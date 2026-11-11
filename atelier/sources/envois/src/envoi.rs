@@ -965,8 +965,8 @@ fn frontiere_au_hasard() -> R<String> {
 
 /// Un identifiant de message (`Message-ID`) neuf, sur le domaine donné.
 pub fn nouveau_message_id(domaine: &str) -> R<String> {
-    let maintenant = std::time::Duration::from_secs_f64(socle::temps::secondes().secondes());
-    let centiemes = maintenant.as_millis() / 10;
+    let maintenant = socle::temps::secondes();
+    let centiemes = i128::from(maintenant.entieres()) * 100 + i128::from(maintenant.nanosecondes() / 10_000_000);
     Ok(format!("<{}.{}.{}@{}>", centiemes, socle::temps::numero_de_processus(), huit_aleas()?, domaine))
 }
 

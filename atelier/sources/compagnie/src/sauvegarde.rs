@@ -362,7 +362,7 @@ pub fn inventaire(racine: &Path) -> Result<(Vec<(String, Etat)>, usize), ErreurG
                 format!("{} est daté hors du calendrier (années 1 à 9999) : régler la date du fichier.", socle::date::repr_texte(&complet.display().to_string())),
             ));
         };
-        trouves.push((relatif, Etat { octets: m.len(), mtime: date.secondes() as i64 }));
+        trouves.push((relatif, Etat { octets: m.len(), mtime: date.entieres() }));
     }
     Ok((trouves, ecartes))
 }

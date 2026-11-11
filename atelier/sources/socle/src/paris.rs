@@ -20,14 +20,29 @@ const PREMIER: i64 = (1 - 719_163) * 86_400;
 /// seconde avant sa fin en UTC (l'heure d'ete ajoute deux heures).
 const DERNIER: i64 = (3_652_059 + 1 - 719_163) * 86_400 - 7_201;
 
-/// UN INSTANT, en secondes depuis le 01/01/1970 (UTC), dans le calendrier (le module).
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
-pub struct Moment(f64);
+/// Les nanosecondes d'une seconde.
+const NANOS: i128 = 1_000_000_000;
+
+/// UN INSTANT, en nanosecondes depuis le 01/01/1970 (UTC), dans le calendrier (le module) : un entier, exact. La montre
+/// le donne a la microseconde ; un instant ecrit dans un fichier se lit tel qu'il est ecrit, a la nanoseconde.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Moment(i128);
 
 impl Moment {
-    /// L'instant de `t` secondes depuis 1970 ; `None` hors du calendrier (ou qui n'est pas un nombre).
-    pub fn de_secondes(t: f64) -> Option<Moment> {
-        (t >= PREMIER as f64 && t <= DERNIER as f64).then_some(Moment(t))
+    /// L'instant de `ns` nanosecondes depuis 1970 ; `None` hors du calendrier.
+    fn de_nanos(ns: i128) -> Option<Moment> {
+        (ns >= PREMIER as i128 * NANOS && ns <= DERNIER as i128 * NANOS).then_some(Moment(ns))
+    }
+
+    /// L'instant de `t` secondes entieres depuis 1970 ; `None` hors du calendrier.
+    pub fn de_secondes(t: i64) -> Option<Moment> {
+        Moment::de_nanos(t as i128 * NANOS)
+    }
+
+    /// L'instant d'une duree depuis 1970 (la montre, la date d'un fichier), a la nanoseconde ; `avant_1970` : avant.
+    pub fn de_duree(d: std::time::Duration, avant_1970: bool) -> Option<Moment> {
+        let ns = d.as_nanos() as i128;
+        Moment::de_nanos(if avant_1970 { -ns } else { ns })
     }
 
     /// L'instant de `jour` a `heure:minute:seconde`, heure de Paris ; `None` hors du calendrier.
@@ -36,22 +51,113 @@ impl Moment {
         // Le decalage de Paris a cet instant : celui de l'instant local lu comme UTC, corrige une fois (un changement
         // d'heure ne tombe jamais a l'heure d'un pas).
         let approx = local - decalage_brut(local)?;
-        Moment::de_secondes((local - decalage_brut(approx)?) as f64 + (minute * 60 + seconde) as f64)
-    }
-
-    /// Les secondes depuis 1970.
-    pub fn secondes(self) -> f64 {
-        self.0
+        Moment::de_secondes(local - decalage_brut(approx)? + minute * 60 + seconde)
     }
 
     /// Les secondes entieres depuis 1970 (l'instant arrondi a la seconde d'avant).
     pub fn entieres(self) -> i64 {
-        self.0.floor() as i64
+        self.0.div_euclid(NANOS) as i64
+    }
+
+    /// Les nanosecondes passees depuis la seconde entiere (`entieres`), de 0 a 999 999 999.
+    pub fn nanosecondes(self) -> u32 {
+        self.0.rem_euclid(NANOS) as u32
+    }
+
+    /// L'instant arrondi a la microseconde la plus proche (au pair a egalite) : la montre ne dit pas plus fin.
+    /// Les bornes du calendrier sont des secondes entieres : l'arrondi y reste.
+    pub fn a_la_microseconde(self) -> Moment {
+        let us = self.0.div_euclid(1_000);
+        let reste = self.0.rem_euclid(1_000);
+        let us = if reste > 500 || (reste == 500 && us % 2 != 0) { us + 1 } else { us };
+        Moment(us * 1_000)
     }
 
     /// `secondes` plus tard (moins tot : negatives) ; `None` hors du calendrier.
-    pub fn plus(self, secondes: f64) -> Option<Moment> {
-        Moment::de_secondes(self.0 + secondes)
+    pub fn plus(self, secondes: i64) -> Option<Moment> {
+        Moment::de_nanos(self.0 + secondes as i128 * NANOS)
+    }
+
+    /// `d` plus tard, a la nanoseconde ; `None` hors du calendrier.
+    pub fn plus_duree(self, d: std::time::Duration) -> Option<Moment> {
+        Moment::de_nanos(self.0 + d.as_nanos() as i128)
+    }
+
+    /// La duree de `avant` a cet instant ; `None` si `avant` est apres.
+    pub fn depuis(self, avant: Moment) -> Option<std::time::Duration> {
+        let ns = u64::try_from(self.0 - avant.0).ok()?;
+        Some(std::time::Duration::from_nanos(ns))
+    }
+
+    /// LA GRAINE DES ALEAS EN SUITE FIXE (`temps::aleas`) : les 64 bits du nombre binaire IEEE 754 (double precision) le
+    /// plus proche de ses secondes (au pair a egalite), calcules en entiers. Les scenarios enregistres et les fictives
+    /// tirent leurs aleas de cette graine : un nom de courriel joue, un code de signature, en dependent.
+    pub fn graine(self) -> u64 {
+        if self.0 == 0 {
+            return 0;
+        }
+        let signe = if self.0 < 0 { 1u64 << 63 } else { 0 };
+        let a = self.0.unsigned_abs();
+        // `a << k` est entre 2^82 et 2^83 : son quotient par 10^9 tient entre 2^52 et 2^53,6, la mantisse a peu pres.
+        let mut k = 83 - (128 - a.leading_zeros()) as i32;
+        let decale = |k: i32| if k >= 0 { a << k } else { a >> -k };
+        let mut q = decale(k) / NANOS as u128;
+        if q >= 1 << 53 {
+            k -= 1;
+            q = decale(k) / NANOS as u128;
+        }
+        // `a` tient sous 2^69 (l'an 9999) : `k` reste positif, rien ne se perd au decalage.
+        let reste = decale(k) % NANOS as u128;
+        if 2 * reste > NANOS as u128 || (2 * reste == NANOS as u128 && q % 2 == 1) {
+            q += 1;
+        }
+        if q == 1 << 53 {
+            q = 1 << 52;
+            k -= 1;
+        }
+        let exposant = (52 - k + 1023) as u64;
+        signe | exposant << 52 | (q as u64 - (1 << 52))
+    }
+
+    /// L'instant tel qu'un fichier l'ecrit (`lu` le relit) : ses secondes depuis 1970, en nombre a virgule (`1767600000.0`,
+    /// `1793606401.2339187`), sans zero en queue de la fraction.
+    pub fn ecrit(self) -> String {
+        let fraction = format!("{:09}", self.nanosecondes());
+        let fraction = fraction.trim_end_matches('0');
+        format!("{}.{}", self.entieres(), if fraction.is_empty() { "0" } else { fraction })
+    }
+
+    /// L'instant d'un nombre de secondes ecrit (`1767600000`, `1793606401.2339187`, `1.7676e9`), exact, arrondi a la
+    /// nanoseconde (au pair a egalite) ; `None` s'il ne se lit pas ou sort du calendrier.
+    pub fn lu(texte: &str) -> Option<Moment> {
+        let (moins, corps) = match texte.strip_prefix('-') {
+            Some(c) => (true, c),
+            None => (false, texte),
+        };
+        let (mantisse, exposant) = match corps.split_once(['e', 'E']) {
+            Some((m, e)) => (m, e.strip_prefix('+').unwrap_or(e).parse::<i32>().ok()?),
+            None => (corps, 0),
+        };
+        let (entier, fraction) = mantisse.split_once('.').unwrap_or((mantisse, ""));
+        let chiffres = format!("{}{}", entier, fraction);
+        if chiffres.is_empty() || !chiffres.bytes().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        let chiffres = chiffres.trim_start_matches('0');
+        // La valeur vaut `chiffres` x 10^puissance nanosecondes.
+        let puissance = exposant - fraction.len() as i32 + 9;
+        let mut n: i128 = 0;
+        for c in chiffres.bytes() {
+            n = n.checked_mul(10)?.checked_add(i128::from(c - b'0'))?;
+        }
+        let ns = if puissance >= 0 {
+            n.checked_mul(10i128.checked_pow(puissance as u32)?)?
+        } else {
+            let diviseur = 10i128.checked_pow(puissance.unsigned_abs())?;
+            let (q, r) = (n / diviseur, n % diviseur);
+            if r > diviseur - r || (r == diviseur - r && q % 2 == 1) { q + 1 } else { q }
+        };
+        Moment::de_nanos(if moins { -ns } else { ns })
     }
 
     /// Le jour de Paris de cet instant.
@@ -71,17 +177,18 @@ impl Moment {
     }
 }
 
-/// UN INSTANT ECRIT DANS UN FICHIER (un scenario) : ses secondes depuis 1970, lues contre le calendrier.
+/// UN INSTANT ECRIT DANS UN FICHIER (un scenario) : ses secondes depuis 1970, un nombre a virgule (`ecrit`), lues
+/// contre le calendrier (`lu`).
 impl serde::Serialize for Moment {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_f64(self.0)
+        crate::forme::nombre_du_texte(&self.ecrit()).serialize(s)
     }
 }
 
 impl<'de> serde::Deserialize<'de> for Moment {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Moment, D::Error> {
-        let t = f64::deserialize(d)?;
-        Moment::de_secondes(t).ok_or_else(|| serde::de::Error::custom(format!("{} s n'est pas un instant du calendrier (années 1 à 9999)", t)))
+        let t = serde_json::Number::deserialize(d)?.to_string();
+        Moment::lu(&t).ok_or_else(|| serde::de::Error::custom(format!("{} s n'est pas un instant du calendrier (années 1 à 9999)", t)))
     }
 }
 
@@ -785,29 +892,21 @@ pub fn iso_secondes(t: Moment) -> String {
 /// Les secondes locales de Paris d'un instant, apres l'arrondi a la microseconde (au pair le plus proche) ; elles restent
 /// dans le calendrier (`DERNIER` en garde la marge).
 fn local_arrondi(t: Moment) -> i64 {
-    let t = t.0;
-    let mut entier = t.trunc();
-    let us = ((t - entier) * 1e6).round_ties_even();
-    if us >= 1e6 {
-        entier += 1.0;
-    } else if us < 0.0 {
-        entier -= 1.0;
-    }
-    let utc = entier as i64;
+    let utc = t.a_la_microseconde().entieres();
     match decalage_brut(utc) {
         Some(d) => utc + d,
         None => unreachable!("un instant est dans le calendrier : {} s", utc),
     }
 }
 
-/// LA DATE DE MODIFICATION D'UN FICHIER, une donnee du dehors : les secondes et la fraction en nanosecondes,
-/// additionnees en flottant, lues contre le calendrier ; `None` : le systeme date le fichier hors du calendrier. Son
-/// lecteur dit ce que l'absence veut dire pour lui.
+/// LA DATE DE MODIFICATION D'UN FICHIER, une donnee du dehors : les secondes et la fraction en nanosecondes, lues
+/// contre le calendrier ; `None` : le systeme date le fichier hors du calendrier. Son lecteur dit ce que l'absence veut
+/// dire pour lui.
 /// Hors Unix (Windows), la meme valeur par `modified()`.
 #[cfg(unix)]
 pub fn mtime(m: &std::fs::Metadata) -> Option<Moment> {
     use std::os::unix::fs::MetadataExt;
-    Moment::de_secondes(m.mtime() as f64 + m.mtime_nsec() as f64 * 1e-9)
+    Moment::de_nanos(m.mtime() as i128 * NANOS + m.mtime_nsec() as i128)
 }
 
 #[cfg(not(unix))]
@@ -818,10 +917,10 @@ pub fn mtime(m: &std::fs::Metadata) -> Option<Moment> {
         Ok(t) => t,
         Err(e) => unreachable!("Windows date tout fichier : {}", e),
     };
-    Moment::de_secondes(match date.duration_since(std::time::UNIX_EPOCH) {
-        Ok(d) => d.as_secs() as f64 + d.subsec_nanos() as f64 * 1e-9,
-        Err(avant_1970) => -avant_1970.duration().as_secs_f64(),
-    })
+    match date.duration_since(std::time::UNIX_EPOCH) {
+        Ok(d) => Moment::de_duree(d, false),
+        Err(avant_1970) => Moment::de_duree(avant_1970.duration(), true),
+    }
 }
 
 #[cfg(test)]
@@ -829,7 +928,7 @@ mod tests {
     use super::*;
 
     fn a(t: i64) -> Moment {
-        Moment::de_secondes(t as f64).unwrap()
+        Moment::de_secondes(t).unwrap()
     }
 
     /// Directive 2000/84/CE, art. 2 : « la période de l'heure d'été commence […] à 1 heure du matin, temps universel, le

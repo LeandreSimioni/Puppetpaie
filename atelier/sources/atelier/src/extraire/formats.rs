@@ -344,22 +344,24 @@ fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>, notes: &mut Vec<String>
     Ok(out)
 }
 
-/// La cle d'une case : un entier, un flottant de valeur entiere et un booleen (0 ou 1) de meme valeur se confondent ;
-/// un texte n'egale qu'un texte.
+/// La cle d'une case : un entier, un nombre a virgule de valeur entiere et un booleen (0 ou 1) de meme valeur se
+/// confondent ; un texte n'egale qu'un texte.
 fn cle(c: &Cellule) -> String {
-    let nombre = |f: f64| {
-        if f.fract() == 0.0 && f.abs() < 9.2e18 {
-            format!("n{}", f as i64)
-        } else {
-            format!("f{}", f.to_bits())
-        }
-    };
     match c {
         Cellule::Texte(s) => format!("t{}", s),
         Cellule::Entier(i) => format!("n{}", i),
-        Cellule::Flottant(f) => nombre(*f),
+        Cellule::AVirgule(n) => match entier_exact(n) {
+            Some(i) => format!("n{}", i),
+            None => format!("f{}", n.ecrit()),
+        },
         Cellule::Booleen(b) => format!("n{}", *b as i64),
     }
+}
+
+/// L'entier qu'un nombre a virgule vaut exactement (`12.0`), ou `None`.
+fn entier_exact(n: &socle::forme::NombreLu) -> Option<i64> {
+    use rust_decimal::prelude::ToPrimitive;
+    n.decimal().ok().filter(|d| d.fract().is_zero()).and_then(|d| d.to_i64())
 }
 
 /// La valeur de la derniere colonne titree `nom` (une ligne plus courte que l'en-tete se complete de vides), ou `None`.
@@ -377,16 +379,16 @@ fn champ_exige<'a>(
     champ(entete, ligne, nom).ok_or_else(|| refus!("la feuille « {} » n'a pas de colonne « {} »", feuille, nom))
 }
 
-/// L'entier d'une case : un entier, un flottant tronque, un booleen (0 ou 1), un texte d'entier.
+/// L'entier d'une case : un entier, un nombre a virgule tronque, un booleen (0 ou 1), un texte d'entier.
 fn entier_de(c: &Cellule) -> R<i64> {
+    use rust_decimal::prelude::ToPrimitive;
     match c {
         Cellule::Entier(i) => Ok(*i),
-        Cellule::Flottant(f) if f.is_finite() => Ok(f.trunc() as i64),
+        Cellule::AVirgule(n) => n.decimal().ok().and_then(|d| d.trunc().to_i64()).ok_or_else(|| refus!("longueur illisible : {}", n.ecrit())),
         Cellule::Booleen(b) => Ok(*b as i64),
         Cellule::Texte(s) => {
             strip(s).parse::<i64>().map_err(|_| refus!("longueur illisible : {}", socle::fichiers::repr(s)))
         }
-        Cellule::Flottant(f) => Err(refus!("longueur illisible : {}", f)),
     }
 }
 

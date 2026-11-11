@@ -1297,7 +1297,7 @@ fn poser_le_banc(args: &[String]) -> R<Vec<String>> {
             }
             Some(neuf_heures)
         }
-        (None, Some(t)) => Some(t.plus(60.0).ok_or_else(hors_calendrier)?),
+        (None, Some(t)) => Some(t.plus(60).ok_or_else(hors_calendrier)?),
         (None, None) => None,
     };
     if let Some(t) = depart {

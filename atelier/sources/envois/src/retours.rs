@@ -845,7 +845,7 @@ impl Reception {
         let local = (self.date.jour.ordinal() - 719_163) * 86_400 + h.seconde;
         let instant = match h.fuseau {
             None => InstantEcrit::du_naif(Naif::de_secondes(local)?),
-            Some(z) => InstantEcrit::de(Moment::de_secondes((local - z.secondes()) as f64)?),
+            Some(z) => InstantEcrit::de(Moment::de_secondes(local - z.secondes())?),
         };
         Some(HeureDuJournal::Instant(instant))
     }

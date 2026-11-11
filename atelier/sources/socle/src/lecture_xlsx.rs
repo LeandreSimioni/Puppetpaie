@@ -21,14 +21,14 @@ const NS_R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relati
 const NS_P: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
 
 /// La valeur d'une case renseignee. `t="s"`, `"inlineStr"`, `"str"` et `"e"` donnent du texte ; `"b"` un booleen ; le
-/// reste (`"n"`, rien) un nombre : flottant s'il porte `.`, `e` ou `E`, entier sinon.
-/// Elle s'ecrit telle quelle (`Serialize`) : un texte, un nombre (le flottant reste flottant, l'entier entier), un booleen.
+/// reste (`"n"`, rien) un nombre : a virgule s'il porte `.`, `e` ou `E`, entier sinon.
+/// Elle s'ecrit telle quelle (`Serialize`) : un texte, un nombre (exact, tel que la case l'ecrit), un booleen.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(untagged)]
 pub enum Cellule {
     Texte(String),
     Entier(i64),
-    Flottant(f64),
+    AVirgule(crate::forme::NombreLu),
     Booleen(bool),
 }
 
@@ -36,12 +36,12 @@ pub enum Cellule {
 pub type Ligne = Vec<Option<Cellule>>;
 
 impl Cellule {
-    /// La case en texte : le texte tel quel, un flottant sous sa forme ecrite (`1.0`, `1e-05`), `True`/`False`.
+    /// La case en texte : le texte tel quel, un nombre a virgule sous sa forme ecrite (`1.0`, `1e-05`), `True`/`False`.
     pub fn en_texte(&self) -> String {
         match self {
             Cellule::Texte(s) => s.clone(),
             Cellule::Entier(i) => i.to_string(),
-            Cellule::Flottant(f) => crate::ecriture::repr_flottant(*f),
+            Cellule::AVirgule(n) => n.ecrit(),
             Cellule::Booleen(b) => if *b { "True" } else { "False" }.to_string(),
         }
     }
@@ -51,7 +51,7 @@ impl Cellule {
         match self {
             Cellule::Texte(s) => !s.is_empty(),
             Cellule::Entier(i) => *i != 0,
-            Cellule::Flottant(f) => *f != 0.0,
+            Cellule::AVirgule(n) => !n.est_nul(),
             Cellule::Booleen(b) => *b,
         }
     }
@@ -223,10 +223,9 @@ pub fn lignes(chemin: &Path, feuille: &str) -> R<Vec<Ligne>> {
                     }
                     Some("str") | Some("e") => Cellule::Texte(v.to_string()),
                     Some("b") => Cellule::Booleen(v == "1"),
-                    _ if v.contains(['.', 'e', 'E']) => Cellule::Flottant(
-                        v.trim_matches(crate::texte::blanc)
-                            .parse::<f64>()
-                            .map_err(|_| refus(format!("{} : nombre illisible {}", c.nom, crate::fichiers::repr(v))))?,
+                    _ if v.contains(['.', 'e', 'E']) => Cellule::AVirgule(
+                        crate::forme::NombreLu::du_texte(v.trim_matches(crate::texte::blanc))
+                            .ok_or_else(|| refus(format!("{} : nombre illisible {}", c.nom, crate::fichiers::repr(v))))?,
                     ),
                     _ => Cellule::Entier(entier(v, "nombre")?),
                 }

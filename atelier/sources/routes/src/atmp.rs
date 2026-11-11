@@ -206,7 +206,7 @@ struct RisqueDit {
     code_arrete: Option<String>,
     libelle: String,
     precisions: Option<String>,
-    #[serde(serialize_with = "socle::forme::ecrire_en_flottant_opt")]
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
     taux: Option<socle::num::Decimal>,
     tc: bool,
 }
@@ -220,7 +220,7 @@ fn risque_dit(r: &RisqueAtmp) -> RisqueDit {
 #[derive(Debug, Serialize)]
 struct LigneDite {
     code_risque: Option<String>,
-    #[serde(serialize_with = "socle::forme::ecrire_en_flottant_opt")]
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
     taux: Option<socle::num::Decimal>,
     depuis: Option<Jour>,
     /// Pour la ligne d'avant : son dernier jour.

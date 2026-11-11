@@ -599,8 +599,8 @@ pub fn hexa_au_hasard(octets: usize) -> R<String> {
 fn horodatage_de(t: socle::paris::Moment) -> String {
     let local = t.local_naif();
     let (j, s) = (local.jour(), local.seconde_du_jour());
-    // La fraction de seconde, exacte en flottant : ses microsecondes sont celles de l'instant entier.
-    let micros = std::time::Duration::from_secs_f64(t.secondes() - t.entieres() as f64).subsec_micros();
+    // Les microsecondes entieres de la fraction de seconde.
+    let micros = t.nanosecondes() / 1_000;
     format!("{:04}{:02}{:02}-{:02}{:02}{:02}-{:06}", j.an, j.mois, j.jour, s / 3600, s % 3600 / 60, s % 60, micros)
 }
 

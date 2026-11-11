@@ -72,7 +72,7 @@ fn aleas_fixes_ici() -> bool {
 
 fn montre() -> Moment {
     match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(d) => dans_le_calendrier(Moment::de_secondes(d.as_secs_f64())),
+        Ok(d) => dans_le_calendrier(Moment::de_duree(d, false)).a_la_microseconde(),
         Err(avant_1970) => horloge_dereglee(avant_1970),
     }
 }
@@ -107,7 +107,7 @@ pub fn secondes() -> Moment {
         return t;
     }
     match etat().as_ref() {
-        Some(Simule { coule: Some((depart, pose)), .. }) => dans_le_calendrier(depart.plus(pose.elapsed().as_secs_f64())),
+        Some(Simule { coule: Some((depart, pose)), .. }) => dans_le_calendrier(depart.plus_duree(pose.elapsed())).a_la_microseconde(),
         _ => au_jour_pose(montre()),
     }
 }
@@ -117,13 +117,13 @@ pub fn secondes() -> Moment {
 /// entre les deux), ce jour-la, et minuit passe comme a la montre. Sans jour pose (ou pose vide), `t` tel quel. Un jour
 /// pose illisible arrete le moteur : celui qui le pose (un test, un banc) le corrige, rien ne compte a la montre a sa place.
 fn au_jour_pose(t: Moment) -> Moment {
-    static DECALAGE: Mutex<Option<(Jour, f64)>> = Mutex::new(None);
+    static DECALAGE: Mutex<Option<(Jour, i64)>> = Mutex::new(None);
     let Some(jour) = jour_pose() else { return t };
     let mut d = crate::memoire::tenu(&DECALAGE);
     let decalage = match d.as_ref().filter(|(lu, _)| *lu == jour) {
         Some((_, decalage)) => *decalage,
         None => {
-            let decalage = jour.moins(&t.jour_de_paris()) as f64 * 86_400.0;
+            let decalage = jour.moins(&t.jour_de_paris()) * 86_400;
             *d = Some((jour, decalage));
             decalage
         }
@@ -239,7 +239,7 @@ pub fn aleas(o: &mut [u8]) -> crate::echec::R<()> {
     let tirage = aleas_fixes_ici().then(|| {
         let rang = TIRAGES.get() + 1;
         TIRAGES.set(rang);
-        let graine: u64 = FIGE.get().into_iter().map(|t| t.secondes().to_bits()).sum();
+        let graine: u64 = FIGE.get().into_iter().map(Moment::graine).sum();
         (rang, graine)
     });
     let Some((rang, graine)) = tirage else {

@@ -275,7 +275,7 @@ fn date_lue(brut: &str) -> Option<socle::paris::Naif> {
                 return None;
             }
             let t = (j.ordinal() - 719_163) * 86_400 + h * 3_600 + mi * 60 + s - d;
-            Some(socle::paris::Moment::de_secondes(t as f64)?.local_naif())
+            Some(socle::paris::Moment::de_secondes(t)?.local_naif())
         }
     }
 }

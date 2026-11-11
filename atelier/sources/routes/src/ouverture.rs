@@ -1183,7 +1183,7 @@ impl serde::Serialize for NombreLu {
         use rust_decimal::prelude::ToPrimitive;
         match self.0.fract().is_zero().then(|| self.0.to_i64()).flatten().filter(|i| i.unsigned_abs() < 1_000_000_000_000_000) {
             Some(i) => s.serialize_i64(i),
-            None => socle::forme::ecrire_en_flottant(&self.0, s),
+            None => socle::forme::ecrire_a_virgule(&self.0, s),
         }
     }
 }
@@ -1425,11 +1425,11 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
 #[derive(Debug, Clone, serde::Serialize)]
 struct NiveauDeSante {
     niveau: String,
-    #[serde(serialize_with = "socle::forme::ecrire_en_flottant")]
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]
     assure: socle::num::Decimal,
-    #[serde(serialize_with = "socle::forme::ecrire_en_flottant")]
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]
     conjoint: socle::num::Decimal,
-    #[serde(serialize_with = "socle::forme::ecrire_en_flottant")]
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]
     enfant: socle::num::Decimal,
     libelle: String,
 }

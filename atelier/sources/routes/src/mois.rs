@@ -239,7 +239,7 @@ struct SexeDeLaFiche {
 /// Ce que la page propose quand la saisie ne le dit pas : le taux d'une ligne de cachet neuve.
 #[derive(Debug, Serialize)]
 struct Defauts {
-    #[serde(serialize_with = "socle::forme::ecrire_en_flottant_opt")]
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
     taux_cachet: Option<Decimal>,
 }
 
@@ -301,7 +301,7 @@ struct EnCours {
     fin: Jour,
     numero: String,
     depuis: Option<Mois>,
-    #[serde(serialize_with = "socle::forme::ecrire_en_flottant_opt")]
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
     taux_cachet: Option<Decimal>,
     deja_repris: bool,
     engagement: Reprise,
@@ -326,7 +326,7 @@ struct Reprise {
 struct LigneAReprendre {
     rubrique: &'static str,
     quantite: u8,
-    #[serde(serialize_with = "socle::forme::ecrire_en_flottant_opt")]
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
     taux: Option<Decimal>,
     dates: [Jour; 0],
 }
@@ -1611,7 +1611,7 @@ pub(crate) struct VuePaie {
     cachets: i64,
     /// Le taux de la premiere ligne de cachet ; sans cachet, celui que la carte ou son mois ecrit.
     taux_cachet: Option<socle::forme::NombreLu>,
-    #[serde(serialize_with = "socle::forme::ecrire_en_flottant_opt")]
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
     heures: Option<Decimal>,
     faits_avances: Vec<&'static str>,
     /// Les rubriques que sa carte propose, et celle d'une ligne neuve (`engagement::proposees`).

@@ -28,7 +28,7 @@ pub fn reecrire_oracles() -> bool {
 /// Deux nombres égaux en valeur (`2.0` et `2`, `"2.50"` et `"2.5"` à 1e-25 près) ; tout le reste au caractère près.
 pub fn egal(a: &Value, b: &Value) -> bool {
     match (a, b) {
-        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
+        (Value::Number(x), Value::Number(y)) => socle::ecriture::canonique(x) == socle::ecriture::canonique(y),
         (Value::String(x), Value::String(y)) => {
             x == y
                 || match (Decimal::from_str(x), Decimal::from_str(y)) {

@@ -1,46 +1,11 @@
 //! Le JSON ASCII et compact qu'on scelle ou qu'on envoie a un service : `\uXXXX` hors ASCII, cles triees a la demande,
-//! separateurs `, ` et `: ` (ou `,` et `:` serres) ; les flottants sous leur forme la plus courte qui se relit, en
-//! notation scientifique hors de 1e-4 .. 1e16. Les octets qu'un coffre deja scelle ou qu'une signature couvre ne
-//! changent pas d'une version a l'autre.
+//! separateurs `, ` et `: ` (ou `,` et `:` serres) ; les nombres a virgule comme les fichiers les ecrivent
+//! (`ecriture::a_virgule`). Les octets qu'un coffre deja scelle ou qu'une signature couvre ne changent pas d'une version
+//! a l'autre.
 //!
 //! Un des trois modules du BORD (`forme` lit ; `ecriture` et `json_ascii` ecrivent) : ce qui s'ecrit est une forme.
 
 use serde_json::Value;
-
-
-/// Un flottant en texte : le plus court qui se relit, notation scientifique hors de
-/// 1e-4 .. 1e16.
-pub fn repr_flottant(f: f64) -> String {
-    if f.is_nan() {
-        return "NaN".into();
-    }
-    if f.is_infinite() {
-        return if f > 0.0 { "Infinity" } else { "-Infinity" }.into();
-    }
-    let signe = if f.is_sign_negative() { "-" } else { "" };
-    let sci = format!("{:e}", f.abs());
-    let (mant, exp) = crate::ecriture::scientifique(&sci);
-    let chiffres: String = mant.chars().filter(|c| *c != '.').collect();
-    let n = chiffres.len() as i32;
-    let decpt = exp + 1;
-    let corps = if f == 0.0 {
-        "0.0".to_string()
-    } else if decpt > 16 || decpt < -3 {
-        let mut m = chiffres[..1].to_string();
-        if n > 1 {
-            m.push('.');
-            m.push_str(&chiffres[1..]);
-        }
-        format!("{}e{}{:02}", m, if exp < 0 { '-' } else { '+' }, exp.abs())
-    } else if decpt <= 0 {
-        format!("0.{}{}", "0".repeat((-decpt) as usize), chiffres)
-    } else if decpt >= n {
-        format!("{}{}.0", chiffres, "0".repeat((decpt - n) as usize))
-    } else {
-        format!("{}.{}", &chiffres[..decpt as usize], &chiffres[decpt as usize..])
-    };
-    format!("{}{}", signe, corps)
-}
 
 /// Le JSON en ASCII (tout autre caractere en `\uXXXX`), cles triees si `trie`. Sans
 /// `indent`, les separateurs sont `, ` et `: ` (ou `,` et `:` si `serre`).
@@ -83,10 +48,7 @@ fn ecrire(v: &Value, indent: Option<usize>, serre: bool, trie: bool, niveau: usi
     match v {
         Value::Null => s.push_str("null"),
         Value::Bool(b) => s.push_str(if *b { "true" } else { "false" }),
-        Value::Number(n) => match n.as_f64().filter(|_| n.is_f64()) {
-            Some(f) => s.push_str(&repr_flottant(f)),
-            None => s.push_str(&n.to_string()),
-        },
+        Value::Number(n) => s.push_str(&crate::ecriture::nombre_ecrit(n)),
         Value::String(t) => chaine_json(t, s),
         Value::Array(a) => {
             if a.is_empty() {

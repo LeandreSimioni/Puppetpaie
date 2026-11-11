@@ -339,30 +339,6 @@ pub fn repr_texte(s: &str) -> String {
     o
 }
 
-/// Un flottant ecrit : le plus court qui revient au meme flottant,
-/// `1.0` pour un entier, l'exposant des 1e16 et des 1e-5.
-pub fn repr_flottant(x: f64) -> String {
-    if x.is_nan() {
-        return "nan".into();
-    }
-    if x.is_infinite() {
-        return if x > 0.0 { "inf" } else { "-inf" }.into();
-    }
-    let a = x.abs();
-    if a != 0.0 && !(1e-4..1e16).contains(&a) {
-        // `{:e}` donne `1e-5` ; la forme ecrite est `1e-05`.
-        let t = format!("{:e}", x);
-        let (m, e) = crate::ecriture::scientifique(&t);
-        return format!("{}e{}{:02}", m, if e < 0 { '-' } else { '+' }, e.abs());
-    }
-    let t = format!("{}", x);
-    if t.contains('.') {
-        t
-    } else {
-        format!("{}.0", t)
-    }
-}
-
 /// `AAAA-MM-JJ` ou `AAAAMMJJ`.
 pub fn jour_iso(texte: &str) -> Option<Jour> {
     let chiffres = |t: &str| t.chars().all(|c| c.is_ascii_digit());

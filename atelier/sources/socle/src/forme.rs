@@ -21,10 +21,11 @@ use serde_json::Value;
 // Un refus de lecture se note la ou la forme se lit (`#[track_caller]`), pas ici : aucune fermeture ne le construit.
 
 /// La donnee `v` lue en `T`. `phrase` est celle du refus, pour l'ecran (« Le barème livré ne se lit pas : le signaler au
-/// développeur. ») ; le chemin de la cle et le detail vont a part.
+/// développeur. ») ; le chemin de la cle et le detail vont a part. Elle se lit dans son texte (`lire_texte`) : un nombre
+/// n'y passe jamais par un flottant, que la lecture d'une `Value` lui donnerait.
 #[track_caller]
 pub fn lire<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
-    match serde_path_to_error::deserialize(v) { Ok(t) => Ok(t), Err(e) => Err(refus(phrase, None, &e)) }
+    lire_texte(&v.to_string(), phrase)
 }
 
 /// Le texte JSON `texte` lu en `T` (`lire`, sans passer par une `Value`).
@@ -49,14 +50,16 @@ pub fn lire_reponse_tiers<T: ReponseDUnTiers>(texte: &str, phrase: &str) -> R<T>
 }
 
 /// UNE FORME QUE SA TABLE TYPE (`DeserializeSeed` : une saisie de fiche, que la table des cases lit case par case selon
-/// la forme de chacune, `declarations::champs::Lecture`) : la donnee `v` lue selon `table`, comme `lire`.
+/// la forme de chacune, `declarations::champs::Lecture`) : la donnee `v` lue selon `table`, dans son texte, comme `lire`.
 #[track_caller]
 pub fn lire_selon<S, U>(v: &Value, table: S, phrase: &str) -> R<U>
 where
     S: for<'de> serde::de::DeserializeSeed<'de, Value = U>,
 {
+    let texte = v.to_string();
+    let mut d = serde_json::Deserializer::from_str(&texte);
     let mut suivi = serde_path_to_error::Track::new();
-    match table.deserialize(serde_path_to_error::Deserializer::new(v, &mut suivi)) { Ok(u) => Ok(u), Err(e) => Err(refus(phrase, None, &serde_path_to_error::Error::new(suivi.path(), e))) }
+    match table.deserialize(serde_path_to_error::Deserializer::new(&mut d, &mut suivi)) { Ok(u) => Ok(u), Err(e) => Err(refus(phrase, None, &serde_path_to_error::Error::new(suivi.path(), e))) }
 }
 
 /// UNE FORME ECRITE (`Serialize`, une fiche typee) RELUE SELON UNE TABLE : ce qu'elle ecrit, lu par `lire_selon`.
@@ -159,25 +162,39 @@ fn en_clair(m: &str) -> String {
     m.to_string()
 }
 
-/// LE DECIMAL D'UN NOMBRE A VIRGULE D'UN FICHIER, tel qu'il est ecrit : sa forme la plus courte, qui revient au meme
-/// nombre (`1.0` reste `1.0`, `24.1` est le decimal 24,1 et non le binaire le plus proche). Le lecteur JSON ne rend un
-/// nombre a virgule qu'en flottant (`visit_f64`, que le trait de serde impose) : il ne devient decimal qu'ici.
-fn decimal_ecrit(x: f64) -> crate::echec::R<crate::num::Decimal> {
+/// LE DECIMAL D'UN NOMBRE A VIRGULE D'UN FICHIER, lu exactement dans son texte (le lecteur JSON le garde en texte :
+/// `arbitrary_precision`) : sans zero en queue, une decimale au moins sous 10^16 (`1.0` reste `1.0`, `1.50` est
+/// `1.5`, `1e5` est `100000.0`).
+fn decimal_ecrit(t: &str) -> crate::echec::R<crate::num::Decimal> {
     use std::str::FromStr;
-    if !x.is_finite() {
-        return Err(crate::echec::refus(format!("nombre non fini : {}", x)));
+    let d = match crate::num::Decimal::from_str(t).or_else(|_| crate::num::Decimal::from_scientific(t)) {
+        Ok(d) => d.normalize(),
+        Err(e) => {
+            return Err(crate::echec::refus_avec(
+                format!("nombre hors de portee : {}", t),
+                crate::echec::Lieu { detail: Some(e.to_string()), ..Default::default() },
+            ))
+        }
+    };
+    let mut d = d;
+    if d.scale() == 0 && d.abs() < crate::num::Decimal::from(10_000_000_000_000_000i64) {
+        d.rescale(1);
     }
-    // Un flottant entier garde sa decimale : `1.0`.
-    let mut s = format!("{}", x);
-    if !s.contains(['.', 'e', 'E']) && x.abs() < 1e16 {
-        s.push_str(".0");
-    }
-    match crate::num::Decimal::from_str(&s).or_else(|_| crate::num::Decimal::from_scientific(&s)) {
-        Ok(d) => Ok(d),
-        Err(e) => Err(crate::echec::refus_avec(
-            format!("nombre hors de portee : {}", s),
-            crate::echec::Lieu { detail: Some(e.to_string()), ..Default::default() },
-        )),
+    Ok(d)
+}
+
+/// LE TEXTE D'UN NOMBRE A VIRGULE QUE LE LECTEUR JSON REND : `arbitrary_precision` le passe en objet a cle privee, que
+/// `serde_json::Number` sait lire.
+fn texte_a_virgule<'de, A: serde::de::MapAccess<'de>>(m: A) -> Result<String, A::Error> {
+    use serde::Deserialize;
+    serde_json::Number::deserialize(serde::de::value::MapAccessDeserializer::new(m)).map(|n| n.to_string())
+}
+
+/// UN NOMBRE JSON DE SON TEXTE (un decimal, un instant) : il s'ecrit tel quel, exact (`ecriture::nombre_ecrit`).
+pub fn nombre_du_texte(t: &str) -> serde_json::Number {
+    match t.parse::<serde_json::Number>() {
+        Ok(n) => n,
+        Err(e) => unreachable!("un nombre s'ecrit en chiffres : {} ({})", t, e),
     }
 }
 
@@ -186,7 +203,7 @@ fn decimal_ecrit(x: f64) -> crate::echec::R<crate::num::Decimal> {
 /// `#[serde(deserialize_with = "socle::forme::decimal")]`.
 pub fn decimal<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decimal, D::Error> {
     struct EnDecimal;
-    impl serde::de::Visitor<'_> for EnDecimal {
+    impl<'de> serde::de::Visitor<'de> for EnDecimal {
         type Value = crate::num::Decimal;
         fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
             f.write_str("un nombre")
@@ -197,8 +214,8 @@ pub fn decimal<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Dec
         fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<Self::Value, E> {
             Ok(u.into())
         }
-        fn visit_f64<E: serde::de::Error>(self, x: f64) -> Result<Self::Value, E> {
-            decimal_ecrit(x).map_err(|e| E::custom(e.phrase))
+        fn visit_map<A: serde::de::MapAccess<'de>>(self, m: A) -> Result<Self::Value, A::Error> {
+            decimal_ecrit(&texte_a_virgule(m)?).map_err(|e| serde::de::Error::custom(e.phrase))
         }
         fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
             crate::num::dec_texte(s).map_err(|e| E::custom(e.phrase))
@@ -255,7 +272,7 @@ where
 /// `#[serde(deserialize_with = "socle::forme::court")]`.
 pub fn court<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decimal, D::Error> {
     struct EnCourt;
-    impl serde::de::Visitor<'_> for EnCourt {
+    impl<'de> serde::de::Visitor<'de> for EnCourt {
         type Value = crate::num::Decimal;
         fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
             f.write_str("un nombre")
@@ -266,8 +283,8 @@ pub fn court<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decim
         fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<Self::Value, E> {
             Ok(crate::num::court(u.into()))
         }
-        fn visit_f64<E: serde::de::Error>(self, x: f64) -> Result<Self::Value, E> {
-            decimal_ecrit(x).map(crate::num::court).map_err(|e| E::custom(e.phrase))
+        fn visit_map<A: serde::de::MapAccess<'de>>(self, m: A) -> Result<Self::Value, A::Error> {
+            decimal_ecrit(&texte_a_virgule(m)?).map(crate::num::court).map_err(|e| serde::de::Error::custom(e.phrase))
         }
     }
     d.deserialize_any(EnCourt)
@@ -306,7 +323,7 @@ pub enum Remplie<T> {
 
 impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for Remplie<T> {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        use serde::de::value::{BoolDeserializer, F64Deserializer, I64Deserializer, MapAccessDeserializer, SeqAccessDeserializer, StrDeserializer, U64Deserializer};
+        use serde::de::value::{BoolDeserializer, I64Deserializer, MapAccessDeserializer, SeqAccessDeserializer, StrDeserializer, U64Deserializer};
         struct Lue<T>(std::marker::PhantomData<T>);
         impl<'de, T: serde::Deserialize<'de>> serde::de::Visitor<'de> for Lue<T> {
             type Value = Remplie<T>;
@@ -331,9 +348,6 @@ impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for Remplie<T> {
             fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<Self::Value, E> {
                 T::deserialize(U64Deserializer::<E>::new(u)).map(Remplie::Dite)
             }
-            fn visit_f64<E: serde::de::Error>(self, x: f64) -> Result<Self::Value, E> {
-                T::deserialize(F64Deserializer::<E>::new(x)).map(Remplie::Dite)
-            }
             fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
                 if s.is_empty() {
                     return Ok(Remplie::Vide);
@@ -354,7 +368,7 @@ impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for Remplie<T> {
 /// UN NOMBRE TEL QU'IL EST ECRIT : un entier, un flottant, ou un texte qui se lit en decimal (`num::decimal_lu`, `12,5`
 /// compris), garde tel quel pour se reecrire de meme (`droit::fiche::Montant`). Un nombre ecrit avec sa virgule se garde
 /// en decimal, dans sa forme la plus courte (`num::court` : `130.0` reste `130.0`), et se reecrit en nombre a virgule
-/// (`ecrire_en_flottant`).
+/// (`ecrire_a_virgule`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum NombreEcrit {
     Entier(i64),
@@ -363,20 +377,20 @@ pub enum NombreEcrit {
     Texte(String),
 }
 
-/// Ecrit un decimal en nombre a virgule (`NombreEcrit::Flottant`, un taux rendu) : celui qu'il etait a sa lecture, que
-/// sa forme ecrite redonne. Le JSON n'ecrit un nombre a virgule qu'en flottant (`serialize_f64`, que le trait de serde
-/// impose) : il ne devient flottant qu'ici.
-pub fn ecrire_en_flottant<S: serde::Serializer>(d: &crate::num::Decimal, s: S) -> Result<S::Ok, S::Error> {
-    match d.to_string().parse::<f64>() {
-        Ok(x) => s.serialize_f64(x),
-        Err(e) => unreachable!("un décimal s'écrit en nombre : {} ({})", d, e),
+/// Ecrit un decimal en nombre a virgule (`NombreEcrit::Flottant`, un taux rendu), exact, comme les fichiers l'ecrivent
+/// (`ecriture::a_virgule` : `130.0`).
+pub fn ecrire_a_virgule<S: serde::Serializer>(d: &crate::num::Decimal, s: S) -> Result<S::Ok, S::Error> {
+    use serde::Serialize;
+    match crate::ecriture::a_virgule(&d.to_string()) {
+        Some(t) => nombre_du_texte(&t).serialize(s),
+        None => unreachable!("un décimal s'écrit en chiffres : {}", d),
     }
 }
 
-/// `ecrire_en_flottant`, quand la valeur peut manquer (nulle, elle s'ecrit `null`).
-pub fn ecrire_en_flottant_opt<S: serde::Serializer>(d: &Option<crate::num::Decimal>, s: S) -> Result<S::Ok, S::Error> {
+/// `ecrire_a_virgule`, quand la valeur peut manquer (nulle, elle s'ecrit `null`).
+pub fn ecrire_a_virgule_opt<S: serde::Serializer>(d: &Option<crate::num::Decimal>, s: S) -> Result<S::Ok, S::Error> {
     match d {
-        Some(d) => ecrire_en_flottant(d, s),
+        Some(d) => ecrire_a_virgule(d, s),
         None => s.serialize_none(),
     }
 }
@@ -384,7 +398,7 @@ pub fn ecrire_en_flottant_opt<S: serde::Serializer>(d: &Option<crate::num::Decim
 impl<'de> serde::Deserialize<'de> for NombreEcrit {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         struct Lu;
-        impl serde::de::Visitor<'_> for Lu {
+        impl<'de> serde::de::Visitor<'de> for Lu {
             type Value = NombreEcrit;
             fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
                 f.write_str("un nombre")
@@ -396,8 +410,8 @@ impl<'de> serde::Deserialize<'de> for NombreEcrit {
                 // Un naturel que `i64` tient est un entier ; au-dela, il reste naturel.
                 Ok(if u <= i64::MAX as u64 { NombreEcrit::Entier(u as i64) } else { NombreEcrit::Naturel(u) })
             }
-            fn visit_f64<E: serde::de::Error>(self, x: f64) -> Result<NombreEcrit, E> {
-                decimal_ecrit(x).map(|d| NombreEcrit::Flottant(crate::num::court(d))).map_err(|e| E::custom(e.phrase))
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, m: A) -> Result<NombreEcrit, A::Error> {
+                decimal_ecrit(&texte_a_virgule(m)?).map(|d| NombreEcrit::Flottant(crate::num::court(d))).map_err(|e| serde::de::Error::custom(e.phrase))
             }
             fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<NombreEcrit, E> {
                 match crate::num::decimal_lu(s) {
@@ -435,11 +449,10 @@ impl From<NombreLu> for serde_json::Number {
 impl NombreLu {
     /// Le decimal du nombre : un entier tel quel, un nombre a virgule par sa forme la plus courte (`decimal_ecrit`).
     pub fn decimal(&self) -> R<crate::num::Decimal> {
-        match (self.0.as_i64(), self.0.as_u64(), self.0.as_f64()) {
-            (Some(i), _, _) => Ok(i.into()),
-            (_, Some(u), _) => Ok(u.into()),
-            (_, _, Some(x)) => decimal_ecrit(x),
-            (None, None, None) => Err(crate::echec::refus(crate::num::illisible(&self.0.to_string()))),
+        match (self.0.as_i64(), self.0.as_u64()) {
+            (Some(i), _) => Ok(i.into()),
+            (_, Some(u)) => Ok(u.into()),
+            (None, None) => decimal_ecrit(&self.0.to_string()),
         }
     }
 
@@ -449,14 +462,15 @@ impl NombreLu {
     }
 
     /// Le nombre tel qu'une donnee l'ecrit : un entier tel quel, un nombre a virgule sous sa forme ecrite (`130.0`,
-    /// `ecriture::repr_flottant`).
+    /// `ecriture::a_virgule`).
     pub fn ecrit(&self) -> String {
-        match (self.0.as_i64(), self.0.as_u64(), self.0.as_f64()) {
-            (Some(i), _, _) => i.to_string(),
-            (_, Some(u), _) => u.to_string(),
-            (_, _, Some(x)) => crate::date::repr_flottant(x),
-            (None, None, None) => self.0.to_string(),
-        }
+        crate::ecriture::nombre_ecrit(&self.0)
+    }
+
+    /// Le nombre qu'un texte ecrit (`12`, `1.50`, `1e-5`), exact ; `None` : ce n'est pas un nombre.
+    pub fn du_texte(t: &str) -> Option<NombreLu> {
+        crate::ecriture::a_virgule(t)?;
+        t.parse::<serde_json::Number>().ok().map(NombreLu)
     }
 
     /// Un decimal en nombre a virgule : celui que sa forme la plus courte ecrit (`num::court` : `130` s'ecrit `130.0`).
@@ -544,7 +558,9 @@ where
 /// d'une compagnie, qu'elle corrige : `droit::fiche`).
 #[track_caller]
 pub fn lire_en_phrase<T: DeserializeOwned>(v: &Value, phrase: impl Fn(&str, &str) -> String) -> R<T> {
-    match serde_path_to_error::deserialize(v) { Ok(t) => Ok(t), Err(e) => Err(refus_en_phrase(&phrase, &e)) }
+    let texte = v.to_string();
+    let mut d = serde_json::Deserializer::from_str(&texte);
+    match serde_path_to_error::deserialize(&mut d) { Ok(t) => Ok(t), Err(e) => Err(refus_en_phrase(&phrase, &e)) }
 }
 
 /// `lire_en_phrase`, du fichier JSON `fichier` (sa lecture notee au registre d'un calcul suivi, `fichiers::lire_texte`) ;

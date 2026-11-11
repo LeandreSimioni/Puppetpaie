@@ -189,7 +189,7 @@ impl Serialize for Montant {
         match self {
             Montant::Entier(i) => s.serialize_i64(*i),
             Montant::Naturel(u) => s.serialize_u64(*u),
-            Montant::Flottant(x) => socle::forme::ecrire_en_flottant(x, s),
+            Montant::Flottant(x) => socle::forme::ecrire_a_virgule(x, s),
             Montant::Texte(t) => s.serialize_str(t),
         }
     }
@@ -634,24 +634,21 @@ pub trait Cases {
     fn voir<V: VoirCase>(&self, v: &mut V);
 }
 
-/// LA CASE `cle` DE `fiche`, ecrite par `s` (une table qui la confronte a ses valeurs l'ecrit dans sa forme) ; `None` :
-/// elle est vide, ou la forme ne la declare pas.
-pub fn case_en<F: Cases + ?Sized, S: Serializer>(fiche: &F, cle: &str, s: S) -> Option<Result<S::Ok, S::Error>> {
-    struct Une<'a, S: Serializer> {
+/// LA CASE `cle` DE `fiche`, telle qu'elle s'ecrit (une table qui la confronte a ses valeurs la lit dans cette forme) ;
+/// `None` : elle est vide, ou la forme ne la declare pas.
+pub fn case_ecrite<F: Cases + ?Sized>(fiche: &F, cle: &str) -> Option<socle::ecriture::Arbre> {
+    struct Une<'a> {
         cle: &'a str,
-        s: Option<S>,
-        ecrite: Option<Result<S::Ok, S::Error>>,
+        ecrite: Option<socle::ecriture::Arbre>,
     }
-    impl<S: Serializer> VoirCase for Une<'_, S> {
+    impl VoirCase for Une<'_> {
         fn case<T: Serialize>(&mut self, cle: &'static str, case: &Option<T>) {
-            if let (true, Some(v)) = (cle == self.cle, case) {
-                if let Some(s) = self.s.take() {
-                    self.ecrite = Some(v.serialize(s));
-                }
+            if let (true, Some(v), None) = (cle == self.cle, case, &self.ecrite) {
+                self.ecrite = Some(socle::ecriture::Arbre::de(v));
             }
         }
     }
-    let mut une = Une { cle, s: Some(s), ecrite: None };
+    let mut une = Une { cle, ecrite: None };
     fiche.voir(&mut une);
     une.ecrite
 }

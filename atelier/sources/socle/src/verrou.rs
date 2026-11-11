@@ -8,7 +8,7 @@
 use std::fs::OpenOptions;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
 use crate::echec::R;
 
@@ -47,11 +47,11 @@ pub fn marque(qui: &str, pid: u32, maintenant: &str) -> String {
 
 fn age_secondes(chemin: &Path) -> std::io::Result<i64> {
     let modifie = std::fs::metadata(chemin)?.modified()?;
-    let en_s = |t: SystemTime| match t.duration_since(UNIX_EPOCH) {
-        Ok(d) => d.as_secs_f64(),
-        Err(e) => -e.duration().as_secs_f64(),
-    };
-    Ok((en_s(SystemTime::now()) - en_s(modifie)).trunc() as i64)
+    // Les secondes entieres ecoulees, tronquees vers zero (un fichier date du futur a un age negatif).
+    Ok(match SystemTime::now().duration_since(modifie) {
+        Ok(d) => d.as_secs() as i64,
+        Err(e) => -(e.duration().as_secs() as i64),
+    })
 }
 
 /// Prend le verrou, ou rend qui le tient. Un verrou plus vieux que `delai`

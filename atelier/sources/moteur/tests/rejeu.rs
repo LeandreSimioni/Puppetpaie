@@ -15,7 +15,7 @@ use serde_json::{json, Value};
 /// L'instant dont les secondes depuis 1970 sont celles de l'heure naive `iso` (`AAAA-MM-JJTHH:MM:SS`).
 fn instant_naif(iso: &str) -> socle::paris::Moment {
     let epoque = socle::paris::Naif::lire("1970-01-01").unwrap();
-    socle::paris::Moment::de_secondes(socle::paris::Naif::lire(iso).unwrap().depuis(epoque) as f64).unwrap()
+    socle::paris::Moment::de_secondes(socle::paris::Naif::lire(iso).unwrap().depuis(epoque)).unwrap()
 }
 
 /// LES TRETEAUX DU BANC : le petit scenario de la preuve, joue au banc. Une compagnie ajoutee par le « + »

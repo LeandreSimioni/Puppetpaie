@@ -364,7 +364,7 @@ fn instant_ecrit(g: &Geste) -> R<Option<Moment>> {
 
 /// L'instant d'une seconde apres `t`.
 fn seconde_apres(t: Moment) -> R<Moment> {
-    t.plus(1.0).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))
+    t.plus(1).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))
 }
 
 /// Les instants de chaque geste, dans l'ordre du fichier : celui qu'il ecrit, ou une seconde apres le precedent. Un

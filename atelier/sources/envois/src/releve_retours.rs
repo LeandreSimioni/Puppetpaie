@@ -775,7 +775,7 @@ type Annees = std::collections::BTreeMap<String, std::collections::BTreeMap<Stri
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EffectifEcrit {
-    #[serde(serialize_with = "socle::forme::ecrire_en_flottant", deserialize_with = "socle::forme::court")]
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule", deserialize_with = "socle::forme::court")]
     valeur: Decimal,
     #[serde(skip_serializing_if = "Option::is_none")]
     calcule_le: Option<InstantEcrit>,

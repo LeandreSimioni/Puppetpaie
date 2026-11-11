@@ -414,7 +414,7 @@ struct ChargeEffectif {
 struct EffectifDit {
     phrase: String,
     annee: Option<i32>,
-    #[serde(serialize_with = "socle::forme::ecrire_en_flottant_opt")]
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
     valeur: Option<socle::num::Decimal>,
     source: Option<&'static str>,
     a_dire: Vec<i32>,

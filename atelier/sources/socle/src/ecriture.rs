@@ -100,14 +100,8 @@ fn canonique_de(v: &Value) -> String {
             format!("{{{}}}", corps.join(","))
         }
         Value::Array(a) => format!("[{}]", a.iter().map(canonique_de).collect::<Vec<_>>().join(",")),
-        // Un entier, tel qu'il est ; un nombre a virgule, le JSON ne le portant qu'en flottant (`forme::ecrire_en_flottant`),
-        // par les plus courts chiffres qui redonnent ce flottant : le decimal qui a ete ecrit.
-        Value::Number(n) => match (n.as_i64(), n.as_u64(), n.as_f64()) {
-            (Some(i), _, _) => decimal_canonique(&i.to_string()),
-            (None, Some(u), _) => decimal_canonique(&u.to_string()),
-            (None, None, Some(f)) => decimal_canonique(&format!("{:e}", f)),
-            (None, None, None) => unreachable!("un nombre JSON est un entier ou un flottant : {}", n),
-        },
+        // Un nombre, tel qu'il est ecrit : le JSON le garde en texte exact.
+        Value::Number(n) => decimal_canonique(&n.to_string()),
         // Un nombre ecrit en texte : un signe au plus, en tete, un point au plus, et au moins un chiffre.
         Value::String(t) if nombre_en_texte(t) => decimal_canonique(t),
         autre => autre.to_string(),
@@ -119,34 +113,11 @@ fn canonique_de(v: &Value) -> String {
 /// sans zero en tete ni en queue des chiffres (`180.0` et `1.8e2` : `18e1` ; `-0.050` : `-5e-2`) ; zero, de tout signe,
 /// s'ecrit `0`.
 fn decimal_canonique(t: &str) -> String {
-    let (moins, corps) = match t.strip_prefix('-') {
-        Some(c) => (true, c),
-        None => (false, t),
-    };
-    let (mantisse, exposant) = match corps.split_once(['e', 'E']) {
-        Some((m, e)) => (m, e),
-        None => (corps, "0"),
-    };
-    let exposant = match exposant.strip_prefix('+') {
-        Some(e) => e,
-        None => exposant,
-    };
-    let exposant: i64 = match exposant.parse() {
-        Ok(e) => e,
-        Err(e) => unreachable!("{} : un exposant ecrit en chiffres ne se lit pas ({})", t, e),
-    };
-    let (entier, fraction) = match mantisse.split_once('.') {
-        Some((a, b)) => (a, b),
-        None => (mantisse, ""),
-    };
-    let chiffres = format!("{}{}", entier, fraction);
-    let chiffres = chiffres.trim_start_matches('0');
-    let significatifs = chiffres.trim_end_matches('0');
-    if significatifs.is_empty() {
-        return "0".to_string();
+    match chiffres_et_puissance(t) {
+        Some((_, chiffres, _)) if chiffres.is_empty() => "0".to_string(),
+        Some((moins, chiffres, puissance)) => format!("{}{}e{}", if moins { "-" } else { "" }, chiffres, puissance - chiffres.len() as i64),
+        None => unreachable!("{} : un decimal ecrit se lit en chiffres", t),
     }
-    let exposant = exposant - fraction.len() as i64 + (chiffres.len() - significatifs.len()) as i64;
-    format!("{}{}e{}", if moins { "-" } else { "" }, significatifs, exposant)
 }
 
 fn ecrire_trie(v: &Value, s: &mut String) {
@@ -191,14 +162,7 @@ fn ecrire(v: &Value, indent: usize, niveau: usize, s: &mut String) {
         Value::Null => s.push_str("null"),
         Value::Bool(true) => s.push_str("true"),
         Value::Bool(false) => s.push_str("false"),
-        Value::Number(n) => match (n.as_i64(), n.as_u64()) {
-            (Some(i), _) => s.push_str(&i.to_string()),
-            (None, Some(u)) => s.push_str(&u.to_string()),
-            _ => match n.as_f64() {
-                Some(f) => s.push_str(&repr_flottant(f)),
-                None => s.push_str(&n.to_string()),
-            },
-        },
+        Value::Number(n) => s.push_str(&nombre_ecrit(n)),
         Value::String(t) => chaine(t, s),
         Value::Array(a) if a.is_empty() => s.push_str("[]"),
         Value::Object(o) if o.is_empty() => s.push_str("{}"),
@@ -251,22 +215,40 @@ fn chaine(t: &str, s: &mut String) {
     s.push('"');
 }
 
-/// Un flottant ecrit : les plus courts chiffres qui reviennent au meme
-/// flottant, en notation positionnelle pour 1e-4 <= |x| < 1e16, sinon
-/// `d.ddde+XX` (exposant sur deux chiffres au moins).
-pub fn repr_flottant(x: f64) -> String {
-    let negatif = x.is_sign_negative();
-    let signe = if negatif { "-" } else { "" };
-    if x == 0.0 {
-        return format!("{}0.0", signe);
+/// UN NOMBRE DECIMAL ECRIT EN TEXTE (`-`, des chiffres, un `.`, un exposant `e` signe ou non), lu exactement : son
+/// signe, ses chiffres significatifs (sans zero en tete ni en queue, vides pour zero) et la puissance de dix de leur
+/// premier chiffre plus un (`12.5` : `125`, 2 ; `0.05` : `5`, -1). `None` : le texte n'ecrit pas un nombre.
+fn chiffres_et_puissance(t: &str) -> Option<(bool, String, i64)> {
+    let (moins, corps) = match t.strip_prefix('-') {
+        Some(c) => (true, c),
+        None => (false, t.strip_prefix('+').unwrap_or(t)),
+    };
+    let (mantisse, exposant) = match corps.split_once(['e', 'E']) {
+        Some((m, e)) => (m, e.strip_prefix('+').unwrap_or(e).parse::<i64>().ok()?),
+        None => (corps, 0),
+    };
+    let (entier, fraction) = mantisse.split_once('.').unwrap_or((mantisse, ""));
+    if entier.is_empty() && fraction.is_empty() || !entier.bytes().chain(fraction.bytes()).all(|c| c.is_ascii_digit()) {
+        return None;
     }
-    // `{:e}` donne les chiffres les plus courts : `1.2345e-5`.
-    let e = format!("{:e}", x.abs());
-    let (mantisse, exp) = scientifique(&e);
-    let chiffres: String = mantisse.chars().filter(|c| *c != '.').collect();
-    let chiffres = pair_a_egalite(x.abs(), chiffres, exp);
-    let n = chiffres.len() as i32;
-    let decpt = exp + 1; // x = 0.CHIFFRES * 10^decpt
+    let chiffres = format!("{}{}", entier, fraction);
+    let tete = chiffres.len() - chiffres.trim_start_matches('0').len();
+    let significatifs = chiffres.trim_matches('0').to_string();
+    let puissance = exposant + entier.len() as i64 - tete as i64;
+    Some((moins, significatifs, puissance))
+}
+
+/// UN NOMBRE A VIRGULE TEL QUE LES FICHIERS L'ECRIVENT, du texte exact d'un nombre (`None` : ce n'en est pas un) : ses
+/// chiffres significatifs, en notation positionnelle pour 1e-4 <= |x| < 1e16, une decimale au moins (`130.0`, `0.0001`),
+/// sinon `d.ddde+XX` (exposant sur deux chiffres au moins : `1e-05`, `1.5e+16`).
+pub fn a_virgule(t: &str) -> Option<String> {
+    let (moins, chiffres, decpt) = chiffres_et_puissance(t)?;
+    let signe = if moins { "-" } else { "" };
+    if chiffres.is_empty() {
+        return Some(format!("{}0.0", signe));
+    }
+    let n = chiffres.len() as i64;
+    let exp = decpt - 1;
     let corps = if decpt <= -4 || decpt > 16 {
         let mut m = chiffres[..1].to_string();
         if n > 1 {
@@ -281,48 +263,78 @@ pub fn repr_flottant(x: f64) -> String {
     } else {
         format!("{}.{}", &chiffres[..decpt as usize], &chiffres[decpt as usize..])
     };
-    format!("{}{}", signe, corps)
+    Some(format!("{}{}", signe, corps))
 }
 
-/// Un flottant ecrit en notation scientifique (`{:e}`, `1.2345e-5`) : sa mantisse et son exposant. `{:e}` ecrit
-/// toujours les deux ; un texte sans exposant est sa propre mantisse, a l'exposant 0.
-pub fn scientifique(e: &str) -> (&str, i32) {
-    match e.split_once('e') {
-        Some((mantisse, exposant)) => match exposant.parse() {
-            Ok(n) => (mantisse, n),
-            Err(e) => unreachable!("`{{:e}}` écrit un exposant entier, pas {} : {}", exposant, e),
-        },
-        None => (e, 0),
+/// UNE FORME ECRITE, VUE EN ARBRE (ce que `en_valeur` en fait), pour qui la lit sans connaitre son type : la trace d'un
+/// diagnostic, une case de fiche confrontee a une condition. Un nombre y est son texte ecrit (`nombre_ecrit`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Arbre {
+    Nul,
+    Booleen(bool),
+    Nombre(String),
+    Texte(String),
+    Liste(Vec<Arbre>),
+    Table(Vec<(String, Arbre)>),
+}
+
+impl Arbre {
+    /// L'arbre de ce que `v` ecrit.
+    pub fn de<T: Serialize + ?Sized>(v: &T) -> Arbre {
+        fn de_valeur(v: Value) -> Arbre {
+            match v {
+                Value::Null => Arbre::Nul,
+                Value::Bool(b) => Arbre::Booleen(b),
+                Value::Number(n) => Arbre::Nombre(nombre_ecrit(&n)),
+                Value::String(t) => Arbre::Texte(t),
+                Value::Array(a) => Arbre::Liste(a.into_iter().map(de_valeur).collect()),
+                Value::Object(o) => Arbre::Table(o.into_iter().map(|(k, x)| (k, de_valeur(x))).collect()),
+            }
+        }
+        de_valeur(en_valeur(v))
     }
 }
 
-/// Quand la valeur exacte tombe pile entre deux ecritures de meme longueur
-/// (`...403.25` : `.2` et `.3`), la forme ecrite prend la paire (`.2`), la ou Rust prend la
-/// superieure : on rend la paire, si elle revient au meme flottant.
-fn pair_a_egalite(x: f64, chiffres: String, exp: i32) -> String {
-    let n = chiffres.len();
-    let dernier = chiffres.as_bytes()[n - 1] - b'0';
-    if dernier % 2 == 0 {
-        return chiffres;
+impl Serialize for Arbre {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::{SerializeMap, SerializeSeq};
+        match self {
+            Arbre::Nul => s.serialize_unit(),
+            Arbre::Booleen(b) => s.serialize_bool(*b),
+            Arbre::Nombre(t) => crate::forme::nombre_du_texte(t).serialize(s),
+            Arbre::Texte(t) => s.serialize_str(t),
+            Arbre::Liste(a) => {
+                let mut l = s.serialize_seq(Some(a.len()))?;
+                for x in a {
+                    l.serialize_element(x)?;
+                }
+                l.end()
+            }
+            Arbre::Table(o) => {
+                let mut m = s.serialize_map(Some(o.len()))?;
+                for (k, x) in o {
+                    m.serialize_entry(k, x)?;
+                }
+                m.end()
+            }
+        }
     }
-    let mut dessous = chiffres.clone().into_bytes();
-    dessous[n - 1] -= 1;
-    let dessous: String = dessous.into_iter().map(char::from).collect();
-    // La valeur exacte, chiffre par chiffre : `DESSOUS` puis `5` puis des zeros.
-    let exact = format!("{:.800e}", x);
-    let exact: String = scientifique(&exact).0.chars().filter(|c| *c != '.').collect();
-    let egalite = exact.len() > n && exact.starts_with(&dessous) && exact.as_bytes()[n] == b'5' && exact[n + 1..].bytes().all(|c| c == b'0');
-    if !egalite {
-        return chiffres;
+}
+
+/// Le nombre ecrit `t` vaut-il zero (`0`, `0.0`, `-0.00`) ?
+pub fn nombre_nul(t: &str) -> bool {
+    decimal_canonique(t) == "0"
+}
+
+/// Le texte d'un nombre JSON tel que les fichiers l'ecrivent : un entier tel quel, un nombre a virgule par `a_virgule`.
+pub fn nombre_ecrit(n: &serde_json::Number) -> String {
+    let t = n.to_string();
+    if n.is_i64() || n.is_u64() {
+        return t;
     }
-    let mut candidat = dessous[..1].to_string();
-    if n > 1 {
-        candidat.push('.');
-        candidat.push_str(&dessous[1..]);
-    }
-    match format!("{}e{}", candidat, exp).parse::<f64>() {
-        Ok(y) if y == x => dessous,
-        _ => chiffres,
+    match a_virgule(&t) {
+        Some(e) => e,
+        None => unreachable!("un nombre JSON s'ecrit en chiffres : {}", t),
     }
 }
 
