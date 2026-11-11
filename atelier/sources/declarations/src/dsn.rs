@@ -301,18 +301,11 @@ fn zero() -> Decimal {
     Decimal::new(0, 2)
 }
 
-/// Le flottant d'un decimal, par sa forme ecrite (l'arrondi correct du texte, comme Python).
-fn en_flottant(x: Decimal) -> f64 {
-    match x.to_string().parse::<f64>() {
-        Ok(f) => f,
-        // Un decimal s'ecrit toujours en un nombre que `f64` lit.
-        Err(e) => unreachable!("{} : {}", x, e),
-    }
-}
-
-/// `"%.Nf" % x` : passe par le flottant.
-fn fmt_f(x: Decimal, n: usize) -> String {
-    format!("{:.*}", n, en_flottant(x))
+/// Un nombre a `n` decimales ecrites, le demi au pair.
+fn fmt_f(x: Decimal, n: u32) -> String {
+    let mut q = x.round_dp_with_strategy(n, RoundingStrategy::MidpointNearestEven);
+    q.rescale(n);
+    q.to_string()
 }
 
 /// Deux decimales, jamais « -0.00 ».
@@ -592,7 +585,7 @@ pub struct Cotisation {
     pub code_insee: Option<String>,
     pub base81: Option<Decimal>,
     /// Le taux de la ligne (81.007), tel que le bareme ou le bulletin l'ecrit.
-    pub taux: Option<f64>,
+    pub taux: Option<Decimal>,
     pub montant: Option<Decimal>,
     /// Le composant d'une base 31 (S21.G00.79.001, et son montant 79.004) quand la source du taux de la ligne le dit
     /// (`composant_79`, `bareme::bareme_sante`) ; `None` : la tranche A, sur le brut.
@@ -605,12 +598,6 @@ pub struct Cotisation {
 /// Le composant d'une base 31 quand la source du taux n'en dit pas (`Cotisation::composant79`) : « 11 - Tranche A »
 /// (S21.G00.79.001), sur le brut.
 const TRANCHE_A: &str = "11";
-
-/// Le decimal d'un taux ecrit en flottant, a son echelle (`1.0` reste `1.0`) : sa forme ecrite la plus courte.
-fn dec_du_taux(x: f64) -> R<Decimal> {
-    let s = socle::ecriture::repr_flottant(x);
-    s.parse::<Decimal>().or_else(|_| Decimal::from_scientific(&s)).map_err(|_| refus!("nombre hors de portee : {}", s))
-}
 
 /// LA SECTION DES ORGANISMES (`organismes-base.json`, `par_nature`) ET DES CONTRIBUTIONS D'UNE NATURE DE CONTRAT : celle
 /// de son bareme (`Nature::bareme`) ; une nature sans section se paie sur le corps du bareme, celui des intermittents.
@@ -833,7 +820,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         } else if let Some(taux) = c.taux.map(|t| t.0) {
             let b = abattue(c.base.ok_or_else(|| socle::fichiers::absent("base"))?)?;
             l.base81 = Some(b);
-            l.taux = Some(socle::num::flottant(taux));
+            l.taux = Some(taux);
             l.montant = Some(match c.composants.as_ref().filter(|c| !c.is_empty()) {
                 Some(composants) => composants.iter().fold(zero(), |s, t| add(s, pct(b, *t))),
                 None => pct(b, taux),
@@ -1001,7 +988,7 @@ const LIGNES_AGIRC_ARRCO: [&str; 3] = ["retraite_t1", "retraite_t2", "cet"];
 /// CET en plus) ; la retraite et la CEG seules sont ce que la ligne vaudrait sans elle, au meme arrondi (chaque composant
 /// sur la base de la ligne), et la CET le reste. Une ligne que ce calcul ne retrouve pas au centime refuse : sa CET ne
 /// se separe pas sans deviner.
-fn sans_la_cet(p: &Paie, l: &engagement::calcul::LigneCotisation, r: &Rubrique) -> R<(Decimal, Option<(Decimal, f64)>)> {
+fn sans_la_cet(p: &Paie, l: &engagement::calcul::LigneCotisation, r: &Rubrique) -> R<(Decimal, Option<(Decimal, Decimal)>)> {
     let Some(cet) = r.cet_si_depasse.as_ref().filter(|_| base_de_la_paie(p, Assiette::Cet).is_some_and(|b| !b.is_zero())) else {
         return Ok((l.montant_pat, None));
     };
@@ -1027,7 +1014,7 @@ ses taux : la part de la CET (146 en 2026, 148 en 2027) ne s'en sépare pas sans
             socle::texte::euros(l.base)
         ));
     }
-    Ok((sans, Some((sub(l.montant_pat, sans), socle::num::flottant(cet_pat)))))
+    Ok((sans, Some((sub(l.montant_pat, sans), cet_pat))))
 }
 
 /// Les parts patronales Agirc-Arrco que l'Urssaf attend a cote d'un 131, sous la meme base 78. Guide Urssaf « Comment
@@ -1066,7 +1053,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
     }
     let org = org_de(pile, "075")
         .ok_or_else(|| refus("La part patronale Agirc-Arrco (142, 146) se declare a l'Urssaf (81.002), et le bareme ne nomme l'Urssaf sur aucune cotisation 075. Rien n'est ecrit."))?;
-    let part = |code: &str, base: Decimal, taux: f64, montant: Decimal| Cotisation {
+    let part = |code: &str, base: Decimal, taux: Decimal, montant: Decimal| Cotisation {
         bloc78: l131.bloc78,
         base78: l131.base78,
         code81: Some(code.into()),
@@ -1081,7 +1068,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
         cet: false,
     };
     let mut out = Vec::new();
-    let (mut cet_montant, mut cet_base, mut cet_taux) = (zero(), zero(), None::<f64>);
+    let (mut cet_montant, mut cet_base, mut cet_taux) = (zero(), zero(), None::<Decimal>);
     for id in &ids {
         // La CET d'un non cadre n'existe pas ; une tranche 2 nulle n'est pas au bulletin (`calcul::calculer`).
         let (Some(r), Some(l)) = (rubrique(id), p.lignes.iter().find(|l| l.est(id))) else { continue };
@@ -1102,7 +1089,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
             let code = if id == "retraite_t1" { AGIRC_ARRCO_PATRONALE_T1 } else { AGIRC_ARRCO_PATRONALE_T2 };
             // La ligne « cet » d'un permanent est toute de la CET ; celle d'un cadre intermittent est fondue dans ses
             // tranches et se separe plus bas (`sans_la_cet`).
-            out.push(Cotisation { cet: id == "cet", ..part(code, l.base, socle::num::flottant(taux), montant) });
+            out.push(Cotisation { cet: id == "cet", ..part(code, l.base, taux, montant) });
         }
     }
     if let (Some(t), false) = (cet_taux, cet_montant.is_zero()) {
@@ -1583,10 +1570,6 @@ fn qt(x: Decimal) -> String {
     fmt_f(x, 2)
 }
 
-fn qt_f(x: f64) -> R<String> {
-    Ok(qt(socle::num::dec_f64(x)?))
-}
-
 /// « Prenom NOM » d'une fiche, a defaut sa cle : qui une phrase de refus designe.
 fn qui_fiche(s: &droit::fiche::ChampsSalarie, cle: &str) -> String {
     match (s.prenom.portee(), s.nom.portee()) {
@@ -1790,8 +1773,8 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     // Le plafond de la nature (`contrats-base.json`, `unite_quotite.plafond`) vaut pour 40.012 comme pour 40.013 :
     // CCH-12 du bloc 40 (journee, 31.00), CCH-13 (heure, 250.00) ; cahier technique 2026.1, p. 189.
     let depasse = |rubrique: &str, quoi: &str, valeur: String| -> R<()> {
-        let plafond = socle::num::flottant(nat.plafond_quotite());
-        let q: f64 = valeur.parse().map_err(|_| refus(socle::num::illisible(&valeur)))?;
+        let plafond = nat.plafond_quotite();
+        let q = socle::num::dec_texte(&valeur)?;
         if q <= plafond {
             return Ok(());
         }
@@ -1811,18 +1794,18 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
             },
             quoi,
             valeur,
-            qt_f(plafond)?,
+            qt(plafond),
             nat.unite_quotite(),
             rubrique,
             cch
         ))
     };
     depasse("S21.G00.40.013", "quotite", qt(quotite))?;
-    match e.quotite_reference()?.map(socle::num::flottant) {
+    match e.quotite_reference()? {
         Some(r) => {
-            depasse("S21.G00.40.012", "quotite de reference", qt_f(r)?)?;
+            depasse("S21.G00.40.012", "quotite de reference", qt(r))?;
             quotite_de_reference_sans_heures_supplementaires(f, p, &nat, r)?;
-            f.add("S21.G00.40.012", qt_f(r)?)
+            f.add("S21.G00.40.012", qt(r))
         }
         None => return Err(refus("S21.G00.40.012 : la quotite de reference manque.")),
     }
@@ -1970,9 +1953,9 @@ Rien n'est ecrit.",
 /// duree legale (35 heures par semaine, C. trav. L. 3121-27 : 151,67 h par mois, `quotite_reference_defaut` de la
 /// nature), une heure est une heure supplementaire (L. 3121-28) : une quotite de reference plus haute en inclut, et
 /// refuse. Une duree collective plus courte (32 h) passe. Un contrat d'usage (en jours) n'est pas concerne.
-fn quotite_de_reference_sans_heures_supplementaires(f: &Fichier, p: &Paie, nat: &droit::natures::Nature, reference: f64) -> R<()> {
+fn quotite_de_reference_sans_heures_supplementaires(f: &Fichier, p: &Paie, nat: &droit::natures::Nature, reference: Decimal) -> R<()> {
     let Some(texte) = f.norme()?.regle("quotite_reference_sans_heures_supplementaires")? else { return Ok(()) };
-    let Some(legale) = nat.quotite_reference_defaut().filter(|_| nat.mensuelle()).map(socle::num::flottant) else { return Ok(()) };
+    let Some(legale) = nat.quotite_reference_defaut().filter(|_| nat.mensuelle()) else { return Ok(()) };
     if reference <= legale {
         return Ok(());
     }
@@ -1982,11 +1965,11 @@ au-dessus de la duree legale ({} h par mois, 35 heures par semaine). En norme {}
 supplementaires structurelles >> : {} Declarer la duree collective sans les heures supplementaires (une compagnie a 39 h \
 declare {} h ; ses quatre heures sont des heures supplementaires, payees comme telles). Rien n'est ecrit.",
         qui_contrat(p),
-        qt_f(reference)?,
-        qt_f(legale)?,
+        qt(reference),
+        qt(legale),
         f.norme()?.version,
         texte,
-        qt_f(legale)?
+        qt(legale)
     ))
 }
 
@@ -2366,7 +2349,7 @@ pub fn bases_et_cotisations(
             f.add("S21.G00.81.005", insee);
         }
         if let (Some(_), Some(t)) = (&org, c.taux) {
-            f.add("S21.G00.81.007", fmt_f(dec_du_taux(t)?, 3));
+            f.add("S21.G00.81.007", fmt_f(t, 3));
         }
     }
     Ok(())
@@ -3159,7 +3142,7 @@ fn taux_at_du_ctp(ctp: &Ctp, bar: &Pile) -> R<String> {
         valeur = mul(valeur, Decimal::new(70, 2));
     }
     let q = valeur.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-    Ok(format!("{:05.2}", en_flottant(q)))
+    Ok(format!("{:0>5}", fmt_f(q, 2)))
 }
 
 fn ligne(code: String, qualifiant: String, taux_at: String, assiette: Option<Decimal>, montant: Option<Decimal>, commune: Option<String>) -> LigneBordereau {

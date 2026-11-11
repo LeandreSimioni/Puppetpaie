@@ -1,8 +1,5 @@
-//! L'arithmetique de la paie (`eur`, `pct`, les arrondis) et la lecture d'un nombre.
-//!
-//! Un flottant lu ne se convertit jamais directement en decimal : il passe par sa representation la plus courte
-//! (`format!("{}", f64)`, a la forme pres : `24` contre `24.0`, jamais la valeur). `dec` lit donc `24.1` comme le
-//! decimal 24.1, et non comme le binaire le plus proche.
+//! L'arithmetique de la paie (`eur`, `pct`, les arrondis) et la lecture d'un nombre ecrit en texte. Un montant, un taux,
+//! une quantite ne sont que des decimaux : le flottant n'existe qu'a la porte d'un fichier (`forme`).
 
 use rust_decimal::prelude::*;
 use crate::d28::P;
@@ -30,32 +27,9 @@ pub fn entier_de_chiffres(t: &str) -> Option<i64> {
     Some(b.iter().fold(0i64, |n, c| n * 10 + i64::from(c - b'0')))
 }
 
-/// Le flottant d'un decimal, par sa forme ecrite (`d.to_string()` relu) : un decimal s'ecrit toujours en un nombre que
-/// le flottant lit.
-pub fn flottant(d: Decimal) -> f64 {
-    match d.to_string().parse::<f64>() {
-        Ok(x) => x,
-        Err(e) => unreachable!("un décimal s'écrit en nombre : {} ({})", d, e),
-    }
-}
-
-/// Le decimal d'un flottant, par sa forme ecrite la plus courte.
-#[track_caller]
-pub fn dec_f64(x: f64) -> R<Decimal> {
-    if !x.is_finite() {
-        return Err(refus(format!("nombre non fini : {}", x)));
-    }
-    // Un flottant entier garde sa decimale : `1.0`.
-    let mut s = format!("{}", x);
-    if !s.contains(['.', 'e', 'E']) && x.abs() < 1e16 {
-        s.push_str(".0");
-    }
-    match Decimal::from_str(&s).or_else(|_| Decimal::from_scientific(&s)) { Ok(d) => Ok(d), Err(_) => Err(refus(format!("nombre hors de portee : {}", s))) }
-}
-
 /// LA FORME LA PLUS COURTE D'UN DECIMAL, une decimale au moins (`24` et `24.00` s'ecrivent `24.0`, `0.10` s'ecrit
-/// `0.1`) : celle que `dec_f64` donne du meme nombre, et que gardent les taux, quantites et quotites que le calcul lit
-/// (`forme::court`).
+/// `0.1`) : celle qu'un nombre a virgule d'un fichier donne a sa lecture (`forme::court`), et que gardent les taux,
+/// quantites et quotites que le calcul lit.
 pub fn court(x: Decimal) -> Decimal {
     let mut c = x.normalize();
     if c.scale() == 0 {

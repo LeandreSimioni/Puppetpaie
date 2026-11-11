@@ -53,7 +53,7 @@ pub const CODE_CONTRIBUTION: CotisationDEtablissement = CotisationDEtablissement
 pub const CODE_EXONERATION: CotisationDEtablissement = CotisationDEtablissement::ExonerationCsa;
 pub const CTP: &str = "998";
 const SEUIL: i64 = 250;
-const SEUIL_DEUX_MILLE: f64 = 2000.0;
+const SEUIL_DEUX_MILLE: i64 = 2000;
 const CODE_ALTERNANTS: &str = "A05";
 const CODE_DENOMINATEUR: &str = "A07";
 
@@ -180,7 +180,7 @@ fn excede_deux_mille(ctx: &Contexte, n: i32) -> R<bool> {
     let mut inconnues = Vec::new();
     for a in n - 4..=n {
         match e.annee(a) {
-            Some(v) if socle::num::flottant(v) > SEUIL_DEUX_MILLE => {}
+            Some(v) if v > Decimal::from(SEUIL_DEUX_MILLE) => {}
             Some(_) => return Ok(false),
             None => inconnues.push(a.to_string()),
         }

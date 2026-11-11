@@ -202,7 +202,8 @@ struct ChargeAjuster {
     modifications: Vec<ModificationEnCours>,
     engagement: Identite,
     cible: Cible,
-    montant: f64,
+    #[serde(deserialize_with = "socle::forme::court")]
+    montant: Decimal,
 }
 
 /// La charge des contrats d'un mois passe : le mois, et le salarie dont ne lire que les siens (absent : tous).
@@ -238,7 +239,8 @@ struct SexeDeLaFiche {
 /// Ce que la page propose quand la saisie ne le dit pas : le taux d'une ligne de cachet neuve.
 #[derive(Debug, Serialize)]
 struct Defauts {
-    taux_cachet: Option<f64>,
+    #[serde(serialize_with = "socle::forme::ecrire_en_flottant_opt")]
+    taux_cachet: Option<Decimal>,
 }
 
 /// UNE CARTE NEUVE DU MOIS S'OUVRE EN CDDU, sa nature ecrite des l'ouverture : le logiciel paie surtout des
@@ -299,7 +301,8 @@ struct EnCours {
     fin: Jour,
     numero: String,
     depuis: Option<Mois>,
-    taux_cachet: Option<f64>,
+    #[serde(serialize_with = "socle::forme::ecrire_en_flottant_opt")]
+    taux_cachet: Option<Decimal>,
     deja_repris: bool,
     engagement: Reprise,
 }
@@ -323,7 +326,8 @@ struct Reprise {
 struct LigneAReprendre {
     rubrique: &'static str,
     quantite: u8,
-    taux: Option<f64>,
+    #[serde(serialize_with = "socle::forme::ecrire_en_flottant_opt")]
+    taux: Option<Decimal>,
     dates: [Jour; 0],
 }
 
@@ -442,13 +446,13 @@ dites!(SaisieDuMois, ContratsEnCours, ContratsPasses, Emploi, CarteEcrite, Ajust
 /// dernier taux saisi -- `null` quand le dossier n'a encore aucun cachet (R12 :
 /// aucun texte ne fixe un taux de cachet, la compagnie le saisit).
 pub(crate) fn squelette(ctx: &Contexte, mois: Mois) -> R<VueDuMois> {
-    Ok(VueDuMois { taux_cachet: dernier_taux(ctx)?.and_then(socle::forme::NombreLu::de_f64), ..VueDuMois::vide(mois) })
+    Ok(VueDuMois { taux_cachet: dernier_taux(ctx)?.map(socle::forme::NombreLu::de_decimal), ..VueDuMois::vide(mois) })
 }
 
 
 /// Le taux du cachet le plus recemment saisi : une ligne de cachet d'abord, le `taux_cachet` du mois a defaut ; `None` si
 /// aucun mois n'en dit rien -- aucun texte ne fixe un taux de cachet (regle 1, R12), la compagnie saisit le sien.
-pub(crate) fn dernier_taux(ctx: &Contexte) -> R<Option<f64>> {
+pub(crate) fn dernier_taux(ctx: &Contexte) -> R<Option<Decimal>> {
     let mut mois = engagement::stock::mois_saisis(&ctx.racine)?;
     mois.reverse();
     for m in mois {
@@ -461,7 +465,7 @@ pub(crate) fn dernier_taux(ctx: &Contexte) -> R<Option<f64>> {
 }
 
 /// Le taux du dernier cachet de la saisie `data`, sinon son `taux_cachet` (un taux nul ne dit rien).
-fn taux_du_mois(ctx: &Contexte, data: &VueDuMois) -> R<Option<f64>> {
+fn taux_du_mois(ctx: &Contexte, data: &VueDuMois) -> R<Option<Decimal>> {
     for e in data.engagements.iter().rev() {
         for l in e.lignes().iter().rev() {
             if let Some(t) = taux_d_une_ligne(ctx, l)? {
@@ -469,15 +473,15 @@ fn taux_du_mois(ctx: &Contexte, data: &VueDuMois) -> R<Option<f64>> {
             }
         }
     }
-    Ok(data.taux_cachet.as_ref().and_then(socle::forme::NombreLu::as_f64).filter(|t| *t != 0.0))
+    Ok(data.taux_cachet.as_ref().map(socle::forme::NombreLu::decimal).transpose()?.filter(|t| !t.is_zero()))
 }
 
 /// Le taux d'une ligne de cachet ; rien pour une autre ligne, ou un cachet sans taux.
-fn taux_d_une_ligne(ctx: &Contexte, l: &LignePaie) -> R<Option<f64>> {
+fn taux_d_une_ligne(ctx: &Contexte, l: &LignePaie) -> R<Option<Decimal>> {
     if droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite != "cachet" {
         return Ok(None);
     }
-    Ok(l.taux().filter(|t| !t.is_zero()).map(socle::num::flottant))
+    Ok(l.taux().filter(|t| !t.is_zero()))
 }
 
 /// Les lignes d'un permanent, calculees. Une saisie incomplete (un engagement qui ne dit pas encore tout,
@@ -521,11 +525,10 @@ fn lignes_affichees(p: &engagement::calcul::Paie, brutes: &[LignePaie]) -> R<Vec
     let mut out = Vec::new();
     for (i, (l, src)) in p.remuneration.iter().zip(brutes).enumerate() {
         let saisi = p.engagement.lignes.get(i).and_then(|x| x.marques()).and_then(|m| m.taux_saisi);
-        // Le nombre que l'ecran montre : sa forme flottante la plus courte.
-        let nombre = |d: socle::num::Decimal| socle::num::dec_f64(socle::num::flottant(d));
-        let (quantite, taux) = (Some(nombre(l.quantite)?), Some(match saisi {
+        // Le nombre que l'ecran montre : sa forme la plus courte.
+        let (quantite, taux) = (Some(socle::num::court(l.quantite)), Some(match saisi {
             Some(t) => t,
-            None => nombre(l.taux)?,
+            None => socle::num::court(l.taux),
         }));
         out.push(match src.clone() {
             LignePaie::Unites(x) => LignePaie::Unites(engagement::ligne::Unites { quantite, taux, ..x }),
@@ -664,9 +667,8 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             .into_iter()
             .flat_map(|p| p.lignes.iter())
             .find(|l| l.rubrique.as_deref() == Some("cachet"))
-            .and_then(|l| l.taux)
-            .map(socle::num::flottant);
-        let taux = match taux_cachet.filter(|t| *t != 0.0) {
+            .and_then(|l| l.taux);
+        let taux = match taux_cachet.filter(|t| !t.is_zero()) {
             Some(t) => Some(t),
             None => dernier_taux(ctx)?,
         };
@@ -879,8 +881,8 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             if deja.is_some() && mc != mois {
                 continue;
             }
-            let jours = match e.jours.as_ref().and_then(socle::forme::NombreLu::as_f64).filter(|j| *j != 0.0) {
-                Some(j) => j.trunc() as i64,
+            let jours = match e.jours.as_ref().map(socle::forme::NombreLu::decimal).transpose()?.filter(|j| !j.is_zero()) {
+                Some(j) => i64::try_from(j.trunc()).map_err(|m| socle::echec::refus(format!("{} jours : {}", j, m)))?,
                 None => dates.len() as i64,
             };
             let contrat = Passe {
@@ -1193,7 +1195,7 @@ fn ce_qui_a_change(avant: &SaisieCarte, apres: &SaisieCarte, index: usize) -> Ce
             lignes.push(TauxQuiChange { rang, rubrique: b.rubrique().to_string(), taux_avant: ta, taux: tb });
         }
     }
-    let salaire = |e: &SaisieCarte| e.salaire_mensuel.as_ref().map(socle::forme::NombreLu::as_f64);
+    let salaire = |e: &SaisieCarte| e.salaire_mensuel.as_ref().map(|n| n.decimal().into_iter().next());
     let change = salaire(avant) != salaire(apres);
     CeQuiChange { index, salaire_mensuel: change.then(|| apres.salaire_mensuel.clone()), lignes }
 }
@@ -1210,7 +1212,7 @@ fn cible_dite(c: Cible) -> &'static str {
 /// Le taux qu'il faudrait, pour que l'engagement `engagement` (son identite ; son brouillon enregistre, ou sa modification
 /// pas encore ecrite, `mois_designe`) coute CE montant. N'ecrit rien.
 fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
-    let vise = q2(socle::num::dec_f64(c.montant).map_err(|m| m.reclasser(Classe::CalculImpossible))?);
+    let vise = q2(c.montant);
     if vise <= Decimal::ZERO {
         return Err(refus(format!("Un montant vise se dit en euros et il est positif (recu : {}).", vise)));
     }
@@ -1248,7 +1250,7 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
         })
         .collect();
     if let Some(Some(s)) = &change.salaire_mensuel {
-        faut.push(format!("salaire du mois à {}", socle::texte::euros(socle::num::dec_f64(s.en_f64())?)));
+        faut.push(format!("salaire du mois à {}", socle::texte::euros(s.decimal()?)));
     }
     let avec = if faut.is_empty() { String::new() } else { format!(" ; {}", faut.join(", ")) };
     let ecart = atteint - vise;
@@ -1607,7 +1609,8 @@ pub(crate) struct VuePaie {
     cachets: i64,
     /// Le taux de la premiere ligne de cachet ; sans cachet, celui que la carte ou son mois ecrit.
     taux_cachet: Option<socle::forme::NombreLu>,
-    heures: Option<f64>,
+    #[serde(serialize_with = "socle::forme::ecrire_en_flottant_opt")]
+    heures: Option<Decimal>,
     faits_avances: Vec<&'static str>,
     /// Les rubriques que sa carte propose, et celle d'une ligne neuve (`engagement::proposees`).
     propose: engagement::proposees::Proposees,
@@ -1665,7 +1668,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         }
     }
     let taux_cachet = match premier_cachet {
-        Some(l) => socle::forme::NombreLu::de_f64(socle::num::flottant(l.taux().ok_or_else(|| socle::fichiers::absent("taux").reclasser(Classe::Manque))?)),
+        Some(l) => Some(socle::forme::NombreLu::de_decimal(l.taux().ok_or_else(|| socle::fichiers::absent("taux").reclasser(Classe::Manque))?)),
         None => match &brut.taux_cachet {
             Some(t) => Some(t.clone()),
             None => data.taux_cachet.clone(),
@@ -1758,7 +1761,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         dates_travail: e.dates_travail.clone(),
         cachets: e.cachets,
         taux_cachet,
-        heures: e.heures.map(socle::num::flottant),
+        heures: e.heures,
         // LES CASES « AVANCÉ » QUE CE CONTRAT PAYE AU MOIS APPELLE (`catalogue::CASES_D_UN_MOIS_PAYE`) : ses heures
         // supplementaires a temps plein, complementaires a temps partiel (`engagement::heures_en_plus::faits_appeles`).
         faits_avances: if nat.mensuelle() { engagement::heures_en_plus::faits_appeles(ctx, e.modalite_temps_travail()? == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel)? } else { Vec::new() },
@@ -2044,11 +2047,10 @@ fn dire_les_tarifs(ctx: &Contexte, mois: Mois, p: &mut VuePaie) -> R<()> {
     }
     let mut dits: Vec<String> = Vec::new();
     for l in &p.remuneration {
-        let taux = Some(socle::num::flottant(l.taux));
         let mut tarif = None;
         for j in &jours {
             match engagement::tarif_conventionnel(ctx, &l.rubrique, j)? {
-                Some(t) if taux.is_some_and(|x| socle::num::flottant(t) == x) => {
+                Some(t) if t == l.taux => {
                     tarif = Some(t);
                     break;
                 }

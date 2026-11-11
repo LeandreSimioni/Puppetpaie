@@ -488,7 +488,7 @@ fn nombre_saisi(v: Option<&Valeur>, quoi: &str) -> R<Option<NombreLu>> {
         return Ok(None);
     }
     let d = socle::num::decimal_lu(brut).ok_or_else(|| erreur(Classe::Refuse, format!("{} illisible : {}.", quoi, brut)))?;
-    NombreLu::de_f64(socle::num::flottant(d)).map(Some).ok_or_else(|| erreur(Classe::Refuse, format!("{} illisible : {}.", quoi, brut)))
+    Ok(Some(NombreLu::de_decimal(d)))
 }
 
 /// La forme declaree qui ne respecte pas sa norme (`champs::faute_de_norme`) se refait ; ce qui n'est pas un texte se
@@ -691,10 +691,10 @@ pub(crate) fn sans_valeur(v: Option<&Valeur>) -> bool {
 }
 
 /// Le nombre que dit une valeur simple (un nombre, ou un texte qui en est un).
-fn nombre_de(v: &Valeur) -> Option<f64> {
+fn nombre_de(v: &Valeur) -> Option<socle::num::Decimal> {
     match v {
-        Valeur::Nombre(n) => Some(n.en_f64()),
-        Valeur::Texte(t) => t.trim().parse::<f64>().into_iter().next(),
+        Valeur::Nombre(n) => n.decimal().into_iter().next(),
+        Valeur::Texte(t) => socle::num::dec_texte(t).into_iter().next(),
         _ => None,
     }
 }

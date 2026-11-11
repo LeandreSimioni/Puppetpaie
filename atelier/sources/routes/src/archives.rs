@@ -477,15 +477,16 @@ fn retenir_logiciel(ctx: &Contexte, c: ChargeRetenirLogiciel) -> R<LogicielReten
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 enum NombreDit {
-    Nombre(f64),
+    Nombre(socle::forme::NombreLu),
     Texte(String),
 }
 
 impl NombreDit {
-    fn texte(&self) -> String {
+    /// Le nombre tel que la page l'ecrit : en chiffres, sans zero inutile (`12.8`, `2025`).
+    fn texte(&self) -> R<String> {
         match self {
-            NombreDit::Nombre(n) => n.to_string(),
-            NombreDit::Texte(t) => t.clone(),
+            NombreDit::Nombre(n) => Ok(n.decimal()?.normalize().to_string()),
+            NombreDit::Texte(t) => Ok(t.clone()),
         }
     }
 }
@@ -519,7 +520,7 @@ fn en_euros(t: &str) -> R<String> {
 /// Note qu'une annee de CASC-SVP est regularisee (apres le virement).
 fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
     let aujourd_hui = socle::paris::InstantEcrit::maintenant().jour();
-    let notee = marquer_regularise(ctx, &c.annee.texte(), c.vire_le, &c.montant.texte(), INTERFACE, aujourd_hui)?;
+    let notee = marquer_regularise(ctx, &c.annee.texte()?, c.vire_le, &c.montant.texte()?,INTERFACE, aujourd_hui)?;
     let montant = en_euros(&notee.montant)?;
     Ok(CascNotee { phrase: format!("CASC-SVP {} notée régularisée : {} virés le {}.", notee.annee, montant, notee.vire_le.jj_mm_aaaa()), notee })
 }

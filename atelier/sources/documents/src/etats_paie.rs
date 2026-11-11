@@ -292,11 +292,6 @@ pub fn titre_spectacle(p: &Paie) -> Option<String> {
     p.spectacle.as_ref().and_then(|s| s.titre.dite()).cloned()
 }
 
-/// Un taux flottant en décimal, par son écriture la plus courte qui se relit.
-pub fn dec_taux(x: f64) -> R<Decimal> {
-    socle::num::dec_f64(x).map_err(|m| m.reclasser(Classe::Illisible))
-}
-
 fn nat_libelle(p: &Paie) -> R<String> {
     Ok(p.engagement.nat().map_err(|m| m.reclasser(Classe::Refuse))?.libelle.clone())
 }
@@ -756,7 +751,7 @@ pub fn xlsx_livre(livre: &LivreDePaie) -> R<Vec<u8>> {
                 CelL::Vide | CelL::M(None) => {}
                 CelL::M(Some(d)) => {
                     let f = if MONTANTS.contains(&cl[i]) { f.set_num_format("# ##0.00 \u{20ac}") } else { f };
-                    ws.write_number_with_format(ligne, i as u16, crate::tableaux_export::en_f64(d)?, &f).map_err(xl)?;
+                    ws.write_number_with_format(ligne, i as u16, crate::tableaux_export::nombre_du_classeur(d)?, &f).map_err(xl)?;
                 }
             }
         }

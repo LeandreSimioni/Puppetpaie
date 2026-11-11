@@ -47,7 +47,6 @@ use rust_decimal::Decimal;
 use documents::bulletin::{fmt_eur, fmt_heures};
 use engagement::calcul::Paie;
 use crate::courriel::Courriel;
-use socle::date::repr_flottant;
 use socle::echec::{refus, Classe, Echec, R};
 
 /// Un courriel, sans le piece jointe lue : `pieces` sont des chemins.
@@ -162,9 +161,8 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
         if e.cachets != 0 {
             volume.push(format!("{} cachet{}", e.cachets, if e.cachets > 1 { "s" } else { "" }));
         }
-        if let Some(h) = e.heures.map(socle::num::flottant).filter(|h| *h != 0.0) {
-            let dec = heures_en_decimal(h)?;
-            volume.push(format!("{} heure{}", fmt_heures(dec), if h > 1.0 { "s" } else { "" }));
+        if let Some(h) = e.heures.filter(|h| !h.is_zero()) {
+            volume.push(format!("{} heure{}", fmt_heures(h), if h > Decimal::ONE { "s" } else { "" }));
         }
         let (premier, dernier) = (dates[0], dates[dates.len() - 1]);
         let periode = if premier == dernier {
@@ -200,11 +198,6 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
     ))
 }
 
-/// Un nombre d'heures en decimal : le flottant tel qu'il s'ecrit (`repr_flottant`).
-fn heures_en_decimal(h: f64) -> R<Decimal> {
-    let t = repr_flottant(h);
-    t.parse::<Decimal>().or_else(|_| Decimal::from_scientific(&t)).map_err(|e| socle::refus!("heures illisibles ({}) : {}", t, e))
-}
 
 
 pub fn nom_fichier(prefixe: &str, cle: &str, etiq: &str) -> String {
@@ -252,7 +245,7 @@ pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
         let e = &p.engagement;
         let mut dates = e.dates_travail.clone();
         dates.sort();
-        let heures = e.heures.map(socle::num::flottant).filter(|h| *h != 0.0).map(|h| heures_en_decimal(h).map(fmt_heures)).transpose()?;
+        let heures = e.heures.filter(|h| !h.is_zero()).map(fmt_heures);
         let spectacle = p.spectacle.as_ref().and_then(|s| s.titre.dite()).filter(|t| !t.is_empty()).cloned();
         contrats.push(ContratResume {
             debut: e.debut,

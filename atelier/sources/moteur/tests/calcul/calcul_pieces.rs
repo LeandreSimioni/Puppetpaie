@@ -13,11 +13,9 @@ const ORACLE: &str = "calcul-pieces.json";
 /// Le decimal d'un nombre de l'oracle : un entier tel quel, un flottant par sa forme ecrite la plus courte.
 fn decimal(v: &Value) -> socle::echec::R<rust_decimal::Decimal> {
     match v {
-        Value::Number(n) => match (n.as_i64(), n.as_u64(), n.as_f64()) {
-            (Some(i), _, _) => Ok(i.into()),
-            (_, Some(u), _) => Ok(u.into()),
-            (_, _, Some(f)) => socle::num::dec_f64(f),
-            _ => Err(socle::refus!("nombre illisible : {}", n)),
+        Value::Number(n) => match socle::forme::NombreLu::try_from(n.clone()) {
+            Ok(l) => l.decimal(),
+            Err(e) => match e {},
         },
         autre => Err(socle::refus!("nombre attendu, lu {}", autre)),
     }

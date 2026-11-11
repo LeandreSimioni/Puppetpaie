@@ -629,16 +629,6 @@ const ENTETES: [(u32, u16, &str); 42] = [
 /// Les cellules fusionnees du modele : (premiere ligne, premiere colonne, derniere ligne, derniere colonne), a partir de 0.
 const FUSIONS: [(u32, u16, u32, u16); 7] = [(0, 0, 1, 25), (0, 26, 0, 29), (0, 30, 0, 34), (1, 26, 1, 29), (1, 30, 2, 30), (1, 31, 1, 32), (1, 33, 1, 34)];
 
-/// Un `Decimal` entier ou non, comme `n(q)` : un nombre s'il y en a un, rien pour zero ou absent.
-fn quantite_xlsx(q: Option<&Decimal>) -> Option<f64> {
-    use rust_decimal::prelude::ToPrimitive;
-    let q = q?;
-    if q.is_zero() {
-        return None;
-    }
-    q.to_f64()
-}
-
 /// La liste nominative du CASC-SVP, une ligne par emploi, a partir de la 4e ligne.
 ///
 /// Le modele officiel (`donnees/modeles/casc-svp-liste-nominative.xlsx`) ne s'ouvre pas : le classeur est RECREE par
@@ -668,7 +658,8 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
     let mut cumul: Vec<((String, Option<String>), Decimal)> = Vec::new();
     let texte_de = cellule;
     let coupe = |t: String, n: usize| -> String { t.chars().take(n).collect() };
-    let arrondi = |d: Decimal| -> f64 { socle::num::flottant(d.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero)) };
+    let arrondi = |d: Decimal| d.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
+    let nombre_du_classeur = documents::tableaux_export::nombre_du_classeur;
     for (n, x) in r.emplois.iter().enumerate() {
         let ligne = 3 + n as u32;
         let (i, c) = (&x.individu, &x.contrat);
@@ -709,13 +700,13 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
         for (col, t) in textes {
             ws.write_string(ligne, col, &t).map_err(xl)?;
         }
-        ws.write_number(ligne, 24, arrondi(x.brut)).map_err(xl)?;
-        ws.write_number(ligne, 36, arrondi(total)).map_err(xl)?;
+        ws.write_number(ligne, 24, nombre_du_classeur(&arrondi(x.brut))?).map_err(xl)?;
+        ws.write_number(ligne, 36, nombre_du_classeur(&arrondi(total))?).map_err(xl)?;
         let act = |q: &str| x.activite.get(q);
         let colonnes: [(u16, &str); 2] = if artiste { [(33, "cachets"), (34, "heures")] } else { [(31, "jours"), (32, "heures")] };
         for (col, quoi) in colonnes {
-            if let Some(v) = quantite_xlsx(act(quoi)) {
-                ws.write_number(ligne, col, v).map_err(xl)?;
+            if let Some(v) = act(quoi).filter(|q| !q.is_zero()) {
+                ws.write_number(ligne, col, nombre_du_classeur(v)?).map_err(xl)?;
             }
         }
     }

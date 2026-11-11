@@ -555,12 +555,13 @@ pub fn json_tableau(t: &Tableau, _ctx: Option<&Contexte>) -> R<Vec<u8>> {
 /// Une cellule du classeur.
 enum Cel {
     Vide,
-    Nombre(f64),
+    Nombre(Decimal),
     Texte(String),
 }
 
-/// Le nombre du classeur : un montant en flottant (le classeur n'a que ceux-la).
-pub fn en_f64(d: &Decimal) -> R<f64> {
+/// LE NOMBRE D'UNE CASE DU CLASSEUR : le format xlsx ne stocke un nombre qu'en flottant ; un decimal ne le devient
+/// qu'ici, dans l'appel qui l'ecrit (`write_number`), et nulle part ailleurs.
+pub fn nombre_du_classeur(d: &Decimal) -> R<f64> {
     use rust_decimal::prelude::ToPrimitive;
     d.to_f64().ok_or_else(|| erreur(Classe::Illisible, format!("{} ne s'écrit pas en nombre du classeur", d)))
 }
@@ -570,11 +571,11 @@ fn cellule_classeur(v: Option<&Val>, c: &Colonne) -> R<Cel> {
     let Some(v) = v else { return Ok(Cel::Vide) };
     Ok(match v {
         Val::Txt(s) if s.is_empty() => Cel::Vide,
-        Val::Dec(d) => Cel::Nombre(en_f64(d)?),
-        Val::Ent(n) => Cel::Nombre(*n as f64),
+        Val::Dec(d) => Cel::Nombre(*d),
+        Val::Ent(n) => Cel::Nombre(Decimal::from(*n)),
         Val::Mois(m) => Cel::Texte(m.to_string()),
         Val::Txt(s) if c.a_droite() => match socle::num::decimal_lu(s) {
-            Some(d) => Cel::Nombre(en_f64(&d)?),
+            Some(d) => Cel::Nombre(d),
             None => Cel::Texte(s.clone()),
         },
         Val::Txt(s) => Cel::Texte(s.clone()),
@@ -603,7 +604,7 @@ fn format_de(gras: bool, taille: Option<f64>, nombre: Option<&str>) -> Format {
 fn ecrire_cellule(ws: &mut Worksheet, ligne: u32, col: u16, cel: &Cel, fmt: &Format) -> R<()> {
     match cel {
         Cel::Vide => Ok(()),
-        Cel::Nombre(x) => ws.write_number_with_format(ligne, col, *x, fmt).map(|_| ()).map_err(xl),
+        Cel::Nombre(d) => ws.write_number_with_format(ligne, col, nombre_du_classeur(d)?, fmt).map(|_| ()).map_err(xl),
         Cel::Texte(t) => ws.write_string_with_format(ligne, col, t, fmt).map(|_| ()).map_err(xl),
     }
 }

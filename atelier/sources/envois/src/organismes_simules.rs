@@ -19,6 +19,7 @@ use droit::contexte::Contexte;
 use droit::nature_declaration::NatureDeLaDeclaration;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, R};
+use socle::num::Decimal;
 
 use crate::journal::Ligne;
 use declarations::dsn_lue::DsnLue;
@@ -124,9 +125,16 @@ fn ecrire(racine: &Path, m: &Memoire) -> R<()> {
 }
 
 /// Un taux annonce en pourcentage (« 7,50 » ou « 7.50 »).
-fn taux_annonce(taux: &str, cle: &str, quoi: &str) -> R<f64> {
+fn taux_annonce(taux: &str, cle: &str, quoi: &str) -> R<Decimal> {
     let t = taux.replace(',', ".");
-    t.parse::<f64>().map_err(|e| socle::echec::a_la_cle(quoi, cle, format!("{} : {}", taux, e)).reclasser(Classe::Illisible))
+    socle::num::dec_texte(&t).map_err(|e| socle::echec::a_la_cle(quoi, cle, format!("{} : {}", taux, e.phrase)).reclasser(Classe::Illisible))
+}
+
+/// Un nombre a deux decimales ecrites, le demi au pair.
+fn deux_decimales(x: Decimal) -> String {
+    let mut q = x.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointNearestEven);
+    q.rescale(2);
+    q.to_string()
 }
 
 /// Un texte facultatif d'une annonce : vide, il n'est pas dit.
@@ -161,20 +169,20 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
     match annonce.clone() {
         Annonce::TauxPas(t) => {
             let n = taux_annonce(&t.taux, "taux_pas.taux", "Le taux de prélèvement annoncé ne se lit pas.")?;
-            if t.salarie.is_empty() || !(0.0..=100.0).contains(&n) {
+            if t.salarie.is_empty() || !(Decimal::ZERO..=Decimal::ONE_HUNDRED).contains(&n) {
                 return Err(socle::echec::cle("Le taux de prélèvement annoncé dit le salarié et un taux entre 0 et 100.", "taux_pas").reclasser(Classe::Illisible));
             }
-            gardee.taux_pas = Some(TauxPasAnnonce { salarie: t.salarie, taux: format!("{:.2}", n) });
+            gardee.taux_pas = Some(TauxPasAnnonce { salarie: t.salarie, taux: deux_decimales(n) });
         }
         Annonce::TauxAtmp(t) => {
             let code = t.code_risque.replace(['.', ' '], "").to_uppercase();
             let n = taux_annonce(&t.taux, "taux_atmp.taux", "Le taux AT/MP annoncé ne se lit pas.")?;
-            if code.len() != 5 || !(0.0..20.0).contains(&n) || n == 0.0 {
+            if code.len() != 5 || !(Decimal::ZERO..Decimal::from(20)).contains(&n) || n.is_zero() {
                 return Err(socle::echec::cle("Le taux AT/MP annoncé dit un code risque de 5 caractères, un taux en pourcentage et une date d'effet AAAA-MM-JJ.", "taux_atmp").reclasser(Classe::Illisible));
             }
             gardee.taux_atmp = Some(TauxAtmpAnnonce {
                 code_risque: code,
-                taux: format!("{:.2}", n),
+                taux: deux_decimales(n),
                 date_effet: t.date_effet,
                 bureau: dit(t.bureau),
                 code_ctn: dit(t.code_ctn),
@@ -204,12 +212,11 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
 /// (motif de recours 01, S21.G00.40.021) n'est pas compte (II, premier alinea, qui renvoie a la deuxieme phrase du 2° de
 /// L. 1111-2). Une personne (son NIR, sinon son NTT) compte au plus une fois par jour, au plus fort de ses contrats de ce
 /// jour. Un contrat sans fin court jusqu'au dernier jour du mois.
-fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<f64> {
-    use rust_decimal::prelude::ToPrimitive;
+fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<Decimal> {
     let n = socle::date::jours_du_mois(an, mois);
     let premier = Jour::nouveau(an, mois, 1).expect("mois");
     let dernier = Jour::nouveau(an, mois, n).expect("mois");
-    let mut par_jour: BTreeMap<String, Vec<f64>> = BTreeMap::new();
+    let mut par_jour: BTreeMap<String, Vec<Decimal>> = BTreeMap::new();
     for d in dsn {
         for k in &d.contrats {
             let ind = &d.individus[k.individu];
@@ -218,7 +225,7 @@ fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<f64> {
                 (true, Some(ntt)) => format!("NTT {}", ntt),
                 (true, None) => return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020")),
             };
-            let jours = par_jour.entry(qui).or_insert_with(|| vec![0.0; n as usize]);
+            let jours = par_jour.entry(qui).or_insert_with(|| vec![Decimal::ZERO; n as usize]);
             if k.motif_recours == Some(droit::natures::MotifDeRecours::Remplacement) {
                 continue;
             }
@@ -231,43 +238,45 @@ fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<f64> {
                 continue;
             }
             let poids = if k.modalite == Some(droit::natures::ModaliteDuTempsDeTravail::TempsPartiel) {
-                let (Some(reference), Some(quotite)) = (k.quotite_reference.and_then(|q| q.to_f64()), k.quotite.and_then(|q| q.to_f64())) else {
+                let (Some(reference), Some(quotite)) = (k.quotite_reference, k.quotite) else {
                     return Err(socle::echec::cle("Un contrat à temps partiel de la DSN ne dit pas sa quotité.", "S21.G00.40.012, S21.G00.40.013"));
                 };
-                if reference > 0.0 {
-                    (quotite / reference).min(1.0)
+                if reference > Decimal::ZERO {
+                    socle::num::div(quotite, reference).min(Decimal::ONE)
                 } else {
-                    1.0
+                    Decimal::ONE
                 }
             } else {
-                1.0
+                Decimal::ONE
             };
             let (a, b) = (if debut < premier { 1 } else { debut.jour }, if fin > dernier { n } else { fin.jour });
             for j in a..=b {
                 let p = &mut jours[(j - 1) as usize];
-                *p = p.max(poids);
+                *p = (*p).max(poids);
             }
         }
     }
-    Ok(par_jour.values().map(|jours| jours.iter().sum::<f64>() / f64::from(n)).sum())
+    Ok(par_jour.values().map(|jours| socle::num::div(jours.iter().sum::<Decimal>(), Decimal::from(n))).sum())
 }
 
 /// L'effectif salarie annuel de `an` : la moyenne des effectifs des mois de l'annee, les mois sans salarie ecartes, le
 /// resultat tronque au centieme (L. 130-1, I, et R. 130-1, I, du code de la securite sociale, memes releves). `None` quand
 /// aucun mois n'a de salarie.
-fn effectif_annuel(an: i32, dsn_par_mois: &BTreeMap<u32, Vec<DsnLue>>) -> R<Option<f64>> {
-    let mut mois: Vec<f64> = Vec::new();
+fn effectif_annuel(an: i32, dsn_par_mois: &BTreeMap<u32, Vec<DsnLue>>) -> R<Option<Decimal>> {
+    let mut mois: Vec<Decimal> = Vec::new();
     for (m, d) in dsn_par_mois {
         let e = effectif_du_mois(an, *m, d)?;
-        if e > 0.0 {
+        if e > Decimal::ZERO {
             mois.push(e);
         }
     }
     if mois.is_empty() {
         return Ok(None);
     }
-    let moyenne = mois.iter().sum::<f64>() / mois.len() as f64;
-    Ok(Some((moyenne * 100.0 + 1e-9).floor() / 100.0))
+    let moyenne = socle::num::div(mois.iter().sum::<Decimal>(), Decimal::from(mois.len() as i64));
+    // Le milliardieme ajoute avant de tronquer : un quotient qui tombe juste sur un centieme (un tiers fois trois)
+    // s'ecrit en decimal une unite du dernier chiffre en dessous, et ne doit pas perdre ce centieme.
+    Ok(Some((moyenne + Decimal::new(1, 9)).round_dp_with_strategy(2, rust_decimal::RoundingStrategy::ToNegativeInfinity)))
 }
 
 // ------------------------------------------------------------------ ce que le simulateur rend
@@ -383,7 +392,7 @@ fn bilans_refuses(flux: &str, publication: InstantCompact, l: &Ligne, nature: Na
 /// nombre tire du NIR (FNV-1a), stable d'un compte rendu a l'autre, de 0,00 % a 12,00 % par dixieme.
 fn taux_de_simulation(nir: &str) -> String {
     let h = nir.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3));
-    format!("{:.2}", (h % 121) as f64 / 10.0)
+    deux_decimales(Decimal::new((h % 121) as i64, 1))
 }
 
 /// Le compte rendu DGFiP de nature 94 d'une DSN mensuelle ou d'un signalement d'amorcage reels : le taux est « mis à
@@ -524,17 +533,17 @@ fn dsn_de_l_annee(racine: &Path, lignes: &[Ligne], an: i32) -> R<BTreeMap<u32, V
 /// `RO.B004` de type 04, `RO.B008` ; dates AAAA-MM-JJ, date de calcul AAAA-MM-JJThh:mm:ss). La date d'effet et la date de
 /// fin bornent l'annee mesuree, comme `releve_retours::reconstruire_effectifs` les lit (inference : le cahier ne dit pas
 /// quelle annee les dates portent ; c'est la forme des 118 recus que le lecteur range).
-fn crm_effectif(an: i32, valeur: f64, flux: &str, publication: InstantCompact) -> Piece {
+fn crm_effectif(an: i32, valeur: Decimal, flux: &str, publication: InstantCompact) -> Piece {
     let calcule_le = socle::paris::maintenant().chars().take(19).collect::<String>();
     let xml = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><RO><RO_R001>P26V01</RO_R001><RO_B000><RO_B000_R001>{}</RO_B000_R001></RO_B000>\
          <RO_B001><RO_B001_R001>04</RO_B001_R001><RO_B002><RO_B002_R002>{}</RO_B002_R002><RO_B002_R003>Effectifs</RO_B002_R003>\
          <RO_B002_R005>URSSAF</RO_B002_R005></RO_B002><RO_B004><RO_B004_R003>04</RO_B004_R003><RO_B008><RO_B008_R001>A01</RO_B008_R001>\
-         <RO_B008_R002>{:.2}</RO_B008_R002><RO_B008_R003>{}-01-01</RO_B008_R003><RO_B008_R004>{}-12-31</RO_B008_R004>\
+         <RO_B008_R002>{}</RO_B008_R002><RO_B008_R003>{}-01-01</RO_B008_R003><RO_B008_R004>{}-12-31</RO_B008_R004>\
          <RO_B008_R006>{}</RO_B008_R006></RO_B008></RO_B004></RO_B001></RO>",
         echappe(flux),
         NATURE_EFFECTIFS,
-        valeur,
+        deux_decimales(valeur),
         an,
         an,
         calcule_le
@@ -637,10 +646,8 @@ mod tests {
         );
         // Fevrier (28 jours) : le seul CDI ; mars a decembre sans salarie, hors de la moyenne.
         par_mois.insert(2, vec![dsn(&[("1800101999991", &[("01012020", "", "10", "151.67", "151.67", "")])])]);
-        let janvier: f64 = 1.0 + 0.5 * 16.0 / 31.0 + 2.0 / 31.0;
-        let attendu = ((janvier + 1.0) / 2.0 * 100.0).floor() / 100.0;
-        assert_eq!(effectif_annuel(2025, &par_mois).unwrap(), Some(attendu));
-        assert_eq!(attendu, 1.16);
+        // Janvier : 1 + 0,5 x 16/31 + 2/31 ; la moyenne avec fevrier (1), tronquee au centieme : 1,16.
+        assert_eq!(effectif_annuel(2025, &par_mois).unwrap(), Some(Decimal::new(116, 2)));
         assert_eq!(effectif_annuel(2025, &BTreeMap::new()).unwrap(), None);
     }
 
@@ -655,9 +662,9 @@ mod tests {
         std::fs::create_dir_all(racine.join(socle::fichiers::CONFIG)).unwrap();
         // Ce que la compagnie a dit : l'annee que le 118 mesure le remplace, l'autre reste.
         let j = |t: &str| socle::date::Jour::lire(t).unwrap();
-        assert!(crate::releve_retours::poser_effectif(&racine, 2026, 3.0, j("2027-01-05")).unwrap());
-        assert!(crate::releve_retours::poser_effectif(&racine, 2025, 2.0, j("2027-01-05")).unwrap());
-        let p = crm_effectif(2026, 11.42, "FICTIF-000000000001", InstantCompact::lire("20270215100000").unwrap());
+        assert!(crate::releve_retours::poser_effectif(&racine, 2026, Decimal::from(3), j("2027-01-05")).unwrap());
+        assert!(crate::releve_retours::poser_effectif(&racine, 2025, Decimal::from(2), j("2027-01-05")).unwrap());
+        let p = crm_effectif(2026, Decimal::new(1142, 2),"FICTIF-000000000001", InstantCompact::lire("20270215100000").unwrap());
         let chemin = crate::releve_retours::archiver_retour(&racine, "", &p.retour, &p.contenu, Some("application/xml"), "20270215-100000").unwrap();
         assert!(chemin.file_name().unwrap().to_string_lossy().contains("_nature118_"));
         crate::releve_retours::reconstruire_effectifs(&racine).unwrap();
@@ -665,7 +672,7 @@ mod tests {
         let e = droit::contexte::effectif_de(&racine, &fiche).unwrap();
         assert_eq!(e.annees.get(&2026), Some(&socle::num::Decimal::new(1142, 2)));
         assert_eq!(e.annees.get(&2025), Some(&socle::num::Decimal::from(2)));
-        assert!(!crate::releve_retours::poser_effectif(&racine, 2026, 3.0, j("2027-03-01")).unwrap());
+        assert!(!crate::releve_retours::poser_effectif(&racine, 2026, Decimal::from(3), j("2027-03-01")).unwrap());
         let _ = std::fs::remove_dir_all(&racine);
     }
 }

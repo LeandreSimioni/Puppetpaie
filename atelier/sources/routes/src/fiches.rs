@@ -366,35 +366,35 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
         };
         return Ok(EffectifDit { phrase, annee: None, valeur: None, source: None, a_dire: manquent });
     };
-    let en_clair = |x: f64| -> R<String> { Ok(socle::texte::virgule(socle::num::dec_f64(x)?.round_dp(2))) };
+    let en_clair = |x: socle::num::Decimal| socle::texte::virgule(x.round_dp(2));
     let mut pose = None;
     if let Some(v) = &charge.valeur {
         if an >= an_paie {
             return Err(erreur(Classe::Refuse, format!("L'effectif de {} se calcule sur l'année entière : il se dit une fois l'année finie. Rien n'est écrit.", an)));
         }
-        let x = socle::num::flottant(v.court().map_err(|m| m.reclasser(Classe::Illisible))?);
-        if !x.is_finite() || x < 0.0 {
+        let x = v.court().map_err(|m| m.reclasser(Classe::Illisible))?;
+        if x < socle::num::Decimal::ZERO {
             return Err(erreur(Classe::Illisible, format!("Effectif illisible : {}.", v.ecrit())));
         }
         // Tronque au centieme (R. 130-1, I).
-        let x = (x * 100.0).trunc() / 100.0;
+        let x = x.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::ToZero);
         if !envois::releve_retours::poser_effectif(&ctx.racine, an, x, ctx.aujourdhui)? {
             return Err(erreur(Classe::Refuse, format!("L'Urssaf a renvoyé l'effectif de {} : c'est le sien qui vaut. Rien n'est écrit.", an)));
         }
-        pose = Some(format!("Effectif de {} : {}.", an, en_clair(x)?));
+        pose = Some(format!("Effectif de {} : {}.", an, en_clair(x)));
     }
     let e = ctx.effectif()?;
     let dit = envois::releve_retours::effectif_dit_par_la_compagnie(&ctx.racine, an)?;
     let (valeur, source) = match e.annees.get(&an) {
-        Some(v) => (Some(socle::num::flottant(*v)), Some(if dit { "la compagnie" } else { "l'Urssaf" })),
-        None => match e.annee(an).map(socle::num::flottant) {
+        Some(v) => (Some(*v), Some(if dit { "la compagnie" } else { "l'Urssaf" })),
+        None => match e.annee(an) {
             Some(v) => (Some(v), Some("la première embauche")),
             None => (None, None),
         },
     };
     let phrase = match (pose, valeur, source) {
         (Some(p), _, _) => p,
-        (None, Some(v), Some(s)) => format!("Effectif de {} : {}, d'après {}.", an, en_clair(v)?, s),
+        (None, Some(v), Some(s)) => format!("Effectif de {} : {}, d'après {}.", an, en_clair(v), s),
         (None, _, _) => format!("L'effectif de {} n'est pas connu. {}", an, OU_TROUVER_L_EFFECTIF),
     };
     Ok(EffectifDit { phrase, annee: Some(an), valeur, source, a_dire: a_dire(ctx)? })
@@ -414,7 +414,8 @@ struct ChargeEffectif {
 struct EffectifDit {
     phrase: String,
     annee: Option<i32>,
-    valeur: Option<f64>,
+    #[serde(serialize_with = "socle::forme::ecrire_en_flottant_opt")]
+    valeur: Option<socle::num::Decimal>,
     source: Option<&'static str>,
     a_dire: Vec<i32>,
 }

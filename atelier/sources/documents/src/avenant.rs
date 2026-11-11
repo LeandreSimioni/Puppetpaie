@@ -515,7 +515,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v:
         "cadre" => {
             let cadre = match v {
                 Valeur::Oui(b) => *b,
-                Valeur::Nombre(n) => n.en_f64() != 0.0,
+                Valeur::Nombre(n) => !n.est_nul(),
                 Valeur::Texte(s) => !s.is_empty(),
                 Valeur::Nature(_) => true,
             };

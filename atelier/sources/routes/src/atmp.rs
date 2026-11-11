@@ -206,12 +206,13 @@ struct RisqueDit {
     code_arrete: Option<String>,
     libelle: String,
     precisions: Option<String>,
-    taux: Option<f64>,
+    #[serde(serialize_with = "socle::forme::ecrire_en_flottant_opt")]
+    taux: Option<socle::num::Decimal>,
     tc: bool,
 }
 
 fn risque_dit(r: &RisqueAtmp) -> RisqueDit {
-    RisqueDit { code: r.code.clone(), code_arrete: r.code_arrete.clone(), libelle: r.libelle.clone(), precisions: r.precisions.clone(), taux: r.taux.map(socle::num::flottant), tc: r.tc }
+    RisqueDit { code: r.code.clone(), code_arrete: r.code_arrete.clone(), libelle: r.libelle.clone(), precisions: r.precisions.clone(), taux: r.taux, tc: r.tc }
 }
 
 /// UNE LIGNE DE LA CASE, telle que l'ecran et le LLM la lisent : son code, son taux, sa date, d'ou elle vient, et la
@@ -219,7 +220,8 @@ fn risque_dit(r: &RisqueAtmp) -> RisqueDit {
 #[derive(Debug, Serialize)]
 struct LigneDite {
     code_risque: Option<String>,
-    taux: Option<f64>,
+    #[serde(serialize_with = "socle::forme::ecrire_en_flottant_opt")]
+    taux: Option<socle::num::Decimal>,
     depuis: Option<Jour>,
     /// Pour la ligne d'avant : son dernier jour.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -249,7 +251,7 @@ fn ligne_dite(t: &TauxAtmp) -> R<LigneDite> {
     };
     let code: String = t.code_risque.iter().map(|c| format!(", code risque {}", c)).collect();
     let depuis: String = t.depuis.iter().map(|j| format!(" à partir du {}", j.jj_mm_aaaa())).collect();
-    Ok(LigneDite { code_risque: t.code_risque.clone(), taux: valeur.map(socle::num::flottant), depuis: t.depuis, jusqu_au: None, provenance: t.provenance, dit: format!("{}{}{} : {}", taux, code, depuis, d_ou), note: None })
+    Ok(LigneDite { code_risque: t.code_risque.clone(), taux: valeur, depuis: t.depuis, jusqu_au: None, provenance: t.provenance, dit: format!("{}{}{} : {}", taux, code, depuis, d_ou), note: None })
 }
 
 /// LA LIGNE D'AVANT, CELLE EN VIGUEUR `aujourdhui`, ET CELLE A VENIR d'une case du taux AT/MP, telles que

@@ -11,7 +11,7 @@ use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
 use socle::texte::euros;
 use socle::echec::{refus, R};
-use socle::num::{dec_f64, div, sub, Decimal};
+use socle::num::{div, sub, Decimal};
 use droit::pas::Versement;
 use rust_decimal::RoundingStrategy;
 use fabrique_pdf::forme::{self as f, Bloc, Cellule, Description, Document, Ligne, Morceau};
@@ -91,9 +91,9 @@ pub fn jours(x: Decimal) -> String {
 }
 
 /// `jours` d'un nombre de jours facultatif : refuse quand il manque.
-fn jours_option(x: Option<f64>) -> R<String> {
+fn jours_option(x: Option<Decimal>) -> R<String> {
     match x {
-        Some(x) => Ok(jours(dec_f64(x)?)),
+        Some(x) => Ok(jours(x)),
         None => Err(refus("nombre de jours absent")),
     }
 }
@@ -740,8 +740,8 @@ fn montant_ou_rien(x: Decimal) -> Cellule {
 }
 
 /// Un taux, s'il y en a un.
-fn taux_dit(t: Option<f64>) -> R<Cellule> {
-    Ok(so(t.map(|t| dec_f64(t).map(fmt_taux)).transpose()?))
+fn taux_dit(t: Option<Decimal>) -> Cellule {
+    so(t.map(fmt_taux))
 }
 
 /// La base d'une ligne, et son taux salarial et son taux employeur ; rien la ou le bareme masque base et taux.
@@ -749,14 +749,14 @@ fn base_et_taux(l: &engagement::calcul::LigneCotisation) -> R<(Cellule, Cellule,
     if l.masquer_base_et_taux {
         return Ok((vide(), vide(), vide()));
     }
-    Ok((s(fmt_eur(l.base)), taux_dit(l.taux_sal.map(socle::num::flottant))?, taux_dit(l.taux_pat.map(socle::num::flottant))?))
+    Ok((s(fmt_eur(l.base)), taux_dit(l.taux_sal), taux_dit(l.taux_pat)))
 }
 
 /// Une ligne de cotisation du bulletin : libelle, base (sauf `masquer_base_et_taux`), taux salarial, montant salarial,
 /// montant employeur ; un montant nul ne s'ecrit pas.
 fn ligne_cotisation(libelle: String, l: &engagement::calcul::LigneCotisation) -> R<Ligne> {
     let base = if l.masquer_base_et_taux { vide() } else { s(fmt_eur(l.base)) };
-    Ok(ligne(vec![s(libelle), base, taux_dit(l.taux_sal.map(socle::num::flottant))?, montant_ou_rien(l.montant_sal), montant_ou_rien(l.montant_pat)], vec![]))
+    Ok(ligne(vec![s(libelle), base, taux_dit(l.taux_sal), montant_ou_rien(l.montant_sal), montant_ou_rien(l.montant_pat)], vec![]))
 }
 
 fn titre_groupe(titre: &str, colonnes: i64) -> Ligne {
@@ -1062,7 +1062,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
             "Durée contractuelle : {} h par mois {} durée de référence de l'entreprise : {} h",
             jours(e.quotite()?),
             tiret,
-            jours_option(e.quotite_reference()?.map(socle::num::flottant))?
+            jours_option(e.quotite_reference()?)?
         );
         ligne_caisse = Vec::new();
         travail = vec![m("Durée du travail :", true, None), mt(format!(" {} h", jours(e.quotite()?)))];

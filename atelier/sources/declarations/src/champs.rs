@@ -647,7 +647,7 @@ impl Valeur {
     pub fn dite(&self) -> bool {
         match self {
             Valeur::Texte(t) => !t.is_empty(),
-            Valeur::Nombre(n) => n.en_f64() != 0.0,
+            Valeur::Nombre(n) => !n.est_nul(),
             Valeur::OuiNon(b) => *b,
             Valeur::Mots(l) => !l.is_empty(),
             Valeur::Bloc(s) => s.est_dite(),
@@ -926,10 +926,8 @@ impl<'de> Visitor<'de> for Attendu {
         self.nombre(NombreLu::from(u), Unexpected::Unsigned(u))
     }
     fn visit_f64<E: serde::de::Error>(self, x: f64) -> Result<Option<Valeur>, E> {
-        match NombreLu::de_f64(x) {
-            Some(n) => self.nombre(n, Unexpected::Float(x)),
-            None => Err(E::invalid_value(Unexpected::Float(x), &self)),
-        }
+        let n = NombreLu::deserialize(serde::de::value::F64Deserializer::<E>::new(x)).map_err(|_| E::invalid_value(Unexpected::Float(x), &self))?;
+        self.nombre(n, Unexpected::Float(x))
     }
     fn visit_seq<A: SeqAccess<'de>>(self, mut a: A) -> Result<Option<Valeur>, A::Error> {
         match self {

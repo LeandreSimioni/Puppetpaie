@@ -659,7 +659,7 @@ fn pgcd(a: usize, b: usize) -> usize {
 /// Le pas de la rotation : le premier entier a partir de N x 0,618 qui est premier avec N. Deux jours voisins ne
 /// tombent pas sur deux conseils voisins de la banque (rangee par domaine), et N jours de suite les montrent tous.
 fn pas(n: usize) -> usize {
-    let mut s = ((n as f64) * 0.618).ceil().max(1.0) as usize;
+    let mut s = (n * 618).div_ceil(1000).max(1);
     while pgcd(s, n) != 1 {
         s += 1;
     }
@@ -874,7 +874,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
         }
         let x = du_mois.entry(p.salarie.id.to_string()).or_insert((0, 0));
         if let Some(h) = e.heures {
-            x.0 += socle::num::flottant(h).round_ties_even() as i64;
+            x.0 += i64::try_from(h.round_dp_with_strategy(0, rust_decimal::RoundingStrategy::MidpointNearestEven)).map_err(|e| socle::echec::refus(format!("{} heures : {}", h, e)))?;
         }
         x.0 += e.cachets * c.heures_par_cachet;
         x.1 += e.cachets;

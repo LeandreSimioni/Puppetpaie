@@ -12,9 +12,9 @@ use fabrique_pdf::forme as pdf;
 use crate::bulletin::{identite_de, FORMAT};
 use droit::contexte::EntrepriseDuDocument;
 use droit::fiche::ChampsEntreprise;
-use socle::date::{repr_flottant, Jour};
+use socle::date::Jour;
 use engagement::Engagement;
-use socle::num::{dec_f64, Decimal};
+use socle::num::{court, Decimal};
 use socle::echec::{erreur, refus, Classe, Echec, R};
 
 // ------------------------------------------------- le numero d'adherent, et le code que la DSN en tire
@@ -225,8 +225,8 @@ pub struct ContratCs {
     pub dates_travail: Vec<Jour>,
     pub cachets: i64,
     pub jours: i64,
-    pub heures: Option<f64>,
-    pub taux_cachet: Option<f64>,
+    pub heures: Option<Decimal>,
+    pub taux_cachet: Option<Decimal>,
     pub numero: Option<engagement::numeros::NumeroContrat>,
     /// Un contrat paye au mois : chacun de ses mois payes (`MoisPaye`), dans l'ordre. Vide pour un contrat a l'activite.
     pub mois_payes: Vec<MoisPaye>,
@@ -248,8 +248,8 @@ impl ContratCs {
             dates_travail: e.dates_travail.clone(),
             cachets: e.cachets,
             jours: e.jours,
-            heures: e.heures.map(socle::num::flottant),
-            taux_cachet: e.taux_cachet.map(socle::num::flottant),
+            heures: e.heures,
+            taux_cachet: e.taux_cachet,
             numero: e.numero.clone(),
             mois_payes: Vec::new(),
         })
@@ -293,13 +293,13 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
         let nb = if eng.cachets != 0 { eng.cachets } else { eng.jours };
         return Ok(vec![(eng.debut, eng.fin, eng.dates_travail.clone(), nb, eng.jours)]);
     }
-    if let Some(h) = eng.heures.filter(|h| *h != 0.0) {
+    if let Some(h) = eng.heures.filter(|h| !h.is_zero()) {
         return Err(erreur(
             Classe::Illisible,
             format!(
                 "Contrat {} a cheval sur le 31 mars ET porteur d'heures ({} h) : les heures ne sont pas datees, le moteur ne sait pas les repartir entre les deux periodes de conges. Scinder le contrat en deux engagements dans le fichier de paie.",
                 eng.nomme(),
-                repr_flottant(h)
+                court(h)
             ),
         ));
     }
@@ -368,7 +368,7 @@ pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
             paie.brut
         } else {
             match e.taux_cachet {
-                Some(t) => dec_f64(t)? * Decimal::from(*nb),
+                Some(t) => court(t) * Decimal::from(*nb),
                 // Aucun cachet ni jour dans la periode : rien a repartir, quel que soit le taux.
                 None if *nb == 0 => Decimal::ZERO,
                 None => {
@@ -663,8 +663,8 @@ mod tests {
         Jour::nouveau(an, mo, jo).unwrap()
     }
 
-    fn contrat(debut: Jour, fin: Jour, dates: Vec<Jour>, cachets: i64, jours: i64, heures: Option<f64>) -> ContratCs {
-        ContratCs { debut, fin, dates_travail: dates, cachets, jours, heures, taux_cachet: Some(130.0), numero: engagement::numeros::NumeroContrat::lire("FA1.26.01").ok(), mois_payes: Vec::new() }
+    fn contrat(debut: Jour, fin: Jour, dates: Vec<Jour>, cachets: i64, jours: i64, heures: Option<Decimal>) -> ContratCs {
+        ContratCs { debut, fin, dates_travail: dates, cachets, jours, heures, taux_cachet: Some(Decimal::new(1300, 1)), numero: engagement::numeros::NumeroContrat::lire("FA1.26.01").ok(), mois_payes: Vec::new() }
     }
 
     /// L'exercice des conges va du 1er avril au 31 mars
@@ -681,7 +681,7 @@ mod tests {
 
     #[test]
     fn des_heures_sur_le_31_mars_refusent() {
-        let c = contrat(j(2026, 3, 30), j(2026, 4, 1), vec![j(2026, 3, 30)], 1, 1, Some(6.0));
+        let c = contrat(j(2026, 3, 30), j(2026, 4, 1), vec![j(2026, 3, 30)], 1, 1, Some(Decimal::new(60, 1)));
         assert!(decouper(&c).unwrap_err().phrase.contains("porteur d'heures (6.0 h)"));
     }
 }

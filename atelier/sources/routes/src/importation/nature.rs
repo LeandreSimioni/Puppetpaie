@@ -339,7 +339,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
                 } else {
                     (&mut contrat.quotite_contrat, "une durée du travail en heures par mois")
                 };
-                match socle::num::decimal_lu(&s).filter(|d| *d > socle::num::Decimal::ZERO).and_then(|d| socle::forme::NombreLu::de_f64(socle::num::flottant(d))) {
+                match socle::num::decimal_lu(&s).filter(|d| *d > socle::num::Decimal::ZERO).map(socle::forme::NombreLu::de_decimal) {
                     Some(n) => *cle = Some(n),
                     None => return Err(refus(format!("« {} » n'est pas {} : rien n'a été écrit.", v, quoi))),
                 };

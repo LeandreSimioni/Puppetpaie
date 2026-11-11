@@ -1176,14 +1176,14 @@ pub(crate) struct Choix {
 
 /// Un nombre lu du fichier, rendu entier quand il l'est (`12`, pas `12.0`).
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct NombreLu(f64);
+pub(crate) struct NombreLu(socle::num::Decimal);
 
 impl serde::Serialize for NombreLu {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        if self.0.fract() == 0.0 && self.0.abs() < 1e15 {
-            s.serialize_i64(self.0 as i64)
-        } else {
-            s.serialize_f64(self.0)
+        use rust_decimal::prelude::ToPrimitive;
+        match self.0.fract().is_zero().then(|| self.0.to_i64()).flatten().filter(|i| i.unsigned_abs() < 1_000_000_000_000_000) {
+            Some(i) => s.serialize_i64(i),
+            None => socle::forme::ecrire_en_flottant(&self.0, s),
         }
     }
 }
@@ -1271,7 +1271,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         nature: r.nature,
         saisie: r.saisie.clone(),
         sens: r.sens.clone(),
-        heures_forfait: r.heures_forfait.map(|h| NombreLu(socle::num::flottant(h))),
+        heures_forfait: r.heures_forfait.map(NombreLu),
         plafond: r.plafond.clone(),
         aem: r.aem.clone(),
         dsn_type: r.dsn_type.clone(),
@@ -1408,7 +1408,7 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
             motif_rupture_defaut: n.motif_rupture_par_defaut(),
             motifs_recours: n.motifs_recours().into_iter().flatten().cloned().collect(),
             motif_recours_exige: n.motif_recours_exige(),
-            quotite_defaut: n.quotite_reference_defaut().map(|q| NombreLu(socle::num::flottant(q))),
+            quotite_defaut: n.quotite_reference_defaut().map(NombreLu),
             temps_plein_dit: n.quotite_reference_defaut().map(|d| format!("temps plein {} h", socle::texte::virgule(d))),
             motif_rupture_vide_dit: match n.motif_rupture_par_defaut() {
                 Some(d) if !n.signalement_fctu(None) => format!("— {}, à son terme —", d),
@@ -1425,9 +1425,12 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
 #[derive(Debug, Clone, serde::Serialize)]
 struct NiveauDeSante {
     niveau: String,
-    assure: Option<f64>,
-    conjoint: Option<f64>,
-    enfant: Option<f64>,
+    #[serde(serialize_with = "socle::forme::ecrire_en_flottant")]
+    assure: socle::num::Decimal,
+    #[serde(serialize_with = "socle::forme::ecrire_en_flottant")]
+    conjoint: socle::num::Decimal,
+    #[serde(serialize_with = "socle::forme::ecrire_en_flottant")]
+    enfant: socle::num::Decimal,
     libelle: String,
 }
 
@@ -1435,7 +1438,6 @@ struct NiveauDeSante {
 /// permanents). Vide quand le bareme n'en porte pas, ou quand il ne se compose pas encore (une fiche entreprise
 /// incomplete : la configuration le dit, `ConfigurationDeLaPage::bareme`).
 fn niveaux_sante(ctx: &Contexte, compose: bool) -> R<Vec<NiveauDeSante>> {
-    use rust_decimal::prelude::ToPrimitive;
     if !compose {
         return Ok(Vec::new());
     }
@@ -1449,9 +1451,9 @@ fn niveaux_sante(ctx: &Contexte, compose: bool) -> R<Vec<NiveauDeSante>> {
         .iter()
         .map(|(n, t)| NiveauDeSante {
             niveau: n.clone(),
-            assure: t.assure.to_f64(),
-            conjoint: t.conjoint.to_f64(),
-            enfant: t.enfant.to_f64(),
+            assure: t.assure,
+            conjoint: t.conjoint,
+            enfant: t.enfant,
             libelle: format!("niveau {} — {} % du PMSS pour l'assuré seul", n, t.assure),
         })
         .collect())
