@@ -227,7 +227,9 @@ pub fn verifier_fctu(texte: &str) -> R<()> {
             versements.push(HashSet::new());
         } else if rubrique == "S21.G00.51.011" && !versements.is_empty() {
             versements.last_mut().unwrap().insert(valeur.to_string());
-        } else if rubrique == "S21.G00.78.001" && valeur == "31" {
+        } else if rubrique == "S21.G00.78.001"
+            && droit::base_assujettie::BaseAssujettie::du_code(valeur) == Some(droit::base_assujettie::BaseAssujettie::PrevoyanceSanteRetraite)
+        {
             return Err(socle::refus!(
                 "Base assujettie de code 31 dans un signalement de fin de contrat.\n  {}",
                 CCH_14

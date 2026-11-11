@@ -7,6 +7,7 @@
 
 use droit::fiche::Lue as _;
 
+use droit::base_assujettie::BaseAssujettie;
 use droit::contexte::{aujourdhui, Contexte};
 use socle::date::Jour;
 use crate::dsn::{
@@ -20,7 +21,7 @@ use socle::fichiers::repr;
 pub const NATURE: &str = "07";
 /// CCH-14 (cahier technique p. 293) : la base assujettie de prevoyance n'a
 /// pas sa place dans un signalement de fin de contrat.
-const BASES_INTERDITES: [&str; 1] = ["31"];
+const BASES_INTERDITES: [BaseAssujettie; 1] = [BaseAssujettie::PrevoyanceSanteRetraite];
 pub const NORMALE: &str = "01";
 pub const ANNULE_ET_REMPLACE: &str = "03";
 pub const ANNULE: &str = "04";
@@ -588,8 +589,8 @@ ou un annule.",
 pub fn verifier_controles_07(texte: &str) -> Result<(), Echec> {
     let lignes: Vec<&str> = texte.lines().map(str::trim).collect();
     let valeur = |l: &str| -> String { crate::usages::rubrique_valeur(l).1.to_string() };
-    let bases: Vec<String> = lignes.iter().filter(|l| l.starts_with("S21.G00.78.001,")).map(|l| valeur(l)).collect();
-    if bases.iter().any(|b| b == "31") {
+    let mut bases = lignes.iter().filter(|l| l.starts_with("S21.G00.78.001,")).map(|l| BaseAssujettie::du_code(&valeur(l)));
+    if bases.any(|b| b == Some(BaseAssujettie::PrevoyanceSanteRetraite)) {
         return Err(Echec::impossible(
             "CCH-14 : la valeur « 31 » est interdite en S21.G00.78.001 dans un signalement de fin de contrat. Le \
 bareme declare une base assujettie de prevoyance, qui n'a pas sa place ici -- l'identifiant d'affiliation qui \

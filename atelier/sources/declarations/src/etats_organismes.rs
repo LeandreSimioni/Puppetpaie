@@ -576,7 +576,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let nic = droit::bareme::etablissement_de(&ctx.entreprise, &q.salarie).map_err(|e| e.reclasser(Classe::Refuse))?;
             let bar = crate::dsn::bar_du(&ctx.du_mois(m).map_err(|e| e.reclasser(Classe::Refuse))?, &ctx.entreprise, &orgs, &nic, m).map_err(|e| e.reclasser(Classe::Refuse))?;
             for e in q.elementaires() {
-                ta = add(ta, crate::dsn::base_declaree(e, &bar, "02").map_err(|e| e.reclasser(Classe::Refuse))?);
+                ta = add(ta, crate::dsn::base_declaree(e, &bar, droit::base_assujettie::BaseAssujettie::BrutePlafonnee).map_err(|e| e.reclasser(Classe::Refuse))?);
             }
         }
         let an = format!("{:04}", m.annee());

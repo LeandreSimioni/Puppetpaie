@@ -269,7 +269,7 @@ URL https://net-entreprises.custhelp.com/app/answers/detail_dsn/a_id/3308/ ; mod
   forme est une **inférence** (la DFS s'applique de même à la base de cotisation, fiche 1336 : « la base de calcul des cotisations
   est constituée par le montant global des rémunérations […] à laquelle on applique la déduction »). Les bases 23 et 43
   (Agirc-Arrco) et le 81.003 n'y figurent pas.
-- Le moteur : `dsn::cle_abattue`, `dsn::BASES_ABATTUES_PAR_LA_DFS`, `dsn::autre_revenu` (le bloc 54 de type 10 = `brut − brut_du_51`).
+- Le moteur : `dsn::cle_abattue`, `droit::base_assujettie::BaseAssujettie::abattue_par_la_dfs`, `dsn::autre_revenu` (le bloc 54 de type 10 = `brut − brut_du_51`).
 
 ### Fiche 827 — « Comment déclarer les avantages en nature (autres éléments du revenu brut) ? »
 

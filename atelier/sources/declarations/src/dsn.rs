@@ -12,6 +12,7 @@ use std::path::Path;
 use rust_decimal::RoundingStrategy;
 
 use droit::assiette::Assiette;
+use droit::base_assujettie::BaseAssujettie;
 use droit::bareme::{self, bareme_applique, EntrepriseLue};
 use droit::fiche::{ChampsEntreprise, DeclarantDsn, Lue};
 use droit::forme_bareme::{CotisationDsn, Pile, Rubrique};
@@ -577,7 +578,7 @@ impl Default for Options {
 /// Une cotisation d'un versement (`dsn.cotisations`).
 #[derive(Clone, Debug)]
 pub struct Cotisation {
-    pub bloc78: String,
+    pub bloc78: BaseAssujettie,
     pub base78: Decimal,
     /// Le code de cotisation (81.001) ; `None` : une base du bloc 78 sans cotisation (`cotisations_dsn` du bareme), qui
     /// ne porte pas de montant.
@@ -673,28 +674,12 @@ fn base(bases: &HashMap<Assiette, Decimal>, a: Assiette) -> R<Decimal> {
     bases.get(&a).copied().ok_or_else(|| socle::fichiers::absent(a.nom()))
 }
 
-/// Les bases assujetties que la deduction forfaitaire specifique abat (
-/// `atelier/reference/sources/dfs/LISEZ-MOI.md`, « La DSN ») : 02 et 03, l'assiette des cotisations de securite sociale
-/// (CSS R. 242-1, al. 3 ; arrete du 4 septembre 2025 relatif aux frais professionnels, art. 1er et 9), et 23 et 43,
-/// celles d'Agirc-Arrco (cahier d'aide a la codification Agirc-Arrco CT2026, l. 3490-3498 : « La solution ainsi retenue
-/// pour le regime general de la Securite sociale s'applique en principe au regime AGIRC-ARRCO »). Que la base 78 porte
-/// l'assiette abattue, et pas seulement son 81.003 : le meme cahier declare la « Base VRP multicartes apres abattement
-/// pour frais professionnels » en 02 et 03 (l. 6230-6236), et la norme 2026.1, chapitre 2 (p. 60-61,
-/// `atelier/reference/norme-dsn/texte/chapitre-2-principes-de-constitution.txt` l. 2116-2160), part du « montant brut [...]
-/// servant de base au calcul des cotisations de securite sociale » et y AJOUTE « le montant de l'abattement forfaitaire
-/// d'assiette pour frais professionnels » : ce brut-la est abattu. INFERENCE, ecrite comme telle : aucun texte depose ne
-/// le dit d'un artiste en toutes lettres (la fiche net-entreprises 1336 ne dit rien des bases). Ne sont pas abattues :
-/// 04 (la CSG, son propre abattement), 07 (le chomage d'un intermittent, « avant application de l'abattement », annexes
-/// VIII et X, art. 49), 27 (les Conges Spectacles, « avant toute deduction forfaitaire specifique », bloc 78 p. 292) et
-/// 31 (la prevoyance, dont les textes ne renvoient pas a l'assiette de la securite sociale).
-pub const BASES_ABATTUES_PAR_LA_DFS: [&str; 4] = ["02", "03", "23", "43"];
-
 /// La cle de `bases` que lit une base 78 de code `bloc78`, ou une cotisation qu'elle porte, pour cette paie : sous
-/// deduction forfaitaire specifique et sous une base de `BASES_ABATTUES_PAR_LA_DFS`, la forme abattue que le bulletin a
-/// calculee (`brut_dfs`...). Une cle sans forme abattue refuse : la DSN ne se fait pas sur une assiette que le bulletin
-/// n'a pas.
-pub fn cle_abattue(p: &Paie, bloc78: &str, a: Assiette) -> R<Assiette> {
-    if p.deduction_forfaitaire.is_none() || !BASES_ABATTUES_PAR_LA_DFS.contains(&bloc78) || a == Assiette::Zero {
+/// deduction forfaitaire specifique et sous une base qu'elle abat (`BaseAssujettie::abattue_par_la_dfs`), la forme
+/// abattue que le bulletin a calculee (`brut_dfs`...). Une cle sans forme abattue refuse : la DSN ne se fait pas sur une
+/// assiette que le bulletin n'a pas.
+pub fn cle_abattue(p: &Paie, bloc78: BaseAssujettie, a: Assiette) -> R<Assiette> {
+    if p.deduction_forfaitaire.is_none() || !bloc78.abattue_par_la_dfs() || a == Assiette::Zero {
         return Ok(a);
     }
     if let Some(abattue) = a.abattue().filter(|ab| p.bases.contains_key(ab)) {
@@ -800,7 +785,7 @@ fn bareme_de(p: &Paie, bar: &BaremeDuMois) -> R<std::sync::Arc<Pile>> {
 /// bareme de cette paie declare sous ce code (`cotisations_dsn`, `base78` ; abattue sous deduction forfaitaire
 /// specifique : `cle_abattue`), lue dans ses bases (`Paie::bases`), rien de recalcule. Une paie importee porte ses
 /// bases aux memes cles (`engagement::importe::Importe::paie`). Zero quand le bareme ne declare rien sous ce code.
-pub fn base_declaree(p: &Paie, bar: &BaremeDuMois, bloc78: &str) -> R<Decimal> {
+pub fn base_declaree(p: &Paie, bar: &BaremeDuMois, bloc78: BaseAssujettie) -> R<Decimal> {
     let bar = bareme_de(p, bar)?;
     let Some(cle) = bar.cotisations_dsn.iter().filter(|c| c.bloc78 == bloc78).map(|c| c.base78).find(|k| *k != Assiette::Zero) else {
         return Ok(zero());
@@ -823,10 +808,10 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         if c.seuil_smic.is_some() && !au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, p.heures_travaillees, c.seuil_smic.map(|n| n.0))? {
             continue;
         }
-        let bloc78 = c.bloc78.clone();
-        let abattue = |a: Assiette| -> R<Decimal> { base(&bases, cle_abattue(p, &bloc78, a)?) };
+        let bloc78 = c.bloc78;
+        let abattue = |a: Assiette| -> R<Decimal> { base(&bases, cle_abattue(p, bloc78, a)?) };
         let mut l = Cotisation {
-            bloc78: bloc78.clone(),
+            bloc78,
             base78: abattue(c.base78)?,
             code81: c.code81.clone(),
             org: c.org.clone(),
@@ -874,7 +859,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         out.insert(
             apres,
             Cotisation {
-                bloc78: "31".into(),
+                bloc78: BaseAssujettie::PrevoyanceSanteRetraite,
                 base78: base(&bases, Assiette::Zero)?,
                 code81: Some("059".into()),
                 org: None,
@@ -904,7 +889,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
             let ft = org_de("040");
             // Sous la base 03 : abattue sous deduction forfaitaire specifique (`cle_abattue`), comme la reduction
             // elle-meme se calcule sur le brut abattu (`droit::reduction::reduction_generale_sous_dfs`).
-            let brut_03 = bases[&cle_abattue(p, "03", Assiette::Brut)?];
+            let brut_03 = bases[&cle_abattue(p, BaseAssujettie::BruteDeplafonnee, Assiette::Brut)?];
             for (code, org, part, cle) in [
                 (par(|d| &d.code81_urssaf, REDUCTION_URSSAF.0), urssaf, rg.urssaf, par(|d| &d.cle_total_urssaf, REDUCTION_URSSAF.1)),
                 (par(|d| &d.code81_chomage, REDUCTION_CHOMAGE.0), ft, rg.chomage, par(|d| &d.cle_total_chomage, REDUCTION_CHOMAGE.1)),
@@ -912,7 +897,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
             ] {
                 if !part.is_zero() {
                     out.push(Cotisation {
-                        bloc78: "03".into(),
+                        bloc78: BaseAssujettie::BruteDeplafonnee,
                         base78: brut_03,
                         code81: Some(code),
                         org,
@@ -937,14 +922,14 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     // doit etre signe »). 81.003 : la remuneration des heures.
     if let Some(remuneration) = p.bases.get(&Assiette::HeuresEnPlus).copied().filter(|m| !m.is_zero()) {
         let urssaf = org_de(&bar, "075");
-        let brut_03 = bases[&cle_abattue(p, "03", Assiette::Brut)?];
+        let brut_03 = bases[&cle_abattue(p, BaseAssujettie::BruteDeplafonnee, Assiette::Brut)?];
         for (code, id) in [(CODE81_REDUCTION_HEURES, engagement::heures_en_plus::REDUCTION), (CODE81_DEDUCTION_HEURES, engagement::heures_en_plus::DEDUCTION)] {
             let montant = p.lignes.iter().filter(|l| l.est(id)).fold(zero(), |a, l| add(a, add(l.montant_pat, l.montant_sal)));
             if montant.is_zero() {
                 continue;
             }
             out.push(Cotisation {
-                bloc78: "03".into(),
+                bloc78: BaseAssujettie::BruteDeplafonnee,
                 base78: brut_03,
                 code81: Some(code.into()),
                 org: urssaf.clone(),
@@ -969,7 +954,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
             None => None,
         }
         .and_then(|a| a.checked_sub(202));
-        if c.bloc78 == "31" && place.is_some_and(|x| exclues.contains(&x)) {
+        if c.bloc78 == BaseAssujettie::PrevoyanceSanteRetraite && place.is_some_and(|x| exclues.contains(&x)) {
             if let Some(m) = c.montant.filter(|m| !m.is_zero()) {
                 return Err(refus!(
                     "{} : une cotisation {} de {} sous une affiliation prevoyance que le salarie n'a pas ce mois-la \
@@ -1079,7 +1064,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
     let org = org_de(pile, "075")
         .ok_or_else(|| refus("La part patronale Agirc-Arrco (142, 146) se declare a l'Urssaf (81.002), et le bareme ne nomme l'Urssaf sur aucune cotisation 075. Rien n'est ecrit."))?;
     let part = |code: &str, base: Decimal, taux: f64, montant: Decimal| Cotisation {
-        bloc78: l131.bloc78.clone(),
+        bloc78: l131.bloc78,
         base78: l131.base78,
         code81: Some(code.into()),
         org: Some(org.clone()),
@@ -2319,24 +2304,24 @@ pub fn net_social(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe: i6
 #[allow(clippy::too_many_arguments)]
 pub fn bases_et_cotisations(
     f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, debut: &Jour, fin: &Jour, signe: i64, nature_dsn: &str,
-    bases_exclues: &[&str],
+    bases_exclues: &[BaseAssujettie],
 ) -> R<()> {
     let e = &p.engagement;
-    let mut courant: Option<(String, Option<String>, Decimal)> = None;
+    let mut courant: Option<(BaseAssujettie, Option<String>, Decimal)> = None;
     let places = places_par_contrat(bar);
     let composants = usage_admet(f, "S21.G00.79.001", nature_dsn)?;
     for mut c in cotisations(p, bar)? {
-        if bases_exclues.contains(&c.bloc78.as_str()) {
+        if bases_exclues.contains(&c.bloc78) {
             continue;
         }
         if let Some(a) = c.affectation.as_deref().filter(|a| !a.is_empty()) {
             let n: i64 = a.trim().parse().map_err(|_| refus!("affectation illisible : {}", a))?;
             c.affectation = Some((n + places * (rang - 1)).to_string());
         }
-        let cle = (c.bloc78.clone(), c.affectation.clone(), c.base78);
+        let cle = (c.bloc78, c.affectation.clone(), c.base78);
         if courant.as_ref() != Some(&cle) {
             courant = Some(cle);
-            f.add("S21.G00.78.001", &c.bloc78);
+            f.ecrire_code(c.bloc78)?;
             f.add("S21.G00.78.002", debut.jjmmaaaa());
             f.add("S21.G00.78.003", fin.jjmmaaaa());
             f.add("S21.G00.78.004", ms(c.base78, signe));
@@ -2347,7 +2332,7 @@ pub fn bases_et_cotisations(
                 si_admise(f, nature_dsn, "S21.G00.78.006", e.numero.clone().map(String::from))?;
             }
             if !composants {
-            } else if c.bloc78 == "03" {
+            } else if c.bloc78 == BaseAssujettie::BruteDeplafonnee {
                 f.add("S21.G00.79.001", "01");
                 // Le SMIC de reference de la reduction generale, sinon le plafond de la periode.
                 let v = match p.reduction_generale.as_ref() {
@@ -2355,7 +2340,7 @@ pub fn bases_et_cotisations(
                     None => p.plafond,
                 };
                 f.add("S21.G00.79.004", ms(v, signe));
-            } else if c.bloc78 == "31" {
+            } else if c.bloc78 == BaseAssujettie::PrevoyanceSanteRetraite {
                 // Le composant que la source du taux donne (`composant79` : la sante des permanents 3090, base forfaitaire
                 // 18 sur le plafond du mois, fiche Audiens 139), sinon la tranche A sur le brut.
                 let (type_79, montant) = match c.composant79.clone() {
@@ -2458,11 +2443,11 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
         let mut vues: Vec<Option<String>> = Vec::new();
         let places = places_par_contrat(bar);
         for c in cotisations(p, bar)? {
-            if c.bloc78 != "31" || vues.contains(&c.affectation) {
+            if c.bloc78 != BaseAssujettie::PrevoyanceSanteRetraite || vues.contains(&c.affectation) {
                 continue;
             }
             vues.push(c.affectation.clone());
-            f.add("S21.G00.78.001", "31");
+            f.ecrire_code(c.bloc78)?;
             f.add("S21.G00.78.002", debut.jjmmaaaa());
             f.add("S21.G00.78.003", fin.jjmmaaaa());
             f.add("S21.G00.78.004", "0.00");
@@ -2809,7 +2794,7 @@ impl Role81 {
 struct Lecture {
     /// Le code 81.001, l'organisme 81.002 (`None` : la ligne n'en porte pas), et ce que la ligne porte.
     roles: Vec<(String, Option<String>, Role81)>,
-    blocs: Vec<(String, Assiette)>,
+    blocs: Vec<(BaseAssujettie, Assiette)>,
 }
 
 fn lecture(p: &Paie, bar: &BaremeDuMois) -> R<Lecture> {
@@ -2817,7 +2802,7 @@ fn lecture(p: &Paie, bar: &BaremeDuMois) -> R<Lecture> {
     let pile = bareme_de(p, bar)?;
     let mut l = Lecture { roles: Vec::new(), blocs: Vec::new() };
     for c in &pile.cotisations_dsn {
-        l.blocs.push((c.bloc78.clone(), c.base78));
+        l.blocs.push((c.bloc78, c.base78));
         let Some(code) = c.code81.clone() else { continue };
         let org = c.org.clone().filter(|o| !o.is_empty());
         let cle_total = c.cle_total.clone().filter(|x| !x.is_empty());
@@ -2838,7 +2823,7 @@ fn lecture(p: &Paie, bar: &BaremeDuMois) -> R<Lecture> {
     let nature = section_de(&*p.engagement.nat()?).to_string();
     for contrib in &contribs {
         if contrib.natures.contains_key(&nature) {
-            l.blocs.push(("31".into(), Assiette::Zero));
+            l.blocs.push((BaseAssujettie::PrevoyanceSanteRetraite, Assiette::Zero));
             l.roles.push(("059".into(), None, Role81::Cotisation { cle: "059".into(), base: None }));
         }
     }
@@ -2850,7 +2835,7 @@ fn lecture(p: &Paie, bar: &BaremeDuMois) -> R<Lecture> {
         }
     };
     let org = |code: &str| -> Option<String> { org_de(&pile, code).filter(|o| !o.is_empty()) };
-    l.blocs.push(("03".into(), Assiette::Brut));
+    l.blocs.push((BaseAssujettie::BruteDeplafonnee, Assiette::Brut));
     for (code, org, part, cle) in [
         (par(|d| &d.code81_urssaf, REDUCTION_URSSAF.0), org("075"), "urssaf", par(|d| &d.cle_total_urssaf, REDUCTION_URSSAF.1)),
         (par(|d| &d.code81_chomage, REDUCTION_CHOMAGE.0), org("040"), "chomage", par(|d| &d.cle_total_chomage, REDUCTION_CHOMAGE.1)),
@@ -2877,17 +2862,19 @@ struct Ligne81 {
 }
 
 /// Les blocs 78 (78.001, 78.004) et les lignes 81 du versement declare.
-fn lignes_declarees(d: &crate::versement_declare::VersementDeclare) -> R<(Vec<(String, Decimal)>, Vec<Ligne81>)> {
+fn lignes_declarees(d: &crate::versement_declare::VersementDeclare) -> R<(Vec<(BaseAssujettie, Decimal)>, Vec<Ligne81>)> {
     let lu = |k: &str, v: &str| -> R<Decimal> { v.parse().map_err(|_| crate::versement_declare::illisible(k, v, &d.fichier)) };
-    let (mut b78, mut l81): (Vec<(String, Decimal)>, Vec<Ligne81>) = (Vec::new(), Vec::new());
-    let (mut bloc, mut affiliation) = (String::new(), None::<String>);
+    let (mut b78, mut l81): (Vec<(BaseAssujettie, Decimal)>, Vec<Ligne81>) = (Vec::new(), Vec::new());
+    let (mut bloc, mut affiliation) = (None::<BaseAssujettie>, None::<String>);
     for (k, v) in d.blocs(&["78", "81"]) {
         match k.as_str() {
             "S21.G00.78.001" => {
-                bloc = v.clone();
+                bloc = Some(BaseAssujettie::du_code(v).ok_or_else(|| {
+                    refus!("La DSN déposée {} porte, en {}, « {} », qui n'est pas un code de sa liste dans la norme.", d.fichier, k, v)
+                })?);
                 affiliation = None;
             }
-            "S21.G00.78.004" => b78.push((bloc.clone(), lu(k, v)?)),
+            "S21.G00.78.004" => b78.push((bloc.ok_or_else(|| refus!("{} sans S21.G00.78.001 dans {}", k, d.fichier))?, lu(k, v)?)),
             "S21.G00.78.005" => affiliation = Some(v.clone()),
             "S21.G00.81.001" => l81.push(Ligne81 { code: v.clone(), org: None, base: None, montant: None, affiliation: affiliation.clone() }),
             "S21.G00.81.002" | "S21.G00.81.003" | "S21.G00.81.004" => {
@@ -2912,9 +2899,9 @@ impl Lecture {
     /// La base `nom` telle que les lignes deposees la portent : les 78.004 des blocs 78 dont le bareme dit qu'ils la
     /// portent (et rien d'autre), les 81.003 des cotisations dont il dit de meme. Elles doivent toutes dire la meme
     /// chose, et il en faut une.
-    fn base(&self, nom: Assiette, b78: &[(String, Decimal)], l81: &[Ligne81]) -> R<Decimal> {
-        let bloc_sur = |b: &str| {
-            let siens: Vec<Assiette> = self.blocs.iter().filter(|(x, _)| x == b).map(|(_, base)| *base).collect();
+    fn base(&self, nom: Assiette, b78: &[(BaseAssujettie, Decimal)], l81: &[Ligne81]) -> R<Decimal> {
+        let bloc_sur = |b: BaseAssujettie| {
+            let siens: Vec<Assiette> = self.blocs.iter().filter(|(x, _)| *x == b).map(|(_, base)| *base).collect();
             !siens.is_empty() && siens.iter().all(|x| *x == nom)
         };
         let cotisation_sur = |code: &str, org: &Option<String>| {
@@ -2923,7 +2910,7 @@ impl Lecture {
         };
         let mut vus: Vec<(String, Decimal)> = Vec::new();
         for (b, v) in b78 {
-            if bloc_sur(b) {
+            if bloc_sur(*b) {
                 vus.push((format!("S21.G00.78.004 du bloc {}", b), *v));
             }
         }
@@ -3035,7 +3022,7 @@ fn assiette_declaree(cle: &str, r: &Regularisation, bar: &BaremeDuMois) -> R<R<D
         "t1_permanent" => si(mensuelle, &|| base(Assiette::T1Mensuelle)),
         // La base 07 deposee (78.004 sous le bloc 07), comme `base_07` pour le corrige.
         "chomage_permanent" => si(mensuelle, &|| {
-            let v: Vec<Decimal> = b78.iter().filter(|(b, _)| b == "07").map(|(_, v)| *v).collect();
+            let v: Vec<Decimal> = b78.iter().filter(|(b, _)| *b == BaseAssujettie::AssuranceChomage).map(|(_, v)| *v).collect();
             match v.first() {
                 None => Ok(zero()),
                 Some(x) if v.iter().all(|y| y == x) => Ok(*x),
@@ -3238,7 +3225,7 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<String, Decim
         let mut x = bases(p, &*bareme_de(p, bar)?)?;
         for a in [Assiette::Brut, Assiette::BrutX115, Assiette::BrutX110, Assiette::BrutPlafonne, Assiette::BrutX115Plafonne] {
             if x.contains_key(&a) {
-                let k = cle_abattue(p, "03", a)?;
+                let k = cle_abattue(p, BaseAssujettie::BruteDeplafonnee, a)?;
                 let v = x[&k];
                 x.insert(a, v);
             }
@@ -3358,7 +3345,7 @@ const MONTANT_DEDUCTION_HEURES: &str = "deduction_heures_supplementaires";
 /// chomage, `brut_chomage` dans les baremes). Zero sans bloc 07 ; deux montants differents refusent.
 fn base_07(p: &Paie, bar: &BaremeDuMois) -> R<Decimal> {
     let mut vu: Option<Decimal> = None;
-    for c in cotisations(p, bar)?.into_iter().filter(|c| c.bloc78 == "07") {
+    for c in cotisations(p, bar)?.into_iter().filter(|c| c.bloc78 == BaseAssujettie::AssuranceChomage) {
         match vu {
             Some(v) if v != c.base78 => {
                 return Err(refus!(
@@ -4049,7 +4036,7 @@ fn verifier_affiliations(texte: &str) -> R<()> {
             }
             "S21.G00.78.001" => {
                 // Sans 78.006 (contrat unique, p. 298), la base se rattache au contrat de l'individu : le dernier 40.009.
-                courant = if valeur == "31" { Some([String::new(), String::new(), String::new(), contrat.clone()]) } else { None };
+                courant = if BaseAssujettie::du_code(valeur) == Some(BaseAssujettie::PrevoyanceSanteRetraite) { Some([String::new(), String::new(), String::new(), contrat.clone()]) } else { None };
             }
             _ => {
                 if let Some(c) = courant.as_mut() {

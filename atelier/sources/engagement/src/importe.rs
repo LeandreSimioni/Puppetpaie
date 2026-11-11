@@ -30,6 +30,7 @@
 use std::collections::BTreeMap;
 
 use droit::assiette::Assiette;
+use droit::base_assujettie::BaseAssujettie;
 use droit::fiche::Lue;
 use droit::natures::NatureDeContrat;
 use std::path::{Path, PathBuf};
@@ -147,7 +148,7 @@ pub struct PaieVersee {
     pub depose_le: Option<Jour>,
     pub fichier: Option<String>,
     /// Les bases assujetties que la DSN declare, par code du bloc 78.
-    pub bases: BTreeMap<String, Decimal>,
+    pub bases: BTreeMap<BaseAssujettie, Decimal>,
     /// Ce que le bulletin d'un mois atteste de ce mois, quand le contrat entier ne le garde pas.
     pub heures: Option<i64>,
     pub cachets: Option<i64>,

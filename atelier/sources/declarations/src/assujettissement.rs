@@ -196,7 +196,7 @@ fn assiette_peec(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, orgs: &dr
                 let bar = crate::dsn::bar_du(ctx, ent, orgs, nic, *mois)?;
                 // Les periodes elementaires d'un mois decoupe : chacune a sa base 03.
                 for p in ps.iter().flat_map(|p| p.elementaires()) {
-                    if let Some(c) = crate::dsn::cotisations(p, &bar)?.into_iter().find(|c| c.bloc78 == "03") {
+                    if let Some(c) = crate::dsn::cotisations(p, &bar)?.into_iter().find(|c| c.bloc78 == droit::base_assujettie::BaseAssujettie::BruteDeplafonnee) {
                         total = add(total, c.base78);
                     }
                 }

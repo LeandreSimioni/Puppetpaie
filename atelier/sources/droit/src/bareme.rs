@@ -12,6 +12,7 @@ use crate::forme_bareme::{
     VersementMobiliteEcrit,
 };
 use crate::assiette::Assiette;
+use crate::base_assujettie::BaseAssujettie;
 use crate::natures::{AuMois, Nature};
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, SalarieDuContrat, Statut, StatutCategorielRc};
 use socle::date::Jour;
@@ -1362,7 +1363,7 @@ pub fn bareme_vm(mut bar: Pile, sal: &SalarieDuContrat) -> R<Pile> {
     });
     bar.cotisations_dsn.push(CotisationDsn {
         code_insee: Some(vm.code_insee),
-        ..CotisationDsn::sur_le_brut("03", "081".into(), org, Assiette::BrutX115, taux)
+        ..CotisationDsn::sur_le_brut(BaseAssujettie::BruteDeplafonnee, "081".into(), org, Assiette::BrutX115, taux)
     });
     Ok(bar)
 }
@@ -1394,7 +1395,7 @@ ne porte pas le taux du regime local (`regime_local_alsace_moselle`).",
         ..Rubrique::default()
     });
     let code81 = if rl.code81.is_empty() { "115".into() } else { rl.code81.clone() };
-    bar.cotisations_dsn.push(CotisationDsn::sur_le_brut("03", code81, org, Assiette::Brut, rl.taux_sal));
+    bar.cotisations_dsn.push(CotisationDsn::sur_le_brut(BaseAssujettie::BruteDeplafonnee, code81, org, Assiette::Brut, rl.taux_sal));
     Ok(bar)
 }
 

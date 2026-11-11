@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use droit::base_assujettie::BaseAssujettie;
+
 use socle::date::Jour;
 use socle::echec::{erreur, refus, Classe, Echec, R};
 use socle::mois::{Mois, MoisOuJour};
@@ -291,9 +293,9 @@ pub struct VersementLu {
 /// Une base assujettie (bloc S21.G00.78) : son code (.001), son montant (.004), et le contrat qu'elle nomme (.006, « dans
 /// le cas de la declaration de plusieurs blocs Contrat », `bloc-S21.G00.79.txt` l. 9-14 ; « dans le cas de la declaration
 /// d'un contrat unique, cette rubrique n'est pas a renseigner »).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct BaseLue {
-    pub code: String,
+    pub code: BaseAssujettie,
     pub montant: Decimal,
     pub contrat: Option<String>,
 }
@@ -338,7 +340,7 @@ pub struct PaieDuContrat {
     pub verse_le: Option<Jour>,
     pub mesures: Mesures,
     /// Ses bases, par code (78.001), sommees.
-    pub bases: BTreeMap<String, Decimal>,
+    pub bases: BTreeMap<BaseAssujettie, Decimal>,
     pub nets: Option<Nets>,
     /// Les autres contrats que ses versements paient (vide : ils ne paient que lui).
     pub avec: Vec<String>,
@@ -563,7 +565,7 @@ impl DsnLue {
                     None => sans_numero,
                 };
                 for b in v.bases.iter().filter(a_lui) {
-                    *p.bases.entry(b.code.clone()).or_default() += b.montant;
+                    *p.bases.entry(b.code).or_default() += b.montant;
                 }
             }
             p.nets = seul.map(|v| Nets {
@@ -1076,10 +1078,11 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
             }
             "S21.G00.70.013" => rattachements.push(v),
             "S21.G00.78.001" => {
+                let code = fautes.code(k, &v);
                 let Some(x) = versement else { continue };
-                base = plein.is_some();
-                if let Some(code) = plein {
-                    x.bases.push(BaseLue { code, ..BaseLue::default() });
+                base = code.is_some();
+                if let Some(code) = code {
+                    x.bases.push(BaseLue { code, montant: Decimal::ZERO, contrat: None });
                 }
             }
             "S21.G00.78.004" | "S21.G00.78.006" => {
@@ -1203,7 +1206,7 @@ mod tests {
                  S21.G00.78.001,'02'\nS21.G00.78.004,'350.00'\nS21.G00.78.006,'MO4.25.17'\n\
                  S21.G00.78.001,'31'\nS21.G00.78.004,'875.00'\n";
         let p = lire(f.as_bytes(), "essai.dsn").unwrap().paies();
-        let dit = |i: usize| (p[i].numero.as_str(), p[i].mesures.brut.map(socle::num::q2), p[i].bases.get("02").copied().map(socle::num::q2), p[i].bases.len(), p[i].nets.is_some(), p[i].avec.clone());
+        let dit = |i: usize| (p[i].numero.as_str(), p[i].mesures.brut.map(socle::num::q2), p[i].bases.get(&BaseAssujettie::BrutePlafonnee).copied().map(socle::num::q2), p[i].bases.len(), p[i].nets.is_some(), p[i].avec.clone());
         assert_eq!(dit(0), ("MO4.25.16", Some("525.00".into()), Some("525.00".into()), 1, false, vec!["MO4.25.17".to_string()]));
         assert_eq!(dit(1), ("MO4.25.17", Some("350.00".into()), Some("350.00".into()), 1, false, vec!["MO4.25.16".to_string()]));
     }

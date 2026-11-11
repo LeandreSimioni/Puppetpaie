@@ -16,7 +16,8 @@ n'entre. Ce qui passe la porte est lu **une fois** et devient un type Rust ; ded
   aucune erreur avalée. Les états impossibles ne s'écrivent pas : une nature de contrat est une `enum`
   (`droit::natures::NatureDeContrat`), dont `contrats-base.json` dit les propriétés ; un motif de recours ou de rupture
   et la modalité du temps de travail aussi (`droit::natures::MotifDeRecours`, `MotifDeRupture`,
-  `ModaliteDuTempsDeTravail`) : chacune est la liste entière de sa rubrique dans la norme (`ListeDeLaNorme`), tenue aux
+  `ModaliteDuTempsDeTravail`), et le code d'une base assujettie (`droit::base_assujettie::BaseAssujettie`, que le
+  barème nomme en `bloc78` et dont la déduction forfaitaire spécifique abat certaines) : chacune est la liste entière de sa rubrique dans la norme (`ListeDeLaNorme`), tenue aux
   listes relevées des versions livrées par un test de structure ; un code propre à une version le dit (`depuis`,
   `jusqu_a`), et la DSN ne l'écrit que dans un fichier de cette version (`dsn::Fichier::ecrire_code`, classe
   `HorsDeLaVersion`). Le fichier, lu contre elles, dit ceux que chaque nature permet. Une assiette du calcul aussi

@@ -9,6 +9,7 @@
 use std::collections::BTreeMap;
 
 use crate::assiette::Assiette;
+use crate::base_assujettie::BaseAssujettie;
 use crate::fiche::Lue;
 use crate::source::Fondement;
 use serde::Deserialize;
@@ -547,7 +548,7 @@ forme! {
     sans_vide
     /// Une cotisation individuelle de la DSN (bloc 81), et la base qu'elle declare au bloc 78.
     pub struct CotisationDsn {
-        pub bloc78: String,
+        pub bloc78: BaseAssujettie,
         pub code81: Option<String>,
         pub org: Option<String>,
         pub base: Option<Assiette>,
@@ -573,9 +574,9 @@ forme! {
 impl CotisationDsn {
     /// UNE COTISATION QUE LA PILE AJOUTE d'elle-meme (le versement mobilite, le regime local d'Alsace-Moselle) : sa base
     /// 78 est le brut, son taux porte sur `base`.
-    pub(crate) fn sur_le_brut(bloc78: &str, code81: String, org: String, base: Assiette, taux: f64) -> CotisationDsn {
+    pub(crate) fn sur_le_brut(bloc78: BaseAssujettie, code81: String, org: String, base: Assiette, taux: f64) -> CotisationDsn {
         CotisationDsn {
-            bloc78: bloc78.into(),
+            bloc78,
             code81: Some(code81),
             org: Some(org),
             base: Some(base),

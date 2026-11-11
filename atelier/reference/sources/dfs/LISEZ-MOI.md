@@ -121,7 +121,7 @@ après l'abattement (Acoss 2013-019, R6, `../majoration-caisses-conges/`) ; l'Ag
 `../agirc-arrco/…ct2026…txt` l. 3490-3498 : « La solution ainsi retenue pour le régime général […] s'applique en principe
 au régime AGIRC-ARRCO »).
 
-**La DSN** (`dsn::cle_abattue`, `dsn::BASES_ABATTUES_PAR_LA_DFS`, `dsn::brut_du_51`, `dsn::remunerations`,
+**La DSN** (`dsn::cle_abattue`, `droit::base_assujettie::BaseAssujettie::abattue_par_la_dfs`, `dsn::brut_du_51`, `dsn::remunerations`,
 `dsn::autre_revenu`, `dsn::cotisations`, `dsn::assiettes_ctp`) :
 - 40.023 = le taux, « systématiquement le taux de l'abattement appliqué ou applicable » (fiche net-entreprises 1336,
   `../net-entreprises-base-connaissances/net-entreprises-fiche1336-dfs-taux-40-023-20250322.txt`) ; il change au

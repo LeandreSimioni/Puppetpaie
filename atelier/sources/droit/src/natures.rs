@@ -76,7 +76,7 @@ macro_rules! codes_fermes {
             }
         }
 
-        impl ListeDeLaNorme for $nom {
+        impl $crate::natures::ListeDeLaNorme for $nom {
             const RUBRIQUE: &'static str = $rubrique;
 
             fn toutes() -> &'static [$nom] {
@@ -122,23 +122,24 @@ macro_rules! codes_fermes {
             }
         }
 
-        impl Serialize for $nom {
+        impl serde::Serialize for $nom {
             fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
                 s.serialize_str(self.code())
             }
         }
 
-        impl<'de> Deserialize<'de> for $nom {
+        impl<'de> serde::Deserialize<'de> for $nom {
             fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                let code = String::deserialize(d)?;
+                let code = <String as serde::Deserialize>::deserialize(d)?;
                 $nom::du_code(&code).ok_or_else(|| {
                     let connus: Vec<&str> = $nom::TOUS.iter().map(|m| m.code()).collect();
-                    serde::de::Error::custom(format!("{} inconnu : {}. Connus : {}.", $quoi, repr(&code), connus.join(", ")))
+                    serde::de::Error::custom(format!("{} inconnu : {}. Connus : {}.", $quoi, socle::fichiers::repr(&code), connus.join(", ")))
                 })
             }
         }
     };
 }
+pub(crate) use codes_fermes;
 
 codes_fermes! {
     /// UN MOTIF DE RECOURS (S21.G00.40.021), la liste entiere de la norme (cahier technique DSN 2026.1 p. 194-195,
