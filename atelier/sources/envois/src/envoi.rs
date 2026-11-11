@@ -712,8 +712,7 @@ pub fn type_devine(nom: &str) -> Option<&'static str> {
         ext = &dernier[dernier.len() - e.len()..];
     }
     if ENCODAGES.contains(&ext) {
-        let (b, e) = couper_extension(base);
-        let _ = b;
+        let (_, e) = couper_extension(base);
         ext = e;
     }
     let ext = ext.to_lowercase();
@@ -724,7 +723,7 @@ fn genre_de(nom: &str) -> &'static str {
     // `piece.suffix.lower()` : le suffixe de pathlib (rien pour un nom qui n'est qu'un suffixe, ni pour un point final).
     let suffixe = match nom.rfind('.') {
         Some(i) if i > 0 && i + 1 < nom.len() => nom[i..].to_lowercase(),
-        _ => String::new(),
+        None | Some(_) => String::new(),
     };
     match GENRES.iter().find(|(s, _)| *s == suffixe).map(|(_, g)| *g).or_else(|| type_devine(nom)) {
         Some(genre) => genre,

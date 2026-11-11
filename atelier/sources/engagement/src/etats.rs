@@ -1386,10 +1386,7 @@ fn rafraichir(ctx: &Contexte, mois: Mois, departs: &Departs, passage: bool) -> R
             continue;
         }
         let empreinte_ecrite = ancienne.as_ref().map(|a| &a.empreinte);
-        let change = match empreinte_ecrite {
-            Some(e) if parti => empreinte::code_ou_regle_change(ctx, e, mois, &mut relues)?,
-            Some(_) | None => false,
-        };
+        let change = empreinte_ecrite.filter(|_| parti).map(|e| empreinte::code_ou_regle_change(ctx, e, mois, &mut relues)).transpose()?.is_some_and(|c| c);
         // Partie, elle ne bouge que par une decision de l'editeur : on la cherche d'abord (quelques entrees), et
         // l'empreinte entiere ne se verifie que si elle a lieu.
         if parti && !change {

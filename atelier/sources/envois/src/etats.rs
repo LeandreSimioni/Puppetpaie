@@ -129,18 +129,7 @@ fn meme_nom(cle: &str, nom: &str) -> bool {
 
 /// Vrai pour une lettre ou un chiffre Unicode (lettres Lu, Ll, Lt, Lm, Lo et Numeric_Type, d'apres la table deposee : `tables_journal`).
 pub fn lettre_ou_chiffre(c: char) -> bool {
-    let c = c as u32;
-    ALNUM
-        .binary_search_by(|&(a, b)| {
-            if c < a {
-                std::cmp::Ordering::Greater
-            } else if c > b {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Equal
-            }
-        })
-        .is_ok()
+    socle::texte::dans_les_plages(ALNUM, c)
 }
 
 /// Ce que les retours d'une DPAE partie en disent : `(passee, refusee)`. Passee : le certificat (nature 41) ou un bilan OK ;
@@ -601,7 +590,7 @@ pub fn refuse_par_un_retour(ligne: &Ligne) -> bool {
             let bilan = e.retours.iter().any(|r| r.nature_retour == "11");
             !bilan && e.detail.reconstruit && e.detail.etat_declaration.as_deref().is_some_and(|x| x.eq_ignore_ascii_case("KO"))
         }
-        _ => false,
+        Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
     }
 }
 

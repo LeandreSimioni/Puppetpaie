@@ -32,7 +32,9 @@ impl Courriel for Boite {
     fn message_brut(&mut self, _: &str) -> R<Vec<u8>> {
         Ok(Vec::new())
     }
-    fn fermer(&mut self) {}
+    fn fermer(&mut self) -> socle::echec::R<()> {
+        Ok(())
+    }
 }
 
 fn message(dest: &str) -> Message {

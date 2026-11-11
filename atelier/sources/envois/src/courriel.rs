@@ -63,7 +63,8 @@ pub trait Courriel {
     fn rechercher(&mut self, requete: &str, maximum: usize) -> R<Vec<String>>;
     /// Un message entier (RFC 822), par son UID.
     fn message_brut(&mut self, identifiant: &str) -> R<Vec<u8>>;
-    fn fermer(&mut self);
+    /// Ferme la boite ; le serveur qui refuse la deconnexion se dit.
+    fn fermer(&mut self) -> R<()>;
     /// La compagnie de la boite : c'est sa fiche qui porte la signature des courriels et le nom affiche
     /// (`signature_courriel`). Rien : les courriels partent tels que les modeles les ecrivent.
     fn racine(&self) -> Option<&Path> {
@@ -245,8 +246,10 @@ impl<F: Read + Write> Imap<F> {
     pub fn ouvrir(flux: F, compte: &str, mot_de_passe: &str, dossier: &str) -> R<Imap<F>> {
         let mut imap = Imap { flux, tampon: Vec::new(), numero: 0 };
         let accueil = imap.lire_unite()?;
-        if let Ok((_, Response::Data { status: Status::Bye, .. })) = Response::parse(&accueil) {
-            return Err(erreur(traduire(String::from_utf8_lossy(&accueil).trim())));
+        match Response::parse(&accueil) {
+            Ok((_, Response::Data { status: Status::Bye, .. })) => return Err(erreur(traduire(String::from_utf8_lossy(&accueil).trim()))),
+            Ok(_) => {}
+            Err(e) => return Err(erreur(format!("L'accueil du serveur ne se lit pas : {}", e))),
         }
         imap.commande(&format!("LOGIN {} {}", quoter(compte)?, quoter(mot_de_passe)?))?;
         imap.commande(&format!("EXAMINE {}", quoter(dossier)?))?;
@@ -362,9 +365,9 @@ impl<F: Read + Write> Imap<F> {
         r.corps.into_iter().next().ok_or_else(|| erreur(format!("Message {} introuvable.", uid)))
     }
 
-    /// `LOGOUT`, sans se soucier de la reponse.
-    pub fn deconnecter(&mut self) {
-        let _ = self.commande("LOGOUT");
+    /// `LOGOUT` ; un serveur qui la refuse se dit.
+    pub fn deconnecter(&mut self) -> R<()> {
+        self.commande("LOGOUT").map(|_| ())
     }
 }
 
@@ -524,9 +527,10 @@ impl Courriel for Client {
         self.boite()?.message_brut(identifiant)
     }
 
-    fn fermer(&mut self) {
-        if let Some(mut i) = self.imap.take() {
-            i.deconnecter();
+    fn fermer(&mut self) -> R<()> {
+        match self.imap.take() {
+            Some(mut i) => i.deconnecter(),
+            None => Ok(()),
         }
     }
 }
@@ -536,9 +540,9 @@ impl Courriel for Client {
 /// La boite s'ouvre-t-elle avec ce client ? UNE tentative IMAP. Rend ce qui est ouvert, ou le refus de la boite --
 /// jamais le mot de passe.
 pub fn verifier(mut c: Client) -> R<String> {
-    let ouverture = c.boite().map(|_| ());
-    c.fermer();
-    ouverture.map(|()| format!("boite {} ouverte ({}).", c.compte, c.serveurs.imap))
+    c.boite()?;
+    c.fermer()?;
+    Ok(format!("boite {} ouverte ({}).", c.compte, c.serveurs.imap))
 }
 
 // ---------------------------------------------------------------------------------------------- la boite simulee
@@ -638,5 +642,7 @@ impl Courriel for BoiteSimulee {
         Err(erreur(format!("Message {} introuvable.", identifiant)))
     }
 
-    fn fermer(&mut self) {}
+    fn fermer(&mut self) -> R<()> {
+        Ok(())
+    }
 }

@@ -400,22 +400,19 @@ fn lire_corps(corps: ureq::Body, delai: u64, attendu: Option<u64>, https: bool) 
         let mut r = corps.into_reader();
         let mut tampon = vec![0u8; 64 * 1024];
         loop {
-            match r.read(&mut tampon) {
-                Ok(0) => {
-                    let _ = tx.send(Ok(Vec::new()));
-                    return;
-                }
-                Ok(n) => {
-                    // Le lecteur est parti (delai depasse) : plus personne n'attend la suite.
-                    if let Err(parti) = tx.send(Ok(tampon[..n].to_vec())) {
-                        drop(parti);
-                        return;
-                    }
-                }
-                Err(e) => {
-                    let _ = tx.send(Err(e));
-                    return;
-                }
+            // Un morceau vide dit la fin du corps ; une erreur aussi.
+            let (morceau, dernier) = match r.read(&mut tampon) {
+                Ok(0) => (Ok(Vec::new()), true),
+                Ok(n) => (Ok(tampon[..n].to_vec()), false),
+                Err(e) => (Err(e), true),
+            };
+            // Le lecteur est parti (delai depasse) : plus personne n'attend la suite.
+            if let Err(parti) = tx.send(morceau) {
+                drop(parti);
+                return;
+            }
+            if dernier {
+                return;
             }
         }
     });

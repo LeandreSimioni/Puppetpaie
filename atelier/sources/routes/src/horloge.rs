@@ -151,7 +151,9 @@ impl Courriel for BoiteMuette {
         Ok(Vec::new())
     }
 
-    fn fermer(&mut self) {}
+    fn fermer(&mut self) -> R<()> {
+        Ok(())
+    }
 }
 
 // ------------------------------------------------------------------ petits outils

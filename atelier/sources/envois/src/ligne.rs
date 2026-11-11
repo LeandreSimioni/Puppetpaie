@@ -268,7 +268,7 @@ impl Ligne {
         match self {
             Ligne::ContratSignature(e) => e.detail.main_propre,
             Ligne::Documents(e) => e.detail.main_propre,
-            _ => false,
+            Ligne::Dsn(_) | Ligne::Dpae(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
         }
     }
 

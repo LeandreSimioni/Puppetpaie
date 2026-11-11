@@ -105,12 +105,15 @@ fn trace_relative(ctx: &Contexte, t: &Path) -> R<String> {
     Ok(relative.to_string_lossy().replace('\\', "/"))
 }
 
-/// Le depot a echoue : la ligne refusee au journal, l'incident dans les suites, et le refus rendu.
+/// Le depot a echoue : la ligne refusee au journal, l'incident dans les suites, et le refus rendu. Une ligne que le
+/// journal refuse joint son echec a celui du depot : il ne se perd pas.
 fn echec(ctx: &Contexte, quoi: Acte, d: &Depot, ligne: Ligne, e: Echec, suites: &mut Suites) -> Echec {
     let classe = e.classe_notee();
-    let _ = noter(ctx, d, ligne);
     suites.depot_refuse = Some(DepotRefuse { quoi: quoi.nom().into(), reel: d.reel, classe: classe.into(), message: e.phrase.clone(), repetition: d.repetition.cloned() });
-    e
+    match noter(ctx, d, ligne) {
+        Ok(_) => e,
+        Err(journal) => e.reformuler(|p| format!("{}\nLe journal des envois ne l'a pas noté : {}", p, journal.phrase)),
+    }
 }
 
 /// LE SIMULATEUR REPOND DANS LE GESTE : rien ne voyage, rien n'oblige a attendre ; les retours d'un depot joue (accuse,

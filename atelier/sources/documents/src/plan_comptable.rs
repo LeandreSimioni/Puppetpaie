@@ -864,7 +864,7 @@ fn mettre_en_forme(objet: &Objet, spec: &str) -> Result<String, Faute> {
                 match s.signe {
                     Some('+') => "+",
                     Some(' ') => " ",
-                    Some('-') | None => "",
+                    None | Some('-') => "",
                     Some(autre) => return Err((Classe::Illisible, format!("signe « {} » inconnu", autre))),
                 }
             };

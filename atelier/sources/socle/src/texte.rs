@@ -6,12 +6,16 @@ pub fn blanc(c: char) -> bool {
     matches!(c, '\u{9}'..='\u{d}' | '\u{1c}'..='\u{20}' | '\u{85}' | '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}')
 }
 
-/// Un chiffre decimal d'Unicode (`str.isdigit()` : la table `nfkd_ascii::CHIFFRES`, triee, ses plages disjointes) : la
-/// premiere plage qui ne finit pas avant lui le contient.
+/// Un chiffre decimal d'Unicode (`str.isdigit()` : la table `nfkd_ascii::CHIFFRES`).
 pub fn est_chiffre(c: char) -> bool {
+    dans_les_plages(crate::nfkd_ascii::CHIFFRES, c)
+}
+
+/// `c` est-il dans une des plages `[a, b]` de `table`, triee, ses plages disjointes ? La premiere plage qui ne finit pas
+/// avant lui le contient, ou aucune.
+pub fn dans_les_plages(table: &[(u32, u32)], c: char) -> bool {
     let n = c as u32;
-    let t = crate::nfkd_ascii::CHIFFRES;
-    t.get(t.partition_point(|&(_, b)| b < n)).is_some_and(|&(a, _)| a <= n)
+    table.get(table.partition_point(|&(_, b)| b < n)).is_some_and(|&(a, _)| a <= n)
 }
 
 /// Le texte sans le blanc autour (`blanc`).

@@ -220,18 +220,7 @@ fn ajouter(a: &mut Arbre, n: roxmltree::Node) -> usize {
 }
 
 fn dans(table: &[(u32, u32)], c: char) -> bool {
-    let c = c as u32;
-    table
-        .binary_search_by(|&(a, b)| {
-            if c < a {
-                std::cmp::Ordering::Greater
-            } else if c > b {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Equal
-            }
-        })
-        .is_ok()
+    socle::texte::dans_les_plages(table, c)
 }
 
 /// Un nom d'element, d'attribut ou d'instruction tel qu'expat le lit (XML 1.0,
@@ -652,7 +641,7 @@ fn codage(nom: &str) -> Codage {
         _ => {}
     }
     let n = normaliser(nom);
-    let a = |t: &[&str]| t.binary_search(&n.as_str()).is_ok();
+    let a = |t: &[&str]| t.contains(&n.as_str());
     if a(CODECS_LATIN1) {
         Codage::Latin1
     } else if a(CODECS_ASCII) {
@@ -1112,7 +1101,8 @@ pub fn fusionner_bilans(bilans: &[Bilan]) -> Option<Bilan> {
     let rang = |b: &Bilan| match b.type_rapport.as_str() {
         "CCO" | "BAN" => 0,
         "AEE" => 1,
-        _ => 2,
+        // Tout autre rapport vient apres ces deux-la.
+        _autre => 2,
     };
     let mut tries: Vec<&Bilan> = bilans.iter().collect();
     tries.sort_by_key(|b| rang(b));
@@ -1794,7 +1784,8 @@ fn repertoire_zip(b: &[u8]) -> R<Vec<Membre>> {
         };
         let nom_brut = prendre(&mut p, ln_nom);
         let extra = prendre(&mut p, ln_extra);
-        let _ = prendre(&mut p, ln_comm);
+        // Le commentaire de l'entree ne se lit pas : on passe ses octets.
+        p += ln_comm;
         let drapeaux = u16_le(c, 8);
         let original = nom_zip(nom_brut, drapeaux)?;
         // Le nom s'arrete au premier octet nul (`split` rend toujours un premier morceau).

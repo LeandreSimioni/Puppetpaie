@@ -29,7 +29,7 @@ fn classe(c: char) -> u8 {
     // `UnicodeData.txt`, ou un point non liste est de classe 0 (Unicode, chapitre 3, D104).
     match CLASSES.get(CLASSES.partition_point(|&(_, b, _)| b < cp)) {
         Some(&(a, _, classe)) if a <= cp => classe,
-        Some(_) | None => 0,
+        None | Some(_) => 0,
     }
 }
 

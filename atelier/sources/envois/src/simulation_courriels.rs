@@ -538,5 +538,7 @@ impl Courriel for BoiteQuiRepond {
         self.reponses.get(identifiant).cloned().ok_or_else(|| erreur(Classe::Courriel, format!("Message {} introuvable.", identifiant)))
     }
 
-    fn fermer(&mut self) {}
+    fn fermer(&mut self) -> R<()> {
+        Ok(())
+    }
 }

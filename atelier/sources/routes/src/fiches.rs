@@ -1275,7 +1275,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         journal::rattacher(&ctx.racine, |l| demande_de(l, &code), journal::Revenu::Fiche(retour)).map_err(|e| e.reclasser(Classe::Disque))?;
         r.recues.push(FicheRecue { code: code.clone(), cle: f.cle, nom: strip(&nom).to_string(), illisible, erreurs });
     }
-    client.fermer();
+    client.fermer()?;
     Ok(r)
 }
 

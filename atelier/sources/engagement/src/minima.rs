@@ -192,10 +192,7 @@ impl<'a> Cx<'a> {
             return Ok(c);
         }
         let annexes = &self.c3090()?.annexes;
-        Ok(match &self.annexe {
-            Some(a) if annexes.as_ref().is_some_and(|m| m.contains_key(a)) => vec![a.clone()],
-            Some(_) | None => vec![],
-        })
+        Ok(self.annexe.iter().filter(|a| annexes.as_ref().is_some_and(|m| m.contains_key(*a))).cloned().collect())
     }
 
     fn plancher_cachet_3090(&self) -> R<Option<Plancher>> {

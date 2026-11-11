@@ -2195,7 +2195,7 @@ fn controles_croises(nom: &str, d: &Saisie) -> R<Vec<Constat>> {
         let fiche = socle::codification_ue::Nationalite::nouvelle(code.as_deref(), pays_n.as_deref(), hors.as_deref(), qui);
         let pays_inconnu = match d.dite("pays_nationalite") {
             Some(Valeur::Texte(p)) => socle::pays::du_code(p)?.is_none(),
-            Some(Valeur::Nombre(_) | Valeur::OuiNon(_) | Valeur::Mots(_) | Valeur::Bloc(_) | Valeur::Lignes(_)) | None => false,
+            None | Some(Valeur::Nombre(_) | Valeur::OuiNon(_) | Valeur::Mots(_) | Valeur::Bloc(_) | Valeur::Lignes(_)) => false,
         };
         let hors_liste = d.dite("pays_nationalite_hors_liste").is_some();
         if let Some(m) = socle::codification_ue::faute_hors_liste(&fiche)? {

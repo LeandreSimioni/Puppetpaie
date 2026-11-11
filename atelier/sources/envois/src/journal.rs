@@ -254,7 +254,8 @@ fn a_jour<'t>(tenus: &'t mut HashMap<PathBuf, Tenu>, p: &Path) -> R<&'t mut Tenu
     // qui ne commence plus par ce qui a ete lu (un journal remplace) se replie en entier.
     let mut t = match tenus.remove(p) {
         Some(t) if octets.starts_with(&t.octets) => t,
-        _ => Tenu::default(),
+        // Rien de lu, ou un journal remplace : il se relit depuis son debut.
+        None | Some(_) => Tenu::default(),
     };
     let debut = t.octets.len();
     t.replier_le_texte(&octets[debut..], p)?;
@@ -328,7 +329,7 @@ pub fn ne_garder_que(racine: &Path, garder: impl Fn(&Ligne) -> bool) -> R<()> {
         let garde = match (&e.ligne, &e.id, &e.a) {
             (Some(ligne), Some(id), _) => garder(ligne) && gardes.insert(id.clone()),
             (_, _, Some(a)) => gardes.contains(a),
-            _ => false,
+            (None, _, None) | (Some(_), None, None) => false,
         };
         if garde {
             texte.push_str(std::str::from_utf8(l).map_err(|x| refus(x.to_string()))?);

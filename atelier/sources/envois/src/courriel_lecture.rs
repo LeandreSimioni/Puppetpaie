@@ -376,7 +376,7 @@ fn forme_de_citation(ligne: &str, tete: &str, milieu: &str, deux_points: bool) -
         match suite.get(milieu.len()) {
             Some(':') => true,
             Some(' ') => suite.get(milieu.len() + 1) == Some(&':'),
-            _ => false,
+            None | Some(_) => false,
         }
     })
 }

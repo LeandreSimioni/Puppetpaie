@@ -278,6 +278,6 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             Err(e) => r.incidents.push(format!("{} : le contrat contresigne n'a pas pu etre renvoye ({}). Il est dans {}.", a_nom, e.phrase, fichier_signe)),
         }
     }
-    client.fermer();
+    client.fermer()?;
     Ok(r)
 }

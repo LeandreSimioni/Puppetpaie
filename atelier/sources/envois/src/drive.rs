@@ -120,7 +120,7 @@ pub fn passagere(e: &ErreurGoogle) -> bool {
             let m = e.echec.phrase.to_lowercase();
             m.contains("rate limit") || m.contains("ratelimitexceeded")
         }
-        _ => false,
+        None | Some(_) => false,
     }
 }
 
