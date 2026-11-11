@@ -861,10 +861,10 @@ pub(crate) struct ResumeDArret {
     a_dire: Option<GesteDImprevu>,
     #[serde(flatten)]
     dit: Dit,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    obligations: Option<Vec<crate::obligations::Obligation>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    parti: Option<Vec<Parti>>,
+    /// Ses obligations, une fois posees (`Resume::poser_obligations`) ; aucune avant.
+    obligations: Vec<crate::obligations::Obligation>,
+    /// Ce qui en est parti, une fois dit (`Resume::dire_ce_qui_est_parti`) ; rien avant.
+    parti: Vec<Parti>,
 }
 
 impl ResumeDArret {
@@ -887,11 +887,7 @@ impl ResumeDArret {
     /// Ce qui est parti de l'arret (`ce_qui_est_parti`), une fois ses obligations posees (un arret sans obligations
     /// posees n'en dit aucune).
     fn dire_ce_qui_est_parti(&mut self) -> R<()> {
-        let obligations = match &self.obligations {
-            Some(o) => o.as_slice(),
-            None => &[],
-        };
-        self.parti = Some(ce_qui_est_parti(&self.prolongations, &self.base.signalements, &self.base.reporte_par_dit, obligations)?);
+        self.parti = ce_qui_est_parti(&self.prolongations, &self.base.signalements, &self.base.reporte_par_dit, &self.obligations)?;
         Ok(())
     }
 }
@@ -919,8 +915,8 @@ pub(crate) struct ResumeDeSuspension {
     gestes: Vec<GesteDImprevu>,
     #[serde(flatten)]
     dit: Dit,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    parti: Option<Vec<Parti>>,
+    /// Ce qui en est parti, une fois dit (`Resume::dire_ce_qui_est_parti`) ; rien avant.
+    parti: Vec<Parti>,
 }
 
 /// UN GESTE D'UN IMPREVU, que la page dessine en bouton et branche : sa route, sa charge (ce qui designe l'imprevu), son
@@ -1235,7 +1231,7 @@ impl Resume {
     /// Les obligations d'un arret (`obligations::de_l_arret`), posees sur lui ; une absence n'en a pas.
     pub(crate) fn poser_obligations(&mut self, obligations: Vec<crate::obligations::Obligation>) {
         if let Resume::Arret(a) = self {
-            a.obligations = Some(obligations);
+            a.obligations = obligations;
         }
     }
 
@@ -1244,7 +1240,7 @@ impl Resume {
     fn dire_ce_qui_est_parti(&mut self) -> R<()> {
         match self {
             Resume::Arret(a) => a.dire_ce_qui_est_parti()?,
-            Resume::Suspension(s) => s.parti = Some(ce_qui_est_parti(&[], &[], &s.reporte_par_dit, &[])?),
+            Resume::Suspension(s) => s.parti = ce_qui_est_parti(&[], &[], &s.reporte_par_dit, &[])?,
         }
         Ok(())
     }
@@ -1253,13 +1249,11 @@ impl Resume {
     /// chacune de ses obligations.
     fn en_lignes(&self) -> Vec<String> {
         let (salarie, contrat, libelle, premier, dernier, etat, obligations) = match self {
-            Resume::Arret(a) => (&a.base.salarie, &a.base.contrat, &a.base.motif_libelle, &a.premier_jour, &a.dernier_jour, a.base.etat.dit(), a.obligations.as_deref()),
-            Resume::Suspension(s) => (&s.salarie, &s.contrat, &s.motif_libelle, &s.premier_jour, &s.dernier_jour, "", None),
+            Resume::Arret(a) => (&a.base.salarie, &a.base.contrat, &a.base.motif_libelle, &a.premier_jour, &a.dernier_jour, a.base.etat.dit(), a.obligations.as_slice()),
+            Resume::Suspension(s) => (&s.salarie, &s.contrat, &s.motif_libelle, &s.premier_jour, &s.dernier_jour, "", &[][..]),
         };
         let mut l = vec![format!("{} ({}) : {}, du {} au {} — {}", salarie, numero_dit(contrat), libelle, premier.jj_mm_aaaa(), dernier.jj_mm_aaaa(), etat)];
-        if let Some(o) = obligations {
-            l.extend(crate::obligations::en_phrases(o).into_iter().map(|o| format!("  {}", o)));
-        }
+        l.extend(crate::obligations::en_phrases(obligations).into_iter().map(|o| format!("  {}", o)));
         l
     }
 }
@@ -1317,8 +1311,8 @@ fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cache
         gestes,
         a_dire,
         dit,
-        obligations: None,
-        parti: None,
+        obligations: Vec::new(),
+        parti: Vec::new(),
     })
 }
 
@@ -1356,7 +1350,7 @@ fn resume_de_suspension(ctx: &Contexte, s: &SuspensionSaisie, cachets: Vec<Cache
         gestes: gestes_d_une_absence(s, &reportee),
         cachets,
         dit,
-        parti: None,
+        parti: Vec::new(),
     })
 }
 
@@ -2241,9 +2235,7 @@ fn arrets(ctx: &Contexte) -> R<ReponseArrets> {
             b.motif_libelle,
             b.etat.dit()
         ));
-        if let Some(o) = &r.obligations {
-            phrases.extend(crate::obligations::en_phrases(o).into_iter().map(|o| format!("  {}", o)));
-        }
+        phrases.extend(crate::obligations::en_phrases(&r.obligations).into_iter().map(|o| format!("  {}", o)));
         resumes.push(Resume::Arret(Box::new(r)));
     }
     let a_signaler: Vec<Resume> = resumes.iter().filter(|r| matches!(r, Resume::Arret(x) if !x.base.signale && x.base.signalement_du)).cloned().collect();
@@ -2263,7 +2255,7 @@ fn arrets(ctx: &Contexte) -> R<ReponseArrets> {
 pub(crate) fn resume_d_arret_complet(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, suivi: &crate::obligations::Suivi, jour: Jour) -> R<ResumeDArret> {
     let imp = Imprevu::Arret(a.clone());
     let mut r = resume_d_arret(ctx, n, a, cachets_de(ctx, &imp)?, magasin(imprevus::premier_jour(&imp))?, magasin(imprevus::dernier_jour(&imp))?)?;
-    r.obligations = Some(crate::obligations::de_l_arret(ctx, a, suivi, jour)?);
+    r.obligations = crate::obligations::de_l_arret(ctx, a, suivi, jour)?;
     r.dire_ce_qui_est_parti()?;
     Ok(r)
 }
