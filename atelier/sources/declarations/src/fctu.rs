@@ -577,7 +577,6 @@ ou un annule.",
     f.add("S90.G00.90.001", n);
     f.add("S90.G00.90.002", "1");
     let texte = f.texte();
-    verifier_controles_07(&texte)?;
     crate::usages::verifier_fichier(&texte)?;
     crate::formats::verifier_fichier(&texte)?;
     Ok(texte)

@@ -236,70 +236,16 @@ pub fn nature_du_fichier(texte: &str) -> R<Option<NatureDeLaDeclaration>> {
     })
 }
 
-const CCH_14: &str = concat!(
-    "CCH-14 : Si la \"Nature de la declaration - S20.G00.05.001\" est ",
-    "\"07 - Signalement Fin du contrat de travail Unique\", alors la valeur ",
-    "\"31 - Elements de cotisation Prevoyance, Sante, retraite ",
-    "supplementaire\" est interdite pour la rubrique \"Code de base ",
-    "assujettie - S21.G00.78.001\". ",
-    "(Cahier technique NEODeS 2026.1, p. 293.)"
-);
-
-const CCH_15: &str = concat!(
-    "CCH-15 : Si la \u{ab} Nature de la declaration - S20.G00.05.001 \u{bb} ",
-    "est \u{ab} 07 \u{bb} alors, pour un meme bloc \u{ab} Versement ",
-    "individu - S21.G00.50 \u{bb}, au moins trois blocs \u{ab} Remuneration ",
-    "- S21.G00.51 \u{bb} enfants sont requis : un de type (S21.G00.51.011) ",
-    "\u{ab} 001 - Remuneration brute non plafonnee \u{bb}, un de type ",
-    "\u{ab} 002 - Salaire brut servant aux calculs des droits de l'Assurance ",
-    "chomage \u{bb} et un de type \u{ab} 010 - Salaire de base \u{bb}. ",
-    "(Cahier technique NEODeS 2026.1, p. 248.)"
-);
-
-const TYPES_51_FCTU: [&str; 3] = ["001", "002", "010"];
-
-/// Les deux controles que la nature 07 ajoute au tableau des usages.
-pub fn verifier_fctu(texte: &str) -> R<()> {
-    let mut versements: Vec<HashSet<String>> = Vec::new();
-    for ligne in lignes(texte) {
-        let (rubrique, valeur) = rubrique_valeur(ligne);
-        if rubrique == "S21.G00.50.001" {
-            versements.push(HashSet::new());
-        } else if rubrique == "S21.G00.51.011" && !versements.is_empty() {
-            versements.last_mut().unwrap().insert(valeur.to_string());
-        } else if rubrique == "S21.G00.78.001"
-            && droit::base_assujettie::BaseAssujettie::du_code(valeur) == Some(droit::base_assujettie::BaseAssujettie::PrevoyanceSanteRetraite)
-        {
-            return Err(socle::refus!(
-                "Base assujettie de code 31 dans un signalement de fin de contrat.\n  {}",
-                CCH_14
-            ));
-        }
-    }
-    for (i, types) in versements.iter().enumerate() {
-        let manquants: Vec<&str> = TYPES_51_FCTU.iter().copied().filter(|x| !types.contains(*x)).collect();
-        if !manquants.is_empty() {
-            return Err(socle::refus!(
-                "Versement individu n\u{b0} {} : il manque le(s) bloc(s) 51 de type {}.\n  {}",
-                i + 1,
-                manquants.join(", "),
-                CCH_15
-            ));
-        }
-    }
-    Ok(())
-}
-
 /// Confronte un fichier produit a sa propre nature, dans le tableau de sa propre version (S10.G00.00.006) : un
-/// fichier sans version, ou d'une version que le logiciel ne livre pas, refuse.
+/// fichier sans version, ou d'une version que le logiciel ne livre pas, refuse. Un signalement de fin de contrat
+/// passe d'abord les deux controles que sa nature ajoute (`fctu::verifier_controles_07` : CCH-14, CCH-15).
 pub fn verifier_fichier(texte: &str) -> R<()> {
     let norme = crate::norme::du_fichier(texte)?;
     let Some(nature) = nature_du_fichier(texte)? else { return Ok(()) };
-    verifier(texte, nature, &norme)?;
     if nature == NatureDeLaDeclaration::SignalementFinDeContrat {
-        verifier_fctu(texte)?;
+        crate::fctu::verifier_controles_07(texte).map_err(|e| e.en_classe(socle::echec::Classe::Refuse))?;
     }
-    Ok(())
+    verifier(texte, nature, &norme)
 }
 
 #[cfg(test)]
