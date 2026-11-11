@@ -444,7 +444,7 @@ pub struct Avant {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Validee {
-    #[serde(default, with = "socle::paris::ecrit::seconde::option")]
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
     pub le: Option<socle::paris::Moment>,
 }
 

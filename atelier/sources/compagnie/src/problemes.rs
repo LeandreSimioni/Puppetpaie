@@ -260,9 +260,9 @@ pub fn apercu(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Captu
 #[serde(deny_unknown_fields)]
 pub struct EnvoiDuMessage {
     pub etat: EtatEnvoi,
-    #[serde(default, with = "socle::paris::ecrit::seconde::option")]
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
     pub quand: Option<Moment>,
-    #[serde(default, with = "socle::paris::ecrit::seconde::option")]
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
     pub essai: Option<Moment>,
     pub erreur: Option<String>,
 }
@@ -287,7 +287,7 @@ pub struct Signalement {
     pub ticket: Option<String>,
     pub ticket_numero: Option<i64>,
     pub reponse: Option<String>,
-    #[serde(default, with = "socle::paris::ecrit::minute_utc::option")]
+    #[serde(with = "socle::paris::ecrit::minute_utc::option")]
     pub repondu_le: Option<socle::paris::Moment>,
     pub lu: Option<bool>,
 }

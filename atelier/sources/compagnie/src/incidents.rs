@@ -92,7 +92,7 @@ pub const SANS_OBJET: EtatEnvoi = EtatEnvoi::SansObjet;
 #[serde(deny_unknown_fields)]
 pub struct Envoi {
     pub etat: EtatEnvoi,
-    #[serde(default, with = "socle::paris::ecrit::seconde::option")]
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
     pub quand: Option<Moment>,
 }
 

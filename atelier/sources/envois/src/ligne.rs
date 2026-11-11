@@ -480,7 +480,7 @@ pub struct RetourOrganisme {
     pub libelle: String,
     pub statut: Option<String>,
     /// L'heure ou la plate-forme l'a mis a disposition (`retours::Annonce`).
-    #[serde(default, with = "socle::paris::ecrit::compacte::option")]
+    #[serde(with = "socle::paris::ecrit::compacte::option")]
     pub publication: Option<socle::paris::Moment>,
 }
 
