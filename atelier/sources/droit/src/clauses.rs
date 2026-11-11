@@ -1130,7 +1130,14 @@ pub fn prime_anciennete<'j>(
     }
     let famille = m.famille();
     let article = format!("{}, {}", nom(idcc), sec.article);
-    let Some(debut) = fiche.date_anciennete.dite().copied().or(e.debut) else { return Ok(None) };
+    // Les « ans de presence » (art. 3.11) partent de la date d'anciennete de la fiche, que le calcul a posee a l'embauche
+    // quand ce contrat l'est (`engagement::calcul::Anciennete`) ; sans elle, la prime ne se calcule pas.
+    let debut = *fiche.date_anciennete.dite().ok_or_else(|| {
+        socle::echec::cle(
+            "La prime d'ancienneté compte les années de présence : la fiche du salarié ne dit pas depuis quand il est dans la compagnie (« Dans la compagnie depuis »).",
+            "date_anciennete",
+        )
+    })?;
     let annees = jour.an as i64 - debut.an as i64 - ((jour.mois, jour.jour) < (debut.mois, debut.jour)) as i64;
     let pourcentage = sec.plafond_pourcentage.min((annees - (sec.apres_annees - 1)).max(0) * sec.pourcentage_par_annee);
     if pourcentage <= 0 {
