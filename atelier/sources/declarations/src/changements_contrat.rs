@@ -156,10 +156,11 @@ fn ddmmaaaa(v: &str) -> Option<Jour> {
 
 /// Les jours ou ces champs d'une fiche datee ont change (`depuis` : les jours ou un champ prend une valeur) : le `depuis` de chaque
 /// valeur qui en suit une autre.
-fn changements_dates(depuis: impl Fn(&str) -> Vec<Option<Jour>>, champs: &[&str]) -> R<Vec<(Jour, String)>> {
+fn changements_dates(depuis: impl Fn(droit::fiche::NomDeCase) -> Vec<Option<Jour>>, champs: &[&str]) -> R<Vec<(Jour, String)>> {
     let mut out = Vec::new();
-    for c in champs {
-        out.extend(depuis(c).into_iter().skip(1).filter_map(|j| j.map(|j| (j, c.to_string()))));
+    // Un nom qu'aucune fiche ne declare (`etablissement`, qui est de la carte) n'a pas d'historique.
+    for (c, nom) in champs.iter().filter_map(|c| droit::fiche::NomDeCase::lire(c).map(|n| (c, n))) {
+        out.extend(depuis(nom).into_iter().skip(1).filter_map(|j| j.map(|j| (j, c.to_string()))));
     }
     Ok(out)
 }

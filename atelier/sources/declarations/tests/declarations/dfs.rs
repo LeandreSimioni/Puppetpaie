@@ -41,7 +41,7 @@ fn la_fiche_salarie_dit_une_profession_et_son_accord_la_fiche_entreprise_l_optio
     // « 25 »), et l'accord du salarie quand l'option repose sur lui ; la fiche entreprise dit l'option de l'employeur
     // (arrete du 4 septembre 2025, art. 9, I, al. 2 et 3). Le moteur verifie les valeurs (`champs::verifier_fiche`).
     let erreur = |nom: &str, cle: &str, v: &str| -> bool {
-        declarations::champs::verifier_fiche(nom, &saisie(nom, &[(cle, v)])).unwrap().iter().any(|a| a.champ == cle && a.gravite == Gravite::Erreur)
+        declarations::champs::verifier_fiche(nom, &saisie(nom, &[(cle, v)])).unwrap().iter().any(|a| a.champ.nom() == cle && a.gravite == Gravite::Erreur)
     };
     assert!(erreur("salarie", "deduction_forfaitaire", "25"), "une categorie n'est plus une profession");
     for profession in ["musicien", "choriste", "chef_orchestre", "regisseur_theatre", "artiste_dramatique", "artiste_lyrique",
@@ -60,7 +60,7 @@ fn la_fiche_salarie_dit_une_profession_et_son_accord_la_fiche_entreprise_l_optio
     let bar: Bareme = lire(&crate::outils::code_livre(), "baremes/2026.json");
     let du_bareme: Vec<String> = bar.deduction_forfaitaire.professions.into_keys().collect();
     let champs = declarations::champs::fiche("salarie").unwrap();
-    let c = champs.iter().find(|c| c.cle == "deduction_forfaitaire").unwrap();
+    let c = champs.iter().find(|c| c.cle == droit::fiche::CaseSalarie::deduction_forfaitaire.into()).unwrap();
     let mut de_la_fiche: Vec<String> = c.choix.iter().filter(|x| !x.is_empty()).cloned().collect();
     de_la_fiche.sort();
     assert_eq!(de_la_fiche, du_bareme);

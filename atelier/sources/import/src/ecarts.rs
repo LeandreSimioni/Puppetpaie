@@ -306,28 +306,29 @@ fn ajouter_les_fiches(ctx: &Contexte, c: &mut Connus) -> R<()> {
     for (_, f) in &ctx.salaries {
         // Les cases que le releve compare, par la table de la fiche.
         let s = Saisie::de_la_fiche("salarie", &f.champs)?;
-        let t = |k: &str| s.mot(k);
-        for k in &["nom", "nom_affichage"] {
+        use droit::fiche::CaseSalarie as S;
+        let t = |k: S| s.mot(k);
+        for k in [S::nom, S::nom_affichage] {
             pousser(&mut c.noms, t(k));
         }
-        pousser(&mut c.noms, t("code_salarie").filter(|x| x.chars().filter(|c| c.is_alphabetic()).count() >= 2));
-        for k in &["prenom", "prenom_affichage"] {
+        pousser(&mut c.noms, t(S::code_salarie).filter(|x| x.chars().filter(|c| c.is_alphabetic()).count() >= 2));
+        for k in [S::prenom, S::prenom_affichage] {
             pousser(&mut c.prenoms, t(k));
         }
-        pousser(&mut c.nirs, t("nir"));
-        if let (Some(n), Some(k)) = (t("nir"), t("nir_cle")) {
+        pousser(&mut c.nirs, t(S::nir));
+        if let (Some(n), Some(k)) = (t(S::nir), t(S::nir_cle)) {
             pousser(&mut c.nirs, Some(format!("{}{}", n, k)));
         }
-        pousser(&mut c.naissances, t("date_naissance"));
-        for k in &["adresse", "adresse_affichage"] {
+        pousser(&mut c.naissances, t(S::date_naissance));
+        for k in [S::adresse, S::adresse_affichage] {
             pousser(&mut c.adresses, t(k));
         }
-        pousser(&mut c.codes_postaux, t("code_postal"));
-        for k in &["commune", "commune_affichage", "lieu_naissance", "lieu_naissance_affichage"] {
+        pousser(&mut c.codes_postaux, t(S::code_postal));
+        for k in [S::commune, S::commune_affichage, S::lieu_naissance, S::lieu_naissance_affichage] {
             pousser(&mut c.communes, t(k));
         }
-        pousser(&mut c.courriels, t("email"));
-        pousser(&mut c.conges_spectacles, t("num_conges_spectacles"));
+        pousser(&mut c.courriels, t(S::email));
+        pousser(&mut c.conges_spectacles, t(S::num_conges_spectacles));
     }
     let e = &ctx.entreprise;
     for k in [e.raison_sociale.remplie(), e.nom_affichage.remplie(), e.adresse.remplie(), e.adresse_affichage.remplie(), e.complement_adresse.remplie(), e.complement_adresse_affichage.remplie(), e.code_postal.remplie(), e.commune.remplie(), e.commune_affichage.remplie()] {

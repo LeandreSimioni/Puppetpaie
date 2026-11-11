@@ -548,11 +548,99 @@ pub fn avec_complement(adresse: String, complement: Option<&str>) -> String {
 
 // ------------------------------------------------------------ la forme declaree
 
+/// LE NOM D'UNE CASE DECLAREE : un champ d'une fiche ou une case d'une structure, tel que sa forme l'ecrit. Il ne se
+/// fabrique que de la forme (`Declaree`, les cles d'une fiche : `CaseSalarie`, `CaseEntreprise`...) ; un texte ne
+/// devient un nom de case qu'a la porte, contre la forme (`NomDeCase::lire`), et un nom que la forme ne declare pas s'y
+/// refuse. C'est la cle d'une saisie (`declarations::champs::Saisie`) : aucune case ne s'y lit par un texte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct NomDeCase(&'static str);
+
+impl NomDeCase {
+    /// LA LIGNE DE L'HISTOIRE D'UNE FICHE (`historique`, forme `histoire` de `champs-base.json`) : ce que la route compose
+    /// des listes datees ; elle ne se saisit pas et n'est pas une case de la forme.
+    pub const HISTORIQUE: NomDeCase = NomDeCase("historique");
+
+    /// Le nom, tel que le fichier et la page l'ecrivent.
+    pub fn nom(self) -> &'static str {
+        self.0
+    }
+
+    /// LE NOM `texte` parmi les cases `declarees` (un niveau de la forme), s'il y est.
+    pub fn parmi(declarees: &[Declaree], texte: &str) -> Option<NomDeCase> {
+        declarees.iter().map(|d| d.cle).find(|c| c.0 == texte)
+    }
+
+    /// LE NOM `texte`, s'il est celui d'une case qu'une fiche declare (a tout niveau) ou la ligne de l'histoire : la
+    /// seule lecture d'un nom de case.
+    pub fn lire(texte: &str) -> Option<NomDeCase> {
+        fn dans(d: &[Declaree], texte: &str) -> Option<NomDeCase> {
+            NomDeCase::parmi(d, texte).or_else(|| d.iter().find_map(|x| dans(&x.cases, texte)))
+        }
+        if texte == NomDeCase::HISTORIQUE.0 {
+            return Some(NomDeCase::HISTORIQUE);
+        }
+        [ChampsEntreprise::cases(), ChampsSalarie::cases(), ChampsSpectacle::cases()].iter().find_map(|d| dans(d, texte))
+    }
+}
+
+impl From<&NomDeCase> for NomDeCase {
+    fn from(n: &NomDeCase) -> NomDeCase {
+        *n
+    }
+}
+
+impl std::fmt::Display for NomDeCase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl Serialize for NomDeCase {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.0)
+    }
+}
+
+/// A la porte : un nom que la forme ne declare pas se refuse.
+impl<'de> Deserialize<'de> for NomDeCase {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let t = String::deserialize(d)?;
+        NomDeCase::lire(&t).ok_or_else(|| serde::de::Error::custom(format!("la case « {} » n'existe dans aucune fiche", t)))
+    }
+}
+
+/// Le nom d'une cle de la forme : `r#type` s'ecrit `type`.
+fn nom_ecrit(cle: &'static str) -> NomDeCase {
+    match cle.strip_prefix("r#") {
+        Some(reste) => NomDeCase(reste),
+        None => NomDeCase(cle),
+    }
+}
+
+/// LES CLES D'UNE FORME (`fiche!`, `cases!`) : une variante par case, qui donne son nom (`NomDeCase`).
+macro_rules! cles {
+    ($cles:ident { $( $champ:ident ),* $(,)? }) => {
+        #[allow(non_camel_case_types)] // la variante est la case, telle qu'elle s'ecrit
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum $cles {
+            $( $champ, )*
+        }
+
+        impl From<$cles> for NomDeCase {
+            fn from(c: $cles) -> NomDeCase {
+                match c {
+                    $( $cles::$champ => nom_ecrit(stringify!($champ)), )*
+                }
+            }
+        }
+    };
+}
+
 /// CE QU'UNE CASE DECLARE, pour le test qui la confronte a `champs-base.json` : ses valeurs (un choix) et ses cases (une
 /// structure) ; pour la saisie, la faute que son type refuse (`FormeDeCase::FAUTE`).
 #[derive(Debug, Clone)]
 pub struct Declaree {
-    pub cle: &'static str,
+    pub cle: NomDeCase,
     pub valeurs: &'static [&'static str],
     pub cases: Vec<Declaree>,
     pub faute: Option<fn(&str) -> Option<String>>,
@@ -574,12 +662,8 @@ pub trait FormeDeCase {
     }
 }
 
-pub fn declaree<T: FormeDeCase>(cle: &'static str) -> Declaree {
-    let cle = match cle.strip_prefix("r#") {
-        Some(reste) => reste,
-        None => cle,
-    };
-    Declaree { cle, valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR }
+fn declaree<T: FormeDeCase>(cle: &'static str) -> Declaree {
+    Declaree { cle: nom_ecrit(cle), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR }
 }
 
 impl FormeDeCase for String {}
@@ -637,6 +721,10 @@ pub trait Cases {
 /// UNE STRUCTURE DE CASES : chacune un `Option` (`Lue`), une cle inconnue refusee. Ses `notes` (d'une fiche datee) ne sont pas des
 /// cases : des textes qui ne se datent pas, que la fiche porte tels qu'ecrits.
 macro_rules! cases {
+    ($(#[$m:meta])* pub struct $nom:ident, cles $cles:ident { $( $(#[$fm:meta])* $champ:ident : $t:ty ),* $(,)? }) => {
+        cles! { $cles { $( $champ ),* } }
+        cases! { $(#[$m])* pub struct $nom { $( $(#[$fm])* $champ : $t ),* } }
+    };
     ($(#[$m:meta])* pub struct $nom:ident { $( $(#[$fm:meta])* $champ:ident : $t:ty ),* $(,)? } $( notes { $( $(#[$nm:meta])* $note:ident ),* $(,)? } )?) => {
         $(#[$m])*
         #[allow(non_snake_case)] // `association_1679A`, la cle ecrite
@@ -796,10 +884,12 @@ fn vide<T>(case: &&Option<T>) -> bool {
 /// toute autre, et la forme qui la nomme (`Changement`, `Cases`, la liste datee) aussi. Ce que la fiche montre se deduit
 /// de la piece de chaque case (`piece_de`).
 macro_rules! fiche {
-    ($(#[$m:meta])* pub struct $plate:ident, datee $datee:ident, changement $ch:ident { $( $(#[$fm:meta])* $champ:ident : $t:ty ),* $(,)? }
+    ($(#[$m:meta])* pub struct $plate:ident, datee $datee:ident, changement $ch:ident, cles $cles:ident { $( $(#[$fm:meta])* $champ:ident : $t:ty ),* $(,)? }
      pieces { $( $(#[$pm:meta])* $piece:ident : $genre:ident, $cases:ident, $cle:ty { $( $(#[$pfm:meta])* $pchamp:ident : $pt:ty ),* $(,)? } )* }
      $( notes { $( $(#[$nm:meta])* $note:ident ),* $(,)? } )?) => {
         $( cases! { $(#[$pm])* pub struct $cases { $( $(#[$pfm])* $pchamp : $pt ),* } } )*
+
+        cles! { $cles { $( $champ, )* $( $( $pchamp, )* )* } }
 
         $(#[$m])*
         #[derive(Debug, Clone, Default, PartialEq)]
@@ -854,8 +944,8 @@ macro_rules! fiche {
             pub const NOTES: &'static [&'static str] = &[$($( stringify!($note) ),*)?];
 
             /// La piece de la case `cle` ; `None` : elle n'est dans aucune, tout calcul la lit.
-            pub fn piece_de(cle: &str) -> Option<Piece> {
-                $( $( if stringify!($pchamp) == cle {
+            pub fn piece_de(cle: NomDeCase) -> Option<Piece> {
+                $( $( if nom_ecrit(stringify!($pchamp)) == cle {
                     return Some(Piece::$genre);
                 } )* )*
                 let _ = cle;
@@ -890,13 +980,13 @@ macro_rules! fiche {
 
             /// Les cases dont la valeur differe dans `autre`, nommees comme `champs-base.json` les nomme ; ses notes n'en
             /// sont pas.
-            pub fn cases_differentes(&self, autre: &$plate) -> Vec<&'static str> {
+            pub fn cases_differentes(&self, autre: &$plate) -> Vec<NomDeCase> {
                 let mut out = Vec::new();
                 $( if self.$champ != autre.$champ {
-                    out.push(stringify!($champ));
+                    out.push(nom_ecrit(stringify!($champ)));
                 } )*
                 $( $( if self.$piece.cases.$pchamp != autre.$piece.cases.$pchamp {
-                    out.push(stringify!($pchamp));
+                    out.push(nom_ecrit(stringify!($pchamp)));
                 } )* )*
                 out
             }
@@ -927,10 +1017,10 @@ macro_rules! fiche {
 
         impl $ch {
             /// La case qu'il change, nommee comme `champs-base.json` la nomme.
-            pub fn case(&self) -> &'static str {
+            pub fn case(&self) -> NomDeCase {
                 match self {
-                    $( $ch::$champ(_) => stringify!($champ), )*
-                    $( $( $ch::$pchamp(_) => stringify!($pchamp), )* )*
+                    $( $ch::$champ(_) => nom_ecrit(stringify!($champ)), )*
+                    $( $( $ch::$pchamp(_) => nom_ecrit(stringify!($pchamp)), )* )*
                 }
             }
         }
@@ -956,13 +1046,13 @@ macro_rules! fiche {
 
             /// Les jours ou le champ `cle` prend une valeur, du plus ancien au plus recent (`None` : la valeur de tout
             /// temps, d'abord) ; aucun pour un champ que la fiche ne dit pas, ou que la forme ne declare pas.
-            pub fn depuis(&self, cle: &str) -> Vec<Option<Jour>> {
-                $( if stringify!($champ) == cle {
+            pub fn depuis(&self, cle: NomDeCase) -> Vec<Option<Jour>> {
+                $( if nom_ecrit(stringify!($champ)) == cle {
                     let mut j: Vec<Option<Jour>> = self.$champ.iter().flatten().map(|e| e.depuis).collect();
                     j.sort();
                     return j;
                 } )*
-                $( $( if stringify!($pchamp) == cle {
+                $( $( if nom_ecrit(stringify!($pchamp)) == cle {
                     let mut j: Vec<Option<Jour>> = self.$pchamp.iter().flatten().map(|e| e.depuis).collect();
                     j.sort();
                     return j;
@@ -1001,7 +1091,7 @@ macro_rules! fiche {
                 $datee::au(self, jour)
             }
 
-            fn depuis(&self, cle: &str) -> Vec<Option<Jour>> {
+            fn depuis(&self, cle: NomDeCase) -> Vec<Option<Jour>> {
                 $datee::depuis(self, cle)
             }
 
@@ -1019,17 +1109,17 @@ macro_rules! fiche {
                 }
             }
 
-            fn changement(plate: &$plate, cle: &str) -> Option<$ch> {
-                $( if stringify!($champ) == cle {
+            fn changement(plate: &$plate, cle: NomDeCase) -> Option<$ch> {
+                $( if nom_ecrit(stringify!($champ)) == cle {
                     return Some($ch::$champ(plate.$champ.clone()));
                 } )*
-                $( $( if stringify!($pchamp) == cle {
+                $( $( if nom_ecrit(stringify!($pchamp)) == cle {
                     return Some($ch::$pchamp(plate.$piece.cases.$pchamp.clone()));
                 } )* )*
                 None
             }
 
-            fn case_changee(ch: &$ch) -> &'static str {
+            fn case_changee(ch: &$ch) -> NomDeCase {
                 ch.case()
             }
 
@@ -1054,10 +1144,10 @@ macro_rules! fiche {
 
             fn voir_listes<V: VoirListe>(&self, v: &mut V) {
                 $( if let Some(l) = &self.$champ {
-                    v.liste(stringify!($champ), l);
+                    v.liste(nom_ecrit(stringify!($champ)), l);
                 } )*
                 $( $( if let Some(l) = &self.$pchamp {
-                    v.liste(stringify!($pchamp), l);
+                    v.liste(nom_ecrit(stringify!($pchamp)), l);
                 } )* )*
             }
         }
@@ -1075,7 +1165,7 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
 
     /// Les jours ou le champ `cle` prend une valeur, du plus ancien au plus recent (`None` d'abord) ; aucun pour un champ
     /// que la fiche ne dit pas, ou que la forme ne declare pas.
-    fn depuis(&self, cle: &str) -> Vec<Option<Jour>>;
+    fn depuis(&self, cle: NomDeCase) -> Vec<Option<Jour>>;
 
     /// LA CASE QUE `ch` CHANGE S'ECRIT DATEE (`dater`) : sa valeur, ou vide.
     fn changer(&mut self, ch: Self::Changement, depuis: Option<&Jour>, note: Option<&str>);
@@ -1084,10 +1174,10 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
     fn appliquer(plate: &mut Self::Plate, ch: Self::Changement);
 
     /// La case `cle` de `plate`, comme un changement qui la poserait (`None` : la forme ne declare pas cette case).
-    fn changement(plate: &Self::Plate, cle: &str) -> Option<Self::Changement>;
+    fn changement(plate: &Self::Plate, cle: NomDeCase) -> Option<Self::Changement>;
 
     /// La case que `ch` change, nommee comme `champs-base.json` la nomme.
-    fn case_changee(ch: &Self::Changement) -> &'static str;
+    fn case_changee(ch: &Self::Changement) -> NomDeCase;
 
     /// Les notes que `plate` porte remplacent les siennes ; les autres restent.
     fn noter(&mut self, plate: &Self::Plate);
@@ -1102,7 +1192,7 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
 /// CE QUI REGARDE LES LISTES DATEES D'UNE FICHE PAR LEUR NOM (l'historique que l'ecran montre, les gardes qui cherchent
 /// ce qui nomme une personne) : chacune lui est donnee typee (`FicheDatee::voir_listes`).
 pub trait VoirListe {
-    fn liste<T: Serialize>(&mut self, cle: &'static str, liste: &[Datee<T>]);
+    fn liste<T: Serialize>(&mut self, cle: NomDeCase, liste: &[Datee<T>]);
 }
 
 /// UNE VALEUR DATEE : de tout temps sans `depuis`, ou a partir de ce jour ; `note` dit d'ou elle vient.
@@ -1370,7 +1460,7 @@ choix! {
 
 cases! {
     /// Le compte bancaire (IBAN, BIC).
-    pub struct Banque { iban: String, bic: String }
+    pub struct Banque, cles CaseBanque { iban: String, bic: String }
 }
 
 cases! {
@@ -1399,7 +1489,7 @@ cases! {
 
 cases! {
     /// Le contact de la medecine du travail interne (S20.G00.07).
-    pub struct ContactSanteTravail { nom_prenom_affichage: String, nom_prenom: String, tel: String, email: String }
+    pub struct ContactSanteTravail, cles CaseContactSanteTravail { nom_prenom_affichage: String, nom_prenom: String, tel: String, email: String }
 }
 
 cases! {
@@ -1437,17 +1527,17 @@ cases! {
     /// (`etablissements`), datee comme toute la configuration : le taux vaut a partir de `depuis` (la date d'effet de la
     /// notification), pour l'annee de cette date (`bareme::taux_atmp_de_l_annee`) ; `provenance` dit qui l'a ecrite,
     /// `notification` celle d'ou elle vient.
-    pub struct TauxAtmp { code_risque: String, valeur: Montant, depuis: Jour, provenance: ProvenanceAtmp, notification: NotificationAtmp }
+    pub struct TauxAtmp, cles CaseTauxAtmp { code_risque: String, valeur: Montant, depuis: Jour, provenance: ProvenanceAtmp, notification: NotificationAtmp }
 }
 
 cases! {
-    pub struct VersementMobilite { taux: Montant, code_insee: String }
+    pub struct VersementMobilite, cles CaseVersementMobilite { taux: Montant, code_insee: String }
 }
 
 cases! {
     /// UN AUTRE ETABLISSEMENT que le siege : son SIRET (et le NIC qui s'en lit), son adresse (et la forme declaree qui se
     /// fabrique de la lisible), son ouverture, son taux AT/MP et son versement mobilite.
-    pub struct Etablissement {
+    pub struct Etablissement, cles CaseEtablissement {
         libelle: String,
         siret: String,
         nic: String,
@@ -1465,7 +1555,7 @@ cases! {
 }
 
 cases! {
-    pub struct Signataire {
+    pub struct Signataire, cles CaseSignataire {
         prenom_affichage: String,
         nom_affichage: String,
         prenom: String,
@@ -1478,7 +1568,7 @@ cases! {
 
 cases! {
     /// Le contact DSN (S20.G00.07).
-    pub struct DeclarantDsn { civilite: Civilite, nom_prenom_affichage: String, nom_prenom: String, tel: Telephone, email: String, qualite: String }
+    pub struct DeclarantDsn, cles CaseDeclarantDsn { civilite: Civilite, nom_prenom_affichage: String, nom_prenom: String, tel: Telephone, email: String, qualite: String }
 }
 
 cases! {
@@ -1496,7 +1586,7 @@ cases! {
 
 fiche! {
     /// LA FICHE D'UN SALARIE a un jour.
-    pub struct ChampsSalarie, datee FicheSalarieDatee, changement ChangementSalarie {
+    pub struct ChampsSalarie, datee FicheSalarieDatee, changement ChangementSalarie, cles CaseSalarie {
         code_salarie: String,
         initiales_contrat: String,
         nom_affichage: String,
@@ -1568,7 +1658,7 @@ fiche! {
 
 fiche! {
     /// LA FICHE DE L'ENTREPRISE a un jour (son siege et, en `etablissements`, les autres).
-    pub struct ChampsEntreprise, datee FicheEntrepriseDatee, changement ChangementEntreprise {
+    pub struct ChampsEntreprise, datee FicheEntrepriseDatee, changement ChangementEntreprise, cles CaseEntreprise {
         nom_affichage: String,
         raison_sociale: RaisonSociale,
         siren: String,
@@ -1670,7 +1760,7 @@ choix! {
 fiche! {
     /// LA FICHE D'UN SPECTACLE a un jour (`config/spectacles.json`). Ses notes, ecrites par l'import, disent d'ou il
     /// vient et le titre que les bulletins de l'ancien logiciel proposent (`declarations::demarrage`).
-    pub struct ChampsSpectacle, datee FicheSpectacleDatee, changement ChangementSpectacle {
+    pub struct ChampsSpectacle, datee FicheSpectacleDatee, changement ChangementSpectacle, cles CaseSpectacle {
         titre: String,
         numero_objet: String,
         code_analytique: String,
@@ -1696,7 +1786,7 @@ fiche! {
     /// UNE RUBRIQUE TELLE QU'UN FICHIER L'ECRIT, case par case : livree (`rubriques-base.json`, de tout temps), ou la
     /// compagnie par-dessus, case par case, datee comme toute la configuration (`config/rubriques-compagnie.json`).
     /// `catalogue::construire` en fait la `Rubrique` du calcul.
-    pub struct ChampsRubrique, datee RubriqueDatee, changement ChangementRubrique {
+    pub struct ChampsRubrique, datee RubriqueDatee, changement ChangementRubrique, cles CaseRubrique {
         libelle: String,
         unite: String,
         nature: crate::catalogue::NatureDeRubrique,

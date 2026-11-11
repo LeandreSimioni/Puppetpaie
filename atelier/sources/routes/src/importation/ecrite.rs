@@ -475,7 +475,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::import::Apercu, reponse: &mut Importation
         };
         if let Some(e) = emplacement {
             e.etat = EtatFiche::Completee;
-            e.completer.retain(|c| faits.case(&c.champ).is_some() || faits.note(&c.champ).is_some());
+            e.completer.retain(|c| faits.case(c.champ).is_some());
         }
         let fichier = match a.nom {
             "entreprise" => "entreprise.json",

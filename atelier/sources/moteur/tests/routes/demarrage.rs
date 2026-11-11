@@ -74,13 +74,13 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
                 if x["ou"] != json!("Configuration › Entreprise") || champ == "taux_atmp" {
                     continue; // le taux AT/MP a son propre encart, hors des cases de la fiche (`ATMP_HTML`)
                 }
-                let c = fiche.iter().find(|c| c.cle == champ.split('.').next().unwrap()).unwrap_or_else(|| panic!("{} : pas un champ", champ));
-                assert!(montre(&c.cle), "{} : « {} » demande, case masquee", nom, champ);
+                let c = fiche.iter().find(|c| c.cle.nom() == champ.split('.').next().unwrap()).unwrap_or_else(|| panic!("{} : pas un champ", champ));
+                assert!(montre(c.cle.nom()), "{} : « {} » demande, case masquee", nom, champ);
             }
             let lue = declarations::champs::Saisie::de_la_fiche("entreprise", &ent).unwrap();
             for c in &fiche {
                 if c.exige(&lue) {
-                    assert!(montre(&c.cle), "{} : « {} » exige et masque", nom, c.cle);
+                    assert!(montre(c.cle.nom()), "{} : « {} » exige et masque", nom, c.cle);
                 }
             }
             let demandee = par_champ(&m, "licence_spectacle").len() == 1;

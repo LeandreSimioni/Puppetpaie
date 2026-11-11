@@ -45,14 +45,14 @@ fn ecrire<F: SorteDeFiche>(ctx: &Contexte, donnees: &Saisie, note: &str) -> R<(O
 
 /// Les cases que `lue` dit, posees dans `plate` : une fiche vide la prend entiere, ses notes comprises. Rend les cases
 /// posees.
-fn poser_les_cases<F: SorteDeFiche>(plate: &mut F::Plate, lue: F::Plate) -> Vec<&'static str> {
+fn poser_les_cases<F: SorteDeFiche>(plate: &mut F::Plate, lue: F::Plate) -> Vec<droit::fiche::NomDeCase> {
     let dites = F::differentes(&F::Plate::default(), &lue);
     if F::differentes(&F::Plate::default(), plate).is_empty() {
         *plate = lue;
         return dites;
     }
     for k in &dites {
-        if let Some(ch) = F::changement(&lue, k) {
+        if let Some(ch) = F::changement(&lue, *k) {
             F::appliquer(plate, ch);
         }
     }

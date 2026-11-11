@@ -256,10 +256,10 @@ fn signature(p: &Path) -> Option<(SystemTime, u64)> {
 struct TextesDeFiche(Vec<(&'static str, Vec<String>)>);
 
 impl droit::fiche::VoirListe for TextesDeFiche {
-    fn liste<T: Serialize>(&mut self, cle: &'static str, liste: &[droit::fiche::Datee<T>]) {
+    fn liste<T: Serialize>(&mut self, cle: droit::fiche::NomDeCase, liste: &[droit::fiche::Datee<T>]) {
         let textes: Vec<String> = liste.iter().filter_map(|e| e.valeur.as_ref()).filter_map(texte_de).collect();
         if !textes.is_empty() {
-            self.0.push((cle, textes));
+            self.0.push((cle.nom(), textes));
         }
     }
 }

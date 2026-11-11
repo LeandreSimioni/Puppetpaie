@@ -16,7 +16,7 @@ use socle::echec::R;
 use socle::date::Jour;
 
 use crate::contexte::Contexte;
-use crate::fiche::{FicheSalarie, Lue, Statut, StatutCategorielRc, StatutConventionnel};
+use crate::fiche::{CaseSalarie, FicheSalarie, Lue, NomDeCase, Statut, StatutCategorielRc, StatutConventionnel};
 
 /// `emplois-base.json` : le catalogue des metiers, dans l'ordre ou le deroulant les montre, et les noms courts des
 /// conventions. Sa `note` dit le perimetre, les sources et les regles de chaque champ.
@@ -356,7 +356,7 @@ pub fn resoudre(code: &str, cadre: Option<bool>, feminin: bool, idcc: Option<&st
 }
 
 /// Les cases de `UNE_VALEUR_PAR_MOIS` d'une fiche, dans son ordre, chacune telle qu'ecrite : `None` quand elle est vide.
-fn valeurs_par_mois(f: &FicheSalarie) -> [(&'static str, Option<String>); 5] {
+fn valeurs_par_mois(f: &FicheSalarie) -> [(CaseSalarie, Option<String>); 5] {
     fn portee<T: std::fmt::Display>(c: &Option<T>) -> Option<String> {
         c.as_ref().map(T::to_string)
     }
@@ -373,7 +373,7 @@ fn valeurs_par_mois(f: &FicheSalarie) -> [(&'static str, Option<String>); 5] {
 /// artiste / technicien, la categorie cadre, le metier qui la dit a defaut de la fiche) et ce que le bloc 40 porte avec
 /// une rubrique en bloc 41 (40.002, 40.003, 40.004). Le libelle de l'emploi n'en est pas : la DSN declare « la derniere
 /// valeur connue » du mois (cahier technique 2026.1, § 2.1.2.4.2, p. 22).
-const UNE_VALEUR_PAR_MOIS: [&str; 5] = ["statut_categoriel_rc", "statut_conventionnel", "statut", "code_emploi_ft", "pcs_ese"];
+const UNE_VALEUR_PAR_MOIS: [CaseSalarie; 5] = [CaseSalarie::statut_categoriel_rc, CaseSalarie::statut_conventionnel, CaseSalarie::statut, CaseSalarie::code_emploi_ft, CaseSalarie::pcs_ese];
 
 /// La fiche salarie `cle` d'un contrat PAYE AU MOIS (CDI, CDD de droit commun), telle qu'elle vaut pour la periode payee
 /// (`debut`, `fin`) : lue a la fin de la periode. Un permanent passe cadre, change de poste, obtient ou perd sa RQTH en
@@ -392,6 +392,7 @@ pub fn emploi_du_mois(ctx: &Contexte, cle: &str, debut: &Jour, fin: &Jour) -> R<
         if avant == apres {
             continue;
         }
+        let c = NomDeCase::from(c);
         let le = ctx.salarie_brut(cle).into_iter().flat_map(|b| b.depuis(c)).flatten().filter(|j| j > debut && j <= fin).last();
         let premier = Jour { jour: 1, ..*debut };
         let suivant = Jour { jour: 1, ..premier.plus_jours(31)? };
@@ -413,7 +414,7 @@ vaut pour tout ce mois-ci) ou le {} (il vaut a partir du mois suivant).",
             texte(&apres),
             premier.jj_mm_aaaa(),
             suivant.jj_mm_aaaa()
-        ), &c, ""));
+        ), c.nom(), ""));
     }
     Ok(a_la_fin)
 }
@@ -427,14 +428,14 @@ pub fn jours_de_changement(ctx: &Contexte, cle: &str, debut: &Jour, fin: &Jour) 
     let Some(brute) = ctx.salarie_brut(cle) else { return Ok(Vec::new()) };
     let mut jours: Vec<Jour> = Vec::new();
     for c in UNE_VALEUR_PAR_MOIS {
-        jours.extend(brute.depuis(c).into_iter().flatten().filter(|j| j > debut && j <= fin));
+        jours.extend(brute.depuis(c.into()).into_iter().flatten().filter(|j| j > debut && j <= fin));
     }
     jours.sort();
     jours.dedup();
     let mut out = Vec::new();
     for j in jours {
         let (avant, apres) = (brute.au(&j.plus_jours(-1)?), brute.au(&j));
-        if !avant.memes_cases(&apres, &UNE_VALEUR_PAR_MOIS) {
+        if !avant.memes_cases(&apres, &UNE_VALEUR_PAR_MOIS.map(|c| NomDeCase::from(c).nom())) {
             out.push(j);
         }
     }

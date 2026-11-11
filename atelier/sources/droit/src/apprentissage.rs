@@ -26,7 +26,7 @@ pub struct MotifMnata {
 }
 
 /// Le champ de la fiche entreprise qui dit pourquoi la compagnie ne doit pas la taxe d'apprentissage (un code MNATA).
-pub const CHAMP_MOTIF_TAXE_APPRENTISSAGE: &str = "taxe_apprentissage_motif_non_assujettissement";
+pub const CHAMP_MOTIF_TAXE_APPRENTISSAGE: crate::fiche::CaseEntreprise = crate::fiche::CaseEntreprise::taxe_apprentissage_motif_non_assujettissement;
 /// Le motif MNATA 007, « Associations sans but lucratif ».
 pub const MNATA_ASSOCIATIONS: &str = "007";
 /// Le premier millesime ou une association a activites non lucratives est redevable de la taxe d'apprentissage : C. trav.
@@ -54,7 +54,7 @@ pub fn motifs_mnata() -> R<Vec<(String, String)>> {
 
 /// Ou la fiche entreprise dit le motif de non-assujettissement a la taxe d'apprentissage.
 pub fn champ_du_motif() -> String {
-    format!("Configuration › Entreprise, « Taxe d'apprentissage : motif de non-assujettissement » (`{}`)", CHAMP_MOTIF_TAXE_APPRENTISSAGE)
+    format!("Configuration › Entreprise, « Taxe d'apprentissage : motif de non-assujettissement » (`{}`)", crate::fiche::NomDeCase::from(CHAMP_MOTIF_TAXE_APPRENTISSAGE))
 }
 
 /// Le motif MNATA que dit la fiche entreprise, avec son libelle, lu dans la table livree : `None` quand la fiche n'en dit

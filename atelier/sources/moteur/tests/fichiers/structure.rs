@@ -1273,13 +1273,14 @@ fn une_seule_fonction_date_une_valeur_de_fiche() {
 }
 
 /// UNE CASE D'UNE PIECE NE SE LIT PAS PAR SON NOM (`droit::fiche::Piece`) : le calcul ne la lit que dans sa piece
-/// ouverte, avec sa cle, et `Cases::voir` ne la regarde pas ; une `Saisie` (la fiche telle que l'ecran la tape) ne la lit
-/// par `case`, `dite` ou `mot` que dans sa porte, `declarations/src/champs.rs`, qui controle ce que la personne ecrit.
+/// ouverte, avec sa cle, et `Cases::voir` ne la regarde pas ; une `Saisie` (la fiche telle que l'ecran la tape, dont la
+/// cle est le nom d'une case declaree, `droit::fiche::NomDeCase`) ne la lit par `case`, `dite`, `mot` ou `texte` que dans
+/// sa porte, `declarations/src/champs.rs`, qui controle ce que la personne ecrit.
 #[test]
 fn une_case_d_une_piece_ne_se_lit_pas_par_son_nom() {
     use droit::fiche::{ChampsEntreprise, ChampsSalarie, FormeDeCase};
-    let mut rangees: Vec<String> = ChampsEntreprise::cases().iter().filter(|d| ChampsEntreprise::piece_de(&d.cle).is_some()).map(|d| d.cle.to_string()).collect();
-    rangees.extend(ChampsSalarie::cases().iter().filter(|d| ChampsSalarie::piece_de(&d.cle).is_some()).map(|d| d.cle.to_string()));
+    let mut rangees: Vec<String> = ChampsEntreprise::cases().iter().filter(|d| ChampsEntreprise::piece_de(d.cle).is_some()).map(|d| d.cle.to_string()).collect();
+    rangees.extend(ChampsSalarie::cases().iter().filter(|d| ChampsSalarie::piece_de(d.cle).is_some()).map(|d| d.cle.to_string()));
     assert!(!rangees.is_empty(), "aucune case n'est rangee dans une piece");
     let porte = espace().join("declarations/src/champs.rs");
     let mut fautes = Vec::new();
@@ -1287,10 +1288,9 @@ fn une_case_d_une_piece_ne_se_lit_pas_par_son_nom() {
         let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
         let t = std::fs::read_to_string(&p).unwrap();
         for c in &rangees {
-            for lecture in ["case", "dite", "mot"] {
-                if t.contains(&format!(".{}(\"{}\")", lecture, c)) {
-                    fautes.push(format!("{} lit la case {} par son nom (`{}`)", rel, c, lecture));
-                }
+            let lue = regex::Regex::new(&format!(r"\.(?:case|dite|mot|texte)\([^()]*::{}\)", c)).unwrap();
+            if let Some(m) = lue.find(&t) {
+                fautes.push(format!("{} lit la case {} dans une saisie (`{}`)", rel, c, m.as_str()));
             }
         }
     }
@@ -1381,7 +1381,7 @@ fn champs_base_et_les_fiches_ont_les_memes_cases() {
                     fautes.push(format!("{} : `{}` est une etiquette ; la piece de la case se range dans sa forme", ou, k));
                 }
             }
-            let Some(d) = declarees.iter().find(|d| d.cle == cle) else {
+            let Some(d) = declarees.iter().find(|d| d.cle.nom() == cle) else {
                 fautes.push(format!("{} : une ligne de champs-base.json qu'aucun champ de la fiche ne porte", ou));
                 continue;
             };

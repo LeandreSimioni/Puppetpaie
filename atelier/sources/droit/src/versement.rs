@@ -41,9 +41,7 @@ use socle::echec::R;
 use crate::natures::Nature;
 
 /// Les deux cases de la fiche entreprise : le jour des permanents, le jour des intermittents.
-pub const CLE_PERMANENTS: &str = "date_de_versement_permanents";
-pub const CLE_INTERMITTENTS: &str = "date_de_versement_intermittents";
-pub const CLES: [&str; 2] = [CLE_PERMANENTS, CLE_INTERMITTENTS];
+pub const CLES: [crate::fiche::CaseEntreprise; 2] = [crate::fiche::CaseEntreprise::date_de_versement_permanents, crate::fiche::CaseEntreprise::date_de_versement_intermittents];
 
 /// Les formes qu'elle lit, dans la phrase d'un refus.
 const FORMES: &str = "vide (le dernier jour du mois), « fin du contrat », « le 25 » ou « le 5 du mois suivant »";

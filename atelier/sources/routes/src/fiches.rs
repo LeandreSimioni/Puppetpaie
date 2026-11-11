@@ -18,7 +18,7 @@ use compagnie::INTERFACE;
 use declarations::champs::{self, Saisie};
 use documents::fiche_questionnaire as fq;
 use droit::contexte::{Contexte, IdSalarie};
-use droit::fiche::{ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, Piece};
+use droit::fiche::{CaseEntreprise, ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, NomDeCase, Piece};
 use envois::courriel::Courriel;
 use envois::courriel_lecture as lecture;
 use envois::envoi::{self, Message};
@@ -426,7 +426,7 @@ struct EffectifDit {
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Permanents {
     phrase: &'static str,
-    montres: Vec<String>,
+    montres: Vec<NomDeCase>,
     pieces_ouvertes: Vec<Piece>,
 }
 
@@ -450,13 +450,13 @@ fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
 /// permanent, celle d'une compagnie qui en emploie) ou pour une case au moins (celle du metier). La page n'ouvre le tiroir
 /// d'une piece que sur elles.
 pub(crate) struct Montres {
-    pub(crate) cases: Vec<String>,
+    pub(crate) cases: Vec<NomDeCase>,
     pub(crate) pieces_ouvertes: Vec<Piece>,
 }
 
 /// La case des permanents de la fiche entreprise telle que l'ecran la saisit.
 fn permanents_de(entreprise: &Saisie) -> bool {
-    entreprise.case("emploie_des_permanents") == Some(&champs::Valeur::OuiNon(true))
+    entreprise.case(CaseEntreprise::emploie_des_permanents) == Some(&champs::Valeur::OuiNon(true))
 }
 
 /// CE QUE LA FICHE `nom` (de cle `cle` pour un salarie enregistre) MONTRE pour `donnees` : chaque case que
@@ -479,16 +479,16 @@ pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sa
     let avec_permanents = nom == "entreprise" && permanents_de(entreprise);
     let du_metier = cases_des_metiers(ctx, nom, cle, donnees)?;
     let (cse, casc) = if nom == "entreprise" { pieces_de_l_effectif(ctx, entreprise)? } else { (false, false) };
-    let ouverte = |piece: Piece, case: &str| match piece {
+    let ouverte = |piece: Piece, case: NomDeCase| match piece {
         Piece::Permanent => au_mois,
         Piece::EmploieDesPermanents => avec_permanents,
-        Piece::Metier | Piece::MetierAuMois => du_metier.contains(case),
+        Piece::Metier | Piece::MetierAuMois => du_metier.contains(case.nom()),
         Piece::Cse => cse,
         Piece::Casc => casc,
     };
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
     let autre = (nom != "entreprise").then_some(entreprise);
-    let cases = champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, &ouverte, etablissements)).map(|c| c.cle.clone()).collect();
+    let cases = champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, &ouverte, etablissements)).map(|c| c.cle).collect();
     // Les cases du metier d'un salarie ; la jauge de la salle, sur la fiche de l'entreprise.
     let metier = if nom == "entreprise" { Piece::MetierAuMois } else { Piece::Metier };
     let pieces_ouvertes = [(Piece::Permanent, au_mois), (Piece::EmploieDesPermanents, avec_permanents), (metier, !du_metier.is_empty()), (Piece::Cse, cse), (Piece::Casc, casc)]
@@ -527,7 +527,7 @@ fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &Saisie) -> R<(bool, bool)> 
 fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie) -> R<std::collections::BTreeSet<String>> {
     let mut cases = std::collections::BTreeSet::new();
     let dit = |x: Option<&str>| x.map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
-    let de_la_fiche = dit(donnees.mot("code_emploi_ft").as_deref());
+    let de_la_fiche = dit(donnees.mot(droit::fiche::CaseSalarie::code_emploi_ft).as_deref());
     // (metier, statut dit par la carte, jour, salarie)
     let mut metiers: std::collections::BTreeSet<(String, Option<String>, Jour, String)> = std::collections::BTreeSet::new();
     for f in engagement::stock::fichiers(&ctx.racine)? {
@@ -1019,7 +1019,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: Option<&str>
     let expediteur = client.compte().to_lowercase();
     let code = fq::code_fiche().map_err(|e| e.reclasser(Classe::Disque))?;
     let utiles = champs::utiles("salarie")?;
-    let q = fq::questionnaire(&code, &fq::posees(&|c| utiles.iter().any(|u| u == c)), &|_| String::new());
+    let q = fq::questionnaire(&code, &fq::posees(&|c| utiles.iter().any(|u| u.nom() == c)), &|_| String::new());
     let sujet = envoi::formater(fq::SUJET, &[("compagnie", compagnie.clone())]);
     let prenom: Option<String> = prenom.map(|p| strip(p).to_string());
     // « Bonjour Claire, » : le prenom, quand il est dit ; « Bonjour, » sinon.
@@ -1253,7 +1253,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             }
             if deja.is_none() {
                 plate.actif = Some(true);
-                nommees.push("actif");
+                nommees.push(droit::fiche::CaseSalarie::actif.into());
             }
             nommees
         })?;
@@ -1320,7 +1320,7 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
     ]);
     let utiles = champs::utiles("salarie")?;
     // Une question que la personne fictive ne sait pas, elle la laisse sans reponse.
-    let rempli = fq::questionnaire(code, &fq::posees(&|c| utiles.iter().any(|u| u == c)), &|cle| reponses.get(cle).into_iter().cloned().collect());
+    let rempli = fq::questionnaire(code, &fq::posees(&|c| utiles.iter().any(|u| u.nom() == c)), &|cle| reponses.get(cle).into_iter().cloned().collect());
     let sujet = match bouton {
         Some(b) => b.0.clone(),
         None => "Re: fiche".to_string(),
@@ -1446,7 +1446,7 @@ pub(crate) fn poser_courriel(ctx: &Contexte, cle: &str, email: &str) -> R<()> {
     }
     let p = preparer::<FicheSalarieDatee>(ctx, Some(cle), |plate| {
         plate.email = Some(email.trim().to_string());
-        vec!["email"]
+        vec![droit::fiche::CaseSalarie::email.into()]
     })?;
     let (depuis, _) = date_proposee(ctx, "salarie", Some(cle))?;
     ecrire_fiche::<FicheSalarieDatee>(ctx, p, Forcer::Rien, Some(depuis), None)?;

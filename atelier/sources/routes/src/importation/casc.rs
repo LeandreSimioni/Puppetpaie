@@ -326,14 +326,15 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         for p in paies {
             // Les colonnes de l'etat nomment les cases de la fiche, lue par sa table.
             let fiche = Saisie::de_la_fiche("salarie", &p.salarie.champs)?;
-            let champ = |cle: &str| fiche.mot(cle);
+            use droit::fiche::CaseSalarie as S;
+            let champ = |cle: S| fiche.mot(cle);
             let brut = p.brut;
             // La liste nominative se tient par NIR : une fiche sans NIR ne s'y range pas.
-            let nir = champ("nir").ok_or_else(|| refus(format!("{} : la fiche du salarié « {} » n'a pas de NIR ; la liste nominative de la régularisation le demande.", m, p.salarie.id)))?;
+            let nir = champ(S::nir).ok_or_else(|| refus(format!("{} : la fiche du salarié « {} » n'a pas de NIR ; la liste nominative de la régularisation le demande.", m, p.salarie.id)))?;
             masse += brut;
             match mois_sal.iter_mut().find(|(n, _, _)| *n == nir) {
                 Some((_, _, t)) => *t += brut,
-                None => mois_sal.push((nir.clone(), match champ("nom") {
+                None => mois_sal.push((nir.clone(), match champ(S::nom) {
                     Some(n) => n,
                     None => nir.clone(),
                 }, brut)),
@@ -342,12 +343,12 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
             let pos = match par_salarie.iter().position(|(k, _)| *k == cle) {
                 Some(i) => i,
                 None => {
-                    let adresse: Vec<String> = ["adresse", "code_postal", "commune"].iter().filter_map(|k| champ(k)).collect();
+                    let adresse: Vec<String> = [S::adresse, S::code_postal, S::commune].into_iter().filter_map(champ).collect();
                     par_salarie.push((
                         cle,
                         SalarieReg {
                             annee: an.clone(),
-                            salarie: [champ("nom"), champ("prenom")].into_iter().flatten().collect::<Vec<_>>().join(" "),
+                            salarie: [champ(S::nom), champ(S::prenom)].into_iter().flatten().collect::<Vec<_>>().join(" "),
                             nir: Some(nir.clone()),
                             date_naissance: p.salarie.champs.date_naissance.dite().copied(),
                             adresse: adresse.join(" "),
@@ -359,16 +360,16 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
             };
             par_salarie[pos].1.masse += brut;
             let individu = IndividuReg {
-                nir: champ("nir"),
-                nom: champ("nom"),
-                prenom: champ("prenom"),
+                nir: champ(S::nir),
+                nom: champ(S::nom),
+                prenom: champ(S::prenom),
                 date_naissance: p.salarie.champs.date_naissance.dite().copied(),
-                adresse: champ("adresse"),
-                code_postal: champ("code_postal"),
-                commune: champ("commune"),
-                email: champ("email"),
+                adresse: champ(S::adresse),
+                code_postal: champ(S::code_postal),
+                commune: champ(S::commune),
+                email: champ(S::email),
             };
-            let contrat = ContratReg { numero: p.numero.clone(), debut: p.debut, fin: p.fin, pcs_ese: champ("pcs_ese"), emploi: champ("emploi") };
+            let contrat = ContratReg { numero: p.numero.clone(), debut: p.debut, fin: p.fin, pcs_ese: champ(S::pcs_ese), emploi: champ(S::emploi) };
             emplois.push(EmploiReg {
                 annee: an.clone(),
                 mois: *m,

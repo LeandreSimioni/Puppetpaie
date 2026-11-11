@@ -558,7 +558,7 @@ pub(crate) enum Mutuelle {
 /// Le champ de la fiche entreprise qui dit ce que le contrat de sante de la compagnie fait d'un mois entierement suspendu
 /// sans indemnisation, hors de la 3090 (`logiciel/donnees/champs-base.json`, `atelier/docs/ARCHITECTURE.md`) : « suspendue » (les
 /// garanties sont suspendues, rien sur la paie), « maintenue » (garanties et cotisations maintenues sur la paie).
-pub const SANTE_SUSPENSION: &str = "sante_suspension_non_indemnisee";
+pub const SANTE_SUSPENSION: crate::fiche::CaseEntreprise = crate::fiche::CaseEntreprise::sante_suspension_non_indemnisee;
 pub const SANTE_SUSPENSION_SUSPENDUE: &str = "suspendue";
 pub const SANTE_SUSPENSION_MAINTENUE: &str = "maintenue";
 

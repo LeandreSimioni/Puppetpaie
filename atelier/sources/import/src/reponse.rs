@@ -9,6 +9,7 @@
 use serde::Serialize;
 
 use declarations::champs::{Anomalie, Saisie, Valeur};
+use droit::fiche::NomDeCase;
 
 use socle::ecran::{couleur_de_l_etat, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
@@ -256,7 +257,7 @@ pub enum EtatFiche {
 /// Une case vide d'une fiche qu'une piece remplit : sa valeur et d'ou elle vient.
 #[derive(Debug, Clone, Serialize)]
 pub struct Completee {
-    pub champ: String,
+    pub champ: NomDeCase,
     pub valeur: Valeur,
     #[serde(flatten)]
     pub origine: Origine,
@@ -276,7 +277,7 @@ pub enum DitPar {
 /// UN ECART : une case que la fiche dit, qu'une piece disait autrement ; la fiche fait foi.
 #[derive(Debug, Clone, Serialize)]
 pub struct Ecart {
-    pub champ: String,
+    pub champ: NomDeCase,
     /// La case de la fiche, telle qu'elle est (un texte, ou une structure : la banque).
     pub fiche: Valeur,
     #[serde(flatten)]
@@ -285,7 +286,7 @@ pub struct Ecart {
 }
 
 impl Ecart {
-    pub fn new(champ: &str, fiche: Valeur, par: DitPar) -> Ecart {
+    pub fn new(champ: impl Into<NomDeCase>, fiche: Valeur, par: DitPar) -> Ecart {
         let (ou, lu) = match &par {
             DitPar::Certificat { certificat, fichier, page } => (format!("le certificat ({}, page {}) disait", fichier, page), certificat.clone()),
             DitPar::Aem { aem, fichier, page } => (format!("l'AEM ({}, page {}) disait", fichier, page), aem.clone()),
@@ -293,7 +294,7 @@ impl Ecart {
             DitPar::Dsn { dsn, mois } => (format!("la DSN {} disait", socle::texte::de(&mois.libelle(socle::mois::Graphie::Accentuee))), en_mots(dsn)),
         };
         let dit = format!("{} « {} », la fiche dit « {} » : la fiche fait foi", ou, lu, en_mots(&fiche));
-        Ecart { champ: champ.to_string(), fiche, par, dit }
+        Ecart { champ: champ.into(), fiche, par, dit }
     }
 }
 
@@ -360,15 +361,15 @@ impl FicheImportee {
     /// (`completer::ajouter`).
     pub fn noter(&mut self, champs: &Saisie, origine: &Origine) {
         for (k, v) in champs.cases() {
-            if !self.completer.iter().any(|c| &c.champ == k) {
-                self.completer.push(Completee { champ: k.clone(), valeur: v.clone(), origine: origine.clone(), dit: String::new() });
+            if !self.completer.iter().any(|c| c.champ == *k) {
+                self.completer.push(Completee { champ: *k, valeur: v.clone(), origine: origine.clone(), dit: String::new() });
             }
         }
     }
 
     /// Le numero d'objet d'un spectacle a creer, en capitales.
     pub fn numero_objet(&self) -> Option<String> {
-        self.donnees.mot("numero_objet").map(|n| n.to_uppercase())
+        self.donnees.mot(droit::fiche::CaseSpectacle::numero_objet).map(|n| n.to_uppercase())
     }
 
     /// La fiche s'ecrit-elle : a creer, ou existante avec des cases a completer.

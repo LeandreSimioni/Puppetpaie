@@ -1230,7 +1230,7 @@ entreprise, « {} »)",
             Some(droit::fiche::SanteSuspension::Maintenue) => return Ok(fiche),
             None => {
                 let qui = [fiche.prenom.portee(), fiche.nom.portee()].into_iter().flatten().filter(|v| !v.is_empty()).collect::<Vec<_>>().join(" ");
-                return Err(refus_detaille(format!("{} : son contrat est suspendu sans indemnisation, et la fiche entreprise ne dit pas ce que devient sa complémentaire santé : le dire dans Configuration › Entreprise, « Santé d'un permanent suspendu sans indemnisation ».", if qui.is_empty() { cle.clone() } else { qui.clone() }), Some(SANTE_SUSPENSION), format!(
+                return Err(refus_detaille(format!("{} : son contrat est suspendu sans indemnisation, et la fiche entreprise ne dit pas ce que devient sa complémentaire santé : le dire dans Configuration › Entreprise, « Santé d'un permanent suspendu sans indemnisation ».", if qui.is_empty() { cle.clone() } else { qui.clone() }), Some(droit::fiche::NomDeCase::from(SANTE_SUSPENSION).nom()), format!(
                     "{} : son contrat est suspendu sans indemnisation sur toute la periode payee (du {} au {} ; suspension {} \
 depuis le {}). Que devient sa complementaire sante ce mois-la ? Sous la convention {}, aucun texte ne le dit : c'est le \
 contrat de sante de la compagnie qui tranche (le maintien est facultatif, instruction DSS du 17/06/2021, II.B). A dire\
@@ -1245,7 +1245,7 @@ si le contrat suspend les garanties (rien sur la paie), « {} » s'il les mainti
                         Some(i) => i,
                         None => "de la compagnie",
                     },
-                    SANTE_SUSPENSION,
+                    droit::fiche::NomDeCase::from(SANTE_SUSPENSION),
                     SANTE_SUSPENSION_SUSPENDUE,
                     SANTE_SUSPENSION_MAINTENUE
                 )));

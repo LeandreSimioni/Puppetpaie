@@ -12,7 +12,7 @@ use droit::fiche::Lue as _;
 use serde::Serialize;
 
 use droit::contexte::Contexte;
-use droit::fiche::ChampsEntreprise;
+use droit::fiche::{CaseEntreprise, ChampsEntreprise, NomDeCase};
 use socle::date::Jour;
 use socle::echec::{Classe, R};
 
@@ -118,23 +118,23 @@ pub struct PourDemarrer {
 }
 
 /// Le champ `cle` de la fiche entreprise (`champs-base.json`), que cette table doit porter.
-fn champ_entreprise(cle: &str) -> R<crate::champs::Champ> {
+fn champ_entreprise(cle: CaseEntreprise) -> R<crate::champs::Champ> {
+    let cle = NomDeCase::from(cle);
     crate::champs::champ("entreprise", cle)?.ok_or_else(|| socle::echec::livree("champs-base.json", &format!("entreprise.{}", cle)))
 }
 
 /// Le libelle et l'aide du champ `cle` de la fiche entreprise (`champs-base.json`).
-fn champ(cle: &str) -> R<(String, String)> {
+fn champ(cle: CaseEntreprise) -> R<(String, String)> {
     let c = champ_entreprise(cle)?;
     Ok((c.libelle, c.aide))
 }
 
-/// Une ligne qui bloque, sur une case de la fiche entreprise ou sans case ; une structure dit ses cases (leur nom, leur
-/// forme, leurs valeurs), d'apres la table qui les decrit.
-fn manque(cle: &str, libelle: String, bloque: &str, ou: (&str, &str), champ: Option<&str>, trouver: String) -> R<Manque> {
-    let mut l = Manque::bloquante(cle, libelle, bloque, ou, champ, trouver);
-    if let Some(k) = champ {
-        l.cases = champ_entreprise(k)?.champs.as_deref().map(crate::champs::cases_dites);
-    }
+/// Une ligne qui bloque, sur une case de la fiche entreprise ; une structure dit ses cases (leur nom, leur forme, leurs
+/// valeurs), d'apres la table qui les decrit.
+fn manque_de_la_case(cle: CaseEntreprise, libelle: String, bloque: &str, trouver: String) -> R<Manque> {
+    let nom = NomDeCase::from(cle);
+    let mut l = Manque::bloquante(nom.nom(), libelle, bloque, ENTREPRISE, Some(nom.nom()), trouver);
+    l.cases = champ_entreprise(cle)?.champs.as_deref().map(crate::champs::cases_dites);
     Ok(l)
 }
 
@@ -153,7 +153,7 @@ fn manque(cle: &str, libelle: String, bloque: &str, ou: (&str, &str), champ: Opt
 ///   (`spectacle` : un spectacle configure pour « Pour demarrer », un contrat de spectacle pour la DSN). Un lieu en 1790
 ///   sans spectacle n'a rien a dire ; l'audiovisuel ne voit pas la case.
 pub fn licence_exigee(ent: &ChampsEntreprise, spectacle: bool) -> R<bool> {
-    let c = champ_entreprise("licence_spectacle")?;
+    let c = champ_entreprise(CaseEntreprise::licence_spectacle)?;
     let ent = crate::champs::Saisie::de_la_fiche("entreprise", ent)?;
     Ok(c.exige(&ent) || (spectacle && crate::champs::condition_remplie(c.si.as_ref(), &ent)))
 }
@@ -199,9 +199,9 @@ fn une_suspension_non_remuneree(ctx: &Contexte) -> R<Option<droit::natures::AuMo
 /// La ligne d'une case vide qu'un acte exige ou qu'un geste sert (`champs::manquants`), ou elle vit ; celle d'un salarie
 /// dit qui (`salarie` : sa cle et son nom).
 fn ligne(m: crate::champs::Manquant, ou: String, onglet: &str, salarie: Option<(&str, &str)>) -> Manque {
-    let racine = match m.ecran.split_once('.') {
-        Some((r, _)) => r.to_string(),
-        None => m.ecran.clone(),
+    let racine = match m.ecran.devant.first() {
+        Some(r) => *r,
+        None => m.ecran.nom,
     };
     let (bloque, utile, sinon) = match m.sert {
         crate::champs::Sert::Exigee(actes) => (crate::champs::actes_en_clair(&actes), None, None),
@@ -210,7 +210,7 @@ fn ligne(m: crate::champs::Manquant, ou: String, onglet: &str, salarie: Option<(
     Manque {
         cle: match salarie {
             Some((s, _)) => format!("{}.{}", m.ecran, s),
-            None => m.ecran.clone(),
+            None => m.ecran.to_string(),
         },
         libelle: m.libelle,
         bloque,
@@ -218,8 +218,8 @@ fn ligne(m: crate::champs::Manquant, ou: String, onglet: &str, salarie: Option<(
         sinon,
         ou,
         onglet: onglet.to_string(),
-        champ: Some(racine),
-        case: Some(m.ecran),
+        champ: Some(racine.to_string()),
+        case: Some(m.ecran.to_string()),
         trouver: m.aide,
         cases: m.cases,
         salarie: salarie.map(|(s, _)| s.to_string()),
@@ -241,7 +241,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // `champs::refus_des_manques`) : l'entreprise, puis chaque salarie actif ; ce qui ne bloque rien dit ce qui se passe
     // sans lui (`sinon`).
     for m in crate::champs::manquants("entreprise", &crate::champs::Saisie::de_la_fiche("entreprise", ent)?)? {
-        if m.cle == documents::conges_spectacles::CLE_ADHERENT && !intermittents {
+        if m.cle.seul() == Some(documents::conges_spectacles::CLE_ADHERENT.into()) && !intermittents {
             continue;
         }
         out.push(ligne(m, ENTREPRISE.0.to_string(), ENTREPRISE.1, None));
@@ -311,8 +311,8 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // en 1790 et en 3252 la case se montre sans etre exigee, dans l'audiovisuel elle ne se montre pas.
     // Elle peut etre datee (une par periode) : le contexte la resout au jour.
     if ctx.licence(&ctx.aujourdhui).is_none_or(|l| l.trim().is_empty()) && licence_exigee(ent, intermittents)? {
-        let (libelle, aide) = champ("licence_spectacle")?;
-        out.push(manque("licence_spectacle", libelle, "la DSN", ENTREPRISE, Some("licence_spectacle"), aide)?);
+        let (libelle, aide) = champ(CaseEntreprise::licence_spectacle)?;
+        out.push(manque_de_la_case(CaseEntreprise::licence_spectacle, libelle, "la DSN", aide)?);
     }
     // L'EFFECTIF, puis le reste du bareme de l'annee : le contexte refuse lui-meme, avec la phrase qui dit ou trouver ce
     // qui manque. L'effectif a part : le bareme s'arrete au premier refus (le taux AT/MP), et tout doit sortir d'un coup.
@@ -326,29 +326,29 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     let effectif = ctx.effectif()?;
     let manquent = effectif.a_dire(an);
     if !manquent.is_empty() && effectif.premiere_embauche.is_none() {
-        let (libelle, _) = champ("premiere_embauche")?;
+        let (libelle, _) = champ(CaseEntreprise::premiere_embauche)?;
         let m = match effectif.atteint(11, an) {
             Err(m) => m.phrase,
             Ok(_) => format!("L'effectif de {} n'est pas connu.", an - 1),
         };
-        out.push(manque("premiere_embauche", libelle, "l'effectif de toute paie (seuils de 11 et 50 salariés)", ENTREPRISE, Some("premiere_embauche"), m)?);
+        out.push(manque_de_la_case(CaseEntreprise::premiere_embauche, libelle, "l'effectif de toute paie (seuils de 11 et 50 salariés)", m)?);
     } else if !manquent.is_empty() {
         let annees = manquent.iter().map(i32::to_string).collect::<Vec<_>>().join(", ");
-        out.push(manque(
+        out.push(Manque::bloquante(
             "effectif",
             format!("L'effectif de {}", annees),
             "l'effectif de toute paie (seuils de 11 et 50 salariés)",
             ENTREPRISE,
             None,
             "Ces années sont d'avant PuppetPaie : leur effectif se dit tel que l'Urssaf l'a calculé (l'effectif annuel moyen de l'année, sur le compte rendu « Effectifs » de nature 118 reçu au début de l'année suivante), sous « Avancé », une année à la fois. Le compte rendu 118 de l'Urssaf le remplace à son arrivée.".to_string(),
-        )?);
+        ));
     }
     // LE CSE, la ou la convention en fait dependre une contribution (`par_representation` : le FNAS de la CCNEAC,
     // article III.3.1) et seulement quand l'effectif de la paie compte au moins onze salaries : en dessous, la question
     // ne se pose pas (III.3.1.b, `droit::bareme::representation_du_personnel`). Il ne se lit qu'avec la cle de l'effectif
     // (`droit::contexte::Effectif::cse`). Un bareme qui ne se lit pas se dit plus bas, ce qui lui manque.
     let bareme = ctx.bareme(&ctx.aujourdhui);
-    let cle = "representation_personnel";
+    let cle = CaseEntreprise::representation_personnel;
     let par_representation = |b: &droit::forme_bareme::Pile| b.contributions_conventionnelles.iter().flatten().any(|c| c.par_representation.as_ref().is_some_and(|p| !p.is_empty()));
     // C'est l'effectif de la paie (celui de l'annee d'avant, L. 130-1, I) qui decide (III.3.1.a et b) : inconnu, c'est
     // lui que la contribution demande, pas le CSE.
@@ -359,26 +359,26 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             match effectif.valeur(an) {
                 Some(e) if e >= socle::num::Decimal::from(11) && cse.is_some() && !dit => {
                     let (libelle, aide) = champ(cle)?;
-                    out.push(manque(cle, libelle, "la contribution au FNAS de chaque paie", ENTREPRISE, Some(cle), aide)?);
+                    out.push(manque_de_la_case(cle, libelle, "la contribution au FNAS de chaque paie", aide)?);
                 }
                 // Sans la cle, l'effectif d'une des cinq annees d'avant manque : `a_dire` l'a demande plus haut.
                 Some(_) => {}
-                None => out.push(manque(
+                None => out.push(Manque::bloquante(
                     "effectif",
                     format!("L'effectif de {}", an - 1),
                     "la contribution au FNAS de chaque paie",
                     ENTREPRISE,
                     None,
                     format!("La CCNEAC fixe la contribution au FNAS par l'effectif (article III.3.1) : celui de {} tel que l'Urssaf l'a calculé (compte rendu « Effectifs » de nature 118), sous « Avancé ».", an - 1),
-                )?),
+                )),
             }
         }
         Ok(_) => {}
         // L'effectif qui manque est demande plus haut.
         Err(e) => match e.classe {
-            Some(Classe::TauxAtmpAbsent) => out.push(manque("taux_atmp", format!("Le taux AT/MP {}", an), "toute paie", ENTREPRISE, Some("taux_atmp"), e.phrase)?),
+            Some(Classe::TauxAtmpAbsent) => out.push(manque_de_la_case(CaseEntreprise::taux_atmp, format!("Le taux AT/MP {}", an), "toute paie", e.phrase)?),
             Some(Classe::EffectifAbsent) => {}
-            _ => out.push(manque("bareme", format!("Le barème {}", an), "toute paie", ENTREPRISE, None, e.phrase)?),
+            _ => out.push(Manque::bloquante("bareme", format!("Le barème {}", an), "toute paie", ENTREPRISE, None, e.phrase)),
         },
     }
     // La sante d'un permanent suspendu sans indemnisation tout un mois : hors de la 3090, aucun texte ne la dit, et le mois
@@ -388,7 +388,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     if ent.idcc.portee() != Some("3090") && une_suspension_non_remuneree(ctx)?.is_some_and(|cle| !dite(&cle)) {
         let cle = droit::bareme::SANTE_SUSPENSION;
         let (libelle, aide) = champ(cle)?;
-        out.push(manque(cle, libelle, "le mois d'un permanent suspendu sans indemnisation tout le mois", ENTREPRISE, Some(cle), aide)?);
+        out.push(manque_de_la_case(cle, libelle, "le mois d'un permanent suspendu sans indemnisation tout le mois", aide)?);
     }
     // LA TVA ET LA TAXE SUR LES SALAIRES : la DSN de decembre declare chaque annee si la compagnie la doit (bloc
     // S21.G00.44) et ne se fait pas sans reponse (`taxe_sur_les_salaires::regime_taxe_sur_les_salaires`). Une compagnie qui
@@ -396,7 +396,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     if let documents::taxe_sur_les_salaires::Decision::ADire(m) = documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires(ent, None).decision {
         let cle = documents::taxe_sur_les_salaires::CHAMP_TAXE_SUR_LES_SALAIRES;
         let (libelle, _) = champ(cle)?;
-        out.push(manque(cle, libelle, "la DSN de décembre", ENTREPRISE, Some(cle), m)?);
+        out.push(manque_de_la_case(cle, libelle, "la DSN de décembre", m)?);
     }
     // LES CONTRATS DES PERMANENTS : c'est tout ce que la compagnie a a saisir des organismes (le reste, les textes le
     // donnent : `droit::organismes`). Sans eux, le mois d'un permanent se refuse (`dsn::affiliations`).
@@ -404,14 +404,14 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     let mois = ctx.aujourdhui.mois_civil();
     let permanents = engagement::permanents::Permanents::de(ctx, &mois.premier_jour(), &mois.dernier_jour())?;
     if permanents.ouverts() && ctx.organismes()?.par_nature.permanent.references.is_empty() {
-        out.push(manque(
+        out.push(Manque::bloquante(
             "organismes_permanents",
             "Les contrats de prévoyance et de santé des permanents".into(),
             "le mois d'un salarié au mois",
             ("Configuration › Organismes et contrats", "organismes"),
             None,
             "La compagnie emploie des salariés au mois : leurs contrats de prévoyance et de santé se disent avec ceux des intermittents. La référence du contrat se lit sur le certificat d'adhésion de l'assureur.".into(),
-        )?);
+        ));
     }
     // LES CONGES PAYES ACQUIS AVANT PUPPETPAIE : un permanent dont le contrat commence avant le premier mois ou PuppetPaie
     // le paie a acquis des jours ailleurs (L3141-3 du code du travail, `atelier/reference/sources/code-du-travail/

@@ -20,7 +20,7 @@ fn la_fiche_dit_l_ancien_03_avant_la_dsn() {
         declarations::champs::verifier_fiche("salarie", &s)
             .unwrap()
             .into_iter()
-            .filter(|a| a.champ == "code_nationalite_dsn" && a.gravite == Gravite::Erreur)
+            .filter(|a| a.champ == droit::fiche::CaseSalarie::code_nationalite_dsn.into() && a.gravite == Gravite::Erreur)
             .collect()
     };
     let avec = |k: &[(&str, &str)]| {

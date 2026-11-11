@@ -17,6 +17,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::etapes::Moteur;
 use compagnie::etat_dsn::Etat;
 use declarations::champs::{self, Valeur};
+use droit::fiche::{CaseEntreprise, CaseEtablissement, CaseSalarie, CaseSpectacle, NomDeCase};
 use droit::catalogue::{self, Rubrique};
 use droit::contexte::Contexte;
 use droit::emplois::{self};
@@ -241,13 +242,13 @@ pub(crate) struct VueFiche<P> {
     anomalies: Vec<champs::Anomalie>,
     pastille: PastilleDeFiche,
     sans_titre: bool,
-    montres: Vec<String>,
+    montres: Vec<NomDeCase>,
     /// Les pieces que les engagements de la fiche ouvrent (`fiches::Montres::pieces_ouvertes`) : la page n'ouvre le tiroir
     /// d'une piece que sur elles.
     pieces_ouvertes: Vec<droit::fiche::Piece>,
     /// Les cases du tiroir « Avancé » qui s'ecartent du cas ordinaire (`champs::Champ::ecart`) : le tiroir s'ouvre pour
     /// elles.
-    ecarts: Vec<String>,
+    ecarts: Vec<NomDeCase>,
 }
 
 impl<P> VueFiche<P> {
@@ -267,13 +268,13 @@ struct DonneesDeLaFiche<P> {
 }
 
 /// Une case seule, ecrite comme une fiche qui ne porterait qu'elle.
-struct UneCase<'a, T>(&'static str, &'a Option<T>);
+struct UneCase<'a, T>(NomDeCase, &'a Option<T>);
 
 impl<T: serde::Serialize> serde::Serialize for UneCase<'_, T> {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap;
         let mut m = s.serialize_map(Some(1))?;
-        m.serialize_entry(self.0, self.1)?;
+        m.serialize_entry(&self.0, self.1)?;
         m.end()
     }
 }
@@ -283,10 +284,10 @@ impl<T: serde::Serialize> serde::Serialize for UneCase<'_, T> {
 fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<Vec<TempsDeLaCase<Valeur>>> {
     struct Toutes {
         nom: &'static str,
-        listes: Vec<(&'static str, R<Vec<droit::fiche::Datee<Valeur>>>)>,
+        listes: Vec<(NomDeCase, R<Vec<droit::fiche::Datee<Valeur>>>)>,
     }
     impl droit::fiche::VoirListe for Toutes {
-        fn liste<T: serde::Serialize>(&mut self, cle: &'static str, liste: &[droit::fiche::Datee<T>]) {
+        fn liste<T: serde::Serialize>(&mut self, cle: NomDeCase, liste: &[droit::fiche::Datee<T>]) {
             let lue = liste
                 .iter()
                 .map(|e| {
@@ -304,10 +305,10 @@ fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<V
     for (champ, lue) in t.listes {
         // Les autres etablissements sont une liste : leurs temps se disent case par case, ligne par ligne
         // (`temps_des_etablissements`).
-        if champ == "etablissements" {
+        if champ == CaseEntreprise::etablissements.into() {
             continue;
         }
-        if let Some(temps) = crate::temps::d_une_case(champ, &lue?, jour, |a, b| a == b)? {
+        if let Some(temps) = crate::temps::d_une_case(champ.nom(), &lue?, jour, |a, b| a == b)? {
             out.push(temps);
         }
     }
@@ -319,26 +320,26 @@ fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<V
 /// change pas, avec la note de la version qui l'a changee). Son taux AT/MP a sa case a lui, que `taux-atmp` dit
 /// (`atmp::case_d_un_etablissement`).
 fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Option<TempsDeLaCase<Valeur>>> {
-    type Cases = Vec<(String, Vec<droit::fiche::Datee<Valeur>>)>;
+    type Cases = Vec<(NomDeCase, Vec<droit::fiche::Datee<Valeur>>)>;
     let Some(liste) = ctx.entreprise_brute().etablissements.as_deref() else { return Ok(None) };
     let principal = ctx.entreprise.nic_principal().map(str::to_string);
     let mut par_nic: Vec<(String, Cases)> = Vec::new();
     for version in droit::fiche::valeurs_datees(liste) {
-        let lue = champs::Saisie::de_la_fiche("entreprise", &UneCase("etablissements", &version.valeur))?;
-        let Some(Valeur::Lignes(lignes)) = lue.case("etablissements") else { continue };
+        let lue = champs::Saisie::de_la_fiche("entreprise", &UneCase(CaseEntreprise::etablissements.into(), &version.valeur))?;
+        let Some(Valeur::Lignes(lignes)) = lue.case(CaseEntreprise::etablissements) else { continue };
         for l in lignes {
-            let Some(nic) = l.mot("nic").filter(|n| Some(n) != principal.as_ref()) else { continue };
+            let Some(nic) = l.mot(CaseEtablissement::nic).filter(|n| Some(n) != principal.as_ref()) else { continue };
             if !par_nic.iter().any(|(n, _)| *n == nic) {
                 par_nic.push((nic.clone(), Vec::new()));
             }
             let Some((_, cases)) = par_nic.iter_mut().find(|(n, _)| *n == nic) else { continue };
             for (cle, _) in l.cases() {
-                if cle != "taux_atmp" && !cases.iter().any(|(k, _)| k == cle) {
-                    cases.push((cle.clone(), Vec::new()));
+                if *cle != CaseEtablissement::taux_atmp.into() && !cases.iter().any(|(k, _)| k == cle) {
+                    cases.push((*cle, Vec::new()));
                 }
             }
             for (cle, datees) in cases.iter_mut() {
-                let valeur = l.case(cle).cloned();
+                let valeur = l.case(*cle).cloned();
                 if datees.last().is_some_and(|d| d.valeur == valeur) {
                     continue;
                 }
@@ -349,14 +350,14 @@ fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Optio
     let mut lignes = Vec::new();
     for (nic, cases) in par_nic {
         // Il se nomme par son dernier libelle, sinon par son NIC.
-        let libelle = cases.iter().find(|(k, _)| k == "libelle").and_then(|(_, d)| d.last()).and_then(|d| d.valeur.as_ref()).and_then(Valeur::mot);
+        let libelle = cases.iter().find(|(k, _)| *k == CaseEtablissement::libelle.into()).and_then(|(_, d)| d.last()).and_then(|d| d.valeur.as_ref()).and_then(Valeur::mot);
         let dit = match libelle {
             Some(l) => l,
             None => nic.clone(),
         };
         let mut temps = Vec::new();
         for (cle, datees) in cases {
-            if let Some(t) = crate::temps::d_une_case(&cle, &datees, jour, |a, b| a == b)? {
+            if let Some(t) = crate::temps::d_une_case(cle.nom(), &datees, jour, |a, b| a == b)? {
                 temps.push(t);
             }
         }
@@ -394,9 +395,9 @@ fn fiche_verifiee<F: SorteDeFiche>(
         let siennes: Vec<&champs::Anomalie> = anomalies.iter().filter(|a| grave(a) == erreur).collect();
         let mut cases: Vec<String> = Vec::new();
         for a in &siennes {
-            let libelle = match champs::champ(nom, &a.champ)?.map(|c| c.libelle).filter(|l| !l.is_empty()) {
+            let libelle = match champs::champ(nom, a.champ)?.map(|c| c.libelle).filter(|l| !l.is_empty()) {
                 Some(l) => l,
-                None => a.champ.clone(),
+                None => a.champ.to_string(),
             };
             let mut lettres = libelle.chars();
             let libelle: String = lettres.next().into_iter().flat_map(char::to_lowercase).chain(lettres).collect();
@@ -407,7 +408,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
         let detail = siennes.iter().map(|a| a.message.as_str()).collect::<Vec<_>>().join(" ");
         Ok((cases.join(", "), detail))
     };
-    let archivee = comble.case("actif") == Some(&Valeur::OuiNon(false));
+    let archivee = comble.case(CaseSalarie::actif) == Some(&Valeur::OuiNon(false));
     let pastille = if archivee {
         PastilleDeFiche { pastille: socle::ecran::Pastille::de("information", "archivé"), detail: None }
     } else if erreurs > 0 {
@@ -421,11 +422,11 @@ fn fiche_verifiee<F: SorteDeFiche>(
     };
     // Ce que la ligne de la fiche dit, dans la liste : ce qui l'identifie (le metier et le matricule d'un salarie, le
     // numero d'objet et le code analytique d'un spectacle), et le geste qui l'archive ou la reactive.
-    let lu = |k: &str| comble.mot(k).map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+    let lu = |k: NomDeCase| comble.mot(k).map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
     // Un spectacle dont l'import n'a lu que le numero d'objet porte le titre « A COMPLETER » : la page le range a part.
-    let sans_titre = nom == "spectacle" && lu("titre").is_some_and(|t| t.eq_ignore_ascii_case(import::proposee::A_COMPLETER));
+    let sans_titre = nom == "spectacle" && lu(CaseSpectacle::titre.into()).is_some_and(|t| t.eq_ignore_ascii_case(import::proposee::A_COMPLETER));
     // Ce que l'en-tete de la fiche dit : le titre d'un spectacle, et les champs a corriger.
-    let titre_dit = match (cle, lu("titre")) {
+    let titre_dit = match (cle, lu(CaseSpectacle::titre.into())) {
         (None, _) => "Nouveau spectacle".to_string(),
         (Some(_), _) if sans_titre => "Spectacle à nommer".to_string(),
         (Some(_), Some(t)) => t,
@@ -438,19 +439,22 @@ fn fiche_verifiee<F: SorteDeFiche>(
     };
     let erreurs_note = if erreurs > 1 { "marqués ci-dessous" } else { "marqué ci-dessous" };
     let quoi = match nom {
-        "salarie" => [lu("emploi_affichage").or_else(|| lu("emploi")), lu("code_salarie").map(|m| format!("matricule {}", m))],
-        _ => [lu("numero_objet"), lu("code_analytique").map(|a| format!("analytique {}", a))],
+        "salarie" => [
+            lu(CaseSalarie::emploi_affichage.into()).or_else(|| lu(CaseSalarie::emploi.into())),
+            lu(CaseSalarie::code_salarie.into()).map(|m| format!("matricule {}", m)),
+        ],
+        _ => [lu(CaseSpectacle::numero_objet.into()), lu(CaseSpectacle::code_analytique.into()).map(|a| format!("analytique {}", a))],
     };
     let quoi_dit = quoi.into_iter().flatten().collect::<Vec<_>>().join(" · ");
     let geste_dit = if archivee { "Réactiver" } else { "Archiver" };
-    let matricule_dit = lu("code_salarie").filter(|_| nom == "salarie").map(|m| format!("matricule {}", m));
+    let matricule_dit = lu(CaseSalarie::code_salarie.into()).filter(|_| nom == "salarie").map(|m| format!("matricule {}", m));
     let super::fiches::Montres { cases: montres, pieces_ouvertes } = super::fiches::montres(ctx, nom, cle, &comble, ent, p)?;
     // L'organisme Urssaf que le code postal de la compagnie donne : le cas ordinaire du code Urssaf.
     let du_code_postal = match ctx.entreprise.code_postal.portee() {
         Some(cp) => declarations::urssaf::base()?.du_code_postal(cp),
         None => None,
     };
-    let ecarts = champs::fiche(nom)?.iter().filter(|c| c.ecart(&comble, du_code_postal.as_deref())).map(|c| c.cle.clone()).collect();
+    let ecarts = champs::fiche(nom)?.iter().filter(|c| c.ecart(&comble, du_code_postal.as_deref())).map(|c| c.cle).collect();
     Ok(VueFiche {
         quoi_dit,
         geste_dit,
@@ -872,7 +876,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
         Some(option) => {
             let nom = description_entreprise
                 .iter()
-                .find(|c| c.cle == "deduction_forfaitaire_option")
+                .find(|c| c.cle == CaseEntreprise::deduction_forfaitaire_option.into())
                 .and_then(|c| c.libelles.and_then(|l| l.de(option)))
                 .filter(|n| !n.is_empty());
             let nom = match nom {

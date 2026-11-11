@@ -11,7 +11,8 @@
 //! imprime, par le meme chemin que la fiche qu'il creerait. La fiche qui existe et ce que l'import en ferait se
 //! confrontent case par case, chacune une saisie de sa fiche (`declarations::champs::Saisie`).
 
-use declarations::champs::{Saisie, Valeur};
+use declarations::champs::{Champ, Saisie, Valeur};
+use droit::fiche::{CaseSalarie, NomDeCase};
 use socle::echec::R;
 
 /// Une case qui ne dit rien : absente, un texte blanc ou « A COMPLETER » (sans casse), une liste ou une structure vides.
@@ -20,15 +21,17 @@ pub(crate) fn vide(v: Option<&Valeur>) -> bool {
     crate::fiches::vide(v)
 }
 
-/// LA FORME DECLAREE D'UNE FORME LISIBLE (`nom_affichage` : `nom`) : la case sans son suffixe d'affichage ; rien pour une
-/// case qui n'est pas une forme lisible.
-pub(crate) fn forme_declaree_de(cle: &str) -> Option<&str> {
-    cle.strip_suffix("affichage").and_then(|b| b.strip_suffix('_'))
+/// LA FORME DECLAREE D'UNE FORME LISIBLE (`nom_affichage` : `nom`) : le champ de la table qui s'en deduit (`derive_de`) ;
+/// rien pour une case qui n'est pas une forme lisible.
+pub(crate) fn forme_declaree_de(champs: &[Champ], cle: NomDeCase) -> Option<NomDeCase> {
+    champs.iter().find(|c| c.derive_de == Some(cle)).map(|c| c.cle)
 }
 
 /// Ce que l'import ne met jamais dans une fiche qui existe : son etat (`actif` : une fiche archivee l'est exprès), et son
 /// historique.
-const JAMAIS: [&str; 2] = ["actif", "historique"];
+fn jamais() -> [NomDeCase; 2] {
+    [CaseSalarie::actif.into(), NomDeCase::HISTORIQUE]
+}
 
 /// Les cases de `proposees` (la fiche que l'import creerait de cette piece) qu'une fiche existante recoit : une case de
 /// la fiche, vide dans `fiche`, pleine dans `proposees`. Un champ officiel dont la forme lisible est remplie se derive
@@ -38,17 +41,17 @@ pub(crate) fn champs_a_completer(nom: &str, fiche: &Saisie, proposees: &Saisie) 
     let champs = declarations::champs::fiche(nom)?;
     let mut out = Saisie::default();
     for c in &champs {
-        if forme_declaree_de(&c.cle).is_some() || JAMAIS.contains(&c.cle.as_str()) {
+        if forme_declaree_de(&champs, c.cle).is_some() || jamais().contains(&c.cle) {
             continue;
         }
-        let Some(v) = proposees.case(&c.cle) else { continue };
-        if vide(Some(v)) || !vide(fiche.case(&c.cle)) {
+        let Some(v) = proposees.case(c.cle) else { continue };
+        if vide(Some(v)) || !vide(fiche.case(c.cle)) {
             continue;
         }
-        if c.derive_de.as_deref().is_some_and(|src| !src.is_empty() && !vide(fiche.case(src))) {
+        if c.derive_de.is_some_and(|src| !vide(fiche.case(src))) {
             continue;
         }
-        out.poser(&c.cle, v.clone());
+        out.poser(c.cle, v.clone());
     }
     if !out.est_dite() {
         return Ok(out);
@@ -58,8 +61,8 @@ pub(crate) fn champs_a_completer(nom: &str, fiche: &Saisie, proposees: &Saisie) 
     import::proposee::fondre(&mut fusion, &out);
     let comble = fusion.comblee(nom)?;
     for c in &champs {
-        let Some(src) = c.derive_de.as_deref().filter(|d| !d.is_empty()) else { continue };
-        if out.case(&c.cle).is_none() || !vide(fiche.case(src)) {
+        let Some(src) = c.derive_de else { continue };
+        if out.case(c.cle).is_none() || !vide(fiche.case(src)) {
             continue;
         }
         let lisible = proposees.case(src).filter(|v| !vide(Some(v))).or_else(|| comble.case(src).filter(|v| !vide(Some(v))));
