@@ -131,7 +131,7 @@ pub fn pages(chemins: &[String]) -> Result<Vec<usize>, Refus> {
 }
 
 /// Le texte de chaque page de `chemin`, et les avertissements (pages illisibles).
-pub fn texte(chemin: &str) -> Result<(Vec<String>, Vec<String>), Refus> {
+pub fn texte(chemin: &str) -> Result<(Vec<crate::texte::TexteDePage>, Vec<String>), Refus> {
     let (doc, _) = ouvrir(chemin, true)?;
     Ok(crate::texte::texte_des_pages(&doc))
 }

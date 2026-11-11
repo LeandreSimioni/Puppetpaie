@@ -522,7 +522,7 @@ Le dédoublonnage des pages par leur texte est fait par l'appelant (qui lit le t
 
 ```
 fabrique-pdf --pages a.pdf [b.pdf …]     # [3, 1]
-fabrique-pdf --texte a.pdf               # ["Page 1\n…\n", "Page 2\n…\n"]
+fabrique-pdf --texte a.pdf               # [["Page 1\n…\n"], ["Page 2\n…\n"]]
 ```
 
 Ils remplacent, de PyMuPDF, le nombre de pages d'un document (`len(doc)`) et le texte de
@@ -537,11 +537,14 @@ pour `--texte`, aussi : chiffré avec un autre mot de passe que le vide) ; **2**
 - `--pages` : un tableau d'entiers, **dans l'ordre des fichiers donnés** ; un seul fichier
   refusé refuse l'ensemble (l'appelant qui veut tolérer un fichier abîmé les passe un à un).
   Un PDF chiffré se compte sans être déchiffré.
-- `--texte` : un tableau de chaînes, **une par page, dans l'ordre des pages** ; une page sans
-  texte (un scan) donne `""`. Chaque chaîne est faite comme celle de `page.get_text()` :
-  **une ligne par `\n`, un `\n` après la dernière**, pas de ligne vide entre les blocs. Une page
-  dont le contenu est illisible donne `""` et **une ligne d'avertissement** sur la sortie
-  d'erreur (code 0) : le reste du document se lit.
+- `--texte` : un tableau, **une entrée par page, dans l'ordre des pages** ; chaque page est le
+  tableau de ses morceaux : une chaîne, ou **un caractère que rien ne dit**, tel qu'il est,
+  `{"police": "ABCDEF+Nom", "code": 12, "pourquoi": "…"}` (ISO 32000-1, 9.10.2 : ni `ToUnicode`,
+  ni l'encodage, ni le programme de la police ne disent son caractère ; ce n'est ni U+FFFD ni un
+  caractère deviné). Une page sans texte (un scan) donne `[]`. Mis bout à bout, les morceaux font
+  le texte de `page.get_text()` : **une ligne par `\n`, un `\n` après la dernière**, pas de ligne
+  vide entre les blocs. Une page dont le contenu est illisible donne `[]` et **une ligne
+  d'avertissement** sur la sortie d'erreur (code 0) : le reste du document se lit.
 - Un PDF chiffré en AES-256 par `--verrouiller` ou par MuPDF (mot de passe utilisateur vide)
   se lit sans rien demander ; les anciens chiffrements RC4 (`/V` 1 ou 2) aussi, quand lopdf les
   lit ; un autre mot de passe que le vide, ou un chiffrement qu'on ne sait pas lire
@@ -614,7 +617,8 @@ sur la sortie d'erreur (code 0).
     "polices": ["QTVKDB+LiberationSans", "DTPUXL+LiberationSans-Bold"],
     "images": [[487.28, 28.0, 561.28, 52.67]],
     "traits": [[41.4, 108.44, 285.1, 108.94]],
-    "mots": [{"texte": "Bonjour", "rect": [50.0, 52.09, 83.35, 64.38], "ligne": 0}]}]}
+    "mots": [{"texte": "Bonjour", "rect": [50.0, 52.09, 83.35, 64.38], "ligne": 0}],
+    "inconnus": []}]}
 ```
 
 Chiffré : `"chiffrement": {"filtre": "Standard", "V": 5, "R": 6, "longueur": 256, "P": -3372,
@@ -638,7 +642,11 @@ Chiffré : `"chiffrement": {"filtre": "Standard", "V": 5, "R": 6, "longueur": 25
   recollant les mots d'une même `ligne` avec un espace, on retrouve la ligne de `--texte`, blancs
   ramenés à un. Les annotations dessinées (`/AP /N`) sont lues comme `--texte` le fait, **après**
   le contenu de la page : leurs mots, leurs images et leurs traits viennent à la fin des listes
-  (leurs polices, non : voir `polices`).
+  (leurs polices, non : voir `polices`). Un caractère que rien ne dit (le morceau de `--texte`)
+  coupe le mot comme un blanc.
+- **`inconnus`.** Chaque caractère que rien ne dit, dans l'ordre de `--texte` : `police`, `code`,
+  `pourquoi` (ceux de `--texte`), sa `rect` et sa `ligne`. Seul le lecteur qui a besoin de ce
+  caractère (une case du bulletin qu'il lit) refuse, en le nommant.
 - **Boîte d'un glyphe.** De la ligne de base moins l'ascendant à la ligne de base plus le
   descendant, sur l'avance du glyphe, sous le corps, la matrice du texte et la CTM. Ascendant et
   descendant sont, comme dans MuPDF, ceux **du fichier de police incorporé** (`hhea` de la table

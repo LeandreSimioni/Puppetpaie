@@ -10,14 +10,15 @@
 //!    une ; sinon les noms de glyphes de l'encodage d'une police simple (un encodage prédéfini, les
 //!    `/Differences`, l'encodage propre d'un programme Type 1 incorporé) lus par la liste des glyphes
 //!    d'Adobe ; sinon le programme TrueType incorporé (sa « cmap » mène au glyphe, qui dit son
-//!    caractère par son nom ou par la « cmap » Unicode du programme). Un glyphe que rien ne dit se
-//!    refuse quand il se montre, en nommant la police. Les largeurs viennent du PDF, ou de
-//!    Liberation pour les polices standard sans `/Widths` ;
+//!    caractère par son nom ou par la « cmap » Unicode du programme). Un glyphe que rien ne dit est
+//!    un signe inconnu du texte (`Inconnu` : la police, le code), à sa place ; seul le lecteur qui en
+//!    a besoin le refuse. Les largeurs viennent du PDF, ou de Liberation pour les polices standard
+//!    sans `/Widths` ;
 //! 3. la mise en lignes : un caractère prolonge la ligne courante s'il part du bout du précédent
 //!    (à un espace près) sur la même ligne de base ; sinon il ouvre une ligne. C'est la règle de
 //!    MuPDF, pas un tri géométrique : le texte sort dans l'ordre du flux.
 //!
-//! Le résultat est le texte de chaque page, les lignes séparées par `\n`, un `\n` final.
+//! Le résultat est le texte de chaque page (`TexteDePage`), les lignes séparées par `\n`, un `\n` final.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -305,6 +306,112 @@ enum Lu {
     Inconnu(String),
 }
 
+/// Un caractère que rien ne dit (ISO 32000-1, 9.10.2 : « there is no way to determine what the character code
+/// represents ») : la police qui le montre (son `/BaseFont`), son code, et pourquoi rien ne le dit. Il est un signe du
+/// texte, à sa place ; seul le lecteur qui a besoin de ce caractère refuse, en le nommant.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct Inconnu {
+    pub police: String,
+    pub code: u32,
+    pub pourquoi: String,
+}
+
+impl Inconnu {
+    /// La phrase qui le nomme, sur la page `page`.
+    pub fn phrase(&self, page: u32) -> String {
+        format!(
+            "page {} : la police {} montre le code {} sans /ToUnicode : {} ; rien ne dit son caractère (ISO 32000-1, 9.10.2)",
+            page, self.police, self.code, self.pourquoi
+        )
+    }
+}
+
+/// Un signe du texte : un caractère, ou un caractère que rien ne dit.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Signe {
+    Caractere(char),
+    Inconnu(Inconnu),
+}
+
+/// Un morceau du texte d'une page : des caractères, ou un caractère que rien ne dit, tel qu'il est.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(untagged)]
+pub enum Morceau {
+    Texte(String),
+    Inconnu(Inconnu),
+}
+
+/// Le texte d'une page : ses lignes, chacune suivie de `\n`, en morceaux.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TexteDePage {
+    /// Son numéro dans le document, à partir de 1.
+    pub page: u32,
+    pub morceaux: Vec<Morceau>,
+}
+
+impl TexteDePage {
+    /// Les morceaux d'une page, à partir de ses lignes.
+    fn de_lignes(page: u32, lignes: Vec<Vec<Signe>>) -> TexteDePage {
+        let mut morceaux = Vec::new();
+        let mut courant = String::new();
+        for ligne in lignes {
+            for s in ligne {
+                match s {
+                    Signe::Caractere(c) => courant.push(c),
+                    Signe::Inconnu(i) => {
+                        if !courant.is_empty() {
+                            morceaux.push(Morceau::Texte(std::mem::take(&mut courant)));
+                        }
+                        morceaux.push(Morceau::Inconnu(i));
+                    }
+                }
+            }
+            courant.push('\n');
+        }
+        if !courant.is_empty() {
+            morceaux.push(Morceau::Texte(courant));
+        }
+        TexteDePage { page, morceaux }
+    }
+
+    /// Le texte de la page à montrer à quelqu'un : chaque caractère que rien ne dit, tel qu'il est
+    /// (« ⟦code C de la police X⟧ »).
+    pub fn montre(&self) -> String {
+        let mut t = String::new();
+        for m in &self.morceaux {
+            match m {
+                Morceau::Texte(s) => t.push_str(s),
+                Morceau::Inconnu(i) => t.push_str(&format!("⟦code {} de la police {}⟧", i.code, i.police)),
+            }
+        }
+        t
+    }
+
+    /// Le texte de la page pour un lecteur qui en a besoin en entier : un caractère que rien ne dit le refuse, nommé
+    /// (la page, la police, le code).
+    pub fn lu(&self) -> Result<String, Refus> {
+        let mut t = String::new();
+        for m in &self.morceaux {
+            match m {
+                Morceau::Texte(s) => t.push_str(s),
+                Morceau::Inconnu(i) => return illisible(i.phrase(self.page)),
+            }
+        }
+        Ok(t)
+    }
+}
+
+/// Le texte d'une ligne, quand chacun de ses signes est un caractère.
+pub(crate) fn caracteres_de(ligne: &[Signe]) -> Option<String> {
+    ligne
+        .iter()
+        .map(|s| match s {
+            Signe::Caractere(c) => Some(*c),
+            Signe::Inconnu(_) => None,
+        })
+        .collect()
+}
+
 /// D'une police composée sans `ToUnicode` pour un code, ce que son programme dit de chaque glyphe.
 enum ParProgramme {
     /// Un programme TrueType (CIDFontType2) : le CID mène au glyphe par `CIDToGIDMap` (ses octets ; `None` : Identity,
@@ -479,12 +586,12 @@ impl Police {
         }
     }
 
-    /// Le texte d'un code (ISO 32000-1, 9.10.2) : `ToUnicode` d'abord ; puis l'encodage d'une police simple, ou le
-    /// programme d'une police composée. `None` quand le code ne montre aucun glyphe ; un glyphe dont rien ne dit le
-    /// caractère se refuse, en nommant la police.
-    fn texte(&self, code: u32) -> Result<Option<String>, Refus> {
+    /// Les signes d'un code (ISO 32000-1, 9.10.2) : `ToUnicode` d'abord ; puis l'encodage d'une police simple, ou le
+    /// programme d'une police composée. Aucun quand le code ne montre aucun glyphe ; un glyphe dont rien ne dit le
+    /// caractère est un signe inconnu, qui nomme la police et le code.
+    fn signes(&self, code: u32) -> Vec<Signe> {
         if let Some(t) = self.unicode.get(&code) {
-            return Ok(Some(t.clone()));
+            return t.chars().map(Signe::Caractere).collect();
         }
         let lu = match &self.sorte {
             Sorte::Simple { encodage } => encodage[code as usize & 0xFF].clone(),
@@ -501,12 +608,9 @@ impl Police {
             }
         };
         match lu {
-            Lu::Texte(t) => Ok(Some(t)),
-            Lu::Rien => Ok(None),
-            Lu::Inconnu(pourquoi) => illisible(format!(
-                "la police {} montre le code {} sans /ToUnicode : {} ; rien ne dit son caractère (ISO 32000-1, 9.10.2)",
-                self.nom, code, pourquoi
-            )),
+            Lu::Texte(t) => t.chars().map(Signe::Caractere).collect(),
+            Lu::Rien => Vec::new(),
+            Lu::Inconnu(pourquoi) => vec![Signe::Inconnu(Inconnu { police: self.nom.clone(), code, pourquoi })],
         }
     }
 
@@ -1100,14 +1204,14 @@ const DECALAGE_MAX: Mesure = mesure("0.8");
 
 struct LigneCourante {
     dir: (Mesure, Mesure),
-    texte: String,
-    /// Une boîte par caractère de `texte` (`None` : un espace ajouté), si `Mise::garder`.
+    texte: Vec<Signe>,
+    /// Une boîte par signe de `texte` (`None` : un espace ajouté), si `Mise::garder`.
     boites: Vec<Option<Boite>>,
 }
 
 #[derive(Default)]
 struct Mise {
-    lignes: Vec<String>,
+    lignes: Vec<Vec<Signe>>,
     /// Garder la boîte de chaque caractère (`--inspecter`) : `boites[k]` est celle de `lignes[k]`.
     garder: bool,
     boites: Vec<Vec<Option<Boite>>>,
@@ -1126,9 +1230,9 @@ impl Mise {
         }
     }
 
-    /// Pose un caractère : origine `p`, vecteur de direction `dir` (déjà à l'échelle du corps),
+    /// Pose un signe : origine `p`, vecteur de direction `dir` (déjà à l'échelle du corps),
     /// avance `adv` (fraction d'em).
-    fn caractere(&mut self, c: char, p: (Mesure, Mesure), dir: (Mesure, Mesure), taille: Mesure, adv: Option<Mesure>, boite: Boite) {
+    fn caractere(&mut self, c: Signe, p:(Mesure, Mesure), dir: (Mesure, Mesure), taille: Mesure, adv: Option<Mesure>, boite: Boite) {
         let longueur = dir.0.hypot(dir.1);
         let (Some(nx), Some(ny)) = (dir.0.sur(longueur), dir.1.sur(longueur)) else {
             return;
@@ -1160,12 +1264,13 @@ impl Mise {
         }
         if nouvelle {
             self.fermer();
-            self.courante = Some(LigneCourante { dir: nd, texte: String::new(), boites: Vec::new() });
+            self.courante = Some(LigneCourante { dir: nd, texte: Vec::new(), boites: Vec::new() });
         }
         let garder = self.garder;
         let l = self.courante.as_mut().unwrap();
-        if espace && !l.texte.ends_with(' ') && c != ' ' {
-            l.texte.push(' ');
+        let blanc = Signe::Caractere(' ');
+        if espace && l.texte.last() != Some(&blanc) && c != blanc {
+            l.texte.push(blanc);
             if garder {
                 l.boites.push(None);
             }
@@ -1181,19 +1286,14 @@ impl Mise {
     }
 
     /// Les lignes avec la boîte de chacun de leurs caractères (`Mise::garder`).
-    fn finir_avec_boites(mut self) -> Vec<(String, Vec<Option<Boite>>)> {
+    fn finir_avec_boites(mut self) -> Vec<(Vec<Signe>, Vec<Option<Boite>>)> {
         self.fermer();
         self.lignes.into_iter().zip(self.boites).collect()
     }
 
-    fn finir(mut self) -> String {
+    fn finir(mut self) -> Vec<Vec<Signe>> {
         self.fermer();
-        let mut t = String::new();
-        for l in self.lignes {
-            t.push_str(&l);
-            t.push('\n');
-        }
-        t
+        self.lignes
     }
 }
 
@@ -1390,7 +1490,7 @@ impl<'a> Interprete<'a> {
         for (k, c) in a.texte.chars().enumerate() {
             let decalage = a.adv * k as i64 / n;
             let boite = englobante(&a.trm, decalage, -a.desc, decalage + a.adv / n, a.asc);
-            self.mise.caractere(c, (x + decalage * dir.0, y + decalage * dir.1), dir, taille, Some(a.adv / n), boite);
+            self.mise.caractere(Signe::Caractere(c), (x + decalage * dir.0, y + decalage * dir.1), dir, taille, Some(a.adv / n), boite);
         }
     }
 
@@ -1670,7 +1770,7 @@ impl<'a> Interprete<'a> {
         for (code, n) in police.codes(chaine)? {
             let w0 = police.largeur(code);
             let trm = mul(&[e.taille * e.th, Z, Z, e.taille, Z, e.rise], &mul(tm, &e.ctm));
-            let texte = police.texte(code)?;
+            let signes = police.signes(code);
             let visible = self.dans_le_cadre(&trm, w0);
             let boite = englobante(&trm, Z, -police.desc, w0, police.asc);
             // Le corps rendu : la racine du déterminant de la matrice de rendu (positive : sa valeur absolue).
@@ -1685,7 +1785,7 @@ impl<'a> Interprete<'a> {
                 a.adv += w0;
             } else if visible {
                 let dir = if police.vertical { (trm[2], trm[3]) } else { (trm[0], trm[1]) };
-                for (k, c) in texte.iter().flat_map(|t| t.chars()).enumerate() {
+                for (k, c) in signes.into_iter().enumerate() {
                     self.mise.caractere(c, (trm[4], trm[5]), dir, taille, if k == 0 { Some(w0) } else { None }, boite);
                 }
             }
@@ -1822,14 +1922,14 @@ fn lire_la_page(doc: &Document, id: ObjectId, inspecter: bool) -> Result<Interpr
 }
 
 /// Le texte d'une page : son contenu, puis l'apparence de ses annotations (champs de formulaire).
-fn texte_de_page(doc: &Document, id: ObjectId) -> Result<String, Refus> {
+fn texte_de_page(doc: &Document, id: ObjectId) -> Result<Vec<Vec<Signe>>, Refus> {
     Ok(lire_la_page(doc, id, false)?.mise.finir())
 }
 
 /// Ce que `--inspecter` relève d'une page, dans le repère du PDF (origine en bas à gauche).
 pub(crate) struct PageLue {
-    /// Les lignes de texte (celles de `--texte`) avec la boîte de chacun de leurs caractères.
-    pub lignes: Vec<(String, Vec<Option<Boite>>)>,
+    /// Les lignes de texte (celles de `--texte`) avec la boîte de chacun de leurs signes.
+    pub lignes: Vec<(Vec<Signe>, Vec<Option<Boite>>)>,
     pub images: Vec<Boite>,
     pub traits: Vec<Boite>,
     pub polices: Vec<String>,
@@ -1845,15 +1945,15 @@ pub(crate) fn inspecter_page(doc: &Document, id: ObjectId) -> Result<PageLue, Re
 
 /// Le texte de chaque page du document. Une page qui ne se lit pas donne un texte vide et un avertissement qui dit
 /// pourquoi (rendu à l'appelant, qui en décide) : le reste du document se lit.
-pub fn texte_des_pages(doc: &Document) -> (Vec<String>, Vec<String>) {
+pub fn texte_des_pages(doc: &Document) -> (Vec<TexteDePage>, Vec<String>) {
     let mut textes = Vec::new();
     let mut avertissements = Vec::new();
     for (n, id) in doc.get_pages() {
         match texte_de_page(doc, id) {
-            Ok(t) => textes.push(t),
+            Ok(lignes) => textes.push(TexteDePage::de_lignes(n, lignes)),
             Err(r) => {
                 avertissements.push(format!("page {} : {}", n, r.phrase));
-                textes.push(String::new());
+                textes.push(TexteDePage { page: n, morceaux: Vec::new() });
             }
         }
     }

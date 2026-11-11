@@ -990,7 +990,8 @@ pub enum Refus {
     /// Un libelle de ligne de paie absent de la table. Il n'est que SIGNALE (son message va dans les avertissements) :
     /// la ligne est gardee telle quelle, la page lue.
     LibelleInconnu(String),
-    /// Une mention qui identifie le bulletin ne se lit pas (salarie, periode, brut, net a payer).
+    /// Une mention qui identifie le bulletin ne se lit pas (salarie, periode, brut, net a payer), ou une case lue porte
+    /// un caractere que rien ne dit (ISO 32000-1, 9.10.2 : le detail nomme la page, la police, le code et la case).
     Incomplet(String),
     /// La page se contredit au point de ne pas se lire.
     Incoherent(String),
@@ -1078,7 +1079,7 @@ pub fn lire_avec(chemin: &Path, table: &Table) -> R<Vec<Lecture>> {
         .map(|(i, p)| {
             let prefixe = format!("page {} : ", i + 1);
             let signale: Vec<&str> = avertissements.iter().filter_map(|a| a.strip_prefix(&prefixe)).collect();
-            let resultat = lire_page(p, &signale, table);
+            let resultat = lire_page(p, i + 1, &signale, table);
             Lecture { page: i + 1, resultat }
         })
         .collect())
@@ -1101,8 +1102,9 @@ fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
     mots
 }
 
-fn lire_page(p: &crate::releve::PageRelevee, signale: &[&str], table: &Table) -> Result<BulletinLu, Refus> {
+fn lire_page(p: &crate::releve::PageRelevee, numero: usize, signale: &[&str], table: &Table) -> Result<BulletinLu, Refus> {
     let mots = mots_de(p);
+    let inconnus = p.inconnus.iter().map(|u| (Boite { x0: u.rect[0], y0: u.rect[1], x1: u.rect[2], y1: u.rect[3] }, u.clone())).collect();
     if mots.is_empty() {
         let mut detail = format!("aucun mot ({} police(s), {} image(s), {} trait(s))", p.polices.len(), p.images.len(), p.traits.len());
         if !signale.is_empty() {
@@ -1118,7 +1120,7 @@ fn lire_page(p: &crate::releve::PageRelevee, signale: &[&str], table: &Table) ->
     let debuts = (0..page.mots.len())
         .map(|i| table.mentions.iter().position(|m| page.libelle_en(i, &m.libelles).is_some()))
         .collect();
-    let mut l = Lecteur { t: table, page, debuts, pris: Vec::new(), avertissements: Vec::new() };
+    let mut l = Lecteur { t: table, page, numero, inconnus, debuts, pris: Vec::new(), avertissements: Vec::new() };
     l.lire(logiciel)
 }
 
@@ -1242,11 +1244,17 @@ fn code_postal(ligne: &str) -> bool {
 struct Bloc {
     lignes: Vec<String>,
     employeur: bool,
+    /// La boite de ses mots.
+    zone: Boite,
 }
 
 struct Lecteur<'a> {
     t: &'a Table,
     page: Page,
+    /// Le numero de la page dans le PDF, a partir de 1.
+    numero: usize,
+    /// Les caracteres que rien ne dit, chacun avec sa boite : une case qui en porte un ne se lit pas.
+    inconnus: Vec<(Boite, crate::releve::InconnuReleve)>,
     /// Pour chaque mot, la mention dont un libelle commence la.
     debuts: Vec<Option<usize>>,
     /// Les mots pris par la valeur d'une mention.
@@ -1285,8 +1293,14 @@ impl<'a> Lecteur<'a> {
         let pied_provisoire = None;
         for k in 0..self.t.mentions.len() {
             if self.t.mentions[k].section == Section::Entete {
-                if let Some(v) = self.mention(k, limite, pied_provisoire) {
-                    valeurs.push((self.t.mentions[k].nom, v));
+                match self.mention(k, limite, pied_provisoire) {
+                    Ok(Some(v)) => valeurs.push((self.t.mentions[k].nom, v)),
+                    Ok(None) => {}
+                    // Le tableau illisible refuse la page d'abord (plus bas) : son refus dit davantage.
+                    Err(r) => match &tableau {
+                        Err(t) => return Err(t.clone()),
+                        Ok(_) => return Err(r),
+                    },
                 }
             }
         }
@@ -1338,7 +1352,7 @@ impl<'a> Lecteur<'a> {
         let pied = corps.fin;
         for k in 0..self.t.mentions.len() {
             if self.t.mentions[k].section != Section::Entete {
-                if let Some(v) = self.mention(k, limite, pied) {
+                if let Some(v) = self.mention(k, limite, pied)? {
                     valeurs.push((self.t.mentions[k].nom, v));
                 }
             }
@@ -1347,8 +1361,8 @@ impl<'a> Lecteur<'a> {
         let mut net_imposable: Option<Decimal> = None;
         let mut cumuls: Vec<(String, Cumul)> = Vec::new();
         if let Some(p) = pied {
-            self.grilles(p, &mut pas, &mut net_imposable, &mut cumuls);
-            self.sans_grille(p, &mut pas, &mut net_imposable);
+            self.grilles(p, &mut pas, &mut net_imposable, &mut cumuls)?;
+            self.sans_grille(p, &mut pas, &mut net_imposable)?;
         }
 
         let periode = valeurs.iter().find_map(|(k, v)| if let (true, Valeur::Periode(a, b)) = (*k == "periode", v) { Some((*a, *b)) } else { None });
@@ -1399,7 +1413,10 @@ impl<'a> Lecteur<'a> {
             }
         };
         // Le mode de reglement : sa mention, sinon ce qui suit « par » dans celle de la date (« le 30/11/2026 par virement »).
-        let mode_reglement = texte(&valeurs, "mode_reglement").or_else(|| self.mode_de_la_date(limite, pied));
+        let mode_reglement = match texte(&valeurs, "mode_reglement") {
+            Some(m) => Some(m),
+            None => self.mode_de_la_date(limite, pied)?,
+        };
 
         let mut b = BulletinLu {
             logiciel,
@@ -1460,15 +1477,55 @@ impl<'a> Lecteur<'a> {
 
     // ----------------------------------------------------------------------------------------- les mentions
 
-    /// La valeur d'une mention : la premiere de ses occurrences qui en porte une.
-    fn mention(&mut self, k: usize, limite: Mesure, pied: Option<Mesure>) -> Option<Valeur> {
+    /// Un caractere que rien ne dit dans `zone` (son milieu vertical a `TOLERANCE` pres, sa boite touchant la zone
+    /// elargie de `marge` de chaque cote), s'il y en a un.
+    fn inconnu_dans(&self, zone: Boite, marge: Mesure) -> Option<&crate::releve::InconnuReleve> {
+        self.inconnus
+            .iter()
+            .find(|(b, _)| b.cy() >= zone.y0 - TOLERANCE && b.cy() <= zone.y1 + TOLERANCE && b.x1 >= zone.x0 - marge && b.x0 <= zone.x1 + marge)
+            .map(|(_, u)| u)
+    }
+
+    /// Un caractere que rien ne dit sur le rang `cy` (son milieu vertical a `TOLERANCE` pres), s'il y en a un.
+    fn inconnu_du_rang(&self, cy: Mesure) -> Option<&crate::releve::InconnuReleve> {
+        self.inconnus.iter().find(|(b, _)| (b.cy() - cy).abs() <= TOLERANCE).map(|(_, u)| u)
+    }
+
+    /// La case `case` porte un caractere que rien ne dit : elle ne se lit pas (ISO 32000-1, 9.10.2).
+    fn refus_inconnu(&self, u: &crate::releve::InconnuReleve, case: &str) -> Refus {
+        Refus::Incomplet(u.phrase(self.numero, case))
+    }
+
+    /// La valeur d'une mention : la premiere de ses occurrences qui en porte une. Une occurrence dont le libelle ou la
+    /// valeur touche un caractere que rien ne dit refuse la page, en nommant la case.
+    fn mention(&mut self, k: usize, limite: Mesure, pied: Option<Mesure>) -> Result<Option<Valeur>, Refus> {
         let m = self.t.mentions[k].clone();
         let occ = self.page.occurrences(&m.libelles, &|x: &Mot| self.dans_section(x.cy(), m.section, limite, pied));
         for (rep, _, dernier) in occ {
+            // Ce qui suit le libelle, jusqu'ou une valeur peut commencer.
+            let apres = Boite { x1: rep.x1 + VALEUR_LOIN, ..rep };
             let v = if m.sorte == Sorte::Nombre && m.section == Section::Pied {
-                self.montant_de(&rep, dernier)
+                let lu = self.montant_de(&rep, dernier);
+                let pres = match &lu {
+                    Some((_, b)) => self.inconnu_dans(apres, pt(0)).or_else(|| self.inconnu_dans(*b, ECART_MOTS)),
+                    None => self.inconnu_dans(apres, pt(0)),
+                };
+                if let Some(u) = pres {
+                    return Err(self.refus_inconnu(u, &self.libelle_de(m.nom)));
+                }
+                lu.map(|(v, _)| v)
             } else {
                 let mots = self.valeur(k, &rep, dernier, m.rangs);
+                let pres = match mots.is_empty() {
+                    true => self.inconnu_dans(apres, pt(0)),
+                    false => {
+                        let zone = mots.iter().fold(rep, |b, &i| b.union(&self.page.mots[i]));
+                        self.inconnu_dans(Boite { x1: zone.x1 + VALEUR_SUITE, ..zone }, pt(0))
+                    }
+                };
+                if let Some(u) = pres {
+                    return Err(self.refus_inconnu(u, &self.libelle_de(m.nom)));
+                }
                 if mots.is_empty() {
                     None
                 } else {
@@ -1480,10 +1537,10 @@ impl<'a> Lecteur<'a> {
                 }
             };
             if v.is_some() {
-                return v;
+                return Ok(v);
             }
         }
-        None
+        Ok(None)
     }
 
     /// Les mots qui suivent un libelle sur son rang (et les rangs dessous, pour une valeur qui en couvre plusieurs) :
@@ -1604,8 +1661,8 @@ impl<'a> Lecteur<'a> {
         }
     }
 
-    /// Un montant du pied : le nombre qui suit son libelle sur son rang, sinon le plus proche dessous.
-    fn montant_de(&self, rep: &Boite, dernier: usize) -> Option<Valeur> {
+    /// Un montant du pied : le nombre qui suit son libelle sur son rang, sinon le plus proche dessous ; et sa boite.
+    fn montant_de(&self, rep: &Boite, dernier: usize) -> Option<(Valeur, Boite)> {
         let p = &self.page;
         let bord_libelle = (0..p.mots.len())
             .filter(|&i| i != dernier && self.debuts[i].is_some() && (p.mots[i].cy() - rep.cy()).abs() <= TOLERANCE && p.mots[i].x0 > rep.x1)
@@ -1617,19 +1674,21 @@ impl<'a> Lecteur<'a> {
             .filter(|n| (n.boite.cy() - rep.cy()).abs() <= TOLERANCE && n.boite.x0 > rep.x1 && n.boite.x1 < bord_libelle)
             .min_by(|a, b| a.boite.x0.cmp(&b.boite.x0));
         if let Some(n) = droite {
-            return Some(Valeur::Nombre(n.valeur));
+            return Some((Valeur::Nombre(n.valeur), n.boite));
         }
         let fenetre = |n: &&Nombre| {
             let b = n.boite;
             b.cy() > rep.cy() + pt(2) && b.cy() - rep.cy() <= DESSOUS_MAX && b.cx() >= rep.x0 - pt(20) && b.cx() <= rep.x1 + pt(80)
         };
         let dist = |n: &Nombre| (n.boite.cx() - rep.cx()).hypot(n.boite.cy() - rep.cy());
-        p.nombres.iter().filter(fenetre).min_by(|a, b| dist(a).cmp(&dist(b))).map(|n| Valeur::Nombre(n.valeur))
+        p.nombres.iter().filter(fenetre).min_by(|a, b| dist(a).cmp(&dist(b))).map(|n| (Valeur::Nombre(n.valeur), n.boite))
     }
 
     /// Le mode de reglement ecrit apres « par » dans la mention de la date du paiement.
-    fn mode_de_la_date(&self, limite: Mesure, pied: Option<Mesure>) -> Option<String> {
-        let k = self.t.mentions.iter().position(|m| m.nom == "regle_le")?;
+    fn mode_de_la_date(&self, limite: Mesure, pied: Option<Mesure>) -> Result<Option<String>, Refus> {
+        let Some(k) = self.t.mentions.iter().position(|m| m.nom == "regle_le") else {
+            return Ok(None);
+        };
         let m = &self.t.mentions[k];
         for (rep, _, dernier) in self.page.occurrences(&m.libelles, &|x: &Mot| self.dans_section(x.cy(), m.section, limite, pied)) {
             let mots = self.valeur(k, &rep, dernier, 1);
@@ -1637,11 +1696,15 @@ impl<'a> Lecteur<'a> {
             if !textes.iter().any(|x| lire_date(x).is_some()) {
                 continue;
             }
+            let zone = mots.iter().fold(rep, |b, &i| b.union(&self.page.mots[i]));
+            if let Some(u) = self.inconnu_dans(Boite { x1: zone.x1 + VALEUR_SUITE, ..zone }, pt(0)) {
+                return Err(self.refus_inconnu(u, "mode de règlement"));
+            }
             let apres: Vec<&str> = textes.iter().skip_while(|x| canon(x) != "par").skip(1).copied().collect();
             let mode = apres.join(" ").trim_end_matches(['.', ';', ',']).trim().to_string();
-            return (!mode.is_empty()).then_some(mode);
+            return Ok((!mode.is_empty()).then_some(mode));
         }
-        None
+        Ok(None)
     }
 
     // ----------------------------------------------------------------------------------------- les adresses
@@ -1689,7 +1752,10 @@ impl<'a> Lecteur<'a> {
                 if lignes.len() >= 2 && lignes[1..].iter().any(|l| code_postal(l)) {
                     let suivant = c.get(k + 1).filter(|s| s.cy() - c[k].cy() <= BLOC_SUIVANT);
                     let employeur = suivant.and_then(|s| s.mention).is_some_and(|x| self.t.mentions[x].employeur);
-                    blocs.push((c[debut].cy(), Bloc { lignes, employeur }));
+                    // Un morceau a toujours un premier mot.
+                    let premier = Boite::de(c[debut].mots[0]);
+                    let zone = c[debut..=k].iter().flat_map(|m| m.mots.iter()).fold(premier, |b, m| b.union(m));
+                    blocs.push((c[debut].cy(), Bloc { lignes, employeur, zone }));
                 }
                 k += 1;
             }
@@ -1704,7 +1770,13 @@ impl<'a> Lecteur<'a> {
         if salaries.next().is_some() {
             return Err(Refus::Ambigu("deux adresses sans mention de l'employeur après elles : laquelle est celle du salarié ne se dit pas".into()));
         }
-        Ok((employeurs.into_iter().next(), salarie))
+        let employeur = employeurs.into_iter().next();
+        for (b, case) in [(&employeur, "adresse de l'employeur"), (&salarie, "nom et adresse du salarié")] {
+            if let Some(u) = b.as_ref().and_then(|b| self.inconnu_dans(b.zone, ECART_SEGMENT)) {
+                return Err(self.refus_inconnu(u, case));
+            }
+        }
+        Ok((employeur, salarie))
     }
 
     fn morceau<'m>(&self, mots: Vec<&'m Mot>) -> Morceau<'m> {
@@ -1866,6 +1938,12 @@ impl<'a> Lecteur<'a> {
         // Le corps finit au net avant impot (compris) : le pied commence sous lui.
         if let Some(k) = sortie.iter().position(|r| resume(&canon(&r.libelle), &self.t.resumes.net_avant_impot)) {
             sortie.truncate(k + 1);
+        }
+        // Chaque rang du corps se lit (son libelle, ses nombres) : un caractere que rien ne dit sur l'un d'eux le refuse.
+        for r in &sortie {
+            if let Some(u) = self.inconnu_du_rang(r.cy) {
+                return Err(self.refus_inconnu(u, &r.libelle));
+            }
         }
         // Le corps descend jusqu'a son dernier rang ; sans rang, il n'a pas de bas.
         let bas = match sortie.last() {
@@ -2067,7 +2145,7 @@ impl<'a> Lecteur<'a> {
 
     /// Les grilles du pied, chacune sous son rang d'en-tetes : l'impot preleve et le net imposable (« base »,
     /// « taux », « montant »), les cumuls (« Période », « Cumul »).
-    fn grilles(&mut self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>, cumuls: &mut Vec<(String, Cumul)>) {
+    fn grilles(&mut self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>, cumuls: &mut Vec<(String, Cumul)>) -> Result<(), Refus> {
         let p = &self.page;
         let t = self.t;
         let mots: Vec<&Mot> = p.mots.iter().filter(|m| m.cy() > pied + TOLERANCE).collect();
@@ -2119,6 +2197,14 @@ impl<'a> Lecteur<'a> {
             for (libelle, cy) in &rangs {
                 let v = valeurs_du_rang(*cy);
                 let col = |g: Genre| v.iter().find(|(x, _)| *x == g).map(|(_, y)| *y);
+                // Un rang lu (un cumul, l'impot, le net imposable) qui porte un caractere que rien ne dit ne se lit pas.
+                let lu = match *cumul {
+                    true => t.cumuls.iter().any(|(_, l)| l.contains(libelle)) || (net_imposable.is_none() && t.resumes.net_imposable.contains(libelle)),
+                    false => (pas.is_none() && t.resumes.pas.contains(libelle)) || (net_imposable.is_none() && t.resumes.net_imposable.contains(libelle)),
+                };
+                if let (true, Some(u)) = (lu, self.inconnu_du_rang(*cy)) {
+                    return Err(self.refus_inconnu(u, libelle));
+                }
                 if *cumul {
                     if let Some((nom, _)) = t.cumuls.iter().find(|(_, l)| l.contains(libelle)) {
                         if !cumuls.iter().any(|(x, _)| x == nom) {
@@ -2135,6 +2221,7 @@ impl<'a> Lecteur<'a> {
                 }
             }
         }
+        Ok(())
     }
 }
 
@@ -2142,7 +2229,7 @@ impl Lecteur<'_> {
     /// L'impot preleve et le net imposable ecrits sans grille, sur un rang du pied : « Net imposable 435,55 »,
     /// « Impôt sur le revenu prélevé à la source (taux 4,300 %) 18,73 ». Le montant est le dernier nombre du rang ; le
     /// taux, celui qui suit le mot « taux ».
-    fn sans_grille(&self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>) {
+    fn sans_grille(&self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>) -> Result<(), Refus> {
         let p = &self.page;
         let r_ = &self.t.resumes;
         let mots: Vec<&Mot> = p.mots.iter().filter(|m| m.cy() > pied + TOLERANCE).collect();
@@ -2151,6 +2238,10 @@ impl Lecteur<'_> {
             let Some(dernier) = nombres.iter().max_by(|a, b| a.boite.x1.cmp(&b.boite.x1)) else { continue };
             let libelle: Vec<&Mot> = rang.iter().copied().filter(|m| m.x1 < dernier.boite.x0 && !ressemble_nombre(&m.texte)).collect();
             let cl = canon(&texte_de(&libelle));
+            let lu = (net_imposable.is_none() && r_.net_imposable.iter().any(|x| *x == cl)) || (pas.is_none() && r_.pas.iter().any(|x| cl.starts_with(x.as_str())));
+            if let (true, Some(u)) = (lu, self.inconnu_du_rang(milieu(&rang))) {
+                return Err(self.refus_inconnu(u, &texte_de(&libelle)));
+            }
             if net_imposable.is_none() && r_.net_imposable.iter().any(|x| *x == cl) {
                 *net_imposable = Some(dernier.valeur);
             }
@@ -2163,6 +2254,7 @@ impl Lecteur<'_> {
                 *pas = Some(Pas { base: None, taux, montant: Some(dernier.valeur), cumul: None });
             }
         }
+        Ok(())
     }
 }
 

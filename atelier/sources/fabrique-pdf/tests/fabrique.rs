@@ -393,7 +393,7 @@ fn texte_des_pages(pdf: &[u8], nom: &str) -> Vec<String> {
     let (pages, avertissements) =
         fabrique_pdf::lecture::texte(&chemin(&p)).unwrap_or_else(|r| panic!("lecture : {}", r.phrase));
     assert!(avertissements.is_empty(), "{:?}", avertissements);
-    pages
+    pages.iter().map(|t| t.lu().unwrap_or_else(|r| panic!("lecture : {}", r.phrase))).collect()
 }
 
 /// Les nombres d'un tableau JSON, lus par leur texte.

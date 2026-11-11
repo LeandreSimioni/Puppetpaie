@@ -303,6 +303,18 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
         c.nom_complet = Some(nom.clone());
         c.adresse = reste.to_vec();
     }
+    // Une case lue qui porte un caractere que rien ne dit ne se lit pas (ISO 32000-1, 9.10.2) : le bloc d'adresse, ou
+    // les rubriques d'un rang.
+    let cy_de = |u: &crate::releve::InconnuReleve| (u.rect[1] + u.rect[3]) / 2;
+    if let Some(u) = p.inconnus.iter().find(|u| u.rect[3] < titre_y) {
+        fautes.push(u.phrase(page, "nom et adresse du salarié"));
+    }
+    for r in &rangs[titre..] {
+        let lues: Vec<&str> = valeurs(r).iter().map(|(cle, _)| *cle).collect();
+        if let (false, Some(u)) = (lues.is_empty(), p.inconnus.iter().find(|u| (cy_de(u) - r[0].cy).abs() <= TOLERANCE)) {
+            fautes.push(u.phrase(page, &lues.join(", ")));
+        }
+    }
     for r in &rangs[titre..] {
         for (cle, v) in valeurs(r) {
             match cle {

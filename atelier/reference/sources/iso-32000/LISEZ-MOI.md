@@ -34,8 +34,9 @@ clé absente, une valeur par défaut ou une forme exigée vient de la norme, don
   incorporée, aucun pour une Type 3 (9.6.6.3) ; une TrueType sans encodage ou symbolique : la « cmap » du programme,
   sous-table (3, 0) puis (1, 0) (9.6.6.4), le dictionnaire d'une non symbolique complété par StandardEncoding ; une
   police CID TrueType : `CIDToGIDMap` (table 117). Le glyphe d'un programme dit son caractère par son nom, sinon par
-  la « cmap » Unicode du programme ; ce que rien ne dit se refuse quand il se montre (9.10.2 : « there is no way to
-  determine what the character code represents »).
+  la « cmap » Unicode du programme ; ce que rien ne dit est un caractère inconnu du texte (`texte::Inconnu` : la
+  police, le code), que seul le lecteur qui en a besoin refuse (9.10.2 : « there is no way to determine what the
+  character code represents ») : `import::bulletin_lu`, `aem_lu`, `certificat_lu` (la case), `TexteDePage::lu`.
 - `fabrique-pdf/src/inspection.rs` (`chiffrement`) : `Filter`, `R`, `P` exigés, `Length` qui vaut 40, `CFM` qui vaut
   `None` (tables 20, 21, 25).
 - `fabrique-pdf/src/formulaire.rs` (les champs) : `Fields` exigé (table 218) ; `Ff` qui vaut 0 (table 220) ; `DA`

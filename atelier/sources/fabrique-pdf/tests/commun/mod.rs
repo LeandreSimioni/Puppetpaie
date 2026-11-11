@@ -78,5 +78,11 @@ pub fn pdf_a_la_main(objets: &[String], decalage: usize) -> Vec<u8> {
 pub fn textes(chemin_pdf: &str) -> Vec<String> {
     let r = lancer(&["--texte", chemin_pdf]);
     assert_eq!(r.status.code(), Some(0), "{}", String::from_utf8_lossy(&r.stderr));
-    serde_json::from_slice(&r.stdout).unwrap()
+    textes_de(&r.stdout)
+}
+
+/// Le texte de chaque page que `--texte` écrit (ses morceaux), quand chacun est du texte.
+pub fn textes_de(sortie: &[u8]) -> Vec<String> {
+    let pages: Vec<Vec<String>> = serde_json::from_slice(sortie).unwrap();
+    pages.into_iter().map(|p| p.concat()).collect()
 }

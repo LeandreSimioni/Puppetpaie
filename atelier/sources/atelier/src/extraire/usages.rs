@@ -237,7 +237,8 @@ fn releve_xlsx(source: &Path) -> R<(Rang, Vec<Rang>)> {
 /// Le tableau des usages du cahier en PDF, lu : (entete, lignes de rubriques, pages ou une rubrique a ete lue).
 fn lire_le_cahier(source: &Path) -> R<(Rang, Vec<Rang>, (usize, usize))> {
     let chemin = source.to_string_lossy();
-    let (textes, _) = fabrique_pdf::lecture::texte(&chemin).map_err(documents::fabrique::echec)?;
+    let (pages, _) = fabrique_pdf::lecture::texte(&chemin).map_err(documents::fabrique::echec)?;
+    let textes = pages.iter().map(|p| p.lu().map_err(documents::fabrique::echec)).collect::<R<Vec<String>>>()?;
     let releve = import::releve::du_pdf(source).map_err(|r| r.en_echec().reformuler(|p| format!("{} : {}", chemin, p)))?;
     let (entete, lignes, pages) = releve_pdf(&textes, &releve.releve.pages)?;
     match (pages.iter().min(), pages.iter().max()) {

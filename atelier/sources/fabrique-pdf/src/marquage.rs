@@ -240,7 +240,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
         let lue = crate::texte::inspecter_page(&doc, id).map_err(|r| r.reformuler(|m| format!("page illisible ({})", m)))?;
         for (texte, boites) in &lue.lignes {
             let Some(Some(b)) = boites.first() else { continue };
-            if texte.trim() != sc::LIBELLE_CASE_ARTISTE || (b[0] - x_case).abs() > Mesure::entier(2) {
+            if crate::texte::caracteres_de(texte).as_deref().map(str::trim) != Some(sc::LIBELLE_CASE_ARTISTE) || (b[0] - x_case).abs() > Mesure::entier(2) {
                 continue;
             }
             let bas = boites.iter().flatten().map(|b| b[1]).fold(Mesure::MAX, Mesure::min);

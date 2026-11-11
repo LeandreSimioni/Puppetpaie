@@ -371,7 +371,7 @@ fn remplir_le_texte_s_extrait_du_resultat() {
     assert!(t[1].contains("Łukasz"), "{:?}", t[1]);
     // la bibliothèque dit la même chose
     let (pages, _) = fabrique_pdf::lecture::texte(&chemin(&p)).unwrap();
-    assert!(pages[0].contains("Dupont Élodie"));
+    assert!(pages[0].lu().unwrap().contains("Dupont Élodie"));
     // Łukasz s'écrit en PDFDocEncoding (Ł = 0x95) ; un caractère hors de PDFDocEncoding passe en UTF-16BE
     assert_eq!(valeur_pdf(&charge(&sortie), CENTRE), b"\x95ukasz");
     assert_eq!(champs(&sortie)["CENTRE"]["valeur"], json!("Łukasz"));

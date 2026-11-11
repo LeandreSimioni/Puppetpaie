@@ -123,13 +123,14 @@ pub fn executer(args: &[String]) -> ExitCode {
             Ok(n) => en_json(&n),
             Err(r) => echec(&r.phrase, 1),
         },
-        // Le texte de chaque page d'un PDF : un tableau JSON de chaînes.
+        // Le texte de chaque page d'un PDF : un tableau JSON, par page, de ses morceaux (une chaîne, ou un caractère
+        // que rien ne dit, tel qu'il est : sa police, son code, pourquoi).
         [a, fichier] if a == "--texte" => match crate::lecture::texte(fichier) {
             Ok((textes, avertissements)) => {
                 for m in avertissements {
                     eprintln!("{} : {}", fichier, m);
                 }
-                en_json(&textes)
+                en_json(&textes.iter().map(|t| &t.morceaux).collect::<Vec<_>>())
             }
             Err(r) => echec(&r.phrase, 1),
         },

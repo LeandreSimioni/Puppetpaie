@@ -59,7 +59,8 @@ fn l_exemplaire_contresigne_est_le_contrat_parti_plus_la_mention() {
     assert_eq!(&signe[..parti.len()], &parti[..]);
     let doc = fabrique_pdf::lecture::charger(&signe).unwrap();
     assert!(doc.trailer.get(b"Encrypt").is_err());
-    let (textes, _) = fabrique_pdf::texte::texte_des_pages(&doc);
+    let (pages, _) = fabrique_pdf::texte::texte_des_pages(&doc);
+    let textes: Vec<String> = pages.iter().map(|p| p.lu().unwrap_or_else(|r| panic!("{}", r.phrase))).collect();
     for l in MENTION.lines() {
         assert!(textes[0].lines().any(|t| t == l), "la ligne {:?} manque : {:?}", l, textes[0]);
     }

@@ -10,7 +10,7 @@ use serde::Serialize;
 use crate::description::{illisible, Refus};
 use crate::lecture;
 use crate::mesure::Mesure;
-use crate::texte::{inspecter_page, Boite};
+use crate::texte::{inspecter_page, Boite, Signe};
 
 #[derive(Serialize)]
 struct Chiffrement {
@@ -32,6 +32,16 @@ struct Mot {
     ligne: usize,
 }
 
+/// Un caractère que rien ne dit (`texte::Inconnu`), à sa place : il borne les mots qui le touchent.
+#[derive(Serialize)]
+struct InconnuVu {
+    police: String,
+    code: u32,
+    pourquoi: String,
+    rect: Boite,
+    ligne: usize,
+}
+
 #[derive(Serialize)]
 struct Page {
     largeur: Mesure,
@@ -41,6 +51,7 @@ struct Page {
     images: Vec<Boite>,
     traits: Vec<Boite>,
     mots: Vec<Mot>,
+    inconnus: Vec<InconnuVu>,
 }
 
 #[derive(Serialize)]
@@ -80,8 +91,9 @@ impl Repere {
     }
 }
 
-/// Les mots d'une ligne : les suites de caractères séparées par des espaces, avec leur boîte.
-fn mots_de(ligne: usize, texte: &str, boites: &[Option<Boite>], repere: &Repere, sortie: &mut Vec<Mot>) {
+/// Les mots d'une ligne : les suites de caractères séparées par des espaces ou par un caractère que rien ne dit, avec
+/// leur boîte ; chaque caractère que rien ne dit, avec la sienne.
+fn mots_de(ligne: usize, texte: &[Signe], boites: &[Option<Boite>], repere: &Repere, sortie: &mut Vec<Mot>, inconnus: &mut Vec<InconnuVu>) {
     let mut mot = String::new();
     let mut boite: Option<Boite> = None;
     let mut finir = |mot: &mut String, boite: &mut Option<Boite>| {
@@ -91,7 +103,17 @@ fn mots_de(ligne: usize, texte: &str, boites: &[Option<Boite>], repere: &Repere,
         mot.clear();
         *boite = None;
     };
-    for (c, b) in texte.chars().zip(boites.iter()) {
+    for (s, b) in texte.iter().zip(boites.iter()) {
+        let c = match s {
+            Signe::Caractere(c) => *c,
+            Signe::Inconnu(i) => {
+                finir(&mut mot, &mut boite);
+                if let Some(b) = b {
+                    inconnus.push(InconnuVu { police: i.police.clone(), code: i.code, pourquoi: i.pourquoi.clone(), rect: repere.boite(b), ligne });
+                }
+                continue;
+            }
+        };
         if c.is_whitespace() {
             finir(&mut mot, &mut boite);
             continue;
@@ -271,6 +293,7 @@ fn page_de(doc: &Document, numero: u32, id: lopdf::ObjectId, avertissements: &mu
         images: Vec::new(),
         traits: Vec::new(),
         mots: Vec::new(),
+        inconnus: Vec::new(),
     };
     match inspecter_page(doc, id) {
         Ok(lue) => {
@@ -278,7 +301,7 @@ fn page_de(doc: &Document, numero: u32, id: lopdf::ObjectId, avertissements: &mu
             page.images = lue.images.iter().map(|b| repere.boite(b)).collect();
             page.traits = lue.traits.iter().map(|b| repere.boite(b)).collect();
             for (k, (texte, boites)) in lue.lignes.iter().enumerate() {
-                mots_de(k, texte, boites, &repere, &mut page.mots);
+                mots_de(k, texte, boites, &repere, &mut page.mots, &mut page.inconnus);
             }
         }
         Err(r) => avertissements.push(format!("page {} : {}", numero, r.phrase)),

@@ -54,6 +54,29 @@ pub struct PageRelevee {
     pub images: Vec<Boite>,
     pub traits: Vec<Boite>,
     pub mots: Vec<MotReleve>,
+    /// Les caracteres que rien ne dit (ISO 32000-1, 9.10.2), chacun a sa place : ils bornent les mots qui les touchent.
+    pub inconnus: Vec<InconnuReleve>,
+}
+
+/// Un caractere que rien ne dit : la police qui le montre, son code, pourquoi, sa boite et sa ligne.
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InconnuReleve {
+    pub police: String,
+    pub code: u32,
+    pub pourquoi: String,
+    pub rect: Boite,
+    pub ligne: usize,
+}
+
+impl InconnuReleve {
+    /// La phrase qui le nomme, sur la page `page`, pour la case `case` qui en a besoin.
+    pub fn phrase(&self, page: usize, case: &str) -> String {
+        format!(
+            "page {} : la case « {} » porte un caractère que rien ne dit (la police {} montre le code {} sans /ToUnicode : {} ; ISO 32000-1, 9.10.2)",
+            page, case, self.police, self.code, self.pourquoi
+        )
+    }
 }
 
 /// Un mot de la page, sa boite et sa ligne.

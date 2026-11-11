@@ -28,9 +28,11 @@
 //! RIEN NE SE DEVINE (regle 1) : une AEM complementaire ou rectificative ne se reprend pas (elle corrige une attestation
 //! que l'import ne voit pas) ; une AEM sans NIR, sans dates, sans ses colonnes de nombres ou sans brut n'est pas
 //! reprise, et le refus dit ce qui manque. UN FORMULAIRE DONT LES LIBELLES NE SE LISENT PAS (polices sans table de
-//! caracteres : les mots sortent en « � ») ne se lit pas : aucune rubrique n'ancre ses valeurs, et une grille de
-//! positions relevee sur un exemplaire serait une position devinee ; l'import le dit et demande la piece du meme mois
-//! qui se lit.
+//! caracteres : les mots sortent en « � », ou en caracteres que rien ne dit) ne se lit pas : aucune rubrique n'ancre
+//! ses valeurs, et une grille de positions relevee sur un exemplaire serait une position devinee ; l'import le dit et
+//! demande la piece du meme mois qui se lit. Une case lue (sa valeur, une colonne du mois, le brut, une case a cocher)
+//! qui porte un caractere que rien ne dit ne se lit pas : l'AEM le dit, en nommant la page, la police, le code et la
+//! case.
 
 use std::path::Path;
 
@@ -291,15 +293,16 @@ pub struct PageAem {
 pub fn lire(chemin: &Path) -> R<Vec<PageAem>> {
     let r = crate::releve::du_pdf(chemin).map_err(crate::releve::Refus::en_echec)?;
     let pages: Vec<Vec<Mot>> = r.releve.pages.iter().map(mots_de).collect();
+    let inconnus: Vec<Vec<Inconnu>> = r.releve.pages.iter().map(|p| p.inconnus.iter().map(Inconnu::de).collect()).collect();
     let notices: Vec<bool> = pages.iter().map(|m| est_notice(m)).collect();
     let mut out = Vec::new();
     for (i, mots) in pages.iter().enumerate() {
         let page = i + 1;
         if notices[i] {
             out.push(PageAem { page, lecture: Lecture::Notice });
-        } else if notices.iter().any(|n| *n) && illisible(mots) {
+        } else if notices.iter().any(|n| *n) && illisible(mots, &inconnus[i]) {
             out.push(PageAem { page, lecture: Lecture::Refusee { sort: crate::reponse::Sort::SansTexte, raison: ILLISIBLE.into(), partiel: None } });
-        } else if let Some(a) = lire_page(mots, page) {
+        } else if let Some(a) = lire_page(mots, &inconnus[i], page) {
             let lecture = match a.manque() {
                 Some(raison) => Lecture::Refusee { sort: crate::reponse::Sort::Incomplet, raison, partiel: Some(a) },
                 None => Lecture::Lue(a),
@@ -425,9 +428,33 @@ fn est_notice(mots: &[Mot]) -> bool {
     t.contains(" rappel des obligations du salarie ") && t.contains(" attestation mensuelle ")
 }
 
-/// Une page dont la moitie des mots au moins sortent en signes sans lettres.
-fn illisible(mots: &[Mot]) -> bool {
-    !mots.is_empty() && mots.iter().filter(|m| m.texte.contains('\u{FFFD}')).count() * 2 >= mots.len()
+/// Une page dont la moitie des mots au moins sortent en signes sans lettres (U+FFFD, ou un caractere que rien ne dit,
+/// qui borne un mot : chacun compte pour un).
+fn illisible(mots: &[Mot], inconnus: &[Inconnu]) -> bool {
+    let sans_lettres = mots.iter().filter(|m| m.texte.contains('\u{FFFD}')).count() + inconnus.len();
+    sans_lettres > 0 && sans_lettres * 2 >= mots.len() + inconnus.len()
+}
+
+/// Un caractere que rien ne dit, et sa boite.
+struct Inconnu {
+    releve: crate::releve::InconnuReleve,
+    x0: Mesure,
+    x1: Mesure,
+    y0: Mesure,
+    y1: Mesure,
+}
+
+impl Inconnu {
+    fn de(u: &crate::releve::InconnuReleve) -> Inconnu {
+        let [x0, y0, x1, y1] = u.rect;
+        Inconnu { releve: u.clone(), x0, x1, y0, y1 }
+    }
+    fn cy(&self) -> Mesure {
+        (self.y0 + self.y1) / 2
+    }
+    fn cx(&self) -> Mesure {
+        (self.x0 + self.x1) / 2
+    }
 }
 
 /// Les mots sur la ligne de `m`, a sa droite, de gauche a droite (lui compris).
@@ -475,7 +502,7 @@ fn rubriques(mots: &[Mot]) -> Vec<Rubrique> {
 }
 
 /// La page : `None` si ce n'est pas une AEM (son titre, les annexes 8 et 10, ses rubriques de contrat).
-fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
+fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     let t = texte_en_jetons(mots);
     let titre = t.contains(" attestation aem ") || t.contains(" attestation d employeur mensuelle ") || t.contains(" attestation employeur mensuelle ");
     let annexes = t.contains(" annexes 8 et 10 ") || t.contains(" annexes viii et x ");
@@ -490,10 +517,21 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
     let bornes = [haut_de("employeur"), haut_de("salarie"), haut_de("prestation"), haut_de("authentification")];
     let section = |y: Mesure| -> usize { bornes.iter().filter(|b| b.is_some_and(|b| y >= b - pt(1))).count() };
 
+    // Le premier caractere que rien ne dit d'une case lue : la case ne se lit pas, l'AEM le dit (ISO 32000-1, 9.10.2).
+    let inconnu: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+    let noter = |u: &Inconnu, case: &str| {
+        let mut i = inconnu.borrow_mut();
+        if i.is_none() {
+            *i = Some(u.releve.phrase(page, case));
+        }
+    };
     // La valeur d'une rubrique : les mots a sa droite, sur sa ligne, jusqu'a la rubrique suivante de la ligne.
     let valeur_de = |r: &Rubrique| -> Vec<String> {
         let tol = (r.y1 - r.y0).max(pt(4)) * mesure("0.6");
         let suivante = rs.iter().filter(|o| o.x0 > r.x1 && (o.cy() - r.cy()).abs() <= tol).map(|o| o.x0).fold(Mesure::MAX, Mesure::min);
+        if let Some(u) = inconnus.iter().find(|u| u.x1 >= r.x0 && u.x0 < suivante && (u.cy() - r.cy()).abs() <= tol) {
+            noter(u, r.cle);
+        }
         let mut v: Vec<usize> = (0..mots.len())
             .filter(|&k| !pris.contains(&k) && !marques.contains(&k) && mots[k].x0 >= r.x1 - pt(1) && mots[k].x0 < suivante && (mots[k].cy() - r.cy()).abs() <= tol)
             .collect();
@@ -582,6 +620,19 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
         }
     }
 
+    // Une case a cocher dont la marque est un caractere que rien ne dit (une marque d'une police de symboles) : cochee
+    // ou non, rien ne le dit.
+    for u in inconnus {
+        let l = (0..mots.len())
+            .filter(|&j| mots[j].x1 <= u.x0 + pt(1) && u.x0 - mots[j].x1 <= pt(12) && (mots[j].cy() - u.cy()).abs() <= pt(5))
+            .min_by(|a, b| (u.x0 - mots[*a].x1).cmp(&(u.x0 - mots[*b].x1)));
+        if let Some(lib) = l.and_then(|l| jetons(&mots[l].texte).last().cloned()) {
+            if matches!(lib.as_str(), "complementaire" | "positive" | "negative" | "artiste" | "technicien" | "ouvrier" | "cours" | "cadre") {
+                noter(u, &lib);
+            }
+        }
+    }
+
     // Les nombres du mois, par colonne : sous les en-tetes, au-dessus de « SALAIRES BRUTS ».
     let en_tetes: Vec<(&str, &Mot)> = COLONNES
         .iter()
@@ -592,6 +643,11 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
         let haut = en_tetes.iter().map(|(_, m)| m.y1).fold(Mesure::MIN, Mesure::max);
         let mut par_colonne: std::collections::BTreeMap<&str, Vec<i64>> = std::collections::BTreeMap::new();
         let mut ambigu = false;
+        for u in inconnus.iter().filter(|u| u.y0 >= haut && !brut_tete.is_some_and(|r| u.y1 > r.y0) && section(u.y0) == 3) {
+            if let Some((c, _)) = en_tetes.iter().map(|(c, t)| (*c, (t.cx() - u.cx()).abs())).filter(|x| x.1 <= pt(45)).min_by(|a, b| a.1.cmp(&b.1)) {
+                noter(u, c);
+            }
+        }
         for (k, m) in mots.iter().enumerate() {
             if pris.contains(&k) || m.y0 < haut || brut_tete.is_some_and(|r| m.y1 > r.y0) {
                 continue;
@@ -620,6 +676,9 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
     // Le brut : le nombre sous « SALAIRES BRUTS », a son aplomb.
     if let Some(r) = brut_tete {
         let cx = (r.x0 + r.x1) / 2;
+        if let Some(u) = inconnus.iter().find(|u| u.y0 > r.y1 && u.y0 < r.y1 + pt(40) && (u.cx() - cx).abs() <= (r.x1 - r.x0) / 2 + pt(10)) {
+            noter(u, "salaires bruts");
+        }
         a.brut = mots
             .iter()
             .filter(|m| m.y0 > r.y1 && m.y0 < r.y1 + pt(40) && (m.cx() - cx).abs() <= (r.x1 - r.x0) / 2 + pt(10))
@@ -627,7 +686,10 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
             .min_by(|a, b| a.0.cmp(&b.0))
             .map(|x| x.1);
     }
-    a.faute = fautes.first().map(|f| f.to_string());
+    a.faute = match inconnu.into_inner() {
+        Some(i) => Some(i),
+        None => fautes.first().map(|f| f.to_string()),
+    };
     Some(a)
 }
 

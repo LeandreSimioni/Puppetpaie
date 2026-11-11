@@ -253,7 +253,8 @@ fn erreur_operation(message: impl Into<String>) -> Echec {
 // ------------------------------------------------------------------ la fabrique de PDF
 
 fn texte_pdf(chemin: &Path) -> R<Vec<String>> {
-    fabrique_pdf::lecture::texte(&chemin.to_string_lossy()).map(|(t, _)| t).map_err(documents::fabrique::echec)
+    let (pages, _) = fabrique_pdf::lecture::texte(&chemin.to_string_lossy()).map_err(documents::fabrique::echec)?;
+    pages.iter().map(|p| p.lu().map_err(documents::fabrique::echec)).collect()
 }
 
 fn pages_pdf(chemin: &Path) -> R<usize> {

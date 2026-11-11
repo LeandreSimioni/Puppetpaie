@@ -49,7 +49,8 @@ fn un_homonyme_ne_porte_rien_de_l_autre() {
     let fiche = |cle: &str| -> String {
         let r = reussi(&route(&c, "dossier-salarie", json!({"salaries": [cle], "annee": "2026", "categories": ["recapitulatif"]}), jour)).clone();
         let chemin = r["fichiers"].as_array().unwrap().iter().filter_map(Value::as_str).find(|f| f.contains("Fiche-recapitulative")).unwrap().to_string();
-        fabrique_pdf::lecture::texte(&chemin).unwrap_or_else(|e| panic!("{} illisible : {}", chemin, e.phrase)).0.join("\n")
+        let (pages, _) = fabrique_pdf::lecture::texte(&chemin).unwrap_or_else(|e| panic!("{} illisible : {}", chemin, e.phrase));
+        pages.iter().map(|t| t.lu().unwrap_or_else(|e| panic!("{} illisible : {}", chemin, e.phrase))).collect::<Vec<_>>().join("\n")
     };
     for (lui, l_autre) in [("FULLER", "FULLER-2"), ("FULLER-2", "FULLER")] {
         let t = fiche(lui);
