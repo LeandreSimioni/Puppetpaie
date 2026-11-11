@@ -45,7 +45,7 @@
   function demarrer() {
     const donnee = document.getElementById("auteur-donnee");
     if (!donnee) return;
-    try { poser(JSON.parse(donnee.textContent)); } catch (e) { /* rien a poser */ }
+    poser(JSON.parse(donnee.textContent));
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", demarrer);
   else demarrer();

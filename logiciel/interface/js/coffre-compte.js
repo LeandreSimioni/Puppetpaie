@@ -25,13 +25,13 @@
  *  net-entreprises : le déclarant de la fiche Entreprise, qui se change
  *  là-bas ; l'Urssaf (DPAE) : un autre compte, qui se saisit sur la ligne. */
 function compteDuService(s) {
-  const id = s.identifiant || {};
+  const id = s.identifiant;
   if (id.texte) return `<span class="compte">${echapper(id.texte)}</span>`;
-  if (!id.manque || !id.manque.length) return "";
+  if (!id.manque.length) return "";
   return id.ici
     ? `<span class="compte a-completer">${echapper(id.manque_dit)}</span>`
-    : `<span class="compte a-completer">${echapper(id.incomplet_dit || "")} —
-        <button class="lien" data-aller-fiche="entreprise">${echapper(id.ou || "fiche Entreprise")}</button></span>`;
+    : `<span class="compte a-completer">${echapper(id.incomplet_dit)} —
+        <button class="lien" data-aller-fiche="entreprise">${echapper(id.ou)}</button></span>`;
 }
 
 /** CE QUI EST PARTI CHEZ L'ÉDITEUR. Le journal des incidents,
@@ -52,8 +52,8 @@ async function dessinerCoffre(cible) {
   // s'ouvrent que sur un clic sur la ligne (ou « Poser… ») -- cinq formulaires ouverts
   // d'office faisaient croire qu'il y avait cinq choses à remplir.
   const etatService = (s) => `${pastilleDeLEtat(s.pastille)}${!fictive && !s.environnement && s.pose && s.compte ? ` <span class="discret">${echapper(s.compte)}</span>` : ""}`;
-  const k = c.ecran || {};
-  const l = k.logiciel || {};
+  const k = c.ecran;
+  const l = k.logiciel;
   const a = k.administrateur;
   cible.innerHTML = `
     <p class="intro">${echapper(k.intro)}</p>
@@ -118,11 +118,11 @@ async function dessinerCoffre(cible) {
         <form class="rang-forme" onsubmit="return false" autocomplete="off"
           ${s.identifiant?.ici && s.identifiant.manque.length ? "" : "hidden"}>
           ${s.identifiant?.ici ? `<label>Prénom du compte Urssaf
-            <input type="text" class="k-prenom" autocomplete="off" value="${echapper(s.identifiant.prenom)}"></label>
+            <input type="text" class="k-prenom" autocomplete="off"${valeurDeDepart(s.identifiant.prenom)}></label>
           <label>Nom du compte Urssaf
-            <input type="text" class="k-nom" autocomplete="off" value="${echapper(s.identifiant.nom)}"></label>` : ""}
+            <input type="text" class="k-nom" autocomplete="off"${valeurDeDepart(s.identifiant.nom)}></label>` : ""}
           ${s.avec_compte ? `<label>Adresse de la boîte
-            <input type="email" class="k-compte" autocomplete="off" value="${echapper(s.compte || "")}"></label>` : ""}
+            <input type="email" class="k-compte" autocomplete="off"${valeurDeDepart(s.compte)}></label>` : ""}
           <label>Mot de passe
             <input type="password" class="k-valeur" autocomplete="off"></label>
           <div class="barre-boutons"><button class="primaire k-poser">${echapper(s.bouton)}</button></div>
@@ -286,7 +286,7 @@ async function dessinerCoffre(cible) {
     };
     const oublierService = carte.querySelector(".k-oublier");
     if (oublierService) oublierService.onclick = async () => {
-      if (!confirm((c.services.find((s) => s.service === service) || {}).oublier)) return;
+      if (!confirm(c.services.find((s) => s.service === service).oublier)) return;
       const p = await preuve("Oublier");
       if (!p) return;
       try {

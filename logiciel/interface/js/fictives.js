@@ -18,7 +18,7 @@ const noteFictive = () => encart(ETAT && ETAT.note_fictive);
 async function repereCourrielsFictifs() {
   if (!enFictive()) return null;
   try { return (await api("courriels-fictifs", { apres: "￿" })).dernier; }
-  catch (e) { return null; }
+  catch (e) { dire(e.message, "erreur"); return null; }
 }
 
 /* Le retour d'une signature jouée, le moteur le dit (`contresigne` de `courriels-fictifs`). Le circuit de chaque genre (ce que reçoit le destinataire,
@@ -26,7 +26,7 @@ async function repereCourrielsFictifs() {
 
 /* CE QU'UNE COMPAGNIE FICTIVE NE FAIT PAS, DIT AU LIEU D'ÊTRE TU : le moteur le rend (`coulisses` de la route `etat`). */
 function fenetreExplicationFictive(quoi, apres = "") {
-  const e = (ETAT && ETAT[quoi]) || { titre: "", sections: [] };
+  const e = ETAT[quoi];
   ouvrirBoite(`
     <div class="fictive-fenetre">
       <h3>Compagnie fictive — ${echapper(e.titre)}</h3>
@@ -41,9 +41,9 @@ async function fenetreCourrielsFictifs(genre, repere) {
   if (!enFictive() || repere === null) return;
   let partis = [], retours = [], etape = 0, fiche = null, lu;
   try {
-    lu = await api("courriels-fictifs", { apres: repere || "" });
+    lu = await api("courriels-fictifs", { apres: repere });
     partis = lu.courriels;
-  } catch (e) { return; }
+  } catch (e) { dire(e.message, "erreur"); return; }
   const c = lu.circuits[genre];
   if (!partis.length) return;
   let premier = partis[0];
@@ -51,7 +51,7 @@ async function fenetreCourrielsFictifs(genre, repere) {
   const apercu = (m) => `
     <div class="fictive-courriel">
       <div class="fictive-entete"><span>De</span> ${echapper(m.de)}<br>
-        <span>À</span> ${echapper(m.a)}<br><span>Objet</span> <b>${echapper(m.sujet)}</b>
+        <span>À</span> ${echapper(m.a)}${m.sujet ? `<br><span>Objet</span> <b>${echapper(m.sujet)}</b>` : ""}
         ${m.pieces.length ? `<br><span>Pièce jointe</span> ${m.pieces.map((x, i) => x.pages
           ? `<button class="lien fictive-piece" data-courriel="${echapper(m.nom)}" data-rang="${i}"
               data-pages="${x.pages}" title="L'ouvrir ici">📎 ${echapper(x.nom)}</button>`
@@ -99,7 +99,7 @@ async function fenetreCourrielsFictifs(genre, repere) {
     else if (retours.length) corps = apercu(retours[0]);
     else if (fiche) corps = `<div class="encart bien"><b>Fiche créée — ${echapper(fiche)}</b>
       ${echapper(c.creee)}</div>`;
-    else corps = `<p class="discret">⏳ ${echapper(c.attente || "")}</p>`;
+    else if (c.attente) corps = `<p class="discret">⏳ ${echapper(c.attente)}</p>`;
     b.querySelector(".fictive-etape").innerHTML = `<p class="note">${echapper(c.notes[etape])}</p>${corps}`;
     const f = b.querySelector(".fictive-corps");
     const m = etape === 0 ? premier : retours[0];
@@ -140,7 +140,7 @@ async function fenetreCourrielsFictifs(genre, repere) {
       if (genre === "signature") {
         api("courriels-fictifs", { apres: partis[partis.length - 1].nom }).then((r) => {
           retours = r.courriels.filter((m) => m.contresigne && m.a === premier.a);
-        }).catch(() => {});
+        }).catch((e) => dire(e.message, "erreur"));
       }
     };
   });
@@ -164,7 +164,7 @@ async function fenetreCourrielsFictifs(genre, repere) {
         // Déjà relevée par la veille : plus rien n'attend, la fiche est là.
         else if (!r.attendues) fiche = premier.a;
       }
-    } catch (e) { /* on réessaie */ }
+    } catch (e) { dire(e.message, "erreur"); }
     if (retours.length || fiche) {
       if (etape === 2) dessiner();
       else document.querySelectorAll(".fictive-bulle")[2].classList.add("fait");

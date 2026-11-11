@@ -22,7 +22,7 @@ async function dessinerReprise() {
   try {
     r = await api("journal-reprise", {});
   } catch (e) {
-    cible.innerHTML = "";
+    cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;
     return;
   }
   if (!r.ajoutes.length) { cible.innerHTML = ""; return; }

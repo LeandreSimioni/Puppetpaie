@@ -32,7 +32,8 @@ function anneeDuJour() { return AUJOURDHUI ? +AUJOURDHUI.slice(0, 4) : null; }
 
 const moisEnTexte = (a, m) => `${a}-${String(m).padStart(2, "0")}`;
 function moisLu(v) {
-  const [a, m] = String(v || "").split("-").map(Number);
+  if (!v) return null;
+  const [a, m] = v.split("-").map(Number);
   return a && m ? [a, m] : null;
 }
 
@@ -48,7 +49,7 @@ function moisSuivant(mois) {
 
 /* « juillet 2021 » et non « 2021-07 » : on lit une phrase, pas un tri. */
 function moisEnClair(iso) {
-  if (!iso || iso.length !== 7) return iso || "";
+  if (iso.length !== 7) return iso;
   return `${MOIS_FR[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
 }
 
@@ -62,7 +63,7 @@ function moisEnGros(mois) {
 /* JJ/MM/AAAA, la date telle qu'on la lit en France. Un texte qui n'est pas une date ISO revient tel quel ;
    pour un horodatage, on passe ses dix premiers caractères. */
 function jjmmaaaa(iso) {
-  if (!iso || iso.length !== 10) return iso || "";
+  if (iso.length !== 10) return iso;
   return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`;
 }
 
@@ -78,6 +79,6 @@ function joursEnClair(isos) {
 }
 
 function jourDe(x) {
-  return (x && typeof x === "object") ? String(x.jour || "") : String(x || "");
+  return typeof x === "object" ? x.jour : x;
 }
 

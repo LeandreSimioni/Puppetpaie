@@ -33,7 +33,7 @@ function conseilHtml(c, replie) {
 /** Le conseil d'un bloc d'engagement : le premier que le moteur a posé sur l'une de ses paies (au plus un par carte),
  * replié. */
 function conseilDuBloc(part) {
-  const p = (part || []).find((x) => x && x.conseil);
+  const p = part.find((x) => x && x.conseil);
   return p ? conseilHtml(p.conseil, true) : "";
 }
 
@@ -49,9 +49,10 @@ async function dessinerConseils(lus) {
       api("conseil-du-jour", { decalage: CONSEIL_DECALAGE }),
       api("conseils-resume"),
     ]);
-  } catch (e) { cible.innerHTML = ""; cible.dataset.peint = ""; return; }
+  } catch (e) { cible.innerHTML = ""; cible.dataset.peint = ""; dire(e.message, "erreur"); return; }
+  // Une lecture refusée à l'ouverture (`conseilsDe` l'a dite) ne montre rien.
   const c = jour && jour.conseil;
-  const r = (resume && resume.conseils) || [];
+  const r = resume ? resume.conseils : [];
   if (!c && !r.length) { cible.innerHTML = ""; cible.dataset.peint = ""; return; }
   const html = `
     ${r.map((x) => conseilHtml(x)).join("")}
@@ -67,7 +68,7 @@ async function dessinerConseils(lus) {
       const j = await api("conseil-du-jour", { decalage: CONSEIL_DECALAGE });
       const bloc = cible.querySelector(".conseil-du-jour");
       if (bloc && j && j.conseil) bloc.firstElementChild.outerHTML = conseilHtml(j.conseil);
-    } catch (e) { /* le conseil d'avant reste */ }
+    } catch (e) { dire(e.message, "erreur"); }
   };
 }
 
@@ -77,9 +78,9 @@ async function dessinerConseilsDuSalarie(cle) {
   if (!cible || !cle) return;
   let r;
   try { r = await api("conseils-salarie", { salarie: cle }); }
-  catch (e) { cible.innerHTML = ""; return; }
+  catch (e) { cible.innerHTML = ""; dire(e.message, "erreur"); return; }
   if (CLE_ACTIVE !== cle) return;      // une autre fiche s'est ouverte entre-temps
-  const liste = (r && r.conseils) || [];
+  const liste = r.conseils;
   cible.innerHTML = liste.length
     ? `<h3>Ses droits</h3>${liste.map((x) => conseilHtml(x)).join("")}`
     : "";
