@@ -28,9 +28,7 @@ let MINUTEUR = null;        // anti-rebond de l'apercu
  * était en train de taper. */
 let SERVEUR_PERDU = false;
 /* Ce que la page dit quand le moteur ne répond plus : la fenêtre le pose dans la page qu'elle sert (`{{PHRASES}}`). */
-const PHRASES_FENETRE = (() => {
-  try { return JSON.parse(document.getElementById("phrases-fenetre").textContent); } catch (e) { return {}; }
-})();
+const PHRASES_FENETRE = JSON.parse(document.getElementById("phrases-fenetre").textContent);
 
 function serveurPerdu() {
   if (SERVEUR_PERDU) return;
@@ -38,7 +36,7 @@ function serveurPerdu() {
   const zone = document.getElementById("veille");
   zone.hidden = false;
   zone.classList.add("souci");
-  document.getElementById("veille-texte").innerHTML = `<b>${echapper(PHRASES_FENETRE.perdu || "")}</b>`;
+  document.getElementById("veille-texte").innerHTML = `<b>${echapper(PHRASES_FENETRE.perdu)}</b>`;
   document.getElementById("veille-maintenant").hidden = true;
 }
 
@@ -55,17 +53,17 @@ function serveurPerdu() {
  * Une route qui écrit le dit dans sa réponse (`ecrit`) : ce qui a été lu part
  * alors — on n'affiche jamais un état qu'on aurait pu changer soi-même. */
 const LECTURES_DU_MOIS = new Set();
-function retenirLesLectures(lectures) { Object.keys(lectures || {}).forEach((k) => LECTURES_DU_MOIS.add(k)); }
+function retenirLesLectures(lectures) { Object.keys(lectures).forEach((k) => LECTURES_DU_MOIS.add(k)); }
 /* LE CATALOGUE DES ROUTES (`routes`), lu au démarrage : la fiche de chaque route, son acte (`lit`, `ecrit`, `engage`) et ce
  * qui est « avancé ». Le même que `moteur routes --json`. */
 let CATALOGUE = {};
-const acteDe = (route) => (CATALOGUE[route] || {}).acte || "";
+const acteDe = (route) => CATALOGUE[route].acte;
 /** « AVANCÉ » EST LE MÊME POUR LES DEUX ACTEURS : une porte de l'écran (`data-route`, la route qu'elle ouvre) dont la fiche
  *  est marquée avancée va dans le groupe « Avancé » de sa barre, après le chemin simple. */
 function rangerLAvance() {
   document.querySelectorAll("[data-route]").forEach((porte) => {
     const groupe = porte.parentElement && porte.parentElement.querySelector(":scope > .sous-onglets-avance");
-    if (!groupe || !(CATALOGUE[porte.dataset.route] || {}).avance) return;
+    if (!groupe || !CATALOGUE[porte.dataset.route].avance) return;
     groupe.appendChild(porte);
     groupe.hidden = false;
   });
@@ -91,7 +89,7 @@ function lireLeMois(mois, perimeAdmis = false) {
   if (LU_EN_COURS && LU_EN_COURS.mois === mois && (perimeAdmis || !LU_EN_COURS.perimeAdmis)) return LU_EN_COURS.promesse;
   const generation = LU_GENERATION;
   const promesse = appelerMoteur("mois", perimeAdmis ? { mois } : { mois, attendre: true }).then((r) => {
-    const lu = { mois, lectures: r.lectures || {}, perime: !!r.perime };
+    const lu = { mois, lectures: r.lectures, perime: r.perime };
     retenirLesLectures(lu.lectures);
     if (generation === LU_GENERATION) LU = lu;
     if (LU_EN_COURS && LU_EN_COURS.promesse === promesse) LU_EN_COURS = null;
@@ -109,7 +107,7 @@ function oublierLeMois() { LU = null; LU_EN_COURS = null; LU_GENERATION++; }
 /** L'écran de `mois` arrivé avec l'ouverture (js/demarrage.js) : c'est la lecture `mois` que la page
  *  aurait faite, servie de même (dernier état connu, `perime` s'il l'est). */
 function poserLeMois(mois, ecran) {
-  LU = { mois, lectures: (ecran && ecran.lectures) || {}, perime: !!(ecran && ecran.perime) };
+  LU = { mois, lectures: ecran.lectures, perime: ecran.perime };
   retenirLesLectures(LU.lectures);
   LU_EN_COURS = null;
 }
@@ -141,7 +139,7 @@ function verifierLeMois(mois, peint) {
     if (generation !== LU_GENERATION || MOIS_AFFICHE !== mois || DEMANDE_MOIS !== mois) return;
     if (!VERIF || VERIF.promesse !== promesse) return;
     const ancien = LU && LU.mois === mois ? LU : null;
-    const frais = { mois, lectures: r.lectures || {}, perime: false };
+    const frais = { mois, lectures: r.lectures, perime: false };
     retenirLesLectures(frais.lectures);
     LU = frais;
     if (ancien) await repeindreLeMois(mois, ancien, frais);
@@ -164,7 +162,7 @@ function attendreLeMoisFrais() { return VERIF ? VERIF.promesse : Promise.resolve
 
 /** Le mois dont `route` est une lecture, ou `null` : `{mois}` pour une lecture du mois. */
 function moisDeLaLecture(route, charge) {
-  const cles = Object.keys(charge || {});
+  const cles = Object.keys(charge);
   if (LECTURES_DU_MOIS.has(route) && cles.length === 1 && cles[0] === "mois" && charge.mois) return charge.mois;
   return null;
 }
@@ -194,22 +192,19 @@ let PAGE_DITE = false;
 const GESTES_MAX = 80;
 
 function noterGeste(g) {
-  try {
-    if (GESTES.length >= GESTES_MAX) { GESTES.shift(); GESTES_PERDUS += 1; }
-    GESTES.push({ t: Date.now(), ...g });
-  } catch (e) { /* un guetteur ne lève jamais */ }
+  if (GESTES.length >= GESTES_MAX) { GESTES.shift(); GESTES_PERDUS += 1; }
+  GESTES.push({ t: Date.now(), ...g });
 }
 
 /** Ce que la page dit d'elle-même, une fois : l'écran, l'échelle, la langue, le fuseau, le moteur de rendu (WebView2). */
 function ditDeLaPage() {
-  let fuseau = "";
-  try { fuseau = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { /* rien */ }
+  // `deviceMemory` et `hardwareConcurrency` n'existent pas dans tous les navigateurs : absents, ils ne partent pas.
   return {
     ecran: `${screen.width}×${screen.height}`, fenetre: `${innerWidth}×${innerHeight}`,
-    echelle: window.devicePixelRatio || 1, langue: navigator.language || "",
-    langues: (navigator.languages || []).join(" "), fuseau,
-    decalage_minutes: -new Date().getTimezoneOffset(), agent: navigator.userAgent || "",
-    memoire_go: navigator.deviceMemory ?? null, coeurs: navigator.hardwareConcurrency ?? null,
+    echelle: window.devicePixelRatio, langue: navigator.language,
+    langues: navigator.languages.join(" "), fuseau: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    decalage_minutes: -new Date().getTimezoneOffset(), agent: navigator.userAgent,
+    memoire_go: navigator.deviceMemory, coeurs: navigator.hardwareConcurrency,
   };
 }
 
@@ -225,11 +220,13 @@ function enteteGestes() {
 /** Ce sur quoi on a cliqué : la balise, l'identifiant, la classe, le texte lisible, l'écran ouvert. */
 function cibleDuClic(el) {
   const c = el.closest("button, a, summary, label, select, input, textarea, [role=button], [data-vue], .carte, .choix, tr, li") || el;
-  const texte = (c.getAttribute("aria-label") || c.title || c.innerText || c.value || "").replace(/\s+/g, " ").trim();
+  // Un élément SVG n'a ni `title` ni `innerText` : son `textContent`, que tout élément a.
+  const texte = String(c.getAttribute("aria-label") || c.title || c.textContent).replace(/\s+/g, " ").trim();
+  const etiquette = c.closest("label");
   return {
-    balise: c.tagName.toLowerCase(), id: c.id || "", classe: String(c.className || "").split(/\s+/).slice(0, 2).join("."),
+    balise: c.tagName.toLowerCase(), id: c.id, classe: String(c.className).split(/\s+/).slice(0, 2).join("."),
     texte: c.matches("input, textarea, select")
-      ? (c.name || c.id || (c.closest("label")?.innerText || "").replace(/\s+/g, " ").trim()).slice(0, 80) : texte.slice(0, 80),
+      ? (c.name || c.id || (etiquette ? etiquette.innerText.replace(/\s+/g, " ").trim() : "")).slice(0, 80) : texte.slice(0, 80),
   };
 }
 
@@ -242,12 +239,12 @@ document.addEventListener("change", (e) => {
   const el = e.target;
   if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) return;
   // Le nom du champ : la clé de fiche qu'il remplit (`data-cle` : `nir`, `adresse`…), son `name`, son `id`, son libellé, sinon sa première classe (`e-spectacle`, `r-taux`).
-  const nom = el.dataset.cle || el.name || el.id || el.getAttribute("aria-label") || el.placeholder || String(el.className || "").split(/\s+/)[0] || "";
+  const nom = el.dataset.cle || el.name || el.id || el.getAttribute("aria-label") || el.placeholder || el.className.split(/\s+/)[0];
   const type = el.type || el.tagName.toLowerCase();
   // Un mot de passe ne voyage jamais, même jusqu'au moteur : seulement qu'il a été tapé.
   if (type === "password") return noterGeste({ quoi: "champ", nom, type, secret: true });
   const valeur = type === "checkbox" || type === "radio" ? el.checked
-    : type === "file" ? (el.files || []).length : String(el.value).slice(0, 300);
+    : type === "file" ? el.files.length : String(el.value).slice(0, 300);
   // Une case dit aussi ce qu'elle coche (sa `value` : un salarié, un jour) ; le moteur le met en forme.
   noterGeste({ quoi: "champ", nom, type, valeur, ...(type === "checkbox" || type === "radio" ? { de: String(el.value).slice(0, 80) } : {}) });
 }, true);
@@ -360,45 +357,41 @@ const INCIDENTS_MAX = 20;
 /* Le jeton ouvre le serveur local : il ne voyage pas, même dans une pile
  * d'appels qui cite l'adresse d'un `fetch`. Le moteur le caviarde aussi —
  * deux serrures, comme pour le NIR. */
-const sansJeton = (t) => String(t ?? "").replace(/jeton=[^&\s"']+/gi, "jeton=[retiré]");
+const sansJeton = (t) => t.replace(/jeton=[^&\s"']+/gi, "jeton=[retiré]");
 
 /** L'onglet ouvert : ce que l'utilisatrice était en train de faire. */
 function ouDansLaPage() {
   const b = document.querySelector(".onglets button.actif");
-  return b ? String(b.dataset.vue || "") : "";
+  return b.dataset.vue;
 }
 
 function noterIncident(rapport) {
-  try {
-    if (INCIDENTS_POSTES >= INCIDENTS_MAX) return;
-    // Le message entre dans la clé, et pas seulement l'endroit : un rejet
-    // de promesse n'a ni fichier ni ligne, et deux défauts différents s'y
-    // confondraient. Le regroupement, lui, se fait à la lecture du journal.
-    const cle = [rapport.genre, rapport.fichier, rapport.ligne,
-                 String(rapport.message || "").slice(0, 80)].join("|");
-    if (INCIDENTS_VUS.has(cle)) return;
-    INCIDENTS_VUS.add(cle);
-    INCIDENTS_POSTES += 1;
-    // `fetch` nu, et non `api()` : `api()` lève, et une exception levée
-    // depuis le guetteur d'exceptions rentrerait dans sa propre bouche.
-    fetch("/api/incident-navigateur?jeton=" + encodeURIComponent(JETON), {
-      method: "POST",
-      headers: (() => { const h = { "Content-Type": "application/json", "X-Jeton": JETON }; const g = enteteGestes(); if (g) h["X-Gestes"] = g; return h; })(),
-      body: JSON.stringify({
-        genre: rapport.genre,
-        message: sansJeton(rapport.message),
-        fichier: rapport.fichier,
-        ligne: rapport.ligne,
-        colonne: rapport.colonne,
-        pile: sansJeton(rapport.pile),
-        canal: rapport.canal,
-        ou_dans_la_page: ouDansLaPage(),
-      }),
-    }).catch(() => {});      // le serveur est parti : il n'y a rien à faire
-  } catch (e) {
-    /* Un guetteur qui lève remplacerait l'erreur qu'on cherche par la
-     * sienne. Il se tait. */
-  }
+  if (INCIDENTS_POSTES >= INCIDENTS_MAX) return;
+  // Le message entre dans la clé, et pas seulement l'endroit : un rejet
+  // de promesse n'a ni fichier ni ligne, et deux défauts différents s'y
+  // confondraient. Le regroupement, lui, se fait à la lecture du journal.
+  const cle = [rapport.genre, rapport.fichier, rapport.ligne, rapport.message.slice(0, 80)].join("|");
+  if (INCIDENTS_VUS.has(cle)) return;
+  INCIDENTS_VUS.add(cle);
+  INCIDENTS_POSTES += 1;
+  // `fetch` nu, et non `api()` : `api()` lève, et une exception levée
+  // depuis le guetteur d'exceptions rentrerait dans sa propre bouche.
+  // Un fichier, une ligne, une pile que la page ne sait pas restent absents.
+  fetch("/api/incident-navigateur?jeton=" + encodeURIComponent(JETON), {
+    method: "POST",
+    headers: (() => { const h = { "Content-Type": "application/json", "X-Jeton": JETON }; const g = enteteGestes(); if (g) h["X-Gestes"] = g; return h; })(),
+    body: JSON.stringify({
+      genre: rapport.genre,
+      message: sansJeton(rapport.message),
+      fichier: rapport.fichier,
+      ligne: rapport.ligne,
+      colonne: rapport.colonne,
+      pile: typeof rapport.pile === "string" ? sansJeton(rapport.pile) : undefined,
+      canal: rapport.canal,
+      ou_dans_la_page: ouDansLaPage(),
+    }),
+  // Le rapport ne part pas : le serveur est parti, et la page le dit.
+  }).catch(() => serveurPerdu());
 }
 
 /** Ce qu'on ne remonte pas : voir l'en-tête. */
@@ -414,14 +407,14 @@ window.addEventListener("error", (ev) => {
     return noterIncident({
       genre: "RessourceAbsente",
       message: String(ev.target.tagName || "?"),
-      fichier: ev.target.src || ev.target.href || "",
-      ligne: 0, canal: "ressource",
+      fichier: ev.target.src || ev.target.href,
+      canal: "ressource",
     });
   }
   if (incidentAIgnorer(ev.error)) return;
   noterIncident({
     genre: (ev.error && ev.error.name) || "Erreur",
-    message: ev.message || String(ev.error || ""),
+    message: ev.message || String(ev.error),
     fichier: ev.filename, ligne: ev.lineno, colonne: ev.colno,
     pile: ev.error && ev.error.stack, canal: "erreur",
   });
@@ -436,8 +429,8 @@ window.addEventListener("error", (ev) => {
  * reste derrière (le moteur la coupe aussi, `fichier_court`). Sans pile
  * lisible, rien : le moteur écrit alors « interface:? ». */
 function sourceDeLaPile(pile) {
-  const m = String(pile || "").match(/(https?:\/\/[^\s()]+?\.js)(?:\?[^\s():]*)?:(\d+):(\d+)/);
-  return m ? { fichier: m[1], ligne: +m[2], colonne: +m[3] } : { fichier: "", ligne: 0 };
+  const m = typeof pile === "string" && pile.match(/(https?:\/\/[^\s()]+?\.js)(?:\?[^\s():]*)?:(\d+):(\d+)/);
+  return m ? { fichier: m[1], ligne: +m[2], colonne: +m[3] } : {};
 }
 
 window.addEventListener("unhandledrejection", (ev) => {
@@ -449,8 +442,8 @@ window.addEventListener("unhandledrejection", (ev) => {
   noterIncident({
     genre: estErreur ? (r.name || "Erreur") : "RejetNonRattrape",
     message: estErreur ? r.message : String(r),
-    ...sourceDeLaPile(estErreur ? r.stack : ""),
-    pile: estErreur ? r.stack : "", canal: "promesse",
+    ...(estErreur ? sourceDeLaPile(r.stack) : {}),
+    pile: estErreur ? r.stack : undefined, canal: "promesse",
   });
 });
 
@@ -505,7 +498,9 @@ function occupe(bouton, texte) {
   };
 }
 
-const echapper = (s) => String(s ?? "").replace(/[&<>"]/g,
+/* Une valeur absente ne s'échappe pas : elle lève (`toString` d'un absent), et le filet la voit. Ce qui peut manquer se
+ * teste avant d'être dessiné. */
+const echapper = (s) => s.toString().replace(/[&<>"]/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 /* LA PASTILLE D'UN ÉTAT : le moteur dit la couleur (`vert` fait, `orange`
@@ -513,12 +508,12 @@ const echapper = (s) => String(s ?? "").replace(/[&<>"]/g,
  * les dessine, sans choisir. */
 const CLASSE_DE_COULEUR = { vert: "bien", orange: "alerte", rouge: "erreur", gris: "info" };
 const pastilleDeLEtat = (p) => p && p.mots
-  ? `<span class="pastille ${CLASSE_DE_COULEUR[p.couleur] ?? ""}">${echapper(p.mots)}</span>` : "";
+  ? `<span class="pastille ${CLASSE_DE_COULEUR[p.couleur]}">${echapper(p.mots)}</span>` : "";
 /* Un encart de la même couleur : `.encart` a ses propres classes. */
 const ENCART_DE_COULEUR = { vert: "bien", orange: "attention", rouge: "erreur", gris: "info" };
 
 /* L'aide d'une case, telle que le moteur la dit (`aides` de la route `etat`), échappée pour un attribut. */
-const aideDe = (k) => echapper(((ETAT && ETAT.aides) || {})[k] || "");
+const aideDe = (k) => echapper(ETAT.aides[k]);
 
 /* Une phrase du moteur qui porte un lien (le texte d'une convention) :
  * echappee d'abord, puis l'adresse https devient cliquable. Le point
@@ -530,8 +525,8 @@ const echapperLiens = (s) => echapper(s).replace(
 /* Un encart que le moteur rend (`routes::encart` : titre, phrase, couleur) ; rien s'il n'y en a pas. La page n'écrit
  * aucune phrase : ce qu'une boîte dit d'un cas lui vient ainsi de la route. */
 const encart = (e) => e && (e.titre || e.phrase)
-  ? `<div class="encart ${ENCART_DE_COULEUR[e.couleur] ?? ""}">${e.titre ? `<b>${echapper(e.titre)}</b> ` : ""}${echapperLiens(e.phrase || "")}</div>` : "";
-const encarts = (l) => (l || []).map(encart).join("");
+  ? `<div class="encart ${ENCART_DE_COULEUR[e.couleur]}">${e.titre ? `<b>${echapper(e.titre)}</b> ` : ""}${e.phrase ? echapperLiens(e.phrase) : ""}</div>` : "";
+const encarts = (l) => l.map(encart).join("");
 
 /* ------------------------------------------------------------ navigation */
 document.querySelectorAll(".onglets button").forEach((b) => {

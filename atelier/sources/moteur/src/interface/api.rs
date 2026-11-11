@@ -136,7 +136,13 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
         let dit = match charge.lire::<compagnie::incidents::RapportNavigateur>() {
             Ok(r) => {
                 let texte = |s: &str, limite: usize| compagnie::diagnostic::texte_en_forme(Some(racine), s, limite);
-                format!("erreur JS {} : {} ({}:{})", texte(&r.genre, 80), texte(&r.message, 200), texte(&r.fichier, 80), r.ligne)
+                let ou = match (&r.fichier, r.ligne) {
+                    (Some(f), Some(l)) => format!(" ({}:{})", texte(f, 80), l),
+                    (Some(f), None) => format!(" ({})", texte(f, 80)),
+                    (None, Some(l)) => format!(" (ligne {})", l),
+                    (None, None) => String::new(),
+                };
+                format!("erreur JS {} : {}{}", texte(&r.genre, 80), texte(&r.message, 200), ou)
             }
             Err(e) => format!("erreur JS, son rapport ne se lit pas : {}", e.phrase),
         };

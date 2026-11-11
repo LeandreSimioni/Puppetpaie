@@ -472,15 +472,15 @@ fn fichier_court(source: &str) -> String {
 }
 
 /// CE QUE LA PAGE A VU CASSER (`noterIncident`, js/tuyau.js) : ce qu'une erreur, un rejet ou une ressource absente de la
-/// page dit. La page dit toujours le genre, le message, le fichier (vide quand elle ne le sait pas), la ligne (0 : elle
-/// ne la sait pas), le canal et l'ecran ; une ressource absente n'a ni pile ni colonne.
+/// page dit. La page dit toujours le genre, le message, le canal et l'ecran ; le fichier et la ligne, quand elle les
+/// sait ; une ressource absente n'a ni pile ni colonne.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RapportNavigateur {
     pub genre: String,
     pub message: String,
-    pub fichier: String,
-    pub ligne: u64,
+    pub fichier: Option<String>,
+    pub ligne: Option<u64>,
     pub colonne: Option<u64>,
     pub pile: Option<String>,
     pub canal: String,
@@ -499,15 +499,21 @@ struct DetailDeLaPage {
 
 /// `depuis_navigateur` : note ce qui a casse dans l'interface. La page n'envoie
 /// que ce qu'elle a vu ; la nature, l'endroit qui regroupe et le caviardage se
-/// decident ICI. La nature est TOUJOURS `logiciel`. Un endroit que la page ne sait pas (un fichier vide, la ligne 0)
+/// decident ICI. La nature est TOUJOURS `logiciel`. Un endroit que la page ne sait pas (sans fichier, sans ligne)
 /// s'ecrit « interface:? ».
 pub fn depuis_navigateur(racine: &Path, rapport: &RapportNavigateur) -> R<Option<Ligne>> {
     let genre = tete(&rapport.genre, 80);
-    let fichier = fichier_court(&rapport.fichier);
+    let fichier = match &rapport.fichier {
+        Some(f) => fichier_court(f),
+        None => String::new(),
+    };
     let ou = format!(
         "{}:{}",
         if fichier.is_empty() { "interface".to_string() } else { fichier },
-        if rapport.ligne > 0 { rapport.ligne.to_string() } else { "?".to_string() }
+        match rapport.ligne {
+            Some(l) => l.to_string(),
+            None => "?".to_string(),
+        }
     );
     let detail = DetailDeLaPage { face: "interface", canal: tete(&rapport.canal, 20), colonne: rapport.colonne, ou_dans_la_page: tete(&rapport.ou_dans_la_page, 120) };
     let resume = format!("{}: {}", genre, rapport.message);

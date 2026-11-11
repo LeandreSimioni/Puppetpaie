@@ -96,7 +96,7 @@ pub const ROUTES: &[Fiche] = &[
         route: Route::IncidentNavigateur,
         geste: "Noter ce qui a cassé dans la page.",
         charge: &[Champ { nom: "message", libelle: Affiche::new("Ce que la page a vu"), forme: Forme::Texte, sens: "ce que la page a vu (et genre, fichier, ligne, colonne, pile, canal, ou_dans_la_page)", avance: false }],
-        exemple: r#"{"genre":"TypeError","message":"exemple","fichier":"","ligne":0,"canal":"erreur","ou_dans_la_page":"paie"}"#,
+        exemple: r#"{"genre":"TypeError","message":"exemple","canal":"erreur","ou_dans_la_page":"paie"}"#,
         rend: "note (vrai : noté), empreinte",
         refus: &[OPERATION],
         acte: Acte::Ecrit,
