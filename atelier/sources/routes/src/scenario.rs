@@ -99,7 +99,7 @@ pub struct Geste {
     pub compagnie: Option<String>,
     /// L'etat refait (`etat`) : un mois, ou l'ouverture.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cle: Option<String>,
+    pub cle: Option<crate::etat_garde::Cle>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub charge: Option<Charge>,
     /// Ce qu'on avait depose dans un dossier que la route lit, par cle de la charge.
@@ -234,22 +234,15 @@ fn heure(t: Moment) -> String {
 /// L'INSTANT D'UN GESTE A PARIS, tel que le scenario l'ecrit : un jour (`AAAA-MM-JJ`, a 9 h), une minute
 /// (`AAAA-MM-JJTHH:MM`) ou une seconde (`AAAA-MM-JJTHH:MM:SS`, ce que le banc ecrit). Il se lit et s'ecrit dans l'une de
 /// ces trois formes, octet pour octet.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(untagged, expecting = "une date (AAAA-MM-JJ) ou une heure de Paris (AAAA-MM-JJTHH:MM[:SS]) est attendue")]
 pub enum HeureDuGeste {
-    Jour(Jour),
-    Minute(MinuteEcrite),
     Seconde(InstantEcrit),
+    Minute(MinuteEcrite),
+    Jour(Jour),
 }
 
 impl HeureDuGeste {
-    /// L'une des trois formes, et rien d'autre ; `None` sinon.
-    pub fn lire(texte: &str) -> Option<HeureDuGeste> {
-        InstantEcrit::lire(texte)
-            .map(HeureDuGeste::Seconde)
-            .or_else(|| MinuteEcrite::lire(texte).map(HeureDuGeste::Minute))
-            .or_else(|| Jour::du_texte(texte).filter(|j| j.iso() == texte).map(HeureDuGeste::Jour))
-    }
-
     /// Sa forme ecrite.
     pub fn iso(self) -> String {
         match self {
@@ -274,15 +267,6 @@ impl HeureDuGeste {
 impl Serialize for HeureDuGeste {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&self.iso())
-    }
-}
-
-impl<'de> Deserialize<'de> for HeureDuGeste {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<HeureDuGeste, D::Error> {
-        let s = String::deserialize(d)?;
-        HeureDuGeste::lire(&s).ok_or_else(|| {
-            serde::de::Error::custom(format!("{} : une date (AAAA-MM-JJ) ou une heure de Paris (AAAA-MM-JJTHH:MM[:SS]) est attendue", socle::fichiers::repr(&s)))
-        })
     }
 }
 
@@ -591,7 +575,7 @@ fn rejouer_les_gestes(
                     r.autres_compagnies += 1;
                     continue;
                 };
-                let cle = g.cle.as_deref().ok_or_else(|| refus!("geste {} : `etat` sans cle", n))?;
+                let cle = g.cle.ok_or_else(|| refus!("geste {} : `etat` sans cle", n))?;
                 let o = Options::de_la_compagnie(&racine);
                 let refait = crate::service::contexte(&o).and_then(|ctx| crate::etat_garde::lire(&o, &ctx, cle));
                 crate::remettre_le_fil();
@@ -865,7 +849,7 @@ pub fn commande(args: &[String]) -> i32 {
     while let Some(x) = it.next() {
         match x {
             "--lectures" => options.lectures = true,
-            "--jusqu-au" => match it.next().map(Jour::lire) {
+            "--jusqu-au" => match it.next().map(|t| socle::ligne::Argument::tape(t).jour()) {
                 Some(Ok(j)) => options.jusqu_au = Some(j),
                 _ => {
                     eprintln!("--jusqu-au attend un jour, AAAA-MM-JJ.\n{}", USAGE);
@@ -1085,7 +1069,7 @@ mod enregistreur {
         /// validee qui se recalcule, celle d'un contrat sans terme qui entre dans le mois), sans qu'aucune route de la
         /// page ne le demande. `f` le refait sous le meme tour, au meme instant fige ; s'il a ecrit, le geste `etat`
         /// (la compagnie, la cle) entre dans le scenario, et le rejeu le refait (`etat_garde::lire`).
-        pub fn fond<T, E>(&self, racine: &Path, cle: &str, f: impl FnOnce() -> std::thread::Result<Result<T, E>>) -> std::thread::Result<Result<T, E>> {
+        pub fn fond<T, E>(&self, racine: &Path, cle: crate::etat_garde::Cle, f: impl FnOnce() -> std::thread::Result<Result<T, E>>) -> std::thread::Result<Result<T, E>> {
             let mut n = socle::memoire::tenu(&self.tour);
             let quand = socle::temps::secondes();
             socle::temps::figer(quand);
@@ -1097,7 +1081,7 @@ mod enregistreur {
                 // Un etat refait peut ecrire puis refuser (une paie recalculee, puis un engagement qui ne se calcule pas) :
                 // le rejeu attend le meme refus.
                 let ok = (!matches!(rendu, Ok(Ok(_)))).then_some(false);
-                let ecrite = self.compagnie(racine).and_then(|c| self.ecrire(&mut n, Geste { compagnie: Some(c), cle: Some(cle.to_string()), ok, ..Geste::du_banc(Genre::Etat) }, quand));
+                let ecrite = self.compagnie(racine).and_then(|c| self.ecrire(&mut n, Geste { compagnie: Some(c), cle: Some(cle), ok, ..Geste::du_banc(Genre::Etat) }, quand));
                 non_enregistre(ecrite);
             }
             rendu

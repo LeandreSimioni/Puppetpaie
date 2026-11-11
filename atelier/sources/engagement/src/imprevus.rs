@@ -301,8 +301,7 @@ pub fn tous(racine: &Path) -> R<Vec<Imprevu>> {
     let Some(fichiers) = socle::fichiers::lister(&dossier(racine))? else { return Ok(Vec::new()) };
     let mut out = Vec::new();
     for f in fichiers {
-        let Some(nom) = f.file_name().map(|n| n.to_string_lossy().into_owned()) else { continue };
-        if !nom.strip_suffix(".json").is_some_and(|m| socle::mois::Mois::du_texte(m).is_some()) {
+        if !(f.extension().is_some_and(|x| x == "json") && f.file_stem().and_then(socle::mois::Mois::du_nom).is_some()) {
             continue;
         }
         out.extend(lu(&f)?);
@@ -349,7 +348,7 @@ fn siens_sans_noter(racine: &Path, cle: &str) -> R<Vec<Imprevu>> {
     let mut fichiers: Vec<PathBuf> = Vec::new();
     for f in std::fs::read_dir(dossier(racine)).map_err(illisible)? {
         let p = f.map_err(illisible)?.path();
-        if p.file_stem().and_then(|n| n.to_str()).is_some_and(|m| socle::mois::Mois::du_texte(m).is_some()) && p.extension().is_some_and(|x| x == "json") {
+        if p.file_stem().and_then(socle::mois::Mois::du_nom).is_some() && p.extension().is_some_and(|x| x == "json") {
             fichiers.push(p);
         }
     }

@@ -11,7 +11,7 @@ use socle::date::Jour;
 #[test]
 fn la_periode_d_essai_ne_depasse_pas_ce_que_le_texte_permet() {
     let (cddu, cdd, cdi) = (N::CdduSpectacle.proprietes().unwrap(), N::Cdd.proprietes().unwrap(), N::Cdi.proprietes().unwrap());
-    let j = |s: &str| Jour::lire(s).unwrap();
+    let j = |s: &str| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", s), "jour").unwrap();
     let jours = |p: Option<droit::essai::Plafond>| p.map(|p| p.jours);
 
     // Un CDD de six mois au plus : un jour par semaine, deux semaines au plus.

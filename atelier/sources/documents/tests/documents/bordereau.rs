@@ -26,7 +26,7 @@ struct Reel {
 }
 
 fn jour(s: &str) -> Jour {
-    Jour::lire(s).unwrap()
+    socle::forme::lire_texte(&format!("\"{}\"", s), "jour").unwrap()
 }
 
 fn l(code: &str, qualifiant: &str, assiette: &str, taux_at: &str) -> LigneBordereau {

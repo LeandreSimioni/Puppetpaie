@@ -61,7 +61,7 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
             fichier.idcc = Some(vec![droit::fiche::Datee { depuis: None, valeur, note: None }]);
             fichier.emploie_des_permanents = Some(vec![droit::fiche::Datee { depuis: None, valeur: Some(permanents), note: None }]);
             ecrire(&racine, "config/entreprise.json", &socle::ecriture::en_valeur(&fichier));
-            let ent = fichier.au(&socle::date::Jour::lire(JOUR).unwrap());
+            let ent = fichier.au(&socle::forme::lire_texte::<socle::date::Jour>(&format!("\"{}\"", JOUR), "jour").unwrap());
             if spectacle {
                 ecrire(&racine, "config/spectacles.json", &json!({"266Z00910022": datee(&json!({"titre": "Le Banc", "actif": true}))}));
             }

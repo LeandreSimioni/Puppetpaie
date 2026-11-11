@@ -53,7 +53,7 @@ fn pss_depuis_table(table: &HashMap<i32, (i64, i64)>) -> impl Fn(i32) -> R<(Deci
 }
 
 fn jour(s: &str) -> Jour {
-    Jour::lire(s).unwrap()
+    socle::forme::lire_texte(&format!("\"{}\"", s), "jour").unwrap()
 }
 
 /// Le jour (an, mois, jour).

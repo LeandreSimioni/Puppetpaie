@@ -147,13 +147,11 @@ impl HeureDeReponse {
 
 impl<'de> Deserialize<'de> for HeureDeReponse {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<HeureDeReponse, D::Error> {
-        let s = String::deserialize(d)?;
-        if s.is_empty() {
-            return Ok(HeureDeReponse::Aucune);
+        match socle::forme::Remplie::<socle::paris::MinuteUtc>::deserialize(d)? {
+            socle::forme::Remplie::Vide => Ok(HeureDeReponse::Aucune),
+            socle::forme::Remplie::Dite(m) => Ok(HeureDeReponse::Le(m)),
+            socle::forme::Remplie::Nulle => Err(serde::de::Error::invalid_type(serde::de::Unexpected::Unit, &"a string")),
         }
-        socle::paris::MinuteUtc::lire(&s)
-            .map(HeureDeReponse::Le)
-            .ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas une heure AAAA-MM-JJTHH:MMZ", socle::date::repr_texte(&s))))
     }
 }
 

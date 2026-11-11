@@ -22,6 +22,7 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use socle::echec::{erreur as echec, Classe, Echec, R};
 use socle::date::Jour;
 use socle::paris::{DateXsd, HeureDuJournal, HeureXsd, InstantCompact, InstantEcrit, Moment, Naif};
+use socle::piece::Zone;
 use socle::texte::blanc;
 
 // ---------------------------------------------------------------- les tables
@@ -879,9 +880,9 @@ fn reception_du_rapport(get: &dyn Fn(&str) -> Option<String>) -> R<Option<Recept
     let illisible = |element: &str, quoi: &str, t: &str| {
         socle::echec::cle(format!("La {} de réception d'un bilan ne se lit pas : {} n'est pas une {} de XML Schema.", quoi, socle::date::repr_texte(t), quoi), element).reclasser(Classe::Illisible)
     };
-    let date = DateXsd::lire(&d).ok_or_else(|| illisible("date_reception", "date", &d))?;
+    let date = Zone::lue(&d).date_xsd().ok_or_else(|| illisible("date_reception", "date", &d))?;
     let heure = match get("heure_reception") {
-        Some(h) => Some(HeureXsd::lire(&h).ok_or_else(|| illisible("heure_reception", "heure", &h))?),
+        Some(h) => Some(Zone::lue(&h).heure_xsd().ok_or_else(|| illisible("heure_reception", "heure", &h))?),
         None => None,
     };
     Ok(Some(Reception { date, heure }))
@@ -889,7 +890,7 @@ fn reception_du_rapport(get: &dyn Fn(&str) -> Option<String>) -> R<Option<Recept
 
 /// Le mois d'une DSN (S20.G00.05.005, `01MMAAAA`) ; un mois qui ne se lit pas refuse le rapport.
 fn mois_du_rapport(brut: &str) -> R<socle::mois::Mois> {
-    socle::mois::Mois::de_la_dsn(nettoye(brut)).map_err(|m| m.reclasser(Classe::Illisible))
+    Zone::lue(nettoye(brut)).mois_dsn().map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> R<Option<Bilan>> {
@@ -1308,7 +1309,7 @@ pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
             let mut a = Annonce { publication: None, production: None, ops: None, delegataire: None, nature_retour: String::new(), statut: None, id: None, url: None, libelle: None, flux: idf.clone() };
             let mut nature = None;
             for (nom, t) in enfants_textes(&arbre, r) {
-                let publication = InstantCompact::lire(t);
+                let publication = Zone::lue(t).instant_compact();
                 let t = Some(t.to_string());
                 match nom {
                     "publication" => a.publication = Some(publication.ok_or_else(|| illisible("flux.retour.publication"))?),
@@ -1347,7 +1348,7 @@ pub fn liste_depots_d_octets(o: &[u8]) -> R<Vec<Depot>> {
         if let Some((autre, _)) = champs.iter().find(|(n, _)| !["idflux", "date", "statut"].contains(n)) {
             return Err(illisible(&format!("depot.{}", autre)));
         }
-        let date = socle::paris::InstantCompact::lire(&champ("date")?).ok_or_else(|| illisible("depot.date"))?;
+        let date = Zone::lue(&champ("date")?).instant_compact().ok_or_else(|| illisible("depot.date"))?;
         out.push(Depot { idflux: champ("idflux")?, date, statut: champ("statut")? });
     }
     Ok(out)
@@ -2009,11 +2010,11 @@ fn nom_aer(nom: &str) -> Option<(String, String)> {
     None
 }
 
-/// Une attestation d'une archive de nature 46 : son nom dans l'archive, sa periode (AAAA-MM, quand le nom la dit), le salarie que le nom designe, et le PDF.
+/// Une attestation d'une archive de nature 46 : son nom dans l'archive, sa periode (quand le nom la dit, `MMAAAA`), le salarie que le nom designe, et le PDF.
 #[derive(Debug, Clone)]
 pub struct AttestationAer {
     pub nom_archive: String,
-    pub periode: Option<String>,
+    pub periode: Option<socle::mois::Mois>,
     pub qui: String,
     pub donnees: Vec<u8>,
 }
@@ -2032,10 +2033,7 @@ pub fn aer_spectacle(o: &[u8]) -> R<Vec<AttestationAer>> {
         // Un dossier, ou un chemin qui ne nomme pas de fichier, n'est pas une attestation.
         let Some(fichier) = nom_de_fichier(&m.nom).filter(|_| !m.nom.ends_with('/')) else { continue };
         let (periode, qui) = match nom_aer(fichier) {
-            Some((mmaaaa, qui)) => {
-                let c: Vec<char> = mmaaaa.chars().collect();
-                (Some(format!("{}-{}", c[2..].iter().collect::<String>(), c[..2].iter().collect::<String>())), qui.replace('_', " "))
-            }
+            Some((mmaaaa, qui)) => (Zone::lue(&mmaaaa).mois_mmaaaa(), qui.replace('_', " ")),
             None => (None, radical(fichier).to_string()),
         };
         let dernier = match membres.iter().rev().find(|x| x.nom == m.nom) {
@@ -2411,7 +2409,7 @@ fn rubrique_montant(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::num::Dec
 /// se refuse.
 fn rubrique_jour(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::date::Jour>> {
     rubrique_de(a, e, nom)
-        .map(|t| socle::date::Jour::du_texte(t).filter(|j| j.iso() == t).ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas une date AAAA-MM-JJ", nom, socle::date::repr_texte(t)))))
+        .map(|t| Zone::lue(t).jour_iso().ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas une date AAAA-MM-JJ", nom, socle::date::repr_texte(t)))))
         .transpose()
 }
 
@@ -2419,7 +2417,7 @@ fn rubrique_jour(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::date::Jour>
 /// parametre ([19,19], meme cahier, RO.B002.R011 et RO.B008.R006) ; une autre forme se refuse.
 fn rubrique_instant(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::paris::InstantEcrit>> {
     rubrique_de(a, e, nom)
-        .map(|t| socle::paris::InstantEcrit::lire(t).ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas un instant AAAA-MM-JJTHH:MM:SS", nom, socle::date::repr_texte(t)))))
+        .map(|t| Zone::lue(t).instant_ecrit().ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas un instant AAAA-MM-JJTHH:MM:SS", nom, socle::date::repr_texte(t)))))
         .transpose()
 }
 
@@ -2741,7 +2739,7 @@ const CRITICITES_OC: [(&str, &str); 2] = [("C", "critique : à corriger impérat
 /// declare : guide v6.8, §7.1).
 /// Un jour `JJMMAAAA`, et rien d'autre.
 fn jour_jjmmaaaa(t: &str) -> Option<socle::date::Jour> {
-    socle::date::Jour::du_texte(t).filter(|j| j.jjmmaaaa() == t)
+    Zone::lue(t).jour_jjmmaaaa()
 }
 
 /// Un attribut d'un CRM OC qui n'a pas la forme du schema : le CRM ne se lit pas.
@@ -2900,5 +2898,8 @@ pub struct ContexteOc {
 /// `AAAA-MM-01` (cahier technique 2027.1.0, `atelier/reference/sources/neores/`) ; un jour qui ne se lit pas refuse le
 /// compte rendu.
 fn mois_du_jour(brut: &str) -> R<socle::mois::Mois> {
-    socle::date::Jour::lire(brut).map(|j| j.mois_civil()).map_err(|m| m.reclasser(Classe::Illisible))
+    match Zone::lue(brut).jour() {
+        Some(j) => Ok(j.mois_civil()),
+        None => Err(echec(Classe::Illisible, format!("date illisible : {}", socle::date::repr_texte(brut.trim())))),
+    }
 }

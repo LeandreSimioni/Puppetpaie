@@ -39,7 +39,8 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         },
     };
     refuser_si_pas_redirige(cadre, Organisme::Dsn, "le depot de test")?;
-    let designee = match socle::mois::Mois::du_texte(fichier) {
+    // Un mois nu designe sa saisie par le nom de son fichier (`routes::depots::resoudre`).
+    let designee = match socle::mois::Mois::du_nom(std::ffi::OsStr::new(fichier)) {
         Some(m) => routes::depots::designee(&cadre.ctx, &routes::depots::Designation::du_mois(routes::depots::Quoi::Dsn, m))?.0,
         None => fichier.to_string(),
     };

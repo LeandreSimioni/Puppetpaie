@@ -1032,7 +1032,7 @@ mod tests {
     use super::*;
 
     fn jour(t: &str) -> Jour {
-        Jour::lire(t).unwrap()
+        socle::forme::lire_texte(&format!("\"{}\"", t), "jour").unwrap()
     }
 
     /// Tout ce que la racine porte : chemins relatifs et octets.

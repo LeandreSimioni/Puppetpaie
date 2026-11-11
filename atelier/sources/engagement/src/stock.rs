@@ -247,7 +247,8 @@ pub(crate) fn fichiers_dans(racine: &Path, d: Dossier) -> R<Vec<Mois>> {
     let mut v: Vec<Mois> = socle::fichiers::entrees(&racine.join(d.nom()))?
         .into_iter()
         .flatten()
-        .filter_map(|p| p.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_suffix(".json")).and_then(Mois::du_texte))
+        .filter(|p| p.extension().is_some_and(|x| x == "json"))
+        .filter_map(|p| p.file_stem().and_then(Mois::du_nom))
         .collect();
     BROUILLON.with(|b| v.extend(b.borrow().iter().filter(|(r, _)| r == racine).flat_map(|(_, f)| f.keys().filter(|(x, _)| *x == d).map(|(_, m)| *m))));
     v.sort();
@@ -863,10 +864,7 @@ pub(crate) fn vue_et_empreinte(racine: &Path, mois: Mois) -> R<Option<std::sync:
 /// La cle sous laquelle un calcul note la saisie d'un mois qu'il a lue (`socle::fichiers::suivre`) : `saisie <mois>`, ou
 /// `saisie <mois> <salarie>` pour la saisie dont depend la paie de ce salarie dans son mois (`etats::calculer_les_rangs`).
 pub fn cle_de_saisie(mois: Mois, salarie: Option<&str>) -> String {
-    match salarie {
-        Some(s) => format!("saisie {} {}", mois, s),
-        None => format!("saisie {}", mois),
-    }
+    socle::fichiers::LectureDatee::Saisie { mois, salarie: salarie.map(String::from) }.cle()
 }
 
 /// L'empreinte de la saisie d'un mois : ce qu'elle dit, sans ce que le moteur tient seul (la validation) ni le numero du

@@ -13,11 +13,11 @@ use declarations::echeance_dsn::{reporter, Echeance, HEURE_LIMITE};
 
 /// L'echeance de la DSN du mois ecrit `mois`.
 fn du_mois(mois: &str, jour: u32) -> socle::echec::R<Echeance> {
-    declarations::echeance_dsn::du_mois(socle::mois::Mois::lire(mois).unwrap(), jour)
+    declarations::echeance_dsn::du_mois(socle::forme::lire_texte::<socle::mois::Mois>(&format!("\"{}\"", mois), "mois").unwrap(), jour)
 }
 
 fn j(s: &str) -> Jour {
-    Jour::lire(s).unwrap()
+    socle::forme::lire_texte(&format!("\"{}\"", s), "jour").unwrap()
 }
 
 /// Le calendrier de net-entreprises (releve du 15/10/2026) : DSN d'octobre 2026 au 15, le dimanche 15/11/2026 devient le

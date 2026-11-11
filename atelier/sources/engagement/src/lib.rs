@@ -1520,7 +1520,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[usize], nuits: &[J
         let (k, _) = nuitee.or(du_jour.first()).ok_or_else(|| refus("un jour à l'étranger sans ligne : le signaler au développeur"))?;
         let lieu = lignes[es[*k].rang].territoire_dit().map(String::from).ok_or_else(|| socle::fichiers::absent("territoire"))?;
         let indemnite = droit::missions::du_jour(&lieu, j).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?;
-        socle::fichiers::noter_valeur(&format!("mission {} {}", lieu, j.iso()), indemnite.empreinte());
+        socle::fichiers::noter_valeur(&socle::fichiers::LectureDatee::Mission { lieu: lieu.clone(), jour: *j }.cle(), indemnite.empreinte());
         let loge = nuitee.is_none() && !nuits.contains(j) && du_jour.iter().any(|(k, _)| cochee(&lignes[es[*k].rang], LOGE));
         let limite = if loge { socle::num::eur2(indemnite.euros * (Decimal::ONE - REDUCTION_LOGE)) } else { indemnite.euros };
         let total: Decimal = du_jour.iter().map(|(k, _)| es[*k].par_jour).sum();

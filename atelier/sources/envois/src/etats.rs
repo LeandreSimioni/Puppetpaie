@@ -1406,7 +1406,7 @@ mod tests {
         let autre = ligne("dpae", "reel", "2026-06-01T10:00:00", "e1", "f.dsn", true, "WSCCCC", "{\"repetition\": null, \"reconstruit\": false, \"embauches\": [], \"certificat\": false}", "[]");
         let r = journal("rattachement", &[l, autre]);
         let annonce = |flux: &str, nature: &str, publication: &str| Annonce {
-            publication: Some(socle::paris::InstantCompact::lire(publication).unwrap()),
+            publication: Some(socle::forme::lire_texte::<socle::paris::InstantCompact>(&format!("\"{}\"", publication), "publication").unwrap()),
             production: None,
             ops: None,
             delegataire: None,

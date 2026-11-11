@@ -47,13 +47,13 @@ impl Jour {
 
     /// Une date ecrite dans l'un des cinq formats.
     #[track_caller]
-    pub fn lire(texte: &str) -> R<Jour> {
+    pub(crate) fn lire(texte: &str) -> R<Jour> {
         match Jour::du_texte(texte) { Some(j) => Ok(j), None => Err(refus(format!("date illisible : {}", repr_texte(texte.trim())))) }
     }
 
     /// Le jour que `texte` ecrit, s'il en ecrit un (`lire` dit pourquoi il n'en ecrit pas) : une phrase qui cite un jour
     /// le dit en clair, et ce qui n'est pas une date tel qu'il est ecrit.
-    pub fn du_texte(texte: &str) -> Option<Jour> {
+    pub(crate) fn du_texte(texte: &str) -> Option<Jour> {
         let s = texte.trim();
         // La forme qu'ecrit le moteur (`iso`), lue d'emblee : c'est celle que le premier format apparierait.
         let o = s.as_bytes();
@@ -309,7 +309,7 @@ fn lire_format(format: &[Champ], c: &[char]) -> Option<Jour> {
 
 /// Une date `AAAAMMJJ`, ou `None`.
 /// `JJMMAAAA` (la DSN, la DPAE) : huit chiffres ASCII, et rien d'autre ; `None` sinon, ou hors du calendrier.
-pub fn lire_jjmmaaaa(v: &str) -> Option<Jour> {
+pub(crate) fn lire_jjmmaaaa(v: &str) -> Option<Jour> {
     if v.len() != 8 || !v.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
@@ -317,7 +317,7 @@ pub fn lire_jjmmaaaa(v: &str) -> Option<Jour> {
     Jour::nouveau(n(4, 8) as i32, n(2, 4), n(0, 2))
 }
 
-pub fn lire_aaaammjj(s: &str) -> Option<Jour> {
+pub(crate) fn lire_aaaammjj(s: &str) -> Option<Jour> {
     let c: Vec<char> = s.chars().collect();
     lire_format(FORMATS[3], &c)
 }
@@ -349,7 +349,7 @@ pub fn repr_texte(s: &str) -> String {
 }
 
 /// `AAAA-MM-JJ` ou `AAAAMMJJ`.
-pub fn jour_iso(texte: &str) -> Option<Jour> {
+pub(crate) fn jour_iso(texte: &str) -> Option<Jour> {
     let chiffres = |t: &str| t.chars().all(|c| c.is_ascii_digit());
     let (a, m, j) = match texte.len() {
         10 if texte.is_char_boundary(4) && texte.is_char_boundary(7) && &texte[4..5] == "-" && &texte[7..8] == "-" => (&texte[..4], &texte[5..7], &texte[8..10]),
@@ -364,13 +364,6 @@ pub fn jour_iso(texte: &str) -> Option<Jour> {
     Jour::nouveau(valeur(a) as i32, valeur(m), valeur(j))
 }
 
-/// `JJ/MM/AAAA` d'un `AAAA-MM-JJ` (ou d'un instant, par ses dix premiers caracteres) ; le texte tel quel s'il ne se lit pas.
-pub fn jj_mm_aaaa(iso: &str) -> String {
-    match jour_iso(&iso.chars().take(10).collect::<String>()) {
-        Some(j) => j.jj_mm_aaaa(),
-        None => iso.to_string(),
-    }
-}
 
 /// UN JOUR DANS UNE DONNEE LUE (`serde`) : la forme qu'ecrit le moteur, `AAAA-MM-JJ`, et elle seule ; il s'ecrit de meme.
 /// Les autres formats de `lire` sont ceux d'une saisie ou d'une piece, qui se lisent avant d'entrer dans une donnee.

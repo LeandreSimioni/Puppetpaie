@@ -70,8 +70,8 @@ pub struct Declare {
 
 impl Declare {
     /// Le mois de la fin, auquel se rattachent les cachets.
-    pub fn mois(&self) -> String {
-        self.fin.mois_civil().to_string()
+    pub fn mois(&self) -> socle::mois::Mois {
+        self.fin.mois_civil()
     }
 
     pub fn heures_equivalentes(&self, c: &Constantes) -> i64 {
@@ -113,7 +113,7 @@ impl Position {
     }
 
     /// `{mois: cachets declares}`.
-    pub fn cachets_par_mois(&self) -> BTreeMap<String, i64> {
+    pub fn cachets_par_mois(&self) -> BTreeMap<socle::mois::Mois, i64> {
         let mut out = BTreeMap::new();
         for e in &self.engagements {
             *out.entry(e.mois()).or_insert(0) += e.cachets;
@@ -131,7 +131,7 @@ impl Position {
     }
 
     /// Les mois ou le plafond a mordu.
-    pub fn mois_plafonnes(&self) -> Vec<String> {
+    pub fn mois_plafonnes(&self) -> Vec<socle::mois::Mois> {
         self.cachets_par_mois()
             .into_iter()
             .filter(|(_, n)| *n > self.constantes.cachets_par_mois)

@@ -17,7 +17,7 @@ fn une_valeur_changee_a_une_date_ne_touche_pas_ce_qui_precede() {
     let racine = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("configuration-datee-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&racine);
     std::fs::create_dir_all(racine.join("config")).unwrap();
-    let j = |s: &str| Jour::lire(s).unwrap();
+    let j = |s: &str| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", s), "jour").unwrap();
     let plate = r#"{"raison_sociale": "CIE DATEE", "idcc": "3090", "annexe_convention": "4", "adresse": "21 RUE DU PORT",
                     "premiere_embauche": "2026-01-01", "taux_atmp": {"valeur": 1.25, "code_risque": "923AD", "depuis": "2026-01-01"}}"#;
     let e = |texte: &str| lu::<ChampsEntreprise>(texte);
@@ -37,7 +37,7 @@ fn une_valeur_changee_a_une_date_ne_touche_pas_ce_qui_precede() {
     // Le contexte d'aujourd'hui (decembre) et celui d'octobre : la meme compagnie, chacun sous ses valeurs.
     let ctx = Contexte::nouveau(&racine, Some(j("2026-12-15"))).unwrap();
     assert_eq!(ctx.entreprise.idcc.portee(), Some("1285"));
-    let mois = |t: &str| socle::mois::Mois::lire(t).unwrap();
+    let mois = |t: &str| socle::forme::lire_texte::<socle::mois::Mois>(&format!("\"{}\"", t), "mois").unwrap();
     let octobre = ctx.du_mois(mois("2026-10")).unwrap();
     assert_eq!((octobre.entreprise.idcc.portee(), octobre.entreprise.adresse.portee()), (Some("3090"), Some("21 RUE DU PORT")));
     assert_eq!(ctx.entreprise_du_mois(mois("2026-11")).adresse.portee(), Some("8 PLACE DU MARCHE"));

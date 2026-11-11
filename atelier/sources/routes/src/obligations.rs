@@ -1611,7 +1611,7 @@ mod essais {
     /// tranche (cahier technique DSN, `norme-dsn/texte/chapitre-4-controles.txt` §4.2) : refuse, il reste du.
     #[test]
     fn un_signalement_de_fin_refuse_au_bilan_reste_du() {
-        let fin = Jour::lire("2026-03-13").unwrap();
+        let fin = Jour::nouveau(2026, 3, 13).unwrap();
         let ligne = |verdict: &str| -> Vec<envois::journal::Ligne> {
             vec![serde_json::from_value(json!({"quoi": "dsn", "mode": "reel", "accepte": true, "mois": "2026-03", "quand": "2026-03-14T10:00:00", "origine": "",
                     "fichier": "SignalementFinContrat_FANCHON_20260313.dsn", "empreinte": null, "qui": "t", "destinataire": "", "flux": "", "reponse": "", "trace": null,
@@ -1628,18 +1628,18 @@ mod essais {
     /// prolongation ; depose avant elle, il ne porte pas la fin de subrogation nouvelle, et reste du.
     #[test]
     fn un_rectificatif_depose_avant_la_prolongation_ne_la_fait_pas() {
-        let jour = |t: &str| Jour::lire(t).unwrap();
+        let jour = |t: &str| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", t), "jour").unwrap();
         let signalement = |type_declaration: TypeDeLaDeclaration, quand: &str| EnvoiDeLArret {
             nature_declaration: NatureDeLaDeclaration::SignalementArret,
             type_declaration: Some(type_declaration),
             ordre: None,
             mois: None,
             fichier: None,
-            quand: HeureDuJournal::lire(quand).unwrap(),
+            quand: socle::forme::lire_texte::<HeureDuJournal>(&format!("\"{}\"", quand), "quand").unwrap(),
         };
         let prolongation = Prolongation {
             le: jour("2026-11-03"),
-            saisi_le: HeureDeSaisie::lire("2026-11-03 15:00").unwrap(),
+            saisi_le: socle::forme::lire_texte::<HeureDeSaisie>("\"2026-11-03 15:00\"", "saisi_le").unwrap(),
             qui: "t".into(),
             fin_avant: jour("2026-11-06"),
             fin: jour("2026-11-13"),

@@ -1104,7 +1104,7 @@ fn du_salarie(ctx: &Contexte, cle: &str) -> R<Vec<ConseilVu>> {
             a_dire.push((
                 Quand::CachetsPerdus,
                 base(vec![
-                    ("mois", val_texte(socle::mois::Mois::en_clair(&m))),
+                    ("mois", val_texte(m.libelle(socle::mois::Graphie::Accentuee))),
                     ("cachets", val_entier(n)),
                     ("plafond", val_entier(c.cachets_par_mois)),
                     ("perdus", val_entier(n - c.cachets_par_mois)),

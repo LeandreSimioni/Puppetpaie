@@ -11,7 +11,6 @@
 use moteur::commandes::actes::{refuser_si_pas_redirige, Organisme};
 use moteur::commandes::analyse::{Args, Opt, Spec};
 use moteur::commandes::Cadre;
-use socle::date::Jour;
 use socle::echec::Echec;
 use socle::paris::Naif;
 
@@ -35,7 +34,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
 /// La plage : `--depuis` et `--jusqu-a` (inclus), par defaut les 30 derniers jours.
 fn plage(args: &Args) -> Result<(Naif, Naif), Echec> {
     let a = |t: &str, h: i64, m: i64, s: i64| {
-        let j = Jour::lire(t).map_err(|e| e.reclasser(socle::echec::Classe::Illisible))?;
+        let j = socle::ligne::Argument::tape(t).jour().map_err(|e| e.reclasser(socle::echec::Classe::Illisible))?;
         Naif::du_jour(j, h, m, s).ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Illisible, socle::date::HORS_CALENDRIER))
     };
     let fin = match args.texte("jusqu-a") {

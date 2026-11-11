@@ -45,8 +45,8 @@ pub struct PaieEcrite {
 #[serde(deny_unknown_fields)]
 pub struct Empreinte {
     pub entrees: BTreeMap<String, String>,
-    pub regles: Vec<String>,
-    pub configuration: Vec<String>,
+    pub regles: Vec<Jour>,
+    pub configuration: Vec<Jour>,
 }
 
 /// Une paie recalculee d'elle-meme : quand, et pourquoi (`etats::raison`).

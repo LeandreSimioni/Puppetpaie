@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 
 fn jour(s: &str) -> Jour {
-    Jour::lire(s).unwrap()
+    socle::forme::lire_texte(&format!("\"{}\"", s), "jour").unwrap()
 }
 
 #[test]

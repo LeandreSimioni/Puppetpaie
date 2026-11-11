@@ -141,10 +141,10 @@ impl Charge {
     /// LE MOIS DE LA CHARGE, s'il est donne : une route qui porte un mois se sert sous la configuration de ce mois
     /// (`Contexte::du_mois`). Un mois qui ne se lit pas refuse la route (`Illisible`), rien ne s'ecrit.
     pub fn mois(&self) -> R<Option<socle::mois::Mois>> {
-        match self.0.get("mois").and_then(Value::as_str).filter(|m| !m.is_empty()) {
-            Some(m) => socle::mois::Mois::lire(m)
+        match self.0.get("mois").filter(|m| m.as_str().is_some_and(|m| !m.is_empty())) {
+            Some(m) => <socle::mois::Mois as serde::Deserialize>::deserialize(m)
                 .map(Some)
-                .map_err(|e| socle::echec::a_la_cle("Le mois de la demande ne se lit pas : il s'écrit AAAA-MM, de 01 à 12.", "mois", e.phrase).reclasser(Classe::Illisible)),
+                .map_err(|e| socle::echec::a_la_cle("Le mois de la demande ne se lit pas : il s'écrit AAAA-MM, de 01 à 12.", "mois", e).reclasser(Classe::Illisible)),
             None => Ok(None),
         }
     }

@@ -193,6 +193,64 @@ pub fn noter_valeur(cle: &str, valeur: String) {
     });
 }
 
+/// UNE LECTURE NOTEE QUI PORTE UN JOUR OU UN MOIS : sa cle s'ecrit ici (`cle`) et se relit ici (`lue`), la seule porte
+/// par laquelle la cle d'une empreinte ecrite redevient un jour ou un mois.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LectureDatee {
+    /// `pas <salarie> <jour> [<mois>]` : le taux de PAS du salarie a ce jour, pour la paie de ce mois.
+    Pas { salarie: String, le: crate::date::Jour, mois: Option<crate::mois::Mois> },
+    /// `mission <lieu> <jour>` : l'indemnite de mission d'un jour a l'etranger.
+    Mission { lieu: String, jour: crate::date::Jour },
+    /// `mensuels <mois> <salarie>` : les mensuels d'avant d'un salarie.
+    Mensuels { mois: crate::mois::Mois, salarie: String },
+    /// `paies <mois> <salarie>` : les paies validees d'un salarie au mois.
+    Paies { mois: crate::mois::Mois, salarie: String },
+    /// `saisie <mois> [<salarie>]` : la saisie du mois, ou celle d'un salarie.
+    Saisie { mois: crate::mois::Mois, salarie: Option<String> },
+}
+
+impl LectureDatee {
+    /// La cle sous laquelle elle se note.
+    pub fn cle(&self) -> String {
+        match self {
+            LectureDatee::Pas { salarie, le, mois: Some(m) } => format!("pas {} {} {}", salarie, le.iso(), m),
+            LectureDatee::Pas { salarie, le, mois: None } => format!("pas {} {}", salarie, le.iso()),
+            LectureDatee::Mission { lieu, jour } => format!("mission {} {}", lieu, jour.iso()),
+            LectureDatee::Mensuels { mois, salarie } => format!("mensuels {} {}", mois, salarie),
+            LectureDatee::Paies { mois, salarie } => format!("paies {} {}", mois, salarie),
+            LectureDatee::Saisie { mois, salarie: Some(s) } => format!("saisie {} {}", mois, s),
+            LectureDatee::Saisie { mois, salarie: None } => format!("saisie {}", mois),
+        }
+    }
+
+    /// La lecture que nomme la cle `cle` d'une empreinte ecrite ; `None` : ce n'en est pas une ; un jour ou un mois qui
+    /// ne se lit pas refuse.
+    pub fn lue(cle: &str) -> Option<crate::echec::R<LectureDatee>> {
+        use crate::date::Jour;
+        use crate::mois::Mois;
+        if let Some(r) = cle.strip_prefix("pas ") {
+            let mut parts = r.split(' ');
+            let (salarie, jour, mois) = (parts.next()?, parts.next()?, parts.next());
+            return Some((|| Ok(LectureDatee::Pas { salarie: salarie.to_string(), le: Jour::lire(jour)?, mois: mois.map(Mois::lire).transpose()? }))());
+        }
+        if let Some((lieu, jour)) = cle.strip_prefix("mission ").and_then(|r| r.split_once(' ')) {
+            return Some(Jour::lire(jour).map(|jour| LectureDatee::Mission { lieu: lieu.to_string(), jour }));
+        }
+        if let Some((mois, salarie)) = cle.strip_prefix("mensuels ").and_then(|r| r.split_once(' ')) {
+            return Some(Mois::lire(mois).map(|mois| LectureDatee::Mensuels { mois, salarie: salarie.to_string() }));
+        }
+        if let Some((mois, salarie)) = cle.strip_prefix("paies ").and_then(|r| r.split_once(' ')) {
+            return Some(Mois::lire(mois).map(|mois| LectureDatee::Paies { mois, salarie: salarie.to_string() }));
+        }
+        let reste = cle.strip_prefix("saisie ")?;
+        let (mois, salarie) = match reste.split_once(' ') {
+            Some((m, s)) => (m, Some(s.to_string())),
+            None => (reste, None),
+        };
+        Some(Mois::lire(mois).map(|mois| LectureDatee::Saisie { mois, salarie }))
+    }
+}
+
 pub fn sha256_hex(octets: &[u8]) -> String {
     Sha256::digest(octets).iter().map(|o| format!("{:02x}", o)).collect()
 }

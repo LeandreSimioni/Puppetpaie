@@ -390,7 +390,7 @@ pub(crate) fn avant_le_mois(ctx: &Contexte, au: &AuMois, cle_salarie: &str, a_la
     }
     let cle = cle_de_fiche(ctx, cle_salarie)?;
     let mensuels = mensuels_d_avant(ctx, mois, &cle)?;
-    socle::fichiers::noter_valeur(&format!("{}{} {}", MENSUELS, mois, cle), empreinte_des(&mensuels));
+    socle::fichiers::noter_valeur(&socle::fichiers::LectureDatee::Mensuels { mois, salarie: cle.to_string() }.cle(), empreinte_des(&mensuels));
     let lus = if mensuels.is_empty() { Lus::Aucun } else { Lus::Avant(mois) };
     compteur(ctx, au, cle_salarie, a_la_date, lus)
 }
@@ -414,9 +414,6 @@ impl Lus {
         }
     }
 }
-
-/// La cle sous laquelle un calcul note les contrats payes au mois d'un salarie avant un mois (`mensuels <mois> <salarie>`).
-pub const MENSUELS: &str = "mensuels ";
 
 /// LE PREMIER MOIS D'UN PERMANENT NE RELIT RIEN : seul un mois paye au mois apporte des conges (`Tenue::ajouter`). Sans
 /// contrat paye au mois du salarie `cle` (la cle de sa fiche) commence avant `mois` (un engagement actif, qui n'est pas

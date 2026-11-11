@@ -930,7 +930,7 @@ pub(crate) fn reprendre_anciennete(ctx: &Contexte, salarie: &str, pose_le: Jour,
 /// ou les pieces importees la portent, comme un numero renouvele saisi « a partir du » (`poser`). Seulement quand la
 /// fiche, sur le disque, porte pour seule licence la premiere que les pieces donnent : une licence saisie autrement reste
 /// ce qu'elle est.
-pub(crate) fn dater_licences_suivantes(ctx: &Contexte, licences: &[(String, String)], note: Option<&str>) -> R<()> {
+pub(crate) fn dater_licences_suivantes(ctx: &Contexte, licences: &[(socle::mois::Mois, String)], note: Option<&str>) -> R<()> {
     let Some(((_, premiere), suivantes)) = licences.split_first().filter(|(_, s)| !s.is_empty()) else { return Ok(()) };
     let fiche = lire_fichier::<FicheEntrepriseDatee>(ctx)?;
     if !matches!(fiche.licence_spectacle.as_deref(), Some([seule]) if seule.depuis.is_none() && seule.valeur.dite() == Some(premiere)) {
@@ -938,8 +938,7 @@ pub(crate) fn dater_licences_suivantes(ctx: &Contexte, licences: &[(String, Stri
     }
     let note = note.filter(|n| !n.trim().is_empty());
     for (mois, numero) in suivantes {
-        let jour = socle::mois::Mois::lire(mois).map(socle::mois::Mois::premier_jour)?;
-        poser_entreprise_note(ctx, ChangementEntreprise::LicenceSpectacle(Some(numero.clone())), jour, note)?;
+        poser_entreprise_note(ctx, ChangementEntreprise::LicenceSpectacle(Some(numero.clone())), mois.premier_jour(), note)?;
     }
     Ok(())
 }

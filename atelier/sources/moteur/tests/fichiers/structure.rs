@@ -531,7 +531,7 @@ fn installation_a_part(c: &Path, test: &str) -> (PathBuf, PathBuf) {
 fn administrateur(c: &Path, route: Route, exemple: Value) -> Value {
     const ADMIN: &str = "administrateur-essai-1";
     let (inst, a) = installation_a_part(c, route.nom());
-    let poste = Poste { dossier_cle: inst.join("cle-du-poste"), maintenant: socle::paris::MinuteEcrite::lire("2026-11-02T10:00").unwrap() };
+    let poste = Poste { dossier_cle: inst.join("cle-du-poste"), maintenant: socle::forme::lire_texte("\"2026-11-02T10:00\"", "maintenant").unwrap() };
     poste.coffre(&a).poser_ouverture(ADMIN, None).unwrap();
     let b = ajouter_venant(&inst, "Seconde", Venue::Neuve).unwrap().racine;
     let mut charge = exemple;
@@ -1071,74 +1071,51 @@ fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
     assert!(fautes.is_empty(), "une liste de la norme declaree en `enum` est l'union des listes livrees :\n{}", fautes.join("\n"));
 }
 
-/// UN MOIS EST UN `socle::mois::Mois`, JAMAIS UN TEXTE : aucune source du logiciel (tests a part, commentaires blanchis)
-/// n'a de champ ni de parametre dont le nom dit un mois (`mois`, `premier_mois`, `mois_attendu`...) en `String`, `&str`,
-/// `Option<String>`, `Vec<String>` ou `impl Into<String>`. Un nom ou le mois n'est qu'un complement (`phrase_du_mois`,
-/// `jours_du_mois`) dit autre chose qu'un mois : une phrase, des jours. Une variable locale (`let`) n'est ni un champ ni
-/// une signature.
+/// UN TEXTE NE DEVIENT UN JOUR, UN MOIS OU UN INSTANT QU'A SA PORTE. Les types du temps sont ceux que declarent les
+/// modules de `Jour`, de `Mois` et de `Moment` (nommes par le compilateur) ; leurs lectures d'un texte sont privees a
+/// `socle`, et le compilateur tient tout le reste : hors de `socle`, un texte n'en devient un que par la forme qui le
+/// porte (`Deserialize`) ou par une porte qui dit son origine dans son type (`socle::ligne::Argument`,
+/// `socle::piece::Zone`, `Mois::du_nom`, `socle::fichiers::LectureDatee`). Ce verrou garde cette visibilite : aucune
+/// fonction publique de `socle` ne rend un type du temps d'un parametre texte (`&str`, `String`, `impl AsRef<str>`,
+/// `impl Into<String>`), et aucun type du temps n'implemente `FromStr`, ni `TryFrom` ou `PartialEq` d'un texte.
 #[test]
-fn un_mois_est_un_mois() {
-    let champ = regex::Regex::new(
-        r"(\blet\s+(?:mut\s+)?)?\b_*((?:[a-z0-9]+_)*)mois(?:_[a-z0-9]+)*\s*:\s*(?:impl\s+(?:Into\s*<\s*String\s*>|AsRef\s*<\s*str\s*>)|&\s*(?:'[a-z_]+\s+)?(?:mut\s+)?str\b|String\b|(?:Option|Vec)\s*<\s*(?:&\s*(?:'[a-z_]+\s+)?str|String)\s*>)",
-    )
-    .unwrap();
+fn un_texte_ne_devient_un_jour_qu_a_sa_porte() {
+    let modules: Vec<(String, String)> = [std::any::type_name::<socle::date::Jour>(), std::any::type_name::<socle::mois::Mois>(), std::any::type_name::<socle::paris::Moment>()]
+        .iter()
+        .map(|t| {
+            let morceaux: Vec<&str> = t.split("::").collect();
+            (morceaux[0].to_string(), morceaux[1].to_string())
+        })
+        .collect();
+    let declare = regex::Regex::new(r"\bpub\s+(?:struct|enum|type)\s+([A-Z][A-Za-z0-9_]*)").unwrap();
+    let mut du_temps: Vec<String> = Vec::new();
+    for (c, m) in &modules {
+        let code = code_seul(&std::fs::read_to_string(espace().join(c).join("src").join(m).with_extension("rs")).unwrap());
+        du_temps.extend(declare.captures_iter(&code).map(|x| x[1].to_string()));
+    }
+    assert!(!du_temps.is_empty(), "les modules du temps ne declarent aucun type : le verrou ne les trouve plus");
+    let nomme_le_temps = |t: &str| t.split(|x: char| !(x.is_alphanumeric() || x == '_')).any(|mot| du_temps.iter().any(|n| n == mot));
+    let porte = regex::Regex::new(r"\bpub\s+fn\s+\w+\s*(?:<[^>]*>)?\s*\(([^)]*)\)\s*->\s*([^{;]+)").unwrap();
+    let un_texte = regex::Regex::new(r"&\s*(?:'[a-z_]+\s+)?(?:mut\s+)?str\b|\bString\b|AsRef\s*<\s*str\s*>|Into\s*<\s*String\s*>").unwrap();
+    let trait_d_un_texte =
+        regex::Regex::new(r"\bimpl\b[^{;]*?\b(?:FromStr|TryFrom\s*<[^>]*\b(?:str|String)\b[^>]*>|PartialEq\s*<[^>]*\b(?:str|String)\b[^>]*>)\s+for\s+([A-Z][A-Za-z0-9_]*)").unwrap();
     let mut fautes = Vec::new();
-    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
+    for p in sources(&espace().join(&modules[0].0).join("src")) {
         let rel = p.strip_prefix(espace()).unwrap().display().to_string();
-        for (n, l) in code_seul(&std::fs::read_to_string(&p).unwrap()).lines().enumerate() {
-            for c in champ.captures_iter(l) {
-                let complement = c[2].trim_end_matches('_').rsplit('_').next().is_some_and(|d| ["du", "de", "des", "d"].contains(&d));
-                if c.get(1).is_none() && !complement {
-                    fautes.push(format!("{}:{} : `{}`", rel, n + 1, c[0].trim()));
-                }
+        let code = code_seul(&std::fs::read_to_string(&p).unwrap());
+        let ligne = |i: usize| code[..i].matches('\n').count() + 1;
+        for c in porte.captures_iter(&code) {
+            if un_texte.is_match(&c[1]) && nomme_le_temps(&c[2]) {
+                fautes.push(format!("{}:{} : `{}`, une lecture publique d'un texte", rel, ligne(c.get(0).unwrap().start()), c[0].trim()));
+            }
+        }
+        for c in trait_d_un_texte.captures_iter(&code) {
+            if du_temps.iter().any(|n| *n == c[1]) {
+                fautes.push(format!("{}:{} : `{}`, un texte qui devient un type du temps", rel, ligne(c.get(0).unwrap().start()), c[0].trim()));
             }
         }
     }
-    assert!(fautes.is_empty(), "un mois est un `socle::mois::Mois`, jamais un texte :\n{}", fautes.join("\n"));
-}
-
-/// UNE DATE EST UNE DATE, JAMAIS UN TEXTE : aucune source du logiciel (tests a part, commentaires blanchis) n'a de champ
-/// ni de parametre dont le nom dit une date, un jour ou un instant en `String`, `&str`, `Option<String>`, `Vec<String>`
-/// ou `impl Into<String>` : c'est un `socle::date::Jour`, un `socle::mois::MoisOuJour`, l'un des instants de
-/// `socle::paris` (`InstantEcrit`, `MinuteEcrite`, `HeureDeSaisie`, `HeureDuJournal`, `MinuteDite`, `MinuteUtc`,
-/// `InstantCompact`), une date ou une heure de XML Schema (`DateXsd`, `HeureXsd`), ou le type qui dit sa forme a lui
-/// (`droit::versement::Versement`, `envois::retours::Reception`...). Un nom dit une date quand il est un mot du temps
-/// (`date`, `dates`, `jour`, `quand`, `instant`, `le`, `debut`, `fin`, `du`, `au`, `depuis`, `jusqu_au`, `echeance`,
-/// `butoir`, `horodatage`, `effet`, `naissance`), quand il commence par l'un d'eux suivi de ce qu'il date
-/// (`date_naissance`, `debut_contrat`, `fin_previsionnelle`), ou quand il finit par la preposition d'une date (`pose_le`,
-/// `vire_le`, `contrats_du`, `actif_depuis`, `valable_jusqu_au`). Ce qui n'en est pas une le dit par son nom : une phrase
-/// qui dit une date (`quand_dit`, `date_dite`, `quand_lisible`, `jour_affichage`), une heure du jour (`heure`, `HH:MM`),
-/// un compte (`jours`). Une variable locale (`let`) n'est ni un champ ni une signature.
-#[test]
-fn une_date_est_une_date() {
-    const MOTS: [&str; 17] =
-        ["date", "dates", "jour", "quand", "instant", "le", "debut", "fin", "du", "au", "depuis", "jusqu_au", "echeance", "butoir", "horodatage", "effet", "naissance"];
-    const TETES: [&str; 8] = ["date", "debut", "fin", "quand", "jour", "butoir", "echeance", "instant"];
-    const PREPOSITIONS: [&str; 5] = ["_le", "_du", "_au", "_depuis", "_jusqu_au"];
-    const PHRASES: [&str; 6] = ["_dit", "_dite", "_dits", "_lisible", "_libelle", "_affichage"];
-    let champ = regex::Regex::new(
-        r"(\blet\s+(?:mut\s+)?)?\b_*([a-z0-9_]+)\s*:\s*(?:impl\s+(?:Into\s*<\s*String\s*>|AsRef\s*<\s*str\s*>)|&\s*(?:'[a-z_]+\s+)?(?:mut\s+)?str\b|String\b|(?:Option|Vec)\s*<\s*(?:&\s*(?:'[a-z_]+\s+)?str|String)\s*>)",
-    )
-    .unwrap();
-    let dit_une_date = |nom: &str| {
-        let nom = nom.trim_start_matches('_');
-        !PHRASES.iter().any(|p| nom.ends_with(p))
-            && (MOTS.contains(&nom)
-                || TETES.iter().any(|t| nom.strip_prefix(t).is_some_and(|r| r.starts_with('_')))
-                || PREPOSITIONS.iter().any(|p| nom.len() > p.len() && nom.ends_with(p)))
-    };
-    let mut fautes = Vec::new();
-    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
-        let rel = p.strip_prefix(espace()).unwrap().display().to_string();
-        for (n, l) in code_seul(&std::fs::read_to_string(&p).unwrap()).lines().enumerate() {
-            for c in champ.captures_iter(l) {
-                if c.get(1).is_none() && dit_une_date(&c[2]) {
-                    fautes.push(format!("{}:{} : `{}`", rel, n + 1, c[0].trim()));
-                }
-            }
-        }
-    }
-    assert!(fautes.is_empty(), "une date est un `Jour` ou un instant de `socle::paris`, jamais un texte :\n{}", fautes.join("\n"));
+    assert!(fautes.is_empty(), "un texte ne devient un jour, un mois ou un instant qu'a sa porte :\n{}", fautes.join("\n"));
 }
 
 /// AUCUN FLOTTANT, NULLE PART : aucun fichier `.rs` du depot (tout le Rust est sous `atelier/sources` : les crates de

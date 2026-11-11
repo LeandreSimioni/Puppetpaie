@@ -1088,7 +1088,7 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
                 "{} cachet(s) dépassent les {} d'un mois ({}) : joués, payés et déclarés, mais sans effet sur les droits.",
                 p.cachets_perdus(),
                 c.cachets_par_mois,
-                p.mois_plafonnes().join(", ")
+                p.mois_plafonnes().iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")
             ));
         }
         if p.enseignement_perdu()? != 0 {

@@ -349,19 +349,19 @@ mod tests {
 
     fn declaree() -> Declaree {
         Declaree {
-            mois: Mois::lire("2026-07").unwrap(),
+            mois: Mois::nouveau(2026, 7).unwrap(),
             fichier: "la paie declaree".into(),
             nir: Some("2901075999009".into()),
             nom: Some("CLAIRON".into()),
             prenoms: Some("LUCILE".into()),
-            naissance: Some(Jour::lire("1990-10-02").unwrap()),
+            naissance: Some(Jour::nouveau(1990, 10, 2).unwrap()),
             ntt: None,
             matricule: Some("6".into()),
         }
     }
 
     fn fin() -> Jour {
-        Jour::lire("2026-09-30").unwrap()
+        Jour::nouveau(2026, 9, 30).unwrap()
     }
 
     fn lue(v: &str) -> ChampsSalarie {
@@ -375,7 +375,7 @@ mod tests {
         for (champ, depuis, v) in apres {
             let changement = format!(r#"{{"case": {}, "valeur": {}}}"#, socle::ecriture::json_en_ligne(champ), socle::ecriture::json_en_ligne(v));
             let ch = socle::forme::lire_texte(&changement, "le changement").unwrap();
-            f.changer(ch, Some(&Jour::lire(depuis).unwrap()), None);
+            f.changer(ch, Some(&socle::forme::lire_texte::<Jour>(&format!("\"{}\"", depuis), "depuis").unwrap()), None);
         }
         f
     }

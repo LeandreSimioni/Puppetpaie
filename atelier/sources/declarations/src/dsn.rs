@@ -5143,17 +5143,17 @@ mod tests {
         let notee = crate::casc::CascSvp {
             quoi: "Les annees de CASC-SVP regularisees hors DSN.".into(),
             regularisations: vec![crate::casc::RegularisationNotee {
-                annee: socle::mois::Annee::lire("2024").unwrap(),
-                mois: regularises.iter().map(|m| Mois::lire(m).unwrap()).collect(),
+                annee: socle::mois::Annee::nouvelle(2024).unwrap(),
+                mois: regularises.iter().map(|m| socle::forme::lire_texte::<Mois>(&format!("\"{}\"", m), "mois").unwrap()).collect(),
                 montant: rust_decimal::Decimal::new(0, 2),
                 calcule: rust_decimal::Decimal::new(0, 2),
-                vire_le: Jour::lire("2025-01-15").unwrap(),
-                note_le: Jour::lire("2025-01-16").unwrap(),
+                vire_le: Jour::nouveau(2025, 1, 15).unwrap(),
+                note_le: Jour::nouveau(2025, 1, 16).unwrap(),
                 qui: "test".into(),
             }],
         };
         socle::ecriture::ecrire_json(&cfg.join("casc-svp.json"), &notee, 0).unwrap();
-        Contexte::nouveau(&racine, Some(Jour::lire("2026-09-27").unwrap())).unwrap()
+        Contexte::nouveau(&racine, Some(Jour::nouveau(2026, 9, 27).unwrap())).unwrap()
     }
 
     fn orgs_casc() -> Organismes {
@@ -5179,7 +5179,7 @@ mod tests {
     // La CASC-SVP de la 3090 (`atelier/reference/sources/casc-svp-fiche-codification-dsn-202606.txt`).
     #[test]
     fn la_dsn_de_la_3090_porte_la_casc_en_troisieme_affiliation() {
-        let c = casc_svp(&ctx_dsn("a", &[]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &orgs_casc(), Mois::lire("2026-09").unwrap()).unwrap().unwrap();
+        let c = casc_svp(&ctx_dsn("a", &[]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &orgs_casc(), Mois::nouveau(2026, 9).unwrap()).unwrap().unwrap();
         assert_eq!(c.reference, "100");
         assert_eq!(c.lignes, ["ccn"]);
         // l'intermittent : apres 103 et 102, donc 204 ; le permanent l'a deja.
@@ -5190,7 +5190,7 @@ mod tests {
     #[test]
     fn pas_de_casc_hors_3090_avant_2025_ni_sur_un_mois_regularise() {
         let o = orgs_casc();
-        let m = |t: &str| Mois::lire(t).unwrap();
+        let m = |t: &str| socle::forme::lire_texte::<Mois>(&format!("\"{}\"", t), "mois").unwrap();
         assert!(casc_svp(&ctx_dsn("b1", &[]), &ChampsEntreprise { idcc: Some("1285".into()), ..Default::default() }, &o, m("2026-09")).unwrap().is_none());
         assert!(casc_svp(&ctx_dsn("b2", &[]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &o, m("2024-12")).unwrap().is_none());
         assert!(casc_svp(&ctx_dsn("b3", &["2026-08"]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &o, m("2026-08")).unwrap().is_none());
@@ -5303,7 +5303,7 @@ mod tests {
     // ------------------------------------------------------------ l'arret de travail
 
     fn arret(reprise: Option<&str>, fin_previsionnelle: &str) -> Arret {
-        let j = |t: &str| Jour::lire(t).unwrap();
+        let j = |t: &str| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", t), "jour").unwrap();
         Arret {
             saisi: engagement::imprevus::ArretSaisi {
                 genre: engagement::imprevus::GenreArret::Arret,
@@ -5327,7 +5327,7 @@ mod tests {
                 ij_nette_majoree: None,
                 prolongations: Vec::new(),
                 reprises: Vec::new(),
-                saisi_le: socle::paris::HeureDeSaisie::lire("2026-06-21 10:00").unwrap(),
+                saisi_le: socle::forme::lire_texte::<socle::paris::HeureDeSaisie>("\"2026-06-21 10:00\"", "saisi_le").unwrap(),
                 qui: "interface".into(),
                 note: None,
             },
@@ -5339,7 +5339,7 @@ mod tests {
     /// travail » (S21.G00.60.010, p. 269) : le dernier jour d'arret est la veille.
     #[test]
     fn un_arret_repris_le_premier_du_mois_ne_couvre_pas_ce_mois() {
-        let j = |s: &str| Jour::lire(s).unwrap();
+        let j = |s: &str| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", s), "jour").unwrap();
         let (juin, juillet) = ((j("2026-06-01"), j("2026-06-30")), (j("2026-07-01"), j("2026-07-31")));
         let repris_le_1er = arret(Some("2026-07-01"), "2026-07-03");
         assert!(repris_le_1er.couvre(&juin.0, &juin.1).unwrap());

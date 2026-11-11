@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use droit::contexte::Contexte;
 use socle::date::Jour;
-use socle::fichiers::{self, dossier_du_code};
+use socle::fichiers::{self, dossier_du_code, LectureDatee};
 use socle::echec::R;
 use socle::mois::Mois;
 
@@ -115,28 +115,18 @@ fn entree_tient(ctx: &Contexte, k: &str, v: &str) -> R<bool> {
         "aujourdhui" => return Ok(v == droit::contexte::aujourdhui_sans_note()?.iso()),
         _ => {}
     }
-    // L'indemnite de mission d'un jour a l'etranger : la valeur prise, pas la table (`droit::missions`).
-    if let Some((code, jour)) = k.strip_prefix("mission ").and_then(|r| r.split_once(' ')) {
-        return Ok(v == droit::missions::du_jour(code, &Jour::lire(jour)?)?.empreinte());
-    }
-    if k.starts_with("pas ") {
-        return Ok(droit::pas::empreinte(ctx, k)?.is_some_and(|e| v == e));
-    }
-    if let Some((mois, salarie)) = k.strip_prefix(crate::conges::MENSUELS).and_then(|r| r.split_once(' ')) {
-        return Ok(v == crate::conges::empreinte_des_mensuels_d_avant(ctx, Mois::lire(mois)?, salarie)?);
-    }
-    if let Some((mois, salarie)) = k.strip_prefix("paies ").and_then(|r| r.split_once(' ')) {
-        return Ok(v == crate::etats::empreinte_des_paies_validees(ctx, Mois::lire(mois)?, Some(salarie))?);
+    if let Some(lue) = LectureDatee::lue(k) {
+        return Ok(match lue? {
+            // L'indemnite de mission d'un jour a l'etranger : la valeur prise, pas la table (`droit::missions`).
+            LectureDatee::Mission { lieu, jour } => v == droit::missions::du_jour(&lieu, &jour)?.empreinte(),
+            LectureDatee::Pas { salarie, le, mois } => v == droit::pas::empreinte(ctx, &salarie, le, mois)?,
+            LectureDatee::Mensuels { mois, salarie } => v == crate::conges::empreinte_des_mensuels_d_avant(ctx, mois, &salarie)?,
+            LectureDatee::Paies { mois, salarie } => v == crate::etats::empreinte_des_paies_validees(ctx, mois, Some(&salarie))?,
+            LectureDatee::Saisie { mois, salarie } => stock::empreinte_de_la_saisie_du_mois(racine, mois, salarie.as_deref())?.is_some_and(|e| v == e),
+        });
     }
     if let Some(salarie) = crate::imprevus::salarie_de_l_entree(k) {
         return Ok(v == crate::imprevus::empreinte_du_salarie(racine, salarie)?);
-    }
-    if let Some(reste) = k.strip_prefix("saisie ") {
-        let (mois, salarie) = match reste.split_once(' ') {
-            Some((m, s)) => (m, Some(s)),
-            None => (reste, None),
-        };
-        return Ok(stock::empreinte_de_la_saisie_du_mois(racine, Mois::lire(mois)?, salarie)?.is_some_and(|e| v == e));
     }
     let Some((genre, p)) = fichiers::chemin_de(k, racine, &code) else { return Ok(false) };
     Ok(match genre.as_str() {
@@ -149,18 +139,18 @@ fn entree_tient(ctx: &Contexte, k: &str, v: &str) -> R<bool> {
 }
 
 /// Les regles datees qui s'appliquent au jour `jour` (`Contexte::regles_datees`), en AAAA-MM-JJ.
-pub fn regles(ctx: &Contexte, jour: &Jour) -> R<Vec<String>> {
-    Ok(ctx.regles_datees(jour)?.into_iter().map(|j| j.iso()).collect())
+pub fn regles(ctx: &Contexte, jour: &Jour) -> R<Vec<Jour>> {
+    ctx.regles_datees(jour)
 }
 
 /// Les valeurs datees de la compagnie qui s'appliquent au jour `jour` a l'engagement de `salarie` sur `spectacle`
 /// (`Contexte::configuration_datee`), en AAAA-MM-JJ. Elles ne font pas recalculer (les fiches sont deja dans les
 /// entrees) : elles disent a quelle date s'applique une valeur nouvelle.
-pub fn configuration(ctx: &Contexte, jour: &Jour, salarie: &str, spectacle: Option<&str>) -> R<Vec<String>> {
-    Ok(ctx.configuration_datee(jour, salarie, spectacle)?.into_iter().map(|j| j.iso()).collect())
+pub fn configuration(ctx: &Contexte, jour: &Jour, salarie: &str, spectacle: Option<&str>) -> R<Vec<Jour>> {
+    ctx.configuration_datee(jour, salarie, spectacle)
 }
 
 /// L'empreinte telle qu'elle s'ecrit : les entrees, les regles datees, et les valeurs datees de la compagnie.
-pub fn ecrite(entrees: &BTreeMap<String, String>, regles: &[String], configuration: &[String]) -> crate::paie_ecrite::Empreinte {
+pub fn ecrite(entrees: &BTreeMap<String, String>, regles: &[Jour], configuration: &[Jour]) -> crate::paie_ecrite::Empreinte {
     crate::paie_ecrite::Empreinte { entrees: entrees.clone(), regles: regles.to_vec(), configuration: configuration.to_vec() }
 }

@@ -1810,12 +1810,12 @@ fn dit_quelque_chose(e: &EmploiImprime) -> bool {
 }
 
 /// La suite des licences que les bulletins impriment (mois, numero), la plus ancienne d'abord, comme les DSN.
-fn licences_lues(lus: &[Lu]) -> Vec<(String, String)> {
-    let mut licences: Vec<(String, String)> = Vec::new();
+fn licences_lues(lus: &[Lu]) -> Vec<(Mois, String)> {
+    let mut licences: Vec<(Mois, String)> = Vec::new();
     for x in lus {
         if let Some(n) = x.b.entreprise.licence.as_deref().filter(|n| !n.is_empty()) {
             if licences.last().is_none_or(|p| p.1 != n) {
-                licences.push((x.mois.to_string(), n.to_string()));
+                licences.push((x.mois, n.to_string()));
             }
         }
     }

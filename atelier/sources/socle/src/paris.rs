@@ -129,7 +129,7 @@ impl Moment {
 
     /// L'instant d'un nombre de secondes ecrit (`1767600000`, `1793606401.2339187`, `1.7676e9`), exact, arrondi a la
     /// nanoseconde (au pair a egalite) ; `None` s'il ne se lit pas ou sort du calendrier.
-    pub fn lu(texte: &str) -> Option<Moment> {
+    pub(crate) fn lu(texte: &str) -> Option<Moment> {
         let (moins, corps) = match texte.strip_prefix('-') {
             Some(c) => (true, c),
             None => (false, texte),
@@ -199,7 +199,7 @@ pub struct Naif(i64);
 
 impl Naif {
     /// L'heure locale naive d'un `AAAA-MM-JJ[THH:MM[:SS]]`, ou `None` (ce qui ne se lit pas, ou qui sort du calendrier).
-    pub fn lire(iso: &str) -> Option<Naif> {
+    pub(crate) fn lire(iso: &str) -> Option<Naif> {
         let c: Vec<char> = iso.chars().collect();
         let n = |a: usize, b: usize| -> Option<i64> {
             let t: String = c.get(a..b)?.iter().collect();
@@ -301,7 +301,7 @@ impl InstantEcrit {
     }
 
     /// `AAAA-MM-JJTHH:MM:SS`, et rien d'autre ; `None` sinon.
-    pub fn lire(texte: &str) -> Option<InstantEcrit> {
+    pub(crate) fn lire(texte: &str) -> Option<InstantEcrit> {
         let n = Naif::lire(texte)?;
         (n.iso() == texte).then_some(InstantEcrit(n))
     }
@@ -345,7 +345,7 @@ impl MinuteEcrite {
     }
 
     /// `AAAA-MM-JJTHH:MM`, et rien d'autre ; `None` sinon.
-    pub fn lire(texte: &str) -> Option<MinuteEcrite> {
+    pub(crate) fn lire(texte: &str) -> Option<MinuteEcrite> {
         let n = Naif::lire(texte)?;
         (texte.len() == 16 && n.iso()[..16] == *texte).then_some(MinuteEcrite(n))
     }
@@ -393,7 +393,7 @@ impl HeureDeSaisie {
     }
 
     /// `AAAA-MM-JJ HH:MM`, et rien d'autre ; `None` sinon.
-    pub fn lire(texte: &str) -> Option<HeureDeSaisie> {
+    pub(crate) fn lire(texte: &str) -> Option<HeureDeSaisie> {
         let n = Naif::lire(&texte.replacen(' ', "T", 1))?;
         let h = HeureDeSaisie(MinuteEcrite::du_naif(n).0);
         (h.iso() == texte).then_some(h)
@@ -451,7 +451,7 @@ impl MinuteDite {
     }
 
     /// `JJ/MM/AAAA HH:MM`, et rien d'autre ; `None` sinon.
-    pub fn lire(texte: &str) -> Option<MinuteDite> {
+    pub(crate) fn lire(texte: &str) -> Option<MinuteDite> {
         let c: Vec<char> = texte.chars().collect();
         if c.len() != 16 {
             return None;
@@ -543,7 +543,7 @@ pub enum HeureDuJournal {
 
 impl HeureDuJournal {
     /// `AAAA-MM-JJTHH:MM:SS` ou `AAAA-MM-JJ`, et rien d'autre ; `None` sinon.
-    pub fn lire(texte: &str) -> Option<HeureDuJournal> {
+    pub(crate) fn lire(texte: &str) -> Option<HeureDuJournal> {
         match InstantEcrit::lire(texte) {
             Some(i) => Some(HeureDuJournal::Instant(i)),
             None => crate::date::jour_iso(texte).filter(|j| j.iso() == texte).map(HeureDuJournal::Jour),
@@ -620,7 +620,7 @@ pub struct MinuteUtc(Naif);
 
 impl MinuteUtc {
     /// `AAAA-MM-JJTHH:MMZ`, et rien d'autre ; `None` sinon.
-    pub fn lire(texte: &str) -> Option<MinuteUtc> {
+    pub(crate) fn lire(texte: &str) -> Option<MinuteUtc> {
         MinuteEcrite::lire(texte.strip_suffix('Z')?).map(|m| MinuteUtc(m.0))
     }
 
@@ -658,7 +658,7 @@ pub struct InstantCompact(Naif);
 
 impl InstantCompact {
     /// Quatorze chiffres `AAAAMMJJHHMMSS` d'une heure du calendrier, et rien d'autre ; `None` sinon.
-    pub fn lire(texte: &str) -> Option<InstantCompact> {
+    pub(crate) fn lire(texte: &str) -> Option<InstantCompact> {
         if texte.len() != 14 || !texte.bytes().all(|b| b.is_ascii_digit()) {
             return None;
         }
@@ -753,7 +753,7 @@ pub struct DateXsd {
 
 impl DateXsd {
     /// `AAAA-MM-JJ` et son fuseau s'il en a un, et rien d'autre ; `None` sinon.
-    pub fn lire(texte: &str) -> Option<DateXsd> {
+    pub(crate) fn lire(texte: &str) -> Option<DateXsd> {
         let (j, f) = (texte.get(..10)?, texte.get(10..)?);
         let jour = crate::date::jour_iso(j).filter(|x| x.iso() == j)?;
         let fuseau = if f.is_empty() { None } else { Some(FuseauXsd::lire(f)?) };
@@ -786,7 +786,7 @@ pub struct HeureXsd {
 
 impl HeureXsd {
     /// `hh:mm:ss[.f…][fuseau]`, et rien d'autre ; `None` sinon.
-    pub fn lire(texte: &str) -> Option<HeureXsd> {
+    pub(crate) fn lire(texte: &str) -> Option<HeureXsd> {
         let b = texte.as_bytes();
         if b.len() < 8 || b[2] != b':' || b[5] != b':' {
             return None;

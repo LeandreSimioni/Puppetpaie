@@ -12,7 +12,7 @@ fn le_plafond_d_enseignement_suit_l_age_a_la_date() {
     let fiche = outils::lire(&outils::code_livre(), "rubriques-base.json")["rubriques"]["enseignement"]["plafond_annuel_heures"].clone();
     assert_eq!(fiche, json!({"moins_de_50_ans": 70, "50_ans_et_plus": 120}));
     let racine = outils::dossier_de_test("cumul", "plafond");
-    let j = |s: &str| Jour::lire(s).unwrap();
+    let j = |s: &str| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", s), "jour").unwrap();
     let plafond = |naissance: Option<&str>, date: &str| plafond_enseignement(&racine, naissance.map(j), j(date)).unwrap();
     assert_eq!(plafond(None, "2026-09-27"), 70, "sans date de naissance, le plafond bas");
     assert_eq!(plafond(Some("1976-09-27"), "2026-09-27"), 120, "50 ans le jour meme");

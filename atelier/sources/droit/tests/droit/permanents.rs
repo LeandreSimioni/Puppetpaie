@@ -180,7 +180,7 @@ fn le_maintien() {
 #[test]
 fn chaque_indemnite_a_le_code_et_le_regime_de_sa_rubrique() {
     let rg = p::regles().unwrap();
-    let r = |code: &str| droit::catalogue::rubrique(std::path::Path::new("/nulle-part"), code, &Jour::lire("2026-10-01").unwrap()).unwrap();
+    let r = |code: &str| droit::catalogue::rubrique(std::path::Path::new("/nulle-part"), code, &Jour::nouveau(2026, 10, 1).unwrap()).unwrap();
     let codes = [
         (rg.conges_payes.indemnite_compensatrice.rubrique.clone(), &rg.conges_payes.indemnite_compensatrice.dsn_bloc52),
         (rg.indemnite_precarite.rubrique.clone(), &rg.indemnite_precarite.dsn_bloc52),

@@ -99,11 +99,16 @@ que par la structure :
   `une_liste_de_la_norme_est_celle_des_versions_livrees` (chaque `ListeDeLaNorme` est l'union des listes de valeurs que
   `formats-dsn-*-base.json` relèvent pour sa rubrique, chaque code dans les seules versions que ses bornes disent),
   `aucun_flottant_dans_le_code` (aucun `.rs` du dépôt n'écrit `f32`, `f64` ni un nombre à virgule : un montant est un
-  `Decimal`, une mesure d'un PDF une `fabrique_pdf::mesure::Mesure`, le reste des entiers), `une_date_est_une_date`
-  (aucun champ ni paramètre dont le nom
-  dit une date en texte : un `Jour`, un instant de `socle::paris`, une date ou une heure de XML Schema, ou le type qui
-  dit sa forme). Les tests de structure sont
+  `Decimal`, une mesure d'un PDF une `fabrique_pdf::mesure::Mesure`, le reste des entiers),
+  `un_texte_ne_devient_un_jour_qu_a_sa_porte` (aucune fonction publique de `socle` ne rend un jour, un mois ou un
+  instant d'un texte, aucun ne s'en construit par un trait). Les tests de structure sont
   les bienvenus ; un test qui fige un détail ne s'écrit pas.
+- **Un texte ne devient un jour, un mois ou un instant qu'à sa porte**, et c'est la visibilité qui le garde : les
+  lectures d'un texte (`Mois::lire`, `Jour::du_texte`, les `lire` de `socle::paris`) sont privées à `socle`. Hors de
+  `socle`, il entre par la forme qui le porte (`Deserialize` d'une charge, d'un fichier, d'une pièce), ou par une porte
+  qui nomme son origine dans son type, une par origine : le nom d'un fichier ou d'un dossier du disque
+  (`Mois::du_nom`), un argument tapé (`socle::ligne::Argument`), une zone d'une pièce lue, au format que sa norme écrit
+  (`socle::piece::Zone`), la clé d'une lecture notée dans une empreinte (`socle::fichiers::LectureDatee`).
 
 ## Compiler peu
 

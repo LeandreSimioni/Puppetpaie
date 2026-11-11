@@ -347,6 +347,8 @@ pub(crate) struct Echeance {
     validees: i64,
     spectacles: Vec<SpectacleARevoir>,
     salarie: Option<String>,
+    /// Le jour que sa cle nomme (`<obligation>:<salarie>:<jour>`) : celui du fichier du signalement qu'elle appelle.
+    jour_de_la_cle: Option<Jour>,
     a_saisir: Vec<String>,
     /// Une DSN : son echeance de depot (`echeance_dsn::Echeance::dite`).
     echeance_depot: Option<declarations::echeance_dsn::EcheanceDite>,
@@ -398,6 +400,7 @@ impl Echeance {
             validees: 0,
             spectacles: Vec::new(),
             salarie: None,
+            jour_de_la_cle: None,
             a_saisir: Vec::new(),
             echeance_depot: None,
             obligation: None,
@@ -520,6 +523,7 @@ impl Echeance {
             objet: self.objet.clone(),
             action: self.action()?,
             bouton_coche: if self.etat == Fait { "Pas encore fait" } else { "C'est fait" },
+            jour_de_la_cle: self.jour_de_la_cle,
             titre_boite: self.annee.map(|a| format!("Les spectacles de {}", a)),
         })
     }
@@ -566,6 +570,9 @@ pub(crate) struct EcheanceDite {
     pub(crate) action: Option<crate::etapes::Action>,
     /// La case « C'est fait ».
     pub(crate) bouton_coche: &'static str,
+    /// Le jour que sa cle nomme : il ne se rend pas, le tableau de l'administrateur y trouve le signalement.
+    #[serde(skip)]
+    pub(crate) jour_de_la_cle: Option<Jour>,
     /// Le titre de sa boite.
     pub(crate) titre_boite: Option<String>,
 }
@@ -1251,6 +1258,7 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
         );
         r.mois = Some(f.mois);
         r.salarie = Some(salarie.clone());
+        r.jour_de_la_cle = Some(f.fin);
         r.etape = if a_saisir.is_empty() { A_PRODUIRE } else { A_SAISIR }.into();
         if !a_saisir.is_empty() {
             r.detail.push_str(&format!(" À saisir d'abord, dans la carte du contrat : {}", a_saisir.join(" ")));
@@ -1283,6 +1291,7 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
                 );
                 r.mois = Some(dernier.mois_civil());
                 r.salarie = Some(a.salarie.clone());
+                r.jour_de_la_cle = Some(dernier);
                 out.push(r);
             }
         }

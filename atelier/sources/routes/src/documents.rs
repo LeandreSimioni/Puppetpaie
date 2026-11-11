@@ -276,7 +276,7 @@ struct Attestation {
 }
 
 /// Une attestation d'un retour, par sa periode (`None` : le retour ne la dit pas) et le nom qu'elle porte.
-type CleAttestation = (Option<String>, String);
+type CleAttestation = (Option<Mois>, String);
 
 /// (periode, qui) -> les attestations du DERNIER retour qui le porte, lues
 /// dans les retours 46, dans l'ordre de l'archive. `mois` : seulement cette periode.
@@ -299,7 +299,7 @@ fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<
         let mut de_ce_retour: HashMap<CleAttestation, Vec<Attestation>> = HashMap::new();
         for (a, cle) in liste.into_iter().zip(cles) {
             if let Some(m) = mois {
-                if !a.periode.as_deref().is_some_and(|p| m == p) {
+                if a.periode != Some(m) {
                     continue;
                 }
             }
@@ -414,7 +414,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
     let mut fait = RangementAer::default();
     for k in cles {
         let groupe = &vues[k];
-        let (Some(periode), Some(cle)) = (&k.0, groupe[0].cle.clone()) else {
+        let (Some(periode), Some(cle)) = (k.0, groupe[0].cle.clone()) else {
             // On ne devine pas : un nom que le rapprochement ne reconnait pas est peut-etre un salarie archive.
             let refuge = ctx.racine.join(envois::retours::RETOURS).join(A_RANGER);
             std::fs::create_dir_all(&refuge).map_err(|e| socle::echec::du_disque(&refuge, &e).reclasser(Classe::du_disque(&e)))?;
@@ -425,8 +425,6 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
             }
             continue;
         };
-        // La periode d'une attestation est le mois qu'elle atteste.
-        let periode = Mois::lire(periode).map_err(|m| m.reclasser(Classe::Illisible))?;
         // LA VERIFICATION SE FAIT SUR TOUTES LES ATTESTATIONS DU SALARIE A LA FOIS : au-dela de cinq periodes, France
         // Travail en edite plusieurs, et chacune ne porte qu'une partie des periodes attendues.
         let mut imprime: Vec<documents::aer::Ligne> = Vec::new();

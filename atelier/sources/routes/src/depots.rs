@@ -960,8 +960,8 @@ pub(crate) fn resoudre(racine: &Path, t: &str) -> R<String> {
     if existe(&candidat) {
         return Ok(candidat);
     }
-    // Un mois nu (`AAAA-MM`) designe sa saisie, si elle est sur le disque.
-    if let Some(mois) = Mois::du_texte(t) {
+    // Un mois nu (`AAAA-MM`) designe sa saisie par le nom de son fichier, si elle est sur le disque.
+    if let Some(mois) = Mois::du_nom(std::ffi::OsStr::new(t)) {
         if let Some(saisie) = engagement::stock::tel_quel(racine, mois)? {
             return Ok(normaliser(&format!("{}/{}", base, saisie.nom)));
         }
@@ -992,7 +992,7 @@ pub(crate) fn lire_octets(chemin: &str) -> R<Vec<u8>> {
 
 /// Un jour `JJMMAAAA` du fichier DPAE ; `None` : ce n'est pas un jour.
 fn jour_jjmmaaaa(v: &str) -> Option<Jour> {
-    socle::date::lire_jjmmaaaa(v)
+    socle::piece::Zone::lue(v).jour_jjmmaaaa()
 }
 
 /// L'identite d'une fiche, telle qu'une DPAE l'ecrit (`apercu_depot_dpae`).

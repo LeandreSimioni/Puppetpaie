@@ -676,8 +676,8 @@ mod tests {
         let retour = |nature: &str, verdict: &str| RetourOrganisme { nature_retour: nature.into(), verdict: Some(verdict.into()), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
         fn envoi<D>(salarie: &str, retours: Vec<RetourOrganisme>, detail: D) -> Envoi<D, RetourOrganisme> {
             let mut e = Envoi::nouveau(Mode::Reel, "t", true, "", "", detail);
-            e.mois = Some(Mois::lire("2026-06").unwrap());
-            e.quand = socle::paris::HeureDuJournal::lire("2026-07-05T10:00:00").unwrap();
+            e.mois = Some(Mois::nouveau(2026, 6).unwrap());
+            e.quand = socle::forme::lire_texte("\"2026-07-05T10:00:00\"", "quand").unwrap();
             e.retours = retours;
             e.versions = Some(vec![Version { salarie: droit::contexte::IdSalarie::lire(salarie).unwrap(), numero: engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap(), version: 1, mois: None }]);
             e

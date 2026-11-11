@@ -21,7 +21,7 @@ use crate::outils::typee::lu;
 #[test]
 fn qui_est_declare_a_la_caisse() {
     let (cddu, cdd, cdi) = (N::CdduSpectacle.proprietes().unwrap(), N::Cdd.proprietes().unwrap(), N::Cdi.proprietes().unwrap());
-    let j = |s: &str| Jour::lire(s).unwrap();
+    let j = |s: &str| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", s), "jour").unwrap();
     let comedien = fiche(r#"{"code_emploi_ft": "COM010", "statut": "artiste"}"#, None);
     let regisseur = |idcc: &str| fiche(r#"{"code_emploi_ft": "REG130", "statut": "technicien"}"#, Some(idcc));
     let sans_metier = fiche(r#"{"statut": "technicien"}"#, Some("3090"));

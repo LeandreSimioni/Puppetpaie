@@ -17,6 +17,7 @@ use socle::date::Jour;
 use socle::echec::Echec;
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
+use socle::piece::Zone;
 use socle::texte::{blanc, lignes_du_texte, texte_latin1};
 
 // ------------------------------------------------------------------ toutes les DSN d'un dossier
@@ -335,14 +336,14 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
             let illisible = |illisibles: &mut Vec<String>| illisibles.push(format!("{} : un enregistrement illisible", nom));
             let nir: String = champ(&l, 375, 390).chars().take(13).collect();
             let (Some(debut), Some(fin)) =
-                (socle::date::lire_aaaammjj(&champ(&l, 618, 626)), socle::date::lire_aaaammjj(&champ(&l, 627, 635)))
+                (Zone::lue(&champ(&l, 618, 626)).jour_aaaammjj(), Zone::lue(&champ(&l, 627, 635)).jour_aaaammjj())
             else {
                 illisible(&mut illisibles);
                 continue;
             };
             // La signature de l'attestation (`AAAAMMJJ`), quand l'AEM en porte une.
             let signee = tranche(&l, 858, 866);
-            let date_attestation = match socle::date::lire_aaaammjj(&signee) {
+            let date_attestation = match Zone::lue(&signee).jour_aaaammjj() {
                 Some(j) => Some(j),
                 None if signee.trim().is_empty() => None,
                 None => {
@@ -515,7 +516,7 @@ mod tests_parametrage {
         std::fs::remove_dir_all(&d).ok();
         let c = lu.entreprise.declarant_dsn.clone().unwrap_or_default();
         assert_eq!((c.nom_prenom.as_str(), c.tel.as_deref(), c.civilite.as_deref()), ("FONTAINE CLAIRE", Some("0478000000"), Some("02")));
-        assert_eq!(lu.atmp.get(&2025), Some(&(socle::mois::Mois::lire("2025-12").unwrap(), "923AD".to_string(), socle::num::decimal_lu("1.65"))));
+        assert_eq!(lu.atmp.get(&2025), Some(&(socle::mois::Mois::nouveau(2025, 12).unwrap(), "923AD".to_string(), socle::num::decimal_lu("1.65"))));
         assert_eq!(lu.adhesions[0].libelle, "PREV SPECT VIVANT PRIV");
         assert_eq!(lu.adhesions[0].organisme.as_deref(), Some("P0983"));
     }

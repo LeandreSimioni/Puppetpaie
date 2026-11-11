@@ -714,7 +714,7 @@ impl Serialize for NaissanceDeclaree {
 
 /// Une date de la DSN, JJMMAAAA, qui est un jour.
 pub(crate) fn jour_dsn(v: &str) -> Option<Jour> {
-    socle::date::lire_jjmmaaaa(v)
+    socle::piece::Zone::lue(v).jour_jjmmaaaa()
 }
 
 /// Ce qu'une DSN porte et qui ne se lit pas : une valeur qui n'est pas ce que sa rubrique dit, ou une ligne qui n'est

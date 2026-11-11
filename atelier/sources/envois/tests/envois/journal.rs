@@ -8,14 +8,14 @@ use crate::outils::dossier_de_test;
 
 fn envoi<D, R>(mode: Mode, detail: D) -> Envoi<D, R> {
     let mut e = Envoi::nouveau(mode, "test", true, "", "", detail);
-    e.mois = Some(Mois::lire("2026-09").unwrap());
+    e.mois = Some(Mois::nouveau(2026, 9).unwrap());
     e.flux = "F1".into();
     e
 }
 
 /// La ligne datee de `instant`, que le test dit.
 fn a(instant: &str) -> journal::Datation {
-    journal::Datation::Lue { quand: socle::paris::HeureDuJournal::lire(instant).unwrap(), origine: "le test".into() }
+    journal::Datation::Lue { quand: socle::forme::lire_texte(&format!("\"{}\"", instant), "quand").unwrap(), origine: "le test".into() }
 }
 
 fn dsn(mode: Mode) -> Ligne {
@@ -37,7 +37,7 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
     assert_eq!(journal::lire(&d, None, None, false).unwrap().len(), 2);
     assert_eq!(journal::lire(&d, Some(Acte::Dpae), None, false).unwrap().len(), 1);
     assert_eq!(journal::lire(&d, None, None, true).unwrap().len(), 1);
-    assert_eq!(journal::lire(&d, None, Some(Mois::lire("2026-08").unwrap()), false).unwrap().len(), 0);
+    assert_eq!(journal::lire(&d, None, Some(Mois::nouveau(2026, 8).unwrap()), false).unwrap().len(), 0);
 
     // DEUX POSTES (regle 9 b) : chacun ajoute au meme journal ce qu'il a fait, et range le meme retour ; leurs journaux mis
     // bout a bout disent tout, sans rien compter deux fois.
@@ -45,7 +45,7 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
     let e = dossier_de_test("journal", "second-poste");
     std::fs::create_dir_all(e.join("journal")).unwrap();
     std::fs::copy(journal::chemin(&d), journal::chemin(&e)).unwrap();
-    let retour = RetourFiche { code: "F-1".into(), abandon: true, salarie: None, illisible: None, erreurs: None, quand: socle::paris::InstantEcrit::lire("2026-10-04T08:00:00").unwrap(), qui: "t".into(), de: None, message: None, reponse: "".into() };
+    let retour = RetourFiche { code: "F-1".into(), abandon: true, salarie: None, illisible: None, erreurs: None, quand: socle::forme::lire_texte("\"2026-10-04T08:00:00\"", "quand").unwrap(), qui: "t".into(), de: None, message: None, reponse: "".into() };
     for (poste, quoi) in [(&d, fiche("F-2")), (&e, dsn(Mode::Test))] {
         journal::noter(poste, quoi, None, a("2026-10-04T09:00:00")).unwrap();
         journal::rattacher(poste, |l| l.acte() == Acte::FicheDemande, Revenu::Fiche(retour.clone())).unwrap();

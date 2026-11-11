@@ -1281,7 +1281,7 @@ fn poser_le_banc(args: &[String]) -> R<Vec<String>> {
                 i += 1;
             }
             "--jour" if i + 1 < args.len() => {
-                jour = Some(socle::date::Jour::lire(&args[i + 1]).map_err(|_| socle::refus!("Jour illisible : {} (AAAA-MM-JJ).", args[i + 1]))?);
+                jour = Some(socle::ligne::Argument::tape(&args[i + 1]).jour().map_err(|_| socle::refus!("Jour illisible : {} (AAAA-MM-JJ).", args[i + 1]))?);
                 i += 2;
             }
             a => {

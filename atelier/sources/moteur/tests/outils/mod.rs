@@ -107,7 +107,7 @@ pub fn ecrire(racine: &Path, rel: &str, v: &Value) {
 
 /// Une fiche de la configuration datee, lue par sa forme `F` (`droit::fiche::FicheDatee`) a `jour` (AAAA-MM-JJ).
 pub fn fiche_au<F: droit::fiche::FicheDatee>(datee: &Value, jour: &str) -> Value {
-    socle::ecriture::en_valeur(&droit::fiche::lire_champs::<F>(datee, "test").unwrap().au(&socle::date::Jour::lire(jour).unwrap()))
+    socle::ecriture::en_valeur(&droit::fiche::lire_champs::<F>(datee, "test").unwrap().au(&socle::forme::lire_texte::<socle::date::Jour>(&format!("\"{}\"", jour), "jour").unwrap()))
 }
 
 /// La fiche datee d'une compagnie de test : chaque valeur de `plate` de tout temps (`droit::fiche::dater`), ses notes `_…`
@@ -147,13 +147,13 @@ pub mod compagnie {
 
 /// La saisie de `mois` telle que ses engagements la montrent (`engagement::vue_requise`).
 pub fn saisie(racine: &Path, mois: &str) -> Value {
-    socle::ecriture::en_valeur(&engagement::vue_requise(racine, socle::mois::Mois::lire(mois).unwrap()).unwrap())
+    socle::ecriture::en_valeur(&engagement::vue_requise(racine, socle::forme::lire_texte::<socle::mois::Mois>(&format!("\"{}\"", mois), "mois").unwrap()).unwrap())
 }
 
 /// « Valider l'engagement » sur la carte du premier engagement en saisie de `salarie` que l'ecran de `mois` montre,
 /// telle qu'elle est enregistree (son identite).
 pub fn valider_la_carte(racine: &Path, mois: &str, salarie: &str, jour: &str) -> Value {
-    let vue = socle::ecriture::en_valeur(&engagement::stock::vue_du_mois(racine, socle::mois::Mois::lire(mois).unwrap()).unwrap().unwrap());
+    let vue = socle::ecriture::en_valeur(&engagement::stock::vue_du_mois(racine, socle::forme::lire_texte::<socle::mois::Mois>(&format!("\"{}\"", mois), "mois").unwrap()).unwrap().unwrap());
     let es = vue["engagements"].as_array().unwrap();
     let k = es.iter().position(|e| e["salarie"] == salarie && e["valide"].is_null()).expect("une carte en saisie");
     route(racine, "valider-engagement", json!({"mois": mois, "engagement": identite_a(racine, mois, k)}), jour)
@@ -240,14 +240,14 @@ pub fn valider(racine: &Path, mois: &str, engagement: Option<&Value>, saisie: &V
 /// L'identite (`engagement::stock::identites`) de la carte du premier engagement de `salarie` dans l'ecran de `mois`
 /// (de numero `numero` s'il est dit).
 pub fn identite(racine: &Path, mois: &str, salarie: &str, numero: Option<&str>) -> engagement::stock::Identite {
-    let vue = socle::ecriture::en_valeur(&engagement::stock::vue_du_mois(racine, socle::mois::Mois::lire(mois).unwrap()).unwrap().unwrap());
+    let vue = socle::ecriture::en_valeur(&engagement::stock::vue_du_mois(racine, socle::forme::lire_texte::<socle::mois::Mois>(&format!("\"{}\"", mois), "mois").unwrap()).unwrap().unwrap());
     let k = vue["engagements"].as_array().unwrap().iter().position(|e| e["salarie"] == salarie && numero.is_none_or(|n| e["numero"] == n)).expect("la carte");
     identite_a(racine, mois, k)
 }
 
 /// L'identite de la `k`-ieme carte de l'ecran de `mois`.
 pub fn identite_a(racine: &Path, mois: &str, k: usize) -> engagement::stock::Identite {
-    engagement::stock::identites(&engagement::stock::objets_du_mois(racine, socle::mois::Mois::lire(mois).unwrap()).unwrap()).swap_remove(k)
+    engagement::stock::identites(&engagement::stock::objets_du_mois(racine, socle::forme::lire_texte::<socle::mois::Mois>(&format!("\"{}\"", mois), "mois").unwrap()).unwrap()).swap_remove(k)
 }
 
 

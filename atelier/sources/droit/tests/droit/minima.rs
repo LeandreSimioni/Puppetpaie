@@ -14,7 +14,7 @@ use crate::outils::typee::{code_livre, lire, lu};
 fn un_accord_lie_l_adherente_des_sa_date_et_toute_compagnie_des_son_extension() {
     let t: droit::minima::Table = lire(&code_livre(), "minima-conventionnels.json");
     let a = accord(&t, "kali-1285-accord-salaires-20260701").expect("l'accord de 2026 de la 1285 est dans la table");
-    let j = |t: &str| socle::date::Jour::lire(t).unwrap();
+    let j = |t: &str| socle::forme::lire_texte::<socle::date::Jour>(&format!("\"{}\"", t), "jour").unwrap();
     let lie = |org: Option<&str>, depuis: &str| lie_depuis(a, org, j(depuis)).map(|x| x.iso());
 
     // Les minima (01/08) et les indemnites (01/09), pour une adherente d'un signataire (sous un nom ou sous un autre).

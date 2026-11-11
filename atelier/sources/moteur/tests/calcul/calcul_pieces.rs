@@ -58,7 +58,7 @@ fn le_code_du_bloc_54() {
     let racine = dossier_de_test("calcul_pieces", "code_54");
     let mut refus = 0;
     for c in cas.as_array_mut().unwrap() {
-        let r = rubrique(&racine, c[0].as_str().unwrap(), &socle::date::Jour::lire("2026-10-28").unwrap()).unwrap();
+        let r = rubrique(&racine, c[0].as_str().unwrap(), &socle::date::Jour::nouveau(2026, 10, 28).unwrap()).unwrap();
         let vu = socle::forme::lire::<Option<String>>(&c[1]["genre"], "La ligne ne se lit pas.").and_then(|g| code_54(&r, g.as_deref()));
         refus += vu.is_err() as usize;
         c[2] = essai(vu.map(|o| o.map_or(Value::Null, |a| Value::String(a.code().to_string()))));

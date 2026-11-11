@@ -66,7 +66,7 @@ pub fn rejouer_dossier(sc: &Path, dossier: &Path) -> (routes::scenario::Rejeu, P
 pub fn livrer(sc: &Path, dossier: &Path, jour: &str) -> PathBuf {
     let _un = UN_A_LA_FOIS.lock().unwrap_or_else(|p| p.into_inner());
     let dest = dossier.join("installation").join("fictives").join(sc.file_name().unwrap());
-    routes::scenario::livrer(sc, &dest, Some(socle::date::Jour::lire(jour).unwrap())).unwrap_or_else(|m| panic!("{} ne se livre pas : {}", sc.display(), m.en_lignes()));
+    routes::scenario::livrer(sc, &dest, Some(socle::forme::lire_texte::<socle::date::Jour>(&format!("\"{}\"", jour), "jour").unwrap())).unwrap_or_else(|m| panic!("{} ne se livre pas : {}", sc.display(), m.en_lignes()));
     dest
 }
 
@@ -105,7 +105,7 @@ impl Soir<'_> {
     /// Le bloc de l'individu `nom` dans la DSN mensuelle de `mois` (`sorties/<mois>/DSN_<Mois><Annee>.dsn`) : (rubrique,
     /// valeur), dans l'ordre ; vide si elle n'est pas encore fabriquee.
     pub fn bloc_dsn(&self, mois: &str, nom: &str) -> Vec<(String, String)> {
-        let f = self.racine.join("sorties").join(mois).join(format!("DSN_{}.dsn", socle::mois::Mois::lire(mois).map(socle::mois::Mois::etiquette).unwrap()));
+        let f = self.racine.join("sorties").join(mois).join(format!("DSN_{}.dsn", socle::forme::lire_texte::<socle::mois::Mois>(&format!("\"{}\"", mois), "mois").unwrap().etiquette()));
         let Ok(octets) = std::fs::read(&f) else { return Vec::new() };
         super::individu(&octets.iter().map(|&o| o as char).collect::<String>(), nom)
     }
@@ -124,7 +124,7 @@ impl Soir<'_> {
 /// la compagnie telle qu'elle est ce soir-la, puis le rejeu reprend. Un ecart avec l'enregistrement fait echouer le test.
 pub fn rejouer_et_lire(nom: &str, dossier: &Path, jours: &[&str], mut lire: impl FnMut(&Soir)) -> (routes::scenario::Rejeu, PathBuf) {
     let _un = UN_A_LA_FOIS.lock().unwrap_or_else(|p| p.into_inner());
-    let arrets: Vec<socle::date::Jour> = jours.iter().map(|j| socle::date::Jour::lire(j).unwrap()).collect();
+    let arrets: Vec<socle::date::Jour> = jours.iter().map(|j| socle::forme::lire_texte::<socle::date::Jour>(&format!("\"{}\"", j), "jour").unwrap()).collect();
     let mut lus = 0;
     let r = routes::scenario::rejouer_et_lire(&scenario(nom), &dossier.join("installation"), &Default::default(), &arrets, &mut |jour, r| {
         let (_, racine) = r.compagnies.first().unwrap_or_else(|| panic!("le scenario {} n'a pas encore de compagnie le {}", nom, jour.iso()));
@@ -212,7 +212,7 @@ pub fn sorties(racine: &Path, jour: &str) -> Value {
     }
     // Les paies de chaque mois saisi, calculees au dernier jour du scenario.
     let mut paies = Map::new();
-    let ctx = droit::contexte::Contexte::nouveau(&racine, Some(socle::date::Jour::lire(jour).unwrap())).unwrap();
+    let ctx = droit::contexte::Contexte::nouveau(&racine, Some(socle::forme::lire_texte::<socle::date::Jour>(&format!("\"{}\"", jour), "jour").unwrap())).unwrap();
     for mois in engagement::stock::mois_saisis(&racine).unwrap() {
         let calcul = engagement::vue_requise(&racine, mois)
             .and_then(|d| engagement::pour_l_ecran(&ctx, &d))

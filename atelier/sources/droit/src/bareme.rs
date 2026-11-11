@@ -1566,18 +1566,18 @@ pub fn bareme_retraite_t1(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuCont
         _ => None,
     });
     let Some(taux) = taux else { return Ok(bar) };
-    if let Some(avant) = dit(&couche.adhesion_avant) {
-        let Some(depuis) = ent.organisation_patronale_depuis.dite().map(Jour::iso) else {
+    if let Some(avant) = couche.adhesion_avant {
+        let Some(depuis) = ent.organisation_patronale_depuis.dite().copied() else {
             return Err(socle::refus!(
                 "Fiche Entreprise : l'adhesion a {} ne donne son taux de \
 retraite ({} %) qu'aux adherents d'avant le {}. Renseigner \
 « Adhérente depuis le » -- le logiciel ne le devine pas.",
                 couche.libelle,
                 court(taux),
-                Jour::lire(avant)?.jj_mm_aaaa()
+                avant.jj_mm_aaaa()
             ));
         };
-        if depuis.as_str() >= avant {
+        if depuis >= avant {
             return Ok(bar);
         }
     }
@@ -1854,7 +1854,7 @@ mod tests_risques_atmp {
         assert_eq!(taux_de_l_arrete(&gestion, false, false), None);
         let sans = risques_de(&socle).into_iter().find(|r| r.code == SANS_NOTIFICATION).unwrap();
         assert_eq!(taux_de_l_arrete(&sans, true, false), None);
-        let ouvert = |le: &str| Etablissement { ouverture: Some(Jour::lire(le).unwrap()), ..Etablissement::default() };
+        let ouvert = |le: &str| Etablissement { ouverture: Some(socle::forme::lire_texte(&format!("\"{}\"", le), "jour").unwrap()), ..Etablissement::default() };
         assert!(etablissement_neuf(&ouvert("2024-06-01"), 2026));
         assert!(!etablissement_neuf(&ouvert("2023-12-01"), 2026));
     }
@@ -1869,7 +1869,7 @@ mod tests_risques_atmp {
         let ligne = |code: &str, t: Decimal| crate::fiche::TauxAtmp {
             code_risque: Some(code.into()),
             valeur: Some(crate::fiche::Montant::Flottant(t)),
-            depuis: Some(Jour::lire("2025-01-01").unwrap()),
+            depuis: Some(Jour::nouveau(2025, 1, 1).unwrap()),
             ..Default::default()
         };
         let (t210, t165) = (Decimal::new(21, 1), Decimal::new(165, 2));

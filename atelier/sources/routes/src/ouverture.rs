@@ -972,7 +972,7 @@ pub(crate) fn mois_connus(racine: &Path) -> R<Vec<(Mois, Vec<String>)>> {
     let mut dossiers: BTreeMap<Mois, PathBuf> = BTreeMap::new();
     for e in entrees(&racine.join("sorties"))? {
         // Les dossiers AAAA-MM seulement : `sorties/exercices/` n'est pas un mois.
-        if let Some(mois) = Mois::du_texte(&e.file_name().to_string_lossy()).filter(|_| e.path().is_dir()) {
+        if let Some(mois) = Mois::du_nom(&e.file_name()).filter(|_| e.path().is_dir()) {
             vus.insert(mois);
             dossiers.insert(mois, e.path());
         }

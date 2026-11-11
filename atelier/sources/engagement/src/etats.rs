@@ -62,6 +62,7 @@ use crate::stock::{self, Objet};
 use crate::{empreinte, relire};
 use droit::contexte::Contexte;
 use socle::date::Jour;
+use socle::fichiers::LectureDatee;
 use socle::mois::{Graphie, Mois};
 use socle::paris::{HeureDuJournal, InstantEcrit};
 use socle::{echec::{refus, Echec, R}, num::{pct, Decimal}};
@@ -87,13 +88,6 @@ pub const CONFIGURATION: &str = "configuration de la compagnie modifiée";
 // ------------------------------------------------------------------ ce qui est parti
 
 /// Ce qui est parti de l'engagement `o` (`departs`), d'apres la cle de son salarie et son numero.
-/// Un jour AAAA-MM-JJ tel qu'une phrase le dit ; ce qui n'est pas une date se dit tel qu'il est ecrit.
-fn jour_dit(s: &str) -> String {
-    match Jour::du_texte(s) {
-        Some(j) => j.jj_mm_aaaa(),
-        None => s.to_string(),
-    }
-}
 
 pub(crate) fn ses_departs<'a>(o: &Objet, departs: &'a Departs) -> &'a [Depart] {
     match (&o.carte().salarie, o.carte().numero.as_deref()) {
@@ -672,7 +666,7 @@ pub fn paies_validees(ctx: &Contexte, mois: Mois, salarie: &str) -> R<Vec<Paie>>
     let Some(saisie) = stock::vue_et_empreinte(&ctx.racine, mois)? else { return Ok(Vec::new()) };
     let data = &saisie.0;
     let valides = valides_lues(ctx, mois, Some(salarie))?;
-    socle::fichiers::noter_valeur(&format!("paies {} {}", mois, salarie), empreinte_des_paies(&valides, mois)?);
+    socle::fichiers::noter_valeur(&LectureDatee::Paies { mois, salarie: salarie.to_string() }.cle(), empreinte_des_paies(&valides, mois)?);
     valides.iter().map(|(i, v)| v.paie(ctx, data, *i)).collect()
 }
 
@@ -983,10 +977,11 @@ fn calculer_les_rangs(ctx: &Contexte, mois: Mois, rangs: &[usize]) -> R<Vec<Paie
             let regles = empreinte::regles(ctx, &fin)?;
             let cle = salarie.to_string();
             let mut siennes = entrees.clone();
-            siennes.retain(|k, _| k.strip_prefix("paies ").and_then(|r| r.split_once(' ')).is_none_or(|(_, s)| s == cle));
-            siennes.retain(|k, _| k.strip_prefix(crate::conges::MENSUELS).and_then(|r| r.split_once(' ')).is_none_or(|(_, s)| s == cle));
-            // Le taux de PAS d'un autre salarie n'est pas de son calcul.
-            siennes.retain(|k, _| k.strip_prefix("pas ").and_then(|r| r.split_once(' ')).is_none_or(|(s, _)| s == cle));
+            // Les paies, les mensuels et le taux de PAS d'un autre salarie ne sont pas de son calcul.
+            siennes.retain(|k, _| match LectureDatee::lue(k) {
+                Some(Ok(LectureDatee::Paies { salarie, .. } | LectureDatee::Mensuels { salarie, .. } | LectureDatee::Pas { salarie, .. })) => salarie == cle,
+                _ => true,
+            });
             siennes.insert(stock::cle_de_saisie(mois, Some(&salarie)), stock::empreinte_de_saisie(&data, Some(&salarie)));
             siennes.insert(cle_fiches, entree_fiches);
             let (conges, conges_avant) = conges.unzip();
@@ -1036,9 +1031,8 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> String {
         return TAUX_DE_PAS.to_string();
     }
     let vieilles = &avant.empreinte.regles;
-    let nouvelles: Vec<&String> = apres.empreinte.regles.iter().filter(|r| !vieilles.contains(r)).collect();
-    if let Some(r) = nouvelles.iter().max() {
-        return format!("règle du {}", jour_dit(r));
+    if let Some(r) = apres.empreinte.regles.iter().filter(|r| !vieilles.contains(r)).max() {
+        return format!("règle du {}", r.jj_mm_aaaa());
     }
     let (ea, eb) = (&avant.empreinte.entrees, &apres.empreinte.entrees);
     let changees: Vec<&String> = ea.keys().chain(eb.keys()).filter(|k| ea.get(*k) != eb.get(*k)).collect();
@@ -1050,9 +1044,10 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> String {
     }
     // La saisie dont la paie depend : `<le mois>:<les engagements de son salarie>` (`stock::empreinte_de_saisie`), lue
     // des deux cotes ; une saisie que l'une des deux paies n'a pas lue ne dit pas qu'un engagement a change.
-    let saisies: Vec<&String> = changees.iter().copied().filter(|k| k.starts_with("saisie ") && ea.contains_key(*k) && eb.contains_key(*k)).collect();
+    let lue = |k: &str| LectureDatee::lue(k).and_then(Result::ok);
+    let saisies: Vec<&String> = changees.iter().copied().filter(|k| matches!(lue(k), Some(LectureDatee::Saisie { .. })) && ea.contains_key(*k) && eb.contains_key(*k)).collect();
     let part = |e: &BTreeMap<String, String>, k: &str, i: usize| e.get(k).and_then(|v| v.split(':').nth(i).map(String::from));
-    if saisies.iter().any(|k| part(&ea, k, 1) != part(&eb, k, 1)) || changees.iter().any(|k| k.starts_with(crate::conges::MENSUELS)) {
+    if saisies.iter().any(|k| part(&ea, k, 1) != part(&eb, k, 1)) || changees.iter().any(|k| matches!(lue(k), Some(LectureDatee::Mensuels { .. }))) {
         return AUTRE_ENGAGEMENT.to_string();
     }
     if !saisies.is_empty() {
@@ -1063,24 +1058,31 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> String {
         return IMPREVU.to_string();
     }
     // L'indemnite de mission d'un jour a l'etranger que la table livree dit autrement : le code qui calcule.
-    if changees.iter().any(|k| k.starts_with("mission ")) {
+    if changees.iter().any(|k| matches!(lue(k), Some(LectureDatee::Mission { .. }))) {
         return CALCUL_CORRIGE.to_string();
     }
     // Les paies validees d'un autre mois que le calcul lit (conges, cumuls) : `paies <le mois> <son salarie>`.
-    let mut mois: Vec<&str> = changees.iter().filter_map(|k| k.strip_prefix("paies ")?.split(' ').next()).collect();
-    mois.sort();
-    if let Some(m) = mois.first() {
-        return format!("la paie {} a changé", socle::texte::de(&socle::mois::Mois::en_clair(m)));
+    let premier = changees.iter().filter_map(|k| match lue(k) {
+        Some(LectureDatee::Paies { mois, .. }) => Some(mois),
+        _ => None,
+    }).min();
+    if let Some(m) = premier {
+        return format!("la paie {} a changé", socle::texte::de(&m.libelle(socle::mois::Graphie::Accentuee)));
     }
     // La configuration de la compagnie : une valeur datee de ses fiches qui s'applique, ou son bareme de l'annee
     // (`config/baremes/<annee>.json` : ses choix de bareme, qui valent pour toute l'annee).
     let config_avant = &avant.empreinte.configuration;
     let config_nouvelle = apres.empreinte.configuration.iter().filter(|r| !config_avant.contains(r)).max().cloned();
     let annee_du_bareme = changees.iter().find_map(|k| {
-        k.split_once(' ').and_then(|(_, c)| c.strip_prefix("racine:config/baremes/")).and_then(|f| f.strip_suffix(".json")).filter(|an| an.len() == 4 && an.bytes().all(|b| b.is_ascii_digit()))
+        k.split_once(' ')
+            .and_then(|(_, c)| c.strip_prefix("racine:config/baremes/"))
+            .and_then(|f| f.strip_suffix(".json"))
+            .filter(|an| an.len() == 4)
+            .and_then(socle::num::entier_de_chiffres)
+            .and_then(|an| Jour::nouveau(an as i32, 1, 1))
     });
-    if let Some(jour) = config_nouvelle.or_else(|| annee_du_bareme.map(|an| format!("{}-01-01", an))) {
-        return format!("règle du {}", jour_dit(&jour));
+    if let Some(jour) = config_nouvelle.or(annee_du_bareme) {
+        return format!("règle du {}", jour.jj_mm_aaaa());
     }
     if code {
         return CALCUL_CORRIGE.to_string();
@@ -1658,7 +1660,7 @@ fn reporter(ctx: &Contexte, o: &Objet, premier: Mois, departs: &Departs) -> R<()
 /// les fiches). `None` : il tient. Sinon, la paie ecrite avec l'etat refait, et ce qu'il a lu dans son empreinte.
 fn conges_avant_a_jour(ctx: &Contexte, o: &Objet, ancienne: &PaieEcrite, mois: Mois, relues: &mut empreinte::Relues) -> R<Option<PaieEcrite>> {
     let entrees = &ancienne.empreinte.entrees;
-    let de_lui = |k: &str| k.starts_with("paies ") || k.starts_with("fiches ");
+    let de_lui = |k: &str| matches!(LectureDatee::lue(k), Some(Ok(LectureDatee::Paies { .. }))) || k.starts_with("fiches ");
     let siennes: BTreeMap<String, String> = entrees.iter().filter(|(k, _)| de_lui(k)).map(|(k, v)| (k.clone(), v.clone())).collect();
     if empreinte::tient(ctx, &siennes, relues)? {
         return Ok(None);

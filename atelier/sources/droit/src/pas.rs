@@ -13,7 +13,7 @@ use crate::type_taux_pas::TypeDeTauxPas;
 use socle::date::{jours_du_mois, Jour};
 use socle::mois::Mois;
 use socle::num::nombre;
-use socle::fichiers::repr;
+use socle::fichiers::{repr, LectureDatee};
 use socle::echec::{refus, Echec, R};
 use socle::num::{eur, pct, sub, Decimal};
 
@@ -343,17 +343,9 @@ pub fn rubriques_par_defaut(
 pub fn taux_dgfip(ctx: &Contexte, cle: &str, le: Option<Jour>, mois: Option<Mois>) -> R<Option<Triplet>> {
     let t = triplet(ctx, cle, le, mois)?;
     if let Some(j) = le {
-        socle::fichiers::noter_valeur(&cle_d_empreinte(cle, j, mois), empreinte_du_triplet(&t));
+        socle::fichiers::noter_valeur(&LectureDatee::Pas { salarie: cle.to_string(), le: j, mois }.cle(), empreinte_du_triplet(&t));
     }
     Ok(t)
-}
-
-/// La cle sous laquelle `taux_dgfip` note le taux du salarie `cle` au jour `le` pour la paie de `mois`.
-fn cle_d_empreinte(cle: &str, le: Jour, mois: Option<Mois>) -> String {
-    match mois {
-        Some(m) => format!("pas {} {} {}", cle, le.iso(), m),
-        None => format!("pas {} {}", cle, le.iso()),
-    }
 }
 
 fn triplet(ctx: &Contexte, cle: &str, le: Option<Jour>, mois: Option<Mois>) -> R<Option<Triplet>> {
@@ -371,16 +363,10 @@ fn empreinte_du_triplet(t: &Option<Triplet>) -> String {
     }
 }
 
-/// Ce que `taux_dgfip` a note sous `cle_notee` (`pas <cle> <jour> [<mois>]`), relu maintenant : l'empreinte tient tant
-/// qu'il est le meme. `None` : la cle n'est pas une cle du PAS (`pas <cle> <jour>`).
-pub fn empreinte(ctx: &Contexte, cle_notee: &str) -> R<Option<String>> {
-    let Some((cle, jour, mois)) = cle_notee.strip_prefix("pas ").and_then(|r| {
-        let mut parts = r.split(' ');
-        Some((parts.next()?, parts.next()?, parts.next()))
-    }) else {
-        return Ok(None);
-    };
-    Ok(Some(empreinte_du_triplet(&triplet(ctx, cle, Some(Jour::lire(jour)?), mois.map(Mois::lire).transpose()?)?)))
+/// Ce que `taux_dgfip` a note pour le salarie `cle` au jour `le` (`LectureDatee::Pas`), relu maintenant : l'empreinte
+/// tient tant qu'il est le meme.
+pub fn empreinte(ctx: &Contexte, cle: &str, le: Jour, mois: Option<Mois>) -> R<String> {
+    Ok(empreinte_du_triplet(&triplet(ctx, cle, Some(le), mois)?))
 }
 
 /// La fiche d'un salarie sans ses taux recus : ce qu'une paie lit de la fiche hors du taux, qu'elle lit au jour de son
@@ -558,6 +544,11 @@ mod tests {
         socle::forme::lire_texte(texte, "le taux").unwrap()
     }
 
+    /// Un jour `AAAA-MM-JJ`, lu par sa forme.
+    fn jour(t: &str) -> Jour {
+        socle::forme::lire_texte(&format!("\"{}\"", t), "jour").unwrap()
+    }
+
     fn recu(taux: &str, id: &str, le: &str, retour: Option<&str>) -> TauxPas {
         let retour = match retour {
             Some(m) => format!(r#", "en_retour_de": "{}""#, m),
@@ -578,7 +569,7 @@ mod tests {
     fn un_taux_vaut_pour_tout_paiement_a_partir_de_sa_mise_a_disposition() {
         let taux = |id: &str, le: &str| recu("9.40", id, le, None);
         let recus = vec![taux("480747943", "20260313070000"), taux("985249073", "20260415100000")];
-        let id = |le: &str| en_vigueur(&recus, Jour::lire(le).unwrap(), None).and_then(|e| e.identifiant.clone());
+        let id = |le: &str| en_vigueur(&recus, jour(le), None).and_then(|e| e.identifiant.clone());
         assert_eq!(id("2026-03-12"), None);
         assert_eq!(id("2026-03-13"), Some("480747943".to_string()));
         assert_eq!(id("2026-03-14"), Some("480747943".to_string()));
@@ -607,15 +598,15 @@ mod tests {
     fn le_taux_en_retour_de_la_dsn_d_un_mois_vaut_pour_les_mois_qui_suivent() {
         let taux = |id: &str, le: &str, retour: Option<&str>| recu("2.30", id, le, retour);
         let recus = vec![taux("157352475", "20261005194311", Some("2026-09")), taux("713288315", "20261221184328", Some("2026-12"))];
-        let id = |le: &str, mois: &str| en_vigueur(&recus, Jour::lire(le).unwrap(), Some(Mois::lire(mois).unwrap())).and_then(|e| e.identifiant.clone());
+        let id = |le: &str, mois: &str| en_vigueur(&recus, jour(le), Some(socle::forme::lire_texte::<Mois>(&format!("\"{}\"", mois), "mois").unwrap())).and_then(|e| e.identifiant.clone());
         assert_eq!(id("2026-12-31", "2026-12"), Some("157352475".to_string()));
         assert_eq!(id("2027-01-05", "2026-12"), Some("157352475".to_string()));
         assert_eq!(id("2027-01-31", "2027-01"), Some("713288315".to_string()));
-        let decembre = Mois::lire("2026-12").unwrap();
+        let decembre = Mois::nouveau(2026, 12).unwrap();
         let demande = vec![taux("480747943", "20261221184328", None)];
-        assert!(en_vigueur(&demande, Jour::lire("2026-12-31").unwrap(), Some(decembre)).is_some());
-        let mad = Jour::lire("2026-12-21").unwrap();
-        assert_eq!(date_d_effet(mad, Some(decembre)), Jour::lire("2027-01-01").unwrap());
+        assert!(en_vigueur(&demande, jour("2026-12-31"), Some(decembre)).is_some());
+        let mad = jour("2026-12-21");
+        assert_eq!(date_d_effet(mad, Some(decembre)), jour("2027-01-01"));
         assert_eq!(date_d_effet(mad, Some(decembre.precedent())), mad);
         assert_eq!(date_d_effet(mad, None), mad);
     }

@@ -153,21 +153,43 @@ fn chemin(racine: &Path) -> PathBuf {
 // ------------------------------------------------------------------------------------------------- les cles
 
 /// LA CLE D'UN ETAT GARDE : un mois, l'ouverture de la compagnie, ou le tableau de l'administrateur.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum Cle {
+/// Elle s'ecrit (le banc la nomme ainsi dans son scenario) `ouverture`, `tableau` ou un mois AAAA-MM.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[serde(from = "CleEcrite")]
+pub enum Cle {
     Mois(Mois),
     Ouverture,
     Tableau,
 }
 
-impl Cle {
-    /// La cle ecrite `texte` (le banc la nomme ainsi) : `ouverture`, `tableau` ou un mois AAAA-MM.
-    fn lire(texte: &str) -> R<Cle> {
-        match texte {
-            OUVERTURE => Ok(Cle::Ouverture),
-            TABLEAU => Ok(Cle::Tableau),
-            m => Mois::lire(m).map(Cle::Mois).map_err(|e| socle::echec::a_la_cle("Le mois de l'état ne se lit pas : il s'écrit AAAA-MM.", "cle", e.en_lignes()).reclasser(Classe::Illisible)),
+/// La cle telle qu'elle s'ecrit : un nom, ou un mois.
+#[derive(Deserialize)]
+#[serde(untagged, expecting = "le mois de l'état (AAAA-MM), « ouverture » ou « tableau »")]
+enum CleEcrite {
+    Nommee(CleNommee),
+    Mois(Mois),
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum CleNommee {
+    Ouverture,
+    Tableau,
+}
+
+impl From<CleEcrite> for Cle {
+    fn from(c: CleEcrite) -> Cle {
+        match c {
+            CleEcrite::Mois(m) => Cle::Mois(m),
+            CleEcrite::Nommee(CleNommee::Ouverture) => Cle::Ouverture,
+            CleEcrite::Nommee(CleNommee::Tableau) => Cle::Tableau,
         }
+    }
+}
+
+impl Serialize for Cle {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
     }
 }
 
@@ -697,8 +719,8 @@ fn ouverture_ecrite(racine: &Path) -> Option<EtatDeLOuverture> {
 
 /// L'etat de `cle` (le banc d'essai le rejoue : `scenario`) : celui de l'ouverture, ecrit, s'il est juste ;
 /// sinon refait.
-pub fn lire(o: &Options, ctx: &Contexte, cle: &str) -> R<()> {
-    garde_juste(o, ctx, Cle::lire(cle)?).map(drop)
+pub fn lire(o: &Options, ctx: &Contexte, cle: Cle) -> R<()> {
+    garde_juste(o, ctx, cle).map(drop)
 }
 
 fn garde_juste(o: &Options, ctx: &Contexte, cle: Cle) -> R<Garde> {
@@ -1035,7 +1057,7 @@ impl FileDesEtats {
         // LE BANC D'ESSAI : ce que l'etat refait ecrit entre dans le scenario (`scenario::Enregistreur::fond`).
         #[cfg(feature = "atelier")]
         let rendu = match crate::scenario::enregistreur_actif() {
-            Some(e) => e.fond(&self.racine, &cle.to_string(), refaire),
+            Some(e) => e.fond(&self.racine, cle, refaire),
             None => refaire(),
         };
         #[cfg(not(feature = "atelier"))]

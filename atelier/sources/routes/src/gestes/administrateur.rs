@@ -656,11 +656,11 @@ fn fichiers_de(dossier: &Path) -> R<Vec<PathBuf>> {
 
 /// Le fichier que l'ecriture d'un signalement pose pour cette obligation (`routes::imprevus` : `arret-signaler`,
 /// `fin-contrat-signaler`), d'apres la cle du rappel (`<obligation>:<salarie>:<jour>`, `fin-contrat:<salarie>:<fin>`).
-fn fichier_du_signalement(ctx: &Contexte, cle: &str) -> R<Option<PathBuf>> {
+fn fichier_du_signalement(ctx: &Contexte, cle: &str, jour: Option<socle::date::Jour>) -> R<Option<PathBuf>> {
     let mut morceaux = cle.splitn(3, ':');
-    let (Some(genre), Some(salarie), Some(jour)) = (morceaux.next(), morceaux.next(), morceaux.next()) else { return Ok(None) };
-    let Some(mois) = jour.get(..7).and_then(socle::mois::Mois::du_texte) else { return Ok(None) };
-    let compact = jour.replace('-', "");
+    let (Some(genre), Some(salarie), Some(jour)) = (morceaux.next(), morceaux.next(), jour) else { return Ok(None) };
+    let mois = jour.mois_civil();
+    let compact = jour.aaaammjj();
     let nom = match genre {
         "signalement_arret" => format!("SignalementArret_{}_{}.dsn", salarie, compact),
         // L'annule-et-remplace s'ecrit a cote du signalement parti, sous `_AR<ordre>` : le dernier ecrit.
@@ -733,7 +733,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
             });
             let detail = if ob.phrase.is_empty() { r.detail.clone() } else { ob.phrase.clone() };
             let (genre, marche, ou) = if ob.cle.nom().starts_with("signalement_") {
-                fichier = fichier_du_signalement(ctx, &r.cle)?;
+                fichier = fichier_du_signalement(ctx, &r.cle, r.jour_de_la_cle)?;
                 let marche = if r.a_saisir.is_empty() {
                     "Écrire le signalement dans la compagnie (Imprévus, ou la colonne du mois), puis le tester."
                 } else {

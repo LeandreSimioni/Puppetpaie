@@ -6,7 +6,6 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use droit::contexte::Contexte;
-use socle::date::Jour;
 use socle::echec::{Classe, R};
 use socle::fichiers::dossier_du_code;
 
@@ -22,7 +21,7 @@ pub(crate) fn options(args: &[String]) -> Option<R<Options>> {
         let valeur = args.get(i + 1)?;
         match args[i].as_str() {
             "--racine" => o.racine = Some(PathBuf::from(valeur)).filter(|r| !r.as_os_str().is_empty()),
-            "--date" => match Jour::lire(valeur) {
+            "--date" => match socle::ligne::Argument::tape(valeur).jour() {
                 Ok(d) => o.date = Some(d),
                 Err(m) => return Some(Err(m.reclasser(Classe::Illisible))),
             },

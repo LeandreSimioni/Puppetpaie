@@ -121,7 +121,7 @@ mod tests {
     use super::*;
 
     fn j(s: &str) -> Jour {
-        Jour::lire(s).unwrap()
+        socle::forme::lire_texte(&format!("\"{}\"", s), "jour").unwrap()
     }
 
     /// Thalie Sante des intermittents n'existe qu'a partir du 01/01/2026 (`DateDebutValidite="01012026"`,

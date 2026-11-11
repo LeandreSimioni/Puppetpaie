@@ -904,7 +904,7 @@ mod tests {
                 ..DuMois::default()
             };
             let au = droit::natures::NatureDeContrat::Cdi.proprietes().unwrap().au_mois().unwrap();
-            let l = lignes(&m, Mois::lire("2026-03").unwrap(), &au);
+            let l = lignes(&m, Mois::nouveau(2026, 3).unwrap(), &au);
             l[0].taux().unwrap()
         };
         assert_eq!(montant(500, 300, 0), Decimal::from(500));

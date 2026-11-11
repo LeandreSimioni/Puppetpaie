@@ -6,7 +6,7 @@ use socle::date::Jour;
 use socle::num::{div, Decimal};
 
 fn j(t: &str) -> Jour {
-    Jour::lire(t).unwrap()
+    socle::forme::lire_texte(&format!("\"{}\"", t), "jour").unwrap()
 }
 
 /// Les jours travailles qu'une fiche ecrit `v`, lus par leur forme comme la fiche les lit.

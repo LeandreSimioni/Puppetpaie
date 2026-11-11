@@ -154,8 +154,8 @@ pub(crate) fn a_dire(racine: &Path) -> R<Vec<ADire>> {
         let en_cours_dit = match (en_cours, mois_au, suite) {
             (true, Some(au), Some(suite)) => Some(format!(
                 "Payé jusqu'en {} : son contrat continue en {}, et sa DSN le déclare avec la date de début et le numéro que votre ancien logiciel lui a donnés. Ils sont sur sa dernière DSN (bloc Contrat), pas sur le bulletin.",
-                socle::mois::Mois::en_clair(&au.to_string()),
-                socle::mois::Mois::en_clair(&suite.to_string())
+                au.libelle(socle::mois::Graphie::Accentuee),
+                suite.libelle(socle::mois::Graphie::Accentuee)
             )),
             _ => None,
         };

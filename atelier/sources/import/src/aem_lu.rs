@@ -336,7 +336,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
     if champ("SALARIE_NIR").is_none() || champ("SAL_DT_DEB_01").is_none() {
         return Ok(None);
     }
-    let jour = |nom: &str| v(nom).and_then(|t: String| Jour::du_texte(&t));
+    let jour = |nom: &str| v(nom).and_then(|t: String| socle::piece::Zone::lue(&t).jour());
     let entier = |nom: &str| v(nom).and_then(|t| entier_de_chiffres(&t.replace([' ', '\u{a0}'], "")));
     let nir = v("SALARIE_NIR").map(|n| n.replace(' ', ""));
     let chiffres = |nom: &str| v(nom).and_then(|t: String| entier_de_chiffres(&t));
@@ -550,9 +550,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     let mut a = Aem { page, ..Default::default() };
     // Le mois : ses chiffres, imprimes case a case (« 0 4 20 2 3 ») : MM puis AAAA.
     let chiffres: String = lu("mois", Some(0)).iter().take_while(|m| m.chars().all(|c| c.is_ascii_digit())).map(String::as_str).collect();
-    if chiffres.len() == 6 {
-        a.mois = Mois::du_texte(&format!("{}-{}", &chiffres[2..], &chiffres[..2]));
-    }
+    a.mois = socle::piece::Zone::lue(&chiffres).mois_mmaaaa();
     a.numero = lu("attestation", Some(0)).first().cloned();
     let siret: String = lu("siret", Some(1)).concat().chars().filter(char::is_ascii_digit).collect();
     a.siret = (siret.len() == 14).then_some(siret);

@@ -945,7 +945,7 @@ mod tests {
         "date_naissance": "1985-03-07", "lieu_naissance": "Tours", "departement_naissance": "37", "emploi": "Comedienne"}"#;
 
     fn jour(t: &str) -> Jour {
-        Jour::lire(t).unwrap()
+        socle::forme::lire_texte(&format!("\"{}\"", t), "jour").unwrap()
     }
 
     fn embauche_de(fiche: &str, nature: N, fin: Option<&str>) -> Embauche {
@@ -986,7 +986,7 @@ mod tests {
     }
 
     fn parametres<'a>(ent: Option<&'a EntrepriseDuDocument>, code: Option<&str>, chemins: &'a Chemins) -> Parametres<'a> {
-        Parametres { horodatage: MinuteEcrite::lire("2026-10-03T14:07").unwrap(), heure_embauche: "0800".into(), code_urssaf: code.map(String::from), ent, chemins }
+        Parametres { horodatage: socle::forme::lire_texte::<MinuteEcrite>("\"2026-10-03T14:07\"", "horodatage").unwrap(), heure_embauche: "0800".into(), code_urssaf: code.map(String::from), ent, chemins }
     }
 
     fn enr(e: &Embauche, ent: Option<&EntrepriseDuDocument>, code: Option<&str>) -> R<String> {

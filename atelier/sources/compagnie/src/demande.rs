@@ -740,7 +740,7 @@ mod tests {
 
     /// Le mois des actes de ces tests.
     fn septembre() -> MoisOuJour {
-        MoisOuJour::Mois(socle::mois::Mois::lire("2026-09").unwrap())
+        MoisOuJour::Mois(socle::mois::Mois::nouveau(2026, 9).unwrap())
     }
 
     // `PUPPETPAIE_CLE` est une variable du processus : un test a la fois y touche.
@@ -761,7 +761,7 @@ mod tests {
         }
 
         fn coffre_a(&self) -> Coffre {
-            Coffre { racine: self.racine.clone(), dossier_cle: self.poste_a.clone(), maintenant: socle::paris::MinuteEcrite::lire("2026-10-08T10:00").unwrap(), variables: Default::default() }
+            Coffre { racine: self.racine.clone(), dossier_cle: self.poste_a.clone(), maintenant: socle::forme::lire_texte("\"2026-10-08T10:00\"", "maintenant").unwrap(), variables: Default::default() }
         }
     }
 

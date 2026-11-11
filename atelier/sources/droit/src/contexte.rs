@@ -1357,7 +1357,7 @@ impl Contexte {
         };
         let fichier = fichier_du_socle(&dossier, an).ok_or_else(|| socle::echec::livree("baremes", "par_convention"))?;
         // Le dernier jour de l'annee du socle quand il est d'une annee passee : ses valeurs datees y valent toutes.
-        let a = if an == jour.an { jour } else { Jour::lire(&format!("{}-12-31", an))? };
+        let a = if an == jour.an { jour } else { Jour::nouveau(an, 12, 31).ok_or_else(|| socle::refus!("{}", socle::date::annee_impossible(an)))? };
         Ok(crate::forme_bareme::lire_le_socle(&fichier, &a, None)?.0.par_convention)
     }
 

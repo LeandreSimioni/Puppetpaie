@@ -14,7 +14,7 @@ use crate::outils::dossier_de_test;
 fn le_fil_de_fond_ne_sort_pas_et_ne_touche_a_aucune_cle() {
     let racine = dossier_de_test("installations", "fil-de-fond");
     std::fs::create_dir_all(racine.join("config")).unwrap();
-    let coffre = move |r: &Path| compagnie::coffre::Coffre::sur(r, r.join("cle"), socle::paris::MinuteEcrite::lire("2026-10-22T10:00").unwrap());
+    let coffre = move |r: &Path| compagnie::coffre::Coffre::sur(r, r.join("cle"), socle::forme::lire_texte::<socle::paris::MinuteEcrite>("\"2026-10-22T10:00\"", "maintenant").unwrap());
     let r = racine.clone();
     let (reseau, cle) = std::thread::spawn(move || {
         socle::fil_de_fond::marquer();

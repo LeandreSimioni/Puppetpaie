@@ -94,22 +94,22 @@ fn dossier_salarie(ctx: &Contexte, demande: &DemandeDeDossier) -> R<DossierRendu
 #[serde(untagged)]
 pub(crate) enum AnneeDite {
     Nombre(i64),
-    Texte(String),
+    Texte(socle::mois::Annee),
 }
 
 impl AnneeDite {
     pub(crate) fn texte(&self) -> String {
         match self {
             AnneeDite::Nombre(n) => n.to_string(),
-            AnneeDite::Texte(t) => t.clone(),
+            AnneeDite::Texte(a) => a.to_string(),
         }
     }
 
-    /// L'annee dite, lue (`AAAA`) ; une annee qui n'en est pas une se refuse.
+    /// L'annee dite ; une annee qui n'en est pas une se refuse.
     pub(crate) fn annee(&self) -> socle::echec::R<socle::mois::Annee> {
         match self {
             AnneeDite::Nombre(n) => socle::mois::Annee::nouvelle(*n),
-            AnneeDite::Texte(t) => socle::mois::Annee::lire(t),
+            AnneeDite::Texte(a) => Ok(*a),
         }
     }
 }
@@ -341,9 +341,9 @@ impl Periode {
     }
 
     /// Le mois, l'annee, ou toutes, comme les recapitulatifs les prennent.
-    fn bornes(&self) -> (Option<String>, Option<String>, bool) {
+    fn bornes(&self) -> (Option<Mois>, Option<String>, bool) {
         match self {
-            Periode::Mois(m) => (Some(m.to_string()), None, false),
+            Periode::Mois(m) => (Some(*m), None, false),
             Periode::Annee(a) => (None, Some(a.clone()), false),
             Periode::Toutes => (None, None, true),
         }
@@ -530,11 +530,11 @@ fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mo
 /// `paie_du_contrat_entier` : le contrat recompose sur tous ses mois, pour son certificat. Les mois d'avant se lisent
 /// dans les paies validees de l'engagement (`engagement::etats::paie_ecrite_de`). Rend la paie du certificat et les
 /// mois du contrat dont aucune paie n'est ecrite.
-fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<String>)> {
+fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
     let eng = &p.engagement;
     let cle = cle_de(p);
     let mois_du = eng.mois_du_contrat();
-    let mut manquants: Vec<String> = Vec::new();
+    let mut manquants: Vec<Mois> = Vec::new();
     let mut lignes: Vec<engagement::LignePaie> = Vec::new();
     // Un contrat commence dans l'ancien logiciel : ses mois d'avant sont ceux que l'engagement importe a verses.
     let cherche = engagement::saisie::Carte { salarie: Some(p.salarie.id.clone()), debut: Some(eng.debut), numero: eng.numero.clone(), ..Default::default() };
@@ -554,7 +554,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<String>)> 
                     lignes.extend(l);
                     jours += j;
                 }
-                None => manquants.push(m.to_string()),
+                None => manquants.push(m),
             }
             continue;
         };
@@ -638,7 +638,7 @@ pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec
                 avertissements.push(format!(
                     "Certificat Conges Spectacles du contrat {} : aucune paie sur le disque pour {} -- il ne porte que les mois presents.",
                     p.engagement.numero.iter().map(ToString::to_string).collect::<String>(),
-                    manquants.iter().map(|m| socle::mois::Mois::en_clair(m)).collect::<Vec<_>>().join(", ")
+                    manquants.iter().map(|m| m.libelle(socle::mois::Graphie::Accentuee)).collect::<Vec<_>>().join(", ")
                 ));
             }
         }
@@ -1267,7 +1267,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
     }
     if cats.contains(&RECAPITULATIF) {
         let (m, a, toutes) = p.bornes();
-        let mut recaps = Recapitulatifs::nouveau(ctx, m.as_deref().map(Mois::lire).transpose()?, a, toutes, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
+        let mut recaps = Recapitulatifs::nouveau(ctx, m, a, toutes, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
         for cle in &cles {
             if let Some(r) = recaps.pdf(cle, tmp)? {
                 for i in 0..pages_pdf(&r)? {

@@ -92,7 +92,7 @@ pub(crate) fn dit(e: Option<&Eng>) -> R<DitParLEngagement> {
     let Some(e) = e else { return Ok(DitParLEngagement::default()) };
     let dite = |v: &Option<String>| v.clone().filter(|s| !s.is_empty());
     let debut = match dite(&e.debut) {
-        Some(s) => Some(s.get(..10).filter(|j| j.as_bytes().get(4) == Some(&b'-') && j.as_bytes().get(7) == Some(&b'-')).and_then(|j| Jour::lire(j).ok()).ok_or_else(|| socle::echec::refus("date illisible"))?),
+        Some(s) => Some(s.get(..10).filter(|j| j.as_bytes().get(4) == Some(&b'-') && j.as_bytes().get(7) == Some(&b'-')).and_then(|j| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", j), "debut").ok()).ok_or_else(|| socle::echec::refus("date illisible"))?),
         None => None,
     };
     Ok(DitParLEngagement { categorie_conventionnelle: dite(&e.categorie_conventionnelle), statut: dite(&e.statut), metier: dite(&e.metier), cadre: e.cadre, debut })
@@ -565,7 +565,7 @@ fn prime_d_anciennete() {
 /// 20261020.md`, l. 763). Un jour ouvrable va du lundi au samedi.
 #[test]
 fn la_remise_du_contrat_suit_l1242_13_et_la_1285_pour_ses_musiciens() {
-    let j = |s: &str| Jour::lire(s).unwrap();
+    let j = |s: &str| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", s), "jour").unwrap();
     // Un vendredi : le samedi, puis le lundi (le dimanche n'est pas ouvrable).
     let loi = droit::echeances::remise_du_contrat(&j("2026-11-20"), Some("3090"), Some("ART170"), None).unwrap();
     assert_eq!(loi.jour, j("2026-11-23"));

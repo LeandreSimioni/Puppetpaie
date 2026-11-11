@@ -324,8 +324,8 @@ pub(crate) struct Apercu {
     /// CE QUE L'IMPORT CHANGE AUX CONTRATS DE L'HISTORIQUE : le contrat qu'un certificat atteste, reduit aux mois qu'il atteste
     /// seul ou retire, celui d'une AEM que le bulletin remplace (`import::attestes`).
     pub(crate) contrats_changes: Vec<import::attestes::Change>,
-    /// La suite des licences que les pieces donnent (mois `AAAA-MM`, numero), la plus ancienne d'abord.
-    pub(crate) licences: Vec<(String, String)>,
+    /// La suite des licences que les pieces donnent (mois, numero), la plus ancienne d'abord.
+    pub(crate) licences: Vec<(socle::mois::Mois, String)>,
     /// Les contrats que la DSN declare payes sans que les nets de leur versement se rattachent a eux (`PaieDuContrat::nets`).
     pub(crate) sans_nets: Vec<SansNets>,
     /// LA CONVENTION COLLECTIVE QUE LES DSN DECLARENT pour l'entreprise (S21.G00.11.022, a defaut S21.G00.40.017 :
@@ -702,7 +702,7 @@ pub(crate) fn apercu_lu(
         paies,
         contrats_attestes: Vec::new(),
         contrats_changes: Vec::new(),
-        licences: lecture.licences.iter().map(|(m, l)| (m.to_string(), l.clone())).collect(),
+        licences: lecture.licences.clone(),
         sans_nets,
         convention: lecture.entreprise.idcc.clone(),
     })

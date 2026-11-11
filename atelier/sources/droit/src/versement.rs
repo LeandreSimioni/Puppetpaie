@@ -208,14 +208,14 @@ mod tests {
     use super::*;
 
     fn j(t: &str) -> Jour {
-        Jour::lire(t).unwrap()
+        socle::forme::lire_texte(&format!("\"{}\"", t), "jour").unwrap()
     }
 
     /// CCH-13 de S21.G00.50.001 : au plus tard le dernier jour du mois qui suit le mois principal declare ; le 5 du mois
     /// suivant (le decalage de paie, BOI-IR-PAS-30-10-30-20, § 50) passe.
     #[test]
     fn un_versement_apres_le_mois_qui_suit_se_refuse() {
-        let decembre = Mois::lire("2026-12").unwrap();
+        let decembre = Mois::nouveau(2026, 12).unwrap();
         let cinq = Versement::lire("le 5 du mois suivant").unwrap().jour(decembre, j("2026-12-31")).unwrap();
         assert_eq!(cinq, j("2027-01-05"));
         assert_eq!(refus("X", &cinq, decembre, None).unwrap(), None);

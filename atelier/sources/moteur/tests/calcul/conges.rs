@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 use socle::date::Jour;
 
 fn jour(s: &str) -> Jour {
-    Jour::lire(s).unwrap()
+    socle::forme::lire_texte(&format!("\"{}\"", s), "jour").unwrap()
 }
 
 fn err(e: socle::echec::Echec) -> Value {

@@ -100,9 +100,9 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     use compagnie::amorcage_demande::{produire, Demande};
     let ctx = &cadre.ctx;
     let mois = match args.texte("mois") {
-        Some(m) => match socle::mois::Mois::du_texte(m) {
-            Some(m) => m,
-            None => {
+        Some(m) => match socle::ligne::Argument::tape(m).mois() {
+            Ok(m) => m,
+            Err(_) => {
                 dire!("--mois attend AAAA-MM, recu {}.", socle::fichiers::repr(m));
                 return Ok(1);
             }

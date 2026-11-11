@@ -52,7 +52,7 @@ fn la_notification_lue_pose_le_taux_de_l_annee_a_sa_date_d_effet() {
     // Effet au 1er janvier : le taux de l'annee, avec la notification pour source.
     let a_faire = suites(&racine, vec![notification(&racine, "n1.xml", "123456873", "00017", &[("923AD", "1.70", "20260101", "20251210")])]);
     assert!(a_faire.is_empty(), "{:?}", a_faire);
-    let jour = |j: &str| socle::date::Jour::lire(j).unwrap();
+    let jour = |j: &str| socle::forme::lire_texte::<socle::date::Jour>(&format!("\"{}\"", j), "jour").unwrap();
     let taux_au = |j: &str| {
         let f: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fichier(&racine.join("config/entreprise.json"), "config/entreprise.json").unwrap();
         droit::fiche::valeur_au(f.taux_atmp.as_deref().unwrap(), &jour(j)).unwrap()

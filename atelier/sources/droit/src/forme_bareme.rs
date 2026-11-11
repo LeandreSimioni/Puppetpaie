@@ -1023,7 +1023,7 @@ forme! {
         pub libelle: String,
         pub applicable: bool,
         pub retraite_t1: Option<RetraiteT1ParStatut>,
-        pub adhesion_avant: Option<String>,
+        pub adhesion_avant: Option<socle::date::Jour>,
         pub alias: Option<Vec<String>>,
         pub a_confirmer: Option<String>,
     }

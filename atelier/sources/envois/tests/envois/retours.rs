@@ -171,7 +171,8 @@ fn les_attestations_d_une_archive_de_nature_46() {
     ]);
     let att = aer_spectacle(&a).unwrap();
     assert_eq!(att.len(), 2);
-    assert_eq!((att[0].periode.as_deref(), att[0].qui.as_str()), (Some("2026-09"), "DUPONT ALICE"));
+    let septembre = socle::mois::Mois::nouveau(2026, 9).ok();
+    assert_eq!((att[0].periode, att[0].qui.as_str()), (septembre, "DUPONT ALICE"));
     assert_eq!(att[0].donnees, b"%PDF-un");
-    assert_eq!((att[1].periode.as_deref(), att[1].qui.as_str()), (Some("2026-09"), "MARTIN PAUL JEAN"));
+    assert_eq!((att[1].periode, att[1].qui.as_str()), (septembre, "MARTIN PAUL JEAN"));
 }
