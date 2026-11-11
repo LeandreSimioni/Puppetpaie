@@ -1575,46 +1575,78 @@ fn champs_base_et_les_fiches_ont_les_memes_cases() {
     assert!(fautes.is_empty(), "champs-base.json et la forme des fiches (droit::fiche) se contredisent :\n{}", fautes.join("\n"));
 }
 
-/// Un seul endroit ecrit un fichier d'engagements : `engagement::stock::poser`. Hors de `stock.rs`, le chemin d'un tel
-/// fichier (`stock::chemin`) ne se nomme que pour le lire : dans la cloture (l'archive de l'exercice) et l'apercu d'un
-/// acte (le fichier designe est-il celui du mois ?).
+/// LE STOCK D'ENGAGEMENT, TEL QUE LE COMPILATEUR LE NOMME : les sources du crate `engagement`, chacune avec son module et
+/// son code seul, et les modules du stock (`engagement::stock`) et des paies (`engagement::paies`), nommes par leurs
+/// types et fonctions.
+fn le_stock() -> (String, String, Vec<(String, String)>) {
+    let module = |nom: &str| nom.rsplit_once("::").unwrap().0.to_string();
+    let stock = module(std::any::type_name::<engagement::stock::FichierDuMois>());
+    let paies = module(std::any::type_name_of_val(&engagement::paies::tel_quel));
+    let code = sources(&espace().join("engagement").join("src"))
+        .into_iter()
+        .map(|p| (module_de(&p.strip_prefix(espace()).unwrap().to_string_lossy().replace('\\', "/")), code_seul(&std::fs::read_to_string(&p).unwrap())))
+        .collect::<Vec<(String, String)>>();
+    assert!(code.iter().any(|(m, _)| *m == stock) && code.iter().any(|(m, _)| *m == paies), "les modules {} et {} sont des sources d'engagement", stock, paies);
+    (stock, paies, code)
+}
+
+/// Ce qu'un module du stock rend public d'un chemin : un texte constant (le nom d'un dossier) ou une fonction qui rend un
+/// chemin. Hors d'`engagement`, un fichier du stock se lit tel quel (`stock::TelQuel`) et ses dossiers se signent
+/// (`stock::dossiers_tenus`) ; rien ne le nomme pour l'ecrire.
+fn chemins_publics(t: &str) -> Vec<String> {
+    let public = regex::Regex::new(r"pub\s+(?:const|static)\s+\w+\s*:\s*&(?:'static\s+)?str|pub\s+fn\s[^{;]*->[^{;]*(?:PathBuf|&Path\b)").unwrap();
+    public.find_iter(t).map(|m| m.as_str().to_string()).collect()
+}
+
+/// UN SEUL ENDROIT ECRIT UN FICHIER D'ENGAGEMENTS : `engagement::stock::poser_dans`, le seul `ecrire_json(` du module du
+/// stock. Le compilateur tient le reste : le dossier et le chemin d'un fichier du stock ne sont pas publics
+/// (`chemins_publics`) ; dans `engagement`, seuls les modules du stock et des paies prennent un chemin du stock
+/// (`chemin_dans(`, `lire_dans(`, `poser_dans(`, `fichiers_dans(`, `tel_quel_dans(`).
 #[test]
 fn un_seul_endroit_ecrit_un_fichier_d_engagements() {
-    const LECTEURS: [&str; 2] = ["routes/src/gestes/exercice_ecrit.rs", "moteur/src/commandes/actes.rs"];
-    let stock = espace().join("engagement/src/stock.rs");
-    assert_eq!(std::fs::read_to_string(&stock).unwrap().matches("ecrire_json(").count(), 1, "stock.rs n'ecrit que par `poser`");
-    for crate_ in &ORDRE[2..] {
-        for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| *p != stock) {
-            if std::fs::read_to_string(&p).unwrap().contains("stock::chemin(") {
-                let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
-                assert!(LECTEURS.contains(&rel.as_str()), "{} nomme le fichier d'un engagement : il passe par `stock`", rel);
+    let (stock, paies, code) = le_stock();
+    let mut fautes = Vec::new();
+    for (ici, t) in &code {
+        if *ici == stock {
+            let n = t.matches("ecrire_json(").count();
+            if n != 1 {
+                fautes.push(format!("{} ecrit {} fois (`ecrire_json(`) : une seule, `poser_dans`", ici, n));
+            }
+        }
+        if *ici == stock || *ici == paies {
+            fautes.extend(chemins_publics(t).into_iter().map(|m| format!("{} rend public un chemin du stock (`{}`)", ici, m)));
+        } else {
+            for f in ["chemin_dans(", "lire_dans(", "poser_dans(", "fichiers_dans(", "tel_quel_dans("] {
+                if t.contains(&format!("stock::{}", f)) {
+                    fautes.push(format!("{} prend un chemin du stock (`stock::{}`) : il lit et ecrit par le stock", ici, f));
+                }
             }
         }
     }
+    assert!(fautes.is_empty(), "un fichier du stock ne s'ecrit que par `engagement::stock::poser_dans` :\n{}", fautes.join("\n"));
 }
 
 /// Une seule fonction lit un fichier de paies, une seule l'ecrit : dans `engagement::paies`, `fichier` (`stock::lire_dans`)
-/// et `ecrire` (`stock::poser_dans`), sur le dossier des paies, que rien d'autre ne nomme. Hors de `paies.rs`, le fichier
-/// des paies d'un mois ne se nomme que pour le lire tel qu'il est sur le disque : dans la cloture (l'archive de
-/// l'exercice) et l'etat garde de l'ecran (sa signature).
+/// et `ecrire` (`stock::poser_dans`), une fois chacune ; le dossier des paies (`Dossier::Paies`), seuls les modules du
+/// stock et des paies le nomment. Hors d'`engagement`, le fichier des paies d'un mois se lit tel quel
+/// (`paies::tel_quel`) : son chemin n'est pas public (`un_seul_endroit_ecrit_un_fichier_d_engagements`).
 #[test]
 fn une_seule_fonction_lit_une_paie_et_une_seule_l_ecrit() {
-    const LECTEURS: [&str; 2] = ["routes/src/gestes/exercice_ecrit.rs", "routes/src/etat_garde.rs"];
-    let paies = espace().join("engagement/src/paies.rs");
-    let stock = espace().join("engagement/src/stock.rs");
-    let texte = std::fs::read_to_string(&paies).unwrap();
-    assert_eq!(texte.matches("stock::lire_dans(").count(), 1, "paies.rs ne lit un fichier de paies que par `fichier`");
-    assert_eq!(texte.matches("stock::poser_dans(").count(), 1, "paies.rs n'ecrit un fichier de paies que par `ecrire`");
-    for crate_ in &ORDRE[2..] {
-        for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| *p != paies && *p != stock) {
-            let t = std::fs::read_to_string(&p).unwrap();
-            let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
-            assert!(!t.contains("Dossier::Paies"), "{} nomme le dossier des paies : il lit et ecrit une paie par `engagement::paies`", rel);
-            if t.contains("paies::chemin(") || t.contains("paies::DOSSIER") {
-                assert!(LECTEURS.contains(&rel.as_str()), "{} nomme le fichier des paies d'un mois : il passe par `engagement::paies`", rel);
+    let (stock, paies, code) = le_stock();
+    let mut fautes = Vec::new();
+    for (ici, t) in &code {
+        if *ici == paies {
+            for f in ["stock::lire_dans(", "stock::poser_dans("] {
+                let n = t.matches(f).count();
+                if n != 1 {
+                    fautes.push(format!("{} appelle {} fois `{}` : une seule", ici, n, f));
+                }
             }
+        } else if *ici != stock && t.contains("Dossier::Paies") {
+            fautes.push(format!("{} nomme le dossier des paies : il lit et ecrit une paie par `engagement::paies`", ici));
         }
     }
+    assert!(fautes.is_empty(), "une paie se lit et s'ecrit par `engagement::paies` :\n{}", fautes.join("\n"));
 }
 
 /// LA ROUTE REND LA PHRASE QUE L'ON LIT : la page (`logiciel/interface/js/`, `index.html`, et les pages que sert la

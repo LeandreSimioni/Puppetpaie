@@ -18,7 +18,7 @@ use socle::mois::Mois;
 use socle::echec::R;
 
 /// Le dossier des paies, sous les donnees de la compagnie.
-pub const DOSSIER: &str = "paies";
+pub(crate) const DOSSIER: &str = "paies";
 
 /// LE FICHIER DES PAIES D'UN MOIS.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -52,9 +52,9 @@ struct Entree {
     versions: BTreeMap<String, PaieEcrite>,
 }
 
-/// Le fichier des paies de `mois`, pour le lire tel qu'il est sur le disque (l'archive de l'exercice).
-pub fn chemin(racine: &std::path::Path, mois: Mois) -> std::path::PathBuf {
-    stock::chemin_dans(racine, Dossier::Paies, mois)
+/// Le fichier des paies de `mois` tel qu'il est sur le disque (l'archive de l'exercice) ; `None` s'il n'y est pas.
+pub fn tel_quel(racine: &std::path::Path, mois: Mois) -> R<Option<stock::TelQuel>> {
+    stock::tel_quel_dans(racine, Dossier::Paies, mois)
 }
 
 /// Le salarie et le numero du contrat de l'engagement `o` ; `None` sans numero ni salarie (un engagement que rien n'a valide).

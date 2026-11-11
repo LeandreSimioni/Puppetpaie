@@ -26,7 +26,7 @@ use socle::mois::Mois;
 use socle::num::{zero2, Decimal};
 use socle::paris::InstantEcrit;
 use socle::echec::{Echec, R};
-use crate::dossier_salarie::{entree_ecrite, entree_fichier, zip, Entree};
+use crate::dossier_salarie::{entree_ecrite, entree_fichier, entree_tel_quel, zip, Entree};
 use documents::ecritures_comptables::{csv_compta, ecritures_du_mois, Ecriture};
 use documents::plan_comptable::plan_comptable;
 use crate::rappels::mois_de_l_annee;
@@ -417,16 +417,14 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
         }
     }
     for &f in &fichiers_engagements {
-        let s = engagement::stock::chemin(&ctx.racine, f);
-        if s.exists() {
-            entrees.push(entree_fichier(&s, format!("{}/{}.json", engagement::stock::DOSSIER, f))?);
+        if let Some(t) = engagement::stock::tel_quel(&ctx.racine, f)? {
+            entrees.push(entree_tel_quel(t));
         }
     }
     // Les paies de chaque mois de l'annee.
     for &m in &mois {
-        let s = engagement::paies::chemin(&ctx.racine, m);
-        if s.exists() {
-            entrees.push(entree_fichier(&s, format!("{}/{}.json", engagement::paies::DOSSIER, m))?);
+        if let Some(t) = engagement::paies::tel_quel(&ctx.racine, m)? {
+            entrees.push(entree_tel_quel(t));
         }
     }
     for m in &mois {

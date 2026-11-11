@@ -36,8 +36,8 @@ use socle::mois::{Graphie, Mois};
 use socle::paris::InstantEcrit;
 use socle::echec::{refus, R};
 
-/// Le dossier des engagements, sous les donnees de la compagnie.
-pub const DOSSIER: &str = "engagements";
+/// Le dossier des engagements, sous les donnees de la compagnie : seul le stock le nomme.
+pub(crate) const DOSSIER: &str = "engagements";
 
 /// La phrase d'un fichier d'engagements qui n'a pas sa forme.
 const ABIME: &str = "Un mois d'engagements ne se relit pas : il est abîmé.";
@@ -195,13 +195,45 @@ pub struct NonActif {
 // ------------------------------------------------------------------ les fichiers
 
 /// Le fichier des engagements qui commencent en `mois`.
-pub fn chemin(racine: &Path, mois: Mois) -> PathBuf {
+fn chemin(racine: &Path, mois: Mois) -> PathBuf {
     chemin_dans(racine, Dossier::Engagements, mois)
 }
 
 /// Le fichier de `mois` dans le dossier `d`.
 pub(crate) fn chemin_dans(racine: &Path, d: Dossier, mois: Mois) -> PathBuf {
     racine.join(d.nom()).join(format!("{}.json", mois))
+}
+
+/// LES DOSSIERS QUE LE STOCK TIENT, sous la racine, pour qui signe leur etat sur le disque sans les lire
+/// (`routes::etat_garde`) : on n'y lit et n'y ecrit que par le stock.
+pub fn dossiers_tenus() -> [&'static str; 2] {
+    [Dossier::Engagements.nom(), Dossier::Paies.nom()]
+}
+
+/// UN FICHIER DU STOCK TEL QU'IL EST SUR LE DISQUE, pour qui le garde sans le lire (l'archive de l'exercice) : son nom
+/// sous la racine, ses octets et ce que le disque en dit.
+pub struct TelQuel {
+    pub nom: String,
+    pub octets: Vec<u8>,
+    pub meta: std::fs::Metadata,
+}
+
+/// Le fichier des engagements qui commencent en `mois`, tel quel ; `None` s'il n'est pas sur le disque.
+pub fn tel_quel(racine: &Path, mois: Mois) -> R<Option<TelQuel>> {
+    tel_quel_dans(racine, Dossier::Engagements, mois)
+}
+
+/// Le fichier de `mois` dans le dossier `d`, tel quel ; `None` s'il n'est pas sur le disque.
+pub(crate) fn tel_quel_dans(racine: &Path, d: Dossier, mois: Mois) -> R<Option<TelQuel>> {
+    let p = chemin_dans(racine, d, mois);
+    let disque = |e: &std::io::Error| socle::echec::du_disque(&p, e).reclasser(socle::echec::Classe::Disque);
+    let octets = match std::fs::read(&p) {
+        Ok(o) => o,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(disque(&e)),
+    };
+    let meta = std::fs::metadata(&p).map_err(|e| disque(&e))?;
+    Ok(Some(TelQuel { nom: format!("{}/{}.json", d.nom(), mois), octets, meta }))
 }
 
 /// Les mois qui ont un fichier d'engagements, du plus ancien au plus recent, ceux du brouillon ouvert compris.
@@ -755,13 +787,14 @@ fn fichier_de(racine: &Path, o: &Objet) -> R<FichierDuMois> {
 }
 
 /// Efface l'objet `o` de son fichier (meme fichier, meme rang).
-pub fn effacer(racine: &Path, o: &Objet) -> R<PathBuf> {
+pub fn effacer(racine: &Path, o: &Objet) -> R<()> {
     let mut contenu = fichier_de(racine, o)?;
     if contenu.engagements.get(o.rang) != Some(&*o.brut) {
         return Err(socle::refus!("{} : l'engagement {} a change sur le disque ; rien n'est efface", o.fichier, o.rang + 1));
     }
     contenu.engagements.remove(o.rang);
-    poser(racine, &contenu)
+    poser(racine, &contenu)?;
+    Ok(())
 }
 
 /// LE MOIS DE L'ECRAN (`VueDuMois`) : le mois, ce que son fichier dit par defaut, et la vue de chaque engagement qui le
@@ -1257,11 +1290,12 @@ pub fn objet_du_mois(racine: &Path, mois: Mois, rang: usize) -> R<Option<Objet>>
 }
 
 /// Remplace l'objet `o` dans son fichier (meme fichier, meme rang), tel qu'il est maintenant.
-pub fn reecrire(racine: &Path, o: &Objet) -> R<PathBuf> {
+pub fn reecrire(racine: &Path, o: &Objet) -> R<()> {
     let mut contenu = fichier_de(racine, o)?;
     let place = contenu.engagements.get_mut(o.rang).ok_or_else(|| socle::refus!("{} : l'engagement {} a disparu", o.fichier, o.rang + 1))?;
     *place = (*o.brut).clone();
-    poser(racine, &contenu)
+    poser(racine, &contenu)?;
+    Ok(())
 }
 
 /// LE MOIS D'ENTREE DE LA COMPAGNIE DANS LE LOGICIEL : le premier mois qu'elle y paie, celui du plus ancien fichier qui

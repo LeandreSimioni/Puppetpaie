@@ -1112,8 +1112,17 @@ pub(crate) fn entree_ecrite(nom: String, octets: Vec<u8>) -> Entree {
 pub(crate) fn entree_fichier(f: &Path, nom: String) -> R<Entree> {
     let octets = std::fs::read(f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::Disque))?;
     let meta = std::fs::metadata(f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::Disque))?;
+    Ok(entree_lue(nom, octets, &meta))
+}
+
+/// Un fichier du stock tel qu'il est sur le disque (`engagement::stock::TelQuel`), comme `entree_fichier`.
+pub(crate) fn entree_tel_quel(t: engagement::stock::TelQuel) -> Entree {
+    entree_lue(t.nom, t.octets, &t.meta)
+}
+
+fn entree_lue(nom: String, octets: Vec<u8>, meta: &std::fs::Metadata) -> Entree {
     let (date, heure) = horodatage_dos(socle::temps::secondes());
-    Ok(Entree { nom, octets, date, heure, attributs: (mode(&meta) & 0xFFFF) << 16 })
+    Entree { nom, octets, date, heure, attributs: (mode(meta) & 0xFFFF) << 16 }
 }
 
 /// `st_mode` d'un fichier du zip. Sous Windows, il se deduit de l'attribut lecture seule : `0o100444`, sinon

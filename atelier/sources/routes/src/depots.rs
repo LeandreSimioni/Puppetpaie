@@ -960,16 +960,10 @@ pub(crate) fn resoudre(racine: &Path, t: &str) -> R<String> {
     if existe(&candidat) {
         return Ok(candidat);
     }
-    // Un mois nu (`\d{4}-\d{2}`) designe sa saisie.
-    let c: Vec<char> = t.chars().collect();
-    if c.len() == 7
-        && c[..4].iter().all(|x| envois::retours::est_chiffre(*x))
-        && c[4] == '-'
-        && c[5..].iter().all(|x| envois::retours::est_chiffre(*x))
-    {
-        let saisie = normaliser(&format!("{}/{}/{}.json", base, engagement::stock::DOSSIER, t));
-        if existe(&saisie) {
-            return Ok(saisie);
+    // Un mois nu (`AAAA-MM`) designe sa saisie, si elle est sur le disque.
+    if let Some(mois) = Mois::du_texte(t) {
+        if let Some(saisie) = engagement::stock::tel_quel(racine, mois)? {
+            return Ok(normaliser(&format!("{}/{}", base, saisie.nom)));
         }
     }
     Ok(p)

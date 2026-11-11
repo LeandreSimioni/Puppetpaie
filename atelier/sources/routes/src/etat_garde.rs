@@ -310,8 +310,9 @@ pub(crate) fn empreinte_de(racine: &Path, cle: &str, jour: socle::date::Jour) ->
     // La compagnie : ses engagements (et `engagements/avant/`) et leurs paies, sa configuration, ses journaux, ses
     // imprevus, ses regularisations, son historique importe, ses retours, et ce qui est sorti pour ce mois-ci (pour
     // l'ouverture : pour tous les mois).
-    signer_dossier(&mut h, racine, engagement::stock::DOSSIER, true, &|n| n.ends_with(".json"));
-    signer_dossier(&mut h, racine, engagement::paies::DOSSIER, true, &|n| n.ends_with(".json"));
+    for d in engagement::stock::dossiers_tenus() {
+        signer_dossier(&mut h, racine, d, true, &|n| n.ends_with(".json"));
+    }
     signer_dossier(&mut h, racine, socle::fichiers::CONFIG, true, &|n| {
         (ouverture || !n.ends_with(".bin")) && !n.ends_with(".tmp") && !HORS_DE_L_ECRAN.contains(&n)
     });

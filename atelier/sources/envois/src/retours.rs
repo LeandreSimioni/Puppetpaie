@@ -111,7 +111,7 @@ fn nettoye(s: &str) -> &str {
 }
 
 /// Un chiffre decimal Unicode (le `\d` d'une expression reguliere sur du texte).
-pub fn est_chiffre(c: char) -> bool {
+fn est_chiffre(c: char) -> bool {
     dans(DECIMAUX, c)
 }
 
