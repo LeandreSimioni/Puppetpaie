@@ -479,7 +479,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
         let versions = envois::journal::versions_des_contrats(ctx, &lignes_avenants, &departs)?;
         let reponse = format!(
             "{} imprime(s) pour une remise en main propre",
-            lignes_avenants.iter().map(|c| format!("avenant n° {} au contrat {}", numero_dit(c.avenant.map(|a| a.to_string()).as_deref()), numero_dit(c.numero_dit()))).collect::<Vec<_>>().join("; ")
+            lignes_avenants.iter().map(|c| format!("avenant n° {} au contrat {}", numero_dit(c.avenant.map(|a| a.to_string()).as_deref()), numero_dit(c.numero.as_deref()))).collect::<Vec<_>>().join("; ")
         );
         noter(ctx, Ligne::ContratSignature(par_courriel(le_mois, qui, true, "", &reponse, detail, Some(versions))))?;
     }

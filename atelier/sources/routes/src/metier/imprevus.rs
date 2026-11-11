@@ -17,7 +17,7 @@ use socle::echec::{Classe, R};
 pub(crate) struct ContratAuJour {
     pub(crate) salarie: IdSalarie,
     pub(crate) nom: String,
-    pub numero: Option<String>,
+    pub numero: Option<engagement::numeros::NumeroContrat>,
     pub debut: Jour,
     pub(crate) fin: Option<Jour>,
     pub(crate) mois: socle::mois::Mois,

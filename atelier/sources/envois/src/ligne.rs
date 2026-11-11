@@ -581,11 +581,6 @@ impl ContratParti {
     pub fn est_avenant(&self) -> bool {
         self.acte.as_deref() == Some("avenant")
     }
-
-    /// Le numero du contrat, tel qu'il sert de cle ; `None` si la ligne ne le dit pas.
-    pub fn numero_dit(&self) -> Option<&str> {
-        self.numero.as_deref()
-    }
 }
 
 /// CE QU'UN AVENANT CHANGE, un article ou un terme : l'article du modele de contrat et son numero, l'ancien texte et le
@@ -666,10 +661,6 @@ pub struct RetourContrat {
 }
 
 impl RetourContrat {
-    pub fn numero_dit(&self) -> Option<&str> {
-        self.numero.as_deref()
-    }
-
     /// Une reponse « Je signe » relevee par courriel.
     pub fn par_courriel(&self) -> bool {
         self.origine.as_deref() == Some("courriel")
@@ -707,11 +698,6 @@ pub struct ContratAttendu {
     pub mois: Mois,
 }
 
-impl ContratAttendu {
-    pub fn numero_dit(&self) -> Option<&str> {
-        self.numero.as_deref()
-    }
-}
 
 /// LE DETAIL DU CONTRAT CONTRESIGNE RENVOYE AU SALARIE : qui, sous quel code, ses contrats, les PDF contresignes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

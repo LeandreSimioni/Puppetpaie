@@ -649,7 +649,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
         let b = i.objet().carte();
         let plein = |o: Option<&String>| o.map(|o| o.trim().to_string()).filter(|o| !o.is_empty());
         // Un contrat qui continue ici porte le salarie, les bornes et le numero que la DSN deposee lui a donnes.
-        let (Some(salarie), Some(debut), Some(fin), Some(numero)) = (b.salarie.as_ref().map(ToString::to_string), b.debut, b.fin, plein(b.numero.as_ref())) else {
+        let (Some(salarie), Some(debut), Some(fin), Some(numero)) = (b.salarie.as_ref().map(ToString::to_string), b.debut, b.fin, b.numero.as_ref().map(ToString::to_string)) else {
             return Err(erreur(Classe::Illisible, "Un contrat repris d'un autre logiciel ne dit pas son salarié, ses bornes ou son numéro : le reprendre à l'import."));
         };
         if !vus.insert((salarie.clone(), debut, numero.clone())) {
@@ -696,7 +696,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
     }
     let mut deja: HashSet<(IdSalarie, Option<Jour>, Option<String>)> = HashSet::new();
     for (c, e) in engagements_du_mois(ctx, mois)? {
-        deja.insert((c, bornes_brutes(&e).0, e.numero.clone()));
+        deja.insert((c, bornes_brutes(&e).0, e.numero.as_ref().map(ToString::to_string)));
     }
     for c in out.iter_mut() {
         c.deja_repris = deja.contains(&(c.salarie.clone(), Some(c.debut), Some(c.numero.clone())));
@@ -1170,12 +1170,12 @@ pub(crate) fn manques_de_la_saisie(ctx: &Contexte, data: &VueDuMois) -> Vec<Opti
 pub(crate) fn manque_de(ctx: &Contexte, data: &VueDuMois, i: usize) -> Option<Echec> {
     let e = data.engagements.get(i)?;
     let cle = &e.salarie;
-    let numero = e.numero_dit();
+    let numero = e.numero.as_ref();
     let mut rang = 0;
     let mut siens = Vec::new();
     for (j, x) in data.engagements.iter().enumerate() {
         let meme_salarie = cle.is_some() && x.salarie == *cle;
-        let meme_numero = numero.is_some() && x.numero_dit() == numero;
+        let meme_numero = numero.is_some() && x.numero.as_ref() == numero;
         if j == i {
             rang = siens.len();
         }
@@ -1362,12 +1362,12 @@ pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: Mois) -> 
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let etats = if disque.is_some() { engagement::etats::du_mois(ctx, mois, &departs)? } else { Vec::new() };
     // TRAVAIL A FAIRE (chaine A) : l'engagement ecrit (`stock::Objet::champs`) se lit par ses cles.
-    let qui = |b: &engagement::saisie::Carte| (b.salarie.clone(), b.numero_dit().map(String::from));
+    let qui = |b: &engagement::saisie::Carte| (b.salarie.clone(), b.numero.clone());
     let mut lues: Vec<Option<PaieMontree>> = Vec::new();
     for e in &data.engagements {
         let mut lue = None;
         if e.est_validee() {
-            let sien = (e.salarie.clone(), e.numero_dit().map(String::from));
+            let sien = (e.salarie.clone(), e.numero.clone());
             // Un mois d'apres le present n'a pas encore de paie ecrite : l'engagement valide s'y calcule pour l'ecran.
             let apres_le_present = mois > engagement::etats::mois_present(ctx);
             let mut trouve = None;
@@ -2114,7 +2114,7 @@ fn dire_l_entree(ctx: &Contexte, mois: Mois, brut: &SaisieCarte, v: &mut VuePaie
     let Some(numero) = v.numero_contrat.as_ref().map(|n| n.as_str().to_string()) else {
         return Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : une paie de l'aperçu n'a pas de numéro de contrat."));
     };
-    let phrase = if brut.numero_dit().is_some() {
+    let phrase = if brut.numero.is_some() {
         format!("{} : contrat commencé le {}, avant PuppetPaie : ni DPAE ni contrat à faire ici. La DSN le déclare sous le n° {}, celui que votre ancien logiciel a déclaré.", qui, le, numero)
     } else {
         format!(

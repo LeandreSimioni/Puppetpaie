@@ -340,7 +340,7 @@ fn phrase_de_la_ligne(l: &LigneDePage) -> String {
 struct NonActif {
     salarie: Option<String>,
     nom: Option<String>,
-    numero: Option<String>,
+    numero: Option<NumeroContrat>,
     debut: Jour,
     fin: Option<Jour>,
     non_actif: String,
@@ -808,8 +808,8 @@ pub(crate) fn avenants_a_faire(ctx: &Contexte, mois: Mois) -> R<HashSet<(String,
             continue;
         }
         let b = &*e.objet().brut;
-        if let (Some(cle), Some(numero)) = (&b.saisie.carte.salarie, b.saisie.carte.numero.clone()) {
-            out.insert((cle.to_string(), numero));
+        if let (Some(cle), Some(numero)) = (&b.saisie.carte.salarie, &b.saisie.carte.numero) {
+            out.insert((cle.to_string(), numero.to_string()));
         }
     }
     Ok(out)
@@ -869,7 +869,7 @@ pub(crate) fn dsn_a_refaire(ctx: &Contexte, mois: Mois, derniere: &envois::journ
         .filter(|e| e.valide().is_some())
         .filter_map(|e| {
             let b = &*e.objet().brut;
-            Some((b.saisie.carte.salarie.as_ref()?.to_string(), b.saisie.carte.numero.clone()?))
+            Some((b.saisie.carte.salarie.as_ref()?.to_string(), b.saisie.carte.numero.as_ref()?.to_string()))
         })
         .collect();
     emportes.sort();
@@ -1715,10 +1715,7 @@ impl<'a> Moteur<'a> {
         let premier_mois = o.premier_mois() == lu;
         let debut = e.debut_lu();
         let anterieur = if let Some(d) = debut { engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, d, lu)? } else { false };
-        let numero = match e.numero_dit() {
-            Some(n) => Some(NumeroContrat::lire(n)?),
-            None => None,
-        };
+        let numero = e.numero.clone();
         let fin = e.fin;
         Ok(Vue {
             salarie: cle,
@@ -2773,7 +2770,7 @@ pub(crate) fn documents_partis(ctx: &Contexte, mois: Mois, etats: &[engagement::
             continue;
         }
         let brut = &*e.objet().brut;
-        let (Some(cle), Some(numero)) = (brut.saisie.carte.salarie.as_ref().map(ToString::to_string), brut.saisie.carte.numero_dit().map(String::from)) else { continue };
+        let (Some(cle), Some(numero)) = (brut.saisie.carte.salarie.as_ref().map(ToString::to_string), brut.saisie.carte.numero.as_ref().map(ToString::to_string)) else { continue };
         let dernier = departs
             .de(&cle, &numero)
             .iter()
@@ -2879,7 +2876,7 @@ fn non_actifs(ctx: &Contexte, mois: Mois) -> R<Vec<NonActif>> {
         let debut = engagement::debut_brut(b).ok_or_else(|| socle::fichiers::absent("debut"))?;
         let fin_ecrite = b.saisie.carte.fin;
         let fin = fin_ecrite.or_else(|| b.saisie.carte.dates().iter().map(|j| j.jour()).max());
-        let dit = match b.saisie.carte.numero_dit() {
+        let dit = match &b.saisie.carte.numero {
             Some(n) => format!("contrat {}, {}", n, periode_dite(debut, fin_ecrite)),
             None => format!("contrat sans numéro, {}", periode_dite(debut, fin_ecrite)),
         };

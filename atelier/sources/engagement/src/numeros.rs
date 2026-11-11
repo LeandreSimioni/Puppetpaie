@@ -274,7 +274,7 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::I
     let dernier: i64 = pris.get(&cle).into_iter().copied().sum();
     let numero = former(&fiche, annee, dernier + 1)?;
     let e = o.brut_mut();
-    e.saisie.carte.numero = Some(numero.to_string());
+    e.saisie.carte.numero = Some(numero);
     e.numero_pour = Some(NumeroPour { salarie: cle.to_string(), debut, le });
     Ok(())
 }

@@ -1423,7 +1423,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
     let contrats: Vec<&envois::journal::ContratParti> = l.signature().into_iter().flat_map(|s| s.detail.contrats.iter().filter(|c| c.fichier == nom)).collect();
     let mut paies: Vec<Paie> = Vec::new();
     for c in &contrats {
-        let numero = c.numero_dit().ok_or_else(|| erreur(Classe::Illisible, format!("journal : un contrat de {} est parti sans numero", nom)))?.to_string();
+        let numero = c.numero.as_deref().ok_or_else(|| erreur(Classe::Illisible, format!("journal : un contrat de {} est parti sans numero", nom)))?.to_string();
         let (cle, mois_c) = (c.salarie.to_string(), c.mois);
         let version = l
             .versions()
@@ -1447,7 +1447,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
             let (date_contrat, modele) = if premier.ailleurs {
                 (premier.debut, crate::modeles_contrat::du_contrat(&ctx_j, p0)?)
             } else {
-                let parti = envois::etats::contrat_parti(&lignes[..rang], &premier.salarie, premier.numero_dit())
+                let parti = envois::etats::contrat_parti(&lignes[..rang], &premier.salarie, premier.numero.as_deref())
                     .ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} modifie un contrat qui n'est pas parti avant lui", nom)))?;
                 (parti.date(), crate::modeles_contrat::du_contrat_parti(&ctx_j, parti.modele.as_deref(), p0)?)
             };
@@ -1458,13 +1458,13 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
         let mut remplacements: Vec<((String, socle::date::Jour, String), (String, socle::date::Jour))> = Vec::new();
         if nom.strip_suffix("remplace.pdf").is_some_and(|b| b.ends_with('_')) {
             for c in &contrats {
-                let parti = envois::etats::contrat_parti(&lignes[..rang], &c.salarie, c.numero_dit())
+                let parti = envois::etats::contrat_parti(&lignes[..rang], &c.salarie, c.numero.as_deref())
                     .ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} remplace un contrat qui n'est pas parti avant lui", nom)))?;
                 let numero = match &parti.numero {
                     Some(n) => n.to_string(),
                     None => SANS_NUMERO.to_string(),
                 };
-                let le_sien = c.numero_dit().ok_or_else(|| erreur(Classe::Illisible, format!("journal : un contrat de {} est parti sans numero", nom)))?;
+                let le_sien = c.numero.as_deref().ok_or_else(|| erreur(Classe::Illisible, format!("journal : un contrat de {} est parti sans numero", nom)))?;
                 remplacements.push(((c.salarie.to_string(), c.debut, le_sien.to_string()), (numero, parti.date())));
             }
         }

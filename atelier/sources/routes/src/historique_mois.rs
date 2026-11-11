@@ -294,7 +294,7 @@ impl Anomalie {
 /// CE QUI EST REVENU D'UN CONTRAT PARTI (`envois::etats::revenus`), lu : le contrat ou l'avenant, de qui, et comment (une
 /// reponse « Je signe », une mention a la main, ou son retrait) ; la piece signee s'il y en a une.
 fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) -> RetourLu {
-    let piece = match (r.avenant, r.numero_dit()) {
+    let piece = match (r.avenant, r.numero.as_deref()) {
         (None, Some(n)) => format!("Contrat n° {}", n),
         (None, None) => "Contrat sans numéro".to_string(),
         (Some(a), Some(n)) => format!("Avenant n° {} au contrat n° {}", a, n),

@@ -893,7 +893,7 @@ impl Choix {
 /// chacun par son contrat.
 pub(crate) fn bulletins_a_refaire(ctx: &Contexte, mois: Mois) -> R<HashMap<String, Vec<String>>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let mut par_salarie: HashMap<String, Vec<(Option<String>, Vec<String>)>> = HashMap::new();
+    let mut par_salarie: HashMap<String, Vec<(Option<engagement::numeros::NumeroContrat>, Vec<String>)>> = HashMap::new();
     for e in engagement::etats::du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)? {
         let Some(v) = e.valide() else { continue };
         let depuis = engagement::etats::a_refaire(ctx, v, &departs)?.into_iter().find_map(|a| match a {

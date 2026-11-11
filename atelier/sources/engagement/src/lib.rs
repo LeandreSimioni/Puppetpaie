@@ -171,7 +171,7 @@ pub struct Assemble {
     pub mois: Option<Mois>,
     pub debut: Option<Jour>,
     pub fin: Option<Jour>,
-    pub numero: Option<String>,
+    pub numero: Option<numeros::NumeroContrat>,
     pub nature: Option<NatureDeContrat>,
     pub taux_cachet: Option<Chiffre>,
     pub jours: Option<Chiffre>,
@@ -241,6 +241,14 @@ impl Engagement {
             Some(n) => format!("{}, contrat {}", self.nom, n),
             None => format!("{}, contrat sans numero", self.nom),
         }
+    }
+
+    /// LE NUMERO DU CONTRAT QUE LA DSN DECLARE (S21.G00.40.009, obligatoire) : sans lui, l'engagement ne se declare pas,
+    /// et le refus le dit.
+    pub fn numero_declare(&self) -> R<&numeros::NumeroContrat> {
+        self.numero.as_ref().ok_or_else(|| {
+            socle::echec::cle(format!("{} : le contrat n'a pas de numéro (S21.G00.40.009), il ne se déclare pas. Valider l'engagement le lui donne.", self.qui()), "numero")
+        })
     }
 
     /// L'engagement que `v` décrit (`Assemble`). `racine` est celle des donnees de la compagnie, pour le catalogue des
@@ -498,7 +506,7 @@ impl Engagement {
             lignes,
             debut,
             fin,
-            numero: numeros::NumeroContrat::du_texte(v.numero.as_deref())?,
+            numero: v.numero.clone(),
             mois,
             planning,
             planning_lieux,
@@ -1780,8 +1788,8 @@ pub(crate) fn qui_de(fiche: &droit::fiche::ChampsSalarie) -> R<String> {
 }
 
 /// « (n° FA1.26.13) » quand le contrat porte son numero ; rien sinon.
-fn numero_dit(eng: &Engagement) -> String {
-    eng.numero.iter().map(|n| format!(" (n° {})", n)).collect()
+pub(crate) fn numero_dit(numero: Option<&numeros::NumeroContrat>) -> String {
+    numero.iter().map(|n| format!(" (n° {})", n)).collect()
 }
 
 /// LE CONTRAT DE CET ENGAGEMENT SE FAIT-IL SIGNER PAR LE LOGICIEL ? Oui quand sa nature a un contrat ecrit (`contrat_ecrit`
@@ -1827,7 +1835,7 @@ fn suivre_permanent(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
                  et son reçu pour solde de tout compte (Fin de contrat).",
                 qui,
                 libelle,
-                numero_dit(eng),
+                numero_dit(eng.numero.as_ref()),
                 fin.jj_mm_aaaa()
             ),
         });
@@ -1860,7 +1868,7 @@ pub fn suivre_contrat(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
                 qui,
                 bornes,
                 mois_du_contrat[0].libelle(Graphie::Accentuee),
-                numero_dit(eng)
+                numero_dit(eng.numero.as_ref())
             ),
         });
     }

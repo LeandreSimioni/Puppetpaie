@@ -400,7 +400,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
                 Some(l) => l,
                 None => aujourdhui,
             };
-            let numero = declare(&g).or_else(|| imprime(&g));
+            let numero = engagement::numeros::NumeroContrat::du_texte(declare(&g).or_else(|| imprime(&g)).as_deref())?;
             let paies = g.paies.iter().map(|p| (p.mois.clone(), p.paie.clone())).collect();
             let pieces = Pieces { le, contrat: g.contrat.map(|c| c.contrat), paies };
             let carte = engagement::saisie::Carte {

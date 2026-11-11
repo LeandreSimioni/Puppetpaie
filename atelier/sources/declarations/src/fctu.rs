@@ -90,13 +90,6 @@ pub struct FinDeContrat {
     pub transaction: Option<String>,
 }
 
-/// Le numero du contrat dans une phrase (« None » s'il n'en a pas).
-fn numero_dit(e: &Engagement) -> &str {
-    match e.numero.as_deref() {
-        Some(n) => n,
-        None => "None",
-    }
-}
 
 // ------------------------------------------------ le dernier jour travaille et paye
 
@@ -180,7 +173,7 @@ preavis ({}) -- CCH-12 de S21.G00.62.006.",
 /// a ete effectue ou qu'il n'y en a pas. Sur un preavis NON effectue (02, 03, 10, 50, 51, 61), le dernier jour paye au
 /// salaire habituel precede le debut du preavis (CCH-12) : sans saisie, le moteur refuse plutot que de le deviner.
 pub fn dernier_jour_paye(e: &Engagement) -> R<Jour> {
-    let numero = numero_dit(e);
+    let numero = e.numero_declare()?;
     let fin = e.fin.ok_or_else(|| socle::refus!("S21.G00.62.006 : le contrat {} n'a pas de fin.", numero))?;
     let preavis = e.preavis.as_ref();
     let type_preavis = preavis.map(|p| p.genre.clone()).filter(|t| !t.is_empty());
@@ -334,7 +327,7 @@ signalement sans elle. Rien n'est ecrit.",
 
     // CCH-11 de S21.G00.62.002 : le motif doit etre autorise pour la nature du contrat (091/092 pas pour un CDD).
     let nat = e.nat()?;
-    if let Some(refus) = nat.motif_rupture_refuse(fin.motif, numero_dit(e)) {
+    if let Some(refus) = nat.motif_rupture_refuse(fin.motif, e.numero_declare()?) {
         return Err(Echec::impossible(refus));
     }
 
@@ -344,7 +337,7 @@ signalement sans elle. Rien n'est ecrit.",
         avertissements.push(format!(
             "Contrat {} : un {} arrivé à son terme n'a pas besoin de signalement de fin de contrat ; sa fin part dans la \
 DSN du mois, par le circuit dérogatoire. Ce signalement ne se fait que si le salarié le demande.",
-            numero_dit(e),
+            e.numero_declare()?,
             nat.libelle
         ));
     }
@@ -433,7 +426,7 @@ ou un annule.",
     if let Some(pourquoi) = droit::preavis::desaccord_du_preavis(&fin.type_preavis, &indemnites_de_preavis_versees(paie)?)? {
         return Err(Echec::impossible(format!(
             "Contrat {} : {}",
-            numero_dit(&paie.engagement),
+            paie.engagement.numero_declare()?,
             pourquoi
         )));
     }

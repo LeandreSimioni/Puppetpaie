@@ -1286,7 +1286,7 @@ fn provision_d_une_annee_importee(
     d: &Demande,
     p: &Periode,
     m: Mois,
-    a_provisionner: &mut Vec<(String, Option<String>, String, engagement::conges::Provision)>,
+    a_provisionner: &mut Vec<(String, Option<engagement::numeros::NumeroContrat>, String, engagement::conges::Provision)>,
     avert: &mut Vec<String>,
 ) -> R<usize> {
     let fin = m.dernier_jour();
@@ -1355,7 +1355,7 @@ fn provision_d_une_annee_importee(
         }
         let salaire = paies.iter().filter(|q| q.importee.is_some() && cle_de(q) == cle).fold(zero2(), |a, q| add(a, q.brut));
         let provision = engagement::conges::provision_du_compteur(cpt, m, salaire).map_err(|x| x.reclasser(Classe::Refuse))?;
-        a_provisionner.push((cle, pa.engagement.numero.as_deref().map(str::to_string), nat.libelle.clone(), provision));
+        a_provisionner.push((cle, pa.engagement.numero.clone(), nat.libelle.clone(), provision));
     }
     Ok(sans_compteur)
 }
@@ -1372,7 +1372,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let zero = zero2();
     let cle_de = |p: &engagement::calcul::Paie| p.salarie.id.to_string();
     // CE QUI SE PROVISIONNE, salarie par salarie : (cle, contrat, nature, compteur et indemnite a la fin du mois `m`).
-    let mut a_provisionner: Vec<(String, Option<String>, String, engagement::conges::Provision)> = Vec::new();
+    let mut a_provisionner: Vec<(String, Option<engagement::numeros::NumeroContrat>, String, engagement::conges::Provision)> = Vec::new();
     let saisis = p.saisis();
     let mut sans_compteur = 0;
     let m = match saisis.last().copied() {

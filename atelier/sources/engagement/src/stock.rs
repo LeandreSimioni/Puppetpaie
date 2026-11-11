@@ -995,7 +995,7 @@ fn refuser_un_second_contrat_au_mois(ctx: &Contexte, e: &Carte, soi: Option<&Obj
         return Ok(());
     };
     let nature = o.carte().nature_lue()?;
-    let numero: String = o.carte().numero_dit().map(|n| format!(" (n° {})", n)).into_iter().collect();
+    let numero = crate::numero_dit(o.carte().numero.as_ref());
     let debut_dit = debut.jj_mm_aaaa();
     Err(socle::refus!(
         "{} : son {} commencé le {}{} a déjà son engagement ; une carte neuve ne le refait pas, il se modifie depuis sa \
@@ -1071,10 +1071,8 @@ pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: usize, saisie: &Carte, 
 /// le numero du contrat ecrit se garde.
 fn poser_sur(o: &mut Objet, mois: Mois, saisie: &Carte, le: Option<Jour>) -> R<()> {
     let mut saisie = en_forme(saisie)?;
-    if saisie.numero_dit().is_none() {
-        if let Some(n) = o.carte().numero_dit() {
-            saisie.numero = Some(n.to_string());
-        }
+    if saisie.numero.is_none() {
+        saisie.numero = o.carte().numero.clone();
     }
     let vue = o.vue(mois)?;
     // Le debut qu'un mois suivant d'un contrat d'usage deduit de son premier jour (`Objet::vue`) n'est pas une saisie.

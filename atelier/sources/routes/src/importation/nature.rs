@@ -345,7 +345,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
             Demande::Numero => {
                 let v = charge.lu(champ).ok_or_else(manque)?;
                 let n = engagement::numeros::NumeroContrat::lire(&v).map_err(|m| m.reformuler(|p| format!("{} Rien n'a été écrit.", p)).reclasser(Classe::Refuse))?;
-                contrat.numero = Some(n.to_string());
+                contrat.numero = Some(n);
             }
         }
     }
@@ -358,7 +358,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
         e.nature = Some(nature);
         if dernier.as_ref().is_some_and(|d| pieces.paies.contains_key(d)) {
             for k in engagement::saisie::Champ::TOUS.iter().copied().filter(|k| contrat.dit(*k)) {
-                if k != engagement::saisie::Champ::Numero || e.numero_dit().is_none() {
+                if k != engagement::saisie::Champ::Numero || e.numero.is_none() {
                     e.prendre(&contrat, k);
                 }
             }

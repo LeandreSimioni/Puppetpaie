@@ -443,7 +443,7 @@ impl Arret {
         // Une date du journal (« 2026-10-15T10:00:00 ») et une date de saisie (« 2026-11-03 11:39 ») a la minute.
         let minute = |t: &str| t.replacen('T', " ", 1).chars().take(16).collect::<String>();
         let saisi = self.saisi.saisi_le.iso();
-        let Some(numero) = dite(&self.saisi.contrat_numero) else { return Ok(false) };
+        let Some(numero) = self.saisi.contrat_numero.as_deref() else { return Ok(false) };
         let mut avant: Option<String> = None;
         for d in departs.de(&self.saisi.salarie, numero).iter().filter(|d| d.envoi == engagement::departs::Envoi::Dsn) {
             // Le mois que la DSN declarait : celui qui la porte (une correction), sinon le sien.
@@ -1534,7 +1534,7 @@ fn motif_rupture(p: &Paie, nat: &Nature) -> R<MotifDeRupture> {
     let e = &p.engagement;
     if let Some(m) = e.motif_rupture {
         // CCH-11 de S21.G00.62.002 : un motif que la nature n'admet pas ne s'ecrit pas.
-        if let Some(phrase) = nat.motif_rupture_refuse(m, &numero_dit(&e.numero, "None").to_string()) {
+        if let Some(phrase) = nat.motif_rupture_refuse(m, e.numero_declare()?) {
             return Err(refus(phrase));
         }
         return Ok(m);
@@ -1550,7 +1550,7 @@ fn motif_rupture(p: &Paie, nat: &Nature) -> R<MotifDeRupture> {
     Err(socle::echec::cle(format!(
         "Contrat {} ({}) : il se termine le {}, et le motif de la rupture (S21.G00.62.002) n'est pas dit. Un {} ne \
 finit pas tout seul, et le motif commande les droits du salarie a l'assurance chomage : il se saisit. Motifs : {}.",
-        numero_dit(&e.numero, "None").to_string(),
+        e.numero_declare()?,
         nat.libelle,
         e.fin.iter().map(|f| f.jjmmaaaa()).collect::<String>(),
         nat.libelle,
@@ -1558,13 +1558,6 @@ finit pas tout seul, et le motif commande les droits du salarie a l'assurance ch
     ), "motif_rupture"))
 }
 
-/// Le numero d'un contrat dans une phrase ; `rien` s'il n'en a pas.
-fn numero_dit<T: Display>(numero: &Option<T>, rien: &str) -> String {
-    match numero {
-        Some(n) => n.to_string(),
-        None => rien.to_string(),
-    }
-}
 
 fn qt(x: Decimal) -> String {
     fmt_f(x, 2)
@@ -1582,7 +1575,10 @@ fn qui_fiche(s: &droit::fiche::ChampsSalarie, cle: &str) -> String {
 /// « Prenom NOM, contrat <numero> » : qui une phrase de refus du bloc 40 designe.
 fn qui_contrat(p: &Paie) -> String {
     let nom = qui_fiche(&p.salarie, &cle_salarie(p));
-    format!("{}, contrat {}", nom, numero_dit(&p.engagement.numero, "sans numero").to_string())
+    match &p.engagement.numero {
+        Some(n) => format!("{}, contrat {}", nom, n),
+        None => format!("{}, contrat sans numero", nom),
+    }
 }
 
 /// `S21.G00.86.003` d'une DSN mensuelle : l'anciennete dans l'entreprise (type 07, en jours), « connue a la fin de la
@@ -1791,7 +1787,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         Err(refus!(
             "Contrat {} du {} au {} : {} de {}, et la norme DSN la plafonne a {} en unite << {} >> \
 ({}, bloc 40{}). A trancher avant de le declarer.",
-            numero_dit(&e.numero, "None").to_string(),
+            e.numero_declare()?,
             e.debut.jjmmaaaa(),
             match e.fin {
                 Some(j) => j.jjmmaaaa(),
@@ -2137,7 +2133,7 @@ pub fn primes_et_indemnites(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour,
             if let Some(pourquoi) = droit::permanents::code_52_permis(Some(code), Some(m))? {
                 return Err(refus!(
                     "Contrat {}, ligne << {} >> : {}",
-                    numero_dit(&p.engagement.numero, "None").to_string(),
+                    p.engagement.numero_declare()?,
                     l.libelle,
                     pourquoi
                 ));
@@ -2589,7 +2585,7 @@ fn blocs_58_de_la_correction(f: &mut Fichier, r: &Regularisation, debut: &Jour, 
 la norme {} declare en S21.G00.58 de type 13 (<< Part exoneree de cotisations sociales des indemnites de rupture >>, \
 cahier 2027.1.1, p. 268). Le logiciel ne sait pas encore l'annuler et la redeclarer dans une correction. Rien n'est ecrit.",
             r.mois,
-            numero_dit(&apres.engagement.numero, "?").to_string(),
+            apres.engagement.numero_declare()?,
             f.norme()?.version
         ));
     }
@@ -2602,7 +2598,7 @@ cahier 2027.1.1, p. 268). Le logiciel ne sait pas encore l'annuler et la redecla
 la DSN déclare en S21.G00.58 de type 01 (fiche net-entreprises 2066). Le logiciel ne sait pas les annuler et les redéclarer \
 dans une correction. Rien n'est écrit.",
             r.mois,
-            numero_dit(&apres.engagement.numero, "?").to_string()
+            apres.engagement.numero_declare()?
         ));
     }
     // Le 58 de la paie d'origine se date de son versement (sa fin de periode, 50.001 de la DSN d'origine) en norme 2027.
@@ -2968,9 +2964,8 @@ fn reduction_a_l_urssaf(p: &Paie, bar: &BaremeDuMois) -> R<Decimal> {
     if p.reduction_generale.as_ref().is_none_or(|r| r.montant.is_zero()) {
         return Ok(zero());
     }
-    lecture(p, bar)?.reduction_a_l_urssaf(&lignes_81(p, bar)?).map_err(|e| {
-        e.reformuler(|e| format!("Contrat {} : {}. Rien n'est ecrit.", numero_dit(&p.engagement.numero, "sans numero"), e))
-    })
+    let numero = p.engagement.numero_declare()?;
+    lecture(p, bar)?.reduction_a_l_urssaf(&lignes_81(p, bar)?).map_err(|e| e.reformuler(|e| format!("Contrat {} : {}. Rien n'est ecrit.", numero, e)))
 }
 
 /// La valeur que le contrat d'une regularisation apportait, tel qu'il a ete DECLARE, a l'assiette `cle` de la table des
@@ -3060,7 +3055,7 @@ fn cumuler_le_declare(
     totaux: &mut Vec<(String, Decimal)>, r: &Regularisation, bar: &BaremeDuMois, orgs: &Organismes, signe: i64,
 ) -> R<()> {
     let d = &r.declare;
-    let numero = numero_dit(&r.apres.engagement.numero, "sans numero");
+    let numero = r.apres.engagement.numero_declare()?;
     let refus = |quoi: String| {
         refus!(
             "Correction de {} (contrat {}) : {}. Les versements de la regularisation portent la difference « corrige moins declare », comme le nominatif ; elle ne se devine pas. Rien n'est ecrit.",
@@ -3337,7 +3332,7 @@ fn base_07(p: &Paie, bar: &BaremeDuMois) -> R<Decimal> {
             Some(v) if v != c.base78 => {
                 return Err(refus!(
                     "Contrat {} : le bareme declare deux bases 07 differentes ({} et {}). Rien n'est ecrit.",
-                    numero_dit(&p.engagement.numero, "sans numero"),
+                    p.engagement.numero_declare()?,
                     mt(v),
                     mt(c.base78)
                 ))
@@ -3551,11 +3546,12 @@ fn lignes_regularisees(
         let (cle, _) = cle_ctp(ctp)?;
         let mut declare = zero();
         for r in &siens {
+            let numero = r.apres.engagement.numero_declare()?;
             let v = assiette_declaree(cle, r, bar_o)?.map_err(|e| {
                 e.reformuler(|e| format!(
                     "Correction de {} (contrat {}) : la ligne {} ({}) du bordereau Urssaf de ce mois, assiette « {} », ne se recompose pas depuis ce que {} a declare pour le contrat : {}. Le bordereau d'une regularisation porte la difference « corrige moins declare », comme le nominatif ; elle ne se devine pas. Rien n'est ecrit.",
                     r.mois,
-                    numero_dit(&r.apres.engagement.numero, "sans numero"),
+                    numero,
                     ctp.code.clone(),
                     ctp.qualifiant.clone(),
                     cle,
@@ -4421,7 +4417,7 @@ etablissement, chacun avec ses salaries. Rien n'est ecrit.",
 statut, de categorie ou de duree du travail en cours de mois). La regularisation d'un tel mois, base par base et periode \
 par periode, n'est pas faite par le logiciel. Rien n'est ecrit.",
             r.mois,
-            numero_dit(&r.apres.engagement.numero, "?")
+            r.apres.engagement.numero_declare()?
         ));
     }
     // Les etablissements, celui de cette DSN d'abord : un contrat declare ailleurs a change d'etablissement (bloc 41).
@@ -4478,7 +4474,7 @@ par periode, n'est pas faite par le logiciel. Rien n'est ecrit.",
                     Some(r) => r,
                     None => s.fin_previsionnelle,
                 };
-                let numero = match dite(&s.contrat_numero) {
+                let numero = match s.contrat_numero.as_deref() {
                     Some(n) => n,
                     None => "sans numero",
                 };
@@ -4496,7 +4492,7 @@ mois (il y figure sans cachet), ou corriger les dates de l'arret. Rien n'est ecr
     let mut manquants: Vec<String> = Vec::new();
     for p in paies {
         if p.remuneration.iter().any(|l| l.arret_de_travail) && arrets_du_contrat(&arrets_du_mois, p)?.is_empty() {
-            manquants.push(format!("{} contrat {}", cle_salarie(p), numero_dit(&p.engagement.numero, "None").to_string()));
+            manquants.push(format!("{} contrat {}", cle_salarie(p), p.engagement.numero_declare()?));
         }
     }
     if !manquants.is_empty() {
@@ -5283,7 +5279,7 @@ mod tests {
                 genre: engagement::imprevus::GenreArret::Arret,
                 salarie: "Audinot".into(),
                 contrat_debut: j("2025-09-01"),
-                contrat_numero: Some("AU.25.01".into()),
+                contrat_numero: Some(engagement::numeros::NumeroContrat::lire("AU.25.01").unwrap()),
                 motif: "01".into(),
                 dernier_jour_travaille: j("2026-06-20"),
                 debut: j("2026-06-21"),

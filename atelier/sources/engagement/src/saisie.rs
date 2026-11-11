@@ -116,7 +116,7 @@ carte! {
         #[champ(Partage, Fin)]
         pub fin: Option<Jour>,
         #[champ(Partage, Numero)]
-        pub numero: Option<String>,
+        pub numero: Option<crate::numeros::NumeroContrat>,
         #[champ(Terme, Etablissement)]
         pub etablissement: Option<String>,
         #[champ(Terme, Metier)]
@@ -275,7 +275,7 @@ impl Simple for droit::natures::NatureDeContrat {
 macro_rules! choix_simple {
     ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.as_str().to_string())) } } )* };
 }
-choix_simple!(droit::fiche::Statut, droit::fiche::StatutConventionnel, droit::fiche::StatutCategorielRc);
+choix_simple!(droit::fiche::Statut, droit::fiche::StatutConventionnel, droit::fiche::StatutCategorielRc, crate::numeros::NumeroContrat);
 
 macro_rules! code_simple {
     ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.code().to_string())) } } )* };
@@ -341,11 +341,6 @@ impl Carte {
     /// Une carte qui ne dit rien (une liste vide ne dit rien : `socle::ecriture::comparable`) ?
     pub fn muette(&self) -> bool {
         socle::ecriture::comparable(self) == socle::ecriture::comparable(&Carte::default())
-    }
-
-    /// Le numero du contrat, s'il est dit.
-    pub fn numero_dit(&self) -> Option<&str> {
-        self.numero.as_deref()
     }
 
     /// Les lignes de la carte (aucune si elle n'en dit pas).

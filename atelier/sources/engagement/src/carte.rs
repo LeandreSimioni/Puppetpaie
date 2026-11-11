@@ -123,7 +123,7 @@ nature! {
         facultatif {
             debut: Jour = Debut,
             fin: Jour = Fin,
-            numero: String = Numero,
+            numero: crate::numeros::NumeroContrat = Numero,
             etablissement: String = Etablissement,
             metier: String = Metier,
             cadre: bool = Cadre,
@@ -171,7 +171,7 @@ nature! {
         }
         facultatif {
             fin: Jour = Fin,
-            numero: String = Numero,
+            numero: crate::numeros::NumeroContrat = Numero,
             etablissement: String = Etablissement,
             metier: String = Metier,
             cadre: bool = Cadre,
@@ -228,7 +228,7 @@ nature! {
             quotite_contrat: NombreLu = QuotiteContrat,
         }
         facultatif {
-            numero: String = Numero,
+            numero: crate::numeros::NumeroContrat = Numero,
             etablissement: String = Etablissement,
             metier: String = Metier,
             cadre: bool = Cadre,
@@ -605,7 +605,7 @@ macro_rules! changements {
 changements! {
     Debut(Jour) = "debut" => debut,
     Fin(Jour) = "fin" => fin,
-    Numero(String) = "numero" => numero,
+    Numero(crate::numeros::NumeroContrat) = "numero" => numero,
     Etablissement(String) = "etablissement" => etablissement,
     Metier(String) = "metier" => metier,
     Cadre(bool) = "cadre" => cadre,

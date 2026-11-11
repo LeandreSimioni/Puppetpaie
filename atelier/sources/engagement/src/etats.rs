@@ -96,7 +96,7 @@ fn jour_dit(s: &str) -> String {
 }
 
 pub(crate) fn ses_departs<'a>(o: &Objet, departs: &'a Departs) -> &'a [Depart] {
-    match (&o.carte().salarie, o.carte().numero_dit()) {
+    match (&o.carte().salarie, o.carte().numero.as_deref()) {
         (Some(c), Some(n)) => departs.de(c, n),
         _ => &[],
     }
@@ -1707,7 +1707,7 @@ mod tests_rupture {
         let carte = |texte: String| crate::saisie::Carte {
             salarie: Some(IdSalarie::lire("X").unwrap()),
             spectacle: Some(droit::contexte::IdSpectacle::lire("s").unwrap()),
-            numero: Some("X1.26.01".into()),
+            numero: Some(crate::numeros::NumeroContrat::lire("X1.26.01").unwrap()),
             lignes: Some(vec![socle::forme::lire_texte(&texte, "ligne").unwrap()]),
             ..Default::default()
         };

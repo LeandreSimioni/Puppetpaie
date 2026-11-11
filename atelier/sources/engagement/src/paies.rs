@@ -59,7 +59,7 @@ pub fn chemin(racine: &std::path::Path, mois: Mois) -> std::path::PathBuf {
 
 /// Le salarie et le numero du contrat de l'engagement `o` ; `None` sans numero ni salarie (un engagement que rien n'a valide).
 fn cle(o: &Objet) -> Option<(String, String)> {
-    let numero = o.carte().numero_dit()?.to_string();
+    let numero = o.carte().numero.as_ref()?.to_string();
     Some((o.carte().salarie.as_ref()?.to_string(), numero))
 }
 

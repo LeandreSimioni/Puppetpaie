@@ -371,12 +371,6 @@ pub(crate) struct ContratASigner {
     pub(crate) avenant_attendu: bool,
 }
 
-impl ContratASigner {
-    /// Le numero du contrat, s'il en a un.
-    pub(crate) fn numero_dit(&self) -> Option<&str> {
-        self.numero.as_deref()
-    }
-}
 
 /// Ce que rend `signature-apercu`.
 #[derive(Debug, Serialize)]
@@ -649,7 +643,7 @@ fn refuser_les_contrats_partis(ctx: &Contexte, mois: Mois, choisis: &Choisis) ->
     }
     let apercu = signature_apercu(ctx, mois)?;
     for c in apercu.contrats.iter().filter(|c| c.en_avenant) {
-        let (salarie, debut, numero) = (&c.salarie, c.debut.iso(), c.numero_dit());
+        let (salarie, debut, numero) = (&c.salarie, c.debut.iso(), c.numero.as_deref());
         let vise = choisis.salaries.as_ref().is_some_and(|l| l.contains(salarie))
             || choisis.contrats.as_ref().is_some_and(|l| l.iter().any(|(s, d, n)| s == salarie && *d == debut && n.as_deref().is_none_or(|n| Some(n) == numero)));
         if vise {
@@ -676,8 +670,8 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, c: ChargeSignature, qui: &str) -
     let quoi: Vec<String> = impression
         .contrats
         .iter()
-        .map(|x| contrat_dit(x.numero_dit()))
-        .chain(impression.avenants.iter().map(|x| format!("{} au {}", avenant_dit(x.avenant), contrat_dit(x.numero_dit()))))
+        .map(|x| contrat_dit(x.numero.as_deref()))
+        .chain(impression.avenants.iter().map(|x| format!("{} au {}", avenant_dit(x.avenant), contrat_dit(x.numero.as_deref()))))
         .collect();
     Ok(Imprimes { phrase: format!("À faire signer en main propre : {} ; imprimés.", quoi.join(", ")), impression })
 }
@@ -768,7 +762,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
         .contrats
         .iter()
         .filter(|x| x.relance == Some(true))
-        .map(|x| if x.est_avenant() { format!("{} au {}", avenant_dit(x.avenant), contrat_dit(x.numero_dit())) } else { contrat_dit(x.numero_dit()) })
+        .map(|x| if x.est_avenant() { format!("{} au {}", avenant_dit(x.avenant), contrat_dit(x.numero.as_deref())) } else { contrat_dit(x.numero.as_deref()) })
         .collect();
     let s = if n_contrats + n_avenants > 1 { "s" } else { "" };
     let fait = if !rappels.is_empty() && rappels.len() == r.contrats.len() {
@@ -815,7 +809,7 @@ fn avenants_a_envoyer(ctx: &Contexte, voulus: &[AvenantVoulu], etats: &[ContratA
         let numero = v.numero.as_deref();
         let attend = etats
             .iter()
-            .find(|c| c.salarie == v.salarie && c.debut == v.debut && numero.is_none_or(|n| c.numero_dit() == Some(n)))
+            .find(|c| c.salarie == v.salarie && c.debut == v.debut && numero.is_none_or(|n| c.numero.as_deref() == Some(n)))
             .filter(|c| c.avenant_attendu && c.en_attente);
         avenants.push(match attend {
             Some(c) => avenant_repris(ctx, c)?,
@@ -1048,7 +1042,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
     }
     let phrases: Vec<String> = contrats
         .iter()
-        .map(|c| format!("{} ({}) : {}", c.nom, contrat_dit(c.numero_dit()), match &c.destinataire { Some(d) => d.as_str(), None => "pas de courriel : il s'imprime" }))
+        .map(|c| format!("{} ({}) : {}", c.nom, contrat_dit(c.numero.as_deref()), match &c.destinataire { Some(d) => d.as_str(), None => "pas de courriel : il s'imprime" }))
         .chain(avertissements.iter().cloned())
         .collect();
     Ok(ApercuSignature {
@@ -1476,7 +1470,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
     for l in lignes.iter().filter(|l| l.accepte()) {
         let Some(e) = l.signature() else { continue };
         let parti = if e.detail.main_propre { "imprimé" } else { "envoyé à la signature" };
-        for x in e.detail.contrats.iter().filter(|x| ce_contrat(&x.salarie, x.numero_dit()) && !x.fichier.is_empty()) {
+        for x in e.detail.contrats.iter().filter(|x| ce_contrat(&x.salarie, x.numero.as_deref()) && !x.fichier.is_empty()) {
             qui.get_or_insert_with(|| x.salarie.to_string());
             let quoi = match x.acte.as_deref() {
                 Some("avenant") => format!("{} {}", majuscule(&avenant_dit(x.avenant)), parti),
@@ -1486,7 +1480,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
             contrat.push(piece(racine, quoi, e.quand(), Some(x.mois), &x.fichier));
         }
         // CE QUI EN EST REVENU, sur la ligne de chaque envoi.
-        for d in e.retours.iter().filter(|d| ce_contrat(&d.salarie, d.numero_dit())) {
+        for d in e.retours.iter().filter(|d| ce_contrat(&d.salarie, d.numero.as_deref())) {
             if let Some(f) = d.fichier_signe.as_deref().filter(|f| !f.is_empty()) {
                 let quoi = match d.avenant {
                     Some(a) if d.acte.as_deref() == Some("avenant") => format!("Avenant n° {} signé, contresigné", a),

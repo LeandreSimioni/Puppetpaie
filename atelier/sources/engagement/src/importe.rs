@@ -245,7 +245,7 @@ pub struct ContratLu {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fin: Option<Jour>,
     #[serde(rename = "contrat", skip_serializing_if = "Option::is_none")]
-    pub numero: Option<String>,
+    pub numero: Option<crate::numeros::NumeroContrat>,
     #[serde(flatten)]
     pub contrat: ContratAtteste,
 }

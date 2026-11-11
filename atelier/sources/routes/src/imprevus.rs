@@ -553,9 +553,9 @@ fn refus(m: impl Into<String>) -> Echec {
 
 
 /// Un numero de contrat tel qu'une phrase le dit.
-fn numero_dit(n: &Option<String>) -> String {
+fn numero_dit<T: std::fmt::Display>(n: &Option<T>) -> String {
     match n {
-        Some(n) => n.clone(),
+        Some(n) => n.to_string(),
         None => "sans numéro".to_string(),
     }
 }
@@ -787,7 +787,7 @@ pub(crate) enum Resume {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ArretResume {
     salarie: String,
-    contrat: Option<String>,
+    contrat: Option<engagement::numeros::NumeroContrat>,
     contrat_debut: Jour,
     motif: String,
     pub motif_libelle: String,
@@ -899,7 +899,7 @@ impl ResumeDArret {
 pub(crate) struct ResumeDeSuspension {
     genre: &'static str,
     salarie: String,
-    contrat: Option<String>,
+    contrat: Option<engagement::numeros::NumeroContrat>,
     contrat_debut: Jour,
     motif: String,
     motif_libelle: String,
@@ -2420,7 +2420,7 @@ pub(crate) struct FinASignaler {
     pub mois: Mois,
     debut: Option<Jour>,
     pub en_retard: bool,
-    pub numero: Option<String>,
+    pub numero: Option<NumeroContrat>,
     pub fin: Jour,
     /// Le libelle de sa nature de contrat.
     #[serde(rename = "nature")]
@@ -2554,7 +2554,7 @@ fn arret_contrats(ctx: &Contexte, c: ChargeArretContrats) -> R<ReponseContrats> 
 /// Les contrats de la fiche `cle` qui couvrent `jour`, lus dans les saisies, du plus ancien debut au plus recent.
 fn contrats_au(ctx: &Contexte, cle: &str, jour: Jour) -> R<Vec<ContratAuJour>> {
     let mut sorties: Vec<ContratAuJour> = Vec::new();
-    let mut vus: BTreeSet<(Jour, Option<String>)> = BTreeSet::new();
+    let mut vus: BTreeSet<(Jour, Option<NumeroContrat>)> = BTreeSet::new();
     let mut mois = engagement::stock::mois_saisis(&ctx.racine)?;
     mois.reverse();
     for m in mois {

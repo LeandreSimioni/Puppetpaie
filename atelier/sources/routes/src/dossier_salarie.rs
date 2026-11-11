@@ -529,7 +529,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<String>)> 
     let mut manquants: Vec<String> = Vec::new();
     let mut lignes: Vec<engagement::LignePaie> = Vec::new();
     // Un contrat commence dans l'ancien logiciel : ses mois d'avant sont ceux que l'engagement importe a verses.
-    let cherche = engagement::saisie::Carte { salarie: Some(p.salarie.id.clone()), debut: Some(eng.debut), numero: eng.numero.as_ref().map(|n| n.to_string()), ..Default::default() };
+    let cherche = engagement::saisie::Carte { salarie: Some(p.salarie.id.clone()), debut: Some(eng.debut), numero: eng.numero.clone(), ..Default::default() };
     let importe = engagement::importe::continue_par(&ctx.racine, &cherche).map_err(|e| e.reclasser(Classe::Illisible))?;
     let mut bruts = Decimal::new(0, 2);
     let mut jours = 0i64;
@@ -579,7 +579,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<String>)> 
         lignes: Some(lignes),
         debut: Some(eng.debut),
         fin: eng.fin,
-        numero: eng.numero.as_ref().map(|n| n.to_string()),
+        numero: eng.numero.clone(),
         jours: Some(engagement::Chiffre::entier(jours + eng.jours)),
         taux_cachet: eng.taux_cachet.map(engagement::Chiffre::de_decimal),
         date_paiement: eng.date_paiement.clone(),
