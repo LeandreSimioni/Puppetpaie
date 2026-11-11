@@ -70,19 +70,19 @@ pub mod format {
     #[derive(Debug, Clone, Copy)]
     pub struct Mmaaaa;
 
-    /// Un instant `AAAA-MM-JJTHH:MM:SS`.
+    /// Un instant `AAAA-MM-JJTHH:MM:SS`, heure de Paris (`paris::ecrit::seconde`).
     #[derive(Debug, Clone, Copy)]
     pub struct InstantIso;
 
-    /// Un instant `AAAAMMJJHHMMSS`.
+    /// Un instant `AAAAMMJJHHMMSS`, lu comme l'heure de Paris (`paris::ecrit::compacte`).
     #[derive(Debug, Clone, Copy)]
     pub struct InstantCompact;
 
-    /// Une date de XML Schema.
+    /// Une date de XML Schema (`paris::date_xsd`) : son jour et son fuseau, tels qu'ecrits.
     #[derive(Debug, Clone, Copy)]
     pub struct DateXsd;
 
-    /// Une heure de XML Schema.
+    /// Une heure de XML Schema (`paris::heure_xsd`) : ses secondes depuis minuit, sa fraction nulle ou non, son fuseau.
     #[derive(Debug, Clone, Copy)]
     pub struct HeureXsd;
 
@@ -152,17 +152,17 @@ pub mod format {
 
     impl Format for DateXsd {}
     impl Scelle for DateXsd {
-        type Lu = Option<paris::DateXsd>;
-        fn lire(t: &str) -> Option<paris::DateXsd> {
-            paris::DateXsd::lire(t)
+        type Lu = Option<(Jour, Option<paris::FuseauXsd>)>;
+        fn lire(t: &str) -> Option<(Jour, Option<paris::FuseauXsd>)> {
+            paris::date_xsd(t)
         }
     }
 
     impl Format for HeureXsd {}
     impl Scelle for HeureXsd {
-        type Lu = Option<paris::HeureXsd>;
-        fn lire(t: &str) -> Option<paris::HeureXsd> {
-            paris::HeureXsd::lire(t)
+        type Lu = Option<(i64, bool, Option<paris::FuseauXsd>)>;
+        fn lire(t: &str) -> Option<(i64, bool, Option<paris::FuseauXsd>)> {
+            paris::heure_xsd(t)
         }
     }
 }

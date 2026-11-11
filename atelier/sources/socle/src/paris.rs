@@ -665,94 +665,43 @@ impl std::fmt::Display for FuseauXsd {
 /// la date de reception d'un bilan (`date_reception`, schema des bilans harmonises, l. 318-322 ;
 /// `atelier/reference/sources/gip-mds-api-dsn/net-entreprises-dsn-bilans-v02r01-20230703.xsd`). Une annee hors de 1 a
 /// 9999 (un signe moins, plus de quatre chiffres), que le schema permet, sort du calendrier du moteur : elle se refuse.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct DateXsd {
-    pub jour: Jour,
-    pub fuseau: Option<FuseauXsd>,
-}
-
-impl DateXsd {
-    /// `AAAA-MM-JJ` et son fuseau s'il en a un, et rien d'autre ; `None` sinon.
-    pub(crate) fn lire(texte: &str) -> Option<DateXsd> {
-        let (j, f) = (texte.get(..10)?, texte.get(10..)?);
-        let jour = crate::date::jour_iso(j).filter(|x| x.iso() == j)?;
-        let fuseau = if f.is_empty() { None } else { Some(FuseauXsd::lire(f)?) };
-        Some(DateXsd { jour, fuseau })
-    }
-}
-
-impl std::fmt::Display for DateXsd {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.jour.iso())?;
-        match self.fuseau {
-            Some(z) => z.fmt(f),
-            None => Ok(()),
-        }
-    }
+/// Rend le jour et le fuseau ecrits ; `None` pour autre chose.
+pub(crate) fn date_xsd(texte: &str) -> Option<(Jour, Option<FuseauXsd>)> {
+    let (j, f) = (texte.get(..10)?, texte.get(10..)?);
+    let jour = crate::date::jour_iso(j).filter(|x| x.iso() == j)?;
+    let fuseau = if f.is_empty() { None } else { Some(FuseauXsd::lire(f)?) };
+    Some((jour, fuseau))
 }
 
 /// UNE HEURE DE XML SCHEMA (`time`, XML Schema Part 2, § 3.2.8) : `hh:mm:ss`, une fraction de seconde ou non (`.` et des
 /// chiffres), un fuseau ou non (`FuseauXsd`) ; `24:00:00` est la fin du jour (XML Schema 1.1, § 3.3.8). L'heure de
-/// reception d'un bilan (`heure_reception`, schema des bilans harmonises, l. 323-327 ; meme fichier que `DateXsd`). Elle
-/// garde ce qui est ecrit : la fraction telle quelle (ses chiffres), le fuseau tel quel.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct HeureXsd {
-    /// Les secondes depuis minuit, de 0 a 86 400 (`24:00:00`).
-    pub seconde: i64,
-    /// Les chiffres apres le point, tels qu'ecrits.
-    pub fraction: Option<String>,
-    pub fuseau: Option<FuseauXsd>,
-}
-
-impl HeureXsd {
-    /// `hh:mm:ss[.f…][fuseau]`, et rien d'autre ; `None` sinon.
-    pub(crate) fn lire(texte: &str) -> Option<HeureXsd> {
-        let b = texte.as_bytes();
-        if b.len() < 8 || b[2] != b':' || b[5] != b':' {
-            return None;
-        }
-        let (h, m, s) = (deux_chiffres(&b[..2])?, deux_chiffres(&b[3..5])?, deux_chiffres(&b[6..8])?);
-        let reste = &texte[8..];
-        let (fraction, reste) = match reste.strip_prefix('.') {
-            Some(r) => {
-                let n = r.bytes().take_while(u8::is_ascii_digit).count();
-                if n == 0 {
-                    return None;
-                }
-                (Some(r[..n].to_string()), &r[n..])
+/// reception d'un bilan (`heure_reception`, schema des bilans harmonises, l. 323-327 ; meme fichier que `date_xsd`).
+/// Rend les secondes depuis minuit (de 0 a 86 400), si la fraction est nulle (absente, ou rien que des zeros : l'heure
+/// tombe sur sa seconde), et le fuseau ecrit ; `None` pour autre chose.
+pub(crate) fn heure_xsd(texte: &str) -> Option<(i64, bool, Option<FuseauXsd>)> {
+    let b = texte.as_bytes();
+    if b.len() < 8 || b[2] != b':' || b[5] != b':' {
+        return None;
+    }
+    let (h, m, s) = (deux_chiffres(&b[..2])?, deux_chiffres(&b[3..5])?, deux_chiffres(&b[6..8])?);
+    let reste = &texte[8..];
+    let (fraction, reste) = match reste.strip_prefix('.') {
+        Some(r) => {
+            let n = r.bytes().take_while(u8::is_ascii_digit).count();
+            if n == 0 {
+                return None;
             }
-            None => (None, reste),
-        };
-        let fuseau = if reste.is_empty() { None } else { Some(FuseauXsd::lire(reste)?) };
-        let fin_du_jour = h == 24 && m == 0 && s == 0 && fraction.as_deref().is_none_or(|f| f.bytes().all(|c| c == b'0'));
-        if !(h < 24 && m < 60 && s < 60 || fin_du_jour) {
-            return None;
+            (Some(&r[..n]), &r[n..])
         }
-        Some(HeureXsd { seconde: i64::from(h) * 3_600 + i64::from(m) * 60 + i64::from(s), fraction, fuseau })
+        None => (None, reste),
+    };
+    let fuseau = if reste.is_empty() { None } else { Some(FuseauXsd::lire(reste)?) };
+    let a_la_seconde = fraction.is_none_or(|f| f.bytes().all(|c| c == b'0'));
+    let fin_du_jour = h == 24 && m == 0 && s == 0 && a_la_seconde;
+    if !(h < 24 && m < 60 && s < 60 || fin_du_jour) {
+        return None;
     }
-
-    /// La fraction est-elle nulle (absente, ou rien que des zeros) : l'heure tombe-t-elle sur sa seconde ?
-    pub fn a_la_seconde(&self) -> bool {
-        self.fraction.as_deref().is_none_or(|f| f.bytes().all(|c| c == b'0'))
-    }
-
-    /// « 09:36 » : l'heure et la minute telles qu'ecrites.
-    pub fn hh_mm(&self) -> String {
-        format!("{:02}:{:02}", self.seconde / 3_600, (self.seconde % 3_600) / 60)
-    }
-}
-
-impl std::fmt::Display for HeureXsd {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{:02}", self.hh_mm(), self.seconde % 60)?;
-        if let Some(x) = &self.fraction {
-            write!(f, ".{}", x)?;
-        }
-        match self.fuseau {
-            Some(z) => z.fmt(f),
-            None => Ok(()),
-        }
-    }
+    Some((i64::from(h) * 3_600 + i64::from(m) * 60 + i64::from(s), a_la_seconde, fuseau))
 }
 
 /// Deux chiffres ASCII, leur valeur ; `None` sinon.

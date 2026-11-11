@@ -21,7 +21,7 @@ use droit::natures::ListeDeLaNorme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use socle::echec::{erreur as echec, Classe, Echec, R};
 use socle::date::Jour;
-use socle::paris::{DateXsd, HeureXsd, InstantOuJour, Moment};
+use socle::paris::{FuseauXsd, InstantOuJour, Moment};
 use socle::piece::format;
 use socle::piece::Zone;
 use socle::texte::blanc;
@@ -806,16 +806,23 @@ impl Bilan {
 /// `heure_reception` (un `time`) ; schema des bilans harmonises, l. 318-327
 /// (`atelier/reference/sources/gip-mds-api-dsn/net-entreprises-dsn-bilans-v02r01-20230703.xsd`). Une heure sans date ne
 /// date rien : le bilan n'a pas de reception. Elle s'ecrit comme elle est lue : `date` ou `dateTheure`, octet pour octet.
+/// L'ordre : par jour ecrit, puis par texte ecrit.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Reception {
-    pub date: DateXsd,
-    pub heure: Option<HeureXsd>,
+    /// Le jour de reception, tel qu'ecrit.
+    jour: Jour,
+    /// `date` ou `dateTheure`, tels qu'ecrits.
+    ecrite: String,
+    /// « 09:36 » : l'heure et la minute telles qu'ecrites, quand le bilan dit l'heure.
+    hh_mm: Option<String>,
+    /// L'instant ou le jour que le journal en garde (`au_journal`), calcule a la lecture.
+    au_journal: Option<InstantOuJour>,
 }
 
 impl Reception {
     /// Le jour de reception, tel qu'ecrit.
     pub fn jour(&self) -> Jour {
-        self.date.jour
+        self.jour
     }
 
     /// L'INSTANT OU LE JOUR QUE LE JOURNAL EN GARDE (`InstantOuJour`) : le jour seul quand le bilan ne dit pas l'heure,
@@ -826,47 +833,46 @@ impl Reception {
     /// une date qui porte un fuseau sans heure (le jour de Paris n'y est pas dit), ou un autre fuseau que celui de son
     /// heure.
     pub fn au_journal(&self) -> Option<InstantOuJour> {
-        let Some(h) = &self.heure else {
-            return self.date.fuseau.is_none().then_some(InstantOuJour::Jour(self.date.jour));
-        };
-        if !h.a_la_seconde() || self.date.fuseau.is_some_and(|z| h.fuseau.is_none_or(|y| y.secondes() != z.secondes())) {
-            return None;
-        }
-        let local = (self.date.jour.ordinal() - 719_163) * 86_400 + h.seconde;
-        let instant = match h.fuseau {
-            None => {
-                // `24:00:00` est le debut du jour suivant.
-                let (jour, seconde) = (socle::date::Jour::depuis_jours_unix(local.div_euclid(86_400))?, local.rem_euclid(86_400));
-                Moment::a_paris(jour, seconde / 3_600, (seconde % 3_600) / 60, seconde % 60).filter(|m| m.jour_de_paris() == jour && m.seconde_du_jour_de_paris() == seconde)?
-            }
-            Some(z) => Moment::de_secondes(local - z.secondes())?,
-        };
-        Some(InstantOuJour::Instant(instant))
+        self.au_journal
     }
 
-    /// Tel que l'ecran le dit : « 03/09/2026 à 09:36 », ou « 03/09/2026 » sans heure ; l'heure telle qu'ecrite.
+    /// Tel que l'ecran le dit : l'heure de Paris de ce qui est lu (« 03/09/2026 à 09:36 », ou « 03/09/2026 » sans heure) ;
+    /// quand elle ne s'y ramene pas (`au_journal`), la date et l'heure telles qu'ecrites.
     pub fn dit(&self) -> String {
-        match &self.heure {
-            Some(h) => format!("{} à {}", self.date.jour.jj_mm_aaaa(), h.hh_mm()),
-            None => self.date.jour.jj_mm_aaaa(),
-        }
-    }
-}
-
-impl std::fmt::Display for Reception {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.date.fmt(f)?;
-        match &self.heure {
-            Some(h) => write!(f, "T{}", h),
-            None => Ok(()),
+        match (self.au_journal, &self.hh_mm) {
+            (Some(q), _) => q.dit(),
+            (None, Some(h)) => format!("{} à {}", self.jour.jj_mm_aaaa(), h),
+            (None, None) => self.jour.jj_mm_aaaa(),
         }
     }
 }
 
 impl Serialize for Reception {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.collect_str(self)
+        s.serialize_str(&self.ecrite)
     }
+}
+
+/// L'instant ou le jour d'une date `(jour, fuseau)` et d'une heure `(secondes depuis minuit, fraction nulle, fuseau)` de
+/// XML Schema (`Reception::au_journal`).
+fn au_journal(date: (Jour, Option<FuseauXsd>), heure: Option<(i64, bool, Option<FuseauXsd>)>) -> Option<InstantOuJour> {
+    let (jour, fuseau_date) = date;
+    let Some((seconde, a_la_seconde, fuseau)) = heure else {
+        return fuseau_date.is_none().then_some(InstantOuJour::Jour(jour));
+    };
+    if !a_la_seconde || fuseau_date.is_some_and(|z| fuseau.is_none_or(|y| y.secondes() != z.secondes())) {
+        return None;
+    }
+    let local = (jour.ordinal() - 719_163) * 86_400 + seconde;
+    let instant = match fuseau {
+        None => {
+            // `24:00:00` est le debut du jour suivant.
+            let (jour, seconde) = (Jour::depuis_jours_unix(local.div_euclid(86_400))?, local.rem_euclid(86_400));
+            Moment::a_paris(jour, seconde / 3_600, (seconde % 3_600) / 60, seconde % 60).filter(|m| m.jour_de_paris() == jour && m.seconde_du_jour_de_paris() == seconde)?
+        }
+        Some(z) => Moment::de_secondes(local - z.secondes())?,
+    };
+    Some(InstantOuJour::Instant(instant))
 }
 
 /// La reception que disent les champs `date_reception` et `heure_reception` du rapport (`get`) ; une date ou une heure
@@ -877,11 +883,12 @@ fn reception_du_rapport(get: &dyn Fn(&str) -> Option<String>) -> R<Option<Recept
         socle::echec::cle(format!("La {} de réception d'un bilan ne se lit pas : {} n'est pas une {} de XML Schema.", quoi, socle::date::repr_texte(t), quoi), element).reclasser(Classe::Illisible)
     };
     let date = Zone::lue(&d, format::DateXsd).valeur().ok_or_else(|| illisible("date_reception", "date", &d))?;
-    let heure = match get("heure_reception") {
-        Some(h) => Some(Zone::lue(&h, format::HeureXsd).valeur().ok_or_else(|| illisible("heure_reception", "heure", &h))?),
-        None => None,
+    let (heure, ecrite) = match get("heure_reception") {
+        Some(h) => (Some(Zone::lue(&h, format::HeureXsd).valeur().ok_or_else(|| illisible("heure_reception", "heure", &h))?), format!("{}T{}", d, h)),
+        None => (None, d.clone()),
     };
-    Ok(Some(Reception { date, heure }))
+    let hh_mm = heure.map(|(s, _, _)| format!("{:02}:{:02}", s / 3_600, (s % 3_600) / 60));
+    Ok(Some(Reception { jour: date.0, ecrite, hh_mm, au_journal: au_journal(date, heure) }))
 }
 
 /// Le mois d'une DSN (S20.G00.05.005, `01MMAAAA`) ; un mois qui ne se lit pas refuse le rapport.
