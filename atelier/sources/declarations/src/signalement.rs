@@ -19,13 +19,16 @@ use droit::nature_declaration::NatureDeLaDeclaration;
 
 /// LA NATURE D'UN SIGNALEMENT QUE CE MODULE ECRIT (S20.G00.05.001) : l'arret de travail (04), la reprise (05). Son code
 /// est celui de sa nature dans la liste de la norme (`nature`) ; elle s'ecrit et se lit par lui.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NatureSignalement {
     Arret,
     Reprise,
 }
 
 impl NatureSignalement {
+    /// Les deux, dans l'ordre de leurs codes (celui de `Ord`).
+    pub const TOUS: [NatureSignalement; 2] = [NatureSignalement::Arret, NatureSignalement::Reprise];
+
     /// Sa nature dans la liste de la norme.
     pub fn nature(self) -> NatureDeLaDeclaration {
         match self {
@@ -36,7 +39,7 @@ impl NatureSignalement {
 
     /// Celle de cette nature de la norme, si ce module l'ecrit.
     pub fn de(n: NatureDeLaDeclaration) -> Option<NatureSignalement> {
-        [NatureSignalement::Arret, NatureSignalement::Reprise].into_iter().find(|s| s.nature() == n)
+        NatureSignalement::TOUS.into_iter().find(|s| s.nature() == n)
     }
 }
 

@@ -21,7 +21,7 @@
 //! (`crate::obligations`), les nomenclatures livrees du bloc 60 (`droit::arrets::Bloc60`) et des suspensions
 //! (`droit::permanents`).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -1122,24 +1122,10 @@ struct Dit {
     contrat_dit: Option<String>,
     reprise_dit: Option<String>,
     paye_pendant: &'static str,
-    signaler_titre: SignalerTitre,
-    deja_signale: DejaSignale,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct SignalerTitre {
-    #[serde(rename = "04")]
-    arret: &'static str,
-    #[serde(rename = "05")]
-    reprise: &'static str,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct DejaSignale {
-    #[serde(rename = "04", skip_serializing_if = "Option::is_none")]
-    arret: Option<String>,
-    #[serde(rename = "05", skip_serializing_if = "Option::is_none")]
-    reprise: Option<String>,
+    /// Le titre du geste qui signale, par nature de signalement (ecrite par son code).
+    signaler_titre: BTreeMap<NatureSignalement, &'static str>,
+    /// Combien de fois chaque nature est deja partie, pour celles qui le sont.
+    deja_signale: BTreeMap<NatureSignalement, String>,
 }
 
 /// Un morceau de ce qui est parti d'un imprevu, ou de ce qui en reste du (`pastille`).
@@ -1179,8 +1165,16 @@ impl Dit {
             contrat_dit: x.contrat.map(|c| format!("contrat {}", c)),
             reprise_dit: x.reprise.map(|r| format!("reprise le {}", r.jj_mm_aaaa())),
             paye_pendant: if x.arret { "Payé pendant l'arrêt" } else { "Payé pendant l'absence" },
-            signaler_titre: SignalerTitre { arret: "Signaler l'arrêt", reprise: "Signaler la reprise" },
-            deja_signale: DejaSignale { arret: deja(NatureSignalement::Arret), reprise: deja(NatureSignalement::Reprise) },
+            signaler_titre: NatureSignalement::TOUS
+                .into_iter()
+                .map(|n| {
+                    (n, match n {
+                        NatureSignalement::Arret => "Signaler l'arrêt",
+                        NatureSignalement::Reprise => "Signaler la reprise",
+                    })
+                })
+                .collect(),
+            deja_signale: NatureSignalement::TOUS.into_iter().filter_map(|n| deja(n).map(|d| (n, d))).collect(),
         })
     }
 }
