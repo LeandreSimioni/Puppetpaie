@@ -1192,7 +1192,7 @@ pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour, meme: impl Fn(&T, &T)
     let pareilles = |a: &Option<T>, b: &Option<T>| match (a, b) {
         (Some(x), Some(y)) => meme(x, y),
         (None, None) => true,
-        _ => false,
+        (Some(_), None) | (None, Some(_)) => false,
     };
     let mut avant = None;
     if let Some(i) = ici {

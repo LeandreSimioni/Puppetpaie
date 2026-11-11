@@ -905,14 +905,7 @@ impl Proprietes {
 
 pub const DUREE_CONTRAT_COURT_MOIS: u32 = 2;
 
-fn jours_du_mois(an: i32, mois: u32) -> u32 {
-    match mois {
-        4 | 6 | 9 | 11 => 30,
-        2 if (an % 4 == 0 && an % 100 != 0) || an % 400 == 0 => 29,
-        2 => 28,
-        _ => 31,
-    }
-}
+use socle::date::jours_du_mois;
 
 /// La meme quantieme, n mois plus tard, ramenee au dernier jour du mois.
 fn dans_n_mois(depuis: Jour, mois: u32) -> Jour {

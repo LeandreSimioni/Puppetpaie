@@ -806,29 +806,35 @@ pub fn bareme_prevoyance(mut bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuC
         }
         // La tranche 2 se range dans la famille de la ligne de la prevoyance.
         let famille = dit(&r.famille).map(str::to_string);
-        let mut rr = r;
-        rr.taux_pat = Some(TauxDate(cot.t1.taux_pat));
-        rr.taux_sal = Some(Court(cot.t1.taux_sal));
-        if cot.t1.base.is_some() {
-            rr.base = cot.t1.base.clone();
-        }
-        rubriques.push(rr);
         posee = true;
-        if let Some(t2) = &cot.t2 {
-            rubriques.push(Rubrique {
-                id: "prevoyance_t2".into(),
-                famille: famille.clone(),
-                libelle: Some(if t2.obligatoire { "Prévoyance Tranche 2" } else { "Prévoyance Tranche 2 (extension conventionnelle)" }.into()),
-                base: Some(t2.base.clone().ok_or_else(|| socle::fichiers::absent("t2_base"))?),
-                taux_pat: Some(TauxDate(t2.taux_pat)),
-                taux_sal: Some(Court(t2.taux_sal)),
-                ..Rubrique::default()
-            });
+        let mut rr = r;
+        match &cot {
+            // Une convention sans regime pour ses non cadres : pas de ligne.
+            prevoyance::Cotisation::SansRegime => {}
+            // Pas encore due : la ligne reste, a taux nul, sur l'assiette du bareme.
+            prevoyance::Cotisation::PasDue => {
+                rr.taux_pat = Some(TauxDate(Decimal::ZERO));
+                rr.taux_sal = Some(Court(Decimal::ZERO));
+                rubriques.push(rr);
+            }
+            prevoyance::Cotisation::Due { t1, t2 } => {
+                rr.taux_pat = Some(TauxDate(t1.taux_pat));
+                rr.taux_sal = Some(Court(t1.taux_sal));
+                rr.base = Some(t1.base.clone());
+                rubriques.push(rr);
+                if let Some(t2) = t2 {
+                    rubriques.push(Rubrique {
+                        id: "prevoyance_t2".into(),
+                        famille: famille.clone(),
+                        libelle: Some(if t2.obligatoire { "Prévoyance Tranche 2" } else { "Prévoyance Tranche 2 (extension conventionnelle)" }.into()),
+                        base: Some(t2.base.clone()),
+                        taux_pat: Some(TauxDate(t2.taux_pat)),
+                        taux_sal: Some(Court(t2.taux_sal)),
+                        ..Rubrique::default()
+                    });
+                }
+            }
         }
-    }
-    if cot.sans_regime {
-        // Une convention sans regime pour ses non cadres : pas de ligne.
-        rubriques.retain(|r| r.id != "prevoyance");
     }
     if !posee {
         return Err(refus(
@@ -1720,7 +1726,7 @@ pub mod prevoyance;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AffiliationPrevoyance {
     /// Pas affilie : la convention n'a pas de regime pour lui (non cadre sans regime de branche), ou l'anciennete qui
-    /// l'ouvre n'est pas atteinte -- sa cotisation est nulle (`prevoyance::cotisation`, `due` faux).
+    /// l'ouvre n'est pas atteinte -- sa cotisation est nulle (`prevoyance::Cotisation::SansRegime`, `PasDue`).
     NonAffilie,
     /// Affilie des l'embauche.
     DesLEmbauche,

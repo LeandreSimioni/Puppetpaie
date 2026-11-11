@@ -175,7 +175,6 @@ forme_notee! {
     pub struct EmploisAutres {
         #[serde(deserialize_with = "socle::forme::court")]
         pub heures_mensuelles: Decimal,
-        pub echelon_par_defaut: i64,
         pub groupes: BTreeMap<String, Vec<Court>>,
     }
 }

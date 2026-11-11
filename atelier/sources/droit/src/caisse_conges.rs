@@ -89,7 +89,7 @@ pub fn intermittent(nat: &Nature, sal: &SalarieDuContrat) -> R<bool> {
             })?;
             Ok(m.nomme_par_l_annexe8(idcc))
         }
-        _ => Ok(false),
+        autre => Err(socle::refus!("Le métier {} est rangé à l'annexe {} : l'assurance chômage n'en a que deux, la 8 (technicien) et la 10 (artiste). Le signaler au développeur.", code, autre)),
     }
 }
 

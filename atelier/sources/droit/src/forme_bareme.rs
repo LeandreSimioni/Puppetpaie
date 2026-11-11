@@ -906,7 +906,7 @@ impl Lu {
     pub fn meme(&self, autre: &Lu) -> bool {
         match (self, autre) {
             (Lu::Taux(a), Lu::Taux(b)) | (Lu::Parametre(a), Lu::Parametre(b)) => a == b,
-            _ => false,
+            (Lu::Taux(_), Lu::Parametre(_)) | (Lu::Parametre(_), Lu::Taux(_)) => false,
         }
     }
 }

@@ -449,28 +449,30 @@ fn minimum_t1(reg: &Regime, annexe: Option<&str>, cadre: bool) -> R<Option<(Deci
     Ok(retenu)
 }
 
-/// Une tranche de la prevoyance d'un permanent : ses deux parts, en pourcent, et son assiette.
-#[derive(Debug, Clone, Default)]
+/// Une tranche de la prevoyance d'un permanent : ses deux parts, en pourcent, son assiette, et si le regime de la
+/// convention l'impose (la tranche 2 obligatoire) ou si c'est son extension.
+#[derive(Debug, Clone)]
 pub struct Part {
     pub taux_pat: Decimal,
     pub taux_sal: Decimal,
-    pub base: Option<Assiette>,
+    pub base: Assiette,
     pub obligatoire: bool,
 }
 
 /// Ce qu'un permanent cotise en prevoyance ce mois-la.
-#[derive(Debug, Clone, Default)]
-pub struct Cotisation {
-    pub t1: Part,
-    pub t2: Option<Part>,
-    pub due: bool,
+#[derive(Debug, Clone)]
+pub enum Cotisation {
     /// La convention n'a pas de regime pour ses non cadres : pas de ligne.
-    pub sans_regime: bool,
+    SansRegime,
+    /// Le regime existe, l'anciennete qui l'ouvre n'est pas atteinte (`ouverture`) : la ligne est a taux nul.
+    PasDue,
+    /// La tranche 1, et la tranche 2 quand le regime ou son extension la porte.
+    Due { t1: Part, t2: Option<Part> },
 }
 
-fn repartir(taux: Decimal, part_patronale: Decimal) -> Part {
+fn repartir(taux: Decimal, part_patronale: Decimal, base: Assiette, obligatoire: bool) -> Part {
     let pat = rond(div(mul(taux, part_patronale), Decimal::ONE_HUNDRED), 4);
-    Part { taux_pat: pat, taux_sal: rond(sub(taux, pat), 4), ..Part::default() }
+    Part { taux_pat: pat, taux_sal: rond(sub(taux, pat), 4), base, obligatoire }
 }
 
 /// La part patronale de la tranche 2 d'un bloc : la sienne quand le texte les distingue, sinon celle du bloc, que le
@@ -491,7 +493,7 @@ pub fn cotisation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: Op
     let ent_taux = ent.and_then(|p| p.taux.dite());
     let part_du_contrat = ent_taux.and_then(|t| t.part_patronale.dite());
     if !cadre && reg.beneficiaires.non_cadres == Some(false) && !contrat {
-        return Ok(Cotisation { sans_regime: true, ..Cotisation::default() });
+        return Ok(Cotisation::SansRegime);
     }
     if reg.contrat_requis == Some(true) && !contrat {
         return Err(socle::echec::refus_avec(
@@ -512,7 +514,7 @@ lus sur le contrat ou l'appel de cotisations. Rien n'est calcule.",
     }
     let (due, _) = ouverture(&reg, sal, au_mois, cadre, fin)?;
     if !due {
-        return Ok(Cotisation::default());
+        return Ok(Cotisation::PasDue);
     }
 
     let minimum = minimum_t1(&reg, entreprise.annexe_convention.code(), cadre)?;
@@ -577,8 +579,7 @@ l'employeur (ANI du 17/11/2017, art. 1er).",
         ));
     }
 
-    let mut t1 = repartir(taux, part_pat);
-    t1.base = Some(obl.base.clone().ok_or_else(|| socle::fichiers::absent("obligatoire.base"))?);
+    let t1 = repartir(taux, part_pat, obl.base.clone().ok_or_else(|| socle::fichiers::absent("obligatoire.base"))?, false);
     let mut t2: Option<Part> = None;
     let obligatoire_t2 = match oc.filter(|b| cadre && b.t2.is_some()) {
         Some(b) => Some(b),
@@ -586,10 +587,7 @@ l'employeur (ANI du 17/11/2017, art. 1er).",
     };
     if let Some((b, t2_taux)) = obligatoire_t2.filter(|_| !contrat).and_then(|b| b.t2.map(|t| (b, t.0))) {
         let base_t2 = b.t2_base.clone().ok_or_else(|| socle::fichiers::absent("t2_base"))?;
-        let mut m = repartir(t2_taux, part_t2(b));
-        m.base = Some(base_t2);
-        m.obligatoire = true;
-        t2 = Some(m);
+        t2 = Some(repartir(t2_taux, part_t2(b), base_t2, true));
     }
     let ext = ent.and_then(|p| p.extension_t2.dite());
     if let Some(ext) = ext.filter(|e| **e == ExtensionT2::Tous || cadre) {
@@ -610,11 +608,9 @@ convention {}.",
             Some(p) => p.court()?,
             None => opt.part_patronale,
         };
-        let mut m = repartir(propre, part);
-        m.base = Some(opt.base.clone());
-        t2 = Some(m);
+        t2 = Some(repartir(propre, part, opt.base.clone(), false));
     }
-    Ok(Cotisation { t1, t2, due: true, sans_regime: false })
+    Ok(Cotisation::Due { t1, t2 })
 }
 
 /// Le premier jour ou `mois_entre(depuis, jour)` atteint `seuil` : le meme quantieme `seuil` mois plus tard, ou le
@@ -632,9 +628,9 @@ fn anniversaire(depuis: &Jour, seuil: i64) -> Option<Jour> {
 /// sa cotisation (`cotisation`, `ouverture`).
 pub fn affiliation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: &Jour, entreprise: &ChampsEntreprise) -> R<super::AffiliationPrevoyance> {
     use super::AffiliationPrevoyance as A;
-    let cot = cotisation(sal, au_mois, cadre, Some(fin), entreprise)?;
-    if !cot.due {
-        return Ok(A::NonAffilie);
+    match cotisation(sal, au_mois, cadre, Some(fin), entreprise)? {
+        Cotisation::SansRegime | Cotisation::PasDue => return Ok(A::NonAffilie),
+        Cotisation::Due { .. } => {}
     }
     let reg = a_la_date(regime(entreprise.idcc.ecrite("idcc")?)?, Some(fin));
     let seuil = seuil(&reg, cadre);

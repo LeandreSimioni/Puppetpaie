@@ -52,14 +52,7 @@ pub const HEURES_PAR_JOURNEE: i64 = 12;
 
 // ---------------------------------------------------------------- les dates
 
-fn jours_du_mois(an: i32, mois: u32) -> u32 {
-    match mois {
-        4 | 6 | 9 | 11 => 30,
-        2 if (an % 4 == 0 && an % 100 != 0) || an % 400 == 0 => 29,
-        2 => 28,
-        _ => 31,
-    }
-}
+use socle::date::jours_du_mois;
 
 /// Numero du jour (algorithme du jour civil) : la difference de deux numeros
 /// est le nombre de jours entre les dates.

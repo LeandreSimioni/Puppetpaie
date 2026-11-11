@@ -255,10 +255,12 @@ impl Effectif {
     /// (`controler_effectif`). Vide : les seuils de la paie sont connus. Ce qui lit l'effectif de l'annee d'avant
     /// (`valeur` : le FNAS de la CCNEAC sans CSE dit) le demande lui-meme.
     pub fn a_dire(&self, annee_paie: i32) -> Vec<i32> {
-        if self.atteint(PLUS_PETIT_SEUIL, annee_paie).is_ok() {
+        let fenetre = annee_paie - ANNEES_CONSECUTIVES..annee_paie;
+        // Une annee connue sous le seuil le departage deja : il n'est pas franchi (`atteint`).
+        if fenetre.clone().any(|a| self.annee(a).is_some_and(|v| v < Decimal::from(PLUS_PETIT_SEUIL))) {
             return Vec::new();
         }
-        (annee_paie - ANNEES_CONSECUTIVES..annee_paie).filter(|a| self.annee(*a).is_none()).collect()
+        fenetre.filter(|a| self.annee(*a).is_none()).collect()
     }
 
     /// Le seuil est-il franchi pour payer en `annee_paie` ? (L. 130-1, II, CSS :
@@ -1333,13 +1335,13 @@ impl Contexte {
         effectif_de(&self.racine, &self.entreprise)
     }
 
-    /// Le 5 a partir de cinquante salaries, le 15 sinon
-    /// (un effectif inconnu donne le 15).
+    /// Le 5 a partir de cinquante salaries, le 15 sinon. Un effectif qu'il faudrait et que le moteur ne connait pas se
+    /// refuse en nommant les annees qui manquent (`Effectif::atteint`).
     pub fn echeance_dsn(&self) -> R<u32> {
         socle::fichiers::noter_valeur("aujourdhui", self.aujourdhui.iso());
-        Ok(match self.effectif()?.atteint(50, self.aujourdhui.an) {
-            Ok(true) => 5,
-            _ => 15,
+        Ok(match self.effectif()?.atteint(GRAND_SEUIL, self.aujourdhui.an)? {
+            true => 5,
+            false => 15,
         })
     }
 
