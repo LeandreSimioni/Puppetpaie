@@ -833,7 +833,7 @@ function brancherTaxeSalaires(racine = "#config-formulaire") {
       const v = String(c.value).trim();
       if (v === "") return;
       const t = c.dataset.sousType;
-      o[c.dataset.sousCle] = t === "nombre" ? Number(v) : t === "booleen" ? v === "true" : v;
+      o[c.dataset.sousCle] = t === "nombre" ? nombreTape(v) : t === "booleen" ? v === "true" : v;
     });
     return o;
   };
@@ -1071,7 +1071,7 @@ function lireFormulaire(racine = "#config-formulaire", origine = STRUCTURES_ORIG
     if (c.dataset.sousType) {
       types.add(p);
       if (String(c.value).trim() === "") o[k] = null;
-      else if (c.dataset.sousType === "nombre") o[k] = Number(c.value);
+      else if (c.dataset.sousType === "nombre") o[k] = nombreTape(c.value);
       // Un oui/non : un vrai booleen, comme une case a cocher.
       else if (c.dataset.sousType === "booleen") o[k] = c.value === "true";
       else o[k] = c.value;

@@ -61,7 +61,7 @@ function valeurDuChamp(bloc, forme, j) {
   if (forme === "oui_non") return x.checked ? true : undefined;
   const v = x.value.trim();
   if (!v) return undefined;
-  return forme === "nombre" ? Number(v) : v;
+  return forme === "nombre" ? nombreTape(v) : v;
 }
 
 /** Ce que les cases de `champs` disent, dans `bloc` : un champ vide ne part pas. */

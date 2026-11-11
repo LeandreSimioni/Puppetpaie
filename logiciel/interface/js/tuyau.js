@@ -30,6 +30,15 @@ let SERVEUR_PERDU = false;
 /* Ce que la page dit quand le moteur ne répond plus : la fenêtre le pose dans la page qu'elle sert (`{{PHRASES}}`). */
 const PHRASES_FENETRE = JSON.parse(document.getElementById("phrases-fenetre").textContent);
 
+/* UN NOMBRE TAPÉ, tel que la personne l'écrit (« 12,5 », « 1 234,56 ») : la virgule décimale et les blancs des milliers
+   se lisent ; ce qui n'est pas un nombre part tel quel, et la route le refuse en le nommant (jamais `NaN`, que JSON
+   enverrait `null`, une absence). */
+function nombreTape(texte) {
+  const t = String(texte).trim().replace(/[\s  ]/g, "");
+  const n = /^-?\d+(,\d+)?$/.test(t) ? Number(t.replace(",", ".")) : Number(t);
+  return t !== "" && isFinite(n) ? n : texte;
+}
+
 function serveurPerdu() {
   if (SERVEUR_PERDU) return;
   SERVEUR_PERDU = true;

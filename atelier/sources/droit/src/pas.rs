@@ -200,7 +200,20 @@ pub fn date_d_effet(mad: Jour, en_retour_de: Option<Mois>) -> Jour {
 /// transmis apres le paiement d'un salaire ne vaut pas pour lui. Aucun taux recu avant ce jour : aucun (la grille de
 /// l'article 204 H s'applique).
 fn en_vigueur<'a>(recus: &'a [TauxPas], le: Jour, mois: Option<Mois>) -> Option<&'a TauxPas> {
-    recus.iter().filter(|e| mise_a_disposition(e).is_some_and(|d| d <= le) && !en_retour_d_un_mois_qui_n_est_pas_avant(e, mois)).last()
+    let mis_a_disposition: Vec<&TauxPas> =
+        recus.iter().filter(|e| mise_a_disposition(e).is_some_and(|d| d <= le) && !en_retour_d_un_mois_qui_n_est_pas_avant(e, mois)).collect();
+    let transmis = |e: &&TauxPas| e.r#type.is_some_and(TypeDeTauxPas::transmis);
+    // Un compte rendu sans taux transmis ne fait pas oublier un taux transmis encore valide : la DGFiP releve comme une
+    // erreur l'« utilisation d'un taux par defaut alors meme que le collecteur dispose d'un taux transmis par la DGFiP qui
+    // est encore valide » (DGFiP, « Les comptes rendus metier (CRM) pour le PAS »,
+    // `atelier/reference/sources/dgfip-pas/dgfip-comptes-rendus-metier-pas-20261111.pdf`).
+    match mis_a_disposition.last() {
+        Some(dernier) if !transmis(dernier) => match mis_a_disposition.iter().rev().find(|e| transmis(e) && !est_perime(e, le)) {
+            Some(valide) => Some(*valide),
+            None => Some(*dernier),
+        },
+        dernier => dernier.copied(),
+    }
 }
 
 // ------------------------------------------ la grille de l'article 204 H du CGI

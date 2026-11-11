@@ -464,7 +464,7 @@ async function ajusterBloc(div, champ) {
       await enregistrerLesCartes(true);
       if (!div.dataset.engagement) throw new Error(aideDe("qui_d_abord"));
       return api("ajuster", { mois, modifications: modificationsAuMoteur(), engagement: JSON.parse(div.dataset.engagement),
-        cible: champ.dataset.cible, montant: Number(montant) });
+        cible: champ.dataset.cible, montant: nombreTape(montant) });
     });
     appliquerAjustement(div, r);
     // LA CASE MONTRE CE QU'ON ATTEINT, PAS CE QU'ON A TAPÉ. Un montant visé
