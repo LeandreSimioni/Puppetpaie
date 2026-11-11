@@ -822,7 +822,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
             l.base81 = Some(b);
             l.taux = Some(taux);
             l.montant = Some(match c.composants.as_ref().filter(|c| !c.is_empty()) {
-                Some(composants) => composants.iter().fold(zero(), |s, t| add(s, pct(b, *t))),
+                Some(composants) => composants.iter().fold(zero(), |s, t| add(s, pct(b, t.0))),
                 None => pct(b, taux),
             });
         }
@@ -994,7 +994,7 @@ fn sans_la_cet(p: &Paie, l: &engagement::calcul::LigneCotisation, r: &Rubrique) 
     };
     let cet_pat = cet.pat;
     let comp = match r.composants_pat.as_deref() {
-        Some(c) if !c.is_empty() => c.to_vec(),
+        Some(c) if !c.is_empty() => c.iter().map(|t| t.0).collect(),
         _ => vec![r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0],
     };
     let sans = droit::bareme::somme_pct(l.base, &comp);

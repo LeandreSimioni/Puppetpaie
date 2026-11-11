@@ -17,6 +17,7 @@ use crate::natures::{AuMois, Nature};
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, SalarieDuContrat, Statut, StatutCategorielRc};
 use socle::date::Jour;
 use socle::echec::{Lieu, Echec, R};
+use socle::forme::Court;
 use socle::num::{add, court, div, mul, sub, Decimal};
 use rust_decimal::RoundingStrategy;
 use std::collections::BTreeMap;
@@ -102,7 +103,7 @@ pub(crate) fn modifier(r: &mut Rubrique, m: &RubriqueModifiee) {
         }
     }
     if let Some(c) = &m.composants {
-        r.composants = Some(c.0.clone());
+        r.composants = Some(c.0.iter().copied().map(Court).collect());
     }
     for (de, vers) in [(&m.composants_pat, &mut r.composants_pat), (&m.composants_sal, &mut r.composants_sal)] {
         if let Some(c) = de {
@@ -136,7 +137,7 @@ pub(crate) fn par_dessus(base: &mut RubriqueModifiee, m: &RubriqueModifiee) {
 /// Ce qu'une couche ecrit d'une cotisation de la DSN remplace ce qu'elle portait.
 pub(crate) fn modifier_cotisation(c: &mut CotisationDsn, m: &CotisationModifiee) {
     if let Some(t) = m.taux {
-        c.taux = Some(crate::forme_bareme::TauxDate(t));
+        c.taux = Some(crate::forme_bareme::TauxDate(t.0));
     }
     if m.efface.iter().flatten().any(|e| *e == crate::forme_bareme::CaseCotisation::Taux) {
         c.taux = None;
@@ -215,7 +216,7 @@ Ajouter une section par_statut['{}'] au bareme.",
         if dit(&r.rempli_par).is_some() {
             continue;
         }
-        if r.taux_pat.is_none() && r.taux_sal.is_none() && r.composants.as_deref().is_none_or(<[Decimal]>::is_empty) {
+        if r.taux_pat.is_none() && r.taux_sal.is_none() && r.composants.as_deref().is_none_or(<[Court]>::is_empty) {
             let pourquoi = match dit(&r.a_confirmer) {
                 Some(a) => a,
                 None => "taux absent",
@@ -294,7 +295,7 @@ donnerait des cotisations fausses sans que rien ne le signale.",
         .rubriques_ajoutees
         .iter()
         .flatten()
-        .filter(|r| r.taux_pat.is_none() && r.taux_sal.is_none() && r.composants.as_deref().is_none_or(<[Decimal]>::is_empty) && dit(&r.rempli_par).is_none())
+        .filter(|r| r.taux_pat.is_none() && r.taux_sal.is_none() && r.composants.as_deref().is_none_or(<[Court]>::is_empty) && dit(&r.rempli_par).is_none())
         .map(|r| format!("rubriques_ajoutees[{}]", r.id))
         .collect();
     // Ce que la section dit encore « a confirmer ».
@@ -375,13 +376,13 @@ section par_nature['{}'].cpf_cdd qui dise son taux et sa cotisation. Rien n'est 
         .iter_mut()
         .find(|r| r.id == sec.rubrique)
         .ok_or_else(|| incomplet(&format!("par_nature.{}.cpf_cdd.rubrique", nom), &sec.rubrique))?;
-    if r.composants.as_deref().is_none_or(<[Decimal]>::is_empty) {
+    if r.composants.as_deref().is_none_or(<[Court]>::is_empty) {
         let premier = r.taux_pat.ok_or_else(|| incomplet(&format!("rubriques_bulletin[{}].taux_pat", sec.rubrique), ""))?.0;
-        r.composants = Some(vec![premier]);
+        r.composants = Some(vec![Court(premier)]);
     }
     let composants = r.composants.get_or_insert_with(Vec::new);
-    composants.push(sec.taux);
-    let total = composants.iter().fold(Decimal::ZERO, |a, c| add(a, *c));
+    composants.push(Court(sec.taux));
+    let total = composants.iter().fold(Decimal::ZERO, |a, c| add(a, c.0));
     // La somme affichee, au millieme comme les composants du bareme (0,30 + 0,016 + 0,55 + 1,0 = 1,866), la moitie
     // loin de zero.
     r.taux_pat = Some(TauxDate(court(total.round_dp_with_strategy(3, RoundingStrategy::MidpointAwayFromZero))));
@@ -540,7 +541,7 @@ fn poser_mutuelle(mut bar: Pile, base: Option<Assiette>, total: Decimal, pat: De
             r.base = Some(b);
         }
         r.taux_pat = Some(TauxDate(rond(mul(total, pat), 4)));
-        r.taux_sal = Some(rond(sub(total, mul(total, pat)), 4));
+        r.taux_sal = Some(Court(rond(sub(total, mul(total, pat)), 4)));
         if let Some(l) = libelle {
             r.libelle = Some(l.to_string());
         }
@@ -784,7 +785,7 @@ pub fn bareme_atmp(mut bar: Pile, _ent: &ChampsEntreprise) -> R<Pile> {
     };
     for r in &mut bar.rubriques_bulletin {
         if let Some(f) = r.facteur_atmp {
-            r.taux_pat = Some(TauxDate(rond(mul(taux, f), 3)));
+            r.taux_pat = Some(TauxDate(rond(mul(taux, f.0), 3)));
         }
     }
     Ok(bar)
@@ -807,7 +808,7 @@ pub fn bareme_prevoyance(mut bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuC
         let famille = dit(&r.famille).map(str::to_string);
         let mut rr = r;
         rr.taux_pat = Some(TauxDate(cot.t1.taux_pat));
-        rr.taux_sal = Some(cot.t1.taux_sal);
+        rr.taux_sal = Some(Court(cot.t1.taux_sal));
         if cot.t1.base.is_some() {
             rr.base = cot.t1.base.clone();
         }
@@ -820,7 +821,7 @@ pub fn bareme_prevoyance(mut bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuC
                 libelle: Some(if t2.obligatoire { "Prévoyance Tranche 2" } else { "Prévoyance Tranche 2 (extension conventionnelle)" }.into()),
                 base: Some(t2.base.clone().ok_or_else(|| socle::fichiers::absent("t2_base"))?),
                 taux_pat: Some(TauxDate(t2.taux_pat)),
-                taux_sal: Some(t2.taux_sal),
+                taux_sal: Some(Court(t2.taux_sal)),
                 ..Rubrique::default()
             });
         }
@@ -1043,7 +1044,7 @@ pub fn bareme_convention(mut bar: Pile, ent: &EntrepriseLue, nat: Option<&Nature
             };
             (Some(t), false)
         } else {
-            (c.taux_pat, efface(Part::TauxPat))
+            (c.taux_pat.map(|t| t.0), efface(Part::TauxPat))
         };
         let base = c.base.as_ref().map(|b| match b {
             BaseParPopulation::Une(x) => x.clone(),
@@ -1051,7 +1052,7 @@ pub fn bareme_convention(mut bar: Pile, ent: &EntrepriseLue, nat: Option<&Nature
         });
         let i = rang(&rubriques, &c.id);
         let vaut = |t: Option<Decimal>| t.is_some_and(|x| !x.is_zero());
-        if !sans_taux && !vaut(taux_pat) && !vaut(c.taux_sal) {
+        if !sans_taux && !vaut(taux_pat) && !vaut(c.taux_sal.map(|t| t.0)) {
             if let Some(i) = i {
                 rubriques.remove(i);
             }
@@ -1375,7 +1376,7 @@ ne porte pas le taux du regime local (`regime_local_alsace_moselle`).",
         libelle: Some("Régime local Alsace-Moselle — maladie".into()),
         base: Some(Assiette::Brut),
         taux_pat: None,
-        taux_sal: Some(rl.taux_sal),
+        taux_sal: Some(Court(rl.taux_sal)),
         ..Rubrique::default()
     });
     let code81 = if rl.code81.is_empty() { "115".into() } else { rl.code81.clone() };
@@ -1513,10 +1514,10 @@ fn poser_t1(mut bar: Pile, retraite_pat: Decimal, retraite_sal: Decimal) -> R<Pi
     let mut base = None;
     for r in bar.rubriques_bulletin.iter_mut().filter(|r| r.id == "retraite_t1") {
         r.taux_pat = Some(TauxDate(court(pat)));
-        r.taux_sal = Some(court(sal));
+        r.taux_sal = Some(Court(court(sal)));
         if r.composants_pat.as_deref().is_some_and(|l| !l.is_empty()) {
-            r.composants_pat = Some(vec![court(retraite_pat), court(ceg_pat)]);
-            r.composants_sal = Some(vec![court(retraite_sal), court(ceg_sal)]);
+            r.composants_pat = Some(vec![Court(court(retraite_pat)), Court(court(ceg_pat))]);
+            r.composants_sal = Some(vec![Court(court(retraite_sal)), Court(court(ceg_sal))]);
         }
         base = r.base.clone();
     }
@@ -1524,7 +1525,7 @@ fn poser_t1(mut bar: Pile, retraite_pat: Decimal, retraite_sal: Decimal) -> R<Pi
         if code81(c) == Some("131") && c.base == base && c.taux.is_some() && c.lignes.as_deref().is_none_or(<[String]>::is_empty) {
             c.taux = Some(crate::forme_bareme::TauxDate(court(pat + sal)));
             if c.composants.as_deref().is_some_and(|l| !l.is_empty()) {
-                c.composants = Some(vec![court(retraite_pat), court(ceg_pat), court(retraite_sal), court(ceg_sal)]);
+                c.composants = Some([retraite_pat, ceg_pat, retraite_sal, ceg_sal].into_iter().map(|t| Court(court(t))).collect());
             }
         }
     }
@@ -1554,8 +1555,8 @@ pub fn bareme_retraite_t1(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuCont
     };
     let statut = sal.statut.exigee("statut")?.as_str().trim().to_lowercase();
     let taux = couche.retraite_t1.as_ref().and_then(|t| match statut.as_str() {
-        "artiste" => t.artiste,
-        "technicien" => t.technicien,
+        "artiste" => t.artiste.map(|c| c.0),
+        "technicien" => t.technicien.map(|c| c.0),
         _ => None,
     });
     let Some(taux) = taux else { return Ok(bar) };

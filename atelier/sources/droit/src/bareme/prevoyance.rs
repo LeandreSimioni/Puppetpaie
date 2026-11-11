@@ -10,7 +10,7 @@ use crate::fiche::{ExtensionT2, Lue};
 use crate::natures::AuMois;
 use socle::echec::Lieu;
 use socle::fichiers::{forme_en_cache, FormeGardee};
-use socle::forme::Nombre;
+use socle::forme::{Court, Nombre};
 use socle::num::{div, mul, sub};
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
@@ -68,18 +68,15 @@ forme! {
 forme! {
     /// Une cotisation de prevoyance (tous, ou les cadres) : tranche 1, tranche 2, repartition, et ce qui change a une date.
     pub struct Bloc {
-        #[serde(default, deserialize_with = "socle::forme::court_opt")]
-        pub taux: Option<Decimal>,
+        pub taux: Option<Court>,
         /// L'assiette de la tranche 1 (celle du bloc `obligatoire` s'applique) et la part de l'employeur, que le catalogue
         /// dit pour chaque bloc.
         pub base: Option<Assiette>,
         #[serde(deserialize_with = "socle::forme::court")]
         pub part_patronale: Decimal,
-        #[serde(default, deserialize_with = "socle::forme::court_opt")]
-        pub t2: Option<Decimal>,
+        pub t2: Option<Court>,
         pub t2_base: Option<Assiette>,
-        #[serde(default, deserialize_with = "socle::forme::court_opt")]
-        pub t2_part_patronale: Option<Decimal>,
+        pub t2_part_patronale: Option<Court>,
         pub ventilation: Option<Ventilation>,
         pub a_partir_du: Option<BTreeMap<Jour, Changement>>,
     }
@@ -98,10 +95,8 @@ forme! {
 forme! {
     /// Ce qu'un bloc prend a une date : ses nouveaux taux.
     pub struct Changement {
-        #[serde(default, deserialize_with = "socle::forme::court_opt")]
-        pub taux: Option<Decimal>,
-        #[serde(default, deserialize_with = "socle::forme::court_opt")]
-        pub t2: Option<Decimal>,
+        pub taux: Option<Court>,
+        pub t2: Option<Court>,
         pub ventilation: Option<Ventilation>,
     }
 }
@@ -125,10 +120,8 @@ forme! {
 forme! {
     /// L'extension facultative a la tranche 2 : son taux pour tous, ou pour les cadres seuls.
     pub struct Extension {
-        #[serde(default, deserialize_with = "socle::forme::court_opt")]
-        pub tous: Option<Decimal>,
-        #[serde(default, deserialize_with = "socle::forme::court_opt")]
-        pub cadres: Option<Decimal>,
+        pub tous: Option<Court>,
+        pub cadres: Option<Court>,
         pub base: Assiette,
         #[serde(deserialize_with = "socle::forme::court")]
         pub part_patronale: Decimal,
@@ -362,12 +355,12 @@ fn resume(reg: &Regime) -> String {
     let mut out = Vec::new();
     if reg.beneficiaires.non_cadres == Some(false) {
         out.push("non cadres : aucun regime de branche".to_string());
-    } else if let Some(t) = reg.obligatoire.taux {
+    } else if let Some(Court(t)) = reg.obligatoire.taux {
         out.push(format!("non cadres {} % de la tranche 1", pcf(t)));
     }
-    if let Some((oc, taux)) = reg.obligatoire_cadre.as_ref().and_then(|oc| oc.taux.map(|t| (oc, t))) {
+    if let Some((oc, taux)) = reg.obligatoire_cadre.as_ref().and_then(|oc| oc.taux.map(|t| (oc, t.0))) {
         let mut s = format!("cadres {} % de la tranche 1", pcf(taux));
-        if let Some(t2) = oc.t2 {
+        if let Some(Court(t2)) = oc.t2 {
             s += &format!(" et {} % de la tranche 2", pcf(t2));
         }
         out.push(s);
@@ -431,13 +424,13 @@ nouveau le laisserait sans couverture pendant un an.",
 /// (taux minimum de tranche 1, d'ou il vient) pour ce salarie ; `None` : ni la convention (elle fixe la repartition,
 /// pas le taux : `contrat_requis`) ni l'obligation cadre n'en fixent.
 fn minimum_t1(reg: &Regime, annexe: Option<&str>, cadre: bool) -> R<Option<(Decimal, String)>> {
-    let mut retenu = reg.obligatoire.taux.map(|t| (t, format!("{} : {} %", reg.texte, pcf(t))));
+    let mut retenu = reg.obligatoire.taux.map(|Court(t)| (t, format!("{} : {} %", reg.texte, pcf(t))));
     let sup = annexe.and_then(|n| reg.annexes.as_ref().and_then(|a| a.get(n)).map(|a| (n, a.taux))).filter(|(_, t)| !t.is_zero());
     if let Some((n, s)) = sup.filter(|(_, s)| retenu.as_ref().is_none_or(|(t, _)| s > t)) {
         retenu = Some((s, format!("annexe {} de la convention : {} %", n, pcf(s))));
     }
     if cadre {
-        if let Some(propre) = reg.obligatoire_cadre.as_ref().and_then(|oc| oc.taux) {
+        if let Some(Court(propre)) = reg.obligatoire_cadre.as_ref().and_then(|oc| oc.taux) {
             let t = match sup {
                 Some((_, s)) => propre.max(s),
                 None => propre,
@@ -484,7 +477,7 @@ fn repartir(taux: Decimal, part_patronale: Decimal) -> Part {
 /// texte fixe pour toute la cotisation.
 fn part_t2(b: &Bloc) -> Decimal {
     match b.t2_part_patronale {
-        Some(propre) => propre,
+        Some(Court(propre)) => propre,
         None => b.part_patronale,
     }
 }
@@ -591,7 +584,7 @@ l'employeur (ANI du 17/11/2017, art. 1er).",
         Some(b) => Some(b),
         None => Some(obl).filter(|b| b.t2.is_some()),
     };
-    if let Some((b, t2_taux)) = obligatoire_t2.filter(|_| !contrat).and_then(|b| b.t2.map(|t| (b, t))) {
+    if let Some((b, t2_taux)) = obligatoire_t2.filter(|_| !contrat).and_then(|b| b.t2.map(|t| (b, t.0))) {
         let base_t2 = b.t2_base.clone().ok_or_else(|| socle::fichiers::absent("t2_base"))?;
         let mut m = repartir(t2_taux, part_t2(b));
         m.base = Some(base_t2);
@@ -605,7 +598,7 @@ l'employeur (ANI du 17/11/2017, art. 1er).",
             ExtensionT2::Tous => o.tous,
             ExtensionT2::Cadres => o.cadres,
         });
-        let (Some(opt), Some(propre)) = (opt, propre) else {
+        let (Some(opt), Some(Court(propre))) = (opt, propre) else {
             return Err(socle::refus!(
                 "L'extension T2 << {} >> n'existe pas dans le regime de la \
 convention {}.",

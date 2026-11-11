@@ -174,7 +174,10 @@ fn decimal_ecrit(x: f64) -> crate::echec::R<crate::num::Decimal> {
     }
     match crate::num::Decimal::from_str(&s).or_else(|_| crate::num::Decimal::from_scientific(&s)) {
         Ok(d) => Ok(d),
-        Err(_) => Err(crate::echec::refus(format!("nombre hors de portee : {}", s))),
+        Err(e) => Err(crate::echec::refus_avec(
+            format!("nombre hors de portee : {}", s),
+            crate::echec::Lieu { detail: Some(e.to_string()), ..Default::default() },
+        )),
     }
 }
 
@@ -270,17 +273,8 @@ pub fn court<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decim
     d.deserialize_any(EnCourt)
 }
 
-/// `court`, quand la valeur peut manquer ou etre nulle (avec `#[serde(default)]`).
-pub fn court_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<crate::num::Decimal>, D::Error> {
-    <Option<Court> as serde::Deserialize>::deserialize(d).map(|n| n.map(|n| n.0))
-}
-
-/// Une liste de `court`, quand elle peut manquer ou etre nulle (avec `#[serde(default)]`).
-pub fn courts_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Vec<crate::num::Decimal>>, D::Error> {
-    <Option<Vec<Court>> as serde::Deserialize>::deserialize(d).map(|v| v.map(|v| v.into_iter().map(|n| n.0).collect()))
-}
-
-/// Un nombre lu comme `court`, la ou un champ ne se pose pas (une valeur de table, une liste datee).
+/// Un nombre lu comme `court`, la ou un champ ne se pose pas (une valeur de table, une liste datee), ou la ou il peut
+/// manquer (`Option<Court>` : absent ou nul, il est vide).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Court(pub crate::num::Decimal);
 
