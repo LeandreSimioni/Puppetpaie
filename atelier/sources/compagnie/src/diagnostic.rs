@@ -286,7 +286,7 @@ impl TextesDeFiche {
 
 /// Le numero d'un salarie : son `code_salarie` (celui des bulletins), sinon son rang dans les fiches.
 fn numero_de(fiche: &TextesDeFiche, rang: usize) -> String {
-    match fiche.dernier(CaseSalarie::code_salarie) {
+    match fiche.dernier(CaseSalarie::CodeSalarie) {
         Some(code) => code,
         None => format!("{}", rang + 1),
     }
@@ -294,24 +294,24 @@ fn numero_de(fiche: &TextesDeFiche, rang: usize) -> String {
 
 /// Les champs d'une fiche qui nomment la personne : ceux-la se cherchent dans tout texte.
 const CHAMPS_QUI_NOMMENT: [CaseSalarie; 8] = [
-    CaseSalarie::nom,
-    CaseSalarie::prenom,
-    CaseSalarie::nom_affichage,
-    CaseSalarie::prenom_affichage,
-    CaseSalarie::email,
-    CaseSalarie::adresse,
-    CaseSalarie::adresse_affichage,
-    CaseSalarie::nir,
+    CaseSalarie::Nom,
+    CaseSalarie::Prenom,
+    CaseSalarie::NomAffichage,
+    CaseSalarie::PrenomAffichage,
+    CaseSalarie::Email,
+    CaseSalarie::Adresse,
+    CaseSalarie::AdresseAffichage,
+    CaseSalarie::Nir,
 ];
 const CHAMPS_DE_LA_COMPAGNIE: [CaseEntreprise; 8] = [
-    CaseEntreprise::raison_sociale,
-    CaseEntreprise::nom_affichage,
-    CaseEntreprise::siren,
-    CaseEntreprise::siret,
-    CaseEntreprise::adresse,
-    CaseEntreprise::adresse_affichage,
-    CaseEntreprise::urssaf_compte,
-    CaseEntreprise::licence_spectacle,
+    CaseEntreprise::RaisonSociale,
+    CaseEntreprise::NomAffichage,
+    CaseEntreprise::Siren,
+    CaseEntreprise::Siret,
+    CaseEntreprise::Adresse,
+    CaseEntreprise::AdresseAffichage,
+    CaseEntreprise::UrssafCompte,
+    CaseEntreprise::LicenceSpectacle,
 ];
 
 fn construire(racine: &Path) -> Personnes {
@@ -344,7 +344,7 @@ fn construire(racine: &Path) -> Personnes {
                         noms.extend(fiche.tous(c).cloned());
                     }
                     // Le prenom et le nom ensemble, dans les deux ordres : « Fanchon Brioche » devient un seul « [salarie n°1] ».
-                    for (p, n) in [(CaseSalarie::prenom, CaseSalarie::nom), (CaseSalarie::prenom_affichage, CaseSalarie::nom_affichage)] {
+                    for (p, n) in [(CaseSalarie::Prenom, CaseSalarie::Nom), (CaseSalarie::PrenomAffichage, CaseSalarie::NomAffichage)] {
                         if let (Some(p), Some(n)) = (fiche.dernier(p), fiche.dernier(n)) {
                             noms.push(format!("{} {}", p, n));
                             noms.push(format!("{} {}", n, p));

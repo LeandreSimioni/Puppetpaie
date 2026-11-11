@@ -23,7 +23,7 @@ use socle::echec::{erreur, refus, Classe, Echec, R};
 /// La cle de la fiche entreprise : le numero d'adherent a la Caisse des Conges Spectacles, le SEUL numero Conges
 /// Spectacles que la compagnie saisit. Il va dans la case COMPTE des certificats, dans les contrats, et la DSN
 /// le declare precede de 97 (`code_dsn`).
-pub const CLE_ADHERENT: droit::fiche::CaseEntreprise = droit::fiche::CaseEntreprise::congesspectacles_adherent;
+pub const CLE_ADHERENT: droit::fiche::CaseEntreprise = droit::fiche::CaseEntreprise::CongesspectaclesAdherent;
 
 /// LA FORME ECRITE DU NUMERO D'ADHERENT : la meme valeur, « accolés, sans espaces, ni tiret » et la lettre en capitale,
 /// comme l'exemple de la fiche (970000000001A ; `audiens-fiche-specificites-conges-spectacles-20261023.txt`, l. 80-81).

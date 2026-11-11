@@ -60,7 +60,7 @@ fn la_fiche_salarie_dit_une_profession_et_son_accord_la_fiche_entreprise_l_optio
     let bar: Bareme = lire(&crate::outils::code_livre(), "baremes/2026.json");
     let du_bareme: Vec<String> = bar.deduction_forfaitaire.professions.into_keys().collect();
     let champs = declarations::champs::fiche(droit::fiche::NomDeFiche::Salarie).unwrap();
-    let c = champs.iter().find(|c| c.cle == droit::fiche::CaseSalarie::deduction_forfaitaire.into()).unwrap();
+    let c = champs.iter().find(|c| c.cle == droit::fiche::CaseSalarie::DeductionForfaitaire.into()).unwrap();
     let mut de_la_fiche: Vec<String> = c.choix.iter().filter(|x| !x.is_empty()).cloned().collect();
     de_la_fiche.sort();
     assert_eq!(de_la_fiche, du_bareme);

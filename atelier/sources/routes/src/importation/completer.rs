@@ -30,7 +30,7 @@ pub(crate) fn forme_declaree_de(champs: &[Champ], cle: NomDeCase) -> Option<NomD
 /// Ce que l'import ne met jamais dans une fiche qui existe : son etat (`actif` : une fiche archivee l'est exprès), et son
 /// historique.
 fn jamais() -> [NomDeCase; 2] {
-    [CaseSalarie::actif.into(), NomDeCase::HISTORIQUE]
+    [CaseSalarie::Actif.into(), NomDeCase::HISTORIQUE]
 }
 
 /// Les cases de `proposees` (la fiche que l'import creerait de cette piece) qu'une fiche existante recoit : une case de

@@ -267,7 +267,7 @@ fn choisir(ctx: &Contexte, charge: &ChargeModele) -> R<ModelesDuBulletin> {
         Modele::Simplifie => droit::fiche::ModeleBulletin::Simplifie,
         Modele::Complet => droit::fiche::ModeleBulletin::Complet,
     };
-    crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::modele_bulletin(Some(choix)), Some(ctx.aujourdhui))?;
+    crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::ModeleBulletin(Some(choix)), Some(ctx.aujourdhui))?;
     let neuf = Contexte::nouveau(&ctx.racine, None).map_err(|e| e.reclasser(Classe::Refuse))?;
     let mut v = modeles(&neuf)?;
     v.phrase = format!("Modèle choisi : {}, pour les documents faits à partir d'aujourd'hui.", v.choisi);

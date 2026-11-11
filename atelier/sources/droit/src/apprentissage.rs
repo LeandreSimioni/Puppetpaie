@@ -26,7 +26,7 @@ pub struct MotifMnata {
 }
 
 /// Le champ de la fiche entreprise qui dit pourquoi la compagnie ne doit pas la taxe d'apprentissage (un code MNATA).
-pub const CHAMP_MOTIF_TAXE_APPRENTISSAGE: crate::fiche::CaseEntreprise = crate::fiche::CaseEntreprise::taxe_apprentissage_motif_non_assujettissement;
+pub const CHAMP_MOTIF_TAXE_APPRENTISSAGE: crate::fiche::CaseEntreprise = crate::fiche::CaseEntreprise::TaxeApprentissageMotifNonAssujettissement;
 /// Le motif MNATA 007, « Associations sans but lucratif ».
 pub const MNATA_ASSOCIATIONS: &str = "007";
 /// Le premier millesime ou une association a activites non lucratives est redevable de la taxe d'apprentissage : C. trav.

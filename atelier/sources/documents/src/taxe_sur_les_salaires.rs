@@ -9,7 +9,7 @@ use socle::num::{add, eur, mul, sub, Decimal};
 use socle::texte::euros;
 
 /// Le champ de la fiche entreprise qui dit la taxe sur les salaires.
-pub const CHAMP_TAXE_SUR_LES_SALAIRES: droit::fiche::CaseEntreprise = droit::fiche::CaseEntreprise::taxe_sur_les_salaires;
+pub const CHAMP_TAXE_SUR_LES_SALAIRES: droit::fiche::CaseEntreprise = droit::fiche::CaseEntreprise::TaxeSurLesSalaires;
 
 // ------------------------------------------------------------ la taxe sur les salaires, salarie par salarie
 

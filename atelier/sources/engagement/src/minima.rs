@@ -1139,7 +1139,7 @@ pub fn cases_du_metier(ctx: &Contexte, code: &str, jour: &Jour) -> R<BTreeSet<No
     if idcc == "1285" && statut == "technicien" {
         let groupe = m.au_catalogue().and_then(|f| f.classification_1285.as_ref()).and_then(|c| c.groupe).map(|g| g.to_string()).filter(|g| !g.is_empty());
         if groupe.is_some_and(|g| grille.emplois_autres_qu_artistiques.as_ref().is_some_and(|e| e.groupes.contains_key(&g))) {
-            lues.insert(CaseSalarie::echelon_ccneac.into());
+            lues.insert(CaseSalarie::EchelonCcneac.into());
         }
     }
     if idcc == "3090" && statut == "technicien" {
@@ -1147,7 +1147,7 @@ pub fn cases_du_metier(ctx: &Contexte, code: &str, jour: &Jour) -> R<BTreeSet<No
         let communes = t.convention("3090").and_then(|c| c.clauses_communes.as_ref());
         if let (Some(c), Some(communes)) = (administratif, communes) {
             if communes.administratifs_mensuel_echelons.du_niveau(&c.niveau).is_some_and(|v| v.len() > 1) {
-                lues.insert(CaseSalarie::poste_depuis.into());
+                lues.insert(CaseSalarie::PosteDepuis.into());
             }
         }
     }

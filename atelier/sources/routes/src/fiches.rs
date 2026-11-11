@@ -456,7 +456,7 @@ pub(crate) struct Montres {
 
 /// La case des permanents de la fiche entreprise telle que l'ecran la saisit.
 fn permanents_de(entreprise: &Saisie) -> bool {
-    entreprise.case(CaseEntreprise::emploie_des_permanents) == Some(&champs::Valeur::OuiNon(true))
+    entreprise.case(CaseEntreprise::EmploieDesPermanents) == Some(&champs::Valeur::OuiNon(true))
 }
 
 /// CE QUE LA FICHE `nom` (de cle `cle` pour un salarie enregistre) MONTRE pour `donnees` : chaque case que
@@ -528,7 +528,7 @@ fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &Saisie) -> R<(bool, bool)> 
 fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees: &Saisie) -> R<std::collections::BTreeSet<NomDeCase>> {
     let mut cases = std::collections::BTreeSet::new();
     let dit = |x: Option<&str>| x.map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
-    let de_la_fiche = dit(donnees.mot(droit::fiche::CaseSalarie::code_emploi_ft).as_deref());
+    let de_la_fiche = dit(donnees.mot(droit::fiche::CaseSalarie::CodeEmploiFt).as_deref());
     // (metier, statut dit par la carte, jour, salarie)
     let mut metiers: std::collections::BTreeSet<(String, Option<String>, Jour, String)> = std::collections::BTreeSet::new();
     for f in engagement::stock::fichiers(&ctx.racine)? {
@@ -561,7 +561,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees
             None => ctx.salarie(salarie)?.statut.dite().map(|s| droit::fiche::Choix::code(s).to_string()),
         };
         if droit::clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), Some(code), statut.as_deref())? {
-            cases.insert(droit::fiche::CaseEntreprise::jauge_annexe_1.into());
+            cases.insert(droit::fiche::CaseEntreprise::JaugeAnnexe1.into());
         }
     }
     Ok(cases)
@@ -759,8 +759,8 @@ pub(crate) fn aujourd_hui() -> Jour {
 pub(crate) fn activer_fiche(ctx: &Contexte, nom: NomDeFiche, cle: &str, actif: bool) -> R<()> {
     let jour = Some(ctx.aujourdhui);
     match nom {
-        NomDeFiche::Salarie => poser::<FicheSalarieDatee>(ctx, Some(cle), vec![ChangementSalarie::actif(Some(actif))], jour, None),
-        NomDeFiche::Spectacle => poser::<FicheSpectacleDatee>(ctx, Some(cle), vec![ChangementSpectacle::actif(Some(actif))], jour, None),
+        NomDeFiche::Salarie => poser::<FicheSalarieDatee>(ctx, Some(cle), vec![ChangementSalarie::Actif(Some(actif))], jour, None),
+        NomDeFiche::Spectacle => poser::<FicheSpectacleDatee>(ctx, Some(cle), vec![ChangementSpectacle::Actif(Some(actif))], jour, None),
         NomDeFiche::Entreprise => Err(refus(format!("Seuls un salarie ou un spectacle s'activent : {}.", socle::fichiers::repr(NomDeFiche::Entreprise.nom())))),
     }
 }
@@ -886,7 +886,7 @@ pub(crate) fn date_proposee(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>) 
 /// UN TAUX DE PAS RECU S'ECRIT DANS LA FICHE DE SON SALARIE (`taux_pas`), date du jour ou il commence de valoir
 /// `depuis` : avant ce jour, la fiche ne le disait pas (la case vide). `note` dit d'ou il vient.
 pub(crate) fn poser_taux_recu(ctx: &Contexte, salarie: &str, valeur: droit::fiche::TauxPas, depuis: Jour, note: &str) -> R<()> {
-    ecriture::poser_au::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::taux_pas(Some(valeur))], true, Some(depuis), Some(note), &depuis)
+    ecriture::poser_au::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::TauxPas(Some(valeur))], true, Some(depuis), Some(note), &depuis)
 }
 
 /// Une case de la fiche entreprise (`poser`).
@@ -902,7 +902,7 @@ pub(crate) fn poser_anciennete_a_l_embauche(ctx: &Contexte, salarie: &str, debut
     let Some(fiche) = ctx.salaries.get(salarie) else { return Ok(()) };
     let debut = debut.ok_or_else(|| socle::fichiers::absent("debut"))?;
     match engagement::calcul::Anciennete::de(&ctx.racine, fiche, salarie, debut)? {
-        engagement::calcul::Anciennete::Embauche(j) => poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::date_anciennete(Some(j))], None, None),
+        engagement::calcul::Anciennete::Embauche(j) => poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::DateAnciennete(Some(j))], None, None),
         engagement::calcul::Anciennete::Dite(_) | engagement::calcul::Anciennete::NonDite => Ok(()),
     }
 }
@@ -920,7 +920,7 @@ pub(crate) fn reprendre_anciennete(ctx: &Contexte, salarie: &str, pose_le: Jour,
         return Ok(false);
     }
     // La note de l'import (d'ou vient la valeur) reste : la valeur vient toujours des pieces importees.
-    poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::date_anciennete(Some(debut))], None, seule.note.as_deref())?;
+    poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::DateAnciennete(Some(debut))], None, seule.note.as_deref())?;
     Ok(true)
 }
 
@@ -939,7 +939,7 @@ pub(crate) fn dater_licences_suivantes(ctx: &Contexte, licences: &[(String, Stri
     let note = note.filter(|n| !n.trim().is_empty());
     for (mois, numero) in suivantes {
         let jour = socle::mois::Mois::lire(mois).map(socle::mois::Mois::premier_jour)?;
-        poser_entreprise_note(ctx, ChangementEntreprise::licence_spectacle(Some(numero.clone())), jour, note)?;
+        poser_entreprise_note(ctx, ChangementEntreprise::LicenceSpectacle(Some(numero.clone())), jour, note)?;
     }
     Ok(())
 }
@@ -1254,7 +1254,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             }
             if deja.is_none() {
                 plate.actif = Some(true);
-                nommees.push(droit::fiche::CaseSalarie::actif.into());
+                nommees.push(droit::fiche::CaseSalarie::Actif.into());
             }
             nommees
         })?;
@@ -1438,7 +1438,7 @@ pub(crate) fn poser_courriel(ctx: &Contexte, cle: &str, email: &str) -> R<()> {
     }
     let p = preparer::<FicheSalarieDatee>(ctx, Some(cle), |plate| {
         plate.email = Some(email.trim().to_string());
-        vec![droit::fiche::CaseSalarie::email.into()]
+        vec![droit::fiche::CaseSalarie::Email.into()]
     })?;
     let (depuis, _) = date_proposee(ctx, NomDeFiche::Salarie, Some(cle))?;
     ecrire_fiche::<FicheSalarieDatee>(ctx, p, Forcer::Rien, Some(depuis), None)?;

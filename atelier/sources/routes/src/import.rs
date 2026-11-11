@@ -269,8 +269,8 @@ pub(crate) struct EntrepriseDesPieces {
 /// initiales, quand rien ne le dit.
 pub(crate) fn entreprise_comblee(f: &Saisie) -> R<Saisie> {
     let mut f = f.comblee(NomDeFiche::Entreprise)?;
-    if f.mot(CaseEntreprise::nom_affichage).is_none() {
-        if let Some(t) = titre_de(f.mot(CaseEntreprise::raison_sociale).as_deref()) {
+    if f.mot(CaseEntreprise::NomAffichage).is_none() {
+        if let Some(t) = titre_de(f.mot(CaseEntreprise::RaisonSociale).as_deref()) {
             #[derive(Serialize)]
             struct Nom {
                 nom_affichage: String,
@@ -304,7 +304,7 @@ pub(crate) struct ACreer {
 impl ACreer {
     /// Le NIR de la fiche d'un salarie a creer.
     pub(crate) fn nir(&self) -> Option<String> {
-        self.donnees.mot(droit::fiche::CaseSalarie::nir)
+        self.donnees.mot(droit::fiche::CaseSalarie::Nir)
     }
 }
 
@@ -478,7 +478,7 @@ pub(crate) fn apercu_lu(
         garder_le_nom(ctx, &mut e)?;
         if ctx.entreprise.siren.is_none() {
             let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Entreprise, &e)?;
-            let libelle = match e.mot(CaseEntreprise::raison_sociale) {
+            let libelle = match e.mot(CaseEntreprise::RaisonSociale) {
                 Some(r) => r,
                 None => "?".to_string(),
             };

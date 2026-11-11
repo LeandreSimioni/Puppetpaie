@@ -763,9 +763,9 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             let mut ec = Vec::new();
             // UN TITRE VIDE OU « A COMPLETER » (celui que l'import des DSN donne, la DSN ne portant pas le titre) recoit
             // le titre propose ; un vrai titre saisi reste, et l'ecart avec la ligne « Spectacle » est seulement signale.
-            if let (Some(t), Some(p), Some(a)) = (&titre, porteur, fiche.mot(CaseSpectacle::titre)) {
-                if !completer::vide(fiche.case(CaseSpectacle::titre)) && compare(&a) != compare(t) {
-                    ec.push(Ecart::new(CaseSpectacle::titre, Valeur::Texte(a), DitPar::Bulletin { bulletin: t.clone(), fichier: chemin_de(p), page: p.page }));
+            if let (Some(t), Some(p), Some(a)) = (&titre, porteur, fiche.mot(CaseSpectacle::Titre)) {
+                if !completer::vide(fiche.case(CaseSpectacle::Titre)) && compare(&a) != compare(t) {
+                    ec.push(Ecart::new(CaseSpectacle::Titre, Valeur::Texte(a), DitPar::Bulletin { bulletin: t.clone(), fichier: chemin_de(p), page: p.page }));
                 }
             }
             // Ce que les bulletins proposent a la fiche : le code analytique qu'ils impriment, s'ils en impriment un.
@@ -776,11 +776,11 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             let mut champs = completer::champs_a_completer(NomDeFiche::Spectacle, &fiche, &proposees)?;
             // Le titre se propose a une fiche sans titre qui n'en a pas deja un a valider : comme toute case, la
             // proposition ne remplit qu'une case vide.
-            if completer::vide(fiche.case(CaseSpectacle::titre)) && fiche.note(declarations::demarrage::TITRE_PROPOSE).is_none_or(|t| t.trim().is_empty()) {
+            if completer::vide(fiche.case(CaseSpectacle::Titre)) && fiche.note(declarations::demarrage::TITRE_PROPOSE).is_none_or(|t| t.trim().is_empty()) {
                 proposition(&mut champs);
             }
             let origine = Origine::bulletin(porteur.map(chemin_de), porteur.map(|p| p.page));
-            let titre_de_la_fiche = match fiche.mot(CaseSpectacle::titre) {
+            let titre_de_la_fiche = match fiche.mot(CaseSpectacle::Titre) {
                 Some(t) => t,
                 None => "?".to_string(),
             };
@@ -834,7 +834,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     }
     for (numero, mois) in objets_aem {
         let deja_la = reponse.spectacles.iter().any(|e| e.numero_objet().as_deref() == Some(numero.as_str()));
-        let a_creer = ap.a_creer.iter().any(|a| a.nom == NomDeFiche::Spectacle && a.donnees.mot(CaseSpectacle::numero_objet).map(|n| n.to_uppercase()).as_deref() == Some(numero.as_str()));
+        let a_creer = ap.a_creer.iter().any(|a| a.nom == NomDeFiche::Spectacle && a.donnees.mot(CaseSpectacle::NumeroObjet).map(|n| n.to_uppercase()).as_deref() == Some(numero.as_str()));
         if connus.contains_key(&numero) || deja_la || a_creer {
             continue;
         }
@@ -1498,7 +1498,7 @@ fn completer_a_creer(a_creer: &mut [ACreer], reponse: &mut Importation, nom: Nom
 fn creer_l_entreprise(ctx: &Contexte, ap: &mut Apercu, reponse: &mut Importation, mut e: Saisie, origine: Option<Origine>) -> R<()> {
     ri::garder_le_nom(ctx, &mut e)?;
     let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Entreprise, &e)?;
-    let libelle = match e.mot(droit::fiche::CaseEntreprise::raison_sociale) {
+    let libelle = match e.mot(droit::fiche::CaseEntreprise::RaisonSociale) {
         Some(r) => r,
         None => "?".to_string(),
     };
@@ -1511,7 +1511,7 @@ fn creer_l_entreprise(ctx: &Contexte, ap: &mut Apercu, reponse: &mut Importation
 
 /// Le libelle d'un salarie qu'une fiche proposee nomme : son nom, puis son prenom en capitales initiales.
 fn libelle_propose(f: &Saisie) -> String {
-    [f.mot(CaseSalarie::nom), ri::titre_de(f.mot(CaseSalarie::prenom).as_deref())].into_iter().flatten().collect::<Vec<_>>().join(" ")
+    [f.mot(CaseSalarie::Nom), ri::titre_de(f.mot(CaseSalarie::Prenom).as_deref())].into_iter().flatten().collect::<Vec<_>>().join(" ")
 }
 
 /// La fiche existante `cle` de la liste, ajoutee (`libelle`) si la reponse ne la porte pas encore.
@@ -1572,12 +1572,12 @@ fn identite<'a>(ls: &[&'a Lu]) -> Vec<(CaseSalarie, String, &'a Lu)> {
     for l in ls {
         let s = &l.b.salarie;
         for (cle, v) in [
-            (CaseSalarie::nom, s.nom.clone()),
-            (CaseSalarie::prenom, s.prenom.clone()),
-            (CaseSalarie::date_naissance, s.naissance.map(|d| d.iso())),
-            (CaseSalarie::num_conges_spectacles, s.conges_spectacles.clone()),
-            (CaseSalarie::emploi, s.emploi.clone()),
-            (CaseSalarie::code_salarie, s.code.clone()),
+            (CaseSalarie::Nom, s.nom.clone()),
+            (CaseSalarie::Prenom, s.prenom.clone()),
+            (CaseSalarie::DateNaissance, s.naissance.map(|d| d.iso())),
+            (CaseSalarie::NumCongesSpectacles, s.conges_spectacles.clone()),
+            (CaseSalarie::Emploi, s.emploi.clone()),
+            (CaseSalarie::CodeSalarie, s.code.clone()),
         ] {
             let Some(v) = v.map(|x| x.trim().to_string()).filter(|x| !x.is_empty()) else { continue };
             out.retain(|x| x.0 != cle);
@@ -1592,7 +1592,7 @@ fn identite<'a>(ls: &[&'a Lu]) -> Vec<(CaseSalarie, String, &'a Lu)> {
 fn ecarts_salarie(fiche: &Saisie, ls: &[&Lu], chemin: &dyn Fn(&Lu) -> String) -> Vec<Ecart> {
     let mut out = Vec::new();
     for (cle, lu, l) in identite(ls) {
-        if !matches!(cle, CaseSalarie::nom | CaseSalarie::prenom | CaseSalarie::date_naissance | CaseSalarie::num_conges_spectacles) {
+        if !matches!(cle, CaseSalarie::Nom | CaseSalarie::Prenom | CaseSalarie::DateNaissance | CaseSalarie::NumCongesSpectacles) {
             continue;
         }
         // Une case vide ou « A COMPLETER » n'est pas un ecart : l'import la complete.
@@ -1611,21 +1611,21 @@ fn ecarts_entreprise(fiche: &Saisie, lue: &Saisie, l: &Lu, chemin: &str) -> Vec<
     let mut out = Vec::new();
     use droit::fiche::CaseEntreprise as E;
     let t = |k: E| fiche.mot(k);
-    let siret_fiche = match (t(E::siret), t(E::siren), t(E::nic)) {
+    let siret_fiche = match (t(E::Siret), t(E::Siren), t(E::Nic)) {
         (Some(s), _, _) => Some(s),
         (None, Some(s), Some(n)) => Some(format!("{}{}", s, n)),
         _ => None,
     };
     let de = |k: E| lue.mot(k);
     for (cle, a, lu) in [
-        (E::siret, siret_fiche, siret_lu(&l.b)),
-        (E::naf, t(E::naf), l.b.entreprise.naf.clone()),
-        (E::raison_sociale, t(E::raison_sociale), de(E::raison_sociale)),
-        (E::adresse, t(E::adresse), de(E::adresse)),
-        (E::code_postal, t(E::code_postal), de(E::code_postal)),
-        (E::commune, t(E::commune), de(E::commune)),
-        (E::idcc, t(E::idcc), de(E::idcc)),
-        (E::urssaf_compte, t(E::urssaf_compte), de(E::urssaf_compte)),
+        (E::Siret, siret_fiche, siret_lu(&l.b)),
+        (E::Naf, t(E::Naf), l.b.entreprise.naf.clone()),
+        (E::RaisonSociale, t(E::RaisonSociale), de(E::RaisonSociale)),
+        (E::Adresse, t(E::Adresse), de(E::Adresse)),
+        (E::CodePostal, t(E::CodePostal), de(E::CodePostal)),
+        (E::Commune, t(E::Commune), de(E::Commune)),
+        (E::Idcc, t(E::Idcc), de(E::Idcc)),
+        (E::UrssafCompte, t(E::UrssafCompte), de(E::UrssafCompte)),
     ] {
         let (Some(a), Some(lu)) = (a, lu) else { continue };
         if completer::vide(Some(&Valeur::Texte(a.clone()))) || compare(&a) == compare(&lu) {
@@ -1735,12 +1735,12 @@ impl SalarieLu {
     /// La case de texte d'identite `cle` (`identite`) ; la date de naissance, un jour, se pose a part.
     fn case(&mut self, cle: CaseSalarie) -> Option<&mut Option<String>> {
         match cle {
-            CaseSalarie::nom => Some(&mut self.nom),
-            CaseSalarie::prenom => Some(&mut self.prenom),
-            CaseSalarie::date_naissance => None,
-            CaseSalarie::num_conges_spectacles => Some(&mut self.num_conges_spectacles),
-            CaseSalarie::emploi => Some(&mut self.emploi),
-            CaseSalarie::code_salarie => Some(&mut self.code_salarie),
+            CaseSalarie::Nom => Some(&mut self.nom),
+            CaseSalarie::Prenom => Some(&mut self.prenom),
+            CaseSalarie::DateNaissance => None,
+            CaseSalarie::NumCongesSpectacles => Some(&mut self.num_conges_spectacles),
+            CaseSalarie::Emploi => Some(&mut self.emploi),
+            CaseSalarie::CodeSalarie => Some(&mut self.code_salarie),
             autre => unreachable!("`identite` ne nomme pas la case {}", NomDeCase::from(autre)),
         }
     }
@@ -2140,7 +2140,7 @@ fn statut_de(ctx: &Contexte, par_nir: &HashMap<String, String>, a_creer: &[ACree
     if let Some(s) = par_nir.get(nir).and_then(|k| ctx.salaries.get(k.as_str())).and_then(|f| f.statut.dite()) {
         return Ok(Some(s.as_str().to_string()));
     }
-    if let Some(s) = a_creer.iter().filter(|a| a.nom == NomDeFiche::Salarie && a.nir().as_deref() == Some(nir)).find_map(|a| a.donnees.mot(CaseSalarie::statut)) {
+    if let Some(s) = a_creer.iter().filter(|a| a.nom == NomDeFiche::Salarie && a.nir().as_deref() == Some(nir)).find_map(|a| a.donnees.mot(CaseSalarie::Statut)) {
         return Ok(Some(s));
     }
     let femme = declarations::ntt::sexe_de(Some(nir), None) == Some("2");

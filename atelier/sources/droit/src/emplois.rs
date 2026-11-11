@@ -373,7 +373,7 @@ fn valeurs_par_mois(f: &FicheSalarie) -> [(CaseSalarie, Option<String>); 5] {
 /// artiste / technicien, la categorie cadre, le metier qui la dit a defaut de la fiche) et ce que le bloc 40 porte avec
 /// une rubrique en bloc 41 (40.002, 40.003, 40.004). Le libelle de l'emploi n'en est pas : la DSN declare « la derniere
 /// valeur connue » du mois (cahier technique 2026.1, § 2.1.2.4.2, p. 22).
-const UNE_VALEUR_PAR_MOIS: [CaseSalarie; 5] = [CaseSalarie::statut_categoriel_rc, CaseSalarie::statut_conventionnel, CaseSalarie::statut, CaseSalarie::code_emploi_ft, CaseSalarie::pcs_ese];
+const UNE_VALEUR_PAR_MOIS: [CaseSalarie; 5] = [CaseSalarie::StatutCategorielRc, CaseSalarie::StatutConventionnel, CaseSalarie::Statut, CaseSalarie::CodeEmploiFt, CaseSalarie::PcsEse];
 
 /// La fiche salarie `cle` d'un contrat PAYE AU MOIS (CDI, CDD de droit commun), telle qu'elle vaut pour la periode payee
 /// (`debut`, `fin`) : lue a la fin de la periode. Un permanent passe cadre, change de poste, obtient ou perd sa RQTH en

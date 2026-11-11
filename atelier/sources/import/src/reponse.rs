@@ -371,7 +371,7 @@ impl FicheImportee {
 
     /// Le numero d'objet d'un spectacle a creer, en capitales.
     pub fn numero_objet(&self) -> Option<String> {
-        self.donnees.mot(droit::fiche::CaseSpectacle::numero_objet).map(|n| n.to_uppercase())
+        self.donnees.mot(droit::fiche::CaseSpectacle::NumeroObjet).map(|n| n.to_uppercase())
     }
 
     /// La fiche s'ecrit-elle : a creer, ou existante avec des cases a completer.

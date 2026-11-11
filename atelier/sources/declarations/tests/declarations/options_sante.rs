@@ -24,8 +24,8 @@ use declarations::champs::Condition;
 fn la_fiche_propose_la_dispense_de_sante_en_ccneac_et_en_3090() {
     let d = declarations::champs::description(droit::fiche::NomDeFiche::Salarie).unwrap();
     use droit::fiche::{CaseEntreprise, CaseSalarie, NomDeCase};
-    let ccneac_et_3090 = Condition::Toutes(vec![(CaseEntreprise::idcc.into(), vec!["1285".to_string(), "3090".to_string()])]);
-    for cle in [CaseSalarie::sante_dispense, CaseSalarie::sante_dispense_depuis, CaseSalarie::sante_dispense_jusqu_au].map(NomDeCase::from) {
+    let ccneac_et_3090 = Condition::Toutes(vec![(CaseEntreprise::Idcc.into(), vec!["1285".to_string(), "3090".to_string()])]);
+    for cle in [CaseSalarie::SanteDispense, CaseSalarie::SanteDispenseDepuis, CaseSalarie::SanteDispenseJusquAu].map(NomDeCase::from) {
         let c = d.iter().find(|c| c.cle == cle).unwrap_or_else(|| panic!("{}", cle));
         assert_eq!(c.si_entreprise, Some(&ccneac_et_3090), "{}", cle);
     }

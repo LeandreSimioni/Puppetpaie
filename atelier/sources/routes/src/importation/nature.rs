@@ -380,7 +380,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
     };
     let permanents_declares = !ctx.emploie_des_permanents_pendant(&depuis, &depuis);
     if permanents_declares {
-        crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::emploie_des_permanents(Some(true)), Some(depuis))?;
+        crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::EmploieDesPermanents(Some(true)), Some(depuis))?;
     }
     // Les contrats de prevoyance et de sante des permanents que l'ecran attend maintenant : ceux que les DSN reprises
     // declarent (S21.G00.15) se posent, lus sous la fiche telle qu'elle vient d'etre ecrite.

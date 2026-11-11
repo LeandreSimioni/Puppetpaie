@@ -1528,7 +1528,7 @@ pub fn normaliser(c: &Champ, texte: &str) -> R<String> {
     let v = strip(texte).to_string();
     Ok(match c.forme {
         Forme::Officiel => {
-            let v = ponctuation_propre(&v, [CaseSalarie::nom, CaseSalarie::prenom].map(NomDeCase::from).contains(&c.cle));
+            let v = ponctuation_propre(&v, [CaseSalarie::Nom, CaseSalarie::Prenom].map(NomDeCase::from).contains(&c.cle));
             let v = sans_caracteres_refuses(c, v)?;
             v.trim_matches(|x| " '.-".contains(x)).to_string()
         }
@@ -1549,13 +1549,13 @@ pub fn personnes() -> [(NomDeCase, Vec<(NomDeCase, NomDeCase)>); 3] {
     use droit::fiche::{CaseContactSanteTravail, CaseDeclarantDsn, CaseSignataire};
     [
         (
-            CaseEntreprise::signataire.into(),
-            vec![(CaseSignataire::nom.into(), CaseSignataire::nom_affichage.into()), (CaseSignataire::prenom.into(), CaseSignataire::prenom_affichage.into())],
+            CaseEntreprise::Signataire.into(),
+            vec![(CaseSignataire::Nom.into(), CaseSignataire::NomAffichage.into()), (CaseSignataire::Prenom.into(), CaseSignataire::PrenomAffichage.into())],
         ),
-        (CaseEntreprise::declarant_dsn.into(), vec![(CaseDeclarantDsn::nom_prenom.into(), CaseDeclarantDsn::nom_prenom_affichage.into())]),
+        (CaseEntreprise::DeclarantDsn.into(), vec![(CaseDeclarantDsn::NomPrenom.into(), CaseDeclarantDsn::NomPrenomAffichage.into())]),
         (
-            CaseEntreprise::contact_sante_travail.into(),
-            vec![(CaseContactSanteTravail::nom_prenom.into(), CaseContactSanteTravail::nom_prenom_affichage.into())],
+            CaseEntreprise::ContactSanteTravail.into(),
+            vec![(CaseContactSanteTravail::NomPrenom.into(), CaseContactSanteTravail::NomPrenomAffichage.into())],
         ),
     ]
 }
@@ -1571,7 +1571,7 @@ pub struct Comble {
 /// `a_combler` : la forme lisible de depart des fiches qui n'en ont pas, tiree de leur forme declaree. Rien n'est ecrit :
 /// c'est une vue, pas une migration.
 pub fn a_combler(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Comble>> {
-    let lieux = [CaseSalarie::adresse, CaseSalarie::commune, CaseSalarie::lieu_naissance].map(NomDeCase::from);
+    let lieux = [CaseSalarie::Adresse, CaseSalarie::Commune, CaseSalarie::LieuNaissance].map(NomDeCase::from);
     let mut out: Vec<Comble> = Vec::new();
     for c in table(nom)? {
         let Some(source) = c.derive_de else { continue };
@@ -1799,7 +1799,7 @@ pub fn luhn(numero: &str) -> bool {
 fn faute_banque(b: &Saisie) -> Option<String> {
     use droit::fiche::CaseBanque;
     let texte = |k: CaseBanque| b.texte(k).map(str::trim).filter(|s| !s.is_empty());
-    texte(CaseBanque::iban).and_then(socle::iban::faute_iban).or_else(|| texte(CaseBanque::bic).and_then(socle::iban::faute_bic))
+    texte(CaseBanque::Iban).and_then(socle::iban::faute_iban).or_else(|| texte(CaseBanque::Bic).and_then(socle::iban::faute_bic))
 }
 
 /// LES JOURS TRAVAILLES D'UN PERMANENT : ceux que le calcul lira (`droit::conges::JoursTravailles`) ; la faute, dite sans
@@ -1930,18 +1930,18 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
         return Ok(None);
     }
     let est = |k: NomDeCase| c.cle == k;
-    if est(CaseSalarie::banque.into()) {
+    if est(CaseSalarie::Banque.into()) {
         return Ok(match valeur {
             Valeur::Bloc(b) => faute_banque(b),
             _ => None,
         });
     }
-    if est(CaseSalarie::jours_travailles.into()) {
+    if est(CaseSalarie::JoursTravailles.into()) {
         return Ok(faute_des_jours(valeur));
     }
     let Valeur::Texte(brut) = valeur else { return Ok(None) };
     // La signature des courriels est du HTML colle : sa seule regle est son poids (150 Ko, images comprises).
-    if est(CaseEntreprise::courriel_signature.into()) {
+    if est(CaseEntreprise::CourrielSignature.into()) {
         return Ok(trop_lourde(brut));
     }
     let v = strip(brut);
@@ -1984,13 +1984,13 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
     // Hors de la liste : un pays de nationalite s'ecrit a part. Le pays de naissance se lit dans la table
     // « Pays » de la DSN (`pays::de_la_table_dsn`), le Kosovo et les Etats disparus compris.
     if c.forme == Forme::Pays {
-        let naissance = est(CaseSalarie::pays_naissance.into());
+        let naissance = est(CaseSalarie::PaysNaissance.into());
         let connu = if naissance { socle::pays::de_la_table_dsn(v)?.is_some() } else { socle::pays::du_code(v)?.is_some() };
         if !connu {
             let quoi = format!("Le {}", c.libelle.to_lowercase());
             return Ok(Some(if naissance {
                 socle::pays::inconnu_naissance(&quoi, v)
-            } else if est(CaseSalarie::pays_nationalite.into()) {
+            } else if est(CaseSalarie::PaysNationalite.into()) {
                 socle::pays::inconnu_nationalite(&quoi, v)
             } else {
                 socle::pays::inconnu(&quoi, v)
@@ -2010,7 +2010,7 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
     }
     // LE CODE APE SE RECONNAIT DANS LA NAF REV. 2 OU LA NAF 2025 (`naf.rs`) : les deux sont admises a la saisie,
     // un code qu'aucune ne connait refuse.
-    if est(CaseEntreprise::naf.into()) {
+    if est(CaseEntreprise::Naf.into()) {
         if let Some(faute) = crate::naf::faute_de_saisie(v)? {
             return Ok(Some(faute));
         }
@@ -2092,7 +2092,7 @@ fn fautes_des_types(champs: &[Champ], donnees: &Saisie) -> Vec<Constat> {
                     for s in &d.cases {
                         let (Some(faute), Some(t)) = (s.faute, l.texte(s.cle)) else { continue };
                         if let Some(f) = faute(t) {
-                            let qui = match l.texte(droit::fiche::CaseEtablissement::libelle).filter(|q| !q.is_empty()) {
+                            let qui = match l.texte(droit::fiche::CaseEtablissement::Libelle).filter(|q| !q.is_empty()) {
                                 Some(q) => q,
                                 None => "un établissement",
                             };
@@ -2122,14 +2122,14 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
     // UNE AUTRE URSSAF QUE CELLE DE L'ADRESSE : permis, mais dit, et par le moteur, pour que la
     // ligne de commande l'entende comme la fenetre. C'est l'Urssaf du territoire qui recoit DPAE et DSN.
     if nom == NomDeFiche::Entreprise {
-        if let Some(choisi) = texte_dit(d, E::code_urssaf) {
-            let deduit = match d.mot(E::code_postal) {
+        if let Some(choisi) = texte_dit(d, E::CodeUrssaf) {
+            let deduit = match d.mot(E::CodePostal) {
                 Some(cp) => crate::urssaf::base()?.du_code_postal(&cp),
                 None => None,
             };
             if let Some(deduit) = deduit.filter(|d| *d != choisi) {
                 out.push(constat(
-                    E::code_urssaf,
+                    E::CodeUrssaf,
                     Gravite::Avertissement,
                     format!(
                         "l'Urssaf de votre adresse est la {} ; c'est elle qui reçoit normalement vos DPAE et DSN. Une Urssaf qui ne vous gère pas peut les faire rejeter.",
@@ -2143,17 +2143,17 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
     if nom == NomDeFiche::Spectacle {
         // LE TITRE QUE L'IMPORT N'A PAS TROUVE : un numero d'objet seul (la DSN ne porte pas le titre) recoit « A COMPLETER ».
         // Ce n'est pas un titre : le contrat et le bulletin l'imprimeraient tel quel.
-        if texte_dit(d, P::titre).is_some_and(|t| t.eq_ignore_ascii_case("A COMPLETER")) {
+        if texte_dit(d, P::Titre).is_some_and(|t| t.eq_ignore_ascii_case("A COMPLETER")) {
             let message = match d.note(crate::demarrage::TITRE_PROPOSE).filter(|t| !t.is_empty()) {
                 Some(t) => format!("à valider : les bulletins repris proposent « {} », et le contrat imprime le titre.", t),
                 None => "à compléter : aucune pièce reprise ne porte le titre de ce spectacle, et le contrat l'imprime.".to_string(),
             };
-            out.push(constat(P::titre, Gravite::Avertissement, message));
+            out.push(constat(P::Titre, Gravite::Avertissement, message));
         }
-        if let Some(code) = texte_dit(d, P::code_analytique) {
+        if let Some(code) = texte_dit(d, P::CodeAnalytique) {
             if !code.chars().all(|c| c.is_ascii() && (c.is_alphanumeric() || c == '-' || c == '_')) {
                 out.push(constat(
-                    P::code_analytique,
+                    P::CodeAnalytique,
                     Gravite::Erreur,
                     "lettres sans accent, chiffres, tiret ou souligné seulement : les fichiers des logiciels de comptabilité coupent sur une espace, une virgule ou un point-virgule.",
                 ));
@@ -2162,16 +2162,16 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
     }
 
     if nom == NomDeFiche::Salarie {
-        let nir = texte_dit(d, S::nir);
-        let cle = texte_dit(d, S::nir_cle);
+        let nir = texte_dit(d, S::Nir);
+        let cle = texte_dit(d, S::NirCle);
         // SANS NIR, LA FICHE N'EST PAS INCOMPLETE : elle est celle d'un salarie
         // pas encore immatricule, sous son numero technique temporaire, qui
         // commence par le sexe.
-        let sexe_saisi = texte_dit(d, S::sexe);
+        let sexe_saisi = texte_dit(d, S::Sexe);
         // Le sexe qu'il faut alors, la DPAE et la DSN l'exigent a leur heure (`exige_par`, `exige_si` du champ `sexe`).
         if nir.is_none() {
             out.push(constat(
-                S::nir,
+                S::Nir,
                 Gravite::Avertissement,
                 "pas de NIR : ce salarie sera declare sous un numero technique temporaire, qui l'identifie dans la DSN mais n'ouvre aucun droit. Des que la caisse notifie le NIR ou le NIA, le saisir ici -- la premiere declaration suivante portera les deux, pour faire le lien.",
             ));
@@ -2180,7 +2180,7 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
             let premier = tranche(nir, 0, 1);
             if (premier == "1" || premier == "2") && *sexe != premier {
                 out.push(constat(
-                    S::sexe,
+                    S::Sexe,
                     Gravite::Erreur,
                     format!("le NIR commence par {}, cette case dit {}. Les deux ne peuvent pas etre vrais ; c'est le NIR qui a ete declare.", premier, sexe),
                 ));
@@ -2189,7 +2189,7 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
         if let (Some(attendue), Some(cle)) = (nir.as_deref().and_then(cle_nir), &cle) {
             if attendue != *cle {
                 out.push(constat(
-                    S::nir_cle,
+                    S::NirCle,
                     Gravite::Erreur,
                     format!("cle incoherente avec le NIR : {} attendue. Un NIR faux passe les controles de format et se voit des mois plus tard, dans un bilan d'identification.", attendue),
                 ));
@@ -2197,32 +2197,32 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
         }
         match (&nir, &cle) {
             (None, Some(_)) => out.push(constat(
-                S::nir,
+                S::Nir,
                 Gravite::Erreur,
                 "le NIR et sa cle vont ensemble : une cle sans NIR ne verifie rien -- si le salarie n'est pas immatricule, effacer aussi la cle",
             )),
-            (Some(_), None) => out.push(constat(S::nir_cle, Gravite::Erreur, "le NIR et sa cle vont ensemble : il manque la cle, les deux chiffres qui le suivent")),
+            (Some(_), None) => out.push(constat(S::NirCle, Gravite::Erreur, "le NIR et sa cle vont ensemble : il manque la cle, les deux chiffres qui le suivent")),
             _ => {}
         }
-        if let (Some(Valeur::Texte(nee)), Some(nir)) = (d.dite(S::date_naissance), &nir) {
+        if let (Some(Valeur::Texte(nee)), Some(nir)) = (d.dite(S::DateNaissance), &nir) {
             if nir.chars().count() == 13 && tous_chiffres(&tranche(nir, 1, 5)) {
                 let (an, mo) = (tranche(nir, 1, 3), tranche(nir, 3, 5));
                 let (n24, n57) = (tranche(nee, 2, 4), tranche(nee, 5, 7));
                 if n24 != an || (mo != "00" && n57 != mo) {
-                    out.push(constat(S::nir, Gravite::Avertissement, format!("le NIR annonce {}/{}, la date de naissance dit {}/{}", mo, an, n57, n24)));
+                    out.push(constat(S::Nir, Gravite::Avertissement, format!("le NIR annonce {}/{}, la date de naissance dit {}/{}", mo, an, n57, n24)));
                 }
             }
         }
         // LE LIEU DE NAISSANCE ET LE NIR SE CONTREDISENT : le departement de naissance est celui que le NIR porte, et 99
         // veut dire « ne a l'etranger » (S21.G00.30.001 et .014, `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.30.txt`).
         // La DPAE et la DSN declarent les deux ; ce qui ne va pas ensemble se dit, sans rien remplacer.
-        let dep = texte_dit(d, S::departement_naissance).map(|t| t.to_uppercase());
-        let pays = texte_dit(d, S::pays_naissance).map(|t| t.to_uppercase());
+        let dep = texte_dit(d, S::DepartementNaissance).map(|t| t.to_uppercase());
+        let pays = texte_dit(d, S::PaysNaissance).map(|t| t.to_uppercase());
         let du_nir = nir.as_deref().and_then(departement_du_nir);
         if let (Some(lu), Some(dep)) = (&du_nir, &dep) {
             if lu != dep {
                 out.push(constat(
-                    S::departement_naissance,
+                    S::DepartementNaissance,
                     Gravite::Avertissement,
                     format!("le NIR dit né dans le département {}, cette case dit {}. Les deux partent dans la DPAE et la DSN : l'un des deux est faux.", lu, dep),
                 ));
@@ -2231,13 +2231,13 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
         if let Some(dep_vu) = dep.or(du_nir) {
             if dep_vu == "99" && pays.as_deref() == Some("FR") {
                 out.push(constat(
-                    S::pays_naissance,
+                    S::PaysNaissance,
                     Gravite::Avertissement,
                     "le département de naissance 99 veut dire « né à l'étranger », et le pays de naissance dit la France. Si la personne est née en France, son NIR ou son département est faux ; sinon, choisir son pays de naissance.",
                 ));
             } else if !["97", "98", "99"].contains(&dep_vu.as_str()) && pays.as_deref().is_some_and(|p| p != "FR") {
                 out.push(constat(
-                    S::pays_naissance,
+                    S::PaysNaissance,
                     Gravite::Avertissement,
                     format!("le département de naissance {} veut dire « né en France métropolitaine », et le pays de naissance dit un autre pays. Une personne née à l'étranger a le département 99.", dep_vu),
                 ));
@@ -2248,58 +2248,58 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
         // Un pays de nationalite hors de la liste se dit sur sa propre case (forme « pays »), pas deux fois.
         // Un pays ecrit « hors de la liste » qui n'en est pas un, ou a cote d'un pays de la liste, se dit sur
         // sa case a lui ; sinon c'est la nationalite choisie qui manque ou qui ne va pas, sur la sienne.
-        let (nom_d, nom_affichage, prenom, prenom_affichage) = (d.mot(S::nom), d.mot(S::nom_affichage), d.mot(S::prenom), d.mot(S::prenom_affichage));
+        let (nom_d, nom_affichage, prenom, prenom_affichage) = (d.mot(S::Nom), d.mot(S::NomAffichage), d.mot(S::Prenom), d.mot(S::PrenomAffichage));
         let qui = socle::texte::salarie_nomme(nom_d.as_deref(), nom_affichage.as_deref(), prenom.as_deref(), prenom_affichage.as_deref());
-        let (code, pays_n, hors) = (d.mot(S::code_nationalite_dsn), d.mot(S::pays_nationalite), d.mot(S::pays_nationalite_hors_liste));
+        let (code, pays_n, hors) = (d.mot(S::CodeNationaliteDsn), d.mot(S::PaysNationalite), d.mot(S::PaysNationaliteHorsListe));
         let fiche = socle::codification_ue::Nationalite::nouvelle(code.as_deref(), pays_n.as_deref(), hors.as_deref(), qui);
-        let pays_inconnu = match d.dite(S::pays_nationalite) {
+        let pays_inconnu = match d.dite(S::PaysNationalite) {
             Some(Valeur::Texte(p)) => socle::pays::du_code(p)?.is_none(),
             None | Some(Valeur::Nombre(_) | Valeur::OuiNon(_) | Valeur::Mots(_) | Valeur::Bloc(_) | Valeur::Lignes(_)) => false,
         };
-        let hors_liste = d.dite(S::pays_nationalite_hors_liste).is_some();
+        let hors_liste = d.dite(S::PaysNationaliteHorsListe).is_some();
         if let Some(m) = socle::codification_ue::faute_hors_liste(&fiche)? {
-            out.push(constat(S::pays_nationalite_hors_liste, Gravite::Erreur, m));
-        } else if !pays_inconnu && (hors_liste || d.dite(S::code_nationalite_dsn).is_some() || d.dite(S::pays_nationalite).is_some()) {
+            out.push(constat(S::PaysNationaliteHorsListe, Gravite::Erreur, m));
+        } else if !pays_inconnu && (hors_liste || d.dite(S::CodeNationaliteDsn).is_some() || d.dite(S::PaysNationalite).is_some()) {
             if let Err(m) = socle::codification_ue::codification_ue(&fiche) {
-                out.push(constat(S::code_nationalite_dsn, Gravite::Erreur, m.phrase));
+                out.push(constat(S::CodeNationaliteDsn, Gravite::Erreur, m.phrase));
             }
         }
         // LES BORNES D'UNE DISPENSE DE SANTE (Q13) : elles bornent un motif, et la fin ne precede pas le debut. Ce que
         // le mois en fait est dans `calcul::dispense_de_la_periode`.
-        let (depuis, jusqu_au) = (d.mot(S::sante_dispense_depuis), d.mot(S::sante_dispense_jusqu_au));
-        if (depuis.is_some() || jusqu_au.is_some()) && d.dite(S::sante_dispense).is_none() {
+        let (depuis, jusqu_au) = (d.mot(S::SanteDispenseDepuis), d.mot(S::SanteDispenseJusquAu));
+        if (depuis.is_some() || jusqu_au.is_some()) && d.dite(S::SanteDispense).is_none() {
             out.push(constat(
-                S::sante_dispense,
+                S::SanteDispense,
                 Gravite::Erreur,
                 "la dispense a des dates mais pas de motif : écrire le motif de la dispense (la demande écrite du salarié), ou retirer ses dates".to_string(),
             ));
         }
         if let (Some(a), Some(b)) = (&depuis, &jusqu_au) {
             if date_iso(a).is_some() && date_iso(b).is_some() && b < a {
-                out.push(constat(S::sante_dispense_jusqu_au, Gravite::Erreur, format!("la dispense finirait ({}) avant de commencer ({})", b, a)));
+                out.push(constat(S::SanteDispenseJusquAu, Gravite::Erreur, format!("la dispense finirait ({}) avant de commencer ({})", b, a)));
             }
         }
         // Le code emploi, le statut et le PCS de la fiche, confrontes au catalogue des metiers. Avertissements, pas
         // erreurs. Le catalogue lit un texte vide comme une case que la fiche ne dit pas : les textes dits, bout a bout.
-        if let Some(code_emploi) = d.mot(S::code_emploi_ft) {
-            let (statut, pcs) = (d.mot(S::statut), d.mot(S::pcs_ese));
+        if let Some(code_emploi) = d.mot(S::CodeEmploiFt) {
+            let (statut, pcs) = (d.mot(S::Statut), d.mot(S::PcsEse));
             for msg in droit::emplois::controler_fiche(&code_emploi, &statut.as_slice().concat(), &pcs.as_slice().concat())? {
-                out.push(constat(S::code_emploi_ft, Gravite::Avertissement, msg));
+                out.push(constat(S::CodeEmploiFt, Gravite::Avertissement, msg));
             }
         }
     }
 
     if nom == NomDeFiche::Entreprise {
-        let (siret, siren, nic) = (d.mot(E::siret), d.mot(E::siren), d.mot(E::nic));
+        let (siret, siren, nic) = (d.mot(E::Siret), d.mot(E::Siren), d.mot(E::Nic));
         if let (Some(siret), Some(siren), Some(nic)) = (&siret, &siren, &nic) {
             let somme = format!("{}{}", siren, nic);
             if *siret != somme {
-                out.push(constat(E::siret, Gravite::Erreur, format!("SIRET != SIREN + NIC ({})", somme)));
+                out.push(constat(E::Siret, Gravite::Erreur, format!("SIRET != SIREN + NIC ({})", somme)));
             }
         }
         if let Some(siret) = &siret {
             if siret.chars().count() == 14 && !luhn(siret) {
-                out.push(constat(E::siret, Gravite::Erreur, "ce numéro ne peut pas être un SIRET : un chiffre est probablement mal tapé"));
+                out.push(constat(E::Siret, Gravite::Erreur, "ce numéro ne peut pas être un SIRET : un chiffre est probablement mal tapé"));
             }
         }
     }
@@ -2330,7 +2330,7 @@ pub fn verifier_fiche(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Anomalie>> {
     let declare = |cle: NomDeCase| champs.iter().any(|c| c.declare && (c.cle == cle || c.derive_de == Some(cle)));
     // Une fiche mise de cote ne doit pas crier. Ses fautes restent visibles --
     // et redeviennent des erreurs a la reactivation, ce que le message dit.
-    let inactive = donnees.case(CaseSalarie::actif) == Some(&Valeur::OuiNon(false));
+    let inactive = donnees.case(CaseSalarie::Actif) == Some(&Valeur::OuiNon(false));
     let mut anomalies: Vec<Anomalie> = constats
         .into_iter()
         .map(|mut c| {
@@ -2429,7 +2429,7 @@ mod tests {
     #[test]
     fn la_fiche_entreprise_admet_un_code_des_deux_nomenclatures() {
         let faute_naf = |code: &str| -> Option<String> {
-            verifier_fiche(NomDeFiche::Entreprise, &une_case(NomDeFiche::Entreprise, "naf", code)).unwrap().into_iter().find(|a| a.champ == CaseEntreprise::naf.into()).map(|a| a.message)
+            verifier_fiche(NomDeFiche::Entreprise, &une_case(NomDeFiche::Entreprise, "naf", code)).unwrap().into_iter().find(|a| a.champ == CaseEntreprise::Naf.into()).map(|a| a.message)
         };
         assert_eq!(faute_naf("9001Z"), None, "NAF rev. 2");
         assert_eq!(faute_naf("9020Y"), None, "NAF 2025");
@@ -2446,11 +2446,11 @@ mod tests {
             let champ = NomDeCase::from(champ);
             verifier_fiche(NomDeFiche::Salarie, &une_case(NomDeFiche::Salarie, champ.nom(), valeur)).unwrap().iter().any(|a| a.champ == champ && a.gravite == Gravite::Erreur)
         };
-        assert!(erreur_sur(CaseSalarie::statut_categoriel_rc, "03"), "03 n'est pas un statut categoriel de retraite complementaire en 2026.1");
+        assert!(erreur_sur(CaseSalarie::StatutCategorielRc, "03"), "03 n'est pas un statut categoriel de retraite complementaire en 2026.1");
         for rc in ["01", "02", "04"] {
-            assert!(!erreur_sur(CaseSalarie::statut_categoriel_rc, rc), "{}", rc);
+            assert!(!erreur_sur(CaseSalarie::StatutCategorielRc, rc), "{}", rc);
         }
-        assert!(!erreur_sur(CaseSalarie::statut_conventionnel, "03"), "03 cadre dirigeant est un classement conventionnel");
+        assert!(!erreur_sur(CaseSalarie::StatutConventionnel, "03"), "03 cadre dirigeant est un classement conventionnel");
     }
 
     #[test]

@@ -309,27 +309,27 @@ fn ajouter_les_fiches(ctx: &Contexte, c: &mut Connus) -> R<()> {
         let s = Saisie::de_la_fiche(droit::fiche::NomDeFiche::Salarie, &f.champs)?;
         use droit::fiche::CaseSalarie as S;
         let t = |k: S| s.mot(k);
-        for k in [S::nom, S::nom_affichage] {
+        for k in [S::Nom, S::NomAffichage] {
             pousser(&mut c.noms, t(k));
         }
-        pousser(&mut c.noms, t(S::code_salarie).filter(|x| x.chars().filter(|c| c.is_alphabetic()).count() >= 2));
-        for k in [S::prenom, S::prenom_affichage] {
+        pousser(&mut c.noms, t(S::CodeSalarie).filter(|x| x.chars().filter(|c| c.is_alphabetic()).count() >= 2));
+        for k in [S::Prenom, S::PrenomAffichage] {
             pousser(&mut c.prenoms, t(k));
         }
-        pousser(&mut c.nirs, t(S::nir));
-        if let (Some(n), Some(k)) = (t(S::nir), t(S::nir_cle)) {
+        pousser(&mut c.nirs, t(S::Nir));
+        if let (Some(n), Some(k)) = (t(S::Nir), t(S::NirCle)) {
             pousser(&mut c.nirs, Some(format!("{}{}", n, k)));
         }
-        pousser(&mut c.naissances, t(S::date_naissance));
-        for k in [S::adresse, S::adresse_affichage] {
+        pousser(&mut c.naissances, t(S::DateNaissance));
+        for k in [S::Adresse, S::AdresseAffichage] {
             pousser(&mut c.adresses, t(k));
         }
-        pousser(&mut c.codes_postaux, t(S::code_postal));
-        for k in [S::commune, S::commune_affichage, S::lieu_naissance, S::lieu_naissance_affichage] {
+        pousser(&mut c.codes_postaux, t(S::CodePostal));
+        for k in [S::Commune, S::CommuneAffichage, S::LieuNaissance, S::LieuNaissanceAffichage] {
             pousser(&mut c.communes, t(k));
         }
-        pousser(&mut c.courriels, t(S::email));
-        pousser(&mut c.conges_spectacles, t(S::num_conges_spectacles));
+        pousser(&mut c.courriels, t(S::Email));
+        pousser(&mut c.conges_spectacles, t(S::NumCongesSpectacles));
     }
     let e = &ctx.entreprise;
     for k in [e.raison_sociale.remplie(), e.nom_affichage.remplie(), e.adresse.remplie(), e.adresse_affichage.remplie(), e.complement_adresse.remplie(), e.complement_adresse_affichage.remplie(), e.code_postal.remplie(), e.commune.remplie(), e.commune_affichage.remplie()] {

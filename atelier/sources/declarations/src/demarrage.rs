@@ -153,7 +153,7 @@ fn manque_de_la_case(cle: CaseEntreprise, libelle: String, bloque: &str, trouver
 ///   (`spectacle` : un spectacle configure pour « Pour demarrer », un contrat de spectacle pour la DSN). Un lieu en 1790
 ///   sans spectacle n'a rien a dire ; l'audiovisuel ne voit pas la case.
 pub fn licence_exigee(ent: &ChampsEntreprise, spectacle: bool) -> R<bool> {
-    let c = champ_entreprise(CaseEntreprise::licence_spectacle)?;
+    let c = champ_entreprise(CaseEntreprise::LicenceSpectacle)?;
     let ent = crate::champs::Saisie::de_la_fiche(NomDeFiche::Entreprise, ent)?;
     Ok(c.exige(&ent) || (spectacle && crate::champs::condition_remplie(c.si.as_ref(), &ent)))
 }
@@ -311,8 +311,8 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // en 1790 et en 3252 la case se montre sans etre exigee, dans l'audiovisuel elle ne se montre pas.
     // Elle peut etre datee (une par periode) : le contexte la resout au jour.
     if ctx.licence(&ctx.aujourdhui).is_none_or(|l| l.trim().is_empty()) && licence_exigee(ent, intermittents)? {
-        let (libelle, aide) = champ(CaseEntreprise::licence_spectacle)?;
-        out.push(manque_de_la_case(CaseEntreprise::licence_spectacle, libelle, "la DSN", aide)?);
+        let (libelle, aide) = champ(CaseEntreprise::LicenceSpectacle)?;
+        out.push(manque_de_la_case(CaseEntreprise::LicenceSpectacle, libelle, "la DSN", aide)?);
     }
     // L'EFFECTIF, puis le reste du bareme de l'annee : le contexte refuse lui-meme, avec la phrase qui dit ou trouver ce
     // qui manque. L'effectif a part : le bareme s'arrete au premier refus (le taux AT/MP), et tout doit sortir d'un coup.
@@ -326,12 +326,12 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     let effectif = ctx.effectif()?;
     let manquent = effectif.a_dire(an);
     if !manquent.is_empty() && effectif.premiere_embauche.is_none() {
-        let (libelle, _) = champ(CaseEntreprise::premiere_embauche)?;
+        let (libelle, _) = champ(CaseEntreprise::PremiereEmbauche)?;
         let m = match effectif.atteint(11, an) {
             Err(m) => m.phrase,
             Ok(_) => format!("L'effectif de {} n'est pas connu.", an - 1),
         };
-        out.push(manque_de_la_case(CaseEntreprise::premiere_embauche, libelle, "l'effectif de toute paie (seuils de 11 et 50 salariés)", m)?);
+        out.push(manque_de_la_case(CaseEntreprise::PremiereEmbauche, libelle, "l'effectif de toute paie (seuils de 11 et 50 salariés)", m)?);
     } else if !manquent.is_empty() {
         let annees = manquent.iter().map(i32::to_string).collect::<Vec<_>>().join(", ");
         out.push(Manque::bloquante(
@@ -348,7 +348,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // ne se pose pas (III.3.1.b, `droit::bareme::representation_du_personnel`). Il ne se lit qu'avec la cle de l'effectif
     // (`droit::contexte::Effectif::cse`). Un bareme qui ne se lit pas se dit plus bas, ce qui lui manque.
     let bareme = ctx.bareme(&ctx.aujourdhui);
-    let cle = CaseEntreprise::representation_personnel;
+    let cle = CaseEntreprise::RepresentationPersonnel;
     let par_representation = |b: &droit::forme_bareme::Pile| b.contributions_conventionnelles.iter().flatten().any(|c| c.par_representation.as_ref().is_some_and(|p| !p.is_empty()));
     // C'est l'effectif de la paie (celui de l'annee d'avant, L. 130-1, I) qui decide (III.3.1.a et b) : inconnu, c'est
     // lui que la contribution demande, pas le CSE.
@@ -376,7 +376,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
         Ok(_) => {}
         // L'effectif qui manque est demande plus haut.
         Err(e) => match e.classe {
-            Some(Classe::TauxAtmpAbsent) => out.push(manque_de_la_case(CaseEntreprise::taux_atmp, format!("Le taux AT/MP {}", an), "toute paie", e.phrase)?),
+            Some(Classe::TauxAtmpAbsent) => out.push(manque_de_la_case(CaseEntreprise::TauxAtmp, format!("Le taux AT/MP {}", an), "toute paie", e.phrase)?),
             Some(Classe::EffectifAbsent) => {}
             _ => out.push(Manque::bloquante("bareme", format!("Le barème {}", an), "toute paie", ENTREPRISE, None, e.phrase)),
         },

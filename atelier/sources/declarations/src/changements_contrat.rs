@@ -109,23 +109,23 @@ const fn d(r40: &'static str, r41: &'static str, saisie: bool, origines: &'stati
 /// dispositifs absents du modele, rubriques 40 non ecrites ou fixees par la nature) n'a pas de jumelle qui bouge : rien
 /// ne peut en changer.
 const MODALITES: [Modalite; 20] = [
-    d("S21.G00.40.002", "S21.G00.41.002", true, &[S(CaseSalarie::statut_conventionnel), S(CaseSalarie::statut_categoriel_rc), S(CaseSalarie::code_emploi_ft)]),
-    d("S21.G00.40.003", "S21.G00.41.003", true, &[S(CaseSalarie::statut_categoriel_rc), S(CaseSalarie::statut_conventionnel), S(CaseSalarie::code_emploi_ft)]),
-    d("S21.G00.40.004", "S21.G00.41.019", true, &[S(CaseSalarie::pcs_ese), S(CaseSalarie::code_emploi_ft)]),
-    d("S21.G00.40.005", "S21.G00.41.020", true, &[S(CaseSalarie::code_emploi_ft)]),
+    d("S21.G00.40.002", "S21.G00.41.002", true, &[S(CaseSalarie::StatutConventionnel), S(CaseSalarie::StatutCategorielRc), S(CaseSalarie::CodeEmploiFt)]),
+    d("S21.G00.40.003", "S21.G00.41.003", true, &[S(CaseSalarie::StatutCategorielRc), S(CaseSalarie::StatutConventionnel), S(CaseSalarie::CodeEmploiFt)]),
+    d("S21.G00.40.004", "S21.G00.41.019", true, &[S(CaseSalarie::PcsEse), S(CaseSalarie::CodeEmploiFt)]),
+    d("S21.G00.40.005", "S21.G00.41.020", true, &[S(CaseSalarie::CodeEmploiFt)]),
     m("S21.G00.40.007", "S21.G00.41.004", true, &[]),
     m("S21.G00.40.008", "S21.G00.41.005", true, &[]),
     m("S21.G00.40.011", "S21.G00.41.006", true, &[]),
     m("S21.G00.40.012", "S21.G00.41.022", true, &[]),
     d("S21.G00.40.013", "S21.G00.41.007", true, &[]),
     Modalite { liste: Some(relue::<droit::natures::ModaliteDuTempsDeTravail>), ..d("S21.G00.40.014", "S21.G00.41.008", true, &[]) },
-    m("S21.G00.40.016", "S21.G00.41.010", false, &[Etablissement, E(CaseEntreprise::code_postal), E(CaseEntreprise::etablissements)]),
-    m("S21.G00.40.017", "S21.G00.41.011", false, &[E(CaseEntreprise::idcc)]),
+    m("S21.G00.40.016", "S21.G00.41.010", false, &[Etablissement, E(CaseEntreprise::CodePostal), E(CaseEntreprise::Etablissements)]),
+    m("S21.G00.40.017", "S21.G00.41.011", false, &[E(CaseEntreprise::Idcc)]),
     // Le lieu de travail est le SIRET de l'etablissement du salarie (`dsn::bloc_contrat`) : il change avec lui, a la
     // date de la mutation (le SIRET, identifiant, va en 41.012 dans un autre bloc, CCH-16).
     m("S21.G00.40.019", "S21.G00.41.013", false, &[Etablissement]),
     Modalite { liste: Some(relue::<droit::natures::MotifDeRecours>), ..m("S21.G00.40.021", "S21.G00.41.016", true, &[]) },
-    m("S21.G00.40.022", "S21.G00.41.023", false, &[E(CaseEntreprise::congesspectacles_adherent)]),
+    m("S21.G00.40.022", "S21.G00.41.023", false, &[E(CaseEntreprise::CongesspectaclesAdherent)]),
     // Le taux de la deduction forfaitaire specifique vient du bareme de l'annee (arrete du 4 septembre 2025, art. 9, II :
     // reduit « au 1er janvier de chaque annee ») et de la fiche (profession, accord du salarie, option de l'employeur).
     Modalite {
@@ -135,9 +135,9 @@ const MODALITES: [Modalite; 20] = [
             "S21.G00.41.017",
             false,
             &[
-                S(CaseSalarie::deduction_forfaitaire),
-                S(CaseSalarie::deduction_forfaitaire_accord),
-                E(CaseEntreprise::deduction_forfaitaire_option),
+                S(CaseSalarie::DeductionForfaitaire),
+                S(CaseSalarie::DeductionForfaitaireAccord),
+                E(CaseEntreprise::DeductionForfaitaireOption),
             ],
         )
     },
@@ -147,13 +147,13 @@ const MODALITES: [Modalite; 20] = [
     // « emplois multiples », « au cours d'une meme periode de paie » (p. 199) : `dsn::emplois_multiples` le calcule
     // chaque mois ; 41.061 est une modalite (§ 4.4.14.1, p. 103).
     Modalite { periodique: true, ..m("S21.G00.40.036", "S21.G00.41.061", false, &[]) },
-    Modalite { en_cours_de_mois: true, ..m("S21.G00.40.072", "S21.G00.41.048", false, &[S(CaseSalarie::statut_boeth)]) },
+    Modalite { en_cours_de_mois: true, ..m("S21.G00.40.072", "S21.G00.41.048", false, &[S(CaseSalarie::StatutBoeth)]) },
     // Norme 2027 (P27V01) : « Ancienne application de la proratisation du Plafond de Securite Sociale a hauteur de la
     // quotite de travail » (cahier 2027.1.1, p. 242, `texte-2027/bloc-S21.G00.41.txt` l. 1439-1450 ; modalite, § 4.4.14.1,
     // `chapitre-4-controles.txt` l. 1047). 40.084 change avec le temps partiel (un avenant, date par la saisie), avec
     // la renonciation de l'etablissement (la fiche entreprise) ou avec le statut d'artiste, que la loi exclut de la
     // proratisation (`calcul::plafond_temps_partiel`). Absente des DSN de 2026 : rien de declare, pas de bloc 41.
-    d("S21.G00.40.084", "S21.G00.41.066", true, &[S(CaseSalarie::statut), E(CaseEntreprise::plafond_temps_partiel)]),
+    d("S21.G00.40.084", "S21.G00.41.066", true, &[S(CaseSalarie::Statut), E(CaseEntreprise::PlafondTempsPartiel)]),
 ];
 
 /// Le bloc 40 d'un contrat tel qu'une DSN partie l'a declare (`dsn::bloc_40_declare`).

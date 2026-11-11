@@ -692,7 +692,7 @@ fn ecrire_compte_dpae(ctx: &Contexte, propres: Vec<(&'static str, String)>) -> R
         let case = if cle == "nom" { &mut cfg.nom } else { &mut cfg.prenom };
         *case = Some(v);
     }
-    crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::api_dpae(Some(cfg)), Some(ctx.aujourdhui))?;
+    crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::ApiDpae(Some(cfg)), Some(ctx.aujourdhui))?;
     Ok(droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&ctx.racine.join(droit::contexte::ENTREPRISE), droit::contexte::ENTREPRISE)?.au(&ctx.aujourdhui))
 }
 
