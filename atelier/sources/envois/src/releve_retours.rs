@@ -24,16 +24,16 @@ use socle::echec::{Classe, Echec};
 use crate::retours::{Annonce, Depot};
 use socle::date::Jour;
 use socle::num::Decimal;
-use socle::paris::{maintenant_naif, InstantEcrit, Naif};
+use socle::paris::{maintenant_naif, Naif};
 
 use crate::branchement::{Branchement, ANCIEN_PREFIXE_FLUX_FICTIF, PREFIXE_FLUX_FICTIF};
 use crate::journal::{Acte, Ligne, RetourOrganisme};
 use crate::suites::Suites;
 
-/// `AAAAMMJJ-HHMMSS` d'une heure locale naive.
-fn horodatage_archive(local: Naif) -> String {
-    let iso = local.iso();
-    format!("{}{}{}-{}{}{}", &iso[0..4], &iso[5..7], &iso[8..10], &iso[11..13], &iso[14..16], &iso[17..19])
+/// `AAAAMMJJ-HHMMSS` d'un instant, a l'heure de Paris.
+fn horodatage_archive(instant: socle::paris::Moment) -> String {
+    let c = socle::paris::ecrit::compacte::texte(instant);
+    format!("{}-{}", &c[..8], &c[8..])
 }
 
 // -------------------------------------------------------------------- les pannes
@@ -296,7 +296,7 @@ impl Releve {
 
 /// Le jour de publication d'un retour, en JJ/MM/AAAA ; aucun quand il ne le dit pas.
 pub fn jour_de_publication_dit(r: &Annonce) -> Option<String> {
-    r.publication.map(|p| p.naif().jour().jj_mm_aaaa())
+    r.publication.map(|p| p.jour_de_paris().jj_mm_aaaa())
 }
 
 // ------------------------------------------------------------------ l'archive des retours
@@ -332,7 +332,7 @@ pub(crate) fn archiver_retour(racine: &Path, canal: &str, retour: &Annonce, cont
         }
     };
     let horo = match retour.publication {
-        Some(p) => horodatage_archive(p.naif()),
+        Some(p) => horodatage_archive(p),
         None => maintenant.to_string(),
     };
     let flux = match retour.flux.as_deref().filter(|f| !f.is_empty()) {
@@ -349,7 +349,7 @@ pub(crate) fn archiver_retour(racine: &Path, canal: &str, retour: &Annonce, cont
 
 /// La piece d'un retour, archivee a l'heure de la releve.
 fn archiver(ctx: &Contexte, retour: &Annonce, contenu: &[u8], ctype: Option<&str>, canal: &str) -> R<PathBuf> {
-    archiver_retour(&ctx.racine, canal, retour, contenu, ctype, &horodatage_archive(maintenant_naif()))
+    archiver_retour(&ctx.racine, canal, retour, contenu, ctype, &horodatage_archive(socle::temps::secondes()))
 }
 
 /// Le journal des retours vus sur le canal.
@@ -420,8 +420,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
     let mut rangements: Vec<(usize, crate::journal::Rangement)> = Vec::new();
     let avant = crate::organismes_simules::memoire(&ctx.racine)?;
     let mut memoire = avant.clone();
-    let maintenant = maintenant_naif();
-    let pub_ = socle::paris::InstantCompact::du_naif(maintenant);
+    let pub_ = socle::temps::secondes().a_la_seconde();
     let mut faits = 0;
     for i in 0..lignes.len() {
         let l = &lignes[i];
@@ -754,7 +753,7 @@ struct Mesure118 {
     valeur: Decimal,
     debut: Option<Jour>,
     fin: Option<Jour>,
-    calcule_le: Option<InstantEcrit>,
+    calcule_le: Option<socle::paris::Moment>,
 }
 
 /// Le code de l'effectif de securite sociale (art. L. 130-1 CSS), celui des seuils de cotisation.
@@ -781,8 +780,8 @@ type Annees = std::collections::BTreeMap<String, std::collections::BTreeMap<Stri
 struct EffectifEcrit {
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule", deserialize_with = "socle::forme::court")]
     valeur: Decimal,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    calcule_le: Option<InstantEcrit>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
+    calcule_le: Option<socle::paris::Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

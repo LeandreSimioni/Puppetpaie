@@ -1214,7 +1214,7 @@ pub(crate) enum ChargeEnregistrer {
 #[serde(untagged)]
 pub(crate) enum FicheEnregistree {
     Avertie { avertissement: Avertissement, phrase: String, phrases: Vec<String> },
-    Ecrite { cle: Option<String>, ecrits: Vec<CaseDeFiche>, enregistre_a: Option<socle::paris::InstantEcrit>, enregistre_dit: Option<String>, phrase: String },
+    Ecrite { cle: Option<String>, ecrits: Vec<CaseDeFiche>, #[serde(with = "socle::paris::ecrit::seconde::option")] enregistre_a: Option<socle::paris::Moment>, enregistre_dit: Option<String>, phrase: String },
 }
 
 impl crate::enveloppe::Dite for FicheEnregistree {
@@ -1272,9 +1272,9 @@ fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Changement>
         (true, false, false) => "Enregistré.",
     };
     // « enregistré à HH:MM » : l'heure du moteur (`temps.rs`), pas celle du navigateur (au banc, le temps est simule).
-    let enregistre_a = e.ecrit.then(socle::paris::InstantEcrit::maintenant);
+    let enregistre_a = e.ecrit.then(|| socle::temps::secondes().a_la_seconde());
     let enregistre_dit = enregistre_a.map(|a| {
-        let s = a.naif().seconde_du_jour();
+        let s = a.seconde_du_jour_de_paris();
         format!("enregistré à {:02}:{:02}", s / 3_600, s / 60 % 60)
     });
     let inscrit = if e.ecrit { F::apres_ecriture(ctx, &e.champs)? } else { Vec::new() };

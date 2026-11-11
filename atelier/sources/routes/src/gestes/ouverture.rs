@@ -33,7 +33,7 @@ use envois::drive::Drive;
 use envois::etats;
 use socle::echec::R;
 use socle::num::Decimal;
-use socle::paris::{ecrit, InstantEcrit, Moment};
+use socle::paris::{ecrit, Moment};
 use envois::releve_retours::{Client, Releve};
 use envois::releve_signatures::ReleveDite;
 use crate::gestes::releve_signatures::{self, ReleveSignatures};
@@ -518,7 +518,8 @@ pub struct Trace {
 #[serde(deny_unknown_fields)]
 pub struct SignatureNotee {
     pub nom: String,
-    pub quand: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub quand: Moment,
     pub renvoye: bool,
     pub phrase: String,
 }

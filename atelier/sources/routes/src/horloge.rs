@@ -60,7 +60,7 @@ use droit::contexte::Contexte;
 use envois::courriel::Courriel;
 use socle::date::Jour;
 use socle::mois::{Annee, Mois};
-use socle::paris::InstantEcrit;
+use socle::paris::Moment;
 use compagnie::preuve::Preuve;
 use crate::gestes::depot_acte;
 use envois::etats;
@@ -163,9 +163,13 @@ fn mois_fr(mois: Mois) -> String {
     mois.libelle(socle::mois::Graphie::Accentuee)
 }
 
-/// `jour` a `heure:minute`, a Paris.
-fn a_l_heure(jour: Jour, heure: i64, minute: i64) -> R<InstantEcrit> {
-    socle::paris::Naif::du_jour(jour, heure, minute, 0).map(InstantEcrit::du_naif).ok_or_else(|| erreur(Classe::Illisible, socle::date::HORS_CALENDRIER))
+/// `jour` a `heure:minute`, a Paris ; une heure que le changement d'heure saute se refuse.
+fn a_l_heure(jour: Jour, heure: i64, minute: i64) -> R<Moment> {
+    let m = Moment::a_paris(jour, heure, minute, 0).ok_or_else(|| erreur(Classe::Illisible, socle::date::HORS_CALENDRIER))?;
+    if m.jour_de_paris() != jour || m.seconde_du_jour_de_paris() != heure * 3_600 + minute * 60 {
+        return Err(erreur(Classe::DefautDuLogiciel, format!("L'instant d'un pas de l'horloge n'existe pas a Paris : {} a {:02}:{:02}.", jour.iso(), heure, minute)));
+    }
+    Ok(m)
 }
 
 /// Les refus ordinaires d'une operation (un refus du moteur sans classe en est un).
@@ -194,24 +198,14 @@ fn motif_de(e: &Echec) -> String {
     message.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" ")
 }
 
-/// Le moment d'un pas, a l'heure de Paris ; une heure que le changement d'heure saute se refuse.
-fn instant_du_pas(quand: InstantEcrit) -> R<socle::paris::Moment> {
-    let s = quand.naif().seconde_du_jour();
-    socle::paris::Moment::a_paris(quand.jour(), s / 3_600, s / 60 % 60, s % 60)
-        .ok_or_else(|| erreur(Classe::DefautDuLogiciel, format!("L'instant d'un pas de l'horloge n'existe pas a Paris : {}.", quand)))
-}
-
 /// Un pas joue -- le geste, ses lignes de journal datees, et sa phrase. Une erreur devient la phrase, sans
 /// arreter les autres pas. `geste` rend ce qu'il a fait (`Joue`).
-fn pas(d: &HorlogeFictive, quoi: &str, quand: InstantEcrit, mut geste: impl FnMut(&Contexte) -> R<Joue>) -> Vec<String> {
+fn pas(d: &HorlogeFictive, quoi: &str, quand: Moment, mut geste: impl FnMut(&Contexte) -> R<Joue>) -> Vec<String> {
     let racine = d.racine;
     let echec = |e: &Echec| non_joue(quand, quoi, e);
     // LE CONTEXTE DU JOUR DU PAS : ce qu'il ecrit (une date de constitution, un jour inscrit) est celui ou il a lieu.
-    let jour_du_pas = quand.jour();
-    let instant = match instant_du_pas(quand) {
-        Ok(x) => x,
-        Err(e) => return echec(&e),
-    };
+    let jour_du_pas = quand.jour_de_paris();
+    let instant = quand;
     let au_jour = HorlogeFictive { racine, jour: jour_du_pas.min(d.jour) };
     let ctx = match au_jour.contexte_a(au_jour.jour) {
         Ok(c) => c,
@@ -221,17 +215,17 @@ fn pas(d: &HorlogeFictive, quoi: &str, quand: InstantEcrit, mut geste: impl FnMu
     // ligne du journal dit qu'il a ete joue (`origine`).
     // La re-verification precede TOUT geste : ce qui suit ne s'execute que dans une compagnie fictive.
     let jouer = || envois::journal::dater_pendant(quand, ORIGINE, || d.reverifier().and_then(|_| geste(&ctx)));
-    let fait = socle::temps::pendant_le_pas_fictif(instant, &format!("{} {}", quand, quoi), jouer);
+    let fait = socle::temps::pendant_le_pas_fictif(instant, &format!("{} {}", socle::paris::ecrit::seconde::texte(quand), quoi), jouer);
     match fait {
-        Ok(Joue::Fait) => vec![format!("Le {} : {}", quand.jour().jj_mm_aaaa(), quoi)],
+        Ok(Joue::Fait) => vec![format!("Le {} : {}", quand.jour_de_paris().jj_mm_aaaa(), quoi)],
         Ok(Joue::Rien) => Vec::new(),
         Err(e) => echec(&e),
     }
 }
 
 /// La phrase d'un pas que le moteur refuse : son jour, ce qu'il devait faire, et le refus.
-fn non_joue(quand: InstantEcrit, quoi: &str, e: &Echec) -> Vec<String> {
-    vec![format!("Le {} : {} — non joué ({})", quand.jour().jj_mm_aaaa(), quoi, motif_de(e))]
+fn non_joue(quand: Moment, quoi: &str, e: &Echec) -> Vec<String> {
+    vec![format!("Le {} : {} — non joué ({})", quand.jour_de_paris().jj_mm_aaaa(), quoi, motif_de(e))]
 }
 
 /// Ce qu'un pas a fait : quelque chose (sa phrase se dit), ou rien, faute de quoi faire (ni phrase, ni date).
@@ -392,7 +386,7 @@ enum Geste {
 
 /// Un pas du calendrier : son instant (a Paris), sa phrase, son geste.
 struct Pas {
-    quand: InstantEcrit,
+    quand: Moment,
     quoi: String,
     geste: Geste,
 }
@@ -549,7 +543,7 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
     };
     for c in apercu.into_iter().flatten() {
         let Some(quand) = revalide_le(ctx, mois, &c.salarie, c.debut)? else { continue };
-        if quand.jour() > jour {
+        if quand.jour_de_paris() > jour {
             continue;
         }
         calendrier.push(Pas { quand, quoi: String::new(), geste: Geste::Avenant { mois: le_mois, salarie: c.salarie, debut: c.debut, nom: c.nom } });
@@ -619,9 +613,9 @@ fn les_pas_de_l_annee(annee: i32, jour: Jour, calendrier: &mut Vec<Pas>) -> R<()
 }
 
 /// L'instant ou l'horloge joue, le jour `jour` : maintenant, si c'est ce jour-la ; sinon ce jour a midi.
-fn maintenant_du(jour: Jour) -> R<InstantEcrit> {
-    let m = InstantEcrit::maintenant();
-    if m.jour() == jour {
+fn maintenant_du(jour: Jour) -> R<Moment> {
+    let m = socle::temps::secondes().a_la_seconde();
+    if m.jour_de_paris() == jour {
         Ok(m)
     } else {
         a_l_heure(jour, 12, 0)
@@ -776,14 +770,14 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
                 let a_l_echeance = HorlogeFictive { racine: d.racine, jour: (*echeance).min(d.jour) };
                 let ctx_e = a_l_echeance.contexte()?;
                 let fabriquer = || crate::gestes::depart::fabriquer_dsn(&ctx_e, *mois, QUI_HORLOGE);
-                let t = instant_du_pas(a_l_heure(*echeance, 10, 0)?)?;
+                let t = a_l_heure(*echeance, 10, 0)?;
                 socle::temps::pendant(t, fabriquer)?;
                 // TOUTES LES DSN DU MOIS QUI NE SONT PAS PARTIES, dans l'ordre de `crate::etapes::ordre_de_depot` :
                 // la mensuelle, puis les signalements.
                 deposer_les_dsn(d, ctx, *mois, |_| true, &mut a_faire).map(Joue::si)
             });
             // Ce que le rangement de l'AER jouee laisse a faire se dit, a la date du depot, comme le dit la releve.
-            fait.extend(a_faire.into_iter().map(|p| format!("Le {} : {}", quand.jour().jj_mm_aaaa(), p)));
+            fait.extend(a_faire.into_iter().map(|p| format!("Le {} : {}", quand.jour_de_paris().jj_mm_aaaa(), p)));
             fait
         }
         Geste::Documents { mois } => {
@@ -850,7 +844,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
 /// `jusqu_au`, a `quand`, par le geste de l'ecran (la route `valider-engagement` : son verrou, ses refus), chacun
 /// designe par son identite et tel qu'il est ecrit. Rien ne part d'un engagement en saisie ; un engagement auquel il
 /// manque un fait attend qu'on le complete, et un refus du moteur arrete le pas, qui le dit.
-fn valider_les_engagements(d: &HorlogeFictive, le_mois: Mois, jusqu_au: Jour, quoi: &str, quand: InstantEcrit) -> Vec<String> {
+fn valider_les_engagements(d: &HorlogeFictive, le_mois: Mois, jusqu_au: Jour, quoi: &str, quand: Moment) -> Vec<String> {
     pas(d, quoi, quand, |ctx| {
         let objets = engagement::stock::objets_du_mois(&ctx.racine, le_mois)?;
         let ids = engagement::stock::identites(&objets);
@@ -900,7 +894,7 @@ fn signables(ctx: &Contexte, mois: Mois) -> R<Vec<Signable>> {
 // ------------------------------------------------------------------ les avenants
 
 /// L'instant ou l'engagement de ce contrat a ete valide en dernier (`valide.le`).
-fn revalide_le(ctx: &Contexte, mois: Mois, salarie: &str, debut: Jour) -> R<Option<InstantEcrit>> {
+fn revalide_le(ctx: &Contexte, mois: Mois, salarie: &str, debut: Jour) -> R<Option<Moment>> {
     Ok(engagement::stock::objets_du_mois(&ctx.racine, mois)?.into_iter().find_map(|o| {
         let b = &*o.brut;
         let sien = b.saisie.carte.salarie.as_deref() == Some(salarie) && engagement::debut_brut(b) == Some(debut);

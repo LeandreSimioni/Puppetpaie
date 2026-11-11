@@ -37,7 +37,7 @@ use envois::etats;
 use envois::journal::{self, AvenantParti, ArticleModifie, ContratParti};
 use envois::releve_signatures::ReleveDite;
 use socle::date::Jour;
-use socle::paris::{HeureDuJournal, InstantEcrit};
+use socle::paris::{InstantOuJour, Moment};
 use socle::echec::{erreur, Classe, R};
 use socle::mois::{Mois, MoisOuJour};
 
@@ -351,7 +351,7 @@ pub(crate) struct ContratASigner {
     pub(crate) debut: Jour,
     fin: Option<Jour>,
     pub(crate) numero: Option<NumeroContrat>,
-    pub(crate) demande_le: Option<HeureDuJournal>,
+    pub(crate) demande_le: Option<InstantOuJour>,
     pastille: Option<Pastille>,
     pub(crate) par: Option<&'static str>,
     /// Un courriel a deja demande de signer ce contrat (le journal le dit) : le redemander est un rappel.
@@ -362,7 +362,8 @@ pub(crate) struct ContratASigner {
     pub(crate) en_attente: bool,
     recu: Option<GesteRecu>,
     relancer: Option<GesteRelancer>,
-    pub(crate) recu_le: Option<InstantEcrit>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    pub(crate) recu_le: Option<Moment>,
     pub(crate) caduc: bool,
     periode_dit: String,
     numero_dit: Option<String>,
@@ -396,7 +397,8 @@ pub(crate) struct NoteRecue {
     phrase: String,
     salarie: String,
     debut: Jour,
-    recu: Option<InstantEcrit>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    recu: Option<Moment>,
     annuler: GesteRecu,
 }
 
@@ -455,7 +457,8 @@ pub(crate) struct ApercuAvenant {
     mois: Mois,
     contrat: Option<NumeroContrat>,
     date_contrat: Jour,
-    signe: Option<InstantEcrit>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    signe: Option<Moment>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     ailleurs: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -477,7 +480,7 @@ pub(crate) struct ApercuAvenant {
 #[derive(Debug, Serialize)]
 struct PiecePartie {
     quoi: String,
-    quand: HeureDuJournal,
+    quand: InstantOuJour,
     quand_dit: String,
     mois: Option<Mois>,
     fichier: String,
@@ -532,7 +535,7 @@ fn poser_courriel(ctx: &Contexte, c: ChargeCourriel) -> R<CourrielPose> {
 pub(crate) struct ParCourriel {
     pub(crate) code: String,
     pub(crate) adresse: String,
-    pub(crate) quand: InstantEcrit,
+    pub(crate) quand: Moment,
     pub(crate) message: String,
     pub(crate) preuve: String,
     /// L'exemplaire contresigne ; aucun quand rien ne s'est contresigne.
@@ -585,7 +588,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
         Some(m) => (format!("contrat signe par courriel ({}, {})", m.code, m.adresse), m.quand),
         None => (
             if recu { format!("{} signe recu, range a la main", ce) } else { format!("mention retiree : le {} signe n'est pas la", ce) },
-            InstantEcrit::maintenant(),
+            socle::temps::secondes().a_la_seconde(),
         ),
     };
     // CE QUI REVIENT SE RANGE SUR LA LIGNE DE L'ENVOI : la derniere qui a fait partir ce contrat (ou cet avenant).
@@ -1105,7 +1108,7 @@ struct AvenantLu {
     mois: Mois,
     contrat: Option<NumeroContrat>,
     date_contrat: Jour,
-    signe: Option<InstantEcrit>,
+    signe: Option<Moment>,
     contrat_signe: Option<ContratSigneDit>,
     numero: i64,
     effet: Jour,
@@ -1437,7 +1440,7 @@ fn piece_existe(racine: &Path, mois: Option<Mois>, fichier: &str) -> bool {
     })
 }
 
-fn piece(racine: &Path, quoi: String, quand: HeureDuJournal, mois: Option<Mois>, fichier: &str) -> PiecePartie {
+fn piece(racine: &Path, quoi: String, quand: InstantOuJour, mois: Option<Mois>, fichier: &str) -> PiecePartie {
     PiecePartie { quoi, quand, quand_dit: quand.dit(), mois, fichier: fichier.to_string(), existe: piece_existe(racine, mois, fichier) }
 }
 

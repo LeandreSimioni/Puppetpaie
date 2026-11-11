@@ -16,7 +16,7 @@ pub struct TauxRecu {
     pub taux: Option<droit::pas::TauxDePas>,
     pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant: String,
-    pub mis_a_disposition: socle::paris::InstantCompact,
+    pub mis_a_disposition: socle::paris::Moment,
     pub en_retour_de: Option<socle::mois::Mois>,
 }
 
@@ -34,8 +34,8 @@ impl TauxRecu {
 }
 
 /// Le debut du jour `j` (`AAAAMMJJ000000`).
-fn instant_du_jour(j: Jour) -> socle::echec::R<socle::paris::InstantCompact> {
-    socle::paris::Naif::du_jour(j, 0, 0, 0).map(socle::paris::InstantCompact::du_naif).ok_or_else(|| socle::refus!("Le jour {} sort du calendrier.", j.jj_mm_aaaa()))
+fn instant_du_jour(j: Jour) -> socle::echec::R<socle::paris::Moment> {
+    socle::paris::Moment::a_paris(j, 0, 0, 0).ok_or_else(|| socle::refus!("Le jour {} sort du calendrier.", j.jj_mm_aaaa()))
 }
 
 /// LE DERNIER TAUX TRANSMIS PAR LA DGFiP QUE LES DSN DEJA DEPOSEES DE `dossier` DECLARENT, par salarie (un releve tel que

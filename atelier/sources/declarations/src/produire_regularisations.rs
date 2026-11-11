@@ -110,7 +110,7 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: Mois, departs: &engage
                     format!("Correction de {} pour {} : la validation de l'engagement ne porte pas son numéro de version, ce qu'elle déclare ne se dit pas. La revalider.", mois, documents::tableaux_export::qui_souple(&apres.salarie)),
                 )
             })?;
-            let decidee_le = Some(d.valide.le().jour());
+            let decidee_le = Some(d.valide.le().jour_de_paris());
             if d.declarees.is_empty() {
                 out.push(ajout(mois, version, decidee_le, apres)?);
                 continue;
@@ -182,7 +182,7 @@ fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: Moi
         out.push(Reg {
             mois,
             version: n.version(),
-            decidee_le: Some(n.le().jour()),
+            decidee_le: Some(n.le().jour_de_paris()),
             taux_pas_origine: lu.versement.taux_pas.clone(),
             avant: lu.avant,
             declare: lu.versement,

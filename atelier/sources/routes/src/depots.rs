@@ -19,7 +19,7 @@ use engagement::calcul::Paie;
 use envois::etats;
 use envois::releve_retours;
 use socle::date::Jour;
-use socle::paris::InstantEcrit;
+use socle::paris::Moment;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::dossier_du_code;
 use socle::mois::{Graphie, Mois};
@@ -428,8 +428,8 @@ fn fichiers_partiels(dossier: &Path, etiq: &str) -> R<Vec<PathBuf>> {
 
 /// La marque `_AAAAMMJJ-HHMM` d'un fichier partiel ecrit maintenant.
 fn marque_a_la_minute() -> String {
-    let maintenant = InstantEcrit::maintenant();
-    let (j, s) = (maintenant.jour(), maintenant.naif().seconde_du_jour());
+    let maintenant = socle::temps::secondes().a_la_seconde();
+    let (j, s) = (maintenant.jour_de_paris(), maintenant.seconde_du_jour_de_paris());
     format!("_{}-{:02}{:02}", j.aaaammjj(), s / 3_600, s / 60 % 60)
 }
 
@@ -621,7 +621,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         Some(f) => f,
         None => {
             let cible = sortie.join(format!("DPAE_{}{}.txt", etiq, marque));
-            ecrire_la_dpae(ctx, &retenues, &cible, &recap, heure, InstantEcrit::maintenant())?;
+            ecrire_la_dpae(ctx, &retenues, &cible, &recap, heure, socle::temps::secondes().a_la_seconde())?;
             compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
             cible
         }
@@ -652,13 +652,13 @@ pub(crate) struct DpaeEcrite {
 /// LES FICHIERS D'UNE DPAE : l'enregistrement de chaque embauche de `retenues` dans `cible` (et son `.zip`), horodate
 /// `quand` (a Paris, a la minute), l'heure d'embauche `heure` ; et son recapitulatif en clair dans `recap`.
 /// Ce que `dpae` ecrit, et ce que `gestes::depart::piece_partie` refait d'une DPAE partie dont le fichier manque.
-pub(crate) fn ecrire_la_dpae(ctx: &Contexte, retenues: &[&Paie], cible: &Path, recap: &Path, heure: &str, quand: InstantEcrit) -> R<()> {
+pub(crate) fn ecrire_la_dpae(ctx: &Contexte, retenues: &[&Paie], cible: &Path, recap: &Path, heure: &str, quand: Moment) -> R<()> {
     let ent = ctx.entreprise_et_gabarits();
     let code = code_urssaf(&ctx.entreprise)?;
     let chemins = Chemins { defaut: dossier_du_code().join("modeles").join("due_tel_gabarit.txt"), poste: ctx.gabarits() };
     let embauches: Vec<Embauche> = retenues.iter().map(|p| embauche_dpae(p, false)).collect();
     let parametres = Parametres {
-        horodatage: socle::paris::MinuteEcrite::du_naif(quand.naif()),
+        horodatage: socle::paris::MinuteEcrite::de(quand),
         heure_embauche: heure.to_string(),
         code_urssaf: Some(code.to_string()),
         ent: Some(&ent),

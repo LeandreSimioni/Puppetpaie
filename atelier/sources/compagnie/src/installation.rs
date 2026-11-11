@@ -143,8 +143,8 @@ pub struct Marqueur {
     /// LA MARQUE D'UNE FICTIVE AJOUTEE (`est_ajoutee`) : `true`, sur elle seule.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ajoutee: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub quand: Option<socle::paris::InstantEcrit>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
+    pub quand: Option<socle::paris::Moment>,
     pub quoi: String,
 }
 

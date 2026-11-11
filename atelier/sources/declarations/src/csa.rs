@@ -159,8 +159,8 @@ impl Effectifs {
 #[serde(deny_unknown_fields)]
 struct EffectifDuCode {
     valeur: Nombre,
-    #[serde(rename = "calcule_le")]
-    _calcule_le: Option<socle::paris::InstantEcrit>,
+    #[serde(rename = "calcule_le", default, with = "socle::paris::ecrit::seconde::option")]
+    _calcule_le: Option<socle::paris::Moment>,
     #[serde(rename = "source")]
     _source: Option<String>,
     #[serde(rename = "dit_le")]

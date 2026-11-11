@@ -186,7 +186,7 @@ fn un_engagement_non_actif_fait_annuler_ce_qui_a_ete_declare_pour_lui() {
     let mut e = envois::journal::Envoi::nouveau(envois::journal::Mode::Reel, "test", true, "", "", envois::journal::DetailDsn::nouveau(false));
     e.mois = Some(socle::mois::Mois::nouveau(2026, 12).unwrap());
     e.versions = Some(serde_json::from_value(json!([{"salarie": "FULLER", "numero": "FU1.26.01", "version": na.version(), "mois": "2026-11"}])).unwrap());
-    let date = envois::journal::Datation::Lue { quand: socle::paris::InstantEcrit::du_naif(socle::paris::Naif::du_jour(jour(2027, 1, 5), 10, 0, 0).unwrap()).into(), origine: "le test".into() };
+    let date = envois::journal::Datation::Lue { quand: socle::paris::Moment::a_paris(jour(2027, 1, 5), 10, 0, 0).unwrap().into(), origine: "le test".into() };
     envois::journal::noter(&racine, envois::journal::Ligne::Dsn(e), Some(std::path::Path::new("DSN_Decembre2026.dsn")), date).unwrap();
     let a_refaire = na.a_refaire(&envois::journal::lu(&racine).map(|j| j.departs).unwrap());
     assert!(!a_refaire.iter().any(|a| matches!(a, ARefaire::Dsn { .. })), "{:?}", a_refaire);

@@ -287,7 +287,8 @@ struct CarteEcrite {
     /// Le brouillon tel qu'il est ecrit, chacune de ses cases (`null` : pas encore remplie).
     brouillon: Brouillon,
     a_completer: Option<String>,
-    enregistre_a: socle::paris::InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    enregistre_a: socle::paris::Moment,
     enregistre_dit: String,
 }
 
@@ -972,7 +973,7 @@ fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
 pub(crate) fn refuser_si_clos(ctx: &Contexte, mois: Mois) -> R<()> {
     let annee = mois.annee_civile();
     if let Some(clos) = crate::rappels::exercice_clos(ctx, annee)? {
-        let le = clos.le.jour().iso();
+        let le = clos.le.jour_de_paris().iso();
         return Err(refus(format!(
             "L'exercice {} est cloture depuis le {} : {} ne se modifie plus. Rouvrir l'exercice (Historique > L'exercice) \
              avant de toucher a ce mois.",
@@ -1046,8 +1047,8 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
     let vue = engagement::stock::vue_du_mois(&ctx.racine, mois)?.ok_or_else(|| refus(format!("{} : la carte écrite ne s'y lit pas.", mois.libelle(Graphie::Accentuee))))?;
     let a_completer = manque_de(ctx, &vue, k).map(|m| m.phrase);
     // « Enregistré à HH:MM » : l'heure du moteur (`temps.rs`), pas celle du navigateur (au banc, le temps est simule).
-    let a = socle::paris::InstantEcrit::maintenant();
-    let s = a.naif().seconde_du_jour();
+    let a = socle::temps::secondes().a_la_seconde();
+    let s = a.seconde_du_jour_de_paris();
     Ok(CarteEcrite {
         phrase: match &a_completer {
             Some(m) => format!("Carte enregistrée ; à compléter avant de valider : {}", m),

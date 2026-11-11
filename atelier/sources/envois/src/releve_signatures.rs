@@ -22,7 +22,7 @@ use crate::etats::Attendue;
 use crate::journal::{self, ContratAttendu, DetailContresigne, Envoi, Ligne, Mode};
 use socle::echec::R;
 use socle::mois::{Graphie, Mois};
-use socle::paris::InstantEcrit;
+use socle::paris::Moment;
 
 /// La fin du nom de l'exemplaire contresigne d'un contrat (le contrat parti, `<souche>` ; contresigne, `<souche>_signe.pdf`) :
 /// la piece jointe du courriel qui le renvoie au signataire. Ses lecteurs passent par `nom_contresigne` et
@@ -56,7 +56,8 @@ pub struct SignatureRecue {
     pub code: String,
     pub adresse: String,
     /// La date du message.
-    pub quand: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub quand: Moment,
     /// `[{salarie, debut, fin, numero, spectacle, fichier, avenant, mois}]`, tels que le journal les donne.
     pub contrats: Vec<ContratAttendu>,
     pub fichier_signe: String,
@@ -67,7 +68,8 @@ pub struct SignatureRecue {
 /// Combien de signatures attendaient, celles qui sont arrivees, ce qui a empeche le reste.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ReleveSignatures {
-    pub quand: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub quand: Moment,
     pub attendues: usize,
     pub recues: Vec<SignatureRecue>,
     pub incidents: Vec<String>,
@@ -75,7 +77,7 @@ pub struct ReleveSignatures {
 
 impl ReleveSignatures {
     pub fn nouvelle() -> ReleveSignatures {
-        ReleveSignatures { quand: InstantEcrit::maintenant(), attendues: 0, recues: Vec::new(), incidents: Vec::new() }
+        ReleveSignatures { quand: socle::temps::secondes().a_la_seconde(), attendues: 0, recues: Vec::new(), incidents: Vec::new() }
     }
 
     /// La phrase de la veille, vide quand rien n'etait attendu ni arrive : contrat par contrat, chaque salarie et les
@@ -139,7 +141,7 @@ pub struct Reponse {
     pub identifiant: String,
     pub brut: Vec<u8>,
     pub de: String,
-    pub quand: InstantEcrit,
+    pub quand: Moment,
 }
 
 /// LA REPONSE A LA DEMANDE `a` (une signature attendue, `etats::signatures_attendues`), triee strictement. `expediteur` :
@@ -198,7 +200,7 @@ pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &st
             incidents.push(format!("{} : une reponse portant {} vient de {} et non de {} ; elle n'est pas retenue.", a_nom, code, de, a_adresse));
             continue;
         }
-        let quand = lecture::date_de(&m, InstantEcrit::maintenant());
+        let quand = lecture::date_de(&m, socle::temps::secondes().a_la_seconde());
         return Ok(Some(Reponse { identifiant: ident, brut: brut.clone(), de, quand }));
     }
     Ok(None)

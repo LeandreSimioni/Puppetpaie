@@ -17,7 +17,7 @@
 use droit::fiche::Lue as _;
 use socle::echec::Classe;
 use socle::mois::{Graphie, Mois};
-use socle::paris::{HeureDuJournal, InstantEcrit, Moment};
+use socle::paris::{InstantOuJour, Moment};
 use crate::dossier_salarie::cle_de;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -280,7 +280,7 @@ fn valide_le(o: &engagement::stock::Objet, n: u64) -> R<Option<socle::date::Jour
     let Some(le) = o.brut.valide.iter().map(Version::Presente).chain(o.brut.versions.iter().map(Version::Passee)).find(|v| v.numero() == Some(n)).and_then(|v| v.valide_le()) else {
         return Ok(None);
     };
-    Ok(Some(le.jour()))
+    Ok(Some(le.jour_de_paris()))
 }
 
 /// LA DSN MENSUELLE PARTIE que dit la ligne `lignes[rang]` du journal, fabriquee de nouveau par la fonction qui l'a
@@ -304,7 +304,7 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
     let fichier = l.fichier().ok_or_else(|| erreur(Classe::Illisible, "journal : une DSN partie sans son fichier".to_string()))?;
     let ecrite = journal_des_ecritures(&ctx.racine)?.remove(&format!("{}/{}", mois, fichier)).map(|n| n.quand);
     let constitution = match ecrite {
-        Some(q) => q.jour(),
+        Some(q) => q.jour_de_paris(),
         None => l.quand().jour(),
     };
     let forme = Forme { type_dsn, ordre: m.ordre_de_la_ligne(le_mois, l)?, etablissement: plusieurs.then_some(nic), constitution, remplacee_versait_pas };
@@ -325,7 +325,7 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
         // La version d'un non actif : la correction annulait ce qui avait ete declare (`Paie::annulee`), le jour ou il
         // a cesse d'etre actif. Sinon, le jour ou la version qu'elle emporte a ete validee.
         let (apres, decidee_le) = match (engagement::etats::NonActif::de(o.clone()).filter(|n| n.version() == version), &dernier) {
-            (Some(n), Some(d)) => (d.avant.annulee(), Some(n.le().jour())),
+            (Some(n), Some(d)) => (d.avant.annulee(), Some(n.le().jour_de_paris())),
             _ => (paie_de_la_version(&ctx_c, &o, &cle, &numero, c, version)?, valide_le(&o, version)?),
         };
         regs.push(match dernier {
@@ -1160,7 +1160,6 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, nom: &str) -> R<PathBu
                 .and_then(|p| p.split_once('-'))
                 .ok_or_else(|| erreur(Classe::Illisible, format!("instant illisible : {}", socle::fichiers::repr(&n))))?;
             let quand = socle::piece::Zone::lue(&[jour, heure].concat(), socle::piece::format::InstantCompact).valeur()
-                .map(|i| InstantEcrit::du_naif(i.naif()))
                 .ok_or_else(|| erreur(Classe::Illisible, format!("instant illisible : {}", socle::fichiers::repr(&n))))?;
             let (jour, instant) = instant_de(quand.into())?;
             let ctx_j = contexte_du_jour(ctx, jour)?;
@@ -1189,13 +1188,12 @@ fn contexte_du_jour(ctx: &Contexte, jour: socle::date::Jour) -> R<Contexte> {
     Ok(c)
 }
 
-/// Le moment d'une heure du journal (a Paris), et son jour. Un jour sans heure, ou une heure que le changement d'heure
-/// saute, se refuse.
-fn instant_de(quand: HeureDuJournal) -> R<(socle::date::Jour, Moment)> {
-    let illisible = || erreur(Classe::Illisible, format!("instant illisible : {}", socle::fichiers::repr(&quand.iso())));
-    let HeureDuJournal::Instant(i) = quand else { return Err(illisible()) };
-    let s = i.naif().seconde_du_jour();
-    Ok((i.jour(), Moment::a_paris(i.jour(), s / 3_600, s / 60 % 60, s % 60).ok_or_else(illisible)?))
+/// Le moment d'une heure du journal, et son jour de Paris. Un jour sans heure se refuse.
+fn instant_de(quand: InstantOuJour) -> R<(socle::date::Jour, Moment)> {
+    let InstantOuJour::Instant(i) = quand else {
+        return Err(erreur(Classe::Illisible, format!("instant illisible : {}", socle::fichiers::repr(&quand.iso()))));
+    };
+    Ok((i.jour_de_paris(), i))
 }
 
 /// LA DSN MENSUELLE QUE DIT LA LIGNE `lignes[rang]`, refaite (`dsn_partie`) au jour ou son fichier a ete ecrit (le journal
@@ -1238,13 +1236,13 @@ fn refaire_la_dsn(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Lig
 
 /// QUAND LA PIECE `nom` DE `mois` A ETE ECRITE : le journal des ecritures, sinon l'instant de la ligne `l` qui l'a
 /// fait partir ; `(jour, moment, instant ecrit)`.
-fn ecrite_a(ctx: &Contexte, mois: Mois, nom: &str, l: &envois::journal::Ligne) -> R<(socle::date::Jour, Moment, InstantEcrit)> {
+fn ecrite_a(ctx: &Contexte, mois: Mois, nom: &str, l: &envois::journal::Ligne) -> R<(socle::date::Jour, Moment, Moment)> {
     let quand = match journal_des_ecritures(&ctx.racine)?.remove(&format!("{}/{}", mois, nom)) {
         Some(n) => n.quand.into(),
         None => l.quand(),
     };
     let (jour, instant) = instant_de(quand)?;
-    Ok((jour, instant, InstantEcrit::de(instant)))
+    Ok((jour, instant, instant.a_la_seconde()))
 }
 
 /// Les paies que la ligne `l` a emportees (`versions`), chacune dans la version sur laquelle elle est partie, vues en

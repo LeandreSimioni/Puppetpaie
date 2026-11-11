@@ -101,13 +101,13 @@ pub fn en_cours(ctx: &Contexte, cle: &str) -> R<Option<EnCours>> {
     let Some(l) = derniere else { return Ok(None) };
     // L'heure de la demande ; un jour seul compte de son debut.
     let partie = match l.quand() {
-        socle::paris::HeureDuJournal::Instant(i) => Some(i.naif()),
-        socle::paris::HeureDuJournal::Jour(j) => socle::paris::Naif::du_jour(j, 0, 0, 0),
+        socle::paris::InstantOuJour::Instant(i) => Some(i),
+        socle::paris::InstantOuJour::Jour(j) => socle::paris::Moment::a_paris(j, 0, 0, 0),
     }
     .ok_or_else(|| erreur(Classe::Illisible, "Le jour d'une demande de taux partie ne se lit pas au journal."))?;
     // Un taux recu depuis la demande y a repondu.
     let recus = droit::pas::recus(ctx, cle).map_err(|e| e.reclasser(Classe::Illisible))?;
-    if recus.last().and_then(|r| r.mis_a_disposition).is_some_and(|d| d.naif() >= partie) {
+    if recus.last().and_then(|r| r.mis_a_disposition).is_some_and(|d| d >= partie) {
         return Ok(None);
     }
     let jour = l.quand().jour();

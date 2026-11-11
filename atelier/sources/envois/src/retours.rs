@@ -21,7 +21,7 @@ use droit::natures::ListeDeLaNorme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use socle::echec::{erreur as echec, Classe, Echec, R};
 use socle::date::Jour;
-use socle::paris::{DateXsd, HeureDuJournal, HeureXsd, InstantCompact, InstantEcrit, Moment, Naif};
+use socle::paris::{DateXsd, HeureXsd, InstantOuJour, Moment};
 use socle::piece::format;
 use socle::piece::Zone;
 use socle::texte::blanc;
@@ -818,25 +818,30 @@ impl Reception {
         self.date.jour
     }
 
-    /// L'HEURE QUE LE JOURNAL EN GARDE (`HeureDuJournal`) : le jour seul quand le bilan ne dit pas l'heure, l'instant a la
-    /// seconde quand il la dit. Le schema ne dit pas le fuseau d'une heure qui n'en ecrit pas : c'est l'heure telle
-    /// qu'elle est ecrite, tenue pour celle de Paris. Une heure qui ecrit son fuseau se ramene a Paris (`InstantEcrit::de`,
-    /// directive 2000/84/CE). `None` (la reprise ne sait pas dire QUAND, et ne la reprend pas) quand elle ne se ramene pas
-    /// a la seconde de Paris sans rien couper ni supposer : une fraction de seconde non nulle ; une date qui porte un
-    /// fuseau sans heure (le jour de Paris n'y est pas dit), ou un autre fuseau que celui de son heure.
-    pub fn au_journal(&self) -> Option<HeureDuJournal> {
+    /// L'INSTANT OU LE JOUR QUE LE JOURNAL EN GARDE (`InstantOuJour`) : le jour seul quand le bilan ne dit pas l'heure,
+    /// l'instant a la seconde quand il la dit. Le schema ne dit pas le fuseau d'une heure qui n'en ecrit pas : c'est
+    /// l'heure telle qu'elle est ecrite, tenue pour celle de Paris (une heure qui n'existe pas a Paris ne s'y ramene pas).
+    /// Une heure qui ecrit son fuseau est un instant. `None` (la reprise ne sait pas dire QUAND, et ne la reprend pas)
+    /// quand elle ne se ramene pas a la seconde de Paris sans rien couper ni supposer : une fraction de seconde non nulle ;
+    /// une date qui porte un fuseau sans heure (le jour de Paris n'y est pas dit), ou un autre fuseau que celui de son
+    /// heure.
+    pub fn au_journal(&self) -> Option<InstantOuJour> {
         let Some(h) = &self.heure else {
-            return self.date.fuseau.is_none().then_some(HeureDuJournal::Jour(self.date.jour));
+            return self.date.fuseau.is_none().then_some(InstantOuJour::Jour(self.date.jour));
         };
         if !h.a_la_seconde() || self.date.fuseau.is_some_and(|z| h.fuseau.is_none_or(|y| y.secondes() != z.secondes())) {
             return None;
         }
         let local = (self.date.jour.ordinal() - 719_163) * 86_400 + h.seconde;
         let instant = match h.fuseau {
-            None => InstantEcrit::du_naif(Naif::de_secondes(local)?),
-            Some(z) => InstantEcrit::de(Moment::de_secondes(local - z.secondes())?),
+            None => {
+                // `24:00:00` est le debut du jour suivant.
+                let (jour, seconde) = (socle::date::Jour::depuis_jours_unix(local.div_euclid(86_400))?, local.rem_euclid(86_400));
+                Moment::a_paris(jour, seconde / 3_600, (seconde % 3_600) / 60, seconde % 60).filter(|m| m.jour_de_paris() == jour && m.seconde_du_jour_de_paris() == seconde)?
+            }
+            Some(z) => Moment::de_secondes(local - z.secondes())?,
         };
-        Some(HeureDuJournal::Instant(instant))
+        Some(InstantOuJour::Instant(instant))
     }
 
     /// Tel que l'ecran le dit : « 03/09/2026 à 09:36 », ou « 03/09/2026 » sans heure ; l'heure telle qu'ecrite.
@@ -1128,8 +1133,8 @@ pub fn fusionner_bilans(bilans: &[Bilan]) -> Option<Bilan> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Annonce {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub publication: Option<InstantCompact>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::compacte::option")]
+    pub publication: Option<Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub production: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1151,7 +1156,7 @@ pub struct Annonce {
 
 impl Annonce {
     /// Ce qui distingue un retour : son flux, sa nature, sa publication.
-    pub fn cle(&self) -> (Option<&str>, &str, Option<InstantCompact>) {
+    pub fn cle(&self) -> (Option<&str>, &str, Option<Moment>) {
         (self.flux.as_deref(), self.nature_retour.as_str(), self.publication)
     }
 }
@@ -1161,7 +1166,8 @@ impl Annonce {
 #[serde(deny_unknown_fields)]
 pub struct Depot {
     pub idflux: String,
-    pub date: socle::paris::InstantCompact,
+    #[serde(with = "socle::paris::ecrit::compacte")]
+    pub date: Moment,
     pub statut: String,
 }
 
@@ -1210,7 +1216,8 @@ struct FluxJson {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RetourJson {
-    publication: Option<InstantCompact>,
+    #[serde(default, with = "socle::paris::ecrit::compacte::option")]
+    publication: Option<Moment>,
     production: Option<String>,
     ops: Option<String>,
     delegataire: Option<String>,
@@ -2408,7 +2415,7 @@ fn rubrique_jour(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::date::Jour>
 
 /// `rubrique_de`, un instant : `AAAA-MM-JJTHH:MM:SS`, la forme des dates de production d'un retour et de calcul d'un
 /// parametre ([19,19], meme cahier, RO.B002.R011 et RO.B008.R006) ; une autre forme se refuse.
-fn rubrique_instant(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::paris::InstantEcrit>> {
+fn rubrique_instant(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::paris::Moment>> {
     rubrique_de(a, e, nom)
         .map(|t| Zone::lue(t, format::InstantIso).valeur().ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas un instant AAAA-MM-JJTHH:MM:SS", nom, socle::date::repr_texte(t)))))
         .transpose()
@@ -2484,7 +2491,8 @@ pub struct ParametreNeores {
     pub effet: Option<socle::date::Jour>,
     pub fin: Option<socle::date::Jour>,
     pub rubrique: Option<String>,
-    pub calcule_le: Option<socle::paris::InstantEcrit>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    pub calcule_le: Option<socle::paris::Moment>,
 }
 
 /// Une identite (`RO.B009`) : ce qui a ete declare, et la reference.
@@ -2525,7 +2533,8 @@ pub struct Neores {
     pub organisme: Option<String>,
     pub debut: Option<socle::date::Jour>,
     pub fin: Option<socle::date::Jour>,
-    pub produit_le: Option<socle::paris::InstantEcrit>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    pub produit_le: Option<socle::paris::Moment>,
     pub mois: Option<socle::mois::Mois>,
     pub essai_reel: Option<String>,
     pub ordre: Option<String>,

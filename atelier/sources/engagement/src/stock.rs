@@ -33,7 +33,7 @@ use droit::contexte::Contexte;
 use crate::saisie::{Avant, Carte, Champ, Groupe, VueDuMois};
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
-use socle::paris::InstantEcrit;
+use socle::paris::Moment;
 use socle::echec::{refus, R};
 
 /// Le dossier des engagements, sous les donnees de la compagnie : seul le stock le nomme.
@@ -123,7 +123,8 @@ impl Avenant {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Validation {
-    pub le: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub le: Moment,
     pub version: Option<u64>,
     pub saisie: Option<Saisie>,
 }
@@ -133,8 +134,10 @@ pub struct Validation {
 #[serde(deny_unknown_fields)]
 pub struct VersionPassee {
     pub version: u64,
-    pub valide_le: InstantEcrit,
-    pub remplacee_le: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub valide_le: Moment,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub remplacee_le: Moment,
     pub saisie: Option<Saisie>,
 }
 
@@ -156,7 +159,7 @@ impl<'a> Version<'a> {
     }
 
     /// Quand elle a ete validee.
-    pub fn valide_le(&self) -> Option<InstantEcrit> {
+    pub fn valide_le(&self) -> Option<Moment> {
         match self {
             Version::Presente(v) => Some(v.le),
             Version::Passee(v) => Some(v.valide_le),
@@ -188,7 +191,8 @@ impl Ecrit {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NonActif {
-    pub le: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub le: Moment,
     pub version: u64,
 }
 

@@ -888,7 +888,7 @@ pub struct Repris {
 #[derive(Debug, Clone)]
 pub enum DejaParti {
     ParCourriel,
-    Imprime { le: socle::paris::HeureDuJournal },
+    Imprime { le: socle::paris::InstantOuJour },
 }
 
 impl UnAvenant {

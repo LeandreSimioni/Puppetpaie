@@ -147,7 +147,8 @@ enum Atelier {
         ok: bool,
         simule: bool,
         jour: socle::date::Jour,
-        heure: socle::paris::InstantEcrit,
+        #[serde(with = "socle::paris::ecrit::seconde")]
+        heure: socle::paris::Moment,
         secondes: socle::paris::Moment,
         scenario: Option<String>,
         compagnie: Option<String>,
@@ -732,7 +733,7 @@ impl Fenetre {
                 ok: true,
                 simule: socle::temps::simule(),
                 jour: socle::temps::jour_de_paris(),
-                heure: socle::paris::InstantEcrit::maintenant(),
+                heure: socle::temps::secondes().a_la_seconde(),
                 secondes: socle::temps::secondes(),
                 scenario: enr.map(|e| e.dossier().display().to_string()),
                 compagnie: ouverte.as_ref().map(|r| r.display().to_string()),

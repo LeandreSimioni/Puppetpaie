@@ -115,7 +115,7 @@ pub const VALIDITE_MOIS: u32 = 2;
 
 /// Le jour de la mise a disposition d'un taux recu (`mis_a_disposition`, AAAAMMJJHHMMSS) : d'ou court sa validite.
 pub fn mise_a_disposition(e: &TauxPas) -> Option<Jour> {
-    e.mis_a_disposition.map(|i| i.naif().jour())
+    e.mis_a_disposition.map(|i| i.jour_de_paris())
 }
 
 /// Dernier jour ou ce taux est celui du salarie ; `None` si on ne sait pas.
@@ -465,7 +465,8 @@ pub struct Situation {
     pub identifiant: Option<String>,
     pub valable_jusqu_a: Option<Jour>,
     pub a_demander: bool,
-    pub dernier_recu: Option<socle::paris::InstantCompact>,
+    #[serde(with = "socle::paris::ecrit::compacte::option")]
+    pub dernier_recu: Option<socle::paris::Moment>,
 }
 
 /// Ou en est le taux d'un salarie au jour `le`, pour la paie du mois `mois` (`en_vigueur`). Ne refuse que si sa fiche est

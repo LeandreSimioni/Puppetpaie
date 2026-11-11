@@ -423,6 +423,31 @@ pub mod ecrit {
             lu(t).ok_or_else(|| serde::de::Error::custom(format!("{} s n'est pas une heure du calendrier (années 1 à 9999)", t)))
         }
     }
+
+    /// L'heure d'un geste de scenario (`heure`), ecrite a la main ou par le banc : un jour `AAAA-MM-JJ`, une minute
+    /// `AAAA-MM-JJTHH:MM` ou une seconde `AAAA-MM-JJTHH:MM:SS`, heure de Paris ; elle s'ecrit comme l'instant ou le jour
+    /// (le banc n'ecrit que la seconde). Un `Option` : absent ou `null`, `None` (le champ porte aussi `#[serde(default)]`).
+    pub mod heure_du_geste {
+        pub mod option {
+            use crate::paris::InstantOuJour;
+
+            pub fn serialize<S: serde::Serializer>(h: &Option<InstantOuJour>, s: S) -> Result<S::Ok, S::Error> {
+                match h {
+                    Some(h) => s.serialize_some(&h.iso()),
+                    None => s.serialize_none(),
+                }
+            }
+
+            pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<InstantOuJour>, D::Error> {
+                let Some(t) = <Option<String> as serde::Deserialize>::deserialize(d)? else { return Ok(None) };
+                let lue = match super::super::minute::lu(&t) {
+                    Some(m) => Some(InstantOuJour::Instant(m)),
+                    None => InstantOuJour::lire(&t),
+                };
+                lue.map(Some).ok_or_else(|| serde::de::Error::custom("une date (AAAA-MM-JJ) ou une heure de Paris (AAAA-MM-JJTHH:MM[:SS]) est attendue"))
+            }
+        }
+    }
 }
 
 /// UN INSTANT ECRIT DANS UN FICHIER (un scenario) : ses secondes depuis 1970, un nombre a virgule (`ecrit`), lues
@@ -521,59 +546,10 @@ impl<'de> serde::Deserialize<'de> for Naif {
     }
 }
 
-/// UN INSTANT ECRIT A LA SECONDE : l'heure de Paris d'un geste, `AAAA-MM-JJTHH:MM:SS` (la saisie d'un imprevu, la
-/// validation d'une version, le depart d'un envoi). Il se lit et s'ecrit dans cette forme, et elle seule, octet pour
-/// octet ; deux instants se comparent comme leurs textes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct InstantEcrit(Naif);
-
 /// UN INSTANT ECRIT A LA MINUTE : l'heure de Paris `AAAA-MM-JJTHH:MM` (la pose d'un secret dans le coffre, la fin d'une
 /// seance). Meme regle que l'instant a la seconde, dans sa forme a lui.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct MinuteEcrite(Naif);
-
-impl InstantEcrit {
-    /// L'heure de Paris de cet instant, comme `iso_secondes` l'ecrit (la fraction arrondie a la microseconde).
-    pub fn de(t: Moment) -> InstantEcrit {
-        InstantEcrit(Naif(local_arrondi(t)))
-    }
-
-    /// L'heure de Paris a cet instant (`socle::temps`).
-    pub fn maintenant() -> InstantEcrit {
-        InstantEcrit::de(crate::temps::secondes())
-    }
-
-    /// Une heure naive, tronquee a la seconde (elle l'est deja).
-    pub fn du_naif(n: Naif) -> InstantEcrit {
-        InstantEcrit(n)
-    }
-
-    /// `AAAA-MM-JJTHH:MM:SS`, et rien d'autre ; `None` sinon.
-    pub(crate) fn lire(texte: &str) -> Option<InstantEcrit> {
-        let n = Naif::lire(texte)?;
-        (n.iso() == texte).then_some(InstantEcrit(n))
-    }
-
-    /// L'heure naive.
-    pub fn naif(self) -> Naif {
-        self.0
-    }
-
-    /// Son jour.
-    pub fn jour(self) -> Jour {
-        self.0.jour()
-    }
-
-    /// `AAAA-MM-JJTHH:MM:SS`.
-    pub fn iso(self) -> String {
-        self.0.iso()
-    }
-
-    /// Tel que l'ecran le dit : « 12/09/2026 à 18:18 ».
-    pub fn dit(self) -> String {
-        self.0.dit()
-    }
-}
 
 impl MinuteEcrite {
     /// L'heure de Paris de cet instant, tronquee a la minute (la fraction de seconde s'arrondit d'abord a la
@@ -619,28 +595,9 @@ impl MinuteEcrite {
     }
 }
 
-impl std::fmt::Display for InstantEcrit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.iso())
-    }
-}
-
 impl std::fmt::Display for MinuteEcrite {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.iso())
-    }
-}
-
-impl serde::Serialize for InstantEcrit {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.iso())
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for InstantEcrit {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<InstantEcrit, D::Error> {
-        let s = String::deserialize(d)?;
-        InstantEcrit::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas un instant AAAA-MM-JJTHH:MM:SS", crate::date::repr_texte(&s))))
     }
 }
 
@@ -657,136 +614,91 @@ impl<'de> serde::Deserialize<'de> for MinuteEcrite {
     }
 }
 
-/// L'HEURE D'UNE LIGNE DU JOURNAL DES ENVOIS : l'instant du geste a la seconde (`AAAA-MM-JJTHH:MM:SS` : un envoi, un pas
-/// de l'horloge, la reprise d'un certificat DPAE ou d'un bilan qui dit son heure), ou le jour seul (`AAAA-MM-JJ` : la
-/// reprise d'un bilan qui ne dit que sa date de reception). Il se lit et s'ecrit dans l'une de ces deux formes, octet pour
-/// octet, et deux heures se comparent comme leurs textes (un jour seul precede les instants de ce jour).
+/// L'INSTANT OU LE JOUR : l'instant d'un geste (un envoi, un pas de l'horloge, la reprise d'un certificat DPAE ou d'un
+/// bilan qui dit son heure), ou le jour seul (la reprise d'un bilan qui ne dit que sa date de reception, un geste de
+/// scenario dit d'un jour). Il s'ecrit `AAAA-MM-JJTHH:MM:SS` (l'heure de Paris, `ecrit::seconde`) ou `AAAA-MM-JJ`, et se
+/// lit dans l'une de ces deux formes. L'ordre : par jour de Paris ; un jour seul avant les instants de ce jour ; puis par
+/// instant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum HeureDuJournal {
-    Instant(InstantEcrit),
+pub enum InstantOuJour {
+    Instant(Moment),
     Jour(Jour),
 }
 
-impl HeureDuJournal {
+impl InstantOuJour {
     /// `AAAA-MM-JJTHH:MM:SS` ou `AAAA-MM-JJ`, et rien d'autre ; `None` sinon.
-    pub(crate) fn lire(texte: &str) -> Option<HeureDuJournal> {
-        match InstantEcrit::lire(texte) {
-            Some(i) => Some(HeureDuJournal::Instant(i)),
-            None => crate::date::jour_iso(texte).filter(|j| j.iso() == texte).map(HeureDuJournal::Jour),
+    pub(crate) fn lire(texte: &str) -> Option<InstantOuJour> {
+        match ecrit::seconde::lu(texte) {
+            Some(i) => Some(InstantOuJour::Instant(i)),
+            None => crate::date::jour_iso(texte).filter(|j| j.iso() == texte).map(InstantOuJour::Jour),
         }
     }
 
-    /// Son jour.
+    /// Son jour (de Paris).
     pub fn jour(self) -> Jour {
         match self {
-            HeureDuJournal::Instant(i) => i.jour(),
-            HeureDuJournal::Jour(j) => j,
+            InstantOuJour::Instant(i) => i.jour_de_paris(),
+            InstantOuJour::Jour(j) => j,
         }
     }
 
     /// Sa forme ecrite.
     pub fn iso(self) -> String {
         match self {
-            HeureDuJournal::Instant(i) => i.iso(),
-            HeureDuJournal::Jour(j) => j.iso(),
+            InstantOuJour::Instant(i) => ecrit::seconde::texte(i),
+            InstantOuJour::Jour(j) => j.iso(),
         }
     }
 
     /// Tel que l'ecran le dit : « 12/09/2026 à 18:18 », ou « 12/09/2026 » pour un jour seul.
     pub fn dit(self) -> String {
         match self {
-            HeureDuJournal::Instant(i) => i.dit(),
-            HeureDuJournal::Jour(j) => j.jj_mm_aaaa(),
+            InstantOuJour::Instant(i) => i.dit(),
+            InstantOuJour::Jour(j) => j.jj_mm_aaaa(),
         }
     }
 }
 
-impl From<InstantEcrit> for HeureDuJournal {
-    fn from(i: InstantEcrit) -> HeureDuJournal {
-        HeureDuJournal::Instant(i)
+impl From<Moment> for InstantOuJour {
+    fn from(i: Moment) -> InstantOuJour {
+        InstantOuJour::Instant(i)
     }
 }
 
-impl PartialOrd for HeureDuJournal {
-    fn partial_cmp(&self, autre: &HeureDuJournal) -> Option<std::cmp::Ordering> {
+impl PartialOrd for InstantOuJour {
+    fn partial_cmp(&self, autre: &InstantOuJour) -> Option<std::cmp::Ordering> {
         Some(self.cmp(autre))
     }
 }
 
-impl Ord for HeureDuJournal {
-    fn cmp(&self, autre: &HeureDuJournal) -> std::cmp::Ordering {
-        self.iso().cmp(&autre.iso())
+impl Ord for InstantOuJour {
+    fn cmp(&self, autre: &InstantOuJour) -> std::cmp::Ordering {
+        use InstantOuJour::{Instant, Jour};
+        self.jour().cmp(&autre.jour()).then_with(|| match (self, autre) {
+            (Jour(_), Jour(_)) => std::cmp::Ordering::Equal,
+            (Jour(_), Instant(_)) => std::cmp::Ordering::Less,
+            (Instant(_), Jour(_)) => std::cmp::Ordering::Greater,
+            (Instant(a), Instant(b)) => a.cmp(b),
+        })
     }
 }
 
-impl std::fmt::Display for HeureDuJournal {
+impl std::fmt::Display for InstantOuJour {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.iso())
     }
 }
 
-impl serde::Serialize for HeureDuJournal {
+impl serde::Serialize for InstantOuJour {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&self.iso())
     }
 }
 
-impl<'de> serde::Deserialize<'de> for HeureDuJournal {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<HeureDuJournal, D::Error> {
+impl<'de> serde::Deserialize<'de> for InstantOuJour {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<InstantOuJour, D::Error> {
         let s = String::deserialize(d)?;
-        HeureDuJournal::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est ni un instant AAAA-MM-JJTHH:MM:SS ni un jour AAAA-MM-JJ", crate::date::repr_texte(&s))))
-    }
-}
-
-/// UN INSTANT ECRIT D'UN BLOC, `AAAAMMJJHHMMSS` : la date d'un depot que la plate-forme DSN liste (guide
-/// d'implementation de l'API DSN v6.8, « Date du dépôt », `depot.date`, format `yyyyMMddhhmmss`, [14,14] ;
-/// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`). Le guide ne dit
-/// pas son fuseau : c'est l'heure telle qu'elle est ecrite. Elle se lit et s'ecrit dans cette forme, octet pour octet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct InstantCompact(Naif);
-
-impl InstantCompact {
-    /// Quatorze chiffres `AAAAMMJJHHMMSS` d'une heure du calendrier, et rien d'autre ; `None` sinon.
-    pub(crate) fn lire(texte: &str) -> Option<InstantCompact> {
-        if texte.len() != 14 || !texte.bytes().all(|b| b.is_ascii_digit()) {
-            return None;
-        }
-        let iso = format!("{}-{}-{}T{}:{}:{}", &texte[..4], &texte[4..6], &texte[6..8], &texte[8..10], &texte[10..12], &texte[12..14]);
-        InstantEcrit::lire(&iso).map(|i| InstantCompact(i.0))
-    }
-
-    /// Une heure naive, a la seconde.
-    pub fn du_naif(n: Naif) -> InstantCompact {
-        InstantCompact(n)
-    }
-
-    /// L'heure naive, telle qu'elle est ecrite.
-    pub fn naif(self) -> Naif {
-        self.0
-    }
-
-    /// `AAAAMMJJHHMMSS`.
-    pub fn compact(self) -> String {
-        self.0.iso().chars().filter(char::is_ascii_digit).collect()
-    }
-}
-
-impl std::fmt::Display for InstantCompact {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.compact())
-    }
-}
-
-impl serde::Serialize for InstantCompact {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.compact())
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for InstantCompact {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<InstantCompact, D::Error> {
-        let s = String::deserialize(d)?;
-        InstantCompact::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas un instant AAAAMMJJHHMMSS", crate::date::repr_texte(&s))))
+        InstantOuJour::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est ni un instant AAAA-MM-JJTHH:MM:SS ni un jour AAAA-MM-JJ", crate::date::repr_texte(&s))))
     }
 }
 

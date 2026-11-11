@@ -112,9 +112,9 @@ fn la_lecture_des_reponses_et_le_questionnaire_rendent_l_oracle() {
                 message_id: identifiant_de(&m),
                 date: {
                     // L'heure de la releve, que l'oracle ecrit `MAINTENANT`.
-                    let releve = socle::paris::InstantEcrit::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(1, 1, 1).unwrap(), 0, 0, 0).unwrap());
+                    let releve = socle::paris::Moment::de_secondes((1 - 719_163) * 86_400).unwrap();
                     let lue = date_de(&m, releve);
-                    if lue == releve { "MAINTENANT".to_string() } else { lue.iso() }
+                    if lue == releve { "MAINTENANT".to_string() } else { socle::paris::ecrit::seconde::texte(lue) }
                 },
                 defaut_tirets: cas.defaut_tirets,
                 reponses: Reponses(reponses),

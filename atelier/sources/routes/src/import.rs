@@ -877,7 +877,7 @@ struct MessageEditeur {
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(untagged)]
 enum QuandDuMessage {
-    Incident(socle::paris::InstantEcrit),
+    Incident(#[serde(with = "socle::paris::ecrit::seconde")] socle::paris::Moment),
     Signalement(socle::paris::MinuteEcrite),
 }
 

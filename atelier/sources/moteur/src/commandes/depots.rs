@@ -72,7 +72,7 @@ pub fn derouler(args: &Args, mut client: Client) -> Result<i32, Echec> {
     }
     for (i, dep) in depots.iter().enumerate() {
         dire!("  depot {}", i + 1);
-        for (k, v) in [("idflux", dep.idflux.clone()), ("date", dep.date.compact()), ("statut", dep.statut.clone())] {
+        for (k, v) in [("idflux", dep.idflux.clone()), ("date", socle::paris::ecrit::compacte::texte(dep.date)), ("statut", dep.statut.clone())] {
             dire!("     {:<24} {}", k, v);
         }
         dire!();

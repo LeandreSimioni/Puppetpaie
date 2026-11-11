@@ -28,7 +28,7 @@ use envois::simulation_courriels::BoiteQuiRepond;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::ecriture::ecrire_json;
-use socle::paris::{HeureDuJournal, InstantEcrit};
+use socle::paris::{InstantOuJour, Moment};
 use socle::html::{html_echapper, mailto};
 use socle::texte::{capitaliser, strip};
 
@@ -738,7 +738,7 @@ pub(crate) fn etat_relu(ctx: &Contexte) -> R<crate::ouverture::EtatDeLaPage> {
 
 /// Aujourd'hui, a Paris (`date.today()`).
 pub(crate) fn aujourd_hui() -> Jour {
-    InstantEcrit::maintenant().jour()
+    socle::temps::secondes().a_la_seconde().jour_de_paris()
 }
 
 // --------------------------------------------------------------- activer-fiche
@@ -796,7 +796,7 @@ fn oublier_demande(ctx: &Contexte, c: ChargeOublier) -> R<DemandeOubliee> {
             salarie: None,
             illisible: None,
             erreurs: None,
-            quand: InstantEcrit::maintenant(),
+            quand: socle::temps::secondes().a_la_seconde(),
             qui: "interface".into(),
             de: None,
             message: None,
@@ -1055,7 +1055,7 @@ pub(crate) struct Attendue {
     pub adresse: String,
     pub prenom: Option<String>,
     /// L'heure de la demande, celle de la ligne du journal.
-    pub quand: HeureDuJournal,
+    pub quand: InstantOuJour,
     /// Les identifiants de NOS envois (le `Message-ID` gardé avec la demande) : jamais pris pour une reponse.
     pub envoyes: Vec<String>,
 }
@@ -1160,7 +1160,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
                 break;
             }
         };
-        let mut retenu: Option<(String, Vec<u8>, String, String, InstantEcrit)> = None;
+        let mut retenu: Option<(String, Vec<u8>, String, String, Moment)> = None;
         for ident in identifiants {
             if a.envoyes.contains(&ident) {
                 continue;
@@ -1197,7 +1197,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
                 r.incidents.push(format!("Fiche {} : une reponse vient de {} et non de {} ; elle n'est pas retenue.", code, de, a.adresse));
                 continue;
             }
-            let quand = lecture::date_de(&m, InstantEcrit::maintenant());
+            let quand = lecture::date_de(&m, socle::temps::secondes().a_la_seconde());
             retenu = Some((ident, brut.clone(), texte, de, quand));
             break;
         }
@@ -1214,7 +1214,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
         let eml = dossier.join(format!("Fiche_{}.eml", code));
         std::fs::write(&eml, &brut).map_err(|e| socle::echec::du_disque(&eml, &e).reclasser(Classe::Disque))?;
-        let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", quand.jour().jj_mm_aaaa());
+        let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", quand.jour_de_paris().jj_mm_aaaa());
         if !illisible.is_empty() {
             note.push_str(&format!(" Non lu, à compléter : {}.", illisible.join(" ; ")));
         }
@@ -1321,17 +1321,17 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
 /// s'ecrit comme tout courriel joue (`BoiteQuiRepond`, partagee avec `BoiteDesSignatures`).
 pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i64) -> R<BoiteQuiRepond> {
     let mut boite = BoiteQuiRepond::nouvelle(ctx)?;
-    let maintenant_naif = socle::paris::maintenant_naif();
+    let maintenant = socle::temps::secondes();
     // Les courriels joues, par leur `Message-ID` : la demande retrouve ainsi son bouton.
     let envoyes = envois::simulation_courriels::courriels_par_identifiant(&ctx.racine)?;
     for a in attendues {
         // Une demande datee d'un jour seul est partie a minuit de ce jour.
         let partie = match a.quand {
-            HeureDuJournal::Instant(i) => Some(i.naif()),
-            HeureDuJournal::Jour(j) => socle::paris::Naif::du_jour(j, 0, 0, 0),
+            InstantOuJour::Instant(i) => Some(i),
+            InstantOuJour::Jour(j) => Moment::a_paris(j, 0, 0, 0),
         };
         let Some(partie) = partie else { continue };
-        if maintenant_naif.depuis(partie) < delai {
+        if !maintenant.depuis(partie).is_some_and(|d| d.as_secs() as i64 >= delai) {
             continue;
         }
         let bouton = envois::simulation_courriels::bouton_de_la_demande(&envoyes, &a.envoyes)?;

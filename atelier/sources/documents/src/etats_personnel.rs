@@ -298,7 +298,7 @@ fn reponse(r: &str) -> String {
 /// UN ACTE DU JOURNAL DES ENVOIS, tel que le journal des declarations le montre : `moteur` le tire de chaque ligne du
 /// journal (`envois::journal::Ligne`), que ce module ne lit pas.
 pub struct ActeDuJournal {
-    pub quand: socle::paris::HeureDuJournal,
+    pub quand: socle::paris::InstantOuJour,
     /// Sa sorte, telle que le journal l'ecrit (`dsn`, `contrat-signature`...).
     pub quoi: String,
     pub main_propre: bool,

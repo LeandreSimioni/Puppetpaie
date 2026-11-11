@@ -24,7 +24,7 @@ use socle::num::Decimal;
 use crate::journal::Ligne;
 use declarations::dsn_lue::DsnLue;
 use socle::mois::Mois;
-use socle::paris::InstantCompact;
+use socle::paris::Moment;
 use crate::branchement::Branchement;
 
 const DOSSIER: &str = "organismes-simules";
@@ -153,7 +153,7 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
         return Err(erreur(Classe::Refuse, "Seuls les organismes d'une compagnie fictive s'annoncent : ceux d'une vraie repondent d'eux-memes."));
     }
     let mut gardee = AnnonceGardee {
-        le: socle::paris::InstantEcrit::maintenant().jour(),
+        le: socle::temps::secondes().a_la_seconde().jour_de_paris(),
         taux_pas: None,
         taux_atmp: None,
         refus: None,
@@ -283,7 +283,7 @@ pub struct Piece {
 
 /// UN RETOUR TEL QUE LA LISTE DES RETOURS LE DECRIT : son flux, sa nature, sa publication, son statut (`fictive`), son
 /// libelle, et pour un compte rendu du PAS, le mois de la declaration (`production`).
-fn retour(nature: &str, flux: &str, publication: InstantCompact, libelle: &str, production: Option<String>) -> crate::retours::Annonce {
+fn retour(nature: &str, flux: &str, publication: Moment, libelle: &str, production: Option<String>) -> crate::retours::Annonce {
     crate::retours::Annonce {
         publication: Some(publication),
         production,
@@ -356,7 +356,7 @@ fn refus_pour(memoire: &mut Memoire, l: &Ligne, flux: &str) -> R<Option<RefusAnn
 /// gip-mds-specifications-schema-bilans-vt2.2-20201118.txt` : `envoi`, `idflux`, `essai_reel`, `envoi_etat` ;
 /// `declaration`, sa `declaration_identification`, son bilan `etat` et `mois`, ses anomalies `code`, `categorie`,
 /// `message`, `identifiant` de la rubrique).
-fn bilans_refuses(flux: &str, publication: InstantCompact, l: &Ligne, nature: NatureDeLaDeclaration, refus: &RefusAnnonce) -> R<Vec<Piece>> {
+fn bilans_refuses(flux: &str, publication: Moment, l: &Ligne, nature: NatureDeLaDeclaration, refus: &RefusAnnonce) -> R<Vec<Piece>> {
     let mois = mois_de(l)?;
     let mois_dsn = format!("01{:02}{}", mois.numero(), mois.annee());
     let envoi = format!("<envoi><idflux>{}</idflux><essai_reel>02</essai_reel><envoi_etat>OK</envoi_etat></envoi>", echappe(flux));
@@ -397,7 +397,7 @@ fn taux_de_simulation(nir: &str) -> Decimal {
 /// plus tard le jour du depot, sinon `taux_de_simulation`), dans la forme du CRM nominatif recu
 /// (`envois/tests/envois/retours.rs`, `CRM_REEL` : `rapport/@identifiant`, `salarie`, `NIR`, `matricule`,
 /// `taux_imposition_PAS`). `None` quand la declaration ne porte aucun salarie de la compagnie.
-fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &str, publication: InstantCompact) -> R<Option<Piece>> {
+fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &str, publication: Moment) -> R<Option<Piece>> {
     let depot = l.quand().jour();
     let mut taux: BTreeMap<String, Decimal> = BTreeMap::new();
     for a in &memoire.annonces {
@@ -452,7 +452,7 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &str,
 /// (`code_ctn`, `section`, `code_risque`, `temoin_bureau`, `taux`, `date_effet`, `date_calcul` ;
 /// `atelier/reference/sources/gip-mds-api-dsn/`, LISEZ-MOI, « La notification du taux AT/MP »). Le `type` du rapport
 /// n'est ecrit par aucun texte depose : la piece n'en porte pas. `None` quand la CARSAT n'a rien a notifier.
-fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &str, publication: InstantCompact) -> R<Option<Piece>> {
+fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &str, publication: Moment) -> R<Option<Piece>> {
     let depot = l.quand().jour();
     let mois = element(d.mois.map(|m| m.premier_jour().jjmmaaaa()).as_deref());
     let calcul = socle::paris::maintenant_naif().jour().aaaammjj();
@@ -526,7 +526,7 @@ fn dsn_de_l_annee(racine: &Path, lignes: &[Ligne], an: i32) -> R<BTreeMap<u32, V
 /// `RO.B004` de type 04, `RO.B008` ; dates AAAA-MM-JJ, date de calcul AAAA-MM-JJThh:mm:ss). La date d'effet et la date de
 /// fin bornent l'annee mesuree, comme `releve_retours::reconstruire_effectifs` les lit (inference : le cahier ne dit pas
 /// quelle annee les dates portent ; c'est la forme des 118 recus que le lecteur range).
-fn crm_effectif(an: i32, valeur: Decimal, flux: &str, publication: InstantCompact) -> Piece {
+fn crm_effectif(an: i32, valeur: Decimal, flux: &str, publication: Moment) -> Piece {
     let calcule_le = socle::paris::maintenant().chars().take(19).collect::<String>();
     let xml = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><RO><RO_R001>P26V01</RO_R001><RO_B000><RO_B000_R001>{}</RO_B000_R001></RO_B000>\
@@ -548,7 +548,7 @@ fn crm_effectif(an: i32, valeur: Decimal, flux: &str, publication: InstantCompac
 /// l'accuse et du bilan conformes : `Err(pieces)` quand net-entreprises la refuse (ses deux bilans, rien d'autre), sinon
 /// `Ok(pieces)` a ajouter (le taux du PAS, a une DSN mensuelle comme a un signalement d'amorcage ; l'effectif de l'annee
 /// precedente a la premiere DSN mensuelle d'une annee). Une DSN du journal dit sa nature.
-pub fn reponses_dsn(ctx: &Contexte, memoire: &mut Memoire, lignes: &[Ligne], l: &Ligne, flux: &str, publication: InstantCompact) -> R<Result<Vec<Piece>, Vec<Piece>>> {
+pub fn reponses_dsn(ctx: &Contexte, memoire: &mut Memoire, lignes: &[Ligne], l: &Ligne, flux: &str, publication: Moment) -> R<Result<Vec<Piece>, Vec<Piece>>> {
     let nature = l.nature_dsn().ok_or_else(|| socle::echec::cle("Une DSN du journal ne dit pas sa nature.", "nature"))?;
     if let Some(r) = refus_pour(memoire, l, flux)? {
         return Ok(Err(bilans_refuses(flux, publication, l, nature, &r)?));
@@ -657,7 +657,7 @@ mod tests {
         let j = |a, m, d| socle::date::Jour::nouveau(a, m, d).unwrap();
         assert!(crate::releve_retours::poser_effectif(&racine, 2026, Decimal::from(3), j(2027, 1, 5)).unwrap());
         assert!(crate::releve_retours::poser_effectif(&racine, 2025, Decimal::from(2), j(2027, 1, 5)).unwrap());
-        let p = crm_effectif(2026, Decimal::new(1142, 2),"FICTIF-000000000001", InstantCompact::du_naif(socle::paris::Naif::du_jour(j(2027, 2, 15), 10, 0, 0).unwrap()));
+        let p = crm_effectif(2026, Decimal::new(1142, 2),"FICTIF-000000000001", Moment::a_paris(j(2027, 2, 15), 10, 0, 0).unwrap());
         let chemin = crate::releve_retours::archiver_retour(&racine, "", &p.retour, &p.contenu, Some("application/xml"), "20270215-100000").unwrap();
         assert!(chemin.file_name().unwrap().to_string_lossy().contains("_nature118_"));
         crate::releve_retours::reconstruire_effectifs(&racine).unwrap();

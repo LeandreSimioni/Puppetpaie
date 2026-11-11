@@ -213,7 +213,7 @@ pub(crate) struct EtatsDeCarte {
 
 /// L'etat de la DPAE d'une embauche tenue avant : le journal (reel accepte, par le numero du contrat), puis les certificats
 /// de `retours/dpae/` (par le salarie et le jour d'embauche qu'ils attestent).
-fn dpae_de(journal: &std::collections::HashMap<etats::Paire, socle::paris::HeureDuJournal>, certifiees: &[envois::reprise_journal::DpaeAttestee], salarie: Option<&str>, numero: Option<&str>, debut: Option<Jour>) -> EtatDeCarte {
+fn dpae_de(journal: &std::collections::HashMap<etats::Paire, socle::paris::InstantOuJour>, certifiees: &[envois::reprise_journal::DpaeAttestee], salarie: Option<&str>, numero: Option<&str>, debut: Option<Jour>) -> EtatDeCarte {
     if let Some(q) = salarie.and_then(|s| journal.get(&(s.to_string(), numero.map(str::to_string)))) {
         return EtatDeCarte { couleur: "vert", courte: "DPAE faite", phrase: format!("DPAE déposée le {}", q.dit()) };
     }

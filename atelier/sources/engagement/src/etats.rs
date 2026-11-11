@@ -64,7 +64,7 @@ use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::fichiers::LectureDatee;
 use socle::mois::{Graphie, Mois};
-use socle::paris::{HeureDuJournal, InstantEcrit};
+use socle::paris::{InstantOuJour, Moment};
 use socle::{echec::{refus, Echec, R}, num::{pct, Decimal}};
 
 /// La raison d'un recalcul : le taux de prelevement a la source a change.
@@ -131,7 +131,7 @@ pub fn corriger_les_mois_finis(ctx: &Contexte, departs: &Departs) -> R<Vec<Mois>
 }
 
 /// Quand les documents de `mois` de cet engagement sont partis (le premier envoi) ; `None` s'ils ne le sont pas.
-fn documents_partis(siens: &[Depart], mois: Mois) -> Option<HeureDuJournal> {
+fn documents_partis(siens: &[Depart], mois: Mois) -> Option<InstantOuJour> {
     siens.iter().find(|d| d.envoi == Envoi::Documents && d.mois == Some(mois)).map(|d| d.le)
 }
 
@@ -147,7 +147,7 @@ pub struct EnSaisie {
 #[derive(Debug, Clone)]
 pub struct Valide {
     objet: Objet,
-    le: InstantEcrit,
+    le: Moment,
     /// Pourquoi la paie du mois lu ne s'est pas ecrite : le refus du recalcul (`du_mois`), quand elle manque, ou quand il
     /// dit une saisie a finir (`saisie_incomplete`) : la paie ecrite ne tient plus, et elle ne se lit pas.
     refus: Option<Echec>,
@@ -160,7 +160,7 @@ pub struct Valide {
 pub struct Partis {
     valide: Valide,
     pub mois: Mois,
-    pub le: HeureDuJournal,
+    pub le: InstantOuJour,
 }
 
 /// Ce qu'est un engagement pour un mois.
@@ -183,7 +183,7 @@ impl Valide {
     }
 
     /// Quand il a ete valide.
-    pub fn le(&self) -> InstantEcrit {
+    pub fn le(&self) -> Moment {
         self.le
     }
 
@@ -1098,8 +1098,8 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> String {
 }
 
 /// Le moment d'un geste, a l'heure du moteur.
-fn maintenant() -> InstantEcrit {
-    InstantEcrit::maintenant()
+fn maintenant() -> Moment {
+    socle::temps::secondes().a_la_seconde()
 }
 
 
@@ -1125,7 +1125,7 @@ fn memes_chiffres(a: &BTreeMap<Mois, PaieEcrite>, b: &BTreeMap<Mois, PaieEcrite>
 /// sur elle (`siens`), elle se garde, datee, dans les versions de l'engagement, ses paies sous son numero dans le fichier
 /// de leur mois (`paies::garder_la_version`), et le present prend le numero suivant ; sinon le present garde son numero
 /// `n`, sans historique.
-fn nouvelle_version(o: &mut Objet, actuelle: &stock::Validation, n: u64, siens: &[Depart], le: InstantEcrit) -> R<u64> {
+fn nouvelle_version(o: &mut Objet, actuelle: &stock::Validation, n: u64, siens: &[Depart], le: Moment) -> R<u64> {
     if !siens.iter().any(|d| d.version == n) {
         return Ok(n);
     }
@@ -1402,7 +1402,7 @@ pub fn supprimer(ctx: &Contexte, o: &Objet, departs: &Departs) -> R<()> {
 #[derive(Debug, Clone)]
 pub struct NonActif {
     objet: Objet,
-    le: InstantEcrit,
+    le: Moment,
     version: u64,
 }
 
@@ -1424,7 +1424,7 @@ impl NonActif {
     }
 
     /// Depuis quand.
-    pub fn le(&self) -> InstantEcrit {
+    pub fn le(&self) -> Moment {
         self.le
     }
 
@@ -2069,6 +2069,6 @@ pub fn debut_declare(ctx: &Contexte, o: &Objet, departs: &Departs, avant: Mois) 
 /// La phrase d'un recalcul, pour l'ecran : « Recalculé le JJ/MM/AAAA : taux de PAS reçu. »
 pub fn phrase_du_recalcul(r: &Recalcul) -> Option<String> {
     // Un instant se dit par son jour.
-    Some(format!("Recalculé le {} : {}.", r.le.jour().jj_mm_aaaa(), r.raison))
+    Some(format!("Recalculé le {} : {}.", r.le.jour_de_paris().jj_mm_aaaa(), r.raison))
 }
 

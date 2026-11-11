@@ -24,7 +24,7 @@ use droit::contexte::Contexte;
 use socle::echec::erreur;
 use socle::mois::{Annee, Mois};
 use socle::num::{zero2, Decimal};
-use socle::paris::InstantEcrit;
+use socle::paris::Moment;
 use socle::echec::{Echec, R};
 use crate::dossier_salarie::{entree_ecrite, entree_fichier, entree_tel_quel, zip, Entree};
 use documents::ecritures_comptables::{csv_compta, ecritures_du_mois, Ecriture};
@@ -48,8 +48,8 @@ fn est_une_erreur_d_operation(e: &Echec) -> bool {
 }
 
 /// L'heure de Paris, a la seconde.
-fn maintenant() -> InstantEcrit {
-    InstantEcrit::maintenant()
+fn maintenant() -> Moment {
+    socle::temps::secondes().a_la_seconde()
 }
 
 
@@ -299,7 +299,8 @@ pub(crate) struct Exercices {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ExerciceNote {
-    pub(crate) le: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub(crate) le: Moment,
     qui: String,
     archive: String,
     octets: u64,
@@ -313,7 +314,8 @@ pub(crate) struct ExerciceNote {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ExerciceRouvertNote {
-    le: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    le: Moment,
     qui: String,
     archive: String,
     octets: u64,
@@ -322,7 +324,8 @@ struct ExerciceRouvertNote {
     forcee: bool,
     sans_dsn: Vec<Mois>,
     annee: Annee,
-    rouvert_le: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    rouvert_le: Moment,
     rouvert_par: String,
 }
 
@@ -378,7 +381,7 @@ fn fichiers_sous(d: &Path, out: &mut Vec<PathBuf>) -> R<()> {
 pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) -> R<ExerciceClos> {
     let mut tous = lire_exercices(&ctx.racine)?;
     if let Some(clos) = tous.de(annee) {
-        return Err(refus(format!("L'exercice {} est déjà clos (le {}).", annee, clos.le.jour().iso())));
+        return Err(refus(format!("L'exercice {} est déjà clos (le {}).", annee, clos.le.jour_de_paris().iso())));
     }
     if annee.nombre() >= ctx.aujourdhui.an {
         return Err(refus(format!("L'exercice {} n'est pas fini : on clôture une année passée.", annee)));
@@ -520,7 +523,8 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct ExerciceClos {
     pub(crate) annee: Annee,
-    le: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    le: Moment,
     archive: String,
     octets: usize,
     empreinte: String,
@@ -532,7 +536,8 @@ pub(crate) struct ExerciceClos {
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct ExerciceRouvert {
     pub(crate) annee: Annee,
-    etait_clos_depuis: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    etait_clos_depuis: Moment,
     archive: String,
 }
 

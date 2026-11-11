@@ -853,7 +853,7 @@ impl FormeDeCase for i64 {}
 impl FormeDeCase for Jour {}
 impl FormeDeCase for Mois {}
 impl FormeDeCase for Montant {}
-impl FormeDeCase for socle::paris::InstantCompact {}
+impl FormeDeCase for socle::paris::Moment {}
 impl<T: FormeDeCase> FormeDeCase for Vec<T> {
     const VALEURS: &'static [&'static str] = T::VALEURS;
     fn cases() -> Vec<Declaree> {
@@ -1669,7 +1669,8 @@ cases! {
         taux: crate::pas::TauxDePas,
         r#type: crate::type_taux_pas::TypeDeTauxPas,
         identifiant: String,
-        mis_a_disposition: socle::paris::InstantCompact,
+        #[serde(default, with = "socle::paris::ecrit::compacte::option")]
+        mis_a_disposition: socle::paris::Moment,
         en_retour_de: Mois,
     }
 }

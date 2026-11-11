@@ -27,7 +27,7 @@ const DSN_ECRITES: &str = "journal/dsn-ecrites.json";
 pub fn noter_piece_ecrite(racine: &Path, cle: &str, empreinte_saisie: Option<EmpreinteNotee>, versions_portees: Option<Vec<envois::journal::Version>>) -> R<()> {
     let p = racine.join(DSN_ECRITES);
     let mut d = journal_des_ecritures(racine)?;
-    d.insert(cle.to_string(), PieceNotee { quand: socle::paris::InstantEcrit::maintenant(), empreinte_saisie, versions_portees });
+    d.insert(cle.to_string(), PieceNotee { quand: socle::temps::secondes().a_la_seconde(), empreinte_saisie, versions_portees });
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent).map_err(|e| os(parent, e))?;
     }
@@ -87,7 +87,7 @@ pub fn journal_des_ecritures(racine: &Path) -> R<std::collections::BTreeMap<Stri
 /// QUAND LE MOTEUR A ECRIT CETTE PIECE, a la minute, lu au journal des ecritures (`noter_piece_ecrite`) ; `None` s'il ne
 /// le dit pas. Jamais la date du fichier.
 pub fn ecrit_le(racine: &Path, fichier: &Path) -> R<Option<socle::paris::MinuteEcrite>> {
-    Ok(piece_notee(racine, fichier)?.map(|n| socle::paris::MinuteEcrite::du_naif(n.quand.naif())))
+    Ok(piece_notee(racine, fichier)?.map(|n| socle::paris::MinuteEcrite::de(n.quand)))
 }
 
 /// UNE PIECE NOTEE AU JOURNAL DES ECRITURES, telle que `noter_piece_ecrite` l'ecrit : quand, la paie qu'elle declare, et
@@ -95,7 +95,8 @@ pub fn ecrit_le(racine: &Path, fichier: &Path) -> R<Option<socle::paris::MinuteE
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PieceNotee {
-    pub quand: socle::paris::InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub quand: socle::paris::Moment,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub empreinte_saisie: Option<EmpreinteNotee>,
     #[serde(skip_serializing_if = "Option::is_none")]

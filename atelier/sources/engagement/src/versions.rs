@@ -359,7 +359,8 @@ pub struct Frise {
 #[derive(Debug, Clone, Serialize)]
 pub struct VersionDeLaFrise {
     pub version: Option<u64>,
-    pub le: socle::paris::InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub le: socle::paris::Moment,
     /// Son jour tel que la frise l'affiche (« 14/11 »).
     #[serde(rename = "jour")]
     pub jour_affichage: String,
@@ -382,7 +383,7 @@ pub fn frise(ctx: &Contexte, v: &Valide, departs: &Departs, mois: Mois) -> R<Opt
         return Ok(None);
     }
     let siens = ses_departs(v.objet(), departs);
-    let toutes: Vec<(Option<Version>, socle::paris::InstantEcrit)> = passees
+    let toutes: Vec<(Option<Version>, socle::paris::Moment)> = passees
         .iter()
         .map(|x| (Some(Version::Passee(x)), x.valide_le))
         .chain(std::iter::once((present, v.le())))
@@ -403,7 +404,7 @@ pub fn frise(ctx: &Contexte, v: &Valide, departs: &Departs, mois: Mois) -> R<Opt
             Some(n) => format!("Version {}", n),
             None => "Version".to_string(),
         };
-        versions.push(VersionDeLaFrise { version: n, le: *le, jour_affichage: le.jour().jj_mm(), titre_dit, jour_dit: format!("le {}", le.jour().jj_mm()), changements: changes, partis });
+        versions.push(VersionDeLaFrise { version: n, le: *le, jour_affichage: le.jour_de_paris().jj_mm(), titre_dit, jour_dit: format!("le {}", le.jour_de_paris().jj_mm()), changements: changes, partis });
         precedente = Some(*x);
     }
     Ok(Some(Frise { phrase: phrase_de_la_frise(ctx, v, departs, siens)?, versions }))
@@ -414,7 +415,7 @@ pub fn frise(ctx: &Contexte, v: &Valide, departs: &Departs, mois: Mois) -> R<Opt
 /// « Modifié le 20/01, à partir de septembre 2025, après l'envoi du contrat, des documents et des DSN de septembre à
 /// décembre 2025 ». Le detail, envoi par envoi, est dans la frise.
 fn phrase_de_la_frise(ctx: &Contexte, v: &Valide, departs: &Departs, siens: &[Depart]) -> R<String> {
-    let mut phrase = format!("Modifié le {}", v.le().jour().jj_mm());
+    let mut phrase = format!("Modifié le {}", v.le().jour_de_paris().jj_mm());
     if let Some(m) = premier_mois_change(v)?.filter(|m| *m != v.objet().premier_mois()) {
         phrase.push_str(&format!(", à partir de {}", m.libelle(Graphie::Accentuee)));
     }

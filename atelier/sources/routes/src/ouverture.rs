@@ -628,8 +628,8 @@ pub(crate) struct ImageIdentite {
     pub(crate) octets: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) format: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) quand: Option<socle::paris::InstantEcrit>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
+    pub(crate) quand: Option<socle::paris::Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
     fichier: Option<String>,
     pub(crate) documents: &'static [&'static str],
@@ -694,7 +694,7 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
                 e.octets = Some(st.len());
                 e.format = f.extension().map(|x| x.to_string_lossy().into_owned());
                 // Datee hors du calendrier, l'image posee se dit sans sa date.
-                e.quand = socle::paris::mtime(&st).map(socle::paris::InstantEcrit::de);
+                e.quand = socle::paris::mtime(&st).map(socle::paris::Moment::a_la_seconde);
                 e.fichier = Some(f.display().to_string());
             }
         }
@@ -750,7 +750,7 @@ struct FicheAttendue {
     code: String,
     adresse: String,
     prenom: Option<String>,
-    quand: socle::paris::HeureDuJournal,
+    quand: socle::paris::InstantOuJour,
     demande_dit: String,
 }
 
@@ -1026,7 +1026,7 @@ pub(crate) struct MoisDuBilan {
     saisi_dit: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pastille: Option<socle::ecran::Pastille>,
-    depose_le: Option<socle::paris::HeureDuJournal>,
+    depose_le: Option<socle::paris::InstantOuJour>,
     depose_dit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     documents_dit: Option<String>,

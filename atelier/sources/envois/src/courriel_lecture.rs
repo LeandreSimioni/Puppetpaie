@@ -112,9 +112,9 @@ pub fn identifiant_des_entetes(entetes: &[mailparse::MailHeader]) -> Option<Stri
 /// l'implementation ce qu'elle fait d'une forme qu'elle ne decrit pas, pourvu qu'elle ne perde pas le message (§ 4,
 /// l. 1711-1718 : « It is up to the implementation to deal with messages robustly »). Un champ hors
 /// limites (31 fevrier, 24 h, 60 s, decalage de 24 h) est illisible.
-pub fn date_de(m: &ParsedMail, maintenant: socle::paris::InstantEcrit) -> socle::paris::InstantEcrit {
+pub fn date_de(m: &ParsedMail, maintenant: socle::paris::Moment) -> socle::paris::Moment {
     match m.headers.get_first_value("Date").as_deref().and_then(date_lue) {
-        Some(local) => socle::paris::InstantEcrit::du_naif(local),
+        Some(instant) => instant,
         None => maintenant,
     }
 }
@@ -244,7 +244,7 @@ fn parsedate_tz(donnees: &str) -> Option<(i64, i64, i64, i64, i64, i64, Option<i
 }
 
 /// L'en-tete `Date` lu, converti en heure locale naive, ou `None` quand il est illisible (ou hors du calendrier).
-fn date_lue(brut: &str) -> Option<socle::paris::Naif> {
+fn date_lue(brut: &str) -> Option<socle::paris::Moment> {
     let (an, mois, jour, h, mi, s, decalage) = parsedate_tz(brut)?;
     let (an, mois, jour) = match (i32::try_from(an), u32::try_from(mois), u32::try_from(jour)) {
         (Ok(a), Ok(m), Ok(j)) => (a, m, j),
@@ -255,16 +255,20 @@ fn date_lue(brut: &str) -> Option<socle::paris::Naif> {
     if !(0..24).contains(&h) || !(0..60).contains(&mi) || !(0..60).contains(&s) {
         return None;
     }
-    let naif = socle::paris::Naif::du_jour(j, h, mi, s)?;
     match decalage {
-        None => Some(naif),
+        // L'heure de Paris telle qu'ecrite : une heure qui n'existe pas a Paris (l'heure sautee du passage a l'ete) est
+        // illisible.
+        None => {
+            let instant = socle::paris::Moment::a_paris(j, h, mi, s)?;
+            (instant.jour_de_paris() == j && instant.seconde_du_jour_de_paris() == h * 3_600 + mi * 60 + s).then_some(instant)
+        }
         Some(d) => {
             // `timezone(timedelta(seconds=d))` : strictement entre -24 h et 24 h.
             if d.abs() >= 86_400 {
                 return None;
             }
             let t = (j.ordinal() - 719_163) * 86_400 + h * 3_600 + mi * 60 + s - d;
-            Some(socle::paris::Moment::de_secondes(t)?.local_naif())
+            socle::paris::Moment::de_secondes(t)
         }
     }
 }

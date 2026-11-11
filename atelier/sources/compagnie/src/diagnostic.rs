@@ -1224,7 +1224,7 @@ pub fn machine(racine: &Path) -> Machine {
 #[derive(Debug, serde::Serialize)]
 pub struct DepotDit {
     quoi: String,
-    quand: socle::paris::HeureDuJournal,
+    quand: socle::paris::InstantOuJour,
     mode: String,
     accepte: bool,
     retours: Vec<String>,

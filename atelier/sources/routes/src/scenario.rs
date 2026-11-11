@@ -55,7 +55,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 use socle::echec::{au_chemin, du_disque, refus, R};
-use socle::paris::{InstantEcrit, MinuteEcrite, Moment};
+use socle::paris::{ecrit, InstantOuJour, Moment};
 use socle::refus;
 
 use compagnie::installation::Venue;
@@ -80,9 +80,10 @@ pub struct Geste {
     /// L'instant, en secondes UTC (le banc).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quand: Option<Moment>,
-    /// L'instant a Paris, ecrit a la main ou par le banc pour qui le relit.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub heure: Option<HeureDuGeste>,
+    /// L'instant a Paris, ecrit a la main ou par le banc pour qui le relit : un jour (`AAAA-MM-JJ`, a 9 h), une minute
+    /// (`AAAA-MM-JJTHH:MM`) ou une seconde (`AAAA-MM-JJTHH:MM:SS`, ce que le banc ecrit).
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::heure_du_geste::option")]
+    pub heure: Option<InstantOuJour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub geste: Option<Genre>,
     /// La route, par son nom : un nom qu'aucune route ne porte se rejoue comme le moteur le refuse.
@@ -206,7 +207,7 @@ pub fn rendre_simulee(racine: &Path) -> R<()> {
         copie_de: format!("{} {} sur le banc d'essai", compagnie::installation::MARQUE_FICTIVE, nom),
         fictive: None,
         ajoutee: None,
-        quand: Some(socle::paris::InstantEcrit::maintenant()),
+        quand: Some(socle::temps::secondes().a_la_seconde()),
         quoi: "Une compagnie ajoutee par le « + », devenue fictive aux envois SIMULES sur le banc d'essai de l'atelier (scenario.rs, geste `simuler`) : ses DPAE, DSN et courriels sont joues, rien ne part.".to_string(),
     };
     socle::ecriture::ecrire_json(&racine.join(compagnie::installation::MARQUEUR), &marqueur, 2)
@@ -227,45 +228,14 @@ pub fn relatif(inst: &Path, racine: &Path) -> R<String> {
 
 /// L'heure lisible d'un instant, a Paris.
 fn heure(t: Moment) -> String {
-    InstantEcrit::de(t).iso()
+    ecrit::seconde::texte(t)
 }
 
-/// L'INSTANT D'UN GESTE A PARIS, tel que le scenario l'ecrit : un jour (`AAAA-MM-JJ`, a 9 h), une minute
-/// (`AAAA-MM-JJTHH:MM`) ou une seconde (`AAAA-MM-JJTHH:MM:SS`, ce que le banc ecrit). Il se lit et s'ecrit dans l'une de
-/// ces trois formes, octet pour octet.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(untagged, expecting = "une date (AAAA-MM-JJ) ou une heure de Paris (AAAA-MM-JJTHH:MM[:SS]) est attendue")]
-pub enum HeureDuGeste {
-    Seconde(InstantEcrit),
-    Minute(MinuteEcrite),
-    Jour(Jour),
-}
-
-impl HeureDuGeste {
-    /// Sa forme ecrite.
-    pub fn iso(self) -> String {
-        match self {
-            HeureDuGeste::Jour(j) => j.iso(),
-            HeureDuGeste::Minute(m) => m.iso(),
-            HeureDuGeste::Seconde(s) => s.iso(),
-        }
-    }
-
-    /// L'instant qu'il dit ; un jour seul, a 9 h.
-    fn instant(self) -> Option<Moment> {
-        let n = match self {
-            HeureDuGeste::Jour(j) => return Moment::a_paris(j, 9, 0, 0),
-            HeureDuGeste::Minute(m) => m.naif(),
-            HeureDuGeste::Seconde(s) => s.naif(),
-        };
-        let s = n.seconde_du_jour();
-        Moment::a_paris(n.jour(), s / 3_600, s % 3_600 / 60, s % 60)
-    }
-}
-
-impl Serialize for HeureDuGeste {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.iso())
+/// L'instant que dit l'heure d'un geste ; un jour seul, a 9 h.
+fn instant_de_l_heure(h: InstantOuJour) -> Option<Moment> {
+    match h {
+        InstantOuJour::Instant(m) => Some(m),
+        InstantOuJour::Jour(j) => Moment::a_paris(j, 9, 0, 0),
     }
 }
 
@@ -346,10 +316,10 @@ fn instant_ecrit(g: &Geste) -> R<Option<Moment>> {
     }
     let h = match (g.heure, g.geste) {
         (Some(h), _) => h,
-        (None, Some(Genre::Jour)) => HeureDuGeste::Jour(g.jour.ok_or_else(|| refus("Un geste qui change de jour ne dit pas lequel."))?),
+        (None, Some(Genre::Jour)) => InstantOuJour::Jour(g.jour.ok_or_else(|| refus("Un geste qui change de jour ne dit pas lequel."))?),
         _ => return Ok(None),
     };
-    Ok(Some(h.instant().ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?))
+    Ok(Some(instant_de_l_heure(h).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?))
 }
 
 /// L'instant d'une seconde apres `t`.
@@ -488,7 +458,7 @@ fn racine_nommee(racines: &BTreeMap<String, PathBuf>, derniere: &Option<PathBuf>
 
 /// Le jour a Paris d'un instant.
 fn jour_de(t: Moment) -> Jour {
-    InstantEcrit::de(t).jour()
+    t.a_la_seconde().jour_de_paris()
 }
 
 fn rejouer_les_gestes(
@@ -846,7 +816,7 @@ fn poser_livree(racine: &Path, dest: &Path, fin: Option<Moment>) -> R<()> {
         copie_de: format!("{} {}", compagnie::installation::MARQUE_FICTIVE, nom),
         fictive: None,
         ajoutee: None,
-        quand: fin.map(socle::paris::InstantEcrit::de),
+        quand: fin.map(Moment::a_la_seconde),
         quoi: "Compagnie FICTIVE de reference, livree avec le logiciel : le rejeu de son scenario (atelier/fictives/). Ses envois sont joues, rien n'en part.".to_string(),
     };
     socle::ecriture::ecrire_json(&dest.join(compagnie::installation::MARQUEUR), &marqueur, 2)
@@ -1063,7 +1033,7 @@ mod enregistreur {
         /// Ecrit la ligne du geste `g`, au rang suivant et a son instant.
         fn ecrire(&self, n: &mut u64, g: Geste, quand: Moment) -> R<()> {
             *n += 1;
-            let ligne = Geste { n: Some(*n), quand: Some(quand), heure: Some(HeureDuGeste::Seconde(InstantEcrit::de(quand))), ..g };
+            let ligne = Geste { n: Some(*n), quand: Some(quand), heure: Some(InstantOuJour::Instant(quand.a_la_seconde())), ..g };
             let f = self.dossier.join(GESTES);
             let mut fichier = std::fs::OpenOptions::new().create(true).append(true).open(&f).map_err(|e| du_disque(&f, &e))?;
             writeln!(fichier, "{}", socle::ecriture::json_en_ligne(&ligne)).map_err(|e| du_disque(&f, &e))

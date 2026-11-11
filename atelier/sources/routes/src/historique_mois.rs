@@ -32,7 +32,7 @@ use envois::retours::{self, AnomalieDuRapport, CrmOc, Neores, Rapport};
 use socle::echec::{Classe, Echec, R};
 use socle::ecran::Pastille;
 use socle::mois::Mois;
-use socle::paris::{InstantCompact, InstantEcrit};
+use socle::paris::Moment;
 
 use crate::catalogue::{Acte, Ecran, Fiche, Place, Refus, Route, FORME, MOIS};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
@@ -224,7 +224,7 @@ struct Envoi {
     quoi: &'static str,
     acte: String,
     mode: &'static str,
-    quand: socle::paris::HeureDuJournal,
+    quand: socle::paris::InstantOuJour,
     fichier: Option<String>,
     flux: Option<String>,
     destinataire: Option<String>,
@@ -241,7 +241,8 @@ struct Envoi {
 #[derive(Debug, Serialize)]
 struct RetourLu {
     titre: String,
-    quand: Option<InstantEcrit>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    quand: Option<Moment>,
     phrases: Vec<String>,
     pastille: Option<Pastille>,
     piece: Option<String>,
@@ -479,7 +480,7 @@ fn retours_illisibles(dossier: &Path, e: std::io::Error) -> Echec {
 /// La piece archivee d'un retour : `retours/[dpae/]AAAAMMJJ-hhmmss_natureN_<flux>.<ext>` (`envois::releve_retours::archiver_retour`,
 /// qui nomme `sansflux` un retour sans flux) : celle de sa publication ; sans publication datee, la premiere de sa nature
 /// pour ce flux (`etats::archive_du_retour`). Aucune s'il n'y en a pas ; un dossier des retours qui ne se lit pas le dit.
-fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, nature: &str, publication: Option<InstantCompact>) -> R<Option<PathBuf>> {
+fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, nature: &str, publication: Option<Moment>) -> R<Option<PathBuf>> {
     let mut dossier = racine.join(envois::retours::RETOURS);
     if let Some(c) = canal {
         dossier = dossier.join(c);
@@ -506,7 +507,7 @@ fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, natur
         }
     }
     noms.sort();
-    let horo = publication.map(|p| p.compact()).map(|p| format!("{}-{}", &p[..8], &p[8..]));
+    let horo = publication.map(socle::paris::ecrit::compacte::texte).map(|p| format!("{}-{}", &p[..8], &p[8..]));
     // Une publication datee n'a que sa piece : celle d'une autre publication du meme flux dirait un autre retour.
     let choisi = match horo {
         Some(h) => noms.iter().find(|n| n.starts_with(&h)),
@@ -876,7 +877,7 @@ fn neores_lu(crm: &Neores) -> Lecture {
             })
             .into_iter()
             .collect();
-        let calcul = morceau(" (calculé le ", p.calcule_le.map(|j| j.jour().jj_mm_aaaa()).as_deref(), ")");
+        let calcul = morceau(" (calculé le ", p.calcule_le.map(|j| j.jour_de_paris().jj_mm_aaaa()).as_deref(), ")");
         l.phrases.push(format!("{}{}{}{}{}.", majuscule(&quoi), morceau(" : ", lu(&p.valeur), ""), periode, morceau(", rubrique ", lu(&p.rubrique), ""), calcul));
     }
     if crm.parametres.iter().any(|x| lu(&x.type_parametre).is_some_and(|t| t.starts_with('A'))) {
@@ -1114,7 +1115,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
         (None, None) => format!("retour de nature {}", nature),
     };
     let nature_dit = dit(&nature).map(|n| format!("Nature {} : {}", n, libelle));
-    let quand = publication.map(|p| InstantEcrit::du_naif(p.naif()));
+    let quand = publication;
     RetourLu {
         titre: titre_dit.clone(),
         quand,
@@ -1124,7 +1125,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
         organisme: Some(RetourDOrganisme {
             titre_dit,
             nature_dit,
-            quand_dit: quand.map(InstantEcrit::dit),
+            quand_dit: quand.map(Moment::dit),
             nature_retour: nature,
             libelle,
             organisme,

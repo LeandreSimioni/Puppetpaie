@@ -209,7 +209,7 @@ fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
         };
         let taux: String = r.taux.iter().map(|t| format!(" {} %", t.to_string().replace('.', ","))).collect();
         // Le mois du versement qui l'applique (`mis_a_disposition`, le jour du versement) : celui que la DSN declare.
-        let mois = format!(", appliqué dans la DSN de {}", r.mis_a_disposition.naif().jour().mois_civil().libelle(socle::mois::Graphie::Accentuee));
+        let mois = format!(", appliqué dans la DSN de {}", r.mis_a_disposition.jour_de_paris().mois_civil().libelle(socle::mois::Graphie::Accentuee));
         faits.push(format!("Prélèvement à la source de {} : taux{} transmis par la DGFiP{} (S21.G00.50.006 à .008).", qui, taux, mois));
     }
 }

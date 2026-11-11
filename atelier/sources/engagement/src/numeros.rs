@@ -27,7 +27,8 @@ use crate::stock::{self, Objet};
 pub struct NumeroPour {
     pub salarie: String,
     pub debut: Jour,
-    pub le: socle::paris::InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub le: socle::paris::Moment,
 }
 
 /// UN NUMERO DE CONTRAT, tel que la DSN le declare en S21.G00.40.009 : de 5 a 20 caracteres (`X [5,20]`,
@@ -232,7 +233,7 @@ fn porte_par_un_autre(ctx: &Contexte, o: &Objet, n: &str) -> R<bool> {
 /// LE NUMERO A LA VALIDATION de l'engagement `o` (`etats::valider`), pose sur lui ; `le` : l'instant de la validation.
 /// Il garde celui qu'il porte, sauf si son salarie ou son debut a change depuis qu'il l'a recu et qu'aucun envoi ne l'a
 /// porte : il en recoit alors un nouveau, comme un engagement qui n'en a pas.
-pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::InstantEcrit, departs: &Departs) -> R<()> {
+pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::Moment, departs: &Departs) -> R<()> {
     let cle = o.carte().salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie"))?;
     let fiche = crate::fiche_du_salarie(ctx, &cle)?;
     let debut = crate::debut_brut(&o.brut).ok_or_else(|| socle::fichiers::absent("debut"))?;

@@ -23,7 +23,7 @@ use crate::editeur::Retour;
 use crate::incidents::{self, Canal, EtatEnvoi, PourLEditeur, DEPOSE, EN_ATTENTE};
 use socle::ecriture::ecrire_json;
 use socle::echec::{erreur, Classe, R};
-use socle::paris::{InstantEcrit, MinuteEcrite};
+use socle::paris::{MinuteEcrite, Moment};
 use socle::verrou::Verrou;
 
 const TEXTE_MAX: usize = 5000;
@@ -260,8 +260,10 @@ pub fn apercu(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Captu
 #[serde(deny_unknown_fields)]
 pub struct EnvoiDuMessage {
     pub etat: EtatEnvoi,
-    pub quand: Option<InstantEcrit>,
-    pub essai: Option<InstantEcrit>,
+    #[serde(default, with = "socle::paris::ecrit::seconde::option")]
+    pub quand: Option<Moment>,
+    #[serde(default, with = "socle::paris::ecrit::seconde::option")]
+    pub essai: Option<Moment>,
     pub erreur: Option<String>,
 }
 
@@ -527,7 +529,7 @@ fn passage(racine: &Path) -> R<BilanMessages> {
     };
     effacer_les_partis(racine)?;
     // Ce qui attend part maintenant : la boite le dit « en cours d'envoi ».
-    let essai = InstantEcrit::maintenant();
+    let essai = socle::temps::secondes().a_la_seconde();
     let attendent = modifier(racine, |lignes| {
         let mut n = 0;
         for l in lignes.iter_mut().filter(|l| en_attente(l)) {
@@ -607,7 +609,7 @@ fn passage(racine: &Path) -> R<BilanMessages> {
 
 /// La ligne `id` est arrivee chez l'editeur : `depose`, avec ce que le serveur a rendu.
 fn marquer_arrive(racine: &Path, id: &str, r: &Retour) -> R<()> {
-    let quand = InstantEcrit::maintenant();
+    let quand = socle::temps::secondes().a_la_seconde();
     let fait = modifier(racine, |lignes| {
         let mut change = false;
         for l in lignes.iter_mut().filter(|l| l.id == id) {

@@ -13,7 +13,7 @@ pub fn enregistrer(ctx: &Contexte, releves: &[TauxRecu], source: &str) -> Result
     for r in releves {
         let cle = r.salarie.clone();
         let lu = r.dans_la_fiche();
-        let mad = r.mis_a_disposition.naif().jour();
+        let mad = r.mis_a_disposition.jour_de_paris();
         let depuis = droit::pas::date_d_effet(mad, r.en_retour_de);
         let deja = droit::pas::recus(ctx, &cle)?.into_iter().chain(ecrits.iter().filter(|(c, _)| *c == cle).map(|(_, v)| v.clone())).any(|v| v == lu);
         if deja {

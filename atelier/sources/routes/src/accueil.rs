@@ -511,7 +511,7 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
         copie_de: format!("{} ajoutee sur ce poste", MARQUE_FICTIVE),
         fictive: None,
         ajoutee: Some(true),
-        quand: Some(socle::paris::InstantEcrit::maintenant()),
+        quand: Some(socle::temps::secondes().a_la_seconde()),
         quoi: "Une compagnie fictive ajoutee sur ce poste, le logiciel etant bride : tout s'y fait, rien n'en part vers un organisme ni vers une personne.".to_string(),
     };
     socle::ecriture::ecrire_json(&dossier.join(MARQUEUR), &marqueur, 2)?;

@@ -95,8 +95,18 @@ pub struct Identite {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rapport {
-    pub recus: Vec<(String, socle::paris::InstantEcrit)>,
-    pub ecartes: Vec<(String, socle::paris::InstantEcrit)>,
+    #[serde(deserialize_with = "cles_lues")]
+    pub recus: Vec<(String, socle::paris::Moment)>,
+    #[serde(deserialize_with = "cles_lues")]
+    pub ecartes: Vec<(String, socle::paris::Moment)>,
+}
+
+/// Les cles `(empreinte, quand)` d'un rapport, le `quand` ecrit `AAAA-MM-JJTHH:MM:SS` (`socle::paris::ecrit::seconde`).
+fn cles_lues<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<(String, socle::paris::Moment)>, D::Error> {
+    Vec::<(String, String)>::deserialize(d)?
+        .into_iter()
+        .map(|(e, q)| Ok((e, socle::paris::ecrit::seconde::deserialize(serde::de::value::StrDeserializer::<D::Error>::new(&q))?)))
+        .collect()
 }
 
 /// `POST /retour` : le numero que l'utilisateur lit, et l'adresse ou l'editeur le suit si elle est deja ouverte (vide

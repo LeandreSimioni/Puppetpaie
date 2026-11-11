@@ -136,17 +136,17 @@ pub mod format {
 
     impl Format for InstantIso {}
     impl Scelle for InstantIso {
-        type Lu = Option<paris::InstantEcrit>;
-        fn lire(t: &str) -> Option<paris::InstantEcrit> {
-            paris::InstantEcrit::lire(t)
+        type Lu = Option<paris::Moment>;
+        fn lire(t: &str) -> Option<paris::Moment> {
+            paris::ecrit::seconde::lu(t)
         }
     }
 
     impl Format for InstantCompact {}
     impl Scelle for InstantCompact {
-        type Lu = Option<paris::InstantCompact>;
-        fn lire(t: &str) -> Option<paris::InstantCompact> {
-            paris::InstantCompact::lire(t)
+        type Lu = Option<paris::Moment>;
+        fn lire(t: &str) -> Option<paris::Moment> {
+            paris::ecrit::compacte::lu(t)
         }
     }
 
