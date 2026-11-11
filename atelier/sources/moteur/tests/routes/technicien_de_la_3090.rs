@@ -24,7 +24,7 @@ use std::path::PathBuf;
 use serde_json::{json, Value};
 
 use crate::outils::rejeu::{rejouer_dossier, scenario};
-use crate::outils::{dec, dossier_de_test, paie_ecrite, reussi, route, valider};
+use crate::outils::{dec, dossier_de_test, nombre, paie_ecrite, reussi, route, valider};
 
 /// Le jour de chaque geste : celui ou les Treteaux commencent.
 const JOUR: &str = "2026-11-02";
@@ -77,7 +77,7 @@ fn la_prime_d_anciennete_d_un_technicien_au_mois_de_l_annexe_1() {
     // Un permanent de la 3090 est affilie a la complementaire sante (L. 911-7) : son niveau se lit sur son adhesion.
     let sante = json!([{"case": "sante_svp", "valeur": {"niveau": "1", "conjoint": false, "enfants": 0}}]);
     reussi(&route(&c, "enregistrer-fiche", json!({"nom": "salarie", "cle": "FORTUNY", "changements": sante}), JOUR));
-    let cdi = json!({"salarie": "FORTUNY", "nature": "cdi", "debut": "2026-11-02", "salaire_mensuel": 2400, "quotite_contrat": 151.67});
+    let cdi = json!({"salarie": "FORTUNY", "nature": "cdi", "debut": "2026-11-02", "salaire_mensuel": 2400, "quotite_contrat": nombre("151.67")});
     reussi(&valider(&c, "2026-11", None, &cdi, JOUR));
 
     let paie = paie_ecrite(&c, "2026-11", "FORTUNY", None);
@@ -95,7 +95,7 @@ fn la_prime_d_anciennete_d_un_technicien_au_mois_de_l_annexe_1() {
 fn le_complement_au_dela_du_seuil_du_bareme_2025() {
     let c = les_treteaux_et_leur_regisseur("complement_2025");
     // Le taux AT/MP de 2025 : celui que les Treteaux ont dit pour 2026, des le 01/01/2025.
-    let atmp = json!([{"case": "taux_atmp", "valeur": {"code_risque": "923AD", "valeur": 1.1, "depuis": "2025-01-01"}}]);
+    let atmp = json!([{"case": "taux_atmp", "valeur": {"code_risque": "923AD", "valeur": nombre("1.1"), "depuis": "2025-01-01"}}]);
     reussi(&route(&c, "enregistrer-fiche", json!({"nom": "entreprise", "cle": null, "changements": atmp}), JOUR));
     let heures = |mois: &str, jour: &str, taux: &str| -> Value {
         let taux: serde_json::Number = taux.parse().unwrap();

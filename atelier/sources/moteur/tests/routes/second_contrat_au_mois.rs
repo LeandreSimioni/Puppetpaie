@@ -5,7 +5,7 @@
 use serde_json::json;
 
 use crate::outils::rejeu::{rejouer_dossier, scenario};
-use crate::outils::{dossier_de_test, identite, refus, reussi, route, saisir, valider};
+use crate::outils::{dossier_de_test, identite, nombre, refus, reussi, route, saisir, valider};
 
 #[test]
 fn une_carte_neuve_ne_refait_pas_le_cdi_qui_court() {
@@ -18,7 +18,7 @@ fn une_carte_neuve_ne_refait_pas_le_cdi_qui_court() {
     std::fs::write(sc.join("gestes.jsonl"), gestes.join("\n") + "\n").unwrap();
     let (_, c) = rejouer_dossier(&sc, &d);
 
-    let saisie = json!({"salarie": "SVOBODA", "nature": "cdi", "debut": "2026-01-05", "salaire_mensuel": 3400, "quotite_contrat": 151.67});
+    let saisie = json!({"salarie": "SVOBODA", "nature": "cdi", "debut": "2026-01-05", "salaire_mensuel": 3400, "quotite_contrat": nombre("151.67")});
     let id = json!(identite(&c, "2026-01", "SVOBODA", None));
     reussi(&valider(&c, "2026-01", Some(&id), &saisie, "2026-01-05"));
 
@@ -28,7 +28,7 @@ fn une_carte_neuve_ne_refait_pas_le_cdi_qui_court() {
         v.into_iter().map(|p| (p.clone(), std::fs::read(p).unwrap())).collect::<Vec<_>>()
     };
     // Une carte neuve de fevrier : son debut, qui dit le meme contrat, se refuse quand il arrive.
-    let sans_debut = json!({"salarie": "SVOBODA", "nature": "cdi", "salaire_mensuel": 3400, "quotite_contrat": 151.67});
+    let sans_debut = json!({"salarie": "SVOBODA", "nature": "cdi", "salaire_mensuel": 3400, "quotite_contrat": nombre("151.67")});
     let neuve = reussi(&saisir(&c, "2026-02", None, &sans_debut, "2026-02-02"))["engagement"].clone();
     let avant = ecrits();
     let (classe, phrase) = refus(&route(

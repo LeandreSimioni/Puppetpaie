@@ -18,7 +18,7 @@
 use serde_json::json;
 
 use crate::outils::rejeu::rejouer;
-use crate::outils::{refus, reussi, route, valider};
+use crate::outils::{nombre, refus, reussi, route, valider};
 
 #[test]
 fn de_la_validation_a_l_attestation() {
@@ -31,7 +31,7 @@ fn de_la_validation_a_l_attestation() {
 
     let saisie = |motif: &str| {
         json!({"salarie": "FULLER", "nature": "cdd", "debut": "2026-03-02", "fin": "2026-05-29",
-            "salaire_mensuel": 2500, "quotite_contrat": 151.67, "metier": "ART040", "motif_recours": motif})
+            "salaire_mensuel": 2500, "quotite_contrat": nombre("151.67"), "metier": "ART040", "motif_recours": motif})
     };
     refus(&valider(&c, "2026-03", None, &saisie("accroissement"), "2026-02-25"));
     // Les changements d'un appel s'ecrivent tout ou rien : un motif refuse, la carte ne s'ecrit pas.
@@ -71,7 +71,7 @@ fn de_la_validation_a_l_attestation() {
 
     // Un CDI le lundi qui suit le terme (un vendredi) : la relation se poursuit, l'indemnite de fin de contrat tombe.
     let cdi = json!({"salarie": "FULLER", "nature": "cdi", "debut": "2026-06-01", "salaire_mensuel": 2500,
-        "quotite_contrat": 151.67, "metier": "ART040"});
+        "quotite_contrat": nombre("151.67"), "metier": "ART040"});
     reussi(&valider(&c, "2026-06", None, &cdi, "2026-05-20"));
     let ap = route(&c, "apercu", json!({"mois": "2026-05", "modifications": []}), "2026-05-20");
     let fuller = reussi(&ap)["paies"].as_array().unwrap().iter().find(|p| p.to_string().contains("FULLER")).cloned().expect("FULLER");

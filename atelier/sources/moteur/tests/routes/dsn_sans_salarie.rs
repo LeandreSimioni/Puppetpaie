@@ -7,7 +7,7 @@
 use serde_json::json;
 
 use crate::outils::rejeu::{rejouer_dossier, scenario};
-use crate::outils::{dossier_de_test, reussi, route};
+use crate::outils::{dossier_de_test, nombre, reussi, route};
 
 #[test]
 fn l_horloge_depose_la_dsn_d_un_mois_sans_engagement() {
@@ -28,7 +28,7 @@ fn l_horloge_depose_la_dsn_d_un_mois_sans_engagement() {
         "2026-01",
         None,
         &json!({"salarie": "CRAIG", "nature": "cddu_spectacle", "spectacle": "nuits-d-ete",
-            "lignes": [{"rubrique": "heure", "quantite": 16, "taux": 18.75, "lieu": null, "dates": ["2026-01-29", "2026-01-30"], "planning": []}]}),
+            "lignes": [{"rubrique": "heure", "quantite": 16, "taux": nombre("18.75"), "lieu": null, "dates": ["2026-01-29", "2026-01-30"], "planning": []}]}),
         "2026-01-05",
     ));
     let r = route(&c, "horloge-rattraper", json!({"aujourdhui": "2026-03-20"}), "2026-03-20");

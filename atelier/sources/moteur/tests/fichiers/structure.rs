@@ -395,7 +395,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
         let r = route(&c, nom, charge, "2026-11-02");
         assert_eq!(r["ok"], json!(true), "le permanent des exemples : {} : {}", nom, r);
     }
-    let cdi = json!({"salarie": "SVOBODA", "nature": "cdi", "debut": "2026-11-02", "salaire_mensuel": 3400, "quotite_contrat": 151.67});
+    let cdi = json!({"salarie": "SVOBODA", "nature": "cdi", "debut": "2026-11-02", "salaire_mensuel": 3400, "quotite_contrat": crate::outils::nombre("151.67")});
     let r = crate::outils::valider(&c, "2026-11", None, &cdi, "2026-11-02");
     assert_eq!(r["ok"], json!(true), "le permanent des exemples : valider-engagement : {}", r);
     for charge in [
@@ -1084,43 +1084,151 @@ fn une_date_est_une_date() {
     assert!(fautes.is_empty(), "une date est un `Jour` ou un instant de `socle::paris`, jamais un texte :\n{}", fautes.join("\n"));
 }
 
-/// UN NOMBRE DE PAIE EST UN DECIMAL, JAMAIS UN FLOTTANT : aucune source du logiciel (tests a part, commentaires et textes
-/// blanchis) ne type en `f32` ou `f64` (seul, ou dans `Option`, `Vec`, `Box`, un tableau) un champ, un parametre, une
-/// variable, une constante ou la valeur rendue d'une fonction dont un mot du nom (entre ses `_`, au singulier) dit un
-/// nombre de paie : un montant, un taux, une quantite, une quotite, des heures, une base, une assiette, un brut, un net, un
-/// salaire, une cotisation, un tarif, une prime, une indemnite, un plafond, un seuil, un minimum, un coefficient, un
-/// pourcentage, un abattement, une reduction, le SMIC, un effectif. Le flottant ne reste qu'au dehors, la ou le format
-/// l'impose : un instant, une duree mesuree, la geometrie d'un dessin, la case d'un classeur, la porte du JSON. Et le
-/// calcul (`droit`, `engagement`) n'a aucune conversion vers le flottant ni depuis lui : ni `en_f64`, ni `flottant`, ni
-/// `dec_f64`, ni `round3`.
+/// AUCUN FLOTTANT, NULLE PART : aucun fichier `.rs` du depot (tout le Rust est sous `atelier/sources` : les crates de
+/// l'espace et leurs tests, l'atelier, la fabrique de PDF, la fenetre, les scripts de construction) n'ecrit, dans son
+/// code (commentaires, textes et caracteres blanchis), le mot `f32` ou `f64` (un type, un suffixe, un nom qui le porte),
+/// ni un nombre a virgule ou a exposant, que Rust type en flottant (`1.5`, `2.0`, `1e-7`). Un nombre a virgule se dit
+/// en `Decimal` (un montant, un taux), en `Mesure` (une mesure d'un PDF), ou en entiers (une duree, un poids) ; celui
+/// d'un JSON se lit et s'ecrit par son texte. Le verrou n'a ni liste ni exemption.
 #[test]
-fn un_nombre_de_paie_n_est_jamais_un_flottant() {
-    const MOTS: [&str; 23] = [
-        "montant", "taux", "quantite", "quotite", "heure", "base", "assiette", "brut", "net", "salaire", "cotisation", "tarif", "prime", "indemnite", "plafond",
-        "seuil", "minimum", "coefficient", "pourcentage", "abattement", "reduction", "smic", "effectif",
-    ];
-    let de_paie = |nom: &str| nom.to_lowercase().split('_').any(|m| MOTS.contains(&m) || m.strip_suffix('s').is_some_and(|s| MOTS.contains(&s)));
-    let flottant = r"(?:&\s*)?(?:(?:Option|Vec|Box)\s*<\s*)*(?:\[\s*)?f(?:32|64)\b";
-    let type_ = regex::Regex::new(&format!(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*:\s*{}", flottant)).unwrap();
-    let rendu = regex::Regex::new(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)[^{;]*->[^{;]*\bf(?:32|64)\b").unwrap();
-    let conversion = regex::Regex::new(r"\b(?:en_f64|flottant|dec_f64|round3)\b").unwrap();
+fn aucun_flottant_dans_le_code() {
+    let mut fichiers = Vec::new();
+    sources_hors_cibles(&espace(), &mut fichiers);
+    fichiers.sort();
+    assert!(fichiers.len() > 100, "les sources Rust ne sont pas ou on les cherche : {}", espace().display());
     let mut fautes = Vec::new();
-    for c in LE_LOGICIEL {
-        for p in sources(&espace().join(c).join("src")) {
-            let rel = p.strip_prefix(espace()).unwrap().display().to_string();
-            for (n, l) in code_seul(&std::fs::read_to_string(&p).unwrap()).lines().enumerate() {
-                for t in type_.captures_iter(l).chain(rendu.captures_iter(l)).filter(|t| de_paie(&t[1])) {
-                    fautes.push(format!("{}:{} : `{}`, un nombre de paie en flottant : un `Decimal`", rel, n + 1, t[0].trim()));
+    for p in fichiers {
+        let rel = p.strip_prefix(espace()).unwrap().display().to_string();
+        let code = code_sans_textes(&std::fs::read_to_string(&p).unwrap());
+        let ident = |x: char| x.is_alphanumeric() || x == '_';
+        let (mut ligne, mut i) = (1, 0);
+        while i < code.len() {
+            let avant = if i > 0 { code[i - 1] } else { ' ' };
+            let a = |k: usize| code.get(i + k).copied().unwrap_or(' ');
+            if code[i] == '\n' {
+                ligne += 1;
+            } else if code[i] == 'f' && !avant.is_alphabetic() && matches!((a(1), a(2)), ('3', '2') | ('6', '4')) && !ident(a(3)) {
+                fautes.push(format!("{}:{} : `f{}{}`", rel, ligne, a(1), a(2)));
+                i += 3;
+                continue;
+            } else if code[i].is_ascii_digit() && !ident(avant) && avant != '.' {
+                let mut j = i;
+                while j < code.len() && (code[j].is_ascii_digit() || code[j] == '_') {
+                    j += 1;
                 }
-                if ["droit", "engagement"].contains(&c) {
-                    if let Some(m) = conversion.find(l) {
-                        fautes.push(format!("{}:{} : `{}`, le calcul passe par le flottant : il reste en `Decimal`", rel, n + 1, m.as_str()));
+                let b = |k: usize| code.get(j + k).copied().unwrap_or(' ');
+                let virgule = b(0) == '.' && b(1).is_ascii_digit();
+                let exposant = matches!(b(0), 'e' | 'E') && (b(1).is_ascii_digit() || (matches!(b(1), '+' | '-') && b(2).is_ascii_digit()));
+                if virgule || exposant {
+                    let nombre: String = code[i..(j + 2).min(code.len())].iter().collect();
+                    fautes.push(format!("{}:{} : `{}…`, un nombre que Rust type en flottant", rel, ligne, nombre));
+                }
+                i = j;
+                continue;
+            }
+            i += 1;
+        }
+    }
+    assert!(fautes.is_empty(), "aucun flottant dans le code : un `Decimal`, une `Mesure` ou des entiers :\n{}", fautes.join("\n"));
+}
+
+/// Les fichiers `.rs` sous `d`, hors des cibles de compilation (`target`).
+fn sources_hors_cibles(d: &Path, sortie: &mut Vec<PathBuf>) {
+    for e in std::fs::read_dir(d).unwrap().flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            if e.file_name() != "target" {
+                sources_hors_cibles(&p, sortie);
+            }
+        } else if p.extension().is_some_and(|x| x == "rs") {
+            sortie.push(p);
+        }
+    }
+}
+
+/// Un source Rust dont les commentaires (de ligne et de bloc, imbriques), les textes (`"…"`, `b"…"`, `r#"…"#`,
+/// `br"…"`) et les caracteres (`'…'`, `b'…'`, `'\u{…}'`) sont blanchis, ses sauts de ligne gardes : ce qui reste est
+/// le code que le compilateur lit.
+fn code_sans_textes(t: &str) -> Vec<char> {
+    let mut c: Vec<char> = t.chars().collect();
+    let n = c.len();
+    let ident = |x: char| x.is_alphanumeric() || x == '_';
+    let mut a_blanchir: Vec<(usize, usize)> = Vec::new();
+    let mut i = 0;
+    while i < n {
+        let avant = if i > 0 { c[i - 1] } else { ' ' };
+        let debut = i;
+        match c[i] {
+            '/' if c.get(i + 1) == Some(&'/') => {
+                while i < n && c[i] != '\n' {
+                    i += 1;
+                }
+            }
+            '/' if c.get(i + 1) == Some(&'*') => {
+                let mut profondeur = 0;
+                while i < n {
+                    if c[i] == '/' && c.get(i + 1) == Some(&'*') {
+                        profondeur += 1;
+                        i += 2;
+                    } else if c[i] == '*' && c.get(i + 1) == Some(&'/') {
+                        profondeur -= 1;
+                        i += 2;
+                        if profondeur == 0 {
+                            break;
+                        }
+                    } else {
+                        i += 1;
                     }
                 }
             }
+            '"' => {
+                i += 1;
+                while i < n && c[i] != '"' {
+                    i += if c[i] == '\\' { 2 } else { 1 };
+                }
+                i += 1;
+            }
+            'r' if (c.get(i + 1) == Some(&'"') || c.get(i + 1) == Some(&'#'))
+                && (!ident(avant) || (avant == 'b' && (i < 2 || !ident(c[i - 2])))) =>
+            {
+                let mut j = i + 1;
+                while c.get(j) == Some(&'#') {
+                    j += 1;
+                }
+                let dieses = j - i - 1;
+                if c.get(j) != Some(&'"') {
+                    i += 1;
+                    continue;
+                }
+                j += 1;
+                while j < n && !(c[j] == '"' && (0..dieses).all(|k| c.get(j + 1 + k) == Some(&'#'))) {
+                    j += 1;
+                }
+                i = j + 1 + dieses;
+            }
+            '\'' if c.get(i + 1) == Some(&'\\') => {
+                i += 3;
+                while i < n && c[i] != '\'' {
+                    i += 1;
+                }
+                i += 1;
+            }
+            '\'' if c.get(i + 2) == Some(&'\'') => i += 3,
+            _ => {
+                i += 1;
+                continue;
+            }
+        }
+        a_blanchir.push((debut, i.min(n)));
+    }
+    for (a, b) in a_blanchir {
+        for x in &mut c[a..b] {
+            if *x != '\n' {
+                *x = ' ';
+            }
         }
     }
-    assert!(fautes.is_empty(), "un nombre de paie est un `Decimal`, jamais un flottant :\n{}", fautes.join("\n"));
+    c
 }
 
 /// UNE VALEUR D'UNE FICHE (entreprise, salarie, spectacle) SE DATE A UN SEUL ENDROIT : `routes::fiches::ecrire_datee`, que

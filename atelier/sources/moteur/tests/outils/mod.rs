@@ -315,6 +315,12 @@ pub fn dec(s: &str) -> Decimal {
     Decimal::from_str(s).unwrap_or_else(|_| panic!("montant illisible : {:?}", s))
 }
 
+/// Un nombre à virgule d'une charge ou d'un fichier, écrit en texte (`nombre("151.67")`) : le JSON le garde tel quel
+/// (`arbitrary_precision`), sans passer par un flottant.
+pub fn nombre(t: &str) -> Value {
+    serde_json::from_str(t).unwrap_or_else(|_| panic!("nombre illisible : {:?}", t))
+}
+
 /// Les rubriques d'une DSN, dans l'ordre : (code, valeur sans apostrophes).
 pub fn paires(dsn: &str) -> Vec<(String, String)> {
     dsn.lines().filter_map(|l| l.trim().split_once(',')).map(|(k, v)| (k.to_string(), v.trim().trim_matches('\'').to_string())).collect()

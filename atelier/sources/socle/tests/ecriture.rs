@@ -4,7 +4,6 @@
 
 use socle::ecriture::ecrire_json;
 use socle::verrou;
-use serde_json::json;
 use std::path::PathBuf;
 
 fn dossier(nom: &str) -> PathBuf {
@@ -18,7 +17,9 @@ fn dossier(nom: &str) -> PathBuf {
 fn ecrire_json_en_lf_avec_saut_final_et_dossiers() {
     let d = dossier("json");
     let f = d.join("a/b/c.json");
-    ecrire_json(&f, &json!({"é": [1, 2.0]}), 2).unwrap();
+    // Le nombre se lit par son texte (`arbitrary_precision`) : `2.0` s'écrit tel qu'il est écrit.
+    let v: serde_json::Value = serde_json::from_str(r#"{"é": [1, 2.0]}"#).unwrap();
+    ecrire_json(&f, &v, 2).unwrap();
     assert_eq!(std::fs::read(&f).unwrap(), "{\n  \"é\": [\n    1,\n    2.0\n  ]\n}\n".as_bytes());
 }
 

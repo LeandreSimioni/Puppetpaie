@@ -7,7 +7,7 @@
 use serde_json::{json, Value};
 
 use crate::outils::rejeu::rejouer;
-use crate::outils::{refus, reussi, route, saisir, valider};
+use crate::outils::{nombre, refus, reussi, route, saisir, valider};
 
 #[test]
 fn un_technicien_ne_se_paie_pas_au_service() {
@@ -15,8 +15,8 @@ fn un_technicien_ne_se_paie_pas_au_service() {
     // Les Faisceaux le 20/02/2026 : CRAIG est technicien.
     let (_, c) = rejouer("faisceaux-sans-civilite", &d);
     let carte_de = |ligne: Value| json!({"salarie": "CRAIG", "nature": "cddu_spectacle", "spectacle": "nuits-d-ete", "lignes": [ligne]});
-    let repetition = json!({"rubrique": "repetition", "quantite": 2, "taux": 70.0, "heures": 4, "lieu": null, "dates": ["2026-03-10"], "planning": []});
-    let heures = json!({"rubrique": "heure", "quantite": 8, "taux": 17.5, "lieu": null, "dates": ["2026-03-10"], "planning": []});
+    let repetition = json!({"rubrique": "repetition", "quantite": 2, "taux": nombre("70.0"), "heures": 4, "lieu": null, "dates": ["2026-03-10"], "planning": []});
+    let heures = json!({"rubrique": "heure", "quantite": 8, "taux": nombre("17.5"), "lieu": null, "dates": ["2026-03-10"], "planning": []});
     let id = reussi(&saisir(&c, "2026-03", None, &carte_de(repetition), "2026-02-25"))["engagement"].clone();
     let (_, phrase) = refus(&route(&c, "valider-engagement", json!({"mois": "2026-03", "engagement": id}), "2026-02-25"));
     assert!(phrase.contains("heure"), "le refus dit de le payer a l'heure : {}", phrase);
@@ -27,6 +27,6 @@ fn un_technicien_ne_se_paie_pas_au_service() {
     // UN ARTISTE CADRE AU CACHET SE PAIE (le bug : « Il manque une donnée attendue », cle apec_t2_journaliere) : le metteur
     // en scene, cadre (3090, art. 6.3), paie l'Apec au-dela de la T1 journaliere, une base de tout le contrat.
     let mes = json!({"salarie": "CRAIG", "nature": "cddu_spectacle", "spectacle": "nuits-d-ete", "metier": "MET040",
-        "lignes": [{"rubrique": "cachet", "quantite": 2, "taux": 400.0, "lieu": null, "dates": ["2026-04-10", "2026-04-11"], "planning": []}]});
+        "lignes": [{"rubrique": "cachet", "quantite": 2, "taux": nombre("400.0"), "lieu": null, "dates": ["2026-04-10", "2026-04-11"], "planning": []}]});
     reussi(&valider(&c, "2026-04", None, &mes, "2026-02-25"));
 }
