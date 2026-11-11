@@ -498,7 +498,8 @@ Puis, avec PUPPETPAIE_DONNEES=DOSSIER, par moteur route : deposer (quoi dsn ou d
 (la suite : atelier/docs/COMPAGNIE-D-ESSAI.md).";
 
 /// `moteur essai ...` : rend le code de sortie.
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+    let args = socle::ligne::textes(args);
     let mut it = args.iter();
     match it.next().map(String::as_str) {
         Some("monter") => {}

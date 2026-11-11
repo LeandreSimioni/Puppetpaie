@@ -242,14 +242,9 @@ pub fn fichiers(racine: &Path) -> R<Vec<Mois>> {
 }
 
 /// Les mois qui ont un fichier dans le dossier `d`, du plus ancien au plus recent, ceux du brouillon ouvert compris. Un
-/// dossier absent n'en a aucun ; un disque qui refuse de le lire se dit (`socle::fichiers::entrees`).
+/// dossier absent n'en a aucun ; un disque qui refuse de le lire se dit (`socle::fichiers::nommes_d_un_mois`).
 pub(crate) fn fichiers_dans(racine: &Path, d: Dossier) -> R<Vec<Mois>> {
-    let mut v: Vec<Mois> = socle::fichiers::entrees(&racine.join(d.nom()))?
-        .into_iter()
-        .flatten()
-        .filter(|p| p.extension().is_some_and(|x| x == "json"))
-        .filter_map(|p| p.file_stem().and_then(Mois::du_nom))
-        .collect();
+    let mut v: Vec<Mois> = socle::fichiers::nommes_d_un_mois(&racine.join(d.nom()), Some("json"), false)?.into_iter().map(|n| n.mois).collect();
     BROUILLON.with(|b| v.extend(b.borrow().iter().filter(|(r, _)| r == racine).flat_map(|(_, f)| f.keys().filter(|(x, _)| *x == d).map(|(_, m)| *m))));
     v.sort();
     v.dedup();

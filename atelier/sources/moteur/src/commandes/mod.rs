@@ -28,6 +28,7 @@ use std::rc::Rc;
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::Echec;
+use socle::ligne::Argument;
 use analyse::{Args, Spec};
 
 /// Ce qu'une commande trouve en arrivant : la compagnie, le jour, et ses options.
@@ -125,12 +126,13 @@ fn aide(table: &[Commande]) -> String {
 /// LA LIGNE DE COMMANDE DU MOTEUR (`args`, sans le nom du programme) : la fabrique de PDF, les routes, leur catalogue, la
 /// mise a jour et la publication par GitHub, la compagnie d'essai, la fenetre, puis les commandes du produit et
 /// `de_l_atelier` (`executer`). Son code de sortie ; `None` quand il faut dire l'usage.
-pub fn ligne_de_commande(args: &[String], de_l_atelier: Vec<Commande>) -> Option<std::process::ExitCode> {
+pub fn ligne_de_commande(args: &[Argument], de_l_atelier: Vec<Commande>) -> Option<std::process::ExitCode> {
     ::compagnie::incidents::brancher_l_engagement();
     let code = |c: i32| std::process::ExitCode::from(c.clamp(0, 255) as u8);
-    Some(match args.first().map(String::as_str) {
-        // Les commandes de la fabrique, servies par sa bibliotheque.
-        Some("pdf") => fabrique_pdf::ligne_de_commande::executer(&args[1..]),
+    Some(match args.first().map(Argument::texte) {
+        // Les commandes de la fabrique, servies par sa bibliotheque, hors de l'espace : elle recoit les textes tapes, et
+        // n'en lit ni jour ni mois.
+        Some("pdf") => fabrique_pdf::ligne_de_commande::executer(&socle::ligne::textes(&args[1..])),
         // Les routes de l'interface, une par processus (la demande JSON sur l'entree standard).
         Some("route") => match routes::service::commande("route", &args[1..]) {
             Some(c) => std::process::exit(c),
@@ -154,15 +156,15 @@ pub fn ligne_de_commande(args: &[String], de_l_atelier: Vec<Commande>) -> Option
 }
 
 /// `moteur [--dev] COMMANDE ...`, parmi les commandes du produit et `de_l_atelier`. Rend le code de sortie.
-fn executer(args: &[String], de_l_atelier: Vec<Commande>) -> i32 {
+fn executer(args: &[Argument], de_l_atelier: Vec<Commande>) -> i32 {
     let mut args = args;
     let mut dev = false;
-    if args.first().map(String::as_str) == Some("--dev") {
+    if args.first().map(Argument::texte) == Some("--dev") {
         dev = true;
         args = &args[1..];
     }
     let table = commandes(de_l_atelier);
-    let Some(nom) = args.first().map(String::as_str) else {
+    let Some(nom) = args.first().map(Argument::texte) else {
         eprintln!("{}", aide(&table));
         return 2;
     };
@@ -175,7 +177,7 @@ fn executer(args: &[String], de_l_atelier: Vec<Commande>) -> i32 {
         return 2;
     };
     let reste = &args[1..];
-    if reste.iter().any(|a| a == "-h" || a == "--help" || a == "--aide") {
+    if reste.iter().any(|a| matches!(a.texte(), "-h" | "--help" | "--aide")) {
         dire!("{}", analyse::usage(c.spec));
         return 0;
     }

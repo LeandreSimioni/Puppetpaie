@@ -107,9 +107,13 @@ que par la structure :
 - **Un texte ne devient un jour, un mois ou un instant qu'à sa porte**, et c'est la visibilité qui le garde : les
   lectures d'un texte (`Mois::lire`, `Jour::du_texte`, les `lire` de `socle::paris`) sont privées à `socle`. Hors de
   `socle`, il entre par la forme qui le porte (`Deserialize` d'une charge, d'un fichier, d'une pièce), ou par une porte
-  qui nomme son origine dans son type, une par origine : le nom d'un fichier ou d'un dossier du disque
-  (`Mois::du_nom`), un argument tapé (`socle::ligne::Argument`), une zone d'une pièce lue, au format que sa norme écrit
-  (`socle::piece::Zone`), la clé d'une lecture notée dans une empreinte (`socle::fichiers::LectureDatee`).
+  qui nomme son origine dans son type, une par origine : le nom d'un fichier ou d'un dossier lu sur le disque
+  (`socle::fichiers::nommes_d_un_mois`), un argument du processus (`socle::ligne::Argument` : seul `socle::ligne`
+  lit les arguments du processus et en fabrique, les parseurs de la ligne de commande les reçoivent), une zone d'une
+  pièce lue, fabriquée avec le format que sa norme donne à cette zone (`socle::piece::Zone`, un type par format dans
+  `socle::piece::format`, que le lecteur de chaque pièce passe : la lecture typée de ce qu'on lit, pas une preuve
+  d'origine), la clé d'une lecture notée dans une empreinte (`socle::fichiers::LectureDatee`). Une charge dit son mois
+  par sa forme : la déclaration d'un mois se désigne par `mois`, jamais par un chemin (`routes::depots::resoudre`).
 
 ## Compiler peu
 

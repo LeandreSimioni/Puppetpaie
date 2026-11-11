@@ -44,15 +44,15 @@ fn devant() {
 }
 
 fn main() -> std::process::ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args = socle::ligne::arguments();
     // Les sous-commandes du moteur : `route` et `routes` (la ligne de commande, sous Windows la seule), et la fabrique.
-    match args.first().map(String::as_str) {
+    match args.first().map(socle::ligne::Argument::texte) {
         Some("route") => match routes::service::commande("route", &args[1..]) {
             Some(code) => std::process::exit(code),
             None => std::process::exit(2),
         },
         Some("routes") => std::process::exit(routes::catalogue::commande(&args[1..])),
-        Some("pdf") => return fabrique_pdf::ligne_de_commande::executer(&args[1..]),
+        Some("pdf") => return fabrique_pdf::ligne_de_commande::executer(&socle::ligne::textes(&args[1..])),
         Some("interface") => std::process::exit(moteur::interface::commande(&args[1..])),
         // Le lanceur Linux demande si la fenetre peut s'ouvrir : le programme se charge (WebKitGTK est la), et un ecran.
         Some("--peut-ouvrir") => {

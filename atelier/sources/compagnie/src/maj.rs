@@ -1954,7 +1954,8 @@ fn attendre_fin(_pid: u32, inst: &Path) -> R<bool> {
 /// journal de la mise a jour. `--racine R` (la compagnie dont `maj/` porte la version prete) au lieu de `--installation` :
 /// c'est ainsi que le programme d'une installation posee qui ne connait pas `--installation` lance le relais de la
 /// version neuve ; ses arguments sont un contrat avec les installations posees, comme la forme des archives.
-pub fn relais(args: &[String]) -> i32 {
+pub fn relais(args: &[socle::ligne::Argument]) -> i32 {
+    let args = socle::ligne::textes(args);
     let valeur = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).map(PathBuf::from);
     let Some(code) = valeur("--code") else { return 2 };
     let maj = match (valeur("--installation"), valeur("--racine")) {

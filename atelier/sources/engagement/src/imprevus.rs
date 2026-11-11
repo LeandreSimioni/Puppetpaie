@@ -296,15 +296,11 @@ fn lu(f: &Path) -> R<Vec<Imprevu>> {
 }
 
 /// Tous les imprevus de la compagnie, dans l'ordre des mois du magasin puis de leur saisie, verifies. La lecture se note
-/// au registre du calcul (`fichiers::lister`, `lu`) : un imprevu saisi refait la paie.
+/// au registre du calcul (`fichiers::nommes_d_un_mois`, `lu`) : un imprevu saisi refait la paie.
 pub fn tous(racine: &Path) -> R<Vec<Imprevu>> {
-    let Some(fichiers) = socle::fichiers::lister(&dossier(racine))? else { return Ok(Vec::new()) };
     let mut out = Vec::new();
-    for f in fichiers {
-        if !(f.extension().is_some_and(|x| x == "json") && f.file_stem().and_then(socle::mois::Mois::du_nom).is_some()) {
-            continue;
-        }
-        out.extend(lu(&f)?);
+    for f in socle::fichiers::nommes_d_un_mois(&dossier(racine), Some("json"), true)? {
+        out.extend(lu(&f.chemin)?);
     }
     Ok(out)
 }
@@ -341,22 +337,10 @@ fn empreinte_de(imprevus: &[Imprevu]) -> String {
 /// Les imprevus de `cle`, lus mois par mois du magasin sans se noter (`socle::forme::partagee`).
 fn siens_sans_noter(racine: &Path, cle: &str) -> R<Vec<Imprevu>> {
     // Un magasin sans dossier n'a aucun imprevu.
-    if !dossier(racine).is_dir() {
-        return Ok(Vec::new());
-    }
-    let illisible = |e: std::io::Error| socle::echec::du_disque(&dossier(racine), &e);
-    let mut fichiers: Vec<PathBuf> = Vec::new();
-    for f in std::fs::read_dir(dossier(racine)).map_err(illisible)? {
-        let p = f.map_err(illisible)?.path();
-        if p.file_stem().and_then(socle::mois::Mois::du_nom).is_some() && p.extension().is_some_and(|x| x == "json") {
-            fichiers.push(p);
-        }
-    }
-    fichiers.sort();
     let mut out = Vec::new();
-    for f in fichiers {
-        let Some(contenu) = socle::forme::partagee::<FichierDesImprevus>(&f, ABIME)? else { continue };
-        out.extend(du_contenu(&contenu, &f)?.into_iter().filter(|imp| imp.salarie() == cle));
+    for f in socle::fichiers::nommes_d_un_mois(&dossier(racine), Some("json"), false)? {
+        let Some(contenu) = socle::forme::partagee::<FichierDesImprevus>(&f.chemin, ABIME)? else { continue };
+        out.extend(du_contenu(&contenu, &f.chemin)?.into_iter().filter(|imp| imp.salarie() == cle));
     }
     Ok(out)
 }

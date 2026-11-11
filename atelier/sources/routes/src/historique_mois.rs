@@ -362,7 +362,7 @@ const AUTRES: &str = "Autres pièces";
 /// `amorcage_demande::produire` : `Amorcage<motif>_<salarie>_<AAAAMMJJ>.dsn`, et sa note
 /// `Amorcage<motif>_<AAAAMMJJ>_recapitulatif.txt`) : pour qui, et quel jour. Un autre nom se lit tel quel.
 fn nom_lisible(ctx: &Contexte, nom: &str) -> String {
-    let jour = |t: &str| socle::piece::Zone::lue(t).jour_aaaammjj().map(|j| j.jj_mm_aaaa());
+    let jour = |t: &str| socle::piece::Zone::lue(t, socle::piece::format::Aaaammjj).valeur().map(|j| j.jj_mm_aaaa());
     let Some(reste) = nom.strip_prefix("Amorcage").and_then(|r| r.get(3..)) else { return nom.to_string() };
     if let Some(j) = reste.strip_suffix("_recapitulatif.txt").and_then(jour) {
         return format!("Note des demandes du {}", j);

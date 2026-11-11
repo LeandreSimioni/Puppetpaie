@@ -41,7 +41,8 @@ pub const USAGE: &str = "usage : moteur-atelier fabriquer-bulletins <description
 
 // --------------------------------------------------------------------------------------------- la ligne de commande
 
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+    let args: &[String] = &socle::ligne::textes(args);
     let mut libres = Vec::new();
     let mut gabarit = None;
     let mut k = 0;

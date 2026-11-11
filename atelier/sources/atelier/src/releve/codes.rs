@@ -231,7 +231,8 @@ fn groupe<'a>(m: &Regex, t: &'a str) -> Option<&'a str> {
 // ------------------------------------------------------------------ la ligne de commande
 
 /// `moteur-atelier releve-codes ...` : rend le code de sortie.
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+    let args: &[String] = &socle::ligne::textes(args);
     if args.len() < 2 || args.iter().any(|a| a == "-h" || a == "--help" || a == "--aide") {
         eprintln!("{}", USAGE);
         return 2;

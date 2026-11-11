@@ -54,7 +54,7 @@ pub fn livraisons(index_html: &str) -> Vec<String> {
 pub fn jour(livraison: &str) -> R<socle::date::Jour> {
     livraison
         .get(..8)
-        .and_then(|t| socle::piece::Zone::lue(t).jour_aaaammjj())
+        .and_then(|t| socle::piece::Zone::lue(t, socle::piece::format::Aaaammjj).valeur())
         .ok_or_else(|| refus(format!("l'estampille KALI « {} » ne commence pas par un jour (AAAAMMJJ)", livraison)))
 }
 

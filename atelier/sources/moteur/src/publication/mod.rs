@@ -14,7 +14,8 @@ use compagnie::maj::{dossier_maj, installation};
 /// Les gestes de la publication de `moteur maj` (`--cle-github [DOSSIER]`, `--publier-github --logiciel L --sortie S
 /// --notes T --calcul T --exigee T`, `--marquer-fictives --logiciel L`, `--poser-fictives DOSSIER --logiciel L`) : leur
 /// code de sortie ; `None` quand `args` n'en demande aucun.
-pub fn commande(args: &[String]) -> Option<i32> {
+pub fn commande(args: &[socle::ligne::Argument]) -> Option<i32> {
+    let args = socle::ligne::textes(args);
     let drapeau = |n: &str| args.iter().any(|a| a == n);
     let valeur = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).filter(|v| !v.starts_with("--")).cloned();
     if !["--cle-github", "--publier-github", "--marquer-fictives", "--poser-fictives"].iter().any(|d| drapeau(d)) {

@@ -28,10 +28,10 @@ fn main() -> std::process::ExitCode {
         return std::process::ExitCode::from(2);
     }
     compagnie::incidents::brancher_l_engagement();
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args = socle::ligne::arguments();
     // Les commandes de l'atelier que l'on lance par leur nom ; le reste est la ligne de commande du moteur, avec celles de
     // l'atelier qui passent par son cadre.
-    if let Some(nom) = args.first() {
+    if let Some(nom) = args.first().map(socle::ligne::Argument::texte) {
         if let Some(code) = atelier::commandes::lancer(nom, &args[1..]) {
             return std::process::ExitCode::from(code.clamp(0, 255) as u8);
         }

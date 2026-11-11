@@ -23,6 +23,7 @@ use socle::echec::R;
 use socle::echec::Classe;
 use socle::mois::Mois;
 use socle::paris::{HeureDuJournal, InstantEcrit};
+use socle::piece::format::Jjmmaaaa;
 use socle::piece::Zone;
 use crate::etats::AvecIncidents;
 use crate::journal::{self, DetailDsn, Envoi, Ligne, Mode};
@@ -300,7 +301,7 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
         let (mut embauches, mut quand, mut mois) = (Vec::new(), None, None);
         for ligne in declarations::dpae::relire(&texte) {
             let (Some(nir), Some(emb)) = (ligne.nir.clone(), ligne.date_embauche.as_deref()) else { continue };
-            let Some(debut) = Zone::lue(emb).jour_jjmmaaaa() else { continue };
+            let Some(debut) = Zone::lue(emb, Jjmmaaaa).valeur() else { continue };
             let iso = debut.iso();
             let Some((_, cle)) = par_nir.iter().find(|(n, _)| *n == nir) else {
                 // On ne devine pas qui c'est : un NIR qu'on ne reconnait pas est peut-etre une fiche archivee sous une autre cle, ou
@@ -316,7 +317,7 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
             if let (None, Some(h)) = (quand, ligne.horodatage.as_deref().filter(|h| h.len() == 12 && h.is_ascii())) {
                 let heure = socle::num::entier_de_chiffres(&h[8..10]).filter(|x| (0..24).contains(x));
                 let minute = socle::num::entier_de_chiffres(&h[10..12]).filter(|x| (0..60).contains(x));
-                quand = Zone::lue(&h[..8]).jour_jjmmaaaa()
+                quand = Zone::lue(&h[..8], Jjmmaaaa).valeur()
                     .zip(heure.zip(minute))
                     .and_then(|(j, (hh, mm))| socle::paris::Naif::du_jour(j, hh, mm, 0))
                     .map(InstantEcrit::du_naif);

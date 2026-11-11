@@ -16,7 +16,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
 }
 
 fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
-    let mois = args.texte("mois").map(|t| socle::ligne::Argument::tape(t).mois()).transpose()?;
+    let mois = args.tape("mois").map(socle::ligne::Argument::mois).transpose()?;
     let fait = routes::documents::ranger_aer_detail(&cadre.ctx, mois, None, args.drapeau("forcer"))?;
     if fait.ecrits.is_empty() && fait.a_ranger.is_empty() && fait.refusees.is_empty() {
         match mois {

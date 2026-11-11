@@ -842,21 +842,21 @@ const USAGE: &str = "scenario rejouer <scenario> <installation neuve> [--lecture
 
 /// LA LIGNE DE COMMANDE DES SCENARIOS : `moteur-atelier scenario ...` (le banc) et l'exemple `vie_fictive` (sans le binaire
 /// de l'atelier). `rejouer`, `verifier`, `elaguer`. Rend le code de sortie : 1 a la moindre difference.
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
     let mut options = OptionsRejeu::default();
     let mut a: Vec<&str> = Vec::new();
-    let mut it = args.iter().map(String::as_str);
+    let mut it = args.iter();
     while let Some(x) = it.next() {
-        match x {
+        match x.texte() {
             "--lectures" => options.lectures = true,
-            "--jusqu-au" => match it.next().map(|t| socle::ligne::Argument::tape(t).jour()) {
+            "--jusqu-au" => match it.next().map(socle::ligne::Argument::jour) {
                 Some(Ok(j)) => options.jusqu_au = Some(j),
                 _ => {
                     eprintln!("--jusqu-au attend un jour, AAAA-MM-JJ.\n{}", USAGE);
                     return 2;
                 }
             },
-            _ => a.push(x),
+            t => a.push(t),
         }
     }
     // Rien ne sort de la machine (`garde_reseau`) : lancee a la main, la commande pose la variable, avant tout fil.

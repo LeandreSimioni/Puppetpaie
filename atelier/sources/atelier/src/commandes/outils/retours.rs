@@ -33,15 +33,15 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
 
 /// La plage : `--depuis` et `--jusqu-a` (inclus), par defaut les 30 derniers jours.
 fn plage(args: &Args) -> Result<(Naif, Naif), Echec> {
-    let a = |t: &str, h: i64, m: i64, s: i64| {
-        let j = socle::ligne::Argument::tape(t).jour().map_err(|e| e.reclasser(socle::echec::Classe::Illisible))?;
+    let a = |t: &socle::ligne::Argument, h: i64, m: i64, s: i64| {
+        let j = t.jour().map_err(|e| e.reclasser(socle::echec::Classe::Illisible))?;
         Naif::du_jour(j, h, m, s).ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Illisible, socle::date::HORS_CALENDRIER))
     };
-    let fin = match args.texte("jusqu-a") {
+    let fin = match args.tape("jusqu-a") {
         Some(j) => a(j, 23, 59, 59)?,
         None => socle::paris::maintenant_naif(),
     };
-    let debut = match args.texte("depuis") {
+    let debut = match args.tape("depuis") {
         Some(j) => a(j, 0, 0, 0)?,
         None => fin.plus(-30 * 86_400)?,
     };

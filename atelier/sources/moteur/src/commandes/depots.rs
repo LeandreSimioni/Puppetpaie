@@ -9,7 +9,6 @@
 use super::analyse::{Args, Opt, Spec};
 use socle::echec::Classe;
 use socle::date::Jour;
-use socle::ligne::Argument;
 use socle::paris::Naif;
 use super::Cadre;
 use envois::releve_retours::{Client, Panne};
@@ -104,12 +103,12 @@ fn a(j: Jour, h: i64, m: i64, s: i64) -> Result<Naif, Echec> {
 
 /// La plage de recherche, en heures locales naives. Par defaut, les 30 derniers jours.
 fn fenetre(args: &Args) -> Result<(Naif, Naif), Echec> {
-    let fin = match args.texte("jusqu-a") {
-        Some(j) => a(Argument::tape(j).jour().map_err(|m| m.reclasser(Classe::Illisible))?, 23, 59, 59)?,
+    let fin = match args.tape("jusqu-a") {
+        Some(j) => a(j.jour().map_err(|m| m.reclasser(Classe::Illisible))?, 23, 59, 59)?,
         None => socle::paris::maintenant_naif(),
     };
-    let debut = match args.texte("depuis") {
-        Some(j) => a(Argument::tape(j).jour().map_err(|m| m.reclasser(Classe::Illisible))?, 0, 0, 0)?,
+    let debut = match args.tape("depuis") {
+        Some(j) => a(j.jour().map_err(|m| m.reclasser(Classe::Illisible))?, 0, 0, 0)?,
         None => fin.plus(-30 * 86_400)?,
     };
     Ok((debut, fin))

@@ -472,7 +472,8 @@ const USAGE: &str = "usage : moteur-atelier verifier-avant-commit [--indexes]\n\
 \x20 sortie : 0 rien trouve, 1 trouve, 2 pas pu verifier\n";
 
 /// `moteur-atelier verifier-avant-commit [--indexes]`, depuis n'importe où dans le dépôt.
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+    let args: &[String] = &socle::ligne::textes(args);
     let mut indexes = false;
     for a in args {
         match a.as_str() {

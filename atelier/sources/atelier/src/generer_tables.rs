@@ -475,7 +475,8 @@ pub fn generer(sources: &Path) -> R<Vec<(&'static str, String)>> {
 }
 
 /// `moteur-atelier generer-tables SOURCES SRC`.
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+    let args: &[String] = &socle::ligne::textes(args);
     let [sources, espace] = args else {
         eprintln!("usage : moteur-atelier generer-tables SOURCES ESPACE   (SOURCES : atelier/reference/sources ; ESPACE : atelier/sources)");
         return 2;

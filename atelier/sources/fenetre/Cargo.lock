@@ -3103,6 +3103,7 @@ dependencies = [
  "fabrique-pdf",
  "moteur",
  "routes",
+ "socle",
  "tauri",
  "tauri-build",
 ]

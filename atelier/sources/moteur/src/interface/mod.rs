@@ -1234,7 +1234,8 @@ pub struct Options {
 const USAGE: &str = "Usage : moteur interface [--port N] [--sans-navigateur] [--veille MINUTES]";
 
 /// Les options de `moteur interface`. Une valeur qui ne se lit pas est refusee, jamais remplacee par le defaut.
-pub fn lire_options(args: &[String]) -> R<Options> {
+pub fn lire_options(args: &[socle::ligne::Argument]) -> R<Options> {
+    let args = socle::ligne::textes(args);
     let mut o = Options { port: None, minutes_veille: MINUTES_VEILLE, sans_navigateur: false };
     let mut i = 0;
     while i < args.len() {
@@ -1267,13 +1268,13 @@ pub fn lire_options(args: &[String]) -> R<Options> {
 /// aussi avec `--lectures`. Un scenario deja commence se poursuit : sans `--jour`, le temps reprend une minute apres son dernier geste ; un `--jour` avant lui est
 /// refuse. Rend les autres options, pour `lire_options`.
 #[cfg(feature = "atelier")]
-fn poser_le_banc(args: &[String]) -> R<Vec<String>> {
+fn poser_le_banc(args: &[socle::ligne::Argument]) -> R<Vec<socle::ligne::Argument>> {
     let (mut reste, mut dossier, mut jour, mut lectures) = (Vec::new(), None, None, false);
     let mut i = 0;
     while i < args.len() {
-        match args[i].as_str() {
+        match args[i].texte() {
             "--enregistrer" if i + 1 < args.len() => {
-                dossier = Some(PathBuf::from(&args[i + 1]));
+                dossier = Some(PathBuf::from(args[i + 1].texte()));
                 i += 2;
             }
             "--lectures" => {
@@ -1281,11 +1282,11 @@ fn poser_le_banc(args: &[String]) -> R<Vec<String>> {
                 i += 1;
             }
             "--jour" if i + 1 < args.len() => {
-                jour = Some(socle::ligne::Argument::tape(&args[i + 1]).jour().map_err(|_| socle::refus!("Jour illisible : {} (AAAA-MM-JJ).", args[i + 1]))?);
+                jour = Some(args[i + 1].jour().map_err(|_| socle::refus!("Jour illisible : {} (AAAA-MM-JJ).", args[i + 1].texte()))?);
                 i += 2;
             }
-            a => {
-                reste.push(a.to_string());
+            _ => {
+                reste.push(args[i].clone());
                 i += 1;
             }
         }
@@ -1327,7 +1328,7 @@ fn poser_le_banc(args: &[String]) -> R<Vec<String>> {
 }
 
 /// `moteur interface [--port N] [--sans-navigateur] [--veille MINUTES]` : la fenetre dans le navigateur du poste.
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
     if let Err(e) = installation::fixer_le_code() {
         eprintln!("{}", e.en_lignes());
         return 1;

@@ -32,7 +32,8 @@ DGFiP, les relit comme le moteur, les depose datees dans <sources>/dgfip-frais-d
 de <donnees>/missions/. <sources> : atelier/reference/sources ; <donnees> : logiciel/donnees.";
 
 /// La commande.
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+    let args: &[String] = &socle::ligne::textes(args);
     if args.len() != 2 || args.iter().any(|a| a == "-h" || a == "--help" || a == "--aide") {
         eprintln!("{}", USAGE);
         return 2;

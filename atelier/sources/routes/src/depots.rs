@@ -944,9 +944,8 @@ fn existe(t: &str) -> bool {
     !t.contains('\0') && Path::new(t).exists()
 }
 
-/// Un chemin tape a la main, tel quel
-/// s'il existe, sinon sous les donnees, un mois nu designant sa saisie. Rend
-/// le texte du chemin, normalisé.
+/// Un chemin tape a la main, tel quel s'il existe, sinon sous les donnees. Rend le texte du chemin, normalisé. La
+/// declaration d'un mois se designe par le mois de la charge (`Designation::mois`), jamais par un chemin.
 pub(crate) fn resoudre(racine: &Path, t: &str) -> R<String> {
     if t.chars().all(socle::texte::blanc) {
         return Err(erreur(Classe::FichierAbsent, "Aucun fichier indique."));
@@ -959,12 +958,6 @@ pub(crate) fn resoudre(racine: &Path, t: &str) -> R<String> {
     let candidat = normaliser(&format!("{}/{}", base, p));
     if existe(&candidat) {
         return Ok(candidat);
-    }
-    // Un mois nu (`AAAA-MM`) designe sa saisie par le nom de son fichier, si elle est sur le disque.
-    if let Some(mois) = Mois::du_nom(std::ffi::OsStr::new(t)) {
-        if let Some(saisie) = engagement::stock::tel_quel(racine, mois)? {
-            return Ok(normaliser(&format!("{}/{}", base, saisie.nom)));
-        }
     }
     Ok(p)
 }
@@ -992,7 +985,7 @@ pub(crate) fn lire_octets(chemin: &str) -> R<Vec<u8>> {
 
 /// Un jour `JJMMAAAA` du fichier DPAE ; `None` : ce n'est pas un jour.
 fn jour_jjmmaaaa(v: &str) -> Option<Jour> {
-    socle::piece::Zone::lue(v).jour_jjmmaaaa()
+    socle::piece::Zone::lue(v, socle::piece::format::Jjmmaaaa).valeur()
 }
 
 /// L'identite d'une fiche, telle qu'une DPAE l'ecrit (`apercu_depot_dpae`).

@@ -17,6 +17,7 @@ use socle::date::Jour;
 use socle::echec::Echec;
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
+use socle::piece::format::Aaaammjj;
 use socle::piece::Zone;
 use socle::texte::{blanc, lignes_du_texte, texte_latin1};
 
@@ -336,14 +337,14 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
             let illisible = |illisibles: &mut Vec<String>| illisibles.push(format!("{} : un enregistrement illisible", nom));
             let nir: String = champ(&l, 375, 390).chars().take(13).collect();
             let (Some(debut), Some(fin)) =
-                (Zone::lue(&champ(&l, 618, 626)).jour_aaaammjj(), Zone::lue(&champ(&l, 627, 635)).jour_aaaammjj())
+                (Zone::lue(&champ(&l, 618, 626), Aaaammjj).valeur(), Zone::lue(&champ(&l, 627, 635), Aaaammjj).valeur())
             else {
                 illisible(&mut illisibles);
                 continue;
             };
             // La signature de l'attestation (`AAAAMMJJ`), quand l'AEM en porte une.
             let signee = tranche(&l, 858, 866);
-            let date_attestation = match Zone::lue(&signee).jour_aaaammjj() {
+            let date_attestation = match Zone::lue(&signee, Aaaammjj).valeur() {
                 Some(j) => Some(j),
                 None if signee.trim().is_empty() => None,
                 None => {

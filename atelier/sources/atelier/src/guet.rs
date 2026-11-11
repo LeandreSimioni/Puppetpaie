@@ -76,7 +76,8 @@ fn options(args: &[String]) -> R<Options> {
 }
 
 /// `moteur-atelier guet ...` : le code de sortie (0 quand il sonne, 1 sans transcript, 2 sur une option fausse).
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+    let args: &[String] = &socle::ligne::textes(args);
     if args.iter().any(|a| a == "--aide" || a == "-h" || a == "--help") {
         dire!("{}", AIDE);
         return 0;

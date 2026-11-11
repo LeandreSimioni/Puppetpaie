@@ -28,6 +28,7 @@ use socle::date::Jour;
 use socle::fichiers::dossier_du_code;
 use socle::echec::R;
 use socle::num::Decimal;
+use socle::piece::format::JourEcrit;
 use socle::piece::Zone;
 
 use crate::source::forme_notee;
@@ -120,7 +121,7 @@ fn construire_de(indemnites: &str, change: &str, villes: &str) -> R<Tables> {
         let ou = |quoi: &str| socle::echec::livree("missions/indemnites.csv", &format!("ligne {} : {}", n + 2, quoi));
         let cellule = |i: usize, nom: &str| c.get(i).copied().ok_or_else(|| ou(nom));
         let (code, nom, monnaie) = (cellule(c_code, "code_pays")?, cellule(c_nom, "nom_pays")?, cellule(c_monnaie, "code_monnaie")?);
-        let date = Zone::lue(cellule(c_date, "date")?).jour().ok_or_else(|| ou("date"))?;
+        let date = Zone::lue(cellule(c_date, "date")?, JourEcrit).valeur().ok_or_else(|| ou("date"))?;
         let montant = socle::num::decimal_a_virgule(cellule(c_montant, "groupe_1")?).ok_or_else(|| ou("groupe_1"))?;
         let e = t.indemnites.entry(code.to_string()).or_insert_with(|| (String::new(), Vec::new()));
         e.1.push(Datee { depuis: date, valeur: (monnaie.to_string(), montant) });
@@ -139,7 +140,7 @@ fn construire_de(indemnites: &str, change: &str, villes: &str) -> R<Tables> {
         let ou = |quoi: &str| socle::echec::livree("missions/change.csv", &format!("ligne {} : {}", n + 2, quoi));
         let cellule = |i: usize, nom: &str| c.get(i).copied().ok_or_else(|| ou(nom));
         let (m, code) = (cellule(c_monnaie, "monnaie_source")?, cellule(c_code, "code_pays")?);
-        let date = Zone::lue(cellule(c_date, "date")?).jour().ok_or_else(|| ou("date"))?;
+        let date = Zone::lue(cellule(c_date, "date")?, JourEcrit).valeur().ok_or_else(|| ou("date"))?;
         let taux = socle::num::decimal_a_virgule(cellule(c_taux, "taux")?).ok_or_else(|| ou("taux"))?;
         let e = t.change.entry((m.to_string(), code.to_string())).or_default();
         e.push(Datee { depuis: date, valeur: taux });
@@ -244,7 +245,7 @@ pub fn pour_les_paies(texte: &str, cles: &[&str], depuis: &Jour) -> R<String> {
         .map(|l| {
             let c = champs(l);
             let lieu = c_cles.iter().map(|i| c.get(*i).copied()).collect::<Option<Vec<_>>>().map(|v| v.join(";"));
-            (l, lieu.zip(c.get(c_date).and_then(|d| Zone::lue(d).jour())))
+            (l, lieu.zip(c.get(c_date).and_then(|d| Zone::lue(d, JourEcrit).valeur())))
         })
         .collect();
     // Pour chaque lieu, la date de la ligne qui vaut le jour `depuis`.

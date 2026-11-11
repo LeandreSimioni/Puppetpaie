@@ -1074,8 +1074,10 @@ fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
 /// UN TEXTE NE DEVIENT UN JOUR, UN MOIS OU UN INSTANT QU'A SA PORTE. Les types du temps sont ceux que declarent les
 /// modules de `Jour`, de `Mois` et de `Moment` (nommes par le compilateur) ; leurs lectures d'un texte sont privees a
 /// `socle`, et le compilateur tient tout le reste : hors de `socle`, un texte n'en devient un que par la forme qui le
-/// porte (`Deserialize`) ou par une porte qui dit son origine dans son type (`socle::ligne::Argument`,
-/// `socle::piece::Zone`, `Mois::du_nom`, `socle::fichiers::LectureDatee`). Ce verrou garde cette visibilite : aucune
+/// porte (`Deserialize`) ou par une porte qui dit son origine dans son type : un argument du processus
+/// (`socle::ligne::Argument`, que seul `socle::ligne::arguments` fabrique), une zone d'une piece au format de sa norme
+/// (`socle::piece::Zone`, un type par format), un nom lu dans un dossier (`socle::fichiers::nommes_d_un_mois`), la cle
+/// d'une lecture notee (`socle::fichiers::LectureDatee`). Ce verrou garde cette visibilite : aucune
 /// fonction publique de `socle` ne rend un type du temps d'un parametre texte (`&str`, `String`, `impl AsRef<str>`,
 /// `impl Into<String>`), et aucun type du temps n'implemente `FromStr`, ni `TryFrom` ou `PartialEq` d'un texte. Hors de
 /// `socle`, code et essais, la forme seule n'est pas une porte : aucune lecture ne vise un type du temps nu (`lire_texte`,

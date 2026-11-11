@@ -79,7 +79,8 @@ const USAGE: &str = "usage : moteur-atelier extraire naf <structure.xlsx> <corre
 La sortie se nomme toujours ; un fichier deja la ne se remplace qu'avec --remplacer.";
 
 /// `moteur-atelier extraire ...` : rend le code de sortie (2 : la commande est mal formee, 1 : le releve refuse, 0 : ecrit).
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+    let args: &[String] = &socle::ligne::textes(args);
     if args.iter().any(|a| matches!(a.as_str(), "-h" | "--help" | "--aide")) {
         dire!("{}", USAGE);
         return 0;

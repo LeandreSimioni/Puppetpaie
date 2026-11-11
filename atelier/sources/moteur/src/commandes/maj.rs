@@ -4,7 +4,8 @@
 use compagnie::maj::{appliquer, installation, revenir, verifier, version_lue};
 
 /// `moteur maj [--sans-telecharger] [--appliquer] [--revenir]`.
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+    let args = socle::ligne::textes(args);
     // D'abord savoir ou l'on est installe : sans cela, `installation()` retombe sur le dossier ou le programme a ete
     // compile.
     let code = compagnie::installation::fixer_le_code();

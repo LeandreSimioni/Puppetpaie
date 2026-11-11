@@ -129,7 +129,8 @@ pub fn lues(depot: &Path) -> R<BTreeMap<String, String>> {
 }
 
 /// La commande `moteur-atelier empreintes` : ecrit les empreintes des textes deposes du depot ou elle est lancee.
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+    let args: &[String] = &socle::ligne::textes(args);
     if !args.is_empty() {
         eprintln!("usage : moteur-atelier empreintes (sans argument, depuis le dépôt)");
         return 2;

@@ -24,7 +24,7 @@ pub fn commandes() -> Vec<Commande> {
 }
 
 /// La commande de l'atelier `nom`, lancee sur `args` : son code de sortie ; `None` si `nom` n'en est pas une.
-pub fn lancer(nom: &str, args: &[String]) -> Option<i32> {
+pub fn lancer(nom: &str, args: &[socle::ligne::Argument]) -> Option<i32> {
     Some(match nom {
         // Les bulletins fictifs d'un logiciel precedent, pour une compagnie qui s'importe.
         "fabriquer-bulletins" => super::fabriquer_bulletins::commande(args),

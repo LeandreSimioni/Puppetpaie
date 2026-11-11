@@ -46,6 +46,8 @@ routes = { path = "../routes" }
 # La compagnie : l'installation, l'instance unique sur le poste, la mise a jour au lancement.
 compagnie = { path = "../compagnie" }
 fabrique-pdf = { path = "../fabrique-pdf" }
+# Les arguments du processus, que seul `socle::ligne` lit.
+socle = { path = "../socle" }
 tauri = { version = "2", features = [] }
 
 [profile.release]

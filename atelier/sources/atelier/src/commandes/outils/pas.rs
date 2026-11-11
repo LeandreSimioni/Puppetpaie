@@ -99,11 +99,11 @@ fn lire(cadre: &Cadre) -> Result<i32, Echec> {
 fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     use compagnie::amorcage_demande::{produire, Demande};
     let ctx = &cadre.ctx;
-    let mois = match args.texte("mois") {
-        Some(m) => match socle::ligne::Argument::tape(m).mois() {
+    let mois = match args.tape("mois") {
+        Some(m) => match m.mois() {
             Ok(m) => m,
             Err(_) => {
-                dire!("--mois attend AAAA-MM, recu {}.", socle::fichiers::repr(m));
+                dire!("--mois attend AAAA-MM, recu {}.", socle::fichiers::repr(m.texte()));
                 return Ok(1);
             }
         },

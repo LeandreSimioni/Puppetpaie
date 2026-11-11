@@ -1,6 +1,6 @@
 //! LE MOIS CIVIL `AAAA-MM` : la cle d'un mois de paie, d'un fichier d'engagements (`engagements/2026-11.json`), d'un
 //! dossier de documents, d'une echeance. Il se lit une fois, a sa porte : `serde` (la meme chaine dans le JSON), le nom
-//! d'un fichier ou d'un dossier du disque (`Mois::du_nom`), un argument tape (`socle::ligne::Argument`), une zone d'une
+//! d'un fichier ou d'un dossier lu sur le disque (`fichiers::nommes_d_un_mois`), un argument tape (`socle::ligne::Argument`), une zone d'une
 //! piece lue (`socle::piece::Zone`) ; un texte n'en devient pas un ailleurs (`lire` n'est pas publique). Il ne s'ecrit
 //! que sous cette forme ; son annee, son numero, son nom, le suivant et le precedent se lisent de lui.
 //!
@@ -84,8 +84,8 @@ impl Mois {
     }
 
     /// Le mois que nomme un fichier ou un dossier du disque, sans son extension (`engagements/2026-11.json`,
-    /// `sorties/2026-11/`) ; `None` : ce nom n'est pas un mois.
-    pub fn du_nom(nom: &std::ffi::OsStr) -> Option<Mois> {
+    /// `sorties/2026-11/`), lu par `fichiers::nommes_d_un_mois` ; `None` : ce nom n'est pas un mois.
+    pub(crate) fn du_nom(nom: &std::ffi::OsStr) -> Option<Mois> {
         nom.to_str().and_then(Mois::du_texte)
     }
 

@@ -426,6 +426,32 @@ pub fn entrees(dossier: &Path) -> R<Option<Vec<PathBuf>>> {
     Ok(Some(v))
 }
 
+/// Un fichier ou un dossier qu'un dossier du disque porte sous le nom d'un mois : c'est la porte par laquelle le nom lu
+/// sur le disque devient un mois (`Mois::du_nom`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NommeDUnMois {
+    pub mois: crate::mois::Mois,
+    pub chemin: PathBuf,
+}
+
+/// Ce que `dossier` porte sous le nom d'un mois, trie par chemin (aucun s'il n'existe pas) : les fichiers
+/// `AAAA-MM.<extension>`, ou, sans extension, les dossiers `AAAA-MM`. `noter` : la lecture se note au registre du calcul
+/// (`lister`) ; sinon, rien n'est note (`entrees`). Le disque qui refuse de le lire se dit.
+pub fn nommes_d_un_mois(dossier: &Path, extension: Option<&str>, noter: bool) -> R<Vec<NommeDUnMois>> {
+    let lus = if noter { lister(dossier)? } else { entrees(dossier)? };
+    Ok(lus
+        .into_iter()
+        .flatten()
+        .filter_map(|chemin| {
+            let mois = match extension {
+                Some(x) => chemin.extension().filter(|e| *e == x).and(chemin.file_stem()).and_then(crate::mois::Mois::du_nom),
+                None => chemin.file_name().and_then(crate::mois::Mois::du_nom).filter(|_| chemin.is_dir()),
+            };
+            mois.map(|mois| NommeDUnMois { mois, chemin })
+        })
+        .collect())
+}
+
 /// Le dossier des referentiels livres (`donnees/`) : `PUPPETPAIE_CODE` si posee, sinon
 /// `<crate>/../donnees`.
 pub fn dossier_du_code() -> PathBuf {
