@@ -238,6 +238,12 @@ pub fn refus_avec(phrase: impl Into<String>, a_part: impl Into<APart>) -> Echec 
     Echec { a_part: Some(a_part.into()), ..noter_et(None, phrase) }
 }
 
+/// Un refus ordinaire qui nomme un dossier ou un fichier : la phrase en mots, le chemin a part (`chemin`).
+#[track_caller]
+pub fn au_chemin(phrase: impl Into<String>, chemin: &std::path::Path) -> Echec {
+    refus_avec(phrase, Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), ..Lieu::default() })
+}
+
 /// La classe d'un refus telle que le journal et les incidents la notent : un refus ordinaire (`None`) s'y nomme
 /// `Exception`.
 pub fn classe_notee(classe: Option<Classe>) -> &'static str {

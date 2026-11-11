@@ -296,6 +296,8 @@ struct SignalementDit {
     #[serde(flatten)]
     vu: SignalementVu,
     quand_dit: String,
+    /// Le lien du ticket ou l'editeur le suit, en mots (« ticket n° 12 ») ; aucun sans ticket.
+    ticket_dit: Option<String>,
     pastille: Option<Pastille>,
     depart: Pastille,
 }
@@ -643,7 +645,11 @@ pub(crate) fn signalements_route(racine: &Path) -> R<Signalements> {
                 EtatDuMessage::PasParti => (Some(Pastille::de(socle::ecran::EtatDEcran::Information, "pas encore parti")), Pastille::de(socle::ecran::EtatDEcran::Information, "Pas encore parti")),
                 EtatDuMessage::Arrive => (None, Pastille::de(socle::ecran::EtatDEcran::Fait, "Message envoyé.")),
             };
-            SignalementDit { quand_dit: vu.garde.quand.dit(), pastille, depart, vu }
+            let ticket_dit = vu.garde.ticket.as_ref().map(|_| match vu.garde.ticket_numero {
+                Some(n) => format!("ticket n° {}", n),
+                None => "ticket".to_string(),
+            });
+            SignalementDit { quand_dit: vu.garde.quand.dit(), ticket_dit, pastille, depart, vu }
         })
         .collect();
     let reponses_dit = (non_lues > 0).then(|| socle::ecran::compte(non_lues, "réponse", "réponses"));

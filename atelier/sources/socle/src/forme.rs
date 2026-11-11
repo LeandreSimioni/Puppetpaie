@@ -60,7 +60,7 @@ pub fn relire<T: DeserializeOwned>(t: &(impl serde::Serialize + ?Sized), phrase:
 /// (`routes::enveloppe::Rendu`). Il ne se lit qu'en une forme (`lire`) ; ce que l'enveloppe en voit sans forme (le mot de
 /// passe qu'elle porte, les phrases qu'une reponse rend) se dit par ses textes, a une cle que l'enveloppe nomme. Son
 /// JSON ne se touche qu'ici et dans `ecriture` (`ecriture::en_objet`).
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(transparent)]
 pub struct Objet(pub(crate) serde_json::Map<String, Value>);
 
@@ -81,6 +81,11 @@ pub enum FormeDesTextes {
 }
 
 impl Objet {
+    /// L'objet sans aucune cle, `{}` : la charge d'une route qui ne prend rien.
+    pub fn sans_cle() -> Objet {
+        Objet(serde_json::Map::new())
+    }
+
     /// LE TEXTE JSON `texte`, UN OBJET : un texte qui n'est pas du JSON se refuse par `illisible`
     /// (`Classe::DemandeIllisible`) ; une autre valeur qu'un objet, par `pas_un_objet` (`Classe::MalFormee`).
     #[track_caller]

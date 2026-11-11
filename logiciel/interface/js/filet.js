@@ -461,6 +461,6 @@ function listeSignalements(liste) {
   return `<h4>Vos signalements</h4><ul class="sg-liste">${liste.map((s) => `
     <li><span class="discret">${echapper(s.quand_dit)}</span>${s.numero ? ` <b>${echapper(s.numero)}</b>` : ""}
       — ${echapper(s.texte)}${s.ticket
-        ? ` <a href="${echapper(s.ticket)}" target="_blank" rel="noopener">ticket${s.ticket_numero ? ` n° ${echapper(s.ticket_numero)}` : ""}</a>` : ""}${s.etat !== "arrive" ? etatDuMessage(s) : ""}</li>`).join("")}</ul>`;
+        ? ` <a href="${echapper(s.ticket)}" target="_blank" rel="noopener">${echapper(s.ticket_dit)}</a>` : ""}${s.etat !== "arrive" ? etatDuMessage(s) : ""}</li>`).join("")}</ul>`;
 }
 

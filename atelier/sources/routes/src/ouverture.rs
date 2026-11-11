@@ -730,7 +730,12 @@ pub(crate) fn boite_liee(ctx: &Contexte) -> R<bool> {
     let adresse = match std::env::var("COURRIEL_COMPTE") {
         Ok(a) if !a.is_empty() => Some(a),
         Ok(_) | Err(std::env::VarError::NotPresent) => coffre.compte_pose("courriel")?,
-        Err(std::env::VarError::NotUnicode(_)) => return Err(socle::refus!("COURRIEL_COMPTE ne se lit pas : ce n'est pas du texte. Corrigez la variable, ou retirez-la.")),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            return Err(socle::echec::refus_avec(
+                "La variable qui pose l'adresse du compte de courriel ne se lit pas : ce n'est pas du texte. Corrigez-la, ou retirez-la.",
+                socle::echec::Lieu { cle: Some("COURRIEL_COMPTE".to_string()), ..socle::echec::Lieu::default() },
+            ))
+        }
     };
     // Sans adresse, rien ne s'envoie.
     if !adresse.is_some_and(|a| !a.trim().is_empty()) {

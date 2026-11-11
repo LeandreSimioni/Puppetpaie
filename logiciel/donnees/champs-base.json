@@ -1095,7 +1095,7 @@
     {"cle": "nom_prenom", "libelle": "Nom et prénom déclarés", "forme": "officiel", "derive_de": "nom_prenom_affichage", "ecran": false, "exige_par": ["dsn"]},
     {"cle": "tel", "libelle": "Téléphone", "forme": "texte", "ecran": true, "exemple": "0102030405", "aide": "11 chiffres au plus, ce que la DPAE écrit.", "exige_par": ["dsn"]},
     {"cle": "email", "libelle": "Courriel", "forme": "email", "ecran": true, "exemple": "paie@compagnie.fr", "exige_par": ["dsn"]},
-    {"cle": "qualite", "libelle": "Qualité", "forme": "chiffres", "aide": "S20.G00.07.004 : le moteur l'écrit seul (`dsn::type_du_contact`).", "ecran": false}
+    {"cle": "qualite", "libelle": "Qualité", "forme": "chiffres", "aide": "S20.G00.07.004 : le logiciel l'écrit seul.", "ecran": false}
    ],
    "libelle": "Qui les organismes contactent",
    "forme": "structure",

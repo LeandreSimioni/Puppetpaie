@@ -35,8 +35,6 @@ unused_allocation = "forbid"
 path_statements = "forbid"
 unreachable_code = "forbid"
 unreachable_patterns = "forbid"
-# Rien de la fabrique n'en a besoin (l'espace, lui, en a : les appels au systeme de Windows de `compagnie`).
-unsafe_code = "forbid"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

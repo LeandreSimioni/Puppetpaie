@@ -96,7 +96,7 @@ const CHARGE_MAL_FORMEE: &str = "La demande est mal formée : sa charge est un o
 impl Charge {
     /// La charge d'une route qui ne prend rien : `{}`.
     pub fn vide() -> Charge {
-        Charge(Objet::default())
+        Charge(Objet::sans_cle())
     }
 
     /// La charge ecrite depuis sa forme `t` : ce qu'une route du moteur demande a une autre (la veille a l'ouverture).

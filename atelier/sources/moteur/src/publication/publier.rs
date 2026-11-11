@@ -16,7 +16,7 @@ use compagnie::maj::{
     PROPRES_A_L_INSTALLATION, SYSTEMES, TOUT_SYSTEME,
 };
 
-use socle::echec::{refus, R};
+use socle::echec::{au_chemin, du_disque, refus, R};
 
 /// La variable d'environnement ou le flux « Publier » pose la graine (base64) : lue par `publier_depuis_l_environnement`,
 /// jamais affichee.
@@ -51,7 +51,7 @@ fn est_un_dossier(e: &std::fs::DirEntry) -> R<bool> {
 
 /// Le dossier qui porte `logiciel/` (`code`) : les fictives livrees y sont, a cote de lui.
 fn base(code: &Path) -> R<&Path> {
-    code.parent().ok_or_else(|| socle::refus!("{} n'a pas de dossier parent : les fictives livrees ne s'y trouvent pas", code.display()))
+    code.parent().ok_or_else(|| au_chemin("Le logiciel n'a pas de dossier parent : les fictives livrées ne s'y trouvent pas.", code))
 }
 
 /// Les fichiers de `logiciel/` pour l'archive, dans l'ordre des noms (meme contenu, meme condensat).
@@ -85,7 +85,7 @@ const HORS_D_UNE_FICTIVE_LIVREE: [&str; 5] =
 fn fictives_livrees(code: &Path) -> R<Vec<PathBuf>> {
     let dossier = base(code)?.join(compagnie::installation::DOSSIER_FICTIVES);
     if !dossier.is_dir() {
-        return Err(socle::refus!("aucune compagnie fictive : {} n'existe pas, et une archive sans elles s'ouvrirait bridee sur un accueil vide", dossier.display()));
+        return Err(au_chemin("Aucune compagnie fictive : leur dossier n'existe pas, et une archive sans elles s'ouvrirait bridée sur un accueil vide.", &dossier));
     }
     let mut out = Vec::new();
     let mut n = 0;
@@ -113,10 +113,7 @@ fn fictives_livrees(code: &Path) -> R<Vec<PathBuf>> {
         }
     }
     if n == 0 {
-        return Err(socle::refus!(
-            "aucune compagnie fictive dans {} : une archive sans elles s'ouvrirait bridee sur un accueil vide",
-            dossier.display()
-        ));
+        return Err(au_chemin("Aucune compagnie fictive dans leur dossier : une archive sans elles s'ouvrirait bridée sur un accueil vide.", &dossier));
     }
     Ok(out)
 }
@@ -162,7 +159,7 @@ fn entrees_des_fictives(code: &Path) -> R<(Vec<Entree>, Vec<(String, Vec<u8>)>, 
     for rel in fictives_livrees(code)? {
         let r = rel.to_string_lossy().replace('\\', "/");
         let chemin = dossier.join(&rel);
-        let sha = condensat(&std::fs::read(&chemin).map_err(|e| socle::refus!("{} : {}", chemin.display(), e))?);
+        let sha = condensat(&std::fs::read(&chemin).map_err(|e| du_disque(&chemin, &e))?);
         toute.update(format!("{}/{}\t{}\n", racine, r, sha).as_bytes());
         if let Some((fictive, dedans)) = r.split_once('/') {
             par_fictive.entry(fictive.to_string()).or_default().update(format!("{}\t{}\n", dedans, sha).as_bytes());
@@ -185,7 +182,8 @@ fn entrees_des_fictives(code: &Path) -> R<(Vec<Entree>, Vec<(String, Vec<u8>)>, 
 /// Un zip deterministe (dates fixes, ordre donne) : les `entrees`, puis les fichiers `en_plus` (nom, octets).
 fn zipper(entrees: &[Entree], en_plus: &[(String, Vec<u8>)]) -> R<Vec<u8>> {
     let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-    let date = zip::DateTime::from_date_and_time(2020, 1, 1, 0, 0, 0).map_err(|e| socle::refus!("{:?}", e))?;
+    let date = zip::DateTime::from_date_and_time(2020, 1, 1, 0, 0, 0)
+        .map_err(|e| socle::echec::refus_avec("La date fixe des entrées de l'archive ne s'écrit pas.", socle::echec::Lieu { detail: Some(format!("{:?}", e)), ..socle::echec::Lieu::default() }))?;
     let options = |executable: bool| {
         zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated)
@@ -194,7 +192,7 @@ fn zipper(entrees: &[Entree], en_plus: &[(String, Vec<u8>)]) -> R<Vec<u8>> {
     };
     for (nom, chemin, executable) in entrees {
         z.start_file(nom.as_str(), options(*executable)).map_err(|e| refus(e.to_string()))?;
-        z.write_all(&std::fs::read(chemin).map_err(|e| socle::refus!("{} : {}", chemin.display(), e))?).map_err(|e| refus(e.to_string()))?;
+        z.write_all(&std::fs::read(chemin).map_err(|e| du_disque(chemin, &e))?).map_err(|e| refus(e.to_string()))?;
     }
     for (nom, octets) in en_plus {
         z.start_file(nom.as_str(), options(false)).map_err(|e| refus(e.to_string()))?;
@@ -279,12 +277,12 @@ pub fn poser_les_fictives(code: &Path, dossier: &Path) -> R<String> {
     let ecrire = |nom: &str, octets: &[u8]| -> R<()> {
         let dest = dossier.join(nom);
         if let Some(p) = dest.parent() {
-            std::fs::create_dir_all(p).map_err(|e| socle::refus!("{} : {}", p.display(), e))?;
+            std::fs::create_dir_all(p).map_err(|e| du_disque(p, &e))?;
         }
-        std::fs::write(&dest, octets).map_err(|e| socle::refus!("{} : {}", dest.display(), e))
+        std::fs::write(&dest, octets).map_err(|e| du_disque(&dest, &e))
     };
     for (nom, chemin, _) in entrees {
-        ecrire(&nom, &std::fs::read(&chemin).map_err(|e| socle::refus!("{} : {}", chemin.display(), e))?)?;
+        ecrire(&nom, &std::fs::read(&chemin).map_err(|e| du_disque(&chemin, &e))?)?;
     }
     for (nom, octets) in en_plus {
         ecrire(&nom, &octets)?;
@@ -326,10 +324,10 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     // installation ne pourrait lancer la version : rien n'est publie.
     let presents: Vec<&str> = SYSTEMES.into_iter().filter(|s| programme_de(c, s, "puppetpaie").is_file()).collect();
     if presents.is_empty() {
-        return Err(socle::refus!(
-            "aucune fenetre dans {} (ni {}) : aucune installation ne pourrait lancer cette version",
-            c.display(),
-            SYSTEMES.map(|s| programme_de(Path::new(""), s, "puppetpaie").to_string_lossy().replace('\\', "/")).join(", ni ")
+        let attendues = SYSTEMES.map(|s| programme_de(Path::new(""), s, "puppetpaie").to_string_lossy().replace('\\', "/")).join(", ");
+        return Err(socle::echec::refus_avec(
+            "Le logiciel n'a la fenêtre d'aucun système : aucune installation ne pourrait lancer cette version.",
+            socle::echec::Lieu { chemin: Some(c.to_string_lossy().into_owned()), detail: Some(format!("attendue : {}", attendues)), ..socle::echec::Lieu::default() },
         ));
     }
     let mut archives = Archives::default();
@@ -413,9 +411,9 @@ pub fn generer_cle_github(dossier: &Path) -> R<CleDeGithub> {
     let fichier = dossier.join("cle-github-graine.txt");
     let fichier_publique = dossier.join("cle-github-publique.txt");
     if fichier.exists() {
-        return Err(socle::refus!(
-            "{} existe deja : le coller dans le secret GitHub s'il n'y est pas, puis l'effacer, avant d'en faire une autre",
-            fichier.display()
+        return Err(au_chemin(
+            "La graine d'une clé précédente est encore là : la coller dans le secret GitHub si elle n'y est pas, puis l'effacer, avant d'en faire une autre.",
+            &fichier,
         ));
     }
     std::fs::create_dir_all(dossier).map_err(|e| refus(e.to_string()))?;
@@ -429,7 +427,7 @@ pub fn generer_cle_github(dossier: &Path) -> R<CleDeGithub> {
         use std::os::unix::fs::OpenOptionsExt;
         o.mode(0o600);
     }
-    let mut f = o.open(&fichier).map_err(|e| socle::refus!("{} : {}", fichier.display(), e))?;
+    let mut f = o.open(&fichier).map_err(|e| du_disque(&fichier, &e))?;
     f.write_all(socle::base64::ecrire(&graine).as_bytes()).map_err(|e| refus(e.to_string()))?;
     graine.fill(0);
     std::fs::write(&fichier_publique, format!("{}\n", publique)).map_err(|e| refus(e.to_string()))?;
@@ -440,7 +438,10 @@ pub fn generer_cle_github(dossier: &Path) -> R<CleDeGithub> {
 /// la cle publique n'est pas reportee (vide) ou si la graine n'est pas la sienne. Aucun message ne porte la graine.
 fn publier_par_graine(logiciel: &Path, sortie: &Path, graine_b64: &str, cle_publique: &str, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
     if cle_publique.is_empty() {
-        return Err(refus("la cle publique de GitHub n'est pas reportee dans le code (compagnie/src/maj.rs, CLE_PUBLIQUE_GITHUB) : rien n'est publie"));
+        return Err(socle::echec::refus_avec(
+            "La clé publique de GitHub n'est pas reportée dans le logiciel : rien n'est publié.",
+            socle::echec::Lieu { cle: Some("CLE_PUBLIQUE_GITHUB".to_string()), ..socle::echec::Lieu::default() },
+        ));
     }
     // Le refus ne dit pas pourquoi la base64 ne se lit pas : il ne porte rien de la graine.
     let graine = match b64(graine_b64.trim()) {
@@ -453,7 +454,10 @@ fn publier_par_graine(logiciel: &Path, sortie: &Path, graine_b64: &str, cle_publ
 /// Le refus d'une graine qui n'est pas celle de la cle publique : rien n'est publie.
 #[track_caller]
 fn autre_graine() -> socle::echec::Echec {
-    socle::refus!("la graine de {} n'est pas celle de CLE_PUBLIQUE_GITHUB : rien n'est publie", VARIABLE_GRAINE)
+    socle::echec::refus_avec(
+        "La graine de signature n'est pas celle de la clé publique du logiciel : rien n'est publié.",
+        socle::echec::Lieu { cle: Some(VARIABLE_GRAINE.to_string()), ..socle::echec::Lieu::default() },
+    )
 }
 
 /// LA PUBLICATION PAR LE FLUX DE GITHUB (`moteur maj --publier-github --logiciel L --sortie S`) : les archives de `L`

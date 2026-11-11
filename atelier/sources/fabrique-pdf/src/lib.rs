@@ -1,4 +1,7 @@
 //! La fabrique de PDF de PuppetPaie : le contrat d'interface est `FORMAT.md`.
+// Rien de la fabrique n'appelle de code `unsafe` (l'espace, lui, en a : les appels au systeme de Windows de
+// `compagnie`) ; ses niveaux de lint sont ceux de l'espace, ce refus en plus.
+#![forbid(unsafe_code)]
 
 mod afm;
 pub mod alleger;
