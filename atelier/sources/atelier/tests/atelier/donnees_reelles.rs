@@ -1,7 +1,7 @@
 //! Le verrou des données réelles (règle de fond 9a), sur ce que Git emporterait hors de `prive/`, en texte : la liste
 //! du garde avant commit (`verifier_avant_commit::ce_qui_part`, suivis et non suivis, les `.gitignore` appliqués par Git
 //! lui-même), lue une fois pour deux verrous. Nulle part un NIR qui ne soit pas inventé (`nirs_non_inventes`, sauf
-//! l'exemple qu'un texte de référence porte de son émetteur : `EXEMPLES_DES_TEXTES`) ; dans le code et ce que reçoit une
+//! un texte déposé tel que son émetteur l'a publié, que son empreinte prouve : `atelier::empreintes`) ; dans le code et ce que reçoit une
 //! compagnie (`DU_CODE`), pas le nom de la compagnie du poste (règle 0 : le logiciel est pour toute compagnie), hors de
 //! la mention de l'auteur (`SIGNATURE`). Et aucun test ne construit un chemin vers `prive/`. Il ne voit ni les adresses
 //! ni les noms de personnes : les écrire ici pour les chercher, ce serait les publier.
@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use regex::Regex;
 
-use atelier::verifier_avant_commit::{ce_qui_part, nirs_non_inventes, EXEMPLES_DES_TEXTES};
+use atelier::verifier_avant_commit::{ce_qui_part, depose_tel_quel, nirs_non_inventes};
 
 /// En deux morceaux, pour que ce fichier ne porte pas lui-même ce qu'il refuse.
 const NOM_REEL: &str = concat!("ueu", "eue");
@@ -53,9 +53,10 @@ fn ligne(o: &[u8], i: usize) -> usize {
 #[test]
 fn rien_de_la_compagnie_reelle_n_est_ecrit_dans_ce_qui_part() {
     let (mut nirs, mut noms) = (Vec::new(), Vec::new());
+    let deposes = atelier::empreintes::lues(&depot()).unwrap_or_else(|m| panic!("les empreintes des textes déposés se lisent : {}", m.phrase));
     for rel in part() {
         let Ok(o) = std::fs::read(depot().join(&rel)) else { continue };
-        if !EXEMPLES_DES_TEXTES.iter().any(|(f, _)| *f == rel) {
+        if !depose_tel_quel(&deposes, &rel, &o) {
             nirs.extend(nirs_non_inventes(&o).into_iter().map(|(i, _)| format!("{}:{}", rel, ligne(&o, i))));
         }
         if rel != SIGNATURE && DU_CODE.iter().any(|d| rel.starts_with(d)) {

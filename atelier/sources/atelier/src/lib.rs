@@ -13,6 +13,7 @@ extern crate socle;
 
 pub mod bulletins_fictifs;
 pub mod commandes;
+pub mod empreintes;
 pub mod extraire;
 pub mod fabriquer_bulletins;
 pub mod generer_tables;

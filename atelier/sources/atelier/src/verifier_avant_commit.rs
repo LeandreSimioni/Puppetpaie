@@ -4,7 +4,8 @@
 //! BIC, et pour chaque salarié son NIR, son numéro Congés Spectacles, son courriel, son adresse, son nom et son prénom).
 //!
 //! Le verrou de la suite (`tests/fichiers/donnees_reelles.rs`) passe, à chaque passage de tests, la même liste
-//! (`ce_qui_part`) au même détecteur de NIR (`nirs_non_inventes`), avec les mêmes exemples excusés, et y cherche le nom
+//! (`ce_qui_part`) au même détecteur de NIR (`nirs_non_inventes`), avec les mêmes textes déposés excusés (leur empreinte,
+//! `crate::empreintes`), et y cherche le nom
 //! de la compagnie du poste dans le code. Ce garde-ci fait ce que le verrou ne peut pas faire sans porter lui-même ce
 //! qu'il cherche : il LIT les vraies valeurs dans `prive/config/` (jamais
 //! `prive/config/*.bin`) et les cherche dans ce qui part. **Il ne contient aucune donnée réelle** : un garde-fou qui
@@ -22,6 +23,7 @@
 //! Sortie : 0 si rien n'a été trouvé, 1 sinon, avec la liste fichier par fichier ; 2 s'il n'a pas pu vérifier (hors d'un
 //! dépôt Git, ou un fichier de `prive/config/` illisible : un garde qui ne lit pas ce qu'il protège ne passe pas).
 
+use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -74,63 +76,6 @@ pub const FICTIVES: [(&str, &str); 10] = [
     // La fictive de référence de l'Hôtel de Bourgogne (`atelier/fictives/fictive-hotel-de-bourgogne/LISEZ-MOI.md` : « tout
     // ce qui suit est inventé ») : le compte de la compagnie, clé juste, banque « 12345 ».
     ("FR7612345678900007778880147", "IBAN de la fictive Compagnie de l'Hôtel de Bourgogne"),
-];
-
-/// Les textes de référence (`atelier/reference/`) sont des copies, octet pour octet, de ce que d'autres ont
-/// publié (leur empreinte se vérifie, `moteur-atelier sources`) : un numéro qui y a la forme d'un NIR, d'un IBAN ou d'un BIC est
-/// celui de l'émetteur -- l'exemple d'une documentation officielle, ou un nombre qui n'en est pas un. Chacun est nommé
-/// ici, fichier par fichier (relatif à la racine du dépôt), avec ce qu'il est ; seuls les motifs GÉNÉRIQUES s'y taisent,
-/// jamais les vraies valeurs lues dans `prive/config/`. Le verrou de la suite s'en sert aussi. Ce qui n'est pas listé
-/// est refusé, nos notes comprises.
-pub const EXEMPLES_DES_TEXTES: [(&str, &str); 12] = [
-    (
-        "atelier/reference/sources/gip-mds-api-dsn/ctip-dsn-crm-oc-phases-2-3-20160601.txt",
-        "les salariés et les comptes d'exemple des comptes rendus métier OC imprimés par le CTIP (présentation de juin 2016)",
-    ),
-    (
-        "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt",
-        "l'IBAN d'exemple (FR99 1234...) de l'aide à la codification Agirc-Arrco",
-    ),
-    (
-        "atelier/reference/sources/agirc-arrco/agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt",
-        "l'IBAN d'exemple (FR99 1234...) de l'aide à la codification Agirc-Arrco",
-    ),
-    (
-        "atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt",
-        "les exemples de flux et de réponses du guide de l'API DSN (GIP-MDS)",
-    ),
-    (
-        "atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-fiche2955-mutation-transfert-contrat-20250818.html",
-        "le salarié d'exemple de la fiche net-entreprises 2955",
-    ),
-    (
-        "atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-fiche2955-mutation-transfert-contrat-20250818.txt",
-        "le salarié d'exemple de la fiche net-entreprises 2955",
-    ),
-    (
-        "atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-fiche2956-bloc-41-changement-modalites-contrat-20250429.html",
-        "le salarié d'exemple de la fiche net-entreprises 2956",
-    ),
-    (
-        "atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-fiche2956-bloc-41-changement-modalites-contrat-20250429.txt",
-        "le salarié d'exemple de la fiche net-entreprises 2956",
-    ),
-    (
-        "atelier/reference/sources/insee-nir-siret/insee-schema-nir-20261028.html",
-        "les NIR d'exemple du schéma des identifiants d'individus de l'INSEE",
-    ),
-    (
-        "atelier/reference/sources/insee-nir-siret/insee-schema-nir-20261028.txt",
-        "les NIR d'exemple du schéma des identifiants d'individus de l'INSEE",
-    ),
-    (
-        "atelier/reference/sources/urssaf-liste-des-sites-et-des-activites.csv",
-        "une longitude de la table de l'Urssaf (des décimales de coordonnée), pas un NIR",
-    ),
-    (
-        "atelier/reference/sources/python/python-cpython-3.11.17-pyexpat-20261015.txt",
-        "une empreinte hexadécimale d'Argument Clinic dans la source de CPython (`[clinic end generated code: … input=…]`), pas un NIR",
-    ),
 ];
 
 /// Les motifs génériques (une forme), par opposition aux valeurs réelles lues.
@@ -438,8 +383,12 @@ fn fictive(trouve: &str) -> bool {
 
 /// Ce que `motifs` trouvent dans un texte : au plus une trouvaille par ligne, celle du premier motif qui y trouve une
 /// valeur qui n'est pas inventée.
-fn chercher(fichier: &str, o: &[u8], motifs: &[Motif], trouvailles: &mut Vec<Trouvaille>) {
-    let exemple = EXEMPLES_DES_TEXTES.iter().any(|(f, _)| *f == fichier);
+///
+/// Un texte depose tel que son emetteur l'a publie (son empreinte est celle que son `LISEZ-MOI` porte, `deposes`) :
+/// un numero qui y a la forme d'un NIR, d'un IBAN ou d'un BIC est le sien, seuls les motifs GENERIQUES s'y taisent,
+/// jamais les vraies valeurs lues dans `prive/config/`.
+fn chercher(fichier: &str, o: &[u8], motifs: &[Motif], deposes: &BTreeMap<String, String>, trouvailles: &mut Vec<Trouvaille>) {
+    let exemple = depose_tel_quel(deposes, fichier, o);
     let siens: Vec<&Motif> = motifs.iter().filter(|m| !(exemple && GENERIQUES.contains(&m.quoi()))).collect();
     let texte = utf8_sans_erreurs(o);
     // Les séparateurs de lignes n'ont pas de casse : les deux textes ont les mêmes lignes. Sans valeur lue (un clone
@@ -470,13 +419,21 @@ pub fn verifier(racine: &Path, indexes: bool) -> R<Vec<Trouvaille>> {
     let motifs = motifs(racine)?;
     let noms = ce_qui_part(racine, indexes)?;
     let contenus: Vec<Option<Vec<u8>>> = if indexes { contenus_indexes(racine, &noms)? } else { noms.iter().map(|n| contenu(&racine.join(n))).collect::<R<_>>()? };
+    let deposes = crate::empreintes::lues(racine)?;
     let mut trouvailles = Vec::new();
     for (nom, o) in noms.iter().zip(contenus) {
         if let Some(o) = o {
-            chercher(nom, &o, &motifs, &mut trouvailles);
+            chercher(nom, &o, &motifs, &deposes, &mut trouvailles);
         }
     }
     Ok(trouvailles)
+}
+
+/// LE TEXTE `fichier` (relatif a la racine du depot), de contenu `o`, EST-IL DEPOSE TEL QUE SON EMETTEUR L'A PUBLIE :
+/// son empreinte est celle que le `LISEZ-MOI` de son dossier porte (`deposes`, `crate::empreintes::lues`). Le verrou de
+/// la suite s'en sert aussi.
+pub fn depose_tel_quel(deposes: &BTreeMap<String, String>, fichier: &str, o: &[u8]) -> bool {
+    deposes.get(fichier).is_some_and(|e| *e == crate::empreintes::empreinte(o))
 }
 
 /// Ce que la commande affiche : la phrase de passage, ou chaque fichier et ses lignes, et ce qu'il faut en faire.

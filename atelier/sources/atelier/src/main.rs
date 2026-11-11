@@ -11,6 +11,7 @@ fn usage() -> ! {
          \x20       moteur-atelier scenario ...   (les scenarios du banc d'essai : rejouer, verifier un banc, elaguer)\n\
          \x20       moteur-atelier guet [--seuil N] [--commits] [--transcript F]   (la veille du contexte d'un sous-agent)\n\
          \x20       moteur-atelier verifier-avant-commit [--indexes]   (le garde avant commit : rien de reel dans ce que git emporterait)\n\
+         \x20       moteur-atelier empreintes   (l'empreinte de chaque texte depose, dans le LISEZ-MOI de son dossier)\n\
          \x20       moteur-atelier generer-tables SOURCES ESPACE   (les tables Unicode du moteur, depuis atelier/reference/sources, dans atelier/sources)\n\
          \x20       moteur-atelier extraire naf|usages|formats|urssaf SOURCES... SORTIE.json [--remplacer]   (les referentiels : moteur-atelier extraire --aide)\n\
          \x20       moteur-atelier releve-codes ... | moteur-atelier releve-conventions ...   (les textes LEGI et KALI de la DILA : --aide)\n\

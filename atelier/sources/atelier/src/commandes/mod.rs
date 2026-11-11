@@ -39,6 +39,8 @@ pub fn lancer(nom: &str, args: &[String]) -> Option<i32> {
         "guet" => super::guet::commande(args),
         // Le garde avant commit (le crochet `atelier/.githooks/pre-commit`) : les donnees reelles dans ce que git emporterait.
         "verifier-avant-commit" => super::verifier_avant_commit::commande(args),
+        // Les empreintes des textes deposes, que le garde lit (`empreintes`).
+        "empreintes" => super::empreintes::commande(args),
         // Les scenarios du banc d'essai : rejouer, verifier un banc, elaguer.
         "scenario" => routes::scenario::commande(args),
         _ => return None,

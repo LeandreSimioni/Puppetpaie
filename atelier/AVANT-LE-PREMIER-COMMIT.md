@@ -38,8 +38,9 @@ Une trouvaille se regarde ; on ne « nettoie » pas un test parce que le garde l
   (`INVENTE`) ; toute autre valeur fabriquée s'inscrit, avec sa raison d'être, dans `FICTIVES`. Une valeur fabriquée a
   une clé qui se vérifie (clé du NIR, clé de Luhn du SIRET, clé de l'IBAN) : un test ne doit pas pouvoir passer sur un
   numéro impossible.
-- **L'exemple imprimé par l'émetteur d'un texte de référence** (`atelier/reference/`) s'inscrit dans
-  `EXEMPLES_DES_TEXTES`.
+- **L'exemple imprimé par l'émetteur d'un texte déposé** (`atelier/reference/sources/`) passe quand le texte est tel
+  que son émetteur l'a publié : son empreinte est celle que le `LISEZ-MOI.md` de son dossier porte (`moteur-atelier
+  empreintes` les écrit, à chaque dépôt d'un texte).
 
 `git commit --no-verify` passe outre ; il ne sert que quand le garde se trompe, et le garde se corrige alors dans le
 même geste.
