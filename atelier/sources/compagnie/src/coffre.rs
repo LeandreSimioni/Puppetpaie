@@ -878,27 +878,38 @@ impl Coffre {
     /// La cle de CE poste ouvre-t-elle le coffre qui est la ? Vrai aussi sans
     /// coffre : il n'y a rien qui resiste.
     pub fn ouvre_a_ce_poste(&self) -> R<bool> {
-        match self.lire_fichier()? {
-            Some(contenu) => Ok(self.ouvrir_avec(&contenu, None)?.is_some()),
-            None => Ok(true),
-        }
+        let ouvert = match self.lire_fichier()? {
+            Some(contenu) => Some(self.ouvrir_avec(&contenu, None)?.is_some()),
+            None => None,
+        };
+        Ok(ouvert.is_none_or(|o| o))
     }
 
-    /// Les secrets du coffre, descelles : aucun dans un coffre neuf.
+    /// Les secrets du coffre, descelles : un coffre neuf n'en scelle aucun, et l'absence se parcourt.
     fn secrets(&self, contenu: &Contenu, maitresse: &[u8]) -> R<BTreeMap<String, String>> {
-        let Some(scelles) = &contenu.secrets else { return Ok(BTreeMap::new()) };
-        let clair = desceller(maitresse, &d64(scelles)?, &aad_fiches(&contenu.fiches))?;
-        let t = String::from_utf8(clair).map_err(|_| echec(Classe::Illisible, "Les secrets du coffre ne se lisent pas."))?;
-        socle::forme::lire_texte(&t, "Les secrets du coffre ne se lisent pas.").map_err(|m| m.reclasser(Classe::Illisible))
+        let lus: Option<BTreeMap<String, String>> = contenu
+            .secrets
+            .as_ref()
+            .map(|scelles| {
+                let clair = desceller(maitresse, &d64(scelles)?, &aad_fiches(&contenu.fiches))?;
+                let t = String::from_utf8(clair).map_err(|_| echec(Classe::Illisible, "Les secrets du coffre ne se lisent pas."))?;
+                socle::forme::lire_texte(&t, "Les secrets du coffre ne se lisent pas.").map_err(|m| m.reclasser(Classe::Illisible))
+            })
+            .transpose()?;
+        Ok(lus.into_iter().flatten().collect())
     }
 
+    /// La cle de ce poste ouvre-t-elle l'enveloppe du poste ? Sans cle, elle n'ouvre rien.
     fn poste_ouvre(&self, enveloppes: &Enveloppes, maitresse: &[u8]) -> R<bool> {
-        let Some(cle) = self.cle_poste(false)? else { return Ok(false) };
-        match desceller(&cle, &d64(&enveloppes.poste)?, AAD_POSTE) {
-            Ok(m) => Ok(m == maitresse),
-            Err(x) if x.classe == Some(Classe::Coffre) => Ok(false),
-            Err(x) => Err(x),
-        }
+        let ouvre = self
+            .cle_poste(false)?
+            .map(|cle| match desceller(&cle, &d64(&enveloppes.poste)?, AAD_POSTE) {
+                Ok(m) => Ok(m == maitresse),
+                Err(x) if x.classe == Some(Classe::Coffre) => Ok(false),
+                Err(x) => Err(x),
+            })
+            .transpose()?;
+        Ok(ouvre.is_some_and(|o| o))
     }
 
     /// Reecrit le coffre : les fiches en clair, les secrets scelles avec elles.
@@ -979,8 +990,8 @@ impl Coffre {
 
     pub fn oublier(&self, service: &str) -> R<bool> {
         service_connu(service)?;
-        let Some(contenu) = self.lire_fichier()? else { return Ok(false) };
-        if !contenu.fiches.contains_key(service) {
+        // Un service que le coffre ne pose pas (ou pas de coffre) : rien a oublier.
+        if !self.lire_fichier()?.is_some_and(|c| c.fiches.contains_key(service)) {
             return Ok(false);
         }
         let (maitresse, mut contenu) = self.ouvrir_ou_lever(None)?;
@@ -1145,13 +1156,18 @@ impl Coffre {
             Err(x) if x.classe == Some(Classe::Coffre) => return Ok(false),
             Err(x) => return Err(x),
         };
-        let Some(e) = &contenu.enveloppes.motdepasse else { return Ok(false) };
-        let r = deriver(motdepasse, &contenu.kdf).and_then(|k| desceller(&k, &d64(e)?, AAD_MOTDEPASSE));
-        match r {
-            Ok(_) => Ok(true),
-            Err(x) if x.classe == Some(Classe::Coffre) => Ok(false),
-            Err(x) => Err(x),
-        }
+        // Sans enveloppe du mot de passe, aucun mot de passe n'ouvre le coffre.
+        let ouvre = contenu
+            .enveloppes
+            .motdepasse
+            .as_ref()
+            .map(|e| match deriver(motdepasse, &contenu.kdf).and_then(|k| desceller(&k, &d64(e)?, AAD_MOTDEPASSE)) {
+                Ok(_) => Ok(true),
+                Err(x) if x.classe == Some(Classe::Coffre) => Ok(false),
+                Err(x) => Err(x),
+            })
+            .transpose()?;
+        Ok(ouvre.is_some_and(|o| o))
     }
 
     // -------------------------------------------- l'ouverture gardee
