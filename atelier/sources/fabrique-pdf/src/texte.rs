@@ -445,7 +445,7 @@ struct Police {
     standard: Option<crate::polices::Metrique>,
     vertical: bool,
     /// Ascendant et descendant (fractions du corps), qui bornent la boîte d'un glyphe pour
-    /// `--inspecter` : ceux du fichier de police incorporé, sinon (polices standard) ceux de MuPDF,
+    /// `--inspecter` : ceux du fichier de police incorporé, sinon (polices standard) ceux de leur fichier de métriques d'Adobe,
     /// sinon ceux du `/FontDescriptor`, sinon 0,8 et 0,2. Laissés à 0,8 et 0,2 pour `--texte`.
     asc: Mesure,
     desc: Mesure,
@@ -464,9 +464,9 @@ fn englobante(m: &Mat, x0: Mesure, y0: Mesure, x1: Mesure, y1: Mesure) -> Boite 
     b
 }
 
-/// L'ascendant et le descendant d'une police (fractions du corps). Comme MuPDF : ceux du fichier de
-/// police incorporé (`hhea`) ; pour une police standard non incorporée, ceux des polices de
-/// remplacement de MuPDF (mesurés) ; sinon le `/FontDescriptor` ; sinon 0,8 et 0,2. Un programme incorporé qui ne se
+/// L'ascendant et le descendant d'une police (fractions du corps) : ceux du fichier de police incorporé (`hhea`) ;
+/// pour une police standard non incorporée, ceux de son fichier de métriques d'Adobe ; sinon le `/FontDescriptor` ;
+/// sinon 0,8 et 0,2. Un programme incorporé qui ne se
 /// lit pas laisse la place au descripteur, qui dit les mêmes mesures (`Ascent`, `Descent`, table 122) ; sans lui, refus.
 fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Option<&str>) -> Result<(Mesure, Mesure), Refus> {
     let mut programme = None;
@@ -499,22 +499,11 @@ fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Opti
             }
         }
         None => {
+            // Une police standard non incorporée (9.6.2.2), que son nom dit : les mesures de son fichier de métriques
+            // d'Adobe (`afm.rs`), celles qu'un descripteur dirait (`Ascent`, `Descent`, table 122).
             if let Some(base) = base_font {
-                let minuscules = base.to_ascii_lowercase();
-                // Le nom sans le préfixe d'un sous-ensemble (« ABCDEF+ », ISO 32000-1, 9.6.4).
-                let n = match minuscules.rsplit_once('+') {
-                    Some((_, apres)) => apres,
-                    None => minuscules.as_str(),
-                };
-                let gras = n.contains("bold");
-                if n.contains("helvetica") || n == "arial" || n == "arialmt" || n.starts_with("arial,") || n.starts_with("arial-") {
-                    return Ok(if gras { (mesure("1.07"), mesure("0.307")) } else { (mesure("1.075"), mesure("0.299")) });
-                }
-                if n.contains("times") {
-                    return Ok(if gras { (mesure("1.044"), mesure("0.341")) } else { (mesure("1.053"), mesure("0.281")) });
-                }
-                if n.contains("courier") {
-                    return Ok((mesure("0.932"), mesure("0.317")));
+                if let Some((a, d)) = crate::afm::ascendant_descendant(base)? {
+                    return Ok((a / 1000, d.abs() / 1000));
                 }
             }
         }

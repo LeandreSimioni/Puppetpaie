@@ -651,9 +651,10 @@ Chiffré : `"chiffrement": {"filtre": "Standard", "V": 5, "R": 6, "longueur": 25
   descendant, sur l'avance du glyphe, sous le corps, la matrice du texte et la CTM. Ascendant et
   descendant sont, comme dans MuPDF, ceux **du fichier de police incorporé** (`hhea` de la table
   TrueType / OpenType, lue avec `ttf-parser`) : exacts pour Liberation Sans (0,905 / 0,212). Les
-  polices standard non incorporées (Helvetica, Arial, Times, Courier) prennent les valeurs mesurées
-  de MuPDF (Helvetica 1,075 / 0,299 ; Times 1,053 / 0,281 ; Courier 0,932 / 0,317, un peu moins
-  en gras) ; sinon le `/FontDescriptor` (`Ascent`, `Descent`) ; sinon 0,8 et 0,2 du corps. Une
+  polices standard non incorporées (Helvetica, Times, Courier et leurs variantes, par leur nom
+  exact) prennent `Ascender` et `Descender` de leur fichier de métriques d'Adobe (Helvetica 0,718 /
+  0,207 ; Times 0,683 / 0,217 ; Courier 0,629 / 0,157) ; sinon le `/FontDescriptor` (`Ascent`,
+  `Descent`) ; sinon 0,8 et 0,2 du corps. Une
   séquence `/ActualText` répartit sa boîte à parts égales entre ses caractères.
 - **`images`.** La boîte de chaque image dessinée, dans l'ordre du flux : le `Do` d'un XObject
   `/Image` et les images en ligne (`BI … ID … EI`), c'est-à-dire le carré unité transformé par la

@@ -13,6 +13,7 @@ Type 1 font's built-in encoding shall be defined by an Encoding array that is pa
 | `adobe-agl-specification-20261111.md` | tel que servi : https://raw.githubusercontent.com/adobe-type-tools/agl-specification/master/README.md (HTTP 200, sha256 `eb14692b0ff134fd44dd2dae014b7a0ea81fccb893982f950e6bf163eb6827a3`) ; « 2. The mapping » : d'un nom de glyphe à des caractères | 11/11/2026 |
 | `adobe-type1-font-format-extraits-20261111.md` | **transcription** (extraits) de https://adobe-type-tools.github.io/font-tech-notes/pdfs/T1_SPEC.pdf ; l'original va dans `reference-privee/sources/adobe-polices/` du privé | 11/11/2026 |
 | `adobe-cff-extraits-20261111.md` | **transcription** (sections 2 à 13, mise en page aplatie) de https://adobe-type-tools.github.io/font-tech-notes/pdfs/5176.CFF.pdf (HTTP 200, 1 062 494 octets, sha256 `60e0696c4fac326de597722af37bcdbbd688e0337a548709a287405ff3b3996a` ; Adobe Technical Note #5176, « The Compact Font Format Specification », 4 Dec 03) ; l'original va dans `reference-privee/sources/adobe-polices/adobe-cff-5176-20261111.pdf` du privé | 11/11/2026 |
+| `adobe-core14-afm-20261111/` | tels que servis, l'archive https://download.macromedia.com/pub/developer/opentype/tech-notes/Core14_AFMs.zip (HTTP 200, 127 150 octets, sha256 `8c892c3c49553cfd2d2a27c4495b4bb12e2875115be7fd127ed3876df19d8654`) dépliée : les 14 fichiers de métriques (AFM 4.1) des polices standard et `MustRead.html`, leur licence (« may be used, copied, and distributed [...] provided [...] that the AFM files are not distributed without this file »), sans modification | 11/11/2026 |
 | `adobe-cff-tables-20261111.txt` | **transcription** des annexes A (391 chaînes standard), B (encodages Standard et Expert, 256 codes chacun) et C (jeux ISOAdobe, Expert, ExpertSubset : 228, 165 et 86 glyphes, dans l'ordre des GID) du même original ; relevée du texte (`pdftotext -layout`, colonnes relues dans l'ordre de la page), chaque SID et son nom vérifiés contre l'annexe A | 11/11/2026 |
 
 ## Où le moteur s'en sert
@@ -31,3 +32,6 @@ Type 1 font's built-in encoding shall be defined by an Encoding array that is pa
   ExpertSubset de l'annexe C) et l'encodage (12, formats 0 et 1 et leurs suppléments, table 14 ; Standard et Expert de
   l'annexe B, du code au SID, note 4), les tableaux commençant au GID 1 (11). Un code que l'encodage ne donne pas n'a
   pas de glyphe : rien n'est complété par StandardEncoding.
+- `fabrique-pdf/src/afm.rs` (`ascendant_descendant`, appelé par `texte.rs` pour les boîtes de `--inspecter`) :
+  `Ascender` et `Descender` du fichier de métriques d'une police standard non incorporée que le `/BaseFont` nomme
+  exactement (Courier, Helvetica, Times et leurs variantes ; ceux de Symbol et ZapfDingbats n'en donnent pas).

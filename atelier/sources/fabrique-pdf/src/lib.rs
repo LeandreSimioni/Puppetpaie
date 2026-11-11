@@ -1,5 +1,6 @@
 //! La fabrique de PDF de PuppetPaie : le contrat d'interface est `FORMAT.md`.
 
+mod afm;
 pub mod alleger;
 pub mod assemblage;
 mod cff;
