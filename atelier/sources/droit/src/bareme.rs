@@ -343,7 +343,7 @@ par un humain, le moteur refuse.",
     ))
 }
 
-/// LA CONTRIBUTION CPF-CDD d'un contrat qui l'ouvre (`assujettissement::contrat_ouvre_cpf_cdd` :
+/// LA CONTRIBUTION CPF-CDD d'un contrat qui l'ouvre (`cpf_cdd::ouvre_cpf_cdd` :
 /// un CDD de droit commun, ni saisonnier, ni CDDU, ni contrat aide) : la section `cpf_cdd` de la nature du contrat
 /// (`par_nature.<nature>.cpf_cdd`) ajoute son taux comme un composant de la rubrique qu'elle nomme (« Autres
 /// contributions dues par l'employeur », a cote de la formation professionnelle) et sa cotisation au nominatif (129). Le

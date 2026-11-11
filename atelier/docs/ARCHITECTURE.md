@@ -94,8 +94,8 @@ que par la structure :
   `un_seul_endroit_ecrit_un_fichier_d_engagements`, `une_seule_fonction_lit_une_paie_et_une_seule_l_ecrit`,
   `la_page_n_ecrit_aucune_phrase`, `la_page_et_la_ligne_de_commande_ont_le_meme_catalogue`,
   `un_refus_n_est_jamais_un_texte` (un refus est un `socle::echec::Echec`, ce qu'il porte a part dans son `a_part`,
-  jamais un `Result<_, String>`), `une_nature_de_contrat_est_une_enum` (aucun champ `nature: String`, la clé d'une
-  nature écrite une seule fois, dans `droit::natures::NatureDeContrat::cle`),
+  jamais un `Result<_, String>`), `une_nature_de_contrat_est_une_enum` (le type garde : une règle d'une nature la
+  prend en `NatureDeContrat` ; la clé d'une nature écrite une seule fois, dans `droit::natures::NatureDeContrat::cle`),
   `une_liste_de_la_norme_est_celle_des_versions_livrees` (chaque `ListeDeLaNorme` est l'union des listes de valeurs que
   `formats-dsn-*-base.json` relèvent pour sa rubrique, chaque code dans les seules versions que ses bornes disent),
   `aucun_flottant_dans_le_code` (aucun `.rs` du dépôt n'écrit `f32`, `f64` ni un nombre à virgule : un montant est un

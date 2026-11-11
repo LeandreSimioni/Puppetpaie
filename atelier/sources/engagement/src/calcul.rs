@@ -1108,8 +1108,8 @@ pub(crate) fn pile_de_la_paie(ctx: &Contexte, p: &Paie) -> R<Arc<Pile>> {
     let eng = &p.engagement;
     let nat = eng.nat()?;
     let caisse = droit::caisse_conges::affilie(&nat, &p.salarie, &eng.debut, eng.fin.as_ref())?;
-    let cpf_cdd = droit::cpf_cdd::contrat_ouvre_cpf_cdd(
-        &nat,
+    let cpf_cdd = droit::cpf_cdd::ouvre_cpf_cdd(
+        eng.nature,
         eng.motif_recours,
         &droit::cpf_cdd::le_contrat(eng.numero.as_deref(), &eng.salarie),
     )?;
@@ -1333,8 +1333,8 @@ pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[
     let caisse = droit::caisse_conges::affilie(&nat, &sal, &eng.debut, eng.fin.as_ref())?;
     // Le contrat ouvre-t-il la contribution CPF-CDD (C. trav. L. 6331-6) ? Un CDD de droit commun, ni saisonnier,
     // ni contrat aide (`droit::cpf_cdd`, la regle du bloc 44).
-    let cpf_cdd = droit::cpf_cdd::contrat_ouvre_cpf_cdd(
-        &nat,
+    let cpf_cdd = droit::cpf_cdd::ouvre_cpf_cdd(
+        eng.nature,
         eng.motif_recours,
         &droit::cpf_cdd::le_contrat(eng.numero.as_deref(), &eng.salarie),
     )?;

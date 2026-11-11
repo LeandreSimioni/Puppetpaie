@@ -978,24 +978,18 @@ fn un_refus_n_est_jamais_un_texte() {
     assert!(fautes.is_empty(), "un refus est un `Echec` (`socle::echec::R`), ce qu'il porte a part dans `a_part` :\n{}", fautes.join("\n"));
 }
 
-/// UNE NATURE DE CONTRAT EST UNE `enum` (`droit::natures::NatureDeContrat`), JAMAIS UN TEXTE : aucune source du logiciel
-/// (tests a part, commentaires blanchis) n'a de champ `nature: String` ni `nature: Option<String>` (une nature d'autre
-/// chose se nomme : `nature_retour`, `nature_declaration`...), et la cle d'une nature (`cddu_spectacle`, `cdi`, `cdd`)
-/// ne s'ecrit en texte qu'une fois, dans sa declaration (`NatureDeContrat::cle`).
+/// UNE NATURE DE CONTRAT EST UNE `enum` (`droit::natures::NatureDeContrat`), JAMAIS UN TEXTE : le type le garde (toute
+/// regle d'une nature la prend en `NatureDeContrat`, comme `droit::cpf_cdd::ouvre_cpf_cdd`), et la cle d'une nature
+/// (`cddu_spectacle`, `cdi`, `cdd`) ne s'ecrit en texte qu'une fois dans le logiciel (tests a part, commentaires
+/// blanchis), dans sa declaration (`NatureDeContrat::cle`) : un texte ne peut pas en tenir lieu.
 #[test]
 fn une_nature_de_contrat_est_une_enum() {
     use droit::natures::NatureDeContrat;
-    let champ = regex::Regex::new(r"\bnature\s*:\s*(?:Option\s*<\s*)?String\b(?:[^:]|$)").unwrap();
     let mut fautes = Vec::new();
     let mut vues: Vec<Vec<String>> = vec![Vec::new(); NatureDeContrat::TOUTES.len()];
     for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
         let rel = p.strip_prefix(espace()).unwrap().display().to_string();
         let texte = std::fs::read_to_string(&p).unwrap();
-        for (n, l) in code_seul(&texte).lines().enumerate() {
-            if let Some(m) = champ.find(l) {
-                fautes.push(format!("{}:{} : `{}`", rel, n + 1, m.as_str().trim()));
-            }
-        }
         for (ligne, _, _, commentaire, t) in jetons_rs(&sans_tests(&texte)) {
             let Some(i) = NatureDeContrat::TOUTES.iter().position(|n| !commentaire && n.cle() == t) else { continue };
             vues[i].push(format!("{}:{}", rel, ligne));

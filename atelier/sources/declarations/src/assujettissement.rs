@@ -121,11 +121,6 @@ fn mois_de_l_annee(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, nic: &s
 
 // ------------------------------------------------------------ la contribution CPF-CDD
 
-/// Ce que la DSN ecrit d'un contrat calcule ou saisi : nature, dispositif, motif.
-fn codes_du_contrat(p: &Paie) -> R<(Option<String>, Option<String>, Option<droit::natures::MotifDeRecours>)> {
-    Ok(droit::cpf_cdd::codes_de(&*p.engagement.nat()?, p.engagement.motif_recours))
-}
-
 fn qui(p: &Paie) -> String {
     droit::cpf_cdd::le_contrat(p.engagement.numero.as_deref(), &p.salarie.id.to_string())
 }
@@ -136,8 +131,7 @@ fn cpf_cdd(annee: &[MoisDeLAnnee]) -> R<bool> {
         match m {
             MoisDeLAnnee::Calcules(_, ps) | MoisDeLAnnee::Contrats(ps) => {
                 for p in ps {
-                    let (n, d, mo) = codes_du_contrat(p)?;
-                    soumis |= droit::cpf_cdd::ouvre_cpf_cdd(n.as_deref(), d.as_deref(), mo, &qui(p))?;
+                    soumis |= droit::cpf_cdd::ouvre_cpf_cdd(p.engagement.nature, p.engagement.motif_recours, &qui(p))?;
                 }
             }
         }

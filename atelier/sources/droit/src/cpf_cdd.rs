@@ -4,7 +4,7 @@
 
 use socle::echec::R;
 
-use crate::natures::{MotifDeRecours, Nature};
+use crate::natures::{MotifDeRecours, Nature, NatureDeContrat};
 
 /// Le contrat d'un salarie dans un message : « le contrat VA5.26.01 de VARENNE », « le contrat de VARENNE » tant qu'il n'a
 /// pas de numero.
@@ -15,8 +15,17 @@ pub fn le_contrat(numero: Option<&str>, salarie: &str) -> String {
     }
 }
 
-/// Un contrat ouvre-t-il la contribution CPF-CDD ? `qui` nomme le contrat dans un refus (`le_contrat`).
-pub fn ouvre_cpf_cdd(nature: Option<&str>, dispositif: Option<&str>, motif: Option<MotifDeRecours>, qui: &str) -> R<bool> {
+/// Le contrat de nature `nature` ouvre-t-il la contribution CPF-CDD ? Il se juge sur ce que la DSN en ecrit
+/// (`codes_de` : le code de la nature, son dispositif, le motif de recours de la nature, sinon celui de l'engagement).
+/// C'est la ou le calcul lit le motif de recours saisi : un CDD sans motif refuse (le motif dit s'il est saisonnier), un
+/// motif que la nature n'a pas aussi (`Nature::motif_recours_refuse`). `qui` nomme le contrat dans un refus
+/// (`le_contrat`).
+pub fn ouvre_cpf_cdd(nature: NatureDeContrat, motif_recours: Option<MotifDeRecours>, qui: &str) -> R<bool> {
+    let nat = nature.proprietes()?;
+    if let Some(refus) = nat.motif_recours_fixe().is_none().then(|| motif_recours.and_then(|m| nat.motif_recours_refuse(m, qui))).flatten() {
+        return Err(socle::echec::refus(refus));
+    }
+    let (nature, dispositif, motif) = codes_de(&nat, motif_recours);
     let Some(nature) = nature else {
         return Err(socle::refus!("La nature de {} ne dit pas son code (S21.G00.40.007) : le signaler au développeur.", qui));
     };
@@ -43,7 +52,7 @@ le déclare (S21.G00.40.021).",
     }
     // D. 6331-72 : contrats d'accompagnement dans l'emploi, d'apprentissage, de professionnalisation, et ceux de
     // L. 6321-9 -- tous portent un dispositif de politique publique (40.008), et le moteur n'en ecrit aucun.
-    if let Some(dispositif) = dispositif.filter(|d| *d != "99") {
+    if let Some(dispositif) = dispositif.filter(|d| d != "99") {
         return Err(socle::refus!(
             "Un CDD sous le dispositif de politique publique {1} (S21.G00.40.008), {0}. D. 6331-72 du code du travail en \
 exclut certains de la contribution CPF-CDD (contrats d'accompagnement dans l'emploi, d'apprentissage, de \
@@ -62,29 +71,16 @@ pub fn codes_de(nat: &Nature, motif_recours: Option<MotifDeRecours>) -> (Option<
     (nat.code("S21.G00.40.007"), nat.code("S21.G00.40.008"), nat.motif_recours_fixe().or(motif_recours))
 }
 
-/// Le contrat de nature `nat` paie-t-il la contribution CPF-CDD ? C'est la ou le calcul lit le motif de recours saisi :
-/// un CDD sans motif refuse (le motif dit s'il est saisonnier), un motif que la nature n'a pas aussi
-/// (`Nature::motif_recours_refuse`).
-pub fn contrat_ouvre_cpf_cdd(nat: &Nature, motif_recours: Option<MotifDeRecours>, qui: &str) -> R<bool> {
-    if let Some(refus) = nat.motif_recours_fixe().is_none().then(|| motif_recours.and_then(|m| nat.motif_recours_refuse(m, qui))).flatten() {
-        return Err(socle::echec::refus(refus));
-    }
-    let (n, d, m) = codes_de(nat, motif_recours);
-    ouvre_cpf_cdd(n.as_deref(), d.as_deref(), m, qui)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn le_cpf_cdd_suit_la_nature_et_le_motif() {
-        assert!(!ouvre_cpf_cdd(Some("01"), Some("99"), None, "x").unwrap(), "un CDI");
-        assert!(!ouvre_cpf_cdd(Some("02"), Some("99"), Some(MotifDeRecours::ContratDUsage), "x").unwrap(), "un CDD d'usage : L. 6331-55");
-        assert!(!ouvre_cpf_cdd(Some("02"), Some("99"), Some(MotifDeRecours::Saisonnier), "x").unwrap(), "un saisonnier : L. 6331-6");
-        assert!(ouvre_cpf_cdd(Some("02"), Some("99"), Some(MotifDeRecours::Accroissement), "x").unwrap(), "un accroissement d'activite");
-        assert!(ouvre_cpf_cdd(Some("02"), Some("99"), None, "x").is_err(), "sans motif, on ne sait pas");
-        assert!(ouvre_cpf_cdd(Some("02"), Some("64"), Some(MotifDeRecours::Apprentissage), "x").is_err(), "un apprenti : D. 6331-72");
-        assert!(ouvre_cpf_cdd(None, None, None, "x").is_err(), "sans nature, on ne sait pas");
+        assert!(!ouvre_cpf_cdd(NatureDeContrat::Cdi, None, "x").unwrap(), "un CDI");
+        assert!(!ouvre_cpf_cdd(NatureDeContrat::CdduSpectacle, None, "x").unwrap(), "un CDD d'usage : L. 6331-55");
+        assert!(!ouvre_cpf_cdd(NatureDeContrat::Cdd, Some(MotifDeRecours::Saisonnier), "x").unwrap(), "un saisonnier : L. 6331-6");
+        assert!(ouvre_cpf_cdd(NatureDeContrat::Cdd, Some(MotifDeRecours::Accroissement), "x").unwrap(), "un accroissement d'activite");
+        assert!(ouvre_cpf_cdd(NatureDeContrat::Cdd, None, "x").is_err(), "sans motif, on ne sait pas");
     }
 }
