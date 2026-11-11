@@ -938,12 +938,12 @@ impl Lecture {
     }
 
     /// LA CASE `cle` ET CE QU'ON EN ATTEND ; une case que la table ne decrit pas : la phrase qui le dit.
-    fn attendu(&self, cle: &str) -> Result<(NomDeCase, Attendu), String> {
+    fn attendu(&self, cle: &str) -> socle::echec::R<(NomDeCase, Attendu)> {
         match self.niveau {
             Niveau::Fiche(fiche, champs) => {
                 let Some(c) = champs.iter().find(|c| c.cle.nom() == cle) else {
                     let connues: Vec<&str> = champs.iter().filter(|c| !c.calcule()).map(|c| c.cle.nom()).collect();
-                    return Err(format!("la case « {} » n'existe pas dans la fiche {} ; ses cases sont : {}", cle, fiche, connues.join(", ")));
+                    return Err(socle::refus!("la case « {} » n'existe pas dans la fiche {} ; ses cases sont : {}", cle, fiche, connues.join(", ")));
                 };
                 let a = match (c.forme, c.champs.as_deref(), &c.ligne) {
                     (Forme::Histoire, _, _) => Attendu::Histoire,
@@ -955,7 +955,7 @@ impl Lecture {
                 Ok((c.cle, a))
             }
             Niveau::Structure(cases, declarees) => {
-                let inconnue = || format!("la case « {} » n'existe pas ; ses cases sont : {}", cle, cases_dites(cases));
+                let inconnue = || socle::refus!("la case « {} » n'existe pas ; ses cases sont : {}", cle, cases_dites(cases));
                 let Some(d) = declarees.iter().find(|d| d.cle.nom() == cle) else { return Err(inconnue()) };
                 let chemin = Chemin { devant: self.devant.clone(), nom: d.cle };
                 match cases.iter().find(|s| s.cle == chemin) {
@@ -975,7 +975,7 @@ impl Lecture {
             }
             Niveau::Libre(declarees) => match declarees.iter().find(|d| d.cle.nom() == cle) {
                 Some(d) => Ok((d.cle, Attendu::Quelconque(&d.cases))),
-                None => Err(format!("la case « {} » n'existe pas", cle)),
+                None => Err(socle::refus!("la case « {} » n'existe pas", cle)),
             },
         }
     }

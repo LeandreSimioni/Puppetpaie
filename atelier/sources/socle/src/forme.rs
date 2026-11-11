@@ -598,13 +598,6 @@ impl From<i64> for NombreLu {
     }
 }
 
-impl std::str::FromStr for NombreLu {
-    type Err = String;
-    fn from_str(t: &str) -> Result<NombreLu, Self::Err> {
-        t.parse::<serde_json::Number>().map(NombreLu).map_err(|_| crate::num::illisible(t))
-    }
-}
-
 impl std::fmt::Display for NombreLu {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.0.fmt(f)

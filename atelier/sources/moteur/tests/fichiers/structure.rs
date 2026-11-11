@@ -941,18 +941,16 @@ fn l_engagement_ne_lit_pas_le_journal() {
 }
 
 /// UN REFUS EST UN `Echec`, JAMAIS UN TEXTE : aucune source du logiciel (tests a part, commentaires blanchis) n'ecrit
-/// `Result<…, String>` (une impl de `TryFrom` ou `FromStr` pour serde rend `Self::Error`, ce que serde exige), et le refus
-/// en texte n'existe plus : ni `A_PART` du socle, ni `phrase_de`, ni `objet_en_tete`, ni `echec::avec`.
+/// `Result<…, String>` ni `type Error = String` (`TryFrom`, `FromStr` : serde ne demande a l'erreur que de s'afficher, ce
+/// qu'un `Echec` fait), et le refus en texte n'existe plus : ni `echec::A_PART`, ni `phrase_de`, ni `objet_en_tete`, ni
+/// `echec::avec`.
 #[test]
 fn un_refus_n_est_jamais_un_texte() {
-    let partout = regex::Regex::new(r"Result<.*,\s*String\s*>|\bphrase_de\b|\bobjet_en_tete\b|echec::(A_PART|avec)\b").unwrap();
-    // Dans le socle, `A_PART` et `avec` ne nomment que le refus en texte (ailleurs, `A_PART` nomme les cases d'une fiche).
-    let socle = regex::Regex::new(r"\bA_PART\b|\bfn avec\b").unwrap();
+    let texte = regex::Regex::new(r"Result<.*,\s*String\s*>|\btype\s+Err(?:or)?\s*=\s*String\b|\bphrase_de\b|\bobjet_en_tete\b|echec::(A_PART|avec)\b").unwrap();
     let mut fautes = Vec::new();
-    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
-        let texte = if p.starts_with(espace().join("socle")) { &socle } else { &partout };
+    for p in ORDRE.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
         for (n, l) in code_seul(&std::fs::read_to_string(&p).unwrap()).lines().enumerate() {
-            if let Some(m) = partout.find(l).or_else(|| texte.find(l)) {
+            if let Some(m) = texte.find(l) {
                 fautes.push(format!("{}:{} : `{}`", p.strip_prefix(espace()).unwrap().display(), n + 1, m.as_str()));
             }
         }
@@ -1172,6 +1170,56 @@ fn aucun_flottant_dans_le_code() {
         }
     }
     assert!(fautes.is_empty(), "aucun flottant dans le code : un `Decimal`, une `Mesure` ou des entiers :\n{}", fautes.join("\n"));
+}
+
+/// AUCUN ATTRIBUT NE LEVE UN LINT : les niveaux de l'espace (`[workspace.lints.rust]` de `atelier/sources/Cargo.toml`,
+/// repris par chaque crate, et les memes dans `fabrique-pdf/` et `fenetre/`) valent pour tout le code. Aucun `.rs` du
+/// depot (code, essais, scripts de construction) n'ecrit `allow(…)`, `expect(…)` ni `warn(…)`, en attribut ou sous un
+/// `cfg_attr` : un champ qu'on ne lit pas est une `socle::forme::NonLue`, un code mort se supprime, un code propre a une
+/// cible se range sous son `cfg`. Le verrou n'a ni liste ni exemption.
+#[test]
+fn aucun_attribut_ne_leve_un_lint() {
+    let leve = regex::Regex::new(r"#!?\[\s*(?:allow|expect|warn)\s*\(|\bcfg_attr\s*\([^\]]*\b(?:allow|expect|warn)\s*\(").unwrap();
+    let mut fichiers = Vec::new();
+    sources_hors_cibles(&espace(), &mut fichiers);
+    fichiers.sort();
+    assert!(fichiers.len() > 100, "les sources Rust ne sont pas ou on les cherche : {}", espace().display());
+    let mut fautes = Vec::new();
+    for p in fichiers {
+        let code: String = code_sans_textes(&std::fs::read_to_string(&p).unwrap()).into_iter().collect();
+        for m in leve.find_iter(&code) {
+            let n = code[..m.start()].matches('\n').count() + 1;
+            fautes.push(format!("{}:{} : `{}`", p.strip_prefix(espace()).unwrap().display(), n, m.as_str()));
+        }
+    }
+    // Les niveaux eux-memes : chaque crate de l'espace reprend ceux de l'espace, la fabrique et la fenetre portent les
+    // memes ; aucune configuration de Cargo ne les abaisse.
+    let niveaux = |t: &str, table: &str| -> Vec<String> {
+        let apres = t.split(table).nth(1).unwrap_or("");
+        apres.lines().skip(1).take_while(|l| !l.starts_with('[')).map(|l| l.split('#').next().unwrap().trim().to_string()).filter(|l| !l.is_empty()).collect()
+    };
+    let espace_toml = std::fs::read_to_string(espace().join("Cargo.toml")).unwrap();
+    let attendus = niveaux(&espace_toml, "[workspace.lints.rust]");
+    assert!(attendus.iter().any(|l| l.starts_with("dead_code = \"forbid\"")), "l'espace interdit le code mort : {:?}", attendus);
+    for e in std::fs::read_dir(espace()).unwrap().flatten() {
+        let toml = e.path().join("Cargo.toml");
+        if let Ok(t) = std::fs::read_to_string(&toml) {
+            let propres = niveaux(&t, "[lints.rust]");
+            let repris = niveaux(&t, "[lints]") == ["workspace = true"];
+            if !(repris || propres == attendus) {
+                fautes.push(format!("{} : ni `[lints] workspace = true`, ni les niveaux de l'espace", toml.strip_prefix(espace()).unwrap().display()));
+            }
+        }
+    }
+    for config in [espace().join(".cargo"), espace().join("../../.cargo")] {
+        for f in std::fs::read_dir(&config).into_iter().flatten().flatten() {
+            let t = std::fs::read_to_string(f.path()).unwrap();
+            if t.contains("-A") || t.contains("--cap-lints") || t.contains("-W") {
+                fautes.push(format!("{} abaisse un lint", f.path().display()));
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "aucun attribut ne leve un lint : le code se corrige ({} écarts) :\n{}", fautes.len(), fautes.join("\n"));
 }
 
 /// Les fichiers `.rs` sous `d`, hors des cibles de compilation (`target`).

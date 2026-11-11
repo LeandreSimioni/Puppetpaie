@@ -55,7 +55,7 @@ pub fn fractions_majorees(base: Decimal, seuil_1: Decimal, seuil_2: Decimal) -> 
 ///   a deduction ; le rapport de l'article 231 vaut donc 100 - `part_tva`. A 90 au moins, la taxe n'est pas due ;
 /// - `sous_franchise` : quand la taxe serait due, le chiffre d'affaires de l'annee precedente n'excede-t-il pas les
 ///   plafonds de l'article 293 B ? (2e alinea) ;
-/// - `association_1679A` : quand la taxe est due, l'abattement de l'article 1679 A s'applique-t-il ?
+/// - `association_1679a` : quand la taxe est due, l'abattement de l'article 1679 A s'applique-t-il ?
 /// Chaque case ne se montre que si la precedente l'appelle (`champs`). Une case qui manque fait refuser la DSN de
 /// decembre, avec ce qu'il faut dire (regle 1 : rien ne se devine).
 #[derive(Debug, Clone, PartialEq)]
@@ -197,8 +197,8 @@ sur les salaires. Sans réponse, la DSN de décembre ne se fait pas.",
             )
         }
     }
-    champs.push("association_1679A");
-    let association = fiche.is_some_and(|f| f.association_1679A.oui());
+    champs.push("association_1679a");
+    let association = fiche.is_some_and(|f| f.association_1679a.oui());
     RegimeTaxeSalaires {
         decision: Decision::DueSur(part_taxee),
         association,

@@ -744,7 +744,6 @@ macro_rules! cases {
     };
     ($(#[$m:meta])* pub struct $nom:ident { $( $(#[$fm:meta])* $champ:ident : $t:ty ),* $(,)? } $( notes { $( $(#[$nm:meta])* $note:ident ),* $(,)? } )?) => {
         $(#[$m])*
-        #[allow(non_snake_case)] // `association_1679A`, la cle ecrite
         #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
         #[serde(deny_unknown_fields)]
         pub struct $nom {
@@ -1497,7 +1496,7 @@ cases! {
 
 cases! {
     /// Le bloc S21.G00.44 : la compagnie doit-elle la taxe sur les salaires.
-    pub struct TaxeSurLesSalaires { tva: Tva, part_tva: Montant, sous_franchise: bool, association_1679A: bool }
+    pub struct TaxeSurLesSalaires { tva: Tva, part_tva: Montant, sous_franchise: bool, association_1679a: bool }
 }
 
 cases! {
