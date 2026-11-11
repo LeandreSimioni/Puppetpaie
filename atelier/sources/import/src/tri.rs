@@ -280,10 +280,10 @@ impl Trieur {
         };
         let assaini: String = nom.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' }).collect();
         let cible = self.travail.join(format!("{}-{}", assaini, &f.empreinte[..12]));
-        let _ = std::fs::remove_dir_all(&cible);
-        if let Err(e) = std::fs::create_dir_all(&cible) {
+        let pret = socle::fichiers::effacer(&cible).and_then(|()| std::fs::create_dir_all(&cible).map_err(|e| socle::echec::du_disque(&cible, &e)));
+        if let Err(e) = pret {
             f.sorte = Sorte::Illisible;
-            f.raison = Some(format!("le dossier de travail de l'archive ne se cree pas ({})", e));
+            f.raison = Some(format!("le dossier de travail de l'archive ne se cree pas ({})", e.phrase));
             self.fichiers.push(f);
             return;
         }
@@ -313,7 +313,12 @@ impl Trieur {
             };
             let chemin = cible.join(rel);
             if e.is_dir() {
-                let _ = std::fs::create_dir_all(&chemin);
+                if let Err(x) = std::fs::create_dir_all(&chemin) {
+                    let mut r = self.nouveau(format!("{}/{}", f.chemin, brut.trim_end_matches('/')), chemin.clone(), Some(&f.chemin));
+                    r.sorte = Sorte::Illisible;
+                    r.raison = Some(format!("dossier d'archive qui ne se cree pas ({})", x));
+                    refusees.push(r);
+                }
                 continue;
             }
             let mut contenu = Vec::new();
@@ -334,8 +339,10 @@ impl Trieur {
                     let mut r = self.nouveau(format!("{}/{}", f.chemin, brut.trim_end_matches('/')), chemin.clone(), Some(&f.chemin));
                     r.sorte = Sorte::Illisible;
                     r.taille = e.size();
-                    r.raison = Some(format!("entree d'archive qui ne s'extrait pas ({})", m));
-                    let _ = std::fs::remove_file(&chemin);
+                    r.raison = Some(match socle::fichiers::effacer(&chemin) {
+                        Ok(()) => format!("entree d'archive qui ne s'extrait pas ({})", m),
+                        Err(n) => format!("entree d'archive qui ne s'extrait pas ({}), et ce qui en est sorti ne s'efface pas ({})", m, n.phrase),
+                    });
                     refusees.push(r);
                     if total > DECOMPRESSE_MAX {
                         break;

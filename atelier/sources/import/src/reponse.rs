@@ -214,7 +214,7 @@ impl Origine {
         let fichier = match (&self.fichier, self.page) {
             (Some(f), Some(p)) => format!(" ({}, page {})", f, p),
             (Some(f), None) => format!(" ({})", f),
-            _ => String::new(),
+            (None, _) => String::new(),
         };
         let de_mois: String = self.mois.iter().map(|m| format!(" {}", socle::texte::de(&m.libelle(Graphie::Accentuee)))).collect();
         match self.source {
@@ -693,11 +693,11 @@ impl Importation {
         // Les declarations.
         let periode = match (self.premier_mois, self.dernier_mois) {
             (Some(p), Some(d)) => format!(" ({} → {})", p.libelle(Graphie::Accentuee), d.libelle(Graphie::Accentuee)),
-            _ => String::new(),
+            (None, _) | (_, None) => String::new(),
         };
         let contrats_du_au = match (self.contrats_du, self.contrats_au) {
             (Some(du), Some(au)) => format!(" du {} au {}", du.jj_mm_aaaa(), au.jj_mm_aaaa()),
-            _ => String::new(),
+            (None, _) | (_, None) => String::new(),
         };
         let contrats = if self.contrats > 0 {
             format!(
@@ -736,7 +736,7 @@ impl Importation {
             .collect();
             let du = match (b.du, b.au) {
                 (Some(d), Some(a)) => format!(" du {} au {}", d.jj_mm_aaaa(), a.jj_mm_aaaa()),
-                _ => String::new(),
+                (None, _) | (_, None) => String::new(),
             };
             format!(
                 "{} bulletin{} lu{} sur {} page{}{} ; {} {}{}.",
@@ -767,7 +767,7 @@ impl Importation {
             .collect();
             let du = match (c.du, c.au) {
                 (Some(d), Some(a)) => format!(" du {} au {}", d.jj_mm_aaaa(), a.jj_mm_aaaa()),
-                _ => String::new(),
+                (None, _) | (_, None) => String::new(),
             };
             c.dit = format!(
                 "{} {} lu{}{}{}.{}",
@@ -808,7 +808,7 @@ impl Importation {
         let b = &self.bulletins;
         let periode = match (b.du, b.au) {
             (Some(du), Some(au)) => format!(" (du {} au {})", du.jj_mm_aaaa(), au.jj_mm_aaaa()),
-            _ => String::new(),
+            (None, _) | (_, None) => String::new(),
         };
         self.phrase = format!(
             "Dans le dossier lu : {} bulletins lus{}, {} à reprendre, fiches à créer : {} ; DSN : {} ; AEM : {}. Rien n'est écrit.",

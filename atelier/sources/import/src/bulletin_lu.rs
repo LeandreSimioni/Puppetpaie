@@ -1366,8 +1366,9 @@ impl<'a> Lecteur<'a> {
                 continue;
             }
             for k in 0..=n {
-                if let Ok(x) = a.plus_jours(k) {
-                    jours_travailles.push(x);
+                match a.plus_jours(k) {
+                    Ok(x) => jours_travailles.push(x),
+                    Err(e) => self.avertissements.push(format!("dates travaillées du {} au {} : {}", a.iso(), b.iso(), e.phrase)),
                 }
             }
         }
