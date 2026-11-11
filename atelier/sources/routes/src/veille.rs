@@ -21,8 +21,8 @@ pub struct EtatDeLaVeille {
 
 /// « à 16:28 » le jour du passage, « le 23/09 à 16:28 » un autre jour : l'heure d'un passage, au jour de l'horloge de
 /// Paris (celle d'une fictive au banc comprise).
-fn heure_du_passage(quand: socle::paris::MinuteDite) -> String {
-    let (jour, s) = (quand.naif().jour(), quand.naif().seconde_du_jour());
+fn heure_du_passage(quand: socle::paris::Moment) -> String {
+    let (jour, s) = (quand.jour_de_paris(), quand.seconde_du_jour_de_paris());
     let heure = format!("{:02}:{:02}", s / 3_600, s / 60 % 60);
     if socle::paris::InstantEcrit::maintenant().jour() == jour {
         format!("à {}", heure)

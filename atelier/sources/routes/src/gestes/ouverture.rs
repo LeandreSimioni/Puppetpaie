@@ -33,7 +33,7 @@ use envois::drive::Drive;
 use envois::etats;
 use socle::echec::R;
 use socle::num::Decimal;
-use socle::paris::{InstantEcrit, MinuteDite};
+use socle::paris::{ecrit, InstantEcrit, Moment};
 use envois::releve_retours::{Client, Releve};
 use envois::releve_signatures::ReleveDite;
 use crate::gestes::releve_signatures::{self, ReleveSignatures};
@@ -192,8 +192,8 @@ pub struct Clients<'a> {
 
 /// `Ouverture` : le compte rendu d'un passage.
 pub struct Ouverture {
-    /// L'heure de Paris du passage.
-    pub quand: MinuteDite,
+    /// L'heure du passage, a la minute.
+    pub quand: Moment,
     pub sauvegarde: Option<Sauvegarde>,
     /// Les retours DSN (dans une compagnie fictive : un releve vide qui ne porte que `rattaches`).
     pub releve: Option<Releve>,
@@ -224,7 +224,7 @@ impl Ouverture {
     /// Le compte rendu d'un passage qui commence maintenant, rien encore de fait.
     fn commence() -> Ouverture {
         Ouverture {
-            quand: MinuteDite::maintenant(),
+            quand: socle::temps::secondes().a_la_minute(),
             sauvegarde: None,
             releve: None,
             releve_dpae: None,
@@ -267,8 +267,8 @@ impl Ouverture {
     pub fn dite(self) -> OuvertureDite {
         let retours_resume = self.releve.as_ref().map(Ouverture::resume_retours);
         let phrase = match &retours_resume {
-            Some(r) => format!("Ouverture du {} : {}", self.quand, r),
-            None => format!("Ouverture du {}.", self.quand),
+            Some(r) => format!("Ouverture du {} : {}", ecrit::francaise::texte(self.quand), r),
+            None => format!("Ouverture du {}.", ecrit::francaise::texte(self.quand)),
         };
         let phrases: Vec<String> = self.horloge.iter().chain(&self.manquants).chain(&self.incidents).cloned().collect();
         let sauvegarde = self.sauvegarde.as_ref().map(|s| SauvegardeDite {
@@ -334,7 +334,8 @@ impl Ouverture {
 #[derive(Debug, Serialize)]
 pub struct OuvertureDite {
     pub phrase: String,
-    pub quand: MinuteDite,
+    #[serde(with = "socle::paris::ecrit::francaise")]
+    pub quand: Moment,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]
     pub secondes: Decimal,
     pub sauvegarde: Option<SauvegardeDite>,
@@ -454,11 +455,12 @@ fn chemin_etape(racine: &Path) -> std::path::PathBuf {
 #[serde(deny_unknown_fields)]
 struct Etape {
     etape: String,
-    depuis: MinuteDite,
+    #[serde(with = "socle::paris::ecrit::francaise")]
+    depuis: Moment,
 }
 
 fn dire_l_etape(ctx: &Contexte, etape: &str) -> R<()> {
-    socle::ecriture::ecrire_json(&chemin_etape(&ctx.racine), &Etape { etape: etape.to_string(), depuis: MinuteDite::maintenant() }, 1)
+    socle::ecriture::ecrire_json(&chemin_etape(&ctx.racine), &Etape { etape: etape.to_string(), depuis: socle::temps::secondes().a_la_minute() }, 1)
 }
 
 fn finir_les_etapes(ctx: &Contexte) -> R<()> {
@@ -487,7 +489,8 @@ fn chemin_trace(ctx: &Contexte) -> std::path::PathBuf {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Trace {
-    pub quand: MinuteDite,
+    #[serde(with = "socle::paris::ecrit::francaise")]
+    pub quand: Moment,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule", deserialize_with = "socle::forme::decimal")]
     pub secondes: Decimal,
     /// La ligne de la sauvegarde, quand elle a eu lieu.
@@ -643,7 +646,7 @@ fn est_copie(racine: &Path) -> bool {
 
 /// `pas_avant` : l'age, en secondes, de la derniere ouverture, d'apres le `quand` de sa trace.
 fn age_de_la_derniere(precedente: &Trace) -> i64 {
-    socle::paris::maintenant_naif().depuis(precedente.quand.naif())
+    socle::paris::maintenant_naif().depuis(precedente.quand.local_naif())
 }
 
 /// Le coffre dit-il que `service` est pose (ou dans l'environnement) ? `Err` : le coffre refuse de s'ouvrir.

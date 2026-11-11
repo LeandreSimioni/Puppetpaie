@@ -687,60 +687,6 @@ impl<'de> serde::Deserialize<'de> for HeureDeSaisie {
     }
 }
 
-/// UNE MINUTE DITE A LA FRANCAISE : l'heure de Paris `JJ/MM/AAAA HH:MM` (l'heure d'un passage de l'ouverture, que le
-/// bandeau montre). Meme regle que l'instant a la seconde, dans sa forme a elle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct MinuteDite(Naif);
-
-impl MinuteDite {
-    /// L'heure de Paris a cet instant (`socle::temps`), tronquee a la minute.
-    pub fn maintenant() -> MinuteDite {
-        MinuteDite(MinuteEcrite::maintenant().0)
-    }
-
-    /// `JJ/MM/AAAA HH:MM`, et rien d'autre ; `None` sinon.
-    pub(crate) fn lire(texte: &str) -> Option<MinuteDite> {
-        let c: Vec<char> = texte.chars().collect();
-        if c.len() != 16 {
-            return None;
-        }
-        let t = |a: usize, b: usize| -> String { c[a..b].iter().collect() };
-        let n = Naif::lire(&format!("{}-{}-{}T{}", t(6, 10), t(3, 5), t(0, 2), t(11, 16)))?;
-        let m = MinuteDite(MinuteEcrite::du_naif(n).0);
-        (m.texte() == texte).then_some(m)
-    }
-
-    /// L'heure naive.
-    pub fn naif(self) -> Naif {
-        self.0
-    }
-
-    /// `JJ/MM/AAAA HH:MM`.
-    pub fn texte(self) -> String {
-        let reste = self.0.seconde_du_jour();
-        format!("{} {:02}:{:02}", self.0.jour().jj_mm_aaaa(), reste / 3_600, (reste % 3_600) / 60)
-    }
-}
-
-impl std::fmt::Display for MinuteDite {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.texte())
-    }
-}
-
-impl serde::Serialize for MinuteDite {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.texte())
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for MinuteDite {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<MinuteDite, D::Error> {
-        let s = String::deserialize(d)?;
-        MinuteDite::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas une heure JJ/MM/AAAA HH:MM", crate::date::repr_texte(&s))))
-    }
-}
-
 impl std::fmt::Display for InstantEcrit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.iso())
