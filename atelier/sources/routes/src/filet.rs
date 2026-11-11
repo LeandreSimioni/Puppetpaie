@@ -296,7 +296,7 @@ struct SignalementDit {
     #[serde(flatten)]
     vu: SignalementVu,
     quand_dit: String,
-    /// Le ticket ou l'editeur suit le signalement, dit en mots pour la page ; absent quand il n'y en a pas.
+    /// Ou l'editeur suit le signalement, dit en mots pour la page ; absent quand rien ne le suit.
     ticket_dit: Option<String>,
     pastille: Option<Pastille>,
     depart: Pastille,
