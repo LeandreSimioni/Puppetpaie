@@ -213,7 +213,14 @@ struct SansType {
 
 /// L'expression est-elle de celles que le moteur sait compiler ?
 fn compile(expression: &str) -> bool {
-    declarations::formats::Regex::compiler(expression).is_ok()
+    match declarations::formats::Regex::compiler(expression) {
+        Ok(_) => true,
+        // Le refus est la reponse : le releve note l'expression comme non compilee.
+        Err(la_reponse) => {
+            let _ = la_reponse;
+            false
+        }
+    }
 }
 
 /// Les groupes de `CSL\s*\d*\s*:\s*(.*?)(?=\n[ \t]*\n)` (drapeau `S` : `.` prend aussi le saut de ligne), cherches de

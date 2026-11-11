@@ -552,9 +552,8 @@ pub fn premiers_caracteres(s: &str, n: usize) -> &str {
     }
 }
 
-/// Ecrit une ligne sur la sortie standard ; un tuyau ferme n'est pas une erreur.
+/// Ecrit une ligne sur la sortie standard (`socle::dire!` : un tuyau ferme se tait, une autre panne se note ; la sortie
+/// standard part a chaque fin de ligne).
 pub fn dire(t: &str) {
-    let mut o = std::io::stdout().lock();
-    let _ = writeln!(o, "{}", t);
-    let _ = o.flush();
+    socle::dire!("{}", t);
 }

@@ -15,11 +15,14 @@ use envois::redirection::{est_locale, VARIABLE_DPAE, VARIABLE_DSN, VARIABLE_GOOG
 /// Au demarrage de `moteur-atelier` : une variable posee sur autre chose qu'un serveur local arrete tout.
 pub fn verifier_environnement() -> socle::echec::R<()> {
     for variable in [VARIABLE_DSN, VARIABLE_DPAE, VARIABLE_GOOGLE] {
-        if let Ok(v) = std::env::var(variable) {
-            let v = v.trim();
-            if !v.is_empty() && !est_locale(v) {
-                return Err(socle::refus!("{} : l'atelier ne se redirige que vers un serveur local (http://127.0.0.1:PORT/...). Rien n'est parti.", variable));
-            }
+        let v = match std::env::var(variable) {
+            Ok(v) => v,
+            Err(std::env::VarError::NotPresent) => continue,
+            Err(std::env::VarError::NotUnicode(_)) => return Err(socle::refus!("{} ne se lit pas : ce n'est pas du texte. Rien n'est parti.", variable)),
+        };
+        let v = v.trim();
+        if !v.is_empty() && !est_locale(v) {
+            return Err(socle::refus!("{} : l'atelier ne se redirige que vers un serveur local (http://127.0.0.1:PORT/...). Rien n'est parti.", variable));
         }
     }
     Ok(())

@@ -173,10 +173,7 @@ fn ecrire(releve: &Releve, sortie: &Path, remplacer: bool) -> R<()> {
     }
     let tmp = socle::ecriture::provisoire(sortie);
     std::fs::write(&tmp, releve.octets()).map_err(|e| refus!("{} : {}", tmp.display(), e))?;
-    std::fs::rename(&tmp, sortie).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        refus!("{} : {}", sortie.display(), e)
-    })
+    std::fs::rename(&tmp, sortie).map_err(|e| socle::fichiers::effacer_apres(refus!("{} : {}", sortie.display(), e), &tmp))
 }
 
 // ------------------------------------------------------------------ la transcription du cahier en PDF
@@ -274,8 +271,7 @@ fn transcrire(args: &[&str], remplacer: bool) -> i32 {
     for (texte, sortie) in [(u, &sorties[0]), (f, &sorties[1])] {
         let tmp = socle::ecriture::provisoire(sortie);
         if let Err(e) = std::fs::write(&tmp, texte).and_then(|_| std::fs::rename(&tmp, sortie)) {
-            let _ = std::fs::remove_file(&tmp);
-            eprintln!("{} : {}", sortie.display(), e);
+            eprintln!("{}", socle::fichiers::effacer_apres(refus!("{} : {}", sortie.display(), e), &tmp).en_lignes());
             return 1;
         }
         dire!("-> {}", sortie.display());

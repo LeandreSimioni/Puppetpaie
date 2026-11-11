@@ -221,26 +221,33 @@ fn intervalles(garde: impl Fn(u32) -> bool) -> Vec<(u32, u32)> {
     out
 }
 
-fn ecrire_intervalles(s: &mut String, v: &[(u32, u32)]) {
+/// Ce que rend une ecriture dans le texte genere : un formatage qui refuse remonte.
+fn ecrit(r: std::fmt::Result) -> R<()> {
+    r.map_err(|e| refus(format!("Le texte généré ne s'écrit pas : {}.", e)))
+}
+
+fn ecrire_intervalles(s: &mut String, v: &[(u32, u32)]) -> R<()> {
     for (a, b) in v {
-        let _ = writeln!(s, "    (0x{:X}, 0x{:X}),", a, b);
+        ecrit(writeln!(s, "    (0x{:X}, 0x{:X}),", a, b))?;
     }
     s.push_str("];\n");
+    Ok(())
 }
 
-fn en_tete(s: &mut String, fichiers: &[&str], version: Option<&str>) {
-    let _ = match version {
+fn en_tete(s: &mut String, fichiers: &[&str], version: Option<&str>) -> R<()> {
+    ecrit(match version {
         Some(v) => writeln!(s, "//! GENERE par `moteur generer-tables` : ne pas editer. Unicode {}.", v),
         None => writeln!(s, "//! GENERE par `moteur generer-tables` : ne pas editer."),
-    };
+    })?;
     for f in fichiers {
-        let _ = writeln!(s, "//! Lu dans `atelier/reference/sources/{}`.", f);
+        ecrit(writeln!(s, "//! Lu dans `atelier/reference/sources/{}`.", f))?;
     }
+    Ok(())
 }
 
-fn tables_nfkc(u: &Ucd) -> String {
+fn tables_nfkc(u: &Ucd) -> R<String> {
     let mut s = String::new();
-    en_tete(&mut s, &[UNICODE_DONNEES, UNICODE_NORMALISATION], Some(&u.version));
+    en_tete(&mut s, &[UNICODE_DONNEES, UNICODE_NORMALISATION], Some(&u.version))?;
     s.push_str("//!\n");
     s.push_str("//! Les tables de `nfkc.rs`. `DECOMP_POINTS[i]` se decompose en `DECOMP_TEXTE`\n");
     s.push_str("//! de `DECOMP_PLACE[i] >> 7` sur `DECOMP_PLACE[i] & 127` octets (NFKD complet).\n\n");
@@ -258,15 +265,15 @@ fn tables_nfkc(u: &Ucd) -> String {
     }
     s.push_str("pub const DECOMP_POINTS: &[u32] = &[\n");
     for morceau in dec.chunks(12) {
-        let _ = writeln!(s, "    {},", morceau.iter().map(|(c, _)| format!("0x{:X}", c)).collect::<Vec<_>>().join(", "));
+        ecrit(writeln!(s, "    {},", morceau.iter().map(|(c, _)| format!("0x{:X}", c)).collect::<Vec<_>>().join(", ")))?;
     }
     s.push_str("];\n\npub const DECOMP_PLACE: &[u32] = &[\n");
     for morceau in places.chunks(12) {
-        let _ = writeln!(s, "    {},", morceau.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", "));
+        ecrit(writeln!(s, "    {},", morceau.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ")))?;
     }
     s.push_str("];\n\npub const DECOMP_TEXTE: &str = \"");
     for c in texte.chars() {
-        let _ = write!(s, "\\u{{{:x}}}", c as u32);
+        ecrit(write!(s, "\\u{{{:x}}}", c as u32))?;
     }
     s.push_str("\";\n\n/// (debut, fin, classe de combinaison), par intervalles.\npub const CLASSES: &[(u32, u32, u8)] = &[\n");
     let mut classes: Vec<(u32, u32, u8)> = Vec::new();
@@ -278,7 +285,7 @@ fn tables_nfkc(u: &Ucd) -> String {
         }
     }
     for (a, b, k) in classes {
-        let _ = writeln!(s, "    (0x{:X}, 0x{:X}, {}),", a, b, k);
+        ecrit(writeln!(s, "    (0x{:X}, 0x{:X}, {}),", a, b, k))?;
     }
     // Les composites primaires (D114) de decomposition canonique en deux points de code : ni exclusion de composition
     // complete (D113), ni syllabe Hangul (composee par le calcul).
@@ -291,15 +298,15 @@ fn tables_nfkc(u: &Ucd) -> String {
     compositions.sort();
     s.push_str("];\n\n/// (premier, second, compose), triees par (premier, second).\npub const COMPOSITIONS: &[(u32, u32, u32)] = &[\n");
     for (a, b, c) in compositions {
-        let _ = writeln!(s, "    (0x{:X}, 0x{:X}, 0x{:X}),", a, b, c);
+        ecrit(writeln!(s, "    (0x{:X}, 0x{:X}, 0x{:X}),", a, b, c))?;
     }
     s.push_str("];\n");
-    s
+    Ok(s)
 }
 
-fn nfkd_ascii(u: &Ucd) -> String {
+fn nfkd_ascii(u: &Ucd) -> R<String> {
     let mut s = String::new();
-    en_tete(&mut s, &[UNICODE_DONNEES, UNICODE_NUMERIQUE], Some(&u.version));
+    en_tete(&mut s, &[UNICODE_DONNEES, UNICODE_NUMERIQUE], Some(&u.version))?;
     s.push_str("//!\n");
     s.push_str("//! Ce que `unicodedata.normalize(\"NFKD\", c).encode(\"ascii\", \"ignore\")` laisse\n");
     s.push_str("//! de chaque caractere non ASCII. `(debut, fin, texte, avance)` : de `debut` a `fin`,\n");
@@ -330,12 +337,12 @@ fn nfkd_ascii(u: &Ucd) -> String {
     }
     s.push_str("pub const TABLE: &[(u32, u32, &str, bool)] = &[\n");
     for (debut, fin, t, avance) in &suites {
-        let _ = writeln!(s, "    (0x{:X}, 0x{:X}, \"{}\", {}),", debut, fin, t.replace('\\', "\\\\").replace('"', "\\\""), avance == &Some(1) && fin > debut);
+        ecrit(writeln!(s, "    (0x{:X}, 0x{:X}, \"{}\", {}),", debut, fin, t.replace('\\', "\\\\").replace('"', "\\\""), avance == &Some(1) && fin > debut))?;
     }
-    let _ = write!(s, "];\n\n/// Les intervalles de points de code ou `str.isdigit()` est vrai (Unicode {}).\npub const CHIFFRES: &[(u32, u32)] = &[\n", u.version);
+    ecrit(write!(s, "];\n\n/// Les intervalles de points de code ou `str.isdigit()` est vrai (Unicode {}).\npub const CHIFFRES: &[(u32, u32)] = &[\n", u.version))?;
     // `str.isdigit` : Numeric_Type=Digit ou Numeric_Type=Decimal (`python/LISEZ-MOI.md`).
-    ecrire_intervalles(&mut s, &intervalles(|c| matches!(u.numerique.get(&c).map(String::as_str), Some("Decimal" | "Digit"))));
-    s
+    ecrire_intervalles(&mut s, &intervalles(|c| matches!(u.numerique.get(&c).map(String::as_str), Some("Decimal" | "Digit"))))?;
+    Ok(s)
 }
 
 /// Le point de code d'un octet que la page ne definit pas : U+FFFD, le caractere de remplacement.
@@ -414,22 +421,22 @@ fn production(page: &str, nom: &str) -> R<Vec<(u32, u32)>> {
 
 fn tables_retours(sources: &Path, u: &Ucd) -> R<String> {
     let mut s = String::new();
-    en_tete(&mut s, &[UNICODE_DONNEES, CP437, CP1252, CODECS, XML_4E], Some(&u.version));
+    en_tete(&mut s, &[UNICODE_DONNEES, CP437, CP1252, CODECS, XML_4E], Some(&u.version))?;
     // `\d` de `re` sur du texte : la categorie Nd (`python/LISEZ-MOI.md`).
     s.push_str("\n/// Les intervalles de points de code ou `str.isdecimal()` est vrai (le `\\d` de `re`).\npub const DECIMAUX: &[(u32, u32)] = &[\n");
-    ecrire_intervalles(&mut s, &intervalles(|c| &u.categorie[c as usize] == b"Nd"));
+    ecrire_intervalles(&mut s, &intervalles(|c| &u.categorie[c as usize] == b"Nd"))?;
     for (nom, fichier, doc) in [("CP437", CP437, "cp437 des octets 0x80 a 0xFF"), ("WINDOWS_1252", CP1252, "windows-1252 des octets 0x80 a 0xFF (U+FFFD : non defini)")] {
-        let _ = write!(s, "\n/// {}.\npub const {}: [u32; 128] = [\n", doc, nom);
+        ecrit(write!(s, "\n/// {}.\npub const {}: [u32; 128] = [\n", doc, nom))?;
         for ligne in page_de_code(sources, fichier)?.chunks(8) {
-            let _ = writeln!(s, "    {},", ligne.iter().map(|x| format!("0x{:X}", x)).collect::<Vec<_>>().join(", "));
+            ecrit(writeln!(s, "    {},", ligne.iter().map(|x| format!("0x{:X}", x)).collect::<Vec<_>>().join(", ")))?;
         }
         s.push_str("];\n");
     }
     let docs = ["la table identite", "l'ASCII, le reste refuse", "windows-1252", "une autre table de 256 caracteres (non portee)", "pas de table : expat refuse"];
     for ((classe, noms), doc) in codecs(sources)?.into_iter().zip(docs) {
-        let _ = write!(s, "\n/// Noms d'encodage normalises que `pyexpat` lit comme {}.\npub const CODECS_{}: &[&str] = &[\n", doc, classe.to_uppercase());
+        ecrit(write!(s, "\n/// Noms d'encodage normalises que `pyexpat` lit comme {}.\npub const CODECS_{}: &[&str] = &[\n", doc, classe.to_uppercase()))?;
         for n in noms {
-            let _ = writeln!(s, "    \"{}\",", n);
+            ecrit(writeln!(s, "    \"{}\",", n))?;
         }
         s.push_str("];\n");
     }
@@ -443,25 +450,25 @@ fn tables_retours(sources: &Path, u: &Ucd) -> R<String> {
     let debut = intervalles(|c| c == '_' as u32 || dans(&lettre, c));
     let suite = intervalles(|c| matches!(char::from_u32(c), Some('.' | '-' | '_')) || dans(&suite, c));
     s.push_str("\n/// Les intervalles de points de code qui peuvent commencer un nom (hors deux-points).\npub const NOM_DEBUT: &[(u32, u32)] = &[\n");
-    ecrire_intervalles(&mut s, &debut);
+    ecrire_intervalles(&mut s, &debut)?;
     s.push_str("\n/// Les intervalles de points de code qui peuvent suivre la premiere lettre d'un nom (hors deux-points).\npub const NOM_SUITE: &[(u32, u32)] = &[\n");
-    ecrire_intervalles(&mut s, &suite);
+    ecrire_intervalles(&mut s, &suite)?;
     Ok(s)
 }
 
-fn tables_journal(u: &Ucd) -> String {
+fn tables_journal(u: &Ucd) -> R<String> {
     let mut s = String::new();
-    en_tete(&mut s, &[UNICODE_DONNEES, UNICODE_NUMERIQUE], Some(&u.version));
+    en_tete(&mut s, &[UNICODE_DONNEES, UNICODE_NUMERIQUE], Some(&u.version))?;
     // `str.isalnum` : une lettre (Lu, Ll, Lt, Lm, Lo), ou un Numeric_Type (Decimal, Digit, Numeric) : `python/LISEZ-MOI.md`.
     s.push_str("\n/// Les intervalles de points de code ou `str.isalnum()` est vrai.\npub const ALNUM: &[(u32, u32)] = &[\n");
-    ecrire_intervalles(&mut s, &intervalles(|c| u.lettre(c) || u.numerique.contains_key(&c)));
-    s
+    ecrire_intervalles(&mut s, &intervalles(|c| u.lettre(c) || u.numerique.contains_key(&c)))?;
+    Ok(s)
 }
 
 /// Les quatre fichiers (`FICHIERS`, dans l'ordre) et leur contenu, depuis les textes de `sources`.
 pub fn generer(sources: &Path) -> R<Vec<(&'static str, String)>> {
     let u = Ucd::lire(sources)?;
-    Ok(vec![(FICHIERS[0], tables_nfkc(&u)), (FICHIERS[1], nfkd_ascii(&u)), (FICHIERS[2], tables_retours(sources, &u)?), (FICHIERS[3], tables_journal(&u))])
+    Ok(vec![(FICHIERS[0], tables_nfkc(&u)?), (FICHIERS[1], nfkd_ascii(&u)?), (FICHIERS[2], tables_retours(sources, &u)?), (FICHIERS[3], tables_journal(&u)?)])
 }
 
 /// `moteur-atelier generer-tables SOURCES SRC`.
