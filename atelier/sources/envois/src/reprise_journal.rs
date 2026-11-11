@@ -25,7 +25,7 @@ use socle::mois::Mois;
 use socle::paris::{HeureDuJournal, InstantEcrit};
 use crate::etats::AvecIncidents;
 use crate::journal::{self, DetailDsn, Envoi, Ligne, Mode};
-use crate::retours::Bilan;
+use crate::retours::{Bilan, Reception};
 
 /// La reponse d'une ligne reprise sans certificat de conformite : le journal ecrit la reponse en texte
 /// (`journal::Envoi::reponse`), et la plate-forme n'en a pas dit.
@@ -119,7 +119,7 @@ fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DepotVu {
     pub flux: String,
-    pub quand: Option<String>,
+    pub quand: Option<Reception>,
     pub mois: Option<Mois>,
     pub mode: Mode,
     pub accepte: bool,
@@ -151,9 +151,9 @@ pub fn reprise(ctx: &Contexte, ecrire: bool, qui: &str) -> AvecIncidents<Reprise
 }
 
 /// L'heure qu'une ligne reprise d'un bilan porte : la date et l'heure de reception que le bilan dit (`Bilan::recu_le`),
-/// si elles s'ecrivent comme une heure du journal ; `None` : la ligne ne saurait pas dire QUAND.
+/// ramenees a la seconde de Paris (`Reception::au_journal`) ; `None` : la ligne ne saurait pas dire QUAND.
 fn heure_du_bilan(b: &Bilan) -> Option<HeureDuJournal> {
-    b.recu_le.as_deref().and_then(HeureDuJournal::lire)
+    b.recu_le.as_ref().and_then(Reception::au_journal)
 }
 
 fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut Vec<crate::etats::IncidentDeRetour>) -> R<Reprise> {

@@ -233,7 +233,6 @@ pub struct MensuellesVues {
 pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, constitution: Mois, mois: Mois) -> Result<MensuellesVues, Echec> {
     let base = if essai { crate::retours::ESSAI_TEST } else { crate::retours::ESSAI_REEL };
     let aaaamm = format!("{:04}{:02}", constitution.annee(), constitution.numero());
-    let recu_ce_mois = constitution.to_string();
     let cite = regex::Regex::new(r"ordre (?:accept\S* )?(\d{7,})").map_err(|e| erreur(Classe::Illisible, e.to_string()))?;
     let mut vues = MensuellesVues::default();
     for (_, p) in bilans_archives(racine)? {
@@ -242,7 +241,7 @@ pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, con
         if bilan.essai_reel.as_deref() != Some(base) {
             continue;
         }
-        let du_mois_recu = bilan.recu_le.as_deref().is_some_and(|r| r.starts_with(&recu_ce_mois));
+        let du_mois_recu = bilan.recu_le.as_ref().is_some_and(|r| r.jour().mois_civil() == constitution);
         let du_mois_declare = bilan.mois == Some(mois);
         let mut du_siren = false;
         for d in crate::retours::declarations_du_bilan(&octets)? {

@@ -217,7 +217,7 @@ fn ajout_dit(d: DepotVu) -> AjoutDit {
         None => "mois inconnu".to_string(),
     };
     let dit = match &d.quand {
-        Some(q) => format!("{} — {}", socle::ecran::quand(q), mois),
+        Some(q) => format!("{} — {}", q.dit(), mois),
         None => mois,
     };
     let origine_dit = match &d.logiciel {
