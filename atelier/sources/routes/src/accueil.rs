@@ -9,8 +9,8 @@
 //! pose. La fenetre sert ces routes a l'accueil, avant toute compagnie ouverte (`interface::api::route_de_l_installation`).
 //!
 //! Ouvrir une compagnie dans la fenetre (sa tuile, son mot de passe) n'est pas une route : la route rend son `chemin`, la
-//! fenetre l'ouvre ; en ligne de commande, on la nomme par `--racine`. Le bridage (la demo) est un reglage de l'accueil :
-//! il n'a pas de route, son geste n'existe qu'a l'ecran.
+//! fenetre l'ouvre ; en ligne de commande, on la nomme par `--racine`. Le bridage (la demo) est un reglage de
+//! l'installation : sa route est `basculer`, que le geste secret de l'accueil appelle.
 //!
 //! CE QUE L'ACCUEIL FAIT DES COMPAGNIES : en ajouter une (le « + », `ajouter_venant`), en supprimer une, garder au
 //! deblocage celles qu'on a ajoutees en demo (`suppression`). Ce qu'est une compagnie sur le poste (sa racine, son
@@ -155,6 +155,17 @@ pub const ROUTES: &[Fiche] = &[
         phrase: 140,
         ecran: Ecran::Auto(Place::Accueil, Affiche::new("Ajouter les systèmes qui manquent")),
     },
+    Fiche {
+        route: Route::Basculer,
+        geste: "Brider le logiciel (la démo) ou le débloquer, sur ce poste.",
+        charge: &[],
+        exemple: r#"{}"#,
+        rend: "bride (vrai : la démo), phrase ; un paquet soudé ne change pas",
+        refus: &[OPERATION],
+        acte: Acte::Ecrit,
+        phrase: 80,
+        ecran: ECRAN,
+    },
 ];
 
 /// L'installation de la route : celle de la compagnie nommee (`--racine`), sinon celle du programme.
@@ -275,6 +286,13 @@ struct Dit {
     phrase: String,
 }
 
+/// Ce que rend `basculer` : l'etat du logiciel sur ce poste, et sa phrase.
+#[derive(Debug, Serialize)]
+struct Bascule {
+    bride: bool,
+    phrase: String,
+}
+
 /// Ce que rend `compagnies-garder`.
 #[derive(Debug, Serialize)]
 struct Gardees {
@@ -302,6 +320,12 @@ impl Dite for Couleur {
 }
 
 impl Dite for Dit {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
+impl Dite for Bascule {
     fn phrase(&self) -> &str {
         &self.phrase
     }
@@ -376,6 +400,12 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
                 Some(false) | None => administrateur::tableau(o, &inst, c.relever == Some(true))?,
             };
             en_json(tableau)
+        }
+        Route::Basculer => {
+            compagnie::bridage::basculer_de(&inst)?;
+            let bride = compagnie::bridage::est_bride_de(&inst);
+            let phrase = if bride { "Le logiciel est bridé : c'est la démo." } else { "Le logiciel est débloqué." }.to_string();
+            en_json(Bascule { bride, phrase })
         }
         Route::PortableCompleter => {
             let c: ChargePortable = charge.lire()?;

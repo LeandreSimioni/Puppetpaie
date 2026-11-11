@@ -92,10 +92,8 @@ const CALE: &str = r#"<script>
 ///   aux tuiles ;
 /// - `fermer`, `redemarrer` : fermer la fenetre, la rouvrir sur la version prete ; `maj` : ou en est la recherche que la
 ///   fenetre mene en fond (la version, elle, est la route `maj-etat`) ; `site` : ouvrir dans le navigateur du poste le site
-///   de l'editeur (le lien de l'auteur, `poste::ouvrir_site`, qui refuse toute autre adresse) ;
-/// - `basculer` : brider ou debloquer le logiciel (la demo), le seul geste qui n'existe qu'a l'ecran : la ligne de commande
-///   n'a pas de bridage.
-const NOMS_ACCUEIL: &str = r#"["choisir", "verifier", "accueil", "fermer", "redemarrer", "maj", "site", "basculer"]"#;
+///   de l'editeur (le lien de l'auteur, `poste::ouvrir_site`, qui refuse toute autre adresse).
+const NOMS_ACCUEIL: &str = r#"["choisir", "verifier", "accueil", "fermer", "redemarrer", "maj", "site"]"#;
 /// Dans la page d'une compagnie : revenir aux compagnies, la mise a jour (`js/mise-a-jour.js`), ouvrir ce qu'une route a
 /// rendu et choisir un dossier (`poste.rs`), le site de l'editeur (`site`), la veille de la fenetre (`js/veille.js`).
 const NOMS_LOGICIEL: &str = r#"["accueil", "maj", "redemarrer", "site", "ouvrir", "choisir_dossier", "veille", "veille_etape", "veille_maintenant"]"#;
@@ -820,10 +818,6 @@ impl Fenetre {
             ("choisir", Phase::Accueil) => {
                 let r = installation::racine_choisie(&installation::base(), texte(args, 0)?)?;
                 self.prendre(r)?;
-                Ok(fait(true))
-            }
-            ("basculer", Phase::Accueil) => {
-                compagnie::bridage::basculer()?;
                 Ok(fait(true))
             }
             ("verifier", Phase::MotDePasse { racine, .. }) => {

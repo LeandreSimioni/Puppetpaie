@@ -125,18 +125,14 @@ pub fn etat() -> &'static str {
     }
 }
 
-/// Le geste secret de l'accueil : bride <-> debloque, retenu sur le poste. Sans effet sur un paquet soude.
-pub fn basculer() -> socle::echec::R<()> {
-    basculer_de(&crate::installation::base())
-}
-
 /// L'installation `inst` bridee en toutes lettres, comme le geste de l'accueil la laisse (`.edition.json`) : celle du rejeu
 /// d'un scenario (`routes::scenario`).
 pub fn brider(inst: &Path) -> socle::echec::R<()> {
     socle::ecriture::ecrire_json(&inst.join(FICHIER_GESTE), &Edition { edition: BRIDE.to_string(), quoi: None }, 2)
 }
 
-/// Le geste, sur l'installation `inst`.
+/// LE GESTE SECRET DE L'ACCUEIL (la route `basculer`), sur l'installation `inst` : bride <-> debloque, retenu sur le
+/// poste. Sans effet sur un paquet soude.
 pub fn basculer_de(inst: &Path) -> socle::echec::R<()> {
     if paquet_soude_de(inst) {
         return Ok(());

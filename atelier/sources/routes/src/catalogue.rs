@@ -200,6 +200,7 @@ routes! {
         AdministrateurDeposer = "administrateur-deposer",
         AdministrateurSuivre = "administrateur-suivre",
         PortableCompleter = "portable-completer",
+        Basculer = "basculer",
         Routes = "routes",
     }
     atelier {

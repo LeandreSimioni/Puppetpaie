@@ -560,9 +560,6 @@ const FENETRE: [(&str, &str); 12] = [
     ("veille_etape", "l'etape de son passage en cours"),
     ("veille_maintenant", "un passage tout de suite : il appelle la route ouverture"),
 ];
-/// Le seul geste qui n'existe qu'a l'ecran : brider ou debloquer le logiciel (la demo) ; la ligne de commande n'a pas de
-/// bridage.
-const ECRAN_SEUL: &str = "basculer";
 
 /// Les fichiers de la page qui servent chaque place (depuis la racine du depot). L'accueil des compagnies, ses pages et
 /// celles du mot de passe sont servies par la fenetre (`interface/pages/`).
@@ -609,8 +606,8 @@ fn appels_de_la_page(t: &str) -> Vec<String> {
 }
 
 /// L'ECRAN ET LE MOTEUR SONT EQUIVALENTS, sans exception : la page (`js/`, et les pages que sert la fenetre : l'accueil,
-/// le mot de passe) ne parle au moteur que par une route du catalogue, ou par un geste de la fenetre elle-meme (`FENETRE`,
-/// et `basculer`, le seul qui n'existe qu'a l'ecran) ; chaque route du catalogue a sa place (une place de la liste du
+/// le mot de passe) ne parle au moteur que par une route du catalogue, ou par un geste de la fenetre elle-meme
+/// (`FENETRE`) ; chaque route du catalogue a sa place (une place de la liste du
 /// moteur, qui existe dans la page) et la page de sa place l'appelle, ou l'affiche sous « Avancé » depuis sa fiche ; une
 /// lecture des ecrans est lue par la page ou par la fenetre ; les routes qui ecrivent d'un module ont une seule place ; et
 /// chaque route se sert par `moteur route`.
@@ -628,8 +625,7 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
         let liste = fenetre_rs.split(&format!("const {}: &str = r#\"", cle)).nth(1).and_then(|s| s.split("\"#").next()).unwrap();
         serde_json::from_str(liste).unwrap()
     };
-    let mut de_la_fenetre: BTreeSet<String> = gestes("NOMS_ACCUEIL").into_iter().chain(gestes("NOMS_LOGICIEL")).collect();
-    assert!(de_la_fenetre.remove(ECRAN_SEUL), "{} : le geste qui débride est celui de l'accueil", ECRAN_SEUL);
+    let de_la_fenetre: BTreeSet<String> = gestes("NOMS_ACCUEIL").into_iter().chain(gestes("NOMS_LOGICIEL")).collect();
     let attendus: BTreeSet<String> = FENETRE.iter().map(|(n, _)| n.to_string()).collect();
     assert_eq!(
         de_la_fenetre, attendus,
@@ -644,7 +640,7 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
         for morceau in t.split("pywebview.api.").skip(1) {
             let geste: String = morceau.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
             assert!(
-                geste == ECRAN_SEUL || attendus.contains(&geste),
+                attendus.contains(&geste),
                 "{} appelle le geste {} de la fenêtre : un geste du logiciel est une route du catalogue (fiche, place), que la page appelle par api(…) ou appel(…)",
                 nom_du_fichier, geste
             );

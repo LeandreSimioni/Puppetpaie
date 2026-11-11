@@ -205,8 +205,9 @@
     lacher();
     minuterie = setTimeout(async () => {
       minuterie = null;
-      const r = await window.pywebview.api.basculer();
-      if (!r.ok) err.textContent = r.refus.phrase;
+      const r = await appel("basculer", {});
+      if (r.ok) location.replace("/");
+      else err.textContent = r.refus.phrase;
     }, 5000);
   });
   for (const ev of ["pointerup", "pointerleave", "pointercancel"]) geste.addEventListener(ev, lacher);
