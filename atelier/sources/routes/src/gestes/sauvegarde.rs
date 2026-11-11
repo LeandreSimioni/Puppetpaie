@@ -172,7 +172,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     // L'index n'est ecrit qu'a la fin, et seulement pour ce qui est passe.
     let fichiers: BTreeMap<String, Etat> = presents.iter().filter(|(r, _)| !en_echec.contains(r)).map(|(r, e)| (r.clone(), *e)).collect();
     let maintenant = socle::temps::secondes();
-    let quand = socle::paris::iso_minutes(maintenant).replacen('T', " ", 1);
+    let quand = socle::paris::HeureDeSaisie::de(maintenant);
     // CE QUI RESTE EN ECHEC, D'UN PASSAGE A L'AUTRE : de quoi dire ce qui persiste (`souci`). Un passage hors ligne ne compte
     // pas (il n'a rien essaye) : il garde les echecs tels quels. Un passage sans rien de reporte les efface. Les deux cles ne
     // s'ecrivent que s'il y a un echec : l'index d'une sauvegarde complete reste celui d'avant.
@@ -197,7 +197,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     let derniere_complete = match &index {
         _ if echecs.is_empty() => None,
         Some(Index { derniere_complete: Some(c), .. }) => Some(*c),
-        Some(i) if anciens.is_empty() && !i.quand.is_empty() => socle::paris::HeureDeSaisie::lire(&i.quand),
+        Some(i) if anciens.is_empty() => Some(i.quand),
         _ => None,
     };
     let nouvel_index = Index {

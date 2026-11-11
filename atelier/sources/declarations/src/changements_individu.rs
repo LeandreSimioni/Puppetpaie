@@ -95,26 +95,26 @@ pub struct Declaree {
     pub nir: Option<String>,
     pub nom: Option<String>,
     pub prenoms: Option<String>,
-    /// JJMMAAAA, comme 30.006.
-    pub naissance: Option<String>,
+    pub naissance: Option<Jour>,
     /// Le numero technique temporaire (30.020), s'il y en avait un.
     pub ntt: Option<String>,
     pub matricule: Option<String>,
 }
 
 impl Declaree {
-    fn valeur(&self, champ: &str) -> Option<&str> {
+    /// La valeur d'un identifiant telle que le bloc 30 l'ecrit (la date de naissance en JJMMAAAA, comme 30.006).
+    fn valeur(&self, champ: &str) -> Option<String> {
         match champ {
-            "nir" => self.nir.as_deref(),
-            "nom" => self.nom.as_deref(),
-            "prenom" => self.prenoms.as_deref(),
-            _ => self.naissance.as_deref(),
+            "nir" => self.nir.clone(),
+            "nom" => self.nom.clone(),
+            "prenom" => self.prenoms.clone(),
+            _ => self.naissance.as_ref().map(Jour::jjmmaaaa),
         }
     }
 
     /// L'identite seule (sans le mois ni le fichier) : deux etablissements d'un meme mois doivent dire la meme.
-    fn identite(&self) -> [&Option<String>; 5] {
-        [&self.nir, &self.nom, &self.prenoms, &self.naissance, &self.ntt]
+    fn identite(&self) -> (&Option<String>, &Option<String>, &Option<String>, Option<Jour>, &Option<String>) {
+        (&self.nir, &self.nom, &self.prenoms, self.naissance, &self.ntt)
     }
 }
 
@@ -187,7 +187,7 @@ impl<'a> Declarations<'a> {
                     nir,
                     nom: texte_ecrit(&s.nom),
                     prenoms: texte_ecrit(&s.prenom),
-                    naissance: s.date_naissance.dite().map(Jour::jjmmaaaa),
+                    naissance: s.date_naissance.dite().copied(),
                     matricule: texte_ecrit(&s.code_salarie),
                 });
             }
@@ -253,7 +253,7 @@ fn decrire(d: &Declaree) -> String {
         "{} {}, ne(e) le {}, {}",
         dite(&d.prenoms),
         dite(&d.nom),
-        dite(&d.naissance),
+        dite(&d.naissance.as_ref().map(Jour::jjmmaaaa)),
         match &d.nir {
             Some(nir) => format!("NIR {}", nir),
             None => format!("NTT {}", dite(&d.ntt)),
@@ -291,7 +291,7 @@ pub fn ecrire(f: &mut Fichier, salarie: &ChampsSalarie, brute: Option<&FicheSala
     for identifiant @ Identifiant { champ, r31, libelle, ecrite: valeur, .. } in &IDENTIFIANTS {
         let (champ, r31, libelle) = (*champ, *r31, *libelle);
         let maintenant = valeur(salarie);
-        if d.valeur(champ) == maintenant.as_deref() {
+        if d.valeur(champ) == maintenant {
             continue;
         }
         // Une case que la DSN n'a pas portee n'a pas d'ancienne valeur : le NIR qui arrive se lie par le NTT.
@@ -307,8 +307,8 @@ dans la fiche, ou le remplacer par le NIR corrige, date. Rien n'est ecrit.",
                 d.fichier
             ));
         }
-        match date_d_effet(brute, identifiant, avant, fin) {
-            Some(j) => par_date.entry(j).or_default().push((r31, avant.to_string())),
+        match date_d_effet(brute, identifiant, &avant, fin) {
+            Some(j) => par_date.entry(j).or_default().push((r31, avant.clone())),
             None => sans_date.push(format!(
                 "  - {} : declare(e) \u{ab} {} \u{bb} dans la DSN de {} ({}), {} dans la fiche",
                 libelle,
@@ -354,7 +354,7 @@ mod tests {
             nir: Some("2901075999009".into()),
             nom: Some("CLAIRON".into()),
             prenoms: Some("LUCILE".into()),
-            naissance: Some("02101990".into()),
+            naissance: Some(Jour::lire("1990-10-02").unwrap()),
             ntt: None,
             matricule: Some("6".into()),
         }

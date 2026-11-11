@@ -743,7 +743,8 @@ fn genre_de(nom: &str) -> &'static str {
 /// Ce que `en_mime_nomme` demande au hasard et a l'horloge : de quoi fixer `Date`, `Message-ID` et les frontieres dans
 /// les tests.
 pub struct Hasards<'a> {
-    pub date: String,
+    /// L'instant que l'en-tete `Date` ecrit (`date_de`).
+    pub date: socle::paris::Moment,
     pub message_id: String,
     /// Une frontiere neuve a chaque appel (`=` x15, 19 chiffres, `==`).
     pub frontiere: &'a mut dyn FnMut() -> R<String>,
@@ -759,7 +760,7 @@ pub fn en_mime_nomme(message: &Message, expediteur: &str, nom: Option<&str>) -> 
         None => expediteur,
     };
     let hasards = Hasards {
-        date: date_de(socle::temps::secondes()),
+        date: socle::temps::secondes(),
         message_id: nouveau_message_id(if domaine.is_empty() { "localhost.localdomain" } else { domaine })?,
         frontiere: &mut frontiere,
     };
@@ -791,7 +792,7 @@ fn en_mime_complet(message: &Message, expediteur: &str, nom: Option<&str>, hasar
         },
         Entete::Adresse("To", message.destinataire.clone()),
         Entete::Libre("Subject", message.sujet.clone()),
-        Entete::Date(date),
+        Entete::Date(date_de(date)),
         Entete::MessageId(message_id),
     ];
     let mime_version = || Entete::Simple("MIME-Version", "1.0".to_string());
@@ -976,8 +977,9 @@ pub fn nouveau_message_id(domaine: &str) -> R<String> {
     Ok(format!("<{}.{}.{}@{}>", centiemes, socle::temps::numero_de_processus(), huit_aleas()?, domaine))
 }
 
-/// La date RFC 5322 d'un instant, heure de Paris.
-pub fn date_de(t: socle::paris::Moment) -> String {
+/// La date RFC 5322 d'un instant, heure de Paris (§ 3.3, `date-time` ;
+/// `atelier/reference/sources/ietf/ietf-rfc5322-internet-message-format-20081001.txt`).
+fn date_de(t: socle::paris::Moment) -> String {
     const JOURS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const MOIS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     let decalage = socle::paris::decalage(t);

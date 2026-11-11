@@ -835,7 +835,7 @@ fn actes_du_journal(ctx: &Contexte) -> R<Vec<documents::etats_personnel::ActeDuJ
     Ok(lignes
         .iter()
         .map(|l| documents::etats_personnel::ActeDuJournal {
-            quand: l.quand().to_string(),
+            quand: l.quand(),
             quoi: l.acte().nom().to_string(),
             main_propre: l.main_propre(),
             mois: l.mois(),

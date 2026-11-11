@@ -381,7 +381,7 @@ pub fn chemin_index(racine: &Path) -> PathBuf {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Index {
-    pub quand: String,
+    pub quand: socle::paris::HeureDeSaisie,
     pub racine_drive: String,
     pub dossiers: BTreeMap<String, String>,
     pub fichiers: BTreeMap<String, Etat>,
@@ -437,7 +437,7 @@ pub fn rien_n_a_bouge(racine: &Path, racine_drive: &str) -> Result<bool, ErreurG
 /// Ce que dit l'index du dernier passage (`derniere`) : quand, combien, vers quelle racine du Drive. Pour l'affichage.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Derniere {
-    pub quand: String,
+    pub quand: socle::paris::HeureDeSaisie,
     pub fichiers: usize,
     pub racine_drive: String,
 }

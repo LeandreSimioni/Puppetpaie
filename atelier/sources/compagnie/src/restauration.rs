@@ -324,7 +324,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
     }
     let maintenant = socle::temps::secondes();
     let index = Index {
-        quand: socle::paris::iso_minutes(maintenant).replacen('T', " ", 1),
+        quand: socle::paris::HeureDeSaisie::de(maintenant),
         racine_drive: racine_drive.to_string(),
         dossiers: index_dossiers,
         fichiers,

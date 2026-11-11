@@ -297,7 +297,7 @@ fn reponse(r: &str) -> String {
 /// UN ACTE DU JOURNAL DES ENVOIS, tel que le journal des declarations le montre : `moteur` le tire de chaque ligne du
 /// journal (`envois::journal::Ligne`), que ce module ne lit pas.
 pub struct ActeDuJournal {
-    pub quand: String,
+    pub quand: socle::paris::HeureDuJournal,
     /// Sa sorte, telle que le journal l'ecrit (`dsn`, `contrat-signature`...).
     pub quoi: String,
     pub main_propre: bool,
@@ -317,12 +317,12 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
     let mut lignes = Vec::new();
     for l in journal {
         // Un acte porte le mois qu'il declare ; un acte annuel se range au mois ou il a eu lieu.
-        let Some(m) = l.mois.or_else(|| l.quand.get(..7).and_then(Mois::du_texte)) else { continue };
+        let m = l.mois.unwrap_or_else(|| l.quand.jour().mois_civil());
         if !p.contient(m) {
             continue;
         }
         let mut x = Ligne::nouvelle();
-        x.t("quand", l.quand.replace('T', " ").chars().take(16).collect::<String>());
+        x.t("quand", l.quand.iso().replace('T', " ").chars().take(16).collect::<String>());
         let main_propre = l.quoi == "contrat-signature" && l.main_propre;
         // Un acte que la table ne nomme pas se dit par sa sorte, telle que le journal l'ecrit.
         let acte = match (main_propre, acte_lisible(&l.quoi)) {

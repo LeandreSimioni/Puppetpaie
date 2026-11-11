@@ -469,7 +469,7 @@ pub fn reponse_jouee(de: &str, a: &str, sujet: &str, corps: &str, ident: &str) -
     let octets = crate::envoi::en_mime_avec(
         &message,
         &nu,
-        crate::envoi::Hasards { date: crate::envoi::date_de(t), message_id: format!("<{}@fictive.puppetpaie>", ident), frontiere: &mut frontiere },
+        crate::envoi::Hasards { date: t, message_id: format!("<{}@fictive.puppetpaie>", ident), frontiere: &mut frontiere },
     )?;
     let entete_nu = format!("From: {}", nu);
     match rendu {

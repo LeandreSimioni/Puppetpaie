@@ -133,7 +133,7 @@ pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> 
             tete + c.as_str()
         };
         let jour_norme = norme.and_then(|v| v.jour_de_paiement);
-        let (date, quand, source): (Option<Jour>, String, &str) = if let Some(j) = o.date_paiement {
+        let (date, quand_dit, source): (Option<Jour>, String, &str) = if let Some(j) = o.date_paiement {
             (Some(j), format!("le {}", j.jj_mm_aaaa()), SOURCE_011)
         } else if est_urssaf || dgfip {
             let e = crate::echeance_dsn::du_mois(mois, jour_echeance)?;
@@ -156,7 +156,7 @@ pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> 
             montant: crate::dsn::mt(o.montant),
             periode: PeriodeEnClair { du: debut, au: fin },
             date,
-            quand,
+            quand_dit,
             source,
             credit,
         });
@@ -173,7 +173,9 @@ pub struct OrdreEnClair {
     pub montant: String,
     pub periode: PeriodeEnClair,
     pub date: Option<Jour>,
-    pub quand: String,
+    /// La phrase de la page (« le 15/11/2026 », « date non dite par la DSN »).
+    #[serde(rename = "quand")]
+    pub quand_dit: String,
     pub source: &'static str,
     pub credit: Option<CreditEnClair>,
 }
