@@ -95,7 +95,7 @@ impl Versement {
             None => &ent.date_de_versement_intermittents,
         };
         match dit {
-            Some(v) => v.choix(),
+            Some(v) => *v,
             None => Versement::FinDuMois,
         }
     }
@@ -127,48 +127,39 @@ impl Versement {
     }
 }
 
-/// LE JOUR DU VERSEMENT QUE DIT UNE CASE DE LA FICHE ENTREPRISE (`date_de_versement_permanents`,
-/// `date_de_versement_intermittents`) : le choix (`Versement`), lu a la porte, et le texte tel que la compagnie l'a
-/// ecrit, que la fiche garde et montre. Un texte qui ne dit aucun choix se refuse a la lecture ; la case vide est nulle.
-#[derive(Debug, Clone, PartialEq)]
-pub struct VersementDit {
-    ecrit: String,
-    choix: Versement,
-}
-
-impl VersementDit {
-    /// Le texte `texte`, ou ce qui le refuse.
-    pub fn lire(texte: &str) -> R<VersementDit> {
-        match Versement::lire(texte) {
-            Ok(choix) => Ok(VersementDit { ecrit: texte.to_string(), choix }),
-            Err(_) => Err(socle::refus!("Le jour du versement « {} » ne se lit pas : écrire {}.", texte.trim(), FORMES)),
+/// LA FORME UNIQUE DU CHOIX, telle que la case de la fiche entreprise l'ecrit et la montre : « fin du mois », « fin du
+/// contrat », « le 25 » (« le 1er »), « le 5 du mois suivant » ; `Versement::lire` la relit.
+impl std::fmt::Display for Versement {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match *self {
+            Versement::FinDuMois => f.write_str("fin du mois"),
+            Versement::FinDuContrat => f.write_str("fin du contrat"),
+            Versement::Fixe { quantieme, mois_suivant } => {
+                let q = if quantieme == 1 { "1er".to_string() } else { quantieme.to_string() };
+                write!(f, "le {}{}", q, if mois_suivant { " du mois suivant" } else { "" })
+            }
         }
     }
-
-    /// Le choix qu'il dit.
-    pub fn choix(&self) -> Versement {
-        self.choix
-    }
-
-    /// Le texte tel qu'il s'ecrit.
-    pub fn ecrit(&self) -> &str {
-        &self.ecrit
-    }
 }
 
-impl Serialize for VersementDit {
+/// LA CASE DE LA FICHE ENTREPRISE (`date_de_versement_permanents`, `date_de_versement_intermittents`) : le choix, lu a
+/// la porte, ecrit sous sa forme unique. Un texte qui ne dit aucun choix se refuse a la lecture ; la case vide est nulle.
+impl Serialize for Versement {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.ecrit)
+        s.collect_str(self)
     }
 }
 
-impl<'de> Deserialize<'de> for VersementDit {
+impl<'de> Deserialize<'de> for Versement {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        VersementDit::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+        let texte = String::deserialize(d)?;
+        Versement::lire(&texte).map_err(|_| {
+            serde::de::Error::custom(format!("Le jour du versement « {} » ne se lit pas : écrire {}.", texte.trim(), FORMES))
+        })
     }
 }
 
-impl crate::fiche::FormeDeCase for VersementDit {}
+impl crate::fiche::FormeDeCase for Versement {}
 
 /// Le dernier jour ou peut etre verse ce que declare la DSN du mois principal `mois` : le dernier jour du
 /// mois suivant (CCH-13 de S21.G00.50.001, `atelier/reference/norme-dsn/texte/bloc-S21.G00.50.txt`, l. 61-62).
