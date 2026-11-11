@@ -20,7 +20,6 @@ use documents::ecrire_documents::paies_aux_numeros_declares;
 use droit::contexte::Contexte;
 use droit::fiche::Lue as _;
 use engagement::calcul::Paie;
-use envois::depot;
 use envois::etats;
 use socle::date::Jour;
 use socle::echec::{erreur, refus, Classe, Echec, R};
@@ -31,8 +30,6 @@ use socle::num::{entier_lu, q2, Decimal};
 use crate::depots::{lire_octets, nom_du_chemin, resoudre};
 use crate::etapes::Moteur;
 use socle::ecran::Pastille;
-
-const TYPES: [(&str, &str); 5] = depot::TYPES;
 
 /// Les paies validees du mois, a leurs numeros declares.
 fn saisie_aux_numeros_declares(ctx: &Contexte, mois: Mois) -> R<Vec<Paie>> {
@@ -394,8 +391,8 @@ pub(crate) struct RemplacementDuFichier {
 /// annule-et-remplace (type 03 ou 05) d'un ordre plus grand que le dernier depose.
 fn remplacement_du_fichier(m: &mut Moteur, a: &DsnLue, mois: Mois) -> R<RemplacementDuFichier> {
     let r = m.etat_remplacement(mois, a.etablissement())?;
-    let remplace = match (a.type_declaration.as_deref(), a.ordre.as_deref()) {
-        (Some("03" | "05"), Some(ordre)) if r.deposee => {
+    let remplace = match (a.type_declaration, a.ordre.as_deref()) {
+        (Some(t), Some(ordre)) if t.remplace() && r.deposee => {
             let n = entier_lu(ordre).ok_or_else(|| erreur(Classe::Illisible, format!("nombre entier illisible : {}", repr(ordre))))?;
             r.dernier_ordre.is_none_or(|d| n > i128::from(d))
         }
@@ -420,7 +417,7 @@ pub(crate) struct ApercuDsn {
     pub(crate) nature_declaration: String,
     pub(crate) libelle_nature: String,
     pub(crate) evenement: Option<socle::date::Jour>,
-    pub(crate) type_declaration: Option<String>,
+    pub(crate) type_declaration: Option<droit::type_declaration::TypeDeLaDeclaration>,
     pub(crate) libelle_type: Option<&'static str>,
     pub(crate) ordre: Option<String>,
     pub(crate) fraction: Option<String>,
@@ -444,12 +441,10 @@ pub(crate) struct ApercuDsn {
 
 /// La description du fichier en une phrase : son nom, son type, son ordre, sa fraction, sa constitution, ses salaries,
 /// ses lignes, son SIREN ; ce qu'il ne dit pas ne se dit pas.
-fn description(nom: &str, a: &DsnLue, libelle_type: Option<&str>) -> String {
+fn description(nom: &str, a: &DsnLue) -> String {
     let mut d = nom.to_string();
-    match (&a.type_declaration, libelle_type) {
-        (Some(g), Some(l)) => d += &format!(" — {} (type {})", l, g),
-        (Some(g), None) => d += &format!(" — type {}", g),
-        (None, _) => {}
+    if let Some(t) = a.type_declaration {
+        d += &format!(" — {} (type {})", t.libelle(), t);
     }
     for (quoi, v) in [("ordre", a.ordre.clone()), ("fraction", a.fraction.clone()), ("constituée le", a.depot.map(|j| j.jj_mm_aaaa()))] {
         if let Some(v) = v {
@@ -497,9 +492,8 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
             None => (Vec::new(), Some("Ce fichier ne dit plus ce que disent les paies du mois : le refaire (Produire la DSN) avant de le déposer.")),
         }
     };
-    let libelle_type = a.type_declaration.as_deref().and_then(|g| TYPES.iter().find(|(c, _)| *c == g)).map(|(_, l)| *l);
     Ok(ApercuDsn {
-        description: description(&nom, &a, libelle_type),
+        description: description(&nom, &a),
         fichier: chemin.clone(),
         nom,
         mois,
@@ -509,8 +503,8 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
         nature_declaration: a.nature()?.to_string(),
         libelle_nature: a.nature_lisible().ok_or_else(|| erreur(Classe::Refuse, "La DSN ne porte pas sa nature (S20.G00.05.001)."))?,
         evenement: if signalement { a.evenement() } else { None },
-        type_declaration: a.type_declaration.clone(),
-        libelle_type,
+        type_declaration: a.type_declaration,
+        libelle_type: a.type_declaration.map(droit::type_declaration::TypeDeLaDeclaration::libelle),
         ordre: a.ordre.clone(),
         fraction: a.fraction.clone(),
         remplace: a.remplace.clone(),

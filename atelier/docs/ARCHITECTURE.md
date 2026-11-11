@@ -20,7 +20,8 @@ n'entre. Ce qui passe la porte est lu **une fois** et devient un type Rust ; ded
   barème nomme en `bloc78` et dont la déduction forfaitaire spécifique abat certaines), et celui d'une cotisation d'établissement (`droit::cotisation_etablissement::CotisationDEtablissement`,
   S21.G00.82.002 : l'OETH, la taxe d'apprentissage, la CSA), et la nature d'une déclaration
   (`droit::nature_declaration::NatureDeLaDeclaration`, S20.G00.05.001 : le fichier l'écrit, le journal des envois la
-  garde par son code ; un signalement d'arrêt, `declarations::signalement::NatureSignalement`, n'en est que 04 ou 05) :
+  garde par son code ; un signalement d'arrêt, `declarations::signalement::NatureSignalement`, n'en est que 04 ou 05),
+  et son type (`droit::type_declaration::TypeDeLaDeclaration`, S20.G00.05.002, avec ses libellés) :
   chacune est la liste entière de sa rubrique dans la norme (`ListeDeLaNorme`), tenue aux
   listes relevées des versions livrées par un test de structure ; un code propre à une version le dit (`depuis`,
   `jusqu_a`), et la DSN ne l'écrit que dans un fichier de cette version (`dsn::Fichier::ecrire_code`, classe

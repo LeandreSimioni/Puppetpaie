@@ -41,6 +41,7 @@ use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::imprevus::{ArretSaisi, Imprevu, Prolongation};
 use socle::date::Jour;
 use socle::ecran::Pastille;
@@ -743,7 +744,7 @@ pub(crate) struct EnvoiDeLArret {
     #[serde(rename = "nature")]
     pub nature_declaration: NatureDeLaDeclaration,
     #[serde(rename = "type")]
-    pub type_declaration: Option<String>,
+    pub type_declaration: Option<TypeDeLaDeclaration>,
     ordre: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mois: Option<socle::mois::Mois>,
@@ -788,7 +789,7 @@ fn rectificatif_du(prolongations: &[Prolongation], envois: &[EnvoiDeLArret]) -> 
     let depart = Depart { jour: p.le, minute: None, quoi: "le jour où la prolongation de la subrogation a été saisie".into(), presume: None };
     let rectificatif = signalements
         .iter()
-        .filter(|e| e.type_declaration.as_deref() == Some(declarations::signalement::ANNULE_ET_REMPLACE) && ordre(e.quand, p.saisi_le).is_ge())
+        .filter(|e| e.type_declaration == Some(TypeDeLaDeclaration::AnnuleEtRemplace) && ordre(e.quand, p.saisi_le).is_ge())
         .map(|e| e.quand)
         .min();
     let fait = match rectificatif {
@@ -914,7 +915,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
         let (mois, quand) = (e.mois, e.quand());
         let d = &e.detail;
         let Some(nature) = d.nature_declaration else { continue };
-        let type_declaration = d.type_declaration.clone();
+        let type_declaration = d.type_declaration;
         let ordre = match d.ordre.as_deref().map(str::trim).filter(|o| !o.is_empty()) {
             Some(o) => Some(o.parse::<i64>().map_err(|x| erreur(Classe::Illisible, format!("L'ordre {} d'une DSN du journal des envois ne se lit pas ({}).", repr(o), x)))?),
             None => None,
@@ -1606,9 +1607,9 @@ mod essais {
     #[test]
     fn un_rectificatif_depose_avant_la_prolongation_ne_la_fait_pas() {
         let jour = |t: &str| Jour::lire(t).unwrap();
-        let signalement = |type_declaration: &str, quand: &str| EnvoiDeLArret {
+        let signalement = |type_declaration: TypeDeLaDeclaration, quand: &str| EnvoiDeLArret {
             nature_declaration: NatureDeLaDeclaration::SignalementArret,
-            type_declaration: Some(type_declaration.into()),
+            type_declaration: Some(type_declaration),
             ordre: None,
             mois: None,
             fichier: None,
@@ -1623,9 +1624,10 @@ mod essais {
             subrogation_fin_avant: Some(jour("2026-11-06")),
             subrogation_fin: Some(jour("2026-11-13")),
         };
-        let avant = [signalement("01", "2026-11-02T10:00:00"), signalement("03", "2026-11-03T09:00:00")];
+        use TypeDeLaDeclaration::{AnnuleEtRemplace, Normale};
+        let avant = [signalement(Normale, "2026-11-02T10:00:00"), signalement(AnnuleEtRemplace, "2026-11-03T09:00:00")];
         assert!(rectificatif_du(std::slice::from_ref(&prolongation), &avant).unwrap().1.is_none());
-        let apres = [signalement("01", "2026-11-02T10:00:00"), signalement("03", "2026-11-03T16:00:00")];
+        let apres = [signalement(Normale, "2026-11-02T10:00:00"), signalement(AnnuleEtRemplace, "2026-11-03T16:00:00")];
         assert!(rectificatif_du(std::slice::from_ref(&prolongation), &apres).unwrap().1.is_some());
     }
 }

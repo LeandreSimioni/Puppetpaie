@@ -204,7 +204,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
         let detail = DetailDsn {
             reconstruit: true,
             logiciel: b.logiciel.clone(),
-            type_declaration: b.type_declaration.clone(),
+            type_declaration: b.type_declaration,
             fraction: b.fraction.clone(),
             ordre: b.ordre.clone(),
             salaries,

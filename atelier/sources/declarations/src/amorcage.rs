@@ -17,19 +17,18 @@ use crate::dsn::{
 use crate::fctu::Echec;
 use socle::fichiers::repr;
 use socle::echec::R;
+use droit::type_declaration::TypeDeLaDeclaration;
 
 pub const NATURE: droit::nature_declaration::NatureDeLaDeclaration = droit::nature_declaration::NatureDeLaDeclaration::SignalementAmorcage;
 pub const EMBAUCHE: &str = "01";
 pub const CHANGEMENT_DE_LOGICIEL: &str = "07";
 
-pub const NORMALE: &str = "01";
-pub const ANNULE: &str = "04";
 /// Les types qu'un amorcage admet. Pas de « 03 - annule et remplace integral » : « CCH-15 : Le type de declaration "03 -
 /// declaration annule et remplace integral" est interdit pour une nature de declaration (S20.G00.05.001) "08 -
 /// Signalement amorcage des donnees variables". » (cahier technique 2026.1, p. 135,
 /// `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt`). Un amorcage se corrige en l'annulant, puis en en deposant
 /// un nouveau (§ 1.4.3.4, p. 15).
-const TYPES: [(&str, &str); 2] = [(NORMALE, "normale"), (ANNULE, "annule")];
+const ADMIS: [TypeDeLaDeclaration; 2] = [TypeDeLaDeclaration::Normale, TypeDeLaDeclaration::Annule];
 
 /// `amorcage-base.json`.
 #[derive(serde::Deserialize)]
@@ -79,7 +78,7 @@ pub fn libelle_motif(motif: &str) -> R<String> {
 /// Les parametres de `generer`, avec leurs defauts.
 pub struct Options {
     pub motif: String,
-    pub type_declaration: String,
+    pub type_declaration: TypeDeLaDeclaration,
     pub ordre: i64,
     pub remplace: Option<String>,
     pub envoi_test: bool,
@@ -87,7 +86,7 @@ pub struct Options {
 }
 
 /// `verifier` : refuse ce que la norme -- ou le bon sens de la demande -- refuse.
-pub fn verifier(paie: &Paie, motif: &str, type_declaration: &str, remplace: Option<&str>) -> Result<(), Echec> {
+pub fn verifier(paie: &Paie, motif: &str, type_declaration: TypeDeLaDeclaration, remplace: Option<&str>) -> Result<(), Echec> {
     let impossible = |m: String| Err(Echec::impossible(m));
     let base = motifs_de_la_norme()?;
     let tous = &base.motifs.codes;
@@ -115,7 +114,7 @@ organismes complementaires, pas la demande d'un taux de PAS. Les deux portes d'u
             portes.join(" et ")
         ));
     }
-    if type_declaration == "03" {
+    if type_declaration == TypeDeLaDeclaration::AnnuleEtRemplace {
         return impossible(
             "Un signalement d'amorcage ne s'annule et ne se remplace pas d'un seul envoi : le type << 03 - annule et \
 remplace integral >> lui est interdit (CCH-15, cahier technique DSN p. 135). Pour le corriger, deposer un << 04 - \
@@ -123,18 +122,16 @@ annule >> qui vise le dernier envoi valide, puis un nouveau signalement << 01 - 
                 .into(),
         );
     }
-    let libelle_type = match TYPES.iter().find(|(c, _)| *c == type_declaration) {
-        Some((_, l)) => *l,
-        None => {
-            return impossible(format!(
-                "Type de declaration {}. Un signalement d'amorcage est {}.",
-                repr(type_declaration),
-                TYPES.iter().map(|(k, v)| format!("<< {} - {} >>", k, v)).collect::<Vec<_>>().join(", ")
-            ))
-        }
-    };
+    if !ADMIS.contains(&type_declaration) {
+        return impossible(format!(
+            "Type de declaration {}. Un signalement d'amorcage est {}.",
+            repr(type_declaration.code()),
+            ADMIS.iter().map(|t| format!("<< {} - {} >>", t.code(), t.libelle())).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    let libelle_type = type_declaration.libelle();
     let remplace = remplace.filter(|r| !r.is_empty());
-    if type_declaration == ANNULE && remplace.is_none() {
+    if type_declaration == TypeDeLaDeclaration::Annule && remplace.is_none() {
         return impossible(format!(
             "Un signalement << {} >> doit viser la declaration qu'il reprend (S20.G00.05.006) : l'identifiant du \
 dernier envoi VALIDE par le point de depot, lu sur son certificat de conformite. Sans lui, la plate-forme rend \
@@ -142,7 +139,7 @@ B1-208-08.",
             libelle_type
         ));
     }
-    if type_declaration == NORMALE && remplace.is_some() {
+    if type_declaration == TypeDeLaDeclaration::Normale && remplace.is_some() {
         return impossible(
             "S20.G00.05.006 est interdite sur un signalement normal (CCH-12) : elle ne s'ecrit que sur un \
 annule-et-remplace ou un annule."
@@ -166,7 +163,7 @@ un manque du logiciel.",
 
 /// Le fichier d'un signalement d'amorcage, pret a deposer.
 pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::departs::Departs) -> Result<String, Echec> {
-    verifier(paie, &o.motif, &o.type_declaration, o.remplace.as_deref())?;
+    verifier(paie, &o.motif, o.type_declaration, o.remplace.as_deref())?;
     let ctx = &ctx.au(&paie.engagement.debut)?;
     let e = &paie.engagement;
     let s = &paie.salarie;
@@ -204,7 +201,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
 
     // ---------------------------------------------------------- S20 declaration
     f.ecrire_code(NATURE)?;
-    f.add("S20.G00.05.002", &o.type_declaration);
+    f.ecrire_code(o.type_declaration)?;
     f.add("S20.G00.05.003", "11");
     f.add("S20.G00.05.004", o.ordre);
     if let Some(r) = remplace {

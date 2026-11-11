@@ -484,7 +484,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &str, publicatio
          </declaration_identification><declaration_bilan><etat>OK</etat>{}</declaration_bilan></declaration></ns2:rapport>",
         echappe(flux),
         element(d.nature_declaration.map(NatureDeLaDeclaration::code)),
-        element(d.type_declaration.as_deref()),
+        element(d.type_declaration.map(droit::type_declaration::TypeDeLaDeclaration::code)),
         mois,
         element(d.entreprise.siren.as_deref()),
         element(d.etablissement()),

@@ -17,15 +17,15 @@ use crate::dsn::{
 use engagement::Engagement;
 use socle::echec::{Classe, R};
 use socle::fichiers::repr;
+use droit::type_declaration::TypeDeLaDeclaration;
 
 pub const NATURE: droit::nature_declaration::NatureDeLaDeclaration = droit::nature_declaration::NatureDeLaDeclaration::SignalementFinDeContrat;
 /// CCH-14 (cahier technique p. 293) : la base assujettie de prevoyance n'a
 /// pas sa place dans un signalement de fin de contrat.
 const BASES_INTERDITES: [BaseAssujettie; 1] = [BaseAssujettie::PrevoyanceSanteRetraite];
-pub const NORMALE: &str = "01";
-pub const ANNULE_ET_REMPLACE: &str = "03";
-pub const ANNULE: &str = "04";
-const TYPES: [(&str, &str); 3] = [(NORMALE, "normale"), (ANNULE_ET_REMPLACE, "annule et remplace integral"), (ANNULE, "annule")];
+/// Les types qu'un FCTU admet : pas de « 02 » ni de « 05 », qui ne sont « autorises que pour une nature de declaration
+/// "01 - DSN Mensuelle" » (CCH-14, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt` l. 70-71).
+const ADMIS: [TypeDeLaDeclaration; 3] = [TypeDeLaDeclaration::Normale, TypeDeLaDeclaration::AnnuleEtRemplace, TypeDeLaDeclaration::Annule];
 
 /// Un refus d'un signalement : `Impossible` est la regle de la norme qui s'oppose (un refus ne la ou elle s'oppose, de
 /// classe `Refuse`) ; `Autre` tout le reste.
@@ -54,10 +54,6 @@ impl Echec {
             Echec::Impossible(e) | Echec::Autre(e) => e.reclasser(classe),
         }
     }
-}
-
-fn type_de_declaration(code: &str) -> Option<&'static str> {
-    TYPES.iter().find(|(c, _)| *c == code).map(|(_, l)| *l)
 }
 
 /// `fctu-base.json`, lu par sa forme (`droit::preavis::base`).
@@ -215,13 +211,13 @@ precede le debut du preavis (CCH-12, cahier technique DSN p. 275). Il se saisit 
 // ------------------------------------------------------------- les controles
 
 /// `verifier` : refuse ce que la norme refuse ; rend les avertissements.
-pub fn verifier(fin: &FinDeContrat, e: &Engagement, type_declaration: &str) -> Result<Vec<String>, Echec> {
+pub fn verifier(fin: &FinDeContrat, e: &Engagement, type_declaration: TypeDeLaDeclaration) -> Result<Vec<String>, Echec> {
     let mut avertissements = Vec::new();
-    if type_de_declaration(type_declaration).is_none() {
+    if !ADMIS.contains(&type_declaration) {
         return Err(Echec::impossible(format!(
             "Type de declaration {}. Un FCTU est {}.",
-            repr(type_declaration),
-            TYPES.iter().map(|(c, l)| format!("{} - {}", c, l)).collect::<Vec<_>>().join(", ")
+            repr(type_declaration.code()),
+            ADMIS.iter().map(|t| format!("{} - {}", t.code(), t.libelle())).collect::<Vec<_>>().join(", ")
         )));
     }
     let types = nomenclatures()?.types_preavis;
@@ -399,7 +395,7 @@ pub fn bloc_62_63(f: &mut Fichier, fin: &FinDeContrat, e: &Engagement) -> R<()> 
 
 /// Les parametres de `generer`, avec leurs defauts.
 pub struct Options {
-    pub type_declaration: String,
+    pub type_declaration: TypeDeLaDeclaration,
     pub ordre: i64,
     pub remplace: Option<String>,
     pub envoi_test: bool,
@@ -408,7 +404,7 @@ pub struct Options {
 
 impl Default for Options {
     fn default() -> Options {
-        Options { type_declaration: NORMALE.into(), ordre: 1, remplace: None, envoi_test: false, date_constitution: None }
+        Options { type_declaration: TypeDeLaDeclaration::Normale, ordre: 1, remplace: None, envoi_test: false, date_constitution: None }
     }
 }
 
@@ -417,20 +413,16 @@ impl Default for Options {
 pub fn generer(
     ctx: &Contexte, paie: &engagement::calcul::Paie, fin: &FinDeContrat, o: &Options, arrets: &[Arret], departs: &engagement::departs::Departs,
 ) -> Result<String, Echec> {
-    let type_declaration = o.type_declaration.as_str();
-    let libelle_type = match type_de_declaration(type_declaration) {
-        Some(l) => l,
-        None => return Err(Echec::impossible(format!("Type de declaration {}.", repr(type_declaration)))),
-    };
+    let type_declaration = o.type_declaration;
     let remplace = o.remplace.as_deref().filter(|r| !r.is_empty());
-    if (type_declaration == ANNULE_ET_REMPLACE || type_declaration == ANNULE) && remplace.is_none() {
+    if matches!(type_declaration, TypeDeLaDeclaration::AnnuleEtRemplace | TypeDeLaDeclaration::Annule) && remplace.is_none() {
         return Err(Echec::impossible(format!(
             "Un signalement « {} » doit viser la declaration qu'il reprend (S20.G00.05.006) : sans elle, la \
 plate-forme rend B1-208-08.",
-            libelle_type
+            type_declaration.libelle()
         )));
     }
-    if type_declaration == NORMALE && remplace.is_some() {
+    if type_declaration == TypeDeLaDeclaration::Normale && remplace.is_some() {
         return Err(Echec::impossible(
             "S20.G00.05.006 est interdite sur un signalement normal : elle ne s'ecrit que sur un annule-et-remplace \
 ou un annule.",
@@ -483,7 +475,7 @@ ou un annule.",
 
     // ---------------------------------------------------------- S20 declaration
     f.ecrire_code(NATURE)?;
-    f.add("S20.G00.05.002", type_declaration);
+    f.ecrire_code(type_declaration)?;
     f.add("S20.G00.05.003", "11");
     f.add("S20.G00.05.004", o.ordre);
     // S20.G00.05.005 (mois principal declare) est INTERDITE : un signalement

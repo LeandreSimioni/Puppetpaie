@@ -25,6 +25,7 @@ use serde::Serialize;
 
 use droit::contexte::Contexte;
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::type_declaration::TypeDeLaDeclaration;
 use envois::etats;
 use envois::journal::Ligne;
 use envois::retours::{self, AnomalieDuRapport, CrmOc, Neores, Rapport};
@@ -121,14 +122,14 @@ fn phrase_du_statut(statut: &str) -> Option<&'static str> {
 
 /// La nature et le type d'une declaration (S20.G00.05.001 et .002, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt`) ;
 /// une nature qui n'est pas dite est une DSN.
-fn nature_dsn(nature: Option<NatureDeLaDeclaration>, type_: Option<&str>) -> String {
+fn nature_dsn(nature: Option<NatureDeLaDeclaration>, type_: Option<TypeDeLaDeclaration>) -> String {
     let n = match nature {
         Some(n) => n.libelle(),
         None => "DSN",
     };
     match type_ {
-        Some("03" | "05") => format!("{} (annule et remplace)", n),
-        Some("04") => format!("{} (annulation)", n),
+        Some(t) if t.remplace() => format!("{} (annule et remplace)", n),
+        Some(TypeDeLaDeclaration::Annule) => format!("{} (annulation)", n),
         _ => n.to_string(),
     }
 }
@@ -324,7 +325,7 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
 /// L'acte d'une ligne du journal, en mots ; un contrat qui repart dit de qui il est.
 fn acte(ctx: &Contexte, l: &Ligne) -> String {
     match l {
-        Ligne::Dsn(e) => nature_dsn(e.detail.nature_declaration, e.detail.type_declaration.as_deref()),
+        Ligne::Dsn(e) => nature_dsn(e.detail.nature_declaration, e.detail.type_declaration),
         Ligne::Dpae(_) => "DPAE".into(),
         Ligne::Documents(_) => "Documents aux salariés".into(),
         Ligne::ContratSignature(e) => match (e.detail.main_propre, e.detail.acte.as_deref() == Some("avenant")) {
@@ -651,7 +652,7 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: &str) -> Lecture {
         };
         l.phrases.push(format!(
             "{}{}{} : {}.",
-            nature_dsn(d.nature_declaration, dit(&d.type_declaration)),
+            nature_dsn(d.nature_declaration, d.type_declaration),
             morceau(" de ", d.mois.map(|m| m.to_string()).as_deref(), ""),
             morceau(", ordre ", dit(&d.ordre), ""),
             verdict
@@ -898,7 +899,7 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
         };
         l.phrases.push(format!(
             "{}{}{} : {}.",
-            nature_dsn(d.nature_declaration, lu(&d.type_declaration)),
+            nature_dsn(d.nature_declaration, d.type_declaration),
             morceau(" de ", d.mois.map(|m| m.to_string()).as_deref(), ""),
             morceau(", vue par ", organisme.as_deref(), ""),
             retour

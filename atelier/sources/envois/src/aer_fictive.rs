@@ -538,8 +538,8 @@ pub fn archive(ctx: &Contexte, dsn: &[u8], mois: socle::mois::Mois, edite_le: Jo
     let d = declarations::dsn_lue::lire(dsn, "")?;
     let le_mois = d.mois.ok_or_else(|| refus("la DSN ne dit pas le mois qu'elle déclare (S20.G00.05.005)"))?;
     // Le type et l'ordre de la declaration (S20.G00.05.002 et .004) : 03 et 05 annulent et remplacent.
-    let remplace = match d.type_declaration.as_deref() {
-        Some("03" | "05") => Some(exigee(&d.ordre, "l'ordre de la déclaration qu'elle remplace", "S20.G00.05.004")?),
+    let remplace = match d.type_declaration {
+        Some(t) if t.remplace() => Some(exigee(&d.ordre, "l'ordre de la déclaration qu'elle remplace", "S20.G00.05.004")?),
         _ => None,
     };
     let lignes = crate::journal::lu(&ctx.racine).map(|j| j.lignes)?;

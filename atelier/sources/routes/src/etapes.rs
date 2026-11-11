@@ -1790,13 +1790,13 @@ impl<'a> Moteur<'a> {
                 continue;
             }
             // Le type de la declaration (S20.G00.05.002), que le depot note : une ligne qui ne le dit pas se refuse.
-            let Some(t) = l.dsn().and_then(|e| e.detail.type_declaration.as_deref()) else {
+            let Some(t) = l.dsn().and_then(|e| e.detail.type_declaration) else {
                 return Err(Echec {
                     a_part: Some(socle::echec::Lieu { fichier: Some(envois::journal::DEPOTS.to_string()), cle: Some("type_declaration".to_string()), ..Default::default() }.into()),
                     ..erreur(Classe::Illisible, format!("Un dépôt réel de la DSN de {} ne dit pas son type (S20.G00.05.002) dans le journal des envois ; le signaler au développeur.", mois))
                 });
             };
-            if matches!(t, "01" | "02" | "03" | "05") {
+            if t != droit::type_declaration::TypeDeLaDeclaration::Annule {
                 out.push(l.clone());
             }
         }

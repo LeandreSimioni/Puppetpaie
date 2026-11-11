@@ -7,6 +7,7 @@
 //! transport est ailleurs (`transport`).
 
 use declarations::dsn_lue::DsnLue;
+use droit::type_declaration::TypeDeLaDeclaration;
 use socle::echec::{Classe, Echec, R};
 use socle::texte::ascii_nfkd;
 
@@ -14,14 +15,6 @@ pub const NATURE_TEST: &str = "01";
 pub use declarations::dsn_lue::{MENSUELLE, NATURE_REEL};
 pub const RUB_NATURE: &str = "S10.G00.00.005";
 
-
-pub const TYPES: [(&str, &str); 5] = [
-    ("01", "déclaration normale"),
-    ("02", "déclaration normale sans individu"),
-    ("03", "annule et remplace intégral"),
-    ("04", "déclaration annule"),
-    ("05", "annule et remplace sans individu"),
-];
 
 /// Le champ C_VERSION de l'enregistrement DPAE a plat : positions 72 a 75.
 pub const INDICATEUR: (usize, usize) = (72, 75);
@@ -96,13 +89,14 @@ pub fn renumeroter(octets: &[u8], ordre: &str) -> R<Vec<u8>> {
     let prefixe = b"S20.G00.05.002,'";
     let mut contenu = octets.to_vec();
     if let Some((i, _)) = premier(octets, prefixe, deux_chiffres) {
-        let type_ar = match &octets[i + prefixe.len()..i + prefixe.len() + 2] {
-            b"01" => Some("03"),
-            b"02" => Some("05"),
+        let lu = std::str::from_utf8(&octets[i + prefixe.len()..i + prefixe.len() + 2]).ok().and_then(TypeDeLaDeclaration::du_code);
+        let type_ar = match lu {
+            Some(TypeDeLaDeclaration::Normale) => Some(TypeDeLaDeclaration::AnnuleEtRemplace),
+            Some(TypeDeLaDeclaration::NormaleSansIndividu) => Some(TypeDeLaDeclaration::AnnuleEtRemplaceSansIndividu),
             _ => None,
         };
         if let Some(t) = type_ar {
-            contenu = poser(&contenu, "S20.G00.05.002", t)?;
+            contenu = poser(&contenu, "S20.G00.05.002", t.code())?;
         }
     }
     poser(&contenu, "S20.G00.05.004", ordre)

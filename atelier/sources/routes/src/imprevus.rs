@@ -32,6 +32,7 @@ use socle::ecran::Pastille;
 use declarations::signalement;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::calcul::Paie;
 use droit::arrets::{Bloc60, CodeDuBloc60};
 use engagement::imprevus::{self, ArretSaisi, GenreSuspension, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, ARRET, SUSPENSION};
@@ -412,7 +413,7 @@ pub(crate) struct ReponseSignalement {
     phrase: String,
     nature: NatureSignalement,
     #[serde(rename = "type")]
-    type_declaration: &'static str,
+    type_declaration: TypeDeLaDeclaration,
     ordre: i64,
     avertissements: Vec<String>,
 }
@@ -423,7 +424,7 @@ pub(crate) struct ReponseSignalementFin {
     fichier: String,
     phrase: String,
     #[serde(rename = "type")]
-    type_declaration: &'static str,
+    type_declaration: TypeDeLaDeclaration,
     ordre: i64,
     preavis: String,
     avertissements: Vec<String>,
@@ -733,7 +734,7 @@ fn envoye(ctx: &Contexte, a: &ArretSaisi, nature: NatureSignalement) -> R<bool> 
 /// (`obligations::ce_qui_est_parti` : un depot reel accepte, que le bilan n'a pas refuse).
 fn parti_le(ctx: &Contexte, a: &ArretSaisi, nature: NatureSignalement) -> R<Option<Jour>> {
     let envois = envois_de_l_arret(ctx, a)?;
-    Ok(envois.iter().filter(|x| x.nature_declaration == nature.nature() && x.type_declaration.as_deref() == Some(signalement::NORMALE)).map(|x| x.quand).min().map(|q| q.jour()))
+    Ok(envois.iter().filter(|x| x.nature_declaration == nature.nature() && x.type_declaration == Some(TypeDeLaDeclaration::Normale)).map(|x| x.quand).min().map(|q| q.jour()))
 }
 
 /// Le nom d'un signalement : `<base>.dsn` ; un annule-et-remplace, `<base>_AR<ordre>.dsn`, a cote du signalement parti
@@ -1201,7 +1202,7 @@ fn ce_qui_est_parti(prolongations: &[Prolongation], signalements: &[crate::oblig
         parti.push(dite(format!("prolongé jusqu'au {} (avis du {})", p.fin.jj_mm_aaaa(), p.le.jj_mm_aaaa())));
     }
     for s in signalements {
-        let quoi = if s.nature_declaration == NatureDeLaDeclaration::SignalementReprise { "reprise signalée" } else if s.type_declaration.as_deref() == Some("03") { "signalement rectifié" } else { "signalé" };
+        let quoi = if s.nature_declaration == NatureDeLaDeclaration::SignalementReprise { "reprise signalée" } else if s.type_declaration == Some(TypeDeLaDeclaration::AnnuleEtRemplace) { "signalement rectifié" } else { "signalé" };
         parti.push(dite(format!("{} le {}", quoi, s.quand.dit())));
     }
     if !reporte_par_dit.is_empty() {
@@ -1986,7 +1987,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
         }
     }
     let paie = paie_de_l_engagement(&paies, rang, &cle, salarie, mois)?;
-    let type_declaration = if remplace.is_some() { declarations::fctu::ANNULE_ET_REMPLACE } else { declarations::fctu::NORMALE };
+    let type_declaration = if remplace.is_some() { TypeDeLaDeclaration::AnnuleEtRemplace } else { TypeDeLaDeclaration::Normale };
     let mut avertissements = declarations::fctu::verifier(&fin, &paie.engagement, type_declaration).map_err(echec_fctu)?;
     // LE NUMERO D'ORDRE : celui qu'on donne, sinon le suivant de tous les signalements deja partis (p. 136), lu une fois la
     // saisie verifiee : la plate-forme ne se consulte pas pour un refus.
@@ -1996,7 +1997,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let cible = ctx.racine.join("sorties").join(mois.to_string()).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = declarations::fctu::Options {
-        type_declaration: type_declaration.to_string(),
+        type_declaration,
         ordre,
         remplace: remplace.clone(),
         envoi_test,
@@ -2123,7 +2124,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
             )));
         }
     }
-    let type_declaration = if remplace.is_some() { signalement::ANNULE_ET_REMPLACE } else { signalement::NORMALE };
+    let type_declaration = if remplace.is_some() { TypeDeLaDeclaration::AnnuleEtRemplace } else { TypeDeLaDeclaration::Normale };
     let constitution = constitue_le(ctx, c.le);
     let dsn_arret = declarations::dsn::Arret { saisi: arret.clone() };
     let mut avertissements = signalement::verifier(&dsn_arret, nature, Some(&constitution)).map_err(echec_fctu)?;
@@ -2133,14 +2134,14 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
     let dernier = arret.dernier_jour_travaille;
     let nom = nom_du_signalement(
         &format!("Signalement{}_{}_{}", if c.nature == NatureSignalement::Arret { "Arret" } else { "Reprise" }, arret.salarie, dernier.aaaammjj()),
-        type_declaration == signalement::ANNULE_ET_REMPLACE,
+        type_declaration == TypeDeLaDeclaration::AnnuleEtRemplace,
         ordre,
     );
     let cible = ctx.racine.join("sorties").join(dernier.mois_civil().to_string()).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = signalement::Options {
         nature_declaration: nature,
-        type_declaration: type_declaration.to_string(),
+        type_declaration,
         ordre,
         remplace,
         envoi_test: c.test == Some(true),

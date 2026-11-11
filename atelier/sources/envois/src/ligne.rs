@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use droit::contexte::IdSalarie;
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
 use socle::mois::Mois;
 
@@ -319,7 +320,7 @@ pub struct DetailDsn {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub logiciel: Option<String>,
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub type_declaration: Option<String>,
+    pub type_declaration: Option<TypeDeLaDeclaration>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fraction: Option<String>,
     #[serde(rename = "nature", skip_serializing_if = "Option::is_none")]

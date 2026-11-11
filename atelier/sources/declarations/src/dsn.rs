@@ -14,6 +14,7 @@ use rust_decimal::RoundingStrategy;
 use droit::assiette::Assiette;
 use droit::base_assujettie::BaseAssujettie;
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::type_declaration::TypeDeLaDeclaration;
 use droit::bordereau::{AssietteDuBordereau, MontantDuBordereau};
 use droit::bareme::{self, bareme_applique, EntrepriseLue};
 use droit::fiche::{ChampsEntreprise, DeclarantDsn, Lue};
@@ -550,7 +551,7 @@ pub struct Regularisation {
 pub struct Options {
     pub date_constitution: Option<Jour>,
     pub fraction: String,
-    pub type_declaration: String,
+    pub type_declaration: TypeDeLaDeclaration,
     pub envoi_test: bool,
     pub ordre: i64,
     pub remplace: Option<String>,
@@ -565,7 +566,7 @@ impl Default for Options {
         Options {
             date_constitution: None,
             fraction: "11".into(),
-            type_declaration: "01".into(),
+            type_declaration: TypeDeLaDeclaration::Normale,
             envoi_test: false,
             ordre: 1,
             remplace: None,
@@ -4562,20 +4563,17 @@ traverse. Reprendre le contrat dans la saisie du mois, ou corriger les dates de 
         // signalements et de la FCTU : une DSN produite le 07/10 est « constituee le 07/10 ».
         None => aujourdhui()?,
     };
-    let mut type_declaration = o.type_declaration.clone();
-    if sans_individu {
-        type_declaration = match type_declaration.as_str() {
-            "01" => "02".into(),
-            "03" => "05".into(),
-            t => t.into(),
-        };
-    }
+    let type_declaration = match (sans_individu, o.type_declaration) {
+        (true, TypeDeLaDeclaration::Normale) => TypeDeLaDeclaration::NormaleSansIndividu,
+        (true, TypeDeLaDeclaration::AnnuleEtRemplace) => TypeDeLaDeclaration::AnnuleEtRemplaceSansIndividu,
+        (_, t) => t,
+    };
     if o.remplace.as_deref().is_some_and(|r| !r.is_empty()) {
         return Err(refus("S20.G00.05.006 est interdite sur une DSN mensuelle : la plate-forme a repondu CST-04 le \
 10/09/2026. Un annule et remplace se code par le type de declaration 03 et un numero d'ordre superieur, sans \
 identifiant de declaration remplacee."));
     }
-    if (type_declaration == "03" || type_declaration == "05") && o.ordre < 2 {
+    if type_declaration.remplace() && o.ordre < 2 {
         return Err(refus!(
             "Un annule et remplace doit porter un numero d'ordre STRICTEMENT superieur au dernier ordre accepte du \
 mois civil en cours (recu ordre={}). La plate-forme rend B1-208-11 sinon ; le dernier ordre accepte se lit sur le \
@@ -4610,7 +4608,7 @@ certificat de conformite du depot precedent.",
     contact_emetteur(&mut f, &ent)?;
 
     f.ecrire_code(NatureDeLaDeclaration::Mensuelle)?;
-    f.add("S20.G00.05.002", &type_declaration);
+    f.ecrire_code(type_declaration)?;
     f.add("S20.G00.05.003", &o.fraction);
     f.add("S20.G00.05.004", o.ordre);
     f.add("S20.G00.05.005", debut_mois.jjmmaaaa());
@@ -5075,7 +5073,7 @@ contrats, le vérifier sur le certificat d'adhésion. Rien n'est écrit.",
     }
 
     let du = pas_retenu(&f.lignes)?;
-    let remplace = type_declaration == "03" || type_declaration == "05";
+    let remplace = type_declaration.remplace();
     let dgfip = versement_dgfip(du, mois, debut_mois, fin_m, banque, remplace, o.remplacee_versait_pas)?;
     if !dgfip.is_empty() {
         let mut arrondi = bordereau::euro(du);

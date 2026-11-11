@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::natures::ListeDeLaNorme;
+use droit::type_declaration::TypeDeLaDeclaration;
 use socle::echec::{erreur as echec, Classe, Echec, R};
 use socle::paris::InstantCompact;
 use socle::texte::blanc;
@@ -770,7 +772,7 @@ pub struct Bilan {
     pub mois: Option<socle::mois::Mois>,
     pub logiciel: Option<String>,
     pub type_rapport: String,
-    pub type_declaration: Option<String>,
+    pub type_declaration: Option<TypeDeLaDeclaration>,
     pub fraction: Option<String>,
     pub ordre: Option<String>,
     pub salaries: Option<String>,
@@ -831,7 +833,7 @@ fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> R<Option<Bil
         mois: get("mois").map(|m| mois_du_rapport(&m)).transpose()?,
         logiciel: get("nom_logiciel"),
         type_rapport: type_rapport.to_string(),
-        type_declaration: get("type"),
+        type_declaration: type_du_retour(get("type").as_deref())?,
         fraction: get("fraction"),
         ordre: get("ordre"),
         salaries: get("salaries"),
@@ -903,7 +905,7 @@ pub fn declarations_du_bilan(o: &[u8]) -> R<Vec<DeclarationIdentifiee>> {
         let get = |k: &str| champs.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string());
         out.push(DeclarationIdentifiee {
             nature_declaration: nature_du_retour(get("nature").as_deref())?,
-            type_declaration: get("type"),
+            type_declaration: type_du_retour(get("type").as_deref())?,
             ordre: get("ordre"),
             siren: get("SIREN"),
             nic: get("nic_affectation"),
@@ -922,7 +924,7 @@ pub struct DeclarationIdentifiee {
     #[serde(rename = "nature")]
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
-    pub type_declaration: Option<String>,
+    pub type_declaration: Option<TypeDeLaDeclaration>,
     pub ordre: Option<String>,
     pub siren: Option<String>,
     pub nic: Option<String>,
@@ -934,9 +936,19 @@ pub struct DeclarationIdentifiee {
 /// La nature d'une declaration qu'un retour de la norme nomme (S20.G00.05.001), `None` s'il ne la dit pas : un code
 /// hors de la liste de la norme refuse le retour, qui ne se lit pas.
 fn nature_du_retour(code: Option<&str>) -> R<Option<NatureDeLaDeclaration>> {
+    code_du_retour(code, "nature")
+}
+
+/// Le type d'une declaration qu'un retour de la norme nomme (S20.G00.05.002), `None` s'il ne le dit pas : un code hors
+/// de la liste de la norme refuse le retour, qui ne se lit pas.
+fn type_du_retour(code: Option<&str>) -> R<Option<TypeDeLaDeclaration>> {
+    code_du_retour(code, "type")
+}
+
+fn code_du_retour<T: ListeDeLaNorme>(code: Option<&str>, quoi: &str) -> R<Option<T>> {
     code.map(|c| {
-        NatureDeLaDeclaration::du_code(c).ok_or_else(|| {
-            socle::refus!("Le retour porte, en nature de la déclaration (S20.G00.05.001), « {} », qui n'est pas un code de sa liste dans la norme : il ne se lit pas.", c)
+        T::du_code_de_la_norme(c).ok_or_else(|| {
+            socle::refus!("Le retour porte, en {} de la déclaration ({}), « {} », qui n'est pas un code de sa liste dans la norme : il ne se lit pas.", quoi, T::RUBRIQUE, c)
                 .reclasser(Classe::Illisible)
         })
     })
@@ -2109,7 +2121,7 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
         let mois = premier_texte(&arbre, id, &["mois"]);
         declarations.push(DeclarationDuRapport {
             nature_declaration: nature_du_retour(Some(premier_texte(&arbre, id, &["nature"])).filter(|t| !t.is_empty()))?,
-            type_declaration: premier_texte(&arbre, id, &["type"]).to_string(),
+            type_declaration: type_du_retour(Some(premier_texte(&arbre, id, &["type"])).filter(|t| !t.is_empty()))?,
             ordre: premier_texte(&arbre, id, &["ordre"]).to_string(),
             mois: if mois.is_empty() { None } else { Some(mois_du_rapport(mois)?) },
             etat: premier_texte(&arbre, bilan, &["etat", "etat_conformite"]).to_string(),
@@ -2189,7 +2201,7 @@ pub struct DeclarationDuRapport {
     #[serde(rename = "nature")]
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
-    pub type_declaration: String,
+    pub type_declaration: Option<TypeDeLaDeclaration>,
     pub ordre: String,
     pub mois: Option<socle::mois::Mois>,
     pub etat: String,
@@ -2685,7 +2697,7 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
         let code = at(d, "CodeRetourDecla");
         declarations.push(DeclarationOc {
             nature_declaration: nature_du_retour(at(d, "NatureDecla").as_deref())?,
-            type_declaration: at(d, "TypeDecla"),
+            type_declaration: type_du_retour(at(d, "TypeDecla").as_deref())?,
             ordre: at(d, "NoOrdreDecla"),
             mois: at(d, "DateMoisDec").map(|m| mois_du_jour(&m)).transpose()?,
             code_oc: at(d, "CodeOC"),
@@ -2725,7 +2737,7 @@ pub struct DeclarationOc {
     #[serde(rename = "nature")]
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
-    pub type_declaration: Option<String>,
+    pub type_declaration: Option<TypeDeLaDeclaration>,
     pub ordre: Option<String>,
     pub mois: Option<socle::mois::Mois>,
     pub code_oc: Option<String>,

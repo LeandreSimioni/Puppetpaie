@@ -12,6 +12,7 @@ use serde::Serialize;
 
 use droit::base_assujettie::BaseAssujettie;
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::type_declaration::TypeDeLaDeclaration;
 
 use socle::date::Jour;
 use socle::echec::{erreur, refus, Classe, Echec, R};
@@ -382,7 +383,7 @@ pub struct DsnLue {
     pub mois: Option<Mois>,
     /// Le type, la fraction et le numero d'ordre de la declaration (S20.G00.05.002, .003, .004), et l'identifiant de
     /// celle qu'elle remplace (.006).
-    pub type_declaration: Option<String>,
+    pub type_declaration: Option<TypeDeLaDeclaration>,
     pub fraction: Option<String>,
     pub ordre: Option<String>,
     pub remplace: Option<String>,
@@ -804,7 +805,8 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
     };
     let mut fautes = Fautes::default();
     let (mut mois, mut depot): (Option<Mois>, Option<Jour>) = (None, None);
-    let (mut type_declaration, mut fraction, mut ordre, mut remplace): (Option<String>, Option<String>, Option<String>, Option<String>) = (None, None, None, None);
+    let mut type_declaration: Option<TypeDeLaDeclaration> = None;
+    let (mut fraction, mut ordre, mut remplace): (Option<String>, Option<String>, Option<String>) = (None, None, None);
     let (mut logiciel, mut nature_envoi): (Option<String>, Option<String>) = (None, None);
     let mut nature: Option<NatureDeLaDeclaration> = None;
     let mut versements_organismes: Vec<Decimal> = Vec::new();
@@ -888,7 +890,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
             "S10.G00.01.003" => premier(&mut emetteur_nom, &plein),
             "S10.G00.02.001" => civilite_emetteur = plein,
             "S10.G00.02.002" => nom_emetteur = plein,
-            "S20.G00.05.002" => type_declaration = plein,
+            "S20.G00.05.002" => type_declaration = fautes.code(k, &v),
             "S20.G00.05.004" => ordre = plein,
             "S20.G00.05.005" => {
                 // 01MMAAAA : le premier jour du mois.

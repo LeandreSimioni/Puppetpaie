@@ -15,6 +15,7 @@ use std::path::PathBuf;
 
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
+use droit::type_declaration::TypeDeLaDeclaration;
 use socle::date::Jour;
 use socle::echec::{erreur, R};
 use socle::mois::Mois;
@@ -159,7 +160,7 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
                 l.pourquoi_pas = format!("demande déjà partie le {}, réponse attendue avant le {}", d.quand.jj_mm_aaaa(), d.avant.jj_mm_aaaa());
             }
             _ => {
-                if let Err(e) = am::verifier(p, motif, am::NORMALE, None) {
+                if let Err(e) = am::verifier(p, motif, TypeDeLaDeclaration::Normale, None) {
                     match e {
                         declarations::fctu::Echec::Impossible(m) => l.pourquoi_pas = m.phrase,
                         autre => return Err(autre.en_classe(Classe::Refuse)),
@@ -185,7 +186,7 @@ pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: &str, m
     for (rang, l) in retenues.iter().enumerate() {
         let options = am::Options {
             motif: motif.to_string(),
-            type_declaration: am::NORMALE.to_string(),
+            type_declaration: TypeDeLaDeclaration::Normale,
             ordre: premier + rang as i64,
             remplace: None,
             envoi_test,

@@ -27,6 +27,7 @@ use declarations::produire_regularisations::{self as regularisations, Reg};
 use crate::etapes::Moteur;
 use compagnie::pieces_ecrites::{cle_de_piece, journal_des_ecritures, noter_piece_ecrite, refuser_si_partie, EmpreinteNotee};
 use droit::contexte::Contexte;
+use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::calcul::Paie;
 use engagement::Avis;
 use socle::echec::erreur;
@@ -65,7 +66,7 @@ pub(crate) fn mois_ecrit(racine: &Path, mois: Mois) -> R<bool> {
 
 /// Ce que doit etre la prochaine DSN REELLE de ce mois : `(type, ordre, remplace)`. Normale d'ordre 1 si rien n'est
 /// passe ; sinon annule-et-remplace au rang suivant -- et un refus si son delai est passe.
-fn forme_de_la_dsn(ctx: &Contexte, m: &mut Moteur, le_mois: Mois, nic: Option<&str>) -> R<(String, i64, bool)> {
+fn forme_de_la_dsn(ctx: &Contexte, m: &mut Moteur, le_mois: Mois, nic: Option<&str>) -> R<(TypeDeLaDeclaration, i64)> {
     let faits = m.depots_reels(le_mois, nic)?;
     let dernier = m.dernier_ordre(le_mois, &faits)?;
     // CE QUE LA PLATE-FORME A VU EN REEL ce mois civil, lu en silence dans les bilans archives
@@ -76,10 +77,10 @@ fn forme_de_la_dsn(ctx: &Contexte, m: &mut Moteur, le_mois: Mois, nic: Option<&s
         Some(d) => d.max(vues.ordre),
         // Une mensuelle du mois acceptee en reel que le journal ignore : la suivante la remplace.
         None if vues.du_mois_acceptee => vues.ordre.max(1),
-        None => return Ok(("01".into(), vues.ordre + 1, false)),
+        None => return Ok((TypeDeLaDeclaration::Normale, vues.ordre + 1)),
     };
     m.refuser_si_hors_delai(le_mois)?;
-    Ok(("03".into(), dernier + 1, true))
+    Ok((TypeDeLaDeclaration::AnnuleEtRemplace, dernier + 1))
 }
 
 /// La declaration qu'un annule-et-remplace remplace (la derniere DSN mensuelle partie du mois, `dsn_parties`)
@@ -97,7 +98,7 @@ fn verse_a_la_dgfip(f: &declarations::dsn::Fabriquee) -> bool {
 
 /// La forme d'une DSN mensuelle : son en-tete, l'etablissement qu'elle declare, et le jour de sa constitution.
 struct Forme {
-    type_dsn: String,
+    type_dsn: TypeDeLaDeclaration,
     ordre: i64,
     /// Le NIC de l'etablissement ; `None` : la compagnie n'en a qu'un.
     etablissement: Option<String>,
@@ -110,7 +111,7 @@ impl Forme {
         declarations::dsn::Options {
             date_constitution: Some(self.constitution),
             envoi_test: false,
-            type_declaration: self.type_dsn.clone(),
+            type_declaration: self.type_dsn,
             ordre: self.ordre,
             etablissement: self.etablissement.clone(),
             remplacee_versait_pas: self.remplacee_versait_pas,
@@ -214,7 +215,7 @@ fn refabriquer_sur(ctx: &Contexte, lu: Option<&Lu>, chemin: &Path, mois: Mois, n
     };
     let entete = declarations::dsn_lue::lire(&octets, "")?;
     // Une DSN dont l'en-tete ne dit pas sa constitution, son type ou son ordre n'est pas celle du moteur : elle se refait.
-    let (Some(constitution), Some(type_dsn), Some(ordre)) = (entete.depot, entete.type_declaration.clone(), entete.ordre.as_deref().map(str::trim).map(str::parse::<i64>)) else {
+    let (Some(constitution), Some(type_dsn), Some(ordre)) = (entete.depot, entete.type_declaration, entete.ordre.as_deref().map(str::trim).map(str::parse::<i64>)) else {
         return Ok(None);
     };
     let ordre = ordre.map_err(|e| erreur(Classe::Illisible, format!("{} : numéro d'ordre illisible ({}).", socle::fichiers::nom_du(chemin), e)))?;
@@ -223,7 +224,7 @@ fn refabriquer_sur(ctx: &Contexte, lu: Option<&Lu>, chemin: &Path, mois: Mois, n
         Some(n) => n.to_string(),
         None => ctx.entreprise.nic.ecrite("nic").map_err(|e| e.reclasser(Classe::Illisible))?.to_string(),
     };
-    let remplacee_versait_pas = if type_dsn == "03" || type_dsn == "05" {
+    let remplacee_versait_pas = if type_dsn.remplace() {
         let mut m = Moteur::nouveau(ctx);
         remplacee_versait_pas_de(ctx, &mut m, mois, plusieurs.then_some(nic.as_str()))?
     } else {
@@ -277,7 +278,7 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
     let e = l.dsn().ok_or_else(|| erreur(Classe::Illisible, "journal : la DSN partie n'est pas une DSN".to_string()))?;
     let le_mois = e.mois.ok_or_else(|| erreur(Classe::Illisible, "journal : une DSN partie sans son mois".to_string()))?;
     let mois = le_mois.to_string();
-    let type_dsn = e.detail.type_declaration.clone().filter(|t| !t.is_empty()).ok_or_else(|| erreur(Classe::Illisible, "journal : une DSN partie sans son type".to_string()))?;
+    let type_dsn = e.detail.type_declaration.ok_or_else(|| erreur(Classe::Illisible, "journal : une DSN partie sans son type".to_string()))?;
     let plusieurs = !ctx.entreprise_du_mois(le_mois).secondaires().is_empty();
     let nic = match l.etablissement() {
         Some(n) => n.to_string(),
@@ -392,7 +393,7 @@ pub(crate) fn dsn_du_mois(ctx: &Contexte, mois: Mois, nic: Option<&str>) -> R<Op
     if let Some(f) = dsn_parties(ctx, &mut m, mois, plusieurs.then_some(nic.as_str()))?.pop() {
         return Ok(Some((f, true)));
     }
-    let forme = Forme { type_dsn: "01".into(), ordre: 1, etablissement: plusieurs.then_some(nic), constitution: ctx.aujourdhui, remplacee_versait_pas: None };
+    let forme = Forme { type_dsn: TypeDeLaDeclaration::Normale, ordre: 1, etablissement: plusieurs.then_some(nic), constitution: ctx.aujourdhui, remplacee_versait_pas: None };
     let present = Lu::du_mois(ctx, mois)?.present(ctx, mois, &forme)?;
     if present.vide() {
         return Ok(None);
@@ -582,9 +583,9 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
             Some(x) if Some(x.as_str()) != principal => format!("DSN_{}_{}.dsn", etiq, x),
             _ => format!("DSN_{}.dsn", etiq),
         };
-        let (type_dsn, ordre, remplace) = forme_de_la_dsn(ctx, &mut m, le_mois, nic.as_deref())?;
+        let (type_dsn, ordre) = forme_de_la_dsn(ctx, &mut m, le_mois, nic.as_deref())?;
         let mut remplacee_versait_pas = None;
-        if remplace {
+        if type_dsn.remplace() {
             remplacee_versait_pas = remplacee_versait_pas_de(ctx, &mut m, mois, nic.as_deref())?;
             nom = format!("{}_AR{}.dsn", &nom[..nom.len() - ".dsn".len()], ordre);
             avertissements.push(info(format!(
@@ -1198,9 +1199,9 @@ fn refaire_la_dsn(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Lig
         }
     }
     avant.sort();
-    let type_dsn = l.dsn().and_then(|e| e.detail.type_declaration.clone());
+    let type_dsn = l.dsn().and_then(|e| e.detail.type_declaration);
     let versait = match avant.last() {
-        Some((_, r)) if matches!(type_dsn.as_deref(), Some("03" | "05")) => Some(verse_a_la_dgfip(&dsn_partie(ctx, m, lignes, *r, None)?)),
+        Some((_, r)) if type_dsn.is_some_and(TypeDeLaDeclaration::remplace) => Some(verse_a_la_dgfip(&dsn_partie(ctx, m, lignes, *r, None)?)),
         _ => None,
     };
     let f = dsn_partie(ctx, m, lignes, rang, versait)?;
@@ -1285,7 +1286,7 @@ fn refaire_le_signalement(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne
     let detail = l.dsn().map(|e| e.detail.clone()).ok_or_else(|| manque("son signalement"))?;
     let nature = detail.nature_declaration.ok_or_else(|| manque("sa nature"))?;
     let ordre: i64 = detail.ordre.as_deref().ok_or_else(|| manque("son numero d'ordre"))?.trim().parse().map_err(|_| manque("numero d'ordre lisible"))?;
-    if matches!(detail.type_declaration.as_deref(), Some(t) if !t.is_empty() && t != "01") {
+    if detail.type_declaration.is_some_and(|t| t != TypeDeLaDeclaration::Normale) {
         return Err(erreur(Classe::Refuse, format!("{} annulait et remplaçait un signalement : il ne se refait pas ; le fichier a été déplacé ou effacé.", nom)));
     }
     let (jour, instant, _) = ecrite_a(ctx, mois, &nom, l)?;
@@ -1299,7 +1300,7 @@ fn refaire_le_signalement(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne
                 let paie = paies.first().ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} n'emporte aucun engagement", nom)))?;
                 let options = declarations::amorcage::Options {
                     motif,
-                    type_declaration: declarations::amorcage::NORMALE.to_string(),
+                    type_declaration: TypeDeLaDeclaration::Normale,
                     ordre,
                     remplace: None,
                     envoi_test: false,

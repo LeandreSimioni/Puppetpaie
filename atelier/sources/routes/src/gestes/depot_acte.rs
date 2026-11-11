@@ -210,7 +210,7 @@ fn verifier_depot_remplacement(ctx: &Contexte, le_mois: Mois, a: &DsnLue, nic: O
     let mut m = crate::etapes::Moteur::nouveau(ctx);
     let faits = m.depots_reels(le_mois, nic)?;
     let dernier = m.dernier_ordre(le_mois, &faits)?;
-    if !a.type_declaration.as_deref().is_some_and(|t| ["03", "05"].contains(&t)) {
+    if !a.type_declaration.is_some_and(droit::type_declaration::TypeDeLaDeclaration::remplace) {
         return Ok(false);
     }
     // CE QUE LA PLATE-FORME A VU EN REEL au mois de constitution du fichier, lu en silence dans les bilans archives

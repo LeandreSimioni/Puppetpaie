@@ -181,7 +181,7 @@ pub fn deposer_dsn(
     let trace = archiver_reponse(&ctx.racine, "depot-dsn", &quand, &reponse)?;
     let detail = DetailDsn {
         preuve,
-        type_declaration: texte(apercu.type_declaration.as_deref()),
+        type_declaration: apercu.type_declaration,
         // LA NATURE : un signalement se numerote a la suite de tous ceux deja partis (`journal::dernier_ordre_des_signalements`).
         nature_declaration: apercu.nature_declaration,
         // LE RANG DECLARE : le prochain annule-et-remplace se numerote au-dessus de cet ordre.

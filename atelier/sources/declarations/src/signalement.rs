@@ -16,6 +16,7 @@ use socle::date::Jour;
 use crate::dsn::{self, dite, Arret, Fichier, LOGICIEL, VERSION};
 use socle::fichiers::repr;
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::type_declaration::TypeDeLaDeclaration;
 
 /// LA NATURE D'UN SIGNALEMENT QUE CE MODULE ECRIT (S20.G00.05.001) : l'arret de travail (04), la reprise (05). Son code
 /// est celui de sa nature dans la liste de la norme (`nature`) ; elle s'ecrit et se lit par lui.
@@ -57,9 +58,6 @@ impl<'de> serde::Deserialize<'de> for NatureSignalement {
         })
     }
 }
-
-pub const NORMALE: &str = "01";
-pub const ANNULE_ET_REMPLACE: &str = "03";
 
 /// Un refus : `Impossible` est `SignalementImpossible`, `Autre` le reste (le refus d'un signalement, `fctu::Echec`).
 pub use crate::fctu::Echec;
@@ -328,7 +326,7 @@ un fait déjà survenu ne se date pas dans le futur.",
 pub struct Options {
     /// La nature de la declaration (S20.G00.05.001).
     pub nature_declaration: NatureSignalement,
-    pub type_declaration: String,
+    pub type_declaration: TypeDeLaDeclaration,
     pub ordre: i64,
     pub remplace: Option<String>,
     pub envoi_test: bool,
@@ -339,7 +337,7 @@ impl Default for Options {
     fn default() -> Options {
         Options {
             nature_declaration: NatureSignalement::Arret,
-            type_declaration: NORMALE.into(),
+            type_declaration: TypeDeLaDeclaration::Normale,
             ordre: 1,
             remplace: None,
             envoi_test: false,
@@ -351,17 +349,17 @@ impl Default for Options {
 /// Le fichier d'un signalement, pret a deposer. `departs` : ce qui est parti, pour l'identite declaree (`ntt::poser_ntt`).
 pub fn generer(ctx: &Contexte, a: &Arret, o: &Options, departs: &engagement::departs::Departs) -> R<String> {
     let nature = o.nature_declaration;
-    let td = o.type_declaration.as_str();
-    if td != NORMALE && td != ANNULE_ET_REMPLACE {
+    let td = o.type_declaration;
+    if td != TypeDeLaDeclaration::Normale && td != TypeDeLaDeclaration::AnnuleEtRemplace {
         return impossible(format!(
             "Type de declaration {}. Un signalement d'arret ou de reprise est « 01 - normale » ou « 03 - annule \
 et remplace integral » ; le « 04 - annule » n'existe que pour un FCTU et un signalement d'amorcage (cahier \
 technique §1.4.3.4).",
-            repr(td)
+            repr(td.code())
         ));
     }
     let remplace = o.remplace.as_deref().filter(|r| !r.is_empty());
-    if td == ANNULE_ET_REMPLACE && remplace.is_none() {
+    if td == TypeDeLaDeclaration::AnnuleEtRemplace && remplace.is_none() {
         return impossible(
             "Un annule-et-remplace doit viser la declaration qu'il remplace (S20.G00.05.006) : l'identifiant du \
 dernier envoi VALIDE par le point de depot, lu sur son certificat de conformite. Sans lui, la plate-forme rend \
@@ -369,7 +367,7 @@ B1-208-08."
                 .into(),
         );
     }
-    if td == NORMALE && remplace.is_some() {
+    if td == TypeDeLaDeclaration::Normale && remplace.is_some() {
         return impossible(
             "S20.G00.05.006 est interdite sur un signalement normal (CCH-12) : elle ne s'ecrit que sur un \
 annule-et-remplace (type 03)."
@@ -411,7 +409,7 @@ annule-et-remplace (type 03)."
 
     // ---------------------------------------------------------- S20 declar.
     f.ecrire_code(nature.nature())?;
-    f.add("S20.G00.05.002", td);
+    f.ecrire_code(td)?;
     f.add("S20.G00.05.003", "11");
     f.add("S20.G00.05.004", o.ordre.to_string());
     if let Some(r) = remplace {

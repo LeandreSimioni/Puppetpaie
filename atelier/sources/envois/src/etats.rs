@@ -1117,7 +1117,7 @@ pub struct IncidentDeRetour {
 pub struct DetailIncidentDeRetour {
     pub reel: bool,
     pub nature_retour: String,
-    pub type_declaration: Option<String>,
+    pub type_declaration: Option<droit::type_declaration::TypeDeLaDeclaration>,
     pub anomalies: Vec<AnomalieDeRetour>,
 }
 
@@ -1182,7 +1182,7 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &Verdict, conten
         detail: DetailIncidentDeRetour {
             reel: ligne.reel(),
             nature_retour: r.nature_retour.clone(),
-            type_declaration: ligne.dsn().and_then(|e| e.detail.type_declaration.clone()),
+            type_declaration: ligne.dsn().and_then(|e| e.detail.type_declaration),
             anomalies: uniques,
         },
     }))
