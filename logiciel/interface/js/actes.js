@@ -21,11 +21,12 @@
 
 /** Le geste d'un groupe ou d'un carré : la boîte de la route que le moteur nomme (`route`, avec sa `charge` ; `puis` :
  *  l'acte qui suit). Un dossier à ouvrir porte son `chemin`. `seulement` : les salariés cochés d'avance. `sur` : ce sur
- *  quoi porte le geste d'un rappel (`objet`, `obligation`, ce que la boîte montre). */
-function ouvrirGeste(action, mois, seulement, sur = {}) {
+ *  quoi porte le geste d'un rappel (`objet`, `obligation`, ce que la boîte montre) : les gestes qui le lisent ne viennent
+ *  que d'un rappel. */
+function ouvrirGeste(action, mois, seulement, sur) {
   if (!action) return;
   if (action.chemin) return ouvrirEtDire(action.chemin, action.phrase, true);
-  const c = action.charge || {};
+  const c = action.charge;
   const m = c.mois || mois;
   switch (action.route) {
     case "depot-apercu":
@@ -38,14 +39,14 @@ function ouvrirGeste(action, mois, seulement, sur = {}) {
     case "avenant-apercu": return boiteAvenant(m, c.salarie, c.debut, c.numero);
     // La carte du contrat, sur la première case qui manque (`objet.a_saisir`) ; elle s'écrit par `puis`.
     case "saisie": {
-      const f = sur.objet || {};
-      return (f.a_saisir || []).length ? allerALaCase({ ...f, mois: f.mois || m }, f.a_saisir[0].champ) : null;
+      const f = sur.objet;
+      return f.a_saisir.length ? allerALaCase({ ...f, mois: f.mois || m }, f.a_saisir[0].champ) : null;
     }
     case "etat-du-mois": return null;   // le mois, déjà ouvert
-    case "fin-contrat-signaler": return boiteSignalerFin(m, sur.objet || {});
-    case "arret-signaler": return boiteSignalerArret(sur.objet || {}, c.nature);
+    case "fin-contrat-signaler": return boiteSignalerFin(m, sur.objet);
+    case "arret-signaler": return boiteSignalerArret(sur.objet, c.nature);
     case "accident-declare":
-    case "attestation-declare": return boiteObligationFaite(sur.objet || {}, sur.obligation || {});
+    case "attestation-declare": return boiteObligationFaite(sur.objet, sur.obligation);
     case "cloture": return boiteCloture(c.annee);
     case "export-compta": return lancerExportCompta(c.annee);
     case "revue-spectacles": return boiteRevueSpectacles(sur, c);
@@ -53,7 +54,7 @@ function ouvrirGeste(action, mois, seulement, sur = {}) {
 }
 
 /** La classe d'une case : la couleur que le moteur donne au groupe (`couleur`) ; une attente se dessine en deux moitiés. */
-const classeDeCase = (g) => g.coupee ? "en-attente" : (g.couleur || "gris");
+const classeDeCase = (g) => g.coupee ? "en-attente" : g.couleur;
 
 /** Les colonnes déjà dessinées pour un mois : une colonne qui apparaît entre en glissant. */
 const COLONNES_VUES = new Map();
@@ -74,7 +75,7 @@ function dessinerCase(et, k, g, colonnes, neuves, gestes) {
     bouton = `data-geste="${gestes.length - 1}" tabindex="0" role="button"`;
   }
   const quoi = `<span class="quoi">${g.compte_texte
-    ? `<span class="compte">${echapper(g.compte_texte)}</span> ` : ""}${echapper(g.quoi || "")}</span>`;
+    ? `<span class="compte">${echapper(g.compte_texte)}</span> ` : ""}${echapper(g.quoi)}</span>`;
   const limite = ech ? `<span class="ech">${echapper(ech)}</span>` : "";
   const corps = g.coupee ? `
       <span class="moitie faite"><span class="etape-rond">✓</span>${cote ? "" : `<b>${echapper(et.nom)}</b>`}</span>
@@ -99,14 +100,14 @@ async function dessinerActions(mois) {
     cible.innerHTML = `<p class="discret">${echapper(err.message)}</p>`;
     return;
   }
-  const colonnes = e.colonnes && e.colonnes.length ? e.colonnes : ["G"];
+  const colonnes = e.colonnes.length ? e.colonnes : ["G"];
   const vues = COLONNES_VUES.get(mois);
   const neuves = new Set(vues ? colonnes.filter((c) => !vues.includes(c)) : []);
   COLONNES_VUES.set(mois, colonnes);
   const gabarit = colonnes.map((c, i) => i === 0 ? "minmax(0, 1.4fr)" : "minmax(0, 1fr)").join(" ");
   const gestes = [];
-  const rangees = (e.etapes || []).map((et, k) => {
-    const cases = (et.groupes || []).map((g) => dessinerCase(et, k, g, colonnes, neuves, gestes)).join("");
+  const rangees = e.etapes.map((et, k) => {
+    const cases = et.groupes.map((g) => dessinerCase(et, k, g, colonnes, neuves, gestes)).join("");
     return `<li class="rangee"><div class="kases" style="grid-template-columns:${gabarit}">${cases}</div></li>`;
   }).join("");
   cible.innerHTML = `<ol class="etapes">${rangees}<svg class="arbre" aria-hidden="true"></svg></ol>`;
@@ -170,7 +171,7 @@ async function rafraichirActions() {
   const mois = document.getElementById("mois").value;
   await dessinerActions(mois);
   await dessinerEtatsDesEngagements(mois);
-  if (mois && toutEstEcrit()) lireLeMois(mois).then((lu) => calculerApercu(lu.lectures.apercu)).catch(() => {});
+  if (mois && toutEstEcrit()) lireLeMois(mois).then((lu) => calculerApercu(lu.lectures.apercu)).catch((e) => dire(e.message, "erreur"));
 }
 
 /* ---------------------------------------- le récapitulatif d'un dépôt */
@@ -199,7 +200,7 @@ function recapitulatifDsn(r) {
     ${c.ecarts.length ? `<tr class="ecart"><td></td><td colspan="6">
       ${pastilleDeLEtat(c.pastille_ecarts)}</td></tr>` : ""}`).join("")).join("");
   return `
-    <div class="encart ${ENCART_DE_COULEUR[r.couleur] ?? ""}">
+    <div class="encart ${ENCART_DE_COULEUR[r.couleur]}">
       <b>${echapper(r.titre)}</b> ${echapper(r.phrase)}
     </div>
     ${r.absents.length ? `<ul class="absents">${r.absents.map((x) =>
@@ -212,13 +213,13 @@ function recapitulatifDsn(r) {
 }
 
 function corpsDsn(a) {
-  const v = a.ordres || [];
+  const v = a.ordres;
   return `
     <p class="discret">${echapper(a.description)}</p>
     ${recapitulatifDsn(a.recapitulatif)}
     <details class="replie">
       <summary>${echapper(a.ordres_titre)}</summary>
-      <div class="encart ${ENCART_DE_COULEUR[a.couleur_ordres] ?? ""}">
+      <div class="encart ${ENCART_DE_COULEUR[a.couleur_ordres]}">
       ${a.ordres_erreur ? `<p><b>${echapper(a.ordres_erreur)}</b></p>` : ""}
       ${v.length
         ? `<table class="ordres">
@@ -244,10 +245,10 @@ function corpsDpae(a) {
     <table>
       <tr><th>Salarié</th><th>Contrat</th><th>Du</th><th>Au</th>
         <th>Trace d'envoi</th></tr>
-      ${(a.embauches || []).map((x) => `
+      ${a.embauches.map((x) => `
         <tr>
           <td>${echapper(x.nom)}</td>
-          <td>${echapper(x.type_contrat || "")}</td>
+          <td>${x.type_contrat ? echapper(x.type_contrat) : ""}</td>
           <td>${echapper(jjmmaaaa(x.debut))}</td>
           <td>${x.fin ? echapper(jjmmaaaa(x.fin))
                       : `<span class="discret">sans terme</span>`}</td>
@@ -266,7 +267,7 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
   try {
     a = await api("depot-apercu", charge);
   } catch (e) { dire(e.message, "erreur"); return; }
-  const dit = [a.phrase, ...(a.avertissements || []), ...(a.informations || [])].filter(Boolean);
+  const dit = [a.phrase, ...a.avertissements, ...a.informations].filter(Boolean);
   if (dit.length) dire(dit.join("  ·  "));
   rafraichirActions();
 
@@ -372,7 +373,7 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
     // « conforme » (le moteur refuse le réel sans lui, DSN comme DPAE).
     for (let tour = 0; tour < 30; tour++) {
       let r = null;
-      try { r = await api("bilan-repetition", charge); } catch (e) { /* on réessaie */ }
+      try { r = await api("bilan-repetition", charge); } catch (e) { dire(e.message, "erreur"); }
       if (r && (r.etat === "testee" || r.etat === "test_refuse")) {
         ecrire(encartRepetition(r));
         libre();
@@ -431,7 +432,7 @@ async function suivreDepot(quoi, flux, mois) {
   for (let tour = 0; tour < 40; tour++) {
     await new Promise((ok) => setTimeout(ok, enFictive() ? 4000 : 15000));
     let r = null;
-    try { r = await api("suivre-depot", { quoi, flux, mois }); } catch (e) { continue; }
+    try { r = await api("suivre-depot", { quoi, flux, mois }); } catch (e) { dire(e.message, "erreur"); continue; }
     if (r && r.fini) {
       dire(r.phrase, r.couleur);
       await rafraichirActions();
@@ -442,7 +443,9 @@ async function suivreDepot(quoi, flux, mois) {
 
 /** Ce que le certificat de conformité (nature 41) dit de chaque personne. */
 function certificatParPersonne(ligne) {
-  const dpae = ((ligne && ligne.retours) || []).flatMap((x) => x.dpae || []);
+  // Le test conforme (`conforme`, sa ligne du journal) ; seul un certificat de conformité nomme des personnes (`dpae`).
+  if (!ligne) return "";
+  const dpae = ligne.retours.filter((x) => x.dpae).flatMap((x) => x.dpae);
   if (!dpae.length) return "";
   return `<ul class="liste-certificat">${dpae.map((x) => `
     <li>${echapper([x.nom, x.prenom].filter(Boolean).join(" "))} :
@@ -452,7 +455,7 @@ function certificatParPersonne(ligne) {
 /** Où en est le test de CE contenu, tel que le moteur le dit (`titre`, `phrase`, `couleur` de la répétition). */
 function encartRepetition(r) {
   if (!r) return "";
-  return `<div class="encart ${ENCART_DE_COULEUR[r.couleur] ?? ""}"><b>${echapper(r.titre)}</b>
+  return `<div class="encart ${ENCART_DE_COULEUR[r.couleur]}"><b>${echapper(r.titre)}</b>
     ${echapper(r.phrase)}${r.etat === "testee" ? certificatParPersonne(r.conforme) : ""}</div>`;
 }
 
@@ -515,9 +518,9 @@ async function boiteEnvoi(mois) {
     <h3>Les documents</h3>
     ${moisEnGros(mois)}
     ${a.boite_liee && a.expediteur_dit ? `<p class="discret">${echapper(a.expediteur_dit)}</p>` : ""}
-    ${(a.empechements || []).map((x) =>
+    ${a.empechements.map((x) =>
       `<div class="encart attention">${echapper(x)}</div>`).join("")}
-    ${(a.avertissements || []).concat(a.informations || []).map((x) =>
+    ${a.avertissements.concat(a.informations).map((x) =>
       `<div class="encart info">${echapper(x)}</div>`).join("")}
     ${!a.messages.length ? "" : `<table class="table-envoi">
       <colgroup><col class="c-coche"><col class="c-salarie">${a.boite_liee ? `<col class="c-adresse">` : ""}<col class="c-pieces"></colgroup>
@@ -534,7 +537,7 @@ async function boiteEnvoi(mois) {
           <ul>${m.changements.map((c) => `<li>${echapper(c)}</li>`).join("")}</ul></td></tr>` : ""}`).join("")}
     </table>`}
     ${a.deja ? `<div class="encart attention"><b>Déjà partis</b>
-      ${echapper(a.deja.quand_dit || "")}</div>` : ""}
+      ${echapper(a.deja.quand_dit)}</div>` : ""}
     ${peut && a.boite_liee ? noteFictive() : ""}
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Fermer</button>
@@ -588,6 +591,9 @@ async function boiteEnvoi(mois) {
  *  Un contrat signé qui a changé part en avenant. Deux gestes : Imprimer (un
  *  seul PDF de tout ce qui est coché), et Envoyer à la signature quand une
  *  boîte courriel est posée. */
+/** Le numéro d'un contrat, quand il en a un : sans lui, la case ne le porte pas, et il ne part pas. */
+const attributNumero = (c) => (c.numero ? ` data-numero="${echapper(c.numero)}"` : "");
+
 async function boiteSignature(mois, seulement) {
   let a;
   try {
@@ -601,12 +607,12 @@ async function boiteSignature(mois, seulement) {
     ${moisEnGros(mois)}
     ${encart(a.signature)}
     ${a.boite_liee ? noteFictive() : ""}
-    ${(a.avertissements || []).map((x) => `<div class="encart info">${echapper(x)}</div>`).join("")}
-    ${!contrats.length ? `<p class="discret">${echapper(a.rien_a_envoyer)}</p>` : `<div class="liste-choix">
+    ${a.avertissements.map((x) => `<div class="encart info">${echapper(x)}</div>`).join("")}
+    ${!contrats.length ? (a.rien_a_envoyer ? `<p class="discret">${echapper(a.rien_a_envoyer)}</p>` : "") : `<div class="liste-choix">
       ${contrats.map((c) => `
         <label class="choix">
           <input type="checkbox" class="s-qui" value="${echapper(c.salarie)}"
-                 data-debut="${echapper(c.debut)}" data-numero="${echapper(c.numero || "")}" ${c.en_avenant ? 'data-avenant="1"' : ""}
+                 data-debut="${echapper(c.debut)}"${attributNumero(c)} ${c.en_avenant ? 'data-avenant="1"' : ""}
                  ${coche(c) ? "checked" : ""}>
           <span><b>${echapper(c.nom)}</b> — ${echapper(c.spectacle)},
             ${echapper(c.periode_dit)}
@@ -617,7 +623,7 @@ async function boiteSignature(mois, seulement) {
                   <button type="button" class="lien s-courriel-poser" data-salarie="${echapper(c.salarie)}">Enregistrer</button></span>`) : ""}
             ${c.pastille ? `<br>${pastilleDeLEtat(c.pastille)}` : ""}${c.en_avenant ? `
               <button class="lien s-avenant" data-salarie="${echapper(c.salarie)}"
-                data-debut="${echapper(c.debut)}" data-numero="${echapper(c.numero || "")}">voir l'avenant</button>` : ""}</span>
+                data-debut="${echapper(c.debut)}"${attributNumero(c)}>voir l'avenant</button>` : ""}</span>
         </label>`).join("")}
     </div>`}
     <div class="actions">
@@ -787,14 +793,14 @@ async function boiteAvenant(mois, salarie, debut, numero) {
   let a;
   try {
     // Le numéro et le mois disent QUEL contrat, si le salarié en a deux qui commencent le même jour (retours Windows, B).
-    a = await api("avenant-apercu", { salarie, debut, numero: numero || "", mois });
+    a = await api("avenant-apercu", { salarie, debut, numero, mois });
   } catch (e) { dire(e.message, "erreur"); return; }
-  const mods = a.modifications || [];
+  const mods = a.modifications;
   const cite = (textes) => textes.map((x) => `<p class="citation">« ${echapper(x)} »</p>`).join("");
   ouvrirBoite(`
     <h3>${echapper(a.titre)}</h3>
     <p class="discret">${echapper(a.situation)}</p>
-    ${(a.avenants || []).map((x) => `<p class="discret">${echapper(x.phrase)}</p>`).join("")}
+    ${a.avenants.map((x) => `<p class="discret">${echapper(x.phrase)}</p>`).join("")}
     ${encarts(a.encarts)}
     ${mods.length ? `
       ${mods.map((m) => m.phrase ? `<div class="modif-avenant">
@@ -834,7 +840,7 @@ async function boiteAvenant(mois, salarie, debut, numero) {
     if (!mdp) return;
     const rendre = occupe(envoyer, "Envoi…");
     try {
-      const r = await api("demander-signature", { mois, avenants: [{ salarie, debut, numero: numero || "", mois, effet }], motdepasse: mdp });
+      const r = await api("demander-signature", { mois, avenants: [{ salarie, debut, numero, mois, effet }], motdepasse: mdp });
       fermerBoite();
       dire(r.phrase, "envoye");
       afficherEnvoi("Avenant à signer", a.mois, r.phrase, r.avertissements);
@@ -850,7 +856,7 @@ async function boiteAvenant(mois, salarie, debut, numero) {
     if (!mdp) return;
     const rendre = occupe(remplace, "Envoi…");
     try {
-      const r = await api("demander-signature", { mois: a.mois, contrats: [{ salarie, debut, numero: numero || a.contrat || "" }],
+      const r = await api("demander-signature", { mois: a.mois, contrats: [{ salarie, debut, numero: numero || a.contrat }],
                                                   motdepasse: mdp, remplace: true });
       fermerBoite();
       dire(r.phrase, "envoye");
@@ -867,8 +873,8 @@ function afficherEnvoi(titre, mois, phrase, details) {
   document.getElementById("resultat").innerHTML = `
     <div class="carte" style="margin-top:20px">
       <h2>${echapper(titre)} — ${echapper(moisEnClair(mois))}</h2>
-      <div class="encart bien">${echapper(phrase || "")}</div>
-      ${(details || []).length
+      <div class="encart bien">${echapper(phrase)}</div>
+      ${details.length
         ? `<p class="note">${echapper(details.join(" · "))}</p>` : ""}
     </div>`;
 }
