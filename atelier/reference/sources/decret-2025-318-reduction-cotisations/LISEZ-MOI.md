@@ -21,3 +21,10 @@ D. 241-3-2, D. 241-6, D. 241-24, D. 711-8) ne servent pas le moteur.
 Le `t` daté (0,3194 jusqu'au 30/04/2025, 0,3193 ensuite) de `par_statut.technicien.reduction_generale` du barème 2025
 (`logiciel/donnees/baremes/2025.json`), avec D. 241-7 en ses versions du 31/12/2023 et du 07/04/2025
 (`../legifrance-versions-datees/`).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `legifrance-decret-2025-318-20250406.pdf` : `1a5722a41a2d86346fb6979bafceb2634777b26e3379633b92f3225003e9e119`
+- `legifrance-decret-2025-318-20250406.txt` : `7590ed4fc8c57c102143b0d9287a06dabb167e9df621e6a13b9cb7ffabaa675f`

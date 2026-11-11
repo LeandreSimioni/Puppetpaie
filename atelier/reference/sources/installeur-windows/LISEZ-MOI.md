@@ -27,3 +27,14 @@ Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'u
 - `nsis-exemple-example2-20261014.nsi` : transcription `nsis-exemple-example2-20261014.txt`
 - `nsis-exemple-install-per-user-20261014.nsi` : transcription `nsis-exemple-install-per-user-20261014.txt`
 - `tauri-windows-installer-20261014.html` : transcription `tauri-windows-installer-20261014.txt`
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `microsoft-msi-uninstall-registry-key-20261014.txt` : `72ef2488d0dec03c29cc90ccdebb95445e87b9ff282cd0d6faec678581a5d810`
+- `microsoft-webview2-distribution-20261014.txt` : `a9f6a478830414106ee5c823c1f310db4d69314cbdbfece94501c5361dc9d01d`
+- `microsoft-webview2-telechargement-20261014.txt` : `a9c50b19fa68fb75b8becb361c2f6c73fbc1f7b928d3355173e98642c4e99a03`
+- `nsis-exemple-example2-20261014.txt` : `1937de9b9bb62a6559d391900dd57e711796623097e1aed50292f3fe4cdd3d84`
+- `nsis-exemple-install-per-user-20261014.txt` : `7077c4739c0d2ea1d8dcefaa83f8c3bc7e4a72c98684979d2441c84a33a27f27`
+- `tauri-windows-installer-20261014.txt` : `a265fabf82035dddb395ebee47c25e597b6fcbe61783cc28ca02dd81c1105c75`

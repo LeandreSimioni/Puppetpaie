@@ -20,3 +20,9 @@ indemnités de mission prévues à l'article 3 du décret n° 2006-781 (NOR BUDB
 
 **Où le moteur s'en sert.** Barème `frais_hors_metropole` (art. 1, a) ; `droit::missions` et `engagement::frais_au_dela`
 (l'annexe et l'art. 2 : la réduction de 65 % quand la compagnie paie l'hôtel, la case `loge`).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `legifrance-arrete-20060703-indemnites-de-mission-20261103.txt` : `d109d1a0b5b6034f2cb1d76cef00aaf4ffbbce1566432b085049c1969bc38dbb`

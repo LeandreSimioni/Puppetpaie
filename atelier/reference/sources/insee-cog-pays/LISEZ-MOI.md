@@ -50,3 +50,14 @@ forme de champ « pays »), `routes_fiches.rs` (`deriver` : la nationalité DSN 
 
 - La table « Pays » de la DSN (net-entreprises / dsn-info), pour confronter la liste.
 - La norme ISO 3166-1 elle-même (payante) : le COG en est la lecture déposée.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `insee-cog-2026-modalites-20260101.html` : `4afe996efc6a3fa89b89212110c9ee21c2dbe31b7c7d67a4721ba030a0c82e2c`
+- `insee-cog-2026-modalites-20260101.txt` : `481fa0172a81bc9a2f61c9bfbfcb156e5f29a30ad4106c1acc850998d1ffe3f8`
+- `insee-cog-2026-page-telechargement-20260101.html` : `262b67dd4c62fb11865da207a41fe0b89aa3b783ea739febf9890bb6f4baedd5`
+- `insee-cog-2026-page-telechargement-20260101.txt` : `df33c26ba78b23eb53c3b6b21cbef98d9c336aec3938692b10b4f66ae309a216`
+- `insee-cog-pays-territoires-depuis-1943-20260101.csv` : `ec584a234189b4cb28eed0ce18ff1183cc10bd16aca17bb84c92520e92ac7d5a`
+- `insee-cog-pays-territoires-etrangers-20260101.csv` : `0dd9d1e83cfba3229b77444747fab0bba7d0ac1acec0442e8e5123c72fa1502d`

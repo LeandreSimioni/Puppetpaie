@@ -109,3 +109,14 @@ noms de catégorie (« un intermittent », « vos salariés ») restent.
 paliers de la grille PAS, montant de l'indemnité maternité Audiens, plancher de l'indemnité d'incapacité, exemple
 d'échéance de 2026) ; ceux qui y sont se lisent par gabarit (plafond de la Sécurité sociale, taux Congés Spectacles,
 abattement d'assiette CSG, taux et plafond de la DFS, cachet de répétition de la 3090).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `afdas-intermittents-conditions-20261021.md` : `db4928fff658265c01f6506a0a7444e1663cbe24fb8159a6efb907ec52815b61`
+- `afdas-intermittents-financements-20261021.md` : `e24ea01f2b807907dd6b492942b58d4f7e9a83a7513aff1c5202d9c2eec7b202`
+- `audiens-vos-conges-spectacles-page-20261021.md` : `c6da988b6d2ccacf15e5dcb3176d420088cbbe7c7da19ebdb41e0437d0cb1ea8`
+- `cour-des-comptes-caisse-conges-spectacles-s2021-1136-20261021.pdf` : `7b44708e25807e5618b58eda391e4fcbe16150527e23413f360be25836b1c778`
+- `cour-des-comptes-caisse-conges-spectacles-s2021-1136-20261021.txt` : `f0cf180eed74829957933c57f32476a125a54792db259f084f180b5eedccd0b5`
+- `legi-travail-D7121-28-a-41-et-L3141-3-a-5-20261021.md` : `a7a6cdff1ac24f00a7bf026a84a175a4eeb7d251b9a2ef6a7de4a8bef8ab2c2e`

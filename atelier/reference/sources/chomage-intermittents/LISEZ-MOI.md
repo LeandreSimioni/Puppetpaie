@@ -113,3 +113,26 @@ Ce qu'on en lit (le détail est dans le rapport de la séance) :
   qu'une même somme couvre au minimum horaire de la convention (`minima::minimum_de_la_ligne`), et les 507 heures
   assurées par nos seuls contrats (`cumul::position_droits`). Le coût d'une heure de plus pendant l'indemnisation se dit en
   jours (art. 30 : heures ÷ 10 × 1,3 en X, ÷ 8 × 1,4 en VIII), jamais en euros.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `audiens-conges-spectacles-flyer-artistes-202604-20261021.txt` : `335b7481bb3bc29a40ae9ec532bb79a76722fb67165f389cea0577fad1530034`
+- `audiens-conges-spectacles-mode-emploi-employeur-202304-20261021.txt` : `748f74d47ad74dad25452a4ed0dc450adfda243debcca9e68ca731b4e776cda3`
+- `audiens-conges-spectacles-plafonds-conventionnels-202507-20261021.txt` : `289cb7b9ba90f231ac2a465c33af277c2c75a4b1a0e89b333916efbb44982d0a`
+- `francetravail-flyer-franchises-20261020.pdf` : `f5cd00dc1b15151215fecff55f8ed078607e09124263e7ee92920323ef71a8b4`
+- `francetravail-flyer-franchises-20261020.txt` : `47b8de406b04cfe5ea063c4952085fe8723d990631b488b26d02e905a930cbe1`
+- `francetravail-guide-intermittents-20261020.pdf` : `29ce037453ed66ff0b6db9b97190b3bd24b3e7e3b4c53a7c3ef88b54839e2137`
+- `francetravail-guide-intermittents-20261020.txt` : `4dbe63118daa34df90c5b4754f7e903056a0bb5e9a81c94c27c055b73f56c38d`
+- `francetravail-premiers-pas-intermittence-20261020.pdf` : `2546cf78ad651e9d9588fd5cdf46d6c7b7125fb458ad232ede32fa8a34a8de67`
+- `francetravail-premiers-pas-intermittence-20261020.txt` : `3e7416162c8a052b358a18fcb3110f3fd704d8e6e3d80f05cb412cf2edcd8e4f`
+- `kali-1285-organisation-travail-repetitions-representations-20261020.md` : `70026862e38e0a501f34b60d5e21cc43e2098d31bbe6068b75069b2da3da8ac1`
+- `kali-3090-repetitions-cachets-representations-20261020.md` : `97ea1b94ffe07357821895918eb2a14a8a5998634ef8089533d59645ceb1f565`
+- `unedic-avenant1-convention-20250707.txt` : `f3199a122fa233597d14d73a8bbe107e27db1fa28fcb91a819a351e23840a350`
+- `unedic-avenant2-convention-20260410.txt` : `b789c04d8e96d984ebfcd5c568dfc66d78bc1db2af88e3f02541915a2afadf07`
+- `unedic-circulaire-2025-07-revalorisation-20250701.txt` : `17a3a3a22db5e0b4def6d57c67afec9dfdeb16ddda30839471df963f25ce767f`
+- `unedic-communique-revalorisation-20250625.txt` : `5d5ddd549e5613c33388bc55675545d40a9901721d33f1525d76f7bdd99b1804`
+- `unedic-communique-revalorisation-20260630.txt` : `14ebe0e9635d0b09a4fc26d2abc3682826e194f260dcce68f93da9daffb7c87d`
+- `unedic-convention-consolidee-20261020.txt` : `1e95f64285d1e8ae30c35d2cfcc420402dafec0e35387fc1c7f107bdf2a8d786`
+- `unedic-reglement-general-consolide-avenants1-2-20261020.txt` : `2fdad4d5b34e549dd12740532986917d0f85abb086ed23b66a91ea2439e48e63`

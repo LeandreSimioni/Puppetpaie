@@ -90,3 +90,30 @@ sur un cas qu'elle ne nomme pas (inférence, forte ; même pratique chez les éd
 Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'un organisme privé, n'y sont pas : seule leur transcription y est (`pdftotext -layout` pour un PDF, une feuille de calcul en CSV, feuille par feuille, le texte d'une page HTML), et c'est elle que citent les renvois. Les condensats donnés plus haut sont ceux des originaux, gardés dans le dépôt privé (`reference-privee/sources/accord-interbranche-prevoyance-intermittents/`).
 
 - `audiens-essentiel-regime-intermittents-20220425.pdf` : transcription `audiens-essentiel-regime-intermittents-20220425.txt`
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `20061220_Accord-interbranche_Prevoyance_IdS-1.pdf` : `dbcc6f90bf20e94806eaf0049aab1ff0540ae9de7d6785d8f1fe7b7a2f577a13`
+- `20080616_AccordInterbrPrevoyance_IdS_Avenant-1.pdf` : `944601395fd7212cbc9cdd21a5e929667bc6fa3a6452a4da60ef51fb2d30df3f`
+- `20091218_AccordInterbrPrevoyance_IdS_Avenant-2.pdf` : `980097186cb35d88c161072d4117b38f15509cbd633b78341636b91de3a4ba69`
+- `20110616_AccordInterbrPrevoyance_IdS_Avenant-3.pdf` : `d6049c0c9be85dedd360e23c9085f7c55b1e1eda6cd6056b96facc4c95fbf73d`
+- `20111222_AccordInterbrPrevoyance_IdS_Avenant4.pdf` : `c818aed0c1f3a3fc73349d73babd32772646e875a1521735a1ed8e18b0fe5e86`
+- `20121218_AccordInterbrPrevoyance_IdS_Avenant5.pdf` : `d4a308aa48f940046b1f053e60b9aa90a5d50a3d361c29f0db96f662d0346e07`
+- `20200414_Avenant_6_Accord_Interbranche_prevoyance_signe.pdf` : `e0d220cd3cfea262b222c1bb871272046134cd4d7c56e4498fe967b586ef06af`
+- `20210906_Avenant_7_AccordInterbrPrevoyance_IdS.pdf` : `7f5b7a1065642a203c12cc82dcb18bf695b4e0cdaa50cd3209da78767f0621b0`
+- `20250521_AccordInterbranche_garanties_collectives_prevoyance_Avenant8.pdf` : `d400a639c0756a6757056da70b82ae64acc1f61860710916a082c08296017390`
+- `accord-interbranche-prevoyance-20061220.md` : `e0ef81c9ec4e0142024b3d63e3baaa7938dea359401592f102063daf7468c883`
+- `accord-interbranche-prevoyance-avenant1-20080616.md` : `ebd12008e63b83b9fa5915bd263cd521c9fd2bd16c0821a680b7e8b57714daac`
+- `accord-interbranche-prevoyance-avenant2-20091218.md` : `57286bf55512a72143c036660111cd92c19da68423f61d99a66e38a0929d8d86`
+- `accord-interbranche-prevoyance-avenant3-20110616.md` : `696ffb3b799fa7aef747a3cdf77ce69188bb01144a5fbe17235af90453ed6277`
+- `accord-interbranche-prevoyance-avenant4-20111222.md` : `19ecb5478404e836a1e719d7316980aad3da80638a237f5163cb9ab2a94b4e85`
+- `accord-interbranche-prevoyance-avenant5-20121218.md` : `70522975521c87a84157461bd9a0544a7a4e97e97b82ac41bb6789b77a2f88f0`
+- `accord-interbranche-prevoyance-avenant6-20200414.md` : `f3f3516239911341dcc22aaf754c01a47bb00e2b6eca616fefe9fd4d2bc13873`
+- `accord-interbranche-prevoyance-avenant7-20210906.md` : `6186215abb6c176c8e6658331e6f8cba08bfff1ae6d722f73db1623ebe83235f`
+- `accord-interbranche-prevoyance-avenant8-20250521.md` : `f95ce5db4594eb3c8ea007868937717a2709412270f4ca692e0a3c2aebe464fd`
+- `accord-interbranche-prevoyance-avenant9-signe-20260707.md` : `d4a208e52fd153efd9d6e4851cb2b4dcaf649cabfd581cfbfa1cdfa61f083f52`
+- `accord-interbranche-prevoyance-avenant9-signe-20260707.pdf` : `af7d1304a436b2c477f52a95a4a8ece3869f289305d49f85ea94e20bda0a0761`
+- `audiens-courrier-avenant9-taux-2027-20261030.md` : `11277fe6a25e52cc248509b55e551d97f91e47ee8c954add8173e5491a056639`
+- `audiens-essentiel-regime-intermittents-20220425.txt` : `4942548fe7f337bebf7ba8d74eadf72b0d3fd35ec0454c2e241da19ad85e943e`

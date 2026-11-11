@@ -86,3 +86,10 @@ symétrie, comme le fait `bordereau::euro` pour l'euro (voir plus bas).
 - **Le bloc 54 des types 92 et 93** (parts patronales de santé et de prévoyance déclarées au nominatif, `dsn.rs`) s'arrondit à
   l'euro : ni L. 133-10 ni la norme (`bloc-S21.G00.54.txt` ne parle pas d'arrondi) ne le disent, le guide excepte le
   nominatif. La fraction de 0,50 y suit la même fonction que le reste de la DSN, faute de texte contraire.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `eurlex-reglement-1103-97-introduction-euro-19970619.html` : `1f11f46eaf67fa2eca78af2f25f5badf5ae0118562d5d64ed3f41b816736256a`
+- `eurlex-reglement-1103-97-introduction-euro-19970619.txt` : `64432f17a25555cf485cccfeb883730d045d3a160d31a58840d618d4446c9b81`

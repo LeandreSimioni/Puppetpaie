@@ -77,3 +77,10 @@
 
 `atelier/sources/import/src/dsn_aem.rs` : le courriel du contact DSN (S20.G00.07.003) et celui d'un salarié
 (S21.G00.30.018) se reprennent tels que la DSN de l'ancien logiciel les déclare, capitales comprises.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `ietf-rfc5321-simple-mail-transfer-protocol-20081001.txt` : `7d560eddff1b213c17d4e1e5f95005728b2f05bc2b3947f0fcc91717c6707634`
+- `ietf-rfc5322-internet-message-format-20081001.txt` : `cb459acca15a2aa895863eaeff6f1d5b9c4ca15578ae3e3706f757787a385969`

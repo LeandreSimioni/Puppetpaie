@@ -34,3 +34,12 @@ l'Urssaf applique les textes ; il cite ses références (Légifrance, Audiens). 
 - Caisse des congés spectacles : 15,40 % du brut (référence Audiens, art. L. 3141-30).
 
 Où le moteur s'en sert : `atelier/sources/paie/src/plafond.rs` (lots 1i, 1l), barème `logiciel/donnees/baremes/`.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `urssaf-modele-social-11.1.0-20260716.tgz` : `c65fd69742e40b98e036d98e55256158ddfae70bd24dae0adc9eb8e5cafa0a8f`
+- `urssaf-modele-social-11.1.0-intermittents-20260716.json` : `a90643345bffbef3538084f0b9aa44febd5ae5ae246672324fa5a7021e90d6f4`
+- `urssaf-mon-entreprise-intermittents-artiste-20261010.mht` : `8fcd1cf7304e2e007eb823c1d8e2644f159bd2abb4804fb9783ca70053c2fc6b`
+- `urssaf-mon-entreprise-intermittents-artiste-20261010.txt` : `1eeeac9f4daf67f83876dbac0ee01eea6c87fe44f455a91282a7672aff1a54a2`

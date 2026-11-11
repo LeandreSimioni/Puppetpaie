@@ -26,3 +26,12 @@ l. 146-160) ; BIC de 8 ou 11 caractères `[A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3
   n'impose que la norme ISO 20022 XML, sans en donner la forme ; la forme du message est dans les *Implementation
   Guidelines* de l'EPC et dans le guide du CFONB, qu'aucun site n'a servi au conteneur. Un **constat**, pas une règle :
   tant que ce texte n'est pas déposé, le moteur ne fabrique aucun fichier de virement.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `eurlex-reglement-260-2012-sepa-20261029.txt` : `fed231cc3607319d603c16f83c361df44c89e706bf137c65408f5c929af0fa39`
+- `eurlex-reglement-260-2012-sepa-20261029.xhtml` : `1db65d6af148473b38b7e2070b7ff78dd5e496e1db41742836e2f0378c2f8cce`
+- `tcmb-communique-iban-20261029.html` : `37cc5a32f215286ab08417f4bdff3bdace2c634568e955cd5a9d7ee5b2300f98`
+- `tcmb-communique-iban-20261029.txt` : `f80f0818f89484efdda5a966bf7fc723da2d94cc3693abe6f406b0d68eb8ac82`

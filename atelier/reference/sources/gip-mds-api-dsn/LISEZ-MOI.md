@@ -155,3 +155,24 @@ privé ; le public n'en garde que la forme, sans identifiant) confirme deux des 
 le taux s'écrit en pourcentage à deux décimales (« 1,50 % »), le code risque sans point (« 923AD »), avec une date
 d'effet, pour « la section 01 » d'un établissement ; sans témoin bureau pour un risque collectif. Les noms des éléments
 du fichier de nature 34 restent à éprouver sur un vrai retour.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `ctip-crm-dsn-oc-p3-v1.1.3-20250617.txt` : `a3f4f2d539d0e28cda4171961749a3d073e7cc763838ed475d1ea2b02f4d13e0`
+- `ctip-crm-dsn-oc-p3-v1.1.4-20250617.txt` : `6bb2e284c1bd3a72a5ff85e67ce5c626d1387733bf5ef9fe04b0b1b8435c16b3`
+- `ctip-crm-dsn-oc-p3-v1.1.4-schema-20230915.xsd` : `8e332f5bca267217ddb0ddf56d8571374c9c9a982f7578190b9b238c3c183171`
+- `ctip-crm-oc-modifications-v1.1.3-20180801.txt` : `b4df164f800f4a3c8a64c9c8c8862496db4b3b09eec57ee726df88b5067bc2fd`
+- `ctip-crm-oc-presentation-v1.1.3-v1.1.4-20200130.txt` : `1946e40ba836e14d0d48b0b9b75c594bfafae09abbda8270545f6b82e5dc6820`
+- `ctip-dsn-crm-oc-phases-2-3-20160601.txt` : `3ab132e729e17b8bccb62a04450fa09ce158600815da93453bddb7790e9fc97f`
+- `gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt` : `09bbdeba2887a55d287b56a581aff168683213e680387b2cd126bb629731cedb`
+- `gip-mds-specifications-schema-bilans-vt2.2-20201118.txt` : `5403e712f68b2166051eac9770a233ed3d16d0dd85ca078b521f5829fe0a8861`
+- `gip-mds-specifications-schema-bilans-vt2.2-communication-type-20201118.png` : `3491da3cf56ec142b90ae3d65e43a743e4aeebeceea83a5043e76a221267d9f6`
+- `gip-mds-specifications-schema-bilans-vt2.2-declaration-resultat-type-20201118.png` : `fe301f0787da98f5d5379377ddd523967124efe00df709b7ad800d7cfeaee498`
+- `gip-mds-specifications-schema-bilans-vt2.2-information-diff-type-20201118.png` : `9c49c6930198b58fad020430e2645bf6d2251c4d2b4a6f04d58b4032321ba2f7`
+- `net-entreprises-dsn-bilans-v02r01-20230703.xsd` : `f1badf1dd13817d2f9897e0e096f6db8bfe555b0c08df869ae7bc75a1ea955ae`
+- `net-entreprises-fiche692-crm-oc-p2-p3-20231116.zip` : `fa888c6db2ad66b0287f02064d57e4a7323c0ac1c434d8b90902ca97d501fb41`
+- `net-entreprises-page-api-dsn-20261020.html` : `f181e3775fa098b40dedc3e10e01a68d94df9c0a4944e876d2b18b12ce94c516`
+- `net-entreprises-page-comptes-rendus-metiers-dsn-20211130.html` : `11a7696af2e43dd1199182a9aff60d024a1d670cae2a89ae5a923ff56fcdcee7`
+- `net-entreprises-page-comptes-rendus-metiers-dsn-20211130.txt` : `4d21f9c0e9c41baf5f2bc3185e2aa3b37046353b75b99e041cb8226d08f9e19c`

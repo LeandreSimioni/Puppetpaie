@@ -90,3 +90,16 @@ la sécurité sociale qu'ils appliquent (D. 242-6-2, D. 242-6-14) sont relevés 
   `routes::atmp::d_un_etablissement`) ; un taux laissé vide est celui de l'annexe 1 pour un risque « TC »
   (`droit::bareme::taux_atmp_applique`, lu par `bareme_atmp` pour la compagnie comme pour ses établissements). Tout autre
   taux se saisit tel que la CARSAT le notifie à l'établissement.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `legifrance-arrete-tarification-atmp-1995-20261029.pdf` : `21a84c1e93833b1e3c5bce2e7b68c41a29026456953a33f0cdaa36b51ea20499`
+- `legifrance-arrete-tarification-atmp-1995-20261029.txt` : `8820081a262013f106344733cc535b537db5bc9bfeb15459f2fce349c9c57e33`
+- `legifrance-arrete-tarification-atmp-2025-complet-20261029.pdf` : `89f20200f2805c58954e3b025edf0e90e90d84ffe15bed8ee2aa5e8e1bc09f8d`
+- `legifrance-arrete-tarification-atmp-2025-complet-20261029.txt` : `0937b0f108b6b77014c077e5df9f93771489bed60a18078a62f00258126e73a1`
+- `legifrance-arrete-tarification-atmp-2026-complet-20261029.pdf` : `a22476faa234efa328eb8ece653c96a469c04a20524ca5e10bcb81d68c7c03fe`
+- `legifrance-arrete-tarification-atmp-2026-complet-20261029.txt` : `9ad8ea91d0cf10fc36da2a73492a8642107ab7c7c5eef272e4e8c236519ee9ba`
+- `legifrance-decret-2026-951-atmp-niveau-entreprise-20261030.md` : `7bdae1eb1ab66be26fd27fcc79e16960c9a04337fe56d9a456a68355bd88cca0`
+- `legifrance-decret-2026-951-atmp-niveau-entreprise-20261030.pdf` : `5faecc114da3152f260bbc4235fa8551ede66381b78da58728d0ace0d445cde8`

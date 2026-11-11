@@ -212,3 +212,42 @@ du cahier Agirc-Arrco, inchangée) ; aucune fiche lue (866 sur 869) ne contredit
 **Le BOSS, chapitre « Frais professionnels »** : `https://boss.gouv.fr/portail/accueil/frais-professionnels.html` (et la page DFS du
 chapitre 9 qu'on y trouve). `curl` : `Recv failure: Connection reset by peer` à l'ouverture TLS (HTTP en clair : redirection 302 vers
 HTTPS). Même résultat pour `boss.gouv.fr/` et `www.boss.gouv.fr/`. À imprimer depuis le poste.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `annexes-2025/legi-arrete-20250904-frais-professionnels-annexe1-professions-20250907.txt` : `686f9532e3e0c0a99b8941e8ba1f3e521a4854eafbee31db51783192a1ee3468`
+- `annexes-2025/legi-arrete-20250904-frais-professionnels-annexe1-professions-20250907.xml` : `9542246976b2d4ffd7bac587a2f67761972f45290dcd5da1ca8b6f32ed7ca066`
+- `annexes-2025/legi-arrete-20250904-frais-professionnels-annexe2-frais-hors-assiette-20250907.txt` : `99b1f38c0981b8b90c1e284020c43f3c0b4247121b4b74110ad65a7541eada32`
+- `annexes-2025/legi-arrete-20250904-frais-professionnels-annexe2-frais-hors-assiette-20250907.xml` : `c590a7197e558c679947568b34812f34f91974033c86b840a3f872925de55cda`
+- `arrete-2019-reduction-generale/articles-20261011.md` : `e29fbc6afa3e3338e8ba6948f6e2083a260be9cb97ba2dbbac9ff71cf0f345cf`
+- `arrete-2019-reduction-generale/articles-20261015.md` : `3bb0883569013109f40fbf615a23cec422cc7ea76bf52d29a03ecd1240786ade`
+- `arrete-2019-reduction-generale/articles-20261103.md` : `f4b364f9b17bffe639692b140bca7bd7ca20679dc280adc8d2a1c95222c08021`
+- `arrete-2019-reduction-generale/articles-20261110.md` : `23081ab095968c590073f43bfb1fea75323dd63e2d78fc39f9cacacb33c8e0a6`
+- `arrete-2019-reduction-generale/releve.json` : `599ed2aca448ab0e33c0c93c8fb8648b467de6a534f70abeb7398bd140bae0e5`
+- `arrete-2019-reduction-generale/xml/1.xml` : `91b8ea4c353f6d123c49c6509a5a73a7a7ee7f33ca73fefff6194193efd2aeca`
+- `arrete-2019-reduction-generale/xml/2.xml` : `723738266d111f18a4bccadc2f80c8dde7e9deef7a7c951bd7f74549274f240b`
+- `arrete-2025-frais-professionnels/articles-20261011.md` : `cb91ee888f3394284b6cabc9dd3e4ef9c57e39fef8ff4b146d0a07ff296aa6c5`
+- `arrete-2025-frais-professionnels/articles-20261015.md` : `57df1ca7b27ca3cb72f5249b7c5237ecc52edbd7e4dbc6ee572f93c37113ffec`
+- `arrete-2025-frais-professionnels/articles-20261103.md` : `f53d6c5a772b8329d685ecf38cfa8fab2f761a5d201eeaf26450e7a27a69ed65`
+- `arrete-2025-frais-professionnels/articles-20261110.md` : `9cb557bc8624342798dbf58a6256d2bd0a4b66695700b98056403fa5e5b57b29`
+- `arrete-2025-frais-professionnels/releve.json` : `e63afb8d25402184e86bfa8fb01c50b5d436f2962bcf5d71f82fed1eebc35950`
+- `arrete-2025-frais-professionnels/xml/1.xml` : `a2bfabe8e3dda6bebb4fbae9ad7e3556dab529ed022062e8580fa79db62f4a75`
+- `arrete-2025-frais-professionnels/xml/10.xml` : `e326fd7bbe34531f9abef66101949bb065b40c871d75d9d85b640ddfdb1987c4`
+- `arrete-2025-frais-professionnels/xml/2.xml` : `b6305eae2039634b05ee16ef3ca3f53191c3c589dc920890904eae3e2acee250`
+- `arrete-2025-frais-professionnels/xml/3.xml` : `206ec30866ace071c8a7cfa4da963d969768bf39015bbfc0be57a62c707b35ef`
+- `arrete-2025-frais-professionnels/xml/5.xml` : `150a95725bf392b9e663ec3369cb8a284505807c19a64f4c8e9a182048537940`
+- `arrete-2025-frais-professionnels/xml/9.xml` : `60230694b3558a17634c0897b51f4b778d0581f31ab656d31768d72a9bfa5441`
+- `autres/legi-arrete-20241219-agrement-convention-chomage-annexes-20241219.txt` : `eff1a43441529ea199b2462120603e87899a3727d5f6ab4b07e3e5960318decb`
+- `autres/legi-arrete-20241219-agrement-convention-chomage-annexes-20241219.xml` : `e22f80fef3f834d9af14325325b91c7b5d034c90c49658ae2a51c670e5a3c0ce`
+- `cgi-annexe4-art5/legi-cgi-annexe4-art5-redaction-20000331.txt` : `20e9e9b4d7a36c7ae210eb33779dfe2a8f88b86f052cd67e1d854e173aa39228`
+- `cgi-annexe4-art5/legi-cgi-annexe4-art5-redaction-20000331.xml` : `9d2fafc86e62ef4580c7ef294a4789dc93c0147e8665f8b04e644ee0a111cc84`
+- `historique/legi-arrete-20021220-art9-redaction-20021227.txt` : `5d7a44bd1bc18d6320fbfe89ef34b14260b921fc4fa52e96bc42bc37aabab78e`
+- `historique/legi-arrete-20021220-art9-redaction-20021227.xml` : `9aa62bc95866f380596af5a72827e90fd0f6ceed6655bc918f84360587b3c494`
+- `historique/legi-arrete-20021220-art9-redaction-20050806.txt` : `afce31ddcba7988073709546f2d6c343cc6874b57534ab64ff88a6bcd2b0f314`
+- `historique/legi-arrete-20021220-art9-redaction-20050806.xml` : `84ccd913fbb1ed2b667c48095a68bd20afda2a162ee16632efbc4d4527130254`
+- `historique/legi-arrete-20050725-annexe-frais-hors-assiette-20050806.txt` : `8aed3613255c9a4d6c25bdebc9f665c8548d7f507e4084404fc554f66b9c0cee`
+- `historique/legi-arrete-20050725-annexe-frais-hors-assiette-20050806.xml` : `fdb67f6eee8ae646e7c78e35a69c024db0c3f36aad7ec177d2c001d76a9627b4`
+- `historique/legifrance-arrete-20021220-frais-professionnels-20250907.pdf` : `d59a462f902e6ba03989c796577dc46ef7fb34acb251610d724731dc7cd35f3c`
+- `historique/legifrance-arrete-20021220-frais-professionnels-20250907.txt` : `197bd3325f1c719305c85e1d4bc4428f275254f4e13e9ddaa3a0c044cc3a2e51`

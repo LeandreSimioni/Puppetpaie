@@ -39,3 +39,11 @@ leurs condensats SHA-256 sont donnés ici.
   ces fichiers dans `~/Library/Application Support/com.example.MyApp/`. Le moteur prend donc
   `~/Library/Application Support/fr.puppetpaie.fenetre` (l'identifiant de la fenêtre, `fenetre/tauri.conf.json`), pour
   la clé du poste (`coffre.rs`, `dossier_cle_de`) comme pour le profil (`navigateur.rs`, `dossier_utilisateur`).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `apple-macos-library-directory-details-20180409.txt` : `7b617c8046f50c6710c439c67169af72fb124309015ab7219cbe266c235f7e61`
+- `freedesktop-basedir-spec-20210508.txt` : `b377df12ebe6f17bf3a3f09fd794d7d521f20b4419a186cd9713c30a4b384742`
+- `microsoft-knownfolderid-20230830.txt` : `3fc71956835439acd2922960a279e6be46e7ded1992ff94a2c4d0573b8070ccf`

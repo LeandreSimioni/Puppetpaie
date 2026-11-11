@@ -45,3 +45,17 @@ Les exemples XML (`ExempleMin`, `ExempleMax`) de chaque version sont dans l'arch
 ## Où le moteur s'en sert
 
 Nulle part : le moteur ne lit aucune fiche de paramétrage ; la DSN d'un permanent santé déclare une base 79 type 18.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `fpoc-presentation-versions-139-140-20260720.pptx` : `9a7814b81278951fc462f1e33a91da28d6ae9e76211f844f2f58ac70e4503c3d`
+- `fpoc-presentation-versions-139-140-20260720.txt` : `cbb1dbcfae1da577cf30f39c997447e3089d07bdd2a04f2a4182167b32f3fdf6`
+- `fpoc-r1.3.9.xsd` : `839da276fe77683f0bd3b78997b863e4619dbdd55597274326bd8038545ee760`
+- `fpoc-r1.4.0.xsd` : `443f1ba7568c6b68f9bc2baa6c748b07e8df303198b3f1a42ced55074f39a558`
+- `fpoc-specification-r1.3.9-20260721.pdf` : `0f7a3b357977900f14635f65ea281735dd620211263935fb57a46b2f1a8a23fe`
+- `fpoc-specification-r1.3.9-20260721.txt` : `56a4bb8d5324883e275756a4c5f3f2222aee93e41e9422b97b186c2aaf74e598`
+- `fpoc-specification-r1.4.0-20260721.pdf` : `2590c467d779f097e8308051b13bcfcce113263ebdedb56d91ef94e661ca7c72`
+- `fpoc-specification-r1.4.0-20260721.txt` : `092e22c35774eab8906dad484623565dec73968e608c8c7c2b2ed67374f5fa3f`
+- `net-entreprises-fiche691-fiches-de-parametrage-oc-20260723.zip` : `08dd2085ed62a42176113858f4a496e81c409218a1e79eca1f56e806e5981133`

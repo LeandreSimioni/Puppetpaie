@@ -69,3 +69,11 @@ seulement la lecture d'une fiche de paramétrage Audiens (p. 4) :
 Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'un organisme privé, n'y sont pas : seule leur transcription y est (`pdftotext -layout` pour un PDF, une feuille de calcul en CSV, feuille par feuille, le texte d'une page HTML), et c'est elle que citent les renvois. Les condensats donnés plus haut sont ceux des originaux, gardés dans le dépôt privé (`reference-privee/sources/faq-dsn-organismes-complementaires/`).
 
 - `ghs-spaiectacle-fiche-technique-controle-parametrage-oc-20191014.pdf` : transcription `ghs-spaiectacle-fiche-technique-controle-parametrage-oc-20191014.txt`
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `ghs-spaiectacle-fiche-technique-controle-parametrage-oc-20191014.txt` : `1a262a5710dc6f8218c457447e11de59f2e1198f2f3e53b55479e5e98e8ab22f`
+- `net-entreprises-faq-dsn-oc-declarants-v4-202310.pdf` : `d3b84578cb40e78c16e4ac07c18b0c5db5da0b533afee500519d482cf80688fb`
+- `net-entreprises-faq-dsn-oc-declarants-v4-202310.txt` : `5e1c54c1c46d0ac5bcc9e08d09c9cfb53ce957b32103254b0c9fdc9cadbb81a8`

@@ -86,3 +86,44 @@ heures_en_plus.rs` (le net exonéré, la limite de l'année), `atelier/sources/d
 81, 8°, et les affections de longue durée) ; **81, 8°** (celles d'un accident du travail, « à hauteur de 50 % de leur
 montant »). Avec le BOFiP BOI-IR-PAS-20-10-10, § 80 à 110 (`../suspension-non-remuneree/`), l'assiette du PAS des
 indemnités qu'un employeur subrogé verse (`engagement::maintien`, `etats::prelevement`).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `articles-20260919.md` : `5bad43a30b1bb1f1033b6da303f0a4f96cb33e639a36d7f58ef3c9c10c2cadd1`
+- `articles-20260921.md` : `69bbd44b93fdfa6609561e040bb8be35845882ff646243b25245e192dc36f916`
+- `articles-20260923.md` : `3bbebb2119b6387c2cf4694df9a4fd0d911285fdb6a3a8886c6e50caf6620cac`
+- `articles-20260924.md` : `5f349ba11f234960114926032185d11539ee15a5ebd85fad3744a7cf1e7d0bb0`
+- `articles-20261010.md` : `34186d1696d27218f2f6b44ea024f126e30a2504af8bfbf3c5082d7268f46a04`
+- `articles-20261013.md` : `dcbb6ab6dc66d73f304d5ea229bd152f29d2aa75a355df120814d593b1609ba6`
+- `articles-20261015.md` : `f1fbac3211330bc56a59da3daa9fd174f5bc37972197e4899eb14bb92d277092`
+- `articles-20261021.md` : `142d9e94d5d7be947933b14d22a4d4d955a823b3cadf88d0f6d42a8fc0a7177e`
+- `articles-20261102.md` : `a1f9bacd2d2142559abf9335ed200bf2af0c58d56b2a11cd034d0f2d8e2d2d20`
+- `articles-20261103.md` : `5545a70bbafa728d49757f8dc2ee60a31cd4f5dc9e931fe50d8942085f2518af`
+- `articles-20261110.md` : `542b7e1e5168813d484ae0bd3351760dffbee4b8541675eeeb81af9764e75d49`
+- `formulaires/impots-2501-sd-2025-notice.pdf` : `eb24a1341c4b5b2a6237cbc5a54cfed803d00fef3cf0c6f7e1c2b1faaa9c3ee5`
+- `formulaires/impots-2501-sd-2025-notice.txt` : `13c0878828b08a0c9e530badcad3a8f95ca286daf77eff6f40b17c4ba29a3ae1`
+- `formulaires/impots-2501-sd-2026-notice.pdf` : `6bac48cbafca098014c98fe3e0337edb5a351c70433af5261de3264d35d39a2e`
+- `formulaires/impots-2501-sd-2026-notice.txt` : `7426c910632fa8391d96b0babda6ce43247e30db4da5f037f23b5131d9143cde`
+- `formulaires/impots-2502-sd-2025-notice.pdf` : `5594dd62ec563ef38062d4c733d2560fe4df440b686c3c160a7234b776d4cdbd`
+- `formulaires/impots-2502-sd-2025-notice.txt` : `a94dfe761e611c731a998cb6b29fb3990b6bd5195db763ae9e88bb18b4444551`
+- `releve.json` : `affabd8072b8e7f724180d9f0b24a169ae065b93922162348a4afac6d6a6bc84`
+- `xml/154_quinquies.xml` : `4740d7a7e0e5b2f8712267eb5cc50c0066b13ebf198fda854cd743573e193305`
+- `xml/1671.xml` : `1b4d346a0dddd9d35947e87598de395f4a17b0e791eedcd4c53da625d97579db`
+- `xml/1679.xml` : `5343b9318796e66bbbfad79aec67724287c5a2a1321d96e9d2de9da2660db90d`
+- `xml/1679_A.xml` : `11473fd0024220a9f25e0adddbe6b3f4121496f7225a9bd01e202ee716857817`
+- `xml/1724.xml` : `bfb28089905081231b1a75272c4cfbb74c0084eedf4738f79aa03b27c90f07b2`
+- `xml/204_A.xml` : `525495ee3f985b8eee68b8236394d9c6bb8f3253689b1cb2a393dba16495d460`
+- `xml/204_B.xml` : `426ba4076dd5005c2b488306df803cec4afe2a2cee7514d8cf75c2797ff2e672`
+- `xml/204_E.xml` : `3d0c4236870131a76b8dd23189c59d2c81d2b1145f2744224d762254d452cff5`
+- `xml/204_F.xml` : `dee4c5b7c3c89b7b4fb009d7c60e31972332c551c95a1e4672b9c88c6e163024`
+- `xml/204_H.xml` : `6751bbbd48e113da2013fc518660fbaaa11a3df8864630e7f6fbb3b435b6e472`
+- `xml/231.xml` : `2fb2460e58f98cbf6c5c23c4a3f46aaea10226752b5ebe77a8fb1853e07cc6f9`
+- `xml/235_bis.xml` : `9b6e3101c92916aa606c9435b36fea739d4fc78eb0a45b0d1d8ee5154dde65db`
+- `xml/293_B.xml` : `5954095c8bbf8927b911945b984e76c820062c9262a22a6c94d3f36e63cbd5a4`
+- `xml/80_duodecies.xml` : `64b775a316d1f1c51c93d7e6042f98979ce217240462280eef54733cc09191c3`
+- `xml/80_quinquies.xml` : `71a57ff67649eb19fea9a39c4db1da7b190d947b5823e1eaa78431d89240af12`
+- `xml/81.xml` : `c9008c7f01ef0fdcd9ee6537307692b54e32d33ca8590eb3210fdd25123cffe1`
+- `xml/81_quater.xml` : `97c24d8f0685ad16a3ad59c6bf3dba1e562adb6e4cc96925c5023b77abe827a7`
+- `xml/83.xml` : `fed50d50d119b28c44b1f242639c079c5964d5be8966e1cb0af4a8669337a4b8`

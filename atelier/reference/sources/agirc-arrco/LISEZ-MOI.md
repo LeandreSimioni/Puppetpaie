@@ -136,3 +136,19 @@ Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'u
 - `agirc-arrco-faq-sommes-versees-apres-depart-v2-202506.pdf` : transcription `agirc-arrco-faq-sommes-versees-apres-depart-v2-202506.txt`
 - `agirc-arrco-faq-temps-partiel-cotisant-temps-plein-201910.pdf` : transcription `agirc-arrco-faq-temps-partiel-cotisant-temps-plein-201910.txt`
 - `agirc-arrco-page-documentation-technique-dsn-20261011.html` : transcription `agirc-arrco-page-documentation-technique-dsn-20261011.txt`
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `agirc-arrco-aide-codification-dsn-ct2025-v1.3-20250301.txt` : `03f8e8c8813308a602e4ec048a4b7bd24c565960f475869ca1cb1210784a0d4e`
+- `agirc-arrco-aide-codification-dsn-ct2026-v1.0-20251201.txt` : `fa30916087f245921b7545a11b3e287588fc61d71c3cfa84c36bcf03b1e71d57`
+- `agirc-arrco-circulaire-2018-09-dc-ani-20171117-20181219.txt` : `d2f09e6ee0ea0bf7a9de741d27b61d8b42b2b771565346c7e1931f9c23861860`
+- `agirc-arrco-faq-bloc-changement-de-contrat-201707.txt` : `278ed3d6e41587e1f8d44845078553525b337ec60f54f6725352892c64f24c63`
+- `agirc-arrco-faq-changement-de-situation-en-cours-de-mois-v2-2025.txt` : `5e68cb5788f25cb7bc685033ea230f74a179bcb5cf39a372a2ab61c721407609`
+- `agirc-arrco-faq-changement-de-situation-retroactif-v2-20250331.txt` : `8afe1dbdc4ca492f1946f3cfc49d1ccda79b210e7ec3146c4143f989e55c1fe8`
+- `agirc-arrco-faq-exonerations-v2026-20250301.txt` : `127d9608350e4fd7509fc013ad0c790f93dcf20827341173cae31c0df9b98f5b`
+- `agirc-arrco-faq-reduction-generale-2026.txt` : `e52f0e6d3d4ca1fb4cfad2992aceb642e7394f45da86e1f4e6ed5dea7ecbff00`
+- `agirc-arrco-faq-sommes-versees-apres-depart-v2-202506.txt` : `9054005b378e803b4f5244ac4b8b50628d24caefc5cae06f57eaf41d7ab1a855`
+- `agirc-arrco-faq-temps-partiel-cotisant-temps-plein-201910.txt` : `fdecc5c6c63539b8e14a36c0ed28ffa923a0ccdce4aee52d09b69b2643ba1857`
+- `agirc-arrco-page-documentation-technique-dsn-20261011.txt` : `d5d7dfece5c546483d32b2db443480bff335564a0bd6069c2fa4c52e407579dd`

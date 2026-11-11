@@ -45,3 +45,11 @@ vont au dépôt privé (`reference-privee/sources/google-drive-api/`) ; leurs co
 **Inférence**, non écrite par Google : trois nouvelles tentatives (sept secondes d'attente au plus, hasard compris
 jusqu'à dix) suffisent pour une panne passagère ; au-delà, c'est le passage suivant de la veille (vingt minutes plus tard)
 qui retente, ce qui tient lieu du « maximum_backoff ».
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `google-drive-api-gerer-les-erreurs-20261020.txt` : `eaf5eb3d3fc953db11bd2c6120e39a2f45f05289b385c17edc993020b06b02f0`
+- `google-drive-api-limites-et-quotas-20261020.txt` : `de8b7f78482b7eaaa9e6e19c1c43cb156c36406de6b6bd5116029b7286f4408f`
+- `google-drive-api-televerser-20261020.txt` : `490ad0ad19c838a795c46a336bc1b1b2af119972ca2248c239257f8f110eb90f`

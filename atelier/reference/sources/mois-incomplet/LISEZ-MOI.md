@@ -39,3 +39,10 @@ Lu aussi, sans le republier : l'article des Éditions Lamy Liaisons « Jurisprud
   `engagement::conges::horaire_du_mois`. La ligne du bulletin dit la part (« 105 h sur les 154 h du mois »), l'aperçu
   cite l'arrêt.
 - Le plafond de la sécurité sociale d'un mois incomplet reste aux jours calendaires (R. 242-2) : ce n'est pas le salaire.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `legifrance-cass-soc-19990120-96-45042-20261030.md` : `0189624e00057e747288e7c794f7b6f69189da38036da77e678d71cdcd7e489b`
+- `legifrance-cass-soc-19990120-96-45042-20261030.pdf` : `99def8db73a22fee48728a319bca2a1db3c713d13053475d983b81668c7e36b8`

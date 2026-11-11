@@ -45,3 +45,30 @@ Type 1 font's built-in encoding shall be defined by an Encoding array that is pa
   sont « typographically the same »). Un code sans nom, ou dont le nom n'est pas dans le fichier, et toute police d'un
   autre nom prennent `MissingWidth` (table 111). Le marquage ne s'en sert pas : il lit nos contrats, qui portent
   leurs largeurs (`W`).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `adobe-afm-extraits-20261111.md` : `d6188a06d7555615a108d8eb6548c25813fac4eeafdf3dd8e9f43bf6ab4c0a9c`
+- `adobe-agl-specification-20261111.md` : `eb14692b0ff134fd44dd2dae014b7a0ea81fccb893982f950e6bf163eb6827a3`
+- `adobe-cff-extraits-20261111.md` : `098584c94ea180f40cb079972a415a88436a0456674b5b5f5377d39369dc9a91`
+- `adobe-cff-tables-20261111.txt` : `7b4f6a7681e9661ba616fabeb76436d4fa7cfca135e6c6055c827269b0b5e9f1`
+- `adobe-core14-afm-20261111/Courier-Bold.afm` : `ad0150d4bedcc8877742bf94251fcec13e348dd599d4603f679d92027d1e6e99`
+- `adobe-core14-afm-20261111/Courier-BoldOblique.afm` : `cb82e69ef5f6d421e8f404fe00bb0d993425aae79725331d0ebf847e94e97e92`
+- `adobe-core14-afm-20261111/Courier-Oblique.afm` : `b27103b2a2ef6030c110626597e2ab47bb8279075a039ab9170facb0aa1f70e1`
+- `adobe-core14-afm-20261111/Courier.afm` : `521e0d7c7521efd4be78a5a9c5398e4c67d0771e396115b0346bc4ef74ada53d`
+- `adobe-core14-afm-20261111/Helvetica-Bold.afm` : `b880d96baf56d0cc059f258f60b4d764ef49b555ab9db294b959c0016dee41f2`
+- `adobe-core14-afm-20261111/Helvetica-BoldOblique.afm` : `69984a35ca26973a39f261cf83e0d367ea2e6517c590b0b030d4d4a219d9c269`
+- `adobe-core14-afm-20261111/Helvetica-Oblique.afm` : `b4609b71b660a392ac09df35060271a876c2ce66617dd83bf826f742bb9d9721`
+- `adobe-core14-afm-20261111/Helvetica.afm` : `da33f1870474c8e68bfe3e2353ff107ab6c6eea1f9836ce2aaf1e1a07b17982f`
+- `adobe-core14-afm-20261111/MustRead.html` : `be71e055bb2551a6fc8b60dcf094bf40357858980abde86f76cc9a3c144d5403`
+- `adobe-core14-afm-20261111/Symbol.afm` : `3d2128a820375a10de9bc8bf6cfb15ded482c01ca0f95cc0b3277f37ec8bde66`
+- `adobe-core14-afm-20261111/Times-Bold.afm` : `b4a000ed85cb22c6cdd985aa0fd3f6f78ed5079b7c6860dc4f0234e0d0e3c522`
+- `adobe-core14-afm-20261111/Times-BoldItalic.afm` : `93c4744ba955215de02c4aae0b777133442ada2f7ab5a2af30a040b792b3c55d`
+- `adobe-core14-afm-20261111/Times-Italic.afm` : `ed37fa2e6a67b5b17dfd47f36fc7e90df32891a4408860dbc8d4cbbe9959e242`
+- `adobe-core14-afm-20261111/Times-Roman.afm` : `768e1cabea085d489a63da3e80b96bc5abf0ec98d3073c9b4d6ba76e7bccba64`
+- `adobe-core14-afm-20261111/ZapfDingbats.afm` : `a32565c90afd1b57a7008fc567b78d95cf1c22adff5e086094d666d88b039859`
+- `adobe-glyphlist-20261111.txt` : `a3b2f61ced9f3644cc0d4ecde5c59df34ca286c689d9484a43a710a81c466789`
+- `adobe-type1-font-format-extraits-20261111.md` : `ea6db85bdc4c97e2d3f2b566919f7ec87d48190e431a9d5fcb8f88b5dbe7ef7e`
+- `adobe-zapfdingbats-20261111.txt` : `f6394e3cb8a447e84a1dad75d4baaf2aa7f45dc104faf369f4720e1a774ef2dc`

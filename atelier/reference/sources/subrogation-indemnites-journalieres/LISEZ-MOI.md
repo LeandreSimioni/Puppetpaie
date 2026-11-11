@@ -43,3 +43,18 @@ donc brut** (le prix unitaire, avant CSG et CRDS, qui se retiennent sur leurs pr
   l'employeur subrogé, pour remplir les indemnités de chaque arrêt sans saisie (le prix unitaire normal et majoré, les
   retenues CSG et RDS, les jours payés), rapprocher ce que la caisse a versé de ce que la paie a avancé (indus, rappels,
   carence), et dire quand un arrêt subrogé n'a rien reçu. Un ticket, pas ce lot.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `ameli-subrogation-salaire-arret-20261102.pdf` : `671ed769375d9c4c490b264680a52e5633323ffda26448ca75a0f687407e53ca`
+- `ameli-subrogation-salaire-arret-20261102.txt` : `7fbb1088f1012a774f8260fcc36d34f0ff70ba235e723d08820fb4fab07319cd`
+- `bpij-edi/cnamts-bpij-modele-v02-00r3-20120306.pdf` : `0be66167905880a6b14aa413d42050247054fd463512b48166bf692e017c6cae`
+- `bpij-edi/cnamts-bpij-modele-v02-00r3-20120306.txt` : `774dacb52fedf0d5581ff9294c56a4da4d03555c554c1b163a0473ff0b12342f`
+- `bpij-edi/cnamts-bpij-xsd-v02-00-20121018.zip` : `4469812d67813e25c76ccecd2ed99186ff608f763eb48ae4155e496aa520f996`
+- `bpij-edi/cnamts-entbpij-modele-v01-00-20110608.pdf` : `1d513bd0c7a36b07a510121b080351463cb4da648d57322c9ef43225478cadea`
+- `bpij-edi/cnamts-entbpij-modele-v01-00-20110608.txt` : `57c2c00edb3ba5f2a635b3b02db98315f6ea02e8e0d830157663a1655d01859a`
+- `bpij-edi/cnamts-entbpij-xsd-v01-00.zip` : `e25658da1f9c44c542dbb4067acff5564879446a4c6a824da6c9c57ab60da884`
+- `net-entreprises-fiche3028-subrogation-assurance-maladie-20261102.pdf` : `a34111d44924057452fdb522ebf8cec4a4e0070d1386d1265a117fcb70def78e`
+- `net-entreprises-fiche3028-subrogation-assurance-maladie-20261102.txt` : `76f53335ba341ca043150c9a6a3a4df3642b3fccef078531cb646a9f03d3cbd7`

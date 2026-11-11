@@ -120,3 +120,16 @@ financement de la prévoyance complémentaire exclues de l'assiette des cotisati
 collectif et obligatoire, limites). C'est l'assiette **sociale** ; le net **imposable** relève du BOFiP
 (`../bofip/BOI-RSA-BASE-30-10-20-*`). Où : la prévoyance et le Fonds collectif santé des intermittents au barème
 (leur `source`), et la part patronale de la mutuelle des permanents.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `boss-assiette-generale-20260801.pdf` : `24e0891513382a6e6fe3304604b182e851dd14945d733d176713c53c641a759e`
+- `boss-assiette-generale-20260801.txt` : `601c928726d512d018a43b6a272ea578245bad6898165920b57436e30708033d`
+- `boss-frais-professionnels-20261013.pdf` : `6b37fa2f738615c30e2af2dc1f4b694e04695732fcd49fffc59a397a5c249b48`
+- `boss-frais-professionnels-20261013.txt` : `1c96b200a616bd52802adde62bc5b54f461846219814f0fde33b5eead21cd88a`
+- `boss-heures-supplementaires-20260601.pdf` : `77d69b0ecb007584a3b408da76fbad57fc762cf3ec6cc0672fe5d99310fdb8ba`
+- `boss-heures-supplementaires-20260601.txt` : `9f76cf518c953422a353c24c8cedbe2bcdaed77bf4f1bffae1a48dac8c82aefd`
+- `boss-protection-sociale-complementaire-20260101.pdf` : `6368aef4057122cde0852e06699447c2b3356a77422e0f633ffeb8a5fb6a5411`
+- `boss-protection-sociale-complementaire-20260101.txt` : `b505d5c421edc56fcd898a4d2df35dd2dae4d74034abbb65a2f0cfe01282e3ac`

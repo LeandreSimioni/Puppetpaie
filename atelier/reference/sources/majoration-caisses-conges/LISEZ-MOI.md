@@ -224,3 +224,16 @@ Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'u
 
 - `audiens-fiche-pratique-conges-spectacles-202302.pdf` : transcription `audiens-fiche-pratique-conges-spectacles-202302.txt`
 - `tissot-fnal-vt-majoration-11-5-20170711.mht` : transcription `tissot-fnal-vt-majoration-11-5-20170711.txt`
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `acoss-lettre-circulaire-2013-019-20130328.pdf` : `71304773b24b93d7ad42b368e3555a078e095c86a5ce32660ecd6eacf6040fee`
+- `acoss-lettre-circulaire-2013-019-20130328.txt` : `16ee4791ede685ca8273e04ab752e232f0da1a99c863d0c55008783530d1fa33`
+- `audiens-fiche-pratique-conges-spectacles-202302.txt` : `a1e7f4333834accce0ff9f694d8afb1b977598b58411a93535b83689f3f3ded1`
+- `tissot-fnal-vt-majoration-11-5-20170711.txt` : `f4fbe633a415cdabc0cbfb2dba45da05623ab187223c574bb8b425a6581e6073`
+- `urssaf-contributions-formation-professionnelle-cfp-cpf-cdd-20240327.html` : `f040618571856b779800ed53ec18bd1c02dea00399faebfc4ea0d4f587b81915`
+- `urssaf-contributions-formation-professionnelle-cfp-cpf-cdd-20240327.txt` : `f9b9bd5dd46e333c9ee476c1b64902fc03759fe707de842321c38e44fc7e138b`
+- `urssaf-guide-contributions-formation-apprentissage-20260312.pdf` : `320d2b560c6b29714e6798cbc46b2063f9c9cd98773445efa1924ff00febeb12`
+- `urssaf-guide-contributions-formation-apprentissage-20260312.txt` : `2674d80267f11fc45f2a02161ff4ec77f838da149021087efea39b6a9f8931df`

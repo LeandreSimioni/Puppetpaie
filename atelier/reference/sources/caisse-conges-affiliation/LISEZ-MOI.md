@@ -132,3 +132,9 @@ salarié occupé douze mois.
 **Où le moteur s'en sert** : `engagement/src/solde.rs`, `solde_de_tout_compte` (l'indemnité compensatrice ne se compose
 que pour un contrat que l'employeur ne déclare pas), qui le demande à `calcul::saisie_declaree_a_la_caisse_des_conges`
 (la fiche telle que la paie la lit au dernier jour du contrat, puis `caisse_conges::affilie`).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `kali-1285-ix1-conges-payes-caisse-20261010.md` : `952154bc7fb1d247ba0d783fae413fbb072ac2afa08f98f8896413504afa8fb4`

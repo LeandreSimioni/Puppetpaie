@@ -19,3 +19,10 @@ minimum garanti 4,35 €.
 Le SMIC horaire de 12,31 € depuis le 01/06/2026 (`smic_horaire` de `logiciel/donnees/baremes/2026.json`). Cette liste
 datée ne porte pas de `source` (la forme `Datee` n'en accepte pas) : le texte est cité par la
 `reduction_generale` du technicien, qui garde le SMIC du 1er janvier (12,02 €) pour toute l'année (D. 241-7, II).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `legifrance-arrete-20260522-smic-20260601.pdf` : `07670acbb6a03b29bac94ae6cc6713fa0dd544c343b22c01461977566a9fea01`
+- `legifrance-arrete-20260522-smic-20260601.txt` : `e6896885696b78229abd3fa6b07135ca0e772d03bfbb13541614f07f6455dfdd`

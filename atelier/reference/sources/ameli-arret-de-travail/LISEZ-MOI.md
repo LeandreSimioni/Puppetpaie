@@ -24,3 +24,9 @@
 la porte, S21.G00.60.003 ; aucun nouveau signalement : fiche net-entreprises 1983, `../net-entreprises-base-connaissances/`) ;
 l'arrêt « en cours » de la page (`routes_imprevus::en_cours`) cesse quand la DSN du mois de sa fin est partie — la reprise à la
 date prévue y est alors déclarée. La reprise plus tôt que prévu : `arret-reprise`, qui fait naître le signalement 05.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `ameli-formalites-employeur-arret-travail-20240906.md` : `e28e3773a3fc2c6eacaf203fffe0296c76b0afa16fd6fdb5c510902fe2c828af`

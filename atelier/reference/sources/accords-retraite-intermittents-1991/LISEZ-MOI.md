@@ -10,3 +10,10 @@ pas été relevée.
 | fichier | ce que c'est | ce qu'on en lit | où ça sert |
 |---|---|---|---|
 | `audiens-accord-retraite-artistes-19911224.md` | l'avenant du 24/12/1991 à la convention collective nationale du 11 mars 1957 (CANRAS), « concernant le personnel artistique » : transcription mot pour mot d'un scan de 5 pages transmis par Audiens (document d'organisme : l'original, et la transcription complète avec les noms des signataires, sont dans `reference-privee/accords-retraite-intermittents-1991/` du privé), relue contre les images le 04/11/2026 | art. 1 : taux contractuel de 7 % (avenant du 8 novembre 1988), régime géré par la CAPRICAS depuis le 1er janvier 1989 ; art. 2 : « 7,50 % au 1er janvier 1992 », « 8,00 % au 1er janvier 1993 », « répartie pour moitié à la charge des employeurs et pour l'autre moitié à la charge des salariés » ; art. 3 : l'assiette est « la tranche 3 A, calculée dans la limite de trois fois le plafond annuel du régime vieillesse de la Sécurité Sociale » ; signataires : SYNDEAC, théâtres privés, SNES, USPA, films d'animation, édition phonographique… (page 1). Aucun taux d'appel : il se lit chez Agirc-Arrco | les 10,16 % en T1 des artistes intermittents des adhérents (tableau n° 2 d'Audiens, `../audiens-fp-taux-repartition-retraite-2026.txt`) : 8 % contractuel × 127 % d'appel |
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `audiens-accord-retraite-artistes-19911224.md` : `f5447c93d928342e96f22ab723a709b65b4728043407e86f8da56d16a3f3e6a1`
+- `legifrance-accord-retraite-intermittents-techniques-19911230.md` : `b2cd66f6a398081a49a38ce03fc03f4b70f947ca8439bc330722713915fdfe57`

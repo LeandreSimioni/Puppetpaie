@@ -36,3 +36,9 @@ l'année 2025 n'a qu'un jeu de montants.
 
 Les limites de 2025 du barème, du 1er janvier au 6 septembre : `logiciel/donnees/baremes/2025.json`, `repas_deplacement`
 et `logement_grand_deplacement` (`engagement::frais_au_dela`).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `legisocial-allocations-forfaitaires-frais-professionnels-2025-20241224.txt` : `bbca6250a18f498d378bd46485191173c96ffe2f5c2030212e1fef08dec288ef`

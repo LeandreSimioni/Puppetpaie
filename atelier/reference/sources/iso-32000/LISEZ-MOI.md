@@ -64,3 +64,10 @@ clé absente, une valeur par défaut ou une forme exigée vient de la norme, don
 - `fabrique-pdf/src/formulaire.rs` (les champs) : `Fields` exigé (table 218) ; `Ff` qui vaut 0 (table 220) ; `DA`
   exigé, `Q` qui vaut 0 et n'a que trois valeurs (table 222) ; `MaxLen` (table 229) ; la couleur initiale noire d'un
   `DA` qui n'en dit pas (table 52) ; le corps 0, automatique (12.7.3.3).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `adobe-iso32000-1-annexe-d-20261111.txt` : `dc72e137722f92772c3c305ee12cf94e183db6c795c860a0292b089c0a868c78`
+- `adobe-iso32000-1-pdf17-extraits-20261111.md` : `1e1ff502c486ae08c020bfc2f3d175bed2f9ee4ec7d08762b0311f9bc0ca6954`

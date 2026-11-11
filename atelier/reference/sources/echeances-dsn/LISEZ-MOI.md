@@ -80,3 +80,16 @@ La charge entière de `codes.droit.org` (1,8 Mo, non déposée) avait pour SHA-2
 - Reste ouvert (`RAPPORT-20261015.md`, « Ce qui reste ouvert ») : le vendredi férié (inférence : lundi), le calendrier
   de qui « non ouvré » parle (inférence : le point de dépôt), la veille de l'annule-et-remplace quand l'échéance est
   reportée.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `RAPPORT-20261015.md` : `699d857db4441d6ce8c9d7650e9adf4a46e5fe58f8431023f5d4bd165017eacb`
+- `droit-org-code-de-procedure-civile-articles-640-a-642-1-20261015.xml` : `96c1aba215d85b76ccc2ee6a53ecacc9bde35af551d7db5dae550ae2dba96302`
+- `legi-securite-sociale-R243-6-LEGIARTI000034668597.xml` : `d38910c83a2ffe68860af13f330337dfdfd69aa2dfc9b15792df49ef9432c915`
+- `net-entreprises-calendrier-des-declarations-20261015.html` : `aa9f068668e99bbdb6a9630c614e9a759cfdc1002beb6a80803ac49bd34b9a8a`
+- `net-entreprises-calendrier-des-declarations-20261015.txt` : `2447450b9d37e5dd3eb0334161a7834f00595197797e9d72944732128c0139f0`
+- `net-entreprises-fiche113-signalement-arret-de-travail-20220211.html` : `7bb120e4dfa3248226d20ba2e417e97afe275ec8005087b09432d9bae9f1b28d`
+- `net-entreprises-fiche113-signalement-arret-de-travail-20220211.txt` : `21e63894cc1026080dd4a1a8d584605d2c3615876068771ad3d78d911c571837`
+- `net-entreprises-gestion-djt-employeurs-20220729.pdf` : `1e8251c85de5fc3b064ec4f855fffa3f549e96f125e3e36e4f624b6378e4208f`

@@ -314,3 +314,55 @@ familles (« Santé », « Retraite », « Famille », « Assurance chômage »,
 le total des cotisations, le « Montant net social », le net avant impôt, l'impôt prélevé, le net imposable. Ces libellés,
 et ceux que les bulletins lus impriment à leur place, sont dans `logiciel/donnees/bulletins-lecture-base.json`
 (`familles`, `resumes`). Tests : `moteur/tests/fichiers/bulletin_lu.rs`.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `boss-montant-net-social-20261001.pdf` : `d99d52ed415c937c0f78979556dab33611e777b174f860b1e6ebecade09934cf`
+- `boss-montant-net-social-20261001.txt` : `120d2b90e3a4e171315b4bc231b2350d46dec7435bf14b39a5edc53c2d49367e`
+- `boss-regles-generales-bulletin-de-paie-20250207-archive-web.html` : `885e9c383099d6fc4472674abd65e6b0f9822f20c4b032f606819e4f1df6396a`
+- `boss-regles-generales-bulletin-de-paie-20250207-archive-web.txt` : `d490decfd6f1fca5c53e048956aed7ea19058a6d78a5aa1bfda7c4620affea88`
+- `jorf-decret-2026-535-20260625/JORFARTI000054310348.xml` : `b3f34bc8f4dcb2d79ddcc7e2438325a71946134d334c93242086d04415d942ec`
+- `jorf-decret-2026-535-20260625/JORFARTI000054310350.xml` : `6257658000ce7bacb852aa260515332243412597dbc7781a99d69e6149586b78`
+- `jorf-decret-2026-535-20260625/JORFARTI000054310352.xml` : `a5dcf41977177714dc33a37513ed94b379778f6db5800e45ca05653fa4ca4eb1`
+- `jorf-decret-2026-535-20260625/JORFARTI000054310356.xml` : `7fa2ea9059728bcc02c4c0d0c75584fa7214885e0801b5b48f9c0f940dc82787`
+- `jorf-decret-2026-535-20260625/JORFTEXT000054310335-struct.xml` : `3e3d9a68eaffac710eab9c8e6dfc1d622fdb303151ef71337984bb5c21504994`
+- `jorf-decret-2026-535-20260625/JORFTEXT000054310335-version.xml` : `da7f97af340382919bede94de89d5be0bc0a01f41305ba53bbfc7606f5d994b0`
+- `jorf-decret-2026-535-20260625.md` : `2afd4b13e3e4b3a9e495a8a27d487619fbad5b445b89d688ed3d5d7599bc23f3`
+- `legi-arrete-20160225-bulletin/LEGIARTI000036902121.xml` : `b7e68bf934f8e50c44fc3db83e13e781d1002a91ae100f6e17ad76e9fb84e2a1`
+- `legi-arrete-20160225-bulletin/LEGIARTI000036902138.xml` : `0924bfacc1124d51d48c6fa3f53e0728dd0ebfe7961d002b45aae775cee29aec`
+- `legi-arrete-20160225-bulletin/LEGIARTI000036902139.xml` : `18f06a914c138e349247dc515c21c67e77a40dd96da235a2c3dec095f3480e3b`
+- `legi-arrete-20160225-bulletin/LEGIARTI000036902140.xml` : `5c1ae546a0af8a8f6ab8b02b06e3ecc85d5fd2f9617ca1bbe953c64306e0bb8c`
+- `legi-arrete-20160225-bulletin/LEGIARTI000036902939.xml` : `ac7b5b01b0ab95ef315df8229e2883f76902252b1263f50c79e40a2a83cdb12d`
+- `legi-arrete-20160225-bulletin/LEGIARTI000045014411.xml` : `6dcff5c5d7954721bfb8937e19339ebc028cbb23a87c6c5b750623efc2b95b50`
+- `legi-arrete-20160225-bulletin/LEGIARTI000045014445.xml` : `7e566ba979bbef19abc7a94036165cc845c64b1a92280d544c2a1d48ea4bbb22`
+- `legi-arrete-20160225-bulletin/LEGIARTI000047098456.xml` : `2f0348d4a5186abd7264f69b3ec1e1c26f6d81a50419c398f36037be5388ff5c`
+- `legi-arrete-20160225-bulletin/LEGIARTI000047098507.xml` : `05a1e344352b9af43dda5932199e8bad5e57a8618b3d20b0f33b0da77d38b8b5`
+- `legi-arrete-20160225-bulletin/LEGIARTI000047098509.xml` : `3d705052dc34680162a356e59efdf6ff4abb8f06f1973c2d96d6015def52dcb4`
+- `legi-arrete-20160225-bulletin/LEGIARTI000049854119.xml` : `b948fd5b8160c04e044c570bd48e2c3fb5905e0e0dbc766de752150af32d82e6`
+- `legi-arrete-20160225-bulletin/LEGITEXT000036902113-struct-livraison-20250814.xml` : `e57804437fd870e63d7966c621536fb5f9f964c9051405ee172f01515d2b3ea1`
+- `legi-arrete-20160225-bulletin/LEGITEXT000036902113-version.xml` : `97f5e4d788a81bcb89fe9e7c0ea6e163cd2c6ae6be4219fa00a33f56aef91735`
+- `legi-arrete-20160225-bulletin.md` : `a61ba50f7c194a835ed04b2e83243821bf7d20232857c2a4eeafc42e191127bb`
+- `legi-arrete-20230131-bulletin/LEGIARTI000047097664.xml` : `513ac069d536aa3fb2f852c234248f40646178f6f8e471380c7758d3c50945b7`
+- `legi-arrete-20230131-bulletin/LEGIARTI000047097666.xml` : `8e926edb71d1d38b7d2b4a806540ba31317d6cfd1626aa36b1199fa0875e7325`
+- `legi-arrete-20230131-bulletin/LEGIARTI000047097668.xml` : `45d6db547114245b58fe6b8f3d8893e0d17d0956af7061934abb34fd2e383cc8`
+- `legi-arrete-20230131-bulletin/LEGIARTI000047097670.xml` : `c13caa2c37e72bf622e68a8ba23bbb044715f6c2311fd52dcf684223cc207ecb`
+- `legi-arrete-20230131-bulletin/LEGIARTI000049854123.xml` : `0370297cf000f117f5fd4c4dce169845840e93ce1cfbeb29272979f51d90f4d7`
+- `legi-arrete-20230131-bulletin/LEGITEXT000047097661-struct.xml` : `11f00dcecc202f977edf92f2c439cc98ab83dc4306338bbf2f8114fbea6f2f48`
+- `legi-arrete-20230131-bulletin/LEGITEXT000047097661-version.xml` : `2b1b81eb19fa76d6724b37e1be55ba8aff3136f16975c5725be3293cf4fa5d45`
+- `legi-arrete-20240625-bulletin/LEGIARTI000049853909.xml` : `2ddcc32b3e4167c2c31b5a5f5477f2d62f21c6e0568a463a68fe54945cc72b22`
+- `legi-arrete-20240625-bulletin/LEGIARTI000049853911.xml` : `960b22f777b26ddfd237c2da8da46b1bdd6ea7a1a7b0a1484414c992ed4f1e2e`
+- `legi-arrete-20240625-bulletin/LEGIARTI000049853913.xml` : `3b54110974ce28aadd4842d55c11632ee723f4b543124ececd92487e024f6620`
+- `legi-arrete-20240625-bulletin/LEGITEXT000049853900-struct.xml` : `74ca1a086b27055b41defb0d3b185d502b55686366759bf0fcb57945924fdecc`
+- `legi-arrete-20240625-bulletin/LEGITEXT000049853900-version.xml` : `82c3cea733001728f73889ad766e91f95b3f4787ece4a426791588fcdc67c86a`
+- `legi-decret-2025-292-20250329/LEGIARTI000051395359.xml` : `063b2ae042f42b5e83d273d1d47cb7d06b58ea185e69693060974b45f155e9b2`
+- `legi-decret-2025-292-20250329/LEGIARTI000051395361.xml` : `bc8b4a5307a274bfbd5183e9857a6163c8ed34de12abf9eeca162012515f7bc4`
+- `legi-decret-2025-292-20250329/LEGIARTI000051395363.xml` : `dae650cf6e9e0d5e12529fe20e2e62b756c6259f4def0f679f5b25f9d889c23e`
+- `legi-decret-2025-292-20250329/LEGITEXT000051395352-struct.xml` : `c1cc98307a4947ef6f7bdfeae6707cee73d670761175a493687a573a3c623679`
+- `legi-decret-2025-292-20250329/LEGITEXT000051395352-version.xml` : `3eccdc914083ebe69d763a2e93c5206d4ab6121f6479e8fc17432ffa194af567`
+- `legi-decret-2025-292-20250329.md` : `b2ab99a97b1df7a9a925fc309dc45e850a2023b8553395e6c067a3be0e5a7ad6`
+- `legi-r844-1-versions/R844-1-LEGIARTI000048841691-20231231.xml` : `8cc0632946e29ecef3a6a5d785c5b68ce4900d33cadd1019779f5f1c3063ff9c`
+- `legi-r844-1-versions/R844-1-LEGIARTI000054314917-20260627.xml` : `1930dfb7c5439caedab36f3b9b62df12d72fa51ef3936ad7c7de376ead075039`
+- `legi-r844-1-versions/R844-1-versions-20231231-20260627.md` : `ff964c05d57194a19ab0bae5561e502bc4c1d6970c4063fec74903e4db0d55ed`
+- `sage-bulletin-clarifie-2023-net-social-faq-boss.txt` : `6789f4f7a76510623eb70a4e3327c98d9176b361b78bbdcc70a8266a2dd761e3`

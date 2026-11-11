@@ -63,3 +63,10 @@ pourrait employer (lignes 391-418 et 733-749 de la transcription) :
   pas. Constat, pas corrigé : c'est une donnée que le comptable de la compagnie remplace.
 - Le passage « 4421 → 442100 » (compléter de zéros à six chiffres) est l'usage des logiciels de comptabilité, pas
   une phrase du plan de comptes : **inférence**.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `anc-plan-de-comptes-20260101.pdf` : `e5d85249d348809bf5f4585d37ecdb9b7c37badd7bf86b371da27eef4bb8dd4a`
+- `anc-plan-de-comptes-20260101.txt` : `c09e9a67c62b65f8c96bc956a0290344fcc4ea56dc97beaf2380200fe36834c7`

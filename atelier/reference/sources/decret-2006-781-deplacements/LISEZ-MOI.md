@@ -17,3 +17,13 @@ deux qui servent.
 
 **Où le moteur s'en sert.** `droit::missions` (l'indemnité du jour à l'étranger, la limite d'exonération que le BOSS
 lui adosse, § 1380-1390).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `articles-20261103.md` : `2ed8f93ec575e970c9360249ac45dde7ec5d99d6e410094d7c1067708a4667d7`
+- `articles-20261110.md` : `767ffb66338a31aab344227e7170c3cf3b8b0bade61b515b5c8d3f8c38fba002`
+- `releve.json` : `e85886872e2ca9f68e78cc11ebce0cbe7bf31a3807e422e187ae1f3ab2ce7362`
+- `xml/3.xml` : `26959238f65a5661abe2433d62ca260163cff344edd104c9e4bc8e10706ac90c`
+- `xml/7.xml` : `9554c5e98618018c59e3b6e3437a38676b5869499bef512f05c70dc2c11ecc8e`

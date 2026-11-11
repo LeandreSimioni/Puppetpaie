@@ -27,3 +27,12 @@ Deux pages du schéma XML des identifiants de l'INSEE, relevées le 28/10/2026 p
 
 `atelier/sources/declarations/src/champs.rs` : `cle_nir` (la clé attendue d'un NIR, refus d'un NIR dont la clé diffère) et
 `luhn` (le SIRET d'un établissement). Tests : `la_cle_du_nir_et_celle_de_la_corse`, `le_siret_se_controle_par_luhn`.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `insee-schema-nir-20261028.html` : `60694c51166bc364c1357cac1d72718368d010d1b67e2fa04f6a5fff5e70bdbb`
+- `insee-schema-nir-20261028.txt` : `80ca7eff20603011fb4fc4b7162fc6614079443b774bd1a53eda7517ad359bd0`
+- `insee-schema-siret-20261028.html` : `f1b29eb5541e4bfe3db67694b5872b4cbf6bf5d2a4bd6ae7a59cc2c5b74fa959`
+- `insee-schema-siret-20261028.txt` : `b59b785b59dd7745fabb2af48613b40823312bede38bd8e1a0d1da0bc6afe71c`

@@ -119,3 +119,15 @@ Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'u
 - `unedic-circulaire-2025-05-contributions-20250501.pdf` : transcription `unedic-circulaire-2025-05-contributions-20250501.txt`
 - `unedic-fiche-assiette-des-contributions-20260922.pdf` : transcription `unedic-fiche-assiette-des-contributions-20260922.txt`
 - `unedic-fiche-assiette-des-contributions-20261010.html` : transcription `unedic-fiche-assiette-des-contributions-20261010.txt`
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `unedic-annexe10-convention-20241115.pdf` : `3ccb4eae9860a4717f594a5b2b83c16233f62aa2eab5f47da5f090ef566b4ef5`
+- `unedic-annexe10-convention-20241115.txt` : `afb816ca05c9bbdb2923efc99543829d27881d67f714e2fe6b8ca1605a52c49b`
+- `unedic-annexe8-convention-20241115.pdf` : `ede7168a195123915b449fb4c30eaa4561cf974a56c24c920cf2256791866f5c`
+- `unedic-annexe8-convention-20241115.txt` : `968a1f85171421cda0bbc76342aaaf72de4e4e4451d9a5bb87127875205eccd0`
+- `unedic-circulaire-2025-05-contributions-20250501.txt` : `235885f15f12db9067f5723998e27a981afb7b78a0b2cdb7157e212a047c0c52`
+- `unedic-fiche-assiette-des-contributions-20260922.txt` : `b837a3f3b55537d588bede6653b80e5140f90025c90fb43daad67262d48f76fc`
+- `unedic-fiche-assiette-des-contributions-20261010.txt` : `8d3f1c70feaee2373e7c74715b724361b28a209134ecf524dcbbd8a4b3c7d960`

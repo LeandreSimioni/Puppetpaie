@@ -32,3 +32,12 @@ les taux). Les tables entières restent ici. `droit::missions` les lit, `engagem
 jour à l'étranger (le choix « Lieu » d'une ligne de nuitée ou de repas). `moteur-atelier releve-missions`
 (`atelier/sources/atelier/src/releve/missions.rs`) les relève par l'API d'opendatasoft avant chaque publication,
 les dépose ici, datées et entières, et livre la part lisible.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `dgfip-frais-de-mission-etranger-20261103.csv` : `aed19085ff268e6bb54b84f82bf57e0068884d1a6e1f56ddd9e2b32233ac2331`
+- `dgfip-taux-de-change-20261103.csv` : `014055d4673e435af915c3432ad0545fb605cd630b426551b48131c25cef533c`
+- `dgfip-webmonn-20261103.txt` : `a6754bb13254b28adfcd1b12528671f91dc669942bd14e163c9cde2c57983990`
+- `dgfip-webpays-20261103.txt` : `a52d5f31fb1b6d8d63f366cfdee062736e1ff836af9d498eef6cd5f46be33bb9`

@@ -20,3 +20,10 @@ la valeur du SMIC ». Les articles eux-mêmes (réduction de 6 points et de 1,8 
 
 Les seuils `seuil_smic` 2,25 (CTP 635, maladie) et 3,3 (CTP 430, allocations familiales) des lignes DSN 102 et 907 du
 technicien et du permanent, barème 2025 (`logiciel/donnees/baremes/2025.json`).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `legifrance-loi-2025-199-20250228.pdf` : `b3688dfd65c40a8d7394b0ef725a700f5870152221064d669e64743e26337e5e`
+- `legifrance-loi-2025-199-20250228.txt` : `6a40614410e3c91aad04e078541ae4a27bc3a14b732cfcd29d7f7aa51d811093`

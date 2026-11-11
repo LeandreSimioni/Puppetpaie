@@ -42,3 +42,13 @@ Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'u
 - `github-docs-deploiements-et-environnements-20261014.html` : transcription `github-docs-deploiements-et-environnements-20261014.txt`
 - `github-docs-environnements-20261014.html` : transcription `github-docs-environnements-20261014.txt`
 - `github-docs-lien-vers-la-derniere-release-20261014.html` : transcription `github-docs-lien-vers-la-derniere-release-20261014.txt`
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `github-blog-approbation-sur-mobile-20210401.txt` : `a7644c9b16e6cfd62c7cf33791aa9e21fab5cbfe9933773b5753c36883415c58`
+- `github-docs-approuver-un-deploiement-20261014.txt` : `31bd4419f2bbe5d5cb419ef8f9ed5a3a43e9d001ce124b5ce1bf100bda85b59f`
+- `github-docs-deploiements-et-environnements-20261014.txt` : `bd874f0de8b45457e5618f4664bd8b0c20d4cab6a3886e8252f04650a165e9a3`
+- `github-docs-environnements-20261014.txt` : `45254b021cbce67b5b1cc9deea58341c53cd1632245fbd6931d6e3176c8d1149`
+- `github-docs-lien-vers-la-derniere-release-20261014.txt` : `bbf5c876eba60d69f379e27211bfb3362fdb2792d70ad4e71c74acd90dd209d8`
