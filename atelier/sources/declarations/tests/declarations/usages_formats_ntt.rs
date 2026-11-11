@@ -8,7 +8,7 @@ use declarations::usages;
 use serde::{Deserialize, Serialize, Serializer};
 
 const ORACLE: &str = "donnees/usages-formats-ntt.json";
-const NATURES: [&str; 7] = ["01", "04", "05", "07", "08", "09", "10"];
+use droit::nature_declaration::NatureDeLaDeclaration;
 
 /// L'oracle : l'usage de chaque rubrique par nature (dans l'ordre du fichier), des motifs et ce qu'ils admettent, des
 /// rubriques avec une valeur, sa mauvaise valeur et ses caracteres refuses.
@@ -78,9 +78,9 @@ fn usages_calcules(o: &Oracle) -> Usages {
             .0
             .iter()
             .map(|(r, _)| {
-                let codes = NATURES
+                let codes = NatureDeLaDeclaration::TOUS
                     .iter()
-                    .map(|nat| match usages::usage(&p26(), r, nat).unwrap() {
+                    .map(|nat| match usages::usage(&p26(), r, *nat).unwrap() {
                         Some(u) => u.lettre(),
                         None => ".",
                     })
@@ -115,8 +115,7 @@ fn rubriques_calculees(o: &Oracle) -> Vec<(String, String, String, Vec<String>)>
 #[test]
 fn tableau_des_usages() {
     let o = lu();
-    assert_eq!(usages::usage(&p26(), "S10.G00.00.001", "99").unwrap(), None);
-    assert!(o.usages.0.len() * NATURES.len() > 4000);
+    assert!(o.usages.0.len() * NatureDeLaDeclaration::TOUS.len() > 4000);
     let usages = usages_calcules(&o);
     comparer(Oracle { usages, ..o });
 }

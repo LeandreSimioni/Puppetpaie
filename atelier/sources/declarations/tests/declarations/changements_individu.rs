@@ -12,9 +12,10 @@ fn le_bloc_31_n_est_admis_que_dans_la_dsn_mensuelle() {
     for version in ["P26V01", "P27V01"] {
         let norme = declarations::norme::Norme::connue(version).unwrap();
         for r in ["S21.G00.31.001", "S21.G00.31.008", "S21.G00.31.009", "S21.G00.31.010", "S21.G00.31.011"] {
-            let u = declarations::usages::usage_en(&norme, r, "01").unwrap();
+            use droit::nature_declaration::NatureDeLaDeclaration as N;
+            let u = declarations::usages::usage_en(&norme, r, N::Mensuelle).unwrap();
             assert!(u == "O" || u == "C", "{} en mensuelle {} : {}", r, version, u);
-            for n in ["04", "05", "07", "08", "10"] {
+            for n in [N::SignalementArret, N::SignalementReprise, N::SignalementFinDeContrat, N::SignalementAmorcage, N::SignalementDpae] {
                 assert_eq!(declarations::usages::usage_en(&norme, r, n).unwrap(), "N", "{} en nature {} {}", r, n, version);
             }
         }

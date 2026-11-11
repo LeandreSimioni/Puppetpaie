@@ -179,7 +179,7 @@ impl Norme {
     /// La rubrique est-elle admise (O ou C) pour cette nature dans le tableau des usages de CETTE version ? C'est la
     /// question que les generateurs posent avant d'ecrire une rubrique qu'une version a retiree (06.003, 11.002 en
     /// P27V01) ou ajoutee.
-    pub fn admet(&self, rubrique: &str, nature: &str) -> R<bool> {
+    pub fn admet(&self, rubrique: &str, nature: droit::nature_declaration::NatureDeLaDeclaration) -> R<bool> {
         Ok(matches!(crate::usages::usage(self, rubrique, nature)?, Some(crate::usages::Usage::O | crate::usages::Usage::C)))
     }
 

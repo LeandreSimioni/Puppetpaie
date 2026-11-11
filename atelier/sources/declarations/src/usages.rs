@@ -5,8 +5,10 @@
 //! `S10.G00.00.006` du fichier controle (`norme::du_fichier`).
 
 use crate::norme::Norme;
+use droit::nature_declaration::NatureDeLaDeclaration;
 use socle::echec::{refus_avec, Lieu, R};
-use serde::Deserialize;
+use serde::de::{Error as _, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
@@ -44,47 +46,79 @@ pub struct Table {
     #[allow(dead_code)]
     sha256_du_classeur: Option<String>,
     /// Le libelle de chaque nature de declaration.
-    pub natures: BTreeMap<String, String>,
+    pub natures: BTreeMap<NatureDeLaDeclaration, String>,
     #[allow(dead_code)]
     valeurs: BTreeMap<String, String>,
     /// Chaque rubrique du tableau.
     pub usages: BTreeMap<String, Entree>,
 }
 
-/// Une rubrique du tableau : son libelle, son usage pour chaque nature.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+/// UNE RUBRIQUE DU TABLEAU : son libelle, et son usage pour chaque nature de declaration (S20.G00.05.001), toutes
+/// dites. Le tableau la donne en un objet : `libelle`, puis une cle par code de nature ; une cle qui n'est ni l'un ni
+/// l'autre, une nature en double ou une nature absente refusent le tableau.
 pub struct Entree {
     pub libelle: String,
-    #[serde(rename = "01")]
-    mensuelle: Usage,
-    #[serde(rename = "04")]
-    arret: Usage,
-    #[serde(rename = "05")]
-    reprise: Usage,
-    #[serde(rename = "07")]
-    fin_de_contrat: Usage,
-    #[serde(rename = "08")]
-    amorcage: Usage,
-    #[serde(rename = "09")]
-    substitution: Usage,
-    #[serde(rename = "10")]
-    dpae: Usage,
+    usages: BTreeMap<NatureDeLaDeclaration, Usage>,
 }
 
 impl Entree {
-    /// L'usage pour la nature `nature` (S20.G00.05.001), `None` pour une nature que le tableau n'a pas.
-    pub fn pour(&self, nature: &str) -> Option<Usage> {
-        match nature {
-            "01" => Some(self.mensuelle),
-            "04" => Some(self.arret),
-            "05" => Some(self.reprise),
-            "07" => Some(self.fin_de_contrat),
-            "08" => Some(self.amorcage),
-            "09" => Some(self.substitution),
-            "10" => Some(self.dpae),
-            _ => None,
+    /// L'usage pour cette nature.
+    pub fn pour(&self, nature: NatureDeLaDeclaration) -> Usage {
+        self.usages[&nature]
+    }
+}
+
+/// Une cle d'une rubrique du tableau : son libelle, ou le code d'une nature.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum CleDEntree {
+    Nature(NatureDeLaDeclaration),
+    Libelle(MotLibelle),
+}
+
+/// La cle `libelle`.
+#[derive(Deserialize)]
+enum MotLibelle {
+    #[serde(rename = "libelle")]
+    Libelle,
+}
+
+impl<'de> Deserialize<'de> for Entree {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_map(LectureDEntree)
+    }
+}
+
+struct LectureDEntree;
+
+impl<'de> Visitor<'de> for LectureDEntree {
+    type Value = Entree;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("une rubrique du tableau des usages : son libelle et l'usage de chaque nature de declaration")
+    }
+
+    fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Entree, A::Error> {
+        let (mut libelle, mut usages) = (None, BTreeMap::new());
+        while let Some(cle) = m.next_key::<CleDEntree>()? {
+            match cle {
+                CleDEntree::Libelle(MotLibelle::Libelle) => {
+                    if libelle.replace(m.next_value::<String>()?).is_some() {
+                        return Err(A::Error::duplicate_field("libelle"));
+                    }
+                }
+                CleDEntree::Nature(n) => {
+                    if usages.insert(n, m.next_value::<Usage>()?).is_some() {
+                        return Err(A::Error::custom(format!("la nature {} est dite deux fois", n)));
+                    }
+                }
+            }
         }
+        let libelle = libelle.ok_or_else(|| A::Error::missing_field("libelle"))?;
+        if let Some(n) = NatureDeLaDeclaration::TOUS.iter().find(|n| !usages.contains_key(*n)) {
+            return Err(A::Error::custom(format!("la rubrique « {} » ne dit pas son usage pour la nature {}", libelle, n)));
+        }
+        Ok(Entree { libelle, usages })
     }
 }
 
@@ -121,16 +155,16 @@ pub fn rubrique_connue(norme: &Norme, rubrique: &str) -> R<bool> {
 }
 
 /// L'usage de la rubrique pour cette nature dans le tableau de cette version ; `None` si le tableau n'a pas la
-/// rubrique, ou pas la nature.
-pub fn usage(norme: &Norme, rubrique: &str, nature: &str) -> R<Option<Usage>> {
-    Ok(table_de(norme)?.usages.get(rubrique).and_then(|e| e.pour(nature)))
+/// rubrique.
+pub fn usage(norme: &Norme, rubrique: &str, nature: NatureDeLaDeclaration) -> R<Option<Usage>> {
+    Ok(table_de(norme)?.usages.get(rubrique).map(|e| e.pour(nature)))
 }
 
-/// Ce que `usage_en` rend pour une rubrique ou une nature que le tableau n'a pas.
+/// Ce que `usage_en` rend pour une rubrique que le tableau n'a pas.
 const INCONNUE: &str = "";
 
 /// 'O', 'C', 'I', 'N' -- ou "" si la rubrique est inconnue du tableau de cette version.
-pub fn usage_en(norme: &Norme, rubrique: &str, nature: &str) -> R<String> {
+pub fn usage_en(norme: &Norme, rubrique: &str, nature: NatureDeLaDeclaration) -> R<String> {
     Ok(match usage(norme, rubrique, nature)? {
         Some(u) => u.lettre().to_string(),
         None => INCONNUE.to_string(),
@@ -138,7 +172,7 @@ pub fn usage_en(norme: &Norme, rubrique: &str, nature: &str) -> R<String> {
 }
 
 /// Les rubriques ecrites que cette nature n'admet pas : (rubrique, usage, `None` si le tableau ne la connait pas).
-pub fn interdites(texte: &str, nature: &str, norme: &Norme) -> R<Vec<(String, Option<Usage>)>> {
+pub fn interdites(texte: &str, nature: NatureDeLaDeclaration, norme: &Norme) -> R<Vec<(String, Option<Usage>)>> {
     let mut vues = HashSet::new();
     let mut out = Vec::new();
     for ligne in lignes(texte) {
@@ -158,13 +192,13 @@ pub fn interdites(texte: &str, nature: &str, norme: &Norme) -> R<Vec<(String, Op
 }
 
 /// Refuse avant le depot ce que le point de depot refuserait (CST-04).
-pub fn verifier(texte: &str, nature: &str, norme: &Norme) -> R<()> {
+pub fn verifier(texte: &str, nature: NatureDeLaDeclaration, norme: &Norme) -> R<()> {
     let mauvaises = interdites(texte, nature, norme)?;
     if mauvaises.is_empty() {
         return Ok(());
     }
     let (t, table) = (table_de(norme)?, norme.table_usages()?);
-    let libelle = t.natures.get(nature).ok_or_else(|| socle::echec::livree(&table, &format!("natures.{}", nature)))?;
+    let libelle = t.natures.get(&nature).ok_or_else(|| socle::echec::livree(&table, &format!("natures.{}", nature)))?;
     let lignes: Vec<String> = mauvaises
         .iter()
         .map(|(r, u)| {
@@ -191,9 +225,15 @@ pub fn verifier(texte: &str, nature: &str, norme: &Norme) -> R<()> {
     ))
 }
 
-/// La nature declaree dans le fichier lui-meme (S20.G00.05.001).
-pub fn nature_du_fichier(texte: &str) -> Option<String> {
-    lignes(texte).into_iter().find_map(|ligne| ligne.strip_prefix("S20.G00.05.001,").map(|reste| strip(reste).trim_matches('\'').to_string()))
+/// La nature declaree dans le fichier lui-meme (S20.G00.05.001), `None` s'il n'en porte pas ; un code hors de la liste
+/// de la norme refuse.
+pub fn nature_du_fichier(texte: &str) -> R<Option<NatureDeLaDeclaration>> {
+    let Some(code) = lignes(texte).into_iter().find_map(|ligne| ligne.strip_prefix("S20.G00.05.001,").map(|reste| strip(reste).trim_matches('\''))) else {
+        return Ok(None);
+    };
+    NatureDeLaDeclaration::du_code(code).map(Some).ok_or_else(|| {
+        socle::refus!("Le fichier porte, en S20.G00.05.001, « {} », qui n'est pas un code de sa liste dans la norme : il ne se controle pas.", code)
+    })
 }
 
 const CCH_14: &str = concat!(
@@ -254,11 +294,9 @@ pub fn verifier_fctu(texte: &str) -> R<()> {
 /// fichier sans version, ou d'une version que le logiciel ne livre pas, refuse.
 pub fn verifier_fichier(texte: &str) -> R<()> {
     let norme = crate::norme::du_fichier(texte)?;
-    let Some(nature) = nature_du_fichier(texte) else { return Ok(()) };
-    if table_de(&norme)?.natures.contains_key(&nature) {
-        verifier(texte, &nature, &norme)?;
-    }
-    if nature == "07" {
+    let Some(nature) = nature_du_fichier(texte)? else { return Ok(()) };
+    verifier(texte, nature, &norme)?;
+    if nature == NatureDeLaDeclaration::SignalementFinDeContrat {
         verifier_fctu(texte)?;
     }
     Ok(())
@@ -288,8 +326,9 @@ mod tests {
         let ajoutees: Vec<&String> = b.keys().filter(|k| !a.contains_key(*k)).collect();
         assert_eq!(retirees, ["S21.G00.06.003", "S21.G00.11.002"]);
         assert_eq!(ajoutees.len(), 20, "{:?}", ajoutees);
-        assert_eq!(usage_en(&p27, "S21.G00.40.084", "01").unwrap(), "C");
-        assert_eq!(usage_en(&p26, "S21.G00.11.024", "01").unwrap(), "I");
-        assert_eq!(usage_en(&p27, "S21.G00.11.024", "01").unwrap(), "C");
+        let mensuelle = NatureDeLaDeclaration::Mensuelle;
+        assert_eq!(usage_en(&p27, "S21.G00.40.084", mensuelle).unwrap(), "C");
+        assert_eq!(usage_en(&p26, "S21.G00.11.024", mensuelle).unwrap(), "I");
+        assert_eq!(usage_en(&p27, "S21.G00.11.024", mensuelle).unwrap(), "C");
     }
 }

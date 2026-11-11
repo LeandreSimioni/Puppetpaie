@@ -1497,7 +1497,7 @@ contrat). Rien n'est ecrit.",
 
 /// La rubrique est-elle admise pour cette nature dans le tableau des usages de la version du fichier ?
 pub fn usage_admet(f: &Fichier, rubrique: &str, nature_dsn: NatureDeLaDeclaration) -> R<bool> {
-    f.norme()?.admet(rubrique, nature_dsn.code())
+    f.norme()?.admet(rubrique, nature_dsn)
 }
 
 /// LA LICENCE D'ENTREPRENEUR DE SPECTACLES d'un contrat (S21.G00.40.049). « La licence est obligatoire pour toute
@@ -2008,8 +2008,7 @@ declare {} h ; ses quatre heures sont des heures supplementaires, payees comme t
 fn proratisation_du_plafond(f: &mut Fichier, p: &Paie, nature_dsn: NatureDeLaDeclaration) -> R<()> {
     use engagement::calcul::PlafondTempsPartiel as P;
     let r = "S21.G00.40.084";
-    let usage = crate::usages::usage_en(f.norme()?, r, nature_dsn.code())?;
-    if usage != "O" && usage != "C" {
+    if !usage_admet(f, r, nature_dsn)? {
         return Ok(());
     }
     let valeur = match p.plafond_temps_partiel {
