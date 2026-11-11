@@ -343,17 +343,24 @@ struct Ecartee {
     coupee: String,
 }
 
-/// Le format d'une rubrique : sa longueur `[min, max]`, ses expressions de controle (CSL) quand elle en a.
+/// Le format d'une rubrique : sa longueur `[min, max]`, ses expressions de controle (CSL) quand elle en a, et sa liste
+/// de valeurs quand le texte lui en donne une (code -> libelle, relevee par `moteur-atelier extraire formats`).
 #[derive(Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct Format {
     pub longueur: [usize; 2],
     pub csl: Option<Vec<String>>,
+    pub valeurs: Option<BTreeMap<String, String>>,
 }
 
 /// Le format de la rubrique dans la table de cette version, `None` si la table ne la connait pas.
 pub fn format_en(norme: &Norme, rubrique: &str) -> R<Option<Format>> {
     Ok(table_de(norme)?.formats.get(rubrique).cloned())
+}
+
+/// Les codes de la liste de valeurs de la rubrique dans cette version, `None` si la table ne lui en donne pas.
+pub fn liste_en(norme: &Norme, rubrique: &str) -> R<Option<Vec<String>>> {
+    Ok(table_de(norme)?.formats.get(rubrique).and_then(|f| f.valeurs.as_ref()).map(|v| v.keys().cloned().collect()))
 }
 
 /// Pour une saisie : le format de la premiere version livree qui en donne un, `None` si aucune.
