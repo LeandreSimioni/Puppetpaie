@@ -70,7 +70,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use socle::date::Jour;
 use socle::echec::{refus, refus_avec, APart, Echec, Lieu, R};
+use socle::paris::MinuteEcrite;
 
 
 /// La cle publique d'un poste d'editeur (Ed25519, 32 octets en base64), que les installations posees acceptent encore
@@ -277,7 +279,7 @@ pub fn depot(pose: Option<String>) -> String {
 #[serde(deny_unknown_fields)]
 pub struct Prete {
     pub version: String,
-    pub quand: String,
+    pub quand: MinuteEcrite,
     pub archives: Vec<String>,
     pub notes: String,
     pub calcul: String,
@@ -367,7 +369,7 @@ fn lire_depot_suivi(depot: &str, nom: &str, suivre: &dyn Fn(u64, Option<u64>)) -
 #[serde(deny_unknown_fields)]
 pub struct Publiee {
     pub version: String,
-    pub publiee_le: String,
+    pub publiee_le: Jour,
     pub notes: String,
     pub calcul: String,
     pub exigee: String,
@@ -777,7 +779,7 @@ fn telecharger(inst: &Path, depot: &str, d: &Publiee, cles: &[&str], suivi: &Rec
     }
     let prete = Prete {
         version: version.to_string(),
-        quand: socle::paris::maintenant_naif().iso()[..16].to_string(),
+        quand: MinuteEcrite::maintenant(),
         archives: prises.iter().map(|(k, _)| k.to_string()).collect(),
         notes: d.notes.clone(),
         calcul: d.calcul.clone(),
@@ -1581,7 +1583,7 @@ fn dire_l_installation(inst: &Path, suivi: &Recherche) {
 #[serde(deny_unknown_fields)]
 struct Appliquee {
     version: String,
-    quand: String,
+    quand: MinuteEcrite,
     notes: String,
     calcul: String,
     vue: bool,
@@ -1644,7 +1646,7 @@ pub fn appliquer(inst: &Path) -> R<Basculee> {
 pub struct Basculee {
     pub version: String,
     pub avant: String,
-    pub quand: String,
+    pub quand: MinuteEcrite,
 }
 
 /// `appliquer`, le dossier de la version prete et le logiciel donnes : `<installation>/maj/`, ou, pour le relais lance avec
@@ -1705,9 +1707,9 @@ fn appliquer_depuis(maj: &Path, code: &Path) -> R<Basculee> {
         }
         return Err(e.reformuler(|m| format!("la bascule a echoue, l'ancienne version reste en place : {}", m)));
     }
-    let quand = socle::paris::maintenant_naif().iso()[..16].to_string();
+    let quand = MinuteEcrite::maintenant();
     std::fs::create_dir_all(dossier_maj(&inst)).map_err(|e| refus(e.to_string()))?;
-    ecrire_appliquee(&dossier_maj(&inst).join(APPLIQUEE), &Appliquee { version: version.clone(), quand: quand.clone(), notes: d.notes, calcul: d.calcul, vue: false })?;
+    ecrire_appliquee(&dossier_maj(&inst).join(APPLIQUEE), &Appliquee { version: version.clone(), quand, notes: d.notes, calcul: d.calcul, vue: false })?;
     let _ = std::fs::remove_file(maj.join(PRETE));
     let _ = std::fs::remove_dir_all(maj.join(&version));
     Ok(Basculee { version, avant: avant.display().to_string(), quand })
@@ -1840,8 +1842,7 @@ pub fn noter(inst: &Path, t: &str) {
     let d = dossier_maj(inst);
     let _ = std::fs::create_dir_all(&d);
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("journal.log")) {
-        let quand = socle::paris::maintenant_naif().iso();
-        let _ = writeln!(f, "{} {}", &quand[..quand.len().min(16)], t);
+        let _ = writeln!(f, "{} {}", MinuteEcrite::maintenant(), t);
     }
 }
 
@@ -1991,7 +1992,7 @@ mod tests {
 
     /// La version 2026.11.01 prete dans `<racine>/maj/`, telle que `telecharger` l'ecrit.
     fn poser_la_prete(racine: &Path) {
-        let p = Prete { version: "2026.11.01".into(), quand: "2026-11-01T09:00".into(), archives: vec![SYSTEME.into()], notes: String::new(), calcul: String::new(), exigee: String::new() };
+        let p = Prete { version: "2026.11.01".into(), quand: MinuteEcrite::lire("2026-11-01T09:00").unwrap(), archives: vec![SYSTEME.into()], notes: String::new(), calcul: String::new(), exigee: String::new() };
         ecrire_prete(&racine.join("maj"), &p).unwrap();
     }
 
