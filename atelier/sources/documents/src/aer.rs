@@ -559,7 +559,7 @@ pub fn periodes_attendues(periode: Mois, cle: &str, paies_du_mois: &mut dyn FnMu
 /// agrandi bave. Un fichier illisible n'est pas pose en silence : la fabrique
 /// refuse, et l'attestation ne sort pas sans qu'on sache pourquoi.
 fn image_fichier(page: usize, rect: [Mesure; 4], fichier: &str) -> ImagePosee {
-    ImagePosee { page, rect, marge: Some(cachet::MARGE), fichier: Some(fichier.to_string()), svg: None }
+    ImagePosee { page, rect, marge: cachet::MARGE, fichier: Some(fichier.to_string()), svg: None }
 }
 
 /// Le cachet a poser dans `rect` de la page `page` : celui de la compagnie
@@ -578,5 +578,5 @@ fn image(page: usize, rect: [Mesure; 4], ent: &droit::fiche::ChampsEntreprise, f
         }
     }
     let dessin = cachet::svg(ent)?;
-    Some(ImagePosee { page, rect, marge: Some(cachet::MARGE), fichier: None, svg: Some(dessin) })
+    Some(ImagePosee { page, rect, marge: cachet::MARGE, fichier: None, svg: Some(dessin) })
 }

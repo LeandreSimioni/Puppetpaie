@@ -612,7 +612,7 @@ impl Dessin {
 
     /// Le fichier PDF : les polices en sous-ensemble, les images, les pages, puis l'écriture au plus court, dans
     /// un ordre canonique (le même document donne toujours les mêmes octets ; les dates et l'identifiant sont fixes).
-    pub fn finir(mut self, titre: &str) -> Result<Vec<u8>, Refus> {
+    pub fn finir(mut self, titre: Option<&str>) -> Result<Vec<u8>, Refus> {
         if self.pages.is_empty() {
             self.nouvelle_page();
         }
@@ -703,14 +703,16 @@ impl Dessin {
         catalogue.set("Type", Object::Name(b"Catalog".to_vec()));
         catalogue.set("Pages", Object::Reference(arbre));
         let racine = doc.add_object(Object::Dictionary(catalogue));
-        // Les propriétés : le titre (en UTF-16, sa marque en tête), le nom du logiciel, des dates fixes.
-        let mut titre_utf16 = vec![0xFE, 0xFF];
-        for u in titre.encode_utf16() {
-            titre_utf16.extend_from_slice(&u.to_be_bytes());
-        }
+        // Les propriétés : le titre s'il est dit (en UTF-16, sa marque en tête), le nom du logiciel, des dates fixes.
         let date = || Object::String(b"D:19700101000000+00'00'".to_vec(), StringFormat::Literal);
         let mut info = Dictionary::new();
-        info.set("Title", Object::String(titre_utf16, StringFormat::Literal));
+        if let Some(titre) = titre {
+            let mut titre_utf16 = vec![0xFE, 0xFF];
+            for u in titre.encode_utf16() {
+                titre_utf16.extend_from_slice(&u.to_be_bytes());
+            }
+            info.set("Title", Object::String(titre_utf16, StringFormat::Literal));
+        }
         info.set("Creator", Object::String(b"PuppetPaie".to_vec(), StringFormat::Literal));
         info.set("Producer", Object::String(b"PuppetPaie".to_vec(), StringFormat::Literal));
         info.set("CreationDate", date());

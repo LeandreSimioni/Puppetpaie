@@ -107,9 +107,9 @@ fn du_spectacle(sp: Option<&droit::fiche::Spectacle>, case: fn(&droit::fiche::Sp
 }
 
 
-/// Un morceau de texte d'un paragraphe ou d'une cellule ; maigre et sans couleur, il ne le dit pas.
+/// Un morceau de texte d'un paragraphe ou d'une cellule, droit ; sans couleur, celle de ce qui le porte.
 fn m(texte: impl Into<String>, gras: bool, couleur: Option<&str>) -> Morceau {
-    Morceau { texte: texte.into(), gras: gras.then_some(true), italique: None, couleur: couleur.map(str::to_string) }
+    Morceau { texte: texte.into(), gras, italique: false, couleur: couleur.map(str::to_string) }
 }
 
 fn mt(texte: impl Into<String>) -> Morceau {
@@ -121,18 +121,18 @@ fn dite(x: Mesure) -> Option<Mesure> {
     (!x.est_nulle()).then_some(x)
 }
 
-/// Un paragraphe du bulletin : ses morceaux, sa taille, sa couleur, l'espace avant et apres ; ce qui est nul ne se dit
-/// pas.
+/// Un paragraphe du bulletin, à gauche : ses morceaux, sa taille (nulle : celle de la police), sa couleur, l'espace
+/// avant et après.
 fn para(morceaux: Vec<Morceau>, taille: Mesure, couleur: Option<&str>, avant: Mesure, apres: Mesure) -> Bloc {
     Bloc::Paragraphe(f::Paragraphe {
         morceaux,
         taille: dite(taille),
         couleur: couleur.map(str::to_string),
-        alignement: None,
-        majuscules: None,
-        espace_avant: dite(avant),
-        espace_apres: dite(apres),
-        retrait: None,
+        alignement: f::Alignement::Gauche,
+        majuscules: false,
+        espace_avant: avant,
+        espace_apres: apres,
+        retrait: Mesure::ZERO,
     })
 }
 
@@ -141,10 +141,10 @@ fn cm(morceaux: Vec<Morceau>, couleur: Option<&str>) -> Cellule {
     Cellule::Decrite(f::CelluleDecrite {
         texte: None,
         morceaux: Some(morceaux),
-        gras: None,
+        gras: false,
         couleur: couleur.map(str::to_string),
         alignement: None,
-        etendue: None,
+        etendue: 1,
     })
 }
 
@@ -153,10 +153,10 @@ fn cell(texte: impl Into<String>, etendue: i64, gras: bool, couleur: Option<&str
     Cellule::Decrite(f::CelluleDecrite {
         texte: Some(texte.into()),
         morceaux: None,
-        gras: gras.then_some(true),
+        gras,
         couleur: couleur.map(str::to_string),
         alignement: None,
-        etendue: (etendue != 1).then_some(etendue as usize),
+        etendue: etendue as usize,
     })
 }
 
@@ -170,7 +170,7 @@ fn s(texte: impl Into<String>) -> Cellule {
 
 /// Une cellule vide : rien ne s'y ecrit.
 fn vide() -> Cellule {
-    Cellule::Decrite(f::CelluleDecrite { texte: None, morceaux: None, gras: None, couleur: None, alignement: None, etendue: None })
+    Cellule::Decrite(f::CelluleDecrite { texte: None, morceaux: None, gras: false, couleur: None, alignement: None, etendue: 1 })
 }
 
 /// Une cellule qui dit son texte, ou vide.
@@ -190,12 +190,12 @@ enum Opt {
     FiletHaut(&'static str, Mesure),
 }
 
-/// Les options absentes ne s'ecrivent pas.
+/// Une ligne maigre ; ce qu'aucune option ne dit est celui du tableau.
 fn ligne(cellules: Vec<Cellule>, options: Vec<Opt>) -> Ligne {
-    let mut l = Ligne { cellules, gras: None, fond: None, couleur: None, taille: None, filet_haut: None, filet_bas: None };
+    let mut l = Ligne { cellules, gras: false, fond: None, couleur: None, taille: None, filet_haut: None, filet_bas: None };
     for o in options {
         match o {
-            Opt::Gras => l.gras = Some(true),
+            Opt::Gras => l.gras = true,
             Opt::Fond(c) => l.fond = Some(c.to_string()),
             Opt::Couleur(c) => l.couleur = Some(c.to_string()),
             Opt::Taille(t) => l.taille = Some(t),
@@ -214,12 +214,12 @@ fn filet_haut(couleur: &'static str, epaisseur: Mesure) -> Opt {
 }
 
 fn filet(couleur: &str, epaisseur: Mesure) -> f::Filet {
-    f::Filet { couleur: Some(couleur.to_string()), epaisseur: Some(epaisseur) }
+    f::Filet { couleur: couleur.to_string(), epaisseur }
 }
 
 /// Les cellules des tableaux : 7 pt, 1,4 pt au-dessus et au-dessous, 3 pt de chaque cote.
 fn marge_cellule() -> f::MargeCellule {
-    f::MargeCellule { haut: Some(mesure("1.4")), droite: Some(Mesure::entier(3)), bas: Some(mesure("1.4")), gauche: Some(Mesure::entier(3)) }
+    f::MargeCellule { haut: mesure("1.4"), droite: Mesure::entier(3), bas: mesure("1.4"), gauche: Mesure::entier(3) }
 }
 
 /// Premiere colonne a gauche, les autres a droite, un filet fin sous chaque ligne.
@@ -229,7 +229,7 @@ fn tableau(largeurs: &[Mesure], entete: Vec<Ligne>, lignes: Vec<Ligne>, teinte: 
         .enumerate()
         .map(|(i, l)| f::ColonneTableau {
             largeur: *l,
-            alignement: Some(if i == 0 { f::Alignement::Gauche } else { f::Alignement::Droite }),
+            alignement: if i == 0 { f::Alignement::Gauche } else { f::Alignement::Droite },
         })
         .collect();
     Bloc::Tableau(f::Tableau {
@@ -239,11 +239,11 @@ fn tableau(largeurs: &[Mesure], entete: Vec<Ligne>, lignes: Vec<Ligne>, teinte: 
         taille: Some(Mesure::entier(7)),
         couleur: None,
         interligne: Some(mesure("1.27")),
-        marge_cellule: Some(marge_cellule()),
+        marge_cellule: marge_cellule(),
         filet_lignes: Some(filet(teinte, mesure("0.3"))),
         filets_cellules: None,
-        espace_avant: None,
-        espace_apres: None,
+        espace_avant: Mesure::ZERO,
+        espace_apres: Mesure::ZERO,
     })
 }
 
@@ -1133,7 +1133,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         k("Licence spec. :"),
         mt(format!(" {}", licence)),
     ]);
-    let moitie = || f::ColonneTableau { largeur: mesure("0.5"), alignement: None };
+    let moitie = || f::ColonneTableau { largeur: mesure("0.5"), alignement: f::Alignement::Gauche };
     blocs.push(Bloc::Tableau(f::Tableau {
         colonnes: vec![moitie(), moitie()],
         entete: None,
@@ -1141,11 +1141,11 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         taille: Some(Mesure::entier(7)),
         couleur: None,
         interligne: Some(mesure("1.27")),
-        marge_cellule: Some(marge_cellule()),
+        marge_cellule: marge_cellule(),
         filet_lignes: None,
         filets_cellules: Some(filet("#dddddd", mesure("0.5"))),
-        espace_avant: None,
-        espace_apres: None,
+        espace_avant: Mesure::ZERO,
+        espace_apres: Mesure::ZERO,
     }));
 
     let contrat_long = if permanent {
@@ -1291,21 +1291,21 @@ pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) ->
             documents.push(Document::Blocs(blocs_annexe(j.paie, j.numero)?));
         }
     }
-    let marge = Some(Mesure::entier(42));
+    let marge = Mesure::entier(42);
     Ok(Description {
         format: FORMAT,
         page: Some(f::Page {
-            largeur: Some(f::PAGE_LARGEUR),
-            hauteur: Some(f::PAGE_HAUTEUR),
-            marges: Some(f::Marges { haut: marge, droite: marge, bas: marge, gauche: marge }),
+            largeur: f::A4_LARGEUR,
+            hauteur: f::A4_HAUTEUR,
+            marges: f::Marges { haut: marge, droite: marge, bas: marge, gauche: marge },
         }),
-        police: Some(f::Police { taille: Some(mesure("7.4")), interligne: Some(mesure("1.2")), couleur: Some(ARDOISE.to_string()) }),
+        police: Some(f::Police { taille: mesure("7.4"), interligne: mesure("1.2"), couleur: ARDOISE.to_string() }),
         style: None,
         logo: identite_de(&ent.gabarits, "logo").map(|logo| f::Logo {
             chemin: chemin_texte(&logo),
             largeur: LOGO_LARGEUR,
-            marge_haut: Some(LOGO_MARGE_HAUT),
-            marge_droite: Some(LOGO_MARGE_DROITE),
+            marge_haut: LOGO_MARGE_HAUT,
+            marge_droite: LOGO_MARGE_DROITE,
         }),
         titre: None,
         documents,
@@ -1316,13 +1316,13 @@ pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) ->
             droite: Some(PIED_TEXTE.to_string()),
             taille: Some(Mesure::entier(6)),
             couleur: Some(PIED_GRIS.to_string()),
-            gras: None,
-            distance: Some(Mesure::entier(24)),
-            premiere_page: None,
+            gras: false,
+            distance: Mesure::entier(24),
+            premiere_page: true,
             image: Some(f::ImageRepere {
                 chemin: chemin_texte(&socle::fichiers::dossier_du_code().join("puppetpaie-mot.svg")),
                 largeur: PIED_MOT_LARGEUR,
-                descente: Some(PIED_MOT_DESCENTE),
+                descente: PIED_MOT_DESCENTE,
             }),
         }),
     })

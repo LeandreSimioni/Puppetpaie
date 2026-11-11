@@ -49,6 +49,9 @@ const Z: Mesure = Mesure::ZERO;
 const FF_PAR_DEFAUT: i64 = 0;
 /// La justification d'un champ qui n'en dit pas (table 222 : `Q`, « Default value: 0 (left-justified) »).
 const Q_PAR_DEFAUT: i64 = 0;
+/// Le corps d'un champ qu'on ajoute sans en dire : 0, le corps automatique (12.7.3.3 : « A zero value for size means
+/// that the font shall be auto-sized »).
+const CORPS_AUTOMATIQUE: Mesure = Mesure::ZERO;
 
 // ------------------------------------------------------------------ les chaînes de texte PDF
 
@@ -1095,11 +1098,10 @@ fn lire_pose(im: &crate::forme::ImagePosee, rang: usize) -> Result<Pose, Refus> 
     if !rect_valide(&im.rect) {
         return refus(format!("image {} : « rect » doit être [x0, y0, x1, y1] avec x1 > x0 et y1 > y0", rang));
     }
-    let marge = match im.marge {
-        None => Z,
-        Some(m) if m >= Z => m,
-        Some(_) => return refus(format!("image {} : « marge » doit être un nombre positif", rang)),
-    };
+    if im.marge < Z {
+        return refus(format!("image {} : « marge » doit être un nombre positif", rang));
+    }
+    let marge = im.marge;
     let (octets, nom) = match (&im.fichier, &im.svg) {
         (Some(f), None) => (std::fs::read(f).map_err(|e| Refus::illisible(format!("image {} illisible ({})", f, e)))?, f.clone()),
         (None, Some(s)) => (s.as_bytes().to_vec(), format!("de l'image {}", rang)),
@@ -1328,18 +1330,17 @@ fn lire_ajout(c: &crate::forme::ChampAjoute, rang: usize) -> Result<Ajout, Refus
     if !rect_valide(&c.rect) {
         return refus(format!("champ « {} » : « rect » doit être [x0, y0, x1, y1] avec x1 > x0 et y1 > y0", nom));
     }
-    let lecture_seule = c.lecture_seule.unwrap_or(false);
-    // Le corps 0 : celui qui tient (`/DA`).
+    let lecture_seule = c.lecture_seule;
     let taille = match c.taille {
-        None => Z,
+        None => CORPS_AUTOMATIQUE,
         Some(t) if t >= Z => t,
         Some(_) => return refus(format!("champ « {} » : « taille » doit être un nombre positif ou nul", nom)),
     };
     let q = match c.alignement {
-        None | Some(Alignement::Gauche) => 0,
-        Some(Alignement::Centre) => 1,
-        Some(Alignement::Droite) => 2,
-        Some(Alignement::Justifie) => {
+        Alignement::Gauche => 0,
+        Alignement::Centre => 1,
+        Alignement::Droite => 2,
+        Alignement::Justifie => {
             return refus(format!("champ « {} » : alignement « justifie » inconnu (gauche, centre, droite)", nom))
         }
     };

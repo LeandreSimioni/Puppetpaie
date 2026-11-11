@@ -32,7 +32,7 @@
 use droit::fiche::Lue as _;
 use std::io::Write;
 
-use fabrique_pdf::forme::{AjoutDeChamps, Alignement, Bloc, ChampAjoute, Description, Document, Marges, Mesure, Page, TexteFixe, Trait};
+use fabrique_pdf::forme::{AjoutDeChamps, Alignement, Bloc, ChampAjoute, Description, Document, Marges, Mesure, Page, Police, PoliceFixe, TexteFixe, Trait};
 use fabrique_pdf::mesure::mesure as m;
 
 use declarations::dsn_lue::{ContratDeclare, DsnLue, IndividuDeclare, Mesures};
@@ -152,15 +152,15 @@ fn pt(n: i64) -> Mesure {
     Mesure::entier(n)
 }
 
-/// Un texte pose, aligne par rapport a `x`.
-fn texte_aligne(x: Mesure, y: Mesure, t: &str, taille: Mesure, gras: bool, couleur: &str, alignement: Option<Alignement>) -> Bloc {
+/// Un texte pose en Helvetica, aligne par rapport a `x`.
+fn texte_aligne(x: Mesure, y: Mesure, t: &str, taille: Mesure, gras: bool, couleur: &str, alignement: Alignement) -> Bloc {
     Bloc::TexteFixe(TexteFixe {
         texte: t.to_string(),
         x,
         y,
         taille: Some(taille),
-        police: None,
-        gras: Some(gras),
+        police: PoliceFixe::Helvetica,
+        gras,
         couleur: Some(couleur.to_string()),
         alignement,
         largeur_max: None,
@@ -168,15 +168,15 @@ fn texte_aligne(x: Mesure, y: Mesure, t: &str, taille: Mesure, gras: bool, coule
 }
 
 fn texte(x: i64, y: i64, t: &str, taille: Mesure, gras: bool, couleur: &str) -> Bloc {
-    texte_aligne(pt(x), pt(y), t, taille, gras, couleur, None)
+    texte_aligne(pt(x), pt(y), t, taille, gras, couleur, Alignement::Gauche)
 }
 
 fn centre(x: Mesure, y: Mesure, t: &str, taille: Mesure, gras: bool, couleur: &str) -> Bloc {
-    texte_aligne(x, y, t, taille, gras, couleur, Some(Alignement::Centre))
+    texte_aligne(x, y, t, taille, gras, couleur, Alignement::Centre)
 }
 
 fn trait_en(x1: Mesure, y1: Mesure, x2: Mesure, y2: Mesure, ep: Mesure, couleur: &str) -> Bloc {
-    Bloc::Trait(Trait { x1, y1, x2, y2, epaisseur: Some(ep), couleur: Some(couleur.to_string()) })
+    Bloc::Trait(Trait { x1, y1, x2, y2, epaisseur: ep, couleur: couleur.to_string() })
 }
 
 fn trait_(x1: i64, y1: i64, x2: i64, y2: i64, ep: Mesure, couleur: &str) -> Bloc {
@@ -208,7 +208,7 @@ fn mention(b: &mut Vec<Bloc>, page: usize) {
     b.push(centre(m("297.6"), pt(51), "COMPAGNIE FICTIVE — DOCUMENT DE DÉMONSTRATION : aucun organisme ne l'a émis, il n'a aucune valeur", pt(8), true, BLANC));
     b.push(trait_(30, 818, 565, 818, m("0.5"), ROUGE));
     b.push(texte(30, 829, "Compagnie fictive : imitation de l'attestation que France Travail édite d'après la DSN, pour la démonstration du logiciel.", m("6.5"), false, ROUGE));
-    b.push(texte_aligne(pt(565), pt(829), &format!("{}/3", page), pt(7), false, NOIR, Some(Alignement::Droite)));
+    b.push(texte_aligne(pt(565), pt(829), &format!("{}/3", page), pt(7), false, NOIR, Alignement::Droite));
 }
 
 /// Les champs ajoutes au dessin.
@@ -224,9 +224,9 @@ impl Champs {
                 page,
                 rect: r.map(pt),
                 valeur: Some(v.to_string()),
-                lecture_seule: Some(true),
+                lecture_seule: true,
                 taille: Some(taille),
-                alignement: Some(alignement),
+                alignement,
             });
         }
     }
@@ -236,9 +236,9 @@ impl Champs {
             self.imprime(page, nom, r, v, taille, alignement);
         }
     }
-    /// A remplir par l'employeur (le cadre 5).
+    /// A remplir par l'employeur (le cadre 5), a gauche.
     fn vide(&mut self, nom: &str, r: [i64; 4]) {
-        self.0.push(ChampAjoute { nom: nom.to_string(), page: 3, rect: r.map(pt), valeur: None, lecture_seule: None, taille: Some(Mesure::entier(9)), alignement: None });
+        self.0.push(ChampAjoute { nom: nom.to_string(), page: 3, rect: r.map(pt), valeur: None, lecture_seule: false, taille: Some(Mesure::entier(9)), alignement: Alignement::Gauche });
     }
 }
 
@@ -387,7 +387,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
         (339, 360, "Salaire brut (non plafonné)"),
     ];
     for (y0, y1, t) in lignes_4 {
-        p2.push(texte_aligne(pt(32), (pt(y0) + pt(y1)) / 2 + m("2.5"), t, m("7.5"), false, NOIR, None));
+        p2.push(texte_aligne(pt(32), (pt(y0) + pt(y1)) / 2 + m("2.5"), t, m("7.5"), false, NOIR, Alignement::Gauche));
         p2.push(trait_en(pt(30), pt(y1) + m("1.5"), pt(565), pt(y1) + m("1.5"), m("0.3"), GRIS));
     }
     etiquette(&mut p2, 32, 392, "Date de paiement");
@@ -496,15 +496,16 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
     case(&mut p3, [401, 685, 562, 765]);
     f.vide("EMPLOYEUR_CACHET", [401, 685, 562, 765]);
 
-    let nulle = Some(Mesure::ZERO);
+    let nulle = Mesure::ZERO;
     let description = Description {
         format: fabrique_pdf::FORMAT,
         page: Some(Page {
-            largeur: Some(fabrique_pdf::forme::PAGE_LARGEUR),
-            hauteur: Some(fabrique_pdf::forme::PAGE_HAUTEUR),
-            marges: Some(Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle }),
+            largeur: fabrique_pdf::forme::A4_LARGEUR,
+            hauteur: fabrique_pdf::forme::A4_HAUTEUR,
+            marges: Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle },
         }),
-        police: None,
+        // Chaque texte dit son corps et sa couleur : la police n'en est que la base.
+        police: Some(Police { taille: pt(10), interligne: m("1.25"), couleur: "#000000".to_string() }),
         style: None,
         logo: None,
         titre: Some(format!("Attestation employeur annexes 8 et 10 (compagnie fictive) — {} {}", nom, prenoms)),

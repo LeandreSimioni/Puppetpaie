@@ -34,8 +34,8 @@ pub fn enveloppe(style: Style, ent: &EntrepriseDuDocument, documents: Vec<Docume
         logo: identite_de(&ent.gabarits, "logo").map(|logo| forme::Logo {
             chemin: chemin_texte(&logo),
             largeur: LOGO_LARGEUR,
-            marge_haut: Some(LOGO_MARGE_HAUT),
-            marge_droite: Some(LOGO_MARGE_DROITE),
+            marge_haut: LOGO_MARGE_HAUT,
+            marge_droite: LOGO_MARGE_DROITE,
         }),
         titre: None,
         documents,

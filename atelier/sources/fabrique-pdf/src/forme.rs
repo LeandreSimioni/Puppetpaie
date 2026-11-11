@@ -3,9 +3,9 @@
 //! ajoute (`AjoutDeChamps`). Le moteur les construit en Rust ; la ligne de commande les lit d'un texte
 //! JSON, une fois, strictement (`lire`) : aucune clé inconnue.
 //!
-//! Un champ `Option` absent est vide : il ne dit rien. Ce que la fabrique met alors à sa place est
-//! nommé sur le champ — la valeur de la police, du bloc, de la colonne, ou une des constantes
-//! ci-dessous — et ne se décide qu'à un seul endroit, la validation (`description.rs`).
+//! L'appelant dit chaque valeur : aucune n'a de défaut. Un champ `Option` ne dit qu'une préséance — sans lui,
+//! la valeur de ce qui le contient (la police, la ligne, la colonne, le style, le modèle), nommée sur le champ —
+//! ou une absence (rien à cette place) ; elle ne se résout qu'à un seul endroit, la validation (`description.rs`).
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -13,22 +13,10 @@ use std::collections::BTreeMap;
 use crate::description::{francais, Refus};
 pub use crate::mesure::Mesure;
 
-/// Une page sans largeur dite : A4 (en points).
-pub const PAGE_LARGEUR: Mesure = Mesure::milliemes(595_280);
-/// Une page sans hauteur dite : A4 (en points).
-pub const PAGE_HAUTEUR: Mesure = Mesure::milliemes(841_890);
-/// Une marge de page non dite (en points, 2 cm).
-pub const MARGE: Mesure = Mesure::milliemes(56_700);
-/// Le corps d'une police non dite.
-pub const TAILLE: Mesure = Mesure::entier(10);
-/// L'interligne d'une police non dite.
-pub const INTERLIGNE: Mesure = Mesure::milliemes(1_250);
-/// La couleur d'une police, d'un filet ou d'un trait non dite.
-pub const COULEUR: &str = "#000000";
-/// L'épaisseur d'un filet ou d'un trait non dite (en points).
-pub const EPAISSEUR: Mesure = Mesure::milliemes(500);
-/// La distance d'un repère au bord de la page non dite (en points, jusqu'à la ligne de base).
-pub const DISTANCE_REPERE: Mesure = Mesure::entier(20);
+/// La largeur d'une page A4, en points (210 mm).
+pub const A4_LARGEUR: Mesure = Mesure::milliemes(595_280);
+/// La hauteur d'une page A4, en points (297 mm).
+pub const A4_HAUTEUR: Mesure = Mesure::milliemes(841_890);
 
 /// Lit `texte` en `T`, strictement ; un refus est une ligne de français.
 pub fn lire<T: serde::de::DeserializeOwned>(texte: &str, quoi: &str) -> Result<T, Refus> {
@@ -44,14 +32,14 @@ pub fn lire<T: serde::de::DeserializeOwned>(texte: &str, quoi: &str) -> Result<T
 pub struct Description {
     /// 1, 2 ou 3 (FORMAT.md) ; un `modele` demande 2 au moins.
     pub format: i64,
-    /// Sans elle : celle du style, sinon A4 aux marges `MARGE`.
+    /// Sans elle : celle du style ; une description sans style la dit.
     pub page: Option<Page>,
-    /// Sans elle : celle du style, sinon `TAILLE`, `INTERLIGNE`, `COULEUR`.
+    /// Sans elle : celle du style ; une description sans style la dit.
     pub police: Option<Police>,
     /// La mise en page des documents « modèle ».
     pub style: Option<Style>,
     pub logo: Option<Logo>,
-    /// Sans lui : celui du premier modèle, sinon aucun.
+    /// Sans lui : celui du premier modèle, sinon le PDF n'a pas de titre.
     pub titre: Option<String>,
     /// Chacun commence sur une nouvelle page.
     pub documents: Vec<Document>,
@@ -77,31 +65,27 @@ pub enum Style {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Page {
-    /// Sans elle : `PAGE_LARGEUR`.
-    pub largeur: Option<Mesure>,
-    /// Sans elle : `PAGE_HAUTEUR`.
-    pub hauteur: Option<Mesure>,
-    /// Sans elles : `MARGE` de chaque côté.
-    pub marges: Option<Marges>,
+    pub largeur: Mesure,
+    pub hauteur: Mesure,
+    pub marges: Marges,
 }
 
-/// Chaque marge non dite : `MARGE`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Marges {
-    pub haut: Option<Mesure>,
-    pub droite: Option<Mesure>,
-    pub bas: Option<Mesure>,
-    pub gauche: Option<Mesure>,
+    pub haut: Mesure,
+    pub droite: Mesure,
+    pub bas: Mesure,
+    pub gauche: Mesure,
 }
 
-/// Chaque valeur non dite : `TAILLE`, `INTERLIGNE`, `COULEUR`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Police {
-    pub taille: Option<Mesure>,
-    pub interligne: Option<Mesure>,
-    pub couleur: Option<String>,
+    pub taille: Mesure,
+    /// Le multiple du corps d'une ligne à la suivante.
+    pub interligne: Mesure,
+    pub couleur: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -109,10 +93,8 @@ pub struct Police {
 pub struct Logo {
     pub chemin: String,
     pub largeur: Mesure,
-    /// Sans elle : 0.
-    pub marge_haut: Option<Mesure>,
-    /// Sans elle : 0.
-    pub marge_droite: Option<Mesure>,
+    pub marge_haut: Mesure,
+    pub marge_droite: Mesure,
 }
 
 /// Un en-tête ou un pied de page répété sur chaque page (FORMAT.md, « En-tête et pied de page »).
@@ -127,12 +109,11 @@ pub struct Repere {
     pub taille: Option<Mesure>,
     /// Sans elle : celle de la police.
     pub couleur: Option<String>,
-    /// Sans lui : maigre.
-    pub gras: Option<bool>,
-    /// Sans elle : `DISTANCE_REPERE`.
-    pub distance: Option<Mesure>,
-    /// Sans lui : le repère est aussi sur la première page.
-    pub premiere_page: Option<bool>,
+    pub gras: bool,
+    /// Du bord de la page à la ligne de base, en points.
+    pub distance: Mesure,
+    /// Le repère est aussi sur la première page.
+    pub premiere_page: bool,
     pub image: Option<ImageRepere>,
 }
 
@@ -142,8 +123,8 @@ pub struct Repere {
 pub struct ImageRepere {
     pub chemin: String,
     pub largeur: Mesure,
-    /// Sans elle : 0 (le bas de l'image sur la ligne de base).
-    pub descente: Option<Mesure>,
+    /// Ce que le bas de l'image descend sous la ligne de base (0 : posé dessus).
+    pub descente: Mesure,
 }
 
 /// Un document : ses blocs, ou un modèle que la fabrique met en page selon le style. En JSON,
@@ -239,10 +220,9 @@ pub enum Bloc {
 #[serde(deny_unknown_fields)]
 pub struct Morceau {
     pub texte: String,
-    /// Sans lui : maigre (dans un tableau, la graisse de la cellule ou de la ligne).
-    pub gras: Option<bool>,
-    /// Sans lui : droit.
-    pub italique: Option<bool>,
+    /// Dans un tableau, gras aussi quand sa cellule ou sa ligne l'est.
+    pub gras: bool,
+    pub italique: bool,
     /// Sans elle : celle du bloc (ou de la cellule, de la ligne).
     pub couleur: Option<String>,
 }
@@ -255,16 +235,13 @@ pub struct Paragraphe {
     pub taille: Option<Mesure>,
     /// Sans elle : celle de la police.
     pub couleur: Option<String>,
-    /// Sans lui : à gauche.
-    pub alignement: Option<Alignement>,
-    /// Sans lui : le texte tel quel.
-    pub majuscules: Option<bool>,
-    /// Sans lui : 0.
-    pub espace_avant: Option<Mesure>,
-    /// Sans lui : 0.
-    pub espace_apres: Option<Mesure>,
-    /// Marge à gauche du paragraphe, en points (une citation, un alinéa). Sans lui : 0.
-    pub retrait: Option<Mesure>,
+    pub alignement: Alignement,
+    /// Le texte mis en capitales.
+    pub majuscules: bool,
+    pub espace_avant: Mesure,
+    pub espace_apres: Mesure,
+    /// Marge à gauche du paragraphe, en points (une citation, un alinéa).
+    pub retrait: Mesure,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -273,22 +250,20 @@ pub struct Espace {
     pub hauteur: Mesure,
 }
 
-/// Un trait : sans couleur, `COULEUR` ; sans épaisseur, `EPAISSEUR`.
+/// Un trait le long d'un bloc ou d'une ligne.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Filet {
-    pub couleur: Option<String>,
-    pub epaisseur: Option<Mesure>,
+    pub couleur: String,
+    pub epaisseur: Mesure,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Colonnes {
     pub filet_haut: Option<Filet>,
-    /// Sans lui : 0.
-    pub espace_avant: Option<Mesure>,
-    /// Sans elle : 0.
-    pub marge_interne_haut: Option<Mesure>,
+    pub espace_avant: Mesure,
+    pub marge_interne_haut: Mesure,
     pub colonnes: Vec<Colonne>,
 }
 
@@ -306,8 +281,8 @@ pub struct Colonne {
 pub struct Image {
     pub chemin: String,
     pub largeur: Mesure,
-    /// Posée à l'endroit courant sans occuper de hauteur. Sans lui : elle occupe sa hauteur.
-    pub flottante: Option<bool>,
+    /// Posée à l'endroit courant sans occuper de hauteur ; sinon elle occupe sa hauteur.
+    pub flottante: bool,
 }
 
 /// La police d'un `texte_fixe` : Liberation Sans (Helvetica), Serif (Times) ou Mono (Courier).
@@ -329,19 +304,17 @@ pub struct TexteFixe {
     pub y: Mesure,
     /// Sans elle : celle de la police.
     pub taille: Option<Mesure>,
-    /// Sans elle : Helvetica.
-    pub police: Option<PoliceFixe>,
-    /// Sans lui : maigre.
-    pub gras: Option<bool>,
+    pub police: PoliceFixe,
+    pub gras: bool,
     /// Sans elle : celle de la police.
     pub couleur: Option<String>,
-    /// Par rapport à `x` ; sans lui : à gauche.
-    pub alignement: Option<Alignement>,
+    /// Par rapport à `x`.
+    pub alignement: Alignement,
     /// La largeur que le texte ne doit pas dépasser : sinon son corps est réduit (FORMAT.md).
     pub largeur_max: Option<Mesure>,
 }
 
-/// Un trait : sans épaisseur, `EPAISSEUR` ; sans couleur, `COULEUR`.
+/// Un trait d'un point à un autre de la page.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Trait {
@@ -349,8 +322,8 @@ pub struct Trait {
     pub y1: Mesure,
     pub x2: Mesure,
     pub y2: Mesure,
-    pub epaisseur: Option<Mesure>,
-    pub couleur: Option<String>,
+    pub epaisseur: Mesure,
+    pub couleur: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -361,8 +334,8 @@ pub struct ImageFixe {
     pub y: Mesure,
     pub largeur: Mesure,
     pub hauteur: Mesure,
-    /// Sans lui : posée au coin (x, y).
-    pub centree: Option<bool>,
+    /// Centrée dans le rectangle à ses proportions ; sinon posée au coin (x, y).
+    pub centree: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -370,18 +343,17 @@ pub struct ImageFixe {
 pub struct ColonneTableau {
     /// La fraction de la largeur utile ; les colonnes font 1 à elles toutes.
     pub largeur: Mesure,
-    /// Sans lui : à gauche.
-    pub alignement: Option<Alignement>,
+    pub alignement: Alignement,
 }
 
-/// L'espace entre le bord d'une cellule et son texte ; chaque côté non dit : 0.
+/// L'espace entre le bord d'une cellule et son texte.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MargeCellule {
-    pub haut: Option<Mesure>,
-    pub droite: Option<Mesure>,
-    pub bas: Option<Mesure>,
-    pub gauche: Option<Mesure>,
+    pub haut: Mesure,
+    pub droite: Mesure,
+    pub bas: Mesure,
+    pub gauche: Mesure,
 }
 
 /// Une cellule : son texte seul (en JSON, une chaîne), ou une cellule décrite (un objet).
@@ -418,22 +390,21 @@ pub struct CelluleDecrite {
     /// `texte` et `morceaux` s'excluent ; sans l'un ni l'autre, la cellule est vide.
     pub texte: Option<String>,
     pub morceaux: Option<Vec<Morceau>>,
-    /// Sans lui : la graisse de la ligne.
-    pub gras: Option<bool>,
+    /// Gras aussi quand sa ligne l'est.
+    pub gras: bool,
     /// Sans elle : celle de la ligne.
     pub couleur: Option<String>,
     /// Sans lui : celui de la colonne où elle commence.
     pub alignement: Option<Alignement>,
-    /// Le nombre de colonnes qu'elle couvre ; sans lui : une.
-    pub etendue: Option<usize>,
+    /// Le nombre de colonnes qu'elle couvre (une cellule donnée par son seul texte en couvre une).
+    pub etendue: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Ligne {
     pub cellules: Vec<Cellule>,
-    /// Sans lui : maigre.
-    pub gras: Option<bool>,
+    pub gras: bool,
     pub fond: Option<String>,
     /// Sans elle : celle du tableau.
     pub couleur: Option<String>,
@@ -457,14 +428,11 @@ pub struct Tableau {
     pub couleur: Option<String>,
     /// Sans lui : celui de la police.
     pub interligne: Option<Mesure>,
-    /// Sans elle : 0 de chaque côté.
-    pub marge_cellule: Option<MargeCellule>,
+    pub marge_cellule: MargeCellule,
     pub filet_lignes: Option<Filet>,
     pub filets_cellules: Option<Filet>,
-    /// Sans lui : 0.
-    pub espace_avant: Option<Mesure>,
-    /// Sans lui : 0.
-    pub espace_apres: Option<Mesure>,
+    pub espace_avant: Mesure,
+    pub espace_apres: Mesure,
 }
 
 // ---------------------------------------------------------------------------
@@ -497,8 +465,8 @@ pub struct ImagePosee {
     pub page: usize,
     /// [x0, y0, x1, y1], en points, origine en haut à gauche (comme `--champs`).
     pub rect: [Mesure; 4],
-    /// Sans elle : 0.
-    pub marge: Option<Mesure>,
+    /// Le retrait de l'image sur chaque bord du rectangle.
+    pub marge: Mesure,
     /// `fichier` (PNG, JPEG ou SVG) et `svg` (le texte du SVG) s'excluent.
     pub fichier: Option<String>,
     pub svg: Option<String>,
@@ -526,10 +494,9 @@ pub struct ChampAjoute {
     /// [x0, y0, x1, y1], origine en haut à gauche.
     pub rect: [Mesure; 4],
     pub valeur: Option<String>,
-    /// Sans lui : on peut y écrire.
-    pub lecture_seule: Option<bool>,
-    /// Le corps ; sans lui : celui qui tient.
+    pub lecture_seule: bool,
+    /// Le corps ; sans lui : le corps automatique (celui qui tient, ISO 32000-1, 12.7.3.3).
     pub taille: Option<Mesure>,
-    /// Gauche, centre ou droite ; sans lui : à gauche.
-    pub alignement: Option<Alignement>,
+    /// Gauche, centre ou droite.
+    pub alignement: Alignement,
 }

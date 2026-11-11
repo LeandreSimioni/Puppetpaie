@@ -80,7 +80,8 @@ pub enum Variante {
 /// paragraphes cités, l'ancien texte puis le nouveau, dans le même ordre ; un alinéa qui n'était pas écrit, ou ne l'est
 /// plus, n'a pas de texte à citer de ce côté-là.
 pub struct Modification {
-    pub numero: i64,
+    /// Aucun pour une modification dite en clair (`phrase`).
+    pub numero: Option<i64>,
     pub article: String,
     pub avant: Vec<String>,
     pub apres: Vec<String>,
@@ -267,7 +268,9 @@ pub fn blocs(m: &Modele, c: &Contrat, ou: &str) -> Result<Vec<BlocEtiquete>, Ref
     for modif in c.modifications {
         n += 1;
         let mut vm = v.clone();
-        vm.insert("modification.numero".to_string(), modif.numero.to_string());
+        if let Some(numero) = modif.numero {
+            vm.insert("modification.numero".to_string(), numero.to_string());
+        }
         vm.insert("modification.article".to_string(), modif.article.clone());
         if let Some(phrase) = &modif.phrase {
             vm.insert("modification.phrase".to_string(), phrase.clone());

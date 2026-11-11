@@ -1,5 +1,5 @@
 //! La description validée : la forme donnée à la fabrique (`forme.rs`) devient ce que la mise en
-//! page emploie, chaque valeur non dite remplacée par celle que la forme nomme.
+//! page emploie, chaque préséance résolue (la valeur de ce qui contient, que la forme nomme).
 //!
 //! Toute erreur sort en une ligne de français, avec le numéro du bloc quand on le connaît.
 
@@ -72,10 +72,9 @@ pub fn defaut<T>(message: impl Into<String>) -> Result<T, Refus> {
 }
 
 /// Le numéro du format que cette fabrique parle (`--version`). Le 2 ajoute les documents « modèle »
-/// (FORMAT.md) ; les descriptions du format 1 sont toujours lues telles quelles. Le 3 ajoute les
-/// modes de lecture et de retouche de PDF existants (`--pages`, `--texte`, `--marquer`,
-/// `--verrouiller`) et le champ facultatif `largeur_max` de `texte_fixe` ; une description du
-/// format 2 reste lue telle quelle.
+/// (FORMAT.md), le 3 les modes de lecture et de retouche de PDF existants (`--pages`, `--texte`,
+/// `--marquer`, `--verrouiller`) et le champ facultatif `largeur_max` de `texte_fixe`. Une
+/// description dit chaque valeur (FORMAT.md) quel que soit son numéro.
 pub const FORMAT: i64 = 3;
 
 /// Le corps en dessous duquel `largeur_max` ne réduit pas un texte (6 pt : sous
@@ -124,12 +123,12 @@ pub struct Logo {
 
 /// Un en-tête ou un pied de page : trois textes d'une ligne (`{page}` et `{pages}` y sont remplacés
 /// par le numéro de la page et par le nombre de pages), à `distance` points du bord de la page (la
-/// ligne de base). Un texte vide n'écrit rien.
+/// ligne de base). Un texte absent ou vide n'écrit rien.
 #[derive(Debug, Clone)]
 pub struct Repere {
-    pub gauche: String,
-    pub centre: String,
-    pub droite: String,
+    pub gauche: Option<String>,
+    pub centre: Option<String>,
+    pub droite: Option<String>,
     pub taille: Mesure,
     pub couleur: Rvb,
     pub gras: bool,
@@ -151,7 +150,7 @@ pub struct ImageRepere {
 impl Repere {
     /// Le total de pages ne se connaît qu'après une première mise en page (FORMAT.md).
     pub fn emploie_total(&self) -> bool {
-        [&self.gauche, &self.centre, &self.droite].iter().any(|t| t.contains("{pages}"))
+        [&self.gauche, &self.centre, &self.droite].into_iter().flatten().any(|t| t.contains("{pages}"))
     }
 }
 
@@ -275,7 +274,8 @@ pub struct Resolue {
     pub page: Page,
     pub police: Police,
     pub logo: Option<Logo>,
-    pub titre: String,
+    /// Sans lui, le PDF n'a pas de titre.
+    pub titre: Option<String>,
     pub documents: Vec<Vec<BlocEtiquete>>,
     pub entete_page: Option<Repere>,
     pub pied_page: Option<Repere>,
@@ -390,11 +390,6 @@ fn positif_ou_nul(v: Mesure, nom: &str, ou: &str) -> Result<Mesure, Refus> {
     }
 }
 
-/// Une longueur facultative : sans elle, 0.
-fn longueur(valeur: Option<Mesure>, nom: &str, ou: &str) -> Result<Mesure, Refus> {
-    positif_ou_nul(valeur.unwrap_or(Mesure::ZERO), nom, ou)
-}
-
 fn strictement_positif(v: Mesure, nom: &str, ou: &str) -> Result<Mesure, Refus> {
     if v <= Mesure::ZERO {
         refus(format!("{} : {} doit être positif ({})", ou, nom, v))
@@ -425,8 +420,8 @@ const STYLES: &str = "contrat, avenant, attestation";
 fn morceau(m: &f::Morceau, majuscules: bool, couleur_du_bloc: Rvb, ou: &str) -> Result<Morceau, Refus> {
     Ok(Morceau {
         texte: if majuscules { m.texte.to_uppercase() } else { m.texte.clone() },
-        gras: m.gras.unwrap_or(false),
-        italique: m.italique.unwrap_or(false),
+        gras: m.gras,
+        italique: m.italique,
         couleur: couleur_ou(&m.couleur, couleur_du_bloc, ou)?,
     })
 }
@@ -434,7 +429,7 @@ fn morceau(m: &f::Morceau, majuscules: bool, couleur_du_bloc: Rvb, ou: &str) -> 
 fn lire_bloc(bloc: &f::Bloc, etiquette: &str, police: &Police) -> Result<Bloc, Refus> {
     match bloc {
         f::Bloc::Paragraphe(p) => {
-            let majuscules = p.majuscules.unwrap_or(false);
+            let majuscules = p.majuscules;
             let couleur_du_bloc = couleur_ou(&p.couleur, police.couleur, etiquette)?;
             let mut morceaux = Vec::new();
             for m in &p.morceaux {
@@ -443,17 +438,17 @@ fn lire_bloc(bloc: &f::Bloc, etiquette: &str, police: &Police) -> Result<Bloc, R
             Ok(Bloc::Paragraphe {
                 morceaux,
                 taille: taille_ou(p.taille, police.taille, "taille", etiquette)?,
-                alignement: p.alignement.unwrap_or(Alignement::Gauche),
-                espace_avant: longueur(p.espace_avant, "espace_avant", etiquette)?,
-                espace_apres: longueur(p.espace_apres, "espace_apres", etiquette)?,
-                retrait: longueur(p.retrait, "retrait", etiquette)?,
+                alignement: p.alignement,
+                espace_avant: positif_ou_nul(p.espace_avant, "espace_avant", etiquette)?,
+                espace_apres: positif_ou_nul(p.espace_apres, "espace_apres", etiquette)?,
+                retrait: positif_ou_nul(p.retrait, "retrait", etiquette)?,
             })
         }
         f::Bloc::Espace(e) => Ok(Bloc::Espace(positif_ou_nul(e.hauteur, "hauteur", etiquette)?)),
         f::Bloc::Image(i) => Ok(Bloc::Image {
             largeur: strictement_positif(i.largeur, "largeur", etiquette)?,
             chemin: i.chemin.clone(),
-            flottante: i.flottante.unwrap_or(false),
+            flottante: i.flottante,
         }),
         f::Bloc::Colonnes(c) => {
             if c.colonnes.is_empty() {
@@ -494,14 +489,14 @@ fn lire_bloc(bloc: &f::Bloc, etiquette: &str, police: &Police) -> Result<Bloc, R
             }
             Ok(Bloc::Colonnes {
                 filet,
-                espace_avant: longueur(c.espace_avant, "espace_avant", etiquette)?,
-                marge_interne_haut: longueur(c.marge_interne_haut, "marge_interne_haut", etiquette)?,
+                espace_avant: positif_ou_nul(c.espace_avant, "espace_avant", etiquette)?,
+                marge_interne_haut: positif_ou_nul(c.marge_interne_haut, "marge_interne_haut", etiquette)?,
                 colonnes,
             })
         }
         f::Bloc::Tableau(t) => lire_tableau(t, etiquette, police),
         f::Bloc::TexteFixe(t) => {
-            let alignement = t.alignement.unwrap_or(Alignement::Gauche);
+            let alignement = t.alignement;
             if alignement == Alignement::Justifie {
                 return refus(format!(
                     "{} : un texte à position fixe ne se justifie pas (gauche, droite ou centre)",
@@ -514,8 +509,8 @@ fn lire_bloc(bloc: &f::Bloc, etiquette: &str, police: &Police) -> Result<Bloc, R
                 taille: taille_ou(t.taille, police.taille, "taille", etiquette)?,
                 couleur: couleur_ou(&t.couleur, police.couleur, etiquette)?,
                 texte: t.texte.clone(),
-                police: t.police.unwrap_or(PoliceFixe::Helvetica),
-                gras: t.gras.unwrap_or(false),
+                police: t.police,
+                gras: t.gras,
                 alignement,
                 largeur_max: match t.largeur_max {
                     Some(v) => Some(strictement_positif(v, "largeur_max", etiquette)?),
@@ -528,15 +523,15 @@ fn lire_bloc(bloc: &f::Bloc, etiquette: &str, police: &Police) -> Result<Bloc, R
             y1: t.y1,
             x2: t.x2,
             y2: t.y2,
-            epaisseur: strictement_positif(t.epaisseur.unwrap_or(f::EPAISSEUR), "epaisseur", etiquette)?,
-            couleur: couleur(t.couleur.as_deref().unwrap_or(f::COULEUR), etiquette)?,
+            epaisseur: strictement_positif(t.epaisseur, "epaisseur", etiquette)?,
+            couleur: couleur(&t.couleur, etiquette)?,
         }),
         f::Bloc::ImageFixe(i) => Ok(Bloc::ImageFixe {
             x: i.x,
             y: i.y,
             largeur: strictement_positif(i.largeur, "largeur", etiquette)?,
             hauteur: strictement_positif(i.hauteur, "hauteur", etiquette)?,
-            centree: i.centree.unwrap_or(false),
+            centree: i.centree,
             chemin: i.chemin.clone(),
         }),
     }
@@ -545,8 +540,8 @@ fn lire_bloc(bloc: &f::Bloc, etiquette: &str, police: &Police) -> Result<Bloc, R
 fn lire_filet(f: &Option<f::Filet>, ou: &str) -> Result<Option<Filet>, Refus> {
     match f {
         Some(x) => Ok(Some((
-            couleur(x.couleur.as_deref().unwrap_or(f::COULEUR), ou)?,
-            strictement_positif(x.epaisseur.unwrap_or(f::EPAISSEUR), "epaisseur", ou)?,
+            couleur(&x.couleur, ou)?,
+            strictement_positif(x.epaisseur, "epaisseur", ou)?,
         ))),
         None => Ok(None),
     }
@@ -567,27 +562,28 @@ fn lire_ligne(
         Some(c) => Some(couleur(c, ou)?),
         None => None,
     };
-    let gras_ligne = l.gras.unwrap_or(false);
+    let gras_ligne = l.gras;
     let mut cellules = Vec::new();
     let mut occupe = 0usize;
     for (k, v) in l.cellules.iter().enumerate() {
         let ou_c = format!("{}, cellule {}", ou, k + 1);
         let texte_seul;
         let decrite = match v {
+            // Une cellule dite par son seul texte : une colonne, sa graisse et sa couleur celles de la ligne.
             f::Cellule::Texte(s) => {
                 texte_seul = f::CelluleDecrite {
                     texte: Some(s.clone()),
                     morceaux: None,
-                    gras: None,
+                    gras: false,
                     couleur: None,
                     alignement: None,
-                    etendue: None,
+                    etendue: 1,
                 };
                 &texte_seul
             }
             f::Cellule::Decrite(d) => d,
         };
-        let etendue = decrite.etendue.unwrap_or(1);
+        let etendue = decrite.etendue;
         if etendue == 0 {
             return refus(format!("{} : etendue doit valoir au moins 1", ou_c));
         }
@@ -599,12 +595,13 @@ fn lire_ligne(
             ));
         }
         let couleur_cellule = couleur_ou(&decrite.couleur, couleur_ligne, &ou_c)?;
-        let gras_cellule = decrite.gras.unwrap_or(false);
+        let gras_cellule = decrite.gras;
         let bruts: Vec<f::Morceau> = match (&decrite.texte, &decrite.morceaux) {
             (Some(_), Some(_)) => {
                 return refus(format!("{} : \"texte\" et \"morceaux\" s'excluent", ou_c))
             }
-            (Some(t), None) => vec![f::Morceau { texte: t.clone(), gras: None, italique: None, couleur: None }],
+            // Le texte d'une cellule : un morceau droit, que la cellule ou la ligne met en gras.
+            (Some(t), None) => vec![f::Morceau { texte: t.clone(), gras: false, italique: false, couleur: None }],
             (None, Some(m)) => m.clone(),
             (None, None) => Vec::new(),
         };
@@ -612,8 +609,8 @@ fn lire_ligne(
         for m in &bruts {
             morceaux.push(Morceau {
                 texte: m.texte.clone(),
-                gras: m.gras.unwrap_or(false) || gras_cellule || gras_ligne,
-                italique: m.italique.unwrap_or(false),
+                gras: m.gras || gras_cellule || gras_ligne,
+                italique: m.italique,
                 couleur: couleur_ou(&m.couleur, couleur_cellule, &ou_c)?,
             });
         }
@@ -621,7 +618,10 @@ fn lire_ligne(
             morceaux,
             etendue,
             // Sans mot de la cellule, celui de la colonne où elle commence.
-            alignement: decrite.alignement.unwrap_or(colonnes[occupe].1),
+            alignement: match decrite.alignement {
+                Some(a) => a,
+                None => colonnes[occupe].1,
+            },
         });
         occupe += etendue;
     }
@@ -644,7 +644,7 @@ fn lire_tableau(t: &f::Tableau, etiquette: &str, police: &Police) -> Result<Bloc
         let ou_col = format!("{}, colonne {}", etiquette, k + 1);
         let l = strictement_positif(c.largeur, "largeur", &ou_col)?;
         somme += l;
-        colonnes.push((l, c.alignement.unwrap_or(Alignement::Gauche)));
+        colonnes.push((l, c.alignement));
     }
     if (somme - Mesure::UN).abs() > Mesure::milliemes(1) {
         return refus(format!(
@@ -656,15 +656,13 @@ fn lire_tableau(t: &f::Tableau, etiquette: &str, police: &Police) -> Result<Bloc
     let couleur_table = couleur_ou(&t.couleur, police.couleur, etiquette)?;
     let interligne = taille_ou(t.interligne, police.interligne, "interligne", etiquette)?;
     let ou_m = format!("{}, marge_cellule", etiquette);
-    let marge_cellule = match &t.marge_cellule {
-        Some(m) => [
-            longueur(m.haut, "haut", &ou_m)?,
-            longueur(m.droite, "droite", &ou_m)?,
-            longueur(m.bas, "bas", &ou_m)?,
-            longueur(m.gauche, "gauche", &ou_m)?,
-        ],
-        None => [Mesure::ZERO; 4],
-    };
+    let m = &t.marge_cellule;
+    let marge_cellule = [
+        positif_ou_nul(m.haut, "haut", &ou_m)?,
+        positif_ou_nul(m.droite, "droite", &ou_m)?,
+        positif_ou_nul(m.bas, "bas", &ou_m)?,
+        positif_ou_nul(m.gauche, "gauche", &ou_m)?,
+    ];
     let mut entete = Vec::new();
     for (i, l) in t.entete.iter().flatten().enumerate() {
         let ou = format!("{}, en-tête, ligne {}", etiquette, i + 1);
@@ -683,8 +681,8 @@ fn lire_tableau(t: &f::Tableau, etiquette: &str, police: &Police) -> Result<Bloc
         filets_cellules: lire_filet(&t.filets_cellules, etiquette)?,
         entete,
         lignes,
-        espace_avant: longueur(t.espace_avant, "espace_avant", etiquette)?,
-        espace_apres: longueur(t.espace_apres, "espace_apres", etiquette)?,
+        espace_avant: positif_ou_nul(t.espace_avant, "espace_avant", etiquette)?,
+        espace_apres: positif_ou_nul(t.espace_apres, "espace_apres", etiquette)?,
     })
 }
 
@@ -693,26 +691,24 @@ fn lire_repere(r: &Option<f::Repere>, nom: &str, police: &Police) -> Result<Opti
         Some(r) => r,
         None => return Ok(None),
     };
-    let texte = |t: &Option<String>| t.clone().unwrap_or_default();
-    let (gauche, centre, droite) = (texte(&r.gauche), texte(&r.centre), texte(&r.droite));
-    for t in [&gauche, &centre, &droite] {
+    for t in [&r.gauche, &r.centre, &r.droite].into_iter().flatten() {
         if t.contains('\n') || t.contains('\r') {
             return refus(format!("{} : chaque texte tient sur une ligne (pas de \\n)", nom));
         }
     }
     Ok(Some(Repere {
-        taille: strictement_positif(r.taille.unwrap_or(police.taille), "taille", nom)?,
+        taille: taille_ou(r.taille, police.taille, "taille", nom)?,
         couleur: couleur_ou(&r.couleur, police.couleur, nom)?,
-        distance: positif_ou_nul(r.distance.unwrap_or(f::DISTANCE_REPERE), "distance", nom)?,
-        gauche,
-        centre,
-        droite,
-        gras: r.gras.unwrap_or(false),
-        premiere_page: r.premiere_page.unwrap_or(true),
+        distance: positif_ou_nul(r.distance, "distance", nom)?,
+        gauche: r.gauche.clone(),
+        centre: r.centre.clone(),
+        droite: r.droite.clone(),
+        gras: r.gras,
+        premiere_page: r.premiere_page,
         image: match &r.image {
             Some(i) => Some(ImageRepere {
                 largeur: strictement_positif(i.largeur, "largeur", nom)?,
-                descente: longueur(i.descente, "descente", nom)?,
+                descente: positif_ou_nul(i.descente, "descente", nom)?,
                 chemin: i.chemin.clone(),
             }),
             None => None,
@@ -720,31 +716,19 @@ fn lire_repere(r: &Option<f::Repere>, nom: &str, police: &Police) -> Result<Opti
     }))
 }
 
-/// La page : celle que la description dit (chaque mesure non dite : A4, `MARGE`), sinon celle du style, sinon A4
-/// aux marges `MARGE`.
+/// La page : celle que la description dit, sinon celle du style ; une description sans l'une ni l'autre se refuse.
 fn lire_page(p: &Option<f::Page>, style: Option<style_contrat::Variante>) -> Result<Page, Refus> {
     let brute = match (p, style) {
-        (Some(p), _) => {
-            let m = p.marges.as_ref();
-            let marge = |c: fn(&f::Marges) -> Option<Mesure>| m.and_then(c).unwrap_or(f::MARGE);
-            Page {
-                largeur: p.largeur.unwrap_or(f::PAGE_LARGEUR),
-                hauteur: p.hauteur.unwrap_or(f::PAGE_HAUTEUR),
-                haut: marge(|m| m.haut),
-                droite: marge(|m| m.droite),
-                bas: marge(|m| m.bas),
-                gauche: marge(|m| m.gauche),
-            }
-        }
-        (None, Some(_)) => style_contrat::page(),
-        (None, None) => Page {
-            largeur: f::PAGE_LARGEUR,
-            hauteur: f::PAGE_HAUTEUR,
-            haut: f::MARGE,
-            droite: f::MARGE,
-            bas: f::MARGE,
-            gauche: f::MARGE,
+        (Some(p), _) => Page {
+            largeur: p.largeur,
+            hauteur: p.hauteur,
+            haut: p.marges.haut,
+            droite: p.marges.droite,
+            bas: p.marges.bas,
+            gauche: p.marges.gauche,
         },
+        (None, Some(_)) => style_contrat::page(),
+        (None, None) => return refus("description : sans \"style\", elle dit sa \"page\""),
     };
     let page = Page {
         largeur: strictement_positif(brute.largeur, "largeur", "page")?,
@@ -760,20 +744,15 @@ fn lire_page(p: &Option<f::Page>, style: Option<style_contrat::Variante>) -> Res
     Ok(page)
 }
 
-/// La police : celle que la description dit (chaque valeur non dite : `TAILLE`, `INTERLIGNE`, `COULEUR`), sinon
-/// celle du style, sinon `TAILLE`, `INTERLIGNE`, `COULEUR`.
+/// La police : celle que la description dit, sinon celle du style ; une description sans l'une ni l'autre se refuse.
 fn lire_police(p: &Option<f::Police>, style: Option<style_contrat::Variante>) -> Result<Police, Refus> {
     let (taille, interligne, teinte) = match (p, style) {
-        (Some(p), _) => (
-            p.taille.unwrap_or(f::TAILLE),
-            p.interligne.unwrap_or(f::INTERLIGNE),
-            couleur(p.couleur.as_deref().unwrap_or(f::COULEUR), "police")?,
-        ),
+        (Some(p), _) => (p.taille, p.interligne, couleur(&p.couleur, "police")?),
         (None, Some(_)) => {
             let q = style_contrat::police();
             (q.taille, q.interligne, q.couleur)
         }
-        (None, None) => (f::TAILLE, f::INTERLIGNE, couleur(f::COULEUR, "police")?),
+        (None, None) => return refus("description : sans \"style\", elle dit sa \"police\""),
     };
     Ok(Police {
         taille: strictement_positif(taille, "taille", "police")?,
@@ -803,8 +782,8 @@ pub fn resoudre(d: &f::Description) -> Result<Resolue, Refus> {
     let logo = match &d.logo {
         Some(l) => Some(Logo {
             largeur: strictement_positif(l.largeur, "largeur", "logo")?,
-            marge_haut: longueur(l.marge_haut, "marge_haut", "logo")?,
-            marge_droite: longueur(l.marge_droite, "marge_droite", "logo")?,
+            marge_haut: positif_ou_nul(l.marge_haut, "marge_haut", "logo")?,
+            marge_droite: positif_ou_nul(l.marge_droite, "marge_droite", "logo")?,
             chemin: l.chemin.clone(),
         }),
         None => None,
@@ -860,7 +839,7 @@ pub fn resoudre(d: &f::Description) -> Result<Resolue, Refus> {
         police,
         logo,
         // Sans titre dit, celui du premier modèle (`texte_brut`, sans gras).
-        titre: d.titre.clone().or(titre_modele).unwrap_or_default(),
+        titre: d.titre.clone().or(titre_modele),
         documents,
         entete_page,
         pied_page,
@@ -900,7 +879,17 @@ fn lire_modele(
         (Some(c), None) => (modele::lire_fichier(c)?, c.clone()),
         (None, Some(t)) => (modele::lire_modele(t, "le modèle donné en texte")?, "le modèle donné en texte".to_string()),
     };
-    let dites: &[f::Modification] = mb.modifications.as_deref().unwrap_or(&[]);
+    // Un avenant dit ce qu'il modifie ; un contrat et une attestation ne modifient rien.
+    let dites: &[f::Modification] = match (&mb.modifications, variante) {
+        (Some(m), Variante::Avenant) if !m.is_empty() => m,
+        (Some(_) | None, Variante::Avenant) => {
+            return refus(format!("{} : rien n'a changé, pas d'avenant à écrire (\"modifications\" est vide)", ou))
+        }
+        (None, Variante::Contrat | Variante::Attestation) => &[],
+        (Some(_), Variante::Contrat | Variante::Attestation) => {
+            return refus(format!("{} : \"modifications\" ne va qu'avec le style \"avenant\"", ou))
+        }
+    };
     if variante != Variante::Contrat && mb.remplace.is_some() {
         return refus(format!("{} : \"remplace\" ne va qu'avec le style \"contrat\"", ou));
     }
@@ -916,13 +905,7 @@ fn lire_modele(
             ou
         ));
     }
-    if variante != Variante::Avenant && !dites.is_empty() {
-        return refus(format!("{} : \"modifications\" ne va qu'avec le style \"avenant\"", ou));
-    }
     if variante == Variante::Avenant {
-        if dites.is_empty() {
-            return refus(format!("{} : rien n'a changé, pas d'avenant à écrire (\"modifications\" est vide)", ou));
-        }
         if m.modification.is_empty() {
             return refus(format!("{} n'a pas de bloc MODIFICATION:.", nom_modele));
         }
@@ -938,7 +921,7 @@ fn lire_modele(
     let modifications: Vec<style_contrat::Modification> = dites
         .iter()
         .map(|x| style_contrat::Modification {
-            numero: x.numero.unwrap_or(0),
+            numero: x.numero,
             article: x.article.clone(),
             avant: x.avant.clone(),
             apres: x.apres.clone(),

@@ -540,10 +540,10 @@ fn texte_fixe(x: Mesure, y: Mesure, texte: &str, police: &str, corps: Mesure, la
         x,
         y,
         taille: Some(corps),
-        police: Some(nom),
-        gras: gras.then_some(true),
+        police: nom,
+        gras,
         couleur: Some(NOIR.to_string()),
-        alignement: None,
+        alignement: pdf::Alignement::Gauche,
         largeur_max: largeur,
     })
 }
@@ -557,8 +557,8 @@ fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R
                 y1: *y0,
                 x2: *x1,
                 y2: *y1,
-                epaisseur: Some(*ep),
-                couleur: Some(NOIR.to_string()),
+                epaisseur: *ep,
+                couleur: NOIR.to_string(),
             })
         })
         .collect();
@@ -580,7 +580,7 @@ fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R
             y: y0,
             largeur: x1 - x0,
             hauteur: y1 - y0,
-            centree: Some(!svg),
+            centree: !svg,
         }));
     }
     Ok(blocs)
@@ -591,21 +591,26 @@ pub fn chemin_texte(p: &std::path::Path) -> String {
     p.components().collect::<std::path::PathBuf>().to_string_lossy().into_owned()
 }
 
-/// `description` : un document par page, sans marge.
+/// `description` : un document par page, sans marge ; chaque texte dit son corps et sa couleur, la police n'en est que
+/// la base (10 pt, interligne 1,25, noir).
 pub fn description(certs: &[(Certificat, &PaieCs)], ent: &EntrepriseDuDocument) -> R<pdf::Description> {
     let mut documents = Vec::new();
     for (c, p) in certs {
         documents.push(pdf::Document::Blocs(blocs_certificat(c, p, ent)?));
     }
-    let nulle = Some(pdf::Mesure::ZERO);
+    let nulle = pdf::Mesure::ZERO;
     Ok(pdf::Description {
         format: FORMAT,
         page: Some(pdf::Page {
-            largeur: Some(fabrique_pdf::mesure::mesure("595.22")),
-            hauteur: Some(pdf::Mesure::entier(842)),
-            marges: Some(pdf::Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle }),
+            largeur: fabrique_pdf::mesure::mesure("595.22"),
+            hauteur: pdf::Mesure::entier(842),
+            marges: pdf::Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle },
         }),
-        police: None,
+        police: Some(pdf::Police {
+            taille: pdf::Mesure::entier(10),
+            interligne: fabrique_pdf::mesure::mesure("1.25"),
+            couleur: NOIR.to_string(),
+        }),
         style: None,
         logo: None,
         titre: Some("Certificats d'emploi Conges Spectacles".to_string()),

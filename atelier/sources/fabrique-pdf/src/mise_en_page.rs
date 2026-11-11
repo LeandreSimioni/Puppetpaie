@@ -799,6 +799,7 @@ impl Decor {
             }
             let remplacer = |t: &str| t.replace("{page}", &n.to_string()).replace("{pages}", &self.total.to_string());
             for (texte, ou) in [(&r.repere.gauche, 0), (&r.repere.centre, 1), (&r.repere.droite, 2)] {
+                let Some(texte) = texte else { continue };
                 let texte = remplacer(texte);
                 if texte.is_empty() {
                     continue;
@@ -860,10 +861,14 @@ struct Cadre {
 /// UN TEXTE A POSITION FIXE TIENT SUR SA PAGE (un texte fixe, un en-tete, un pied) : son haut a `y` depuis le haut de la
 /// page, il ne descend pas sous son bas (`hauteur`). Un texte qui en sortirait ne se dessine pas : il se refuse, en
 /// nommant le document et le texte. C'est un defaut du modele, pas de la saisie : ni police reduite, ni texte coupe.
-fn tient_sur_la_page(ctx: &Ctx<'_>, style: Style, y: Mesure, hauteur: Mesure, document: &str, ou: &str, texte: &str) -> Result<(), Refus> {
+fn tient_sur_la_page(ctx: &Ctx<'_>, style: Style, y: Mesure, hauteur: Mesure, document: Option<&str>, ou: &str, texte: &str) -> Result<(), Refus> {
     if ctx.polices.hauteur(&style) > hauteur - y {
+        let document = match document {
+            Some(t) => format!("Le document « {} »", t),
+            None => "Le document".to_string(),
+        };
         return defaut(format!(
-            "Le document « {} » pose « {} » ({}) sous le bas de sa page : le texte ne se dessinerait pas. C'est un défaut du logiciel, à signaler au développeur.",
+            "{} pose « {} » ({}) sous le bas de sa page : le texte ne se dessinerait pas. C'est un défaut du logiciel, à signaler au développeur.",
             document, texte, ou
         ));
     }
@@ -877,7 +882,7 @@ fn construire(
     police: &Police,
     hauteur_page: Mesure,
     cadre: &Cadre,
-    document: &str,
+    document: Option<&str>,
 ) -> Result<Noeud, Refus> {
     let ou = b.etiquette.as_str();
     let noeud = match &b.bloc {
@@ -1099,11 +1104,11 @@ pub fn fabriquer(description: &crate::forme::Description) -> Result<Vec<u8>, Ref
     let polices = Polices::charger()?;
     let (dessin, titre, veut_total) = fabriquer_passe(&polices, description, 0)?;
     if !veut_total {
-        return dessin.finir(&titre);
+        return dessin.finir(titre.as_deref());
     }
     let pages = dessin.nombre_de_pages();
     let (dessin, titre, _) = fabriquer_passe(&polices, description, pages)?;
-    dessin.finir(&titre)
+    dessin.finir(titre.as_deref())
 }
 
 /// Une passe de mise en page : le dessin, le titre, et si l'en-tête ou le pied emploie `{pages}`.
@@ -1111,7 +1116,7 @@ fn fabriquer_passe(
     polices: &Polices,
     description: &crate::forme::Description,
     total: usize,
-) -> Result<(Dessin, String, bool), Refus> {
+) -> Result<(Dessin, Option<String>, bool), Refus> {
     let d = resoudre(description)?;
     let ctx = Ctx { polices, base: Style::new(d.police.taille) };
     let cadre = Cadre { origine: (d.page.gauche, d.page.haut), page: (d.page.largeur, d.page.hauteur) };
@@ -1126,10 +1131,10 @@ fn fabriquer_passe(
             let style = Style::new(r.taille).couleur(r.couleur).gras(r.gras);
             // Sa ligne de base, depuis le haut de la page : le pied se mesure depuis le bas (`Decor::poser`).
             let ligne = if en_bas { d.page.hauteur - r.distance } else { r.distance };
-            for t in [&r.gauche, &r.centre, &r.droite] {
+            for t in [&r.gauche, &r.centre, &r.droite].into_iter().flatten() {
                 verifier_texte(&ctx, style, t, nom)?;
                 if !t.is_empty() {
-                    tient_sur_la_page(&ctx, style, ligne - ctx.polices.ascendante(&style), d.page.hauteur, &d.titre, nom, t)?;
+                    tient_sur_la_page(&ctx, style, ligne - ctx.polices.ascendante(&style), d.page.hauteur, d.titre.as_deref(), nom, t)?;
                 }
             }
             let image = match &r.image {
@@ -1159,7 +1164,7 @@ fn fabriquer_passe(
         }
         let debut = noeuds.len();
         for b in blocs {
-            noeuds.push(construire(b, &ctx, largeur, &d.police, hauteur_page, &cadre, &d.titre)?);
+            noeuds.push(construire(b, &ctx, largeur, &d.police, hauteur_page, &cadre, d.titre.as_deref())?);
         }
         fondre_marges(&mut noeuds[debut..]);
     }

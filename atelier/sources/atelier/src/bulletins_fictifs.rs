@@ -14,7 +14,7 @@
 
 #![allow(dead_code)]
 
-use fabrique_pdf::forme::{Alignement, Bloc, Description, Document, Marges, Mesure, Page, Police, TexteFixe};
+use fabrique_pdf::forme::{Alignement, Bloc, Description, Document, Marges, Mesure, Page, Police, PoliceFixe, TexteFixe};
 use fabrique_pdf::mesure::mesure;
 use std::path::Path;
 
@@ -25,15 +25,15 @@ pub const fn m(t: &str) -> Mesure {
     mesure(t)
 }
 
-/// Un texte pose, dans la police de la page.
-fn texte_fixe(x: Mesure, y: Mesure, texte: &str, taille: Mesure, alignement: Option<Alignement>) -> Bloc {
+/// Un texte pose, maigre, en Helvetica, de la couleur de la page.
+fn texte_fixe(x: Mesure, y: Mesure, texte: &str, taille: Mesure, alignement: Alignement) -> Bloc {
     Bloc::TexteFixe(TexteFixe {
         texte: texte.to_string(),
         x,
         y,
         taille: Some(taille),
-        police: None,
-        gras: None,
+        police: PoliceFixe::Helvetica,
+        gras: false,
         couleur: None,
         alignement,
         largeur_max: None,
@@ -41,29 +41,29 @@ fn texte_fixe(x: Mesure, y: Mesure, texte: &str, taille: Mesure, alignement: Opt
 }
 
 pub fn t(b: &mut Vec<Bloc>, x: Mesure, y: Mesure, texte: &str) {
-    b.push(texte_fixe(x, y, texte, Mesure::entier(9), None));
+    b.push(texte_fixe(x, y, texte, Mesure::entier(9), Alignement::Gauche));
 }
 
 /// Un nombre, aligne a droite sur `x`.
 pub fn r(b: &mut Vec<Bloc>, x: Mesure, y: Mesure, texte: &str) {
-    b.push(texte_fixe(x, y, texte, Mesure::entier(9), Some(Alignement::Droite)));
+    b.push(texte_fixe(x, y, texte, Mesure::entier(9), Alignement::Droite));
 }
 
 pub fn grand(b: &mut Vec<Bloc>, x: Mesure, y: Mesure, texte: &str, taille: Mesure) {
-    b.push(texte_fixe(x, y, texte, taille, None));
+    b.push(texte_fixe(x, y, texte, taille, Alignement::Gauche));
 }
 
 /// Les octets d'un PDF d'une page par liste de blocs, A4.
 pub fn pdf_octets(pages: Vec<Vec<Bloc>>) -> socle::echec::R<Vec<u8>> {
-    let nulle = Some(Mesure::ZERO);
+    let nulle = Mesure::ZERO;
     let d = Description {
         format: 3,
         page: Some(Page {
-            largeur: Some(mesure("595.22")),
-            hauteur: Some(Mesure::entier(842)),
-            marges: Some(Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle }),
+            largeur: mesure("595.22"),
+            hauteur: Mesure::entier(842),
+            marges: Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle },
         }),
-        police: Some(Police { taille: Some(Mesure::entier(9)), interligne: Some(mesure("1.25")), couleur: Some("#000000".to_string()) }),
+        police: Some(Police { taille: Mesure::entier(9), interligne: mesure("1.25"), couleur: "#000000".to_string() }),
         style: None,
         logo: None,
         titre: None,
