@@ -39,24 +39,33 @@ macro_rules! refus {
     };
 }
 
-/// Ecrit une ligne sur la sortie standard. Un tuyau ferme (`| head`) n'est pas une erreur du programme.
+/// Ecrit une ligne sur la sortie standard (`au_terminal`).
 #[macro_export]
 macro_rules! dire {
-    () => {{
-        use std::io::Write;
-        let _ = writeln!(std::io::stdout());
-    }};
-    ($($arg:tt)*) => {{
-        use std::io::Write;
-        let _ = writeln!(std::io::stdout(), $($arg)*);
-    }};
+    () => {
+        $crate::au_terminal(format_args!("\n"))
+    };
+    ($($arg:tt)*) => {
+        $crate::au_terminal(format_args!("{}\n", format_args!($($arg)*)))
+    };
 }
 
 /// Ecrit sans saut de ligne, comme `dire!`.
 #[macro_export]
 macro_rules! dire_sans_ligne {
-    ($($arg:tt)*) => {{
-        use std::io::Write;
-        let _ = write!(std::io::stdout(), $($arg)*);
-    }};
+    ($($arg:tt)*) => {
+        $crate::au_terminal(format_args!($($arg)*))
+    };
+}
+
+/// Ecrit sur la sortie standard. Un tuyau ferme (`| head`) n'est pas une erreur du programme : son lecteur a fini. Une
+/// autre panne du terminal n'a personne a qui se dire : elle est notee (`echec::noter_echec`, que les incidents lisent).
+#[doc(hidden)]
+pub fn au_terminal(texte: std::fmt::Arguments<'_>) {
+    use std::io::Write;
+    match std::io::stdout().write_fmt(texte) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
+        Err(e) => echec::noter_echec(Some(echec::Classe::du_disque(&e)), &format!("la sortie standard refuse d'ecrire : {}", e)),
+    }
 }

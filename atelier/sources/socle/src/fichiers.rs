@@ -145,7 +145,7 @@ fn cle_de(genre: &str, chemin: &Path) -> String {
         let r = r.borrow();
         let r = r.last().expect("registre ouvert");
         for (nom, base) in [("racine", &r.racine), ("code", &r.code)] {
-            if let Ok(rel) = chemin.strip_prefix(base) {
+            if let Some(rel) = sous(chemin, base) {
                 return format!("{} {}:{}", genre, nom, chemin_en_barres(rel));
             }
         }
@@ -289,6 +289,37 @@ pub fn est_dossier(chemin: &Path) -> bool {
     let v = chemin.is_dir();
     noter("dossier?", chemin, if v { "oui" } else { "non" }.into());
     v
+}
+
+/// Le chemin `chemin` relatif a `base`, s'il est dessous (`Path::strip_prefix`, composant par composant) ; `None` s'il
+/// n'y est pas : un etat, pas une erreur.
+pub fn sous<'a>(chemin: &'a Path, base: &Path) -> Option<&'a Path> {
+    let mut reste = chemin.components();
+    base.components().all(|b| reste.next() == Some(b)).then(|| reste.as_path())
+}
+
+/// EFFACE `chemin`, un fichier ou un dossier entier : un chemin qui n'existe pas est deja efface ; le disque qui refuse
+/// se dit (`echec::du_disque`).
+pub fn effacer(chemin: &Path) -> R<()> {
+    let fait = match std::fs::symlink_metadata(chemin) {
+        Ok(m) if m.is_dir() => std::fs::remove_dir_all(chemin),
+        Ok(_) => std::fs::remove_file(chemin),
+        Err(e) => Err(e),
+    };
+    match fait {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(crate::echec::du_disque(chemin, &e)),
+    }
+}
+
+/// UN NETTOYAGE APRES UN ECHEC : `effacer(chemin)`, et l'echec `premier` rendu ; si le nettoyage lui-meme echoue, sa
+/// phrase suit celle du premier, qui garde sa classe.
+pub fn effacer_apres(premier: crate::echec::Echec, chemin: &Path) -> crate::echec::Echec {
+    match effacer(chemin) {
+        Ok(()) => premier,
+        Err(nettoyage) => premier.reformuler(|p| format!("{}\n{}", p, nettoyage.phrase)),
+    }
 }
 
 /// Les `.json` d'un dossier, tries ; `None` s'il n'existe pas ; le disque qui refuse se dit (`echec::du_disque`). Note :

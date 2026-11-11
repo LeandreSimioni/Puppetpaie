@@ -32,9 +32,9 @@ fn le_verrou_se_prend_se_refuse_se_rend() {
     let refus = verrou::prendre(&p, "autre pid 2 y", 600).unwrap().unwrap_err();
     assert_eq!(refus.detenteur, "moi pid 1 x");
     // Le sortant ne retire que le sien.
-    verrou::rendre(&p, "autre pid 2 y");
+    verrou::rendre(&p, "autre pid 2 y").unwrap();
     assert!(p.exists());
-    verrou::rendre(&p, "moi pid 1 x");
+    verrou::rendre(&p, "moi pid 1 x").unwrap();
     assert!(!p.exists());
 }
 
