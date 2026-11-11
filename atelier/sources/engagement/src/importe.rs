@@ -478,7 +478,8 @@ impl Importe {
             contrat.nature_a_dire = false;
             contrat.nature = Some(n);
         }
-        contrat.importe_le = contrat.importe_le.or(Some(self.le()));
+        // Importe le jour ou il l'a ete la premiere fois ; sinon, aujourd'hui, par cet import.
+        contrat.importe_le.get_or_insert(self.le());
         let numero = self.carte().numero.clone().filter(|n| !n.is_empty());
         Ok(Some(ContratLu { salarie: self.cle_ecrite()?, debut: self.carte().debut, fin: self.carte().fin, numero, contrat }))
     }
@@ -490,7 +491,7 @@ impl Importe {
 
     fn paie_lue(&self, mois: Mois, p: &PaieVersee) -> R<PaieLue> {
         let mut paie = p.clone();
-        paie.importe_le = paie.importe_le.or(Some(self.le()));
+        paie.importe_le.get_or_insert(self.le());
         Ok(PaieLue { mois, salarie: self.cle_ecrite()?, paie })
     }
 
@@ -682,7 +683,7 @@ impl Importe {
             non_dits.push("plafond");
         }
         // Le net avant impot : celui que le bulletin imprime, sinon le net paye ou le net verse plus l'impot preleve.
-        let net_a_payer = p.net_avant_impot.or_else(|| Some(p.net_a_payer.or(p.net_verse)? + p.pas?));
+        let net_a_payer = p.net_avant_impot.or_else(|| p.net_a_payer.or(p.net_verse).zip(p.pas).map(|(net, pas)| net + pas));
         if net_a_payer.is_none() {
             non_dits.push("net_a_payer");
         }
