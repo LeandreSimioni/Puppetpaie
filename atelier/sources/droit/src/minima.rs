@@ -11,7 +11,7 @@ use serde::Deserialize;
 use crate::fiche::Lue;
 use socle::date::Jour;
 use socle::fichiers::{forme_en_cache, FormeGardee};
-use socle::forme::Nombre;
+use socle::forme::{Court, Nombre};
 use socle::echec::R;
 use socle::num::Decimal;
 use socle::texte::sigle;
@@ -83,7 +83,7 @@ forme_notee! {
     /// Les clauses communes de la 3090 : le taux horaire des techniciens, la grille mensuelle des administratifs.
     pub struct ClausesCommunes {
         pub techniciens: ParNiveau<Nombre>,
-        pub administratifs_mensuel_echelons: ParNiveau<Vec<f64>>,
+        pub administratifs_mensuel_echelons: ParNiveau<Vec<Court>>,
     }
 }
 
@@ -173,9 +173,10 @@ pub struct ServiceDeCategorie {
 forme_notee! {
     /// Les emplois autres qu'artistiques de la 1285 : le mensuel de chaque echelon, par groupe, pour `heures_mensuelles`.
     pub struct EmploisAutres {
-        pub heures_mensuelles: f64,
+        #[serde(deserialize_with = "socle::forme::court")]
+        pub heures_mensuelles: Decimal,
         pub echelon_par_defaut: i64,
-        pub groupes: BTreeMap<String, Vec<f64>>,
+        pub groupes: BTreeMap<String, Vec<Court>>,
     }
 }
 

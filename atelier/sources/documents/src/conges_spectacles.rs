@@ -248,8 +248,8 @@ impl ContratCs {
             dates_travail: e.dates_travail.clone(),
             cachets: e.cachets,
             jours: e.jours,
-            heures: e.heures,
-            taux_cachet: e.taux_cachet,
+            heures: e.heures.map(socle::num::flottant),
+            taux_cachet: e.taux_cachet.map(socle::num::flottant),
             numero: e.numero.clone(),
             mois_payes: Vec::new(),
         })

@@ -31,7 +31,7 @@ use crate::{Avis, Chiffre, LignePaie};
 use socle::feries;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
-use socle::num::{add, dec_f64, div, eur2, mul, zero2, Decimal};
+use socle::num::{add, court, div, eur2, mul, zero2, Decimal};
 use droit::conges::{jours_ouvrables, IndemniteDesJours};
 use droit::permanents::{arrondir_jours, duree_du_conge, jours_acquis, periode_de_reference, plafonner, Acquisition};
 
@@ -85,11 +85,6 @@ pub(crate) fn horaire_du_mois(
     let anciennete = crate::calcul::date_d_anciennete(&fiche, debut_contrat);
     let feries_non_payes = droit::conges::feries_non_payes(debut_mois, fin_mois, ctx.entreprise.feries_chomes(), &jours, &anciennete)?;
     Ok(droit::periodes::Horaire { jours, feries_non_payes })
-}
-
-/// Le flottant d'un decimal, correctement arrondi, par le texte.
-pub(crate) fn flot(x: Decimal) -> f64 {
-    socle::num::flottant(x)
 }
 
 /// LE TAUX D'UNE LIGNE QUI PAIE `montant` POUR `quantite` : la ligne paie son taux par sa quantite, au centime
@@ -1001,7 +996,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
             ))
         }
     };
-    let defaut = dec_f64(nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree("contrats-base.json", "quotite_reference_defaut"))?)?;
+    let defaut = nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree("contrats-base.json", "quotite_reference_defaut"))?;
     let quotite = dec_ou(e.quotite_contrat.as_ref(), defaut)?;
     let salaire = dec_de(salaire)?;
 
@@ -1047,14 +1042,14 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     // et la fraction, en `quantite`, en fait la part ; `precision` la dit sur le bulletin.
     let mois_paye = LignePaie::Composee(crate::ligne::Composee {
         rubrique: "mois".to_string(),
-        quantite: dec_f64(flot(fraction))?,
-        taux: dec_f64(flot(salaire))?,
-        heures: Some(dec_f64(flot(eur2(quotite)))?),
+        quantite: court(fraction),
+        taux: court(salaire),
+        heures: Some(court(eur2(quotite))),
         precision: part.sur_le_bulletin(heures_par_jour),
         dates: Vec::new(),
     });
     // Le salaire du mois tel que la ligne « mois » le paie (`calcul::lignes_brut` : le montant arrondi ligne par ligne).
-    let salaire_du_mois = socle::num::eur(mul(dec_f64(flot(salaire))?, dec_f64(flot(fraction))?));
+    let salaire_du_mois = socle::num::eur(mul(court(salaire), court(fraction)));
     let mut lignes = vec![mois_paye];
     // L'entreprise dit quels jours feries elle chome.
     let chomes = ctx.entreprise.feries_chomes();
@@ -1071,8 +1066,8 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         let cpt = compteur_conges(ctx, au, &salarie, &fin, mois)?;
         let maintien = eur2(mul(taux_jour_ouvrable, pris));
         let ind = indemnite_des_jours(&cpt, pris, maintien)?;
-        lignes.push(LignePaie::composee("absence_conges_payes", dec_f64(flot(pris))?, dec_f64(flot(taux_jour_ouvrable))?));
-        lignes.push(LignePaie::du_mois(au, droit::catalogue::RubriqueDuMois::IndemniteCongesPayes, dec_f64(flot(pris))?, dec_f64(flot(taux_au_montant(ind.retenu, pris)))?));
+        lignes.push(LignePaie::composee("absence_conges_payes", court(pris), court(taux_jour_ouvrable)));
+        lignes.push(LignePaie::du_mois(au, droit::catalogue::RubriqueDuMois::IndemniteCongesPayes, court(pris), court(taux_au_montant(ind.retenu, pris))));
         avert.push(info(format!(
             "{} : {} jour(s) ouvrable(s) de conges. Indemnite retenue : {} \
              ({}) -- le dixieme donnait {}, le maintien {} (L3141-24). \
@@ -1121,8 +1116,8 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
 
     // --- les primes
     for pr in e.primes.iter().flatten() {
-        let montant = Chiffre::Nombre(pr.montant.clone()).flottant()?;
-        lignes.push(LignePaie::composee(&pr.rubrique, Decimal::ONE, dec_f64(montant)?));
+        let montant = Chiffre::Nombre(pr.montant.clone()).court()?;
+        lignes.push(LignePaie::composee(&pr.rubrique, Decimal::ONE, montant));
     }
 
     // --- les heures supplementaires d'un temps plein, complementaires d'un temps partiel
@@ -1162,7 +1157,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         let reference = Decimal::from_str("151.67").unwrap();
         let base = eur2(div(mul(base_conv, quotite), reference));
         let montant = eur2(div(mul(base, pourcentage), Decimal::ONE_HUNDRED));
-        lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, Decimal::ONE, dec_f64(flot(montant))?));
+        lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, Decimal::ONE, court(montant)));
         let proratise = if quotite != reference { format!(" proratisé à {} h", virgule(quotite)) } else { String::new() };
         avert.push(info(format!(
             "{} : prime d'ancienneté {} % ({} an(s) de présence) du salaire \

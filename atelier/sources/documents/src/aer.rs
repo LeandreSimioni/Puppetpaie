@@ -326,7 +326,7 @@ impl PaieAer {
         let (d, f) = (e.debut_mois(), e.fin_mois());
         let numero = e.numero.as_deref().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
         let fin = e.fin.ok_or_else(|| socle::refus!("contrat {} sans fin", numero))?;
-        let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees) } else { e.heures.map(socle::num::dec_f64).transpose()? };
+        let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees) } else { e.heures };
         Ok(PaieAer {
             numero: numero.to_string(),
             debut: if e.debut > d { e.debut } else { d },

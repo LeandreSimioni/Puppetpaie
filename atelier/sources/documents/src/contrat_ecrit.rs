@@ -136,7 +136,7 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     // Le temps partiel comme la DSN le declare (S21.G00.40.014, `Engagement::modalite_temps_travail`) : la modalite
     // saisie, sinon une quotite sous la reference de l'entreprise, plafonnee a la duree legale ; sans reference, le temps
     // plein.
-    let legale = nat.quotite_reference_defaut().map(socle::num::dec_f64).transpose()?;
+    let legale = nat.quotite_reference_defaut();
     let reference = match (eng.quotite_reference_saisie, legale) {
         (Some(r), Some(l)) => Some(r.min(l)),
         (r, l) => r.or(l),

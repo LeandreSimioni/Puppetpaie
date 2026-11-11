@@ -833,10 +833,10 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         } else if let Some(taux) = c.taux.map(|t| t.0) {
             let b = abattue(c.base.ok_or_else(|| socle::fichiers::absent("base"))?)?;
             l.base81 = Some(b);
-            l.taux = Some(taux);
+            l.taux = Some(socle::num::flottant(taux));
             l.montant = Some(match c.composants.as_ref().filter(|c| !c.is_empty()) {
-                Some(composants) => composants.iter().try_fold(zero(), |s, t| Ok::<_, socle::echec::Echec>(add(s, pct(b, dec_du_taux(*t)?))))?,
-                None => pct(b, dec_du_taux(taux)?),
+                Some(composants) => composants.iter().fold(zero(), |s, t| add(s, pct(b, *t))),
+                None => pct(b, taux),
             });
         }
         // Une cotisation qui porte un montant se declare sous son code (81.001) : le bareme le dit.
@@ -1010,12 +1010,12 @@ fn sans_la_cet(p: &Paie, l: &engagement::calcul::LigneCotisation, r: &Rubrique) 
         Some(c) if !c.is_empty() => c.to_vec(),
         _ => vec![r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0],
     };
-    let sans = droit::bareme::somme_pct(l.base, &comp)?;
+    let sans = droit::bareme::somme_pct(l.base, &comp);
     let mut avec = comp;
     if let Some(dernier) = avec.last_mut() {
         *dernier += cet_pat;
     }
-    if droit::bareme::somme_pct(l.base, &avec)? != l.montant_pat {
+    if droit::bareme::somme_pct(l.base, &avec) != l.montant_pat {
         return Err(refus!(
             "La ligne « {} » du bulletin ({} de part patronale sur {}) ne se refait pas, CET comprise, à partir de \
 ses taux : la part de la CET (146 en 2026, 148 en 2027) ne s'en sépare pas sans deviner. Rien n'est écrit.",
@@ -1027,7 +1027,7 @@ ses taux : la part de la CET (146 en 2026, 148 en 2027) ne s'en sépare pas sans
             socle::texte::euros(l.base)
         ));
     }
-    Ok((sans, Some((sub(l.montant_pat, sans), cet_pat))))
+    Ok((sans, Some((sub(l.montant_pat, sans), socle::num::flottant(cet_pat)))))
 }
 
 /// Les parts patronales Agirc-Arrco que l'Urssaf attend a cote d'un 131, sous la meme base 78. Guide Urssaf « Comment
@@ -1102,7 +1102,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
             let code = if id == "retraite_t1" { AGIRC_ARRCO_PATRONALE_T1 } else { AGIRC_ARRCO_PATRONALE_T2 };
             // La ligne « cet » d'un permanent est toute de la CET ; celle d'un cadre intermittent est fondue dans ses
             // tranches et se separe plus bas (`sans_la_cet`).
-            out.push(Cotisation { cet: id == "cet", ..part(code, l.base, taux, montant) });
+            out.push(Cotisation { cet: id == "cet", ..part(code, l.base, socle::num::flottant(taux), montant) });
         }
     }
     if let (Some(t), false) = (cet_taux, cet_montant.is_zero()) {
@@ -1790,7 +1790,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     // Le plafond de la nature (`contrats-base.json`, `unite_quotite.plafond`) vaut pour 40.012 comme pour 40.013 :
     // CCH-12 du bloc 40 (journee, 31.00), CCH-13 (heure, 250.00) ; cahier technique 2026.1, p. 189.
     let depasse = |rubrique: &str, quoi: &str, valeur: String| -> R<()> {
-        let plafond = nat.plafond_quotite();
+        let plafond = socle::num::flottant(nat.plafond_quotite());
         let q: f64 = valeur.parse().map_err(|_| refus(socle::num::illisible(&valeur)))?;
         if q <= plafond {
             return Ok(());
@@ -1818,7 +1818,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         ))
     };
     depasse("S21.G00.40.013", "quotite", qt(quotite))?;
-    match e.quotite_reference()? {
+    match e.quotite_reference()?.map(socle::num::flottant) {
         Some(r) => {
             depasse("S21.G00.40.012", "quotite de reference", qt_f(r)?)?;
             quotite_de_reference_sans_heures_supplementaires(f, p, &nat, r)?;
@@ -1972,7 +1972,7 @@ Rien n'est ecrit.",
 /// refuse. Une duree collective plus courte (32 h) passe. Un contrat d'usage (en jours) n'est pas concerne.
 fn quotite_de_reference_sans_heures_supplementaires(f: &Fichier, p: &Paie, nat: &droit::natures::Nature, reference: f64) -> R<()> {
     let Some(texte) = f.norme()?.regle("quotite_reference_sans_heures_supplementaires")? else { return Ok(()) };
-    let Some(legale) = nat.quotite_reference_defaut().filter(|_| nat.mensuelle()) else { return Ok(()) };
+    let Some(legale) = nat.quotite_reference_defaut().filter(|_| nat.mensuelle()).map(socle::num::flottant) else { return Ok(()) };
     if reference <= legale {
         return Ok(());
     }
@@ -2109,7 +2109,7 @@ pub fn mesures_d_activite(p: &Paie) -> R<Vec<(String, Decimal, String)>> {
             Mesure::Jours => Decimal::from(e.jours),
             Mesure::Cachets => Decimal::from(e.cachets),
             Mesure::Heures => match e.heures {
-                Some(h) if h != 0.0 => socle::num::dec_f64(h)?,
+                Some(h) if !h.is_zero() => h,
                 _ => Decimal::ZERO,
             },
         };

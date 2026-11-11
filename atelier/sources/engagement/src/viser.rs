@@ -55,11 +55,6 @@ fn centimes(x: Decimal) -> Decimal {
     r
 }
 
-/// Un taux ou un total en nombre.
-fn flottant(x: Decimal) -> Option<Chiffre> {
-    NombreLu::de_f64(socle::num::flottant(x)).map(Chiffre::Nombre)
-}
-
 /// La rubrique de la ligne ; une rubrique que le catalogue ne connait pas se refuse.
 fn rubrique_de(ctx: &Contexte, ligne: &LignePaie) -> R<droit::catalogue::Rubrique> {
     droit::catalogue::rubrique(&ctx.racine, ligne.rubrique(), &ctx.lue_au).map_err(RefusVisee::Refus)
@@ -144,21 +139,18 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
     Ok(())
 }
 
-/// Un montant multiplie par `facteur`, au centime, en flottant.
-fn mis_a_l_echelle(x: &Chiffre, facteur: Decimal) -> R<Option<Chiffre>> {
+/// Un montant multiplie par `facteur`, au centime, en nombre a virgule (`NombreLu::de_decimal`).
+fn mis_a_l_echelle(x: &Chiffre, facteur: Decimal) -> R<NombreLu> {
     let a = x.dec().map_err(RefusVisee::Refus)?;
     let p = a.checked_mul(facteur).ok_or_else(|| refus("Montant trop grand pour l'ajustement."))?;
-    Ok(flottant(centimes(p)))
+    Ok(NombreLu::de_decimal(centimes(p)))
 }
 
 /// L'engagement recopie, ses salaires multiplies -- et rien d'autre. Rend aussi s'il y avait quelque chose a multiplier.
 fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Decimal) -> R<bool> {
     let mut touche = false;
     if let Some(s) = &e.salaire_mensuel {
-        e.salaire_mensuel = match mis_a_l_echelle(&Chiffre::Nombre(s.clone()), facteur)? {
-            Some(Chiffre::Nombre(n)) => Some(n),
-            _ => return Err(refus("Montant trop grand pour l'ajustement.")),
-        };
+        e.salaire_mensuel = Some(mis_a_l_echelle(&Chiffre::Nombre(s.clone()), facteur)?);
         touche = true;
     }
     for l in e.lignes.iter_mut().flatten() {
@@ -166,9 +158,9 @@ fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Decimal) -> R<bool> {
             continue;
         }
         if let Some(t) = l.taux() {
-            // Le taux au centime, sous sa forme flottante la plus courte (`mis_a_l_echelle`).
+            // Le taux au centime, dans sa forme la plus courte (`mis_a_l_echelle`).
             let p = t.checked_mul(facteur).ok_or_else(|| refus("Montant trop grand pour l'ajustement."))?;
-            l.poser_taux(socle::num::dec_f64(socle::num::flottant(centimes(p))).map_err(RefusVisee::Refus)?).map_err(RefusVisee::Refus)?;
+            l.poser_taux(socle::num::court(centimes(p))).map_err(RefusVisee::Refus)?;
         }
         touche = true;
     }

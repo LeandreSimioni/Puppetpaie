@@ -180,7 +180,7 @@ fn excede_deux_mille(ctx: &Contexte, n: i32) -> R<bool> {
     let mut inconnues = Vec::new();
     for a in n - 4..=n {
         match e.annee(a) {
-            Some(v) if v > SEUIL_DEUX_MILLE => {}
+            Some(v) if socle::num::flottant(v) > SEUIL_DEUX_MILLE => {}
             Some(_) => return Ok(false),
             None => inconnues.push(a.to_string()),
         }

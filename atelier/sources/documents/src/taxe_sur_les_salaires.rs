@@ -119,7 +119,7 @@ decembre ne se fait pas.",
             champs.push("part_tva");
             let part = match fiche.and_then(|f| f.part_tva.dite()) {
                 None => None,
-                Some(v) => match v.avec_echelle() {
+                Some(v) => match v.dec() {
                     Ok(p) if p >= Decimal::ZERO && p <= Decimal::ONE_HUNDRED => Some(p),
                     _ => {
                         return manque(

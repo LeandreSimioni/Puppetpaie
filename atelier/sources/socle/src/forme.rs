@@ -228,6 +228,49 @@ where
     d.deserialize_map(Visiteur(std::marker::PhantomData))
 }
 
+/// UN TAUX, UNE QUOTITE, UN COEFFICIENT, UNE QUANTITE QUE LE CALCUL LIT : un nombre (jamais un texte), en decimal, dans
+/// sa forme la plus courte, une decimale au moins (`num::court` : `24` se lit `24.0`, `0.10` se lit `0.1`).
+/// `#[serde(deserialize_with = "socle::forme::court")]`.
+pub fn court<'de, D: serde::Deserializer<'de>>(d: D) -> Result<crate::num::Decimal, D::Error> {
+    struct EnCourt;
+    impl serde::de::Visitor<'_> for EnCourt {
+        type Value = crate::num::Decimal;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("un nombre")
+        }
+        fn visit_i64<E: serde::de::Error>(self, i: i64) -> Result<Self::Value, E> {
+            Ok(crate::num::court(i.into()))
+        }
+        fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<Self::Value, E> {
+            Ok(crate::num::court(u.into()))
+        }
+        fn visit_f64<E: serde::de::Error>(self, x: f64) -> Result<Self::Value, E> {
+            crate::num::dec_f64(x).map(crate::num::court).map_err(|e| E::custom(e.phrase))
+        }
+    }
+    d.deserialize_any(EnCourt)
+}
+
+/// `court`, quand la valeur peut manquer ou etre nulle (avec `#[serde(default)]`).
+pub fn court_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<crate::num::Decimal>, D::Error> {
+    <Option<Court> as serde::Deserialize>::deserialize(d).map(|n| n.map(|n| n.0))
+}
+
+/// Une liste de `court`, quand elle peut manquer ou etre nulle (avec `#[serde(default)]`).
+pub fn courts_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Vec<crate::num::Decimal>>, D::Error> {
+    <Option<Vec<Court>> as serde::Deserialize>::deserialize(d).map(|v| v.map(|v| v.into_iter().map(|n| n.0).collect()))
+}
+
+/// Un nombre lu comme `court`, la ou un champ ne se pose pas (une valeur de table, une liste datee).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Court(pub crate::num::Decimal);
+
+impl<'de> serde::Deserialize<'de> for Court {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        court(d).map(Court)
+    }
+}
+
 /// Un nombre decimal, lu comme `decimal`, la ou un champ ne se pose pas (une valeur de table).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Nombre(pub crate::num::Decimal);
@@ -296,13 +339,21 @@ impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for Remplie<T> {
 }
 
 /// UN NOMBRE TEL QU'IL EST ECRIT : un entier, un flottant, ou un texte qui se lit en decimal (`num::decimal_lu`, `12,5`
-/// compris), garde tel quel pour se reecrire de meme (`droit::fiche::Montant`).
+/// compris), garde tel quel pour se reecrire de meme (`droit::fiche::Montant`). Un nombre ecrit avec sa virgule se garde
+/// en decimal, dans sa forme la plus courte (`num::court` : `130.0` reste `130.0`), et se reecrit en nombre a virgule
+/// (`ecrire_en_flottant`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum NombreEcrit {
     Entier(i64),
     Naturel(u64),
-    Flottant(f64),
+    Flottant(crate::num::Decimal),
     Texte(String),
+}
+
+/// Ecrit un decimal en nombre a virgule (`NombreEcrit::Flottant`) : celui qu'il etait a sa lecture, que sa forme la plus
+/// courte redonne (`num::flottant`).
+pub fn ecrire_en_flottant<S: serde::Serializer>(d: &crate::num::Decimal, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_f64(crate::num::flottant(*d))
 }
 
 impl<'de> serde::Deserialize<'de> for NombreEcrit {
@@ -321,7 +372,7 @@ impl<'de> serde::Deserialize<'de> for NombreEcrit {
                 Ok(if u <= i64::MAX as u64 { NombreEcrit::Entier(u as i64) } else { NombreEcrit::Naturel(u) })
             }
             fn visit_f64<E: serde::de::Error>(self, x: f64) -> Result<NombreEcrit, E> {
-                Ok(NombreEcrit::Flottant(x))
+                crate::num::dec_f64(x).map(|d| NombreEcrit::Flottant(crate::num::court(d))).map_err(|e| E::custom(e.phrase))
             }
             fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<NombreEcrit, E> {
                 match crate::num::decimal_lu(s) {
@@ -371,6 +422,34 @@ impl NombreLu {
         match self.0.as_f64() {
             Some(x) => x,
             None => f64::NAN,
+        }
+    }
+
+    /// Le decimal du nombre : un entier tel quel, un nombre a virgule par sa forme la plus courte (`num::dec_f64`).
+    pub fn decimal(&self) -> R<crate::num::Decimal> {
+        match (self.0.as_i64(), self.0.as_u64()) {
+            (Some(i), _) => Ok(i.into()),
+            (_, Some(u)) => Ok(u.into()),
+            _ => crate::num::dec_f64(self.en_f64()),
+        }
+    }
+
+    /// Le nombre tel qu'une donnee l'ecrit : un entier tel quel, un nombre a virgule sous sa forme ecrite (`130.0`,
+    /// `ecriture::repr_flottant`).
+    pub fn ecrit(&self) -> String {
+        match (self.0.as_i64(), self.0.as_u64()) {
+            (Some(i), _) => i.to_string(),
+            (_, Some(u)) => u.to_string(),
+            _ => crate::date::repr_flottant(self.en_f64()),
+        }
+    }
+
+    /// Un decimal en nombre a virgule : celui que sa forme la plus courte ecrit (`num::court` : `130` s'ecrit `130.0`).
+    pub fn de_decimal(d: crate::num::Decimal) -> NombreLu {
+        let t = crate::num::court(d).to_string();
+        match t.parse::<serde_json::Number>() {
+            Ok(n) => NombreLu(n),
+            Err(e) => unreachable!("un décimal s'écrit en nombre : {} ({})", t, e),
         }
     }
 

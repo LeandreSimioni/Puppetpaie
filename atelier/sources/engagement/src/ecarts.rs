@@ -40,7 +40,7 @@ use crate::importe::{Importe, PaieVersee};
 use droit::contexte::Contexte;
 use socle::echec::{refus, Echec, R};
 use socle::mois::Mois;
-use socle::num::{dec_f64, Decimal};
+use socle::num::Decimal;
 
 /// Ce que l'on compare d'une ligne.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -350,13 +350,13 @@ fn comparer_une(
     if let Some((taux, montant, base)) = atmp_imprime {
         // Calcule au taux notifie de 1 %, la ligne AT/MP porte le facteur du contrat, et son assiette.
         let ligne = saisie.paies.first().and_then(|p| p.lignes.iter().find(|l| l.est("atmp")));
-        let facteur = ligne.and_then(|l| l.taux_pat).filter(|f| *f > 0.0);
+        let facteur = ligne.and_then(|l| l.taux_pat).filter(|f| *f > Decimal::ZERO);
         let applique = taux.or_else(|| {
             let b = base.or(ligne.map(|l| l.base)).filter(|b| !b.is_zero())?;
             Some((montant? / b * Decimal::from(100)).round_dp(2))
         });
         if let (Some(f), Some(applique)) = (facteur, applique) {
-            let notifie = (applique / dec_f64(f)?).round_dp(2);
+            let notifie = (applique / f).round_dp(2);
             ctx = ctx.avec_le_taux_atmp_lu(an, notifie);
             saisie = crate::charger_donnees(&ctx, &data).map_err(|m| a_refaire(c, m))?;
         }
@@ -460,7 +460,7 @@ fn comparer_une(
         for (grandeur, leur, notre) in [(Grandeur::TauxSalarie, l.taux_salarie, n.taux_sal), (Grandeur::TauxEmployeur, l.taux_employeur, n.taux_pat)] {
             // Un taux se compare quand chaque cote en a un : une ligne calculee sans taux (la reduction generale, un
             // montant fixe) n'en a pas, et ce que le bulletin imprime a sa place n'en est pas un ; le montant compare.
-            let (Some(leur), Some(notre)) = (leur, notre.map(dec_f64).transpose()?) else { continue };
+            let (Some(leur), Some(notre)) = (leur, notre) else { continue };
             if (leur - notre).abs() > Decimal::new(5, 4) {
                 ecarts.push(ecart(grandeur, Some(notre), Some(leur), None));
             }

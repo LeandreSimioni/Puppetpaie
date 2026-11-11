@@ -7,22 +7,29 @@ use droit::contexte::Contexte;
 use droit::cumul::Declare;
 use socle::echec::R;
 use socle::mois::Mois;
+use socle::num::Decimal;
 
 /// La part d'enseignement de lignes de paie, en heures entieres : les rubriques dont le catalogue dit
 /// `compte_pour = ouverture_des_droits`.
 fn heures_enseignement(ctx: &Contexte, lignes: &[crate::LignePaie]) -> R<i64> {
-    let mut heures = 0.0;
+    let mut heures = Decimal::ZERO;
     for l in lignes {
         let r = droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         if r.compte_pour != "ouverture_des_droits" {
             continue;
         }
-        let q = socle::num::flottant(l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?);
+        let q = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
         // Le signe porte aussi sur les heures, comme au calcul (`calcul::lignes_brut`) : une ligne « - » en retire.
-        let signe = if r.sens == "-" { -1.0 } else { 1.0 };
-        heures += signe * r.heures(q, l.heures_lues());
+        let h = r.heures(q, l.heures());
+        heures += if r.sens == "-" { -h } else { h };
     }
-    Ok(heures.round_ties_even() as i64)
+    heures_entieres(heures)
+}
+
+/// Des heures en heures entieres, la moitie au pair.
+fn heures_entieres(h: Decimal) -> R<i64> {
+    let e = h.round_dp_with_strategy(0, rust_decimal::RoundingStrategy::MidpointNearestEven);
+    rust_decimal::prelude::ToPrimitive::to_i64(&e).ok_or_else(|| socle::echec::refus(socle::fichiers::entier_hors_limites(&e.to_string())))
 }
 
 // ------------------------------------------------------------------- lecture
@@ -66,7 +73,11 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
     if e.sans_paie() || e.nat()?.mensuelle() {
         return Ok(None);
     }
-    let heures = e.heures.into_iter().sum::<f64>().round_ties_even() as i64;
+    // Un engagement sans heures n'en declare aucune.
+    let heures = match e.heures {
+        Some(h) => heures_entieres(h)?,
+        None => 0,
+    };
     Ok(Some(Declare {
         salarie: p.salarie.id.to_string(),
         debut: e.debut_periode(),

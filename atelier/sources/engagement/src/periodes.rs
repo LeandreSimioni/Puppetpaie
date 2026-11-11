@@ -17,7 +17,7 @@ use droit::contexte::Contexte;
 use socle::date::Jour;
 use crate::{Avis, Chiffre, Engagement, LignePaie};
 use socle::echec::{refus, R};
-use socle::num::{dec_f64, eur2, Decimal};
+use socle::num::{court, eur2, Decimal};
 
 
 /// Le jour ou l'avenant de la saisie du mois decoupe la paie (`droit::periodes::jour_de_l_avenant`).
@@ -88,20 +88,20 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         let part = droit::periodes::part_du_mois(d, f, &fin_mois, regle, &horaire)?;
         let mut e = eng.clone();
         e.periode = Some((*d, *f));
-        e.quotite_contrat = Some(crate::conges::flot(quotite));
-        let (q, h) = (crate::conges::flot(part.fraction), crate::conges::flot(eur2(quotite)));
+        e.quotite_contrat = Some(court(quotite));
+        let (q, h) = (court(part.fraction), court(eur2(quotite)));
         e.lignes = vec![LignePaie::Composee(crate::ligne::Composee {
             rubrique: "mois".to_string(),
-            quantite: dec_f64(q)?,
-            taux: dec_f64(crate::conges::flot(salaire))?,
-            heures: Some(dec_f64(h)?),
+            quantite: q,
+            taux: court(salaire),
+            heures: Some(h),
             precision: part.sur_le_bulletin(droit::conges::heures_par_jour(quotite, &horaire.jours)),
             dates: Vec::new(),
         })];
         // Les heures que la DSN mesure (S21.G00.53, « heures » d'un contrat paye au mois) : celles de la ligne de la
         // periode, comme `Engagement::nouveau` les tire des lignes du mois.
         let heures = droit::catalogue::rubrique(&ctx.racine, "mois", &ctx.lue_au)?.heures(q, Some(h));
-        e.heures = if heures != 0.0 { Some(heures) } else { None };
+        e.heures = if !heures.is_zero() { Some(heures) } else { None };
         out.push(e);
     }
     Ok(out)
@@ -199,8 +199,8 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     let derniere = parts.last().ok_or_else(|| refus("assembler : aucune periode"))?;
     let mut e = eng.clone();
     e.lignes = parts.iter().flat_map(|p| p.engagement.lignes.iter().cloned()).collect();
-    let heures: f64 = parts.iter().filter_map(|p| p.engagement.heures).sum();
-    e.heures = if heures != 0.0 { Some(heures) } else { None };
+    let heures: Decimal = parts.iter().filter_map(|p| p.engagement.heures).sum();
+    e.heures = if !heures.is_zero() { Some(court(heures)) } else { None };
     let somme = |f: &dyn Fn(&Paie) -> Decimal| parts.iter().fold(zero, |a, p| a + f(p));
     let mut paie = Paie::nouveau(
         e,

@@ -8,7 +8,7 @@ use droit::clauses;
 use droit::conges::jours_ouvrables;
 use crate::conges::{
     avertir, compteur_conges, debut_de, dec_de, dec_ou, indemnite_des_jours, info, jours_ouvrables_de,
-    qui, flot, remuneration_du_mois, salarie_de, sub, taux_au_montant,
+    qui, remuneration_du_mois, salarie_de, sub, taux_au_montant,
 };
 use crate::saisie::Carte;
 use crate::{Chiffre, LignePaie};
@@ -18,7 +18,7 @@ use socle::mois::Mois;
 use crate::Avis;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
-use socle::num::{add, dec_f64, div, eur2, mul, zero2, Decimal};
+use socle::num::{add, court, div, eur2, mul, zero2, Decimal};
 use droit::permanents::{self, anciennete_mois, arrondir_jours, jours_acquis, IndemniteDePreavis};
 
 /// Les lignes et les avertissements du solde.
@@ -31,13 +31,13 @@ struct Solde {
 }
 
 /// La ligne de `rubrique`, `quantite` x `taux`, telle que le solde l'ecrit.
-fn ligne(rubrique: &str, quantite: Decimal, taux: Decimal) -> R<LignePaie> {
-    Ok(LignePaie::composee(rubrique, dec_f64(flot(quantite))?, dec_f64(flot(taux))?))
+fn ligne(rubrique: &str, quantite: Decimal, taux: Decimal) -> LignePaie {
+    LignePaie::composee(rubrique, court(quantite), court(taux))
 }
 
 /// La ligne d'une indemnite de `rubrique` qui verse `montant` en une fois.
-fn ligne_unique(rubrique: &str, montant: Decimal) -> R<LignePaie> {
-    Ok(LignePaie::composee(rubrique, Decimal::ONE, dec_f64(flot(montant))?))
+fn ligne_unique(rubrique: &str, montant: Decimal) -> LignePaie {
+    LignePaie::composee(rubrique, Decimal::ONE, court(montant))
 }
 
 /// Le plus grand de `a` et `b` : `a` a egalite.
@@ -324,7 +324,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
             cpt2.reports = sub(cpt.reports, entame);
             let ind = indemnite_des_jours(&cpt2, solde, maintien)?;
             stc.conges_payes = Some((stc.lignes.len(), solde, ind.retenu));
-            stc.lignes.push(ligne(&permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique, solde, taux_au_montant(ind.retenu, solde))?);
+            stc.lignes.push(ligne(&permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique, solde, taux_au_montant(ind.retenu, solde)));
             stc.avertissements.push(info(format!(
                 "{} : {} jour(s) de conges acquis et non pris, payes {} ({}) -- \
                  art. L3141-28, due quelle que soit la cause de la rupture.",
@@ -367,7 +367,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 // Le taux de la loi : la fiche entreprise ne porte aucun accord qui le change.
                 let montant = permanents::indemnite_precarite(total)?;
                 if montant > Decimal::ZERO {
-                    stc.lignes.push(ligne_unique(&permanents::regles()?.indemnite_precarite.rubrique, montant)?);
+                    stc.lignes.push(ligne_unique(&permanents::regles()?.indemnite_precarite.rubrique, montant));
                     let pour_cent = virgule(mul(permanents::regles()?.indemnite_precarite.taux, Decimal::from(100)).normalize());
                     stc.avertissements.push(info(format!(
                         "{} : indemnité de fin de contrat {} % sur {} de \
@@ -459,7 +459,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 }
                 // La rubrique, et avec elle le code du bloc 52, suit le motif : 023, ou 032 pour le 092 (L1226-14).
                 let rubrique = permanents::rubrique_de_l_indemnite_de_preavis(motif)?;
-                stc.lignes.push(ligne(&rubrique, m, salaire)?);
+                stc.lignes.push(ligne(&rubrique, m, salaire));
                 let article = match indemnite {
                     IndemniteDePreavis::AutreArticle(t) => format!(" Pour ce motif, l'indemnite vient d'un autre article : {}", t),
                     IndemniteDePreavis::ATrancher(t) => format!(
@@ -626,7 +626,7 @@ fn delai_de_prevenance(
         jours += part.jours;
         j = f.plus_jours(1)?;
     }
-    stc.lignes.push(ligne(&regle.rubrique, fraction, salaire)?);
+    stc.lignes.push(ligne(&regle.rubrique, fraction, salaire));
     let montant = eur2(mul(fraction, salaire));
     let conges = conges_non_effectues(ctx, e, mois, fin, jours_acquis(&fin.plus_jours(1)?, &delai.expiration)?, salaire, montant, stc)?;
     let avantages = avantages_du_mois(ctx, deja)?;
@@ -680,7 +680,7 @@ fn conges_non_effectues(
         Some((rang, j, m)) => (rang, add(j, jours), add(m, ind.retenu)),
         None => (stc.lignes.len(), jours, ind.retenu),
     };
-    let l = ligne(&rubrique, total_jours, taux_au_montant(total, total_jours))?;
+    let l = ligne(&rubrique, total_jours, taux_au_montant(total, total_jours));
     match stc.lignes.get_mut(rang) {
         Some(x) => *x = l,
         None => stc.lignes.push(l),
@@ -954,10 +954,10 @@ fn indemnite_de_rupture(
     let part_legale = plus_petit(montant, m_legal);
     let supplement = sub(montant, part_legale);
     if part_legale > Decimal::ZERO {
-        stc.lignes.push(ligne_unique(&rubrique, part_legale)?);
+        stc.lignes.push(ligne_unique(&rubrique, part_legale));
     }
     if supplement > Decimal::ZERO {
-        stc.lignes.push(ligne_unique(&supplement_rub, supplement)?);
+        stc.lignes.push(ligne_unique(&supplement_rub, supplement));
     }
     // L137-12 : une contribution patronale sur la part exoneree, due et non calculee.
     let regles = permanents::regles()?;
@@ -1153,11 +1153,11 @@ fn indemnite_de_licenciement(
     verifier_les_plafonds(ctx, mois, montant, "licenciement", &qui)?;
     let part_legale = plus_petit(montant, m_legal);
     if part_legale > Decimal::ZERO {
-        stc.lignes.push(ligne_unique(&permanents::regles()?.indemnite_licenciement.rubrique, part_legale)?);
+        stc.lignes.push(ligne_unique(&permanents::regles()?.indemnite_licenciement.rubrique, part_legale));
     }
     let supplement = sub(montant, part_legale);
     if supplement > Decimal::ZERO {
-        stc.lignes.push(ligne_unique("indemnite_licenciement_conventionnelle", supplement)?);
+        stc.lignes.push(ligne_unique("indemnite_licenciement_conventionnelle", supplement));
     }
     stc.avertissements.push(info(format!(
         "{} : indemnité de licenciement {} ({} mois d'ancienneté, salaire \

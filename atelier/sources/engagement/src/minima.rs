@@ -21,7 +21,7 @@ use crate::{Avis, Engagement};
 use droit::minima::{ans_revolus, grille_au, palier, plancher, plus_bas, signataire, table, case_lue, CaseLue, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
 use socle::texte::{euros, virgule};
 use socle::echec::{refus, Echec, R};
-use socle::num::{add, dec_f64, div, mul, sub, Decimal};
+use socle::num::{add, div, mul, sub, Decimal};
 /// L'IDCC d'un contrat (`droit::minima::idcc_du_contrat`) : celui de la compagnie, sauf pour l'emission de television du
 /// spectacle `sp` (un contrat paye au mois n'en a pas).
 pub fn idcc_du_contrat(idcc: &str, sp: Option<&droit::fiche::Spectacle>, sal: &droit::fiche::ChampsSalarie) -> R<String> {
@@ -61,13 +61,10 @@ fn pair(x: Decimal) -> Decimal {
     x.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven)
 }
 
-/// Un flottant arrondi a deux decimales, par son texte.
-fn arrondi2(x: f64) -> f64 {
-    // Un flottant ecrit par Rust se relit toujours (`NaN` et `inf` compris).
-    match format!("{:.2}", x).parse() {
-        Ok(a) => a,
-        Err(e) => unreachable!("un flottant écrit par Rust se relit : {} ({})", x, e),
-    }
+/// Un salaire mensuel ramene a l'heure : au centime, au pair sur le demi, dans sa forme la plus courte. Aucun texte ne
+/// fixe cet arrondi.
+fn horaire_du_mensuel(mensuel: Decimal, heures: Decimal) -> Decimal {
+    socle::num::court(pair(div(mensuel, heures)))
 }
 
 
@@ -300,19 +297,19 @@ impl<'a> Cx<'a> {
         let Some(grille) = self.grille.emplois_autres_qu_artistiques.as_ref() else { return Ok(None) };
         let Some(echelons) = grille.groupes.get(&groupe) else { return Ok(None) };
         let (echelon, d_ou) = self.echelon_ccneac()?;
-        let mensuel = *echelons
+        let mensuel = echelons
             .get(echelon - 1)
-            .ok_or_else(|| refus(socle::fichiers::trop_courte(&format!("l'échelon {} du groupe {}", echelon, groupe))))?;
+            .ok_or_else(|| refus(socle::fichiers::trop_courte(&format!("l'échelon {} du groupe {}", echelon, groupe))))?
+            .0;
         let heures = grille.heures_mensuelles;
-        let horaire = arrondi2(mensuel / heures);
         Ok(plancher(
-            dec_f64(horaire)?,
+            horaire_du_mensuel(mensuel, heures),
             format!(
                 "CCNEAC (1285), groupe {} ({}), {} : {} pour 151 h 40, ramenés à l'heure",
                 groupe,
                 c1285.emploi_xi3.as_str(),
                 d_ou,
-                euros(dec_f64(mensuel)?)
+                euros(mensuel)
             ),
         ))
     }
@@ -365,7 +362,7 @@ impl<'a> Cx<'a> {
             Some(j) if j <= 4 => (div(semaine, d("31.5")?), "contrat de 4 jours ou moins : la semaine / 4,5 par journée de 7 h"),
             Some(j) if j >= 89 => {
                 let mensuel = mul(semaine, d("3.8")?);
-                let smic = mul(mul(dec_f64(self.paie.smic)?, d("151.67")?), d("1.3")?);
+                let smic = mul(mul(self.paie.smic, d("151.67")?), d("1.3")?);
                 let mensuel = if smic > mensuel { smic } else { mensuel };
                 (div(mensuel, d("151.67")?), "contrat de 3 mois ou plus : la semaine x 3,8 par mois de 151,67 h, pas moins de 130 % du SMIC")
             }
@@ -745,20 +742,19 @@ impl<'a> Cx<'a> {
             }
             // Le cadre du groupe 1 n'a qu'une valeur : aucune anciennete a lire.
             let (montant, d_ou) = if valeurs.len() == 1 {
-                (valeurs[0], "sans échelon".to_string())
+                (valeurs[0].0, "sans échelon".to_string())
             } else {
                 let (echelon, d_ou) = self.echelon_3090()?;
-                let montant = *valeurs.get(echelon.min(valeurs.len()) - 1).ok_or_else(|| refus(socle::fichiers::trop_courte(&format!("l'échelon {} du niveau {}", echelon, niveau))))?;
+                let montant = valeurs.get(echelon.min(valeurs.len()) - 1).ok_or_else(|| refus(socle::fichiers::trop_courte(&format!("l'échelon {} du niveau {}", echelon, niveau))))?.0;
                 (montant, d_ou)
             };
-            let horaire = arrondi2(montant / 151.67);
             return Ok(plancher(
-                dec_f64(horaire)?,
+                horaire_du_mensuel(montant, Decimal::new(15167, 2)),
                 format!(
                     "CCN 3090, grille administrative, {}, {} : {} par mois ramenés à l'heure sur 151,67 h",
                     niveau.replace('_', " "),
                     d_ou,
-                    euros(dec_f64(montant)?)
+                    euros(montant)
                 ),
             ));
         }
@@ -1113,7 +1109,7 @@ pub(crate) fn avertissements(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
 pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
     let qui = crate::qui_de(&paie.salarie)?;
     let jour = paie.engagement.fin_periode();
-    let smic = dec_f64(ctx.smic(&jour)?)?;
+    let smic = ctx.smic(&jour)?;
     let mut avis = Vec::new();
     for l in &paie.remuneration {
         let heures = l.heures_annexes;

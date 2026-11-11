@@ -563,7 +563,7 @@ impl Objet {
         let quotite = |x: &Carte| -> R<Option<NombreLu>> {
             Ok(match &x.quotite_contrat {
                 Some(q) => Some(q.clone()),
-                None => x.nature_lue()?.quotite_reference_defaut().and_then(NombreLu::de_f64),
+                None => x.nature_lue()?.quotite_reference_defaut().map(NombreLu::de_decimal),
             })
         };
         let avant = Avant { salaire_mensuel: a.salaire_mensuel.clone(), quotite_contrat: quotite(&a)? };

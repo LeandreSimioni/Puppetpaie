@@ -19,7 +19,7 @@ use crate::{Avis, Engagement};
 use crate::paie_ecrite::{Cle, FormeDeCotisation, FormeDeLaDeduction, FormeDePaie, FormeDeRemuneration, Montant};
 use droit::assiette::Assiette;
 use socle::echec::{refus, refus_avec, Lieu, Echec, R};
-use socle::num::{add, dec_f64, div, eur, mul, pct, round3, sub, Decimal};
+use socle::num::{add, court, div, eur, mul, pct, sub, Decimal};
 pub use droit::reduction::ReductionGenerale;
 use droit::bareme::somme_pct;
 use droit::forme_bareme::{Pile, Rubrique};
@@ -27,10 +27,11 @@ use droit::reduction::{au_dela_du_seuil, reduction_generale, reduction_generale_
 use droit::plafond::{plafond_permanent, pour_paie, EngagementPlafond};
 
 
-
-/// Le flottant d'un decimal, correctement arrondi, via le texte.
-fn en_f64(x: Decimal) -> f64 {
-    crate::conges::flot(x)
+/// Un taux de cotisation qu'une addition compose (le taux reduit et son complement, une part et la CET) : a trois
+/// decimales, la moitie au pair, dans sa forme la plus courte. Aucun texte ne fixe cet arrondi ; les taux additionnes
+/// n'ont pas plus de trois decimales.
+fn taux_compose(x: Decimal) -> Decimal {
+    court(x.round_dp_with_strategy(3, rust_decimal::RoundingStrategy::MidpointNearestEven))
 }
 
 // ------------------------------------------------------ les lignes de brut
@@ -179,10 +180,9 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         let q = requis(l.quantite(), "quantite")?;
         let taux = requis(l.taux(), "taux")?;
-        let heures = l.heures_lues();
         let signe = if r.sens == "-" { -Decimal::ONE } else { Decimal::ONE };
         // Le signe porte aussi sur les heures : une absence en retire.
-        let h = dec_f64(r.heures(en_f64(q), heures))?;
+        let h = r.heures(q, l.heures());
         let dsn_autres_bruts = code_54(&r, l.genre())?;
         out.push(LigneBrut {
             code: r.code,
@@ -218,9 +218,9 @@ pub struct LigneCotisation {
     pub famille: Option<String>,
     pub libelle: String,
     pub base: Decimal,
-    pub taux_pat: Option<f64>,
+    pub taux_pat: Option<Decimal>,
     pub montant_pat: Decimal,
-    pub taux_sal: Option<f64>,
+    pub taux_sal: Option<Decimal>,
     pub montant_sal: Decimal,
     pub masquer_base_et_taux: bool,
 }
@@ -232,19 +232,18 @@ impl LigneCotisation {
     }
 
     /// Sa forme ecrite : un taux en decimal par sa forme la plus courte.
-    pub fn forme(&self) -> R<FormeDeCotisation> {
-        let taux = |t: Option<f64>| t.map(dec_f64).transpose();
-        Ok(FormeDeCotisation {
+    pub fn forme(&self) -> FormeDeCotisation {
+        FormeDeCotisation {
             id: self.id.clone(),
             famille: self.famille.clone(),
             libelle: self.libelle.clone(),
             base: self.base,
-            taux_pat: taux(self.taux_pat)?,
+            taux_pat: self.taux_pat.map(court),
             montant_pat: self.montant_pat,
-            taux_sal: taux(self.taux_sal)?,
+            taux_sal: self.taux_sal.map(court),
             montant_sal: self.montant_sal,
             masquer_base_et_taux: self.masquer_base_et_taux,
-        })
+        }
     }
 
     /// Relue de sa forme ecrite.
@@ -254,9 +253,9 @@ impl LigneCotisation {
             famille: f.famille.clone(),
             libelle: f.libelle.clone(),
             base: f.base,
-            taux_pat: f.taux_pat.map(en_f64),
+            taux_pat: f.taux_pat.map(court),
             montant_pat: f.montant_pat,
-            taux_sal: f.taux_sal.map(en_f64),
+            taux_sal: f.taux_sal.map(court),
             montant_sal: f.montant_sal,
             masquer_base_et_taux: f.masquer_base_et_taux,
         }
@@ -340,7 +339,8 @@ pub struct Contenu {
     pub brut: Decimal,
     pub base_csg: Decimal,
     pub plafond: Decimal,
-    pub smic: f64,
+    /// Le SMIC horaire de la periode, dans sa forme la plus courte (`Contexte::smic`).
+    pub smic: Decimal,
     pub heures: Decimal,
     pub lignes: Vec<LigneCotisation>,
     pub total_pat: Decimal,
@@ -412,7 +412,7 @@ impl Paie {
     /// Les champs sans valeur par defaut ; les autres partent a zero ou vides.
     pub(crate) fn nouveau(
         engagement: Engagement, salarie: SalarieDuContrat, spectacle: Option<droit::fiche::Spectacle>, brut: Decimal,
-        base_csg: Decimal, plafond: Decimal, smic: f64, heures: Decimal,
+        base_csg: Decimal, plafond: Decimal, smic: Decimal, heures: Decimal,
         plafond_temps_partiel: PlafondTempsPartiel,
     ) -> Paie {
         let zero = Decimal::new(0, 2);
@@ -1097,8 +1097,8 @@ fn base_de(r: &Rubrique) -> R<Assiette> {
 }
 
 /// Le taux patronal d'une rubrique, s'il n'est pas nul.
-fn part_patronale(r: &Rubrique) -> Option<f64> {
-    r.taux_pat.map(|t| t.0).filter(|t| *t != 0.0)
+fn part_patronale(r: &Rubrique) -> Option<Decimal> {
+    r.taux_pat.map(|t| t.0).filter(|t| !t.is_zero())
 }
 
 /// La pile de bareme sur laquelle se calcule la paie `p` (celle de `calculer_periode`, du meme cache).
@@ -1259,10 +1259,10 @@ fn essai_dans_son_plafond(ctx: &Contexte, eng: &Engagement, nat: &Nature, sal: &
     let Some(v) = crate::ligne::dite(&eng.ecrit.periode_essai_jours) else { return Ok(()) };
     // Une virgule decimale se lit comme un point ; un texte qui n'est pas un nombre se refuse.
     let lu = match v {
-        crate::Chiffre::Texte(t) => t.trim().replace(',', ".").parse::<f64>().map_err(|_| refus(socle::num::illisible(t)))?,
-        nombre => nombre.flottant()?,
+        crate::Chiffre::Texte(t) => socle::num::dec_texte(&t.replace(',', ".")).map_err(|_| refus(socle::num::illisible(t)))?,
+        nombre => nombre.dec()?,
     };
-    let jours = lu.ceil() as i64;
+    let jours = rust_decimal::prelude::ToPrimitive::to_i64(&lu.ceil()).ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&lu.to_string())))?;
     let artiste = sal.statut.dite() == Some(&Statut::Artiste);
     let plafond = droit::essai::plafond(nat, &eng.debut, eng.fin.as_ref(), sal.statut_conventionnel.dite().map(|s| s.as_str()), artiste, ctx.entreprise.idcc.portee())?;
     droit::essai::refuser_au_dela(jours, plafond.as_ref(), &format!("{} ({})", crate::qui_de(sal)?, nat.libelle))
@@ -1361,7 +1361,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
 
     // 7.3 : la prevoyance dans l'assiette CSG.
     let (prev, taux_prev) = match bar.rubrique("prevoyance") {
-        Some(p @ Rubrique { taux_pat: Some(t), .. }) => (p, dec_f64(t.0)?),
+        Some(p @ Rubrique { taux_pat: Some(t), .. }) => (p, t.0),
         _ => {
             return Err(refus_detaille("Le barème de l'année n'a pas de prévoyance avec un taux patronal : le signaler au développeur.", None, format!(
                 "Bareme {}{} : aucune rubrique `prevoyance` avec un taux \
@@ -1416,14 +1416,14 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             )));
         };
         let base_t2 = Decimal::new(0, 2).max(brut.min(Decimal::from(4) * t1) - t1);
-        tranches_prev = add(tranches_prev, div(mul(base_t2, dec_f64(taux)?), Decimal::ONE_HUNDRED));
+        tranches_prev = add(tranches_prev, div(mul(base_t2, taux), Decimal::ONE_HUNDRED));
     }
     // La part patronale de la mutuelle : un forfait sur le plafond MENSUEL de la periode, sans la correction du temps
     // partiel (`plafond_de_la_sante`).
     let mutuelle = bar.rubrique("mutuelle").and_then(part_patronale);
     let pss_sante = if nat.mensuelle() { Some(plafond_de_la_sante(ctx, eng)?) } else { None };
     if let (Some(m), Some(pss)) = (mutuelle, pss_sante) {
-        tranches_prev += pct(pss, dec_f64(m)?);
+        tranches_prev += pct(pss, m);
     }
 
     // 7.4 : les assiettes, par rubrique de salaire.
@@ -1473,7 +1473,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     let hpc = bar.heures_par_cachet;
     let heures_annexes = lb.iter().fold(Decimal::ZERO, |a, l| a + l.heures_annexes);
     let heures = if nat.mensuelle() { Decimal::ZERO.max(heures_annexes) } else { heures_annexes.min(mul(hpc, jours)) };
-    let plafond = eur(mul(dec_f64(smic)?, heures));
+    let plafond = eur(mul(smic, heures));
 
     // 7.5 bis : la deduction forfaitaire specifique (arrete du 4 septembre 2025, art. 9 ; `abattement_dfs`). Elle abat
     // l'assiette des lignes que le bareme nomme, rubrique de salaire par rubrique de salaire, apres le plafond annuel
@@ -1612,13 +1612,13 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         };
         let (mut m_pat, mut m_sal) = (zero, zero);
         let (mut taux_pat, mut taux_sal) = (r.taux_pat.map(|t| t.0), r.taux_sal);
-        let non_vide = |c: &Option<Vec<f64>>| c.clone().filter(|c| !c.is_empty());
+        let non_vide = |c: &Option<Vec<Decimal>>| c.clone().filter(|c| !c.is_empty());
         let (mut comp_pat, mut comp_sal) = (non_vide(&r.composants_pat), non_vide(&r.composants_sal));
         let manque = || socle::echec::refus("taux absent (taux_pat ou taux_sal) : le complément ne s'ajoute à rien");
         // Le complement au-dela d'un seuil : le taux reduit, plus le complement.
         if let Some(compl) = &r.complement {
             if au_dela_du_seuil(bar.reduction_generale.as_ref(), brut, Decimal::ZERO.max(heures_annexes), compl.seuil_smic.map(|n| n.0))? {
-                taux_pat = Some(round3(taux_pat.ok_or_else(manque)? + compl.taux));
+                taux_pat = Some(taux_compose(add(taux_pat.ok_or_else(manque)?, compl.taux)));
             }
         }
         // La CET des cadres, fondue dans T1 et T2 : l'arrondi se fait en deux parts.
@@ -1629,31 +1629,36 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
                     Some(c) => c,
                     None => vec![taux_pat.ok_or_else(manque)?],
                 };
-                *cp.last_mut().unwrap() += cet_pat;
+                // Le dernier composant prend la CET, sans arrondi : chaque composant s'arrondit au centime (`somme_pct`).
+                if let Some(d) = cp.last_mut() {
+                    *d = court(add(*d, cet_pat));
+                }
                 let mut cs = match comp_sal.take() {
                     Some(c) => c,
                     None => vec![taux_sal.ok_or_else(manque)?],
                 };
-                *cs.last_mut().unwrap() += cet_sal;
+                if let Some(d) = cs.last_mut() {
+                    *d = court(add(*d, cet_sal));
+                }
                 comp_pat = Some(cp);
                 comp_sal = Some(cs);
-                taux_pat = Some(round3(taux_pat.ok_or_else(manque)? + cet_pat));
-                taux_sal = Some(round3(taux_sal.ok_or_else(manque)? + cet_sal));
+                taux_pat = Some(taux_compose(add(taux_pat.ok_or_else(manque)?, cet_pat)));
+                taux_sal = Some(taux_compose(add(taux_sal.ok_or_else(manque)?, cet_sal)));
             }
         }
         let composants = non_vide(&r.composants);
         for a in &assiettes_r {
             if let Some(c) = &composants {
-                m_pat += somme_pct(*a, c)?;
+                m_pat += somme_pct(*a, c);
             } else if let Some(c) = &comp_pat {
-                m_pat += somme_pct(*a, c)?;
+                m_pat += somme_pct(*a, c);
             } else if let Some(t) = taux_pat {
-                m_pat += pct(*a, dec_f64(t)?);
+                m_pat += pct(*a, t);
             }
             if let Some(c) = &comp_sal {
-                m_sal += somme_pct(*a, c)?;
+                m_sal += somme_pct(*a, c);
             } else if let Some(t) = taux_sal {
-                m_sal += pct(*a, dec_f64(t)?);
+                m_sal += pct(*a, t);
             }
         }
         lignes.push(LigneCotisation {
@@ -1957,9 +1962,9 @@ devine pas.",
             l.quantite().iter().map(Decimal::to_string).collect::<String>()
         ));
     }
-    let legale = dec_f64(nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree("contrats-base.json", &format!("{}.quotite_reference_defaut", nat.libelle)))?)?;
+    let legale = nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree("contrats-base.json", &format!("{}.quotite_reference_defaut", nat.libelle)))?;
     let reference = match e.quotite_reference()? {
-        Some(r) => legale.min(dec_f64(r)?),
+        Some(r) => legale.min(r),
         None => legale,
     };
     // « majoree du nombre d'heures complementaires » : celles que le moteur compose du fait du mois (`heures_en_plus`).
@@ -2015,7 +2020,7 @@ impl Paie {
             heures: self.heures,
             heures_absence: self.heures_absence,
             heures_travaillees: self.heures_travaillees,
-            lignes: self.lignes.iter().map(LigneCotisation::forme).collect::<R<_>>()?,
+            lignes: self.lignes.iter().map(LigneCotisation::forme).collect(),
             net_a_payer: self.net_a_payer,
             net_imposable: self.net_imposable,
             net_social: self.net_social,
@@ -2025,7 +2030,7 @@ impl Paie {
             salaire_de_base: self.salaire_de_base,
             salaire_retabli: self.salaire_retabli,
             salarie: Cle { cle: self.salarie.id.to_string() },
-            smic: dec_f64(self.smic)?,
+            smic: court(self.smic),
             spectacle: self.spectacle.as_ref().map(|s| Cle { cle: s.cle.to_string() }),
             total_pat: self.total_pat,
             total_sal: self.total_sal,

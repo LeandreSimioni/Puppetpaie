@@ -28,34 +28,16 @@ fn exige<T: AsRef<str>>(c: &Option<T>, cle: &str) -> R<String> {
     c.ecrite(cle).map(str::to_string)
 }
 
-/// `"%g" % x`.
-pub fn format_g(x: f64) -> String {
-    if x == 0.0 {
-        return "0".into();
-    }
-    if !x.is_finite() {
-        return if x.is_nan() { "nan" } else if x > 0.0 { "inf" } else { "-inf" }.into();
-    }
-    let t = format!("{:.5e}", x);
-    let (m, e) = t.split_once('e').unwrap();
-    let e: i32 = e.parse().unwrap();
-    let rogner = |s: String| -> String {
-        if s.contains('.') {
-            s.trim_end_matches('0').trim_end_matches('.').to_string()
-        } else {
-            s
-        }
-    };
-    if !(-4..6).contains(&e) {
-        format!("{}e{}{:02}", rogner(m.to_string()), if e < 0 { '-' } else { '+' }, e.abs())
-    } else {
-        rogner(format!("{:.*}", (5 - e) as usize, x))
-    }
+/// Un effectif tel qu'un message l'ecrit : six chiffres significatifs au plus, au pair sur le demi, sans zeros
+/// inutiles (`2.5`, `12`).
+fn effectif_ecrit(x: Decimal) -> String {
+    let entiers = x.trunc().abs().to_string().trim_start_matches('0').len() as u32;
+    x.round_dp_with_strategy(6u32.saturating_sub(entiers), rust_decimal::RoundingStrategy::MidpointNearestEven).normalize().to_string()
 }
 
-/// Un nombre a virgule, sans zeros inutiles.
-fn nombre_fr(x: f64) -> String {
-    format_g(x).replace('.', ",")
+/// Un effectif a virgule, sans zeros inutiles.
+fn nombre_fr(x: Decimal) -> String {
+    effectif_ecrit(x).replace('.', ",")
 }
 
 // ------------------------------------------------- la recherche floue
@@ -150,7 +132,7 @@ const PLUS_PETIT_SEUIL: i64 = 11;
 /// (`envois::releve_retours::poser_effectif`), qu'un 118 de la meme annee remplace.
 #[derive(Debug, Clone, Default)]
 pub struct Effectif {
-    pub annees: BTreeMap<i32, f64>,
+    pub annees: BTreeMap<i32, Decimal>,
     /// L'annee de la premiere embauche (fiche entreprise) : avant elle, zero.
     pub premiere_embauche: Option<i32>,
     /// La fiche dit la compagnie d'au moins cinquante salaries (`cinquante_salaries_et_plus`, une compagnie qui emploie des
@@ -173,7 +155,7 @@ pub struct UnCsePossible(());
 pub struct CinquanteSalaries(());
 
 /// Le seuil du comite social et economique (C. trav. L2311-2).
-const SEUIL_DU_CSE: f64 = 11.0;
+const SEUIL_DU_CSE: i64 = 11;
 /// Les annees civiles avant celle lue ou un effectif d'au moins onze salaries laisse un comite exister : un mandat de
 /// quatre ans au plus (L2314-33, L2314-34), renouvele tant que l'effectif n'est pas reste sous onze salaries les douze
 /// mois d'avant son terme (L2313-10). Un mandat renouvele au plus tard un an apres le dernier mois a onze court quatre
@@ -206,7 +188,8 @@ struct FichierEffectifs {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EffectifEcrit {
-    valeur: f64,
+    #[serde(deserialize_with = "socle::forme::court")]
+    valeur: Decimal,
     #[serde(rename = "calcule_le")]
     _calcule_le: Option<socle::paris::InstantEcrit>,
     #[serde(rename = "source")]
@@ -234,18 +217,18 @@ pub fn effectif_de(racine: &Path, fiche: &ChampsEntreprise) -> R<Effectif> {
 }
 
 impl Effectif {
-    pub fn annee(&self, a: i32) -> Option<f64> {
+    pub fn annee(&self, a: i32) -> Option<Decimal> {
         if let Some(v) = self.annees.get(&a) {
             return Some(*v);
         }
         match self.premiere_embauche {
-            Some(p) if a < p => Some(0.0),
+            Some(p) if a < p => Some(Decimal::ZERO),
             _ => None,
         }
     }
 
     /// L'effectif le plus recent connu pour payer en `annee_paie`, ou `None`.
-    pub fn valeur(&self, annee_paie: i32) -> Option<f64> {
+    pub fn valeur(&self, annee_paie: i32) -> Option<Decimal> {
         match self.annees.range(..annee_paie).next_back() {
             Some((_, v)) => Some(*v),
             None => self.annee(annee_paie - 1),
@@ -258,13 +241,13 @@ impl Effectif {
     /// par mois, de L1111-2 que le code du travail compte : c'est le seul que le moteur connaisse. `None` : aucune de ces
     /// annees n'atteint onze salaries, ou leur effectif n'est pas connu (`a_dire` le demande).
     pub fn cse(&self, annee: i32) -> Option<UnCsePossible> {
-        (annee - ANNEES_DU_CSE..annee).any(|a| self.annee(a).is_some_and(|v| v >= SEUIL_DU_CSE)).then_some(UnCsePossible(()))
+        (annee - ANNEES_DU_CSE..annee).any(|a| self.annee(a).is_some_and(|v| v >= Decimal::from(SEUIL_DU_CSE))).then_some(UnCsePossible(()))
     }
 
     /// LA CLE DE CINQUANTE SALARIES pour `annee` (`CinquanteSalaries`) : la fiche dit la compagnie d'au moins cinquante
     /// salaries (`cinquante_salaries`), et l'effectif connu le plus recent (`valeur`) l'atteint.
     pub fn cinquante(&self, annee: i32) -> Option<CinquanteSalaries> {
-        (self.cinquante_salaries && self.valeur(annee).is_some_and(|v| v >= GRAND_SEUIL as f64)).then_some(CinquanteSalaries(()))
+        (self.cinquante_salaries && self.valeur(annee).is_some_and(|v| v >= Decimal::from(GRAND_SEUIL))).then_some(CinquanteSalaries(()))
     }
 
     /// LES ANNEES DONT L'EFFECTIF MANQUE POUR LES TAUX DE LA PAIE EN `annee_paie` : celles des cinq dernieres que le plus
@@ -287,8 +270,8 @@ impl Effectif {
             return Ok(false);
         }
         let fenetre = annee_paie - ANNEES_CONSECUTIVES..annee_paie;
-        let connues: BTreeMap<i32, f64> = fenetre.clone().filter_map(|a| self.annee(a).map(|v| (a, v))).collect();
-        if connues.values().any(|v| *v < seuil as f64) {
+        let connues: BTreeMap<i32, Decimal> = fenetre.clone().filter_map(|a| self.annee(a).map(|v| (a, v))).collect();
+        if connues.values().any(|v| *v < Decimal::from(seuil)) {
             return Ok(false);
         }
         if connues.len() == ANNEES_CONSECUTIVES as usize {
@@ -891,7 +874,7 @@ qu'une decision a ete prise, pas laquelle -- comme pour le taux \
 AT/MP, que lui seul ne peut pas connaitre.",
         an,
         match eff.valeur(an) {
-            Some(n) => format_g(n),
+            Some(n) => effectif_ecrit(n),
             None => "?".to_string(),
         },
         noms.join(", "),
@@ -1290,13 +1273,8 @@ impl Contexte {
     /// l'etablissement, notifie par l'Assurance Maladie : il ne se devine pas, il se lit, ici du bulletin d'un autre
     /// logiciel qui l'a applique. Rien ne s'ecrit ; une compagnie qui a pose le sien garde le sien.
     pub fn avec_le_taux_atmp_lu(mut self, an: i32, valeur: Decimal) -> Contexte {
-        // Le taux tel qu'un bareme l'ecrit : sa forme la plus courte (`socle::forme::decimal`).
-        // Sans ses zeros de queue, un entier gardant sa decimale (`1.0`), comme `socle::num::dec_f64` l'ecrit.
-        let mut ecrit = valeur.normalize();
-        if ecrit.scale() == 0 {
-            ecrit.rescale(1);
-        }
-        self.atmp_lu = Some((an, ecrit));
+        // Le taux tel qu'un bareme l'ecrit : sa forme la plus courte, un entier gardant sa decimale (`1.0`).
+        self.atmp_lu = Some((an, socle::num::court(valeur)));
         self
     }
 
@@ -1628,10 +1606,10 @@ PSS_H_METROP).",
 
     /// Le SMIC horaire applicable a la date (le bareme liste les revalorisations ; la derniere dont `depuis <= date`
     /// gagne).
-    pub fn smic(&self, jour: &Jour) -> R<f64> {
+    pub fn smic(&self, jour: &Jour) -> R<Decimal> {
         let lue = self.pile_lue(jour, &self.entreprise_au(jour))?;
         match smic_en_vigueur(&lue.pile.smic_horaire, jour)? {
-            Some((_, v)) => v.to_string().parse::<f64>().map_err(|e| refus(e.to_string())),
+            Some((_, v)) => Ok(socle::num::court(v)),
             None => Err(socle::refus!("Aucun SMIC applicable au {} dans le bareme.", jour.iso())),
         }
     }

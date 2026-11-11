@@ -26,9 +26,9 @@ fn releve(e: &Engagement) -> Value {
     let par_lieu = |p: bool| {
         Value::Array(e.dates_par_lieu(p).into_iter().map(|(l, ds)| json!([l, iso(&ds)])).collect())
     };
-    let nombre = |o: Option<f64>| match o {
+    let nombre = |o: Option<socle::num::Decimal>| match o {
         None => Ok(Value::Null),
-        Some(x) => socle::num::dec_f64(x).map(|v| Value::String(socle::num::nombre(v))),
+        Some(x) => Ok(Value::String(socle::num::nombre(x))),
     };
     let mut extras = Map::new();
     extras.insert("dates_du_contrat".into(), essai(Ok(iso(&jours))));

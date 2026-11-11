@@ -577,7 +577,7 @@ impl Importe {
         if lignes_lues.is_empty() {
             lignes_lues.push(LigneImprimee { libelle: "brut déclaré".into(), montant: Some(brut), soumis: true, ..Default::default() });
         }
-        let quotite = p.quotite.map(socle::num::flottant);
+        let quotite = p.quotite.map(socle::num::court);
         let mut engagement = crate::Engagement {
             salarie: cle.clone(),
             nom: crate::qui_de(&sal)?,
@@ -633,13 +633,13 @@ impl Importe {
         let cachets = remuneration.iter().filter(|r| r.unite == "cachet").map(|r| r.quantite).sum::<Decimal>().trunc().to_string();
         engagement.cachets = cachets.parse().map_err(|_| socle::echec::refus(socle::num::illisible(&cachets)))?;
         let heures: Decimal = remuneration.iter().map(|r| r.heures_annexes).sum();
-        engagement.heures = (!heures.is_zero()).then(|| crate::conges::flot(heures));
+        engagement.heures = (!heures.is_zero()).then(|| socle::num::court(heures));
         engagement.jours = engagement.dates_travail.len() as i64;
         engagement.jours_contrat = engagement.jours;
 
         // Les lignes de cotisation du bulletin, sous leur cotisation ; une ligne que l'import n'a pas qualifiee garde
         // son libelle, sans cotisation.
-        let taux = |x: Option<Decimal>| x.map(socle::num::flottant);
+        let taux = |x: Option<Decimal>| x.map(socle::num::court);
         let cotisations: Vec<LigneCotisation> = p
             .cotisations
             .iter()
@@ -688,7 +688,7 @@ impl Importe {
         }
 
         let tp = PlafondTempsPartiel::NonConcerne;
-        let mut paie = Paie::nouveau(engagement, sal, spec, brut, base_csg, tu_vaut_zero(plafond), 0.0, zero, tp);
+        let mut paie = Paie::nouveau(engagement, sal, spec, brut, base_csg, tu_vaut_zero(plafond), Decimal::ZERO, zero, tp);
         let c = paie.ecrire();
         c.lignes = cotisations;
         c.remuneration = remuneration;
@@ -701,7 +701,7 @@ impl Importe {
         c.numero_bulletin = p.bulletin.as_ref().and_then(|b| b.numero.clone()).filter(|n| !n.is_empty());
         c.bases = bases;
         c.pas = p.pas.map(|prelevement| droit::pas::Versement {
-            taux: p.taux_pas.map(socle::num::flottant).map(droit::fiche::Montant::Flottant),
+            taux: p.taux_pas.map(socle::num::court).map(droit::fiche::Montant::Flottant),
             type_taux: p.type_pas.clone(),
             identifiant: p.identifiant_pas.clone(),
             abattement: zero,

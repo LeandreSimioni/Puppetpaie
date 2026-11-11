@@ -10,7 +10,7 @@ use crate::paie_ecrite::FormeDePaie;
 use crate::{Avis, Engagement, LignePaie};
 use droit::contexte::Contexte;
 use socle::echec::R;
-use socle::num::Decimal;
+use socle::num::court;
 
 /// La forme ecrite d'une paie : sa forme canonique, ses avertissements (`{"texte", "info"}`), les lignes de son
 /// engagement telles quelles (celles d'un permanent, deduites) et le plafond d'un temps partiel.
@@ -18,10 +18,6 @@ pub fn ecrire(ctx: &Contexte, p: &Paie) -> R<FormeDePaie<Avis>> {
     p.forme(ctx, &Avis::clone, true)
 }
 
-/// Le flottant d'un decimal ecrit.
-fn en_f64(x: Decimal) -> f64 {
-    socle::num::flottant(x)
-}
 
 /// Les engagements de la saisie `data`, construits sans rien chiffrer, puis ce que le calcul a pose dessus : le numero
 /// (quand l'engagement n'en porte pas),
@@ -100,7 +96,7 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
         Some(crate::fiche_du_spectacle(ctx, eng.spectacle.as_ref().ok_or_else(|| socle::fichiers::absent("spectacle"))?)?)
     };
     let tp = PlafondTempsPartiel::lire(v.plafond_temps_partiel.as_deref().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "plafond_temps_partiel"))?)?;
-    let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut, v.base_csg, v.plafond, en_f64(v.smic), v.heures, tp);
+    let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut, v.base_csg, v.plafond, court(v.smic), v.heures, tp);
     let p = paie.ecrire();
     p.total_pat = v.total_pat;
     p.total_sal = v.total_sal;
@@ -126,8 +122,8 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
         let mut sub = eng.clone();
         sub.periode = Some((e.debut_periode, e.fin_periode));
         sub.lignes = e.lignes.clone();
-        sub.quotite_contrat = Some(en_f64(e.quotite));
-        sub.heures = e.heures.map(en_f64);
+        sub.quotite_contrat = Some(court(e.quotite));
+        sub.heures = e.heures.map(court);
         p.periodes.push(paie_lue(ctx, sub, x, periodes.get(n), &[])?);
     }
     Ok(paie)

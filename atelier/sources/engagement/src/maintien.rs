@@ -53,10 +53,13 @@ pub const IJ_BRUTES: &str = "ijss_brutes";
 /// Ce que dit le refus d'un mois dont les indemnites journalieres manquent : une saisie a finir (`saisie_incomplete`).
 pub const IJ_A_DIRE: &str = ", à dire sur l'arrêt (« Indemnités journalières »)";
 
-/// L'entier d'un nombre saisi (un flottant tronque) ; refus sinon.
+/// L'entier d'un nombre saisi (un nombre a virgule tronque) ; refus sinon.
 fn entier(c: &Chiffre) -> R<i64> {
     match c {
-        Chiffre::Nombre(n) => n.as_i64().or_else(|| n.as_f64().map(|x| x.trunc() as i64)).ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&n.to_string()))),
+        Chiffre::Nombre(n) => n
+            .as_i64()
+            .or_else(|| n.decimal().ok().and_then(|d| rust_decimal::prelude::ToPrimitive::to_i64(&d.trunc())))
+            .ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&n.to_string()))),
         Chiffre::Texte(s) => s.trim().parse::<i64>().map_err(|_| socle::refus!("nombre entier illisible : {}", socle::fichiers::repr(s))),
     }
 }

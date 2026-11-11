@@ -31,12 +31,9 @@ pub enum Chiffre {
 }
 
 impl Chiffre {
-    /// Un flottant, en nombre.
-    pub fn de_f64(x: f64) -> Chiffre {
-        match NombreLu::de_f64(x) {
-            Some(n) => Chiffre::Nombre(n),
-            None => Chiffre::Texte(socle::date::repr_flottant(x)),
-        }
+    /// Un decimal, en nombre a virgule (`NombreLu::de_decimal`).
+    pub fn de_decimal(x: Decimal) -> Chiffre {
+        Chiffre::Nombre(NombreLu::de_decimal(x))
     }
 
     /// Un entier, en nombre.
@@ -52,39 +49,36 @@ impl Chiffre {
     /// Ni zero, ni un texte vide.
     pub fn vrai(&self) -> bool {
         match self {
-            Chiffre::Nombre(n) => n.en_f64() != 0.0,
+            Chiffre::Nombre(n) => n.decimal().is_ok_and(|d| !d.is_zero()),
             Chiffre::Texte(s) => !s.is_empty(),
         }
     }
 
-    /// Le decimal : un entier tel quel, un flottant par sa forme la plus courte, un texte lu.
+    /// Le decimal : un entier tel quel, un nombre a virgule par sa forme la plus courte, un texte lu.
     pub fn dec(&self) -> R<Decimal> {
         match self {
-            Chiffre::Nombre(n) => match (n.as_i64(), n.as_u64()) {
-                (Some(i), _) => Ok(Decimal::from(i)),
-                (_, Some(u)) => Ok(Decimal::from(u)),
-                _ => socle::num::dec_f64(n.en_f64()),
-            },
+            Chiffre::Nombre(n) => n.decimal(),
             Chiffre::Texte(s) => socle::num::dec_texte(s),
         }
     }
 
-    /// Le decimal dont un flottant garde son echelle (`130.0`, sa forme ecrite).
+    /// Le decimal dont un nombre a virgule garde son echelle (`130.0`, sa forme ecrite).
     pub fn dec_avec_echelle(&self) -> R<Decimal> {
         match self {
             Chiffre::Nombre(n) if n.as_i64().is_none() && n.as_u64().is_none() => {
-                let s = socle::date::repr_flottant(n.en_f64());
+                let s = n.ecrit();
                 socle::num::dec_texte(&s).map_err(|_| socle::refus!("nombre hors de portee : {}", s))
             }
             autre => autre.dec(),
         }
     }
 
-    /// Le flottant : un nombre, ou un nombre ecrit en texte.
-    pub fn flottant(&self) -> R<f64> {
+    /// Le taux, la quantite ou la quotite qu'il dit, dans sa forme la plus courte (`socle::num::court`) : un nombre, ou
+    /// un nombre ecrit en texte (sans virgule).
+    pub fn court(&self) -> R<Decimal> {
         match self {
-            Chiffre::Nombre(n) => n.as_f64().ok_or_else(|| socle::refus!("nombre illisible : {}", n)),
-            Chiffre::Texte(s) => s.trim().parse::<f64>().map_err(|_| refus(socle::num::illisible(s))),
+            Chiffre::Nombre(n) => n.decimal().map(socle::num::court),
+            Chiffre::Texte(s) => socle::num::dec_texte(s).map(socle::num::court).map_err(|_| refus(socle::num::illisible(s))),
         }
     }
 
@@ -92,11 +86,7 @@ impl Chiffre {
     pub fn en_texte(&self) -> String {
         match self {
             Chiffre::Texte(s) => s.clone(),
-            Chiffre::Nombre(n) => match (n.as_i64(), n.as_u64()) {
-                (Some(i), _) => i.to_string(),
-                (_, Some(u)) => u.to_string(),
-                _ => socle::date::repr_flottant(n.en_f64()),
-            },
+            Chiffre::Nombre(n) => n.ecrit(),
         }
     }
 
@@ -476,11 +466,6 @@ impl LignePaie {
             LignePaie::IndemniteJournaliere(_) | LignePaie::Maintien(_) => Some(Decimal::ZERO),
             LignePaie::Unites(_) | LignePaie::Frais(_) | LignePaie::Pourcentage(_) | LignePaie::Montant(_) | LignePaie::AvantageEnNature(_) | LignePaie::RetenueArret(_) => None,
         }
-    }
-
-    /// Ses heures dites, en flottant (`None` : rien n'est dit).
-    pub fn heures_lues(&self) -> Option<f64> {
-        self.heures().map(socle::num::flottant)
     }
 
     /// Ses jours du mois.

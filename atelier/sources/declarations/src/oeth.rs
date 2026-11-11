@@ -11,7 +11,7 @@ use socle::echec::{refus_avec, Lieu, R};
 use socle::fichiers::repr;
 use socle::forme::Nombre;
 use socle::texte::{euros, virgule};
-use socle::num::{add, dec_f64, eur2, mul, sub, Decimal};
+use socle::num::{add, eur2, mul, sub, Decimal};
 use std::collections::BTreeMap;
 
 const SEUIL: i64 = 20;
@@ -431,7 +431,7 @@ pub fn smic_au_31_decembre(ctx: &Contexte, millesime: i32) -> R<Decimal> {
     let socle = droit::contexte::socle_livre_lu(millesime)?;
     let liste = match socle.as_ref().map(|s| &s.smic_horaire) {
         Some(l) if !l.is_empty() => l,
-        _ => return dec_f64(ctx.smic(&jour)?),
+        _ => return ctx.smic(&jour),
     };
     let mut entrees: Vec<&droit::forme_bareme::Datee> = liste.iter().collect();
     // Une valeur sans `depuis` est celle de tout temps (`droit::forme_bareme::Datee`) : elle vient avant les autres.

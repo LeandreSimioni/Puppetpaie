@@ -65,7 +65,7 @@ fn decimal(t: &TauxAtmp) -> R<Option<Decimal>> {
 pub(crate) fn recue(ctx: &Contexte, n: &envois::retours::TauxAtmpNotifie, le: Option<Jour>, source: &str) -> R<Option<String>> {
     let t = TauxAtmp {
         code_risque: Some(n.code_risque.clone()),
-        valeur: Some(Montant::Flottant(socle::num::flottant(n.taux))),
+        valeur: Some(Montant::Flottant(socle::num::court(n.taux))),
         depuis: Some(n.date_effet),
         provenance: Some(ProvenanceAtmp::Notification),
         notification: Some(NotificationAtmp { le, calcul: n.date_calcul, effet: Some(n.date_effet) }),
@@ -120,7 +120,7 @@ pub(crate) fn inscrire_l_arrete(ctx: &Contexte, an: i32) -> R<Vec<String>> {
         let t = bareme::taux_de_l_arrete(r, neuf, alsace)?;
         Some(TauxAtmp {
             code_risque: Some(code),
-            valeur: Some(Montant::Flottant(socle::num::flottant(t))),
+            valeur: Some(Montant::Flottant(socle::num::court(t))),
             depuis: Some(match de_l_annee {
                 Some(d) => d.max(depuis),
                 None => depuis,

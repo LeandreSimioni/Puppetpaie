@@ -586,7 +586,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<String>)> 
         fin: eng.fin,
         numero: eng.numero.as_ref().map(|n| n.to_string()),
         jours: Some(engagement::Chiffre::entier(jours + eng.jours)),
-        taux_cachet: eng.taux_cachet.map(engagement::Chiffre::de_f64),
+        taux_cachet: eng.taux_cachet.map(engagement::Chiffre::de_decimal),
         date_paiement: eng.date_paiement.clone(),
         lieu: Some(eng.lieu.clone()),
         emploi: eng.emploi.clone(),

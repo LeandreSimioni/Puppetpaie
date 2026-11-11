@@ -187,8 +187,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     manque.insert(format!("{} ({})", id, c.libelle));
                     continue;
                 };
-                let ts = c.taux_sal.map(documents::etats_paie::dec_taux).transpose()?;
-                let tp = c.taux_pat.map(documents::etats_paie::dec_taux).transpose()?;
+                let (ts, tp) = (c.taux_sal, c.taux_pat);
                 if id == "reduction_generale" {
                     if let Some(rg) = &paie.reduction_generale {
                         let mut reparti = zero;
@@ -711,7 +710,7 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             Some(eff) => Some(
                 tranches
                     .iter()
-                    .find(|x| x.jusqu_a.is_none_or(|j| eff <= j as f64))
+                    .find(|x| x.jusqu_a.is_none_or(|j| eff <= socle::num::Decimal::from(j)))
                     .ok_or_else(|| socle::echec::cle("Le barème de l'année est incomplet : le signaler au développeur.", "tranches").reclasser(Classe::Manque))?
                     .taux,
             ),

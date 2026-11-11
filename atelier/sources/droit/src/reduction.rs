@@ -10,15 +10,11 @@ use serde::Serialize;
 
 use crate::forme_bareme::ReductionGenerale as Parametres;
 use socle::echec::R;
-use socle::num::{add, dec_f64, div, eur, mul, nombre, sub, Decimal};
+use socle::num::{add, div, eur, mul, nombre, sub, Decimal};
 
 /// Un parametre exige de la section.
 fn requis(v: Option<Decimal>, cle: &str) -> R<Decimal> {
     v.ok_or_else(|| socle::fichiers::absent(cle))
-}
-
-fn en_f64(x: Decimal) -> f64 {
-    socle::num::flottant(x)
 }
 
 /// Quatre decimales, la moitie vers le haut, l'echelle gardee.
@@ -83,8 +79,8 @@ pub fn reduction_generale(
         coefficient = quantifier4(t.min(x));
     } else {
         let crochet = Decimal::ONE.min(div(sub(diviser(mul(plafond, smic_ref), brut)?, Decimal::ONE), Decimal::TWO));
-        let puissance = en_f64(requis(rg.puissance.map(|n| n.0), "puissance")?);
-        let terme = dec_f64(en_f64(crochet).powf(puissance))?;
+        let puissance = requis(rg.puissance.map(|n| n.0), "puissance")?;
+        let terme = crochet.checked_powd(puissance).ok_or_else(|| socle::refus!("la réduction générale ne se calcule pas : {} puissance {}", crochet, puissance))?;
         coefficient = add(requis(rg.tmin.map(|n| n.0), "tmin")?, mul(requis(rg.tdelta.map(|n| n.0), "tdelta")?, terme));
     }
     if let Some(t) = rg.majoration_caisse_conges.as_deref().filter(|t| !t.is_empty()) {

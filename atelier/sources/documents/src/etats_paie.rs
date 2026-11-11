@@ -919,8 +919,8 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     None => l.rien("code"),
                 };
                 l.t("libelle", c.libelle.clone()).d("base", eur2(c.base));
-                l.od("taux_sal", c.taux_sal.map(dec_taux).transpose()?).d("part_sal", eur2(c.montant_sal));
-                l.od("taux_pat", c.taux_pat.map(dec_taux).transpose()?).d("part_pat", eur2(c.montant_pat));
+                l.od("taux_sal", c.taux_sal).d("part_sal", eur2(c.montant_sal));
+                l.od("taux_pat", c.taux_pat).d("part_pat", eur2(c.montant_pat));
                 lignes.push(l);
             }
             for (lib, v) in [("Net imposable", paie.net_imposable), ("Net à payer avant impôt", paie.net_a_payer)] {

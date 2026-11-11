@@ -162,7 +162,7 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
         if e.cachets != 0 {
             volume.push(format!("{} cachet{}", e.cachets, if e.cachets > 1 { "s" } else { "" }));
         }
-        if let Some(h) = e.heures.filter(|h| *h != 0.0) {
+        if let Some(h) = e.heures.map(socle::num::flottant).filter(|h| *h != 0.0) {
             let dec = heures_en_decimal(h)?;
             volume.push(format!("{} heure{}", fmt_heures(dec), if h > 1.0 { "s" } else { "" }));
         }
@@ -252,7 +252,7 @@ pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
         let e = &p.engagement;
         let mut dates = e.dates_travail.clone();
         dates.sort();
-        let heures = e.heures.filter(|h| *h != 0.0).map(|h| heures_en_decimal(h).map(fmt_heures)).transpose()?;
+        let heures = e.heures.map(socle::num::flottant).filter(|h| *h != 0.0).map(|h| heures_en_decimal(h).map(fmt_heures)).transpose()?;
         let spectacle = p.spectacle.as_ref().and_then(|s| s.titre.dite()).filter(|t| !t.is_empty()).cloned();
         contrats.push(ContratResume {
             debut: e.debut,

@@ -53,6 +53,17 @@ pub fn dec_f64(x: f64) -> R<Decimal> {
     match Decimal::from_str(&s).or_else(|_| Decimal::from_scientific(&s)) { Ok(d) => Ok(d), Err(_) => Err(refus(format!("nombre hors de portee : {}", s))) }
 }
 
+/// LA FORME LA PLUS COURTE D'UN DECIMAL, une decimale au moins (`24` et `24.00` s'ecrivent `24.0`, `0.10` s'ecrit
+/// `0.1`) : celle que `dec_f64` donne du meme nombre, et que gardent les taux, quantites et quotites que le calcul lit
+/// (`forme::court`).
+pub fn court(x: Decimal) -> Decimal {
+    let mut c = x.normalize();
+    if c.scale() == 0 {
+        c.rescale(1);
+    }
+    c
+}
+
 /// Deux decimales, la moitie toujours vers le haut (jamais au pair) : le cent le plus proche, le milieu au cent superieur
 /// (reglement (CE) n° 1103/97, art. 5, `atelier/reference/sources/arrondi-euro/eurlex-reglement-1103-97-introduction-euro-19970619.txt` ;
 /// lu comme la regle de tout montant du bulletin, et d'un negatif comme de son oppose : inferences dites au
@@ -64,16 +75,6 @@ pub fn eur(x: Decimal) -> Decimal {
 /// Un taux en pourcentage applique, arrondi au centime.
 pub fn pct(base: Decimal, taux: Decimal) -> Decimal {
     eur(div(mul(base, taux), Decimal::ONE_HUNDRED))
-}
-
-/// Un flottant a trois decimales (arrondi correct, au pair sur le
-/// demi exact), par sa forme ecrite.
-pub fn round3(x: f64) -> f64 {
-    // Un flottant ecrit par Rust se relit toujours (`NaN` et `inf` compris).
-    match format!("{:.3}", x).parse() {
-        Ok(y) => y,
-        Err(e) => unreachable!("un flottant écrit par Rust se relit : {} ({})", x, e),
-    }
 }
 
 /// Une somme de montants, à deux décimales au moins.

@@ -59,7 +59,7 @@ use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
 use droit::emplois;
 
-use socle::{echec::{refus, Echec, R}, num::{dec_f64, Decimal}};
+use socle::{echec::{refus, Echec, R}, num::{court, Decimal}};
 
 #[derive(Debug, Clone)]
 pub struct Engagement {
@@ -89,9 +89,9 @@ pub struct Engagement {
     pub versement: droit::versement::Versement,
     /// Le taux de la premiere ligne de cachet ; sans cachet, celui que l'engagement ou son mois ecrit ; sinon `None`
     /// (regle 1 : aucun taux par defaut, aucun texte n'en fixe).
-    pub taux_cachet: Option<f64>,
+    pub taux_cachet: Option<Decimal>,
     pub cachets: i64,
-    pub heures: Option<f64>,
+    pub heures: Option<Decimal>,
     pub lieu: String,
     pub lieux: BTreeMap<Jour, String>,
     pub emploi: Option<String>,
@@ -108,8 +108,8 @@ pub struct Engagement {
     pub etablissement: Option<String>,
     /// Sa nature de contrat, toujours dite (regle 6).
     pub nature: NatureDeContrat,
-    pub quotite_contrat: Option<f64>,
-    pub quotite_reference_saisie: Option<f64>,
+    pub quotite_contrat: Option<Decimal>,
+    pub quotite_reference_saisie: Option<Decimal>,
     pub modalite_temps_travail_saisie: Option<ModaliteDuTempsDeTravail>,
     pub motif_recours: Option<MotifDeRecours>,
     pub motif_rupture: Option<MotifDeRupture>,
@@ -212,7 +212,7 @@ fn entier_dit(v: &Option<Chiffre>, nom: &str) -> R<Option<i64>> {
         None => Ok(None),
         Some(Chiffre::Nombre(n)) => n
             .as_i64()
-            .or_else(|| n.as_f64().filter(|f| f.fract() == 0.0).map(|f| f as i64))
+            .or_else(|| n.decimal().ok().filter(|d| d.fract().is_zero()).and_then(|d| rust_decimal::prelude::ToPrimitive::to_i64(&d)))
             .map(Some)
             .ok_or_else(|| socle::echec::a_la_cle("Un nombre entier est attendu.", nom, n)),
         Some(autre) => Err(socle::echec::a_la_cle("Un nombre entier est attendu.", nom, socle::date::repr_texte(&autre.en_texte()))),
@@ -318,8 +318,8 @@ impl Engagement {
         }
 
         // Ce que la declaration compte : cachets et heures, derives des lignes.
-        let mut cachets_somme = 0.0;
-        let mut autres = 0.0;
+        let mut cachets_somme = Decimal::ZERO;
+        let mut autres = Decimal::ZERO;
         let mut premier_cachet: Option<&LignePaie> = None;
         // Les rubriques se lisent a la fin du mois paye (le mois dit, sinon celui de la premiere date jouee).
         let jour_lu = match (mois_saisi, jours_joues.first()) {
@@ -329,7 +329,7 @@ impl Engagement {
         };
         for l in &lignes {
             let r = rubrique(racine, l.rubrique(), &jour_lu)?;
-            let q = socle::num::flottant(l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?);
+            let q = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
             if r.unite == "cachet" {
                 cachets_somme += q;
                 premier_cachet.get_or_insert(l);
@@ -337,24 +337,25 @@ impl Engagement {
                 // Le signe porte aussi sur les heures, comme au calcul
                 // (`calcul::lignes_brut`) : une absence en retire. Un acompte,
                 // au forfait et sans heures, n'en retire aucune.
-                let signe = if r.sens == "-" { -1.0 } else { 1.0 };
-                autres += signe * r.heures(q, l.heures_lues());
+                let h = r.heures(q, l.heures());
+                autres += if r.sens == "-" { -h } else { h };
             }
         }
-        let cachets = cachets_somme as i64;
+        // Un nombre de cachets se compte en entiers : la partie entiere de la somme.
+        let cachets = rust_decimal::prelude::ToPrimitive::to_i64(&cachets_somme.trunc()).ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&cachets_somme.to_string())))?;
         // Les heures de travail remunere d'un contrat paye au mois : la quotite payee moins les absences, comptees au reel
         // (`imprevus::lignes_du_mois`). Au reel, un mois entier d'absence (154 h en septembre 2026) depasse la quotite
         // lissee (151,67 h) : l'activite remuneree est alors 0.00, jamais negative -- « Pour un individu entierement
         // absent sur le mois, avec une valeur a « 0.00 » », et « Si une DSN contient une activite negative sur la periode
         // courante, elle sera rejetee par l'assurance chomage » (fiche DSN 2640, `atelier/reference/sources/suspension-
         // non-remuneree/net-entreprises-fiche2640-volumes-activite-s21g00-53-20260929.txt`, « Regles generales »).
-        let autres = if mensuel { autres.max(0.0) } else { autres };
-        let heures = if autres != 0.0 { Some(autres) } else { None };
+        let autres = if mensuel { autres.max(Decimal::ZERO) } else { autres };
+        let heures = if !autres.is_zero() { Some(court(autres)) } else { None };
         // Le taux du cachet : celui de la premiere ligne de cachet ; sans cachet, celui qui est ecrit ; sinon aucun. Un
         // contrat qui ne paie aucun cachet n'a pas de taux de cachet, et le moteur n'en invente pas (regle 1).
-        let mut taux_cachet = v.taux_cachet.as_ref().map(Chiffre::flottant).transpose()?;
+        let mut taux_cachet = v.taux_cachet.as_ref().map(Chiffre::court).transpose()?;
         if let Some(l) = premier_cachet {
-            taux_cachet = Some(socle::num::flottant(l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?));
+            taux_cachet = Some(court(l.taux().ok_or_else(|| socle::fichiers::absent("taux"))?));
         }
 
         // Les jours travailles : un fait qui se saisit, sinon les dates distinctes.
@@ -518,8 +519,8 @@ impl Engagement {
             statut_categoriel_rc: v.statut_categoriel_rc.clone(),
             etablissement: v.etablissement.clone().filter(|t| !t.trim().is_empty()),
             nature,
-            quotite_contrat: v.quotite_contrat.as_ref().map(Chiffre::flottant).transpose()?,
-            quotite_reference_saisie: v.quotite_reference_saisie.as_ref().map(Chiffre::flottant).transpose()?,
+            quotite_contrat: v.quotite_contrat.as_ref().map(Chiffre::court).transpose()?,
+            quotite_reference_saisie: v.quotite_reference_saisie.as_ref().map(Chiffre::court).transpose()?,
             modalite_temps_travail_saisie: v.modalite_temps_travail_saisie.clone(),
             motif_recours: v.motif_recours.clone(),
             motif_rupture: v.motif_rupture.clone(),
@@ -568,7 +569,7 @@ impl Engagement {
             return Ok(Decimal::from(self.jours_contrat));
         }
         match self.quotite_contrat {
-            Some(q) => dec_f64(q),
+            Some(q) => Ok(court(q)),
             None => Err(socle::refus!(
                 "{} : combien d'heures par mois ? La durée du travail se lit sur le contrat signé \
                  (151,67 h pour un temps plein à 35 h) et la DSN la déclare. À taper dans la case « Heures par \
@@ -579,13 +580,13 @@ impl Engagement {
     }
 
     /// S21.G00.40.012 : la quotite de reference de l'entreprise.
-    pub fn quotite_reference(&self) -> R<Option<f64>> {
+    pub fn quotite_reference(&self) -> R<Option<Decimal>> {
         let nat = self.nat()?;
         if !nat.mensuelle() {
-            return Ok(Some(self.jours_contrat as f64));
+            return Ok(Some(court(Decimal::from(self.jours_contrat))));
         }
         Ok(match self.quotite_reference_saisie {
-            Some(q) if q != 0.0 => Some(q),
+            Some(q) if !q.is_zero() => Some(q),
             _ => nat.quotite_reference_defaut(),
         })
     }
@@ -611,7 +612,7 @@ impl Engagement {
         let contrat = self.quotite()?;
         Ok(match reference {
             None => ModaliteDuTempsDeTravail::TempsPlein,
-            Some(r) if contrat >= dec_f64(r)? => ModaliteDuTempsDeTravail::TempsPlein,
+            Some(r) if contrat >= r => ModaliteDuTempsDeTravail::TempsPlein,
             Some(_) => ModaliteDuTempsDeTravail::TempsPartiel,
         })
     }
@@ -713,7 +714,7 @@ impl Engagement {
 
     /// La forme canonique d'un engagement : une ecriture stable, pour les empreintes et les oracles.
     pub fn canon(&self) -> R<paie_ecrite::FormeDEngagement> {
-        let nombre_f = |x: Option<f64>| x.map(dec_f64).transpose();
+        let nombre_f = |x: Option<Decimal>| x.map(court);
         Ok(paie_ecrite::FormeDEngagement {
             salarie: self.salarie.clone(),
             spectacle: self.spectacle.clone(),
@@ -728,9 +729,9 @@ impl Engagement {
             jours: self.jours,
             jours_contrat: self.jours_contrat,
             date_paiement: self.date_paiement.clone(),
-            taux_cachet: nombre_f(self.taux_cachet)?,
+            taux_cachet: nombre_f(self.taux_cachet),
             cachets: self.cachets,
-            heures: nombre_f(self.heures)?,
+            heures: nombre_f(self.heures),
             lieu: self.lieu.clone(),
             lieux: self.lieux.clone(),
             emploi: self.emploi.clone(),
@@ -744,8 +745,8 @@ impl Engagement {
             // Ecrit seulement quand il est dit.
             etablissement: self.etablissement.clone(),
             nature: self.nature,
-            quotite_contrat: nombre_f(self.quotite_contrat)?,
-            quotite_reference_saisie: nombre_f(self.quotite_reference_saisie)?,
+            quotite_contrat: nombre_f(self.quotite_contrat),
+            quotite_reference_saisie: nombre_f(self.quotite_reference_saisie),
             modalite_temps_travail_saisie: self.modalite_temps_travail_saisie.clone(),
             motif_recours: self.motif_recours.clone(),
             motif_rupture: self.motif_rupture.clone(),
@@ -2048,7 +2049,7 @@ pub fn embauche(ctx: &Contexte, eng: &Engagement) -> R<calcul::Paie> {
     };
     let zero = Decimal::new(0, 2);
     let tp = calcul::plafond_temps_partiel(&ctx.entreprise, eng, &sal)?;
-    Ok(calcul::Paie::nouveau(eng.clone(), sal, spec, zero, zero, zero, 0.0, zero, tp))
+    Ok(calcul::Paie::nouveau(eng.clone(), sal, spec, zero, zero, zero, Decimal::ZERO, zero, tp))
 }
 
 /// LA SAISIE LUE SANS PAIE (l'ecran, le panneau, les DPAE a faire) : l'embauche de chaque engagement de la saisie `data`

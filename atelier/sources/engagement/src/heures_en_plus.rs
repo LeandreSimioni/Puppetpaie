@@ -11,14 +11,14 @@ use droit::fiche::Lue;
 use socle::forme::NombreLu;
 
 use crate::calcul::{LigneBrut, LigneCotisation};
-use crate::conges::{avertir, flot, info, qui};
+use crate::conges::{avertir, info, qui};
 use crate::saisie::Carte;
 use crate::Avis;
 use droit::contexte::Contexte;
 use socle::texte::{euros, virgule};
 use socle::echec::{refus, R};
 use socle::mois::Mois;
-use socle::num::{dec_f64, eur2, Decimal};
+use socle::num::{court, eur2, Decimal};
 
 /// Les faits du mois, sur la carte d'un salarie paye au mois.
 pub const HEURES_SUPPLEMENTAIRES: &str = "heures_supplementaires";
@@ -98,8 +98,8 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: Decimal, qu
         let taux = (horaire * (Decimal::ONE_HUNDRED + p.majoration) / Decimal::ONE_HUNDRED).round_dp(4);
         out.push(crate::LignePaie::Composee(crate::ligne::Composee {
             rubrique: rubrique.to_string(),
-            quantite: dec_f64(flot(p.heures))?,
-            taux: dec_f64(flot(taux))?,
+            quantite: court(p.heures),
+            taux: court(taux),
             heures: None,
             precision: Some(format!("majorées de {} %", virgule(p.majoration.normalize()))),
             dates: Vec::new(),
@@ -169,7 +169,7 @@ pub(crate) fn apres_les_cotisations(
         base: remuneration,
         taux_pat: None,
         montant_pat: Decimal::new(0, 2),
-        taux_sal: Some(crate::conges::flot(taux)),
+        taux_sal: Some(court(taux)),
         montant_sal: -reduction,
         masquer_base_et_taux: false,
     }];
@@ -204,7 +204,7 @@ pub(crate) fn apres_les_cotisations(
         .iter()
         .filter(|l| l.est("csg_ded"))
         .take(1)
-        .map(|l| socle::num::dec_f64(l.taux_sal.ok_or_else(|| refus("la ligne de CSG déductible n'a pas de taux salarial"))?))
+        .map(|l| l.taux_sal.ok_or_else(|| refus("la ligne de CSG déductible n'a pas de taux salarial")))
         .sum::<R<Decimal>>()?;
     let csg_deductible = eur2(remuneration * abattement * taux_csg / Decimal::ONE_HUNDRED);
     let autres = sal(&|l| !(l.est("csg_ded") || l.est("csg_crds_nd") || l.est("mutuelle")));

@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use socle::fichiers::{forme_en_cache, repr, FormeGardee};
 use socle::echec::R;
+use socle::num::Decimal;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
@@ -378,7 +379,8 @@ struct Bareme {
 #[serde(deny_unknown_fields)]
 struct UniteDeQuotite {
     valeur: String,
-    plafond: f64,
+    #[serde(deserialize_with = "socle::forme::court")]
+    plafond: Decimal,
     #[serde(rename = "quoi")]
     _quoi: String,
 }
@@ -386,7 +388,8 @@ struct UniteDeQuotite {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct QuotiteDeReference {
-    valeur: f64,
+    #[serde(deserialize_with = "socle::forme::court")]
+    valeur: Decimal,
     #[serde(rename = "quoi")]
     _quoi: String,
 }
@@ -704,12 +707,12 @@ impl Proprietes {
     }
 
     /// Le plafond de 40.012 et 40.013 : CCH-12 du bloc 40, 31.00 en journee ; CCH-13, 250.00 en heure.
-    pub fn plafond_quotite(&self) -> f64 {
+    pub fn plafond_quotite(&self) -> Decimal {
         self.unite_quotite.plafond
     }
 
     /// La quotite de reference d'un contrat au mois (la duree legale, L. 3121-27), ou `None` : la nature n'en a pas.
-    pub fn quotite_reference_defaut(&self) -> Option<f64> {
+    pub fn quotite_reference_defaut(&self) -> Option<Decimal> {
         self.quotite_reference.as_ref().map(|q| q.valeur)
     }
 

@@ -31,8 +31,32 @@
 //! la ligne saute. Un cachet qui afficherait un SIRET vide ou << None >> serait
 //! pire que pas de cachet, et la case n'est exigee par aucun formulaire.
 
-use droit::contexte::format_g;
 use droit::fiche::Lue;
+
+/// Une coordonnee du dessin, ecrite comme `"%g" % x` : six chiffres significatifs, sans zeros inutiles.
+fn format_g(x: f64) -> String {
+    if x == 0.0 {
+        return "0".into();
+    }
+    if !x.is_finite() {
+        return if x.is_nan() { "nan" } else if x > 0.0 { "inf" } else { "-inf" }.into();
+    }
+    let t = format!("{:.5e}", x);
+    let (m, e) = t.split_once('e').unwrap();
+    let e: i32 = e.parse().unwrap();
+    let rogner = |s: String| -> String {
+        if s.contains('.') {
+            s.trim_end_matches('0').trim_end_matches('.').to_string()
+        } else {
+            s
+        }
+    };
+    if !(-4..6).contains(&e) {
+        format!("{}e{}{:02}", rogner(m.to_string()), if e < 0 { '-' } else { '+' }, e.abs())
+    } else {
+        rogner(format!("{:.*}", (5 - e) as usize, x))
+    }
+}
 
 /// L'encre d'un tampon, et la geometrie du dessin. Le rapport 2:1 est celui
 /// d'un tampon rectangulaire courant ; il tient dans la case cachet de l'AER

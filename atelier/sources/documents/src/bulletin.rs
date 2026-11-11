@@ -269,7 +269,7 @@ pub fn smic_de_la_reduction(p: &Paie) -> R<String> {
             ));
         }
     }
-    Ok(format!("{} ({} h à {})", euros(p.plafond), fmt_heures(p.heures), euros(dec_f64(p.smic)?)))
+    Ok(format!("{} ({} h à {})", euros(p.plafond), fmt_heures(p.heures), euros(p.smic)))
 }
 
 /// (IDCC, libellé) de la convention d'un contrat, pour ce qui s'imprime : le libellé se lit au catalogue des conventions
@@ -749,14 +749,14 @@ fn base_et_taux(l: &engagement::calcul::LigneCotisation) -> R<(Cellule, Cellule,
     if l.masquer_base_et_taux {
         return Ok((vide(), vide(), vide()));
     }
-    Ok((s(fmt_eur(l.base)), taux_dit(l.taux_sal)?, taux_dit(l.taux_pat)?))
+    Ok((s(fmt_eur(l.base)), taux_dit(l.taux_sal.map(socle::num::flottant))?, taux_dit(l.taux_pat.map(socle::num::flottant))?))
 }
 
 /// Une ligne de cotisation du bulletin : libelle, base (sauf `masquer_base_et_taux`), taux salarial, montant salarial,
 /// montant employeur ; un montant nul ne s'ecrit pas.
 fn ligne_cotisation(libelle: String, l: &engagement::calcul::LigneCotisation) -> R<Ligne> {
     let base = if l.masquer_base_et_taux { vide() } else { s(fmt_eur(l.base)) };
-    Ok(ligne(vec![s(libelle), base, taux_dit(l.taux_sal)?, montant_ou_rien(l.montant_sal), montant_ou_rien(l.montant_pat)], vec![]))
+    Ok(ligne(vec![s(libelle), base, taux_dit(l.taux_sal.map(socle::num::flottant))?, montant_ou_rien(l.montant_sal), montant_ou_rien(l.montant_pat)], vec![]))
 }
 
 fn titre_groupe(titre: &str, colonnes: i64) -> Ligne {
@@ -1062,7 +1062,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
             "Durée contractuelle : {} h par mois {} durée de référence de l'entreprise : {} h",
             jours(e.quotite()?),
             tiret,
-            jours_option(e.quotite_reference()?)?
+            jours_option(e.quotite_reference()?.map(socle::num::flottant))?
         );
         ligne_caisse = Vec::new();
         travail = vec![m("Durée du travail :", true, None), mt(format!(" {} h", jours(e.quotite()?)))];

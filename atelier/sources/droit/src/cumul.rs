@@ -31,7 +31,8 @@ impl Constantes {
         let cachet = rubrique(racine, "cachet", jour)?;
         let a = annexes()?;
         Ok(Constantes {
-            heures_par_cachet: cachet.heures_forfait.ok_or_else(|| socle::fichiers::absent("cachet.heures_forfait"))? as i64,
+            heures_par_cachet: rust_decimal::prelude::ToPrimitive::to_i64(&cachet.heures_forfait.ok_or_else(|| socle::fichiers::absent("cachet.heures_forfait"))?.trunc())
+                .ok_or_else(|| socle::echec::refus(socle::fichiers::entier_hors_limites("cachet.heures_forfait")))?,
             cachets_par_mois: cachet.plafond_mensuel.ok_or_else(|| socle::fichiers::absent("cachet.plafond_mensuel"))?,
             seuil_heures: a.seuil_heures,
             fenetre_jours: a.fenetre_jours,

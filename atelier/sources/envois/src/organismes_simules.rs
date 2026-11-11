@@ -663,8 +663,8 @@ mod tests {
         crate::releve_retours::reconstruire_effectifs(&racine).unwrap();
         let fiche: droit::fiche::ChampsEntreprise = socle::forme::lire_texte("{}", "la fiche").unwrap();
         let e = droit::contexte::effectif_de(&racine, &fiche).unwrap();
-        assert_eq!(e.annees.get(&2026), Some(&11.42));
-        assert_eq!(e.annees.get(&2025), Some(&2.0));
+        assert_eq!(e.annees.get(&2026), Some(&socle::num::Decimal::new(1142, 2)));
+        assert_eq!(e.annees.get(&2025), Some(&socle::num::Decimal::from(2)));
         assert!(!crate::releve_retours::poser_effectif(&racine, 2026, 3.0, j("2027-03-01")).unwrap());
         let _ = std::fs::remove_dir_all(&racine);
     }

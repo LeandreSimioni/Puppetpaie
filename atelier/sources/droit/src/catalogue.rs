@@ -10,6 +10,7 @@ use serde::Deserialize;
 use socle::echec::Lieu;
 use socle::fichiers::{dossier_du_code, repr, signature};
 use socle::echec::R;
+use socle::num::Decimal;
 use crate::fiche::{ChampsRubrique, Datee, FicheDatee, Piece, RubriqueDatee, VoirListe};
 use std::collections::HashMap;
 use std::path::Path;
@@ -139,7 +140,7 @@ pub struct Rubrique {
     pub conges_spectacles: bool,
     pub source: String,
     pub sens: String,
-    pub heures_forfait: Option<f64>,
+    pub heures_forfait: Option<Decimal>,
     pub plafond: Option<String>,
     pub aem: Option<String>,
     pub dsn_type: Option<String>,
@@ -285,18 +286,20 @@ impl Rubrique {
     /// Un mois de permanent : `quantite` = la fraction du mois payee,
     /// `heures` = la quotite du contrat (`conges::lignes_du_mois`). Le produit
     /// se compte au centieme d'heure, comme la DSN l'ecrit.
-    pub fn heures(&self, quantite: f64, heures_saisies: Option<f64>) -> f64 {
-        let centieme = |x: f64| (x * 100.0).round() / 100.0;
+    /// Le centieme d'heure se prend au plus pres, la moitie loin de zero ; le nombre rendu est dans sa forme la plus
+    /// courte (`socle::num::court`).
+    pub fn heures(&self, quantite: Decimal, heures_saisies: Option<Decimal>) -> Decimal {
+        let centieme = |x: Decimal| socle::num::court(socle::num::mul(x, quantite).round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero));
         if let Some(f) = self.heures_forfait {
-            return centieme(f * quantite);
+            return centieme(f);
         }
         if let Some(h) = heures_saisies {
-            return centieme(h * quantite);
+            return centieme(h);
         }
         if self.unite == "heure" {
-            return quantite;
+            return socle::num::court(quantite);
         }
-        0.0
+        socle::num::court(Decimal::ZERO)
     }
 }
 
@@ -458,7 +461,7 @@ fn construire(code: &str, f: ChampsRubrique, origine: &str, piece: Option<Piece>
         conges_spectacles: dite(f.conges_spectacles, "conges_spectacles", &faute)?,
         source: dite(f.source, "source", &faute)?,
         sens: dite(f.sens, "sens", &faute)?,
-        heures_forfait: f.heures_forfait.map(|m| m.flottant()).transpose()?,
+        heures_forfait: f.heures_forfait.map(|m| m.court()).transpose()?,
         plafond: f.plafond,
         aem: f.aem,
         dsn_type: f.dsn_type,

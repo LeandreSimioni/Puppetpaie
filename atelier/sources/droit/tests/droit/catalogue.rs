@@ -12,10 +12,6 @@ fn jour(s: &str) -> Jour {
     Jour::lire(s).unwrap()
 }
 
-fn dec(x: f64) -> Decimal {
-    x.to_string().parse().unwrap()
-}
-
 #[test]
 fn les_catalogues_et_les_refus() {
     // Une rubrique de la compagnie changee a une date : la nouvelle valeur a partir d'elle, l'ancienne avant.
@@ -43,10 +39,6 @@ struct CasHeures {
     heures_saisies: Option<Decimal>,
 }
 
-fn flottant(d: Decimal) -> f64 {
-    d.to_string().parse().unwrap()
-}
-
 #[test]
 fn les_heures() {
     let racine = chemin_donnee("racines/a");
@@ -56,7 +48,7 @@ fn les_heures() {
         .into_iter()
         .map(|c| {
             let r = rubrique(&racine, &c.rubrique, &jour("2026-10-28")).unwrap();
-            let heures = dec(r.heures(flottant(c.quantite), c.heures_saisies.map(flottant)));
+            let heures = r.heures(c.quantite, c.heures_saisies).normalize();
             Ligne { cas: c, attendu: heures }
         })
         .collect();

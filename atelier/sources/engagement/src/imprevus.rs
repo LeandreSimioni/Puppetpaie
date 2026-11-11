@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::conges::{avertir, flot, info};
+use crate::conges::{avertir, info};
 use crate::Chiffre;
 use droit::permanents::MotifDeSuspension;
 use droit::contexte::Contexte;
@@ -833,7 +833,7 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
         // Les heures retirees et leur taux, quand le mois en retire.
         let retenue = || -> R<Option<(Decimal, Decimal)>> {
             match taux_horaire {
-                Some(t) if heures > Decimal::ZERO => Ok(Some((socle::num::dec_f64(flot(heures))?, t))),
+                Some(t) if heures > Decimal::ZERO => Ok(Some((socle::num::court(heures), t))),
                 _ => Ok(None),
             }
         };

@@ -372,7 +372,7 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
         if an >= an_paie {
             return Err(erreur(Classe::Refuse, format!("L'effectif de {} se calcule sur l'année entière : il se dit une fois l'année finie. Rien n'est écrit.", an)));
         }
-        let x = v.flottant().map_err(|m| m.reclasser(Classe::Illisible))?;
+        let x = socle::num::flottant(v.court().map_err(|m| m.reclasser(Classe::Illisible))?);
         if !x.is_finite() || x < 0.0 {
             return Err(erreur(Classe::Illisible, format!("Effectif illisible : {}.", v.ecrit())));
         }
@@ -386,8 +386,8 @@ fn effectif(ctx: &Contexte, charge: ChargeEffectif) -> R<EffectifDit> {
     let e = ctx.effectif()?;
     let dit = envois::releve_retours::effectif_dit_par_la_compagnie(&ctx.racine, an)?;
     let (valeur, source) = match e.annees.get(&an) {
-        Some(v) => (Some(*v), Some(if dit { "la compagnie" } else { "l'Urssaf" })),
-        None => match e.annee(an) {
+        Some(v) => (Some(socle::num::flottant(*v)), Some(if dit { "la compagnie" } else { "l'Urssaf" })),
+        None => match e.annee(an).map(socle::num::flottant) {
             Some(v) => (Some(v), Some("la première embauche")),
             None => (None, None),
         },

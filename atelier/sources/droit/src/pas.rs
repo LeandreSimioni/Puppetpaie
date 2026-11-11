@@ -227,25 +227,21 @@ pub fn grille<'a>(bareme: &'a Pile, le: Option<Jour>, zone: &str) -> RPas<&'a Gr
 /// `(taux, type de taux)` pour un montant DEJA abattu.
 pub fn taux_par_defaut(bareme: &Pile, montant: Decimal, le: Option<Jour>, zone: &str) -> RPas<(String, String)> {
     let g = grille(bareme, le, zone)?;
-    let nombre = |x: f64| dec_avec_echelle_f64(x);
     for t in &g.tranches {
         let (bas, haut, taux) = match t.as_slice() {
-            [Some(b), h, Some(x)] => (*b, *h, *x),
+            [Some(b), h, Some(x)] => (b.0, h.map(|h| h.0), x.0),
             _ => return Err(ErreurPas::Autre(socle::refus!("tranche de la grille du PAS illisible (bas, haut, taux attendus) : {:?}", t))),
         };
         // La derniere tranche n'a pas de haut.
-        if montant >= nombre(bas)? && haut.map(nombre).transpose()?.is_none_or(|h| montant < h) {
-            return Ok((format!("{:.2}", taux), g.genre.clone()));
+        if montant >= bas && haut.is_none_or(|h| montant < h) {
+            // Le taux de la grille (CGI 204 H, III) a deux decimales au plus : il s'ecrit avec ses deux decimales.
+            let mut taux = taux.round_dp(2);
+            taux.rescale(2);
+            return Ok((taux.to_string(), g.genre.clone()));
         }
     }
     // Seul un montant negatif tombe ici : taux zero.
     Ok(("0.00".to_string(), g.genre.clone()))
-}
-
-/// Le decimal d'un flottant du bareme, son echelle gardee (sa forme ecrite, `socle::date::repr_flottant`).
-fn dec_avec_echelle_f64(x: f64) -> R<Decimal> {
-    let s = socle::date::repr_flottant(x);
-    s.parse::<Decimal>().or_else(|_| Decimal::from_scientific(&s)).map_err(|_| socle::refus!("nombre hors de portee : {}", s))
 }
 
 /// LE PRELEVEMENT D'UN VERSEMENT, par l'un des deux chemins : tel que la paie l'ecrit et le relit (les montants en
@@ -271,7 +267,7 @@ fn en_nombre<S: Serializer>(x: &Decimal, s: S) -> Result<S::Ok, S::Error> {
 
 /// Le taux d'un versement en decimal, son echelle gardee ; un versement sans taux ne se calcule pas.
 pub fn taux_du_versement(taux: Option<&Montant>) -> R<Decimal> {
-    taux.ok_or_else(|| refus("nombre attendu, lu null"))?.avec_echelle()
+    taux.ok_or_else(|| refus("nombre attendu, lu null"))?.dec()
 }
 
 pub fn plancher(x: Decimal, zero: Decimal) -> Decimal {

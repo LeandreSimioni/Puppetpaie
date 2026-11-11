@@ -532,7 +532,7 @@ impl Donnees {
             Livree::PlafondDeduction => b.deduction_forfaitaire.as_ref().map(|d| d.plafond_annuel),
             Livree::TauxDeduction(t) => b.deduction_forfaitaire.as_ref().and_then(|d| d.taux.get(t)).map(|n| n.0),
             Livree::TauxPatronal(id) => match b.rubrique(id).and_then(|r| r.taux_pat) {
-                Some(t) => Some(socle::num::dec_f64(t.0)?),
+                Some(t) => Some(t.0),
                 None => None,
             },
             Livree::CachetDeRepetition { .. } => None,
@@ -874,7 +874,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
         }
         let x = du_mois.entry(p.salarie.id.to_string()).or_insert((0, 0));
         if let Some(h) = e.heures {
-            x.0 += h.round_ties_even() as i64;
+            x.0 += socle::num::flottant(h).round_ties_even() as i64;
         }
         x.0 += e.cachets * c.heures_par_cachet;
         x.1 += e.cachets;
@@ -990,7 +990,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
                     trouve
                 }
                 Quand::Suspension if !e.suspensions.is_empty() => Some(base(vec![])),
-                Quand::CachetsEtHeures if annexe == Annexe::X && e.cachets > 0 && e.heures.is_some_and(|h| h > 0.0) => Some(base(vec![])),
+                Quand::CachetsEtHeures if annexe == Annexe::X && e.cachets > 0 && e.heures.is_some_and(|h| h > socle::num::Decimal::ZERO) => Some(base(vec![])),
                 _ => None,
             };
             if let Some(v) = vals {

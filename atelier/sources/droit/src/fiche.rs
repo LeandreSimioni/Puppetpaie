@@ -131,49 +131,36 @@ impl<'de, C: Deserialize<'de>> Deserialize<'de> for Changements<C> {
 pub enum Montant {
     Entier(i64),
     Naturel(u64),
-    Flottant(f64),
+    /// Un nombre ecrit avec sa virgule, dans sa forme la plus courte (`socle::forme::NombreEcrit::Flottant`).
+    Flottant(Decimal),
     /// Un texte qui se lit en decimal (`socle::num::decimal_lu`).
     Texte(String),
 }
 
 impl Montant {
-    /// Le decimal ; un texte se lit en decimal (`12,5` compris). Un flottant ou un texte illisible se refuse.
+    /// Le decimal ; un texte se lit en decimal (`12,5` compris). Un texte illisible se refuse.
     pub fn decimal(&self) -> R<Decimal> {
         match self {
             Montant::Entier(i) => Ok(Decimal::from(*i)),
             Montant::Naturel(u) => Ok(Decimal::from(*u)),
-            Montant::Flottant(x) => socle::num::dec_f64(*x),
+            Montant::Flottant(x) => Ok(*x),
             Montant::Texte(s) => socle::num::decimal_lu(s).ok_or_else(|| socle::echec::refus(socle::num::illisible(s))),
         }
     }
 
-    /// Le decimal, un flottant gardant son echelle telle qu'elle s'ecrit (`130.0`) ; un texte se lit sans virgule.
-    pub fn avec_echelle(&self) -> R<Decimal> {
-        match self {
-            Montant::Flottant(x) => socle::num::dec_texte(&socle::date::repr_flottant(*x)),
-            Montant::Texte(s) => socle::num::dec_texte(s),
-            autre => autre.decimal(),
-        }
-    }
-
-    /// Le decimal, un flottant par sa forme la plus courte (`socle::num::dec_f64`) ; un texte se lit sans virgule.
+    /// Le decimal, un nombre a virgule dans sa forme la plus courte, son echelle telle qu'elle s'ecrit (`130.0`) ; un texte
+    /// se lit sans virgule.
     pub fn dec(&self) -> R<Decimal> {
         match self {
-            Montant::Flottant(x) => socle::num::dec_f64(*x),
             Montant::Texte(s) => socle::num::dec_texte(s),
             autre => autre.decimal(),
         }
     }
 
-
-    /// Le flottant ; un texte se lit sans virgule.
-    pub fn flottant(&self) -> R<f64> {
-        match self {
-            Montant::Entier(i) => Ok(*i as f64),
-            Montant::Naturel(u) => Ok(*u as f64),
-            Montant::Flottant(x) => Ok(*x),
-            Montant::Texte(s) => s.trim().parse::<f64>().map_err(|_| socle::echec::refus(socle::num::illisible(s))),
-        }
+    /// Le taux, la quotite ou le coefficient qu'il dit, dans sa forme la plus courte (`socle::num::court`) ; un texte se
+    /// lit sans virgule.
+    pub fn court(&self) -> R<Decimal> {
+        self.dec().map(socle::num::court)
     }
 
     /// L'entier ecrit : un nombre entier, ou un texte qui se lit en entier ; `None` pour un nombre qui n'est pas un
@@ -191,7 +178,7 @@ impl Montant {
         match self {
             Montant::Entier(i) => i.to_string(),
             Montant::Naturel(u) => u.to_string(),
-            Montant::Flottant(x) => socle::date::repr_flottant(*x),
+            Montant::Flottant(x) => x.to_string(),
             Montant::Texte(s) => s.clone(),
         }
     }
@@ -202,7 +189,7 @@ impl Serialize for Montant {
         match self {
             Montant::Entier(i) => s.serialize_i64(*i),
             Montant::Naturel(u) => s.serialize_u64(*u),
-            Montant::Flottant(x) => s.serialize_f64(*x),
+            Montant::Flottant(x) => socle::forme::ecrire_en_flottant(x, s),
             Montant::Texte(t) => s.serialize_str(t),
         }
     }
@@ -490,7 +477,7 @@ impl<'de> Deserialize<'de> for EchelonCcneac {
         let ecrit = match socle::forme::NombreEcrit::deserialize(d)? {
             socle::forme::NombreEcrit::Entier(i) => i.to_string(),
             socle::forme::NombreEcrit::Naturel(u) => u.to_string(),
-            socle::forme::NombreEcrit::Flottant(x) => socle::date::repr_flottant(x),
+            socle::forme::NombreEcrit::Flottant(x) => x.to_string(),
             socle::forme::NombreEcrit::Texte(t) => t,
         };
         EchelonCcneac::lire(&ecrit).map_err(|e| serde::de::Error::custom(e.phrase))

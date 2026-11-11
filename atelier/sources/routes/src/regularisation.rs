@@ -58,7 +58,7 @@ fn montants(p: &Paie) -> [Decimal; 6] {
 /// Les heures d'une paie au centieme : la somme flottante des lignes (151,67 - 63) ne se montre pas avec ses residus.
 fn heures(p: &Paie) -> R<Option<Decimal>> {
     match p.engagement.heures {
-        Some(h) => Ok(Some(socle::num::dec_f64(h).map_err(|e| e.reclasser(Classe::CalculImpossible))?.round_dp(2).normalize())),
+        Some(h) => Ok(Some(h.round_dp(2).normalize())),
         None => Ok(None),
     }
 }
