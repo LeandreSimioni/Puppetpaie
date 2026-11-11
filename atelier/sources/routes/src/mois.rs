@@ -2162,10 +2162,7 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                     fin,
                     avertissements: [],
                     informations: [],
-                    contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, mois)?, modeles: match e.nature {
-                        Some(n) => crate::modeles_contrat::au_choix(ctx, n)?,
-                        None => Vec::new(),
-                    } },
+                    contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, mois)?, modeles: if let Some(n) = e.nature { crate::modeles_contrat::au_choix(ctx, n)? } else { Vec::new() } },
                     propose: engagement::proposees::de_la_carte(ctx, e, &data.mois.premier_jour())?,
                 }));
                 // Une carte a completer n'a pas de total.

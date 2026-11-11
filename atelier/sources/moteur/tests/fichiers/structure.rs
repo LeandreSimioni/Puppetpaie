@@ -1499,6 +1499,48 @@ fn la_page_n_ecrit_aucune_phrase() {
     );
 }
 
+/// LA PAGE LIT LA REPONSE, ELLE N'INVENTE RIEN A SA PLACE (`AGENTS.md`, « Un seul logiciel, qui que soit la main ») : une
+/// liste ou un objet d'une reponse est toujours ecrit par la route, un champ facultatif se teste avant d'etre dessine, et
+/// une erreur se dit. Dans chaque `.js` et chaque `.html` des pages (les memes que `la_page_n_ecrit_aucune_phrase`),
+/// commentaires compris, le verrou refuse :
+/// - un repli qui remplace une absence par une valeur : `|| ""`, `|| ''`, `|| []`, `|| {}`, `|| 0`, et `??` suivi d'un
+///   litteral (un texte, un nombre, `[`, `{`, `null`, `undefined`, `true`, `false`) ;
+/// - une erreur avalee : un `catch` dont le bloc est vide (des blancs ou des commentaires seulement), et une promesse
+///   dont le `.catch` ne fait rien (`.catch(() => {})`).
+#[test]
+fn la_page_n_invente_aucune_valeur_ni_ne_tait_une_erreur() {
+    let depot = espace().join("../..");
+    let mut fichiers: Vec<PathBuf> = std::fs::read_dir(depot.join("logiciel/interface/js")).unwrap().flatten().map(|e| e.path()).collect();
+    fichiers.push(depot.join("logiciel/interface/index.html"));
+    fichiers.extend(std::fs::read_dir(espace().join("moteur/src/interface/pages")).unwrap().flatten().map(|e| e.path()));
+    fichiers.sort();
+    let repli = regex::Regex::new(r#"\|\|\s*(?:""|''|\[\s*\]|\{\s*\}|0\b)|\?\?\s*(?:["'`\[{]|-?\d|(?:null|undefined|true|false)\b)"#).unwrap();
+    let commentaires = r"(?:\s|/\*(?s:.)*?\*/|//[^\n]*\n)*";
+    let avalee = regex::Regex::new(&format!(
+        r"\bcatch\s*(?:\(\s*\w*\s*\))?\s*\{{{c}\}}|\.catch\(\s*(?:\(\s*\w*\s*\)|\w+)\s*=>\s*\{{{c}\}}\s*\)",
+        c = commentaires
+    ))
+    .unwrap();
+    let mut trouves = Vec::new();
+    for p in &fichiers {
+        if !p.extension().is_some_and(|x| x == "js" || x == "html") {
+            continue;
+        }
+        let t = std::fs::read_to_string(p).unwrap();
+        for m in repli.find_iter(&t).chain(avalee.find_iter(&t)) {
+            let ligne = t[..m.start()].matches('\n').count() + 1;
+            trouves.push(format!("{}:{} : « {} »", p.file_name().unwrap().to_string_lossy(), ligne, m.as_str().replace('\n', " ")));
+        }
+    }
+    trouves.sort();
+    assert!(
+        trouves.is_empty(),
+        "la page invente {} valeur(s) ou tait une erreur : une liste ou un objet de la réponse se lit tel que la route l'écrit, un champ facultatif se teste avant d'être dessiné, et un `catch` dit le refus (ou laisse l'erreur remonter) :\n{}",
+        trouves.len(),
+        trouves.join("\n")
+    );
+}
+
 /// Le plus de mots qu'ait un mot d'interface (« Envoyer à la signature », « Code emploi France Travail »).
 const MOTS_D_INTERFACE: usize = 4;
 

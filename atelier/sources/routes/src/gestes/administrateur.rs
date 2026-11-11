@@ -742,9 +742,11 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 (Genre::Signalement, marche, Vec::new())
             } else {
                 // HORS DSN : la declaration d'accident, l'attestation de salaire. Le logiciel ne la fait pas : ou la faire.
-                let lieux: Vec<String> = match &ob.ou {
-                    Some(declarations::obligations::Ou::Lieux(l)) => l.iter().map(|x| x.libelle.clone()).collect(),
-                    Some(declarations::obligations::Ou::Phrase(_)) | None => Vec::new(),
+                // Seule une obligation qui nomme ses lieux en a ; une phrase n'en nomme aucun.
+                let lieux: Vec<String> = if let Some(declarations::obligations::Ou::Lieux(l)) = &ob.ou {
+                    l.iter().map(|x| x.libelle.clone()).collect()
+                } else {
+                    Vec::new()
                 };
                 (Genre::HorsDsn, "Elle ne part pas avec la DSN : à faire sur le service de l'organisme, puis à dire faite dans la compagnie.", lieux)
             };

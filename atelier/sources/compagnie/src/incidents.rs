@@ -503,13 +503,13 @@ struct DetailDeLaPage {
 /// s'ecrit « interface:? ».
 pub fn depuis_navigateur(racine: &Path, rapport: &RapportNavigateur) -> R<Option<Ligne>> {
     let genre = tete(&rapport.genre, 80);
-    let fichier = match &rapport.fichier {
-        Some(f) => fichier_court(f),
-        None => String::new(),
+    let fichier = match rapport.fichier.as_deref().map(fichier_court) {
+        Some(f) if !f.is_empty() => f,
+        _ => "interface".to_string(),
     };
     let ou = format!(
         "{}:{}",
-        if fichier.is_empty() { "interface".to_string() } else { fichier },
+        fichier,
         match rapport.ligne {
             Some(l) => l.to_string(),
             None => "?".to_string(),
