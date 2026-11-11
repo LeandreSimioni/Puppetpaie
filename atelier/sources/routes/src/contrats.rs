@@ -1418,7 +1418,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
         contrat: Some(NumeroContrat::lire(numero).map_err(|m| m.reclasser(Classe::Illisible))?),
         date_contrat: debut,
         signe: None,
-        contrat_signe: Some(crate::gestes::signature::contrat_signe_dit(ctx, salarie, debut)),
+        contrat_signe: Some(crate::gestes::signature::contrat_signe_dit(ctx, salarie, debut)?),
         numero: signes + 1,
         effet,
         modifications,

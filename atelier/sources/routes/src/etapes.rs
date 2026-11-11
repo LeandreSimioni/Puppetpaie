@@ -1513,7 +1513,7 @@ impl<'a> Moteur<'a> {
                 repris,
                 ecrit: engagement::contrat_a_signer(&self.ctx.racine, &p.engagement)?,
                 ailleurs,
-                dossier: ailleurs.then(|| crate::gestes::signature::contrat_signe_dit(self.ctx, &cle, p.engagement.debut)),
+                dossier: ailleurs.then(|| crate::gestes::signature::contrat_signe_dit(self.ctx, &cle, p.engagement.debut)).transpose()?,
                 anterieur: engagement::stock::commence_avant_le_logiciel(&self.ctx.racine, p.engagement.debut, le_mois)?,
             });
             // CE QUE CE SALARIE RECOIT POUR CETTE PAIE : le bulletin s'il y a une paie, le certificat Conges Spectacles

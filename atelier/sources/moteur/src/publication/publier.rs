@@ -259,7 +259,7 @@ pub fn marquer_les_fictives(code: &Path) -> R<String> {
     if std::env::var_os(socle::garde_reseau::VARIABLE).is_none() {
         std::env::set_var(socle::garde_reseau::VARIABLE, "1");
     }
-    for (nom, scenario) in routes::scenario::fictives_de_reference(base) {
+    for (nom, scenario) in routes::scenario::fictives_de_reference(base)? {
         let dest = base.join(compagnie::installation::DOSSIER_FICTIVES).join(&nom);
         routes::scenario::livrer(&scenario, &dest, Some(droit::contexte::jour_reel()))?;
     }

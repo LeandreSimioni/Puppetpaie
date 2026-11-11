@@ -352,6 +352,22 @@ pub fn lister(dossier: &Path) -> R<Option<Vec<PathBuf>>> {
     }
 }
 
+/// Ce que porte un dossier (fichiers et dossiers), trie par chemin ; `None` s'il n'existe pas ; le disque qui refuse
+/// de le lire se dit (`echec::du_disque`). Rien n'est note : ce n'est pas une entree d'un calcul (`lister`).
+pub fn entrees(dossier: &Path) -> R<Option<Vec<PathBuf>>> {
+    let lus = match std::fs::read_dir(dossier) {
+        Ok(lus) => lus,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(crate::echec::du_disque(dossier, &e)),
+    };
+    let mut v = Vec::new();
+    for e in lus {
+        v.push(e.map_err(|e| crate::echec::du_disque(dossier, &e))?.path());
+    }
+    v.sort();
+    Ok(Some(v))
+}
+
 /// Le dossier des referentiels livres (`donnees/`) : `PUPPETPAIE_CODE` si posee, sinon
 /// `<crate>/../donnees`.
 pub fn dossier_du_code() -> PathBuf {

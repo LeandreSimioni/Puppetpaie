@@ -122,7 +122,7 @@ pub fn fini(siens: &[Depart], mois: Mois) -> bool {
 /// l'appelle une fois par version installee. Rend les mois dont une paie s'est refaite.
 pub fn corriger_les_mois_finis(ctx: &Contexte, departs: &Departs) -> R<Vec<Mois>> {
     let mut refaits = Vec::new();
-    for mois in crate::paies::mois_payes(&ctx.racine) {
+    for mois in crate::paies::mois_payes(&ctx.racine)? {
         let avant: Vec<Option<Arc<PaieEcrite>>> = tels_qu_ecrits(ctx, mois, departs)?.iter().map(|e| e.paie_ecrite(mois)).collect::<R<_>>()?;
         let apres: Vec<Option<Arc<PaieEcrite>>> = lu_et_rafraichi(ctx, mois, departs, true)?.iter().map(|e| e.paie_ecrite(mois)).collect::<R<_>>()?;
         let change = |a: &Option<Arc<PaieEcrite>>, b: &Option<Arc<PaieEcrite>>| match (a, b) {
@@ -1489,7 +1489,7 @@ fn rafraichir(ctx: &Contexte, mois: Mois, departs: &Departs, passage: bool) -> R
 fn reporter(ctx: &Contexte, o: &Objet, premier: Mois, departs: &Departs) -> R<()> {
     let Some(cle) = &o.carte().salarie else { return Ok(()) };
     let present = mois_present(ctx);
-    for mois in crate::paies::mois_payes(&ctx.racine).into_iter().filter(|m| *m > premier && *m <= present) {
+    for mois in crate::paies::mois_payes(&ctx.racine)?.into_iter().filter(|m| *m > premier && *m <= present) {
         let ctx = &ctx.du_mois(mois)?;
         let mut relues = empreinte::Relues::default();
         for e in tels_qu_ecrits(ctx, mois, departs)? {

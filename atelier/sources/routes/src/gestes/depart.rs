@@ -1147,14 +1147,11 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, nom: &str) -> R<PathBu
     // L'AER vient de France Travail : elle ne se refait pas, elle se relit dans `retours/` (l'archive du retour 46) et se
     // range de nouveau comme a sa releve (`routes::documents::ranger_aer_detail`), signee au jour de cette releve.
     if nom.starts_with("AER_") {
-        let mut archives: Vec<PathBuf> = std::fs::read_dir(ctx.racine.join(envois::retours::RETOURS))
+        let archives: Vec<PathBuf> = socle::fichiers::entrees(&ctx.racine.join(envois::retours::RETOURS))?
             .into_iter()
             .flatten()
-            .flatten()
-            .map(|e| e.path())
             .filter(|p| p.is_file() && socle::fichiers::nom_du(p).split('_').any(|x| x == NATURE_AER))
             .collect();
-        archives.sort();
         for a in archives {
             let n = socle::fichiers::nom_du(&a);
             // Le nom de l'archive commence par l'instant de sa releve, `AAAAMMJJ_HHMMSS`.

@@ -124,14 +124,14 @@ pub fn ecrites(o: &Objet, mois: Mois) -> R<Vec<PaieEcrite>> {
 }
 
 /// Les mois qui ont un fichier de paies, du plus ancien au plus recent.
-pub(crate) fn mois_payes(racine: &std::path::Path) -> Vec<Mois> {
+pub(crate) fn mois_payes(racine: &std::path::Path) -> R<Vec<Mois>> {
     stock::fichiers_dans(racine, Dossier::Paies)
 }
 
 /// Les mois ou l'engagement `o` a une paie ecrite (presente ou d'une version passee), du premier au dernier.
 pub fn mois_ecrits(o: &Objet) -> R<Vec<Mois>> {
     let mut out = Vec::new();
-    for m in stock::fichiers_dans(&o.racine, Dossier::Paies).into_iter().filter(|m| *m >= o.fichier) {
+    for m in stock::fichiers_dans(&o.racine, Dossier::Paies)?.into_iter().filter(|m| *m >= o.fichier) {
         if entree(o, m)?.is_some() {
             out.push(m);
         }

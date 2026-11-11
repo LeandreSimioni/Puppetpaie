@@ -205,18 +205,22 @@ pub(crate) fn chemin_dans(racine: &Path, d: Dossier, mois: Mois) -> PathBuf {
 }
 
 /// Les mois qui ont un fichier d'engagements, du plus ancien au plus recent, ceux du brouillon ouvert compris.
-pub fn fichiers(racine: &Path) -> Vec<Mois> {
+pub fn fichiers(racine: &Path) -> R<Vec<Mois>> {
     fichiers_dans(racine, Dossier::Engagements)
 }
 
-/// Les mois qui ont un fichier dans le dossier `d`, du plus ancien au plus recent, ceux du brouillon ouvert compris.
-pub(crate) fn fichiers_dans(racine: &Path, d: Dossier) -> Vec<Mois> {
-    let mut v: Vec<Mois> =
-        std::fs::read_dir(racine.join(d.nom())).into_iter().flatten().flatten().filter_map(|e| Mois::du_texte(e.file_name().to_str()?.strip_suffix(".json")?)).collect();
+/// Les mois qui ont un fichier dans le dossier `d`, du plus ancien au plus recent, ceux du brouillon ouvert compris. Un
+/// dossier absent n'en a aucun ; un disque qui refuse de le lire se dit (`socle::fichiers::entrees`).
+pub(crate) fn fichiers_dans(racine: &Path, d: Dossier) -> R<Vec<Mois>> {
+    let mut v: Vec<Mois> = socle::fichiers::entrees(&racine.join(d.nom()))?
+        .into_iter()
+        .flatten()
+        .filter_map(|p| p.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_suffix(".json")).and_then(Mois::du_texte))
+        .collect();
     BROUILLON.with(|b| v.extend(b.borrow().iter().filter(|(r, _)| r == racine).flat_map(|(_, f)| f.keys().filter(|(x, _)| *x == d).map(|(_, m)| *m))));
     v.sort();
     v.dedup();
-    v
+    Ok(v)
 }
 
 /// LA SEULE LECTURE D'UN FICHIER D'ENGAGEMENTS, par sa forme ; `None` s'il n'existe pas.
@@ -606,7 +610,7 @@ fn memes(a: &Lus, b: &Lus) -> bool {
 
 fn lus(racine: &Path) -> R<Lus> {
     let mut out = Vec::new();
-    for f in fichiers(racine) {
+    for f in fichiers(racine)? {
         if let Some(v) = lire_partage(racine, f)? {
             out.push((f, v));
         }
@@ -861,7 +865,7 @@ pub fn empreinte_de_saisie(vue: &VueDuMois, salarie: Option<&str>) -> String {
 /// janvier que rien n'a saisi depuis a une paie, une DSN et des documents chaque mois qu'il court.
 pub fn mois_saisis(racine: &Path) -> R<Vec<Mois>> {
     let mut v: Vec<Mois> = Vec::new();
-    for m in fichiers(racine) {
+    for m in fichiers(racine)? {
         if !importes_seuls(racine, m)? {
             v.push(m);
         }

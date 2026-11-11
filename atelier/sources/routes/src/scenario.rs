@@ -785,17 +785,14 @@ pub fn verifier(scenario: &Path, inst: &Path, travail: &Path) -> R<Vec<String>> 
 pub const DOSSIER_REFERENCE: &str = "atelier/fictives";
 
 /// Les scenarios des fictives de reference d'un depot (`depot/atelier/fictives/<nom>/`, ceux qui ont des gestes), par
-/// nom, dans l'ordre des noms.
-pub fn fictives_de_reference(depot: &Path) -> Vec<(String, PathBuf)> {
-    let mut v: Vec<(String, PathBuf)> = std::fs::read_dir(depot.join(DOSSIER_REFERENCE))
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|e| e.path().join(GESTES).is_file())
-        .map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()))
-        .collect();
-    v.sort();
-    v
+/// nom, dans l'ordre des noms. Un dossier qui ne se lit pas (ou manque) refuse : une publication sans ses fictives n'en
+/// est pas une.
+pub fn fictives_de_reference(depot: &Path) -> R<Vec<(String, PathBuf)>> {
+    let dossier = depot.join(DOSSIER_REFERENCE);
+    let Some(entrees) = socle::fichiers::entrees(&dossier)? else {
+        return Err(refus!("Les fictives de référence manquent : {} n'existe pas.", dossier.display()));
+    };
+    Ok(entrees.into_iter().filter(|p| p.join(GESTES).is_file()).map(|p| (socle::fichiers::nom_du(&p), p)).collect())
 }
 
 /// Ce qu'une fictive livree ne porte pas de son rejeu : le marqueur (reecrit), les incidents du rejeu, les caches.

@@ -47,12 +47,13 @@ pub(crate) fn archiver(racine: &Path, le_mois: socle::mois::Mois, racine_drive: 
     if !dossier.exists() {
         return Err(sortie_absente(&dossier));
     }
-    let mut fichiers: Vec<std::path::PathBuf> = std::fs::read_dir(&dossier)
-        .map_err(|e| ErreurGoogle::fichier(&e, &dossier))?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_file())
-        .collect();
+    let mut fichiers: Vec<std::path::PathBuf> = Vec::new();
+    for e in std::fs::read_dir(&dossier).map_err(|e| ErreurGoogle::fichier(&e, &dossier))? {
+        let p = e.map_err(|e| ErreurGoogle::fichier(&e, &dossier))?.path();
+        if p.is_file() {
+            fichiers.push(p);
+        }
+    }
     fichiers.sort();
     if fichiers.is_empty() {
         return Err(sortie_absente(&dossier));

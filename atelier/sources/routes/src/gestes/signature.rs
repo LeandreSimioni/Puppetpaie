@@ -826,16 +826,12 @@ pub(crate) fn dossier_du_contrat_signe(racine: &std::path::Path, cle: &str, debu
 }
 
 /// Les PDF deposes dans ce dossier, par ordre de nom.
-pub(crate) fn contrat_signe_depose(racine: &std::path::Path, cle: &str, debut: Jour) -> Vec<PathBuf> {
-    let mut pdf: Vec<PathBuf> = std::fs::read_dir(dossier_du_contrat_signe(racine, cle, debut))
+pub(crate) fn contrat_signe_depose(racine: &std::path::Path, cle: &str, debut: Jour) -> R<Vec<PathBuf>> {
+    Ok(socle::fichiers::entrees(&dossier_du_contrat_signe(racine, cle, debut))?
         .into_iter()
         .flatten()
-        .flatten()
-        .map(|e| e.path())
         .filter(|p| p.is_file() && p.extension().is_some_and(|x| x.eq_ignore_ascii_case("pdf")))
-        .collect();
-    pdf.sort();
-    pdf
+        .collect())
 }
 
 /// Ce que l'ecran et la ligne de commande disent du dossier du contrat signe hors du logiciel : son chemin (la fenetre
@@ -848,15 +844,15 @@ pub(crate) struct ContratSigneDit {
 }
 
 /// Ce dossier, dit (`ContratSigneDit`).
-pub(crate) fn contrat_signe_dit(ctx: &Contexte, cle: &str, debut: Jour) -> ContratSigneDit {
-    let deposes: Vec<String> = contrat_signe_depose(&ctx.racine, cle, debut).iter().map(|p| nom_du(p)).collect();
+pub(crate) fn contrat_signe_dit(ctx: &Contexte, cle: &str, debut: Jour) -> R<ContratSigneDit> {
+    let deposes: Vec<String> = contrat_signe_depose(&ctx.racine, cle, debut)?.iter().map(|p| nom_du(p)).collect();
     let qui = ctx.nomme(cle);
     let phrase = if deposes.is_empty() {
         format!("Le contrat de {} a été signé hors de PuppetPaie : son PDF, déposé dans son dossier, part joint à chaque avenant. Le dossier est vide.", qui)
     } else {
         format!("Le contrat signé de {} ({}) part joint à chaque avenant.", qui, deposes.join(", "))
     };
-    ContratSigneDit { chemin: dossier_du_contrat_signe(&ctx.racine, cle, debut).to_string_lossy().into_owned(), deposes, phrase }
+    Ok(ContratSigneDit { chemin: dossier_du_contrat_signe(&ctx.racine, cle, debut).to_string_lossy().into_owned(), deposes, phrase })
 }
 
 /// L'AVENANT A ENVOYER OU A IMPRIMER, verifie par la route : le contrat qu'il modifie (son salarie, son premier jour, le
@@ -1090,7 +1086,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(String, Vec<UnAve
         let mut joints: Vec<PathBuf> = Vec::new();
         for (a, c) in aa.iter().zip(&lignes_contrats) {
             if c.ailleurs {
-                joints.extend(contrat_signe_depose(&ctx.racine, salarie, a.debut));
+                joints.extend(contrat_signe_depose(&ctx.racine, salarie, a.debut)?);
             }
         }
         let contrat_dit = |a: &UnAvenant, n: &ContratNomme| -> String {

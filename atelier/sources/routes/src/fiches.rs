@@ -530,7 +530,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sai
     let de_la_fiche = dit(donnees.mot("code_emploi_ft").as_deref());
     // (metier, statut dit par la carte, jour, salarie)
     let mut metiers: std::collections::BTreeSet<(String, Option<String>, Jour, String)> = std::collections::BTreeSet::new();
-    for f in engagement::stock::fichiers(&ctx.racine) {
+    for f in engagement::stock::fichiers(&ctx.racine)? {
         let Some(lu) = engagement::stock::lire_fichier(&ctx.racine, f)? else { continue };
         for e in lu.engagements.iter().filter(|e| e.non_actif.is_none()) {
             let s = &e.saisie;
