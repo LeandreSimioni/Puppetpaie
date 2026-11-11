@@ -386,11 +386,8 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
             let c: ChargeGarder = charge.lire()?;
             let poste = administrateur::Poste::de_ce_poste();
             let reponse = suppression::repondre(&inst, &c.garder, &c.ne_pas_garder, &poste, &|_| {}).map_err(|e| e.reclasser(Classe::Refuse))?;
-            let mut phrase = format!("{} compagnie(s) gardée(s), {} supprimée(s).", reponse.gardees.len(), reponse.supprimees.len());
-            for e in &reponse.erreurs {
-                phrase.push(' ');
-                phrase.push_str(e);
-            }
+            let erreurs: String = reponse.erreurs.iter().map(|e| format!(" {}", e)).collect();
+            let phrase = format!("{} compagnie(s) gardée(s), {} supprimée(s).{}", reponse.gardees.len(), reponse.supprimees.len(), erreurs);
             en_json(Gardees { phrase, reponse })
         }
         Route::AdministrateurTableau => {

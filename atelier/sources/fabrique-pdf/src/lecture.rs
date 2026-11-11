@@ -504,23 +504,21 @@ pub fn herite<'a>(doc: &'a Document, page: ObjectId, cle: &[u8]) -> Result<Optio
     illisible(format!("l'arbre des pages remonte au-delà de {} ancêtres", ANCETRES_MAX))
 }
 
-/// Les ressources d'une page : `Resources` est exigé, héritable (ISO 32000-1, table 30).
-pub fn ressources_de_page(doc: &Document, page: ObjectId) -> Result<&Dictionary, Refus> {
-    match herite(doc, page, b"Resources")? {
-        Some(o) => dictionnaire(o).map_err(|attendu| Refus::illisible(format!("/Resources de la page n'est pas {}", attendu))),
-        None => illisible("la page n'a pas de /Resources, que la norme exige (ISO 32000-1, table 30)"),
-    }
-}
-
 /// Les ressources d'une page recopiées, et leur sous-dictionnaire `cle` (`Font`, `XObject`) recopié à part, pour y
 /// poser une ressource : des ressources qui n'ont pas `cle` n'ont encore aucune ressource de cette sorte.
+/// `Resources` est héritable (ISO 32000-1, table 30 : « (Required; inheritable) ») : il se lit chez la page, sinon
+/// chez son plus proche ancêtre. Les ressources rendues sont celles que celui qui y pose la sienne écrira dans la page :
+/// les héritées, recopiées entrée par entrée ; quand aucun ancêtre n'en porte, la page n'en a aucune à recopier.
 pub fn ressources_et(doc: &Document, page: ObjectId, cle: &[u8]) -> Result<(Dictionary, Dictionary), Refus> {
-    let res = ressources_de_page(doc, page)?;
+    let mut res = Dictionary::new();
+    if let Some(o) = herite(doc, page, b"Resources")? {
+        res.extend(dictionnaire(o).map_err(|attendu| Refus::illisible(format!("/Resources de la page n'est pas {}", attendu)))?);
+    }
     let mut sorte = Dictionary::new();
-    if let Some(p) = lue(doc, res, cle, dictionnaire)? {
+    if let Some(p) = lue(doc, &res, cle, dictionnaire)? {
         sorte.extend(p);
     }
-    Ok((res.clone(), sorte))
+    Ok((res, sorte))
 }
 
 /// Le rectangle héritable `cle` d'une page.

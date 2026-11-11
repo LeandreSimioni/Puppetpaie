@@ -655,8 +655,14 @@ impl Dite for LeCatalogue {
 }
 
 /// `routes` : le catalogue, ce que `moteur routes --json` imprime. Il ne porte sur aucune compagnie.
-pub fn route(charge: &Charge) -> R<Rendu> {
-    en_json(le_catalogue(charge.lire()?)?)
+pub fn route(route: Route, charge: &Charge) -> R<Rendu> {
+    match route {
+        Route::Routes => {
+            let catalogue: LeCatalogue = le_catalogue(charge.lire()?)?;
+            en_json(catalogue)
+        }
+        autre => Err(super::enveloppe::route_inconnue(autre.nom())),
+    }
 }
 
 fn le_catalogue(c: ChargeDuCatalogue) -> R<LeCatalogue> {

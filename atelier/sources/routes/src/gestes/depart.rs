@@ -1154,8 +1154,11 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, nom: &str) -> R<PathBu
             .collect();
         for a in archives {
             let n = socle::fichiers::nom_du(&a);
-            // Le nom de l'archive commence par l'instant de sa releve, `AAAAMMJJ_HHMMSS`.
-            let Some((jour, heure)) = n.get(..15).and_then(|p| p.split_once('_')) else { continue };
+            // Le nom de l'archive commence par l'instant de sa releve, `AAAAMMJJ-HHMMSS`.
+            let (jour, heure) = n
+                .get(..15)
+                .and_then(|p| p.split_once('-'))
+                .ok_or_else(|| erreur(Classe::Illisible, format!("instant illisible : {}", socle::fichiers::repr(&n))))?;
             let quand = socle::piece::Zone::lue(&[jour, heure].concat(), socle::piece::format::InstantCompact).valeur()
                 .map(|i| InstantEcrit::du_naif(i.naif()))
                 .ok_or_else(|| erreur(Classe::Illisible, format!("instant illisible : {}", socle::fichiers::repr(&n))))?;

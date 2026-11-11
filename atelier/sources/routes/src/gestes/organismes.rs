@@ -121,18 +121,20 @@ impl Dite for OrganismesDits {
 /// Une route de ce module.
 pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let ctx = porte.ctx;
-    let (lu, enregistre) = match porte.route {
+    match porte.route {
         Route::OrganismesContrats => {
             let c: ChargeOrganismes = charge.lire()?;
-            (lire(ctx, c.mois)?, false)
+            let dits: OrganismesDits = dire(lire(ctx, c.mois)?, false, temps_des_contrats(ctx)?)?;
+            en_json(dits)
         }
+        // Les temps se lisent apres l'ecriture : ceux du contrat qui vient d'etre enregistre.
         Route::OrganismesEnregistrer => {
             let c: ChargeEnregistrer = charge.lire()?;
-            (enregistrer(ctx, c)?, true)
+            let dits: OrganismesDits = dire(enregistrer(ctx, c)?, true, temps_des_contrats(ctx)?)?;
+            en_json(dits)
         }
-        autre => return Err(crate::enveloppe::route_inconnue(autre.nom())),
-    };
-    en_json(dire(lu, enregistre, temps_des_contrats(ctx)?)?)
+        autre => Err(crate::enveloppe::route_inconnue(autre.nom())),
+    }
 }
 
 /// Ce que l'ecran lit des contrats : sa phrase (ce qui reste a dire a la compagnie, sinon combien de contrats la DSN

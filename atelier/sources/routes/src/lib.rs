@@ -221,7 +221,7 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
     }
     // Le catalogue lui-meme, ce que `moteur routes --json` imprime : il ne porte sur aucune compagnie non plus.
     if route == Route::Routes {
-        return catalogue::route(charge);
+        return catalogue::route(route, charge);
     }
     // UNE ROUTE QUI PORTE UN MOIS LIT LA CONFIGURATION DE CE MOIS (`Contexte::du_mois`) : sa paie, sa DSN et ses documents
     // se font sous les valeurs qui valaient alors, jamais sous celles d'aujourd'hui. Un mois qui ne se lit pas refuse la
