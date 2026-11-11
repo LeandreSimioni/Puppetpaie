@@ -167,6 +167,262 @@ impl Moment {
         let t = self.entieres();
         Naif(t + decalage(self))
     }
+
+    /// L'instant a la seconde : arrondi a la microseconde (la montre ne dit pas plus fin), puis tronque a la seconde. Le
+    /// decalage de Paris est d'heures entieres : la seconde de Paris tombe sur la seconde UTC.
+    pub fn a_la_seconde(self) -> Moment {
+        Moment(self.a_la_microseconde().entieres() as i128 * NANOS)
+    }
+
+    /// L'instant a la minute : comme `a_la_seconde`, puis tronque a la minute (de Paris comme d'UTC : le decalage est
+    /// d'heures entieres).
+    pub fn a_la_minute(self) -> Moment {
+        let s = self.a_la_microseconde().entieres();
+        Moment((s - s.rem_euclid(60)) as i128 * NANOS)
+    }
+
+    /// « 12/09/2026 à 18:18 » : le jour et l'heure de Paris, a la minute, tels que l'ecran les dit.
+    pub fn dit(self) -> String {
+        let (jour, reste) = ecrit::local(self);
+        format!("{} à {:02}:{:02}", jour.jj_mm_aaaa(), reste / 3_600, (reste % 3_600) / 60)
+    }
+
+    /// Les secondes passees depuis minuit de Paris, ce jour-la (l'instant arrondi a la microseconde, puis tronque).
+    pub fn seconde_du_jour_de_paris(self) -> i64 {
+        ecrit::local(self).1
+    }
+}
+
+/// LES ECRITURES D'UN INSTANT : une facon d'ecrire n'est pas un type. Chaque forme de fichier dit la sienne par un
+/// attribut serde (`#[serde(with = "socle::paris::ecrit::seconde")]`, `…::option` pour un `Option<Moment>` : absent ou
+/// `null`, `None`), ou l'ecrit par `ecrit::<forme>::texte`. Une heure de Paris se lit champ a champ, l'instant se
+/// construit (`Moment::a_paris`), puis se reecrit : s'il ne redonne pas le texte lu, la lecture rend `None`. Une heure
+/// qui n'existe pas a Paris (l'heure sautee du passage a l'heure d'ete, directive 2000/84/CE, art. 2) se refuse ainsi ;
+/// l'heure doublee du passage a l'heure d'hiver (art. 3) se relit a l'identique.
+pub mod ecrit {
+    use super::{local_arrondi, Moment};
+    use crate::date::Jour;
+
+    /// Le jour et la seconde du jour de l'heure de Paris d'un instant (arrondi a la microseconde, puis tronque).
+    pub(super) fn local(m: Moment) -> (Jour, i64) {
+        let l = local_arrondi(m);
+        (super::dans_le_calendrier(l.div_euclid(86_400)), l.rem_euclid(86_400))
+    }
+
+    /// Le jour et la seconde du jour UTC d'un instant (arrondi a la microseconde, puis tronque).
+    fn utc(m: Moment) -> (Jour, i64) {
+        let s = m.a_la_microseconde().entieres();
+        (super::dans_le_calendrier(s.div_euclid(86_400)), s.rem_euclid(86_400))
+    }
+
+    /// Des chiffres ASCII seuls, au plus quatre : leur valeur se compte, sans lecture qui puisse echouer.
+    fn chiffres(t: &str) -> Option<i64> {
+        (!t.is_empty() && t.len() <= 4 && t.bytes().all(|b| b.is_ascii_digit())).then(|| t.bytes().fold(0i64, |n, b| n * 10 + i64::from(b - b'0')))
+    }
+
+    /// L'instant d'une heure de Paris ecrite champ a champ (`an`, `mois`, `jour`, `heure`, `minute`, `seconde`), relu par
+    /// `texte` : `None` si un champ ne se lit pas, si l'heure n'existe pas a Paris, ou si l'ecriture ne redonne pas `lu`.
+    fn de_paris(champs: [&str; 6], texte: fn(Moment) -> String, lu: &str) -> Option<Moment> {
+        let [an, mois, jour, heure, minute, seconde] = champs;
+        let jour = Jour::nouveau(chiffres(an)? as i32, chiffres(mois)? as u32, chiffres(jour)? as u32)?;
+        let m = Moment::a_paris(jour, chiffres(heure)?, chiffres(minute)?, chiffres(seconde)?)?;
+        (texte(m) == lu).then_some(m)
+    }
+
+    /// Les morceaux `[a..b]` d'un texte ASCII de `n` octets ; `None` sinon.
+    fn morceaux<const K: usize>(t: &str, n: usize, bornes: [(usize, usize); K]) -> Option<[&str; K]> {
+        if t.len() != n || !t.is_ascii() {
+            return None;
+        }
+        Some(bornes.map(|(a, b)| &t[a..b]))
+    }
+
+    /// Le `serialize` et le `deserialize` d'une ecriture en texte (`texte`, `lu`), et ceux de son `Option` (`option`).
+    macro_rules! en_texte {
+        ($message:literal) => {
+            /// L'instant ecrit dans cette forme.
+            pub fn serialize<S: serde::Serializer>(m: &Moment, s: S) -> Result<S::Ok, S::Error> {
+                s.serialize_str(&texte(*m))
+            }
+
+            /// L'instant lu dans cette forme, et elle seule.
+            pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Moment, D::Error> {
+                let s = <String as serde::Deserialize>::deserialize(d)?;
+                lu(&s).ok_or_else(|| serde::de::Error::custom(format!($message, crate::date::repr_texte(&s))))
+            }
+
+            /// Un `Option<Moment>` dans cette forme : absent ou `null`, `None` (le champ porte aussi `#[serde(default)]`).
+            pub mod option {
+                use super::Moment;
+
+                pub fn serialize<S: serde::Serializer>(m: &Option<Moment>, s: S) -> Result<S::Ok, S::Error> {
+                    match m {
+                        Some(m) => s.serialize_some(&super::texte(*m)),
+                        None => s.serialize_none(),
+                    }
+                }
+
+                pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Moment>, D::Error> {
+                    match <Option<String> as serde::Deserialize>::deserialize(d)? {
+                        Some(s) => super::lu(&s).map(Some).ok_or_else(|| serde::de::Error::custom(format!($message, crate::date::repr_texte(&s)))),
+                        None => Ok(None),
+                    }
+                }
+            }
+        };
+    }
+
+    /// `AAAA-MM-JJTHH:MM:SS`, heure de Paris : l'instant d'un geste (la saisie d'un imprevu, la validation d'une
+    /// version, le depart d'un envoi, une ligne de journal).
+    pub mod seconde {
+        use super::Moment;
+
+        pub fn texte(m: Moment) -> String {
+            let (j, r) = super::local(m);
+            format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}", j.an, j.mois, j.jour, r / 3_600, (r % 3_600) / 60, r % 60)
+        }
+
+        pub(crate) fn lu(t: &str) -> Option<Moment> {
+            let c = super::morceaux(t, 19, [(0, 4), (5, 7), (8, 10), (11, 13), (14, 16), (17, 19)])?;
+            super::de_paris(c, texte, t)
+        }
+
+        en_texte!("{} n'est pas un instant AAAA-MM-JJTHH:MM:SS");
+    }
+
+    /// `AAAA-MM-JJTHH:MM`, heure de Paris : la pose d'un secret dans le coffre, la fin d'une seance.
+    pub mod minute {
+        use super::Moment;
+
+        pub fn texte(m: Moment) -> String {
+            let (j, r) = super::local(m);
+            format!("{:04}-{:02}-{:02}T{:02}:{:02}", j.an, j.mois, j.jour, r / 3_600, (r % 3_600) / 60)
+        }
+
+        pub(crate) fn lu(t: &str) -> Option<Moment> {
+            let [a, m, j, h, mi] = super::morceaux(t, 16, [(0, 4), (5, 7), (8, 10), (11, 13), (14, 16)])?;
+            super::de_paris([a, m, j, h, mi, "0"], texte, t)
+        }
+
+        en_texte!("{} n'est pas un instant AAAA-MM-JJTHH:MM");
+    }
+
+    /// `AAAA-MM-JJ HH:MM`, heure de Paris, une espace entre le jour et l'heure : la saisie d'un imprevu, de la
+    /// connaissance d'un arret.
+    pub mod saisie {
+        use super::Moment;
+
+        pub fn texte(m: Moment) -> String {
+            let (j, r) = super::local(m);
+            format!("{:04}-{:02}-{:02} {:02}:{:02}", j.an, j.mois, j.jour, r / 3_600, (r % 3_600) / 60)
+        }
+
+        pub(crate) fn lu(t: &str) -> Option<Moment> {
+            let [a, m, j, h, mi] = super::morceaux(t, 16, [(0, 4), (5, 7), (8, 10), (11, 13), (14, 16)])?;
+            super::de_paris([a, m, j, h, mi, "0"], texte, t)
+        }
+
+        en_texte!("{} n'est pas une heure AAAA-MM-JJ HH:MM");
+    }
+
+    /// `JJ/MM/AAAA HH:MM`, heure de Paris : l'heure d'un passage de l'ouverture, que le bandeau montre.
+    pub mod francaise {
+        use super::Moment;
+
+        pub fn texte(m: Moment) -> String {
+            let (j, r) = super::local(m);
+            format!("{} {:02}:{:02}", j.jj_mm_aaaa(), r / 3_600, (r % 3_600) / 60)
+        }
+
+        pub(crate) fn lu(t: &str) -> Option<Moment> {
+            let [j, m, a, h, mi] = super::morceaux(t, 16, [(0, 2), (3, 5), (6, 10), (11, 13), (14, 16)])?;
+            super::de_paris([a, m, j, h, mi, "0"], texte, t)
+        }
+
+        en_texte!("{} n'est pas une heure JJ/MM/AAAA HH:MM");
+    }
+
+    /// `AAAA-MM-JJTHH:MMZ`, en UTC : l'heure ou le serveur du filet a releve la reponse a un retour (`iso` de
+    /// `infra/filet/filet_serveur.py`, `FORMAT = "%Y-%m-%dT%H:%M"` suivi de `Z`).
+    pub mod minute_utc {
+        use super::Moment;
+
+        pub fn texte(m: Moment) -> String {
+            let (j, r) = super::utc(m);
+            format!("{:04}-{:02}-{:02}T{:02}:{:02}Z", j.an, j.mois, j.jour, r / 3_600, (r % 3_600) / 60)
+        }
+
+        pub(crate) fn lu(t: &str) -> Option<Moment> {
+            let [a, m, j, h, mi] = super::morceaux(t, 17, [(0, 4), (5, 7), (8, 10), (11, 13), (14, 16)])?;
+            let jour = crate::date::Jour::nouveau(super::chiffres(a)? as i32, super::chiffres(m)? as u32, super::chiffres(j)? as u32)?;
+            let instant = Moment::de_secondes((jour.ordinal() - 719_163) * 86_400 + super::chiffres(h)? * 3_600 + super::chiffres(mi)? * 60)?;
+            (texte(instant) == t).then_some(instant)
+        }
+
+        en_texte!("{} n'est pas une heure AAAA-MM-JJTHH:MMZ");
+
+        /// L'heure d'une reponse, telle que le serveur du filet l'ecrit : `""` tant que l'editeur n'a pas repondu (`None`),
+        /// sinon une minute UTC. Le `""` est un contrat avec les versions installees, qui le lisent en texte strict : le
+        /// serveur ne change pas, et il se lit ici, a la porte, comme le cas qu'il nomme. `null` se refuse.
+        pub fn vide_ou<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Moment>, D::Error> {
+            let s = <String as serde::Deserialize>::deserialize(d)?;
+            if s.is_empty() {
+                return Ok(None);
+            }
+            lu(&s).map(Some).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas une heure AAAA-MM-JJTHH:MMZ", crate::date::repr_texte(&s))))
+        }
+    }
+
+    /// `AAAAMMJJHHMMSS` : la date d'un depot que la plate-forme DSN liste (guide d'implementation de l'API DSN v6.8,
+    /// « Date du dépôt », `depot.date`, format `yyyyMMddhhmmss`, [14,14] ;
+    /// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`). Le guide ne
+    /// dit pas le fuseau ; lue comme l'heure de Paris (une inference).
+    pub mod compacte {
+        use super::Moment;
+
+        pub fn texte(m: Moment) -> String {
+            let (j, r) = super::local(m);
+            format!("{:04}{:02}{:02}{:02}{:02}{:02}", j.an, j.mois, j.jour, r / 3_600, (r % 3_600) / 60, r % 60)
+        }
+
+        pub(crate) fn lu(t: &str) -> Option<Moment> {
+            let c = super::morceaux(t, 14, [(0, 4), (4, 6), (6, 8), (8, 10), (10, 12), (12, 14)])?;
+            super::de_paris(c, texte, t)
+        }
+
+        en_texte!("{} n'est pas un instant AAAAMMJJHHMMSS");
+    }
+
+    /// Un entier : les secondes de l'heure de Paris lue comme si c'etait de l'UTC (l'enregistrement d'un message).
+    pub mod secondes_locales {
+        use super::Moment;
+
+        /// Les secondes locales de Paris de cet instant (arrondi a la microseconde, puis tronque).
+        pub fn texte(m: Moment) -> String {
+            nombre(m).to_string()
+        }
+
+        fn nombre(m: Moment) -> i64 {
+            let (j, r) = super::local(m);
+            (j.ordinal() - 719_163) * 86_400 + r
+        }
+
+        pub(crate) fn lu(local: i64) -> Option<Moment> {
+            let jour = crate::date::Jour::depuis_jours_unix(local.div_euclid(86_400))?;
+            let r = local.rem_euclid(86_400);
+            let m = Moment::a_paris(jour, r / 3_600, (r % 3_600) / 60, r % 60)?;
+            (nombre(m) == local).then_some(m)
+        }
+
+        pub fn serialize<S: serde::Serializer>(m: &Moment, s: S) -> Result<S::Ok, S::Error> {
+            s.serialize_i64(nombre(*m))
+        }
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Moment, D::Error> {
+            let t = <i64 as serde::Deserialize>::deserialize(d)?;
+            lu(t).ok_or_else(|| serde::de::Error::custom(format!("{} s n'est pas une heure du calendrier (années 1 à 9999)", t)))
+        }
+    }
 }
 
 /// UN INSTANT ECRIT DANS UN FICHIER (un scenario) : ses secondes depuis 1970, un nombre a virgule (`ecrit`), lues
@@ -935,6 +1191,21 @@ mod tests {
         assert_eq!(decalage(a(t * 86_400 + 3_600)), 3_600);
         assert_eq!(MinuteEcrite::de(a(t * 86_400 + 3_599)).iso(), "2026-10-25T02:59");
         assert_eq!(MinuteEcrite::de(a(t * 86_400 + 3_600)).iso(), "2026-10-25T02:00");
+    }
+
+    /// Directive 2000/84/CE, art. 2 (même fichier) : à 1 h UTC le dernier dimanche de mars, Paris passe de 2 h à 3 h ;
+    /// l'heure de Paris `2026-03-29T02:30:00` n'existe pas, elle se refuse.
+    #[test]
+    fn l_heure_sautee_du_passage_a_l_ete_se_refuse() {
+        assert_eq!(ecrit::seconde::lu("2026-03-29T02:30:00"), None);
+    }
+
+    /// Directive 2000/84/CE, art. 3 (même fichier) : à 1 h UTC le dernier dimanche d'octobre, Paris revient de 3 h à 2 h ;
+    /// l'heure de Paris `2026-10-25T02:30:00` existe deux fois, elle se relit à l'identique.
+    #[test]
+    fn l_heure_doublee_du_passage_a_l_hiver_se_relit() {
+        let m = ecrit::seconde::lu("2026-10-25T02:30:00").unwrap();
+        assert_eq!(ecrit::seconde::texte(m), "2026-10-25T02:30:00");
     }
 
 }
