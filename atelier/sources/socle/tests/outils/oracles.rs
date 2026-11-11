@@ -2,8 +2,6 @@
 //! crate qui l'inclut (`CARGO_MANIFEST_DIR`), que `PUPPETPAIE_REECRIRE_ORACLES=1` reecrit ; et l'echantillon a graine
 //! fixe d'une grille (`tire`). Inclus par les aides de chaque crate (`#[path = ...] mod oracles;`).
 
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 

@@ -4,7 +4,7 @@
 use lopdf::content::Content;
 use lopdf::{Document, Object, ObjectId};
 
-mod commun;
+pub mod commun;
 use commun::{chemin, dossier_temp, flux, lancer, octets_fabrique, pdf_a_la_main, pdf_fabrique, textes};
 
 const MARQUE: &str = "Réédité par Test le 01/10/2026 — numéros identiques ; mise en page d'aujourd'hui.";

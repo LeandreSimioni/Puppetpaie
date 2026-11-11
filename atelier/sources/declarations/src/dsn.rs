@@ -1723,7 +1723,6 @@ profession intermediaire, 06 employe, 07 ouvrier), et {}. Il ne se devine pas : 
 
 /// Les blocs 40 a 71 d'un contrat. `emplois` : le code emplois multiples (`40.036`) du contrat,
 /// que `emplois_multiples` tire des autres contrats de la periode.
-#[allow(clippy::too_many_arguments)]
 pub fn bloc_contrat(
     f: &mut Fichier, p: &Paie, ent: &ChampsEntreprise, orgs: &Organismes, rang: i64, bar: &BaremeDuMois, fin_de_contrat: bool,
     arrets: &[&Arret], nature_dsn: NatureDeLaDeclaration, emplois: &str,
@@ -1734,7 +1733,6 @@ pub fn bloc_contrat(
 /// Les blocs d'un contrat avec `fin_fctu` : la fin du contrat d'un signalement de
 /// fin de contrat (blocs 62 et 63, `fctu::bloc_62_63`) a la place de celle
 /// d'une mensuelle.
-#[allow(clippy::too_many_arguments)]
 pub fn bloc_contrat_fctu(
     f: &mut Fichier, p: &Paie, ent: &ChampsEntreprise, orgs: &Organismes, rang: i64, bar: &BaremeDuMois, fin_de_contrat: bool,
     arrets: &[&Arret], nature_dsn: NatureDeLaDeclaration, fin_fctu: Option<&crate::fctu::FinDeContrat>, emplois: &str,
@@ -2299,7 +2297,6 @@ pub fn net_social(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe: i6
 }
 
 /// Les blocs 78, 79 et 81 d'une paie.
-#[allow(clippy::too_many_arguments)]
 pub fn bases_et_cotisations(
     f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, debut: &Jour, fin: &Jour, signe: i64, nature_dsn: NatureDeLaDeclaration,
     bases_exclues: &[BaseAssujettie],
@@ -2684,7 +2681,6 @@ fn annuler_les_58(f: &mut Fichier, r: &Regularisation, origine: (Jour, Jour)) ->
 
 /// `rang` : le rang du contrat sous l'individu (ses affiliations, 78.005) ; `numero` : celui du versement (50.003), qui
 /// n'est jamais celui d'un autre versement de l'individu (`numero_de_versement`).
-#[allow(clippy::too_many_arguments)]
 fn bloc_regularisation(
     f: &mut Fichier, r: &Regularisation, bar_o: &BaremeDuMois, rang: i64, numero: i64, pas_c: &PrelevementDeLaCorrection,
     fin_mois: Jour,
@@ -3903,7 +3899,6 @@ pub fn pas_retenu(lignes: &[String]) -> R<Decimal> {
 
 /// Le bloc 20 de la DGFiP, ou rien. `du` : le PAS retenu par le fichier ; `remplace` : la DSN est un annule et
 /// remplace (type 03 ou 05), et `remplacee_versait_pas` dit si la declaration remplacee portait un versement DGFiP.
-#[allow(clippy::too_many_arguments)]
 fn versement_dgfip(
     du: Decimal, mois: Mois, debut: Jour, fin: Jour, banque: &droit::fiche::Banque, remplace: bool, remplacee_versait_pas: Option<bool>,
 ) -> R<Vec<String>> {

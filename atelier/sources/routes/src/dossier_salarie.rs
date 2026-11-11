@@ -651,7 +651,6 @@ pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec
 /// `contrats_vus` : les numeros de contrat deja reedites par un mois precedent. Un contrat
 /// plurimensuel est sur la paie de chacun de ses mois, mais c'est UN contrat : il ne sort qu'une
 /// fois, a son premier mois.
-#[allow(clippy::too_many_arguments)]
 fn mois_puppetpaie(
     ctx: &Contexte,
     le_mois: Mois,

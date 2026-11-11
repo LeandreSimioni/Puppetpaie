@@ -541,7 +541,6 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
 /// La ligne : la part du delai apres la fin du contrat, le salaire de chaque mois pour ses heures
 /// (`droit::periodes::part_du_mois`) ; DSN 52 « 017 ». Les conges que ces jours acquierent (`conges_du_delai`) s'ajoutent
 /// a l'indemnite compensatrice de conges payes du solde.
-#[allow(clippy::too_many_arguments)]
 fn delai_de_prevenance(
     ctx: &Contexte, au: &AuMois, e: &Carte, mois: Mois, deja: &[LignePaie], fin: &socle::date::Jour, salaire: Decimal, motif: Option<MotifDeRupture>, nat: &Nature,
     qui: &str, stc: &mut Solde,
@@ -661,7 +660,6 @@ fn delai_de_prevenance(
 /// jours ouvrables, comme le solde ; L3141-24), s'ajoutent a la ligne de l'indemnite compensatrice de conges payes du
 /// solde, ou en font une. Un salarie dont la caisse des Conges Spectacles paie les conges n'en a pas chez l'employeur
 /// (L3141-30). Rend la phrase qui le dit.
-#[allow(clippy::too_many_arguments)]
 fn conges_non_effectues(
     ctx: &Contexte, e: &Carte, mois: Mois, fin: &socle::date::Jour, jours: Decimal, salaire: Decimal, montant: Decimal,
     stc: &mut Solde,

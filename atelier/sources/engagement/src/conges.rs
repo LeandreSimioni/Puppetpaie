@@ -469,7 +469,6 @@ impl Tenue {
 
     /// Ce que les paies validees `paies` du salarie (`cle`, la cle de sa fiche) en `mois` apportent a la periode [debut,
     /// fin] : sa presence, ses jours pris, et, avec `remuneration`, son brut d'un mois ou il est present.
-    #[allow(clippy::too_many_arguments)]
     fn ajouter(
         &mut self, ctx: &Contexte, cle_salarie: &str, cle: &str, rep: Option<&Reprise>, debut: &Jour, fin: &Jour, mois: Mois,
         paies: &[PaieLue], remuneration: bool,

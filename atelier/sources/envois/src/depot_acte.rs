@@ -208,7 +208,6 @@ pub fn deposer_dsn(
 /// Depose une DPAE. `contenu` : le fichier tel qu'il part (bascule en test faite) ; `embauches` : ce qu'elle declare
 /// (salarie, numero du contrat, premier jour, fin) ; `client` : le client Urssaf, identifiants deja verifies (le monde
 /// seulement) ; `deja` : le depot precedent du meme fichier.
-#[allow(clippy::too_many_arguments)]
 pub fn deposer_dpae(
     ctx: &Contexte,
     branchement: Branchement,

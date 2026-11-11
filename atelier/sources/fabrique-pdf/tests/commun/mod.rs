@@ -1,7 +1,6 @@
 //! Ce que les tests des modes de lecture et de retouche de PDF (`lecture`, `marquage`,
 //! `verrouillage`) ont en commun : un dossier temporaire, le lancement du programme, un PDF
 //! fabriqué par la fabrique, un PDF écrit à la main (comme un outil tiers le ferait).
-#![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

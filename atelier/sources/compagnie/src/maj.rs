@@ -527,12 +527,17 @@ pub fn b64(t: &str) -> R<Vec<u8>> {
 /// Les cles publiques dont une archive est acceptee : celle du poste de l'editeur (`CLE_PUBLIQUE`) et celle du flux de
 /// GitHub (`CLE_PUBLIQUE_GITHUB`), quand elle est reportee. Une signature de toute autre cle est refusee.
 pub fn cles_de_l_editeur() -> Vec<&'static str> {
-    #[allow(unused_mut)]
-    let mut v: Vec<&'static str> = [CLE_PUBLIQUE, CLE_PUBLIQUE_GITHUB].into_iter().filter(|c| !c.is_empty()).collect();
-    // LE BINAIRE DE L'ATELIER (le banc, jamais livre) accepte aussi la cle d'un faux depot local, que nomme
-    // `PUPPETPAIE_ATELIER_CLE_MAJ` (une cle publique Ed25519 en base64) : la mise a jour et le dossier portable s'y
-    // jouent de bout en bout par `moteur route`. Le binaire livre n'en porte rien (`tests/atelier.rs`).
+    let v: Vec<&'static str> = [CLE_PUBLIQUE, CLE_PUBLIQUE_GITHUB].into_iter().filter(|c| !c.is_empty()).collect();
     #[cfg(feature = "atelier")]
+    let v = avec_la_cle_de_l_atelier(v);
+    v
+}
+
+/// LE BINAIRE DE L'ATELIER (le banc, jamais livre) accepte aussi la cle d'un faux depot local, que nomme
+/// `PUPPETPAIE_ATELIER_CLE_MAJ` (une cle publique Ed25519 en base64) : la mise a jour et le dossier portable s'y
+/// jouent de bout en bout par `moteur route`. Le binaire livre n'en porte rien (`tests/atelier.rs`).
+#[cfg(feature = "atelier")]
+fn avec_la_cle_de_l_atelier(mut v: Vec<&'static str>) -> Vec<&'static str> {
     if let Some(c) = std::env::var_os("PUPPETPAIE_ATELIER_CLE_MAJ") {
         let c = c.to_string_lossy();
         if !c.trim().is_empty() {

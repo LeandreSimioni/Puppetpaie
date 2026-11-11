@@ -1,13 +1,11 @@
 //! Les aides des essais de l'atelier : les donnees livrees, un dossier par test, une fiche datee, les oracles.
 
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
 #[path = "../../../socle/tests/outils/oracles.rs"]
-mod oracles;
+pub mod oracles;
 pub use oracles::*;
 
 /// Les données livrées (`logiciel/donnees`).

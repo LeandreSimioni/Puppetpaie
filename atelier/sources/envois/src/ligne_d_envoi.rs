@@ -27,7 +27,6 @@ pub fn noter(ctx: &Contexte, ligne: Ligne) -> R<Ligne> {
 /// aucun) ; l'adresse ou l'envoi a echoue est a part, dans le detail (`echec_a`), avec les partis. Jamais l'expediteur
 /// comme destinataire. `detail` : ce que l'envoi garde d'ordinaire ; `sorte`, la ligne de sa sorte. `versions` : celles
 /// des engagements des salaries servis avant l'echec ; ce qui a atteint le salarie est parti (`departs_des_lignes`).
-#[allow(clippy::too_many_arguments)]
 pub fn noter_echec_d_envoi<D: EnRoute, Rt>(
     ctx: &Contexte,
     sorte: impl FnOnce(Envoi<D, Rt>) -> Ligne,

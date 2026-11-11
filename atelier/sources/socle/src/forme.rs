@@ -49,6 +49,22 @@ pub fn lire_reponse_tiers<T: ReponseDUnTiers>(texte: &str, phrase: &str) -> R<T>
     lire_texte(texte, phrase)
 }
 
+/// UNE CLE CONNUE QUE LE LOGICIEL NE LIT PAS : une note d'un fichier (`quoi`, `note`, `source` : atelier/AGENTS.md,
+/// « Chaque forme est declaree une fois »), ou une valeur que le fichier porte pour qui l'ecrit. La forme la nomme, pour
+/// refuser toute cle inconnue (`deny_unknown_fields`), et n'en garde rien : son type ne porte aucune valeur
+/// (`PhantomData`, que le compilateur sait vide). Elle se lit par `non_lue`, exigee :
+/// `#[serde(deserialize_with = "socle::forme::non_lue")]` ; une note qui peut manquer ajoute `default`, qui ne fabrique
+/// aucune valeur (`aucun_repli_ne_fabrique_une_valeur`, `moteur/tests/fichiers/structure.rs`).
+pub type NonLue = std::marker::PhantomData<Rien>;
+
+/// Ce qu'une cle non lue garde : rien (aucune valeur de ce type n'existe).
+pub enum Rien {}
+
+/// La valeur d'une cle non lue (`NonLue`) : n'importe quelle valeur JSON, parcourue et jetee.
+pub fn non_lue<'de, D: serde::Deserializer<'de>>(d: D) -> Result<NonLue, D::Error> {
+    <serde::de::IgnoredAny as serde::Deserialize>::deserialize(d).map(|_| std::marker::PhantomData)
+}
+
 /// UNE FORME QUE SA TABLE TYPE (`DeserializeSeed` : une saisie de fiche, que la table des cases lit case par case selon
 /// la forme de chacune, `declarations::champs::Lecture`) : la donnee `v` lue selon `table`, dans son texte, comme `lire`.
 #[track_caller]

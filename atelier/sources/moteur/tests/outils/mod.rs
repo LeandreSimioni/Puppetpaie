@@ -4,8 +4,6 @@
 //! Déclaré par chaque `main.rs` de groupe (`#[path = "../outils/mod.rs"] mod outils;`) et par les fichiers seuls
 //! (`#[path = "outils/mod.rs"] mod outils;`).
 
-#![allow(dead_code)]
-
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -416,8 +414,7 @@ pub fn aem(zones: &[(usize, &str)], nir: &str, debut: &str, fin: &str, objet: &s
 // ------------------------------------------------------------------ le faux serveur HTTP
 
 #[path = "../../../envois/tests/outils/serveur.rs"]
-mod serveur;
-#[allow(unused_imports)]
+pub mod serveur;
 pub use serveur::*;
 
 /// Une réponse HTTP dont le corps est ce JSON.
@@ -453,5 +450,5 @@ pub fn mandataire() -> (String, Arc<Mutex<Vec<String>>>) {
 // ------------------------------------------------------------------ les oracles (communs aux trois crates)
 
 #[path = "../../../socle/tests/outils/oracles.rs"]
-mod oracles;
+pub mod oracles;
 pub use oracles::*;

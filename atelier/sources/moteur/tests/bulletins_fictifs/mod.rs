@@ -5,10 +5,8 @@
 //! les tests fabriquent (le certificat Congés Spectacles, l'AEM, un PDF en traces) : noms, adresses,
 //! NIR, Siret, numeros d'objet, titres et montants inventes ; rien de `prive/`, aucun des PDF reels de `import/`.
 
-#![allow(dead_code)]
-
 #[path = "../../../atelier/src/bulletins_fictifs.rs"]
-mod fabrique;
+pub mod fabrique;
 pub use fabrique::*;
 use fabrique_pdf::forme::{Bloc, Mesure};
 

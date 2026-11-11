@@ -8,7 +8,7 @@
 //! Aucun de ces fichiers ne change l'environnement du processus (`set_var`) : ceux qui le font restent seuls dans `tests/`.
 
 #[path = "../outils/mod.rs"]
-mod outils;
+pub mod outils;
 
 mod calcul_pieces;
 mod conges;

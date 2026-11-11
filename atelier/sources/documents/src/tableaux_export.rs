@@ -800,7 +800,6 @@ fn ligne_de(cellules: Vec<String>) -> pdf::Ligne {
 /// La description (FORMAT.md) d'un etat -- A4 paysage, son titre, son tableau, ses
 /// notes. `entetes` : (libelle, a droite) ; `rangees` : (cellules en texte, genre) avec `genre` dans « », « total »
 /// ou « general ».
-#[allow(clippy::too_many_arguments)]
 pub fn description_pdf(
     titre: &str, periode: &str, nom: Option<&str>, sous_titre: &str, pied: &str, entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], notes: &[String],
     sources: &[String],

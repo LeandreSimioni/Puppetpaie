@@ -852,8 +852,8 @@ fn fait_annuel(ctx: &Contexte, e: &Annuelle, annee: i32, faites: &Cochees) -> R<
 #[serde(deny_unknown_fields)]
 struct EcheancierBase {
     /// Ce qu'est le fichier.
-    #[allow(dead_code)]
-    quoi: String,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    quoi: socle::forme::NonLue,
     dsn: ModeleDsn,
     annuelles: Vec<Annuelle>,
 }

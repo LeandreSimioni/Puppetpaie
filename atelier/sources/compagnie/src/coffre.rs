@@ -559,7 +559,6 @@ pub fn maison_de(env: &dyn Fn(&str) -> Option<String>) -> PathBuf {
         None if cfg!(windows) => env("USERPROFILE"),
         None => None,
     };
-    #[allow(deprecated)]
     match (dit, std::env::home_dir()) {
         (Some(h), _) => PathBuf::from(h),
         (None, Some(h)) => h,

@@ -34,10 +34,10 @@ const ADMIS: [TypeDeLaDeclaration; 2] = [TypeDeLaDeclaration::Normale, TypeDeLaD
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Base {
-    #[allow(dead_code)]
-    quoi: String,
-    #[allow(dead_code)]
-    note: String,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    quoi: socle::forme::NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    note: socle::forme::NonLue,
     motifs: Motifs,
 }
 
@@ -45,22 +45,23 @@ struct Base {
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Motifs {
-    #[allow(dead_code)]
-    note: String,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    note: socle::forme::NonLue,
     codes: Vec<Motif>,
 }
 
-/// Une nature d'evenement declencheur : son code, son libelle, et si le moteur l'emet (`saisissable`).
+/// Une nature d'evenement declencheur : son code, son libelle, et si le moteur l'emet (`saisissable`). `dgfip` et
+/// `organismes_complementaires` disent a qui la norme destine l'amorcage : le moteur ne les lit pas.
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Motif {
     code: String,
     libelle: String,
     saisissable: bool,
-    #[allow(dead_code)]
-    dgfip: bool,
-    #[allow(dead_code)]
-    organismes_complementaires: bool,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    dgfip: socle::forme::NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    organismes_complementaires: socle::forme::NonLue,
 }
 
 fn motifs_de_la_norme() -> R<std::sync::Arc<Base>> {

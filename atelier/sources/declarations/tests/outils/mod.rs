@@ -1,8 +1,6 @@
 //! Les aides des tests des declarations : les donnees livrees, et une saisie de fiche
 //! lue dans la forme que la table des cases donne a chacune (`Saisie::de_la_fiche`).
 
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;

@@ -97,10 +97,10 @@ const ILLISIBLE: &str = "La banque des conseils ne se lit pas : le signaler au d
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Banque {
-    #[allow(dead_code)] // une note : elle ne se lit pas au calcul
-    quoi: Option<String>,
-    #[allow(dead_code)] // une note : elle ne se lit pas au calcul
-    note: Option<String>,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    quoi: socle::forme::NonLue,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    note: socle::forme::NonLue,
     /// Le titre lisible de chaque texte depose qu'une source cite, par son chemin.
     documents: BTreeMap<String, String>,
     annexes: Annexes,
@@ -114,10 +114,10 @@ struct Banque {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Annexes {
-    #[allow(dead_code)] // une note : elle ne se lit pas au calcul
-    quoi: Option<String>,
-    #[allow(dead_code)] // une note : elle ne se lit pas au calcul
-    note: Option<String>,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    quoi: socle::forme::NonLue,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    note: socle::forme::NonLue,
     #[serde(rename = "X")]
     x: Art30,
     #[serde(rename = "VIII")]
@@ -155,8 +155,8 @@ struct Art30Techniciens {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Fenetres {
-    #[allow(dead_code)] // une note : elle ne se lit pas au calcul
-    quoi: Option<String>,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    quoi: socle::forme::NonLue,
     anniversaire: String,
     glissante: String,
 }
@@ -211,14 +211,14 @@ struct Conseil {
     texte: Gabarit,
     detail: Option<Gabarit>,
     source: Vec<Source>,
-    #[allow(dead_code)] // pour qui ecrit la banque
-    domaine: String,
-    #[allow(dead_code)] // pour qui ecrit la banque
-    public: String,
-    #[allow(dead_code)] // pour qui ecrit la banque
-    ciblage: String,
-    #[allow(dead_code)] // pour qui ecrit la banque
-    certitude: String,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    domaine: socle::forme::NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    public: socle::forme::NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    ciblage: socle::forme::NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    certitude: socle::forme::NonLue,
 }
 
 /// La banque, lue en sa forme une fois par contenu.

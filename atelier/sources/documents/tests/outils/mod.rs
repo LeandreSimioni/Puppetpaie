@@ -1,8 +1,6 @@
 //! Les aides des tests des documents, sans JSON brut : une donnee de test se lit PAR LA PORTE DU SOCLE, en texte,
 //! directement dans sa forme (`socle::forme::lire_texte`) ; un montant se lit en decimal.
 
-#![allow(dead_code)]
-
 use std::path::Path;
 use std::str::FromStr;
 

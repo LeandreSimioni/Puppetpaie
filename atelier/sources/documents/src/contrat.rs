@@ -207,7 +207,6 @@ fn reference_du_contrat(p: &Paie, date_contrat: Jour, ailleurs: bool) -> String 
 /// l'avenant suit le sien -- celui avec lequel le contrat est parti, ou, signe hors du logiciel (`ailleurs`), celui que
 /// son engagement suit : ses modifications se disent alors en clair (`avenant::changements_en_clair`), par le paragraphe
 /// `{{modification.phrase}}` du bloc MODIFICATION:.
-#[allow(clippy::too_many_arguments)]
 pub fn ecrire_avenant(
     ctx: &Contexte,
     p: &Paie,

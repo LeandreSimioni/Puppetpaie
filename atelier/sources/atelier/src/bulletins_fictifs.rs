@@ -12,8 +12,6 @@
 //! litteraux, l'outil en `String`). Rien de reel : noms, adresses, NIR, Siret, numeros d'objet, titres et montants
 //! sont ceux qu'on lui donne, inventes (regle 9 a).
 
-#![allow(dead_code)]
-
 use fabrique_pdf::forme::{Alignement, Bloc, Description, Document, Marges, Mesure, Page, Police, PoliceFixe, TexteFixe};
 use fabrique_pdf::mesure::mesure;
 use std::path::Path;

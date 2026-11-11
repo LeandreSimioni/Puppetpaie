@@ -11,8 +11,8 @@ use socle::date::Jour;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Reels {
-    #[allow(dead_code)]
-    quoi: String,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    quoi: socle::forme::NonLue,
     bordereaux: Vec<Reel>,
 }
 

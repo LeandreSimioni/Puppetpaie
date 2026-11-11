@@ -127,7 +127,6 @@ fn periodes(ctx: &Contexte, lignes: &[crate::journal::Ligne], d: &DsnLue, le_moi
     Ok(out)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn periode(c: &ContratDeclare, numero: &str, x: &Mesures, debut: Jour, fin: Jour, m: socle::mois::Mois, paiement: Option<Jour>, premiere: bool) -> Periode {
     let (d, f) = (m.premier_jour(), m.dernier_jour());
     Periode {

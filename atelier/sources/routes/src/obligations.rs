@@ -856,7 +856,6 @@ fn dit_fait(faite: Option<&ObligationFaite>, o: &DeBase) -> Option<Fait> {
 }
 
 /// Un signalement DSN (04 ou 05) : cinq jours ouvres sans subrogation, avec la mensuelle du mois avec.
-#[allow(clippy::too_many_arguments)]
 fn signalement_dsn(
     ctx: &Contexte,
     cal: &mut Calendrier,

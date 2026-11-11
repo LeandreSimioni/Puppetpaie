@@ -227,8 +227,8 @@ pub(crate) fn dossier_apercu() -> PathBuf {
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SaisieDeLApercu {
-    #[allow(dead_code)]
-    source: String,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    source: socle::forme::NonLue,
     mois: socle::mois::Mois,
     engagements: Vec<engagement::saisie::Carte>,
 }

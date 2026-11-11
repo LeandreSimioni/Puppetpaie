@@ -195,7 +195,6 @@ fn qui(p: &Paie) -> String {
 
 /// La date de la modification (41.001) du changement de `md`, declaree `avant` dans la DSN de `decl.mois`. Refus
 /// quand elle ne se lit pas, ou qu'elle ne tombe pas dans le mois declare (voir l'en-tete du module).
-#[allow(clippy::too_many_arguments)]
 fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, mois: Mois, avant: &str, apres: Option<&str>) -> R<Jour> {
     let apres = match apres {
         Some(a) => a,
@@ -320,7 +319,6 @@ intermediaires, ou ne garder qu'un changement.",
 /// Les blocs S21.G00.41 du contrat de `p`, dont le bloc 40 vient d'etre ecrit (`ecrit`), dans la DSN mensuelle de
 /// `mois` de l'etablissement `nics[0]`, en norme `norme` ; `declare` : son bloc 40 declare (`dsn::bloc_40_declare`). Vide au
 /// premier mois du contrat ou quand rien n'a encore ete declare.
-#[allow(clippy::too_many_arguments)]
 fn blocs_41(ctx: &Contexte, p: &Paie, mois: Mois, norme: &crate::norme::Norme, nics: &[String], ecrit: &[(String, String)], declare: Option<&Declare>) -> R<Vec<Vec<(String, String)>>> {
     let e = &p.engagement;
     if e.numero.as_deref().is_none_or(str::is_empty) {

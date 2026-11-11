@@ -3,7 +3,7 @@
 //! d'ou ce fichier seul. Cle et jeton fictifs, dans `CARGO_TARGET_TMPDIR` ; un faux serveur sur `127.0.0.1`.
 
 #[path = "outils/mod.rs"]
-mod outils;
+pub mod outils;
 
 use std::path::PathBuf;
 use std::sync::Once;

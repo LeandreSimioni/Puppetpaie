@@ -501,7 +501,6 @@ fn jour_de(t: Moment) -> Jour {
     InstantEcrit::de(t).jour()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn rejouer_les_gestes(
     scenario: &Path,
     inst: &Path,

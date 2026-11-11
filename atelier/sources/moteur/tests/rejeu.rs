@@ -8,7 +8,7 @@
 //! Chaque fictive de la phase 4 aura son test ici, sur ce modele : `outils::rejeu::rejouer_et_comparer("<nom>", ...)`.
 
 #[path = "outils/mod.rs"]
-mod outils;
+pub mod outils;
 
 use serde_json::{json, Value};
 

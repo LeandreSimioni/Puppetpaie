@@ -125,10 +125,10 @@ struct Entree<T> {
     depuis: Option<socle::date::Jour>,
     valeur: T,
     accord: Option<String>,
-    #[allow(dead_code)]
-    source: Option<Fondement>,
-    #[allow(dead_code)]
-    note: Option<String>,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    source: socle::forme::NonLue,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    note: socle::forme::NonLue,
 }
 
 /// LA LECTURE EN COURS : le jour ou le bareme se lit, l'organisation patronale de la compagnie (un accord la lie peut-etre

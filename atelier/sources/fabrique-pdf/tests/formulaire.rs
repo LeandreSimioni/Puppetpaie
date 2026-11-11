@@ -11,7 +11,7 @@ use fabrique_pdf::mesure::{mesure, Mesure};
 use lopdf::{Document, Object, ObjectId};
 use serde_json::{json, Value};
 
-mod commun;
+pub mod commun;
 use commun::{chemin, dossier_temp, flux, lancer, octets_fabrique, pdf_a_la_main, textes};
 
 // Les numéros d'objets du formulaire d'essai.

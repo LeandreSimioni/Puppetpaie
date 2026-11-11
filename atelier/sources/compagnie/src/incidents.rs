@@ -767,7 +767,7 @@ fn systeme() -> String {
 /// donc le nombre pointe entre les crochets, sans lire le mot. Windows 11 garde le « 10.0 » de Windows 10 : c'est le build
 /// (le troisieme nombre) qui les distingue, 22000 et plus pour Windows 11. Sans numero lisible, « Windows » seul : le
 /// moteur ne devine pas lequel (regle 1).
-#[cfg_attr(unix, allow(dead_code))]
+#[cfg(not(unix))]
 fn windows_de_ver(sortie: &str) -> String {
     let Some((entre, _)) = sortie.split_once('[').and_then(|(_, r)| r.split_once(']')) else { return "Windows".to_string() };
     let numero = |m: &&str| m.contains('.') && m.chars().all(|c| c.is_ascii_digit() || c == '.');

@@ -11,7 +11,7 @@ use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use lopdf::{Dictionary, Document, Object};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 
-mod commun;
+pub mod commun;
 use commun::{chemin, dossier_temp, lancer, pdf_fabrique, textes};
 
 fn verrouiller(entree: &str, sortie: &str) -> std::process::Output {

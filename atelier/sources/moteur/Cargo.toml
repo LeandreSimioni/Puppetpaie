@@ -1,3 +1,6 @@
+[lints]
+workspace = true
+
 [package]
 name = "moteur"
 version = "0.1.0"
@@ -9,9 +12,12 @@ publish = false
 [lib]
 path = "src/lib.rs"
 
+# Le binaire n'a pas d'essais : ils sont dans la bibliotheque et `tests/` (le harnais de test d'un binaire leverait le
+# `forbid(dead_code)` de l'espace sur son `main`).
 [[bin]]
 name = "moteur"
 path = "src/main.rs"
+test = false
 
 [features]
 # Le binaire de l'ATELIER (`moteur-atelier`, la crate `atelier`, jamais livre) : le banc de la fenetre, et les

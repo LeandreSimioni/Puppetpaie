@@ -33,10 +33,10 @@ pub(crate) fn livree<T: serde::de::DeserializeOwned + Send + Sync + 'static>(nom
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Base {
-    #[allow(dead_code)]
-    quoi: String,
-    #[allow(dead_code)]
-    note: String,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    quoi: socle::forme::NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    note: socle::forme::NonLue,
     /// Les versions, dans l'ordre de la donnee.
     #[serde(deserialize_with = "socle::forme::en_ordre")]
     versions: Vec<(String, Version)>,
@@ -46,8 +46,9 @@ struct Base {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Version {
-    #[allow(dead_code)]
-    libelle: String,
+    /// Le nom de la version, pour qui lit la donnee.
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    libelle: socle::forme::NonLue,
     /// Les mois principaux declares d'une DSN mensuelle en cette version.
     mensuelle: Plage<Mois>,
     /// Les jours de constitution d'un signalement en cette version.
@@ -71,8 +72,8 @@ struct Version {
 struct Plage<T> {
     du: Option<T>,
     au: Option<T>,
-    #[allow(dead_code)]
-    note: String,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    note: socle::forme::NonLue,
 }
 
 /// Une borne d'une plage, telle que la donnee l'ecrit (`AAAA-MM`, `AAAA-MM-JJ`).

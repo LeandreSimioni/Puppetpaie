@@ -9,6 +9,34 @@ publish = false
 [[bin]]
 name = "fabrique-pdf"
 path = "src/main.rs"
+# Ses essais sont dans la bibliotheque et `tests/` (le harnais de test d'un binaire leverait le `forbid(dead_code)` sur
+# son `main`).
+test = false
+
+# Les niveaux de l'espace (`atelier/sources/Cargo.toml`, `[workspace.lints.rust]`), que la fabrique, hors de l'espace,
+# porte elle-meme.
+[lints.rust]
+warnings = { level = "deny", priority = -1 }
+unused = { level = "deny", priority = -1 }
+dead_code = "forbid"
+deprecated = "forbid"
+unused_imports = "forbid"
+unused_variables = "forbid"
+unused_assignments = "forbid"
+unused_mut = "forbid"
+unused_must_use = "forbid"
+unused_macros = "forbid"
+unused_unsafe = "forbid"
+unused_parens = "forbid"
+unused_braces = "forbid"
+unused_labels = "forbid"
+unused_doc_comments = "forbid"
+unused_allocation = "forbid"
+path_statements = "forbid"
+unreachable_code = "forbid"
+unreachable_patterns = "forbid"
+# Rien de la fabrique n'en a besoin (l'espace, lui, en a : les appels au systeme de Windows de `compagnie`).
+unsafe_code = "forbid"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

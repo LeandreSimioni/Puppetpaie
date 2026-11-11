@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use fabrique_pdf::mesure::{mesure, Mesure};
 use serde_json::{json, Value};
 
-mod commun;
+pub mod commun;
 use commun::{chemin, dossier_temp, flux, lancer, pdf_a_la_main, textes};
 
 fn exemples() -> PathBuf {

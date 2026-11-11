@@ -954,13 +954,15 @@ pub(crate) fn choisir(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::P
     Ok(choix)
 }
 
+/// La phrase du courriel de renvoi qui dit ou la correction d'un salarie (par sa cle) sera declaree.
+type DeclarationDUneCorrection = Box<dyn Fn(&str) -> String>;
+
 /// LA CORRECTION D'UN MOIS DONT L'ANNULE-ET-REMPLACE EST PASSE : le courriel de renvoi ajoute une phrase, la correction
 /// sera declaree avec la paie d'un mois suivant. La DSN du mois ne se refait pas (`se_corrige_ailleurs` : sa DSN est
 /// partie et l'annule-et-remplace n'est plus admis, ou c'est celle de l'ancien logiciel) ; une correction deja portee
 /// par une DSN partie se lit dans ce qui est parti (`corrections_du_mois`), une correction a porter part dans la DSN
 /// qui porte le mois (`compagnie::etat_dsn::dsn_qui_porte`). `None` : le mois se corrige dans sa propre DSN.
-#[allow(clippy::type_complexity)]
-fn declaration_de_la_correction(ctx: &Contexte, mois: Mois) -> R<Option<Box<dyn Fn(&str) -> String>>> {
+fn declaration_de_la_correction(ctx: &Contexte, mois: Mois) -> R<Option<DeclarationDUneCorrection>> {
     let departs = journal::lu(&ctx.racine).map(|j| j.departs)?;
     if !declarations::produire_regularisations::se_corrige_ailleurs(ctx, &departs, mois)? {
         return Ok(None);

@@ -5,7 +5,7 @@
 
 use serde_json::json;
 
-mod commun;
+pub mod commun;
 use commun::{dossier_temp, flux, lancer, pdf_a_la_main, pdf_fabrique, textes_de};
 
 /// Le PDF « tiers » de ces tests : une page dont `/Contents` renvoie à un tableau de deux flux,

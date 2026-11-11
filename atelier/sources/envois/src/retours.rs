@@ -1242,11 +1242,13 @@ struct DeclarantJson {
 /// Le declarant que la liste nomme : la releve ne lit que ses depots.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-#[allow(dead_code)]
 struct DepotsDuDeclarant {
-    siret: Option<String>,
-    nom: Option<String>,
-    prenom: Option<String>,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    siret: socle::forme::NonLue,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    nom: socle::forme::NonLue,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    prenom: socle::forme::NonLue,
     depot: Option<UnOuPlusieurs<Depot>>,
 }
 

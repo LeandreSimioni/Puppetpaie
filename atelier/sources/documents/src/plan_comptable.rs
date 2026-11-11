@@ -651,7 +651,6 @@ fn resoudre(nom: &str, code: Option<i64>, cle: &str, auto: &mut Option<bool>, pr
 }
 
 /// `output_markup` : le champ resolu, converti, mis en forme.
-#[allow(clippy::too_many_arguments)]
 fn remplir(
     nom: &str,
     spec: &str,

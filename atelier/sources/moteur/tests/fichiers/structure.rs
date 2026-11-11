@@ -807,7 +807,8 @@ fn blanchi(t: &str, textes: bool) -> String {
 /// 2. de cle libre : aucune cle en `_` nommee par une forme (`rename = "_…"`, `alias = "_…"`) ni, dans le bord, par un
 ///    texte (`"_cle"`, `"_{}"`) ; hors du bord, ou aucun JSON ne se touche, un tel texte est un nom de fichier ; aucun
 ///    tri par le `_` de tete (`starts_with('_')`, `strip_prefix("_")`, `trim_start_matches('_')`) ;
-/// 3. de repli sur une donnee : ni `#[serde(default…)]`, ni
+/// 3. de repli sur une donnee : ni `#[serde(default…)]` (sauf sur le type qui ne porte aucune valeur,
+///    `socle::forme::NonLue` : une absence n'y devient rien), ni
 ///    `unwrap_or`, `unwrap_or_default`, `unwrap_or_else`, `map_or`, `map_or_else`, ni un bras `None =>` qui fabrique
 ///    une valeur, ni un bras joker (`_ =>`, `_autre =>`, `Some(_) =>`, donc `None | Some(_) =>`) qui en rend une (texte
 ///    vide, nombre, booleen, vecteur vide, defaut, `Ok(…)` de l'une d'elles), ni un bras dont le motif a un `_` a la
@@ -834,7 +835,11 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
             fautes.push(format!("{}/Cargo.toml prend serde_json : une couche fermée ne lit que des formes, par `socle::forme` (ses tests aussi : un texte lu par la porte)", couche));
         }
     }
-    let repli = regex::Regex::new(r"\b(?:unwrap_or(?:_default|_else)?|map_or(?:_else)?)\b|\bserde\s*\([^\]]*\bdefault\b").unwrap();
+    let repli = regex::Regex::new(r"\b(?:unwrap_or(?:_default|_else)?|map_or(?:_else)?)\b").unwrap();
+    // Le repli de serde : `#[serde(default…)]` donne une valeur a une cle absente. Seul le type qui ne porte aucune valeur
+    // (`socle::forme::NonLue`, une cle connue que le logiciel ne lit pas) n'en recoit aucune.
+    let defaut = regex::Regex::new(r"#\[\s*serde\s*\([^\]]*\bdefault\b[^\]]*\]").unwrap();
+    let champ_type = regex::Regex::new(r"^\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?\w+\s*:\s*([^,\n}]+)").unwrap();
     // Le repli en `match` : un bras `None =>` qui fabrique une valeur (texte vide, nombre, booleen, vecteur vide, defaut).
     let bras_vide = regex::Regex::new(r#"\bNone\s*=>\s*\{?\s*(?:String::new\(\)|""|-?\d[\w.]*|false\b|true\b|Vec::new\(\)|vec!\s*\[\s*\]|Default::default\(\)|[A-Za-z_][\w:]*::default\(\)|Decimal::\w+|[A-Za-z_][\w:]*::(?:new\(\)|ZERO\b))"#).unwrap();
     // Le repli en joker : un bras `_ =>`, `_autre =>` ou `Some(_) =>` (donc `None | Some(_) =>`) qui rend une valeur
@@ -890,6 +895,13 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     for dossier in dossiers {
         for f in sources(&dossier) {
             let code = code_seul(&std::fs::read_to_string(&f).unwrap());
+            for m in defaut.find_iter(&code) {
+                let sans_valeur = champ_type.captures(&code[m.end()..]).is_some_and(|c| c[1].trim().ends_with("NonLue"));
+                if !sans_valeur {
+                    let n = code[..m.start()].matches('\n').count() + 1;
+                    fautes.push(format!("{}:{} : `{}`, un repli : une donnée exigée se refuse quand elle manque, une donnée nulle s'écrit `null` et se lit `Option`", f.display(), n, m.as_str()));
+                }
+            }
             for m in bras_tuple.find_iter(&code) {
                 let n = code[..m.start()].matches('\n').count() + 1;
                 fautes.push(format!("{}:{} : `{}`, un joker de tuple qui rend une valeur : le `match` nomme chaque cas qu'il traite", f.display(), n, m.as_str().split_whitespace().collect::<Vec<_>>().join(" ")));

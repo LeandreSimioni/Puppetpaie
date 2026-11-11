@@ -283,7 +283,6 @@ pub(crate) fn secondes(d: std::time::Duration) -> String {
 ///
 /// `seuls` : ne regarder que ces textes-la (des cles de `TEXTES`) -- c'est ce que fait `completer` pour un texte ajoute
 /// apres la construction de l'entrepot.
-#[allow(clippy::too_many_arguments)]
 fn passer<L: Read>(
     tar: &mut LecteurTar<L>,
     articles: &mut EnOrdre<ArticleLegi>,

@@ -37,18 +37,20 @@ impl Usage {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Table {
-    #[allow(dead_code)]
-    quoi: String,
-    #[allow(dead_code)]
-    note: String,
-    #[allow(dead_code)]
-    sha256_du_pdf: Option<String>,
-    #[allow(dead_code)]
-    sha256_du_classeur: Option<String>,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    quoi: socle::forme::NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    note: socle::forme::NonLue,
+    /// L'empreinte du texte releve (le cahier en PDF ou le classeur) : pour le releve de l'atelier.
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    sha256_du_pdf: socle::forme::NonLue,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    sha256_du_classeur: socle::forme::NonLue,
     /// Le libelle de chaque nature de declaration.
     pub natures: BTreeMap<NatureDeLaDeclaration, String>,
-    #[allow(dead_code)]
-    valeurs: BTreeMap<String, String>,
+    /// Le sens de chaque lettre du tableau (O, C, I, N) : pour qui le lit.
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    valeurs: socle::forme::NonLue,
     /// Chaque rubrique du tableau.
     pub usages: BTreeMap<String, Entree>,
 }

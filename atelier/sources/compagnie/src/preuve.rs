@@ -3,10 +3,9 @@
 //! au coffre seulement une fois la preuve verifiee. Un depot, un envoi, une signature passent tous par ici.
 
 use socle::echec::Classe;
-use std::path::Path;
 
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Lieu, Echec, R};
+use socle::echec::{erreur, R};
 use socle::mois::MoisOuJour;
 
 /// `Preuve` : ce qui prouve qu'un humain veut CET acte, MAINTENANT. Le mot de passe DU LOGICIEL, retape.
@@ -27,19 +26,22 @@ impl Preuve {
 
 // -------------------------------------------------------------------- la preuve
 
-/// Une version lue en entiers separes par des points, pour la comparer ; illisible, elle se refuse.
+/// Une version lue en entiers separes par des points, pour la comparer ; illisible, elle se refuse. Le binaire de
+/// l'atelier ne la lit pas : il refuse tout acte reel avant (`refus_atelier`).
+#[cfg(not(feature = "atelier"))]
 fn cle_de_version(v: &str) -> R<Vec<i64>> {
     v.trim().split('.').map(|x| x.trim().parse::<i64>()).collect::<Result<Vec<i64>, _>>().map_err(|e| {
-        let a_part = Lieu { detail: Some(format!("« {} » : {}", v, e)), ..Lieu::default() };
-        Echec { a_part: Some(a_part.into()), ..erreur(Classe::Illisible, "Un numéro de version ne se lit pas : le signaler au développeur.") }
+        let a_part = socle::echec::Lieu { detail: Some(format!("« {} » : {}", v, e)), ..socle::echec::Lieu::default() };
+        socle::echec::Echec { a_part: Some(a_part.into()), ..erreur(Classe::Illisible, "Un numéro de version ne se lit pas : le signaler au développeur.") }
     })
 }
 
 /// La raison pour laquelle une version telechargee et pas encore appliquee est
 /// indispensable avant de declarer -- ou `""`.
 /// La version prete est celle de l'INSTALLATION du contexte (`<installation>/logiciel/donnees` = `ctx.code`).
-pub(crate) fn exigee_en_attente(ctx: &Contexte) -> R<String> {
-    let code = ctx.code.parent().map(Path::to_path_buf).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : le dossier des données livrées n'est dans aucun dossier."))?;
+#[cfg(not(feature = "atelier"))]
+fn exigee_en_attente(ctx: &Contexte) -> R<String> {
+    let code = ctx.code.parent().map(std::path::Path::to_path_buf).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : le dossier des données livrées n'est dans aucun dossier."))?;
     let Some(p) = crate::maj::prete(&code.join(".."))? else { return Ok(String::new()) };
     let (exigee, version) = (p.exigee, p.version);
     if exigee.is_empty() || cle_de_version(&version)? <= cle_de_version(&crate::maj::courante(&code).map_err(|e| e.reclasser(Classe::Illisible))?)? {
@@ -83,7 +85,7 @@ fn refus_atelier(ctx: &Contexte, _preuve: Option<&Preuve>, _quand: MoisOuJour, _
     Err(erreur(Classe::ActeReelRefuse, envois::redirection::REFUS_ACTE_REEL.to_string()))
 }
 
-#[cfg_attr(feature = "atelier", allow(dead_code))]
+#[cfg(not(feature = "atelier"))]
 fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, quand: MoisOuJour, quoi: &str, a_qui: &str) -> R<String> {
     // LA COMPAGNIE FICTIVE : rien ne part, il n'y a rien a prouver.
     if crate::bridage::branchement(&ctx.racine)?.joue() {

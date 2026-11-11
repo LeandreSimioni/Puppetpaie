@@ -533,7 +533,6 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
 /// Telecharge et archive ce que les organismes ont publie. `debut` et `fin` : heures locales naives
 /// (`maintenant_naif`). `client` : le client du service, avec son mot de passe (le canal DPAE passe le sien, avec
 /// `canal = "dpae"`) ; `None` dans le monde : aucun mot de passe n'est pose, et cela se dit.
-#[allow(clippy::too_many_arguments)]
 pub fn relever_retours(
     ctx: &Contexte,
     branchement: Branchement,
@@ -664,7 +663,6 @@ pub fn relever_retours(
 /// Les retours de l'API DPAE -- UN AUTRE SERVICE que celui de la DSN, ses archives sont dans `retours/dpae/`. `flux` : le
 /// seul chemin documente (la FAQ) quand on connait l'idflux ; sinon la consultation par plage, sur le canal `dpae`.
 /// `client` : le client Urssaf, avec son mot de passe ; `None` dans le monde : aucun mot de passe n'est pose.
-#[allow(clippy::too_many_arguments)]
 pub fn relever_retours_dpae(
     ctx: &Contexte,
     branchement: Branchement,

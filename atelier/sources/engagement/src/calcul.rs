@@ -931,7 +931,6 @@ pub(crate) fn bareme_pour_ranger(ctx: &Contexte, sal: &SalarieDuContrat, nat: &N
     pile(ctx, sal, nat, fin, caisse, false, majoration, true)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn pile(ctx: &Contexte, sal: &SalarieDuContrat, nat: &Nature, fin: &Jour, caisse: bool, cpf_cdd: bool, majoration: bool, taux_lus: bool) -> R<Arc<Pile>> {
     type Cache = Mutex<HashMap<String, Arc<Pile>>>;
     static CACHE: OnceLock<Cache> = OnceLock::new();

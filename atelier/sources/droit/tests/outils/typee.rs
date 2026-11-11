@@ -5,8 +5,6 @@
 //! le cas et le champ. `PUPPETPAIE_REECRIRE_ORACLES=1` reecrit la reference, par l'ecriture du socle
 //! (`socle::ecriture`).
 
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;

@@ -350,28 +350,20 @@ pub fn table_de(norme: &Norme) -> R<Arc<Table>> {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Table {
-    #[allow(dead_code)]
-    quoi: String,
-    #[allow(dead_code)]
-    note: String,
-    #[allow(dead_code)]
-    sha256_du_pdf: Option<String>,
-    #[allow(dead_code)]
-    sha256_du_classeur: Option<String>,
-    #[allow(dead_code)]
-    expressions_ecartees: Vec<Ecartee>,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    quoi: socle::forme::NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    note: socle::forme::NonLue,
+    /// L'empreinte du texte releve (le cahier en PDF ou le classeur) : pour le releve de l'atelier.
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    sha256_du_pdf: socle::forme::NonLue,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    sha256_du_classeur: socle::forme::NonLue,
+    /// Les expressions du cahier que le releve n'a pas gardees (coupees a la mise en page) : pour le releve.
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    expressions_ecartees: socle::forme::NonLue,
     /// Le format de chaque rubrique.
     pub formats: BTreeMap<String, Format>,
-}
-
-/// Une expression du cahier que le releve n'a pas gardee (coupee a la mise en page).
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Ecartee {
-    #[allow(dead_code)]
-    rubrique: String,
-    #[allow(dead_code)]
-    coupee: String,
 }
 
 /// Le format d'une rubrique : sa longueur `[min, max]`, ses expressions de controle (CSL) quand elle en a, et sa liste

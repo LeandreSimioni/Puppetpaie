@@ -266,7 +266,6 @@ pub(crate) fn deposer_dsn(
 /// d'un B1-208-11). L'essai part alors en annule-et-remplace a cet ordre, ou plus haut si le journal en sait davantage.
 /// Refuse pour un depot reel et pour un signalement (leur ordre est celui du fichier, lu sur la plate-forme a son
 /// ecriture : `ordre_signalements`).
-#[allow(clippy::too_many_arguments)]
 pub fn deposer_dsn_dans(
     ctx: &Contexte,
     fichier: &str,
@@ -460,7 +459,6 @@ pub(crate) fn deposer_dpae(
 /// `deposer_dpae` avec, au besoin, le client Urssaf que l'appelant donne a la place du vrai (la preuve : un client pointe sur
 /// un serveur local). Un client donne n'est jamais confronte au coffre, et ses identifiants sont verifies comme ceux
 /// d'un client construit ici. Sans client, rien ne change.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn deposer_dpae_avec(
     ctx: &Contexte,
     fichier: &str,

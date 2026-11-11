@@ -1340,7 +1340,6 @@ pub fn remboursements(ctx: &Contexte, p: &Paie) -> R<Vec<usize>> {
 /// indice dans `paies` -> ce que le bloc rectificatif imprime ; `numeros` : le numero du bulletin de chaque paie, au
 /// meme rang. `passe` : ce que la compagnie a declare jusqu'a `mois`, pour au moins les salaries au cachet de `paies`
 /// (`passe_des_bulletins`), lu une fois pour tous les bulletins du geste.
-#[allow(clippy::too_many_arguments)]
 pub fn jeux_et_description(
     ctx: &Contexte,
     paies: &[Paie],
