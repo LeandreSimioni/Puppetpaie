@@ -27,7 +27,7 @@ async function rafraichirApresVeille(v) {
   try {
     await dessinerEtatsDesEngagements(mois);
     await rafraichirActions();
-  } catch (e) { /* le bandeau dit déjà l'essentiel */ }
+  } catch (e) { dire(e.message, "erreur"); }
 }
 
 /* LE BANDEAU. On y cherche trois choses, dans cet ordre : est-ce que tout
@@ -57,21 +57,22 @@ function dessinerVeille(v) {
 
   if (v.en_cours) {
     // L'ÉTAPE, DITE PAR LE MOTEUR : qui il appelle, puis qui d'autre, puis la sauvegarde.
-    texte.innerHTML = `<span class="veille-etape">${echapper(v.etape || (v.dit || {}).en_cours)}</span>`;
+    texte.innerHTML = `<span class="veille-etape">${echapper(v.etape || v.dit.en_cours)}</span>`;
     suivreLesEtapes();
     return;
   }
-  const d = v.dernier || {};
+  // Le dernier passage : `null` tant qu'aucun n'a eu lieu.
+  const d = v.dernier;
 
   // 1. L'ÉTAT, en une phrase. Le détail des relevés passe au survol : on
   //    le cherche rarement, et il reste à portée.
-  const detail = [...(d.injoignables || []), d.sauvegarde, d.retours, d.signatures, d.fiches].filter(Boolean).join("\n");
+  const detail = d ? [...d.injoignables, d.sauvegarde, d.retours, d.signatures, d.fiches].filter(Boolean).join("\n") : "";
   if (v.sauvegarde_en_cours) suivreLesEtapes();
   // « HORS CONNEXION, C'EST QUAND IL N'Y A PAS INTERNET, PAS QUAND ON ATTEND » : l'attente
   // dit l'heure du prochain relevé ; un service qui n'a pas répondu se nomme (au survol), et le relevé qui est
   // passé reste dit. « Pas de réponse » seulement quand le relevé lui-même n'est pas passé.
-  const k = v.dit || {};
-  const sansReponse = (d.injoignables || []).join("\n");
+  const k = v.dit;
+  const sansReponse = d ? d.injoignables.join("\n") : "";
   const morceaux = [`<span class="veille-etat" title="${echapper(detail)}">${echapper(k.etat)}${v.sauvegarde_en_cours
         ? ` · <span class="veille-etape">${echapper(v.etape || k.sauvegarde)}</span>` : ""}</span>${
     k.muets ? ` — <span class="veille-sauvegarde" title="${echapper(sansReponse)}">${echapper(k.muets)}</span>` : ""}${k.fictive
@@ -79,15 +80,15 @@ function dessinerVeille(v) {
   // LA SAUVEGARDE QUI N'ARRIVE PAS AU BOUT, à sa place : un dossier que
   // Google refuse une fois repart au passage suivant, sans bruit ; ce qui dure, le moteur le dit
   // en une phrase (`sauvegarde::souci`), et elle se lit ici, à côté de l'état, pas parmi les retours.
-  if (d.sauvegarde_souci && !d.hors_ligne) {
-    morceaux.push(`<span class="veille-sauvegarde" title="${echapper(d.sauvegarde || "")}">${echapper(d.sauvegarde_souci)}</span>`);
+  if (d && d.sauvegarde_souci && !d.hors_ligne) {
+    morceaux.push(`<span class="veille-sauvegarde"${d.sauvegarde ? ` title="${echapper(d.sauvegarde)}"` : ""}>${echapper(d.sauvegarde_souci)}</span>`);
   }
 
   // 2. LES NOUVELLES : ce qui est arrivé depuis le dernier regard.
   const nouvelles = [];
   // Les retours se LISENT dans l'Historique : le bandeau les annonce et y mène.
   const retours = k.retours ? ` <button class="lien" data-vers-historique>${echapper(k.retours)}</button>` : "";
-  (d.signatures_recues || []).forEach((x) => nouvelles.push(x.phrase));
+  if (d) d.signatures_recues.forEach((x) => nouvelles.push(x.phrase));
   // L'HORLOGE DE LA COMPAGNIE FICTIVE : ce que l'administrateur fictif a fait
   // pendant l'absence du visiteur, chaque geste à sa date limite.
   const horloge = k.horloge ? ` <button class="lien" id="fictive-horloge">${echapper(k.horloge)}</button>` : "";
@@ -98,12 +99,14 @@ function dessinerVeille(v) {
   // 3. CE QUI EST À FAIRE : en mots, avec le chemin. Le premier se lit, les
   //    suivants se déplient.
   const afaire = [];
-  (d.a_poser || []).forEach((code) => {
-    const [phrase, geste] = (k.a_poser || {})[code] || [code, "Mots de passe"];
-    afaire.push(`${echapper(phrase)} <button class="lien" data-aller="${echapper(code)}">${echapper(geste)}</button>`);
-  });
-  [...(d.manquants || []), ...(d.incidents || []), ...(v.erreur ? [v.erreur] : [])]
-    .forEach((x) => afaire.push(echapper(x)));
+  if (d) {
+    d.a_poser.forEach((code) => {
+      const [phrase, geste] = k.a_poser[code];
+      afaire.push(`${echapper(phrase)} <button class="lien" data-aller="${echapper(code)}">${echapper(geste)}</button>`);
+    });
+    [...d.manquants, ...d.incidents].forEach((x) => afaire.push(echapper(x)));
+  }
+  if (v.erreur) afaire.push(echapper(v.erreur));
   if (afaire.length) {
     zone.classList.add("souci");
     morceaux.push(afaire.length === 1 ? afaire[0]
@@ -144,7 +147,7 @@ function suivreLesEtapes() {
   if (SUIVI_ETAPES || SERVEUR_PERDU) return;
   SUIVI_ETAPES = setTimeout(async () => {
     let e = null;
-    try { e = (await fenetre("veille_etape")).etat; } catch (x) { /* déjà signalé */ }
+    try { e = (await fenetre("veille_etape")).etat; } catch (x) { dire(x.message, "erreur"); }
     SUIVI_ETAPES = null;
     if (!e) return;
     if (e.en_cours || e.sauvegarde_en_cours || RELEVE_DEMANDE) {
@@ -164,21 +167,22 @@ async function suivreVeille() {
     await rafraichirApresVeille(v);
     dessinerVeille(v);
     dessinerPastilleReponses();
-  } catch (e) { /* déjà signalé */ }
+  } catch (e) { dire(e.message, "erreur"); }
 }
 
 document.getElementById("veille-maintenant").onclick = async () => {
   RELEVE_DEMANDE = true;
-  dessinerVeille({ ...(VEILLE || {}), en_cours: true, etape: "" });
+  // Le bouton n'est là que dans le bandeau de la veille : elle est lue.
+  dessinerVeille({ ...VEILLE, en_cours: true, etape: null });
   try {
     const v = (await fenetre("veille_maintenant")).etat;
     oublierLeMois();   // un passage a pu changer les mois : ce qui a été lu part
     RELEVE_DEMANDE = false;
     // Le relevé manuel repeint TOUJOURS : c'est ce qu'on vient demander.
-    VEILLE = { ...(VEILLE || {}), dernier: {} };
+    VEILLE = { ...VEILLE, dernier: null };
     await rafraichirApresVeille(v);
     dessinerVeille(v);
-    dire((v.dit || {}).termine);
+    dire(v.dit.termine);
   } catch (e) { RELEVE_DEMANDE = false; dire(e.message, "erreur"); }
 };
 

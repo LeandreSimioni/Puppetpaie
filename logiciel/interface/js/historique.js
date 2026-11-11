@@ -34,7 +34,7 @@ function dessinerHistorique() {
   const majuscule = (t) => t.charAt(0).toUpperCase() + t.slice(1);
   cible.innerHTML = ETAT.historique.map((m) => {
     const p = m.pastille;
-    const couleur = CLASSE_DE_COULEUR[p.couleur] ?? "";
+    const couleur = CLASSE_DE_COULEUR[p.couleur];
     const mots = p.mots;
     const depose = m.depose_dit ? " " + m.depose_dit : "";
     return `
@@ -44,8 +44,7 @@ function dessinerHistorique() {
         <span class="rang-nom">${echapper(majuscule(moisEnClair(m.mois)))}</span>
         <span class="rang-etat"><span class="pastille ${couleur}">${echapper(mots)}${echapper(depose)}</span>${
           m.clos ? ` <span class="pastille">clos</span>` : ""}</span>
-        <span class="rang-infos">${
-          echapper(m.documents_dit || "")}</span>
+        <span class="rang-infos">${m.documents_dit ? echapper(m.documents_dit) : ""}</span>
         <span class="rang-actions">
         </span>
       </summary>
@@ -61,7 +60,7 @@ function dessinerHistorique() {
  *  bandeau. */
 async function ouvrirMoisHistorique(mois) {
   document.querySelector('.onglets button[data-vue="historique"]').click();
-  const d = document.querySelector(`details.mois-hist[data-mois="${CSS.escape(mois || "")}"]`);
+  const d = document.querySelector(`details.mois-hist[data-mois="${CSS.escape(mois)}"]`);
   if (!d) return;
   d.open = true;
   d.scrollIntoView({ block: "start" });
@@ -153,22 +152,25 @@ function dessinerEnvoi(e) {
 
 /** Un retour, lu : l'organisme, ce que dit sa pièce, ses anomalies ; la pièce elle-même en dernier recours. */
 function dessinerRetour(r) {
-  const titre = r.titre_dit || r.titre || "";
-  const anomalies = (r.anomalies || []).length ? `
+  // Un retour d'organisme dit son titre, sa date et ses anomalies (`titre_dit`, `quand_dit`, `anomalies`) ; un autre,
+  // son titre seul. Une case d'anomalie que la pièce ne dit pas reste vide.
+  const titre = r.titre_dit || r.titre;
+  const cellule = (v) => (v ? echapper(v) : "");
+  const anomalies = r.anomalies && r.anomalies.length ? `
     <table class="anomalies"><tr><th>code</th><th>message</th><th>rubrique</th><th>salarié</th></tr>
-    ${r.anomalies.map((a) => `<tr><td><code>${echapper(a.code || "")}</code></td>
-      <td>${echapper(a.message || "")}${a.categorie ? ` <span class="discret">(${echapper(a.categorie)})</span>` : ""}${
+    ${r.anomalies.map((a) => `<tr><td>${a.code ? `<code>${echapper(a.code)}</code>` : ""}</td>
+      <td>${cellule(a.message)}${a.categorie ? ` <span class="discret">(${echapper(a.categorie)})</span>` : ""}${
         a.nombre && a.nombre !== "1" ? ` <span class="discret">× ${echapper(a.nombre)}</span>` : ""}</td>
-      <td>${echapper(a.rubrique || "")}</td>
-      <td>${echapper(a.salarie || "")}</td></tr>`).join("")}</table>` : "";
+      <td>${cellule(a.rubrique)}</td>
+      <td>${cellule(a.salarie)}</td></tr>`).join("")}</table>` : "";
   return `
     <details class="retour">
-      <summary><span class="discret">${echapper(r.quand_dit || "")}</span>
+      <summary>${r.quand_dit ? `<span class="discret">${echapper(r.quand_dit)}</span>` : ""}
         ${r.organisme ? `${echapper(r.organisme)} — ` : ""}${echapper(titre)}
         ${pastilleDeLEtat(r.pastille)}</summary>
       <div class="retour-corps">
         ${r.nature_dit ? `<p class="discret">${echapper(r.nature_dit)}</p>` : ""}
-        ${(r.phrases || []).map((p) => `<p>${echapper(p)}</p>`).join("")}
+        ${r.phrases.map((p) => `<p>${echapper(p)}</p>`).join("")}
         ${anomalies}
         ${r.piece ? `<p><button class="lien" data-piece="${echapper(r.piece)}">Ouvrir la pièce</button>
           </p>` : ""}
@@ -183,8 +185,8 @@ function dessinerRetour(r) {
  *  le restent. */
 async function rafraichirHistorique() {
   let etat;
-  try { etat = await api("etat"); } catch (e) { return; }
-  if (!etat || JSON.stringify(etat.historique) === JSON.stringify(ETAT.historique)) return;
+  try { etat = await api("etat"); } catch (e) { dire(e.message, "erreur"); return; }
+  if (JSON.stringify(etat.historique) === JSON.stringify(ETAT.historique)) return;
   ETAT.historique = etat.historique;
   if (document.getElementById("vue-historique").classList.contains("cachee")) return;
   const ouverts = [...document.querySelectorAll("details.mois-hist[open]")].map((d) => d.dataset.mois);
