@@ -106,13 +106,39 @@ pub(crate) fn sub(a: Decimal, b: Decimal) -> Decimal {
     add(a, -b)
 }
 
-/// Le decimal d'un nombre de la carte, son echelle gardee (`Chiffre::dec_avec_echelle`), ou, s'il n'est pas dit ou nul,
-/// `defaut`.
-pub(crate) fn dec_ou(v: Option<&NombreLu>, defaut: Decimal) -> R<Decimal> {
-    match v.map(|n| Chiffre::Nombre(n.clone())) {
-        Some(x) if x.vrai() => x.dec_avec_echelle(),
-        _ => Ok(defaut),
+/// LE SALAIRE MENSUEL BRUT d'un contrat paye au mois, son echelle gardee : la carte le dit (il se lit sur le contrat
+/// signe), ou le calcul refuse en nommant la case.
+pub(crate) fn salaire_mensuel(ctx: &Contexte, e: &Carte) -> R<Decimal> {
+    match &e.salaire_mensuel {
+        Some(s) => dec_de(s),
+        None => Err(socle::refus!(
+            "{} : saisissez le salaire mensuel brut de son {}, dans la case « Salaire mensuel brut ».\n\
+             Il se lit sur le contrat signé.",
+            qui(ctx, e),
+            e.nature_lue()?.libelle
+        )),
     }
+}
+
+/// LES HEURES PAR MOIS DU CONTRAT d'un salarie au mois (S21.G00.40.013) : celles que la carte dit ; un contrat qui ne
+/// les dit pas est a la duree legale que sa nature porte (`quotite_reference_defaut`, C. trav. L. 3121-27, dans
+/// `contrats-base.json`). Des heures nulles se refusent en nommant la case.
+pub(crate) fn quotite_du_contrat(ctx: &Contexte, e: &Carte, nat: &droit::natures::Nature) -> R<Decimal> {
+    match &e.quotite_contrat {
+        Some(q) if Chiffre::Nombre(q.clone()).vrai() => dec_de(q),
+        Some(_) => Err(socle::refus!("{} : ses heures par mois sont nulles : la case « Heures par mois » dit la durée du contrat signé.", qui(ctx, e))),
+        None => nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree("contrats-base.json", "quotite_reference_defaut")),
+    }
+}
+
+/// LES HEURES DE PLUS DE SON CONTRAT d'un salarie au mois, une case de sa carte (`nom`) : la somme de ce qu'elle dit,
+/// aucune si elle ne dit rien. Un nombre d'heures negatif se refuse en la nommant.
+pub(crate) fn heures_dites(ctx: &Contexte, e: &Carte, x: &Option<NombreLu>, nom: &str) -> R<Decimal> {
+    let h = x.iter().map(dec_de).try_fold(Decimal::ZERO, |a, h| h.map(|h| add(a, h)))?;
+    if h < Decimal::ZERO {
+        return Err(socle::refus!("{} : « {} » est négatif ({}) : une heure de plus se compte en positif.", qui(ctx, e), nom, h));
+    }
+    Ok(h)
 }
 
 /// Le decimal d'un nombre de la carte, son echelle gardee (`Chiffre::dec_avec_echelle`).
@@ -679,10 +705,8 @@ fn avis_perdu(cle_salarie: &str, perdu: Decimal, p_debut: &Jour, p_fin: &Jour) -
 }
 
 fn pris_de_la_reprise(ctx: &Contexte, au: &AuMois, cle_salarie: &str, debut: &Jour, fin: &Jour) -> R<Decimal> {
-    Ok(match reprise_conges(ctx, au, cle_salarie)? {
-        Some(r) if *debut <= r.date && r.date <= *fin => r.pris,
-        _ => Decimal::ZERO,
-    })
+    // Les jours pris que la reprise recopie, quand elle tombe dans la periode.
+    Ok(reprise_conges(ctx, au, cle_salarie)?.into_iter().filter(|r| *debut <= r.date && r.date <= *fin).fold(Decimal::ZERO, |a, r| add(a, r.pris)))
 }
 
 /// Le report de la periode precedente, periode par periode depuis le premier
@@ -985,20 +1009,8 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         return Err(socle::refus!("{} n'est pas un contrat paye au mois : ses lignes se saisissent.", nat.libelle));
     };
     let au = &au;
-    let salaire = match &e.salaire_mensuel {
-        Some(s) => s,
-        None => {
-            return Err(socle::refus!(
-                "{} : saisissez le salaire mensuel brut de son {}, dans la case « Salaire mensuel brut ».\n\
-                 Il se lit sur le contrat signé.",
-                qui(ctx, e),
-                nat.libelle
-            ))
-        }
-    };
-    let defaut = nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree("contrats-base.json", "quotite_reference_defaut"))?;
-    let quotite = dec_ou(e.quotite_contrat.as_ref(), defaut)?;
-    let salaire = dec_de(salaire)?;
+    let salaire = salaire_mensuel(ctx, e)?;
+    let quotite = quotite_du_contrat(ctx, e, &nat)?;
 
     let debut_mois = mois.premier_jour();
     let fin_mois = mois.dernier_jour();
@@ -1123,9 +1135,13 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     // --- les heures supplementaires d'un temps plein, complementaires d'un temps partiel
     // Le temps partiel comme la DSN le declare (`Engagement::modalite_temps_travail`) : une duree du contrat inferieure a
     // la plus courte de la duree legale et de la quotite de reference (C. trav. L3123-1).
-    let reference = match e.quotite_reference.as_ref().filter(|q| Chiffre::Nombre((*q).clone()).vrai()) {
-        Some(r) => dec_de(r)?.min(defaut),
-        None => defaut,
+    let legale = nat.quotite_reference_defaut().ok_or_else(|| socle::echec::livree("contrats-base.json", "quotite_reference_defaut"))?;
+    let reference = match &e.quotite_reference {
+        Some(r) if Chiffre::Nombre(r.clone()).vrai() => dec_de(r)?.min(legale),
+        Some(_) => {
+            return Err(socle::refus!("{} : la quotité de référence saisie est nulle : elle dit la durée collective du travail de l'entreprise (en heures par mois), ou ne se saisit pas à la durée légale.", qui(ctx, e)))
+        }
+        None => legale,
     };
     let partiel = match e.modalite_temps_travail {
         Some(m) => m == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel,
@@ -1244,7 +1260,7 @@ pub struct Provision {
 /// La provision de conges d'un permanent a la fin de `mois`, lue dans la paie ecrite `paie` de ce mois : le compteur
 /// que son bulletin montre (`Paie::conges`, ecrit a la validation), dont l'assiette du dixieme compte aussi le brut du
 /// mois (`brut_du_mois`, celui des paies ecrites du salarie), et l'indemnite de son solde (`provision_du_compteur`).
-/// `salaire_mensuel` : la valeur de l'engagement (`None` ou fausse = 0). `None` : un contrat sans compteur de
+/// `salaire_mensuel` : la valeur de l'engagement ; absente, elle se refuse. `None` : un contrat sans compteur de
 /// l'employeur (declare a la caisse des Conges Spectacles). Refus : une paie validee qui ne porte pas le compteur
 /// qu'elle devrait.
 pub fn provision_conges_de(paie: &Paie, mois: Mois, brut_du_mois: socle::num::Decimal, salaire_mensuel: Option<&NombreLu>) -> R<Option<Provision>> {
@@ -1259,11 +1275,13 @@ pub fn provision_conges_de(paie: &Paie, mois: Mois, brut_du_mois: socle::num::De
     };
     let mut cpt = ecrit.clone();
     cpt.remuneration_periode = add(cpt.remuneration_periode, brut_du_mois);
-    let salaire = match salaire_mensuel {
-        Some(n) => Chiffre::Nombre(n.clone()).dec()?,
-        _ => Decimal::ZERO,
+    let Some(salaire) = salaire_mensuel else {
+        return Err(socle::refus!(
+            "{} : son engagement payé au mois ne dit pas son salaire mensuel brut : l'indemnité de ses congés au maintien ne se calcule pas. Le saisir dans la case « Salaire mensuel brut ».",
+            paie.engagement.salarie
+        ));
     };
-    provision_du_compteur(cpt, mois, salaire).map(Some)
+    provision_du_compteur(cpt, mois, Chiffre::Nombre(salaire.clone()).dec()?).map(Some)
 }
 
 /// LA PROVISION D'UN COMPTEUR a la fin de `mois` : son solde, et l'indemnite de ce solde quand il est positif, le

@@ -48,17 +48,18 @@ pub fn faits_appeles(ctx: &Contexte, partiel: bool) -> R<Vec<&'static str>> {
     })
 }
 
-/// Les heures d'un fait de la carte, zero s'il n'est pas dit ou s'il est negatif.
-fn heures(x: &Option<NombreLu>) -> R<Decimal> {
-    crate::conges::dec_ou(x.as_ref(), Decimal::ZERO).map(|h| h.max(Decimal::ZERO))
-}
 
 /// LES LIGNES DES HEURES EN PLUS DU MOIS de la saisie `e` d'un contrat paye au mois de `salaire` pour `quotite` heures
 /// par mois, a temps `partiel` ou non : une ligne par majoration, au taux horaire du contrat majore. INFERENCE, ecrite
 /// comme telle : le taux horaire est le salaire mensuel du contrat sur ses heures par mois ; le BOSS (§ 310) y ajoute les
 /// primes qui sont la contrepartie du travail, que la carte ne distingue pas des autres.
 pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: Decimal, quotite: Decimal, partiel: bool) -> R<(Vec<crate::LignePaie>, Vec<Avis>)> {
-    let (sup, a_50, comp) = (heures(&e.heures_supplementaires)?, heures(&e.heures_supplementaires_a_50)?, heures(&e.heures_complementaires)?);
+    let heures = |x: &Option<NombreLu>, nom: &str| crate::conges::heures_dites(ctx, e, x, nom);
+    let (sup, a_50, comp) = (
+        heures(&e.heures_supplementaires, "Heures supplémentaires")?,
+        heures(&e.heures_supplementaires_a_50, "Heures supplémentaires à 50 %")?,
+        heures(&e.heures_complementaires, "Heures complémentaires")?,
+    );
     if sup.is_zero() && comp.is_zero() && a_50.is_zero() {
         return Ok((Vec::new(), Vec::new()));
     }

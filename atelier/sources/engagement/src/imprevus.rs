@@ -302,7 +302,7 @@ pub fn tous(racine: &Path) -> R<Vec<Imprevu>> {
     let mut out = Vec::new();
     for f in fichiers {
         let Some(nom) = f.file_name().map(|n| n.to_string_lossy().into_owned()) else { continue };
-        if !nom.strip_suffix(".json").is_some_and(|m| socle::mois::Mois::lire(m).is_ok()) {
+        if !nom.strip_suffix(".json").is_some_and(|m| socle::mois::Mois::du_texte(m).is_some()) {
             continue;
         }
         out.extend(lu(&f)?);

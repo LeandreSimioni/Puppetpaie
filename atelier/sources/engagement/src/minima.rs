@@ -194,7 +194,7 @@ impl<'a> Cx<'a> {
         let annexes = &self.c3090()?.annexes;
         Ok(match &self.annexe {
             Some(a) if annexes.as_ref().is_some_and(|m| m.contains_key(a)) => vec![a.clone()],
-            _ => vec![],
+            Some(_) | None => vec![],
         })
     }
 

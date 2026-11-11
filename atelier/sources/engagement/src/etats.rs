@@ -445,7 +445,7 @@ static TEMOIN: std::sync::OnceLock<Temoin> = std::sync::OnceLock::new();
 
 /// Pose le temoin des recalculs refuses (`du_mois`), une fois pour le processus.
 pub fn poser_temoin(t: Temoin) {
-    let _ = TEMOIN.set(t);
+    TEMOIN.get_or_init(|| t);
 }
 
 /// Pour chaque engagement que `mois` montre, dans l'ordre de l'ecran : est-il valide ? Ne lit aucune paie, donc ne
@@ -1388,7 +1388,7 @@ fn rafraichir(ctx: &Contexte, mois: Mois, departs: &Departs, passage: bool) -> R
         let empreinte_ecrite = ancienne.as_ref().map(|a| &a.empreinte);
         let change = match empreinte_ecrite {
             Some(e) if parti => empreinte::code_ou_regle_change(ctx, e, mois, &mut relues)?,
-            _ => false,
+            Some(_) | None => false,
         };
         // Partie, elle ne bouge que par une decision de l'editeur : on la cherche d'abord (quelques entrees), et
         // l'empreinte entiere ne se verifie que si elle a lieu.

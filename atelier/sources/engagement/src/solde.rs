@@ -7,7 +7,7 @@ use droit::fiche::Lue;
 use droit::clauses;
 use droit::conges::jours_ouvrables;
 use crate::conges::{
-    avertir, compteur_conges, debut_de, dec_de, dec_ou, indemnite_des_jours, info, jours_ouvrables_de,
+    avertir, compteur_conges, debut_de, dec_de, indemnite_des_jours, info, jours_ouvrables_de,
     qui, remuneration_du_mois, salarie_de, sub, taux_au_montant,
 };
 use crate::saisie::Carte;
@@ -270,7 +270,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
     let Some(fin) = e.fin else {
         return Ok((stc.lignes, stc.avertissements));
     };
-    let salaire = dec_ou(e.salaire_mensuel.as_ref(), Decimal::ZERO)?;
+    let salaire = crate::conges::salaire_mensuel(ctx, e)?;
     let qui = qui(ctx, e);
     let motif = e.motif_rupture;
     let chomes = ctx.entreprise.feries_chomes();
@@ -467,7 +467,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                          A trancher.",
                         t
                     ),
-                    _ => String::new(),
+                    IndemniteDePreavis::Licenciement | IndemniteDePreavis::Aucune(_) => String::new(),
                 };
                 // L1234-5 : « indemnité de congés payés comprise » ; un mois de travail acquiert ses jours (L3141-3).
                 let jours = mul(permanents::regles()?.conges_payes.acquisition.jours_par_mois, m);
@@ -1287,7 +1287,7 @@ fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Decimal>, V
         bruts.push(remuneration_du_mois(ctx, m, &salarie)?);
     }
     if bruts.is_empty() {
-        let salaire = dec_ou(e.salaire_mensuel.as_ref(), Decimal::ZERO)?;
+        let salaire = crate::conges::salaire_mensuel(ctx, e)?;
         bruts = vec![salaire; 12];
     }
     let trois = bruts.iter().take(3).copied().collect();

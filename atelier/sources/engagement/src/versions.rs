@@ -234,12 +234,16 @@ pub fn termes_changes(convenue: &Saisie, presente: &Saisie) -> Vec<TermeChange> 
 }
 
 /// CE QUI A CHANGE DEPUIS LA VERSION `n` de l'engagement valide `v` jusqu'a son present, en mots (`changements`) : ce
-/// que dit la frise, et ce que dit le renvoi des documents partis sur la version `n`. Vide si `n` est le present ou ne se
-/// lit pas.
+/// que dit la frise, et ce que dit le renvoi des documents partis sur la version `n`. Vide si `n` est le present ; une
+/// version que l'engagement n'a pas se refuse.
 pub fn depuis(ctx: &Contexte, v: &Valide, n: u64) -> R<Vec<String>> {
     match (v.version_numero(n), &v.objet().brut.valide) {
         (Some(passee), Some(present)) if v.version() != Some(n) => changements(ctx, passee.saisie(), present.saisie.as_ref()),
-        _ => Ok(Vec::new()),
+        (Some(_), Some(_)) => Ok(Vec::new()),
+        (None, _) | (Some(_), None) => Err(socle::refus!(
+            "Un document parti nomme la version {} d'un engagement validé qui ne l'a pas : le signaler au développeur.",
+            n
+        )),
     }
 }
 

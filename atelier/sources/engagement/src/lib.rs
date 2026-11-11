@@ -587,9 +587,14 @@ impl Engagement {
         if !nat.mensuelle() {
             return Ok(Some(court(Decimal::from(self.jours_contrat))));
         }
+        // Une entreprise a la duree legale ne dit pas de duree collective : sa reference est la duree legale que la nature
+        // porte (`quotite_reference_defaut`, C. trav. L. 3121-27, dans `contrats-base.json`).
         Ok(match self.quotite_reference_saisie {
-            Some(q) if !q.is_zero() => Some(q),
-            _ => nat.quotite_reference_defaut(),
+            Some(q) if q.is_zero() => {
+                return Err(socle::refus!("La quotité de référence saisie est nulle : elle dit la durée collective du travail de l'entreprise (en heures par mois), ou ne se saisit pas à la durée légale."))
+            }
+            Some(q) => Some(q),
+            None => nat.quotite_reference_defaut(),
         })
     }
 
@@ -1050,7 +1055,7 @@ pub(crate) fn engagements(
             emploi_affichage: if ecrit(&carte.emploi).is_none() { d.map(|d| d.emploi_affichage.clone()) } else { None },
             nature: Some(valide.nature()),
             quotite_contrat: termes.quotite_contrat,
-            quotite_reference_saisie: termes.quotite_reference.filter(Chiffre::vrai),
+            quotite_reference_saisie: termes.quotite_reference,
             modalite_temps_travail_saisie: termes.modalite_temps_travail,
             motif_recours: termes.motif_recours,
             etablissement: carte.etablissement.clone(),

@@ -1812,17 +1812,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
 /// atelier/reference/sources/plafond-intermittents/LISEZ-MOI.md.
 pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &ChampsSalarie) -> R<Decimal> {
     let nat = e.nat()?;
-    let artiste = match statut_de(sal)? {
-        "artiste" => true,
-        "technicien" => false,
-        autre if !nat.mensuelle() => {
-            return Err(socle::refus!(
-                "Statut << {} >> : le plafond de securite sociale d'un intermittent depend de son statut (artiste : \
-                 arrete du 24/01/1975, art. 3 ; technicien : R. 242-2 CSS), et ce statut n'est ni l'un ni l'autre.",
-                autre))
-        }
-        _ => false,
-    };
+    // Le plafond d'un salarie au mois ne depend pas de son statut.
     if nat.mensuelle() {
         let tp = match plafond_temps_partiel(&ctx.entreprise, e, sal)? {
             PlafondTempsPartiel::Proratise => Some(duree_du_temps_partiel(e)?),
@@ -1830,6 +1820,16 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
         };
         return plafond_permanent(tuple(&e.debut_periode()), tuple(&e.fin_periode()), tp, &pss_du_contexte(ctx));
     }
+    let artiste = match statut_de(sal)? {
+        "artiste" => true,
+        "technicien" => false,
+        autre => {
+            return Err(socle::refus!(
+                "Statut << {} >> : le plafond de securite sociale d'un intermittent depend de son statut (artiste : \
+                 arrete du 24/01/1975, art. 3 ; technicien : R. 242-2 CSS), et ce statut n'est ni l'un ni l'autre.",
+                autre))
+        }
+    };
     let ep = EngagementPlafond {
         mensuelle: nat.mensuelle(),
         artiste,

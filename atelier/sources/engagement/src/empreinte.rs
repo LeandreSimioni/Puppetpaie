@@ -138,13 +138,14 @@ fn entree_tient(ctx: &Contexte, k: &str, v: &str) -> R<bool> {
         };
         return Ok(stock::empreinte_de_la_saisie_du_mois(racine, Mois::lire(mois)?, salarie)?.is_some_and(|e| v == e));
     }
-    Ok(fichiers::chemin_de(k, racine, &code).is_some_and(|(genre, p)| match genre.as_str() {
+    let Some((genre, p)) = fichiers::chemin_de(k, racine, &code) else { return Ok(false) };
+    Ok(match genre.as_str() {
         "fichier" => v == fichiers::empreinte_fichier(&p),
         "existe" => v == if p.exists() { "oui" } else { "non" },
         "dossier?" => v == if p.is_dir() { "oui" } else { "non" },
         "dossier" => v == fichiers::empreinte_dossier(&p),
-        _ => false,
-    }))
+        autre => return Err(socle::refus!("L'empreinte d'une paie note « {} », que le registre des lectures n'écrit pas : le signaler au développeur.", autre)),
+    })
 }
 
 /// Les regles datees qui s'appliquent au jour `jour` (`Contexte::regles_datees`), en AAAA-MM-JJ.
