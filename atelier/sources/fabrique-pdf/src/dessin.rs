@@ -2,8 +2,8 @@
 //! pose (du texte, des traits, des aplats, des images), puis le fichier.
 //!
 //! Les coordonnées se donnent depuis le coin haut gauche de la page, en points (`Mesure`) ; le PDF compte depuis le
-//! coin bas gauche, et la conversion se fait ici, à l'écriture. Les nombres s'écrivent en texte, au dix-millième
-//! (`marquage::nb`) : une position écrite diffère de la position calculée de moins d'un dix-millième de point.
+//! coin bas gauche, et la conversion se fait ici, à l'écriture. Les nombres s'écrivent en texte : les positions au
+//! dix-millième (`marquage::nb`, moins d'un dix-millième de point d'écart), le corps d'un texte au millionième.
 //!
 //! Le texte s'écrit avec des polices embarquées en sous-ensemble (`sous_ensemble`) : codes de deux octets qui sont
 //! le point de code Unicode, et seuls les glyphes imprimés.
@@ -515,7 +515,8 @@ impl Dessin {
             page.fontes.insert(f);
             if police != Some((f, st.corps)) {
                 police = Some((f, st.corps));
-                page.contenu.push_str(&format!("/F{} {} Tf\n", f, nb(st.corps)));
+                // Le corps au millionième : il multiplie toute la largeur de la ligne.
+                page.contenu.push_str(&format!("/F{} {} Tf\n", f, st.corps));
             }
             let codes: Vec<char> = t.chars().collect();
             if espace.est_nulle() || !codes.contains(&' ') {
