@@ -42,14 +42,15 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 use droit::contexte::Contexte;
+use droit::cotisation_etablissement::CotisationDEtablissement;
 use socle::forme::Nombre;
 use socle::texte::{euros, virgule};
 use socle::echec::R;
 use socle::num::{add, div, mul, Decimal};
 
 const MOIS_DE_DECLARATION: u32 = 3;
-pub const CODE_CONTRIBUTION: &str = "079";
-pub const CODE_EXONERATION: &str = "080";
+pub const CODE_CONTRIBUTION: CotisationDEtablissement = CotisationDEtablissement::Csa;
+pub const CODE_EXONERATION: CotisationDEtablissement = CotisationDEtablissement::ExonerationCsa;
 pub const CTP: &str = "998";
 const SEUIL: i64 = 250;
 const SEUIL_DEUX_MILLE: f64 = 2000.0;
@@ -61,7 +62,7 @@ const CODE_DENOMINATEUR: &str = "A07";
 pub struct Csa {
     pub millesime: i32,
     /// « 079 » (la contribution) ou « 080 » (l'exoneration, a 0.00).
-    pub code: &'static str,
+    pub code: CotisationDEtablissement,
     /// Le montant, a l'euro (L. 6242-1, VII).
     pub montant: Decimal,
     /// Le quotient A05 / A07, en pourcentage.
@@ -75,7 +76,7 @@ pub struct Csa {
 
 impl Csa {
     /// Le bloc S21.G00.82 : (code, montant).
-    pub fn bloc_82(&self) -> (&'static str, Decimal) {
+    pub fn bloc_82(&self) -> (CotisationDEtablissement, Decimal) {
         (self.code, self.montant)
     }
 

@@ -4,6 +4,7 @@
 //! millesime ; le calcul applique D5212-2, -20 a -24.
 
 use droit::contexte::Contexte;
+use droit::cotisation_etablissement::CotisationDEtablissement;
 use serde::Deserialize;
 use socle::date::Jour;
 use socle::echec::{refus_avec, Lieu, R};
@@ -21,7 +22,11 @@ const CTP_CONTRIBUTION: &str = "730";
 const CTP_ACCORD: &str = "740";
 
 /// Les categories de D5212-23 et leur code en S21.G00.82.002.
-const DEPENSES: [(&str, &str); 3] = [("accessibilite", "062"), ("maintien", "063"), ("accompagnement", "064")];
+const DEPENSES: [(&str, CotisationDEtablissement); 3] = [
+    ("accessibilite", CotisationDEtablissement::DepenseAccessibilite),
+    ("maintien", CotisationDEtablissement::DepenseMaintien),
+    ("accompagnement", CotisationDEtablissement::DepenseAccompagnement),
+];
 
 /// S21.G00.13.002 : les types de beneficiaires mis a disposition.
 const TYPES_EXTERNES: [&str; 6] = ["01", "02", "03", "04", "05", "06"];
@@ -47,7 +52,7 @@ pub struct Declaration {
     pub brute: Decimal,
     pub nette: Decimal,
     /// Les deductions non plafonnees, telles qu'elles se declarent (code -> montant).
-    pub deductions: BTreeMap<String, Decimal>,
+    pub deductions: BTreeMap<CotisationDEtablissement, Decimal>,
     /// [(type, nombre)] des beneficiaires mis a disposition.
     pub externes: Vec<(String, Decimal)>,
     /// Le code de l'accord agree, ou `None`.
@@ -69,15 +74,15 @@ impl Declaration {
     }
 
     /// [(code, montant)] du bloc S21.G00.82, dans l'ordre des codes.
-    pub fn blocs_82(&self) -> Vec<(String, Decimal)> {
+    pub fn blocs_82(&self) -> Vec<(CotisationDEtablissement, Decimal)> {
         if self.accord.is_some() {
-            return self.non_realisees().map(|m| ("069".to_string(), m)).into_iter().collect();
+            return self.non_realisees().map(|m| (CotisationDEtablissement::OethNonRealisees, m)).into_iter().collect();
         }
-        let mut l: Vec<(String, Decimal)> =
-            self.deductions.iter().filter(|(_, m)| !m.is_zero()).map(|(c, m)| (c.clone(), *m)).collect();
-        l.push(("065".into(), self.brute));
-        l.push(("066".into(), self.nette));
-        l.push(("068".into(), self.due()));
+        let mut l: Vec<(CotisationDEtablissement, Decimal)> =
+            self.deductions.iter().filter(|(_, m)| !m.is_zero()).map(|(c, m)| (*c, *m)).collect();
+        l.push((CotisationDEtablissement::OethBrute, self.brute));
+        l.push((CotisationDEtablissement::OethNette, self.nette));
+        l.push((CotisationDEtablissement::OethReelleDue, self.due()));
         l.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
         l
     }
@@ -306,7 +311,7 @@ connait pas s'applique. Rien n'est ecrit.",
 
     // La sous-traitance et les depenses (D5212-22 et -23) : celles que la compagnie ecrit, et elles seules.
     let sous_traitance = montant(donnees.sous_traitance, "sous_traitance", millesime)?;
-    let mut depenses: Vec<(&str, Decimal)> = Vec::new();
+    let mut depenses: Vec<(CotisationDEtablissement, Decimal)> = Vec::new();
     for (cle, code) in DEPENSES {
         if let Some(m) = montant(donnees.depenses.as_ref().and_then(|d| d.de(cle)), &format!("depenses.{}", cle), millesime)? {
             depenses.push((code, m));
@@ -338,12 +343,12 @@ pour le dire. Rien n'est ecrit.",
     d.brute = eur2(mul(mul(d.manquants, Decimal::from(d.coefficient)), smic));
 
     let ecap = eur2(mul(mul(dec(ecap, "ecap", millesime)?, Decimal::from(17)), smic));
-    d.deductions.insert("060".into(), ecap);
+    d.deductions.insert(CotisationDEtablissement::DeductionEcap, ecap);
     if let Some(s) = sous_traitance {
-        d.deductions.insert("061".into(), s);
+        d.deductions.insert(CotisationDEtablissement::DeductionSousTraitance, s);
     }
     for (code, m) in &depenses {
-        d.deductions.insert(code.to_string(), *m);
+        d.deductions.insert(*code, *m);
     }
 
     // Les plafonds, sur la contribution brute (D5212-22 et -23).

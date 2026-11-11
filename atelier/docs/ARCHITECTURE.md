@@ -17,7 +17,8 @@ n'entre. Ce qui passe la porte est lu **une fois** et devient un type Rust ; ded
   (`droit::natures::NatureDeContrat`), dont `contrats-base.json` dit les propriétés ; un motif de recours ou de rupture
   et la modalité du temps de travail aussi (`droit::natures::MotifDeRecours`, `MotifDeRupture`,
   `ModaliteDuTempsDeTravail`), et le code d'une base assujettie (`droit::base_assujettie::BaseAssujettie`, que le
-  barème nomme en `bloc78` et dont la déduction forfaitaire spécifique abat certaines) : chacune est la liste entière de sa rubrique dans la norme (`ListeDeLaNorme`), tenue aux
+  barème nomme en `bloc78` et dont la déduction forfaitaire spécifique abat certaines), et celui d'une cotisation d'établissement (`droit::cotisation_etablissement::CotisationDEtablissement`,
+  S21.G00.82.002 : l'OETH, la taxe d'apprentissage, la CSA) : chacune est la liste entière de sa rubrique dans la norme (`ListeDeLaNorme`), tenue aux
   listes relevées des versions livrées par un test de structure ; un code propre à une version le dit (`depuis`,
   `jusqu_a`), et la DSN ne l'écrit que dans un fichier de cette version (`dsn::Fichier::ecrire_code`, classe
   `HorsDeLaVersion`). Le fichier, lu contre elles, dit ceux que chaque nature permet. Une assiette du calcul aussi

@@ -14,6 +14,7 @@ pub mod caisse_conges;
 pub mod catalogue;
 pub mod clauses;
 pub mod conges;
+pub mod cotisation_etablissement;
 pub mod cumul;
 pub mod cpf_cdd;
 pub mod contexte;

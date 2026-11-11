@@ -4686,7 +4686,7 @@ certificat de conformite du depot precedent.",
     let solde_ta = solde_taxe_apprentissage(ctx, mois, &orgs, &bar, &nic, departs)?;
     if let Some(s) = &solde_ta {
         f.add("S21.G00.82.001", mt(s.montant));
-        f.add("S21.G00.82.002", "076");
+        f.ecrire_code(droit::cotisation_etablissement::CotisationDEtablissement::SoldeTaxeDApprentissage)?;
         f.add("S21.G00.82.003", format!("0101{}", s.annee));
         f.add("S21.G00.82.004", format!("3112{}", s.annee));
         f.add("S21.G00.82.005", &s.org);
@@ -4700,7 +4700,7 @@ certificat de conformite du depot precedent.",
             .ok_or_else(|| refus("StopIteration"))?;
         for (code, montant) in d.blocs_82() {
             f.add("S21.G00.82.001", mt(montant));
-            f.add("S21.G00.82.002", code);
+            f.ecrire_code(code)?;
             f.add("S21.G00.82.003", format!("0101{}", d.millesime));
             f.add("S21.G00.82.004", format!("3112{}", d.millesime));
             f.add("S21.G00.82.005", &org_urssaf);
@@ -4714,7 +4714,7 @@ certificat de conformite du depot precedent.",
             .ok_or_else(|| refus("StopIteration"))?;
         let (code, montant) = c.bloc_82();
         f.add("S21.G00.82.001", mt(montant));
-        f.add("S21.G00.82.002", code);
+        f.ecrire_code(code)?;
         f.add("S21.G00.82.003", format!("0101{}", c.millesime));
         f.add("S21.G00.82.004", format!("3112{}", c.millesime));
         f.add("S21.G00.82.005", &org_urssaf);
