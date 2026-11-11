@@ -204,7 +204,7 @@ pub fn rendre_simulee(racine: &Path) -> R<()> {
     let nom = racine.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| refus!("{} : un dossier est attendu", racine.display()))?;
     let marqueur = compagnie::installation::Marqueur {
         copie_de: format!("{} {} sur le banc d'essai", compagnie::installation::MARQUE_FICTIVE, nom),
-        depuis: None,
+        fictive: None,
         ajoutee: None,
         quand: Some(socle::paris::InstantEcrit::maintenant()),
         quoi: "Une compagnie ajoutee par le « + », devenue fictive aux envois SIMULES sur le banc d'essai de l'atelier (scenario.rs, geste `simuler`) : ses DPAE, DSN et courriels sont joues, rien ne part.".to_string(),
@@ -813,7 +813,7 @@ fn poser_livree(racine: &Path, dest: &Path, fin: Option<Moment>) -> R<()> {
     }
     let marqueur = compagnie::installation::Marqueur {
         copie_de: format!("{} {}", compagnie::installation::MARQUE_FICTIVE, nom),
-        depuis: None,
+        fictive: None,
         ajoutee: None,
         quand: fin.map(socle::paris::InstantEcrit::de),
         quoi: "Compagnie FICTIVE de reference, livree avec le logiciel : le rejeu de son scenario (atelier/fictives/). Ses envois sont joues, rien n'en part.".to_string(),

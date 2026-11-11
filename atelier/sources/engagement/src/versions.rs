@@ -356,7 +356,9 @@ pub struct Frise {
 pub struct VersionDeLaFrise {
     pub version: Option<u64>,
     pub le: socle::paris::InstantEcrit,
-    pub jour: String,
+    /// Son jour tel que la frise l'affiche (« 14/11 »).
+    #[serde(rename = "jour")]
+    pub jour_affichage: String,
     pub titre_dit: String,
     pub jour_dit: String,
     pub changements: Vec<String>,
@@ -397,7 +399,7 @@ pub fn frise(ctx: &Contexte, v: &Valide, departs: &Departs, mois: Mois) -> R<Opt
             Some(n) => format!("Version {}", n),
             None => "Version".to_string(),
         };
-        versions.push(VersionDeLaFrise { version: n, le: *le, jour: le.jour().jj_mm(), titre_dit, jour_dit: format!("le {}", le.jour().jj_mm()), changements: changes, partis });
+        versions.push(VersionDeLaFrise { version: n, le: *le, jour_affichage: le.jour().jj_mm(), titre_dit, jour_dit: format!("le {}", le.jour().jj_mm()), changements: changes, partis });
         precedente = Some(*x);
     }
     Ok(Some(Frise { phrase: phrase_de_la_frise(ctx, v, departs, siens)?, versions }))

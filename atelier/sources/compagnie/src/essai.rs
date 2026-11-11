@@ -328,7 +328,8 @@ impl Identite {
 #[derive(Debug)]
 pub struct Montage {
     pub dossier: PathBuf,
-    pub depuis: String,
+    /// Le nom de la fictive copiee.
+    pub fictive: String,
     /// `false` : la copie existait deja, seule son identite a ete reecrite.
     pub neuf: bool,
 }
@@ -340,9 +341,9 @@ fn installation() -> R<PathBuf> {
 }
 
 /// La fictive a copier : un chemin (s'il designe un dossier), sinon un nom de `fictives/` de l'installation.
-fn source(depuis: &str) -> R<PathBuf> {
-    let p = PathBuf::from(depuis);
-    let d = if depuis.contains('/') || depuis.contains('\\') || p.is_dir() { p } else { installation()?.join(crate::installation::DOSSIER_FICTIVES).join(depuis) };
+fn source(fictive: &str) -> R<PathBuf> {
+    let p = PathBuf::from(fictive);
+    let d = if fictive.contains('/') || fictive.contains('\\') || p.is_dir() { p } else { installation()?.join(crate::installation::DOSSIER_FICTIVES).join(fictive) };
     if !d.join(droit::contexte::ENTREPRISE).is_file() {
         return Err(refus_avec("Ce dossier n'est pas une compagnie : il n'a pas de fiche entreprise. Rien n'est écrit.", a_part(&d)));
     }
@@ -406,12 +407,12 @@ fn retirer_les_depots_de_dsn(dossier: &Path) -> R<()> {
     envois::journal::ne_garder_que(dossier, |l| l.acte() != envois::journal::Acte::Dsn)
 }
 
-/// Monte (ou remet a jour) la compagnie d'essai dans `dossier`, depuis la fictive `depuis`, sous l'identite `texte` (le
+/// Monte (ou remet a jour) la compagnie d'essai dans `dossier`, depuis la fictive `fictive`, sous l'identite `texte` (le
 /// contenu de la variable, `None` si elle est absente). Tout se verifie AVANT d'ecrire : un refus ne laisse rien.
 ///
 /// Une copie qui existe deja et qui est une compagnie d'essai garde tout (journal, DSN, retours releves) : seule sa fiche
 /// reprend l'identite de la variable. Un dossier qui existe et qui n'en est pas une, s'il n'est pas vide, est refuse.
-pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> R<Montage> {
+pub fn monter(dossier: &Path, fictive: &str, texte: Option<&str>) -> R<Montage> {
     let texte = texte.filter(|t| !t.trim().is_empty()).ok_or_else(|| {
         socle::refus!("{} absente : elle porte l'identite de la compagnie (un objet JSON sur une ligne ; ses cles : `moteur essai monter --aide`). La poser dans les reglages de l'environnement, puis ouvrir une nouvelle seance. Rien n'est ecrit.", VARIABLE)
     })?;
@@ -432,12 +433,12 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> R<Montage> {
     }
     let (src, nom) = if deja {
         // La copie dit de quelle fictive elle vient ; `--depuis` ne la change pas (il faudrait une copie neuve).
-        let depuis = crate::installation::marqueur(dossier)?
-            .and_then(|m| m.depuis)
+        let copiee = crate::installation::marqueur(dossier)?
+            .and_then(|m| m.fictive)
             .ok_or_else(|| refus_avec("Le marqueur de la compagnie d'essai ne dit pas de quelle fictive elle vient.", a_part(dossier)))?;
-        (None, depuis)
+        (None, copiee)
     } else {
-        let s = source(depuis)?;
+        let s = source(fictive)?;
         let nom = s.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| refus_avec("La fictive à copier n'a pas de nom.", a_part(&s)))?;
         (Some(s), nom)
     };
@@ -455,7 +456,7 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> R<Montage> {
         let quand = socle::paris::InstantEcrit::maintenant();
         let marqueur = crate::installation::Marqueur {
             copie_de: format!("{} (moteur essai monter, identite de {}), depuis la compagnie fictive {}", MARQUE_ESSAI, VARIABLE, nom),
-            depuis: Some(nom.clone()),
+            fictive: Some(nom.clone()),
             ajoutee: None,
             quand: Some(quand),
             quoi: "Compagnie d'ESSAI : ses depots de TEST vont au reseau, sous l'identite d'une vraie compagnie ; tout acte reel est refuse (depot_acte::refuser_si_copie, et pas de coffre). Ne se commite jamais.".to_string(),
@@ -465,7 +466,7 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> R<Montage> {
             .map_err(|e| socle::echec::du_disque(&dossier, &e))?;
     }
     socle::ecriture::ecrire_json(&dossier.join(droit::contexte::ENTREPRISE), &fiche, 2)?;
-    Ok(Montage { dossier: absolu(dossier)?, depuis: nom, neuf: !deja })
+    Ok(Montage { dossier: absolu(dossier)?, fictive: nom, neuf: !deja })
 }
 
 // ------------------------------------------------------------------ la commande
@@ -503,7 +504,7 @@ pub fn commande(args: &[String]) -> i32 {
             return 2;
         }
     }
-    let (mut dossier, mut depuis): (Option<PathBuf>, String) = (None, FICTIVE_PAR_DEFAUT.to_string());
+    let (mut dossier, mut fictive): (Option<PathBuf>, String) = (None, FICTIVE_PAR_DEFAUT.to_string());
     while let Some(a) = it.next() {
         match a.as_str() {
             "-h" | "--help" | "--aide" => {
@@ -511,7 +512,7 @@ pub fn commande(args: &[String]) -> i32 {
                 return 0;
             }
             "--depuis" => match it.next() {
-                Some(v) => depuis = v.clone(),
+                Some(v) => fictive = v.clone(),
                 None => {
                     eprintln!("moteur essai monter : --depuis attend une fictive.\n\n{}", AIDE);
                     return 2;
@@ -542,13 +543,13 @@ pub fn commande(args: &[String]) -> i32 {
             return 1;
         }
     };
-    match monter(&dossier, &depuis, texte.as_deref()) {
+    match monter(&dossier, &fictive, texte.as_deref()) {
         Ok(m) => {
             let d = m.dossier.display();
             if m.neuf {
-                dire!("Compagnie d'essai montee dans {}, depuis la compagnie fictive {}.", d, m.depuis);
+                dire!("Compagnie d'essai montee dans {}, depuis la compagnie fictive {}.", d, m.fictive);
             } else {
-                dire!("Compagnie d'essai {} (depuis {}) : identite reecrite ; journal, DSN et retours gardes.", d, m.depuis);
+                dire!("Compagnie d'essai {} (depuis {}) : identite reecrite ; journal, DSN et retours gardes.", d, m.fictive);
             }
             dire!("Identite : {} (posee ; ses valeurs ne s'affichent pas). Tout depot reel y est refuse.", VARIABLE);
             dire!();

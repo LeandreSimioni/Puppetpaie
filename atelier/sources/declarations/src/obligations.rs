@@ -133,8 +133,9 @@ pub struct Suites {
 pub struct Reserves {
     pub libelle: String,
     pub jours_francs: i64,
+    /// Ce d'ou courent les jours francs, en mots (« la déclaration »).
     #[serde(rename = "depuis")]
-    _depuis: String,
+    _point_de_depart: String,
     pub texte: TexteDepose,
     pub inference: String,
 }

@@ -138,14 +138,14 @@ pub const MARQUE_FICTIVE: &str = "compagnie fictive";
 /// LE MARQUEUR D'UNE COPIE (`COPIE-DE-DEVELOPPEMENT.json`) : ce qu'elle copie (`copie_de`), quand, et ce qu'elle est.
 /// Ses ecrivains : la livraison d'une fictive (`scenario::poser_livree` : « compagnie fictive <son dossier> », `quand` le
 /// dernier geste rejoue, s'il en a un), le « + » d'un logiciel bride (`accueil::ajouter_venant`, avec la marque `ajoutee`), le banc
-/// d'essai (`scenario::rendre_simulee`), la compagnie d'essai (`essai::monter`, avec la fictive copiee, `depuis`).
+/// d'essai (`scenario::rendre_simulee`), la compagnie d'essai (`essai::monter`, avec la fictive copiee, `fictive`).
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Marqueur {
     pub copie_de: String,
-    /// La fictive que copie une compagnie d'essai.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub depuis: Option<String>,
+    /// La fictive que copie une compagnie d'essai (son nom).
+    #[serde(rename = "depuis", skip_serializing_if = "Option::is_none")]
+    pub fictive: Option<String>,
     /// LA MARQUE D'UNE FICTIVE AJOUTEE (`est_ajoutee`) : `true`, sur elle seule.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ajoutee: Option<bool>,

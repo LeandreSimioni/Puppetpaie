@@ -1474,7 +1474,9 @@ pub struct Machine {
     pub edition: String,
     pub compagnie: String,
     pub langue_systeme: Option<String>,
-    pub lance_depuis: String,
+    /// Depuis combien de temps le moteur tourne, en mots.
+    #[serde(rename = "lance_depuis")]
+    pub duree_lance: String,
     pub mises_a_jour: Vec<String>,
     pub page: Option<PageDite>,
 }
@@ -1526,7 +1528,7 @@ pub fn machine(racine: &Path) -> Machine {
             Err(e) => e.phrase,
         },
         langue_systeme: langue,
-        lance_depuis: duree_lisible(demarrage().elapsed()),
+        duree_lance: duree_lisible(demarrage().elapsed()),
         mises_a_jour,
         page: page(),
     }

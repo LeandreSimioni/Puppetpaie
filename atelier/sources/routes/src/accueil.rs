@@ -482,7 +482,7 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
     // fictive livree (`maj::marquee_comme_livree` compare « compagnie fictive <nom du dossier> ») : elle n'en est pas une.
     let marqueur = Marqueur {
         copie_de: format!("{} ajoutee sur ce poste", MARQUE_FICTIVE),
-        depuis: None,
+        fictive: None,
         ajoutee: Some(true),
         quand: Some(socle::paris::InstantEcrit::maintenant()),
         quoi: "Une compagnie fictive ajoutee sur ce poste, le logiciel etant bride : tout s'y fait, rien n'en part vers un organisme ni vers une personne.".to_string(),
