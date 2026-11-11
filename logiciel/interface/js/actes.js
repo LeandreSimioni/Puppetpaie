@@ -371,9 +371,13 @@ async function boiteDepot(charge, { testerDabord = false } = {}) {
     // Seul le bilan du test (le certificat, ou le bilan d'anomalies) ouvre le
     // réel ou le ferme ; l'accusé d'enregistrement dit « envoi reçu », pas
     // « conforme » (le moteur refuse le réel sans lui, DSN comme DPAE).
+    suiviRepris("bilan-repetition");
     for (let tour = 0; tour < 30; tour++) {
       let r = null;
-      try { r = await api("bilan-repetition", charge); } catch (e) { dire(e.message, "erreur"); }
+      try {
+        r = await api("bilan-repetition", charge);
+        suiviRepris("bilan-repetition");
+      } catch (e) { direLeRefusDuSuivi("bilan-repetition", e.message); }
       if (r && (r.etat === "testee" || r.etat === "test_refuse")) {
         ecrire(encartRepetition(r));
         libre();
@@ -429,10 +433,14 @@ function avisApresLeDepot(r) {
  *  se repeint dès que le dépôt est tranché. */
 async function suivreDepot(quoi, flux, mois) {
   if (!flux) return;
+  suiviRepris("suivre-depot");
   for (let tour = 0; tour < 40; tour++) {
     await new Promise((ok) => setTimeout(ok, enFictive() ? 4000 : 15000));
     let r = null;
-    try { r = await api("suivre-depot", { quoi, flux, mois }); } catch (e) { dire(e.message, "erreur"); continue; }
+    try {
+      r = await api("suivre-depot", { quoi, flux, mois });
+      suiviRepris("suivre-depot");
+    } catch (e) { direLeRefusDuSuivi("suivre-depot", e.message); continue; }
     if (r && r.fini) {
       dire(r.phrase, r.couleur);
       await rafraichirActions();

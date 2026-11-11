@@ -147,7 +147,10 @@ function suivreLesEtapes() {
   if (SUIVI_ETAPES || SERVEUR_PERDU) return;
   SUIVI_ETAPES = setTimeout(async () => {
     let e = null;
-    try { e = (await fenetre("veille_etape")).etat; } catch (x) { dire(x.message, "erreur"); }
+    try {
+      e = (await fenetre("veille_etape")).etat;
+      suiviRepris("veille_etape");
+    } catch (x) { direLeRefusDuSuivi("veille_etape", x.message); }
     SUIVI_ETAPES = null;
     if (!e) return;
     if (e.en_cours || e.sauvegarde_en_cours || RELEVE_DEMANDE) {
@@ -164,10 +167,11 @@ async function suivreVeille() {
   if (SERVEUR_PERDU) return;          // le bandeau dit déjà l'essentiel
   try {
     const v = (await fenetre("veille")).etat;
+    suiviRepris("veille");
     await rafraichirApresVeille(v);
     dessinerVeille(v);
     dessinerPastilleReponses();
-  } catch (e) { dire(e.message, "erreur"); }
+  } catch (e) { direLeRefusDuSuivi("veille", e.message); }
 }
 
 document.getElementById("veille-maintenant").onclick = async () => {

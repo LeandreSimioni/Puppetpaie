@@ -481,6 +481,17 @@ function dire(texte, type) {
   dire._t = setTimeout(() => el.classList.add("cachee"), 6000);
 }
 
+/* UN SUIVI QUI TOURNE (le bilan d'un test, l'écoute d'un dépôt, la veille) redemande à chaque tour : un refus se dit
+ * une fois, et un même refus déjà montré ne se remontre pas tant qu'il n'a pas changé. Chaque suivi a son nom ; un tour
+ * qui passe (`suiviRepris`) l'oublie, et le prochain refus se dit de nouveau. */
+const REFUS_DES_SUIVIS = new Map();
+function direLeRefusDuSuivi(suivi, message) {
+  if (REFUS_DES_SUIVIS.get(suivi) === message) return;
+  REFUS_DES_SUIVIS.set(suivi, message);
+  dire(message, "erreur");
+}
+function suiviRepris(suivi) { REFUS_DES_SUIVIS.delete(suivi); }
+
 /** UN ACTE EN COURS SE VOIT. Le bouton cliqué s'éteint et dit ce qui se passe, là où l'on
  *  regarde — dans la boîte, que le bandeau du bas ne traverse pas. Rend
  *  la fonction qui le rallume (une erreur : on peut réessayer). */
