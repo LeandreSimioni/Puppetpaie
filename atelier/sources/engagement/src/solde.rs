@@ -143,7 +143,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
     let legal = permanents::preavis_mois(anciennete, motif, cdd)?;
     let prof = profil(ctx, e)?;
     let categorie = prof.categorie.as_deref();
-    let conv = clauses::preavis_mois(idcc, categorie, anciennete, motif.map(MotifDeRupture::code), age(ctx, e)?)?;
+    let conv = clauses::preavis_mois(idcc, categorie, anciennete, motif, age(ctx, e)?)?;
     let conv_mois = conv.mois.map(de_p).transpose()?;
     // Une convention qui ne donne pas de duree dit pourquoi ; une qui en donne une dit son article (`clauses::preavis_mois`).
     let conv_pourquoi = || conv.pourquoi.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention ne donne pas de durée et ne dit pas pourquoi"));
@@ -1212,7 +1212,7 @@ fn indemnite_conventionnelle(
         &profil(ctx, e)?,
         anciennete,
         reference,
-        motif.map(MotifDeRupture::code),
+        motif,
         age(ctx, e)?,
     )
 }

@@ -141,8 +141,8 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
         (Some(r), Some(l)) => Some(r.min(l)),
         (r, l) => r.or(l),
     };
-    let partiel = match texte(eng.modalite_temps_travail_saisie.as_deref()) {
-        Some(m) => m == "20",
+    let partiel = match eng.modalite_temps_travail_saisie {
+        Some(m) => m == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel,
         None => reference.is_some_and(|r| q < r),
     };
     let mut duree = format!("{} heures par mois", virgule(q));

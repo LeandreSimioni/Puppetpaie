@@ -1132,8 +1132,8 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         Some(r) => dec_de(r)?.min(defaut),
         None => defaut,
     };
-    let partiel = match e.modalite_temps_travail.as_deref().filter(|m| !m.is_empty()) {
-        Some(m) => m == "20",
+    let partiel = match e.modalite_temps_travail {
+        Some(m) => m == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel,
         None => quotite < reference,
     };
     let (l, a) = crate::heures_en_plus::lignes(ctx, e, mois, salaire, quotite, partiel)?;

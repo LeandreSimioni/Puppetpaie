@@ -7,8 +7,9 @@
 #[test]
 fn le_code_032_n_accompagne_qu_une_inaptitude() {
     // CCH-29 : avec 032, le motif de rupture est 033, 091, 092 ou 099 ; un 032 avec un licenciement ordinaire refuse.
-    assert_eq!(droit::permanents::code_52_permis(Some("032"), Some("092")).unwrap(), None);
-    assert_eq!(droit::permanents::code_52_permis(Some("032"), Some("033")).unwrap(), None);
-    let refus = droit::permanents::code_52_permis(Some("032"), Some("020")).unwrap().expect("032 avec 020");
+    use droit::natures::MotifDeRupture;
+    assert_eq!(droit::permanents::code_52_permis(Some("032"), Some(MotifDeRupture::InaptitudeProfessionnelle)).unwrap(), None);
+    assert_eq!(droit::permanents::code_52_permis(Some("032"), Some(MotifDeRupture::InaptitudeDuCdd)).unwrap(), None);
+    let refus = droit::permanents::code_52_permis(Some("032"), Some(MotifDeRupture::LicenciementAutreMotif)).unwrap().expect("032 avec 020");
     assert!(refus.contains("CCH-29") && refus.contains("092"), "{}", refus);
 }

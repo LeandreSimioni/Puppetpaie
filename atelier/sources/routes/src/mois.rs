@@ -1460,7 +1460,7 @@ fn champs_du_contrat_ecrit(ctx: &Contexte, e: &engagement::Engagement, nat: &dro
     if e.motif_recours.is_some_and(|m| nat.motif_de_remplacement(m)) {
         v.push("personne_remplacee");
     }
-    if nat.mensuelle() && e.modalite_temps_travail()? == "20" {
+    if nat.mensuelle() && e.modalite_temps_travail()? == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel {
         v.push("repartition_horaire");
     }
     v.push("clauses_particulieres");
@@ -1761,7 +1761,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         heures: e.heures,
         // LES CASES « AVANCÉ » QUE CE CONTRAT PAYE AU MOIS APPELLE (`catalogue::CASES_D_UN_MOIS_PAYE`) : ses heures
         // supplementaires a temps plein, complementaires a temps partiel (`engagement::heures_en_plus::faits_appeles`).
-        faits_avances: if nat.mensuelle() { engagement::heures_en_plus::faits_appeles(ctx, e.modalite_temps_travail()? == "20")? } else { Vec::new() },
+        faits_avances: if nat.mensuelle() { engagement::heures_en_plus::faits_appeles(ctx, e.modalite_temps_travail()? == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel)? } else { Vec::new() },
         // LES RUBRIQUES QUE SA CARTE PROPOSE : sa nature, et le statut et le metier de la fiche telle que la paie la lit
         // (le metier de la carte par-dessus celui du salarie).
         propose: engagement::proposees::proposees(ctx, Some(nat.mensuelle()), s.statut.dite().map(|x| x.as_str()), s.code_emploi_ft.remplie(), &data.mois.premier_jour())?,

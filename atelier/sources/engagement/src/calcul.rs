@@ -1924,7 +1924,7 @@ pub(crate) fn plafond_temps_partiel(ent: &ChampsEntreprise, e: &Engagement, sal:
     let Some(au_mois) = e.nat()?.au_mois() else {
         return Ok(PlafondTempsPartiel::NonConcerne);
     };
-    if e.modalite_temps_travail()? != "20" {
+    if e.modalite_temps_travail()? != droit::natures::ModaliteDuTempsDeTravail::TempsPartiel {
         return Ok(PlafondTempsPartiel::NonConcerne);
     }
     // « Entier » : l'etablissement renonce a la proratisation pour tous ses salaries a temps partiel (fiche 3369 ; BOSS,

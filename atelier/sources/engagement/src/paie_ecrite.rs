@@ -239,7 +239,7 @@ pub struct FormeDEngagement {
     pub quotite_contrat: Option<Decimal>,
     #[serde(with = "nombre_opt")]
     pub quotite_reference_saisie: Option<Decimal>,
-    pub modalite_temps_travail_saisie: Option<String>,
+    pub modalite_temps_travail_saisie: Option<droit::natures::ModaliteDuTempsDeTravail>,
     pub motif_recours: Option<droit::natures::MotifDeRecours>,
     pub motif_rupture: Option<droit::natures::MotifDeRupture>,
     pub notification_rupture: Option<Jour>,

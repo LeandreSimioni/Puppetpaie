@@ -132,7 +132,7 @@ carte! {
         #[champ(Terme, QuotiteReference)]
         pub quotite_reference: Option<NombreLu>,
         #[champ(Terme, ModaliteTempsTravail)]
-        pub modalite_temps_travail: Option<String>,
+        pub modalite_temps_travail: Option<droit::natures::ModaliteDuTempsDeTravail>,
         #[champ(Terme, SalaireMensuel)]
         pub salaire_mensuel: Option<NombreLu>,
         #[champ(Terme, Emploi)]
@@ -280,7 +280,7 @@ choix_simple!(droit::fiche::Statut, droit::fiche::StatutConventionnel, droit::fi
 macro_rules! code_simple {
     ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.code().to_string())) } } )* };
 }
-code_simple!(droit::natures::MotifDeRecours, droit::natures::MotifDeRupture);
+code_simple!(droit::natures::MotifDeRecours, droit::natures::MotifDeRupture, droit::natures::ModaliteDuTempsDeTravail);
 
 impl Simple for NombreLu {
     fn simple(&self) -> Option<Valeur> {

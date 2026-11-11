@@ -20,7 +20,7 @@
 use serde::{Deserialize, Serialize};
 
 use droit::contexte::{IdSalarie, IdSpectacle};
-use droit::natures::{MotifDeRecours, MotifDeRupture, NatureDeContrat};
+use droit::natures::{ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NatureDeContrat};
 use socle::date::Jour;
 use socle::forme::NombreLu;
 use socle::echec::{refus, R};
@@ -177,7 +177,7 @@ nature! {
             cadre: bool = Cadre,
             lieu: String = Lieu,
             quotite_reference: NombreLu = QuotiteReference,
-            modalite_temps_travail: String = ModaliteTempsTravail,
+            modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail,
             emploi: String = Emploi,
             pcs_ese: String = PcsEse,
             code_emploi_ft: String = CodeEmploiFt,
@@ -234,7 +234,7 @@ nature! {
             cadre: bool = Cadre,
             lieu: String = Lieu,
             quotite_reference: NombreLu = QuotiteReference,
-            modalite_temps_travail: String = ModaliteTempsTravail,
+            modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail,
             emploi: String = Emploi,
             pcs_ese: String = PcsEse,
             code_emploi_ft: String = CodeEmploiFt,
@@ -613,7 +613,7 @@ changements! {
     MotifRecours(MotifDeRecours) = "motif_recours" => motif_recours,
     QuotiteContrat(NombreLu) = "quotite_contrat" => quotite_contrat,
     QuotiteReference(NombreLu) = "quotite_reference" => quotite_reference,
-    ModaliteTempsTravail(String) = "modalite_temps_travail" => modalite_temps_travail,
+    ModaliteTempsTravail(ModaliteDuTempsDeTravail) = "modalite_temps_travail" => modalite_temps_travail,
     SalaireMensuel(NombreLu) = "salaire_mensuel" => salaire_mensuel,
     Emploi(String) = "emploi" => emploi,
     PcsEse(String) = "pcs_ese" => pcs_ese,

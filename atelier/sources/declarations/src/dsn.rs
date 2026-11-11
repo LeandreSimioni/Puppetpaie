@@ -1832,10 +1832,10 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     }
     f.add("S21.G00.40.013", qt(quotite));
     // La modalite que la nature fixe, sinon celle de l'engagement.
-    match nat.modalite_fixee() {
-        Some(m) => f.ecrire_code(m)?,
-        None => f.add("S21.G00.40.014", e.modalite_temps_travail()?),
-    }
+    f.ecrire_code(match nat.modalite_fixee() {
+        Some(m) => m,
+        None => e.modalite_temps_travail()?,
+    })?;
     if bareme::alsace_moselle(&bar.entreprise.fiche, &p.salarie) {
         f.add("S21.G00.40.016", "01");
     } else {
@@ -2152,7 +2152,7 @@ pub fn primes_et_indemnites(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour,
             None => continue,
         };
         if let Some(m) = p.engagement.motif_rupture {
-            if let Some(pourquoi) = droit::permanents::code_52_permis(Some(code), Some(m.code()))? {
+            if let Some(pourquoi) = droit::permanents::code_52_permis(Some(code), Some(m))? {
                 return Err(refus!(
                     "Contrat {}, ligne << {} >> : {}",
                     numero_dit(&p.engagement.numero, "None").to_string(),

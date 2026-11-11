@@ -35,7 +35,7 @@ fn releve(e: &Engagement) -> Value {
     extras.insert("lieux_joues".into(), essai(Ok(json!(e.lieux_joues()))));
     extras.insert("dates_par_lieu".into(), essai(Ok(par_lieu(true))));
     extras.insert("dates_par_lieu_mois".into(), essai(Ok(par_lieu(false))));
-    extras.insert("modalite_temps_travail".into(), essai(e.modalite_temps_travail().map(Value::String)));
+    extras.insert("modalite_temps_travail".into(), essai(e.modalite_temps_travail().map(|m| Value::String(m.code().to_string()))));
     extras.insert("quotite_reference".into(), essai(e.quotite_reference().and_then(nombre)));
     extras.insert("a_cheval".into(), essai(Ok(Value::Bool(e.a_cheval()))));
     extras.insert("planning_connu".into(), essai(Ok(Value::Bool(e.planning_connu()))));

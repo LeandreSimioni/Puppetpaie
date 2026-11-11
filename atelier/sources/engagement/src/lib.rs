@@ -53,7 +53,7 @@ use socle::forme::NombreLu;
 use droit::catalogue::rubrique;
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
 use droit::fiche::{Statut, StatutCategorielRc, StatutConventionnel};
-use droit::natures::{MotifDeRecours, MotifDeRupture, Nature, NatureDeContrat};
+use droit::natures::{ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, Nature, NatureDeContrat};
 pub use ligne::{Chiffre, DateDeLigne, LignePaie};
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
@@ -110,7 +110,7 @@ pub struct Engagement {
     pub nature: NatureDeContrat,
     pub quotite_contrat: Option<f64>,
     pub quotite_reference_saisie: Option<f64>,
-    pub modalite_temps_travail_saisie: Option<String>,
+    pub modalite_temps_travail_saisie: Option<ModaliteDuTempsDeTravail>,
     pub motif_recours: Option<MotifDeRecours>,
     pub motif_rupture: Option<MotifDeRupture>,
     pub notification_rupture: Option<Jour>,
@@ -189,7 +189,7 @@ pub struct Assemble {
     pub etablissement: Option<String>,
     pub quotite_contrat: Option<Chiffre>,
     pub quotite_reference_saisie: Option<Chiffre>,
-    pub modalite_temps_travail_saisie: Option<String>,
+    pub modalite_temps_travail_saisie: Option<ModaliteDuTempsDeTravail>,
     pub motif_recours: Option<MotifDeRecours>,
     pub motif_rupture: Option<MotifDeRupture>,
     pub notification_rupture: Option<Jour>,
@@ -599,9 +599,9 @@ impl Engagement {
     /// caisse Agirc-Arrco, qui proratise elle-meme le plafond d'un « 20 » sur 40.013 / 40.012 (cahier CT2026, l. 3325-3343,
     /// `atelier/reference/sources/agirc-arrco/`), le proratiserait a tort, alors que la paie ne le fait pas
     /// (`calcul::duree_du_temps_partiel`, la meme plus courte des durees).
-    pub fn modalite_temps_travail(&self) -> R<String> {
-        if let Some(m) = self.modalite_temps_travail_saisie.as_ref().filter(|m| !m.is_empty()) {
-            return Ok(m.clone());
+    pub fn modalite_temps_travail(&self) -> R<ModaliteDuTempsDeTravail> {
+        if let Some(m) = self.modalite_temps_travail_saisie {
+            return Ok(m);
         }
         let nat = self.nat()?;
         let reference = match (self.quotite_reference()?, nat.quotite_reference_defaut().filter(|_| nat.mensuelle())) {
@@ -610,8 +610,9 @@ impl Engagement {
         };
         let contrat = self.quotite()?;
         Ok(match reference {
-            None => "10".into(),
-            Some(r) => if contrat >= dec_f64(r)? { "10" } else { "20" }.into(),
+            None => ModaliteDuTempsDeTravail::TempsPlein,
+            Some(r) if contrat >= dec_f64(r)? => ModaliteDuTempsDeTravail::TempsPlein,
+            Some(_) => ModaliteDuTempsDeTravail::TempsPartiel,
         })
     }
 
@@ -861,7 +862,7 @@ struct Termes {
     taux_cachet: Option<Chiffre>,
     quotite_contrat: Option<Chiffre>,
     quotite_reference: Option<Chiffre>,
-    modalite_temps_travail: Option<String>,
+    modalite_temps_travail: Option<ModaliteDuTempsDeTravail>,
     motif_recours: Option<MotifDeRecours>,
     personne_remplacee: Option<String>,
     repartition_horaire: Option<String>,

@@ -218,7 +218,7 @@ fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<f64> {
                 (true, None) => return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020")),
             };
             let jours = par_jour.entry(qui).or_insert_with(|| vec![0.0; n as usize]);
-            if k.motif_recours.as_deref().and_then(droit::natures::MotifDeRecours::du_code) == Some(droit::natures::MotifDeRecours::Remplacement) {
+            if k.motif_recours == Some(droit::natures::MotifDeRecours::Remplacement) {
                 continue;
             }
             let Some(debut) = k.debut else { continue };

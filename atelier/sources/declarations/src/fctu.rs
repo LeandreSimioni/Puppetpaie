@@ -124,8 +124,7 @@ pub fn preavis_non_effectue(type_preavis: &str) -> R<bool> {
 /// refuse par le point de depot. Un seul endroit : la liste des fins a signaler (`routes::imprevus::ce_qui_manque`) et
 /// `verifier` la lisent ici.
 pub fn notification_exigee(motif: droit::natures::MotifDeRupture) -> R<bool> {
-    // La liste de la CCH-12 est celle de la norme, plus large que les motifs qu'une nature permet : du texte.
-    Ok(nomenclatures()?.notification_rupture.motifs.iter().any(|m| m == motif.code()))
+    Ok(nomenclatures()?.notification_rupture.motifs.contains(&motif))
 }
 
 // ------------------------------------------------ le type de preavis et ce que la paie verse

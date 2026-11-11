@@ -89,7 +89,7 @@ forme! {
     pub struct Preavis {
         pub article: String,
         /// Les motifs de rupture (S21.G00.62.002) qui n'ouvrent pas ce preavis, chacun avec la phrase qui le dit.
-        pub motifs_hors_preavis: Option<BTreeMap<String, String>>,
+        pub motifs_hors_preavis: Option<BTreeMap<MotifDeRupture, String>>,
         pub toutes_categories: Option<Vec<TranchePreavis>>,
         pub par_categorie: Option<BTreeMap<String, PreavisDeLaCategorie>>,
         /// Ajoute a l'age du salarie, au licenciement (et a la demission si `supplement_age_demission`).
@@ -133,7 +133,7 @@ forme! {
     pub struct Licenciement {
         pub article: String,
         pub anciennete_minimale_mois: Nombre,
-        pub motifs_sans_indemnite: Option<Vec<String>>,
+        pub motifs_sans_indemnite: Option<Vec<MotifDeRupture>>,
         /// Le bareme, quand il ne depend pas du motif.
         pub taux: Option<Vec<Tranche>>,
         /// Le bareme du motif economique, et celui des autres.
@@ -156,7 +156,7 @@ forme! {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Bareme {
-    pub motifs: Option<Vec<String>>,
+    pub motifs: Option<Vec<MotifDeRupture>>,
     pub taux: Option<Vec<Tranche>>,
     pub bandes: Option<Vec<Bande>>,
 }
@@ -228,7 +228,7 @@ forme! {
         /// Le salaire de reference s'entend hors primes.
         pub hors_primes: Option<bool>,
         /// Les motifs pour lesquels l'annexe renvoie a la loi.
-        pub motifs_legaux_seulement: Option<Vec<String>>,
+        pub motifs_legaux_seulement: Option<Vec<MotifDeRupture>>,
         #[serde(deserialize_with = "en_ordre")]
         pub lectures: Vec<(String, Bareme)>,
     }
@@ -649,7 +649,7 @@ pub struct PreavisDit {
 
 /// Le motif est un code de la norme (S21.G00.62.002) : les listes d'une convention suivent son texte, plus large que les
 /// motifs qu'une nature permet (089).
-pub fn preavis_mois(idcc: Option<&str>, categorie: Option<&str>, anciennete: Decimal, motif: Option<&str>, age: Option<Decimal>) -> R<PreavisDit> {
+pub fn preavis_mois(idcc: Option<&str>, categorie: Option<&str>, anciennete: Decimal, motif: Option<MotifDeRupture>, age: Option<Decimal>) -> R<PreavisDit> {
     let (a, age) = (P::depuis(anciennete), age.map(P::depuis));
     let rien = |article: Option<String>, pourquoi: String| PreavisDit { mois: None, article, jours: None, pourquoi: Some(pourquoi) };
     let t = table()?;
@@ -661,11 +661,11 @@ pub fn preavis_mois(idcc: Option<&str>, categorie: Option<&str>, anciennete: Dec
         return Ok(rien(None, non_relevees(idcc)));
     };
     let article = format!("{}, art. {}", nom(idcc), sec.article);
-    if let Some(hors) = motif.and_then(|m| sec.motifs_hors_preavis.as_ref().and_then(|h| h.get(m))).filter(|h| !h.is_empty()) {
+    if let Some(hors) = motif.and_then(|m| sec.motifs_hors_preavis.as_ref().and_then(|h| h.get(&m))).filter(|h| !h.is_empty()) {
         return Ok(PreavisDit { mois: Some(P::ZERO), article: Some(article), jours: None, pourquoi: Some(hors.clone()) });
     }
     let categorie = categorie.filter(|c| !c.is_empty());
-    let demission = motif.and_then(MotifDeRupture::du_code) == Some(MotifDeRupture::Demission);
+    let demission = motif == Some(MotifDeRupture::Demission);
     let tranches: &[TranchePreavis] = match sec.toutes_categories.as_deref() {
         Some(t) if !t.is_empty() => t,
         _ => {
@@ -774,7 +774,7 @@ impl Bareme {
 // ----------------------------------------------- l'indemnite de licenciement
 /// La clause d'annexe qui s'applique a ce salarie, ou `None`. Le personnel technique de l'annexe I se lit sur la
 /// GRILLE du metier.
-pub fn clause_d_annexe(idcc: Option<&str>, annexe: Option<&str>, prof: &Profil, motif: Option<&str>) -> R<Option<ClauseDAnnexe>> {
+pub fn clause_d_annexe(idcc: Option<&str>, annexe: Option<&str>, prof: &Profil, motif: Option<MotifDeRupture>) -> R<Option<ClauseDAnnexe>> {
     let t = table()?;
     let par = t
         .convention(idcc)
@@ -788,7 +788,7 @@ pub fn clause_d_annexe(idcc: Option<&str>, annexe: Option<&str>, prof: &Profil, 
         (_, _, Some(c)) if cat == Some("artiste") => Some(c),
         _ => None,
     };
-    Ok(choix.filter(|c| !motif.is_some_and(|mo| c.motifs_legaux_seulement.iter().flatten().any(|m| m == mo))).cloned())
+    Ok(choix.filter(|c| !motif.is_some_and(|mo| c.motifs_legaux_seulement.iter().flatten().any(|m| *m == mo))).cloned())
 }
 
 /// L'indemnite CONVENTIONNELLE de licenciement. `bas` et `haut` sont egaux quand le texte n'a qu'une lecture ; quand
@@ -813,7 +813,7 @@ pub fn indemnite_licenciement(
     prof: &Profil,
     anciennete: Decimal,
     reference: Decimal,
-    motif: Option<&str>,
+    motif: Option<MotifDeRupture>,
     age: Option<Decimal>,
 ) -> R<Indemnite> {
     let (a, ref_, age) = (P::depuis(anciennete), P::depuis(reference), age.map(P::depuis));
@@ -827,7 +827,7 @@ pub fn indemnite_licenciement(
         return Ok(pas_releve(non_relevees(idcc)));
     };
     let annees = a.div(P::entier(12));
-    let dans = |l: &[String]| motif.is_some_and(|m| l.iter().any(|x| x == m));
+    let dans = |l: &[MotifDeRupture]| motif.is_some_and(|m| l.contains(&m));
     let mut lectures: Vec<(String, P)> = Vec::new();
     let mut article = format!("{}, art. {}", nom(idcc), sec.article);
     let mut hors_primes = false;

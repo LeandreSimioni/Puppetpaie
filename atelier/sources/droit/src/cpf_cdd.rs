@@ -16,7 +16,7 @@ pub fn le_contrat(numero: Option<&str>, salarie: &str) -> String {
 }
 
 /// Un contrat ouvre-t-il la contribution CPF-CDD ? `qui` nomme le contrat dans un refus (`le_contrat`).
-pub fn ouvre_cpf_cdd(nature: Option<&str>, dispositif: Option<&str>, motif: Option<&str>, qui: &str) -> R<bool> {
+pub fn ouvre_cpf_cdd(nature: Option<&str>, dispositif: Option<&str>, motif: Option<MotifDeRecours>, qui: &str) -> R<bool> {
     let Some(nature) = nature else {
         return Err(socle::refus!("La nature de {} ne dit pas son code (S21.G00.40.007) : le signaler au développeur.", qui));
     };
@@ -27,10 +27,10 @@ pub fn ouvre_cpf_cdd(nature: Option<&str>, dispositif: Option<&str>, motif: Opti
     match motif {
         // L. 6331-55 : la participation unique des employeurs d'intermittents du spectacle, « par dérogation [...] à
         // l'article L. 6331-6 ». INFERENCE : le CDD d'usage (05) d'une compagnie est celui d'un intermittent.
-        Some("05") => return Ok(false),
+        Some(MotifDeRecours::ContratDUsage) => return Ok(false),
         // L. 6331-6 : « ceux visant les salariés occupant un emploi à caractère saisonnier défini au 3° de l'article
         // L. 1242-2 ». Le contrat vendanges (04) est un emploi saisonnier (INFERENCE).
-        Some("03" | "04") => return Ok(false),
+        Some(MotifDeRecours::Saisonnier | MotifDeRecours::Vendanges) => return Ok(false),
         None => {
             return Err(socle::refus!(
                 "Dites pourquoi ce CDD est conclu (« Motif du CDD », sur la carte de l'engagement) : {} n'en dit pas le motif.\n\
@@ -58,9 +58,8 @@ S21.G00.44 sur une supposition.",
 /// Ce que la DSN ecrit d'un contrat de nature `nat` : nature, dispositif, motif (celui de la nature, sinon celui de
 /// l'engagement).
 /// Un code que la nature ni l'engagement ne disent est `None`.
-pub fn codes_de(nat: &Nature, motif_recours: Option<MotifDeRecours>) -> (Option<String>, Option<String>, Option<String>) {
-    let motif = nat.motif_recours_fixe().or(motif_recours).map(|m| m.code().to_string());
-    (nat.code("S21.G00.40.007"), nat.code("S21.G00.40.008"), motif)
+pub fn codes_de(nat: &Nature, motif_recours: Option<MotifDeRecours>) -> (Option<String>, Option<String>, Option<MotifDeRecours>) {
+    (nat.code("S21.G00.40.007"), nat.code("S21.G00.40.008"), nat.motif_recours_fixe().or(motif_recours))
 }
 
 /// Le contrat de nature `nat` paie-t-il la contribution CPF-CDD ? C'est la ou le calcul lit le motif de recours saisi :
@@ -71,7 +70,7 @@ pub fn contrat_ouvre_cpf_cdd(nat: &Nature, motif_recours: Option<MotifDeRecours>
         return Err(socle::echec::refus(refus));
     }
     let (n, d, m) = codes_de(nat, motif_recours);
-    ouvre_cpf_cdd(n.as_deref(), d.as_deref(), m.as_deref(), qui)
+    ouvre_cpf_cdd(n.as_deref(), d.as_deref(), m, qui)
 }
 
 #[cfg(test)]
@@ -81,11 +80,11 @@ mod tests {
     #[test]
     fn le_cpf_cdd_suit_la_nature_et_le_motif() {
         assert!(!ouvre_cpf_cdd(Some("01"), Some("99"), None, "x").unwrap(), "un CDI");
-        assert!(!ouvre_cpf_cdd(Some("02"), Some("99"), Some("05"), "x").unwrap(), "un CDD d'usage : L. 6331-55");
-        assert!(!ouvre_cpf_cdd(Some("02"), Some("99"), Some("03"), "x").unwrap(), "un saisonnier : L. 6331-6");
-        assert!(ouvre_cpf_cdd(Some("02"), Some("99"), Some("02"), "x").unwrap(), "un accroissement d'activite");
+        assert!(!ouvre_cpf_cdd(Some("02"), Some("99"), Some(MotifDeRecours::ContratDUsage), "x").unwrap(), "un CDD d'usage : L. 6331-55");
+        assert!(!ouvre_cpf_cdd(Some("02"), Some("99"), Some(MotifDeRecours::Saisonnier), "x").unwrap(), "un saisonnier : L. 6331-6");
+        assert!(ouvre_cpf_cdd(Some("02"), Some("99"), Some(MotifDeRecours::Accroissement), "x").unwrap(), "un accroissement d'activite");
         assert!(ouvre_cpf_cdd(Some("02"), Some("99"), None, "x").is_err(), "sans motif, on ne sait pas");
-        assert!(ouvre_cpf_cdd(Some("02"), Some("64"), Some("11"), "x").is_err(), "un apprenti : D. 6331-72");
+        assert!(ouvre_cpf_cdd(Some("02"), Some("64"), Some(MotifDeRecours::Apprentissage), "x").is_err(), "un apprenti : D. 6331-72");
         assert!(ouvre_cpf_cdd(None, None, None, "x").is_err(), "sans nature, on ne sait pas");
     }
 }

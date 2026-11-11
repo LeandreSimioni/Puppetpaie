@@ -104,6 +104,12 @@ pub(crate) fn profil_de(p: &Prof) -> Profil {
 
 // ------------------------------------------------------------- les calculs
 
+/// Le motif de rupture d'un oracle (S21.G00.62.002) : un code hors de la liste de la norme est une donnee invalide, que
+/// le test refuse en la nommant.
+pub(crate) fn motif_lu(m: Option<&str>) -> Option<droit::natures::MotifDeRupture> {
+    m.map(|c| droit::natures::MotifDeRupture::du_code(c).unwrap_or_else(|| panic!("le motif {:?} de l'oracle n'est pas un code de S21.G00.62.002 : donnee invalide", c)))
+}
+
 /// Un IDCC ou une annexe des oracles, ou son vide (`""` dans les oracles : la compagnie n'en dit pas).
 pub(crate) fn dit_ou_vide(t: &str) -> Option<&str> {
     Some(t).filter(|t| !t.is_empty())
@@ -128,7 +134,7 @@ pub(crate) fn bloc_profil(g: &Grilles, idcc: &str, code: &str) -> Vec<R<Profil>>
 }
 
 pub(crate) fn bloc_preavis(g: &Grilles, idcc: &str, categorie: Option<&str>, motif: Option<&str>) -> Vec<R<PreavisDit>> {
-    g.anc_p.iter().flat_map(|a| g.ages_p.iter().map(move |age| c::preavis_mois(dit_ou_vide(idcc), categorie, dec(a), motif, age.as_deref().map(dec)))).collect()
+    g.anc_p.iter().flat_map(|a| g.ages_p.iter().map(move |age| c::preavis_mois(dit_ou_vide(idcc), categorie, dec(a), motif_lu(motif), age.as_deref().map(dec)))).collect()
 }
 
 pub(crate) fn annees(g: &Grilles) -> Vec<P> {
@@ -161,11 +167,11 @@ pub(crate) fn bloc_paliers(g: &Grilles, idcc: &str, section: &str) -> Vec<(P, Op
 }
 
 pub(crate) fn bloc_annexe(g: &Grilles, idcc: &str, annexe: &str) -> Vec<R<Option<c::ClauseDAnnexe>>> {
-    g.profs.iter().flat_map(|pr| g.motifs.iter().map(move |m| c::clause_d_annexe(dit_ou_vide(idcc), dit_ou_vide(annexe), &profil_de(pr), m.as_deref()))).collect()
+    g.profs.iter().flat_map(|pr| g.motifs.iter().map(move |m| c::clause_d_annexe(dit_ou_vide(idcc), dit_ou_vide(annexe), &profil_de(pr), motif_lu(m.as_deref())))).collect()
 }
 
 pub(crate) fn indemnite(idcc: &str, annexe: &str, pr: &Prof, anc: &str, r: &str, motif: Option<&str>, age: Option<&str>) -> R<Indemnite> {
-    c::indemnite_licenciement(dit_ou_vide(idcc), dit_ou_vide(annexe), &profil_de(pr), dec(anc), dec(r), motif, age.map(dec))
+    c::indemnite_licenciement(dit_ou_vide(idcc), dit_ou_vide(annexe), &profil_de(pr), dec(anc), dec(r), motif_lu(motif), age.map(dec))
 }
 
 pub(crate) fn bloc_indemnite(g: &Grilles, idcc: &str, annexe: &str, pr: &Prof) -> Vec<R<Indemnite>> {
@@ -350,7 +356,7 @@ pub(crate) fn annexe_ecrite(a: Option<c::ClauseDAnnexe>) -> Option<AnnexeLue> {
         hors_primes: a.hors_primes,
         anciennete_minimale_mois: a.anciennete_minimale_mois.0.to_string(),
         plafond_mois: a.plafond_mois.map(|m| m.0.to_string()),
-        motifs_legaux_seulement: a.motifs_legaux_seulement,
+        motifs_legaux_seulement: a.motifs_legaux_seulement.map(|l| l.iter().map(|m| m.code().to_string()).collect()),
     })
 }
 
@@ -426,11 +432,11 @@ pub(crate) fn cas_profil(c: &CasProfil) -> Rendu<ProfilLu> {
 }
 
 pub(crate) fn cas_preavis(x: &CasPreavis) -> Rendu<PreavisLu> {
-    rendu(c::preavis_mois(dit_ou_vide(&x.idcc), x.categorie.as_deref(), dec(&x.anciennete), x.motif.as_deref(), x.age.as_deref().map(dec)), preavis_ecrit)
+    rendu(c::preavis_mois(dit_ou_vide(&x.idcc), x.categorie.as_deref(), dec(&x.anciennete), motif_lu(x.motif.as_deref()), x.age.as_deref().map(dec)), preavis_ecrit)
 }
 
 pub(crate) fn cas_annexe(x: &CasAnnexe) -> Rendu<Option<AnnexeLue>> {
-    rendu(c::clause_d_annexe(dit_ou_vide(&x.idcc), dit_ou_vide(&x.annexe), &profil_de(&x.profil), x.motif.as_deref()), annexe_ecrite)
+    rendu(c::clause_d_annexe(dit_ou_vide(&x.idcc), dit_ou_vide(&x.annexe), &profil_de(&x.profil), motif_lu(x.motif.as_deref())), annexe_ecrite)
 }
 
 pub(crate) fn cas_indemnite(x: &CasIndemnite) -> Rendu<IndemniteLue> {

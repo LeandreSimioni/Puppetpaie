@@ -237,7 +237,7 @@ forme! {
     pub struct CodeDIndemnite {
         pub libelle: String,
         pub controle: String,
-        pub motifs: Vec<String>,
+        pub motifs: Vec<MotifDeRupture>,
     }
 }
 
@@ -1044,7 +1044,7 @@ pub fn rupture(motif_rupture: Option<MotifDeRupture>) -> R<Option<(FinDeCdi, Str
 /// CCH-24), sinon pourquoi non.
 /// Les listes des controles sont celles de la norme, plus larges que les motifs qu'une nature permet : `motif_rupture` est
 /// un code de la norme.
-pub fn code_52_permis(code: Option<&str>, motif_rupture: Option<&str>) -> R<Option<String>> {
+pub fn code_52_permis(code: Option<&str>, motif_rupture: Option<MotifDeRupture>) -> R<Option<String>> {
     let code = match code {
         Some(c) if !c.is_empty() => c,
         _ => return Ok(None),
@@ -1053,17 +1053,17 @@ pub fn code_52_permis(code: Option<&str>, motif_rupture: Option<&str>) -> R<Opti
     let Some(dit) = rg.indemnites_de_rupture.codes.get(code) else {
         return Ok(None);
     };
-    let Some(motif) = motif_rupture.filter(|m| !m.is_empty()) else {
+    let Some(motif) = motif_rupture else {
         return Ok(None);
     };
-    if dit.motifs.iter().any(|m| m == motif) {
+    if dit.motifs.contains(&motif) {
         return Ok(None);
     }
     Ok(Some(format!(
         "{} ({}) n'est permis qu'avec les motifs de rupture {}, et celui-ci est {} -- {} du cahier technique.",
         code,
         dit.libelle,
-        dit.motifs.join(", "),
+        dit.motifs.iter().map(|m| m.code()).collect::<Vec<_>>().join(", "),
         motif,
         dit.controle
     )))

@@ -76,10 +76,10 @@ fn legale(i: p::IndemniteLegale) -> IndemniteLegale {
 type Nature = droit::natures::NatureDeContrat;
 type Motif = Option<String>;
 
-/// Le motif de rupture d'un cas : un code de la norme que les motifs d'une nature n'ont pas (« zzz », 099, 110...) ne
-/// dit aucun motif, comme le texte vide.
+/// Le motif de rupture d'un cas (S21.G00.62.002) : un code hors de la liste de la norme est une donnee invalide, que le
+/// test refuse en la nommant.
 fn motif(m: &Motif) -> Option<droit::natures::MotifDeRupture> {
-    m.as_deref().and_then(droit::natures::MotifDeRupture::du_code)
+    m.as_deref().map(|c| droit::natures::MotifDeRupture::du_code(c).unwrap_or_else(|| panic!("le motif {:?} de l'oracle n'est pas un code de S21.G00.62.002 : donnee invalide", c)))
 }
 
 fn arrondir_jours(a: &(Decimal,)) -> Decimal {
@@ -139,7 +139,7 @@ fn rupture(a: &(Motif,)) -> Rendu<Option<Fin>> {
     p::rupture(motif(&a.0)).map(|o| o.map(|(fin, rubrique)| Fin { cle: fin.cle().to_string(), rubrique })).into()
 }
 fn code_52_permis(a: &(Motif, Motif)) -> Rendu<Option<String>> {
-    p::code_52_permis(a.0.as_deref(), a.1.as_deref()).into()
+    p::code_52_permis(a.0.as_deref(), motif(&a.1)).into()
 }
 
 #[test]

@@ -216,7 +216,7 @@ pub struct ContratDeclare {
     /// .017, la convention du contrat.
     pub idcc: Option<String>,
     /// .021, le motif de recours.
-    pub motif_recours: Option<String>,
+    pub motif_recours: Option<droit::natures::MotifDeRecours>,
     /// .022, la caisse de conges payes, telle que la DSN l'ecrit.
     pub caisse_conges: Option<String>,
     /// .040 et .043 : le code risque et le taux AT/MP (`bloc-S21.G00.40.txt` l. 1224-1315).
@@ -761,6 +761,10 @@ impl Fautes {
     fn jour(&mut self, k: &str, v: &str) -> Option<Jour> {
         self.valeur(k, v, "une date (JJMMAAAA)", jour_dsn(v))
     }
+    /// Un code d'une liste de la norme (`droit::natures::ListeDeLaNorme`) : un code qu'elle n'a pas est une faute.
+    fn code<T: droit::natures::ListeDeLaNorme>(&mut self, k: &str, v: &str) -> Option<T> {
+        self.valeur(k, v, "un code de sa liste dans la norme", T::du_code_de_la_norme(v))
+    }
     /// Un refus dit quoi corriger et n'ecrit rien.
     fn refus(self, mois: Option<Mois>) -> Option<Echec> {
         let de: String = mois.iter().map(|m| format!(" de {}", m.libelle(socle::mois::Graphie::Accentuee))).collect();
@@ -876,7 +880,10 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 contrat.into_iter().for_each(|c| c.quotite_reference = q);
             }
             "S21.G00.40.014" => contrat.into_iter().for_each(|c| c.modalite = plein.clone()),
-            "S21.G00.40.021" => contrat.into_iter().for_each(|c| c.motif_recours = plein.clone()),
+            "S21.G00.40.021" => {
+                let m = fautes.code(k, &v);
+                contrat.into_iter().for_each(|c| c.motif_recours = m);
+            }
             "S21.G00.60.002" => {
                 let jour = fautes.jour(k, &v);
                 contrat.into_iter().for_each(|c| c.dernier_jour_travaille = jour);
