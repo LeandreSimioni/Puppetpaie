@@ -1000,19 +1000,13 @@ impl FileDesEtats {
         let mut e = self.verrou();
         e.en_cours = None;
         // L'OUVERTURE FAITE, le mois qu'elle ouvre passe devant : la page le demande juste apres.
-        if e.affiche.is_none() {
-            match &rendu {
-                Ok(Garde::Ouverture(o)) => {
-                    if let Some(m) = o.ouvre {
-                        Self::inscrire(&mut e, Cle::Mois(m), true);
-                    }
-                }
-                // Un autre etat, ou un refus (garde ci-dessous avec son passage) : rien ne passe devant.
-                Ok(_autre) => {}
-                Err(garde_avec_le_passage) => {
-                    let _ = garde_avec_le_passage;
-                }
-            }
+        // Un autre etat, ou un refus : rien ne passe devant ; le refus est le rendu garde ci-dessous avec son passage.
+        let ouvre = rendu.iter().find_map(|g| match g {
+            Garde::Ouverture(o) => o.ouvre,
+            Garde::Mois(_) | Garde::Tableau(_) => None,
+        });
+        if let (true, Some(m)) = (e.affiche.is_none(), ouvre) {
+            Self::inscrire(&mut e, Cle::Mois(m), true);
         }
         e.fait.insert(cle, (numero, rendu));
         self.signal.notify_all();

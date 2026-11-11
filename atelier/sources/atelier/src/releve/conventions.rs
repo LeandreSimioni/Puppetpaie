@@ -433,8 +433,7 @@ pub fn commande(args: &[String]) -> i32 {
     };
     match args[0].as_str() {
         "mettre-a-jour" => {
-            compagnie::installation::fixer_le_code();
-            let r = crate::sources::manifeste(&socle::fichiers::dossier_du_code()).and_then(|m| {
+            let r = compagnie::installation::fixer_le_code().and_then(|()| crate::sources::manifeste(&socle::fichiers::dossier_du_code())).and_then(|m| {
                 let jour = droit::contexte::aujourdhui_sans_note()?;
                 mettre_a_jour(racine, args.iter().any(|a| a == "--reconstruire"), &m, &dila::Reseau, &jour).map(|_| String::new())
             });

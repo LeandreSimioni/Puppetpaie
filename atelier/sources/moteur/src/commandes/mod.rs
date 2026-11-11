@@ -184,7 +184,10 @@ fn executer(args: &[String], de_l_atelier: Vec<Commande>) -> i32 {
         Err(code) => return code,
     };
     // La commande est lancee a la main : sans PUPPETPAIE_CODE, le code est celui qu'on trouve a cote du programme.
-    ::compagnie::installation::fixer_le_code();
+    if let Err(e) = ::compagnie::installation::fixer_le_code() {
+        eprintln!("{}", e.en_lignes());
+        return 1;
+    }
     let racine = match compagnie::racine(dev) {
         Ok(r) => r,
         Err(e) => {

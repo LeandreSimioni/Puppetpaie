@@ -1328,7 +1328,10 @@ fn poser_le_banc(args: &[String]) -> R<Vec<String>> {
 
 /// `moteur interface [--port N] [--sans-navigateur] [--veille MINUTES]` : la fenetre dans le navigateur du poste.
 pub fn commande(args: &[String]) -> i32 {
-    installation::fixer_le_code();
+    if let Err(e) = installation::fixer_le_code() {
+        eprintln!("{}", e.en_lignes());
+        return 1;
+    }
     compagnie::incidents::brancher_l_engagement();
     #[cfg(feature = "atelier")]
     let args = &match poser_le_banc(args) {

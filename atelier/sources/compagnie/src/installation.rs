@@ -42,44 +42,31 @@ pub fn dessus(p: &Path) -> PathBuf {
 /// l'on trouve a cote du programme (`logiciel/puppetpaie.exe` -> `logiciel/donnees` ; `atelier/sources/moteur/bin/<systeme>/moteur`
 /// -> `logiciel/donnees` en remontant), a defaut celui du depot qui a compile le programme.
 /// Le chemin est rendu absolu et sans `..` : le moteur remonte de `moteur/` a `logiciel/` puis au depot par `parent()`.
-pub fn fixer_le_code() {
+/// Un programme qui ne sait pas ou il est, ou un dossier du code qui ne se resout pas, refuse : le systeme dit pourquoi.
+pub fn fixer_le_code() -> R<()> {
     let valide = |p: &Path| p.join("echeancier-base.json").is_file();
     let mut candidats: Vec<PathBuf> = Vec::new();
     match std::env::var_os("PUPPETPAIE_CODE").filter(|v| !v.is_empty()) {
         // Posee, elle seule : rendue absolue et sans `..` quand elle nomme un dossier.
         Some(pose) => candidats.push(PathBuf::from(pose)),
         None => {
-            match std::env::current_exe() {
-                Ok(exe) => {
-                    for a in exe.ancestors().skip(1) {
-                        candidats.push(a.join("donnees"));
-                        candidats.push(a.join("logiciel").join("donnees"));
-                    }
-                }
-                // Un programme qui ne sait pas ou il est n'a pas de voisins a proposer : restent les autres candidats.
-                Err(sans) => drop(sans),
+            let exe = std::env::current_exe().map_err(|e| socle::echec::du_disque(Path::new("le programme"), &e))?;
+            for a in exe.ancestors().skip(1) {
+                candidats.push(a.join("donnees"));
+                candidats.push(a.join("logiciel").join("donnees"));
             }
             candidats.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../logiciel/donnees"));
         }
     }
-    for c in candidats {
-        if !valide(&c) {
-            continue;
-        }
-        // Un candidat qui ne se resout pas n'est pas le dossier du code : le suivant.
-        match c.canonicalize() {
-            Ok(abs) => {
-                // Sous Windows, `canonicalize` rend un chemin `\\?\C:\...` que le reste du moteur ne compare pas.
-                let abs = match abs.to_string_lossy().strip_prefix(r"\\?\") {
-                    Some(sans) => PathBuf::from(sans),
-                    None => abs.clone(),
-                };
-                std::env::set_var("PUPPETPAIE_CODE", abs);
-                return;
-            }
-            Err(pas_lui) => drop(pas_lui),
-        }
-    }
+    let Some(c) = candidats.into_iter().find(|c| valide(c)) else { return Ok(()) };
+    let abs = c.canonicalize().map_err(|e| socle::echec::du_disque(&c, &e))?;
+    // Sous Windows, `canonicalize` rend un chemin `\\?\C:\...` que le reste du moteur ne compare pas.
+    let abs = match abs.to_string_lossy().strip_prefix(r"\\?\") {
+        Some(sans) => PathBuf::from(sans),
+        None => abs.clone(),
+    };
+    std::env::set_var("PUPPETPAIE_CODE", abs);
+    Ok(())
 }
 
 /// Le dossier du logiciel (`logiciel/`) : celui qui porte le dossier du code (`fixer_le_code` l'a rendu absolu et sans

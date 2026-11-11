@@ -536,7 +536,10 @@ pub fn commande(args: &[String]) -> i32 {
             }
         }
     }
-    crate::installation::fixer_le_code();
+    if let Err(e) = crate::installation::fixer_le_code() {
+        eprintln!("{}", e.en_lignes());
+        return 1;
+    }
     // Sans dossier dit : dans le dossier temporaire du systeme.
     let dossier = match dossier {
         Some(d) => d,

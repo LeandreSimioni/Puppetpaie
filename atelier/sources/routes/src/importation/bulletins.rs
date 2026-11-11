@@ -1086,13 +1086,9 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             }
         };
         infos.contrat = Some(etat_contrat);
-        match &l.compteurs {
-            Ok(c) => infos.compteurs = c.avertissements.clone(),
-            // Des compteurs qui ne se lisent pas : le contrat atteste le dit deja (`atteste`, plus haut).
-            Err(dit_plus_haut) => {
-                let _ = dit_plus_haut;
-            }
-        }
+        // Les avertissements des compteurs lus ; des compteurs qui ne se lisent pas n'en ont pas : leur refus, le contrat
+        // atteste le dit (`atteste`, plus haut).
+        infos.compteurs = l.compteurs.iter().flat_map(|c| c.avertissements.iter().cloned()).collect();
         let inconnus: Vec<String> = l
             .b
             .avertissements

@@ -64,15 +64,16 @@ pub fn commande(quoi: &str, args: &[String]) -> Option<i32> {
     }
     let texte_seul = args.iter().any(|a| a == "--texte");
     let args: Vec<String> = args.iter().filter(|a| *a != "--texte").cloned().collect();
-    let lues = options(&args)?;
-    // Les referentiels : ceux de l'installation du programme, comme pour toute autre entree.
-    compagnie::installation::fixer_le_code();
+    // Les referentiels : ceux de l'installation du programme, comme pour toute autre entree ; un dossier du code qui ne se
+    // trouve pas refuse la route.
+    let lues = options(&args)?.and_then(|o| compagnie::installation::fixer_le_code().map(|()| o));
     let mut entree = String::new();
     let lue = std::io::stdin().read_to_string(&mut entree);
     let o = match lues {
         Ok(o) => o,
         Err(e) => {
-            // Une date qui ne se lit pas : la route ne se sert pas, sa reponse est le refus qui le dit.
+            // Une date qui ne se lit pas, ou le dossier du code introuvable : la route ne se sert pas, sa reponse est le
+            // refus qui le dit.
             let refusee = Reponse::refusee(Refus::de(None, e));
             if texte_seul {
                 dire_sans_ligne!("{}", refusee.en_texte(""));

@@ -23,9 +23,11 @@ pub fn commande(args: &[String]) -> Option<i32> {
     // D'abord savoir ou l'on est installe : sans cela, `installation()` retombe sur le dossier ou le programme a ete
     // compile (un chemin du conteneur, que Windows lit sur le lecteur courant : la graine de `--cle-github` irait
     // dans `D:\home\user\...\maj\`).
-    compagnie::installation::fixer_le_code();
+    let code = compagnie::installation::fixer_le_code();
     // Ni compagnie ni coffre.
-    let r = if drapeau("--cle-github") {
+    let r = if let Err(e) = code {
+        Err(e)
+    } else if drapeau("--cle-github") {
         // Sans dossier dit, la graine va dans `maj/` de l'installation.
         let dossier = match valeur("--cle-github") {
             Some(d) => PathBuf::from(d),

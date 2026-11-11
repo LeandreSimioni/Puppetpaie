@@ -67,7 +67,10 @@ fn main() -> std::process::ExitCode {
         _ => {}
     }
 
-    compagnie::installation::fixer_le_code();
+    if let Err(e) = compagnie::installation::fixer_le_code() {
+        eprintln!("La fenetre ne demarre pas : {}", e.en_lignes());
+        std::process::exit(1);
+    }
     // UNE FENETRE PAR INSTALLATION (`compagnie::instance`). Celle de cette installation est deja
     // ouverte : elle revient devant. Une AUTRE installation ouverte sur le poste ne change rien : chacune a son creneau
     // (son verrou et le port de sa page), et elles s'ouvrent cote a cote.

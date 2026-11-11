@@ -7,9 +7,11 @@ use compagnie::maj::{appliquer, installation, revenir, verifier, version_lue};
 pub fn commande(args: &[String]) -> i32 {
     // D'abord savoir ou l'on est installe : sans cela, `installation()` retombe sur le dossier ou le programme a ete
     // compile.
-    compagnie::installation::fixer_le_code();
+    let code = compagnie::installation::fixer_le_code();
     let drapeau = |n: &str| args.iter().any(|a| a == n);
-    let r = if drapeau("--appliquer") {
+    let r = if let Err(e) = code {
+        Err(e)
+    } else if drapeau("--appliquer") {
         match compagnie::instance::ouverte(&installation(), compagnie::instance::Plage::DU_POSTE) {
             Ok(true) => Err(socle::echec::refus("PuppetPaie tourne : fermer la fenetre, puis appliquer")),
             Ok(false) => appliquer(&installation()).map(|r| format!("Version {} en place ; la precedente est dans {}", version_lue(&r.version), r.avant)),
