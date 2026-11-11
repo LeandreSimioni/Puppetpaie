@@ -168,8 +168,8 @@ pub(crate) fn a_dire(racine: &Path) -> R<Vec<ADire>> {
             salarie,
             nom,
             contrats: c.nombre,
-            du: c.payes.map(|p| p.0.iso()),
-            au: c.payes.map(|p| p.1.iso()),
+            du: c.payes.map(|p| p.0),
+            au: c.payes.map(|p| p.1),
             au_dit,
             en_cours,
             suite: suite.filter(|_| en_cours).map(|m| m.to_string()),
@@ -188,8 +188,8 @@ pub(crate) struct ADire {
     pub(crate) nom: String,
     pub(crate) contrats: usize,
     /// Le premier et le dernier jour que ses paies reprises paient ; rien sans paie reprise.
-    pub(crate) du: Option<String>,
-    pub(crate) au: Option<String>,
+    pub(crate) du: Option<Jour>,
+    pub(crate) au: Option<Jour>,
     pub(crate) au_dit: Option<String>,
     /// Paye le dernier mois repris : son contrat court peut-etre encore (`suite` : le mois qui suit).
     pub(crate) en_cours: bool,
@@ -220,8 +220,10 @@ fn refus(m: impl Into<String>) -> socle::echec::Echec {
 pub(crate) struct ChargeNature {
     pub(crate) salarie: String,
     pub(crate) nature: droit::natures::NatureDeContrat,
-    pub(crate) debut: Option<String>,
-    pub(crate) fin: Option<String>,
+    #[serde(default, deserialize_with = "Jour::ou_vide")]
+    pub(crate) debut: Option<Jour>,
+    #[serde(default, deserialize_with = "Jour::ou_vide")]
+    pub(crate) fin: Option<Jour>,
     pub(crate) numero: Option<String>,
     pub(crate) salaire: Option<MontantSaisi>,
     pub(crate) quotite: Option<MontantSaisi>,
@@ -245,27 +247,16 @@ impl MontantSaisi {
 }
 
 impl ChargeNature {
-    /// Une case demandee, telle qu'elle est dite, sans ses blancs ; rien pour une case vide.
+    /// Une case de texte demandee (le numero, le salaire, la quotite), telle qu'elle est dite, sans ses blancs ; rien
+    /// pour une case vide. Un jour n'est pas un texte : il se lit dans sa case (`debut`, `fin`).
     fn lu(&self, champ: Demande) -> Option<String> {
         let v = match champ {
-            Demande::Debut => self.debut.clone(),
-            Demande::Fin => self.fin.clone(),
+            Demande::Debut | Demande::Fin => None,
             Demande::Numero => self.numero.clone(),
             Demande::Salaire => self.salaire.as_ref().map(MontantSaisi::texte),
             Demande::Quotite => self.quotite.as_ref().map(MontantSaisi::texte),
         };
         v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
-    }
-
-    /// La case demandee, posee.
-    fn poser(&mut self, champ: Demande, v: String) {
-        match champ {
-            Demande::Debut => self.debut = Some(v),
-            Demande::Fin => self.fin = Some(v),
-            Demande::Numero => self.numero = Some(v),
-            Demande::Salaire => self.salaire = Some(MontantSaisi::Texte(v)),
-            Demande::Quotite => self.quotite = Some(MontantSaisi::Texte(v)),
-        }
     }
 }
 
@@ -303,14 +294,13 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
     let Some((du, au)) = c.payes else {
         return Err(refus(format!("Aucune paie reprise de {} ne dit quand ses contrats ont été payés : rien n'a été écrit.", qui)));
     };
-    let (du, au) = (du.iso(), au.iso());
     let dernier = dernier_mois(&importes);
     // Le contrat qui court encore : son debut, sa fin s'il a un terme, son numero -- lus sur la DSN deja deposee ; ce
     // qui s'en ecrit sur l'engagement repris.
     let mut contrat = engagement::saisie::Carte::default();
-    let mut debut_dit: Option<String> = None;
+    let mut debut_dit: Option<Jour> = None;
     for champ in demande(nat, en_cours) {
-        let v = charge.lu(champ).ok_or_else(|| {
+        let manque = || {
             refus(match champ {
                 Demande::Debut => format!("La date de début du contrat de {} manque (celle que la DSN déclare) : rien n'a été écrit.", qui),
                 Demande::Fin => format!("La date de fin prévue du contrat de {} manque : rien n'a été écrit.", qui),
@@ -321,26 +311,28 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
                 ),
                 Demande::Numero => format!("Le numéro du contrat de {} manque (celui que la DSN déclare) : rien n'a été écrit.", qui),
             })
-        })?;
+        };
         match champ {
             Demande::Debut | Demande::Fin => {
-                let jour = Jour::lire(&v).map_err(|m| m.reformuler(|p| format!("{} : rien n'a été écrit.", p)).reclasser(Classe::Refuse))?;
-                let j = jour.iso();
-                if champ == Demande::Debut && j > du {
+                let jour = (if champ == Demande::Debut { charge.debut } else { charge.fin }).ok_or_else(manque)?;
+                if champ == Demande::Debut && jour > du {
                     return Err(refus(format!(
                         "Le contrat de {} ne peut pas commencer le {} : un bulletin le paie dès le {}. Rien n'a été écrit.",
-                        qui, j, du
+                        qui,
+                        jour.iso(),
+                        du.iso()
                     )));
                 }
-                if champ == Demande::Fin && j < au {
-                    return Err(refus(format!("Le contrat de {} ne peut pas finir le {} : un bulletin le paie jusqu'au {}. Rien n'a été écrit.", qui, j, au)));
+                if champ == Demande::Fin && jour < au {
+                    return Err(refus(format!("Le contrat de {} ne peut pas finir le {} : un bulletin le paie jusqu'au {}. Rien n'a été écrit.", qui, jour.iso(), au.iso())));
                 }
                 if champ == Demande::Debut {
-                    debut_dit = Some(j.clone());
+                    debut_dit = Some(jour);
                 }
                 *(if champ == Demande::Debut { &mut contrat.debut } else { &mut contrat.fin }) = Some(jour);
             }
             Demande::Salaire | Demande::Quotite => {
+                let v = charge.lu(champ).ok_or_else(manque)?;
                 let s = v.replace([' ', '\u{a0}'], "").replace(',', ".");
                 let (cle, quoi) = if champ == Demande::Salaire {
                     (&mut contrat.salaire_mensuel, "un salaire mensuel brut")
@@ -353,6 +345,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
                 };
             }
             Demande::Numero => {
+                let v = charge.lu(champ).ok_or_else(manque)?;
                 let n = engagement::numeros::NumeroContrat::lire(&v).map_err(|m| m.reformuler(|p| format!("{} Rien n'a été écrit.", p)).reclasser(Classe::Refuse))?;
                 contrat.numero = Some(n.to_string());
             }
@@ -375,8 +368,8 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
         true
     })?;
     // Son anciennete dans l'entreprise part du debut de son contrat, s'il a commence avant le premier bulletin repris.
-    if let Some(debut) = debut_dit.as_deref() {
-        crate::fiches::reprendre_anciennete(ctx, &salarie, &du, debut)?;
+    if let Some(debut) = debut_dit {
+        crate::fiches::reprendre_anciennete(ctx, &salarie, du, debut)?;
     }
     // LA COMPAGNIE EMPLOIE UN PERMANENT : c'est ce qu'on vient de dire (une nature payee au mois). La case « La
     // compagnie emploie aussi des salaries au mois » de la fiche Entreprise (`Contexte::emploie_des_permanents_pendant`)
@@ -384,12 +377,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
     // paient) : un contrat paye au mois qui commence sans elle se refuse (`engagement::engagements`), et ce qu'elle
     // ouvre (les contrats de prevoyance et de sante des permanents) se demande alors dans « Pour demarrer », comme pour
     // toute compagnie qui la coche.
-    let commence = match debut_dit.as_deref() {
-        Some(d) => d,
-        None => du.as_str(),
-    };
-    let depuis = Jour::lire(commence)
-        .map_err(|m| m.reformuler(|p| format!("{} : la case des permanents n'a pas ete cochee.", p)).reclasser(Classe::Refuse))?;
+    let depuis = debut_dit.unwrap_or(du);
     let permanents_declares = !ctx.emploie_des_permanents_pendant(&depuis, &depuis);
     if permanents_declares {
         crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::emploie_des_permanents(Some(true)), Some(depuis))?;
@@ -445,17 +433,14 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
         let mut charge = ChargeNature { salarie: salarie.clone(), nature: nat.cle, debut: None, fin: None, numero: None, salaire: None, quotite: None };
         let mut complet = true;
         for champ in demande(nat, en_cours) {
-            let v = match champ {
-                Demande::Numero => Some(numero.clone()).filter(|n| !n.is_empty()),
-                Demande::Salaire => p.paie.mesures.salaire_habituel.map(|m| m.to_string()),
-                Demande::Debut => c.and_then(|c| c.debut).map(|j| j.iso()),
-                Demande::Fin => c.and_then(|c| c.fin).map(|j| j.iso()),
-                Demande::Quotite => c.and_then(|c| c.quotite).map(|q| q.to_string()),
+            let pose = match champ {
+                Demande::Numero => Some(numero.clone()).filter(|n| !n.is_empty()).map(|v| charge.numero = Some(v)),
+                Demande::Salaire => p.paie.mesures.salaire_habituel.map(|m| charge.salaire = Some(MontantSaisi::Texte(m.to_string()))),
+                Demande::Debut => c.and_then(|c| c.debut).map(|j| charge.debut = Some(j)),
+                Demande::Fin => c.and_then(|c| c.fin).map(|j| charge.fin = Some(j)),
+                Demande::Quotite => c.and_then(|c| c.quotite).map(|q| charge.quotite = Some(MontantSaisi::Texte(q.to_string()))),
             };
-            match v {
-                Some(v) => charge.poser(champ, v),
-                None => complet = false,
-            }
+            complet &= pose.is_some();
         }
         if !complet {
             continue;

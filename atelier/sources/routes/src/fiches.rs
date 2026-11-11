@@ -910,14 +910,13 @@ pub(crate) fn poser_anciennete_a_l_embauche(ctx: &Contexte, salarie: &str, debut
 /// l'entreprise : `norme-dsn/texte/bloc-S21.G00.86.txt` ; inference : un contrat en cours dans l'entreprise y compte).
 /// Seule la valeur que l'import a posee, `pose_le`, se remplace : l'anciennete est un fait du passe (`FAITS_SANS_DATE`),
 /// elle se corrige. Une date saisie depuis reste la sienne. Rend vrai si elle a ete remplacee.
-pub(crate) fn reprendre_anciennete(ctx: &Contexte, salarie: &str, pose_le: &str, debut: &str) -> R<bool> {
+pub(crate) fn reprendre_anciennete(ctx: &Contexte, salarie: &str, pose_le: Jour, debut: Jour) -> R<bool> {
     let contenu = lire_fichier::<FicheSalarieDatee>(ctx)?;
     let Some([seule]) = contenu.fiches.get(salarie).and_then(|f| f.date_anciennete.as_deref()) else { return Ok(false) };
-    if seule.valeur.dite().map(Jour::iso).as_deref() != Some(pose_le) || debut >= pose_le {
+    if seule.valeur.dite() != Some(&pose_le) || debut >= pose_le {
         return Ok(false);
     }
     // La note de l'import (d'ou vient la valeur) reste : la valeur vient toujours des pieces importees.
-    let debut = Jour::lire(debut)?;
     poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::date_anciennete(Some(debut))], None, seule.note.as_deref())?;
     Ok(true)
 }

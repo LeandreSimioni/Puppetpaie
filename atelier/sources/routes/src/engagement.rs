@@ -157,7 +157,9 @@ enum Modification {
 #[derive(Debug, Serialize)]
 struct Avertissement {
     engagements: Vec<Touche>,
-    jour: Option<String>,
+    /// D'ou vaut ce qui change, en une phrase.
+    #[serde(rename = "jour")]
+    jour_dit: Option<String>,
 }
 
 /// Un engagement que la modification touche : nomme (`qui`), une ligne par consequence.
@@ -371,7 +373,7 @@ fn modifier_puis_revalider(ctx: &Contexte, lu: Mois, i: usize, o: &engagement::s
     let lignes = ce_que_le_changement_entraine(ctx, &v, &departs)?;
     if !confirme && !lignes.is_empty() {
         let touche = Touche { qui: engagement::etats::qui_de(ctx, v.objet()), consequences: lignes };
-        return Ok(Issue::Avertir(Avertissement { engagements: vec![touche], jour: depuis.map(|j| vaut_a_partir_du(&j)) }));
+        return Ok(Issue::Avertir(Avertissement { engagements: vec![touche], jour_dit: depuis.map(|j| vaut_a_partir_du(&j)) }));
     }
     Ok(Issue::Ecrite(depuis))
 }
@@ -380,7 +382,7 @@ fn modifier_puis_revalider(ctx: &Contexte, lu: Mois, i: usize, o: &engagement::s
 /// d'ou vaut un terme change (`jour`).
 fn avertissement_en_phrases(a: &Avertissement) -> Vec<String> {
     let mut lignes: Vec<String> = a.engagements.iter().flat_map(|e| e.consequences.iter().map(move |c| format!("{} : {}", e.qui, c))).collect();
-    if let Some(j) = &a.jour {
+    if let Some(j) = &a.jour_dit {
         lignes.push(format!("{} (jour : un autre jour du mois)", j));
     }
     lignes
