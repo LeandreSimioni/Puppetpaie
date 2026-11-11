@@ -723,7 +723,8 @@ async function demanderFiche(bouton) {
   const rendre = occupe(bouton, "Envoi…");
   const repere = await repereCourrielsFictifs();
   try {
-    const r = await api("fiche-demander", { adresse, prenom, motdepasse: mdp });
+    // Un prénom non tapé part absent : le courriel dit alors « Bonjour, ».
+    const r = await api("fiche-demander", { adresse, prenom: prenom || null, motdepasse: mdp });
     // La réponse ne porte plus la configuration (ni NIR ni IBAN) : la page la relit.
     ETAT.configuration = await api("configuration", {}); peindreEtatGlobal();
     FICHE_MODIFIEE = false;

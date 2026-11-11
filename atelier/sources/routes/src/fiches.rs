@@ -979,7 +979,7 @@ pub struct FicheDemandee {
 #[serde(deny_unknown_fields)]
 struct ChargeFicheDemander {
     adresse: String,
-    prenom: String,
+    prenom: Option<socle::forme::TexteDit>,
 }
 
 /// Ce que rend `fiche-demander`.
@@ -993,11 +993,11 @@ struct DemandeDeFiche {
 /// `fiche-demander` : le courriel « Remplir ma fiche » part (`demander_fiche`), sous la preuve que la charge porte.
 fn fiche_demander(ctx: &Contexte, c: ChargeFicheDemander, motdepasse: Option<&str>) -> R<DemandeDeFiche> {
     let preuve = Preuve::du_mot_de_passe(motdepasse.map(str::to_string));
-    let d = demander_fiche(ctx, &c.adresse, &c.prenom, &preuve, INTERFACE, None)?;
+    let d = demander_fiche(ctx, &c.adresse, c.prenom.as_deref(), &preuve, INTERFACE, None)?;
     Ok(DemandeDeFiche { phrase: format!("Demande de fiche envoyée à {} (code {}) : sa fiche se crée à l'arrivée de sa réponse.", d.adresse, d.code), code: d.code, adresse: d.adresse })
 }
 /// compagnie fictive, sinon refus « boite absente ») quand l'appelant n'en donne pas.
-pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve: &Preuve, qui: &str, client: Option<&mut dyn Courriel>) -> R<FicheDemandee> {
+pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: Option<&str>, preuve: &Preuve, qui: &str, client: Option<&mut dyn Courriel>) -> R<FicheDemandee> {
     let adresse = strip(adresse).to_lowercase();
     if !adresse_valide(&adresse) {
         return Err(refus(format!("« {} » n'est pas une adresse de courriel.", adresse)));
@@ -1021,8 +1021,9 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve
     let utiles = champs::utiles("salarie")?;
     let q = fq::questionnaire(&code, &fq::posees(&|c| utiles.iter().any(|u| u == c)), &|_| String::new());
     let sujet = envoi::formater(fq::SUJET, &[("compagnie", compagnie.clone())]);
-    let prenom = strip(prenom).to_string();
-    let virgule_prenom = if prenom.is_empty() { String::new() } else { format!(" {}", prenom) };
+    let prenom: Option<String> = prenom.map(|p| strip(p).to_string());
+    // « Bonjour Claire, » : le prenom, quand il est dit ; « Bonjour, » sinon.
+    let virgule_prenom: String = prenom.iter().map(|p| format!(" {}", p)).collect();
     let champs = |echappe: bool| -> Vec<(&'static str, String)> {
         let e = |s: &str| if echappe { html_echapper(s) } else { s.to_string() };
         vec![("virgule_prenom", e(&virgule_prenom)), ("compagnie", e(&compagnie)), ("signataire", e(&signataire))]
@@ -1035,7 +1036,10 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve
     html.push(("mailto", html_echapper(&lien)));
     let message = Message {
         cle: format!("fiche-{}", code),
-        nom: if prenom.is_empty() { adresse.clone() } else { prenom.clone() },
+        nom: match &prenom {
+            Some(p) => p.clone(),
+            None => adresse.clone(),
+        },
         destinataire: adresse.clone(),
         sujet,
         corps: envoi::formater(fq::CORPS, &texte),
@@ -1060,7 +1064,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: &str, preuve
 pub(crate) struct Attendue {
     pub code: String,
     pub adresse: String,
-    pub prenom: String,
+    pub prenom: Option<String>,
     /// L'heure de la demande, celle de la ligne du journal.
     pub quand: HeureDuJournal,
     /// Les identifiants de NOS envois (le `Message-ID` gardé avec la demande) : jamais pris pour une reponse.
@@ -1292,7 +1296,10 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
     let code = &demande.code;
     let somme: u32 = code.chars().map(|c| c as u32).sum();
     let (prenom, nom, sexe) = PERSONNES[somme as usize % PERSONNES.len()];
-    let prenom = if demande.prenom.is_empty() { prenom.to_string() } else { demande.prenom.clone() };
+    let prenom = match &demande.prenom {
+        Some(p) => p.clone(),
+        None => prenom.to_string(),
+    };
     let an = 80 + code.chars().count() % 15;
     let mois = 1 + somme % 12;
     let treize = format!("{}{:02}{:02}75056{:03}", sexe, an, mois, 1 + somme % 900);

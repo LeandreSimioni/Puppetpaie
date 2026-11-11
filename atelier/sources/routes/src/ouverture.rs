@@ -737,7 +737,7 @@ pub(crate) fn boite_liee(ctx: &Contexte) -> R<bool> {
 struct FicheAttendue {
     code: String,
     adresse: String,
-    prenom: String,
+    prenom: Option<String>,
     quand: socle::paris::HeureDuJournal,
     demande_dit: String,
 }

@@ -553,7 +553,7 @@ pub(crate) struct ChargeCloture {
     annee: crate::dossier_salarie::AnneeDite,
     forcer: Option<bool>,
     rouvrir: Option<bool>,
-    qui: Option<String>,
+    qui: Option<socle::forme::TexteDit>,
 }
 
 /// Retire la cloture. L'archive reste sur le disque : elle dit ce
@@ -586,8 +586,8 @@ fn rouvrir_exercice(ctx: &Contexte, annee: &str, qui: &str) -> R<ExerciceRouvert
 pub(crate) fn cloture_route(ctx: &Contexte, c: ChargeCloture) -> R<Cloture> {
     let annee = c.annee.texte();
     // Qui ecrit : la ligne de commande le dit (`cli`), la page non (l'interface).
-    let qui = match c.qui.filter(|q| !q.is_empty()) {
-        Some(q) => q,
+    let qui = match c.qui {
+        Some(q) => q.to_string(),
         None => compagnie::INTERFACE.to_string(),
     };
     if c.rouvrir == Some(true) {

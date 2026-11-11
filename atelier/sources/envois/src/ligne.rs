@@ -777,7 +777,8 @@ pub struct DetailDossier {
 pub struct DetailFiche {
     pub code: String,
     pub adresse: String,
-    pub prenom: String,
+    /// Le prenom pour lui ecrire, s'il a ete dit.
+    pub prenom: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

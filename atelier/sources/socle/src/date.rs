@@ -381,16 +381,3 @@ impl<'de> serde::Deserialize<'de> for Jour {
     }
 }
 
-impl Jour {
-    /// LA PORTE D'UNE CASE DE DATE QUE LA PAGE ENVOIE TELLE QU'ELLE EST (`serde(deserialize_with)`) : une case vide (ou
-    /// de blancs, ou `null`) n'est pas encore dite, et la seulement le vide vaut « pas dit » ; sinon un jour `AAAA-MM-JJ`.
-    pub fn ou_vide<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Jour>, D::Error> {
-        let Some(s) = <Option<String> as serde::Deserialize>::deserialize(d)?.filter(|s| !s.trim().is_empty()) else {
-            return Ok(None);
-        };
-        match Jour::lire(&s) {
-            Ok(j) if j.iso() == s => Ok(Some(j)),
-            _ => Err(serde::de::Error::custom(format!("{} n'est pas une date AAAA-MM-JJ", repr_texte(&s)))),
-        }
-    }
-}

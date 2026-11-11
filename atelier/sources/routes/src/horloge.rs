@@ -669,7 +669,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
                 let Some(x) = du_contrat(ctx)?.filter(|x| x.en_avenant) else {
                     return Ok(false);
                 };
-                let numero = x.numero.as_ref().map(|n| n.to_string());
+                let numero = x.numero.clone();
                 let voulu = AvenantVoulu { salarie: salarie.clone(), debut: *debut, numero, mois: Some(*mois), effet: None };
                 // LA BOITE MUETTE, et jamais une autre ; sans courriel dans la fiche, l'avenant s'imprime et se remet en
                 // main propre : l'impression est son depart.
@@ -696,7 +696,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
                     mois: *mois,
                     salarie: salarie.clone(),
                     debut: *debut,
-                    numero: x.numero.as_ref().map(|n| n.to_string()),
+                    numero: x.numero.clone(),
                     avenant: x.avenant.as_ref().and_then(|a| a.numero),
                     recu: true,
                 };
@@ -856,7 +856,7 @@ fn signables(ctx: &Contexte, mois: Mois) -> R<Vec<Signable>> {
         .map(|x| Signable {
             courriel: x.destinataire.is_some(),
             a_envoyer: x.a_envoyer && !x.en_avenant,
-            vise: ContratVise { numero: x.numero.as_ref().map(|n| n.to_string()), salarie: x.salarie, debut: x.debut },
+            vise: ContratVise { numero: x.numero.clone(), salarie: x.salarie, debut: x.debut },
             nom: x.nom,
         })
         .collect())

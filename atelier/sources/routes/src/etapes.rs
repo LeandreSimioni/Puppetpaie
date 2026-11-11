@@ -396,14 +396,14 @@ pub(crate) fn deposer_dsn(mois: Mois, nic: Option<&str>, libelle: String) -> Act
 /// `avenant` (son numero) ; la route `contrat-recu` rend la phrase qui le dit et de quoi l'annuler. Rien pour un
 /// engagement qui ne dit pas encore son salarie ou son premier jour.
 fn noter_recu(p: &Vue, mois: Mois, libelle: &str, avenant: Option<i64>, recu: bool) -> Option<Action> {
-    let charge = crate::contrats::ChargeRecu { mois, salarie: p.salarie.clone()?, debut: p.debut?, numero: p.numero.as_ref().map(|n| n.to_string()), avenant, recu };
+    let charge = crate::contrats::ChargeRecu { mois, salarie: p.salarie.clone()?, debut: p.debut?, numero: p.numero.clone(), avenant, recu };
     Some(action(Route::ContratRecu, charge, None, libelle.into()))
 }
 
 /// L'avenant du contrat de l'engagement `p` : l'apercu, puis sa demande de signature. Rien pour un engagement qui ne
 /// dit pas encore son salarie ou son premier jour.
 fn avenant(p: &Vue, mois: Mois) -> Option<Action> {
-    let charge = crate::contrats::ChargeAvenant { salarie: p.salarie.clone()?, debut: p.debut?, numero: p.numero.as_ref().map(|n| n.to_string()), mois: Some(mois) };
+    let charge = crate::contrats::ChargeAvenant { salarie: p.salarie.clone()?, debut: p.debut?, numero: p.numero.clone(), mois: Some(mois) };
     Some(action(Route::AvenantApercu, charge, Some(Route::DemanderSignature), "Avenant…".into()))
 }
 

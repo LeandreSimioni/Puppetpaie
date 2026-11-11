@@ -164,19 +164,19 @@ pub const ROUTES: &[Fiche] = &[
 // ------------------------------------------------------------------ les charges
 
 /// Un contrat que la page vise : son salarie, son premier jour, et son numero, qui distingue deux contrats du meme jour
-/// (vide : tous ceux de ce salarie a ce jour).
+/// (absent : tous ceux de ce salarie a ce jour ; un numero se lit tel que la norme l'ecrit, `""` se refuse).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ContratVise {
     pub(crate) salarie: String,
     pub(crate) debut: Jour,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) numero: Option<String>,
+    pub(crate) numero: Option<NumeroContrat>,
 }
 
 impl ContratVise {
     fn cible(&self) -> Cible {
-        (self.salarie.clone(), self.debut.iso(), self.numero.clone().filter(|n| !n.is_empty()))
+        (self.salarie.clone(), self.debut.iso(), self.numero.as_deref().map(str::to_string))
     }
 }
 
@@ -188,7 +188,7 @@ pub(crate) struct AvenantVoulu {
     pub(crate) salarie: String,
     pub(crate) debut: Jour,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) numero: Option<String>,
+    pub(crate) numero: Option<NumeroContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) mois: Option<Mois>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -280,7 +280,7 @@ pub(crate) struct ChargeRecu {
     pub(crate) mois: Mois,
     pub(crate) salarie: String,
     pub(crate) debut: Jour,
-    pub(crate) numero: Option<String>,
+    pub(crate) numero: Option<NumeroContrat>,
     pub(crate) avenant: Option<i64>,
     pub(crate) recu: bool,
 }
@@ -292,14 +292,14 @@ pub(crate) struct ChargeRecu {
 pub(crate) struct ChargeAvenant {
     pub(crate) salarie: String,
     pub(crate) debut: Jour,
-    pub(crate) numero: Option<String>,
+    pub(crate) numero: Option<NumeroContrat>,
     pub(crate) mois: Option<Mois>,
 }
 
 impl ChargeAvenant {
     /// Le numero du contrat vise, s'il est dit.
     fn numero(&self) -> Option<&str> {
-        self.numero.as_deref().filter(|n| !n.is_empty())
+        self.numero.as_deref()
     }
 }
 
@@ -307,8 +307,8 @@ impl ChargeAvenant {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargePieces {
-    numero: Option<String>,
-    salarie: Option<String>,
+    numero: Option<NumeroContrat>,
+    salarie: Option<socle::forme::TexteDit>,
 }
 
 /// La charge de `poser-courriel` : le salarie et son courriel.
@@ -561,7 +561,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
     let paies = documents::ecrire_documents::paies_aux_numeros_declares(ctx, c.mois, None, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?.1;
     // LE CONTRAT, pas le salarie : son numero, celui que l'ecran affiche (ou que la releve a lu) ; sans numero, l'engagement
     // de ce salarie qui commence ce jour-la.
-    let numero = c.numero.as_deref().filter(|n| !n.is_empty());
+    let numero = c.numero.as_deref();
     let trouvee = paies.iter().position(|p| {
         p.salarie.id == salarie
             && match numero {
@@ -634,7 +634,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
     }
     let phrase = format!("{} de {} {}.", socle::texte::capitaliser(&ce), nom, if recu { "noté reçu signé" } else { "de nouveau en attente" });
     // De quoi revenir sur la note : la meme route, le mot contraire.
-    let annuler = ChargeRecu { mois: c.mois, salarie: salarie.to_string(), debut: c.debut, numero: numero_note.map(|n| n.to_string()), avenant, recu: !recu };
+    let annuler = ChargeRecu { mois: c.mois, salarie: salarie.to_string(), debut: c.debut, numero: numero_note, avenant, recu: !recu };
     Ok(NoteRecue { phrase, salarie: salarie.to_string(), debut: c.debut, recu: recu.then_some(quand_note), annuler: GesteRecu { route: Route::ContratRecu, charge: annuler } })
 }
 
@@ -812,7 +812,7 @@ fn par_salarie(avenants: Vec<UnAvenant>) -> Vec<(String, Vec<UnAvenant>)> {
 fn avenants_a_envoyer(ctx: &Contexte, voulus: &[AvenantVoulu], etats: &[ContratASigner]) -> R<Vec<(String, Vec<UnAvenant>)>> {
     let mut avenants = Vec::new();
     for v in voulus {
-        let numero = v.numero.as_deref().filter(|n| !n.is_empty());
+        let numero = v.numero.as_deref();
         let attend = etats
             .iter()
             .find(|c| c.salarie == v.salarie && c.debut == v.debut && numero.is_none_or(|n| c.numero_dit() == Some(n)))
@@ -967,16 +967,16 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         // Le jour du depart, « JJ/MM », s'il est dit.
         let le: String = depuis.map(|q| q.jour()).map(|j| format!(" le {:02}/{:02}", j.jour, j.mois)).into_iter().collect();
         let attente = format!("{}{}{}", ce, if par == Some("imprime") { "imprimé" } else { "envoyé" }, le);
-        let numero = p.engagement.numero.clone().filter(|n| !n.is_empty());
+        let numero = p.engagement.numero.clone();
         let demande_par_courriel = demandes_par_courriel.contains(&k);
         let (recu_g, relancer) = if en_attente {
-            let charge = ChargeRecu { mois, salarie: cle_s.clone(), debut, numero: numero.as_ref().map(|n| n.to_string()), avenant: numero_avenant, recu: true };
+            let charge = ChargeRecu { mois, salarie: cle_s.clone(), debut, numero: numero.clone(), avenant: numero_avenant, recu: true };
             // LA PIECE QUI ATTEND (l'avenant, sinon le contrat) : un courriel l'a deja demandee, la redemander est un
             // rappel ; partie imprimee seulement, elle part par courriel pour la premiere fois. `demander-signature` le
             // lit de meme au journal : la charge ne le dit pas.
             let rappel = if avenant_en_attente { etat.avenant.as_ref().is_some_and(|a| a.par_courriel) } else { demande_par_courriel };
             let relancer = (par.is_some() && boite_liee).then(|| {
-                let vise = ContratVise { salarie: cle_s.clone(), debut, numero: numero.as_ref().map(|n| n.to_string()) };
+                let vise = ContratVise { salarie: cle_s.clone(), debut, numero: numero.clone() };
                 let charge = if avenant_en_attente {
                     ChargeSignature::des_avenants(mois, vec![AvenantVoulu { salarie: cle_s.clone(), debut, numero: vise.numero.clone(), mois: Some(mois), effet: None }])
                 } else {
@@ -1449,11 +1449,11 @@ fn piece(racine: &Path, quoi: String, quand: HeureDuJournal, mois: Option<Mois>,
 /// signature, le contrat revenu signe et la preuve de la signature. Lu au journal ; rien ne part. La phrase dit chaque
 /// piece et son jour, comme la boite de l'ecran.
 fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
-    let numero = c.numero.filter(|n| !n.is_empty()).ok_or_else(|| {
+    let numero = c.numero.ok_or_else(|| {
         erreur(Classe::Manque, "Quel contrat ? Donnez son numéro (« numero »), tel que signature-apercu ou etat-par-engagement le rend. Rien n'est écrit.")
     })?;
-    let le_salarie = c.salarie.filter(|s| !s.is_empty());
-    let mut qui: Option<String> = le_salarie.clone();
+    let le_salarie = c.salarie;
+    let mut qui: Option<String> = le_salarie.as_deref().map(str::to_string);
     let racine = ctx.racine.as_path();
     let lignes = Moteur::nouveau(ctx).lignes()?;
 

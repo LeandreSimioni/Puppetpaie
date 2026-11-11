@@ -222,7 +222,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             // Le contrat que cette reponse signe, par son numero : le jumeau du meme jour garde sa propre attente.
             let note = match (a.mois, socle::date::Jour::lire(&debut)) {
                 (Some(mois), Ok(jour)) => {
-                    let charge = crate::contrats::ChargeRecu { mois, salarie: c.salarie.to_string(), debut: jour, numero: c.numero.as_ref().map(|n| n.to_string()), avenant: None, recu: true };
+                    let charge = crate::contrats::ChargeRecu { mois, salarie: c.salarie.to_string(), debut: jour, numero: c.numero.clone(), avenant: None, recu: true };
                     crate::contrats::contrat_recu(ctx, &charge, qui, Some(&courriel)).map(|_| ())
                 }
                 (None, _) => Err(erreur(Classe::Refuse, "la demande de signature ne dit pas son mois")),

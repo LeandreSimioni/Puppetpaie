@@ -281,6 +281,42 @@ pub fn texte_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String
     }
 }
 
+/// UN TEXTE DIT : jamais vide. `Option<TexteDit>` est la case facultative d'une charge : absente ou nulle, elle est vide
+/// (`None`) ; un texte vide `""` ne dit rien et se refuse a la porte, comme `texte_opt`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
+#[serde(transparent)]
+pub struct TexteDit(String);
+
+impl TexteDit {
+    /// Le texte `t`, dit ; vide, il se refuse.
+    pub fn lire(t: &str) -> R<TexteDit> {
+        if t.is_empty() {
+            return Err(crate::refus!("un texte vide ne dit rien : le vide s'écrit absent ou null"));
+        }
+        Ok(TexteDit(t.to_string()))
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for TexteDit {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let t = <String as serde::Deserialize>::deserialize(d)?;
+        TexteDit::lire(&t).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
+impl std::ops::Deref for TexteDit {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for TexteDit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// UN OBJET DONT L'ORDRE COMPTE (un catalogue montre dans l'ordre du fichier), lu en paires `(cle, valeur)` :
 /// `#[serde(deserialize_with = "socle::forme::en_ordre")]` sur un `Vec<(K, T)>` (`K` : un texte, ou un type qui se lit
 /// d'un texte). Une cle repetee refuse.

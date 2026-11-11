@@ -45,6 +45,7 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::imprevus::{ArretSaisi, Imprevu, Prolongation};
 use socle::date::Jour;
 use socle::ecran::Pastille;
+use socle::forme::TexteDit;
 use socle::paris::{HeureDeSaisie, HeureDuJournal};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
 use socle::echec::R;
@@ -130,7 +131,7 @@ pub const ROUTES: &[Fiche] = &[
         route: Route::AttestationDeclare,
         geste: "Dire faite l'attestation de salaire d'un arrêt que la DSN ne porte pas.",
         charge: FAITE,
-        exemple: r#"{"salarie":"SVOBODA","dernier_jour":"2026-11-16","le":"","depot":"net-entreprises-ecran"}"#,
+        exemple: r#"{"salarie":"SVOBODA","dernier_jour":"2026-11-16","le":null}"#,
         rend: OBLIGATIONS_REND,
         refus: &[NON_ECRIT, MANQUE],
         acte: Acte::Ecrit,
@@ -1255,7 +1256,7 @@ fn jour_saisi(ctx: &Contexte, j: Option<Jour>, quoi: &str) -> R<Option<Jour>> {
 }
 
 fn heure_saisie(heure: Option<&str>) -> R<Option<String>> {
-    match heure.filter(|h| !h.trim().is_empty()) {
+    match heure {
         None => Ok(None),
         Some(h) => match lire_heure(h) {
             Some(m) => Ok(Some(heure_lisible(m))),
@@ -1278,9 +1279,8 @@ pub(crate) struct ChargeConnaissance {
     salarie: String,
     dernier_jour: Jour,
     de: DeQuoi,
-    #[serde(deserialize_with = "Jour::ou_vide")]
     jour: Option<Jour>,
-    heure: Option<String>,
+    heure: Option<TexteDit>,
 }
 
 /// Le jour (et l'heure) ou la compagnie a connu l'arret ou l'accident, tel qu'on le dit : `arret-connaissance`, et
@@ -1288,9 +1288,8 @@ pub(crate) struct ChargeConnaissance {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ConnaissanceDite {
-    #[serde(deserialize_with = "Jour::ou_vide")]
     jour: Option<Jour>,
-    heure: Option<String>,
+    heure: Option<TexteDit>,
 }
 
 /// `arret-connaissance` : le jour (et l'heure) ou la compagnie a connu l'arret ou l'accident ; un `jour` vide efface ce
@@ -1390,11 +1389,10 @@ struct Faite {
 pub(crate) struct ChargeFaite {
     salarie: String,
     dernier_jour: Jour,
-    #[serde(deserialize_with = "Jour::ou_vide")]
     le: Option<Jour>,
-    depot: Option<String>,
-    heure: Option<String>,
-    reference: Option<String>,
+    depot: Option<TexteDit>,
+    heure: Option<TexteDit>,
+    reference: Option<TexteDit>,
 }
 
 /// Une obligation hors DSN dite faite, telle que la fiche de suivi de l'arret la garde.
@@ -1418,7 +1416,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
     let faite = match le {
         None => None,
         Some(le) => {
-            let depot = charge.depot.clone().ok_or_else(|| socle::fichiers::absent("depot").reclasser(Classe::Manque))?;
+            let depot = charge.depot.as_deref().map(str::to_string).ok_or_else(|| socle::fichiers::absent("depot").reclasser(Classe::Manque))?;
             let codes: Vec<String> = base()?.obligations.de(f.obligation).lieux().iter().map(|x| x.code.clone()).collect();
             if !codes.contains(&depot) {
                 return Err(refus(format!("Ou {} a-t-elle ete faite ? {} n'est pas connu ; les lieux sont : {}. Rien n'est ecrit.", f.quoi.to_lowercase(), repr(&depot), codes.join(", "))));
@@ -1450,7 +1448,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
                 le,
                 heure: heure_saisie(charge.heure.as_deref())?,
                 depot,
-                reference: charge.reference.clone().filter(|r| !r.trim().is_empty()),
+                reference: charge.reference.as_deref().map(str::to_string),
                 saisi_le: compagnie::maintenant(),
             })
         }
@@ -1473,26 +1471,21 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
 /// La charge de `arret-obligations` : l'arret tel qu'il se saisit, chaque champ vide tant qu'il n'est pas tape -- le
 /// motif, le dernier jour travaille, le debut, la fin prescrite, la reprise, le salarie et le contrat suspendu (d'ou se
 /// tire la subrogation), le jour de l'accident, et ce que la compagnie a connu (l'arret, l'accident et son heure). Un champ
-/// absent ou nul n'est pas encore tape ; un jour tape s'ecrit AAAA-MM-JJ.
+/// absent ou nul n'est pas encore tape (`""` se refuse, `TexteDit`) ; un jour tape s'ecrit AAAA-MM-JJ.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeArretObligations {
-    motif: Option<String>,
+    motif: Option<TexteDit>,
     dernier_jour: Option<Jour>,
     debut: Option<Jour>,
     fin: Option<Jour>,
     reprise: Option<Jour>,
-    salarie: Option<String>,
-    contrat: Option<String>,
+    salarie: Option<TexteDit>,
+    contrat: Option<TexteDit>,
     date_accident: Option<Jour>,
     connaissance_arret: Option<Jour>,
     connaissance_accident: Option<Jour>,
-    connaissance_heure: Option<String>,
-}
-
-/// Un champ tape de la saisie, s'il l'est.
-fn tape(t: &Option<String>) -> Option<&str> {
-    t.as_deref().map(str::trim).filter(|x| !x.is_empty())
+    connaissance_heure: Option<TexteDit>,
 }
 
 /// L'arret tel qu'il s'ecrirait (`imprevus::arret_a_ecrire`), sa subrogation tiree du contrat suspendu et du droit
@@ -1503,11 +1496,11 @@ fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salari
         Ok(cle) => cle,
         Err(m) => return Ok(ArretEcrit::PasEncore(m.phrase)),
     };
-    let contrat = match crate::imprevus::contrat_suspendu(ctx, &cle, &dernier, tape(&c.contrat)) {
+    let contrat = match crate::imprevus::contrat_suspendu(ctx, &cle, &dernier, c.contrat.as_deref()) {
         Ok(contrat) => contrat,
         Err(e) => return Ok(ArretEcrit::PasEncore(e.phrase)),
     };
-    let Some(motif) = tape(&c.motif) else { return Ok(ArretEcrit::PasEncore("le motif n'est pas encore dit.".to_string())) };
+    let Some(motif) = c.motif.as_deref() else { return Ok(ArretEcrit::PasEncore("le motif n'est pas encore dit.".to_string())) };
     let mut arret = crate::metier::imprevus::arret_a_ecrire(crate::metier::imprevus::ArretDit {
         cle: &cle,
         contrat: &contrat,
@@ -1537,7 +1530,7 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
     let (dernier, debut, fin) = (c.dernier_jour, c.debut, c.fin);
     // L'ARRET TEL QU'IL S'ECRIRAIT, quand le salarie, son contrat et les trois jours le permettent : d'ou la subrogation
     // et le premier jour d'absence. Sinon, ce qui est tape seulement ; ce qui l'empeche se dit.
-    let ecrit = match (tape(&c.salarie), dernier, debut, fin) {
+    let ecrit = match (c.salarie.as_deref(), dernier, debut, fin) {
         (Some(s), Some(dj), Some(d), Some(f)) => Some(arret_tel_qu_il_s_ecrirait(ctx, &c, s, dj, d, f)?),
         _ => None,
     };
@@ -1548,14 +1541,14 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
     };
     let a = match &saisi {
         Some(s) => ArretLu { reprise: c.reprise, date_accident: c.date_accident, ..ArretLu::de(s)? },
-        None => ArretLu { motif: tape(&c.motif), dernier, debut: None, fin, reprise: c.reprise, subrogation: None, date_accident: c.date_accident, prolongations: &[] },
+        None => ArretLu { motif: c.motif.as_deref(), dernier, debut: None, fin, reprise: c.reprise, subrogation: None, date_accident: c.date_accident, prolongations: &[] },
     };
     // Ce que la compagnie dit avoir connu, tape et lisible ; une heure de l'accident dite sans jour est celle du jour de
     // l'accident, comme a l'enregistrement (`connaissance_saisie`).
     let connue = |jour: Option<Jour>, heure: Option<&str>| {
         jour.map(|j| ConnaissanceSaisie { jour: j, heure: heure.map(String::from), saisi_le: compagnie::maintenant() })
     };
-    let heure_accident = tape(&c.connaissance_heure).filter(|h| lire_heure(h).is_some());
+    let heure_accident = c.connaissance_heure.as_deref().filter(|h| lire_heure(h).is_some());
     let jour_accident = c.connaissance_accident.or_else(|| heure_accident.and(c.date_accident));
     let (arret_connu, accident_connu) = (connue(c.connaissance_arret, None), connue(jour_accident, heure_accident));
     let dit = CeQueDitLaCompagnie { connaissance_arret: arret_connu.as_ref(), connaissance_accident: accident_connu.as_ref(), ..CeQueDitLaCompagnie::rien() };

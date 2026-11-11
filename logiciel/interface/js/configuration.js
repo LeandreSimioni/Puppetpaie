@@ -702,7 +702,8 @@ async function apercuImportation() {
   const rendre = occupe(document.getElementById("import-apercu"), "Lecture…");
   cible.innerHTML = `<p class="discret">Lecture…</p>`;
   try {
-    const r = await api("importation-apercu", { dossier: IMPORT_DOSSIER });
+    // Un dossier vide part absent : la boîte import/ de la compagnie.
+    const r = await api("importation-apercu", { dossier: IMPORT_DOSSIER || null });
     cible.innerHTML = vueImportation(r);
     brancherImportation();
   } catch (e) {
@@ -717,7 +718,7 @@ async function ecrireImportation() {
   cible.classList.add("attente");
   occupe(document.getElementById("import-ecrire"), "Reprise…");
   try {
-    const r = await api("importer", { dossier: IMPORT_DOSSIER });
+    const r = await api("importer", { dossier: IMPORT_DOSSIER || null });
     cible.innerHTML = vueImportation(r);
     brancherImportation();
     // Les fiches créées doivent apparaître dans Salariés et Spectacles, et

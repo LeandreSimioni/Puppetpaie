@@ -23,7 +23,7 @@ fn dsn(mode: Mode) -> Ligne {
 }
 
 fn fiche(code: &str) -> Ligne {
-    Ligne::FicheDemande(envoi(Mode::Reel, journal::DetailFiche { code: code.into(), adresse: "a@b.invalid".into(), prenom: "A".into(), message: None, expediteur: None }))
+    Ligne::FicheDemande(envoi(Mode::Reel, journal::DetailFiche { code: code.into(), adresse: "a@b.invalid".into(), prenom: Some("A".into()), message: None, expediteur: None }))
 }
 
 #[test]

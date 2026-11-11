@@ -117,7 +117,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeDossier {
-    dossier: Option<String>,
+    dossier: Option<socle::forme::TexteDit>,
 }
 
 /// Le dossier a trier : `charge.dossier`, ou `import/` a la racine de la compagnie s'il est vide ou absent.
@@ -128,7 +128,7 @@ pub(crate) struct ChargeDossier {
 /// refuse (`import::tri::trier`).
 pub(crate) fn dossier_import(ctx: &Contexte, charge: &ChargeDossier) -> R<PathBuf> {
     let boite = ctx.racine.join("import");
-    let d = match charge.dossier.as_deref().filter(|s| !s.trim().is_empty()) {
+    let d = match charge.dossier.as_deref() {
         None => boite.clone(),
         Some(s) => PathBuf::from(crate::depots::normaliser(s)),
     };
