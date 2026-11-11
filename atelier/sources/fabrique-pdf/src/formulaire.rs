@@ -597,7 +597,7 @@ fn flux_image(largeur: u32, hauteur: u32, espace: &str, filtre: &str, donnees: V
     Stream::new(d, donnees).with_compression(false)
 }
 
-/// Des pixels bruts (8 bits), comprimés avec les prédicteurs PNG (`genpdfi::render::predict_image`).
+/// Des pixels bruts (8 bits), comprimés avec les prédicteurs PNG (`ecriture::predire_image`).
 fn flux_pixels(largeur: u32, hauteur: u32, espace: &str, pixels: Vec<u8>) -> Stream {
     let mut d = Dictionary::new();
     d.set("Type", Object::Name(b"XObject".to_vec()));
@@ -607,7 +607,7 @@ fn flux_pixels(largeur: u32, hauteur: u32, espace: &str, pixels: Vec<u8>) -> Str
     d.set("ColorSpace", Object::Name(espace.as_bytes().to_vec()));
     d.set("BitsPerComponent", Object::Integer(8));
     let mut s = Stream::new(d, pixels).with_compression(false);
-    let _ = genpdfi::render::predict_image(&mut s);
+    crate::ecriture::predire_image(&mut s);
     if s.dict.get(b"Filter").is_err() {
         let brut = std::mem::take(&mut s.content);
         s.dict.set("Filter", Object::Name(b"FlateDecode".to_vec()));
@@ -1015,7 +1015,7 @@ pub fn remplir(octets: &[u8], d: &Remplissage) -> Result<Vec<u8>, Refus> {
         poser_images(&mut doc, &poses, Some(&avant))?;
     }
     doc.prune_objects();
-    Ok(genpdfi::pdf_ecriture::ajouter(&lus, &avant, &doc))
+    Ok(crate::ecriture::ajouter(&lus, &avant, &doc))
 }
 
 fn lire_pose(im: &crate::forme::ImagePosee, rang: usize) -> Result<Pose, Refus> {
@@ -1044,17 +1044,17 @@ fn lire_pose(im: &crate::forme::ImagePosee, rang: usize) -> Result<Pose, Refus> 
 /// une police ajoutée par cette écriture-ci quand il s'écrit en mise à jour incrémentale (`avant` : le document
 /// reçu, dont les objets restent tels quels) ; sinon, un sous-ensemble neuf de ces seuls caractères.
 pub(crate) fn police_pour(doc: &mut Document, donnees: &[u8], caracteres: &BTreeSet<char>, avant: Option<&Document>) -> Result<ObjectId, Refus> {
-    let echec = |e: genpdfi::error::Error| Refus(format!("police impossible à embarquer : {}", e));
-    let candidates = genpdfi::pdf_subset::polices_de_la_fabrique(doc, donnees);
+    let echec = |e: Refus| Refus(format!("police impossible à embarquer : {}", e.0));
+    let candidates = crate::sous_ensemble::polices_de_la_fabrique(doc, donnees);
     if let Some((id, _)) = candidates.iter().find(|(_, portes)| caracteres.is_subset(portes)) {
         return Ok(*id);
     }
     if let Some((id, portes)) = candidates.into_iter().find(|(id, _)| avant.map_or(true, |a| !a.objects.contains_key(id))) {
         let tous: BTreeSet<char> = portes.union(caracteres).copied().collect();
-        genpdfi::pdf_subset::elargir(doc, id, donnees, &tous).map_err(echec)?;
+        crate::sous_ensemble::elargir(doc, id, donnees, &tous).map_err(echec)?;
         return Ok(id);
     }
-    genpdfi::pdf_subset::embarquer(doc, donnees, caracteres).map_err(echec)
+    crate::sous_ensemble::embarquer(doc, donnees, caracteres).map_err(echec)
 }
 
 /// Les polices qui écrivent `caracteres` dans une mise à jour incrémentale de `avant` (le document reçu, qui reste
@@ -1062,7 +1062,7 @@ pub(crate) fn police_pour(doc: &mut Document, donnees: &[u8], caracteres: &BTree
 /// puis, pour ce qui lui manque, un sous-ensemble neuf de ces seuls caractères (`police_pour`). Un texte qui passe de
 /// l'une à l'autre change de police entre deux `Tj`, sans changer de place.
 pub(crate) fn polices_pour_ajout(doc: &mut Document, donnees: &[u8], caracteres: &BTreeSet<char>, avant: &Document) -> Result<Vec<(ObjectId, BTreeSet<char>)>, Refus> {
-    let meilleure = genpdfi::pdf_subset::polices_de_la_fabrique(doc, donnees)
+    let meilleure = crate::sous_ensemble::polices_de_la_fabrique(doc, donnees)
         .into_iter()
         .filter(|(id, _)| avant.objects.contains_key(id))
         .map(|(id, portes)| (id, caracteres.intersection(&portes).copied().collect::<BTreeSet<char>>()))
@@ -1430,5 +1430,5 @@ pub fn ajouter_champs(octets: &[u8], d: &AjoutDeChamps) -> Result<Vec<u8>, Refus
         }
     }
     doc.prune_objects();
-    Ok(genpdfi::pdf_ecriture::compact(&doc))
+    Ok(crate::ecriture::compact(&doc))
 }

@@ -141,7 +141,7 @@ fn chaine_pdf(s: &[u8]) -> String {
     } else if s.starts_with(&[0xEF, 0xBB, 0xBF]) {
         String::from_utf8_lossy(&s[3..]).into_owned()
     } else if s.iter().any(|b| *b >= 0x80) && std::str::from_utf8(s).is_ok() {
-        // Des octets qui forment de l'UTF-8 valide (printpdf l'écrit ainsi, sans marque) : MuPDF
+        // Des octets qui forment de l'UTF-8 valide (sans marque) : MuPDF
         // les lit comme tels, et un texte en PDFDocEncoding n'a presque jamais cette forme.
         String::from_utf8_lossy(s).into_owned()
     } else {

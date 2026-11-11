@@ -1,6 +1,6 @@
 //! Les polices : Liberation Sans, et pour les blocs à position fixe Liberation Serif et Mono,
 //! embarquées dans le PDF **en sous-ensemble** : seuls les glyphes des caractères imprimés
-//! (`genpdfi/src/pdf_subset.rs`), avec la table `ToUnicode` qui fait que le texte extrait est
+//! (`sous_ensemble.rs`), avec la table `ToUnicode` qui fait que le texte extrait est
 //! exactement le texte imprimé.
 //!
 //! Liberation (licence SIL OFL 1.1, voir `polices/LICENCE-Liberation-OFL.txt`) a les métriques
@@ -14,8 +14,6 @@
 //! la case reprend le romain, ou le gras, du même fichier.
 
 use std::sync::Arc;
-
-use genpdfi::fonts::{FontData, FontFamily};
 
 use crate::description::{refus, Refus};
 
@@ -47,21 +45,6 @@ fn decomprimer(z: &'static [u8]) -> Result<Arc<Vec<u8>>, Refus> {
     Ok(f)
 }
 
-fn police(donnees: &Arc<Vec<u8>>) -> Result<FontData, Refus> {
-    FontData::new_subset(donnees.clone())
-        .or_else(|e| refus(format!("police interne illisible : {}", e)))
-}
-
-/// Liberation Sans : romain, gras, italique, gras italique.
-pub fn famille() -> Result<FontFamily<FontData>, Refus> {
-    Ok(FontFamily {
-        regular: police(&decomprimer(REGULIER_Z)?)?,
-        bold: police(&decomprimer(GRAS_Z)?)?,
-        italic: police(&decomprimer(ITALIQUE_Z)?)?,
-        bold_italic: police(&decomprimer(GRAS_ITALIQUE_Z)?)?,
-    })
-}
-
 /// Le fichier de Liberation Sans romain (celui dont la fabrique tire ses sous-ensembles), pour
 /// l'embarquer dans un PDF existant (`marquage.rs`).
 pub fn sans_regulier() -> Result<Arc<Vec<u8>>, Refus> {
@@ -73,39 +56,15 @@ pub fn sans_gras() -> Result<Arc<Vec<u8>>, Refus> {
     decomprimer(GRAS_Z)
 }
 
-/// Tous les fichiers de Liberation (Sans en quatre styles, Serif et Mono en romain et gras) : ce
-/// que le texte d'un SVG peut demander quand on le pose dans un PDF (`formulaire.rs`). Aucune
-/// police du système n'est lue : le même SVG donne le même dessin sur tous les postes.
+/// Tous les fichiers de Liberation, dans cet ordre : Sans romain, gras, italique, gras italique ; Serif (Times)
+/// romain et gras ; Mono (Courier, chasse fixe de 0,6 em) romain et gras. Ce sont les polices du dessin
+/// (`dessin::Polices`) et ce que le texte d'un SVG peut demander quand on le pose dans un PDF (`formulaire.rs`).
+/// Aucune police du système n'est lue : le même document donne le même dessin sur tous les postes.
 pub fn toutes() -> Result<Vec<Arc<Vec<u8>>>, Refus> {
     [REGULIER_Z, GRAS_Z, ITALIQUE_Z, GRAS_ITALIQUE_Z, SERIF_Z, SERIF_GRAS_Z, MONO_Z, MONO_GRAS_Z]
         .iter()
         .map(|z| decomprimer(z))
         .collect()
-}
-
-/// Liberation Serif (Times), pour les textes à position fixe. L'italique n'est pas offert par
-/// les blocs ; la case sert de repli (le romain, le gras).
-pub fn famille_times() -> Result<FontFamily<FontData>, Refus> {
-    let regulier = decomprimer(SERIF_Z)?;
-    let gras = decomprimer(SERIF_GRAS_Z)?;
-    Ok(FontFamily {
-        regular: police(&regulier)?,
-        bold: police(&gras)?,
-        italic: police(&regulier)?,
-        bold_italic: police(&gras)?,
-    })
-}
-
-/// Liberation Mono (Courier) : chasse fixe de 0,6 em, gras compris.
-pub fn famille_courier() -> Result<FontFamily<FontData>, Refus> {
-    let regulier = decomprimer(MONO_Z)?;
-    let gras = decomprimer(MONO_GRAS_Z)?;
-    Ok(FontFamily {
-        regular: police(&regulier)?,
-        bold: police(&gras)?,
-        italic: police(&regulier)?,
-        bold_italic: police(&gras)?,
-    })
 }
 
 /// Les largeurs d'une police standard (Helvetica, Times, Courier et leurs variantes) qu'un PDF

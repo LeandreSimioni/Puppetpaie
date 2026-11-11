@@ -144,8 +144,8 @@ pub fn marquer(octets: &[u8], texte: &str) -> Result<Vec<u8>, Refus> {
         }
         caracteres.insert(c);
     }
-    let police = genpdfi::pdf_subset::embarquer(&mut doc, &donnees, &caracteres)
-        .map_err(|e| Refus(format!("police impossible à embarquer : {}", e)))?;
+    let police = crate::sous_ensemble::embarquer(&mut doc, &donnees, &caracteres)
+        .map_err(|e| Refus(format!("police impossible à embarquer : {}", e.0)))?;
     let codes: String = texte.chars().map(|c| format!("{:04X}", c as u32)).collect();
 
     let pages: Vec<ObjectId> = doc.get_pages().values().copied().collect();
@@ -369,5 +369,5 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
         page.set("Contents", Object::Array(contenu));
     }
     neuf.prune_objects();
-    Ok(genpdfi::pdf_ecriture::ajouter(octets, &doc, &neuf))
+    Ok(crate::ecriture::ajouter(octets, &doc, &neuf))
 }

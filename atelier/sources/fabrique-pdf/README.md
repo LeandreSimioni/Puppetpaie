@@ -62,20 +62,18 @@ Programme : **4,4 Mo** (Linux, `opt-level = "z"`, LTO, `strip` : 4 401 600 octet
 texte, `aes`, `cbc`, `sha2` et `getrandom` pour `--verrouiller`. Les huit fichiers de Liberation, comprimés,
 pèsent 1,4 Mo (romain, gras, italique et gras italique de Sans ; romain et gras de Serif et de Mono) :
 `build.rs` en retire crénage, substitutions et noms de glyphes, que rien ne lit. Le découpage des
-polices est du code à nous (`genpdfi/src/pdf_subset.rs`), sans dépendance.
+polices est du code à nous (`src/sous_ensemble.rs`), sans dépendance, comme la mise en page et le dessin
+(`src/mise_en_page.rs`, `src/dessin.rs`), qui comptent en mesures exactes (`src/mesure.rs`).
 
 Un document : un bulletin de deux pages de la fictive de l'Hôtel de Bourgogne pèse 20 Ko, un certificat Congés
 Spectacles 19 Ko, deux contrats sur quatre pages 23 Ko ; la moitié en polices (deux sous-ensembles de Liberation,
 les glyphes imprimés, sans hinting), un tiers en flux de contenu, le reste dans des flux d'objets (PDF 1.5,
-`genpdfi/src/pdf_ecriture.rs`). Ce qui s'ajoute à un PDF parti ou reçu (la mention d'un contrat signé, le cadre 5
+`src/ecriture.rs`). Ce qui s'ajoute à un PDF parti ou reçu (la mention d'un contrat signé, le cadre 5
 d'une AER) s'écrit en mise à jour incrémentale : quelques Ko. Une image de la compagnie est allégée quand elle se
 pose (`src/alleger.rs`).
 
 ## Licences
 
-- `genpdfi/` : copie modifiée de genpdfi 0.2.7 (Apache-2.0 ou MIT), textes
-  dans `genpdfi/LICENSES/`, chaque modification dans
-  `genpdfi/MODIFICATIONS.md`.
 - `polices/` : Liberation Sans (SIL OFL, `LICENCE-Liberation-OFL.txt`) ;
   Liberation Serif et Mono (Times, Courier) pour les blocs à position fixe ;
   la licence permet de les embarquer : le PDF en porte un sous-ensemble (les

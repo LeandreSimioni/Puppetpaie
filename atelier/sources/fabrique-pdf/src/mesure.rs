@@ -6,9 +6,8 @@
 //! (`Mesure::lue`, `FromStr`) en texte, sans passer par un flottant. Un produit ou un quotient s'arrondit au millionième
 //! le plus proche, la moitié loin de zéro : une position peut différer d'une fraction de millième de point, invisible.
 //!
-//! Les bibliothèques qui la reçoivent ou la rendent en flottant (le dessin, `genpdfi` ; la lecture, `lopdf`) la
-//! convertissent à leur porte : `genpdfi::Mm::de_millioniemes_de_point`, et un réel lu par `lopdf` repasse par son texte
-//! (`Mesure::du_reel`).
+//! Les bibliothèques qui la rendent en flottant (la lecture, `lopdf` ; le dessin d'un SVG, `usvg`) la donnent par
+//! son texte : `Mesure::de_l_objet`, `Mesure::par_son_texte`.
 
 use std::fmt;
 use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
@@ -173,16 +172,6 @@ impl Mesure {
         } else {
             lopdf::Object::Real(self.to_string().parse().unwrap_or_default())
         }
-    }
-
-    /// La longueur en millimètres du dessin (`genpdfi`), pour une mesure en points.
-    pub fn en_mm(self) -> genpdfi::Mm {
-        genpdfi::Mm::de_millioniemes_de_point(self.0)
-    }
-
-    /// La mesure en points d'une longueur du dessin (`genpdfi`), au millionième.
-    pub fn du_mm(mm: genpdfi::Mm) -> Mesure {
-        Mesure(mm.en_millioniemes_de_point())
     }
 
     /// La longueur du vecteur (`self`, `autre`) : la racine de la somme des carrés, au millionième le plus proche.

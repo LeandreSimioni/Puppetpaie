@@ -710,15 +710,8 @@ fn les_polices_embarquees_n_ont_plus_de_hinting_et_gardent_leurs_contours() {
         let face = ttf_parser::Face::parse(&ttf, 0).unwrap();
         let mut avec_contour = 0;
         for g in 1..face.number_of_glyphs() {
-            struct Rien;
-            impl ttf_parser::OutlineBuilder for Rien {
-                fn move_to(&mut self, _: f32, _: f32) {}
-                fn line_to(&mut self, _: f32, _: f32) {}
-                fn quad_to(&mut self, _: f32, _: f32, _: f32, _: f32) {}
-                fn curve_to(&mut self, _: f32, _: f32, _: f32, _: f32, _: f32, _: f32) {}
-                fn close(&mut self) {}
-            }
-            if face.outline_glyph(ttf_parser::GlyphId(g), &mut Rien).is_some() {
+            // Un glyphe dessine a une boite ; un glyphe vide n'en a pas.
+            if face.glyph_bounding_box(ttf_parser::GlyphId(g)).is_some() {
                 avec_contour += 1;
             }
         }

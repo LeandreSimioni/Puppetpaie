@@ -4,6 +4,8 @@ pub mod alleger;
 pub mod assemblage;
 pub mod chiffrement;
 pub mod description;
+mod dessin;
+mod ecriture;
 pub mod forme;
 pub mod formulaire;
 pub mod glyphes;
@@ -15,6 +17,7 @@ pub mod mesure;
 pub mod mise_en_page;
 pub mod modele;
 pub mod polices;
+mod sous_ensemble;
 pub mod style_contrat;
 pub mod texte;
 

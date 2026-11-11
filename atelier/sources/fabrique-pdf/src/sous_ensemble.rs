@@ -1,12 +1,4 @@
-// Fichier modifié pour PuppetPaie (copie locale de genpdfi 0.2.7, Apache-2.0 OU MIT) :
-// voir MODIFICATIONS.md à la racine de cette copie.
-//! Polices embarquées en sous-ensemble (modification PuppetPaie, nouveau module).
-//!
-//! printpdf embarque la police entière (350 Ko par fichier de Liberation) et une table
-//! `ToUnicode` de tous ses glyphes — en parcourant tout l'espace Unicode, ce qui prend 70 ms par
-//! police. On lui donne donc à la place une **doublure** (`doublure`) : la police réduite au seul
-//! `.notdef`, marquée d'un numéro. `embed_subsets` la retrouve dans le fichier écrit et réécrit
-//! la police pour que le PDF ne porte que les glyphes réellement imprimés :
+//! Les polices embarquées en sous-ensemble : un PDF ne porte que les glyphes réellement imprimés.
 //!
 //! - le texte est écrit avec des codes de deux octets qui sont le **point de code Unicode**
 //!   (`Identity-H`) ; `CIDToGIDMap` les traduit vers les glyphes du sous-ensemble ;
@@ -18,47 +10,26 @@
 
 use std::collections::BTreeSet;
 use std::convert::TryInto;
-use std::sync::Arc;
 
-use printpdf::lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat};
+use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat};
 
-use crate::error::{Error, ErrorKind};
+use crate::description::Refus;
+use crate::mesure::Mesure;
 
-fn interne(message: String) -> Error {
-    Error::new(message, ErrorKind::Internal)
+fn interne(message: String) -> Refus {
+    Refus(message)
 }
 
-/// Une police en sous-ensemble : la doublure donnée à printpdf, le fichier de police entier et
-/// les caractères imprimés (vide : aucun texte ne l'a employée).
-pub struct SubsetFace {
-    /// La doublure (`doublure`).
-    pub stub: Vec<u8>,
-    /// Le fichier de police (TTF).
-    pub data: Arc<Vec<u8>>,
-    /// Les caractères imprimés, triés.
-    pub chars: BTreeSet<char>,
-}
-
-/// La doublure du fichier de police `donnees`, numéro `numero` : son seul `.notdef`, suivi d'une
-/// marque (les octets en trop après les tables sont ignorés par les lecteurs de polices). Deux
-/// polices n'ont jamais la même doublure, grâce au numéro.
-pub(crate) fn doublure(donnees: &[u8], numero: u32) -> Result<Vec<u8>, Error> {
-    let (mut octets, _) = decouper_ttf(donnees, &[])?;
-    octets.extend_from_slice(b"\0puppetpaie-sous-ensemble\0");
-    octets.extend_from_slice(&numero.to_be_bytes());
-    Ok(octets)
-}
-
-/// Les trois objets que printpdf écrit pour une police externe : la police `Type0`, son
-/// descripteur et son flux de police.
-struct PolicePrintpdf {
+/// Les objets d'une police embarquée : la police `Type0`, son descripteur, son fichier et sa table
+/// `ToUnicode`.
+struct ObjetsDePolice {
     type0: ObjectId,
     descripteur: ObjectId,
     fichier: ObjectId,
     tounicode: ObjectId,
 }
 
-fn objets_de(pdf: &Document, id: ObjectId) -> Option<PolicePrintpdf> {
+fn objets_de(pdf: &Document, id: ObjectId) -> Option<ObjetsDePolice> {
     let type0 = pdf.get_dictionary(id).ok()?;
     if type0.get(b"Subtype").ok()?.as_name().ok()? != b"Type0" {
         return None;
@@ -77,7 +48,7 @@ fn objets_de(pdf: &Document, id: ObjectId) -> Option<PolicePrintpdf> {
         .as_reference()
         .ok()?;
     let tounicode = type0.get(b"ToUnicode").ok()?.as_reference().ok()?;
-    Some(PolicePrintpdf {
+    Some(ObjetsDePolice {
         type0: id,
         descripteur,
         fichier,
@@ -85,7 +56,7 @@ fn objets_de(pdf: &Document, id: ObjectId) -> Option<PolicePrintpdf> {
     })
 }
 
-/// Les octets du fichier de police que printpdf a embarqué.
+/// Les octets (décomprimés) d'un flux.
 fn octets_du_flux(pdf: &Document, id: ObjectId) -> Option<Vec<u8>> {
     let flux = pdf.get_object(id).ok()?.as_stream().ok()?;
     Some(
@@ -149,41 +120,10 @@ fn table_tounicode(caracteres: &BTreeSet<char>) -> String {
     t
 }
 
-/// Coupe chaque doublure de `pdf` aux caractères imprimés de sa police. Une police externe qui
-/// n'est la doublure d'aucune reste telle que printpdf l'a écrite.
-pub(crate) fn embed_subsets(pdf: &mut Document, sous_ensembles: &[SubsetFace]) -> Result<(), Error> {
-    if sous_ensembles.is_empty() {
-        return Ok(());
-    }
-    let ids: Vec<ObjectId> = pdf.objects.keys().copied().collect();
-    for id in ids {
-        let objets = match objets_de(pdf, id) {
-            Some(o) => o,
-            None => continue,
-        };
-        let doublure = match octets_du_flux(pdf, objets.fichier) {
-            Some(d) => d,
-            None => continue,
-        };
-        let face = match sous_ensembles.iter().find(|f| f.stub == doublure) {
-            Some(f) => f,
-            None => continue,
-        };
-        if face.chars.is_empty() {
-            // Une police qu'aucun texte n'emploie : elle sort du fichier.
-            retirer_des_ressources(pdf, objets.type0);
-        } else {
-            couper(pdf, &objets, &face.data, &face.chars)?;
-        }
-    }
-    Ok(())
-}
-
-/// Ajoute à un PDF **existant** la police `donnees` réduite aux caractères `caracteres` (même
-/// sous-ensemble, mêmes codes `Identity-H` = point de code, même table `ToUnicode` que dans les PDF
-/// de la fabrique) et rend l'objet de la police `Type0`, à mettre dans les `/Font` d'une page.
-/// Les flux (police, `CIDToGIDMap`, `ToUnicode`) sont comprimés.
-pub fn embarquer(pdf: &mut Document, donnees: &[u8], caracteres: &BTreeSet<char>) -> Result<ObjectId, Error> {
+/// Ajoute au PDF `pdf` la police `donnees` réduite aux caractères `caracteres` (codes `Identity-H` = point de
+/// code, table `ToUnicode` d'identité) et rend l'objet de la police `Type0`, à mettre dans les `/Font` d'une
+/// page. Les flux (police, `CIDToGIDMap`, `ToUnicode`) sont comprimés.
+pub fn embarquer(pdf: &mut Document, donnees: &[u8], caracteres: &BTreeSet<char>) -> Result<ObjectId, Refus> {
     if caracteres.is_empty() {
         return Err(interne("aucun caractère à embarquer".to_string()));
     }
@@ -198,7 +138,7 @@ pub fn embarquer(pdf: &mut Document, donnees: &[u8], caracteres: &BTreeSet<char>
     t0.set("Encoding", Object::Name(b"Identity-H".to_vec()));
     t0.set("ToUnicode", Object::Reference(tounicode));
     let type0 = pdf.add_object(Object::Dictionary(t0));
-    let objets = PolicePrintpdf { type0, descripteur, fichier, tounicode };
+    let objets = ObjetsDePolice { type0, descripteur, fichier, tounicode };
     couper(pdf, &objets, donnees, caracteres)?;
     comprimer_police(pdf, &objets);
     Ok(type0)
@@ -288,14 +228,14 @@ pub fn polices_de_la_fabrique(pdf: &Document, donnees: &[u8]) -> Vec<(ObjectId, 
 /// Élargit la police `type0` de la fabrique (`polices_de_la_fabrique`) à `caracteres` : le sous-ensemble est
 /// refait de ces caractères, sous les mêmes objets ; les codes ne changent pas (le point de code), donc
 /// le texte déjà écrit avec elle se lit pareil. Les flux sont comprimés.
-pub fn elargir(pdf: &mut Document, type0: ObjectId, donnees: &[u8], caracteres: &BTreeSet<char>) -> Result<(), Error> {
+pub fn elargir(pdf: &mut Document, type0: ObjectId, donnees: &[u8], caracteres: &BTreeSet<char>) -> Result<(), Refus> {
     let objets = objets_de(pdf, type0).ok_or_else(|| interne("police introuvable".to_string()))?;
     couper(pdf, &objets, donnees, caracteres)?;
     comprimer_police(pdf, &objets);
     Ok(())
 }
 
-fn comprimer_police(pdf: &mut Document, objets: &PolicePrintpdf) {
+fn comprimer_police(pdf: &mut Document, objets: &ObjetsDePolice) {
     let gid = pdf
         .get_dictionary(objets.type0)
         .ok()
@@ -312,46 +252,17 @@ fn comprimer_police(pdf: &mut Document, objets: &PolicePrintpdf) {
     }
 }
 
-/// Retire la police `id` des ressources (`/Font`) des pages : toute entrée de dictionnaire qui y
-/// renvoie (seuls les dictionnaires de polices le font). Ses objets, que plus rien n'atteint,
-/// sont élagués ensuite.
-fn retirer_des_ressources(pdf: &mut Document, id: ObjectId) {
-    fn parcourir(o: &mut Object, id: ObjectId) {
-        match o {
-            Object::Dictionary(d) => nettoyer(d, id),
-            Object::Stream(s) => nettoyer(&mut s.dict, id),
-            Object::Array(a) => a.iter_mut().for_each(|x| parcourir(x, id)),
-            _ => {}
-        }
-    }
-    fn nettoyer(d: &mut Dictionary, id: ObjectId) {
-        let noms: Vec<Vec<u8>> = d
-            .iter()
-            .filter(|(_, v)| matches!(v, Object::Reference(r) if *r == id))
-            .map(|(k, _)| k.clone())
-            .collect();
-        for n in noms {
-            d.remove(&n);
-        }
-        for (_, v) in d.iter_mut() {
-            parcourir(v, id);
-        }
-    }
-    for objet in pdf.objects.values_mut() {
-        parcourir(objet, id);
-    }
-}
-
 fn couper(
     pdf: &mut Document,
-    objets: &PolicePrintpdf,
+    objets: &ObjetsDePolice,
     donnees: &[u8],
     caracteres: &BTreeSet<char>,
-) -> Result<(), Error> {
+) -> Result<(), Refus> {
     let face = ttf_parser::Face::parse(donnees, 0)
         .map_err(|e| interne(format!("Failed to parse font: {:?}", e)))?;
-    let echelle = 1000.0 / face.units_per_em() as f32;
-    let en_mille = |v: f32| (v * echelle).round() as i64;
+    // Une mesure en unités de la police, en millièmes d'em, à l'entier le plus proche.
+    let upem = face.units_per_em() as i64;
+    let en_mille = |v: i64| Mesure::entier(v).fois_rapport(1000, upem).map_or(0, Mesure::arrondi);
 
     // Les glyphes dans l'ordre des caractères : le .notdef d'abord, puis un par caractère.
     let mut voulus: Vec<u16> = Vec::new();
@@ -384,7 +295,7 @@ fn couper(
     for (code, origine, _) in &glyphes {
         let l = face
             .glyph_hor_advance(ttf_parser::GlyphId(*origine))
-            .unwrap_or(0) as f32;
+            .unwrap_or(0) as i64;
         largeurs.push(Object::Integer(*code as i64));
         largeurs.push(Object::Array(vec![Object::Integer(en_mille(l))]));
     }
@@ -420,15 +331,16 @@ fn couper(
 
     // Le descripteur.
     let bbox = face.global_bounding_box();
-    let angle = face.italic_angle().unwrap_or(0.0);
+    // L'angle de l'italique, que `ttf_parser` rend en flottant : lu par son texte.
+    let angle = face.italic_angle().and_then(Mesure::par_son_texte).unwrap_or(Mesure::ZERO);
     let mut drapeaux = 32; // jeu de caractères non symbolique
     if face.is_monospaced() {
         drapeaux |= 1;
     }
-    if face.is_italic() || angle != 0.0 {
+    if face.is_italic() || !angle.est_nulle() {
         drapeaux |= 64;
     }
-    let hauteur_capitale = face.capital_height().map(|h| h as f32).unwrap_or(face.ascender() as f32);
+    let hauteur_capitale = face.capital_height().unwrap_or(face.ascender()) as i64;
     let mut descripteur = Dictionary::new();
     descripteur.set("Type", Object::Name(b"FontDescriptor".to_vec()));
     descripteur.set("FontName", Object::Name(nom.clone().into_bytes()));
@@ -436,15 +348,15 @@ fn couper(
     descripteur.set(
         "FontBBox",
         Object::Array(vec![
-            Object::Integer(en_mille(bbox.x_min as f32)),
-            Object::Integer(en_mille(bbox.y_min as f32)),
-            Object::Integer(en_mille(bbox.x_max as f32)),
-            Object::Integer(en_mille(bbox.y_max as f32)),
+            Object::Integer(en_mille(bbox.x_min as i64)),
+            Object::Integer(en_mille(bbox.y_min as i64)),
+            Object::Integer(en_mille(bbox.x_max as i64)),
+            Object::Integer(en_mille(bbox.y_max as i64)),
         ]),
     );
-    descripteur.set("ItalicAngle", Object::Integer(angle.round() as i64));
-    descripteur.set("Ascent", Object::Integer(en_mille(face.ascender() as f32)));
-    descripteur.set("Descent", Object::Integer(en_mille(face.descender() as f32)));
+    descripteur.set("ItalicAngle", Object::Integer(angle.arrondi()));
+    descripteur.set("Ascent", Object::Integer(en_mille(face.ascender() as i64)));
+    descripteur.set("Descent", Object::Integer(en_mille(face.descender() as i64)));
     descripteur.set("CapHeight", Object::Integer(en_mille(hauteur_capitale)));
     descripteur.set("StemV", Object::Integer(if face.is_bold() { 140 } else { 80 }));
     descripteur.set("FontFile2", Object::Reference(objets.fichier));
@@ -507,7 +419,7 @@ fn somme_de_controle(table: &[u8]) -> u32 {
 /// Seules les polices à contours TrueType (`glyf`) sont prises en charge ; les contours, les
 /// instructions de hinting et les tables `cvt `, `fpgm`, `prep` sont recopiés tels quels. Le
 /// résultat ne dépend que de l'entrée : mêmes glyphes, mêmes octets.
-pub(crate) fn decouper_ttf(donnees: &[u8], voulus: &[u16]) -> Result<(Vec<u8>, Vec<u16>), Error> {
+fn decouper_ttf(donnees: &[u8], voulus: &[u16]) -> Result<(Vec<u8>, Vec<u16>), Refus> {
     let illisible = || interne("Failed to read the TrueType font".to_string());
     let nombre = u16_en(donnees, 4).ok_or_else(illisible)? as usize;
     let table = |nom: &[u8; 4]| -> Option<&[u8]> {

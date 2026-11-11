@@ -1,6 +1,4 @@
-// Fichier modifié pour PuppetPaie (copie locale de genpdfi 0.2.7, Apache-2.0 OU MIT) :
-// voir MODIFICATIONS.md à la racine de cette copie.
-//! L'écriture d'un PDF au plus court (modification PuppetPaie, nouveau module).
+//! L'écriture d'un PDF au plus court.
 //!
 //! Deux écritures, et pas d'autre dans la fabrique :
 //!
@@ -13,12 +11,17 @@
 //!   suit la forme de celle d'avant (un flux si le fichier en a un, une table classique sinon).
 //!
 //! Le résultat ne dépend que de l'entrée : mêmes objets, mêmes octets.
+//!
+//! S'y ajoutent ce qui prépare un document fabriqué à son écriture : les pixels d'une image comprimés avec les
+//! prédicteurs PNG (`predire_image`) et l'ordre canonique des objets (`canonique`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Write;
 
-use printpdf::lopdf::xref::XrefEntry;
-use printpdf::lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat};
+use lopdf::xref::XrefEntry;
+use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat};
+
+use crate::mesure::{mesure, Mesure};
 
 /// Le nombre d'objets d'un flux d'objets : un lecteur décompresse le flux entier pour en lire un.
 const PAR_FLUX: usize = 400;
@@ -29,7 +32,7 @@ pub fn ecrire_objet(out: &mut Vec<u8>, o: &Object) {
         Object::Null => out.extend_from_slice(b"null"),
         Object::Boolean(b) => out.extend_from_slice(if *b { b"true" } else { b"false" }),
         Object::Integer(i) => out.extend_from_slice(i.to_string().as_bytes()),
-        Object::Real(r) => out.extend_from_slice(reel(*r).as_bytes()),
+        Object::Real(r) => out.extend_from_slice(reel(r).as_bytes()),
         Object::Name(n) => nom(out, n),
         Object::String(t, StringFormat::Literal) => litteral(out, t),
         Object::String(t, StringFormat::Hexadecimal) => {
@@ -62,13 +65,11 @@ pub fn ecrire_objet(out: &mut Vec<u8>, o: &Object) {
     }
 }
 
-/// Un réel au plus court : sans zéros ni point inutiles (`1.5`, `2`, `-0.25`).
-fn reel(r: f32) -> String {
-    if !r.is_finite() {
-        return "0".into();
-    }
-    let s = format!("{}", r);
-    if s == "-0" {
+/// Un réel de `lopdf` (qui le garde en flottant), écrit par son texte au plus court : sans zéros ni point
+/// inutiles (`1.5`, `2`, `-0.25`) ; ce qui n'est pas un nombre fini s'écrit `0`.
+fn reel(r: impl std::fmt::Display) -> String {
+    let s = r.to_string();
+    if s == "-0" || s.bytes().any(|b| b.is_ascii_alphabetic()) {
         "0".into()
     } else {
         s
@@ -271,8 +272,8 @@ fn queue_reprise(trailer: &Dictionary) -> Dictionary {
 
 /// La version écrite : au moins 1.5 (les flux d'objets).
 fn version(v: &str) -> String {
-    let n: f32 = v.trim().parse().unwrap_or(1.5);
-    if n < 1.5 {
+    let n = Mesure::lue(v).unwrap_or(mesure("1.5"));
+    if n < mesure("1.5") {
         "1.5".into()
     } else {
         v.trim().to_string()
@@ -381,4 +382,188 @@ pub fn ajouter(avant: &[u8], doc_avant: &Document, apres: &Document) -> Vec<u8> 
         table_classique(&mut out, &table, libre, queue, false);
     }
     out
+}
+
+/// Les pixels d'une image (8 bits par composante, gris ou RVB) comprimés avec les prédicteurs PNG avant le Flate :
+/// chaque ligne s'écrit avec le filtre PNG qui donne la plus petite somme des écarts, et le flux le dit
+/// (`DecodeParms`, `Predictor 15`, PDF 1.7 § 7.4.4.4). Un Flate seul garde presque entiers un dégradé ou un bord
+/// lissé. Tout autre flux reste tel quel, de même qu'une image que le Flate seul écrit déjà plus court.
+pub fn predire_image(s: &mut Stream) {
+    let name = |s: &Stream, k: &[u8]| s.dict.get(k).ok().and_then(|o| o.as_name().ok()).map(|n| n.to_vec());
+    let int = |s: &Stream, k: &[u8]| s.dict.get(k).ok().and_then(|o| o.as_i64().ok());
+    if name(s, b"Subtype").as_deref() != Some(b"Image") || s.dict.get(b"DecodeParms").is_ok() {
+        return;
+    }
+    let raw = match s.dict.get(b"Filter").ok() {
+        None => s.content.clone(),
+        Some(f) => {
+            let flate = match f {
+                Object::Name(n) => n.as_slice() == b"FlateDecode",
+                Object::Array(a) => a.len() == 1 && a[0].as_name().ok() == Some(&b"FlateDecode"[..]),
+                _ => false,
+            };
+            if !flate {
+                return;
+            }
+            let mut out = Vec::new();
+            use std::io::Read as _;
+            if flate2::read::ZlibDecoder::new(&s.content[..]).read_to_end(&mut out).is_err() {
+                return;
+            }
+            out
+        }
+    };
+    let colors = match name(s, b"ColorSpace").as_deref() {
+        Some(b"DeviceRGB") => 3usize,
+        Some(b"DeviceGray") => 1,
+        _ => return,
+    };
+    let (Some(w), Some(h), Some(8)) = (int(s, b"Width"), int(s, b"Height"), int(s, b"BitsPerComponent")) else { return };
+    let (w, h) = (w as usize, h as usize);
+    let row = w * colors;
+    if w == 0 || h == 0 || raw.len() != row * h {
+        return;
+    }
+    let mut filtered = Vec::with_capacity((row + 1) * h);
+    let zero = vec![0u8; row];
+    let mut candidate = vec![0u8; row];
+    let mut best = vec![0u8; row];
+    for y in 0..h {
+        let cur = &raw[y * row..(y + 1) * row];
+        let up = if y == 0 { &zero[..] } else { &raw[(y - 1) * row..y * row] };
+        let mut best_type = 0u8;
+        let mut best_score = u64::MAX;
+        for t in 0..5u8 {
+            for i in 0..row {
+                let a = if i >= colors { cur[i - colors] } else { 0 };
+                let b = up[i];
+                let c = if i >= colors { up[i - colors] } else { 0 };
+                let p = match t {
+                    0 => 0,
+                    1 => a,
+                    2 => b,
+                    3 => ((a as u16 + b as u16) / 2) as u8,
+                    _ => paeth(a, b, c),
+                };
+                candidate[i] = cur[i].wrapping_sub(p);
+            }
+            let score: u64 = candidate.iter().map(|&v| (v as i8).unsigned_abs() as u64).sum();
+            if score < best_score {
+                best_score = score;
+                best_type = t;
+                best.copy_from_slice(&candidate);
+            }
+        }
+        filtered.push(best_type);
+        filtered.extend_from_slice(&best);
+    }
+    let packed = comprimer(&filtered);
+    if s.dict.get(b"Filter").is_ok() && packed.len() >= s.content.len() {
+        return;
+    }
+    let mut parms = Dictionary::new();
+    parms.set("Predictor", Object::Integer(15));
+    parms.set("Colors", Object::Integer(colors as i64));
+    parms.set("BitsPerComponent", Object::Integer(8));
+    parms.set("Columns", Object::Integer(w as i64));
+    s.dict.set("Filter", Object::Name(b"FlateDecode".to_vec()));
+    s.dict.set("DecodeParms", Object::Dictionary(parms));
+    s.set_content(packed);
+}
+
+/// Le prédicteur PNG de Paeth.
+fn paeth(a: u8, b: u8, c: u8) -> u8 {
+    let p = a as i16 + b as i16 - c as i16;
+    let (pa, pb, pc) = ((p - a as i16).abs(), (p - b as i16).abs(), (p - c as i16).abs());
+    if pa <= pb && pa <= pc {
+        a
+    } else if pb <= pc {
+        b
+    } else {
+        c
+    }
+}
+
+/// Les numéros d'objets que `o` cite.
+pub fn references(o: &Object, out: &mut Vec<ObjectId>) {
+    match o {
+        Object::Reference(id) => out.push(*id),
+        Object::Dictionary(d) => d.iter().for_each(|(_, v)| references(v, out)),
+        Object::Stream(s) => s.dict.iter().for_each(|(_, v)| references(v, out)),
+        Object::Array(a) => a.iter().for_each(|v| references(v, out)),
+        _ => {}
+    }
+}
+
+/// Le document dans un ordre canonique : les clés de chaque dictionnaire triées, et les objets numérotés dans
+/// l'ordre où un parcours depuis la queue les rencontre (ce qu'aucun parcours n'atteint sort du fichier). Le même
+/// document s'écrit alors toujours avec les mêmes octets.
+pub fn canonique(pdf: &mut Document) {
+    fn trier_dict(d: &mut Dictionary) {
+        for (_, v) in d.iter_mut() {
+            trier(v);
+        }
+        let mut entrees: Vec<(Vec<u8>, Object)> = d.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        entrees.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut triee = Dictionary::new();
+        for (k, v) in entrees {
+            triee.set(k, v);
+        }
+        *d = triee;
+    }
+    fn trier(o: &mut Object) {
+        match o {
+            Object::Dictionary(d) => trier_dict(d),
+            Object::Stream(s) => trier_dict(&mut s.dict),
+            Object::Array(a) => a.iter_mut().for_each(trier),
+            _ => {}
+        }
+    }
+    fn renumeroter(o: &mut Object, table: &HashMap<ObjectId, ObjectId>) {
+        match o {
+            Object::Reference(id) => {
+                if let Some(n) = table.get(id) {
+                    *id = *n;
+                }
+            }
+            Object::Dictionary(d) => d.iter_mut().for_each(|(_, v)| renumeroter(v, table)),
+            Object::Stream(s) => s.dict.iter_mut().for_each(|(_, v)| renumeroter(v, table)),
+            Object::Array(a) => a.iter_mut().for_each(|v| renumeroter(v, table)),
+            _ => {}
+        }
+    }
+
+    trier_dict(&mut pdf.trailer);
+    for o in pdf.objects.values_mut() {
+        trier(o);
+    }
+    // Le parcours en profondeur, dans une pile.
+    let mut ordre: Vec<ObjectId> = Vec::new();
+    let mut vus: std::collections::HashSet<ObjectId> = Default::default();
+    let mut racines = Vec::new();
+    pdf.trailer.iter().for_each(|(_, v)| references(v, &mut racines));
+    let mut pile: Vec<ObjectId> = racines.into_iter().rev().collect();
+    while let Some(id) = pile.pop() {
+        if !vus.insert(id) {
+            continue;
+        }
+        if let Some(o) = pdf.objects.get(&id) {
+            ordre.push(id);
+            let mut enfants = Vec::new();
+            references(o, &mut enfants);
+            pile.extend(enfants.into_iter().rev());
+        }
+    }
+    let table: HashMap<ObjectId, ObjectId> =
+        ordre.iter().enumerate().map(|(i, id)| (*id, (i as u32 + 1, 0))).collect();
+    let mut objets = BTreeMap::new();
+    for (ancien, mut o) in std::mem::take(&mut pdf.objects) {
+        if let Some(neuf) = table.get(&ancien) {
+            renumeroter(&mut o, &table);
+            objets.insert(*neuf, o);
+        }
+    }
+    pdf.objects = objets;
+    pdf.trailer.iter_mut().for_each(|(_, v)| renumeroter(v, &table));
+    pdf.max_id = ordre.len() as u32;
 }

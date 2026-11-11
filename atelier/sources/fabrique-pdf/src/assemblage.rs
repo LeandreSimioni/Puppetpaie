@@ -119,7 +119,7 @@ pub fn assembler(a: &Assemblage) -> Result<(Vec<u8>, bool), Refus> {
     fusionner_identiques(&mut sortie, &[id_pages, id_racine]);
     sortie.renumber_objects();
     sortie.compress();
-    let octets = genpdfi::pdf_ecriture::compact(&sortie);
+    let octets = crate::ecriture::compact(&sortie);
     Ok((octets, verrouille))
 }
 

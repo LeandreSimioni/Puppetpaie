@@ -445,10 +445,10 @@ le corps, donc ne changent pas les sauts de page.
   n'existe pas dans la police Liberation`.
 - **Le plus léger possible, sans rien perdre** : un document fabriqué (ou assemblé) s'écrit en PDF 1.5, les objets
   qui ne sont pas des flux (polices et leurs largeurs, pages, champs) dans des flux d'objets comprimés et la table
-  des références en flux comprimé (`genpdfi::pdf_ecriture::compact`, ISO 32000-1, 7.5.7 et 7.5.8) ; une police n'y est
+  des références en flux comprimé (`ecriture::compact`, ISO 32000-1, 7.5.7 et 7.5.8) ; une police n'y est
   qu'une fois par fichier de police, en sous-ensemble sans hinting, sa table `ToUnicode` en plages. Ce qui s'ajoute à
   un PDF reçu (`--remplir`, `marquage::contresigner`) ne réécrit pas ses octets : une mise à jour incrémentale
-  (`genpdfi::pdf_ecriture::ajouter`).
+  (`ecriture::ajouter`).
 - Un texte à position fixe tombe à ses coordonnées à 0,1 pt près (tests).
 - Même description, même PDF à l'octet près (aucune date variable dans le
   fichier, aucun nom de sous-ensemble tiré au hasard : l'étiquette
@@ -643,8 +643,7 @@ Chiffré : `"chiffrement": {"filtre": "Standard", "V": 5, "R": 6, "longueur": 25
   l'apparence des annotations et celles sans `/BaseFont` (Type 3) n'en font pas partie.
 - **`metadonnees`.** Le dictionnaire `/Info`, tel quel (clés de l'auteur du PDF : `Title`,
   `Producer`, `CreationDate`…), les chaînes **décodées** : UTF-16BE ou UTF-16LE avec marque, UTF-8
-  (avec marque, ou sans quand les octets en sont de l'UTF-8 valide : printpdf écrit ainsi le titre
-  de nos PDF), sinon PDFDocEncoding ; les noms et les nombres sont rendus en texte. `{}` s'il n'y a
+  (avec marque, ou sans quand les octets en sont de l'UTF-8 valide), sinon PDFDocEncoding ; les noms et les nombres sont rendus en texte. `{}` s'il n'y a
   pas de `/Info`. (`doc.metadata` de PyMuPDF renomme les clés en minuscules et remplit les absentes
   de `""` : le Python qui s'y appuyait lit ici `metadonnees.get("Title", "")`.)
 
