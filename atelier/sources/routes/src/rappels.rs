@@ -11,7 +11,6 @@
 //! (`config/echeancier.json`) sont une forme declaree ici, lue une fois (`socle::forme::lire`). Un refus porte sa `classe`.
 
 use droit::fiche::Lue as _;
-use socle::date::jj_mm_aaaa;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -1325,14 +1324,13 @@ fn rappel_d_obligation(o: &crate::obligations::Obligation, cle: String, titre: S
 /// des que la DPAE reelle est au journal.
 fn rappels_dpae(st: &Etat) -> R<Vec<Echeance>> {
     let aujourdhui = st.aujourdhui;
-    let mut jours: BTreeMap<(Mois, String), Vec<crate::etapes::DpaeDue>> = BTreeMap::new();
+    let mut jours: BTreeMap<(Mois, Jour), Vec<crate::etapes::DpaeDue>> = BTreeMap::new();
     for e in crate::etapes::Moteur::nouveau(st.ctx).embauches_a_declarer(None)? {
-        jours.entry((e.mois, e.debut.clone())).or_default().push(e);
+        jours.entry((e.mois, e.debut)).or_default().push(e);
     }
 
     let mut out = Vec::new();
-    for ((mois, debut), groupe) in jours {
-        let jour = Jour::lire(&debut)?;
+    for ((mois, jour), groupe) in jours {
         let retard = jour < aujourdhui;
         let noms = groupe
             .iter()
@@ -1343,7 +1341,7 @@ fn rappels_dpae(st: &Etat) -> R<Vec<Echeance>> {
             .collect::<Vec<_>>()
             .join(", ");
         let quand = if retard {
-            format!("L'embauche a commencé le {} : la DPAE est EN RETARD, à envoyer tout de suite.", jj_mm_aaaa(&debut))
+            format!("L'embauche a commencé le {} : la DPAE est EN RETARD, à envoyer tout de suite.", jour.jj_mm_aaaa())
         } else if jour == aujourdhui {
             "L'embauche est aujourd'hui : la DPAE doit partir avant la première heure de travail.".to_string()
         } else {
@@ -1356,8 +1354,8 @@ fn rappels_dpae(st: &Etat) -> R<Vec<Echeance>> {
         };
         let mut r = Echeance::nouveau(
             DPAE,
-            format!("dpae:{}", debut),
-            format!("DPAE à envoyer — embauche du {}", jj_mm_aaaa(&debut)),
+            format!("dpae:{}", jour.iso()),
+            format!("DPAE à envoyer — embauche du {}", jour.jj_mm_aaaa()),
             format!("Pas de trace d'envoi pour : {}.", noms),
             Some(jour.mois_civil()),
         );

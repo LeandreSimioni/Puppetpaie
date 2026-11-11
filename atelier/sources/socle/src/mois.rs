@@ -203,12 +203,41 @@ pub enum MoisOuJour {
     Jour(Jour),
 }
 
+impl MoisOuJour {
+    /// Son mois : le mois meme, ou celui du jour.
+    pub fn mois(self) -> Mois {
+        match self {
+            MoisOuJour::Mois(m) => m,
+            MoisOuJour::Jour(j) => j.mois_civil(),
+        }
+    }
+}
+
 impl std::fmt::Display for MoisOuJour {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             MoisOuJour::Mois(m) => m.fmt(f),
             MoisOuJour::Jour(j) => f.write_str(&j.iso()),
         }
+    }
+}
+
+/// Deux se comparent comme leurs textes : un mois precede les jours de ce mois.
+impl PartialOrd for MoisOuJour {
+    fn partial_cmp(&self, autre: &MoisOuJour) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(autre))
+    }
+}
+
+impl Ord for MoisOuJour {
+    fn cmp(&self, autre: &MoisOuJour) -> std::cmp::Ordering {
+        self.to_string().cmp(&autre.to_string())
+    }
+}
+
+impl serde::Serialize for MoisOuJour {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_string())
     }
 }
 

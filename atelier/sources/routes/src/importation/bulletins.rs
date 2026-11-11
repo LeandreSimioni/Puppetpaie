@@ -862,7 +862,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         Dsn(usize),
         Historique((Mois, String, String)),
     }
-    let mut index: HashMap<(String, String, String), Vec<(Mois, String, Cible)>> = HashMap::new();
+    let mut index: HashMap<(String, Jour, Jour), Vec<(Mois, String, Cible)>> = HashMap::new();
     // LA PAIE D'UN CONTRAT QUI COURT AU-DELA DU MOIS (un permanent) : la DSN la date des bornes du contrat
     // (S21.G00.40.001 et .010, un CDI sans fin), le bulletin de la periode payee ; les dates ne la rapprochent donc pas.
     // Le numero du contrat (S21.G00.40.009, que le versement rappelle en S21.G00.51.010) et le mois, si : un bulletin qui
@@ -871,15 +871,15 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // Sans numero imprime, la regle de l'ecriture (`import::ecrite::rapprocher`, « un contrat a cheval sur deux mois ») :
     // le bulletin complete la paie declaree du meme mois dont le contrat contient sa periode, quand il n'y en a qu'une.
     // (debut, fin, contrat, cible) ; une fin absente : le contrat court encore.
-    let mut par_mois: HashMap<(String, Mois), Vec<(String, Option<String>, String, Cible)>> = HashMap::new();
+    let mut par_mois: HashMap<(String, Mois), Vec<(Jour, Option<Jour>, String, Cible)>> = HashMap::new();
     let mut vus: HashSet<(Mois, String, String)> = HashSet::new();
     // (mois, NIR, contrat, debut, fin) d'une paie. Une paie sans NIR ne se rattache a aucun bulletin.
-    let reperes = |x: &PaieLue| (x.mois, x.paie.nir.clone(), x.paie.contrat.clone(), x.paie.debut.map(|j| j.iso()), x.paie.fin.map(|j| j.iso()));
+    let reperes = |x: &PaieLue| (x.mois, x.paie.nir.clone(), x.paie.contrat.clone(), x.paie.debut, x.paie.fin);
     for (k, x) in ap.paies.iter().enumerate() {
         let (mois, Some(nir), contrat, debut, fin) = reperes(x) else { continue };
         vus.insert((mois.clone(), nir.clone(), contrat.clone()));
         if let (Some(d), Some(f)) = (&debut, &fin) {
-            index.entry((nir.clone(), d.clone(), f.clone())).or_default().push((mois.clone(), contrat.clone(), Cible::Dsn(k)));
+            index.entry((nir.clone(), *d, *f)).or_default().push((mois.clone(), contrat.clone(), Cible::Dsn(k)));
         }
         if !contrat.is_empty() {
             par_numero.entry((nir.clone(), mois.clone(), contrat.clone())).or_default().push((mois.clone(), contrat.clone(), Cible::Dsn(k)));
@@ -931,8 +931,8 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 infos.avertissements.push(format!("le bulletin imprime la convention {}, la compagnie relève de la {}", lue, reference));
             }
         }
-        let (debut, fin) = (l.b.debut.iso(), l.b.fin.iso());
-        let mut candidats: Vec<(Mois, String, Cible)> = index.get(&(l.nir.clone(), debut.clone(), fin.clone())).into_iter().flatten().cloned().collect();
+        let (debut, fin) = (l.b.debut, l.b.fin);
+        let mut candidats: Vec<(Mois, String, Cible)> = index.get(&(l.nir.clone(), debut, fin)).into_iter().flatten().cloned().collect();
         if candidats.is_empty() {
             if let Some(n) = l.b.contrat.as_deref().map(str::trim).filter(|n| !n.is_empty()) {
                 candidats = par_numero.get(&(l.nir.clone(), l.mois, n.to_string())).into_iter().flatten().cloned().collect();
@@ -967,7 +967,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let cible = candidats.into_iter().next();
         let ident = match &cible {
             Some((mois, contrat, _)) => format!("paie {} {} {}", mois, l.nir, contrat),
-            None => format!("bulletin {} {} {}", l.nir, debut, fin),
+            None => format!("bulletin {} {} {}", l.nir, debut.iso(), fin.iso()),
         };
         if let Some((autre, page, brut, net)) = prises.get(&ident) {
             let (sort, raison) = if *brut == l.b.brut && *net == l.b.net_a_payer {
@@ -1680,14 +1680,17 @@ fn lisibles_de_la_piece_sur(nom: &str, fiche: &Saisie, proposees: &Saisie) -> R<
 fn fiche_salarie(nir: &str, ls: &[&Lu], idcc: Option<&str>) -> R<Saisie> {
     let mut s = SalarieLu { nir: nir.to_string(), ..SalarieLu::default() };
     for (cle, v, _) in identite(ls) {
-        *s.case(cle) = Some(v);
+        if let Some(case) = s.case(cle) {
+            *case = Some(v);
+        }
     }
+    s.date_naissance = ls.iter().rev().find_map(|l| l.b.salarie.naissance);
     if let Some((rue, cp, commune)) = ls.iter().rev().find_map(|l| adresse_lue(&l.b.salarie.adresse)) {
         s.adresse = Some(rue).filter(|r| !r.is_empty());
         (s.code_postal, s.commune) = (Some(cp), Some(commune));
     }
     s.nir_cle = ls.iter().rev().find_map(|l| l.cle_nir.clone()).or_else(|| declarations::champs::cle_nir(nir));
-    s.date_anciennete = ls.iter().map(|l| l.b.debut).min().map(|j| j.iso());
+    s.date_anciennete = ls.iter().map(|l| l.b.debut).min();
     let statut = ls.iter().rev().find_map(|l| l.b.salarie.statut.as_deref());
     // Une salariee recoit le metier au feminin, comme dans sa fiche (`routes::mois::emploi`) : le sexe que porte son NIR.
     let femme = declarations::ntt::sexe_de(Some(nir), None) == Some("2");
@@ -1706,7 +1709,7 @@ struct SalarieLu {
     #[serde(skip_serializing_if = "Option::is_none")]
     prenom: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    date_naissance: Option<String>,
+    date_naissance: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     num_conges_spectacles: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1720,19 +1723,19 @@ struct SalarieLu {
     #[serde(skip_serializing_if = "Option::is_none")]
     commune: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    date_anciennete: Option<String>,
+    date_anciennete: Option<Jour>,
 }
 
 impl SalarieLu {
-    /// La case d'identite `cle` (`identite`).
-    fn case(&mut self, cle: &'static str) -> &mut Option<String> {
+    /// La case de texte d'identite `cle` (`identite`) ; la date de naissance, un jour, se pose a part.
+    fn case(&mut self, cle: &'static str) -> Option<&mut Option<String>> {
         match cle {
-            "nom" => &mut self.nom,
-            "prenom" => &mut self.prenom,
-            "date_naissance" => &mut self.date_naissance,
-            "num_conges_spectacles" => &mut self.num_conges_spectacles,
-            "emploi" => &mut self.emploi,
-            "code_salarie" => &mut self.code_salarie,
+            "nom" => Some(&mut self.nom),
+            "prenom" => Some(&mut self.prenom),
+            "date_naissance" => None,
+            "num_conges_spectacles" => Some(&mut self.num_conges_spectacles),
+            "emploi" => Some(&mut self.emploi),
+            "code_salarie" => Some(&mut self.code_salarie),
             autre => unreachable!("`identite` ne nomme pas la case {}", autre),
         }
     }
@@ -2085,11 +2088,11 @@ fn fiche_de_certificats(nir: &str, ls: &[&Attestee], idcc: Option<&str>) -> R<Sa
         nom: dernier(&|c| c.nom.clone()),
         prenom: dernier(&|c| c.prenom.clone()),
         // L'AEM dit la date de naissance, et artiste ou technicien par sa case ; le certificat, ni l'un ni l'autre.
-        date_naissance: ls.iter().rev().find_map(|l| l.aem.as_ref().and_then(|a| a.naissance)).map(|n| n.iso()),
+        date_naissance: ls.iter().rev().find_map(|l| l.aem.as_ref().and_then(|a| a.naissance)),
         adresse: adresse.as_ref().map(|a| a.0.clone()).filter(|r| !r.is_empty()),
         code_postal: adresse.as_ref().map(|a| a.1.clone()),
         commune: adresse.as_ref().map(|a| a.2.clone()),
-        date_anciennete: ls.iter().filter_map(|l| l.c.debut).min().map(|j| j.iso()),
+        date_anciennete: ls.iter().filter_map(|l| l.c.debut).min(),
         ..SalarieLu::default()
     };
     let cadre = ls.iter().rev().find_map(|l| l.c.cadre).map(|c| if c { "cadre" } else { "non cadre" });

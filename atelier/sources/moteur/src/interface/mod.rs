@@ -742,7 +742,7 @@ impl Fenetre {
                     // La compagnie ouverte passe sa veille : l'horloge joue dans la route `ouverture` qui suit, et
                     // seulement la (`scenario::rejouer`).
                     use routes::scenario::{Genre, Geste};
-                    e.geste(|| Ok(((), Geste { jour: Some(jour.iso()), veille: ouverte.is_some().then_some(true), ..Geste::du_banc(Genre::Jour) })))?;
+                    e.geste(|| Ok(((), Geste { jour: Some(jour), veille: ouverte.is_some().then_some(true), ..Geste::du_banc(Genre::Jour) })))?;
                 }
                 self.ecrire(&format!("Banc d'essai : le calendrier avance au {}.\n", jour.iso()));
                 let veille = match phase {
@@ -1308,7 +1308,7 @@ fn poser_le_banc(args: &[String]) -> R<Vec<String>> {
         // `scenario::verifier` le controle. Le banc n'est jamais un poste.
         socle::temps::aleas_fixes();
         use routes::scenario::{Genre, Geste};
-        e.geste(|| Ok(((), Geste { jour: Some(socle::temps::jour_de_paris().iso()), logiciel: Some(version()), format: Some(routes::scenario::FORMAT), ..Geste::du_banc(Genre::Debut) })))?;
+        e.geste(|| Ok(((), Geste { jour: Some(socle::temps::jour_de_paris()), logiciel: Some(version()), format: Some(routes::scenario::FORMAT), ..Geste::du_banc(Genre::Debut) })))?;
     }
     Ok(reste)
 }

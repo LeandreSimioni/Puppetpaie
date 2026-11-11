@@ -1262,8 +1262,8 @@ pub struct DpaeDue {
     pub numero: NumeroContrat,
     pub nom: String,
     pub spectacle: Option<String>,
-    pub debut: String,
-    pub fin: Option<String>,
+    pub debut: Jour,
+    pub fin: Option<Jour>,
     pub empreinte: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pourquoi: Option<String>,
@@ -2380,7 +2380,6 @@ impl<'a> Moteur<'a> {
                     Some(r) => r.iter().filter(|a| matches!(a, ARefaire::Dpae { .. })).cloned().collect(),
                     None => engagement::etats::a_refaire_parmi(self.ctx, v, &departs, &|s| s == engagement::departs::Envoi::Dpae)?,
                 };
-                let debut = p.engagement.debut.iso();
                 // UNE DPAE PAR EMBAUCHE, reconnue a sa date : « L'embauche d'un salarié ne peut intervenir qu'après
                 // déclaration nominative » (code du travail, L. 1221-10), et la DPAE porte la « Date et heure
                 // d'embauche » (R. 1221-1, 3°) ; `atelier/reference/sources/code-du-travail/xml/L1221-10.xml` et
@@ -2419,8 +2418,8 @@ impl<'a> Moteur<'a> {
                     numero,
                     nom: super::nom_a_l_ecran(&p.salarie, &cle.to_string()),
                     spectacle: titre,
-                    debut,
-                    fin: p.engagement.fin.map(|f| f.iso()),
+                    debut: p.engagement.debut,
+                    fin: p.engagement.fin,
                     empreinte: empreinte_de_l_embauche(&p.engagement, &p.salarie),
                     pourquoi,
                 });

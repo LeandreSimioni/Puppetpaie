@@ -116,7 +116,7 @@ pub struct Geste {
     pub refus: Option<String>,
     /// Le jour (`debut`, `jour`).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub jour: Option<String>,
+    pub jour: Option<Jour>,
     /// La version du logiciel qui a commence le banc (`debut`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub logiciel: Option<String>,
@@ -301,7 +301,10 @@ fn instant_ecrit(g: &Geste) -> R<Option<Moment>> {
     }
     let texte = match (&g.heure, g.geste) {
         (Some(h), _) => h.as_str(),
-        (None, Some(Genre::Jour)) => g.jour.as_deref().ok_or_else(|| refus("un geste `jour` sans jour"))?,
+        (None, Some(Genre::Jour)) => {
+            let jour = g.jour.ok_or_else(|| refus("un geste `jour` sans jour"))?;
+            return Ok(Some(Moment::a_paris(jour, 9, 0, 0).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?));
+        }
         _ => return Ok(None),
     };
     let illisible = || refus!("{} : une date (AAAA-MM-JJ) ou une heure de Paris (AAAA-MM-JJTHH:MM) est attendue", socle::fichiers::repr(texte));
