@@ -1044,10 +1044,10 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> String {
     }
     // La saisie dont la paie depend : `<le mois>:<les engagements de son salarie>` (`stock::empreinte_de_saisie`), lue
     // des deux cotes ; une saisie que l'une des deux paies n'a pas lue ne dit pas qu'un engagement a change.
-    let lue = |k: &str| LectureDatee::lue(k).and_then(Result::ok);
-    let saisies: Vec<&String> = changees.iter().copied().filter(|k| matches!(lue(k), Some(LectureDatee::Saisie { .. })) && ea.contains_key(*k) && eb.contains_key(*k)).collect();
+    let lue = LectureDatee::lue;
+    let saisies: Vec<&String> = changees.iter().copied().filter(|k| matches!(lue(k), Some(Ok(LectureDatee::Saisie { .. }))) && ea.contains_key(*k) && eb.contains_key(*k)).collect();
     let part = |e: &BTreeMap<String, String>, k: &str, i: usize| e.get(k).and_then(|v| v.split(':').nth(i).map(String::from));
-    if saisies.iter().any(|k| part(&ea, k, 1) != part(&eb, k, 1)) || changees.iter().any(|k| matches!(lue(k), Some(LectureDatee::Mensuels { .. }))) {
+    if saisies.iter().any(|k| part(&ea, k, 1) != part(&eb, k, 1)) || changees.iter().any(|k| matches!(lue(k), Some(Ok(LectureDatee::Mensuels { .. })))) {
         return AUTRE_ENGAGEMENT.to_string();
     }
     if !saisies.is_empty() {
@@ -1058,12 +1058,12 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> String {
         return IMPREVU.to_string();
     }
     // L'indemnite de mission d'un jour a l'etranger que la table livree dit autrement : le code qui calcule.
-    if changees.iter().any(|k| matches!(lue(k), Some(LectureDatee::Mission { .. }))) {
+    if changees.iter().any(|k| matches!(lue(k), Some(Ok(LectureDatee::Mission { .. })))) {
         return CALCUL_CORRIGE.to_string();
     }
     // Les paies validees d'un autre mois que le calcul lit (conges, cumuls) : `paies <le mois> <son salarie>`.
     let premier = changees.iter().filter_map(|k| match lue(k) {
-        Some(LectureDatee::Paies { mois, .. }) => Some(mois),
+        Some(Ok(LectureDatee::Paies { mois, .. })) => Some(mois),
         _ => None,
     }).min();
     if let Some(m) = premier {
