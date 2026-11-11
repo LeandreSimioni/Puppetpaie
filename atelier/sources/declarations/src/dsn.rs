@@ -16,7 +16,7 @@ use droit::base_assujettie::BaseAssujettie;
 use droit::bordereau::{AssietteDuBordereau, MontantDuBordereau};
 use droit::bareme::{self, bareme_applique, EntrepriseLue};
 use droit::fiche::{ChampsEntreprise, DeclarantDsn, Lue};
-use droit::forme_bareme::{CotisationDsn, Pile, Rubrique};
+use droit::forme_bareme::{CotisationDsn, CotisationSupplementaire, Pile, Rubrique};
 use documents::bordereau::{self, Destinataire, LigneBordereau};
 use droit::reduction::au_dela_du_seuil;
 use engagement::calcul::Paie;
@@ -2198,16 +2198,9 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour,
     let bp = bareme_de(p, bar)?;
     for (type_54, supp) in [("92", &bp.cotisation_sante_patronale), ("93", &bp.cotisation_prevoyance_retraite_supp)] {
         let Some(supp) = supp else { continue };
-        let montant = if let Some(lignes) = supp.lignes_patronales.as_ref().filter(|l| !l.is_empty()) {
-            somme_lignes(p, lignes, true)
-        } else {
-            // Un taux « sur brut » (`taux_sur_brut`) : sur le brut, ou sur la base que le bareme nomme.
-            let k = match supp.base {
-                Some(k) => k,
-                None => Assiette::Brut,
-            };
-            let base_54 = base(&bases(p, &bp)?, k)?;
-            pct(base_54, supp.taux_sur_brut.map(|n| n.0).ok_or_else(|| socle::fichiers::absent("taux_sur_brut"))?)
+        let montant = match supp {
+            CotisationSupplementaire::DesLignes(l) => somme_lignes(p, &l.lignes_patronales, true),
+            CotisationSupplementaire::SurUneBase(t) => pct(base(&bases(p, &bp)?, t.base)?, t.taux_sur_brut.0),
         };
         let montant = rond(montant);
         if montant.is_zero() {

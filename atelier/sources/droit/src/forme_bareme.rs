@@ -611,12 +611,29 @@ forme! {
     }
 }
 
+/// Une cotisation hors des lignes 81 (S21.G00.54, types 92 et 93) : un taux sur une base que le bareme nomme, ou la
+/// somme de lignes patronales du bulletin.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum CotisationSupplementaire {
+    SurUneBase(TauxSurUneBase),
+    DesLignes(LignesPatronales),
+}
+
 forme! {
-    /// Une cotisation hors des lignes 81 (S21.G00.54, types 92 et 93) : un taux sur une base, ou la somme de lignes.
-    pub struct CotisationSupplementaire {
-        pub taux_sur_brut: Option<Nombre>,
-        pub base: Option<Assiette>,
-        pub lignes_patronales: Option<Vec<String>>,
+    sans_vide
+    /// Un taux sur une base (`CotisationSupplementaire`) : la base est toujours dite.
+    pub struct TauxSurUneBase {
+        pub taux_sur_brut: Nombre,
+        pub base: Assiette,
+    }
+}
+
+forme! {
+    sans_vide
+    /// La somme des parts patronales de lignes du bulletin (`CotisationSupplementaire`).
+    pub struct LignesPatronales {
+        pub lignes_patronales: Vec<String>,
     }
 }
 
