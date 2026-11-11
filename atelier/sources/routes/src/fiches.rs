@@ -893,17 +893,17 @@ pub(crate) fn poser_entreprise(ctx: &Contexte, case: ChangementEntreprise, depui
     poser::<FicheEntrepriseDatee>(ctx, None, vec![case], depuis, None)
 }
 
-/// L'ANCIENNETE D'UN SALARIE PART DE SON EMBAUCHE (S21.G00.86.003, l'anciennete dans l'entreprise :
-/// `norme-dsn/texte/bloc-S21.G00.86.txt`) : la validation de son premier engagement la pose sur sa fiche, au premier jour
-/// de ce contrat (`debut`), quand la fiche ne la dit pas, par l'ecrivain de la fiche (`poser`) ; elle se change ensuite
-/// dans « Avancé » de la fiche. Une fiche qui la dit la garde. INFERENCE : l'anciennete commence a l'entree dans
-/// l'entreprise.
+/// L'ANCIENNETE D'UN SALARIE PART DE SON EMBAUCHE (`engagement::calcul::Anciennete`, le chemin du calcul) : la validation
+/// d'un engagement qui est son embauche (aucun engagement anterieur ne le nomme) la pose sur sa fiche, au premier jour de
+/// ce contrat (`debut`), par l'ecrivain de la fiche (`poser`) ; elle se change ensuite dans « Avancé » de la fiche. Une
+/// fiche qui la dit la garde ; une anciennete ni dite ni lue ne se pose pas : ce qui la lit refuse en la nommant.
 pub(crate) fn poser_anciennete_a_l_embauche(ctx: &Contexte, salarie: &str, debut: Option<Jour>) -> R<()> {
-    if ctx.salaries.get(salarie).is_none_or(|f| f.date_anciennete.est_dite()) {
-        return Ok(());
-    }
+    let Some(fiche) = ctx.salaries.get(salarie) else { return Ok(()) };
     let debut = debut.ok_or_else(|| socle::fichiers::absent("debut"))?;
-    poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::date_anciennete(Some(debut))], None, None)
+    match engagement::calcul::Anciennete::de(&ctx.racine, fiche, salarie, debut)? {
+        engagement::calcul::Anciennete::Embauche(j) => poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::date_anciennete(Some(j))], None, None),
+        engagement::calcul::Anciennete::Dite(_) | engagement::calcul::Anciennete::NonDite => Ok(()),
+    }
 }
 
 /// L'ANCIENNETE D'UN SALARIE REPRIS QUE SON CONTRAT FAIT REMONTER : l'import la pose au premier bulletin lu
