@@ -269,9 +269,24 @@ fn empreinte() -> String {
                 continue;
             }
         };
-        for e in it.flatten() {
+        for e in it {
+            // Une entree qui ne se lit pas entre dans l'empreinte par son erreur, comme son dossier.
+            let e = match e {
+                Ok(e) => e,
+                Err(x) => {
+                    noms.push((format!("{}/", dossier), Signature::Illisible(x.to_string())));
+                    continue;
+                }
+            };
             let nom = e.file_name().to_string_lossy().into_owned();
-            if matches!(e.file_type(), Ok(t) if t.is_file()) && (nom.ends_with(".css") || nom.ends_with(".js")) {
+            let fichier = match e.file_type() {
+                Ok(t) => t.is_file(),
+                Err(x) => {
+                    noms.push((format!("{}/{}", dossier, nom), Signature::Illisible(x.to_string())));
+                    continue;
+                }
+            };
+            if fichier && (nom.ends_with(".css") || nom.ends_with(".js")) {
                 let nom = if dossier.is_empty() { nom } else { format!("{}/{}", dossier, nom) };
                 let sig = match socle::fichiers::signature(&ressources().join(&nom)) {
                     Ok(s) => Signature::Lue(s),
