@@ -734,7 +734,7 @@ const ENCRE: &str = "#2C3E50";
 const CHASSE: f64 = 3.9;
 const CHASSE_ENTETE: f64 = 4.2;
 const MARGE_CELLULE: f64 = 3.0;
-const PLAFOND_TEXTE: f64 = 40.0;
+const LIGNE_DE_TEXTE: f64 = 40.0;
 
 /// La largeur de chaque colonne, en fraction de la largeur utile.
 pub fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], utile: f64) -> Vec<f64> {
@@ -759,20 +759,21 @@ pub fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], ut
         }
     }
     let texte: Vec<bool> = entetes.iter().map(|(_, a_droite)| !a_droite).collect();
-    let besoins = |plafond: f64| -> Vec<f64> {
+    let besoins = |ligne: f64| -> Vec<f64> {
         (0..n)
             .map(|i| {
-                let lg = if texte[i] { plus_long[i].min(plafond).max(plus_long_mot[i]) } else { plus_long[i] };
+                let lg = if texte[i] { plus_long[i].min(ligne).max(plus_long_mot[i]) } else { plus_long[i] };
                 (lg * CHASSE).max(mot_entete[i] * CHASSE_ENTETE) + 2.0 * MARGE_CELLULE
             })
             .collect()
     };
     let somme_de = |b: &[f64]| b.iter().fold(0.0, |a, x| a + x);
-    let mut plafond = PLAFOND_TEXTE;
-    let mut b = besoins(plafond);
-    while somme_de(&b) > utile && plafond > 8.0 {
-        plafond -= 2.0;
-        b = besoins(plafond);
+    // La ligne de texte la plus longue, en caracteres : elle raccourcit jusqu'a ce que les colonnes tiennent.
+    let mut ligne = LIGNE_DE_TEXTE;
+    let mut b = besoins(ligne);
+    while somme_de(&b) > utile && ligne > 8.0 {
+        ligne -= 2.0;
+        b = besoins(ligne);
     }
     let total = somme_de(&b);
     b.iter().map(|x| x / total).collect()

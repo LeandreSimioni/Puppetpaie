@@ -90,8 +90,10 @@ que par la structure :
   jamais un `Result<_, String>`), `une_nature_de_contrat_est_une_enum` (aucun champ `nature: String`, la clé d'une
   nature écrite une seule fois, dans `droit::natures::NatureDeContrat::cle`),
   `une_liste_de_la_norme_est_celle_des_versions_livrees` (chaque `ListeDeLaNorme` est l'union des listes de valeurs que
-  `formats-dsn-*-base.json` relèvent pour sa rubrique, chaque code dans les seules versions que ses bornes disent). Les
-  tests de structure sont
+  `formats-dsn-*-base.json` relèvent pour sa rubrique, chaque code dans les seules versions que ses bornes disent),
+  `un_nombre_de_paie_n_est_jamais_un_flottant` (un montant, un taux, une quantité, des heures… sont des `Decimal` ; le
+  flottant ne reste qu'au dehors, où le format l'impose : un instant, une durée mesurée, la géométrie d'un dessin, la
+  case d'un classeur, la porte du JSON, `socle::forme`). Les tests de structure sont
   les bienvenus ; un test qui fige un détail ne s'écrit pas.
 
 ## Compiler peu

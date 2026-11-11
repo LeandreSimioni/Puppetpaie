@@ -1039,6 +1039,45 @@ fn un_mois_est_un_mois() {
     assert!(fautes.is_empty(), "un mois est un `socle::mois::Mois`, jamais un texte :\n{}", fautes.join("\n"));
 }
 
+/// UN NOMBRE DE PAIE EST UN DECIMAL, JAMAIS UN FLOTTANT : aucune source du logiciel (tests a part, commentaires et textes
+/// blanchis) ne type en `f32` ou `f64` (seul, ou dans `Option`, `Vec`, `Box`, un tableau) un champ, un parametre, une
+/// variable, une constante ou la valeur rendue d'une fonction dont un mot du nom (entre ses `_`, au singulier) dit un
+/// nombre de paie : un montant, un taux, une quantite, une quotite, des heures, une base, une assiette, un brut, un net, un
+/// salaire, une cotisation, un tarif, une prime, une indemnite, un plafond, un seuil, un minimum, un coefficient, un
+/// pourcentage, un abattement, une reduction, le SMIC, un effectif. Le flottant ne reste qu'au dehors, la ou le format
+/// l'impose : un instant, une duree mesuree, la geometrie d'un dessin, la case d'un classeur, la porte du JSON. Et le
+/// calcul (`droit`, `engagement`) n'a aucune conversion vers le flottant ni depuis lui : ni `en_f64`, ni `flottant`, ni
+/// `dec_f64`, ni `round3`.
+#[test]
+fn un_nombre_de_paie_n_est_jamais_un_flottant() {
+    const MOTS: [&str; 23] = [
+        "montant", "taux", "quantite", "quotite", "heure", "base", "assiette", "brut", "net", "salaire", "cotisation", "tarif", "prime", "indemnite", "plafond",
+        "seuil", "minimum", "coefficient", "pourcentage", "abattement", "reduction", "smic", "effectif",
+    ];
+    let de_paie = |nom: &str| nom.to_lowercase().split('_').any(|m| MOTS.contains(&m) || m.strip_suffix('s').is_some_and(|s| MOTS.contains(&s)));
+    let flottant = r"(?:&\s*)?(?:(?:Option|Vec|Box)\s*<\s*)*(?:\[\s*)?f(?:32|64)\b";
+    let type_ = regex::Regex::new(&format!(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*:\s*{}", flottant)).unwrap();
+    let rendu = regex::Regex::new(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)[^{;]*->[^{;]*\bf(?:32|64)\b").unwrap();
+    let conversion = regex::Regex::new(r"\b(?:en_f64|flottant|dec_f64|round3)\b").unwrap();
+    let mut fautes = Vec::new();
+    for c in LE_LOGICIEL {
+        for p in sources(&espace().join(c).join("src")) {
+            let rel = p.strip_prefix(espace()).unwrap().display().to_string();
+            for (n, l) in code_seul(&std::fs::read_to_string(&p).unwrap()).lines().enumerate() {
+                for t in type_.captures_iter(l).chain(rendu.captures_iter(l)).filter(|t| de_paie(&t[1])) {
+                    fautes.push(format!("{}:{} : `{}`, un nombre de paie en flottant : un `Decimal`", rel, n + 1, t[0].trim()));
+                }
+                if ["droit", "engagement"].contains(&c) {
+                    if let Some(m) = conversion.find(l) {
+                        fautes.push(format!("{}:{} : `{}`, le calcul passe par le flottant : il reste en `Decimal`", rel, n + 1, m.as_str()));
+                    }
+                }
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "un nombre de paie est un `Decimal`, jamais un flottant :\n{}", fautes.join("\n"));
+}
+
 /// UNE VALEUR D'UNE FICHE (entreprise, salarie, spectacle) SE DATE A UN SEUL ENDROIT : `routes::fiches::ecrire_datee`, que
 /// l'ecran, les gestes d'une case et l'import appellent, et qui la date par la forme de la fiche
 /// (`droit::fiche::FicheDatee::changer`, et dessous `droit::fiche::dater`, la seule fonction qui date). Ailleurs dans le
