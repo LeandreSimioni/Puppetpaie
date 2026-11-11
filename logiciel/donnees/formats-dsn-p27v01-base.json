@@ -1,6 +1,6 @@
 {
- "quoi": "Le format de chaque rubrique du cahier technique NEODeS : sa longueur [min,max] et ses expressions de controle CSL. Le tableau des usages dit si une rubrique a le droit d'etre la ; ceci dit ce qu'elle doit contenir. Ce n'est pas un validateur : il verifie la FORME d'une valeur, pas sa justesse : un montant faux au bon format passe.",
- "note": "Formats des rubriques de la norme DSN 2027.1.2, classeur dsn-tableaux-categories-controles-datatypes-usages-2027.1.2-20251224.xlsx (feuilles « Fields » et « Data Types »). Releve automatiquement par `moteur extraire formats` le 15/10/2026. Toute declaration que le moteur ecrit (DSN, signalement, FCTU) passe ce releve avant d'etre ecrite (`declarations::formats::verifier_fichier`), et `declarations/tests/declarations/usages_formats_ntt.rs` en eprouve les expressions motif par motif. Une expression qui refuserait une valeur reellement acceptee serait fausse, et c'est elle qu'on retire -- un controle faux refuse une declaration licite, ce qui est pire que pas de controle.",
+ "quoi": "Le format de chaque rubrique du cahier technique NEODeS : sa longueur [min,max], ses expressions de controle CSL et, quand elle en a une, sa liste de valeurs (code -> libelle). Le tableau des usages dit si une rubrique a le droit d'etre la ; ceci dit ce qu'elle doit contenir. Ce n'est pas un validateur : il verifie la FORME d'une valeur, pas sa justesse : un montant faux au bon format passe.",
+ "note": "Formats des rubriques de la norme DSN 2027.1.2, classeur dsn-tableaux-categories-controles-datatypes-usages-2027.1.2-20251224.xlsx (feuilles « Fields » et « Data Types », les listes de valeurs dans sa colonne « Values »). Releve automatiquement par `moteur extraire formats` le 11/11/2026. Toute declaration que le moteur ecrit (DSN, signalement, FCTU) passe ce releve avant d'etre ecrite (`declarations::formats::verifier_fichier`), et `declarations/tests/declarations/usages_formats_ntt.rs` en eprouve les expressions motif par motif. Une expression qui refuserait une valeur reellement acceptee serait fausse, et c'est elle qu'on retire -- un controle faux refuse une declaration licite, ce qui est pire que pas de controle.",
  "sha256_du_classeur": "c2ab0f8d87f9c93271107753ad324fd5ecf4bbd2f1926775742e605236406c10",
  "expressions_ecartees": [],
  "formats": {
@@ -32,25 +32,40 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "envoi fichier test",
+    "02": "envoi fichier réel"
+   }
   },
   "S10.G00.00.006": {
    "longueur": [
     6,
     6
-   ]
+   ],
+   "valeurs": {
+    "P27V01": "Année 2027 Version 1"
+   }
   },
   "S10.G00.00.007": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Net-entreprises",
+    "02": "MSA"
+   }
   },
   "S10.G00.00.008": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "envoi normal",
+    "02": "envoi néant"
+   }
   },
   "S10.G00.01.001": {
    "longueur": [
@@ -125,7 +140,11 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "monsieur",
+    "02": "madame"
+   }
   },
   "S10.G00.02.002": {
    "longueur": [
@@ -155,13 +174,29 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "DSN Mensuelle",
+    "04": "Signalement Arrêt de travail",
+    "05": "Signalement Reprise suite à arrêt de travail",
+    "07": "Signalement Fin du contrat de travail Unique",
+    "08": "Signalement Amorçage des données variables",
+    "09": "DSN de substitution",
+    "10": "Signalement Déclaration préalable à l'embauche"
+   }
   },
   "S20.G00.05.002": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "déclaration normale",
+    "02": "déclaration normale sans individu",
+    "03": "déclaration annule et remplace intégral",
+    "04": "déclaration annule",
+    "05": "annule et remplace sans individu"
+   }
   },
   "S20.G00.05.003": {
    "longueur": [
@@ -212,7 +247,12 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "déclaration totale",
+    "02": "déclaration partielle régime agricole",
+    "03": "déclaration partielle régime général"
+   }
   },
   "S20.G00.05.009": {
    "longueur": [
@@ -224,13 +264,26 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "euro",
+    "02": "franc Pacifique"
+   }
   },
   "S20.G00.05.011": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Embauche effective de l'individu",
+    "02": "Mutation de l'individu sans rupture du contrat de travail",
+    "03": "Fin de dispense d’affiliation",
+    "04": "Changement des paramètres salarié du contrat collectif prévoyance, santé complémentaire, retraite supplémentaire",
+    "05": "Transmission de l’ensemble d’une population à affilier à un nouveau contrat (individu faisant partie d’une population à affilier à un nouveau contrat)",
+    "06": "Appel de taux de PAS pour un individu non salarié",
+    "07": "Changement de tiers déclarant ou changement de logiciel déclaratif"
+   }
   },
   "S20.G00.05.012": {
    "longueur": [
@@ -245,13 +298,21 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "DSN de substitution suite à contrôle (comptable d’assiette)",
+    "02": "DSN de substitution suite à fiabilisation (CRM)",
+    "03": "DSN de substitution suite à redressement LCTI"
+   }
   },
   "S20.G00.05.014": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Oui"
+   }
   },
   "S20.G00.07.001": {
    "longueur": [
@@ -275,7 +336,23 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Contact chez le déclaré pour les IJ",
+    "02": "Contact chez le déclaré pour les fins de contrats de travail (France Travail)",
+    "03": "Contact chez le déclaré pour les acteurs statistiques (DARES, INSEE, etc …)",
+    "04": "Contact chez le déclaré recouvrant, entre autres, des cotisations de Sécurité Sociale (Urssaf CN, MSA) et contributions assurance chômage et cotisations AGS (France Travail)",
+    "05": "Contact chez le déclaré pour le recouvrement des cotisations (retraite complémentaire et autres)",
+    "06": "Contact sur l’identification des salariés (NIR)",
+    "07": "Contact sur l’identification de l’établissement (SIRET)",
+    "08": "Contextualisable à l’ensemble des organismes, hors typologies 1 à 7, et 9",
+    "09": "Contact chez l'établissement centralisateur pour les IJ",
+    "13": "Contact chez le déclaré pour les aides versées par l'ASP",
+    "14": "Contact chez le déclaré pour le suivi des travailleurs handicapés",
+    "15": "Contact pour les congés payés (CIBTP, Transport, Manutention portuaire)",
+    "16": "Contact chez le déclaré pour la formation professionnelle",
+    "17": "Contact au sein du service de médecine du travail interne à l’établissement pour la prévention et la santé au travail chez le déclaré"
+   }
   },
   "S20.G00.08.001": {
    "longueur": [
@@ -350,7 +427,12 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Entreprise étrangère avec établissement en France",
+    "02": "Entreprise étrangère hors UE sans établissement en France",
+    "03": "Entreprise étrangère dans l’UE sans établissement en France"
+   }
   },
   "S21.G00.06.015": {
    "longueur": [
@@ -404,7 +486,11 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Salaire réel",
+    "02": "Salaire de comparaison"
+   }
   },
   "S21.G00.11.015": {
    "longueur": [
@@ -422,7 +508,12 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Privée",
+    "02": "Publique",
+    "03": "Etablissement privé à capitaux majoritaires publics"
+   }
   },
   "S21.G00.11.019": {
    "longueur": [
@@ -458,7 +549,10 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Demande de sortie de la DSN"
+   }
   },
   "S21.G00.11.025": {
    "longueur": [
@@ -470,7 +564,10 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Paiement aide ASP"
+   }
   },
   "S21.G00.12.002": {
    "longueur": [
@@ -500,7 +597,15 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "BOETH intérimaires",
+    "02": "BOETH salariés d'un groupement d'employeurs mis à disposition",
+    "03": "BOETH stagiaires n’ayant pas fait l’objet d’une déclaration nominative au préalable",
+    "04": "BOETH salariés d’une association intermédiaire mis à disposition",
+    "05": "BOETH salariés d’une agence de mannequin mis à disposition",
+    "06": "BOETH salariés d’une entreprise de travail à temps partagé (ETTP) mis à disposition"
+   }
   },
   "S21.G00.13.003": {
    "longueur": [
@@ -542,7 +647,11 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Oui, concerne au moins un salarié de l'établissement d'affectation",
+    "02": "Non, ne concerne aucun salarié de l'établissement d'affectation"
+   }
   },
   "S21.G00.15.005": {
    "longueur": [
@@ -641,7 +750,14 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "chèque",
+    "02": "virement",
+    "04": "titre inter-bancaire de paiement",
+    "05": "prélèvement SEPA",
+    "06": "versement réalisé par un autre établissement"
+   }
   },
   "S21.G00.20.011": {
    "longueur": [
@@ -728,7 +844,11 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "920": "Autre assiette",
+    "921": "Assiette plafonnée"
+   }
   },
   "S21.G00.23.003": {
    "longueur": [
@@ -800,7 +920,11 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "masculin",
+    "02": "féminin"
+   }
   },
   "S21.G00.30.006": {
    "longueur": [
@@ -854,7 +978,13 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "France",
+    "02": "UE",
+    "03": "EEE",
+    "04": "Reste du Monde"
+   }
   },
   "S21.G00.30.014": {
    "longueur": [
@@ -905,25 +1035,51 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "travail frontalier",
+    "02": "travail à l’étranger"
+   }
   },
   "S21.G00.30.023": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Non",
+    "03": "Oui"
+   }
   },
   "S21.G00.30.024": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Formation n'allant pas au-delà de la scolarité obligatoire (16 ans)",
+    "02": "Formation d'une durée maximale d'un an après le collège",
+    "03": "Niveau de formation équivalent au CAP (certificat d'aptitude professionnelle) ou au BEP (brevet d'études professionnelles)",
+    "04": "Formation de niveau du bac (général, technologique ou professionnel), du brevet de technicien (BT) ou du brevet professionnel",
+    "05": "Formation de niveau bac+2 : licence 2, BTS (brevet de technicien supérieur), DUT (diplôme universitaire de technologie), etc.",
+    "06": "Formation de niveau bac+3 et bac+4 : licence 3, licence professionnelle, master 1, etc.",
+    "07": "Formation de niveau bac+5 : master 2, diplôme d'études approfondies, diplôme d'études supérieures spécialisées, diplôme d'ingénieur, etc.",
+    "08": "Formation de niveau bac+8 : doctorat, habilitation à diriger des recherches, etc."
+   }
   },
   "S21.G00.30.025": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "03": "Niveau de formation équivalent au CAP (certificat d'aptitude professionnelle) ou au BEP (brevet d'études professionnelles)",
+    "04": "Formation de niveau du bac (général, technologique ou professionnel), du brevet de technicien (BT) ou du brevet professionnel",
+    "05": "Formation de niveau bac+2 : licence 2, BTS (brevet de technicien supérieur), DUT (diplôme universitaire de technologie), etc.",
+    "06": "Formation de niveau bac+3 et bac+4 : licence 3, licence professionnelle, master 1, etc.",
+    "07": "Formation de niveau bac+5 : master 2, diplôme d'études approfondies, diplôme d'études supérieures spécialisées, diplôme d'ingénieur, etc.",
+    "08": "Formation de niveau bac+8 : doctorat, habilitation à diriger des recherches, etc."
+   }
   },
   "S21.G00.30.029": {
    "longueur": [
@@ -980,7 +1136,16 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "05": "les activités exercées en milieu hyperbare",
+    "06": "les températures extrêmes",
+    "07": "le bruit",
+    "08": "le travail de nuit",
+    "09": "le travail en équipes successives alternantes",
+    "10": "le travail répétitif (répétition d'un même geste, à une cadence contrainte avec un temps de cycle défini)",
+    "99": "annulation"
+   }
   },
   "S21.G00.34.002": {
    "longueur": [
@@ -1010,13 +1175,32 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "agriculteur salarié de son exploitation",
+    "02": "artisan ou commerçant salarié de son entreprise",
+    "03": "cadre dirigeant (votant au collège employeur des élections prud'homales)",
+    "04": "autres cadres au sens de la convention collective (ou du statut pour les régimes spéciaux)",
+    "05": "profession intermédiaire (technicien, contremaître, agent de maîtrise, clergé)",
+    "06": "employé administratif d'entreprise, de commerce, agent de service",
+    "07": "ouvriers qualifiés et non qualifiés y compris ouvriers agricoles",
+    "08": "agent de la fonction publique d'Etat",
+    "09": "agent de la fonction publique hospitalière",
+    "10": "agent de la fonction publique territoriale"
+   }
   },
   "S21.G00.40.003": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "cadre (article 4 et 4bis)",
+    "02": "extension cadre pour retraite complémentaire",
+    "04": "non cadre",
+    "98": "retraite complémentaire ne définissant pas de statut cadre ou non-cadre",
+    "99": "pas de retraite complémentaire"
+   }
   },
   "S21.G00.40.004": {
    "longueur": [
@@ -1040,13 +1224,59 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Contrat de travail à durée indéterminée de droit privé",
+    "02": "Contrat de travail à durée déterminée de droit privé",
+    "03": "Contrat de mission (contrat de travail temporaire)",
+    "07": "Contrat à durée indéterminée intermittent",
+    "08": "Contrat à durée indéterminée intérimaire",
+    "09": "Contrat de travail à durée indéterminée de droit public",
+    "10": "Contrat de travail à durée déterminée de droit public",
+    "20": "[FP] Détachement d’un agent d’une Fonction Publique donnant lieu à pension (ECP)",
+    "21": "[FP] Détachement d’un agent d’une Fonction Publique ne donnant pas lieu à pension (ENCP)",
+    "29": "Convention de stage (hors formation professionnelle)",
+    "32": "Contrat d’appui au projet d’entreprise",
+    "50": "Nomination dans la fonction publique (par arrêté, par décision,…)",
+    "51": "Contrat de mission d’un collaborateur occasionnel du service public (COSP) ou assimilé",
+    "52": "[FP] Cumul d’activité à titre accessoire",
+    "53": "Contrat d'emploi pénitentiaire",
+    "54": "Contrat d'emploi pénitentiaire en apprentissage",
+    "60": "Contrat d'engagement éducatif",
+    "70": "Contrat de soutien et d'aide par le travail",
+    "80": "Mandat social",
+    "81": "Mandat d'élu",
+    "82": "Contrat de travail à durée indéterminée de Chantier ou d'opération",
+    "89": "Volontariat de service civique",
+    "90": "Autre nature de contrat, convention, mandat (hors mandat social)",
+    "91": "Contrat d'engagement maritime à durée indéterminée",
+    "92": "Contrat d'engagement maritime à durée déterminée",
+    "93": "Ligne de service"
+   }
   },
   "S21.G00.40.008": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "21": "CUI - Contrat Initiative Emploi",
+    "41": "Parcours Emploi Compétences / CUI - CAE",
+    "42": "CUI - Contrat d'accès à l'emploi - DOM",
+    "61": "Contrat de Professionnalisation",
+    "64": "Contrat d'apprentissage entreprises artisanales ou de moins de 11 salariés (loi du 3 janvier 1979)",
+    "65": "Contrat d’apprentissage entreprises non inscrites au répertoire des métiers d’au moins 11 salariés (loi de 1987)",
+    "66": "Convention industrielle de formation par la recherche en entreprise (CIFRE)",
+    "70": "Contrat à durée déterminée pour les séniors",
+    "71": "Contrat à durée déterminée d’insertion",
+    "80": "Contrat de génération",
+    "81": "Contrat d'apprentissage secteur public (Loi de 1992)",
+    "83": "Contrat de valorisation de l’expérience",
+    "92": "Stage de la formation professionnelle",
+    "93": "Période de mise en situation en milieu professionnel",
+    "94": "Contrat adulte relais",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.40.009": {
    "longueur": [
@@ -1067,7 +1297,19 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "10": "heure",
+    "12": "journée",
+    "20": "forfait jour",
+    "21": "forfait heure",
+    "31": "à la pige",
+    "32": "à la vacation",
+    "33": "à la tâche",
+    "34": "au SMIC",
+    "35": "à la part",
+    "99": "salarié non concerné"
+   }
   },
   "S21.G00.40.012": {
    "longueur": [
@@ -1091,13 +1333,28 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "10": "Temps plein",
+    "20": "Temps partiel",
+    "30": "Temps alterné - personnel navigant de l'aéronautique civile",
+    "40": "CPA 2004",
+    "41": "Temps partiel de droit",
+    "42": "Temps partiel de droit pour enfant",
+    "99": "Salarié non concerné"
+   }
   },
   "S21.G00.40.016": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "régime local Alsace Moselle",
+    "02": "complémentaire CAMIEG",
+    "03": "régime Alsace-Moselle et Complémentaire CAMIEG",
+    "99": "non applicable"
+   }
   },
   "S21.G00.40.017": {
    "longueur": [
@@ -1109,7 +1366,27 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "134": "régime spécial de la SNCF",
+    "135": "régime spécial de la RATP",
+    "136": "établissement des invalides de la marine (ENIM)",
+    "137": "mineurs ou assimilés (CANSSM)",
+    "138": "militaires de carrière (CNMSS)",
+    "140": "clercs et employés de notaires (CRPCEN)",
+    "141": "chambre de commerce et d'industrie de Paris",
+    "144": "Assemblée Nationale",
+    "145": "Sénat",
+    "146": "port autonome de Bordeaux",
+    "147": "régime spécial des industries électriques et gazières (CAMIEG)",
+    "149": "régimes des cultes (CAVIMAC)",
+    "200": "régime général (CNAM)",
+    "300": "régime agricole (MSA)",
+    "400": "régime spécial Banque de France",
+    "900": "autre régime (réservé Polynésie Française, Nouvelle Calédonie)",
+    "909": "travailleur étranger non assujetti à un régime de base risque maladie en France",
+    "999": "sans régime obligatoire"
+   }
   },
   "S21.G00.40.019": {
    "longueur": [
@@ -1121,13 +1398,61 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "120": "retraite des agents des collectivités locales (CNRACL)",
+    "121": "pensions des ouvriers des établissements industriels de l'Etat (FSPOEIE)",
+    "122": "pensions civiles et militaires de retraite de l'Etat (SRE)",
+    "134": "régime spécial de la branche ferroviaire",
+    "135": "régime spécial de la RATP",
+    "136": "établissement des invalides de la marine (ENIM)",
+    "137": "mineurs ou assimilés (fonds Caisse des Dépôts)",
+    "139": "Banque de France",
+    "140": "clercs et employés de notaires (CRPCEN)",
+    "141": "chambre de commerce et d'industrie de Paris",
+    "144": "Assemblée Nationale",
+    "145": "Sénat",
+    "147": "régime spécial des industries électriques et gazières (CNIEG)",
+    "149": "régime des cultes (CAVIMAC)",
+    "157": "régime de retraite des avocats (CNBF)",
+    "158": "SEITA",
+    "159": "Comédie Française",
+    "160": "Opéra de Paris",
+    "200": "régime général (CNAV)",
+    "300": "régime agricole (MSA)",
+    "900": "autre régime (réservé Polynésie Française, Nouvelle Calédonie)",
+    "904": "principauté de Monaco",
+    "905": "Régime général pour la déclaration des individus de Mayotte affiliés à la CSSM",
+    "909": "travailleur non assujetti à un régime de base risque vieillesse en France",
+    "994": "absence d'affiliation pour le personnel médical hospitalier universitaire",
+    "995": "absence d’affiliation pour un fonctionnaire en cumul d’activité à titre accessoire",
+    "996": "absence d’affiliation pour un expatrié",
+    "997": "absence d’affiliation pour un stagiaire hors formation professionnelle",
+    "998": "absence d’affiliation pour un élu"
+   }
   },
   "S21.G00.40.021": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Remplacement d'un salarié",
+    "02": "Accroissement temporaire de l'activité de l'entreprise",
+    "03": "Emplois à caractère saisonnier",
+    "04": "Contrat vendanges",
+    "05": "Contrat d’usage",
+    "06": "Contrat à durée déterminée à objet défini",
+    "07": "Remplacement d'un chef d'entreprise (« artisanale, industrielle ou commerciale, d'une personne exerçant une profession libérale, de son conjoint participant effectivement à l'activité de l'entreprise à titre professionnel et habituel ou d'un associé non salarié d'une société civile professionnelle, d'une société civile de moyens ou d'une société d'exercice libéral »)",
+    "08": "Remplacement du chef d'une exploitation agricole (« ou d'une entreprise mentionnée aux 1° à 4° de l'article L. 722-1 du code rural et de la pêche maritime, d'un aide familial, d'un associé d'exploitation, ou de leur conjoint mentionné à l'article L. 722-10 du même code dès lors qu'il participe effectivement à l'activité de l'exploitation agricole ou de l'entreprise »)",
+    "09": "Recrutement de personnes sans emploi rencontrant des difficultés sociales et professionnelles particulières",
+    "10": "Complément de formation professionnelle au salarié",
+    "11": "Formation professionnelle au salarié par la voie de l'apprentissage, en vue de l'obtention d'une qualification professionnelle sanctionnée par un diplôme ou un titre à finalité professionnelle enregistré au répertoire national des certifications professionnelles",
+    "12": "Remplacement d’un salarié passé provisoirement à temps partiel",
+    "13": "Attente de la suppression définitive du poste du salarié ayant quitté définitivement l’entreprise",
+    "14": "Contrat de voyage",
+    "15": "Recrutement d'un intérimaire en sa qualité de BOETH"
+   }
   },
   "S21.G00.40.022": {
    "longueur": [
@@ -1148,19 +1473,47 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Détaché",
+    "02": "Expatrié",
+    "03": "Frontalier",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.40.025": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Fonctionnaires de l’une des trois fonctions publiques (Etat, Territoriale, Hospitalière) sauf admission spécifique",
+    "02": "Personnels navigants de la marine marchande",
+    "03": "Marins-pêcheurs",
+    "05": "Contrat de travail faisant l'objet d’une attestation employeur mensuelle (AEM) pour un ouvrier ou technicien de l'édition d'enregistrement sonore, de la production cinématographique et audiovisuelle, de la radio, de la diffusion et du spectacle",
+    "06": "Contrat de travail faisant l'objet d'une attestation employeur mensuelle (AEM) pour un artiste du spectacle",
+    "13": "Dockers carte G"
+   }
   },
   "S21.G00.40.026": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "[FP] Fonctionnaire",
+    "02": "[FP] Contractuel de la Fonction publique",
+    "03": "Statutaire",
+    "04": "Non statutaire",
+    "06": "Personnel médical hospitalier",
+    "07": "Médecin sans statut hospitalier",
+    "08": "[FP] Fonctionnaire stagiaire",
+    "09": "[FP] Ouvrier d'Etat",
+    "10": "[FP] Militaire",
+    "11": "[FP] Parcours d'accès aux carrières (Pacte)",
+    "12": "[FP] Militaire de réserve",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.40.027": {
    "longueur": [
@@ -1178,7 +1531,15 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "employeur en auto-assurance",
+    "02": "employeur ayant conclu une convention de gestion",
+    "03": "employeur ayant adhéré au régime d'Assurance chômage (adhésion révocable)",
+    "04": "employeur ayant adhéré au régime d'Assurance chômage (adhésion non révocable)",
+    "05": "adhésion au régime particulier pour les apprentis du secteur public",
+    "06": "affiliation obligatoire au régime d’Assurance chômage (contrats des intermittents du spectacle, des expatriés et d’emploi pénitentiaire)"
+   }
   },
   "S21.G00.40.030": {
    "longueur": [
@@ -1217,25 +1578,79 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "501": "MGEN - Section Extra-Métropolitaine",
+    "505": "MAGE - CPAM75 - Mutuelle autonome générale de l'éducation",
+    "506": "MGEN",
+    "512": "MG - Mutuelle Générale",
+    "516": "MNAM - Mutuelle Nationale Aviation Marine",
+    "523": "MCF - Mutuelle Centrale des Finances",
+    "533": "Mutuelle des Relations Extérieures (MAE)",
+    "537": "MGP - Mutuelle Générale de la Police",
+    "555": "SMPPN - Société Mutualiste du Personnel de la Police Nationale",
+    "599": "MFP - Mutuelle de la fonction publique et MGAS - Mutuelle Générale des Affaires Sociales",
+    "601": "LMDE - La Mutuelle des Étudiants",
+    "602": "MCVPAP - Mutuelle Complémentaire de la Ville de Paris. de l'Assistance Publique et des Administrations Annexes",
+    "604": "MMI - Mutuelle du Ministère de l'Intérieur et MPN- Mutuelle de la Police Nationale de Strasbourg",
+    "606": "MNFCT - Mutuelle Nationale des fonctionnaires des collectivités territoriales",
+    "607": "SLTC -Transports en Commun de Lyon",
+    "609": "MNT- Mutuelle Nationale Territoriale",
+    "610": "HCL - Hospices Civils de Lyon",
+    "612": "UPBTP - Bâtiments et Travaux Publics de Lyon et Mutuelle Boissière du Bâtiment (Dieppe et Rouen)",
+    "613": "MGAT Chartres et MUTAME Nantes - Mutuelle des Personnels municipaux",
+    "614": "MICILS - UMIGA SOGIREL. UPES - Mutuelle Interprofessionnelle des Cadres. Ingénieurs de la région Lyonnaise et stéphanoise",
+    "616": "Mutuelle de municipaux de Marseille",
+    "617": "Sociétés d'Étudiants Mutualistes (SMEBA - SMERRA - SMESO - SMENO - MEP - MGEL – SMEREB - SMECO - SMEREP - SMERE)",
+    "618": "VITTAVI pour DOM",
+    "619": "MNH - Mutuelle Nationale des Hospitalier, y compris certaines mutuelles des personnels municipaux",
+    "651": "Mutuelle des Personnels Municipaux et Hospitaliers de Tours. Mulhouse. Poitiers",
+    "652": "COVIMUT - Poitiers (Transports en commun)",
+    "654": "Mutuelle de la Mairie de Toulouse CGFTE - Bordeaux (Transports en commun)",
+    "689": "Mutuelle de l'Est - Section de Strasbourg",
+    "908": "Caisse de branche ferroviaire"
+   }
   },
   "S21.G00.40.036": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "emploi unique",
+    "02": "emplois multiples",
+    "03": "situation non connue"
+   }
   },
   "S21.G00.40.037": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "employeur unique",
+    "02": "employeurs multiples",
+    "03": "situation non connue"
+   }
   },
   "S21.G00.40.039": {
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "134": "régime spécial de la SNCF",
+    "135": "régime spécial de la RATP",
+    "136": "établissement des invalides de la marine (ENIM)",
+    "137": "mineurs ou assimilés (CANSSM)",
+    "147": "régime spécial des industries électriques et gazières",
+    "200": "régime général (CNAM)",
+    "300": "régime agricole (CCMSA ou C3A)",
+    "401": "risque AT/MP pris en charge totalement par l'employeur (hors périmètre Etat)",
+    "402": "risque AT/MP pris en charge partiellement par l'employeur (hors périmètre Etat)",
+    "900": "autre régime",
+    "999": "sans régime obligatoire (fonctionnaire des trois fonctions publiques et contractuels dont le risque AT est couvert par l'Etat)"
+   }
   },
   "S21.G00.40.040": {
    "longueur": [
@@ -1253,7 +1668,11 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "salarié cadre",
+    "02": "salarié non cadre"
+   }
   },
   "S21.G00.40.043": {
    "longueur": [
@@ -1268,13 +1687,20 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "pour la vieillesse régime de base",
+    "02": "pour la vieillesse régime de base et la retraite complémentaire"
+   }
   },
   "S21.G00.40.045": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "oui"
+   }
   },
   "S21.G00.40.046": {
    "longueur": [
@@ -1304,7 +1730,11 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Organisateur occasionnel de spectacles vivants (maximum 6 spectacles vivants annuels)",
+    "02": "Entrepreneur de spectacles vivants professionnel (plus de 6 spectacles vivants annuels)"
+   }
   },
   "S21.G00.40.052": {
    "longueur": [
@@ -1316,7 +1746,12 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "[FP] Temps complet",
+    "02": "[FP] Temps non complet",
+    "03": "Régime VSDL (Week-endiste)"
+   }
   },
   "S21.G00.40.054": {
    "longueur": [
@@ -1340,7 +1775,94 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "[FP] Emploi service sédentaire",
+    "02": "[FP] Emploi service actif",
+    "03": "[FP] Emploi à plus de 800 heures annuelles dans les réseaux souterrains et les ouvrages annexes homologués",
+    "04": "[FP] Emploi dans le corps des identificateurs de la Préfecture de Police de Paris",
+    "05": "[FP] Emploi entre 400 et 529 heures annuelles dans les réseaux souterrains et les ouvrages annexes homologués",
+    "06": "[FP] Emploi entre 530 et 799 heures annuelles dans les réseaux souterrains et les ouvrages annexes homologués",
+    "07": "[FP] Emploi entre 400 et 529 heures annuelles en réseaux souterrains ou ouvrages annexes homologués et complément en service actif",
+    "08": "[FP] Emploi entre 530 et 799 heures annuelles en réseaux souterrains ou ouvrages annexes homologués et complément en service actif",
+    "10": "Fonction Capitaine",
+    "11": "Fonction Second capitaine",
+    "12": "Fonction Chef mécanicien",
+    "13": "Fonction Second mécanicien",
+    "14": "Fonction Officier chargé du quart à la passerelle",
+    "15": "Fonction Officier chargé du quart à la machine",
+    "16": "Fonction Officier électrotechnicien / électricien",
+    "17": "Marin qualifié Pont",
+    "18": "Fonction Matelot dans une équipe de quart",
+    "19": "Fonction Matelot sans tâche spécialisée",
+    "20": "Marin qualifié Machine",
+    "21": "Fonction Mécanicien dans une équipe de quart",
+    "22": "Fonction Mécanicien sans tâche spécialisée",
+    "23": "Fonction Matelot électrotechnicien / électricien",
+    "24": "Fonction Opérateur des radiocommunications à bord d’un navire exploité dans le cadre du Système Mondial de Détresse et de Sécurité en Mer (SMDSM)",
+    "25": "Fonction Cuisinier de navire",
+    "26": "Fonction élève machine",
+    "27": "Fonction élève pont",
+    "28": "Fonction Personnel de préparation ou service des repas pour les gens de mer",
+    "29": "Fonction Personnel d’hôtellerie",
+    "30": "Fonction Personnel de propreté",
+    "31": "Fonction Personnel de restauration",
+    "32": "Fonction Personnel de vente",
+    "33": "Fonction Personnel pour l’accueil des passagers",
+    "34": "Fonction Écrivain de bord",
+    "35": "Fonction Médecin",
+    "36": "Fonction Infirmier",
+    "37": "Fonction Hydrographe",
+    "38": "Fonction Pilote maritime",
+    "39": "Fonction Capitaine Polyvalent",
+    "40": "Fonction Second Polyvalent",
+    "41": "Fonction Officier Polyvalent",
+    "42": "Fonction Marin qualifié Polyvalent",
+    "43": "Fonction Matelot Polyvalent",
+    "44": "Fonction Commissaire",
+    "45": "Fonction Officier électronicien",
+    "46": "Fonction élève autre",
+    "47": "Fonction élève polyvalent",
+    "48": "Fonction Navigant cultures marines",
+    "49": "Fonction Personnel usine navire pêche",
+    "50": "Travaux actifs à 100% [Actifs à 100%]",
+    "51": "Travaux mixtes non cadre [Actifs Mixtes non cadre]",
+    "52": "Travaux actifs en partie cadre [Actifs Mixtes cadre]",
+    "53": "Travaux actifs intermittents non cadre [Actifs Intermittents non cadre]",
+    "54": "CSS fonction politique (si actif précédemment) [Actifs à 100%]",
+    "55": "CSS fonction politique (si actif précédemment) [Actifs Mixtes non cadre]",
+    "56": "CSS fonction politique (si actif précédemment) [Actifs Mixtes cadre]",
+    "57": "CSS fonction politique (si actif précédemment) [Actifs Intermittents non cadre]",
+    "58": "CSS fonction syndicale (si actif précédemment) [Actifs à 100%]",
+    "59": "CSS fonction syndicale (si actif précédemment) [Actifs Mixtes non cadre]",
+    "60": "CSS fonction syndicale (si actif précédemment) [Actifs Mixtes cadre]",
+    "61": "CSS fonction syndicale (si actif précédemment) [Actifs Intermittents non cadre]",
+    "62": "Elu CAS SLV (si actif précédemment) [Actifs à 100%]",
+    "63": "Elu CAS SLV (si actif précédemment) [Actifs Mixtes non cadre]",
+    "64": "Elu CAS SLV (si actif précédemment) [Actifs Mixtes cadre]",
+    "65": "Elu CAS SLV (si actif précédemment) [Actifs Intermittents non cadre]",
+    "66": "Sédentaire (si actif avant A.T.) [Actifs à 100%]",
+    "67": "Sédentaire (si actif avant A.T.) [Actifs Mixtes non cadre]",
+    "68": "Sédentaire (si actif avant A.T.) [Actifs Mixtes cadre]",
+    "69": "Sédentaire (si actif avant A.T.) [Actifs Intermittents non cadre]",
+    "70": "A disposition CCAS encadrement [Actifs à 100%]",
+    "71": "A disposition CCAS encadrement [Actifs Mixtes non cadre]",
+    "72": "A disposition CCAS encadrement [Actifs Mixtes cadre]",
+    "73": "A disposition CCAS encadrement [Actifs Intermittents non cadre]",
+    "74": "Services actifs accord 2010 [Actifs sans Prépondérance]",
+    "75": "Sédentaire (si actif avant A.T.) accord 2010 [Actifs à 100%]",
+    "76": "Sédentaire (si actif avant A.T.) accord 2010 [Actifs Mixtes non cadre]",
+    "77": "Sédentaire (si actif avant A.T.) accord 2010 [Actifs Mixtes cadre]",
+    "78": "Sédentaire (si actif avant A.T.) accord 2010 [Actifs Intermittents non cadre]",
+    "79": "Sédentaire (si actif avant A.T.) accord 2010 [Actifs sans Prépondérance]",
+    "80": "Fonction Lamanage",
+    "81": "Fonction Pêcheur à pied",
+    "82": "Fonction Autre navigant",
+    "83": "Pénibilité P0",
+    "84": "Pénibilité P1",
+    "85": "Pénibilité P2",
+    "86": "Pénibilité P3"
+   }
   },
   "S21.G00.40.057": {
    "longueur": [
@@ -1391,7 +1913,11 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Orange",
+    "02": "La poste"
+   }
   },
   "S21.G00.40.063": {
    "longueur": [
@@ -1424,13 +1950,51 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "[FP] Détachement auprès d'un parlementaire",
+    "02": "[FP] Détachement sur un emploi de collaborateur cabinet",
+    "03": "[FP] Détachement au titre de la coopération technique",
+    "05": "[FP] Détachement sur un emploi fonctionnel",
+    "06": "[FP] Détachement pour fonction élective ou mandat syndical",
+    "07": "[FP] Détachement pour exercer un mandat de député",
+    "08": "[FP] Détachement pour exercer un mandat de sénateur",
+    "09": "[FP] Détachement (reclassement) pour difficultés opérationnelles",
+    "10": "[FP] Détachement (reclassement) pour raison opérationnelle",
+    "11": "[FP] Détachement auprès d'un organisme de droit privé, d'un EPIC ou d'un GIP",
+    "12": "[FP] Détachement auprès d'un établissement public national",
+    "13": "[FP] Détachement auprès d'une collectivité ou d’un établissement public territorial ou hospitalier",
+    "15": "[FP] Détachement auprès de l’Etat"
+   }
   },
   "S21.G00.40.067": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Cabotage international",
+    "02": "Cabotage national",
+    "03": "Conchyliculture petite pêche",
+    "04": "Culture marine",
+    "05": "Culture marine petite pêche",
+    "06": "Grande pêche",
+    "07": "Lamanage navigation côtière",
+    "08": "Long cours",
+    "09": "Navigation côtière",
+    "10": "Pêche au large",
+    "11": "Pêche côtière",
+    "12": "Petite pêche",
+    "13": "Pilotage",
+    "14": "Remorquage cabotage international",
+    "15": "Remorquage cabotage national",
+    "16": "Remorquage long cours",
+    "17": "Remorquage navigation côtière",
+    "18": "Yachting cabotage international",
+    "19": "Yachting cabotage national",
+    "20": "Yachting long cours",
+    "21": "Yachting navigation côtière"
+   }
   },
   "S21.G00.40.068": {
    "longueur": [
@@ -1469,19 +2033,49 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Travailleur reconnu handicapé par la commission des droits et de l'autonomie des personnes handicapées",
+    "02": "Victime d'accident du travail ou de maladie professionnelle ayant entraîné une incapacité permanente au moins égale à 10 % et titulaire d'une rente",
+    "03": "Titulaire d'une pension d'invalidité à condition que l'invalidité réduise au moins des deux tiers sa capacité de travail",
+    "04": "Bénéficiaire mentionné à l'article L.241-2 du Code des pensions militaires d'invalidité et des victimes de la guerre",
+    "05": "Bénéficiaire mentionné aux articles L.241-3 et L.241-4 du Code des pensions militaires d'invalidité et des victimes de la guerre",
+    "06": "Titulaire d'une allocation ou d'une rente d'invalidité dans les conditions définies par la Loi n°91-1389 du 31 décembre 1991",
+    "07": "Titulaire de la carte \"mobilité inclusion\" portant la mention \"invalidité\" (L. 241-3 du Code de l'action sociale et des familles)",
+    "08": "Titulaire de l'allocation aux adultes handicapés",
+    "09": "Bénéficiaire mentionné aux articles L.241-5 et L.241-6 du Code des pensions militaires d'invalidité et des victimes de guerre",
+    "10": "Agent public reclassé (3ème alinéa de l'article L.323-5 du Code du travail)",
+    "11": "Agent public bénéficiaire d'une allocation temporaire d'invalidité (4ème alinéa de l'article L.323-5 du Code du travail)",
+    "12": "Ayant droit à la prestation de compensation du handicap, à l'allocation compensatrice pour tierce personne ou à l'allocation d'éducation de l'enfant handicapé bénéficiant d'un stage (L.5212-7 du Code du travail)"
+   }
   },
   "S21.G00.40.073": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Poste éligible à l'aide en entreprise adaptée",
+    "02": "Poste éligible à l'aide en structure d’IAE : ACI (ACI_DC)",
+    "03": "Poste éligible à l'aide en structure d’IAE : AI (AI_DC)",
+    "04": "Poste éligible à l'aide en structure d’IAE : EI (EI_DC)",
+    "05": "Poste éligible à l'aide en structure d’IAE : ETTI (ETTI_DC)"
+   }
   },
   "S21.G00.40.074": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Individu en portage salarial",
+    "02": "Individu mis à disposition dans un établissement adhérent du groupement d'employeurs",
+    "03": "Individu d'une entreprise adaptée mis à disposition",
+    "04": "Individu d’une agence de mannequin mis à disposition",
+    "05": "Individu d’une entreprise de travail à temps partagé (ETTP ou ETT) mis à disposition en CDI employabilité",
+    "06": "Individu d’une association intermédiaire mis à disposition",
+    "07": "Individu d'une entreprise de travail à temps partagé (ETTP) mis à disposition hors CDI employabilité"
+   }
   },
   "S21.G00.40.075": {
    "longueur": [
@@ -1502,13 +2096,30 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Collège Exécution",
+    "02": "Collège Maîtrise",
+    "03": "Collège Cadre"
+   }
   },
   "S21.G00.40.078": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Forfait hebdomadaire",
+    "02": "Autre temps de travail hebdomadaire",
+    "03": "Equivalent à 35h - 39h (Mayotte)",
+    "04": "Forfait mensuel",
+    "05": "Forfait annuel en jour",
+    "06": "Forfait annuel en heures",
+    "07": "Cycle",
+    "08": "Modulation",
+    "09": "Aménagement du temps de travail (Loi du 20 août 2008)",
+    "10": "Personnel navigant ou autres"
+   }
   },
   "S21.G00.40.079": {
    "longueur": [
@@ -1553,19 +2164,31 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Oui",
+    "02": "Non"
+   }
   },
   "S21.G00.40.085": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "pour la vieillesse régime de base",
+    "02": "pour la vieillesse régime de base et la retraite complémentaire",
+    "03": "pour la retraite complémentaire"
+   }
   },
   "S21.G00.40.086": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Oui"
+   }
   },
   "S21.G00.41.001": {
    "longueur": [
@@ -1580,31 +2203,108 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "agriculteur salarié de son exploitation",
+    "02": "artisan ou commerçant salarié de son entreprise",
+    "03": "cadre dirigeant (votant au collège employeur des élections prud'homales)",
+    "04": "autres cadres au sens de la convention collective (ou du statut pour les régimes spéciaux)",
+    "05": "profession intermédiaire (technicien, contremaître, agent de maîtrise, clergé)",
+    "06": "employé administratif d'entreprise, de commerce, agent de service",
+    "07": "ouvriers qualifiés et non qualifiés y compris ouvriers agricoles",
+    "08": "agent de la fonction publique d'Etat",
+    "09": "agent de la fonction publique hospitalière",
+    "10": "agent de la fonction publique territoriale"
+   }
   },
   "S21.G00.41.003": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "cadre (article 4 et 4bis)",
+    "02": "extension cadre pour retraite complémentaire",
+    "04": "non cadre",
+    "98": "retraite complémentaire ne définissant pas de statut cadre ou non-cadre",
+    "99": "pas de retraite complémentaire"
+   }
   },
   "S21.G00.41.004": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Contrat de travail à durée indéterminée de droit privé",
+    "02": "Contrat de travail à durée déterminée de droit privé",
+    "03": "Contrat de mission (contrat de travail temporaire)",
+    "07": "Contrat à durée indéterminée intermittent",
+    "08": "Contrat à durée indéterminée intérimaire",
+    "09": "Contrat de travail à durée indéterminée de droit public",
+    "10": "Contrat de travail à durée déterminée de droit public",
+    "20": "[FP] Détachement d’un agent d’une Fonction Publique donnant lieu à pension (ECP)",
+    "21": "[FP] Détachement d’un agent d’une Fonction Publique ne donnant pas lieu à pension (ENCP)",
+    "29": "Convention de stage (hors formation professionnelle)",
+    "32": "Contrat d’appui au projet d’entreprise",
+    "50": "Nomination dans la fonction publique (par arrêté, par décision,…)",
+    "51": "Contrat de mission d’un collaborateur occasionnel du service public (COSP) ou assimilé",
+    "52": "[FP] Cumul d’activité à titre accessoire",
+    "53": "Contrat d'emploi pénitentiaire",
+    "54": "Contrat d'emploi pénitentiaire en apprentissage",
+    "60": "Contrat d'engagement éducatif",
+    "70": "Contrat de soutien et d'aide par le travail",
+    "80": "Mandat social",
+    "81": "Mandat d'élu",
+    "82": "Contrat de travail à durée indéterminée de Chantier ou d'opération",
+    "89": "Volontariat de service civique",
+    "90": "Autre nature de contrat, convention, mandat (hors mandat social)",
+    "91": "Contrat d'engagement maritime à durée indéterminée",
+    "92": "Contrat d'engagement maritime à durée déterminée",
+    "93": "Ligne de service"
+   }
   },
   "S21.G00.41.005": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "21": "CUI - Contrat Initiative Emploi",
+    "41": "Parcours Emploi Compétences / CUI - CAE",
+    "42": "CUI - Contrat d'accès à l'emploi - DOM",
+    "61": "Contrat de Professionnalisation",
+    "64": "Contrat d'apprentissage entreprises artisanales ou de moins de 11 salariés (loi du 3 janvier 1979)",
+    "65": "Contrat d’apprentissage entreprises non inscrites au répertoire des métiers d’au moins 11 salariés (loi de 1987)",
+    "66": "Convention industrielle de formation par la recherche en entreprise (CIFRE)",
+    "70": "Contrat à durée déterminée pour les séniors",
+    "71": "Contrat à durée déterminée d’insertion",
+    "80": "Contrat de génération",
+    "81": "Contrat d'apprentissage secteur public (Loi de 1992)",
+    "83": "Contrat de valorisation de l’expérience",
+    "92": "Stage de la formation professionnelle",
+    "93": "Période de mise en situation en milieu professionnel",
+    "94": "Contrat adulte relais",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.41.006": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "10": "heure",
+    "12": "journée",
+    "20": "forfait jour",
+    "21": "forfait heure",
+    "31": "à la pige",
+    "32": "à la vacation",
+    "33": "à la tâche",
+    "34": "au SMIC",
+    "35": "à la part",
+    "99": "salarié non concerné"
+   }
   },
   "S21.G00.41.007": {
    "longueur": [
@@ -1619,13 +2319,28 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "10": "Temps plein",
+    "20": "Temps partiel",
+    "30": "Temps alterné - personnel navigant de l'aéronautique civile",
+    "40": "CPA 2004",
+    "41": "Temps partiel de droit",
+    "42": "Temps partiel de droit pour enfant",
+    "99": "Salarié non concerné"
+   }
   },
   "S21.G00.41.010": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "régime local Alsace Moselle",
+    "02": "complémentaire CAMIEG",
+    "03": "régime Alsace-Moselle et Complémentaire CAMIEG",
+    "99": "non applicable"
+   }
   },
   "S21.G00.41.011": {
    "longueur": [
@@ -1658,7 +2373,25 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Remplacement d'un salarié",
+    "02": "Accroissement temporaire de l'activité de l'entreprise",
+    "03": "Emplois à caractère saisonnier",
+    "04": "Contrat vendanges",
+    "05": "Contrat d’usage",
+    "06": "Contrat à durée déterminée à objet défini",
+    "07": "Remplacement d'un chef d'entreprise (« artisanale, industrielle ou commerciale, d'une personne exerçant une profession libérale, de son conjoint participant effectivement à l'activité de l'entreprise à titre professionnel et habituel ou d'un associé non salarié d'une société civile professionnelle, d'une société civile de moyens ou d'une société d'exercice libéral »)",
+    "08": "Remplacement du chef d'une exploitation agricole (« ou d'une entreprise mentionnée aux 1° à 4° de l'article L. 722-1 du code rural et de la pêche maritime, d'un aide familial, d'un associé d'exploitation, ou de leur conjoint mentionné à l'article L. 722-10 du même code dès lors qu'il participe effectivement à l'activité de l'exploitation agricole ou de l'entreprise »)",
+    "09": "Recrutement de personnes sans emploi rencontrant des difficultés sociales et professionnelles particulières",
+    "10": "Complément de formation professionnelle au salarié",
+    "11": "Formation professionnelle au salarié par la voie de l'apprentissage, en vue de l'obtention d'une qualification professionnelle sanctionnée par un diplôme ou un titre à finalité professionnelle enregistré au répertoire national des certifications professionnelles",
+    "12": "Remplacement d’un salarié passé provisoirement à temps partiel",
+    "13": "Attente de la suppression définitive du poste du salarié ayant quitté définitivement l’entreprise",
+    "14": "Contrat de voyage",
+    "15": "Recrutement d'un intérimaire en sa qualité de BOETH",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.41.017": {
    "longueur": [
@@ -1673,7 +2406,13 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Détaché",
+    "02": "Expatrié",
+    "03": "Frontalier",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.41.019": {
    "longueur": [
@@ -1721,13 +2460,23 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "salarié cadre",
+    "02": "salarié non cadre",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.41.027": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "pour la vieillesse régime de base",
+    "02": "pour la vieillesse régime de base et la retraite complémentaire",
+    "03": "temps plein ou temps partiel ne cotisant pas sur la base d’un temps plein"
+   }
   },
   "S21.G00.41.028": {
    "longueur": [
@@ -1748,7 +2497,13 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "[FP] Temps complet",
+    "02": "[FP] Temps non complet",
+    "03": "Régime VSDL (Week-endiste)",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.41.031": {
    "longueur": [
@@ -1772,7 +2527,95 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "[FP] Emploi service sédentaire",
+    "02": "[FP] Emploi service actif",
+    "03": "[FP] Emploi à plus de 800 heures annuelles dans les réseaux souterrains et les ouvrages annexes homologués",
+    "04": "[FP] Emploi dans le corps des identificateurs de la Préfecture de Police de Paris",
+    "05": "[FP] Emploi entre 400 et 529 heures annuelles dans les réseaux souterrains et les ouvrages annexes homologués",
+    "06": "[FP] Emploi entre 530 et 799 heures annuelles dans les réseaux souterrains et les ouvrages annexes homologués",
+    "07": "[FP] Emploi entre 400 et 529 heures annuelles en réseaux souterrains ou ouvrages annexes homologués et complément en service actif",
+    "08": "[FP] Emploi entre 530 et 799 heures annuelles en réseaux souterrains ou ouvrages annexes homologués et complément en service actif",
+    "10": "Fonction Capitaine",
+    "11": "Fonction Second capitaine",
+    "12": "Fonction Chef mécanicien",
+    "13": "Fonction Second mécanicien",
+    "14": "Fonction Officier chargé du quart à la passerelle",
+    "15": "Fonction Officier chargé du quart à la machine",
+    "16": "Fonction Officier électrotechnicien / électricien",
+    "17": "Marin qualifié Pont",
+    "18": "Fonction Matelot dans une équipe de quart",
+    "19": "Fonction Matelot sans tâche spécialisée",
+    "20": "Marin qualifié Machine",
+    "21": "Fonction Mécanicien dans une équipe de quart",
+    "22": "Fonction Mécanicien sans tâche spécialisée",
+    "23": "Fonction Matelot électrotechnicien / électricien",
+    "24": "Fonction Opérateur des radiocommunications à bord d’un navire exploité dans le cadre du Système Mondial de Détresse et de Sécurité en Mer (SMDSM)",
+    "25": "Fonction Cuisinier de navire",
+    "26": "Fonction élève machine",
+    "27": "Fonction élève pont",
+    "28": "Fonction Personnel de préparation ou service des repas pour les gens de mer",
+    "29": "Fonction Personnel d’hôtellerie",
+    "30": "Fonction Personnel de propreté",
+    "31": "Fonction Personnel de restauration",
+    "32": "Fonction Personnel de vente",
+    "33": "Fonction Personnel pour l’accueil des passagers",
+    "34": "Fonction Écrivain de bord",
+    "35": "Fonction Médecin",
+    "36": "Fonction Infirmier",
+    "37": "Fonction Hydrographe",
+    "38": "Fonction Pilote maritime",
+    "39": "Fonction Capitaine Polyvalent",
+    "40": "Fonction Second Polyvalent",
+    "41": "Fonction Officier Polyvalent",
+    "42": "Fonction Marin qualifié Polyvalent",
+    "43": "Fonction Matelot Polyvalent",
+    "44": "Fonction Commissaire",
+    "45": "Fonction Officier électronicien",
+    "46": "Fonction élève autre",
+    "47": "Fonction élève polyvalent",
+    "48": "Fonction Navigant cultures marines",
+    "49": "Fonction Personnel usine navire pêche",
+    "50": "Travaux actifs à 100% [Actifs à 100%]",
+    "51": "Travaux mixtes non cadre [Actifs Mixtes non cadre]",
+    "52": "Travaux actifs en partie cadre [Actifs Mixtes cadre]",
+    "53": "Travaux actifs intermittents non cadre [Actifs Intermittents non cadre]",
+    "54": "CSS fonction politique (si actif précédemment) [Actifs à 100%]",
+    "55": "CSS fonction politique (si actif précédemment) [Actifs Mixtes non cadre]",
+    "56": "CSS fonction politique (si actif précédemment) [Actifs Mixtes cadre]",
+    "57": "CSS fonction politique (si actif précédemment) [Actifs Intermittents non cadre]",
+    "58": "CSS fonction syndicale (si actif précédemment) [Actifs à 100%]",
+    "59": "CSS fonction syndicale (si actif précédemment) [Actifs Mixtes non cadre]",
+    "60": "CSS fonction syndicale (si actif précédemment) [Actifs Mixtes cadre]",
+    "61": "CSS fonction syndicale (si actif précédemment) [Actifs Intermittents non cadre]",
+    "62": "Elu CAS SLV (si actif précédemment) [Actifs à 100%]",
+    "63": "Elu CAS SLV (si actif précédemment) [Actifs Mixtes non cadre]",
+    "64": "Elu CAS SLV (si actif précédemment) [Actifs Mixtes cadre]",
+    "65": "Elu CAS SLV (si actif précédemment) [Actifs Intermittents non cadre]",
+    "66": "Sédentaire (si actif avant A.T.) [Actifs à 100%]",
+    "67": "Sédentaire (si actif avant A.T.) [Actifs Mixtes non cadre]",
+    "68": "Sédentaire (si actif avant A.T.) [Actifs Mixtes cadre]",
+    "69": "Sédentaire (si actif avant A.T.) [Actifs Intermittents non cadre]",
+    "70": "A disposition CCAS encadrement [Actifs à 100%]",
+    "71": "A disposition CCAS encadrement [Actifs Mixtes non cadre]",
+    "72": "A disposition CCAS encadrement [Actifs Mixtes cadre]",
+    "73": "A disposition CCAS encadrement [Actifs Intermittents non cadre]",
+    "74": "Services actifs accord 2010 [Actifs sans Prépondérance]",
+    "75": "Sédentaire (si actif avant A.T.) accord 2010 [Actifs à 100%]",
+    "76": "Sédentaire (si actif avant A.T.) accord 2010 [Actifs Mixtes non cadre]",
+    "77": "Sédentaire (si actif avant A.T.) accord 2010 [Actifs Mixtes cadre]",
+    "78": "Sédentaire (si actif avant A.T.) accord 2010 [Actifs Intermittents non cadre]",
+    "79": "Sédentaire (si actif avant A.T.) accord 2010 [Actifs sans Prépondérance]",
+    "80": "Fonction Lamanage",
+    "81": "Fonction Pêcheur à pied",
+    "82": "Fonction Autre navigant",
+    "83": "Pénibilité P0",
+    "84": "Pénibilité P1",
+    "85": "Pénibilité P2",
+    "86": "Pénibilité P3",
+    "99": "Pas de catégorie de service"
+   }
   },
   "S21.G00.41.034": {
    "longueur": [
@@ -1823,7 +2666,12 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Orange",
+    "02": "La poste",
+    "99": "Pas d'ancien employeur public"
+   }
   },
   "S21.G00.41.040": {
    "longueur": [
@@ -1889,25 +2737,82 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Cabotage international",
+    "02": "Cabotage national",
+    "03": "Conchyliculture petite pêche",
+    "04": "Culture marine",
+    "05": "Culture marine petite pêche",
+    "06": "Grande pêche",
+    "07": "Lamanage navigation côtière",
+    "08": "Long cours",
+    "09": "Navigation côtière",
+    "10": "Pêche au large",
+    "11": "Pêche côtière",
+    "12": "Petite pêche",
+    "13": "Pilotage",
+    "14": "Remorquage cabotage international",
+    "15": "Remorquage cabotage national",
+    "16": "Remorquage long cours",
+    "17": "Remorquage navigation côtière",
+    "18": "Yachting cabotage international",
+    "19": "Yachting cabotage national",
+    "20": "Yachting long cours",
+    "21": "Yachting navigation côtière",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.41.048": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Travailleur reconnu handicapé par la commission des droits et de l'autonomie des personnes handicapées",
+    "02": "Victime d'accident du travail ou de maladie professionnelle ayant entraîné une incapacité permanente au moins égale à 10 % et titulaire d'une rente",
+    "03": "Titulaire d'une pension d'invalidité à condition que l'invalidité réduise au moins des deux tiers sa capacité de travail",
+    "04": "Bénéficiaire mentionné à l'article L.241-2 du Code des pensions militaires d'invalidité et des victimes de la guerre",
+    "05": "Bénéficiaire mentionné aux articles L.241-3 et L.241-4 du Code des pensions militaires d'invalidité et des victimes de la guerre",
+    "06": "Titulaire d'une allocation ou d'une rente d'invalidité dans les conditions définies par la Loi n°91-1389 du 31 décembre 1991",
+    "07": "Titulaire de la carte \"mobilité inclusion\" portant la mention \"invalidité\" (L. 241-3 du Code de l'action sociale et des familles)",
+    "08": "Titulaire de l'allocation aux adultes handicapés",
+    "09": "Bénéficiaire mentionné aux articles L.241-5 et L.241-6 du Code des pensions militaires d'invalidité et des victimes de guerre",
+    "10": "Agent public reclassé (3ème alinéa de l'article L.323-5 du Code du travail)",
+    "11": "Agent public bénéficiaire d'une allocation temporaire d'invalidité (4ème alinéa de l'article L.323-5 du Code du travail)",
+    "12": "Ayant droit à la prestation de compensation du handicap, à l'allocation compensatrice pour tierce personne ou à l'allocation d'éducation de l'enfant handicapé bénéficiant d'un stage (L.5212-7 du Code du travail)",
+    "99": "Absence de statut BOETH"
+   }
   },
   "S21.G00.41.049": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Poste éligible à l'aide en entreprise adaptée",
+    "02": "Poste éligible à l'aide en structure d’IAE : ACI (ACI_DC)",
+    "03": "Poste éligible à l'aide en structure d’IAE : AI (AI_DC)",
+    "04": "Poste éligible à l'aide en structure d’IAE : EI (EI_DC)",
+    "05": "Poste éligible à l'aide en structure d’IAE : ETTI (ETTI_DC)",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.41.050": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Individu en portage salarial",
+    "02": "Individu mis à disposition dans un établissement adhérent du groupement d'employeurs",
+    "03": "Individu d'une entreprise adaptée mis à disposition",
+    "04": "Individu d’une agence de mannequin mis à disposition",
+    "05": "Individu d’une entreprise de travail à temps partagé (ETTP ou ETT) mis à disposition en CDI employabilité",
+    "06": "Individu d’une association intermédiaire mis à disposition",
+    "07": "Individu d'une entreprise de travail à temps partagé (ETTP) mis à disposition hors CDI employabilité",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.41.051": {
    "longueur": [
@@ -1922,13 +2827,64 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "134": "régime spécial de la SNCF",
+    "135": "régime spécial de la RATP",
+    "136": "établissement des invalides de la marine (ENIM)",
+    "137": "mineurs ou assimilés (CANSSM)",
+    "138": "militaires de carrière (CNMSS)",
+    "140": "clercs et employés de notaires (CRPCEN)",
+    "141": "chambre de commerce et d'industrie de Paris",
+    "144": "Assemblée Nationale",
+    "145": "Sénat",
+    "146": "port autonome de Bordeaux",
+    "147": "régime spécial des industries électriques et gazières (CAMIEG)",
+    "149": "régimes des cultes (CAVIMAC)",
+    "200": "régime général (CNAM)",
+    "300": "régime agricole (MSA)",
+    "400": "régime spécial Banque de France",
+    "900": "autre régime (réservé Polynésie Française, Nouvelle Calédonie)",
+    "909": "travailleur étranger non assujetti à un régime de base risque maladie en France",
+    "999": "sans régime obligatoire"
+   }
   },
   "S21.G00.41.053": {
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "120": "retraite des agents des collectivités locales (CNRACL)",
+    "121": "pensions des ouvriers des établissements industriels de l'Etat (FSPOEIE)",
+    "122": "pensions civiles et militaires de retraite de l'Etat (SRE)",
+    "134": "régime spécial de la branche ferroviaire",
+    "135": "régime spécial de la RATP",
+    "136": "établissement des invalides de la marine (ENIM)",
+    "137": "mineurs ou assimilés (fonds Caisse des Dépôts)",
+    "139": "Banque de France",
+    "140": "clercs et employés de notaires (CRPCEN)",
+    "141": "chambre de commerce et d'industrie de Paris",
+    "144": "Assemblée Nationale",
+    "145": "Sénat",
+    "147": "régime spécial des industries électriques et gazières (CNIEG)",
+    "149": "régime des cultes (CAVIMAC)",
+    "157": "régime de retraite des avocats (CNBF)",
+    "158": "SEITA",
+    "159": "Comédie Française",
+    "160": "Opéra de Paris",
+    "200": "régime général (CNAV)",
+    "300": "régime agricole (MSA)",
+    "900": "autre régime (réservé Polynésie Française, Nouvelle Calédonie)",
+    "904": "principauté de Monaco",
+    "905": "Régime général pour la déclaration des individus de Mayotte affiliés à la CSSM",
+    "909": "travailleur non assujetti à un régime de base risque vieillesse en France",
+    "994": "absence d'affiliation pour le personnel médical hospitalier universitaire",
+    "995": "absence d’affiliation pour un fonctionnaire en cumul d’activité à titre accessoire",
+    "996": "absence d’affiliation pour un expatrié",
+    "997": "absence d’affiliation pour un stagiaire hors formation professionnelle",
+    "998": "absence d’affiliation pour un élu"
+   }
   },
   "S21.G00.41.054": {
    "longueur": [
@@ -1940,19 +2896,55 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Collège Exécution",
+    "02": "Collège Maîtrise",
+    "03": "Collège Cadre",
+    "99": "Pas de collège"
+   }
   },
   "S21.G00.41.056": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Forfait hebdomadaire",
+    "02": "Autre temps de travail hebdomadaire",
+    "03": "Equivalent à 35h - 39h (Mayotte)",
+    "04": "Forfait mensuel",
+    "05": "Forfait annuel en jour",
+    "06": "Forfait annuel en heures",
+    "07": "Cycle",
+    "08": "Modulation",
+    "09": "Aménagement du temps de travail (Loi du 20 août 2008)",
+    "10": "Personnel navigant ou autres",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.41.057": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "[FP] Détachement auprès d'un parlementaire",
+    "02": "[FP] Détachement sur un emploi de collaborateur cabinet",
+    "03": "[FP] Détachement au titre de la coopération technique",
+    "05": "[FP] Détachement sur un emploi fonctionnel",
+    "06": "[FP] Détachement pour fonction élective ou mandat syndical",
+    "07": "[FP] Détachement pour exercer un mandat de député",
+    "08": "[FP] Détachement pour exercer un mandat de sénateur",
+    "09": "[FP] Détachement (reclassement) pour difficultés opérationnelles",
+    "10": "[FP] Détachement (reclassement) pour raison opérationnelle",
+    "11": "[FP] Détachement auprès d'un organisme de droit privé, d'un EPIC ou d'un GIP",
+    "12": "[FP] Détachement auprès d'un établissement public national",
+    "13": "[FP] Détachement auprès d'une collectivité ou d’un établissement public territorial ou hospitalier",
+    "15": "[FP] Détachement auprès de l’Etat",
+    "16": "[FP] Absence de détachement",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.41.058": {
    "longueur": [
@@ -1964,25 +2956,62 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "134": "régime spécial de la SNCF",
+    "135": "régime spécial de la RATP",
+    "136": "établissement des invalides de la marine (ENIM)",
+    "137": "mineurs ou assimilés (CANSSM)",
+    "147": "régime spécial des industries électriques et gazières",
+    "200": "régime général (CNAM)",
+    "300": "régime agricole (CCMSA ou C3A)",
+    "401": "risque AT/MP pris en charge totalement par l'employeur (hors périmètre Etat)",
+    "402": "risque AT/MP pris en charge partiellement par l'employeur (hors périmètre Etat)",
+    "900": "autre régime",
+    "999": "sans régime obligatoire (fonctionnaire des trois fonctions publiques et contractuels dont le risque AT est couvert par l'Etat)"
+   }
   },
   "S21.G00.41.060": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "[FP] Fonctionnaire",
+    "02": "[FP] Contractuel de la Fonction publique",
+    "03": "Statutaire",
+    "04": "Non statutaire",
+    "06": "Personnel médical hospitalier",
+    "07": "Médecin sans statut hospitalier",
+    "08": "[FP] Fonctionnaire stagiaire",
+    "09": "[FP] Ouvrier d'Etat",
+    "10": "[FP] Militaire",
+    "11": "[FP] Parcours d'accès aux carrières (Pacte)",
+    "12": "[FP] Militaire de réserve",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.41.061": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "emploi unique",
+    "02": "emplois multiples",
+    "03": "situation non connue"
+   }
   },
   "S21.G00.41.062": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "employeur unique",
+    "02": "employeurs multiples",
+    "03": "situation non connue"
+   }
   },
   "S21.G00.41.063": {
    "longueur": [
@@ -2009,25 +3038,55 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Oui",
+    "02": "Non"
+   }
   },
   "S21.G00.41.067": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "pour la vieillesse régime de base",
+    "02": "pour la vieillesse régime de base et la retraite complémentaire",
+    "03": "pour la retraite complémentaire",
+    "04": "non concerné"
+   }
   },
   "S21.G00.41.068": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Oui",
+    "99": "Non concerné"
+   }
   },
   "S21.G00.44.001": {
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "001": "Assujettissement à la taxe à l'apprentissage",
+    "002": "Non assujettissement à la taxe à l'apprentissage",
+    "003": "Assujettissement à la contribution supplémentaire à l’apprentissage",
+    "004": "Non assujettissement à la contribution supplémentaire à l’apprentissage",
+    "005": "Assujettissement à la participation des employeurs à l'effort de construction (PEEC)",
+    "006": "Non assujettissement à la participation des employeurs à l'effort de construction (PEEC)",
+    "007": "Assujettissement à la contribution à la formation professionnelle (CFP)",
+    "008": "Non assujettissement à la contribution à la formation professionnelle (CFP)",
+    "009": "Assujettissement à la taxe sur les salaires",
+    "010": "Non assujettissement à la taxe sur les salaires",
+    "013": "Assujettissement à la contribution dédiée au financement du Compte Personnel de Formation pour les titulaires de CDD (CPF-CDD)",
+    "014": "Non assujettissement à la contribution dédiée au financement du Compte Personnel de Formation pour les titulaires de CDD (CPF-CDD)",
+    "015": "Assiette de la taxe sur les salaires au premier taux",
+    "016": "Assiette de la taxe sur les salaires au deuxième taux"
+   }
   },
   "S21.G00.44.002": {
    "longueur": [
@@ -2117,7 +3176,17 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Taux transmis par la DGFIP",
+    "13": "Barème mensuel métropole",
+    "17": "Barème mathématique sur base mensuelle métropole",
+    "23": "Barème mensuel Guadeloupe, Réunion et Martinique",
+    "27": "Barème mathématique sur base mensuelle Guadeloupe, Réunion et Martinique",
+    "33": "Barème mensuel Guyane et Mayotte",
+    "37": "Barème mathématique sur base mensuelle Guyane et Mayotte",
+    "99": "Indu relatif à un exercice antérieur – pas de taux de PAS"
+   }
   },
   "S21.G00.50.008": {
    "longueur": [
@@ -2168,7 +3237,11 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Eléments de la DSN mensuelle portant les derniers éléments déclarés dans le FCTU",
+    "02": "Eléments de la déclaration précédant la DSN mensuelle portant les derniers éléments déclarés dans le FCTU"
+   }
   },
   "S21.G00.51.001": {
    "longueur": [
@@ -2198,7 +3271,32 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "001": "Rémunération brute non plafonnée",
+    "002": "Salaire brut servant aux calculs des droits de l'Assurance chômage",
+    "003": "Salaire rétabli – reconstitué",
+    "010": "Salaire de base",
+    "012": "Heures d’équivalence",
+    "013": "Heures d’habillage, déshabillage, pause",
+    "016": "[FP] Heures affectées à un travail d’aide à domicile",
+    "017": "Heures supplémentaires ou complémentaires aléatoires",
+    "018": "Heures supplémentaires structurelles",
+    "019": "Heures d'activité partielle",
+    "020": "Heures affectées à un travail d’aide à domicile de publics fragiles",
+    "021": "[FP] Taux de rémunération de la situation administrative",
+    "022": "[FP] Complément de traitement indiciaire (CTI)",
+    "023": "Jours de RTT monétisés",
+    "025": "Heures correspondant à du chômage intempéries",
+    "028": "Rémunération perçue hors éléments non affectés par l’absence",
+    "029": "Rémunération habituelle mois complet hors éléments non affectés par l’absence",
+    "030": "Potentiel nouveau type de rémunération A",
+    "031": "Potentiel nouveau type de rémunération D",
+    "032": "Potentiel nouveau type de rémunération E",
+    "034": "Potentiel nouveau type de rémunération B",
+    "035": "Potentiel nouveau type de rémunération C",
+    "036": "Heures supplémentaires ou complémentaires aléatoires à exclure du calcul d'un dispositif de réduction ou d'exonération de cotisations de Sécurité sociale"
+   }
   },
   "S21.G00.51.012": {
    "longueur": [
@@ -2267,7 +3365,70 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "001": "Indemnité spécifique de rupture conventionnelle",
+    "002": "Indemnité versée à l'occasion de la cessation forcée des fonctions des mandataires sociaux",
+    "003": "Indemnité légale de mise à la retraite par l'employeur",
+    "004": "Indemnité conventionnelle de mise à la retraite par l'employeur",
+    "005": "Indemnité légale de départ à la retraite du salarié",
+    "006": "Indemnité conventionnelle de départ à la retraite du salarié",
+    "007": "Indemnité légale de licenciement",
+    "008": "Indemnité légale supplémentaire de licenciement",
+    "009": "Indemnité légale spéciale de licenciement",
+    "010": "Indemnité légale spécifique de licenciement",
+    "011": "Indemnité légale de fin de CDD",
+    "012": "Indemnité légale de fin de mission",
+    "013": "Indemnité légale due aux journalistes",
+    "014": "Indemnité légale de clientèle",
+    "015": "Indemnité légale due au personnel naviguant de l'aviation civile",
+    "016": "Indemnité légale versée à l'apprenti",
+    "017": "Dommages et intérêts dus à la non remise du contrat ou dus à un CDD ou à une rupture de période d’essai (délai de prévenance)",
+    "018": "Indemnité due en raison d'un sinistre",
+    "019": "Indemnité suite à clause de non concurrence",
+    "020": "Indemnité compensatrice de congés payés",
+    "021": "Indemnité conventionnelle (supplémentaire aux indemnités légales)",
+    "022": "Indemnité transactionnelle",
+    "023": "Indemnité compensatrice de préavis payé non effectué",
+    "025": "Indemnité compensatrice des droits acquis dans le cadre d’un compte épargne temps",
+    "026": "Prime exceptionnelle liée à l'activité avec période de rattachement spécifique",
+    "027": "Prime liée à l'activité avec période de rattachement spécifique",
+    "028": "Prime non liée à l'activité",
+    "029": "Prime liée au repos compensateur ou au rachat des jours de RTT avec période de rattachement spécifique",
+    "030": "Prime rachat CET",
+    "032": "Indemnité compensatrice de préavis pour inaptitude suite AT ou Maladie Professionnelle",
+    "033": "Indemnité forfaitaire de conciliation prud’homale",
+    "034": "Indemnité de congés payés (art. D. 3141-32 et D. 3141-33 du Code du travail)",
+    "039": "Complément de rémunération à la charge de l'Etat",
+    "040": "[FP] Indemnité mensuelle de technicité",
+    "041": "[FP] Indemnité de sujétions spéciales",
+    "042": "[FP] Indemnité de risque",
+    "043": "[FP] Prime de sujétions spéciales",
+    "044": "[FP] Indemnité de sujétion spécifique",
+    "045": "Dommages et intérêts à la non remise du contrat de mission",
+    "046": "Indemnité de congés payés (art. L. 3141-24 du Code du travail)",
+    "047": "[FP] GIPA - Garantie individuelle du pouvoir d'achat",
+    "048": "Indemnité de résidence",
+    "049": "[FP] Supplément familial de traitement",
+    "050": "[FP] RIFSEEP IFSE",
+    "051": "[FP] RIFSEEP CIA",
+    "052": "Supplément de rémunération des agents classe 4 niveau 2 position de rémunération 19",
+    "053": "Supplément de rémunération des agents classe 1 à 3 et 5 à 8",
+    "054": "Supplément de rémunération agents et ex-agents de conduite",
+    "055": "Indemnité transactionnelle exonérée fiscalement",
+    "900": "Indemnité d'expatriation",
+    "901": "Indemnité d'impatriation",
+    "902": "Potentiel nouveau type de prime exceptionnelle de pouvoir d'achat (PEPA)",
+    "903": "Autre prime exonérée de cotisation, contribution sociale et impôt sur le revenu",
+    "904": "Prime de partage de la valeur exonérée socialement et non imposable",
+    "905": "Prime de partage de la valeur exonérée socialement et imposable",
+    "906": "Prime de partage de la valeur soumise à la CSG-CRDS et exonérée socialement et non imposable",
+    "907": "Potentiel nouveau type de prime B",
+    "908": "Potentiel nouveau type de prime C",
+    "909": "Potentiel nouveau type de prime D",
+    "910": "Potentiel nouveau type de prime E",
+    "911": "Potentiel nouveau type de prime A"
+   }
   },
   "S21.G00.52.002": {
    "longueur": [
@@ -2315,7 +3476,11 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Travail rémunéré",
+    "02": "Durée d'absence partiellement ou pas du tout rémunérée"
+   }
   },
   "S21.G00.53.002": {
    "longueur": [
@@ -2330,13 +3495,69 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "10": "heure",
+    "12": "journée",
+    "20": "forfait jour",
+    "21": "forfait heure",
+    "31": "à la pige",
+    "32": "à la vacation",
+    "33": "à la tâche",
+    "35": "heures intermittents du spectacle",
+    "36": "cachets groupés",
+    "37": "cachets isolés",
+    "38": "jour CRPNPAC",
+    "39": "cachet",
+    "40": "jours calendaires de la période d’emploi pris en compte dans le calcul du plafond de Sécurité Sociale",
+    "41": "heure travaillée le dimanche ou le premier mai (ESAT)"
+   }
   },
   "S21.G00.54.001": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Somme versée par un tiers",
+    "02": "Avantage en nature : repas",
+    "03": "Avantage en nature : logement",
+    "04": "Avantage en nature : véhicule",
+    "05": "Avantage en nature : NTIC",
+    "06": "Avantage en nature : autres",
+    "07": "Frais professionnels remboursés au forfait",
+    "08": "Frais professionnels pris en charge par l'employeur",
+    "09": "Frais professionnels remboursés au réel",
+    "10": "Déduction forfaitaire spécifique",
+    "11": "Participation y compris supplément",
+    "12": "Intéressement y compris supplément",
+    "14": "Abondement au plan d'épargne entreprise (PEE)",
+    "15": "Abondement au plan d'épargne interentreprises (PEI)",
+    "16": "Abondement à un plan d'épargne pour la retraite collectif (PERCO, PERECO)",
+    "17": "Participation patronale au financement des titres-restaurant",
+    "18": "Participation patronale aux frais de transports publics",
+    "19": "Participation patronale aux frais de transports personnels",
+    "25": "Droit d'auteur",
+    "26": "Droit de doublage",
+    "27": "Droit de rediffusion",
+    "31": "Avantages de préretraite versés par l’employeur",
+    "33": "Sommes provenant d'un CET et réaffectées à un plan d'épargne retraite (PERCO, PERECO, PEREO) ou à un régime de retraite supplémentaire",
+    "34": "[FP] Prestations familiales",
+    "35": "Parts des frais professionnels réintégrées dans l'assiette de contribution du fait de l'application d'une DFS",
+    "36": "Sommes provenant d'un CET et converties en points retraite RAFP",
+    "37": "Participation et intéressement versés immédiatement et directement par l'employeur",
+    "50": "Potentiel nouveau type d'autre élément de revenu brut A",
+    "51": "Potentiel nouveau type d'autre élément de revenu brut B",
+    "52": "Prime plan de partage de la valorisation de l'entreprise (PPVE) versée immédiatement et directement par l'employeur",
+    "53": "Sommes provenant d’un plan de partage de la valorisation de l'entreprise (PPVE) et affectées à un plan d'épargne salariale ou à un plan d'épargne retraite d'entreprise",
+    "90": "Participation au financement des services à la personne",
+    "91": "Montant de la participation de l'employeur aux chèques vacances",
+    "92": "Cotisation patronale frais de santé",
+    "93": "Cotisation prévoyance et retraite supplémentaire",
+    "94": "Potentiel nouveau type d'autre élément de revenu brut C",
+    "95": "Potentiel nouveau type d'autre élément de revenu brut D",
+    "96": "Potentiel nouveau type d'autre élément de revenu brut E"
+   }
   },
   "S21.G00.54.002": {
    "longueur": [
@@ -2420,7 +3641,13 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Rectification sur rémunération nette fiscale",
+    "02": "Rectification sur taux",
+    "03": "Cas d’indu avec rémunération nette fiscale du mois courant négative",
+    "04": "Rectification sur rémunération nette fiscale sans PAS"
+   }
   },
   "S21.G00.56.003": {
    "longueur": [
@@ -2525,7 +3752,22 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Heure(s) complémentaire(s) ou supplémentaire(s) exonérée(s) fiscalement (y compris journées de RTT monétisées)",
+    "03": "Montant net social",
+    "04": "Potentiel nouveau type d'élément de revenu calculé en net A",
+    "05": "Potentiel nouveau type d'élément de revenu calculé en net B",
+    "06": "Potentiel nouveau type d'élément de revenu calculé en net C",
+    "07": "Potentiel nouveau type d'élément de revenu calculé en net D",
+    "08": "Potentiel nouveau type d'élément de revenu calculé en net E",
+    "10": "IJSS subrogées prises en compte dans le calcul du MNS",
+    "11": "Fraction représentative des frais d'emploi (FRFE)",
+    "12": "Défraiement des frais de mandat du parlementaire (à ne pas renseigner en version de norme P27V01)",
+    "13": "Part exonérée de cotisations sociales des indemnités de rupture",
+    "14": "Indemnité journalière complémentaire de prévoyance subrogée exonérée de cotisations sociales",
+    "15": "Part exonérée de la participation employeurs aux chèques vacances et au financement des services à la personne"
+   }
   },
   "S21.G00.58.004": {
    "longueur": [
@@ -2588,7 +3830,34 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "maladie",
+    "02": "maternité",
+    "03": "paternité / accueil de l’enfant",
+    "04": "congé suite à un accident de trajet",
+    "05": "congé suite à maladie professionnelle",
+    "06": "congé suite à accident de travail ou de service",
+    "07": "femme enceinte dispensée de travail",
+    "09": "adoption",
+    "10": "[FP] Congé suite à une maladie imputable au service",
+    "11": "[FP] Congé de maladie des victimes ou réformés de guerre (art 41)",
+    "12": "[FP] Congé de longue durée",
+    "13": "[FP] Congé de longue maladie",
+    "14": "[FP] Congé pour invalidité temporaire imputable au service",
+    "15": "temps partiel thérapeutique (risque maladie)",
+    "16": "temps partiel thérapeutique (risque accident de travail)",
+    "17": "temps partiel thérapeutique (risque accident de trajet)",
+    "18": "temps partiel thérapeutique (risque maladie professionnelle)",
+    "19": "Deuil d'enfant",
+    "20": "Congé supplémentaire de naissance",
+    "21": "Potentiel nouveau motif d’arrêt B",
+    "22": "Potentiel nouveau motif d’arrêt C",
+    "23": "Potentiel nouveau motif d’arrêt D",
+    "24": "Potentiel nouveau motif d’arrêt E",
+    "25": "Potentiel nouveau motif d’arrêt A",
+    "99": "annulation"
+   }
   },
   "S21.G00.60.002": {
    "longueur": [
@@ -2612,7 +3881,11 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "oui",
+    "02": "non"
+   }
   },
   "S21.G00.60.005": {
    "longueur": [
@@ -2657,7 +3930,12 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "reprise normale",
+    "02": "reprise temps partiel thérapeutique",
+    "03": "reprise temps partiel raison personnelle"
+   }
   },
   "S21.G00.60.012": {
    "longueur": [
@@ -2690,7 +3968,64 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "011": "licenciement suite à liquidation judiciaire ou à redressement judiciaire",
+    "012": "licenciement suite à fermeture définitive de l'établissement",
+    "014": "licenciement pour motif économique",
+    "015": "licenciement pour fin de chantier ou d'opération",
+    "020": "licenciement pour autre motif",
+    "025": "autre fin de contrat pour motif économique",
+    "026": "rupture pour motif économique suite à l'acceptation d’un contrat de sécurisation professionnelle",
+    "031": "fin de contrat à durée déterminée ou fin d'accueil occasionnel",
+    "032": "fin de mission d'intérim",
+    "033": "rupture anticipée d’un CDD ou d’un contrat de mission en cas d’inaptitude physique constatée par le médecin du travail",
+    "034": "fin de période d'essai à l'initiative de l'employeur",
+    "035": "fin de période d'essai à l'initiative du salarié",
+    "036": "rupture anticipée d'un CDD, d’un contrat de professionnalisation, d'un contrat d'apprentissage ou d’un contrat de mission à l'initiative de l'employeur",
+    "037": "rupture anticipée d'un CDD, d’un contrat de professionnalisation, d'un contrat d'apprentissage ou d’un contrat de mission à l'initiative du salarié",
+    "038": "mise à la retraite par l'employeur",
+    "039": "départ à la retraite à l'initiative du salarié",
+    "043": "rupture conventionnelle",
+    "058": "prise d'acte de la rupture de contrat de travail",
+    "059": "démission",
+    "065": "décès de l'employeur ou internement / conduit à un licenciement autre motif",
+    "066": "décès de l’individu",
+    "070": "[FP] Révocation suite à abandon de poste",
+    "071": "[FP] Révocation suite à sanction pénale",
+    "072": "[FP] Révocation suite à sanction disciplinaire",
+    "081": "fin de contrat d'apprentissage",
+    "082": "résiliation judiciaire du contrat de travail",
+    "083": "rupture de contrat de travail ou d’un contrat de mission pour force majeure ou fait du prince",
+    "084": "rupture d'un commun accord du CDD, d’un contrat de professionnalisation, du contrat d'apprentissage ou d’un contrat de mission",
+    "085": "fin de mandat",
+    "086": "licenciement convention CATS",
+    "087": "licenciement pour faute grave",
+    "088": "licenciement pour faute lourde",
+    "089": "licenciement pour force majeure",
+    "091": "licenciement pour inaptitude physique d'origine non professionnelle",
+    "092": "licenciement pour inaptitude physique d'origine professionnelle",
+    "093": "licenciement suite à décision d'une autorité administrative",
+    "094": "rupture anticipée du contrat de travail pour arrêt de tournage",
+    "095": "rupture anticipée du contrat de travail ou d’un contrat de mission pour faute grave",
+    "096": "rupture anticipée du contrat de travail ou d’un contrat de mission pour faute lourde",
+    "097": "rupture anticipée d’un contrat de travail ou d’un contrat de mission suite à fermeture de l'établissement",
+    "098": "retrait d'enfant",
+    "099": "Annulation",
+    "100": "Mutation au sein du même groupe ou extérieure au groupe pour les secteurs d’activité autorisés (gardiennage, ménage, restauration, etc.) sans rupture du contrat",
+    "110": "Rupture conventionnelle collective",
+    "111": "Rupture amiable dans le cadre d’un congé de mobilité",
+    "112": "Rupture dans le cadre d'un accord de performance collective",
+    "113": "Licenciement pour motif spécifique (Article L. 2254-2 du Code du Travail)",
+    "114": "Rupture d’un commun accord pour entrée en PAP",
+    "115": "Licenciement au titre des articles 18 et 19 de la loi n° 2017-1339 du 15 septembre 2017",
+    "116": "Fin de ligne de service",
+    "117": "licenciement pour motif économique suite au refus d’un contrat de sécurisation professionnelle",
+    "118": "Fin de contrat d’appui au projet d’entreprise",
+    "119": "Fin d'affectation",
+    "998": "transfert du contrat de travail sans rupture du contrat vers un autre établissement pas rentré dans la DSN",
+    "999": "fin de relation avec l’employeur (autres que contrat de travail, convention ou mandat)"
+   }
   },
   "S21.G00.62.003": {
    "longueur": [
@@ -2732,7 +4067,11 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "oui",
+    "02": "non"
+   }
   },
   "S21.G00.62.011": {
    "longueur": [
@@ -2756,19 +4095,39 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Gérant ou collège de gérance",
+    "02": "Administrateur",
+    "03": "Directeur Général",
+    "04": "Président Directeur Général",
+    "05": "Membre du Directoire",
+    "06": "Président du Directoire",
+    "07": "Membre du Conseil de surveillance",
+    "08": "Président, administrateur, secrétaire ou trésorier d'une association",
+    "09": "Contrôleur de gestion, membre ou administrateur membre d'un GIE",
+    "10": "Associé, actionnaire",
+    "11": "Salarié en portage salarial"
+   }
   },
   "S21.G00.62.016": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "oui"
+   }
   },
   "S21.G00.62.017": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Application du circuit dérogatoire",
+    "02": "Non application du circuit dérogatoire"
+   }
   },
   "S21.G00.62.018": {
    "longueur": [
@@ -2801,13 +4160,27 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Proposition refusée"
+   }
   },
   "S21.G00.63.001": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "préavis effectué et payé",
+    "02": "préavis non effectué et payé",
+    "03": "préavis non effectué et non payé",
+    "10": "préavis non effectué non payé dans le cadre d’un contrat de sécurisation professionnelle (CSP)",
+    "50": "préavis non effectué et payé dans le cadre d’un congé de reclassement",
+    "51": "préavis non effectué et payé dans le cadre d’un congé de mobilité",
+    "60": "Délai de prévenance",
+    "61": "préavis non effectué et non payé dans le cadre du parcours d’accompagnement personnalisé (PAP)",
+    "90": "pas de clause de préavis applicable"
+   }
   },
   "S21.G00.63.002": {
    "longueur": [
@@ -2831,7 +4204,88 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "112": "Invalidité catégorie 1",
+    "114": "Invalidité catégorie 2",
+    "116": "Invalidité catégorie 3",
+    "200": "COP (Congés payés indemnisés par une caisse de congés payés)",
+    "301": "Congé de Formation Professionnelle",
+    "501": "Congé divers non rémunéré",
+    "507": "Chômage intempéries",
+    "601": "Mobilité (volontaire sécurisée, internationale des alternants, …)",
+    "602": "Chômage sans rupture de contrat",
+    "603": "Détention provisoire",
+    "605": "Congé statutaire",
+    "606": "Détachement d'un salarié IEG",
+    "607": "Congé de présence parentale",
+    "608": "CASA-CATS (Cessation d'Activité des Travailleurs Salariés)",
+    "610": "Projet de Transition Professionnelle (PTP) ou Congé de Reconversion Professionnelle (CRP)",
+    "611": "Congé de bilan de compétences",
+    "612": "Congé de candidat parlementaire ou élu à un mandat local",
+    "615": "Congé de formation de cadres et d'animateurs pour la jeunesse",
+    "617": "Congé de formation pour les salariés de moins de 25 ans",
+    "618": "Congé de formation économique, sociale, environnementale et syndicale (CFESES)",
+    "620": "Congé de mobilité",
+    "621": "Congé de participation aux instances d'emploi ou de formation professionnelle",
+    "625": "Congé de reclassement",
+    "626": "Congé de représentation",
+    "627": "Congé de solidarité familiale",
+    "628": "Congé de solidarité internationale",
+    "630": "Congé d'enseignement ou de recherche",
+    "631": "Congé mutualiste de formation",
+    "632": "Congé parental d'éducation",
+    "633": "Congé pour acquisition de la nationalité",
+    "634": "Congé pour catastrophe naturelle",
+    "635": "Congé pour création ou reprise d'entreprise",
+    "636": "Congé pour enfant malade",
+    "637": "Congé pour évènement familial",
+    "638": "Congé pour validation des acquis de l'expérience",
+    "639": "Congé sabbatique",
+    "642": "Convention FNE d'aide au passage à temps partiel",
+    "643": "Congé de conversion avec prise en charge par l'Etat",
+    "644": "Congé de conversion sans prise en charge par l'Etat",
+    "645": "Préretraite progressive",
+    "646": "Préretraite d'entreprise sans rupture de contrat de travail",
+    "647": "Réduction temps d'emploi",
+    "650": "Congé de proche aidant",
+    "651": "Congé pour mandat parlementaire",
+    "652": "Inaptitude temporaire liée à la grossesse",
+    "653": "Maintien de salaire – personnel navigant de l’aéronautique civile",
+    "654": "Inactivité temps alterné – personnel navigant de l’aéronautique civile",
+    "655": "[FP] Détachement conduisant à pension (ECP)",
+    "656": "[FP] Congé pour cessation anticipée d’activité du fait d’une maladie professionnelle provoquée par l’amiante",
+    "657": "[FP] Absence concertée de travail",
+    "658": "[FP] Congé spécial",
+    "659": "[FP] Période d'instruction militaire ou réserve opérationnelle",
+    "660": "[FP] Congé avec traitement période d'instruction militaire obligatoire",
+    "661": "[FP] Congé organisations de jeunesse",
+    "662": "[FP] Congé pour siéger auprès d’une association, d’une mutuelle, d’une instance de l’Etat ou d’une collectivité territoriale",
+    "663": "Congé non rémunéré de 18 jours pour mandats municipaux ou départementaux ou régionaux",
+    "664": "[FP] Congé avec traitement pour période d'activité dans la réserve de sécurité civile",
+    "665": "[FP] Congé pour période d'activité dans la réserve sanitaire",
+    "666": "[FP] Congé pour recherches ou conversions thématiques",
+    "667": "[FP] Congé pour raisons opérationnelles et activités privées des sapeurs-pompiers professionnels",
+    "668": "[FP] Congé pour raisons opérationnelles cotisé des sapeurs-pompiers professionnels",
+    "669": "[FP] Congé pour difficultés opérationnelles des sapeurs-pompiers professionnels",
+    "670": "[FP] Congé pour période d'activité dans la réserve civile de la police",
+    "671": "[FP] Exclusion temporaire de fonctions",
+    "672": "[FP] Suspension",
+    "673": "[FP] Absences irrégulières (service non fait)",
+    "674": "[FP] Détachement ne conduisant pas à pension (ENCP)",
+    "675": "[FP] Disponibilité",
+    "676": "[FP] Disponibilité pour maladie",
+    "677": "Disponibilité pour élever un enfant âgé de moins de 12 ans (de moins de 8 ans pour la RATP)",
+    "678": "[FP] Position hors cadres",
+    "680": "Congé sans solde cotisé",
+    "683": "Potentiel nouveau motif de suspension A",
+    "684": "Potentiel nouveau motif de suspension B",
+    "685": "Potentiel nouveau motif de suspension C",
+    "686": "Contrat suspendu pour expatriation",
+    "687": "Potentiel nouveau motif de suspension D",
+    "688": "Potentiel nouveau motif de suspension E",
+    "998": "Annulation"
+   }
   },
   "S21.G00.65.002": {
    "longueur": [
@@ -2990,25 +4444,53 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Affiliation prévoyance applicable à plusieurs contrats de travail"
+   }
   },
   "S21.G00.71.002": {
    "longueur": [
     4,
     8
-   ]
+   ],
+   "valeurs": {
+    "RETA": "Retraite complémentaire ARRCO",
+    "RETC": "Retraite complémentaire ARRCO et AGIRC",
+    "RUAA": "Régime unifié AGIRC-ARRCO",
+    "CAVEC": "Caisse d'assurance vieillesse des experts-comptables et des commissaires aux comptes",
+    "CNBF": "Caisse nationale des Barreaux Français",
+    "CRPCEN": "Clercs et employés de notaire",
+    "CRPNPAC": "Caisse de Retraite du Personnel Navigant Professionnel de l'Aéronautique Civile",
+    "IRCANTEC": "Institution de retraite complémentaire des agents non titulaires de l’État et des collectivités publiques",
+    "90000": "pas de régime complémentaire"
+   }
   },
   "S21.G00.72.001": {
    "longueur": [
     4,
     8
-   ]
+   ],
+   "valeurs": {
+    "RETA": "Retraite complémentaire ARRCO",
+    "RETC": "Retraite complémentaire ARRCO et AGIRC",
+    "RUAA": "Régime unifié AGIRC-ARRCO",
+    "CAVEC": "Caisse d'assurance vieillesse des experts-comptables et des commissaires aux comptes",
+    "CNBF": "Caisse nationale des Barreaux Français",
+    "CRPCEN": "Clercs et employés de notaire",
+    "CRPNPAC": "Caisse de Retraite du Personnel Navigant Professionnel de l'Aéronautique Civile",
+    "IRCANTEC": "Institution de retraite complémentaire des agents non titulaires de l’État et des collectivités publiques",
+    "90000": "pas de régime complémentaire"
+   }
   },
   "S21.G00.73.001": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Oui"
+   }
   },
   "S21.G00.73.002": {
    "longueur": [
@@ -3020,7 +4502,12 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "adulte (conjoint, concubin, pacs)",
+    "02": "enfant",
+    "03": "autre (ascendant, collatéraux, …)"
+   }
   },
   "S21.G00.73.004": {
    "longueur": [
@@ -3089,7 +4576,28 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "114": "Invalidité catégorie 2",
+    "116": "Invalidité catégorie 3",
+    "607": "Congé de présence parentale",
+    "627": "Congé de solidarité familiale",
+    "630": "Congé d'enseignement ou de recherche",
+    "632": "Congé parental d'éducation",
+    "635": "Congé pour création ou reprise d'entreprise",
+    "642": "Convention FNE d'aide au passage à temps partiel",
+    "645": "Retraite progressive",
+    "646": "Préretraite d’entreprise sans rupture du contrat de travail",
+    "647": "Réduction temps d'emploi",
+    "650": "Congé de proche aidant",
+    "652": "Inaptitude temporaire liée à la grossesse",
+    "683": "Potentiel nouveau motif d'aménagement A",
+    "684": "Potentiel nouveau motif d'aménagement B",
+    "685": "Potentiel nouveau motif d'aménagement C",
+    "687": "Potentiel nouveau motif d'aménagement D",
+    "688": "Potentiel nouveau motif d'aménagement E",
+    "998": "Annulation"
+   }
   },
   "S21.G00.75.002": {
    "longueur": [
@@ -3113,13 +4621,90 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "114": "Invalidité catégorie 2",
+    "116": "Invalidité catégorie 3",
+    "607": "Congé de présence parentale",
+    "627": "Congé de solidarité familiale",
+    "630": "Congé d'enseignement ou de recherche",
+    "632": "Congé parental d'éducation",
+    "635": "Congé pour création ou reprise d'entreprise",
+    "642": "Convention FNE d'aide au passage à temps partiel",
+    "645": "Retraite progressive",
+    "646": "Préretraite d’entreprise sans rupture du contrat de travail",
+    "647": "Réduction temps d'emploi",
+    "650": "Congé de proche aidant",
+    "652": "Inaptitude temporaire liée à la grossesse",
+    "683": "Potentiel nouveau motif d'aménagement A",
+    "684": "Potentiel nouveau motif d'aménagement B",
+    "685": "Potentiel nouveau motif d'aménagement C",
+    "687": "Potentiel nouveau motif d'aménagement D",
+    "688": "Potentiel nouveau motif d'aménagement E"
+   }
   },
   "S21.G00.78.001": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "02": "Assiette brute plafonnée",
+    "03": "Assiette brute déplafonnée",
+    "04": "Assiette de la contribution sociale généralisée",
+    "05": "Assiette du forfait social",
+    "07": "Assiette des contributions d'Assurance Chômage",
+    "08": "Assiette retraite CPRPF",
+    "09": "Assiette de compensation bilatérale maladie CPRPF",
+    "10": "Base brute fiscale",
+    "11": "Base forfaitaire soumise aux cotisations de Sécurité Sociale",
+    "12": "Assiette du crédit d'impôt compétitivité-emploi",
+    "13": "Assiette du forfait social à 8%",
+    "14": "Assiette du forfait social à 20%",
+    "15": "Assiette brute du régime spécial IEG",
+    "16": "Assiette brute du complément invalidité IEG",
+    "17": "Assiette brute du petit pool IEG",
+    "18": "Assiette brute plafonnée régime maladie IEG",
+    "19": "Assiette CRPCEN",
+    "20": "Caisses de congés payés (CIBTP, Transport, Manutention portuaire) - Base brute de cotisations congés payés",
+    "21": "CIBTP - Base brute de cotisations OPPBTP permanents",
+    "22": "Base brute spécifique",
+    "23": "Base exceptionnelle (Agirc Arrco)",
+    "24": "Base plafonnée spécifique",
+    "25": "Assiette de contribution libératoire",
+    "27": "Assiette Caisse de congés spectacles",
+    "28": "Base IRCANTEC cotisée",
+    "31": "Eléments de cotisation Prévoyance, Santé, retraite supplémentaire",
+    "33": "Assiette Contribution sur les avantages de préretraite entreprise",
+    "34": "CIBTP - Base plafonnée de cotisations intempéries gros oeuvre travaux publics",
+    "35": "CIBTP - Base plafonnée de cotisations intempéries second oeuvre",
+    "36": "CIBTP - Base de cotisations dérogatoire Bâtiment",
+    "38": "Rémunération pour le calcul de la réduction Travailleur Occasionnel",
+    "39": "CIBTP - Base de cotisations dérogatoire Travaux Publics",
+    "40": "CIBTP - Base de cotisations dérogatoire Partenaires Bâtiment",
+    "41": "CRPNPAC-Assiette soumise au taux normal (non-plafonnée)",
+    "42": "CRPNPAC-Assiette soumise au taux majoré (non-plafonnée)",
+    "43": "Base plafonnée exceptionnelle Agirc Arrco",
+    "44": "Assiette du forfait social à 16%",
+    "45": "Base plafonnée ICP Agirc-Arrco",
+    "46": "[FP] SRE – Base brute pension civile et militaire",
+    "47": "[FP] SRE – Base brute accessoires pension civile et militaire",
+    "48": "[FP] CNRACL – Base brute avant abattement",
+    "49": "[FP] RAFP – Base brute avant abattement",
+    "50": "[FP] FSPOEIE - Base brute avant abattement",
+    "52": "Assiette spécifique Tranche 2 régime spécial RATP",
+    "53": "Assiette spécifique régime spécial RATP",
+    "54": "Assiette du forfait social à 10%",
+    "55": "Assiette de pénibilité conventionnelle de la Manutention portuaire",
+    "56": "Potentielle nouvelle base assujettie A",
+    "57": "Assiette du versement mobilité",
+    "59": "Base contrat d’emploi pénitentiaire 1",
+    "60": "Base contrat d’emploi pénitentiaire 2",
+    "61": "Potentielle nouvelle base assujettie D",
+    "62": "Potentielle nouvelle base assujettie E",
+    "63": "Potentielle nouvelle base assujettie B",
+    "64": "Potentielle nouvelle base assujettie C"
+   }
   },
   "S21.G00.78.002": {
    "longueur": [
@@ -3173,7 +4758,38 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Montant du SMIC retenu pour le calcul de la réduction générale dégressive unique des cotisations patronales de sécurité sociale, de retraite complémentaire et d'assurance chômage",
+    "02": "Montant du SMIC retenu pour le calcul du crédit d'impôt compétitivité-emploi",
+    "03": "Contributions patronales à des régimes complémentaires de retraite",
+    "04": "Contributions patronales destinées au financement des prestations de prévoyance complémentaire",
+    "05": "Contributions patronales destinées au financement des prestations de retraite supplémentaire",
+    "06": "Plafond calculé pour salarié poly-employeurs",
+    "07": "Plafond de Sécurité Sociale appliqué",
+    "10": "Salaire brut Prévoyance",
+    "11": "Tranche A Prévoyance",
+    "12": "Tranche 2 Prévoyance",
+    "13": "Tranche B Prévoyance",
+    "14": "Tranche C Prévoyance",
+    "15": "Tranche D Prévoyance",
+    "16": "Tranche D1 Prévoyance",
+    "17": "Base spécifique Prévoyance",
+    "18": "Base forfaitaire Prévoyance",
+    "19": "Base fictive Prévoyance reconstituée",
+    "20": "Montant forfaitaire Prévoyance",
+    "21": "Montant Prévoyance libre ou exceptionnel",
+    "22": "Montant des indemnités journalières CRPCEN",
+    "23": "Sans composant de base assujettie en paie",
+    "24": "Tranche 2 Unifiée Prévoyance",
+    "25": "Potentiel nouveau type de composant de base assujettie A",
+    "26": "Potentiel nouveau type de composant de base assujettie B",
+    "27": "Potentiel nouveau type de composant de base assujettie C",
+    "28": "Potentiel nouveau type de composant de base assujettie D",
+    "29": "Potentiel nouveau type de composant de base assujettie E",
+    "90": "Retenue sur salaire",
+    "91": "Base de taxe sur les salaires au taux normal"
+   }
   },
   "S21.G00.79.004": {
    "longueur": [
@@ -3194,7 +4810,177 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "001": "Exonération de cotisations au titre de l'emploi d'un apprenti (loi de 1979)",
+    "002": "Exonération de cotisations au titre de l'emploi d'un apprenti (loi de 1987)",
+    "003": "Exonération de cotisations au titre de l'emploi d'un apprenti (loi de 1992)",
+    "004": "Exonération de cotisations au titre de l'emploi d'un salarié en contrat d'accès à l'emploi",
+    "006": "Exonération de cotisations au titre de l'emploi d'un salarié en contrat d'accompagnement dans l'emploi",
+    "008": "Exonération de cotisations au titre de l'emploi d'un salarié en contrat de professionnalisation",
+    "009": "Exonération de cotisations applicable aux associations intermédiaires",
+    "010": "Exonération de cotisations applicable aux entreprises des bassins d'emploi à redynamiser",
+    "011": "Exonération de cotisations applicable au créateur ou repreneur d'entreprise",
+    "012": "Exonération de cotisations applicable dans les DOM",
+    "013": "Exonération de cotisations applicable aux entreprises et associations d'aide à domicile",
+    "014": "Exonérations de cotisations applicable aux entreprises innovantes, universitaires ou de croissance",
+    "015": "Exonération de cotisations applicable aux entreprises en zones franches urbaines",
+    "016": "Exonération de cotisations applicable aux organismes d'intérêt général en zones de revitalisation rurale",
+    "017": "Exonération de cotisations applicable aux structures agréées de l'aide sociale",
+    "018": "Réduction générale dégressive unique des cotisations patronales de sécurité sociale et d'assurance chômage",
+    "019": "Réduction de cotisations applicable aux entreprises des zones de restructuration de la défense",
+    "020": "Réduction de cotisations au titre de l'embauche du 1er au 50ème salarié en zones de revitalisation rurale",
+    "021": "Déduction patronale au titre des heures supplémentaires",
+    "022": "Exonération de cotisations applicable à une gratification de stage",
+    "023": "Exonération de cotisation des sommes provenant d'un CET et réaffectées à un plan d'épargne retraite (PERCO, PERECO, PEREO) ou à un régime de retraite supplémentaire",
+    "025": "Exonération de cotisations au titre de l’emploi d’un salarié en chantier et atelier d'insertion",
+    "027": "Exonération Personnel technique CUMA, hors ateliers",
+    "028": "Réduction Travailleur Occasionnel",
+    "029": "Réduction employeurs petit pool IEG",
+    "030": "Cotisation employeurs régime spécial maladie IEG Complémentaire",
+    "031": "Cotisation salariés régime spécial maladie IEG Complémentaire",
+    "032": "Cotisation salariés régime maladie IEG spécial Solidarité",
+    "033": "Cotisation employeurs complément d'invalidité IEG",
+    "034": "Cotisation employeurs régime de droit commun IEG (population adossée)",
+    "035": "Cotisation employeurs autres risques IEG",
+    "036": "Cotisation employeurs régime spécial IEG (population non adossée)",
+    "037": "Cotisation salariés régime de droit commun IEG (population adossée)",
+    "038": "Cotisation salariés régime spécial IEG (population non adossée)",
+    "039": "Cotisations employeurs petit pool IEG",
+    "040": "Cotisation AC : assurance chômage sur rémunérations brutes après déduction",
+    "041": "Cotisation AC majorée 1 : application d’une majoration AC + 0,5% sur les contrats d’usage inférieurs ou égaux à 3 mois",
+    "042": "Cotisation AC majorée 2 : application d’une majoration AC + 3% sur les contrats d’accroissement temporaire d’activité inférieurs ou égaux à 1 mois",
+    "043": "Cotisation AC majorée 3 : application d’une majoration AC + 1,5% sur les contrats d’accroissement temporaire d’activité supérieurs à 1 mois mais inférieurs ou égaux à 3 mois",
+    "044": "Exonération de cotisation chômage pour les moins de 26 ans",
+    "045": "Cotisation Accident du travail",
+    "046": "Cotisation AEF Bourse de l'emploi",
+    "047": "Cotisation AEF CESA",
+    "048": "Cotisation AGS : assurance garantie des salaires sur rémunérations brutes après déduction",
+    "049": "Cotisation Allocation de logement (FNAL)",
+    "051": "Cotisation Formation professionnelle ADEFA",
+    "053": "Cotisation Formation professionnelle additionnelle FAFSEA",
+    "054": "Cotisation Formation professionnelle AREFA",
+    "056": "Cotisation Formation professionnelle FAFSEA",
+    "057": "Cotisation Formation professionnelle FAFSEA CDD",
+    "058": "Cotisation Formation professionnelle FAFSEA des communes forestières",
+    "059": "Cotisation individuelle Prévoyance-Assurance-Mutuelle pour la période et l'affiliation concernées",
+    "060": "Cotisation IRCANTEC Tranche A",
+    "061": "Cotisation IRCANTEC Tranche B",
+    "065": "Cotisation CRPCEN",
+    "066": "Cotisation caisse de congés spectacles",
+    "068": "Contribution solidarité autonomie",
+    "069": "Contribution sur avantage de pré-retraite entreprise à dater du 11/10/2007 (CAPE)",
+    "070": "Contribution sur avantage de pré-retraite entreprise aux taux normal (CAPE)",
+    "071": "Contribution forfait social",
+    "072": "Contribution sociale généralisée/salaires partiellement déductibles",
+    "073": "CSG/CRDS sur participation intéressement épargne salariale",
+    "074": "Cotisation Allocation familiale - taux normal",
+    "075": "Cotisation Assurance Maladie",
+    "076": "Cotisation Assurance Vieillesse",
+    "077": "Montant de la retenue à la source effectuée sur les salaires versés aux personnes domiciliées hors de France",
+    "078": "Pénalité de 1% emploi sénior",
+    "079": "Remboursement de la dette sociale",
+    "081": "Versement mobilité",
+    "082": "Versement mobilité additionnel",
+    "088": "Exonération versement mobilité",
+    "089": "Exonération Contrat Initiative Emploi",
+    "090": "Exonération accueillants familiaux",
+    "091": "Cotisation Service de santé au travail",
+    "092": "Cotisation Association pour l'emploi des cadres ingénieurs et techniciens de l'agriculture (APECITA)",
+    "093": "Contribution sur indemnités de mise à la retraite ou de rupture conventionnelle individuelle",
+    "094": "Exonération cotisations Allocations familiales (SICAE)",
+    "096": "Cotisation CRPNPAC au fonds de retraite",
+    "097": "Cotisation CRPNPAC au fonds d'assurance",
+    "098": "Cotisation CRPNPAC au fonds de majoration",
+    "099": "Contribution stock options",
+    "100": "Contribution au financement du dialogue social",
+    "101": "Association Mutualisation du Coût Inaptitude",
+    "102": "Complément de cotisation Allocation Familiale",
+    "103": "Contribution actions gratuites",
+    "104": "Pénibilité Cotisation de base",
+    "106": "Réduction générale dégressive unique des cotisations patronales de retraite complémentaire",
+    "107": "Forfait marin",
+    "108": "Demi-rôle marin",
+    "109": "Exonération de cotisations salariales de retraite complémentaire au titre de l'emploi d'un apprenti",
+    "110": "Exonération de cotisations patronales de retraite complémentaire applicable dans les DOM (LODEOM) SMIC 130% à 220%",
+    "111": "Exonération de cotisations de retraite complémentaire applicable aux entreprises et associations d'aide à domicile",
+    "112": "Exonération de cotisations patronales de retraite complémentaire applicable dans les DOM (LODEOM) SMIC 170% à 270%",
+    "113": "Exonération de cotisations patronales de retraite complémentaire applicable dans les DOM (LODEOM) SMIC 170% à 350%",
+    "114": "Montant de réduction des heures supplémentaires/complémentaires",
+    "115": "Cotisation Assurance Maladie pour le Régime Local Alsace Moselle",
+    "116": "Cotisation absente de la norme en cas de régularisation prud'homale",
+    "128": "Contribution à la formation professionnelle (CFP)",
+    "129": "Contribution dédiée au financement du Compte Personnel de Formation pour les titulaires de CDD (CPF-CDD)",
+    "130": "Part principale de la taxe d'apprentissage",
+    "131": "Cotisation régime unifié Agirc-Arrco",
+    "132": "Cotisation Apec",
+    "133": "Contribution maladie spécifique Mayotte",
+    "140": "Contribution conventionnelle au financement du dialogue social",
+    "141": "Contribution conventionnelle à la formation professionnelle",
+    "142": "Cotisation régime unifié Agirc-Arrco (part patronale tranche T1)",
+    "143": "Contribution au compte professionnel de prévention (C2P)",
+    "144": "Cotisation CAVEC - classe C",
+    "145": "Cotisation CAVEC - classe D",
+    "146": "Cotisation régime unifié Agirc-Arrco (part patronale T2) et CEG (part patronale T2), hors CET",
+    "147": "Contribution vieillesse due au titre d'un plan de partage de la valorisation de l'entreprise (PPVE)",
+    "148": "Contribution d'équilibre technique (CET) part patronale",
+    "300": "[FP] Cotisations normales (part salariale)",
+    "301": "[FP] Cotisations normales (part patronale)",
+    "302": "[FP] Surcotisation huit trimestres (part salariale)",
+    "303": "[FP] Validation de services (part salariale)",
+    "304": "[FP] Cotisations Nouvelle Bonification Indiciaire (part salariale)",
+    "305": "[FP] Cotisations Nouvelle Bonification Indiciaire (part patronale)",
+    "306": "[FP] Cotisations sur indemnité de feu (part salariale)",
+    "307": "[FP] Cotisations sur indemnité de feu (part patronale)",
+    "308": "[FP] Cotisation sur bonification sapeur pompier (part salariale)",
+    "309": "[FP] Cotisation sur prime sur sujetion des aides soignantes (part salariale)",
+    "310": "[FP] Cotisation sur prime sur sujetion des aides soignantes (part patronale)",
+    "311": "[FP] Cotisation RAFP (part salariale)",
+    "312": "[FP] Cotisation RAFP (part patronale)",
+    "313": "[FP] Cotisations pour pension sur ISS ou PSS (part salariale)",
+    "314": "[FP] Cotisations pour pension sur ISS ou PSS (part patronale)",
+    "315": "[FP] Cotisations pour pension sur IR (part salariale)",
+    "316": "[FP] Cotisations pour pension sur IR (part patronale)",
+    "317": "[FP] Cotisations pour pension sur IMT (part salariale)",
+    "318": "[FP] Cotisations pour pension sur IMT (part patronale)",
+    "319": "[FP] Cotisations pour l'allocation temporaire d'invalidité (part patronale)",
+    "320": "[FP] Surcotisation (part salariale)",
+    "321": "[FP] Rachat des années d'études (part salariale)",
+    "322": "[FP] Exonération de cotisation pour heures d’aide à domicile (part patronale)",
+    "323": "[FP] Cotisation RAEP (part patronale)",
+    "324": "[FP] Cotisation RAEP (part salariale)",
+    "325": "[FP] Validation de services (part patronale)",
+    "326": "[FP] Régularisation de service (part salariale)",
+    "327": "[FP] Régularisation de service (part patronale)",
+    "330": "Régime de base forfaitaire CNBF",
+    "331": "Régime de base proportionnelle CNBF",
+    "332": "Régime complémentaire CNBF",
+    "333": "Cotisation contrat d’emploi pénitentiaire 1",
+    "334": "Cotisation contrat d’emploi pénitentiaire 2",
+    "901": "Cotisation épargne retraite",
+    "902": "Contribution à la formation professionnelle des Artisans assimilés salariés",
+    "903": "Cotisation AFNCA",
+    "904": "Cotisation ANEFA",
+    "905": "Cotisation ASCPA",
+    "906": "Cotisation PROVEA",
+    "907": "Complément de cotisation Assurance Maladie",
+    "908": "Taxe forfaitaire CDDU Assurance Chômage",
+    "909": "Cotisation au titre du financement des régimes de retraites supplémentaires à prestation définies",
+    "910": "Exonération de cotisations patronales pour les entreprises affectées par la crise sanitaire",
+    "911": "Réduction de cotisations patronales pour les entreprises du secteur de la vigne affectées par la crise sanitaire",
+    "912": "Exonération du forfait social à 10%",
+    "913": "Indemnité inflation",
+    "914": "Réduction sapeurs-pompiers volontaires sur les contributions recouvrées par la MSA, l’Urssaf ou France Travail",
+    "915": "Réduction sapeurs-pompiers volontaires sur les cotisations et contributions recouvrées par l’Agirc-Arrco",
+    "916": "Exonération de cotisations applicable en Zones France Ruralités Revitalisation (ZFRR)",
+    "917": "Potentielle nouvelle cotisation D",
+    "918": "Versement mobilité régional et rural",
+    "919": "Exonération de contribution patronale sur les indemnités de mise à la retraite d’un salarié en contrat de valorisation de l’expérience (CVE)",
+    "920": "Potentielle nouvelle cotisation B",
+    "921": "Potentielle nouvelle cotisation C",
+    "922": "Potentielle nouvelle cotisation E",
+    "923": "Potentielle nouvelle cotisation A"
+   }
   },
   "S21.G00.81.002": {
    "longueur": [
@@ -3263,7 +5049,82 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "001": "Cotisation ADPFA (Association pour le Développement du Paritarisme des Fleuristes et Animaliers)",
+    "002": "Cotisation APNAB (Association Paritaire Nationale pour le développement de la négociation collective dans l'Artisanat du Bâtiment)",
+    "003": "Cotisation sur assiette avec congés payés CCCA-BTP (Comité de Concertation et de Coordination de l'apprentissage du Bâtiment et des Travaux Publics)",
+    "004": "Cotisation CPPNTT (Commission Paritaire Professionnelle Nationale du Travail Temporaire)",
+    "005": "Cotisation Développement du paritarisme",
+    "006": "Cotisation Dialogue social",
+    "007": "Cotisation FAF (Fonds d'Assurance formation)",
+    "009": "Cotisation FAPS (Fonds d'action professionnelle et sociale)",
+    "010": "Cotisation FASTT (Fonds d'Action Sociale du Travail Temporaire)",
+    "011": "Cotisation Fonds de péréquation",
+    "012": "Cotisation IFC (Indemnités de fin de carrière)",
+    "017": "Cotisation ORGA (Organisations Syndicales du Travail Temporaire)",
+    "018": "Cotisation Promotion et recrutement",
+    "019": "Cotisations attachées à une population de non salariés ayants-droit",
+    "020": "Cotisations attachées à une population de non salariés retraités",
+    "021": "Cotisations FMSE (Fond national agricole de mutualisation des risques sanitaires et environnementaux)",
+    "022": "Cotisations VAL'HOR (association française pour la valorisation des produits et métiers de l'horticulture et du paysage)",
+    "023": "Activation du bénéfice de l'aide au paiement des cotisations",
+    "024": "Cotisation assise sur le nombre d'heures d'intérim",
+    "025": "Contribution aux régimes supplémentaires de retraite à prestations définies - Rente",
+    "026": "Contribution aux régimes supplémentaires de retraite à prestations définies - Prime",
+    "027": "Contribution aux régimes supplémentaires de retraite à prestations définies - Dotations",
+    "028": "Contribution additionnelle sur les rentes liquidées",
+    "029": "Contribution aux régimes supplémentaires de retraite à prestations définies. Rente à taux 7%",
+    "030": "Contribution aux régimes supplémentaires de retraite à prestations définies. Rente à taux 14%",
+    "031": "Contribution additionnelle de solidarité pour l'autonomie",
+    "032": "Contribution Sociale généralisée au taux de 3,80% + RDS sur revenu de remplacement",
+    "033": "Contribution Sociale généralisée au taux de 6,20% + RDS sur revenu de remplacement",
+    "034": "Contribution Sociale généralisée au taux de 6,60% + RDS sur revenu de remplacement",
+    "035": "Contribution Sociale généralisée au taux de 7,50% + RDS sur revenu de remplacement",
+    "036": "Cotisation TTC sur assiette CDD avec congés payés pour le secteur du BTP (Constructys Organisme Paritaire Collecteur Agréé pour le BTP)",
+    "037": "Cotisation TTC sur assiette avec congés payés pour le secteur du BTP (Constructys Organisme Paritaire Collecteur Agréé pour le BTP)",
+    "038": "Cotisation TTC sur assiette sans congés payés (Constructys Organisme Paritaire Collecteur Agréé pour le BTP)",
+    "039": "Cotisation TTC sur assiette avec congés payés pour les salariés non soumis à la cotisation CCCA-BTP (Constructys Organisme Paritaire Collecteur Agréé pour le BTP)",
+    "040": "Cotisation TTC sur assiette hors congés payés pour les salariés non soumis à la cotisation CCCA-BTP (Constructys Organisme Paritaire Collecteur Agréé pour le BTP)",
+    "041": "Cotisation maladie sur les avantages de préretraite",
+    "042": "Cotisation maladie sur les avantages de retraite",
+    "043": "Cotisation maladie Alsace-Moselle sur les avantages de retraite",
+    "044": "Cotisation forfait social à 8%",
+    "045": "Cotisation forfait social à 20%",
+    "046": "Cotisations organismes ou syndicats professionnels recouvrées par Audiens (Culture Communication Médias)",
+    "047": "Cotisation forfait social à 16%",
+    "048": "Cotisation forfait social à 10%",
+    "049": "CSG au taux de 8.30% + RDS sur revenus de remplacement",
+    "050": "CSG au taux de 9.20% + RDS sur revenus de remplacement",
+    "054": "Cotisation assise sur le chiffre d'affaires",
+    "060": "Déduction ECAP",
+    "061": "Déduction de sous-traitance (EA, ESAT, TIH, portage salarial)",
+    "062": "Dépense déductible liée aux travaux d’accessibilité",
+    "063": "Dépense déductible liée au maintien et à la reconversion professionnelle",
+    "064": "Dépense déductible liée aux prestations d’accompagnement et de sensibilisation",
+    "065": "Contribution OETH brute avant déductions",
+    "066": "Contribution OETH nette",
+    "067": "Contribution OETH nette après écrêtement (pour les millésimes strictement antérieurs à 2025)",
+    "068": "Contribution OETH réelle due",
+    "069": "Dépenses OETH prévues par l’accord et non réalisées",
+    "071": "Dépense déductible liée à la participation à des événements",
+    "072": "Dépense déductible liée aux partenariats avec des associations",
+    "073": "Dépenses déductibles liées aux actions concourant à la professionnalisation et aux achats auprès des EA, ESAT, TIH",
+    "074": "Exonération Taxe d’apprentissage pour un employeur d’apprenti(s), dont la masse salariale est inférieure à 6 SMICs",
+    "075": "Déductions relatives aux CFA d’entreprise et/ou au financement des offres nouvelles de formation par apprentissage (Art. L6241-2 code du travail)",
+    "076": "Solde de la taxe d'apprentissage versé en numéraire",
+    "077": "Réduction du solde de la taxe d’apprentissage liée à des subventions aux CFA (Art. L6241-4 du code du travail) versé en nature",
+    "078": "Réduction du solde de la taxe d’apprentissage liée à des créances alternants (Art. L6241-4 du code du travail)",
+    "079": "Contribution supplémentaire à l’apprentissage (CSA)",
+    "080": "Exonération de la contribution supplémentaire à l’apprentissage (CSA)",
+    "090": "Cotisation spécifique Prévoyance",
+    "091": "Cotisation relative aux droits spécifiques passés des activités non régulées (DSPNR)",
+    "092": "Potentielle nouvelle cotisation établissement B",
+    "093": "Potentielle nouvelle cotisation établissement C",
+    "094": "Potentielle nouvelle cotisation établissement A",
+    "095": "Potentielle nouvelle cotisation établissement D",
+    "096": "Potentielle nouvelle cotisation établissement E"
+   }
   },
   "S21.G00.82.003": {
    "longueur": [
@@ -3317,7 +5178,22 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "02": "Assiette brute plafonnée",
+    "03": "Assiette brute déplafonnée",
+    "11": "Base forfaitaire soumise aux cotisations de Sécurité Sociale",
+    "19": "Assiette CRPCEN",
+    "22": "Base brute spécifique",
+    "23": "Base exceptionnelle (Agirc Arrco)",
+    "24": "Base plafonnée spécifique",
+    "25": "Assiette de contribution libératoire",
+    "28": "Base IRCANTEC cotisée",
+    "41": "CRPNPAC-Assiette soumise au taux normal (non-plafonnée)",
+    "42": "CRPNPAC-Assiette soumise au taux majoré (non-plafonnée)",
+    "43": "Base plafonnée exceptionnelle Agirc Arrco",
+    "45": "Base plafonnée ICP Agirc-Arrco"
+   }
   },
   "S21.G00.84.002": {
    "longueur": [
@@ -3413,7 +5289,12 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Etablissement",
+    "02": "Autre",
+    "03": "A domicile"
+   }
   },
   "S21.G00.85.011": {
    "longueur": [
@@ -3425,13 +5306,25 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "02": "Ancienneté dans la branche professionnelle ou le secteur d'activité",
+    "03": "Ancienneté dans le collège ou la catégorie professionnelle",
+    "04": "Ancienneté dans le poste",
+    "06": "Ancienneté dans le groupe",
+    "07": "Ancienneté dans l'entreprise"
+   }
   },
   "S21.G00.86.002": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Jours",
+    "02": "Mois",
+    "03": "Années"
+   }
   },
   "S21.G00.86.003": {
    "longueur": [
@@ -3452,7 +5345,12 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "02": "Assiette brute plafonnée",
+    "03": "Assiette brute déplafonnée",
+    "11": "Base forfaitaire soumise aux cotisations de Sécurité Sociale"
+   }
   },
   "S21.G00.95.002": {
    "longueur": [
@@ -3497,7 +5395,15 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Fin ou sans droits",
+    "02": "Positif sans règlement",
+    "03": "Positif avec règlement partiel avec concurrence",
+    "04": "Positif avec règlement partiel sans concurrence",
+    "05": "Positif avec règlement total avec concurrence",
+    "06": "Positif avec règlement total sans concurrence"
+   }
   },
   "S21.G00.98.003": {
    "longueur": [
@@ -3608,7 +5514,11 @@
    "longueur": [
     1,
     1
-   ]
+   ],
+   "valeurs": {
+    "D": "dispense de retenue à la source",
+    "R": "taux réduit de retenue à la source"
+   }
   },
   "S89.G00.32.016": {
    "longueur": [
@@ -3641,7 +5551,14 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "nourriture",
+    "02": "logement",
+    "03": "voiture",
+    "04": "nouvelles technologies de l'Informatique et de la Communication",
+    "09": "autre avantage"
+   }
   },
   "S89.G00.33.002": {
    "longueur": [
@@ -3656,7 +5573,12 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "allocations forfaitaires",
+    "02": "remboursement",
+    "03": "prise en charge par l'employeur"
+   }
   },
   "S89.G00.35.002": {
    "longueur": [
@@ -3671,7 +5593,18 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "honoraires, vacations",
+    "02": "commissions",
+    "03": "courtages",
+    "04": "ristournes",
+    "05": "jetons de présence",
+    "06": "droits d'auteur",
+    "07": "droits d'inventeur",
+    "08": "autres rémunérations",
+    "11": "retenue impôt sur le revenu"
+   }
   },
   "S89.G00.43.002": {
    "longueur": [
@@ -3728,7 +5661,11 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "oui",
+    "02": "non"
+   }
   },
   "S89.G00.87.002": {
    "longueur": [
@@ -3794,7 +5731,11 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "oui",
+    "02": "non"
+   }
   },
   "S89.G00.88.002": {
    "longueur": [
@@ -3965,7 +5906,11 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "masculin",
+    "02": "féminin"
+   }
   },
   "S89.G00.91.006": {
    "longueur": [
@@ -4043,13 +5988,28 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "03": "cadre dirigeant (votant au collège employeur des élections prud'homales)",
+    "04": "autres cadres au sens de la convention collective (ou du statut pour les régimes spéciaux)",
+    "05": "profession intermédiaire (technicien, contremaître, agent de maîtrise, clergé)",
+    "06": "employé administratif d'entreprise, de commerce, agent de service",
+    "07": "ouvriers qualifiés et non qualifiés y compris ouvriers agricoles",
+    "08": "agent de la fonction publique d'Etat",
+    "99": "individu non concerné"
+   }
   },
   "S89.G00.91.018": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "cadre (article 4 et 4bis)",
+    "02": "extension cadre pour retraite complémentaire",
+    "04": "non cadre",
+    "10": "sans statut catégoriel"
+   }
   },
   "S89.G00.91.019": {
    "longueur": [
@@ -4076,13 +6036,31 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Allocation de chômage pour les entreprises en auto-assurance chômage",
+    "02": "Allocation de cessation anticipée d'activité Amiante",
+    "03": "Allocation de pré-retraite suite à rupture du contrat",
+    "05": "Somme versée à un tiers",
+    "06": "Montant versé à un bénéficiaire ne relevant pas des règles de sécurité sociale en France mais qui est imposable",
+    "07": "Allocation de pré-retraite sans rupture de contrat",
+    "08": "Montant de retraite versée par l'employeur",
+    "09": "Pensions d'invalidité"
+   }
   },
   "S89.G00.92.002": {
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "23": "Base exceptionnelle Agirc Arrco",
+    "43": "Base plafonnée exceptionnelle Agirc Arrco",
+    "50": "Assiette brute déplafonnée",
+    "51": "Assiette brute plafonnée",
+    "52": "Assiette de la contribution libératoire",
+    "53": "Assiette de la contribution sociale généralisée"
+   }
   },
   "S89.G00.92.003": {
    "longueur": [
@@ -4133,7 +6111,17 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Taux transmis par la DGFIP",
+    "13": "Barème mensuel métropole",
+    "17": "Barème mathématique sur base mensuelle métropole",
+    "23": "Barème mensuel Guadeloupe, Réunion et Martinique",
+    "27": "Barème mathématique sur base mensuelle Guadeloupe, Réunion et Martinique",
+    "33": "Barème mensuel Guyane et Mayotte",
+    "37": "Barème mathématique sur base mensuelle Guyane et Mayotte",
+    "99": "Indu relatif à un exercice antérieur – pas de taux de PAS"
+   }
   },
   "S89.G00.92.009": {
    "longueur": [
@@ -4235,7 +6223,13 @@
    "longueur": [
     2,
     2
-   ]
+   ],
+   "valeurs": {
+    "01": "Rectification sur montant net fiscal du revenu versé",
+    "02": "Rectification sur taux",
+    "03": "Cas d’indu avec montant net fiscal du mois courant négatif",
+    "04": "Rectification sur montant net fiscal du revenu versé sans PAS"
+   }
   },
   "S89.G00.93.003": {
    "longueur": [
@@ -4322,7 +6316,10 @@
    "longueur": [
     3,
     3
-   ]
+   ],
+   "valeurs": {
+    "001": "Montant de cotisation Régime Unifié Agirc-Arrco"
+   }
   },
   "S89.G00.94.002": {
    "longueur": [
