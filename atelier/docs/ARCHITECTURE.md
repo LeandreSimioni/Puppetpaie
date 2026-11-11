@@ -819,7 +819,9 @@ Ce que le moteur écrit, d'après la norme déposée (`atelier/reference/norme-d
 - `S21.G00.23` : une ligne par CTP des organismes de la compagnie (composés depuis
   `ctp_urssaf` de `logiciel/donnees/organismes-base.json`), sur l'assiette que
   la ligne nomme (`brut`, `csg`, `brut_artiste`, `brut_x115_artiste`,
-  `ta_principale`, `chomage_permanent`…), sommée sur les paies du mois
+  `ta_principale`, `chomage_permanent`… : une `droit::bordereau::AssietteDuBordereau`,
+  ou un `MontantDuBordereau`, lus strictement ; celles qui somment une assiette du
+  calcul sur toutes les paies le disent, `de_toutes_les_paies`), sommée sur les paies du mois
   (`dsn::assiettes_ctp`, plafonnée sous le qualifiant 921) et arrondie à
   l'euro ; le montant se calcule depuis la table des CTP (`bordereau.rs`). La
   norme ne définit pas ces assiettes, elle renvoie au guide Urssaf (p. 42 et

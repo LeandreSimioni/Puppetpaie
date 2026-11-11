@@ -13,6 +13,7 @@ use rust_decimal::RoundingStrategy;
 
 use droit::assiette::Assiette;
 use droit::base_assujettie::BaseAssujettie;
+use droit::bordereau::{AssietteDuBordereau, MontantDuBordereau};
 use droit::bareme::{self, bareme_applique, EntrepriseLue};
 use droit::fiche::{ChampsEntreprise, DeclarantDsn, Lue};
 use droit::forme_bareme::{CotisationDsn, Pile, Rubrique};
@@ -2992,11 +2993,10 @@ fn reduction_a_l_urssaf(p: &Paie, bar: &BaremeDuMois) -> R<Decimal> {
 /// La valeur que le contrat d'une regularisation apportait, tel qu'il a ete DECLARE, a l'assiette `cle` de la table des
 /// CTP (celles de `assiettes_ctp`). La nature (permanent, intermittent) et le statut (artiste, technicien) sont ceux du
 /// contrat d'avant (`r.avant`), comme ses bornes.
-fn assiette_declaree(cle: &str, r: &Regularisation, bar: &BaremeDuMois) -> R<R<Decimal>> {
+fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R<Decimal>> {
     // Un contrat ajoute apres la limite (`produire_regularisations::ajout`) : rien de declare, toutes ses assiettes sont
     // nulles -- le bordereau du mois d'origine porte tout le corrige.
     if r.declare.lignes.is_empty() && r.declare.fichier.is_empty() {
-        let _ = (cle, bar);
         return Ok(Ok(zero()));
     }
     let p = &r.avant;
@@ -3012,16 +3012,18 @@ fn assiette_declaree(cle: &str, r: &Regularisation, bar: &BaremeDuMois) -> R<R<D
     let si = |oui: bool, v: &dyn Fn() -> R<Decimal>| if oui { v() } else { Ok(zero()) };
     let base = |a: Assiette| l.base(a, &b78, &l81);
     let t1_ou_majoree = if caisse { Assiette::T1MensuelleX115 } else { Assiette::T1Mensuelle };
+    use AssietteDuBordereau as A;
+    use MontantDuBordereau as M;
     Ok(match cle {
-        "brut" => Ok(brut),
-        "csg" => base(Assiette::Csg),
-        "brut_x115" => base(Assiette::BrutX115),
-        "brut_x110" => base(Assiette::BrutX110),
-        "brut_permanent" => si(mensuelle, &|| Ok(brut)),
-        "csg_permanent" => si(mensuelle, &|| base(Assiette::Csg)),
-        "t1_permanent" => si(mensuelle, &|| base(Assiette::T1Mensuelle)),
+        CleCtp::Assiette(A::Brut) => Ok(brut),
+        CleCtp::Assiette(A::Csg) => base(Assiette::Csg),
+        CleCtp::Assiette(A::BrutX115) => base(Assiette::BrutX115),
+        CleCtp::Assiette(A::BrutX110) => base(Assiette::BrutX110),
+        CleCtp::Assiette(A::BrutPermanent) => si(mensuelle, &|| Ok(brut)),
+        CleCtp::Assiette(A::CsgPermanent) => si(mensuelle, &|| base(Assiette::Csg)),
+        CleCtp::Assiette(A::T1Permanent) => si(mensuelle, &|| base(Assiette::T1Mensuelle)),
         // La base 07 deposee (78.004 sous le bloc 07), comme `base_07` pour le corrige.
-        "chomage_permanent" => si(mensuelle, &|| {
+        CleCtp::Assiette(A::ChomagePermanent) => si(mensuelle, &|| {
             let v: Vec<Decimal> = b78.iter().filter(|(b, _)| *b == BaseAssujettie::AssuranceChomage).map(|(_, v)| *v).collect();
             match v.first() {
                 None => Ok(zero()),
@@ -3029,32 +3031,32 @@ fn assiette_declaree(cle: &str, r: &Regularisation, bar: &BaremeDuMois) -> R<R<D
                 Some(_) => Err(refus("la DSN deposee porte deux bases 07 differentes")),
             }
         }),
-        "t1_x115_permanent" => si(mensuelle, &|| base(t1_ou_majoree)),
-        "reduction_generale_permanent" => si(mensuelle, &|| l.reduction_a_l_urssaf(&l81)),
+        CleCtp::Assiette(A::T1X115Permanent) => si(mensuelle, &|| base(t1_ou_majoree)),
+        CleCtp::Montant(M::ReductionGeneralePermanent) => si(mensuelle, &|| l.reduction_a_l_urssaf(&l81)),
         // Les 81.003 de la cotisation 129 deposee (aucune, pour un mois depose sans elles : la correction declare
         // alors toute la contribution, qui etait due).
-        "cpf_cdd" => Ok(l81.iter().filter(|x| x.code == CODE81_CPF_CDD).filter_map(|x| x.base).fold(zero(), add)),
+        CleCtp::Assiette(A::CpfCdd) => Ok(l81.iter().filter(|x| x.code == CODE81_CPF_CDD).filter_map(|x| x.base).fold(zero(), add)),
         // Les 81.003 de la cotisation 128 deposee d'un permanent, comme `assiettes_ctp`.
-        ASSIETTE_CFP_PERMANENT => si(mensuelle, &|| Ok(l81.iter().filter(|x| x.code == CODE81_CFP).filter_map(|x| x.base).fold(zero(), add))),
-        "brut_intermittent" => si(!mensuelle, &|| Ok(brut)),
-        "csg_intermittent" => si(!mensuelle, &|| base(Assiette::Csg)),
-        "ta_principale" => if mensuelle && !caisse { Ok(brut) } else { base(Assiette::BrutX110) },
-        "brut_technicien" => si(tech, &|| Ok(brut)),
-        "brut_x115_technicien" => si(tech, &|| base(Assiette::BrutX115)),
-        "brut_artiste" => si(art, &|| Ok(brut)),
-        "brut_x115_artiste" => si(art, &|| base(Assiette::BrutX115)),
-        "reduction_generale_urssaf" => si(tech, &|| l.reduction_a_l_urssaf(&l81)),
+        CleCtp::Assiette(A::CfpPermanent) => si(mensuelle, &|| Ok(l81.iter().filter(|x| x.code == CODE81_CFP).filter_map(|x| x.base).fold(zero(), add))),
+        CleCtp::Assiette(A::BrutIntermittent) => si(!mensuelle, &|| Ok(brut)),
+        CleCtp::Assiette(A::CsgIntermittent) => si(!mensuelle, &|| base(Assiette::Csg)),
+        CleCtp::Assiette(A::TaPrincipale) => if mensuelle && !caisse { Ok(brut) } else { base(Assiette::BrutX110) },
+        CleCtp::Assiette(A::BrutTechnicien) => si(tech, &|| Ok(brut)),
+        CleCtp::Assiette(A::BrutX115Technicien) => si(tech, &|| base(Assiette::BrutX115)),
+        CleCtp::Assiette(A::BrutArtiste) => si(art, &|| Ok(brut)),
+        CleCtp::Assiette(A::BrutX115Artiste) => si(art, &|| base(Assiette::BrutX115)),
+        CleCtp::Montant(M::ReductionGeneraleUrssaf) => si(tech, &|| l.reduction_a_l_urssaf(&l81)),
         // Les 114 et 021 deposes, signes '-' au nominatif : le montant de la ligne 23 est leur oppose.
-        MONTANT_REDUCTION_HEURES => Ok(l81.iter().filter(|x| x.code == CODE81_REDUCTION_HEURES).filter_map(|x| x.montant).fold(zero(), sub)),
-        MONTANT_DEDUCTION_HEURES => Ok(l81.iter().filter(|x| x.code == CODE81_DEDUCTION_HEURES).filter_map(|x| x.montant).fold(zero(), sub)),
+        CleCtp::Montant(M::ReductionHeuresEnPlus) => Ok(l81.iter().filter(|x| x.code == CODE81_REDUCTION_HEURES).filter_map(|x| x.montant).fold(zero(), sub)),
+        CleCtp::Montant(M::DeductionHeuresSupplementaires) => Ok(l81.iter().filter(|x| x.code == CODE81_DEDUCTION_HEURES).filter_map(|x| x.montant).fold(zero(), sub)),
         // Sous 921, l'assiette plafonnee (`assiettes_ctp`) : ce que la DSN deposee a declare en base 02 et sous le FNAL.
-        k if k == plafonnee("t1_permanent") => si(mensuelle, &|| base(Assiette::T1Mensuelle)),
-        k if k == plafonnee("t1_x115_permanent") => si(mensuelle, &|| base(t1_ou_majoree)),
-        k if k == plafonnee("brut_artiste") => si(art, &|| base(Assiette::BrutPlafonne)),
-        k if k == plafonnee("brut_x115_artiste") => si(art, &|| base(Assiette::BrutX115Plafonne)),
-        k if k == plafonnee("brut_technicien") => si(tech, &|| base(Assiette::BrutPlafonne)),
-        k if k == plafonnee("brut_x115_technicien") => si(tech, &|| base(Assiette::BrutX115Plafonne)),
-        autre => return Err(refus!("assiette inconnue : {}", socle::fichiers::repr(autre))),
+        CleCtp::Plafonnee(A::T1Permanent) => si(mensuelle, &|| base(Assiette::T1Mensuelle)),
+        CleCtp::Plafonnee(A::T1X115Permanent) => si(mensuelle, &|| base(t1_ou_majoree)),
+        CleCtp::Plafonnee(A::BrutArtiste) => si(art, &|| base(Assiette::BrutPlafonne)),
+        CleCtp::Plafonnee(A::BrutX115Artiste) => si(art, &|| base(Assiette::BrutX115Plafonne)),
+        CleCtp::Plafonnee(A::BrutTechnicien) => si(tech, &|| base(Assiette::BrutPlafonne)),
+        CleCtp::Plafonnee(A::BrutX115Technicien) => si(tech, &|| base(Assiette::BrutX115Plafonne)),
+        autre @ CleCtp::Plafonnee(_) => return Err(refus!("assiette inconnue : {}", socle::fichiers::repr(&autre.to_string()))),
     })
 }
 
@@ -3217,7 +3219,8 @@ fn assiette(t: &HashMap<Assiette, Decimal>, a: Assiette) -> Decimal {
 }
 
 /// Les assiettes agregees du bordereau Urssaf.
-fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<String, Decimal>> {
+fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<CleCtp, Decimal>> {
+    use AssietteDuBordereau as A;
     // Sous deduction forfaitaire specifique, les assiettes de la securite sociale sont celles des bases abattues
     // (`cle_abattue`, la base 03 ; le 51 de type 001, `brut_du_51`) ; la CSG garde la sienne.
     let mut b = Vec::new();
@@ -3237,14 +3240,16 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<String, Decim
     };
     let tous = |_: usize| true;
     let mut out = HashMap::new();
-    for a in [Assiette::Brut, Assiette::Csg, Assiette::BrutX115, Assiette::BrutX110] {
-        out.insert(a.nom().to_string(), somme(&tous, &|i| assiette(&b[i], a)));
+    for x in A::TOUTES {
+        if let Some(a) = x.de_toutes_les_paies() {
+            out.insert(CleCtp::Assiette(*x), somme(&tous, &|i| assiette(&b[i], a)));
+        }
     }
     let mensuelle: Vec<bool> = paies.iter().map(|p| p.engagement.nat().map(|n| n.mensuelle())).collect::<socle::echec::R<_>>()?;
     let perm = |i: usize| mensuelle[i];
     let inter = |i: usize| !mensuelle[i];
-    out.insert("brut_permanent".into(), somme(&perm, &|i| assiette(&b[i], Assiette::Brut)));
-    out.insert("csg_permanent".into(), somme(&perm, &|i| assiette(&b[i], Assiette::Csg)));
+    out.insert(CleCtp::Assiette(A::BrutPermanent), somme(&perm, &|i| assiette(&b[i], Assiette::Brut)));
+    out.insert(CleCtp::Assiette(A::CsgPermanent), somme(&perm, &|i| assiette(&b[i], Assiette::Csg)));
     // La tranche 1 de chaque permanent, et la meme majoree pour un contrat declare a la caisse (`t1_mensuelle_x115`,
     // sinon la tranche 1 elle-meme).
     let (mut t1, mut t1_x115) = (zero(), zero());
@@ -3256,7 +3261,7 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<String, Decim
             None => t,
         });
     }
-    out.insert("t1_permanent".into(), t1);
+    out.insert(CleCtp::Assiette(A::T1Permanent), t1);
     // Le chomage et l'AGS des permanents (CTP 772 et 937, qualifiant 920) : la somme des bases 07 que leur nominatif
     // declare (`base_07`). Le tableau d'equivalence de l'Urssaf rattache ces deux CTP a la base 07 (040 et 048) sous le
     // qualifiant 920 (atelier/reference/sources/chomage-permanents/urssaf-equivalence-dida-20260611.csv, lignes 1640 et
@@ -3266,7 +3271,7 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<String, Decim
     for i in (0..paies.len()).filter(|i| perm(*i)) {
         chomage = add(chomage, base_07(paies[i], bar)?);
     }
-    out.insert("chomage_permanent".into(), chomage);
+    out.insert(CleCtp::Assiette(A::ChomagePermanent), chomage);
     // La contribution CPF-CDD (CTP 987, qualifiant 920) : la somme des 81.003 de la cotisation 129 que le nominatif de
     // chaque contrat declare (DIDA : 987 -> 129, base 03).
     let mut cpf_cdd = zero();
@@ -3275,7 +3280,7 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<String, Decim
             cpf_cdd = add(cpf_cdd, base_de_la_cotisation(&c));
         }
     }
-    out.insert("cpf_cdd".into(), cpf_cdd);
+    out.insert(CleCtp::Assiette(A::CpfCdd), cpf_cdd);
     // La contribution a la formation professionnelle des permanents (CTP 959 ou 971, qualifiant 920) : la somme des
     // 81.003 de leur cotisation 128, l'assiette majoree de 11,5 % d'un contrat declare a la caisse des Conges Spectacles
     // (guide Urssaf des contributions de formation, 12/03/2026 ; fiche net-entreprises 2503 :
@@ -3286,7 +3291,7 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<String, Decim
             cfp = add(cfp, base_de_la_cotisation(&c));
         }
     }
-    out.insert(ASSIETTE_CFP_PERMANENT.into(), cfp);
+    out.insert(CleCtp::Assiette(A::CfpPermanent), cfp);
     // La reduction generale que l'Urssaf recouvre (`reduction_a_l_urssaf`) : pour un permanent, CTP 668 « reduction
     // generale etendue », sa part securite sociale ET sa part chomage ; pour un technicien intermittent, CTP 671, la
     // seule part securite sociale (France Travail recouvre son chomage).
@@ -3298,22 +3303,22 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<String, Decim
             rg_tech = add(rg_tech, reduction_a_l_urssaf(paies[i], bar)?);
         }
     }
-    out.insert("reduction_generale_permanent".into(), rg_perm);
-    out.insert("brut_intermittent".into(), somme(&inter, &|i| assiette(&b[i], Assiette::Brut)));
-    out.insert("csg_intermittent".into(), somme(&inter, &|i| assiette(&b[i], Assiette::Csg)));
+    out.insert(CleCtp::Montant(MontantDuBordereau::ReductionGeneralePermanent), rg_perm);
+    out.insert(CleCtp::Assiette(A::BrutIntermittent), somme(&inter, &|i| assiette(&b[i], Assiette::Brut)));
+    out.insert(CleCtp::Assiette(A::CsgIntermittent), somme(&inter, &|i| assiette(&b[i], Assiette::Csg)));
     // La taxe d'apprentissage sur l'assiette majoree de chaque contrat declare a la caisse (D. 243-0-2), le brut des
     // autres (une majoration de 1,0) : intermittents et permanents ensemble.
-    out.insert("ta_principale".into(), somme(&tous, &|i| assiette(&b[i], Assiette::BrutX110)));
+    out.insert(CleCtp::Assiette(A::TaPrincipale), somme(&tous, &|i| assiette(&b[i], Assiette::BrutX110)));
     // Le FNAL plafonne des permanents (CTP 332 sous 921) : la tranche 1, majoree pour un contrat declare a la caisse
     // (`calcul::calculer`, `t1_mensuelle_x115`). Le 100 sous 921 garde `t1_permanent`.
-    out.insert("t1_x115_permanent".into(), t1_x115);
+    out.insert(CleCtp::Assiette(A::T1X115Permanent), t1_x115);
     let tech = |i: usize| inter(i) && technicien(paies[i]);
     let art = |i: usize| inter(i) && !tech(i);
-    out.insert("brut_technicien".into(), somme(&tech, &|i| assiette(&b[i], Assiette::Brut)));
-    out.insert("brut_x115_technicien".into(), somme(&tech, &|i| assiette(&b[i], Assiette::BrutX115)));
-    out.insert("brut_artiste".into(), somme(&art, &|i| assiette(&b[i], Assiette::Brut)));
-    out.insert("brut_x115_artiste".into(), somme(&art, &|i| assiette(&b[i], Assiette::BrutX115)));
-    out.insert("reduction_generale_urssaf".into(), rg_tech);
+    out.insert(CleCtp::Assiette(A::BrutTechnicien), somme(&tech, &|i| assiette(&b[i], Assiette::Brut)));
+    out.insert(CleCtp::Assiette(A::BrutX115Technicien), somme(&tech, &|i| assiette(&b[i], Assiette::BrutX115)));
+    out.insert(CleCtp::Assiette(A::BrutArtiste), somme(&art, &|i| assiette(&b[i], Assiette::Brut)));
+    out.insert(CleCtp::Assiette(A::BrutX115Artiste), somme(&art, &|i| assiette(&b[i], Assiette::BrutX115)));
+    out.insert(CleCtp::Montant(MontantDuBordereau::ReductionGeneraleUrssaf), rg_tech);
     // Sous le qualifiant 921 (« Assiette plafonnee », cahier technique 2026.1, p. 168), une population porte son assiette
     // PLAFONNEE : celle du bulletin et de la base 02 de chaque contrat (point 22). La cle de la table des CTP reste
     // celle de la population (`brut_artiste` sous 312/921) ; c'est le qualifiant qui dit plafonnee.
@@ -3321,24 +3326,23 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<String, Decim
     let plaf = |f: &dyn Fn(usize) -> bool, a: Assiette| -> R<Decimal> {
         (0..paies.len()).filter(|i| f(*i)).try_fold(zero(), |s, i| Ok(add(s, base(i, a)?)))
     };
-    out.insert(plafonnee("t1_permanent"), out["t1_permanent"]);
-    out.insert(plafonnee("t1_x115_permanent"), out["t1_x115_permanent"]);
-    out.insert(plafonnee("brut_artiste"), plaf(&art, Assiette::BrutPlafonne)?);
-    out.insert(plafonnee("brut_x115_artiste"), plaf(&art, Assiette::BrutX115Plafonne)?);
-    out.insert(plafonnee("brut_technicien"), plaf(&tech, Assiette::BrutPlafonne)?);
-    out.insert(plafonnee("brut_x115_technicien"), plaf(&tech, Assiette::BrutX115Plafonne)?);
+    out.insert(CleCtp::Plafonnee(A::T1Permanent), t1);
+    out.insert(CleCtp::Plafonnee(A::T1X115Permanent), t1_x115);
+    out.insert(CleCtp::Plafonnee(A::BrutArtiste), plaf(&art, Assiette::BrutPlafonne)?);
+    out.insert(CleCtp::Plafonnee(A::BrutX115Artiste), plaf(&art, Assiette::BrutX115Plafonne)?);
+    out.insert(CleCtp::Plafonnee(A::BrutTechnicien), plaf(&tech, Assiette::BrutPlafonne)?);
+    out.insert(CleCtp::Plafonnee(A::BrutX115Technicien), plaf(&tech, Assiette::BrutX115Plafonne)?);
     // Les heures en plus : la reduction salariale (CTP 003) et la deduction patronale (CTP 004, 005), en montant, comme
     // le nominatif les declare (114 et 021, `cotisations`).
-    for (cle, id) in [(MONTANT_REDUCTION_HEURES, engagement::heures_en_plus::REDUCTION), (MONTANT_DEDUCTION_HEURES, engagement::heures_en_plus::DEDUCTION)] {
+    for (cle, id) in [
+        (MontantDuBordereau::ReductionHeuresEnPlus, engagement::heures_en_plus::REDUCTION),
+        (MontantDuBordereau::DeductionHeuresSupplementaires, engagement::heures_en_plus::DEDUCTION),
+    ] {
         let m = paies.iter().flat_map(|p| p.lignes.iter()).filter(|l| l.est(id)).fold(zero(), |a, l| sub(a, add(l.montant_pat, l.montant_sal)));
-        out.insert(cle.into(), m);
+        out.insert(CleCtp::Montant(cle), m);
     }
     Ok(out)
 }
-
-/// Les cles de montant des CTP des heures en plus (`organismes-base.json`, `ctp_urssaf`).
-const MONTANT_REDUCTION_HEURES: &str = "reduction_heures_en_plus";
-const MONTANT_DEDUCTION_HEURES: &str = "deduction_heures_supplementaires";
 
 /// La base 07 (« Assiette des contributions d'Assurance Chomage », norme 2026.1 p. 294) que le nominatif du contrat
 /// declare : le 78.004 des lignes de `cotisations` sous le bloc 07, le meme montant que le bulletin (la base de la ligne
@@ -3367,25 +3371,39 @@ fn base_07(p: &Paie, bar: &BaremeDuMois) -> R<Decimal> {
 /// Le qualifiant d'assiette plafonnee de la table des CTP (S21.G00.23.002, p. 168).
 const QUALIFIANT_PLAFONNEE: &str = "921";
 
-/// La cle, dans `assiettes_ctp`, de l'assiette plafonnee d'une population.
-fn plafonnee(cle: &str) -> String {
-    format!("{}:{}", QUALIFIANT_PLAFONNEE, cle)
+/// UNE CLE DE LA TABLE DES CTP (`assiettes_ctp`) : une assiette du bordereau, sa forme plafonnee sous le qualifiant 921,
+/// ou un montant. Elle s'ecrit comme la ligne de `ctp_urssaf` la nomme, precedee de « 921: » pour la forme plafonnee.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum CleCtp {
+    Assiette(AssietteDuBordereau),
+    Plafonnee(AssietteDuBordereau),
+    Montant(MontantDuBordereau),
 }
 
-/// La cle d'une ligne de la table des CTP dans `assiettes_ctp` : sa cle de montant, ou son assiette, plafonnee sous 921.
-fn cle_ctp(ctp: &Ctp) -> R<(String, bool)> {
-    if let Some(m) = ctp.montant.as_deref().filter(|m| !m.is_empty()) {
-        return Ok((m.to_string(), true));
+impl Display for CleCtp {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            CleCtp::Assiette(a) => write!(f, "{}", a),
+            CleCtp::Plafonnee(a) => write!(f, "{}:{}", QUALIFIANT_PLAFONNEE, a),
+            CleCtp::Montant(m) => write!(f, "{}", m),
+        }
     }
-    let k = ctp.assiette.clone().ok_or_else(|| socle::echec::livree("organismes-base.json", &format!("ctp_urssaf.{}.assiette", ctp.code)))?;
-    Ok((if ctp.qualifiant.trim() == QUALIFIANT_PLAFONNEE { plafonnee(&k) } else { k }, false))
 }
 
-fn valeur_ctp(somme: &HashMap<String, Decimal>, ctp: &Ctp) -> R<(Decimal, bool)> {
+/// La cle d'une ligne de la table des CTP dans `assiettes_ctp` : son montant, ou son assiette, plafonnee sous 921.
+fn cle_ctp(ctp: &Ctp) -> R<(CleCtp, bool)> {
+    if let Some(m) = ctp.montant {
+        return Ok((CleCtp::Montant(m), true));
+    }
+    let k = ctp.assiette.ok_or_else(|| socle::echec::livree("organismes-base.json", &format!("ctp_urssaf.{}.assiette", ctp.code)))?;
+    Ok((if ctp.qualifiant.trim() == QUALIFIANT_PLAFONNEE { CleCtp::Plafonnee(k) } else { CleCtp::Assiette(k) }, false))
+}
+
+fn valeur_ctp(somme: &HashMap<CleCtp, Decimal>, ctp: &Ctp) -> R<(Decimal, bool)> {
     let (k, par_montant) = cle_ctp(ctp)?;
-    match somme.get(&k) {
-        Some(v) => Ok((*v, par_montant)),
-        None if k.starts_with(&plafonnee("")) => Err(refus_avec(
+    match (somme.get(&k), k) {
+        (Some(v), _) => Ok((*v, par_montant)),
+        (None, CleCtp::Plafonnee(a)) => Err(refus_avec(
             format!(
                 "La table des CTP livrée avec le logiciel : le CTP {} sous le qualifiant {} (assiette plafonnée, cahier \
 technique 2026.1, p. 168) lit une assiette qui n'a pas de forme plafonnée. Aucune saisie de la compagnie ne le corrige : le \
@@ -3393,9 +3411,9 @@ signaler au développeur. Rien n'est écrit.",
                 ctp.code.trim(),
                 QUALIFIANT_PLAFONNEE
             ),
-            Lieu { fichier: Some("organismes-base.json".into()), cle: Some(k[plafonnee("").len()..].to_string()), ..Default::default() },
+            Lieu { fichier: Some("organismes-base.json".into()), cle: Some(a.nom().to_string()), ..Default::default() },
         )),
-        None => Err(socle::echec::livree("organismes-base.json", &k)),
+        (None, _) => Err(socle::echec::livree("organismes-base.json", &k.to_string())),
     }
 }
 
@@ -3404,13 +3422,12 @@ signaler au développeur. Rien n'est écrit.",
 const CODE81_CPF_CDD: &str = "129";
 /// La contribution a la formation professionnelle au nominatif (« 128 - Contribution a la formation professionnelle
 /// (CFP) », fiche net-entreprises 2503) ; l'assiette de ses CTP de droit commun (959 sous onze salaries, 971 au-dela)
-/// est la somme de ses 81.003 chez les permanents (`ASSIETTE_CFP_PERMANENT`).
+/// est la somme de ses 81.003 chez les permanents (`AssietteDuBordereau::CfpPermanent`).
 const CODE81_CFP: &str = "128";
 /// « 114 - Montant de réduction des heures supplémentaires/complémentaires » et « 021 - Déduction patronale au titre des
 /// heures supplémentaires » (cahier technique 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt`, l. 191 et 281).
 const CODE81_REDUCTION_HEURES: &str = "114";
 const CODE81_DEDUCTION_HEURES: &str = "021";
-const ASSIETTE_CFP_PERMANENT: &str = "cfp_permanent";
 
 /// Les seuils d'effectif d'un mois, pour les CTP qui en dependent (`effectif_au_moins`, `effectif_sous` d'une ligne de
 /// `ctp_urssaf`) : l'effectif A01 que l'Urssaf renvoie en CRM 118 (`config/effectifs.json`, regle 8), la regle des cinq
@@ -3451,14 +3468,15 @@ fn lignes_bordereau(
     let somme = assiettes_ctp(paies, bar)?;
     let ctps = crate::assujettissement::ctp_sans_la_taxe_non_due(orgs.ctp_urssaf().to_vec(), taxe_apprentissage_non_due_du_mois(ent, mois)?);
     let ctps = ctps.as_slice();
-    if !somme["brut_permanent"].is_zero() && !ctps.iter().any(|c| c.population.as_deref() == Some("permanent")) {
+    let brut_permanent = somme[&CleCtp::Assiette(AssietteDuBordereau::BrutPermanent)];
+    if !brut_permanent.is_zero() &&!ctps.iter().any(|c| c.population.as_deref() == Some("permanent")) {
         return Err(refus!(
             "La DSN de {} porte {} de brut de salariés permanents, et la table des CTP livrée avec le logiciel \
 n'a aucun CTP des permanents. Le bordereau Urssaf serait faux : un \
 permanent relève du régime général (CTP 100 et suivants) et son assurance chômage est recouvrée par l'Urssaf, \
 contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le corrige. Rien n'est écrit.",
             mois,
-            socle::texte::euros(somme["brut_permanent"])
+            socle::texte::euros(brut_permanent)
         ));
     }
     for ctp in ctps {
@@ -3553,7 +3571,7 @@ fn lignes_regularisees(
         let (cle, _) = cle_ctp(ctp)?;
         let mut declare = zero();
         for r in &siens {
-            let v = assiette_declaree(&cle, r, bar_o)?.map_err(|e| {
+            let v = assiette_declaree(cle, r, bar_o)?.map_err(|e| {
                 e.reformuler(|e| format!(
                     "Correction de {} (contrat {}) : la ligne {} ({}) du bordereau Urssaf de ce mois, assiette « {} », ne se recompose pas depuis ce que {} a declare pour le contrat : {}. Le bordereau d'une regularisation porte la difference « corrige moins declare », comme le nominatif ; elle ne se devine pas. Rien n'est ecrit.",
                     r.mois,

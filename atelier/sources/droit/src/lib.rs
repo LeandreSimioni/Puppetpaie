@@ -10,6 +10,7 @@ pub mod arrets;
 pub mod assiette;
 pub mod bareme;
 pub mod base_assujettie;
+pub mod bordereau;
 pub mod caisse_conges;
 pub mod catalogue;
 pub mod clauses;

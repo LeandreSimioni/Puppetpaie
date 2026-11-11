@@ -99,8 +99,8 @@ forme_notee! {
     pub struct Ctp {
         pub code: String,
         pub qualifiant: String,
-        pub assiette: Option<String>,
-        pub montant: Option<String>,
+        pub assiette: Option<crate::bordereau::AssietteDuBordereau>,
+        pub montant: Option<crate::bordereau::MontantDuBordereau>,
         pub taux_at: Option<TauxAt>,
         pub statut: Option<String>,
         /// La population : `intermittent` ou `permanent` (`ParNature`).
