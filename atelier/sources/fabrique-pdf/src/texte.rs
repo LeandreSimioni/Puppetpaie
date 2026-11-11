@@ -459,15 +459,47 @@ struct Police {
     largeurs: HashMap<u32, Mesure>,
     largeur_defaut: Mesure,
     vertical: bool,
-    /// Ascendant et descendant (fractions du corps), qui bornent la boîte d'un glyphe pour
-    /// `--inspecter` : ceux du fichier de police incorporé, sinon (polices standard) ceux de leur fichier de métriques d'Adobe,
-    /// sinon ceux du `/FontDescriptor`, sinon 0,8 et 0,2. Laissés à 0,8 et 0,2 pour `--texte`.
+    /// Ce qui borne la boîte d'un glyphe pour `--inspecter` (`ascendant_descendant`) ; `None` : rien ne les dit, la
+    /// boîte de ses glyphes n'a pas de hauteur. Non lues pour `--texte`, qui ne garde aucune boîte.
+    hauteurs: Option<Hauteurs>,
+}
+
+/// L'ascendant et le descendant d'une police, en fractions du corps.
+#[derive(Clone, Copy)]
+struct Hauteurs {
     asc: Mesure,
     desc: Mesure,
 }
 
 /// Une boîte (x0, y0, x1, y1), dans le repère de la page du PDF (origine en bas à gauche).
 pub(crate) type Boite = [Mesure; 4];
+
+/// La place d'un signe : sa ligne de base (la boîte du segment que son avance parcourt, toujours connue) et sa boîte,
+/// que seules les hauteurs de sa police bornent (`None` : la police ne les dit pas).
+#[derive(Clone, Copy)]
+pub(crate) struct Place {
+    pub base: Boite,
+    pub boite: Option<Boite>,
+}
+
+impl Place {
+    /// La place d'un glyphe d'avance `x0`..`x1` sous la matrice de rendu `m`.
+    fn du_glyphe(m: &Mat, x0: Mesure, x1: Mesure, hauteurs: Option<Hauteurs>) -> Place {
+        Place { base: englobante(m, x0, Z, x1, Z), boite: hauteurs.map(|h| englobante(m, x0, -h.desc, x1, h.asc)) }
+    }
+
+    /// La place de deux signes réunis : leurs lignes de base, et leur boîte si chacun a la sienne.
+    pub(crate) fn union(&self, autre: &Place) -> Place {
+        let u = |a: &Boite, b: &Boite| [a[0].min(b[0]), a[1].min(b[1]), a[2].max(b[2]), a[3].max(b[3])];
+        Place {
+            base: u(&self.base, &autre.base),
+            boite: match (self.boite, autre.boite) {
+                (Some(a), Some(b)) => Some(u(&a, &b)),
+                (None, _) | (_, None) => None,
+            },
+        }
+    }
+}
 
 /// La boîte englobante du rectangle (x0, y0)-(x1, y1) transformé par `m`.
 fn englobante(m: &Mat, x0: Mesure, y0: Mesure, x1: Mesure, y1: Mesure) -> Boite {
@@ -481,9 +513,9 @@ fn englobante(m: &Mat, x0: Mesure, y0: Mesure, x1: Mesure, y1: Mesure) -> Boite 
 
 /// L'ascendant et le descendant d'une police (fractions du corps) : ceux du fichier de police incorporé (`hhea`) ;
 /// pour une police standard non incorporée, ceux de son fichier de métriques d'Adobe ; sinon le `/FontDescriptor` ;
-/// sinon 0,8 et 0,2. Un programme incorporé qui ne se
+/// sinon `None` : rien ne les dit. Un programme incorporé qui ne se
 /// lit pas laisse la place au descripteur, qui dit les mêmes mesures (`Ascent`, `Descent`, table 122) ; sans lui, refus.
-fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Option<&str>) -> Result<(Mesure, Mesure), Refus> {
+fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Option<&str>) -> Result<Option<Hauteurs>, Refus> {
     let mut programme = None;
     let mut programme_illisible = None;
     if let Some(d) = fd {
@@ -506,7 +538,7 @@ fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Opti
                         let em = face.units_per_em() as i64;
                         let (a, d) = (Mesure::entier(face.ascender() as i64) / em, Mesure::entier(-(face.descender() as i64)) / em);
                         if a > Z && a <= Mesure::entier(2) && (Z..=Mesure::UN).contains(&d) {
-                            return Ok((a, d));
+                            return Ok(Some(Hauteurs { asc: a, desc: d }));
                         }
                     }
                     Err(e) => programme_illisible = Some(format!("le programme incorporé d'une police ({}) ne se lit pas ({}), et son descripteur ne dit pas ses mesures", lecture::nom_de(cle), e)),
@@ -518,7 +550,7 @@ fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Opti
             // d'Adobe (`afm.rs`), celles qu'un descripteur dirait (`Ascent`, `Descent`, table 122).
             if let Some(base) = base_font {
                 if let Some((a, d)) = crate::afm::ascendant_descendant(base)? {
-                    return Ok((a / 1000, d.abs() / 1000));
+                    return Ok(Some(Hauteurs { asc: a / 1000, desc: d.abs() / 1000 }));
                 }
             }
         }
@@ -528,9 +560,9 @@ fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Opti
         None => (None, None),
     };
     match (ascent, descent, programme_illisible) {
-        (Some(a), Some(d), _) if a > Z && a <= Mesure::entier(1500) && d.abs() <= Mesure::entier(1000) => Ok((a / 1000, d.abs() / 1000)),
+        (Some(a), Some(d), _) if a > Z && a <= Mesure::entier(1500) && d.abs() <= Mesure::entier(1000) => Ok(Some(Hauteurs { asc: a / 1000, desc: d.abs() / 1000 })),
         (_, _, Some(pourquoi)) => illisible(pourquoi),
-        (_, _, None) => Ok((mesure("0.8"), mesure("0.2"))),
+        (_, _, None) => Ok(None),
     }
 }
 
@@ -750,8 +782,7 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
         largeurs: HashMap::new(),
         largeur_defaut: Z,
         vertical: false,
-        asc: mesure("0.8"),
-        desc: mesure("0.2"),
+        hauteurs: None,
     };
     // Les espaces de codes de `ToUnicode`, « consistent with the encoding that the font uses » (9.10.3).
     let mut espaces_unicode = None;
@@ -793,7 +824,7 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
             v => return illisible(format!("/DescendantFonts a {} éléments, la norme en veut un (ISO 32000-1, table 121)", v.len())),
         };
         if inspecter {
-            (p.asc, p.desc) = ascendant_descendant(doc, descripteur(doc, desc)?, base_nom.as_deref())?;
+            p.hauteurs = ascendant_descendant(doc, descripteur(doc, desc)?, base_nom.as_deref())?;
         }
         p.sorte = match (p.unicode.is_empty(), non_depose) {
             (_, Some(cmap)) => Sorte::NonDeposee { cmap, espaces: espaces_unicode },
@@ -838,7 +869,7 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
     // Police simple : l'encodage.
     let fd = descripteur(doc, d)?;
     if inspecter {
-        (p.asc, p.desc) = ascendant_descendant(doc, fd, base_nom.as_deref())?;
+        p.hauteurs = ascendant_descendant(doc, fd, base_nom.as_deref())?;
     }
     let encoding = lecture::valeur(doc, d, b"Encoding")?;
     let encodage = match sous_type {
@@ -1305,8 +1336,8 @@ const DECALAGE_MAX: Mesure = mesure("0.8");
 struct LigneCourante {
     dir: (Mesure, Mesure),
     texte: Vec<Signe>,
-    /// Une boîte par signe de `texte` (`None` : un espace ajouté), si `Mise::garder`.
-    boites: Vec<Option<Boite>>,
+    /// Une place par signe de `texte` (`None` : un espace ajouté), si `Mise::garder`.
+    boites: Vec<Option<Place>>,
 }
 
 #[derive(Default)]
@@ -1314,7 +1345,7 @@ struct Mise {
     lignes: Vec<Vec<Signe>>,
     /// Garder la boîte de chaque caractère (`--inspecter`) : `boites[k]` est celle de `lignes[k]`.
     garder: bool,
-    boites: Vec<Vec<Option<Boite>>>,
+    boites: Vec<Vec<Option<Place>>>,
     courante: Option<LigneCourante>,
     /// Le bout du dernier caractère posé.
     stylo: (Mesure, Mesure),
@@ -1332,7 +1363,7 @@ impl Mise {
 
     /// Pose un signe : origine `p`, vecteur de direction `dir` (déjà à l'échelle du corps),
     /// avance `adv` (fraction d'em).
-    fn caractere(&mut self, c: Signe, p:(Mesure, Mesure), dir: (Mesure, Mesure), taille: Mesure, adv: Option<Mesure>, boite: Boite) {
+    fn caractere(&mut self, c: Signe, p:(Mesure, Mesure), dir: (Mesure, Mesure), taille: Mesure, adv: Option<Mesure>, boite: Place) {
         let longueur = dir.0.hypot(dir.1);
         let (Some(nx), Some(ny)) = (dir.0.sur(longueur), dir.1.sur(longueur)) else {
             return;
@@ -1386,7 +1417,7 @@ impl Mise {
     }
 
     /// Les lignes avec la boîte de chacun de leurs caractères (`Mise::garder`).
-    fn finir_avec_boites(mut self) -> Vec<(Vec<Signe>, Vec<Option<Boite>>)> {
+    fn finir_avec_boites(mut self) -> Vec<(Vec<Signe>, Vec<Option<Place>>)> {
         self.fermer();
         self.lignes.into_iter().zip(self.boites).collect()
     }
@@ -1465,12 +1496,18 @@ impl Releve {
 
 struct Actuel {
     texte: String,
-    premier: Option<((Mesure, Mesure), (Mesure, Mesure), Mesure)>,
+    premier: Option<Premier>,
     adv: Mesure,
-    /// La matrice de rendu du premier glyphe, son ascendant et son descendant.
+}
+
+/// Le premier glyphe qu'un `/ActualText` remplace : son origine, sa direction, son corps, sa matrice de rendu et les
+/// hauteurs de sa police.
+struct Premier {
+    origine: (Mesure, Mesure),
+    dir: (Mesure, Mesure),
+    taille: Mesure,
     trm: Mat,
-    asc: Mesure,
-    desc: Mesure,
+    hauteurs: Option<Hauteurs>,
 }
 
 /// Remplace chaque image en ligne (`BI … ID données EI`) par l'opérateur `PPBI`, que l'analyseur
@@ -1572,15 +1609,14 @@ impl<'a> Interprete<'a> {
             Some(a) => a,
             None => return,
         };
-        let ((x, y), dir, taille) = match a.premier {
-            Some(p) => p,
-            None => return,
+        let Some(Premier { origine: (x, y), dir, taille, trm, hauteurs }) = a.premier else {
+            return;
         };
         let n = a.texte.chars().count().max(1) as i64;
         for (k, c) in a.texte.chars().enumerate() {
             let decalage = a.adv * k as i64 / n;
-            let boite = englobante(&a.trm, decalage, -a.desc, decalage + a.adv / n, a.asc);
-            self.mise.caractere(Signe::Caractere(c), (x + decalage * dir.0, y + decalage * dir.1), dir, taille, Some(a.adv / n), boite);
+            let place = Place::du_glyphe(&trm, decalage, decalage + a.adv / n, hauteurs);
+            self.mise.caractere(Signe::Caractere(c), (x + decalage * dir.0, y + decalage * dir.1), dir, taille, Some(a.adv / n), place);
         }
     }
 
@@ -1756,7 +1792,7 @@ impl<'a> Interprete<'a> {
                     };
                     match reel {
                         Some(t) if self.actuel.is_none() => {
-                            self.actuel = Some(Actuel { texte: t, premier: None, adv: Z, trm: ID, asc: mesure("0.8"), desc: mesure("0.2") });
+                            self.actuel = Some(Actuel { texte: t, premier: None, adv: Z });
                             marques.push(true);
                         }
                         _ => marques.push(false),
@@ -1858,15 +1894,14 @@ impl<'a> Interprete<'a> {
     fn poser(&mut self, police: &Police, e: &Etat, tm: &Mat, signes: Vec<Signe>, w0: Mesure) -> Result<(), Refus> {
         let trm = mul(&[e.taille * e.th, Z, Z, e.taille, Z, e.rise], &mul(tm, &e.ctm));
         let visible = self.dans_le_cadre(&trm, w0);
-        let boite = englobante(&trm, Z, -police.desc, w0, police.asc);
+        let boite = Place::du_glyphe(&trm, Z, w0, police.hauteurs);
         // Le corps rendu : la racine du déterminant de la matrice de rendu (positive : sa valeur absolue).
         let taille = (trm[0] * trm[3] - trm[1] * trm[2]).abs().racine().ok_or_else(|| Refus::defaut("une valeur absolue sans racine"))?;
         if let Some(a) = &mut self.actuel {
             // Sous un `/ActualText` : on ne garde que la position du premier glyphe et
             // l'avance totale ; le texte réel se pose à la fermeture.
             if a.premier.is_none() {
-                a.premier = Some(((trm[4], trm[5]), (trm[0], trm[1]), taille));
-                (a.trm, a.asc, a.desc) = (trm, police.asc, police.desc);
+                a.premier = Some(Premier { origine: (trm[4], trm[5]), dir: (trm[0], trm[1]), taille, trm, hauteurs: police.hauteurs });
             }
             a.adv += w0;
         } else if visible {
@@ -2035,7 +2070,7 @@ fn texte_de_page(doc: &Document, id: ObjectId) -> Result<Vec<Vec<Signe>>, Refus>
 /// Ce que `--inspecter` relève d'une page, dans le repère du PDF (origine en bas à gauche).
 pub(crate) struct PageLue {
     /// Les lignes de texte (celles de `--texte`) avec la boîte de chacun de leurs signes.
-    pub lignes: Vec<(Vec<Signe>, Vec<Option<Boite>>)>,
+    pub lignes: Vec<(Vec<Signe>, Vec<Option<Place>>)>,
     pub images: Vec<Boite>,
     pub traits: Vec<Boite>,
     pub polices: Vec<String>,

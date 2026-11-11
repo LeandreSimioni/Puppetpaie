@@ -1091,7 +1091,7 @@ fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
         if texte.is_empty() {
             continue;
         }
-        let [x0, y0, x1, y1] = m.rect;
+        let [x0, y0, x1, y1] = m.rect.connue();
         // Un meme mot ecrit deux fois au meme endroit (des cumuls imprimes en double) ne compte qu'une fois.
         let double = mots.iter().any(|x| x.texte == texte && (x.x0 - x0).abs() < mesure("0.05") && (x.y0 - y0).abs() < mesure("0.05"));
         if !double {
@@ -1103,7 +1103,7 @@ fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
 
 fn lire_page(p: &crate::releve::PageRelevee, numero: usize, signale: &[&str], table: &Table) -> Result<BulletinLu, Refus> {
     let mots = mots_de(p);
-    let inconnus = p.inconnus.iter().map(|u| (Boite { x0: u.rect[0], y0: u.rect[1], x1: u.rect[2], y1: u.rect[3] }, u.clone())).collect();
+    let inconnus = p.inconnus.iter().map(|u| (u.rect.connue(), u.clone())).map(|([x0, y0, x1, y1], u)| (Boite { x0, y0, x1, y1 }, u)).collect();
     if mots.is_empty() {
         let mut detail = format!("aucun mot ({} police(s), {} image(s), {} trait(s))", p.polices.len(), p.images.len(), p.traits.len());
         if !signale.is_empty() {

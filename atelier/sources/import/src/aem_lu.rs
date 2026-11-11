@@ -52,7 +52,7 @@ const MARQUES: [&str; 5] = ["Ñ", "✔", "✓", "☒", "X"];
 /// Ce que dit une AEM qui ne se lit pas.
 pub const ILLISIBLE: &str = "cette AEM ne se lit pas : ses libellés s'impriment en signes sans lettres (police sans table de caractères), rien ne dit quelle case porte quelle valeur ; déposez le bulletin ou le certificat Congés Spectacles du même mois";
 
-/// Un mot de la page et sa boite.
+/// Un mot de la page et sa boite (sa ligne de base si sa police ne dit pas sa hauteur : `hauteur_connue` faux).
 #[derive(Clone, Debug)]
 struct Mot {
     texte: String,
@@ -60,6 +60,7 @@ struct Mot {
     x1: Mesure,
     y0: Mesure,
     y1: Mesure,
+    hauteur_connue: bool,
 }
 
 impl Mot {
@@ -80,6 +81,8 @@ struct Rubrique {
     x1: Mesure,
     y0: Mesure,
     y1: Mesure,
+    /// Chacun de ses mots a sa hauteur : sa ligne se borne par elle.
+    hauteur_connue: bool,
 }
 
 impl Rubrique {
@@ -409,8 +412,8 @@ fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
         if texte.is_empty() {
             continue;
         }
-        let [x0, y0, x1, y1] = m.rect;
-        mots.push(Mot { texte, x0, y0, x1, y1 });
+        let [x0, y0, x1, y1] = m.rect.connue();
+        mots.push(Mot { texte, x0, y0, x1, y1, hauteur_connue: m.rect.boite().is_some() });
     }
     mots
 }
@@ -446,7 +449,7 @@ struct Inconnu {
 
 impl Inconnu {
     fn de(u: &crate::releve::InconnuReleve) -> Inconnu {
-        let [x0, y0, x1, y1] = u.rect;
+        let [x0, y0, x1, y1] = u.rect.connue();
         Inconnu { releve: u.clone(), x0, x1, y0, y1 }
     }
     fn cy(&self) -> Mesure {
@@ -495,7 +498,7 @@ fn rubriques(mots: &[Mot]) -> Vec<Rubrique> {
                 prises[*k] = true;
             }
             let b = |f: fn(&Mot) -> Mesure, min: bool| faits.iter().map(|k| f(&mots[*k])).fold(if min { Mesure::MAX } else { Mesure::MIN }, |a, x| if min { a.min(x) } else { a.max(x) });
-            out.push(Rubrique { cle, x0: b(|w| w.x0, true), x1: b(|w| w.x1, false), y0: b(|w| w.y0, true), y1: b(|w| w.y1, false), mots: faits });
+            out.push(Rubrique { cle, x0: b(|w| w.x0, true), x1: b(|w| w.x1, false), y0: b(|w| w.y0, true), y1: b(|w| w.y1, false), hauteur_connue: faits.iter().all(|k| mots[*k].hauteur_connue), mots: faits });
         }
     }
     out
@@ -518,15 +521,25 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     let section = |y: Mesure| -> usize { bornes.iter().filter(|b| b.is_some_and(|b| y >= b - pt(1))).count() };
 
     // Le premier caractere que rien ne dit d'une case lue : la case ne se lit pas, l'AEM le dit (ISO 32000-1, 9.10.2).
+    // Une case dont la rubrique n'a pas de hauteur (sa police ne la dit pas) ne se lit pas non plus : sa ligne se borne
+    // par cette hauteur.
     let inconnu: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
-    let noter = |u: &Inconnu, case: &str| {
+    let noter_phrase = |phrase: String| {
         let mut i = inconnu.borrow_mut();
         if i.is_none() {
-            *i = Some(u.releve.phrase(page, case));
+            *i = Some(phrase);
         }
     };
+    let noter = |u: &Inconnu, case: &str| noter_phrase(u.releve.phrase(page, case));
     // La valeur d'une rubrique : les mots a sa droite, sur sa ligne, jusqu'a la rubrique suivante de la ligne.
     let valeur_de = |r: &Rubrique| -> Vec<String> {
+        if !r.hauteur_connue {
+            noter_phrase(format!(
+                "page {} : la case « {} » est écrite dans une police qui ne dit pas la hauteur de ses glyphes (ni son programme, ni ses métriques, ni son descripteur : ISO 32000-1, table 122) : sa ligne ne se borne pas",
+                page, r.cle
+            ));
+            return Vec::new();
+        }
         let tol = (r.y1 - r.y0).max(pt(4)) * mesure("0.6");
         let suivante = rs.iter().filter(|o| o.x0 > r.x1 && (o.cy() - r.cy()).abs() <= tol).map(|o| o.x0).fold(Mesure::MAX, Mesure::min);
         if let Some(u) = inconnus.iter().find(|u| u.x1 >= r.x0 && u.x0 < suivante && (u.cy() - r.cy()).abs() <= tol) {

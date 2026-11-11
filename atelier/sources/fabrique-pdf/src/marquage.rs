@@ -240,11 +240,15 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
         let lue = crate::texte::inspecter_page(&doc, id).map_err(|r| r.reformuler(|m| format!("page illisible ({})", m)))?;
         for (texte, boites) in &lue.lignes {
             let Some(Some(b)) = boites.first() else { continue };
-            if crate::texte::caracteres_de(texte).as_deref().map(str::trim) != Some(sc::LIBELLE_CASE_ARTISTE) || (b[0] - x_case).abs() > Mesure::entier(2) {
+            if crate::texte::caracteres_de(texte).as_deref().map(str::trim) != Some(sc::LIBELLE_CASE_ARTISTE) || (b.base[0] - x_case).abs() > Mesure::entier(2) {
                 continue;
             }
-            let bas = boites.iter().flatten().map(|b| b[1]).fold(Mesure::MAX, Mesure::min);
-            let haut = boites.iter().flatten().map(|b| b[3]).fold(Mesure::MIN, Mesure::max);
+            // La case se pose sous la hauteur de la ligne : sans elle (une police qui ne la dit pas), rien ne la place.
+            let Some(hauteurs) = boites.iter().flatten().map(|p| p.boite).collect::<Option<Vec<_>>>() else {
+                return illisible("la ligne « signature » de la case de l'artiste est dans une police qui ne dit pas la hauteur de ses glyphes : la mention ne se place pas");
+            };
+            let bas = hauteurs.iter().map(|b| b[1]).fold(Mesure::MAX, Mesure::min);
+            let haut = hauteurs.iter().map(|b| b[3]).fold(Mesure::MIN, Mesure::max);
             // La ligne occupe son pas, le glyphe au milieu ; la case est 3 pt sous son pas.
             let pas = sc::TAILLE_SOUS_LIBELLE * sc::police().interligne;
             cases.push((id, bas - (pas - (haut - bas)) / 2 - sc::MENTION_ECART));

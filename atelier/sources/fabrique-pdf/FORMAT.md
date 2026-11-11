@@ -659,8 +659,11 @@ Chiffré : `"chiffrement": {"filtre": "Standard", "V": 5, "R": 6, "longueur": 25
   polices standard non incorporées (Helvetica, Times, Courier et leurs variantes, par leur nom
   exact) prennent `Ascender` et `Descender` de leur fichier de métriques d'Adobe (Helvetica 0,718 /
   0,207 ; Times 0,683 / 0,217 ; Courier 0,629 / 0,157) ; sinon le `/FontDescriptor` (`Ascent`,
-  `Descent`) ; sinon 0,8 et 0,2 du corps. Une
-  séquence `/ActualText` répartit sa boîte à parts égales entre ses caractères.
+  `Descent`). Quand rien de cela ne dit la hauteur d'une police, la boîte de ses glyphes ne se
+  devine pas : la `rect` d'un mot (ou d'un caractère inconnu) qui en porte un est alors
+  `{"base": [x0, y0, x1, y1]}`, la boîte de sa seule ligne de base (l'avance du glyphe à la
+  hauteur de son origine), et le lecteur qui a besoin d'une hauteur refuse la case en la nommant.
+  Une séquence `/ActualText` répartit sa boîte à parts égales entre ses caractères.
 - **`images`.** La boîte de chaque image dessinée, dans l'ordre du flux : le `Do` d'un XObject
   `/Image` et les images en ligne (`BI … ID … EI`), c'est-à-dire le carré unité transformé par la
   CTM (un objet formulaire suivi par `Do` transmet la sienne). Les images en ligne ne sont lues

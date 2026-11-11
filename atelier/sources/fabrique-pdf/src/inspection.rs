@@ -10,7 +10,7 @@ use serde::Serialize;
 use crate::description::{illisible, Refus};
 use crate::lecture;
 use crate::mesure::Mesure;
-use crate::texte::{inspecter_page, Boite, Signe};
+use crate::texte::{inspecter_page, Boite, Place, Signe};
 
 #[derive(Serialize)]
 struct Chiffrement {
@@ -28,8 +28,17 @@ struct Chiffrement {
 #[derive(Serialize)]
 struct Mot {
     texte: String,
-    rect: Boite,
+    rect: Rect,
     ligne: usize,
+}
+
+/// La place d'un mot ou d'un caractère : sa boîte ; ou, quand une de ses polices ne dit pas la hauteur de ses glyphes
+/// (`texte::Place`), sa seule ligne de base (`{"base": [x0, y0, x1, y1]}`).
+#[derive(Serialize)]
+#[serde(untagged)]
+enum Rect {
+    Boite(Boite),
+    SurSaBase { base: Boite },
 }
 
 /// Un caractère que rien ne dit (`texte::Inconnu`), à sa place : il borne les mots qui le touchent.
@@ -38,7 +47,7 @@ struct InconnuVu {
     police: String,
     code: String,
     pourquoi: String,
-    rect: Boite,
+    rect: Rect,
     ligne: usize,
 }
 
@@ -81,6 +90,13 @@ impl Repere {
         [arrondi(b[0].min(b[2]) - x0), arrondi(y1 - b[1].max(b[3])), arrondi(b[0].max(b[2]) - x0), arrondi(y1 - b[1].min(b[3]))]
     }
 
+    fn rect(&self, p: &Place) -> Rect {
+        match &p.boite {
+            Some(b) => Rect::Boite(self.boite(b)),
+            None => Rect::SurSaBase { base: self.boite(&p.base) },
+        }
+    }
+
     fn dimensions(&self) -> (Mesure, Mesure) {
         let (l, h) = (self.cadre[2] - self.cadre[0], self.cadre[3] - self.cadre[1]);
         if self.rotation % 180 == 90 {
@@ -93,12 +109,12 @@ impl Repere {
 
 /// Les mots d'une ligne : les suites de caractères séparées par des espaces ou par un caractère que rien ne dit, avec
 /// leur boîte ; chaque caractère que rien ne dit, avec la sienne.
-fn mots_de(ligne: usize, texte: &[Signe], boites: &[Option<Boite>], repere: &Repere, sortie: &mut Vec<Mot>, inconnus: &mut Vec<InconnuVu>) {
+fn mots_de(ligne: usize, texte: &[Signe], boites: &[Option<Place>], repere: &Repere, sortie: &mut Vec<Mot>, inconnus: &mut Vec<InconnuVu>) {
     let mut mot = String::new();
-    let mut boite: Option<Boite> = None;
-    let mut finir = |mot: &mut String, boite: &mut Option<Boite>| {
-        if let (false, Some(b)) = (mot.is_empty(), *boite) {
-            sortie.push(Mot { texte: std::mem::take(mot), rect: repere.boite(&b), ligne });
+    let mut boite: Option<Place> = None;
+    let mut finir = |mot: &mut String, boite: &mut Option<Place>| {
+        if let (false, Some(b)) = (mot.is_empty(), &*boite) {
+            sortie.push(Mot { texte: std::mem::take(mot), rect: repere.rect(b), ligne });
         }
         mot.clear();
         *boite = None;
@@ -109,7 +125,7 @@ fn mots_de(ligne: usize, texte: &[Signe], boites: &[Option<Boite>], repere: &Rep
             Signe::Inconnu(i) => {
                 finir(&mut mot, &mut boite);
                 if let Some(b) = b {
-                    inconnus.push(InconnuVu { police: i.police.clone(), code: i.code.clone(), pourquoi: i.pourquoi.clone(), rect: repere.boite(b), ligne });
+                    inconnus.push(InconnuVu { police: i.police.clone(), code: i.code.clone(), pourquoi: i.pourquoi.clone(), rect: repere.rect(b), ligne });
                 }
                 continue;
             }
@@ -121,7 +137,7 @@ fn mots_de(ligne: usize, texte: &[Signe], boites: &[Option<Boite>], repere: &Rep
         mot.push(c);
         if let Some(b) = b {
             boite = Some(match boite {
-                Some(u) => [u[0].min(b[0]), u[1].min(b[1]), u[2].max(b[2]), u[3].max(b[3])],
+                Some(u) => u.union(b),
                 None => *b,
             });
         }

@@ -149,7 +149,7 @@ fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
         if texte.is_empty() {
             continue;
         }
-        let [x0, y0, _, y1] = m.rect;
+        let [x0, y0, _, y1] = m.rect.connue();
         mots.push(Mot { texte, x0, cy: (y0 + y1) / 2, y0 });
     }
     mots
@@ -302,8 +302,8 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
     }
     // Une case lue qui porte un caractere que rien ne dit ne se lit pas (ISO 32000-1, 9.10.2) : le bloc d'adresse, ou
     // les rubriques d'un rang.
-    let cy_de = |u: &crate::releve::InconnuReleve| (u.rect[1] + u.rect[3]) / 2;
-    if let Some(u) = p.inconnus.iter().find(|u| u.rect[3] < titre_y) {
+    let cy_de = |u: &crate::releve::InconnuReleve| (u.rect.connue()[1] + u.rect.connue()[3]) / 2;
+    if let Some(u) = p.inconnus.iter().find(|u| u.rect.connue()[3] < titre_y) {
         fautes.push(u.phrase(page, "nom et adresse du salarié"));
     }
     for r in &rangs[titre..] {

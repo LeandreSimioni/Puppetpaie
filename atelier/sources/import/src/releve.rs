@@ -17,6 +17,34 @@ use socle::echec::Echec;
 /// Une boite sur la page : x0, y0, x1, y1, dans le repere de la page non tournee.
 pub type Boite = [Mesure; 4];
 
+/// La place d'un mot ou d'un caractere, telle que la fabrique l'ecrit : sa boite ; ou, quand une de ses polices ne dit
+/// pas la hauteur de ses glyphes (ni son programme, ni ses metriques, ni son descripteur : ISO 32000-1, table 122), sa
+/// seule ligne de base.
+#[derive(Clone, Copy, Debug, serde::Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
+pub enum Rect {
+    Boite(Boite),
+    SurSaBase { base: Boite },
+}
+
+impl Rect {
+    /// Ce qui place le texte : sa boite, ou sa ligne de base, dont l'abscisse et la hauteur sur la page sont connues.
+    pub fn connue(&self) -> Boite {
+        match self {
+            Rect::Boite(b) => *b,
+            Rect::SurSaBase { base } => *base,
+        }
+    }
+
+    /// Sa boite, pour une case qui a besoin de sa hauteur ; `None` : sa police ne la dit pas.
+    pub fn boite(&self) -> Option<Boite> {
+        match self {
+            Rect::Boite(b) => Some(*b),
+            Rect::SurSaBase { .. } => None,
+        }
+    }
+}
+
 pub use fabrique_pdf::mesure::Mesure;
 
 /// CE QUE LA FABRIQUE RELEVE D'UN PDF (`fabrique_pdf::inspection`) : son chiffrement, ses metadonnees, ses pages.
@@ -66,7 +94,7 @@ pub struct InconnuReleve {
     /// Les octets du code, en hexadecimal entre chevrons (`texte::Inconnu`).
     pub code: String,
     pub pourquoi: String,
-    pub rect: Boite,
+    pub rect: Rect,
     pub ligne: usize,
 }
 
@@ -85,7 +113,7 @@ impl InconnuReleve {
 #[serde(deny_unknown_fields)]
 pub struct MotReleve {
     pub texte: String,
-    pub rect: Boite,
+    pub rect: Rect,
     pub ligne: usize,
 }
 

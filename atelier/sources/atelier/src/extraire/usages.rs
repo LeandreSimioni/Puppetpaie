@@ -168,7 +168,7 @@ fn lignes_du_tableau(page: &PageRelevee) -> Vec<Rang> {
     }
     let mut cellules: HashMap<(usize, usize), Vec<&str>> = HashMap::new();
     for mot in &page.mots {
-        let [x0, y0, x1, y1] = a_l_endroit(page, mot.rect);
+        let [x0, y0, x1, y1] = a_l_endroit(page, mot.rect.connue());
         if let (Some(i), Some(j)) = (place((y0 + y1) / 2, &lignes), place((x0 + x1) / 2, &colonnes)) {
             cellules.entry((i, j)).or_default().push(&mot.texte);
         }
