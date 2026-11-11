@@ -1208,7 +1208,7 @@ fn ce_qui_est_parti(prolongations: &[Prolongation], signalements: &[crate::oblig
         let libelle = minuscule(o.libelle.clone());
         match &o.fait {
             Some(f) if matches!(o.ou, Some(crate::obligations::Ou::Lieux(_))) => {
-                parti.push(dite(format!("{}, faite le {}", libelle, socle::ecran::quand(&f.le().iso()))));
+                parti.push(dite(format!("{}, faite le {}", libelle, f.le().jj_mm_aaaa())));
             }
             // Une obligation due sans date butoir (son delai ne se compte pas) dit son etat, pas une butoir absente.
             _ if o.du => {

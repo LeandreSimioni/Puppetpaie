@@ -473,22 +473,85 @@ fn phrase_du_mois(tete: Option<String>, etapes: &[Etape]) -> String {
 /// mois d'avant, la signature d'un salarie au mois) est faite pour lui. `dsn` : la classe de son etablissement
 /// (`groupes_dsn`) ; aucune pour une carte qui ne nomme pas encore son salarie, dans une compagnie de plusieurs
 /// etablissements (sa DSN est a completer).
-/// Le point d'un engagement auquel il manque un fait, sur chacune de ses lignes.
-const A_COMPLETER: &str = "a_completer";
+/// CE QU'UNE LIGNE DIT D'UN ENGAGEMENT QUI N'EST PAS VALIDE : il lui manque un fait (`ACompleter`), il est complet et
+/// personne ne l'a encore valide (`AValider` : rien ne part d'un engagement en saisie, `routes/depots.rs`,
+/// `routes/documents.rs`), ou la ligne n'a rien a faire pour lui.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Attente {
+    ACompleter,
+    AValider,
+    Aucune,
+}
 
-/// Le point d'un engagement complet que personne n'a encore valide, sur chacune de ses lignes : rien ne part d'un
-/// engagement en saisie (`routes/depots.rs`, `routes/documents.rs`).
-const A_VALIDER: &str = "a_valider";
+/// Le point d'un engagement sur la ligne DPAE. `RienADeclarer` : un contrat commence avant le logiciel.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PointDpae {
+    Fait,
+    AFaire,
+    Refuse,
+    ACompleter,
+    AValider,
+    RienADeclarer,
+}
 
-/// Le point, sur la ligne DPAE et sur la ligne Contrats, d'un contrat commence avant le logiciel : rien a faire ici.
-const RIEN_A_DECLARER: &str = "rien_a_declarer";
-const RIEN_A_SIGNER: &str = "rien_a_signer";
+/// Le point d'un engagement sur la ligne Contrats. `RienASigner` : un contrat commence avant le logiciel, ou signe
+/// ailleurs.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PointContrat {
+    Fait,
+    AEnvoyer,
+    ARefaire,
+    EnAttente,
+    ACompleter,
+    AValider,
+    RienASigner,
+}
+
+/// Le point d'un engagement sur la ligne Documents.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PointDocuments {
+    Fait,
+    AEnvoyer,
+    ARenvoyer,
+    ACompleter,
+    AValider,
+}
+
+impl PointDpae {
+    fn attente(self) -> Attente {
+        match self {
+            PointDpae::ACompleter => Attente::ACompleter,
+            PointDpae::AValider => Attente::AValider,
+            PointDpae::Fait | PointDpae::AFaire | PointDpae::Refuse | PointDpae::RienADeclarer => Attente::Aucune,
+        }
+    }
+}
+
+impl PointContrat {
+    fn attente(self) -> Attente {
+        match self {
+            PointContrat::ACompleter => Attente::ACompleter,
+            PointContrat::AValider => Attente::AValider,
+            PointContrat::Fait | PointContrat::AEnvoyer | PointContrat::ARefaire | PointContrat::EnAttente | PointContrat::RienASigner => Attente::Aucune,
+        }
+    }
+}
+
+impl PointDocuments {
+    fn attente(self) -> Attente {
+        match self {
+            PointDocuments::ACompleter => Attente::ACompleter,
+            PointDocuments::AValider => Attente::AValider,
+            PointDocuments::Fait | PointDocuments::AEnvoyer | PointDocuments::ARenvoyer => Attente::Aucune,
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 struct Point {
-    dpae: &'static str,
-    contrat: &'static str,
-    documents: &'static str,
+    dpae: PointDpae,
+    contrat: PointContrat,
+    documents: PointDocuments,
     dsn: Option<usize>,
 }
 
@@ -503,9 +566,9 @@ impl Point {
         if p.a_completer.is_some() {
             let spectacle = p.spectacle.is_some();
             return Point {
-                dpae: if anterieur { RIEN_A_DECLARER } else if embauche { A_COMPLETER } else { "fait" },
-                contrat: if anterieur { RIEN_A_SIGNER } else if embauche && spectacle { A_COMPLETER } else { "fait" },
-                documents: A_COMPLETER,
+                dpae: if anterieur { PointDpae::RienADeclarer } else if embauche { PointDpae::ACompleter } else { PointDpae::Fait },
+                contrat: if anterieur { PointContrat::RienASigner } else if embauche && spectacle { PointContrat::ACompleter } else { PointContrat::Fait },
+                documents: PointDocuments::ACompleter,
                 dsn,
             };
         }
@@ -515,67 +578,72 @@ impl Point {
         let ailleurs = p.contrat.ailleurs();
         if !p.valide() {
             return Point {
-                dpae: if anterieur { RIEN_A_DECLARER } else if embauche { A_VALIDER } else { "fait" },
-                contrat: if anterieur || ailleurs { RIEN_A_SIGNER } else if embauche && ecrit { A_VALIDER } else { "fait" },
-                documents: A_VALIDER,
+                dpae: if anterieur { PointDpae::RienADeclarer } else if embauche { PointDpae::AValider } else { PointDpae::Fait },
+                contrat: if anterieur || ailleurs { PointContrat::RienASigner } else if embauche && ecrit { PointContrat::AValider } else { PointContrat::Fait },
+                documents: PointDocuments::AValider,
                 dsn,
             };
         }
         // LA DPAE A DEPOSER est celle que dit la liste des DPAE a faire (`Moteur::embauches_a_declarer`, `a_declarer`).
         let d = &p.etats.dpae;
         let dpae = if anterieur {
-            RIEN_A_DECLARER
+            PointDpae::RienADeclarer
         } else if !embauche {
-            "fait"
+            PointDpae::Fait
         } else if d.refusee {
-            "refuse"
+            PointDpae::Refuse
         } else if d.a_declarer {
-            "a_faire"
+            PointDpae::AFaire
         } else {
-            "fait"
+            PointDpae::Fait
         };
         let s = &p.etats.signature;
         // Le contrat se fait signer au mois de l'embauche ; un avenant, a chaque mois du contrat : tant qu'il n'est pas
         // revenu signe, chacun de ses mois le dit.
         // Un contrat signe hors du logiciel ne se fait pas signer ici, ses avenants si.
         let contrat = if (ecrit && !embauche || ailleurs) && s.caduc {
-            "a_refaire"
+            PointContrat::ARefaire
         } else if (ecrit && !embauche || ailleurs) && s.avenant_attendu {
-            "en_attente"
+            PointContrat::EnAttente
         } else if anterieur || ailleurs {
-            RIEN_A_SIGNER
+            PointContrat::RienASigner
         } else if !(embauche && ecrit) {
-            "fait"
+            PointContrat::Fait
         } else if !s.parti() {
-            "a_envoyer"
+            PointContrat::AEnvoyer
         } else if s.caduc {
-            "a_refaire"
+            PointContrat::ARefaire
         } else if s.recu.is_none() || s.avenant_attendu {
-            "en_attente"
+            PointContrat::EnAttente
         } else {
-            "fait"
+            PointContrat::Fait
         };
         let o = &p.etats.documents;
         let documents = if o.caduc {
-            "a_renvoyer"
+            PointDocuments::ARenvoyer
         } else if o.parti() {
-            "fait"
+            PointDocuments::Fait
         } else {
-            "a_envoyer"
+            PointDocuments::AEnvoyer
         };
         Point { dpae, contrat, documents, dsn }
     }
 
     /// Sa vague : ce qui reste a faire de notre cote. Une DPAE partie l'est, revenue refusee ou non ; un contrat parti
-    /// l'est, signe ou non.
-    fn vague(&self) -> (bool, &'static str, &'static str, Option<usize>) {
-        let contrat = if matches!(self.contrat, "a_envoyer" | "a_refaire") { self.contrat } else { "parti" };
-        (self.dpae == "a_faire", contrat, self.documents, self.dsn)
+    /// l'est, signe ou non (`None`).
+    fn vague(&self) -> (bool, Option<PointContrat>, PointDocuments, Option<usize>) {
+        let contrat = matches!(self.contrat, PointContrat::AEnvoyer | PointContrat::ARefaire).then_some(self.contrat);
+        (self.dpae == PointDpae::AFaire, contrat, self.documents, self.dsn)
     }
 
     /// Combien de ses lignes sont faites de notre cote : l'ordre des colonnes, la plus avancee en G.
     fn avance(&self, dsn_fait: &[bool]) -> usize {
-        [!matches!(self.dpae, "a_faire" | A_COMPLETER | A_VALIDER), matches!(self.contrat, "fait" | "en_attente" | RIEN_A_SIGNER), self.documents == "fait", self.dsn.is_some_and(|k| dsn_fait.get(k) == Some(&true))]
+        [
+            !matches!(self.dpae, PointDpae::AFaire | PointDpae::ACompleter | PointDpae::AValider),
+            matches!(self.contrat, PointContrat::Fait | PointContrat::EnAttente | PointContrat::RienASigner),
+            self.documents == PointDocuments::Fait,
+            self.dsn.is_some_and(|k| dsn_fait.get(k) == Some(&true)),
+        ]
             .iter()
             .filter(|x| **x)
             .count()
@@ -593,7 +661,7 @@ struct Colonne {
 /// refusee ne reste pas dans G, qui dit ce qui est fait : elle sort a cote. Un etablissement sans engagement du mois
 /// dont la DSN diverge a sa colonne. `dsn_fait` : par classe DSN (`groupes_dsn`, une au moins), si elle est faite.
 fn colonnes(points: &[Point], dsn_fait: &[bool]) -> Vec<Colonne> {
-    let mut vagues: Vec<((bool, &'static str, &'static str, Option<usize>), Vec<usize>)> = Vec::new();
+    let mut vagues: Vec<((bool, Option<PointContrat>, PointDocuments, Option<usize>), Vec<usize>)> = Vec::new();
     for (i, p) in points.iter().enumerate() {
         match vagues.iter_mut().find(|(v, _)| *v == p.vague()) {
             Some((_, m)) => m.push(i),
@@ -603,7 +671,7 @@ fn colonnes(points: &[Point], dsn_fait: &[bool]) -> Vec<Colonne> {
     let mut cols: Vec<(Option<usize>, Vec<usize>)> = vagues.into_iter().map(|(v, m)| (v.3, m)).collect();
     cols.sort_by_key(|(_, m)| std::cmp::Reverse(points[m[0]].avance(dsn_fait)));
     if let Some((dsn, g)) = cols.first_mut() {
-        let (refusees, reste): (Vec<usize>, Vec<usize>) = g.iter().partition(|i| points[**i].dpae == "refuse");
+        let (refusees, reste): (Vec<usize>, Vec<usize>) = g.iter().partition(|i| points[**i].dpae == PointDpae::Refuse);
         if !refusees.is_empty() && !reste.is_empty() {
             let dsn = *dsn;
             *g = reste;
@@ -633,8 +701,8 @@ fn colonnes(points: &[Point], dsn_fait: &[bool]) -> Vec<Colonne> {
 
 /// Une ligne en cases : les colonnes voisines au meme point (`point`) se fondent. Chaque case : son point, ses
 /// engagements, ses colonnes, et la classe DSN de sa premiere colonne.
-fn cases_de_la_ligne(cols: &[Colonne], point: impl Fn(&Colonne) -> String) -> Vec<(String, Vec<usize>, Vec<String>, Option<usize>)> {
-    let mut out: Vec<(String, Vec<usize>, Vec<String>, Option<usize>)> = Vec::new();
+fn cases_de_la_ligne<P: PartialEq>(cols: &[Colonne], point: impl Fn(&Colonne) -> P) -> Vec<(P, Vec<usize>, Vec<String>, Option<usize>)> {
+    let mut out: Vec<(P, Vec<usize>, Vec<String>, Option<usize>)> = Vec::new();
     for c in cols {
         let p = point(c);
         match out.last_mut() {
@@ -648,16 +716,17 @@ fn cases_de_la_ligne(cols: &[Colonne], point: impl Fn(&Colonne) -> String) -> Ve
     out
 }
 
-/// Le point d'une colonne sur une ligne : le premier etat de `ordre` qu'un de ses engagements porte ; sinon `fait`, ou le
-/// point que tous ses engagements partagent (rien a faire ici pour chacun).
-fn point_de(c: &Colonne, points: &[Point], ligne: fn(&Point) -> &'static str, ordre: &[&'static str]) -> String {
+/// Le point d'une colonne sur une ligne : le premier etat de `ordre` qu'un de ses engagements porte ; sinon le point que
+/// tous ses engagements partagent (rien a faire ici pour chacun) ; sinon, ses engagements ne partageant rien qui reste a
+/// faire, ou la colonne n'en ayant aucun, `fait`.
+fn point_de<P: Copy + PartialEq>(c: &Colonne, points: &[Point], ligne: fn(&Point) -> P, ordre: &[P], fait: P) -> P {
     if let Some(o) = ordre.iter().find(|o| c.membres.iter().any(|i| ligne(&points[*i]) == **o)) {
-        return o.to_string();
+        return *o;
     }
     let mut tous = c.membres.iter().map(|i| ligne(&points[*i]));
     match tous.next() {
-        Some(p) if tous.all(|q| q == p) => p.to_string(),
-        _ => "fait".to_string(),
+        Some(p) if tous.all(|q| q == p) => p,
+        Some(_) | None => fait,
     }
 }
 
@@ -1075,7 +1144,7 @@ pub(crate) struct Vue {
     fin: Option<Jour>,
     etablissement: Option<String>,
     echeances: Option<Echeances>,
-    valide: Option<String>,
+    valide: Option<InstantEcrit>,
     recalcul: Option<String>,
     contrat: ContratDit,
     pieces: Vec<&'static str>,
@@ -1085,7 +1154,7 @@ pub(crate) struct Vue {
 
 impl Vue {
     fn valide(&self) -> bool {
-        self.valide.as_deref().is_some_and(|v| !v.is_empty())
+        self.valide.is_some()
     }
 }
 
@@ -1122,7 +1191,7 @@ struct LigneDePage<'a> {
     numero: Option<&'a str>,
     debut: Option<Jour>,
     fin: Option<Jour>,
-    valide: Option<&'a str>,
+    valide: Option<InstantEcrit>,
     recalcul: Option<&'a str>,
     contrat: &'a ContratDit,
     versions: Option<&'a engagement::versions::Frise>,
@@ -1150,7 +1219,7 @@ struct DpaeDePage<'a> {
 impl<'a> LigneDePage<'a> {
     fn de(l: &'a Ligne) -> LigneDePage<'a> {
         let v = &l.vue;
-        let valide = v.valide.as_deref().filter(|t| !t.is_empty()).map(socle::ecran::quand);
+        let valide = v.valide.map(InstantEcrit::dit);
         let embauche = v.debut.map(|d| format!("embauche le {}", d.jj_mm_aaaa()));
         LigneDePage {
             periode_dit: v.debut.map(|d| periode_dite(d, v.fin)),
@@ -1170,7 +1239,7 @@ impl<'a> LigneDePage<'a> {
             numero: v.numero.as_deref(),
             debut: v.debut,
             fin: v.fin,
-            valide: v.valide.as_deref(),
+            valide: v.valide,
             recalcul: v.recalcul.as_deref(),
             contrat: &v.contrat,
             versions: l.versions.as_ref(),
@@ -1602,7 +1671,7 @@ impl<'a> Moteur<'a> {
                 fin: p.engagement.fin,
                 etablissement,
                 echeances,
-                valide: e.valide().map(|v| v.le().to_string()),
+                valide: e.valide().map(|v| v.le()),
                 recalcul,
                 contrat,
                 pieces,
@@ -2051,12 +2120,13 @@ impl<'a> Moteur<'a> {
 
         // --- DPAE : par embauche du mois. Partie, elle est faite tant qu'aucun retour ne revient KO.
         let mut dpae = Vec::new();
-        for (point, m, noms, _) in cases_de_la_ligne(&cols, |c| point_de(c, &points, |p| p.dpae, &["a_faire", "refuse", A_COMPLETER, A_VALIDER])) {
+        let ordre = [PointDpae::AFaire, PointDpae::Refuse, PointDpae::ACompleter, PointDpae::AValider];
+        for (point, m, noms, _) in cases_de_la_ligne(&cols, |c| point_de(c, &points, |p| p.dpae, &ordre, PointDpae::Fait)) {
             let siens: Vec<&Vue> = de(&m).into_iter().zip(m.iter()).filter(|(_, i)| points[**i].dpae == point).map(|(p, _)| p).collect();
             let n = siens.len();
-            let g = match point.as_str() {
-                "refuse" => Groupe::de(EtatCase::Refuse, Some(Compte::Nombre(n)), n.to_string(), format!("refusée{} · l'éditeur est prévenu", plur(n, "", "s")), echeance_de(&siens, true), Some(historique(le_mois))),
-                "a_faire" => {
+            let g = match point {
+                PointDpae::Refuse =>Groupe::de(EtatCase::Refuse, Some(Compte::Nombre(n)), n.to_string(), format!("refusée{} · l'éditeur est prévenu", plur(n, "", "s")), echeance_de(&siens, true), Some(historique(le_mois))),
+                PointDpae::AFaire => {
                     let (a, refus) = self.action_de_depot(le_mois, DPAE, None, Some(declarer_embauches(le_mois)))?;
                     // Le jour de l'embauche passe, la DPAE qui devait le preceder (L. 1221-10) est en retard ; elle se depose
                     // toujours.
@@ -2070,21 +2140,22 @@ impl<'a> Moteur<'a> {
                     let quoi = avec_refus(&etat, refus);
                     Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), quoi, echeance, a)
                 }
-                A_COMPLETER => a_completer(n),
-                A_VALIDER => a_valider(n),
-                RIEN_A_DECLARER => rien_ici("rien à déclarer"),
-                _ => Groupe::fait(),
+                PointDpae::ACompleter => a_completer(n),
+                PointDpae::AValider => a_valider(n),
+                PointDpae::RienADeclarer => rien_ici("rien à déclarer"),
+                PointDpae::Fait => Groupe::fait(),
             };
             dpae.push(g.sous(&noms));
         }
 
         // --- Contrats : un par embauche dont la nature a un contrat ecrit (`engagement::contrat_a_signer`).
         let mut contrats = Vec::new();
-        for (point, m, noms, _) in cases_de_la_ligne(&cols, |c| point_de(c, &points, |p| p.contrat, &["a_envoyer", "a_refaire", "en_attente", A_COMPLETER, A_VALIDER])) {
+        let ordre = [PointContrat::AEnvoyer, PointContrat::ARefaire, PointContrat::EnAttente, PointContrat::ACompleter, PointContrat::AValider];
+        for (point, m, noms, _) in cases_de_la_ligne(&cols, |c| point_de(c, &points, |p| p.contrat, &ordre, PointContrat::Fait)) {
             let siens: Vec<&Vue> = de(&m).into_iter().zip(m.iter()).filter(|(_, i)| points[**i].contrat == point).map(|(p, _)| p).collect();
             let n = siens.len();
-            let g = match point.as_str() {
-                "en_attente" => {
+            let g = match point {
+                PointContrat::EnAttente => {
                     // CE QUI EST REVENU SUR CE QUI VIENT DE PARTIR, et sur cela seul : les contrats de la case partis le
                     // jour du dernier envoi encore attendu.
                     let jour = |p: &Vue| p.etats.signature.fait.map(HeureDuJournal::jour);
@@ -2092,7 +2163,7 @@ impl<'a> Moteur<'a> {
                     let partis: Vec<&Vue> = de(&m)
                         .into_iter()
                         .zip(m.iter())
-                        .filter(|(p, i)| matches!(points[**i].contrat, "fait" | "en_attente") && p.etats.signature.parti() && jour(p) == dernier)
+                        .filter(|(p, i)| matches!(points[**i].contrat, PointContrat::Fait | PointContrat::EnAttente) && p.etats.signature.parti() && jour(p) == dernier)
                         .map(|(p, _)| p)
                         .collect();
                     let recus = partis.iter().filter(|p| p.etats.signature.recu.is_some() && !p.etats.signature.avenant_attendu).count();
@@ -2110,19 +2181,19 @@ impl<'a> Moteur<'a> {
                 }
                 // L'AVENANT n'a pas d'echeance : L. 1242-13 date la remise du contrat a l'embauche, aucun texte depose ne
                 // date celle d'un avenant (regle 1 : rien ne se devine).
-                "a_refaire" => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à refaire signer".into(), None, Some(faire_signer(le_mois))),
-                "a_envoyer" => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à envoyer".into(), echeance_de(&siens, false), Some(faire_signer(le_mois))),
-                A_COMPLETER => a_completer(n),
-                A_VALIDER => a_valider(n),
-                RIEN_A_SIGNER => rien_ici("rien à signer"),
-                _ => Groupe::fait(),
+                PointContrat::ARefaire => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à refaire signer".into(), None, Some(faire_signer(le_mois))),
+                PointContrat::AEnvoyer => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à envoyer".into(), echeance_de(&siens, false), Some(faire_signer(le_mois))),
+                PointContrat::ACompleter => a_completer(n),
+                PointContrat::AValider => a_valider(n),
+                PointContrat::RienASigner => rien_ici("rien à signer"),
+                PointContrat::Fait => Groupe::fait(),
             };
             contrats.push(g.sous(&noms));
         }
 
         // --- DSN : par etablissement (`groupes_dsn`), chaque colonne sous la DSN de ses etablissements ; celle des cartes
         // qui ne nomment pas encore leur salarie est a completer.
-        let dsn: Vec<Groupe> = cases_de_la_ligne(&cols, |c| format!("{:?}", c.dsn))
+        let dsn: Vec<Groupe> = cases_de_la_ligne(&cols, |c| c.dsn)
             .into_iter()
             .map(|(_, m, noms, k)| match k {
                 Some(k) => classes[k].1.clone().sous(&noms),
@@ -2132,16 +2203,17 @@ impl<'a> Moteur<'a> {
 
         // --- Documents : par salarie du mois, des que son engagement est valide, sans echeance : ils partent quand on veut.
         let mut documents = Vec::new();
-        for (point, m, noms, _) in cases_de_la_ligne(&cols, |c| point_de(c, &points, |p| p.documents, &["a_renvoyer", "a_envoyer", A_COMPLETER, A_VALIDER])) {
+        let ordre = [PointDocuments::ARenvoyer, PointDocuments::AEnvoyer, PointDocuments::ACompleter, PointDocuments::AValider];
+        for (point, m, noms, _) in cases_de_la_ligne(&cols, |c| point_de(c, &points, |p| p.documents, &ordre, PointDocuments::Fait)) {
             let siens: Vec<&Vue> = de(&m).into_iter().zip(m.iter()).filter(|(_, i)| points[**i].documents == point).map(|(p, _)| p).collect();
             let n = siens.iter().map(|p| p.salarie.as_deref()).collect::<BTreeSet<Option<&str>>>().len();
-            let g = match point.as_str() {
-                "a_renvoyer" => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à renvoyer".into(), None, Some(envoyer_documents(le_mois, format!("Renvoyer les documents corrigés ({})…", n)))),
-                "a_envoyer" => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à envoyer".into(), None, Some(envoyer_documents(le_mois, "Envoyer les documents…".into()))),
+            let g = match point {
+                PointDocuments::ARenvoyer => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à renvoyer".into(), None, Some(envoyer_documents(le_mois, format!("Renvoyer les documents corrigés ({})…", n)))),
+                PointDocuments::AEnvoyer => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à envoyer".into(), None, Some(envoyer_documents(le_mois, "Envoyer les documents…".into()))),
                 // Ce qui reste a completer se compte en engagements, comme a la DPAE.
-                A_COMPLETER => a_completer(siens.len()),
-                A_VALIDER => a_valider(siens.len()),
-                _ => Groupe::fait(),
+                PointDocuments::ACompleter => a_completer(siens.len()),
+                PointDocuments::AValider => a_valider(siens.len()),
+                PointDocuments::Fait => Groupe::fait(),
             };
             documents.push(g.sous(&noms));
         }
@@ -2453,12 +2525,16 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
     let pt = Point::de(p, None);
     // A COMPLETER, OU A VALIDER : rien n'est parti de lui ; chaque carre qui l'attend dit ce qui reste, sans geste.
     if p.a_completer.is_some() || !p.valide() {
-        let attend = |cle: QuelleEtape, nom: &str, point: &str| match (point, p.a_completer.as_deref()) {
-            (A_COMPLETER, Some(manque)) => carre(cle, nom, EtatCase::AFaire, format!("À compléter avant de valider : {}", manque), None, Some("à compléter")),
-            (A_VALIDER, _) => carre(cle, nom, EtatCase::AFaire, format!("{} après la validation", nom), None, Some("à valider")),
-            _ => carre(cle, nom, EtatCase::Fait, "Rien à faire ici pour cet engagement".into(), None, None),
+        let attend = |cle: QuelleEtape, nom: &str, attente: Attente| match (attente, p.a_completer.as_deref()) {
+            (Attente::ACompleter, Some(manque)) => carre(cle, nom, EtatCase::AFaire, format!("À compléter avant de valider : {}", manque), None, Some("à compléter")),
+            (Attente::AValider, _) => carre(cle, nom, EtatCase::AFaire, format!("{} après la validation", nom), None, Some("à valider")),
+            (Attente::ACompleter, None) | (Attente::Aucune, _) => carre(cle, nom, EtatCase::Fait, "Rien à faire ici pour cet engagement".into(), None, None),
         };
-        return Ok(vec![attend(QuelleEtape::Dpae, "DPAE", pt.dpae), attend(QuelleEtape::Signature, "Contrat", pt.contrat), attend(QuelleEtape::Documents, "Documents", pt.documents)]);
+        return Ok(vec![
+            attend(QuelleEtape::Dpae, "DPAE", pt.dpae.attente()),
+            attend(QuelleEtape::Signature, "Contrat", pt.contrat.attente()),
+            attend(QuelleEtape::Documents, "Documents", pt.documents.attente()),
+        ]);
     }
     let d = &p.etats.dpae;
     let s = &p.etats.signature;
@@ -2472,16 +2548,17 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
     let depuis = p.contrat.depuis();
     let route = |a: Action| Some(Geste::Route(a));
 
+    // Un engagement valide n'est ni a completer ni a valider : ses points sont ceux de ce qui part.
     let (etat, phrase, geste) = match pt.dpae {
-        "refuse" => {
+        PointDpae::Refuse => {
             let motif = motif_dpae(d);
             (EtatCase::Refuse, format!("DPAE refusée {} : {}", le_jour_de(d.fait.map(HeureDuJournal::jour))?, motif), route(historique(mois)))
         }
-        "a_faire" => (EtatCase::AFaire, "DPAE à déposer".to_string(), route(declarer_embauches(mois))),
-        RIEN_A_DECLARER => (EtatCase::Fait, format!("Contrat commencé le {}, avant PuppetPaie : rien à déclarer ici", debut_dit), None),
-        _ if !embauche => (EtatCase::Fait, format!("DPAE faite en {}, à l'embauche", depuis), None),
-        _ if d.passee => (EtatCase::Fait, format!("DPAE déposée {}, passée", le_jour_de(d.fait.map(HeureDuJournal::jour))?), None),
-        _ => (EtatCase::Fait, format!("DPAE déposée {}, retour pas encore arrivé", le_jour_de(d.fait.map(HeureDuJournal::jour))?), None),
+        PointDpae::AFaire => (EtatCase::AFaire, "DPAE à déposer".to_string(), route(declarer_embauches(mois))),
+        PointDpae::RienADeclarer => (EtatCase::Fait, format!("Contrat commencé le {}, avant PuppetPaie : rien à déclarer ici", debut_dit), None),
+        PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider if !embauche => (EtatCase::Fait, format!("DPAE faite en {}, à l'embauche", depuis), None),
+        PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider if d.passee => (EtatCase::Fait, format!("DPAE déposée {}, passée", le_jour_de(d.fait.map(HeureDuJournal::jour))?), None),
+        PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider => (EtatCase::Fait, format!("DPAE déposée {}, retour pas encore arrivé", le_jour_de(d.fait.map(HeureDuJournal::jour))?), None),
     };
     let pieces = Pieces { vide: Some("Aucune DPAE déposée pour cette embauche.".into()), encart: None, gestes: Vec::new() };
     let dpae = Carre { pieces: Some(pieces), ..carre(QuelleEtape::Dpae, "DPAE", etat, phrase, geste, None) };
@@ -2495,12 +2572,12 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
     };
     let par_dit = if s.par == Some("imprime") { "imprimé" } else { "envoyé" };
     let (etat, phrase, geste) = match pt.contrat {
-        "a_envoyer" => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois))),
-        "a_refaire" if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois))),
-        "a_refaire" => (EtatCase::AFaire, format!("Contrat parti {} : {}", le_jour_de(s.fait.map(HeureDuJournal::jour))?, s.pourquoi), route(faire_signer(mois))),
+        PointContrat::AEnvoyer => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois))),
+        PointContrat::ARefaire if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois))),
+        PointContrat::ARefaire => (EtatCase::AFaire, format!("Contrat parti {} : {}", le_jour_de(s.fait.map(HeureDuJournal::jour))?, s.pourquoi), route(faire_signer(mois))),
         // Un avenant parti, imprime ou par courriel, se note signe d'un clic, comme le contrat ; la relance est dans la
         // boite des contrats en attente. `par` est celui du dernier depart, l'avenant attendu.
-        "en_attente" if s.avenant_attendu => (
+        PointContrat::EnAttente if s.avenant_attendu => (
             EtatCase::EnAttente,
             match s.avenant.as_ref().and_then(|a| a.numero) {
                 Some(n) => format!("Avenant n° {} {} {}", n, par_dit, le_jour_de(s.avenant.as_ref().map(|a| a.quand.jour()))?),
@@ -2508,27 +2585,40 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
             },
             noter_recu(p, mois, "Noter l'avenant signé", s.avenant.as_ref().and_then(|a| a.numero), true).and_then(&route),
         ),
-        "en_attente" => (EtatCase::EnAttente, format!("Contrat {} {}", par_dit, le_jour_de(s.fait.map(HeureDuJournal::jour))?), noter_recu(p, mois, "Noter le contrat signé", None, true).and_then(&route)),
-        RIEN_A_SIGNER if ailleurs && !p.contrat.anterieur() => (EtatCase::Fait, "Contrat signé hors de PuppetPaie : rien à signer ici".to_string(), geste_du_dossier(dossier)),
-        RIEN_A_SIGNER => (EtatCase::Fait, format!("Contrat commencé le {}, avant PuppetPaie : rien à signer ici", debut_dit), geste_du_dossier(dossier)),
-        _ if cdi.is_some() => (EtatCase::Fait, format!("CDI en cours depuis {}, sans terme : rien à envoyer", depuis), None),
-        _ if !embauche => (EtatCase::Fait, format!("Contrat signé en {}", depuis), None),
-        _ if !p.contrat.ecrit() => (EtatCase::Fait, "Pas de contrat à faire signer ici".to_string(), None),
-        _ => (EtatCase::Fait, format!("Contrat signé {}", le_jour_de(s.recu.map(InstantEcrit::jour))?), None),
+        PointContrat::EnAttente => (EtatCase::EnAttente, format!("Contrat {} {}", par_dit, le_jour_de(s.fait.map(HeureDuJournal::jour))?), noter_recu(p, mois, "Noter le contrat signé", None, true).and_then(&route)),
+        PointContrat::RienASigner if ailleurs && !p.contrat.anterieur() => (EtatCase::Fait, "Contrat signé hors de PuppetPaie : rien à signer ici".to_string(), geste_du_dossier(dossier)),
+        PointContrat::RienASigner => (EtatCase::Fait, format!("Contrat commencé le {}, avant PuppetPaie : rien à signer ici", debut_dit), geste_du_dossier(dossier)),
+        PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider if cdi.is_some() => (EtatCase::Fait, format!("CDI en cours depuis {}, sans terme : rien à envoyer", depuis), None),
+        PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider if !embauche => (EtatCase::Fait, format!("Contrat signé en {}", depuis), None),
+        PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider if !p.contrat.ecrit() => (EtatCase::Fait, "Pas de contrat à faire signer ici".to_string(), None),
+        PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider => (EtatCase::Fait, format!("Contrat signé {}", le_jour_de(s.recu.map(InstantEcrit::jour))?), None),
     };
     let contrat = Carre { pieces: Some(pieces_du_contrat(p, mois, s, dossier)), ..carre(QuelleEtape::Signature, nom_contrat, etat, phrase, geste, None) };
 
     let (etat, phrase, geste) = match pt.documents {
-        "a_renvoyer" => (EtatCase::AFaire, format!("Documents à renvoyer : {}", o.pourquoi), route(envoyer_documents(mois, "Renvoyer les documents corrigés…".into()))),
-        "a_envoyer" => (EtatCase::AFaire, "Documents à envoyer".to_string(), route(envoyer_documents(mois, "Envoyer les documents…".into()))),
-        _ => (EtatCase::Fait, format!("Documents partis {}", le_jour_de(o.fait.map(HeureDuJournal::jour))?), None),
+        PointDocuments::ARenvoyer => (EtatCase::AFaire, format!("Documents à renvoyer : {}", o.pourquoi), route(envoyer_documents(mois, "Renvoyer les documents corrigés…".into()))),
+        PointDocuments::AEnvoyer => (EtatCase::AFaire, "Documents à envoyer".to_string(), route(envoyer_documents(mois, "Envoyer les documents…".into()))),
+        PointDocuments::Fait | PointDocuments::ACompleter | PointDocuments::AValider => (EtatCase::Fait, format!("Documents partis {}", le_jour_de(o.fait.map(HeureDuJournal::jour))?), None),
     };
     let documents = carre(QuelleEtape::Documents, "Documents", etat, phrase, geste, None);
     // CE QUI RESTE, EN UN MOT, sur le carre meme (la phrase entiere est l'infobulle) ; un point fait n'a rien qui reste.
     let restes = [
-        match pt.dpae { "refuse" => Some("refusée"), "a_faire" => Some("à déposer"), _ => None },
-        match pt.contrat { "a_envoyer" => Some("à envoyer"), "a_refaire" => Some("à refaire signer"), "en_attente" => Some("signature attendue"), _ => None },
-        match pt.documents { "a_renvoyer" => Some("à renvoyer"), "a_envoyer" => Some("à envoyer"), _ => None },
+        match pt.dpae {
+            PointDpae::Refuse => Some("refusée"),
+            PointDpae::AFaire => Some("à déposer"),
+            PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider | PointDpae::RienADeclarer => None,
+        },
+        match pt.contrat {
+            PointContrat::AEnvoyer => Some("à envoyer"),
+            PointContrat::ARefaire => Some("à refaire signer"),
+            PointContrat::EnAttente => Some("signature attendue"),
+            PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider | PointContrat::RienASigner => None,
+        },
+        match pt.documents {
+            PointDocuments::ARenvoyer => Some("à renvoyer"),
+            PointDocuments::AEnvoyer => Some("à envoyer"),
+            PointDocuments::Fait | PointDocuments::ACompleter | PointDocuments::AValider => None,
+        },
     ];
     // LE LIEN DU DETAIL vers ce qui est parti : seulement quand une piece est passee par le logiciel, ou vers le contrat
     // signe hors du logiciel, que son dossier garde.
@@ -2801,7 +2891,7 @@ fn non_actifs(ctx: &Contexte, mois: Mois) -> R<Vec<NonActif>> {
             debut,
             fin,
             non_actif: n.le().to_string(),
-            non_actif_dit: format!("non actif depuis le {}", socle::ecran::quand(&n.le().iso())),
+            non_actif_dit: format!("non actif depuis le {}", n.le().dit()),
             a_faire: crate::engagement::a_faire_en_phrases(&n.a_refaire(&departs)),
         });
     }
