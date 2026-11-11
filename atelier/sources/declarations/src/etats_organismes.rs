@@ -118,7 +118,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut cumul: Vec<Cumul> = Vec::new();
     let mut manque: BTreeSet<String> = BTreeSet::new();
     let zero = zero2();
-    let mut ajouter = |m: Mois, org: &str, code: &str, libelle: &str, base: Option<Decimal>, ts: Option<Decimal>, ms: Decimal, tp: Option<Decimal>, mp: Decimal| {
+    let mut ajouter = |m: Mois, org: &str, code: &str, libelle: &str, base: Option<Decimal>, ts: Option<Decimal>, ms: Option<Decimal>, tp: Option<Decimal>, mp: Option<Decimal>| {
         let cle = ((regroupement == "mois").then_some(m), org.to_string(), code.to_string(), libelle.to_string(), ts, tp);
         let i = match cumul.iter().position(|c| c.cle == cle) {
             Some(i) => i,
@@ -142,8 +142,13 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         if let Some(b) = base.filter(|b| !b.is_zero()) {
             c.base = add(c.base, b);
         }
-        c.part_sal = add(c.part_sal, if ms.is_zero() { zero } else { ms });
-        c.part_pat = add(c.part_pat, if mp.is_zero() { zero } else { mp });
+        // Une part que la ligne ne porte pas (la colonne qu'un bulletin importe laisse vide) n'ajoute rien.
+        if let Some(ms) = ms.filter(|x| !x.is_zero()) {
+            c.part_sal = add(c.part_sal, ms);
+        }
+        if let Some(mp) = mp.filter(|x| !x.is_zero()) {
+            c.part_pat = add(c.part_pat, mp);
+        }
     };
     // CE QUE LES PIECES IMPORTEES NE VENTILENT PAS : une paie reprise de la seule DSN (ses lignes de cotisation sont sur
     // un bulletin qu'on n'a pas), et une ligne de bulletin que la lecture de l'import ne rattache a aucune cotisation
@@ -153,15 +158,17 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut non_rattachees: BTreeMap<String, (BTreeSet<Mois>, Decimal)> = BTreeMap::new();
     for m in p.mois.clone() {
         for paie in lecture.paies(m)?.iter() {
-            if paie.importee.is_some() && paie.lignes.is_empty() {
+            let cotisations = paie.cotisations();
+            if paie.importee().is_some() && cotisations.is_empty() {
                 sans_bulletin.insert(m);
             }
-            for c in &paie.lignes {
+            for c in &cotisations {
                 let Some(id) = c.id.as_deref() else {
-                    if paie.importee.is_some() {
+                    if paie.importee().is_some() {
                         let (mois, total) = non_rattachees.entry(c.libelle.clone()).or_default();
                         mois.insert(m);
-                        *total = add(*total, add(eur2(c.montant_sal), eur2(c.montant_pat)));
+                        // Les parts que la ligne porte ; la colonne qu'un bulletin importe laisse vide n'en porte pas.
+                        *total = [c.montant_sal, c.montant_pat].into_iter().flatten().map(eur2).fold(*total, add);
                     } else {
                         manque.insert(format!("sans cotisation ({})", c.libelle));
                     }
@@ -173,28 +180,29 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 };
                 let (ts, tp) = (c.taux_sal, c.taux_pat);
                 if id == "reduction_generale" {
-                    if let Some(rg) = &paie.reduction_generale {
+                    if let Some(rg) = paie.validee().and_then(|v| v.reduction_generale.as_ref()) {
                         let mut reparti = zero;
                         for (part, id_org, quoi) in [(rg.urssaf, "maladie", "part Urssaf"), (rg.chomage, "chomage", "part chômage"), (rg.agirc_arrco, "retraite_t1", "part retraite")] {
                             if !part.is_zero() {
                                 let o = org_de(id_org).ok_or_else(|| socle::fichiers::absent(id_org).reclasser(Classe::Manque))?;
-                                ajouter(m, &o, id, &format!("{} — {}", c.libelle, quoi), None, None, zero, None, -part);
+                                ajouter(m, &o, id, &format!("{} — {}", c.libelle, quoi), None, None, None, None, Some(-part));
                                 reparti = add(reparti, part);
                             }
                         }
-                        if -reparti != c.montant_pat {
+                        let calculee = c.montant_pat.ok_or_else(|| socle::fichiers::absent("montant_pat").reclasser(Classe::Illisible))?;
+                        if -reparti != calculee {
                             avert.push(format!(
                                 "{}, {} : la réduction générale ({}) ne tombe pas sur la somme de ses parts ({}).",
                                 libelle_mois(m),
-                                qui(&paie.salarie)?,
-                                eur2(c.montant_pat),
+                                qui(paie.salarie())?,
+                                eur2(calculee),
                                 -reparti
                             ));
                         }
                         continue;
                     }
                 }
-                ajouter(m, &org, id, &c.libelle, Some(eur2(c.base)), ts, eur2(c.montant_sal), tp, eur2(c.montant_pat));
+                ajouter(m, &org, id, &c.libelle, c.base.map(eur2), ts, c.montant_sal.map(eur2), tp, c.montant_pat.map(eur2));
             }
         }
     }
@@ -258,7 +266,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 
 /// Les paies de chaque mois de la periode (`engagement::etats::paies_du_mois` : ecrites ou importees), tous
 /// etablissements. Un mois sans paie est dit.
-fn paies_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs) -> R<Vec<(Mois, Vec<engagement::calcul::Paie>)>> {
+fn paies_des_mois(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, departs: &engagement::departs::Departs) -> R<Vec<(Mois, Vec<engagement::etats::PaieDuMois>)>> {
     let (mut out, mut sans) = (Vec::new(), Vec::new());
     for &m in &p.mois {
         let paies = engagement::etats::paies_du_mois(ctx, m, departs).map_err(|e| e.reclasser(Classe::Refuse))?;
@@ -560,10 +568,25 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         // La tranche A : la base 02 (« assiette brute plafonnee ») de chaque paie (`dsn::base_declaree`).
         let mut ta = zero;
         for q in &paies {
-            let nic = droit::bareme::etablissement_de(&ctx.entreprise, &q.salarie).map_err(|e| e.reclasser(Classe::Refuse))?;
+            let nic = droit::bareme::etablissement_de(&ctx.entreprise, q.salarie()).map_err(|e| e.reclasser(Classe::Refuse))?;
             let bar = crate::dsn::bar_du(&ctx.du_mois(m).map_err(|e| e.reclasser(Classe::Refuse))?, &ctx.entreprise, &orgs, &nic, m).map_err(|e| e.reclasser(Classe::Refuse))?;
-            for e in q.elementaires() {
-                ta = add(ta, crate::dsn::base_declaree(e, &bar, droit::base_assujettie::BaseAssujettie::BrutePlafonnee).map_err(|e| e.reclasser(Classe::Refuse))?);
+            let plafonnee = droit::base_assujettie::BaseAssujettie::BrutePlafonnee;
+            match q {
+                engagement::etats::PaieDuMois::Validee(v) => {
+                    for e in v.elementaires() {
+                        ta = add(ta, crate::dsn::base_declaree(e, &bar, plafonnee).map_err(|e| e.reclasser(Classe::Refuse))?);
+                    }
+                }
+                engagement::etats::PaieDuMois::Importee(i) => {
+                    let Some(base) = crate::dsn::base_declaree_importee(i, &bar, plafonnee).map_err(|e| e.reclasser(Classe::Refuse))? else {
+                        return Err(refus(format!(
+                            "{}, {} : les pièces importées ne disent pas son assiette brute plafonnée ; la tranche A de l'année ne se calcule pas sans elle.",
+                            qui(q.salarie())?,
+                            libelle_mois(m)
+                        )));
+                    };
+                    ta = add(ta, base);
+                }
             }
         }
         let an = format!("{:04}", m.annee());

@@ -166,7 +166,7 @@ fn assiettes_taxe_sur_les_salaires(annee: &[MoisDeLAnnee], bar: &droit::forme_ba
             MoisDeLAnnee::Calcules(_, ps) => {
                 for p in ps.iter().filter(|p| !p.engagement.sans_paie()) {
                     let b = par_salarie.entry(p.salarie.id.to_string()).or_insert(Decimal::ZERO);
-                    *b = add(*b, assiette_taxe_sur_les_salaires(p, abattement));
+                    *b = add(*b, assiette_taxe_sur_les_salaires(p.brut, p.base_csg, abattement));
                 }
             }
             MoisDeLAnnee::Contrats(_) => return Err(refus("assiettes de la taxe sur les salaires : un mois sans montants")),

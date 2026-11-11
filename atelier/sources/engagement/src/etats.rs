@@ -508,10 +508,155 @@ pub fn validees_du_mois_parmi(ctx: &Contexte, mois: Mois, departs: &Departs, gar
 /// (`validees_du_mois`), puis celle de chaque engagement importe paye ce mois (`importe::paies_du_mois` : ce que les
 /// pieces de l'ancien logiciel en disent, dans les mots du moteur). Un engagement en saisie n'est pas paye ; rien ne se
 /// calcule. Ce qui part (DSN, documents) ne lit que la saisie (`validees_du_mois`) : un mois importe a deja ete declare.
-pub fn paies_du_mois(ctx: &Contexte, mois: Mois, departs: &Departs) -> R<Vec<Paie>> {
-    let mut paies: Vec<Paie> = validees_du_mois(ctx, mois, departs)?.into_iter().flat_map(|(_, p)| p).filter(|p| !p.engagement.sans_paie()).collect();
-    paies.extend(crate::importe::paies_du_mois(ctx, mois)?);
+pub fn paies_du_mois(ctx: &Contexte, mois: Mois, departs: &Departs) -> R<Vec<PaieDuMois>> {
+    let mut paies: Vec<PaieDuMois> =
+        validees_du_mois(ctx, mois, departs)?.into_iter().flat_map(|(_, p)| p).filter(|p| !p.engagement.sans_paie()).map(PaieDuMois::Validee).collect();
+    paies.extend(crate::importe::paies_du_mois(ctx, mois)?.into_iter().map(PaieDuMois::Importee));
     Ok(paies)
+}
+
+/// UNE PAIE DU MOIS, CE QUE LIT UN ETAT : la paie ecrite d'un engagement valide, ou celle d'un engagement importe, que
+/// ses pieces disent (`importe::PaieImportee` : un montant qu'elles taisent est vide). Ce qu'elles ont en commun se lit
+/// par les memes noms ; un montant se lit `Option` : toujours dit pour une paie validee, dit ou non pour une importee.
+#[derive(Debug, Clone)]
+pub enum PaieDuMois {
+    Validee(Paie),
+    Importee(crate::importe::PaieImportee),
+}
+
+/// Une ligne de cotisation d'une paie du mois, telle qu'un etat la lit : celle d'une paie validee, tous ses montants
+/// dits, ou celle qu'un bulletin importe imprime (`importe::LigneDeCotisation`).
+pub type CotisationDuMois = crate::importe::LigneDeCotisation;
+
+/// Une ligne de remuneration d'une paie du mois, telle qu'un etat la lit (`importe::LigneDeRemuneration`).
+pub type RemunerationDuMois = crate::importe::LigneDeRemuneration;
+
+impl PaieDuMois {
+    pub fn engagement(&self) -> &crate::Engagement {
+        match self {
+            PaieDuMois::Validee(p) => &p.engagement,
+            PaieDuMois::Importee(p) => &p.engagement,
+        }
+    }
+
+    pub fn salarie(&self) -> &droit::fiche::SalarieDuContrat {
+        match self {
+            PaieDuMois::Validee(p) => &p.salarie,
+            PaieDuMois::Importee(p) => &p.salarie,
+        }
+    }
+
+    pub fn spectacle(&self) -> Option<&droit::fiche::Spectacle> {
+        match self {
+            PaieDuMois::Validee(p) => p.spectacle.as_ref(),
+            PaieDuMois::Importee(p) => p.spectacle.as_ref(),
+        }
+    }
+
+    /// La paie importee, ou `None` pour une paie validee.
+    pub fn importee(&self) -> Option<&crate::importe::PaieImportee> {
+        match self {
+            PaieDuMois::Validee(_) => None,
+            PaieDuMois::Importee(p) => Some(p),
+        }
+    }
+
+    /// La paie validee, ou `None` pour une paie importee.
+    pub fn validee(&self) -> Option<&Paie> {
+        match self {
+            PaieDuMois::Validee(p) => Some(p),
+            PaieDuMois::Importee(_) => None,
+        }
+    }
+
+    fn montant(&self, validee: fn(&Paie) -> Decimal, importee: fn(&crate::importe::PaieImportee) -> Option<Decimal>) -> Option<Decimal> {
+        match self {
+            PaieDuMois::Validee(p) => Some(validee(p)),
+            PaieDuMois::Importee(p) => importee(p),
+        }
+    }
+
+    pub fn brut(&self) -> Option<Decimal> {
+        self.montant(|p| p.brut, |p| p.brut)
+    }
+
+    pub fn total_sal(&self) -> Option<Decimal> {
+        self.montant(|p| p.total_sal, |p| p.total_sal)
+    }
+
+    pub fn total_pat(&self) -> Option<Decimal> {
+        self.montant(|p| p.total_pat, |p| p.total_pat)
+    }
+
+    pub fn net_a_payer(&self) -> Option<Decimal> {
+        self.montant(|p| p.net_a_payer, |p| p.net_a_payer)
+    }
+
+    pub fn net_imposable(&self) -> Option<Decimal> {
+        self.montant(|p| p.net_imposable, |p| p.net_imposable)
+    }
+
+    pub fn cout_employeur(&self) -> Option<Decimal> {
+        self.montant(|p| p.cout_employeur, |p| p.cout_employeur)
+    }
+
+    pub fn plafond(&self) -> Option<Decimal> {
+        self.montant(|p| p.plafond, |p| p.plafond)
+    }
+
+    /// L'assiette de la CSG : celle du calcul, ou celle que les pieces disent.
+    pub fn base_csg(&self) -> Option<Decimal> {
+        self.montant(|p| p.base_csg, |p| p.bases.get(&droit::assiette::Assiette::Csg).copied())
+    }
+
+    pub fn bases(&self) -> &BTreeMap<droit::assiette::Assiette, Decimal> {
+        match self {
+            PaieDuMois::Validee(p) => &p.bases,
+            PaieDuMois::Importee(p) => &p.bases,
+        }
+    }
+
+    /// Les lignes de cotisation : celles du calcul, ou celles du bulletin importe.
+    pub fn cotisations(&self) -> Vec<CotisationDuMois> {
+        match self {
+            PaieDuMois::Validee(p) => p
+                .lignes
+                .iter()
+                .map(|l| CotisationDuMois {
+                    id: l.id.clone(),
+                    famille: l.famille.clone(),
+                    libelle: l.libelle.clone(),
+                    base: Some(l.base),
+                    taux_pat: l.taux_pat,
+                    montant_pat: Some(l.montant_pat),
+                    taux_sal: l.taux_sal,
+                    montant_sal: Some(l.montant_sal),
+                })
+                .collect(),
+            PaieDuMois::Importee(p) => p.lignes.clone(),
+        }
+    }
+
+    /// Les lignes de remuneration : celles du calcul, ou celles du bulletin importe.
+    pub fn remuneration(&self) -> Vec<RemunerationDuMois> {
+        match self {
+            PaieDuMois::Validee(p) => p
+                .remuneration
+                .iter()
+                .map(|r| RemunerationDuMois {
+                    code: Some(r.code.clone()),
+                    libelle: r.libelle.clone(),
+                    unite: Some(r.unite.clone()),
+                    quantite: Some(r.quantite),
+                    taux: Some(r.taux),
+                    montant: Some(r.montant),
+                    heures_annexes: Some(r.heures_annexes),
+                    soumis: r.soumis,
+                })
+                .collect(),
+            PaieDuMois::Importee(p) => p.remuneration.clone(),
+        }
+    }
 }
 
 /// LES PAIES VALIDEES DU SALARIE `salarie` (la cle de sa fiche) EN `mois` QU'UN CALCUL LIT (le compteur de conges, le
@@ -752,7 +897,7 @@ pub fn prelevement_de_la_correction(
             None => None,
         }
     } else {
-        Some(pct(versement.montant_soumis, droit::pas::taux_du_versement(versement.taux.as_ref())?))
+        Some(pct(versement.montant_soumis, versement.taux.dec()?))
     };
     Ok(PrelevementDeLaCorrection { difference, versement, prelevement })
 }

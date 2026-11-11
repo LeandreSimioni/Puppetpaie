@@ -1296,7 +1296,7 @@ fn provision_d_une_annee_importee(
     let premier_importe = importes.first().copied().ok_or_else(|| erreur(Classe::Refuse, format!("{} : aucun mois repris d'un ancien logiciel.", m)))?;
     let mut lecture = crate::etats_paie::Lecture::nouvelle(ctx, &d.departs);
     let mut sans_compteur = 0;
-    let cle_de = |p: &engagement::calcul::Paie| p.salarie.id.to_string();
+    let cle_de = |p: &engagement::importe::PaieImportee| p.salarie.id.to_string();
     // Les salaries dont un contrat repris court au-dela du dernier jour repris : sans fin, ou une fin apres lui.
     let continuent: BTreeSet<String> = engagement::importe::contrats_lus(&ctx.racine)
         .map_err(|x| x.reclasser(Classe::Refuse))?
@@ -1306,17 +1306,19 @@ fn provision_d_une_annee_importee(
         .filter(|s| !s.is_empty())
         .collect();
     let paies = lecture.paies(m)?;
-    // Les bruts repris d'un salarie du mois de `du` a celui de `au`, et si les bulletins repris couvrent ces mois.
-    let mut bruts = |cle: &str, du: &socle::date::Jour, au: &socle::date::Jour| -> R<(Decimal, bool)> {
+    // Les bruts repris d'un salarie du mois de `du` a celui de `au`, et si les bulletins repris couvrent ces mois ; un
+    // brut que les pieces taisent, la somme ne se fait pas (`None`).
+    let mut bruts = |cle: &str, du: &socle::date::Jour, au: &socle::date::Jour| -> R<Option<(Decimal, bool)>> {
         let mut total = zero2();
         for &mois in importes.iter().filter(|x| **x >= du.mois_civil() && **x <= au.mois_civil()) {
-            for q in lecture.paies(mois)?.iter().filter(|q| q.importee.is_some() && cle_de(q) == cle) {
-                total = add(total, q.brut);
+            for q in lecture.paies(mois)?.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == cle) {
+                let Some(brut) = q.brut else { return Ok(None) };
+                total = add(total, brut);
             }
         }
-        Ok((total, premier_importe <= du.mois_civil()))
+        Ok(Some((total, premier_importe <= du.mois_civil())))
     };
-    for pa in paies.iter().filter(|q| q.importee.is_some()) {
+    for pa in paies.iter().filter_map(engagement::etats::PaieDuMois::importee) {
         let nat = pa.engagement.nat().map_err(|x| x.reclasser(Classe::Refuse))?;
         let cle = cle_de(pa);
         let Some(au) = nat.au_mois().filter(|_| continuent.contains(&cle)) else {
@@ -1335,8 +1337,8 @@ fn provision_d_une_annee_importee(
             sans_compteur += 1;
             continue;
         };
-        let (periode, couverte) = bruts(&cle, &cpt.periode_debut, &fin)?;
-        if couverte {
+        // Un bulletin repris qui ne dit pas son brut ne couvre pas sa periode : la remuneration est celle que la fiche recopie.
+        if let Some((periode, true)) = bruts(&cle, &cpt.periode_debut, &fin)? {
             if !cpt.remuneration_periode.is_zero() && cpt.remuneration_periode != periode {
                 avert.push(format!(
                     "{} : la rémunération de la période que sa fiche recopie ({}) n'est pas la somme des bruts de ses bulletins repris ({}) ; la provision prend les bulletins.",
@@ -1348,12 +1350,20 @@ fn provision_d_une_annee_importee(
             cpt.remuneration_periode = periode;
         }
         if let (Some(du), Some(au)) = (cpt.report_debut, cpt.report_fin) {
-            let (report, couverte) = bruts(&cle, &du, &au)?;
-            if couverte {
+            if let Some((report, true)) = bruts(&cle, &du, &au)? {
                 cpt.remuneration_report = report;
             }
         }
-        let salaire = paies.iter().filter(|q| q.importee.is_some() && cle_de(q) == cle).fold(zero2(), |a, q| add(a, q.brut));
+        // Le salaire du maintien : le brut du dernier mois repris ; un bulletin qui ne le dit pas, il ne se lit pas.
+        let Some(salaire) = paies.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == cle).map(|q| q.brut).try_fold(zero2(), |a, b| b.map(|b| add(a, b))) else {
+            avert.push(format!(
+                "{} : un de ses bulletins repris de {} ne dit pas son brut : son salaire du mois ne se lit pas, il n'est pas dans la provision.",
+                ctx.nomme(&cle),
+                m
+            ));
+            sans_compteur += 1;
+            continue;
+        };
         let provision = engagement::conges::provision_du_compteur(cpt, m, salaire).map_err(|x| x.reclasser(Classe::Refuse))?;
         a_provisionner.push((cle, pa.engagement.numero.clone(), nat.libelle.clone(), provision));
     }
@@ -1565,19 +1575,27 @@ pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             Err(e) => return Err(e),
         };
         for pa in &paies {
-            if pa.engagement.sans_paie() {
+            if pa.engagement().sans_paie() {
                 continue;
             }
-            let cle = pa.salarie.id.to_string();
+            // L'assiette de la CSG, sans la reduction de 1,75 % (CGI 231) : la meme que la DSN de decembre declare
+            // (`assujettissement`, bloc S21.G00.44). Le brut ou l'assiette de la CSG que les pieces d'une paie importee
+            // taisent ne s'invente pas : la taxe ne se calcule pas sans eux.
+            let (Some(brut), Some(base_csg)) = (pa.brut(), pa.base_csg()) else {
+                return Err(refus(format!(
+                    "{}, {} : les pièces importées ne disent pas son brut ou son assiette de CSG ; la taxe sur les salaires ne se calcule pas sans eux.",
+                    crate::tableaux_export::qui_souple(pa.salarie()),
+                    m
+                )));
+            };
+            let cle = pa.salarie().id.to_string();
             if !par.contains_key(&cle) {
                 ordre.push(cle.clone());
-                par.insert(cle.clone(), (crate::tableaux_export::qui_souple(&pa.salarie), zero, zero, BTreeSet::new()));
+                par.insert(cle.clone(), (crate::tableaux_export::qui_souple(pa.salarie()), zero, zero, BTreeSet::new()));
             }
             let x = par.get_mut(&cle).expect("insere");
-            // L'assiette de la CSG, sans la reduction de 1,75 % (CGI 231) : la meme que la DSN de decembre declare
-            // (`assujettissement`, bloc S21.G00.44).
-            x.1 = add(x.1, pa.brut);
-            x.2 = add(x.2, crate::taxe_sur_les_salaires::assiette_taxe_sur_les_salaires(pa, abatt));
+            x.1 = add(x.1, brut);
+            x.2 = add(x.2, crate::taxe_sur_les_salaires::assiette_taxe_sur_les_salaires(brut, base_csg, abatt));
             x.3.insert(m);
         }
     }

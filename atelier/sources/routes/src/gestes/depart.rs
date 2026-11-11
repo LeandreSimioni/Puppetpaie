@@ -717,15 +717,15 @@ impl DocumentsFabriques {
 /// (`engagement::etats::prelevement_de_la_correction`, au taux du bulletin parti pour un trop-verse : BOFiP,
 /// BOI-IR-PAS-30-10-50, § 1 et § 90, `atelier/reference/sources/bofip/BOI-IR-PAS-30-10-50-extrait-regularisation.md`).
 fn ecart_avec_le_bulletin_parti(ctx: &Contexte, apres: &Paie, parti: &Paie, mois_versement: Mois) -> R<documents::bulletin::Ecart> {
-    let taux_parti = parti.pas.as_ref().and_then(|p| p.taux.as_ref().map(droit::fiche::Montant::ecrit)).filter(|t| !t.is_empty());
+    let taux_parti = parti.pas.as_ref().map(|p| p.taux.ecrit()).filter(|t| !t.is_empty());
     let d_net = apres.net_a_payer - parti.net_a_payer;
     let pas_c = engagement::etats::prelevement_de_la_correction(ctx, apres, parti.net_imposable, taux_parti.as_deref(), mois_versement).map_err(|e| e.reclasser(Classe::Illisible))?;
     let indu = pas_c.indu();
     let prelevement = match pas_c.prelevement {
         Some(montant) => {
-            let taux = match (indu, taux_parti) {
-                (false, _) => pas_c.versement.taux.clone(),
-                (true, t) => t.map(droit::fiche::Montant::Texte),
+            let taux = match indu {
+                false => Some(pas_c.versement.taux.clone()),
+                true => taux_parti.map(droit::fiche::Montant::Texte),
             };
             let taux = taux.ok_or_else(|| erreur(Classe::Illisible, format!("La correction de {} prélève {} sans taux de prélèvement à la source.", mois_versement.libelle(Graphie::Accentuee), montant)))?;
             Some(documents::bulletin::PrelevementDeLEcart { indu, taux, montant })

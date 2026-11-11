@@ -41,21 +41,22 @@ fn contrats_de(p: &Periode, lecture: &mut Lecture) -> R<Vec<ContratMois>> {
     let mut out = Vec::new();
     for m in p.mois.clone() {
         for paie in lecture.paies(m)?.iter() {
-            let e = &paie.engagement;
-            let emploi = e.emploi.clone().filter(|x| !x.is_empty()).or_else(|| paie.salarie.emploi.en_texte());
+            let e = paie.engagement();
+            let s = paie.salarie();
+            let emploi = e.emploi.clone().filter(|x| !x.is_empty()).or_else(|| s.emploi.en_texte());
             out.push(ContratMois {
                 mois: m,
-                cle: paie.salarie.id.to_string(),
-                fiche: paie.salarie.champs.clone(),
-                salarie: qui(&paie.salarie)?,
+                cle: s.id.to_string(),
+                fiche: s.champs.clone(),
+                salarie: qui(s)?,
                 contrat: e.numero.as_deref().map(str::to_string),
                 libelle_nature: e.nat().map_err(|x| x.reclasser(Classe::Refuse))?.libelle.clone(),
                 emploi,
                 spectacle: titre_spectacle(paie),
-                objet: paie.spectacle.as_ref().and_then(|s| s.numero_objet.dite()).cloned(),
+                objet: paie.spectacle().and_then(|s| s.numero_objet.dite()).cloned(),
                 debut: e.debut,
                 fin: e.fin.or(e.dates_travail.last().copied()),
-                brut: Some(eur2(paie.brut)),
+                brut: paie.brut().map(eur2),
             });
         }
     }

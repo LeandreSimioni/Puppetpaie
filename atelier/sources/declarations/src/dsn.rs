@@ -761,28 +761,29 @@ fn org_de(pile: &Pile, code: &str) -> Option<String> {
 
 /// La pile de bareme de cette paie, sur le bareme du mois choisi.
 fn bareme_de(p: &Paie, bar: &BaremeDuMois) -> R<std::sync::Arc<Pile>> {
-    let nat = p.engagement.nat()?;
-    let fin = p.engagement.fin_periode();
-    let cpf_cdd = droit::cpf_cdd::contrat_ouvre_cpf_cdd(
-        &nat,
-        p.engagement.motif_recours,
-        &droit::cpf_cdd::le_contrat(p.engagement.numero.as_deref(), &p.engagement.salarie),
-    )?;
-    let caisse = p.declaree_a_la_caisse_des_conges()?;
-    let majoration = droit::majoration_chomage::due(&nat, p.engagement.motif_recours,&p.engagement.debut, p.engagement.fin.as_ref());
-    let cle = format!("{}|{}|{:?}|{}|{}|{}|{}", fin.iso(), nat.cle, p.salarie, nat.mensuelle(), caisse, cpf_cdd, majoration);
+    bareme_du_contrat(&p.engagement, &p.salarie, bar)
+}
+
+/// La pile de bareme du contrat `e` de `salarie` (une paie calculee ou importee), sur le bareme du mois choisi.
+fn bareme_du_contrat(e: &engagement::Engagement, salarie: &droit::fiche::SalarieDuContrat, bar: &BaremeDuMois) -> R<std::sync::Arc<Pile>> {
+    let nat = e.nat()?;
+    let fin = e.fin_periode();
+    let cpf_cdd = droit::cpf_cdd::contrat_ouvre_cpf_cdd(&nat, e.motif_recours, &droit::cpf_cdd::le_contrat(e.numero.as_deref(), &e.salarie))?;
+    let caisse = droit::caisse_conges::affilie(&nat, salarie, &e.debut, e.fin.as_ref())?;
+    let majoration = droit::majoration_chomage::due(&nat, e.motif_recours, &e.debut, e.fin.as_ref());
+    let cle = format!("{}|{}|{:?}|{}|{}|{}|{}", fin.iso(), nat.cle, salarie, nat.mensuelle(), caisse, cpf_cdd, majoration);
     if let Some(pile) = socle::memoire::tenu(&bar.piles).get(&cle) {
         return Ok(pile.clone());
     }
-    let pile = std::sync::Arc::new(bareme_applique(bar, &bar.entreprise, &p.salarie, &nat, Some(&fin), caisse, cpf_cdd, majoration)?);
+    let pile = std::sync::Arc::new(bareme_applique(bar, &bar.entreprise, salarie, &nat, Some(&fin), caisse, cpf_cdd, majoration)?);
     socle::memoire::tenu(&bar.piles).insert(cle, pile.clone());
     Ok(pile)
 }
 
 /// LA BASE `bloc78` DE LA PAIE `p` (S21.G00.78.004 sous ce code), telle que la paie la porte : la base du calcul que le
 /// bareme de cette paie declare sous ce code (`cotisations_dsn`, `base78` ; abattue sous deduction forfaitaire
-/// specifique : `cle_abattue`), lue dans ses bases (`Paie::bases`), rien de recalcule. Une paie importee porte ses
-/// bases aux memes cles (`engagement::importe::Importe::paie`). Zero quand le bareme ne declare rien sous ce code.
+/// specifique : `cle_abattue`), lue dans ses bases (`Paie::bases`), rien de recalcule (une paie importee :
+/// `base_declaree_importee`). Zero quand le bareme ne declare rien sous ce code.
 pub fn base_declaree(p: &Paie, bar: &BaremeDuMois, bloc78: BaseAssujettie) -> R<Decimal> {
     let bar = bareme_de(p, bar)?;
     let Some(cle) = bar.cotisations_dsn.iter().filter(|c| c.bloc78 == bloc78).map(|c| c.base78).find(|k| *k != Assiette::Zero) else {
@@ -792,6 +793,20 @@ pub fn base_declaree(p: &Paie, bar: &BaremeDuMois, bloc78: BaseAssujettie) -> R<
         Assiette::Brut => p.brut,
         Assiette::Csg => p.base_csg,
         k => p.bases.get(&k).copied().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, k.nom()))?,
+    })
+}
+
+/// LA BASE `bloc78` D'UNE PAIE IMPORTEE, telle que ses pieces la disent, sous la cle que le bareme de son contrat declare
+/// sous ce code (comme `base_declaree`) ; `None` : les pieces ne la disent pas. Zero quand le bareme ne declare rien sous
+/// ce code. Une paie importee n'a pas de deduction forfaitaire specifique : rien ne s'y abat.
+pub fn base_declaree_importee(p: &engagement::importe::PaieImportee, bar: &BaremeDuMois, bloc78: BaseAssujettie) -> R<Option<Decimal>> {
+    let bar = bareme_du_contrat(&p.engagement, &p.salarie, bar)?;
+    let Some(cle) = bar.cotisations_dsn.iter().filter(|c| c.bloc78 == bloc78).map(|c| c.base78).find(|k| *k != Assiette::Zero) else {
+        return Ok(Some(zero()));
+    };
+    Ok(match cle {
+        Assiette::Brut => p.brut,
+        k => p.bases.get(&k).copied(),
     })
 }
 
@@ -2029,7 +2044,7 @@ pub fn bloc_anciennete(f: &mut Fichier, p: &Paie, jours: i64) -> R<()> {
 /// assistants maternels et familiaux, que seuls PAJEmploi et les departements declarent : le moteur ne l'ecrit pas.
 fn pas_du_versement(
     taux_pas: Option<&Triplet>, bar: &Pile, montant: Decimal, le: Jour, court: bool,
-) -> R<(Option<droit::fiche::Montant>, Option<droit::type_taux_pas::TypeDeTauxPas>, Option<String>, Decimal)> {
+) -> R<(droit::fiche::Montant, Option<droit::type_taux_pas::TypeDeTauxPas>, Option<String>, Decimal)> {
     let r = pas::du_versement(taux_pas, bar, montant, Some(le), court, ZONE_DEFAUT)?;
     Ok((r.taux, r.type_taux, r.identifiant, r.montant_soumis))
 }
@@ -2406,13 +2421,13 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
             ), "pas"))
         }
     };
-    f.add_ecrit("S21.G00.50.006", taux.as_ref().map(droit::fiche::Montant::ecrit))?;
+    f.add("S21.G00.50.006", taux.ecrit());
     let type_taux = type_taux.ok_or_else(|| absente("S21.G00.50.007"))?;
     f.ecrire_code(type_taux)?;
     if type_taux.transmis() {
         f.add_ecrit("S21.G00.50.008", identifiant.clone())?;
     }
-    f.add("S21.G00.50.009", mt(pct(soumis, droit::pas::taux_du_versement(taux.as_ref())?)));
+    f.add("S21.G00.50.009", mt(pct(soumis, taux.dec()?)));
     f.add("S21.G00.50.013", mt(soumis));
 
     // Un mois decoupe : les remunerations de chaque periode elementaire, datees de ses bornes (« La periode a
@@ -2695,14 +2710,14 @@ fn bloc_regularisation(
     f.add("S21.G00.50.004", mt(d_net));
     let v = &pas_c.versement;
     let (taux, type_taux, identifiant, soumis) = (&v.taux, &v.type_taux, &v.identifiant, v.montant_soumis);
-    f.add_ecrit("S21.G00.50.006", taux.as_ref().map(droit::fiche::Montant::ecrit))?;
+    f.add("S21.G00.50.006", taux.ecrit());
     let type_taux = type_taux.ok_or_else(|| absente("S21.G00.50.007"))?;
     f.ecrire_code(type_taux)?;
     if type_taux.transmis() {
         f.add_ecrit("S21.G00.50.008", identifiant.clone())?;
     }
     let indu = d_ni < Decimal::ZERO;
-    f.add("S21.G00.50.009", if indu { "0.00".into() } else { mt(pct(soumis, droit::pas::taux_du_versement(taux.as_ref())?)) });
+    f.add("S21.G00.50.009", if indu { "0.00".into() } else { mt(pct(soumis, taux.dec()?)) });
     f.add("S21.G00.50.013", if indu { "0.00".into() } else { mt(soumis) });
 
     annuler_le_declare(f, r, &["51", "53"])?;

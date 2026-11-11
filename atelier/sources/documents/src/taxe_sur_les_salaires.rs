@@ -4,7 +4,6 @@
 //! les memes fonctions.
 
 use droit::fiche::Lue as _;
-use engagement::calcul::Paie;
 use socle::echec::R;
 use socle::num::{add, eur, mul, sub, Decimal};
 use socle::texte::euros;
@@ -18,8 +17,8 @@ pub const CHAMP_TAXE_SUR_LES_SALAIRES: droit::fiche::CaseEntreprise = droit::fic
 /// « La réduction mentionnée au I de l'article L. 136-2 du code de la sécurité sociale n'est pas applicable »).
 /// `abattement` : le facteur de la CSG du bareme (`abattement_csg`, 0,9825). Le calcul de l'etat « taxe sur les
 /// salaires » (`etats_compta`), mis ici pour que la DSN lise le meme.
-pub fn assiette_taxe_sur_les_salaires(p: &Paie, abattement: Decimal) -> Decimal {
-    eur(add(sub(p.base_csg, eur(mul(p.brut, abattement))), p.brut))
+pub fn assiette_taxe_sur_les_salaires(brut: Decimal, base_csg: Decimal, abattement: Decimal) -> Decimal {
+    eur(add(sub(base_csg, eur(mul(brut, abattement))), brut))
 }
 
 /// Les fractions d'une remuneration individuelle annuelle soumises aux taux majores (CGI art. 231, 2 bis) : celle

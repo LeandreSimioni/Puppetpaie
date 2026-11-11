@@ -385,27 +385,6 @@ pub struct Contenu {
     /// Le plafond d'un salarie a temps partiel (`plafond_temps_partiel`), tel que le calcul l'a applique : ce que la DSN
     /// declare en S21.G00.40.084.
     pub plafond_temps_partiel: PlafondTempsPartiel,
-    /// LA PAIE D'UN ENGAGEMENT IMPORTE (`importe::Importe::paie`) : ce que les pieces de l'ancien logiciel en disent, rien
-    /// de calcule ; `None` pour une paie calculee ici.
-    pub importee: Option<Importee>,
-}
-
-/// Ce qu'une paie importee dit, et ce qu'elle tait.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Importee {
-    /// Le jour de l'import.
-    pub le: socle::date::Jour,
-    /// Les montants que les pieces ne disent pas (`brut`, `cotisations_salariales`, `net_a_payer`, `plafond`...) : ils
-    /// valent zero dans la paie, et un etat les laisse vides.
-    pub non_dits: Vec<&'static str>,
-}
-
-impl Paie {
-    /// Le montant `champ` de la paie est-il dit ? Toujours pour une paie calculee ; pour une paie importee, quand ses
-    /// pieces le disent.
-    pub fn dit(&self, champ: &str) -> bool {
-        self.importee.as_ref().is_none_or(|i| !i.non_dits.contains(&champ))
-    }
 }
 
 impl Paie {
@@ -423,7 +402,7 @@ impl Paie {
             bases: BTreeMap::new(), remuneration: Vec::new(), reduction_generale: None,
             deduction_forfaitaire: None, avertissements: Vec::new(), salaire_de_base: zero,
             salaire_retabli: zero, assiette_chomage: zero, heures_travaillees: zero,
-            heures_absence: zero, periodes: Vec::new(), pas: None, conges: None, conges_avant: None, plafond_temps_partiel, importee: None,
+            heures_absence: zero, periodes: Vec::new(), pas: None, conges: None, conges_avant: None, plafond_temps_partiel,
         })
     }
 

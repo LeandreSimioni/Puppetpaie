@@ -282,7 +282,7 @@ pub fn taux_par_defaut(bareme: &Pile, montant: Decimal, le: Option<Jour>, zone: 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Versement {
-    pub taux: Option<Montant>,
+    pub taux: Montant,
     #[serde(rename = "type")]
     pub type_taux: Option<TypeDeTauxPas>,
     pub identifiant: Option<String>,
@@ -296,11 +296,6 @@ pub struct Versement {
 
 fn en_nombre<S: Serializer>(x: &Decimal, s: S) -> Result<S::Ok, S::Error> {
     s.serialize_str(&nombre(*x))
-}
-
-/// Le taux d'un versement en decimal, son echelle gardee ; un versement sans taux ne se calcule pas.
-pub fn taux_du_versement(taux: Option<&Montant>) -> R<Decimal> {
-    taux.ok_or_else(|| refus("nombre attendu, lu null"))?.dec()
 }
 
 pub fn plancher(x: Decimal, zero: Decimal) -> Decimal {
@@ -329,7 +324,7 @@ pub fn rubriques_par_defaut(
     let (taux, type_taux) = taux_par_defaut(bareme, soumis, le, zone)?;
     let prelevement = pct(soumis, taux);
     Ok(Versement {
-        taux: Some(Montant::Texte(taux.to_string())),
+        taux: Montant::Texte(taux.to_string()),
         type_taux: Some(type_taux),
         identifiant: None,
         abattement: abat,
@@ -418,7 +413,7 @@ pub fn du_versement(
     // impots-20261015.md`).
     let soumis = plancher(eur(remuneration_nette_fiscale), Decimal::new(0, 2));
     Ok(Versement {
-        taux: Some(Montant::Texte(taux.to_string())),
+        taux: Montant::Texte(taux.to_string()),
         type_taux: t.type_taux,
         identifiant: t.identifiant.clone(),
         abattement: Decimal::new(0, 2),

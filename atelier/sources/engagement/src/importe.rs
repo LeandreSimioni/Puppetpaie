@@ -37,7 +37,6 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::calcul::{Importee, LigneCotisation, Paie, PlafondTempsPartiel};
 use crate::numeros::NumeroContrat;
 use crate::saisie::Carte;
 use crate::stock::{self, Objet};
@@ -502,28 +501,80 @@ impl Importe {
     }
 }
 
-/// UN MONTANT QUE LES PIECES DISENT, ou zero (au centime) quand elles le taisent : une paie importee le nomme parmi ses
-/// `non_dits` (`Importe::paie`), et un etat le laisse vide.
-fn tu_vaut_zero(x: Option<Decimal>) -> Decimal {
-    x.into_iter().fold(Decimal::new(0, 2), |_, m| m)
+/// LA PAIE D'UN ENGAGEMENT IMPORTE, DANS LES MOTS DU MOTEUR (`Importe::paie`) : ce que les pieces de l'ancien logiciel
+/// disent de ce qui a ete verse, et rien de calcule. Un montant qu'elles taisent est vide (`None`) : non dit, jamais zero.
+#[derive(Debug, Clone)]
+pub struct PaieImportee {
+    /// Le jour de l'import.
+    pub le: Jour,
+    pub engagement: crate::Engagement,
+    pub salarie: droit::fiche::SalarieDuContrat,
+    /// La fiche du spectacle dont le numero d'objet est celui que les pieces disent.
+    pub spectacle: Option<droit::fiche::Spectacle>,
+    /// Les lignes de remuneration que le bulletin imprime ; a defaut, le brut que la DSN declare.
+    pub remuneration: Vec<LigneDeRemuneration>,
+    /// Les lignes de cotisation que le bulletin imprime ; vide quand aucun bulletin ne les donne.
+    pub lignes: Vec<LigneDeCotisation>,
+    /// Les bases que les pieces disent, la ou le bareme de la paie les range.
+    pub bases: BTreeMap<Assiette, Decimal>,
+    pub brut: Option<Decimal>,
+    /// Le plafond applique : la base plafonnee que les pieces disent, quand elle est sous le brut.
+    pub plafond: Option<Decimal>,
+    pub total_sal: Option<Decimal>,
+    pub total_pat: Option<Decimal>,
+    /// Le net avant impot : celui que le bulletin imprime, sinon le net paye ou verse plus l'impot preleve.
+    pub net_a_payer: Option<Decimal>,
+    pub net_social: Option<Decimal>,
+    pub net_imposable: Option<Decimal>,
+    pub cout_employeur: Option<Decimal>,
+    pub numero_bulletin: Option<String>,
+    /// Le prelevement a la source que les pieces disent ; `None` : elles n'en disent pas.
+    pub pas: Option<PasImporte>,
 }
 
-/// Les montants d'une paie importee, tels que ses pieces les nomment, et la grandeur de la paie qu'ils sont.
-fn montants(p: &PaieVersee) -> [(&'static str, Option<Decimal>); 7] {
-    [
-        ("brut", p.brut),
-        ("cotisations_salariales", p.cotisations_salariales),
-        ("cotisations_patronales", p.cotisations_patronales),
-        ("net_imposable", p.net_imposable),
-        ("net_social", p.net_social),
-        ("cout_employeur", p.cout_employeur),
-        ("pas", p.pas),
-    ]
+/// Une ligne de remuneration d'une paie importee : ce que le bulletin imprime, et ce que le catalogue dit de la rubrique
+/// a laquelle l'import l'a rattachee (son code, son unite, ses heures pour les annexes 8 et 10). Une ligne sans rubrique
+/// n'a que son libelle et son montant.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LigneDeRemuneration {
+    pub code: Option<String>,
+    pub libelle: String,
+    pub unite: Option<String>,
+    pub quantite: Option<Decimal>,
+    pub taux: Option<Decimal>,
+    pub montant: Option<Decimal>,
+    pub heures_annexes: Option<Decimal>,
+    /// La ligne est soumise a cotisations : ce que le catalogue dit de sa rubrique, sinon ce que le bulletin imprime.
+    pub soumis: bool,
+}
+
+/// Une ligne de cotisation d'une paie importee, sous la cotisation que l'import lui a donnee (`None` : il ne l'a pas
+/// qualifiee) ; ce que le bulletin n'imprime pas est vide.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LigneDeCotisation {
+    pub id: Option<String>,
+    pub famille: Option<String>,
+    pub libelle: String,
+    pub base: Option<Decimal>,
+    pub taux_pat: Option<Decimal>,
+    pub montant_pat: Option<Decimal>,
+    pub taux_sal: Option<Decimal>,
+    pub montant_sal: Option<Decimal>,
+}
+
+/// Le prelevement a la source d'une paie importee : l'impot preleve, et le taux, son type et son identifiant que les
+/// pieces disent (S21.G00.50.006 a .009). Elles ne disent ni l'abattement ni le montant soumis.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PasImporte {
+    pub taux: Option<Decimal>,
+    pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
+    pub identifiant: Option<String>,
+    pub prelevement: Decimal,
 }
 
 impl Importe {
-    /// LA PAIE DE `mois`, DANS LES MOTS DU MOTEUR : ce que les pieces de l'ancien logiciel disent de ce qui a ete verse,
-    /// range comme le calcul range le sien (`calcul::Paie`), et rien de calcule. L'engagement porte l'identite importee
+    /// LA PAIE DE `mois`, DANS LES MOTS DU MOTEUR (`PaieImportee`) : ce que les pieces de l'ancien logiciel disent de ce
+    /// qui a ete verse, range comme le calcul range le sien, et rien de calcule. L'engagement porte l'identite importee
     /// (salarie, bornes, numero, nature : `nature_rangee`), le spectacle dont la fiche a son numero d'objet,
     /// l'emploi que le bulletin imprime, les lignes de remuneration lues et le jour du versement. Les lignes de
     /// cotisation sont celles du bulletin, sous la cotisation que l'import leur a donnee (`cotisation`).
@@ -533,12 +584,10 @@ impl Importe {
     /// (bloc 78, son code) sous celle que le bareme y declare (`cotisations_dsn`, `base78`), quand il n'en declare
     /// qu'une. Le bulletin passe devant la DSN, comme l'import le fait pour le brut et les nets.
     ///
-    /// Ce que les pieces ne disent pas vaut zero et se nomme (`Importee::non_dits`) : un etat le laisse vide.
-    pub fn paie(&self, ctx: &Contexte, mois: Mois) -> R<Paie> {
+    /// Ce que les pieces ne disent pas est vide.
+    pub fn paie(&self, ctx: &Contexte, mois: Mois) -> R<PaieImportee> {
         let p = self.paies().get(&mois).ok_or_else(|| socle::refus!("{} (rang {}) : aucune paie importee en {}", self.objet.fichier, self.objet.rang, mois))?;
         let contrat = self.contrat();
-        let zero = Decimal::new(0, 2);
-        let mut non_dits: Vec<&'static str> = montants(p).iter().filter(|(_, m)| m.is_none()).map(|(k, _)| *k).collect();
 
         let nature = self.nature_rangee();
         let nat = nature.proprietes()?;
@@ -572,11 +621,11 @@ impl Importe {
                 j = j.plus_jours(1)?;
             }
         }
-        let brut = tu_vaut_zero(p.brut);
+        let brut = p.brut;
         // LES LIGNES DE REMUNERATION QUE LES PIECES DISENT : celles du bulletin ; a defaut, le brut que la DSN declare.
         let mut lignes_lues = p.lignes.clone();
         if lignes_lues.is_empty() {
-            lignes_lues.push(LigneImprimee { libelle: "brut déclaré".into(), montant: Some(brut), soumis: true, ..Default::default() });
+            lignes_lues.push(LigneImprimee { libelle: "brut déclaré".into(), montant: brut, soumis: true, ..Default::default() });
         }
         let quotite = p.quotite.map(socle::num::court);
         let mut engagement = crate::Engagement {
@@ -628,12 +677,9 @@ impl Importe {
             ecrit: crate::ContratEcrit::default(),
         };
         let remuneration = remuneration_lue(&engagement, &lignes_lues, &ctx)?;
-        if lignes_lues.iter().all(|l| l.rubrique.as_deref().is_none_or(str::is_empty)) {
-            non_dits.extend(["cachets", "heures"]);
-        }
-        let cachets = remuneration.iter().filter(|r| r.unite == "cachet").map(|r| r.quantite).sum::<Decimal>().trunc().to_string();
+        let cachets = remuneration.iter().filter(|r| r.unite.as_deref() == Some("cachet")).filter_map(|r| r.quantite).sum::<Decimal>().trunc().to_string();
         engagement.cachets = cachets.parse().map_err(|_| socle::echec::refus(socle::num::illisible(&cachets)))?;
-        let heures: Decimal = remuneration.iter().map(|r| r.heures_annexes).sum();
+        let heures: Decimal = remuneration.iter().filter_map(|r| r.heures_annexes).sum();
         engagement.heures = (!heures.is_zero()).then(|| socle::num::court(heures));
         engagement.jours = engagement.dates_travail.len() as i64;
         engagement.jours_contrat = engagement.jours;
@@ -641,32 +687,33 @@ impl Importe {
         // Les lignes de cotisation du bulletin, sous leur cotisation ; une ligne que l'import n'a pas qualifiee garde
         // son libelle, sans cotisation.
         let taux = |x: Option<Decimal>| x.map(socle::num::court);
-        let cotisations: Vec<LigneCotisation> = p
+        let cotisations: Vec<LigneDeCotisation> = p
             .cotisations
             .iter()
             .flatten()
-            .map(|l| LigneCotisation {
+            .map(|l| LigneDeCotisation {
                 id: l.cotisation.clone().filter(|c| !c.is_empty()),
                 famille: l.famille.clone().filter(|f| !f.is_empty()),
                 libelle: l.libelle.clone(),
-                base: tu_vaut_zero(l.base),
+                base: l.base,
                 taux_pat: taux(l.taux_employeur),
-                montant_pat: tu_vaut_zero(l.montant_employeur),
+                montant_pat: l.montant_employeur,
                 taux_sal: taux(l.taux_salarie),
-                montant_sal: tu_vaut_zero(l.montant_salarie),
-                masquer_base_et_taux: false,
+                montant_sal: l.montant_salarie,
             })
             .collect();
 
         // Les bases, ou le bareme de la paie les range ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
         let mut bases: BTreeMap<Assiette, Decimal> = BTreeMap::new();
-        bases.insert(Assiette::Brut, brut);
+        if let Some(b) = brut {
+            bases.insert(Assiette::Brut, b);
+        }
         let fin_periode = engagement.fin_periode();
         let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.debut, engagement.fin.as_ref())?;
         let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.debut, engagement.fin.as_ref()))?;
-        for (l, id) in cotisations.iter().filter_map(|l| l.id.as_deref().map(|id| (l, id))).filter(|(l, _)| !l.base.is_zero()) {
+        for (id, base) in cotisations.iter().filter_map(|l| l.id.as_deref().zip(l.base)).filter(|(_, b)| !b.is_zero()) {
             if let Some(cle) = bar.rubrique(id).and_then(|r| r.base) {
-                bases.entry(cle).or_insert(l.base);
+                bases.entry(cle).or_insert(base);
             }
         }
         for (code, m) in &p.bases {
@@ -677,45 +724,40 @@ impl Importe {
                 bases.entry(*cle).or_insert(*m);
             }
         }
-        let base_csg = tu_vaut_zero(bases.get(&Assiette::Csg).copied());
-        let plafond = [Assiette::BrutPlafonne, Assiette::T1Mensuelle].iter().find_map(|k| bases.get(k)).filter(|t| **t < brut).copied();
-        if plafond.is_none() {
-            non_dits.push("plafond");
-        }
+        // Le plafond applique : la base plafonnee, quand elle est sous le brut.
+        let plafond = brut.and_then(|b| [Assiette::BrutPlafonne, Assiette::T1Mensuelle].iter().find_map(|k| bases.get(k)).filter(|t| **t < b).copied());
         // Le net avant impot : celui que le bulletin imprime, sinon le net paye ou le net verse plus l'impot preleve.
         let net_a_payer = p.net_avant_impot.or_else(|| p.net_a_payer.or(p.net_verse).zip(p.pas).map(|(net, pas)| net + pas));
-        if net_a_payer.is_none() {
-            non_dits.push("net_a_payer");
-        }
 
-        let tp = PlafondTempsPartiel::NonConcerne;
-        let mut paie = Paie::nouveau(engagement, sal, spec, brut, base_csg, tu_vaut_zero(plafond), Decimal::ZERO, zero, tp);
-        let c = paie.ecrire();
-        c.lignes = cotisations;
-        c.remuneration = remuneration;
-        c.total_sal = tu_vaut_zero(p.cotisations_salariales);
-        c.total_pat = tu_vaut_zero(p.cotisations_patronales);
-        c.net_a_payer = tu_vaut_zero(net_a_payer);
-        c.net_social = tu_vaut_zero(p.net_social);
-        c.net_imposable = tu_vaut_zero(p.net_imposable);
-        c.cout_employeur = tu_vaut_zero(p.cout_employeur);
-        c.numero_bulletin = p.bulletin.as_ref().and_then(|b| b.numero.clone()).filter(|n| !n.is_empty());
-        c.bases = bases;
-        c.pas = p.pas.map(|prelevement| droit::pas::Versement {
-            taux: p.taux_pas.map(socle::num::court).map(droit::fiche::Montant::Flottant),
-            type_taux: p.type_pas,
-            identifiant: p.identifiant_pas.clone(),
-            abattement: zero,
-            montant_soumis: tu_vaut_zero(p.net_imposable),
-            prelevement,
-        });
-        c.importee = Some(Importee { le: self.le(), non_dits });
-        Ok(paie)
+        Ok(PaieImportee {
+            le: self.le(),
+            engagement,
+            salarie: sal,
+            spectacle: spec,
+            remuneration,
+            lignes: cotisations,
+            bases,
+            brut,
+            plafond,
+            total_sal: p.cotisations_salariales,
+            total_pat: p.cotisations_patronales,
+            net_a_payer,
+            net_social: p.net_social,
+            net_imposable: p.net_imposable,
+            cout_employeur: p.cout_employeur,
+            numero_bulletin: p.bulletin.as_ref().and_then(|b| b.numero.clone()).filter(|n| !n.is_empty()),
+            pas: p.pas.map(|prelevement| PasImporte {
+                taux: p.taux_pas.map(socle::num::court),
+                type_taux: p.type_pas,
+                identifiant: p.identifiant_pas.clone(),
+                prelevement,
+            }),
+        })
     }
 }
 
 /// LES PAIES IMPORTEES DE `mois`, dans les mots du moteur (`Importe::paie`), une par engagement importe paye ce mois.
-pub fn paies_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Paie>> {
+pub fn paies_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<PaieImportee>> {
     du_mois(&ctx.racine, mois)?.iter().filter(|i| i.paies().contains_key(&mois)).map(|i| i.paie(ctx, mois)).collect()
 }
 
@@ -935,39 +977,28 @@ pub fn completer(racine: &Path, mut completer: impl FnMut(&mut Carte, &Pieces) -
 /// rattachee a une rubrique du catalogue (`rubrique`, avec sa quantite et son taux) prend ce que le catalogue dit
 /// d'elle (son unite, ses heures pour les annexes 8 et 10, son assiette : `calcul::lignes_brut`) ; son montant reste
 /// celui du bulletin. Une ligne sans rubrique garde son libelle et son montant, rien de plus.
-fn remuneration_lue(e: &crate::Engagement, lignes: &[LigneImprimee], ctx: &Contexte) -> R<Vec<crate::calcul::LigneBrut>> {
+fn remuneration_lue(e: &crate::Engagement, lignes: &[LigneImprimee], ctx: &Contexte) -> R<Vec<LigneDeRemuneration>> {
     let mut out = Vec::new();
     for l in lignes {
-        let montant = tu_vaut_zero(l.montant);
         let rattachee = l.en_ligne_de_paie().filter(|_| l.quantite.is_some() && l.taux.is_some());
         if let Some(ligne) = rattachee {
             let mut seule = e.clone();
             seule.lignes = vec![ligne];
-            for mut b in crate::calcul::lignes_brut(&seule, ctx)? {
-                b.montant = montant;
-                out.push(b);
+            for b in crate::calcul::lignes_brut(&seule, ctx)? {
+                out.push(LigneDeRemuneration {
+                    code: Some(b.code),
+                    libelle: b.libelle,
+                    unite: Some(b.unite),
+                    quantite: Some(b.quantite),
+                    taux: Some(b.taux),
+                    montant: l.montant,
+                    heures_annexes: Some(b.heures_annexes),
+                    soumis: b.soumis,
+                });
             }
             continue;
         }
-        out.push(crate::calcul::LigneBrut {
-            code: String::new(),
-            libelle: l.libelle.clone(),
-            unite: String::new(),
-            quantite: Decimal::ZERO,
-            taux: Decimal::ZERO,
-            montant,
-            heures_annexes: Decimal::ZERO,
-            soumis: l.soumis,
-            imposable: l.soumis,
-            conges_spectacles: l.soumis,
-            salaire_de_base: false,
-            retabli: false,
-            conges_pris: false,
-            dsn_bloc52: None,
-            arret_de_travail: false,
-            dsn_autres_bruts: None,
-            precision: None,
-        });
+        out.push(LigneDeRemuneration { code: None, libelle: l.libelle.clone(), unite: None, quantite: None, taux: None, montant: l.montant, heures_annexes: None, soumis: l.soumis });
     }
     Ok(out)
 }

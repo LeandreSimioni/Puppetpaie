@@ -250,7 +250,7 @@ pub fn dernier_declare(
         etat.net_social = origine_58;
         etat.rappels_net_social = rappels;
     }
-    etat.taux_pas = origine.paie.pas.as_ref().and_then(|p| p.taux.as_ref().map(droit::fiche::Montant::ecrit)).filter(|t| !t.is_empty());
+    etat.taux_pas = origine.paie.pas.as_ref().and_then(|p| Some(p.taux.ecrit())).filter(|t| !t.is_empty());
     if let Some(d) = engagement::etats::debut_declare(ctx, o, departs, mois_courant)? {
         etat.debut_contrat = Some(d);
     }

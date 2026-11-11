@@ -407,13 +407,12 @@ fn rectificatif_lignes(r: &Ecart, colonnes: i64) -> R<Vec<Ligne>> {
 /// L'impot a la source, et le net paye. La ligne du prelevement suit le modele de l'arrete du
 /// 25/02/2016 (art. 1, I : « IMPÔT SUR LE REVENU PRÉLEVÉ À LA SOURCE », colonnes Base, Taux, Salarié) : son assiette
 /// (le montant soumis, apres l'abattement d'un contrat court ; C. trav. R. 3243-1, 9°), son taux, son montant. Le
-/// « Cumul annuel » du modele (art. 1, V) n'est pas imprime : le moteur ne le calcule pas. Un versement sans taux (une
-/// paie importee dont la piece ne le disait pas) laisse sa case vide.
+/// « Cumul annuel » du modele (art. 1, V) n'est pas imprime : le moteur ne le calcule pas.
 fn lignes_pas_tableau(p: &Paie, pas: &Versement, colonnes: i64) -> R<Vec<Ligne>> {
-    let taux = pas.taux.as_ref().map(|t| t.dec().map(fmt_taux)).transpose()?;
+    let taux = fmt_taux(pas.taux.dec()?);
     Ok(vec![
         ligne(
-            vec![s("IMPÔT SUR LE REVENU PRÉLEVÉ À LA SOURCE"), s(fmt_eur(pas.montant_soumis)), so(taux), s(fmt_eur(pas.prelevement))],
+            vec![s("IMPÔT SUR LE REVENU PRÉLEVÉ À LA SOURCE"), s(fmt_eur(pas.montant_soumis)), s(taux), s(fmt_eur(pas.prelevement))],
             vec![],
         ),
         ligne_net("MONTANT NET À PAYER (en Euros)", sub(p.net_a_payer, pas.prelevement), colonnes),

@@ -41,27 +41,81 @@ struct Lus {
 /// calcule pour elle (`Paie::pas`). Aucun ne se calcule ici : une paie qui n'en porte pas se refuse.
 pub fn des_paies(ctx: &Contexte, paies: &[Paie], departs: &engagement::departs::Departs) -> R<Vec<Option<Versement>>> {
     let mut lus = Lus::default();
-    let mut out = Vec::new();
-    for pa in paies {
-        if pa.engagement.sans_paie() {
-            out.push(None);
-            continue;
-        }
-        if let Some(v) = deja_declare(ctx, pa, &mut lus, departs)? {
-            out.push(Some(v));
-            continue;
-        }
-        let v = pa.pas.clone().ok_or_else(|| {
-            socle::echec::cle(
-                format!(
-                    "{} : la paie de {} ne porte pas de prelevement a la source. Revalider l'engagement.",
-                    pa.salarie.id.to_string(),
-                    pa.engagement.mois
-                ),
-                "pas",
-            )
-        })?;
-        out.push(Some(v));
+    paies.iter().map(|pa| de_la_paie(ctx, pa, &mut lus, departs)).collect()
+}
+
+fn de_la_paie(ctx: &Contexte, pa: &Paie, lus: &mut Lus, departs: &engagement::departs::Departs) -> R<Option<Versement>> {
+    if pa.engagement.sans_paie() {
+        return Ok(None);
     }
-    Ok(out)
+    if let Some(v) = deja_declare(ctx, pa, lus, departs)? {
+        return Ok(Some(v));
+    }
+    let v = pa.pas.clone().ok_or_else(|| {
+        socle::echec::cle(
+            format!("{} : la paie de {} ne porte pas de prelevement a la source. Revalider l'engagement.", pa.salarie.id.to_string(), pa.engagement.mois),
+            "pas",
+        )
+    })?;
+    Ok(Some(v))
+}
+
+/// LE PRELEVEMENT D'UNE PAIE DU MOIS : celui d'une paie validee (`des_paies`), ou celui que les pieces d'une paie
+/// importee disent (`engagement::importe::PasImporte`), qui ne disent ni l'abattement ni le montant soumis.
+#[derive(Debug, Clone)]
+pub enum Prelevement {
+    Calcule(Versement),
+    Importe(engagement::importe::PasImporte),
+}
+
+impl Prelevement {
+    pub fn prelevement(&self) -> socle::num::Decimal {
+        match self {
+            Prelevement::Calcule(v) => v.prelevement,
+            Prelevement::Importe(p) => p.prelevement,
+        }
+    }
+
+    pub fn abattement(&self) -> Option<socle::num::Decimal> {
+        match self {
+            Prelevement::Calcule(v) => Some(v.abattement),
+            Prelevement::Importe(_) => None,
+        }
+    }
+
+    pub fn montant_soumis(&self) -> Option<socle::num::Decimal> {
+        match self {
+            Prelevement::Calcule(v) => Some(v.montant_soumis),
+            Prelevement::Importe(_) => None,
+        }
+    }
+
+    pub fn type_taux(&self) -> Option<droit::type_taux_pas::TypeDeTauxPas> {
+        match self {
+            Prelevement::Calcule(v) => v.type_taux,
+            Prelevement::Importe(p) => p.type_taux,
+        }
+    }
+
+    /// Le taux, son echelle gardee ; `None` : les pieces d'une paie importee ne le disent pas.
+    pub fn taux(&self) -> R<Option<socle::num::Decimal>> {
+        match self {
+            Prelevement::Calcule(v) => v.taux.dec().map(Some),
+            Prelevement::Importe(p) => Ok(p.taux),
+        }
+    }
+}
+
+/// Le prelevement de chaque paie du mois, par POSITION dans `paies` (`None` : un mois sans paie, ou une paie importee
+/// dont les pieces ne disent pas de prelevement) : celui d'une paie validee (`des_paies`), celui que les pieces d'une
+/// paie importee disent.
+pub fn du_mois(ctx: &Contexte, paies: &[engagement::etats::PaieDuMois], departs: &engagement::departs::Departs) -> R<Vec<Option<Prelevement>>> {
+    let mut lus = Lus::default();
+    paies
+        .iter()
+        .map(|pa| match pa {
+            engagement::etats::PaieDuMois::Validee(p) => Ok(de_la_paie(ctx, p, &mut lus, departs)?.map(Prelevement::Calcule)),
+            engagement::etats::PaieDuMois::Importee(p) => Ok(p.pas.clone().map(Prelevement::Importe)),
+        })
+        .collect()
 }
