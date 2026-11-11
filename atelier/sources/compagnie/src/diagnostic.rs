@@ -35,6 +35,7 @@ use regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
 
+use droit::fiche::{CaseEntreprise, CaseSalarie, NomDeCase};
 use socle::echec::{Echoue, R, FENETRE_MS};
 use socle::ecriture::Arbre;
 use socle::temps::maintenant_ms;
@@ -253,13 +254,13 @@ fn signature(p: &Path) -> Option<(SystemTime, u64)> {
 
 /// Les textes qu'une fiche datee a portes, champ par champ (`droit::fiche::VoirListe`) : tout ce qui peut nommer une
 /// personne, a quelque date que ce soit.
-struct TextesDeFiche(Vec<(&'static str, Vec<String>)>);
+struct TextesDeFiche(Vec<(NomDeCase, Vec<String>)>);
 
 impl droit::fiche::VoirListe for TextesDeFiche {
-    fn liste<T: Serialize>(&mut self, cle: droit::fiche::NomDeCase, liste: &[droit::fiche::Datee<T>]) {
+    fn liste<T: Serialize>(&mut self, cle: NomDeCase, liste: &[droit::fiche::Datee<T>]) {
         let textes: Vec<String> = liste.iter().filter_map(|e| e.valeur.as_ref()).filter_map(texte_de).collect();
         if !textes.is_empty() {
-            self.0.push((cle.nom(), textes));
+            self.0.push((cle, textes));
         }
     }
 }
@@ -272,32 +273,45 @@ impl TextesDeFiche {
     }
 
     /// Tous les textes que le champ `cle` a portes.
-    fn tous<'a>(&'a self, cle: &'a str) -> impl Iterator<Item = &'a String> + 'a {
+    fn tous(&self, cle: impl Into<NomDeCase>) -> impl Iterator<Item = &String> {
+        let cle = cle.into();
         self.0.iter().filter(move |(c, _)| *c == cle).flat_map(|(_, l)| l.iter())
     }
 
     /// Le dernier texte du champ `cle`, sans ses blancs de bord, s'il en a porte un qui dit quelque chose.
-    fn dernier(&self, cle: &str) -> Option<String> {
+    fn dernier(&self, cle: impl Into<NomDeCase>) -> Option<String> {
         self.tous(cle).last().map(|t| t.trim().to_string()).filter(|t| !t.is_empty())
     }
 }
 
 /// Le numero d'un salarie : son `code_salarie` (celui des bulletins), sinon son rang dans les fiches.
 fn numero_de(fiche: &TextesDeFiche, rang: usize) -> String {
-    match fiche.dernier("code_salarie") {
+    match fiche.dernier(CaseSalarie::code_salarie) {
         Some(code) => code,
         None => format!("{}", rang + 1),
     }
 }
 
 /// Les champs d'une fiche qui nomment la personne : ceux-la se cherchent dans tout texte.
-const CHAMPS_QUI_NOMMENT: [&str; 13] = [
-    "nom", "prenom", "prenoms", "nom_affichage", "prenom_affichage", "nom_usage", "nom_naissance", "email", "courriel",
-    "adresse", "adresse_affichage", "telephone", "nir",
+const CHAMPS_QUI_NOMMENT: [CaseSalarie; 8] = [
+    CaseSalarie::nom,
+    CaseSalarie::prenom,
+    CaseSalarie::nom_affichage,
+    CaseSalarie::prenom_affichage,
+    CaseSalarie::email,
+    CaseSalarie::adresse,
+    CaseSalarie::adresse_affichage,
+    CaseSalarie::nir,
 ];
-const CHAMPS_DE_LA_COMPAGNIE: [&str; 11] = [
-    "raison_sociale", "nom_affichage", "enseigne", "siren", "siret", "adresse", "adresse_affichage", "urssaf_compte",
-    "licence_spectacle", "email", "telephone",
+const CHAMPS_DE_LA_COMPAGNIE: [CaseEntreprise; 8] = [
+    CaseEntreprise::raison_sociale,
+    CaseEntreprise::nom_affichage,
+    CaseEntreprise::siren,
+    CaseEntreprise::siret,
+    CaseEntreprise::adresse,
+    CaseEntreprise::adresse_affichage,
+    CaseEntreprise::urssaf_compte,
+    CaseEntreprise::licence_spectacle,
 ];
 
 fn construire(racine: &Path) -> Personnes {
@@ -330,7 +344,7 @@ fn construire(racine: &Path) -> Personnes {
                         noms.extend(fiche.tous(c).cloned());
                     }
                     // Le prenom et le nom ensemble, dans les deux ordres : « Fanchon Brioche » devient un seul « [salarie n°1] ».
-                    for (p, n) in [("prenom", "nom"), ("prenom_affichage", "nom_affichage"), ("prenom_affichage", "nom_usage")] {
+                    for (p, n) in [(CaseSalarie::prenom, CaseSalarie::nom), (CaseSalarie::prenom_affichage, CaseSalarie::nom_affichage)] {
                         if let (Some(p), Some(n)) = (fiche.dernier(p), fiche.dernier(n)) {
                             noms.push(format!("{} {}", p, n));
                             noms.push(format!("{} {}", n, p));

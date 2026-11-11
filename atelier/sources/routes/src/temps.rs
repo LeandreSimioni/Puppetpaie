@@ -14,13 +14,22 @@ type R<T> = Result<T, Echec>;
 /// ligne par ligne (`lignes`).
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct TempsDeLaCase<V> {
-    pub(crate) champ: String,
+    pub(crate) champ: CaseDatee,
     #[serde(skip_serializing_if = "Option::is_none")]
     avant: Option<LigneDuTemps<V>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     a_venir: Option<LigneDuTemps<V>>,
     valeurs: Vec<LigneDuTemps<V>>,
     lignes: Vec<TempsDUneLigne<V>>,
+}
+
+/// CE QUI EST DATE : une case d'une fiche (ou d'une ligne d'une liste de la fiche), ou un contrat de prevoyance saisi
+/// (`config/organismes.json`), par sa cle. Il s'ecrit en texte.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub(crate) enum CaseDatee {
+    Case(droit::fiche::NomDeCase),
+    Contrat(String),
 }
 
 /// Les temps des cases d'une ligne d'une liste datee, la ligne nommee par sa cle (le NIC d'un etablissement) et par ce
@@ -60,7 +69,7 @@ fn quand_dit(depuis: Option<Jour>, jusqu_au: Option<Jour>) -> String {
 
 /// LES TEMPS DE LA CASE `champ` (sa liste datee `liste`) a `jour` (`droit::fiche::temps_au`, `meme` disant deux valeurs
 /// pareilles) ; `None` si elle n'a qu'une valeur.
-pub(crate) fn d_une_case<V: Clone>(champ: &str, liste: &[droit::fiche::Datee<V>], jour: &Jour, meme: impl Fn(&V, &V) -> bool) -> R<Option<TempsDeLaCase<V>>> {
+pub(crate) fn d_une_case<V: Clone>(champ: CaseDatee, liste: &[droit::fiche::Datee<V>], jour: &Jour, meme: impl Fn(&V, &V) -> bool) -> R<Option<TempsDeLaCase<V>>> {
     let temps = droit::fiche::temps_au(liste, jour, meme)?;
     if temps.toutes.len() < 2 {
         return Ok(None);
@@ -74,12 +83,12 @@ pub(crate) fn d_une_case<V: Clone>(champ: &str, liste: &[droit::fiche::Datee<V>]
         let jusqu_au = temps.toutes.get(i + 1).and_then(|s| s.depuis).map(|d| d.plus_jours(-1)).transpose()?;
         valeurs.push(LigneDuTemps { valeur: e.valeur.clone(), depuis: e.depuis, jusqu_au, dit: quand_dit(e.depuis, jusqu_au), en_vigueur: en_vigueur == Some(e.depuis), note: e.note.clone() });
     }
-    Ok(Some(TempsDeLaCase { champ: champ.to_string(), avant, a_venir, valeurs, lignes: Vec::new() }))
+    Ok(Some(TempsDeLaCase { champ, avant, a_venir, valeurs, lignes: Vec::new() }))
 }
 
 /// LES TEMPS DES CASES DE CHAQUE LIGNE d'une liste datee (`lignes`, chacune nommee), sous la case `champ` de la liste ;
 /// `None` si aucune case d'aucune ligne n'a plus d'une valeur.
-pub(crate) fn d_une_liste<V>(champ: &str, lignes: Vec<TempsDUneLigne<V>>) -> Option<TempsDeLaCase<V>> {
+pub(crate) fn d_une_liste<V>(champ: droit::fiche::NomDeCase, lignes: Vec<TempsDUneLigne<V>>) -> Option<TempsDeLaCase<V>> {
     let lignes: Vec<TempsDUneLigne<V>> = lignes.into_iter().filter(|l| !l.cases.is_empty()).collect();
-    (!lignes.is_empty()).then(|| TempsDeLaCase { champ: champ.to_string(), avant: None, a_venir: None, valeurs: Vec::new(), lignes })
+    (!lignes.is_empty()).then(|| TempsDeLaCase { champ: CaseDatee::Case(champ), avant: None, a_venir: None, valeurs: Vec::new(), lignes })
 }

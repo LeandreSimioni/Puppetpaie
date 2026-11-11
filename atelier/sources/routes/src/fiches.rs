@@ -482,7 +482,7 @@ pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sa
     let ouverte = |piece: Piece, case: NomDeCase| match piece {
         Piece::Permanent => au_mois,
         Piece::EmploieDesPermanents => avec_permanents,
-        Piece::Metier | Piece::MetierAuMois => du_metier.contains(case.nom()),
+        Piece::Metier | Piece::MetierAuMois => du_metier.contains(&case),
         Piece::Cse => cse,
         Piece::Casc => casc,
     };
@@ -524,7 +524,7 @@ fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &Saisie) -> R<(bool, bool)> 
 /// l'annexe I, que sa prime
 /// d'anciennete peut viser (`droit::clauses::prime_anciennete_possible`, le metier de la carte ou de la fiche de son
 /// salarie). Un engagement qui n'est plus actif ne demande rien ; une fiche sans engagement, rien.
-fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie) -> R<std::collections::BTreeSet<String>> {
+fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie) -> R<std::collections::BTreeSet<NomDeCase>> {
     let mut cases = std::collections::BTreeSet::new();
     let dit = |x: Option<&str>| x.map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
     let de_la_fiche = dit(donnees.mot(droit::fiche::CaseSalarie::code_emploi_ft).as_deref());
@@ -560,7 +560,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sai
             None => ctx.salarie(salarie)?.statut.dite().map(|s| droit::fiche::Choix::code(s).to_string()),
         };
         if droit::clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), Some(code), statut.as_deref())? {
-            cases.insert("jauge_annexe_1".to_string());
+            cases.insert(droit::fiche::CaseEntreprise::jauge_annexe_1.into());
         }
     }
     Ok(cases)
@@ -1019,7 +1019,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: Option<&str>
     let expediteur = client.compte().to_lowercase();
     let code = fq::code_fiche().map_err(|e| e.reclasser(Classe::Disque))?;
     let utiles = champs::utiles("salarie")?;
-    let q = fq::questionnaire(&code, &fq::posees(&|c| utiles.iter().any(|u| u.nom() == c)), &|_| String::new());
+    let q = fq::questionnaire(&code, &fq::posees(&|c| utiles.contains(&c)), &|_| String::new());
     let sujet = envoi::formater(fq::SUJET, &[("compagnie", compagnie.clone())]);
     let prenom: Option<String> = prenom.map(|p| strip(p).to_string());
     // « Bonjour Claire, » : le prenom, quand il est dit ; « Bonjour, » sinon.
@@ -1320,7 +1320,7 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
     ]);
     let utiles = champs::utiles("salarie")?;
     // Une question que la personne fictive ne sait pas, elle la laisse sans reponse.
-    let rempli = fq::questionnaire(code, &fq::posees(&|c| utiles.iter().any(|u| u.nom() == c)), &|cle| reponses.get(cle).into_iter().cloned().collect());
+    let rempli = fq::questionnaire(code, &fq::posees(&|c| utiles.contains(&c)), &|cle| reponses.get(cle).into_iter().cloned().collect());
     let sujet = match bouton {
         Some(b) => b.0.clone(),
         None => "Re: fiche".to_string(),

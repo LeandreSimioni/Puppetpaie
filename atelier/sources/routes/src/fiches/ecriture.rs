@@ -708,16 +708,17 @@ fn nombre_de(v: &Valeur) -> Option<socle::num::Decimal> {
 }
 
 /// LA MEME VALEUR, a la forme pres : un nombre saisi en texte (100 et « 100 »), une structure sans ses formes lisibles
-/// (les cases `_affichage` que l'ecran comble ne se declarent pas) ni ses cases laissees vides.
-fn meme(a: &Valeur, b: &Valeur) -> bool {
+/// (`lisibles` : les cases que l'ecran comble ne se declarent pas, `champs::formes_lisibles`) ni ses cases laissees
+/// vides.
+fn meme(a: &Valeur, b: &Valeur, lisibles: &[NomDeCase]) -> bool {
     if a == b {
         return true;
     }
     match (a, b) {
         (Valeur::Bloc(x), Valeur::Bloc(y)) => {
-            let dites = |s: &Saisie| -> Vec<(NomDeCase, Valeur)> { s.cases().iter().filter(|(k, v)| !k.nom().ends_with("_affichage") && !sans_valeur(Some(v))).cloned().collect() };
+            let dites = |s: &Saisie| -> Vec<(NomDeCase, Valeur)> { s.cases().iter().filter(|(k, v)| !lisibles.contains(k) && !sans_valeur(Some(v))).cloned().collect() };
             let (x, y) = (dites(x), dites(y));
-            x.len() == y.len() && x.iter().all(|(k, v)| y.iter().any(|(l, w)| l == k && meme(v, w)))
+            x.len() == y.len() && x.iter().all(|(k, v)| y.iter().any(|(l, w)| l == k && meme(v, w, lisibles)))
         }
         (Valeur::Bloc(_) | Valeur::Lignes(_) | Valeur::Mots(_), _) | (_, Valeur::Bloc(_) | Valeur::Lignes(_) | Valeur::Mots(_)) => false,
         _ => match (nombre_de(a), nombre_de(b)) {
@@ -727,17 +728,17 @@ fn meme(a: &Valeur, b: &Valeur) -> bool {
     }
 }
 
-fn meme_case(a: Option<&Valeur>, b: Option<&Valeur>) -> bool {
+fn meme_case(a: Option<&Valeur>, b: Option<&Valeur>, lisibles: &[NomDeCase]) -> bool {
     match (a, b) {
-        (Some(a), Some(b)) => meme(a, b),
+        (Some(a), Some(b)) => meme(a, b, lisibles),
         (a, b) => a.is_none() && b.is_none(),
     }
 }
 
 /// La structure `apres` garde chaque case de `avant` qui a une valeur (elle n'en remplit que des vides).
-fn seulement_completee(avant: &Valeur, apres: &Valeur) -> bool {
+fn seulement_completee(avant: &Valeur, apres: &Valeur, lisibles: &[NomDeCase]) -> bool {
     match (avant, apres) {
-        (Valeur::Bloc(a), Valeur::Bloc(b)) => a.cases().iter().filter(|(_, x)| !sans_valeur(Some(x))).all(|(k, x)| b.case(k).is_some_and(|y| meme(x, y))),
+        (Valeur::Bloc(a), Valeur::Bloc(b)) => a.cases().iter().filter(|(_, x)| !sans_valeur(Some(x))).all(|(k, x)| b.case(k).is_some_and(|y| meme(x, y, lisibles))),
         // Autre chose qu'une structure, d'un cote ou de l'autre : rien ne s'y complete.
         (Valeur::Texte(_) | Valeur::Nombre(_) | Valeur::OuiNon(_) | Valeur::Mots(_) | Valeur::Lignes(_) | Valeur::Bloc(_), _) => false,
     }
@@ -776,6 +777,7 @@ fn changements_a_dater(nom: &str, avant: &Saisie, apres: &Saisie, cles: &[NomDeC
         champs::fiche(nom)?.into_iter().filter(|c| c.forme == champs::Forme::Booleen).map(|c| (c.cle, Valeur::OuiNon(c.booleen_defaut))).collect();
     defauts.insert(droit::fiche::CaseSalarie::jours_travailles.into(), Valeur::Mots(droit::conges::JOURS_DE_LA_SEMAINE[..5].iter().map(|j| j.to_string()).collect()));
     let sans_date = faits_sans_date();
+    let lisibles = champs::formes_lisibles(nom)?;
     Ok(cles
         .iter()
         .copied()
@@ -784,12 +786,12 @@ fn changements_a_dater(nom: &str, avant: &Saisie, apres: &Saisie, cles: &[NomDeC
             let a = dite.or(defauts.get(k));
             let b = apres.case(k);
             !sans_date.contains(&(nom, *k))
-                && !(a.is_some() && b.is_some() && meme_case(a, b))
+                && !(a.is_some() && b.is_some() && meme_case(a, b, &lisibles))
                 && !(sans_valeur(a) && sans_valeur(b))
                 && (premiere_datee || avait_une_valeur(dite))
                 // Une structure dont on remplit des cases vides sans changer celles qui ont une valeur : c'est leur
                 // premiere valeur, comme une case vide.
-                && (premiere_datee || !matches!((a, b), (Some(a), Some(b)) if seulement_completee(a, b)))
+                && (premiere_datee || !matches!((a, b), (Some(a), Some(b)) if seulement_completee(a, b, &lisibles)))
         })
         .collect())
 }
@@ -822,10 +824,11 @@ pub(crate) fn ecrire_datee<F: SorteDeFiche>(
     }
     let mut ecritures: Vec<(F::Changement, Option<Jour>, Option<&str>)> = Vec::new();
     let mut ecrites = Vec::new();
+    let lisibles = champs::formes_lisibles(F::NOM)?;
     for k in cles {
         let (a, b) = (vue_avant.case(k), vue_apres.case(k));
         let rien = b.is_none_or(|v| matches!(v, Valeur::Texte(t) if t.is_empty()) || matches!(v, Valeur::Bloc(_) if sans_valeur(Some(v))));
-        if (vide(a) && rien) || (a.is_some() && b.is_some() && meme_case(a, b)) {
+        if (vide(a) && rien) || (a.is_some() && b.is_some() && meme_case(a, b, &lisibles)) {
             continue;
         }
         let jours = brute.depuis(k);

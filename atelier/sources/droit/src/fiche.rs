@@ -707,17 +707,6 @@ macro_rules! choix {
     };
 }
 
-/// CE QUI REGARDE LES CASES D'UNE FICHE PAR LEUR NOM, celui que `champs-base.json` donne a chacune (une table qui les
-/// nomme, un bareme, l'import) : chacune lui est donnee typee (`Cases::voir`), qu'il ecrit comme il l'entend.
-pub trait VoirCase {
-    fn case<T: Serialize>(&mut self, cle: &'static str, case: &Option<T>);
-}
-
-/// UNE FICHE QUI SE MONTRE CASE PAR CASE (`cases!`) a qui la regarde (`VoirCase`).
-pub trait Cases {
-    fn voir<V: VoirCase>(&self, v: &mut V);
-}
-
 /// UNE STRUCTURE DE CASES : chacune un `Option` (`Lue`), une cle inconnue refusee. Ses `notes` (d'une fiche datee) ne sont pas des
 /// cases : des textes qui ne se datent pas, que la fiche porte tels qu'ecrits.
 macro_rules! cases {
@@ -748,14 +737,6 @@ macro_rules! cases {
                 true $(&& self.$champ.is_none())*
             }
 
-            /// Les cases `cles` (leurs noms) sont-elles les memes dans `autre` ?
-            pub fn memes_cases(&self, autre: &$nom, cles: &[&str]) -> bool {
-                $( if cles.contains(&stringify!($champ).trim_start_matches("r#")) && self.$champ != autre.$champ {
-                    return false;
-                } )*
-                true
-            }
-
             /// Les cases que `autre` dit remplacent les siennes ; ses notes restent.
             pub fn par_dessus(&mut self, autre: &$nom) {
                 $( if autre.$champ.is_some() {
@@ -763,24 +744,9 @@ macro_rules! cases {
                 } )*
             }
 
-            /// Les cases dont la valeur differe dans `autre`, nommees comme `champs-base.json` les nomme ; ses notes n'en
-            /// sont pas.
-            pub fn cases_differentes(&self, autre: &$nom) -> Vec<&'static str> {
-                let mut out = Vec::new();
-                $( if self.$champ != autre.$champ {
-                    out.push(stringify!($champ).trim_start_matches("r#"));
-                } )*
-                out
-            }
-
             /// Les memes cases, sans ses notes.
             pub fn sans_notes(self) -> $nom {
                 $nom { $( $( $note: None, )* )? ..self }
-            }
-        }
-        impl Cases for $nom {
-            fn voir<V: VoirCase>(&self, v: &mut V) {
-                $( v.case(stringify!($champ).trim_start_matches("r#"), &self.$champ); )*
             }
         }
     };
@@ -957,12 +923,12 @@ macro_rules! fiche {
                 true $(&& self.$champ.is_none())* $( $(&& self.$piece.cases.$pchamp.is_none())* )*
             }
 
-            /// Les cases `cles` (leurs noms) sont-elles les memes dans `autre` ?
-            pub fn memes_cases(&self, autre: &$plate, cles: &[&str]) -> bool {
-                $( if cles.contains(&stringify!($champ)) && self.$champ != autre.$champ {
+            /// Les cases `cles` sont-elles les memes dans `autre` ?
+            pub fn memes_cases(&self, autre: &$plate, cles: &[$cles]) -> bool {
+                $( if cles.contains(&$cles::$champ) && self.$champ != autre.$champ {
                     return false;
                 } )*
-                $( $( if cles.contains(&stringify!($pchamp)) && self.$piece.cases.$pchamp != autre.$piece.cases.$pchamp {
+                $( $( if cles.contains(&$cles::$pchamp) && self.$piece.cases.$pchamp != autre.$piece.cases.$pchamp {
                     return false;
                 } )* )*
                 true
@@ -983,10 +949,10 @@ macro_rules! fiche {
             pub fn cases_differentes(&self, autre: &$plate) -> Vec<NomDeCase> {
                 let mut out = Vec::new();
                 $( if self.$champ != autre.$champ {
-                    out.push(nom_ecrit(stringify!($champ)));
+                    out.push($cles::$champ.into());
                 } )*
                 $( $( if self.$piece.cases.$pchamp != autre.$piece.cases.$pchamp {
-                    out.push(nom_ecrit(stringify!($pchamp)));
+                    out.push($cles::$pchamp.into());
                 } )* )*
                 out
             }
@@ -994,13 +960,6 @@ macro_rules! fiche {
             /// Les memes cases, sans ses notes.
             pub fn sans_notes(self) -> $plate {
                 $plate { $( $( $note: None, )* )? ..self }
-            }
-        }
-
-        /// Ses cases hors de ses pieces : celles d'une piece se regardent dans la piece ouverte (`$cases`, `Cases`).
-        impl Cases for $plate {
-            fn voir<V: VoirCase>(&self, v: &mut V) {
-                $( v.case(stringify!($champ), &self.$champ); )*
             }
         }
 
@@ -1157,7 +1116,7 @@ macro_rules! fiche {
 /// UNE FICHE DATEE (`fiche!`) : la fiche telle qu'ecrite, chaque champ une liste datee, et sa fiche a un jour
 /// (`Plate`). Elle s'ecrit par `changer` (une case, qui vaut a partir de `depuis`), ses notes par `noter`.
 pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned {
-    type Plate: Cases + Clone + Default + Serialize + DeserializeOwned;
+    type Plate: Clone + Default + Serialize + DeserializeOwned;
     type Changement: DeserializeOwned;
 
     /// Ses champs en vigueur a `jour`, ses notes telles qu'ecrites.

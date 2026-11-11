@@ -681,6 +681,12 @@ pub fn fiche(nom: &str) -> R<Vec<Champ>> {
     Ok(table(nom)?.to_vec())
 }
 
+/// LES FORMES LISIBLES DES STRUCTURES DE LA FICHE `nom` : les cases d'ou une autre case de leur structure se deduit
+/// (`derive_de`). L'ecran les comble ; elles ne se declarent pas.
+pub fn formes_lisibles(nom: &str) -> R<Vec<NomDeCase>> {
+    Ok(table(nom)?.iter().flat_map(|c| c.champs.iter().flatten()).filter_map(|c| c.derive_de.as_ref().map(|d| d.nom)).collect())
+}
+
 /// Le champ `cle` de la fiche `nom`, s'il existe.
 pub fn champ(nom: &str, cle: impl Into<NomDeCase>) -> R<Option<Champ>> {
     let cle = cle.into();

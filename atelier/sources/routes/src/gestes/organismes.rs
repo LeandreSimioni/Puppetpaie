@@ -106,7 +106,7 @@ fn temps_des_contrats(ctx: &droit::contexte::Contexte) -> R<Vec<TempsDeLaCase<Co
     }
     let mut out = Vec::new();
     for (cle, datees) in par_cle {
-        out.extend(crate::temps::d_une_case(&cle, &datees, &ctx.aujourdhui, |a, b| a == b)?);
+        out.extend(crate::temps::d_une_case(crate::temps::CaseDatee::Contrat(cle), &datees, &ctx.aujourdhui, |a, b| a == b)?);
     }
     Ok(out)
 }
@@ -159,7 +159,7 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
             (None, Some(a)) => format!("Jusqu'au {}.", a),
             (None, None) => String::new(),
         };
-        let temps = temps.iter().position(|t| t.champ == ligne.cle).map(|i| temps.swap_remove(i));
+        let temps = temps.iter().position(|t| matches!(&t.champ, crate::temps::CaseDatee::Contrat(c) if *c == ligne.cle)).map(|i| temps.swap_remove(i));
         contrats.push(ContratDit { ligne, periode, temps });
     }
     Ok(OrganismesDits { phrase, idcc: lu.idcc, a_saisir: lu.a_saisir, mois, contrats, encarts })

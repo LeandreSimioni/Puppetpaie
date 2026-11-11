@@ -35,7 +35,9 @@
 
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
+use droit::fiche::{CaseEntreprise, CaseSalarie, NomDeCase};
 use socle::date::Jour;
+use Origine::{Entreprise as E, Etablissement, Salarie as S};
 use socle::mois::{Graphie, Mois};
 use socle::echec::R;
 
@@ -45,10 +47,9 @@ struct Modalite {
     r41: &'static str,
     /// La saisie du mois la porte (`date_modification` de l'engagement la date).
     saisie: bool,
-    /// Les champs de la fiche salarie dont l'historique la date.
-    fiche: &'static [&'static str],
-    /// Les champs de la fiche entreprise dont l'historique la date.
-    entreprise: &'static [&'static str],
+    /// D'ou elle vient, hors de la saisie : les cases des fiches dont l'historique la date, et l'etablissement de la
+    /// carte.
+    origines: &'static [Origine],
     /// Elle vient du bareme de l'annee : elle change au 1er janvier.
     annuelle: bool,
     /// Elle se lit periode de paie par periode de paie (le moteur la calcule chaque mois) : elle change au premier
@@ -63,6 +64,17 @@ struct Modalite {
     /// Sa valeur est un code d'une liste de la norme (`droit::natures::ListeDeLaNorme`) : l'ancienne se relit dans son
     /// `enum` et ne s'ecrit en bloc 41 que si la liste de la version du fichier l'a (`relue`).
     liste: Option<Relue>,
+}
+
+/// D'ou vient une modalite, hors de la saisie du mois.
+#[derive(Clone, Copy)]
+enum Origine {
+    /// Une case de la fiche du salarie, que son historique date.
+    Salarie(CaseSalarie),
+    /// Une case de la fiche entreprise, que son historique date.
+    Entreprise(CaseEntreprise),
+    /// L'etablissement que la carte de l'engagement dit : il change par un avenant, que la saisie date.
+    Etablissement,
 }
 
 /// L'ancienne valeur d'une modalite a liste, relue dans son `enum`, et le code que le fichier de cette norme en ecrit.
@@ -83,13 +95,13 @@ recopie pas. Rien n'est ecrit.",
     crate::dsn::code_admis(norme, v)
 }
 
-const fn m(r40: &'static str, r41: &'static str, saisie: bool, fiche: &'static [&'static str], entreprise: &'static [&'static str]) -> Modalite {
-    Modalite { r40, r41, saisie, fiche, entreprise, annuelle: false, periodique: false, en_cours_de_mois: false, decoupable: false, liste: None }
+const fn m(r40: &'static str, r41: &'static str, saisie: bool, origines: &'static [Origine]) -> Modalite {
+    Modalite { r40, r41, saisie, origines, annuelle: false, periodique: false, en_cours_de_mois: false, decoupable: false, liste: None }
 }
 
 /// `m`, une modalite que le decoupage de la paie porte en cours de mois.
-const fn d(r40: &'static str, r41: &'static str, saisie: bool, fiche: &'static [&'static str], entreprise: &'static [&'static str]) -> Modalite {
-    Modalite { decoupable: true, ..m(r40, r41, saisie, fiche, entreprise) }
+const fn d(r40: &'static str, r41: &'static str, saisie: bool, origines: &'static [Origine]) -> Modalite {
+    Modalite { decoupable: true, ..m(r40, r41, saisie, origines) }
 }
 
 /// Les modalites que le modele fait changer (fiche N8, « Les rubriques 41.0xx, une par une »), chacune avec sa jumelle
@@ -97,42 +109,51 @@ const fn d(r40: &'static str, r41: &'static str, saisie: bool, fiche: &'static [
 /// dispositifs absents du modele, rubriques 40 non ecrites ou fixees par la nature) n'a pas de jumelle qui bouge : rien
 /// ne peut en changer.
 const MODALITES: [Modalite; 20] = [
-    d("S21.G00.40.002", "S21.G00.41.002", true, &["statut_conventionnel", "statut_categoriel_rc", "code_emploi_ft"], &[]),
-    d("S21.G00.40.003", "S21.G00.41.003", true, &["statut_categoriel_rc", "statut_conventionnel", "code_emploi_ft"], &[]),
-    d("S21.G00.40.004", "S21.G00.41.019", true, &["pcs_ese", "code_emploi_ft"], &[]),
-    d("S21.G00.40.005", "S21.G00.41.020", true, &["code_emploi_ft"], &[]),
-    m("S21.G00.40.007", "S21.G00.41.004", true, &[], &[]),
-    m("S21.G00.40.008", "S21.G00.41.005", true, &[], &[]),
-    m("S21.G00.40.011", "S21.G00.41.006", true, &[], &[]),
-    m("S21.G00.40.012", "S21.G00.41.022", true, &[], &["quotite_reference"]),
-    d("S21.G00.40.013", "S21.G00.41.007", true, &[], &[]),
-    Modalite { liste: Some(relue::<droit::natures::ModaliteDuTempsDeTravail>), ..d("S21.G00.40.014", "S21.G00.41.008", true, &[], &[]) },
-    m("S21.G00.40.016", "S21.G00.41.010", false, &["etablissement"], &["code_postal", "etablissements"]),
-    m("S21.G00.40.017", "S21.G00.41.011", false, &[], &["idcc"]),
+    d("S21.G00.40.002", "S21.G00.41.002", true, &[S(CaseSalarie::statut_conventionnel), S(CaseSalarie::statut_categoriel_rc), S(CaseSalarie::code_emploi_ft)]),
+    d("S21.G00.40.003", "S21.G00.41.003", true, &[S(CaseSalarie::statut_categoriel_rc), S(CaseSalarie::statut_conventionnel), S(CaseSalarie::code_emploi_ft)]),
+    d("S21.G00.40.004", "S21.G00.41.019", true, &[S(CaseSalarie::pcs_ese), S(CaseSalarie::code_emploi_ft)]),
+    d("S21.G00.40.005", "S21.G00.41.020", true, &[S(CaseSalarie::code_emploi_ft)]),
+    m("S21.G00.40.007", "S21.G00.41.004", true, &[]),
+    m("S21.G00.40.008", "S21.G00.41.005", true, &[]),
+    m("S21.G00.40.011", "S21.G00.41.006", true, &[]),
+    m("S21.G00.40.012", "S21.G00.41.022", true, &[]),
+    d("S21.G00.40.013", "S21.G00.41.007", true, &[]),
+    Modalite { liste: Some(relue::<droit::natures::ModaliteDuTempsDeTravail>), ..d("S21.G00.40.014", "S21.G00.41.008", true, &[]) },
+    m("S21.G00.40.016", "S21.G00.41.010", false, &[Etablissement, E(CaseEntreprise::code_postal), E(CaseEntreprise::etablissements)]),
+    m("S21.G00.40.017", "S21.G00.41.011", false, &[E(CaseEntreprise::idcc)]),
     // Le lieu de travail est le SIRET de l'etablissement du salarie (`dsn::bloc_contrat`) : il change avec lui, a la
     // date de la mutation (le SIRET, identifiant, va en 41.012 dans un autre bloc, CCH-16).
-    m("S21.G00.40.019", "S21.G00.41.013", false, &["etablissement"], &[]),
-    Modalite { liste: Some(relue::<droit::natures::MotifDeRecours>), ..m("S21.G00.40.021", "S21.G00.41.016", true, &[], &[]) },
-    m("S21.G00.40.022", "S21.G00.41.023", false, &[], &["congesspectacles_adherent"]),
+    m("S21.G00.40.019", "S21.G00.41.013", false, &[Etablissement]),
+    Modalite { liste: Some(relue::<droit::natures::MotifDeRecours>), ..m("S21.G00.40.021", "S21.G00.41.016", true, &[]) },
+    m("S21.G00.40.022", "S21.G00.41.023", false, &[E(CaseEntreprise::congesspectacles_adherent)]),
     // Le taux de la deduction forfaitaire specifique vient du bareme de l'annee (arrete du 4 septembre 2025, art. 9, II :
     // reduit « au 1er janvier de chaque annee ») et de la fiche (profession, accord du salarie, option de l'employeur).
     Modalite {
         annuelle: true,
-        ..m("S21.G00.40.023", "S21.G00.41.017", false, &["deduction_forfaitaire", "deduction_forfaitaire_accord"], &["deduction_forfaitaire_option"])
+        ..m(
+            "S21.G00.40.023",
+            "S21.G00.41.017",
+            false,
+            &[
+                S(CaseSalarie::deduction_forfaitaire),
+                S(CaseSalarie::deduction_forfaitaire_accord),
+                E(CaseEntreprise::deduction_forfaitaire_option),
+            ],
+        )
     },
     // Le code risque vient du bareme de l'annee, celui de l'etablissement du salarie (`bareme::surcharger`) : il change
     // au 1er janvier, ou avec une mutation.
-    Modalite { annuelle: true, ..m("S21.G00.40.040", "S21.G00.41.024", false, &["etablissement"], &[]) },
+    Modalite { annuelle: true, ..m("S21.G00.40.040", "S21.G00.41.024", false, &[Etablissement]) },
     // « emplois multiples », « au cours d'une meme periode de paie » (p. 199) : `dsn::emplois_multiples` le calcule
     // chaque mois ; 41.061 est une modalite (§ 4.4.14.1, p. 103).
-    Modalite { periodique: true, ..m("S21.G00.40.036", "S21.G00.41.061", false, &[], &[]) },
-    Modalite { en_cours_de_mois: true, ..m("S21.G00.40.072", "S21.G00.41.048", false, &["statut_boeth"], &[]) },
+    Modalite { periodique: true, ..m("S21.G00.40.036", "S21.G00.41.061", false, &[]) },
+    Modalite { en_cours_de_mois: true, ..m("S21.G00.40.072", "S21.G00.41.048", false, &[S(CaseSalarie::statut_boeth)]) },
     // Norme 2027 (P27V01) : « Ancienne application de la proratisation du Plafond de Securite Sociale a hauteur de la
     // quotite de travail » (cahier 2027.1.1, p. 242, `texte-2027/bloc-S21.G00.41.txt` l. 1439-1450 ; modalite, § 4.4.14.1,
     // `chapitre-4-controles.txt` l. 1047). 40.084 change avec le temps partiel (un avenant, date par la saisie), avec
     // la renonciation de l'etablissement (la fiche entreprise) ou avec le statut d'artiste, que la loi exclut de la
     // proratisation (`calcul::plafond_temps_partiel`). Absente des DSN de 2026 : rien de declare, pas de bloc 41.
-    d("S21.G00.40.084", "S21.G00.41.066", true, &["statut"], &["plafond_temps_partiel"]),
+    d("S21.G00.40.084", "S21.G00.41.066", true, &[S(CaseSalarie::statut), E(CaseEntreprise::plafond_temps_partiel)]),
 ];
 
 /// Le bloc 40 d'un contrat tel qu'une DSN partie l'a declare (`dsn::bloc_40_declare`).
@@ -154,15 +175,10 @@ fn ddmmaaaa(v: &str) -> Option<Jour> {
     crate::dsn_lue::jour_dsn(v)
 }
 
-/// Les jours ou ces champs d'une fiche datee ont change (`depuis` : les jours ou un champ prend une valeur) : le `depuis` de chaque
-/// valeur qui en suit une autre.
-fn changements_dates(depuis: impl Fn(droit::fiche::NomDeCase) -> Vec<Option<Jour>>, champs: &[&str]) -> R<Vec<(Jour, String)>> {
-    let mut out = Vec::new();
-    // Un nom qu'aucune fiche ne declare (`etablissement`, qui est de la carte) n'a pas d'historique.
-    for (c, nom) in champs.iter().filter_map(|c| droit::fiche::NomDeCase::lire(c).map(|n| (c, n))) {
-        out.extend(depuis(nom).into_iter().skip(1).filter_map(|j| j.map(|j| (j, c.to_string()))));
-    }
-    Ok(out)
+/// Les jours ou une case d'une fiche datee a change (`depuis` : les jours ou elle prend une valeur) : le `depuis` de
+/// chaque valeur qui en suit une autre.
+fn changements_dates(depuis: Vec<Option<Jour>>) -> impl Iterator<Item = Jour> {
+    depuis.into_iter().skip(1).flatten()
 }
 
 /// « NOM Prénom, contrat <numéro> » : qui la phrase de refus désigne.
@@ -194,11 +210,14 @@ fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, m
         }
     }
     // Sans fiche datee, aucun changement date.
-    for (j, c) in changements_dates(|c| ctx.salarie_brut(p.salarie.id.as_str()).into_iter().flat_map(|b| b.depuis(c)).collect(), md.fiche)? {
-        candidats.push((j, format!("la fiche du salarie (`{}`)", c)));
-    }
-    for (j, c) in changements_dates(|c| ctx.entreprise_brute().depuis(c), md.entreprise)? {
-        candidats.push((j, format!("la fiche entreprise (`{}`)", c)));
+    for origine in md.origines {
+        let (depuis, ou, c): (Vec<Option<Jour>>, &str, NomDeCase) = match *origine {
+            S(c) => (ctx.salarie_brut(p.salarie.id.as_str()).into_iter().flat_map(|b| b.depuis(c.into())).collect(), "la fiche du salarie", c.into()),
+            E(c) => (ctx.entreprise_brute().depuis(c.into()), "la fiche entreprise", c.into()),
+            // L'etablissement est de la carte : un avenant le change, que la saisie date (`date_modification`).
+            Etablissement => continue,
+        };
+        candidats.extend(changements_dates(depuis).map(|j| (j, format!("{} (`{}`)", ou, c))));
     }
     if md.annuelle && decl.mois.annee() < mois.annee() {
         candidats.push((Jour { an: debut_m.an, mois: 1, jour: 1 }, "le bareme de l'annee (il vaut du 1er janvier)".into()));
@@ -233,7 +252,7 @@ fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, m
 partir duquel le changement vaut, que l'avertissement demande ; l'avenant prend effet le premier jour de ce mois)"
                 .to_string());
         }
-        if !md.fiche.is_empty() || !md.entreprise.is_empty() {
+        if !md.origines.is_empty() {
             o.push("la date du changement sur la fiche (« a partir du » de l'ecran)".to_string());
         }
         o.join(", ou ")
@@ -269,7 +288,7 @@ correction de mois deja declares, que le logiciel ne fait pas.",
             // 41.001 au jour, 41.028 au premier du mois), pour ce que le decoupage sait calculer.
             if *j > debut_m && !md.en_cours_de_mois && !(md.decoupable && p.decoupee_le(j)) {
                 let suivant = Jour { jour: 1, ..debut_m.plus_jours(31)? };
-                let comment = if md.decoupable && md.saisie && md.fiche.is_empty() {
+                let comment = if md.decoupable && md.saisie && md.origines.is_empty() {
                     " La paie se decoupe au jour d'un avenant quand la saisie dit les termes du contrat d'avant (`avant` : \
 `salaire_mensuel` et `quotite_contrat`) ; sinon, le"
                 } else if md.decoupable {

@@ -1330,12 +1330,10 @@ fn une_rubrique_d_un_salarie_au_mois_ne_se_compose_que_par_sa_cle() {
     assert!(fautes.is_empty(), "une rubrique d'un salarie au mois se compose par sa cle (`LignePaie::du_mois`) :\n{}", fautes.join("\n"));
 }
 
-/// LES FICHES N'ONT QU'UNE FORME : chaque cle de `champs-base.json` (`entreprise`, `salarie`) est un champ de sa structure
-/// (`droit::fiche`), et chaque champ y a sa ligne ; de meme les cases d'une structure que la ligne decrit (`champs`, un
-/// chemin `taux.t1_cadre` pour une case d'un bloc) ; les valeurs d'un choix sont celles de son type (la ligne vide en
-/// plus) ; l'aide d'une case que les normes bornent dit sa longueur (`droit::fiche::texte_borne!`). La ligne `historique`
-/// (forme `histoire`) n'est pas une donnee ; une structure sans `champs` se verifie comme un champ seul. Aucune ligne ne
-/// porte d'etiquette (`si_fait`, `si_permanents`...) : la piece d'une case ne se dit que dans sa forme.
+/// LES FICHES N'ONT QU'UNE FORME : ce que la lecture de `champs-base.json` ne tient pas (elle apparie lignes et cases,
+/// `declarations::champs::ranger`) : les valeurs d'un choix sont celles de son type (la ligne vide en plus), et l'aide
+/// d'une case que les normes bornent dit sa longueur (`droit::fiche::texte_borne!`). La ligne `historique` (forme
+/// `histoire`) n'est pas une donnee.
 #[test]
 fn champs_base_et_les_fiches_ont_les_memes_cases() {
     use droit::fiche::{ChampsEntreprise, ChampsSalarie, Declaree, FormeDeCase};
@@ -1370,21 +1368,12 @@ fn champs_base_et_les_fiches_ont_les_memes_cases() {
     let mut fautes = Vec::new();
     for (nom, declarees) in [("entreprise", ChampsEntreprise::cases()), ("salarie", ChampsSalarie::cases())] {
         let lignes: Vec<&Value> = base[nom].as_array().unwrap().iter().filter(|l| l["forme"] != json!("histoire")).collect();
+        // L'appariement des lignes et des cases, et les cles d'une ligne, la lecture de la table les tient
+        // (`declarations::champs::ranger`, `deny_unknown_fields`).
         for l in &lignes {
             let cle = l["cle"].as_str().unwrap_or("");
             let ou = format!("{}.{}", nom, cle);
-            // AUCUNE ETIQUETTE : ce que la fiche montre se deduit de la piece de la case, tiree de sa forme
-            // (`droit::fiche::Piece`) ; une ligne ne pose de condition que sur ce qui est saisi (`si`, `si_entreprise`,
-            // `si_etablissements`), jamais sur un fait du calcul ni sur une piece.
-            for k in l.as_object().into_iter().flat_map(|o| o.keys()) {
-                if k == "piece" || (k.starts_with("si_") && k != "si_entreprise" && k != "si_etablissements") {
-                    fautes.push(format!("{} : `{}` est une etiquette ; la piece de la case se range dans sa forme", ou, k));
-                }
-            }
-            let Some(d) = declarees.iter().find(|d| d.cle.nom() == cle) else {
-                fautes.push(format!("{} : une ligne de champs-base.json qu'aucun champ de la fiche ne porte", ou));
-                continue;
-            };
+            let Some(d) = declarees.iter().find(|d| d.cle.nom() == cle) else { continue };
             choix(&ou, l, d, &mut fautes);
             longueur(&ou, l, d, &mut fautes);
             let Some(cases) = l["champs"].as_array().filter(|c| !c.is_empty()) else { continue };
@@ -1392,20 +1381,11 @@ fn champs_base_et_les_fiches_ont_les_memes_cases() {
             feuilles(&d.cases, "", &mut declarees_ici);
             for s in cases {
                 let sc = s["cle"].as_str().unwrap_or("");
-                match declarees_ici.iter().find(|(c, _)| c == sc) {
-                    Some((_, ds)) => {
-                        choix(&format!("{}.{}", ou, sc), s, ds, &mut fautes);
-                        longueur(&format!("{}.{}", ou, sc), s, ds, &mut fautes);
-                    }
-                    None => fautes.push(format!("{}.{} : une case de champs-base.json que la structure ne porte pas", ou, sc)),
+                if let Some((_, ds)) = declarees_ici.iter().find(|(c, _)| c == sc) {
+                    choix(&format!("{}.{}", ou, sc), s, ds, &mut fautes);
+                    longueur(&format!("{}.{}", ou, sc), s, ds, &mut fautes);
                 }
             }
-            for (c, _) in declarees_ici.iter().filter(|(c, _)| !cases.iter().any(|s| s["cle"] == json!(c))) {
-                fautes.push(format!("{}.{} : une case de la structure sans sa ligne dans champs-base.json", ou, c));
-            }
-        }
-        for d in declarees.iter().filter(|d| !lignes.iter().any(|l| l["cle"] == json!(d.cle))) {
-            fautes.push(format!("{}.{} : un champ de la fiche sans sa ligne dans champs-base.json", nom, d.cle));
         }
     }
     assert!(fautes.is_empty(), "champs-base.json et la forme des fiches (droit::fiche) se contredisent :\n{}", fautes.join("\n"));

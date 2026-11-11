@@ -308,7 +308,7 @@ fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<V
         if champ == CaseEntreprise::etablissements.into() {
             continue;
         }
-        if let Some(temps) = crate::temps::d_une_case(champ.nom(), &lue?, jour, |a, b| a == b)? {
+        if let Some(temps) = crate::temps::d_une_case(crate::temps::CaseDatee::Case(champ), &lue?, jour, |a, b| a == b)? {
             out.push(temps);
         }
     }
@@ -357,13 +357,13 @@ fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Optio
         };
         let mut temps = Vec::new();
         for (cle, datees) in cases {
-            if let Some(t) = crate::temps::d_une_case(cle.nom(), &datees, jour, |a, b| a == b)? {
+            if let Some(t) = crate::temps::d_une_case(crate::temps::CaseDatee::Case(cle), &datees, jour, |a, b| a == b)? {
                 temps.push(t);
             }
         }
         lignes.push(crate::temps::TempsDUneLigne { cle: nic, dit, cases: temps });
     }
-    Ok(crate::temps::d_une_liste("etablissements", lignes))
+    Ok(crate::temps::d_une_liste(CaseEntreprise::etablissements.into(), lignes))
 }
 
 /// La fiche telle que l'ecran la montre. Ses cases sont COMBLEES : une fiche d'avant ne porte que la forme declaree, et

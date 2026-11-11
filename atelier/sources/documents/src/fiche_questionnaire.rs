@@ -15,6 +15,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use droit::fiche::{CaseSalarie, NomDeCase};
 use socle::texte::{blanc as espace, strip};
 use socle::date::Jour;
 use socle::echec::R;
@@ -46,27 +47,27 @@ pub fn code_fiche() -> R<String> {
 
 /// Les questions que le questionnaire sait lire : (cle de la reponse, libelle, case de la fiche salarie qu'elle remplit).
 /// Ne se posent que celles dont la case sert a un acte (`posees`) : la liste de `champs-base.json` (`exige_par`, `sinon`).
-pub const QUESTIONS: [(&str, &str, &str); 15] = [
-    ("prenom", "Prénom", "prenom_affichage"),
-    ("nom", "Nom de famille (de naissance)", "nom_affichage"),
-    ("naissance", "Date de naissance (JJ/MM/AAAA)", "date_naissance"),
-    ("lieu", "Commune de naissance", "lieu_naissance_affichage"),
-    ("pays", "Pays de naissance", "pays_naissance"),
-    ("nationalite", "Nationalité", "code_nationalite_dsn"),
-    ("nir", "Numéro de sécurité sociale (15 chiffres)", "nir"),
-    ("sexe", "Sans numéro de sécurité sociale : femme ou homme ?", "sexe"),
-    ("adresse", "Adresse (numéro et rue)", "adresse_affichage"),
-    ("code_postal", "Code postal", "code_postal"),
-    ("commune", "Commune", "commune_affichage"),
-    ("conges", "Numéro Congés Spectacles", "num_conges_spectacles"),
-    ("anniversaire", "Date anniversaire de vos droits France Travail (JJ/MM/AAAA)", "anniversaire_droits"),
-    ("iban", "IBAN (le compte où verser le salaire, sur le RIB)", "banque"),
-    ("bic", "BIC (sur le même RIB)", "banque"),
+pub const QUESTIONS: [(&str, &str, CaseSalarie); 15] = [
+    ("prenom", "Prénom", CaseSalarie::prenom_affichage),
+    ("nom", "Nom de famille (de naissance)", CaseSalarie::nom_affichage),
+    ("naissance", "Date de naissance (JJ/MM/AAAA)", CaseSalarie::date_naissance),
+    ("lieu", "Commune de naissance", CaseSalarie::lieu_naissance_affichage),
+    ("pays", "Pays de naissance", CaseSalarie::pays_naissance),
+    ("nationalite", "Nationalité", CaseSalarie::code_nationalite_dsn),
+    ("nir", "Numéro de sécurité sociale (15 chiffres)", CaseSalarie::nir),
+    ("sexe", "Sans numéro de sécurité sociale : femme ou homme ?", CaseSalarie::sexe),
+    ("adresse", "Adresse (numéro et rue)", CaseSalarie::adresse_affichage),
+    ("code_postal", "Code postal", CaseSalarie::code_postal),
+    ("commune", "Commune", CaseSalarie::commune_affichage),
+    ("conges", "Numéro Congés Spectacles", CaseSalarie::num_conges_spectacles),
+    ("anniversaire", "Date anniversaire de vos droits France Travail (JJ/MM/AAAA)", CaseSalarie::anniversaire_droits),
+    ("iban", "IBAN (le compte où verser le salaire, sur le RIB)", CaseSalarie::banque),
+    ("bic", "BIC (sur le même RIB)", CaseSalarie::banque),
 ];
 
 /// Les questions posees : celles dont la case sert a un acte (`utile`, que l'appelant lit dans `champs-base.json`).
-pub fn posees(utile: &dyn Fn(&str) -> bool) -> Vec<(&'static str, &'static str)> {
-    QUESTIONS.iter().filter(|(_, _, case)| utile(case)).map(|(cle, lib, _)| (*cle, *lib)).collect()
+pub fn posees(utile: &dyn Fn(NomDeCase) -> bool) -> Vec<(&'static str, &'static str)> {
+    QUESTIONS.iter().filter(|(_, _, case)| utile((*case).into())).map(|(cle, lib, _)| (*cle, *lib)).collect()
 }
 
 pub const SUJET: &str = "Ta fiche pour {compagnie}";

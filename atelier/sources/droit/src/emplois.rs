@@ -435,7 +435,7 @@ pub fn jours_de_changement(ctx: &Contexte, cle: &str, debut: &Jour, fin: &Jour) 
     let mut out = Vec::new();
     for j in jours {
         let (avant, apres) = (brute.au(&j.plus_jours(-1)?), brute.au(&j));
-        if !avant.memes_cases(&apres, &UNE_VALEUR_PAR_MOIS.map(|c| NomDeCase::from(c).nom())) {
+        if !avant.memes_cases(&apres, &UNE_VALEUR_PAR_MOIS) {
             out.push(j);
         }
     }

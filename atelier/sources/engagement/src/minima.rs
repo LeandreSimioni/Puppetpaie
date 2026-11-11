@@ -8,7 +8,7 @@
 
 use std::collections::BTreeSet;
 
-use droit::fiche::Lue;
+use droit::fiche::{CaseSalarie, Lue, NomDeCase};
 
 use rust_decimal::RoundingStrategy;
 
@@ -489,7 +489,7 @@ impl<'a> Cx<'a> {
                         crate::qui_de(self.fiche)?,
                         a.ans
                     ),
-                    a.champ.cle(),
+                    droit::fiche::NomDeCase::from(a.champ.cle()).nom(),
                 ));
             };
             let n = ans_revolus(depuis, jour_de_paie(self.paie));
@@ -1126,7 +1126,7 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
 /// l'entreprise) ne retire rien : une case que le calcul peut demander se montre. La fiche du salarie montre ces
 /// cases-la, et seulement celles-la (`droit::fiche::Piece::Metier`, `routes::fiches::montres`) ; le calcul ne les lit
 /// qu'avec la cle de la grille trouvee (`droit::minima::ParLaGrille`).
-pub fn cases_du_metier(ctx: &Contexte, code: &str, jour: &Jour) -> R<BTreeSet<String>> {
+pub fn cases_du_metier(ctx: &Contexte, code: &str, jour: &Jour) -> R<BTreeSet<NomDeCase>> {
     let mut lues = BTreeSet::new();
     let ent = ctx.entreprise_au(jour);
     let Some(idcc) = ent.idcc.portee() else { return Ok(lues) };
@@ -1139,7 +1139,7 @@ pub fn cases_du_metier(ctx: &Contexte, code: &str, jour: &Jour) -> R<BTreeSet<St
     if idcc == "1285" && statut == "technicien" {
         let groupe = m.au_catalogue().and_then(|f| f.classification_1285.as_ref()).and_then(|c| c.groupe).map(|g| g.to_string()).filter(|g| !g.is_empty());
         if groupe.is_some_and(|g| grille.emplois_autres_qu_artistiques.as_ref().is_some_and(|e| e.groupes.contains_key(&g))) {
-            lues.insert("echelon_ccneac".to_string());
+            lues.insert(CaseSalarie::echelon_ccneac.into());
         }
     }
     if idcc == "3090" && statut == "technicien" {
@@ -1147,7 +1147,7 @@ pub fn cases_du_metier(ctx: &Contexte, code: &str, jour: &Jour) -> R<BTreeSet<St
         let communes = t.convention("3090").and_then(|c| c.clauses_communes.as_ref());
         if let (Some(c), Some(communes)) = (administratif, communes) {
             if communes.administratifs_mensuel_echelons.du_niveau(&c.niveau).is_some_and(|v| v.len() > 1) {
-                lues.insert("poste_depuis".to_string());
+                lues.insert(CaseSalarie::poste_depuis.into());
             }
         }
     }
@@ -1156,9 +1156,9 @@ pub fn cases_du_metier(ctx: &Contexte, code: &str, jour: &Jour) -> R<BTreeSet<St
         c.categories.is_none_or(|cats| cats.iter().any(|x| Some(x.as_str()) == ligne || (x.is_empty() && ligne.is_none())))
             && c.codes.is_none_or(|codes| codes.iter().any(|x| *x == m.code))
     };
-    let nommees = |c: &Conditions, lues: &mut BTreeSet<String>| {
-        lues.extend(c.anciennete.map(|a| a.champ.cle().to_string()));
-        lues.extend(c.si_salarie.into_iter().flat_map(|s| s.cases()).map(str::to_string));
+    let nommees = |c: &Conditions, lues: &mut BTreeSet<NomDeCase>| {
+        lues.extend(c.anciennete.map(|a| NomDeCase::from(a.champ.cle())));
+        lues.extend(c.si_salarie.into_iter().flat_map(|s| s.cases()).map(NomDeCase::from));
     };
     let grilles = grille.grilles.iter().flatten().chain(grille.grilles_complementaires.iter().flatten());
     for gr in grilles.filter(|gr| gr.statut.as_deref().is_none_or(|st| st == "tous" || st == statut)) {
