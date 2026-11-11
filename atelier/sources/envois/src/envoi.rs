@@ -1410,7 +1410,7 @@ fn mot_code(s: &[char]) -> String {
 /// Le texte d'un en-tete libre : les mots codes sont decodes, le blanc entre deux mots codes s'efface.
 fn decoder_libre(s: &str) -> String {
     enum Piece {
-        Blanc(String, bool),
+        Blanc(String),
         Mot(String),
         Code(String),
     }
@@ -1419,17 +1419,15 @@ fn decoder_libre(s: &str) -> String {
     while !reste.is_empty() {
         if reste.starts_with(est_blanc) {
             let fin = jusqu_a(reste, |c: char| !est_espace_unicode(c));
-            pieces.push(Piece::Blanc(reste[..fin].to_string(), false));
+            pieces.push(Piece::Blanc(reste[..fin].to_string()));
             reste = &reste[fin..];
             continue;
         }
         if reste.starts_with("=?") {
             if let Some((texte, suite)) = lire_mot_code(reste) {
                 let n = pieces.len();
-                if n > 1 && matches!(pieces[n - 1], Piece::Blanc(..)) && matches!(pieces[n - 2], Piece::Code(_)) {
-                    if let Piece::Blanc(_, efface) = &mut pieces[n - 1] {
-                        *efface = true;
-                    }
+                if n > 1 && matches!(pieces[n - 1], Piece::Blanc(_)) && matches!(pieces[n - 2], Piece::Code(_)) {
+                    pieces.pop();
                 }
                 pieces.push(Piece::Code(texte));
                 reste = suite;
@@ -1443,8 +1441,7 @@ fn decoder_libre(s: &str) -> String {
     pieces
         .iter()
         .map(|p| match p {
-            Piece::Blanc(_, true) => String::new(),
-            Piece::Blanc(t, false) | Piece::Mot(t) | Piece::Code(t) => t.clone(),
+            Piece::Blanc(t) | Piece::Mot(t) | Piece::Code(t) => t.clone(),
         })
         .collect()
 }

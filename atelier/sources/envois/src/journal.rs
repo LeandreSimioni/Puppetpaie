@@ -336,7 +336,7 @@ pub fn ne_garder_que(racine: &Path, garder: impl Fn(&Ligne) -> bool) -> R<()> {
         let garde = match (&e.ligne, &e.id, &e.a) {
             (Some(ligne), Some(id), _) => garder(ligne) && gardes.insert(id.clone()),
             (_, _, Some(a)) => gardes.contains(a),
-            (None, _, None) | (Some(_), None, None) => false,
+            (None, None, None) | (None, Some(_), None) | (Some(_), None, None) => false,
         };
         if garde {
             texte.push_str(std::str::from_utf8(l).map_err(|x| refus(x.to_string()))?);
