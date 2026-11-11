@@ -196,10 +196,9 @@ pub fn signer(message: &Message, s: &Signature) -> Message {
     };
     let tete = tete_du_texte(&m.corps);
     m.corps = format!("{}{}\n", tete, s.texte);
-    m.html = if m.html.is_empty() {
-        html_signe(&socle::html::courriel_en_html(tete.trim_end()), s)
-    } else {
-        html_signe(&m.html, s)
-    };
+    m.html = Some(match &m.html {
+        None => html_signe(&socle::html::courriel_en_html(tete.trim_end()), s),
+        Some(html) => html_signe(html, s),
+    });
     m
 }

@@ -192,7 +192,8 @@ fn vue_salarie(ctx: &Contexte, cle: &str) -> R<Saisie> {
 /// CE QU'UNE FICHE NEUVE RECOIT D'UNE DSN, a cote de son identite et de son emploi (`SalarieDeclare::fiche`).
 #[derive(Serialize)]
 struct SalarieDeLaDsn<'a> {
-    nir: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nir: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     nir_cle: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -236,11 +237,11 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
             None => None,
         },
     };
-    let femme = declarations::ntt::sexe_de(Some(decl.nir.as_str()), None) == Some("2");
+    let femme = declarations::ntt::sexe_de(decl.nir.as_deref(), None) == Some("2");
     let emploi_affichage = du_catalogue.map(|m| if femme { m.feminin() } else { m.libelle() }).filter(|l| !l.is_empty());
     let de_la_dsn = SalarieDeLaDsn {
-        nir: &decl.nir,
-        nir_cle: declarations::champs::cle_nir(&decl.nir),
+        nir: decl.nir.as_deref(),
+        nir_cle: decl.nir.as_deref().and_then(declarations::champs::cle_nir),
         initiales_contrat: Some(decl.initiales.as_str()).filter(|i| !i.is_empty()),
         date_anciennete: decl.premier_contrat,
         statut,
@@ -339,7 +340,7 @@ pub(crate) struct Apercu {
 #[derive(Clone, Debug)]
 pub(crate) struct SansNets {
     pub(crate) mois: socle::mois::Mois,
-    pub(crate) nir: String,
+    pub(crate) nir: Option<String>,
     pub(crate) contrat: String,
     pub(crate) qui: String,
     pub(crate) avec: Vec<String>,
@@ -405,7 +406,7 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<String>) -> engagement
     use engagement::importe::{Declaration, PaieVersee};
     let (c, d) = (p.contrat.as_ref(), &p.paie);
     let mut x = PaieVersee::vide(d.numero.clone(), Declaration::Dsn);
-    x.nir = Some(d.nir.clone());
+    x.nir = d.nir.clone();
     x.numero_objet = objet;
     (x.debut, x.fin, x.verse_le, x.quotite) = (c.and_then(|c| c.debut), c.and_then(|c| c.fin), d.verse_le, c.and_then(|c| c.quotite));
     (x.brut, x.bases) = (d.mesures.brut, d.bases.clone());
@@ -514,10 +515,11 @@ pub(crate) fn apercu_lu(
     let mut ordre: Vec<&SalarieDeclare> = lecture.salaries.iter().collect();
     ordre.sort_by(|a, b| a.mois.cmp(&b.mois));
     let mut salaries = Vec::new();
-    let mut cles_a_venir: HashSet<String> = HashSet::new();
+    // Les NIR des fiches a creer ; aucun pour un individu que la DSN declare sans NIR.
+    let mut cles_a_venir: HashSet<Option<String>> = HashSet::new();
     for decl in ordre {
         let libelle = libelle_de(&decl.individu);
-        if let Some(cle) = par_nir.get(&decl.nir) {
+        if let Some(cle) = decl.nir.as_ref().and_then(|n| par_nir.get(n)) {
             let fiche = vue_salarie(ctx, cle)?;
             let ec = ecarts(NomDeFiche::Salarie, &fiche, &decl.fiche()?, decl.mois)?;
             let mut entree = FicheImportee::new(NomDeFiche::Salarie, Some(cle), &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
@@ -535,7 +537,7 @@ pub(crate) fn apercu_lu(
         a_creer += 1;
     }
 
-    cles_a_venir.extend(a_venir.iter().filter(|n| !par_nir.contains_key(*n)).cloned());
+    cles_a_venir.extend(a_venir.iter().filter(|n| !par_nir.contains_key(*n)).cloned().map(Some));
 
     // 3. Les spectacles, par numero d'objet -- ceux des DSN et ceux des AEM.
     let (contrats, illisibles) = match &aem {
@@ -621,7 +623,7 @@ pub(crate) fn apercu_lu(
 
     // 4. L'historique : les contrats attestes, rattaches par NIR aux fiches -- existantes ou a creer. Lesquels sont
     // nouveaux, c'est le registre de l'import qui le dit (`import::attestes`).
-    let sans_fiche = contrats.iter().filter(|c| !par_nir.contains_key(&c.nir) && !cles_a_venir.contains(&c.nir)).count();
+    let sans_fiche = contrats.iter().filter(|c| !par_nir.contains_key(&c.nir) && !cles_a_venir.contains(&Some(c.nir.clone()))).count();
     let contrats_du = contrats.iter().map(|c| c.debut).min();
     let contrats_au = contrats.iter().map(|c| c.fin).max();
     if sans_fiche > 0 {
@@ -633,13 +635,14 @@ pub(crate) fn apercu_lu(
 
     // 5. Les paies declarees par les DSN : ce que chaque versement a porte.
     let deja_paies: HashSet<(String, String, String)> = paies_historique(ctx)?.iter().map(|p| { let (m, s, c) = p.cle(); (m.to_string(), s, c) }).collect();
-    let cle_de = |nir: &str| match par_nir.get(nir) {
+    let cle_de = |nir: &Option<String>| match nir.as_ref().and_then(|n| par_nir.get(n)) {
         Some(c) => c.clone(),
         None => A_CREER.to_string(),
     };
+    let a_une_fiche = |nir: &Option<String>| nir.as_ref().is_some_and(|n| par_nir.contains_key(n)) || cles_a_venir.contains(nir);
     let mut paies_nouvelles = 0usize;
     for (mois, nir, contrat) in lecture.paies.keys() {
-        if !par_nir.contains_key(nir) && !cles_a_venir.contains(nir) {
+        if !a_une_fiche(nir) {
             continue;
         }
         if !deja_paies.contains(&(mois.to_string(), cle_de(nir), contrat.clone())) {
@@ -657,19 +660,21 @@ pub(crate) fn apercu_lu(
     let mut paies: Vec<engagement::importe::PaieLue> = Vec::new();
     let mut sans_nets: Vec<SansNets> = Vec::new();
     for ((mois, nir, contrat), v) in &lecture.paies {
-        if !par_nir.contains_key(nir) && !cles_a_venir.contains(nir) {
+        if !a_une_fiche(nir) {
             continue;
         }
         let mois = *mois;
         let c = v.contrat.as_ref();
         let objet = c.and_then(|c| c.objet.clone()).or_else(|| {
             let (debut, fin) = (c.and_then(|c| c.debut)?, c.and_then(|c| c.fin)?);
-            objets_aem.get(&(nir.clone(), debut.iso(), fin.iso())).cloned()
+            objets_aem.get(&(nir.clone()?, debut.iso(), fin.iso())).cloned()
         });
         if v.paie.nets.is_none() {
-            let qui = match lecture.salaries.iter().find(|s| s.nir == *nir) {
-                Some(s) => libelle_de(&s.individu),
-                None => nir.clone(),
+            // Chaque paie lue est celle d'un individu de sa DSN, que `lecture.salaries` porte.
+            let qui = match (lecture.salaries.iter().find(|s| s.nir == *nir), nir) {
+                (Some(s), _) => libelle_de(&s.individu),
+                (None, Some(n)) => n.clone(),
+                (None, None) => format!("Le salarié du contrat {}", contrat),
             };
             sans_nets.push(SansNets { mois, nir: nir.clone(), contrat: contrat.clone(), qui, avec: v.paie.avec.clone() });
         }

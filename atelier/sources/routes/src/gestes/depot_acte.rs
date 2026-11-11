@@ -184,7 +184,8 @@ fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&str>, cons
     if essais.is_empty() && !vues.du_mois_acceptee {
         return Ok(None);
     }
-    let mut connus: Vec<i64> = vec![essais.len() as i64, vues.ordre];
+    let mut connus: Vec<i64> = vec![essais.len() as i64];
+    connus.extend(vues.ordre);
     for l in &essais {
         if let Some(n) = l.dsn().and_then(|e| e.detail.ordre_test).filter(|n| *n > 0) {
             connus.push(n);
@@ -218,22 +219,24 @@ fn verifier_depot_remplacement(ctx: &Contexte, le_mois: Mois, a: &DsnLue, nic: O
     // a la production (`depart::forme_a_produire`).
     let constitution = mois_de_constitution(a)?;
     let vues = envois::ordre_signalements::dernier_ordre_des_mensuelles(&ctx.racine, &envois::ordre_signalements::siren_de(ctx)?, false, constitution, le_mois)?;
-    let dernier = match dernier {
-        Some(d) => Some(d.max(vues.ordre)),
-        None if vues.du_mois_acceptee || vues.ordre > 0 => Some(vues.ordre),
-        None => None,
+    // Ce qu'elle remplace : le dernier ordre reel connu, ou une mensuelle du mois acceptee dont aucun ordre n'est vu.
+    let remplacee = match (dernier, vues.ordre) {
+        (Some(d), o) => Some(Some(o.into_iter().fold(d, i64::max))),
+        (None, Some(o)) if o > 0 || vues.du_mois_acceptee => Some(Some(o)),
+        (None, None) if vues.du_mois_acceptee => Some(None),
+        (None, Some(_)) | (None, None) => None,
     };
     // Aucune DSN reelle du mois avant elle : une premiere, rien ne se remplace.
     let en_regle = |dernier| -> R<bool> { remplacement_en_regle(&mut m, le_mois, a, mois, dernier) };
-    Ok(dernier.map(en_regle).transpose()?.is_some_and(|oui| oui))
+    Ok(remplacee.map(en_regle).transpose()?.is_some_and(|oui| oui))
 }
 
-/// L'annule-et-remplace `a` du mois `le_mois` remplace la DSN reelle d'ordre `dernier` : dans le delai, a un ordre
-/// superieur.
-fn remplacement_en_regle(m: &mut crate::etapes::Moteur, le_mois: Mois, a: &DsnLue, mois: &str, dernier: i64) -> R<bool> {
+/// L'annule-et-remplace `a` du mois `le_mois` remplace la DSN reelle d'ordre `dernier` (aucun : une mensuelle acceptee
+/// dont aucun bilan ne dit l'ordre) : dans le delai, a un ordre superieur.
+fn remplacement_en_regle(m: &mut crate::etapes::Moteur, le_mois: Mois, a: &DsnLue, mois: &str, dernier: Option<i64>) -> R<bool> {
     m.refuser_si_hors_delai(le_mois)?;
     let ordre = ordre_dit(a.ordre.as_deref())?;
-    if ordre <= dernier {
+    if let Some(dernier) = dernier.filter(|d| ordre <= *d) {
         return Err(erreur(
             Classe::OrdreTropPetit,
             format!(

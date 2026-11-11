@@ -1032,7 +1032,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: Option<&str>
         destinataire: adresse.clone(),
         sujet,
         corps: envoi::formater(fq::CORPS, &texte),
-        html: envoi::formater(fq::HTML, &html),
+        html: Some(envoi::formater(fq::HTML, &html)),
         pieces: Vec::new(),
     };
     let mut identifiants: Vec<String> = Vec::new();

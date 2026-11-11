@@ -944,21 +944,22 @@ fn ecrivain(format: &str) -> Option<Ecrivain> {
 /// Le logiciel du comptable et l'analytique que la compagnie a retenus, sous sa racine.
 const COMPTA: &str = "config/compta.json";
 
-/// `config/compta.json` : le logiciel du comptable (vide : aucun) et l'analytique, retenus une fois pour toutes. Lu par
-/// `ChoixCompta::lu` seule (les ecritures comptables, la page des exports), ecrit par `ChoixCompta::ecrire` seule
+/// `config/compta.json` : le logiciel du comptable (absent : aucun) et l'analytique, retenus une fois pour toutes. Lu
+/// par `ChoixCompta::lu` seule (les ecritures comptables, la page des exports), ecrit par `ChoixCompta::ecrire` seule
 /// (`retenir-logiciel`).
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChoixCompta {
     #[serde(rename = "quoi")]
     _quoi: String,
-    pub logiciel: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub logiciel: Option<String>,
     pub analytique: bool,
 }
 
 impl ChoixCompta {
-    /// Le choix `logiciel` (vide : aucun) et `analytique`, tel qu'il s'ecrit.
-    pub fn nouveau(logiciel: String, analytique: bool) -> ChoixCompta {
+    /// Le choix `logiciel` (aucun : aucun logiciel retenu) et `analytique`, tel qu'il s'ecrit.
+    pub fn nouveau(logiciel: Option<String>, analytique: bool) -> ChoixCompta {
         ChoixCompta { _quoi: "Le logiciel du comptable, retenu pour les écritures comptables (Exports).".to_string(), logiciel, analytique }
     }
 
@@ -966,7 +967,7 @@ impl ChoixCompta {
     pub fn lu(racine: &std::path::Path) -> R<ChoixCompta> {
         let chemin = racine.join(COMPTA);
         if !chemin.exists() {
-            return Ok(ChoixCompta::nouveau(String::new(), false));
+            return Ok(ChoixCompta::nouveau(None, false));
         }
         socle::forme::lire_fichier(&chemin, "Le logiciel du comptable retenu (config/compta.json) ne se lit pas.").map_err(|m| m.reclasser(Classe::Illisible))
     }
@@ -978,7 +979,7 @@ impl ChoixCompta {
 
     /// Le logiciel retenu, s'il en est un.
     fn retenu(&self) -> Option<String> {
-        Some(self.logiciel.clone()).filter(|l| !l.is_empty())
+        self.logiciel.clone()
     }
 }
 

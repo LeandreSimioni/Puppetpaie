@@ -66,7 +66,7 @@ pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle
         for v in &d.versements {
             // « -1 » : un CDD court sans taux personnalise (`norme-dsn/texte/bloc-S21.G00.50.txt`, S21.G00.50.008) ;
             // aucun taux n'a ete transmis. Sans la date du versement (S21.G00.50.001), le taux ne se date pas.
-            let (Some(id), Some(j), Some(cle)) = (v.identifiant_pas.as_ref().filter(|i| *i != "-1"), v.verse_le, par_nir.get(&v.nir)) else {
+            let (Some(id), Some(j), Some(cle)) = (v.identifiant_pas.as_ref().filter(|i| *i != "-1"), v.verse_le, v.nir.as_ref().and_then(|n| par_nir.get(n))) else {
                 continue;
             };
             let taux = match v.taux_pas {

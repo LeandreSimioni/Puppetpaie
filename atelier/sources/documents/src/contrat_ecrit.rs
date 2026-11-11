@@ -378,8 +378,8 @@ const CLAUSES_EXIGEES: &str = "les clauses particulières qu'un engagement dit n
 fn champs_cites(m: &fabrique_pdf::modele::Modele, annulation: &[Marqueur], partout: &[Marqueur]) -> (Vec<String>, Vec<(Marqueur, Option<Marqueur>)>) {
     let permis = |c: &Marqueur| CHAMPS.iter().any(|(k, _, _)| k == c) || partout.contains(c);
     let mut lieux: Vec<(String, &[String], &[Marqueur])> = vec![
-        ("le titre".into(), std::slice::from_ref(&m.titre), &[]),
-        ("le sous-titre".into(), std::slice::from_ref(&m.soustitre), &[]),
+        ("le titre".into(), m.titre.as_slice(), &[]),
+        ("le sous-titre".into(), m.soustitre.as_slice(), &[]),
         ("le préambule".into(), &m.preambule, &[]),
         ("la phrase d'annulation".into(), &m.annule, annulation),
         ("le bloc de modification".into(), &m.modification, &[]),

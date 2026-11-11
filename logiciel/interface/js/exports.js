@@ -277,10 +277,12 @@ function dessinerQuestions(opt) {
   if (q.has("logiciel")) {
     const retenir = async () => {
       document.getElementById("exports-resultat").innerHTML = "";
+      // « Aucun » ne nomme aucun logiciel : la charge n'en porte pas.
+      const charge = { analytique: document.getElementById("x-analytique").checked };
+      const logiciel = document.getElementById("x-logiciel").value;
+      if (logiciel) charge.logiciel = logiciel;
       try {
-        EXPORTS.compta = await api("retenir-logiciel", {
-          logiciel: document.getElementById("x-logiciel").value,
-          analytique: document.getElementById("x-analytique").checked });
+        EXPORTS.compta = await api("retenir-logiciel", charge);
       } catch (e) { dire(e.message, "erreur"); }
       montrerLogiciel();
     };

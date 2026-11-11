@@ -24,8 +24,9 @@ pub const CLES: [&str; 7] = [
 /// Un modèle lu : des textes bruts (marqueurs et `**gras**` encore en place).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Modele {
-    pub titre: String,
-    pub soustitre: String,
+    /// `TITRE:` et `SOUSTITRE:` ; aucun quand le modèle ne les écrit pas.
+    pub titre: Option<String>,
+    pub soustitre: Option<String>,
     pub preambule: Vec<String>,
     /// (titre, paragraphes), dans l'ordre du fichier.
     pub articles: Vec<(String, Vec<String>)>,
@@ -97,8 +98,8 @@ fn paragraphes(tampon: &[&str]) -> Vec<String> {
 /// `nom` est ce qu'on nomme dans les refus (le chemin du fichier).
 pub fn lire_modele(texte: &str, nom: &str) -> Result<Modele, Refus> {
     let mut m = Modele {
-        titre: String::new(),
-        soustitre: String::new(),
+        titre: None,
+        soustitre: None,
         preambule: Vec::new(),
         articles: Vec::new(),
         signatures: Vec::new(),
@@ -131,8 +132,8 @@ pub fn lire_modele(texte: &str, nom: &str) -> Result<Modele, Refus> {
             tampon.clear();
             let reste = strip(&ligne[k.len()..]);
             match k {
-                "TITRE:" => m.titre = reste.to_string(),
-                "SOUSTITRE:" => m.soustitre = reste.to_string(),
+                "TITRE:" => m.titre = Some(reste.to_string()),
+                "SOUSTITRE:" => m.soustitre = Some(reste.to_string()),
                 "ARTICLE:" => titre_art = reste.to_string(),
                 _ => {}
             }

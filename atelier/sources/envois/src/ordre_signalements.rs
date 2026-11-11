@@ -206,11 +206,26 @@ pub fn conduite_b1_208_10(declaration: &crate::retours::DeclarationIdentifiee, f
 /// lit tous les retours, sans rien montrer, y compris ceux des tests faits ailleurs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MensuellesVues {
-    /// Le plus grand ordre de mensuelle vu pour ce mois de constitution, 0 si aucun.
-    pub ordre: i64,
+    /// Le plus grand ordre de mensuelle vu pour ce mois de constitution ; aucun si aucune n'est vue.
+    pub ordre: Option<i64>,
     /// Une mensuelle du mois declare a ete ACCEPTEE dans cette base : une normale de plus y serait refusee, le depot
     /// suivant part en annule-et-remplace (cahier technique DSN, §1.4.3.2).
     pub du_mois_acceptee: bool,
+}
+
+/// Le rang de la premiere mensuelle d'un mois civil : le numero d'ordre « est remis a zero a chaque premier jour de mois
+/// civil » (cahier technique DSN 2026.1, p. 136, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt`), la premiere
+/// declaration prend le rang qui suit.
+pub const PREMIER_RANG: i64 = 1;
+
+impl MensuellesVues {
+    /// Le rang de la mensuelle suivante : celui qui suit le plus grand vu, le premier si aucune n'est vue.
+    pub fn suivant(&self) -> i64 {
+        match self.ordre {
+            Some(o) => o + 1,
+            None => PREMIER_RANG,
+        }
+    }
 }
 
 /// L'ordre d'une mensuelle « au cours du mois courant », lu sur la plate-forme. Cahier technique DSN 2026.1, p. 136
@@ -235,7 +250,7 @@ pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, con
     let aaaamm = format!("{:04}{:02}", constitution.annee(), constitution.numero());
     let cite = regex::Regex::new(r"ordre (?:accept\S* )?(\d{7,})").map_err(|e| erreur(Classe::Illisible, e.to_string()))?;
     // Avant le premier bilan lu : aucune mensuelle vue.
-    let mut vues = MensuellesVues { ordre: 0, du_mois_acceptee: false };
+    let mut vues = MensuellesVues { ordre: None, du_mois_acceptee: false };
     for (_, p) in bilans_archives(racine)? {
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         let Some(bilan) = crate::retours::bilan_si_xml(&octets)? else { continue };
@@ -251,7 +266,7 @@ pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, con
             }
             du_siren = true;
             if let Some(o) = ordre_lu(d.ordre.as_deref(), &p)?.filter(|_| du_mois_recu) {
-                vues.ordre = vues.ordre.max(o);
+                vues.ordre = vues.ordre.max(Some(o));
             }
             if du_mois_declare && d.etat.as_deref().is_some_and(|e| e.eq_ignore_ascii_case("OK")) {
                 vues.du_mois_acceptee = true;
@@ -263,7 +278,7 @@ pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, con
         for c in cite.captures_iter(&String::from_utf8_lossy(&octets)) {
             if let Some(reste) = c[1].strip_prefix(aaaamm.as_str()) {
                 if let Some(o) = ordre_lu(Some(reste), &p)? {
-                    vues.ordre = vues.ordre.max(o);
+                    vues.ordre = vues.ordre.max(Some(o));
                 }
             }
         }

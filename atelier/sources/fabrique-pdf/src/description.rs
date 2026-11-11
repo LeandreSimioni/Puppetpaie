@@ -938,6 +938,9 @@ fn lire_modele(
         modifications: &modifications,
         signature_employeur: mb.signature_employeur.as_deref(),
     };
-    let titre = if veut_titre { Some(modele::texte_brut(&m.titre, valeurs)?) } else { None };
+    let titre = match (veut_titre, &m.titre) {
+        (true, Some(t)) => Some(modele::texte_brut(t, valeurs)?),
+        (true, None) | (false, Some(_)) | (false, None) => None,
+    };
     Ok((style_contrat::blocs(&m, &c, &prefixe)?, titre))
 }

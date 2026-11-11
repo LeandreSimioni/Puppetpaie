@@ -99,7 +99,7 @@ fn dsn_deposee(ctx: &Contexte, lignes: &[crate::journal::Ligne], m: socle::mois:
 }
 
 /// Le jour du premier versement de l'individu `nir` dans la DSN `d`.
-fn paiement_de(d: &DsnLue, nir: &str) -> Option<Jour> {
+fn paiement_de(d: &DsnLue, nir: Option<&str>) -> Option<Jour> {
     d.versements_de(nir).next().and_then(|v| v.verse_le)
 }
 
@@ -113,16 +113,16 @@ fn periodes(ctx: &Contexte, lignes: &[crate::journal::Ligne], d: &DsnLue, le_moi
     // Les mois du contrat avant celui-ci.
     for m in debut.mois_civil().jusqu_a(le_mois.precedent()) {
         let Some(lue) = dsn_deposee(ctx, lignes, m)? else { continue };
-        if lue.contrats_de(&c.nir).any(|x| x.numero == c.numero) {
-            let mesures = lue.mesures(&c.nir, numero, false);
-            out.push(periode(c, numero, &mesures, debut, fin, m, paiement_de(&lue, &c.nir), out.is_empty()));
+        if lue.contrats_de(c.nir.as_deref()).any(|x| x.numero == c.numero) {
+            let mesures = lue.mesures(c.nir.as_deref(), numero, false);
+            out.push(periode(c, numero, &mesures, debut, fin, m, paiement_de(&lue, c.nir.as_deref()), out.is_empty()));
         }
     }
     // Un contrat que ce fichier ne porte que pour le rappel d'un mois deja declare (`dsn_lue::Remuneration::rappel`) n'a
     // pas de periode ce mois-ci.
-    let mesures = d.mesures(&c.nir, numero, false);
+    let mesures = d.mesures(c.nir.as_deref(), numero, false);
     if mesures.remunere || out.is_empty() {
-        out.push(periode(c, numero, &mesures, debut, fin, le_mois, paiement_de(d, &c.nir), out.is_empty()));
+        out.push(periode(c, numero, &mesures, debut, fin, le_mois, paiement_de(d, c.nir.as_deref()), out.is_empty()));
     }
     Ok(out)
 }
@@ -256,7 +256,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
     if periodes.is_empty() || periodes.len() > COLONNES {
         return Err(socle::refus!("une attestation porte de 1 a {} periodes ({} donnees)", COLONNES, periodes.len()));
     }
-    let premier_contrat = d.contrats_de(&ind.nir).find(|c| cinema_spectacle(c));
+    let premier_contrat = d.contrats_de(ind.nir.as_deref()).find(|c| cinema_spectacle(c));
     let (nom, prenoms) = (exigee(&ind.nom, "le nom d'un salarié", "S21.G00.30.002")?, exigee(&ind.prenom, "le prénom d'un salarié", "S21.G00.30.004")?);
     let mut f = Champs::default();
     let (mut p1, mut p2, mut p3): (Vec<Bloc>, Vec<Bloc>, Vec<Bloc>) = (Vec::new(), Vec::new(), Vec::new());
@@ -268,7 +268,10 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
         Some(ordre) => format!("Attestation annule et remplace éditée pour la démonstration (compagnie fictive) le {}. N° d'ordre {} — imitation : France Travail n'a rien édité", edite_le.jj_mm_aaaa(), ordre),
         None => format!("Attestation éditée pour la démonstration (compagnie fictive) le {} — imitation : France Travail n'a rien édité", edite_le.jj_mm_aaaa()),
     };
-    let qui = format!("{}, {} {}", ind.nir, nom, prenoms);
+    let qui = match &ind.nir {
+        Some(nir) => format!("{}, {} {}", nir, nom, prenoms),
+        None => format!("{} {}", nom, prenoms),
+    };
     f.imprime(1, "ENTETE_PROVENANCE", [7, 5, 588, 16], &provenance, m("6.5"), Alignement::Centre);
     f.imprime(1, "ENTETE_SALARIE", [88, 16, 571, 26], &qui, m("6.5"), Alignement::Centre);
     // Un nom de champ n'est porte qu'une fois : les pages 2 et 3 redisent l'en-tete en texte.
@@ -352,7 +355,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
     etiquette(&mut p1, 170, 652, "Commune");
     f.imprime_dite(1, "SALARIE_ADR_LOCALITE", [237, 643, 563, 655], ind.commune.as_deref(), m("8.5"), Alignement::Gauche);
     etiquette(&mut p1, 30, 667, "NIR (n° de Sécurité sociale)");
-    f.imprime(1, "SALARIE_NIR", [165, 658, 331, 670], &ind.nir, m("8.5"), Alignement::Gauche);
+    f.imprime_dite(1, "SALARIE_NIR", [165, 658, 331, 670], ind.nir.as_deref(), m("8.5"), Alignement::Gauche);
     etiquette(&mut p1, 30, 681, "Date de naissance");
     // AAAA-MM-JJ (`NaissanceDeclaree::iso`), le jour ou le mois tels que declares s'il est inconnu.
     if let Some(n) = ind.date_naissance.map(|n| n.iso()) {
@@ -401,7 +404,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
             f.imprime(2, &format!("CON_NUM_DT_DEB_{}", n), r(105, 120), deb, m("8.5"), Alignement::Centre);
             f.imprime(2, &format!("CON_NUM_DT_FIN_{}", n), r(125, 140), fin, m("8.5"), Alignement::Centre);
             f.imprime_dite(2, &format!("CON_OBJET_{}", n), r(145, 172), objet.as_deref(), pt(8), Alignement::Centre);
-            let idcc_contrat = d.contrats_de(&ind.nir).find(|c| c.numero.as_deref() == Some(numero.as_str())).and_then(|c| c.idcc.as_deref()).filter(|i| !i.is_empty());
+            let idcc_contrat = d.contrats_de(ind.nir.as_deref()).find(|c| c.numero.as_deref() == Some(numero.as_str())).and_then(|c| c.idcc.as_deref()).filter(|i| !i.is_empty());
             if let Some(idcc_contrat) = idcc_contrat.filter(|i| Some(*i) != idcc) {
                 f.imprime(2, &format!("CON_IDCC_{}", n), r(184, 206), idcc_contrat, m("8.5"), Alignement::Centre);
             }
@@ -554,7 +557,7 @@ pub fn archive(ctx: &Contexte, dsn: &[u8], mois: socle::mois::Mois, edite_le: Jo
     let idcc = ent.idcc.portee();
     let mut pdfs: Vec<(String, Vec<u8>)> = Vec::new();
     for ind in &d.individus {
-        let mut finis: Vec<&ContratDeclare> = d.contrats_de(&ind.nir).filter(|c| cinema_spectacle(c) && c.fin_declaree.is_some()).collect();
+        let mut finis: Vec<&ContratDeclare> = d.contrats_de(ind.nir.as_deref()).filter(|c| cinema_spectacle(c) && c.fin_declaree.is_some()).collect();
         finis.sort_by_key(|c| (c.debut, c.fin));
         let Some(dernier) = finis.last() else { continue };
         let motif = dernier.motif_fin.ok_or_else(|| socle::echec::cle("La DSN ne dit pas le motif de fin d'un contrat.", "S21.G00.62.002"))?;

@@ -463,7 +463,7 @@ pub fn reponse_jouee(de: &str, a: &str, sujet: &str, corps: &str, ident: &str) -
         sujet: sujet.to_string(),
         corps: corps.to_string(),
         pieces: Vec::new(),
-        html: String::new(),
+        html: None,
     };
     let t = socle::temps::secondes();
     let mut frontiere = || Ok(String::new());

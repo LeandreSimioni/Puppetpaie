@@ -91,10 +91,10 @@ fn forme_de_la_dsn(ctx: &Contexte, m: &mut Moteur, le_mois: Mois, nic: Option<&s
     // technique DSN, p. 136), toutes declarations du SIREN confondues, d'ou qu'elles soient parties (un autre poste).
     let vues = envois::ordre_signalements::dernier_ordre_des_mensuelles(&ctx.racine, &envois::ordre_signalements::siren_de(ctx)?, false, ctx.aujourdhui.mois_civil(), le_mois)?;
     let dernier = match dernier {
-        Some(d) => d.max(vues.ordre),
+        Some(d) => vues.ordre.into_iter().fold(d, i64::max),
         // Une mensuelle du mois acceptee en reel que le journal ignore : la suivante la remplace.
-        None if vues.du_mois_acceptee => vues.ordre.max(1),
-        None => return Ok((TypeDeLaDeclaration::Normale, vues.ordre + 1)),
+        None if vues.du_mois_acceptee => vues.ordre.into_iter().fold(envois::ordre_signalements::PREMIER_RANG, i64::max),
+        None => return Ok((TypeDeLaDeclaration::Normale, vues.suivant())),
     };
     m.refuser_si_hors_delai(le_mois)?;
     Ok((TypeDeLaDeclaration::AnnuleEtRemplace, dernier + 1))

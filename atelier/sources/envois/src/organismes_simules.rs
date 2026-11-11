@@ -214,10 +214,10 @@ fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<Decimal> {
     for d in dsn {
         for k in &d.contrats {
             let ind = &d.individus[k.individu];
-            let qui = match (ind.nir.is_empty(), &ind.ntt) {
-                (false, _) => ind.nir.clone(),
-                (true, Some(ntt)) => format!("NTT {}", ntt),
-                (true, None) => return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020")),
+            let qui = match (&ind.nir, &ind.ntt) {
+                (Some(nir), _) => nir.clone(),
+                (None, Some(ntt)) => format!("NTT {}", ntt),
+                (None, None) => return Err(socle::echec::cle("Un salarié de la DSN n'a ni NIR ni NTT.", "S21.G00.30.020")),
             };
             let jours = par_jour.entry(qui).or_insert_with(|| vec![Decimal::ZERO; n as usize]);
             if k.motif_recours == Some(droit::natures::MotifDeRecours::Remplacement) {
@@ -408,8 +408,7 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &str,
     }
     let mut salaries = String::new();
     let mut vus = BTreeSet::new();
-    for ind in d.individus.iter().filter(|i| !i.nir.is_empty()) {
-        let nir = ind.nir.clone();
+    for (ind, nir) in d.individus.iter().filter_map(|i| i.nir.clone().map(|n| (i, n))) {
         let Some((cle, _)) = ctx.salaries.iter().find(|(_, s)| s.nir.portee() == Some(nir.as_str())) else { continue };
         if !vus.insert(nir.clone()) {
             continue;

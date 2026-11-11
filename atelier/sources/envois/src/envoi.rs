@@ -58,9 +58,9 @@ pub struct Message {
     pub sujet: String,
     pub corps: String,
     pub pieces: Vec<PathBuf>,
-    /// La meme lettre en HTML, quand elle porte un bouton (le « Je signe » des contrats). Le texte reste la version
-    /// de reference : c'est lui que la page de relecture montre, et lui que lit une messagerie sans HTML.
-    pub html: String,
+    /// La meme lettre en HTML, quand elle porte un bouton (le « Je signe » des contrats) ; aucune sinon. Le texte reste
+    /// la version de reference : c'est lui que la page de relecture montre, et lui que lit une messagerie sans HTML.
+    pub html: Option<String>,
 }
 
 /// Le seul texte de ce depot qui s'adresse a un humain : il porte ses accents. Les champs : `{prenom}`, `{mois}`,
@@ -412,7 +412,7 @@ pub fn preparer_avec(
             sujet,
             corps,
             pieces,
-            html: String::new(),
+            html: None,
         });
     }
     Ok(messages)
@@ -809,19 +809,17 @@ fn en_mime_complet(message: &Message, expediteur: &str, nom: Option<&str>, hasar
             corps: Corps::Texte(base64_lignes(&octets, MAXLEN).into_bytes()),
         });
     }
-    let racine = if message.html.is_empty() && pieces.is_empty() {
+    let racine = if message.html.is_none() && pieces.is_empty() {
         // Texte seul : les en-tetes de contenu suivent ceux du message.
         let Noeud { entetes, corps } = texte;
         racine_entetes.extend(entetes);
         racine_entetes.push(mime_version());
         Noeud { entetes: racine_entetes, corps }
     } else {
-        let alternative = if message.html.is_empty() {
-            None
-        } else {
-            let (cte_h, charge_h) = encoder_texte(&message.html);
-            Some(vec![texte.clone(), partie_texte("html", cte_h, charge_h, true)])
-        };
+        let alternative = message.html.as_deref().map(|html| {
+            let (cte_h, charge_h) = encoder_texte(html);
+            vec![texte.clone(), partie_texte("html", cte_h, charge_h, true)]
+        });
         racine_entetes.push(mime_version());
         match (alternative, pieces.is_empty()) {
             (Some(a), true) => {

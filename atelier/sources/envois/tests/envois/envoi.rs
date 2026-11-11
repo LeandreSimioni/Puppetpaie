@@ -45,7 +45,7 @@ fn message(dest: &str) -> Message {
         sujet: format!("Sujet pour {}", dest),
         corps: "Bonjour,\n".into(),
         pieces: Vec::new(),
-        html: String::new(),
+        html: None,
     }
 }
 

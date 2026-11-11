@@ -246,9 +246,12 @@ pub fn blocs(m: &Modele, c: &Contrat, ou: &str) -> Result<Vec<BlocEtiquete>, Ref
             Ok(vec![para(modele::morceaux(texte, v, false)?, CORPS, COULEUR_TEXTE,Justifie, avant, mesure("2.6"))])
         }
     };
-    let mut blocs = vec![para(modele::morceaux(&m.titre, v, true)?, Mesure::entier(11), ROUGE, Gauche, Mesure::entier(10), Mesure::UN)];
-    if !m.soustitre.is_empty() {
-        blocs.push(para(modele::morceaux(&m.soustitre, v, false)?, mesure("6.8"), GRIS, Justifie, Z, Mesure::entier(7)));
+    let mut blocs = Vec::new();
+    if let Some(titre) = &m.titre {
+        blocs.push(para(modele::morceaux(titre, v, true)?, Mesure::entier(11), ROUGE, Gauche, Mesure::entier(10), Mesure::UN));
+    }
+    if let Some(soustitre) = m.soustitre.as_deref().filter(|s| !s.is_empty()) {
+        blocs.push(para(modele::morceaux(soustitre, v, false)?, mesure("6.8"), GRIS, Justifie, Z, Mesure::entier(7)));
     }
     if let Some((numero, date)) = c.remplace {
         let mut vr = v.clone();

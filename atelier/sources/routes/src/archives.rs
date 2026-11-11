@@ -311,12 +311,13 @@ struct LogicielPropose {
     dit: String,
 }
 
-/// Ce que la page montre du logiciel du comptable : les logiciels, celui retenu (vide : aucun), l'analytique, et ce que
-/// le plan comptable ne tiendrait pas dans son format.
+/// Ce que la page montre du logiciel du comptable : les logiciels, celui retenu (absent : aucun), l'analytique, et ce
+/// que le plan comptable ne tiendrait pas dans son format.
 #[derive(Debug, Serialize)]
 pub(crate) struct LogicielDuComptable {
     logiciels: Vec<LogicielPropose>,
-    logiciel: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    logiciel: Option<String>,
     analytique: bool,
     controle: Vec<String>,
 }
@@ -326,7 +327,7 @@ pub(crate) fn etat_logiciel(ctx: &Contexte) -> R<LogicielDuComptable> {
     let choix = ChoixCompta::lu(&ctx.racine)?;
     let livres = &tables().logiciels;
     // Le controle du plan pour le logiciel retenu ; aucun logiciel retenu, aucun plan a controler.
-    let controle: Vec<String> = livres.iter().find(|l| l.logiciel == choix.logiciel).map(|l| controler_plan(ctx, &l.format)).transpose()?.into_iter().flatten().collect();
+    let controle: Vec<String> = livres.iter().find(|l| Some(&l.logiciel) == choix.logiciel.as_ref()).map(|l| controler_plan(ctx, &l.format)).transpose()?.into_iter().flatten().collect();
     // Ce que l'ecran dit de chaque logiciel, une fois choisi.
     let logiciels = livres
         .iter()
@@ -466,11 +467,12 @@ fn retenir_logiciel(ctx: &Contexte, c: ChargeRetenirLogiciel) -> R<LogicielReten
             return Err(refus(format!("Logiciel inconnu : « {} ».", nom)));
         }
     }
-    // `ChoixCompta` ecrit « aucun logiciel » d'un nom vide.
-    let nom: String = c.logiciel.into_iter().collect();
-    ChoixCompta::nouveau(nom, c.analytique == Some(true)).ecrire(&ctx.racine)?;
+    ChoixCompta::nouveau(c.logiciel, c.analytique == Some(true)).ecrire(&ctx.racine)?;
     let compta = etat_logiciel(ctx)?;
-    let phrase = if compta.logiciel.is_empty() { "Aucun logiciel comptable retenu.".to_string() } else { format!("Logiciel comptable retenu : {}.", compta.logiciel) };
+    let phrase = match &compta.logiciel {
+        None => "Aucun logiciel comptable retenu.".to_string(),
+        Some(l) => format!("Logiciel comptable retenu : {}.", l),
+    };
     Ok(LogicielRetenu { phrase, compta })
 }
 
@@ -794,7 +796,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
             sujet: format!("Ton dossier de salarié — {}", d.periode),
             corps,
             pieces: vec![f.clone()],
-            html: String::new(),
+            html: None,
         });
     }
     let mut client = ouvrir()?;
@@ -901,7 +903,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
             sujet: r.courriel_audiens.objet.clone(),
             corps: r.courriel_audiens.corps.clone(),
             pieces: Vec::new(),
-            html: courriel_en_html(&r.courriel_audiens.corps),
+            html: Some(courriel_en_html(&r.courriel_audiens.corps)),
         },
         Message {
             cle: "casc".into(),
@@ -910,7 +912,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
             sujet: r.courriel_casc.objet.clone(),
             corps: r.courriel_casc.corps.clone(),
             pieces: vec![classeur],
-            html: String::new(),
+            html: None,
         },
     ];
     let compte = client.compte().to_string();

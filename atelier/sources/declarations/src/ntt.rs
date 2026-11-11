@@ -143,7 +143,7 @@ fn refuser_les_doublons(individus: &[crate::dsn_lue::IndividuDeclare]) -> R<()> 
             Some(n) => n,
             None => "Un individu sans nom (S21.G00.30.002)",
         };
-        let nir = Some(i.nir.as_str()).filter(|n| !n.is_empty());
+        let nir = i.nir.as_deref();
         if nir.is_none() && i.ntt.is_none() {
             return Err(socle::refus!(
                 "{} est declare sans numero d'inscription au repertoire et sans numero technique temporaire. La norme exige l'un ou l'autre (CCH-12, S21.G00.30.020) : sans cela l'individu n'est identifie par rien.",

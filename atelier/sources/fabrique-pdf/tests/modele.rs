@@ -67,8 +67,8 @@ fn vals() -> Valeurs {
 #[test]
 fn la_grammaire_decoupe_titre_corps_et_marqueurs() {
     let m = modele::lire_modele(PETIT, "petit.modele").unwrap();
-    assert_eq!(m.titre, "Contrat n° {{contrat.numero}}");
-    assert_eq!(m.soustitre, "Pour **{{salarie.nom}}**");
+    assert_eq!(m.titre.as_deref(), Some("Contrat n° {{contrat.numero}}"));
+    assert_eq!(m.soustitre.as_deref(), Some("Pour **{{salarie.nom}}**"));
     assert_eq!(m.annule, vec!["Annule le {{remplace.numero}} du {{remplace.date}}."]);
     // Les lignes se recollent par un espace, une ligne vide sépare deux paragraphes.
     assert_eq!(m.preambule, vec!["**Entre** nous, et vous.", "Deuxième paragraphe."]);
@@ -93,7 +93,7 @@ fn la_cle_modification_et_les_lignes_avant_toute_cle() {
 fn fins_de_ligne_crlf_et_commentaire_indente() {
     let t = "TITRE: T\r\n   # commentaire indenté\r\nARTICLE: A\r\nUn\r\nDeux\r\n";
     let m = modele::lire_modele(t, "m").unwrap();
-    assert_eq!(m.titre, "T");
+    assert_eq!(m.titre.as_deref(), Some("T"));
     assert_eq!(m.articles[0].1, vec!["Un Deux"]);
 }
 

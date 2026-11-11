@@ -281,7 +281,7 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
             ],
         ),
         pieces: c.signes.to_vec(),
-        html: String::new(),
+        html: None,
     };
     envoi::envoyer(&[message], c.expediteur, client, None, None)?;
     let noms_signes: Vec<String> = c.signes.iter().map(|p| socle::fichiers::nom_du(p)).collect();

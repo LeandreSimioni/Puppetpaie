@@ -1429,12 +1429,12 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // UN CONTRAT QUE LA DSN DECLARE SANS SES NETS (`routes::import::SansNets`) : son bulletin, lu ici ou deja
     // repris, les donne ; sinon l'apercu le dit, contrat par contrat.
     for s in &ap.sans_nets {
-        let ligne = ap.paies.iter().find(|x| x.mois == s.mois && x.paie.nir.as_deref() == Some(s.nir.as_str()) && x.paie.contrat == s.contrat);
+        let ligne = ap.paies.iter().find(|x| x.mois == s.mois && x.paie.nir == s.nir &&x.paie.contrat == s.contrat);
         let dates = ligne.map(|x| (x.paie.debut, x.paie.fin));
         let complete = ligne.is_some_and(|x| x.paie.bulletin.is_some())
             || historique_paies.iter().any(|h| {
                 h.mois == s.mois
-                    && h.paie.nir.as_deref() == Some(s.nir.as_str())
+                    && h.paie.nir == s.nir
                     && h.paie.bulletin.is_some()
                     && (h.paie.contrat == s.contrat || (h.paie.declare_par == Declaration::Bulletin && Some((h.paie.debut, h.paie.fin)) == dates))
             });

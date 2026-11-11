@@ -25,7 +25,8 @@ use socle::texte::{blanc, lignes_du_texte, texte_latin1};
 
 /// Ce qu'une DSN dit d'un salarie.
 pub struct SalarieDeclare {
-    pub nir: String,
+    /// Aucun pour un individu que la DSN declare sans NIR.
+    pub nir: Option<String>,
     pub individu: IndividuDeclare,
     /// L'emploi de son dernier contrat de la DSN ; rien quand la DSN ne lui declare aucun contrat.
     pub emploi: Option<EmploiDeclare>,
@@ -87,8 +88,8 @@ pub struct LectureDsn {
     /// Les etablissements declares (S21.G00.11.001), et le NIC du siege (S21.G00.06.002), d'une DSN a l'autre.
     pub etablissements: BTreeSet<String>,
     pub nics_siege: BTreeSet<String>,
-    /// Par (mois, NIR, numero du contrat).
-    pub paies: BTreeMap<(Mois, String, String), PaieDeclaree>,
+    /// Par (mois, NIR s'il est declare, numero du contrat).
+    pub paies: BTreeMap<(Mois, Option<String>, String), PaieDeclaree>,
     /// Le code risque et le taux AT/MP que les contrats declarent (S21.G00.40.040, .043), par annee : ceux de la derniere DSN
     /// de l'annee (son mois, le code, le taux ; aucun taux pour 999ZZ), quand tous ses contrats disent le meme.
     pub atmp: BTreeMap<i32, (Mois, String, Option<Decimal>)>,
@@ -202,7 +203,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
     lues.sort_by(|(ma, a), (mb, b)| (ma, a.depot, &a.fichier).cmp(&(mb, b.depot, &b.fichier)));
     out.fichiers = lues.len();
     (out.premier_mois, out.dernier_mois) = (lues.first().map(|p| p.0), lues.last().map(|d| d.0));
-    let mut index_salaries: HashMap<String, usize> = HashMap::new();
+    let mut index_salaries: HashMap<Option<String>, usize> = HashMap::new();
     let mut index_objets: HashMap<String, usize> = HashMap::new();
     for &(mois, ref info) in &lues {
         out.etablissements.extend(info.etablissements.iter().cloned());
@@ -229,9 +230,9 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
         if !info.adhesions.is_empty() {
             out.adhesions = info.adhesions.clone();
         }
-        let mut dernier_contrat: HashMap<&str, &ContratDeclare> = HashMap::new();
+        let mut dernier_contrat: HashMap<Option<&str>, &ContratDeclare> = HashMap::new();
         for c in &info.contrats {
-            dernier_contrat.insert(c.nir.as_str(), c);
+            dernier_contrat.insert(c.nir.as_deref(), c);
             if let Some(objet) = &c.objet {
                 let i = *index_objets.entry(objet.clone()).or_insert_with(|| {
                     out.objets.push(ObjetDeclare {
@@ -248,13 +249,13 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             }
         }
         for paie in info.paies() {
-            let contrat = info.contrats_de(&paie.nir).filter(|x| x.numero.as_deref() == Some(paie.numero.as_str())).last().cloned();
+            let contrat = info.contrats_de(paie.nir.as_deref()).filter(|x| x.numero.as_deref() == Some(paie.numero.as_str())).last().cloned();
             let cle = (mois, paie.nir.clone(), paie.numero.clone());
             out.paies.insert(cle, PaieDeclaree { paie, contrat, depot: info.depot, fichier: info.fichier.clone() });
         }
         for ind in &info.individus {
             let nir = ind.nir.clone();
-            let c = dernier_contrat.get(nir.as_str()).copied();
+            let c = dernier_contrat.get(&nir.as_deref()).copied();
             // Les initiales du numero de son dernier contrat (avant le premier point) ; aucune sans numero.
             let initiales: String =
                 c.and_then(|c| c.numero.as_deref()).and_then(|n| n.split('.').next()).into_iter().flat_map(str::chars).filter(|ch| ch.is_alphabetic()).take(2).collect();

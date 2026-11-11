@@ -258,7 +258,7 @@ fn message_de_signature(d: &Demande, pieces: Vec<PathBuf>) -> R<Message> {
         destinataire: d.adresse.to_string(),
         sujet: d.sujet.to_string(),
         corps: envoi::formater(CORPS_SIGNATURE, &texte),
-        html: envoi::formater(HTML_SIGNATURE, &html),
+        html: Some(envoi::formater(HTML_SIGNATURE, &html)),
         pieces,
     })
 }
