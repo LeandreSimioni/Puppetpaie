@@ -63,8 +63,9 @@ pub fn json_en_ligne<T: Serialize + ?Sized>(v: &T) -> String {
 }
 
 /// LA FORME `v` ECRITE SANS CE QUI NE CHANGE RIEN A CE QU'ELLE DIT, pour la comparer ou en tirer une empreinte : les cles
-/// triees, un nombre ecrit comme un flottant (`180` et `180.0` sont le meme taux : la page ecrit l'un, un fichier
-/// l'autre), un nombre ecrit en texte comme ce nombre.
+/// triees, un nombre lu en decimal exact et ecrit dans sa seule forme (`decimal_canonique` : `180` et `180.0` sont le
+/// meme taux, la page ecrit l'un, un fichier l'autre ; `0.1000000000000000001` n'est pas `0.1`), un nombre ecrit en
+/// texte comme ce nombre.
 pub fn canonique<T: Serialize + ?Sized>(v: &T) -> String {
     canonique_de(&en_valeur(v))
 }
@@ -99,18 +100,53 @@ fn canonique_de(v: &Value) -> String {
             format!("{{{}}}", corps.join(","))
         }
         Value::Array(a) => format!("[{}]", a.iter().map(canonique_de).collect::<Vec<_>>().join(",")),
-        Value::Number(n) => match n.as_f64() {
-            Some(f) => format!("{:?}", f),
-            None => n.to_string(),
+        // Un entier, tel qu'il est ; un nombre a virgule, le JSON ne le portant qu'en flottant (`forme::ecrire_en_flottant`),
+        // par les plus courts chiffres qui redonnent ce flottant : le decimal qui a ete ecrit.
+        Value::Number(n) => match (n.as_i64(), n.as_u64(), n.as_f64()) {
+            (Some(i), _, _) => decimal_canonique(&i.to_string()),
+            (None, Some(u), _) => decimal_canonique(&u.to_string()),
+            (None, None, Some(f)) => decimal_canonique(&format!("{:e}", f)),
+            (None, None, None) => unreachable!("un nombre JSON est un entier ou un flottant : {}", n),
         },
-        // Un nombre ecrit en texte : un signe au plus, en tete, un point au plus, et au moins un chiffre ; un tel texte se
-        // lit toujours en flottant.
-        Value::String(t) if nombre_en_texte(t) => match t.parse::<f64>() {
-            Ok(f) => format!("{:?}", f),
-            Err(e) => unreachable!("{} s'écrit en nombre et ne se lit pas : {}", t, e),
-        },
+        // Un nombre ecrit en texte : un signe au plus, en tete, un point au plus, et au moins un chiffre.
+        Value::String(t) if nombre_en_texte(t) => decimal_canonique(t),
         autre => autre.to_string(),
     }
+}
+
+/// LA SEULE FORME D'UN DECIMAL ECRIT (`-`, des chiffres, un `.`, un exposant `e` signe ou non, comme `nombre_en_texte`, un
+/// entier ou `{:e}` l'ecrivent), lu exactement, chiffre a chiffre, sans flottant ni borne : `<signe><chiffres>e<exposant>`,
+/// sans zero en tete ni en queue des chiffres (`180.0` et `1.8e2` : `18e1` ; `-0.050` : `-5e-2`) ; zero, de tout signe,
+/// s'ecrit `0`.
+fn decimal_canonique(t: &str) -> String {
+    let (moins, corps) = match t.strip_prefix('-') {
+        Some(c) => (true, c),
+        None => (false, t),
+    };
+    let (mantisse, exposant) = match corps.split_once(['e', 'E']) {
+        Some((m, e)) => (m, e),
+        None => (corps, "0"),
+    };
+    let exposant = match exposant.strip_prefix('+') {
+        Some(e) => e,
+        None => exposant,
+    };
+    let exposant: i64 = match exposant.parse() {
+        Ok(e) => e,
+        Err(e) => unreachable!("{} : un exposant ecrit en chiffres ne se lit pas ({})", t, e),
+    };
+    let (entier, fraction) = match mantisse.split_once('.') {
+        Some((a, b)) => (a, b),
+        None => (mantisse, ""),
+    };
+    let chiffres = format!("{}{}", entier, fraction);
+    let chiffres = chiffres.trim_start_matches('0');
+    let significatifs = chiffres.trim_end_matches('0');
+    if significatifs.is_empty() {
+        return "0".to_string();
+    }
+    let exposant = exposant - fraction.len() as i64 + (chiffres.len() - significatifs.len()) as i64;
+    format!("{}{}e{}", if moins { "-" } else { "" }, significatifs, exposant)
 }
 
 fn ecrire_trie(v: &Value, s: &mut String) {
