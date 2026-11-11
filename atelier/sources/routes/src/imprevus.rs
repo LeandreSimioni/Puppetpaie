@@ -2472,7 +2472,7 @@ pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R
         // celle du delai.
         let incomplet = !a_saisir.is_empty();
         let du = incomplet || obligation.du;
-        let en_retard = obligation.etat == crate::obligations::EN_RETARD;
+        let en_retard = obligation.etat == crate::obligations::EtatDObligation::EnRetard;
         let pastille = if incomplet && !en_retard { Pastille::de(socle::ecran::EtatDEcran::AFaire, "à compléter") } else { obligation.pastille.clone() };
         out.push(FinASignaler {
             salarie,

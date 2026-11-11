@@ -1296,7 +1296,7 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
 
 /// Une obligation due : a faire, ou en retard.
 fn du(o: &crate::obligations::Obligation) -> bool {
-    o.etat == crate::obligations::A_FAIRE || o.etat == crate::obligations::EN_RETARD
+    o.etat.du()
 }
 
 /// Le rappel d'une obligation : son titre, sa question, et ce que le moteur en a calcule -- la date butoir (`jour`), le
@@ -1305,8 +1305,8 @@ fn rappel_d_obligation(o: &crate::obligations::Obligation, cle: String, titre: S
     // La date butoir, quand le delai se compte ; une obligation sans date butoir ne tombe dans aucun mois.
     let butoir = o.butoir;
     let mut r = Echeance::nouveau(OBLIGATION, cle, titre, question, butoir.map(|j| j.mois_civil()));
-    r.etat = if o.etat == crate::obligations::EN_RETARD { EnRetard } else { AFaire };
-    r.etape = o.etat.to_string();
+    r.etat = if o.etat == crate::obligations::EtatDObligation::EnRetard { EnRetard } else { AFaire };
+    r.etape = o.etat.nom().to_string();
     if let Some(j) = butoir {
         r.le(&j);
     }

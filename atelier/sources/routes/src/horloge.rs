@@ -877,7 +877,7 @@ fn revalide_le(ctx: &Contexte, mois: Mois, salarie: &str, debut: Jour) -> R<Opti
 
 /// Une obligation que le moteur dit a faire (ou en retard) : sa date butoir, qu'elle soit passee ou non.
 fn a_faire(o: &crate::obligations::Obligation) -> Option<Jour> {
-    if o.etat != crate::obligations::A_FAIRE && o.etat != crate::obligations::EN_RETARD {
+    if !o.etat.du() {
         return None;
     }
     o.butoir

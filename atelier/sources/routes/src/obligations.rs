@@ -140,12 +140,40 @@ pub const ROUTES: &[Fiche] = &[
     },
 ];
 
-pub const A_FAIRE: &str = "a_faire";
-pub const EN_RETARD: &str = "en_retard";
-pub const FAIT: &str = "fait";
-pub const A_VENIR: &str = "a_venir";
-pub const INDETERMINE: &str = "indetermine";
-pub const A_LA_CHARGE_DU_SALARIE: &str = "a_la_charge_du_salarie";
+/// OU EN EST UNE OBLIGATION : due par la compagnie (a faire, en retard, un delai qui ne se compte pas encore), faite, a
+/// venir, ou a la charge du salarie.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EtatDObligation {
+    AFaire,
+    EnRetard,
+    Fait,
+    AVenir,
+    Indetermine,
+    ALaChargeDuSalarie,
+}
+
+impl EtatDObligation {
+    /// Le nom de l'etat, tel que la reponse l'ecrit.
+    pub fn nom(self) -> &'static str {
+        match self {
+            EtatDObligation::AFaire => "a_faire",
+            EtatDObligation::EnRetard => "en_retard",
+            EtatDObligation::Fait => "fait",
+            EtatDObligation::AVenir => "a_venir",
+            EtatDObligation::Indetermine => "indetermine",
+            EtatDObligation::ALaChargeDuSalarie => "a_la_charge_du_salarie",
+        }
+    }
+
+    /// Due par la compagnie : a faire, ou en retard.
+    pub fn du(self) -> bool {
+        match self {
+            EtatDObligation::AFaire | EtatDObligation::EnRetard => true,
+            EtatDObligation::Fait | EtatDObligation::AVenir | EtatDObligation::Indetermine | EtatDObligation::ALaChargeDuSalarie => false,
+        }
+    }
+}
 
 /// Minuit, en minutes depuis minuit : le debut d'un jour. L'heure de connaissance de l'accident que la compagnie ne dit
 /// pas : un choix de l'editeur, pas un texte -- pre-remplie a minuit du jour de connaissance, l'heure la plus tot, donc
@@ -562,7 +590,7 @@ pub struct Obligation {
     pub heure_du_butoir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     dans_les_temps: Option<bool>,
-    pub etat: &'static str,
+    pub etat: EtatDObligation,
     pub du: bool,
     pub pastille: Pastille,
     priorite: u8,
@@ -596,7 +624,7 @@ impl Obligation {
             butoir: None,
             heure_du_butoir: None,
             dans_les_temps: None,
-            etat: INDETERMINE,
+            etat: EtatDObligation::Indetermine,
             du: false,
             pastille: Pastille::de(socle::ecran::EtatDEcran::AFaire, ""),
             priorite: 1,
@@ -607,32 +635,32 @@ impl Obligation {
             delai_dit: None,
             connaissance: None,
         };
-        ob.poser_l_etat(INDETERMINE);
+        ob.poser_l_etat(EtatDObligation::Indetermine);
         ob
     }
 
     /// Ce que l'ecran dit d'une obligation dans l'etat `etat` : est-elle DUE par la compagnie (en retard, a faire, un
     /// delai qui ne se compte pas encore faute d'un fait), et sa pastille (`routes::pastille`).
-    fn poser_l_etat(&mut self, etat: &'static str) {
+    fn poser_l_etat(&mut self, etat: EtatDObligation) {
         use socle::ecran::EtatDEcran;
         let (du, couleur, mots) = match etat {
-            EN_RETARD => (true, EtatDEcran::EnRetard, "en retard"),
-            A_FAIRE => (true, EtatDEcran::AFaire, "à faire"),
-            INDETERMINE => (true, EtatDEcran::AFaire, "délai à préciser"),
-            FAIT => (false, EtatDEcran::Fait, "fait"),
-            A_VENIR => (false, EtatDEcran::Information, "à venir"),
-            _ => (false, EtatDEcran::Information, "à la charge du salarié"),
+            EtatDObligation::EnRetard => (true, EtatDEcran::EnRetard, "en retard"),
+            EtatDObligation::AFaire => (true, EtatDEcran::AFaire, "à faire"),
+            EtatDObligation::Indetermine => (true, EtatDEcran::AFaire, "délai à préciser"),
+            EtatDObligation::Fait => (false, EtatDEcran::Fait, "fait"),
+            EtatDObligation::AVenir => (false, EtatDEcran::Information, "à venir"),
+            EtatDObligation::ALaChargeDuSalarie => (false, EtatDEcran::Information, "à la charge du salarié"),
         };
         self.etat = etat;
         self.du = du;
         self.pastille = Pastille::de(couleur, mots);
         // Le plus presse d'abord, la ou on le montre : ce qui est en retard, puis le reste (par date butoir).
-        self.priorite = if etat == EN_RETARD { 0 } else { 1 };
+        self.priorite = if etat == EtatDObligation::EnRetard { 0 } else { 1 };
     }
 
     /// Une obligation dont le delai ne se compte pas : pourquoi.
     fn indeterminee(mut self, pourquoi: &str) -> Obligation {
-        self.poser_l_etat(INDETERMINE);
+        self.poser_l_etat(EtatDObligation::Indetermine);
         self.phrase = pourquoi.to_string();
         self
     }
@@ -657,7 +685,7 @@ impl Obligation {
                 let dans_les_temps = f.le <= butoir;
                 self.dans_les_temps = Some(dans_les_temps);
                 (
-                    FAIT,
+                    EtatDObligation::Fait,
                     format!(
                         "Fait le {} ({}){}.",
                         f.le.jj_mm_aaaa(),
@@ -666,9 +694,9 @@ impl Obligation {
                     ),
                 )
             }
-            None if depart.is_some_and(|d| d.jour > aujourdhui) => (A_VENIR, format!("À venir : {}, soit au plus tard {}.", delai, quand_butoir)),
+            None if depart.is_some_and(|d| d.jour > aujourdhui) => (EtatDObligation::AVenir, format!("À venir : {}, soit au plus tard {}.", delai, quand_butoir)),
             None if restants >= 0 => (
-                A_FAIRE,
+                EtatDObligation::AFaire,
                 format!(
                     "À faire au plus tard {}{}.",
                     quand_butoir,
@@ -678,7 +706,7 @@ impl Obligation {
                     }
                 ),
             ),
-            None => (EN_RETARD, format!("En retard de {} jour{} : c'était à faire au plus tard {}.", -restants, s(-restants), quand_butoir)),
+            None => (EtatDObligation::EnRetard, format!("En retard de {} jour{} : c'était à faire au plus tard {}.", -restants, s(-restants), quand_butoir)),
         };
         self.poser_l_etat(etat);
         self.jours_restants = if fait.is_some() { None } else { Some(restants) };
@@ -1103,7 +1131,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
                 m.delai = Some(d.dit.clone());
                 m.depart = Some(Depart { jour: debut, minute: None, quoi: "la cessation du travail".into(), presume: None }.dit());
                 m.butoir = Some(butoir);
-                m.poser_l_etat(A_LA_CHARGE_DU_SALARIE);
+                m.poser_l_etat(EtatDObligation::ALaChargeDuSalarie);
                 m.phrase = format!(
                     "La maladie professionnelle se déclare par le salarié lui-même à sa caisse, au plus tard le {} (CSS L. 461-5 et R. 461-5) : la compagnie n'a pas de déclaration d'accident à faire.",
                     lisible(&butoir)
@@ -1559,7 +1587,7 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
         .iter()
         .map(|o| {
             let libelle: String = o.libelle.chars().take(1).flat_map(char::to_lowercase).chain(o.libelle.chars().skip(1)).collect();
-            let quand = match (o.etat == A_LA_CHARGE_DU_SALARIE, o.butoir_en_clair()) {
+            let quand = match (o.etat == EtatDObligation::ALaChargeDuSalarie, o.butoir_en_clair()) {
                 (true, _) => " (par le salarié)".to_string(),
                 (false, Some(b)) => format!(" ({})", b),
                 (false, None) => String::new(),
