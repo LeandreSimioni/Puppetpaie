@@ -129,10 +129,9 @@ impl SorteDeFiche for FicheEntrepriseDatee {
     fn usage(ctx: &Contexte, avant: &ChampsEntreprise, apres: &ChampsEntreprise) -> R<Option<String>> {
         let versement = apres
             .date_de_versement_intermittents
-            .remplie()
-            .map(str::trim)
-            .filter(|neuf| Some(*neuf) != avant.date_de_versement_intermittents.remplie().map(str::trim))
-            .and_then(droit::versement::Versement::a_confirmer_pour_les_intermittents);
+            .as_ref()
+            .filter(|neuf| Some(neuf.ecrit().trim()) != avant.date_de_versement_intermittents.as_ref().map(|v| v.ecrit().trim()))
+            .and_then(|neuf| neuf.choix().a_confirmer_pour_les_intermittents());
         let atmp = match apres.taux_atmp.as_ref().filter(|_| apres.taux_atmp != avant.taux_atmp) {
             Some(t) => {
                 let recue = t.depuis.and_then(|d| ctx.entreprise_au(&d).taux_atmp);

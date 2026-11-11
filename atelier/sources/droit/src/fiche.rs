@@ -1634,7 +1634,7 @@ fiche! {
         organisation_patronale: String,
         organisation_patronale_depuis: Jour,
         emploie_des_permanents: bool,
-        date_de_versement_intermittents: String,
+        date_de_versement_intermittents: crate::versement::VersementDit,
         jours_feries_chomes: JoursFeriesChomes,
         deduction_forfaitaire_option: OptionDfs,
         premiere_embauche: Jour,
@@ -1658,7 +1658,7 @@ fiche! {
         /// non indemnisee (`natures::AuMois`).
         permanent: Permanent, CasesDesPermanents, crate::natures::AuMois {
             subrogation_ij: Subrogation,
-            date_de_versement_permanents: String,
+            date_de_versement_permanents: crate::versement::VersementDit,
             prevoyance_permanents: PrevoyancePermanents,
             plafond_temps_partiel: PlafondTempsPartiel,
             sante_permanents: SantePermanents,

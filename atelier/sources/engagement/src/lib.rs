@@ -1063,7 +1063,7 @@ pub(crate) fn engagements(
             transaction: None,
         };
         let mut eng = Engagement::nouveau(&ctx.racine, &assemble, &qui)?;
-        eng.versement = droit::versement::Versement::de_la_fiche(&ctx.entreprise_au(&eng.fin_mois()), &*eng.nat()?)?;
+        eng.versement = droit::versement::Versement::de_la_fiche(&ctx.entreprise_au(&eng.fin_mois()), &*eng.nat()?);
         // Ce que l'ancien logiciel a verse est un fait : seul ce que la compagnie va verser se juge.
         if carte.importe.is_none() {
             if let Some(phrase) = versement_refuse(ctx, &eng, &qui)? {

@@ -33,11 +33,11 @@
 //! INFERENCES, ecrites comme telles : un jour fixe que le mois n'a pas (« le 31 » en avril) est son dernier jour ; « la
 //! 1re semaine du mois suivant » va du 1er au 7.
 
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::R;
 
-use crate::fiche::Lue;
 use crate::natures::Nature;
 
 /// Les deux cases de la fiche entreprise : le jour des permanents, le jour des intermittents.
@@ -69,7 +69,7 @@ impl Versement {
             None => &t,
         };
         match t {
-            "" | "fin du mois" | "dernier jour du mois" => return Ok(Versement::FinDuMois),
+            "fin du mois" | "dernier jour du mois" => return Ok(Versement::FinDuMois),
             "fin du contrat" | "dernier jour du contrat" => return Ok(Versement::FinDuContrat),
             _ => {}
         }
@@ -87,33 +87,25 @@ impl Versement {
         }
     }
 
-    /// La case de la fiche entreprise `ent` qui dit le jour d'un contrat de nature `nat` (`cle_de`) ; absente : le dernier
-    /// jour du mois.
-    pub fn de_la_fiche(ent: &crate::fiche::ChampsEntreprise, nat: &Nature) -> R<Versement> {
+    /// La case de la fiche entreprise `ent` qui dit le jour d'un contrat de nature `nat` ; absente : le dernier jour du
+    /// mois.
+    pub fn de_la_fiche(ent: &crate::fiche::ChampsEntreprise, nat: &Nature) -> Versement {
         let dit = match nat.au_mois() {
             Some(au_mois) => &ent.permanent.ouvrir(&au_mois).date_de_versement_permanents,
             None => &ent.date_de_versement_intermittents,
         };
-        match dit.portee() {
-            Some(t) => Versement::lire(t).map_err(|_| {
-                socle::refus!(
-                    "Le jour du versement des {} que dit la configuration, « {} », ne se lit pas : écrire {} \
-                     (Configuration › Entreprise).",
-                    if nat.mensuelle() { "permanents" } else { "intermittents" },
-                    t.trim(),
-                    FORMES
-                )
-            }),
-            None => Ok(Versement::FinDuMois),
+        match dit {
+            Some(v) => v.choix(),
+            None => Versement::FinDuMois,
         }
     }
 
-    /// Ce que la configuration demande de confirmer avant d'ecrire le jour des intermittents `texte`, quand il change : un
+    /// Ce que la configuration demande de confirmer avant d'ecrire ce jour pour les intermittents, quand il change : un
     /// jour fixe dans le mois paie avant leur fin les contrats qui finissent apres lui, ce qui n'est pas l'usage (un choix
     /// de la compagnie, que rien n'interdit : `None` pour les autres formes, et le 31, qui est la fin du mois).
-    pub fn a_confirmer_pour_les_intermittents(texte: &str) -> Option<String> {
-        match Versement::lire(texte) {
-            Ok(Versement::Fixe { quantieme, mois_suivant: false }) if quantieme < 31 => Some(format!(
+    pub fn a_confirmer_pour_les_intermittents(self) -> Option<String> {
+        match self {
+            Versement::Fixe { quantieme, mois_suivant: false } if quantieme < 31 => Some(format!(
                 "Payer le {} alors que des contrats peuvent finir jusqu'au 31 n'est pas l'usage. Continuer ?",
                 if quantieme == 1 { "1er".to_string() } else { quantieme.to_string() }
             )),
@@ -134,6 +126,49 @@ impl Versement {
         }
     }
 }
+
+/// LE JOUR DU VERSEMENT QUE DIT UNE CASE DE LA FICHE ENTREPRISE (`date_de_versement_permanents`,
+/// `date_de_versement_intermittents`) : le choix (`Versement`), lu a la porte, et le texte tel que la compagnie l'a
+/// ecrit, que la fiche garde et montre. Un texte qui ne dit aucun choix se refuse a la lecture ; la case vide est nulle.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VersementDit {
+    ecrit: String,
+    choix: Versement,
+}
+
+impl VersementDit {
+    /// Le texte `texte`, ou ce qui le refuse.
+    pub fn lire(texte: &str) -> R<VersementDit> {
+        match Versement::lire(texte) {
+            Ok(choix) => Ok(VersementDit { ecrit: texte.to_string(), choix }),
+            Err(_) => Err(socle::refus!("Le jour du versement « {} » ne se lit pas : écrire {}.", texte.trim(), FORMES)),
+        }
+    }
+
+    /// Le choix qu'il dit.
+    pub fn choix(&self) -> Versement {
+        self.choix
+    }
+
+    /// Le texte tel qu'il s'ecrit.
+    pub fn ecrit(&self) -> &str {
+        &self.ecrit
+    }
+}
+
+impl Serialize for VersementDit {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.ecrit)
+    }
+}
+
+impl<'de> Deserialize<'de> for VersementDit {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        VersementDit::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
+impl crate::fiche::FormeDeCase for VersementDit {}
 
 /// Le dernier jour ou peut etre verse ce que declare la DSN du mois principal `mois` : le dernier jour du
 /// mois suivant (CCH-13 de S21.G00.50.001, `atelier/reference/norme-dsn/texte/bloc-S21.G00.50.txt`, l. 61-62).
