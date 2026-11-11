@@ -55,7 +55,7 @@ fn avec_etat<T: serde::Serialize + Clone + Send + Sync + 'static>(classe: Classe
 /// corrige, un test PERIME se refait, une absence de test se fait, par la route `deposer` sans `reel`.
 fn phrase_repetition(quoi: &str, etat: &etats::Repetition) -> String {
     let acte = if quoi == "dsn" { "la DSN" } else { "la DPAE" };
-    let quand = |l: &envois::journal::Ligne| etats::quand_lisible(&l.quand().iso());
+    let quand = |l: &envois::journal::Ligne| l.quand().dit();
     let situation = if let Some(c) = &etat.conforme {
         format!(
             "Ce contenu est parti en test le {}, et son compte rendu n'est pas encore arrivé : l'accusé d'enregistrement dit que l'envoi est reçu, pas qu'il est conforme. Relevez les retours, puis envoyez le réel.",
@@ -531,8 +531,8 @@ pub(crate) fn deposer_dpae_avec(
             Ok(EmbaucheDeclaree {
                 salarie: IdSalarie::lire(l.salarie.as_deref().ok_or_else(|| socle::refus!("{} : aucune fiche ne porte l'identité de cette embauche du fichier.", l.nom))?)?,
                 numero: l.numero.as_deref().map(NumeroContrat::lire).transpose()?,
-                debut: socle::date::Jour::lire(&l.debut)?,
-                fin: l.fin.as_deref().map(socle::date::Jour::lire).transpose()?,
+                debut: l.debut,
+                fin: l.fin,
             })
         })
         .collect::<R<_>>()?;

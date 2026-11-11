@@ -19,6 +19,7 @@ use engagement::calcul::Paie;
 use envois::etats;
 use envois::releve_retours;
 use socle::date::Jour;
+use socle::paris::InstantEcrit;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::dossier_du_code;
 use socle::mois::{Graphie, Mois};
@@ -388,11 +389,6 @@ fn refus(m: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, m)
 }
 
-/// L'heure de Paris, en `AAAA-MM-JJTHH:MM:SS`.
-fn maintenant_iso() -> String {
-    socle::paris::maintenant()
-}
-
 fn ecrire_texte(chemin: &Path, texte: &str) -> R<()> {
     if let Some(d) = chemin.parent() {
         std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(&d, &e))?;
@@ -432,8 +428,9 @@ fn fichiers_partiels(dossier: &Path, etiq: &str) -> R<Vec<PathBuf>> {
 
 /// La marque `_AAAAMMJJ-HHMM` d'un fichier partiel ecrit maintenant.
 fn marque_a_la_minute() -> String {
-    let now = maintenant_iso();
-    format!("_{}{}{}-{}{}", &now[0..4], &now[5..7], &now[8..10], &now[11..13], &now[14..16])
+    let maintenant = InstantEcrit::maintenant();
+    let (j, s) = (maintenant.jour(), maintenant.naif().seconde_du_jour());
+    format!("_{}-{:02}{:02}", j.aaaammjj(), s / 3_600, s / 60 % 60)
 }
 
 /// La marque `_AAAAMMJJ-HHMM` d'un fichier partiel, suivie de `-2`, `-3`... tant que `DPAE_<etiq><marque>.txt` existe deja.
@@ -568,8 +565,14 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
     let embauches: Vec<Embauche> = retenues.iter().map(|p| embauche_dpae(p, false)).collect();
     let mut f: Option<PathBuf> = None;
     {
-        let h = horodatage(&maintenant_iso());
-        let voulu = declarations::dpae::contenu(&embauches, &parametres_de(&h, &heure_texte, &code, &ent, &chemins))?;
+        let parametres = Parametres {
+            horodatage: socle::paris::MinuteEcrite::maintenant(),
+            heure_embauche: heure_texte.to_string(),
+            code_urssaf: Some(code.to_string()),
+            ent: Some(&ent),
+            chemins: &chemins,
+        };
+        let voulu = declarations::dpae::contenu(&embauches, &parametres)?;
         let voulu = latin1(&voulu);
         let mut pareils = Vec::new();
         let complet = sortie.join(format!("DPAE_{}.txt", etiq));
@@ -618,7 +621,7 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
         Some(f) => f,
         None => {
             let cible = sortie.join(format!("DPAE_{}{}.txt", etiq, marque));
-            ecrire_la_dpae(ctx, &retenues, &cible, &recap, heure, &maintenant_iso())?;
+            ecrire_la_dpae(ctx, &retenues, &cible, &recap, heure, InstantEcrit::maintenant())?;
             compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
             cible
         }
@@ -647,28 +650,25 @@ pub(crate) struct DpaeEcrite {
 }
 
 /// LES FICHIERS D'UNE DPAE : l'enregistrement de chaque embauche de `retenues` dans `cible` (et son `.zip`), horodate
-/// `quand` (`AAAA-MM-JJTHH:MM:SS`, a Paris), l'heure d'embauche `heure` ; et son recapitulatif en clair dans `recap`.
+/// `quand` (a Paris, a la minute), l'heure d'embauche `heure` ; et son recapitulatif en clair dans `recap`.
 /// Ce que `dpae` ecrit, et ce que `gestes::depart::piece_partie` refait d'une DPAE partie dont le fichier manque.
-pub(crate) fn ecrire_la_dpae(ctx: &Contexte, retenues: &[&Paie], cible: &Path, recap: &Path, heure: &str, quand: &str) -> R<()> {
+pub(crate) fn ecrire_la_dpae(ctx: &Contexte, retenues: &[&Paie], cible: &Path, recap: &Path, heure: &str, quand: InstantEcrit) -> R<()> {
     let ent = ctx.entreprise_et_gabarits();
     let code = code_urssaf(&ctx.entreprise)?;
     let chemins = Chemins { defaut: dossier_du_code().join("modeles").join("due_tel_gabarit.txt"), poste: ctx.gabarits() };
     let embauches: Vec<Embauche> = retenues.iter().map(|p| embauche_dpae(p, false)).collect();
-    let h = horodatage(quand);
-    declarations::dpae::ecrire(&embauches, cible, &parametres_de(&h, heure, &code, &ent, &chemins), true)?;
+    let parametres = Parametres {
+        horodatage: socle::paris::MinuteEcrite::du_naif(quand.naif()),
+        heure_embauche: heure.to_string(),
+        code_urssaf: Some(code.to_string()),
+        ent: Some(&ent),
+        chemins: &chemins,
+    };
+    declarations::dpae::ecrire(&embauches, cible, &parametres, true)?;
     let pour_recap: Vec<Embauche> = retenues.iter().map(|p| embauche_dpae(p, true)).collect();
     ecrire_texte(recap, &declarations::dpae::recapitulatif(&pour_recap, heure)?)
 }
 
-/// Les parametres d'une ecriture de DPAE.
-fn parametres_de<'a>(horodatage: &'a str, heure: &str, code: &str, ent: &'a droit::contexte::EntrepriseDuDocument, chemins: &'a Chemins) -> Parametres<'a> {
-    Parametres { horodatage, heure_embauche: heure.to_string(), code_urssaf: Some(code.to_string()), ent: Some(ent), chemins }
-}
-
-/// `AAAA-MM-JJTHH:MM:SS` -> `JJMMAAAAHHMM`.
-fn horodatage(iso: &str) -> String {
-    format!("{}{}{}{}{}", &iso[8..10], &iso[5..7], &iso[0..4], &iso[11..13], &iso[14..16])
-}
 
 #[cfg(test)]
 mod tests_dpae_partielles {
@@ -1023,7 +1023,7 @@ struct IdentiteDeFiche {
     nir: Option<String>,
     nom: Option<String>,
     prenom: Option<String>,
-    naissance: Option<String>,
+    naissance: Option<Jour>,
 }
 
 /// UNE EMBAUCHE QUE LE FICHIER DPAE DECLARE : le salarie (`?` s'il n'est pas de la configuration), son nom, son contrat
@@ -1033,9 +1033,9 @@ pub(crate) struct EmbaucheDuFichier {
     /// La fiche que l'embauche designe ; `None` : aucune fiche ne porte son identite.
     pub(crate) salarie: Option<String>,
     pub(crate) nom: String,
-    pub(crate) debut: String,
+    pub(crate) debut: Jour,
     pub(crate) numero: Option<String>,
-    pub(crate) fin: Option<String>,
+    pub(crate) fin: Option<Jour>,
     pub(crate) type_contrat: Option<String>,
     pub(crate) deja_declaree: bool,
     pastille: Pastille,
@@ -1077,7 +1077,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
             nir: f.champs.nir.remplie().map(String::from),
             nom: f.champs.nom.portee().map(|t| t.trim().to_uppercase()),
             prenom: f.champs.prenom.portee().map(|t| t.trim().to_uppercase()),
-            naissance: f.champs.date_naissance.dite().map(|j| j.jjmmaaaa()),
+            naissance: f.champs.date_naissance.dite().copied(),
         })
         .collect();
     // LE NUMERO DU CONTRAT DE CHAQUE EMBAUCHE : celui de l'engagement valide du salarie qui commence ce jour-la. C'est lui
@@ -1112,8 +1112,8 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
         let trouve: Option<&IdentiteDeFiche> = match zone(e, "nir")? {
             Some(nir) => fiches.iter().find(|f| f.nir.as_deref() == Some(nir)),
             None => {
-                let (nom, prenom, naissance) = (zone(e, "nom")?, zone(e, "prenom")?, zone(e, "date_naissance")?);
-                fiches.iter().find(|f| nom.is_some() && f.nom.as_deref() == nom && f.prenom.as_deref() == prenom && f.naissance.as_deref() == naissance)
+                let (nom, prenom, naissance) = (zone(e, "nom")?, zone(e, "prenom")?, zone(e, "date_naissance")?.map(jour_jjmmaaaa));
+                fiches.iter().find(|f| nom.is_some() && f.nom.as_deref() == nom && f.prenom.as_deref() == prenom && f.naissance.map(Some) == naissance)
             }
         };
         let debut = zone(e, "date_embauche")?
@@ -1139,9 +1139,9 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
         lignes.push(EmbaucheDuFichier {
             salarie: trouve.map(|f| f.cle.clone()),
             nom,
-            debut: debut.iso(),
+            debut,
             numero,
-            fin: zone(e, "date_fin")?.and_then(jour_jjmmaaaa).map(|j| j.iso()),
+            fin: zone(e, "date_fin")?.and_then(jour_jjmmaaaa),
             type_contrat,
             deja_declaree: deja,
             // Deja declaree, a voir (elle partirait deux fois) ; a declarer, une information.

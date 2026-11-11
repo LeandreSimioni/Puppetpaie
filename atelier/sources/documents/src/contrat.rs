@@ -72,7 +72,7 @@ struct MarqueurAPart {
 }
 
 /// Les contrats qui en annulent un autre : `{(salarie, premier jour, numero du contrat): (numero remplace, date)}`.
-pub type Remplacements = [((String, String, String), (String, String))];
+pub type Remplacements = [((String, Jour, String), (String, Jour))];
 
 /// `contrat.description` puis `fabrique.figer` : la description de ces contrats, un document par
 /// paie, son modele (`modeles`, un par paie, dans leur ordre) en texte. `remplacements` : ces contrats-la annulent et
@@ -91,10 +91,10 @@ pub fn description(ctx: &Contexte, paies: &[Paie], modeles: &[ModeleDuContrat], 
             return Err(refus("description illisible : une valeur du modele de contrat n'est pas un texte"));
         }
         let mut un = document_modele(lu, &v);
-        let (salarie, debut) = (p.salarie.id.to_string(), p.engagement.debut.iso());
+        let (salarie, debut) = (p.salarie.id.to_string(), p.engagement.debut);
         let remplace = p.engagement.numero.as_deref().and_then(|n| remplacements.iter().find(|((s, d, k), _)| *s == salarie && *d == debut && k == n));
         if let Some((_, (numero, date))) = remplace {
-            un.remplace = Some(forme::Remplace { numero: numero.clone(), date: date.clone() });
+            un.remplace = Some(forme::Remplace { numero: numero.clone(), date: date.jj_mm_aaaa() });
         }
         un.signature = signature.as_deref().map(chemin_texte);
         refuser_ce_que_le_modele_tairait(modele, &v)?;
@@ -155,8 +155,8 @@ fn refuser_ce_que_le_modele_tairait(modele: &ModeleDuContrat, valeurs: &Valeurs)
 }
 
 /// Ce que le logiciel depose dans la case de l'artiste, quatre lignes.
-pub fn mention_signature(nom: &str, quand: &str, adresse: &str, code: &str) -> String {
-    format!("Signé électroniquement le {}\npar {}\n{}\ncode de signature {}", quand, nom, adresse, code)
+pub fn mention_signature(nom: &str, quand_lisible: &str, adresse: &str, code: &str) -> String {
+    format!("Signé électroniquement le {}\npar {}\n{}\ncode de signature {}", quand_lisible, nom, adresse, code)
 }
 
 /// Le contrat de `paies` (un par page), ecrit a `chemin`. Le contrat parti se refait ainsi, depuis la version de

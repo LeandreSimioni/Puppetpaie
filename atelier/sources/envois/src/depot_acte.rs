@@ -96,7 +96,7 @@ fn envoi_du_depot<D, Rt>(d: &Depot, accepte: bool, destinataire: &str, flux: &st
 
 /// Ajoute la ligne au journal des depots et la rend.
 fn noter(ctx: &Contexte, d: &Depot, ligne: Ligne) -> R<Ligne> {
-    crate::journal::noter(&ctx.racine, ligne, Some(d.chemin), socle::paris::InstantEcrit::maintenant()).map_err(|m| m.reclasser(Classe::Disque))
+    crate::journal::noter(&ctx.racine, ligne, Some(d.chemin), crate::journal::Datation::Maintenant).map_err(|m| m.reclasser(Classe::Disque))
 }
 
 /// LA TRACE, RELATIVE A LA COMPAGNIE : une compagnie change de dossier, et un chemin absolu ne menerait nulle part.

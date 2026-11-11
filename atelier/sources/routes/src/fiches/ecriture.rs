@@ -17,7 +17,7 @@ use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::forme::NombreLu;
 
-use super::{date_proposee, ecrire, maintenant, plain, refus, DejaDeclare};
+use super::{date_proposee, ecrire, plain, refus, DejaDeclare};
 use import::proposee::A_COMPLETER;
 use compagnie::avant::sauver_avant;
 
@@ -1200,7 +1200,7 @@ pub(crate) enum ChargeEnregistrer {
 #[serde(untagged)]
 pub(crate) enum FicheEnregistree {
     Avertie { avertissement: Avertissement, phrase: String, phrases: Vec<String> },
-    Ecrite { cle: Option<String>, ecrits: Vec<&'static str>, enregistre_a: Option<String>, enregistre_dit: Option<String>, phrase: String },
+    Ecrite { cle: Option<String>, ecrits: Vec<&'static str>, enregistre_a: Option<socle::paris::InstantEcrit>, enregistre_dit: Option<String>, phrase: String },
 }
 
 impl crate::enveloppe::Dite for FicheEnregistree {
@@ -1258,8 +1258,11 @@ fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Changement>
         (true, false, false) => "Enregistré.",
     };
     // « enregistré à HH:MM » : l'heure du moteur (`temps.rs`), pas celle du navigateur (au banc, le temps est simule).
-    let enregistre_a = e.ecrit.then(maintenant);
-    let enregistre_dit = enregistre_a.as_ref().map(|a| format!("enregistré à {}", a.chars().skip(11).take(5).collect::<String>()));
+    let enregistre_a = e.ecrit.then(socle::paris::InstantEcrit::maintenant);
+    let enregistre_dit = enregistre_a.map(|a| {
+        let s = a.naif().seconde_du_jour();
+        format!("enregistré à {:02}:{:02}", s / 3_600, s / 60 % 60)
+    });
     let inscrit = if e.ecrit { F::apres_ecriture(ctx, &e.champs)? } else { Vec::new() };
     let phrase = std::iter::once(phrase.to_string()).chain(inscrit).collect::<Vec<_>>().join(" ");
     Ok(FicheEnregistree::Ecrite { cle: e.cle, ecrits: e.champs, enregistre_a, enregistre_dit, phrase })

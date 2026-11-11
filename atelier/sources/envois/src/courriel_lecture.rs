@@ -112,10 +112,10 @@ pub fn identifiant_des_entetes(entetes: &[mailparse::MailHeader]) -> Option<Stri
 /// l'implementation ce qu'elle fait d'une forme qu'elle ne decrit pas, pourvu qu'elle ne perde pas le message (§ 4,
 /// l. 1711-1718 : « It is up to the implementation to deal with messages robustly »). Un champ hors
 /// limites (31 fevrier, 24 h, 60 s, decalage de 24 h) est illisible.
-pub fn date_de(m: &ParsedMail, maintenant: &str) -> String {
+pub fn date_de(m: &ParsedMail, maintenant: socle::paris::InstantEcrit) -> socle::paris::InstantEcrit {
     match m.headers.get_first_value("Date").as_deref().and_then(date_lue) {
-        Some(local) => local.iso(),
-        None => maintenant.to_string(),
+        Some(local) => socle::paris::InstantEcrit::du_naif(local),
+        None => maintenant,
     }
 }
 

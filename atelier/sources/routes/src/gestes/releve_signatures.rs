@@ -167,7 +167,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
                 fichiers.push(paire);
             }
         }
-        let quand_lisible = etats::quand_lisible(&quand);
+        let quand_lisible = quand.dit();
         // La mention porte le nom que la fiche dit : sans lui, rien ne se contresigne.
         let mention = a.nom.as_deref().map(|n| documents::contrat::mention_signature(n, &quand_lisible, &de, &code));
         let mut signes: Vec<(String, PathBuf)> = Vec::new();

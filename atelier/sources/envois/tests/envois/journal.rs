@@ -13,8 +13,9 @@ fn envoi<D, R>(mode: Mode, detail: D) -> Envoi<D, R> {
     e
 }
 
-fn a(instant: &str) -> socle::paris::InstantEcrit {
-    socle::paris::InstantEcrit::lire(instant).unwrap()
+/// La ligne datee de `instant`, que le test dit.
+fn a(instant: &str) -> journal::Datation {
+    journal::Datation::Lue { quand: socle::paris::HeureDuJournal::lire(instant).unwrap(), origine: "le test".into() }
 }
 
 fn dsn(mode: Mode) -> Ligne {
@@ -44,7 +45,7 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
     let e = dossier_de_test("journal", "second-poste");
     std::fs::create_dir_all(e.join("journal")).unwrap();
     std::fs::copy(journal::chemin(&d), journal::chemin(&e)).unwrap();
-    let retour = RetourFiche { code: "F-1".into(), abandon: true, salarie: None, illisible: None, erreurs: None, quand: "2026-10-04T08:00:00".into(), qui: "t".into(), de: None, message: None, reponse: "".into() };
+    let retour = RetourFiche { code: "F-1".into(), abandon: true, salarie: None, illisible: None, erreurs: None, quand: socle::paris::InstantEcrit::lire("2026-10-04T08:00:00").unwrap(), qui: "t".into(), de: None, message: None, reponse: "".into() };
     for (poste, quoi) in [(&d, fiche("F-2")), (&e, dsn(Mode::Test))] {
         journal::noter(poste, quoi, None, a("2026-10-04T09:00:00")).unwrap();
         journal::rattacher(poste, |l| l.acte() == Acte::FicheDemande, Revenu::Fiche(retour.clone())).unwrap();

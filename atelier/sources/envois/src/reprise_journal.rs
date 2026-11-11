@@ -222,9 +222,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
         let mut e = Envoi::nouveau(Mode::de(reel(b)), qui, accepte(b), "net-entreprises", reponse, detail);
         e.mois = b.mois;
         e.flux = d.flux.clone();
-        e.quand = quand;
-        e.origine = format!("retours/{}", piece);
-        journal::noter(&ctx.racine, Ligne::Dsn(e), None, InstantEcrit::maintenant())?;
+        journal::noter(&ctx.racine, Ligne::Dsn(e), None, journal::Datation::Lue { quand, origine: format!("retours/{}", piece) })?;
     }
     // Les retours deja archives se rangent en face des lignes qui viennent d'apparaitre -- par le flux.
     let p = ctx.racine.join(crate::retours::RETOURS).join("journal.json");
@@ -420,10 +418,8 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
             e.mois = a.mois;
             e.flux = a.flux.clone();
             // Un certificat qui ne dit pas l'heure du depot laisse la ligne a celle de sa reprise.
-            let maintenant = InstantEcrit::maintenant();
-            e.quand = a.quand.unwrap_or(maintenant).into();
-            e.origine = format!("retours/dpae/{}", a.piece);
-            journal::noter(&ctx.racine, Ligne::Dpae(e), None, maintenant)?;
+            let quand = a.quand.unwrap_or_else(InstantEcrit::maintenant).into();
+            journal::noter(&ctx.racine, Ligne::Dpae(e), None, journal::Datation::Lue { quand, origine: format!("retours/dpae/{}", a.piece) })?;
         }
     }
     Ok(rapport)

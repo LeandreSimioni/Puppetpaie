@@ -226,7 +226,7 @@ struct Envoi {
     quoi: &'static str,
     acte: String,
     mode: &'static str,
-    quand: String,
+    quand: socle::paris::HeureDuJournal,
     fichier: Option<String>,
     flux: Option<String>,
     destinataire: Option<String>,
@@ -301,7 +301,7 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
         (Some(a), Some(n)) => format!("Avenant n° {} au contrat n° {}", a, n),
         (Some(a), None) => format!("Avenant n° {} au contrat sans numéro", a),
     };
-    let quand = etats::quand_lisible(&r.quand);
+    let quand = r.quand.dit();
     let (titre, phrase) = if !r.recu {
         (format!("{} : mention « signé » retirée", piece), format!("Mention retirée le {}.", quand))
     } else if r.par_courriel() {
@@ -315,7 +315,7 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
     };
     RetourLu {
         titre: format!("{} — {}", titre, qui_du_contrat(ctx, &r.nom, &r.salarie)),
-        quand: Some(r.quand.clone()),
+        quand: Some(r.quand.iso()),
         phrases: vec![phrase],
         pastille: Some(Pastille::de(if !r.recu { "information" } else { "fait" }, "signé")),
         piece: signe.map(|p| relatif(&ctx.racine, &p)),
@@ -733,10 +733,10 @@ fn neores_lu(crm: &Neores) -> Lecture {
     if crm.essai_reel.as_deref() == Some("01") {
         l.phrases.push("Il répond à un envoi d'essai (test).".into());
     }
-    if let Some(debut) = lu(&crm.debut.map(|j| j.iso())) {
-        l.phrases.push(match lu(&crm.fin.map(|j| j.iso())).filter(|f| *f != debut) {
-            None => format!("Période : {}.", date_lisible(debut)),
-            Some(fin) => format!("Période : du {} au {}.", date_lisible(debut), date_lisible(fin)),
+    if let Some(debut) = crm.debut {
+        l.phrases.push(match crm.fin.filter(|f| *f != debut) {
+            None => format!("Période : {}.", debut.jj_mm_aaaa()),
+            Some(fin) => format!("Période : du {} au {}.", debut.jj_mm_aaaa(), fin.jj_mm_aaaa()),
         });
     }
     let metier = morceau(" (", lu(&crm.metier), ")");
@@ -836,12 +836,12 @@ fn neores_lu(crm: &Neores) -> Lecture {
             Some(libelle) => format!("{}{}", libelle, morceau(" (", lu(&p.type_parametre), ")")),
             None => format!("Paramètre{}", morceau(" ", lu(&p.type_parametre), "")),
         };
-        let periode = match (lu(&p.effet.map(|j| j.iso())), lu(&p.fin.map(|j| j.iso()))) {
-            (Some(e), Some(f)) => format!(", du {} au {}", date_lisible(e), date_lisible(f)),
-            (Some(e), None) => format!(", à partir du {}", date_lisible(e)),
+        let periode = match (p.effet, p.fin) {
+            (Some(e), Some(f)) => format!(", du {} au {}", e.jj_mm_aaaa(), f.jj_mm_aaaa()),
+            (Some(e), None) => format!(", à partir du {}", e.jj_mm_aaaa()),
             (None, _) => String::new(),
         };
-        let calcul = morceau(" (calculé le ", lu(&p.calcule_le.map(|j| j.iso())).map(date_lisible).as_deref(), ")");
+        let calcul = morceau(" (calculé le ", p.calcule_le.map(|j| j.jour().jj_mm_aaaa()).as_deref(), ")");
         l.phrases.push(format!("{}{}{}{}{}.", majuscule(&quoi), morceau(" : ", lu(&p.valeur), ""), periode, morceau(", rubrique ", lu(&p.rubrique), ""), calcul));
     }
     if crm.parametres.iter().any(|x| lu(&x.type_parametre).is_some_and(|t| t.starts_with('A'))) {
@@ -1113,7 +1113,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
                 .iter()
                 .map(|r| RetourLu {
                     titre: if r.abandon { "Demande abandonnée" } else { "Fiche reçue" }.to_string(),
-                    quand: Some(r.quand.clone()),
+                    quand: Some(r.quand.iso()),
                     phrases: Vec::new(),
                     pastille: None,
                     piece: None,
@@ -1128,7 +1128,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
             quoi: l.acte().nom(),
             acte: acte(ctx, l),
             mode: l.mode().nom(),
-            quand: l.quand().to_string(),
+            quand: l.quand(),
             fichier: l.fichier().map(String::from),
             flux: dit(l.flux()).map(String::from),
             destinataire: dit(l.destinataire()).map(String::from),

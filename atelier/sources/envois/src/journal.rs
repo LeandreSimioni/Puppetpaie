@@ -369,8 +369,13 @@ pub fn lire(racine: &Path, quoi: Option<Acte>, mois: Option<Mois>, reel_seulemen
 }
 
 impl<D, R> Envoi<D, R> {
-    /// L'envoi que `qui` fait maintenant, dans `mode` : `noter` le date (une reprise pose l'heure de sa piece et son
-    /// `origine`), et y lit le nom et l'empreinte du fichier.
+    /// Son heure, que `noter` a posee (`Datation`).
+    pub fn quand(&self) -> HeureDuJournal {
+        self.quand
+    }
+
+    /// L'envoi que `qui` fait maintenant, dans `mode` : `noter` le date (`Datation`), et y lit le nom et l'empreinte
+    /// du fichier.
     pub fn nouveau(mode: Mode, qui: &str, accepte: bool, destinataire: &str, reponse: &str, detail: D) -> Envoi<D, R> {
         Envoi {
             quand: InstantEcrit::maintenant().into(),
@@ -392,20 +397,29 @@ impl<D, R> Envoi<D, R> {
     }
 }
 
-/// AJOUTE LA LIGNE `ligne` A LA FIN DU FICHIER ET LA REND, telle qu'elle se relira. Son heure est celle de
-/// `dater_pendant`, sinon celle qu'elle porte si son `origine` la justifie (une reprise), sinon `maintenant` : une
-/// ligne sans origine ne garde jamais l'heure qu'on lui a posee. `fichier` : le fichier parti, dont la ligne garde le
-/// nom et l'empreinte (s'il existe).
-pub fn noter(racine: &Path, mut ligne: Ligne, fichier: Option<&Path>, maintenant: InstantEcrit) -> R<Ligne> {
+/// CE QUI DATE UNE LIGNE QU'ON NOTE : rien (l'acte a lieu maintenant), ou une heure lue dans une piece avec cette
+/// piece, ensemble (une reprise : la ligne dit d'ou vient sa date).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Datation {
+    /// L'heure de l'acte, l'instant present.
+    Maintenant,
+    /// L'heure que la piece `origine` dit.
+    Lue { quand: HeureDuJournal, origine: String },
+}
+
+/// AJOUTE LA LIGNE `ligne` A LA FIN DU FICHIER ET LA REND, telle qu'elle se relira. Son heure et son origine sont
+/// celles de `dater_pendant`, sinon celles de `date` ; ce que la ligne portait avant ne compte pas. `fichier` : le
+/// fichier parti, dont la ligne garde le nom et l'empreinte (s'il existe).
+pub fn noter(racine: &Path, mut ligne: Ligne, fichier: Option<&Path>, date: Datation) -> R<Ligne> {
+    let (q, o) = match DATE.with(|d| d.borrow().clone()) {
+        Some((q, o)) => (q.into(), o),
+        None => match date {
+            Datation::Maintenant => (InstantEcrit::maintenant().into(), String::new()),
+            Datation::Lue { quand, origine } => (quand, origine),
+        },
+    };
     let (quand, origine) = commun_mut(&mut ligne);
-    match DATE.with(|d| d.borrow().clone()) {
-        Some((q, o)) => {
-            *quand = q.into();
-            *origine = o;
-        }
-        None if origine.is_empty() => *quand = maintenant.into(),
-        None => {}
-    }
+    (*quand, *origine) = (q, o);
     if let Some(f) = fichier.filter(|f| !f.as_os_str().is_empty()) {
         let nom = f
             .file_name()

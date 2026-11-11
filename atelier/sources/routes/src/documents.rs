@@ -26,7 +26,6 @@ use envois::courriel::{BoiteSimulee, Courriel};
 use envois::envoi;
 use envois::journal;
 use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
-use socle::date::jour_iso;
 use socle::echec::{erreur, Classe, Echec};
 use socle::fichiers::nom_du;
 use socle::mois::{Graphie, Mois, MoisOuJour};
@@ -197,7 +196,7 @@ struct MessageVu {
 /// Le dernier depart des documents, quand tous sont deja partis.
 #[derive(Debug, Serialize)]
 struct DejaPartis {
-    quand: String,
+    quand: socle::paris::HeureDuJournal,
     quand_dit: String,
 }
 
@@ -630,10 +629,10 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
     let deja = messages
         .iter()
         .filter_map(|x| partis.get(&x.cle))
-        .map(|p| p.quand.as_str())
+        .map(|p| p.quand)
         .max()
         .filter(|_| tous_a_jour)
-        .map(|q| DejaPartis { quand: q.to_string(), quand_dit: format!("Le {}.", socle::ecran::quand(q)) });
+        .map(|q| DejaPartis { quand: q, quand_dit: format!("Le {}.", q.dit()) });
     let messages: Vec<MessageVu> = messages
         .into_iter()
         .map(|x| {
@@ -949,11 +948,7 @@ pub(crate) fn choisir(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::P
             choix.a_jour.insert(cle.clone());
             continue;
         };
-        let envoye_le = parti
-            .quand
-            .get(..10)
-            .and_then(jour_iso)
-            .ok_or_else(|| socle::echec::a_la_cle("Le jour d'un envoi du journal ne se lit pas.", "quand", &parti.quand).reclasser(Classe::Illisible))?;
+        let envoye_le = parti.quand.jour();
         let changements = envoi::ce_qui_a_change(faits, parti.resume.as_ref(), choix.resumes.get(cle));
         let declaration = declaration.as_ref().map(|d| d(cle)).into_iter().collect();
         choix.renvois.insert(cle.clone(), envoi::Renvoi { envoye_le, changements, declaration });

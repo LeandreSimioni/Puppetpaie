@@ -28,6 +28,7 @@ use envois::simulation_courriels::BoiteQuiRepond;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::ecriture::ecrire_json;
+use socle::paris::{HeureDuJournal, InstantEcrit};
 use socle::html::{html_echapper, mailto};
 use socle::texte::{capitaliser, strip};
 
@@ -683,12 +684,12 @@ pub fn pieces_importees(ctx: &Contexte) -> std::path::PathBuf {
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct DejaDeclare {
     pub(crate) declarations: usize,
-    pub(crate) du: Option<String>,
-    pub(crate) au: Option<String>,
+    pub(crate) du: Option<socle::mois::Mois>,
+    pub(crate) au: Option<socle::mois::Mois>,
 }
 
 fn usages_declares(ctx: &Contexte, rubrique: Option<&str>, valeur: Option<&str>) -> R<DejaDeclare> {
-    let (mut n, mut mois) = (0usize, Vec::<String>::new());
+    let (mut n, mut mois) = (0usize, Vec::<socle::mois::Mois>::new());
     if let (Some(rubrique), Some(valeur)) = (rubrique, valeur) {
         for dossier in [pieces_importees(ctx), ctx.racine.join("sorties")] {
             for f in declarations::dsn_lue::fichiers(&dossier)? {
@@ -696,7 +697,7 @@ fn usages_declares(ctx: &Contexte, rubrique: Option<&str>, valeur: Option<&str>)
                 if d.declare(rubrique, &valeur) {
                     // Un signalement declare la valeur sans mois principal (S20.G00.05.005).
                     n += 1;
-                    mois.extend(d.mois.map(|m| m.to_string()));
+                    mois.extend(d.mois);
                 }
             }
         }
@@ -743,15 +744,9 @@ pub(crate) fn etat_relu(ctx: &Contexte) -> R<crate::ouverture::EtatDeLaPage> {
     crate::ouverture::etat(&neuf)
 }
 
-/// L'heure de Paris, a la seconde.
-pub(super) fn maintenant() -> String {
-    let t = socle::temps::secondes();
-    socle::paris::iso_secondes(t)
-}
-
 /// Aujourd'hui, a Paris (`date.today()`).
 pub(crate) fn aujourd_hui() -> Jour {
-    Jour::lire(&maintenant()[..10]).expect("date de Paris")
+    InstantEcrit::maintenant().jour()
 }
 
 // --------------------------------------------------------------- activer-fiche
@@ -809,7 +804,7 @@ fn oublier_demande(ctx: &Contexte, c: ChargeOublier) -> R<DemandeOubliee> {
             salarie: None,
             illisible: None,
             erreurs: None,
-            quand: maintenant(),
+            quand: InstantEcrit::maintenant(),
             qui: "interface".into(),
             de: None,
             message: None,
@@ -1065,8 +1060,8 @@ pub(crate) struct Attendue {
     pub code: String,
     pub adresse: String,
     pub prenom: String,
-    /// L'heure de la demande (ISO), celle de la ligne du journal.
-    pub quand: String,
+    /// L'heure de la demande, celle de la ligne du journal.
+    pub quand: HeureDuJournal,
     /// Les identifiants de NOS envois (le `Message-ID` gardé avec la demande) : jamais pris pour une reponse.
     pub envoyes: Vec<String>,
 }
@@ -1089,7 +1084,7 @@ pub(crate) fn fiches_attendues(ctx: &Contexte) -> R<Vec<Attendue>> {
             code: e.detail.code.clone(),
             adresse: e.detail.adresse.clone(),
             prenom: e.detail.prenom.clone(),
-            quand: e.quand.iso(),
+            quand: e.quand(),
             envoyes: e.detail.message.clone().filter(|m| !m.is_empty()).into_iter().collect(),
         });
     }
@@ -1172,7 +1167,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
                 break;
             }
         };
-        let mut retenu: Option<(String, Vec<u8>, String, String, String)> = None;
+        let mut retenu: Option<(String, Vec<u8>, String, String, InstantEcrit)> = None;
         for ident in identifiants {
             if a.envoyes.contains(&ident) {
                 continue;
@@ -1209,7 +1204,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
                 r.incidents.push(format!("Fiche {} : une reponse vient de {} et non de {} ; elle n'est pas retenue.", code, de, a.adresse));
                 continue;
             }
-            let quand = lecture::date_de(&m, &socle::paris::maintenant());
+            let quand = lecture::date_de(&m, InstantEcrit::maintenant());
             retenu = Some((ident, brut.clone(), texte, de, quand));
             break;
         }
@@ -1226,8 +1221,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
         let eml = dossier.join(format!("Fiche_{}.eml", code));
         std::fs::write(&eml, &brut).map_err(|e| socle::echec::du_disque(&eml, &e).reclasser(Classe::Disque))?;
-        let jour: Vec<&str> = quand.get(..10).into_iter().flat_map(|j| j.split('-').rev()).collect();
-        let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", jour.join("/"));
+        let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", quand.jour().jj_mm_aaaa());
         if !illisible.is_empty() {
             note.push_str(&format!(" Non lu, à compléter : {}.", illisible.join(" ; ")));
         }
@@ -1272,7 +1266,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             salarie: f.cle.as_deref().map(droit::contexte::IdSalarie::lire).transpose().map_err(|e| e.reclasser(Classe::Disque))?,
             illisible: Some(illisible.clone()),
             erreurs: Some(erreurs),
-            quand: quand.clone(),
+            quand,
             qui: qui.to_string(),
             de: Some(de.clone()),
             message: Some(ident.clone()),
@@ -1335,8 +1329,12 @@ pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i6
     // Les courriels joues, par leur `Message-ID` : la demande retrouve ainsi son bouton.
     let envoyes = envois::simulation_courriels::courriels_par_identifiant(&ctx.racine)?;
     for a in attendues {
-        // Une demande sans heure lisible n'a pas d'age : la personne fictive n'y repond pas.
-        let Some(partie) = socle::paris::Naif::lire(&a.quand) else { continue };
+        // Une demande datee d'un jour seul est partie a minuit de ce jour.
+        let partie = match a.quand {
+            HeureDuJournal::Instant(i) => Some(i.naif()),
+            HeureDuJournal::Jour(j) => socle::paris::Naif::du_jour(j, 0, 0, 0),
+        };
+        let Some(partie) = partie else { continue };
         if maintenant_naif.depuis(partie) < delai {
             continue;
         }

@@ -110,7 +110,12 @@ fn la_lecture_des_reponses_et_le_questionnaire_rendent_l_oracle() {
                 texte: propre,
                 adresse: adresse_de(&m),
                 message_id: identifiant_de(&m),
-                date: date_de(&m, "MAINTENANT"),
+                date: {
+                    // L'heure de la releve, que l'oracle ecrit `MAINTENANT`.
+                    let releve = socle::paris::InstantEcrit::lire("0001-01-01T00:00:00").unwrap();
+                    let lue = date_de(&m, releve);
+                    if lue == releve { "MAINTENANT".to_string() } else { lue.iso() }
+                },
                 defaut_tirets: cas.defaut_tirets,
                 reponses: Reponses(reponses),
                 fiche,

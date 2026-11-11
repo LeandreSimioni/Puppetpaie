@@ -108,16 +108,6 @@ pub(crate) struct Choisis {
     pub contrats: Option<Vec<Cible>>,
 }
 
-/// Une date ISO en JJ/MM/AAAA ; refus (`Illisible`) si elle ne se lit pas.
-pub(crate) fn jj(iso: &str) -> R<String> {
-    jour(iso).map(|j| j.jj_mm_aaaa())
-}
-
-/// Le jour qu'ecrit `iso` ; illisible, il se refuse.
-fn jour(iso: &str) -> R<socle::date::Jour> {
-    socle::date::Jour::lire(iso).map_err(|m| m.reclasser(Classe::Illisible))
-}
-
 /// « du 12/01/2026 au 30/06/2026 », ou « à partir du 12/01/2026 » pour un contrat sans terme.
 fn periode_de(p: &Paie) -> String {
     match p.engagement.fin {
@@ -532,28 +522,27 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     // autres partent. Les adresses se lisent avant d'ecrire le moindre PDF : un refus ne laisse rien sur le disque.
     let (par_salarie, noms_sans) = avec_et_sans_courriel(d.contrats(ctx, &paies)?)?;
 
-    let aujourdhui = ctx.aujourdhui.iso();
-    let mut remplacements: Vec<((String, String, String), (String, String))> = Vec::new();
+    let mut remplacements: Vec<((String, Jour, String), (String, Jour))> = Vec::new();
     if remplace {
         let lignes = envois::journal::lire(&ctx.racine, None, None, false)?;
         for (k, ps, _) in &par_salarie {
             for p in ps {
-                let debut = p.engagement.debut.iso();
+                let debut = p.engagement.debut;
                 // Le contrat qui part est remplace, lui (son numero) : un autre contrat du salarie n'a rien a remplacer.
                 let Some(parti) = envois::etats::contrat_parti(&lignes, k, p.engagement.numero.as_deref()) else {
-                    return Err(refus(format!("Le contrat de {} du {} n'est jamais parti : il n'a rien à remplacer, il s'envoie. Rien n'est parti.", k, jj(&debut)?)));
+                    return Err(refus(format!("Le contrat de {} du {} n'est jamais parti : il n'a rien à remplacer, il s'envoie. Rien n'est parti.", k, debut.jj_mm_aaaa())));
                 };
-                if debut <= aujourdhui {
+                if debut <= ctx.aujourdhui {
                     return Err(refus(format!(
                         "Le contrat de {} du {} a commencé : un contrat en cours d'exécution ne s'annule pas, il se modifie par un avenant. Rien n'est parti.",
                         k,
-                        jj(&debut)?
+                        debut.jj_mm_aaaa()
                     )));
                 }
                 let numero = numero_dit(parti.numero.as_ref().map(|n| n.to_string()).as_deref());
                 // Le contrat qui remplace se reconnait a son numero : sans numero, rien ne le designe.
                 if let Some(propre) = p.engagement.numero.as_deref() {
-                    remplacements.push(((k.clone(), debut, propre.to_string()), (numero, jj(&parti.date())?)));
+                    remplacements.push(((k.clone(), debut, propre.to_string()), (numero, parti.date())));
                 }
             }
         }
@@ -644,7 +633,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
         )?;
         messages.push(message);
         for (((p, t), fige), rappel) in ps.iter().zip(&titres).zip(figes).zip(&rappels) {
-            let debut = p.engagement.debut.iso();
+            let debut = p.engagement.debut;
             let mut c = entree_du_contrat(ctx, p, cle, &pdf, t, s_mois, &ent, fige)?;
             // Ce qu'il faut pour reconnaitre la reponse : le code, et l'adresse dont elle doit venir.
             c.code = Some(code.clone());
@@ -653,7 +642,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
             c.empreinte = Some(empreinte.clone());
             if remplace {
                 c.acte = Some("remplace".into());
-                c.remplace = p.engagement.numero.as_deref().and_then(|propre| remplacements.iter().find(|(k, _)| *k == (cle.clone(), debut.clone(), propre.to_string())).map(|(_, (n, _))| n.clone()));
+                c.remplace = p.engagement.numero.as_deref().and_then(|propre| remplacements.iter().find(|(k, _)| *k == (cle.clone(), debut, propre.to_string())).map(|(_, (n, _))| n.clone()));
             }
             contrats.push(c);
         }
@@ -795,7 +784,7 @@ pub(crate) fn verifier_demande(ctx: &Contexte, d: &DemandeDeSignature) -> R<Dema
 /// « Déjà parti, imprimé le 05/11/2026. » : ce que l'envoi par courriel d'un contrat deja parti dit, sans le refuser.
 fn deja_parti_dit(etats: &[crate::contrats::ContratASigner], salarie: &str, numero: Option<&str>) -> Option<String> {
     let c = etats.iter().rev().find(|c| c.salarie == salarie && c.numero.as_deref() == numero)?;
-    let quand = socle::ecran::quand(c.demande_le.as_deref()?.get(..10)?);
+    let quand = c.demande_le?.jour().jj_mm_aaaa();
     let comment = if c.par == Some("imprime") { "imprimé" } else { "envoyé" };
     Some(format!("Contrat n° {} de {} : déjà parti, {} le {}.", numero_dit(numero), c.nom, comment, quand))
 }
@@ -832,12 +821,12 @@ fn verifier_rappel(c: Option<&crate::contrats::ContratASigner>, numero: Option<&
 /// LE DOSSIER DU CONTRAT SIGNE HORS DU LOGICIEL (`engagement::signe_ailleurs`) du salarie `cle` commence le `debut` : la
 /// compagnie y depose, si elle le veut, le PDF de ce contrat ; il est garde avec elle (la sauvegarde l'emporte) et part
 /// joint a chaque avenant envoye a la signature, pour que le salarie l'ait sous les yeux. Le logiciel ne le lit pas.
-pub(crate) fn dossier_du_contrat_signe(racine: &std::path::Path, cle: &str, debut: &str) -> PathBuf {
-    racine.join("salaries").join(cle).join(format!("contrat-du-{}", debut))
+pub(crate) fn dossier_du_contrat_signe(racine: &std::path::Path, cle: &str, debut: Jour) -> PathBuf {
+    racine.join("salaries").join(cle).join(format!("contrat-du-{}", debut.iso()))
 }
 
 /// Les PDF deposes dans ce dossier, par ordre de nom.
-pub(crate) fn contrat_signe_depose(racine: &std::path::Path, cle: &str, debut: &str) -> Vec<PathBuf> {
+pub(crate) fn contrat_signe_depose(racine: &std::path::Path, cle: &str, debut: Jour) -> Vec<PathBuf> {
     let mut pdf: Vec<PathBuf> = std::fs::read_dir(dossier_du_contrat_signe(racine, cle, debut))
         .into_iter()
         .flatten()
@@ -859,7 +848,7 @@ pub(crate) struct ContratSigneDit {
 }
 
 /// Ce dossier, dit (`ContratSigneDit`).
-pub(crate) fn contrat_signe_dit(ctx: &Contexte, cle: &str, debut: &str) -> ContratSigneDit {
+pub(crate) fn contrat_signe_dit(ctx: &Contexte, cle: &str, debut: Jour) -> ContratSigneDit {
     let deposes: Vec<String> = contrat_signe_depose(&ctx.racine, cle, debut).iter().map(|p| nom_du(p)).collect();
     let qui = ctx.nomme(cle);
     let phrase = if deposes.is_empty() {
@@ -880,9 +869,9 @@ pub struct UnAvenant {
     pub mois: Mois,
     pub contrat: Option<NumeroContrat>,
     pub numero: i64,
-    /// Le jour du contrat qu'il modifie, AAAA-MM-JJ (sans objet pour un avenant repris : la piece est deja ecrite).
-    pub date_contrat: String,
-    pub effet: String,
+    /// Le jour du contrat qu'il modifie ; aucun pour un avenant repris (la piece est deja ecrite).
+    pub date_contrat: Option<Jour>,
+    pub effet: Jour,
     pub modifications: Vec<ArticleModifie>,
     /// Le courriel du salarie, s'il est dit : sans lui, l'avenant ne part pas par courriel.
     pub destinataire: Option<String>,
@@ -903,7 +892,7 @@ pub struct Repris {
 #[derive(Debug, Clone)]
 pub enum DejaParti {
     ParCourriel,
-    Imprime { le: String },
+    Imprime { le: socle::paris::HeureDuJournal },
 }
 
 impl UnAvenant {
@@ -915,8 +904,7 @@ impl UnAvenant {
     /// « Avenant n° 1 de Nom : déjà parti, imprimé le 05/11/2026. », quand il n'est parti qu'imprimé.
     pub(crate) fn deja_parti(&self, nom: &str) -> Option<String> {
         let Some(Repris { deja: DejaParti::Imprime { le }, .. }) = &self.repris else { return None };
-        let quand = socle::ecran::quand(le.get(..10)?);
-        Some(format!("Avenant n° {} de {} : déjà parti, imprimé le {}.", self.numero, nom, quand))
+        Some(format!("Avenant n° {} de {} : déjà parti, imprimé le {}.", self.numero, nom, le.jour().jj_mm_aaaa()))
     }
 
     /// Le numero du contrat qu'il modifie, ou « (sans numéro) ».
@@ -1012,7 +1000,7 @@ fn avenant_ecrit(
                 let parti = envois::etats::contrat_parti(&j.lignes, salarie, a.contrat.as_deref());
                 crate::modeles_contrat::du_contrat_parti(ctx, parti.as_ref().and_then(|x| x.modele.as_deref()), p)?
             };
-            documents::contrat::ecrire_avenant(ctx, p, &ent, &f, &pour_la_piece(&a.modifications), a.numero, jour(&a.date_contrat)?, jour(&a.effet)?, ctx.aujourdhui, &modele, ailleurs)?;
+            documents::contrat::ecrire_avenant(ctx, p, &ent, &f, &pour_la_piece(&a.modifications), a.numero, a.date_contrat.ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un avenant neuf ne dit pas la date du contrat qu'il modifie."))?, a.effet, ctx.aujourdhui, &modele, ailleurs)?;
             f
         }
     };
@@ -1027,7 +1015,7 @@ fn avenant_ecrit(
         acte: Some("avenant".into()),
         avenant: Some(a.numero),
         remplace: None,
-        effet: Some(a.effet.clone()),
+        effet: Some(a.effet),
         modifie: Some(a.modifications.iter().map(|m| m.article.clone()).collect()),
         modifications: Some(a.modifications.clone()),
         clauses: Some(clauses_du_contrat(ctx, p, &ent)?),
@@ -1098,7 +1086,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(String, Vec<UnAve
         let mut joints: Vec<PathBuf> = Vec::new();
         for (a, c) in aa.iter().zip(&lignes_contrats) {
             if c.ailleurs {
-                joints.extend(contrat_signe_depose(&ctx.racine, salarie, &a.debut.iso()));
+                joints.extend(contrat_signe_depose(&ctx.racine, salarie, a.debut));
             }
         }
         let contrat_dit = |a: &UnAvenant, n: &ContratNomme| -> String {

@@ -32,6 +32,7 @@ use envois::courriel::Courriel;
 use envois::drive::Drive;
 use envois::etats;
 use socle::echec::R;
+use socle::paris::{InstantEcrit, MinuteDite};
 use envois::releve_retours::{Client, Releve};
 use envois::releve_signatures::ReleveDite;
 use crate::gestes::releve_signatures::{self, ReleveSignatures};
@@ -188,10 +189,9 @@ pub struct Clients<'a> {
 // ------------------------------------------------------------------ ce que l'ouverture rend
 
 /// `Ouverture` : le compte rendu d'un passage.
-#[derive(Default)]
 pub struct Ouverture {
-    /// `JJ/MM/AAAA HH:MM`, l'heure de Paris.
-    pub quand: String,
+    /// L'heure de Paris du passage.
+    pub quand: MinuteDite,
     pub sauvegarde: Option<Sauvegarde>,
     /// Les retours DSN (dans une compagnie fictive : un releve vide qui ne porte que `rattaches`).
     pub releve: Option<Releve>,
@@ -218,6 +218,27 @@ pub struct Ouverture {
 }
 
 impl Ouverture {
+    /// Le compte rendu d'un passage qui commence maintenant, rien encore de fait.
+    fn commence() -> Ouverture {
+        Ouverture {
+            quand: MinuteDite::maintenant(),
+            sauvegarde: None,
+            releve: None,
+            releve_dpae: None,
+            signatures: None,
+            fiches: None,
+            incidents: Vec::new(),
+            manquants: Vec::new(),
+            a_poser: Vec::new(),
+            phrases_coffre: Vec::new(),
+            horloge: Vec::new(),
+            secondes: 0.0,
+            hors_ligne: false,
+            injoignables: Vec::new(),
+            retenue: false,
+        }
+    }
+
     /// `Ouverture.tout_va_bien`.
     pub(crate) fn tout_va_bien(&self) -> bool {
         self.incidents.is_empty() && self.manquants.is_empty()
@@ -310,7 +331,7 @@ impl Ouverture {
 #[derive(Debug, Serialize)]
 pub struct OuvertureDite {
     pub phrase: String,
-    pub quand: String,
+    pub quand: MinuteDite,
     pub secondes: f64,
     pub sauvegarde: Option<SauvegardeDite>,
     pub retours: Option<RetoursDits>,
@@ -428,11 +449,11 @@ fn chemin_etape(racine: &Path) -> std::path::PathBuf {
 #[serde(deny_unknown_fields)]
 struct Etape {
     etape: String,
-    depuis: String,
+    depuis: MinuteDite,
 }
 
 fn dire_l_etape(ctx: &Contexte, etape: &str) {
-    let _ = socle::ecriture::ecrire_json(&chemin_etape(&ctx.racine), &Etape { etape: etape.to_string(), depuis: quand_maintenant() }, 1);
+    let _ = socle::ecriture::ecrire_json(&chemin_etape(&ctx.racine), &Etape { etape: etape.to_string(), depuis: MinuteDite::maintenant() }, 1);
 }
 
 fn finir_les_etapes(ctx: &Contexte) {
@@ -461,7 +482,7 @@ fn chemin_trace(ctx: &Contexte) -> std::path::PathBuf {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Trace {
-    pub quand: String,
+    pub quand: MinuteDite,
     pub secondes: f64,
     /// La ligne de la sauvegarde, quand elle a eu lieu.
     pub sauvegarde: Option<String>,
@@ -488,7 +509,7 @@ pub struct Trace {
 #[serde(deny_unknown_fields)]
 pub struct SignatureNotee {
     pub nom: String,
-    pub quand: String,
+    pub quand: InstantEcrit,
     pub renvoye: bool,
     pub phrase: String,
 }
@@ -540,7 +561,7 @@ fn noter_ouverture(ctx: &Contexte, r: &mut Ouverture) {
     });
     let sauvegarde_souci = souci_de_la_sauvegarde(ctx, r);
     let trace = Trace {
-        quand: r.quand.clone(),
+        quand: r.quand,
         secondes: r.secondes,
         sauvegarde: r.sauvegarde.as_ref().map(Sauvegarde::resume),
         sauvegarde_souci,
@@ -554,7 +575,7 @@ fn noter_ouverture(ctx: &Contexte, r: &mut Ouverture) {
             .signatures
             .iter()
             .flat_map(|s| &s.recues)
-            .map(|x| SignatureNotee { nom: x.nom.clone(), quand: x.quand.clone(), renvoye: x.renvoye, phrase: format!("contrat signé par {}", x.nom) })
+            .map(|x| SignatureNotee { nom: x.nom.clone(), quand: x.quand, renvoye: x.renvoye, phrase: format!("contrat signé par {}", x.nom) })
             .collect(),
         incidents: r.incidents.clone(),
         // Les phrases du coffre ne repartent pas : `a_poser` les dit.
@@ -617,24 +638,9 @@ fn est_copie(racine: &Path) -> bool {
     racine.join(MARQUEUR_COPIE).is_file()
 }
 
-/// L'heure de Paris, `JJ/MM/AAAA HH:MM`.
-fn quand_maintenant() -> String {
-    let iso = socle::paris::maintenant_naif().iso();
-    format!("{}/{}/{} {}:{}", &iso[8..10], &iso[5..7], &iso[0..4], &iso[11..13], &iso[14..16])
-}
-
-/// `pas_avant` : l'age, en secondes, de la derniere ouverture, d'apres le `quand` de sa trace (`JJ/MM/AAAA HH:MM`, ce
-/// que `quand_maintenant` ecrit). Un `quand` qui ne se lit pas se refuse.
-fn age_de_la_derniere(precedente: &Trace) -> R<i64> {
-    let c: Vec<char> = precedente.quand.chars().collect();
-    let illisible = || socle::refus!("La trace de la dernière ouverture ne dit pas son heure : « {} ».", precedente.quand);
-    if c.len() != 16 || c[2] != '/' || c[5] != '/' {
-        return Err(illisible());
-    }
-    let tranche = |a: usize, b: usize| -> String { c[a..b].iter().collect() };
-    let iso = format!("{}-{}-{}T{}", tranche(6, 10), tranche(3, 5), tranche(0, 2), tranche(11, 16));
-    let avant = socle::paris::Naif::lire(&iso).ok_or_else(illisible)?;
-    Ok(socle::paris::maintenant_naif().depuis(avant))
+/// `pas_avant` : l'age, en secondes, de la derniere ouverture, d'apres le `quand` de sa trace.
+fn age_de_la_derniere(precedente: &Trace) -> i64 {
+    socle::paris::maintenant_naif().depuis(precedente.quand.naif())
 }
 
 /// Le coffre dit-il que `service` est pose (ou dans l'environnement) ? `Err` : le coffre refuse de s'ouvrir.
@@ -714,7 +720,7 @@ fn completer_la_trace(ctx: &Contexte, r: &mut Ouverture, debut: std::time::Insta
 /// et rien d'autre (ni coffre, ni reseau, ni sauvegarde).
 pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut apres_releve: Option<&mut dyn FnMut()>) -> Ouverture {
     let debut = std::time::Instant::now();
-    let mut r = Ouverture { quand: quand_maintenant(), ..Ouverture::default() };
+    let mut r = Ouverture::commence();
     let mut sauvegarder = opt.sauvegarder;
     let mut retours = opt.retours;
     let mut signatures = opt.signatures;
@@ -733,14 +739,11 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
     }
 
     if let (true, Some(p)) = (opt.pas_avant > 0, &precedente) {
-        match age_de_la_derniere(p) {
-            Ok(age) if age < opt.pas_avant * 60 => {
-                r.incidents.push(format!("Ouverture deja faite il y a {} minute(s) : rien a refaire.", age.div_euclid(60)));
-                r.retenue = true;
-                return r;
-            }
-            Ok(_) => {}
-            Err(e) => r.incidents.push(e.phrase),
+        let age = age_de_la_derniere(p);
+        if age < opt.pas_avant * 60 {
+            r.incidents.push(format!("Ouverture deja faite il y a {} minute(s) : rien a refaire.", age.div_euclid(60)));
+            r.retenue = true;
+            return r;
         }
     }
 

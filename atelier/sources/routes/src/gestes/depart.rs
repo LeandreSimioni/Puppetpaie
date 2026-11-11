@@ -17,7 +17,7 @@
 use droit::fiche::Lue as _;
 use socle::echec::Classe;
 use socle::mois::{Graphie, Mois};
-use socle::paris::Moment;
+use socle::paris::{HeureDuJournal, InstantEcrit, Moment};
 use crate::dossier_salarie::cle_de;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -266,12 +266,6 @@ fn valide_le(o: &engagement::stock::Objet, n: u64) -> R<Option<socle::date::Jour
     Ok(Some(le.jour()))
 }
 
-/// Le jour d'un instant ISO (`AAAA-MM-JJ…`).
-fn jour_d_un_instant(iso: &str) -> R<socle::date::Jour> {
-    let tete = iso.get(..10).ok_or_else(|| erreur(Classe::Illisible, format!("instant illisible : {}", socle::fichiers::repr(iso))))?;
-    socle::date::Jour::lire(tete).map_err(|e| e.reclasser(Classe::Illisible))
-}
-
 /// LA DSN MENSUELLE PARTIE que dit la ligne `lignes[rang]` du journal, fabriquee de nouveau par la fonction qui l'a
 /// fabriquee (`dsn::fabriquer`) depuis les versions qu'elle a emportees (`versions` de sa ligne) : les paies de son mois,
 /// et les corrections des mois passes qu'elle portait -- leur paie d'apres, la version emportee ; ce qu'elles annulaient,
@@ -292,11 +286,10 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
     // Constituee le jour ou son fichier a ete ecrit (le journal des ecritures), sinon le jour de son depot.
     let fichier = l.fichier().ok_or_else(|| erreur(Classe::Illisible, "journal : une DSN partie sans son fichier".to_string()))?;
     let ecrite = journal_des_ecritures(&ctx.racine)?.remove(&format!("{}/{}", mois, fichier)).map(|n| n.quand);
-    let quand = match ecrite {
-        Some(q) => q,
-        None => l.quand().to_string(),
+    let constitution = match ecrite {
+        Some(q) => q.jour(),
+        None => l.quand().jour(),
     };
-    let constitution = jour_d_un_instant(&quand)?;
     let forme = Forme { type_dsn, ordre: m.ordre_de_la_ligne(le_mois, l)?, etablissement: plusieurs.then_some(nic), constitution, remplacee_versait_pas };
     let avant = envois::journal::departs_des_lignes(&lignes[..rang]);
     let ctx_m = ctx.du_mois(le_mois).map_err(|e| e.reclasser(Classe::Illisible))?;
@@ -1149,11 +1142,13 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, nom: &str) -> R<PathBu
         archives.sort();
         for a in archives {
             let n = socle::fichiers::nom_du(&a);
+            // Le nom de l'archive commence par l'instant de sa releve, `AAAAMMJJ_HHMMSS`.
             let quand = match (n.get(..4), n.get(4..6), n.get(6..8), n.get(9..11), n.get(11..13), n.get(13..15)) {
                 (Some(an), Some(mo), Some(j), Some(h), Some(mi), Some(s)) => format!("{}-{}-{}T{}:{}:{}", an, mo, j, h, mi, s),
                 _ => continue,
             };
-            let (jour, instant) = instant_de(&quand)?;
+            let quand = InstantEcrit::lire(&quand).ok_or_else(|| erreur(Classe::Illisible, format!("instant illisible : {}", socle::fichiers::repr(&quand))))?;
+            let (jour, instant) = instant_de(quand.into())?;
             let ctx_j = contexte_du_jour(ctx, jour)?;
             socle::temps::pendant(instant, || crate::documents::ranger_aer_detail(&ctx_j, Some(mois), Some(std::slice::from_ref(&a)), false))?;
             if let Some(f) = envois::etats::chemin_piece(&ctx.racine, le_mois, nom) {
@@ -1175,19 +1170,13 @@ fn contexte_du_jour(ctx: &Contexte, jour: socle::date::Jour) -> R<Contexte> {
     Ok(c)
 }
 
-/// L'instant `AAAA-MM-JJTHH:MM[:SS]` (heure de Paris), et son jour. Un instant qui ne se lit pas (ou hors du calendrier)
-/// se refuse.
-fn instant_de(quand: &str) -> R<(socle::date::Jour, Moment)> {
-    let illisible = || erreur(Classe::Illisible, format!("instant illisible : {}", socle::fichiers::repr(quand)));
-    let (jour, heure) = quand.split_once('T').ok_or_else(illisible)?;
-    let jour = socle::date::Jour::lire(jour).map_err(|e| e.reclasser(Classe::Illisible))?;
-    let hms: Vec<i64> = heure.split(':').map(|x| x.parse::<i64>().map_err(|_| illisible())).collect::<R<_>>()?;
-    let (h, m, s) = match hms.as_slice() {
-        [h, m] => (*h, *m, 0),
-        [h, m, s] => (*h, *m, *s),
-        _ => return Err(illisible()),
-    };
-    Ok((jour, Moment::a_paris(jour, h, m, s).ok_or_else(illisible)?))
+/// Le moment d'une heure du journal (a Paris), et son jour. Un jour sans heure, ou une heure que le changement d'heure
+/// saute, se refuse.
+fn instant_de(quand: HeureDuJournal) -> R<(socle::date::Jour, Moment)> {
+    let illisible = || erreur(Classe::Illisible, format!("instant illisible : {}", socle::fichiers::repr(&quand.iso())));
+    let HeureDuJournal::Instant(i) = quand else { return Err(illisible()) };
+    let s = i.naif().seconde_du_jour();
+    Ok((i.jour(), Moment::a_paris(i.jour(), s / 3_600, s / 60 % 60, s % 60).ok_or_else(illisible)?))
 }
 
 /// LA DSN MENSUELLE QUE DIT LA LIGNE `lignes[rang]`, refaite (`dsn_partie`) au jour ou son fichier a ete ecrit (le journal
@@ -1229,15 +1218,14 @@ fn refaire_la_dsn(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Lig
 }
 
 /// QUAND LA PIECE `nom` DE `mois` A ETE ECRITE : le journal des ecritures, sinon l'instant de la ligne `l` qui l'a
-/// fait partir ; `(jour, instant, AAAA-MM-JJTHH:MM:SS)`.
-fn ecrite_a(ctx: &Contexte, mois: Mois, nom: &str, l: &envois::journal::Ligne) -> R<(socle::date::Jour, Moment, String)> {
+/// fait partir ; `(jour, moment, instant ecrit)`.
+fn ecrite_a(ctx: &Contexte, mois: Mois, nom: &str, l: &envois::journal::Ligne) -> R<(socle::date::Jour, Moment, InstantEcrit)> {
     let quand = match journal_des_ecritures(&ctx.racine)?.remove(&format!("{}/{}", mois, nom)) {
-        Some(n) => n.quand,
-        None => l.quand().to_string(),
+        Some(n) => n.quand.into(),
+        None => l.quand(),
     };
-    let (jour, instant) = instant_de(&quand)?;
-    let iso = socle::paris::iso_secondes(instant);
-    Ok((jour, instant, iso))
+    let (jour, instant) = instant_de(quand)?;
+    Ok((jour, instant, InstantEcrit::de(instant)))
 }
 
 /// Les paies que la ligne `l` a emportees (`versions`), chacune dans la version sur laquelle elle est partie, vues en
@@ -1283,7 +1271,7 @@ fn refaire_la_dpae(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne, cible
     let base = cible.file_stem().ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} n'est pas un nom de fichier", nom)))?.to_string_lossy().into_owned();
     let recap = cible.with_file_name(format!("{}_recapitulatif.txt", base));
     let zip = cible.with_file_name(format!("{}.zip", nom));
-    socle::temps::pendant(instant, || crate::depots::ecrire_la_dpae(&ctx_j, &retenues, cible, &recap, declarations::dpae::HEURE_EMBAUCHE, &quand))?;
+    socle::temps::pendant(instant, || crate::depots::ecrire_la_dpae(&ctx_j, &retenues, cible, &recap, declarations::dpae::HEURE_EMBAUCHE, quand))?;
     garder_si_identique(l, &[cible.to_path_buf(), zip, recap])
 }
 
@@ -1405,8 +1393,7 @@ fn contrat_parti(ctx: &Contexte, lignes: &[envois::journal::Ligne], rang: usize,
 pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Ligne], rang: usize, pdf: &Path, vers: &Path) -> R<()> {
     let l = &lignes[rang];
     let nom = socle::fichiers::nom_du(pdf);
-    let quand = l.quand().to_string();
-    let (jour, instant) = instant_de(&quand)?;
+    let (jour, instant) = instant_de(l.quand())?;
     let ctx_j = contexte_du_jour(ctx, jour)?;
     let contrats: Vec<&envois::journal::ContratParti> = l.signature().into_iter().flat_map(|s| s.detail.contrats.iter().filter(|c| c.fichier == nom)).collect();
     let mut paies: Vec<Paie> = Vec::new();
@@ -1427,24 +1414,23 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
         return Err(erreur(Classe::Illisible, format!("journal : aucun contrat ne part dans {}", nom)));
     };
     let ent = documents::avenant::ent_du_mois(&ctx_j, premier.mois);
-    let jj = |iso: &str| jour_d_un_instant(iso).map(|j| j.jj_mm_aaaa());
     let ecrire = || -> R<()> {
         if premier.est_avenant() {
             let numero_av = premier.avenant.ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} sans numero d'avenant", nom)))?;
             // Le contrat qu'il modifie : parti avant lui, avec son modele fige ; ou signe hors du logiciel (`ailleurs`),
             // date de son premier jour, avec le modele que son engagement suit.
             let (date_contrat, modele) = if premier.ailleurs {
-                (premier.debut.iso(), crate::modeles_contrat::du_contrat(&ctx_j, p0)?)
+                (premier.debut, crate::modeles_contrat::du_contrat(&ctx_j, p0)?)
             } else {
                 let parti = envois::etats::contrat_parti(&lignes[..rang], &premier.salarie, premier.numero_dit())
                     .ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} modifie un contrat qui n'est pas parti avant lui", nom)))?;
                 (parti.date(), crate::modeles_contrat::du_contrat_parti(&ctx_j, parti.modele.as_deref(), p0)?)
             };
             let modifs = crate::gestes::signature::pour_la_piece(premier.modifications.as_deref().ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} sans les articles qu'il modifie", nom)))?);
-            let effet = premier.effet.as_deref().ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} sans sa date d'effet", nom)))?;
-            return documents::contrat::ecrire_avenant(&ctx_j, p0, &ent, vers, &modifs, numero_av, jour_d_un_instant(&date_contrat)?, jour_d_un_instant(effet)?, jour, &modele, premier.ailleurs);
+            let effet = premier.effet.ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} sans sa date d'effet", nom)))?;
+            return documents::contrat::ecrire_avenant(&ctx_j, p0, &ent, vers, &modifs, numero_av, date_contrat, effet, jour, &modele, premier.ailleurs);
         }
-        let mut remplacements: Vec<((String, String, String), (String, String))> = Vec::new();
+        let mut remplacements: Vec<((String, socle::date::Jour, String), (String, socle::date::Jour))> = Vec::new();
         if nom.strip_suffix("remplace.pdf").is_some_and(|b| b.ends_with('_')) {
             for c in &contrats {
                 let parti = envois::etats::contrat_parti(&lignes[..rang], &c.salarie, c.numero_dit())
@@ -1454,7 +1440,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
                     None => SANS_NUMERO.to_string(),
                 };
                 let le_sien = c.numero_dit().ok_or_else(|| erreur(Classe::Illisible, format!("journal : un contrat de {} est parti sans numero", nom)))?;
-                remplacements.push(((c.salarie.to_string(), c.debut.iso(), le_sien.to_string()), (numero, jj(&parti.date())?)));
+                remplacements.push(((c.salarie.to_string(), c.debut, le_sien.to_string()), (numero, parti.date())));
             }
         }
         // Chaque contrat avec le modele qu'il suivait a son depart.
@@ -1510,8 +1496,7 @@ fn paie_ecrite_au_bulletin(o: &engagement::stock::Objet, mois: Mois, numero: &st
 /// salarie et le numero de son bulletin.
 fn refaire_les_documents(ctx: &Contexte, mois: Mois, lignes: &[envois::journal::Ligne], rang: usize, ecrire: bool) -> R<Vec<(String, Option<String>)>> {
     let l = &lignes[rang];
-    let quand = l.quand().to_string();
-    let (jour, instant) = instant_de(&quand)?;
+    let (jour, instant) = instant_de(l.quand())?;
     let cles: Vec<String> = l.documents().ok_or_else(|| erreur(Classe::Illisible, "journal : la ligne n'est pas un envoi de documents".to_string()))?.detail.salaries.iter().map(|s| s.cle.to_string()).collect();
     let refaire = || -> R<Vec<(String, Option<String>)>> {
         let ctx = contexte_du_jour(ctx, jour)?.du_mois(mois).map_err(|e| e.reclasser(Classe::Illisible))?;

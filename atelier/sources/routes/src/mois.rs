@@ -25,7 +25,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::fiches::{maintenant, refus};
+use crate::fiches::refus;
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::etapes::ChargeMois;
 use engagement::calcul::Paie;
@@ -285,7 +285,7 @@ struct CarteEcrite {
     /// Le brouillon tel qu'il est ecrit, chacune de ses cases (`null` : pas encore remplie).
     brouillon: Brouillon,
     a_completer: Option<String>,
-    enregistre_a: String,
+    enregistre_a: socle::paris::InstantEcrit,
     enregistre_dit: String,
 }
 
@@ -295,8 +295,8 @@ struct EnCours {
     salarie: IdSalarie,
     nom: String,
     spectacle: Option<String>,
-    debut: String,
-    fin: String,
+    debut: Jour,
+    fin: Jour,
     numero: String,
     depuis: Option<Mois>,
     taux_cachet: Option<f64>,
@@ -312,8 +312,8 @@ struct Reprise {
     salarie: IdSalarie,
     #[serde(skip_serializing_if = "Option::is_none")]
     spectacle: Option<String>,
-    debut: String,
-    fin: String,
+    debut: Jour,
+    fin: Jour,
     numero: String,
     lignes: [LigneAReprendre; 1],
 }
@@ -342,14 +342,14 @@ struct Passe {
     dit: String,
     salarie: String,
     nom: String,
-    debut: String,
-    fin: String,
+    debut: Jour,
+    fin: Jour,
     cachets: Option<i64>,
     heures: Option<i64>,
     jours: Option<i64>,
     titre: Option<String>,
     numero_objet: Option<String>,
-    dates: Vec<String>,
+    dates: Vec<Jour>,
     source: &'static str,
 }
 
@@ -642,15 +642,15 @@ pub(crate) fn engagements_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<(IdSalari
 /// encore aucun cachet, R12, n'en propose aucun : la ligne reste a completer).
 fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
     let mut out: Vec<EnCours> = Vec::new();
-    let mut vus: HashSet<(String, String, String)> = HashSet::new();
+    let mut vus: HashSet<(String, Jour, String)> = HashSet::new();
     for i in engagement::importe::qui_continuent(&ctx.racine, mois)? {
         let b = i.objet().carte();
         let plein = |o: Option<&String>| o.map(|o| o.trim().to_string()).filter(|o| !o.is_empty());
         // Un contrat qui continue ici porte le salarie, les bornes et le numero que la DSN deposee lui a donnes.
-        let (Some(salarie), Some(debut), Some(fin), Some(numero)) = (b.salarie.as_ref().map(ToString::to_string), b.debut.map(|j| j.iso()), b.fin.map(|j| j.iso()), plein(b.numero.as_ref())) else {
+        let (Some(salarie), Some(debut), Some(fin), Some(numero)) = (b.salarie.as_ref().map(ToString::to_string), b.debut, b.fin, plein(b.numero.as_ref())) else {
             return Err(erreur(Classe::Illisible, "Un contrat repris d'un autre logiciel ne dit pas son salarié, ses bornes ou son numéro : le reprendre à l'import."));
         };
-        if !vus.insert((salarie.clone(), debut.clone(), numero.clone())) {
+        if !vus.insert((salarie.clone(), debut, numero.clone())) {
             continue;
         }
         let fiche = ctx.salarie(&salarie).map_err(|m| m.reclasser(Classe::Manque))?;
@@ -675,8 +675,8 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             nature: NatureDeContrat::CdduSpectacle,
             salarie: fiche.id.clone(),
             spectacle: spectacle.clone(),
-            debut: debut.clone(),
-            fin: fin.clone(),
+            debut,
+            fin,
             numero: numero.clone(),
             lignes: [LigneAReprendre { rubrique: "cachet", quantite: 0, taux, dates: [] }],
         };
@@ -693,12 +693,12 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             engagement,
         });
     }
-    let mut deja: HashSet<(IdSalarie, Option<String>, Option<String>)> = HashSet::new();
+    let mut deja: HashSet<(IdSalarie, Option<Jour>, Option<String>)> = HashSet::new();
     for (c, e) in engagements_du_mois(ctx, mois)? {
-        deja.insert((c, bornes_brutes(&e).0.map(|j| j.iso()), e.numero.clone()));
+        deja.insert((c, bornes_brutes(&e).0, e.numero.clone()));
     }
     for c in out.iter_mut() {
-        c.deja_repris = deja.contains(&(c.salarie.clone(), Some(c.debut.clone()), Some(c.numero.clone())));
+        c.deja_repris = deja.contains(&(c.salarie.clone(), Some(c.debut), Some(c.numero.clone())));
     }
     Ok(out)
 }
@@ -775,16 +775,15 @@ fn cachets_de(ctx: &Contexte, e: &SaisieCarte) -> R<i64> {
 }
 
 /// Ce qu'une ligne de la liste dit d'un contrat passe : ses bornes, ses cachets et ses heures, quand ils sont dits.
-fn dit_du_contrat(debut: &str, fin: &str, cachets: Option<i64>, heures: Option<i64>) -> R<String> {
-    let court = |iso: &str| -> R<String> { Ok(Jour::lire(iso)?.jj_mm()) };
-    let mut dit = format!("{}→{}", court(debut)?, court(fin)?);
+fn dit_du_contrat(debut: Jour, fin: Jour, cachets: Option<i64>, heures: Option<i64>) -> String {
+    let mut dit = format!("{}→{}", debut.jj_mm(), fin.jj_mm());
     if let Some(c) = cachets {
         dit.push_str(&format!(" · {}", socle::ecran::compte(c.max(0) as usize, "cachet", "cachets")));
     }
     if let Some(h) = heures.filter(|h| *h > 0) {
         dit.push_str(&format!(" + {} h", h));
     }
-    Ok(dit)
+    dit
 }
 
 /// UN CONTRAT QU'UN ENGAGEMENT IMPORTE ATTESTE (`engagement::importe::Importe::contrat_lu`) ; celui d'un permanent, mois
@@ -792,8 +791,8 @@ fn dit_du_contrat(debut: &str, fin: &str, cachets: Option<i64>, heures: Option<i
 /// reste vide.
 struct Atteste {
     salarie: String,
-    debut: String,
-    fin: String,
+    debut: Jour,
+    fin: Jour,
     numero_objet: Option<String>,
     cachets: Option<i64>,
     heures: Option<i64>,
@@ -805,7 +804,7 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
     let mut out = Vec::new();
     for i in engagement::importe::tous(&ctx.racine)? {
         let Some(c) = i.contrat_lu()? else { continue };
-        let atteste = |debut: String, fin: String, (cachets, heures, jours): (Option<i64>, Option<i64>, Option<i64>)| Atteste {
+        let atteste = |debut: Jour, fin: Jour, (cachets, heures, jours): (Option<i64>, Option<i64>, Option<i64>)| Atteste {
             salarie: c.salarie.clone(),
             debut,
             fin,
@@ -815,21 +814,21 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
             jours,
         };
         if !i.permanent() {
-            if let (Some(debut), Some(fin)) = (c.debut.map(|j| j.iso()), c.fin.map(|j| j.iso())) {
+            if let (Some(debut), Some(fin)) = (c.debut, c.fin) {
                 out.push(atteste(debut, fin, (c.contrat.cachets, c.contrat.heures, c.contrat.jours)));
             }
             continue;
         }
         for (&mois_paye, p) in i.paies() {
-            let lu = |j: Option<Jour>| j.filter(|j| mois_paye.contient(j)).map(|j| j.iso());
+            let lu = |j: Option<Jour>| j.filter(|j| mois_paye.contient(j));
             // Une paie d'un permanent couvre son mois, des bornes qu'elle dit, sinon du premier au dernier jour.
             let debut = match lu(p.debut) {
                 Some(d) => d,
-                None => mois_paye.premier_jour().iso(),
+                None => mois_paye.premier_jour(),
             };
             let fin = match lu(p.fin) {
                 Some(f) => f,
-                None => mois_paye.dernier_jour().iso(),
+                None => mois_paye.dernier_jour(),
             };
             out.push(atteste(debut, fin, (p.cachets, p.heures, p.jours)));
         }
@@ -841,7 +840,7 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
 /// est lu la (avec ses jours exacts), l'historique importe parle pour les autres. Trie par salarie puis debut.
 /// `salarie` : ses seuls contrats (absent : ceux de tous).
 fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<Vec<Passe>> {
-    let (premier, dernier) = (format!("{}-01", mois), format!("{}-31", mois));
+    let (premier, dernier) = (mois.premier_jour(), mois.dernier_jour());
     let voulu = |cle: &str| salarie.is_none_or(|s| s.as_str() == cle);
     let spectacles = Spectacles::nouveau(ctx);
 
@@ -885,17 +884,17 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
                 None => dates.len() as i64,
             };
             let contrat = Passe {
-                dit: dit_du_contrat(&debut.iso(), &fin.iso(), Some(cachets), None)?,
+                dit: dit_du_contrat(debut, fin, Some(cachets), None),
                 nom: nom_de(ctx, &cle),
                 salarie: cle.to_string(),
-                debut: debut.iso(),
-                fin: fin.iso(),
+                debut,
+                fin,
                 cachets: Some(cachets),
                 heures: None,
                 jours: Some(jours),
                 titre: titre_de(spec, numero.as_deref()),
                 numero_objet: numero,
-                dates: dates.into_iter().filter(|j| j.mois_civil() == mois).map(|j| j.iso()).collect(),
+                dates: dates.into_iter().filter(|j| j.mois_civil() == mois).collect(),
                 source: "paie",
             };
             match deja {
@@ -908,17 +907,17 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
         }
     }
     for a in historique(ctx)? {
-        if a.debut.is_empty() || a.debut > dernier || a.fin < premier {
+        if a.debut > dernier || a.fin < premier {
             continue;
         }
         // Un mois produit ici se tait dans l'historique : ce sont les memes contrats, declares deux fois pendant le
         // double run.
-        if a.fin.get(..7).and_then(Mois::du_texte).is_some_and(|m| couverts.contains(&m)) || !voulu(&a.salarie) {
+        if couverts.contains(&a.fin.mois_civil()) || !voulu(&a.salarie) {
             continue;
         }
         let spec = a.numero_objet.as_deref().and_then(|n| spectacles.par_objet.get(n).copied());
         out.push(Passe {
-            dit: dit_du_contrat(&a.debut, &a.fin, a.cachets, a.heures)?,
+            dit: dit_du_contrat(a.debut, a.fin, a.cachets, a.heures),
             nom: nom_de(ctx, &a.salarie),
             titre: titre_de(spec, a.numero_objet.as_deref()),
             salarie: a.salarie,
@@ -1048,7 +1047,8 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
     let vue = engagement::stock::vue_du_mois(&ctx.racine, mois)?.ok_or_else(|| refus(format!("{} : la carte écrite ne s'y lit pas.", mois.libelle(Graphie::Accentuee))))?;
     let a_completer = manque_de(ctx, &vue, k).map(|m| m.phrase);
     // « Enregistré à HH:MM » : l'heure du moteur (`temps.rs`), pas celle du navigateur (au banc, le temps est simule).
-    let a = maintenant();
+    let a = socle::paris::InstantEcrit::maintenant();
+    let s = a.naif().seconde_du_jour();
     Ok(CarteEcrite {
         phrase: match &a_completer {
             Some(m) => format!("Carte enregistrée ; à compléter avant de valider : {}", m),
@@ -1057,7 +1057,7 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
         engagement: id,
         brouillon,
         a_completer,
-        enregistre_dit: format!("Enregistré à {}", a.chars().skip(11).take(5).collect::<String>()),
+        enregistre_dit: format!("Enregistré à {:02}:{:02}", s / 3_600, s / 60 % 60),
         enregistre_a: a,
     })
 }

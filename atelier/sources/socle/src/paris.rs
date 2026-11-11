@@ -138,6 +138,12 @@ impl Naif {
         dans_le_calendrier(self.0.div_euclid(86_400))
     }
 
+    /// « 12/09/2026 à 18:18 » : le jour et l'heure a la minute, tels que l'ecran les dit.
+    pub fn dit(self) -> String {
+        let reste = self.0.rem_euclid(86_400);
+        format!("{} à {:02}:{:02}", self.jour().jj_mm_aaaa(), reste / 3_600, (reste % 3_600) / 60)
+    }
+
     /// `AAAA-MM-JJTHH:MM:SS`.
     pub fn iso(self) -> String {
         let j = self.jour();
@@ -207,6 +213,11 @@ impl InstantEcrit {
     pub fn iso(self) -> String {
         self.0.iso()
     }
+
+    /// Tel que l'ecran le dit : « 12/09/2026 à 18:18 ».
+    pub fn dit(self) -> String {
+        self.0.dit()
+    }
 }
 
 impl MinuteEcrite {
@@ -244,6 +255,11 @@ impl MinuteEcrite {
     /// `AAAA-MM-JJTHH:MM`.
     pub fn iso(self) -> String {
         self.0.iso()[..16].to_string()
+    }
+
+    /// Tel que l'ecran le dit : « 12/09/2026 à 18:18 ».
+    pub fn dit(self) -> String {
+        self.0.dit()
     }
 }
 
@@ -284,6 +300,11 @@ impl HeureDeSaisie {
     pub fn iso(self) -> String {
         self.0.iso()[..16].replacen('T', " ", 1)
     }
+
+    /// Tel que l'ecran le dit : « 12/09/2026 à 18:18 ».
+    pub fn dit(self) -> String {
+        self.0.dit()
+    }
 }
 
 impl std::fmt::Display for HeureDeSaisie {
@@ -302,6 +323,60 @@ impl<'de> serde::Deserialize<'de> for HeureDeSaisie {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<HeureDeSaisie, D::Error> {
         let s = String::deserialize(d)?;
         HeureDeSaisie::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas une heure AAAA-MM-JJ HH:MM", crate::date::repr_texte(&s))))
+    }
+}
+
+/// UNE MINUTE DITE A LA FRANCAISE : l'heure de Paris `JJ/MM/AAAA HH:MM` (l'heure d'un passage de l'ouverture, que le
+/// bandeau montre). Meme regle que l'instant a la seconde, dans sa forme a elle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MinuteDite(Naif);
+
+impl MinuteDite {
+    /// L'heure de Paris a cet instant (`socle::temps`), tronquee a la minute.
+    pub fn maintenant() -> MinuteDite {
+        MinuteDite(MinuteEcrite::maintenant().0)
+    }
+
+    /// `JJ/MM/AAAA HH:MM`, et rien d'autre ; `None` sinon.
+    pub fn lire(texte: &str) -> Option<MinuteDite> {
+        let c: Vec<char> = texte.chars().collect();
+        if c.len() != 16 {
+            return None;
+        }
+        let t = |a: usize, b: usize| -> String { c[a..b].iter().collect() };
+        let n = Naif::lire(&format!("{}-{}-{}T{}", t(6, 10), t(3, 5), t(0, 2), t(11, 16)))?;
+        let m = MinuteDite(MinuteEcrite::du_naif(n).0);
+        (m.texte() == texte).then_some(m)
+    }
+
+    /// L'heure naive.
+    pub fn naif(self) -> Naif {
+        self.0
+    }
+
+    /// `JJ/MM/AAAA HH:MM`.
+    pub fn texte(self) -> String {
+        let reste = self.0.seconde_du_jour();
+        format!("{} {:02}:{:02}", self.0.jour().jj_mm_aaaa(), reste / 3_600, (reste % 3_600) / 60)
+    }
+}
+
+impl std::fmt::Display for MinuteDite {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.texte())
+    }
+}
+
+impl serde::Serialize for MinuteDite {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.texte())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for MinuteDite {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<MinuteDite, D::Error> {
+        let s = String::deserialize(d)?;
+        MinuteDite::lire(&s).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas une heure JJ/MM/AAAA HH:MM", crate::date::repr_texte(&s))))
     }
 }
 
@@ -375,6 +450,14 @@ impl HeureDuJournal {
         match self {
             HeureDuJournal::Instant(i) => i.iso(),
             HeureDuJournal::Jour(j) => j.iso(),
+        }
+    }
+
+    /// Tel que l'ecran le dit : « 12/09/2026 à 18:18 », ou « 12/09/2026 » pour un jour seul.
+    pub fn dit(self) -> String {
+        match self {
+            HeureDuJournal::Instant(i) => i.dit(),
+            HeureDuJournal::Jour(j) => j.jj_mm_aaaa(),
         }
     }
 }

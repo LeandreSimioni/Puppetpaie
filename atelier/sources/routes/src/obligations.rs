@@ -43,7 +43,7 @@ use droit::contexte::Contexte;
 use engagement::imprevus::{ArretSaisi, Imprevu, Prolongation};
 use socle::date::Jour;
 use socle::ecran::Pastille;
-use socle::paris::HeureDeSaisie;
+use socle::paris::{HeureDeSaisie, HeureDuJournal};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
 use socle::echec::R;
 pub use declarations::obligations::{CleDObligation, Ou, TexteDepose};
@@ -184,11 +184,6 @@ pub fn signalement_du(motif: &str) -> R<bool> {
 }
 
 // --------------------------------------------------------------- le calendrier
-
-/// Un jour que le magasin ou le suivi ecrit : lu, ou refuse (le fichier est abime).
-fn jour_ecrit(t: &str) -> R<Jour> {
-    Jour::lire(t).map_err(|m| m.reclasser(Classe::Illisible))
-}
 
 fn plus(j: Jour, n: i64) -> R<Jour> {
     j.plus_jours(n).map_err(|m| m.reclasser(Classe::CalculImpossible))
@@ -473,7 +468,7 @@ pub enum FaitDit {
 /// Un depot du journal qui fait une obligation : quand, son fichier, son ordre ou son flux, et le jour.
 #[derive(Debug, Clone, Serialize)]
 pub struct DepotFait {
-    quand: String,
+    quand: HeureDuJournal,
     #[serde(skip_serializing_if = "Option::is_none")]
     fichier: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -759,26 +754,31 @@ pub(crate) struct EnvoiDeLArret {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mois: Option<socle::mois::Mois>,
     fichier: Option<String>,
-    pub quand: String,
+    pub quand: HeureDuJournal,
 }
 
-/// Le jour d'un instant du journal (`AAAA-MM-JJ…`) : lu, ou refuse (le journal est abime).
-fn jour_de_l_instant(quand: &str) -> R<Jour> {
-    match quand.get(..10) {
-        Some(j) => jour_ecrit(j),
-        None => Err(erreur(Classe::Illisible, format!("L'instant {} du journal des envois ne se lit pas : il commence par AAAA-MM-JJ.", repr(quand)))),
+/// L'ordre d'une heure du journal et d'une heure de saisie, tel que leurs textes l'ont toujours donne : par le jour ; le
+/// meme jour, un instant du journal (`AAAA-MM-JJTHH:MM:SS`) vient apres toute saisie (`AAAA-MM-JJ HH:MM`), un jour seul
+/// avant.
+fn ordre_ecrit(quand: HeureDuJournal, saisi: HeureDeSaisie) -> std::cmp::Ordering {
+    match quand.jour().cmp(&saisi.jour()) {
+        std::cmp::Ordering::Equal => match quand {
+            HeureDuJournal::Instant(_) => std::cmp::Ordering::Greater,
+            HeureDuJournal::Jour(_) => std::cmp::Ordering::Less,
+        },
+        autre => autre,
     }
 }
 
 /// Le premier envoi de cette nature parti pour l'arret (`ce_qui_est_parti`).
-fn envoi(envois: &[EnvoiDeLArret], nature: &str) -> R<Option<Fait>> {
-    let Some(e) = envois.iter().filter(|e| e.nature_declaration == nature).min_by(|a, b| a.quand.cmp(&b.quand)) else { return Ok(None) };
-    let le = jour_de_l_instant(&e.quand)?;
-    Ok(Some(Fait {
+fn envoi(envois: &[EnvoiDeLArret], nature: &str) -> Option<Fait> {
+    let e = envois.iter().filter(|e| e.nature_declaration == nature).min_by(|a, b| a.quand.cmp(&b.quand))?;
+    let le = e.quand.jour();
+    Some(Fait {
         le,
         comment: "déposé sur net-entreprises ; le bilan dit s'il est accepté".into(),
-        dit: FaitDit::Depose(DepotFait { quand: e.quand.clone(), fichier: e.fichier.clone(), ordre: e.ordre, flux: None, comment: "depot", le }),
-    }))
+        dit: FaitDit::Depose(DepotFait { quand: e.quand, fichier: e.fichier.clone(), ordre: e.ordre, flux: None, comment: "depot", le }),
+    })
 }
 
 /// LE SIGNALEMENT RECTIFICATIF EST-IL DU ? Quand un avis de prolongation (`prolongations`, `crate::imprevus::arret_prolonger`)
@@ -789,19 +789,19 @@ fn envoi(envois: &[EnvoiDeLArret], nature: &str) -> R<Option<Fait>> {
 /// l. 37). Le depart : le jour ou la derniere de ces prolongations a ete sue (`le`). Fait : un signalement d'arret de type
 /// 03 (annule et remplace) depose apres sa saisie. L'ordre se lit sur les heures de saisie et de depot, toutes deux a
 /// l'horloge (`saisi_le`, `quand`).
-fn rectificatif_du(prolongations: &[Prolongation], envois: &[EnvoiDeLArret]) -> R<Option<(Depart, Option<Fait>)>> {
+fn rectificatif_du(prolongations: &[Prolongation], envois: &[EnvoiDeLArret]) -> Option<(Depart, Option<Fait>)> {
     let signalements: Vec<&EnvoiDeLArret> = envois.iter().filter(|e| e.nature_declaration == "04").collect();
-    let Some(premier) = signalements.iter().map(|e| e.quand.as_str()).min() else { return Ok(None) };
-    let Some(p) = prolongations.iter().filter(|p| p.subrogation_fin != p.subrogation_fin_avant && p.saisi_le.iso().as_str() > premier).last() else { return Ok(None) };
+    let premier = signalements.iter().map(|e| e.quand).min()?;
+    let p = prolongations.iter().filter(|p| p.subrogation_fin != p.subrogation_fin_avant && ordre_ecrit(premier, p.saisi_le).is_lt()).last()?;
     let depart = Depart { jour: p.le, minute: None, quoi: "le jour où la prolongation de la subrogation a été saisie".into(), presume: None };
     let rectificatif = signalements
         .iter()
-        .filter(|e| e.type_declaration.as_deref() == Some(declarations::signalement::ANNULE_ET_REMPLACE) && e.quand >= p.saisi_le.iso())
-        .map(|e| e.quand.clone())
+        .filter(|e| e.type_declaration.as_deref() == Some(declarations::signalement::ANNULE_ET_REMPLACE) && ordre_ecrit(e.quand, p.saisi_le).is_ge())
+        .map(|e| e.quand)
         .min();
     let fait = match rectificatif {
         Some(quand) => {
-            let le = jour_de_l_instant(&quand)?;
+            let le = quand.jour();
             Some(Fait {
                 le,
                 comment: "annule et remplace déposé sur net-entreprises ; le bilan dit s'il est accepté".into(),
@@ -810,7 +810,7 @@ fn rectificatif_du(prolongations: &[Prolongation], envois: &[EnvoiDeLArret]) -> 
         }
         None => None,
     };
-    Ok(Some((depart, fait)))
+    Some((depart, fait))
 }
 
 /// Ce que la compagnie a dit fait d'une obligation hors DSN (`accident_declare`, `attestation_salaire` de sa fiche de
@@ -899,16 +899,19 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
             traverses = socle::mois::Mois::entre(&p, &d);
         }
     }
-    let saisi = &match lu {
+    let saisi = match lu {
         Imprevu::Arret(a) => a.saisi_le,
         Imprevu::Suspension(s) => s.saisi_le,
-    }
-    .iso();
-    // Une DSN mensuelle a reporte l'imprevu : celle d'un mois qu'il traverse, partie apres sa saisie ; ou, un arret, la DSN suivante
-    // qui reporte l'arret saisi apres le depart de celles de ses mois (`Arret::a_reporter`).
-    let reporte = |mois: socle::mois::Mois, quand: &str| -> R<bool> {
+    };
+    // Une DSN mensuelle a reporte l'imprevu : celle d'un mois qu'il traverse, partie apres sa saisie (a la minute ; une DSN
+    // datee d'un jour seul, avant toute saisie de ce jour) ; ou, un arret, la DSN suivante qui reporte l'arret saisi apres
+    // le depart de celles de ses mois (`Arret::a_reporter`).
+    let reporte = |mois: socle::mois::Mois, quand: HeureDuJournal| -> R<bool> {
         if traverses.contains(&mois) {
-            return Ok(quand.replace('T', " ") >= *saisi);
+            return Ok(match quand {
+                HeureDuJournal::Instant(i) => socle::paris::MinuteEcrite::du_naif(i.naif()).naif() >= saisi.naif(),
+                HeureDuJournal::Jour(j) => j > saisi.jour(),
+            });
         }
         match &arret {
             Some(arret) => arret.a_reporter(mois, &departs).map_err(|m| m.reclasser(Classe::Illisible)),
@@ -917,7 +920,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
     };
     let mut partis = Vec::new();
     for e in envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, true).filter(|l| l.accepte() && !envois::etats::refuse_par_un_retour(l)).filter_map(envois::journal::Ligne::dsn) {
-        let (mois, quand) = (e.mois, e.quand.iso());
+        let (mois, quand) = (e.mois, e.quand());
         let d = &e.detail;
         let Some(nature) = d.nature_declaration.clone() else { continue };
         let type_declaration = d.type_declaration.clone();
@@ -931,7 +934,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
             ("04" | "05", Some(dj), _) if declare.is_some() && d.evenement == declare && du_salarie => {
                 partis.push(EnvoiDeLArret { fichier: dans(&dj.mois_civil()), nature_declaration: nature, type_declaration, ordre, mois: None, quand });
             }
-            ("01", _, Some(mois)) if reporte(mois, &quand)? => {
+            ("01", _, Some(mois)) if reporte(mois, quand)? => {
                 partis.push(EnvoiDeLArret { fichier: dans(&mois), nature_declaration: nature, type_declaration, ordre, mois: Some(mois), quand });
             }
             _ => {}
@@ -1007,7 +1010,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
     let o = &n.signalement_arret;
     if !parmi(o.sauf()) {
         match (debut, connu_de_l_arret(o)?) {
-            (Some(debut), Some(depart)) => out.push(signalement_dsn(ctx, &mut cal, aujourdhui, CleDObligation::SignalementArret, o, subrogation, depart, debut, envoi(envois, "04")?)?),
+            (Some(debut), Some(depart)) => out.push(signalement_dsn(ctx, &mut cal, aujourdhui, CleDObligation::SignalementArret, o, subrogation, depart, debut, envoi(envois, "04"))?),
             _ => out.push(Obligation::squelette(CleDObligation::SignalementArret, o).indeterminee("Le début de cet arrêt est illisible : le délai ne se compte pas.")),
         }
     }
@@ -1015,7 +1018,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
     // LE SIGNALEMENT D'ARRET RECTIFICATIF (04, annule et remplace) : une fin de subrogation prolongee APRES le depot du
     // signalement d'arret, qui la portait plus courte (fiche net-entreprises 1983 ; `rectificatif_du`).
     let o = &n.signalement_arret_rectificatif;
-    if let Some((depart, fait)) = rectificatif_du(a.prolongations, envois)? {
+    if let Some((depart, fait)) = rectificatif_du(a.prolongations, envois) {
         let mut m = Obligation::squelette(CleDObligation::SignalementArretRectificatif, o);
         let d = o.delai_de(&o.delai, "delai")?;
         let butoir = cal.jours_ouvres_apres(depart.jour, nombre(d.jours_ouvres, "delai.jours_ouvres")?)?;
@@ -1113,7 +1116,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
     if let (Some(rep), Some(fin)) = (a.reprise, a.fin) {
         if rep < fin && !parmi(o.sauf()) {
             let depart = Depart { jour: rep, minute: None, quoi: "la reprise".into(), presume: None };
-            out.push(signalement_dsn(ctx, &mut cal, aujourdhui, CleDObligation::SignalementReprise, o, subrogation, depart, rep, envoi(envois, "05")?)?);
+            out.push(signalement_dsn(ctx, &mut cal, aujourdhui, CleDObligation::SignalementReprise, o, subrogation, depart, rep, envoi(envois, "05"))?);
         }
     }
     Ok(out.into_iter().map(Obligation::dire_le_butoir).collect())
@@ -1160,7 +1163,7 @@ fn fctu_depose(journal: &[envois::journal::Ligne], cle: &str, fin: &Jour) -> R<O
     Ok(Some(Fait {
         le,
         comment: "déposé sur net-entreprises ; le bilan dit s'il est accepté".into(),
-        dit: FaitDit::Depose(DepotFait { quand: l.quand().to_string(), fichier: l.fichier().map(str::to_string), ordre: None, flux: Some(l.flux().to_string()), comment: "depot", le }),
+        dit: FaitDit::Depose(DepotFait { quand: l.quand(), fichier: l.fichier().map(str::to_string), ordre: None, flux: Some(l.flux().to_string()), comment: "depot", le }),
     }))
 }
 

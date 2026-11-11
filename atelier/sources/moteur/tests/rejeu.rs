@@ -175,10 +175,9 @@ fn un_engagement_non_actif_fait_annuler_ce_qui_a_ete_declare_pour_lui() {
     // Partie sur la version du non actif, la correction ne ressort plus et ne se porte plus en janvier.
     let mut e = envois::journal::Envoi::nouveau(envois::journal::Mode::Reel, "test", true, "", "", envois::journal::DetailDsn::default());
     e.mois = Some(socle::mois::Mois::lire("2026-12").unwrap());
-    e.quand = socle::paris::HeureDuJournal::lire("2027-01-05T10:00:00").unwrap();
-    e.origine = "le test".into();
     e.versions = Some(serde_json::from_value(json!([{"salarie": "FULLER", "numero": "FU1.26.01", "version": na.version(), "mois": "2026-11"}])).unwrap());
-    envois::journal::noter(&racine, envois::journal::Ligne::Dsn(e), Some(std::path::Path::new("DSN_Decembre2026.dsn")), socle::paris::InstantEcrit::maintenant()).unwrap();
+    let date = envois::journal::Datation::Lue { quand: socle::paris::HeureDuJournal::lire("2027-01-05T10:00:00").unwrap(), origine: "le test".into() };
+    envois::journal::noter(&racine, envois::journal::Ligne::Dsn(e), Some(std::path::Path::new("DSN_Decembre2026.dsn")), date).unwrap();
     let a_refaire = na.a_refaire(&envois::journal::lu(&racine).map(|j| j.departs).unwrap());
     assert!(!a_refaire.iter().any(|a| matches!(a, ARefaire::Dsn { .. })), "{:?}", a_refaire);
     assert!(declarations::produire_regularisations::regularisations_pour(&ctx("2027-01-20"), socle::mois::Mois::lire("2027-01").unwrap(), &envois::journal::lu(&racine).map(|j| j.departs).unwrap()).unwrap().is_empty());

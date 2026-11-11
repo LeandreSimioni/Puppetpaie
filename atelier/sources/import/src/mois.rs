@@ -215,11 +215,11 @@ pub(crate) struct EtatsDeCarte {
 /// de `retours/dpae/` (par le salarie et le jour d'embauche qu'ils attestent).
 fn dpae_de(journal: &std::collections::HashMap<etats::Paire, socle::paris::HeureDuJournal>, certifiees: &[envois::reprise_journal::DpaeAttestee], salarie: Option<&str>, numero: Option<&str>, debut: Option<Jour>) -> EtatDeCarte {
     if let Some(q) = salarie.and_then(|s| journal.get(&(s.to_string(), numero.map(str::to_string)))) {
-        return EtatDeCarte { couleur: "vert", courte: "DPAE faite", phrase: format!("DPAE déposée le {}", etats::quand_lisible(&q.iso())) };
+        return EtatDeCarte { couleur: "vert", courte: "DPAE faite", phrase: format!("DPAE déposée le {}", q.dit()) };
     }
     let certifiee = certifiees.iter().find(|c| c.embauches.iter().any(|e| Some(e.salarie.as_str()) == salarie && Some(e.debut) == debut));
     if let Some(c) = certifiee {
-        let quand: String = c.quand.iter().map(|q| format!(" ({})", etats::quand_lisible(&q.iso()))).collect();
+        let quand: String = c.quand.iter().map(|q| format!(" ({})", q.dit())).collect();
         return EtatDeCarte { couleur: "vert", courte: "DPAE faite", phrase: format!("DPAE certifiée par l'Urssaf{}", quand) };
     }
     EtatDeCarte { couleur: "gris", courte: "avant PuppetPaie", phrase: "DPAE faite avant PuppetPaie : aucun certificat de l'Urssaf n'est relevé pour cette embauche".to_string() }

@@ -27,7 +27,7 @@ const DSN_ECRITES: &str = "journal/dsn-ecrites.json";
 pub fn noter_piece_ecrite(racine: &Path, cle: &str, empreinte_saisie: Option<EmpreinteNotee>, versions_portees: Option<Vec<envois::journal::Version>>) -> R<()> {
     let p = racine.join(DSN_ECRITES);
     let mut d = journal_des_ecritures(racine)?;
-    d.insert(cle.to_string(), PieceNotee { quand: socle::paris::maintenant(), empreinte_saisie, versions_portees });
+    d.insert(cle.to_string(), PieceNotee { quand: socle::paris::InstantEcrit::maintenant(), empreinte_saisie, versions_portees });
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent).map_err(|e| os(parent, e))?;
     }
@@ -84,10 +84,10 @@ pub fn journal_des_ecritures(racine: &Path) -> R<std::collections::BTreeMap<Stri
     socle::forme::lire_fichier(&p, "Le journal des pièces écrites ne se lit pas.").map_err(|e| e.reclasser(Classe::Illisible))
 }
 
-/// QUAND LE MOTEUR A ECRIT CETTE PIECE (`AAAA-MM-JJTHH:MM`), lu au journal des ecritures (`noter_piece_ecrite`) ; `None`
-/// s'il ne le dit pas. Jamais la date du fichier.
-pub fn ecrit_le(racine: &Path, fichier: &Path) -> R<Option<String>> {
-    Ok(piece_notee(racine, fichier)?.map(|n| n.quand.chars().take(16).collect()))
+/// QUAND LE MOTEUR A ECRIT CETTE PIECE, a la minute, lu au journal des ecritures (`noter_piece_ecrite`) ; `None` s'il ne
+/// le dit pas. Jamais la date du fichier.
+pub fn ecrit_le(racine: &Path, fichier: &Path) -> R<Option<socle::paris::MinuteEcrite>> {
+    Ok(piece_notee(racine, fichier)?.map(|n| socle::paris::MinuteEcrite::du_naif(n.quand.naif())))
 }
 
 /// UNE PIECE NOTEE AU JOURNAL DES ECRITURES, telle que `noter_piece_ecrite` l'ecrit : quand, la paie qu'elle declare, et
@@ -95,7 +95,7 @@ pub fn ecrit_le(racine: &Path, fichier: &Path) -> R<Option<String>> {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PieceNotee {
-    pub quand: String,
+    pub quand: socle::paris::InstantEcrit,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub empreinte_saisie: Option<EmpreinteNotee>,
     #[serde(skip_serializing_if = "Option::is_none")]

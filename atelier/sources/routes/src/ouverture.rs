@@ -739,20 +739,19 @@ struct FicheAttendue {
     code: String,
     adresse: String,
     prenom: String,
-    quand: String,
+    quand: socle::paris::HeureDuJournal,
     demande_dit: String,
 }
 
 /// Les demandes de fiche parties et pas encore revenues, les plus anciennes d'abord, comme la page les lit.
 fn fiches_attendues(ctx: &Contexte) -> R<Vec<FicheAttendue>> {
-    crate::fiches::fiches_attendues(ctx)?
+    Ok(crate::fiches::fiches_attendues(ctx)?
         .into_iter()
         .map(|a| {
-            let jour: String = a.quand.chars().take(10).collect();
-            let demande_dit = format!("demandée le {}", socle::date::Jour::lire(&jour)?.jj_mm_aaaa());
-            Ok(FicheAttendue { code: a.code, adresse: a.adresse, prenom: a.prenom, quand: a.quand, demande_dit })
+            let demande_dit = format!("demandée le {}", a.quand.jour().jj_mm_aaaa());
+            FicheAttendue { code: a.code, adresse: a.adresse, prenom: a.prenom, quand: a.quand, demande_dit }
         })
-        .collect()
+        .collect())
 }
 
 

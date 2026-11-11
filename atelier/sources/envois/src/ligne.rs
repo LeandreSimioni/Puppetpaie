@@ -89,9 +89,9 @@ pub struct Version {
 #[serde(deny_unknown_fields)]
 pub struct Envoi<D, R> {
     /// L'heure de l'envoi (a la seconde), ou celle qu'une reprise lit dans sa piece (`journal::noter`).
-    pub quand: socle::paris::HeureDuJournal,
+    pub(crate) quand: socle::paris::HeureDuJournal,
     /// D'ou vient une heure qui n'est pas celle de l'acte (une reprise, l'horloge d'une fictive) ; vide sinon.
-    pub origine: String,
+    pub(crate) origine: String,
     pub mois: Option<Mois>,
     /// Le nom du fichier parti, sans son dossier.
     pub fichier: Option<String>,
@@ -549,7 +549,7 @@ pub struct ContratParti {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remplace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub effet: Option<String>,
+    pub effet: Option<socle::date::Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modifie: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -647,7 +647,7 @@ pub struct RetourContrat {
     pub code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adresse: Option<String>,
-    pub quand: String,
+    pub quand: socle::paris::InstantEcrit,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -684,9 +684,9 @@ pub struct AvenantParti {
     pub fichier: String,
     pub code: Option<String>,
     pub contrat: Option<NumeroContrat>,
-    pub effet: Option<String>,
+    pub effet: Option<socle::date::Jour>,
     pub modifications: Vec<ArticleModifie>,
-    pub signe: Option<String>,
+    pub signe: Option<socle::paris::InstantEcrit>,
     pub par_courriel: bool,
 }
 
@@ -794,7 +794,7 @@ pub struct RetourFiche {
     pub illisible: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub erreurs: Option<usize>,
-    pub quand: String,
+    pub quand: socle::paris::InstantEcrit,
     pub qui: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub de: Option<String>,

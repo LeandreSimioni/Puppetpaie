@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use socle::mois::Mois;
-use socle::paris::HeureDuJournal;
+use socle::date::Jour;
+use socle::paris::{HeureDuJournal, InstantEcrit};
 use crate::journal::{chemin, Rangement};
 use crate::ligne::{Acte, AvenantParti, ContratAttendu, Ligne, Mode, PersonneCertifiee, RetourContrat, RetourOrganisme, Verdict};
 use crate::retours::{self, Annonce};
@@ -269,14 +270,14 @@ pub fn renvoyes_depuis_la_signature(lignes: &[Ligne]) -> HashSet<Paire> {
 }
 
 /// Les contrats dont le dernier mot est « recu » : (salarie, numero) -> quand.
-pub fn contrats_recus(lignes: &[Ligne]) -> HashMap<Paire, String> {
-    let mut etat: HashMap<Paire, Option<String>> = HashMap::new();
+pub fn contrats_recus(lignes: &[Ligne]) -> HashMap<Paire, InstantEcrit> {
+    let mut etat: HashMap<Paire, Option<InstantEcrit>> = HashMap::new();
     for d in lignes.iter().flat_map(revenus) {
         // La note d'un avenant (signe, ou defait) ne dit rien du contrat lui-meme.
         if d.avenant.is_some() {
             continue;
         }
-        etat.insert(paire(&d.salarie, d.numero_dit()), d.recu.then(|| d.quand.clone()).filter(|q| !q.is_empty()));
+        etat.insert(paire(&d.salarie, d.numero_dit()), d.recu.then_some(d.quand));
     }
     etat.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))).collect()
 }
@@ -434,7 +435,7 @@ pub fn avenants_par_contrat(lignes: &[Ligne]) -> HashMap<Paire, Vec<AvenantParti
                     if !d.recu {
                         a.signe = None;
                     } else if a.signe.is_none() {
-                        a.signe = Some(d.quand.clone());
+                        a.signe = Some(d.quand);
                     }
                 }
             }
@@ -495,9 +496,9 @@ fn pluriel(n: usize) -> &'static str {
 /// LA PHRASE D'UN ENVOI DU JOURNAL : quand il est parti, et ce qui en est revenu. Un contrat est revenu signe quand le
 /// journal le note recu (`contrats_recus`) ; un avenant, quand sa propre note le dit (`avenants_par_contrat`) -- les
 /// memes lectures que l'etat de l'engagement.
-pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, String>, avenants: &HashMap<Paire, Vec<AvenantParti>>) -> String {
+pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, InstantEcrit>, avenants: &HashMap<Paire, Vec<AvenantParti>>) -> String {
     let Some(ligne) = ligne else { return "pas encore envoyé".into() };
-    let mut quand = quand_lisible(&ligne.quand().iso());
+    let mut quand = ligne.quand().dit();
     if ligne.mode() == Mode::Test {
         quand = format!("en TEST le {}", quand);
     }
@@ -735,26 +736,26 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &str, nom: &str) -> R
         (Some(c), _, _) if compte_rendu == Some("ok") => (
             EtatDuTest::Testee,
             format!("{} est testée — conforme. Voulez-vous l'envoyer ?", cette),
-            format!("Déposée en test le {}, avec ce même contenu.", quand_lisible(&c.quand().iso())),
+            format!("Déposée en test le {}, avec ce même contenu.", c.quand().dit()),
         ),
         (Some(c), _, _) => (
             EtatDuTest::EnTest,
             format!("{} est en test — son compte rendu est attendu", cette),
-            format!("Envoyée en test le {}. {}", quand_lisible(&c.quand().iso()), ENSUITE),
+            format!("Envoyée en test le {}. {}", c.quand().dit(), ENSUITE),
         ),
         (None, Some(r), _) => (
             EtatDuTest::TestRefuse,
             "Le test est refusé".into(),
             format!(
                 "Essayé le {} : {}. Le même refus attendrait le dépôt réel : c'est cela qu'il faut corriger.",
-                quand_lisible(&r.quand().iso()),
+                r.quand().dit(),
                 pourquoi_rate(r).trim_end_matches('.')
             ),
         ),
         (None, None, Some(p)) => (
             EtatDuTest::Ecrite,
             "Pas de test valable pour ce contenu".into(),
-            format!("Un fichier du même nom a été essayé le {}, mais son contenu a changé depuis : le test ne vaut plus. {}", quand_lisible(&p.quand().iso()), ENSUITE),
+            format!("Un fichier du même nom a été essayé le {}, mais son contenu a changé depuis : le test ne vaut plus. {}", p.quand().dit(), ENSUITE),
         ),
         (None, None, None) => (EtatDuTest::Ecrite, "D'abord, le dépôt de test".into(), format!("Ce contenu n'a jamais été déposé en test. {}", ENSUITE)),
     };
@@ -1273,17 +1274,17 @@ pub struct Parti {
     pub numero: Option<engagement::numeros::NumeroContrat>,
     pub fichier: String,
     pub quand: HeureDuJournal,
-    pub signe: Option<String>,
+    pub signe: Option<InstantEcrit>,
     /// L'empreinte du modele avec lequel il est parti (`ContratParti::modele`).
     pub modele: Option<String>,
 }
 
 impl Parti {
     /// Le jour qui date le contrat dans un avenant : celui de sa signature, sinon de son envoi.
-    pub fn date(&self) -> String {
+    pub fn date(&self) -> Jour {
         match &self.signe {
-            Some(s) => s.chars().take(10).collect(),
-            None => self.quand.jour().iso(),
+            Some(s) => s.jour(),
+            None => self.quand.jour(),
         }
     }
 }
@@ -1300,7 +1301,7 @@ pub fn contrat_parti(lignes: &[Ligne], salarie: &str, numero: Option<&str>) -> O
         for d in revenus(l) {
             if let Some(p) = parti.as_mut() {
                 if d.recu && d.salarie.as_str() == salarie && d.numero_dit() == numero && p.signe.is_none() {
-                    p.signe = Some(d.quand.clone());
+                    p.signe = Some(d.quand);
                 }
             }
         }

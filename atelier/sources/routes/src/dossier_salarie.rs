@@ -854,7 +854,7 @@ fn mois_puppetpaie(
                 if !engagement::signe_ailleurs(&ctx.racine, &p.engagement)? {
                     continue;
                 }
-                for f in crate::gestes::signature::contrat_signe_depose(&ctx.racine, cle, &p.engagement.debut.iso()) {
+                for f in crate::gestes::signature::contrat_signe_depose(&ctx.racine, cle, p.engagement.debut) {
                     if !d.deposes_vus.insert(f.clone()) {
                         continue;
                     }

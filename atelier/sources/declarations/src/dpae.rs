@@ -25,6 +25,7 @@ use droit::contexte::EntrepriseDuDocument;
 use droit::fiche::ChampsEntreprise;
 use socle::date::Jour;
 use socle::fichiers::{modele_de, repr};
+use socle::paris::MinuteEcrite;
 use crate::ntt;
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::texte::ascii_nfkd;
@@ -333,13 +334,19 @@ pub struct Embauche {
 
 /// Les parametres communs d'une ecriture.
 pub struct Parametres<'a> {
-    /// JJMMAAAAHHMM : la minute de l'ecriture, donnee par l'appelant (heure de Paris).
-    pub horodatage: &'a str,
+    /// La minute de l'ecriture, donnee par l'appelant (heure de Paris), que la zone ecrit JJMMAAAAHHMM.
+    pub horodatage: MinuteEcrite,
     pub heure_embauche: String,
     /// Le code Urssaf voulu, tel que l'appelant l'a donne (`None` : celui du gabarit).
     pub code_urssaf: Option<String>,
     pub ent: Option<&'a EntrepriseDuDocument>,
     pub chemins: &'a Chemins,
+}
+
+/// La zone `horodatage` d'une minute : JJMMAAAAHHMM.
+fn horodatage_dpae(m: MinuteEcrite) -> String {
+    let (j, s) = (m.jour(), m.naif().seconde_du_jour());
+    format!("{:02}{:02}{:04}{:02}{:02}", j.jour, j.mois, j.an, s / 3_600, s / 60 % 60)
 }
 
 fn poser(buf: &mut [char], nom: &str, valeur: &str) -> R<()> {
@@ -410,7 +417,7 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
         Some("2") => "F",
         _ => "",
     };
-    poser(&mut buf, "horodatage", p.horodatage)?;
+    poser(&mut buf, "horodatage", &horodatage_dpae(p.horodatage))?;
     // Les zones du salarie, chacune entiere dans le jeu que la norme lui admet (`Jeu`) : la fiche les tient a leur longueur.
     let zone = |nom: &str| {
         let (a, b) = champ(nom);
@@ -536,23 +543,16 @@ pub fn contenu(embauches: &[Embauche], p: &Parametres) -> R<Vec<u8>> {
 /// les deux, et CoolPaie deposait le zip. La date du fichier dans l'archive
 /// est la minute de l'ecriture (JJMMAAAAHHMM) : le zip est le meme a chaque
 /// ecriture du meme contenu.
-pub fn zip(nom: &str, donnees: &[u8], horodatage: &str) -> R<Vec<u8>> {
+pub fn zip(nom: &str, donnees: &[u8], horodatage: MinuteEcrite) -> R<Vec<u8>> {
     use flate2::write::DeflateEncoder;
     use flate2::{Compression, Crc};
     use std::io::Write;
 
-    // L'horodatage JJMMAAAAHHMM, entre 1980 et 2107 (ce qu'une date d'archive zip peut dire) ; autre chose se refuse.
-    let illisible = || socle::refus!("L'horodatage de la DPAE ({}) ne se lit pas en JJMMAAAAHHMM.", repr(horodatage));
-    let n = |a: usize, b: usize| -> R<u32> {
-        match horodatage.get(a..b).map(str::parse::<u32>) {
-            Some(Ok(x)) => Ok(x),
-            _ => Err(illisible()),
-        }
-    };
-    let (j, mo, a, h, m) = (n(0, 2)?, n(2, 4)?, n(4, 8)?, n(8, 10)?, n(10, 12)?);
-    if horodatage.chars().count() != 12 || !(1980..2108).contains(&a) {
-        return Err(illisible());
-    }
+    // L'horodatage, entre 1980 et 2107 (ce qu'une date d'archive zip peut dire) ; autre chose se refuse.
+    let jour = horodatage.jour();
+    let s = horodatage.naif().seconde_du_jour();
+    let (j, mo, h, m) = (jour.jour, jour.mois, (s / 3_600) as u32, (s / 60 % 60) as u32);
+    let a = u32::try_from(jour.an).ok().filter(|a| (1980..2108).contains(a)).ok_or_else(|| socle::refus!("L'horodatage de la DPAE ({}) ne tient pas dans une archive zip (années 1980 à 2107).", horodatage_dpae(horodatage)))?;
     let (date, heure) = (((a - 1980) << 9) | (mo << 5) | j, (h << 11) | (m << 5));
     let mut crc = Crc::new();
     crc.update(donnees);
@@ -950,7 +950,7 @@ mod tests {
     }
 
     fn parametres<'a>(ent: Option<&'a EntrepriseDuDocument>, code: Option<&str>, chemins: &'a Chemins) -> Parametres<'a> {
-        Parametres { horodatage: "031020261407", heure_embauche: "0800".into(), code_urssaf: code.map(String::from), ent, chemins }
+        Parametres { horodatage: MinuteEcrite::lire("2026-10-03T14:07").unwrap(), heure_embauche: "0800".into(), code_urssaf: code.map(String::from), ent, chemins }
     }
 
     fn enr(e: &Embauche, ent: Option<&EntrepriseDuDocument>, code: Option<&str>) -> R<String> {

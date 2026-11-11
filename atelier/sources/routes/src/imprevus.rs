@@ -762,8 +762,7 @@ fn envoye(ctx: &Contexte, a: &ArretSaisi, nature: &str) -> R<bool> {
 /// (`obligations::ce_qui_est_parti` : un depot reel accepte, que le bilan n'a pas refuse).
 fn parti_le(ctx: &Contexte, a: &ArretSaisi, nature: &str) -> R<Option<Jour>> {
     let envois = envois_de_l_arret(ctx, a)?;
-    let premier = envois.iter().filter(|x| x.nature_declaration == nature && x.type_declaration.as_deref() == Some(signalement::NORMALE)).map(|x| x.quand.as_str()).min().map(str::to_string);
-    premier.map(|q| jour(&q.chars().take(10).collect::<String>())).transpose()
+    Ok(envois.iter().filter(|x| x.nature_declaration == nature && x.type_declaration.as_deref() == Some(signalement::NORMALE)).map(|x| x.quand).min().map(|q| q.jour()))
 }
 
 /// Le nom d'un signalement : `<base>.dsn` ; un annule-et-remplace, `<base>_AR<ordre>.dsn`, a cote du signalement parti
@@ -830,7 +829,7 @@ pub(crate) struct ArretResume {
     reprise: Option<Jour>,
     reprise_motif: Option<String>,
     note: Option<String>,
-    saisi_le: String,
+    saisi_le: socle::paris::HeureDeSaisie,
     /// Un signalement en est parti : `etat` le dit a la page.
     #[serde(skip)]
     pub signale: bool,
@@ -942,7 +941,7 @@ pub(crate) struct ResumeDeSuspension {
     premier_jour: Jour,
     dernier_jour: Jour,
     note: Option<String>,
-    saisi_le: String,
+    saisi_le: socle::paris::HeureDeSaisie,
     reporte_par_dit: Vec<String>,
     cachets: Vec<Cachet>,
     gestes: Vec<GesteDImprevu>,
@@ -1238,7 +1237,7 @@ fn ce_qui_est_parti(prolongations: &[Prolongation], signalements: &[crate::oblig
     }
     for s in signalements {
         let quoi = if s.nature_declaration == "05" { "reprise signalée" } else if s.type_declaration.as_deref() == Some("03") { "signalement rectifié" } else { "signalé" };
-        parti.push(dite(format!("{} le {}", quoi, socle::ecran::quand(&s.quand))));
+        parti.push(dite(format!("{} le {}", quoi, s.quand.dit())));
     }
     if !reporte_par_dit.is_empty() {
         parti.push(dite(format!("déclaré par la DSN {}", reporte_par_dit.join(", "))));
@@ -1386,7 +1385,7 @@ fn resume_de_suspension(ctx: &Contexte, s: &SuspensionSaisie, cachets: Vec<Cache
         premier_jour: premier,
         dernier_jour: dernier,
         note: s.note.clone(),
-        saisi_le: s.saisi_le.iso(),
+        saisi_le: s.saisi_le,
         reporte_par_dit: mois_de_la_dsn(&reportee),
         gestes: gestes_d_une_absence(s, &reportee),
         cachets,
@@ -2239,7 +2238,7 @@ pub(crate) fn resume_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi) -> R<Arre
         reprise: a.reprise,
         reprise_motif: a.reprise_motif.clone(),
         note: a.note.clone(),
-        saisi_le: a.saisi_le.iso(),
+        saisi_le: a.saisi_le,
         signale,
         signalement_du,
         signalements,

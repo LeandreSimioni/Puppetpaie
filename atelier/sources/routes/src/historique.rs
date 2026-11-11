@@ -316,7 +316,7 @@ struct ExerciceDit {
 #[derive(Debug, serde::Serialize)]
 struct ExportDeLAnnee {
     fichier: String,
-    ecrit: Option<String>,
+    ecrit: Option<socle::paris::MinuteEcrite>,
 }
 
 /// La route `exercices` : chaque annee connue du dossier -- ses mois, sa cloture, son export -- et le dossier des archives.
@@ -357,7 +357,7 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
         let note = clos.get(a);
         let clos_dit: String = note.iter().map(|c| format!(" · clos le {}", socle::ecran::quand(&c.le))).collect();
         let export_dit = match &export {
-            Some(ExportDeLAnnee { ecrit: Some(e), .. }) => format!(" · export compta du {}", socle::ecran::quand(e)),
+            Some(ExportDeLAnnee { ecrit: Some(e), .. }) => format!(" · export compta du {}", e.dit()),
             Some(_) => " · export compta".to_string(),
             None => " · pas d'export compta".to_string(),
         };

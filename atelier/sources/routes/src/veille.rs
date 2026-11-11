@@ -19,20 +19,15 @@ pub struct EtatDeLaVeille {
     pub erreur: Option<String>,
 }
 
-/// « à 16:28 » le jour du passage, « le 23/09 à 16:28 » un autre jour : l'heure d'un passage (`JJ/MM/AAAA HH:MM`, ou
-/// ISO), au jour de l'horloge de Paris (celle d'une fictive au banc comprise).
-fn heure_du_passage(quand: &str) -> String {
-    let c: Vec<&str> = quand.split(|x: char| !x.is_ascii_digit()).filter(|x| !x.is_empty()).collect();
-    let (an, mo, jo, h, mi) = match c.as_slice() {
-        [a, m, j, h, mi, ..] if a.len() == 4 => (*a, *m, *j, *h, *mi),
-        [j, m, a, h, mi, ..] if a.len() == 4 => (*a, *m, *j, *h, *mi),
-        _ => return if quand.is_empty() { String::new() } else { format!("le {}", quand) },
-    };
-    let aujourdhui = socle::paris::maintenant();
-    if aujourdhui.get(..10) == Some(&format!("{}-{}-{}", an, mo, jo)) {
-        format!("à {}:{}", h, mi)
+/// « à 16:28 » le jour du passage, « le 23/09 à 16:28 » un autre jour : l'heure d'un passage, au jour de l'horloge de
+/// Paris (celle d'une fictive au banc comprise).
+fn heure_du_passage(quand: socle::paris::MinuteDite) -> String {
+    let (jour, s) = (quand.naif().jour(), quand.naif().seconde_du_jour());
+    let heure = format!("{:02}:{:02}", s / 3_600, s / 60 % 60);
+    if socle::paris::InstantEcrit::maintenant().jour() == jour {
+        format!("à {}", heure)
     } else {
-        format!("le {}/{} à {}:{}", jo, mo, h, mi)
+        format!("le {:02}/{:02} à {}", jour.jour, jour.mois, heure)
     }
 }
 
@@ -66,7 +61,7 @@ pub struct DitDuBandeau {
 pub fn dit_du_bandeau(d: Option<&Trace>, dans: Option<u64>, fictive: bool) -> DitDuBandeau {
     // Aucun passage encore : le releve est a venir.
     let quand = match d {
-        Some(t) => heure_du_passage(&t.quand),
+        Some(t) => heure_du_passage(t.quand),
         None => "à venir".to_string(),
     };
     let hors_ligne = d.is_some_and(|t| t.hors_ligne);
