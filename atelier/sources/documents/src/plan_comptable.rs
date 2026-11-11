@@ -852,7 +852,8 @@ fn mettre_en_forme(objet: &Objet, spec: &str) -> Result<String, Faute> {
                     'X' => "0X",
                     'o' => "0o",
                     'b' => "0b",
-                    _ => "",
+                    'd' | 'n' | 'c' => "",
+                    autre => return Err((Classe::Illisible, format!("type « {} » inconnu pour un nombre entier", autre))),
                 }
             } else {
                 ""
@@ -863,7 +864,8 @@ fn mettre_en_forme(objet: &Objet, spec: &str) -> Result<String, Faute> {
                 match s.signe {
                     Some('+') => "+",
                     Some(' ') => " ",
-                    _ => "",
+                    Some('-') | None => "",
+                    Some(autre) => return Err((Classe::Illisible, format!("signe « {} » inconnu", autre))),
                 }
             };
             let entete = format!("{}{}", signe, prefixe);

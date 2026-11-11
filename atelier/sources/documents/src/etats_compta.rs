@@ -596,7 +596,7 @@ fn oxygene(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         // Le poste analytique d'une ligne ventilee : celui que la compagnie dit ; sinon la zone reste vide.
         let poste = match (&section, &env.plan.poste_analytique) {
             (Some(_), Some(p)) => tenir("Oxygène", "CODAGE", p, 9)?,
-            _ => String::new(),
+            (None, _) | (Some(_), None) => String::new(),
         };
         let section = ou_vide(section);
         for (k, v) in [
@@ -1122,16 +1122,15 @@ fn fabriquer(ec: &Ecrivain, ecr: &[Ecriture], env: &Envoi) -> R<Fabrique> {
 pub fn trop_longs(ctx: &Contexte, format: &str, departs: &engagement::departs::Departs) -> R<Vec<Depasse>> {
     let Some(ec) = ecrivain(format).filter(|_| FormatBorne::de(format).is_some()) else { return Ok(Vec::new()) };
     let (plan, _) = crate::plan_comptable::plan(ctx)?;
-    // Mois par mois : un mois dont les ecritures se refusent (sa paie incomplete) ne s'exporte pas, il n'a rien a
-    // raccourcir ; son refus est celui de son export.
+    // Mois par mois : un mois dont les ecritures se refusent (sa paie incomplete) ne s'exporte pas, et son refus est
+    // celui de son export : il se dit ici aussi.
     let mut ecr = Vec::new();
     for m in Periode::nouvelle(ctx, None, None, true, false)?.mois {
-        if let Ok(mut du_mois) = ecritures_du_mois(ctx, m, &plan, departs) {
-            for e in du_mois.iter_mut() {
-                e.piece = format!("PAIE-{}", m);
-            }
-            ecr.extend(du_mois);
+        let mut du_mois = ecritures_du_mois(ctx, m, &plan, departs)?;
+        for e in du_mois.iter_mut() {
+            e.piece = format!("PAIE-{}", m);
         }
+        ecr.extend(du_mois);
     }
     let env = envoi(ctx, &plan, None, format)?;
     fabriquer(&ec, &ecr, &env)?;

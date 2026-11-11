@@ -17,8 +17,7 @@ pub fn ecrire(description: &Description, chemin: &Path) -> R<PathBuf> {
     }
     let octets = fabriquer_octets(description)?;
     if let Err(e) = std::fs::write(chemin, &octets) {
-        let _ = std::fs::remove_file(chemin);
-        return Err(socle::echec::du_disque(chemin, &e));
+        return Err(socle::fichiers::effacer_apres(socle::echec::du_disque(chemin, &e), chemin));
     }
     Ok(chemin.to_path_buf())
 }
@@ -92,6 +91,10 @@ impl Temporaire {
 
 impl Drop for Temporaire {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        // A la sortie de sa portee, rien ne remonte : un dossier qui ne s'efface pas est note a la naissance de son echec
+        // (`echec::noter_echec`, que les incidents lisent).
+        if let Err(note) = socle::fichiers::effacer(&self.0) {
+            std::mem::drop(note);
+        }
     }
 }

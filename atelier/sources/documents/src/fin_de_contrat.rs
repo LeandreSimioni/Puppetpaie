@@ -103,8 +103,7 @@ fait). Rien n'est écrit.",
     let lu_recu = ModeleLu::du_fichier(&socle::fichiers::modele_de("recu-solde-de-tout-compte.modele", Some(&ent.gabarits), &poste))?;
     ecrire_papier(&lu_cert, valeurs_cert, &certificat, &ent, true)?;
     if let Err(e) = ecrire_papier(&lu_recu, valeurs, &recu, &ent, false) {
-        let _ = std::fs::remove_file(&certificat);
-        return Err(e);
+        return Err(socle::fichiers::effacer_apres(e, &certificat));
     }
     Ok([certificat, recu])
 }

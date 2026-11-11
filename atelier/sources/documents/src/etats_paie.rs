@@ -1137,8 +1137,8 @@ pub fn etat_des_virements(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 // ================================================ 5. le prelevement a la source
 
 /// Les types de taux.
-fn type_de_taux(code: &str) -> &'static str {
-    match code {
+fn type_de_taux(code: &str) -> R<&'static str> {
+    Ok(match code {
         "01" => "Taux transmis par la DGFIP",
         "13" => "Bareme mensuel metropole",
         "17" => "Bareme mathematique sur base mensuelle metropole",
@@ -1147,8 +1147,8 @@ fn type_de_taux(code: &str) -> &'static str {
         "33" => "Bareme mensuel Guyane et Mayotte",
         "37" => "Bareme mathematique sur base mensuelle Guyane et Mayotte",
         "99" => "Indu relatif a un exercice anterieur - pas de taux de PAS",
-        _ => "",
-    }
+        autre => return Err(socle::refus!("Le type de taux de PAS « {} » n'est pas dans la liste de la norme (S21.G00.50.007) : le signaler au développeur.", autre)),
+    })
 }
 
 /// Ce qui a ete retenu au titre de l'impot sur le revenu.
@@ -1172,7 +1172,7 @@ pub fn prelevement_a_la_source(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 Some(v) => {
                     l.d("abattement", v.abattement).d("assiette", v.montant_soumis);
                     // Un taux ou un type que la paie ne dit pas (une paie importee dont les pieces ne l'impriment pas) reste vide.
-                    l.ot("type", v.type_taux.as_deref().filter(|c| !c.is_empty()).map(|c| format!("{} — {}", c, type_de_taux(c))));
+                    l.ot("type", v.type_taux.as_deref().filter(|c| !c.is_empty()).map(|c| type_de_taux(c).map(|t| format!("{} — {}", c, t))).transpose()?);
                     match &v.taux {
                         None => l.rien("taux"),
                         Some(t) => l.d("taux", t.dec().map_err(|m| m.reclasser(Classe::CalculImpossible))?),
