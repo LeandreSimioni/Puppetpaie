@@ -27,11 +27,14 @@ fn classe(c: char) -> u8 {
     // La premiere plage qui ne finit pas avant `cp` (la table est triee, ses plages disjointes) : la sienne si elle le
     // contient. Un point qu'aucune plage ne contient est de classe 0 : la table ne releve que les classes non nulles de
     // `UnicodeData.txt`, ou un point non liste est de classe 0 (Unicode, chapitre 3, D104).
-    match CLASSES.get(CLASSES.partition_point(|&(_, b, _)| b < cp)) {
-        Some(&(a, _, classe)) if a <= cp => classe,
-        None | Some(_) => 0,
+    match CLASSES.get(CLASSES.partition_point(|&(_, b, _)| b < cp)).filter(|&&(a, _, _)| a <= cp) {
+        Some(&(_, _, classe)) => classe,
+        None => CLASSE_NON_LISTEE,
     }
 }
+
+/// La classe d'un point de code que `UnicodeData.txt` ne liste pas : 0 (Unicode, chapitre 3, D104).
+const CLASSE_NON_LISTEE: u8 = 0;
 
 fn decomposer(c: char, sortie: &mut Vec<char>) {
     let cp = c as u32;
