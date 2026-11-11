@@ -875,6 +875,7 @@ const CACHES = {
   entreprise: ["siren", "nic"],
   // `sante_svp` se remplit par les trois cases de la complementaire sante : gardé tel quel, jamais demandé.
   salarie: ["sante_svp"],
+  spectacle: [],
 };
 
 /* Les structures telles qu'elles etaient AVANT la saisie : `lireFormulaire`

@@ -1612,8 +1612,9 @@ function nouvelleFiche(nom) {
   dessinerConfig();
   // L'ancienneté d'une fiche neuve : celle de son embauche, que le moteur
   // pose à la validation de son premier engagement (à changer, dans Avancé).
+  // Une fiche neuve n'a encore ni anomalie, ni écart, ni pièce ouverte ; ce qu'elle montre, la première réponse le dit.
   const donnees = { actif: true };
-  dessinerFormulaire({ nom, cle: null, donnees, anomalies: [] });
+  dessinerFormulaire({ nom, cle: null, donnees, anomalies: [], ecarts: [], pieces_ouvertes: [] });
   document.getElementById("config-formulaire").scrollIntoView({ behavior: "smooth" });
 }
 

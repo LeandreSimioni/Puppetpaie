@@ -4,25 +4,34 @@
 /* Ce que l'écran dit de chaque valeur d'une liste de choix : les `libelles` du champ, tels que la description des fiches
  * les rend (`donnees/champs-base.json`) ; `""` est la ligne vide, quand elle vaut le cas ordinaire. */
 function libellesDe(cle) {
-  const d = (ETAT.configuration || {}).description || {};
+  const d = ETAT.configuration.description;
   for (const nom of ["entreprise", "salarie", "spectacle"]) {
-    const c = (d[nom] || []).find((x) => x.cle === cle);
-    if (c) return c.libelles || {};
+    const c = d[nom].find((x) => x.cle === cle);
+    // Un champ sans libellés (`libelles` absent) montre ses valeurs telles quelles.
+    if (c) return c.libelles ? c.libelles : {};
   }
   return {};
 }
+
+/* Ce qu'une case du formulaire montre : la valeur de la fiche, et rien quand la fiche ne la dit pas (un champ facultatif
+ * absent). C'est la seule règle d'affichage d'une absence, ici. */
+const texteDeLaCase = (v) => (v == null ? "" : String(v));
+/* Ce qu'une case de structure montre en JSON : `null` pour une structure que la fiche ne dit pas. */
+const jsonDeLaCase = (v, ...espaces) => JSON.stringify(v === undefined ? null : v, ...espaces);
 
 /* LES CASES D'UNE STRUCTURE, telles que le moteur les décrit (`champs` de la description) : `{champs: [[clé, libellé,
  * aide, genre]], liste, ligne}`, ou null. Une case déclarée qui se déduit d'une autre (`ecran: false`) ne se montre pas ;
  * le genre (`caseSousChamp`, `ligneStructure`) se lit de la forme : un choix et ses libellés, un oui/non, un nombre, une
  * date, un code risque AT/MP, une case que la configuration montre (`si_configuration`). */
 function sousChamps(c) {
-  if (!c || !(c.champs || []).length) return null;
+  // Une structure dit ses cases (`champs`) ; un champ seul n'en a pas.
+  if (!c || !c.champs || !c.champs.length) return null;
   const genre = (s) => {
-    const lib = s.libelles || {};
+    // Une case de choix dit ses libellés quand elle en a (`libelles`) ; la ligne vide se montre « — » sans eux.
+    const lib = s.libelles ? s.libelles : {};
     const g = {};
-    if ((s.choix || []).length) {
-      const vide = "" in lib || !s.choix.includes("") ? [["", lib[""] ?? "—"]] : [];
+    if (s.choix && s.choix.length) {
+      const vide = "" in lib || !s.choix.includes("") ? [["", "" in lib ? lib[""] : "—"]] : [];
       g.choix = Object.fromEntries([...vide, ...s.choix.filter((v) => v !== "").map((v) => [v, lib[v] ?? v])]);
     }
     if (s.forme === "booleen") g.booleen = true;
@@ -39,15 +48,15 @@ function sousChamps(c) {
 
 /* La structure `cle` de la fiche `nom` (par défaut, celle qu'on montre), case par case (`sousChamps`). */
 function structureDecrite(cle, nom = FICHE_ACTIVE) {
-  return sousChamps(((ETAT.configuration || {}).description[nom] || []).find((c) => c.cle === cle));
+  return sousChamps(ETAT.configuration.description[nom].find((c) => c.cle === cle));
 }
 
 /* UN CHAMP DE FICHE, DESSINÉ : celui que la fiche montre (`dessinerFormulaire`) et celui que « Pour démarrer » propose,
  * le même dessin. `c` : sa description ; `fiche` : `{donnees, anomalies}` ; `nom` : entreprise, salarie, spectacle. */
 function champDeFiche(c, fiche, nom) {
   const desc = ETAT.configuration.description[nom];
-  const anomalie = (cle) => (fiche.anomalies || []).find((a) => a.champ === cle);
-  const caches = CACHES[nom] || [];
+  const anomalie = (cle) => fiche.anomalies.find((a) => a.champ === cle);
+  const caches = CACHES[nom];
   // Un champ replié reste dans le formulaire, avec sa valeur, qui repart à l'enregistrement.
   // CE QUE LA FICHE MONTRE, LE MOTEUR LE DIT (`montres` de la fiche, puis de la route `permanents` à chaque changement,
   // `brancherConditions`) : chaque case porte sa clé (`data-montre`), et se replie quand le moteur ne la nomme pas. Une
@@ -77,10 +86,10 @@ function champDeFiche(c, fiche, nom) {
       // `lireFormulaire` comme une structure.
       if (c.forme === "structure" || (v !== null && typeof v === "object")) {
         return `<input type="hidden" data-cle="${c.cle}" data-structure="1"
-                  value="${echapper(JSON.stringify(v ?? null))}">`;
+                  value="${echapper(jsonDeLaCase(v))}">`;
       }
       return `<input type="hidden" data-cle="${c.cle}" data-forme="${c.forme}"
-                value="${echapper(v ?? "")}">`;
+                value="${echapper(texteDeLaCase(v))}">`;
     }
     const sous = sousChamps(c);
     if (sous) return structureHtml(c, v, sous, a, tempsDuChamp(c.cle, fiche.donnees));
@@ -100,7 +109,7 @@ function champDeFiche(c, fiche, nom) {
     // mise en forme copiee depuis une messagerie, son poids sous le cadre. Le
     // HTML part dans un champ cache ; le moteur le nettoie encore a l'envoi.
     if (c.cle === "courriel_signature") {
-      const html = nettoyerHtmlColle(String(v ?? ""));
+      const html = nettoyerHtmlColle(texteDeLaCase(v));
       return `<div class="champ pleine">
         <label>${echapper(c.libelle)}
           ${aideHtml(c.cle, c.aide)}</label>
@@ -118,15 +127,15 @@ function champDeFiche(c, fiche, nom) {
         ${a ? `<div class="anomalie ${a.gravite}">${echapper(a.message)}</div>` : ""}
       </div>`;
     }
-    if (c.cle === "code_urssaf" && (ETAT.organismes_urssaf || []).length) {
+    if (c.cle === "code_urssaf" && ETAT.organismes_urssaf.length) {
       const org = ETAT.organismes_urssaf;
-      const v3 = String(v ?? "");
+      const v3 = texteDeLaCase(v);
       const connu = org.some((o) => o.code === v3);
       return `<div class="champ pleine">
         <label>${echapper(c.libelle)}
           ${aideHtml(c.cle, c.aide)}
           <select data-cle="${c.cle}" data-forme="chiffres">
-            <option value=""${v3 ? "" : " selected"}>${echapper(ETAT.urssaf_deduit_dit || "")}</option>
+            <option value=""${v3 ? "" : " selected"}>${echapper(ETAT.urssaf_deduit_dit)}</option>
             ${org.map((o) => `<option value="${echapper(o.code)}"${
                 o.code === v3 ? " selected" : ""}
               >${echapper(o.code)} — ${echapper(o.nom)}</option>`).join("")}
@@ -137,18 +146,19 @@ function champDeFiche(c, fiche, nom) {
         ${a ? `<div class="anomalie ${a.gravite}">${echapper(a.message)}</div>` : ""}
       </div>`;
     }
-    if (c.cle === "idcc" && (ETAT.conventions || []).length) {
+    if (c.cle === "idcc" && ETAT.conventions.length) {
       const cv = ETAT.conventions;
-      const connue = cv.some((x) => String(x.idcc) === String(v ?? ""));
+      const v4 = texteDeLaCase(v);
+      const connue = cv.some((x) => String(x.idcc) === v4);
       return `<div class="champ pleine">
         <label><span>Convention collective</span>
           ${aideHtml(c.cle, c.aide)}
           <select data-cle="${c.cle}" data-forme="chiffres">
-            ${String(v ?? "") ? "" : `<option value="" selected>— à choisir —</option>`}
+            ${v4 ? "" : `<option value="" selected>— à choisir —</option>`}
             ${cv.map((x) => `<option value="${echapper(x.idcc)}"${
-                String(x.idcc) === String(v ?? "") ? " selected" : ""}
+                String(x.idcc) === v4 ? " selected" : ""}
               >${echapper(x.option_dit)}</option>`).join("")}
-            ${connue || !String(v ?? "") ? "" : `<option value="${echapper(v)}" selected
+            ${connue || !v4 ? "" : `<option value="${echapper(v)}" selected
               >${echapper(v)}</option>`}
           </select></label>
         ${aideCorps(c.cle, c.aide)}
@@ -164,11 +174,11 @@ function champDeFiche(c, fiche, nom) {
     // Le pays de naissance a sa liste a lui : la table
     // « Pays » de la DSN que le moteur sert (`etat.pays_naissance`), le Kosovo
     // et les Etats disparus compris.
-    const listePays = (c.cle === "pays_naissance" && (ETAT.pays_naissance || []).length)
+    const listePays = (c.cle === "pays_naissance" && ETAT.pays_naissance.length)
       ? ETAT.pays_naissance : ETAT.pays;
-    if (c.forme === "pays" && (listePays || []).length) {
+    if (c.forme === "pays" && listePays.length) {
       const liste = listePays;
-      const v2 = String(v ?? "").trim();
+      const v2 = texteDeLaCase(v).trim();
       const connu = liste.some((p) => p.code === v2.toUpperCase());
       return `<div class="champ">
         <label>${echapper(c.libelle)}
@@ -190,9 +200,10 @@ function champDeFiche(c, fiche, nom) {
     // La fiche salarie a suivi le meme jour : le sexe s'ecrivait « 2 », la
     // nationalite « 01 », le statut cadre « 04 ».
     if (["entreprise", "salarie"].includes(nom) && c.forme === "choix"
-        && (c.choix || []).length) {
-      const lib = c.libelles || {};
-      const v1 = String(v ?? "");
+        && c.choix.length) {
+      // Un champ sans libellés (`libelles` absent) montre ses codes.
+      const lib = c.libelles ? c.libelles : {};
+      const v1 = texteDeLaCase(v);
       // L'ordre de la table des libelles (le cas ordinaire d'abord), puis ce
       // qu'elle ne nomme pas ; un choix vide prevu par le moteur (« aucun »)
       // tient lieu de premiere ligne.
@@ -221,7 +232,7 @@ function champDeFiche(c, fiche, nom) {
         && (v == null || (Array.isArray(v) && v.every((x) => typeof x === "string")))) {
       return `<div class="champ pleine">
         <label>${echapper(c.libelle)} ${aideHtml(c.cle, c.aide)}
-          <input data-cle="${c.cle}" data-liste-textes="1" value="${echapper((v || []).join(", "))}"
+          <input data-cle="${c.cle}" data-liste-textes="1" value="${v ? echapper(v.join(", ")) : ""}"
                  placeholder="zerbinette, aaah">
         </label>
         ${aideCorps(c.cle, c.aide)}
@@ -257,12 +268,12 @@ function champDeFiche(c, fiche, nom) {
     }
     const structure = c.forme === "structure" || (v !== null && typeof v === "object");
     const controle = structure
-      ? `<textarea rows="4" data-cle="${c.cle}" data-structure="1">${echapper(JSON.stringify(v ?? null, null, 1))}</textarea>`
-      : `<input data-cle="${c.cle}" data-forme="${c.forme}" value="${echapper(v ?? "")}"${
+      ? `<textarea rows="4" data-cle="${c.cle}" data-structure="1">${echapper(jsonDeLaCase(v, null, 1))}</textarea>`
+      : `<input data-cle="${c.cle}" data-forme="${c.forme}" value="${echapper(texteDeLaCase(v))}"${
             // Une date se choisit dans un calendrier, dans toutes les fiches ;
             // la valeur reste AAAA-MM-JJ, celle du moteur.
             c.forme === "date"
-              && /^(\d{4}-\d{2}-\d{2})?$/.test(String(v ?? "")) ? ' type="date"' : ""}${
+              && /^(\d{4}-\d{2}-\d{2})?$/.test(texteDeLaCase(v)) ? ' type="date"' : ""}${
             c.exemple ? ` placeholder="ex. ${echapper(c.exemple)}"` : ""}
             class="${a ? (a.gravite === "erreur" ? "faute" : "suspect") : ""}">`;
     // L'adresse et le nom prennent la ligne entiere : le code postal et la
@@ -315,7 +326,8 @@ function dessinerFormulaire(fiche) {
     saisissables.forEach((c) => { parCle[c.cle] = c; });
     // CE QUI EST « AVANCÉ », LE MOTEUR LE DIT (`avance` de la description) : une case ne va dans un tiroir « Avancé »
     // que s'il la dit avancée, et une case qu'il dit avancée n'en sort pas. Les tables ne disent que l'ordre et la place.
-    const avancee = (i) => !!(sections[i][2] || {}).avance;
+    // Les options d'une section (son troisième terme), quand la table lui en donne.
+    const avancee = (i) => !!(sections[i][2] && sections[i][2].avance);
     const places = new Set();
     sections.forEach(([, cles], i) => cles.forEach((k) => {
       if (parCle[k] && !!parCle[k].avance === avancee(i)) places.add(k);
@@ -339,20 +351,20 @@ function dessinerFormulaire(fiche) {
       // La section dont chaque case est rangée dans une pièce (`piece`) se replie
       // quand le moteur n'en montre aucune case (`montres`, `montrerBlocsPermanents`).
       const toute = dedans.every((c) => !!c.piece);
-      if ((options || {}).avance) {
+      const opt = options ? options : {};
+      if (opt.avance) {
         // Le tiroir s'ouvre pour une case qui s'ecarte du cas ordinaire : le moteur les nomme (`ecarts` de la fiche).
-        const ecarts = new Set(fiche.ecarts || []);
+        const ecarts = new Set(fiche.ecarts);
         const ecart = dedans.some((c) => ecarts.has(c.cle));
         return `<details class="bloc avance"${ecart ? " open" : ""}>
           <summary>${echapper(titre)}</summary>
-          ${(options || {}).dfs ? DFS_HTML() : ""}
+          ${opt.dfs ? DFS_HTML() : ""}
           <div class="champs">${dedansHtml}</div>
         </details>`;
       }
       // Le bloc de l'emploi s'ouvre sur la liste des metiers, celui du
       // salarie au mois sur sa complementaire sante : chacun a sa place,
       // et non plus en tete de fiche.
-      const opt = options || {};
       const entete = opt.metier ? METIER_HTML(fiche) : opt.sante ? SANTE_HTML()
         : opt.atmp ? ATMP_HTML() : "";
       const permanents = toute || opt.sante;
@@ -360,7 +372,7 @@ function dessinerFormulaire(fiche) {
       // (`pieces_ouvertes` de la fiche, puis de la route `permanents`) ; la page
       // n'en décide rien.
       if (opt.sante && FICHE_ACTIVE === "salarie") {
-        const ouverte = (fiche.pieces_ouvertes || []).includes("permanent");
+        const ouverte = fiche.pieces_ouvertes.includes("permanent");
         return `<details class="bloc avance" data-bloc-permanents="1" data-piece="permanent"${ouverte ? " open" : ""}>
           <summary>${echapper(titre)}</summary>
           ${entete}
@@ -379,7 +391,7 @@ function dessinerFormulaire(fiche) {
   document.getElementById("config-formulaire").innerHTML = `
     <div class="carte" style="margin-top:16px">
       ${FICHE_ACTIVE === "salarie" ? enteteSalarie(fiche)
-        : FICHE_ACTIVE === "entreprise" ? "" : `<h2>${echapper(fiche.titre_dit || "")}${fiche.cle
+        : FICHE_ACTIVE === "entreprise" ? "" : `<h2>${fiche.titre_dit ? echapper(fiche.titre_dit) : ""}${fiche.cle
           // Le titre, pas la cle : `aaah-zerbinette` est un identifiant interne.
           ? ` <span class="discret">— ${echapper(fiche.donnees.numero_objet || fiche.cle)}</span>` : ""}</h2>
         ${fiche.cle && fiche.donnees.titre ? `<div class="cout-annee" data-cote="spectacles"
@@ -415,7 +427,7 @@ function dessinerFormulaire(fiche) {
   document.getElementById("config-annuler").onclick = annulerFiche;
   const choixMetier = document.getElementById("config-metier-choix");
   if (choixMetier) {
-    choixMetier.value = (fiche.donnees || {}).code_emploi_ft || "";
+    choixMetier.value = texteDeLaCase(fiche.donnees.code_emploi_ft);
     // L'INTITULÉ SUIT LE MÉTIER. Le champ libre « Emploi »
     // côtoyait la liste « Métier » : on tapait l'emploi, on ne choisissait pas
     // le métier, et l'enregistrement refusait sur des codes cachés (PCS-ESE,
@@ -425,7 +437,7 @@ function dessinerFormulaire(fiche) {
     const emploi = document.querySelector('#config-formulaire [data-cle="emploi_affichage"]');
     const caseEmploi = emploi && emploi.closest(".champ");
     const montrerEmploi = () => {
-      if (caseEmploi) caseEmploi.hidden = !choixMetier.value && !String(emploi.value || "").trim();
+      if (caseEmploi) caseEmploi.hidden = !choixMetier.value && !emploi.value.trim();
     };
     montrerEmploi();
     choixMetier.onchange = async () => {
@@ -449,8 +461,7 @@ function dessinerFormulaire(fiche) {
   brancherNir();
   brancherSalarie(fiche);
   FICHE_MODIFIEE = false;
-  try { FICHE_INITIALE = JSON.stringify(lireFormulaire()); }
-  catch (e) { FICHE_INITIALE = null; }
+  FICHE_INITIALE = JSON.stringify(lireFormulaire());
   const t = document.getElementById("config-modifie");
   if (t) t.hidden = true;
 }
@@ -482,7 +493,7 @@ function brancherSignatureCourriel() {
     if (n) poids.textContent = `${Math.ceil(n / 1024)} / 150 Ko`;
     else poids.textContent = poids.dataset.vide;
     poids.style.color = n > SIGNATURE_LIMITE ? "#B22222" : "";
-    if (n > SIGNATURE_LIMITE) poids.textContent += " — " + ((ETAT.aides || {}).signature_lourde || "");
+    if (n > SIGNATURE_LIMITE) poids.textContent += " — " + ETAT.aides.signature_lourde;
   };
   const relire = () => {
     // Un cadre vide garde souvent un <br> : c'est vide.
@@ -517,11 +528,11 @@ function brancherUrssaf() {
   if (!choix) return;
   let avant = choix.value;
   choix.addEventListener("change", () => {
-    const deduit = String(ETAT.urssaf_deduit || "");
+    const deduit = ETAT.urssaf_deduit;
     const neuf = choix.value;
     if (!neuf || !deduit || neuf === deduit) { avant = neuf; return; }
     const nom = (code) => {
-      const o = (ETAT.organismes_urssaf || []).find((x) => x.code === code);
+      const o = ETAT.organismes_urssaf.find((x) => x.code === code);
       return o ? `${code} — ${o.nom}` : code;
     };
     let repondu = false;
@@ -571,7 +582,7 @@ function poserEnChemin(o, chemin, v) {
 /* Une ligne qui dit quelque chose, à quelque profondeur que ce soit. */
 function ligneRemplie(v) {
   if (v && typeof v === "object") return Object.values(v).some(ligneRemplie);
-  return String(v ?? "").trim() !== "";
+  return texteDeLaCase(v).trim() !== "";
 }
 
 /* Le « + » et la croix des listes (licences, etablissements). On redessine
@@ -582,7 +593,7 @@ function brancherListes(fiche) {
     document.querySelectorAll(
       `#config-formulaire [data-liste-de="${CSS.escape(cle)}"]`).forEach((c) => {
       const i = +c.dataset.listeIndex;
-      l[i] = l[i] || {};
+      l[i] ||= {};
       poserEnChemin(l[i], c.dataset.sousCle, c.value);
     });
     return l.filter(Boolean);
@@ -591,7 +602,8 @@ function brancherListes(fiche) {
     const sous = structureDecrite(cle);
     const boite = document.querySelector(
       `#config-formulaire [data-liste="${CSS.escape(cle)}"]`);
-    const temps = (tempsDuChamp(cle, (fiche || {}).donnees) || {}).lignes || [];
+    const t = tempsDuChamp(cle, fiche.donnees);
+    const temps = t ? t.lignes : [];
     boite.innerHTML = lignes.map((l, i) => ligneStructure(cle, sous, l, i, temps.find((x) => x.cle === l.nic))).join("");
     boite.querySelectorAll("input").forEach((c) => {
       c.oninput = () => { marquerModifie();
@@ -638,7 +650,7 @@ function brancherNationalite() {
   }
   const lib = libellesDe("code_nationalite_dsn");
   const poser = () => {
-    const p = (ETAT.pays || []).find((x) => x.code === String(pays.value || "").toUpperCase());
+    const p = ETAT.pays.find((x) => x.code === pays.value.toUpperCase());
     code.hidden = !!p;
     code.disabled = !!p;
     note.hidden = !p;
@@ -664,12 +676,12 @@ function brancherNir() {
   const sexe = document.querySelector('#config-formulaire [data-cle="sexe"]');
   const champSexe = sexe && sexe.closest(".champ");
   const poser = () => {
-    const v = (nir.value || "").replace(/[\s.\-]/g, "");
+    const v = nir.value.replace(/[\s.\-]/g, "");
     if (cle && /^\d{15}$/.test(v)) {
       nir.value = v.slice(0, 13);
       cle.value = v.slice(13);
     }
-    if (champSexe) champSexe.hidden = !!nir.value.trim() && !String(sexe.value || "").trim();
+    if (champSexe) champSexe.hidden = !!nir.value.trim() && !sexe.value.trim();
   };
   nir.addEventListener("input", poser);
   poser();
@@ -704,8 +716,8 @@ async function exporterSalarie(cle) {
 }
 
 async function demanderFiche(bouton) {
-  const adresse = (document.getElementById("invitation-courriel").value || "").trim();
-  const prenom = (document.getElementById("invitation-prenom").value || "").trim();
+  const adresse = document.getElementById("invitation-courriel").value.trim();
+  const prenom = document.getElementById("invitation-prenom").value.trim();
   const mdp = await demanderMotDePasse("Envoyer la demande", { envoi: true });
   if (!mdp) return;
   const rendre = occupe(bouton, "Envoi…");
@@ -728,10 +740,10 @@ async function demanderFiche(bouton) {
 
 /* Les demandes parties et pas revenues, sous la liste des salaries. */
 function fichesAttenduesHtml() {
-  const l = (ETAT.configuration || {}).fiches_attendues || [];
+  const l = ETAT.configuration.fiches_attendues;
   if (!l.length) return "";
   return `<div class="encart attente-fiches">
-    <b>${echapper((ETAT.configuration || {}).fiches_attendues_titre || "")}</b>
+    <b>${echapper(ETAT.configuration.fiches_attendues_titre)}</b>
     <button class="lien" id="fiches-relever">relever maintenant</button>
     <ul>${l.map((a) => `<li>${echapper(a.prenom ? a.prenom + " — " : "")}${
         echapper(a.adresse)} <span class="discret">${echapper(a.demande_dit)}</span>
@@ -789,9 +801,9 @@ function brancherConditions() {
     if (FICHE_ACTIVE === "salarie" && FICHE_COURANTE && FICHE_COURANTE.cle) charge.cle = FICHE_COURANTE.cle;
     try { r = await api("permanents", charge); } catch (e) { dire(e.message, "erreur"); return; }
     if (n !== demande || !form.isConnected) return;
-    const montres = new Set(r.montres || []);
+    const montres = new Set(r.montres);
     form.querySelectorAll("[data-montre]").forEach((el) => { el.hidden = !montres.has(el.dataset.montre); });
-    const ouvertes = new Set(r.pieces_ouvertes || []);
+    const ouvertes = new Set(r.pieces_ouvertes);
     form.querySelectorAll("details[data-piece]").forEach((el) => { el.open = ouvertes.has(el.dataset.piece); });
     montrerBlocsPermanents();
   };
@@ -878,11 +890,11 @@ function brancherSante(fiche) {
   const conjoint = document.getElementById("config-sante-conjoint");
   const enfants = document.getElementById("config-sante-enfants");
   const champ = document.querySelector('#config-formulaire [data-cle="sante_svp"]');
-  const choix = (fiche.donnees || {}).sante_svp || null;
+  const choix = fiche.donnees.sante_svp;
   if (choix) {
-    niveau.value = choix.niveau || "";
+    niveau.value = texteDeLaCase(choix.niveau);
     conjoint.checked = !!choix.conjoint;
-    enfants.value = choix.enfants || 0;
+    enfants.value = texteDeLaCase(choix.enfants);
   }
   const ecrire = () => {
     if (!champ) return;
@@ -890,7 +902,7 @@ function brancherSante(fiche) {
     // fiche qui porterait {"niveau": ""} ferait croire à un choix fait.
     champ.value = JSON.stringify(
       niveau.value ? { niveau: niveau.value, conjoint: conjoint.checked,
-                       enfants: +enfants.value || 0 } : null, null, 1);
+                       enfants: enfants.value === "" ? null : +enfants.value } : null, null, 1);
     champ.classList.remove("faute");
     verifierFormulaire();
   };
@@ -905,7 +917,11 @@ async function remplirDepuisMetier(code) {
   let r;
   // Le NIR et le sexe de la fiche : le moteur en tire la forme du métier
   // (« Administratrice de production » pour une salariée).
-  const lu = (cle) => (document.querySelector(`#config-formulaire [data-cle="${cle}"]`) || {}).value || "";
+  // Une case vide, ou que la fiche n'a pas, part `null`.
+  const lu = (cle) => {
+    const c = document.querySelector(`#config-formulaire [data-cle="${cle}"]`);
+    return c && c.value ? c.value : null;
+  };
   try { r = await api("emploi", { metier: code, cadre: null, feminin: false, salarie: { nir: lu("nir"), sexe: lu("sexe") } }); }
   catch (e) { dire(e.message, "erreur"); return; }
   const poser = (cle, v) => {
@@ -913,10 +929,11 @@ async function remplirDepuisMetier(code) {
     if (c && v != null) c.value = v;
   };
   poser("emploi_affichage", r.emploi_affichage);
-  poser("pcs_ese", r.pcs_ese || "");
+  // Ces deux cases se vident quand le métier ne les dit pas.
+  poser("pcs_ese", texteDeLaCase(r.pcs_ese));
   poser("code_emploi_ft", r.code_emploi_ft);
   poser("statut", r.statut);
-  poser("statut_conventionnel", r.statut_conventionnel || "");
+  poser("statut_conventionnel", texteDeLaCase(r.statut_conventionnel));
   poser("statut_categoriel_rc", r.statut_categoriel_rc);
   verifierFormulaire();
 }
@@ -933,9 +950,12 @@ async function remplirDepuisMetier(code) {
  */
 function histoireDuChamp(cases, desc) {
   if (!Array.isArray(cases) || !cases.length) return "";
-  const libelle = (cle) => (desc.find((c) => c.cle === cle) || {}).libelle || cle;
+  const libelle = (cle) => {
+    const c = desc.find((x) => x.cle === cle);
+    return c ? c.libelle : cle;
+  };
   // Les cases d'une liste (les autres établissements) : chaque ligne, nommée par le moteur, case par case.
-  const rangees = (t) => (t.lignes || []).length
+  const rangees = (t) => t.lignes.length
     ? t.lignes.map((l) => l.cases.map((c) => lignesDHistoire(c,
         `${l.dit} · ${sousLibelle(t.champ, c.champ)}`, valeurLisible)).join("")).join("")
     : lignesDHistoire(t, libelle(t.champ), (v) => valeurHistorique(t.champ, v));
@@ -948,11 +968,11 @@ function histoireDuChamp(cases, desc) {
 
 /* Toutes les valeurs d'une case datée (`valeurs` de ses temps), une rangée chacune, celle d'aujourd'hui en gras. */
 function lignesDHistoire(t, nom, dire) {
-  return (t.valeurs || []).map((e) => `
+  return t.valeurs.map((e) => `
       <div class="histoire-ligne${e.en_vigueur ? " en-vigueur" : ""}">
         <span class="histoire-champ">${echapper(nom)}</span>
         <span class="histoire-valeur">${echapper(dire(e.valeur))}</span>
-        <span class="histoire-date">${echapper(e.dit || "")}</span>
+        <span class="histoire-date">${echapper(e.dit)}</span>
         ${e.note ? `<div class="histoire-note">${echapper(e.note)}</div>` : ""}
       </div>`).join("");
 }
@@ -960,7 +980,8 @@ function lignesDHistoire(t, nom, dire) {
 /* Le libellé d'une case d'une structure `cle` (« adresse_affichage » des établissements), tel que la description le
  * dit ; une case faite de cases (« versement_mobilite ») se nomme par sa première. */
 function sousLibelle(cle, sous) {
-  const champs = (structureDecrite(cle) || {}).champs || [];
+  const s = structureDecrite(cle);
+  const champs = s ? s.champs : [];
   const c = champs.find(([k]) => k === sous) || champs.find(([k]) => k.startsWith(sous + "."));
   return c ? c[1] : sous;
 }
@@ -977,7 +998,8 @@ function lignesDuTemps(t, dire) {
 
 /* Les temps de la case `cle` d'une fiche (`historique` de ses données). */
 function tempsDuChamp(cle, donnees) {
-  return ((donnees || {}).historique || []).find((h) => h.champ === cle);
+  // Une fiche neuve (faite par la page, pas encore lue) n'a pas d'historique.
+  return donnees.historique && donnees.historique.find((h) => h.champ === cle);
 }
 
 /* Sous une case de fiche, ses deux lignes. */
@@ -998,10 +1020,10 @@ const CRAYON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 
    la boite de depot DSN disait « 210.80 € » a cote d'un apercu en
    « 1 053,08 € ». Ce qui n'est pas un nombre repart tel quel. */
 function euros(v) {
-  const n = typeof v === "number" ? v : Number(String(v ?? "").trim());
-  if (v === null || v === undefined || String(v).trim() === "" || !isFinite(n)) {
-    return String(v ?? "");
-  }
+  // Un montant absent ne se met pas en forme : il lève (`toString` d'un absent) ; ce qui peut manquer se teste avant.
+  const t = v.toString().trim();
+  const n = typeof v === "number" ? v : Number(t);
+  if (t === "" || !isFinite(n)) return t;
   return n.toLocaleString("fr-FR", { minimumFractionDigits: 2,
                                       maximumFractionDigits: 2 }) + " €";
 }
@@ -1033,7 +1055,8 @@ function lireFormulaire(racine = "#config-formulaire", origine = STRUCTURES_ORIG
   document.querySelectorAll(`${racine} [data-sous-de]`).forEach((c) => {
     const p = c.dataset.sousDe;
     if (!d[p] || typeof d[p] !== "object" || Array.isArray(d[p])) {
-      d[p] = JSON.parse(JSON.stringify(origine[p] || {}));
+      // La structure telle qu'elle était (`STRUCTURES_ORIGINE`), ou une neuve que les cases remplissent.
+      d[p] = p in origine ? JSON.parse(JSON.stringify(origine[p])) : {};
     }
     const chemin = c.dataset.sousCle.split(".");
     let o = d[p];
@@ -1072,17 +1095,17 @@ function lireFormulaire(racine = "#config-formulaire", origine = STRUCTURES_ORIG
   const listes = {};
   document.querySelectorAll(`${racine} [data-liste-de]`).forEach((c) => {
     const p = c.dataset.listeDe, i = +c.dataset.listeIndex;
-    listes[p] = listes[p] || [];
+    listes[p] ||= [];
     // Pas de reprise de l'original ici, contrairement aux objets : une ligne
     // ajoutee ou retiree decale les index, et on recopierait la valeur cachee
     // de la ligne d'a cote. Ces listes n'ont pas de clef masquee.
-    listes[p][i] = listes[p][i] || {};
+    listes[p][i] ||= {};
     poserEnChemin(listes[p][i], c.dataset.sousCle, c.value);
   });
   // Une liste dont on a retiré toutes les lignes n'a plus de case : elle vaut
   // « rien », et le moteur le lit (un établissement retiré ferme).
   document.querySelectorAll(`${racine} [data-liste]`).forEach((b) => {
-    listes[b.dataset.liste] = listes[b.dataset.liste] || [];
+    listes[b.dataset.liste] ||= [];
   });
   Object.keys(listes).forEach((p) => {
     const propres = listes[p].filter((l) => l && ligneRemplie(l));
@@ -1115,7 +1138,7 @@ function appliquerSuggestions(suggestions) {
     // le remplir ici l'ecrirait dans la fiche, et un demenagement ne le
     // suivrait plus.
     if (cle === "code_urssaf") return;
-    if (!champ || champ.type === "hidden" || String(champ.value || "").trim()) return;
+    if (!champ || champ.type === "hidden" || champ.value.trim()) return;
     champ.value = s.valeur;
     const boite = champ.closest(".champ");
     if (!boite || boite.querySelector(".suggere")) return;
@@ -1142,8 +1165,7 @@ let FICHE_INITIALE = null;
 
 function ficheIdentique() {
   if (FICHE_INITIALE === null) return false;
-  try { return JSON.stringify(lireFormulaire()) === FICHE_INITIALE; }
-  catch (e) { return false; }
+  return JSON.stringify(lireFormulaire()) === FICHE_INITIALE;
 }
 
 function marquerModifie() {
@@ -1251,7 +1273,7 @@ async function verifierFormulaire() {
       && anomalies.some((x) => x.champ === c.dataset.cle && x.gravite === "erreur"));
     if (fautif) d.open = true;
   });
-  appliquerSuggestions(r.suggestions || {});
+  appliquerSuggestions(r.suggestions);
   return anomalies;
 }
 
@@ -1295,7 +1317,8 @@ function valeurLisible(v) {
 /* UNE STRUCTURE DITE PAR SES CASES (« Prénom : Claire · Nom : Fontaine · Fonction : Présidente ») : celles que la
  * fiche montre (`structureDecrite`), remplies, avec leur libellé et le mot d'un choix ; jamais ses clés. */
 function structureLisible(champ, v) {
-  return ((structureDecrite(champ) || {}).champs || []).map(([k, libelle, , opts]) => {
+  const s = structureDecrite(champ);
+  return (s ? s.champs : []).map(([k, libelle, , opts]) => {
     const x = k.split(".").reduce((o, p) => (o && typeof o === "object" ? o[p] : undefined), v);
     if (x === undefined || x === null || String(x).trim() === "") return "";
     const mot = opts && opts.choix ? opts.choix[String(x)] : null;
@@ -1310,8 +1333,9 @@ function valeurHistorique(champ, v) {
   if (v === null || typeof v !== "object" || Array.isArray(v)) {
     return valeurLisible(v);
   }
-  const decrit = ((ETAT.configuration || {}).description[FICHE_ACTIVE] || []).find((c) => c.cle === champ) || {};
-  const libelles = Object.fromEntries((decrit.champs || []).map((s) => [s.cle, s.libelle]));
+  // Une case de structure se nomme par les libellés de ses cases (`champs` de sa description).
+  const decrit = ETAT.configuration.description[FICHE_ACTIVE].find((c) => c.cle === champ);
+  const libelles = Object.fromEntries(decrit && decrit.champs ? decrit.champs.map((s) => [s.cle, s.libelle]) : []);
   const dire = (k, x) => x && typeof x === "object" && !Array.isArray(x) && !libelles[k]
     ? Object.entries(x).map(([s, y]) => dire(`${k}.${s}`, y)).join(" · ")
     : `${libelles[k] || k} : ${valeurLisible(x)}`;
@@ -1337,8 +1361,8 @@ function demanderDateDEffet({ changements = [], depuis: propose, pourquoi, usage
     if (v && typeof v === "object" && !Array.isArray(v) && structureDecrite(c.champ)) {
       return structureLisible(c.champ, v);
     }
-    const nom = libellesDe(c.champ)[String(v ?? "")];
-    return nom && String(v ?? "") ? nom : valeurLisible(v);
+    const nom = libellesDe(c.champ)[texteDeLaCase(v)];
+    return nom && texteDeLaCase(v) ? nom : valeurLisible(v);
   };
   const ligne = (titre, avant, apres, detail = "") => `<div class="changement">
       <div class="changement-titre">${echapper(titre)}</div>
@@ -1368,9 +1392,9 @@ function demanderDateDEffet({ changements = [], depuis: propose, pourquoi, usage
       ${dater ? `<p>${aideDe("dater")}</p>
       <div class="changements">${blocs}</div>
       <label class="champ-boite">À partir du
-        <input type="date" id="b-depuis" value="${echapper(propose || "")}">
+        <input type="date" id="b-depuis"${valeurDeDepart(propose)}>
       </label>
-      <p class="note">${echapper(pourquoi || "")} ${aideDe("dater_avant")}</p>
+      <p class="note">${pourquoi ? echapper(pourquoi) : ""} ${aideDe("dater_avant")}</p>
       <details class="b-note-bloc"><summary class="discret">ajouter une note</summary>
         <input type="text" id="b-note" placeholder="motif">
       </details>` : ""}
@@ -1416,7 +1440,7 @@ async function ecrireFiche(fiche, donnees, daté, forcer = false) {
       const réponse = await demanderDateDEffet(r.avertissement);
       // Annulé, ou la boîte fermée d'un clic à côté : la fiche garde ce qu'on y a tapé, et la page le dit.
       if (!réponse) {
-        dire((ETAT.aides || {}).rien_enregistre);
+        dire(ETAT.aides.rien_enregistre);
         return;
       }
       return ecrireFiche(fiche, donnees, { ...réponse, confirme: true }, forcer);
@@ -1457,7 +1481,7 @@ async function ecrireFiche(fiche, donnees, daté, forcer = false) {
       // peut se tromper, l'utilisateur en sait parfois plus qu'elle.
       // Le libellé du champ, pas sa clé technique (« numero_objet »).
       const libelles = {};
-      (ETAT.configuration.description[FICHE_ACTIVE] || []).forEach((c) => { libelles[c.cle] = c.libelle; });
+      ETAT.configuration.description[FICHE_ACTIVE].forEach((c) => { libelles[c.cle] = c.libelle; });
       const erreurs = e.detail.a_part.anomalies.filter((a) => a.gravite === "erreur");
       // LE MOTEUR DIT CE QUI SE FORCE : une erreur de forme (`forcable`), oui ;
       // une case qu'une structure ne décrit pas, non.
@@ -1466,7 +1490,7 @@ async function ecrireFiche(fiche, donnees, daté, forcer = false) {
       const pourquoi = [...new Set(erreurs.filter((a) => forcable || a.forcable === false).map((a) => a.pourquoi).filter(Boolean))];
       // Le libellé et son message sur une ligne : `.encart b` est un titre.
       ouvrirBoite(`<h3>Enregistrement refusé</h3>
-        <div class="encart erreur"><b>${echapper(e.detail.a_part.erreurs_dit || "")}</b>
+        <div class="encart erreur">${e.detail.a_part.erreurs_dit ? `<b>${echapper(e.detail.a_part.erreurs_dit)}</b>` : ""}
           ${erreurs.map((a) => `<div class="anomalie"><b>${echapper(libelles[a.champ] || a.champ)}</b> : ${echapper(a.message)}</div>`).join("")}</div>
         ${pourquoi.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
         <div class="actions">

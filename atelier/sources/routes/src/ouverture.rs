@@ -263,7 +263,6 @@ impl<P> VueFiche<P> {
 struct DonneesDeLaFiche<P> {
     #[serde(flatten)]
     fiche: P,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     historique: Vec<TempsDeLaCase<Valeur>>,
 }
 

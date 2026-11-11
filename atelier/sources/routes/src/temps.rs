@@ -19,9 +19,7 @@ pub(crate) struct TempsDeLaCase<V> {
     avant: Option<LigneDuTemps<V>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     a_venir: Option<LigneDuTemps<V>>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     valeurs: Vec<LigneDuTemps<V>>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     lignes: Vec<TempsDUneLigne<V>>,
 }
 

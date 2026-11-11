@@ -226,12 +226,12 @@ struct ChargeEmploi {
 }
 
 /// Ce qui dit le sexe, sur la fiche que l'ecran remplit : le NIR, sinon la case `sexe` (`ntt::sexe_de`), chacune telle
-/// que la fiche l'ecrit (vide quand elle n'est pas remplie).
+/// que la fiche l'ecrit (absente quand elle n'est pas remplie).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SexeDeLaFiche {
-    nir: String,
-    sexe: String,
+    nir: Option<String>,
+    sexe: Option<String>,
 }
 
 // ------------------------------------------------------------------ les reponses
@@ -953,7 +953,7 @@ fn contrats_passes_route(ctx: &Contexte, c: ChargeContratsPasses) -> R<ContratsP
 /// salariee : le catalogue porte les deux formes (`feminin`), la fiche dit le sexe (le premier chiffre du NIR, sinon la
 /// case `sexe` : `ntt::sexe_de`). `feminin` donne seul suffit aussi.
 fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
-    let feminin = c.feminin || c.salarie.is_some_and(|s| declarations::ntt::sexe_de(Some(s.nir.as_str()), Some(s.sexe.as_str())) == Some("2"));
+    let feminin = c.feminin || c.salarie.is_some_and(|s| declarations::ntt::sexe_de(s.nir.as_deref(), s.sexe.as_deref()) == Some("2"));
     if emplois::metier(&c.metier)?.is_none() {
         return Err(erreur(
             Classe::Illisible,
