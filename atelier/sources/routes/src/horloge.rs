@@ -205,7 +205,7 @@ fn instant_du_pas(quand: InstantEcrit) -> R<socle::paris::Moment> {
 /// arreter les autres pas. `geste` rend ce qu'il a fait (`Joue`).
 fn pas(d: &HorlogeFictive, quoi: &str, quand: InstantEcrit, mut geste: impl FnMut(&Contexte) -> R<Joue>) -> Vec<String> {
     let racine = d.racine;
-    let echec = |e: &Echec| vec![format!("Le {} : {} — non joué ({})", quand.jour().jj_mm_aaaa(), quoi, motif_de(e))];
+    let echec = |e: &Echec| non_joue(quand, quoi, e);
     // LE CONTEXTE DU JOUR DU PAS : ce qu'il ecrit (une date de constitution, un jour inscrit) est celui ou il a lieu.
     let jour_du_pas = quand.jour();
     let instant = match instant_du_pas(quand) {
@@ -227,6 +227,11 @@ fn pas(d: &HorlogeFictive, quoi: &str, quand: InstantEcrit, mut geste: impl FnMu
         Ok(Joue::Rien) => Vec::new(),
         Err(e) => echec(&e),
     }
+}
+
+/// La phrase d'un pas que le moteur refuse : son jour, ce qu'il devait faire, et le refus.
+fn non_joue(quand: InstantEcrit, quoi: &str, e: &Echec) -> Vec<String> {
+    vec![format!("Le {} : {} — non joué ({})", quand.jour().jj_mm_aaaa(), quoi, motif_de(e))]
 }
 
 /// Ce qu'un pas a fait : quelque chose (sa phrase se dit), ou rien, faute de quoi faire (ni phrase, ni date).
@@ -381,6 +386,8 @@ enum Geste {
     Cloture { annee: i32 },
     /// L'exercice `annee` s'exporte pour la comptabilite.
     Export { annee: i32 },
+    /// Un pas que le moteur empeche de regarder : son refus se dit, a l'instant ou l'horloge joue.
+    Empeche { refus: Echec },
 }
 
 /// Un pas du calendrier : son instant (a Paris), sa phrase, son geste.
@@ -529,7 +536,18 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
             geste: Geste::Signes { mois: le_mois, debut },
         });
     }
-    for c in crate::contrats::signature_apercu(ctx, le_mois)?.contrats {
+    // LES AVENANTS se lisent dans l'apercu des signatures, qui relit la paie de chaque engagement valide du mois : une paie
+    // que le moteur refuse de calculer (un mois dont la version n'a pas les taux) empeche ce pas, et lui seul ; il se dit,
+    // nomme par le refus (le salarie, le mois, la raison), et les autres pas se jouent.
+    let apercu = match crate::contrats::signature_apercu(ctx, le_mois) {
+        Ok(a) => Some(a.contrats),
+        Err(e) if est_une_erreur_d_operation(&e) => {
+            calendrier.push(Pas { quand: maintenant_du(jour)?, quoi: format!("avenants de {} regardés", mois_fr(mois)), geste: Geste::Empeche { refus: e } });
+            None
+        }
+        Err(e) => return Err(e),
+    };
+    for c in apercu.into_iter().flatten() {
         let Some(quand) = revalide_le(ctx, mois, &c.salarie, c.debut)? else { continue };
         if quand.jour() > jour {
             continue;
@@ -814,6 +832,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
             crate::gestes::exercice_ecrit::cloturer(ctx, annee, false, QUI_HORLOGE)?;
             Ok(Joue::Fait)
         }),
+        Geste::Empeche { refus } => non_joue(quand, quoi, refus),
         Geste::Export { annee } => pas(d, quoi, quand, |ctx| {
             let annee = Annee::nouvelle(i64::from(*annee))?;
             if !Moteur::nouveau(ctx).exercice_clos(annee)? || crate::gestes::exercice_ecrit::export_compta_a_jour(&ctx.racine, annee)? {
