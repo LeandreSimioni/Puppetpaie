@@ -6,6 +6,7 @@ pub mod avenant;
 pub mod bordereau;
 pub mod bulletin;
 pub mod cachet;
+pub mod classeur;
 pub mod conges_spectacles;
 pub mod contrat;
 pub mod contrat_ecrit;

@@ -112,7 +112,7 @@ dependencies = [
  "sha2",
  "socle",
  "ureq",
- "zip 2.4.2",
+ "zip",
 ]
 
 [[package]]
@@ -320,7 +320,7 @@ dependencies = [
  "sha2",
  "socle",
  "ureq",
- "zip 2.4.2",
+ "zip",
 ]
 
 [[package]]
@@ -514,9 +514,9 @@ dependencies = [
  "engagement",
  "fabrique-pdf",
  "rust_decimal",
- "rust_xlsxwriter",
  "serde",
  "socle",
+ "zip",
 ]
 
 [[package]]
@@ -607,7 +607,7 @@ dependencies = [
  "sha2",
  "socle",
  "ureq",
- "zip 2.4.2",
+ "zip",
 ]
 
 [[package]]
@@ -965,7 +965,7 @@ dependencies = [
  "serde",
  "sha2",
  "socle",
- "zip 2.4.2",
+ "zip",
 ]
 
 [[package]]
@@ -1230,7 +1230,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "socle",
- "zip 2.4.2",
+ "zip",
 ]
 
 [[package]]
@@ -1595,7 +1595,6 @@ dependencies = [
  "mailparse",
  "regex",
  "rust_decimal",
- "rust_xlsxwriter",
  "serde",
  "serde_json",
  "sha2",
@@ -1654,15 +1653,6 @@ dependencies = [
  "serde_json",
  "wasm-bindgen",
  "zmij",
-]
-
-[[package]]
-name = "rust_xlsxwriter"
-version = "0.90.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2be778223b36bb449b2ef2df4856ced2d311680818a7310db5c5dc370170f935"
-dependencies = [
- "zip 4.6.1",
 ]
 
 [[package]]
@@ -2016,7 +2006,7 @@ dependencies = [
  "serde_path_to_error",
  "sha2",
  "ureq",
- "zip 2.4.2",
+ "zip",
 ]
 
 [[package]]
@@ -2795,20 +2785,6 @@ dependencies = [
  "indexmap",
  "memchr",
  "thiserror",
- "zopfli",
-]
-
-[[package]]
-name = "zip"
-version = "4.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1"
-dependencies = [
- "arbitrary",
- "crc32fast",
- "flate2",
- "indexmap",
- "memchr",
  "zopfli",
 ]
 

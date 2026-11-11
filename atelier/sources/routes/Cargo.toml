@@ -39,7 +39,5 @@ sha2 = { workspace = true }
 regex = { version = "1", default-features = false, features = ["std", "unicode"] }
 # Les pages d'un PDF du dossier d'un salarie, lues par la fabrique dans le meme processus.
 fabrique-pdf = { path = "../fabrique-pdf" }
-# La liste nominative du CASC-SVP des mois importes : ecriture seule.
-rust_xlsxwriter = "0.90"
 # Les messages de la boite courriel releves pour les fiches (`fiches.rs`) : lecture MIME, bibliothèque éprouvée.
 mailparse = "0.16"

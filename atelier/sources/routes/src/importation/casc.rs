@@ -633,34 +633,31 @@ const FUSIONS: [(u32, u16, u32, u16); 7] = [(0, 0, 1, 25), (0, 26, 0, 29), (0, 3
 /// La liste nominative du CASC-SVP, une ligne par emploi, a partir de la 4e ligne.
 ///
 /// Le modele officiel (`donnees/modeles/casc-svp-liste-nominative.xlsx`) ne s'ouvre pas : le classeur est RECREE par
-/// `rust_xlsxwriter` avec les memes colonnes (37), les memes trois lignes de consignes (memes textes, memes cellules
+/// `documents::classeur` avec les memes colonnes (37), les memes trois lignes de consignes (memes textes, memes cellules
 /// fusionnees) et les memes valeurs ; la mise en forme est plus simple (gras, retour a la ligne, volet fige sous la
 /// 3e ligne). Les consignes de la 4e ligne du modele (« NE PAS REMPLIR »...) n'y sont pas : elles sont
 /// effacees avant d'ecrire.
 fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path, fichiers: &mut Vec<std::path::PathBuf>) -> R<()> {
-    use rust_xlsxwriter::{Format, FormatAlign, Workbook};
-    let xl = |e: rust_xlsxwriter::XlsxError| erreur(Classe::Disque, format!("classeur CASC-SVP : {}", e));
-    let mut wb = Workbook::new();
-    let ws = wb.add_worksheet();
-    ws.set_name("Feuil1").map_err(xl)?;
-    let titre = Format::new().set_bold().set_text_wrap().set_align(FormatAlign::Center).set_align(FormatAlign::VerticalCenter);
-    let entete = Format::new().set_text_wrap().set_align(FormatAlign::Top);
+    use documents::classeur::{Feuille, Style, Vertical};
+    let mut ws = Feuille::nouvelle("Feuil1");
+    let titre = Style { gras: true, retour_a_la_ligne: true, centre: true, vertical: Some(Vertical::Centre), ..Style::default() };
+    let entete = Style { retour_a_la_ligne: true, vertical: Some(Vertical::Haut), ..Style::default() };
     for (a, b, c, d) in FUSIONS {
-        ws.merge_range(a, b, c, d, "", &titre).map_err(xl)?;
+        ws.fusionner(a, b, c, d, &titre);
     }
     for (ligne, col, texte) in ENTETES {
-        ws.write_string_with_format(ligne, col, texte, if ligne < 2 { &titre } else { &entete }).map_err(xl)?;
+        ws.texte(ligne, col, texte, if ligne < 2 { &titre } else { &entete });
     }
-    ws.set_row_height(2, 132.0).map_err(xl)?;
-    ws.set_freeze_panes(3, 0).map_err(xl)?;
-    ws.set_column_range_width(0, 36, 14.0).map_err(xl)?;
+    ws.hauteur(2, 132);
+    ws.figer(3);
+    ws.largeur(0, 36, 14);
+    let simple = Style::default();
     let siret = ctx.entreprise.siret.ecrite("siret").map_err(|e| e.reclasser(Classe::Refuse))?.to_string();
     let aujourdhui = droit::contexte::jour_reel().jj_mm_aaaa();
     let mut cumul: Vec<((String, Option<String>), Decimal)> = Vec::new();
     let texte_de = cellule;
     let coupe = |t: String, n: usize| -> String { t.chars().take(n).collect() };
     let arrondi = |d: Decimal| d.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
-    let nombre_du_classeur = documents::tableaux_export::nombre_du_classeur;
     for (n, x) in r.emplois.iter().enumerate() {
         let ligne = 3 + n as u32;
         let (i, c) = (&x.individu, &x.contrat);
@@ -700,15 +697,15 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
             (30, if artiste { "A" } else { "T" }.to_string()),
         ];
         for (col, t) in textes {
-            ws.write_string(ligne, col, &t).map_err(xl)?;
+            ws.texte(ligne, col, t, &simple);
         }
-        ws.write_number(ligne, 24, nombre_du_classeur(&arrondi(x.brut))?).map_err(xl)?;
-        ws.write_number(ligne, 36, nombre_du_classeur(&arrondi(total))?).map_err(xl)?;
+        ws.nombre(ligne, 24, arrondi(x.brut), &simple);
+        ws.nombre(ligne, 36, arrondi(total), &simple);
         let act = |q: &str| x.activite.get(q);
         let colonnes: [(u16, &str); 2] = if artiste { [(33, "cachets"), (34, "heures")] } else { [(31, "jours"), (32, "heures")] };
         for (col, quoi) in colonnes {
             if let Some(v) = act(quoi).filter(|q| !q.is_zero()) {
-                ws.write_number(ligne, col, nombre_du_classeur(v)?).map_err(xl)?;
+                ws.nombre(ligne, col, *v, &simple);
             }
         }
     }
@@ -725,7 +722,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
         ));
     }
     let chemin = dossier.join("CASC-SVP_liste-nominative.xlsx");
-    wb.save(&chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
+    std::fs::write(&chemin, ws.octets()?).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
     fichiers.push(chemin);
     Ok(())
 }

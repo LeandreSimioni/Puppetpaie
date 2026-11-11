@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use rust_xlsxwriter::{Format, FormatAlign, Workbook};
+use crate::classeur::{Feuille, Style, Vertical};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
@@ -726,61 +726,51 @@ pub fn csv_livre(livre: &LivreDePaie) -> Vec<u8> {
 
 /// `xlsx_livre` : une feuille, les colonnes en place, les montants en nombres (le comptable les additionne).
 pub fn xlsx_livre(livre: &LivreDePaie) -> R<Vec<u8>> {
-    let xl = |e: rust_xlsxwriter::XlsxError| erreur(Classe::Disque, format!("classeur : {}", e));
-    let mut wb = Workbook::new();
-    let ws = wb.add_worksheet();
-    ws.set_name("Livre de paie").map_err(xl)?;
-    ws.write_string_with_format(0, 0, titre_livre(livre), &Format::new().set_bold().set_font_size(13.0)).map_err(xl)?;
+    let mut ws = Feuille::nouvelle("Livre de paie");
+    ws.texte(0, 0, titre_livre(livre), &Style::gras(Some(13)));
     let cl = colonnes_livre(livre);
-    let entete = Format::new().set_bold().set_text_wrap().set_align(FormatAlign::VerticalCenter);
+    let entete = Style { gras: true, retour_a_la_ligne: true, vertical: Some(Vertical::Centre), ..Style::default() };
     for (i, c) in cl.iter().enumerate() {
-        ws.write_string_with_format(2, i as u16, *c, &entete).map_err(xl)?;
+        ws.texte(2, i as u16, *c, &entete);
     }
     let mut ligne: u32 = 3;
-    let ecrire_rang = |ws: &mut rust_xlsxwriter::Worksheet, cel: &[CelL], gras: bool, taille: Option<f64>, ligne: u32| -> R<()> {
+    let ecrire_rang = |ws: &mut Feuille, cel: &[CelL], gras: bool, corps: Option<u32>, ligne: u32| {
         for (i, c) in cel.iter().enumerate() {
-            let mut f = Format::new();
-            if gras {
-                f = f.set_bold();
-            }
-            if let Some(t) = taille {
-                f = f.set_font_size(t);
-            }
+            let style = Style { gras, corps, ..Style::default() };
             match c {
                 CelL::T(t) => {
                     if !t.is_empty() {
-                        ws.write_string_with_format(ligne, i as u16, t, &f).map_err(xl)?;
+                        ws.texte(ligne, i as u16, t.clone(), &style);
                     }
                 }
                 CelL::Vide | CelL::M(None) => {}
                 CelL::M(Some(d)) => {
-                    let f = if MONTANTS.contains(&cl[i]) { f.set_num_format("# ##0.00 \u{20ac}") } else { f };
-                    ws.write_number_with_format(ligne, i as u16, crate::tableaux_export::nombre_du_classeur(d)?, &f).map_err(xl)?;
+                    let style = Style { format: MONTANTS.contains(&cl[i]).then_some("# ##0.00 \u{20ac}"), ..style };
+                    ws.nombre(ligne, i as u16, *d, &style);
                 }
             }
         }
-        Ok(())
     };
     for g in &livre.groupes {
         for l in &g.lignes {
-            ecrire_rang(ws, &cellules(l, livre.coordonnees), false, None, ligne)?;
+            ecrire_rang(&mut ws, &cellules(l, livre.coordonnees), false, None, ligne);
             ligne += 1;
         }
-        ecrire_rang(ws, &cellules_totaux(&g.totaux, &format!("Total {}", g.libelle), livre.coordonnees), true, None, ligne)?;
+        ecrire_rang(&mut ws, &cellules_totaux(&g.totaux, &format!("Total {}", g.libelle), livre.coordonnees), true, None, ligne);
         ligne += 2;
     }
-    ecrire_rang(ws, &cellules_totaux(&livre.totaux, "TOTAL GENERAL", livre.coordonnees), true, Some(12.0), ligne)?;
+    ecrire_rang(&mut ws, &cellules_totaux(&livre.totaux, "TOTAL GENERAL", livre.coordonnees), true, Some(12), ligne);
     ligne += 1;
     for a in &livre.avertissements {
         ligne += 1;
-        ws.write_string(ligne, 0, format!("! {}", a)).map_err(xl)?;
+        ws.texte(ligne, 0, format!("! {}", a), &Style::default());
         ligne += 1;
     }
     for (i, nom) in cl.iter().enumerate() {
-        ws.set_column_width(i as u16, if ["Salarie", "Adresse", "Spectacle"].contains(nom) { 34.0 } else { 16.0 }).map_err(xl)?;
+        ws.largeur(i as u16, i as u16, if ["Salarie", "Adresse", "Spectacle"].contains(nom) { 34 } else { 16 });
     }
-    ws.set_freeze_panes(3, 0).map_err(xl)?;
-    wb.save_to_buffer().map_err(xl)
+    ws.figer(3);
+    ws.octets()
 }
 
 /// `pdf_livre` : A4 paysage, l'en-tete des colonnes a chaque page, un pied qui numerote.

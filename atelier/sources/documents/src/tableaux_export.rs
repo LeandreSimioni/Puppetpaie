@@ -10,8 +10,8 @@
 //! LES TOTAUX se calculent ici, avec la regle du livre de paie : un montant `None` ne compte pas pour zero, et
 //! une colonne qu'aucune ligne ne declare a un total VIDE, pas 0,00.
 //!
-//! Le `.xlsx` s'ecrit avec `rust_xlsxwriter` : montants en nombres, formats `# ##0.00 €`, largeurs 14 / 26,
-//! volet fige sous l'en-tete. Il se prouve par son contenu (openpyxl), pas a l'octet. Le PDF est celui de la
+//! Le `.xlsx` s'ecrit par `classeur` : montants en nombres exacts, formats `# ##0.00 €`, largeurs 14 / 26,
+//! volet fige sous l'en-tete. Il se prouve par son contenu, pas a l'octet. Le PDF est celui de la
 //! fabrique (`fabrique_pdf`), decrit comme `tableaux.description_pdf`.
 
 use droit::fiche::Lue as _;
@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use fabrique_pdf::forme as pdf;
 use fabrique_pdf::mesure::mesure;
-use rust_xlsxwriter::{Format, FormatAlign, Workbook, Worksheet};
+use crate::classeur::{Feuille, Style, Vertical};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
@@ -560,13 +560,6 @@ enum Cel {
     Texte(String),
 }
 
-/// LE NOMBRE D'UNE CASE DU CLASSEUR : le format xlsx ne stocke un nombre qu'en flottant ; un decimal ne le devient
-/// qu'ici, dans l'appel qui l'ecrit (`write_number`), et nulle part ailleurs.
-pub fn nombre_du_classeur(d: &Decimal) -> R<f64> {
-    use rust_decimal::prelude::ToPrimitive;
-    d.to_f64().ok_or_else(|| erreur(Classe::Illisible, format!("{} ne s'écrit pas en nombre du classeur", d)))
-}
-
 /// Le nombre d'une colonne de chiffres (un texte qui se lit en nombre aussi), le texte sinon.
 fn cellule_classeur(v: Option<&Val>, c: &Colonne) -> R<Cel> {
     let Some(v) = v else { return Ok(Cel::Vide) };
@@ -583,30 +576,11 @@ fn cellule_classeur(v: Option<&Val>, c: &Colonne) -> R<Cel> {
     })
 }
 
-fn xl(e: rust_xlsxwriter::XlsxError) -> Echec {
-    erreur(Classe::Disque, format!("classeur : {}", e))
-}
-
-/// Un format : gras ou non, une taille, un format de nombre.
-fn format_de(gras: bool, taille: Option<f64>, nombre: Option<&str>) -> Format {
-    let mut f = Format::new();
-    if gras {
-        f = f.set_bold();
-    }
-    if let Some(t) = taille {
-        f = f.set_font_size(t);
-    }
-    if let Some(n) = nombre {
-        f = f.set_num_format(n);
-    }
-    f
-}
-
-fn ecrire_cellule(ws: &mut Worksheet, ligne: u32, col: u16, cel: &Cel, fmt: &Format) -> R<()> {
+fn ecrire_cellule(ws: &mut Feuille, ligne: u32, col: u16, cel: &Cel, style: &Style) {
     match cel {
-        Cel::Vide => Ok(()),
-        Cel::Nombre(d) => ws.write_number_with_format(ligne, col, nombre_du_classeur(d)?, fmt).map(|_| ()).map_err(xl),
-        Cel::Texte(t) => ws.write_string_with_format(ligne, col, t, fmt).map(|_| ()).map_err(xl),
+        Cel::Vide => {}
+        Cel::Nombre(d) => ws.nombre(ligne, col, *d, style),
+        Cel::Texte(t) => ws.texte(ligne, col, t.clone(), style),
     }
 }
 
@@ -624,18 +598,16 @@ fn nom_de_feuille(t: &Tableau) -> R<&str> {
 
 /// `xlsx_tableau`.
 pub fn xlsx_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
-    let mut wb = Workbook::new();
-    let ws = wb.add_worksheet();
-    ws.set_name(nom_de_feuille(t)?).map_err(xl)?;
+    let mut ws = Feuille::nouvelle(nom_de_feuille(t)?);
     let mut ligne: u32 = 0;
     for x in entete_texte(t, lire_nom(ctx)) {
-        ws.write_string_with_format(ligne, 0, &x, &format_de(true, Some(13.0), None)).map_err(xl)?;
+        ws.texte(ligne, 0, x, &Style::gras(Some(13)));
         ligne += 1;
     }
     ligne += 1;
-    let entete = Format::new().set_bold().set_text_wrap().set_align(FormatAlign::VerticalCenter);
+    let entete = Style { gras: true, retour_a_la_ligne: true, vertical: Some(Vertical::Centre), ..Style::default() };
     for (i, c) in t.colonnes.iter().enumerate() {
-        ws.write_string_with_format(ligne, i as u16, &c.libelle, &entete).map_err(xl)?;
+        ws.texte(ligne, i as u16, c.libelle.clone(), &entete);
     }
     let ligne_entete = ligne;
     ligne += 1;
@@ -648,33 +620,33 @@ pub fn xlsx_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
         }
     };
     for (d, genre) in rangees(t) {
-        let (gras, taille) = match genre {
-            "general" => (true, Some(12.0)),
-            "total" => (true, Some(11.0)),
+        let (gras, corps) = match genre {
+            "general" => (true, Some(12)),
+            "total" => (true, Some(11)),
             _ => (false, None),
         };
         for (i, c) in t.colonnes.iter().enumerate() {
             let cel = cellule_classeur(d.val(&c.cle), c)?;
-            let fmt = format_de(gras, taille, if matches!(cel, Cel::Nombre(_)) { nombre_de(c) } else { None });
-            ecrire_cellule(ws, ligne, i as u16, &cel, &fmt)?;
+            let style = Style { gras, corps, format: if matches!(cel, Cel::Nombre(_)) { nombre_de(c) } else { None }, ..Style::default() };
+            ecrire_cellule(&mut ws, ligne, i as u16, &cel, &style);
         }
         ligne += 1;
     }
-    let simple = Format::new();
+    let simple = Style::default();
     for a in &t.avertissements {
         ligne += 1;
-        ws.write_string_with_format(ligne, 0, format!("! {}", a), &simple).map_err(xl)?;
+        ws.texte(ligne, 0, format!("! {}", a), &simple);
         ligne += 1;
     }
     for s in &t.sources {
-        ws.write_string_with_format(ligne, 0, format!("Source : {}", s), &simple).map_err(xl)?;
+        ws.texte(ligne, 0, format!("Source : {}", s), &simple);
         ligne += 1;
     }
     for (i, c) in t.colonnes.iter().enumerate() {
-        ws.set_column_width(i as u16, if c.a_droite() { 14.0 } else { 26.0 }).map_err(xl)?;
+        ws.largeur(i as u16, i as u16, if c.a_droite() { 14 } else { 26 });
     }
-    ws.set_freeze_panes(ligne_entete + 1, 0).map_err(xl)?;
-    wb.save_to_buffer().map_err(xl)
+    ws.figer(ligne_entete + 1);
+    ws.octets()
 }
 
 // --------------------------------------------------------------- html / pdf

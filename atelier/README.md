@@ -1365,7 +1365,7 @@ Quatre choses à savoir :
   état neuf écrit ses lignes et ses colonnes, les trois formats le suivent.
   Le **PDF** s'édite en A4 paysage, repose l'en-tête des colonnes à chaque
   page et numérote ; le **classeur** écrit les montants en nombres, pour
-  qu'ils s'additionnent (`rust_xlsxwriter`, dans le programme). Le PDF est
+  qu'ils s'additionnent, exacts (`documents::classeur`, dans le programme). Le PDF est
   fait par la fabrique de PDF, elle aussi dans le programme. C'est le CSV qui
   fait foi ;
 - chaque ligne vient des **paies écrites des engagements validés**
