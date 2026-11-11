@@ -705,8 +705,8 @@ pub struct Formes<'e> {
     deja: HashMap<String, usize>,
 }
 
-const FEUILLES: [&str; 22] = [
-    "String", "str", "bool", "char", "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize", "f32", "f64",
+const FEUILLES: [&str; 20] = [
+    "String", "str", "bool", "char", "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize",
     "Decimal", "PathBuf", "Path", "Number",
 ];
 

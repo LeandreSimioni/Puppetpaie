@@ -104,15 +104,7 @@ pub struct RestaurationDite {
     pub a_faire: Vec<String>,
 }
 
-fn lisible(octets: u64) -> String {
-    if octets >= 1024 * 1024 {
-        format!("{:.1} Mo", octets as f64 / (1024.0 * 1024.0))
-    } else if octets >= 1024 {
-        format!("{} Ko", octets / 1024)
-    } else {
-        format!("{} o", octets)
-    }
-}
+use crate::sauvegarde::lisible;
 
 fn md5_de(octets: &[u8]) -> String {
     Md5::digest(octets).iter().map(|b| format!("{:02x}", b)).collect()

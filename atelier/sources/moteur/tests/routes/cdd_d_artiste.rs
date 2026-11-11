@@ -102,6 +102,6 @@ fn de_la_validation_a_l_attestation() {
     let ap = route(&c, "apercu", json!({"mois": "2026-06", "modifications": []}), "2026-06-20");
     let svoboda = reussi(&ap)["paies"].as_array().unwrap().iter().find(|p| p.to_string().contains("SVOBODA")).cloned().expect("SVOBODA");
     let iccp = svoboda["remuneration"].as_array().unwrap().iter().find(|l| l["rubrique"] == "indemnite_compensatrice_conges").cloned().expect("l'indemnite compensatrice");
-    let taux: f64 = iccp["taux"].to_string().trim_matches('"').parse().unwrap();
-    assert!(taux <= 3400.0 / 24.0, "un jour de conge paye plus qu'un jour de travail : {}", iccp);
+    let taux = crate::outils::dec(iccp["taux"].to_string().trim_matches('"'));
+    assert!(taux * crate::outils::dec("24") <= crate::outils::dec("3400"), "un jour de conge paye plus qu'un jour de travail : {}", iccp);
 }

@@ -264,7 +264,15 @@ pub fn commande(args: &[String]) -> i32 {
 
 // ------------------------------------------------------------------ moissonner
 
-/// Fait defiler une archive et garde les articles en vigueur ; rend (fichiers d'article des textes suivis, secondes).
+/// Une duree en secondes entieres, la moitie au pair, pour le dire.
+pub(crate) fn secondes(d: std::time::Duration) -> String {
+    match socle::num::quotient(d.as_nanos(), 1_000_000_000, 0) {
+        Some(t) => t,
+        None => unreachable!("une seconde n'est pas nulle"),
+    }
+}
+
+/// Fait defiler une archive et garde les articles en vigueur ; rend (fichiers d'article des textes suivis, duree).
 ///
 /// `tar` : une archive ouverte (en flux pour la globale, en memoire pour une livraison). `tous` : garder TOUS les articles
 /// des textes suivis -- c'est ce que fait l'entrepot --, et non les seuls voulus.
@@ -284,7 +292,7 @@ fn passer<L: Read>(
     livraison: &str,
     tous_les_articles: bool,
     seuls: Option<&[&str]>,
-) -> R<(usize, f64)> {
+) -> R<(usize, std::time::Duration)> {
     let suivis: Vec<(&str, &str)> = par_legitext().into_iter().filter(|(_, cle)| seuls.is_none_or(|s| s.contains(cle))).collect();
     let (mut vus, t0) = (0usize, Instant::now());
     while let Some(m) = tar.suivant()? {
@@ -344,7 +352,7 @@ fn passer<L: Read>(
         }
         articles.poser(k, ArticleLegi { cle: vec![texte.to_string(), num], id, debut, en_vigueur, xml: txt });
     }
-    Ok((vus, t0.elapsed().as_secs_f64()))
+    Ok((vus, t0.elapsed()))
 }
 
 /// Les livraisons de l'index posterieures a l'archive globale. Un index qui n'en liste aucune n'est plus celui qu'on
@@ -364,7 +372,7 @@ fn passer_le_global(
     journal: &mut Vec<String>,
     source: &dyn Source,
     seuls: Option<&[&str]>,
-) -> R<(usize, f64)> {
+) -> R<(usize, std::time::Duration)> {
     let mut essai = 1;
     loop {
         let r = source.flux(&format!("{}{}", BASE, GLOBAL)).and_then(|f| passer(&mut dila::tar_gz(f), &mut ent.articles, journal, None, "", true, seuls));
@@ -417,7 +425,7 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
         let etat = EtatLegi { changes: Vec::new(), construit_le: jour.clone(), global: GLOBAL.to_string(), lues: Vec::new(), mis_a_jour_le: None };
         let mut ent: EntrepotLegi = Entrepot::neuf(&dossier, etat);
         let (vus, sec) = passer_le_global(&mut ent, &mut journal, source, None)?;
-        dire(&format!("  {} fichiers d'article lus en {:.0}s ; {} articles gardes", vus, sec, ent.articles.len()));
+        dire(&format!("  {} fichiers d'article lus en {}s ; {} articles gardes", vus, secondes(sec), ent.articles.len()));
         ent.sauver(&jour)?;
         ent
     };
@@ -499,7 +507,7 @@ pub fn moissonner(racine: &Path, reconstruire: bool, source: &dyn Source, aujour
 fn completer(ent: &mut EntrepotLegi, absents: &[&str], journal: &mut Vec<String>, source: &dyn Source, jour: &str) -> R<()> {
     dire(&format!("== textes ajoutes depuis la construction : {} ==", absents.join(", ")));
     let (vus, sec) = passer_le_global(ent, journal, source, Some(absents))?;
-    dire(&format!("  {} fichiers d'article de ces textes lus en {:.0}s", vus, sec));
+    dire(&format!("  {} fichiers d'article de ces textes lus en {}s", vus, secondes(sec)));
     let mut lues: Vec<String> = ent.lues().into_iter().collect();
     lues.sort();
     let urls: Vec<String> = lues.iter().map(|n| format!("{}LEGI_{}.tar.gz", BASE, n)).collect();
@@ -766,9 +774,9 @@ fn avant(racine: &Path, changements: &[ChangeLegi], source: &dyn Source) -> R<Ha
         }
     }
     dire(&format!(
-        "  {} fichiers parcourus en {:.0}s ; {}/{} versions anterieures retrouvees",
+        "  {} fichiers parcourus en {}s ; {}/{} versions anterieures retrouvees",
         vus,
-        t0.elapsed().as_secs_f64(),
+        secondes(t0.elapsed()),
         trouves.len(),
         vise.len()
     ));

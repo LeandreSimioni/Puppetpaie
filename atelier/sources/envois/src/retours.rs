@@ -1811,7 +1811,7 @@ fn repertoire_zip(b: &[u8]) -> R<Vec<Membre>> {
             fin: 0,
         };
         if c[6] > 63 {
-            return Err(echec(Classe::ArchiveNonLue, format!("archive zip de version {:.1} : non lue", c[6] as f64 / 10.0)));
+            return Err(echec(Classe::ArchiveNonLue, format!("archive zip de version {}.{} : non lue", c[6] / 10, c[6] % 10)));
         }
         extra_zip64(extra, &mut m)?;
         m.decalage += concat;

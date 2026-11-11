@@ -44,7 +44,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
         octets_deposes: 0,
         exclus: ecartes,
         disparus: 0,
-        secondes: 0.0,
+        secondes: socle::num::Decimal::ZERO,
         incidents: Vec::new(),
         reportes: Vec::new(),
         persistant: None,
@@ -210,6 +210,6 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     };
     resultat.persistant = phrase_persistante(&nouvel_index, socle::paris::maintenant_naif())?;
     ecrire_index(racine, &nouvel_index)?;
-    resultat.secondes = (socle::temps::duree(debut).as_secs_f64() * 10.0).round() / 10.0;
+    resultat.secondes = socle::num::secondes_au_dixieme(socle::temps::duree(debut));
     Ok(resultat)
 }

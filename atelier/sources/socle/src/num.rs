@@ -168,6 +168,24 @@ pub fn entier_lu(t: &str) -> Option<i128> {
     Some(if neg { -n } else { n })
 }
 
+/// UN QUOTIENT DIT A L'ECRAN (des octets en Mo, une duree en secondes) : `n / d` a `chiffres` decimales, exact, la
+/// moitie au pair (`quotient(3_670_016, 1_048_576, 1)` : « 3.5 ») ; `d` nul, `None`.
+pub fn quotient(n: u128, d: u128, chiffres: u32) -> Option<String> {
+    let echelle = 10u128.checked_pow(chiffres)?;
+    let (q, r) = (n.checked_mul(echelle)?.checked_div(d)?, n.checked_mul(echelle)? % d);
+    let q = if r > d - r || (r == d - r && q % 2 == 1) { q + 1 } else { q };
+    if chiffres == 0 {
+        return Some(q.to_string());
+    }
+    Some(format!("{}.{:0width$}", q / echelle, q % echelle, width = chiffres as usize))
+}
+
+/// Une duree en secondes, au dixieme, la moitie loin de zero : un nombre a virgule qu'une reponse rend (« 1.2 »).
+pub fn secondes_au_dixieme(d: std::time::Duration) -> Decimal {
+    let ns = Decimal::from_i128_with_scale(d.as_nanos() as i128, 9);
+    ns.round_dp_with_strategy(1, RoundingStrategy::MidpointAwayFromZero)
+}
+
 /// Deux décimales, la moitié au pair, en texte.
 pub fn q2(d: Decimal) -> String {
     let mut r = d.round_dp(2);

@@ -274,7 +274,7 @@ pub fn mettre_a_jour(racine: &Path, reconstruire: bool, manifeste: &Manifeste, s
             let mut ent: EntrepotKali = Entrepot::neuf(&dossier, etat);
             let t0 = Instant::now();
             let n = passer(&mut dila::tar_gz(source.flux(&format!("{}{}", BASE, glob))?), &mut ent.articles, &mut ent.etat.changes, &conteneurs, None)?;
-            dire(&format!("  {} articles gardes en {:.0}s", n, t0.elapsed().as_secs_f64()));
+            dire(&format!("  {} articles gardes en {}s", n, crate::releve::codes::secondes(t0.elapsed())));
             ent.sauver(&jour)?;
             ent
         }

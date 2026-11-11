@@ -97,7 +97,8 @@ fn le_complement_au_dela_du_seuil_du_bareme_2025() {
     // Le taux AT/MP de 2025 : celui que les Treteaux ont dit pour 2026, des le 01/01/2025.
     let atmp = json!([{"case": "taux_atmp", "valeur": {"code_risque": "923AD", "valeur": 1.1, "depuis": "2025-01-01"}}]);
     reussi(&route(&c, "enregistrer-fiche", json!({"nom": "entreprise", "cle": null, "changements": atmp}), JOUR));
-    let heures = |mois: &str, jour: &str, taux: f64| -> Value {
+    let heures = |mois: &str, jour: &str, taux: &str| -> Value {
+        let taux: serde_json::Number = taux.parse().unwrap();
         let carte = json!({"salarie": "FORTUNY", "nature": "cddu_spectacle", "spectacle": "le-banc-des-menteurs",
             "lignes": [{"rubrique": "heure", "quantite": 10, "taux": taux, "lieu": null, "dates": [jour], "planning": []}]});
         reussi(&valider(&c, mois, None, &carte, JOUR));
@@ -105,12 +106,12 @@ fn le_complement_au_dela_du_seuil_du_bareme_2025() {
     };
     let patronale = |paie: &Value, id: &str| (montant(&ligne(paie, "lignes", "id", id)["taux_pat"]), montant(&ligne(paie, "lignes", "id", id)["montant_pat"]));
 
-    let mars = heures("2025-03", "2025-03-14", 51.73);
+    let mars = heures("2025-03", "2025-03-14", "51.73");
     assert_eq!(montant(&mars["paie"]["brut"]), dec("517.30"), "{}", mars);
     assert_eq!(patronale(&mars, "maladie"), (dec("13"), dec("67.25")), "{}", mars);
     assert_eq!(patronale(&mars, "famille"), (dec("5.25"), dec("27.16")), "{}", mars);
 
-    let avril = heures("2025-04", "2025-04-11", 30.0);
+    let avril = heures("2025-04", "2025-04-11", "30.0");
     assert_eq!(montant(&avril["paie"]["brut"]), dec("300"), "{}", avril);
     assert_eq!(patronale(&avril, "maladie"), (dec("13"), dec("39.00")), "{}", avril);
     assert_eq!(patronale(&avril, "famille"), (dec("3.45"), dec("10.35")), "{}", avril);

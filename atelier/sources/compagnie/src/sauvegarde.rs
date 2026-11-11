@@ -95,7 +95,8 @@ pub struct Sauvegarde {
     pub exclus: usize,
     /// Purges entre l'inventaire et l'envoi : pas un incident.
     pub disparus: usize,
-    pub secondes: f64,
+    /// La duree du passage, en secondes, au dixieme.
+    pub secondes: socle::num::Decimal,
     /// Le detail brut de ce qui n'est pas passe (`dossier : erreur`), pour la ligne de commande. La fenetre ne le montre
     /// pas : un dossier reporte au passage suivant n'est pas un incident.
     pub incidents: Vec<String>,
@@ -260,9 +261,17 @@ pub fn souci(racine: &Path) -> Result<Option<String>, ErreurGoogle> {
     }
 }
 
-fn lisible(octets: u64) -> String {
+/// Des octets en mega-octets (2^20), au dixieme : « 3.5 ».
+pub fn mo(octets: u64) -> String {
+    match socle::num::quotient(u128::from(octets), 1_048_576, 1) {
+        Some(t) => t,
+        None => unreachable!("un mega-octet n'est pas nul"),
+    }
+}
+
+pub(crate) fn lisible(octets: u64) -> String {
     if octets >= 1024 * 1024 {
-        format!("{:.1} Mo", octets as f64 / (1024.0 * 1024.0))
+        format!("{} Mo", mo(octets))
     } else if octets >= 1024 {
         format!("{} Ko", octets / 1024)
     } else {

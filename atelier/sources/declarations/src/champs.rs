@@ -925,10 +925,6 @@ impl<'de> Visitor<'de> for Attendu {
     fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<Option<Valeur>, E> {
         self.nombre(NombreLu::from(u), Unexpected::Unsigned(u))
     }
-    fn visit_f64<E: serde::de::Error>(self, x: f64) -> Result<Option<Valeur>, E> {
-        let n = NombreLu::deserialize(serde::de::value::F64Deserializer::<E>::new(x)).map_err(|_| E::invalid_value(Unexpected::Float(x), &self))?;
-        self.nombre(n, Unexpected::Float(x))
-    }
     fn visit_seq<A: SeqAccess<'de>>(self, mut a: A) -> Result<Option<Valeur>, A::Error> {
         match self {
             Attendu::Lignes(l) => {
@@ -949,6 +945,13 @@ impl<'de> Visitor<'de> for Attendu {
         }
     }
     fn visit_map<A: MapAccess<'de>>(self, m: A) -> Result<Option<Valeur>, A::Error> {
+        let m = match socle::forme::table_ou_nombre(m)? {
+            socle::forme::TableOuNombre::Nombre(n) => {
+                let ecrit = n.ecrit();
+                return self.nombre(n, Unexpected::Other(&ecrit));
+            }
+            socle::forme::TableOuNombre::Table(m) => m,
+        };
         match self {
             Attendu::Bloc(l) => l.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
             Attendu::Libre | Attendu::Quelconque => Lecture { niveau: Niveau::Libre, devant: String::new() }.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
@@ -991,9 +994,6 @@ impl<'de> Visitor<'de> for Dite {
     fn visit_u64<E: serde::de::Error>(self, u: u64) -> Result<bool, E> {
         Ok(u != 0)
     }
-    fn visit_f64<E: serde::de::Error>(self, x: f64) -> Result<bool, E> {
-        Ok(x != 0.0)
-    }
     fn visit_str<E: serde::de::Error>(self, t: &str) -> Result<bool, E> {
         Ok(!t.is_empty())
     }
@@ -1004,7 +1004,11 @@ impl<'de> Visitor<'de> for Dite {
         }
         Ok(dite)
     }
-    fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<bool, A::Error> {
+    fn visit_map<A: MapAccess<'de>>(self, m: A) -> Result<bool, A::Error> {
+        let mut m = match socle::forme::table_ou_nombre(m)? {
+            socle::forme::TableOuNombre::Nombre(n) => return Ok(!n.est_nul()),
+            socle::forme::TableOuNombre::Table(m) => m,
+        };
         let mut dite = false;
         while m.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {
             dite = true;
@@ -1238,9 +1242,9 @@ fn tranche(s: &str, a: usize, b: usize) -> String {
     s.chars().skip(a).take(b.saturating_sub(a)).collect()
 }
 
-/// Le texte est-il un nombre flottant ? (`nan`, `inf`, `1e5`,
+/// Le texte est-il un nombre a virgule ? (`nan`, `inf`, `1e5`,
 /// `1_000` en sont ; une virgule non.)
-fn flottant_valide(t: &str) -> bool {
+fn nombre_valide(t: &str) -> bool {
     let t = strip(t);
     if t.is_empty() {
         return false;
@@ -1261,7 +1265,17 @@ fn flottant_valide(t: &str) -> bool {
         }
     }
     let net: String = sans.chars().filter(|x| *x != '_').collect();
-    !net.is_empty() && net.parse::<f64>().is_ok() && !net.starts_with(['+', '-'])
+    // Des chiffres, un point au plus (avec au moins un chiffre), puis un exposant `e` signe ou non.
+    let (mantisse, exposant) = match net.split_once(['e', 'E']) {
+        Some((m, e)) => (m, Some(e)),
+        None => (net.as_str(), None),
+    };
+    let exposant_bon = exposant.is_none_or(|e| {
+        let e = e.strip_prefix(['+', '-']).unwrap_or(e);
+        !e.is_empty() && e.bytes().all(|c| c.is_ascii_digit())
+    });
+    let (entier, fraction) = mantisse.split_once('.').unwrap_or((mantisse, ""));
+    exposant_bon && !(entier.is_empty() && fraction.is_empty()) && entier.bytes().chain(fraction.bytes()).all(|c| c.is_ascii_digit())
 }
 
 /// Une date ISO : AAAA-MM-JJ, AAAAMMJJ, et les semaines ISO.
@@ -1890,7 +1904,7 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
     if c.forme == Forme::Email && !courriel_valide(v) {
         return Ok(Some("adresse de courriel attendue".into()));
     }
-    if c.forme == Forme::Montant && !flottant_valide(&v.replace(',', ".")) {
+    if c.forme == Forme::Montant && !nombre_valide(&v.replace(',', ".")) {
         return Ok(Some("nombre attendu".into()));
     }
     if let (Forme::Choix, Some(choix)) = (c.forme, c.choix) {

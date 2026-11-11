@@ -910,11 +910,11 @@ pub fn commande(args: &[String]) -> i32 {
                         dire!("{} -> {}", nom, racine.display());
                     }
                     dire!(
-                        "{} route(s) rejouee(s), {} lecture(s) ecartee(s), {} geste(s) sur une autre compagnie, en {:.1} s.",
+                        "{} route(s) rejouee(s), {} lecture(s) ecartee(s), {} geste(s) sur une autre compagnie, en {} s.",
                         r.routes_rejouees,
                         r.lectures_ecartees,
                         r.autres_compagnies,
-                        debut.elapsed().as_secs_f64()
+                        socle::num::secondes_au_dixieme(debut.elapsed())
                     );
                     for e in &r.ecarts {
                         dire!("ECART  {}", e);
@@ -929,7 +929,7 @@ pub fn commande(args: &[String]) -> i32 {
         }
         ["verifier", sc, inst, travail] => match verifier(Path::new(sc), Path::new(inst), Path::new(travail)) {
             Ok(e) if e.is_empty() => {
-                dire!("Le rejeu refait la compagnie du banc, fichier pour fichier ({:.1} s).", debut.elapsed().as_secs_f64());
+                dire!("Le rejeu refait la compagnie du banc, fichier pour fichier ({} s).", socle::num::secondes_au_dixieme(debut.elapsed()));
                 0
             }
             Ok(e) => {
@@ -945,7 +945,7 @@ pub fn commande(args: &[String]) -> i32 {
         },
         ["livrer", sc, dest] => match livrer(Path::new(sc), Path::new(dest), options.jusqu_au) {
             Ok(r) => {
-                dire!("{} : {} route(s) rejouee(s), {} geste(s) d'apres le jour laisse(s) a l'horloge, en {:.1} s.", dest, r.routes_rejouees, r.laisses, debut.elapsed().as_secs_f64());
+                dire!("{} : {} route(s) rejouee(s), {} geste(s) d'apres le jour laisse(s) a l'horloge, en {} s.", dest, r.routes_rejouees, r.laisses, socle::num::secondes_au_dixieme(debut.elapsed()));
                 0
             }
             Err(m) => {

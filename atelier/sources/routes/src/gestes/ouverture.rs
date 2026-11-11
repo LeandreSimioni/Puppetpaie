@@ -32,6 +32,7 @@ use envois::courriel::Courriel;
 use envois::drive::Drive;
 use envois::etats;
 use socle::echec::R;
+use socle::num::Decimal;
 use socle::paris::{InstantEcrit, MinuteDite};
 use envois::releve_retours::{Client, Releve};
 use envois::releve_signatures::ReleveDite;
@@ -206,7 +207,8 @@ pub struct Ouverture {
     pub phrases_coffre: Vec<String>,
     /// Ce que l'horloge de la compagnie fictive a joue aujourd'hui, en phrases.
     pub horloge: Vec<String>,
-    pub secondes: f64,
+    /// La duree de l'ouverture, en secondes, au dixieme.
+    pub secondes: Decimal,
     /// Le reseau manquait : dit une fois, pas par erreur.
     pub hors_ligne: bool,
     /// Ce qui n'a pas repondu, une phrase par service (l'erreur telle qu'elle est venue) : le reseau manquait pour CELA,
@@ -232,7 +234,7 @@ impl Ouverture {
             a_poser: Vec::new(),
             phrases_coffre: Vec::new(),
             horloge: Vec::new(),
-            secondes: 0.0,
+            secondes: Decimal::ZERO,
             hors_ligne: false,
             injoignables: Vec::new(),
             retenue: false,
@@ -332,7 +334,8 @@ impl Ouverture {
 pub struct OuvertureDite {
     pub phrase: String,
     pub quand: MinuteDite,
-    pub secondes: f64,
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]
+    pub secondes: Decimal,
     pub sauvegarde: Option<SauvegardeDite>,
     pub retours: Option<RetoursDits>,
     pub signatures: Option<ReleveDite>,
@@ -483,7 +486,8 @@ fn chemin_trace(ctx: &Contexte) -> std::path::PathBuf {
 #[serde(deny_unknown_fields)]
 pub struct Trace {
     pub quand: MinuteDite,
-    pub secondes: f64,
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule", deserialize_with = "socle::forme::decimal")]
+    pub secondes: Decimal,
     /// La ligne de la sauvegarde, quand elle a eu lieu.
     pub sauvegarde: Option<String>,
     /// Ce qui persiste de la sauvegarde (`sauvegarde::souci`).
@@ -670,7 +674,7 @@ fn trier_hors_ligne(r: &mut Ouverture) {
 fn clore(ctx: &Contexte, r: &mut Ouverture, debut: std::time::Instant) {
     finir_les_etapes(ctx);
     trier_hors_ligne(r);
-    r.secondes = (socle::temps::duree(debut).as_secs_f64() * 10.0).round() / 10.0;
+    r.secondes = socle::num::secondes_au_dixieme(socle::temps::duree(debut));
     noter_ouverture(ctx, r);
 }
 
@@ -684,11 +688,11 @@ fn completer_la_trace(ctx: &Contexte, r: &mut Ouverture, debut: std::time::Insta
         return clore(ctx, r, debut);
     };
     trier_hors_ligne(r);
-    let ma_duree = (socle::temps::duree(debut).as_secs_f64() * 10.0).round() / 10.0;
+    let ma_duree = socle::num::secondes_au_dixieme(socle::temps::duree(debut));
     r.secondes = ma_duree;
     trace.sauvegarde = r.sauvegarde.as_ref().map(Sauvegarde::resume);
     trace.sauvegarde_souci = souci_de_la_sauvegarde(ctx, r);
-    trace.secondes = ((trace.secondes + ma_duree) * 10.0).round() / 10.0;
+    trace.secondes = (trace.secondes + ma_duree).round_dp_with_strategy(1, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
     trace.hors_ligne = trace.hors_ligne || r.hors_ligne;
     // La sauvegarde qui ne passe pas ne tait plus la ligne des retours : la releve, elle, est passee.
     trace.injoignables.extend(r.injoignables.iter().cloned());

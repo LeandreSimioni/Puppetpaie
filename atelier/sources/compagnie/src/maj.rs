@@ -72,6 +72,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use socle::date::Jour;
 use socle::echec::{refus, refus_avec, APart, Echec, Lieu, R};
+use socle::num::Decimal;
 use socle::paris::MinuteEcrite;
 
 
@@ -867,7 +868,7 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
                 let quart = attendus.filter(|a| *a > 0).map(|a| recus * 4 / a);
                 if quart.is_some() && quart != dit.get() {
                     dit.set(quart);
-                    let mo = |o: u64| format!("{:.1}", o as f64 / 1_048_576.0).replace('.', ",");
+                    let mo = |o: u64| crate::sauvegarde::mo(o).replace('.', ",");
                     if let Some(a) = attendus {
                         eprintln!("{} : {} Mo reçus sur {} Mo", qui, mo(recus), mo(a));
                     }
@@ -1439,7 +1440,7 @@ impl Recherche {
         let p = self.tenu();
         let lue = p.version.as_deref().map(version_lue);
         let nommee = |t: &str| lue.as_ref().map(|v| format!("PuppetPaie {} {}", v, t));
-        let mo = |o: u64| format!("{:.1}", o as f64 / 1_048_576.0).replace('.', ",");
+        let mo = |o: u64| crate::sauvegarde::mo(o).replace('.', ",");
         let essai = p.nouvel_essai.map(|t| {
             let s = t.saturating_duration_since(std::time::Instant::now()).as_secs();
             match s {
@@ -1448,7 +1449,7 @@ impl Recherche {
                 _ => format!("nouvel essai dans {} min", s.div_ceil(60)),
             }
         });
-        let (texte, detail, barre, progression): (&str, Option<String>, bool, Option<f64>) = match p.etape {
+        let (texte, detail, barre, progression): (&str, Option<String>, bool, Option<Decimal>) = match p.etape {
             Etape::Aucune => ("", None, false, None),
             Etape::Recherche => ("Recherche de mise à jour…", None, false, None),
             Etape::AJour => (
@@ -1468,9 +1469,10 @@ impl Recherche {
                     None => nommee(&format!(": {} Mo reçus", mo(p.recus))),
                 },
                 true,
-                p.attendus.filter(|a| *a > 0).map(|a| (p.recus as f64 / a as f64).min(1.0)),
+                // La part recue, au millionieme : la page la montre au millieme.
+                p.attendus.filter(|a| *a > 0).map(|a| (Decimal::from(p.recus) / Decimal::from(a)).min(Decimal::ONE).round_dp(6)),
             ),
-            Etape::Preparation => ("Mise à jour en cours", nommee(": vérification"), true, Some(1.0)),
+            Etape::Preparation => ("Mise à jour en cours", nommee(": vérification"), true, Some(Decimal::ONE)),
             Etape::Prete => (
                 "Redémarrer pour mettre à jour",
                 if p.calcul.is_empty() {
@@ -1538,7 +1540,8 @@ pub struct EtatDeLaRecherche {
     pub texte: String,
     pub detail: Option<String>,
     pub barre: bool,
-    pub progression: Option<f64>,
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
+    pub progression: Option<Decimal>,
     pub en_cours: bool,
     pub relire_ms: Option<u64>,
     pub redemarrer: bool,
