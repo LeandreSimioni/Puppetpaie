@@ -22,7 +22,7 @@ use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe};
 use socle::date::Jour;
-use socle::mois::Mois;
+use socle::mois::{Annee, Mois};
 use socle::num::{eur2, zero2, Decimal};
 use crate::prelevement::Prelevement;
 use engagement::etats::PaieDuMois;
@@ -39,7 +39,7 @@ pub const IMPORTE: &str = "importe";
 #[derive(Clone, Default)]
 pub struct Demande {
     pub mois: Option<Mois>,
-    pub annee: Option<String>,
+    pub annee: Option<Annee>,
     pub toutes: bool,
     pub regroupement: String,
     pub format: String,
@@ -56,11 +56,11 @@ pub struct Demande {
 // ------------------------------------------------------------------ ou ca s'ecrit
 
 /// `exports/`, et le sous-dossier de l'annee quand il y en a une.
-pub fn dossier_exports(ctx: &Contexte, annee: Option<&str>) -> PathBuf {
+pub fn dossier_exports(ctx: &Contexte, annee: Option<Annee>) -> PathBuf {
     let d = ctx.racine.join("exports");
     match annee {
-        Some(a) if !a.is_empty() => d.join(a),
-        _ => d,
+        Some(a) => d.join(a.to_string()),
+        None => d,
     }
 }
 
@@ -70,26 +70,26 @@ pub fn dossier_exports(ctx: &Contexte, annee: Option<&str>) -> PathBuf {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Quand {
     Mois(Mois),
-    Annee(String),
+    Annee(Annee),
     Toutes,
 }
 
 impl Quand {
     /// La periode d'une demande : une seule des trois, sinon le refus `phrase`.
-    pub fn lire(mois: Option<Mois>, annee: Option<&str>, toutes: bool, phrase: &str) -> R<Quand> {
-        match (mois, annee.filter(|a| !a.is_empty()), toutes) {
+    pub fn lire(mois: Option<Mois>, annee: Option<Annee>, toutes: bool, phrase: &str) -> R<Quand> {
+        match (mois, annee, toutes) {
             (Some(m), None, false) => Ok(Quand::Mois(m)),
-            (None, Some(a), false) => Ok(Quand::Annee(a.to_string())),
+            (None, Some(a), false) => Ok(Quand::Annee(a)),
             (None, None, true) => Ok(Quand::Toutes),
             _ => Err(refus(phrase)),
         }
     }
 
     /// Le mois, l'annee et « toutes les annees », tels qu'une demande les porte.
-    pub fn en_demande(&self) -> (Option<Mois>, Option<String>, bool) {
+    pub fn en_demande(&self) -> (Option<Mois>, Option<Annee>, bool) {
         match self {
             Quand::Mois(m) => (Some(*m), None, false),
-            Quand::Annee(a) => (None, Some(a.clone()), false),
+            Quand::Annee(a) => (None, Some(*a), false),
             Quand::Toutes => (None, None, true),
         }
     }
@@ -99,7 +99,7 @@ impl Quand {
         match self {
             Quand::Toutes => true,
             Quand::Mois(u) => m == *u,
-            Quand::Annee(a) => m.to_string().starts_with(a.as_str()),
+            Quand::Annee(a) => Annee::du_mois(m) == *a,
         }
     }
 
@@ -108,7 +108,7 @@ impl Quand {
         match self {
             Quand::Toutes => "toutes-les-annees".to_string(),
             Quand::Mois(m) => m.to_string(),
-            Quand::Annee(a) => a.clone(),
+            Quand::Annee(a) => a.to_string(),
         }
     }
 
@@ -116,8 +116,8 @@ impl Quand {
     pub fn dossier(&self, ctx: &Contexte) -> PathBuf {
         match self {
             Quand::Toutes => dossier_exports(ctx, None),
-            Quand::Mois(m) => dossier_exports(ctx, Some(&format!("{:04}", m.annee()))),
-            Quand::Annee(a) => dossier_exports(ctx, Some(&a.chars().take(4).collect::<String>())),
+            Quand::Mois(m) => dossier_exports(ctx, Some(Annee::du_mois(*m))),
+            Quand::Annee(a) => dossier_exports(ctx, Some(*a)),
         }
     }
 }
@@ -152,7 +152,7 @@ pub fn mois_importes(ctx: &Contexte) -> R<BTreeSet<Mois>> {
 fn libelle_periode(mois: &[Mois], quand: &Quand) -> String {
     match quand {
         Quand::Mois(m) => libelle_mois(*m),
-        Quand::Annee(a) => a.clone(),
+        Quand::Annee(a) => a.to_string(),
         Quand::Toutes => {
             let annees: BTreeSet<i32> = mois.iter().map(|m| m.annee()).collect();
             match (annees.first(), annees.last()) {
@@ -167,7 +167,7 @@ fn libelle_periode(mois: &[Mois], quand: &Quand) -> String {
 impl Periode {
     /// La periode d'un etat : un mois, une annee, ou toutes les annees. `obligatoire` : ses mois sont ceux que la compagnie
     /// a (`mois_pris`), sinon ceux que la demande nomme.
-    pub fn nouvelle(ctx: &Contexte, mois: Option<Mois>, annee: Option<&str>, toutes: bool, obligatoire: bool) -> R<Periode> {
+    pub fn nouvelle(ctx: &Contexte, mois: Option<Mois>, annee: Option<Annee>, toutes: bool, obligatoire: bool) -> R<Periode> {
         Periode::pour(ctx, Quand::lire(mois, annee, toutes, UNE_PERIODE)?, obligatoire)
     }
 
@@ -188,7 +188,7 @@ impl Periode {
 
     /// La periode d'une demande (`mois`, `annee`, `toutes`).
     pub fn de(ctx: &Contexte, d: &Demande, obligatoire: bool) -> R<Periode> {
-        Periode::nouvelle(ctx, d.mois, d.annee.as_deref(), d.toutes, obligatoire)
+        Periode::nouvelle(ctx, d.mois, d.annee, d.toutes, obligatoire)
     }
 
     pub fn saisis(&self) -> Vec<Mois> {
@@ -556,7 +556,7 @@ fn grouper(lignes: &[LigneLivre], regroupement: &str) -> R<Vec<Groupe>> {
 pub fn livre_de_paie(ctx: &Contexte, d: &Demande) -> R<LivreDePaie> {
     let quand = Quand::lire(
         d.mois,
-        d.annee.as_deref(),
+        d.annee,
         d.toutes,
         "Un livre de paie se demande pour UNE période : un mois (--mois AAAA-MM), une année (--annee AAAA), ou toutes les années (--toutes-les-annees).",
     )?;
@@ -963,7 +963,7 @@ pub fn recapitulatif_annuel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     if d.mois.is_some() {
         return Err(refus("Le récapitulatif annuel se demande pour une année, ou pour toutes les années — pas pour un mois."));
     }
-    let p = Periode::nouvelle(ctx, None, d.annee.as_deref(), d.toutes, true)?;
+    let p = Periode::nouvelle(ctx, None, d.annee, d.toutes, true)?;
     let mut avert = Vec::new();
     let lignes = lignes_livre(ctx, &p, &mut avert, &d.departs)?;
     let mut ordre: Vec<(String, String)> = Vec::new();

@@ -708,17 +708,6 @@ fn usages_declares(ctx: &Contexte, rubrique: Option<&str>, valeur: Option<&str>)
     Ok(DejaDeclare { declarations: n, du: mois.iter().min().cloned(), au: mois.iter().max().cloned() })
 }
 
-/// Le chiffre (0 a 9) que `c` represente : les chiffres ASCII, et
-/// ceux des ecritures les plus courantes (arabe, devanagari, pleine chasse).
-pub(crate) fn chiffre_lu(c: char) -> Option<u32> {
-    const DEBUTS: [u32; 4] = [0x0660, 0x06F0, 0x0966, 0xFF10];
-    let u = c as u32;
-    if c.is_ascii_digit() {
-        return Some(u - 0x30);
-    }
-    DEBUTS.iter().find(|d| u >= **d && u < **d + 10).map(|d| u - d)
-}
-
 
 #[track_caller]
 pub(crate) fn plain(m: impl Into<String>) -> Echec {
@@ -1374,7 +1363,7 @@ struct CoutDit {
 struct CoutsDits {
     phrase: String,
     phrases: Vec<String>,
-    annee: String,
+    annee: socle::mois::Annee,
     jusqu_a: String,
     #[serde(serialize_with = "en_objet")]
     spectacles: Vec<(String, CoutDit)>,
@@ -1392,7 +1381,7 @@ dites!(EffectifDit, CoutsDits, DemandeOubliee);
 /// `couts` : le cout de l'annee, au jour du contexte (`documents::fiche_recapitulative::Recapitulatifs::couts_de_l_annee`).
 fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
     use socle::texte::euros;
-    let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(c.annee.to_string()), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
+    let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(socle::mois::Annee::nouvelle(i64::from(c.annee))?), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
     let couts = r.couts_de_l_annee()?;
     let bulletins = |x: &documents::fiche_recapitulative::Cout| socle::ecran::compte(x.bulletins as usize, "bulletin", "bulletins");
     // La ligne de chaque spectacle et de chaque salarie, telle que sa fiche la montre.

@@ -32,7 +32,7 @@ fn copie(e: &Echec) -> Echec {
 /// dans l'ordre ou les paies le rencontrent.
 #[derive(Debug, Serialize)]
 pub struct CoutsDeLAnnee {
-    pub annee: String,
+    pub annee: socle::mois::Annee,
     pub jusqu_a: Mois,
     #[serde(serialize_with = "en_objet")]
     pub spectacles: Vec<(String, Cout)>,
@@ -65,7 +65,7 @@ pub struct Recapitulatifs<'a> {
 }
 
 impl<'a> Recapitulatifs<'a> {
-    pub fn nouveau(ctx: &'a Contexte, mois: Option<Mois>, annee: Option<String>, toutes: bool, departs: engagement::departs::Departs) -> Self {
+    pub fn nouveau(ctx: &'a Contexte, mois: Option<Mois>, annee: Option<socle::mois::Annee>, toutes: bool, departs: engagement::departs::Departs) -> Self {
         let demande = Demande { mois, annee, toutes, format: "pdf".to_string(), departs, ..Demande::default() };
         Recapitulatifs { ctx, demande, etats: [None, None] }
     }
@@ -74,15 +74,12 @@ impl<'a> Recapitulatifs<'a> {
     /// est seulement saisi pour plus tard se dit a part (`prevu`). Une paie importee dont les pieces ne disaient pas le
     /// cout employeur rend le cumul `incomplet`. Sans annee, ou sans mois cette annee-la : rien.
     pub fn couts_de_l_annee(&mut self) -> R<CoutsDeLAnnee> {
-        let Some(annee) = self.demande.annee.clone() else {
+        let Some(annee) = self.demande.annee else {
             return Err(erreur(Classe::Illisible, "Le coût de l'année se demande pour une année : la dire."));
         };
         let courant = self.ctx.aujourdhui.mois_civil();
-        let mut out = CoutsDeLAnnee { annee: annee.clone(), jusqu_a: courant, spectacles: Vec::new(), salaries: Vec::new() };
-        if annee.is_empty() {
-            return Ok(out);
-        }
-        let p = Periode::nouvelle(self.ctx, None, Some(&annee), false, false)?;
+        let mut out = CoutsDeLAnnee { annee, jusqu_a: courant, spectacles: Vec::new(), salaries: Vec::new() };
+        let p = Periode::nouvelle(self.ctx, None, Some(annee), false, false)?;
         if p.mois.is_empty() {
             return Ok(out);
         }

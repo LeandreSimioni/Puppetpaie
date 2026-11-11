@@ -1522,15 +1522,12 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 /// `taxe_sur_les_salaires` : la taxe sur les salaires d'une annee (CGI art. 231), salarie par salarie, et ce qui
 /// reste a payer apres franchise, decote et abattement. Se calcule sur une ANNEE (ses seuils sont annuels).
 pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
-    let Some(annee) = d.annee.as_deref().filter(|a| !a.is_empty()) else {
+    let Some(annee) = d.annee else {
         return Err(socle::echec::cle("La taxe sur les salaires se calcule sur une ANNÉE (ses seuils sont annuels) : choisir l'année.", "annee"));
     };
     // Qui doit la taxe, et sur quelle part : le meme regime que la DSN de decembre (`assujettissement`, CGI art. 231, 1).
     // NE PAS SAVOIR N'EST PAS UNE ERREUR : l'etat le dit, et dit quoi repondre.
-    let Some(an) = socle::num::entier_de_chiffres(annee).filter(|_| annee.len() == 4) else {
-        return Err(socle::refus!("année illisible : {} (attendu : AAAA)", socle::date::repr_texte(annee)).reclasser(Classe::Illisible));
-    };
-    let an = socle::mois::Annee::nouvelle(an).map_err(|x| x.reclasser(Classe::Illisible))?.nombre();
+    let an = annee.nombre();
     let jour = socle::date::Jour::nouveau(an, 1, 1).ok_or_else(|| socle::refus!("{}", socle::date::annee_impossible(an)))?;
     let bar = ctx.bareme(&jour)?;
     // Les plafonds de la franchise, que la conclusion nomme : ceux du bareme de l'annee.

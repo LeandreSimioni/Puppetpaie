@@ -558,7 +558,7 @@ pub fn fcap_svp(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             idcc
         )));
     };
-    let p = Periode::nouvelle(ctx, None, d.annee.as_deref(), d.toutes, true)?;
+    let p = Periode::nouvelle(ctx, None, d.annee, d.toutes, true)?;
     let mut avert = Vec::new();
     let (taux, plancher, plafond) = (fp.taux.0, fp.plancher.0, fp.plafond.0);
     let mut par_an: Vec<(String, i64, Decimal)> = Vec::new();

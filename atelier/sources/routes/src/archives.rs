@@ -643,7 +643,7 @@ pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
     let format = if forme.formats.is_empty() { String::new() } else { choisi("format", &c.format, &forme.formats)? };
     let d = Demande {
         mois: c.mois,
-        annee: c.annee.as_ref().map(AnneeDite::texte),
+        annee: c.annee.as_ref().map(AnneeDite::annee).transpose()?,
         toutes: c.toutes_les_annees == Some(true),
         regroupement,
         format,
@@ -654,8 +654,7 @@ pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
         departs: envois::journal::lu(&ctx.racine).map(|j| j.departs)?,
     };
     if etat == "regularisation-casc-svp" {
-        let annee = c.annee.as_ref().map(AnneeDite::annee).transpose()?;
-        let demande = crate::importation::casc::Demande { mois: d.mois, annee, toutes_les_annees: d.toutes, boite_liee: crate::ouverture::boite_liee(ctx)?, ..Default::default() };
+        let demande = crate::importation::casc::Demande { mois: d.mois, annee: d.annee, toutes_les_annees: d.toutes, boite_liee: crate::ouverture::boite_liee(ctx)?, ..Default::default() };
         let mut r = crate::importation::casc::regularisation(ctx, &demande)?;
         if d.ecrire {
             crate::importation::casc::ecrire(ctx, &mut r)?;

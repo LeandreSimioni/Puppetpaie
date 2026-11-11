@@ -286,27 +286,23 @@ fn marquer(chemin: &Path, aujourdhui: &Jour) -> R<()> {
 
 // ------------------------------------------------------------------ la periode
 
-/// Un chiffre lu dans un nom (`\d`) : ASCII, arabe, devanagari, pleine chasse.
-fn chiffre(c: char) -> Option<u32> {
-    crate::fiches::chiffre_lu(c)
-}
 
 /// Un mois, une annee, ou tout. Les bornes servent aux pages CoolPaie, qui n'ont qu'une date.
 enum Periode {
     Mois(Mois),
-    Annee(String),
+    Annee(socle::mois::Annee),
     Toutes,
 }
 
 impl Periode {
-    fn nouveau(mois: Option<Mois>, annee: Option<String>, toutes: bool) -> R<Periode> {
+    fn nouveau(mois: Option<Mois>, annee: Option<socle::mois::Annee>, toutes: bool) -> R<Periode> {
         match (mois, annee, toutes) {
             (Some(m), None, false) => Ok(Periode::Mois(m)),
-            (None, Some(t), false) => {
-                if !(t.chars().count() == 4 && t.chars().all(|x| chiffre(x).is_some())) {
-                    return Err(erreur_operation(format!("Année attendue sous la forme AAAA : « {} ».", t)));
+            (None, Some(a), false) => {
+                if a.nombre() < 1000 {
+                    return Err(erreur_operation(format!("Année attendue sous la forme AAAA : « {} ».", a.nombre())));
                 }
-                Ok(Periode::Annee(t))
+                Ok(Periode::Annee(a))
             }
             (None, None, true) => Ok(Periode::Toutes),
             _ => Err(erreur_operation(
@@ -319,7 +315,7 @@ impl Periode {
     fn contient(&self, m: Mois) -> bool {
         match self {
             Periode::Mois(x) => m == *x,
-            Periode::Annee(a) => format!("{:04}", m.annee()) == *a,
+            Periode::Annee(a) => socle::mois::Annee::du_mois(m) == *a,
             Periode::Toutes => true,
         }
     }
@@ -327,7 +323,7 @@ impl Periode {
     fn libelle(&self) -> String {
         match self {
             Periode::Mois(m) => m.libelle(socle::mois::Graphie::Minuscule),
-            Periode::Annee(a) => a.clone(),
+            Periode::Annee(a) => a.to_string(),
             Periode::Toutes => "toute la période".to_string(),
         }
     }
@@ -335,16 +331,16 @@ impl Periode {
     fn nom(&self) -> String {
         match self {
             Periode::Mois(m) => m.to_string(),
-            Periode::Annee(a) => a.clone(),
+            Periode::Annee(a) => a.to_string(),
             Periode::Toutes => "toute-la-periode".to_string(),
         }
     }
 
     /// Le mois, l'annee, ou toutes, comme les recapitulatifs les prennent.
-    fn bornes(&self) -> (Option<Mois>, Option<String>, bool) {
+    fn bornes(&self) -> (Option<Mois>, Option<socle::mois::Annee>, bool) {
         match self {
             Periode::Mois(m) => (Some(*m), None, false),
-            Periode::Annee(a) => (None, Some(a.clone()), false),
+            Periode::Annee(a) => (None, Some(*a), false),
             Periode::Toutes => (None, None, true),
         }
     }
@@ -1219,7 +1215,7 @@ fn ecrire_ensemble(dossier: &Path, contenus: &Contenus, preuves: &[(String, Vec<
 /// Le dossier construit (et ecrit, sauf `apercu`). L'envoi (`archives`, `dossier-envoyer`)
 /// en a besoin tel quel : ses salaries, ses fichiers, ses pages.
 pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossier> {
-    let annee = demande.annee.as_ref().map(AnneeDite::texte);
+    let annee = demande.annee.as_ref().map(AnneeDite::annee).transpose()?;
     let (ensemble, ecrire) = (demande.ensemble == Some(true), demande.apercu != Some(true));
     let p = Periode::nouveau(demande.mois, annee, demande.toutes_les_annees == Some(true))?;
     // Le jour reel de Paris, pas `ctx.aujourdhui`.
