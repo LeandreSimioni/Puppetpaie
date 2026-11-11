@@ -39,6 +39,8 @@ use socle::echec::{refus, R};
 use socle::mois::Mois;
 use socle::num::entier_de_chiffres;
 use socle::num::Decimal;
+use fabrique_pdf::mesure::mesure;
+use crate::releve::Mesure;
 
 use crate::certificat_lu::{date_en_tete, jetons, nir_en_tete, Certificat};
 
@@ -52,18 +54,18 @@ pub const ILLISIBLE: &str = "cette AEM ne se lit pas : ses libellés s'impriment
 #[derive(Clone, Debug)]
 struct Mot {
     texte: String,
-    x0: f64,
-    x1: f64,
-    y0: f64,
-    y1: f64,
+    x0: Mesure,
+    x1: Mesure,
+    y0: Mesure,
+    y1: Mesure,
 }
 
 impl Mot {
-    fn cy(&self) -> f64 {
-        (self.y0 + self.y1) / 2.0
+    fn cy(&self) -> Mesure {
+        (self.y0 + self.y1) / 2
     }
-    fn cx(&self) -> f64 {
-        (self.x0 + self.x1) / 2.0
+    fn cx(&self) -> Mesure {
+        (self.x0 + self.x1) / 2
     }
 }
 
@@ -72,15 +74,15 @@ impl Mot {
 struct Rubrique {
     cle: &'static str,
     mots: Vec<usize>,
-    x0: f64,
-    x1: f64,
-    y0: f64,
-    y1: f64,
+    x0: Mesure,
+    x1: Mesure,
+    y0: Mesure,
+    y1: Mesure,
 }
 
 impl Rubrique {
-    fn cy(&self) -> f64 {
-        (self.y0 + self.y1) / 2.0
+    fn cy(&self) -> Mesure {
+        (self.y0 + self.y1) / 2
     }
 }
 
@@ -130,7 +132,12 @@ const RUBRIQUES: [(&str, &str); 37] = [
 const COLONNES: [(&str, &str); 4] = [("heures", "heures"), ("isoles", "isoles"), ("groupes", "groupes"), ("jours", "jours")];
 
 /// Deux mots sont sur la meme ligne quand leurs milieux verticaux sont a moins de cela.
-const LIGNE: f64 = 3.5;
+const LIGNE: Mesure = mesure("3.5");
+
+/// `n` points.
+const fn pt(n: i64) -> Mesure {
+    Mesure::entier(n)
+}
 
 /// Ce qu'une AEM en PDF dit, page par page.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -409,7 +416,7 @@ fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
 /// Les jetons de la page, a la suite (dans l'ordre de lecture), pour reconnaitre ce qu'elle est.
 fn texte_en_jetons(mots: &[Mot]) -> String {
     let mut m: Vec<&Mot> = mots.iter().collect();
-    m.sort_by(|a, b| a.y0.total_cmp(&b.y0).then(a.x0.total_cmp(&b.x0)));
+    m.sort_by(|a, b| a.y0.cmp(&b.y0).then(a.x0.cmp(&b.x0)));
     format!(" {} ", m.iter().flat_map(|w| jetons(&w.texte)).collect::<Vec<_>>().join(" "))
 }
 
@@ -428,7 +435,7 @@ fn illisible(mots: &[Mot]) -> bool {
 fn ligne_depuis(mots: &[Mot], m: usize) -> Vec<usize> {
     let cy = mots[m].cy();
     let mut v: Vec<usize> = (0..mots.len()).filter(|&k| (mots[k].cy() - cy).abs() <= LIGNE && mots[k].x0 >= mots[m].x0).collect();
-    v.sort_by(|a, b| mots[*a].x0.total_cmp(&mots[*b].x0));
+    v.sort_by(|a, b| mots[*a].x0.cmp(&mots[*b].x0));
     v
 }
 
@@ -437,7 +444,7 @@ fn rubriques(mots: &[Mot]) -> Vec<Rubrique> {
     let mut prises = vec![false; mots.len()];
     let mut out: Vec<Rubrique> = Vec::new();
     let mut ordre: Vec<usize> = (0..mots.len()).collect();
-    ordre.sort_by(|a, b| mots[*a].y0.total_cmp(&mots[*b].y0).then(mots[*a].x0.total_cmp(&mots[*b].x0)));
+    ordre.sort_by(|a, b| mots[*a].y0.cmp(&mots[*b].y0).then(mots[*a].x0.cmp(&mots[*b].x0)));
     for (cle, phrase) in RUBRIQUES {
         let p: Vec<&str> = phrase.split(' ').collect();
         for &m in &ordre {
@@ -454,14 +461,14 @@ fn rubriques(mots: &[Mot]) -> Vec<Rubrique> {
             faits.dedup();
             // Les mots d'une rubrique se suivent (pas de valeur entre eux), et ne finissent pas au milieu d'un mot.
             let fin_dans_le_mot = js.get(p.len()).is_some_and(|j| j.1 == *faits.last().unwrap());
-            let serres = faits.windows(2).all(|w| mots[w[1]].x0 - mots[w[0]].x1 < 15.0);
+            let serres = faits.windows(2).all(|w| mots[w[1]].x0 - mots[w[0]].x1 < pt(15));
             if fin_dans_le_mot || !serres || faits.iter().any(|k| prises[*k]) {
                 continue;
             }
             for k in &faits {
                 prises[*k] = true;
             }
-            let b = |f: fn(&Mot) -> f64, min: bool| faits.iter().map(|k| f(&mots[*k])).fold(if min { f64::MAX } else { f64::MIN }, |a, x| if min { a.min(x) } else { a.max(x) });
+            let b = |f: fn(&Mot) -> Mesure, min: bool| faits.iter().map(|k| f(&mots[*k])).fold(if min { Mesure::MAX } else { Mesure::MIN }, |a, x| if min { a.min(x) } else { a.max(x) });
             out.push(Rubrique { cle, x0: b(|w| w.x0, true), x1: b(|w| w.x1, false), y0: b(|w| w.y0, true), y1: b(|w| w.y1, false), mots: faits });
         }
     }
@@ -482,16 +489,16 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
     // Les sections du formulaire, par leur titre : 2 EMPLOYEUR, 3 SALARIE, 4 PRESTATION DE TRAVAIL, 5 AUTHENTIFICATION.
     let haut_de = |cle: &str| rs.iter().find(|r| r.cle == cle).map(|r| r.y0);
     let bornes = [haut_de("employeur"), haut_de("salarie"), haut_de("prestation"), haut_de("authentification")];
-    let section = |y: f64| -> usize { bornes.iter().filter(|b| b.is_some_and(|b| y >= b - 1.0)).count() };
+    let section = |y: Mesure| -> usize { bornes.iter().filter(|b| b.is_some_and(|b| y >= b - pt(1))).count() };
 
     // La valeur d'une rubrique : les mots a sa droite, sur sa ligne, jusqu'a la rubrique suivante de la ligne.
     let valeur_de = |r: &Rubrique| -> Vec<String> {
-        let tol = (r.y1 - r.y0).max(4.0) * 0.6;
-        let suivante = rs.iter().filter(|o| o.x0 > r.x1 && (o.cy() - r.cy()).abs() <= tol).map(|o| o.x0).fold(f64::MAX, f64::min);
+        let tol = (r.y1 - r.y0).max(pt(4)) * mesure("0.6");
+        let suivante = rs.iter().filter(|o| o.x0 > r.x1 && (o.cy() - r.cy()).abs() <= tol).map(|o| o.x0).fold(Mesure::MAX, Mesure::min);
         let mut v: Vec<usize> = (0..mots.len())
-            .filter(|&k| !pris.contains(&k) && !marques.contains(&k) && mots[k].x0 >= r.x1 - 1.0 && mots[k].x0 < suivante && (mots[k].cy() - r.cy()).abs() <= tol)
+            .filter(|&k| !pris.contains(&k) && !marques.contains(&k) && mots[k].x0 >= r.x1 - pt(1) && mots[k].x0 < suivante && (mots[k].cy() - r.cy()).abs() <= tol)
             .collect();
-        v.sort_by(|a, b| mots[*a].x0.total_cmp(&mots[*b].x0));
+        v.sort_by(|a, b| mots[*a].x0.cmp(&mots[*b].x0));
         v.into_iter().map(|k| mots[k].texte.clone()).collect()
     };
     // Les mots de la premiere rubrique `cle` de la section `s` (toutes si `None`) qui a une valeur ; aucun s'il n'y en a pas.
@@ -549,8 +556,8 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
     for &k in &marques {
         let m = &mots[k];
         let Some(l) = (0..mots.len())
-            .filter(|&j| j != k && mots[j].x1 <= m.x0 + 1.0 && m.x0 - mots[j].x1 <= 12.0 && (mots[j].cy() - m.cy()).abs() <= 5.0)
-            .min_by(|a, b| (m.x0 - mots[*a].x1).total_cmp(&(m.x0 - mots[*b].x1)))
+            .filter(|&j| j != k && mots[j].x1 <= m.x0 + pt(1) && m.x0 - mots[j].x1 <= pt(12) && (mots[j].cy() - m.cy()).abs() <= pt(5))
+            .min_by(|a, b| (m.x0 - mots[*a].x1).cmp(&(m.x0 - mots[*b].x1)))
         else {
             continue;
         };
@@ -567,8 +574,8 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
                 let w = &mots[l];
                 let non = mots.iter().any(|o| {
                     jetons(&o.texte) == ["non"]
-                        && (((o.cy() - w.cy()).abs() <= LIGNE && w.x0 - o.x1 >= 0.0 && w.x0 - o.x1 < 8.0)
-                            || ((o.x0 - w.x0).abs() <= 3.0 && w.cy() - o.cy() > 2.0 && w.cy() - o.cy() < 12.0))
+                        && (((o.cy() - w.cy()).abs() <= LIGNE && w.x0 - o.x1 >= pt(0) && w.x0 - o.x1 < pt(8))
+                            || ((o.x0 - w.x0).abs() <= pt(3) && w.cy() - o.cy() > pt(2) && w.cy() - o.cy() < pt(12)))
                 });
                 a.cadre = Some(!non);
             }
@@ -581,9 +588,9 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
         .iter()
         .filter_map(|(c, j)| mots.iter().find(|m| section(m.y0) == 3 && jetons(&m.texte).first().map(String::as_str) == Some(*j)).map(|m| (*c, m)))
         .collect();
-    let brut_tete = rs.iter().filter(|r| r.cle == "brut" && section(r.y0) == 3).min_by(|a, b| a.x0.total_cmp(&b.x0));
+    let brut_tete = rs.iter().filter(|r| r.cle == "brut" && section(r.y0) == 3).min_by(|a, b| a.x0.cmp(&b.x0));
     if !en_tetes.is_empty() {
-        let haut = en_tetes.iter().map(|(_, m)| m.y1).fold(f64::MIN, f64::max);
+        let haut = en_tetes.iter().map(|(_, m)| m.y1).fold(Mesure::MIN, Mesure::max);
         let mut par_colonne: std::collections::BTreeMap<&str, Vec<i64>> = std::collections::BTreeMap::new();
         let mut ambigu = false;
         for (k, m) in mots.iter().enumerate() {
@@ -591,7 +598,7 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
                 continue;
             }
             let Some(n) = entier(&m.texte) else { continue };
-            match en_tetes.iter().map(|(c, t)| (*c, (t.cx() - m.cx()).abs())).filter(|x| x.1 <= 45.0).min_by(|a, b| a.1.total_cmp(&b.1)) {
+            match en_tetes.iter().map(|(c, t)| (*c, (t.cx() - m.cx()).abs())).filter(|x| x.1 <= pt(45)).min_by(|a, b| a.1.cmp(&b.1)) {
                 Some((c, _)) => par_colonne.entry(c).or_default().push(n),
                 None => ambigu = true,
             }
@@ -613,12 +620,12 @@ fn lire_page(mots: &[Mot], page: usize) -> Option<Aem> {
     }
     // Le brut : le nombre sous « SALAIRES BRUTS », a son aplomb.
     if let Some(r) = brut_tete {
-        let cx = (r.x0 + r.x1) / 2.0;
+        let cx = (r.x0 + r.x1) / 2;
         a.brut = mots
             .iter()
-            .filter(|m| m.y0 > r.y1 && m.y0 < r.y1 + 40.0 && (m.cx() - cx).abs() <= (r.x1 - r.x0) / 2.0 + 10.0)
+            .filter(|m| m.y0 > r.y1 && m.y0 < r.y1 + pt(40) && (m.cx() - cx).abs() <= (r.x1 - r.x0) / 2 + pt(10))
             .filter_map(|m| crate::bulletin_lu::lire_nombre(&m.texte).filter(|_| m.texte.chars().any(|c| c.is_ascii_digit())).map(|n| (m.y0, n)))
-            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .min_by(|a, b| a.0.cmp(&b.0))
             .map(|x| x.1);
     }
     a.faute = fautes.first().map(|f| f.to_string());

@@ -27,17 +27,18 @@ use std::path::Path;
 
 use socle::date::Jour;
 use socle::num::Decimal;
+use crate::releve::Mesure;
 
 /// Deux mots sont sur le meme rang quand leurs milieux verticaux sont a moins de cela.
-const TOLERANCE: f64 = 4.0;
+const TOLERANCE: Mesure = Mesure::entier(4);
 
 /// Un mot de la page et sa boite.
 #[derive(Clone, Debug)]
 struct Mot {
     texte: String,
-    x0: f64,
-    cy: f64,
-    y0: f64,
+    x0: Mesure,
+    cy: Mesure,
+    y0: Mesure,
 }
 
 /// Les jetons d'une rubrique : minuscules, sans accents, tout ce qui n'est ni lettre ni chiffre lu comme un blanc
@@ -149,14 +150,14 @@ fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
             continue;
         }
         let [x0, y0, _, y1] = m.rect;
-        mots.push(Mot { texte, x0, cy: (y0 + y1) / 2.0, y0 });
+        mots.push(Mot { texte, x0, cy: (y0 + y1) / 2, y0 });
     }
     mots
 }
 
 /// Les mots en rangs, de haut en bas, chaque rang de gauche a droite.
 fn en_rangs(mut mots: Vec<Mot>) -> Vec<Vec<Mot>> {
-    mots.sort_by(|a, b| a.cy.total_cmp(&b.cy).then(a.x0.total_cmp(&b.x0)));
+    mots.sort_by(|a, b| a.cy.cmp(&b.cy).then(a.x0.cmp(&b.x0)));
     let mut rangs: Vec<Vec<Mot>> = Vec::new();
     for m in mots {
         match rangs.last_mut() {
@@ -165,7 +166,7 @@ fn en_rangs(mut mots: Vec<Mot>) -> Vec<Vec<Mot>> {
         }
     }
     for r in rangs.iter_mut() {
-        r.sort_by(|a, b| a.x0.total_cmp(&b.x0));
+        r.sort_by(|a, b| a.x0.cmp(&b.x0));
     }
     rangs
 }
@@ -295,7 +296,7 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
     let mut c = Certificat { page, ..Default::default() };
     let mut fautes: Vec<String> = Vec::new();
     // Le bloc d'adresse : les rangs au-dessus du titre, le premier est le nom.
-    let titre_y = rangs[titre].iter().map(|m| m.y0).fold(f64::MAX, f64::min);
+    let titre_y = rangs[titre].iter().map(|m| m.y0).fold(Mesure::MAX, Mesure::min);
     let bloc: Vec<String> = rangs[..titre].iter().filter(|r| r.iter().all(|m| m.y0 < titre_y)).map(|r| r.iter().map(|m| m.texte.as_str()).collect::<Vec<_>>().join(" ")).collect();
     if let Some((nom, reste)) = bloc.split_first() {
         c.nom_complet = Some(nom.clone());

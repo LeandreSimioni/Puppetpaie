@@ -50,69 +50,76 @@ use std::path::Path;
 use socle::date::Jour;
 use socle::echec::R;
 use socle::num::Decimal;
+use fabrique_pdf::mesure::mesure;
+use crate::releve::Mesure;
+
+/// `n` points.
+const fn pt(n: i64) -> Mesure {
+    Mesure::entier(n)
+}
 
 /// La table de lecture, dans `logiciel/donnees/`.
 pub const FICHIER_TABLE: &str = "bulletins-lecture-base.json";
 
 /// Deux mots dont le milieu vertical s'ecarte de moins que cela sont sur un meme rang (en points).
-const TOLERANCE: f64 = 3.5;
+const TOLERANCE: Mesure = mesure("3.5");
 
 /// Un mot plus loin que cela du precedent ne continue pas un libelle.
-const ECART_MOTS: f64 = 15.0;
+const ECART_MOTS: Mesure = pt(15);
 
 /// Deux morceaux d'un nombre (« 1 » et « 421,13 ») separes de moins que cela forment un seul nombre (l'espace des
 /// milliers grandit avec le corps du texte : 2 points en 9, 4 en 14).
-const ECART_MILLIERS: f64 = 5.0;
+const ECART_MILLIERS: Mesure = pt(5);
 
 /// Un montant « sous » son libelle : au plus a cette distance verticale.
-const DESSOUS_MAX: f64 = 40.0;
+const DESSOUS_MAX: Mesure = pt(40);
 
 /// Les rangs d'une grille du pied : au plus a cette distance sous son en-tete.
-const GRILLE_HAUTEUR: f64 = 60.0;
+const GRILLE_HAUTEUR: Mesure = pt(60);
 
 /// Une periode de dates travaillees plus longue que cela n'est pas depliee en jours.
 const INTERVALLE_MAX: i64 = 366;
 
 /// Sur un rang de l'en-tete, deux mots separes de plus que cela sont deux morceaux (un libelle et sa valeur, deux
 /// colonnes d'adresses) ; « 99999 » et sa commune, ecrits en deux, restent un.
-const ECART_SEGMENT: f64 = 40.0;
+const ECART_SEGMENT: Mesure = pt(40);
 
 /// La valeur d'une mention commence au plus a cette distance de son libelle, sur son rang.
-const VALEUR_LOIN: f64 = 180.0;
+const VALEUR_LOIN: Mesure = pt(180);
 
 /// Les mots d'une valeur se suivent a moins de cet ecart.
-const VALEUR_SUITE: f64 = 40.0;
+const VALEUR_SUITE: Mesure = pt(40);
 
 /// Une valeur sur plusieurs rangs : chaque rang au plus a cette distance du precedent.
-const VALEUR_RANG: f64 = 14.0;
+const VALEUR_RANG: Mesure = pt(14);
 
 /// Les rangs d'un bloc d'adresse se suivent a moins de cet ecart vertical.
-const BLOC_ECART: f64 = 30.0;
+const BLOC_ECART: Mesure = pt(30);
 
 /// Ce qui suit un bloc d'adresse dans sa colonne (le Siret de l'employeur) : au plus a cet ecart vertical.
-const BLOC_SUIVANT: f64 = 35.0;
+const BLOC_SUIVANT: Mesure = pt(35);
 
 /// Deux morceaux de l'en-tete commencent dans la meme colonne a moins de cela.
-const MEME_COLONNE: f64 = 2.5;
+const MEME_COLONNE: Mesure = mesure("2.5");
 
 /// Les rangs d'en-tetes du tableau : au plus a cet ecart vertical du « Libellé ».
-const ENTETE_HAUTEUR: f64 = 12.0;
+const ENTETE_HAUTEUR: Mesure = pt(12);
 
 /// Les mots d'un meme en-tete de colonne, sur un rang (« Part Employeur ») : au plus cet ecart.
-const ENTETE_MOTS: f64 = 4.0;
+const ENTETE_MOTS: Mesure = pt(4);
 
 /// Un en-tete precise celui du dessus (« Taux » sous « Part employeur ») si son milieu tombe a moins de cela de lui.
-const SOUS_ENTETE: f64 = 25.0;
+const SOUS_ENTETE: Mesure = pt(25);
 
 /// Un en-tete aligne a droite sous un en-tete de part (« Montant » sous « Part employeur ») en depasse le bord droit
 /// d'au plus cela.
-const GROUPE_MARGE: f64 = 10.0;
+const GROUPE_MARGE: Mesure = pt(10);
 
 /// Un nombre aligne a droite depasse le bord droit de l'en-tete de sa colonne d'au plus cela.
-const COLONNE_MARGE: f64 = 20.0;
+const COLONNE_MARGE: Mesure = pt(20);
 
 /// Le libelle d'un rang finit au moins a cette distance avant la premiere colonne.
-const LIBELLE_MARGE: f64 = 15.0;
+const LIBELLE_MARGE: Mesure = pt(15);
 
 // --------------------------------------------------------------------------------------------- le texte
 
@@ -201,25 +208,25 @@ fn ponctuation(t: &str) -> bool {
 struct Mot {
     texte: String,
     jetons: Vec<String>,
-    x0: f64,
-    y0: f64,
-    x1: f64,
-    y1: f64,
+    x0: Mesure,
+    y0: Mesure,
+    x1: Mesure,
+    y1: Mesure,
 }
 
 impl Mot {
-    fn cy(&self) -> f64 {
-        (self.y0 + self.y1) / 2.0
+    fn cy(&self) -> Mesure {
+        (self.y0 + self.y1) / 2
     }
 }
 
 /// Une boite : celle d'un libelle trouve (union de ses mots), ou d'un nombre.
 #[derive(Clone, Copy, Debug)]
 struct Boite {
-    x0: f64,
-    y0: f64,
-    x1: f64,
-    y1: f64,
+    x0: Mesure,
+    y0: Mesure,
+    x1: Mesure,
+    y1: Mesure,
 }
 
 impl Boite {
@@ -232,11 +239,11 @@ impl Boite {
     fn unir(self, b: Boite) -> Boite {
         Boite { x0: self.x0.min(b.x0), y0: self.y0.min(b.y0), x1: self.x1.max(b.x1), y1: self.y1.max(b.y1) }
     }
-    fn cy(&self) -> f64 {
-        (self.y0 + self.y1) / 2.0
+    fn cy(&self) -> Mesure {
+        (self.y0 + self.y1) / 2
     }
-    fn cx(&self) -> f64 {
-        (self.x0 + self.x1) / 2.0
+    fn cx(&self) -> Mesure {
+        (self.x0 + self.x1) / 2
     }
 }
 
@@ -257,13 +264,13 @@ struct Page {
 
 impl Page {
     fn nouvelle(mut mots: Vec<Mot>) -> Page {
-        mots.sort_by(|a, b| a.cy().total_cmp(&b.cy()).then(a.x0.total_cmp(&b.x0)));
+        mots.sort_by(|a, b| a.cy().cmp(&b.cy()).then(a.x0.cmp(&b.x0)));
         let voisins = (0..mots.len())
             .map(|i| {
                 let m = &mots[i];
                 (0..mots.len())
-                    .filter(|&j| j != i && (mots[j].cy() - m.cy()).abs() <= TOLERANCE && mots[j].x0 >= m.x1 - 1.0 && mots[j].x0 - m.x1 <= ECART_MOTS)
-                    .min_by(|&a, &b| mots[a].x0.total_cmp(&mots[b].x0))
+                    .filter(|&j| j != i && (mots[j].cy() - m.cy()).abs() <= TOLERANCE && mots[j].x0 >= m.x1 - pt(1) && mots[j].x0 - m.x1 <= ECART_MOTS)
+                    .min_by(|&a, &b| mots[a].x0.cmp(&mots[b].x0))
             })
             .collect();
         let nombres = nombres_de(&mots);
@@ -302,15 +309,15 @@ impl Page {
     /// retient : (sa boite, son premier mot, son dernier mot).
     fn occurrences(&self, phrases: &[Vec<String>], garder: &dyn Fn(&Mot) -> bool) -> Vec<(Boite, usize, usize)> {
         let mut ordre: Vec<usize> = (0..self.mots.len()).filter(|&i| garder(&self.mots[i])).collect();
-        ordre.sort_by(|&a, &b| self.mots[a].y0.total_cmp(&self.mots[b].y0).then(self.mots[a].x0.total_cmp(&self.mots[b].x0)));
+        ordre.sort_by(|&a, &b| self.mots[a].y0.cmp(&self.mots[b].y0).then(self.mots[a].x0.cmp(&self.mots[b].x0)));
         ordre.into_iter().filter_map(|i| self.libelle_en(i, phrases).map(|(b, f)| (b, i, f))).collect()
     }
 
     /// Le mot est-il un morceau d'un nombre dont le bord droit est a droite de `limite` (le « 1 » de « 1 421,13 ») ?
-    fn dans_un_nombre(&self, m: &Mot, limite: f64) -> bool {
+    fn dans_un_nombre(&self, m: &Mot, limite: Mesure) -> bool {
         self.nombres.iter().any(|n| {
             let b = n.boite;
-            b.x1 > limite && m.x0 >= b.x0 - 0.01 && m.x1 <= b.x1 + 0.01 && (m.cy() - b.cy()).abs() < 1.0
+            b.x1 > limite && m.x0 >= b.x0 - mesure("0.01") && m.x1 <= b.x1 + mesure("0.01") && (m.cy() - b.cy()).abs() < pt(1)
         })
     }
 
@@ -330,7 +337,7 @@ impl Page {
 /// separes de moins de `ECART_MILLIERS`).
 fn nombres_de(mots: &[Mot]) -> Vec<Nombre> {
     let mut candidats: Vec<&Mot> = mots.iter().filter(|m| ressemble_nombre(&m.texte)).collect();
-    candidats.sort_by(|a, b| a.cy().total_cmp(&b.cy()).then(a.x0.total_cmp(&b.x0)));
+    candidats.sort_by(|a, b| a.cy().cmp(&b.cy()).then(a.x0.cmp(&b.x0)));
     let milliers = |t: &str| t.len() == 3 && t.chars().all(|c| c.is_ascii_digit());
     let tete = |t: &str| {
         let t = sans_signe(t);
@@ -347,7 +354,7 @@ fn nombres_de(mots: &[Mot]) -> Vec<Nombre> {
                 Some((s, _)) => s,
                 None => m.texte.as_str(),
             };
-            let colle = (m.cy() - boite.cy()).abs() <= 1.5 && m.x0 >= boite.x1 - 0.5 && m.x0 - boite.x1 < ECART_MILLIERS;
+            let colle = (m.cy() - boite.cy()).abs() <= mesure("1.5") && m.x0 >= boite.x1 - mesure("0.5") && m.x0 - boite.x1 < ECART_MILLIERS;
             if colle && tete(texte) && milliers(suite) {
                 texte.push(' ');
                 texte.push_str(&m.texte);
@@ -362,7 +369,7 @@ fn nombres_de(mots: &[Mot]) -> Vec<Nombre> {
 
 /// Des mots en rangs (milieu vertical a moins de `TOLERANCE` du premier mot du rang), chaque rang de gauche a droite.
 fn en_rangs<'a>(mut mots: Vec<&'a Mot>) -> Vec<Vec<&'a Mot>> {
-    mots.sort_by(|a, b| a.cy().total_cmp(&b.cy()));
+    mots.sort_by(|a, b| a.cy().cmp(&b.cy()));
     let mut rangs: Vec<Vec<&Mot>> = Vec::new();
     for m in mots {
         match rangs.last_mut() {
@@ -371,7 +378,7 @@ fn en_rangs<'a>(mut mots: Vec<&'a Mot>) -> Vec<Vec<&'a Mot>> {
         }
     }
     for r in rangs.iter_mut() {
-        r.sort_by(|a, b| a.x0.total_cmp(&b.x0));
+        r.sort_by(|a, b| a.x0.cmp(&b.x0));
     }
     rangs
 }
@@ -417,8 +424,8 @@ fn texte_de(mots: &[&Mot]) -> String {
     mots.iter().map(|m| m.texte.as_str()).collect::<Vec<_>>().join(" ")
 }
 
-fn milieu(rang: &[&Mot]) -> f64 {
-    rang.iter().map(|m| m.cy()).sum::<f64>() / rang.len().max(1) as f64
+fn milieu(rang: &[&Mot]) -> Mesure {
+    rang.iter().map(|m| m.cy()).sum::<Mesure>() / rang.len().max(1) as i64
 }
 
 // --------------------------------------------------------------------------------------------- la table
@@ -1086,7 +1093,7 @@ fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
         }
         let [x0, y0, x1, y1] = m.rect;
         // Un meme mot ecrit deux fois au meme endroit (des cumuls imprimes en double) ne compte qu'une fois.
-        let double = mots.iter().any(|x| x.texte == texte && (x.x0 - x0).abs() < 0.05 && (x.y0 - y0).abs() < 0.05);
+        let double = mots.iter().any(|x| x.texte == texte && (x.x0 - x0).abs() < mesure("0.05") && (x.y0 - y0).abs() < mesure("0.05"));
         if !double {
             mots.push(Mot { jetons: jetons(&texte), texte, x0, y0, x1, y1 });
         }
@@ -1141,7 +1148,7 @@ fn colonne_de<'c>(cols: &'c [Colonne], n: &Nombre) -> Option<&'c Colonne> {
 }
 
 fn trier_colonnes(cols: &mut [Colonne]) {
-    cols.sort_by(|a, b| a.boite.x1.total_cmp(&b.boite.x1));
+    cols.sort_by(|a, b| a.boite.x1.cmp(&b.boite.x1));
 }
 
 /// Les en-tetes de colonnes d'un ensemble de mots : les mots voisins d'un rang s'unissent (« Part Employeur »), puis
@@ -1168,7 +1175,7 @@ fn etiquettes(mots: &[&Mot], e: &Entetes) -> Vec<(Boite, Vec<String>, String)> {
         // qui en chevauche un du dessus est le meme, ecrit sur deux rangs (« Taux » sur « salarial »).
         let chevauche = |a: &Boite, b: &Boite| a.x0 < b.x1 && b.x0 < a.x1;
         let mut parts: Vec<usize> = (0..sortie.len()).filter(|&k| part_dans(&sortie[k].1)).collect();
-        parts.sort_by(|&a, &b| sortie[a].0.x1.total_cmp(&sortie[b].0.x1));
+        parts.sort_by(|&a, &b| sortie[a].0.x1.cmp(&sortie[b].0.x1));
         let titre: Vec<Option<usize>> = du_rang.iter().map(|e| parts.iter().copied().find(|&k| e.0.x1 <= sortie[k].0.x1 + GROUPE_MARGE)).collect();
         let groupes: Vec<usize> = parts.iter().copied().filter(|&k| titre.iter().filter(|t| **t == Some(k)).count() >= 2).collect();
         let mut enfants: Vec<bool> = vec![false; du_rang.len()];
@@ -1195,15 +1202,15 @@ fn etiquettes(mots: &[&Mot], e: &Entetes) -> Vec<(Boite, Vec<String>, String)> {
             }
         }
     }
-    sortie.sort_by(|a, b| a.0.x0.total_cmp(&b.0.x0));
+    sortie.sort_by(|a, b| a.0.x0.cmp(&b.0.x0));
     sortie
 }
 
 /// Le rang d'en-tetes du tableau : ses colonnes, et les bornes verticales de ses rangs.
 struct Tableau {
     colonnes: Vec<Colonne>,
-    haut: f64,
-    bas: f64,
+    haut: Mesure,
+    bas: Mesure,
 }
 
 /// Un morceau d'un rang de l'en-tete : des mots qui se suivent.
@@ -1215,10 +1222,10 @@ struct Morceau<'a> {
 }
 
 impl Morceau<'_> {
-    fn x0(&self) -> f64 {
+    fn x0(&self) -> Mesure {
         self.mots[0].x0
     }
-    fn cy(&self) -> f64 {
+    fn cy(&self) -> Mesure {
         milieu(&self.mots)
     }
     fn lignes(&self) -> Vec<String> {
@@ -1253,7 +1260,7 @@ struct RangCorps {
     /// La quantite en tete du libelle, et le libelle sans elle (une ligne de paie : « 2 Cachets isolés »).
     quantite: Option<(Decimal, String)>,
     nombres: Vec<(Option<(Genre, Option<Part>)>, Decimal)>,
-    cy: f64,
+    cy: Mesure,
 }
 
 impl RangCorps {
@@ -1272,7 +1279,7 @@ impl<'a> Lecteur<'a> {
         // L'en-tete finit au tableau ; sans tableau, toute la page en est (le salarie se lit pour le caviardage).
         let limite = match &tableau {
             Ok(Some(t)) => t.haut - TOLERANCE,
-            _ => f64::INFINITY,
+            _ => Mesure::MAX,
         };
         let mut valeurs: Vec<(&'static str, Valeur)> = Vec::new();
         let pied_provisoire = None;
@@ -1442,7 +1449,7 @@ impl<'a> Lecteur<'a> {
         }
     }
 
-    fn dans_section(&self, cy: f64, section: Section, limite: f64, pied: Option<f64>) -> bool {
+    fn dans_section(&self, cy: Mesure, section: Section, limite: Mesure, pied: Option<Mesure>) -> bool {
         match section {
             Section::Entete => cy < limite,
             Section::Pied => pied.is_some_and(|p| cy > p + TOLERANCE),
@@ -1453,7 +1460,7 @@ impl<'a> Lecteur<'a> {
     // ----------------------------------------------------------------------------------------- les mentions
 
     /// La valeur d'une mention : la premiere de ses occurrences qui en porte une.
-    fn mention(&mut self, k: usize, limite: f64, pied: Option<f64>) -> Option<Valeur> {
+    fn mention(&mut self, k: usize, limite: Mesure, pied: Option<Mesure>) -> Option<Valeur> {
         let m = self.t.mentions[k].clone();
         let occ = self.page.occurrences(&m.libelles, &|x: &Mot| self.dans_section(x.cy(), m.section, limite, pied));
         for (rep, _, dernier) in occ {
@@ -1483,9 +1490,9 @@ impl<'a> Lecteur<'a> {
     /// mention. La ponctuation qui borne la valeur (« — », « · », « : ») n'en est pas.
     fn valeur(&self, k: usize, rep: &Boite, dernier: usize, rangs: usize) -> Vec<usize> {
         let p = &self.page;
-        let suite = |depart: f64, cy: f64, x_min: f64, loin: f64| -> Vec<usize> {
+        let suite = |depart: Mesure, cy: Mesure, x_min: Mesure, loin: Mesure| -> Vec<usize> {
             let mut rang: Vec<usize> = (0..p.mots.len()).filter(|&i| i != dernier && (p.mots[i].cy() - cy).abs() <= TOLERANCE && p.mots[i].x0 >= x_min).collect();
-            rang.sort_by(|&a, &b| p.mots[a].x0.total_cmp(&p.mots[b].x0));
+            rang.sort_by(|&a, &b| p.mots[a].x0.cmp(&p.mots[b].x0));
             let mut pris = Vec::new();
             let mut bord = depart;
             for i in rang {
@@ -1503,35 +1510,35 @@ impl<'a> Lecteur<'a> {
             }
             pris
         };
-        let mut mots = suite(rep.x1, rep.cy(), rep.x1 - 0.5, VALEUR_LOIN);
+        let mut mots = suite(rep.x1, rep.cy(), rep.x1 - mesure("0.5"), VALEUR_LOIN);
         // La valeur commence a son premier mot qui n'est pas une ponctuation ; sans lui, au libelle.
         let x_valeur = match mots.iter().find(|&&i| !ponctuation(&p.mots[i].texte)) {
             Some(&i) => p.mots[i].x0,
             None => rep.x0,
         };
-        let x_suite = x_valeur.min(rep.x0) - 3.0;
+        let x_suite = x_valeur.min(rep.x0) - pt(3);
         let mut cy = rep.cy();
         let mut n = 1;
         while n < rangs && !mots.is_empty() {
             let haut = (0..p.mots.len())
                 .filter(|&i| p.mots[i].cy() > cy + TOLERANCE && p.mots[i].cy() <= cy + TOLERANCE + VALEUR_RANG && p.mots[i].x0 >= x_suite)
-                .min_by(|&a, &b| p.mots[a].cy().total_cmp(&p.mots[b].cy()).then(p.mots[a].x0.total_cmp(&p.mots[b].x0)));
+                .min_by(|&a, &b| p.mots[a].cy().cmp(&p.mots[b].cy()).then(p.mots[a].x0.cmp(&p.mots[b].x0)));
             let Some(h) = haut else { break };
             // Le rang suivant commence ou commence la valeur (ou son libelle), et pas par le libelle d'une mention.
             // `h` est de ce rang : le rang a toujours un premier mot.
             let premier = match (0..p.mots.len())
                 .filter(|&i| (p.mots[i].cy() - p.mots[h].cy()).abs() <= TOLERANCE && p.mots[i].x0 >= x_suite)
-                .min_by(|&a, &b| p.mots[a].x0.total_cmp(&p.mots[b].x0))
+                .min_by(|&a, &b| p.mots[a].x0.cmp(&p.mots[b].x0))
             {
                 Some(i) => i,
                 None => h,
             };
-            let aligne = (p.mots[premier].x0 - x_valeur).abs() <= 3.0 || (p.mots[premier].x0 - rep.x0).abs() <= 3.0;
+            let aligne = (p.mots[premier].x0 - x_valeur).abs() <= pt(3) || (p.mots[premier].x0 - rep.x0).abs() <= pt(3);
             if self.debuts[premier].is_some() || !aligne {
                 break;
             }
             let mut rang = vec![premier];
-            rang.extend(suite(p.mots[premier].x1, p.mots[premier].cy(), p.mots[premier].x1 - 0.5, VALEUR_SUITE));
+            rang.extend(suite(p.mots[premier].x1, p.mots[premier].cy(), p.mots[premier].x1 - mesure("0.5"), VALEUR_SUITE));
             cy = p.mots[h].cy();
             mots.extend(rang);
             n += 1;
@@ -1602,25 +1609,25 @@ impl<'a> Lecteur<'a> {
         let bord_libelle = (0..p.mots.len())
             .filter(|&i| i != dernier && self.debuts[i].is_some() && (p.mots[i].cy() - rep.cy()).abs() <= TOLERANCE && p.mots[i].x0 > rep.x1)
             .map(|i| p.mots[i].x0)
-            .fold(f64::INFINITY, f64::min);
+            .fold(Mesure::MAX, Mesure::min);
         let droite = p
             .nombres
             .iter()
             .filter(|n| (n.boite.cy() - rep.cy()).abs() <= TOLERANCE && n.boite.x0 > rep.x1 && n.boite.x1 < bord_libelle)
-            .min_by(|a, b| a.boite.x0.total_cmp(&b.boite.x0));
+            .min_by(|a, b| a.boite.x0.cmp(&b.boite.x0));
         if let Some(n) = droite {
             return Some(Valeur::Nombre(n.valeur));
         }
         let fenetre = |n: &&Nombre| {
             let b = n.boite;
-            b.cy() > rep.cy() + 2.0 && b.cy() - rep.cy() <= DESSOUS_MAX && b.cx() >= rep.x0 - 20.0 && b.cx() <= rep.x1 + 80.0
+            b.cy() > rep.cy() + pt(2) && b.cy() - rep.cy() <= DESSOUS_MAX && b.cx() >= rep.x0 - pt(20) && b.cx() <= rep.x1 + pt(80)
         };
         let dist = |n: &Nombre| (n.boite.cx() - rep.cx()).hypot(n.boite.cy() - rep.cy());
-        p.nombres.iter().filter(fenetre).min_by(|a, b| dist(a).total_cmp(&dist(b))).map(|n| Valeur::Nombre(n.valeur))
+        p.nombres.iter().filter(fenetre).min_by(|a, b| dist(a).cmp(&dist(b))).map(|n| Valeur::Nombre(n.valeur))
     }
 
     /// Le mode de reglement ecrit apres « par » dans la mention de la date du paiement.
-    fn mode_de_la_date(&self, limite: f64, pied: Option<f64>) -> Option<String> {
+    fn mode_de_la_date(&self, limite: Mesure, pied: Option<Mesure>) -> Option<String> {
         let k = self.t.mentions.iter().position(|m| m.nom == "regle_le")?;
         let m = &self.t.mentions[k];
         for (rep, _, dernier) in self.page.occurrences(&m.libelles, &|x: &Mot| self.dans_section(x.cy(), m.section, limite, pied)) {
@@ -1641,7 +1648,7 @@ impl<'a> Lecteur<'a> {
     /// Les adresses de l'employeur et du salarie : les blocs de rangs alignes de l'en-tete dont un rang, apres le
     /// premier, porte un code postal. Celui de l'employeur est suivi, dans sa colonne, d'une mention de l'employeur
     /// (son Siret, son code APE, sa convention) ; celui du salarie est l'autre. Deux adresses de salarie : refus.
-    fn blocs(&mut self, limite: f64) -> Result<(Option<Bloc>, Option<Bloc>), Refus> {
+    fn blocs(&mut self, limite: Mesure) -> Result<(Option<Bloc>, Option<Bloc>), Refus> {
         let p = &self.page;
         let mots: Vec<&Mot> = p.mots.iter().filter(|m| m.cy() < limite).collect();
         let mut morceaux: Vec<Morceau> = Vec::new();
@@ -1664,9 +1671,9 @@ impl<'a> Lecteur<'a> {
                 None => colonnes.push(vec![m]),
             }
         }
-        let mut blocs: Vec<(f64, Bloc)> = Vec::new();
+        let mut blocs: Vec<(Mesure, Bloc)> = Vec::new();
         for c in colonnes.iter_mut() {
-            c.sort_by(|a, b| a.cy().total_cmp(&b.cy()));
+            c.sort_by(|a, b| a.cy().cmp(&b.cy()));
             let mut k = 0;
             while k < c.len() {
                 if c[k].coupe {
@@ -1686,7 +1693,7 @@ impl<'a> Lecteur<'a> {
                 k += 1;
             }
         }
-        blocs.sort_by(|a, b| a.0.total_cmp(&b.0));
+        blocs.sort_by(|a, b| a.0.cmp(&b.0));
         let (employeurs, salaries): (Vec<_>, Vec<_>) = blocs.into_iter().map(|(_, b)| b).partition(|b| b.employeur);
         if employeurs.len() > 1 {
             self.avertissements.push(format!("{} adresses d'employeur : la première est gardée", employeurs.len()));
@@ -1751,8 +1758,8 @@ impl<'a> Lecteur<'a> {
             let mots: Vec<&Mot> = rangs.iter().flatten().copied().filter(|m| !std::ptr::eq(*m, c) && !m.jetons.iter().any(|j| e.libelle.contains(j))).collect();
             match self.colonnes_du_corps(&mots, None) {
                 Ok(colonnes) => {
-                    let haut = rangs.iter().flatten().map(|m| m.cy()).fold(f64::INFINITY, f64::min);
-                    let bas = rangs.iter().flatten().map(|m| m.cy()).fold(f64::NEG_INFINITY, f64::max);
+                    let haut = rangs.iter().flatten().map(|m| m.cy()).fold(Mesure::MAX, Mesure::min);
+                    let bas = rangs.iter().flatten().map(|m| m.cy()).fold(Mesure::MIN, Mesure::max);
                     trouves.push(Tableau { colonnes, haut, bas });
                 }
                 Err(r) => derniere_erreur = Some(r),
@@ -1788,7 +1795,7 @@ impl<'a> Lecteur<'a> {
                     .iter()
                     .enumerate()
                     .filter(|(_, d)| c.boite.cx() >= d.boite.x0 - SOUS_ENTETE && c.boite.cx() <= d.boite.x1 + SOUS_ENTETE && d.genre == Genre::Montant)
-                    .min_by(|a, b| (a.1.boite.cx() - c.boite.cx()).abs().total_cmp(&(b.1.boite.cx() - c.boite.cx()).abs()));
+                    .min_by(|a, b| (a.1.boite.cx() - c.boite.cx()).abs().cmp(&(b.1.boite.cx() - c.boite.cx()).abs()));
                 if let Some((k, d)) = parent {
                     if c.part.is_none() {
                         c.part = d.part;
@@ -1830,13 +1837,13 @@ impl<'a> Lecteur<'a> {
     fn rangs_du_corps(&mut self, t: &Tableau) -> Result<Vec<RangCorps>, Refus> {
         let p = &self.page;
         let e = &self.t.entetes;
-        let seuil = t.colonnes.iter().map(|c| c.boite.x0).fold(f64::INFINITY, f64::min) - LIBELLE_MARGE;
+        let seuil = t.colonnes.iter().map(|c| c.boite.x0).fold(Mesure::MAX, Mesure::min) - LIBELLE_MARGE;
         let haut = t.bas + TOLERANCE;
         let gauche: Vec<&Mot> = p.mots.iter().filter(|m| m.x1 <= seuil && m.cy() > haut && !p.dans_un_nombre(m, seuil)).collect();
         let rangs = en_rangs(gauche);
         // Le rang qui precise les en-tetes (le premier) : sans libelle, des en-tetes seulement, a droite du libelle.
         let droite: Vec<&Mot> = p.mots.iter().filter(|m| m.x1 > seuil && m.cy() > haut).collect();
-        let mut sous: Option<(f64, Vec<Colonne>)> = None;
+        let mut sous: Option<(Mesure, Vec<Colonne>)> = None;
         for r in en_rangs(droite) {
             let sans_libelle = !rangs.iter().any(|g| (milieu(g) - milieu(&r)).abs() <= TOLERANCE);
             let entetes = r.len() >= 2 && r.iter().all(|m| !m.jetons.is_empty() && m.jetons.iter().all(|j| e.tous().any(|x| x == j)));
@@ -1862,13 +1869,13 @@ impl<'a> Lecteur<'a> {
         // Le corps descend jusqu'a son dernier rang ; sans rang, il n'a pas de bas.
         let bas = match sortie.last() {
             Some(r) => r.cy + TOLERANCE,
-            None => f64::INFINITY,
+            None => Mesure::MAX,
         };
         if sous.as_ref().is_some_and(|(y, _)| *y > bas) {
             sous = None;
         }
         let nombres: Vec<Nombre> = p.nombres.iter().filter(|n| n.boite.x1 > seuil && n.boite.cy() > haut && n.boite.cy() <= bas).cloned().collect();
-        let mut places: Vec<Vec<(f64, Option<(Genre, Option<Part>)>, Decimal)>> = vec![Vec::new(); sortie.len()];
+        let mut places: Vec<Vec<(Mesure, Option<(Genre, Option<Part>)>, Decimal)>> = vec![Vec::new(); sortie.len()];
         for n in nombres {
             let cols: &[Colonne] = match &sous {
                 Some((y, c)) if n.boite.cy() > *y => c,
@@ -1877,7 +1884,7 @@ impl<'a> Lecteur<'a> {
             let col = colonne_de(cols, &n).map(|c| (c.genre, c.part));
             let proche = (0..sortie.len())
                 .filter(|&k| (sortie[k].cy - n.boite.cy()).abs() <= TOLERANCE)
-                .min_by(|&a, &b| (sortie[a].cy - n.boite.cy()).abs().total_cmp(&(sortie[b].cy - n.boite.cy()).abs()));
+                .min_by(|&a, &b| (sortie[a].cy - n.boite.cy()).abs().cmp(&(sortie[b].cy - n.boite.cy()).abs()));
             match proche {
                 Some(k) if col.is_some() && places[k].iter().any(|(_, c, _)| *c == col) => {
                     self.avertissements.push(format!("« {} » : deux nombres dans une même colonne", sortie[k].libelle));
@@ -1892,7 +1899,7 @@ impl<'a> Lecteur<'a> {
             }
         }
         for (r, mut l) in sortie.iter_mut().zip(places) {
-            l.sort_by(|a, b| a.0.total_cmp(&b.0));
+            l.sort_by(|a, b| a.0.cmp(&b.0));
             r.nombres = l.into_iter().map(|(_, c, v)| (c, v)).collect();
         }
         Ok(sortie)
@@ -1919,7 +1926,7 @@ impl<'a> Lecteur<'a> {
         let mut famille_apres_total = false;
         let mut titre_en_cours: Option<(String, String)> = None; // (canonique, tel qu'ecrit)
         let mut avertissements = Vec::new();
-        let mut fin: Option<f64> = None;
+        let mut fin: Option<Mesure> = None;
         // Une ligne de paie : sa quantite en tete, son montant au dernier nombre, son taux a l'avant-dernier ou dans son
         // libelle (« Cachets à 150,00 »).
         let ligne = |libelle: &str, quantite: Option<Decimal>, r: &RangCorps, soumis: bool, avertissements: &mut Vec<String>| {
@@ -2059,11 +2066,11 @@ impl<'a> Lecteur<'a> {
 
     /// Les grilles du pied, chacune sous son rang d'en-tetes : l'impot preleve et le net imposable (« base »,
     /// « taux », « montant »), les cumuls (« Période », « Cumul »).
-    fn grilles(&mut self, pied: f64, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>, cumuls: &mut Vec<(String, Cumul)>) {
+    fn grilles(&mut self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>, cumuls: &mut Vec<(String, Cumul)>) {
         let p = &self.page;
         let t = self.t;
         let mots: Vec<&Mot> = p.mots.iter().filter(|m| m.cy() > pied + TOLERANCE).collect();
-        let mut entetes: Vec<(f64, Vec<Colonne>, bool)> = Vec::new();
+        let mut entetes: Vec<(Mesure, Vec<Colonne>, bool)> = Vec::new();
         for r in en_rangs(mots) {
             let mut cols: Vec<Colonne> = Vec::new();
             for (boite, jetons, texte) in etiquettes(&r, &t.entetes) {
@@ -2084,20 +2091,20 @@ impl<'a> Lecteur<'a> {
         }
         for (k, (y, cols, cumul)) in entetes.iter().enumerate() {
             let jusqu_a = match entetes.get(k + 1) {
-                Some(e) => e.0.min(y + GRILLE_HAUTEUR),
-                None => y + GRILLE_HAUTEUR,
+                Some(e) => e.0.min(*y + GRILLE_HAUTEUR),
+                None => *y + GRILLE_HAUTEUR,
             };
-            let seuil = cols.iter().map(|c| c.boite.x0).fold(f64::INFINITY, f64::min) - LIBELLE_MARGE;
-            let dans = |cy: f64| cy > y + TOLERANCE && cy <= jusqu_a + if k + 1 < entetes.len() { -TOLERANCE } else { 0.0 };
+            let seuil = cols.iter().map(|c| c.boite.x0).fold(Mesure::MAX, Mesure::min) - LIBELLE_MARGE;
+            let dans = |cy: Mesure| cy > *y + TOLERANCE && cy <= jusqu_a + if k + 1 < entetes.len() { -TOLERANCE } else { pt(0) };
             let libelles: Vec<&Mot> = p.mots.iter().filter(|m| dans(m.cy()) && m.x1 <= seuil && !p.dans_un_nombre(m, seuil)).collect();
-            let rangs: Vec<(String, f64)> = en_rangs(libelles).iter().map(|r| (canon(&texte_de(r)), milieu(r))).collect();
+            let rangs: Vec<(String, Mesure)> = en_rangs(libelles).iter().map(|r| (canon(&texte_de(r)), milieu(r))).collect();
             let nombres: Vec<&Nombre> = p.nombres.iter().filter(|n| dans(n.boite.cy()) && n.boite.x1 > seuil).collect();
-            let valeurs_du_rang = |cy: f64| -> Vec<(Genre, Decimal)> {
+            let valeurs_du_rang = |cy: Mesure| -> Vec<(Genre, Decimal)> {
                 let mut v: Vec<(Genre, Decimal)> = Vec::new();
                 for n in &nombres {
                     // Le rang le plus proche de ce nombre doit etre celui-ci.
                     let ecart = (n.boite.cy() - cy).abs();
-                    if ecart > TOLERANCE || rangs.iter().any(|(_, autre)| (n.boite.cy() - autre).abs() < ecart) {
+                    if ecart > TOLERANCE || rangs.iter().any(|(_, autre)| (n.boite.cy() - *autre).abs() < ecart) {
                         continue;
                     }
                     if let Some(c) = colonne_de(cols, n) {
@@ -2134,13 +2141,13 @@ impl Lecteur<'_> {
     /// L'impot preleve et le net imposable ecrits sans grille, sur un rang du pied : « Net imposable 435,55 »,
     /// « Impôt sur le revenu prélevé à la source (taux 4,300 %) 18,73 ». Le montant est le dernier nombre du rang ; le
     /// taux, celui qui suit le mot « taux ».
-    fn sans_grille(&self, pied: f64, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>) {
+    fn sans_grille(&self, pied: Mesure, pas: &mut Option<Pas>, net_imposable: &mut Option<Decimal>) {
         let p = &self.page;
         let r_ = &self.t.resumes;
         let mots: Vec<&Mot> = p.mots.iter().filter(|m| m.cy() > pied + TOLERANCE).collect();
         for rang in en_rangs(mots) {
             let nombres: Vec<&Nombre> = p.nombres.iter().filter(|n| (n.boite.cy() - milieu(&rang)).abs() <= TOLERANCE).collect();
-            let Some(dernier) = nombres.iter().max_by(|a, b| a.boite.x1.total_cmp(&b.boite.x1)) else { continue };
+            let Some(dernier) = nombres.iter().max_by(|a, b| a.boite.x1.cmp(&b.boite.x1)) else { continue };
             let libelle: Vec<&Mot> = rang.iter().copied().filter(|m| m.x1 < dernier.boite.x0 && !ressemble_nombre(&m.texte)).collect();
             let cl = canon(&texte_de(&libelle));
             if net_imposable.is_none() && r_.net_imposable.iter().any(|x| *x == cl) {
@@ -2172,7 +2179,7 @@ struct Corps {
 /// Le corps lu, et le milieu du rang qui le ferme (le net avant impot) : le pied commence sous lui.
 struct CorpsLu {
     lu: Corps,
-    fin: Option<f64>,
+    fin: Option<Mesure>,
 }
 
 impl Corps {

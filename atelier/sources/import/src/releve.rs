@@ -15,7 +15,9 @@ use std::time::SystemTime;
 use socle::echec::Echec;
 
 /// Une boite sur la page : x0, y0, x1, y1, dans le repere de la page non tournee.
-pub type Boite = [f64; 4];
+pub type Boite = [Mesure; 4];
+
+pub use fabrique_pdf::mesure::Mesure;
 
 /// CE QUE LA FABRIQUE RELEVE D'UN PDF (`fabrique_pdf::inspection`) : son chiffrement, ses metadonnees, ses pages.
 #[derive(Debug, serde::Deserialize)]
@@ -45,8 +47,8 @@ pub struct Chiffrement {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PageRelevee {
-    pub largeur: f64,
-    pub hauteur: f64,
+    pub largeur: Mesure,
+    pub hauteur: Mesure,
     pub rotation: i64,
     pub polices: Vec<String>,
     pub images: Vec<Boite>,
