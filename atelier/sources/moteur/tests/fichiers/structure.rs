@@ -955,6 +955,60 @@ fn une_nature_de_contrat_est_une_enum() {
     assert!(fautes.is_empty(), "une nature de contrat est une `NatureDeContrat`, sa cle ne s'ecrit qu'une fois :\n{}", fautes.join("\n"));
 }
 
+/// UNE LISTE DE LA NORME QUE LE LOGICIEL DECLARE (`droit::natures::ListeDeLaNorme`) EST CELLE DES VERSIONS LIVREES, ni
+/// plus ni moins : pour chaque version (`norme-dsn-base.json`), la liste de valeurs que sa table des formats a relevee
+/// pour la rubrique (`formats-dsn-*-base.json`, `moteur-atelier extraire formats`) est exactement l'ensemble des
+/// variantes que leurs bornes (`depuis`, `jusqu_a`) disent de cette version ; donc chaque code d'une liste est une
+/// variante, et chaque variante est dans au moins une liste.
+#[test]
+fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
+    use droit::natures::{ListeDeLaNorme, ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture};
+    fn confronter<T: ListeDeLaNorme>(fautes: &mut Vec<String>) {
+        let mut union = BTreeSet::new();
+        for n in declarations::norme::versions().unwrap() {
+            let Some(liste) = declarations::formats::liste_en(&n, T::RUBRIQUE).unwrap() else {
+                fautes.push(format!("{} ({}) : la table des formats de {} n'en a pas la liste", T::quoi(), T::RUBRIQUE, n.version));
+                continue;
+            };
+            for code in &liste {
+                match T::du_code_de_la_norme(code) {
+                    None => fautes.push(format!("{} ({}) : le code {} de la liste {} n'est pas une variante", T::quoi(), T::RUBRIQUE, code, n.version)),
+                    Some(v) if !n.a_dans_sa_liste(v).unwrap() => fautes.push(format!(
+                        "{} ({}) : la liste {} a le code {}, que les bornes de sa variante excluent",
+                        T::quoi(),
+                        T::RUBRIQUE,
+                        n.version,
+                        code
+                    )),
+                    Some(_) => {}
+                }
+            }
+            for v in T::toutes() {
+                if !liste.iter().any(|c| c == v.code_de_la_norme()) && n.a_dans_sa_liste(*v).unwrap() {
+                    fautes.push(format!(
+                        "{} ({}) : la variante {} se dit de {}, dont la liste ne l'a pas",
+                        T::quoi(),
+                        T::RUBRIQUE,
+                        v.code_de_la_norme(),
+                        n.version
+                    ));
+                }
+            }
+            union.extend(liste);
+        }
+        for v in T::toutes() {
+            if !union.contains(v.code_de_la_norme()) {
+                fautes.push(format!("{} ({}) : la variante {} n'est dans aucune liste livree", T::quoi(), T::RUBRIQUE, v.code_de_la_norme()));
+            }
+        }
+    }
+    let mut fautes = Vec::new();
+    confronter::<MotifDeRecours>(&mut fautes);
+    confronter::<MotifDeRupture>(&mut fautes);
+    confronter::<ModaliteDuTempsDeTravail>(&mut fautes);
+    assert!(fautes.is_empty(), "une liste de la norme declaree en `enum` est l'union des listes livrees :\n{}", fautes.join("\n"));
+}
+
 /// UN MOIS EST UN `socle::mois::Mois`, JAMAIS UN TEXTE : aucune source du logiciel (tests a part, commentaires blanchis)
 /// n'a de champ ni de parametre dont le nom dit un mois (`mois`, `premier_mois`, `mois_attendu`...) en `String`, `&str`,
 /// `Option<String>`, `Vec<String>` ou `impl Into<String>`. Un nom ou le mois n'est qu'un complement (`phrase_du_mois`,

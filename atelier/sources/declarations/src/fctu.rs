@@ -365,7 +365,7 @@ DSN du mois, par le circuit dérogatoire. Ce signalement ne se fait que si le sa
 /// (`dernier_jour_paye`).
 pub fn bloc_62_63(f: &mut Fichier, fin: &FinDeContrat, e: &Engagement) -> R<()> {
     f.add("S21.G00.62.001", fin.fin.jjmmaaaa());
-    f.add("S21.G00.62.002", fin.motif.code());
+    f.ecrire_code(fin.motif)?;
     if let Some(n) = fin.notification {
         f.add("S21.G00.62.003", n.jjmmaaaa());
     }

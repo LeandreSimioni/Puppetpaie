@@ -59,7 +59,7 @@ S21.G00.44 sur une supposition.",
 /// l'engagement).
 /// Un code que la nature ni l'engagement ne disent est `None`.
 pub fn codes_de(nat: &Nature, motif_recours: Option<MotifDeRecours>) -> (Option<String>, Option<String>, Option<String>) {
-    let motif = nat.code("S21.G00.40.021").or_else(|| motif_recours.map(|m| m.code().to_string()));
+    let motif = nat.motif_recours_fixe().or(motif_recours).map(|m| m.code().to_string());
     (nat.code("S21.G00.40.007"), nat.code("S21.G00.40.008"), motif)
 }
 
@@ -67,7 +67,7 @@ pub fn codes_de(nat: &Nature, motif_recours: Option<MotifDeRecours>) -> (Option<
 /// un CDD sans motif refuse (le motif dit s'il est saisonnier), un motif que la nature n'a pas aussi
 /// (`Nature::motif_recours_refuse`).
 pub fn contrat_ouvre_cpf_cdd(nat: &Nature, motif_recours: Option<MotifDeRecours>, qui: &str) -> R<bool> {
-    if let Some(refus) = nat.code("S21.G00.40.021").is_none().then(|| motif_recours.and_then(|m| nat.motif_recours_refuse(m, qui))).flatten() {
+    if let Some(refus) = nat.motif_recours_fixe().is_none().then(|| motif_recours.and_then(|m| nat.motif_recours_refuse(m, qui))).flatten() {
         return Err(socle::echec::refus(refus));
     }
     let (n, d, m) = codes_de(nat, motif_recours);

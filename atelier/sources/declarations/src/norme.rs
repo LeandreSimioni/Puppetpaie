@@ -152,6 +152,27 @@ impl Norme {
         }
     }
 
+    /// Le rang de la version `version` dans la donnee : refus si elle n'y est pas (une borne d'une liste de la norme qui
+    /// nomme une version que le logiciel ne livre pas).
+    fn rang(version: &str) -> R<usize> {
+        base()?.versions.iter().position(|(k, _)| k == version).ok_or_else(|| socle::echec::livree(BASE, &format!("versions.{}", version)))
+    }
+
+    /// La liste de la norme que `v` remplit a-t-elle son code dans CETTE version ? Le code dit ses bornes
+    /// (`droit::natures::ListeDeLaNorme::depuis`, `jusqu_a`), comparees dans l'ordre des versions de la donnee.
+    pub fn a_dans_sa_liste<T: droit::natures::ListeDeLaNorme>(&self, v: T) -> R<bool> {
+        let ici = Norme::rang(&self.version)?;
+        let apres_le_debut = match v.depuis() {
+            Some(d) => Norme::rang(d)? <= ici,
+            None => true,
+        };
+        let avant_la_fin = match v.jusqu_a() {
+            Some(j) => ici <= Norme::rang(j)?,
+            None => true,
+        };
+        Ok(apres_le_debut && avant_la_fin)
+    }
+
     /// La table des usages de cette version (un fichier de `logiciel/donnees/`).
     pub fn table_usages(&self) -> R<String> {
         self.entree(|e| e.usages.clone())

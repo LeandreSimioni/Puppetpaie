@@ -26,11 +26,36 @@ pub enum Paie {
 /// La rubrique du motif de recours (S21.G00.40.021), dont une nature peut dire les valeurs (`champs`).
 const MOTIF_DE_RECOURS: &str = "S21.G00.40.021";
 
+/// UNE LISTE DE VALEURS DE LA NORME DSN, close : la rubrique qu'elle remplit, chaque code, et la version de la norme ou
+/// il entre dans la liste (`depuis`) ou en sort (`jusqu_a`) quand il n'est pas dans toutes. L'ensemble de ses codes est
+/// l'union des listes des versions livrees, et chaque code n'est que dans celles que ses bornes disent : un test de
+/// structure le tient, contre les listes relevees (`moteur/tests/fichiers/structure.rs`,
+/// `formats-dsn-*-base.json`). La DSN n'ecrit un code que dans un fichier d'une version qui l'a
+/// (`declarations::dsn::Fichier::ecrire_code`).
+pub trait ListeDeLaNorme: Copy + std::fmt::Display + 'static {
+    /// La rubrique que la liste remplit.
+    const RUBRIQUE: &'static str;
+    /// Toutes ses valeurs, dans l'ordre de leurs codes.
+    fn toutes() -> &'static [Self];
+    /// Son code.
+    fn code_de_la_norme(self) -> &'static str;
+    /// Celle de ce code, s'il en est une.
+    fn du_code_de_la_norme(code: &str) -> Option<Self>;
+    /// Ce que la liste est, pour une phrase (« Motif de recours »).
+    fn quoi() -> &'static str;
+    /// La premiere version de la norme dont la liste a ce code (`None` : des la plus ancienne livree).
+    fn depuis(self) -> Option<&'static str>;
+    /// La derniere version de la norme dont la liste a ce code (`None` : jusqu'a la plus recente livree).
+    fn jusqu_a(self) -> Option<&'static str>;
+}
+
 /// UNE LISTE FERMEE DE CODES DE LA NORME, declaree une fois : chaque variante et son code, le seul endroit ou il s'ecrit.
 /// Elle se lit et s'ecrit par son code ; un code qu'elle n'a pas se refuse a la lecture, en disant ceux qu'elle a.
 /// Dans l'ordre de leurs codes : un objet indexe par elle s'ecrit comme quand son code etait un texte.
 macro_rules! codes_fermes {
-    ($(#[$a:meta])* $nom:ident, $quoi:literal { $( $(#[$va:meta])* $v:ident = $code:literal, )* }) => {
+    ($(#[$a:meta])* $nom:ident, $quoi:literal, $rubrique:literal {
+        $( $(#[$va:meta])* $v:ident = $code:literal $(depuis $depuis:literal)? $(jusqu_a $jusqu:literal)?, )*
+    }) => {
         $(#[$a])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         pub enum $nom {
@@ -48,6 +73,34 @@ macro_rules! codes_fermes {
             /// Celui de ce code, s'il en est un.
             pub fn du_code(code: &str) -> Option<$nom> {
                 $nom::TOUS.iter().copied().find(|m| m.code() == code)
+            }
+        }
+
+        impl ListeDeLaNorme for $nom {
+            const RUBRIQUE: &'static str = $rubrique;
+
+            fn toutes() -> &'static [$nom] {
+                $nom::TOUS
+            }
+
+            fn code_de_la_norme(self) -> &'static str {
+                self.code()
+            }
+
+            fn du_code_de_la_norme(code: &str) -> Option<$nom> {
+                $nom::du_code(code)
+            }
+
+            fn quoi() -> &'static str {
+                $quoi
+            }
+
+            fn depuis(self) -> Option<&'static str> {
+                match self { $( $nom::$v => None::<&'static str> $( .or(Some($depuis)) )?, )* }
+            }
+
+            fn jusqu_a(self) -> Option<&'static str> {
+                match self { $( $nom::$v => None::<&'static str> $( .or(Some($jusqu)) )?, )* }
             }
         }
 
@@ -88,32 +141,46 @@ macro_rules! codes_fermes {
 }
 
 codes_fermes! {
-    /// UN MOTIF DE RECOURS D'UN CDD (S21.G00.40.021, cahier technique DSN 2026.1 p. 194-195,
-    /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt`) : ceux que `contrats-base.json` offre
-    /// (`natures.cdd.champs."S21.G00.40.021".valeurs`), ni plus ni moins (`lu` le verifie). Ce que chacun porte en plus
-    /// (la personne remplacee) et la nature qui le permet, le fichier le dit (`Proprietes::motif_de_remplacement`,
-    /// `Proprietes::motif_recours_refuse`).
-    MotifDeRecours, "Motif de recours" {
+    /// UN MOTIF DE RECOURS (S21.G00.40.021), la liste entiere de la norme (cahier technique DSN 2026.1 p. 194-195,
+    /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt` ; classeur 2027.1.2, type `DSN_Motifs_Recours`). Ceux
+    /// qu'une nature offre a la saisie, et ce que chacun porte en plus (la personne remplacee), `contrats-base.json` le
+    /// dit (`natures.cdd.champs."S21.G00.40.021".valeurs`, `Proprietes::motif_de_remplacement`,
+    /// `Proprietes::motif_recours_refuse`) ; le CDDU fixe le sien (05, `Proprietes::motif_recours_fixe`).
+    MotifDeRecours, "Motif de recours", "S21.G00.40.021" {
         Remplacement = "01",
         Accroissement = "02",
         Saisonnier = "03",
+        Vendanges = "04",
+        ContratDUsage = "05",
         ObjetDefini = "06",
+        RemplacementDUnChefDEntreprise = "07",
+        RemplacementDUnChefDExploitationAgricole = "08",
         Insertion = "09",
         ComplementDeFormation = "10",
+        Apprentissage = "11",
         RemplacementATempsPartiel = "12",
         AttenteDeSuppression = "13",
+        ContratDeVoyage = "14",
+        InterimaireBoeth = "15",
     }
 }
 
 codes_fermes! {
-    /// UN MOTIF DE RUPTURE (S21.G00.62.002, cahier technique DSN 2026.1 p. 270-273,
-    /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt`) : ceux que `contrats-base.json` permet a ses natures
-    /// (`natures.<n>.fin_de_contrat.motifs`), ni plus ni moins (`lu` le verifie). Ceux qu'une nature permet, elle le dit
-    /// (`Proprietes::motif_rupture_refuse`).
-    MotifDeRupture, "Motif de rupture" {
+    /// UN MOTIF DE RUPTURE (S21.G00.62.002), la liste entiere de la norme (cahier technique DSN 2026.1 p. 270-274,
+    /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt` ; classeur 2027.1.2, type
+    /// `RAC_Rupture_Motif_DSN_phase_1`). Ceux qu'une nature permet, `contrats-base.json` le dit
+    /// (`natures.<n>.fin_de_contrat.motifs`, `Proprietes::motif_rupture_refuse`). 072 n'est que dans la liste 2027
+    /// (`texte-2027/bloc-S21.G00.62.txt` l. 245).
+    MotifDeRupture, "Motif de rupture", "S21.G00.62.002" {
+        LicenciementLiquidationJudiciaire = "011",
+        LicenciementFermetureDeLEtablissement = "012",
         LicenciementEconomique = "014",
+        LicenciementFinDeChantier = "015",
         LicenciementAutreMotif = "020",
+        AutreFinEconomique = "025",
+        RuptureEconomiqueCsp = "026",
         FinDeCdd = "031",
+        FinDeMissionDInterim = "032",
         InaptitudeDuCdd = "033",
         FinDEssaiParLEmployeur = "034",
         FinDEssaiParLeSalarie = "035",
@@ -125,14 +192,57 @@ codes_fermes! {
         PriseDActe = "058",
         Demission = "059",
         DecesDeLEmployeur = "065",
+        DecesDuSalarie = "066",
+        RevocationAbandonDePoste = "070",
+        RevocationSanctionPenale = "071",
+        RevocationSanctionDisciplinaire = "072" depuis "P27V01",
+        FinDApprentissage = "081",
+        ResiliationJudiciaire = "082",
         ForceMajeure = "083",
         CommunAccord = "084",
+        FinDeMandat = "085",
+        LicenciementCats = "086",
         LicenciementFauteGrave = "087",
         LicenciementFauteLourde = "088",
+        LicenciementForceMajeure = "089",
         InaptitudeNonProfessionnelle = "091",
         InaptitudeProfessionnelle = "092",
+        LicenciementDecisionAdministrative = "093",
+        ArretDeTournage = "094",
         RuptureAnticipeeFauteGrave = "095",
         RuptureAnticipeeFauteLourde = "096",
+        RuptureAnticipeeFermeture = "097",
+        RetraitDEnfant = "098",
+        Annulation = "099",
+        Mutation = "100",
+        RuptureConventionnelleCollective = "110",
+        CongeDeMobilite = "111",
+        AccordDePerformanceCollective = "112",
+        LicenciementMotifSpecifique = "113",
+        EntreeEnPap = "114",
+        LicenciementLoiDe2017 = "115",
+        FinDeLigneDeService = "116",
+        LicenciementRefusCsp = "117",
+        FinDeCape = "118",
+        FinDAffectation = "119",
+        TransfertSansRupture = "998",
+        FinDeRelation = "999",
+    }
+}
+
+codes_fermes! {
+    /// LA MODALITE D'EXERCICE DU TEMPS DE TRAVAIL (S21.G00.40.014), la liste entiere de la norme (cahier technique DSN
+    /// 2026.1 p. 189, `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt` ; classeur 2027.1.2, type
+    /// `Travail_Modalite`). Le CDDU fixe la sienne (99, `Proprietes::modalite_fixee`) ; un engagement d'une autre
+    /// nature la dit, ou la calcule (`engagement::Engagement::modalite_temps_travail`).
+    ModaliteDuTempsDeTravail, "Modalité d'exercice du temps de travail", "S21.G00.40.014" {
+        TempsPlein = "10",
+        TempsPartiel = "20",
+        TempsAlterne = "30",
+        Cpa2004 = "40",
+        TempsPartielDeDroit = "41",
+        TempsPartielDeDroitPourEnfant = "42",
+        NonConcerne = "99",
     }
 }
 
@@ -237,7 +347,7 @@ pub struct Proprietes {
     #[serde(rename = "quotite_reference_defaut")]
     quotite_reference: Option<QuotiteDeReference>,
     /// rubrique -> valeur fixe.
-    codes: BTreeMap<String, CodeFixe>,
+    codes: CodesFixes,
     /// rubrique -> d'ou la valeur vient.
     champs: BTreeMap<String, Champ>,
     /// rubrique -> pourquoi cette nature ne l'ecrit pas.
@@ -287,6 +397,37 @@ struct CodeFixe {
     valeur: String,
     #[serde(rename = "quoi")]
     _quoi: String,
+}
+
+/// LES VALEURS FIXES D'UNE NATURE (`codes` de `contrats-base.json`) : celles d'une liste que le logiciel declare
+/// (`ListeDeLaNorme` : la modalite du temps de travail, le motif de recours) se lisent dans leur `enum` ; les autres
+/// restent le texte que la DSN ecrit.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "BTreeMap<String, CodeFixe>")]
+struct CodesFixes {
+    modalite: Option<ModaliteDuTempsDeTravail>,
+    motif_recours: Option<MotifDeRecours>,
+    autres: BTreeMap<String, CodeFixe>,
+}
+
+/// La valeur fixe de la liste `T`, otee de `codes` : un code que la liste n'a pas se refuse.
+fn code_fixe<T: ListeDeLaNorme>(codes: &mut BTreeMap<String, CodeFixe>) -> Result<Option<T>, String> {
+    match codes.remove(T::RUBRIQUE) {
+        None => Ok(None),
+        Some(c) => T::du_code_de_la_norme(&c.valeur).map(Some).ok_or_else(|| {
+            let connus: Vec<&str> = T::toutes().iter().map(|m| m.code_de_la_norme()).collect();
+            format!("{} {} : {} inconnu. Connus : {}.", T::RUBRIQUE, T::quoi(), repr(&c.valeur), connus.join(", "))
+        }),
+    }
+}
+
+impl TryFrom<BTreeMap<String, CodeFixe>> for CodesFixes {
+    type Error = String;
+    fn try_from(mut codes: BTreeMap<String, CodeFixe>) -> Result<CodesFixes, String> {
+        let modalite = code_fixe(&mut codes)?;
+        let motif_recours = code_fixe(&mut codes)?;
+        Ok(CodesFixes { modalite, motif_recours, autres: codes })
+    }
 }
 
 /// Une rubrique dont la valeur se lit sur l'engagement ou la fiche. Le motif de recours (S21.G00.40.021) d'un CDD porte
@@ -611,8 +752,21 @@ impl Proprietes {
     }
 
     /// La valeur fixe d'une rubrique pour cette nature, ou `None` (absente comme interdite : `interdit` les distingue).
+    /// La modalite du temps de travail et le motif de recours fixes se lisent dans leur `enum` (`modalite_fixee`,
+    /// `motif_recours_fixe`).
     pub fn code(&self, rubrique: &str) -> Option<String> {
-        self.codes.get(rubrique).map(|c| c.valeur.clone())
+        self.codes.autres.get(rubrique).map(|c| c.valeur.clone())
+    }
+
+    /// La modalite du temps de travail (S21.G00.40.014) que la nature fixe (le CDDU : 99), ou `None` : elle se dit sur
+    /// l'engagement.
+    pub fn modalite_fixee(&self) -> Option<ModaliteDuTempsDeTravail> {
+        self.codes.modalite
+    }
+
+    /// Le motif de recours (S21.G00.40.021) que la nature fixe (le CDDU : 05, contrat d'usage), ou `None`.
+    pub fn motif_recours_fixe(&self) -> Option<MotifDeRecours> {
+        self.codes.motif_recours
     }
 
     /// Le controle qui refuse cette rubrique pour cette nature, ou `None`.
@@ -622,7 +776,9 @@ impl Proprietes {
 
     /// Cette nature ecrit-elle cette rubrique ? (valeur fixe ou champ)
     pub fn ecrit(&self, rubrique: &str) -> bool {
-        self.codes.contains_key(rubrique) || self.champs.contains_key(rubrique)
+        let liste = (rubrique == ModaliteDuTempsDeTravail::RUBRIQUE && self.codes.modalite.is_some())
+            || (rubrique == MotifDeRecours::RUBRIQUE && self.codes.motif_recours.is_some());
+        liste || self.codes.autres.contains_key(rubrique) || self.champs.contains_key(rubrique)
     }
 
     /// Le motif de rupture quand le contrat va a son terme (`None` pour un CDI).
@@ -846,14 +1002,6 @@ fn lu() -> R<Arc<Contrats>> {
             }
         };
         let par_nature = [de(NatureDeContrat::TOUTES[0])?, de(NatureDeContrat::TOUTES[1])?, de(NatureDeContrat::TOUTES[2])?];
-        // Les deux listes fermees sont celles du fichier, ni plus ni moins : un code qu'elles n'ont pas s'est refuse a la
-        // lecture ; un code qu'aucune nature ne permet se refuse ici.
-        if let Some(m) = MotifDeRecours::TOUS.iter().find(|m| !natures.iter().any(|n| n.motifs_recours().into_iter().flatten().any(|o| o.code == **m))) {
-            return Err(socle::echec::a_la_cle(ILLISIBLE, "natures", format!("aucune nature n'y offre le motif de recours {}", m)));
-        }
-        if let Some(m) = MotifDeRupture::TOUS.iter().find(|m| !natures.iter().any(|n| n.motifs_rupture().iter().any(|o| o.code == **m))) {
-            return Err(socle::echec::a_la_cle(ILLISIBLE, "natures", format!("aucune nature n'y permet le motif de rupture {}", m)));
-        }
         Ok(Contrats { natures: Arc::new(natures), par_nature, categories: f.categories_d_emploi })
     })
 }

@@ -69,6 +69,34 @@ impl Fichier {
         Ok(())
     }
 
+    /// UN CODE D'UNE LISTE DE LA NORME (`droit::natures::ListeDeLaNorme`), dans sa rubrique : il ne s'ecrit que si la
+    /// liste de la version de ce fichier l'a (« Une rubrique assortie d'une liste de valeurs ne peut contenir qu'une des
+    /// valeurs indiquees dans cette liste », cahier 2027.1.1 p. 86, `texte-2027/chapitre-4-controles.txt` l. 164).
+    pub fn ecrire_code<T: droit::natures::ListeDeLaNorme>(&mut self, v: T) -> R<()> {
+        let norme = self.norme()?;
+        if !norme.a_dans_sa_liste(v)? {
+            let bornes = match (v.depuis(), v.jusqu_a()) {
+                (Some(d), Some(j)) => format!("il n'y est que de {} à {}", d, j),
+                (Some(d), None) => format!("il n'y est qu'à partir de {}", d),
+                (None, Some(j)) => format!("il n'y est que jusqu'à {}", j),
+                (None, None) => String::new(),
+            };
+            return Err(socle::echec::erreur(
+                socle::echec::Classe::HorsDeLaVersion,
+                format!(
+                    "{} « {} » ({}) : la liste de la norme {} ne l'a pas ({}) ; la déclaration serait rejetée. Rien n'est écrit.",
+                    T::quoi(),
+                    v.code_de_la_norme(),
+                    T::RUBRIQUE,
+                    norme.version,
+                    bornes
+                ),
+            ));
+        }
+        self.add(T::RUBRIQUE, v.code_de_la_norme());
+        Ok(())
+    }
+
     pub fn add(&mut self, rubrique: &str, valeur: impl Display) {
         self.lignes.push(format!("{},'{}'", rubrique, valeur));
     }
@@ -1505,10 +1533,10 @@ fn si_admise(f: &mut Fichier, nature_dsn: &str, rubrique: &str, valeur: Option<S
     Ok(())
 }
 
-fn motif_recours(p: &Paie, nat: &Nature) -> R<String> {
+fn motif_recours(p: &Paie, nat: &Nature) -> R<droit::natures::MotifDeRecours> {
     let e = &p.engagement;
     match e.motif_recours {
-        Some(m) => Ok(m.code().to_string()),
+        Some(m) => Ok(m),
         None => Err(refus!(
             "Dites pourquoi ce CDD est conclu (« Motif du CDD », sur la carte de l'engagement) : {} ({}) n'en dit pas le motif.\n\
 C'est le motif qui rend le contrat licite (code du travail, L. 1242-2 : remplacement d'un salarié, accroissement \
@@ -1804,11 +1832,10 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     }
     f.add("S21.G00.40.013", qt(quotite));
     // La modalite que la nature fixe, sinon celle de l'engagement.
-    let modalite = match nat.code("S21.G00.40.014").filter(|c| !c.is_empty()) {
-        Some(c) => c,
-        None => e.modalite_temps_travail()?,
-    };
-    f.add("S21.G00.40.014", modalite);
+    match nat.modalite_fixee() {
+        Some(m) => f.ecrire_code(m)?,
+        None => f.add("S21.G00.40.014", e.modalite_temps_travail()?),
+    }
     if bareme::alsace_moselle(&bar.entreprise.fiche, &p.salarie) {
         f.add("S21.G00.40.016", "01");
     } else {
@@ -1819,11 +1846,11 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     f.add_case("S21.G00.40.019", &ent.siret, "siret")?;
     f.add_opt("S21.G00.40.020", nat.code("S21.G00.40.020"))?;
     if nat.ecrit("S21.G00.40.021") {
-        let m = match nat.code("S21.G00.40.021").filter(|c| !c.is_empty()) {
-            Some(c) => c,
+        let m = match nat.motif_recours_fixe() {
+            Some(m) => m,
             None => motif_recours(p, &nat)?,
         };
-        f.add("S21.G00.40.021", m);
+        f.ecrire_code(m)?;
     }
     // « dans le cas ou les indemnites ne sont pas versees par l'employeur » (p. 195) : un contrat declare a la caisse
     // des Conges Spectacles (`caisse_conges::affilie`), et aucun autre -- ni un CDI, ni un contrat de douze mois ou plus.
@@ -1881,7 +1908,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         let fin = e.fin.ok_or_else(|| refus("S21.G00.62.001 : le contrat n'a pas de fin."))?;
         f.add("S21.G00.62.001", fin.jjmmaaaa());
         let motif = motif_rupture(p, &nat)?;
-        f.add("S21.G00.62.002", motif.code());
+        f.ecrire_code(motif)?;
         // Le meme jour que le FCTU du contrat (`fctu::dernier_jour_paye`, cahier technique DSN p. 275 et § 2.5.2 p. 68).
         f.add("S21.G00.62.006", crate::fctu::dernier_jour_paye(e)?.jjmmaaaa());
         // 62.017 d'un CDDU suit le motif : 01 (circuit derogatoire) pour le 031, 02 sinon (CCH-12, `Nature::codes_fin`).

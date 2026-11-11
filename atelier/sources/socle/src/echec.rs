@@ -97,6 +97,8 @@ classes! {
     FabriqueRefus,
     /// Une version plus recente du logiciel est exigee.
     VersionExigee,
+    /// Un code d'une liste de la norme DSN que la version du fichier n'a pas dans sa liste.
+    HorsDeLaVersion,
     /// Une DSN faite par l'ancien logiciel.
     DsnDeLAncienLogiciel,
     /// Les compteurs sont verrouilles.
