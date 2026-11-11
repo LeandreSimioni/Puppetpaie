@@ -867,11 +867,15 @@ fn neores_lu(crm: &Neores) -> Lecture {
             Some(libelle) => format!("{}{}", libelle, morceau(" (", lu(&p.type_parametre), ")")),
             None => format!("Paramètre{}", morceau(" ", lu(&p.type_parametre), "")),
         };
-        let periode = match (p.effet, p.fin) {
-            (Some(e), Some(f)) => format!(", du {} au {}", e.jj_mm_aaaa(), f.jj_mm_aaaa()),
-            (Some(e), None) => format!(", à partir du {}", e.jj_mm_aaaa()),
-            (None, _) => String::new(),
-        };
+        // Sans jour d'effet, la phrase ne dit pas de periode.
+        let periode: String = p
+            .effet
+            .map(|e| match p.fin {
+                Some(f) => format!(", du {} au {}", e.jj_mm_aaaa(), f.jj_mm_aaaa()),
+                None => format!(", à partir du {}", e.jj_mm_aaaa()),
+            })
+            .into_iter()
+            .collect();
         let calcul = morceau(" (calculé le ", p.calcule_le.map(|j| j.jour().jj_mm_aaaa()).as_deref(), ")");
         l.phrases.push(format!("{}{}{}{}{}.", majuscule(&quoi), morceau(" : ", lu(&p.valeur), ""), periode, morceau(", rubrique ", lu(&p.rubrique), ""), calcul));
     }

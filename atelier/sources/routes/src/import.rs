@@ -750,11 +750,12 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
         .collect();
     bornes.sort();
     let en_clair = |m: &socle::mois::Mois| m.libelle(socle::mois::Graphie::Accentuee);
-    let periode = match (bornes.first(), bornes.last()) {
-        (Some(du), Some(au)) if du == au => format!(", en {}", en_clair(du)),
-        (Some(du), Some(au)) => format!(", {} à {}", socle::texte::de(&en_clair(du)), en_clair(au)),
+    let periode = match bornes.as_slice() {
         // Aucune borne : la phrase ne dit pas de periode.
-        (None, _) | (_, None) => String::new(),
+        [] => String::new(),
+        [seul] => format!(", en {}", en_clair(seul)),
+        [du, .., au] if du == au => format!(", en {}", en_clair(du)),
+        [du, .., au] => format!(", {} à {}", socle::texte::de(&en_clair(du)), en_clair(au)),
     };
     let repris_dit = (!quoi.is_empty()).then(|| format!("{}{}", quoi.join(", "), periode));
     let le = importe_le.iter().chain(reprises.iter().filter_map(|r| r.le.as_ref())).max();

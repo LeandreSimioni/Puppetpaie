@@ -31,11 +31,8 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     };
     let (presents, ecartes) = inventaire(racine)?;
     let index = lire_index(racine)?;
-    let mut dossiers: BTreeMap<String, String> = match (&index, tout) {
-        (Some(i), false) => i.dossiers.clone(),
-        // Tout renvoyer, ou aucun index : aucun dossier n'est connu d'avance, chacun se cherche dans Drive.
-        (Some(_), true) | (None, _) => BTreeMap::new(),
-    };
+    // Tout renvoyer, ou aucun index : aucun dossier n'est connu d'avance, chacun se cherche dans Drive.
+    let mut dossiers: BTreeMap<String, String> = index.iter().filter(|_| !tout).flat_map(|i| i.dossiers.clone()).collect();
 
     let mut resultat = Sauvegarde {
         racine_drive: racine_drive.to_string(),

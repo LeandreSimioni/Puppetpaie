@@ -901,12 +901,14 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
         (0, _, _) => None,
         (n, de, a) => {
             let s = if n > 1 { "s" } else { "" };
-            let annees = match (de, a) {
-                (Some(de), Some(a)) if de != a => format!(" de {}–{}", de, a),
-                (Some(de), _) => format!(" de {}", de),
-                // Aucun numero ne dit son annee : la phrase n'en dit pas.
-                (None, _) => String::new(),
-            };
+            // Aucun numero ne dit son annee : la phrase n'en dit pas.
+            let annees: String = de
+                .map(|de| match a.filter(|a| *a != de) {
+                    Some(a) => format!(" de {}–{}", de, a),
+                    None => format!(" de {}", de),
+                })
+                .into_iter()
+                .collect();
             Some(format!("{} numéro{} sans titre, trouvé{} dans les DSN{} : les nommer si vous savez à quel spectacle ils étaient (cliquer sur la ligne).", n, s, s, annees))
         }
     };

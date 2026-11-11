@@ -54,7 +54,7 @@ pub(crate) enum Demande {
 fn demande(n: &droit::natures::Nature, en_cours: bool) -> Vec<Demande> {
     use Demande::*;
     match (en_cours, n.duree_indeterminee) {
-        (false, _) => vec![],
+        (false, true) | (false, false) => vec![],
         (true, true) => vec![Debut, Numero, Salaire, Quotite],
         (true, false) => vec![Debut, Fin, Numero, Salaire, Quotite],
     }

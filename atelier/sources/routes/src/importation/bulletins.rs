@@ -1380,22 +1380,22 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // LES CERTIFICATS ET LES AEM EN PDF, chacun son bloc : combien, de quand a quand, ce qu'ils ajoutent ; et, pour une
     // fiche qu'ils creent, ce qu'aucune de ces pieces ne porte et qui reste a saisir (la fiche dit elle-meme ses cases
     // obligatoires vides). L'AEM dit la date de naissance ; le certificat, non.
-    for (bloc, source, ajoutes, confirmes) in
-        [("certificats", "certificat", registre.lignes("certificats"), certificats_confirmes), ("aem_pdf", "AEM", registre.lignes("aem_pdf"), aem_confirmees)]
-    {
+    let certificat_tait = vec![
+        "le compte bancaire",
+        "le taux de prélèvement à la source",
+        "la date et la commune de naissance (le NIR ne dit que l'année, le mois et le département)",
+    ];
+    let aem_tait = vec!["le compte bancaire", "le taux de prélèvement à la source", "la commune de naissance"];
+    for (bloc, source, ajoutes, confirmes, tait) in [
+        ("certificats", "certificat", registre.lignes("certificats"), certificats_confirmes, certificat_tait),
+        ("aem_pdf", "AEM", registre.lignes("aem_pdf"), aem_confirmees, aem_tait),
+    ] {
         let siennes: Vec<&Attestee> = certificats.iter().filter(|c| c.source() == source).collect();
         if siennes.is_empty() {
             continue;
         }
-        let reste: Vec<&'static str> = match (salaries_certificats.get(source).is_some_and(|n| *n > 0), source) {
-            (false, _) => Vec::new(),
-            (true, "AEM") => vec!["le compte bancaire", "le taux de prélèvement à la source", "la commune de naissance"],
-            (true, _) => vec![
-                "le compte bancaire",
-                "le taux de prélèvement à la source",
-                "la date et la commune de naissance (le NIR ne dit que l'année, le mois et le département)",
-            ],
-        };
+        // Ce que la piece tait reste a saisir dans chaque fiche qu'elle a creee ; aucune fiche creee, rien.
+        let reste: Vec<&'static str> = if salaries_certificats.get(source).is_some_and(|n| *n > 0) { tait } else { Vec::new() };
         let lu = BlocPieces {
             lus: siennes.len(),
             du: siennes.iter().filter_map(|c| c.c.debut).min(),

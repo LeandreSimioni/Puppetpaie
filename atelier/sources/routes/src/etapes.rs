@@ -1988,7 +1988,7 @@ impl<'a> Moteur<'a> {
             let de_l_etablissement = match (quoi == DSN, nic) {
                 (true, Some(n)) => declarations::dsn_lue::lire(&crate::depots::lire_octets(&f.chemin)?, "")?.etablissement() == Some(n),
                 // Une DPAE, ou une DSN sans etablissement demande : le premier fichier, quel qu'il soit.
-                (true, None) | (false, _) => true,
+                (true, None) | (false, Some(_)) | (false, None) => true,
             };
             if de_l_etablissement {
                 trouve = Some(f.clone());
@@ -2838,7 +2838,7 @@ pub(crate) fn etat_signature(
     let dernier = avenants.and_then(|a| a.last()).cloned();
     let attendu = dernier.as_ref().is_some_and(|d| d.signe.is_none());
     let pourquoi = match (caduc, ailleurs) {
-        (false, _) => "",
+        (false, false) | (false, true) => "",
         (true, false) => CONTRAT_A_REFAIRE,
         (true, true) => CONTRAT_AILLEURS_A_MODIFIER,
     };

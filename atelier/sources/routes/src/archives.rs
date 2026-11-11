@@ -408,13 +408,13 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
     let mois = mois_disponibles(ctx)?;
     let t = tables();
     // Les mois a exporter, du premier au dernier : un permanent s'y propose-t-il, ou y est-il du ?
-    let permanents = match (mois.first(), mois.last()) {
-        (Some(premier), Some(dernier)) => {
-            engagement::permanents::Permanents::de(ctx, &premier.premier_jour(), &dernier.dernier_jour())?.ouverts()
-        }
-        // Aucun mois a exporter : aucun permanent n'y est.
-        (None, _) | (_, None) => false,
-    };
+    // Aucun mois a exporter : aucun permanent n'y est.
+    let permanents = mois
+        .first()
+        .zip(mois.last())
+        .map(|(premier, dernier)| engagement::permanents::Permanents::de(ctx, &premier.premier_jour(), &dernier.dernier_jour()))
+        .transpose()?
+        .is_some_and(|p| p.ouverts());
     let annees = annees_de(&mois);
     let taxe_due = taxe_due_une_annee(ctx, &annees)?;
     let etats: Vec<documents::plan_comptable::EtatLivre> = t.etats().filter(|(e, piece)| etat_concerne(ctx, &e.etat, *piece, permanents, taxe_due)).map(|(e, _)| e.clone()).collect();

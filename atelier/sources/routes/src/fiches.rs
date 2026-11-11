@@ -470,11 +470,12 @@ fn permanents_de(entreprise: &Saisie) -> bool {
 /// engagement paye au mois : `cases_des_metiers`). Celles que l'effectif ouvre, par lui (`pieces_de_l_effectif`). La
 /// page ne montre que ces cases-la.
 pub(crate) fn montres(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees: &Saisie, entreprise: &Saisie, p: &engagement::permanents::Permanents) -> R<Montres> {
-    let au_mois = match (nom, cle) {
-        (NomDeFiche::Entreprise, _) => permanents_de(entreprise) || !p.dus.is_empty(),
-        (NomDeFiche::Salarie,Some(c)) => engagement::permanents::cle_du_salarie(ctx, c)?.is_some(),
-        // Un salarie pas encore enregistre n'a aucun engagement ; une autre fiche n'a pas la piece d'un permanent.
-        (_autre_fiche, _) => false,
+    let au_mois = match nom {
+        NomDeFiche::Entreprise => permanents_de(entreprise) || !p.dus.is_empty(),
+        // Un salarie pas encore enregistre n'a aucun engagement.
+        NomDeFiche::Salarie => cle.map(|c| engagement::permanents::cle_du_salarie(ctx, c)).transpose()?.flatten().is_some(),
+        // Un spectacle n'a pas la piece d'un permanent.
+        NomDeFiche::Spectacle => false,
     };
     let avec_permanents = nom == NomDeFiche::Entreprise && permanents_de(entreprise);
     let du_metier = cases_des_metiers(ctx, nom, cle, donnees)?;

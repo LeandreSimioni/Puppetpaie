@@ -714,18 +714,20 @@ fn meme(a: &Valeur, b: &Valeur, lisibles: &[NomDeCase]) -> bool {
     if a == b {
         return true;
     }
-    match (a, b) {
-        (Valeur::Bloc(x), Valeur::Bloc(y)) => {
-            let dites = |s: &Saisie| -> Vec<(NomDeCase, Valeur)> { s.cases().iter().filter(|(k, v)| !lisibles.contains(k) && !sans_valeur(Some(v))).cloned().collect() };
-            let (x, y) = (dites(x), dites(y));
-            x.len() == y.len() && x.iter().all(|(k, v)| y.iter().any(|(l, w)| l == k && meme(v, w, lisibles)))
-        }
-        (Valeur::Bloc(_) | Valeur::Lignes(_) | Valeur::Mots(_), _) | (_, Valeur::Bloc(_) | Valeur::Lignes(_) | Valeur::Mots(_)) => false,
-        _ => match (nombre_de(a), nombre_de(b)) {
+    if let (Valeur::Bloc(x), Valeur::Bloc(y)) = (a, b) {
+        let dites = |s: &Saisie| -> Vec<(NomDeCase, Valeur)> { s.cases().iter().filter(|(k, v)| !lisibles.contains(k) && !sans_valeur(Some(v))).cloned().collect() };
+        let (x, y) = (dites(x), dites(y));
+        return x.len() == y.len() && x.iter().all(|(k, v)| y.iter().any(|(l, w)| l == k && meme(v, w, lisibles)));
+    }
+    // Deux valeurs simples se comparent par leur nombre ou leur mot ; une structure ou une liste d'un cote seulement
+    // n'est pas la meme valeur.
+    let simple = |v: &Valeur| matches!(v, Valeur::Texte(_) | Valeur::Nombre(_) | Valeur::OuiNon(_));
+    simple(a)
+        && simple(b)
+        && match (nombre_de(a), nombre_de(b)) {
             (Some(x), Some(y)) => x == y,
             _ => a.mot().is_some() && a.mot() == b.mot(),
-        },
-    }
+        }
 }
 
 fn meme_case(a: Option<&Valeur>, b: Option<&Valeur>, lisibles: &[NomDeCase]) -> bool {
@@ -737,11 +739,9 @@ fn meme_case(a: Option<&Valeur>, b: Option<&Valeur>, lisibles: &[NomDeCase]) -> 
 
 /// La structure `apres` garde chaque case de `avant` qui a une valeur (elle n'en remplit que des vides).
 fn seulement_completee(avant: &Valeur, apres: &Valeur, lisibles: &[NomDeCase]) -> bool {
-    match (avant, apres) {
-        (Valeur::Bloc(a), Valeur::Bloc(b)) => a.cases().iter().filter(|(_, x)| !sans_valeur(Some(x))).all(|(k, x)| b.case(k).is_some_and(|y| meme(x, y, lisibles))),
-        // Autre chose qu'une structure, d'un cote ou de l'autre : rien ne s'y complete.
-        (Valeur::Texte(_) | Valeur::Nombre(_) | Valeur::OuiNon(_) | Valeur::Mots(_) | Valeur::Lignes(_) | Valeur::Bloc(_), _) => false,
-    }
+    // Autre chose qu'une structure, d'un cote ou de l'autre : rien ne s'y complete.
+    let (Valeur::Bloc(a), Valeur::Bloc(b)) = (avant, apres) else { return false };
+    a.cases().iter().filter(|(_, x)| !sans_valeur(Some(x))).all(|(k, x)| b.case(k).is_some_and(|y| meme(x, y, lisibles)))
 }
 
 /// La case avait une valeur : la changer est un changement, a dater. Une case a cocher que la fiche dit a la sienne,
