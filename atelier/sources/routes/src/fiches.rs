@@ -904,13 +904,12 @@ pub(crate) fn poser_anciennete_a_l_embauche(ctx: &Contexte, salarie: &str, debut
 /// elle se corrige. Une date saisie depuis reste la sienne. Rend vrai si elle a ete remplacee.
 pub(crate) fn reprendre_anciennete(ctx: &Contexte, salarie: &str, pose_le: Jour, debut: Jour) -> R<bool> {
     let contenu = lire_fichier::<FicheSalarieDatee>(ctx)?;
-    let Some([seule]) = contenu.fiches.get(salarie).and_then(|f| f.date_anciennete.as_deref()) else { return Ok(false) };
-    if seule.valeur.dite() != Some(&pose_le) || debut >= pose_le {
-        return Ok(false);
-    }
+    // La seule valeur de la fiche, celle que l'import a posee, quand le contrat commence avant elle.
+    let posee = contenu.fiches.get(salarie).and_then(|f| f.date_anciennete.as_deref()).filter(|v| v.len() == 1).and_then(|v| v.first());
+    let a_remplacer = posee.filter(|seule| seule.valeur.dite() == Some(&pose_le) && debut < pose_le);
     // La note de l'import (d'ou vient la valeur) reste : la valeur vient toujours des pieces importees.
-    poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::DateAnciennete(Some(debut))], None, seule.note.as_deref())?;
-    Ok(true)
+    let remplacer = |seule: &droit::fiche::Datee<Jour>| poser::<FicheSalarieDatee>(ctx, Some(salarie), vec![ChangementSalarie::DateAnciennete(Some(debut))], None, seule.note.as_deref());
+    Ok(a_remplacer.map(remplacer).transpose()?.is_some())
 }
 
 
@@ -948,9 +947,10 @@ fn adresse_valide(adresse: &str) -> bool {
     if adresse.chars().any(blanc) || adresse.matches('@').count() != 1 {
         return false;
     }
-    let Some((local, domaine)) = adresse.split_once('@') else { return false };
-    let d: Vec<char> = domaine.chars().collect();
-    !local.is_empty() && d.len() >= 3 && (1..d.len() - 1).any(|i| d[i] == '.')
+    adresse.split_once('@').is_some_and(|(local, domaine)| {
+        let d: Vec<char> = domaine.chars().collect();
+        !local.is_empty() && d.len() >= 3 && (1..d.len() - 1).any(|i| d[i] == '.')
+    })
 }
 
 /// Ce que `demander_fiche` rend : le code, l'adresse (en minuscules), la ligne du journal.

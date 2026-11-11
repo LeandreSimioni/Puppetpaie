@@ -1048,7 +1048,10 @@ fn du_salarie(ctx: &Contexte, cle: &str) -> R<Vec<ConseilVu>> {
     if !actifs(&ctx.entreprise) {
         return Ok(Vec::new());
     }
-    let Some(fiche) = ctx.salaries.get(cle) else { return Ok(Vec::new()) };
+    Ok(ctx.salaries.get(cle).map(|fiche| conseils_de(ctx, cle, fiche)).transpose()?.into_iter().flatten().collect())
+}
+
+fn conseils_de(ctx: &Contexte, cle: &str, fiche: &droit::fiche::FicheSalarie) -> R<Vec<ConseilVu>> {
     let b = banque()?;
     let jour = ctx.aujourdhui;
     let d = Donnees::de_l_annee(jour.an);

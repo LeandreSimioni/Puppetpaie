@@ -622,10 +622,8 @@ pub(crate) fn bornes_brutes(e: &SaisieCarte) -> (Option<Jour>, Option<Jour>) {
 /// Les engagements que le mois montre (`engagement::stock::vue_du_mois`), avec la cle du salarie ; vide si aucun
 /// engagement ne le touche. Une carte qui ne nomme pas son salarie est sautee.
 pub(crate) fn engagements_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<(IdSalarie, SaisieCarte)>> {
-    let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else {
-        return Ok(Vec::new());
-    };
-    Ok(data.engagements.into_iter().filter_map(|e| Some((e.salarie.clone()?, e))).collect())
+    // Un mois sans saisie n'a aucun engagement.
+    Ok(engagement::stock::vue_du_mois(&ctx.racine, mois)?.into_iter().flat_map(|data| data.engagements).filter_map(|e| Some((e.salarie.clone()?, e))).collect())
 }
 
 // ------------------------------------------------------------- contrats en cours
@@ -1483,7 +1481,10 @@ fn champs_du_contrat_ecrit(ctx: &Contexte, e: &engagement::Engagement, nat: &dro
 /// duree du travail calculee.
 /// Une carte qui ne nomme pas encore son salarie ou sa nature n'appelle encore aucune case.
 fn champs_du_contrat_ecrit_en_saisie(ctx: &Contexte, e: &SaisieCarte, mois: Mois) -> R<Vec<&'static str>> {
-    let Some(cle) = &e.salarie else { return Ok(Vec::new()) };
+    Ok(e.salarie.as_ref().map(|cle| champs_du_contrat_de(ctx, e, cle, mois)).transpose()?.into_iter().flatten().collect())
+}
+
+fn champs_du_contrat_de(ctx: &Contexte, e: &SaisieCarte, cle: &IdSalarie, mois: Mois) -> R<Vec<&'static str>> {
     let debut = e.debut_lu();
     if let Some(d) = debut {
         if engagement::stock::commence_avant_le_logiciel(&ctx.racine, d, mois)? {

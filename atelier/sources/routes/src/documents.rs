@@ -577,9 +577,8 @@ fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: Mois, doss
 /// ecrites), numerote. L'envoi des documents (`envoyer_documents`) prepare ses messages sur les memes paies que l'apercu.
 pub(crate) fn charger_le_mois(ctx: &Contexte, mois: Mois) -> R<Vec<engagement::calcul::Paie>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let Some((_, mut paies)) = engagement::etats::validees_du_mois(ctx, mois, &departs)? else {
-        return Ok(Vec::new());
-    };
+    // Un mois sans engagement valide n'a aucune paie.
+    let mut paies: Vec<engagement::calcul::Paie> = engagement::etats::validees_du_mois(ctx, mois, &departs)?.into_iter().flat_map(|(_, paies)| paies).collect();
     documents::ecrire_documents::numeroter(ctx, &mut paies, mois.annee(), &departs)?;
     Ok(paies)
 }

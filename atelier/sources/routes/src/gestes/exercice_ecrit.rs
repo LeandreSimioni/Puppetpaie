@@ -240,15 +240,17 @@ pub(crate) fn export_compta_a_jour(racine: &Path, annee: Annee) -> R<bool> {
     if !f.is_file() {
         return Ok(false);
     }
-    match compagnie::pieces_ecrites::piece_notee(racine, &f)?.and_then(|n| n.empreinte_saisie) {
-        Some(EmpreinteNotee::Annee(lues)) => Ok(lues == empreintes_des_saisies(racine, annee)?),
-        Some(EmpreinteNotee::Saisie(saisie)) => Err(socle::echec::erreur(
-            Classe::DefautDuLogiciel,
-            format!("Défaut du logiciel : l'export compta {} est noté avec l'empreinte d'un seul mois ({}), et non celles de l'année.", annee, saisie),
-        )),
-        // Le moteur ne l'a pas note : il ne l'a pas ecrit.
-        None => Ok(false),
-    }
+    let a_jour = |notee: EmpreinteNotee| -> R<bool> {
+        match notee {
+            EmpreinteNotee::Annee(lues) => Ok(lues == empreintes_des_saisies(racine, annee)?),
+            EmpreinteNotee::Saisie(saisie) => Err(socle::echec::erreur(
+                Classe::DefautDuLogiciel,
+                format!("Défaut du logiciel : l'export compta {} est noté avec l'empreinte d'un seul mois ({}), et non celles de l'année.", annee, saisie),
+            )),
+        }
+    };
+    // Le moteur ne l'a pas note : il ne l'a pas ecrit.
+    Ok(compagnie::pieces_ecrites::piece_notee(racine, &f)?.and_then(|n| n.empreinte_saisie).map(a_jour).transpose()?.is_some_and(|oui| oui))
 }
 
 /// La charge de `export-compta` : l'annee, du mois au mois (toute l'annee sans eux), et l'apercu (rien n'est ecrit).

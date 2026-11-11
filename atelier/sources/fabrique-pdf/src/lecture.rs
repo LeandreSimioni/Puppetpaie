@@ -557,9 +557,12 @@ pub fn rotation_de(doc: &Document, page: ObjectId) -> Result<i64, Refus> {
             Ok(r) => illisible(format!("/Rotate vaut {}, qui n'est pas un multiple de 90", r)),
             Err(attendu) => illisible(format!("/Rotate n'est pas {}", attendu)),
         },
-        None => Ok(0),
+        None => Ok(ROTATION_PAR_DEFAUT),
     }
 }
+
+/// ISO 32000-1, table 30 : `Rotate`, « Default value: 0 ».
+const ROTATION_PAR_DEFAUT: i64 = 0;
 
 /// Au-delà, des tableaux de contenus imbriqués se refusent.
 const IMBRICATION_MAX: usize = 4;

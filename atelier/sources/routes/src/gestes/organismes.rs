@@ -88,9 +88,10 @@ pub(crate) struct ContratSaisi {
 /// qu'elle ne change pas ; absent d'une version, il n'y est pas saisi).
 fn temps_des_contrats(ctx: &droit::contexte::Contexte) -> R<Vec<TempsDeLaCase<ContratSaisi>>> {
     let fichier = droit::organismes::fichier_organismes(ctx)?;
-    let Some(liste) = fichier.adhesions_prevoyance.as_deref() else { return Ok(Vec::new()) };
     let mut par_cle: Vec<(String, Vec<droit::fiche::Datee<ContratSaisi>>)> = Vec::new();
-    for version in droit::fiche::valeurs_datees(liste) {
+    // Aucune adhesion saisie : aucun contrat.
+    let versions = fichier.adhesions_prevoyance.as_deref().map(droit::fiche::valeurs_datees);
+    for version in versions.into_iter().flatten() {
         for a in version.valeur.iter().flatten() {
             if !par_cle.iter().any(|(c, _)| c == a.cle.trim()) {
                 par_cle.push((a.cle.trim().to_string(), Vec::new()));

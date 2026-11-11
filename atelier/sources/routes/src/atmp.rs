@@ -100,7 +100,11 @@ pub(crate) fn recue(ctx: &Contexte, n: &envois::retours::TauxAtmpNotifie, le: Op
 /// le code se complete a sa date. Le code est celui de la derniere ligne. Appele a l'ouverture, a l'import, et apres
 /// l'enregistrement de la case (`SorteDeFiche::apres_ecriture`). Rend ce qui s'est inscrit, en phrases.
 pub(crate) fn inscrire_l_arrete(ctx: &Contexte, an: i32) -> R<Vec<String>> {
-    let Some(socle) = socle_de(an)? else { return Ok(Vec::new()) };
+    // Une annee sans socle livre n'a pas d'arrete a inscrire.
+    Ok(socle_de(an)?.map(|socle| inscrire_selon(ctx, an, socle)).transpose()?.into_iter().flatten().collect())
+}
+
+fn inscrire_selon(ctx: &Contexte, an: i32, socle: droit::forme_bareme::Pile) -> R<Vec<String>> {
     let janvier = premier_janvier(an)?;
     let risques = bareme::risques_de(&socle);
     let arrete = match bareme::arrete_atmp(&socle) {

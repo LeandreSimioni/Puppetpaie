@@ -184,13 +184,16 @@ pub fn oublier(inst: &Path, racine: &Path) -> R<()> {
 
 /// La compagnie `racine` est-elle rattachee a l'administrateur de son installation ?
 pub fn est_rattachee(inst: &Path, racine: &Path) -> R<bool> {
-    let Some(rel) = relatif(inst, racine)? else { return Ok(false) };
-    for r in rattachees(inst)? {
-        if relatif(inst, &r)?.as_deref() == Some(rel.as_str()) {
-            return Ok(true);
+    let parmi_les_rattachees = |rel: String| -> R<bool> {
+        for r in rattachees(inst)? {
+            if relatif(inst, &r)?.as_deref() == Some(rel.as_str()) {
+                return Ok(true);
+            }
         }
-    }
-    Ok(false)
+        Ok(false)
+    };
+    // Une compagnie hors de l'installation n'y est pas rattachee.
+    Ok(relatif(inst, racine)?.map(parmi_les_rattachees).transpose()?.is_some_and(|oui| oui))
 }
 
 /// `liste` sans la compagnie `racine`.

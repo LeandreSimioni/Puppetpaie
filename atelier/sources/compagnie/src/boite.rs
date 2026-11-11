@@ -36,10 +36,9 @@ pub fn adresse(racine: &Path) -> R<Option<String>> {
 
 /// Peut-on ouvrir la boite sans rien demander ? Adresse ET secret ; ce qui ne se lit pas le refuse.
 pub fn disponible(racine: &Path) -> R<bool> {
-    match adresse(racine)? {
-        Some(_) => coffre_de(racine).disponible(SERVICE).map_err(|e| e.reclasser(Classe::Courriel)),
-        None => Ok(false),
-    }
+    // Sans adresse, la boite n'est pas a ouvrir.
+    let secret = |_| coffre_de(racine).disponible(SERVICE).map_err(|e| e.reclasser(Classe::Courriel));
+    Ok(adresse(racine)?.map(secret).transpose()?.is_some_and(|oui| oui))
 }
 
 /// Le mot de passe, lu en CONSULTATION.

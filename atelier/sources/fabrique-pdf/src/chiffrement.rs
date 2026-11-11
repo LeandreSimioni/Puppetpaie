@@ -33,6 +33,10 @@ pub const PERMISSIONS: u32 = 0xFFFF_F0C0 | 4 | 16 | 512;
 /// (ISO 32000-1, table 21).
 const METADONNEES_CHIFFREES: bool = true;
 
+/// ISO 32000-1, table 20 : `StmF` et `StrF`, « Default value: Identity » ; table 26 : `Identity`, « Input data shall be
+/// passed through without any processing ».
+const FILTRE_PAR_DEFAUT: &[u8] = b"Identity";
+
 /// D'ou viennent les tirages d'un verrou (`verrouiller_avec`) ; `None` : le systeme.
 type Tirage = fn(&mut [u8]) -> Result<(), String>;
 
@@ -357,9 +361,12 @@ pub fn dechiffrer(doc: &mut Document, mot_de_passe: &[u8]) -> Result<(), Refus> 
     // passed through without any processing »). Un autre nom est une clé de `/CF` (table 20).
     let filtre = |cle: &[u8]| -> Result<bool, Refus> {
         let n = match lecture::lue(doc, &e, cle, lecture::nom)? {
-            Some(b"Identity") | None => return Ok(false),
             Some(n) => n,
+            None => FILTRE_PAR_DEFAUT,
         };
+        if n == FILTRE_PAR_DEFAUT {
+            return Ok(false);
+        }
         let cf = match lecture::lue(doc, &e, b"CF", lecture::dictionnaire)? {
             Some(cf) => cf,
             None => return illisible(format!("chiffrement illisible : {} nomme /{}, et /CF manque", lecture::nom_de(cle), String::from_utf8_lossy(n))),

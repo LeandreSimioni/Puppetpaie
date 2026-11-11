@@ -299,9 +299,11 @@ fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<V
             self.listes.push((cle, lue));
         }
     }
-    let Some(brute) = brute else { return Ok(Vec::new()) };
+    // Une fiche absente n'a aucune case datee.
     let mut t = Toutes { nom: F::NOM, listes: Vec::new() };
-    brute.voir_listes(&mut t);
+    if let Some(brute) = brute {
+        brute.voir_listes(&mut t);
+    }
     let mut out = Vec::new();
     for (champ, lue) in t.listes {
         // Les autres etablissements sont une liste : leurs temps se disent case par case, ligne par ligne
@@ -726,13 +728,11 @@ pub(crate) fn boite_liee(ctx: &Contexte) -> R<bool> {
     let coffre = compagnie::coffre::Coffre::du_poste(&ctx.racine);
     // L'adresse posee dans l'environnement, sinon celle du coffre.
     let adresse = match std::env::var("COURRIEL_COMPTE") {
-        Ok(a) if !a.is_empty() => a,
-        _ => match coffre.compte_pose("courriel")? {
-            Some(a) => a,
-            None => return Ok(false),
-        },
+        Ok(a) if !a.is_empty() => Some(a),
+        _ => coffre.compte_pose("courriel")?,
     };
-    if adresse.trim().is_empty() {
+    // Sans adresse, rien ne s'envoie.
+    if !adresse.is_some_and(|a| !a.trim().is_empty()) {
         return Ok(false);
     }
     coffre.disponible("courriel")
@@ -1491,10 +1491,10 @@ fn niveaux_sante(ctx: &Contexte, compose: bool) -> R<Vec<NiveauDeSante>> {
     // La complementaire sante est celle des permanents : la couche de leur nature.
     const PERMANENT: &str = "permanent";
     let releve = pile.par_nature.get(PERMANENT).and_then(|p| p.rubriques_ajoutees.as_ref()?.iter().find(|r| r.id == "mutuelle")).and_then(|r| r.releve_svp_sante.as_ref());
-    let Some(releve) = releve else { return Ok(Vec::new()) };
+    // Une couche sans releve de la complementaire n'en dit aucun niveau.
     Ok(releve
-        .niveaux
-        .iter()
+        .into_iter()
+        .flat_map(|r| r.niveaux.iter())
         .map(|(n, t)| NiveauDeSante {
             niveau: n.clone(),
             assure: t.assure,

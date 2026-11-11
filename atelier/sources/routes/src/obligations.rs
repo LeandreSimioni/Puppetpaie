@@ -942,10 +942,8 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
                 HeureDuJournal::Jour(j) => j > saisi.jour(),
             });
         }
-        match &arret {
-            Some(arret) => arret.a_reporter(mois, &departs).map_err(|m| m.reclasser(Classe::Illisible)),
-            None => Ok(false),
-        }
+        // Sans arret, rien ne se reporte.
+        Ok(arret.as_ref().map(|arret| arret.a_reporter(mois, &departs)).transpose().map_err(|m| m.reclasser(Classe::Illisible))?.is_some_and(|oui| oui))
     };
     let mut partis = Vec::new();
     for e in envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, true).filter(|l| l.accepte() && !envois::etats::refuse_par_un_retour(l)).filter_map(envois::journal::Ligne::dsn) {

@@ -785,10 +785,7 @@ pub(crate) fn contrat_parti_le(departs: &engagement::departs::Departs, cle: &str
 /// Ce qui est a refaire pour l'engagement `e` : le present compare a la version sur laquelle chaque envoi est parti
 /// (`engagement::etats::a_refaire`) ; rien pour un engagement en saisie.
 pub(crate) fn a_refaire_de(ctx: &Contexte, e: &engagement::etats::Etat, departs: &engagement::departs::Departs) -> R<Vec<ARefaire>> {
-    match e.valide() {
-        Some(v) => engagement::etats::a_refaire(ctx, v, departs),
-        None => Ok(Vec::new()),
-    }
+    Ok(e.valide().map(|v| engagement::etats::a_refaire(ctx, v, departs)).transpose()?.into_iter().flatten().collect())
 }
 
 /// Les contrats de `mois` dont l'avenant est a faire signer : `(cle du salarie, numero)` des engagements dont les clauses
@@ -842,7 +839,17 @@ pub(crate) fn nic_de_l_engagement_ecrit(ctx: &Contexte, brut: &engagement::stock
 /// (`refaire` : `Moteur::a_refaire_du_mois`), ou ils ne sont plus ceux qu'elle a emportes (`versions`) : un engagement ajoute, ou retire.
 pub(crate) fn dsn_a_refaire(ctx: &Contexte, mois: Mois, derniere: &envois::journal::Ligne, etats: &[engagement::etats::Etat], refaire: &mut dyn FnMut(&engagement::etats::Etat) -> R<Rc<Vec<ARefaire>>>) -> R<bool> {
     // Une ligne qui ne dit pas ce qu'elle a emporte ne se compare a rien.
-    let Some(emportes) = derniere.versions() else { return Ok(false) };
+    Ok(derniere.versions().map(|emportes| emportes_a_refaire(ctx, mois, derniere, emportes, etats, refaire)).transpose()?.is_some_and(|oui| oui))
+}
+
+fn emportes_a_refaire(
+    ctx: &Contexte,
+    mois: Mois,
+    derniere: &envois::journal::Ligne,
+    emportes: &[envois::journal::Version],
+    etats: &[engagement::etats::Etat],
+    refaire: &mut dyn FnMut(&engagement::etats::Etat) -> R<Rc<Vec<ARefaire>>>,
+) -> R<bool> {
     let nic = match derniere.etablissement() {
         Some(n) => n.to_string(),
         None => ctx.entreprise.nic.ecrite("nic")?.to_string(),
@@ -2798,8 +2805,11 @@ fn etat_documents(parti_le: Option<HeureDuJournal>, caduc: bool) -> EtatDocument
 
 /// `DSN_[^\W\d_]+\d{4}(_AR\d+)?\.dsn` : le nom d'une DSN mensuelle.
 pub(crate) fn est_une_dsn_mensuelle(nom: &str) -> bool {
-    let Some(reste) = nom.strip_prefix("DSN_") else { return false };
-    let Some(reste) = reste.strip_suffix(".dsn") else { return false };
+    nom.strip_prefix("DSN_").and_then(|r| r.strip_suffix(".dsn")).is_some_and(nom_du_mois_et_rang)
+}
+
+/// `[^\W\d_]+\d{4}(_AR\d+)?` : ce que le nom d'une DSN mensuelle porte entre `DSN_` et `.dsn`.
+fn nom_du_mois_et_rang(reste: &str) -> bool {
     let c: Vec<char> = reste.chars().collect();
     let lettres = c.iter().take_while(|x| etats::lettre_ou_chiffre(**x) && !x.is_ascii_digit() && **x != '_' && !x.is_numeric()).count();
     if lettres == 0 {

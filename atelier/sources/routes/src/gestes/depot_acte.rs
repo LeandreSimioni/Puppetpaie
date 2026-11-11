@@ -219,10 +219,18 @@ fn verifier_depot_remplacement(ctx: &Contexte, le_mois: Mois, a: &DsnLue, nic: O
     let constitution = mois_de_constitution(a)?;
     let vues = envois::ordre_signalements::dernier_ordre_des_mensuelles(&ctx.racine, &envois::ordre_signalements::siren_de(ctx)?, false, constitution, le_mois)?;
     let dernier = match dernier {
-        Some(d) => d.max(vues.ordre),
-        None if vues.du_mois_acceptee || vues.ordre > 0 => vues.ordre,
-        None => return Ok(false),
+        Some(d) => Some(d.max(vues.ordre)),
+        None if vues.du_mois_acceptee || vues.ordre > 0 => Some(vues.ordre),
+        None => None,
     };
+    // Aucune DSN reelle du mois avant elle : une premiere, rien ne se remplace.
+    let en_regle = |dernier| -> R<bool> { remplacement_en_regle(&mut m, le_mois, a, mois, dernier) };
+    Ok(dernier.map(en_regle).transpose()?.is_some_and(|oui| oui))
+}
+
+/// L'annule-et-remplace `a` du mois `le_mois` remplace la DSN reelle d'ordre `dernier` : dans le delai, a un ordre
+/// superieur.
+fn remplacement_en_regle(m: &mut crate::etapes::Moteur, le_mois: Mois, a: &DsnLue, mois: &str, dernier: i64) -> R<bool> {
     m.refuser_si_hors_delai(le_mois)?;
     let ordre = ordre_dit(a.ordre.as_deref())?;
     if ordre <= dernier {
@@ -629,13 +637,15 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
 fn paies_des_embauches(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclaree]) -> R<Vec<engagement::calcul::Paie>> {
     let o = |m: Echec| m.reclasser(Classe::Refuse);
     let departs = envois::journal::lu(&ctx.racine).map_err(o)?.departs;
-    let Some((data, _)) = engagement::etats::validees_du_mois(ctx, mois, &departs).map_err(o)? else { return Ok(Vec::new()) };
+    // Un mois sans engagement valide n'a aucune embauche declaree.
+    let saisie = engagement::etats::validees_du_mois(ctx, mois, &departs).map_err(o)?;
     let declaree = |p: &engagement::calcul::Paie| {
         let cle = p.salarie.id.to_string();
         embauches.iter().any(|e| e.salarie.as_str() == cle && e.numero.as_deref() == p.engagement.numero.as_deref())
     };
     let mut paies = Vec::new();
-    for e in engagement::engagements_de_la_saisie(ctx, &data).map_err(o)? {
+    let engagements = saisie.map(|(data, _)| engagement::engagements_de_la_saisie(ctx, &data)).transpose().map_err(o)?;
+    for e in engagements.into_iter().flatten() {
         let p = engagement::embauche(ctx, &e).map_err(o)?;
         if declaree(&p) {
             paies.push(p);

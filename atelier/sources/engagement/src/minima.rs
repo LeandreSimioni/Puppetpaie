@@ -473,10 +473,10 @@ impl<'a> Cx<'a> {
                 return Ok(false);
             }
         }
+        // Un contrat dont la duree ne se compte pas n'est pas d'une duree au plus `max`.
         if let Some(max) = c.duree_contrat_max_jours {
-            match jours_du_contrat(&self.paie.engagement) {
-                Some(j) if j <= max => {}
-                _ => return Ok(false),
+            if !jours_du_contrat(&self.paie.engagement).is_some_and(|j| j <= max) {
+                return Ok(false);
             }
         }
         // L'anciennete, en dernier : elle ne se demande que si tout le reste vise la ligne. Seule la compagnie sait depuis

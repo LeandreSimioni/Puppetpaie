@@ -1944,14 +1944,12 @@ impl<'a> Interprete<'a> {
     }
 
     fn dans_le_cadre(&self, trm: &Mat, w0: Mesure) -> bool {
-        let Some(c) = &self.cadre else {
-            return true;
-        };
         let p = (trm[4], trm[5]);
         let q = (p.0 + w0 * trm[0], p.1 + w0 * trm[1]);
         let (x0, x1) = (p.0.min(q.0), p.0.max(q.0));
         let (y0, y1) = (p.1.min(q.1) - trm[3].abs() * mesure("0.25"), p.1.max(q.1) + trm[3].abs() * mesure("0.75"));
-        !(x1 < c[0] || x0 > c[2] || y1 < c[1] || y0 > c[3])
+        // Une page sans support : rien n'est hors de lui.
+        self.cadre.as_ref().is_none_or(|c| !(x1 < c[0] || x0 > c[2] || y1 < c[1] || y0 > c[3]))
     }
 }
 

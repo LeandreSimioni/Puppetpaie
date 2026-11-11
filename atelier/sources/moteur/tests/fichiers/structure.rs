@@ -825,7 +825,10 @@ fn blanchi_entier(t: &str, textes: bool) -> String {
 ///    une valeur, ni un bras joker (`_ =>`, `_autre =>`, `Some(_) =>`, donc `None | Some(_) =>`) qui en rend une (texte
 ///    vide, nombre, booleen, vecteur vide, defaut, `Ok(…)` de l'une d'elles), ni un bras dont le motif a un `_` a la
 ///    place d'un element d'un tuple ou d'un champ d'une variante (`(None, _)`, `(_, false)`, `Piece::Blanc(_, true)`)
-///    et qui rend une telle valeur, sur sa ligne ou la suivante : un `match` nomme chaque cas qu'il traite.
+///    et qui rend une telle valeur, sur sa ligne ou la suivante : un `match` nomme chaque cas qu'il traite. Ni le
+///    `else` d'un `let … else` qui en rend une (`else { return Ok(Vec::new()) }`) : il rend une erreur ou un etat nomme,
+///    et une absence reste vide (l'`Option` se porte, ou se parcourt). La valeur se voit rendue (`return`) ou non, nue ou
+///    dans son `Ok(…)`.
 ///    Ni `.or(Some(…))`, ni `.or_else(|| Some(…))` : une valeur fabriquee faute de mieux (une preseance entre deux
 ///    valeurs dites s'ecrit `.or(autre)`). Une donnee absente d'un champ facultatif (`Option`) est vide ; une donnee
 ///    obligatoire absente se refuse.
@@ -852,14 +855,21 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     // (`socle::forme::NonLue`, une cle connue que le logiciel ne lit pas) n'en recoit aucune.
     let defaut = regex::Regex::new(r"#\[\s*serde\s*\([^\]]*\bdefault\b[^\]]*\]").unwrap();
     let champ_type = regex::Regex::new(r"^\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?\w+\s*:\s*([^,\n}]+)").unwrap();
-    // Le repli en `match` : un bras `None =>` qui fabrique une valeur (texte vide, nombre, booleen, vecteur vide, defaut).
-    let bras_vide = regex::Regex::new(r#"\bNone\s*=>\s*\{?\s*(?:String::new\(\)|""|-?\d[\w.]*|false\b|true\b|Vec::new\(\)|vec!\s*\[\s*\]|Default::default\(\)|[A-Za-z_][\w:]*::default\(\)|Decimal::\w+|[A-Za-z_][\w:]*::(?:new\(\)|ZERO\b))"#).unwrap();
+    // La valeur fabriquee (texte vide, nombre, booleen, vecteur vide, defaut), rendue ou non (`return`), ou son `Ok(…)` :
+    // ce qu'un repli rend, quelle que soit sa forme.
+    const FABRIQUEE: &str = r#"\{?\s*(?:return\s+)?(?:Ok\()?\s*(?:String::new\(\)|""|-?\d[\w.]*|false\b|true\b|Vec::new\(\)|vec!\s*\[\s*\]|Default::default\(\)|[A-Za-z_][\w:]*::default\(\)|Decimal::\w+|[A-Za-z_][\w:]*::(?:new\(\)|ZERO\b))"#;
+    // Le repli en `match` : un bras `None =>` qui fabrique une valeur.
+    let bras_vide = regex::Regex::new(&format!(r"\bNone\s*=>\s*{}", FABRIQUEE)).unwrap();
     // Le repli en joker : un bras `_ =>`, `_autre =>` ou `Some(_) =>` (donc `None | Some(_) =>`) qui rend une valeur
-    // fabriquee, ou son `Ok(…)`.
-    let bras_joker = regex::Regex::new(r#"(?:\b_\w*|\bSome\s*\(\s*_\w*\s*\))\s*=>\s*\{?\s*(?:Ok\()?\s*(?:String::new\(\)|""|-?\d[\w.]*|false\b|true\b|Vec::new\(\)|vec!\s*\[\s*\]|Default::default\(\)|[A-Za-z_][\w:]*::default\(\)|Decimal::\w+|[A-Za-z_][\w:]*::(?:new\(\)|ZERO\b))"#).unwrap();
+    // fabriquee.
+    let bras_joker = regex::Regex::new(&format!(r"(?:\b_\w*|\bSome\s*\(\s*_\w*\s*\))\s*=>\s*{}", FABRIQUEE)).unwrap();
     // Le repli en joker d'un tuple : un `_` a la place d'un element d'un tuple ou d'un champ d'une variante, dans le motif
-    // d'un bras qui rend une valeur fabriquee (la meme liste), sur sa ligne ou la suivante.
-    let bras_tuple = regex::Regex::new(r#"(?:\(\s*_\w*\s*,|,\s*_\w*\s*[,)])[^=;{}\n]*=>\s*\{?\s*(?:Ok\()?\s*(?:String::new\(\)|""|-?\d[\w.]*|false\b|true\b|Vec::new\(\)|vec!\s*\[\s*\]|Default::default\(\)|[A-Za-z_][\w:]*::default\(\)|Decimal::\w+|[A-Za-z_][\w:]*::(?:new\(\)|ZERO\b))"#).unwrap();
+    // d'un bras qui rend une valeur fabriquee, sur sa ligne ou la suivante.
+    let bras_tuple = regex::Regex::new(&format!(r"(?:\(\s*_\w*\s*,|,\s*_\w*\s*[,)])[^=;{{}}\n]*=>\s*{}", FABRIQUEE)).unwrap();
+    // Le repli en `let … else` : le `else` d'un motif refute qui rend une valeur fabriquee (la meme regle qu'un bras de
+    // `match` : il rend une erreur, ou un etat nomme). Le `else` d'un `let` ne suit jamais une accolade (Rust refuse un
+    // `let … else` dont l'expression finit par `}`) ; celui d'un `if`, toujours.
+    let let_else = regex::Regex::new(&format!(r"[^}}\s]\s*\belse\s*\{{\s*{}", FABRIQUEE.trim_start_matches(r"\{?\s*"))).unwrap();
     // La valeur fabriquee faute de mieux : `.or(Some(…))`, `.or_else(|| Some(…))`.
     let fabriquee = regex::Regex::new(r"\.or\(\s*Some\s*\(|\.or_else\(\s*\|\|\s*Some\s*\(").unwrap();
     let tri = regex::Regex::new(r#"\b(?:starts_with|strip_prefix|trim_start_matches)\s*\(\s*(?:'_'|"_")"#).unwrap();
@@ -917,6 +927,10 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
             for m in bras_tuple.find_iter(&code) {
                 let n = code[..m.start()].matches('\n').count() + 1;
                 fautes.push(format!("{}:{} : `{}`, un joker de tuple qui rend une valeur : le `match` nomme chaque cas qu'il traite", f.display(), n, m.as_str().split_whitespace().collect::<Vec<_>>().join(" ")));
+            }
+            for m in let_else.find_iter(&code) {
+                let n = code[..m.start()].matches('\n').count() + 1;
+                fautes.push(format!("{}:{} : `{}`, un repli en `let … else` : le `else` rend une erreur ou un état nommé ; une absence reste vide (`Option` porté jusqu'au lecteur, ou parcouru)", f.display(), n, m.as_str().split_whitespace().collect::<Vec<_>>().join(" ")));
             }
             for (n, l) in code.lines().enumerate() {
                 if let Some(m) = repli.find(l) {

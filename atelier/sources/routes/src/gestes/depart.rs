@@ -166,10 +166,9 @@ impl Lu {
         let fiche = ctx.entreprise_du_mois(mois);
         let nic = forme.etablissement.clone();
         let du_nic = |sal: &droit::fiche::SalarieDuContrat| -> R<bool> {
-            match &nic {
-                Some(n) => Ok(droit::bareme::etablissement_de(&fiche, sal).map_err(|e| e.reclasser(Classe::Illisible))? == *n),
-                None => Ok(true),
-            }
+            // Sans etablissement nomme, la DSN les declare tous.
+            let du = |n: &String| -> R<bool> { Ok(droit::bareme::etablissement_de(&fiche, sal).map_err(|e| e.reclasser(Classe::Illisible))? == *n) };
+            Ok(nic.as_ref().map(du).transpose()?.is_none_or(|oui| oui))
         };
         let mut paies: Vec<Paie> = Vec::new();
         for p in &self.paies {

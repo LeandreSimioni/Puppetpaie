@@ -740,8 +740,7 @@ fn meme_case(a: Option<&Valeur>, b: Option<&Valeur>, lisibles: &[NomDeCase]) -> 
 /// La structure `apres` garde chaque case de `avant` qui a une valeur (elle n'en remplit que des vides).
 fn seulement_completee(avant: &Valeur, apres: &Valeur, lisibles: &[NomDeCase]) -> bool {
     // Autre chose qu'une structure, d'un cote ou de l'autre : rien ne s'y complete.
-    let (Valeur::Bloc(a), Valeur::Bloc(b)) = (avant, apres) else { return false };
-    a.cases().iter().filter(|(_, x)| !sans_valeur(Some(x))).all(|(k, x)| b.case(k).is_some_and(|y| meme(x, y, lisibles)))
+    matches!((avant, apres), (Valeur::Bloc(a), Valeur::Bloc(b)) if a.cases().iter().filter(|(_, x)| !sans_valeur(Some(x))).all(|(k, x)| b.case(k).is_some_and(|y| meme(x, y, lisibles))))
 }
 
 /// La case avait une valeur : la changer est un changement, a dater. Une case a cocher que la fiche dit a la sienne,

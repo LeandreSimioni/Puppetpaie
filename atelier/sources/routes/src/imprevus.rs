@@ -1482,8 +1482,8 @@ fn nature_du_contrat(ctx: &Contexte, a: &ArretSaisi) -> R<Option<std::sync::Arc<
 /// L'arret ouvre-t-il le maintien de salaire, par la loi ou la convention (`engagement::maintien::droits`) ? Un arret dont
 /// le contrat n'est plus dans la saisie n'en ouvre pas.
 fn ouvre_le_maintien(ctx: &Contexte, a: &ArretSaisi) -> R<bool> {
-    let Some(nat) = nature_du_contrat(ctx, a)? else { return Ok(false) };
-    Ok(magasin(engagement::maintien::droits(ctx, a, &nat))?.is_some_and(|d| d.du()))
+    let ouvre = |nat: std::sync::Arc<droit::natures::Nature>| -> R<bool> { Ok(magasin(engagement::maintien::droits(ctx, a, &nat))?.is_some_and(|d| d.du())) };
+    Ok(nature_du_contrat(ctx, a)?.map(ouvre).transpose()?.is_some_and(|oui| oui))
 }
 
 /// LA SUBROGATION D'UN ARRET, telle que le moteur la tire de la convention et du choix de la compagnie
@@ -2443,13 +2443,15 @@ pub(crate) struct FinASignaler {
 pub(crate) fn fins_a_signaler(ctx: &Contexte, mois: Mois, aujourdhui: Jour) -> R<Vec<FinASignaler>> {
     // Un signalement de fin ne se doit que pour un engagement valide, lu tel qu'il est ecrit (`tels_qu_ecrits`) : un
     // brouillon ne part pas, et ce qui ne fait que lire ne recalcule rien. Un mois sans saisie n'a aucune fin.
-    let Some(saisie) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else {
+    let saisie = engagement::stock::vue_du_mois(&ctx.racine, mois)?;
+    let cartes: Vec<&engagement::saisie::Carte> = saisie.iter().flat_map(|s| s.engagements.iter()).collect();
+    if cartes.is_empty() {
         return Ok(Vec::new());
-    };
+    }
     let journal = envois::journal::lu(&ctx.racine)?;
     let etats = engagement::etats::tels_qu_ecrits(ctx, mois, &journal.departs)?;
     let mut out = Vec::new();
-    for (i, carte) in saisie.engagements.iter().enumerate() {
+    for (i, carte) in cartes.into_iter().enumerate() {
         if etats.get(i).and_then(|x| x.valide()).is_none() {
             continue;
         }
