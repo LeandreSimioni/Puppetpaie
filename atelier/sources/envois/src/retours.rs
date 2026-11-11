@@ -1098,11 +1098,10 @@ pub fn anomalies_codees_d_octets(o: &[u8]) -> R<Vec<AnomalieCodee>> {
 /// `fusionner_bilans` : un seul bilan par flux, le plus complet. Le bilan de
 /// declaration (CCO, BAN) l'emporte sur l'accuse de transport (AEE).
 pub fn fusionner_bilans(bilans: &[Bilan]) -> Option<Bilan> {
-    let rang = |b: &Bilan| match b.type_rapport.as_str() {
-        "CCO" | "BAN" => 0,
-        "AEE" => 1,
-        // Tout autre rapport vient apres ces deux-la.
-        _autre => 2,
+    // Le bilan de declaration d'abord, puis l'accuse de transport, puis tout autre rapport.
+    let rang = |b: &Bilan| {
+        let t = b.type_rapport.as_str();
+        (!matches!(t, "CCO" | "BAN"), t != "AEE")
     };
     let mut tries: Vec<&Bilan> = bilans.iter().collect();
     tries.sort_by_key(|b| rang(b));

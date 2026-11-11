@@ -721,11 +721,8 @@ pub fn type_devine(nom: &str) -> Option<&'static str> {
 
 fn genre_de(nom: &str) -> &'static str {
     // `piece.suffix.lower()` : le suffixe de pathlib (rien pour un nom qui n'est qu'un suffixe, ni pour un point final).
-    let suffixe = match nom.rfind('.') {
-        Some(i) if i > 0 && i + 1 < nom.len() => nom[i..].to_lowercase(),
-        None | Some(_) => String::new(),
-    };
-    match GENRES.iter().find(|(s, _)| *s == suffixe).map(|(_, g)| *g).or_else(|| type_devine(nom)) {
+    let suffixe: Option<String> = nom.rfind('.').filter(|&i| i > 0 && i + 1 < nom.len()).map(|i| nom[i..].to_lowercase());
+    match GENRES.iter().find(|(s, _)| suffixe.as_deref() == Some(*s)).map(|(_, g)| *g).or_else(|| type_devine(nom)) {
         Some(genre) => genre,
         // Un type que l'extension ne dit pas : des octets (RFC 2046).
         None => "application/octet-stream",

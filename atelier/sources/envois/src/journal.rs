@@ -110,6 +110,13 @@ struct Tenu {
     index: HashMap<String, usize>,
 }
 
+impl Tenu {
+    /// Un journal dont rien n'est encore lu : aucun octet, aucune ligne.
+    fn rien_de_lu() -> Tenu {
+        Tenu::default()
+    }
+}
+
 type Tenus = Mutex<HashMap<PathBuf, Tenu>>;
 
 fn tenus() -> std::sync::MutexGuard<'static, HashMap<PathBuf, Tenu>> {
@@ -255,7 +262,7 @@ fn a_jour<'t>(tenus: &'t mut HashMap<PathBuf, Tenu>, p: &Path) -> R<&'t mut Tenu
     let mut t = match tenus.remove(p) {
         Some(t) if octets.starts_with(&t.octets) => t,
         // Rien de lu, ou un journal remplace : il se relit depuis son debut.
-        None | Some(_) => Tenu::default(),
+        None | Some(_) => Tenu::rien_de_lu(),
     };
     let debut = t.octets.len();
     t.replier_le_texte(&octets[debut..], p)?;

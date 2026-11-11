@@ -114,14 +114,12 @@ const ATTENTE_DE_BASE_MS: u64 = 1000;
 
 /// Une erreur que Google dit passagere : a retenter apres une attente (voir `NOUVELLES_TENTATIVES`).
 pub fn passagere(e: &ErreurGoogle) -> bool {
-    match e.statut {
-        Some(500 | 502 | 503 | 504 | 429) => true,
-        Some(403) => {
-            let m = e.echec.phrase.to_lowercase();
-            m.contains("rate limit") || m.contains("ratelimitexceeded")
-        }
-        None | Some(_) => false,
-    }
+    // Un 403 n'est passager que s'il dit une limite de debit.
+    let limite = || {
+        let m = e.echec.phrase.to_lowercase();
+        m.contains("rate limit") || m.contains("ratelimitexceeded")
+    };
+    matches!(e.statut, Some(500 | 502 | 503 | 504 | 429)) || (e.statut == Some(403) && limite())
 }
 
 /// Une erreur de l'API ou de la configuration, avec sa classe (`Google` pour ce qui est deja traduit en francais ;

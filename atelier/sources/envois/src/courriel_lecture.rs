@@ -373,11 +373,8 @@ fn forme_de_citation(ligne: &str, tete: &str, milieu: &str, deux_points: bool) -
         if !deux_points {
             return true;
         }
-        match suite.get(milieu.len()) {
-            Some(':') => true,
-            Some(' ') => suite.get(milieu.len() + 1) == Some(&':'),
-            None | Some(_) => false,
-        }
+        // Le deux-points suit, aussitot ou apres une espace.
+        suite.get(milieu.len()) == Some(&':') || (suite.get(milieu.len()) == Some(&' ') && suite.get(milieu.len() + 1) == Some(&':'))
     })
 }
 
