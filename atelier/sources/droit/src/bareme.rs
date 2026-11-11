@@ -1181,23 +1181,19 @@ fn rattachement(nics: &[String], sal: &SalarieDuContrat) -> R<String> {
         _ => return Ok(nics[0].clone()),
     };
     if !nics[1..].contains(&nic) {
-        return Err(socle::refus!(
-            "{} : l'engagement le rattache a l'etablissement {}, que la \
+        let suite = format!(
+            "'engagement le rattache a l'etablissement {}, que la \
 fiche entreprise ne porte pas a cette date (Configuration › Entreprise › Avancé, « Autres établissements » : son ouverture ; connus : {}).",
-            nom_ou(sal, "Ce salarie"),
             nic,
             nics.join(", ")
-        ));
+        );
+        // Un salarie sans nom : la phrase se tourne sans lui.
+        return Err(socle::echec::refus(match sal.nom.remplie() {
+            Some(n) => format!("{} : l{}", n, suite),
+            None => format!("L{}", suite),
+        }));
     }
     Ok(nic)
-}
-
-/// Le nom du salarie, ou `defaut` s'il n'en a pas.
-fn nom_ou(sal: &ChampsSalarie, defaut: &str) -> String {
-    match sal.nom.remplie() {
-        Some(n) => n.to_string(),
-        None => defaut.to_string(),
-    }
 }
 
 /// L'entreprise vue depuis l'etablissement `nic`.
@@ -1589,13 +1585,14 @@ retraite ({} %) qu'aux adherents d'avant le {}. Renseigner \
         return Err(refus(
             "La retraite complémentaire d'un cadre intermittent ne se lit pas pour cette adhésion : la demander à Audiens.",
             format!(
-                "{}, cadre : l'adhesion de la compagnie a {} porte la retraite \
+                "{}cadre : l'adhesion de la compagnie a {} porte la retraite \
 complementaire des {}s intermittents a {} % en tranche 1, et la \
 source (Audiens, tableau n 2) ne dit pas si elle vaut pour un \
 cadre, dont le taux n'est deja pas celui d'un non cadre. A \
 demander a Audiens, puis a ecrire dans la couche de \
 `par_organisation_patronale` du socle.",
-                nom_ou(sal, "Ce salarie"),
+                // Un salarie sans nom : la phrase commence au statut.
+                sal.nom.remplie().iter().map(|n| format!("{}, ", n)).collect::<String>(),
                 couche.libelle,
                 statut,
                 court(taux)

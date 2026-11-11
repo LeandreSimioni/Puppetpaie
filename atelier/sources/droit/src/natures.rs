@@ -97,11 +97,12 @@ macro_rules! codes_fermes {
             }
 
             fn depuis(self) -> Option<&'static str> {
-                match self { $( $nom::$v => None::<&'static str> $( .or(Some($depuis)) )?, )* }
+                // La borne que la declaration ecrit, ou aucune.
+                match self { $( $nom::$v => <[&'static str]>::first(&[$( $depuis )?]).copied(), )* }
             }
 
             fn jusqu_a(self) -> Option<&'static str> {
-                match self { $( $nom::$v => None::<&'static str> $( .or(Some($jusqu)) )?, )* }
+                match self { $( $nom::$v => <[&'static str]>::first(&[$( $jusqu )?]).copied(), )* }
             }
         }
 
