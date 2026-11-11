@@ -31,6 +31,33 @@ pub const LOGICIEL: &str = "PUPPETPAIE";
 pub const VERSION: &str = "1.0.0";
 pub const SIRET_FRANCE_TRAVAIL: &str = "13000548100010";
 
+/// Le code de `v` si la liste de la norme `norme` l'a ; sinon le refus `HorsDeLaVersion` (« Une rubrique assortie d'une
+/// liste de valeurs ne peut contenir qu'une des valeurs indiquees dans cette liste », cahier 2027.1.1 p. 86,
+/// `texte-2027/chapitre-4-controles.txt` l. 164). Le seul chemin par lequel un code d'une liste de la norme devient une
+/// valeur de fichier (`Fichier::ecrire_code`, `changements_contrat`).
+pub(crate) fn code_admis<T: droit::natures::ListeDeLaNorme>(norme: &crate::norme::Norme, v: T) -> R<&'static str> {
+    if norme.a_dans_sa_liste(v)? {
+        return Ok(v.code_de_la_norme());
+    }
+    let bornes = match (v.depuis(), v.jusqu_a()) {
+        (Some(d), Some(j)) => format!("il n'y est que de {} à {}", d, j),
+        (Some(d), None) => format!("il n'y est qu'à partir de {}", d),
+        (None, Some(j)) => format!("il n'y est que jusqu'à {}", j),
+        (None, None) => String::new(),
+    };
+    Err(socle::echec::erreur(
+        socle::echec::Classe::HorsDeLaVersion,
+        format!(
+            "{} « {} » ({}) : la liste de la norme {} ne l'a pas ({}) ; la déclaration serait rejetée. Rien n'est écrit.",
+            T::quoi(),
+            v.code_de_la_norme(),
+            T::RUBRIQUE,
+            norme.version,
+            bornes
+        ),
+    ))
+}
+
 /// L'accumulateur de lignes DSN, et la version de la norme du fichier qu'il fabrique.
 #[derive(Default)]
 pub struct Fichier {
@@ -73,27 +100,8 @@ impl Fichier {
     /// liste de la version de ce fichier l'a (« Une rubrique assortie d'une liste de valeurs ne peut contenir qu'une des
     /// valeurs indiquees dans cette liste », cahier 2027.1.1 p. 86, `texte-2027/chapitre-4-controles.txt` l. 164).
     pub fn ecrire_code<T: droit::natures::ListeDeLaNorme>(&mut self, v: T) -> R<()> {
-        let norme = self.norme()?;
-        if !norme.a_dans_sa_liste(v)? {
-            let bornes = match (v.depuis(), v.jusqu_a()) {
-                (Some(d), Some(j)) => format!("il n'y est que de {} à {}", d, j),
-                (Some(d), None) => format!("il n'y est qu'à partir de {}", d),
-                (None, Some(j)) => format!("il n'y est que jusqu'à {}", j),
-                (None, None) => String::new(),
-            };
-            return Err(socle::echec::erreur(
-                socle::echec::Classe::HorsDeLaVersion,
-                format!(
-                    "{} « {} » ({}) : la liste de la norme {} ne l'a pas ({}) ; la déclaration serait rejetée. Rien n'est écrit.",
-                    T::quoi(),
-                    v.code_de_la_norme(),
-                    T::RUBRIQUE,
-                    norme.version,
-                    bornes
-                ),
-            ));
-        }
-        self.add(T::RUBRIQUE, v.code_de_la_norme());
+        let code = code_admis(self.norme()?, v)?;
+        self.add(T::RUBRIQUE, code);
         Ok(())
     }
 
@@ -4944,7 +4952,7 @@ certificat de conformite du depot precedent.",
             bloc_contrat(&mut f, p, &ent_e, &orgs, i as i64 + 1, &bar, true, &siens, "01", emplois_multiples(p, &periode))?;
             // Ce qui a change depuis la derniere DSN deposee du contrat : le bloc S21.G00.41, sous son bloc 40.
             let declare = bloc_40_declare(ctx, p, mois, &etats_du_mois, departs, &orgs)?;
-            crate::changements_contrat::poser(&mut f.lignes, debut_bloc, ctx, p, mois, &nics_courant_d_abord, declare.as_ref())?;
+            crate::changements_contrat::poser(&mut f, debut_bloc, ctx, p, mois, &nics_courant_d_abord, declare.as_ref())?;
         }
         let mut rangs_regs = Vec::new();
         let mut ajoutes: Vec<&Regularisation> = Vec::new();

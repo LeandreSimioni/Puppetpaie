@@ -60,10 +60,31 @@ struct Modalite {
     /// statut, la categorie, la PCS et le code emploi que la fiche date, la duree du travail que l'avenant date avec ses
     /// termes d'avant (`avant`), et la proratisation du plafond qui la suit.
     decoupable: bool,
+    /// Sa valeur est un code d'une liste de la norme (`droit::natures::ListeDeLaNorme`) : l'ancienne se relit dans son
+    /// `enum` et ne s'ecrit en bloc 41 que si la liste de la version du fichier l'a (`relue`).
+    liste: Option<Relue>,
+}
+
+/// L'ancienne valeur d'une modalite a liste, relue dans son `enum`, et le code que le fichier de cette norme en ecrit.
+type Relue = fn(&crate::norme::Norme, &str) -> R<&'static str>;
+
+/// L'ancienne valeur `avant` (le bloc 40 declare) dans la liste `T` ; un code qu'elle n'a pas refuse, et le code ne
+/// s'ecrit que si la liste de la version du fichier l'a (`dsn::code_admis`).
+fn relue<T: droit::natures::ListeDeLaNorme>(norme: &crate::norme::Norme, avant: &str) -> R<&'static str> {
+    let v = T::du_code_de_la_norme(avant).ok_or_else(|| {
+        socle::refus!(
+            "{} « {} » ({}), declare : ce n'est pas un code de sa liste dans la norme ; le bloc Changements contrat ne le \
+recopie pas. Rien n'est ecrit.",
+            T::quoi(),
+            avant,
+            T::RUBRIQUE
+        )
+    })?;
+    crate::dsn::code_admis(norme, v)
 }
 
 const fn m(r40: &'static str, r41: &'static str, saisie: bool, fiche: &'static [&'static str], entreprise: &'static [&'static str]) -> Modalite {
-    Modalite { r40, r41, saisie, fiche, entreprise, annuelle: false, periodique: false, en_cours_de_mois: false, decoupable: false }
+    Modalite { r40, r41, saisie, fiche, entreprise, annuelle: false, periodique: false, en_cours_de_mois: false, decoupable: false, liste: None }
 }
 
 /// `m`, une modalite que le decoupage de la paie porte en cours de mois.
@@ -85,13 +106,13 @@ const MODALITES: [Modalite; 20] = [
     m("S21.G00.40.011", "S21.G00.41.006", true, &[], &[]),
     m("S21.G00.40.012", "S21.G00.41.022", true, &[], &["quotite_reference"]),
     d("S21.G00.40.013", "S21.G00.41.007", true, &[], &[]),
-    d("S21.G00.40.014", "S21.G00.41.008", true, &[], &[]),
+    Modalite { liste: Some(relue::<droit::natures::ModaliteDuTempsDeTravail>), ..d("S21.G00.40.014", "S21.G00.41.008", true, &[], &[]) },
     m("S21.G00.40.016", "S21.G00.41.010", false, &["etablissement"], &["code_postal", "etablissements"]),
     m("S21.G00.40.017", "S21.G00.41.011", false, &[], &["idcc"]),
     // Le lieu de travail est le SIRET de l'etablissement du salarie (`dsn::bloc_contrat`) : il change avec lui, a la
     // date de la mutation (le SIRET, identifiant, va en 41.012 dans un autre bloc, CCH-16).
     m("S21.G00.40.019", "S21.G00.41.013", false, &["etablissement"], &[]),
-    m("S21.G00.40.021", "S21.G00.41.016", true, &[], &[]),
+    Modalite { liste: Some(relue::<droit::natures::MotifDeRecours>), ..m("S21.G00.40.021", "S21.G00.41.016", true, &[], &[]) },
     m("S21.G00.40.022", "S21.G00.41.023", false, &[], &["congesspectacles_adherent"]),
     // Le taux de la deduction forfaitaire specifique vient du bareme de l'annee (arrete du 4 septembre 2025, art. 9, II :
     // reduit « au 1er janvier de chaque annee ») et de la fiche (profession, accord du salarie, option de l'employeur).
@@ -277,9 +298,10 @@ intermediaires, ou ne garder qu'un changement.",
 }
 
 /// Les blocs S21.G00.41 du contrat de `p`, dont le bloc 40 vient d'etre ecrit (`ecrit`), dans la DSN mensuelle de
-/// `mois` de l'etablissement `nics[0]` ; `declare` : son bloc 40 declare (`dsn::bloc_40_declare`). Vide au premier mois du
-/// contrat ou quand rien n'a encore ete declare.
-pub fn blocs_41(ctx: &Contexte, p: &Paie, mois: Mois, nics: &[String], ecrit: &[(String, String)], declare: Option<&Declare>) -> R<Vec<Vec<(String, String)>>> {
+/// `mois` de l'etablissement `nics[0]`, en norme `norme` ; `declare` : son bloc 40 declare (`dsn::bloc_40_declare`). Vide au
+/// premier mois du contrat ou quand rien n'a encore ete declare.
+#[allow(clippy::too_many_arguments)]
+fn blocs_41(ctx: &Contexte, p: &Paie, mois: Mois, norme: &crate::norme::Norme, nics: &[String], ecrit: &[(String, String)], declare: Option<&Declare>) -> R<Vec<Vec<(String, String)>>> {
     let e = &p.engagement;
     if e.numero.as_deref().is_none_or(str::is_empty) {
         return Ok(Vec::new());
@@ -352,11 +374,15 @@ mutation (cahier technique DSN, p. 21) : ouvrir la carte de l'engagement, change
         let debut = ddmmaaaa(debut_declare(ecrit, "le bloc contrat ecrit", p)?)
             .ok_or_else(|| socle::refus!("{} : la date de debut du bloc contrat ecrit (S21.G00.40.001) ne se lit pas.", qui(p)))?;
         let profondeur = Jour { jour: 1, ..date }.max(debut);
+        let ancienne = match md.liste {
+            Some(relue) => relue(norme, avant)?.to_string(),
+            None => avant.to_string(),
+        };
         modalites.push((
             md.r41,
             vec![
                 ("S21.G00.41.001".to_string(), date.jjmmaaaa()),
-                (md.r41.to_string(), avant.to_string()),
+                (md.r41.to_string(), ancienne),
                 ("S21.G00.41.028".to_string(), profondeur.jjmmaaaa()),
             ],
         ));
@@ -366,19 +392,19 @@ mutation (cahier technique DSN, p. 21) : ouvrir la carte de l'engagement, change
     Ok(identifiants)
 }
 
-/// Pose les blocs 41 du contrat de `p` juste apres son bloc 40, qui commence a la ligne `debut` de `lignes`.
-pub fn poser(lignes: &mut Vec<String>, debut: usize, ctx: &Contexte, p: &Paie, mois: Mois, nics: &[String], declare: Option<&Declare>) -> R<()> {
+/// Pose les blocs 41 du contrat de `p` juste apres son bloc 40, qui commence a la ligne `debut` du fichier `f`.
+pub fn poser(f: &mut crate::dsn::Fichier, debut: usize, ctx: &Contexte, p: &Paie, mois: Mois, nics: &[String], declare: Option<&Declare>) -> R<()> {
     let mut fin = debut;
     let mut ecrit = Vec::new();
-    while let Some(l) = lignes.get(fin).filter(|l| l.starts_with("S21.G00.40.")) {
+    while let Some(l) = f.lignes.get(fin).filter(|l| l.starts_with("S21.G00.40.")) {
         if let Some((k, v)) = l.split_once(',') {
             ecrit.push((k.to_string(), v.trim_matches('\'').to_string()));
         }
         fin += 1;
     }
-    let blocs = blocs_41(ctx, p, mois, nics, &ecrit, declare)?;
+    let blocs = blocs_41(ctx, p, mois, f.norme()?, nics, &ecrit, declare)?;
     let neuves: Vec<String> = blocs.into_iter().flatten().map(|(k, v)| format!("{},'{}'", k, v)).collect();
-    lignes.splice(fin..fin, neuves);
+    f.lignes.splice(fin..fin, neuves);
     Ok(())
 }
 
