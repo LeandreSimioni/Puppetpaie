@@ -212,7 +212,7 @@ pub struct ContratDeclare {
     /// .012, la quotite de reference de la categorie ; .013, celle du contrat ; .014, la modalite du temps de travail.
     pub quotite_reference: Option<Decimal>,
     pub quotite: Option<Decimal>,
-    pub modalite: Option<String>,
+    pub modalite: Option<droit::natures::ModaliteDuTempsDeTravail>,
     /// .017, la convention du contrat.
     pub idcc: Option<String>,
     /// .021, le motif de recours.
@@ -230,7 +230,7 @@ pub struct ContratDeclare {
     pub dernier_jour_travaille: Option<Jour>,
     /// S21.G00.62.001 et .002 : la fin que la DSN declare, et son motif.
     pub fin_declaree: Option<Jour>,
-    pub motif_fin: Option<String>,
+    pub motif_fin: Option<droit::natures::MotifDeRupture>,
 }
 
 /// Une activite (bloc S21.G00.53) de la remuneration qui la precede : son type (.001), sa mesure (.002), son unite (.003).
@@ -879,7 +879,10 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 let q = fautes.nombre(k, &v);
                 contrat.into_iter().for_each(|c| c.quotite_reference = q);
             }
-            "S21.G00.40.014" => contrat.into_iter().for_each(|c| c.modalite = plein.clone()),
+            "S21.G00.40.014" => {
+                let m = fautes.code(k, &v);
+                contrat.into_iter().for_each(|c| c.modalite = m);
+            }
             "S21.G00.40.021" => {
                 let m = fautes.code(k, &v);
                 contrat.into_iter().for_each(|c| c.motif_recours = m);
@@ -1017,8 +1020,9 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 }
             }
             "S21.G00.62.002" => {
+                let m = fautes.code(k, &v);
                 if let Some(c) = fin_de.and_then(|i| contrats.get_mut(i)) {
-                    c.motif_fin = plein;
+                    c.motif_fin = m;
                 }
             }
             "S21.G00.50.001" => {

@@ -247,7 +247,7 @@ fn quantite(d: Decimal) -> String {
 
 /// Le PDF d'une attestation : le salarie `ind` (et ce que la DSN dit de plus, `plus`), ses periodes (cinq au plus),
 /// l'emploi et le motif de rupture de son contrat, l'employeur `ent`, edite le `edite_le`.
-fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuDeclare, periodes: &[&Periode], emploi: Option<&str>, motif: &str, idcc: Option<&str>, edite_le: Jour, remplace: Option<&str>) -> R<Vec<u8>> {
+fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuDeclare, periodes: &[&Periode], emploi: Option<&str>, motif: droit::natures::MotifDeRupture, idcc: Option<&str>, edite_le: Jour, remplace: Option<&str>) -> R<Vec<u8>> {
     if periodes.is_empty() || periodes.len() > COLONNES {
         return Err(socle::refus!("une attestation porte de 1 a {} periodes ({} donnees)", COLONNES, periodes.len()));
     }
@@ -361,7 +361,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
     cadre(&mut p1, 745.0, "3", "CONTRAT DE TRAVAIL");
     etiquette(&mut p1, 30.0, 773.0, "Emploi occupé");
     f.imprime_dite(1, "CON_LIB_EMPLOI", [109.0, 764.0, 562.0, 776.0], emploi, 8.5, Alignement::Gauche);
-    let motif_lu = if droit::natures::MotifDeRupture::du_code(motif) == Some(droit::natures::MotifDeRupture::FinDeCdd) { "Fin de CDD".to_string() } else { format!("motif {} (S21.G00.62.002)", motif) };
+    let motif_lu = if motif == droit::natures::MotifDeRupture::FinDeCdd { "Fin de CDD".to_string() } else { format!("motif {} (S21.G00.62.002)", motif) };
     etiquette(&mut p1, 30.0, 792.0, &format!("Motif de la rupture : {}", motif_lu));
 
     // Page 2 : le cadre 4, une colonne par periode.
@@ -551,7 +551,7 @@ pub fn archive(ctx: &Contexte, dsn: &[u8], mois: socle::mois::Mois, edite_le: Jo
         let mut finis: Vec<&ContratDeclare> = d.contrats_de(&ind.nir).filter(|c| cinema_spectacle(c) && c.fin_declaree.is_some()).collect();
         finis.sort_by_key(|c| (c.debut, c.fin));
         let Some(dernier) = finis.last() else { continue };
-        let motif = exigee(&dernier.motif_fin, "le motif de fin d'un contrat", "S21.G00.62.002")?;
+        let motif = dernier.motif_fin.ok_or_else(|| socle::echec::cle("La DSN ne dit pas le motif de fin d'un contrat.", "S21.G00.62.002"))?;
         let mut toutes: Vec<Periode> = Vec::new();
         for c in &finis {
             toutes.extend(periodes(ctx, &lignes, &d, le_mois, c)?);

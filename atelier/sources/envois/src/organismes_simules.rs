@@ -229,7 +229,7 @@ fn effectif_du_mois(an: i32, mois: u32, dsn: &[DsnLue]) -> R<f64> {
             if debut > dernier || fin < premier {
                 continue;
             }
-            let poids = if k.modalite.as_deref() == Some("20") {
+            let poids = if k.modalite == Some(droit::natures::ModaliteDuTempsDeTravail::TempsPartiel) {
                 let (Some(reference), Some(quotite)) = (k.quotite_reference.and_then(|q| q.to_f64()), k.quotite.and_then(|q| q.to_f64())) else {
                     return Err(socle::echec::cle("Un contrat à temps partiel de la DSN ne dit pas sa quotité.", "S21.G00.40.012, S21.G00.40.013"));
                 };

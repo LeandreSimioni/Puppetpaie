@@ -61,7 +61,7 @@ struct ContratLu {
     nature_dsn: Option<String>,
     objet: Option<String>,
     fin_declaree: Option<Jour>,
-    motif_fin: Option<String>,
+    motif_fin: Option<droit::natures::MotifDeRupture>,
     mois: Mesures,
     rappel: Mesures,
 }
@@ -79,7 +79,7 @@ impl ContratLu {
             nature_dsn: c.nature_dsn.clone(),
             objet: c.objet.clone(),
             fin_declaree: c.fin_declaree,
-            motif_fin: c.motif_fin.clone(),
+            motif_fin: c.motif_fin,
             numero,
         })
     }
@@ -233,7 +233,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) 
                 cachets: norm(m.cachets),
                 heures: norm(m.heures),
                 fin_declaree: c.fin_declaree,
-                motif_fin: c.motif_fin.clone(),
+                motif_fin: c.motif_fin,
                 remunere: m.remunere,
                 paie: p.is_some(),
                 correction,
@@ -362,7 +362,7 @@ struct ContratDuFichier {
     cachets: String,
     heures: String,
     fin_declaree: Option<Jour>,
-    motif_fin: Option<String>,
+    motif_fin: Option<droit::natures::MotifDeRupture>,
     remunere: bool,
     paie: bool,
     correction: bool,
