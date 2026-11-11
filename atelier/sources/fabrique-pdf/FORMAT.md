@@ -20,6 +20,9 @@ devait donc ne pas l'employer : il ne retenait qu'un programme qui répondait
 `fabrique-pdf 2` (puis 3, voir ci-dessous), et s'arrêtait sinon : plus aucun PDF ne se faisait
 par Python.
 
+**Toujours version 3 (11/11/2026)** : la description dit chaque valeur (« Unités et conventions ») ; une
+description d'avant, qui se taisait sur une valeur que la fabrique mettait alors d'elle-même, est refusée.
+
 **Version 3 (01/10/2026)** : la description ne change pas, à une clé facultative près
 (`largeur_max` de `texte_fixe`) ; ce qui s'ajoute, ce sont **quatre modes** qui lisent
 ou retouchent un PDF existant, de quoi se passer de PyMuPDF : `--pages` (nombre de
@@ -67,7 +70,10 @@ largeur, une page), par le numéro du bloc (« bloc 12 : … »).
 - Longueurs en **points** (1/72 de pouce), nombres décimaux.
 - Couleurs en `"#RRGGBB"`.
 - Chemins de fichiers absolus, en UTF-8.
-- Un champ absent prend la valeur que `src/forme.rs` nomme pour lui ; **un champ inconnu est un
+- **La description dit chaque valeur** : un champ que cette page dit **exigé** absent est un refus,
+  la fabrique ne met rien à sa place. Seuls se taisent les champs **facultatifs** : une
+  **préséance** (sans elle, la valeur de ce qui contient, que cette page nomme : la police, la
+  ligne, la colonne, le style) ou une **absence** (rien à cette place). **Un champ inconnu est un
   refus** (faute de frappe attrapée, pas ignorée).
 
 ## Le document
@@ -93,14 +99,19 @@ largeur, une page), par le numéro du bloc (« bloc 12 : … »).
   **police** (7,5 pt, interligne 1,25, `#2C3E50`) quand la description ne les
   dit pas, et il règle la mise en page des documents modèle. Un style inconnu
   est un refus.
+- `page` (`largeur`, `hauteur`, `marges` et ses quatre côtés, tous exigés) et `police`
+  (`taille`, `interligne`, `couleur`, tous exigés) : facultatives avec un `style`, qui
+  les donne ; **exigées sans style**.
 - `titre` : sans lui, le titre du fichier PDF est celui du premier document
-  modèle, marqueurs substitués et sans gras.
+  modèle, marqueurs substitués et sans gras ; sans l'un ni l'autre, le PDF n'a pas
+  de titre.
 - Les propriétés du PDF (créateur et producteur) disent toujours « PuppetPaie ».
 - `police` : Liberation Sans (les métriques d'Helvetica), embarquée **en
   sous-ensemble** : le PDF ne porte que les glyphes des caractères imprimés.
   `interligne` est un facteur de la taille.
 - `logo` (facultatif) : posé en haut à droite de **chaque page**, largeur
-  fixée, hauteur selon les proportions. SVG (vectoriel), PNG ou JPEG.
+  fixée, hauteur selon les proportions, à `marge_haut` du haut et `marge_droite`
+  du bord droit (exigées). SVG (vectoriel), PNG ou JPEG.
 - `documents` : chacun **commence sur une nouvelle page** (un contrat par
   salarié) ; un document long continue sur les pages suivantes. Un document
   porte `blocs` **ou** `modele` : l'un des deux, ni les deux ni aucun.
@@ -148,8 +159,9 @@ largeur, une page), par le numéro du bloc (« bloc 12 : … »).
 - `remplace` ne va qu'avec le style `contrat`, `modifications` qu'avec
   `avenant`, et `signature` pas avec `attestation` (pas de case) : sinon refus.
 - Pour les styles `contrat` et `avenant`, les valeurs `employeur.signataire`,
-  `employeur.signataire_fonction` et `salarie.nom_complet` sont celles du
-  bloc de signatures : absentes, c'est un refus.
+  `employeur.signataire_fonction`, `salarie.nom_complet` et
+  `salarie.case_signature` (le titre de la case du salarié : « L'artiste »,
+  « Le salarié ») sont celles du bloc de signatures : absentes, c'est un refus.
 
 ### La grammaire du `.modele`
 
@@ -194,19 +206,22 @@ c'est `src/modele.rs` (le chemin PyMuPDF de repli n'existe plus).
 
 ```json
 {"type": "paragraphe",
- "morceaux": [{"texte": "Entre la société "}, {"texte": "FIL DE FER", "gras": true}],
+ "morceaux": [{"texte": "Entre la société ", "gras": false, "italique": false},
+              {"texte": "FIL DE FER", "gras": true, "italique": false}],
  "taille": 7.5, "couleur": "#2C3E50", "alignement": "justifie",
- "majuscules": false, "espace_avant": 0, "espace_apres": 2.6}
+ "majuscules": false, "espace_avant": 0, "espace_apres": 2.6, "retrait": 0}
 ```
 
-- `alignement` : `gauche` (défaut), `justifie`, `centre`, `droite`. Justifié :
+- Exigés : `morceaux`, `alignement`, `majuscules`, `espace_avant`, `espace_apres`,
+  `retrait` ; d'un morceau, `texte`, `gras`, `italique`.
+- `alignement` : `gauche`, `justifie`, `centre`, `droite`. Justifié :
   la dernière ligne reste à gauche.
 - `majuscules` : le texte s'imprime en capitales (le texte transmis garde sa
   casse ; c'est l'équivalent de `text-transform: uppercase`).
-- Taille, couleur : celles de `police` par défaut. Un morceau peut avoir sa propre
-  `couleur` (`{"texte": "N° :", "couleur": "#777777"}`) ; sans elle, celle du bloc.
-- `italique` (d'un morceau, faux par défaut) : le morceau s'imprime en oblique ;
-  `retrait` (du bloc, 0 par défaut) : marge à gauche en points, le texte se
+- `taille`, `couleur` (facultatives) : sans elles, celles de `police`. Un morceau peut avoir
+  sa propre `couleur` (`"couleur": "#777777"`) ; sans elle, celle du bloc.
+- `italique` (d'un morceau) : le morceau s'imprime en oblique ;
+  `retrait` (du bloc) : marge à gauche en points, le texte se
   met en page dans une largeur d'autant réduite (une citation).
 - Le texte ne porte **aucun balisage** : pas d'échappement HTML, un « & » est
   un « & ». `\n` force un retour à la ligne.
@@ -229,11 +244,14 @@ c'est `src/modele.rs` (le chemin PyMuPDF de repli n'existe plus).
  ]}
 ```
 
+- Exigés : `espace_avant`, `marge_interne_haut`, `colonnes` ; d'une colonne, `largeur`
+  (`blocs` facultatifs : sans eux, une colonne vide).
 - `largeur` : fraction de la largeur utile ; leur somme vaut 1.
 - Les marges verticales voisines **se fondent**, comme en CSS : entre un bloc
   qui laisse `a` après lui et un bloc qui demande `b` avant lui, l'écart vaut
   max(a, b). Un bloc `espace` s'ajoute toujours.
-- `filet_haut` (facultatif) : un trait au-dessus de chaque colonne.
+- `filet_haut` (facultatif) : un trait au-dessus de chaque colonne. Un filet dit sa
+  `couleur` et son `epaisseur` (exigées, l'épaisseur strictement positive).
 - Un bloc `colonnes` **ne se coupe pas** entre deux pages : s'il ne tient
   pas, il passe entier à la page suivante.
 
@@ -243,7 +261,7 @@ c'est `src/modele.rs` (le chemin PyMuPDF de repli n'existe plus).
 {"type": "image", "chemin": "/…/signature.png", "largeur": 92, "flottante": false}
 ```
 
-`flottante` (défaut `false`) : l'image se pose à l'endroit courant **sans
+`flottante` (exigé) : vraie, l'image se pose à l'endroit courant **sans
 occuper de hauteur** ; ce qui suit passe dessous, et elle peut descendre dans
 la marge du bas. C'est ainsi que la signature de l'employeur recouvre les
 lignes vides de sa case, comme le faisait l'ancienne passe PyMuPDF qui la posait après coup.
@@ -263,7 +281,7 @@ dans le fichier (ticket #228).
 
 ```json
 {"type": "tableau",
- "colonnes": [{"largeur": 0.55},
+ "colonnes": [{"largeur": 0.55, "alignement": "gauche"},
               {"largeur": 0.15, "alignement": "droite"},
               {"largeur": 0.30, "alignement": "droite"}],
  "taille": 7, "couleur": "#2C3E50", "interligne": 1.27,
@@ -273,8 +291,9 @@ dans le fichier (ticket #228).
  "entete": [{"cellules": ["LIBELLE", "Base", "Montant"],
              "fond": "#B22222", "couleur": "#FFFFFF", "gras": true, "taille": 6.6}],
  "lignes": [
-   {"cellules": ["Salaire", "1 234,56", {"texte": "12,00", "gras": true}]},
-   {"cellules": [{"texte": "Total", "etendue": 2}, "1 246,56"],
+   {"cellules": ["Salaire", "1 234,56", {"texte": "12,00", "gras": true, "etendue": 1}],
+    "gras": false},
+   {"cellules": [{"texte": "Total", "gras": false, "etendue": 2}, "1 246,56"],
     "gras": true, "filet_haut": {"couleur": "#B22222", "epaisseur": 0.6}}
  ],
  "espace_avant": 4, "espace_apres": 0}
@@ -284,25 +303,28 @@ Un tableau « de données » : le moteur donne des **cellules de texte**, la fab
 calcule les largeurs, les retours à la ligne, les hauteurs et les coupures de page.
 C'est le bloc du bulletin de paie (`documents/src/bulletin.rs`) et des tableaux des exports.
 
+- Exigés : `colonnes`, `marge_cellule` (ses quatre côtés), `espace_avant`, `espace_apres`.
 - `colonnes` : au moins une ; `largeur` = fraction de la largeur utile (leur somme
-  vaut 1) ; `alignement` : `gauche` (défaut), `droite` (les nombres), `centre`,
+  vaut 1) ; `alignement` (exigé) : `gauche`, `droite` (les nombres), `centre`,
   `justifie`.
-- `taille`, `couleur`, `interligne` : ceux de `police` par défaut. `marge_cellule` :
-  l'espace entre le bord d'une cellule et son texte (0 par défaut) ; une colonne plus
+- `taille`, `couleur`, `interligne` (facultatifs) : sans eux, ceux de `police`. `marge_cellule` :
+  l'espace entre le bord d'une cellule et son texte ; une colonne plus
   étroite que ses marges est refusée.
 - `entete` : lignes **répétées en haut de chaque page** où le tableau continue
   (aucune : pas d'en-tête). `lignes` : le corps (aucune : l'en-tête seul s'écrit).
-- Une **ligne** : `cellules` (liste), et, tous facultatifs, `gras` (toutes ses cellules),
-  `couleur`, `taille` (celles du tableau par défaut), `fond` (rectangle plein sur toute
+- Une **ligne** : `cellules` (liste) et `gras` (toutes ses cellules), exigés ; et, facultatifs,
+  `couleur`, `taille` (sans elles, celles du tableau), `fond` (rectangle plein sur toute
   la largeur), `filet_haut` et `filet_bas` (un trait sur toute la largeur, dans la
   hauteur de la ligne). `filet_lignes` pose un `filet_bas` à chaque ligne du corps
   (pas de l'en-tête) qui n'en a pas ; `filets_cellules` cadre **chaque cellule** (un
   cadre autour d'un tableau d'une ligne). Les filets sont dessinés après les textes,
   les fonds avant.
-- Une **cellule** : une chaîne (le texte) ou un objet `{"texte" | "morceaux", "gras",
-  "couleur", "alignement", "etendue"}`. `morceaux` : comme ceux d'un `paragraphe`
-  (gras, couleur par morceau) ; `\n` force un retour. `etendue` : le nombre de colonnes
-  qu'elle occupe (défaut 1) ; sans `alignement`, celui de la colonne où elle commence.
+- Une **cellule** : une chaîne (le texte, sur une colonne, de la graisse de sa ligne) ou un
+  objet `{"texte" | "morceaux", "gras", "couleur", "alignement", "etendue"}`, où `gras` et
+  `etendue` sont exigés. `morceaux` : comme ceux d'un `paragraphe` (gras, couleur par
+  morceau) ; `\n` force un retour. `gras` : la cellule est grasse (sa ligne grasse la rend
+  grasse aussi). `etendue` : le nombre de colonnes qu'elle occupe (1 au moins) ; sans
+  `couleur`, celle de la ligne ; sans `alignement`, celui de la colonne où elle commence.
   Une ligne qui a moins de cellules que de colonnes laisse les dernières vides ; une
   cellule vide (`""`) n'écrit rien dans le PDF.
 - Le texte passe à la ligne dans la cellule ; la hauteur d'une ligne est celle de sa
@@ -339,16 +361,15 @@ suivant, et ils ne se coupent pas entre deux pages.
 ```
 
 - `trait` : un segment de (`x1`, `y1`) à (`x2`, `y2`), bouts droits.
-  `epaisseur` (0,5 par défaut, strictement positive) ; `couleur` (`#000000`
-  par défaut).
-- `texte_fixe` : `texte`, `x`, `y` obligatoires. **`y` est la ligne de base**
+  `epaisseur` (exigée, strictement positive) ; `couleur` (exigée).
+- `texte_fixe` : `texte`, `x`, `y`, `police`, `gras`, `alignement` exigés. **`y` est la ligne de base**
   (le bas des lettres sans jambage, comme `insert_text` de PyMuPDF), pas le haut
-  du texte. `taille` (celle de `police` par défaut), `couleur` (idem), `gras`
-  (faux). `police` : `helvetica` (défaut, celle du reste du document), `times`
+  du texte. `taille`, `couleur` (facultatives) : sans elles, celles de `police`.
+  `police` : `helvetica` (celle du reste du document), `times`
   ou `courier` : Liberation Sans, Serif (Times) ou Mono (Courier), embarquées
   en sous-ensemble comme le reste du document. Le gras de `courier` est
   Liberation Mono Bold. `alignement` : `gauche`
-  (défaut : `x` est le bord gauche), `droite` (`x` est le bord droit du texte)
+  (`x` est le bord gauche), `droite` (`x` est le bord droit du texte)
   ou `centre` (`x` est son milieu) ; `justifie` est refusé. Le texte tient sur
   **une ligne** (`\n` refusé), ne retourne jamais à la ligne, garde ses espaces
   (même en tête), et ne s'écrit qu'avec des caractères que la police possède :
@@ -371,8 +392,8 @@ suivant, et ils ne se coupent pas entre deux pages.
 - `image_fixe` : `chemin`, `x`, `y` (coin haut-gauche de la **boîte**), `largeur`
   et `hauteur` de la boîte. L'image tient dans la boîte, **proportions
   gardées** : à la pleine largeur, ou, si elle déborde en hauteur, à la largeur
-  qui remplit la hauteur. Par défaut elle est calée en haut à gauche de la
-  boîte ; `centree` (faux par défaut) la centre. SVG, PNG, JPEG ; illisible ou
+  qui remplit la hauteur. `centree` (exigé) : vrai, elle est centrée dans la
+  boîte ; faux, calée en haut à gauche. SVG, PNG, JPEG ; illisible ou
   introuvable : refus.
 
 **Une page par certificat.** Une page fixe est **un document** (`documents`) :
@@ -400,24 +421,26 @@ le corps, donc ne changent pas les sauts de page.
 "entete_page": {"gauche": "Livre de paie — 2026 (suite)", "taille": 8.5, "gras": true,
                 "couleur": "#2C3E50", "distance": 24, "premiere_page": false},
 "pied_page":   {"gauche": "Livre de paie — 2026", "droite": "page {page} sur {pages}",
-                "taille": 6.5, "couleur": "#777777", "distance": 20}
+                "taille": 6.5, "couleur": "#777777", "gras": false, "distance": 20,
+                "premiere_page": true}
 ```
 
-- `gauche`, `centre`, `droite` (vides par défaut) : trois textes d'**une ligne**
+- Exigés : `gras`, `distance`, `premiere_page`.
+- `gauche`, `centre`, `droite` (facultatifs : sans eux, rien à cette place) : trois textes d'**une ligne**
   (`\n` refusé), avec les caractères de la police comme `texte_fixe`. Gauche et droite s'alignent
   sur les marges gauche et droite de la page ; le centre est centré entre elles.
 - `{page}` y vaut le numéro de la page (à partir de 1, tous documents confondus),
   `{pages}` le nombre total de pages. Tout autre texte entre accolades reste tel quel.
-- `taille` et `couleur` : celles de `police` par défaut ; `gras` (faux).
-- `distance` (20 par défaut) : de la **ligne de base** du texte au bord de la page
+- `taille` et `couleur` (facultatives) : sans elles, celles de `police`.
+- `distance` : de la **ligne de base** du texte au bord de la page
   (haut pour l'en-tête, bas pour le pied). Le texte doit tenir dans la marge : c'est à
   la description d'y veiller.
-- `premiere_page` (vrai par défaut) : faux, et la première page n'a pas ce repère (un
+- `premiere_page` : faux, et la première page n'a pas ce repère (un
   état y porte déjà son grand titre, l'en-tête n'est que le rappel des suivantes).
 - `image` (facultatif) : `{"chemin": "/…/mot.svg", "largeur": 34, "descente": 4.5}`, une image
   posée au bout de la ligne, contre la marge droite ; le texte de `droite` s'arrête une espace
   avant elle. `largeur` en points, hauteur selon les proportions ; son bas descend de
-  `descente` points (0 par défaut) sous la ligne de base, pour qu'un mot dessiné s'y pose
+  `descente` points (exigée ; 0 : posée sur elle) sous la ligne de base, pour qu'un mot dessiné s'y pose
   comme une lettre. SVG, PNG ou JPEG, comme le `logo`. Le bulletin y signe « Édité avec » et
   le mot Puppetpaie dessiné.
 - **Le total des pages** demande deux passes : un `{pages}` fait mettre le document en
@@ -445,10 +468,10 @@ le corps, donc ne changent pas les sauts de page.
   n'existe pas dans la police Liberation`.
 - **Le plus léger possible, sans rien perdre** : un document fabriqué (ou assemblé) s'écrit en PDF 1.5, les objets
   qui ne sont pas des flux (polices et leurs largeurs, pages, champs) dans des flux d'objets comprimés et la table
-  des références en flux comprimé (`genpdfi::pdf_ecriture::compact`, ISO 32000-1, 7.5.7 et 7.5.8) ; une police n'y est
+  des références en flux comprimé (`ecriture::compact`, ISO 32000-1, 7.5.7 et 7.5.8) ; une police n'y est
   qu'une fois par fichier de police, en sous-ensemble sans hinting, sa table `ToUnicode` en plages. Ce qui s'ajoute à
   un PDF reçu (`--remplir`, `marquage::contresigner`) ne réécrit pas ses octets : une mise à jour incrémentale
-  (`genpdfi::pdf_ecriture::ajouter`).
+  (`ecriture::ajouter`).
 - Un texte à position fixe tombe à ses coordonnées à 0,1 pt près (tests).
 - Même description, même PDF à l'octet près (aucune date variable dans le
   fichier, aucun nom de sous-ensemble tiré au hasard : l'étiquette
@@ -499,7 +522,7 @@ Le dédoublonnage des pages par leur texte est fait par l'appelant (qui lit le t
 
 ```
 fabrique-pdf --pages a.pdf [b.pdf …]     # [3, 1]
-fabrique-pdf --texte a.pdf               # ["Page 1\n…\n", "Page 2\n…\n"]
+fabrique-pdf --texte a.pdf               # [["Page 1\n…\n"], ["Page 2\n…\n"]]
 ```
 
 Ils remplacent, de PyMuPDF, le nombre de pages d'un document (`len(doc)`) et le texte de
@@ -514,11 +537,15 @@ pour `--texte`, aussi : chiffré avec un autre mot de passe que le vide) ; **2**
 - `--pages` : un tableau d'entiers, **dans l'ordre des fichiers donnés** ; un seul fichier
   refusé refuse l'ensemble (l'appelant qui veut tolérer un fichier abîmé les passe un à un).
   Un PDF chiffré se compte sans être déchiffré.
-- `--texte` : un tableau de chaînes, **une par page, dans l'ordre des pages** ; une page sans
-  texte (un scan) donne `""`. Chaque chaîne est faite comme celle de `page.get_text()` :
-  **une ligne par `\n`, un `\n` après la dernière**, pas de ligne vide entre les blocs. Une page
-  dont le contenu est illisible donne `""` et **une ligne d'avertissement** sur la sortie
-  d'erreur (code 0) : le reste du document se lit.
+- `--texte` : un tableau, **une entrée par page, dans l'ordre des pages** ; chaque page est le
+  tableau de ses morceaux : une chaîne, ou **un caractère que rien ne dit**, tel qu'il est,
+  `{"police": "ABCDEF+Nom", "code": "<0C>", "pourquoi": "…"}` (ISO 32000-1, 9.10.2 : ni `ToUnicode`,
+  ni l'encodage, ni le programme de la police ne disent son caractère ; ce n'est ni U+FFFD ni un
+  caractère deviné). `code` en donne les octets, en hexadécimal entre chevrons : ceux de la chaîne
+  entière quand rien ne dit où un code finit (un CMap prédéfini non déposé, sans `ToUnicode`). Une page sans texte (un scan) donne `[]`. Mis bout à bout, les morceaux font
+  le texte de `page.get_text()` : **une ligne par `\n`, un `\n` après la dernière**, pas de ligne
+  vide entre les blocs. Une page dont le contenu est illisible donne `[]` et **une ligne
+  d'avertissement** sur la sortie d'erreur (code 0) : le reste du document se lit.
 - Un PDF chiffré en AES-256 par `--verrouiller` ou par MuPDF (mot de passe utilisateur vide)
   se lit sans rien demander ; les anciens chiffrements RC4 (`/V` 1 ou 2) aussi, quand lopdf les
   lit ; un autre mot de passe que le vide, ou un chiffrement qu'on ne sait pas lire
@@ -538,11 +565,15 @@ l'écrit**, comme MuPDF. Ce que MuPDF fait en plus, la fabrique le fait :
   caractères de nos PDF : aucun n'est mal classé. Un texte en tableau (un libellé puis, plus à
   droite, sa valeur) donne donc deux lignes, comme avec PyMuPDF.
 - *Les polices.* La table `ToUnicode`, quand la police en a une, donne le texte (elle l'emporte,
-  comme dans MuPDF) ; sinon l'encodage de la police simple (WinAnsi, MacRoman, Standard,
-  `/Differences` avec les noms de glyphes d'Adobe, `uniXXXX`) ; une police composée sans
-  `ToUnicode` donne U+FFFD. Les largeurs viennent de `/Widths` ou `/W` ; Liberation tient lieu
-  de métrique aux polices standard (Helvetica, Times, Courier) citées sans largeurs. Le 0xAD de
-  WinAnsi est le trait d'union conditionnel (U+00AD), comme chez MuPDF.
+  comme dans MuPDF) ; sinon l'encodage de la police simple (les encodages de l'annexe D,
+  `/Differences` avec les noms de glyphes d'Adobe, `uniXXXX`, l'encodage propre d'un programme
+  Type 1 ou CFF, la « cmap » d'un programme TrueType ou OpenType) ; une police composée sans
+  `ToUnicode` : le programme TrueType (ses noms de glyphes) ; un caractère que rien ne dit est un
+  morceau à part (plus haut). Les largeurs viennent de `/Widths` ou `/W` ; une des 14 polices
+  standard citée sans largeurs, **sous son nom exact**, prend celles de son fichier de métriques
+  d'Adobe (AFM), par le nom du glyphe ; un autre nom prend `MissingWidth`. Un code d'un CMap
+  prédéfini non déposé n'a pas de largeur lue : il n'avance pas le texte. Le 0xAD de WinAnsi est
+  le trait d'union conditionnel (U+00AD).
 - *Les annotations.* MuPDF dessine les champs de formulaire : leur apparence (`/AP /N`, état
   `/AS`, calée sur `/Rect`) est lue **après** le contenu de la page, sauf les annotations
   cachées ou `Popup`. Les AEM de CoolPaie sont des formulaires : leurs champs sortent dans le texte.
@@ -556,7 +587,7 @@ glyphes de symboles (MuPDF prend l'avance du glyphe dans le fichier de police, l
 de `/Widths` : un espace de plus ou de moins après une case ou une puce) ; les polices en
 petites capitales dont les codes sont des minuscules (MuPDF lit la capitale dans le nom du
 glyphe) ; les caractères de la zone privée de Wingdings (MuPDF les traduit en flèches, la
-fabrique les rend tels quels) ; les polices CFF et Type 3 sans `ToUnicode` ; le texte vertical et
+fabrique les rend tels quels) ; les polices CID compactes et Type 3 sans `ToUnicode` ; le texte vertical et
 les pages dont `/Rotate` change le sens de lecture ne sont pas retraités. Mesuré sur nos PDF
 (README.md) : 254 pages sur 255 des exports de CoolPaie et 120 sur 124 de celles de PuppetPaie
 (contrats, avenants, bulletins, certificats, y compris verrouillés) ont **le même texte que
@@ -591,7 +622,8 @@ sur la sortie d'erreur (code 0).
     "polices": ["QTVKDB+LiberationSans", "DTPUXL+LiberationSans-Bold"],
     "images": [[487.28, 28.0, 561.28, 52.67]],
     "traits": [[41.4, 108.44, 285.1, 108.94]],
-    "mots": [{"texte": "Bonjour", "rect": [50.0, 52.09, 83.35, 64.38], "ligne": 0}]}]}
+    "mots": [{"texte": "Bonjour", "rect": [50.0, 52.09, 83.35, 64.38], "ligne": 0}],
+    "inconnus": []}]}
 ```
 
 Chiffré : `"chiffrement": {"filtre": "Standard", "V": 5, "R": 6, "longueur": 256, "P": -3372,
@@ -615,15 +647,23 @@ Chiffré : `"chiffrement": {"filtre": "Standard", "V": 5, "R": 6, "longueur": 25
   recollant les mots d'une même `ligne` avec un espace, on retrouve la ligne de `--texte`, blancs
   ramenés à un. Les annotations dessinées (`/AP /N`) sont lues comme `--texte` le fait, **après**
   le contenu de la page : leurs mots, leurs images et leurs traits viennent à la fin des listes
-  (leurs polices, non : voir `polices`).
+  (leurs polices, non : voir `polices`). Un caractère que rien ne dit (le morceau de `--texte`)
+  coupe le mot comme un blanc.
+- **`inconnus`.** Chaque caractère que rien ne dit, dans l'ordre de `--texte` : `police`, `code`,
+  `pourquoi` (ceux de `--texte`), sa `rect` et sa `ligne`. Seul le lecteur qui a besoin de ce
+  caractère (une case du bulletin qu'il lit) refuse, en le nommant.
 - **Boîte d'un glyphe.** De la ligne de base moins l'ascendant à la ligne de base plus le
   descendant, sur l'avance du glyphe, sous le corps, la matrice du texte et la CTM. Ascendant et
   descendant sont, comme dans MuPDF, ceux **du fichier de police incorporé** (`hhea` de la table
   TrueType / OpenType, lue avec `ttf-parser`) : exacts pour Liberation Sans (0,905 / 0,212). Les
-  polices standard non incorporées (Helvetica, Arial, Times, Courier) prennent les valeurs mesurées
-  de MuPDF (Helvetica 1,075 / 0,299 ; Times 1,053 / 0,281 ; Courier 0,932 / 0,317, un peu moins
-  en gras) ; sinon le `/FontDescriptor` (`Ascent`, `Descent`) ; sinon 0,8 et 0,2 du corps. Une
-  séquence `/ActualText` répartit sa boîte à parts égales entre ses caractères.
+  polices standard non incorporées (Helvetica, Times, Courier et leurs variantes, par leur nom
+  exact) prennent `Ascender` et `Descender` de leur fichier de métriques d'Adobe (Helvetica 0,718 /
+  0,207 ; Times 0,683 / 0,217 ; Courier 0,629 / 0,157) ; sinon le `/FontDescriptor` (`Ascent`,
+  `Descent`). Quand rien de cela ne dit la hauteur d'une police, la boîte de ses glyphes ne se
+  devine pas : la `rect` d'un mot (ou d'un caractère inconnu) qui en porte un est alors
+  `{"base": [x0, y0, x1, y1]}`, la boîte de sa seule ligne de base (l'avance du glyphe à la
+  hauteur de son origine), et le lecteur qui a besoin d'une hauteur refuse la case en la nommant.
+  Une séquence `/ActualText` répartit sa boîte à parts égales entre ses caractères.
 - **`images`.** La boîte de chaque image dessinée, dans l'ordre du flux : le `Do` d'un XObject
   `/Image` et les images en ligne (`BI … ID … EI`), c'est-à-dire le carré unité transformé par la
   CTM (un objet formulaire suivi par `Do` transmet la sienne). Les images en ligne ne sont lues
@@ -643,8 +683,7 @@ Chiffré : `"chiffrement": {"filtre": "Standard", "V": 5, "R": 6, "longueur": 25
   l'apparence des annotations et celles sans `/BaseFont` (Type 3) n'en font pas partie.
 - **`metadonnees`.** Le dictionnaire `/Info`, tel quel (clés de l'auteur du PDF : `Title`,
   `Producer`, `CreationDate`…), les chaînes **décodées** : UTF-16BE ou UTF-16LE avec marque, UTF-8
-  (avec marque, ou sans quand les octets en sont de l'UTF-8 valide : printpdf écrit ainsi le titre
-  de nos PDF), sinon PDFDocEncoding ; les noms et les nombres sont rendus en texte. `{}` s'il n'y a
+  (avec marque, ou sans quand les octets en sont de l'UTF-8 valide), sinon PDFDocEncoding ; les noms et les nombres sont rendus en texte. `{}` s'il n'y a
   pas de `/Info`. (`doc.metadata` de PyMuPDF renomme les clés en minuscules et remplit les absentes
   de `""` : le Python qui s'y appuyait lit ici `metadonnees.get("Title", "")`.)
 
@@ -826,7 +865,7 @@ aussi. Une valeur plus longue que `/MaxLen` est un refus. Pour chaque champ :
 
 *Les images* se posent **par-dessus** le contenu de la page, dans l'ordre de la liste :
 
-- `page`, `rect` (`[x0, y0, x1, y1]`, x1 > x0, y1 > y0) ; `marge` (0 par défaut) rentre la case
+- `page`, `rect` (`[x0, y0, x1, y1]`, x1 > x0, y1 > y0), `marge` (exigés) ; `marge` (positive ou nulle) rentre la case
   de chaque côté ; `fichier` (un chemin) **ou** `svg` (le texte d'un SVG), l'un des deux.
 - *Proportions gardées* : l'image occupe le plus grand rectangle à ses proportions (pixels d'un
   PNG ou d'un JPEG, taille d'un SVG) qui tient dans la case, **centré**. (PyMuPDF étirait un
@@ -872,13 +911,14 @@ formulaire. Pas de mode en ligne de commande.
 {"format": 3,
  "champs": [{"nom": "SAL_DT_DEB_01", "page": 2, "rect": [147, 218, 227, 233], "valeur": "29/09/2026",
              "lecture_seule": true, "taille": 8.5, "alignement": "centre"},
-            {"nom": "EMPLOYEUR_NOM", "page": 3, "rect": [131, 542, 569, 558], "taille": 9}]}
+            {"nom": "EMPLOYEUR_NOM", "page": 3, "rect": [131, 542, 569, 558], "lecture_seule": false, "taille": 9,
+             "alignement": "gauche"}]}
 ```
 
-- `nom` (texte non vide, sans point), `page` (à partir de 1), `rect` (origine en haut à gauche, comme `--champs`) :
-  obligatoires. `valeur` : le champ la reçoit **avec son apparence** (la même que `--remplir`) ; `lecture_seule` (faux par
-  défaut) pose ensuite le bit 1 de `/Ff` — un champ en lecture seule sans valeur est un refus. `taille` : le corps du
-  `/DA` (0 par défaut : ce qui tient) ; `alignement` : `gauche`, `centre`, `droite` (`/Q`).
+- `nom` (texte non vide, sans point), `page` (à partir de 1), `rect` (origine en haut à gauche, comme `--champs`),
+  `lecture_seule`, `alignement` : exigés. `valeur` (facultative) : le champ la reçoit **avec son apparence** (la même que
+  `--remplir`) ; `lecture_seule` vrai pose ensuite le bit 1 de `/Ff` — un champ en lecture seule sans valeur est un refus. `taille` : le corps du
+  `/DA` (facultatif : sans lui, 0, le corps automatique, ce qui tient ; ISO 32000-1, 12.7.3.3) ; `alignement` : `gauche`, `centre`, `droite` (`/Q`).
 - Un `/AcroForm` est créé s'il manque (`/DA` et `/DR` Helvetica) ; chaque champ est un widget fusionné, ajouté aux
   `/Annots` de sa page et aux `/Fields`.
 - Tout se vérifie avant d'écrire : un nom déjà porté (par le formulaire ou deux fois dans la liste), une page qui

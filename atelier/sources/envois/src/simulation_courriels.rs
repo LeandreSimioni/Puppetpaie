@@ -12,8 +12,8 @@ use std::path::Path;
 use mailparse::{parse_mail, MailHeaderMap, ParsedMail};
 
 use droit::contexte::Contexte;
-use socle::echec::{Echec, R};
-use crate::courriel::{BoiteSimulee, Courriel, ErreurCourriel, DOSSIER_COURRIELS};
+use socle::echec::{erreur, Classe, Echec, R};
+use crate::courriel::{BoiteSimulee, Courriel, DOSSIER_COURRIELS};
 
 /// Le parametre MIME qui nomme une piece jointe (`Content-Disposition`), puis celui de son type (`Content-Type`).
 const PARAMETRE_FICHIER: &str = "filename";
@@ -21,12 +21,12 @@ const PARAMETRE_NOM: &str = "name";
 
 /// Le disque qui refuse un courriel joue.
 fn du_disque(chemin: &Path, e: &std::io::Error) -> Echec {
-    Echec::from(socle::echec::du_disque(chemin, e))
+    socle::echec::du_disque(chemin, e)
 }
 
 /// Un courriel joue que `mailparse` ne lit pas : il a ete ecrit par la boite simulee, c'est un defaut du logiciel.
 fn illisible(e: mailparse::MailParseError) -> Echec {
-    Echec::from(socle::echec::avec("Un courriel joué ne se lit pas.", socle::echec::APart { detail: Some(e.to_string()), ..socle::echec::APart::default() }))
+    socle::echec::refus_avec("Un courriel joué ne se lit pas.", socle::echec::Lieu { detail: Some(e.to_string()), ..socle::echec::Lieu::default() })
 }
 
 /// Les courriels joues, du plus ancien au plus recent : (nom, octets). Aucun encore : le dossier n'existe pas.
@@ -313,7 +313,7 @@ fn pages(f: &ParsedMail) -> R<Option<usize>> {
         return Ok(None);
     }
     let octets = f.get_body_raw().map_err(illisible)?;
-    let pdf = fabrique_pdf::lecture::charger(&octets).map_err(|e| Echec::from(socle::echec::avec("Un PDF joint à un courriel joué ne se lit pas.", socle::echec::APart { detail: Some(e.to_string()), ..socle::echec::APart::default() })))?;
+    let pdf = fabrique_pdf::lecture::charger(&octets).map_err(|e| socle::echec::refus_avec("Un PDF joint à un courriel joué ne se lit pas.", socle::echec::Lieu { detail: Some(e.to_string()), ..socle::echec::Lieu::default() }))?;
     Ok(Some(pdf.get_pages().len()))
 }
 
@@ -321,7 +321,7 @@ fn pages(f: &ParsedMail) -> R<Option<usize>> {
 /// en adresses. Un courriel joue dit toujours qui l'envoie et a qui.
 fn adresses(m: &ParsedMail, champ: &str) -> R<String> {
     let (Some(brut), Some(h)) = (m.headers.get_first_value(champ), m.headers.get_first_header(champ)) else {
-        return Err(Echec::from(socle::echec::cle("Un courriel joué ne dit pas qui l'envoie ou à qui.", champ)));
+        return Err(socle::echec::cle("Un courriel joué ne dit pas qui l'envoie ou à qui.", champ));
     };
     let liste = match mailparse::addrparse_header(h) {
         Ok(l) => l,
@@ -451,7 +451,7 @@ pub fn bouton_de_la_demande(envoyes: &HashMap<String, Vec<u8>>, identifiants: &[
 
 /// Le courriel que la personne fictive renvoie a la boite (de `de` a `a`), date de maintenant,
 /// identifiant `<ident@fictive.puppetpaie>`.
-pub fn reponse_jouee(de: &str, a: &str, sujet: &str, corps: &str, ident: &str) -> Result<Vec<u8>, String> {
+pub fn reponse_jouee(de: &str, a: &str, sujet: &str, corps: &str, ident: &str) -> socle::echec::R<Vec<u8>> {
     // Dans une compagnie fictive, une adresse de salarie AVEC NOM D'AFFICHAGE (`Nom <adresse>`) est
     // acceptee. `envoi::en_mime_avec` n'ecrit que des adresses simples : le message se fabrique avec l'adresse nue,
     // puis l'en-tete `From` est remis avec son nom d'affichage.
@@ -462,14 +462,15 @@ pub fn reponse_jouee(de: &str, a: &str, sujet: &str, corps: &str, ident: &str) -
         destinataire: a.to_string(),
         sujet: sujet.to_string(),
         corps: corps.to_string(),
-        ..Default::default()
+        pieces: Vec::new(),
+        html: None,
     };
-    let t = socle::temps::secondes().floor() as i64;
+    let t = socle::temps::secondes();
     let mut frontiere = || Ok(String::new());
     let octets = crate::envoi::en_mime_avec(
         &message,
         &nu,
-        crate::envoi::Hasards { date: crate::envoi::date_de(t)?, message_id: format!("<{}@fictive.puppetpaie>", ident), frontiere: &mut frontiere },
+        crate::envoi::Hasards { date: t, message_id: format!("<{}@fictive.puppetpaie>", ident), frontiere: &mut frontiere },
     )?;
     let entete_nu = format!("From: {}", nu);
     match rendu {
@@ -524,19 +525,21 @@ impl Courriel for BoiteQuiRepond {
         Courriel::racine(&self.boite)
     }
 
-    fn envoyer(&mut self, message_mime: &[u8]) -> Result<String, ErreurCourriel> {
+    fn envoyer(&mut self, message_mime: &[u8]) -> R<String> {
         self.boite.envoyer(message_mime)
     }
 
     /// Le code cherche, s'il a sa reponse : `[code]`.
-    fn rechercher(&mut self, requete: &str, _maximum: usize) -> Result<Vec<String>, ErreurCourriel> {
+    fn rechercher(&mut self, requete: &str, _maximum: usize) -> R<Vec<String>> {
         let code = requete.trim_matches('"');
         Ok(if self.reponses.contains_key(code) { vec![code.to_string()] } else { Vec::new() })
     }
 
-    fn message_brut(&mut self, identifiant: &str) -> Result<Vec<u8>, ErreurCourriel> {
-        self.reponses.get(identifiant).cloned().ok_or_else(|| ErreurCourriel(format!("Message {} introuvable.", identifiant)))
+    fn message_brut(&mut self, identifiant: &str) -> R<Vec<u8>> {
+        self.reponses.get(identifiant).cloned().ok_or_else(|| erreur(Classe::Courriel, format!("Message {} introuvable.", identifiant)))
     }
 
-    fn fermer(&mut self) {}
+    fn fermer(&mut self) -> R<()> {
+        Ok(())
+    }
 }

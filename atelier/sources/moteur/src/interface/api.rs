@@ -117,7 +117,7 @@ struct RefusDeLaPage<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     mois: Option<compagnie::diagnostic::EtatDuMois>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    mois_illisible: Option<String>,
+    etat_illisible: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     refus: Option<&'a routes::enveloppe::APart>,
 }
@@ -136,9 +136,15 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
         let dit = match charge.lire::<compagnie::incidents::RapportNavigateur>() {
             Ok(r) => {
                 let texte = |s: &str, limite: usize| compagnie::diagnostic::texte_en_forme(Some(racine), s, limite);
-                format!("erreur JS {} : {} ({}:{})", texte(&r.genre, 80), texte(&r.message, 200), texte(&r.fichier, 80), r.ligne)
+                let ou = match (&r.fichier, r.ligne) {
+                    (Some(f), Some(l)) => format!(" ({}:{})", texte(f, 80), l),
+                    (Some(f), None) => format!(" ({})", texte(f, 80)),
+                    (None, Some(l)) => format!(" (ligne {})", l),
+                    (None, None) => String::new(),
+                };
+                format!("erreur JS {} : {}{}", texte(&r.genre, 80), texte(&r.message, 200), ou)
             }
-            Err(e) => format!("erreur JS, son rapport ne se lit pas : {}", socle::echec::phrase_de(&e.message)),
+            Err(e) => format!("erreur JS, son rapport ne se lit pas : {}", e.phrase),
         };
         compagnie::diagnostic::noter_moteur(&dit);
     } else {
@@ -158,25 +164,25 @@ pub fn repondre(racine: &Path, nom: Route, charge: &Charge, veille: Option<&Veil
             // DE QUOI REJOUER LA ROUTE : sa charge mise en forme,
             // sa duree, l'etat du mois qu'elle touche, ce que le refus portait pour la page ; et la trace -- l'endroit du
             // code et la chaine des echecs. Le fil et la machine s'y ajoutent dans `incidents::noter`.
-            let (mois, mois_illisible) = match charge.mois() {
-                Ok(Some(m)) => match compagnie::diagnostic::etat_du_mois(racine, &m.to_string()) {
-                    Ok(etat) => (etat, None),
-                    Err(e) => (None, Some(e.message)),
+            let (mois, etat_illisible) = match charge.mois() {
+                Ok(Some(m)) => match compagnie::diagnostic::etat_du_mois(racine, m) {
+                    Ok(etat) => (Some(etat), None),
+                    Err(e) => (None, Some(e.en_lignes())),
                 },
                 Ok(None) => (None, None),
-                Err(e) => (None, Some(e.message)),
+                Err(e) => (None, Some(e.en_lignes())),
             };
             let detail = RefusDeLaPage {
                 route: nom,
                 charge,
                 duree_ms: duree.as_millis() as u64,
                 mois,
-                mois_illisible,
+                etat_illisible,
                 refus: r.a_part.as_ref(),
             };
             let trace = compagnie::diagnostic::trace_du_refus(racine, &r.phrase, debut_ms);
             if let Err(e) = compagnie::incidents::depuis_exception(racine, r.classe, &r.phrase, None, nom.nom(), detail, trace.as_deref()) {
-                compagnie::diagnostic::noter_moteur(&format!("Le refus de {} ne se note pas au journal des incidents : {}", nom, socle::echec::phrase_de(&e.message)));
+                compagnie::diagnostic::noter_moteur(&format!("Le refus de {} ne se note pas au journal des incidents : {}", nom, e.phrase));
             }
         }
     }
@@ -196,16 +202,16 @@ pub fn route_de_l_installation(nom: Route, charge: &Charge) -> Reponse {
             // precedent, et son dossier.
             use routes::scenario::{Genre, Geste};
             let rendu = e.geste(|| {
-                let a: routes::accueil::ChargeAjouter = charge.lire().map_err(|x| x.phrase())?;
+                let a: routes::accueil::ChargeAjouter = charge.lire()?;
                 let r = routes::dans_la_fenetre(&o, nom, charge);
-                let ajoutee: routes::accueil::Ajoutee = r.lire().map_err(|x| x.phrase)?;
+                let ajoutee: routes::accueil::Ajoutee = r.lire().map_err(|x| socle::echec::refus(x.phrase))?;
                 let venue = (a.venue != compagnie::installation::Venue::Neuve).then_some(a.venue);
                 let geste = Geste { nom: Some(a.nom), venue, compagnie: Some(e.compagnie(std::path::Path::new(&ajoutee.chemin))?), ..Geste::du_banc(Genre::Ajouter) };
                 Ok((r, geste))
             });
             return match rendu {
                 Ok(r) => r,
-                Err(m) => Reponse::refusee_par(nom, routes::enveloppe::Refus::nouveau(Classe::Refuse, m)),
+                Err(m) => Reponse::refusee_par(nom, routes::enveloppe::Refus::de(None, m.reclasser(Classe::Refuse))),
             };
         }
     }

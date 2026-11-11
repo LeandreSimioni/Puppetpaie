@@ -22,9 +22,10 @@ use crate::avenant::{de_devant, et, fait_le_brut, ligne_citee, remuneration_hors
 use crate::bulletin::fmt_eur;
 use socle::texte::{euros, virgule};
 use droit::contexte::Contexte;
-use droit::natures::{self, Nature};
+use droit::natures::{self, Nature, NatureDeContrat};
 use engagement::paie_ecrite::{FormeDEngagement, FormeDePaie};
-use socle::num::{Decimal, Resultat};
+use socle::echec::{erreur, Classe, R};
+use socle::num::Decimal;
 
 /// Un texte de l'engagement, non vide (ses blancs ote).
 fn texte(t: Option<&str>) -> Option<&str> {
@@ -43,19 +44,19 @@ fn periode_essai(eng: &FormeDEngagement) -> Option<String> {
 }
 
 /// Qui le contrat nomme, pour un refus : les parties le posent toujours (`avenant::parties`).
-fn qui(m: &Valeurs) -> Resultat<String> {
+fn qui(m: &Valeurs) -> R<String> {
     posee(m, Marqueur::SalarieNomComplet)
 }
 
 /// Une valeur que les parties ont posee (`avenant::parties`).
-fn posee(m: &Valeurs, k: Marqueur) -> Resultat<String> {
-    m.get(&k).cloned().ok_or_else(|| format!("le contrat n'a pas de valeur {}", k))
+fn posee(m: &Valeurs, k: Marqueur) -> R<String> {
+    m.get(&k).cloned().ok_or_else(|| socle::refus!("le contrat n'a pas de valeur {}", k))
 }
 
 /// Les valeurs du contrat d'un permanent, paye au mois, que les parties (`avenant::parties`) ne portent pas : le motif
 /// et le terme d'un CDD, le lieu, la remuneration, sa periodicite, la duree du travail ; la remuneration, le brut et le
 /// net sont ceux de la paie `paie` du mois.
-pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs) -> Resultat<()> {
+pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs) -> R<()> {
     let eng = &paie.engagement;
     let nom = qui(m)?;
     // LE TERME (L1242-12, 2°) : un contrat a duree determinee le dit ; un CDI n'en a pas.
@@ -63,17 +64,17 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
         Some(f) => {
             m.insert(Marqueur::ContratFin, f.jj_mm_aaaa());
         }
-        None if !nat.duree_indeterminee => return Err(format!("Le contrat de {} ({}) n'a pas de date de fin : un contrat à durée déterminée dit son terme (L. 1242-12, 2°). Rien n'est écrit.", nom, nat.libelle)),
+        None if !nat.duree_indeterminee => return Err(socle::refus!("Le contrat de {} ({}) n'a pas de date de fin : un contrat à durée déterminée dit son terme (L. 1242-12, 2°). Rien n'est écrit.", nom, nat.libelle)),
         None => {}
     }
     // LE MOTIF (L1242-12, premier alinea) et, pour un remplacement, la personne remplacee (1°).
     if nat.motif_recours_exige() {
-        let code = texte(eng.motif_recours.as_deref()).ok_or_else(|| format!("Le contrat de {} ne dit pas son motif de recours : un CDD « comporte la définition précise de son motif » (L. 1242-12). Le choisir dans l'engagement (Plus d'options › Motif de recours). Rien n'est écrit.", nom))?;
-        let libelle = nat.libelle_motif_recours(code).ok_or_else(|| format!("Motif de recours {} inconnu pour un {}.", code, nat.libelle))?;
+        let code = eng.motif_recours.ok_or_else(|| socle::refus!("Le contrat de {} ne dit pas son motif de recours : un CDD « comporte la définition précise de son motif » (L. 1242-12). Le choisir dans l'engagement (Plus d'options › Motif de recours). Rien n'est écrit.", nom))?;
+        let libelle = nat.libelle_motif_recours(code).ok_or_else(|| socle::refus!("Motif de recours {} inconnu pour un {}.", code, nat.libelle))?;
         m.insert(Marqueur::ContratMotif, minuscule_initiale(&libelle));
         if nat.motif_de_remplacement(code) {
             let qui_remplace = ecrit(eng, |c| c.personne_remplacee.as_deref()).ok_or_else(|| {
-                format!("Le contrat de {} est conclu pour un remplacement : il comporte « le nom et la qualification professionnelle de la personne remplacée » (L. 1242-12, 1°). L'écrire dans l'engagement (Plus d'options › Personne remplacée). Rien n'est écrit.", nom)
+                socle::refus!("Le contrat de {} est conclu pour un remplacement : il comporte « le nom et la qualification professionnelle de la personne remplacée » (L. 1242-12, 1°). L'écrire dans l'engagement (Plus d'options › Personne remplacée). Rien n'est écrit.", nom)
             })?;
             m.insert(Marqueur::ContratPersonneRemplacee, qui_remplace);
         }
@@ -110,7 +111,7 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
         morceaux.insert(0, b);
     }
     if morceaux.is_empty() {
-        return Err(format!("Le contrat de {} ne dit aucune rémunération : la paie de son premier mois n'a pas de salaire de base. Rien n'est écrit.", nom));
+        return Err(socle::refus!("Le contrat de {} ne dit aucune rémunération : la paie de son premier mois n'a pas de salaire de base. Rien n'est écrit.", nom));
     }
     m.insert(Marqueur::RemunerationDetail, et(&morceaux));
     if let Some(h) = remuneration_hors_brut(&paie.remuneration) {
@@ -122,8 +123,8 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     // d'engagement le dit.
     m.insert(Marqueur::ContratPaiement, "chaque mois, par virement".into());
     m.insert(Marqueur::SalarieCaseSignature, "Le salarié".into());
-    if let Some(p) = texte(eng.date_paiement.as_deref()) {
-        m.insert(Marqueur::ContratDatePaiement, socle::date::Jour::lire(p)?.jj_mm_aaaa());
+    if let Some(p) = eng.date_paiement {
+        m.insert(Marqueur::ContratDatePaiement, p.jj_mm_aaaa());
     }
     // LA DUREE DU TRAVAIL (R1221-34, 12°) : la quotite du contrat, en heures par mois ; sans elle, celle que la DSN
     // declare (S21.G00.40.013, `quotite`). Sous la duree de reference, c'est un temps partiel, dont le contrat dit la
@@ -135,20 +136,20 @@ pub fn marqueurs_au_mois<A>(paie: &FormeDePaie<A>, nat: &Nature, m: &mut Valeurs
     // Le temps partiel comme la DSN le declare (S21.G00.40.014, `Engagement::modalite_temps_travail`) : la modalite
     // saisie, sinon une quotite sous la reference de l'entreprise, plafonnee a la duree legale ; sans reference, le temps
     // plein.
-    let legale = nat.quotite_reference_defaut().map(socle::num::dec_f64).transpose()?;
+    let legale = nat.quotite_reference_defaut();
     let reference = match (eng.quotite_reference_saisie, legale) {
         (Some(r), Some(l)) => Some(r.min(l)),
         (r, l) => r.or(l),
     };
-    let partiel = match texte(eng.modalite_temps_travail_saisie.as_deref()) {
-        Some(m) => m == "20",
+    let partiel = match eng.modalite_temps_travail_saisie {
+        Some(m) => m == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel,
         None => reference.is_some_and(|r| q < r),
     };
     let mut duree = format!("{} heures par mois", virgule(q));
     if partiel {
         let plein = if let Some(r) = reference { format!(", pour {} à temps plein", virgule(r)) } else { String::new() };
         let repartition = ecrit(eng, |c| c.repartition_horaire.as_deref()).ok_or_else(|| {
-            format!(
+            socle::refus!(
                 "Le contrat de {} est à temps partiel ({} heures par mois{}) : il dit « la répartition de la durée du travail entre les jours de la semaine ou les semaines du mois » (L. 3123-6, 1°). L'écrire dans l'engagement (Plus d'options › Répartition des horaires). Rien n'est écrit.",
                 nom,
                 virgule(q),
@@ -193,7 +194,7 @@ struct Organismes {
 }
 
 impl Organismes {
-    fn lire(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise) -> Resultat<Organismes> {
+    fn lire(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise) -> R<Organismes> {
         Ok(Organismes { compagnie: ctx.organismes()?, idcc: ent.idcc.en_texte() })
     }
 
@@ -226,7 +227,7 @@ impl Organismes {
 /// de prevoyance (L1242-12, 8° ; R1221-34, 14°), les mentions de renvoi (R1221-34, 8° a 10° et 14°, que R1221-35 permet
 /// de dire par un renvoi aux textes), et les clauses particulieres de l'engagement, s'il en dit (le modele les imprime
 /// par un alinea `[si contrat.clauses_particulieres]`).
-pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, sal: &droit::fiche::ChampsSalarie, eng: &FormeDEngagement, nat: &Nature, m: &mut Valeurs) -> Resultat<()> {
+pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, sal: &droit::fiche::ChampsSalarie, eng: &FormeDEngagement, nat: &Nature, m: &mut Valeurs) -> R<()> {
     let nom = qui(m)?;
     // LA CATEGORIE D'EMPLOI : le classement conventionnel (S21.G00.40.002), sinon le statut cadre ou non cadre de la
     // retraite complementaire (S21.G00.40.003), sinon le statut du spectacle (artiste, technicien).
@@ -237,13 +238,13 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
             Some("01" | "02") => "cadre".to_string(),
             Some("04") => "non cadre".to_string(),
             _ => sal.statut.code().map(str::to_string).ok_or_else(|| {
-                format!("La fiche de {} ne dit pas sa catégorie d'emploi, que le contrat écrit porte (R. 1221-34, 3°) : choisir son métier dans la liste, ou saisir son classement conventionnel sur sa fiche. Rien n'est écrit.", nom)
+                socle::refus!("La fiche de {} ne dit pas sa catégorie d'emploi, que le contrat écrit porte (R. 1221-34, 3°) : choisir son métier dans la liste, ou saisir son classement conventionnel sur sa fiche. Rien n'est écrit.", nom)
             })?,
         },
     };
     m.insert(Marqueur::SalarieCategorie, categorie);
     // LES PHRASES DE RENVOI de la nature (R. 1221-35) : une nature sans contrat ecrit n'en fait pas.
-    let phrases = nat.phrases().ok_or_else(|| format!("La nature {} n'a pas de contrat écrit.", nat.libelle))?;
+    let phrases = nat.phrases().ok_or_else(|| socle::refus!("La nature {} n'a pas de contrat écrit.", nat.libelle))?;
     if let Some(motif) = &phrases.motif {
         m.insert(Marqueur::ContratMotif, motif.clone());
     }
@@ -256,8 +257,8 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     );
     // LES ORGANISMES : le nom ET l'adresse (L1242-12, 8°) ; une adresse que la donnee ne porte pas ne se devine pas.
     let org = Organismes::lire(ctx, ent)?;
-    let retraite = org.retraite().ok_or_else(|| socle::echec::avec(format!("Le contrat de {} nomme sa caisse de retraite complémentaire (L. 1242-12, 8°), et la table livrée des versements n'en nomme aucune : le signaler au développeur. Rien n'est écrit.", nom), socle::echec::APart { fichier: Some("organismes-base.json".into()), cle: Some("131".into()), ..Default::default() }))?;
-    let manque_adresse = |o: &Organisme| format!("Le contrat de {} donne « le nom et l'adresse » de {} (L. 1242-12, 8°), et cette adresse n'est pas connue du logiciel. Rien n'est écrit.", nom, o.nom);
+    let retraite = org.retraite().ok_or_else(|| socle::echec::refus_avec(format!("Le contrat de {} nomme sa caisse de retraite complémentaire (L. 1242-12, 8°), et la table livrée des versements n'en nomme aucune : le signaler au développeur. Rien n'est écrit.", nom), socle::echec::Lieu { fichier: Some("organismes-base.json".into()), cle: Some("131".into()), ..Default::default() }))?;
+    let manque_adresse = |o: &Organisme| socle::refus!("Le contrat de {} donne « le nom et l'adresse » de {} (L. 1242-12, 8°), et cette adresse n'est pas connue du logiciel. Rien n'est écrit.", nom, o.nom);
     m.insert(Marqueur::OrganismesRetraite, retraite.nom_et_adresse().ok_or_else(|| manque_adresse(&retraite))?);
     let (cle_prevoyance, cle_sante) = if nat.permanent() { ("prevoyance_permanents", "sante_permanents") } else { ("interbranche", "tsintermittents") };
     let prevoyance = org.adhesion(cle_prevoyance);
@@ -277,8 +278,8 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     // declare (S21.G00.40.018, 200 : le regime general), la retraite complementaire, et les contrats collectifs.
     let regime = match nat.code("S21.G00.40.018").as_deref() {
         Some("200") => "Le salarié est affilié au régime général de la sécurité sociale".to_string(),
-        Some(autre) => return Err(format!("Le contrat de {} : le régime de base {} de la nature {} n'a pas de libellé pour le contrat écrit.", nom, autre, nat.libelle)),
-        None => return Err(format!("Le contrat de {} : la nature {} ne dit pas son régime de base (S21.G00.40.018).", nom, nat.libelle)),
+        Some(autre) => return Err(socle::refus!("Le contrat de {} : le régime de base {} de la nature {} n'a pas de libellé pour le contrat écrit.", nom, autre, nat.libelle)),
+        None => return Err(socle::refus!("Le contrat de {} : la nature {} ne dit pas son régime de base (S21.G00.40.018).", nom, nat.libelle)),
     };
     let aupres = |nom: &str| format!("auprès {}{}", de_devant(nom), nom);
     let mut protection = format!("{} ; sa retraite complémentaire est celle du régime Agirc-Arrco, {}", regime, aupres(&retraite.nom));
@@ -317,19 +318,19 @@ const PEUVENT_ETRE_VIDES: [Marqueur; 5] = [Marqueur::SpectacleNumeroObjet, Marqu
 
 /// Ce que le refus d'une mention inconnue porte a part : la table livree et le marqueur.
 #[derive(Serialize)]
-struct MentionAPart<'a> {
+struct MentionAPart {
     fichier: &'static str,
-    marqueur: &'a str,
+    marqueur: String,
 }
 
 /// Les mentions que la loi exige d'un contrat de cette nature (`Nature::mentions_obligatoires`), chacune par son
 /// marqueur, le texte qui l'exige, et si elle n'est due que dite.
-pub fn mentions(nat: &Nature) -> Result<Vec<(Marqueur, String, bool)>, String> {
+pub fn mentions(nat: &Nature) -> R<Vec<(Marqueur, String, bool)>> {
     nat.mentions_obligatoires()
         .into_iter()
         .flatten()
         .map(|x| {
-            let m = Marqueur::lire(&x.marqueur).ok_or_else(|| socle::echec::avec(format!("La table livrée des natures exige du {} une mention que le logiciel ne connaît pas : le signaler au développeur.", nat.nom_du_contrat()), MentionAPart { fichier: "contrats-base.json", marqueur: &x.marqueur }))?;
+            let m = Marqueur::lire(&x.marqueur).ok_or_else(|| socle::echec::refus_avec(format!("La table livrée des natures exige du {} une mention que le logiciel ne connaît pas : le signaler au développeur.", nat.nom_du_contrat()), socle::echec::APart::forme(MentionAPart { fichier: "contrats-base.json", marqueur: x.marqueur.clone() })))?;
             Ok((m, x.texte.clone(), x.si_dite == Some(true)))
         })
         .collect()
@@ -343,10 +344,10 @@ pub fn mentions(nat: &Nature) -> Result<Vec<(Marqueur, String, bool)>, String> {
 /// `si_dite` (la personne remplacee, les clauses) n'est due que si sa valeur est dite :
 /// `valeurs` celles d'un contrat ; `None`, un modele qu'on ecrit, ou chacune se demande comme si elle l'etait. Rend les
 /// manques, chacun une phrase qui nomme le paragraphe ou la donnee ; vide : le modele est bon.
-pub fn manques(nat: &Nature, texte: &str, valeurs: Option<&Valeurs>) -> Result<Vec<String>, String> {
+pub fn manques(nat: &Nature, texte: &str, valeurs: Option<&Valeurs>) -> R<Vec<String>> {
     let m = match fabrique_pdf::modele::lire_modele(texte, "le modèle") {
         Ok(m) => m,
-        Err(r) => return Ok(vec![format!("Ce modèle ne se lit pas : {}.", r.0)]),
+        Err(r) => return Ok(vec![format!("Ce modèle ne se lit pas : {}.", r.phrase)]),
     };
     let (mut dits, ecrits) = champs_cites(&m, &crate::marqueurs::DU_REMPLACEMENT, &[]);
     for (cle, pourquoi, si_dite) in mentions(nat)? {
@@ -377,8 +378,8 @@ const CLAUSES_EXIGEES: &str = "les clauses particulières qu'un engagement dit n
 fn champs_cites(m: &fabrique_pdf::modele::Modele, annulation: &[Marqueur], partout: &[Marqueur]) -> (Vec<String>, Vec<(Marqueur, Option<Marqueur>)>) {
     let permis = |c: &Marqueur| CHAMPS.iter().any(|(k, _, _)| k == c) || partout.contains(c);
     let mut lieux: Vec<(String, &[String], &[Marqueur])> = vec![
-        ("le titre".into(), std::slice::from_ref(&m.titre), &[]),
-        ("le sous-titre".into(), std::slice::from_ref(&m.soustitre), &[]),
+        ("le titre".into(), m.titre.as_slice(), &[]),
+        ("le sous-titre".into(), m.soustitre.as_slice(), &[]),
         ("le préambule".into(), &m.preambule, &[]),
         ("la phrase d'annulation".into(), &m.annule, annulation),
         ("le bloc de modification".into(), &m.modification, &[]),
@@ -424,7 +425,7 @@ fn champs_cites(m: &fabrique_pdf::modele::Modele, annulation: &[Marqueur], parto
 pub fn manques_de_l_avenant(texte: &str) -> Vec<String> {
     let m = match fabrique_pdf::modele::lire_modele(texte, "le modèle d'avenant") {
         Ok(m) => m,
-        Err(r) => return vec![format!("Ce modèle d'avenant ne se lit pas : {}.", r.0)],
+        Err(r) => return vec![format!("Ce modèle d'avenant ne se lit pas : {}.", r.phrase)],
     };
     let (mut dits, _) = champs_cites(&m, &[], &CHAMPS_DE_L_AVENANT.map(|(c, _)| c));
     if m.modification.is_empty() {
@@ -435,72 +436,78 @@ pub fn manques_de_l_avenant(texte: &str) -> Vec<String> {
     dits
 }
 
-/// LE MODELE `m` FAIT-IL CE CONTRAT ? (`manques`, avec ses valeurs). `Err` : la phrase du refus, qui dit chaque manque et
+/// LE MODELE `m` FAIT-IL CE CONTRAT ? (`manques`, avec ses valeurs). Le refus, `ModeleIncomplet`, dit chaque manque et
 /// quoi faire.
-pub fn refuser_un_modele_incomplet(m: &ModeleDuContrat, nat: &Nature, valeurs: &Valeurs) -> Result<(), String> {
-    let dits = manques(nat, &m.lu.texte, Some(valeurs))?;
+pub fn refuser_un_modele_incomplet(m: &ModeleDuContrat, nat: &Nature, valeurs: &Valeurs) -> R<()> {
+    let dits = manques(nat, &m.lu.texte, Some(valeurs)).map_err(|e| e.reclasser(Classe::ModeleIncomplet))?;
     if dits.is_empty() {
         return Ok(());
     }
     let quoi_faire = if m.base { "C'est un défaut du logiciel : le signaler." } else { "Corriger ce modèle (Configuration › Modèles de contrat), ou choisir un autre modèle pour ce contrat." };
-    Err(format!("{} ne fait pas ce contrat : {} {} Rien n'est écrit.", m.nom, dits.join(" "), quoi_faire))
+    Err(erreur(Classe::ModeleIncomplet, format!("{} ne fait pas ce contrat : {} {} Rien n'est écrit.", m.nom, dits.join(" "), quoi_faire)))
 }
 
+const TOUS: &[NatureDeContrat] = &NatureDeContrat::TOUTES;
+const CDDU: &[NatureDeContrat] = &[NatureDeContrat::CdduSpectacle];
+const CDD: &[NatureDeContrat] = &[NatureDeContrat::Cdd];
+const AU_TERME: &[NatureDeContrat] = &[NatureDeContrat::CdduSpectacle, NatureDeContrat::Cdd];
+const PERMANENTS: &[NatureDeContrat] = &[NatureDeContrat::Cdd, NatureDeContrat::Cdi];
+
 /// LES CHAMPS QU'UN MODELE PEUT CITER, et ce que chacun imprime : ce que l'ecran montre a qui ecrit le modele de sa
-/// compagnie. `(marqueur, ce qu'il imprime, natures ou il vaut)` ; « tous » : toute nature.
-pub const CHAMPS: &[(Marqueur, &str, &str)] = &[
-    (Marqueur::EmployeurRaisonSociale, "la raison sociale de la compagnie", "tous"),
-    (Marqueur::EmployeurAdresse, "son adresse (la rue)", "tous"),
-    (Marqueur::EmployeurCodePostal, "son code postal", "tous"),
-    (Marqueur::EmployeurCommune, "sa commune", "tous"),
-    (Marqueur::EmployeurSiret, "son SIRET", "tous"),
-    (Marqueur::EmployeurNaf, "son code APE", "tous"),
-    (Marqueur::EmployeurLicence, "sa licence d'entrepreneur de spectacles", "cddu_spectacle"),
-    (Marqueur::EmployeurIdcc, "le numéro (IDCC) de sa convention collective", "tous"),
-    (Marqueur::EmployeurConvention, "l'intitulé de sa convention collective", "tous"),
-    (Marqueur::EmployeurCongesspectacles, "son numéro d'adhérent aux Congés Spectacles", "cddu_spectacle"),
-    (Marqueur::EmployeurSignataire, "le prénom et le nom de qui signe pour elle", "tous"),
-    (Marqueur::EmployeurSignataireFonction, "sa fonction", "tous"),
-    (Marqueur::EmployeurQualiteDe, "« d' » ou « de », selon la fonction qui suit", "tous"),
-    (Marqueur::SalarieNomComplet, "le prénom et le nom du salarié", "tous"),
-    (Marqueur::SalarieNom, "son nom", "tous"),
-    (Marqueur::SalariePrenom, "son prénom", "tous"),
-    (Marqueur::SalarieDateNaissance, "sa date de naissance", "tous"),
-    (Marqueur::SalarieLieuNaissance, "son lieu de naissance", "tous"),
-    (Marqueur::SalarieAdresse, "son adresse (la rue)", "tous"),
-    (Marqueur::SalarieCodePostal, "son code postal", "tous"),
-    (Marqueur::SalarieCommune, "sa commune", "tous"),
-    (Marqueur::SalarieNir, "son numéro de sécurité sociale", "tous"),
-    (Marqueur::SalarieEmploi, "son emploi (le métier de l'engagement, ou de sa fiche)", "tous"),
-    (Marqueur::SalarieQualiteDe, "« d' » ou « de », selon l'emploi qui suit", "tous"),
-    (Marqueur::SalarieCategorie, "sa catégorie d'emploi (son classement conventionnel)", "tous"),
-    (Marqueur::ContratNumero, "le numéro du contrat", "tous"),
-    (Marqueur::ContratDebut, "la date d'embauche", "tous"),
-    (Marqueur::ContratFin, "la date du terme", "cddu_spectacle cdd"),
-    (Marqueur::ContratMotif, "le motif du contrat à durée déterminée", "cddu_spectacle cdd"),
-    (Marqueur::ContratPersonneRemplacee, "le nom et la qualification de la personne remplacée, pour un remplacement ; vide sinon", "cdd"),
-    (Marqueur::ContratDatesTravail, "les dates de travail, et le lieu de chacune", "cddu_spectacle"),
-    (Marqueur::ContratLieu, "le lieu de travail", "tous"),
-    (Marqueur::ContratDatePaiement, "la date du paiement", "tous"),
-    (Marqueur::ContratPaiement, "la périodicité et le mode de paiement", "cdd cdi"),
-    (Marqueur::ContratDureeTravail, "la durée du travail (et, à temps partiel, sa répartition)", "cdd cdi"),
-    (Marqueur::ContratPeriodeEssai, "la durée de la période d'essai, ou « aucune »", "tous"),
-    (Marqueur::ContratClausesParticulieres, "les clauses particulières que l'engagement dit ; vide sinon", "tous"),
-    (Marqueur::RemunerationDetail, "la rémunération et ses composantes", "tous"),
-    (Marqueur::RemunerationHorsBrut, "ce qui est versé en plus du brut (défraiements) ; vide sans eux", "tous"),
-    (Marqueur::RemunerationBrut, "le brut du (premier) mois", "tous"),
-    (Marqueur::RemunerationNetEstime, "le net à payer estimé du (premier) mois", "tous"),
-    (Marqueur::RemunerationPeriode, "« le mois de … » quand le contrat se poursuit après le mois ; vide sinon", "cddu_spectacle"),
-    (Marqueur::RemunerationCachets, "le nombre de cachets", "cddu_spectacle"),
-    (Marqueur::RemunerationTauxCachet, "le taux du cachet, quand le contrat paie des cachets", "cddu_spectacle"),
-    (Marqueur::SpectacleTitre, "le titre du spectacle", "cddu_spectacle"),
-    (Marqueur::SpectacleNumeroObjet, "son numéro d'objet France Travail ; vide sans numéro", "cddu_spectacle"),
-    (Marqueur::OrganismesRetraite, "le nom et l'adresse de la caisse de retraite complémentaire", "tous"),
-    (Marqueur::OrganismesPrevoyance, "le nom et l'adresse de l'organisme de prévoyance, ou « aucun »", "tous"),
-    (Marqueur::MentionsFormation, "le droit à la formation (un renvoi au code du travail)", "tous"),
-    (Marqueur::MentionsConges, "les congés payés", "tous"),
-    (Marqueur::MentionsRupture, "comment le contrat prend fin", "tous"),
-    (Marqueur::MentionsProtectionSociale, "les régimes obligatoires et la protection sociale complémentaire", "tous"),
+/// compagnie. `(marqueur, ce qu'il imprime, natures ou il vaut)`.
+pub const CHAMPS: &[(Marqueur, &str, &[NatureDeContrat])] = &[
+    (Marqueur::EmployeurRaisonSociale, "la raison sociale de la compagnie", TOUS),
+    (Marqueur::EmployeurAdresse, "son adresse (la rue)", TOUS),
+    (Marqueur::EmployeurCodePostal, "son code postal", TOUS),
+    (Marqueur::EmployeurCommune, "sa commune", TOUS),
+    (Marqueur::EmployeurSiret, "son SIRET", TOUS),
+    (Marqueur::EmployeurNaf, "son code APE", TOUS),
+    (Marqueur::EmployeurLicence, "sa licence d'entrepreneur de spectacles", CDDU),
+    (Marqueur::EmployeurIdcc, "le numéro (IDCC) de sa convention collective", TOUS),
+    (Marqueur::EmployeurConvention, "l'intitulé de sa convention collective", TOUS),
+    (Marqueur::EmployeurCongesspectacles, "son numéro d'adhérent aux Congés Spectacles", CDDU),
+    (Marqueur::EmployeurSignataire, "le prénom et le nom de qui signe pour elle", TOUS),
+    (Marqueur::EmployeurSignataireFonction, "sa fonction", TOUS),
+    (Marqueur::EmployeurQualiteDe, "« d' » ou « de », selon la fonction qui suit", TOUS),
+    (Marqueur::SalarieNomComplet, "le prénom et le nom du salarié", TOUS),
+    (Marqueur::SalarieNom, "son nom", TOUS),
+    (Marqueur::SalariePrenom, "son prénom", TOUS),
+    (Marqueur::SalarieDateNaissance, "sa date de naissance", TOUS),
+    (Marqueur::SalarieLieuNaissance, "son lieu de naissance", TOUS),
+    (Marqueur::SalarieAdresse, "son adresse (la rue)", TOUS),
+    (Marqueur::SalarieCodePostal, "son code postal", TOUS),
+    (Marqueur::SalarieCommune, "sa commune", TOUS),
+    (Marqueur::SalarieNir, "son numéro de sécurité sociale", TOUS),
+    (Marqueur::SalarieEmploi, "son emploi (le métier de l'engagement, ou de sa fiche)", TOUS),
+    (Marqueur::SalarieQualiteDe, "« d' » ou « de », selon l'emploi qui suit", TOUS),
+    (Marqueur::SalarieCategorie, "sa catégorie d'emploi (son classement conventionnel)", TOUS),
+    (Marqueur::ContratNumero, "le numéro du contrat", TOUS),
+    (Marqueur::ContratDebut, "la date d'embauche", TOUS),
+    (Marqueur::ContratFin, "la date du terme", AU_TERME),
+    (Marqueur::ContratMotif, "le motif du contrat à durée déterminée", AU_TERME),
+    (Marqueur::ContratPersonneRemplacee, "le nom et la qualification de la personne remplacée, pour un remplacement ; vide sinon", CDD),
+    (Marqueur::ContratDatesTravail, "les dates de travail, et le lieu de chacune", CDDU),
+    (Marqueur::ContratLieu, "le lieu de travail", TOUS),
+    (Marqueur::ContratDatePaiement, "la date du paiement", TOUS),
+    (Marqueur::ContratPaiement, "la périodicité et le mode de paiement", PERMANENTS),
+    (Marqueur::ContratDureeTravail, "la durée du travail (et, à temps partiel, sa répartition)", PERMANENTS),
+    (Marqueur::ContratPeriodeEssai, "la durée de la période d'essai, ou « aucune »", TOUS),
+    (Marqueur::ContratClausesParticulieres, "les clauses particulières que l'engagement dit ; vide sinon", TOUS),
+    (Marqueur::RemunerationDetail, "la rémunération et ses composantes", TOUS),
+    (Marqueur::RemunerationHorsBrut, "ce qui est versé en plus du brut (défraiements) ; vide sans eux", TOUS),
+    (Marqueur::RemunerationBrut, "le brut du (premier) mois", TOUS),
+    (Marqueur::RemunerationNetEstime, "le net à payer estimé du (premier) mois", TOUS),
+    (Marqueur::RemunerationPeriode, "« le mois de … » quand le contrat se poursuit après le mois ; vide sinon", CDDU),
+    (Marqueur::RemunerationCachets, "le nombre de cachets", CDDU),
+    (Marqueur::RemunerationTauxCachet, "le taux du cachet, quand le contrat paie des cachets", CDDU),
+    (Marqueur::SpectacleTitre, "le titre du spectacle", CDDU),
+    (Marqueur::SpectacleNumeroObjet, "son numéro d'objet France Travail ; vide sans numéro", CDDU),
+    (Marqueur::OrganismesRetraite, "le nom et l'adresse de la caisse de retraite complémentaire", TOUS),
+    (Marqueur::OrganismesPrevoyance, "le nom et l'adresse de l'organisme de prévoyance, ou « aucun »", TOUS),
+    (Marqueur::MentionsFormation, "le droit à la formation (un renvoi au code du travail)", TOUS),
+    (Marqueur::MentionsConges, "les congés payés", TOUS),
+    (Marqueur::MentionsRupture, "comment le contrat prend fin", TOUS),
+    (Marqueur::MentionsProtectionSociale, "les régimes obligatoires et la protection sociale complémentaire", TOUS),
 ];
 
 /// Ce que l'avenant ajoute aux champs du contrat, et ce que chacun imprime : les siens, et ceux de chaque modification
@@ -520,12 +527,12 @@ pub const CHAMPS_DE_L_AVENANT: [(Marqueur, &str); 10] = [
 
 /// Les champs d'un modele de cette nature, chacun avec ce qu'il imprime et, s'il est obligatoire, le texte qui l'exige ;
 /// ceux d'un avenant (`avenant`) : les memes, aucun obligatoire, et les siens.
-pub fn champs_des_modeles(nat: &Nature, avenant: bool) -> Result<Vec<ChampDeModele>, String> {
+pub fn champs_des_modeles(nat: &Nature, avenant: bool) -> R<Vec<ChampDeModele>> {
     let mut mentions = if avenant { Vec::new() } else { mentions(nat)? };
     if !avenant {
         mentions.push((Marqueur::ContratClausesParticulieres, CLAUSES_EXIGEES.to_string(), true));
     }
-    let du_contrat = CHAMPS.iter().filter(|(_, _, ou)| *ou == "tous" || ou.split(' ').any(|n| n == nat.cle)).map(|(cle, quoi, _)| (*cle, *quoi));
+    let du_contrat = CHAMPS.iter().filter(|(_, _, ou)| ou.contains(&nat.cle)).map(|(cle, quoi, _)| (*cle, *quoi));
     let siens = CHAMPS_DE_L_AVENANT.iter().filter(|_| avenant).copied();
     Ok(du_contrat
         .chain(siens)

@@ -9,7 +9,7 @@
 //! rompue, un gzip illisible (`Reseau`) portent leur `classe`, que l'appelant releve.
 
 use droit::fiche::Lue as _;
-use socle::echec::Classe;
+use socle::echec::{Classe, Echec};
 use std::io::Read;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -63,34 +63,51 @@ pub enum Panne {
     Statut { code: u16, corps: Result<Vec<u8>, Box<Panne>> },
     /// La connexion n'a pas abouti : la raison.
     Reseau(String),
-    /// Une panne après l'envoi, sous sa classe.
-    Brute { classe: Classe, message: String },
+    /// Une panne après l'envoi : son refus, né avec sa classe.
+    Brute(Echec),
 }
 
 impl Panne {
+    #[track_caller]
     fn brute(classe: Classe, message: impl Into<String>) -> Panne {
-        Panne::Brute { classe, message: message.into() }
+        Panne::Brute(socle::echec::erreur(classe, message))
     }
 }
 
-/// UNE PANNE D'UN ORGANISME, telle que la releve la note : sa classe (`Organisme`, `DepotRefuse`, ou celle d'une panne
-/// brute), sa phrase, et le statut HTTP quand il y en a un (0 : le reseau injoignable).
-#[derive(Debug, Clone, PartialEq)]
+/// UNE PANNE D'UN ORGANISME, telle que la releve la note : son refus, de classe `Organisme`, `DepotRefuse`, ou celle
+/// d'une panne brute, et le statut HTTP quand il y en a un (0 : le reseau injoignable).
+#[derive(Debug, Clone)]
 pub struct EchecApi {
-    pub erreur: String,
-    pub classe: Classe,
+    pub echec: Echec,
     pub code: Option<i64>,
 }
 
 impl EchecApi {
+    #[track_caller]
     fn nouveau(classe: Classe, erreur: String, code: Option<i64>) -> EchecApi {
-        EchecApi { erreur, classe, code }
+        EchecApi { echec: socle::echec::erreur(classe, erreur), code }
+    }
+
+    /// Un refus de la plate-forme elle-meme (`Organisme`, `DepotRefuse`) : la releve le note et continue.
+    pub fn est_api(&self) -> bool {
+        matches!(self.echec.classe, Some(Classe::Organisme | Classe::DepotRefuse))
+    }
+
+    /// La panne comme un refus de route.
+    pub fn en_echec(self) -> Echec {
+        self.echec
+    }
+}
+
+impl From<Echec> for EchecApi {
+    fn from(echec: Echec) -> Self {
+        EchecApi { echec, code: None }
     }
 }
 
 fn echec_brut(p: Panne) -> EchecApi {
     match p {
-        Panne::Brute { classe, message } => EchecApi::nouveau(classe, message, None),
+        Panne::Brute(e) => EchecApi::from(e),
         // Les appelants traduisent les deux autres avant d'arriver ici.
         Panne::Reseau(r) => EchecApi::nouveau(Classe::Reseau, r, None),
         Panne::Statut { code, .. } => EchecApi::nouveau(Classe::Reseau, format!("HTTP {}", code), Some(code as i64)),
@@ -129,35 +146,15 @@ fn avant<'a>(t: &'a str, signes: &[char]) -> &'a str {
     }
 }
 
-/// Un texte lu en nombre entier ; `None` s'il n'en est pas un.
-fn entier(t: &str) -> Option<u64> {
-    if t.is_empty() || !t.bytes().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    t.bytes().try_fold(0u64, |n, c| n.checked_mul(10)?.checked_add(u64::from(c - b'0')))
-}
 
 /// Les trois caracteres que le HTML reserve (`&`, `<`, `>`) echappes.
 pub fn echapper(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
-/// `AAAAMMJJhhmmss` depuis un instant ISO (`AAAA-MM-JJ[Thh:mm:ss...]`), la forme des plages de consultation.
-fn horodatage(iso: &str) -> Result<String, String> {
-    let c: Vec<char> = iso.chars().collect();
-    let chiffres = |a: usize, b: usize| -> Option<String> {
-        let t: String = c.get(a..b)?.iter().collect();
-        t.chars().all(|ch| ch.is_ascii_digit()).then_some(t)
-    };
-    let jour = (|| Some(format!("{}{}{}", chiffres(0, 4)?, chiffres(5, 7)?, chiffres(8, 10)?)))()
-        .ok_or_else(|| format!("horodatage illisible : {}", iso))?;
-    let heure = if c.len() >= 19 {
-        (|| Some(format!("{}{}{}", chiffres(11, 13)?, chiffres(14, 16)?, chiffres(17, 19)?)))()
-            .ok_or_else(|| format!("horodatage illisible : {}", iso))?
-    } else {
-        "000000".to_string()
-    };
-    Ok(jour + &heure)
+/// `AAAAMMJJhhmmss` d'une heure locale, la forme des plages de consultation.
+fn horodatage(n: socle::paris::Naif) -> String {
+    n.iso().chars().filter(char::is_ascii_digit).collect()
 }
 
 // ------------------------------------------------------------------- gzip
@@ -384,7 +381,7 @@ fn agent(delai: u64, url: &str) -> Result<ureq::Agent, Panne> {
     if tls {
         c = c.tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build());
     }
-    let c = socle::garde_reseau::regler(c, url).map_err(Panne::Reseau)?;
+    let c = socle::garde_reseau::regler(c, url).map_err(|e| Panne::Reseau(e.phrase))?;
     Ok(c.build().into())
 }
 
@@ -396,22 +393,19 @@ fn lire_corps(corps: ureq::Body, delai: u64, attendu: Option<u64>, https: bool) 
         let mut r = corps.into_reader();
         let mut tampon = vec![0u8; 64 * 1024];
         loop {
-            match r.read(&mut tampon) {
-                Ok(0) => {
-                    let _ = tx.send(Ok(Vec::new()));
-                    return;
-                }
-                Ok(n) => {
-                    // Le lecteur est parti (delai depasse) : plus personne n'attend la suite.
-                    if let Err(parti) = tx.send(Ok(tampon[..n].to_vec())) {
-                        drop(parti);
-                        return;
-                    }
-                }
-                Err(e) => {
-                    let _ = tx.send(Err(e));
-                    return;
-                }
+            // Un morceau vide dit la fin du corps ; une erreur aussi.
+            let (morceau, dernier) = match r.read(&mut tampon) {
+                Ok(0) => (Ok(Vec::new()), true),
+                Ok(n) => (Ok(tampon[..n].to_vec()), false),
+                Err(e) => (Err(e), true),
+            };
+            // Le lecteur est parti (delai depasse) : plus personne n'attend la suite.
+            if let Err(parti) = tx.send(morceau) {
+                drop(parti);
+                return;
+            }
+            if dernier {
+                return;
             }
         }
     });
@@ -489,7 +483,6 @@ pub fn entete<'a>(e: &'a Entetes, nom: &str) -> Option<&'a str> {
 }
 
 /// Ce qu'on envoie : une requete du guide.
-#[derive(Default)]
 pub struct Requete<'a> {
     pub url: &'a str,
     pub jeton: Option<&'a str>,
@@ -506,6 +499,13 @@ pub struct Requete<'a> {
     pub sans_gzip: bool,
     /// Une autre methode que GET ou POST (`PATCH` du Drive) ; elle part avec son corps, meme vide.
     pub methode: Option<&'a str>,
+}
+
+impl<'a> Requete<'a> {
+    /// Un GET de `url`, sans jeton, sans corps ni en-tete de plus, qui demande `gzip`.
+    pub fn get(url: &'a str, delai: u64) -> Requete<'a> {
+        Requete { url, jeton: None, donnees: None, content_type: None, corps_gzip: false, post: false, delai, entetes: &[], sans_gzip: false, methode: None }
+    }
 }
 
 /// Le corps de la reponse (decompresse si `Content-Encoding: gzip`) et ses
@@ -586,7 +586,7 @@ pub fn envoyer(r: &Requete) -> Result<(Vec<u8>, Entetes), Panne> {
     let code = parts.status.as_u16();
     let entetes = en_tetes_de(&parts);
     // Une longueur annoncee qui ne se lit pas n'annonce rien.
-    let attendu = entete(&entetes, "Content-Length").and_then(|v| entier(v.trim()));
+    let attendu = entete(&entetes, "Content-Length").and_then(|v| socle::num::entier_de_chiffres(v.trim())).map(i64::unsigned_abs);
     let brut = lire_corps(corps, r.delai, attendu, https);
     if !(200..300).contains(&code) {
         return Err(Panne::Statut { code, corps: brut.map_err(Box::new) });
@@ -629,18 +629,17 @@ fn en_erreur_api(url: &str, p: Panne) -> EchecApi {
 
 /// Un GET sous le jeton de la session : le corps et les en-tetes ; une panne en `Organisme`.
 pub fn appeler(url: &str, jeton: Option<&str>) -> Result<(Vec<u8>, Entetes), EchecApi> {
-    let r = Requete { url, jeton, delai: DELAI_APPEL, ..Default::default() };
+    let r = Requete { jeton, ..Requete::get(url, DELAI_APPEL) };
     envoyer(&r).map_err(|p| en_erreur_api(url, p))
 }
 
-/// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des instants ISO).
-pub fn consulter(base: &str, jeton: Option<&str>, debut: &str, fin: Option<&str>) -> Result<Vec<u8>, EchecApi> {
+/// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des heures locales).
+pub fn consulter(base: &str, jeton: Option<&str>, debut: socle::paris::Naif, fin: Option<socle::paris::Naif>) -> Result<Vec<u8>, EchecApi> {
     let mut url = base.to_string();
-    let illisible = |e: String| EchecApi::nouveau(Classe::Illisible, e, None);
-    url.push_str(&horodatage(debut).map_err(illisible)?);
+    url.push_str(&horodatage(debut));
     if let Some(fin) = fin {
         url.push('/');
-        url.push_str(&horodatage(fin).map_err(illisible)?);
+        url.push_str(&horodatage(fin));
     }
     appeler(&url, jeton).map(|(corps, _)| corps)
 }
@@ -690,11 +689,10 @@ pub struct Authentification<'a> {
     pub jeton: Option<&'a str>,
 }
 
-/// UNE SESSION OUVERTE : son jeton, et l'heure ou il expire si le service la dit (l'en-tete `Expires`).
+/// UNE SESSION OUVERTE : son jeton.
 #[derive(Debug, Clone)]
 pub struct Session {
     pub jeton: String,
-    pub expire_le: Option<String>,
 }
 
 /// L'authentification du guide de l'API DSN : la session ouverte. Sans mot de passe ou sans declarant complet, rien ne
@@ -744,18 +742,14 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
     );
     let url = a.url;
     let r = Requete {
-        url,
         jeton: a.jeton,
         donnees: Some(corps.as_bytes()),
         content_type: Some("application/xml"),
-        corps_gzip: false,
-        post: false,
-        delai: DELAI_APPEL,
-        ..Default::default()
+        ..Requete::get(url, DELAI_APPEL)
     };
-    let (brut, entetes) = envoyer(&r).map_err(|p| en_erreur_api(url, p))?;
+    let (brut, _) = envoyer(&r).map_err(|p| en_erreur_api(url, p))?;
     let jeton: String = brut.iter().map(|&b| if b < 0x80 { b as char } else { '\u{fffd}' }).collect();
-    Ok(Session { jeton: socle::texte::strip(&jeton).to_string(), expire_le: entete(&entetes, "Expires").map(String::from) })
+    Ok(Session { jeton: socle::texte::strip(&jeton).to_string() })
 }
 
 /// L'envoi du corps d'un depot (deja prepare : octets gzip) : POST `text/plain`,
@@ -763,14 +757,12 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
 /// raconte, `dsn` (`DepotRefuse`) ou `dpae` (`Organisme`).
 pub fn depot(url: &str, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete {
-        url,
         jeton: Some(jeton),
         donnees: Some(corps_gzip),
         content_type: Some("text/plain"),
         corps_gzip: true,
         post: true,
-        delai,
-        ..Default::default()
+        ..Requete::get(url, delai)
     };
     envoyer(&r).map_err(|p| match (forme, p) {
             ("dsn", Panne::Statut { code, corps }) => match corps {

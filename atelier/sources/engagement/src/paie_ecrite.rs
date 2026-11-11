@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use socle::date::Jour;
+use socle::mois::Mois;
 use socle::num::Decimal;
 
 use crate::{Avis, ContratEcrit, LignePaie};
@@ -44,15 +45,15 @@ pub struct PaieEcrite {
 #[serde(deny_unknown_fields)]
 pub struct Empreinte {
     pub entrees: BTreeMap<String, String>,
-    pub regles: Vec<String>,
-    pub configuration: Vec<String>,
+    pub regles: Vec<Jour>,
+    pub configuration: Vec<Jour>,
 }
 
 /// Une paie recalculee d'elle-meme : quand, et pourquoi (`etats::raison`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Recalcul {
-    pub le: String,
+    pub le: socle::paris::InstantEcrit,
     pub raison: String,
 }
 
@@ -76,8 +77,7 @@ pub struct FormeDePaie<A> {
     pub avertissements: Vec<A>,
     #[serde(with = "nombre")]
     pub base_csg: Decimal,
-    #[serde(with = "nombres")]
-    pub bases: BTreeMap<String, Decimal>,
+    pub bases: BTreeMap<droit::assiette::Assiette, Montant>,
     #[serde(with = "nombre")]
     pub brut: Decimal,
     #[serde(with = "nombre")]
@@ -134,12 +134,10 @@ pub struct Cle {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FormeDeCotisation {
-    /// La cotisation de la ligne ; vide pour une ligne que l'import n'a pas qualifiee.
-    #[serde(deserialize_with = "socle::forme::texte_opt")]
-    pub id: Option<String>,
-    /// Sa famille ; vide pour une ligne que l'import n'a pas qualifiee.
-    #[serde(deserialize_with = "socle::forme::texte_opt")]
-    pub famille: Option<String>,
+    /// La cotisation de la ligne.
+    pub id: String,
+    /// Sa famille.
+    pub famille: String,
     pub libelle: String,
     #[serde(with = "nombre")]
     pub base: Decimal,
@@ -177,7 +175,7 @@ pub struct FormeDeRemuneration {
     pub conges_pris: bool,
     pub dsn_bloc52: Option<String>,
     pub arret_de_travail: bool,
-    pub dsn_autres_bruts: Option<String>,
+    pub dsn_autres_bruts: Option<droit::autre_revenu_brut::AutreElementDeRevenuBrut>,
     pub precision: Option<String>,
     pub designation: String,
 }
@@ -209,14 +207,14 @@ pub struct FormeDEngagement {
     pub debut: Jour,
     pub fin: Option<Jour>,
     pub numero: Option<crate::numeros::NumeroContrat>,
-    pub mois: String,
+    pub mois: Mois,
     pub planning: Vec<Jour>,
     pub planning_lieux: BTreeMap<Jour, String>,
     #[serde(with = "entier")]
     pub jours: i64,
     #[serde(with = "entier")]
     pub jours_contrat: i64,
-    pub date_paiement: Option<String>,
+    pub date_paiement: Option<Jour>,
     #[serde(with = "nombre_opt")]
     pub taux_cachet: Option<Decimal>,
     #[serde(with = "entier")]
@@ -229,19 +227,19 @@ pub struct FormeDEngagement {
     pub emploi_affichage: Option<String>,
     pub pcs_ese: Option<String>,
     pub code_emploi_ft: Option<String>,
-    pub statut: Option<String>,
-    pub statut_conventionnel: Option<String>,
-    pub statut_categoriel_rc: Option<String>,
+    pub statut: Option<droit::fiche::Statut>,
+    pub statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
+    pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
     pub etablissement: Option<String>,
-    pub nature: String,
+    pub nature: droit::natures::NatureDeContrat,
     #[serde(with = "nombre_opt")]
     pub quotite_contrat: Option<Decimal>,
     #[serde(with = "nombre_opt")]
     pub quotite_reference_saisie: Option<Decimal>,
-    pub modalite_temps_travail_saisie: Option<String>,
-    pub motif_recours: Option<String>,
-    pub motif_rupture: Option<String>,
-    pub notification_rupture: Option<String>,
+    pub modalite_temps_travail_saisie: Option<droit::natures::ModaliteDuTempsDeTravail>,
+    pub motif_recours: Option<droit::natures::MotifDeRecours>,
+    pub motif_rupture: Option<droit::natures::MotifDeRupture>,
+    pub notification_rupture: Option<Jour>,
     pub preavis: Option<crate::saisie::Preavis>,
     pub transaction: Option<String>,
     pub suspensions: Vec<crate::imprevus::Suspension>,
@@ -253,7 +251,7 @@ pub struct FormeDEngagement {
     pub sans_paie: bool,
     pub premier_mois: bool,
     pub dernier_mois: bool,
-    pub mois_du_contrat: Vec<String>,
+    pub mois_du_contrat: Vec<Mois>,
 }
 
 /// Un montant en texte normalise (`socle::num::nombre`), relu en decimal.
@@ -281,16 +279,19 @@ pub(crate) mod nombre_opt {
     }
 }
 
-/// Des montants par cle, chacun en `nombre`.
-pub(crate) mod nombres {
-    use std::collections::BTreeMap;
-    use serde::{Deserialize, Serialize};
-    use socle::num::Decimal;
-    pub fn serialize<S: serde::Serializer>(m: &BTreeMap<String, Decimal>, s: S) -> Result<S::Ok, S::Error> {
-        m.iter().map(|(k, x)| (k, socle::num::nombre(*x))).collect::<BTreeMap<_, _>>().serialize(s)
+/// UN MONTANT D'UNE PAIE ECRITE, en `nombre` : la valeur de chacune de ses assiettes (`FormeDePaie::bases`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Montant(pub Decimal);
+
+impl Serialize for Montant {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        nombre::serialize(&self.0, s)
     }
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<String, Decimal>, D::Error> {
-        Ok(BTreeMap::<String, socle::forme::Nombre>::deserialize(d)?.into_iter().map(|(k, n)| (k, n.0)).collect())
+}
+
+impl<'de> Deserialize<'de> for Montant {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        nombre::deserialize(d).map(Montant)
     }
 }
 

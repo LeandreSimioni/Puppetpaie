@@ -39,8 +39,8 @@ pub mod taux_pas;
 pub const INTERFACE: &str = "interface";
 
 /// `socle::paris::maintenant` a la minute, `AAAA-MM-JJ HH:MM` : l'heure d'une saisie.
-pub fn maintenant() -> String {
-    socle::paris::maintenant()[..16].replacen('T', " ", 1)
+pub fn maintenant() -> socle::paris::HeureDeSaisie {
+    socle::paris::HeureDeSaisie::maintenant()
 }
 
 /// Une racine d'essai (dans le dossier temporaire, jamais `prive/` ni `fictives/`) : les trois fiches vides de quoi ouvrir un

@@ -25,12 +25,16 @@ fn classe(c: char) -> u8 {
         return 0;
     }
     // La premiere plage qui ne finit pas avant `cp` (la table est triee, ses plages disjointes) : la sienne si elle le
-    // contient ; sinon il n'en a pas.
-    match CLASSES.get(CLASSES.partition_point(|&(_, b, _)| b < cp)) {
-        Some(&(a, _, classe)) if a <= cp => classe,
-        _ => 0,
+    // contient. Un point qu'aucune plage ne contient est de classe 0 : la table ne releve que les classes non nulles de
+    // `UnicodeData.txt`, ou un point non liste est de classe 0 (Unicode, chapitre 3, D104).
+    match CLASSES.get(CLASSES.partition_point(|&(_, b, _)| b < cp)).filter(|&&(a, _, _)| a <= cp) {
+        Some(&(_, _, classe)) => classe,
+        None => CLASSE_NON_LISTEE,
     }
 }
+
+/// La classe d'un point de code que `UnicodeData.txt` ne liste pas : 0 (Unicode, chapitre 3, D104).
+const CLASSE_NON_LISTEE: u8 = 0;
 
 fn decomposer(c: char, sortie: &mut Vec<char>) {
     let cp = c as u32;
@@ -43,7 +47,7 @@ fn decomposer(c: char, sortie: &mut Vec<char>) {
         if s % T_NB != 0 {
             sortie.push(char::from_u32(T_BASE + s % T_NB).expect("hangul"));
         }
-    } else if let Ok(i) = DECOMP_POINTS.binary_search(&cp) {
+    } else if let Some(i) = Some(DECOMP_POINTS.partition_point(|&p| p < cp)).filter(|&i| DECOMP_POINTS.get(i) == Some(&cp)) {
         let place = DECOMP_PLACE[i];
         let (debut, long) = ((place >> 7) as usize, (place & 127) as usize);
         sortie.extend(DECOMP_TEXTE[debut..debut + long].chars());

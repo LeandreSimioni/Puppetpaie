@@ -41,33 +41,41 @@ pub const SERVEUR_PAR_DEFAUT: &str = "https://filet.puppetpaie.fr";
 /// Le filet ne doit jamais faire attendre une paie.
 pub const DELAI: u64 = 15;
 
-/// Une erreur du filet, ou une autre panne (`classe` : son nom) -- celle-ci ne se rattrape pas comme une erreur du
-/// filet.
+/// Une erreur du filet, que les appelants rattrapent (le passage suivant reessaie), ou une autre panne, un refus qui
+/// remonte.
 #[derive(Debug)]
-pub struct ErreurFilet {
-    pub message: String,
-    pub statut: u16,
-    pub classe: Option<Classe>,
+pub enum ErreurFilet {
+    /// Le serveur ne repond pas, ou refuse : ce qu'il en dit, et son statut HTTP (0 sans reponse).
+    Filet { message: String, statut: u16 },
+    /// Une autre panne, sous sa classe.
+    Autre(Echec),
 }
 
 impl ErreurFilet {
     pub(crate) fn filet(message: String, statut: u16) -> ErreurFilet {
-        ErreurFilet { message, statut, classe: None }
+        ErreurFilet::Filet { message, statut }
     }
 
-    pub(crate) fn autre(classe: Classe, message: String) -> ErreurFilet {
-        ErreurFilet { message, statut: 0, classe: Some(classe) }
-    }
-
-    /// Une vraie `ErreurFilet`, que les appelants rattrapent ; sinon une autre
-    /// exception, qui remonte.
+    /// Une vraie erreur du filet, que les appelants rattrapent ; sinon une autre panne, qui remonte.
     pub fn est_filet(&self) -> bool {
-        self.classe.is_none()
+        matches!(self, ErreurFilet::Filet { .. })
     }
 
-    /// L'exception qui remonte de la route.
+    /// Ce que le bilan d'un passage en dit.
+    pub fn dite(self) -> String {
+        match self {
+            ErreurFilet::Filet { message, .. } => message,
+            ErreurFilet::Autre(e) => e.phrase,
+        }
+    }
+
+    /// Le refus qui remonte de la route.
+    #[track_caller]
     pub fn en_echec(self) -> Echec {
-        Echec { classe: self.classe.or(Some(Classe::Filet)), message: self.message }
+        match self {
+            ErreurFilet::Filet { message, .. } => socle::echec::erreur(Classe::Filet, message),
+            ErreurFilet::Autre(e) => e,
+        }
     }
 }
 
@@ -82,12 +90,13 @@ pub struct Identite {
 }
 
 /// `POST /rapport` : les cles `(empreinte, quand)` recues, et celles que le serveur a ecartees (une ligne mal formee :
-/// le poste la marque deposee quand meme).
+/// le poste la marque deposee quand meme). Le serveur rend le `quand` que le poste a envoye, tel quel
+/// (`rapporter` de `infra/filet/filet_serveur.py`) : l'instant de la ligne.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rapport {
-    pub recus: Vec<(String, String)>,
-    pub ecartes: Vec<(String, String)>,
+    pub recus: Vec<(String, socle::paris::InstantEcrit)>,
+    pub ecartes: Vec<(String, socle::paris::InstantEcrit)>,
 }
 
 /// `POST /retour` : le numero que l'utilisateur lit, et l'adresse ou l'editeur le suit si elle est deja ouverte (vide
@@ -113,7 +122,37 @@ pub struct Reponses {
 pub struct ReponseDuServeur {
     pub numero: String,
     pub reponse: String,
-    pub repondu_le: String,
+    pub repondu_le: HeureDeReponse,
+}
+
+/// L'HEURE D'UNE REPONSE, telle que le serveur du filet l'ecrit (`infra/filet/filet_serveur.py`) : `""` tant que
+/// l'editeur n'a pas repondu, sinon une minute UTC. Le `""` est un contrat avec les versions installees, qui le lisent en
+/// texte strict : le serveur ne change pas, et il se lit ici, a la porte, comme le cas qu'il nomme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeureDeReponse {
+    /// `""` : pas de reponse.
+    Aucune,
+    Le(socle::paris::MinuteUtc),
+}
+
+impl HeureDeReponse {
+    /// La minute de la reponse ; `None` : pas de reponse.
+    pub fn minute(self) -> Option<socle::paris::MinuteUtc> {
+        match self {
+            HeureDeReponse::Aucune => None,
+            HeureDeReponse::Le(m) => Some(m),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for HeureDeReponse {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<HeureDeReponse, D::Error> {
+        match socle::forme::Remplie::<socle::paris::MinuteUtc>::deserialize(d)? {
+            socle::forme::Remplie::Vide => Ok(HeureDeReponse::Aucune),
+            socle::forme::Remplie::Dite(m) => Ok(HeureDeReponse::Le(m)),
+            socle::forme::Remplie::Nulle => Err(serde::de::Error::invalid_type(serde::de::Unexpected::Unit, &"a string")),
+        }
+    }
 }
 
 /// `POST /paies` : ce que le serveur a recu.
@@ -172,9 +211,17 @@ fn edition_bridee(quoi: &str) -> String {
     )
 }
 
-/// La phrase HTTP d'un code de réponse.
-fn phrase(code: u16) -> &'static str {
-    match code {
+/// Un code de réponse HTTP en mots : son code, et sa phrase quand le code en a une.
+fn statut_dit(code: u16) -> String {
+    match phrase(code) {
+        Some(p) => format!("HTTP Error {}: {}", code, p),
+        None => format!("HTTP Error {}", code),
+    }
+}
+
+/// La phrase HTTP d'un code de réponse, s'il en a une.
+fn phrase(code: u16) -> Option<&'static str> {
+    Some(match code {
         100 => "Continue",
         101 => "Switching Protocols",
         102 => "Processing",
@@ -237,23 +284,23 @@ fn phrase(code: u16) -> &'static str {
         508 => "Loop Detected",
         510 => "Not Extended",
         511 => "Network Authentication Required",
-        _ => "",
-    }
+        _sans_phrase => return None,
+    })
 }
 
 /// Une panne du transport, en mots.
 fn panne_dite(p: &Panne) -> String {
     match p {
-        Panne::Statut { code, .. } => format!("HTTP Error {}: {}", code, phrase(*code)),
+        Panne::Statut { code, .. } => statut_dit(*code),
         Panne::Reseau(raison) => raison.trim_end_matches('.').to_string(),
-        Panne::Brute { message, .. } => message.trim_end_matches('.').to_string(),
+        Panne::Brute(e) => e.phrase.trim_end_matches('.').to_string(),
     }
 }
 
 /// Ce que le serveur dit d'un refus : son `erreur` ; un corps vide ou qui n'a pas cette forme laisse le statut seul le
 /// dire, et dit pourquoi.
 fn refus_dit(code: u16, corps: &Result<Vec<u8>, Box<Panne>>) -> String {
-    let propre = format!("HTTP Error {}: {}", code, phrase(code));
+    let propre = statut_dit(code);
     match corps {
         Err(p) => format!("{} (corps de la réponse non lu : {})", propre, panne_dite(p)),
         Ok(o) if o.is_empty() => propre,
@@ -262,7 +309,7 @@ fn refus_dit(code: u16, corps: &Result<Vec<u8>, Box<Panne>>) -> String {
             Ok(t) => match socle::forme::lire_texte::<RefusDuServeur>(t.trim_start_matches('\u{feff}'), "corps de la réponse illisible") {
                 Ok(r) if !r.erreur.is_empty() => r.erreur,
                 Ok(_) => propre,
-                Err(e) => format!("{} ({})", propre, socle::echec::phrase_de(&e).trim_end_matches('.')),
+                Err(e) => format!("{} ({})", propre, e.phrase.trim_end_matches('.')),
             },
         },
     }
@@ -271,7 +318,7 @@ fn refus_dit(code: u16, corps: &Result<Vec<u8>, Box<Panne>>) -> String {
 /// La reponse du serveur a l'action `action`, lue en sa forme, ou l'`ErreurFilet` qu'elle a causee.
 pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &str, action: &str, corps: &C, entetes: &[(&str, &str)], delai: u64) -> Result<T, ErreurFilet> {
     if crate::bridage::paquet_soude() && !ACTIONS_BRIDEES.contains(&action) {
-        return Err(ErreurFilet::autre(Classe::EditionBridee, edition_bridee(action)));
+        return Err(ErreurFilet::Autre(socle::echec::erreur(Classe::EditionBridee, edition_bridee(action))));
     }
     let donnees = socle::json_ascii::dumps(corps, None, false, false);
     let url = format!("{}/{}", serveur.trim_end_matches('/'), action);
@@ -279,14 +326,12 @@ pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &str, action:
     let mut en_tetes: Vec<(&str, &str)> = vec![("User-Agent", "PuppetPaie-filet"), ("Accept-Encoding", "identity")];
     en_tetes.extend_from_slice(entetes);
     let r = Requete {
-        url: &url,
         donnees: Some(donnees.as_bytes()),
         content_type: Some("application/json"),
         post: true,
-        delai,
         entetes: &en_tetes,
         sans_gzip: true,
-        ..Default::default()
+        ..Requete::get(&url, delai)
     };
     match envoyer(&r) {
         Ok((brut, _)) => {
@@ -296,16 +341,16 @@ pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &str, action:
                 Err(e) => return Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e), 0)),
             };
             socle::forme::lire_texte::<T>(texte, "réponse illisible")
-                .map_err(|e| ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", socle::echec::phrase_de(&e).trim_end_matches('.')), 0))
+                .map_err(|e| ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e.phrase.trim_end_matches('.')), 0))
         }
         Err(Panne::Statut { code, corps }) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}", refus_dit(code, &corps)), code)),
         Err(Panne::Reseau(raison)) => Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", raison.trim_end_matches('.')), 0)),
-        Err(Panne::Brute { classe, message, .. }) => match classe {
+        Err(Panne::Brute(e)) => match e.classe {
             // Une connexion rompue ou qui ne répond plus : le filet est injoignable.
-            Classe::DelaiDepasse | Classe::Reseau => {
-                Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", message.trim_end_matches('.')), 0))
+            Some(Classe::DelaiDepasse | Classe::Reseau) => {
+                Err(ErreurFilet::filet(format!("le serveur de l'éditeur est injoignable ({}).", e.phrase.trim_end_matches('.')), 0))
             }
-            autre => Err(ErreurFilet::autre(autre, message)),
+            _ => Err(ErreurFilet::Autre(e)),
         },
     }
 }
@@ -333,7 +378,7 @@ impl Client {
     fn post_du_poste<C: Serialize, T: DeserializeOwned>(&self, action: &str, corps: C, delai: u64) -> Result<T, ErreurFilet> {
         let (numero, cle) = &self.poste;
         match poster(&self.serveur, action, &DuPoste { poste: numero, corps }, &[("X-Filet-Cle", cle.as_str())], delai) {
-            Err(e) if e.est_filet() && e.statut == 401 => Err(ErreurFilet::filet(format!("{} {}", e.message, REDEMANDER_IDENTITE), 401)),
+            Err(ErreurFilet::Filet { message, statut: 401 }) => Err(ErreurFilet::filet(format!("{} {}", message, REDEMANDER_IDENTITE), 401)),
             r => r,
         }
     }

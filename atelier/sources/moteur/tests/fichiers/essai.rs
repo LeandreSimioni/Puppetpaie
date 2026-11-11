@@ -164,7 +164,7 @@ fn une_compagnie_d_essai_montee_se_lit_par_sa_forme() {
     let d = dossier("se-lit");
     let s = lancer(PAIE, &["essai", "monter", d.to_str().unwrap(), "--depuis", source.to_str().unwrap()], &[("PUPPETPAIE_COMPAGNIE", &identite().to_string())]);
     assert_eq!(s.code, 0, "{}", s.texte);
-    let ctx = droit::contexte::Contexte::nouveau(&d, None).unwrap_or_else(|e| panic!("la compagnie d'essai ne se lit pas : {}", e));
+    let ctx = droit::contexte::Contexte::nouveau(&d, None).unwrap_or_else(|e| panic!("la compagnie d'essai ne se lit pas : {}", e.phrase));
     let dpae = ctx.entreprise.api_dpae.as_ref().expect("le compte DPAE");
     // Le SIRET du compte DPAE, vide dans la variable, n'est pas dit : celui de la compagnie sert (`Client::dpae`).
     assert_eq!((dpae.nom.as_deref(), dpae.siret.as_deref()), (Some("QUENOUILLEDPAE"), None));

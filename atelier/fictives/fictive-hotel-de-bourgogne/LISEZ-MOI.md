@@ -2,7 +2,9 @@
 
 Une compagnie de théâtre, **fictive** (tout ce qui suit est inventé ; NIR, SIRET et IBAN ont une forme valide et la marque
 d'un numéro inventé). Convention 1285 (entreprises artistiques et culturelles), trois permanents en CDI et cinq
-intermittents, venue d'un logiciel précédent (sPAIEctacle) au 1er janvier 2026 avec ses papiers de 2025.
+intermittents, venue d'un logiciel précédent (sPAIEctacle) au 1er janvier 2026 avec ses papiers de 2025. En 2026
+arrivent un sixième intermittent, un metteur en scène cadre (avril), et une directrice de production cadre en CDD à
+temps partiel (juin à octobre).
 
 ## Ce que ce dossier porte
 
@@ -80,6 +82,8 @@ Tous de nationalité française, nés en France.
 | intermittent | Lemaître Octavien | 27/05/1975 à Bordeaux (33) | 1 75 05 33 999 006 20 | comédien |
 | intermittent | Lekain Barnabé | 30/08/1982 à Dijon (21) | 1 82 08 21 999 007 48 | technicien lumière |
 | intermittente | Talma Capucine | 16/03/1993 à Strasbourg (67) | 2 93 03 67 999 008 76 | technicienne de plateau |
+| intermittent, cadre, depuis avril 2026 | Copeau Théodore | 04/04/1968 à Marseille (13) | 1 68 04 13 999 009 11 | metteur en scène |
+| CDD, cadre, temps partiel, juin à octobre 2026 | Vilar Apolline | 14/09/1979 à Sète (34) | 2 79 09 34 999 010 01 | directrice de production |
 
 - **Hortense Champmeslé** : temps plein (151,67 h par mois), depuis le 01/03/2022, 3 943,42 € brut par mois (26,00 € de
   l'heure).
@@ -91,7 +95,21 @@ Tous de nationalité française, nés en France.
   par jour de jeu (le moteur refuse un service pour un technicien) : les textes de la 1285 ne définissent le service que pour les artistes
   (`atelier/reference/sources/chomage-intermittents/kali-1285-organisation-travail-repetitions-representations-20261020.md`), le titre VI ne
   compte les techniciens qu'en heures (`atelier/reference/sources/kali-1285-titre-vi-duree-du-travail-20261102.md`).
-- Numéros Congés Spectacles : Molière M8001423, Dorval D8711207, Lemaître L7505316, Lekain L8208554, Talma T9303098.
+- **Théodore Copeau** : metteur en scène (MET040), artiste au cachet et cadre pour la retraite complémentaire (DSN
+  40.002 = 04, 40.003 = 01) ; 1 500 € le cachet, payé très au-dessus du plafond : la tranche A journalière (220 € par
+  jour) et le plafond de la sécurité sociale du contrat sont dépassés. Seul cadre intermittent des deux
+  fictives, il éprouve la tranche 2 journalière, l'Apec et la CET fondue dans la T1 et la T2
+  (`cet_si_depasse`). Il n'apparaît pas dans les papiers de 2025 : sa fiche se crée par la route, en avril 2026.
+- **Apolline Vilar** : directrice de production (DIR120, groupe 3 de la CCNEAC, échelon 1), technicienne et cadre, en
+  CDD du 1er juin au 31 octobre 2026 (motif 02, accroissement temporaire d'activité : la création des Plaideurs) ; temps
+  partiel, 28 h par semaine (121,33 h par mois ; du lundi au jeudi, de 9 h à 17 h, une heure de pause) ; 6 500 € par
+  mois, 7 000 € à partir du 16 septembre. Payée très au-dessus du plafond (proratisé à sa durée du travail, environ
+  3 204 €) : sa tranche 2 mensuelle, son Apec et sa CET pèsent. Elle éprouve aussi les heures complémentaires d'un
+  temps partiel (6 h en juillet), le mois de septembre coupé en deux périodes par l'avenant du 16, et la fin d'un CDD
+  à son terme : l'indemnité compensatrice de congés et l'indemnité de fin de contrat (L1243-8), le signalement de fin
+  de contrat. Sa fiche se crée par la route, en mai 2026.
+- Numéros Congés Spectacles : Molière M8001423, Dorval D8711207, Lemaître L7505316, Lekain L8208554, Talma T9303098,
+  Copeau C6804139.
 - Courriels : `<prénom>.<nom>@exemple.invalid`, sans accents (hortense.champmesle@exemple.invalid…).
 
 ## L'année 2025
@@ -151,24 +169,29 @@ Août : les permanents seuls.
   signalement d'arrêt (test puis réel) ; la prolongation au 3 avril, reçue le 20 ; le 30, les indemnités journalières
   du relevé de la CPAM : **40,89 € brut, 38,15 € net par jour** (la moitié du salaire journalier de base, 3 × 2 487,39 /
   91,25, CSS R323-4 ; net de CSG et CRDS, 6,7 %). La compagnie est subrogée et maintient le salaire (1285, X.4.6).
+- **Avril** : le 14, la fiche de Théodore Copeau se crée, et son engagement pour les répétitions des Plaideurs (20 au
+  24 avril, 5 cachets de 1 500 €) se valide avec ceux des comédiens ; sa DPAE et son contrat partent avec les leurs.
 - **Mai** : la tournée de Bretagne, le 13 à Rennes, le 14 à Lorient, les 15 et 16 à Quimper ; huit repas (le dîner du
   13, déjeuner et dîner des 14, 15 et 16, le déjeuner du 17) et quatre nuitées par personne, au tarif de la convention,
   chacun à sa date ; le repas du 17 ne fait pas un jour du contrat. Les 8 heures supplémentaires de Marivaux, saisies
-  le 18.
+  le 18. Le 26, la fiche d'Apolline Vilar se crée ; son CDD (1er juin au 31 octobre) se valide, sa DPAE part (test
+  puis réel), son contrat part à la signature.
 - **Juin** : la démission de Clairon, remise le 2 (préavis du 3 juin au 2 juillet, son dernier jour).
 - **Juillet** : le congé de Champmeslé du 20 au 31 ; le 3, le signalement de fin du contrat de Clairon (test puis réel)
-  et ses documents de fin.
+  et ses documents de fin ; le 31, les 6 heures complémentaires de Vilar.
 - **Août** : sans intermittent ; Champmeslé en congé du 1er au 7, Marivaux du 10 au 28.
 - **Septembre** : l'augmentation de Champmeslé, décidée le 7, à 4 100,00 € au 1er septembre, et son avenant à la
-  signature ; le 29, les engagements d'Orléans (9, 10 et 11 octobre) et leurs contrats.
+  signature ; le même jour, l'augmentation de Vilar à 7 000 € au 16 septembre, et son avenant à la signature ; le 29,
+  les engagements d'Orléans (9, 10 et 11 octobre) et leurs contrats.
 - **Octobre** : le 2, la quatrième représentation d'Orléans (le 17) : les cinq engagements partis comptent une date de
-  plus, et leurs avenants partent à la signature.
+  plus, et leurs avenants partent à la signature. Le 31, le CDD de Vilar arrive à son terme ; le lundi 2 novembre, son
+  signalement de fin de contrat (test puis réel) et ses documents de fin, avant la DSN d'octobre.
 - **Janvier 2027** : la DSN de décembre, la revue des spectacles de 2027, la clôture de 2026 le 29.
 
 ## Le calendrier 2026
 
 Une représentation par jour, le soir ; deux services de répétition par jour, à la salle de la compagnie (Paris). Chacun
-rentre dormir chez soi, sauf pendant la tournée de mai.
+rentre dormir chez soi, sauf pendant la tournée de mai. Les lettres sont celles de 2025, et C = Copeau (mise en scène).
 
 | dates | quoi | où | qui |
 |---|---|---|---|
@@ -180,7 +203,7 @@ rentre dormir chez soi, sauf pendant la tournée de mai.
 | ven. 13 au dim. 15 mars | Le Barbier de Séville, 3 représentations | Paris, théâtre du Marais-Neuf | M, D, L, K, T |
 | ven. 20, sam. 21 mars | Le Barbier de Séville, 2 représentations | Créteil | M, D, L, K, T |
 | ven. 10 au dim. 12 avril | Les Fausses Confidences, 3 représentations | Paris, théâtre du Marais-Neuf | M, D, L, K, T |
-| lun. 20 au ven. 24 avril | répétitions, Les Plaideurs | Paris | M, D, L |
+| lun. 20 au ven. 24 avril | répétitions, Les Plaideurs ; Copeau les met en scène, 5 cachets | Paris | M, D, L, C |
 | mer. 13 au sam. 16 mai | Les Fausses Confidences, tournée de Bretagne | Rennes, Lorient, Quimper | M, D, L, K, T |
 | ven. 22, sam. 23 mai | Le Barbier de Séville, 2 représentations | Paris, théâtre du Marais-Neuf | M, D, K |
 | ven. 5 au dim. 7, ven. 12 au dim. 14 juin | Le Barbier de Séville, festival, 6 représentations | Paris, parc de Bagatelle | M, D, L, K, T |

@@ -205,8 +205,9 @@
     lacher();
     minuterie = setTimeout(async () => {
       minuterie = null;
-      const r = await window.pywebview.api.basculer();
-      if (!r.ok) err.textContent = r.refus.phrase;
+      const r = await appel("basculer", {});
+      if (r.ok) location.replace("/");
+      else err.textContent = r.refus.phrase;
     }, 5000);
   });
   for (const ev of ["pointerup", "pointerleave", "pointercancel"]) geste.addEventListener(ev, lacher);
@@ -279,30 +280,34 @@
     // La fenetre se tire par son corps : le tableau n'en est pas une poignee.
     zone.addEventListener("mousedown", (e) => e.stopPropagation());
     const api = window.pywebview.api;
-    const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    // Une valeur absente ne s'échappe pas : elle lève. Ce qui peut manquer se teste avant d'être dessiné.
+    const esc = (t) => t.toString().replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     let dernier = null, resultats = "";
 
     function ligne(d) {
-      const pret = d.pret || {};
+      const pret = d.pret;
       const pastille = pret.reel ? `<span class="pastille">prête à envoyer</span>`
         : pret.test ? `<span class="pastille test">prête pour le test</span>` : "";
-      const ou = (d.ou || []).length ? `<ul>${d.ou.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
-      return `<div class="declaration${d.en_retard ? " retard" : ""}" data-id="${esc(d.id)}" style="--cie:${esc(d.couleur)}">
+      const ou = d.ou.length ? `<ul>${d.ou.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
+      return `<div class="declaration${d.en_retard ? " retard" : ""}"${attributsDeLaCompagnie(d)}>
         <span class="cie">${esc(d.compagnie)}</span>
-        <span class="quoi"><b>${esc(d.titre)}${pastille}</b><span>${esc(d.marche || d.detail || "")}</span>${ou}</span>
-        <span class="limite">${esc(d.limite_dit || "")}</span>
+        <span class="quoi"><b>${esc(d.titre)}${pastille}</b><span>${esc(d.marche || d.detail)}</span>${ou}</span>
+        <span class="limite">${d.limite_dit ? esc(d.limite_dit) : ""}</span>
       </div>`;
     }
 
+    /** L'identifiant (ce qu'un clic ouvre) et la couleur d'une compagnie, quand l'accueil les a. */
+    const attributsDeLaCompagnie = (c) => `${c.id ? ` data-id="${esc(c.id)}"` : ""}${c.couleur ? ` style="--cie:${esc(c.couleur)}"` : ""}`;
+
     function dessiner(t) {
       dernier = t;
-      if (!t || !(t.compagnies || []).length) { zone.hidden = true; return; }
+      if (!t || !t.compagnies.length) { zone.hidden = true; return; }
       zone.hidden = false;
-      const decl = t.declarations || [];
+      const decl = t.declarations;
       const noms = t.compagnies.map((c) => c.nom);
       // Une compagnie dont le tableau ne se fait pas le dit, avec la phrase du moteur (pas avant qu'il ait ete refait).
       const pannes = t.garde ? [] : t.compagnies.filter((c) => c.erreur);
-      const g = t.groupe || {};
+      const g = t.groupe;
       const boutons = [];
       if (g.reel && g.reel.propose) boutons.push(`<button type="button" id="g-reel" data-occupe="Dépôts…">${esc(g.reel.bouton)}</button>`);
       if (g.test && g.test.propose) boutons.push(`<button type="button" class="second" id="g-test" data-occupe="Tests…">${esc(g.test.bouton)}</button>`);
@@ -311,7 +316,7 @@
         <p class="intro">${esc(noms.join(" · "))} — {{P:administrateur_seul}}</p>
         <div class="declarations">${decl.length ? decl.map(ligne).join("")
           : pannes.length ? "" : `<div class="vide">{{P:toutes_faites}}</div>`}
-          ${pannes.map((c) => `<div class="declaration retard" data-id="${esc(c.id)}" style="--cie:${esc(c.couleur)}">
+          ${pannes.map((c) => `<div class="declaration retard"${attributsDeLaCompagnie(c)}>
             <span class="cie">${esc(c.nom)}</span><span class="quoi"><b>{{P:tableau_illisible}}</b>
             <span>${esc(c.erreur)}</span></span><span class="limite"></span></div>`).join("")}</div>
         ${boutons.length ? `<div class="groupe">${boutons.join("")}</div>` : ""}
@@ -359,10 +364,10 @@
       }
       const d = r.resultat;
       resultats = `<p><b>${esc(d.phrase)}</b></p>
-        <ul>${(d.resultats || []).map((x) => `<li class="${x.parti ? "" : "refus"}"><b>${esc(x.compagnie)}</b>${x.titre ? " — " + esc(x.titre) : ""} :
+        <ul>${d.resultats.map((x) => `<li class="${x.parti ? "" : "refus"}"><b>${esc(x.compagnie)}</b>${x.titre ? " — " + esc(x.titre) : ""} :
           ${esc(x.parti ? x.phrase : x.refus)}</li>`).join("")}</ul>`;
       dessiner(d.tableau);
-      suivre((d.resultats || []).map((x) => x.suivre).filter(Boolean));
+      suivre(d.resultats.map((x) => x.suivre).filter(Boolean));
     }
 
     /* LES RETOURS DU DEPOT GROUPE, juste apres un depot reel : comme la page d'une compagnie (`suivreDepot`), toutes les
@@ -376,7 +381,7 @@
         if (!r || !r.ok) continue;
         const s = r.resultat;
         const suite = `<p><b>${esc(s.phrase)}</b></p>
-          <ul>${(s.suivies || []).map((x) => `<li class="${x.refuse ? "refus" : ""}"><b>${esc(x.compagnie)}</b> : ${esc(x.phrase)}</li>`).join("")}</ul>`;
+          <ul>${s.suivies.map((x) => `<li class="${x.refuse ? "refus" : ""}"><b>${esc(x.compagnie)}</b> : ${esc(x.phrase)}</li>`).join("")}</ul>`;
         resultats = resultats.split('<div class="suivi">')[0] + `<div class="suivi">${suite}</div>`;
         if (s.fini) {
           const t = await appel("administrateur-tableau", {});
@@ -391,7 +396,7 @@
       // Le tableau gardé, tout de suite ; puis refait.
       const r = await appel("administrateur-tableau", { garde: true });
       if (r && r.ok) dessiner(r.resultat);
-      if (!r || !r.ok || !(r.resultat.compagnies || []).length) return;
+      if (!r || !r.ok || !r.resultat.compagnies.length) return;
       const frais = await appel("administrateur-tableau", {});
       if (frais && frais.ok) dessiner(frais.resultat);
     })();
@@ -400,8 +405,9 @@
 <script>
   // Ce que `js/avance.js` lit dans la page d'une compagnie (`js/tuyau.js`) : le catalogue, l'echappement, la route.
   let CATALOGUE = {};
-  const echapper = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-  const api = (nom, charge) => appel(nom, charge).then((r) => { if (!r || !r.ok) throw new Error((r && r.refus && r.refus.phrase) || ""); return r.resultat; });
+  const echapper = (s) => s.toString().replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  // `appel` rend toujours `{ok, resultat}` ou `{ok: false, refus}` (la cale de la fenêtre).
+  const api = (nom, charge) => appel(nom, charge).then((r) => { if (!r.ok) throw new Error(r.refus.phrase); return r.resultat; });
 </script>
 <script src="/js/avance.js?v={{EMPREINTE}}"></script>
 <script>

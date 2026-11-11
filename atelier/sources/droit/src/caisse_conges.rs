@@ -23,7 +23,7 @@ use crate::natures::Nature;
 use crate::fiche::{Lue, SalarieDuContrat};
 use socle::date::Jour;
 use crate::emplois;
-use socle::num::Resultat;
+use socle::echec::R;
 
 /// Ce que la pile du bareme decrit sans contrat : le CORPS est un intermittent affilie (le CDDU), la section
 /// `par_nature.permanent` un salarie que l'employeur paie de ses conges (CDI, CDD de droit commun). C'est la valeur
@@ -34,14 +34,14 @@ pub fn par_defaut(nat: &Nature) -> bool {
 
 /// Le jour ou un contrat commence a durer douze mois : son debut, douze mois plus tard (le dernier jour du mois quand
 /// ce jour n'existe pas : un 29 fevrier). Un contrat dont le lendemain du terme l'atteint dure douze mois ou plus.
-fn douze_mois_apres(debut: &Jour) -> Resultat<Jour> {
+fn douze_mois_apres(debut: &Jour) -> R<Jour> {
     let an = debut.an + 1;
     let jour = debut.jour.min(socle::date::jours_du_mois(an, debut.mois));
-    Jour::nouveau(an, debut.mois, jour).ok_or_else(|| format!("Douze mois après le {} : date illisible.", debut.iso()))
+    Jour::nouveau(an, debut.mois, jour).ok_or_else(|| socle::refus!("Douze mois après le {} : date illisible.", debut.iso()))
 }
 
 /// Le contrat, du `debut` au `fin` signes, dure-t-il douze mois ou plus ?
-pub fn douze_mois_ou_plus(debut: &Jour, fin: &Jour) -> Resultat<bool> {
+pub fn douze_mois_ou_plus(debut: &Jour, fin: &Jour) -> R<bool> {
     Ok(fin.plus_jours(1)? >= douze_mois_apres(debut)?)
 }
 
@@ -68,35 +68,38 @@ pub fn douze_mois_ou_plus(debut: &Jour, fin: &Jour) -> Resultat<bool> {
 /// Ce qui en suit, et le lit ici : la caisse des Conges Spectacles (`affilie`), le code emploi de la nomenclature du
 /// spectacle en DSN (S21.G00.40.005, CCH-18 : « 999SPT » n'est que pour les emplois permanents), l'attestation employeur
 /// Cinema Spectacle (`documents::aer::due`), le certificat de la caisse.
-pub fn intermittent(nat: &Nature, sal: &SalarieDuContrat) -> Resultat<bool> {
+pub fn intermittent(nat: &Nature, sal: &SalarieDuContrat) -> R<bool> {
     if nat.duree_indeterminee {
         return Ok(false);
     }
     if !nat.mensuelle() {
         return Ok(true);
     }
-    let Some(code) = sal.code_emploi_ft.portee().map(str::trim).filter(|c| !c.is_empty() && !c.eq_ignore_ascii_case("999SPT")) else {
-        return Ok(false);
+    // Un emploi permanent (999SPT), ou sans code, n'a pas de metier du catalogue.
+    let code = sal.code_emploi_ft.portee().map(str::trim).filter(|c| !c.is_empty() && !c.eq_ignore_ascii_case("999SPT"));
+    let metier = match code {
+        Some(code) => emplois::metier(code)?.map(|m| (code, m)),
+        None => None,
     };
-    let Some(m) = emplois::metier(code)? else {
-        return Ok(false);
-    };
-    match m.annexe() {
-        10 => Ok(true),
-        8 => {
-            let idcc = sal.idcc_de_l_employeur.as_deref().ok_or_else(|| {
-                "La convention collective de l'employeur n'est pas dite : la liste de l'annexe 8 qui nomme le métier en dépend (Configuration › Entreprise).".to_string()
-            })?;
-            Ok(m.nomme_par_l_annexe8(idcc))
+    let range = |(code, m): (&str, emplois::Metier)| -> R<bool> {
+        match m.annexe() {
+            10 => Ok(true),
+            8 => {
+                let idcc = sal.idcc_de_l_employeur.as_deref().ok_or_else(|| {
+                    socle::echec::refus("La convention collective de l'employeur n'est pas dite : la liste de l'annexe 8 qui nomme le métier en dépend (Configuration › Entreprise).")
+                })?;
+                Ok(m.nomme_par_l_annexe8(idcc))
+            }
+            autre => Err(socle::refus!("Le métier {} est rangé à l'annexe {} : l'assurance chômage n'en a que deux, la 8 (technicien) et la 10 (artiste). Le signaler au développeur.", code, autre)),
         }
-        _ => Ok(false),
-    }
+    };
+    Ok(metier.map(range).transpose()?.is_some_and(|oui| oui))
 }
 
 /// Le technicien d'un CDD de droit commun que la liste de l'annexe 8 de la convention de l'employeur ne nomme pas
 /// (`intermittent` : non, par la seule annexe 8) : son metier (le libelle du catalogue) et l'IDCC. Sans IDCC sur la
 /// fiche, rien : la convention ne dit alors rien.
-pub fn hors_de_l_annexe8(nat: &Nature, sal: &SalarieDuContrat) -> Resultat<Option<(String, String)>> {
+pub fn hors_de_l_annexe8(nat: &Nature, sal: &SalarieDuContrat) -> R<Option<(String, String)>> {
     if nat.duree_indeterminee || !nat.mensuelle() {
         return Ok(None);
     }
@@ -121,7 +124,7 @@ pub fn hors_de_l_annexe8(nat: &Nature, sal: &SalarieDuContrat) -> Resultat<Optio
 /// - un CDD de droit commun d'un intermittent (`intermittent`) : oui, sauf s'il dure douze mois ou plus ; sans terme,
 ///   refus -- sa duree decide, et le moteur ne la devine pas ;
 /// - un CDD de droit commun d'un autre salarie : non.
-pub fn affilie(nat: &Nature, sal: &SalarieDuContrat, debut: &Jour, fin: Option<&Jour>) -> Resultat<bool> {
+pub fn affilie(nat: &Nature, sal: &SalarieDuContrat, debut: &Jour, fin: Option<&Jour>) -> R<bool> {
     if !intermittent(nat, sal)? {
         return Ok(false);
     }
@@ -129,7 +132,7 @@ pub fn affilie(nat: &Nature, sal: &SalarieDuContrat, debut: &Jour, fin: Option<&
         Some(f) => f,
         None if !nat.mensuelle() => return Ok(true),
         None => {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} d'un intermittent commence le {} sans terme : la duree d'un contrat a duree determinee dit s'il est \
 declare a la caisse des Conges Spectacles (moins de douze mois : code du travail D. 7121-41, fiche Audiens), et le \
 moteur ne la devine pas.",

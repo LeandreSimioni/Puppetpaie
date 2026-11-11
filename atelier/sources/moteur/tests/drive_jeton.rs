@@ -3,7 +3,7 @@
 //! d'ou ce fichier seul. Cle et jeton fictifs, dans `CARGO_TARGET_TMPDIR` ; un faux serveur sur `127.0.0.1`.
 
 #[path = "outils/mod.rs"]
-mod outils;
+pub mod outils;
 
 use std::path::PathBuf;
 use std::sync::Once;
@@ -38,7 +38,7 @@ fn compagnie_liee(nom: &str) -> PathBuf {
     let r = racine(nom);
     std::fs::write(r.join("config").join("google.json"), r#"{"client_id": "id-fictif", "client_secret": "secret-fictif"}"#).unwrap();
     let jeton = json!({"rafraichissement": "rafraichissement-fictif", "compte": "compte@exemple.invalid", "permissions": []});
-    let scelle = Coffre::du_poste(&r, "").proteger(jeton.to_string().as_bytes(), "moteur de paie - jeton Google").unwrap();
+    let scelle = Coffre::du_poste(&r).proteger(jeton.to_string().as_bytes(), "moteur de paie - jeton Google").unwrap();
     std::fs::write(r.join("config").join("google-jeton.bin"), scelle).unwrap();
     r
 }

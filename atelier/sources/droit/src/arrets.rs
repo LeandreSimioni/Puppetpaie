@@ -4,7 +4,7 @@
 //! le signalement et la DSN (`declarations`), les obligations et la page des imprevus (le moteur) la lisent par elle.
 
 use crate::maintien::Origine;
-use socle::num::Resultat;
+use socle::echec::R;
 use socle::fichiers::{forme_en_cache, FormeGardee};
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -66,19 +66,19 @@ impl Nomenclature {
 
 impl Bloc60 {
     /// Le code « oui » de la subrogation (S21.G00.60.004), que le fichier doit porter.
-    pub fn subrogation_oui(&self) -> Resultat<&str> {
+    pub fn subrogation_oui(&self) -> R<&str> {
         self.subrogation.codes.iter().find(|c| c.libelle == "oui").map(|c| c.code.as_str()).ok_or_else(|| socle::echec::livree("arrets-base.json", "subrogation.oui"))
     }
 }
 
 /// `arrets-base.json`, lu par sa forme (le texte est lu une fois tant qu'il ne change pas).
-pub fn bloc_60() -> Resultat<Bloc60> {
+pub fn bloc_60() -> R<Bloc60> {
     static CACHE: std::sync::OnceLock<FormeGardee<Bloc60>> = std::sync::OnceLock::new();
     let b = forme_en_cache(&CACHE, "arrets-base.json", "Les codes du bloc arrêt de travail livrés avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;
     Ok((*b).clone())
 }
 
 /// Le motif d'arret (`arrets-base.json`, `motifs_arret`), s'il existe.
-pub fn motif_d_arret(code: &str) -> Resultat<Option<CodeDuBloc60>> {
+pub fn motif_d_arret(code: &str) -> R<Option<CodeDuBloc60>> {
     Ok(bloc_60()?.motifs_arret.codes.into_iter().find(|c| c.code == code))
 }

@@ -1,0 +1,1063 @@
+# PDF 32000-1:2008 (ISO 32000-1, PDF 1.7), Annex D « Character Sets and Encodings » : transcription des tables
+# (pages 653 à 672 de l'original, reference-privee/sources/iso-32000/ du privé). Chaque entrée de la table, une par
+# ligne, dans l'ordre de la table ; la colonne CHAR (le dessin du caractère) n'est pas transcrite : le NAME le dit.
+# Un code est en octal, « — » : non encodé ; un chiffre après un nom est le renvoi à sa note de D.2.
+
+## D.2 Latin Character Set and Encodings : NAME [note] STD MAC WIN PDF
+A 101 101 101 101
+OE 352 316 214 226
+AE 341 256 306 306
+Oacute — 356 323 323
+Aacute — 347 301 301
+Ocircumflex — 357 324 324
+Acircumflex — 345 302 302
+Odieresis — 205 326 326
+Adieresis — 200 304 304
+Ograve — 361 322 322
+Agrave — 313 300 300
+Oslash 351 257 330 330
+Aring — 201 305 305
+Otilde — 315 325 325
+Atilde — 314 303 303
+P 120 120 120 120
+B 102 102 102 102
+Q 121 121 121 121
+C 103 103 103 103
+R 122 122 122 122
+Ccedilla — 202 307 307
+S 123 123 123 123
+D 104 104 104 104
+Scaron — — 212 227
+E 105 105 105 105
+T 124 124 124 124
+Eacute — 203 311 311
+Thorn — — 336 336
+Ecircumflex — 346 312 312
+U 125 125 125 125
+Edieresis — 350 313 313
+Uacute — 362 332 332
+Egrave — 351 310 310
+Ucircumflex — 363 333 333
+Eth — — 320 320
+Udieresis — 206 334 334
+Euro 1 — — 200 240
+Ugrave — 364 331 331
+F 106 106 106 106
+V 126 126 126 126
+G 107 107 107 107
+W 127 127 127 127
+H 110 110 110 110
+X 130 130 130 130
+I 111 111 111 111
+Y 131 131 131 131
+Iacute — 352 315 315
+Yacute — — 335 335
+Icircumflex — 353 316 316
+Ydieresis — 331 237 230
+Idieresis — 354 317 317
+Z 132 132 132 132
+Igrave — 355 314 314
+Zcaron 2 — — 216 231
+J 112 112 112 112
+a 141 141 141 141
+K 113 113 113 113
+aacute — 207 341 341
+L 114 114 114 114
+acircumflex — 211 342 342
+Lslash 350 — — 225
+acute 302 253 264 264
+M 115 115 115 115
+adieresis — 212 344 344
+N 116 116 116 116
+ae 361 276 346 346
+Ntilde — 204 321 321
+agrave — 210 340 340
+O 117 117 117 117
+ampersand 046 046 046 046
+aring — 214 345 345
+ecircumflex — 220 352 352
+asciicircum 136 136 136 136
+edieresis — 221 353 353
+asciitilde 176 176 176 176
+egrave — 217 350 350
+asterisk 052 052 052 052
+eight 070 070 070 070
+at 100 100 100 100
+ellipsis 274 311 205 203
+atilde — 213 343 343
+emdash 320 321 227 204
+b 142 142 142 142
+endash 261 320 226 205
+backslash 134 134 134 134
+equal 075 075 075 075
+bar 174 174 174 174
+eth — — 360 360
+braceleft 173 173 173 173
+exclam 041 041 041 041
+braceright 175 175 175 175
+exclamdown 241 301 241 241
+bracketleft 133 133 133 133
+f 146 146 146 146
+bracketright 135 135 135 135
+fi 256 336 — 223
+breve 306 371 — 030
+five 065 065 065 065
+brokenbar — — 246 246
+fl 257 337 — 224
+bullet 3 267 245 225 200
+florin 246 304 203 206
+c 143 143 143 143
+four 064 064 064 064
+caron 317 377 — 031
+fraction 244 332 — 207
+ccedilla — 215 347 347
+g 147 147 147 147
+cedilla 313 374 270 270
+germandbls 373 247 337 337
+cent 242 242 242 242
+grave 301 140 140 140
+circumflex 303 366 210 032
+greater 076 076 076 076
+colon 072 072 072 072
+guillemotleft 4 253 307 253 253
+comma 054 054 054 054
+guillemotright 4 273 310 273 273
+copyright — 251 251 251
+guilsinglleft 254 334 213 210
+currency 1 250 333 244 244
+guilsinglright 255 335 233 211
+d 144 144 144 144
+h 150 150 150 150
+dagger 262 240 206 201
+hungarumlaut 315 375 — 034
+daggerdbl 263 340 207 202
+hyphen 5 055 055 055 055
+degree — 241 260 260
+i 151 151 151 151
+dieresis 310 254 250 250
+iacute — 222 355 355
+divide — 326 367 367
+icircumflex — 224 356 356
+dollar 044 044 044 044
+idieresis — 225 357 357
+dotaccent 307 372 — 033
+igrave — 223 354 354
+dotlessi 365 365 — 232
+j 152 152 152 152
+e 145 145 145 145
+k 153 153 153 153
+eacute — 216 351 351
+l 154 154 154 154
+less 074 074 074 074
+q 161 161 161 161
+logicalnot — 302 254 254
+question 077 077 077 077
+lslash 370 — — 233
+questiondown 277 300 277 277
+m 155 155 155 155
+quotedbl 042 042 042 042
+macron 305 370 257 257
+quotedblbase 271 343 204 214
+minus — — — 212
+quotedblleft 252 322 223 215
+mu — 265 265 265
+quotedblright 272 323 224 216
+multiply — — 327 327
+quoteleft 140 324 221 217
+n 156 156 156 156
+quoteright 047 325 222 220
+nine 071 071 071 071
+quotesinglbase 270 342 202 221
+ntilde — 226 361 361
+quotesingle 251 047 047 047
+numbersign 043 043 043 043
+r 162 162 162 162
+o 157 157 157 157
+registered — 250 256 256
+oacute — 227 363 363
+ring 312 373 — 036
+ocircumflex — 231 364 364
+s 163 163 163 163
+odieresis — 232 366 366
+scaron — — 232 235
+oe 372 317 234 234
+section 247 244 247 247
+ogonek 316 376 — 035
+semicolon 073 073 073 073
+ograve — 230 362 362
+seven 067 067 067 067
+one 061 061 061 061
+six 066 066 066 066
+onehalf — — 275 275
+slash 057 057 057 057
+onequarter — — 274 274
+space 6 040 040 040 040
+onesuperior — — 271 271
+sterling 243 243 243 243
+ordfeminine 343 273 252 252
+t 164 164 164 164
+ordmasculine 353 274 272 272
+thorn — — 376 376
+oslash 371 277 370 370
+three 063 063 063 063
+otilde — 233 365 365
+threequarters — — 276 276
+p 160 160 160 160
+threesuperior — — 263 263
+paragraph 266 246 266 266
+tilde 304 367 230 037
+parenleft 050 050 050 050
+trademark — 252 231 222
+parenright 051 051 051 051
+two 062 062 062 062
+percent 045 045 045 045
+twosuperior — — 262 262
+period 056 056 056 056
+u 165 165 165 165
+periodcentered 264 341 267 267
+uacute — 234 372 372
+perthousand 275 344 211 213
+ucircumflex — 236 373 373
+plus 053 053 053 053
+udieresis — 237 374 374
+plusminus — 261 261 261
+ugrave — 235 371 371
+underscore 137 137 137 137
+ydieresis — 330 377 377
+v 166 166 166 166
+yen 245 264 245 245
+w 167 167 167 167
+z 172 172 172 172
+x 170 170 170 170
+zcaron 2 — — 236 236
+y 171 171 171 171
+zero 060 060 060 060
+yacute — — 375 375
+
+## D.2, notes (mot pour mot)
+1. In PDF 1.3, the euro character was added to the Adobe standard Latin character set. It shall be en-
+coded as 200 in WinAnsiEncoding and 240 in PDFDocEncoding, assigning codes that were pre-
+viously unused. Apple changed the Mac OS Latin-text encoding for code 333 from the currency
+character to the euro character. However, this incompatible change has not been reflected in PDF’s
+MacRomanEncoding, which shall continue to map code 333 to currency. If the euro character is
+desired, an encoding dictionary may be used to specify this single difference from MacRomanEn-
+coding.
+2. In PDF 1.3, the existing Zcaron and zcaron characters were added to WinAnsiEncoding as the
+previously unused codes 216 and 236.
+3. In WinAnsiEncoding, all unused codes greater than 40 map to the bullet character. However, only
+code 225 shall be specifically assigned to the bullet character; other codes are subject to future re-
+assignment.
+4. The character names guillemotleft and guillemotright are misspelled. The correct spelling for this
+punctuation character is guillemet. However, the misspelled names are the ones actually used in
+the fonts and encodings containing these characters.
+5. The hyphen character is also encoded as 255 in WinAnsiEncoding. The meaning of this duplicate
+code shall be “soft hyphen,” but it shall be typographically the same as hyphen.
+6. The SPACE character shall also be encoded as 312 in MacRomanEncoding and as 240 in
+WinAnsiEncoding. This duplicate code shall signify a nonbreaking space; it shall be typographi-
+cally the same as (U+003A) SPACE.
+
+## D.3 PDFDocEncoding Character Set (Table D.2) : Hex Octal Unicode [Notes] (U : « Undefined code point in PDFDocEncoding » ; SR : « Unicode codepoint that may require special representation in XML in some contexts »)
+0x00 0000 U+0000 U
+0x01 0001 U+0001 U
+0x02 0002 U+0002 U
+0x03 0003 U+0003 U
+0x04 0004 U+0004 U
+0x05 0005 U+0005 U
+0x06 0006 U+0006 U
+0x07 0007 U+0007 U
+0x08 0010 U+0008 U
+0x09 0011 U+0009 SR
+0x0a 0012 U+000A SR
+0x0b 0013 U+000B U
+0x0c 0014 U+000C U
+0x0d 0015 U+000D SR
+0x0e 0016 U+000E U
+0x0f 0017 U+000F U
+0x10 0020 U+0010 U
+0x11 0021 U+0011 U
+0x12 0022 U+0012 U
+0x13 0023 U+0013 U
+0x14 0024 U+0014 U
+0x15 0025 U+0015 U
+0x16 0026 U+0017 U
+0x17 0027 U+0017 U
+0x18 0030 U+02D8
+0x19 0031 U+02C7
+0x1a 0032 U+02C6
+0x1b 0033 U+02D9
+0x1c 0034 U+02DD
+0x1d 0035 U+02DB
+0x1e 0036 U+02DA
+0x1f 0037 U+02DC
+0x20 0040 U+0020
+0x21 0041 U+0021 SR
+0x22 0042 U+0022 SR
+0x23 0043 U+0023
+0x24 0044 U+0024
+0x25 0045 U+0025
+0x26 0046 U+0026
+0x27 0047 U+0027
+0x28 0050 U+0028
+0x29 0051 U+0029
+0x2a 0052 U+002A
+0x2b 0053 U+002B
+0x2c 0054 U+002C
+0x2d 0055 U+002D
+0x2e 0056 U+002E
+0x2f 0057 U+002F
+0x30 0060 U+0030
+0x31 0061 U+0031
+0x32 0062 U+0032
+0x33 0063 U+0033
+0x34 0064 U+0034
+0x35 0065 U+0035
+0x36 0066 U+0036
+0x37 0067 U+0037
+0x38 0070 U+0038
+0x39 0071 U+0039
+0x3a 0072 U+003A
+0x3b 0073 U+003B
+0x3c 0074 U+003C SR
+0x3d 0075 U+003D
+0x3e 0076 U+003E
+0x3f 0077 U+003F
+0x40 0100 U+0040
+0x41 0101 U+0041
+0x42 0102 U+0042
+0x43 0103 U+0043
+0x44 0104 U+0044
+0x45 0105 U+0045
+0x46 0106 U+0046
+0x47 0107 U+0047
+0x48 0110 U+0048
+0x49 0111 U+0049
+0x4a 0112 U+004A
+0x4b 0113 U+004B
+0x4c 0114 U+004C
+0x4d 0115 U+004D
+0x4e 0116 U+004E
+0x4f 0117 U+004F
+0x50 0120 U+0050
+0x51 0121 U+0051
+0x52 0122 U+0052
+0x53 0123 U+0053
+0x54 0124 U+0054
+0x55 0125 U+0055
+0x56 0126 U+0056
+0x57 0127 U+0057
+0x58 0130 U+0058
+0x59 0131 U+0059
+0x5a 0132 U+005A
+0x5b 0133 U+005B
+0x5c 0134 U+005C
+0x5d 0135 U+005D
+0x5e 0136 U+005E
+0x5f 0137 U+005F
+0x60 0140 U+0060
+0x61 0141 U+0061
+0x62 0142 U+0062
+0x63 0143 U+0063
+0x64 0144 U+0064
+0x65 0145 U+0065
+0x66 0146 U+0066
+0x67 0147 U+0067
+0x68 0150 U+0068
+0x69 0151 U+0069
+0x6a 0152 U+006A
+0x6b 0153 U+006B
+0x6c 0154 U+006C
+0x6d 0155 U+006D
+0x6e 0156 U+006E
+0x6f 0157 U+006F
+0x70 0160 U+0070
+0x71 0161 U+0071
+0x72 0162 U+0072
+0x73 0163 U+0073
+0x74 0164 U+0074
+0x75 0165 U+0075
+0x76 0166 U+0076
+0x77 0167 U+0077
+0x78 0170 U+0078
+0x79 0171 U+0079
+0x7a 0172 U+007A
+0x7b 0173 U+007B
+0x7c 0174 U+007C
+0x7d 0175 U+007D
+0x7e 0176 U+007E
+0x7f 0177 Undefined U
+0x80 0200 U+2022
+0x81 0201 U+2020
+0x82 0202 U+2021
+0x83 0203 U+2026
+0x84 0204 U+2014
+0x85 0205 U+2013
+0x86 0206 U+0192
+0x87 0207 U+2044
+0x88 0210 U+2039
+0x89 0211 U+203A
+0x8a 0212 U+2212
+0x8b 0213 U+2030
+0x8c 0214 U+201E
+0x8d 0215 U+201C
+0x8e 0216 U+201D
+0x8f 0217 U+2018
+0x90 0220 U+2019
+0x91 0221 U+201A
+0x92 0222 U+2122
+0x93 0223 U+FB01
+0x94 0224 U+FB02
+0x95 0225 U+0141
+0x96 0226 U+0152
+0x97 0227 U+0160
+0x98 0230 U+0178
+0x99 0231 U+017D
+0x9a 0232 U+0131
+0x9b 0233 U+0142
+0x9c 0234 U+0153
+0x9d 0235 U+0161
+0x9e 0236 U+017E
+0x9f 0237 Undefined U
+0xa0 0240 U+20AC
+0xa1 0241 U+00A1
+0xa2 0242 U+00A2
+0xa3 0243 U+00A3
+0xa4 0244 U+00A4
+0xa5 0245 U+00A5
+0xa6 0246 U+00A6
+0xa7 0247 U+00A7
+0xa8 0250 U+00A8
+0xa9 0251 U+00A9
+0xaa 0252 U+00AA
+0xab 0253 U+00AB
+0xac 0254 U+00AC
+0xad 0255 Undefined U
+0xae 0256 U+00AE
+0xaf 0257 U+00AF
+0xb0 0260 U+00B0
+0xb1 0261 U+00B1
+0xb2 0262 U+00B2
+0xb3 0263 U+00B3
+0xb4 0264 U+00B4
+0xb5 0265 U+00B5
+0xb6 0266 U+00B6
+0xb7 0267 U+00B7
+0xb8 0270 U+00B8
+0xb9 0271 U+00B9
+0xba 0272 U+00BA
+0xbb 0273 U+00BB
+0xbc 0274 U+00BC
+0xbd 0275 U+00BD
+0xbe 0276 U+00BE
+0xbf 0277 U+00BF
+0xc0 0300 U+00C0
+0xc1 0301 U+00C1
+0xc2 0302 U+00C2
+0xc3 0303 U+00C3
+0xc4 0304 U+00C4
+0xc5 0305 U+00C5
+0xc6 0306 U+00C6
+0xc7 0307 U+00C7
+0xc8 0310 U+00C8
+0xc9 0311 U+00C9
+0xca 0312 U+00CA
+0xcb 0313 U+00CB
+0xcc 0314 U+00CC
+0xcd 0315 U+00CD
+0xce 0316 U+00CE
+0xcf 0317 U+00CF
+0xd0 0320 U+00D0
+0xd1 0321 U+00D1
+0xd2 0322 U+00D2
+0xd3 0323 U+00D3
+0xd4 0324 U+00D4
+0xd5 0325 U+00D5
+0xd6 0326 U+00D6
+0xd7 0327 U+00D7
+0xd8 0330 U+00D8
+0xd9 0331 U+00D9
+0xda 0332 U+00DA
+0xdb 0333 U+00DB
+0xdc 0334 U+00DC
+0xdd 0335 U+00DD
+0xde 0336 U+00DE
+0xdf 0337 U+00DF
+0xe0 0340 U+00E0
+0xe1 0341 U+00E1
+0xe2 0342 U+00E2
+0xe3 0343 U+00E3
+0xe4 0344 U+00E4
+0xe5 0345 U+00E5
+0xe6 0346 U+00E6
+0xe7 0347 U+00E7
+0xe8 0350 U+00E8
+0xe9 0351 U+00E9
+0xea 0352 U+00EA
+0xeb 0353 U+00EB
+0xec 0354 U+00EC
+0xed 0355 U+00ED
+0xee 0356 U+00EE
+0xef 0357 U+00EF
+0xf0 0360 U+00F0
+0xf1 0361 U+00F1
+0xf2 0362 U+00F2
+0xf3 0363 U+00F3
+0xf4 0364 U+00F4
+0xf5 0365 U+00F5
+0xf6 0366 U+00F6
+0xf7 0367 U+00F7
+0xf8 0370 U+00F8
+0xf9 0371 U+00F9
+0xfa 0372 U+00FA
+0xfb 0373 U+00FB
+0xfc 0374 U+00FC
+0xfd 0375 U+00FD
+0xfe 0376 U+00FE
+0xff 0377 U+00FF
+
+## D.4 Expert Set and MacExpertEncoding : NAME CODE
+AEsmall 276
+Jsmall 152
+Aacutesmall 207
+Ksmall 153
+Acircumflexsmall 211
+Lslashsmall 302
+Acutesmall 047
+Lsmall 154
+Adieresissmall 212
+Macronsmall 364
+Agravesmall 210
+Msmall 155
+Aringsmall 214
+Nsmall 156
+Asmall 141
+Ntildesmall 226
+Atildesmall 213
+OEsmall 317
+Brevesmall 363
+Oacutesmall 227
+Bsmall 142
+Ocircumflexsmall 231
+Caronsmall 256
+Odieresissmall 232
+Ccedillasmall 215
+Ogoneksmall 362
+Cedillasmall 311
+Ogravesmall 230
+Circumflexsmall 136
+Oslashsmall 277
+Csmall 143
+Osmall 157
+Dieresissmall 254
+Otildesmall 233
+Dotaccentsmall 372
+Psmall 160
+Dsmall 144
+Qsmall 161
+Eacutesmall 216
+Ringsmall 373
+Ecircumflexsmall 220
+Rsmall 162
+Edieresissmall 221
+Scaronsmall 247
+Egravesmall 217
+Ssmall 163
+Esmall 145
+Thornsmall 271
+Ethsmall 104
+Tildesmall 176
+Fsmall 146
+Tsmall 164
+Gravesmall 140
+Uacutesmall 234
+Gsmall 147
+Ucircumflexsmall 236
+Hsmall 150
+Udieresissmall 237
+Hungarumlautsmall 042
+Ugravesmall 235
+Iacutesmall 222
+Usmall 165
+Icircumflexsmall 224
+Vsmall 166
+Idieresissmall 225
+Wsmall 167
+Igravesmall 223
+Xsmall 170
+Ismall 151
+Yacutesmall 264
+Ydieresissmall 330
+fouroldstyle 064
+Ysmall 171
+foursuperior 335
+Zcaronsmall 275
+fraction 057
+Zsmall 172
+hyphen 055
+ampersandsmall 046
+hypheninferior 137
+asuperior 201
+hyphensuperior 321
+bsuperior 365
+isuperior 351
+centinferior 251
+lsuperior 361
+centoldstyle 043
+msuperior 367
+centsuperior 202
+nineinferior 273
+colon 072
+nineoldstyle 071
+colonmonetary 173
+ninesuperior 341
+comma 054
+nsuperior 366
+commainferior 262
+onedotenleader 053
+commasuperior 370
+oneeighth 112
+dollarinferior 266
+onefitted 174
+dollaroldstyle 044
+onehalf 110
+dollarsuperior 045
+oneinferior 301
+dsuperior 353
+oneoldstyle 061
+eightinferior 245
+onequarter 107
+eightoldstyle 070
+onesuperior 332
+eightsuperior 241
+onethird 116
+esuperior 344
+osuperior 257
+exclamdownsmall 326
+parenleftinferior 133
+exclamsmall 041
+parenleftsuperior 050
+ff 126
+parenrightinferior 135
+ffi 131
+parenrightsuperior 051
+ffl 132
+period 056
+fi 127
+periodinferior 263
+figuredash 320
+periodsuperior 371
+fiveeighths 114
+questiondownsmall 300
+fiveinferior 260
+questionsmall 077
+fiveoldstyle 065
+rsuperior 345
+fivesuperior 336
+rupiah 175
+fl 130
+semicolon 073
+fourinferior 242
+seveneighths 115
+seveninferior 246
+threequartersemdash 075
+sevenoldstyle 067
+threesuperior 334
+sevensuperior 340
+tsuperior 346
+sixinferior 244
+twodotenleader 052
+sixoldstyle 066
+twoinferior 252
+sixsuperior 337
+twooldstyle 062
+space 040
+twosuperior 333
+ssuperior 352
+twothirds 117
+threeeighths 113
+zeroinferior 274
+threeinferior 243
+zerooldstyle 060
+threeoldstyle 063
+zerosuperior 342
+threequarters 111
+
+## D.5 Symbol Set and Encoding : NAME CODE
+Alpha 101
+arrowboth 253
+Beta 102
+arrowdblboth 333
+Chi 103
+arrowdbldown 337
+Delta 104
+arrowdblleft 334
+Epsilon 105
+arrowdblright 336
+Eta 110
+arrowdblup 335
+Euro 240
+arrowdown 257
+Gamma 107
+arrowhorizex 276
+Ifraktur 301
+arrowleft 254
+Iota 111
+arrowright 256
+Kappa 113
+arrowup 255
+Lambda 114
+arrowvertex 275
+Mu 115
+asteriskmath 052
+Nu 116
+bar 174
+Omega 127
+beta 142
+Omicron 117
+braceleft 173
+Phi 106
+braceright 175
+Pi 120
+bracelefttp 354
+Psi 131
+braceleftmid 355
+Rfraktur 302
+braceleftbt 356
+Rho 122
+bracerighttp 374
+Sigma 123
+bracerightmid 375
+Tau 124
+bracerightbt 376
+Theta 121
+braceex 357
+Upsilon 125
+bracketleft 133
+Upsilon1 241
+bracketright 135
+Xi 130
+bracketlefttp 351
+Zeta 132
+bracketleftex 352
+aleph 300
+bracketleftbt 353
+alpha 141
+bracketrighttp 371
+ampersand 046
+bracketrightex 372
+angle 320
+bracketrightbt 373
+angleleft 341
+bullet 267
+angleright 361
+carriagereturn 277
+approxequal 273
+chi 143
+circlemultiply 304
+integralbt 365
+circleplus 305
+intersection 307
+club 247
+iota 151
+colon 072
+kappa 153
+comma 054
+lambda 154
+congruent 100
+less 074
+copyrightsans 343
+lessequal 243
+copyrightserif 323
+logicaland 331
+degree 260
+logicalnot 330
+delta 144
+logicalor 332
+diamond 250
+lozenge 340
+divide 270
+minus 055
+dotmath 327
+minute 242
+eight 070
+mu 155
+element 316
+multiply 264
+ellipsis 274
+nine 071
+emptyset 306
+notelement 317
+epsilon 145
+notequal 271
+equal 075
+notsubset 313
+equivalence 272
+nu 156
+eta 150
+numbersign 043
+exclam 041
+omega 167
+existential 044
+omega1 166
+five 065
+omicron 157
+florin 246
+one 061
+four 064
+parenleft 050
+fraction 244
+parenright 051
+gamma 147
+parenlefttp 346
+gradient 321
+parenleftex 347
+greater 076
+parenleftbt 350
+greaterequal 263
+parenrighttp 366
+heart 251
+parenrightex 367
+infinity 245
+parenrightbt 370
+integral 362
+partialdiff 266
+integraltp 363
+percent 045
+integralex 364
+period 056
+perpendicular 136
+similar 176
+phi 146
+six 066
+phi1 152
+slash 057
+pi 160
+space 040
+plus 053
+spade 252
+plusminus 261
+suchthat 047
+product 325
+summation 345
+propersubset 314
+tau 164
+propersuperset 311
+therefore 134
+proportional 265
+theta 161
+psi 171
+theta1 112
+question 077
+three 063
+radical 326
+trademarksans 344
+radicalex 140
+trademarkserif 324
+reflexsubset 315
+two 062
+reflexsuperset 312
+underscore 137
+registersans 342
+union 310
+registerserif 322
+universal 042
+rho 162
+upsilon 165
+second 262
+weierstrass 303
+semicolon 073
+xi 170
+seven 067
+zero 060
+sigma 163
+zeta 172
+sigma1 126
+
+## D.6 ZapfDingbats Set and Encoding : NAME CODE
+space 040
+a30 103
+a65 146
+a109 253
+a1 041
+a31 104
+a66 147
+a120 254
+a2 042
+a32 105
+a67 150
+a121 255
+a202 043
+a33 106
+a68 151
+a122 256
+a3 044
+a34 107
+a69 152
+a123 257
+a4 045
+a35 110
+a70 153
+a124 260
+a5 046
+a36 111
+a71 154
+a125 261
+a119 047
+a37 112
+a72 155
+a126 262
+a118 050
+a38 113
+a73 156
+a127 263
+a117 051
+a39 114
+a74 157
+a128 264
+a11 052
+a40 115
+a203 160
+a129 265
+a12 053
+a41 116
+a75 161
+a130 266
+a13 054
+a42 117
+a204 162
+a131 267
+a14 055
+a43 120
+a76 163
+a132 270
+a15 056
+a44 121
+a77 164
+a133 271
+a16 057
+a45 122
+a78 165
+a134 272
+a105 060
+a46 123
+a79 166
+a135 273
+a17 061
+a47 124
+a81 167
+a136 274
+a18 062
+a48 125
+a82 170
+a137 275
+a19 063
+a49 126
+a83 171
+a138 276
+a20 064
+a50 127
+a84 172
+a139 277
+a21 065
+a51 130
+a97 173
+a140 300
+a22 066
+a52 131
+a98 174
+a141 301
+a23 067
+a53 132
+a99 175
+a142 302
+a24 070
+a54 133
+a100 176
+a143 303
+a25 071
+a55 134
+a101 241
+a144 304
+a26 072
+a56 135
+a102 242
+a145 305
+a27 073
+a57 136
+a103 243
+a146 306
+a28 074
+a58 137
+a104 244
+a147 307
+a6 075
+a59 140
+a106 245
+a148 310
+a7 076
+a60 141
+a107 246
+a149 311
+a8 077
+a61 142
+a108 247
+a150 312
+a9 100
+a62 143
+a112 250
+a151 313
+a10 101
+a63 144
+a111 251
+a152 314
+a29 102
+a64 145
+a110 252
+a153 315
+a154 316
+a192 332
+a176 346
+a184 363
+a155 317
+a166 333
+a177 347
+a197 364
+a156 320
+a167 334
+a178 350
+a185 365
+a157 321
+a168 335
+a179 351
+a194 366
+a158 322
+a169 336
+a193 352
+a198 367
+a159 323
+a170 337
+a180 353
+a186 370
+a160 324
+a171 340
+a199 354
+a195 371
+a161 325
+a172 341
+a181 355
+a187 372
+a163 326
+a173 342
+a200 356
+a188 373
+a164 327
+a162 343
+a182 357
+a189 374
+a196 330
+a174 344
+a201 361
+a190 375
+a165 331
+a175 345
+a183 362
+a191 376

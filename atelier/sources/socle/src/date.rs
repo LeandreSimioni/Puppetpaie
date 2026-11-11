@@ -6,7 +6,7 @@
 //! et un format entame ne revient pas en arriere (`20260315` n'est pas lu en `JJMMAAAA`). Ce parcours est celui des
 //! fichiers deja ecrits : une date lue aujourd'hui se lit comme elle s'est toujours lue.
 
-use crate::num::Resultat;
+use crate::echec::{refus, R};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Jour {
@@ -46,16 +46,14 @@ impl Jour {
     }
 
     /// Une date ecrite dans l'un des cinq formats.
-    pub fn lire(texte: &str) -> Resultat<Jour> {
-        match Jour::du_texte(texte) {
-            Some(j) => Ok(j),
-            None => Err(format!("date illisible : {}", repr_texte(texte.trim()))),
-        }
+    #[track_caller]
+    pub(crate) fn lire(texte: &str) -> R<Jour> {
+        match Jour::du_texte(texte) { Some(j) => Ok(j), None => Err(refus(format!("date illisible : {}", repr_texte(texte.trim())))) }
     }
 
     /// Le jour que `texte` ecrit, s'il en ecrit un (`lire` dit pourquoi il n'en ecrit pas) : une phrase qui cite un jour
     /// le dit en clair, et ce qui n'est pas une date tel qu'il est ecrit.
-    pub fn du_texte(texte: &str) -> Option<Jour> {
+    pub(crate) fn du_texte(texte: &str) -> Option<Jour> {
         let s = texte.trim();
         // La forme qu'ecrit le moteur (`iso`), lue d'emblee : c'est celle que le premier format apparierait.
         let o = s.as_bytes();
@@ -129,17 +127,19 @@ impl Jour {
     }
 
     /// `date + timedelta(days=n)`, refuse hors des annees 1 a 9999.
-    pub fn plus_jours(&self, n: i64) -> Resultat<Jour> {
-        Jour::depuis_ordinal(self.ordinal() + n).ok_or_else(|| HORS_CALENDRIER.to_string())
+    #[track_caller]
+    pub fn plus_jours(&self, n: i64) -> R<Jour> {
+        match Jour::depuis_ordinal(self.ordinal() + n) { Some(j) => Ok(j), None => Err(refus(HORS_CALENDRIER)) }
     }
 
     /// Le meme quantieme `n` mois de calendrier plus tard (`n` negatif : plus tot), ou le dernier jour du mois s'il ne
     /// l'a pas.
-    pub fn plus_mois(&self, n: i64) -> Resultat<Jour> {
+    #[track_caller]
+    pub fn plus_mois(&self, n: i64) -> R<Jour> {
         let total = self.an as i64 * 12 + (self.mois as i64 - 1) + n;
         let (an, mois) = (total.div_euclid(12) as i32, (total.rem_euclid(12) + 1) as u32);
         let jour = self.jour.min(jours_du_mois(an, mois));
-        Jour::nouveau(an, mois, jour).ok_or_else(|| date_impossible(an, mois, jour))
+        match Jour::nouveau(an, mois, jour) { Some(j) => Ok(j), None => Err(refus(date_impossible(an, mois, jour))) }
     }
 
     /// `(self - autre).days`.
@@ -308,7 +308,16 @@ fn lire_format(format: &[Champ], c: &[char]) -> Option<Jour> {
 }
 
 /// Une date `AAAAMMJJ`, ou `None`.
-pub fn lire_aaaammjj(s: &str) -> Option<Jour> {
+/// `JJMMAAAA` (la DSN, la DPAE) : huit chiffres ASCII, et rien d'autre ; `None` sinon, ou hors du calendrier.
+pub(crate) fn lire_jjmmaaaa(v: &str) -> Option<Jour> {
+    if v.len() != 8 || !v.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let n = |a: usize, b: usize| v.as_bytes()[a..b].iter().fold(0u32, |x, c| x * 10 + u32::from(c - b'0'));
+    Jour::nouveau(n(4, 8) as i32, n(2, 4), n(0, 2))
+}
+
+pub(crate) fn lire_aaaammjj(s: &str) -> Option<Jour> {
     let c: Vec<char> = s.chars().collect();
     lire_format(FORMATS[3], &c)
 }
@@ -339,32 +348,8 @@ pub fn repr_texte(s: &str) -> String {
     o
 }
 
-/// Un flottant ecrit : le plus court qui revient au meme flottant,
-/// `1.0` pour un entier, l'exposant des 1e16 et des 1e-5.
-pub fn repr_flottant(x: f64) -> String {
-    if x.is_nan() {
-        return "nan".into();
-    }
-    if x.is_infinite() {
-        return if x > 0.0 { "inf" } else { "-inf" }.into();
-    }
-    let a = x.abs();
-    if a != 0.0 && !(1e-4..1e16).contains(&a) {
-        // `{:e}` donne `1e-5` ; la forme ecrite est `1e-05`.
-        let t = format!("{:e}", x);
-        let (m, e) = crate::ecriture::scientifique(&t);
-        return format!("{}e{}{:02}", m, if e < 0 { '-' } else { '+' }, e.abs());
-    }
-    let t = format!("{}", x);
-    if t.contains('.') {
-        t
-    } else {
-        format!("{}.0", t)
-    }
-}
-
 /// `AAAA-MM-JJ` ou `AAAAMMJJ`.
-pub fn jour_iso(texte: &str) -> Option<Jour> {
+pub(crate) fn jour_iso(texte: &str) -> Option<Jour> {
     let chiffres = |t: &str| t.chars().all(|c| c.is_ascii_digit());
     let (a, m, j) = match texte.len() {
         10 if texte.is_char_boundary(4) && texte.is_char_boundary(7) && &texte[4..5] == "-" && &texte[7..8] == "-" => (&texte[..4], &texte[5..7], &texte[8..10]),
@@ -379,13 +364,6 @@ pub fn jour_iso(texte: &str) -> Option<Jour> {
     Jour::nouveau(valeur(a) as i32, valeur(m), valeur(j))
 }
 
-/// `JJ/MM/AAAA` d'un `AAAA-MM-JJ` (ou d'un instant, par ses dix premiers caracteres) ; le texte tel quel s'il ne se lit pas.
-pub fn jj_mm_aaaa(iso: &str) -> String {
-    match jour_iso(&iso.chars().take(10).collect::<String>()) {
-        Some(j) => j.jj_mm_aaaa(),
-        None => iso.to_string(),
-    }
-}
 
 /// UN JOUR DANS UNE DONNEE LUE (`serde`) : la forme qu'ecrit le moteur, `AAAA-MM-JJ`, et elle seule ; il s'ecrit de meme.
 /// Les autres formats de `lire` sont ceux d'une saisie ou d'une piece, qui se lisent avant d'entrer dans une donnee.
@@ -404,3 +382,4 @@ impl<'de> serde::Deserialize<'de> for Jour {
         }
     }
 }
+

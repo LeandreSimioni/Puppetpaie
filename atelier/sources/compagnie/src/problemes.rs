@@ -23,6 +23,7 @@ use crate::editeur::Retour;
 use crate::incidents::{self, Canal, EtatEnvoi, PourLEditeur, DEPOSE, EN_ATTENTE};
 use socle::ecriture::ecrire_json;
 use socle::echec::{erreur, Classe, R};
+use socle::paris::{InstantEcrit, MinuteEcrite};
 use socle::verrou::Verrou;
 
 const TEXTE_MAX: usize = 5000;
@@ -259,8 +260,8 @@ pub fn apercu(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Captu
 #[serde(deny_unknown_fields)]
 pub struct EnvoiDuMessage {
     pub etat: EtatEnvoi,
-    pub quand: Option<String>,
-    pub essai: Option<String>,
+    pub quand: Option<InstantEcrit>,
+    pub essai: Option<InstantEcrit>,
     pub erreur: Option<String>,
 }
 
@@ -270,19 +271,19 @@ pub struct EnvoiDuMessage {
 #[serde(deny_unknown_fields)]
 pub struct Signalement {
     pub id: String,
-    pub quand: String,
+    pub quand: MinuteEcrite,
     pub texte: String,
     pub captures: usize,
     pub incidents: usize,
     pub empreinte: String,
     /// L'heure ou il s'est enregistre, en secondes (les doublons).
-    pub enregistre: i64,
+    pub enregistre: socle::paris::Naif,
     pub envoi: EnvoiDuMessage,
     pub numero: Option<String>,
     pub ticket: Option<String>,
     pub ticket_numero: Option<i64>,
     pub reponse: Option<String>,
-    pub repondu_le: Option<String>,
+    pub repondu_le: Option<socle::paris::MinuteUtc>,
     pub lu: Option<bool>,
 }
 
@@ -329,8 +330,8 @@ fn chemin_corps(racine: &Path, id: &str) -> PathBuf {
 /// Ecrit en entier ou pas du tout : un fichier a cote, puis renomme. Un lecteur ne voit jamais un fichier a moitie.
 fn ecrire_entier<T: Serialize + ?Sized>(p: &Path, v: &T) -> R<()> {
     let provisoire = socle::ecriture::provisoire(p);
-    ecrire_json(&provisoire, v, 2).map_err(|m| erreur(Classe::Disque, m))?;
-    std::fs::rename(&provisoire, p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))
+    ecrire_json(&provisoire, v, 2).map_err(|e| e.reclasser(Classe::Disque))?;
+    std::fs::rename(&provisoire, p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))
 }
 
 /// `signalements` : ceux faits depuis ce poste, du plus recent au plus ancien, chacun avec ce que la page en dit.
@@ -369,12 +370,12 @@ fn en_attente(l: &Signalement) -> bool {
 fn verrouiller(racine: &Path) -> R<Option<Verrou>> {
     let p = chemin_signalements(racine).with_file_name(".signalements.verrou");
     if let Some(d) = p.parent() {
-        std::fs::create_dir_all(d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
+        std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(&d, &e).reclasser(Classe::Disque))?;
     }
     let marque = socle::verrou::marque("signalements", std::process::id(), &socle::paris::maintenant());
     let fin = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
-        match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur(Classe::Disque, m))? {
+        match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|e| e.reclasser(Classe::Disque))? {
             Ok(v) => return Ok(Some(v)),
             Err(socle::verrou::Verrouille { .. }) if std::time::Instant::now() >= fin => return Ok(None),
             Err(socle::verrou::Verrouille { .. }) => std::thread::sleep(std::time::Duration::from_millis(50)),
@@ -397,7 +398,7 @@ fn modifier<T>(racine: &Path, f: impl FnOnce(&mut Vec<Signalement>) -> R<(T, boo
 /// Un identifiant de message, propre au poste : l'heure et six octets tires au hasard. Il nomme son fichier d'attente.
 fn nouvel_id() -> R<String> {
     let mut alea = [0u8; 6];
-    socle::temps::aleas(&mut alea).map_err(|e| erreur(Classe::Disque, e))?;
+    socle::temps::aleas(&mut alea).map_err(|e| e.reclasser(Classe::Disque))?;
     let heure: String = socle::paris::maintenant().chars().filter(char::is_ascii_alphanumeric).collect();
     Ok(format!("{}-{}", heure, alea.iter().map(|o| format!("{:02x}", o)).collect::<String>()))
 }
@@ -429,7 +430,7 @@ pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Capt
     let fichier = chemin_corps(racine, &id);
     let ligne = Signalement {
         id: id.clone(),
-        quand: tete(&socle::paris::maintenant(), 16),
+        quand: MinuteEcrite::maintenant(),
         texte: corps.texte.clone(),
         captures: corps.captures.len(),
         incidents: corps.incidents.len(),
@@ -444,11 +445,11 @@ pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Capt
         lu: None,
     };
     let ecrit = modifier(racine, |lignes| {
-        if let Some(deja) = lignes.iter().rev().find(|l| l.empreinte == empreinte && (en_attente(l) || maintenant - l.enregistre < DOUBLON_SECONDES)) {
+        if let Some(deja) = lignes.iter().rev().find(|l| l.empreinte == empreinte && (en_attente(l) || maintenant.depuis(l.enregistre) < DOUBLON_SECONDES)) {
             return Ok((Some(deja.id.clone()), false));
         }
         if let Some(d) = fichier.parent() {
-            std::fs::create_dir_all(d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
+            std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(&d, &e).reclasser(Classe::Disque))?;
         }
         ecrire_entier(&fichier, &corps)?;
         lignes.push(ligne);
@@ -461,7 +462,10 @@ pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Capt
         Err(e) => match std::fs::remove_file(&fichier) {
             Ok(()) => Err(e),
             Err(x) if x.kind() == std::io::ErrorKind::NotFound => Err(e),
-            Err(x) => Err(socle::echec::Echec { classe: e.classe, message: format!("{} {}", e.message, socle::echec::du_disque(&fichier, &x)) }),
+            Err(x) => {
+                let d = socle::echec::du_disque(&fichier, &x);
+                Err(socle::echec::Echec { a_part: e.a_part.or(d.a_part), phrase: format!("{} {}", e.phrase, d.phrase), ..e })
+            }
         },
     }
 }
@@ -502,9 +506,9 @@ pub fn partir(racine: &Path) -> BilanMessages {
         Err(e) => {
             let reste = match en_ordre(racine) {
                 Ok(l) => l.iter().filter(|l| en_attente(l)).count(),
-                Err(f) => return BilanMessages { partis: 0, reste: 0, erreur: Some(format!("{} {}", e.message, f.message)), occupe: false },
+                Err(f) => return BilanMessages { partis: 0, reste: 0, erreur: Some(format!("{} {}", e.phrase, f.phrase)), occupe: false },
             };
-            BilanMessages { partis: 0, reste, erreur: Some(e.message), occupe: false }
+            BilanMessages { partis: 0, reste, erreur: Some(e.phrase), occupe: false }
         }
     }
 }
@@ -513,20 +517,20 @@ fn passage(racine: &Path) -> R<BilanMessages> {
     let bilan = |partis: usize, reste: usize, erreur: Option<String>, occupe: bool| BilanMessages { partis, reste, erreur, occupe };
     let p = chemin_signalements(racine).with_file_name(".signalements-envoi.verrou");
     if let Some(d) = p.parent() {
-        std::fs::create_dir_all(d).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&d, &e)))?;
+        std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(&d, &e).reclasser(Classe::Disque))?;
     }
     let marque = socle::verrou::marque("signalements-envoi", std::process::id(), &socle::paris::maintenant());
-    let _envoi = match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur(Classe::Disque, m))? {
+    let _envoi = match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|e| e.reclasser(Classe::Disque))? {
         Ok(v) => v,
         Err(socle::verrou::Verrouille { .. }) => return Ok(bilan(0, en_ordre(racine)?.iter().filter(|l| en_attente(l)).count(), None, true)),
     };
     effacer_les_partis(racine)?;
     // Ce qui attend part maintenant : la boite le dit « en cours d'envoi ».
-    let essai = socle::paris::maintenant();
+    let essai = InstantEcrit::maintenant();
     let attendent = modifier(racine, |lignes| {
         let mut n = 0;
         for l in lignes.iter_mut().filter(|l| en_attente(l)) {
-            l.envoi.essai = Some(essai.clone());
+            l.envoi.essai = Some(essai);
             l.envoi.erreur = None;
             n += 1;
         }
@@ -554,7 +558,7 @@ fn passage(racine: &Path) -> R<BilanMessages> {
         if client.is_none() {
             match incidents::canal(racine)? {
                 Canal::Panne(e) => {
-                    panne = Some(e.message);
+                    panne = Some(e.dite());
                     break;
                 }
                 Canal::Pret(c) => client = Some(c),
@@ -564,11 +568,11 @@ fn passage(racine: &Path) -> R<BilanMessages> {
         match c.signaler(&corps) {
             Ok(r) => {
                 marquer_arrive(racine, &id, &r)?;
-                socle::ecriture::effacer(&fichier).map_err(|m| erreur(Classe::Disque, m))?;
+                socle::ecriture::effacer(&fichier).map_err(|e| e.reclasser(Classe::Disque))?;
                 partis += 1;
             }
             Err(e) => {
-                panne = Some(e.message);
+                panne = Some(e.dite());
                 break;
             }
         }
@@ -602,11 +606,11 @@ fn passage(racine: &Path) -> R<BilanMessages> {
 
 /// La ligne `id` est arrivee chez l'editeur : `depose`, avec ce que le serveur a rendu.
 fn marquer_arrive(racine: &Path, id: &str, r: &Retour) -> R<()> {
-    let quand = socle::paris::maintenant();
+    let quand = InstantEcrit::maintenant();
     let fait = modifier(racine, |lignes| {
         let mut change = false;
         for l in lignes.iter_mut().filter(|l| l.id == id) {
-            l.envoi = EnvoiDuMessage { etat: DEPOSE, quand: Some(quand.clone()), essai: l.envoi.essai.clone(), erreur: None };
+            l.envoi = EnvoiDuMessage { etat: DEPOSE, quand: Some(quand), essai: l.envoi.essai, erreur: None };
             l.numero = Some(r.numero.clone());
             l.ticket = Some(r.ticket.clone()).filter(|t| !t.is_empty());
             l.ticket_numero = r.ticket_numero;
@@ -646,7 +650,7 @@ fn effacer_les_partis(racine: &Path) -> R<()> {
             };
             let Some(id) = nom.strip_suffix(".json") else { continue };
             if !lignes.iter().any(|l| en_attente(l) && l.id == id) {
-                socle::ecriture::effacer(&f).map_err(|m| erreur(Classe::Disque, m))?;
+                socle::ecriture::effacer(&f).map_err(|e| e.reclasser(Classe::Disque))?;
             }
         }
         Ok(((), false))
@@ -680,7 +684,7 @@ pub fn relever_reponses(racine: &Path) -> R<usize> {
         for l in lignes.iter_mut().filter(|l| l.reponse.is_none()) {
             let Some(x) = recues.iter().rev().find(|x| l.numero.as_deref() == Some(x.numero.as_str())) else { continue };
             l.reponse = Some(tete(&x.reponse, 2000));
-            l.repondu_le = Some(x.repondu_le.clone()).filter(|q| !q.is_empty());
+            l.repondu_le = x.repondu_le.minute();
             l.lu = Some(false);
             n += 1;
         }

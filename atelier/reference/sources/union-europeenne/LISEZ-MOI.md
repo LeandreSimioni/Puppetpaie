@@ -74,3 +74,22 @@ refuse aux seuls résidents des Féroé. L'annexe II n'est pas déposée.
   CELEX n'a pas été trouvé ; l'art. 126 suffit pour une paie de 2026 (transition finie le 31/12/2020).
 - Le protocole portant adaptation de l'accord EEE (17/03/1993, sortie de la Suisse) : la synthèse le dit seulement.
 - La liste ISO 3166-1 des codes de pays.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `eurlex-accord-eee-19940103.html` : `ff7670a41dfc7d9e82180d51ce07abd96ed9e38b8fdf0dadac2f1544fe7fc923`
+- `eurlex-accord-eee-19940103.txt` : `aacecd10c5671c5ea9e1d57ce372524ad512af01761da805fd5675097190c206`
+- `eurlex-accord-retrait-royaume-uni-20200131.html` : `4a08fed12a40af8467c84ce002bf02c6359a4be7a896eaba5e7605a9016d2c00`
+- `eurlex-accord-retrait-royaume-uni-20200131.txt` : `455a4a64da3b551845d845d88faeac113a8f9f9ea6cf57640826347b98ba12fd`
+- `eurlex-acte-adhesion-1972-protocole-2-iles-feroe-19720327.html` : `b52c6488a129c9c09ae0b1dfac96143d13a1b6b1e2fbb387fee43c35a321caab`
+- `eurlex-acte-adhesion-1972-protocole-2-iles-feroe-19720327.txt` : `48508e1ac9a6d6cf04b32134c4644e22b6e35692d7f04774b4a70ed9a13a3c03`
+- `eurlex-directive-2000-84-ce-heure-d-ete-20010202.html` : `293a37978948a20e5e4dde155c75f955b66f3244c0b8edb6b1d46bc1f01394b6`
+- `eurlex-directive-2000-84-ce-heure-d-ete-20010202.txt` : `376c1e2aa8f90b19c1a978ddb6162718d25b2cd33b99c8cf3401ac0d8127411f`
+- `eurlex-synthese-accord-eee-20160524.html` : `d43352b3d510aeedbc41fa0ba82a86c940e2b1638e6a3b41418137ec635a40bc`
+- `eurlex-synthese-accord-eee-20160524.txt` : `2c1f833ef237fc75df343444cf5e4d07d667e35ba8571a9419491c0c9e8d4681`
+- `eurlex-tfue-art355-version-consolidee-20160607.txt` : `1de7b10c6680c37cc6ae1298580b2416aac58d46d0da71a7f0b5d7ee81697327`
+- `eurlex-tfue-art355-version-consolidee-20160607.xhtml` : `631ca8b017bc81fd80796386f6ddf778a21c494eb69c5ad3f99b02275b343f46`
+- `eurlex-tue-art52-version-consolidee-20160607.html` : `c52b7cc8723aa4006a0ba57938dc3828304781668dcbbb3aa758a1514d8d4b6c`
+- `eurlex-tue-art52-version-consolidee-20160607.txt` : `c17f8a305d6c5f5eaed76a51585150cdd84707557028f17a2fa5281a95915dcb`

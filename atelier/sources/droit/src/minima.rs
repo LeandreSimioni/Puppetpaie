@@ -11,8 +11,9 @@ use serde::Deserialize;
 use crate::fiche::Lue;
 use socle::date::Jour;
 use socle::fichiers::{forme_en_cache, FormeGardee};
-use socle::forme::Nombre;
-use socle::num::{Decimal, Resultat};
+use socle::forme::{Court, Nombre};
+use socle::echec::R;
+use socle::num::Decimal;
 use socle::texte::sigle;
 
 use crate::source::forme_notee;
@@ -38,10 +39,10 @@ forme_notee! {
         pub libelle: Option<String>,
         pub texte: Option<String>,
         pub lien: Option<String>,
-        pub en_vigueur: Option<String>,
+        pub en_vigueur: Option<Jour>,
         pub etendu: Option<bool>,
         /// Le jour ou l'extension de l'accord prend effet (sa publication au JORF).
-        pub etendu_le: Option<String>,
+        pub etendu_le: Option<Jour>,
         /// Les organisations d'employeurs signataires de l'accord.
         pub signataires: Option<Vec<String>>,
         pub annexes: Option<BTreeMap<String, Annexe>>,
@@ -82,7 +83,7 @@ forme_notee! {
     /// Les clauses communes de la 3090 : le taux horaire des techniciens, la grille mensuelle des administratifs.
     pub struct ClausesCommunes {
         pub techniciens: ParNiveau<Nombre>,
-        pub administratifs_mensuel_echelons: ParNiveau<Vec<f64>>,
+        pub administratifs_mensuel_echelons: ParNiveau<Vec<Court>>,
     }
 }
 
@@ -172,9 +173,9 @@ pub struct ServiceDeCategorie {
 forme_notee! {
     /// Les emplois autres qu'artistiques de la 1285 : le mensuel de chaque echelon, par groupe, pour `heures_mensuelles`.
     pub struct EmploisAutres {
-        pub heures_mensuelles: f64,
-        pub echelon_par_defaut: i64,
-        pub groupes: BTreeMap<String, Vec<f64>>,
+        #[serde(deserialize_with = "socle::forme::court")]
+        pub heures_mensuelles: Decimal,
+        pub groupes: BTreeMap<String, Vec<Court>>,
     }
 }
 
@@ -210,7 +211,7 @@ forme_notee! {
         pub socle: Decimal,
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub part_au_dela: Decimal,
-        pub depuis: String,
+        pub depuis: Jour,
     }
 }
 
@@ -284,9 +285,9 @@ forme_notee! {
         pub heures: Option<Nombre>,
         pub categories: Option<Vec<String>>,
         pub codes: Option<Vec<String>>,
-        pub si_spectacle: Option<BTreeMap<String, Attendu>>,
-        pub si_entreprise: Option<BTreeMap<String, Attendu>>,
-        pub si_salarie: Option<BTreeMap<String, Attendu>>,
+        pub si_spectacle: Option<SiSpectacle>,
+        pub si_entreprise: Option<SiEntreprise>,
+        pub si_salarie: Option<SiSalarie>,
         pub anciennete: Option<Anciennete>,
         pub duree_contrat_max_jours: Option<i64>,
         pub remplace: Option<Vec<String>>,
@@ -308,9 +309,9 @@ forme_notee! {
         pub groupe: Option<String>,
         pub categories: Option<Vec<String>>,
         pub codes: Option<Vec<String>>,
-        pub si_spectacle: Option<BTreeMap<String, Attendu>>,
-        pub si_entreprise: Option<BTreeMap<String, Attendu>>,
-        pub si_salarie: Option<BTreeMap<String, Attendu>>,
+        pub si_spectacle: Option<SiSpectacle>,
+        pub si_entreprise: Option<SiEntreprise>,
+        pub si_salarie: Option<SiSalarie>,
         pub anciennete: Option<Anciennete>,
         pub duree_contrat_max_jours: Option<i64>,
         #[serde(deserialize_with = "socle::forme::en_ordre")]
@@ -322,17 +323,118 @@ forme_notee! {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Anciennete {
-    pub champ: String,
+    pub champ: ChampDAnciennete,
     pub ans: i64,
+}
+
+/// LA CASE D'OU SE COMPTE UNE ANCIENNETE (`anciennete.champ`) : une date de la fiche du salarie, qu'une grille nomme.
+/// Une autre se refuse a la lecture de la table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChampDAnciennete {
+    /// Le poste occupe depuis (`ChampsSalarie::metier`, `poste_depuis`).
+    PosteDepuis,
+}
+
+impl ChampDAnciennete {
+    /// La case de la fiche du salarie.
+    pub fn cle(self) -> crate::fiche::CasePieceSalarie {
+        match self {
+            ChampDAnciennete::PosteDepuis => crate::fiche::CasePieceSalarie::PosteDepuis,
+        }
+    }
+
+    /// Sa date dans les cases du metier de la fiche ; `None` : la fiche ne la dit pas.
+    pub fn dans(self, metier: &crate::fiche::CasesDuMetier) -> Option<Jour> {
+        match self {
+            ChampDAnciennete::PosteDepuis => metier.poste_depuis,
+        }
+    }
+}
+
+/// La case attendue `attendu` est-elle celle de la fiche ? Aucune attente : oui ; une case vide ne remplit aucune
+/// attente.
+fn vaut<T: PartialEq>(attendu: &Option<T>, case: &Option<T>) -> bool {
+    attendu.as_ref().is_none_or(|a| case.as_ref() == Some(a))
+}
+
+/// CE QU'UNE CONDITION DE GRILLE ATTEND DU SPECTACLE DE LA PAIE (`si_spectacle`) : chaque case qu'elle nomme, dans la
+/// forme de la fiche (`droit::fiche::ChampsSpectacle`) ; une case qu'elle ne declare pas se refuse a la lecture.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SiSpectacle {
+    pub genre_audiovisuel: Option<crate::fiche::GenreAudiovisuel>,
+    pub derogation_annexe_iii_3097: Option<bool>,
+}
+
+impl SiSpectacle {
+    /// Le spectacle `sp` remplit-il la condition ? Une paie sans spectacle ne remplit aucune condition sur lui.
+    pub fn remplie(&self, sp: Option<&crate::fiche::ChampsSpectacle>) -> bool {
+        match sp {
+            Some(sp) => vaut(&self.genre_audiovisuel, &sp.genre_audiovisuel) && vaut(&self.derogation_annexe_iii_3097, &sp.derogation_annexe_iii_3097),
+            None => self.genre_audiovisuel.is_none() && self.derogation_annexe_iii_3097.is_none(),
+        }
+    }
+}
+
+/// CE QU'UNE CONDITION DE GRILLE ATTEND DE LA FICHE ENTREPRISE (`si_entreprise`), dans sa forme
+/// (`droit::fiche::ChampsEntreprise`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SiEntreprise {
+    pub type_radio_1922: Option<crate::fiche::TypeRadio1922>,
+    pub cinquante_salaries_3241: Option<bool>,
+}
+
+impl SiEntreprise {
+    pub fn remplie(&self, ent: &crate::fiche::ChampsEntreprise) -> bool {
+        vaut(&self.type_radio_1922, &ent.type_radio_1922) && vaut(&self.cinquante_salaries_3241, &ent.cinquante_salaries_3241)
+    }
+}
+
+/// CE QU'UNE CONDITION DE GRILLE ATTEND DE LA FICHE DU SALARIE (`si_salarie`), dans sa forme : des cases du metier
+/// (`ChampsSalarie::metier`), et le forfait en jours, case d'un permanent (`ChampsSalarie::permanent`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SiSalarie {
+    pub stagiaire_ccneac: Option<crate::fiche::StagiaireCcneac>,
+    pub experimente_3241: Option<bool>,
+    pub forfait_jours: Option<bool>,
+}
+
+impl SiSalarie {
+    /// Les cases du metier `metier` (que la grille trouvee ouvre) et celles d'un permanent `permanent` (`None` : le
+    /// contrat n'est pas paye au mois, elles ne disent rien) remplissent-elles la condition ?
+    pub fn remplie(&self, metier: &crate::fiche::CasesDuMetier, permanent: Option<&crate::fiche::CasesDuPermanent>) -> bool {
+        vaut(&self.stagiaire_ccneac, &metier.stagiaire_ccneac)
+            && vaut(&self.experimente_3241, &metier.experimente_3241)
+            && match permanent {
+                Some(p) => vaut(&self.forfait_jours, &p.forfait_jours),
+                None => self.forfait_jours.is_none(),
+            }
+    }
+
+    /// Les cases de la fiche du salarie qu'elle nomme.
+    pub fn cases(&self) -> Vec<crate::fiche::CasePieceSalarie> {
+        use crate::fiche::CasePieceSalarie;
+        [
+            self.stagiaire_ccneac.is_some().then_some(CasePieceSalarie::StagiaireCcneac),
+            self.experimente_3241.is_some().then_some(CasePieceSalarie::Experimente3241),
+            self.forfait_jours.is_some().then_some(CasePieceSalarie::ForfaitJours),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
 }
 
 /// LES CONDITIONS D'UNE GRILLE OU D'UNE MAJORATION, telles que l'engagement les confronte a une ligne de paie.
 pub struct Conditions<'a> {
     pub categories: Option<&'a [String]>,
     pub codes: Option<&'a [String]>,
-    pub si_spectacle: Option<&'a BTreeMap<String, Attendu>>,
-    pub si_entreprise: Option<&'a BTreeMap<String, Attendu>>,
-    pub si_salarie: Option<&'a BTreeMap<String, Attendu>>,
+    pub si_spectacle: Option<&'a SiSpectacle>,
+    pub si_entreprise: Option<&'a SiEntreprise>,
+    pub si_salarie: Option<&'a SiSalarie>,
     pub anciennete: Option<&'a Anciennete>,
     pub duree_contrat_max_jours: Option<i64>,
 }
@@ -365,145 +467,10 @@ impl Majoration {
     }
 }
 
-/// Ce qu'une condition de grille (`si_*`) attend d'une case : cochee ou non, ou une valeur.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(untagged)]
-pub enum Attendu {
-    Oui(bool),
-    Valeur(String),
-}
-
-/// Une case lue pour une condition : si elle dit quelque chose (`vraie`), et son texte (vide si elle ne dit rien).
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct CaseLue {
-    pub vraie: bool,
-    pub texte: String,
-}
-
-/// LA CASE `cle` DE `fiche` LUE POUR UNE CONDITION (`fiche::case_en`) : absente, nulle ou vide, elle ne dit rien
-/// (`None`) ; dite, un oui ou un nombre non nul la rend vraie, et son texte est celui qu'elle ecrit (`True`, `12`, `1.5`,
-/// le texte tel quel). Une case de plusieurs valeurs ne se confronte a aucune condition : elle se refuse.
-pub fn case_lue<F: crate::fiche::Cases + ?Sized>(fiche: &F, cle: &str) -> Resultat<Option<CaseLue>> {
-    let lue = crate::fiche::case_en(fiche, cle, Lecture)
-        .transpose()
-        .map_err(|_| socle::echec::a_la_cle("Une condition de grille des minima nomme une case de plusieurs valeurs, qu'elle ne lit pas : le signaler au développeur.", cle, ""))?;
-    Ok(lue.filter(|l| !l.texte.is_empty()))
-}
-
-/// Ce qui lit une case en `CaseLue` (`case_lue`).
-struct Lecture;
-
-impl serde::Serializer for Lecture {
-    type Ok = CaseLue;
-    type Error = std::fmt::Error;
-    type SerializeSeq = serde::ser::Impossible<CaseLue, std::fmt::Error>;
-    type SerializeTuple = serde::ser::Impossible<CaseLue, std::fmt::Error>;
-    type SerializeTupleStruct = serde::ser::Impossible<CaseLue, std::fmt::Error>;
-    type SerializeTupleVariant = serde::ser::Impossible<CaseLue, std::fmt::Error>;
-    type SerializeMap = serde::ser::Impossible<CaseLue, std::fmt::Error>;
-    type SerializeStruct = serde::ser::Impossible<CaseLue, std::fmt::Error>;
-    type SerializeStructVariant = serde::ser::Impossible<CaseLue, std::fmt::Error>;
-
-    fn serialize_bool(self, b: bool) -> Result<CaseLue, std::fmt::Error> {
-        Ok(CaseLue { vraie: b, texte: if b { "True" } else { "False" }.into() })
-    }
-    fn serialize_i8(self, x: i8) -> Result<CaseLue, std::fmt::Error> {
-        self.serialize_i64(x.into())
-    }
-    fn serialize_i16(self, x: i16) -> Result<CaseLue, std::fmt::Error> {
-        self.serialize_i64(x.into())
-    }
-    fn serialize_i32(self, x: i32) -> Result<CaseLue, std::fmt::Error> {
-        self.serialize_i64(x.into())
-    }
-    fn serialize_i64(self, x: i64) -> Result<CaseLue, std::fmt::Error> {
-        Ok(CaseLue { vraie: x != 0, texte: x.to_string() })
-    }
-    fn serialize_u8(self, x: u8) -> Result<CaseLue, std::fmt::Error> {
-        self.serialize_u64(x.into())
-    }
-    fn serialize_u16(self, x: u16) -> Result<CaseLue, std::fmt::Error> {
-        self.serialize_u64(x.into())
-    }
-    fn serialize_u32(self, x: u32) -> Result<CaseLue, std::fmt::Error> {
-        self.serialize_u64(x.into())
-    }
-    fn serialize_u64(self, x: u64) -> Result<CaseLue, std::fmt::Error> {
-        Ok(CaseLue { vraie: x != 0, texte: x.to_string() })
-    }
-    fn serialize_f32(self, x: f32) -> Result<CaseLue, std::fmt::Error> {
-        self.serialize_f64(x.into())
-    }
-    fn serialize_f64(self, x: f64) -> Result<CaseLue, std::fmt::Error> {
-        Ok(CaseLue { vraie: x != 0.0, texte: socle::ecriture::repr_flottant(x) })
-    }
-    fn serialize_char(self, c: char) -> Result<CaseLue, std::fmt::Error> {
-        self.serialize_str(&c.to_string())
-    }
-    fn serialize_str(self, s: &str) -> Result<CaseLue, std::fmt::Error> {
-        Ok(CaseLue { vraie: !s.is_empty(), texte: s.to_string() })
-    }
-    fn serialize_bytes(self, _: &[u8]) -> Result<CaseLue, std::fmt::Error> {
-        Err(std::fmt::Error)
-    }
-    fn serialize_none(self) -> Result<CaseLue, std::fmt::Error> {
-        Ok(CaseLue::default())
-    }
-    fn serialize_some<T: serde::Serialize + ?Sized>(self, v: &T) -> Result<CaseLue, std::fmt::Error> {
-        v.serialize(self)
-    }
-    fn serialize_unit(self) -> Result<CaseLue, std::fmt::Error> {
-        Ok(CaseLue::default())
-    }
-    fn serialize_unit_struct(self, _: &'static str) -> Result<CaseLue, std::fmt::Error> {
-        Ok(CaseLue::default())
-    }
-    fn serialize_unit_variant(self, _: &'static str, _: u32, variante: &'static str) -> Result<CaseLue, std::fmt::Error> {
-        self.serialize_str(variante)
-    }
-    fn serialize_newtype_struct<T: serde::Serialize + ?Sized>(self, _: &'static str, v: &T) -> Result<CaseLue, std::fmt::Error> {
-        v.serialize(self)
-    }
-    fn serialize_newtype_variant<T: serde::Serialize + ?Sized>(self, _: &'static str, _: u32, _: &'static str, _: &T) -> Result<CaseLue, std::fmt::Error> {
-        Err(std::fmt::Error)
-    }
-    fn serialize_seq(self, _: Option<usize>) -> Result<Self::SerializeSeq, std::fmt::Error> {
-        Err(std::fmt::Error)
-    }
-    fn serialize_tuple(self, _: usize) -> Result<Self::SerializeTuple, std::fmt::Error> {
-        Err(std::fmt::Error)
-    }
-    fn serialize_tuple_struct(self, _: &'static str, _: usize) -> Result<Self::SerializeTupleStruct, std::fmt::Error> {
-        Err(std::fmt::Error)
-    }
-    fn serialize_tuple_variant(self, _: &'static str, _: u32, _: &'static str, _: usize) -> Result<Self::SerializeTupleVariant, std::fmt::Error> {
-        Err(std::fmt::Error)
-    }
-    fn serialize_map(self, _: Option<usize>) -> Result<Self::SerializeMap, std::fmt::Error> {
-        Err(std::fmt::Error)
-    }
-    fn serialize_struct(self, _: &'static str, _: usize) -> Result<Self::SerializeStruct, std::fmt::Error> {
-        Err(std::fmt::Error)
-    }
-    fn serialize_struct_variant(self, _: &'static str, _: u32, _: &'static str, _: usize) -> Result<Self::SerializeStructVariant, std::fmt::Error> {
-        Err(std::fmt::Error)
-    }
-}
-
-impl Attendu {
-    /// La case lue est-elle celle qu'on attend ?
-    pub fn vaut(&self, lu: &CaseLue) -> bool {
-        match self {
-            Attendu::Oui(b) => lu.vraie == *b,
-            Attendu::Valeur(v) => lu.texte == *v,
-        }
-    }
-}
-
 const ILLISIBLE: &str = "Les minima conventionnels livrés avec le logiciel ne se lisent pas : le signaler au développeur.";
 
 /// LA SEULE LECTURE DE `minima-conventionnels.json` : sa forme.
-pub fn table() -> Resultat<Arc<Table>> {
+pub fn table() -> R<Arc<Table>> {
     static CACHE: OnceLock<FormeGardee<Table>> = OnceLock::new();
     forme_en_cache(&CACHE, "minima-conventionnels.json", ILLISIBLE, Ok)
 }
@@ -522,7 +489,7 @@ pub struct SpectacleDuContrat<'a> {
 /// (`minima-conventionnels.json`, la note de la 1734). Le contrat le déclare (S21.G00.40.017), le bulletin l'imprime, le
 /// minimum lit sa grille. Artiste-interprète se lit au métier du catalogue (familles « Artistes », « Cirque et rue ») :
 /// un métier hors catalogue ne dit pas s'il l'est, l'IDCC se refuse (règle 1).
-pub fn idcc_du_contrat(idcc: &str, sp: &SpectacleDuContrat, sal: &crate::fiche::ChampsSalarie) -> Resultat<String> {
+pub fn idcc_du_contrat(idcc: &str, sp: &SpectacleDuContrat, sal: &crate::fiche::ChampsSalarie) -> R<String> {
     let idcc = idcc.to_string();
     if (idcc != "2642" && idcc != "3241") || !sp.emission_tv_1734 || sal.statut.dite().is_some_and(|s| *s != crate::fiche::Statut::Artiste) {
         return Ok(idcc);
@@ -533,7 +500,7 @@ pub fn idcc_du_contrat(idcc: &str, sp: &SpectacleDuContrat, sal: &crate::fiche::
         None => None,
     };
     match metier.as_ref().and_then(|m| m.au_catalogue()).map(|f| f.famille.as_str()) {
-        None => Err(format!(
+        None => Err(socle::refus!(
             "Spectacle {}, émission de télévision (convention 1734) : le métier {} de {} n'est pas au catalogue, et \
              le logiciel ne sait pas s'il est artiste-interprète (1734) ou musicien, metteur en scène, artiste de \
              complément (convention de l'entreprise). Choisir un métier du catalogue.",
@@ -565,26 +532,9 @@ pub fn plus_bas<T>(v: Vec<T>, valeur: impl Fn(&T) -> Decimal) -> Option<T> {
     mini.map(|(_, x)| x)
 }
 
-/// Les dix premiers caracteres d'une date, AAAA-MM-JJ ou AAAAMMJJ.
-pub fn iso(s: &str) -> Option<Jour> {
-    let s: String = s.chars().take(10).collect();
-    let c = s.as_bytes();
-    let n = |a: usize, b: usize| -> Option<u32> {
-        let x = s.get(a..b)?;
-        x.bytes().try_fold(0u32, |n, c| c.is_ascii_digit().then(|| n * 10 + u32::from(c - b'0')))
-    };
-    match c.len() {
-        10 if c[4] == b'-' && c[7] == b'-' => Jour::nouveau(n(0, 4)? as i32, n(5, 7)?, n(8, 10)?),
-        8 => Jour::nouveau(n(0, 4)? as i32, n(4, 6)?, n(6, 8)?),
-        _ => None,
-    }
-}
-
-/// Les annees revolues de `depuis` au `jour` (une anciennete, un age) ; `None` si l'une des dates ne se lit pas.
-pub fn ans_revolus(depuis: &str, jour: Option<&str>) -> Option<i64> {
-    let a = iso(depuis)?;
-    let b = iso(jour?)?;
-    Some(b.an as i64 - a.an as i64 - i64::from((b.mois, b.jour) < (a.mois, a.jour)))
+/// Les annees revolues de `a` au `b` (une anciennete, un age).
+pub fn ans_revolus(a: Jour, b: Jour) -> i64 {
+    b.an as i64 - a.an as i64 - i64::from((b.mois, b.jour) < (a.mois, a.jour))
 }
 
 /// Un minimum : le montant, d'ou il vient, et s'il se compare a l'unite.
@@ -618,8 +568,7 @@ pub fn accord<'a>(t: &'a Table, id: &str) -> Option<&'a Convention> {
 
 /// La compagnie adherente de `organisation` l'est-elle d'une organisation d'employeurs signataire de l'accord ?
 pub fn signataire(accord: &Convention, organisation: Option<&str>) -> bool {
-    let Some(s) = organisation.map(sigle).filter(|s| !s.is_empty()) else { return false };
-    accord.signataires.iter().flatten().any(|x| sigle(x) == s)
+    organisation.map(sigle).filter(|s| !s.is_empty()).is_some_and(|s| accord.signataires.iter().flatten().any(|x| sigle(x) == s))
 }
 
 /// LE JOUR OU UNE STIPULATION D'UN ACCORD, DATEE `depuis` PAR L'ACCORD, LIE LA COMPAGNIE ADHERENTE DE `organisation` :
@@ -629,26 +578,23 @@ pub fn signataire(accord: &Convention, organisation: Option<&str>) -> bool {
 /// pas. Les deux articles : `atelier/reference/sources/legi-entrepot/articles.jsonl.gz`. Les minima d'un accord
 /// (`grille_au`) et les valeurs datees du bareme qui en viennent (`accord` dans l'entree,
 /// `droit::contexte::dater_les_accords`) se lisent ici.
-pub fn lie_depuis(accord: &Convention, organisation: Option<&str>, depuis: &str) -> Option<String> {
-    let depuis: String = depuis.chars().take(10).collect();
+pub fn lie_depuis(accord: &Convention, organisation: Option<&str>, depuis: Jour) -> Option<Jour> {
     if signataire(accord, organisation) {
         return Some(depuis);
     }
-    let etendu: String = accord.etendu_le.as_deref().filter(|e| !e.is_empty())?.chars().take(10).collect();
-    Some(etendu.max(depuis))
+    Some(accord.etendu_le?.max(depuis))
 }
 
 /// LA GRILLE DE LA CONVENTION `idcc` QUI LIE LA COMPAGNIE AU `jour` : celle du dernier de ses accords (`accords`) dont
 /// les minima (`en_vigueur`) la lient a ce jour (`lie_depuis`), avec le jour depuis lequel il la lie ; a defaut, la
 /// grille de la convention elle-meme. `None` : la table ne connait pas la convention. Avec elle, la cle des cases du
 /// metier (`ParLaGrille`) : seule une grille trouvee les ouvre.
-pub fn grille_au<'a>(t: &'a Table, idcc: &str, organisation: Option<&str>, jour: Option<&str>) -> Option<(&'a Convention, Option<String>, ParLaGrille)> {
+pub fn grille_au<'a>(t: &'a Table, idcc: &str, organisation: Option<&str>, jour: Option<Jour>) -> Option<(&'a Convention, Option<Jour>, ParLaGrille)> {
     let base = t.convention(idcc)?;
-    let jour: Option<String> = jour.map(|j| j.chars().take(10).collect());
     let lie = |a: &'a Convention| {
         // Un accord qui ne dit pas quand ses minima entrent en vigueur ne lie personne.
-        let depuis = lie_depuis(a, organisation, a.en_vigueur.as_deref()?)?;
-        jour.as_ref().filter(|j| **j >= depuis).map(|_| (a, Some(depuis)))
+        let depuis = lie_depuis(a, organisation, a.en_vigueur?)?;
+        jour.filter(|j| *j >= depuis).map(|_| (a, Some(depuis)))
     };
     let (grille, depuis) = match base.accords.iter().flatten().rev().find_map(lie) {
         Some(retenu) => retenu,

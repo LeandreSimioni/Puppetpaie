@@ -13,7 +13,6 @@
 //! d'erreur ou sur le terminal, jamais sur la sortie standard d'un programme qui lirait du JSON.
 
 use super::actes::est_refus;
-use routes::gestes::administrateur::maintenant_minutes;
 use super::analyse::{Args, Opt, Pos, Spec};
 use super::Cadre;
 use compagnie::coffre::Coffre;
@@ -35,24 +34,19 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         Ok(c) => c,
         // Un refus (le mot de passe du logiciel non tape, l'atelier, une phrase du coffre) : une phrase, code 2.
         Err(e) if est_refus(e.classe) || e.classe == Some(socle::echec::Classe::Coffre) => {
-            dire!("! {}", e.message);
+            dire!("! {}", e.en_lignes());
             2
         }
         Err(e) => cadre.plantage(e),
     }
 }
 
-fn vers(e: compagnie::coffre::Echec) -> Echec {
-    Echec { classe: None, message: e.message }
-}
-
-/// Le refus du coffre sous sa classe (`Coffre`, `Disque`...), pour que la commande sache s'il se rend en phrase.
-fn vers_classe(e: compagnie::coffre::Echec) -> Echec {
-    Echec { classe: Some(e.classe), message: e.message }
+fn vers(e: Echec) -> Echec {
+    Echec { classe: None, ..e }
 }
 
 fn faire(cadre: &Cadre) -> Result<i32, Echec> {
-    let c = Coffre::du_poste(&cadre.racine, "");
+    let c = Coffre::du_poste(&cadre.racine);
     dire!("Coffre : {}", c.chemin().display());
     dire!("  scelle (AES-256-GCM). Cle de ce poste : {}", c.chemin_cle().display());
     if !c.cle_posee().map_err(vers)? {
@@ -94,15 +88,15 @@ fn faire(cadre: &Cadre) -> Result<i32, Echec> {
 /// `coffre seance` : taper le mot de passe du logiciel UNE fois ; les commandes suivantes ouvrent le coffre sans le redemander, 12 h
 /// au plus. `coffre seance fermer` la clot. Jamais une preuve d'acte reel.
 fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
-    let coffre = Coffre::du_poste(&cadre.racine, &maintenant_minutes());
+    let coffre = Coffre::du_poste(&cadre.racine);
     if args.texte("service") == Some("fermer") {
-        let fermee = coffre.oublier_ouverture_gardee().map_err(vers_classe)?;
+        let fermee = coffre.oublier_ouverture_gardee()?;
         dire!("{}", if fermee { "Seance fermee." } else { "Aucune seance ouverte." });
         return Ok(0);
     }
-    if let Some(fin) = coffre.fin_ouverture_gardee().map_err(vers_classe)? {
-        if coffre.ouverture_gardee().map_err(vers_classe)?.is_some() {
-            dire!("Seance deja ouverte, jusqu'au {}.", fin.replace('T', " a "));
+    if let Some(fin) = coffre.fin_ouverture_gardee()? {
+        if coffre.ouverture_gardee()?.is_some() {
+            dire!("Seance deja ouverte, jusqu'au {}.", fin.iso().replace('T', " a "));
             return Ok(0);
         }
     }
@@ -110,16 +104,16 @@ fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         compagnie::demande::Verdict::Accepte => {
             let fin = coffre
                 .fin_ouverture_gardee()
-                .map_err(vers_classe)?
-                .ok_or_else(|| Echec { classe: Some(socle::echec::Classe::Coffre), message: "La seance acceptee n'a pas ete gardee : rien ne la dit.".into() })?;
+?
+                .ok_or_else(|| Echec { classe: Some(socle::echec::Classe::Coffre), phrase: "La seance acceptee n'a pas ete gardee : rien ne la dit.".into(), a_part: None })?;
             dire!(
                 "Seance ouverte jusqu'au {} : le coffre s'ouvre sans redemander le mot de passe du logiciel. Un depot REEL le redemande toujours.",
-                fin.replace('T', " a ")
+                fin.iso().replace('T', " a ")
             );
             Ok(0)
         }
-        compagnie::demande::Verdict::Refuse(phrase) => {
-            dire!("! {}", phrase);
+        compagnie::demande::Verdict::Refuse(e) => {
+            dire!("! {}", e.en_lignes());
             Ok(2)
         }
     }

@@ -1,3 +1,6 @@
+[lints]
+workspace = true
+
 [package]
 name = "atelier"
 version = "0.1.0"
@@ -13,6 +16,9 @@ path = "src/lib.rs"
 [[bin]]
 name = "moteur-atelier"
 path = "src/main.rs"
+# Ses essais sont dans la bibliotheque et `tests/` (le harnais de test d'un binaire leverait le `forbid(dead_code)` de
+# l'espace sur son `main`).
+test = false
 
 [dependencies]
 socle = { path = "../socle" }

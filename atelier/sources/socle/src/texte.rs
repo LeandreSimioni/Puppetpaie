@@ -8,18 +8,14 @@ pub fn blanc(c: char) -> bool {
 
 /// Un chiffre decimal d'Unicode (`str.isdigit()` : la table `nfkd_ascii::CHIFFRES`).
 pub fn est_chiffre(c: char) -> bool {
+    dans_les_plages(crate::nfkd_ascii::CHIFFRES, c)
+}
+
+/// `c` est-il dans une des plages `[a, b]` de `table`, triee, ses plages disjointes ? La premiere plage qui ne finit pas
+/// avant lui le contient, ou aucune.
+pub fn dans_les_plages(table: &[(u32, u32)], c: char) -> bool {
     let n = c as u32;
-    crate::nfkd_ascii::CHIFFRES
-        .binary_search_by(|(a, b)| {
-            if n < *a {
-                std::cmp::Ordering::Greater
-            } else if n > *b {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Equal
-            }
-        })
-        .is_ok()
+    table.get(table.partition_point(|&(_, b)| b < n)).is_some_and(|&(a, _)| a <= n)
 }
 
 /// Le texte sans le blanc autour (`blanc`).

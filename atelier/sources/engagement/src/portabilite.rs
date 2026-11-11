@@ -18,14 +18,11 @@
 
 use droit::fiche::Lue as _;
 use socle::date::Jour;
-use socle::num::Resultat;
+use socle::echec::R;
 
 use crate::calcul::Paie;
 use crate::stock::Objet;
-
-/// Les motifs de fin pour faute lourde (S21.G00.62.002) : « 088 - Licenciement pour faute lourde », « 096 - Rupture
-/// anticipee pour faute lourde ».
-const FAUTE_LOURDE: [&str; 2] = ["088", "096"];
+use crate::DateDeLigne;
 
 /// Le plafond du maintien, en mois (L. 911-8, 1°).
 const DOUZE_MOIS: u32 = 12;
@@ -45,17 +42,19 @@ pub struct Portabilite {
 
 /// LA PORTABILITE DU CONTRAT QUE LA PAIE `p` TERMINE (son engagement, de numero `numero`, finit le `fin`) ; `None` : rien
 /// n'est maintenu (une faute lourde, ou aucune garantie collective).
-pub fn de(racine: &std::path::Path, p: &Paie, numero: &str, fin: &Jour) -> Resultat<Option<Portabilite>> {
-    if p.engagement.motif_rupture.as_deref().is_some_and(|m| FAUTE_LOURDE.contains(&m)) {
+pub fn de(racine: &std::path::Path, p: &Paie, numero: &str, fin: &Jour) -> R<Option<Portabilite>> {
+    // Les motifs de fin pour faute lourde (S21.G00.62.002).
+    use droit::natures::MotifDeRupture::{LicenciementFauteLourde, RuptureAnticipeeFauteLourde};
+    if matches!(p.engagement.motif_rupture, Some(LicenciementFauteLourde | RuptureAnticipeeFauteLourde)) {
         return Ok(None);
     }
     let objets = crate::stock::objets(racine)?;
     let siens: Vec<&Objet> = objets.iter().filter(|o| !o.est_non_actif() && o.carte().salarie.as_ref() == Some(&p.salarie.id)).collect();
     // Les garanties : ce que la paie qui finit cotise, et chaque paie de l'engagement avant elle.
-    let mut ids: Vec<String> = p.lignes.iter().filter_map(|l| l.id.clone()).collect();
-    for o in siens.iter().filter(|o| o.carte().numero_dit() == Some(numero)) {
+    let mut ids: Vec<String> = p.lignes.iter().map(|l| l.id.clone()).collect();
+    for o in siens.iter().filter(|o| o.carte().numero.as_deref() == Some(numero)) {
         for paie in crate::paies::presentes(o)?.into_values() {
-            ids.extend(paie.paie.lignes.into_iter().filter_map(|l| l.id));
+            ids.extend(paie.paie.lignes.into_iter().map(|l| l.id));
         }
     }
     let prevoyance = ids.iter().any(|i| i == "prevoyance" || i.starts_with("prevoyance_"));
@@ -73,22 +72,13 @@ pub fn de(racine: &std::path::Path, p: &Paie, numero: &str, fin: &Jour) -> Resul
 /// contrat du salarie qui finit au plus tard la veille de ce debut, sans jour entre les deux (ou qui le chevauche),
 /// s'y ajoute. INFERENCE : L. 911-8 ne definit pas « consecutifs » ; on le lit au mot, des contrats qui se suivent
 /// sans interruption. Un contrat dont la fin ne se lit pas (ni dite, ni jour joue) n'y entre pas.
-fn debut_des_contrats_consecutifs(siens: &[&Objet], debut: Jour) -> Resultat<Jour> {
+fn debut_des_contrats_consecutifs(siens: &[&Objet], debut: Jour) -> R<Jour> {
     let mut bornes = Vec::new();
     for o in siens {
         let c = o.carte();
-        let d = c.debut_lu();
-        if d.is_empty() {
-            continue;
-        }
-        let f = match c.fin.as_deref().filter(|f| !f.is_empty()) {
-            Some(f) => f.to_string(),
-            None => match c.dates().iter().map(|j| j.jour().to_string()).max() {
-                Some(j) => j,
-                None => continue,
-            },
-        };
-        bornes.push((Jour::lire(&d)?, Jour::lire(&f)?));
+        let Some(d) = c.debut_lu() else { continue };
+        let Some(f) = c.fin.or_else(|| c.dates().iter().map(DateDeLigne::jour).max()) else { continue };
+        bornes.push((d, f));
     }
     let mut depuis = debut;
     loop {
@@ -104,7 +94,7 @@ fn debut_des_contrats_consecutifs(siens: &[&Objet], debut: Jour) -> Resultat<Jou
 /// entier (« arrondie au nombre superieur »), au plus `DOUZE_MOIS`. Le `n`-ieme mois finit la veille du meme quantieme
 /// `n` mois plus tard, ou le dernier jour de ce mois-la quand il n'a pas ce quantieme (du 31/01, le premier mois finit
 /// le 28/02).
-fn mois_arrondis(debut: &Jour, fin: &Jour) -> Resultat<u32> {
+fn mois_arrondis(debut: &Jour, fin: &Jour) -> R<u32> {
     let mut n = 0;
     while n < DOUZE_MOIS {
         n += 1;

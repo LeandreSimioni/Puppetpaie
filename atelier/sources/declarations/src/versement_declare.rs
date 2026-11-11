@@ -13,6 +13,8 @@ use std::str::FromStr;
 use droit::contexte::Contexte;
 use engagement::calcul::Paie;
 
+use socle::echec::{refus, refus_avec, Lieu, Echec, R};
+use socle::mois::Mois;
 use socle::num::Decimal;
 
 /// Les rubriques d'un versement que l'annulation reprend, et si elles portent un montant (a changer de signe).
@@ -87,7 +89,7 @@ pub struct VersementDeclare {
     /// S21.G00.40.001 (JJMMAAAA) : la date de debut declaree, la DERNIERE (une correction deja portee a pu la changer).
     /// Une correction qui la change la declare en S21.G00.41.021 (fiche net-entreprises 1952). `None` : rien de declare
     /// (un contrat ajoute apres la limite).
-    pub debut_contrat: Option<String>,
+    pub debut_contrat: Option<socle::date::Jour>,
 }
 
 impl VersementDeclare {
@@ -106,20 +108,21 @@ pub fn est_un_montant(rubrique: &str) -> Option<bool> {
 }
 
 /// Le refus d'un montant `v` de la rubrique `k` qui ne se lit pas, dans `quoi`.
-pub(crate) fn illisible(k: &str, v: &str, quoi: &str) -> String {
-    socle::echec::avec(
+#[track_caller]
+pub(crate) fn illisible(k: &str, v: &str, quoi: &str) -> Echec {
+    refus_avec(
         format!("La DSN déposée porte un montant illisible en {}.", k),
-        socle::echec::APart { fichier: Some(quoi.to_string()), detail: Some(v.to_string()), ..socle::echec::APart::default() },
+        Lieu { fichier: Some(quoi.to_string()), detail: Some(v.to_string()), ..Lieu::default() },
     )
 }
 
 /// Le brut (S21.G00.51.013 du type 001) de lignes de versement ; chaque rubrique y doit etre de celles que
 /// l'annulation sait reprendre, chaque montant lisible.
-fn verifier_et_brut(lignes: &[(String, String)], numero: &str, quoi: &str) -> Result<Decimal, String> {
+fn verifier_et_brut(lignes: &[(String, String)], numero: &str, quoi: &str) -> R<Decimal> {
     let mut brut: Option<Decimal> = None;
     let mut type_51: Option<&str> = None;
     for (k, v) in lignes {
-        let montant = est_un_montant(k).ok_or_else(|| format!("le versement du contrat {} porte {} dans {}, que l'annulation ne sait pas reprendre", numero, k, quoi))?;
+        let montant = est_un_montant(k).ok_or_else(|| socle::refus!("le versement du contrat {} porte {} dans {}, que l'annulation ne sait pas reprendre", numero, k, quoi))?;
         if montant {
             Decimal::from_str(v).map_err(|_| illisible(k, v, quoi))?;
         }
@@ -130,12 +133,12 @@ fn verifier_et_brut(lignes: &[(String, String)], numero: &str, quoi: &str) -> Re
             brut = Some(brut.iter().sum::<Decimal>() + m);
         }
     }
-    brut.ok_or_else(|| format!("le versement du contrat {} ne declare pas de brut (S21.G00.51.011 = 001) dans {}", numero, quoi))
+    brut.ok_or_else(|| socle::refus!("le versement du contrat {} ne declare pas de brut (S21.G00.51.011 = 001) dans {}", numero, quoi))
 }
 
 /// Le montant net social declare : le S21.G00.58.004 du seul bloc 58 de type 03 de ces lignes ; aucun ou plusieurs
 /// refusent.
-fn net_social_de(lignes: &[(String, String)], numero: &str, quoi: &str) -> Result<Decimal, String> {
+fn net_social_de(lignes: &[(String, String)], numero: &str, quoi: &str) -> R<Decimal> {
     let mut type_58: Option<&str> = None;
     let mut nets = Vec::new();
     for (k, v) in lignes {
@@ -147,7 +150,7 @@ fn net_social_de(lignes: &[(String, String)], numero: &str, quoi: &str) -> Resul
     }
     match nets[..] {
         [n] => Ok(n),
-        _ => Err(format!(
+        _ => Err(socle::refus!(
             "le versement du contrat {} declare {} montant(s) net social (S21.G00.58.003 = 03) dans {} : le net verse au salarie ne se lit pas",
             numero,
             nets.len(),
@@ -157,7 +160,7 @@ fn net_social_de(lignes: &[(String, String)], numero: &str, quoi: &str) -> Resul
 }
 
 /// Les frais declares : la somme des S21.G00.54.002 dont le 54.001 est dans `FRAIS_54` (lignes deja verifiees lisibles).
-fn frais_de(lignes: &[(String, String)], quoi: &str) -> Result<Decimal, String> {
+fn frais_de(lignes: &[(String, String)], quoi: &str) -> R<Decimal> {
     let mut type_54: Option<&str> = None;
     let mut total = Decimal::ZERO;
     for (k, v) in lignes {
@@ -173,9 +176,9 @@ fn frais_de(lignes: &[(String, String)], quoi: &str) -> Result<Decimal, String> 
 /// Le versement que la paie declaree `p` de `mois` a fait partir, tel que les fonctions de la mensuelle l'ecrivent
 /// (`dsn::versement_ecrit`) : ses rubriques (bloc 50 a part, sans le bloc 52), les affiliations du contrat, et ses
 /// montants, ceux de la paie. Refus : une rubrique que l'annulation ne sait pas reprendre, un montant net social absent.
-pub fn de_la_paie(ctx: &Contexte, p: &Paie, mois: &str) -> Result<VersementDeclare, String> {
+pub fn de_la_paie(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementDeclare> {
     let quoi = format!("la paie declaree de {}", mois);
-    let numero = p.engagement.numero.clone().ok_or_else(|| format!("{} n'a pas de numero de contrat : ce qu'elle a declare ne se relit pas", quoi))?;
+    let numero = p.engagement.numero.clone().ok_or_else(|| socle::refus!("{} n'a pas de numero de contrat : ce qu'elle a declare ne se relit pas", quoi))?;
     let ecrit = crate::dsn::versement_ecrit(ctx, p, mois)?;
     let (entete, lignes): (Vec<(String, String)>, Vec<(String, String)>) =
         ecrit.rubriques.into_iter().filter(|(k, _)| !k.starts_with("S21.G00.52.")).partition(|(k, _)| k.starts_with("S21.G00.50."));
@@ -194,7 +197,7 @@ pub fn de_la_paie(ctx: &Contexte, p: &Paie, mois: &str) -> Result<VersementDecla
         lignes,
         affiliations: ecrit.affiliations,
         taux_pas,
-        debut_contrat: Some(p.engagement.debut.jjmmaaaa()),
+        debut_contrat: Some(p.engagement.debut),
     })
 }
 
@@ -222,9 +225,9 @@ pub struct DernierDeclare {
 /// du mois d'origine ; la date de debut, la derniere declaree (`engagement::etats::debut_declare`). `None` : aucune DSN
 /// n'a declare ce contrat pour `mois`.
 pub fn dernier_declare(
-    ctx: &Contexte, o: &engagement::stock::Objet, departs: &engagement::departs::Departs, mois: &str, mois_courant: &str,
-) -> Result<Option<DernierDeclare>, String> {
-    let declarees = engagement::etats::paies_declarees(ctx, o, departs, mois, mois_courant)?;
+    ctx: &Contexte, o: &engagement::stock::Objet, departs: &engagement::departs::Departs, mois: Mois, mois_courant: Mois,
+) -> R<Option<DernierDeclare>> {
+    let declarees = engagement::etats::paies_declarees(ctx, o, departs, mois, Some(mois_courant))?;
     let (Some(origine), Some(derniere)) = (declarees.first(), declarees.last()) else { return Ok(None) };
     let mut etat = de_la_paie(ctx, &derniere.paie, mois)?;
     let mut rappels = Decimal::ZERO;
@@ -247,12 +250,12 @@ pub fn dernier_declare(
         etat.net_social = origine_58;
         etat.rappels_net_social = rappels;
     }
-    etat.taux_pas = origine.paie.pas.as_ref().and_then(|p| p.taux.as_ref().map(droit::fiche::Montant::ecrit)).filter(|t| !t.is_empty());
+    etat.taux_pas = origine.paie.pas.as_ref().and_then(|p| Some(p.taux.ecrit())).filter(|t| !t.is_empty());
     if let Some(d) = engagement::etats::debut_declare(ctx, o, departs, mois_courant)? {
-        etat.debut_contrat = Some(socle::date::Jour::lire(&d)?.jjmmaaaa());
+        etat.debut_contrat = Some(d);
     }
     let bulletin = declarees.iter().rev().find_map(|d| d.paie.numero_bulletin.clone());
     let net_deja_verse = derniere.paie.net_a_payer;
-    let avant = declarees.into_iter().next_back().map(|d| d.paie).ok_or_else(|| "aucune paie declaree".to_string())?;
+    let avant = declarees.into_iter().next_back().map(|d| d.paie).ok_or_else(|| refus("aucune paie declaree"))?;
     Ok(Some(DernierDeclare { versement: etat, net_deja_verse, avant, bulletin }))
 }

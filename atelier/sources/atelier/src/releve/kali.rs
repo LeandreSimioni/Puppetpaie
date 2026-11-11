@@ -39,7 +39,7 @@ pub const CACHE: &str = "veille-kali.json";
 /// Un texte connu par le manifeste, pas par une fiche.
 pub const CITE: &str = "(cite par sources.json)";
 
-type R<T> = Result<T, String>;
+use socle::echec::{refus, R};
 
 /// Ce qu'on telecharge : une adresse, ses octets (ou la panne, en une phrase).
 pub type Telecharger<'a> = dyn FnMut(&str) -> R<Vec<u8>> + 'a;
@@ -50,14 +50,17 @@ pub fn livraisons(index_html: &str) -> Vec<String> {
     crate::releve::entrepot_dila::livraisons(index_html, "KALI")
 }
 
-/// Le jour d'une estampille (`AAAAMMJJ...`, que l'index ecrit) : `AAAA-MM-JJ`.
-pub fn jour(livraison: &str) -> String {
-    format!("{}-{}-{}", &livraison[0..4], &livraison[4..6], &livraison[6..8])
+/// Le jour d'une estampille (`AAAAMMJJ...`, que l'index ecrit) ; une estampille qui ne commence pas par un jour refuse.
+pub fn jour(livraison: &str) -> R<socle::date::Jour> {
+    livraison
+        .get(..8)
+        .and_then(|t| socle::piece::Zone::lue(t, socle::piece::format::Aaaammjj).valeur())
+        .ok_or_else(|| refus(format!("l'estampille KALI « {} » ne commence pas par un jour (AAAAMMJJ)", livraison)))
 }
 
 /// Le jour d'une estampille, sans l'heure (`AAAAMMJJ`).
-fn huit(estampille: &str) -> String {
-    estampille[..8].to_string()
+fn huit(estampille: &str) -> R<String> {
+    Ok(jour(estampille)?.aaaammjj())
 }
 
 // ------------------------------------------------------------------ l'archive
@@ -118,17 +121,17 @@ fn lire_livraison(octets: &[u8]) -> R<(EnOrdre<Fiche>, EnOrdre<(Texte, String)>)
         if !nom.ends_with(".xml") || !(nom.contains("/conteneur/") || nom.contains("/texte/version/")) {
             continue;
         }
-        let t = String::from_utf8(xml).map_err(|e| format!("{} : pas de l'UTF-8 ({})", nom, e))?;
-        let doc = roxmltree::Document::parse(&t).map_err(|e| format!("{} illisible : {}", nom, e))?;
+        let t = String::from_utf8(xml).map_err(|e| refus!("{} : pas de l'UTF-8 ({})", nom, e))?;
+        let doc = roxmltree::Document::parse(&t).map_err(|e| refus!("{} illisible : {}", nom, e))?;
         let racine = doc.root_element();
-        let ident = texte_de(racine, &["META", "META_COMMUN", "ID"]).ok_or_else(|| format!("{} : sans identifiant (META_COMMUN/ID)", nom))?;
+        let ident = texte_de(racine, &["META", "META_COMMUN", "ID"]).ok_or_else(|| refus!("{} : sans identifiant (META_COMMUN/ID)", nom))?;
         match racine.tag_name().name() {
             "IDCC" => {
                 let champ = |c: &str| texte_de(racine, &["META", "META_SPEC", "META_CONTENEUR", c]);
                 let mut liens = EnOrdre::new();
                 for l in racine.descendants().filter(|n| n.has_tag_name("LIEN_TXT")) {
                     if let Some(id) = l.attribute("idtxt").filter(|s| !s.is_empty()) {
-                        let titre = l.attribute("titretxt").ok_or_else(|| format!("{} : le lien {} n'a pas de titre", nom, id))?;
+                        let titre = l.attribute("titretxt").ok_or_else(|| refus!("{} : le lien {} n'a pas de titre", nom, id))?;
                         liens.poser(id.to_string(), titre.trim().to_string());
                     }
                 }
@@ -309,11 +312,11 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
         }
     }
 
-    let seuil = format!("{}-999999", depuis.iso().replace('-', ""));
+    let seuil = format!("{}-999999", depuis.aaaammjj());
     let index = String::from_utf8_lossy(&telecharger(INDEX)?).into_owned();
     let toutes = livraisons(&index);
     let (Some(premiere), Some(derniere)) = (toutes.first().cloned(), toutes.last().cloned()) else {
-        return Err("l'index KALI ne liste aucune livraison : la page a change ?".into());
+        return Err(refus("l'index KALI ne liste aucune livraison : la page a change ?"));
     };
     let a_lire: Vec<&String> = toutes.iter().filter(|l| **l > seuil).collect();
 
@@ -322,23 +325,23 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
     let couverture = match couverture {
         None => {
             if premiere > seuil {
-                trous.push(Trou { de: huit(&seuil), a: huit(&premiere) });
+                trous.push(Trou { de: depuis.aaaammjj(), a: huit(&premiere)? });
             }
             Plage { de: std::cmp::min(&seuil, &premiere).clone(), a: derniere.clone() }
         }
         Some(c) if premiere > c.a => {
-            trous.push(Trou { de: huit(&c.a), a: huit(&premiere) });
+            trous.push(Trou { de: huit(&c.a)?, a: huit(&premiere)? });
             Plage { de: c.de, a: derniere.clone() }
         }
         Some(c) => Plage { de: c.de, a: std::cmp::max(c.a, derniere.clone()) },
     };
     let mut trou = None;
     for t in &trous {
-        if t.a > huit(&seuil) {
+        if t.a > depuis.aaaammjj() {
             trou = Some(format!(
                 "des livraisons entre le {} et le {} sont sorties de l'index sans avoir ete lues : verifier la page a la main pour cette periode",
-                jour(&t.de),
-                jour(&t.a)
+                jour(&t.de)?.iso(),
+                jour(&t.a)?.iso()
             ));
         }
     }
@@ -359,7 +362,7 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
                 for (k, v) in &c.textes.0 {
                     ses.poser(k.clone(), v.clone());
                 }
-                amorces.poser(cont.to_string(), Amorce { livraison: jour(l), textes: c.textes.len(), titre: c.titre.clone() });
+                amorces.poser(cont.to_string(), Amorce { livraison: jour(l)?.iso(), textes: c.textes.len(), titre: c.titre.clone() });
                 a_amorcer.retain(|x| *x != cont);
             }
         }
@@ -403,7 +406,7 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
         nouvelles.push(l.clone());
     }
 
-    std::fs::create_dir_all(dossier).map_err(|e| format!("{} : {}", dossier.display(), e))?;
+    std::fs::create_dir_all(dossier).map_err(|e| refus!("{} : {}", dossier.display(), e))?;
     let cache = Cache { quoi: QUOI_DU_CACHE.to_string(), livraisons: livraisons_lues, textes_connus: connus, trous, couverture, amorces };
     socle::ecriture::ecrire_json(&cache_p, &cache, 1)?;
 
@@ -422,7 +425,7 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
             }
             let n = match cache.textes_connus.valeur(cont) {
                 Some(t) => t.len(),
-                None => return Err(format!("veille-kali.json : la convention {} n'a pas de textes connus", cont)),
+                None => return Err(refus!("veille-kali.json : la convention {} n'a pas de textes connus", cont)),
             };
             let titre = if c.premiere {
                 format!("premiere fiche de la convention vue : {} texte(s) attache(s), liste de reference posee", n)
@@ -433,18 +436,18 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
                 }
             };
             if let Some(ev) = evenements.0.iter_mut().find(|(k, _)| k == cont).map(|(_, v)| v) {
-                ev.push(Evenement::Convention(EvenementConvention { livraison: jour(l), genre: "convention", ident: cont.clone(), titre, premiere: c.premiere, nouveaux: c.nouveaux.clone() }));
+                ev.push(Evenement::Convention(EvenementConvention { livraison: jour(l)?.iso(), genre: "convention", ident: cont.clone(), titre, premiere: c.premiere, nouveaux: c.nouveaux.clone() }));
             }
         }
         for (ident, t) in &r.textes.0 {
             if let Some(ev) = evenements.0.iter_mut().find(|(k, _)| *k == t.conteneur).map(|(_, v)| v) {
-                ev.push(Evenement::Texte(EvenementTexte { texte: t.texte.clone(), conteneur: t.conteneur.clone(), livraison: jour(l), genre: "texte", ident: ident.clone() }));
+                ev.push(Evenement::Texte(EvenementTexte { texte: t.texte.clone(), conteneur: t.conteneur.clone(), livraison: jour(l)?.iso(), genre: "texte", ident: ident.clone() }));
             }
         }
     }
     Ok(Rapport {
-        livraisons_lues: toutes.iter().filter(|l| **l > seuil).map(|l| jour(l)).collect(),
-        nouvelles: nouvelles.iter().map(|l| jour(l)).collect(),
+        livraisons_lues: toutes.iter().filter(|l| **l > seuil).map(|l| jour(l).map(|j| j.iso())).collect::<R<Vec<String>>>()?,
+        nouvelles: nouvelles.iter().map(|l| jour(l).map(|j| j.iso())).collect::<R<Vec<String>>>()?,
         trou,
         amorces: cache.amorces,
         evenements,
@@ -455,10 +458,10 @@ pub fn veiller(dossier: &Path, suivis: &[Suivi], depuis: &Jour, relever: bool, t
 /// l'index.
 fn poser(dossier: &Path, livraison: &str, ident: &str, membre: &str, octets: &[u8]) -> R<()> {
     let Some((_, xml)) = fichiers_tar_gz(octets)?.into_iter().find(|(n, _)| n == membre) else {
-        return Err(format!("{} absent de la livraison {}", membre, livraison));
+        return Err(refus!("{} absent de la livraison {}", membre, livraison));
     };
     let kali = dossier.join("kali");
-    let cible = kali.join(format!("{}-{}.xml", ident, jour(livraison)));
-    std::fs::create_dir_all(&kali).map_err(|e| format!("{} : {}", kali.display(), e))?;
-    std::fs::write(&cible, xml).map_err(|e| format!("{} : {}", cible.display(), e))
+    let cible = kali.join(format!("{}-{}.xml", ident, jour(livraison)?.iso()));
+    std::fs::create_dir_all(&kali).map_err(|e| refus!("{} : {}", kali.display(), e))?;
+    std::fs::write(&cible, xml).map_err(|e| refus!("{} : {}", cible.display(), e))
 }

@@ -5,15 +5,13 @@
 //! `cargo nextest run --cargo-profile essais -E 'binary(routes) & test(/^<fichier>::/)'` (le nom du fichier est le nom du module).
 //! Aucun de ces fichiers ne change l'environnement du processus (`set_var`) : ceux qui le font restent seuls dans `tests/`.
 
+// Les aides communes a plusieurs binaires d'essai : publiques, chacun n'en prend que ce qu'il emploie.
 #[path = "../outils/mod.rs"]
-mod outils;
-
-#[allow(dead_code)]
+pub mod outils;
 #[path = "../bulletins_fictifs/mod.rs"]
-mod bulletins_fictifs;
-#[allow(dead_code)]
+pub mod bulletins_fictifs;
 #[path = "../faux_drive/mod.rs"]
-mod faux_drive;
+pub mod faux_drive;
 
 mod demarrage;
 mod import_neuve;
@@ -33,3 +31,4 @@ mod frais_de_deplacement;
 mod second_contrat_au_mois;
 mod identite_qui_arrive;
 mod technicien_au_service;
+mod technicien_de_la_3090;

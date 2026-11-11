@@ -23,3 +23,10 @@ Ces deux versions valent pour 2025 et 2026.
 
 Le net de l'indemnité journalière de principe (`engagement::maintien::ij_de_principe`, `net_de_csg_crds` ;
 `logiciel/donnees/permanents-base.json`, `indemnites_journalieres.principe.crds` et `principe_accident.crds`).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `legifrance-ordonnance-96-50-crds-20251231.pdf` : `16acbd4a0c13ef1e4546fb9e21aa97f1024bd91c95a48ce9c2db2cdf1bbd90ff`
+- `legifrance-ordonnance-96-50-crds-20251231.txt` : `59f68a458dc073d27e69851ef68c60fecf7de51696067e01bcb4e3f50641a5d2`

@@ -24,7 +24,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
 }
 
 fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
-    let Some(fichier) = args.texte("fichier").filter(|f| !f.is_empty()) else {
+    let Some(fichier) = args.tape("fichier").filter(|f| !f.texte().is_empty()) else {
         dire!("depot-dsn FICHIER|AAAA-MM [--ordre N] [--environnement editeur] : un depot de TEST.");
         return Ok(2);
     };
@@ -39,9 +39,10 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         },
     };
     refuser_si_pas_redirige(cadre, Organisme::Dsn, "le depot de test")?;
-    let designee = match socle::mois::Mois::du_texte(fichier) {
+    // Un mois tape (`AAAA-MM`) designe la DSN du mois, comme la route (`depots::designee`) ; tout autre texte, un fichier.
+    let designee = match fichier.designe_un_mois() {
         Some(m) => routes::depots::designee(&cadre.ctx, &routes::depots::Designation::du_mois(routes::depots::Quoi::Dsn, m))?.0,
-        None => fichier.to_string(),
+        None => fichier.texte().to_string(),
     };
     // Un depot de test n'engage rien : il lui faut seulement le secret de l'organisme, donc le coffre ouvert.
     cadre.ouvrir_le_coffre();

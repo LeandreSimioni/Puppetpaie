@@ -56,3 +56,17 @@ libellé de chaque contrôle, `RO.B004.R002`).
   `historique-mois`) ; une cible d'action à corriger se range parmi les anomalies, un paramètre se dit en phrase.
 - Tests : `paie/tests/routes/historique_mois.rs`,
   `les_comptes_rendus_neores_et_des_organismes_complementaires_se_traduisent` (un 118 et un 119 fabriqués en fictif).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `gip-mds-neores-cahier-technique-2026.1.2-20251024.pdf` : `ea39d8b58ae9f0dc29d6033ba6d2d90865a41c4fe48e6b2c662eb8025928f8bd`
+- `gip-mds-neores-cahier-technique-2026.1.2-20251024.txt` : `ceacfcf9cb9aa8d140c9f74d52e292e8cdf95accb27d098ca75ffebb6c3cf060`
+- `gip-mds-neores-cahier-technique-2027.1.0-20260303.pdf` : `12e03e606d418a55307c4ee1f73e920ed3eb5e05e6b47eec1ab1c6a522eeebee`
+- `gip-mds-neores-cahier-technique-2027.1.0-20260303.txt` : `52f23c4fed89842d07373d9d989df024619f73cf7e0632fa54e658e50e3174e5`
+- `gip-mds-neores-note-differentielle-2026.1.2-2027.1.0-20260313.pdf` : `c52937ff35ee841ba29d15af8cd6a877becce7569c5672f274f47daa8ef25600`
+- `gip-mds-neores-note-differentielle-2026.1.2-2027.1.0-20260313.txt` : `b6f466ea9af3507e2690656c8f4564262d46763b9890a4aceebfc58dc970f9e2`
+- `gip-mds-neores-table-types-de-parametres-20230703.csv` : `72fc659a70ef72d6020d41bc752eba0e92ca3230f32f7523e48e44f114c0c2bb`
+- `gip-mds-neores-table-types-de-parametres-20230703.xlsx` : `b0e27324f077d5f4b3f68249616a65c68a8e7e635d3303c5db976da9d38023de`
+- `net-entreprises-page-norme-et-documentation-neores-20261014.html` : `0569107aa3337b0a5ae61454c5964bbefbc90746f1597bc899781d739f46e614`

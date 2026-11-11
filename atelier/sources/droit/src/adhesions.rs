@@ -16,7 +16,7 @@ use crate::fiche::Lue;
 use socle::date::Jour;
 use socle::fichiers::{forme_en_cache, FormeGardee};
 use socle::forme::Nombre;
-use socle::num::Resultat;
+use socle::echec::R;
 
 use crate::organismes::Adhesion;
 use crate::source::forme_notee;
@@ -31,8 +31,8 @@ forme_notee! {
     /// `casc-svp-base.json`, entier : la CASC-SVP de la 3090, ce que la DSN en declare et sa regularisation hors DSN.
     pub struct CascSvp {
         pub idcc: String,
-        /// Le premier mois declare en DSN, `AAAA-MM`.
-        pub depuis: String,
+        /// Le premier mois declare en DSN.
+        pub depuis: socle::mois::Mois,
         pub taux: TauxCasc,
         pub reglement: Reglement,
         pub courriel_audiens: CourrielCasc,
@@ -47,14 +47,14 @@ forme_notee! {
     /// Le taux de la cotisation, en pourcentage, par annee de salaires (`AAAA`).
     pub struct TauxCasc {
         #[serde(deserialize_with = "socle::forme::en_ordre")]
-        pub par_annee: Vec<(String, Nombre)>,
+        pub par_annee: Vec<(socle::mois::Annee, Nombre)>,
     }
 }
 
 impl TauxCasc {
     /// Le taux de l'annee `an`, s'il est releve.
-    pub fn de(&self, an: &str) -> Option<socle::num::Decimal> {
-        self.par_annee.iter().find(|(a, _)| a == an).map(|(_, t)| t.0)
+    pub fn de(&self, an: socle::mois::Annee) -> Option<socle::num::Decimal> {
+        self.par_annee.iter().find(|(a, _)| *a == an).map(|(_, t)| t.0)
     }
 }
 
@@ -86,7 +86,7 @@ forme_notee! {
 }
 
 /// LA LECTURE DE `casc-svp-base.json`, la seule, une fois tant que le fichier ne change pas.
-pub fn casc_svp_base() -> Resultat<Arc<CascSvp>> {
+pub fn casc_svp_base() -> R<Arc<CascSvp>> {
     static CACHE: OnceLock<FormeGardee<CascSvp>> = OnceLock::new();
     forme_en_cache(&CACHE, "casc-svp-base.json", "La table livrée de la CASC-SVP ne se lit pas : le signaler au développeur.", Ok)
 }
@@ -98,7 +98,7 @@ pub fn casc_svp_base() -> Resultat<Arc<CascSvp>> {
 /// interne au message DSN (`atelier/reference/norme-dsn/texte/bloc-S21.G00.15.txt`, l. 112-117). La compagnie n'en
 /// saisit donc rien : `Contexte::organismes` la porte meme quand `config/organismes.json` ne la nomme pas.
 /// L'exemption se lit avec les cles de l'effectif `eff` de l'annee `an` (`contexte::Effectif::cinquante`, `cse`).
-pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise, eff: &crate::contexte::Effectif, an: i32) -> Resultat<Option<Adhesion>> {
+pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise, eff: &crate::contexte::Effectif, an: i32) -> R<Option<Adhesion>> {
     let base = casc_svp_base()?;
     if ent.idcc.portee().map(str::trim) != Some(base.idcc.trim()) || crate::bareme::casc_exemptee(ent, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()) {
         return Ok(None);
@@ -120,8 +120,8 @@ pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise, eff: &crate::contexte::Eff
 mod tests {
     use super::*;
 
-    fn j(s: &str) -> Jour {
-        Jour::lire(s).unwrap()
+    fn j(an: i32, mois: u32, jour: u32) -> Jour {
+        Jour::nouveau(an, mois, jour).unwrap()
     }
 
     /// Thalie Sante des intermittents n'existe qu'a partir du 01/01/2026 (`DateDebutValidite="01012026"`,
@@ -130,14 +130,14 @@ mod tests {
     /// le mois ou il s'ouvre.
     #[test]
     fn un_contrat_ne_vaut_que_pour_la_periode_qu_il_couvre() {
-        let thalie = Some(j("2026-01-01"));
-        assert!(!en_vigueur(thalie, None, &j("2025-12-01"), &j("2025-12-31")));
-        assert!(en_vigueur(thalie, None, &j("2026-01-01"), &j("2026-01-31")));
-        let clos = (Some(j("2025-01-01")), Some(j("2026-06-30")));
-        assert!(en_vigueur(clos.0, clos.1, &j("2026-06-01"), &j("2026-06-30")));
-        assert!(!en_vigueur(clos.0, clos.1, &j("2026-07-01"), &j("2026-07-31")));
-        assert!(en_vigueur(Some(j("2026-03-15")), None, &j("2026-03-01"), &j("2026-03-31")));
-        assert!(en_vigueur(None, None, &j("2025-01-01"), &j("2025-01-31")));
+        let thalie = Some(j(2026, 1, 1));
+        assert!(!en_vigueur(thalie, None, &j(2025, 12, 1), &j(2025, 12, 31)));
+        assert!(en_vigueur(thalie, None, &j(2026, 1, 1), &j(2026, 1, 31)));
+        let clos = (Some(j(2025, 1, 1)), Some(j(2026, 6, 30)));
+        assert!(en_vigueur(clos.0, clos.1, &j(2026, 6, 1), &j(2026, 6, 30)));
+        assert!(!en_vigueur(clos.0, clos.1, &j(2026, 7, 1), &j(2026, 7, 31)));
+        assert!(en_vigueur(Some(j(2026, 3, 15)), None, &j(2026, 3, 1), &j(2026, 3, 31)));
+        assert!(en_vigueur(None, None, &j(2025, 1, 1), &j(2025, 1, 31)));
     }
 
     /// L'adhesion CASC-SVP d'une 3090 est celle de la fiche de codification, sans rien de la compagnie
@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn la_casc_svp_d_une_3090_ne_se_saisit_pas() {
         let fiche = |texte: &str| socle::forme::lire_texte::<crate::fiche::ChampsEntreprise>(texte, "la fiche").unwrap();
-        let soixante = crate::contexte::Effectif { annees: [(2025, 60.0)].into(), premiere_embauche: None, cinquante_salaries: true };
+        let soixante = crate::contexte::Effectif { annees: [(2025, socle::num::Decimal::from(60))].into(), premiere_embauche: None, cinquante_salaries: true };
         let a = casc_svp(&fiche(r#"{"idcc": "3090"}"#), &soixante, 2026).unwrap().unwrap();
         assert_eq!((a.libelle.as_str(), a.delegataire.as_str()), ("CASCSVP", "P0983"));
         assert!(casc_svp(&fiche(r#"{"idcc": "1285"}"#), &soixante, 2026).unwrap().is_none());

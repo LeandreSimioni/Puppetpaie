@@ -35,8 +35,8 @@ async function dessinerIdentite(cible) {
   // (« Choisir un fichier — aucun fichier choisi ») se cache derrière un
   // bouton qui dit ce qu'il fait.
   const rang = (quoi) => {
-    const e = etat[quoi] || { pose: false };
-    const titre = echapper(e.titre || "");
+    const e = etat[quoi];
+    const titre = echapper(e.titre);
     // Le tampon a une image même quand rien n'est posé : celle que le
     // logiciel dessine. C'est tout l'objet de la case « automatique ».
     const vue = e.pose
@@ -52,7 +52,7 @@ async function dessinerIdentite(cible) {
       ${vue}
       <div class="rang-infos">
         <b class="rang-nom">${titre}</b>
-        <span class="discret">${echapper(e.dit || "")}</span>${quoi === "signature" ? `
+        <span class="discret">${echapper(e.dit)}</span>${quoi === "signature" ? `
           <button class="lien" data-aller-fiche="entreprise">Qui signe</button>` : ""}
         <div>${dit}</div>
       </div>
@@ -98,7 +98,7 @@ async function dessinerIdentite(cible) {
           l.readAsDataURL(f);
         });
         const poids = cible.querySelector("#identite-poids").value;
-        poidsVise = poids === "" ? null : Number(poids);
+        poidsVise = poids;
         const r = await api("poser-identite", { quoi: ch.dataset.quoi, contenu, poids: poidsVise });
         await dessinerIdentite(cible);
         // Ce que l'image pèsera dans chaque document : le moteur le dit.

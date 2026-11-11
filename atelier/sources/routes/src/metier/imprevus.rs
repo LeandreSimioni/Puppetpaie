@@ -8,7 +8,7 @@ use droit::contexte::{Contexte, IdSalarie};
 use engagement::imprevus::{self, ArretSaisi, GenreArret, Imprevu};
 use engagement::Chiffre;
 use socle::date::Jour;
-use socle::echec::{erreur, Classe, Echec, R};
+use socle::echec::{Classe, R};
 
 /// UN CONTRAT QUI COUVRE UN JOUR, lu dans les saisies : le salarie, son nom, le numero, le debut et la fin, le mois qui le
 /// saisit, le spectacle (tels que l'engagement les ecrit), paye au mois ou non, sa nature ; `arret-contrats` le dit
@@ -17,29 +17,20 @@ use socle::echec::{erreur, Classe, Echec, R};
 pub(crate) struct ContratAuJour {
     pub(crate) salarie: IdSalarie,
     pub(crate) nom: String,
-    pub numero: Option<String>,
-    pub debut: String,
-    pub(crate) fin: Option<String>,
-    pub(crate) mois: String,
+    pub numero: Option<engagement::numeros::NumeroContrat>,
+    pub debut: Jour,
+    pub(crate) fin: Option<Jour>,
+    pub(crate) mois: socle::mois::Mois,
     pub(crate) spectacle: Option<String>,
     pub(crate) mensuel: bool,
-    pub(crate) nature: Option<String>,
+    pub(crate) nature: Option<droit::natures::NatureDeContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) dit: Option<String>,
 }
 
-fn plain(m: String) -> Echec {
-    socle::echec::noter_et(None, m)
-}
-
 /// Un refus du magasin des imprevus (`imprevus`) : un fichier abime, un genre inconnu.
-#[track_caller]
-pub(crate) fn refus_magasin(m: String) -> Echec {
-    erreur(Classe::Refuse, m)
-}
-
-pub(crate) fn magasin<T>(r: Result<T, String>) -> R<T> {
-    r.map_err(refus_magasin)
+pub(crate) fn magasin<T>(r: R<T>) -> R<T> {
+    r.map_err(|e| e.reclasser(Classe::Refuse))
 }
 
 /// Les arrets de travail du magasin des imprevus (`imprevus/AAAA-MM.json`, genre `arret`), dans l'ordre des mois du
@@ -56,7 +47,7 @@ pub(crate) fn tous_les_arrets(ctx: &Contexte) -> R<Vec<ArretSaisi>> {
 
 /// Les nomenclatures du bloc 60 (`arrets-base.json`), lues par leur forme (`droit::arrets::bloc_60`).
 pub(crate) fn nomenclatures() -> R<Bloc60> {
-    droit::arrets::bloc_60().map_err(plain)
+    droit::arrets::bloc_60()
 }
 
 /// CE QUI FAIT UN ARRET A ECRIRE : qui, quel contrat, le motif et les jours, et ce que la saisie en dit d'autre.
@@ -78,18 +69,18 @@ pub(crate) fn arret_a_ecrire(x: ArretDit) -> ArretSaisi {
     ArretSaisi {
         genre: GenreArret::Arret,
         salarie: x.cle.to_string(),
-        contrat_debut: x.contrat.debut.clone(),
+        contrat_debut: x.contrat.debut,
         contrat_numero: x.contrat.numero.clone(),
         motif: x.motif.to_string(),
-        dernier_jour_travaille: x.dernier_jour.iso(),
-        debut: x.debut.iso(),
-        fin_previsionnelle: x.fin.iso(),
+        dernier_jour_travaille: x.dernier_jour,
+        debut: x.debut,
+        fin_previsionnelle: x.fin,
         subrogation: None,
         subrogation_debut: None,
         subrogation_fin: None,
         reprise: None,
         reprise_motif: None,
-        date_accident: x.date_accident.map(|j| j.iso()),
+        date_accident: x.date_accident,
         jours_deja_indemnises: x.jours_deja_indemnises.map(|j| Chiffre::entier(i64::from(j))),
         ij_brute: None,
         ij_nette: None,

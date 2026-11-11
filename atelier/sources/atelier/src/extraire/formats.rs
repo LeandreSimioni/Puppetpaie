@@ -25,6 +25,14 @@
 //!   (`fabrique_pdf::lecture::texte`) : chaque identifiant de rubrique seul sur sa ligne ouvre un corps, qui va jusqu'au
 //!   suivant ; on y lit la premiere longueur `[min,max]` et chaque expression `CSL nn : ...`.
 //!
+//! LES LISTES DE VALEURS. « Une rubrique assortie d'une liste de valeurs ne peut contenir qu'une des valeurs indiquees
+//! dans cette liste » (cahier 2027.1.1 p. 86, `texte-2027/chapitre-4-controles.txt` l. 164). Le releve la prend, code et
+//! libelle, la ou le texte la donne : dans le classeur, la colonne « Values » du type (`code=libelle;...`) ; dans le
+//! cahier en PDF, les lignes `code - libelle` qui suivent la longueur de la rubrique (`valeurs_du_cahier`). Le moteur
+//! ne s'en sert pas pour refuser une valeur : les `enum` qui disent une liste de la norme
+//! (`droit::natures::MotifDeRecours`, `MotifDeRupture`, `ModaliteDuTempsDeTravail`) s'y tiennent, par un test de
+//! structure (`moteur/tests/fichiers/structure.rs`).
+//!
 //! UNE EXPRESSION QUE LE MOTEUR NE SAIT PAS COMPILER (`formats::Regex::compiler`) EST LAISSEE TOMBER, plutot que reparee a
 //! la main : une expression devinee refuserait des valeurs licites. Elle est nommee dans `expressions_ecartees`. Le
 //! critere est celui du moteur, qui seul se sert de ces expressions ; sur les sources deposees, il ecarte trois
@@ -42,14 +50,14 @@ use regex::Regex;
 use serde::Serialize;
 
 use super::usages::{en_classeur, version_du_cahier};
-use super::{date_du_releve, en_transcription, nom_de, sha256, EnOrdre, Releve, Transcription};
+use super::{blancs_ramenes, date_du_releve, en_transcription, nfc, nom_de, sha256, EnOrdre, Releve, Transcription};
 use socle::date::Jour;
 use socle::lecture_xlsx::{self, Cellule};
-use socle::num::Resultat;
+use socle::echec::R;
 use socle::texte::{blanc as espace, strip};
 
-const QUOI: &str = "Le format de chaque rubrique du cahier technique NEODeS : sa longueur [min,max] et ses expressions de \
-                      controle CSL. Le tableau des usages dit si une rubrique a le droit d'etre la ; ceci dit ce qu'elle doit \
+const QUOI: &str = "Le format de chaque rubrique du cahier technique NEODeS : sa longueur [min,max], ses expressions de \
+                      controle CSL et, quand elle en a une, sa liste de valeurs (code -> libelle). Le tableau des usages dit si une rubrique a le droit d'etre la ; ceci dit ce qu'elle doit \
                       contenir. Ce n'est pas un validateur : il verifie la FORME d'une valeur, pas sa justesse : un montant \
                       faux au bon format passe.";
 
@@ -73,13 +81,119 @@ enum Empreinte {
     Pdf(String),
 }
 
-/// Le format d'une rubrique : sa longueur [min, max], ses expressions de controle que le moteur compile.
+/// Le format d'une rubrique : sa longueur [min, max], ses expressions de controle que le moteur compile, et sa liste de
+/// valeurs quand le texte lui en donne une (code -> libelle, dans l'ordre du texte).
 #[derive(Serialize)]
 struct Format {
     #[serde(skip_serializing_if = "Option::is_none")]
     longueur: Option<[i64; 2]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     csl: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    valeurs: Option<EnOrdre<String>>,
+}
+
+/// Une liste de valeurs, code -> libelle (blancs ramenes a un, forme composee) ; un code deja pose garde son premier
+/// libelle, et le double se dit au bilan (`notes`).
+fn liste_de(paires: Vec<(String, String)>, rubrique: &str, notes: &mut Vec<String>) -> Option<EnOrdre<String>> {
+    let mut liste = EnOrdre::new();
+    for (code, libelle) in paires {
+        if liste.valeur(&code).is_some() {
+            notes.push(format!("{} : le code {} deux fois dans la liste (le premier libelle garde)", rubrique, code));
+            continue;
+        }
+        liste.poser(code, nfc(&blancs_ramenes(&libelle)));
+    }
+    Some(liste).filter(|l| !l.is_empty())
+}
+
+/// LA LISTE DE VALEURS D'UN TYPE DU CLASSEUR (colonne « Values » de la feuille « Data Types ») : `code=libelle`,
+/// separes par `;`. Un morceau sans `=` ne se lit pas : refus, plutot qu'un libelle devine.
+fn valeurs_du_classeur(texte: &str, rubrique: &str) -> R<Vec<(String, String)>> {
+    let mut paires = Vec::new();
+    for morceau in texte.split(';') {
+        if strip(morceau).is_empty() {
+            continue;
+        }
+        let Some((code, libelle)) = morceau.split_once('=') else {
+            return Err(refus!("{} : la liste de valeurs du type a un morceau sans « = » : {}", rubrique, socle::fichiers::repr(morceau)));
+        };
+        paires.push((strip(code).to_string(), libelle.to_string()));
+    }
+    Ok(paires)
+}
+
+/// Le pied d'une page du cahier qui commence a la ligne `i` (le bloc, `S21.G00.40` ; la date du cahier ; des lignes
+/// blanches ; `195 / 361`) : l'indice de la ligne qui le suit.
+fn pied_de_page(lignes: &[&str], i: usize) -> Option<usize> {
+    let bloc = Regex::new(r"^S\d\d\.G00\.\d\d$").expect("motif");
+    let date = Regex::new(r"^\d{4}-\d\d-\d\d$").expect("motif");
+    let page = Regex::new(r"^\d+ / \d+$").expect("motif");
+    if !bloc.is_match(lignes.get(i)?) || !date.is_match(lignes.get(i + 1)?) {
+        return None;
+    }
+    let mut j = i + 2;
+    while lignes.get(j).is_some_and(|l| l.is_empty()) {
+        j += 1;
+    }
+    page.is_match(lignes.get(j)?).then_some(j + 1)
+}
+
+/// LA LISTE DE VALEURS D'UNE RUBRIQUE DU CAHIER EN PDF : ce qui suit sa longueur (`zone`). Les pieds de page, et les
+/// lignes blanches qui les entourent, s'otent d'abord : une liste continue d'une page a l'autre. La liste commence a
+/// la premiere ligne non blanche, qui doit etre une valeur (`01 - libelle` : un code en chiffres et capitales, un
+/// tiret, le libelle) -- sinon la rubrique n'a pas de liste (une table de nomenclature, une expression). Chaque ligne
+/// suivante est une valeur, ou la suite du libelle de la precedente ; la liste finit a la premiere ligne blanche, ou a
+/// une expression de controle (`CSL`). Une liste qui court jusqu'au bout du corps finit par le nom de la rubrique
+/// suivante, ecrit sans ligne blanche (S21.G00.40.021, « Code caisse professionnelle de congés payés ») : sa derniere
+/// ligne, si elle n'est pas une valeur, n'est pas a elle.
+fn valeurs_du_cahier(zone: &str) -> Vec<(String, String)> {
+    let valeur = Regex::new(r"^([0-9A-Z]{1,8}) [-–] (.+)$").expect("motif");
+    let lignes: Vec<&str> = zone.split('\n').map(strip).collect();
+    let mut gardees: Vec<&str> = Vec::new();
+    let mut i = 0;
+    while i < lignes.len() {
+        if let Some(apres) = pied_de_page(&lignes, i) {
+            while gardees.last().is_some_and(|l| l.is_empty()) {
+                gardees.pop();
+            }
+            i = apres;
+            while lignes.get(i).is_some_and(|l| l.is_empty()) {
+                i += 1;
+            }
+            continue;
+        }
+        gardees.push(lignes[i]);
+        i += 1;
+    }
+    let mut paires: Vec<(String, String)> = Vec::new();
+    // Le libelle de la derniere valeur avant sa derniere suite : la rendre si la liste court jusqu'au bout du corps.
+    let mut avant_la_suite: Option<String> = None;
+    let mut jusqu_au_bout = true;
+    for l in gardees.iter().skip_while(|l| l.is_empty()) {
+        if l.is_empty() || l.starts_with("CSL") {
+            jusqu_au_bout = false;
+            break;
+        }
+        if let Some(c) = valeur.captures(l) {
+            paires.push((c[1].to_string(), c[2].to_string()));
+            avant_la_suite = None;
+            continue;
+        }
+        let Some((_, libelle)) = paires.last_mut() else {
+            jusqu_au_bout = false;
+            break;
+        };
+        avant_la_suite = Some(libelle.clone());
+        libelle.push(' ');
+        libelle.push_str(l);
+    }
+    if jusqu_au_bout {
+        if let (Some(avant), Some((_, libelle))) = (avant_la_suite, paires.last_mut()) {
+            *libelle = avant;
+        }
+    }
+    paires
 }
 
 /// Une expression ecartee : la rubrique, et l'expression que le moteur ne compile pas.
@@ -99,7 +213,14 @@ struct SansType {
 
 /// L'expression est-elle de celles que le moteur sait compiler ?
 fn compile(expression: &str) -> bool {
-    declarations::formats::Regex::compiler(expression).is_ok()
+    match declarations::formats::Regex::compiler(expression) {
+        Ok(_) => true,
+        // Le refus est la reponse : le releve note l'expression comme non compilee.
+        Err(la_reponse) => {
+            let _ = la_reponse;
+            false
+        }
+    }
 }
 
 /// Les groupes de `CSL\s*\d*\s*:\s*(.*?)(?=\n[ \t]*\n)` (drapeau `S` : `.` prend aussi le saut de ligne), cherches de
@@ -166,7 +287,7 @@ fn csl_trouvees(corps: &str) -> Vec<String> {
 }
 
 /// Les formats lus dans le texte du cahier.
-fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>) -> Resultat<EnOrdre<Format>> {
+fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>, notes: &mut Vec<String>) -> R<EnOrdre<Format>> {
     let rubrique = Regex::new(r"(?m)^[\s\x1c-\x1f]*(S\d\d\.G00\.\d\d\.\d\d\d)[\s\x1c-\x1f]*$").expect("motif");
     let longueur = Regex::new(r"\[(\d+),(\d+)\]").expect("motif");
     // `RUBRIQUE.split(texte)` : [avant, id, corps, id, corps...].
@@ -203,12 +324,13 @@ fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>) -> Resultat<EnOrdre<For
         if csl.is_empty() && lon.is_none() {
             continue;
         }
-        let longueur = match lon {
+        let (longueur, valeurs) = match lon {
             Some(l) => {
-                let n = |i: usize| l[i].parse::<i64>().map_err(|e| format!("{} : longueur illisible {} ({})", rid, &l[0], e));
-                Some([n(1)?, n(2)?])
+                let n = |i: usize| l[i].parse::<i64>().map_err(|e| refus!("{} : longueur illisible {} ({})", rid, &l[0], e));
+                let apres = l.get_match().end();
+                (Some([n(1)?, n(2)?]), liste_de(valeurs_du_cahier(&corps[apres..]), rid, notes))
             }
-            None => None,
+            None => (None, None),
         };
         // Plusieurs CSL = plusieurs formes admises (CSL 00, CSL 01...), sans doublon, dans l'ordre.
         let mut vues: Vec<&String> = Vec::new();
@@ -224,27 +346,29 @@ fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>) -> Resultat<EnOrdre<For
                 ecartees.push(Ecartee { rubrique: rid.to_string(), coupee: c.clone() });
             }
         }
-        out.poser(rid.to_string(), Format { longueur, csl: Some(bonnes).filter(|b| !b.is_empty()) });
+        out.poser(rid.to_string(), Format { longueur, csl: Some(bonnes).filter(|b| !b.is_empty()), valeurs });
     }
     Ok(out)
 }
 
-/// La cle d'une case : un entier, un flottant de valeur entiere et un booleen (0 ou 1) de meme valeur se confondent ;
-/// un texte n'egale qu'un texte.
-fn cle(c: &Cellule) -> String {
-    let nombre = |f: f64| {
-        if f.fract() == 0.0 && f.abs() < 9.2e18 {
-            format!("n{}", f as i64)
-        } else {
-            format!("f{}", f.to_bits())
-        }
-    };
-    match c {
+/// La cle d'une case : un entier, un nombre a virgule de valeur entiere et un booleen (0 ou 1) de meme valeur se
+/// confondent ; un texte n'egale qu'un texte.
+fn cle(c: &Cellule) -> R<String> {
+    Ok(match c {
         Cellule::Texte(s) => format!("t{}", s),
         Cellule::Entier(i) => format!("n{}", i),
-        Cellule::Flottant(f) => nombre(*f),
+        Cellule::AVirgule(n) => match entier_exact(n)? {
+            Some(i) => format!("n{}", i),
+            None => format!("f{}", n.ecrit()),
+        },
         Cellule::Booleen(b) => format!("n{}", *b as i64),
-    }
+    })
+}
+
+/// L'entier qu'un nombre a virgule vaut exactement (`12.0`), ou `None` ; un nombre qui ne tient pas en decimal refuse.
+fn entier_exact(n: &socle::forme::NombreLu) -> R<Option<i64>> {
+    use rust_decimal::prelude::ToPrimitive;
+    Ok(Some(n.decimal()?).filter(|d| d.fract().is_zero()).and_then(|d| d.to_i64()))
 }
 
 /// La valeur de la derniere colonne titree `nom` (une ligne plus courte que l'en-tete se complete de vides), ou `None`.
@@ -258,20 +382,20 @@ fn champ_exige<'a>(
     ligne: &'a [Option<Cellule>],
     nom: &str,
     feuille: &str,
-) -> Resultat<Option<&'a Cellule>> {
-    champ(entete, ligne, nom).ok_or_else(|| format!("la feuille « {} » n'a pas de colonne « {} »", feuille, nom))
+) -> R<Option<&'a Cellule>> {
+    champ(entete, ligne, nom).ok_or_else(|| refus!("la feuille « {} » n'a pas de colonne « {} »", feuille, nom))
 }
 
-/// L'entier d'une case : un entier, un flottant tronque, un booleen (0 ou 1), un texte d'entier.
-fn entier_de(c: &Cellule) -> Resultat<i64> {
+/// L'entier d'une case : un entier, un nombre a virgule tronque, un booleen (0 ou 1), un texte d'entier.
+fn entier_de(c: &Cellule) -> R<i64> {
+    use rust_decimal::prelude::ToPrimitive;
     match c {
         Cellule::Entier(i) => Ok(*i),
-        Cellule::Flottant(f) if f.is_finite() => Ok(f.trunc() as i64),
+        Cellule::AVirgule(n) => n.decimal()?.trunc().to_i64().ok_or_else(|| refus!("longueur illisible : {}", n.ecrit())),
         Cellule::Booleen(b) => Ok(*b as i64),
         Cellule::Texte(s) => {
-            strip(s).parse::<i64>().map_err(|_| format!("longueur illisible : {}", socle::fichiers::repr(s)))
+            strip(s).parse::<i64>().map_err(|_| refus!("longueur illisible : {}", socle::fichiers::repr(s)))
         }
-        Cellule::Flottant(f) => Err(format!("longueur illisible : {}", f)),
     }
 }
 
@@ -280,7 +404,8 @@ fn relever_xlsx(
     chemin: &Path,
     ecartees: &mut Vec<Ecartee>,
     sans_type: &mut Vec<SansType>,
-) -> Resultat<EnOrdre<Format>> {
+    notes: &mut Vec<String>,
+) -> R<EnOrdre<Format>> {
     let mut types: std::collections::HashMap<String, Vec<Option<Cellule>>> = std::collections::HashMap::new();
     let mut entete_types: Option<Vec<Option<Cellule>>> = None;
     for r in lecture_xlsx::lignes(chemin, "Data Types")? {
@@ -292,11 +417,11 @@ fn relever_xlsx(
             if premiere.vrai() {
                 let mut valeurs = r.clone();
                 valeurs.resize(entete.len().max(valeurs.len()), None);
-                types.insert(cle(premiere), valeurs);
+                types.insert(cle(premiere)?, valeurs);
             }
         }
     }
-    let entete_types = entete_types.ok_or_else(|| format!("{} : la feuille « Data Types » est vide", chemin.display()))?;
+    let entete_types = entete_types.ok_or_else(|| refus!("{} : la feuille « Data Types » est vide", chemin.display()))?;
     let mut out = EnOrdre::new();
     let mut entete: Option<Vec<Option<Cellule>>> = None;
     for r in lecture_xlsx::lignes(chemin, "Fields")? {
@@ -312,10 +437,13 @@ fn relever_xlsx(
         let type_id = champ_exige(e, &r, "DataType Id", "Fields")?;
         let texte = |c: Option<&Cellule>, nom: &str| match c {
             Some(c) => Ok(strip(&c.en_texte()).to_string()),
-            None => Err(format!("la feuille « Fields » a une ligne sans « {} »", nom)),
+            None => Err(refus!("la feuille « Fields » a une ligne sans « {} »", nom)),
         };
         let rid = format!("{}.{}", texte(bloc, "Block Id")?, texte(id, "Id")?);
-        let genre = type_id.and_then(|t| types.get(&cle(t)));
+        let genre = match type_id {
+            Some(t) => types.get(&cle(t)?),
+            None => None,
+        };
         let Some(genre) = genre else {
             sans_type.push(SansType { rubrique: rid, type_: type_id.cloned() });
             continue;
@@ -328,7 +456,7 @@ fn relever_xlsx(
         let expression = match lg("Regexp") {
             Some(Cellule::Texte(s)) => Some(strip(s).to_string()).filter(|e| !e.is_empty()),
             Some(c) if c.vrai() => {
-                return Err(format!("{} : l'expression du type n'est pas un texte ({})", rid, c.en_texte()))
+                return Err(refus!("{} : l'expression du type n'est pas un texte ({})", rid, c.en_texte()))
             }
             _ => None,
         };
@@ -340,8 +468,17 @@ fn relever_xlsx(
             }
             None => None,
         };
+        let valeurs = match champ_exige(&entete_types, genre, "Values", "Data Types")? {
+            Some(Cellule::Texte(s)) => liste_de(valeurs_du_classeur(s, &rid)?, &rid, notes),
+            Some(c) if c.vrai() => {
+                return Err(refus!("{} : la liste de valeurs du type n'est pas un texte ({})", rid, c.en_texte()))
+            }
+            _ => None,
+        };
         if longueur.is_some() || csl.is_some() {
-            out.poser(rid, Format { longueur, csl });
+            out.poser(rid, Format { longueur, csl, valeurs });
+        } else if valeurs.is_some() {
+            notes.push(format!("{} : une liste de valeurs, sans longueur ni expression (non reprise)", rid));
         }
     }
     Ok(out)
@@ -349,17 +486,18 @@ fn relever_xlsx(
 
 /// LA TRANSCRIPTION DES DEFINITIONS du cahier en PDF (`super::Transcription`) : son texte, tel que la fabrique de PDF le
 /// lit, les pages separees par un saut de ligne -- ce que `relever_pdf` lit.
-pub fn transcrire(pdf: &Path) -> Resultat<String> {
+pub fn transcrire(pdf: &Path) -> R<String> {
     version_du_cahier(pdf)?;
-    let (textes, _) = fabrique_pdf::lecture::texte(&pdf.to_string_lossy()).map_err(|r| r.0)?;
+    let (pages, _) = fabrique_pdf::lecture::texte(&pdf.to_string_lossy()).map_err(documents::fabrique::echec)?;
+    let textes = pages.iter().map(|p| p.lu().map_err(documents::fabrique::echec)).collect::<R<Vec<String>>>()?;
     let t = Transcription::de(pdf, Vec::new(), textes.join("\n"))?;
     Ok(t.texte(&format!("Le texte de {}, tel que la fabrique de PDF le lit (`moteur extraire transcrire`)", nom_de(pdf))))
 }
 
 /// Le releve des formats, depuis le classeur, le cahier en PDF ou sa transcription.
-pub fn relever(source: &Path, jour: &Jour) -> Resultat<Releve> {
+pub fn relever(source: &Path, jour: &Jour) -> R<Releve> {
     let date = date_du_releve(jour);
-    let (mut ecartees, mut sans_type) = (Vec::new(), Vec::new());
+    let (mut ecartees, mut sans_type, mut notes) = (Vec::new(), Vec::new(), Vec::new());
     let classeur = en_classeur(source);
     let (formats, provenance, empreinte) = if classeur {
         let chemin = source.to_string_lossy();
@@ -368,15 +506,16 @@ pub fn relever(source: &Path, jour: &Jour) -> Resultat<Releve> {
             .captures(&chemin)
             .map(|c| c[1].to_string())
             .ok_or_else(|| {
-                format!(
+                refus!(
                     "version illisible dans le nom du classeur : {} (attendu \
                      dsn-tableaux-categories-controles-datatypes-usages-<version>-<AAAAMMJJ>.xlsx)",
                     chemin
                 )
             })?;
-        let formats = relever_xlsx(source, &mut ecartees, &mut sans_type)?;
+        let formats = relever_xlsx(source, &mut ecartees, &mut sans_type, &mut notes)?;
         let provenance = format!(
-            "Formats des rubriques de la norme DSN {}, classeur {} (feuilles « Fields » et « Data Types »). Releve \
+            "Formats des rubriques de la norme DSN {}, classeur {} (feuilles « Fields » et « Data Types », les listes \
+             de valeurs dans sa colonne « Values »). Releve \
              automatiquement par `moteur extraire formats` le {}.",
             v,
             nom_de(source),
@@ -389,13 +528,15 @@ pub fn relever(source: &Path, jour: &Jour) -> Resultat<Releve> {
             let t = Transcription::lire(source)?;
             (t.pdf, t.corps, t.sha256)
         } else {
-            let (textes, _) = fabrique_pdf::lecture::texte(&source.to_string_lossy()).map_err(|r| r.0)?;
+            let (pages, _) = fabrique_pdf::lecture::texte(&source.to_string_lossy()).map_err(documents::fabrique::echec)?;
+            let textes = pages.iter().map(|p| p.lu().map_err(documents::fabrique::echec)).collect::<R<Vec<String>>>()?;
             (nom_de(source), textes.join("\n"), sha256(source)?)
         };
         let v = version_du_cahier(Path::new(&pdf))?;
-        let formats = relever_pdf(&texte, &mut ecartees)?;
+        let formats = relever_pdf(&texte, &mut ecartees, &mut notes)?;
         let provenance = format!(
-            "Cahier technique NEODeS {} ({}), definitions des rubriques. Releve automatiquement par \
+            "Cahier technique NEODeS {} ({}), definitions des rubriques (les listes de valeurs : ce qui suit la \
+             longueur). Releve automatiquement par \
              `moteur extraire formats` le {}.",
             v,
             pdf,
@@ -404,10 +545,14 @@ pub fn relever(source: &Path, jour: &Jour) -> Resultat<Releve> {
         (formats, provenance, empreinte)
     };
     let mut bilan = vec![format!(
-        "{} rubriques, dont {} avec expression de controle",
+        "{} rubriques, dont {} avec expression de controle, {} avec liste de valeurs",
         formats.len(),
-        formats.0.iter().filter(|(_, f)| f.csl.is_some()).count()
+        formats.0.iter().filter(|(_, f)| f.csl.is_some()).count(),
+        formats.0.iter().filter(|(_, f)| f.valeurs.is_some()).count()
     )];
+    for n in &notes {
+        bilan.push(format!("  {}", n));
+    }
     for e in &ecartees {
         bilan.push(format!(
             "  ecartee (le moteur ne la compile pas) : {} -- {}",

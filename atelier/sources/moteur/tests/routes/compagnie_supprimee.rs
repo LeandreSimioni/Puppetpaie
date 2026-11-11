@@ -24,7 +24,7 @@ fn inst(test: &str) -> PathBuf {
 }
 
 fn poste(inst: &Path) -> Poste {
-    Poste { dossier_cle: inst.join("cle-du-poste"), maintenant: "2026-10-22T10:00".into() }
+    Poste { dossier_cle: inst.join("cle-du-poste"), maintenant: socle::paris::MinuteEcrite::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(2026, 10, 22).unwrap(), 10, 0, 0).unwrap()) }
 }
 
 fn sans_rien(_: &Path) {}

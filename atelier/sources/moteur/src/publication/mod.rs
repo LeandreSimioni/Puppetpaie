@@ -14,7 +14,8 @@ use compagnie::maj::{dossier_maj, installation};
 /// Les gestes de la publication de `moteur maj` (`--cle-github [DOSSIER]`, `--publier-github --logiciel L --sortie S
 /// --notes T --calcul T --exigee T`, `--marquer-fictives --logiciel L`, `--poser-fictives DOSSIER --logiciel L`) : leur
 /// code de sortie ; `None` quand `args` n'en demande aucun.
-pub fn commande(args: &[String]) -> Option<i32> {
+pub fn commande(args: &[socle::ligne::Argument]) -> Option<i32> {
+    let args = socle::ligne::textes(args);
     let drapeau = |n: &str| args.iter().any(|a| a == n);
     let valeur = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).filter(|v| !v.starts_with("--")).cloned();
     if !["--cle-github", "--publier-github", "--marquer-fictives", "--poser-fictives"].iter().any(|d| drapeau(d)) {
@@ -23,9 +24,11 @@ pub fn commande(args: &[String]) -> Option<i32> {
     // D'abord savoir ou l'on est installe : sans cela, `installation()` retombe sur le dossier ou le programme a ete
     // compile (un chemin du conteneur, que Windows lit sur le lecteur courant : la graine de `--cle-github` irait
     // dans `D:\home\user\...\maj\`).
-    compagnie::installation::fixer_le_code();
+    let code = compagnie::installation::fixer_le_code();
     // Ni compagnie ni coffre.
-    let r = if drapeau("--cle-github") {
+    let r = if let Err(e) = code {
+        Err(e)
+    } else if drapeau("--cle-github") {
         // Sans dossier dit, la graine va dans `maj/` de l'installation.
         let dossier = match valeur("--cle-github") {
             Some(d) => PathBuf::from(d),
@@ -61,7 +64,7 @@ pub fn commande(args: &[String]) -> Option<i32> {
             0
         }
         Err(e) => {
-            dire!("! {}", e);
+            dire!("! {}", e.en_lignes());
             2
         }
     })
@@ -74,6 +77,6 @@ fn phrase_publiee(dite: Option<String>) -> String {
 }
 
 /// Le refus d'une commande a qui manquent des options : la phrase, et les options a part.
-fn options_manquantes(phrase: &str, options: &str) -> String {
-    socle::echec::avec(phrase, socle::echec::APart { detail: Some(options.to_string()), ..Default::default() })
+fn options_manquantes(phrase: &str, options: &str) -> socle::echec::Echec {
+    socle::echec::refus_avec(phrase, socle::echec::Lieu { detail: Some(options.to_string()), ..Default::default() })
 }

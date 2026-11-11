@@ -11,9 +11,25 @@ n'entre. Ce qui passe la porte est lu **une fois** et devient un type Rust ; ded
 
 - **Une donnée lue est une forme, déclarée une fois.** Fichier, barème, charge ou réponse d'une route : une structure
   `serde` (`deny_unknown_fields`), lue par `socle::forme`, écrite par `socle::ecriture`. Le JSON brut ne se touche
-  qu'au bord : `socle::forme`, `socle::ecriture`, `socle::json_ascii`, `routes::enveloppe`. Aucune lecture par clé
+  qu'au bord, ces deux modules : tout autre passe par eux (la charge et la réponse d'une route y sont un
+  `socle::forme::Objet`, qui ne se lit qu'en une forme ; le JSON ASCII s'écrit dans `socle::ecriture`). Aucune lecture par clé
   texte, aucune clé libre, aucun repli (une donnée facultative absente est `None`, une donnée exigée absente se refuse),
-  aucune erreur avalée. Les états impossibles ne s'écrivent pas : une nature est une `enum`.
+  aucune erreur avalée. Les états impossibles ne s'écrivent pas : une nature de contrat est une `enum`
+  (`droit::natures::NatureDeContrat`), dont `contrats-base.json` dit les propriétés ; un motif de recours ou de rupture
+  et la modalité du temps de travail aussi (`droit::natures::MotifDeRecours`, `MotifDeRupture`,
+  `ModaliteDuTempsDeTravail`), et le code d'une base assujettie (`droit::base_assujettie::BaseAssujettie`, que le
+  barème nomme en `bloc78` et dont la déduction forfaitaire spécifique abat certaines), et celui d'une cotisation d'établissement (`droit::cotisation_etablissement::CotisationDEtablissement`,
+  S21.G00.82.002 : l'OETH, la taxe d'apprentissage, la CSA), et la nature d'une déclaration
+  (`droit::nature_declaration::NatureDeLaDeclaration`, S20.G00.05.001 : le fichier l'écrit, le journal des envois la
+  garde par son code ; un signalement d'arrêt, `declarations::signalement::NatureSignalement`, n'en est que 04 ou 05),
+  et son type (`droit::type_declaration::TypeDeLaDeclaration`, S20.G00.05.002, avec ses libellés) :
+  chacune est la liste entière de sa rubrique dans la norme (`ListeDeLaNorme`), tenue aux
+  listes relevées des versions livrées par un test de structure ; un code propre à une version le dit (`depuis`,
+  `jusqu_a`), et la DSN ne l'écrit que dans un fichier de cette version (`dsn::Fichier::ecrire_code`, classe
+  `HorsDeLaVersion`). Le fichier, lu contre elles, dit ceux que chaque nature permet. Une assiette du calcul aussi
+  (`droit::assiette::Assiette`) : un barème la nomme (`base`, `base78`) et une assiette inconnue le refuse à sa lecture ;
+  elle indexe les bases d'une paie, calculée, écrite ou importée ; ce qui est propre à une assiette (par rubrique de
+  salaire, sa forme abattue) est une de ses propriétés.
 - **La porte des tiers : les réponses de Google.** On ne lit que des clés connues ; seule une réponse de Google peut
   porter en plus des clés qu'on ignore à la porte. Sa forme se déclare elle-même réponse d'un tiers
   (`impl socle::forme::ReponseDUnTiers`, à côté de sa structure, sans `deny_unknown_fields`) et ne se lit que par
@@ -37,8 +53,8 @@ Un garde-fou écrit dans le code ou dans une consigne finit contourné (un agent
 garde-fou que le compilateur ou un test de structure tient ne s'oublie pas. On ne garde donc une règle d'architecture
 que par la structure :
 
-- **Le verrou des dépendances** : `serde_json` n'est au `Cargo.toml` que des portes, `socle` et `routes` (`moteur` et
-  `atelier` l'ont pour leurs essais) ; une autre crate qui voudrait lire du JSON brut ne compile pas.
+- **Le verrou des dépendances** : `serde_json` n'est au `Cargo.toml` que du `socle`, la porte (`moteur` et `atelier`
+  l'ont pour leurs essais) ; une autre crate qui voudrait lire du JSON brut ne compile pas.
 - **L'ordre des crates** : chaque crate ne prend qu'à celles du dessous (« Les parties ») ; le calcul n'est que dans
   `engagement`.
 - **Les pièces d'une fiche** : une case qu'un seul genre de calcul lit est rangée, dans le type, dans sa pièce
@@ -58,20 +74,52 @@ que par la structure :
   engagements payés au mois (`engagement::permanents::cle_du_salarie`) ; celle du métier, case par case, par la grille
   du métier de chacun de ses engagements ; celles de l'effectif, par lui ; une pièce qu'aucun engagement ni l'effectif
   ne peut ouvrir ne pose aucune question. Le fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans
-  `champs-base.json`. Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
+  `champs-base.json`. Une case d'une pièce n'est pas un `droit::fiche::NomDeCase` : `fiche!` la déclare à part
+  (`droit::fiche::CaseDePiece`), et une saisie (`declarations::champs::Saisie`) ne la lit pas par `case`, qui ne prend
+  qu'un `NomDeCase`, mais par `piece`, qui prend une `CaseDePiece` ; la mécanique de toutes les cases (la table,
+  l'écriture datée) les nomme ensemble (`droit::fiche::CaseDeFiche`). Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
   (`au_mois` de `rubriques-base.json`, `droit::catalogue::Rubrique::piece`) ; un contrat d'organisme des permanents
   l'est par son rôle, prévoyance ou santé (`droit::organismes::Attendu::piece`). Aucune étiquette ne dit une pièce. Le
   rejeu des deux fictives le vérifie (`moteur/tests/rejeu.rs`, `aucune_piece_fermee_ne_se_montre`) : le Fil de fer,
   sans permanent, et un intermittent de l'Hôtel de Bourgogne ne voient aucune case d'une pièce qu'aucun de leurs
   engagements n'ouvre.
-- **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions :
+- **Les niveaux du compilateur** (`[workspace.lints.rust]` de `atelier/sources/Cargo.toml`, repris par chaque crate ;
+  les mêmes dans `fabrique-pdf/` et `fenetre/`) : aucun avertissement, et le code mort, les imports et variables
+  inutiles, le déprécié interdits (`forbid`). Aucun attribut ne les lève (`aucun_attribut_ne_leve_un_lint`) : une clé
+  connue qu'on ne lit pas est une `socle::forme::NonLue`, qui n'en garde rien ; un code mort se supprime ; un code
+  propre à une cible se range sous son `cfg`.
+- **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions, ce que tient
+  `un_verrou_n_a_ni_liste_ni_filtre` (aucun verrou ne nomme un source pour l'écarter ; un endroit unique se compte, ou
+  se nomme par son type) :
   `une_couche_fermee_ne_lit_que_des_formes` (le JSON au bord seulement, ni clé libre, ni repli, ni erreur avalée),
+  `un_defaut_n_invente_aucune_valeur` (`Default` sur un type dont chaque champ a un vide qui ne dit rien : une
+  `Option`, une liste, un autre de ces types ; aucune `enum` ; un autre type se construit en disant chaque champ),
   `chaque_forme_lue_refuse_une_cle_inconnue` (`deny_unknown_fields`, ou la forme se déclare elle-même réponse d'un
   tiers : « Le corps et ses portes »),
   `une_crate_ne_prend_qu_a_celles_du_dessous`, `l_atelier_reste_hors_du_logiciel`, `l_engagement_ne_lit_pas_le_journal`,
   `un_seul_endroit_ecrit_un_fichier_d_engagements`, `une_seule_fonction_lit_une_paie_et_une_seule_l_ecrit`,
-  `la_page_n_ecrit_aucune_phrase`, `la_page_et_la_ligne_de_commande_ont_le_meme_catalogue`. Les tests de structure sont
+  `la_page_n_ecrit_aucune_phrase`, `la_page_et_la_ligne_de_commande_ont_le_meme_catalogue`,
+  `un_refus_n_est_jamais_un_texte` (un refus est un `socle::echec::Echec`, ce qu'il porte a part dans son `a_part`,
+  jamais un `Result<_, String>`), `une_nature_de_contrat_est_une_enum` (le type garde : une règle d'une nature la
+  prend en `NatureDeContrat` ; la clé d'une nature écrite une seule fois, dans `droit::natures::NatureDeContrat::cle`),
+  `une_liste_de_la_norme_est_celle_des_versions_livrees` (chaque `ListeDeLaNorme` est l'union des listes de valeurs que
+  `formats-dsn-*-base.json` relèvent pour sa rubrique, chaque code dans les seules versions que ses bornes disent),
+  `aucun_flottant_dans_le_code` (aucun `.rs` du dépôt n'écrit `f32`, `f64` ni un nombre à virgule : un montant est un
+  `Decimal`, une mesure d'un PDF une `fabrique_pdf::mesure::Mesure`, le reste des entiers),
+  `un_texte_ne_devient_un_jour_qu_a_sa_porte` (aucune fonction publique de `socle` ne rend un jour, un mois ou un
+  instant d'un texte, aucun ne s'en construit par un trait ; hors de `socle`, aucune lecture ne vise un type du temps
+  nu ni ne lit un texte JSON qui n'est qu'une chaine : un essai ecrit son jour par `Jour::nouveau`). Les tests de structure sont
   les bienvenus ; un test qui fige un détail ne s'écrit pas.
+- **Un texte ne devient un jour, un mois ou un instant qu'à sa porte**, et c'est la visibilité qui le garde : les
+  lectures d'un texte (`Mois::lire`, `Jour::du_texte`, les `lire` de `socle::paris`) sont privées à `socle`. Hors de
+  `socle`, il entre par la forme qui le porte (`Deserialize` d'une charge, d'un fichier, d'une pièce), ou par une porte
+  qui nomme son origine dans son type, une par origine : le nom d'un fichier ou d'un dossier lu sur le disque
+  (`socle::fichiers::nommes_d_un_mois`), un argument du processus (`socle::ligne::Argument` : seul `socle::ligne`
+  lit les arguments du processus et en fabrique, les parseurs de la ligne de commande les reçoivent), une zone d'une
+  pièce lue, fabriquée avec le format que sa norme donne à cette zone (`socle::piece::Zone`, un type par format dans
+  `socle::piece::format`, que le lecteur de chaque pièce passe : la lecture typée de ce qu'on lit, pas une preuve
+  d'origine), la clé d'une lecture notée dans une empreinte (`socle::fichiers::LectureDatee`). Une charge dit son mois
+  par sa forme : la déclaration d'un mois se désigne par `mois`, jamais par un chemin (`routes::depots::resoudre`).
 
 ## Compiler peu
 
@@ -802,7 +850,9 @@ Ce que le moteur écrit, d'après la norme déposée (`atelier/reference/norme-d
 - `S21.G00.23` : une ligne par CTP des organismes de la compagnie (composés depuis
   `ctp_urssaf` de `logiciel/donnees/organismes-base.json`), sur l'assiette que
   la ligne nomme (`brut`, `csg`, `brut_artiste`, `brut_x115_artiste`,
-  `ta_principale`, `chomage_permanent`…), sommée sur les paies du mois
+  `ta_principale`, `chomage_permanent`… : une `droit::bordereau::AssietteDuBordereau`,
+  ou un `MontantDuBordereau`, lus strictement ; celles qui somment une assiette du
+  calcul sur toutes les paies le disent, `de_toutes_les_paies`), sommée sur les paies du mois
   (`dsn::assiettes_ctp`, plafonnée sous le qualifiant 921) et arrondie à
   l'euro ; le montant se calcule depuis la table des CTP (`bordereau.rs`). La
   norme ne définit pas ces assiettes, elle renvoie au guide Urssaf (p. 42 et

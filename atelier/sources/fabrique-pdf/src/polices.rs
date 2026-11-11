@@ -1,6 +1,6 @@
 //! Les polices : Liberation Sans, et pour les blocs à position fixe Liberation Serif et Mono,
 //! embarquées dans le PDF **en sous-ensemble** : seuls les glyphes des caractères imprimés
-//! (`genpdfi/src/pdf_subset.rs`), avec la table `ToUnicode` qui fait que le texte extrait est
+//! (`sous_ensemble.rs`), avec la table `ToUnicode` qui fait que le texte extrait est
 //! exactement le texte imprimé.
 //!
 //! Liberation (licence SIL OFL 1.1, voir `polices/LICENCE-Liberation-OFL.txt`) a les métriques
@@ -13,130 +13,59 @@
 //! le Mono n'ont ni italique ni gras italique dans les blocs fixes (le format ne les offre pas) :
 //! la case reprend le romain, ou le gras, du même fichier.
 
-use std::sync::Arc;
+use std::sync::OnceLock;
 
-use genpdfi::fonts::{FontData, FontFamily};
+use crate::description::{defaut, Refus};
 
-use crate::description::{refus, Refus};
+/// Un fichier de police comprimé par build.rs (zlib : 0,4 Mo de moins dans le programme), décomprimé une fois par
+/// processus : chaque document le reprend.
+struct Comprimee {
+    z: &'static [u8],
+    ttf: OnceLock<Vec<u8>>,
+}
 
-// Comprimées par build.rs (zlib) : 0,4 Mo de moins dans le programme.
-static REGULIER_Z: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/LiberationSans-Regular.ttf.z"));
-static GRAS_Z: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/LiberationSans-Bold.ttf.z"));
-static ITALIQUE_Z: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/LiberationSans-Italic.ttf.z"));
-static GRAS_ITALIQUE_Z: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/LiberationSans-BoldItalic.ttf.z"));
-static SERIF_Z: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/LiberationSerif-Regular.ttf.z"));
-static SERIF_GRAS_Z: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/LiberationSerif-Bold.ttf.z"));
-static MONO_Z: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/LiberationMono-Regular.ttf.z"));
-static MONO_GRAS_Z: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/LiberationMono-Bold.ttf.z"));
-
-/// Le fichier de la police comprimee `z`, decomprime une fois par processus : chaque document le reprend.
-fn decomprimer(z: &'static [u8]) -> Result<Arc<Vec<u8>>, Refus> {
-    use std::io::Read;
-    static DECOMPRIMEES: std::sync::Mutex<Vec<(usize, Arc<Vec<u8>>)>> = std::sync::Mutex::new(Vec::new());
-    let cle = z.as_ptr() as usize;
-    if let Some((_, f)) = DECOMPRIMEES.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|(c, _)| *c == cle) {
-        return Ok(f.clone());
+impl Comprimee {
+    const fn de(z: &'static [u8]) -> Comprimee {
+        Comprimee { z, ttf: OnceLock::new() }
     }
-    let mut ttf = Vec::new();
-    flate2::read::ZlibDecoder::new(z)
-        .read_to_end(&mut ttf)
-        .or_else(|e| refus(format!("police interne illisible : {}", e)))?;
-    let f = Arc::new(ttf);
-    DECOMPRIMEES.lock().unwrap_or_else(|e| e.into_inner()).push((cle, f.clone()));
-    Ok(f)
+
+    fn lire(&'static self) -> Result<&'static [u8], Refus> {
+        use std::io::Read;
+        if let Some(f) = self.ttf.get() {
+            return Ok(f);
+        }
+        let mut ttf = Vec::new();
+        flate2::read::ZlibDecoder::new(self.z)
+            .read_to_end(&mut ttf)
+            .or_else(|e| defaut(format!("police interne illisible : {}", e)))?;
+        Ok(self.ttf.get_or_init(move || ttf))
+    }
 }
 
-fn police(donnees: &Arc<Vec<u8>>) -> Result<FontData, Refus> {
-    FontData::new_subset(donnees.clone())
-        .or_else(|e| refus(format!("police interne illisible : {}", e)))
-}
-
-/// Liberation Sans : romain, gras, italique, gras italique.
-pub fn famille() -> Result<FontFamily<FontData>, Refus> {
-    Ok(FontFamily {
-        regular: police(&decomprimer(REGULIER_Z)?)?,
-        bold: police(&decomprimer(GRAS_Z)?)?,
-        italic: police(&decomprimer(ITALIQUE_Z)?)?,
-        bold_italic: police(&decomprimer(GRAS_ITALIQUE_Z)?)?,
-    })
-}
+static REGULIER: Comprimee = Comprimee::de(include_bytes!(concat!(env!("OUT_DIR"), "/LiberationSans-Regular.ttf.z")));
+static GRAS: Comprimee = Comprimee::de(include_bytes!(concat!(env!("OUT_DIR"), "/LiberationSans-Bold.ttf.z")));
+static ITALIQUE: Comprimee = Comprimee::de(include_bytes!(concat!(env!("OUT_DIR"), "/LiberationSans-Italic.ttf.z")));
+static GRAS_ITALIQUE: Comprimee = Comprimee::de(include_bytes!(concat!(env!("OUT_DIR"), "/LiberationSans-BoldItalic.ttf.z")));
+static SERIF: Comprimee = Comprimee::de(include_bytes!(concat!(env!("OUT_DIR"), "/LiberationSerif-Regular.ttf.z")));
+static SERIF_GRAS: Comprimee = Comprimee::de(include_bytes!(concat!(env!("OUT_DIR"), "/LiberationSerif-Bold.ttf.z")));
+static MONO: Comprimee = Comprimee::de(include_bytes!(concat!(env!("OUT_DIR"), "/LiberationMono-Regular.ttf.z")));
+static MONO_GRAS: Comprimee = Comprimee::de(include_bytes!(concat!(env!("OUT_DIR"), "/LiberationMono-Bold.ttf.z")));
 
 /// Le fichier de Liberation Sans romain (celui dont la fabrique tire ses sous-ensembles), pour
 /// l'embarquer dans un PDF existant (`marquage.rs`).
-pub fn sans_regulier() -> Result<Arc<Vec<u8>>, Refus> {
-    decomprimer(REGULIER_Z)
+pub fn sans_regulier() -> Result<&'static [u8], Refus> {
+    REGULIER.lire()
 }
 
 /// Le fichier de Liberation Sans gras, pour le texte gras d'un SVG posé dans un PDF existant (`formulaire.rs`).
-pub fn sans_gras() -> Result<Arc<Vec<u8>>, Refus> {
-    decomprimer(GRAS_Z)
+pub fn sans_gras() -> Result<&'static [u8], Refus> {
+    GRAS.lire()
 }
 
-/// Tous les fichiers de Liberation (Sans en quatre styles, Serif et Mono en romain et gras) : ce
-/// que le texte d'un SVG peut demander quand on le pose dans un PDF (`formulaire.rs`). Aucune
-/// police du système n'est lue : le même SVG donne le même dessin sur tous les postes.
-pub fn toutes() -> Result<Vec<Arc<Vec<u8>>>, Refus> {
-    [REGULIER_Z, GRAS_Z, ITALIQUE_Z, GRAS_ITALIQUE_Z, SERIF_Z, SERIF_GRAS_Z, MONO_Z, MONO_GRAS_Z]
-        .iter()
-        .map(|z| decomprimer(z))
-        .collect()
-}
-
-/// Liberation Serif (Times), pour les textes à position fixe. L'italique n'est pas offert par
-/// les blocs ; la case sert de repli (le romain, le gras).
-pub fn famille_times() -> Result<FontFamily<FontData>, Refus> {
-    let regulier = decomprimer(SERIF_Z)?;
-    let gras = decomprimer(SERIF_GRAS_Z)?;
-    Ok(FontFamily {
-        regular: police(&regulier)?,
-        bold: police(&gras)?,
-        italic: police(&regulier)?,
-        bold_italic: police(&gras)?,
-    })
-}
-
-/// Liberation Mono (Courier) : chasse fixe de 0,6 em, gras compris.
-pub fn famille_courier() -> Result<FontFamily<FontData>, Refus> {
-    let regulier = decomprimer(MONO_Z)?;
-    let gras = decomprimer(MONO_GRAS_Z)?;
-    Ok(FontFamily {
-        regular: police(&regulier)?,
-        bold: police(&gras)?,
-        italic: police(&regulier)?,
-        bold_italic: police(&gras)?,
-    })
-}
-
-/// Les largeurs d'une police standard (Helvetica, Times, Courier et leurs variantes) qu'un PDF
-/// cite sans `/Widths` : celles de Liberation, qui a les métriques de ces polices. Sert à
-/// l'extraction de texte (`texte.rs`) et au marquage (`marquage.rs`).
-pub struct Metrique {
-    donnees: Arc<Vec<u8>>,
-}
-
-impl Metrique {
-    /// La métrique de la police standard que `base_font` nomme (`None` : aucune police connue).
-    pub fn pour(base_font: &str) -> Option<Metrique> {
-        let n = base_font.to_ascii_lowercase();
-        let n = n.rsplit('+').next().unwrap_or("");
-        let gras = n.contains("bold") || n.contains("black") || n.contains("heavy");
-        let z = if n.contains("times") || (n.contains("serif") && !n.contains("sans")) {
-            if gras { SERIF_GRAS_Z } else { SERIF_Z }
-        } else if n.contains("courier") || n.contains("mono") || n.contains("consolas") {
-            if gras { MONO_GRAS_Z } else { MONO_Z }
-        } else if n.contains("helvetica") || n.contains("arial") || n.contains("sans") || n.is_empty() {
-            if gras { GRAS_Z } else { REGULIER_Z }
-        } else {
-            return None;
-        };
-        Some(Metrique { donnees: decomprimer(z).ok()? })
-    }
-
-    /// La largeur du caractère, en fraction d'em (`None` : la police ne le dessine pas).
-    pub fn largeur(&self, c: char) -> Option<f64> {
-        let face = ttf_parser::Face::parse(&self.donnees, 0).ok()?;
-        let g = face.glyph_index(c)?;
-        Some(face.glyph_hor_advance(g)? as f64 / face.units_per_em() as f64)
-    }
+/// Tous les fichiers de Liberation, dans cet ordre : Sans romain, gras, italique, gras italique ; Serif (Times)
+/// romain et gras ; Mono (Courier, chasse fixe de 0,6 em) romain et gras. Ce sont les polices du dessin
+/// (`dessin::Polices`) et ce que le texte d'un SVG peut demander quand on le pose dans un PDF (`formulaire.rs`).
+/// Aucune police du système n'est lue : le même document donne le même dessin sur tous les postes.
+pub fn toutes() -> Result<Vec<&'static [u8]>, Refus> {
+    [&REGULIER, &GRAS, &ITALIQUE, &GRAS_ITALIQUE, &SERIF, &SERIF_GRAS, &MONO, &MONO_GRAS].iter().map(|p| p.lire()).collect()
 }

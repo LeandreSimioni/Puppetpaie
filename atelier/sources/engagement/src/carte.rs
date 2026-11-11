@@ -20,8 +20,10 @@
 use serde::{Deserialize, Serialize};
 
 use droit::contexte::{IdSalarie, IdSpectacle};
+use droit::natures::{ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, NatureDeContrat};
+use socle::date::Jour;
 use socle::forme::NombreLu;
-use socle::num::Resultat;
+use socle::echec::{refus, R};
 
 use crate::ligne::{LigneDonnee, LignePaie};
 use crate::saisie::{Carte, Champ, CongePris, Groupe, Preavis, Prime, Valeur};
@@ -35,16 +37,17 @@ pub enum Exige {
 }
 
 /// UNE NATURE DE CONTRAT ET SES CASES, declarees une fois : la structure (chaque case obligatoire une valeur, chaque case
-/// facultative un `Option` present), la liste de ses cases (`CASES`), et sa lecture depuis la carte du mois. Une case se
-/// lit de la case de meme nom de la carte, ou par la fonction que `par` nomme.
+/// facultative un `Option` present), la liste de ses cases (`CASES`), et sa lecture depuis la carte du mois, case par
+/// case de meme nom. Ce que porte un motif de recours (`du_motif`, `DU_MOTIF`) est facultatif, et le motif dit s'il le
+/// porte (`Proprietes::motif_de_remplacement`).
 ///
 /// Elle declare aussi SON BROUILLON (`$brouillon`) : les memes cases, chacune un `Option` lu present (une case pas encore
-/// remplie s'ecrit `null`), celle d'un motif en texte (`| String`, son code), et ce que porte un motif (`du_motif`).
+/// remplie s'ecrit `null`).
 macro_rules! nature {
     (
         $(#[$a:meta])*
         $nom:ident / $brouillon:ident {
-            obligatoire { $( $o:ident : $to:ty $(| $bo:ty)? = $co:ident $(par $lo:path)? ),* $(,)? }
+            obligatoire { $( $o:ident : $to:ty = $co:ident ),* $(,)? }
             facultatif { $( $f:ident : $tf:ty = $cf:ident ),* $(,)? }
             du_motif { $( $m:ident : $tm:ty = $cm:ident ),* $(,)? }
         }
@@ -53,7 +56,7 @@ macro_rules! nature {
         #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
         #[serde(deny_unknown_fields)]
         pub struct $brouillon {
-            $( pub $o: Option<nature!(@type $to $(| $bo)?)>, )*
+            $( pub $o: Option<$to>, )*
             $( pub $f: Option<$tf>, )*
             $( pub $m: Option<$tm>, )*
         }
@@ -86,25 +89,26 @@ macro_rules! nature {
         pub struct $nom {
             $( pub $o: $to, )*
             $( pub $f: Option<$tf>, )*
+            $( pub $m: Option<$tm>, )*
         }
 
         impl $nom {
             /// Ses cases, dans l'ordre de la structure.
             pub const CASES: &'static [(Champ, Exige)] = &[ $( (Champ::$co, Exige::Obligatoire), )* $( (Champ::$cf, Exige::Facultatif), )* ];
 
+            /// Les cases qu'un motif de recours porte en plus des siennes.
+            pub const DU_MOTIF: &'static [Champ] = &[ $( Champ::$cm, )* ];
+
             /// Ce que la carte `c` dit de cette nature ; `None` s'il lui manque une case obligatoire (`manques` les nomme).
-            fn tiree(c: &Carte) -> Resultat<Option<$nom>> {
-                Ok(Some($nom {
-                    $( $o: match nature!(@lit c, $o $(, $lo)?) { Some(v) => v, None => return Ok(None) }, )*
+            fn tiree(c: &Carte) -> Option<$nom> {
+                Some($nom {
+                    $( $o: c.$o.clone()?, )*
                     $( $f: c.$f.clone(), )*
-                }))
+                    $( $m: c.$m.clone(), )*
+                })
             }
         }
     };
-    (@type $t:ty) => { $t };
-    (@type $t:ty | $b:ty) => { $b };
-    (@lit $c:ident, $o:ident) => { $c.$o.clone() };
-    (@lit $c:ident, $o:ident, $l:path) => { $l($c)? };
 }
 
 nature! {
@@ -117,9 +121,9 @@ nature! {
             lignes: Vec<LignePaie> = Lignes,
         }
         facultatif {
-            debut: String = Debut,
-            fin: String = Fin,
-            numero: String = Numero,
+            debut: Jour = Debut,
+            fin: Jour = Fin,
+            numero: crate::numeros::NumeroContrat = Numero,
             etablissement: String = Etablissement,
             metier: String = Metier,
             cadre: bool = Cadre,
@@ -127,25 +131,25 @@ nature! {
             emploi: String = Emploi,
             pcs_ese: String = PcsEse,
             code_emploi_ft: String = CodeEmploiFt,
-            statut: String = Statut,
-            statut_conventionnel: String = StatutConventionnel,
-            statut_categoriel_rc: String = StatutCategorielRc,
+            statut: droit::fiche::Statut = Statut,
+            statut_conventionnel: droit::fiche::StatutConventionnel = StatutConventionnel,
+            statut_categoriel_rc: droit::fiche::StatutCategorielRc = StatutCategorielRc,
             periode_essai_jours: NombreLu = PeriodeEssaiJours,
             clauses_particulieres: String = ClausesParticulieres,
             modele_contrat: String = ModeleContrat,
             primes: Vec<Prime> = Primes,
-            date_paiement: String = DatePaiement,
+            date_paiement: Jour = DatePaiement,
             jours: NombreLu = Jours,
             taux_cachet: NombreLu = TauxCachet,
             indemnite_licenciement: NombreLu = IndemniteLicenciement,
             faute_grave: bool = FauteGrave,
-            motif_rupture: String = MotifRupture,
-            notification_rupture: String = NotificationRupture,
-            engagement_licenciement: String = EngagementLicenciement,
-            signature_convention: String = SignatureConvention,
+            motif_rupture: MotifDeRupture = MotifRupture,
+            notification_rupture: Jour = NotificationRupture,
+            engagement_licenciement: Jour = EngagementLicenciement,
+            signature_convention: Jour = SignatureConvention,
             preavis: Preavis = Preavis,
             transaction: String = Transaction,
-            dernier_jour_paye: String = DernierJourPaye,
+            dernier_jour_paye: Jour = DernierJourPaye,
             en_droit_a_la_retraite: bool = EnDroitALaRetraite,
             preavis_non_effectue: bool = PreavisNonEffectue,
             preavis_mois: NombreLu = PreavisMois,
@@ -161,25 +165,25 @@ nature! {
     Cdi / BrouillonCdi {
         obligatoire {
             salarie: IdSalarie = Salarie,
-            debut: String = Debut,
+            debut: Jour = Debut,
             salaire_mensuel: NombreLu = SalaireMensuel,
             quotite_contrat: NombreLu = QuotiteContrat,
         }
         facultatif {
-            fin: String = Fin,
-            numero: String = Numero,
+            fin: Jour = Fin,
+            numero: crate::numeros::NumeroContrat = Numero,
             etablissement: String = Etablissement,
             metier: String = Metier,
             cadre: bool = Cadre,
             lieu: String = Lieu,
             quotite_reference: NombreLu = QuotiteReference,
-            modalite_temps_travail: String = ModaliteTempsTravail,
+            modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail,
             emploi: String = Emploi,
             pcs_ese: String = PcsEse,
             code_emploi_ft: String = CodeEmploiFt,
-            statut: String = Statut,
-            statut_conventionnel: String = StatutConventionnel,
-            statut_categoriel_rc: String = StatutCategorielRc,
+            statut: droit::fiche::Statut = Statut,
+            statut_conventionnel: droit::fiche::StatutConventionnel = StatutConventionnel,
+            statut_categoriel_rc: droit::fiche::StatutCategorielRc = StatutCategorielRc,
             periode_essai_jours: NombreLu = PeriodeEssaiJours,
             repartition_horaire: String = RepartitionHoraire,
             clauses_particulieres: String = ClausesParticulieres,
@@ -187,20 +191,20 @@ nature! {
             lignes: Vec<LignePaie> = Lignes,
             conges_pris: Vec<CongePris> = CongesPris,
             primes: Vec<Prime> = Primes,
-            date_paiement: String = DatePaiement,
+            date_paiement: Jour = DatePaiement,
             jours: NombreLu = Jours,
             heures_supplementaires: NombreLu = HeuresSupplementaires,
             heures_supplementaires_a_50: NombreLu = HeuresSupplementairesA50,
             heures_complementaires: NombreLu = HeuresComplementaires,
             indemnite_licenciement: NombreLu = IndemniteLicenciement,
             faute_grave: bool = FauteGrave,
-            motif_rupture: String = MotifRupture,
-            notification_rupture: String = NotificationRupture,
-            engagement_licenciement: String = EngagementLicenciement,
-            signature_convention: String = SignatureConvention,
+            motif_rupture: MotifDeRupture = MotifRupture,
+            notification_rupture: Jour = NotificationRupture,
+            engagement_licenciement: Jour = EngagementLicenciement,
+            signature_convention: Jour = SignatureConvention,
             preavis: Preavis = Preavis,
             transaction: String = Transaction,
-            dernier_jour_paye: String = DernierJourPaye,
+            dernier_jour_paye: Jour = DernierJourPaye,
             en_droit_a_la_retraite: bool = EnDroitALaRetraite,
             preavis_non_effectue: bool = PreavisNonEffectue,
             preavis_mois: NombreLu = PreavisMois,
@@ -217,26 +221,26 @@ nature! {
     Cdd / BrouillonCdd {
         obligatoire {
             salarie: IdSalarie = Salarie,
-            debut: String = Debut,
-            fin: String = Fin,
-            motif_recours: Recours | String = MotifRecours par Recours::de_la_carte,
+            debut: Jour = Debut,
+            fin: Jour = Fin,
+            motif_recours: MotifDeRecours = MotifRecours,
             salaire_mensuel: NombreLu = SalaireMensuel,
             quotite_contrat: NombreLu = QuotiteContrat,
         }
         facultatif {
-            numero: String = Numero,
+            numero: crate::numeros::NumeroContrat = Numero,
             etablissement: String = Etablissement,
             metier: String = Metier,
             cadre: bool = Cadre,
             lieu: String = Lieu,
             quotite_reference: NombreLu = QuotiteReference,
-            modalite_temps_travail: String = ModaliteTempsTravail,
+            modalite_temps_travail: ModaliteDuTempsDeTravail = ModaliteTempsTravail,
             emploi: String = Emploi,
             pcs_ese: String = PcsEse,
             code_emploi_ft: String = CodeEmploiFt,
-            statut: String = Statut,
-            statut_conventionnel: String = StatutConventionnel,
-            statut_categoriel_rc: String = StatutCategorielRc,
+            statut: droit::fiche::Statut = Statut,
+            statut_conventionnel: droit::fiche::StatutConventionnel = StatutConventionnel,
+            statut_categoriel_rc: droit::fiche::StatutCategorielRc = StatutCategorielRc,
             periode_essai_jours: NombreLu = PeriodeEssaiJours,
             repartition_horaire: String = RepartitionHoraire,
             clauses_particulieres: String = ClausesParticulieres,
@@ -244,20 +248,20 @@ nature! {
             lignes: Vec<LignePaie> = Lignes,
             conges_pris: Vec<CongePris> = CongesPris,
             primes: Vec<Prime> = Primes,
-            date_paiement: String = DatePaiement,
+            date_paiement: Jour = DatePaiement,
             jours: NombreLu = Jours,
             heures_supplementaires: NombreLu = HeuresSupplementaires,
             heures_supplementaires_a_50: NombreLu = HeuresSupplementairesA50,
             heures_complementaires: NombreLu = HeuresComplementaires,
             indemnite_licenciement: NombreLu = IndemniteLicenciement,
             faute_grave: bool = FauteGrave,
-            motif_rupture: String = MotifRupture,
-            notification_rupture: String = NotificationRupture,
-            engagement_licenciement: String = EngagementLicenciement,
-            signature_convention: String = SignatureConvention,
+            motif_rupture: MotifDeRupture = MotifRupture,
+            notification_rupture: Jour = NotificationRupture,
+            engagement_licenciement: Jour = EngagementLicenciement,
+            signature_convention: Jour = SignatureConvention,
             preavis: Preavis = Preavis,
             transaction: String = Transaction,
-            dernier_jour_paye: String = DernierJourPaye,
+            dernier_jour_paye: Jour = DernierJourPaye,
             en_droit_a_la_retraite: bool = EnDroitALaRetraite,
             preavis_non_effectue: bool = PreavisNonEffectue,
             preavis_mois: NombreLu = PreavisMois,
@@ -270,103 +274,13 @@ nature! {
     }
 }
 
-/// LE MOTIF DE RECOURS D'UN CDD (S21.G00.40.021), tel que `contrats-base.json` les offre (`cdd.champs."S21.G00.40.021"
-/// .valeurs`) : seul un motif de remplacement nomme la personne remplacee (L. 1242-12, 1° ; facultative, comme le contrat
-/// ecrit l'imprime, `si_dite`).
+/// LA CARTE VALIDE : une variante par nature de contrat, du nom de la sienne (`NatureDeContrat`), la nature dite
+/// (`nature`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "code", deny_unknown_fields)]
-pub enum Recours {
-    #[serde(rename = "01")]
-    Remplacement {
-        personne_remplacee: Option<String>,
-    },
-    #[serde(rename = "02")]
-    Accroissement,
-    #[serde(rename = "03")]
-    Saisonnier,
-    #[serde(rename = "06")]
-    ObjetDefini,
-    #[serde(rename = "09")]
-    Insertion,
-    #[serde(rename = "10")]
-    ComplementDeFormation,
-    #[serde(rename = "12")]
-    RemplacementATempsPartiel {
-        personne_remplacee: Option<String>,
-    },
-    #[serde(rename = "13")]
-    AttenteDeSuppression {
-        personne_remplacee: Option<String>,
-    },
-}
-
-impl Recours {
-    /// Les cases qu'un motif porte en plus de celles du CDD.
-    pub const CASES: &'static [Champ] = &[Champ::PersonneRemplacee];
-
-    /// Chaque motif : son code, et s'il nomme la personne remplacee.
-    pub const TOUS: &'static [(&'static str, bool)] =
-        &[("01", true), ("02", false), ("03", false), ("06", false), ("09", false), ("10", false), ("12", true), ("13", true)];
-
-    /// Le motif que la carte dit (`None` : elle n'en dit pas) ; un code que la liste n'offre pas se refuse.
-    fn de_la_carte(c: &Carte) -> Resultat<Option<Recours>> {
-        let Some(code) = c.motif_recours.as_deref().filter(|m| !m.trim().is_empty()) else { return Ok(None) };
-        let p = c.personne_remplacee.clone();
-        Ok(Some(match code {
-            "01" => Recours::Remplacement { personne_remplacee: p },
-            "02" => Recours::Accroissement,
-            "03" => Recours::Saisonnier,
-            "06" => Recours::ObjetDefini,
-            "09" => Recours::Insertion,
-            "10" => Recours::ComplementDeFormation,
-            "12" => Recours::RemplacementATempsPartiel { personne_remplacee: p },
-            "13" => Recours::AttenteDeSuppression { personne_remplacee: p },
-            autre => {
-                let codes: Vec<&str> = Recours::TOUS.iter().map(|(c, _)| *c).collect();
-                return Err(format!("« {} » n'est pas un motif de recours d'un CDD : {}.", autre, codes.join(", ")));
-            }
-        }))
-    }
-
-    /// Son code.
-    pub fn code(&self) -> &'static str {
-        match self {
-            Recours::Remplacement { .. } => "01",
-            Recours::Accroissement => "02",
-            Recours::Saisonnier => "03",
-            Recours::ObjetDefini => "06",
-            Recours::Insertion => "09",
-            Recours::ComplementDeFormation => "10",
-            Recours::RemplacementATempsPartiel { .. } => "12",
-            Recours::AttenteDeSuppression { .. } => "13",
-        }
-    }
-
-    /// La personne remplacee, pour un motif de remplacement qui la nomme.
-    pub fn personne_remplacee(&self) -> Option<&String> {
-        match self {
-            Recours::Remplacement { personne_remplacee } | Recours::RemplacementATempsPartiel { personne_remplacee } | Recours::AttenteDeSuppression { personne_remplacee } => {
-                personne_remplacee.as_ref()
-            }
-            Recours::Accroissement | Recours::Saisonnier | Recours::ObjetDefini | Recours::Insertion | Recours::ComplementDeFormation => None,
-        }
-    }
-
-    /// Le motif nomme-t-il la personne remplacee ?
-    fn remplace(&self) -> bool {
-        Recours::TOUS.iter().any(|(c, p)| *c == self.code() && *p)
-    }
-}
-
-/// LA CARTE VALIDE : une variante par nature de contrat, la nature dite (`nature`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "nature", deny_unknown_fields)]
+#[serde(tag = "nature", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CarteValide {
-    #[serde(rename = "cddu_spectacle")]
     CdduSpectacle(Cddu),
-    #[serde(rename = "cdi")]
     Cdi(Cdi),
-    #[serde(rename = "cdd")]
     Cdd(Cdd),
 }
 
@@ -374,7 +288,7 @@ pub enum CarteValide {
 /// sa cle, chacune de ses cases (obligatoire ou facultative), et, pour un CDD, ses motifs et ce que chacun porte en plus.
 #[derive(Debug, Clone, Serialize)]
 pub struct NatureDecrite {
-    pub nature: &'static str,
+    pub nature: NatureDeContrat,
     pub cases: Vec<CaseDecrite>,
     pub motifs_recours: Vec<MotifDecrit>,
 }
@@ -390,70 +304,72 @@ pub struct CaseDecrite {
 /// Un motif de recours : son code, et les cases qu'il porte en plus de celles de sa nature.
 #[derive(Debug, Clone, Serialize)]
 pub struct MotifDecrit {
-    pub code: &'static str,
+    pub code: MotifDeRecours,
     pub cases: Vec<CaseDecrite>,
 }
 
-/// La nature d'un contrat d'usage du spectacle.
-pub const CDDU: &str = "cddu_spectacle";
-
-/// Les natures et leurs cases, dans l'ordre de `contrats-base.json`.
-pub const NATURES: [(&str, &[(Champ, Exige)]); 3] = [("cddu_spectacle", Cddu::CASES), ("cdi", Cdi::CASES), ("cdd", Cdd::CASES)];
-
 impl CarteValide {
-    /// Les cases de la nature `cle` ; `None` : ce n'est pas une nature.
-    pub fn cases_de(cle: &str) -> Option<&'static [(Champ, Exige)]> {
-        NATURES.iter().find(|(n, _)| *n == cle).map(|(_, c)| *c)
+    /// Les cases de la nature `n`.
+    pub fn cases_de(n: NatureDeContrat) -> &'static [(Champ, Exige)] {
+        match n {
+            NatureDeContrat::CdduSpectacle => Cddu::CASES,
+            NatureDeContrat::Cdi => Cdi::CASES,
+            NatureDeContrat::Cdd => Cdd::CASES,
+        }
     }
 
-    /// Chaque nature et ses cases, tirees du type.
-    pub fn natures() -> Vec<NatureDecrite> {
+    /// Les cases qu'un motif de recours de la nature `n` porte en plus des siennes.
+    fn du_motif_de(n: NatureDeContrat) -> &'static [Champ] {
+        match n {
+            NatureDeContrat::CdduSpectacle => Cddu::DU_MOTIF,
+            NatureDeContrat::Cdi => Cdi::DU_MOTIF,
+            NatureDeContrat::Cdd => Cdd::DU_MOTIF,
+        }
+    }
+
+    /// Chaque nature et ses cases, tirees du type ; ses motifs de recours, et ce que chacun porte, de
+    /// `contrats-base.json`.
+    pub fn natures() -> R<Vec<NatureDecrite>> {
         let decrire = |cases: &'static [(Champ, Exige)]| -> Vec<CaseDecrite> {
             cases.iter().map(|(c, e)| CaseDecrite { cle: c.nom(), libelle: libelle(*c), exige: *e }).collect()
         };
-        NATURES
-            .iter()
-            .map(|(n, cases)| NatureDecrite {
-                nature: n,
-                cases: decrire(cases),
-                motifs_recours: if *n == "cdd" {
-                    Recours::TOUS
-                        .iter()
-                        .map(|(code, remplace)| MotifDecrit {
-                            code,
-                            cases: if *remplace {
-                                Recours::CASES.iter().map(|c| CaseDecrite { cle: c.nom(), libelle: libelle(*c), exige: Exige::Facultatif }).collect()
-                            } else {
-                                Vec::new()
-                            },
-                        })
-                        .collect()
-                } else {
-                    Vec::new()
-                },
-            })
-            .collect()
+        let mut out = Vec::new();
+        for n in NatureDeContrat::TOUTES {
+            let nat = n.proprietes()?;
+            let motifs_recours = nat
+                .motifs_recours()
+                .into_iter()
+                .flatten()
+                .map(|m| MotifDecrit {
+                    code: m.code,
+                    cases: if nat.motif_de_remplacement(m.code) {
+                        CarteValide::du_motif_de(n).iter().map(|c| CaseDecrite { cle: c.nom(), libelle: libelle(*c), exige: Exige::Facultatif }).collect()
+                    } else {
+                        Vec::new()
+                    },
+                })
+                .collect();
+            out.push(NatureDecrite { nature: n, cases: decrire(CarteValide::cases_de(n)), motifs_recours });
+        }
+        Ok(out)
     }
 
     /// LA CARTE DU MOIS `c`, VALIDE : sa nature dite, chaque case obligatoire remplie, aucune case que sa nature n'a pas.
     /// Le refus nomme chaque case a remplir (`A_REMPLIR`), ou chaque case a retirer ; `qui` : le salarie qu'il nomme. Ce
     /// que la vue deduit (`Groupe::Deduit`) et ce qu'elle dit de l'engagement ecrit (`Groupe::Vue`) ne sont pas des cases.
-    pub fn depuis(c: &Carte, qui: &str) -> Resultat<CarteValide> {
-        let Some(nature) = c.nature.as_deref().filter(|n| !n.trim().is_empty()) else {
-            return Err(format!("{}{}", qui, crate::PAS_DE_NATURE));
+    pub fn depuis(c: &Carte, qui: &str) -> R<CarteValide> {
+        let Some(nature) = c.nature else {
+            return Err(crate::a_finir(format!("{}{}", qui, crate::PAS_DE_NATURE)));
         };
-        let Some(cases) = CarteValide::cases_de(nature) else {
-            let cles: Vec<&str> = NATURES.iter().map(|(n, _)| *n).collect();
-            return Err(format!("{} : « {} » n'est pas une nature de contrat : {}.", qui, nature, cles.join(", ")));
-        };
-        let nat = droit::natures::nature(nature)?;
+        let cases = CarteValide::cases_de(nature);
+        let nat = nature.proprietes()?;
         let libelle_nature = nat.libelle.clone();
         // Un motif que la nature n'offre pas se refuse en disant ceux qu'elle offre (`contrats-base.json`).
-        if let Some(refus) = c.motif_recours.as_deref().and_then(|m| nat.motif_recours_refuse(m, qui)) {
-            return Err(refus);
+        if let Some(phrase) = c.motif_recours.and_then(|m| nat.motif_recours_refuse(m, qui)) {
+            return Err(refus(phrase));
         }
-        // Ce que porte un motif de recours est une case du CDD (son motif dit ensuite s'il la porte).
-        let du_motif: &[Champ] = if nature == "cdd" { Recours::CASES } else { &[] };
+        // Ce que porte un motif de recours est une case de sa nature (son motif dit ensuite s'il la porte).
+        let du_motif = CarteValide::du_motif_de(nature);
         let a_elle = |x: Champ| x == Champ::Nature || du_motif.contains(&x) || cases.iter().any(|(k, _)| *k == x);
         let de_trop: Vec<&str> = Champ::TOUS
             .iter()
@@ -462,7 +378,7 @@ impl CarteValide {
             .map(libelle)
             .collect();
         if !de_trop.is_empty() {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : {} {} pas une case d'un {} ; retirez-{} de sa carte. Rien n'est écrit.",
                 qui,
                 guillemets(&de_trop),
@@ -473,20 +389,20 @@ impl CarteValide {
         }
         let manques: Vec<&str> = cases.iter().filter(|(x, e)| *e == Exige::Obligatoire && !remplie(c, *x)).map(|(x, _)| libelle(*x)).collect();
         if !manques.is_empty() {
-            return Err(format!("{}{}{} ({}).", qui, A_REMPLIR, guillemets(&manques), libelle_nature));
+            return Err(crate::a_finir(format!("{}{}{} ({}).", qui, A_REMPLIR, guillemets(&manques), libelle_nature)));
         }
-        let manquante = || format!("{}{}({})", qui, A_REMPLIR, libelle_nature);
+        let manquante = || crate::a_finir(format!("{}{}({})", qui, A_REMPLIR, libelle_nature));
         Ok(match nature {
-            "cddu_spectacle" => CarteValide::CdduSpectacle(Cddu::tiree(c)?.ok_or_else(manquante)?),
-            "cdi" => CarteValide::Cdi(Cdi::tiree(c)?.ok_or_else(manquante)?),
-            _ => {
-                let v = Cdd::tiree(c)?.ok_or_else(manquante)?;
-                if c.personne_remplacee.is_some() && !v.motif_recours.remplace() {
-                    return Err(format!(
+            NatureDeContrat::CdduSpectacle => CarteValide::CdduSpectacle(Cddu::tiree(c).ok_or_else(manquante)?),
+            NatureDeContrat::Cdi => CarteValide::Cdi(Cdi::tiree(c).ok_or_else(manquante)?),
+            NatureDeContrat::Cdd => {
+                let v = Cdd::tiree(c).ok_or_else(manquante)?;
+                if v.personne_remplacee.is_some() && !nat.motif_de_remplacement(v.motif_recours) {
+                    return Err(socle::refus!(
                         "{} : {} n'est pas une case d'un CDD conclu pour ce motif ({}) ; retirez-la de sa carte. Rien n'est écrit.",
                         qui,
                         guillemets(&[libelle(Champ::PersonneRemplacee)]),
-                        v.motif_recours.code()
+                        v.motif_recours
                     ));
                 }
                 CarteValide::Cdd(v)
@@ -494,34 +410,12 @@ impl CarteValide {
         })
     }
 
-    /// Sa nature, telle que `contrats-base.json` la nomme.
-    pub fn nature(&self) -> &'static str {
+    /// Sa nature.
+    pub fn nature(&self) -> NatureDeContrat {
         match self {
-            CarteValide::CdduSpectacle(_) => "cddu_spectacle",
-            CarteValide::Cdi(_) => "cdi",
-            CarteValide::Cdd(_) => "cdd",
-        }
-    }
-}
-
-/// UNE NATURE DE CONTRAT, telle que `contrats-base.json` la nomme : celle d'un brouillon, des sa naissance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum NatureDeContrat {
-    #[serde(rename = "cddu_spectacle")]
-    CdduSpectacle,
-    #[serde(rename = "cdi")]
-    Cdi,
-    #[serde(rename = "cdd")]
-    Cdd,
-}
-
-impl NatureDeContrat {
-    /// Sa cle.
-    pub fn cle(self) -> &'static str {
-        match self {
-            NatureDeContrat::CdduSpectacle => "cddu_spectacle",
-            NatureDeContrat::Cdi => "cdi",
-            NatureDeContrat::Cdd => "cdd",
+            CarteValide::CdduSpectacle(_) => NatureDeContrat::CdduSpectacle,
+            CarteValide::Cdi(_) => NatureDeContrat::Cdi,
+            CarteValide::Cdd(_) => NatureDeContrat::Cdd,
         }
     }
 }
@@ -529,15 +423,13 @@ impl NatureDeContrat {
 /// LE BROUILLON D'UNE CARTE : ce que la page enregistre tant que l'engagement n'est pas valide, peut-etre incomplet. Il
 /// nait avec sa nature (une carte neuve s'ouvre dans celle que dit la route saisie du mois, `nouvelle_carte`) et n'existe jamais
 /// sans elle ; chacune des cases de sa nature y est, remplie ou `null`. Il change d'une case a la fois (`Changement`) ;
-/// changer de nature le fait changer de variante. Valider, c'est le lire en carte valide (`CarteValide::depuis`).
+/// changer de nature le fait changer de variante. Valider, c'est le lire en carte valide (`CarteValide::depuis`). Comme
+/// la carte valide, une variante par nature, du nom de la sienne.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "nature", deny_unknown_fields)]
+#[serde(tag = "nature", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Brouillon {
-    #[serde(rename = "cddu_spectacle")]
     CdduSpectacle(BrouillonCddu),
-    #[serde(rename = "cdi")]
     Cdi(BrouillonCdi),
-    #[serde(rename = "cdd")]
     Cdd(BrouillonCdd),
 }
 
@@ -572,18 +464,9 @@ impl Brouillon {
     /// LE BROUILLON QUE LA CARTE `c` ECRIT (la vue d'un mois d'un engagement en saisie, `stock::Objet::vue`) : sa nature
     /// dite, et aucune case que sa nature n'a pas (le refus les nomme). Ce que la vue deduit (`Groupe::Deduit`) et ce
     /// qu'elle dit de l'engagement ecrit (`Groupe::Vue`) ne sont pas des cases. `qui` : le salarie que le refus nomme.
-    pub fn de_la_carte(c: &Carte, qui: &str) -> Resultat<Brouillon> {
-        let Some(cle) = c.nature.as_deref().filter(|n| !n.trim().is_empty()) else {
-            return Err(format!("{}{}", qui, crate::PAS_DE_NATURE));
-        };
-        let n = match cle {
-            "cddu_spectacle" => NatureDeContrat::CdduSpectacle,
-            "cdi" => NatureDeContrat::Cdi,
-            "cdd" => NatureDeContrat::Cdd,
-            autre => {
-                let cles: Vec<&str> = NATURES.iter().map(|(n, _)| *n).collect();
-                return Err(format!("{} : « {} » n'est pas une nature de contrat : {}.", qui, autre, cles.join(", ")));
-            }
+    pub fn de_la_carte(c: &Carte, qui: &str) -> R<Brouillon> {
+        let Some(n) = c.nature else {
+            return Err(crate::a_finir(format!("{}{}", qui, crate::PAS_DE_NATURE)));
         };
         let cases = Brouillon::cases(n);
         let de_trop: Vec<&str> = Champ::TOUS
@@ -593,12 +476,12 @@ impl Brouillon {
             .map(libelle)
             .collect();
         if !de_trop.is_empty() {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : {} {} pas une case d'un {}. Rien n'est écrit.",
                 qui,
                 guillemets(&de_trop),
                 if de_trop.len() > 1 { "ne sont" } else { "n'est" },
-                droit::natures::nature(cle)?.libelle
+                n.proprietes()?.libelle
             ));
         }
         Ok(match n {
@@ -610,7 +493,7 @@ impl Brouillon {
 
     /// La carte qu'il ecrit : sa nature et ses cases remplies.
     pub fn en_carte(&self) -> Carte {
-        let mut c = Carte { nature: Some(self.nature().cle().to_string()), ..Carte::default() };
+        let mut c = Carte { nature: Some(self.nature()), ..Carte::default() };
         match self {
             Brouillon::CdduSpectacle(b) => b.sur_la_carte(&mut c),
             Brouillon::Cdi(b) => b.sur_la_carte(&mut c),
@@ -623,10 +506,10 @@ impl Brouillon {
     /// l'ancienne disparaissent, celles propres a la nouvelle naissent vides, et une case des deux (le salarie, le metier,
     /// les bornes, les lignes...) garde ce qu'elle dit : c'est la meme case, et l'ecran la montre telle quelle. Refus :
     /// une case que sa nature n'a pas, un motif de recours que sa nature n'offre pas ; rien ne change.
-    pub fn changer(&mut self, ch: Changement, qui: &str) -> Resultat<()> {
+    pub fn changer(&mut self, ch: Changement, qui: &str) -> R<()> {
         let mut c = self.en_carte();
         if let Changement::Nature(n) = ch {
-            let mut neuve = Carte { nature: Some(n.cle().to_string()), ..Carte::default() };
+            let mut neuve = Carte { nature: Some(n), ..Carte::default() };
             for x in Brouillon::cases(n) {
                 neuve.prendre(&c, *x);
             }
@@ -635,13 +518,13 @@ impl Brouillon {
         }
         let x = ch.champ();
         if !Brouillon::cases(self.nature()).contains(&x) {
-            let nat = droit::natures::nature(self.nature().cle())?;
-            return Err(format!("{} : {} n'est pas une case d'un {}. Rien n'est écrit.", qui, guillemets(&[libelle(x)]), nat.libelle));
+            let nat = self.nature().proprietes()?;
+            return Err(socle::refus!("{} : {} n'est pas une case d'un {}. Rien n'est écrit.", qui, guillemets(&[libelle(x)]), nat.libelle));
         }
         if let Changement::MotifRecours(Some(m)) = &ch {
-            let nat = droit::natures::nature(self.nature().cle())?;
-            if let Some(refus) = nat.motif_recours_refuse(m, qui) {
-                return Err(refus);
+            let nat = self.nature().proprietes()?;
+            if let Some(phrase) = nat.motif_recours_refuse(*m, qui) {
+                return Err(refus(phrase));
             }
         }
         ch.poser(&mut c);
@@ -690,10 +573,10 @@ macro_rules! changements {
             /// (`salarie`, `spectacle`) ; une autre case telle quelle.
             pub fn ranger(
                 self,
-                ranger: &dyn Fn(Vec<LigneDonnee>) -> Resultat<Vec<LignePaie>>,
-                salarie: &dyn Fn(&str) -> Resultat<IdSalarie>,
-                spectacle: &dyn Fn(&str) -> Resultat<IdSpectacle>,
-            ) -> Resultat<Changement> {
+                ranger: &dyn Fn(Vec<LigneDonnee>) -> R<Vec<LignePaie>>,
+                salarie: &dyn Fn(&str) -> R<IdSalarie>,
+                spectacle: &dyn Fn(&str) -> R<IdSpectacle>,
+            ) -> R<Changement> {
                 Ok(match self {
                     Changement::Nature(n) => Changement::Nature(n),
                     Changement::Salarie(x) => Changement::Salarie(x.map(|nom| salarie(&nom)).transpose()?),
@@ -708,7 +591,7 @@ macro_rules! changements {
             /// Pose sur la carte `c` la valeur qu'il dit.
             fn poser(self, c: &mut Carte) {
                 match self {
-                    Changement::Nature(n) => c.nature = Some(n.cle().to_string()),
+                    Changement::Nature(n) => c.nature = Some(n),
                     Changement::Salarie(x) => c.salarie = x,
                     Changement::Spectacle(x) => c.spectacle = x,
                     Changement::Lignes(x) => c.lignes = x,
@@ -720,24 +603,24 @@ macro_rules! changements {
 }
 
 changements! {
-    Debut(String) = "debut" => debut,
-    Fin(String) = "fin" => fin,
-    Numero(String) = "numero" => numero,
+    Debut(Jour) = "debut" => debut,
+    Fin(Jour) = "fin" => fin,
+    Numero(crate::numeros::NumeroContrat) = "numero" => numero,
     Etablissement(String) = "etablissement" => etablissement,
     Metier(String) = "metier" => metier,
     Cadre(bool) = "cadre" => cadre,
     Lieu(String) = "lieu" => lieu,
-    MotifRecours(String) = "motif_recours" => motif_recours,
+    MotifRecours(MotifDeRecours) = "motif_recours" => motif_recours,
     QuotiteContrat(NombreLu) = "quotite_contrat" => quotite_contrat,
     QuotiteReference(NombreLu) = "quotite_reference" => quotite_reference,
-    ModaliteTempsTravail(String) = "modalite_temps_travail" => modalite_temps_travail,
+    ModaliteTempsTravail(ModaliteDuTempsDeTravail) = "modalite_temps_travail" => modalite_temps_travail,
     SalaireMensuel(NombreLu) = "salaire_mensuel" => salaire_mensuel,
     Emploi(String) = "emploi" => emploi,
     PcsEse(String) = "pcs_ese" => pcs_ese,
     CodeEmploiFt(String) = "code_emploi_ft" => code_emploi_ft,
-    Statut(String) = "statut" => statut,
-    StatutConventionnel(String) = "statut_conventionnel" => statut_conventionnel,
-    StatutCategorielRc(String) = "statut_categoriel_rc" => statut_categoriel_rc,
+    Statut(droit::fiche::Statut) = "statut" => statut,
+    StatutConventionnel(droit::fiche::StatutConventionnel) = "statut_conventionnel" => statut_conventionnel,
+    StatutCategorielRc(droit::fiche::StatutCategorielRc) = "statut_categoriel_rc" => statut_categoriel_rc,
     PeriodeEssaiJours(NombreLu) = "periode_essai_jours" => periode_essai_jours,
     PersonneRemplacee(String) = "personne_remplacee" => personne_remplacee,
     RepartitionHoraire(String) = "repartition_horaire" => repartition_horaire,
@@ -745,7 +628,7 @@ changements! {
     ModeleContrat(String) = "modele_contrat" => modele_contrat,
     CongesPris(Vec<CongePris>) = "conges_pris" => conges_pris,
     Primes(Vec<Prime>) = "primes" => primes,
-    DatePaiement(String) = "date_paiement" => date_paiement,
+    DatePaiement(Jour) = "date_paiement" => date_paiement,
     Jours(NombreLu) = "jours" => jours,
     TauxCachet(NombreLu) = "taux_cachet" => taux_cachet,
     HeuresSupplementaires(NombreLu) = "heures_supplementaires" => heures_supplementaires,
@@ -753,13 +636,13 @@ changements! {
     HeuresComplementaires(NombreLu) = "heures_complementaires" => heures_complementaires,
     IndemniteLicenciement(NombreLu) = "indemnite_licenciement" => indemnite_licenciement,
     FauteGrave(bool) = "faute_grave" => faute_grave,
-    MotifRupture(String) = "motif_rupture" => motif_rupture,
-    NotificationRupture(String) = "notification_rupture" => notification_rupture,
-    EngagementLicenciement(String) = "engagement_licenciement" => engagement_licenciement,
-    SignatureConvention(String) = "signature_convention" => signature_convention,
+    MotifRupture(MotifDeRupture) = "motif_rupture" => motif_rupture,
+    NotificationRupture(Jour) = "notification_rupture" => notification_rupture,
+    EngagementLicenciement(Jour) = "engagement_licenciement" => engagement_licenciement,
+    SignatureConvention(Jour) = "signature_convention" => signature_convention,
     Preavis(Preavis) = "preavis" => preavis,
     Transaction(String) = "transaction" => transaction,
-    DernierJourPaye(String) = "dernier_jour_paye" => dernier_jour_paye,
+    DernierJourPaye(Jour) = "dernier_jour_paye" => dernier_jour_paye,
     EnDroitALaRetraite(bool) = "en_droit_a_la_retraite" => en_droit_a_la_retraite,
     PreavisNonEffectue(bool) = "preavis_non_effectue" => preavis_non_effectue,
     PreavisMois(NombreLu) = "preavis_mois" => preavis_mois,
@@ -788,7 +671,7 @@ impl Changements {
     /// rien : ses lignes se rangent d'abord, chacune lue au catalogue de la compagnie (`racine`, `ligne::ranger`) ; le
     /// premier refus (il nomme sa case, ou sa ligne) laisse `b` tel qu'il etait. `qui` : le salarie que le refus nomme,
     /// tel que le brouillon le dit au moment du changement.
-    pub fn appliquer(self, ctx: &droit::contexte::Contexte, mois: socle::mois::Mois, b: &mut Brouillon, qui: impl Fn(&Brouillon) -> String) -> Resultat<()> {
+    pub fn appliquer(self, ctx: &droit::contexte::Contexte, mois: socle::mois::Mois, b: &mut Brouillon, qui: impl Fn(&Brouillon) -> String) -> R<()> {
         let mut essai = b.clone();
         for ch in self.0 {
             let q = qui(&essai);
@@ -802,9 +685,9 @@ impl Changements {
 
 /// LE SALARIE QU'UN NOM TAPE DESIGNE, retrouve une fois a la porte (`Contexte::cle_du_salarie`) : la carte ne porte
 /// que sa cle. Un nom vide ne designe personne ; aucun salarie, ou plusieurs, se refuse en disant quoi corriger.
-pub fn salarie_nomme(ctx: &droit::contexte::Contexte, nom: &str) -> Resultat<IdSalarie> {
+pub fn salarie_nomme(ctx: &droit::contexte::Contexte, nom: &str) -> R<IdSalarie> {
     if nom.trim().is_empty() {
-        return Err("Le nom du salarié est vide : écrire son nom, ou vider la case. Rien n'est écrit.".to_string());
+        return Err(refus("Le nom du salarié est vide : écrire son nom, ou vider la case. Rien n'est écrit."));
     }
     ctx.cle_du_salarie(nom)
 }

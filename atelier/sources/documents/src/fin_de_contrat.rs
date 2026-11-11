@@ -74,7 +74,7 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let recu = sortie.join(format!("RecuSoldeToutCompte_{}_{}.pdf", cle, fin.aaaammjj()));
     let mut valeurs_cert = marqueurs_communs(&date, p, numero, fin, &ent)?;
     let mut valeurs = valeurs_cert.clone();
-    let nom = format!("{} {}", p.salarie.prenom.ecrite("prenom").map_err(|m| erreur(Classe::Manque, m))?, p.salarie.nom.ecrite("nom").map_err(|m| erreur(Classe::Manque, m))?);
+    let nom = format!("{} {}", p.salarie.prenom.ecrite("prenom").map_err(|m| m.reclasser(Classe::Manque))?, p.salarie.nom.ecrite("nom").map_err(|m| m.reclasser(Classe::Manque))?);
     let maintien = engagement::portabilite::de(&ctx.racine, p, numero, &fin)?;
     // LE MODELE DU CERTIFICAT : celui de la compagnie (ses `gabarits/`, une copie qu'elle a pu modifier) ou celui livre.
     // Quand un maintien est du, un modele qui ne cite pas sa mention la tairait sans le dire : il se refuse.
@@ -103,8 +103,7 @@ fait). Rien n'est écrit.",
     let lu_recu = ModeleLu::du_fichier(&socle::fichiers::modele_de("recu-solde-de-tout-compte.modele", Some(&ent.gabarits), &poste))?;
     ecrire_papier(&lu_cert, valeurs_cert, &certificat, &ent, true)?;
     if let Err(e) = ecrire_papier(&lu_recu, valeurs, &recu, &ent, false) {
-        let _ = std::fs::remove_file(&certificat);
-        return Err(e);
+        return Err(socle::fichiers::effacer_apres(e, &certificat));
     }
     Ok([certificat, recu])
 }
@@ -114,9 +113,9 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &str, fin: Jour, ent: &droit
     let s = &p.salarie;
     let e = &p.engagement;
     fn ecrite<T: AsRef<str>>(c: &Option<T>, k: &str) -> R<String> {
-        c.ecrite(k).map(str::to_string).map_err(|m| erreur(Classe::Manque, m))
+        c.ecrite(k).map(str::to_string).map_err(|m| m.reclasser(Classe::Manque))
     }
-    let sig = ent.signataire.exigee("signataire").map_err(|m| erreur(Classe::Manque, m))?;
+    let sig = ent.signataire.exigee("signataire").map_err(|m| m.reclasser(Classe::Manque))?;
     let aujourdhui = date.jj_mm_aaaa();
     let mut m = Valeurs::new();
     let mut poser = |k: Marqueur, v: String| {
@@ -131,7 +130,7 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &str, fin: Jour, ent: &droit
     poser(Marqueur::EmployeurSignataire, format!("{} {}", ecrite(&sig.prenom, "prenom")?, ecrite(&sig.nom, "nom")?));
     poser(Marqueur::EmployeurSignataireFonction, ecrite(&sig.fonction, "fonction")?);
     poser(Marqueur::SalarieNomComplet, format!("{} {}", ecrite(&s.prenom, "prenom")?, ecrite(&s.nom, "nom")?));
-    poser(Marqueur::SalarieDateNaissance, s.date_naissance.exigee("date_naissance").map_err(|m| erreur(Classe::Manque, m))?.jj_mm_aaaa());
+    poser(Marqueur::SalarieDateNaissance, s.date_naissance.exigee("date_naissance").map_err(|m| m.reclasser(Classe::Manque))?.jj_mm_aaaa());
     poser(Marqueur::SalarieLieuNaissance, ecrite(&s.lieu_naissance, "lieu_naissance")?);
     poser(Marqueur::SalarieAdresse, ecrite(&s.adresse, "adresse")?);
     poser(Marqueur::SalarieCodePostal, ecrite(&s.code_postal, "code_postal")?);
@@ -140,7 +139,7 @@ fn marqueurs_communs(date: &Jour, p: &Paie, numero: &str, fin: Jour, ent: &droit
     poser(Marqueur::ContratDebut, e.debut.jj_mm_aaaa());
     poser(Marqueur::ContratFin, fin.jj_mm_aaaa());
     poser(Marqueur::ContratEmploi, ecrite(&s.emploi, "emploi")?);
-    poser(Marqueur::ContratNature, e.nat().map_err(|m| erreur(Classe::Illisible, m))?.libelle.clone());
+    poser(Marqueur::ContratNature, e.nat().map_err(|m| m.reclasser(Classe::Illisible))?.libelle.clone());
     poser(Marqueur::CertificatDate, aujourdhui.clone());
     poser(Marqueur::RecuDate, aujourdhui);
     Ok(m)
@@ -169,6 +168,6 @@ fn ecrire_papier(lu: &ModeleLu, valeurs: Valeurs, chemin: &Path, ent: &droit::co
         un.signature_employeur = identite_de(&ent.gabarits, "signature").as_deref().map(crate::conges_spectacles::chemin_texte);
     }
     let d = crate::contrat::enveloppe(Style::Attestation, ent, vec![Document::Modele(un)]);
-    crate::fabrique::ecrire(&d, chemin).map_err(|m| erreur(Classe::FabriqueRefus, m.replace('\n', " ").trim().to_string()))?;
+    crate::fabrique::ecrire_pdf(&d, chemin)?;
     Ok(())
 }

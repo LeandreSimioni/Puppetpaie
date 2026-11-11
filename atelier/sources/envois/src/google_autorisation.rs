@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
-use socle::echec::Echec;
+use socle::echec::{Classe, Echec};
 use crate::google::{encoder, lue, phrase_de_panne, Application, ReponseJeton, DELAI, JETONS, PERMISSIONS};
 use crate::transport::{envoyer, Requete};
 
@@ -54,8 +54,9 @@ fn echapper(t: &str) -> String {
     t.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&#x27;")
 }
 
+#[track_caller]
 fn refus(message: impl Into<String>) -> Echec {
-    Echec { classe: Some(socle::echec::Classe::Refuse),message: message.into() }
+    socle::echec::erreur(Classe::Refuse, message)
 }
 
 /// Les deux adresses que l'autorisation appelle : les jetons et l'adresse du compte. Les vraies par defaut ; l'appelant
@@ -74,7 +75,7 @@ impl Adresses {
 
     /// Les adresses d'un Google qui repond a `base` (un serveur local).
     pub fn de_la_base(base: &str) -> Adresses {
-        Adresses { jetons: format!("{}/token", base), compte: format!("{}/userinfo", base) }
+        Adresses { jetons: crate::google::jetons_de_la_base(base), compte: format!("{}/userinfo", base) }
     }
 }
 
@@ -133,7 +134,11 @@ struct Retour {
 /// Sert une connexion : `Some(retour)` quand c'est la reponse de Google (le `state` est le bon), `None` sinon (on continue d'attendre).
 /// Un `state` faux : 403. Une autre methode que GET : 501, comme `BaseHTTPRequestHandler`.
 fn servir(flux: &mut TcpStream, etat: &str) -> Option<Retour> {
-    let _ = flux.set_read_timeout(Some(Duration::from_secs(5)));
+    // Une connexion dont l'attente ne se regle pas n'est pas la reponse de Google : on continue d'attendre.
+    if let Err(coupee) = flux.set_read_timeout(Some(Duration::from_secs(5))) {
+        drop(coupee);
+        return None;
+    }
     let mut tampon = [0u8; 8192];
     let mut lu = 0;
     while lu < tampon.len() {
@@ -153,8 +158,11 @@ fn servir(flux: &mut TcpStream, etat: &str) -> Option<Retour> {
         }
     }
     let texte = String::from_utf8_lossy(&tampon[..lu]).into_owned();
+    // Ce n'est pas la reponse de Google : un navigateur parti avant la reponse n'attend plus rien.
     let repondre_vide = |flux: &mut TcpStream, statut: &str| {
-        let _ = flux.write_all(format!("HTTP/1.1 {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", statut).as_bytes());
+        if let Err(parti) = flux.write_all(format!("HTTP/1.1 {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", statut).as_bytes()) {
+            drop(parti);
+        }
     };
     // La ligne de la demande : `GET <cible> HTTP/1.1`. Toute autre methode, ou une ligne qui n'en est pas une : 501.
     let Some(cible) = texte.lines().next().and_then(|l| l.strip_prefix("GET ")).and_then(|r| r.split(' ').next()) else {
@@ -180,18 +188,21 @@ fn servir(flux: &mut TcpStream, etat: &str) -> Option<Retour> {
         Some(e) => page_retour("Autorisation refusee", "#d05353", &echapper(e)),
     };
     let corps = page.into_bytes();
-    let _ = flux.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", corps.len()).as_bytes());
-    let _ = flux.write_all(&corps);
+    // La page n'est qu'un mot a la personne : un navigateur parti avant de la lire n'ote rien a ce que Google a renvoye.
+    let entete = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", corps.len());
+    if let Err(parti) = flux.write_all(entete.as_bytes()).and_then(|()| flux.write_all(&corps)) {
+        drop(parti);
+    }
     Some(retour)
 }
 
 /// La reponse de Google lue en sa forme `T`, ou la phrase de la panne.
 fn appeler<T: socle::forme::ReponseDUnTiers>(requete: &Requete) -> Result<T, Echec> {
     match envoyer(requete) {
-        Ok((brut, _)) => lue(brut, "Google a rendu une reponse illisible. Aucune autorisation enregistree. Recommencer plus tard.").map_err(refus),
+        Ok((brut, _)) => lue(brut, "Google a rendu une reponse illisible. Aucune autorisation enregistree. Recommencer plus tard.").map_err(|e| e.reclasser(Classe::Refuse)),
         Err(panne) => match phrase_de_panne(panne) {
             Ok(phrase) => Err(refus(phrase)),
-            Err((_, message)) => Err(refus(format!("Google ne repond pas : {}. Aucune autorisation enregistree.", message))),
+            Err(e) => Err(e.reformuler(|m| format!("Google ne repond pas : {}. Aucune autorisation enregistree.", m)).reclasser(Classe::Refuse)),
         },
     }
 }
@@ -249,7 +260,10 @@ pub fn autoriser(
                 }
             };
             if let Some(r) = servir(&mut flux, &fil_etat) {
-                let _ = tx.send(r);
+                // L'attente est passee : plus personne n'attend la reponse.
+                if let Err(parti) = tx.send(r) {
+                    drop(parti);
+                }
                 break;
             }
         }
@@ -262,7 +276,10 @@ pub fn autoriser(
         Err(mpsc::RecvTimeoutError::Timeout | mpsc::RecvTimeoutError::Disconnected) => {
             // Reveille le fil, qui attend une connexion, pour qu'il rende le port.
             fini.store(true, Ordering::SeqCst);
-            let _ = TcpStream::connect(adresse);
+            // Un reveil qui echoue laisse le fil a sa connexion suivante : le port se rend alors.
+            if let Err(rate) = socle::garde_reseau::vers_cette_machine(adresse.port(), None) {
+                drop(rate);
+            }
             return Err(refus(format!(
                 "Aucune reponse de Google en {} minutes : aucune autorisation enregistree. Recommencer, et accepter dans la fenetre du navigateur.",
                 std::cmp::max(1, delai / 60)
@@ -285,12 +302,10 @@ pub fn autoriser(
         ("redirect_uri", redirection),
     ]);
     let reponse: ReponseJeton = appeler(&Requete {
-        url: &adresses.jetons,
         donnees: Some(corps.as_bytes()),
         content_type: Some("application/x-www-form-urlencoded"),
         post: true,
-        delai: DELAI,
-        ..Default::default()
+        ..Requete::get(&adresses.jetons, DELAI)
     })?;
     let non_vide = |t: Option<String>| t.filter(|x| !x.is_empty());
     let Some(rafraichissement) = non_vide(reponse.refresh_token) else {
@@ -319,7 +334,7 @@ pub fn autoriser(
 
     let autorisation = format!("Bearer {}", acces);
     let entetes = [("Authorization", autorisation.as_str())];
-    let infos: ReponseCompte = appeler(&Requete { url: &adresses.compte, entetes: &entetes, delai: DELAI, ..Default::default() })?;
+    let infos: ReponseCompte = appeler(&Requete { entetes: &entetes, ..Requete::get(&adresses.compte, DELAI) })?;
     let Some(compte) = non_vide(infos.email) else {
         return Err(refus("Google n'a pas donne l'adresse du compte : aucune autorisation enregistree. Recommencer."));
     };

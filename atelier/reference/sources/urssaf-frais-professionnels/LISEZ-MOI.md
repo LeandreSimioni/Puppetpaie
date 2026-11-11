@@ -35,3 +35,10 @@ les revalorise chaque 1er janvier (art. 10) ; cette page publie les montants rev
 
 Les limites de 2026 du barème : `logiciel/donnees/baremes/2026.json`, `repas_deplacement` et `logement_grand_deplacement`
 (`engagement::frais_au_dela`).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `urssaf-frais-professionnels-20261030.pdf` : `80d60c58343f964cd708e100e5fc9336a15f3868b288b4ec167d1e3e49ecb2bd`
+- `urssaf-frais-professionnels-20261030.txt` : `c56bf4dd1b8a15fb606caa70facae08e8dfa1aa7b47d2c08bbce2222edb54d79`

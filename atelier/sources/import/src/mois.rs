@@ -18,13 +18,15 @@ use serde::Serialize;
 use droit::contexte::Contexte;
 use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratLu, DatesTravaillees, Declaration, Importe, LigneImprimee, PaieLue, PaieVersee};
 use envois::etats;
-use socle::echec::{erreur, Classe, Echec, R};
+use socle::date::Jour;
+use socle::echec::{Classe, R};
+use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 use crate::proposee::A_COMPLETER;
 
 /// Les engagements importes qui touchent `mois`.
-fn importes_du_mois(racine: &Path, mois: &str) -> R<Vec<Importe>> {
-    engagement::importe::du_mois(racine, mois).map_err(Echec::from)
+fn importes_du_mois(racine: &Path, mois: Mois) -> R<Vec<Importe>> {
+    engagement::importe::du_mois(racine, mois)
 }
 
 /// Un bulletin que l'ancien logiciel a fait, tel que l'import le garde : sa copie (relative a la compagnie), et le
@@ -36,9 +38,9 @@ pub struct BulletinRepris {
 
 /// LES BULLETINS REPRIS DE `mois` : la copie que l'import garde de chaque fichier lu (`historique/bulletins/`, le nom que
 /// porte la paie importee), un par fichier, avec le salarie qu'il paie. Un fichier qui manque ne se liste pas.
-pub fn bulletins_repris(racine: &Path, mois: &str) -> R<Vec<BulletinRepris>> {
+pub fn bulletins_repris(racine: &Path, mois: Mois) -> R<Vec<BulletinRepris>> {
     let mut out: Vec<BulletinRepris> = Vec::new();
-    for p in engagement::importe::paies_lues(racine).map_err(Echec::from)? {
+    for p in engagement::importe::paies_lues(racine)? {
         if p.mois != mois {
             continue;
         }
@@ -56,11 +58,11 @@ pub fn bulletins_repris(racine: &Path, mois: &str) -> R<Vec<BulletinRepris>> {
 }
 
 /// Les mois que les engagements importes touchent, qu'aucun engagement de la saisie ne touche.
-pub fn mois_importes(racine: &Path) -> R<Vec<String>> {
-    let mois: BTreeSet<String> = engagement::importe::tous(racine).map_err(Echec::from)?.iter().flat_map(Importe::mois).collect();
+pub fn mois_importes(racine: &Path) -> R<Vec<Mois>> {
+    let mois: BTreeSet<Mois> = engagement::importe::tous(racine)?.iter().flat_map(Importe::mois).collect();
     let mut out = Vec::new();
     for m in mois {
-        if !engagement::stock::a_une_saisie(racine, &m).map_err(Echec::from)? {
+        if !engagement::stock::a_une_saisie(racine, m)? {
             out.push(m);
         }
     }
@@ -74,8 +76,8 @@ pub fn mois_importes(racine: &Path) -> R<Vec<String>> {
 /// (`produire_regularisations::regularisations_pour` : cahier technique DSN 2026.1, § 2.1.2.1,
 /// `atelier/reference/norme-dsn/texte/chapitre-2-principes-de-constitution.txt`). La DSN de l'ancien logiciel ne se
 /// refait pas ici (regle 4).
-pub fn dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<Option<DsnDeLAncienLogiciel>> {
-    if engagement::importe::dsn_deposee(&ctx.racine, mois).map_err(Echec::from)?.is_none() {
+pub fn dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: Mois) -> R<Option<DsnDeLAncienLogiciel>> {
+    if engagement::importe::dsn_deposee(&ctx.racine, mois)?.is_none() {
         return Ok(None);
     }
     let porteur = compagnie::etat_dsn::dsn_qui_porte(ctx, mois)?;
@@ -84,13 +86,13 @@ pub fn dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<Option<DsnDeLAn
     for e in engagement::etats::du_mois(ctx, mois, &departs)? {
         // Un engagement valide ne s'y declare que si sa correction est due ; un engagement en saisie, toujours.
         if let Some(v) = e.valide() {
-            if engagement::etats::correction_due(ctx, v, &departs, mois, &porteur).map_err(Echec::from)?.is_none() {
+            if engagement::etats::correction_due(ctx, v, &departs, mois, Some(porteur))?.is_none() {
                 continue;
             }
         }
         n += 1;
     }
-    let lib = socle::mois::Mois::en_clair(&porteur);
+    let lib = porteur.libelle(Graphie::Accentuee);
     let phrase = match n {
         0 => "DSN déposée par l'ancien logiciel.".to_string(),
         1 => format!("DSN déposée par l'ancien logiciel ; cet engagement se déclare dans la DSN de {}.", lib),
@@ -102,7 +104,7 @@ pub fn dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<Option<DsnDeLAn
 /// La DSN d'un mois deposee par l'ancien logiciel (`dsn_de_l_ancien_logiciel`) : le mois de la DSN qui porte ce que la
 /// saisie y ajoute, combien d'engagements s'y declarent, et la phrase qui le dit.
 pub struct DsnDeLAncienLogiciel {
-    pub porteur: String,
+    pub porteur: Mois,
     pub engagements: usize,
     pub phrase: String,
 }
@@ -112,13 +114,13 @@ pub struct DsnDeLAncienLogiciel {
 /// ce logiciel (`importe` : `compagnie::etat_dsn` le dit « aucune trace de sa DSN ») -- l'ancien logiciel a calcule ces
 /// paies, sa DSN est la sienne, et elle se garde en l'important (la route `importer`). Le refus que `fabriquer_dsn`
 /// oppose avant d'ecrire quoi que ce soit, le seul.
-pub fn refuser_la_dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: &str) -> R<()> {
+pub fn refuser_la_dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: Mois) -> R<()> {
     let phrase = match dsn_de_l_ancien_logiciel(ctx, mois)? {
         Some(d) => format!("{} Elle ne se refait pas ici.", d.phrase),
         None if compagnie::etat_dsn::importe(&ctx.racine, mois)? => "mois tenu avant PuppetPaie, sa DSN est celle de l'ancien logiciel et ne se fait pas ici. Pour la garder, mettez son fichier dans le dossier d'import, puis « Importer » (Configuration › Reprendre l'historique).".to_string(),
         None => return Ok(()),
     };
-    Err(socle::echec::erreur(socle::echec::Classe::DsnDeLAncienLogiciel, format!("{} : {} Rien n'est écrit.", socle::mois::Mois::en_clair(mois), phrase)))
+    Err(socle::echec::erreur(socle::echec::Classe::DsnDeLAncienLogiciel, format!("{} : {} Rien n'est écrit.", mois.libelle(Graphie::Accentuee), phrase)))
 }
 
 // ------------------------------------------------------------------ les cartes
@@ -144,13 +146,11 @@ fn spectacle_de(ctx: &Contexte, numero: &str) -> Option<(String, Option<String>)
 /// contrat qui commence et finit dans le mois (le 1er quand il a commence avant), « 20/11 – 03/12 » pour un contrat a
 /// cheval sur un autre mois (« 01/09/2022 – 31/12 » quand il a commence une autre annee), « … » pour une borne que
 /// l'import n'a pas lue.
-fn periode_en_clair(debut: Option<&str>, fin: Option<&str>, mois: &str) -> String {
-    let (d, f) = (debut.and_then(socle::date::Jour::du_texte), fin.and_then(socle::date::Jour::du_texte));
-    let dans = |j: &socle::date::Jour| j.iso().starts_with(mois);
+fn periode_en_clair(d: Option<Jour>, f: Option<Jour>, mois: Mois) -> String {
+    let dans = |j: &Jour| mois.contient(j);
     let dehors = d.as_ref().is_some_and(|j| !dans(j)) || f.as_ref().is_some_and(|j| !dans(j));
-    let annee: String = mois.chars().take(4).collect();
-    let borne = |j: Option<&socle::date::Jour>, inconnue: &str| match j {
-        Some(j) if dehors && !j.iso().starts_with(&annee) => j.jj_mm_aaaa(),
+    let borne = |j: Option<&Jour>, inconnue: &str| match j {
+        Some(j) if dehors && j.an != mois.annee() => j.jj_mm_aaaa(),
         Some(j) if dehors => j.jj_mm(),
         Some(j) => j.jour.to_string(),
         None => inconnue.to_string(),
@@ -164,19 +164,18 @@ fn periode_en_clair(debut: Option<&str>, fin: Option<&str>, mois: &str) -> Strin
 }
 
 /// Les jours des dates travaillees d'un bulletin, dans `mois`.
-fn jours_du_mois(dates: &[DatesTravaillees], mois: &str) -> R<Vec<String>> {
+fn jours_du_mois(dates: &[DatesTravaillees], mois: Mois) -> R<Vec<Jour>> {
     let mut out = Vec::new();
     for d in dates {
         let (mut j, b) = (d.debut, d.fin);
         while j <= b {
-            let iso = j.iso();
-            if iso.starts_with(mois) && !out.contains(&iso) {
-                out.push(iso);
+            if mois.contient(&j) && !out.contains(&j) {
+                out.push(j);
             }
             if j == b {
                 break;
             }
-            j = j.plus_jours(1).map_err(|m| erreur(Classe::CalculImpossible, m))?;
+            j = j.plus_jours(1).map_err(|m| m.reclasser(Classe::CalculImpossible))?;
         }
     }
     out.sort();
@@ -214,39 +213,39 @@ pub(crate) struct EtatsDeCarte {
 
 /// L'etat de la DPAE d'une embauche tenue avant : le journal (reel accepte, par le numero du contrat), puis les certificats
 /// de `retours/dpae/` (par le salarie et le jour d'embauche qu'ils attestent).
-fn dpae_de(journal: &std::collections::HashMap<etats::Paire, String>, certifiees: &[envois::reprise_journal::DpaeAttestee], salarie: Option<&str>, numero: Option<&str>, debut: Option<&str>) -> EtatDeCarte {
+fn dpae_de(journal: &std::collections::HashMap<etats::Paire, socle::paris::HeureDuJournal>, certifiees: &[envois::reprise_journal::DpaeAttestee], salarie: Option<&str>, numero: Option<&str>, debut: Option<Jour>) -> EtatDeCarte {
     if let Some(q) = salarie.and_then(|s| journal.get(&(s.to_string(), numero.map(str::to_string)))) {
-        return EtatDeCarte { couleur: "vert", courte: "DPAE faite", phrase: format!("DPAE déposée le {}", etats::quand_lisible(q)) };
+        return EtatDeCarte { couleur: "vert", courte: "DPAE faite", phrase: format!("DPAE déposée le {}", q.dit()) };
     }
-    let certifiee = certifiees.iter().find(|c| c.embauches.iter().any(|e| Some(e.salarie.as_str()) == salarie && Some(e.debut.as_str()) == debut));
+    let certifiee = certifiees.iter().find(|c| c.embauches.iter().any(|e| Some(e.salarie.as_str()) == salarie && Some(e.debut) == debut));
     if let Some(c) = certifiee {
-        let quand: String = c.quand.iter().map(|q| format!(" ({})", etats::quand_lisible(q))).collect();
+        let quand: String = c.quand.iter().map(|q| format!(" ({})", q.dit())).collect();
         return EtatDeCarte { couleur: "vert", courte: "DPAE faite", phrase: format!("DPAE certifiée par l'Urssaf{}", quand) };
     }
     EtatDeCarte { couleur: "gris", courte: "avant PuppetPaie", phrase: "DPAE faite avant PuppetPaie : aucun certificat de l'Urssaf n'est relevé pour cette embauche".to_string() }
 }
 
-/// Les montants qu'une piece importee porte, chacun en texte exact ; un montant qu'aucune ne porte n'y est pas.
+/// Les montants qu'une piece importee porte, chacun exact ; un montant qu'aucune ne porte n'y est pas.
 #[derive(Debug, Clone, Default, Serialize)]
 pub(crate) struct Montants {
     #[serde(skip_serializing_if = "Option::is_none")]
-    brut: Option<String>,
+    brut: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    net_imposable: Option<String>,
+    net_imposable: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    net_a_payer: Option<String>,
+    net_a_payer: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pas: Option<String>,
+    pas: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    net_verse: Option<String>,
+    net_verse: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cotisations_salariales: Option<String>,
+    cotisations_salariales: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cotisations_patronales: Option<String>,
+    cotisations_patronales: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cout_employeur: Option<String>,
+    cout_employeur: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    net_avant_impot: Option<String>,
+    net_avant_impot: Option<Decimal>,
 }
 
 /// D'ou vient chaque montant : la DSN, le bulletin, l'AEM, l'historique.
@@ -291,10 +290,10 @@ pub struct CarteImportee {
     nom: Option<String>,
     spectacle: SpectacleDeCarte,
     contrat: Option<String>,
-    debut: Option<String>,
-    fin: Option<String>,
+    debut: Option<Jour>,
+    fin: Option<Jour>,
     periode: String,
-    dates: Vec<String>,
+    dates: Vec<Jour>,
     cachets: Option<i64>,
     heures: Option<i64>,
     jours: Option<i64>,
@@ -309,14 +308,13 @@ pub struct CarteImportee {
 }
 
 /// Une carte : une paie importee (et le contrat atteste qui va avec), ou un contrat atteste seul.
-fn carte(ctx: &Contexte, mois: &str, paie: Option<&PaieLue>, contrat: Option<&ContratLu>, dpae: EtatDeCarte) -> R<CarteImportee> {
+fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieLue>, contrat: Option<&ContratLu>, dpae: EtatDeCarte) -> R<CarteImportee> {
     let p = paie.map(|x| &x.paie);
     let c = contrat.map(|x| &x.contrat);
     let plein = |t: String| Some(t.trim().to_string()).filter(|t| !t.is_empty());
     let salarie = paie.and_then(|x| plein(x.salarie.clone())).or_else(|| contrat.and_then(|x| plein(x.salarie.clone())));
-    let jour = |j: Option<socle::date::Jour>| j.map(|j| j.iso());
-    let debut = p.and_then(|p| jour(p.debut)).or_else(|| contrat.and_then(|x| x.debut.clone().and_then(plein)));
-    let fin = p.and_then(|p| jour(p.fin)).or_else(|| contrat.and_then(|x| x.fin.clone().and_then(plein)));
+    let debut = p.and_then(|p| p.debut).or_else(|| contrat.and_then(|x| x.debut));
+    let fin = p.and_then(|p| p.fin).or_else(|| contrat.and_then(|x| x.fin));
     let numero = p.and_then(|p| p.numero_objet.clone()).or_else(|| c.and_then(|c| c.numero_objet.clone())).and_then(plein);
     let spectacle = numero.as_deref().and_then(|n| spectacle_de(ctx, n));
     let titre_bulletin = p.and_then(|p| p.spectacle.clone()).and_then(plein);
@@ -325,7 +323,7 @@ fn carte(ctx: &Contexte, mois: &str, paie: Option<&PaieLue>, contrat: Option<&Co
         _ => titre_bulletin,
     };
     let nom = salarie.as_deref().and_then(|s| nom_du_salarie(ctx, s));
-    let dates: Vec<String> = p.map(|p| jours_du_mois(&p.dates, mois)).transpose()?.into_iter().flatten().collect();
+    let dates: Vec<Jour> = p.map(|p| jours_du_mois(&p.dates, mois)).transpose()?.into_iter().flatten().collect();
     // Ce que la piece du mois atteste de lui (la paie d'un mois d'un permanent), sinon le contrat.
     let nombre = |de_la_paie: fn(&PaieVersee) -> Option<i64>, du_contrat: fn(&ContratAtteste) -> Option<i64>| p.and_then(de_la_paie).or_else(|| c.and_then(du_contrat));
     let (cachets, heures, jours) = (nombre(|p| p.cachets, |c| c.cachets), nombre(|p| p.heures, |c| c.heures), nombre(|p| p.jours, |c| c.jours));
@@ -339,7 +337,7 @@ fn carte(ctx: &Contexte, mois: &str, paie: Option<&PaieLue>, contrat: Option<&Co
 
     // Les montants, et d'ou chacun vient : le bulletin fait foi sur ceux qu'il imprime (`import::bulletins::completer`).
     let (mut montants, mut sources) = (Montants::default(), Sources::default());
-    let lus: [(&str, fn(&PaieVersee) -> Option<Decimal>, for<'a> fn(&'a mut Montants, &'a mut Sources) -> (&'a mut Option<String>, &'a mut Option<&'static str>)); 9] = [
+    let lus: [(&str, fn(&PaieVersee) -> Option<Decimal>, for<'a> fn(&'a mut Montants, &'a mut Sources) -> (&'a mut Option<Decimal>, &'a mut Option<&'static str>)); 9] = [
         ("brut", |p| p.brut, |m, s| (&mut m.brut, &mut s.brut)),
         ("net_imposable", |p| p.net_imposable, |m, s| (&mut m.net_imposable, &mut s.net_imposable)),
         ("net_a_payer", |p| p.net_a_payer, |m, s| (&mut m.net_a_payer, &mut s.net_a_payer)),
@@ -359,7 +357,7 @@ fn carte(ctx: &Contexte, mois: &str, paie: Option<&PaieLue>, contrat: Option<&Co
         };
         if let Some(v) = v {
             let (m, s) = place(&mut montants, &mut sources);
-            *m = Some(v.to_string());
+            *m = Some(v);
             *s = Some(match source {
                 Some(s) => s,
                 None => "historique",
@@ -468,7 +466,7 @@ fn carte(ctx: &Contexte, mois: &str, paie: Option<&PaieLue>, contrat: Option<&Co
         (None, None) => None,
     };
     let net_titre = montants.net_a_payer.is_some().then_some("net à payer");
-    let periode = periode_en_clair(debut.as_deref(), fin.as_deref(), mois);
+    let periode = periode_en_clair(debut, fin, mois);
     Ok(CarteImportee {
         quoi_dit,
         origine_dit,
@@ -573,7 +571,7 @@ pub enum Teinte {
 /// LES CARTES DES ENGAGEMENTS IMPORTES QUI TOUCHENT `mois`, qu'il soit tenu avant ce logiciel ou qu'il ait aussi des
 /// engagements de la saisie : une carte par engagement importe, son contrat atteste et ce qui lui a ete verse ce
 /// mois-la, dans l'ordre de leur debut.
-pub fn cartes(ctx: &Contexte, mois: &str) -> R<Vec<CarteImportee>> {
+pub fn cartes(ctx: &Contexte, mois: Mois) -> R<Vec<CarteImportee>> {
     let importes = importes_du_mois(&ctx.racine, mois)?;
     if importes.is_empty() {
         return Ok(Vec::new());
@@ -583,11 +581,11 @@ pub fn cartes(ctx: &Contexte, mois: &str) -> R<Vec<CarteImportee>> {
     let (certifiees, _) = envois::reprise_journal::embauches_attestees(ctx)?;
     let mut cartes = Vec::new();
     for i in importes {
-        let contrat = i.contrat_lu().map_err(Echec::from)?;
-        let paie = i.paies_lues().map_err(Echec::from)?.into_iter().find(|p| p.mois == mois);
+        let contrat = i.contrat_lu()?;
+        let paie = i.paies_lues()?.into_iter().find(|p| p.mois == mois);
         let brut = i.objet().carte();
         let salarie = brut.salarie.as_ref().map(ToString::to_string);
-        let dpae = dpae_de(&embauches, &certifiees, salarie.as_deref(), brut.numero.as_deref(), brut.debut.as_deref());
+        let dpae = dpae_de(&embauches, &certifiees, salarie.as_deref(), brut.numero.as_deref(), brut.debut);
         cartes.push(carte(ctx, mois, paie.as_ref(), contrat.as_ref(), dpae)?);
     }
     cartes.sort_by(|a, b| (&a.debut, &a.nom).cmp(&(&b.debut, &b.nom)));
@@ -603,11 +601,11 @@ pub struct VueImportee {
 
 /// LE MOIS TENU AVANT, comme le panneau du mois le lit : `None` si un engagement de la saisie touche le mois ou si aucun
 /// engagement importe ne le touche.
-pub fn vue(ctx: &Contexte, mois: &str) -> R<Option<VueImportee>> {
+pub fn vue(ctx: &Contexte, mois: Mois) -> R<Option<VueImportee>> {
     if !compagnie::etat_dsn::importe(&ctx.racine, mois)? {
         return Ok(None);
     }
     let paies = cartes(ctx, mois)?;
-    let dsn = compagnie::etat_dsn::du_mois(ctx, socle::mois::Mois::lire(mois)?, None)?;
+    let dsn = compagnie::etat_dsn::du_mois(ctx, mois, None)?;
     Ok(Some(VueImportee { dsn, paies }))
 }

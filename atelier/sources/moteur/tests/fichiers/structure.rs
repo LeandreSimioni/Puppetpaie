@@ -28,14 +28,28 @@ const PLACES: [Place; 14] = [
 ];
 
 
-/// LES CRATES DU LOGICIEL, de bas en haut : ce que le `moteur` livre porte.
-const LE_LOGICIEL: [&str; 10] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "routes", "moteur"];
-
-/// LES CRATES DE L'ESPACE, de bas en haut : le logiciel, puis l'atelier, au-dessus de tout, que rien ne prend.
-const ORDRE: [&str; 11] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "routes", "moteur", "atelier"];
-
 fn espace() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
+}
+
+/// La liste `cle` (`members`, `default-members`) du `Cargo.toml` de l'espace, dans son ordre.
+fn liste_de_l_espace(cle: &str) -> Vec<String> {
+    let espace_toml = std::fs::read_to_string(espace().join("Cargo.toml")).unwrap();
+    let l = espace_toml.lines().find(|l| l.starts_with(&format!("{} = [", cle))).unwrap_or_else(|| panic!("Cargo.toml de l'espace : pas de `{}`", cle));
+    l.split('"').skip(1).step_by(2).map(str::to_string).collect()
+}
+
+/// LES CRATES DE L'ESPACE, de bas en haut, telles que son `Cargo.toml` les declare (`members`) : le logiciel, puis
+/// l'atelier, au-dessus de tout, que rien ne prend. Chacune ne prend qu'a celles d'avant elle
+/// (`une_crate_ne_prend_qu_a_celles_du_dessous`).
+fn membres() -> Vec<String> {
+    liste_de_l_espace("members")
+}
+
+/// LES CRATES DU LOGICIEL, de bas en haut : ce que le `moteur` livre porte, tel que le `Cargo.toml` de l'espace le dit
+/// (`default-members`).
+fn le_logiciel() -> Vec<String> {
+    liste_de_l_espace("default-members")
 }
 
 /// Les fichiers `.rs` sous `d`.
@@ -50,6 +64,12 @@ fn sources(d: &Path) -> Vec<PathBuf> {
         }
     }
     v
+}
+
+/// Le module d'un source de l'espace, depuis son chemin relatif (`crate/src/a/b.rs` ou `crate/src/a/b/mod.rs` :
+/// `crate::a::b`), tel que le compilateur le nomme.
+pub(crate) fn module_de(rel: &str) -> String {
+    rel.trim_end_matches(".rs").trim_end_matches("/mod").replacen("/src/", "::", 1).replace('/', "::")
 }
 
 /// UNE EXPLICATION S'ECRIT SOUS `quoi`, `note` OU `source`, et sous aucune cle en `_` : aucun fichier JSON livre
@@ -113,8 +133,9 @@ fn chaque_route_dit_brievement_ce_qu_elle_fait() {
 /// CE QUE L'ECRAN AFFICHE EST FAIT POUR L'ECRAN (`routes::affiche`) : le bouton de chaque route sous « Avancé » et le
 /// libelle de chaque champ, tels que le catalogue les rend a la page (`routes --avance`), et le libelle, l'aide et les
 /// choix de chaque case de `donnees/champs-base.json` : brefs, sans fichier, chemin ni terme de code ; un libelle ou un
-/// bouton commence par une capitale. Les phrases que rendent les routes passent la meme verification
-/// (`l_exemple_de_chaque_fiche_est_accepte`). Le sens long, qui peut nommer un fichier, est celui du LLM (`sens`, `geste`).
+/// bouton commence par une capitale ; chaque case, que la page la montre ou non, et chaque refus des sources du logiciel.
+/// Les phrases que rendent les routes passent la meme verification (`l_exemple_de_chaque_fiche_est_accepte`). Le sens
+/// long d'une fiche de route (`sens`, `geste`) peut nommer un fichier.
 #[test]
 fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
     use routes::affiche::{defaut, COURT};
@@ -151,9 +172,8 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
     let base: Value = serde_json::from_str(&std::fs::read_to_string(espace().join("../../logiciel/donnees/champs-base.json")).unwrap()).unwrap();
     let mut toutes = Vec::new();
     cases(&base, "", &mut toutes);
-    // Une case que l'ecran ne montre pas (`ecran: false`, et ce qu'elle porte) est pour le LLM.
-    let cachees: Vec<String> = toutes.iter().filter(|(_, c)| c["ecran"] == json!(false)).map(|(ou, _)| ou.clone()).collect();
-    for (ou, c) in toutes.iter().filter(|(ou, _)| !cachees.iter().any(|x| ou == x || ou.starts_with(&format!("{}.", x)))) {
+    // Chaque case, que la page la montre ou non : la ligne de commande la lit de meme (« un seul logiciel »).
+    for (ou, c) in &toutes {
         voir(format!("champs-base.json {} : libelle", ou), c["libelle"].as_str().unwrap_or(""), CASE, true);
         if let Some(a) = c["aide"].as_str().filter(|a| !a.is_empty()) {
             voir(format!("champs-base.json {} : aide", ou), a, AIDE, false);
@@ -168,16 +188,14 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
         }
     }
     let mut chemins = Vec::new();
-    // LES PHRASES DE REFUS que les sources construisent : la page les affiche, le LLM les lit (`refus_rs`). Les refus des
-    // outils de l'atelier (la crate `atelier`, hors de cette liste), du scenario du banc (la forme d'un fichier de
-    // scenario) et de la publication (le journal du workflow « Publier ») vont au developpeur.
-    for crate_ in LE_LOGICIEL {
-        let (scenario, publication) = (espace().join("routes/src/scenario.rs"), espace().join("moteur/src/publication"));
-        for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| *p != scenario && !p.starts_with(&publication)) {
+    // LES PHRASES DE REFUS que les sources du logiciel construisent, toutes : la page et la ligne de commande les
+    // affichent (`refus_rs`). Les outils de l'atelier (la crate `atelier`) ne sont pas le logiciel.
+    for crate_ in le_logiciel() {
+        for p in sources(&espace().join(crate_).join("src")) {
             let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
             for (ligne, phrase, chemin) in refus_rs(&std::fs::read_to_string(&p).unwrap()) {
                 if chemin {
-                    chemins.push(format!("{}:{} : le refus « {} » compose un chemin : il va dans un champ à part (`socle::echec::avec`)", rel, ligne, phrase));
+                    chemins.push(format!("{}:{} : le refus « {} » compose un chemin : il va dans un champ à part (`socle::echec::refus_avec`)", rel, ligne, phrase));
                 } else {
                     voir(format!("{}:{} : le refus", rel, ligne), &phrase, usize::MAX, false);
                 }
@@ -185,11 +203,11 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
         }
     }
     fautes.extend(chemins);
-    assert!(fautes.is_empty(), "ce que l'écran affiche n'est pas fait pour l'écran : récris-le bref, en mots, dans le moteur (le sens long reste au LLM ; un chemin, une clé, un fichier vont dans un champ à part du refus, `socle::echec::avec`) :\n{}", fautes.join("\n"));
+    assert!(fautes.is_empty(), "ce que l'écran affiche n'est pas fait pour l'écran : récris-le bref, en mots, dans le moteur (le sens long reste au LLM ; un chemin, une clé, un fichier vont dans un champ à part du refus, `socle::echec::refus_avec`) :\n{}", fautes.join("\n"));
 }
 
 /// LES PHRASES DE REFUS d'un source Rust (hors commentaires et tests) : le litteral que construit un refus, en premier
-/// argument de `Err(…)`, `ok_or(…)`, `ok_or_else(|| …)`, `map_err(|e| …)`, `Echec::from(…)`, `message: …`, `avec(…)`,
+/// argument de `Err(…)`, `ok_or(…)`, `ok_or_else(|| …)`, `map_err(|e| …)`, `refus(…)`, `refus!(…)`, `message: …`, `refus_avec(…)`,
 /// ou en second de `erreur(classe, …)`, `noter_et(classe, …)` (directement ou par `format!`). Chacune : sa ligne, sa
 /// phrase (une valeur composee `{}` y devient un mot ; `{:?}` reste du code) et si ses valeurs portent un chemin
 /// (`.display()`).
@@ -232,7 +250,7 @@ fn refus_rs(t: &str) -> Vec<(usize, String, bool)> {
         let avant: String = c[debut.saturating_sub(160)..debut].iter().filter(|x| !x.is_whitespace()).collect();
         let avant = avant.strip_suffix("format!(").unwrap_or(&avant);
         let avant = avant.strip_suffix('&').unwrap_or(avant);
-        let premier = ["Err(", "ok_or(", "Echec::from(", "message:", "echec::avec(", "echec::a_la_cle(", "echec::cle(", "ok_or_else(||"].iter().any(|s| avant.ends_with(s))
+        let premier = ["Err(", "ok_or(", "refus(", "refus!(", "message:", "refus_avec(", "echec::a_la_cle(", "echec::cle(", "ok_or_else(||"].iter().any(|s| avant.ends_with(s))
             || avant.rsplit_once("map_err(|").is_some_and(|(_, r)| r.ends_with('|') && r[..r.len() - 1].chars().all(|x| x.is_alphanumeric() || x == '_'));
         let second = ["erreur(", "noter_et("].iter().any(|f| avant.rsplit_once(f).is_some_and(|(_, r)| r.ends_with(',') && r.matches(',').count() == 1 && !r.replace("Some(", "").contains('(')));
         // La phrase d'un texte borne (`droit::fiche::texte_borne!`), apres sa mesure : `… "caractères" par caracteres, "…"`.
@@ -395,7 +413,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
         let r = route(&c, nom, charge, "2026-11-02");
         assert_eq!(r["ok"], json!(true), "le permanent des exemples : {} : {}", nom, r);
     }
-    let cdi = json!({"salarie": "SVOBODA", "nature": "cdi", "debut": "2026-11-02", "salaire_mensuel": 3400, "quotite_contrat": 151.67});
+    let cdi = json!({"salarie": "SVOBODA", "nature": "cdi", "debut": "2026-11-02", "salaire_mensuel": 3400, "quotite_contrat": crate::outils::nombre("151.67")});
     let r = crate::outils::valider(&c, "2026-11", None, &cdi, "2026-11-02");
     assert_eq!(r["ok"], json!(true), "le permanent des exemples : valider-engagement : {}", r);
     for charge in [
@@ -415,7 +433,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
     // Un administrateur, pour son tableau et son dépôt groupé : la compagnie est rattachée à son registre, après les
     // exemples du mot de passe du logiciel (celui d'une compagnie seule).
     let inst = c.parent().unwrap().parent().unwrap();
-    let registre = json!({"quoi": "Le registre de l'administrateur.", "compagnies": [{"dossier": c.strip_prefix(inst).unwrap().to_string_lossy(), "depuis": "2026-01-02T09:00:00"}]});
+    let registre = json!({"quoi": "Le registre de l'administrateur.", "compagnies": [{"dossier": c.strip_prefix(inst).unwrap().to_string_lossy(), "depuis": "2026-01-02T09:00"}]});
     let mut phrases_fautives = Vec::new();
     for f in &fiches {
         if (f.route == Route::AdministrateurTableau || f.route == Route::AdministrateurDeposer) && !inst.join("administrateur.json").exists() {
@@ -429,7 +447,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
             Route::CompagnieSupprimer => {
                 let autre = c.parent().unwrap().join("ajoutee-a-supprimer");
                 crate::outils::copier(&c.join("config"), &autre.join("config"));
-                std::fs::write(autre.join("COPIE-DE-DEVELOPPEMENT.json"), json!({"copie_de": "compagnie fictive ajoutee", "ajoutee": true, "quand": "2026-11-09T09:00", "quoi": "ajoutee"}).to_string()).unwrap();
+                std::fs::write(autre.join("COPIE-DE-DEVELOPPEMENT.json"), json!({"copie_de": "compagnie fictive ajoutee", "ajoutee": true, "quand": "2026-11-09T09:00:00", "quoi": "ajoutee"}).to_string()).unwrap();
                 let r = route(&autre, f.nom(), exemple, "2026-11-02");
                 assert!(!autre.exists(), "compagnie-supprimer : la compagnie est encore la");
                 r
@@ -452,13 +470,14 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
         };
         assert_eq!(r["ok"], json!(true), "{} refuse l'exemple de sa fiche : {}", f.nom(), r);
         assert!(r["resultat"]["phrase"].as_str().is_some_and(|p| !p.trim().is_empty()), "{} : sa phrase manque (moteur route --texte ne rend que des phrases, celles que l'écran lit) : {}", f.nom(), r);
-        for p in routes::phrases_rendues(&r["resultat"]) {
+        let resultat: socle::forme::Objet = socle::forme::lire(&r["resultat"], "le résultat d'une route").unwrap();
+        for p in routes::phrases_rendues(&resultat) {
             if let Some(d) = routes::affiche::defaut(p, usize::MAX, false) {
                 phrases_fautives.push(format!("{} : « {} » : {}", f.nom(), p, d.corriger()));
             }
         }
         if f.phrase > 0 {
-            let n = routes::plus_longue_phrase(&r["resultat"]);
+            let n = routes::plus_longue_phrase(&resultat);
             assert!(n <= f.phrase, "{} : une phrase qu'elle rend (la sienne, ou celle d'une de ses lignes) passe sa place ({}) : {} caractères : {}", f.nom(), f.phrase, n, r);
         }
     }
@@ -527,7 +546,7 @@ fn installation_a_part(c: &Path, test: &str) -> (PathBuf, PathBuf) {
 fn administrateur(c: &Path, route: Route, exemple: Value) -> Value {
     const ADMIN: &str = "administrateur-essai-1";
     let (inst, a) = installation_a_part(c, route.nom());
-    let poste = Poste { dossier_cle: inst.join("cle-du-poste"), maintenant: "2026-11-02T10:00".into() };
+    let poste = Poste { dossier_cle: inst.join("cle-du-poste"), maintenant: socle::paris::MinuteEcrite::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(2026, 11, 2).unwrap(), 10, 0, 0).unwrap()) };
     poste.coffre(&a).poser_ouverture(ADMIN, None).unwrap();
     let b = ajouter_venant(&inst, "Seconde", Venue::Neuve).unwrap().racine;
     let mut charge = exemple;
@@ -539,7 +558,7 @@ fn administrateur(c: &Path, route: Route, exemple: Value) -> Value {
     }
     match routes::coffre::administrateur(&b, route, serde_json::from_value(charge).unwrap(), None, &poste) {
         Ok(v) => json!({"ok": true, "resultat": serde_json::to_value(v).unwrap()}),
-        Err(e) => json!({"ok": false, "erreur": e.message}),
+        Err(e) => json!({"ok": false, "erreur": e.en_lignes()}),
     }
 }
 
@@ -560,9 +579,6 @@ const FENETRE: [(&str, &str); 12] = [
     ("veille_etape", "l'etape de son passage en cours"),
     ("veille_maintenant", "un passage tout de suite : il appelle la route ouverture"),
 ];
-/// Le seul geste qui n'existe qu'a l'ecran : brider ou debloquer le logiciel (la demo) ; la ligne de commande n'a pas de
-/// bridage.
-const ECRAN_SEUL: &str = "basculer";
 
 /// Les fichiers de la page qui servent chaque place (depuis la racine du depot). L'accueil des compagnies, ses pages et
 /// celles du mot de passe sont servies par la fenetre (`interface/pages/`).
@@ -609,8 +625,8 @@ fn appels_de_la_page(t: &str) -> Vec<String> {
 }
 
 /// L'ECRAN ET LE MOTEUR SONT EQUIVALENTS, sans exception : la page (`js/`, et les pages que sert la fenetre : l'accueil,
-/// le mot de passe) ne parle au moteur que par une route du catalogue, ou par un geste de la fenetre elle-meme (`FENETRE`,
-/// et `basculer`, le seul qui n'existe qu'a l'ecran) ; chaque route du catalogue a sa place (une place de la liste du
+/// le mot de passe) ne parle au moteur que par une route du catalogue, ou par un geste de la fenetre elle-meme
+/// (`FENETRE`) ; chaque route du catalogue a sa place (une place de la liste du
 /// moteur, qui existe dans la page) et la page de sa place l'appelle, ou l'affiche sous « Avancé » depuis sa fiche ; une
 /// lecture des ecrans est lue par la page ou par la fenetre ; les routes qui ecrivent d'un module ont une seule place ; et
 /// chaque route se sert par `moteur route`.
@@ -628,8 +644,7 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
         let liste = fenetre_rs.split(&format!("const {}: &str = r#\"", cle)).nth(1).and_then(|s| s.split("\"#").next()).unwrap();
         serde_json::from_str(liste).unwrap()
     };
-    let mut de_la_fenetre: BTreeSet<String> = gestes("NOMS_ACCUEIL").into_iter().chain(gestes("NOMS_LOGICIEL")).collect();
-    assert!(de_la_fenetre.remove(ECRAN_SEUL), "{} : le geste qui débride est celui de l'accueil", ECRAN_SEUL);
+    let de_la_fenetre: BTreeSet<String> = gestes("NOMS_ACCUEIL").into_iter().chain(gestes("NOMS_LOGICIEL")).collect();
     let attendus: BTreeSet<String> = FENETRE.iter().map(|(n, _)| n.to_string()).collect();
     assert_eq!(
         de_la_fenetre, attendus,
@@ -644,7 +659,7 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
         for morceau in t.split("pywebview.api.").skip(1) {
             let geste: String = morceau.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '_').collect();
             assert!(
-                geste == ECRAN_SEUL || attendus.contains(&geste),
+                attendus.contains(&geste),
                 "{} appelle le geste {} de la fenêtre : un geste du logiciel est une route du catalogue (fiche, place), que la page appelle par api(…) ou appel(…)",
                 nom_du_fichier, geste
             );
@@ -654,9 +669,9 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
     // LE GESTE QU'OFFRE UNE ETAPE OU UN RAPPEL EST UNE ROUTE (`routes::etapes::action(Route, charge, puis, libelle)` : la
     // route qu'il ouvre, celle de l'acte qui suit, que le compilateur garde) : l'ecran ouvre sa boite d'apres elle, le LLM
     // l'appelle.
-    for f in ["etapes.rs", "rappels.rs"] {
-        let source = lu(&format!("atelier/sources/routes/src/{}", f));
-        assert!(!source.contains("\"geste\":"), "routes/{} nomme un geste hors du catalogue : un geste est `action(route, charge, puis, libelle)`", f);
+    for p in sources(&espace().join("routes/src")) {
+        let code = blanchi(&std::fs::read_to_string(&p).unwrap(), false);
+        assert!(!code.contains("\"geste\":"), "{} nomme un geste hors du catalogue : un geste est `action(route, charge, puis, libelle)`", p.display());
     }
     let html = (lu("logiciel/interface/index.html") + &lu("atelier/sources/moteur/src/interface/pages/accueil.html")).replace("&amp;", "&");
     for p in PLACES {
@@ -691,9 +706,12 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
             Ecran::Auto(p, _) => {
                 assert!(f.charge.iter().all(|c| c.forme != routes::catalogue::Forme::Objet), "{} s'affiche sous « Avancé » : aucun champ de sa charge n'est un objet, que la page ne saisit pas d'une case", f.nom());
                 let porte = format!("data-auto=\"{}\"", p.nom());
-                let configuration = p.nom().starts_with("Configuration › ") && html.contains("id=\"config-avance\"");
+                // Un sous-onglet (`data-fiche`) de cette place : son « Avancé » est celui des sous-onglets, qui prend la
+                // place de l'onglet ouvert (`config-avance`, `js/configuration.js`).
+                let sous_onglet = regex::Regex::new(&format!(r#"data-fiche="[^"]*"[^>]*data-place="{}""#, regex::escape(p.nom()))).unwrap();
+                let par_l_onglet = sous_onglet.is_match(&html) && html.contains("id=\"config-avance\"");
                 assert!(
-                    configuration || html.contains(&porte) || fichiers_de(p).iter().any(|x| lu(x).contains(&porte)),
+                    par_l_onglet || html.contains(&porte) || fichiers_de(p).iter().any(|x| lu(x).contains(&porte)),
                     "{} : sa place ({}) n'a pas son « Avancé » (data-auto) : appelle js/avance.js là où la page l'ouvre", f.nom(), p.nom()
                 );
             }
@@ -717,15 +735,16 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
     }
 }
 
-/// Les crates de l'espace, de bas en haut (`ORDRE`) : chacune ne prend qu'a celles d'en dessous.
+/// Les crates de l'espace, de bas en haut (`membres`) : chacune ne prend qu'a celles d'en dessous.
 #[test]
 fn une_crate_ne_prend_qu_a_celles_du_dessous() {
-    for (rang, nom) in ORDRE.iter().enumerate() {
+    let ordre = membres();
+    for (rang, nom) in ordre.iter().enumerate() {
         let t = std::fs::read_to_string(espace().join(nom).join("Cargo.toml")).unwrap();
         let deps = t.split("\n[dependencies]").nth(1).unwrap_or("").split("\n[").next().unwrap();
         for l in deps.lines() {
             let dep = l.split([' ', '=']).next().unwrap_or("");
-            if let Some(r) = ORDRE.iter().position(|x| *x == dep) {
+            if let Some(r) = ordre.iter().position(|x| *x == dep) {
                 assert!(r < rang, "{} prend a {}, qui n'est pas en dessous", nom, dep);
             }
         }
@@ -740,44 +759,51 @@ fn une_crate_ne_prend_qu_a_celles_du_dessous() {
 
 /// L'ATELIER N'ENTRE JAMAIS DANS LE LOGICIEL : la crate `atelier` (le binaire `moteur-atelier`) allume la feature
 /// `atelier` de ce qu'elle prend, et Cargo unifie les features de ce qu'il construit ensemble. Elle est donc hors de
-/// `default-members` de l'espace (la suite ne l'allume jamais), et aucun manifeste ne la prend, ni l'espace (toute
-/// section, essais compris) ni la fenetre.
+/// `default-members` de l'espace (la suite ne l'allume jamais), au-dessus de tout le logiciel, et aucun manifeste ne la
+/// prend, ni l'espace (toute section, essais compris) ni la fenetre.
 #[test]
 fn l_atelier_reste_hors_du_logiciel() {
-    let espace_toml = std::fs::read_to_string(espace().join("Cargo.toml")).unwrap();
-    let liste = |cle: &str| -> Vec<String> {
-        let l = espace_toml.lines().find(|l| l.starts_with(&format!("{} = [", cle))).unwrap_or_else(|| panic!("Cargo.toml de l'espace : pas de `{}`", cle));
-        l.split('"').skip(1).step_by(2).map(str::to_string).collect()
-    };
-    assert_eq!(liste("members"), ORDRE, "les membres de l'espace sont ses crates, de bas en haut");
-    assert_eq!(liste("default-members"), LE_LOGICIEL, "`default-members` porte le logiciel, et lui seul : jamais l'atelier");
-    let prend = regex::Regex::new(r#"^atelier\s*=|path\s*=\s*"\.\./atelier""#).unwrap();
-    for nom in LE_LOGICIEL.iter().chain(&["fenetre", "fabrique-pdf"]) {
-        let t = std::fs::read_to_string(espace().join(nom).join("Cargo.toml")).unwrap();
-        let mut section = "";
-        for l in t.lines() {
-            if l.starts_with('[') {
-                section = l;
-            } else if section.contains("dependencies") {
-                assert!(!prend.is_match(l), "{}/Cargo.toml prend la crate `atelier` ({}) : {}", nom, section, l);
+    let (membres, logiciel) = (membres(), le_logiciel());
+    assert_eq!(membres[..logiciel.len()], logiciel[..], "`default-members` porte le logiciel, de bas en haut, et les membres hors du logiciel viennent au-dessus");
+    let hors: Vec<&String> = membres[logiciel.len()..].iter().collect();
+    assert!(hors.iter().any(|h| *h == "atelier"), "l'atelier est un membre de l'espace, hors de `default-members`");
+    for h in hors {
+        let prend = regex::Regex::new(&format!(r#"^{}\s*=|path\s*=\s*"\.\./{}""#, h, h)).unwrap();
+        for nom in logiciel.iter().map(String::as_str).chain(["fenetre", "fabrique-pdf"]) {
+            let t = std::fs::read_to_string(espace().join(nom).join("Cargo.toml")).unwrap();
+            let mut section = "";
+            for l in t.lines() {
+                if l.starts_with('[') {
+                    section = l;
+                } else if section.contains("dependencies") {
+                    assert!(!prend.is_match(l), "{}/Cargo.toml prend la crate `{}` ({}) : {}", nom, h, section, l);
+                }
             }
         }
     }
 }
 
-/// LES COUCHES FERMEES, de bas en haut (l'ordre de `une_crate_ne_prend_qu_a_celles_du_dessous`) : toutes.
-const COUCHES_FERMEES: [&str; 11] = ORDRE;
+/// LES PORTES : les couches qui ont la bibliotheque du JSON, telles que leur `Cargo.toml` le dit (ses dependances, ou
+/// celles de ses essais). Le socle lit et ecrit les fichiers, les charges et les reponses des routes : il la prend pour
+/// son code, et a les modules du bord. Le moteur ne l'a que pour ses essais
+/// (`moteur/tests/`, qui lisent une reponse telle que la page la recoit), l'atelier aussi (`atelier/tests/`, qui lisent
+/// les referentiels livres) : ils n'ont aucun module du bord, leur code n'en touche donc pas. Hors de leur bord, leur JSON
+/// brut se lit au texte.
+fn a_le_json(couche: &str) -> (bool, bool) {
+    let cargo = std::fs::read_to_string(espace().join(couche).join("Cargo.toml")).unwrap();
+    // Les sections du manifeste, chacune son titre (`[dependencies]`) et ses lignes.
+    let pour_le_code = cargo.split("\n[").any(|s| s.starts_with("dependencies]") && s.lines().any(|l| l.trim_start().starts_with("serde_json")));
+    (cargo.lines().any(|l| l.trim_start().starts_with("serde_json")), pour_le_code)
+}
 
-/// LES PORTES : les couches qui ont la bibliotheque du JSON. Le socle lit et ecrit les fichiers ; les routes recoivent
-/// la charge d'une route et rendent sa reponse. Le moteur ne l'a que pour ses essais (`moteur/tests/`, qui lisent une
-/// reponse telle que la page la recoit), l'atelier aussi (`atelier/tests/`, qui lisent les referentiels livres) : ils
-/// n'ont aucun module du bord, leur code n'en touche donc pas. Hors de leur bord, leur JSON brut se lit au texte.
-const PORTES: [&str; 4] = ["socle", "routes", "moteur", "atelier"];
-
-/// LE BORD : les seuls modules ou le JSON brut se touche, parce qu'ils sont la porte d'entree et de sortie des formes.
-/// `forme` lit (une donnee, un texte, un fichier, en sa structure `serde`) ; `ecriture` et `json_ascii` ecrivent une forme ;
-/// `routes::enveloppe` lit la charge d'une route et ecrit sa reponse.
-const BORD: [&str; 4] = ["socle::forme", "socle::ecriture", "socle::json_ascii", "routes::enveloppe"];
+/// LE BORD : les seuls modules ou le JSON brut se touche, parce qu'ils sont la porte d'entree et de sortie des formes,
+/// tels que le compilateur les nomme (le module d'un de leurs types). `forme` lit (une donnee, un texte, un fichier, en
+/// sa structure `serde` ; un objet qui passe une porte, `forme::Objet`) ; `ecriture` ecrit une forme. Tout autre module
+/// passe par eux.
+fn bord() -> [String; 2] {
+    let module = |nom: &str| nom.rsplit_once("::").unwrap().0.to_string();
+    [module(std::any::type_name::<socle::forme::Objet>()), module(std::any::type_name::<socle::ecriture::Arbre>())]
+}
 
 /// Un source Rust sans ses parties de test, ses commentaires blanchis et ses textes vides entre leurs guillemets : le
 /// code seul, a ses lignes.
@@ -787,7 +813,12 @@ fn code_seul(t: &str) -> String {
 
 /// Un source Rust sans ses parties de test, ses commentaires blanchis (et ses textes vides, si `textes`), a ses lignes.
 fn blanchi(t: &str, textes: bool) -> String {
-    let mut c: Vec<char> = sans_tests(t).chars().collect();
+    blanchi_entier(&sans_tests(t), textes)
+}
+
+/// Un source Rust entier, ses parties de test comprises, ses commentaires blanchis (et ses textes vides, si `textes`).
+fn blanchi_entier(t: &str, textes: bool) -> String {
+    let mut c: Vec<char> = t.chars().collect();
     for (_, debut, fin, commentaire, _) in jetons_rs(&c.iter().collect::<String>()) {
         if !commentaire && !textes {
             continue;
@@ -806,45 +837,84 @@ fn blanchi(t: &str, textes: bool) -> String {
 /// UNE COUCHE FERMEE NE LIT QUE DES FORMES, ENTIERES (atelier/AGENTS.md, « Chaque forme est declaree une fois, en
 /// Rust ») : aucune de ses sources (tests a part, commentaires blanchis) n'a
 /// 1. de JSON brut : la couche (code et tests) n'a pas `serde_json` dans son `Cargo.toml`, le compilateur refuse qu'elle
-///    en touche ; les portes (`PORTES`), qui l'ont, n'en touchent que dans le bord (`BORD`) : ailleurs, ni `json!`, ni
+///    en touche ; les portes (`a_le_json`), qui l'ont, n'en touchent que dans le bord (`bord`) : ailleurs, ni `json!`, ni
 ///    `serde_json::`, ni `Map<`, ni lecture par cle (`.get("…")`, `x["…"]`) ;
 /// 2. de cle libre : aucune cle en `_` nommee par une forme (`rename = "_…"`, `alias = "_…"`) ni, dans le bord, par un
 ///    texte (`"_cle"`, `"_{}"`) ; hors du bord, ou aucun JSON ne se touche, un tel texte est un nom de fichier ; aucun
 ///    tri par le `_` de tete (`starts_with('_')`, `strip_prefix("_")`, `trim_start_matches('_')`) ;
-/// 3. de repli sur une donnee : ni `#[serde(default…)]`, ni
+/// 3. de repli sur une donnee : ni `#[serde(default…)]` (sauf sur le type qui ne porte aucune valeur,
+///    `socle::forme::NonLue` : une absence n'y devient rien), ni
 ///    `unwrap_or`, `unwrap_or_default`, `unwrap_or_else`, `map_or`, `map_or_else`, ni un bras `None =>` qui fabrique
-///    une valeur. Une donnee absente d'un champ facultatif (`Option`) est vide ; une donnee obligatoire absente se refuse.
-/// 4. d'erreur avalee : ni `.ok()`, ni `let Ok(..) = .. else`, ni
-///    `is_ok_and`, ni `is_err_and`. Une erreur remonte (`?`) ; un etat qui n'est pas une erreur (un nom qu'aucune fiche
-///    ne porte, un texte qui n'est pas une adresse) se dit par un `match` qui le nomme.
+///    une valeur, ni un bras joker (`_ =>`, `_autre =>`, `Some(_) =>`, donc `None | Some(_) =>`) qui en rend une (texte
+///    vide, nombre, booleen, vecteur vide, defaut, `Ok(…)` de l'une d'elles), ni un bras dont le motif a un `_` a la
+///    place d'un element d'un tuple ou d'un champ d'une variante (`(None, _)`, `(_, false)`, `Piece::Blanc(_, true)`)
+///    et qui rend une telle valeur, sur sa ligne ou la suivante : un `match` nomme chaque cas qu'il traite. Ni le
+///    `else` d'un `let … else` qui en rend une (`else { return Ok(Vec::new()) }`) : il rend une erreur ou un etat nomme,
+///    et une absence reste vide (l'`Option` se porte, ou se parcourt). La valeur se voit rendue (`return`) ou non, nue ou
+///    dans son `Ok(…)`.
+///    Ni `.or(Some(…))`, ni `.or_else(|| Some(…))` : une valeur fabriquee faute de mieux (une preseance entre deux
+///    valeurs dites s'ecrit `.or(autre)`). Une donnee absente d'un champ facultatif (`Option`) est vide ; une donnee
+///    obligatoire absente se refuse.
+/// 4. d'erreur avalee : ni `.ok()`, ni `let Ok(..) = .. else`, ni `if let Ok(..)`, ni `.is_ok()`, ni
+///    `is_ok_and`, ni `is_err_and`, ni `let _ = …(…)` qui jette ce qu'un appel rend (un `Result`). Une erreur remonte
+///    (`?`) ; un etat qui n'est pas une erreur (un nom qu'aucune fiche ne porte, un texte qui n'est pas une adresse) se
+///    dit par un `match` qui le nomme.
 /// Le verrou n'a aucune exception : quand il echoue, on corrige le code ou la donnee.
 #[test]
 fn une_couche_fermee_ne_lit_que_des_formes() {
-    assert_eq!(COUCHES_FERMEES, ORDRE[..COUCHES_FERMEES.len()], "les couches se ferment de bas en haut, dans l'ordre des crates");
+    // Les couches fermees : toutes les crates de l'espace (`membres`).
+    let couches = membres();
     // Les portes ont la bibliotheque du JSON : hors du bord, leur JSON brut se lit au texte. Toute autre couche fermee ne
     // l'a pas, ni pour son code ni pour ses tests : le compilateur refuse qu'elle en touche.
     let json = regex::Regex::new(r#"\bjson!|\bserde_json::|\bMap\s*<|\.get\("|[A-Za-z0-9_)\]]\s*\[""#).unwrap();
     let mut fautes = Vec::new();
-    for couche in COUCHES_FERMEES.iter().filter(|c| !PORTES.contains(c)) {
-        let cargo = std::fs::read_to_string(espace().join(couche).join("Cargo.toml")).unwrap();
-        if cargo.contains("serde_json") {
-            fautes.push(format!("{}/Cargo.toml prend serde_json : une couche fermée ne lit que des formes, par `socle::forme` (ses tests aussi : un texte lu par la porte)", couche));
+    // Une couche ne prend la bibliotheque du JSON pour son code que si elle a un module du bord ; pour ses seuls essais,
+    // que si elle a un binaire (`[[bin]]`), dont ses essais lisent ce qu'il rend : son code n'en touche pas, le
+    // compilateur le refuse.
+    let bord = bord();
+    for couche in couches.iter().map(String::as_str) {
+        let sien = bord.iter().any(|b| b.split("::").next() == Some(couche));
+        let binaire = std::fs::read_to_string(espace().join(couche).join("Cargo.toml")).unwrap().contains("\n[[bin]]");
+        match a_le_json(couche) {
+            (_, true) if !sien => fautes.push(format!("{}/Cargo.toml prend serde_json pour son code sans avoir de module du bord : une couche fermée ne lit que des formes, par `socle::forme`", couche)),
+            (true, false) if !binaire => fautes.push(format!("{}/Cargo.toml prend serde_json pour ses essais sans avoir de binaire : ses tests lisent un texte par la porte", couche)),
+            (true, _) | (false, _) => {}
         }
     }
-    let repli = regex::Regex::new(r"\b(?:unwrap_or(?:_default|_else)?|map_or(?:_else)?)\b|\bserde\s*\([^\]]*\bdefault\b").unwrap();
-    // Le repli en `match` : un bras `None =>` qui fabrique une valeur (texte vide, nombre, booleen, vecteur vide, defaut).
-    let bras_vide = regex::Regex::new(r#"\bNone\s*=>\s*\{?\s*(?:String::new\(\)|""|-?\d[\w.]*|false\b|true\b|Vec::new\(\)|vec!\s*\[\s*\]|Default::default\(\)|[A-Za-z_][\w:]*::default\(\)|Decimal::\w+|[A-Za-z_][\w:]*::(?:new\(\)|ZERO\b))"#).unwrap();
+    let repli = regex::Regex::new(r"\b(?:unwrap_or(?:_default|_else)?|map_or(?:_else)?)\b").unwrap();
+    // Le repli de serde : `#[serde(default…)]` donne une valeur a une cle absente. Seul le type qui ne porte aucune valeur
+    // (`socle::forme::NonLue`, une cle connue que le logiciel ne lit pas) n'en recoit aucune.
+    let defaut = regex::Regex::new(r"#\[\s*serde\s*\([^\]]*\bdefault\b[^\]]*\]").unwrap();
+    let champ_type = regex::Regex::new(r"^\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?\w+\s*:\s*([^,\n}]+)").unwrap();
+    // La valeur fabriquee (texte vide, nombre, booleen, vecteur vide, defaut), rendue ou non (`return`), ou son `Ok(…)` :
+    // ce qu'un repli rend, quelle que soit sa forme.
+    const FABRIQUEE: &str = r#"\{?\s*(?:return\s+)?(?:Ok\()?\s*(?:String::new\(\)|""|-?\d[\w.]*|false\b|true\b|Vec::new\(\)|vec!\s*\[\s*\]|Default::default\(\)|[A-Za-z_][\w:]*::default\(\)|Decimal::\w+|[A-Za-z_][\w:]*::(?:new\(\)|ZERO\b))"#;
+    // Le repli en `match` : un bras `None =>` qui fabrique une valeur.
+    let bras_vide = regex::Regex::new(&format!(r"\bNone\s*=>\s*{}", FABRIQUEE)).unwrap();
+    // Le repli en joker : un bras `_ =>`, `_autre =>` ou `Some(_) =>` (donc `None | Some(_) =>`) qui rend une valeur
+    // fabriquee.
+    let bras_joker = regex::Regex::new(&format!(r"(?:\b_\w*|\bSome\s*\(\s*_\w*\s*\))\s*=>\s*{}", FABRIQUEE)).unwrap();
+    // Le repli en joker d'un tuple : un `_` a la place d'un element d'un tuple ou d'un champ d'une variante, dans le motif
+    // d'un bras qui rend une valeur fabriquee, sur sa ligne ou la suivante.
+    let bras_tuple = regex::Regex::new(&format!(r"(?:\(\s*_\w*\s*,|,\s*_\w*\s*[,)])[^=;{{}}\n]*=>\s*{}", FABRIQUEE)).unwrap();
+    // Le repli en `let … else` : le `else` d'un motif refute qui rend une valeur fabriquee (la meme regle qu'un bras de
+    // `match` : il rend une erreur, ou un etat nomme). Le `else` d'un `let` ne suit jamais une accolade (Rust refuse un
+    // `let … else` dont l'expression finit par `}`) ; celui d'un `if`, toujours.
+    let let_else = regex::Regex::new(&format!(r"[^}}\s]\s*\belse\s*\{{\s*{}", FABRIQUEE.trim_start_matches(r"\{?\s*"))).unwrap();
+    // La valeur fabriquee faute de mieux : `.or(Some(…))`, `.or_else(|| Some(…))`.
+    let fabriquee = regex::Regex::new(r"\.or\(\s*Some\s*\(|\.or_else\(\s*\|\|\s*Some\s*\(").unwrap();
     let tri = regex::Regex::new(r#"\b(?:starts_with|strip_prefix|trim_start_matches)\s*\(\s*(?:'_'|"_")"#).unwrap();
     // Une cle en `_` que la forme elle-meme nomme.
     let nommee = regex::Regex::new(r#"\b(?:rename|alias)\s*=\s*"_"#).unwrap();
-    for couche in COUCHES_FERMEES {
+    for couche in couches.iter().map(String::as_str) {
         let src = espace().join(couche).join("src");
+        let porte = a_le_json(couche).0;
         for f in sources(&src) {
             let module = format!("{}::{}", couche, f.strip_prefix(&src).unwrap().with_extension("").to_string_lossy().replace(std::path::MAIN_SEPARATOR, "::"));
             let texte = std::fs::read_to_string(&f).unwrap();
             let ou = |n: usize| format!("{}:{}", f.display(), n);
             for (n, l) in code_seul(&texte).lines().enumerate() {
-                if PORTES.contains(&couche) && !BORD.contains(&module.as_str()) {
+                if porte && !bord.contains(&module) {
                     if let Some(m) = json.find(l) {
                         fautes.push(format!("{} : `{}`, du JSON brut hors du bord : déclare la forme (`serde`, `deny_unknown_fields`) ; la lecture passe par `socle::forme`, l'écriture par `socle::ecriture`", ou(n + 1), m.as_str().trim()));
                     }
@@ -860,24 +930,52 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
             }
             // Hors du bord, aucun JSON brut ne se touche (point 1) : un texte en `_` y est un morceau de nom de fichier ou
             // de champ, jamais une cle. Dans le bord, il en serait une.
-            for (n, s) in litteraux_rs(&sans_tests(&texte)).into_iter().filter(|_| BORD.contains(&module.as_str())) {
+            for (n, s) in litteraux_rs(&sans_tests(&texte)).into_iter().filter(|_| bord.contains(&module)) {
                 if s.starts_with('_') && s.chars().nth(1).is_some_and(|c| c.is_alphanumeric() || c == '{') {
                     fautes.push(format!("{} : `\"{}\"`, une clé libre : une donnée est un champ nommé de sa forme", ou(n), s));
                 }
             }
         }
     }
-    // Une erreur ecartee sans etre remontee : `.ok()`, un `let Ok(..) else`, `is_ok_and`, `is_err_and`, `is_err()`, et tout
-    // motif `Err(_)` (`Err(_x)`) qui ignore sa valeur (`match`, `if let`, `matches!`).
-    let avalee = regex::Regex::new(r"\.ok\(\)|\blet\s+Ok\s*\(.*\belse\b|\bis_ok_and\b|\bis_err_and\b|\.is_err\(\)|\bErr\s*\(\s*_\w*\s*\)").unwrap();
-    for couche in COUCHES_FERMEES {
-        for f in sources(&espace().join(couche).join("src")) {
-            for (n, l) in code_seul(&std::fs::read_to_string(&f).unwrap()).lines().enumerate() {
+    // Une erreur ecartee sans etre remontee : `.ok()`, un `let Ok(..) else`, un `if let Ok(..)` (son `Err` n'est pas dit),
+    // `.is_ok()`, `is_ok_and`, `is_err_and`, `is_err()`, tout motif `Err(_)` (`Err(_x)`) qui ignore sa valeur (`match`,
+    // `if let`, `matches!`), et `let _ = …(…)`, qui jette ce qu'un appel rend (`let _ = x;`, une variable tue, n'appelle
+    // rien).
+    let avalee = regex::Regex::new(r"\.ok\(\)|\blet\s+Ok\s*\(.*\belse\b|\bif\s+let\s+Ok\s*\(|\.is_ok\(\)|\bis_ok_and\b|\bis_err_and\b|\.is_err\(\)|\bErr\s*\(\s*_\w*\s*\)|\blet\s+_\s*=\s*[^;]*\(").unwrap();
+    // Les points 3 et 4 valent pour les couches et pour la fabrique de PDF (`fabrique-pdf`, son propre espace Cargo,
+    // que les couches prennent) ; le point 1 ne s'y applique pas tel quel : la fabrique est sa propre porte (sa forme
+    // lue une fois par `forme::lire`, sa ligne de commande, `--inspecter` et `--champs`, qui rendent du JSON).
+    let dossiers = couches.iter().map(|c| espace().join(c).join("src")).chain([espace().join("fabrique-pdf/src")]);
+    for dossier in dossiers {
+        for f in sources(&dossier) {
+            let code = code_seul(&std::fs::read_to_string(&f).unwrap());
+            for m in defaut.find_iter(&code) {
+                let sans_valeur = champ_type.captures(&code[m.end()..]).is_some_and(|c| c[1].trim().ends_with("NonLue"));
+                if !sans_valeur {
+                    let n = code[..m.start()].matches('\n').count() + 1;
+                    fautes.push(format!("{}:{} : `{}`, un repli : une donnée exigée se refuse quand elle manque, une donnée nulle s'écrit `null` et se lit `Option`", f.display(), n, m.as_str()));
+                }
+            }
+            for m in bras_tuple.find_iter(&code) {
+                let n = code[..m.start()].matches('\n').count() + 1;
+                fautes.push(format!("{}:{} : `{}`, un joker de tuple qui rend une valeur : le `match` nomme chaque cas qu'il traite", f.display(), n, m.as_str().split_whitespace().collect::<Vec<_>>().join(" ")));
+            }
+            for m in let_else.find_iter(&code) {
+                let n = code[..m.start()].matches('\n').count() + 1;
+                fautes.push(format!("{}:{} : `{}`, un repli en `let … else` : le `else` rend une erreur ou un état nommé ; une absence reste vide (`Option` porté jusqu'au lecteur, ou parcouru)", f.display(), n, m.as_str().split_whitespace().collect::<Vec<_>>().join(" ")));
+            }
+            for (n, l) in code.lines().enumerate() {
                 if let Some(m) = repli.find(l) {
                     fautes.push(format!("{}:{} : `{}`, un repli : une donnée exigée se refuse quand elle manque, une donnée nulle s'écrit `null` et se lit `Option` ; un calcul s'écrit sans repli (`sum`, `fold`, `match`, `?`)", f.display(), n + 1, m.as_str()));
                 }
                 if let Some(m) = bras_vide.find(l) {
                     fautes.push(format!("{}:{} : `{}`, un repli déguisé en `match` : un vide reste vide (`Option` porté jusqu'au lecteur) ou se refuse, il ne devient pas une valeur", f.display(), n + 1, m.as_str()));
+                }
+                if let Some(m) = bras_joker.find(l) {
+                    fautes.push(format!("{}:{} : `{}`, un joker qui rend une valeur : le `match` nomme chaque cas qu'il traite", f.display(), n + 1, m.as_str()));
+                }
+                if let Some(m) = fabriquee.find(l) {
+                    fautes.push(format!("{}:{} : `{}`, une valeur fabriquée faute de mieux : une absence reste vide ou se refuse", f.display(), n + 1, m.as_str()));
                 }
                 if let Some(m) = avalee.find(l) {
                     fautes.push(format!("{}:{} : `{}`, une erreur avalée : elle remonte (`?`), ou un `match` nomme l'état qu'elle dit", f.display(), n + 1, m.as_str()));
@@ -888,23 +986,814 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     assert!(fautes.is_empty(), "une couche fermée ne lit que des formes, entières ({} écarts) :\n{}", fautes.len(), fautes.join("\n"));
 }
 
+/// UN DEFAUT N'INVENTE AUCUNE VALEUR (atelier/AGENTS.md, « Un champ facultatif ne s'écrit que s'il est rempli » : un
+/// repli, c'est une absence qui devient une valeur) : dans les couches et la fabrique de PDF, `Default` (dérivé, ou écrit
+/// `impl Default for`) ne vaut que pour un type dont chaque champ a un vide qui ne dit rien : une `Option`, une liste
+/// (`Vec`, `VecDeque`, une table, un ensemble), un marqueur (`PhantomData`, `NonLue`), un paramètre du type, un autre de
+/// ces types, ou l'un d'eux sous `Arc`, `Rc`, `Box`, `Mutex`, `RwLock`, `RefCell`. Un nombre, un booléen, un texte, un
+/// n-uplet, une variante n'ont pas de vide : leur défaut serait une valeur fabriquée (0, faux, « », la première
+/// variante). Un tel type se construit en disant chaque champ, ou par un constructeur qui dit ce qu'il construit ; aucune
+/// `enum` n'a de `Default`. Une macro se lit dépliée (ses répétitions `$( … )*` ôtées). Un nom porté par plusieurs types
+/// n'est sûr que si chacun l'est.
+#[test]
+fn un_defaut_n_invente_aucune_valeur() {
+    /// Un `Default` a juger : le type, ses parametres, ceux de l'`impl` et les arguments qu'elle lui donne, ses champs.
+    struct AJuger {
+        nom: String,
+        params: Vec<String>,
+        de_l_impl: Vec<String>,
+        args: Vec<String>,
+        champs: Vec<String>,
+        ou: String,
+    }
+    let vides = ["Option", "Vec", "VecDeque", "BTreeMap", "BTreeSet", "HashMap", "HashSet", "IndexMap", "IndexSet", "PhantomData", "NonLue"];
+    let enveloppes = ["Arc", "Rc", "Box", "Mutex", "RwLock", "RefCell"];
+    let derive = regex::Regex::new(r"#\[\s*derive\s*\(([^)]*)\)\s*\]").unwrap();
+    let defaut = regex::Regex::new(r"\bDefault\b").unwrap();
+    let type_ou_enum = regex::Regex::new(r"^(?:pub(?:\([^)]*\))?\s+)?(struct|enum)\s+(\$?\w+)").unwrap();
+    let structure = regex::Regex::new(r"\bstruct\s+(\$?\w+)").unwrap();
+    let enumeration = regex::Regex::new(r"\benum\s+(\w+)").unwrap();
+    let ecrit = regex::Regex::new(r"^\s*(?:std::default::)?Default\s+for\s+(\w+)").unwrap();
+    let une_impl = regex::Regex::new(r"\bimpl\b").unwrap();
+    let mut definis: Vec<(String, Vec<String>, Vec<String>)> = Vec::new();
+    let mut enums: BTreeSet<String> = BTreeSet::new();
+    let mut a_juger: Vec<AJuger> = Vec::new();
+    let mut impls: Vec<(String, Vec<String>, Vec<String>, String)> = Vec::new();
+    let mut fautes = Vec::new();
+    let dossiers = membres().into_iter().map(|c| espace().join(c).join("src")).chain([espace().join("fabrique-pdf/src")]);
+    for dossier in dossiers {
+        for f in sources(&dossier) {
+            let code = code_seul(&std::fs::read_to_string(&f).unwrap());
+            let c: Vec<char> = code.chars().collect();
+            // Les positions se comptent en caracteres : le code est relu en `Vec<char>`.
+            let rang = |octet: usize| code[..octet].chars().count();
+            let ou = |i: usize| format!("{}:{}", f.display(), c[..i].iter().filter(|x| **x == '\n').count() + 1);
+            for m in structure.captures_iter(&code) {
+                let fin = rang(m.get(0).unwrap().end());
+                let (params, champs) = definition(&c, fin);
+                definis.push((m[1].to_string(), params, champs));
+            }
+            for m in enumeration.captures_iter(&code) {
+                enums.insert(m[1].to_string());
+            }
+            for m in derive.captures_iter(&code) {
+                if !defaut.is_match(&m[1]) {
+                    continue;
+                }
+                let mut i = rang(m.get(0).unwrap().end());
+                // Les attributs qui suivent, et ceux qu'une macro repete (`$(#[$m])*`).
+                loop {
+                    while c.get(i).is_some_and(|x| x.is_whitespace()) {
+                        i += 1;
+                    }
+                    if c.get(i) == Some(&'#') && c.get(i + 1) == Some(&'[') {
+                        i = ferme(&c, i + 1) + 1;
+                    } else if c.get(i) == Some(&'$') && c.get(i + 1) == Some(&'(') {
+                        i = ferme(&c, i + 1) + 1;
+                        while c.get(i).is_some_and(|x| matches!(x, '*' | '+' | '?')) {
+                            i += 1;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                let reste: String = c[i..].iter().collect();
+                let Some(t) = type_ou_enum.captures(&reste) else { continue };
+                if &t[1] == "enum" {
+                    fautes.push(format!("{} : `{}` dérive `Default` : une variante n'est pas un vide, elle se dit", ou(i), &t[2]));
+                    continue;
+                }
+                let (params, champs) = definition(&c, i + reste[..t.get(0).unwrap().end()].chars().count());
+                a_juger.push(AJuger { nom: t[2].to_string(), de_l_impl: params.clone(), args: params.clone(), params, champs, ou: ou(i) });
+            }
+            // `impl<…> Default for Nom<…>` : ses parametres, et les arguments qu'il donne au type.
+            for m in une_impl.find_iter(&code) {
+                let mut i = rang(m.end());
+                while c.get(i).is_some_and(|x| x.is_whitespace()) {
+                    i += 1;
+                }
+                let mut de_l_impl = Vec::new();
+                if c.get(i) == Some(&'<') {
+                    let fin = chevron(&c, i);
+                    de_l_impl = parametres(&c[i + 1..fin].iter().collect::<String>());
+                    i = fin + 1;
+                }
+                let reste: String = c[i..].iter().collect();
+                let Some(e) = ecrit.captures(&reste) else { continue };
+                let mut j = i + reste[..e.get(0).unwrap().end()].chars().count();
+                let mut args = Vec::new();
+                if c.get(j) == Some(&'<') {
+                    let fin = chevron(&c, j);
+                    args = au_premier_niveau(&c[j + 1..fin].iter().collect::<String>());
+                    j = fin + 1;
+                }
+                impls.push((e[1].to_string(), de_l_impl, args, ou(j)));
+            }
+        }
+    }
+    for (nom, de_l_impl, args, ou) in impls {
+        if enums.contains(&nom) {
+            fautes.push(format!("{} : `Default` écrit pour `{}` : une variante n'est pas un vide, elle se dit", ou, nom));
+            continue;
+        }
+        let siens: Vec<&(String, Vec<String>, Vec<String>)> = definis.iter().filter(|d| d.0 == nom).collect();
+        if siens.is_empty() {
+            fautes.push(format!("{} : `Default` écrit pour `{}`, que le verrou ne trouve défini nulle part", ou, nom));
+        }
+        for (_, params, champs) in siens {
+            a_juger.push(AJuger { nom: nom.clone(), params: params.clone(), de_l_impl: de_l_impl.clone(), args: args.clone(), champs: champs.clone(), ou: ou.clone() });
+        }
+    }
+    // Un champ a un vide qui ne dit rien : la forme de son type, ou un type deja sur (`surs`).
+    fn vide(ty: &str, j: &AJuger, surs: &BTreeSet<String>, vides: &[&str], enveloppes: &[&str]) -> bool {
+        let ty = ty.trim();
+        if let Some(k) = j.params.iter().position(|p| p == ty) {
+            return match j.args.get(k) {
+                Some(a) if j.de_l_impl.contains(a) => true,
+                Some(a) => a != ty && vide(a, j, surs, vides, enveloppes),
+                None => false,
+            };
+        }
+        let (tete, dedans) = match ty.find('<') {
+            Some(i) if ty.ends_with('>') => (&ty[..i], Some(&ty[i + 1..ty.len() - 1])),
+            _ => (ty, None),
+        };
+        let tete = tete.rsplit("::").next().unwrap().trim();
+        if vides.contains(&tete) {
+            return true;
+        }
+        if enveloppes.contains(&tete) {
+            return dedans.is_some_and(|d| vide(d, j, surs, vides, enveloppes));
+        }
+        surs.contains(tete)
+    }
+    let mut surs: BTreeSet<String> = BTreeSet::new();
+    loop {
+        let noms: BTreeSet<&String> = a_juger.iter().map(|j| &j.nom).collect();
+        let nouveaux: Vec<String> = noms
+            .into_iter()
+            .filter(|n| !surs.contains(*n) && a_juger.iter().filter(|j| &j.nom == *n).all(|j| j.champs.iter().all(|t| vide(t, j, &surs, &vides, &enveloppes))))
+            .cloned()
+            .collect();
+        if nouveaux.is_empty() {
+            break;
+        }
+        surs.extend(nouveaux);
+    }
+    for j in &a_juger {
+        if let Some(t) = j.champs.iter().find(|t| !vide(t, j, &surs, &vides, &enveloppes)) {
+            fautes.push(format!("{} : `{}` a un `Default`, et son champ `{}` n'a pas de vide : son défaut serait une valeur fabriquée ; la construction dit chaque champ", j.ou, j.nom, t.trim()));
+        }
+    }
+    assert!(fautes.is_empty(), "un défaut n'invente aucune valeur ({} écarts) :\n{}", fautes.len(), fautes.join("\n"));
+}
+
+/// L'indice de ce qui ferme l'ouvrant `c[i]` (`(`, `[` ou `{`), en comptant ses semblables.
+fn ferme(c: &[char], i: usize) -> usize {
+    let (ouvre, clos) = match c[i] {
+        '(' => ('(', ')'),
+        '[' => ('[', ']'),
+        _ => ('{', '}'),
+    };
+    let mut prof = 0i64;
+    for (k, x) in c.iter().enumerate().skip(i) {
+        if *x == ouvre {
+            prof += 1;
+        } else if *x == clos {
+            prof -= 1;
+            if prof == 0 {
+                return k;
+            }
+        }
+    }
+    c.len()
+}
+
+/// L'indice du `>` qui ferme le `<` en `c[i]` (la fleche `->` n'en est pas un).
+fn chevron(c: &[char], i: usize) -> usize {
+    let mut prof = 0i64;
+    for (k, x) in c.iter().enumerate().skip(i) {
+        match x {
+            '<' => prof += 1,
+            '>' if k > 0 && c[k - 1] == '-' => {}
+            '>' => {
+                prof -= 1;
+                if prof == 0 {
+                    return k;
+                }
+            }
+            _ => {}
+        }
+    }
+    c.len()
+}
+
+/// Les morceaux de `t` separes par une virgule hors de toute parenthese, crochet, accolade ou chevron, non vides.
+fn au_premier_niveau(t: &str) -> Vec<String> {
+    let c: Vec<char> = t.chars().collect();
+    let (mut prof, mut debut, mut v) = (0i64, 0, Vec::new());
+    for (k, x) in c.iter().enumerate() {
+        match x {
+            '(' | '[' | '{' | '<' => prof += 1,
+            '>' if k > 0 && c[k - 1] == '-' => {}
+            ')' | ']' | '}' | '>' => prof -= 1,
+            ',' if prof == 0 => {
+                v.push(c[debut..k].iter().collect::<String>());
+                debut = k + 1;
+            }
+            _ => {}
+        }
+    }
+    v.push(c[debut..].iter().collect::<String>());
+    v.into_iter().map(|m| m.trim().to_string()).filter(|m| !m.is_empty()).collect()
+}
+
+/// Les noms des parametres d'un type ou d'une `impl` (`'a, T: Borne, const N: usize` : `T`, `N`).
+fn parametres(t: &str) -> Vec<String> {
+    au_premier_niveau(t)
+        .into_iter()
+        .filter(|p| !p.starts_with('\''))
+        .map(|p| p.trim_start_matches("const ").split([':', '=']).next().unwrap().trim().to_string())
+        .collect()
+}
+
+/// Le texte `t` sans les repetitions d'une macro : `$( … )*` (ou `+`, `?`, avec ou sans separateur) laisse son contenu,
+/// suivi d'une virgule.
+fn deplie(t: &str) -> String {
+    let c: Vec<char> = t.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < c.len() {
+        if c[i] == '$' && c.get(i + 1) == Some(&'(') {
+            let fin = ferme(&c, i + 1);
+            out.push_str(&deplie(&c[i + 2..fin.min(c.len())].iter().collect::<String>()));
+            out.push(',');
+            let mut j = fin + 1;
+            let repete = |x: Option<&char>| x.is_some_and(|x| matches!(x, '*' | '+' | '?'));
+            if !repete(c.get(j)) && repete(c.get(j + 1)) {
+                j += 1;
+            }
+            if repete(c.get(j)) {
+                j += 1;
+            }
+            i = j;
+        } else {
+            out.push(c[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Les parametres et les types des champs d'un `struct` dont le nom finit en `c[i]` : `{ a: A, … }`, `(A, …)`, ou rien.
+fn definition(c: &[char], mut i: usize) -> (Vec<String>, Vec<String>) {
+    while c.get(i).is_some_and(|x| x.is_whitespace()) {
+        i += 1;
+    }
+    let mut params = Vec::new();
+    if c.get(i) == Some(&'<') {
+        let fin = chevron(c, i);
+        params = parametres(&c[i + 1..fin.min(c.len())].iter().collect::<String>());
+        i = fin + 1;
+    }
+    while c.get(i).is_some_and(|x| !matches!(x, '{' | '(' | ';')) {
+        i += 1;
+    }
+    if !matches!(c.get(i), Some('{' | '(')) {
+        return (params, Vec::new());
+    }
+    let fin = ferme(c, i);
+    let corps = deplie(&c[i + 1..fin.min(c.len())].iter().collect::<String>());
+    let champs = au_premier_niveau(&corps).into_iter().map(|champ| type_du_champ(&champ)).filter(|t| !t.is_empty()).collect();
+    (params, champs)
+}
+
+/// Le type d'un champ (`#[…] pub nom: Type`, ou `pub Type` d'un n-uplet), sans ses attributs ni sa visibilite.
+fn type_du_champ(champ: &str) -> String {
+    let c: Vec<char> = champ.chars().collect();
+    let mut i = 0;
+    loop {
+        while c.get(i).is_some_and(|x| x.is_whitespace()) {
+            i += 1;
+        }
+        if c.get(i) == Some(&'#') && c.get(i + 1) == Some(&'[') {
+            i = ferme(&c, i + 1) + 1;
+        } else {
+            break;
+        }
+    }
+    let reste: String = c[i.min(c.len())..].iter().collect();
+    let reste = reste.trim();
+    let reste = match reste.strip_prefix("pub") {
+        Some(r) if r.starts_with('(') => {
+            let rc: Vec<char> = r.chars().collect();
+            rc[(ferme(&rc, 0) + 1).min(rc.len())..].iter().collect::<String>()
+        }
+        Some(r) if r.starts_with(char::is_whitespace) => r.to_string(),
+        _ => reste.to_string(),
+    };
+    let rc: Vec<char> = reste.chars().collect();
+    // Le deux-points du nom : seul, hors d'un chemin (`::`).
+    let deux_points = (0..rc.len()).find(|&k| rc[k] == ':' && rc.get(k + 1) != Some(&':') && (k == 0 || rc[k - 1] != ':'));
+    match deux_points {
+        Some(k) => rc[k + 1..].iter().collect::<String>().trim().to_string(),
+        None => reste.trim().to_string(),
+    }
+}
+
 /// L'engagement ne lit pas le journal : le moteur le lit une fois par geste (`envois::journal::lu`) et lui passe ce qui
-/// est parti.
+/// est parti. Le compilateur tient le code : `engagement` est sous `envois` (`une_crate_ne_prend_qu_a_celles_du_dessous`),
+/// il n'en prend rien. Reste le disque : aucun texte d'`engagement` (code et essais, commentaires blanchis) n'est le
+/// dossier du journal (`envois::journal::JOURNAL`, tel que le code le declare) ni un chemin dessous.
 #[test]
 fn l_engagement_ne_lit_pas_le_journal() {
-    for p in sources(&espace().join("engagement/src")) {
-        for (n, l) in std::fs::read_to_string(&p).unwrap().lines().enumerate() {
-            let code = l.split("//").next().unwrap();
-            assert!(!code.contains("\"journal"), "{}:{} lit le journal : {}", p.display(), n + 1, l.trim());
+    let journal = envois::journal::JOURNAL;
+    let dessous = format!("{}/", journal);
+    let mut fautes = Vec::new();
+    for p in sources(&espace().join("engagement")) {
+        let t = std::fs::read_to_string(&p).unwrap();
+        for (ligne, _, _, commentaire, texte) in jetons_rs(&t) {
+            if !commentaire && (texte == journal || texte.starts_with(&dessous)) {
+                fautes.push(format!("{}:{} : {:?}", p.strip_prefix(espace()).unwrap().display(), ligne, texte));
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "l'engagement ne lit pas le journal : le moteur le lit (`envois::journal::lu`) et lui passe ce qui est parti :\n{}", fautes.join("\n"));
+}
+
+/// UN REFUS EST UN `Echec`, JAMAIS UN TEXTE : aucune source du logiciel (tests a part, commentaires blanchis) n'ecrit
+/// `Result<…, String>` ni `type Error = String` (`TryFrom`, `FromStr` : serde ne demande a l'erreur que de s'afficher, ce
+/// qu'un `Echec` fait), et le refus en texte n'existe plus : ni `echec::A_PART`, ni `phrase_de`, ni `objet_en_tete`, ni
+/// `echec::avec`.
+#[test]
+fn un_refus_n_est_jamais_un_texte() {
+    let texte = regex::Regex::new(r"Result<.*,\s*String\s*>|\btype\s+Err(?:or)?\s*=\s*String\b|\bphrase_de\b|\bobjet_en_tete\b|echec::(A_PART|avec)\b").unwrap();
+    let mut fautes = Vec::new();
+    for p in membres().iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
+        for (n, l) in code_seul(&std::fs::read_to_string(&p).unwrap()).lines().enumerate() {
+            if let Some(m) = texte.find(l) {
+                fautes.push(format!("{}:{} : `{}`", p.strip_prefix(espace()).unwrap().display(), n + 1, m.as_str()));
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "un refus est un `Echec` (`socle::echec::R`), ce qu'il porte a part dans `a_part` :\n{}", fautes.join("\n"));
+}
+
+/// UNE NATURE DE CONTRAT EST UNE `enum` (`droit::natures::NatureDeContrat`), JAMAIS UN TEXTE : le type le garde (toute
+/// regle d'une nature la prend en `NatureDeContrat`, comme `droit::cpf_cdd::ouvre_cpf_cdd`), et la cle d'une nature
+/// (`cddu_spectacle`, `cdi`, `cdd`) ne s'ecrit en texte qu'une fois dans le logiciel (tests a part, commentaires
+/// blanchis), dans sa declaration (`NatureDeContrat::cle`) : un texte ne peut pas en tenir lieu.
+#[test]
+fn une_nature_de_contrat_est_une_enum() {
+    use droit::natures::NatureDeContrat;
+    let mut fautes = Vec::new();
+    let mut vues: Vec<Vec<String>> = vec![Vec::new(); NatureDeContrat::TOUTES.len()];
+    for p in le_logiciel().iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
+        let rel = p.strip_prefix(espace()).unwrap().display().to_string();
+        let texte = std::fs::read_to_string(&p).unwrap();
+        for (ligne, _, _, commentaire, t) in jetons_rs(&sans_tests(&texte)) {
+            let Some(i) = NatureDeContrat::TOUTES.iter().position(|n| !commentaire && n.cle() == t) else { continue };
+            vues[i].push(format!("{}:{}", rel, ligne));
+        }
+    }
+    // Chaque cle s'ecrit une fois en tout : la ou elle est declaree (`NatureDeContrat::cle`), et nulle part ailleurs.
+    for (n, vu) in NatureDeContrat::TOUTES.iter().zip(&vues) {
+        if vu.len() != 1 {
+            fautes.push(format!("la cle {:?} s'ecrit {} fois en texte ({}) : une seule, `NatureDeContrat::cle`", n.cle(), vu.len(), vu.join(", ")));
+        }
+    }
+    assert!(fautes.is_empty(), "une nature de contrat est une `NatureDeContrat`, sa cle ne s'ecrit qu'une fois :\n{}", fautes.join("\n"));
+}
+
+/// UNE LISTE DE LA NORME QUE LE LOGICIEL DECLARE (`droit::natures::ListeDeLaNorme`) EST CELLE DES VERSIONS LIVREES, ni
+/// plus ni moins : pour chaque version (`norme-dsn-base.json`), la liste de valeurs que sa table des formats a relevee
+/// pour la rubrique (`formats-dsn-*-base.json`, `moteur-atelier extraire formats`) est exactement l'ensemble des
+/// variantes que leurs bornes (`depuis`, `jusqu_a`) disent de cette version ; donc chaque code d'une liste est une
+/// variante, et chaque variante est dans au moins une liste.
+#[test]
+fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
+    use droit::natures::{ListeDeLaNorme, ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture};
+    fn confronter<T: ListeDeLaNorme>(fautes: &mut Vec<String>) {
+        let mut union = BTreeSet::new();
+        for n in declarations::norme::versions().unwrap() {
+            let valeurs = declarations::formats::format_en(&n, T::RUBRIQUE).unwrap().and_then(|f| f.valeurs);
+            let Some(liste) = valeurs.map(|v| v.into_keys().collect::<Vec<String>>()) else {
+                fautes.push(format!("{} ({}) : la table des formats de {} n'en a pas la liste", T::quoi(), T::RUBRIQUE, n.version));
+                continue;
+            };
+            for code in &liste {
+                match T::du_code_de_la_norme(code) {
+                    None => fautes.push(format!("{} ({}) : le code {} de la liste {} n'est pas une variante", T::quoi(), T::RUBRIQUE, code, n.version)),
+                    Some(v) if !n.a_dans_sa_liste(v).unwrap() => fautes.push(format!(
+                        "{} ({}) : la liste {} a le code {}, que les bornes de sa variante excluent",
+                        T::quoi(),
+                        T::RUBRIQUE,
+                        n.version,
+                        code
+                    )),
+                    Some(_) => {}
+                }
+            }
+            for v in T::toutes() {
+                if !liste.iter().any(|c| c == v.code_de_la_norme()) && n.a_dans_sa_liste(*v).unwrap() {
+                    fautes.push(format!(
+                        "{} ({}) : la variante {} se dit de {}, dont la liste ne l'a pas",
+                        T::quoi(),
+                        T::RUBRIQUE,
+                        v.code_de_la_norme(),
+                        n.version
+                    ));
+                }
+            }
+            union.extend(liste);
+        }
+        for v in T::toutes() {
+            if !union.contains(v.code_de_la_norme()) {
+                fautes.push(format!("{} ({}) : la variante {} n'est dans aucune liste livree", T::quoi(), T::RUBRIQUE, v.code_de_la_norme()));
+            }
+        }
+    }
+    let mut fautes = Vec::new();
+    confronter::<MotifDeRecours>(&mut fautes);
+    confronter::<MotifDeRupture>(&mut fautes);
+    confronter::<ModaliteDuTempsDeTravail>(&mut fautes);
+    confronter::<droit::base_assujettie::BaseAssujettie>(&mut fautes);
+    confronter::<droit::cotisation_etablissement::CotisationDEtablissement>(&mut fautes);
+    confronter::<droit::nature_declaration::NatureDeLaDeclaration>(&mut fautes);
+    confronter::<droit::type_declaration::TypeDeLaDeclaration>(&mut fautes);
+    confronter::<droit::type_taux_pas::TypeDeTauxPas>(&mut fautes);
+    confronter::<droit::autre_revenu_brut::AutreElementDeRevenuBrut>(&mut fautes);
+    assert!(fautes.is_empty(), "une liste de la norme declaree en `enum` est l'union des listes livrees :\n{}", fautes.join("\n"));
+}
+
+/// UN TEXTE NE DEVIENT UN JOUR, UN MOIS OU UN INSTANT QU'A SA PORTE. Les types du temps sont ceux que declarent les
+/// modules de `Jour`, de `Mois` et de `Moment` (nommes par le compilateur) ; leurs lectures d'un texte sont privees a
+/// `socle`, et le compilateur tient tout le reste : hors de `socle`, un texte n'en devient un que par la forme qui le
+/// porte (`Deserialize`) ou par une porte qui dit son origine dans son type : un argument du processus
+/// (`socle::ligne::Argument`, que seul `socle::ligne::arguments` fabrique), une zone d'une piece au format de sa norme
+/// (`socle::piece::Zone`, un type par format), un nom lu dans un dossier (`socle::fichiers::nommes_d_un_mois`), la cle
+/// d'une lecture notee (`socle::fichiers::LectureDatee`). Ce verrou garde cette visibilite : aucune
+/// fonction publique de `socle` ne rend un type du temps d'un parametre texte (`&str`, `String`, `impl AsRef<str>`,
+/// `impl Into<String>`), et aucun type du temps n'implemente `FromStr`, ni `TryFrom` ou `PartialEq` d'un texte. Hors de
+/// `socle`, code et essais, la forme seule n'est pas une porte : aucune lecture ne vise un type du temps nu (`lire_texte`,
+/// `lire`, `from_str`, `from_value`, `from_slice` vers lui, ou son `deserialize`), et aucune ne lit un texte JSON qui n'est
+/// qu'une chaine ; un essai ecrit son jour ou son mois par `Jour::nouveau` ou `Mois::nouveau`.
+#[test]
+fn un_texte_ne_devient_un_jour_qu_a_sa_porte() {
+    let modules: Vec<(String, String)> = [std::any::type_name::<socle::date::Jour>(), std::any::type_name::<socle::mois::Mois>(), std::any::type_name::<socle::paris::Moment>()]
+        .iter()
+        .map(|t| {
+            let morceaux: Vec<&str> = t.split("::").collect();
+            (morceaux[0].to_string(), morceaux[1].to_string())
+        })
+        .collect();
+    let declare = regex::Regex::new(r"\bpub\s+(?:struct|enum|type)\s+([A-Z][A-Za-z0-9_]*)").unwrap();
+    let mut du_temps: Vec<String> = Vec::new();
+    for (c, m) in &modules {
+        let code = code_seul(&std::fs::read_to_string(espace().join(c).join("src").join(m).with_extension("rs")).unwrap());
+        du_temps.extend(declare.captures_iter(&code).map(|x| x[1].to_string()));
+    }
+    assert!(!du_temps.is_empty(), "les modules du temps ne declarent aucun type : le verrou ne les trouve plus");
+    let nomme_le_temps = |t: &str| t.split(|x: char| !(x.is_alphanumeric() || x == '_')).any(|mot| du_temps.iter().any(|n| n == mot));
+    let porte = regex::Regex::new(r"\bpub\s+fn\s+\w+\s*(?:<[^>]*>)?\s*\(([^)]*)\)\s*->\s*([^{;]+)").unwrap();
+    let un_texte = regex::Regex::new(r"&\s*(?:'[a-z_]+\s+)?(?:mut\s+)?str\b|\bString\b|AsRef\s*<\s*str\s*>|Into\s*<\s*String\s*>").unwrap();
+    let trait_d_un_texte =
+        regex::Regex::new(r"\bimpl\b[^{;]*?\b(?:FromStr|TryFrom\s*<[^>]*\b(?:str|String)\b[^>]*>|PartialEq\s*<[^>]*\b(?:str|String)\b[^>]*>)\s+for\s+([A-Z][A-Za-z0-9_]*)").unwrap();
+    let mut fautes = Vec::new();
+    for p in sources(&espace().join(&modules[0].0).join("src")) {
+        let rel = p.strip_prefix(espace()).unwrap().display().to_string();
+        let code = code_seul(&std::fs::read_to_string(&p).unwrap());
+        let ligne = |i: usize| code[..i].matches('\n').count() + 1;
+        for c in porte.captures_iter(&code) {
+            if un_texte.is_match(&c[1]) && nomme_le_temps(&c[2]) {
+                fautes.push(format!("{}:{} : `{}`, une lecture publique d'un texte", rel, ligne(c.get(0).unwrap().start()), c[0].trim()));
+            }
+        }
+        for c in trait_d_un_texte.captures_iter(&code) {
+            if du_temps.iter().any(|n| *n == c[1]) {
+                fautes.push(format!("{}:{} : `{}`, un texte qui devient un type du temps", rel, ligne(c.get(0).unwrap().start()), c[0].trim()));
+            }
+        }
+    }
+    let vers_le_temps =
+        regex::Regex::new(r"\b(?:lire_texte\w*|lire|from_str|from_value|from_slice)\s*::\s*<\s*(?:Option\s*<\s*)?(?:\w+\s*::\s*)*([A-Z]\w*)").unwrap();
+    let son_deserialize = regex::Regex::new(r"(?:\b([A-Z]\w*)\s*::|<\s*(?:\w+\s*::\s*)*([A-Z]\w*)\s+as\s+(?:\w+\s*::\s*)*Deserialize\s*>\s*::)\s*deserialize\s*\(").unwrap();
+    let chaine_seule = regex::Regex::new(r#"\blire_texte\w*\s*(?:::\s*<[^(]*>)?\s*\(\s*&?\s*(?:format!\s*\(\s*)?"\\""#).unwrap();
+    let mut fichiers = Vec::new();
+    sources_hors_cibles(&espace(), &mut fichiers);
+    for p in fichiers.iter().filter(|p| !p.starts_with(espace().join(&modules[0].0))) {
+        let rel = p.strip_prefix(espace()).unwrap().display().to_string();
+        let brut = std::fs::read_to_string(p).unwrap();
+        let code = code_seul(&brut);
+        let ligne = |i: usize| code[..i].matches('\n').count() + 1;
+        for c in vers_le_temps.captures_iter(&code) {
+            if du_temps.iter().any(|n| *n == c[1]) {
+                fautes.push(format!("{}:{} : `{}`, une lecture qui vise un type du temps nu", rel, ligne(c.get(0).unwrap().start()), c[0].trim()));
+            }
+        }
+        for c in son_deserialize.captures_iter(&code) {
+            if du_temps.iter().any(|n| Some(n.as_str()) == c.get(1).or(c.get(2)).map(|m| m.as_str())) {
+                fautes.push(format!("{}:{} : `{}`, un type du temps lu sans sa forme", rel, ligne(c.get(0).unwrap().start()), c[0].trim()));
+            }
+        }
+        // Le texte de l'appel se lit dans le source tel qu'il est ecrit : `code_seul` blanchit les chaines.
+        for m in chaine_seule.find_iter(&brut) {
+            let l = brut[..m.start()].matches('\n').count() + 1;
+            fautes.push(format!("{}:{} : `{}`, un texte JSON qui n'est qu'une chaine", rel, l, m.as_str().trim()));
+        }
+    }
+    assert!(fautes.is_empty(), "un texte ne devient un jour, un mois ou un instant qu'a sa porte :\n{}", fautes.join("\n"));
+}
+
+/// AUCUN FLOTTANT, NULLE PART : aucun fichier `.rs` du depot (tout le Rust est sous `atelier/sources` : les crates de
+/// l'espace et leurs tests, l'atelier, la fabrique de PDF, la fenetre, les scripts de construction) n'ecrit, dans son
+/// code (commentaires, textes et caracteres blanchis), le mot `f32` ou `f64` (un type, un suffixe, un nom qui le porte),
+/// ni un nombre a virgule ou a exposant, que Rust type en flottant (`1.5`, `2.0`, `1e-7`). Un nombre a virgule se dit
+/// en `Decimal` (un montant, un taux), en `Mesure` (une mesure d'un PDF), ou en entiers (une duree, un poids) ; celui
+/// d'un JSON se lit et s'ecrit par son texte. Le verrou n'a ni liste ni exemption.
+#[test]
+fn aucun_flottant_dans_le_code() {
+    let mut fichiers = Vec::new();
+    sources_hors_cibles(&espace(), &mut fichiers);
+    fichiers.sort();
+    assert!(fichiers.len() > 100, "les sources Rust ne sont pas ou on les cherche : {}", espace().display());
+    let mut fautes = Vec::new();
+    for p in fichiers {
+        let rel = p.strip_prefix(espace()).unwrap().display().to_string();
+        let code = code_sans_textes(&std::fs::read_to_string(&p).unwrap());
+        let ident = |x: char| x.is_alphanumeric() || x == '_';
+        let (mut ligne, mut i) = (1, 0);
+        while i < code.len() {
+            let avant = if i > 0 { code[i - 1] } else { ' ' };
+            let a = |k: usize| code.get(i + k).copied().unwrap_or(' ');
+            if code[i] == '\n' {
+                ligne += 1;
+            } else if code[i] == 'f' && !avant.is_alphabetic() && matches!((a(1), a(2)), ('3', '2') | ('6', '4')) && !ident(a(3)) {
+                fautes.push(format!("{}:{} : `f{}{}`", rel, ligne, a(1), a(2)));
+                i += 3;
+                continue;
+            } else if code[i].is_ascii_digit() && !ident(avant) && avant != '.' {
+                let mut j = i;
+                while j < code.len() && (code[j].is_ascii_digit() || code[j] == '_') {
+                    j += 1;
+                }
+                let b = |k: usize| code.get(j + k).copied().unwrap_or(' ');
+                let virgule = b(0) == '.' && b(1).is_ascii_digit();
+                let exposant = matches!(b(0), 'e' | 'E') && (b(1).is_ascii_digit() || (matches!(b(1), '+' | '-') && b(2).is_ascii_digit()));
+                if virgule || exposant {
+                    let nombre: String = code[i..(j + 2).min(code.len())].iter().collect();
+                    fautes.push(format!("{}:{} : `{}…`, un nombre que Rust type en flottant", rel, ligne, nombre));
+                }
+                i = j;
+                continue;
+            }
+            i += 1;
+        }
+    }
+    assert!(fautes.is_empty(), "aucun flottant dans le code : un `Decimal`, une `Mesure` ou des entiers :\n{}", fautes.join("\n"));
+}
+
+/// AUCUN ATTRIBUT NE LEVE UN LINT : les niveaux de l'espace (`[workspace.lints.rust]` de `atelier/sources/Cargo.toml`,
+/// repris par chaque crate, et les memes dans `fabrique-pdf/` et `fenetre/`) valent pour tout le code. Aucun `.rs` du
+/// depot (code, essais, scripts de construction) n'ecrit `allow(…)`, `expect(…)` ni `warn(…)`, en attribut ou sous un
+/// `cfg_attr` : un champ qu'on ne lit pas est une `socle::forme::NonLue`, un code mort se supprime, un code propre a une
+/// cible se range sous son `cfg`. Le verrou n'a ni liste ni exemption.
+#[test]
+fn aucun_attribut_ne_leve_un_lint() {
+    let leve = regex::Regex::new(r"#!?\[\s*(?:allow|expect|warn)\s*\(|\bcfg_attr\s*\([^\]]*\b(?:allow|expect|warn)\s*\(").unwrap();
+    let mut fichiers = Vec::new();
+    sources_hors_cibles(&espace(), &mut fichiers);
+    fichiers.sort();
+    assert!(fichiers.len() > 100, "les sources Rust ne sont pas ou on les cherche : {}", espace().display());
+    let mut fautes = Vec::new();
+    for p in fichiers {
+        let code: String = code_sans_textes(&std::fs::read_to_string(&p).unwrap()).into_iter().collect();
+        for m in leve.find_iter(&code) {
+            let n = code[..m.start()].matches('\n').count() + 1;
+            fautes.push(format!("{}:{} : `{}`", p.strip_prefix(espace()).unwrap().display(), n, m.as_str()));
+        }
+    }
+    // Les niveaux eux-memes : chaque crate de l'espace reprend ceux de l'espace, la fabrique et la fenetre portent les
+    // memes ; aucune configuration de Cargo ne les abaisse.
+    let niveaux = |t: &str, table: &str| -> Vec<String> {
+        let apres = t.split(table).nth(1).unwrap_or("");
+        apres.lines().skip(1).take_while(|l| !l.starts_with('[')).map(|l| l.split('#').next().unwrap().trim().to_string()).filter(|l| !l.is_empty()).collect()
+    };
+    let espace_toml = std::fs::read_to_string(espace().join("Cargo.toml")).unwrap();
+    let attendus = niveaux(&espace_toml, "[workspace.lints.rust]");
+    assert!(attendus.iter().any(|l| l.starts_with("dead_code = \"forbid\"")), "l'espace interdit le code mort : {:?}", attendus);
+    for e in std::fs::read_dir(espace()).unwrap().flatten() {
+        let toml = e.path().join("Cargo.toml");
+        if let Ok(t) = std::fs::read_to_string(&toml) {
+            let propres = niveaux(&t, "[lints.rust]");
+            let repris = niveaux(&t, "[lints]") == ["workspace = true"];
+            if !(repris || propres == attendus) {
+                fautes.push(format!("{} : ni `[lints] workspace = true`, ni les niveaux de l'espace", toml.strip_prefix(espace()).unwrap().display()));
+            }
+        }
+    }
+    for config in [espace().join(".cargo"), espace().join("../../.cargo")] {
+        for f in std::fs::read_dir(&config).into_iter().flatten().flatten() {
+            let t = std::fs::read_to_string(f.path()).unwrap();
+            if t.contains("-A") || t.contains("--cap-lints") || t.contains("-W") {
+                fautes.push(format!("{} abaisse un lint", f.path().display()));
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "aucun attribut ne leve un lint : le code se corrige ({} écarts) :\n{}", fautes.len(), fautes.join("\n"));
+}
+
+/// LE VERROU DES VERROUS : un verrou vise un comportement ou un type, partout ; il n'ecarte aucun fichier. Aucun `.rs` du
+/// depot (les verrous et le garde avant commit compris, celui-ci aussi) n'a
+/// 1. de liste de fichiers : un tableau (`[…]`) dont un element est un texte qui nomme un source (`….rs`, un dossier
+///    sous `…/src/`) ;
+/// 2. de filtre par nom de fichier : un tel texte compare (`==`, `!=`, `assert_eq!`, `assert_ne!`) ou cherche dans un
+///    chemin (`ends_with`, `starts_with`, `contains`, `strip_prefix`, `strip_suffix`), ou un chemin fait d'un tel texte
+///    (`let x = ….join("….rs")`, `const X: &str = "….rs"`) puis compare ou cherche de meme ;
+/// 3. de marque en commentaire qu'un verrou chercherait (`contains("// …")`) : une exemption ecrite a cote du code.
+/// Ce qu'il attrape se corrige dans le verrou, qui regarde tout, et dans le code qu'il attrape alors. Il n'a lui-meme ni
+/// liste ni exemption.
+#[test]
+fn un_verrou_n_a_ni_liste_ni_filtre() {
+    // Un texte qui nomme un source : un fichier `….rs`, ou un chemin sous un `src/`.
+    let source = |s: &str| {
+        let morceaux: Vec<&str> = s.split('/').collect();
+        let sous_src = morceaux.iter().position(|m| *m == "src").is_some_and(|i| i > 0 && !morceaux[i + 1..].iter().any(|m| m.contains('.')));
+        (s.len() > 3 && s.ends_with(".rs")) || sous_src
+    };
+    let cherche = ["ends_with(", "starts_with(", "contains(", "strip_prefix(", "strip_suffix("];
+    let compare = regex::Regex::new(r"(?:assert_eq|assert_ne)!\(\s*[^,()]*,\s*$").unwrap();
+    let liaison = regex::Regex::new(r"(?:\blet\s+(?:mut\s+)?|\bconst\s+|\bstatic\s+)(\([^)]*\)|\w+)[^=;]*=[^;]*$").unwrap();
+    let mut fichiers = Vec::new();
+    sources_hors_cibles(&espace(), &mut fichiers);
+    fichiers.sort();
+    let mut fautes = Vec::new();
+    for p in fichiers {
+        let rel = p.strip_prefix(espace()).unwrap().display().to_string();
+        let t = std::fs::read_to_string(&p).unwrap();
+        let code = code_sans_textes(&t);
+        let mut lies: Vec<String> = Vec::new();
+        for (ligne, debut, fin, s) in litteraux_rs_places(&t) {
+            let avant: String = code[debut.saturating_sub(400)..debut].iter().collect::<String>();
+            let avant = avant.trim_end();
+            let apres: String = code[fin.min(code.len())..].iter().take(80).collect::<String>();
+            let apres = apres.trim_start();
+            if s.trim_start().starts_with("//") && avant.ends_with("contains(") {
+                fautes.push(format!("{}:{} : `contains(\"{}\")`, une marque en commentaire", rel, ligne, s));
+            }
+            if !source(&s) {
+                continue;
+            }
+            // Les ouvrants qui l'enferment, du plus proche : un `[` avant tout appel fait une liste (un n-uplet `(…)` s'y
+            // traverse, l'appel `f(…)` ou le bloc `{…}` arretent).
+            let mut profondeur = 0i64;
+            let mut en_liste = false;
+            let lu: Vec<char> = avant.chars().collect();
+            for (i, ch) in lu.iter().enumerate().rev() {
+                match ch {
+                    ')' | ']' | '}' => profondeur += 1,
+                    '(' | '[' | '{' if profondeur > 0 => profondeur -= 1,
+                    '[' => {
+                        // `#[…]` et `#![…]` sont des attributs (`#[path = "…"]`), `vec![…]` une liste.
+                        let devant: String = lu[..i].iter().rev().filter(|x| !x.is_whitespace()).take(2).collect();
+                        en_liste = !(devant.starts_with('#') || devant == "!#");
+                        break;
+                    }
+                    '(' if !lu[..i].iter().rev().find(|x| !x.is_whitespace()).is_some_and(|x| x.is_alphanumeric() || matches!(x, '_' | '!' | '>')) => {}
+                    '(' | '{' => break,
+                    _ => {}
+                }
+            }
+            if en_liste {
+                fautes.push(format!("{}:{} : « {} », une liste de fichiers", rel, ligne, s));
+            }
+            let compare_ici = avant.ends_with("==") || avant.ends_with("!=") || apres.starts_with("==") || apres.starts_with("!=") || compare.is_match(avant);
+            if compare_ici || cherche.iter().any(|c| avant.ends_with(c) || avant.ends_with(&format!("{}&", c))) {
+                fautes.push(format!("{}:{} : « {} », un filtre par nom de fichier", rel, ligne, s));
+            }
+            // Le chemin fait de ce texte : les noms que la ligne lie.
+            let debut_de_ligne = avant.rfind(['\n', ';', '{']).map(|i| i + 1).unwrap_or(0);
+            if let Some(c) = liaison.captures(&avant[debut_de_ligne..]) {
+                lies.extend(c[1].split(|x: char| !(x.is_alphanumeric() || x == '_')).filter(|x| !x.is_empty() && *x != "mut").map(str::to_string));
+            }
+        }
+        let code: String = code.into_iter().collect();
+        for nom in lies {
+            let e = regex::escape(&nom);
+            let usage = regex::Regex::new(&format!(r"(?:==|!=)\s*&?\*?{e}\b|\b{e}\s*(?:==|!=)|(?:ends_with|starts_with|strip_prefix|strip_suffix|contains)\(\s*&?{e}\b|(?:assert_eq|assert_ne)!\(\s*[^,()]*,\s*&?{e}\b")).unwrap();
+            if let Some(m) = usage.find(&code) {
+                let n = code[..m.start()].matches('\n').count() + 1;
+                fautes.push(format!("{}:{} : `{}`, un filtre par nom de fichier (`{}` nomme un source)", rel, n, m.as_str(), nom));
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "un verrou n'a ni liste ni filtre : il regarde tout, et ce qu'il attrape se corrige ({} écarts) :\n{}", fautes.len(), fautes.join("\n"));
+}
+
+/// Les fichiers `.rs` sous `d`, hors des cibles de compilation (`target`).
+fn sources_hors_cibles(d: &Path, sortie: &mut Vec<PathBuf>) {
+    for e in std::fs::read_dir(d).unwrap().flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            if e.file_name() != "target" {
+                sources_hors_cibles(&p, sortie);
+            }
+        } else if p.extension().is_some_and(|x| x == "rs") {
+            sortie.push(p);
         }
     }
 }
 
+/// Un source Rust dont les commentaires (de ligne et de bloc, imbriques), les textes (`"…"`, `b"…"`, `r#"…"#`,
+/// `br"…"`) et les caracteres (`'…'`, `b'…'`, `'\u{…}'`) sont blanchis, ses sauts de ligne gardes : ce qui reste est
+/// le code que le compilateur lit.
+pub(crate) fn code_sans_textes(t: &str) -> Vec<char> {
+    let mut c: Vec<char> = t.chars().collect();
+    let n = c.len();
+    let ident = |x: char| x.is_alphanumeric() || x == '_';
+    let mut a_blanchir: Vec<(usize, usize)> = Vec::new();
+    let mut i = 0;
+    while i < n {
+        let avant = if i > 0 { c[i - 1] } else { ' ' };
+        let debut = i;
+        match c[i] {
+            '/' if c.get(i + 1) == Some(&'/') => {
+                while i < n && c[i] != '\n' {
+                    i += 1;
+                }
+            }
+            '/' if c.get(i + 1) == Some(&'*') => {
+                let mut profondeur = 0;
+                while i < n {
+                    if c[i] == '/' && c.get(i + 1) == Some(&'*') {
+                        profondeur += 1;
+                        i += 2;
+                    } else if c[i] == '*' && c.get(i + 1) == Some(&'/') {
+                        profondeur -= 1;
+                        i += 2;
+                        if profondeur == 0 {
+                            break;
+                        }
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+            '"' => {
+                i += 1;
+                while i < n && c[i] != '"' {
+                    i += if c[i] == '\\' { 2 } else { 1 };
+                }
+                i += 1;
+            }
+            'r' if (c.get(i + 1) == Some(&'"') || c.get(i + 1) == Some(&'#'))
+                && (!ident(avant) || (avant == 'b' && (i < 2 || !ident(c[i - 2])))) =>
+            {
+                let mut j = i + 1;
+                while c.get(j) == Some(&'#') {
+                    j += 1;
+                }
+                let dieses = j - i - 1;
+                if c.get(j) != Some(&'"') {
+                    i += 1;
+                    continue;
+                }
+                j += 1;
+                while j < n && !(c[j] == '"' && (0..dieses).all(|k| c.get(j + 1 + k) == Some(&'#'))) {
+                    j += 1;
+                }
+                i = j + 1 + dieses;
+            }
+            '\'' if c.get(i + 1) == Some(&'\\') => {
+                i += 3;
+                while i < n && c[i] != '\'' {
+                    i += 1;
+                }
+                i += 1;
+            }
+            '\'' if c.get(i + 2) == Some(&'\'') => i += 3,
+            _ => {
+                i += 1;
+                continue;
+            }
+        }
+        a_blanchir.push((debut, i.min(n)));
+    }
+    for (a, b) in a_blanchir {
+        for x in &mut c[a..b] {
+            if *x != '\n' {
+                *x = ' ';
+            }
+        }
+    }
+    c
+}
+
 /// UNE VALEUR D'UNE FICHE (entreprise, salarie, spectacle) SE DATE A UN SEUL ENDROIT : `routes::fiches::ecrire_datee`, que
 /// l'ecran, les gestes d'une case et l'import appellent, et qui la date par la forme de la fiche
-/// (`droit::fiche::FicheDatee::changer`, et dessous `droit::fiche::dater`, la seule fonction qui date). Ailleurs dans le
-/// moteur, `droit::fiche::dater` ne date que le fichier des organismes ; une fiche neuve (`FicheDatee::neuve`) n'a rien a
-/// dater.
+/// (`droit::fiche::FicheDatee::changer`, et dessous `droit::fiche::dater`, la seule fonction qui date) : dans tout le
+/// code au-dessus du droit, un seul appel de `FicheDatee::changer`, le sien. Une fiche neuve (`FicheDatee::neuve`) n'a
+/// rien a dater.
 #[test]
 fn une_seule_fonction_date_une_valeur_de_fiche() {
     let fiches = espace().join("routes/src/fiches/ecriture.rs");
@@ -912,40 +1801,16 @@ fn une_seule_fonction_date_une_valeur_de_fiche() {
     let debut = texte.find("pub(crate) fn ecrire_datee<").unwrap();
     let fin = debut + texte[debut..].find("\n}\n").unwrap();
     assert_eq!(texte[..debut].matches("FicheDatee::changer(").count() + texte[fin..].matches("FicheDatee::changer(").count(), 0, "seul `ecrire_datee` date une case d'une fiche");
-    assert_eq!(texte.matches("FicheDatee::changer(").count(), 1, "`ecrire_datee` date ses cases en un seul endroit");
-    for p in ["compagnie", "import", "routes", "moteur", "atelier"].into_iter().flat_map(|c| sources(&espace().join(c).join("src"))).filter(|p| *p != fiches) {
-        let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
-        let t = std::fs::read_to_string(&p).unwrap();
-        assert!(!t.contains("FicheDatee::changer("), "{} date une valeur de fiche : il passe par `fiches::ecrire_datee`", rel);
-        if t.contains("fiche::dater(") {
-            assert_eq!(rel, "compagnie/src/organismes.rs", "{} date une valeur de fiche : il passe par `fiches::ecrire_datee`", rel);
-        }
-    }
-}
-
-/// UNE CASE D'UNE PIECE NE SE LIT PAS PAR SON NOM (`droit::fiche::Piece`) : le calcul ne la lit que dans sa piece
-/// ouverte, avec sa cle, et `Cases::voir` ne la regarde pas ; une `Saisie` (la fiche telle que l'ecran la tape) ne la lit
-/// par `case`, `dite` ou `mot` que dans sa porte, `declarations/src/champs.rs`, qui controle ce que la personne ecrit.
-#[test]
-fn une_case_d_une_piece_ne_se_lit_pas_par_son_nom() {
-    use droit::fiche::{ChampsEntreprise, ChampsSalarie, FormeDeCase};
-    let mut rangees: Vec<String> = ChampsEntreprise::cases().iter().filter(|d| ChampsEntreprise::piece_de(&d.cle).is_some()).map(|d| d.cle.to_string()).collect();
-    rangees.extend(ChampsSalarie::cases().iter().filter(|d| ChampsSalarie::piece_de(&d.cle).is_some()).map(|d| d.cle.to_string()));
-    assert!(!rangees.is_empty(), "aucune case n'est rangee dans une piece");
-    let porte = espace().join("declarations/src/champs.rs");
-    let mut fautes = Vec::new();
-    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))).filter(|p| *p != porte) {
-        let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
-        let t = std::fs::read_to_string(&p).unwrap();
-        for c in &rangees {
-            for lecture in ["case", "dite", "mot"] {
-                if t.contains(&format!(".{}(\"{}\")", lecture, c)) {
-                    fautes.push(format!("{} lit la case {} par son nom (`{}`)", rel, c, lecture));
-                }
-            }
-        }
-    }
-    assert!(fautes.is_empty(), "une case d'une piece se lit par la piece ouverte, avec sa cle :\n{}", fautes.join("\n"));
+    // Dans tout le code qui prend a la fiche, ce seul appel : `ecrire_datee`.
+    let appels: Vec<String> = membres()[1..]
+        .iter()
+        .flat_map(|c| sources(&espace().join(c).join("src")))
+        .flat_map(|p| {
+            let n = code_seul(&std::fs::read_to_string(&p).unwrap()).matches("FicheDatee::changer(").count();
+            std::iter::repeat_n(p.strip_prefix(espace()).unwrap().display().to_string(), n)
+        })
+        .collect();
+    assert_eq!(appels.len(), 1, "une valeur de fiche se date par `fiches::ecrire_datee`, et lui seul appelle `FicheDatee::changer` : {:?}", appels);
 }
 
 /// UNE RUBRIQUE D'UN SALARIE AU MOIS NE SE COMPOSE QUE PAR SA CLE (`droit::catalogue::RubriqueDuMois`, la section
@@ -959,37 +1824,46 @@ fn une_rubrique_d_un_salarie_au_mois_ne_se_compose_que_par_sa_cle() {
     let base: Value = serde_json::from_str(&std::fs::read_to_string(espace().join("../../logiciel/donnees/rubriques-base.json")).unwrap()).unwrap();
     let codes: Vec<String> = base["au_mois"].as_object().unwrap().keys().cloned().collect();
     assert!(!codes.is_empty(), "rubriques-base.json n'a pas de section au_mois");
-    let enumeration = espace().join("droit/src/catalogue.rs");
-    let composition = espace().join("engagement/src/ligne.rs");
+    // L'enum et la ligne qui la compose, telles que le compilateur les nomme : leurs modules.
+    let module = |nom: &str| nom.rsplit_once("::").unwrap().0.to_string();
+    let enumeration = module(std::any::type_name::<droit::catalogue::RubriqueDuMois>());
+    let composition = module(std::any::type_name::<engagement::LignePaie>());
     let mut fautes = Vec::new();
-    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
-        let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
-        let tout = std::fs::read_to_string(&p).unwrap();
-        // Les tests d'un fichier lisent ce qu'ils veulent.
-        let t = tout.split("#[cfg(test)]").next().unwrap_or("");
-        if p != enumeration {
-            fautes.extend(codes.iter().filter(|c| t.contains(&format!("\"{}\"", c))).map(|c| format!("{} ecrit le code {}", rel, c)));
+    let mut ecrits: Vec<Vec<String>> = vec![Vec::new(); codes.len()];
+    for p in le_logiciel().iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
+        let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().replace('\\', "/");
+        // Les tests d'un fichier lisent ce qu'ils veulent ; le code, ses textes compris.
+        let t = blanchi(&std::fs::read_to_string(&p).unwrap(), false);
+        for (i, c) in codes.iter().enumerate() {
+            if t.contains(&format!("\"{}\"", c)) {
+                ecrits[i].push(rel.clone());
+            }
         }
-        if p != enumeration && p != composition {
-            for v in ["IndemniteCongesPayes", "IjssNettes"] {
-                if t.contains(&format!("{}.code()", v)) {
-                    fautes.push(format!("{} prend le code de {} hors de la ligne qui la compose", rel, v));
+        let ici = module_de(&rel);
+        if ici != enumeration && ici != composition {
+            for v in droit::catalogue::RubriqueDuMois::TOUTES {
+                if t.contains(&format!("{:?}.code()", v)) {
+                    fautes.push(format!("{} prend le code de {:?} hors de la ligne qui la compose", rel, v));
                 }
             }
+        }
+    }
+    // Chaque code s'ecrit en texte a un seul endroit : son enum.
+    for (c, ou) in codes.iter().zip(&ecrits) {
+        if ou.len() != 1 {
+            fautes.push(format!("le code {} s'ecrit en texte dans {} fichiers ({:?}) : un seul, son enum", c, ou.len(), ou));
         }
     }
     assert!(fautes.is_empty(), "une rubrique d'un salarie au mois se compose par sa cle (`LignePaie::du_mois`) :\n{}", fautes.join("\n"));
 }
 
-/// LES FICHES N'ONT QU'UNE FORME : chaque cle de `champs-base.json` (`entreprise`, `salarie`) est un champ de sa structure
-/// (`droit::fiche`), et chaque champ y a sa ligne ; de meme les cases d'une structure que la ligne decrit (`champs`, un
-/// chemin `taux.t1_cadre` pour une case d'un bloc) ; les valeurs d'un choix sont celles de son type (la ligne vide en
-/// plus) ; l'aide d'une case que les normes bornent dit sa longueur (`droit::fiche::texte_borne!`). La ligne `historique`
-/// (forme `histoire`) n'est pas une donnee ; une structure sans `champs` se verifie comme un champ seul. Aucune ligne ne
-/// porte d'etiquette (`si_fait`, `si_permanents`...) : la piece d'une case ne se dit que dans sa forme.
+/// LES FICHES N'ONT QU'UNE FORME : ce que la lecture de `champs-base.json` ne tient pas (elle apparie lignes et cases,
+/// `declarations::champs::ranger`) : les valeurs d'un choix sont celles de son type (la ligne vide en plus), et l'aide
+/// d'une case que les normes bornent dit sa longueur (`droit::fiche::texte_borne!`). La ligne `historique` (forme
+/// `histoire`) n'est pas une donnee.
 #[test]
 fn champs_base_et_les_fiches_ont_les_memes_cases() {
-    use droit::fiche::{ChampsEntreprise, ChampsSalarie, Declaree, FormeDeCase};
+    use droit::fiche::{ChampsEntreprise, ChampsSalarie, Declaree};
     fn feuilles<'a>(d: &'a [Declaree], devant: &str, out: &mut Vec<(String, &'a Declaree)>) {
         for c in d {
             let chemin = format!("{}{}", devant, c.cle);
@@ -1000,7 +1874,7 @@ fn champs_base_et_les_fiches_ont_les_memes_cases() {
             }
         }
     }
-    fn choix(ou: &str, ligne: &Value, d: &Declaree, fautes: &mut Vec<String>) {
+    fn choix<K>(ou: &str, ligne: &Value, d: &Declaree<K>, fautes: &mut Vec<String>) {
         if ligne["forme"] != json!("choix") {
             return;
         }
@@ -1010,7 +1884,7 @@ fn champs_base_et_les_fiches_ont_les_memes_cases() {
             fautes.push(format!("{} : champs-base offre {:?}, la forme {:?}", ou, ecrits, declares));
         }
     }
-    fn longueur(ou: &str, ligne: &Value, d: &Declaree, fautes: &mut Vec<String>) {
+    fn longueur<K>(ou: &str, ligne: &Value, d: &Declaree<K>, fautes: &mut Vec<String>) {
         let Some((n, unite)) = d.longueur else { return };
         let dite = format!("{} {}", n, unite);
         if !ligne["aide"].as_str().unwrap_or("").contains(&dite) {
@@ -1021,21 +1895,12 @@ fn champs_base_et_les_fiches_ont_les_memes_cases() {
     let mut fautes = Vec::new();
     for (nom, declarees) in [("entreprise", ChampsEntreprise::cases()), ("salarie", ChampsSalarie::cases())] {
         let lignes: Vec<&Value> = base[nom].as_array().unwrap().iter().filter(|l| l["forme"] != json!("histoire")).collect();
+        // L'appariement des lignes et des cases, et les cles d'une ligne, la lecture de la table les tient
+        // (`declarations::champs::ranger`, `deny_unknown_fields`).
         for l in &lignes {
             let cle = l["cle"].as_str().unwrap_or("");
             let ou = format!("{}.{}", nom, cle);
-            // AUCUNE ETIQUETTE : ce que la fiche montre se deduit de la piece de la case, tiree de sa forme
-            // (`droit::fiche::Piece`) ; une ligne ne pose de condition que sur ce qui est saisi (`si`, `si_entreprise`,
-            // `si_etablissements`), jamais sur un fait du calcul ni sur une piece.
-            for k in l.as_object().into_iter().flat_map(|o| o.keys()) {
-                if k == "piece" || (k.starts_with("si_") && k != "si_entreprise" && k != "si_etablissements") {
-                    fautes.push(format!("{} : `{}` est une etiquette ; la piece de la case se range dans sa forme", ou, k));
-                }
-            }
-            let Some(d) = declarees.iter().find(|d| d.cle == cle) else {
-                fautes.push(format!("{} : une ligne de champs-base.json qu'aucun champ de la fiche ne porte", ou));
-                continue;
-            };
+            let Some(d) = declarees.iter().find(|d| d.cle.nom() == cle) else { continue };
             choix(&ou, l, d, &mut fautes);
             longueur(&ou, l, d, &mut fautes);
             let Some(cases) = l["champs"].as_array().filter(|c| !c.is_empty()) else { continue };
@@ -1043,65 +1908,88 @@ fn champs_base_et_les_fiches_ont_les_memes_cases() {
             feuilles(&d.cases, "", &mut declarees_ici);
             for s in cases {
                 let sc = s["cle"].as_str().unwrap_or("");
-                match declarees_ici.iter().find(|(c, _)| c == sc) {
-                    Some((_, ds)) => {
-                        choix(&format!("{}.{}", ou, sc), s, ds, &mut fautes);
-                        longueur(&format!("{}.{}", ou, sc), s, ds, &mut fautes);
-                    }
-                    None => fautes.push(format!("{}.{} : une case de champs-base.json que la structure ne porte pas", ou, sc)),
+                if let Some((_, ds)) = declarees_ici.iter().find(|(c, _)| c == sc) {
+                    choix(&format!("{}.{}", ou, sc), s, ds, &mut fautes);
+                    longueur(&format!("{}.{}", ou, sc), s, ds, &mut fautes);
                 }
             }
-            for (c, _) in declarees_ici.iter().filter(|(c, _)| !cases.iter().any(|s| s["cle"] == json!(c))) {
-                fautes.push(format!("{}.{} : une case de la structure sans sa ligne dans champs-base.json", ou, c));
-            }
-        }
-        for d in declarees.iter().filter(|d| !lignes.iter().any(|l| l["cle"] == json!(d.cle))) {
-            fautes.push(format!("{}.{} : un champ de la fiche sans sa ligne dans champs-base.json", nom, d.cle));
         }
     }
     assert!(fautes.is_empty(), "champs-base.json et la forme des fiches (droit::fiche) se contredisent :\n{}", fautes.join("\n"));
 }
 
-/// Un seul endroit ecrit un fichier d'engagements : `engagement::stock::poser`. Hors de `stock.rs`, le chemin d'un tel
-/// fichier (`stock::chemin`) ne se nomme que pour le lire : dans la cloture (l'archive de l'exercice) et l'apercu d'un
-/// acte (le fichier designe est-il celui du mois ?).
+/// LE STOCK D'ENGAGEMENT, TEL QUE LE COMPILATEUR LE NOMME : les sources du crate `engagement`, chacune avec son module et
+/// son code seul, et les modules du stock (`engagement::stock`) et des paies (`engagement::paies`), nommes par leurs
+/// types et fonctions.
+fn le_stock() -> (String, String, Vec<(String, String)>) {
+    let module = |nom: &str| nom.rsplit_once("::").unwrap().0.to_string();
+    let stock = module(std::any::type_name::<engagement::stock::FichierDuMois>());
+    let paies = module(std::any::type_name_of_val(&engagement::paies::tel_quel));
+    let code = sources(&espace().join("engagement").join("src"))
+        .into_iter()
+        .map(|p| (module_de(&p.strip_prefix(espace()).unwrap().to_string_lossy().replace('\\', "/")), code_seul(&std::fs::read_to_string(&p).unwrap())))
+        .collect::<Vec<(String, String)>>();
+    assert!(code.iter().any(|(m, _)| *m == stock) && code.iter().any(|(m, _)| *m == paies), "les modules {} et {} sont des sources d'engagement", stock, paies);
+    (stock, paies, code)
+}
+
+/// Ce qu'un module du stock rend public d'un chemin : un texte constant (le nom d'un dossier) ou une fonction qui rend un
+/// chemin. Hors d'`engagement`, un fichier du stock se lit tel quel (`stock::TelQuel`) et ses dossiers se signent
+/// (`stock::dossiers_tenus`) ; rien ne le nomme pour l'ecrire.
+fn chemins_publics(t: &str) -> Vec<String> {
+    let public = regex::Regex::new(r"pub\s+(?:const|static)\s+\w+\s*:\s*&(?:'static\s+)?str|pub\s+fn\s[^{;]*->[^{;]*(?:PathBuf|&Path\b)").unwrap();
+    public.find_iter(t).map(|m| m.as_str().to_string()).collect()
+}
+
+/// UN SEUL ENDROIT ECRIT UN FICHIER D'ENGAGEMENTS : `engagement::stock::poser_dans`, le seul `ecrire_json(` du module du
+/// stock. Le compilateur tient le reste : le dossier et le chemin d'un fichier du stock ne sont pas publics
+/// (`chemins_publics`) ; dans `engagement`, seuls les modules du stock et des paies prennent un chemin du stock
+/// (`chemin_dans(`, `lire_dans(`, `poser_dans(`, `fichiers_dans(`, `tel_quel_dans(`).
 #[test]
 fn un_seul_endroit_ecrit_un_fichier_d_engagements() {
-    const LECTEURS: [&str; 2] = ["routes/src/gestes/exercice_ecrit.rs", "moteur/src/commandes/actes.rs"];
-    let stock = espace().join("engagement/src/stock.rs");
-    assert_eq!(std::fs::read_to_string(&stock).unwrap().matches("ecrire_json(").count(), 1, "stock.rs n'ecrit que par `poser`");
-    for crate_ in &ORDRE[2..] {
-        for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| *p != stock) {
-            if std::fs::read_to_string(&p).unwrap().contains("stock::chemin(") {
-                let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
-                assert!(LECTEURS.contains(&rel.as_str()), "{} nomme le fichier d'un engagement : il passe par `stock`", rel);
+    let (stock, paies, code) = le_stock();
+    let mut fautes = Vec::new();
+    for (ici, t) in &code {
+        if *ici == stock {
+            let n = t.matches("ecrire_json(").count();
+            if n != 1 {
+                fautes.push(format!("{} ecrit {} fois (`ecrire_json(`) : une seule, `poser_dans`", ici, n));
+            }
+        }
+        if *ici == stock || *ici == paies {
+            fautes.extend(chemins_publics(t).into_iter().map(|m| format!("{} rend public un chemin du stock (`{}`)", ici, m)));
+        } else {
+            for f in ["chemin_dans(", "lire_dans(", "poser_dans(", "fichiers_dans(", "tel_quel_dans("] {
+                if t.contains(&format!("stock::{}", f)) {
+                    fautes.push(format!("{} prend un chemin du stock (`stock::{}`) : il lit et ecrit par le stock", ici, f));
+                }
             }
         }
     }
+    assert!(fautes.is_empty(), "un fichier du stock ne s'ecrit que par `engagement::stock::poser_dans` :\n{}", fautes.join("\n"));
 }
 
 /// Une seule fonction lit un fichier de paies, une seule l'ecrit : dans `engagement::paies`, `fichier` (`stock::lire_dans`)
-/// et `ecrire` (`stock::poser_dans`), sur le dossier des paies, que rien d'autre ne nomme. Hors de `paies.rs`, le fichier
-/// des paies d'un mois ne se nomme que pour le lire tel qu'il est sur le disque : dans la cloture (l'archive de
-/// l'exercice) et l'etat garde de l'ecran (sa signature).
+/// et `ecrire` (`stock::poser_dans`), une fois chacune ; le dossier des paies (`Dossier::Paies`), seuls les modules du
+/// stock et des paies le nomment. Hors d'`engagement`, le fichier des paies d'un mois se lit tel quel
+/// (`paies::tel_quel`) : son chemin n'est pas public (`un_seul_endroit_ecrit_un_fichier_d_engagements`).
 #[test]
 fn une_seule_fonction_lit_une_paie_et_une_seule_l_ecrit() {
-    const LECTEURS: [&str; 2] = ["routes/src/gestes/exercice_ecrit.rs", "routes/src/etat_garde.rs"];
-    let paies = espace().join("engagement/src/paies.rs");
-    let stock = espace().join("engagement/src/stock.rs");
-    let texte = std::fs::read_to_string(&paies).unwrap();
-    assert_eq!(texte.matches("stock::lire_dans(").count(), 1, "paies.rs ne lit un fichier de paies que par `fichier`");
-    assert_eq!(texte.matches("stock::poser_dans(").count(), 1, "paies.rs n'ecrit un fichier de paies que par `ecrire`");
-    for crate_ in &ORDRE[2..] {
-        for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| *p != paies && *p != stock) {
-            let t = std::fs::read_to_string(&p).unwrap();
-            let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
-            assert!(!t.contains("Dossier::Paies"), "{} nomme le dossier des paies : il lit et ecrit une paie par `engagement::paies`", rel);
-            if t.contains("paies::chemin(") || t.contains("paies::DOSSIER") {
-                assert!(LECTEURS.contains(&rel.as_str()), "{} nomme le fichier des paies d'un mois : il passe par `engagement::paies`", rel);
+    let (stock, paies, code) = le_stock();
+    let mut fautes = Vec::new();
+    for (ici, t) in &code {
+        if *ici == paies {
+            for f in ["stock::lire_dans(", "stock::poser_dans("] {
+                let n = t.matches(f).count();
+                if n != 1 {
+                    fautes.push(format!("{} appelle {} fois `{}` : une seule", ici, n, f));
+                }
             }
+        } else if *ici != stock && t.contains("Dossier::Paies") {
+            fautes.push(format!("{} nomme le dossier des paies : il lit et ecrit une paie par `engagement::paies`", ici));
         }
     }
+    assert!(fautes.is_empty(), "une paie se lit et s'ecrit par `engagement::paies` :\n{}", fautes.join("\n"));
 }
 
 /// LA ROUTE REND LA PHRASE QUE L'ON LIT : la page (`logiciel/interface/js/`, `index.html`, et les pages que sert la
@@ -1143,6 +2031,48 @@ fn la_page_n_ecrit_aucune_phrase() {
         phrases.is_empty(),
         "la page écrit {} phrase(s) : chacune doit venir d'une route (la phrase de la réponse du geste qui l'appelle, que la page affiche), ou disparaître ; la page n'écrit que des mots d'interface ({} mots au plus, sans ponctuation de phrase) :\n{}",
         phrases.len(), MOTS_D_INTERFACE, phrases.join("\n")
+    );
+}
+
+/// LA PAGE LIT LA REPONSE, ELLE N'INVENTE RIEN A SA PLACE (`AGENTS.md`, « Un seul logiciel, qui que soit la main ») : une
+/// liste ou un objet d'une reponse est toujours ecrit par la route, un champ facultatif se teste avant d'etre dessine, et
+/// une erreur se dit. Dans chaque `.js` et chaque `.html` des pages (les memes que `la_page_n_ecrit_aucune_phrase`),
+/// commentaires compris, le verrou refuse :
+/// - un repli qui remplace une absence par une valeur : `|| ""`, `|| ''`, `|| []`, `|| {}`, `|| 0`, et `??` suivi d'un
+///   litteral (un texte, un nombre, `[`, `{`, `null`, `undefined`, `true`, `false`) ;
+/// - une erreur avalee : un `catch` dont le bloc est vide (des blancs ou des commentaires seulement), et une promesse
+///   dont le `.catch` ne fait rien (`.catch(() => {})`).
+#[test]
+fn la_page_n_invente_aucune_valeur_ni_ne_tait_une_erreur() {
+    let depot = espace().join("../..");
+    let mut fichiers: Vec<PathBuf> = std::fs::read_dir(depot.join("logiciel/interface/js")).unwrap().flatten().map(|e| e.path()).collect();
+    fichiers.push(depot.join("logiciel/interface/index.html"));
+    fichiers.extend(std::fs::read_dir(espace().join("moteur/src/interface/pages")).unwrap().flatten().map(|e| e.path()));
+    fichiers.sort();
+    let repli = regex::Regex::new(r#"\|\|\s*(?:""|''|\[\s*\]|\{\s*\}|0\b)|\?\?\s*(?:["'`\[{]|-?\d|(?:null|undefined|true|false)\b)"#).unwrap();
+    let commentaires = r"(?:\s|/\*(?s:.)*?\*/|//[^\n]*\n)*";
+    let avalee = regex::Regex::new(&format!(
+        r"\bcatch\s*(?:\(\s*\w*\s*\))?\s*\{{{c}\}}|\.catch\(\s*(?:\(\s*\w*\s*\)|\w+)\s*=>\s*\{{{c}\}}\s*\)",
+        c = commentaires
+    ))
+    .unwrap();
+    let mut trouves = Vec::new();
+    for p in &fichiers {
+        if !p.extension().is_some_and(|x| x == "js" || x == "html") {
+            continue;
+        }
+        let t = std::fs::read_to_string(p).unwrap();
+        for m in repli.find_iter(&t).chain(avalee.find_iter(&t)) {
+            let ligne = t[..m.start()].matches('\n').count() + 1;
+            trouves.push(format!("{}:{} : « {} »", p.file_name().unwrap().to_string_lossy(), ligne, m.as_str().replace('\n', " ")));
+        }
+    }
+    trouves.sort();
+    assert!(
+        trouves.is_empty(),
+        "la page invente {} valeur(s) ou tait une erreur : une liste ou un objet de la réponse se lit tel que la route l'écrit, un champ facultatif se teste avant d'être dessiné, et un `catch` dit le refus (ou laisse l'erreur remonter) :\n{}",
+        trouves.len(),
+        trouves.join("\n")
     );
 }
 
@@ -1545,35 +2475,29 @@ fn textes_html(t: &str) -> Vec<String> {
     v
 }
 
-/// UN SEUL ENDROIT ECRIT UN MONTANT TEL QU'ON LE LIT : `socle::texte::euros` (« 1 234,50 € »), et une quantite par
-/// `socle::texte::virgule`. Hors de `socle/src/texte.rs`, aucun litteral des sources ne met « € » ou « EUR » derriere
-/// une valeur qu'il compose (`{}`, `{:.2}`…), ni ne commence par un blanc suivi de « € » (le suffixe qu'on colle a un
-/// nombre) : c'est le signe d'une fonction qui refait la mise en forme. Un fichier dont une norme impose la forme d'un
-/// montant (un format d'organisme, l'imprime d'un autre logiciel) l'ecrit sans « € », ou porte, sur la ligne du
-/// litteral, la marque `// forme imposée :` suivie de la norme.
+/// UN SEUL ENDROIT DU LOGICIEL ECRIT UN MONTANT TEL QU'ON LE LIT (« 1 234,50 € », `socle::texte::euros`) : dans les
+/// sources du logiciel (les crates livrees, `le_logiciel`), un seul litteral met « € » ou « EUR » derriere une valeur
+/// qu'il compose (`{}`, `{:.2}`…) ou commence par un blanc suivi de « € » (le suffixe qu'on colle a un nombre). Un
+/// second est une fonction qui refait la mise en forme. Le verrou ne nomme pas l'endroit : il en compte un. L'atelier,
+/// qui imite l'imprime d'autres logiciels, n'est pas le logiciel.
 #[test]
 fn un_seul_endroit_ecrit_un_montant() {
-    let maison = espace().join("socle/src/texte.rs");
-    let mut fautes = Vec::new();
-    for crate_ in ORDRE {
-        for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| *p != maison) {
+    let mut endroits = Vec::new();
+    for crate_ in le_logiciel() {
+        for p in sources(&espace().join(crate_).join("src")) {
             let t = std::fs::read_to_string(&p).unwrap();
-            let lignes: Vec<&str> = t.lines().collect();
             for (ligne, l) in litteraux_rs(&t) {
-                if lignes.get(ligne - 1).is_some_and(|x| x.contains("// forme imposée :")) {
-                    continue;
-                }
                 if met_des_euros(&l) {
                     let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
-                    fautes.push(format!("{}:{} : « {} »", rel, ligne, l));
+                    endroits.push(format!("{}:{} : « {} »", rel, ligne, l));
                 }
             }
         }
     }
     assert!(
-        fautes.is_empty(),
-        "{} litteral(aux) mettent un montant en forme : un montant s'ecrit par `socle::texte::euros` (ou `euros_de` pour une valeur), une quantite par `socle::texte::virgule` ; un format impose par une norme porte `// forme imposée : <la norme>` sur sa ligne :\n{}",
-        fautes.len(), fautes.join("\n")
+        endroits.len() == 1,
+        "{} litteral(aux) du logiciel mettent un montant en forme, un seul le fait : un montant s'ecrit par `socle::texte::euros` (ou `euros_de` pour une valeur), une quantite par `socle::texte::virgule` :\n{}",
+        endroits.len(), endroits.join("\n")
     );
 }
 
@@ -1602,7 +2526,7 @@ fn met_des_euros(l: &str) -> bool {
 
 /// Les litteraux de chaine d'un source Rust (hors commentaires), avec la ligne ou chacun commence ; une fin de ligne
 /// echappee (`\` puis le blanc qui suit) est retiree, comme le fait le compilateur.
-fn litteraux_rs(t: &str) -> Vec<(usize, String)> {
+pub(crate) fn litteraux_rs(t: &str) -> Vec<(usize, String)> {
     jetons_rs(t).into_iter().filter(|j| !j.3).map(|(l, _, _, _, s)| (l, s)).collect()
 }
 
@@ -2013,81 +2937,146 @@ fn tout_ce_qui_est_public_sert_le_logiciel() {
     );
 }
 
-/// Le code d'un source Rust sans ses parties `#[cfg(test)]` (un module, une fonction ou un `use` a la marge).
+/// Le code d'un source Rust sans ses parties `#[cfg(test)]`, blanchies a leurs lignes : chaque item que l'attribut
+/// marque, ou qu'il soit (a la marge, dans un `impl`, un champ), de l'attribut a ce qui le finit dans le code (textes et
+/// commentaires blanchis) : son `;` ou sa `,` hors de toute parenthese, l'accolade qui ferme son corps, ou l'accolade qui
+/// ferme ce qui le contient. Rien d'autre ne s'ecarte.
 fn sans_tests(t: &str) -> String {
-    let mut v = Vec::new();
-    let mut lignes = t.lines();
-    while let Some(l) = lignes.next() {
-        if l != "#[cfg(test)]" {
-            v.push(l);
+    let code: Vec<char> = blanchi_entier(t, true).chars().collect();
+    let mut c: Vec<char> = t.chars().collect();
+    let marque: Vec<char> = "#[cfg(test)]".chars().collect();
+    let mut i = 0;
+    while i + marque.len() <= code.len() {
+        if code[i..i + marque.len()] != marque[..] {
+            i += 1;
             continue;
         }
-        if let Some(item) = lignes.next() {
-            if !item.trim_end().ends_with(';') {
-                for x in lignes.by_ref() {
-                    if x == "}" {
+        let (mut j, mut profondeur) = (i + marque.len(), 0i32);
+        while j < code.len() {
+            match code[j] {
+                '{' | '(' | '[' => profondeur += 1,
+                '}' | ')' | ']' => {
+                    profondeur -= 1;
+                    if profondeur < 0 {
+                        break;
+                    }
+                    if profondeur == 0 && code[j] == '}' {
+                        j += 1;
                         break;
                     }
                 }
+                ';' | ',' if profondeur == 0 => {
+                    j += 1;
+                    break;
+                }
+                _ => {}
+            }
+            j += 1;
+        }
+        let n = c.len();
+        for x in c.iter_mut().take(j.min(n)).skip(i) {
+            if *x != '\n' {
+                *x = ' ';
             }
         }
+        i = j;
     }
-    v.join("\n")
+    c.into_iter().collect()
 }
 
-/// LA CARTE VALIDE A UNE VARIANTE PAR NATURE DE `contrats-base.json` (`engagement::carte::NATURES`), et le motif de recours
-/// d'un CDD un cas par motif que le fichier offre, la personne remplacee la ou il la nomme (`engagement::carte::Recours`).
+/// LA CARTE VALIDE A UNE VARIANTE PAR NATURE DE `contrats-base.json` (`droit::natures::NatureDeContrat`). Les motifs
+/// de recours et de rupture du fichier sont ceux de leurs `enum` : `droit::natures` le verifie a la lecture.
 #[test]
-fn la_carte_valide_a_une_variante_par_nature_et_par_motif() {
-    use engagement::carte::{Recours, NATURES};
+fn la_carte_valide_a_une_variante_par_nature() {
+    use droit::natures::NatureDeContrat;
     let base: Value = serde_json::from_str(&std::fs::read_to_string(espace().join("../../logiciel/donnees/contrats-base.json")).unwrap()).unwrap();
     let ecrites: BTreeSet<&str> = base["natures"].as_object().unwrap().keys().map(String::as_str).collect();
-    assert_eq!(ecrites, NATURES.iter().map(|(n, _)| *n).collect::<BTreeSet<_>>(), "une variante de la carte par nature du fichier");
-    for (n, v) in base["natures"].as_object().unwrap() {
-        let offerts: Vec<(&str, bool)> = v["champs"]["S21.G00.40.021"]["valeurs"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .map(|m| (m["code"].as_str().unwrap(), m["personne_remplacee"] == json!(true)))
-            .collect();
-        let declares: Vec<(&str, bool)> = if n == "cdd" { Recours::TOUS.to_vec() } else { Vec::new() };
-        assert_eq!(offerts, declares, "{} : les motifs de recours du fichier sont ceux du type", n);
-    }
+    assert_eq!(ecrites, NatureDeContrat::TOUTES.iter().map(|n| n.cle()).collect::<BTreeSet<_>>(), "une variante de la carte par nature du fichier");
 }
 
-/// UNE FORME LUE REFUSE CE QU'ELLE NE CONNAIT PAS : chaque structure derivee de `Deserialize` porte
-/// `#[serde(deny_unknown_fields)]` (atelier/AGENTS.md, « Chaque forme est declaree une fois, en Rust »), ou se lit par une
-/// autre forme qui la porte (`try_from`), ou se declare elle-meme, dans son fichier, reponse d'un tiers
-/// (`impl socle::forme::ReponseDUnTiers for <elle>`) : elle ne se lit alors que par la porte des tiers
-/// (`socle::forme::lire_reponse_tiers`), qui ignore les cles que le tiers ajoute.
+/// UNE FORME LUE REFUSE CE QU'ELLE NE CONNAIT PAS (atelier/AGENTS.md, « Chaque forme est declaree une fois, en Rust ») :
+/// chaque type derive de `Deserialize` (son `derive` sur une ligne ou plusieurs, hors des tests) qui a des cles -- une
+/// structure a champs nommes, une `enum` qui a une variante a champs nommes -- porte `#[serde(deny_unknown_fields)]`,
+/// ou se declare elle-meme, dans son fichier, reponse d'un tiers (`impl socle::forme::ReponseDUnTiers for <elle>`) :
+/// elle ne se lit alors que par la porte des tiers (`socle::forme::lire_reponse_tiers`), qui ignore les cles que le
+/// tiers ajoute. Un type qui se lit entier par un autre (`try_from`, `from`) le nomme : cet autre est une forme que ce
+/// verrou tient (derivee de `Deserialize` dans l'espace), une lecture ecrite a la main (`impl Deserialize for`), ou un
+/// type sans champ nomme (un texte, un nombre, un booleen, une liste, une table) ; un type `transparent` se lit par son
+/// seul champ, que le compilateur type.
 #[test]
 fn chaque_forme_lue_refuse_une_cle_inconnue() {
-    let mut fautes = Vec::new();
-    for crate_ in ORDRE {
+    let derive = regex::Regex::new(r"#\[\s*derive\s*\([^\]]*\bDeserialize\b").unwrap();
+    let declaration = regex::Regex::new(r"^\s*(?:pub(?:\s*\([^)]*\))?\s+)?(struct|enum)\s+([A-Za-z_]\w*)").unwrap();
+    let par_un_autre = regex::Regex::new(r#"\b(?:try_from|from)\s*=\s*"([^"]+)""#).unwrap();
+    // Les types de Rust et de la norme JSON qui n'ont pas de champ nomme : un texte, un nombre, un booleen, une liste, une
+    // table (ses cles sont des donnees, pas des champs).
+    let sans_champ = ["String", "str", "bool", "char", "u8", "u16", "u32", "u64", "usize", "i8", "i16", "i32", "i64", "isize", "Number", "Vec", "BTreeMap", "HashMap"];
+    // Un type dont la lecture est ecrite a la main (`impl Deserialize for`) : sa porte est son code.
+    let a_la_main = regex::Regex::new(r"\bimpl\s*<[^>]*>\s*(?:serde::)?Deserialize\s*<[^>]*>\s*for\s+([A-Za-z_]\w*)").unwrap();
+    let mut ecrites: BTreeSet<String> = BTreeSet::new();
+    // (fichier, ligne, nom, attributs, a des cles, se declare reponse d'un tiers)
+    let mut formes: Vec<(String, usize, String, String, bool, bool)> = Vec::new();
+    for crate_ in membres() {
         for f in sources(&espace().join(crate_).join("src")) {
             let texte = std::fs::read_to_string(&f).unwrap();
-            let lignes: Vec<&str> = texte.lines().collect();
-            for (i, l) in lignes.iter().enumerate() {
-                if !(l.trim_start().starts_with("#[derive(") && l.contains("Deserialize")) {
+            let brut: Vec<String> = blanchi(&texte, false).lines().map(String::from).collect();
+            let code: Vec<String> = code_seul(&texte).lines().map(String::from).collect();
+            ecrites.extend(code.iter().flat_map(|l| a_la_main.captures_iter(l).map(|c| c[1].to_string()).collect::<Vec<_>>()));
+            for (i, l) in code.iter().enumerate() {
+                let Some(d) = declaration.captures(l) else { continue };
+                // Les attributs : les lignes au-dessus, jusqu'a la fin de l'item d'avant (`;`, `}`) ou au debut de ce
+                // qui le contient (`{`), et le debut de la ligne de la declaration.
+                let mut debut = i;
+                while debut > 0 && !code[debut - 1].trim_end().ends_with([';', '}', '{']) {
+                    debut -= 1;
+                }
+                let attributs = brut[debut..=i].join(" ");
+                if !derive.is_match(&attributs) {
                     continue;
                 }
-                let suite: Vec<&str> = lignes[i + 1..].iter().take_while(|x| !x.contains("struct ") && !x.contains("enum ")).copied().collect();
-                let declare = lignes.get(i + 1 + suite.len()).copied().unwrap_or("");
-                let attributs = suite.join(" ");
-                if !declare.contains("struct ") || attributs.contains("deny_unknown_fields") || attributs.contains("try_from") {
-                    continue;
+                // Le corps, du `{` de la declaration a l'accolade qui le ferme : une cle est un `{` a la profondeur 1 d'une
+                // `enum` (une variante a champs nommes), ou le corps meme d'une structure.
+                let (mut profondeur, mut corps, mut cles) = (0i32, false, false);
+                'corps: for x in &code[i..] {
+                    for ch in x.chars() {
+                        match ch {
+                            '{' => {
+                                profondeur += 1;
+                                corps = true;
+                                cles |= (&d[1] == "struct" && profondeur == 1) || (&d[1] == "enum" && profondeur == 2);
+                            }
+                            '}' => {
+                                profondeur -= 1;
+                                if profondeur == 0 {
+                                    break 'corps;
+                                }
+                            }
+                            ';' | '(' if !corps && profondeur == 0 => break 'corps,
+                            _ => {}
+                        }
+                    }
                 }
-                let nom: String = declare.split("struct ").nth(1).unwrap_or("").chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
-                let tiers = |l: &&str| {
-                    let l = l.trim_start();
-                    l.starts_with("impl ") && l.contains("ReponseDUnTiers for ") && l.split("ReponseDUnTiers for ").nth(1).is_some_and(|r| r.trim_start().starts_with(&format!("{} ", nom)) || r.trim_start().starts_with(&format!("{}{{", nom)))
-                };
-                if nom.is_empty() || !lignes.iter().any(tiers) {
-                    fautes.push(format!("{}:{}", f.display(), i + 1));
-                }
+                let nom = d[2].to_string();
+                let tiers = brut.iter().any(|x| x.contains("ReponseDUnTiers for ") && x.split("ReponseDUnTiers for ").nth(1).is_some_and(|r| r.trim_start().split(|c: char| !(c.is_alphanumeric() || c == '_')).next() == Some(nom.as_str())));
+                formes.push((f.display().to_string(), i + 1, nom, attributs, cles, tiers));
             }
         }
     }
+    let derivees: BTreeSet<&str> = formes.iter().map(|x| x.2.as_str()).collect();
+    let mut fautes = Vec::new();
+    for (f, ligne, nom, attributs, cles, tiers) in &formes {
+        if let Some(autre) = par_un_autre.captures(attributs) {
+            let t = autre[1].split('<').next().and_then(|x| x.rsplit("::").next()).map(str::trim);
+            if !t.is_some_and(|t| derivees.contains(t) || ecrites.contains(t) || sans_champ.contains(&t)) {
+                fautes.push(format!("{}:{} : {} se lit par « {} », qui n'est ni une forme tenue par ce verrou, ni une lecture ecrite a la main, ni un type sans champ", f, ligne, nom, &autre[1]));
+            }
+            continue;
+        }
+        if *cles && !attributs.contains("deny_unknown_fields") && !attributs.contains("transparent") && !tiers {
+            fautes.push(format!("{}:{} : {}", f, ligne, nom));
+        }
+    }
+    assert!(formes.len() > 100, "le verrou ne trouve que {} formes lues : il ne les voit plus", formes.len());
     assert!(fautes.is_empty(), "une forme lue sans deny_unknown_fields, qui ne se declare pas reponse d'un tiers (`socle::forme::ReponseDUnTiers`) :\n{}", fautes.join("\n"));
 }
 
@@ -2120,12 +3109,13 @@ fn scripts_de(html: &str) -> String {
 /// `en_json(…)` : `structure/reponses.rs`) a la forme que `serde` ecrit de son type ; chaque champ que la page lit sur
 /// ce qu'elle a recu de cette route (`structure/page.rs`, qui dit ce qui se suit et ce qui ne se suit pas) est un champ de
 /// cette forme. Un champ renomme d'un cote et pas de l'autre fait echouer le test, la route, la cle et la ligne nommees.
-/// Les routes que la page appelle et dont la reponse n'est pas encore une structure (un `json!`) se nomment, a typer.
+/// Chaque route rend une structure : une route dont la reponse n'en est pas une (ou ne se suit pas jusqu'a son type)
+/// fait echouer le test, nommee.
 #[test]
 fn la_page_ne_lit_que_ce_que_les_routes_rendent() {
     let depot = espace().join("../..");
     let mut fichiers = Vec::new();
-    for crate_ in ORDRE {
+    for crate_ in membres() {
         fichiers.extend(sources(&espace().join(crate_).join("src")));
     }
     fichiers.sort();
@@ -2199,9 +3189,14 @@ fn la_page_ne_lit_que_ce_que_les_routes_rendent() {
         .map(|(v, n)| format!("{} ({})", n, declarees.get(v).map(|f| e.nom_du_fichier(*f, &espace())).unwrap_or_default()))
         .collect();
     toutes.sort_by(|a, b| a.split(" (").nth(1).cmp(&b.split(" (").nth(1)));
-    eprintln!(
-        "{} champs lus verifies ; {} routes typees ; la page appelle {} routes dont la reponse n'est pas une structure (a typer) : {}\nnon typees ({}) :\n{}",
-        verifies, routes.len(), a_typer.len(), a_typer.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "), toutes.len(), toutes.join("\n")
+    // Chaque route rend une structure : celle que la page lit, et toutes les autres.
+    assert!(
+        a_typer.is_empty() && toutes.is_empty(),
+        "la reponse d'une route n'est pas une structure (`en_json` d'un type `Serialize`) : la page en lit {} ({}) ; non typees ({}) :\n{}",
+        a_typer.len(),
+        a_typer.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
+        toutes.len(),
+        toutes.join("\n")
     );
 }
 

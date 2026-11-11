@@ -20,3 +20,10 @@ l'article R. 331-5 ».
 
 L'indemnité journalière de principe d'un accident du travail ou de trajet (`engagement::maintien::ij_de_principe`,
 `montants_d_accident`) : `logiciel/donnees/permanents-base.json`, `indemnites_journalieres.principe_accident.taux_forfaitaire`.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `legifrance-arrete-20130328-taux-r331-5-20130331.pdf` : `831b42daa1f1e70f82eeab86c65ca54fed75842662a564c073b50b53908772eb`
+- `legifrance-arrete-20130328-taux-r331-5-20130331.txt` : `4e201313b099abca83f0151c48d172a1187c12fb8b57190e44de7fd8e29bd1bd`

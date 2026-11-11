@@ -46,12 +46,15 @@ use std::path::Path;
 
 use std::collections::BTreeMap;
 
-use fabrique_pdf::forme::{ImagePosee, Remplissage};
+use fabrique_pdf::forme::{ImagePosee, Mesure, Remplissage};
+use fabrique_pdf::mesure::mesure;
 use fabrique_pdf::formulaire::ChampLu;
 
-use engagement::cachet;
+use crate::cachet;
 use socle::date::Jour;
-use socle::num::{Decimal, Resultat};
+use socle::echec::refus;
+use socle::mois::Mois;
+use socle::num::Decimal;
 
 /// Les champs du cadre 5, et rien d'autre.
 pub const CHAMPS_TEXTE: [&str; 10] = [
@@ -100,12 +103,12 @@ const NUM_CONTRAT: &str = "CON_NUMERO_";
 /// v3-2-20230328.txt`, l. 500-510) : le contrat d'un intermittent (`droit::caisse_conges::intermittent`). Un permanent n'en a
 /// pas : sa fin de contrat est un signalement (`contrats-base.json`, `cdd.fin_de_contrat.signalement_fctu`), et
 /// l'attestation de droit commun qui en revient n'est pas celle-ci.
-pub fn due(p: &engagement::calcul::Paie) -> Resultat<bool> {
+pub fn due(p: &engagement::calcul::Paie) -> socle::echec::R<bool> {
     let e = &p.engagement;
     if !droit::caisse_conges::intermittent(&*e.nat()?, &p.salarie)? {
         return Ok(false);
     }
-    let (debut, fin) = (e.debut_mois()?, e.fin_mois()?);
+    let (debut, fin) = (e.debut_mois(), e.fin_mois());
     Ok(e.fin.is_some_and(|f| debut <= f && f <= fin))
 }
 
@@ -118,36 +121,36 @@ pub fn due(p: &engagement::calcul::Paie) -> Resultat<bool> {
 /// `net-entreprises-base-connaissances/net-entreprises-fiche3037-attestation-employeur-aed-fctu-20250323.txt`). Le moteur
 /// ne la range pas pour l'envoi : la forme de ce PDF (ses champs, son cadre d'authentification) n'est relevee sur
 /// aucune piece deposee. Le courriel des documents le dit (`envoi::NOTE_SANS_ATTESTATION_FCTU`), sans rien promettre.
-pub fn attestation_fctu(e: &engagement::Engagement) -> Resultat<bool> {
+pub fn attestation_fctu(e: &engagement::Engagement) -> socle::echec::R<bool> {
     let nat = e.nat()?;
-    if !nat.signalement_fctu(e.motif_rupture.as_deref().filter(|m| !m.is_empty())) {
+    if !nat.signalement_fctu(e.motif_rupture) {
         return Ok(false);
     }
-    let (debut, fin) = (e.debut_mois()?, e.fin_mois()?);
+    let (debut, fin) = (e.debut_mois(), e.fin_mois());
     Ok(e.fin.is_some_and(|f| debut <= f && f <= fin))
 }
 
 /// Pourquoi une attestation n'est pas rendue.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Echec {
     /// `AttestationInexacte` : un chiffre ne correspond pas a la paie du mois.
     Ecarts(Vec<String>),
-    /// La fabrique de PDF refuse (`FabriqueRefus`) : sa phrase.
-    Fabrique(String),
+    /// La fabrique de PDF refuse : son refus, dans sa classe (`fabrique::echec`).
+    Fabrique(socle::echec::Echec),
     /// Tout autre refus (une cle absente de la fiche, un jour illisible...).
-    Autre(String),
+    Autre(socle::echec::Echec),
 }
 
-impl From<String> for Echec {
-    fn from(m: String) -> Echec {
-        Echec::Autre(m)
+impl From<socle::echec::Echec> for Echec {
+    fn from(e: socle::echec::Echec) -> Echec {
+        Echec::Autre(e)
     }
 }
 
 type R<T> = Result<T, Echec>;
 
 fn fabrique<T>(r: Result<T, fabrique_pdf::Refus>) -> R<T> {
-    r.map_err(|e| Echec::Fabrique(e.0.replace('\n', " ")))
+    r.map_err(|e| Echec::Fabrique(crate::fabrique::echec(e)))
 }
 
 /// Ce qu'on appose. Rien n'est invente : tout vient d'entreprise.json.
@@ -157,21 +160,20 @@ pub struct Cadre5 {
     pub prenom: String,
     pub qualite: String,
     pub lieu: String,
-    pub jour: String,
-    pub mois: String,
-    pub annee: String,
+    /// Le jour de la signature, imprime en trois cases (jour, mois, annee).
+    pub le: Jour,
     pub correspondant: String,
     pub telephone: String,
     pub courriel: String,
 }
 
 /// Une case que le cadre 5 exige : absente, elle se refuse (`Manque`).
-fn req<T: AsRef<str>>(c: &Option<T>, cle: &str) -> Resultat<String> {
+fn req<T: AsRef<str>>(c: &Option<T>, cle: &str) -> socle::echec::R<String> {
     c.ecrite(cle).map(str::to_string)
 }
 
 impl Cadre5 {
-    pub fn depuis(ent: &droit::fiche::ChampsEntreprise, aujourdhui: &Jour) -> Resultat<Cadre5> {
+    pub fn depuis(ent: &droit::fiche::ChampsEntreprise, aujourdhui: &Jour) -> socle::echec::R<Cadre5> {
         let sig = ent.signataire.exigee("signataire")?;
         let dec = ent.declarant_dsn.exigee("declarant_dsn")?;
         // Le lieu de signature est le siege, pas le lieu du spectacle.
@@ -184,9 +186,7 @@ impl Cadre5 {
             prenom: req(&sig.prenom, "prenom")?,
             qualite: req(&sig.fonction, "fonction")?,
             lieu,
-            jour: format!("{:02}", aujourdhui.jour),
-            mois: format!("{:02}", aujourdhui.mois),
-            annee: format!("{:04}", aujourdhui.an),
+            le: *aujourdhui,
             // << Personne a joindre concernant cette attestation >> : c'est le
             // declarant DSN, pas le signataire. France Travail rappelle pour
             // une question de declaration, et c'est l'employeur qui les depose.
@@ -198,34 +198,34 @@ impl Cadre5 {
 
     pub fn valeurs(&self) -> Vec<(&'static str, String)> {
         let v = [
-            &self.nom,
-            &self.prenom,
-            &self.qualite,
-            &self.lieu,
-            &self.jour,
-            &self.mois,
-            &self.annee,
-            &self.correspondant,
-            &self.telephone,
-            &self.courriel,
+            self.nom.clone(),
+            self.prenom.clone(),
+            self.qualite.clone(),
+            self.lieu.clone(),
+            format!("{:02}", self.le.jour),
+            format!("{:02}", self.le.mois),
+            format!("{:04}", self.le.an),
+            self.correspondant.clone(),
+            self.telephone.clone(),
+            self.courriel.clone(),
         ];
-        CHAMPS_TEXTE.iter().copied().zip(v.into_iter().cloned()).collect()
+        CHAMPS_TEXTE.iter().copied().zip(v).collect()
     }
 }
 
 /// Une quantite du formulaire -> nombre ; une case vide (ou absente) ne dit aucune quantite (`None`). Un nombre a
 /// virgule se lit tel qu'il est ecrit (« 151,67 » : cent cinquante et une heures soixante-sept), le separateur des
 /// milliers (espace) s'ote ; tout autre texte refuse : une quantite qu'on ne sait pas lire ne se compare pas.
-pub fn quantite(v: Option<&str>) -> Resultat<Option<Decimal>> {
+pub fn quantite(v: Option<&str>) -> socle::echec::R<Option<Decimal>> {
     let Some(v) = v else { return Ok(None) };
-    let t: String = v.chars().filter(|c| !c.is_whitespace() && *c != '\u{a0}').collect::<String>().replace(',', ".");
+    let t: String = v.chars().filter(|c| !c.is_whitespace() && *c != '\u{a0}').collect();
     if t.is_empty() {
         return Ok(None);
     }
-    if !t.chars().all(|c| c.is_ascii_digit() || c == '.') {
-        return Err(format!("quantite illisible : {}", socle::fichiers::repr(&t)));
+    if !t.chars().all(|c| c.is_ascii_digit() || c == '.' || c == ',') {
+        return Err(socle::refus!("quantite illisible : {}", socle::fichiers::repr(&t)));
     }
-    socle::num::decimal_lu(&t).map(|d| Some(d.normalize())).ok_or_else(|| format!("quantite illisible : {}", socle::fichiers::repr(&t)))
+    socle::num::decimal_a_virgule(&t).map(|d| Some(d.normalize())).ok_or_else(|| socle::refus!("quantite illisible : {}", socle::fichiers::repr(&t)))
 }
 
 /// Deux quantites concordent-elles ? Une quantite que rien ne dit (une case vide de l'attestation, des heures que
@@ -240,7 +240,7 @@ fn concordent(a: Option<Decimal>, b: Option<Decimal>) -> bool {
 
 /// << 23/08/2026 >> -> date. None si ce n'est pas une date ; une date qui
 /// n'existe pas (31/02) se refuse.
-pub fn jour(t: &str) -> Resultat<Option<Jour>> {
+pub fn jour(t: &str) -> socle::echec::R<Option<Jour>> {
     let t = t.trim();
     let b = t.as_bytes();
     let chiffres = |a: usize, z: usize| b[a..z].iter().all(u8::is_ascii_digit);
@@ -250,12 +250,12 @@ pub fn jour(t: &str) -> Resultat<Option<Jour>> {
     let n = |a: usize, z: usize| t[a..z].parse::<u32>().unwrap();
     let (j, m, a) = (n(0, 2), n(3, 5), n(6, 10));
     if a < 1 {
-        return Err(socle::date::annee_impossible(a));
+        return Err(refus(socle::date::annee_impossible(a)));
     }
     if !(1..=12).contains(&m) {
-        return Err(socle::mois::mois_impossible(m));
+        return Err(refus(socle::mois::mois_impossible(m)));
     }
-    Jour::nouveau(a as i32, m, j).map(Some).ok_or_else(|| socle::date::jour_impossible(a, m, j))
+    Jour::nouveau(a as i32, m, j).map(Some).ok_or_else(|| refus(socle::date::jour_impossible(a, m, j)))
 }
 
 /// Une colonne du cadre 4 telle qu'IMPRIMEE sur l'attestation : la periode, le numero du contrat (repris de la colonne
@@ -276,7 +276,7 @@ fn valeur(champs: &[ChampLu], nom: &str) -> Option<String> {
 /// Les colonnes imprimees, dans l'ordre. Une colonne sans dates de periode n'en est pas une ; une colonne sans numero
 /// prend celui de la colonne precedente (la suite du meme contrat). Deux colonnes de meme cle (numero, periode) : la
 /// derniere l'emporte, a la place de la premiere.
-pub fn lire_quantites(champs: &[ChampLu]) -> Resultat<Vec<Ligne>> {
+pub fn lire_quantites(champs: &[ChampLu]) -> socle::echec::R<Vec<Ligne>> {
     let mut out: Vec<Ligne> = Vec::new();
     let mut numero_courant = String::new();
     for rang in 1..=5 {
@@ -322,12 +322,12 @@ impl PaieAer {
     /// l'artiste qui n'est pas au cachet (annexe 10, art. 3 : « Lorsque l'activite des artistes est declaree sous la
     /// forme de cachets, chaque cachet est converti en heures » ; `plafond-intermittents/unedic-annexe10-convention-
     /// 20241115.txt`).
-    pub fn du_mois(p: &engagement::calcul::Paie) -> Resultat<PaieAer> {
+    pub fn du_mois(p: &engagement::calcul::Paie) -> socle::echec::R<PaieAer> {
         let e = &p.engagement;
-        let (d, f) = (e.debut_mois()?, e.fin_mois()?);
-        let numero = e.numero.as_deref().ok_or_else(|| format!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
-        let fin = e.fin.ok_or_else(|| format!("contrat {} sans fin", numero))?;
-        let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees) } else { e.heures.map(socle::num::dec_f64).transpose()? };
+        let (d, f) = (e.debut_mois(), e.fin_mois());
+        let numero = e.numero.as_deref().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
+        let fin = e.fin.ok_or_else(|| socle::refus!("contrat {} sans fin", numero))?;
+        let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees) } else { e.heures };
         Ok(PaieAer {
             numero: numero.to_string(),
             debut: if e.debut > d { e.debut } else { d },
@@ -425,19 +425,20 @@ pub fn verifier(donnees: &[u8], paies: &[PaieAer]) -> R<Vec<String>> {
 /// La largeur des cases « Signature de l'employeur » et « Cachet de l'entreprise » du cadre 5 de l'attestation, en
 /// points : celles du formulaire de France Travail (relevées sur une vraie attestation, le gabarit de la fictive les
 /// reprend : `envois::aer_fictive`). Ce qu'il faut de pixels à une image posée là (`crate::largeur_imprimee`).
-pub const CASE_SIGNATURE: f64 = 121.0;
-pub const CASE_CACHET: f64 = 161.0;
+pub const CASE_SIGNATURE: Mesure = Mesure::entier(121);
+pub const CASE_CACHET: Mesure = Mesure::entier(161);
 
 /// La signature occupe le haut de la case, sur 80 % de sa largeur.
 ///
 /// Meme parti que pour le certificat Conges Spectacles : un tampon pose en
 /// travers, pas une image etiree aux dimensions de la case. `rect` :
 /// [x0, y0, x1, y1] en points, l'origine en haut a gauche de la page.
-pub fn cadre_signature(rect: [f64; 4]) -> [f64; 4] {
+pub fn cadre_signature(rect: [Mesure; 4]) -> [Mesure; 4] {
     let [x0, y0, x1, y1] = rect;
-    let largeur = (x1 - x0) * 0.80;
-    let hauteur = (y1 - y0) * 0.55;
-    [x0 + 4.0, y0 + 4.0, x0 + 4.0 + largeur, y0 + 4.0 + hauteur]
+    let largeur = (x1 - x0) * mesure("0.8");
+    let hauteur = (y1 - y0) * mesure("0.55");
+    let quatre = Mesure::entier(4);
+    [x0 + quatre, y0 + quatre, x0 + quatre + largeur, y0 + quatre + hauteur]
 }
 
 /// Le champ `nom` du formulaire, s'il en a un.
@@ -446,7 +447,7 @@ fn champ<'a>(champs: &'a [ChampLu], nom: &str) -> Option<&'a ChampLu> {
 }
 
 /// La page et le rectangle du champ `nom`, s'il est sur une page.
-fn case(champs: &[ChampLu], nom: &str) -> Option<(usize, [f64; 4])> {
+fn case(champs: &[ChampLu], nom: &str) -> Option<(usize, [Mesure; 4])> {
     let c = champ(champs, nom)?;
     Some((c.page?, c.rect?))
 }
@@ -526,7 +527,7 @@ pub fn remplir(donnees: &[u8], valeurs: BTreeMap<String, String>, images: Vec<Im
 
 /// Toutes les periodes que l'AER de `cle` pour `periode` doit porter (`ecarts`) : chaque contrat dont l'AER est due ce
 /// mois-ci (`due`), mois par mois depuis son debut, chacun lu dans la paie de son mois (`paies_du_mois`).
-pub fn periodes_attendues(periode: &str, cle: &str, paies_du_mois: &mut dyn FnMut(&str) -> Vec<engagement::calcul::Paie>) -> Resultat<Vec<PaieAer>> {
+pub fn periodes_attendues(periode: Mois, cle: &str, paies_du_mois: &mut dyn FnMut(Mois) -> Vec<engagement::calcul::Paie>) -> socle::echec::R<Vec<PaieAer>> {
     let de_lui = |p: &engagement::calcul::Paie| p.salarie.id == cle;
     let mut out = Vec::new();
     for p in paies_du_mois(periode).iter().filter(|p| de_lui(p)) {
@@ -534,13 +535,13 @@ pub fn periodes_attendues(periode: &str, cle: &str, paies_du_mois: &mut dyn FnMu
         if !due(p)? {
             continue;
         }
-        let numero = e.numero.as_deref().ok_or_else(|| format!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?.to_string();
-        let mut m = e.debut.iso()[..7].to_string();
-        while m.as_str() < periode {
-            for q in paies_du_mois(&m).iter().filter(|q| de_lui(q) && q.engagement.numero.as_deref() == Some(numero.as_str()) && !q.engagement.sans_paie()) {
+        let numero = e.numero.as_deref().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?.to_string();
+        let mut m = e.debut.mois_civil();
+        while m < periode {
+            for q in paies_du_mois(m).iter().filter(|q| de_lui(q) && q.engagement.numero.as_deref() == Some(numero.as_str()) && !q.engagement.sans_paie()) {
                 out.push(PaieAer::du_mois(q)?);
             }
-            m = socle::mois::Mois::lire(&m)?.suivant().to_string();
+            m = m.suivant();
         }
         if !e.sans_paie() {
             out.push(PaieAer::du_mois(p)?);
@@ -557,8 +558,8 @@ pub fn periodes_attendues(periode: &str, cle: &str, paies_du_mois: &mut dyn FnMu
 /// reste VECTORIEL, net quelle que soit la taille de la case, la ou un PNG
 /// agrandi bave. Un fichier illisible n'est pas pose en silence : la fabrique
 /// refuse, et l'attestation ne sort pas sans qu'on sache pourquoi.
-fn image_fichier(page: usize, rect: [f64; 4], fichier: &str) -> ImagePosee {
-    ImagePosee { page, rect, marge: Some(cachet::MARGE), fichier: Some(fichier.to_string()), svg: None }
+fn image_fichier(page: usize, rect: [Mesure; 4], fichier: &str) -> ImagePosee {
+    ImagePosee { page, rect, marge: cachet::MARGE, fichier: Some(fichier.to_string()), svg: None }
 }
 
 /// Le cachet a poser dans `rect` de la page `page` : celui de la compagnie
@@ -570,12 +571,12 @@ fn image_fichier(page: usize, rect: [f64; 4], fichier: &str) -> ImagePosee {
 /// fiche, et il suit la fiche quand elle change. Un fichier pose l'emporte
 /// simplement parce qu'une compagnie qui prend la peine d'apporter son tampon
 /// veut le sien.
-fn image(page: usize, rect: [f64; 4], ent: &droit::fiche::ChampsEntreprise, fichier: Option<&str>) -> Option<ImagePosee> {
+fn image(page: usize, rect: [Mesure; 4], ent: &droit::fiche::ChampsEntreprise, fichier: Option<&str>) -> Option<ImagePosee> {
     if let Some(f) = fichier {
         if Path::new(f).exists() {
             return Some(image_fichier(page, rect, f));
         }
     }
     let dessin = cachet::svg(ent)?;
-    Some(ImagePosee { page, rect, marge: Some(cachet::MARGE), fichier: None, svg: Some(dessin) })
+    Some(ImagePosee { page, rect, marge: cachet::MARGE, fichier: None, svg: Some(dessin) })
 }

@@ -54,19 +54,47 @@ default-members = ["socle", "droit", "engagement", "documents", "declarations", 
 exclude = ["fenetre", "fabrique-pdf"]
 resolver = "2"
 
+# Aucun avertissement, aucun code mort : `forbid` ne se leve par aucun attribut du code. Chaque crate le reprend
+# (`[lints] workspace = true`) ; `fenetre/` et `fabrique-pdf/` portent les memes niveaux dans leur manifeste.
+# Les groupes `warnings` et `unused` sont a `deny` : le code que `serde` derive porte ses propres
+# `allow(unused_attributes, unused_extern_crates, non_upper_case_globals, non_camel_case_types)`, qu'un `forbid` de
+# groupe ferait signaler a chaque derive ; tout `allow` ecrit dans nos sources est refuse par
+# `aucun_attribut_ne_leve_un_lint` (`moteur/tests/fichiers/structure.rs`).
+[workspace.lints.rust]
+warnings = { level = "deny", priority = -1 }
+unused = { level = "deny", priority = -1 }
+dead_code = "forbid"
+deprecated = "forbid"
+unused_imports = "forbid"
+unused_variables = "forbid"
+unused_assignments = "forbid"
+unused_mut = "forbid"
+unused_must_use = "forbid"
+unused_macros = "forbid"
+unused_unsafe = "forbid"
+unused_parens = "forbid"
+unused_braces = "forbid"
+unused_labels = "forbid"
+unused_doc_comments = "forbid"
+unused_allocation = "forbid"
+path_statements = "forbid"
+unreachable_code = "forbid"
+unreachable_patterns = "forbid"
+
 [workspace.dependencies]
-# Arithmetique decimale : ROUND_HALF_UP = MidpointAwayFromZero. `serde` : un montant d'un fichier se lit en decimal par
-# sa representation la plus courte, comme `num::dec`.
-rust_decimal = { version = "1", default-features = false, features = ["std", "maths", "serde"] }
+# Arithmetique decimale : ROUND_HALF_UP = MidpointAwayFromZero. `serde` : un montant d'un fichier se lit en decimal,
+# exactement, dans le texte que le lecteur JSON garde (`serde-with-arbitrary-precision`).
+rust_decimal = { version = "1", default-features = false, features = ["std", "maths", "serde", "serde-with-arbitrary-precision"] }
 # Chaque forme lue est une structure derivee (`socle::forme::lire`), qui refuse une cle inconnue.
 serde = { version = "1", features = ["derive"] }
 # Le chemin de la cle fautive dans le refus d'une lecture (`socle::forme`).
 serde_path_to_error = "0.1"
+# Ce qu'un refus porte a part dans la forme de la couche qui refuse, gardee typee jusqu'a la porte (`socle::echec::APart`).
+erased-serde = "0.4"
 # L'ordre des fiches d'un fichier (`droit::fiche::Salaries`) : celui du fichier, comme `serde_json` le garde.
 indexmap = "2"
-# `float_roundtrip` : un flottant lu est exactement celui qui est ecrit, et `num::dec` passe par sa representation la
-# plus courte.
-serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+# `arbitrary_precision` : un nombre lu garde son texte, exact ; il ne passe jamais par un flottant (`socle::forme`).
+serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }
 sha2 = { version = "0.10", default-features = false }
 getrandom = "0.3"
 ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier"] }

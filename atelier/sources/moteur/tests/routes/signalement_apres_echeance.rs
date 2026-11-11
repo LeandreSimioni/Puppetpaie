@@ -9,7 +9,7 @@
 use serde_json::{json, Value};
 
 use crate::outils::rejeu::{rejouer_dossier, scenario};
-use crate::outils::{dossier_de_test, ecrire, reussi, route};
+use crate::outils::{dossier_de_test, ecrire, nombre, reussi, route};
 
 #[test]
 fn la_fin_signalee_apres_l_echeance_de_la_dsn_part_le_jour_de_son_delai() {
@@ -32,7 +32,8 @@ fn la_fin_signalee_apres_l_echeance_de_la_dsn_part_le_jour_de_son_delai() {
     // bareme exige a cet effectif (`seuils_effectif` du socle 2026).
     ecrire(&c, "config/effectifs.json", &json!({"annees": (2021..=2025).map(|a| (a.to_string(), json!({"A01": {"valeur": 60}}))).collect::<serde_json::Map<String, Value>>()}));
     let mut bareme = json!({"annee": 2026, "socle": 2026});
-    let surcouche = json!({
+    let surcouche: Value = serde_json::from_str(
+        r#"{
         "versement_mobilite": "aucun",
         "cotisations_dsn": {"049": {"taux": 0.35, "base": "brut_x115"}},
         "rubriques": {"autres_2": {"taux_pat": 0.35, "base": "brut_x115"}},
@@ -46,7 +47,9 @@ fn la_fin_signalee_apres_l_echeance_de_la_dsn_part_le_jour_de_son_delai() {
             "rubriques": {"autres_2": {"taux_pat": 0.5, "base": "brut_x115"}},
             "rubriques_ajoutees": {"autres_4": {"taux_pat": 1.0, "composants": [1.0]}}
         }}
-    });
+    }"#,
+    )
+    .unwrap();
     bareme.as_object_mut().unwrap().extend(surcouche.as_object().unwrap().clone());
     ecrire(&c, "config/baremes/2026.json", &bareme);
 
@@ -56,7 +59,7 @@ fn la_fin_signalee_apres_l_echeance_de_la_dsn_part_le_jour_de_son_delai() {
         "2026-01",
         None,
         &json!({"salarie": "CRAIG", "nature": "cddu_spectacle", "spectacle": "nuits-d-ete",
-            "lignes": [{"rubrique": "heure", "quantite": 16, "taux": 18.75, "lieu": null, "dates": ["2026-01-29", "2026-01-30"], "planning": []}],
+            "lignes": [{"rubrique": "heure", "quantite": 16, "taux": nombre("18.75"), "lieu": null, "dates": ["2026-01-29", "2026-01-30"], "planning": []}],
             "motif_rupture": "037", "preavis": {"type": "90", "debut": null, "fin": null}, "dernier_jour_paye": "2026-01-30", "notification_rupture": "2026-01-29"}),
         "2026-01-05",
     ));

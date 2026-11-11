@@ -107,3 +107,11 @@ Le règlement général art. 49 vaut pour toute l'année 2025, et la règle des 
 - **Inférence** : le montant d'assiette du CTP 772 (et du 937) au bloc 23 est la somme des bases 07 des permanents ; le
   tableau d'équivalence rattache le CTP à la base 07 sans écrire la somme, que le guide Urssaf écrit pour le CTP 100
   (« le montant d'assiette [...] 920 est égal à la somme des montants de base assujettie [...] 03 », fiche 1).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `unedic-reglement-general-convention-20241115.pdf` : `33039432673f2d38e67e97d6f762d82cb422560287105de363aac848331ebc40`
+- `unedic-reglement-general-convention-20241115.txt` : `8ac2470faa6d0b43aff4b729c21d6cd23b7af1bf0f2c4e6fffd8ed99c0773624`
+- `urssaf-equivalence-dida-20260611.csv` : `043c5e1752074dddfe3e19b89285aeeca516e2736902a09ea7255dde7479bf9d`

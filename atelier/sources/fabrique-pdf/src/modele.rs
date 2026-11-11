@@ -22,10 +22,11 @@ pub const CLES: [&str; 7] = [
 ];
 
 /// Un modèle lu : des textes bruts (marqueurs et `**gras**` encore en place).
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Modele {
-    pub titre: String,
-    pub soustitre: String,
+    /// `TITRE:` et `SOUSTITRE:` ; aucun quand le modèle ne les écrit pas.
+    pub titre: Option<String>,
+    pub soustitre: Option<String>,
     pub preambule: Vec<String>,
     /// (titre, paragraphes), dans l'ordre du fichier.
     pub articles: Vec<(String, Vec<String>)>,
@@ -96,7 +97,15 @@ fn paragraphes(tampon: &[&str]) -> Vec<String> {
 /// Découpe le texte d'un modèle en titre, préambule, articles et signatures (`lire_modele`).
 /// `nom` est ce qu'on nomme dans les refus (le chemin du fichier).
 pub fn lire_modele(texte: &str, nom: &str) -> Result<Modele, Refus> {
-    let mut m = Modele::default();
+    let mut m = Modele {
+        titre: None,
+        soustitre: None,
+        preambule: Vec::new(),
+        articles: Vec::new(),
+        signatures: Vec::new(),
+        annule: Vec::new(),
+        modification: Vec::new(),
+    };
     let mut cle: Option<&str> = None;
     let mut titre_art = String::new();
     let mut tampon: Vec<&str> = Vec::new();
@@ -123,8 +132,8 @@ pub fn lire_modele(texte: &str, nom: &str) -> Result<Modele, Refus> {
             tampon.clear();
             let reste = strip(&ligne[k.len()..]);
             match k {
-                "TITRE:" => m.titre = reste.to_string(),
-                "SOUSTITRE:" => m.soustitre = reste.to_string(),
+                "TITRE:" => m.titre = Some(reste.to_string()),
+                "SOUSTITRE:" => m.soustitre = Some(reste.to_string()),
                 "ARTICLE:" => titre_art = reste.to_string(),
                 _ => {}
             }
@@ -186,9 +195,9 @@ impl Modele {
 /// Lit le fichier `chemin` (UTF-8) et le découpe.
 pub fn lire_fichier(chemin: &str) -> Result<Modele, Refus> {
     let octets = std::fs::read(chemin)
-        .map_err(|e| Refus(format!("modèle illisible : {} : {}", chemin, e)))?;
+        .map_err(|e| Refus::illisible(format!("modèle illisible : {} : {}", chemin, e)))?;
     let texte = String::from_utf8(octets)
-        .map_err(|_| Refus(format!("modèle illisible : {} n'est pas de l'UTF-8", chemin)))?;
+        .map_err(|e| Refus::illisible(format!("modèle illisible : {} n'est pas de l'UTF-8 ({})", chemin, e.utf8_error())))?;
     lire_modele(&texte, chemin)
 }
 

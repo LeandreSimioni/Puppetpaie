@@ -200,6 +200,7 @@ routes! {
         AdministrateurDeposer = "administrateur-deposer",
         AdministrateurSuivre = "administrateur-suivre",
         PortableCompleter = "portable-completer",
+        Basculer = "basculer",
         Routes = "routes",
     }
     atelier {
@@ -465,8 +466,8 @@ fn cases_de_la_fin(charge: &[Champ]) -> &'static [Champ] {
 
 /// LES NATURES D'UNE CARTE ET LEURS CASES, tirees du type (`engagement::carte::CarteValide::natures`), pour une fiche dont
 /// la charge porte une carte ; aucune sinon.
-fn natures_de_la_carte(charge: &[Champ]) -> Vec<NatureDecrite> {
-    if porte_une_carte(charge) { CarteValide::natures() } else { Vec::new() }
+fn natures_de_la_carte(charge: &[Champ]) -> R<Vec<NatureDecrite>> {
+    if porte_une_carte(charge) { CarteValide::natures() } else { Ok(Vec::new()) }
 }
 
 /// Un refus : sa classe, et ce qu'il faut corriger.
@@ -545,14 +546,14 @@ impl Fiche {
     /// La fiche telle que le catalogue l'ecrit. Un exemple qui n'est pas une charge est un defaut du logiciel.
     pub fn ecrite(&self) -> R<FicheEcrite> {
         let exemple = socle::forme::lire_texte(self.exemple, "Défaut du logiciel : l'exemple d'une route n'est pas une charge.")
-            .map_err(|m| socle::echec::erreur(Classe::DefautDuLogiciel, m))?;
+            .map_err(|m| m.reclasser(Classe::DefautDuLogiciel))?;
         Ok(FicheEcrite {
             nom: self.nom(),
             geste: self.geste,
             charge: self.charge.iter().map(Champ::ecrit).collect(),
             cases: cases(self.charge).iter().map(Champ::ecrit).collect(),
             cases_de_la_fin: cases_de_la_fin(self.charge).iter().map(Champ::ecrit).collect(),
-            natures: natures_de_la_carte(self.charge),
+            natures: natures_de_la_carte(self.charge)?,
             exemple,
             rend: self.rend,
             refus: self.refus.iter().map(|r| RefusEcrit { classe: r.classe, corriger: r.corriger }).collect(),
@@ -572,7 +573,7 @@ impl Fiche {
         })
     }
 
-    pub fn en_texte(&self) -> String {
+    pub fn en_texte(&self) -> R<String> {
         let mut t = format!("{}{} : {}\n  Acte : {}\n  Charge :\n", self.nom(), if self.ecran.avance() { " (avancé)" } else { "" }, self.geste, self.acte.mot());
         for c in self.charge {
             t.push_str(&format!("    {}{} : {}\n", c.nom, if c.avance { " (avancé)" } else { "" }, c.sens));
@@ -589,7 +590,7 @@ impl Fiche {
                 t.push_str(&format!("    {} : {}\n", c.nom, c.sens));
             }
         }
-        for n in natures_de_la_carte(self.charge) {
+        for n in natures_de_la_carte(self.charge)? {
             t.push_str(&format!("  Cases d'une carte {} (cases de changements, carte neuve \"{}\") :\n", n.nature, n.nature));
             for c in &n.cases {
                 t.push_str(&format!("    {} ({}) : {}\n", c.cle, c.libelle, if c.exige == Exige::Obligatoire { "obligatoire" } else { "facultative, null si rien n'est dit" }));
@@ -609,7 +610,7 @@ impl Fiche {
         for r in self.refus {
             t.push_str(&format!("    {} : {}\n", r.classe, r.corriger));
         }
-        t
+        Ok(t)
     }
 }
 
@@ -704,7 +705,8 @@ pub fn catalogue() -> Vec<Fiche> {
 
 /// `moteur routes [NOM] [--avance] [--json]` : le catalogue en texte (le chemin simple ; toutes avec `--avance`), en JSON
 /// (toutes : chaque fiche porte `avance`), ou la fiche entiere d'une route.
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+    let args = socle::ligne::textes(args);
     // Une option que `routes` ne prend pas se refuse, comme a `moteur route` (code 2) : sa valeur se lirait comme un nom.
     if let Some(o) = args.iter().find(|a| a.starts_with("--") && !["--json", "--avance"].contains(&a.as_str())) {
         eprintln!("option inconnue : {} (moteur routes [NOM] [--avance] [--json] ; --racine et --date sont de moteur route)", o);
@@ -719,16 +721,13 @@ pub fn commande(args: &[String]) -> i32 {
             eprintln!("route inconnue : {} (moteur routes --avance les dit toutes)", nom);
             return 2;
         };
-        if json {
-            match f.ecrite() {
-                Ok(e) => dire!("{}", socle::ecriture::json_en_ligne(&e)),
-                Err(e) => {
-                    eprintln!("{}", e.phrase());
-                    return 1;
-                }
+        let ecrite = if json { f.ecrite().map(|e| format!("{}\n", socle::ecriture::json_en_ligne(&e))) } else { f.en_texte() };
+        match ecrite {
+            Ok(t) => dire_sans_ligne!("{}", t),
+            Err(e) => {
+                eprintln!("{}", e.phrase);
+                return 1;
             }
-        } else {
-            dire_sans_ligne!("{}", f.en_texte());
         }
         return 0;
     }
@@ -739,7 +738,7 @@ pub fn commande(args: &[String]) -> i32 {
                 0
             }
             Err(e) => {
-                eprintln!("{}", e.phrase());
+                eprintln!("{}", e.phrase);
                 1
             }
         };

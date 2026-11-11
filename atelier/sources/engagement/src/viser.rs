@@ -9,6 +9,7 @@ use crate::{Chiffre, LignePaie};
 use crate::calcul::Paie;
 use crate::saisie::{Carte, VueDuMois};
 use droit::contexte::Contexte;
+use socle::echec::Echec;
 use socle::num::Decimal;
 
 /// Ce qui se vise : le brut, le cout employeur, le net a payer ; la charge du montant vise le dit `brut`, `cout`, `net`.
@@ -23,8 +24,8 @@ pub enum Cible {
 /// Pourquoi la recherche n'aboutit pas : un refus de la recherche elle-meme, ou le calcul de la saisie qui refuse.
 #[derive(Debug, Clone)]
 pub enum RefusVisee {
-    Refus(String),
-    Calcul(String),
+    Refus(Echec),
+    Calcul(Echec),
 }
 
 /// Le meilleur essai : la saisie aux taux trouves, ses paies, le montant atteint, celui du depart, le facteur applique
@@ -40,8 +41,9 @@ pub struct Visee {
 
 type R<T> = Result<T, RefusVisee>;
 
+#[track_caller]
 fn refus(m: impl Into<String>) -> RefusVisee {
-    RefusVisee::Refus(m.into())
+    RefusVisee::Refus(socle::echec::refus(m))
 }
 
 const TOURS: usize = 12;
@@ -53,14 +55,9 @@ fn centimes(x: Decimal) -> Decimal {
     r
 }
 
-/// Un taux ou un total en nombre.
-fn flottant(x: Decimal) -> Option<Chiffre> {
-    NombreLu::de_f64(socle::num::flottant(x)).map(Chiffre::Nombre)
-}
-
 /// La rubrique de la ligne ; une rubrique que le catalogue ne connait pas se refuse.
 fn rubrique_de(ctx: &Contexte, ligne: &LignePaie) -> R<droit::catalogue::Rubrique> {
-    droit::catalogue::rubrique(&ctx.racine, ligne.rubrique(), &ctx.lue_au).map_err(refus)
+    droit::catalogue::rubrique(&ctx.racine, ligne.rubrique(), &ctx.lue_au).map_err(RefusVisee::Refus)
 }
 
 /// Une ligne dont le taux est une case : en unites (un salaire, une absence, une indemnite), ou de frais.
@@ -75,7 +72,7 @@ fn absent_ou_zero(v: Option<Decimal>) -> bool {
 
 /// Un SALAIRE se hausse ; un defraiement, une prime, un acompte, non.
 fn ligne_ajustable(ctx: &Contexte, ligne: &LignePaie) -> R<bool> {
-    Ok(taux_saisi(ligne) && rubrique_de(ctx, ligne)?.nature == "salaire" && !absent_ou_zero(ligne.taux()))
+    Ok(taux_saisi(ligne) && rubrique_de(ctx, ligne)?.nature == droit::catalogue::NatureDeRubrique::Salaire && !absent_ou_zero(ligne.taux()))
 }
 
 /// Une ligne dont le taux est une case vide.
@@ -106,7 +103,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
                 continue;
             }
             let r = rubrique_de(ctx, ligne)?;
-            if r.nature == "salaire" && absent_ou_zero(ligne.taux()) && !absent_ou_zero(ligne.quantite()) {
+            if r.nature == droit::catalogue::NatureDeRubrique::Salaire && absent_ou_zero(ligne.taux()) && !absent_ou_zero(ligne.quantite()) {
                 sans_taux.push((k, r.libelle));
             }
         }
@@ -125,7 +122,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
             )));
         }
         if let Some(l) = sans_taux.first().and_then(|(k, _)| e.lignes.as_mut().and_then(|ls| ls.get_mut(*k))) {
-            l.poser_taux(Decimal::ONE).map_err(refus)?;
+            l.poser_taux(Decimal::ONE).map_err(RefusVisee::Refus)?;
         }
     }
     // Les AUTRES blocs du mois repartent comme la page les enverrait d'ordinaire : sans leurs lignes incompletes.
@@ -133,7 +130,7 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
         let Some(ls) = e.lignes.as_mut() else { continue };
         if rangs.contains(&i) {
             for l in ls.iter_mut().filter(|l| taux_vide(l)) {
-                l.poser_taux(Decimal::ZERO).map_err(refus)?;
+                l.poser_taux(Decimal::ZERO).map_err(RefusVisee::Refus)?;
             }
         } else {
             ls.retain(|l| !taux_vide(l));
@@ -142,21 +139,18 @@ fn poser_taux_provisoires(ctx: &Contexte, data: &mut VueDuMois, rangs: &[usize])
     Ok(())
 }
 
-/// Un montant multiplie par `facteur`, au centime, en flottant.
-fn mis_a_l_echelle(x: &Chiffre, facteur: Decimal) -> R<Option<Chiffre>> {
-    let a = x.dec().map_err(refus)?;
+/// Un montant multiplie par `facteur`, au centime, en nombre a virgule (`NombreLu::de_decimal`).
+fn mis_a_l_echelle(x: &Chiffre, facteur: Decimal) -> R<NombreLu> {
+    let a = x.dec().map_err(RefusVisee::Refus)?;
     let p = a.checked_mul(facteur).ok_or_else(|| refus("Montant trop grand pour l'ajustement."))?;
-    Ok(flottant(centimes(p)))
+    Ok(NombreLu::de_decimal(centimes(p)))
 }
 
 /// L'engagement recopie, ses salaires multiplies -- et rien d'autre. Rend aussi s'il y avait quelque chose a multiplier.
 fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Decimal) -> R<bool> {
     let mut touche = false;
     if let Some(s) = &e.salaire_mensuel {
-        e.salaire_mensuel = match mis_a_l_echelle(&Chiffre::Nombre(s.clone()), facteur)? {
-            Some(Chiffre::Nombre(n)) => Some(n),
-            _ => return Err(refus("Montant trop grand pour l'ajustement.")),
-        };
+        e.salaire_mensuel = Some(mis_a_l_echelle(&Chiffre::Nombre(s.clone()), facteur)?);
         touche = true;
     }
     for l in e.lignes.iter_mut().flatten() {
@@ -164,9 +158,9 @@ fn a_l_echelle(ctx: &Contexte, e: &mut Carte, facteur: Decimal) -> R<bool> {
             continue;
         }
         if let Some(t) = l.taux() {
-            // Le taux au centime, sous sa forme flottante la plus courte (`mis_a_l_echelle`).
+            // Le taux au centime, dans sa forme la plus courte (`mis_a_l_echelle`).
             let p = t.checked_mul(facteur).ok_or_else(|| refus("Montant trop grand pour l'ajustement."))?;
-            l.poser_taux(socle::num::dec_f64(socle::num::flottant(centimes(p))).map_err(refus)?).map_err(refus)?;
+            l.poser_taux(socle::num::court(centimes(p))).map_err(RefusVisee::Refus)?;
         }
         touche = true;
     }

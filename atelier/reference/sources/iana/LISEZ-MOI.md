@@ -17,3 +17,9 @@ Chaque `<record>` donne un nom (`<name>`), un nom préféré pour MIME (`<prefer
 Nulle part directement : le registre sert à dire d'où viennent les noms d'encodage que `retours.rs` connaît
 (`tables_retours.rs`, `CODECS_*`), qui sont ceux de Python. Le recoupement (223 noms sur 422 sont au registre) est dans
 `python/LISEZ-MOI.md`.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `iana-character-sets-20261015.xml` : `a64184cd76a209d9873d54720165da09c3f910ec5ec68025377a95b5ff85662b`

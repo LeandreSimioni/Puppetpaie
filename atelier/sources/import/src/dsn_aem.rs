@@ -15,18 +15,22 @@ use declarations::champs::Saisie;
 use declarations::dsn_lue::{Adhesion, ContratDeclare, DsnLue, EmploiDeclare, EntrepriseDeclaree, IndividuDeclare, PaieDuContrat};
 use socle::date::Jour;
 use socle::echec::Echec;
+use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
+use socle::piece::format::Aaaammjj;
+use socle::piece::Zone;
 use socle::texte::{blanc, lignes_du_texte, texte_latin1};
 
 // ------------------------------------------------------------------ toutes les DSN d'un dossier
 
 /// Ce qu'une DSN dit d'un salarie.
 pub struct SalarieDeclare {
-    pub nir: String,
+    /// Aucun pour un individu que la DSN declare sans NIR.
+    pub nir: Option<String>,
     pub individu: IndividuDeclare,
     /// L'emploi de son dernier contrat de la DSN ; rien quand la DSN ne lui declare aucun contrat.
     pub emploi: Option<EmploiDeclare>,
-    pub mois: String,
+    pub mois: Mois,
     pub initiales: String,
     pub premier_contrat: Option<Jour>,
 }
@@ -41,20 +45,20 @@ impl SalarieDeclare {
             #[serde(flatten)]
             emploi: &'a Option<EmploiDeclare>,
         }
-        crate::proposee::de("salarie", &Fiche { individu: &self.individu, emploi: &self.emploi })
+        crate::proposee::de(droit::fiche::NomDeFiche::Salarie, &Fiche { individu: &self.individu, emploi: &self.emploi })
     }
 }
 
 /// La fiche Entreprise que la DSN remplit (`champs-base.json`), telle que les fiches la lisent.
 pub fn fiche_entreprise(e: &EntrepriseDeclaree) -> socle::echec::R<Saisie> {
-    crate::proposee::de("entreprise", e)
+    crate::proposee::de(droit::fiche::NomDeFiche::Entreprise, e)
 }
 
 /// Un numero d'objet spectacle, vu dans une DSN ou dans une AEM.
 pub struct ObjetDeclare {
     pub numero: String,
-    pub premier_mois: String,
-    pub dernier_mois: String,
+    pub premier_mois: Mois,
+    pub dernier_mois: Mois,
     pub contrats: i64,
     pub source: &'static str,
 }
@@ -71,24 +75,24 @@ pub struct PaieDeclaree {
 }
 
 /// Les listes gardent l'ordre ou les cles sont apparues.
-#[derive(Default)]
 pub struct LectureDsn {
     pub fichiers: usize,
     pub salaries: Vec<SalarieDeclare>,
     pub objets: Vec<ObjetDeclare>,
     pub entreprise: EntrepriseDeclaree,
-    pub licences: Vec<(String, String)>,
-    pub premier_mois: String,
-    pub dernier_mois: String,
+    pub licences: Vec<(Mois, String)>,
+    /// Le premier et le dernier mois declares ; aucun sans DSN.
+    pub premier_mois: Option<Mois>,
+    pub dernier_mois: Option<Mois>,
     pub illisibles: Vec<String>,
     /// Les etablissements declares (S21.G00.11.001), et le NIC du siege (S21.G00.06.002), d'une DSN a l'autre.
     pub etablissements: BTreeSet<String>,
     pub nics_siege: BTreeSet<String>,
-    /// Par (mois, NIR, numero du contrat).
-    pub paies: BTreeMap<(String, String, String), PaieDeclaree>,
+    /// Par (mois, NIR s'il est declare, numero du contrat).
+    pub paies: BTreeMap<(Mois, Option<String>, String), PaieDeclaree>,
     /// Le code risque et le taux AT/MP que les contrats declarent (S21.G00.40.040, .043), par annee : ceux de la derniere DSN
     /// de l'annee (son mois, le code, le taux ; aucun taux pour 999ZZ), quand tous ses contrats disent le meme.
-    pub atmp: BTreeMap<i32, (String, String, Option<Decimal>)>,
+    pub atmp: BTreeMap<i32, (Mois, String, Option<Decimal>)>,
     /// Les adhesions prevoyance de la derniere DSN qui en declare.
     pub adhesions: Vec<Adhesion>,
     /// Les conventions collectives que chaque DSN declare, dans l'ordre des mois (`conventions_divergentes`).
@@ -100,7 +104,7 @@ pub struct LectureDsn {
 /// rubriques sont obligatoires en mensuelle (`norme-dsn/texte/tableaux-des-usages.txt`).
 #[derive(Clone, Debug)]
 pub(crate) struct ConventionsDuMois {
-    pub(crate) mois: String,
+    pub(crate) mois: Mois,
     pub(crate) etablissement: Option<String>,
     pub(crate) contrats: BTreeSet<String>,
 }
@@ -108,7 +112,22 @@ pub(crate) struct ConventionsDuMois {
 impl LectureDsn {
     /// Aucune DSN lue : le dossier n'en a pas.
     pub fn aucune() -> LectureDsn {
-        LectureDsn::default()
+        LectureDsn {
+            fichiers: 0,
+            salaries: Vec::new(),
+            objets: Vec::new(),
+            entreprise: EntrepriseDeclaree::default(),
+            licences: Vec::new(),
+            premier_mois: None,
+            dernier_mois: None,
+            illisibles: Vec::new(),
+            etablissements: BTreeSet::new(),
+            nics_siege: BTreeSet::new(),
+            paies: BTreeMap::new(),
+            atmp: BTreeMap::new(),
+            adhesions: Vec::new(),
+            conventions: Vec::new(),
+        }
     }
 
     /// LES CONVENTIONS QUI DIVERGENT, dites : des contrats d'une meme DSN qui declarent d'autres conventions que
@@ -126,24 +145,24 @@ impl LectureDsn {
             let etablissement: String = c.etablissement.iter().map(|e| format!("l'établissement relève de la convention {} (S21.G00.11.022), ", e)).collect();
             out.push(format!(
                 "la DSN de {} déclare plusieurs conventions collectives : {}des contrats de la convention {} (S21.G00.40.017) ; la fiche Entreprise n'en porte qu'une, à vérifier",
-                socle::mois::Mois::en_clair(&c.mois),
+                c.mois.libelle(Graphie::Accentuee),
                 etablissement,
                 autres.join(", ")
             ));
         }
-        let mut avant: Option<(&str, &str)> = None;
+        let mut avant: Option<(&str, Mois)> = None;
         for c in &self.conventions {
             let Some(i) = c.etablissement.as_deref() else { continue };
             if let Some((a, m)) = avant.filter(|(a, _)| *a != i) {
                 out.push(format!(
                     "la convention collective déclarée change d'une DSN à l'autre : {} dans la DSN de {}, {} dans celle de {} ; la fiche Entreprise prend la plus récente, à vérifier",
                     a,
-                    socle::mois::Mois::en_clair(m),
+                    m.libelle(Graphie::Accentuee),
                     i,
-                    socle::mois::Mois::en_clair(&c.mois)
+                    c.mois.libelle(Graphie::Accentuee)
                 ));
             }
-            avant = Some((i, &c.mois));
+            avant = Some((i, c.mois));
         }
         out
     }
@@ -151,7 +170,7 @@ impl LectureDsn {
 
 /// Les noms du dossier, tries. Un dossier ou une entree qui ne se lisent pas se refusent.
 fn noms_tries(dossier: &Path) -> Result<Vec<String>, Echec> {
-    let disque = |e: std::io::Error| socle::echec::erreur(socle::echec::Classe::Disque, socle::echec::du_disque(dossier, &e));
+    let disque = |e: std::io::Error| socle::echec::du_disque(dossier, &e).reclasser(socle::echec::Classe::Disque);
     let mut v: Vec<String> = Vec::new();
     for e in std::fs::read_dir(dossier).map_err(disque)? {
         v.push(e.map_err(disque)?.file_name().to_string_lossy().into_owned());
@@ -171,8 +190,8 @@ fn nom_de(f: &Path) -> String {
 /// Toutes les DSN d'un dossier, la plus recente faisant foi par salarie. Une DSN fautive refuse
 /// (`declarations::dsn_lue::lire`).
 pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
-    let mut out = LectureDsn::default();
-    let mut lues: Vec<(socle::mois::Mois, DsnLue)> = Vec::new();
+    let mut out = LectureDsn::aucune();
+    let mut lues: Vec<(Mois, DsnLue)> = Vec::new();
     for f in declarations::dsn_lue::fichiers(dossier)? {
         // Une DSN sans mois principal (S20.G00.05.005) ne dit pas quel mois elle declare : elle est ignoree, en le disant.
         match declarations::dsn_lue::lire_une_dsn(&f)?.and_then(|i| Some((i.mois?, i))) {
@@ -183,25 +202,21 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
     // Par mois declare, puis par date de depot : un annule-et-remplace depose apres l'original fait foi.
     lues.sort_by(|(ma, a), (mb, b)| (ma, a.depot, &a.fichier).cmp(&(mb, b.depot, &b.fichier)));
     out.fichiers = lues.len();
-    if let (Some(p), Some(d)) = (lues.first(), lues.last()) {
-        out.premier_mois = p.0.to_string();
-        out.dernier_mois = d.0.to_string();
-    }
-    let mut index_salaries: HashMap<String, usize> = HashMap::new();
+    (out.premier_mois, out.dernier_mois) = (lues.first().map(|p| p.0), lues.last().map(|d| d.0));
+    let mut index_salaries: HashMap<Option<String>, usize> = HashMap::new();
     let mut index_objets: HashMap<String, usize> = HashMap::new();
-    for (le_mois, info) in &lues {
-        let mois = le_mois.to_string();
+    for &(mois, ref info) in &lues {
         out.etablissements.extend(info.etablissements.iter().cloned());
         out.nics_siege.extend(info.nic_siege.clone());
         out.entreprise.suivre(&info.entreprise);
         out.conventions.push(ConventionsDuMois {
-            mois: mois.clone(),
+            mois,
             etablissement: info.entreprise.idcc.clone(),
             contrats: info.contrats.iter().filter_map(|c| c.idcc.clone()).collect(),
         });
         if let Some(l) = &info.entreprise.licence {
             if out.licences.last().is_none_or(|x| x.1 != *l) {
-                out.licences.push((mois.clone(), l.clone()));
+                out.licences.push((mois, l.clone()));
             }
         }
         // Le code risque de la DSN : un seul pour tous ses contrats, sinon rien (on ne choisit pas).
@@ -209,38 +224,38 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             info.contrats.iter().filter_map(|c| c.code_risque.clone().map(|r| (r, c.taux_at))).collect();
         if risques.len() == 1 {
             if let Some((code, taux)) = risques.into_iter().next() {
-                out.atmp.insert(le_mois.annee(), (mois.clone(), code, taux));
+                out.atmp.insert(mois.annee(), (mois, code, taux));
             }
         }
         if !info.adhesions.is_empty() {
             out.adhesions = info.adhesions.clone();
         }
-        let mut dernier_contrat: HashMap<&str, &ContratDeclare> = HashMap::new();
+        let mut dernier_contrat: HashMap<Option<&str>, &ContratDeclare> = HashMap::new();
         for c in &info.contrats {
-            dernier_contrat.insert(c.nir.as_str(), c);
+            dernier_contrat.insert(c.nir.as_deref(), c);
             if let Some(objet) = &c.objet {
                 let i = *index_objets.entry(objet.clone()).or_insert_with(|| {
                     out.objets.push(ObjetDeclare {
                         numero: objet.clone(),
-                        premier_mois: mois.clone(),
-                        dernier_mois: mois.clone(),
+                        premier_mois: mois,
+                        dernier_mois: mois,
                         contrats: 0,
                         source: "DSN",
                     });
                     out.objets.len() - 1
                 });
-                out.objets[i].dernier_mois = mois.clone();
+                out.objets[i].dernier_mois = mois;
                 out.objets[i].contrats += 1;
             }
         }
         for paie in info.paies() {
-            let contrat = info.contrats_de(&paie.nir).filter(|x| x.numero.as_deref() == Some(paie.numero.as_str())).last().cloned();
-            let cle = (mois.clone(), paie.nir.clone(), paie.numero.clone());
+            let contrat = info.contrats_de(paie.nir.as_deref()).filter(|x| x.numero.as_deref() == Some(paie.numero.as_str())).last().cloned();
+            let cle = (mois, paie.nir.clone(), paie.numero.clone());
             out.paies.insert(cle, PaieDeclaree { paie, contrat, depot: info.depot, fichier: info.fichier.clone() });
         }
         for ind in &info.individus {
             let nir = ind.nir.clone();
-            let c = dernier_contrat.get(nir.as_str()).copied();
+            let c = dernier_contrat.get(&nir.as_deref()).copied();
             // Les initiales du numero de son dernier contrat (avant le premier point) ; aucune sans numero.
             let initiales: String =
                 c.and_then(|c| c.numero.as_deref()).and_then(|n| n.split('.').next()).into_iter().flat_map(str::chars).filter(|ch| ch.is_alphabetic()).take(2).collect();
@@ -250,7 +265,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
                 nir: nir.clone(),
                 individu: ind.clone(),
                 emploi: c.map(|c| c.emploi.du_salarie()).transpose()?,
-                mois: mois.clone(),
+                mois,
                 initiales,
                 premier_contrat: premier,
             };
@@ -274,16 +289,6 @@ fn tranche(ligne: &[char], a: usize, b: usize) -> String {
     ligne.iter().skip(a).take(b.saturating_sub(a)).collect()
 }
 
-/// `19900723` -> `1990-07-23` (les dates de l'AEM), le reste tel quel.
-fn aaaammjj(v: &str) -> String {
-    let c: Vec<char> = v.chars().collect();
-    // Des chiffres : les chiffres ASCII et les exposants de Latin-1 (qu'une AEM lue en latin-1 peut porter).
-    if c.len() == 8 && c.iter().all(|x| x.is_ascii_digit() || matches!(x, '\u{b2}' | '\u{b3}' | '\u{b9}')) {
-        return format!("{}-{}-{}", c[0..4].iter().collect::<String>(), c[4..6].iter().collect::<String>(), c[6..8].iter().collect::<String>());
-    }
-    v.to_string()
-}
-
 fn champ(ligne: &[char], a: usize, b: usize) -> String {
     ligne[a..b].iter().collect()
 }
@@ -302,7 +307,7 @@ pub struct ContratAtteste {
     pub(crate) brut: socle::num::Decimal,
     /// Le numero de l'attestation (zone 36..42), et sa date de signature (858..866, AAAA-MM-JJ si c'en est une).
     pub(crate) numero_attestation: String,
-    pub(crate) date_attestation: String,
+    pub(crate) date_attestation: Option<socle::date::Jour>,
     pub fichier: String,
 }
 
@@ -310,14 +315,16 @@ pub struct ContratAtteste {
 pub fn ligne_du_contrat(c: &ContratAtteste, salarie: &str) -> engagement::importe::ContratLu {
     use engagement::importe::{Attestation, ContratAtteste as Atteste, ContratLu};
     let plein = |s: &str| Some(s.to_string()).filter(|s| !s.trim().is_empty());
-    let mut a = Atteste::vide(Attestation::Aem);
+    // L'AEM est l'attestation des annexes 8 et 10, celle d'un contrat d'usage du spectacle (Unédic, circulaire 2016-25,
+    // `atelier/reference/sources/unedic-circulaire-2016-25-annexes-8-10.txt`).
+    let mut a = Atteste::vide(Attestation::Aem, Some(droit::natures::NatureDeContrat::CdduSpectacle));
     a.numero_objet = plein(&c.numero_objet);
     (a.heures, a.cachets, a.jours) = (Some(c.heures as i64), Some(c.cachets as i64), Some(c.jours as i64));
     a.brut = Some(c.brut);
     a.numero_attestation = plein(&c.numero_attestation);
-    a.atteste_le = plein(&c.date_attestation);
+    a.atteste_le = c.date_attestation;
     a.fichier = plein(&c.fichier);
-    ContratLu { salarie: salarie.to_string(), debut: Some(c.debut.iso()), fin: Some(c.fin.iso()), numero: None, contrat: a }
+    ContratLu { salarie: salarie.to_string(), debut: Some(c.debut), fin: Some(c.fin), numero: None, contrat: a }
 }
 
 /// Tous les contrats attestes d'un dossier AEM_EDI, dedoublonnes, et les
@@ -347,10 +354,20 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
             let illisible = |illisibles: &mut Vec<String>| illisibles.push(format!("{} : un enregistrement illisible", nom));
             let nir: String = champ(&l, 375, 390).chars().take(13).collect();
             let (Some(debut), Some(fin)) =
-                (socle::date::lire_aaaammjj(&champ(&l, 618, 626)), socle::date::lire_aaaammjj(&champ(&l, 627, 635)))
+                (Zone::lue(&champ(&l, 618, 626), Aaaammjj).valeur(), Zone::lue(&champ(&l, 627, 635), Aaaammjj).valeur())
             else {
                 illisible(&mut illisibles);
                 continue;
+            };
+            // La signature de l'attestation (`AAAAMMJJ`), quand l'AEM en porte une.
+            let signee = tranche(&l, 858, 866);
+            let date_attestation = match Zone::lue(&signee, Aaaammjj).valeur() {
+                Some(j) => Some(j),
+                None if signee.trim().is_empty() => None,
+                None => {
+                    illisible(&mut illisibles);
+                    continue;
+                }
             };
             let numero_objet = champ(&l, 638, 650).trim_matches(blanc).to_string();
             let entiers = [(650, 653), (653, 655), (655, 657), (657, 659)].map(|(a, b)| entier_lu(&champ(&l, a, b)));
@@ -360,7 +377,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
             };
             let brut_texte = champ(&l, 659, 668);
             let Some(brut_cts) = decimal_lu(&brut_texte) else {
-                return Err(socle::echec::Echec { classe: Some(socle::echec::Classe::CalculImpossible), message: socle::num::illisible(&brut_texte) });
+                return Err(socle::echec::Echec { classe: Some(socle::echec::Classe::CalculImpossible), phrase: socle::num::illisible(&brut_texte), a_part: None });
             };
             let mut brut = brut_cts / socle::num::Decimal::from(100);
             brut = brut.round_dp(2);
@@ -386,7 +403,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
                     jours,
                     brut,
                     numero_attestation: tranche(&l, 36, 42).trim_matches(blanc).to_string(),
-                    date_attestation: aaaammjj(&tranche(&l, 858, 866)),
+                    date_attestation,
                     fichier: nom.clone(),
                 }));
             }
@@ -407,7 +424,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
 pub(crate) const AEM_SIRET: (usize, usize) = (50, 64);
 
 /// Ce qu'une piece (DSN, AEM) dit de son employeur.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Employeur {
     /// Les Siren qu'elle porte (un, d'ordinaire ; une AEM en porte un par enregistrement).
     pub sirens: std::collections::BTreeSet<String>,
@@ -425,8 +442,8 @@ pub fn employeur_dsn(chemin: &Path) -> Result<Employeur, Echec> {
 /// Une AEM : le Siret de chaque enregistrement (`AEM_SIRET`), ramene a son Siren. Un fichier que le tri a lu et qui ne
 /// se lit plus se refuse.
 pub fn employeur_aem(chemin: &Path) -> Result<Employeur, Echec> {
-    let mut e = Employeur::default();
-    let octets = std::fs::read(chemin).map_err(|x| socle::echec::erreur(socle::echec::Classe::Disque, socle::echec::du_disque(chemin, &x)))?;
+    let mut e = Employeur { sirens: std::collections::BTreeSet::new(), illisibles: 0 };
+    let octets = std::fs::read(chemin).map_err(|x| socle::echec::du_disque(chemin, &x).reclasser(socle::echec::Classe::Disque))?;
     for ligne in lignes_du_texte(&texte_latin1(&octets)) {
         let l: Vec<char> = ligne.chars().collect();
         // Les enregistrements que `lire_aem` lit.
@@ -469,18 +486,26 @@ pub(crate) const AEM_AUTRE: &str = "AEM d'une autre entreprise : son Siret n'est
 pub(crate) const AEM_SANS_SIRET: &str =
     "son Siret ne se lit pas (caractères 51 à 64 de l'enregistrement) : l'entreprise n'est pas contrôlée";
 
-/// Le sort d'une DSN (`aem` faux) ou d'une AEM devant la reference : `Err(raison)` -- elle n'est pas reprise et RIEN
-/// n'en est lu --, `Ok(Some(avertissement))` -- elle passe, mais son entreprise ne se controle pas --, ou `Ok(None)`.
-pub fn verdict_entreprise(aem: bool, e: &Employeur, reference: Option<&str>) -> Result<Option<String>, String> {
+/// Le sort d'une DSN ou d'une AEM devant la reference (`verdict_entreprise`) : ecartee, avec sa raison -- elle n'est pas
+/// reprise et RIEN n'en est lu --, reprise avec un avertissement -- son entreprise ne se controle pas --, ou reprise.
+pub enum Verdict {
+    Ecartee(&'static str),
+    Avertie(&'static str),
+    Reprise,
+}
+
+/// Le sort d'une DSN (`aem` faux) ou d'une AEM devant la reference.
+pub fn verdict_entreprise(aem: bool, e: &Employeur, reference: Option<&str>) -> Verdict {
+    let lisible = if e.illisibles > 0 { Verdict::Avertie(AEM_SANS_SIRET) } else { Verdict::Reprise };
     if e.sirens.is_empty() {
         // Une AEM sans enregistrement lisible ne rend rien a `lire_aem` : rien a controler.
-        return if aem { Ok((e.illisibles > 0).then(|| AEM_SANS_SIRET.to_string())) } else { Err(DSN_SANS_SIREN.to_string()) };
+        return if aem { lisible } else { Verdict::Ecartee(DSN_SANS_SIREN) };
     }
-    let Some(r) = reference else { return Err(PLUSIEURS_ENTREPRISES.to_string()) };
+    let Some(r) = reference else { return Verdict::Ecartee(PLUSIEURS_ENTREPRISES) };
     if e.sirens.iter().any(|s| s != r) {
-        return Err((if aem { AEM_AUTRE } else { DSN_AUTRE }).to_string());
+        return Verdict::Ecartee(if aem { AEM_AUTRE } else { DSN_AUTRE });
     }
-    Ok((e.illisibles > 0).then(|| AEM_SANS_SIRET.to_string()))
+    lisible
 }
 
 
@@ -507,9 +532,9 @@ mod tests_parametrage {
         std::fs::write(&f, lignes.join("\n")).unwrap();
         let lu = super::lire_dsn(&d).unwrap();
         std::fs::remove_dir_all(&d).ok();
-        let c = lu.entreprise.declarant_dsn.clone().unwrap_or_default();
+        let c = lu.entreprise.declarant_dsn.clone().unwrap();
         assert_eq!((c.nom_prenom.as_str(), c.tel.as_deref(), c.civilite.as_deref()), ("FONTAINE CLAIRE", Some("0478000000"), Some("02")));
-        assert_eq!(lu.atmp.get(&2025), Some(&("2025-12".to_string(), "923AD".to_string(), socle::num::decimal_lu("1.65"))));
+        assert_eq!(lu.atmp.get(&2025), Some(&(socle::mois::Mois::nouveau(2025, 12).unwrap(), "923AD".to_string(), socle::num::decimal_lu("1.65"))));
         assert_eq!(lu.adhesions[0].libelle, "PREV SPECT VIVANT PRIV");
         assert_eq!(lu.adhesions[0].organisme.as_deref(), Some("P0983"));
     }

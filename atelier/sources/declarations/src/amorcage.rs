@@ -16,29 +16,28 @@ use crate::dsn::{
 };
 use crate::fctu::Echec;
 use socle::fichiers::repr;
-use socle::num::Resultat;
+use socle::echec::R;
+use droit::type_declaration::TypeDeLaDeclaration;
 
-pub const NATURE: &str = "08";
+pub const NATURE: droit::nature_declaration::NatureDeLaDeclaration = droit::nature_declaration::NatureDeLaDeclaration::SignalementAmorcage;
 pub const EMBAUCHE: &str = "01";
 pub const CHANGEMENT_DE_LOGICIEL: &str = "07";
 
-pub const NORMALE: &str = "01";
-pub const ANNULE: &str = "04";
 /// Les types qu'un amorcage admet. Pas de « 03 - annule et remplace integral » : « CCH-15 : Le type de declaration "03 -
 /// declaration annule et remplace integral" est interdit pour une nature de declaration (S20.G00.05.001) "08 -
 /// Signalement amorcage des donnees variables". » (cahier technique 2026.1, p. 135,
 /// `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt`). Un amorcage se corrige en l'annulant, puis en en deposant
 /// un nouveau (§ 1.4.3.4, p. 15).
-const TYPES: [(&str, &str); 2] = [(NORMALE, "normale"), (ANNULE, "annule")];
+const ADMIS: [TypeDeLaDeclaration; 2] = [TypeDeLaDeclaration::Normale, TypeDeLaDeclaration::Annule];
 
 /// `amorcage-base.json`.
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Base {
-    #[allow(dead_code)]
-    quoi: String,
-    #[allow(dead_code)]
-    note: String,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    quoi: socle::forme::NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    note: socle::forme::NonLue,
     motifs: Motifs,
 }
 
@@ -46,30 +45,31 @@ struct Base {
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Motifs {
-    #[allow(dead_code)]
-    note: String,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    note: socle::forme::NonLue,
     codes: Vec<Motif>,
 }
 
-/// Une nature d'evenement declencheur : son code, son libelle, et si le moteur l'emet (`saisissable`).
+/// Une nature d'evenement declencheur : son code, son libelle, et si le moteur l'emet (`saisissable`). `dgfip` et
+/// `organismes_complementaires` disent a qui la norme destine l'amorcage : le moteur ne les lit pas.
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Motif {
     code: String,
     libelle: String,
     saisissable: bool,
-    #[allow(dead_code)]
-    dgfip: bool,
-    #[allow(dead_code)]
-    organismes_complementaires: bool,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    dgfip: socle::forme::NonLue,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    organismes_complementaires: socle::forme::NonLue,
 }
 
-fn motifs_de_la_norme() -> Resultat<std::sync::Arc<Base>> {
+fn motifs_de_la_norme() -> R<std::sync::Arc<Base>> {
     crate::norme::livree("amorcage-base.json")
 }
 
 /// Le libelle du motif, « ? » s'il est inconnu.
-pub fn libelle_motif(motif: &str) -> Resultat<String> {
+pub fn libelle_motif(motif: &str) -> R<String> {
     Ok(match motifs_de_la_norme()?.motifs.codes.iter().find(|c| c.code == motif) {
         Some(c) => c.libelle.clone(),
         None => "?".to_string(),
@@ -79,7 +79,7 @@ pub fn libelle_motif(motif: &str) -> Resultat<String> {
 /// Les parametres de `generer`, avec leurs defauts.
 pub struct Options {
     pub motif: String,
-    pub type_declaration: String,
+    pub type_declaration: TypeDeLaDeclaration,
     pub ordre: i64,
     pub remplace: Option<String>,
     pub envoi_test: bool,
@@ -87,8 +87,8 @@ pub struct Options {
 }
 
 /// `verifier` : refuse ce que la norme -- ou le bon sens de la demande -- refuse.
-pub fn verifier(paie: &Paie, motif: &str, type_declaration: &str, remplace: Option<&str>) -> Result<(), Echec> {
-    let impossible = |m: String| Err(Echec::Impossible(m));
+pub fn verifier(paie: &Paie, motif: &str, type_declaration: TypeDeLaDeclaration, remplace: Option<&str>) -> Result<(), Echec> {
+    let impossible = |m: String| Err(Echec::impossible(m));
     let base = motifs_de_la_norme()?;
     let tous = &base.motifs.codes;
     let m = match tous.iter().find(|c| c.code == motif) {
@@ -115,7 +115,7 @@ organismes complementaires, pas la demande d'un taux de PAS. Les deux portes d'u
             portes.join(" et ")
         ));
     }
-    if type_declaration == "03" {
+    if type_declaration == TypeDeLaDeclaration::AnnuleEtRemplace {
         return impossible(
             "Un signalement d'amorcage ne s'annule et ne se remplace pas d'un seul envoi : le type << 03 - annule et \
 remplace integral >> lui est interdit (CCH-15, cahier technique DSN p. 135). Pour le corriger, deposer un << 04 - \
@@ -123,18 +123,16 @@ annule >> qui vise le dernier envoi valide, puis un nouveau signalement << 01 - 
                 .into(),
         );
     }
-    let libelle_type = match TYPES.iter().find(|(c, _)| *c == type_declaration) {
-        Some((_, l)) => *l,
-        None => {
-            return impossible(format!(
-                "Type de declaration {}. Un signalement d'amorcage est {}.",
-                repr(type_declaration),
-                TYPES.iter().map(|(k, v)| format!("<< {} - {} >>", k, v)).collect::<Vec<_>>().join(", ")
-            ))
-        }
-    };
+    if !ADMIS.contains(&type_declaration) {
+        return impossible(format!(
+            "Type de declaration {}. Un signalement d'amorcage est {}.",
+            repr(type_declaration.code()),
+            ADMIS.iter().map(|t| format!("<< {} - {} >>", t.code(), t.libelle())).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    let libelle_type = type_declaration.libelle();
     let remplace = remplace.filter(|r| !r.is_empty());
-    if type_declaration == ANNULE && remplace.is_none() {
+    if type_declaration == TypeDeLaDeclaration::Annule && remplace.is_none() {
         return impossible(format!(
             "Un signalement << {} >> doit viser la declaration qu'il reprend (S20.G00.05.006) : l'identifiant du \
 dernier envoi VALIDE par le point de depot, lu sur son certificat de conformite. Sans lui, la plate-forme rend \
@@ -142,7 +140,7 @@ B1-208-08.",
             libelle_type
         ));
     }
-    if type_declaration == NORMALE && remplace.is_some() {
+    if type_declaration == TypeDeLaDeclaration::Normale && remplace.is_some() {
         return impossible(
             "S20.G00.05.006 est interdite sur un signalement normal (CCH-12) : elle ne s'ecrit que sur un \
 annule-et-remplace ou un annule."
@@ -164,9 +162,64 @@ un manque du logiciel.",
     Ok(())
 }
 
+/// La pile d'une declaration qui ne declare aucun taux (le taux AT/MP est interdit en nature 08) : l'annee, et aucune
+/// valeur ni aucune cotisation. Aucun calcul ne la lit.
+fn pile_sans_taux(annee: i32) -> droit::forme_bareme::Pile {
+    use socle::num::Decimal;
+    use std::collections::BTreeMap;
+    droit::forme_bareme::Pile {
+        annee,
+        quoi: None,
+        smic_horaire: Vec::new(),
+        heures_par_cachet: Decimal::ZERO,
+        logement_grand_deplacement: None,
+        repas_deplacement: None,
+        frais_hors_metropole: None,
+        taxe_sur_les_salaires: None,
+        solde_taxe_apprentissage: None,
+        pas_taux_par_defaut: None,
+        plafond_securite_sociale: None,
+        sante_obligatoire: None,
+        abattement_csg: Decimal::ZERO,
+        majoration_conges_115: Decimal::ZERO,
+        majoration_conges_110: Decimal::ZERO,
+        plafond_journalier: None,
+        t2_multiple: None,
+        apec_multiple: None,
+        plafonds_des_intermittents: None,
+        rubriques_bulletin: Vec::new(),
+        cotisations_dsn: Vec::new(),
+        cotisation_prevoyance_retraite_supp: None,
+        cotisation_sante_patronale: None,
+        reduction_generale: None,
+        majoration_chomage_cddu: None,
+        statuts: Vec::new(),
+        par_statut: BTreeMap::new(),
+        deduction_forfaitaire: None,
+        par_categorie: BTreeMap::new(),
+        par_nature: BTreeMap::new(),
+        par_caisse_conges: None,
+        risques_atmp: None,
+        seuils_effectif: None,
+        regime_local_alsace_moselle: None,
+        versement_mobilite: None,
+        par_organisation_patronale: BTreeMap::new(),
+        retraite_t1_repartition: None,
+        par_convention: BTreeMap::new(),
+        contributions_conventionnelles: None,
+        tarifs_conventionnels: None,
+        contributions_dsn: None,
+        secteurs: None,
+        taux_atmp: None,
+        etablissement: None,
+        source: None,
+        note: None,
+    }
+}
+
 /// Le fichier d'un signalement d'amorcage, pret a deposer.
 pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::departs::Departs) -> Result<String, Echec> {
-    verifier(paie, &o.motif, &o.type_declaration, o.remplace.as_deref())?;
+    verifier(paie, &o.motif, o.type_declaration, o.remplace.as_deref())?;
     let ctx = &ctx.au(&paie.engagement.debut)?;
     let e = &paie.engagement;
     let s = &paie.salarie;
@@ -177,7 +230,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
         None => aujourdhui()?,
     };
     // Le bareme ne sert a rien ici : le taux AT/MP est interdit en nature 08.
-    let bar = crate::dsn::BaremeDuMois::nouveau(droit::forme_bareme::Pile::default(), droit::bareme::EntrepriseLue { fiche: ent.clone(), effectif: None, cse: None, cinquante: None, taux_lus: false });
+    let bar = crate::dsn::BaremeDuMois::nouveau(pile_sans_taux(e.debut.an), droit::bareme::EntrepriseLue { fiche: ent.clone(), effectif: None, cse: None, cinquante: None, taux_lus: false });
     let remplace = o.remplace.as_deref().filter(|r| !r.is_empty());
 
     // La version de la norme d'un signalement suit le jour ou il est constitue (`norme-dsn-base.json`, une inference).
@@ -203,8 +256,8 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
     crate::dsn::contact_emetteur(&mut f, ent)?;
 
     // ---------------------------------------------------------- S20 declaration
-    f.add("S20.G00.05.001", NATURE);
-    f.add("S20.G00.05.002", &o.type_declaration);
+    f.ecrire_code(NATURE)?;
+    f.ecrire_code(o.type_declaration)?;
     f.add("S20.G00.05.003", "11");
     f.add("S20.G00.05.004", o.ordre);
     if let Some(r) = remplace {
@@ -257,7 +310,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
     } else {
         // Celles auxquelles le salarie est affilie a l'embauche (`dsn::rattachements`) : un bloc 15 que nul bloc 70 ne
         // cite n'aurait personne de couvert.
-        let refs = affiliations(&orgs, &*e.nat()?, &[], (e.debut_periode()?, e.fin_periode()?))?;
+        let refs = affiliations(&orgs, &*e.nat()?, &[], (e.debut_periode(), e.fin_periode()))?;
         crate::dsn::rattachements(paie, &orgs, ent, refs)?.into_iter().map(|a| a.reference).collect()
     };
     for a in &orgs.adhesions_prevoyance {
@@ -276,7 +329,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
     // ------------------------------------------------------------ S21 contrat
     if !changement {
         // Les emplois multiples (`40.036`) : les autres contrats du salarie dans le mois de l'embauche.
-        let du_mois = crate::dsn::contrats_du_mois(ctx, &e.debut_periode()?.mois_civil().to_string(), departs)?;
+        let du_mois = crate::dsn::contrats_du_mois(ctx, e.debut_periode().mois_civil(), departs)?;
         let emplois = crate::dsn::emplois_multiples(paie, &du_mois.iter().collect::<Vec<_>>());
         bloc_contrat(&mut f, paie, &etab, &orgs, 1, &bar, false, &[], NATURE, emplois)?;
         // L'anciennete, due des qu'une adhesion prevoyance est declaree.

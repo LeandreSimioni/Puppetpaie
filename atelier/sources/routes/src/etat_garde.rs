@@ -153,21 +153,43 @@ fn chemin(racine: &Path) -> PathBuf {
 // ------------------------------------------------------------------------------------------------- les cles
 
 /// LA CLE D'UN ETAT GARDE : un mois, l'ouverture de la compagnie, ou le tableau de l'administrateur.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum Cle {
+/// Elle s'ecrit (le banc la nomme ainsi dans son scenario) `ouverture`, `tableau` ou un mois AAAA-MM.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[serde(from = "CleEcrite")]
+pub enum Cle {
     Mois(Mois),
     Ouverture,
     Tableau,
 }
 
-impl Cle {
-    /// La cle ecrite `texte` (le banc la nomme ainsi) : `ouverture`, `tableau` ou un mois AAAA-MM.
-    fn lire(texte: &str) -> R<Cle> {
-        match texte {
-            OUVERTURE => Ok(Cle::Ouverture),
-            TABLEAU => Ok(Cle::Tableau),
-            m => Mois::lire(m).map(Cle::Mois).map_err(|e| erreur(Classe::Illisible, socle::echec::a_la_cle("Le mois de l'état ne se lit pas : il s'écrit AAAA-MM.", "cle", e))),
+/// La cle telle qu'elle s'ecrit : un nom, ou un mois.
+#[derive(Deserialize)]
+#[serde(untagged, expecting = "le mois de l'état (AAAA-MM), « ouverture » ou « tableau »")]
+enum CleEcrite {
+    Nommee(CleNommee),
+    Mois(Mois),
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum CleNommee {
+    Ouverture,
+    Tableau,
+}
+
+impl From<CleEcrite> for Cle {
+    fn from(c: CleEcrite) -> Cle {
+        match c {
+            CleEcrite::Mois(m) => Cle::Mois(m),
+            CleEcrite::Nommee(CleNommee::Ouverture) => Cle::Ouverture,
+            CleEcrite::Nommee(CleNommee::Tableau) => Cle::Tableau,
         }
+    }
+}
+
+impl Serialize for Cle {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
     }
 }
 
@@ -291,10 +313,10 @@ const HORS_DE_L_ECRAN: [&str; 7] = [
 /// (la configuration dit si la boite courriel est liee, `boite_liee` : rien n'en est lu ici, ni ailleurs dans
 /// l'empreinte), et l'adresse de la boite posee dans l'environnement (`COURRIEL_COMPTE`). Ce qui ne s'y lit pas reste
 /// dehors (`HORS_DE_L_ECRAN` : les signalements se lisent a chaque ouverture, a cote).
-pub(crate) fn empreinte_de(racine: &Path, cle: &str, jour: &str) -> String {
+pub(crate) fn empreinte_de(racine: &Path, cle: &str, jour: socle::date::Jour) -> String {
     let ouverture = cle == OUVERTURE;
     let mut h = Sha256::new();
-    let mut marques = vec![env!("PAIE_SOURCES").to_string(), jour.to_string(), absolu(racine), absolu(&socle::fichiers::dossier_du_code())];
+    let mut marques = vec![env!("PAIE_SOURCES").to_string(), jour.iso(), absolu(racine), absolu(&socle::fichiers::dossier_du_code())];
     if ouverture {
         let compte = match std::env::var("COURRIEL_COMPTE") {
             Ok(c) => c,
@@ -310,8 +332,9 @@ pub(crate) fn empreinte_de(racine: &Path, cle: &str, jour: &str) -> String {
     // La compagnie : ses engagements (et `engagements/avant/`) et leurs paies, sa configuration, ses journaux, ses
     // imprevus, ses regularisations, son historique importe, ses retours, et ce qui est sorti pour ce mois-ci (pour
     // l'ouverture : pour tous les mois).
-    signer_dossier(&mut h, racine, engagement::stock::DOSSIER, true, &|n| n.ends_with(".json"));
-    signer_dossier(&mut h, racine, engagement::paies::DOSSIER, true, &|n| n.ends_with(".json"));
+    for d in engagement::stock::dossiers_tenus() {
+        signer_dossier(&mut h, racine, d, true, &|n| n.ends_with(".json"));
+    }
     signer_dossier(&mut h, racine, socle::fichiers::CONFIG, true, &|n| {
         (ouverture || !n.ends_with(".bin")) && !n.ends_with(".tmp") && !HORS_DE_L_ECRAN.contains(&n)
     });
@@ -334,18 +357,17 @@ pub(crate) fn empreinte_de(racine: &Path, cle: &str, jour: &str) -> String {
 
 /// L'empreinte de l'etat `cle` de la compagnie `racine`, au jour `jour`.
 fn empreinte(racine: &Path, cle: Cle, jour: &Jour) -> String {
-    empreinte_de(racine, &cle.to_string(), &jour.iso())
+    empreinte_de(racine, &cle.to_string(), *jour)
 }
 
 /// Le jour de l'empreinte : celui d'un `Contexte` (`aujourdhui`, que `date` ne regle pas).
 fn jour() -> R<Jour> {
-    droit::contexte::aujourdhui_sans_note().map_err(Echec::from)
-}
+    droit::contexte::aujourdhui_sans_note()}
 
 /// Ce que le fil des calculs ne peut pas dire a un ecran (il tourne en fond) : note au diagnostic du moteur, que le
 /// developpeur lit.
-fn noter(quoi: &str, e: &str) {
-    compagnie::diagnostic::noter_moteur(&format!("État gardé : {} ({}).", quoi, e));
+fn noter(quoi: &str, e: &Echec) {
+    compagnie::diagnostic::noter_moteur(&format!("État gardé : {} ({}).", quoi, e.en_lignes()));
 }
 
 /// Un verrou pris, meme si un fil est tombe en le tenant : ce qu'il garde reste coherent (chaque ecriture s'y fait d'un
@@ -424,7 +446,7 @@ impl Serialize for ALaPage<'_> {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match self {
             // La reponse telle que la porte l'a ecrite, et non le texte qui la garde.
-            ALaPage::Ecrite(t) => socle::forme::lire_texte::<Reponse>(t, "Une lecture gardée ne se relit pas.").map_err(serde::ser::Error::custom)?.serialize(s),
+            ALaPage::Ecrite(t) => socle::forme::lire_texte::<Reponse>(t, "Une lecture gardée ne se relit pas.").map_err(|e| serde::ser::Error::custom(e.phrase))?.serialize(s),
             ALaPage::Faite(r) => r.serialize(s),
         }
     }
@@ -446,9 +468,8 @@ impl Dite for DuMois<'_> {
 }
 
 fn du_mois(racine: &Path, bilan: &Bilan) -> R<Rendu> {
-    let pose = compagnie::coffre::Coffre::du_poste(racine, "")
-        .ouverture_exigee()
-        .map_err(|x| Echec { classe: Some(x.classe), message: x.message })?;
+    let pose = compagnie::coffre::Coffre::du_poste(racine)
+        .ouverture_exigee()?;
     Rendu::de(&DuMois { bilan, mot_de_passe_pose: pose })
 }
 
@@ -586,8 +607,7 @@ fn lecture(o: &Options, route: Route, charge: &Charge) -> String {
 
 /// La charge `{"mois": mois}` d'une lecture de l'ecran du mois.
 fn charge_du_mois(mois: Mois) -> R<Charge> {
-    socle::forme::lire_texte(&socle::ecriture::json_en_ligne(&ChargeMois { mois }), "La charge d'un mois ne s'écrit pas.").map_err(Echec::from)
-}
+    socle::forme::lire_texte(&socle::ecriture::json_en_ligne(&ChargeMois { mois }), "La charge d'un mois ne s'écrit pas.")}
 
 /// La charge de l'apercu de la saisie enregistree : le mois, et aucune modification en cours (`mois::ChargeApercu`).
 #[derive(Serialize)]
@@ -604,9 +624,9 @@ fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: String) -
     // L'APERCU : ce que la page demande des qu'un mois s'affiche (`calculerApercu`), sur la saisie qu'elle vient de lire
     // (`{"mois": mois, "modifications": []}`, le mois enregistre), quand le mois a une saisie ; la page ne le redemande
     // que quand on modifie la saisie.
-    if engagement::stock::a_une_saisie(&ctx.racine, &mois.to_string())? {
+    if engagement::stock::a_une_saisie(&ctx.racine, mois)? {
         let apercu = ApercuEnregistre { mois, modifications: [] };
-        let charge = socle::forme::lire_texte(&socle::ecriture::json_en_ligne(&apercu), "La charge de l'aperçu ne s'écrit pas.").map_err(Echec::from)?;
+        let charge = socle::forme::lire_texte(&socle::ecriture::json_en_ligne(&apercu), "La charge de l'aperçu ne s'écrit pas.")?;
         lectures.push((Route::Apercu, lecture(o, Route::Apercu, &charge)));
     }
     let (par_engagement, bilan) = crate::etapes::les_deux_etats(ctx, mois)?;
@@ -630,7 +650,7 @@ fn refaire_l_ouverture(o: &Options, ctx: &Contexte, empreinte: String) -> R<Etat
     // Le mois que l'ouverture montre se lit avec elle : ses paies validees se recalculent ici (`engagement::etats::du_mois`),
     // pas apres l'ecriture de l'etat, qui serait aussitot perime. Ce qui refuse ici refusera a l'ecran du mois, qui le dit.
     if let Some(m) = ouvre {
-        let recalcul = envois::journal::lu(&ctx.racine).and_then(|j| engagement::etats::du_mois(ctx, &m.to_string(), &j.departs));
+        let recalcul = envois::journal::lu(&ctx.racine).and_then(|j| engagement::etats::du_mois(ctx, m, &j.departs));
         if let Err(e) = recalcul {
             noter(&format!("le recalcul de {} à l'ouverture refuse", m), &e);
         }
@@ -699,8 +719,8 @@ fn ouverture_ecrite(racine: &Path) -> Option<EtatDeLOuverture> {
 
 /// L'etat de `cle` (le banc d'essai le rejoue : `scenario`) : celui de l'ouverture, ecrit, s'il est juste ;
 /// sinon refait.
-pub fn lire(o: &Options, ctx: &Contexte, cle: &str) -> R<()> {
-    garde_juste(o, ctx, Cle::lire(cle)?).map(drop)
+pub fn lire(o: &Options, ctx: &Contexte, cle: Cle) -> R<()> {
+    garde_juste(o, ctx, cle).map(drop)
 }
 
 fn garde_juste(o: &Options, ctx: &Contexte, cle: Cle) -> R<Garde> {
@@ -754,15 +774,8 @@ fn mois_suivis(racine: &Path) -> R<Vec<Mois>> {
     Ok(mois)
 }
 
-/// Un passage de la file : l'etat garde, ou son refus (classe et phrase : un `Echec` ne se copie pas).
-type Fait = Result<Garde, (Option<Classe>, String)>;
-
-fn refus(f: &Fait) -> R<Garde> {
-    match f {
-        Ok(g) => Ok(g.clone()),
-        Err((classe, message)) => Err(Echec { classe: *classe, message: message.clone() }),
-    }
-}
+/// Un passage de la file : l'etat garde, ou son refus.
+type Fait = R<Garde>;
 
 /// Ce qu'une panique dit, pour la phrase d'un calcul tombe.
 fn pourquoi(p: &(dyn std::any::Any + Send)) -> String {
@@ -775,7 +788,6 @@ fn pourquoi(p: &(dyn std::any::Any + Send)) -> String {
     "sans phrase".to_string()
 }
 
-#[derive(Default)]
 struct EtatDeLaFile {
     /// Les cles a verifier, dans l'ordre ou elles se feront.
     attente: VecDeque<Cle>,
@@ -806,7 +818,6 @@ pub struct Fil {
     reveil: Condvar,
 }
 
-#[derive(Default)]
 struct EtatDuFil {
     files: Vec<Arc<FileDesEtats>>,
     devant: Option<Arc<FileDesEtats>>,
@@ -820,7 +831,9 @@ struct EtatDuFil {
 impl Fil {
     /// Un fil, qui tourne aussitot (il attend du travail).
     pub fn nouveau() -> Arc<Fil> {
-        let f = Arc::new(Fil { etat: Mutex::new(EtatDuFil::default()), reveil: Condvar::new() });
+        // Aucune file encore, la premiere servie en tete, aucun jour suivi.
+        let etat = EtatDuFil { files: Vec::new(), devant: None, tour: 0, jour: None, arrete: false };
+        let f = Arc::new(Fil { etat: Mutex::new(etat), reveil: Condvar::new() });
         let fil = f.clone();
         crate::fil_de_routes(move || {
             socle::fil_de_fond::marquer();
@@ -845,7 +858,7 @@ impl Fil {
         match jour() {
             Ok(j) => Some(j),
             Err(e) => {
-                noter("le jour ne se lit pas", &e.message);
+                noter("le jour ne se lit pas", &e);
                 None
             }
         }
@@ -857,7 +870,16 @@ impl Fil {
         let f = Arc::new(FileDesEtats {
             o,
             racine: racine.to_path_buf(),
-            etat: Mutex::new(EtatDeLaFile::default()),
+            // Rien a verifier, aucune demande encore (numero 0), rien d'affiche.
+            etat: Mutex::new(EtatDeLaFile {
+                attente: VecDeque::new(),
+                voulu: HashMap::new(),
+                fait: HashMap::new(),
+                numero: 0,
+                affiche: None,
+                en_cours: None,
+                arretee: false,
+            }),
             signal: Condvar::new(),
             fil: self.clone(),
         });
@@ -1010,12 +1032,13 @@ impl FileDesEtats {
         let mut e = self.verrou();
         e.en_cours = None;
         // L'OUVERTURE FAITE, le mois qu'elle ouvre passe devant : la page le demande juste apres.
-        if e.affiche.is_none() {
-            if let Ok(Garde::Ouverture(o)) = &rendu {
-                if let Some(m) = o.ouvre {
-                    Self::inscrire(&mut e, Cle::Mois(m), true);
-                }
-            }
+        // Un autre etat, ou un refus : rien ne passe devant ; le refus est le rendu garde ci-dessous avec son passage.
+        let ouvre = rendu.iter().find_map(|g| match g {
+            Garde::Ouverture(o) => o.ouvre,
+            Garde::Mois(_) | Garde::Tableau(_) => None,
+        });
+        if let (true, Some(m)) = (e.affiche.is_none(), ouvre) {
+            Self::inscrire(&mut e, Cle::Mois(m), true);
         }
         e.fait.insert(cle, (numero, rendu));
         self.signal.notify_all();
@@ -1032,7 +1055,7 @@ impl FileDesEtats {
                 if let Some((g, true)) = self.connu(cle, &jour) {
                     return Ok(g);
                 }
-                let ctx = crate::service::contexte(o).map_err(|m| Echec { classe: None, message: m })?;
+                let ctx = crate::service::contexte(o)?;
                 garde_juste(o, &ctx, cle)
             }));
             // Un calcul tombe a pu laisser son fil sale (un registre ouvert, les nombres « fideles ») : le travail
@@ -1043,15 +1066,15 @@ impl FileDesEtats {
         // LE BANC D'ESSAI : ce que l'etat refait ecrit entre dans le scenario (`scenario::Enregistreur::fond`).
         #[cfg(feature = "atelier")]
         let rendu = match crate::scenario::enregistreur_actif() {
-            Some(e) => e.fond(&self.racine, &cle.to_string(), refaire),
+            Some(e) => e.fond(&self.racine, cle, refaire),
             None => refaire(),
         };
         #[cfg(not(feature = "atelier"))]
         let rendu = refaire();
         match rendu {
             Ok(Ok(g)) => Ok(g),
-            Ok(Err(e)) => Err((e.classe, e.message)),
-            Err(p) => Err((Some(Classe::DefautDuLogiciel), format!("Défaut du logiciel : l'état de {} ne s'est pas refait (le calcul s'est arrêté : {}).", cle, pourquoi(p.as_ref())))),
+            Ok(Err(e)) => Err(e),
+            Err(p) => Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : l'état de {} ne s'est pas refait (le calcul s'est arrêté : {}).", cle, pourquoi(p.as_ref())))),
         }
     }
 
@@ -1092,7 +1115,7 @@ impl FileDesEtats {
         let suivis = match mois_suivis(&self.racine) {
             Ok(s) => s,
             Err(e) => {
-                noter("les mois suivis ne se lisent pas", &e.message);
+                noter("les mois suivis ne se lisent pas", &e);
                 Vec::new()
             }
         };
@@ -1133,7 +1156,7 @@ impl FileDesEtats {
         loop {
             if let Some((fait, rendu)) = e.fait.get(&cle) {
                 if *fait >= n {
-                    return refus(rendu);
+                    return rendu.clone();
                 }
             }
             if e.arretee {
@@ -1191,7 +1214,7 @@ impl FileDesEtats {
         loop {
             if let Some((fait, rendu)) = e.fait.get(&cle) {
                 if *fait >= n {
-                    return refus(rendu).map(|g| Some((g, true)));
+                    return rendu.clone().map(|g| Some((g, true)));
                 }
             }
             if e.arretee {

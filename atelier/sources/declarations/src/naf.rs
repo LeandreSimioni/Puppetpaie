@@ -29,7 +29,7 @@ use serde::Deserialize;
 use droit::fiche::Lue as _;
 use socle::fichiers::{forme_en_cache, FormeGardee};
 use crate::norme::Norme;
-use socle::num::Resultat;
+use socle::echec::{refus, refus_avec, Lieu, R};
 
 const BASE: &str = "naf-base.json";
 
@@ -87,7 +87,7 @@ struct Vers {
     contenu: String,
 }
 
-fn base() -> Resultat<Arc<Base>> {
+fn base() -> R<Arc<Base>> {
     static CACHE: OnceLock<FormeGardee<Base>> = OnceLock::new();
     forme_en_cache(&CACHE, BASE, "La table NAF livrée avec le logiciel ne se lit pas : le signaler au développeur.", Ok)
 }
@@ -98,17 +98,17 @@ fn net(code: &str) -> String {
 }
 
 /// Le code est-il une sous-classe de la NAF 2025 ?
-pub fn en_naf_2025(code: &str) -> Resultat<bool> {
+pub fn en_naf_2025(code: &str) -> R<bool> {
     Ok(base()?.naf_2025.contains_key(&net(code)))
 }
 
 /// Le code est-il une sous-classe de la NAF rev. 2 ?
-pub fn en_naf_rev2(code: &str) -> Resultat<bool> {
+pub fn en_naf_rev2(code: &str) -> R<bool> {
     Ok(base()?.naf_rev2.contains_key(&net(code)))
 }
 
 /// Ce qu'on reproche a un code APE saisi, ou `None`.
-pub fn faute_de_saisie(code: &str) -> Resultat<Option<String>> {
+pub fn faute_de_saisie(code: &str) -> R<Option<String>> {
     let c = net(code);
     if en_naf_2025(&c)? || en_naf_rev2(&c)? {
         return Ok(None);
@@ -127,10 +127,10 @@ point, tels que l'avis de situation Sirene les donne (9001Z en NAF rev. 2 ; 9020
 }
 
 /// La phrase d'un code NAF rev. 2 dans un fichier qui veut la NAF 2025 : vers quels codes il passe, et quoi faire.
-fn refus_rev2(ou: &str, code: &str, version: &str) -> Resultat<String> {
+fn refus_rev2(ou: &str, code: &str, version: &str) -> R<String> {
     let b = base()?;
     let Some(e) = b.naf_rev2.get(code) else {
-        return Err(format!("Code APE (NAF) {} : « {} » n'est pas dans la NAF rev. 2 livrée : le signaler au développeur.", ou, code));
+        return Err(socle::refus!("Code APE (NAF) {} : « {} » n'est pas dans la NAF rev. 2 livrée : le signaler au développeur.", ou, code));
     };
     let vers: Vec<String> =
         e.vers.iter().map(|x| format!("{} ({} : {})", x.code_insee, x.intitule, x.contenu.trim_start_matches("- "))).collect();
@@ -162,7 +162,7 @@ fn codes_de(ent: &droit::fiche::ChampsEntreprise) -> Vec<(String, String)> {
 /// Un fichier DSN de la version `norme` peut-il partir avec les codes APE de cette fiche entreprise ? Seule une version
 /// qui porte la regle `code_naf_en_naf_2025` les controle : un code NAF rev. 2 refuse avec la phrase qui dit vers quels
 /// codes il passe ; un code que la NAF 2025 ne connait pas refuse.
-pub fn verifier_pour(norme: &Norme, ent: &droit::fiche::ChampsEntreprise) -> Resultat<()> {
+pub fn verifier_pour(norme: &Norme, ent: &droit::fiche::ChampsEntreprise) -> R<()> {
     if norme.regle(REGLE)?.is_none() {
         return Ok(());
     }
@@ -171,16 +171,16 @@ pub fn verifier_pour(norme: &Norme, ent: &droit::fiche::ChampsEntreprise) -> Res
             continue;
         }
         if en_naf_rev2(&code)? {
-            return Err(refus_rev2(&ou, &code, &norme.version)?);
+            return Err(refus(refus_rev2(&ou, &code, &norme.version)?));
         }
-        return Err(socle::echec::avec(
+        return Err(refus_avec(
             format!(
                 "Code APE (NAF) {} : « {} » n'est pas un code de la NAF 2025 (INSEE), que tout fichier DSN \
 en norme {} demande (net-entreprises, 08/10/2026). Saisir dans Configuration › Entreprise, « Code APE (NAF) », le code que \
 l'INSEE a notifie, sans le point. Rien n'est ecrit.",
                 ou, code, norme.version
             ),
-            socle::echec::APart { fichier: Some(BASE.into()), ..Default::default() },
+            Lieu { fichier: Some(BASE.into()), ..Default::default() },
         ));
     }
     Ok(())

@@ -18,7 +18,7 @@ fn une_journee_de_plus_de_24_heures_se_refuse_et_plus_de_10_heures_se_dit() {
     std::fs::write(sc.join("gestes.jsonl"), debut.join("\n") + "\n").unwrap();
     let (_, c) = rejouer_dossier(&sc, &d);
     let jour = "2026-11-02";
-    let spectacle = saisie(&c, "2026-11")["engagements"].as_array().unwrap().iter().find(|e| e["salarie"] == "FULLER").unwrap()["spectacle"].clone();
+    let spectacle = saisie(&c, crate::outils::le_mois(2026, 11))["engagements"].as_array().unwrap().iter().find(|e| e["salarie"] == "FULLER").unwrap()["spectacle"].clone();
     let regie = |heures: i64| json!({"salarie": "FULLER", "nature": "cddu_spectacle", "spectacle": spectacle, "lignes": [{"rubrique": "heure", "quantite": heures, "taux": 19, "lieu": null, "dates": ["2026-11-28"], "planning": []}]});
     let id = reussi(&saisir(&c, "2026-11", None, &regie(25), jour))["engagement"].clone();
     let (_, r) = refus(&route(&c, "valider-engagement", json!({"mois": "2026-11", "engagement": id}), jour));

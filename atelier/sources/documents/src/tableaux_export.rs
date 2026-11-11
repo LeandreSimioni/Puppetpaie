@@ -10,8 +10,8 @@
 //! LES TOTAUX se calculent ici, avec la regle du livre de paie : un montant `None` ne compte pas pour zero, et
 //! une colonne qu'aucune ligne ne declare a un total VIDE, pas 0,00.
 //!
-//! Le `.xlsx` s'ecrit avec `rust_xlsxwriter` : montants en nombres, formats `# ##0.00 €`, largeurs 14 / 26,
-//! volet fige sous l'en-tete. Il se prouve par son contenu (openpyxl), pas a l'octet. Le PDF est celui de la
+//! Le `.xlsx` s'ecrit par `classeur` : montants en nombres exacts, formats `# ##0.00 €`, largeurs 14 / 26,
+//! volet fige sous l'en-tete. Il se prouve par son contenu, pas a l'octet. Le PDF est celui de la
 //! fabrique (`fabrique_pdf`), decrit comme `tableaux.description_pdf`.
 
 use droit::fiche::Lue as _;
@@ -19,7 +19,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use fabrique_pdf::forme as pdf;
-use rust_xlsxwriter::{Format, FormatAlign, Workbook, Worksheet};
+use fabrique_pdf::mesure::mesure;
+use crate::classeur::{Feuille, Style, Vertical, CORPS_DU_CLASSEUR};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
@@ -27,8 +28,8 @@ use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe};
 use socle::num::Decimal;
 use socle::echec::Echec;
-
-pub type R<T> = Result<T, Echec>;
+use socle::mois::Mois;
+pub use socle::echec::R;
 
 /// Un refus `Refuse`.
 pub fn refus(m: impl Into<String>) -> Echec {
@@ -40,11 +41,13 @@ pub const FORMATS_TABLEAU: [&str; 6] = ["csv", "tsv", "xlsx", "pdf", "html", "js
 
 // ------------------------------------------------------------------ valeurs
 
-/// Une valeur de cellule : un `Decimal` (il s'ecrit en texte), un entier (un compte, un rang), un texte.
+/// Une valeur de cellule : un `Decimal` (il s'ecrit en texte), un entier (un compte, un rang), un mois (`AAAA-MM`), un
+/// texte.
 #[derive(Clone, Debug)]
 pub enum Val {
     Dec(Decimal),
     Ent(i64),
+    Mois(Mois),
     Txt(String),
 }
 
@@ -62,6 +65,7 @@ impl Val {
         match self {
             Val::Dec(d) => d.to_string(),
             Val::Ent(n) => n.to_string(),
+            Val::Mois(m) => m.to_string(),
             Val::Txt(s) => s.clone(),
         }
     }
@@ -71,6 +75,7 @@ impl Val {
         match self {
             Val::Dec(d) => Ok(*d),
             Val::Ent(n) => Ok(Decimal::from(*n)),
+            Val::Mois(m) => Err(erreur(Classe::CalculImpossible, socle::num::illisible(&m.to_string()))),
             Val::Txt(t) => socle::num::decimal_lu(t).ok_or_else(|| erreur(Classe::CalculImpossible, socle::num::illisible(t))),
         }
     }
@@ -81,6 +86,7 @@ impl Serialize for Val {
         match self {
             Val::Dec(d) => s.serialize_str(&d.to_string()),
             Val::Ent(n) => s.serialize_i64(*n),
+            Val::Mois(m) => m.serialize(s),
             Val::Txt(t) => s.serialize_str(t),
         }
     }
@@ -126,6 +132,10 @@ impl Ligne {
         self.poser(k, s.map(|s| Val::Txt(s.into())))
     }
 
+    pub fn m(&mut self, k: &str, m: Mois) -> &mut Ligne {
+        self.poser(k, Some(Val::Mois(m)))
+    }
+
     pub fn d(&mut self, k: &str, v: Decimal) -> &mut Ligne {
         self.poser(k, Some(Val::Dec(v)))
     }
@@ -161,6 +171,14 @@ impl Ligne {
     pub fn decimal(&self, k: &str) -> Option<Decimal> {
         match self.val(k) {
             Some(Val::Dec(d)) => Some(*d),
+            _ => None,
+        }
+    }
+
+    /// Le mois de la case `k`, quand elle en porte un (`m`).
+    pub fn mois(&self, k: &str) -> Option<Mois> {
+        match self.val(k) {
+            Some(Val::Mois(m)) => Some(*m),
             _ => None,
         }
     }
@@ -255,7 +273,7 @@ pub struct Tableau {
     pub total: Option<Ligne>,
     pub avertissements: Vec<String>,
     pub sources: Vec<String>,
-    pub mois: Vec<String>,
+    pub mois: Vec<Mois>,
     pub format: String,
     #[serde(serialize_with = "nom_du_fichier")]
     pub fichier: Option<PathBuf>,
@@ -314,9 +332,14 @@ pub fn sections_de<K: Ord + Clone>(
         .collect()
 }
 
-/// Le libelle d'une section par mois (`AAAA-MM`, la case `mois` de ses lignes) : « Septembre 2026 ».
-pub fn section_du_mois(m: &String) -> R<String> {
-    libelle_mois(m)
+/// Le libelle d'une section par mois (la case `mois` de ses lignes, `Ligne::mois`) : « Septembre 2026 ».
+pub fn section_du_mois(m: &Option<Mois>) -> R<String> {
+    m.map(libelle_mois).ok_or_else(sans_mois)
+}
+
+/// Le refus d'une ligne rangee par son mois qui n'en porte pas.
+pub fn sans_mois() -> Echec {
+    erreur(Classe::Illisible, "Une ligne de l'état n'a pas de mois.")
 }
 
 // ------------------------------------------------------------------ totaux
@@ -389,30 +412,49 @@ pub fn texte(v: Option<&Val>, c: &Colonne) -> String {
     .collect()
 }
 
+/// Ce qu'une rangee d'un tableau est : une ligne, le sous-total d'une section, ou le total general.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Rangee {
+    Ligne,
+    Total,
+    General,
+}
+
+impl Rangee {
+    /// La classe HTML d'un total ; une ligne n'en a pas.
+    fn classe(self) -> Option<&'static str> {
+        match self {
+            Rangee::Ligne => None,
+            Rangee::Total => Some("total"),
+            Rangee::General => Some("general"),
+        }
+    }
+}
+
 /// (cellules, genre) dans l'ordre d'ecriture : lignes, sous-totaux, total.
-fn rangees(t: &Tableau) -> Vec<(&Ligne, &'static str)> {
+fn rangees(t: &Tableau) -> Vec<(&Ligne, Rangee)> {
     let plusieurs = t.sections.len() > 1 && t.sous_totaux;
-    let mut out: Vec<(&Ligne, &'static str)> = Vec::new();
+    let mut out: Vec<(&Ligne, Rangee)> = Vec::new();
     for s in &t.sections {
         for l in &s.lignes {
-            out.push((l, ""));
+            out.push((l, Rangee::Ligne));
         }
         if plusieurs {
             if let Some(tot) = &s.total {
-                out.push((tot, "total"));
+                out.push((tot, Rangee::Total));
             }
         }
     }
     if let Some(tot) = &t.total {
-        out.push((tot, "general"));
+        out.push((tot, Rangee::General));
     }
     out
 }
 
 /// `(texte, genre)` de chaque cellule d'une ligne, `—` pour un montant de ligne que la source ne dit pas.
-fn cellule_lisible(l: &Ligne, c: &Colonne, genre: &str) -> String {
+fn cellule_lisible(l: &Ligne, c: &Colonne, genre: Rangee) -> String {
     let v = l.get(&c.cle);
-    if matches!(v, Some(None)) && c.genre == Genre::Montant && genre.is_empty() {
+    if matches!(v, Some(None)) && c.genre == Genre::Montant && genre == Rangee::Ligne {
         "—".to_string()
     } else {
         texte(v.and_then(|x| x.as_ref()), c)
@@ -447,13 +489,13 @@ pub fn csv_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
     }
     ligne(&mut s, &[]);
     ligne(&mut s, &t.colonnes.iter().map(|c| c.libelle.clone()).collect::<Vec<_>>());
-    let mut precedent = "";
+    let mut precedent = Rangee::Ligne;
     for (d, genre) in rangees(t) {
-        if genre == "general" && precedent == "total" {
+        if genre == Rangee::General && precedent == Rangee::Total {
             ligne(&mut s, &[]);
         }
         ligne(&mut s, &t.colonnes.iter().map(|c| texte(d.val(&c.cle), c)).collect::<Vec<_>>());
-        if genre == "total" {
+        if genre == Rangee::Total {
             ligne(&mut s, &[]);
         }
         precedent = genre;
@@ -498,7 +540,7 @@ struct FichierTableau<'a> {
     etat: &'a str,
     titre: &'a str,
     periode: &'a str,
-    mois: &'a [String],
+    mois: &'a [Mois],
     colonnes: &'a [Colonne],
     sections: &'a [Section],
     total: Option<&'a Ligne>,
@@ -533,14 +575,8 @@ pub fn json_tableau(t: &Tableau, _ctx: Option<&Contexte>) -> R<Vec<u8>> {
 /// Une cellule du classeur.
 enum Cel {
     Vide,
-    Nombre(f64),
+    Nombre(Decimal),
     Texte(String),
-}
-
-/// Le nombre du classeur : un montant en flottant (le classeur n'a que ceux-la).
-pub fn en_f64(d: &Decimal) -> R<f64> {
-    use rust_decimal::prelude::ToPrimitive;
-    d.to_f64().ok_or_else(|| erreur(Classe::Illisible, format!("{} ne s'écrit pas en nombre du classeur", d)))
 }
 
 /// Le nombre d'une colonne de chiffres (un texte qui se lit en nombre aussi), le texte sinon.
@@ -548,40 +584,22 @@ fn cellule_classeur(v: Option<&Val>, c: &Colonne) -> R<Cel> {
     let Some(v) = v else { return Ok(Cel::Vide) };
     Ok(match v {
         Val::Txt(s) if s.is_empty() => Cel::Vide,
-        Val::Dec(d) => Cel::Nombre(en_f64(d)?),
-        Val::Ent(n) => Cel::Nombre(*n as f64),
+        Val::Dec(d) => Cel::Nombre(*d),
+        Val::Ent(n) => Cel::Nombre(Decimal::from(*n)),
+        Val::Mois(m) => Cel::Texte(m.to_string()),
         Val::Txt(s) if c.a_droite() => match socle::num::decimal_lu(s) {
-            Some(d) => Cel::Nombre(en_f64(&d)?),
+            Some(d) => Cel::Nombre(d),
             None => Cel::Texte(s.clone()),
         },
         Val::Txt(s) => Cel::Texte(s.clone()),
     })
 }
 
-fn xl(e: rust_xlsxwriter::XlsxError) -> Echec {
-    erreur(Classe::Disque, format!("classeur : {}", e))
-}
-
-/// Un format : gras ou non, une taille, un format de nombre.
-fn format_de(gras: bool, taille: Option<f64>, nombre: Option<&str>) -> Format {
-    let mut f = Format::new();
-    if gras {
-        f = f.set_bold();
-    }
-    if let Some(t) = taille {
-        f = f.set_font_size(t);
-    }
-    if let Some(n) = nombre {
-        f = f.set_num_format(n);
-    }
-    f
-}
-
-fn ecrire_cellule(ws: &mut Worksheet, ligne: u32, col: u16, cel: &Cel, fmt: &Format) -> R<()> {
+fn ecrire_cellule(ws: &mut Feuille, ligne: u32, col: u16, cel: &Cel, style: &Style) {
     match cel {
-        Cel::Vide => Ok(()),
-        Cel::Nombre(x) => ws.write_number_with_format(ligne, col, *x, fmt).map(|_| ()).map_err(xl),
-        Cel::Texte(t) => ws.write_string_with_format(ligne, col, t, fmt).map(|_| ()).map_err(xl),
+        Cel::Vide => {}
+        Cel::Nombre(d) => ws.nombre(ligne, col, *d, style),
+        Cel::Texte(t) => ws.texte(ligne, col, t.clone(), style),
     }
 }
 
@@ -599,18 +617,16 @@ fn nom_de_feuille(t: &Tableau) -> R<&str> {
 
 /// `xlsx_tableau`.
 pub fn xlsx_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
-    let mut wb = Workbook::new();
-    let ws = wb.add_worksheet();
-    ws.set_name(nom_de_feuille(t)?).map_err(xl)?;
+    let mut ws = Feuille::nouvelle(nom_de_feuille(t)?);
     let mut ligne: u32 = 0;
     for x in entete_texte(t, lire_nom(ctx)) {
-        ws.write_string_with_format(ligne, 0, &x, &format_de(true, Some(13.0), None)).map_err(xl)?;
+        ws.texte(ligne, 0, x, &Style::gras(13));
         ligne += 1;
     }
     ligne += 1;
-    let entete = Format::new().set_bold().set_text_wrap().set_align(FormatAlign::VerticalCenter);
+    let entete = Style { gras: true, retour_a_la_ligne: true, vertical: Some(Vertical::Centre), ..Style::CLASSEUR };
     for (i, c) in t.colonnes.iter().enumerate() {
-        ws.write_string_with_format(ligne, i as u16, &c.libelle, &entete).map_err(xl)?;
+        ws.texte(ligne, i as u16, c.libelle.clone(), &entete);
     }
     let ligne_entete = ligne;
     ligne += 1;
@@ -623,33 +639,33 @@ pub fn xlsx_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
         }
     };
     for (d, genre) in rangees(t) {
-        let (gras, taille) = match genre {
-            "general" => (true, Some(12.0)),
-            "total" => (true, Some(11.0)),
-            _ => (false, None),
+        let (gras, corps) = match genre {
+            Rangee::General => (true, 12),
+            Rangee::Total => (true, CORPS_DU_CLASSEUR),
+            Rangee::Ligne => (false, CORPS_DU_CLASSEUR),
         };
         for (i, c) in t.colonnes.iter().enumerate() {
             let cel = cellule_classeur(d.val(&c.cle), c)?;
-            let fmt = format_de(gras, taille, if matches!(cel, Cel::Nombre(_)) { nombre_de(c) } else { None });
-            ecrire_cellule(ws, ligne, i as u16, &cel, &fmt)?;
+            let style = Style { gras, corps, format: if matches!(cel, Cel::Nombre(_)) { nombre_de(c) } else { None }, ..Style::CLASSEUR };
+            ecrire_cellule(&mut ws, ligne, i as u16, &cel, &style);
         }
         ligne += 1;
     }
-    let simple = Format::new();
+    let simple = Style::CLASSEUR;
     for a in &t.avertissements {
         ligne += 1;
-        ws.write_string_with_format(ligne, 0, format!("! {}", a), &simple).map_err(xl)?;
+        ws.texte(ligne, 0, format!("! {}", a), &simple);
         ligne += 1;
     }
     for s in &t.sources {
-        ws.write_string_with_format(ligne, 0, format!("Source : {}", s), &simple).map_err(xl)?;
+        ws.texte(ligne, 0, format!("Source : {}", s), &simple);
         ligne += 1;
     }
     for (i, c) in t.colonnes.iter().enumerate() {
-        ws.set_column_width(i as u16, if c.a_droite() { 14.0 } else { 26.0 }).map_err(xl)?;
+        ws.largeur(i as u16, i as u16, if c.a_droite() { 14 } else { 26 });
     }
-    ws.set_freeze_panes(ligne_entete + 1, 0).map_err(xl)?;
-    wb.save_to_buffer().map_err(xl)
+    ws.figer(ligne_entete + 1);
+    ws.octets()
 }
 
 // --------------------------------------------------------------- html / pdf
@@ -668,14 +684,14 @@ pub fn html_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
         let mut cel = String::new();
         for c in &t.colonnes {
             let v = d.get(&c.cle);
-            let s = if matches!(v, Some(None)) && c.genre == Genre::Montant && genre.is_empty() {
+            let s = if matches!(v, Some(None)) && c.genre == Genre::Montant && genre == Rangee::Ligne {
                 "&mdash;".to_string()
             } else {
                 echapper(&texte(v.and_then(|x| x.as_ref()), c))
             };
             cel.push_str(&format!("<td{}>{}</td>", if c.a_droite() { " class='n'" } else { "" }, s));
         }
-        corps.push_str(&format!("<tr{}>{}</tr>", if genre.is_empty() { String::new() } else { format!(" class='{}'", genre) }, cel));
+        corps.push_str(&format!("<tr{}>{}</tr>", genre.classe().iter().map(|classe| format!(" class='{}'", classe)).collect::<String>(), cel));
     }
     let th: String = t.colonnes.iter().map(|c| format!("<th{}>{}</th>", if c.a_droite() { " class='n'" } else { "" }, echapper(&c.libelle))).collect();
     let nom = lire_nom(ctx);
@@ -702,81 +718,96 @@ pub fn html_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
     Ok(page.into_bytes())
 }
 
-const PAGE_LARGEUR: f64 = 841.89;
-const PAGE_HAUTEUR: f64 = 595.28;
+const PAGE_LARGEUR: pdf::Mesure = pdf::Mesure::milliemes(841_890);
+const PAGE_HAUTEUR: pdf::Mesure = pdf::Mesure::milliemes(595_280);
 const ROUGE: &str = "#B22222";
 const ENCRE: &str = "#2C3E50";
 
-const CHASSE: f64 = 3.9;
-const CHASSE_ENTETE: f64 = 4.2;
-const MARGE_CELLULE: f64 = 3.0;
-const PLAFOND_TEXTE: f64 = 40.0;
+const CHASSE: pdf::Mesure = mesure("3.9");
+const CHASSE_ENTETE: pdf::Mesure = mesure("4.2");
+const MARGE_CELLULE: pdf::Mesure = pdf::Mesure::entier(3);
+/// La ligne de texte la plus longue, en caracteres, avant qu'elle raccourcisse.
+const LIGNE_DE_TEXTE: i64 = 40;
 
-/// La largeur de chaque colonne, en fraction de la largeur utile.
-pub fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], utile: f64) -> Vec<f64> {
+/// La largeur de chaque colonne, en fraction de la largeur utile. Une longueur s'y compte en caracteres (gonfles d'un
+/// dixieme pour un total, de trois pour le total general), une largeur en points.
+pub(crate) fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, Rangee)], utile: pdf::Mesure) -> Vec<pdf::Mesure> {
+    use pdf::Mesure;
     let n = entetes.len();
-    let mut plus_long = vec![0.0f64; n];
-    let mut plus_long_mot = vec![0.0f64; n];
-    let mut mot_entete = vec![0.0f64; n];
+    let mut plus_long = vec![Mesure::ZERO; n];
+    let mut plus_long_mot = vec![Mesure::ZERO; n];
+    let mut mot_entete = vec![Mesure::ZERO; n];
     for (i, (libelle, _)) in entetes.iter().enumerate() {
-        mot_entete[i] = libelle.split(socle::texte::blanc).map(|m| m.chars().count()).fold(0, usize::max) as f64;
+        mot_entete[i] = Mesure::entier(libelle.split(socle::texte::blanc).map(|m| m.chars().count()).fold(0, usize::max) as i64);
     }
-    let gonfle = |genre: &str| match genre {
-        "total" => 1.1,
-        "general" => 1.3,
-        _ => 1.0,
+    let gonfle = |caracteres: usize, genre: Rangee| {
+        let (n, d) = match genre {
+            Rangee::Total => (11, 10),
+            Rangee::General => (13, 10),
+            Rangee::Ligne => (1, 1),
+        };
+        match Mesure::entier(caracteres as i64).fois_rapport(n, d) {
+            Some(m) => m,
+            None => unreachable!("un rapport de dix"),
+        }
     };
     for (cellules, genre) in rangees {
         for (i, c) in cellules.iter().take(n).enumerate() {
-            plus_long[i] = plus_long[i].max(c.chars().count() as f64 * gonfle(genre));
+            plus_long[i] = plus_long[i].max(gonfle(c.chars().count(), *genre));
             for m in c.split(socle::texte::blanc).filter(|m| !m.is_empty()) {
-                plus_long_mot[i] = plus_long_mot[i].max(m.chars().count() as f64 * gonfle(genre));
+                plus_long_mot[i] = plus_long_mot[i].max(gonfle(m.chars().count(), *genre));
             }
         }
     }
     let texte: Vec<bool> = entetes.iter().map(|(_, a_droite)| !a_droite).collect();
-    let besoins = |plafond: f64| -> Vec<f64> {
+    let besoins = |ligne: i64| -> Vec<Mesure> {
         (0..n)
             .map(|i| {
-                let lg = if texte[i] { plus_long[i].min(plafond).max(plus_long_mot[i]) } else { plus_long[i] };
-                (lg * CHASSE).max(mot_entete[i] * CHASSE_ENTETE) + 2.0 * MARGE_CELLULE
+                let lg = if texte[i] { plus_long[i].min(Mesure::entier(ligne)).max(plus_long_mot[i]) } else { plus_long[i] };
+                (lg * CHASSE).max(mot_entete[i] * CHASSE_ENTETE) + MARGE_CELLULE * 2
             })
             .collect()
     };
-    let somme_de = |b: &[f64]| b.iter().fold(0.0, |a, x| a + x);
-    let mut plafond = PLAFOND_TEXTE;
-    let mut b = besoins(plafond);
-    while somme_de(&b) > utile && plafond > 8.0 {
-        plafond -= 2.0;
-        b = besoins(plafond);
+    let somme_de = |b: &[Mesure]| b.iter().sum::<Mesure>();
+    // La ligne de texte la plus longue, en caracteres : elle raccourcit jusqu'a ce que les colonnes tiennent.
+    let mut ligne = LIGNE_DE_TEXTE;
+    let mut b = besoins(ligne);
+    while somme_de(&b) > utile && ligne > 8 {
+        ligne -= 2;
+        b = besoins(ligne);
     }
     let total = somme_de(&b);
-    b.iter().map(|x| x / total).collect()
+    b.iter()
+        .map(|x| match x.sur(total) {
+            Some(f) => f,
+            None => unreachable!("chaque colonne a sa marge : le total n'est pas nul"),
+        })
+        .collect()
 }
 
-fn filets(couleur: &str, epaisseur: f32) -> Option<pdf::Filet> {
-    Some(pdf::Filet { couleur: Some(couleur.to_string()), epaisseur: Some(epaisseur) })
+fn filets(couleur: &str, epaisseur: pdf::Mesure) -> Option<pdf::Filet> {
+    Some(pdf::Filet { couleur: couleur.to_string(), epaisseur })
 }
 
-/// Un paragraphe d'un seul morceau ; ce qui n'est pas dit ne s'ecrit pas.
-fn paragraphe(texte: String, gras: bool, taille: f32, couleur: Option<&str>, majuscules: bool, avant: Option<f32>, apres: Option<f32>) -> pdf::Bloc {
+/// Un paragraphe d'un seul morceau droit, à gauche ; sans couleur, celle de la police.
+fn paragraphe(texte: String, gras: bool, taille: pdf::Mesure, couleur: Option<&str>, majuscules: bool, avant: pdf::Mesure, apres: pdf::Mesure) -> pdf::Bloc {
     pdf::Bloc::Paragraphe(pdf::Paragraphe {
-        morceaux: vec![pdf::Morceau { texte, gras: gras.then_some(true), italique: None, couleur: None }],
+        morceaux: vec![pdf::Morceau { texte, gras, italique: false, couleur: None }],
         taille: Some(taille),
         couleur: couleur.map(str::to_string),
-        alignement: None,
-        majuscules: majuscules.then_some(true),
+        alignement: pdf::Alignement::Gauche,
+        majuscules,
         espace_avant: avant,
         espace_apres: apres,
-        retrait: None,
+        retrait: pdf::Mesure::ZERO,
     })
 }
 
-/// Une ligne de cellules en texte, sans rien d'autre.
+/// Une ligne maigre de cellules en texte, sans rien d'autre.
 fn ligne_de(cellules: Vec<String>) -> pdf::Ligne {
     pdf::Ligne {
         cellules: cellules.into_iter().map(pdf::Cellule::Texte).collect(),
-        gras: None,
+        gras: false,
         fond: None,
         couleur: None,
         taille: None,
@@ -786,75 +817,75 @@ fn ligne_de(cellules: Vec<String>) -> pdf::Ligne {
 }
 
 /// La description (FORMAT.md) d'un etat -- A4 paysage, son titre, son tableau, ses
-/// notes. `entetes` : (libelle, a droite) ; `rangees` : (cellules en texte, genre) avec `genre` dans « », « total »
-/// ou « general ».
-#[allow(clippy::too_many_arguments)]
-pub fn description_pdf(
-    titre: &str, periode: &str, nom: Option<&str>, sous_titre: &str, pied: &str, entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], notes: &[String],
+/// notes. `entetes` : (libelle, a droite) ; `rangees` : (cellules en texte, ce qu'est la rangee).
+pub(crate) fn description_pdf(
+    titre: &str, periode: &str, nom: Option<&str>, sous_titre: &str, pied: &str, entetes: &[(String, bool)], rangees: &[(Vec<String>, Rangee)], notes: &[String],
     sources: &[String],
 ) -> pdf::Description {
-    let fr = fractions(entetes, rangees, PAGE_LARGEUR - 68.0);
+    let fr = fractions(entetes, rangees, PAGE_LARGEUR - pdf::Mesure::entier(68));
     let colonnes = fr
         .iter()
         .zip(entetes)
-        .map(|(f, e)| pdf::ColonneTableau { largeur: *f as f32, alignement: e.1.then_some(pdf::Alignement::Droite) })
+        .map(|(f, e)| pdf::ColonneTableau { largeur: *f, alignement: if e.1 { pdf::Alignement::Droite } else { pdf::Alignement::Gauche } })
         .collect();
     let lignes = rangees
         .iter()
         .map(|(cellules, genre)| {
             let mut l = ligne_de(cellules.clone());
-            if *genre == "total" {
-                l.gras = Some(true);
-                l.filet_haut = filets("#999999", 0.5);
-                l.filet_bas = filets("#999999", 0.5);
-            } else if *genre == "general" {
-                l.gras = Some(true);
-                l.taille = Some(8.0);
+            if *genre == Rangee::Total {
+                l.gras = true;
+                l.filet_haut = filets("#999999", mesure("0.5"));
+                l.filet_bas = filets("#999999", mesure("0.5"));
+            } else if *genre == Rangee::General {
+                l.gras = true;
+                l.taille = Some(pdf::Mesure::entier(8));
                 l.couleur = Some(ROUGE.to_string());
-                l.filet_haut = filets("#999999", 0.5);
-                l.filet_bas = filets("#999999", 0.5);
+                l.filet_haut = filets("#999999", mesure("0.5"));
+                l.filet_bas = filets("#999999", mesure("0.5"));
             }
             l
         })
         .collect();
     let mut entete = ligne_de(entetes.iter().map(|e| e.0.clone()).collect());
-    entete.gras = Some(true);
-    entete.taille = Some(6.3);
+    entete.gras = true;
+    entete.taille = Some(mesure("6.3"));
     entete.couleur = Some(ROUGE.to_string());
-    entete.filet_bas = filets(ROUGE, 0.7);
+    entete.filet_bas = filets(ROUGE, mesure("0.7"));
     let mut blocs: Vec<pdf::Bloc> = Vec::new();
+    let pt = pdf::Mesure::entier;
+    let zero = pdf::Mesure::ZERO;
     if let Some(nom) = nom {
-        blocs.push(paragraphe(nom.to_string(), true, 8.5, None, false, None, Some(1.0)));
+        blocs.push(paragraphe(nom.to_string(), true, mesure("8.5"), None, false, zero, pt(1)));
     }
-    blocs.push(paragraphe(titre.to_string(), true, 11.0, Some(ROUGE), true, None, Some(1.0)));
-    blocs.push(paragraphe(sous_titre.to_string(), false, 6.8, Some("#555555"), false, None, Some(6.0)));
+    blocs.push(paragraphe(titre.to_string(), true, pt(11), Some(ROUGE), true, zero, pt(1)));
+    blocs.push(paragraphe(sous_titre.to_string(), false, mesure("6.8"), Some("#555555"), false, zero, pt(6)));
     blocs.push(pdf::Bloc::Tableau(pdf::Tableau {
         colonnes,
         entete: Some(vec![entete]),
         lignes: Some(lignes),
-        taille: Some(7.0),
+        taille: Some(pt(7)),
         couleur: Some(ENCRE.to_string()),
         interligne: None,
-        marge_cellule: Some(pdf::MargeCellule { haut: Some(1.6), droite: Some(3.0), bas: Some(1.6), gauche: Some(3.0) }),
-        filet_lignes: filets("#EEEEEE", 0.3),
+        marge_cellule: pdf::MargeCellule { haut: mesure("1.6"), droite: pt(3), bas: mesure("1.6"), gauche: pt(3) },
+        filet_lignes: filets("#EEEEEE", mesure("0.3")),
         filets_cellules: None,
-        espace_avant: None,
-        espace_apres: None,
+        espace_avant: zero,
+        espace_apres: zero,
     }));
     for a in notes {
-        blocs.push(paragraphe(format!("! {}", a), false, 6.3, Some("#777777"), false, Some(6.0), None));
+        blocs.push(paragraphe(format!("! {}", a), false, mesure("6.3"), Some("#777777"), false, pt(6), zero));
     }
     for src in sources {
-        blocs.push(paragraphe(format!("Source : {}", src), false, 6.0, Some("#999999"), false, Some(2.0), None));
+        blocs.push(paragraphe(format!("Source : {}", src), false, pt(6), Some("#999999"), false, pt(2), zero));
     }
     pdf::Description {
         format: crate::bulletin::FORMAT,
         page: Some(pdf::Page {
-            largeur: Some(PAGE_LARGEUR as f32),
-            hauteur: Some(PAGE_HAUTEUR as f32),
-            marges: Some(pdf::Marges { haut: Some(40.0), droite: Some(34.0), bas: Some(40.0), gauche: Some(34.0) }),
+            largeur: PAGE_LARGEUR,
+            hauteur: PAGE_HAUTEUR,
+            marges: pdf::Marges { haut: pt(40), droite: pt(34), bas: pt(40), gauche: pt(34) },
         }),
-        police: Some(pdf::Police { taille: Some(7.0), interligne: Some(1.25), couleur: Some(ENCRE.to_string()) }),
+        police: Some(pdf::Police { taille: pt(7), interligne: mesure("1.25"), couleur: ENCRE.to_string() }),
         style: None,
         logo: None,
         titre: Some(format!("{} — {}", titre, periode)),
@@ -863,22 +894,22 @@ pub fn description_pdf(
             gauche: Some(format!("{} — {} (suite)", titre, periode)),
             centre: None,
             droite: None,
-            taille: Some(8.5),
+            taille: Some(mesure("8.5")),
             couleur: Some(ENCRE.to_string()),
-            gras: Some(true),
-            distance: Some(24.0),
-            premiere_page: Some(false),
+            gras: true,
+            distance: pt(24),
+            premiere_page: false,
             image: None,
         }),
         pied_page: Some(pdf::Repere {
             gauche: Some(pied.to_string()),
             centre: None,
             droite: Some("page {page} sur {pages}".to_string()),
-            taille: Some(6.5),
+            taille: Some(mesure("6.5")),
             couleur: Some("#777777".to_string()),
-            gras: None,
-            distance: Some(20.0),
-            premiere_page: None,
+            gras: false,
+            distance: pt(20),
+            premiere_page: true,
             image: None,
         }),
     }
@@ -886,13 +917,13 @@ pub fn description_pdf(
 
 /// `pdf_fabrique` : les octets du PDF mis en page par la fabrique. Un refus de la fabrique est `Refuse`.
 pub fn pdf_fabrique(description: &pdf::Description) -> R<Vec<u8>> {
-    fabrique_pdf::fabriquer(description).map_err(|r| refus(format!("PDF impossible : la fabrique de PDF refuse cet état ({}). Aucun PDF n'est fait autrement.", r.0.replace('\n', " "))))
+    fabrique_pdf::fabriquer(description).map_err(|r| crate::fabrique::echec(r).reformuler(|p| format!("PDF impossible : la fabrique de PDF refuse cet état ({}). Aucun PDF n'est fait autrement.", p)))
 }
 
 /// `pdf_tableau` : A4 paysage, l'en-tete des colonnes a chaque page, un pied numerote.
 pub fn pdf_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
     let sous = format!("{}{}", t.periode, if t.donnees_personnelles { " — porte des données personnelles" } else { "" });
-    let rangs: Vec<(Vec<String>, &str)> = rangees(t).into_iter().map(|(d, genre)| (t.colonnes.iter().map(|c| cellule_lisible(d, c, genre)).collect(), genre)).collect();
+    let rangs: Vec<(Vec<String>, Rangee)> = rangees(t).into_iter().map(|(d, genre)| (t.colonnes.iter().map(|c| cellule_lisible(d, c, genre)).collect(), genre)).collect();
     let entetes: Vec<(String, bool)> = t.colonnes.iter().map(|c| (c.libelle.clone(), c.a_droite())).collect();
     let d = description_pdf(&t.titre, &t.periode, lire_nom(ctx), &sous, &format!("{} — {}", t.titre, t.periode), &entetes, &rangs, &t.avertissements, &t.sources);
     pdf_fabrique(&d)
@@ -924,20 +955,20 @@ pub fn format_possible(fmt: &str, formats: &[&str]) -> R<String> {
 
 /// Ecrit le tableau dans `dossier/nom.<ext>` (`tsv` s'ecrit `.txt`) et rend le chemin.
 pub fn ecrire(t: &mut Tableau, dossier: &Path, nom: &str, ctx: &Contexte) -> R<PathBuf> {
-    std::fs::create_dir_all(dossier).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e)))?;
+    std::fs::create_dir_all(dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
     let ext = if t.format == "tsv" { "txt" } else { t.format.as_str() };
     let chemin = dossier.join(format!("{}.{}", nom, ext));
     let contenu = octets(t, Some(ctx))?;
-    std::fs::write(&chemin, contenu).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e)))?;
+    std::fs::write(&chemin, contenu).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
     t.fichier = Some(chemin.clone());
     Ok(chemin)
 }
 
 // ------------------------------------------------------------------ petits outils
 
-/// « Septembre 2026 » d'un mois `AAAA-MM` (le nom en titre) ; un mois illisible se refuse.
-pub fn libelle_mois(m: &str) -> R<String> {
-    socle::mois::Mois::lire(m).map(|m| m.libelle(socle::mois::Graphie::Titre)).map_err(|e| erreur(Classe::Illisible, e))
+/// « Septembre 2026 » (le nom en titre).
+pub fn libelle_mois(m: Mois) -> String {
+    m.libelle(socle::mois::Graphie::Titre)
 }
 
 /// AAAA-MM-JJ -> JJ/MM/AAAA ; le reste tel quel.
@@ -953,7 +984,7 @@ pub fn jj(iso: &str) -> String {
 /// « NOM Prenom ».
 pub fn qui(fiche: &droit::fiche::ChampsSalarie) -> R<String> {
     if fiche.nom.is_none() {
-        return Err(erreur(Classe::Manque, socle::fichiers::absent("nom")));
+        return Err(socle::fichiers::absent("nom").reclasser(Classe::Manque));
     }
     Ok(qui_souple(fiche))
 }
@@ -964,8 +995,3 @@ pub fn qui_souple(fiche: &droit::fiche::ChampsSalarie) -> String {
     [fiche.nom.portee(), fiche.prenom_affichage.portee().or(fiche.prenom.portee())].into_iter().flatten().collect::<Vec<_>>().join(" ")
 }
 
-/// Un montant ecrit en texte, a deux decimales ; un texte qui n'est pas un nombre se refuse.
-pub fn montant(t: &str) -> R<Decimal> {
-    let d = socle::num::decimal_lu(t).ok_or_else(|| erreur(Classe::CalculImpossible, socle::num::illisible(t)))?;
-    Ok(socle::num::eur2(d))
-}

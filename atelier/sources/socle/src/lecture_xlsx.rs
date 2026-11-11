@@ -14,22 +14,21 @@
 use std::io::Read;
 use std::path::Path;
 
-use crate::echec::APart;
-use crate::num::Resultat;
+use crate::echec::{refus, refus_avec, Lieu, R};
 
 const NS_M: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 const NS_R: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const NS_P: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
 
 /// La valeur d'une case renseignee. `t="s"`, `"inlineStr"`, `"str"` et `"e"` donnent du texte ; `"b"` un booleen ; le
-/// reste (`"n"`, rien) un nombre : flottant s'il porte `.`, `e` ou `E`, entier sinon.
-/// Elle s'ecrit telle quelle (`Serialize`) : un texte, un nombre (le flottant reste flottant, l'entier entier), un booleen.
+/// reste (`"n"`, rien) un nombre : a virgule s'il porte `.`, `e` ou `E`, entier sinon.
+/// Elle s'ecrit telle quelle (`Serialize`) : un texte, un nombre (exact, tel que la case l'ecrit), un booleen.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(untagged)]
 pub enum Cellule {
     Texte(String),
     Entier(i64),
-    Flottant(f64),
+    AVirgule(crate::forme::NombreLu),
     Booleen(bool),
 }
 
@@ -37,12 +36,12 @@ pub enum Cellule {
 pub type Ligne = Vec<Option<Cellule>>;
 
 impl Cellule {
-    /// La case en texte : le texte tel quel, un flottant sous sa forme ecrite (`1.0`, `1e-05`), `True`/`False`.
+    /// La case en texte : le texte tel quel, un nombre a virgule sous sa forme ecrite (`1.0`, `1e-05`), `True`/`False`.
     pub fn en_texte(&self) -> String {
         match self {
             Cellule::Texte(s) => s.clone(),
             Cellule::Entier(i) => i.to_string(),
-            Cellule::Flottant(f) => crate::ecriture::repr_flottant(*f),
+            Cellule::AVirgule(n) => n.ecrit(),
             Cellule::Booleen(b) => if *b { "True" } else { "False" }.to_string(),
         }
     }
@@ -52,7 +51,7 @@ impl Cellule {
         match self {
             Cellule::Texte(s) => !s.is_empty(),
             Cellule::Entier(i) => *i != 0,
-            Cellule::Flottant(f) => *f != 0.0,
+            Cellule::AVirgule(n) => !n.est_nul(),
             Cellule::Booleen(b) => *b,
         }
     }
@@ -64,10 +63,10 @@ struct Classeur {
 }
 
 impl Classeur {
-    fn ouvrir(chemin: &Path) -> Resultat<Classeur> {
+    fn ouvrir(chemin: &Path) -> R<Classeur> {
         let f = std::fs::File::open(chemin).map_err(|e| crate::echec::du_disque(chemin, &e))?;
         let archive = zip::ZipArchive::new(f)
-            .map_err(|e| crate::echec::avec("Ce fichier n'est pas un classeur Excel lisible.", APart { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..APart::default() }))?;
+            .map_err(|e| refus_avec("Ce fichier n'est pas un classeur Excel lisible.", Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Lieu::default() }))?;
         Ok(Classeur { archive, nom: chemin.display().to_string() })
     }
 
@@ -75,21 +74,21 @@ impl Classeur {
         self.archive.index_for_name(membre).is_some()
     }
 
-    fn lire(&mut self, membre: &str) -> Resultat<String> {
+    fn lire(&mut self, membre: &str) -> R<String> {
         let mut f = self
             .archive
             .by_name(membre)
-            .map_err(|e| format!("{} : {} absent du classeur ({})", self.nom, membre, e))?;
+            .map_err(|e| refus(format!("{} : {} absent du classeur ({})", self.nom, membre, e)))?;
         let mut octets = Vec::new();
-        f.read_to_end(&mut octets).map_err(|e| format!("{} : {} illisible ({})", self.nom, membre, e))?;
-        String::from_utf8(octets).map_err(|_| format!("{} : {} n'est pas en UTF-8", self.nom, membre))
+        f.read_to_end(&mut octets).map_err(|e| refus(format!("{} : {} illisible ({})", self.nom, membre, e)))?;
+        String::from_utf8(octets).map_err(|_| refus(format!("{} : {} n'est pas en UTF-8", self.nom, membre)))
     }
 }
 
-fn analyser<'a>(nom: &str, membre: &str, texte: &'a str) -> Resultat<roxmltree::Document<'a>> {
+fn analyser<'a>(nom: &str, membre: &str, texte: &'a str) -> R<roxmltree::Document<'a>> {
     let options = roxmltree::ParsingOptions { allow_dtd: true, ..Default::default() };
     roxmltree::Document::parse_with_options(texte, options)
-        .map_err(|e| format!("{} : {} illisible ({})", nom, membre, e))
+        .map_err(|e| refus(format!("{} : {} illisible ({})", nom, membre, e)))
 }
 
 fn est(n: &roxmltree::Node, ns: &str, nom: &str) -> bool {
@@ -113,53 +112,51 @@ fn texte_de(n: roxmltree::Node) -> String {
 }
 
 /// `C12` -> 2 (colonnes comptees depuis 0).
-fn colonne(reference: &str) -> Resultat<usize> {
+fn colonne(reference: &str) -> R<usize> {
     let lettres: Vec<char> = reference.chars().take_while(|c| c.is_ascii_uppercase()).collect();
     if lettres.is_empty() {
-        return Err(format!("reference de case illisible : {}", crate::fichiers::repr(reference)));
+        return Err(refus(format!("reference de case illisible : {}", crate::fichiers::repr(reference))));
     }
     let mut n: usize = 0;
     for c in lettres {
         n = n
             .checked_mul(26)
             .and_then(|n| n.checked_add(c as usize - 64))
-            .ok_or_else(|| format!("colonne hors d'atteinte : {}", reference))?;
+            .ok_or_else(|| refus(format!("colonne hors d'atteinte : {}", reference)))?;
     }
     Ok(n - 1)
 }
 
 /// Un entier ecrit en texte (blancs autour admis).
-fn entier(texte: &str, quoi: &str) -> Resultat<i64> {
-    texte.trim_matches(crate::texte::blanc)
-        .parse::<i64>()
-        .map_err(|_| format!("{} illisible : {}", quoi, crate::fichiers::repr(texte)))
+fn entier(texte: &str, quoi: &str) -> R<i64> {
+    crate::num::entier_signe(texte.trim_matches(crate::texte::blanc)).ok_or_else(|| refus(format!("{} illisible : {}", quoi, crate::fichiers::repr(texte))))
 }
 
 /// Les noms des feuilles du classeur, dans l'ordre.
-pub fn feuilles(chemin: &Path) -> Resultat<Vec<String>> {
+pub fn feuilles(chemin: &Path) -> R<Vec<String>> {
     let mut c = Classeur::ouvrir(chemin)?;
     let texte = c.lire("xl/workbook.xml")?;
     noms_des_feuilles(&c.nom, &texte).map(|v| v.into_iter().map(|(nom, _)| nom).collect())
 }
 
 /// (nom, `r:id`) de chaque feuille de `xl/workbook.xml`.
-fn noms_des_feuilles(nom: &str, texte: &str) -> Resultat<Vec<(String, Option<String>)>> {
+fn noms_des_feuilles(nom: &str, texte: &str) -> R<Vec<(String, Option<String>)>> {
     let doc = analyser(nom, "xl/workbook.xml", texte)?;
     let sheets = enfant(doc.root_element(), "sheets")
-        .ok_or_else(|| crate::echec::avec("Ce classeur Excel n'a aucune feuille lisible.", APart { chemin: Some(nom.to_string()), ..APart::default() }))?;
+        .ok_or_else(|| refus_avec("Ce classeur Excel n'a aucune feuille lisible.", Lieu { chemin: Some(nom.to_string()), ..Lieu::default() }))?;
     sheets
         .children()
         .filter(|n| n.is_element())
         .map(|f| match f.attribute("name") {
             Some(n) => Ok((n.to_string(), f.attribute((NS_R, "id")).map(str::to_string))),
-            None => Err(crate::echec::avec("Une feuille de ce classeur Excel n'a pas de nom.", APart { chemin: Some(nom.to_string()), ..APart::default() })),
+            None => Err(refus_avec("Une feuille de ce classeur Excel n'a pas de nom.", Lieu { chemin: Some(nom.to_string()), ..Lieu::default() })),
         })
         .collect()
 }
 
 /// Les lignes de la feuille nommee, de haut en bas, chacune la liste de ses cases de la premiere colonne a la derniere
 /// renseignee ; une ligne absente du classeur est rendue vide. Une feuille inconnue refuse, en disant les feuilles.
-pub fn lignes(chemin: &Path, feuille: &str) -> Resultat<Vec<Ligne>> {
+pub fn lignes(chemin: &Path, feuille: &str) -> R<Vec<Ligne>> {
     let mut c = Classeur::ouvrir(chemin)?;
     let classeur = c.lire("xl/workbook.xml")?;
     let liens = c.lire("xl/_rels/workbook.xml.rels")?;
@@ -172,7 +169,7 @@ pub fn lignes(chemin: &Path, feuille: &str) -> Resultat<Vec<Ligne>> {
     }
     let Some(rid) = rid else {
         let liste: Vec<&str> = noms.iter().map(|(n, _)| n.as_str()).collect();
-        return Err(format!("feuille « {} » absente de {} (feuilles : {})", feuille, c.nom, liste.join(", ")));
+        return Err(refus(format!("feuille « {} » absente de {} (feuilles : {})", feuille, c.nom, liste.join(", "))));
     };
     let doc_liens = analyser(&c.nom, "xl/_rels/workbook.xml.rels", &liens)?;
     let mut cible = None;
@@ -181,7 +178,7 @@ pub fn lignes(chemin: &Path, feuille: &str) -> Resultat<Vec<Ligne>> {
             cible = l.attribute("Target").map(str::to_string);
         }
     }
-    let cible = cible.ok_or_else(|| format!("{} : la feuille « {} » ({}) n'a pas de cible", c.nom, feuille, rid))?;
+    let cible = cible.ok_or_else(|| refus(format!("{} : la feuille « {} » ({}) n'a pas de cible", c.nom, feuille, rid)))?;
     let mut chemin_feuille = cible.trim_start_matches('/').to_string();
     if !chemin_feuille.starts_with("xl/") {
         chemin_feuille = format!("xl/{}", chemin_feuille);
@@ -195,11 +192,11 @@ pub fn lignes(chemin: &Path, feuille: &str) -> Resultat<Vec<Ligne>> {
     let texte = c.lire(&chemin_feuille)?;
     let doc = analyser(&c.nom, &chemin_feuille, &texte)?;
     let donnees = enfant(doc.root_element(), "sheetData")
-        .ok_or_else(|| format!("{} : {} sans sheetData", c.nom, chemin_feuille))?;
+        .ok_or_else(|| refus(format!("{} : {} sans sheetData", c.nom, chemin_feuille)))?;
     let mut rangs: Vec<Ligne> = Vec::new();
     for rang in enfants(donnees, "row") {
         let numero = entier(
-            rang.attribute("r").ok_or_else(|| format!("{} : une ligne sans numero", c.nom))?,
+            rang.attribute("r").ok_or_else(|| refus(format!("{} : une ligne sans numero", c.nom)))?,
             "numero de ligne",
         )?;
         let mut cellules: std::collections::BTreeMap<usize, Cellule> = std::collections::BTreeMap::new();
@@ -207,34 +204,33 @@ pub fn lignes(chemin: &Path, feuille: &str) -> Resultat<Vec<Ligne>> {
             let genre = case.attribute("t");
             let v = enfant(case, "v").and_then(|v| v.text());
             let valeur = if genre == Some("inlineStr") {
-                let is = enfant(case, "is").ok_or_else(|| format!("{} : texte en ligne sans <is>", c.nom))?;
+                let is = enfant(case, "is").ok_or_else(|| refus(format!("{} : texte en ligne sans <is>", c.nom)))?;
                 Cellule::Texte(texte_de(is))
             } else if let Some(v) = v {
                 match genre {
                     Some("s") => {
                         let i = entier(v, "indice de texte partage")?;
                         let i = usize::try_from(i)
-                            .map_err(|_| format!("{} : indice de texte partage {} hors de la table", c.nom, i))?;
+                            .map_err(|_| refus(format!("{} : indice de texte partage {} hors de la table", c.nom, i)))?;
                         Cellule::Texte(
                             partages
                                 .get(i)
                                 .cloned()
-                                .ok_or_else(|| format!("{} : indice de texte partage {} hors de la table", c.nom, i))?,
+                                .ok_or_else(|| refus(format!("{} : indice de texte partage {} hors de la table", c.nom, i)))?,
                         )
                     }
                     Some("str") | Some("e") => Cellule::Texte(v.to_string()),
                     Some("b") => Cellule::Booleen(v == "1"),
-                    _ if v.contains(['.', 'e', 'E']) => Cellule::Flottant(
-                        v.trim_matches(crate::texte::blanc)
-                            .parse::<f64>()
-                            .map_err(|_| format!("{} : nombre illisible {}", c.nom, crate::fichiers::repr(v)))?,
+                    _ if v.contains(['.', 'e', 'E']) => Cellule::AVirgule(
+                        crate::forme::NombreLu::du_texte(v.trim_matches(crate::texte::blanc))
+                            .map_err(|e| refus(format!("{} : nombre illisible {} ({})", c.nom, crate::fichiers::repr(v), e)))?,
                     ),
                     _ => Cellule::Entier(entier(v, "nombre")?),
                 }
             } else {
                 continue;
             };
-            let r = case.attribute("r").ok_or_else(|| format!("{} : une case sans reference", c.nom))?;
+            let r = case.attribute("r").ok_or_else(|| refus(format!("{} : une case sans reference", c.nom)))?;
             cellules.insert(colonne(r)?, valeur);
         }
         while (rangs.len() as i64) < numero - 1 {

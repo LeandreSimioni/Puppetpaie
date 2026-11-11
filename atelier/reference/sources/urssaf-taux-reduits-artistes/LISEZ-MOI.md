@@ -59,3 +59,10 @@ majoré) `effectif_au_moins: 50` ; `dsn::Seuils` lit l'effectif de `config/effec
 `Effectif::atteint`) pour l'année du mois ; un fichier composé avant, sans 316, refuse à cinquante salariés
 (`dsn::fnal_des_artistes`). **Inférence** : à cinquante, le 316 *remplace* le 334 (la page donne un seul taux par tranche).
 Preuve : `tests/plafond_intermittents.rs` (`a_cinquante_salaries_…`).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `urssaf-taux-reduits-cas-particuliers-20260715.pdf` : `15cdbb769591210624cf50c72423022a60cbab15cf84ea1a8d30135194ae4bd9`
+- `urssaf-taux-reduits-cas-particuliers-20260715.txt` : `104c6ea66cc17f64f6f4e6837575bdcb0e53aeef976b48b04a7791ae75e4deac`

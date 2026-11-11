@@ -29,7 +29,7 @@ use std::sync::{Arc, OnceLock};
 use serde::{Deserialize, Serialize};
 
 use crate::fichiers::{forme_en_cache, FormeGardee};
-use crate::num::Resultat;
+use crate::echec::R;
 
 /// Une ligne de la liste : le code ISO, le nom et le nom officiel du COG, le pays de rattachement d'un territoire.
 #[derive(Debug, Clone, Deserialize)]
@@ -74,13 +74,13 @@ struct Ecarte {
 }
 
 /// La liste livree, dans l'ordre du COG.
-pub fn liste() -> Resultat<Arc<Vec<Pays>>> {
+pub fn liste() -> R<Arc<Vec<Pays>>> {
     static CACHE: OnceLock<FormeGardee<Vec<Pays>>> = OnceLock::new();
     forme_en_cache(&CACHE, "pays-base.json", "La liste des pays livrée avec le logiciel ne se lit pas : le signaler au développeur.", |b: BasePays| Ok(b.pays))
 }
 
 /// Le pays d'un code ISO (casse et blancs ignores), ou `None` s'il n'est pas dans la liste.
-pub fn du_code(code: &str) -> Resultat<Option<Pays>> {
+pub fn du_code(code: &str) -> R<Option<Pays>> {
     let c = code.trim().to_uppercase();
     Ok(liste()?.iter().find(|p| p.code == c).cloned())
 }
@@ -152,13 +152,13 @@ struct BasePaysDsn {
 }
 
 /// La table « Pays » de la DSN, dans l'ordre de la nomenclature.
-pub fn table_dsn() -> Resultat<Arc<Vec<PaysDsn>>> {
+pub fn table_dsn() -> R<Arc<Vec<PaysDsn>>> {
     static CACHE: OnceLock<FormeGardee<Vec<PaysDsn>>> = OnceLock::new();
     forme_en_cache(&CACHE, "pays-dsn-base.json", "La table des pays de la DSN livrée avec le logiciel ne se lit pas : le signaler au développeur.", |b: BasePaysDsn| Ok(b.pays))
 }
 
 /// Le pays de naissance d'un code (casse et blancs ignores) : sa ligne de la table « Pays » de la DSN, ou `None`.
-pub fn de_la_table_dsn(code: &str) -> Resultat<Option<PaysDsn>> {
+pub fn de_la_table_dsn(code: &str) -> R<Option<PaysDsn>> {
     let c = code.trim().to_uppercase();
     Ok(table_dsn()?.iter().find(|p| p.code == c).cloned())
 }
@@ -180,7 +180,7 @@ pub struct PaysServi {
 }
 
 /// Ce que la page recoit pour le pays de naissance (`etat.pays_naissance`) : la table « Pays » de la DSN, triee par nom.
-pub fn servir_naissance() -> Resultat<Vec<PaysServi>> {
+pub fn servir_naissance() -> R<Vec<PaysServi>> {
     let cog = liste()?;
     let mut l: Vec<PaysServi> = table_dsn()?.iter().map(|p| PaysServi { code: p.code.clone(), nom: nom_de_naissance(p, &cog) }).collect();
     // La cle se calcule une fois par pays (`sort_by_cached_key`, stable comme `sort_by_key`), pas a chaque comparaison.
@@ -190,7 +190,7 @@ pub fn servir_naissance() -> Resultat<Vec<PaysServi>> {
 
 /// Le code d'un pays de naissance nomme `texte` (le nom du COG, le nom officiel, ou le libelle de la table « Pays » de la
 /// DSN), accents et casse ignores ; `None` sinon.
-pub fn naissance_du_nom(texte: &str) -> Resultat<Option<String>> {
+pub fn naissance_du_nom(texte: &str) -> R<Option<String>> {
     if let Some(p) = du_nom(texte)? {
         return Ok(Some(p.code));
     }
@@ -207,7 +207,7 @@ pub fn cle_de_nom(nom: &str) -> String {
 }
 
 /// Le pays dont le nom (celui du COG, ou le nom officiel) est `texte`, accents et casse ignores.
-pub fn du_nom(texte: &str) -> Resultat<Option<Pays>> {
+pub fn du_nom(texte: &str) -> R<Option<Pays>> {
     let t = cle_de_nom(texte);
     if t.is_empty() {
         return Ok(None);
@@ -227,7 +227,7 @@ pub struct PaysDeNationalite {
 
 /// Ce que la page recoit (`etat.pays`) : la liste triee par nom, chaque pays avec la codification UE que le moteur
 /// en deduit. La page l'affiche ; elle ne decide rien.
-pub fn servir() -> Resultat<Vec<PaysDeNationalite>> {
+pub fn servir() -> R<Vec<PaysDeNationalite>> {
     let mut l = (*liste()?).clone();
     l.sort_by_cached_key(|p| cle_de_nom(&p.nom));
     Ok(l.iter()
@@ -237,12 +237,12 @@ pub fn servir() -> Resultat<Vec<PaysDeNationalite>> {
 
 /// `S21.G00.30.015` du pays de naissance `code` d'une fiche (`qui` : celui qu'elle nomme) : le code, s'il est dans la
 /// table « Pays » de la DSN ; un code blanc tel quel.
-pub fn de_naissance(code: &str, qui: &str) -> Resultat<String> {
+pub fn de_naissance(code: &str, qui: &str) -> R<String> {
     if code.trim().is_empty() {
         return Ok(code.to_string());
     }
     match de_la_table_dsn(code)? {
         Some(p) => Ok(p.code),
-        None => Err(inconnu_naissance(&format!("Le pays de naissance de {}", if qui.is_empty() { "ce salarié" } else { qui }), code)),
+        None => Err(crate::echec::refus(inconnu_naissance(&format!("Le pays de naissance de {}", if qui.is_empty() { "ce salarié" } else { qui }), code))),
     }
 }

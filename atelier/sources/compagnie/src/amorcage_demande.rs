@@ -9,20 +9,21 @@
 //! si une demande est partie depuis le dernier taux recu pour lui et que sa reponse est encore attendue (`en_cours`). Ce qui
 //! ne se demande pas se dit : un salarie sans NIR, une demande deja partie.
 
-use droit::fiche::Lue as _;
 use socle::echec::Classe;
 use std::path::PathBuf;
 
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
+use droit::type_declaration::TypeDeLaDeclaration;
 use socle::date::Jour;
 use socle::echec::{erreur, R};
+use socle::mois::Mois;
 
 /// Ce qu'on demande de produire (l'outil de l'atelier).
 pub struct Demande<'a> {
     pub motif: &'a str,
-    /// Le mois de paie ou lire le contrat a declarer (`AAAA-MM`) ; vide : le mois de la constitution.
-    pub mois: &'a str,
+    /// Le mois de paie ou lire le contrat a declarer.
+    pub mois: Mois,
     /// `--salarie` : seulement ceux-la (`None` : tous ceux qui ont un taux a demander).
     pub salaries: Option<&'a [String]>,
     pub envoi_test: bool,
@@ -64,21 +65,17 @@ fn gauche(t: &str, n: usize) -> String {
     format!("{}{}", t, " ".repeat(n.saturating_sub(t.chars().count())))
 }
 
-/// Les chiffres d'un instant (`AAAA-MM-JJTHH:MM:SS` -> `AAAAMMJJHHMMSS`).
-fn chiffres(t: &str) -> String {
-    t.chars().filter(char::is_ascii_digit).collect()
-}
 
 /// Le jour ouvre qui tombe `combien` jours ouvres apres `depart` -- ni samedi, ni dimanche, ni fete legale.
 fn jours_ouvres_apres(depart: Jour, combien: i64) -> R<Jour> {
     let mut jour = depart;
     let mut restants = combien;
     while restants > 0 {
-        jour = jour.plus_jours(1).map_err(|m| erreur(Classe::CalculImpossible, m))?;
+        jour = jour.plus_jours(1).map_err(|e| e.reclasser(Classe::CalculImpossible))?;
         if jour.jour_de_la_semaine() >= 5 {
             continue;
         }
-        let feries = socle::feries::feries(jour.an).map_err(|m| erreur(Classe::Illisible, m))?;
+        let feries = socle::feries::feries(jour.an).map_err(|e| e.reclasser(Classe::Illisible))?;
         if feries.iter().any(|(j, _)| *j == jour) {
             continue;
         }
@@ -96,20 +93,24 @@ fn jours_ouvres_apres(depart: Jour, combien: i64) -> R<Jour> {
 /// reponse, il ne la fait pas attendre au-dela du delai. Il se lit au journal de ce qui est parti ; rien d'autre ne le
 /// garde.
 pub fn en_cours(ctx: &Contexte, cle: &str) -> R<Option<EnCours>> {
-    let lignes = envois::journal::lu(&ctx.racine).map_err(|m| erreur(Classe::Disque, m))?.lignes;
+    let lignes = envois::journal::lu(&ctx.racine).map_err(|e| e.reclasser(Classe::Disque))?.lignes;
     let pour_lui = |l: &envois::journal::Ligne| l.versions().is_some_and(|v| v.iter().any(|x| x.salarie.as_str() == cle));
     let derniere = envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, true)
         .filter(|l| l.accepte() && l.nature_dsn() == Some(declarations::amorcage::NATURE) && pour_lui(l) && !envois::etats::refuse_par_un_retour(l))
         .last();
     let Some(l) = derniere else { return Ok(None) };
-    let quand = l.quand().to_string();
+    // L'heure de la demande ; un jour seul compte de son debut.
+    let partie = match l.quand() {
+        socle::paris::HeureDuJournal::Instant(i) => Some(i.naif()),
+        socle::paris::HeureDuJournal::Jour(j) => socle::paris::Naif::du_jour(j, 0, 0, 0),
+    }
+    .ok_or_else(|| erreur(Classe::Illisible, "Le jour d'une demande de taux partie ne se lit pas au journal."))?;
     // Un taux recu depuis la demande y a repondu.
-    let recus = droit::pas::recus(ctx, cle).map_err(|m| erreur(Classe::Illisible, m))?;
-    if recus.last().and_then(|r| r.mis_a_disposition.portee()).is_some_and(|d| chiffres(d) >= chiffres(&quand)) {
+    let recus = droit::pas::recus(ctx, cle).map_err(|e| e.reclasser(Classe::Illisible))?;
+    if recus.last().and_then(|r| r.mis_a_disposition).is_some_and(|d| d.naif() >= partie) {
         return Ok(None);
     }
-    let le_jour = quand.get(..10).ok_or_else(|| erreur(Classe::Illisible, "Le jour d'une demande de taux partie ne se lit pas au journal."))?;
-    let jour = Jour::lire(le_jour).map_err(|m| erreur(Classe::Illisible, m))?;
+    let jour = l.quand().jour();
     let avant = jours_ouvres_apres(jour, 5)?;
     Ok((ctx.aujourdhui <= avant).then_some(EnCours { quand: jour, avant }))
 }
@@ -120,7 +121,6 @@ pub fn en_cours(ctx: &Contexte, cle: &str) -> R<Option<EnCours>> {
 /// porte un (1,1). `forcer` : demander encore, une demande deja partie (le signalement rejete par la plate-forme).
 pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R<Vec<Ligne>> {
     use declarations::amorcage as am;
-    let ko = |m: String| erreur(Classe::Illisible, m);
     let cle_de = |p: &Paie| p.salarie.id.to_string();
     let mut cles: Vec<String> = Vec::new();
     for p in paies {
@@ -134,15 +134,15 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
     for cle in &cles {
         let mut besoin: Option<(usize, droit::pas::Situation)> = None;
         for (i, p) in paies.iter().enumerate().filter(|(_, p)| cle_de(p) == *cle) {
-            let s = droit::pas::situation(ctx, cle, Some(p.engagement.date_du_versement().map_err(ko)?), Some(&p.engagement.mois)).map_err(ko)?;
-            if s.situation == droit::pas::SANS_NIR || s.a_demander {
+            let s = droit::pas::situation(ctx, cle, Some(p.engagement.date_du_versement().map_err(|e| e.reclasser(Classe::Illisible))?), Some(p.engagement.mois)).map_err(|e| e.reclasser(Classe::Illisible))?;
+            if s.situation == droit::pas::SituationDuTaux::SansNir || s.a_demander {
                 besoin = Some((i, s));
                 break;
             }
         }
         let Some((i, s)) = besoin else { continue };
         // SANS NIR, LA DGFiP N'A PERSONNE A QUI REPONDRE : la demande ne part pas, et cela se dit.
-        if s.situation == droit::pas::SANS_NIR {
+        if s.situation == droit::pas::SituationDuTaux::SansNir {
             lignes.push(Ligne { salarie: cle.clone(), libelle: s.libelle.to_string(), contrat: None, pourquoi_pas: "sans NIR dans sa fiche, la DGFiP n'a personne à qui répondre".into(), indice: i });
             continue;
         }
@@ -159,10 +159,10 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
                 l.pourquoi_pas = format!("demande déjà partie le {}, réponse attendue avant le {}", d.quand.jj_mm_aaaa(), d.avant.jj_mm_aaaa());
             }
             _ => {
-                if let Err(e) = am::verifier(p, motif, am::NORMALE, None) {
+                if let Err(e) = am::verifier(p, motif, TypeDeLaDeclaration::Normale, None) {
                     match e {
-                        declarations::fctu::Echec::Impossible(m) => l.pourquoi_pas = m,
-                        declarations::fctu::Echec::Autre(m) => return Err(erreur(Classe::Refuse, m)),
+                        declarations::fctu::Echec::Impossible(m) => l.pourquoi_pas = m.phrase,
+                        autre => return Err(autre.en_classe(Classe::Refuse)),
                     }
                 }
             }
@@ -176,25 +176,25 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
 /// (`Amorcage<motif>_<salarie>_<AAAAMMJJ>.dsn`), constitue le jour `constitution`. UN NUMERO D'ORDRE PAR FICHIER, a la
 /// suite de tous les signalements deja partis : la sequence ne se remet jamais a zero (cahier technique DSN, p. 136), et
 /// deux signalements au meme ordre ne passent pas (p. 14) ; ecrits ensemble, ils se suivent.
-pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: &str, mois: &str, constitution: Jour, envoi_test: bool) -> R<Vec<PathBuf>> {
+pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: &str, mois: Mois, constitution: Jour, envoi_test: bool) -> R<Vec<PathBuf>> {
     use declarations::amorcage as am;
-    let dossier = ctx.racine.join("sorties").join(mois);
-    let premier = envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|m| erreur(Classe::Refuse, m))? + 1;
-    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(|m| erreur(Classe::Disque, m))?;
+    let dossier = ctx.racine.join("sorties").join(mois.to_string());
+    let premier = envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))? + 1;
+    let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(|e| e.reclasser(Classe::Disque))?;
     let mut fichiers = Vec::new();
     for (rang, l) in retenues.iter().enumerate() {
         let options = am::Options {
             motif: motif.to_string(),
-            type_declaration: am::NORMALE.to_string(),
+            type_declaration: TypeDeLaDeclaration::Normale,
             ordre: premier + rang as i64,
             remplace: None,
             envoi_test,
             date_constitution: Some(constitution),
         };
-        let texte = am::generer(ctx, &paies[l.indice], &options, &departs).map_err(|e| erreur(Classe::Refuse, e.message().to_string()))?;
+        let texte = am::generer(ctx, &paies[l.indice], &options, &departs).map_err(|e| e.en_classe(Classe::Refuse))?;
         let cible = dossier.join(format!("Amorcage{}_{}_{}.dsn", motif, l.salarie, constitution.aaaammjj()));
         crate::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
-        declarations::dsn::ecrire(&texte, &cible).map_err(|m| erreur(Classe::Disque, m))?;
+        declarations::dsn::ecrire(&texte, &cible).map_err(|e| e.reclasser(Classe::Disque))?;
         crate::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &crate::pieces_ecrites::cle_de_piece(&cible), None, None)?;
         fichiers.push(cible);
     }
@@ -230,15 +230,15 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
         let raisons: Vec<String> = ecartes.iter().map(|l| format!("{} ({})", l.salarie, l.pourquoi_pas)).collect();
         return Err(erreur(Classe::AmorcageImpossible, format!("Taux de PAS non demandé : {}.", raisons.join(" ; "))));
     }
-    let mois = if d.mois.is_empty() { d.constitution.mois_civil().to_string() } else { d.mois.to_string() };
-    let dossier = ctx.racine.join("sorties").join(&mois);
-    let fichiers = ecrire(ctx, paies, &retenus, d.motif, &mois, d.constitution, d.envoi_test)?;
+    let mois = d.mois;
+    let dossier = ctx.racine.join("sorties").join(mois.to_string());
+    let fichiers = ecrire(ctx, paies, &retenus, d.motif, mois, d.constitution, d.envoi_test)?;
     ecrits.extend(fichiers.iter().cloned());
     // Le recapitulatif : ce qu'on lit avant de deposer -- et apres, pour savoir ce qu'on attend.
     let jour = d.constitution.aaaammjj();
     let mut out: Vec<String> = vec![
         "SIGNALEMENTS D'AMORCAGE DES DONNEES VARIABLES (nature 08)".into(),
-        format!("Motif {} - {}", d.motif, am::libelle_motif(d.motif).map_err(|m| erreur(Classe::Illisible, m))?),
+        format!("Motif {} - {}", d.motif, am::libelle_motif(d.motif).map_err(|e| e.reclasser(Classe::Illisible))?),
         format!("Constitues le {}", d.constitution.jj_mm_aaaa()),
         String::new(),
         format!("Un signalement par individu : {} fichier(s) a deposer.", retenus.len()),
@@ -263,6 +263,6 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
         }
     }
     let recap = dossier.join(format!("Amorcage{}_{}_recapitulatif.txt", d.motif, jour));
-    std::fs::write(&recap, format!("{}\n", out.join("\n"))).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&recap, &e)))?;
+    std::fs::write(&recap, format!("{}\n", out.join("\n"))).map_err(|e| socle::echec::du_disque(&recap, &e).reclasser(Classe::Disque))?;
     Ok(Lot { motif: d.motif.to_string(), dossier, fichiers, lignes: retenus, ecartes, recapitulatif: recap })
 }

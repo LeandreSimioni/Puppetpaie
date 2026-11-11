@@ -6,7 +6,7 @@ async function dessinerDiagnostic(rang) {
   const etat = rang.querySelector(".k-diag-etat"), compte = rang.querySelector(".k-diag-compte");
   let d;
   try { d = await api("diagnostic-etat"); } catch (e) { etat.textContent = e.message; return; }
-  const k = d.ecran || {};
+  const k = d.ecran;
   // L'ENVOI SE COUPE : avec un avertissement, et il se
   // rallume d'un clic. Coupé, rien ne part ; le journal reste sur le poste.
   const couper = rang.querySelector("#k-diag-couper");
@@ -14,7 +14,7 @@ async function dessinerDiagnostic(rang) {
   couper.textContent = k.couper;
   couper.onclick = async () => {
     if (d.envoi !== false) {
-      const a = k.desactiver || {};
+      const a = k.desactiver;
       const oui = await new Promise((resoudre) => {
         let repondu = false;
         const repondre = (v) => { if (!repondu) { repondu = true; resoudre(v); } };
@@ -38,14 +38,15 @@ async function dessinerDiagnostic(rang) {
     dessinerDiagnostic(rang);
   };
   etat.innerHTML = pastilleDeLEtat(d.pastille);
-  compte.textContent = k.compte || "";
-  let signales = [];
-  try { signales = (await api("signalements")).signalements; } catch (e) { /* la liste est un plus */ }
+  compte.textContent = k.compte;
+  let signales;
+  try { signales = retenirSignalements(await api("signalements")).signalements; }
+  catch (e) { dire(e.message, "erreur"); return; }
   rang.querySelector("#k-diag-voir").onclick = () => boiteDiagnostic(d, rang, signales);
 }
 
-function boiteDiagnostic(d, rang, signales = []) {
-  const k = d.ecran || {};
+function boiteDiagnostic(d, rang, signales) {
+  const k = d.ecran;
   ouvrirBoite(`
     <h3>Ce qui est parti</h3>
     <p class="note">${echapper(k.parti)}</p>
@@ -54,8 +55,8 @@ function boiteDiagnostic(d, rang, signales = []) {
         <div class="choix"><span>
           <b>${echapper(g.quoi_dit)}</b>
           ${g.combien > 1 ? `<span class="discret">× ${g.combien}</span>` : ""}
-          — ${echapper(g.resume || g.genre || "")}
-          <br><span class="discret">${echapper(g.ou || "")} · ${echapper(g.dernier_dit)}</span>
+          — ${echapper(g.resume)}
+          <br><span class="discret">${echapper(g.ou)} · ${echapper(g.dernier_dit)}</span>
           <br>${pastilleDeLEtat(g.pastille)}
           <button class="lien d-contenu" data-i="${i}">voir le contenu exact</button>
           <pre class="d-pre" data-i="${i}" hidden></pre></span>
@@ -100,8 +101,12 @@ function boiteDiagnostic(d, rang, signales = []) {
 const CAPTURE_MAX = 1536 * 1024;           // 1,5 Mo, comme le moteur
 const CAPTURES_MAX = 5;
 let SIGNALEMENT_REDUIT = null;             // rouvre la boîte rangée dans sa pastille
-/* Ce que la boîte dit, tel que le moteur le rend (`ecran` de `signalements`). */
-let ECRAN_MESSAGE = {};
+/* Ce que la boîte dit, tel que le moteur le rend (`ecran` de `signalements`), retenu à chaque lecture des messages. */
+let ECRAN_MESSAGE = null;
+function retenirSignalements(r) {
+  ECRAN_MESSAGE = r.ecran;
+  return r;
+}
 
 function ecranCourant() {
   const b = document.querySelector(".onglets button.actif");
@@ -119,7 +124,8 @@ function boiteSignalement() {
   const ecran = ecranCourant();
   const captures = [];                      // { type, donnees (data URL), octets }
   const enCours = new Set();                // les captures d'écran qui se dessinent encore (promesses)
-  chargerHtml2canvas().catch(() => {});     // l'outil de capture se charge dès l'ouverture, pas au clic
+  // L'outil de capture se charge dès l'ouverture, pas au clic.
+  chargerHtml2canvas().catch((e) => dire(e.message, "erreur"));
   // La boîte déjà ouverte (une DPAE, un dépôt) attend dessous, et revient
   // quand celle-ci se ferme ou se réduit.
   let dessous = mettreDeCote();
@@ -152,7 +158,7 @@ function boiteSignalement() {
   dessinerAvance(boite.querySelector("#sg-avance"));
   const $ = (id) => boite.querySelector("#" + id);
   const texte = $("sg-texte"), envoyer = $("sg-envoyer");
-  const montrerErreur = (m) => { $("sg-erreur").textContent = m || ""; $("sg-erreur").hidden = !m; };
+  const montrerErreur = (m) => { $("sg-erreur").textContent = m; $("sg-erreur").hidden = !m; };
   const charge = () => ({ texte: texte.value, ecran,
     captures: captures.map((c) => ({ type: c.type, donnees: c.donnees })) });
   const changement = () => {
@@ -211,18 +217,16 @@ function boiteSignalement() {
   // VOS MESSAGES, et leurs réponses : ouvrir la boîte les rend lues.
   (async () => {
     try {
-      const r = await api("signalements");
-      const l = r.signalements;
-      ECRAN_MESSAGE = r.ecran || {};
-      $("sg-question").textContent = ECRAN_MESSAGE.question || "";
-      $("sg-captures").textContent = ECRAN_MESSAGE.captures || "";
-      $("sg-ce-qui-part").textContent = ECRAN_MESSAGE.ce_qui_part || "";
+      const l = retenirSignalements(await api("signalements")).signalements;
+      $("sg-question").textContent = ECRAN_MESSAGE.question;
+      $("sg-captures").textContent = ECRAN_MESSAGE.captures;
+      $("sg-ce-qui-part").textContent = ECRAN_MESSAGE.ce_qui_part;
       $("sg-messages").innerHTML = vosMessages(l);
       if (l.some((s) => s.reponse && !s.lu)) {
         await api("signalements-lus");
         dessinerPastilleReponses();
       }
-    } catch (e) { /* la liste est un plus */ }
+    } catch (e) { montrerErreur(e.message); }
   })();
 
   // RÉDUIRE : la boîte sort de la page, intacte, et une pastille la rappelle.
@@ -299,14 +303,14 @@ function boiteSignalement() {
     const rendre = occupe(envoyer, "Envoi…");
     try {
       await Promise.all([...enCours]);      // une capture qui se dessine encore part avec le reste
-      const r = await api("signalement-envoyer", charge());
+      const r = retenirSignalements(await api("signalement-envoyer", charge()));
       $("sg-pre").hidden = true;
       $("sg-resultat").hidden = false;
       // D'ABORD MERCI, puis où en est l'envoi, dit par le moteur (« envoi en cours » puis
       // « message envoyé »). La réponse revient dans « Vos messages ».
       SG_ENVOI = { id: r.id, deja: !!r.deja };
-      $("sg-resultat").innerHTML = departDuMessage((r.signalements || []).find((s) => s.id === r.id));
-      $("sg-messages").innerHTML = vosMessages(r.signalements || []);
+      $("sg-resultat").innerHTML = departDuMessage(r.signalements.find((s) => s.id === r.id));
+      $("sg-messages").innerHTML = vosMessages(r.signalements);
       ["sg-voir", "sg-reduire", "sg-ajout"].forEach((id) => { $(id).hidden = true; });
       envoyer.hidden = true;
       texte.readOnly = true;
@@ -424,7 +428,7 @@ function departDuMessage(s) {
 /** Où en est un message (l'état vient du moteur, `problemes::signalements`). */
 function etatDuMessage(s) {
   if (s.pastille) return ` ${pastilleDeLEtat(s.pastille)}${s.raison ? ` <span class="discret">— ${echapper(s.raison)}</span>` : ""}`;
-  return ` <span class="discret">— ${echapper(ECRAN_MESSAGE.attente || "")}</span>`;
+  return ` <span class="discret">— ${echapper(ECRAN_MESSAGE.attente)}</span>`;
 }
 
 /** Tant qu'un message est en cours d'envoi et la boîte ouverte, la liste se
@@ -434,7 +438,7 @@ function suivreLesMessages(boite, depuis) {
     if (!boite.isConnected && !SIGNALEMENT_REDUIT) return;
     if (Date.now() - depuis > 2 * 60 * 1000) return;
     let l;
-    try { l = (await api("signalements")).signalements; } catch (e) { return; }
+    try { l = retenirSignalements(await api("signalements")).signalements; } catch (e) { dire(e.message, "erreur"); return; }
     const nid = boite.querySelector("#sg-messages");
     if (nid) nid.innerHTML = vosMessages(l);
     const res = boite.querySelector("#sg-resultat");
@@ -447,7 +451,7 @@ function suivreLesMessages(boite, depuis) {
  *  les demande. */
 async function dessinerPastilleReponses(lus) {
   let s;
-  try { s = lus || await api("signalements"); } catch (e) { return; }
+  try { s = retenirSignalements(lus || await api("signalements")); } catch (e) { dire(e.message, "erreur"); return; }
   document.getElementById("signaler").innerHTML = "Un problème, une idée ?"
     + (s.reponses_dit ? ` <span class="sg-nouvelles">· ${echapper(s.reponses_dit)}</span>` : "");
 }
@@ -455,8 +459,8 @@ async function dessinerPastilleReponses(lus) {
 function listeSignalements(liste) {
   if (!liste.length) return "";
   return `<h4>Vos signalements</h4><ul class="sg-liste">${liste.map((s) => `
-    <li><span class="discret">${echapper(s.quand_dit)}</span> <b>${echapper(s.numero)}</b>
+    <li><span class="discret">${echapper(s.quand_dit)}</span>${s.numero ? ` <b>${echapper(s.numero)}</b>` : ""}
       — ${echapper(s.texte)}${s.ticket
-        ? ` <a href="${echapper(s.ticket)}" target="_blank" rel="noopener">ticket n° ${echapper(String(s.ticket_numero ?? ""))}</a>` : ""}${s.etat !== "arrive" ? etatDuMessage(s) : ""}</li>`).join("")}</ul>`;
+        ? ` <a href="${echapper(s.ticket)}" target="_blank" rel="noopener">${echapper(s.ticket_dit)}</a>` : ""}${s.etat !== "arrive" ? etatDuMessage(s) : ""}</li>`).join("")}</ul>`;
 }
 

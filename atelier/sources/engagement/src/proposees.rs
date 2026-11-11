@@ -13,7 +13,7 @@ use droit::contexte::Contexte;
 use droit::emplois;
 use droit::fiche::Lue as _;
 use socle::date::Jour;
-use socle::num::Resultat;
+use socle::echec::R;
 
 use crate::saisie::Carte;
 
@@ -27,7 +27,7 @@ pub struct Proposees {
 
 /// Les rubriques que la nature (`mensuelle` : payee au mois ; `None` : pas encore dite), le statut et le metier (`None` :
 /// pas encore dits) d'un engagement prennent, au catalogue de la compagnie a `jour`.
-pub fn proposees(ctx: &Contexte, mensuelle: Option<bool>, statut: Option<&str>, metier: Option<&str>, jour: &Jour) -> Resultat<Proposees> {
+pub fn proposees(ctx: &Contexte, mensuelle: Option<bool>, statut: Option<&str>, metier: Option<&str>, jour: &Jour) -> R<Proposees> {
     let cat = catalogue(&ctx.racine, jour)?;
     let ent = &ctx.entreprise;
     let prime = clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), metier, statut)?;
@@ -43,7 +43,7 @@ pub fn proposees(ctx: &Contexte, mensuelle: Option<bool>, statut: Option<&str>, 
     let siennes: Vec<&Rubrique> = cat.iter().filter(prend).collect();
     let par_defaut = match mensuelle {
         Some(true) => siennes.first(),
-        _ => siennes.iter().find(|r| r.nature == "salaire"),
+        _ => siennes.iter().find(|r| r.nature == droit::catalogue::NatureDeRubrique::Salaire),
     };
     Ok(Proposees { par_defaut: par_defaut.map(|r| r.code.clone()), rubriques: siennes.iter().map(|r| r.code.clone()).collect() })
 }
@@ -51,10 +51,10 @@ pub fn proposees(ctx: &Contexte, mensuelle: Option<bool>, statut: Option<&str>, 
 /// Les rubriques d'une carte qui ne se calcule pas encore, lues sur sa saisie comme la paie les lira : sa nature si elle
 /// la dit ; son metier, sinon celui de la fiche de son salarie ; son statut ecrit, sinon celui de son metier, sinon
 /// celui de la fiche de son salarie.
-pub fn de_la_carte(ctx: &Contexte, carte: &Carte, jour: &Jour) -> Resultat<Proposees> {
+pub fn de_la_carte(ctx: &Contexte, carte: &Carte, jour: &Jour) -> R<Proposees> {
     let dit = |x: &Option<String>| x.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
-    let mensuelle = match dit(&carte.nature) {
-        Some(n) => Some(droit::natures::nature(&n)?.mensuelle()),
+    let mensuelle = match carte.nature {
+        Some(n) => Some(n.proprietes()?.mensuelle()),
         None => None,
     };
     let fiche = carte.salarie.as_ref().and_then(|c| ctx.salaries.get(c.as_str()));
@@ -64,6 +64,6 @@ pub fn de_la_carte(ctx: &Contexte, carte: &Carte, jour: &Jour) -> Resultat<Propo
         None => None,
     };
     let de_la_fiche = fiche.and_then(|f| f.statut.dite()).map(|s| s.as_str().to_string());
-    let statut = dit(&carte.statut).or(du_metier).or(de_la_fiche);
+    let statut = carte.statut.map(|s| s.as_str().to_string()).or(du_metier).or(de_la_fiche);
     proposees(ctx, mensuelle, statut.as_deref(), metier.as_deref(), jour)
 }

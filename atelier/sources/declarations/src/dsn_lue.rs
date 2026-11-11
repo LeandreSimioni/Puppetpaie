@@ -10,11 +10,18 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use droit::base_assujettie::BaseAssujettie;
+use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::type_declaration::TypeDeLaDeclaration;
+
 use socle::date::Jour;
-use socle::echec::Echec;
-use socle::mois::Mois;
+use socle::echec::{erreur, refus, Classe, Echec, R};
+use socle::mois::{Mois, MoisOuJour};
 use socle::num::Decimal;
 use socle::texte::{blanc, lignes_du_texte, texte_latin1};
+
+/// Ce qu'on dit d'un fichier qui ne dit pas le mois qu'il declare (`DsnLue::mois_declare`).
+pub const SANS_MOIS: &str = "il ne porte pas de mois principal déclaré (S20.G00.05.005)";
 
 // ------------------------------------------------------------------ la forme
 
@@ -32,7 +39,7 @@ pub struct Banque {
 /// (`declarant_dsn`). Son courriel se garde tel que la DSN le declare, capitales comprises : la casse de ce qui precede
 /// l'arobase est a l'adresse (« The local-part of a mailbox MUST BE treated as case sensitive », RFC 5321, § 2.4 :
 /// `ietf/ietf-rfc5321-simple-mail-transfer-protocol-20081001.txt`, l. 869).
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Contact {
     pub nom_prenom: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -119,7 +126,7 @@ impl EmploiDeclare {
     /// Une valeur que la NATURE du contrat fixe (`contrats-base.json`, `codes` : « 999SPT » en 40.005 pour tout permanent,
     /// CCH-18 du bloc 40) ne dit rien du salarie : elle ne passe pas dans sa fiche. `999SPT` n'est pas un metier, et une
     /// DSN de PuppetPaie reimportee le donnerait comme `code_emploi_ft` d'un permanent.
-    pub fn du_salarie(&self) -> socle::num::Resultat<EmploiDeclare> {
+    pub fn du_salarie(&self) -> R<EmploiDeclare> {
         let natures = droit::natures::natures()?;
         let garder = |rubrique: &str, v: &Option<String>| {
             v.clone().filter(|v| !natures.iter().any(|nat| nat.code(rubrique).as_deref() == Some(v.as_str())))
@@ -141,11 +148,11 @@ impl EmploiDeclare {
 /// salarie (`champs-base.json`) : il n'est pas lu. La date de naissance n'est pas un jour : la norme admet un jour ou un
 /// mois inconnu (« 00MMAAAA ou 99MMAAAA », « JJ00AAAA ou JJ99AAAA », p. 172, l. 175-177) ; elle passe a la fiche en
 /// AAAA-MM-JJ, que la fiche controle.
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct IndividuDeclare {
-    /// S21.G00.30.001.
+    /// S21.G00.30.001, absent quand l'individu commence a son nom.
     #[serde(skip)]
-    pub nir: String,
+    pub nir: Option<String>,
     /// .002.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nom: Option<String>,
@@ -157,7 +164,7 @@ pub struct IndividuDeclare {
     pub sexe: Option<String>,
     /// .006.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_naissance: Option<String>,
+    pub date_naissance: Option<NaissanceDeclaree>,
     /// .007.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lieu_naissance: Option<String>,
@@ -192,9 +199,9 @@ pub struct IndividuDeclare {
 
 /// Un contrat (bloc S21.G00.40) de l'individu qui le precede, son arret (bloc S21.G00.60) et sa fin (bloc S21.G00.62)
 /// s'il les declare.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ContratDeclare {
-    pub nir: String,
+    pub nir: Option<String>,
     /// Le rang de son individu dans `DsnLue::individus` : un individu sans NIR n'a que lui.
     pub individu: usize,
     /// .001.
@@ -209,11 +216,11 @@ pub struct ContratDeclare {
     /// .012, la quotite de reference de la categorie ; .013, celle du contrat ; .014, la modalite du temps de travail.
     pub quotite_reference: Option<Decimal>,
     pub quotite: Option<Decimal>,
-    pub modalite: Option<String>,
+    pub modalite: Option<droit::natures::ModaliteDuTempsDeTravail>,
     /// .017, la convention du contrat.
     pub idcc: Option<String>,
     /// .021, le motif de recours.
-    pub motif_recours: Option<String>,
+    pub motif_recours: Option<droit::natures::MotifDeRecours>,
     /// .022, la caisse de conges payes, telle que la DSN l'ecrit.
     pub caisse_conges: Option<String>,
     /// .040 et .043 : le code risque et le taux AT/MP (`bloc-S21.G00.40.txt` l. 1224-1315).
@@ -227,7 +234,7 @@ pub struct ContratDeclare {
     pub dernier_jour_travaille: Option<Jour>,
     /// S21.G00.62.001 et .002 : la fin que la DSN declare, et son motif.
     pub fin_declaree: Option<Jour>,
-    pub motif_fin: Option<String>,
+    pub motif_fin: Option<droit::natures::MotifDeRupture>,
 }
 
 /// Une activite (bloc S21.G00.53) de la remuneration qui la precede : son type (.001), sa mesure (.002), son unite (.003).
@@ -265,9 +272,9 @@ impl Remuneration {
 /// l. 9-14). 50.004 est le montant net verse de la norme (la remuneration nette fiscale moins CSG/CRDS non deductible et
 /// sante patronale, p. 244), pas le net a payer. Le taux du prelevement a la source, son type et son identifiant (50.006
 /// a 50.008) se lisent avec lui.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct VersementLu {
-    pub nir: String,
+    pub nir: Option<String>,
     /// .001.
     pub verse_le: Option<Jour>,
     /// .002.
@@ -276,7 +283,7 @@ pub struct VersementLu {
     pub net_verse: Option<Decimal>,
     /// .006 a .008.
     pub taux_pas: Option<Decimal>,
-    pub type_pas: Option<String>,
+    pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant_pas: Option<String>,
     /// .009.
     pub pas: Option<Decimal>,
@@ -288,14 +295,95 @@ pub struct VersementLu {
 /// Une base assujettie (bloc S21.G00.78) : son code (.001), son montant (.004), et le contrat qu'elle nomme (.006, « dans
 /// le cas de la declaration de plusieurs blocs Contrat », `bloc-S21.G00.79.txt` l. 9-14 ; « dans le cas de la declaration
 /// d'un contrat unique, cette rubrique n'est pas a renseigner »).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct BaseLue {
-    pub code: String,
+    pub code: BaseAssujettie,
     pub montant: Decimal,
     pub contrat: Option<String>,
 }
 
+impl Contact {
+    /// Un contact a son nom (S20.G00.07.001), le reste dit par les rubriques qui le suivent.
+    fn nomme(nom_prenom: String) -> Contact {
+        Contact { nom_prenom, tel: None, email: None, qualite: None, civilite: None }
+    }
+}
+
+impl Adhesion {
+    /// Une adhesion a sa reference (S21.G00.15.001), le reste dit par les rubriques qui la suivent.
+    fn de(libelle: String) -> Adhesion {
+        Adhesion { libelle, organisme: None, reference: None }
+    }
+}
+
+impl IndividuDeclare {
+    /// Un individu a son NIR (S21.G00.30.001), aucun quand il commence a son nom ; le reste dit par les rubriques qui le
+    /// suivent.
+    fn de(nir: Option<String>) -> IndividuDeclare {
+        IndividuDeclare {
+            nir,
+            nom: None,
+            prenom: None,
+            sexe: None,
+            date_naissance: None,
+            lieu_naissance: None,
+            adresse: None,
+            code_postal: None,
+            commune: None,
+            code_nationalite_dsn: None,
+            departement_naissance: None,
+            pays_naissance: None,
+            email: None,
+            code_salarie: None,
+            ntt: None,
+        }
+    }
+}
+
+impl ContratDeclare {
+    /// Un contrat de l'individu `individu` a son debut (S21.G00.40.001), le reste dit par les rubriques qui le suivent.
+    fn de(nir: Option<String>, individu: usize, debut: Option<Jour>) -> ContratDeclare {
+        ContratDeclare {
+            nir,
+            individu,
+            debut,
+            emploi: EmploiDeclare::default(),
+            nature_dsn: None,
+            numero: None,
+            fin: None,
+            quotite_reference: None,
+            quotite: None,
+            modalite: None,
+            idcc: None,
+            motif_recours: None,
+            caisse_conges: None,
+            code_risque: None,
+            taux_at: None,
+            licence: None,
+            objet: None,
+            dernier_jour_travaille: None,
+            fin_declaree: None,
+            motif_fin: None,
+        }
+    }
+}
+
 impl VersementLu {
+    /// Un versement de l'individu a sa date (S21.G00.50.001), le reste dit par les rubriques qui le suivent.
+    fn de(nir: Option<String>, verse_le: Option<Jour>) -> VersementLu {
+        VersementLu {
+            nir,
+            verse_le,
+            net_imposable: None,
+            net_verse: None,
+            taux_pas: None,
+            type_pas: None,
+            identifiant_pas: None,
+            pas: None,
+            remunerations: Vec::new(),
+            bases: Vec::new(),
+        }
+    }
     /// Les contrats que ses remunerations paient (S21.G00.51.010), dans l'ordre ou ils paraissent.
     pub fn contrats(&self) -> Vec<&str> {
         let mut v: Vec<&str> = Vec::new();
@@ -316,7 +404,7 @@ pub struct Nets {
     pub net_imposable: Option<Decimal>,
     pub net_verse: Option<Decimal>,
     pub taux_pas: Option<Decimal>,
-    pub type_pas: Option<String>,
+    pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant_pas: Option<String>,
     pub pas: Option<Decimal>,
 }
@@ -326,23 +414,23 @@ pub struct Nets {
 /// l. 91-98 : `mesures`), ses bases (S21.G00.78.006, `bloc-S21.G00.79.txt` l. 9-14) -- et, quand un seul versement le
 /// paie et ne paie que lui, ce que ce versement porte sans le nommer : ses nets, son prelevement (`nets`) et ses bases sans
 /// 78.006. Un versement de plusieurs contrats n'attribue a aucun ses nets ni ses bases sans numero : rien ne se repartit.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct PaieDuContrat {
-    pub nir: String,
+    pub nir: Option<String>,
     /// Le contrat (S21.G00.51.010).
     pub numero: String,
     /// Le jour du dernier versement qui le paie (S21.G00.50.001).
     pub verse_le: Option<Jour>,
     pub mesures: Mesures,
     /// Ses bases, par code (78.001), sommees.
-    pub bases: BTreeMap<String, Decimal>,
+    pub bases: BTreeMap<BaseAssujettie, Decimal>,
     pub nets: Option<Nets>,
     /// Les autres contrats que ses versements paient (vide : ils ne paient que lui).
     pub avec: Vec<String>,
 }
 
 /// Une adhesion prevoyance (S21.G00.15 : la reference .001, l'organisme .002, la reference de l'adhesion .005).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Adhesion {
     pub libelle: String,
     pub organisme: Option<String>,
@@ -352,7 +440,7 @@ pub struct Adhesion {
 /// Ce qu'un contrat declare pour des periodes de paie : son brut (51 de type 001, « remuneration brute non plafonnee » ;
 /// `None` : aucun), son salaire habituel (51 de type 010, « la remuneration brute habituelle du salarie »,
 /// `bloc-S21.G00.51.txt` : le salaire du contrat d'un permanent) et son activite (53 de type 01).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Mesures {
     pub brut: Option<Decimal>,
     pub salaire_habituel: Option<Decimal>,
@@ -370,13 +458,13 @@ pub struct DsnLue {
     pub nature_envoi: Option<String>,
     /// Le Siren de l'emetteur (S10.G00.01.001) : celui du cabinet quand un tiers depose (`EntrepriseDeclaree`).
     pub emetteur: Option<String>,
-    /// La nature de la declaration (S20.G00.05.001 : `01` mensuelle, un signalement sinon ; `NATURES`).
-    pub nature: Option<String>,
+    /// La nature de la declaration (S20.G00.05.001 : `01` mensuelle, un signalement sinon).
+    pub nature_declaration: Option<NatureDeLaDeclaration>,
     /// Le mois principal declare (S20.G00.05.005) ; un signalement n'en declare pas.
     pub mois: Option<Mois>,
     /// Le type, la fraction et le numero d'ordre de la declaration (S20.G00.05.002, .003, .004), et l'identifiant de
     /// celle qu'elle remplace (.006).
-    pub type_declaration: Option<String>,
+    pub type_declaration: Option<TypeDeLaDeclaration>,
     pub fraction: Option<String>,
     pub ordre: Option<String>,
     pub remplace: Option<String>,
@@ -404,17 +492,7 @@ pub struct DsnLue {
 /// La nature d'un envoi reel (S10.G00.00.005 ; `01` : un test).
 pub const NATURE_REEL: &str = "02";
 /// La nature d'une DSN mensuelle (S20.G00.05.001).
-pub const MENSUELLE: &str = "01";
-/// Les natures de declaration (S20.G00.05.001), en clair.
-pub const NATURES: [(&str, &str); 7] = [
-    ("01", "DSN mensuelle"),
-    ("04", "signalement arrêt de travail"),
-    ("05", "signalement reprise suite à arrêt de travail"),
-    ("07", "signalement fin de contrat de travail unique"),
-    ("08", "signalement amorçage des données variables"),
-    ("09", "DSN de substitution"),
-    ("10", "signalement déclaration préalable à l'embauche"),
-];
+pub const MENSUELLE: NatureDeLaDeclaration = NatureDeLaDeclaration::Mensuelle;
 
 impl DsnLue {
     /// Un envoi reel (S10.G00.00.005), pas un test.
@@ -424,21 +502,17 @@ impl DsnLue {
 
     /// La nature de la declaration (S20.G00.05.001), obligatoire dans toute declaration (tableau des usages) : une DSN
     /// qui ne la dit pas refuse, en le disant.
-    pub fn nature(&self) -> Result<&str, String> {
-        self.nature.as_deref().ok_or_else(|| "La DSN ne porte pas sa nature (S20.G00.05.001, obligatoire) : elle ne se lit pas.".to_string())
+    pub fn nature(&self) -> R<NatureDeLaDeclaration> {
+        self.nature_declaration.ok_or_else(|| erreur(Classe::Refuse, "La DSN ne porte pas sa nature (S20.G00.05.001, obligatoire) : elle ne se lit pas."))
     }
 
     pub fn est_signalement(&self) -> bool {
-        self.nature.as_deref().is_some_and(|n| crate::norme::SIGNALEMENTS.contains(&n))
+        self.nature_declaration.is_some_and(NatureDeLaDeclaration::signalement_envoye)
     }
 
     /// La nature en clair ; `None` si la DSN ne la porte pas.
     pub fn nature_lisible(&self) -> Option<String> {
-        let n = self.nature.as_deref()?;
-        Some(match NATURES.iter().find(|(c, _)| *c == n) {
-            Some((_, l)) => l.to_string(),
-            None => format!("nature {}", n),
-        })
+        self.nature_declaration.map(|n| n.libelle().to_string())
     }
 
     /// L'etablissement declare (le premier S21.G00.11.001).
@@ -454,26 +528,27 @@ impl DsnLue {
         premier(|c| c.dernier_jour_travaille)
             .or_else(|| premier(|c| c.fin_declaree))
             .or_else(|| self.contrats.first().and_then(|c| c.debut))
-            .or_else(|| self.depot.filter(|_| self.nature.as_deref() == Some(crate::amorcage::NATURE)))
+            .or_else(|| self.depot.filter(|_| self.nature_declaration == Some(crate::amorcage::NATURE)))
     }
 
     /// LE MOIS QUE LE FICHIER DECLARE (S20.G00.05.005) ; un signalement se date par son evenement, et se range dans le
-    /// mois de ce jour.
-    pub fn mois_declare(&self) -> Result<Mois, String> {
+    /// mois de ce jour ; `None` s'il ne le dit pas (`SANS_MOIS`).
+    pub fn mois_declare(&self) -> Option<Mois> {
         match (self.mois, self.evenement()) {
-            (Some(m), _) => Ok(m),
-            (None, Some(j)) if self.est_signalement() => Ok(Mois::du_jour(&j)),
-            _ => Err("il ne porte pas de mois principal déclaré (S20.G00.05.005)".to_string()),
+            (Some(m), _) => Some(m),
+            (None, Some(j)) if self.est_signalement() => Some(Mois::du_jour(&j)),
+            _ => None,
         }
     }
 
     /// Ce qu'on fait recopier pour prouver qu'on a regarde : le jour de l'evenement d'un signalement (`AAAA-MM-JJ`), le
     /// mois sinon. Un fichier qui ne dit ni l'un ni l'autre refuse : il n'y a rien a recopier.
-    pub fn confirmation_attendue(&self) -> Result<String, String> {
+    pub fn confirmation_attendue(&self) -> R<MoisOuJour> {
+        let refuse = |phrase: &str| erreur(Classe::Refuse, phrase);
         if self.est_signalement() {
-            self.evenement().map(|j| j.iso()).ok_or_else(|| "Le signalement ne porte pas le jour de son événement : il n'y a rien à confirmer.".to_string())
+            self.evenement().map(MoisOuJour::Jour).ok_or_else(|| refuse("Le signalement ne porte pas le jour de son événement : il n'y a rien à confirmer."))
         } else {
-            self.mois_declare().map(|m| m.to_string())
+            self.mois_declare().map(MoisOuJour::Mois).ok_or_else(|| refuse(SANS_MOIS))
         }
     }
 
@@ -484,25 +559,26 @@ impl DsnLue {
     }
 
     pub fn pas_bareme(&self) -> usize {
-        self.versements.iter().filter(|v| v.type_pas.as_deref().is_some_and(|t| t != "01")).count()
+        self.versements.iter().filter(|v| v.type_pas.is_some_and(|t| !t.transmis())).count()
     }
 
-    /// Les contrats de l'individu `nir`.
-    pub fn contrats_de<'a>(&'a self, nir: &'a str) -> impl Iterator<Item = &'a ContratDeclare> + 'a {
-        self.contrats.iter().filter(move |c| c.nir == nir)
+    /// Les contrats de l'individu `nir` (aucun : ceux des individus sans NIR).
+    pub fn contrats_de<'a>(&'a self, nir: Option<&'a str>) -> impl Iterator<Item = &'a ContratDeclare> + 'a {
+        self.contrats.iter().filter(move |c| c.nir.as_deref() == nir)
     }
 
-    /// Les versements de l'individu `nir`.
-    pub fn versements_de<'a>(&'a self, nir: &'a str) -> impl Iterator<Item = &'a VersementLu> + 'a {
-        self.versements.iter().filter(move |v| v.nir == nir)
+    /// Les versements de l'individu `nir` (aucun : ceux des individus sans NIR).
+    pub fn versements_de<'a>(&'a self, nir: Option<&'a str>) -> impl Iterator<Item = &'a VersementLu> + 'a {
+        self.versements.iter().filter(move |v| v.nir.as_deref() == nir)
     }
 
     /// CE QUE LE CONTRAT `numero` DE L'INDIVIDU `nir` DECLARE, pour le mois (`rappel` faux) ou en rappel d'un mois deja
     /// declare : ses remunerations (S21.G00.51.010 le nomme) dans tous ses versements, le brut de type 001, le salaire
     /// habituel de type 010, et le travail remunere (S21.G00.53 de type 01 : en heures, unites 10 et 35 ; en jours, 12 ;
     /// en cachets, 37).
-    pub fn mesures(&self, nir: &str, numero: &str, rappel: bool) -> Mesures {
-        let mut m = Mesures::default();
+    pub fn mesures(&self, nir: Option<&str>, numero: &str, rappel: bool) -> Mesures {
+        // Les sommes du contrat, a zero avant sa premiere remuneration.
+        let mut m = Mesures { brut: None, salaire_habituel: None, jours: Decimal::ZERO, cachets: Decimal::ZERO, heures: Decimal::ZERO, remunere: false };
         for r in self.versements_de(nir).flat_map(|v| v.remunerations.iter()) {
             if r.contrat.as_deref() != Some(numero) || self.mois.is_some_and(|m| r.rappel(m)) != rappel {
                 continue;
@@ -531,47 +607,57 @@ impl DsnLue {
     /// LES PAIES DU MOIS QUE LA DSN DECLARE, une par contrat qu'un versement paie (S21.G00.51.010), dans l'ordre ou
     /// elles paraissent, chacune avec ce que la DSN lui attribue (`PaieDuContrat`).
     pub fn paies(&self) -> Vec<PaieDuContrat> {
-        let mut out: Vec<PaieDuContrat> = Vec::new();
+        let mut contrats: Vec<(Option<&str>, &str)> = Vec::new();
         for v in &self.versements {
             for c in v.contrats() {
-                if !out.iter().any(|p| p.nir == v.nir && p.numero == c) {
-                    out.push(PaieDuContrat { nir: v.nir.clone(), numero: c.to_string(), ..PaieDuContrat::default() });
+                if !contrats.iter().any(|(nir, numero)| *nir == v.nir.as_deref() && *numero == c) {
+                    contrats.push((v.nir.as_deref(), c));
                 }
             }
         }
-        for p in &mut out {
-            let payeurs: Vec<&VersementLu> = self.versements_de(&p.nir).filter(|v| v.contrats().contains(&p.numero.as_str())).collect();
-            let seul = match payeurs.as_slice() {
-                [v] if v.contrats().len() == 1 => Some(*v),
-                _ => None,
+        contrats.into_iter().map(|(nir, numero)| self.paie_du_contrat(nir, numero)).collect()
+    }
+
+    /// Ce que la DSN attribue au contrat `numero` de l'individu `nir` (`paies`).
+    fn paie_du_contrat(&self, nir: Option<&str>, numero: &str) -> PaieDuContrat {
+        let payeurs: Vec<&VersementLu> = self.versements_de(nir).filter(|v| v.contrats().contains(&numero)).collect();
+        let seul = match payeurs.as_slice() {
+            [v] if v.contrats().len() == 1 => Some(*v),
+            _ => None,
+        };
+        let mut avec: Vec<String> = Vec::new();
+        for c in payeurs.iter().flat_map(|v| v.contrats()) {
+            if c != numero && !avec.iter().any(|x| x == c) {
+                avec.push(c.to_string());
+            }
+        }
+        let mut bases: BTreeMap<BaseAssujettie, Decimal> = BTreeMap::new();
+        for v in self.versements_de(nir) {
+            let sans_numero = seul.is_some_and(|s| std::ptr::eq(s, v));
+            let a_lui = |b: &&BaseLue| match b.contrat.as_deref() {
+                Some(c) => c == numero,
+                None => sans_numero,
             };
-            p.verse_le = payeurs.last().and_then(|v| v.verse_le);
-            p.mesures = self.mesures(&p.nir, &p.numero, false);
-            for c in payeurs.iter().flat_map(|v| v.contrats()) {
-                if c != p.numero && !p.avec.iter().any(|x| x == c) {
-                    p.avec.push(c.to_string());
-                }
+            for b in v.bases.iter().filter(a_lui) {
+                *bases.entry(b.code).or_default() += b.montant;
             }
-            for v in self.versements_de(&p.nir) {
-                let sans_numero = seul.is_some_and(|s| std::ptr::eq(s, v));
-                let a_lui = |b: &&BaseLue| match b.contrat.as_deref() {
-                    Some(c) => c == p.numero,
-                    None => sans_numero,
-                };
-                for b in v.bases.iter().filter(a_lui) {
-                    *p.bases.entry(b.code.clone()).or_default() += b.montant;
-                }
-            }
-            p.nets = seul.map(|v| Nets {
+        }
+        PaieDuContrat {
+            nir: nir.map(str::to_string),
+            numero: numero.to_string(),
+            verse_le: payeurs.last().and_then(|v| v.verse_le),
+            mesures: self.mesures(nir, numero, false),
+            bases,
+            nets: seul.map(|v| Nets {
                 net_imposable: v.net_imposable,
                 net_verse: v.net_verse,
                 taux_pas: v.taux_pas,
-                type_pas: v.type_pas.clone(),
+                type_pas: v.type_pas,
                 identifiant_pas: v.identifiant_pas.clone(),
                 pas: v.pas,
-            });
+            }),
+            avec,
         }
-        out
     }
 
     /// LA DSN DECLARE-T-ELLE `valeur` EN `rubrique` ? La rubrique est celle que la table des champs donne a une case
@@ -628,14 +714,14 @@ pub fn est_une_dsn(tete: &[u8]) -> bool {
 
 /// LES DSN D'UN DOSSIER ET DE SES SOUS-DOSSIERS (sans suivre un lien vers un dossier), par leur contenu
 /// (`est_une_dsn`), dans l'ordre des noms. Un dossier qui n'existe pas n'en a aucune ; un disque qui refuse se dit.
-pub fn fichiers(dossier: &Path) -> Result<Vec<PathBuf>, Echec> {
+pub fn fichiers(dossier: &Path) -> R<Vec<PathBuf>> {
     let mut out = Vec::new();
     parcourir(dossier, &mut out)?;
     Ok(out)
 }
 
-fn parcourir(dossier: &Path, out: &mut Vec<PathBuf>) -> Result<(), Echec> {
-    let panne = |e: std::io::Error, p: &Path| Echec::from(socle::fichiers::panne_fichier(&e, p));
+fn parcourir(dossier: &Path, out: &mut Vec<PathBuf>) -> R<()> {
+    let panne = |e: std::io::Error, p: &Path| refus(socle::fichiers::panne_fichier(&e, p));
     let entrees = match std::fs::read_dir(dossier) {
         Ok(e) => e,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -674,24 +760,53 @@ fn sexe_de_la_fiche(v: &str) -> String {
     }
 }
 
-/// `23071990` -> `1990-07-23` ; une date qui n'a pas ses huit chiffres est rendue telle quelle.
-fn jjmmaaaa(v: &str) -> String {
-    let c: Vec<char> = v.chars().collect();
-    if c.len() == 8 && c.iter().all(char::is_ascii_digit) {
-        let t = |a: usize, b: usize| c[a..b].iter().collect::<String>();
-        format!("{}-{}-{}", t(4, 8), t(2, 4), t(0, 2))
-    } else {
-        v.to_string()
+/// UNE DATE DE NAISSANCE DECLAREE (S21.G00.30.006) : `JJMMAAAA`, dont le jour ou le mois peuvent etre inconnus, ecrits
+/// `00` ou `99` (cahier technique 2026.1, p. 172, `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`, l. 175-178 :
+/// « Jour de naissance inconnu : 00MMAAAA ou 99MMAAAA, Mois de naissance inconnu : JJ00AAAA ou JJ99AAAA, Si jour et
+/// mois inconnus : 0000AAAA ou 9999AAAA » ; CSL 00 et CSL-11, l. 185-189). Elle se lit dans cette forme et elle seule,
+/// garde ses chiffres tels qu'ils sont declares (`jjmmaaaa`), et passe a la fiche en `AAAA-MM-JJ` (`iso`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NaissanceDeclaree {
+    jour: u32,
+    mois: u32,
+    an: i32,
+}
+
+impl NaissanceDeclaree {
+    /// Le motif de CSL 00 (`(0[0-9]|[1-2][0-9]|3[0-1]|99)(0[0-9]|1[0-2]|99)(18|19|20)[0-9]{2}`), et un jour du
+    /// calendrier quand le jour et le mois sont connus (CSL-11) ; `None` sinon.
+    pub fn lire(v: &str) -> Option<NaissanceDeclaree> {
+        if v.len() != 8 || !v.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let n = |a: usize, b: usize| v.as_bytes()[a..b].iter().fold(0u32, |x, c| x * 10 + u32::from(c - b'0'));
+        let (jour, mois, an) = (n(0, 2), n(2, 4), n(4, 8) as i32);
+        let inconnu = |x: u32| x == 0 || x == 99;
+        let forme = (jour <= 31 || jour == 99) && (mois <= 12 || mois == 99) && (1800..=2099).contains(&an);
+        let calendrier = inconnu(jour) || inconnu(mois) || Jour::nouveau(an, mois, jour).is_some();
+        (forme && calendrier).then_some(NaissanceDeclaree { jour, mois, an })
+    }
+
+    /// `JJMMAAAA`, tel que declare.
+    pub fn jjmmaaaa(&self) -> String {
+        format!("{:02}{:02}{:04}", self.jour, self.mois, self.an)
+    }
+
+    /// `AAAA-MM-JJ`, le jour et le mois tels que declares.
+    pub fn iso(&self) -> String {
+        format!("{:04}-{:02}-{:02}", self.an, self.mois, self.jour)
+    }
+}
+
+impl Serialize for NaissanceDeclaree {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.iso())
     }
 }
 
 /// Une date de la DSN, JJMMAAAA, qui est un jour.
 pub(crate) fn jour_dsn(v: &str) -> Option<Jour> {
-    if v.len() != 8 || !v.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    let n = |a: usize, b: usize| v.as_bytes()[a..b].iter().fold(0u32, |x, c| x * 10 + u32::from(c - b'0'));
-    Jour::nouveau(n(4, 8) as i32, n(2, 4), n(0, 2))
+    socle::piece::Zone::lue(v, socle::piece::format::Jjmmaaaa).valeur()
 }
 
 /// Ce qu'une DSN porte et qui ne se lit pas : une valeur qui n'est pas ce que sa rubrique dit, ou une ligne qui n'est
@@ -724,6 +839,10 @@ impl Fautes {
     fn jour(&mut self, k: &str, v: &str) -> Option<Jour> {
         self.valeur(k, v, "une date (JJMMAAAA)", jour_dsn(v))
     }
+    /// Un code d'une liste de la norme (`droit::natures::ListeDeLaNorme`) : un code qu'elle n'a pas est une faute.
+    fn code<T: droit::natures::ListeDeLaNorme>(&mut self, k: &str, v: &str) -> Option<T> {
+        self.valeur(k, v, "un code de sa liste dans la norme", T::du_code_de_la_norme(v))
+    }
     /// Un refus dit quoi corriger et n'ecrit rien.
     fn refus(self, mois: Option<Mois>) -> Option<Echec> {
         let de: String = mois.iter().map(|m| format!(" de {}", m.libelle(socle::mois::Graphie::Accentuee))).collect();
@@ -732,10 +851,7 @@ impl Fautes {
             Faute::Rubrique { ligne, version: Some(v) } => format!("porte la rubrique {}, que la norme DSN {} ne connaît pas", ligne, v),
             Faute::Rubrique { ligne, version: None } => format!("porte la ligne « {} », qui n'est pas une rubrique de la norme DSN", ligne),
         };
-        Some(socle::echec::erreur(
-            socle::echec::Classe::Refuse,
-            format!("La DSN{} {} : corrigez-la ou retirez-la, puis recommencez.", de, ce),
-        ))
+        Some(erreur(Classe::Refuse, format!("La DSN{} {} : corrigez-la ou retirez-la, puis recommencez.", de, ce)))
     }
 }
 
@@ -747,16 +863,16 @@ fn premier(a: &mut Option<String>, v: &Option<String>) {
 }
 
 /// La DSN du fichier `chemin` (`lire`) ; `Ok(None)` s'il n'est pas une DSN (`est_une_dsn`). Un disque qui refuse se dit.
-pub fn lire_une_dsn(chemin: &Path) -> Result<Option<DsnLue>, Echec> {
-    let octets = std::fs::read(chemin).map_err(|e| Echec::from(socle::fichiers::panne_fichier(&e, chemin)))?;
+pub fn lire_une_dsn(chemin: &Path) -> R<Option<DsnLue>> {
+    let octets = std::fs::read(chemin).map_err(|e| refus(socle::fichiers::panne_fichier(&e, chemin)))?;
     if !est_une_dsn(&octets) {
         return Ok(None);
     }
     let nom = chemin.file_name().ok_or_else(|| {
-        Echec::from(socle::echec::avec(
+        socle::echec::refus_avec(
             "Ce chemin n'est pas un fichier : le signaler au développeur.",
-            socle::echec::APart { chemin: Some(chemin.to_string_lossy().into_owned()), ..socle::echec::APart::default() },
-        ))
+            socle::echec::Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), ..socle::echec::Lieu::default() },
+        )
     })?;
     lire(&octets, &nom.to_string_lossy()).map(Some)
 }
@@ -766,19 +882,21 @@ pub fn lire_une_dsn(chemin: &Path) -> Result<Option<DsnLue>, Echec> {
 /// rubrique, refuse : rien ne se devine (regle 1). La rubrique se controle au tableau des usages de la version que le
 /// fichier declare (S10.G00.00.006, `usages-dsn-base.json`) ; une version que le logiciel ne livre pas (une DSN d'avant
 /// 2026) ne se controle que par la forme de ses rubriques (`usages::est_rubrique`).
-pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
+pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
     let contenu = texte_latin1(octets);
     // L'indicateur d'ordre des octets d'UTF-8, lu en latin-1, n'est pas une rubrique.
     let lignes = lignes_du_texte(contenu.trim_start_matches("\u{ef}\u{bb}\u{bf}"));
     let valeur = |v: &str| v.trim_matches(blanc).trim_matches('\'').to_string();
     let norme = match lignes.iter().find_map(|l| l.split_once(',').filter(|(k, _)| *k == crate::norme::RUBRIQUE).map(|(_, v)| valeur(v))) {
-        Some(v) => crate::norme::Norme::livree(&v).map_err(Echec::from)?,
+        Some(v) => crate::norme::Norme::livree(&v)?,
         None => None,
     };
     let mut fautes = Fautes::default();
     let (mut mois, mut depot): (Option<Mois>, Option<Jour>) = (None, None);
-    let (mut type_declaration, mut fraction, mut ordre, mut remplace): (Option<String>, Option<String>, Option<String>, Option<String>) = (None, None, None, None);
-    let (mut logiciel, mut nature_envoi, mut nature): (Option<String>, Option<String>, Option<String>) = (None, None, None);
+    let mut type_declaration: Option<TypeDeLaDeclaration> = None;
+    let (mut fraction, mut ordre, mut remplace): (Option<String>, Option<String>, Option<String>) = (None, None, None);
+    let (mut logiciel, mut nature_envoi): (Option<String>, Option<String>) = (None, None);
+    let mut nature: Option<NatureDeLaDeclaration> = None;
     let mut versements_organismes: Vec<Decimal> = Vec::new();
     let mut e = EntrepriseDeclaree::default();
     let mut individus: Vec<IndividuDeclare> = Vec::new();
@@ -809,7 +927,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
             continue;
         };
         if let Some(n) = &norme {
-            if !crate::usages::rubrique_connue(n, k).map_err(Echec::from)? {
+            if !crate::usages::rubrique_connue(n, k)? {
                 fautes.noter(Faute::Rubrique { ligne: k.to_string(), version: Some(n.version.clone()) });
                 continue;
             }
@@ -820,7 +938,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
         // UN INDIVIDU SANS NIR (S21.G00.30.001 absent, « En l'absence de NIR ou de NIA », `bloc-S21.G00.30.txt`
         // l. 338-354) commence a son nom (.002).
         if k == "S21.G00.30.002" && individus.last().is_none_or(|i| i.nom.is_some()) {
-            individus.push(IndividuDeclare::default());
+            individus.push(IndividuDeclare::de(None));
         }
         let individu = individus.len().checked_sub(1);
         let versement = versements.last_mut();
@@ -828,7 +946,10 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
         match k {
             "S10.G00.00.001" => premier(&mut logiciel, &plein),
             "S10.G00.00.005" => premier(&mut nature_envoi, &plein),
-            "S20.G00.05.001" => premier(&mut nature, &plein),
+            "S20.G00.05.001" => {
+                let n = fautes.code(k, &v);
+                nature = nature.or(n);
+            }
             "S20.G00.05.003" => premier(&mut fraction, &plein),
             "S20.G00.05.006" => premier(&mut remplace, &plein),
             "S21.G00.20.005" => versements_organismes.extend(fautes.montant(k, &v)),
@@ -841,8 +962,14 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
                 let q = fautes.nombre(k, &v);
                 contrat.into_iter().for_each(|c| c.quotite_reference = q);
             }
-            "S21.G00.40.014" => contrat.into_iter().for_each(|c| c.modalite = plein.clone()),
-            "S21.G00.40.021" => contrat.into_iter().for_each(|c| c.motif_recours = plein.clone()),
+            "S21.G00.40.014" => {
+                let m = fautes.code(k, &v);
+                contrat.into_iter().for_each(|c| c.modalite = m);
+            }
+            "S21.G00.40.021" => {
+                let m = fautes.code(k, &v);
+                contrat.into_iter().for_each(|c| c.motif_recours = m);
+            }
             "S21.G00.60.002" => {
                 let jour = fautes.jour(k, &v);
                 contrat.into_iter().for_each(|c| c.dernier_jour_travaille = jour);
@@ -851,7 +978,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
             "S10.G00.01.003" => premier(&mut emetteur_nom, &plein),
             "S10.G00.02.001" => civilite_emetteur = plein,
             "S10.G00.02.002" => nom_emetteur = plein,
-            "S20.G00.05.002" => type_declaration = plein,
+            "S20.G00.05.002" => type_declaration = fautes.code(k, &v),
             "S20.G00.05.004" => ordre = plein,
             "S20.G00.05.005" => {
                 // 01MMAAAA : le premier jour du mois.
@@ -859,7 +986,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
                 mois = fautes.valeur(k, &v, "un mois (01MMAAAA)", premier_jour.map(|j| Mois::du_jour(&j)));
             }
             "S20.G00.05.007" => depot = fautes.jour(k, &v),
-            "S20.G00.07.001" => contacts.push(Contact { nom_prenom: v, ..Contact::default() }),
+            "S20.G00.07.001" => contacts.push(Contact::nomme(v)),
             "S20.G00.07.002" | "S20.G00.07.003" | "S20.G00.07.004" => {
                 if let Some(c) = contacts.last_mut() {
                     *match k { "S20.G00.07.002" => &mut c.tel, "S20.G00.07.003" => &mut c.email, _ => &mut c.qualite } = plein;
@@ -883,7 +1010,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
             "S21.G00.11.005" => premier(&mut e.commune, &plein),
             "S21.G00.11.022" => premier(&mut e.idcc, &plein),
             "S21.G00.11.025" => spst = v,
-            "S21.G00.15.001" => adhesions.push(Adhesion { libelle: v, ..Adhesion::default() }),
+            "S21.G00.15.001" => adhesions.push(Adhesion::de(v)),
             "S21.G00.15.002" | "S21.G00.15.005" => {
                 if let Some(a) = adhesions.last_mut() {
                     *if k == "S21.G00.15.002" { &mut a.organisme } else { &mut a.reference } = plein;
@@ -891,21 +1018,25 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
             }
             "S21.G00.20.001" => blocs20.push([v, String::new(), String::new(), String::new()]),
             "S21.G00.20.002" | "S21.G00.20.003" | "S21.G00.20.004" => {
-                if let Some(b) = blocs20.last_mut() {
-                    b[match k { "S21.G00.20.002" => 1, "S21.G00.20.003" => 2, _ => 3 }] = v;
+                // Le rang de la rubrique dans son bloc : 002, 003, 004 vont en 1, 2, 3.
+                let rang = ["S21.G00.20.002", "S21.G00.20.003", "S21.G00.20.004"].iter().position(|r| *r == k).map(|i| i + 1);
+                if let (Some(b), Some(rang)) = (blocs20.last_mut(), rang) {
+                    b[rang] = v;
                 }
             }
-            "S21.G00.30.001" => individus.push(IndividuDeclare { nir: v, ..IndividuDeclare::default() }),
-            "S21.G00.30.002" | "S21.G00.30.004" | "S21.G00.30.005" | "S21.G00.30.006" | "S21.G00.30.007" | "S21.G00.30.008"
-            | "S21.G00.30.009" | "S21.G00.30.010" | "S21.G00.30.013" | "S21.G00.30.014" | "S21.G00.30.015" | "S21.G00.30.018"
-            | "S21.G00.30.019" => {
+            "S21.G00.30.001" => individus.push(IndividuDeclare::de(plein)),
+            "S21.G00.30.006" => {
+                let Some(i) = individu else { continue };
+                individus[i].date_naissance = fautes.valeur(k, &v, "une date de naissance (JJMMAAAA)", NaissanceDeclaree::lire(&v));
+            }
+            "S21.G00.30.002" | "S21.G00.30.004" | "S21.G00.30.005" | "S21.G00.30.007" | "S21.G00.30.008" | "S21.G00.30.009"
+            | "S21.G00.30.010" | "S21.G00.30.013" | "S21.G00.30.014" | "S21.G00.30.015" | "S21.G00.30.018" | "S21.G00.30.019" => {
                 let Some(i) = individu else { continue };
                 let s = &mut individus[i];
                 let case = match k {
                     "S21.G00.30.002" => &mut s.nom,
                     "S21.G00.30.004" => &mut s.prenom,
                     "S21.G00.30.005" => &mut s.sexe,
-                    "S21.G00.30.006" => &mut s.date_naissance,
                     "S21.G00.30.007" => &mut s.lieu_naissance,
                     "S21.G00.30.008" => &mut s.adresse,
                     "S21.G00.30.009" => &mut s.code_postal,
@@ -918,14 +1049,13 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
                 };
                 *case = Some(match k {
                     "S21.G00.30.005" => sexe_de_la_fiche(&v),
-                    "S21.G00.30.006" => jjmmaaaa(&v),
                     _ => v,
                 });
             }
             "S21.G00.40.001" => {
                 let Some(i) = individu else { continue };
                 let debut = fautes.jour(k, &v);
-                contrats.push(ContratDeclare { nir: individus[i].nir.clone(), individu: i, debut, ..ContratDeclare::default() });
+                contrats.push(ContratDeclare::de(individus[i].nir.clone(), i, debut));
                 fin_de = Some(contrats.len() - 1);
             }
             "S21.G00.40.002" | "S21.G00.40.003" | "S21.G00.40.004" | "S21.G00.40.005" | "S21.G00.40.006" => {
@@ -975,14 +1105,15 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
                 }
             }
             "S21.G00.62.002" => {
+                let m = fautes.code(k, &v);
                 if let Some(c) = fin_de.and_then(|i| contrats.get_mut(i)) {
-                    c.motif_fin = plein;
+                    c.motif_fin = m;
                 }
             }
             "S21.G00.50.001" => {
                 let Some(i) = individu else { continue };
                 let verse_le = fautes.jour(k, &v);
-                versements.push(VersementLu { nir: individus[i].nir.clone(), verse_le, ..VersementLu::default() });
+                versements.push(VersementLu::de(individus[i].nir.clone(), verse_le));
                 base = false;
             }
             "S21.G00.50.002" => {
@@ -997,7 +1128,10 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
                 let t = fautes.nombre(k, &v);
                 versement.into_iter().for_each(|x| x.taux_pas = t);
             }
-            "S21.G00.50.007" => versement.into_iter().for_each(|x| x.type_pas = plein.clone()),
+            "S21.G00.50.007" => {
+                let t = fautes.code(k, &v);
+                versement.into_iter().for_each(|x| x.type_pas = t);
+            }
             "S21.G00.50.008" => versement.into_iter().for_each(|x| x.identifiant_pas = plein.clone()),
             "S21.G00.50.009" => {
                 let m = fautes.montant(k, &v);
@@ -1030,10 +1164,11 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
             }
             "S21.G00.70.013" => rattachements.push(v),
             "S21.G00.78.001" => {
+                let code = fautes.code(k, &v);
                 let Some(x) = versement else { continue };
-                base = plein.is_some();
-                if let Some(code) = plein {
-                    x.bases.push(BaseLue { code, ..BaseLue::default() });
+                base = code.is_some();
+                if let Some(code) = code {
+                    x.bases.push(BaseLue { code, montant: Decimal::ZERO, contrat: None });
                 }
             }
             "S21.G00.78.004" | "S21.G00.78.006" => {
@@ -1097,7 +1232,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> Result<DsnLue, Echec> {
         logiciel,
         nature_envoi,
         emetteur: emetteur_siren,
-        nature,
+        nature_declaration: nature,
         mois,
         type_declaration,
         fraction,
@@ -1136,12 +1271,12 @@ mod tests {
                  S21.G00.51.001,'01072026'\nS21.G00.51.010,'FA1.26.13'\nS21.G00.51.011,'001'\nS21.G00.51.013,'30.00'\n\
                  S21.G00.53.001,'01'\nS21.G00.53.002,'1'\nS21.G00.53.003,'37'\n";
         let d = lire(f.as_bytes(), "essai.dsn").unwrap();
-        let (mois, rappel) = (d.mesures("1850", "FA1.26.13", false), d.mesures("1850", "FA1.26.13", true));
+        let (mois, rappel) = (d.mesures(Some("1850"), "FA1.26.13", false), d.mesures(Some("1850"), "FA1.26.13", true));
         assert_eq!((socle::num::q2(mois.brut.unwrap()), mois.cachets.normalize().to_string(), mois.remunere), ("200.00".to_string(), "2".to_string(), true));
         assert_eq!((socle::num::q2(rappel.brut.unwrap()), rappel.cachets.normalize().to_string()), ("30.00".to_string(), "1".to_string()));
         assert_eq!(d.contrats[0].fin_declaree.map(|j| j.iso()).as_deref(), Some("2026-08-31"));
         let faux = "S20.G00.05.005,'01082026'\nS21.G00.30.001,'1'\nS21.G00.50.001,'31082026'\nS21.G00.51.001,'01082026'\nS21.G00.51.010,'FA1.26.13'\nS21.G00.51.013,'12,5'\n";
-        assert!(lire(faux.as_bytes(), "essai.dsn").unwrap_err().message.contains("« 12,5 », qui n'est pas un montant"));
+        assert!(lire(faux.as_bytes(), "essai.dsn").unwrap_err().phrase.contains("« 12,5 », qui n'est pas un montant"));
     }
 
     /// UN VERSEMENT DE DEUX CONTRATS attribue a chacun ce que la norme rattache a son numero : ses remunerations
@@ -1157,7 +1292,7 @@ mod tests {
                  S21.G00.78.001,'02'\nS21.G00.78.004,'350.00'\nS21.G00.78.006,'MO4.25.17'\n\
                  S21.G00.78.001,'31'\nS21.G00.78.004,'875.00'\n";
         let p = lire(f.as_bytes(), "essai.dsn").unwrap().paies();
-        let dit = |i: usize| (p[i].numero.as_str(), p[i].mesures.brut.map(socle::num::q2), p[i].bases.get("02").copied().map(socle::num::q2), p[i].bases.len(), p[i].nets.is_some(), p[i].avec.clone());
+        let dit = |i: usize| (p[i].numero.as_str(), p[i].mesures.brut.map(socle::num::q2), p[i].bases.get(&BaseAssujettie::BrutePlafonnee).copied().map(socle::num::q2), p[i].bases.len(), p[i].nets.is_some(), p[i].avec.clone());
         assert_eq!(dit(0), ("MO4.25.16", Some("525.00".into()), Some("525.00".into()), 1, false, vec!["MO4.25.17".to_string()]));
         assert_eq!(dit(1), ("MO4.25.17", Some("350.00".into()), Some("350.00".into()), 1, false, vec!["MO4.25.16".to_string()]));
     }

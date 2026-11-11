@@ -28,6 +28,7 @@ use std::rc::Rc;
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::echec::Echec;
+use socle::ligne::Argument;
 use analyse::{Args, Spec};
 
 /// Ce qu'une commande trouve en arrivant : la compagnie, le jour, et ses options.
@@ -53,10 +54,10 @@ impl Cadre {
     pub fn plantage(&self, e: Echec) -> i32 {
         let nature = ::compagnie::incidents::nature_de(e.classe);
         let ou = if nature == ::compagnie::incidents::REFUS { self.commande } else { "" };
-        if let Err(f) = ::compagnie::incidents::depuis_exception(&self.racine, e.classe, &e.message, Some(nature), ou, DeLaCommande { commande: self.commande }, None) {
-            eprintln!("(Ce refus ne se note pas au journal des incidents : {})", socle::echec::phrase_de(&f.message));
+        if let Err(f) = ::compagnie::incidents::depuis_exception(&self.racine, e.classe, &e.en_lignes(), Some(nature), ou, DeLaCommande { commande: self.commande }, None) {
+            eprintln!("(Ce refus ne se note pas au journal des incidents : {})", f.phrase);
         }
-        eprintln!("{}", e.message);
+        eprintln!("{}", e.phrase);
         1
     }
 
@@ -65,13 +66,13 @@ impl Cadre {
     /// `demande::ouvrir_seance`. Un refus ne coupe pas la commande : le secret vient peut-etre de
     /// l'environnement, et sinon la lecture du coffre dira elle-meme ce qui manque. La phrase est dite.
     pub fn ouvrir_le_coffre(&self) {
-        let c = ::compagnie::coffre::Coffre::du_poste(&self.racine, "");
+        let c = ::compagnie::coffre::Coffre::du_poste(&self.racine);
         match c.ouvre_a_ce_poste() {
             Ok(true) => return,
             Ok(false) => {}
             // Un coffre illisible : la phrase le dit, et la lecture du secret refusera.
             Err(e) => {
-                eprintln!("{}", socle::echec::phrase_de(&e.message));
+                eprintln!("{}", e.phrase);
                 return;
             }
         }
@@ -83,8 +84,8 @@ impl Cadre {
         eprintln!();
         eprintln!("Le coffre de ce poste ne s'ouvre pas avec sa cle. Ouverture de la seance : le mot de passe du logiciel, une");
         eprintln!("fois, pour {} h.", ::compagnie::demande::HEURES_SEANCE);
-        if let ::compagnie::demande::Verdict::Refuse(phrase) = ::compagnie::demande::ouvrir_seance(&self.racine) {
-            eprintln!("! {}", phrase);
+        if let ::compagnie::demande::Verdict::Refuse(e) = ::compagnie::demande::ouvrir_seance(&self.racine) {
+            eprintln!("! {}", e.en_lignes());
         }
     }
 }
@@ -125,12 +126,13 @@ fn aide(table: &[Commande]) -> String {
 /// LA LIGNE DE COMMANDE DU MOTEUR (`args`, sans le nom du programme) : la fabrique de PDF, les routes, leur catalogue, la
 /// mise a jour et la publication par GitHub, la compagnie d'essai, la fenetre, puis les commandes du produit et
 /// `de_l_atelier` (`executer`). Son code de sortie ; `None` quand il faut dire l'usage.
-pub fn ligne_de_commande(args: &[String], de_l_atelier: Vec<Commande>) -> Option<std::process::ExitCode> {
+pub fn ligne_de_commande(args: &[Argument], de_l_atelier: Vec<Commande>) -> Option<std::process::ExitCode> {
     ::compagnie::incidents::brancher_l_engagement();
     let code = |c: i32| std::process::ExitCode::from(c.clamp(0, 255) as u8);
-    Some(match args.first().map(String::as_str) {
-        // Les commandes de la fabrique, servies par sa bibliotheque.
-        Some("pdf") => fabrique_pdf::ligne_de_commande::executer(&args[1..]),
+    Some(match args.first().map(Argument::texte) {
+        // Les commandes de la fabrique, servies par sa bibliotheque, hors de l'espace : elle recoit les textes tapes, et
+        // n'en lit ni jour ni mois.
+        Some("pdf") => fabrique_pdf::ligne_de_commande::executer(&socle::ligne::textes(&args[1..])),
         // Les routes de l'interface, une par processus (la demande JSON sur l'entree standard).
         Some("route") => match routes::service::commande("route", &args[1..]) {
             Some(c) => std::process::exit(c),
@@ -154,15 +156,15 @@ pub fn ligne_de_commande(args: &[String], de_l_atelier: Vec<Commande>) -> Option
 }
 
 /// `moteur [--dev] COMMANDE ...`, parmi les commandes du produit et `de_l_atelier`. Rend le code de sortie.
-fn executer(args: &[String], de_l_atelier: Vec<Commande>) -> i32 {
+fn executer(args: &[Argument], de_l_atelier: Vec<Commande>) -> i32 {
     let mut args = args;
     let mut dev = false;
-    if args.first().map(String::as_str) == Some("--dev") {
+    if args.first().map(Argument::texte) == Some("--dev") {
         dev = true;
         args = &args[1..];
     }
     let table = commandes(de_l_atelier);
-    let Some(nom) = args.first().map(String::as_str) else {
+    let Some(nom) = args.first().map(Argument::texte) else {
         eprintln!("{}", aide(&table));
         return 2;
     };
@@ -175,7 +177,7 @@ fn executer(args: &[String], de_l_atelier: Vec<Commande>) -> i32 {
         return 2;
     };
     let reste = &args[1..];
-    if reste.iter().any(|a| a == "-h" || a == "--help" || a == "--aide") {
+    if reste.iter().any(|a| matches!(a.texte(), "-h" | "--help" | "--aide")) {
         dire!("{}", analyse::usage(c.spec));
         return 0;
     }
@@ -184,11 +186,14 @@ fn executer(args: &[String], de_l_atelier: Vec<Commande>) -> i32 {
         Err(code) => return code,
     };
     // La commande est lancee a la main : sans PUPPETPAIE_CODE, le code est celui qu'on trouve a cote du programme.
-    ::compagnie::installation::fixer_le_code();
+    if let Err(e) = ::compagnie::installation::fixer_le_code() {
+        eprintln!("{}", e.en_lignes());
+        return 1;
+    }
     let racine = match compagnie::racine(dev) {
         Ok(r) => r,
-        Err(phrase) => {
-            eprintln!("{}", phrase);
+        Err(e) => {
+            eprintln!("{}", e.en_lignes());
             return 1;
         }
     };
@@ -199,12 +204,19 @@ fn executer(args: &[String], de_l_atelier: Vec<Commande>) -> i32 {
     let ctx = match Contexte::nouveau(&racine, Some(aujourdhui)) {
         Ok(c) => c,
         Err(m) => {
-            eprintln!("{}", m);
+            eprintln!("{}", m.en_lignes());
             return 1;
         }
     };
     let cadre = Cadre { racine, o, ctx, aujourdhui, commande: c.nom };
     // La demande du mot de passe du logiciel est celle du moteur : fenetre s'il y en a une, sinon le terminal.
-    let _canaux = ::compagnie::demande::installer(Rc::new(::compagnie::demande::Reel::du_poste()));
+    let reel = match ::compagnie::demande::Reel::du_poste() {
+        Ok(r) => r,
+        Err(m) => {
+            eprintln!("{}", m.en_lignes());
+            return 1;
+        }
+    };
+    let _canaux = ::compagnie::demande::installer(Rc::new(reel));
     (c.executer)(&cadre, &a)
 }

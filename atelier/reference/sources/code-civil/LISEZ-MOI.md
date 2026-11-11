@@ -35,3 +35,11 @@ pour les causes que la loi autorise. »
 **Où le moteur s'en sert** : avec L1221-1 du code du travail (le contrat de travail est soumis au droit commun,
 `../code-du-travail/LISEZ-MOI.md`), il fonde l'avenant qu'un changement d'un terme du contrat (salaire, durée du travail,
 emploi) fait signer au salarié : `engagement::signe_ailleurs`, `documents::avenant`, et les contrats faits dans le logiciel.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `legifrance-code-civil-art1193-force-obligatoire-20261102.md` : `1da82186a2c0ef2821731bd0ce83261eaa5e7df8d2642d8adaf7274ee3828d2e`
+- `legifrance-code-civil-art1218-force-majeure-20261030.md` : `81ef25bd2a93fd7db2ce96b63ee69aaeecbd707b5a0b6815af06499fff93bae3`
+- `legifrance-code-civil-art1218-force-majeure-20261030.pdf` : `e0581bd45f21ad7676071f4f532b3521e2d21f05baebf1e7e849882507d24a8f`

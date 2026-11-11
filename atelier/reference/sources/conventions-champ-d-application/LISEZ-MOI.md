@@ -37,3 +37,9 @@ l'un ni l'autre entrepôt ne porte, et Légifrance refuse les robots. KALI dit s
   d'une autre convention que celle de l'import se disent en avertissement.
 - `atelier/sources/import/src/dsn_aem.rs` (`LectureDsn::conventions_divergentes`) : des contrats d'une même DSN sous
   d'autres conventions que l'établissement, une convention qui change d'une DSN à l'autre, se disent.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `kali-3090-1285-champ-d-application-transcription-20261109.md` : `7c4b0ee3b97efa80ca83003c429ff937ee9863526ba863eabec9f0a55b8791f6`

@@ -16,3 +16,10 @@ cinématographique) est une lecture du titre.
 **Où le moteur s'en sert** : `logiciel/donnees/baremes/2026.json`, `par_convention.2642.hors_bulletin` et
 `par_convention.3097.hors_bulletin` (`contribution_conventionnelle_permanents`, `cpnef_dialogue_social`) ; la
 contribution conventionnelle des intermittents (0,10 %) est dans `autres_1` du corps du barème.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `afdas-contributions-2026-audiovisuel-20261104.txt` : `23592e68e77ac219e08275e1313fdc2ae8edcb2442af2ad61e49443098c4ce2b`
+- `afdas-taux-contribution-formation-continue-20261104.txt` : `0fde5c6865e11d45f779808fd830b47021cf8c49eaa621bce05b58b5f8e93f3d`

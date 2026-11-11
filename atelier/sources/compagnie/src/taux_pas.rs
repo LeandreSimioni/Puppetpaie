@@ -6,31 +6,36 @@ use droit::fiche::Lue as _;
 
 use droit::contexte::Contexte;
 use socle::date::Jour;
-use socle::echec::Echec;
-
-pub fn ko(m: String) -> Echec {
-    Echec { classe: None, message: m }
-}
 
 /// UN TAUX RECU POUR UN SALARIE : la cle de sa fiche, et le taux tel que sa fiche l'ecrit (`droit::fiche::TauxPas`) --
 /// le taux, son type, son identifiant, sa mise a disposition (`AAAAMMJJHHMMSS`) et, pour le compte rendu qui repond a une
 /// DSN mensuelle, le mois qu'elle declare (`en_retour_de`).
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone)]
 pub struct TauxRecu {
-    #[serde(skip)]
     pub salarie: String,
-    pub taux: Option<String>,
-    #[serde(rename = "type")]
-    pub type_taux: Option<String>,
+    pub taux: Option<droit::pas::TauxDePas>,
+    pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant: String,
-    pub mis_a_disposition: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub en_retour_de: Option<String>,
+    pub mis_a_disposition: socle::paris::InstantCompact,
+    pub en_retour_de: Option<socle::mois::Mois>,
 }
 
-/// `AAAAMMJJ000000` du jour `j`.
-fn instant_du_jour(j: Jour) -> String {
-    format!("{}000000", j.aaaammjj())
+impl TauxRecu {
+    /// Le taux tel que la fiche de son salarie l'ecrit.
+    pub fn dans_la_fiche(&self) -> droit::fiche::TauxPas {
+        droit::fiche::TauxPas {
+            taux: self.taux,
+            r#type: self.type_taux,
+            identifiant: Some(self.identifiant.clone()),
+            mis_a_disposition: Some(self.mis_a_disposition),
+            en_retour_de: self.en_retour_de,
+        }
+    }
+}
+
+/// Le debut du jour `j` (`AAAAMMJJ000000`).
+fn instant_du_jour(j: Jour) -> socle::echec::R<socle::paris::InstantCompact> {
+    socle::paris::Naif::du_jour(j, 0, 0, 0).map(socle::paris::InstantCompact::du_naif).ok_or_else(|| socle::refus!("Le jour {} sort du calendrier.", j.jj_mm_aaaa()))
 }
 
 /// LE DERNIER TAUX TRANSMIS PAR LA DGFiP QUE LES DSN DEJA DEPOSEES DE `dossier` DECLARENT, par salarie (un releve tel que
@@ -46,7 +51,7 @@ fn instant_du_jour(j: Jour) -> String {
 /// taux n'en porte pas la date. INFERENCE (aucun texte ne date un taux lu dans une DSN) : le releve est date du jour du versement
 /// (`mis_a_disposition`), la mise a disposition la plus tardive que les textes permettent ; le compte rendu de la DSN suivante
 /// le remplace. Chaque DSN se lit par `declarations::dsn_lue::lire_une_dsn` ; une DSN fautive refuse.
-pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> Result<Vec<TauxRecu>, Echec> {
+pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle::echec::R<Vec<TauxRecu>> {
     let par_nir: std::collections::HashMap<String, String> = ctx
         .salaries
         .iter()
@@ -61,15 +66,21 @@ pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> Resul
         for v in &d.versements {
             // « -1 » : un CDD court sans taux personnalise (`norme-dsn/texte/bloc-S21.G00.50.txt`, S21.G00.50.008) ;
             // aucun taux n'a ete transmis. Sans la date du versement (S21.G00.50.001), le taux ne se date pas.
-            let (Some(id), Some(j), Some(cle)) = (v.identifiant_pas.as_ref().filter(|i| *i != "-1"), v.verse_le, par_nir.get(&v.nir)) else {
+            let (Some(id), Some(j), Some(cle)) = (v.identifiant_pas.as_ref().filter(|i| *i != "-1"), v.verse_le, v.nir.as_ref().and_then(|n| par_nir.get(n))) else {
                 continue;
+            };
+            let taux = match v.taux_pas {
+                Some(t) => Some(droit::pas::TauxDePas::du_decimal(t).ok_or_else(|| {
+                    socle::refus!("La DSN de {} porte en S21.G00.50.006 le taux {}, qui n'a pas la forme de la norme : corrigez-la ou retirez-la, puis recommencez.", mois, t)
+                })?),
+                None => None,
             };
             let rel = TauxRecu {
                 salarie: cle.clone(),
-                taux: v.taux_pas.map(|t| t.to_string()),
-                type_taux: v.type_pas.clone(),
+                taux,
+                type_taux: v.type_pas,
                 identifiant: id.to_string(),
-                mis_a_disposition: instant_du_jour(j),
+                mis_a_disposition: instant_du_jour(j)?,
                 en_retour_de: None,
             };
             match trouve.iter_mut().find(|(k, _)| k == cle) {

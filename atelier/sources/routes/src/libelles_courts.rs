@@ -170,7 +170,8 @@ fn libelles_courts(ctx: &Contexte, c: ChargeLire) -> R<Libelles> {
 
 /// Le refus d'une valeur : sa phrase, et sa cle a part (il se dit seul, sans ce qui manque pour demarrer).
 fn faute(phrase: String, cle: &str) -> Echec {
-    erreur(socle::echec::Classe::Refuse, socle::echec::cle(phrase, cle))
+    let a_part = socle::echec::Lieu { cle: Some(cle.to_string()), ..Default::default() };
+    Echec { a_part: Some(a_part.into()), ..erreur(socle::echec::Classe::Refuse, phrase) }
 }
 
 /// ENREGISTRER : chaque valeur se verifie (un libelle qui depasse, une valeur non vide qui tient) ; une seule faute et

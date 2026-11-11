@@ -11,7 +11,7 @@ use crate::fiches::refus;
 use droit::contexte::Contexte;
 use documents::bulletin::{jeux_et_description, Modele};
 use socle::fichiers::dossier_du_code;
-use socle::echec::R;
+use socle::echec::{Classe, R};
 
 const MODELE: Champ = Champ { nom: "modele", libelle: Affiche::new("Modèle"), forme: Forme::Texte, sens: "« simplifié » ou « complet »", avance: false };
 
@@ -71,7 +71,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 /// `bulletin-modele-apercu` : le bulletin d'exemple dans le modele demande, en PDF.
 fn apercu(c: ChargeModele) -> R<ApercuModele> {
     let modele = modele_demande(&c)?;
-    let pdf = apercu_pdf(modele).map_err(refus)?;
+    let pdf = apercu_pdf(modele).map_err(|e| e.reclasser(Classe::Refuse))?;
     Ok(ApercuModele {
         phrase: format!("Bulletin d'exemple dans le modèle {}, en PDF.", modele.cle()),
         modele: modele.cle().to_string(),
@@ -179,7 +179,7 @@ fn modeles(ctx: &Contexte) -> R<ModelesDuBulletin> {
     let modele = documents::bulletin::modele_de_la_compagnie(&ctx.entreprise);
     let mut autrement = Vec::new();
     for (cle, sal) in &ctx.salaries {
-        if let Some(m) = documents::bulletin::modele_du_salarie(sal).map_err(refus)? {
+        if let Some(m) = documents::bulletin::modele_du_salarie(sal).map_err(|e| e.reclasser(Classe::Refuse))? {
             if m != modele {
                 let nom = match (sal.prenom_affichage.portee(), sal.nom_affichage.portee()) {
                     (Some(prenom), Some(nom)) => format!("{} {}", prenom, nom),
@@ -198,7 +198,7 @@ fn modeles(ctx: &Contexte) -> R<ModelesDuBulletin> {
             description: m.description(),
             apercu_dit: format!("Aperçu du modèle {}", m.nom()),
             apercu: adresse_apercu(*m),
-            pastille: (*m == modele).then(|| socle::ecran::Pastille::de("fait", if choisi.is_none() { "celui de la compagnie (par défaut)" } else { "celui de la compagnie" })),
+            pastille: (*m == modele).then(|| socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, if choisi.is_none() { "celui de la compagnie (par défaut)" } else { "celui de la compagnie" })),
         })
         .collect();
     let dits: Vec<String> = autrement.iter().map(|s| format!("{} ({})", s.nom, s.modele)).collect();
@@ -227,18 +227,18 @@ pub(crate) fn dossier_apercu() -> PathBuf {
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SaisieDeLApercu {
-    #[allow(dead_code)]
-    source: String,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    source: socle::forme::NonLue,
     mois: socle::mois::Mois,
     engagements: Vec<engagement::saisie::Carte>,
 }
 
 /// La description du bulletin de la paie fictive sous `modele` : le moteur du jour, la compagnie fictive, rien d'ecrit.
-pub(crate) fn apercu_description(modele: Modele) -> Result<fabrique_pdf::Description, String> {
+pub(crate) fn apercu_description(modele: Modele) -> R<fabrique_pdf::Description> {
     let racine = dossier_apercu();
     let lue: SaisieDeLApercu = socle::forme::lire_fichier(&racine.join("saisie.json"), "La paie de l'aperçu ne se lit pas.")?;
     let saisie = engagement::saisie::VueDuMois { mois: lue.mois, taux_cachet: None, engagements: lue.engagements };
-    let mois = saisie.mois.to_string();
+    let le_mois = saisie.mois;
     let ctx = Contexte::nouveau(&racine, Some(saisie.mois.dernier_jour()))?;
     let s = engagement::pour_l_ecran(&ctx, &saisie)?;
     let mut fiche = ctx.entreprise.clone();
@@ -247,14 +247,14 @@ pub(crate) fn apercu_description(modele: Modele) -> Result<fabrique_pdf::Descrip
     let ent = ctx.pour_un_modele(&fiche);
     // Une paie de l'ecran n'a pas de numero de bulletin (il se reserve au depart) : l'apercu montre celui d'un premier
     // bulletin de l'annee.
-    let numeros: Vec<Option<String>> = (1..=s.paies.len()).map(|n| Some(format!("{}/{}", n, &mois[..4]))).collect();
+    let numeros: Vec<Option<String>> = (1..=s.paies.len()).map(|n| Some(format!("{}/{:04}", n, le_mois.annee()))).collect();
     let departs = engagement::departs::Departs::default();
-    let passe = documents::bulletin::passe_des_bulletins(&ctx, &s.paies, &mois, &departs)?;
-    jeux_et_description(&ctx, &s.paies, &numeros, &ent, &mois, None, false, &HashMap::new(), &departs, &passe)
+    let passe = documents::bulletin::passe_des_bulletins(&ctx, &s.paies, le_mois, &departs)?;
+    jeux_et_description(&ctx, &s.paies, &numeros, &ent, le_mois, None, false, &HashMap::new(), &departs, &passe)
 }
 
 /// Le PDF de la paie fictive sous `modele`.
-pub(crate) fn apercu_pdf(modele: Modele) -> Result<Vec<u8>, String> {
+pub(crate) fn apercu_pdf(modele: Modele) -> R<Vec<u8>> {
     documents::fabrique::fabriquer_octets(&apercu_description(modele)?)
 }
 
@@ -267,8 +267,8 @@ fn choisir(ctx: &Contexte, charge: &ChargeModele) -> R<ModelesDuBulletin> {
         Modele::Simplifie => droit::fiche::ModeleBulletin::Simplifie,
         Modele::Complet => droit::fiche::ModeleBulletin::Complet,
     };
-    crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::modele_bulletin(Some(choix)), Some(ctx.aujourdhui))?;
-    let neuf = Contexte::nouveau(&ctx.racine, None).map_err(refus)?;
+    crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::ModeleBulletin(Some(choix)), Some(ctx.aujourdhui))?;
+    let neuf = Contexte::nouveau(&ctx.racine, None).map_err(|e| e.reclasser(Classe::Refuse))?;
     let mut v = modeles(&neuf)?;
     v.phrase = format!("Modèle choisi : {}, pour les documents faits à partir d'aujourd'hui.", v.choisi);
     Ok(v)

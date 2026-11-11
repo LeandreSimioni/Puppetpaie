@@ -107,7 +107,7 @@ pub fn tables() -> &'static Tables {
     static T: OnceLock<Tables> = OnceLock::new();
     T.get_or_init(|| match socle::forme::lire_texte(include_str!("exports_tables.json"), "Les tables des exports livrées ne se lisent pas : le signaler au développeur.") {
         Ok(t) => t,
-        Err(m) => unreachable!("exports_tables.json : {}", m),
+        Err(m) => unreachable!("exports_tables.json : {}", m.phrase),
     })
 }
 
@@ -293,11 +293,11 @@ pub fn plan(ctx: &Contexte) -> R<(Plan, &'static str)> {
 /// Le plan livre, recouvert par `config/plan-comptable.json`.
 pub fn plan_comptable(ctx: &Contexte) -> R<Plan> {
     let mut plan: Plan = socle::forme::lire_fichier(&ctx.code.join("plan-comptable-base.json"), "Le plan comptable livré ne se lit pas : le signaler au développeur.")
-        .map_err(|m| erreur(Classe::Illisible, m))?;
+        .map_err(|m| m.reclasser(Classe::Illisible))?;
     let propre = ctx.racine.join(PLAN_COMPTABLE);
     if propre.exists() {
         let p: PlanPropre = socle::forme::lire_fichier(&propre, "Le plan comptable de la compagnie (config/plan-comptable.json) ne se lit pas : le corriger.")
-            .map_err(|m| erreur(Classe::Illisible, m))?;
+            .map_err(|m| m.reclasser(Classe::Illisible))?;
         plan.recouvrir(p);
     }
     Ok(plan)
@@ -306,8 +306,12 @@ pub fn plan_comptable(ctx: &Contexte) -> R<Plan> {
 /// Ce qui, dans le plan comptable, ne
 /// passerait pas dans ce format -- avant l'export.
 pub fn controler_plan(ctx: &Contexte, format: &str) -> R<Vec<String>> {
+    // Un format dont les tables ne bornent pas les zones n'a rien qui depasse.
+    Ok(tables().limites.get(format).map(|lim| controler_contre(ctx, format, lim)).transpose()?.into_iter().flatten().collect())
+}
+
+fn controler_contre(ctx: &Contexte, format: &str, lim: &Limite) -> R<Vec<String>> {
     let plan = plan_comptable(ctx)?;
-    let Some(lim) = tables().limites.get(format) else { return Ok(Vec::new()) };
     let (lim_journal, nom_format) = (lim.journal, lim.nom.as_str());
     let mut comptes: HashSet<String> = HashSet::new();
     for c in [&plan.brut.compte, &plan.net.compte, &plan.pas.compte] {
@@ -376,7 +380,9 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
         ));
     }
     let code = match salarie.code_salarie.portee() {
-        Some(t) => entier_de(t.trim()).map_err(|m| Refus::Operation(format!("Le code salarié de {} : {}.", cle, m)))?,
+        Some(t) => entier_de(t.trim()).map_err(|e| {
+            Refus::Operation(format!("Le code salarié de {} : « {} » n'est pas un entier que le modèle sait écrire ({}).", cle, t.trim(), e))
+        })?,
         None => None,
     };
     formater(modele, code, cle, 0).map(Some).map_err(|(classe, message)| {
@@ -384,16 +390,16 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
         match classe {
             Classe::Illisible | Classe::Manque => {}
             Classe::FormeNonPortee => {
-                return Refus::Autre(erreur(
-                    Classe::Refuse,
-                    socle::echec::avec(
+                return Refus::Autre(Echec {
+                    a_part: Some(socle::echec::Lieu { cle: Some("net.par_salarie".to_string()), detail: Some(message), ..socle::echec::Lieu::default() }.into()),
+                    ..erreur(
+                        Classe::Refuse,
                         format!(
                             "Le modèle du compte individuel « {} » emploie une forme que le logiciel ne sait pas remplir : l'écrire autrement dans le plan comptable.",
                             modele
                         ),
-                        socle::echec::APart { cle: Some("net.par_salarie".to_string()), detail: Some(message), ..socle::echec::APart::default() },
-                    ),
-                ))
+                    )
+                })
             }
             autre => return Refus::Autre(erreur(autre, message)),
         }
@@ -408,7 +414,7 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
 
 /// Un entier écrit : le signe, les chiffres, un tiret bas entre deux chiffres ; `None` pour un code qui n'est pas un
 /// entier (il se lit alors en texte). Un entier trop grand se refuse.
-fn entier_de(t: &str) -> Result<Option<i64>, String> {
+fn entier_de(t: &str) -> Result<Option<i64>, std::num::ParseIntError> {
     let (neg, reste) = if let Some(r) = t.strip_prefix('-') {
         (true, r)
     } else if let Some(r) = t.strip_prefix('+') {
@@ -424,10 +430,7 @@ fn entier_de(t: &str) -> Result<Option<i64>, String> {
     if !chiffres.chars().all(|c| c.is_ascii_digit()) {
         return Ok(None);
     }
-    match chiffres.parse::<i64>() {
-        Ok(n) => Ok(Some(if neg { -n } else { n })),
-        Err(e) => Err(format!("« {} » n'est pas un entier que le modèle sait écrire ({})", t, e)),
-    }
+    chiffres.parse::<i64>().map(|n| Some(if neg { -n } else { n }))
 }
 
 // ------------------------------------------------------------- str.format
@@ -652,7 +655,6 @@ fn resoudre(nom: &str, code: Option<i64>, cle: &str, auto: &mut Option<bool>, pr
 }
 
 /// `output_markup` : le champ resolu, converti, mis en forme.
-#[allow(clippy::too_many_arguments)]
 fn remplir(
     nom: &str,
     spec: &str,
@@ -853,7 +855,8 @@ fn mettre_en_forme(objet: &Objet, spec: &str) -> Result<String, Faute> {
                     'X' => "0X",
                     'o' => "0o",
                     'b' => "0b",
-                    _ => "",
+                    'd' | 'n' | 'c' => "",
+                    autre => return Err((Classe::Illisible, format!("type « {} » inconnu pour un nombre entier", autre))),
                 }
             } else {
                 ""
@@ -864,7 +867,8 @@ fn mettre_en_forme(objet: &Objet, spec: &str) -> Result<String, Faute> {
                 match s.signe {
                     Some('+') => "+",
                     Some(' ') => " ",
-                    _ => "",
+                    None | Some('-') => "",
+                    Some(autre) => return Err((Classe::Illisible, format!("signe « {} » inconnu", autre))),
                 }
             };
             let entete = format!("{}{}", signe, prefixe);

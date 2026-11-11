@@ -32,11 +32,12 @@ use socle::forme::NombreLu;
 use droit::contexte::Contexte;
 use crate::saisie::{Avant, Carte, Champ, Groupe, VueDuMois};
 use socle::date::Jour;
-use socle::mois::Mois;
-use socle::num::Resultat;
+use socle::mois::{Graphie, Mois};
+use socle::paris::InstantEcrit;
+use socle::echec::{refus, R};
 
-/// Le dossier des engagements, sous les donnees de la compagnie.
-pub const DOSSIER: &str = "engagements";
+/// Le dossier des engagements, sous les donnees de la compagnie : seul le stock le nomme.
+pub(crate) const DOSSIER: &str = "engagements";
 
 /// La phrase d'un fichier d'engagements qui n'a pas sa forme.
 const ABIME: &str = "Un mois d'engagements ne se relit pas : il est abîmé.";
@@ -119,10 +120,10 @@ impl Avenant {
 
 /// UNE VALIDATION : quand, sa version, et la saisie validee (`None` : comptee comme valide par le calcul qui l'ecrit,
 /// `etats::calculer_les_rangs`).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Validation {
-    pub le: String,
+    pub le: InstantEcrit,
     pub version: Option<u64>,
     pub saisie: Option<Saisie>,
 }
@@ -132,8 +133,8 @@ pub struct Validation {
 #[serde(deny_unknown_fields)]
 pub struct VersionPassee {
     pub version: u64,
-    pub valide_le: String,
-    pub remplacee_le: String,
+    pub valide_le: InstantEcrit,
+    pub remplacee_le: InstantEcrit,
     pub saisie: Option<Saisie>,
 }
 
@@ -155,10 +156,10 @@ impl<'a> Version<'a> {
     }
 
     /// Quand elle a ete validee.
-    pub fn valide_le(&self) -> Option<&'a str> {
+    pub fn valide_le(&self) -> Option<InstantEcrit> {
         match self {
-            Version::Presente(v) => Some(v.le.as_str()),
-            Version::Passee(v) => Some(v.valide_le.as_str()),
+            Version::Presente(v) => Some(v.le),
+            Version::Passee(v) => Some(v.valide_le),
         }
     }
 
@@ -187,51 +188,71 @@ impl Ecrit {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NonActif {
-    pub le: String,
+    pub le: InstantEcrit,
     pub version: u64,
-}
-
-/// Le chemin d'un engagement dans un refus : son fichier, son rang.
-#[derive(Serialize)]
-struct OuDansLeFichier {
-    chemin: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    rang: Option<usize>,
 }
 
 // ------------------------------------------------------------------ les fichiers
 
 /// Le fichier des engagements qui commencent en `mois`.
-pub fn chemin(racine: &Path, mois: &str) -> PathBuf {
+fn chemin(racine: &Path, mois: Mois) -> PathBuf {
     chemin_dans(racine, Dossier::Engagements, mois)
 }
 
 /// Le fichier de `mois` dans le dossier `d`.
-pub(crate) fn chemin_dans(racine: &Path, d: Dossier, mois: &str) -> PathBuf {
+pub(crate) fn chemin_dans(racine: &Path, d: Dossier, mois: Mois) -> PathBuf {
     racine.join(d.nom()).join(format!("{}.json", mois))
 }
 
+/// LES DOSSIERS QUE LE STOCK TIENT, sous la racine, pour qui signe leur etat sur le disque sans les lire
+/// (`routes::etat_garde`) : on n'y lit et n'y ecrit que par le stock.
+pub fn dossiers_tenus() -> [&'static str; 2] {
+    [Dossier::Engagements.nom(), Dossier::Paies.nom()]
+}
+
+/// UN FICHIER DU STOCK TEL QU'IL EST SUR LE DISQUE, pour qui le garde sans le lire (l'archive de l'exercice) : son nom
+/// sous la racine, ses octets et ce que le disque en dit.
+pub struct TelQuel {
+    pub nom: String,
+    pub octets: Vec<u8>,
+    pub meta: std::fs::Metadata,
+}
+
+/// Le fichier des engagements qui commencent en `mois`, tel quel ; `None` s'il n'est pas sur le disque.
+pub fn tel_quel(racine: &Path, mois: Mois) -> R<Option<TelQuel>> {
+    tel_quel_dans(racine, Dossier::Engagements, mois)
+}
+
+/// Le fichier de `mois` dans le dossier `d`, tel quel ; `None` s'il n'est pas sur le disque.
+pub(crate) fn tel_quel_dans(racine: &Path, d: Dossier, mois: Mois) -> R<Option<TelQuel>> {
+    let p = chemin_dans(racine, d, mois);
+    let disque = |e: &std::io::Error| socle::echec::du_disque(&p, e).reclasser(socle::echec::Classe::Disque);
+    let octets = match std::fs::read(&p) {
+        Ok(o) => o,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(disque(&e)),
+    };
+    let meta = std::fs::metadata(&p).map_err(|e| disque(&e))?;
+    Ok(Some(TelQuel { nom: format!("{}/{}.json", d.nom(), mois), octets, meta }))
+}
+
 /// Les mois qui ont un fichier d'engagements, du plus ancien au plus recent, ceux du brouillon ouvert compris.
-pub fn fichiers(racine: &Path) -> Vec<String> {
+pub fn fichiers(racine: &Path) -> R<Vec<Mois>> {
     fichiers_dans(racine, Dossier::Engagements)
 }
 
-/// Les mois qui ont un fichier dans le dossier `d`, du plus ancien au plus recent, ceux du brouillon ouvert compris.
-pub(crate) fn fichiers_dans(racine: &Path, d: Dossier) -> Vec<String> {
-    let mut v: Vec<String> = std::fs::read_dir(racine.join(d.nom()))
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| e.file_name().to_str()?.strip_suffix(".json").filter(|m| socle::mois::Mois::lire(m).is_ok()).map(String::from))
-        .collect();
-    BROUILLON.with(|b| v.extend(b.borrow().iter().filter(|(r, _)| r == racine).flat_map(|(_, f)| f.keys().filter(|(x, _)| *x == d).map(|(_, m)| m.clone()))));
+/// Les mois qui ont un fichier dans le dossier `d`, du plus ancien au plus recent, ceux du brouillon ouvert compris. Un
+/// dossier absent n'en a aucun ; un disque qui refuse de le lire se dit (`socle::fichiers::nommes_d_un_mois`).
+pub(crate) fn fichiers_dans(racine: &Path, d: Dossier) -> R<Vec<Mois>> {
+    let mut v: Vec<Mois> = socle::fichiers::nommes_d_un_mois(&racine.join(d.nom()), Some("json"), false)?.into_iter().map(|n| n.mois).collect();
+    BROUILLON.with(|b| v.extend(b.borrow().iter().filter(|(r, _)| r == racine).flat_map(|(_, f)| f.keys().filter(|(x, _)| *x == d).map(|(_, m)| *m))));
     v.sort();
     v.dedup();
-    v
+    Ok(v)
 }
 
 /// LA SEULE LECTURE D'UN FICHIER D'ENGAGEMENTS, par sa forme ; `None` s'il n'existe pas.
-pub fn lire_fichier(racine: &Path, mois: &str) -> Resultat<Option<FichierDuMois>> {
+pub fn lire_fichier(racine: &Path, mois: Mois) -> R<Option<FichierDuMois>> {
     Ok(lire_partage(racine, mois)?.map(|f| (*f).clone()))
 }
 
@@ -267,7 +288,7 @@ impl FichierDuStock for FichierDuMois {
 
 thread_local! {
     /// Les fichiers ecrits dans le brouillon ouvert (`Brouillon`), pour sa racine : chacun par son dossier et son mois.
-    static BROUILLON: std::cell::RefCell<Option<(PathBuf, BTreeMap<(Dossier, String), Tenu>)>> = const { std::cell::RefCell::new(None) };
+    static BROUILLON: std::cell::RefCell<Option<(PathBuf, BTreeMap<(Dossier, Mois), Tenu>)>> = const { std::cell::RefCell::new(None) };
 }
 
 /// UN BROUILLON : tant qu'il est ouvert, ce qui s'ecrit dans les engagements de `racine` et dans leurs paies (`reecrire`,
@@ -281,33 +302,33 @@ impl Brouillon {
     }
 
     /// Ce que le brouillon tient s'ecrit sur le disque.
-    pub fn ecrire(self) -> Resultat<()> {
+    pub fn ecrire(self) -> R<()> {
         // Un brouillon deja ecrit ne tient plus rien.
         let fichiers = BROUILLON.with(|b| b.borrow_mut().take()).into_iter().flat_map(|(_, f)| f);
         for ((_, mois), contenu) in fichiers {
             match contenu {
-                Tenu::Engagements(f) => poser_dans(&self.0, &mois, &*f)?,
-                Tenu::Paies(f) => poser_dans(&self.0, &mois, &*f)?,
+                Tenu::Engagements(f) => poser_dans(&self.0, mois, &*f)?,
+                Tenu::Paies(f) => poser_dans(&self.0, mois, &*f)?,
             };
         }
         Ok(())
     }
 
     /// Le fichier de `mois` de la forme `T` tel que le brouillon ouvert pour `racine` le tient.
-    fn lu<T: FichierDuStock>(racine: &Path, mois: &str) -> Option<std::sync::Arc<T>> {
-        BROUILLON.with(|b| b.borrow().as_ref().filter(|(r, _)| r == racine).and_then(|(_, f)| f.get(&(T::DOSSIER, mois.to_string())).and_then(T::de)))
+    fn lu<T: FichierDuStock>(racine: &Path, mois: Mois) -> Option<std::sync::Arc<T>> {
+        BROUILLON.with(|b| b.borrow().as_ref().filter(|(r, _)| r == racine).and_then(|(_, f)| f.get(&(T::DOSSIER, mois)).and_then(T::de)))
     }
 
     /// Ecrit `contenu` comme fichier de `mois` dans le brouillon ouvert pour `racine`, tel que le disque le relirait (ce
     /// que sa forme n'ecrit pas, il ne le tient pas) ; faux : aucun ne l'est.
-    fn tient<T: FichierDuStock>(racine: &Path, mois: &str, contenu: &T) -> Resultat<bool> {
+    fn tient<T: FichierDuStock>(racine: &Path, mois: Mois, contenu: &T) -> R<bool> {
         if !BROUILLON.with(|b| b.borrow().as_ref().is_some_and(|(r, _)| r == racine)) {
             return Ok(false);
         }
         let relu: T = socle::forme::lire_texte(&socle::ecriture::json_en_ligne(contenu), T::ILLISIBLE)?;
         BROUILLON.with(|b| {
             if let Some((_, f)) = b.borrow_mut().as_mut() {
-                f.insert((T::DOSSIER, mois.to_string()), T::tenu(std::sync::Arc::new(relu)));
+                f.insert((T::DOSSIER, mois), T::tenu(std::sync::Arc::new(relu)));
             }
         });
         Ok(true)
@@ -321,19 +342,19 @@ impl Drop for Brouillon {
 }
 
 /// LA SEULE ECRITURE D'UN FICHIER D'ENGAGEMENTS : `contenu` devient le fichier de son mois (`poser_dans`).
-pub(crate) fn poser(racine: &Path, contenu: &FichierDuMois) -> Resultat<PathBuf> {
-    poser_dans(racine, &contenu.mois.to_string(), contenu)
+pub(crate) fn poser(racine: &Path, contenu: &FichierDuMois) -> R<PathBuf> {
+    poser_dans(racine, contenu.mois, contenu)
 }
 
 /// LE SEUL ENDROIT QUI ECRIT UN FICHIER D'ENGAGEMENTS OU DE PAIES : `contenu` devient le fichier de `mois` de son dossier,
 /// dans le brouillon ouvert pour `racine` s'il y en a un (`Brouillon`), sinon sur le disque. Rend son chemin.
-pub(crate) fn poser_dans<T: FichierDuStock>(racine: &Path, mois: &str, contenu: &T) -> Resultat<PathBuf> {
+pub(crate) fn poser_dans<T: FichierDuStock>(racine: &Path, mois: Mois, contenu: &T) -> R<PathBuf> {
     let p = chemin_dans(racine, T::DOSSIER, mois);
     if Brouillon::tient(racine, mois, contenu)? {
         return Ok(p);
     }
     if let Some(dir) = p.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| socle::fichiers::panne_fichier(&e, dir))?;
+        std::fs::create_dir_all(dir).map_err(|e| refus(socle::fichiers::panne_fichier(&e, dir)))?;
     }
     socle::ecriture::ecrire_json(&p, contenu, 2)?;
     Ok(p)
@@ -341,8 +362,8 @@ pub(crate) fn poser_dans<T: FichierDuStock>(racine: &Path, mois: &str, contenu: 
 
 /// LE FICHIER D'ENGAGEMENTS DE `mois` QUI N'A PLUS RIEN (un fichier que l'import avait pose) s'en va : un mois sans
 /// fichier ni engagement n'a pas de saisie. Dans un brouillon, il s'ecrit vide.
-pub(crate) fn retirer(racine: &Path, mois: &str) -> Resultat<PathBuf> {
-    let vide = FichierDuMois { mois: Mois::lire(mois)?, taux_cachet: None, engagements: Vec::new() };
+pub(crate) fn retirer(racine: &Path, mois: Mois) -> R<PathBuf> {
+    let vide = FichierDuMois { mois, taux_cachet: None, engagements: Vec::new() };
     if Brouillon::tient(racine, mois, &vide)? {
         return Ok(chemin(racine, mois));
     }
@@ -352,13 +373,13 @@ pub(crate) fn retirer(racine: &Path, mois: &str) -> Resultat<PathBuf> {
 }
 
 /// Le fichier d'engagements d'un mois (`lire_dans`) ; un refus dit son chemin.
-fn lire_partage(racine: &Path, mois: &str) -> Resultat<Option<std::sync::Arc<FichierDuMois>>> {
-    lire_dans(racine, mois).map_err(|m| socle::echec::avec(m, OuDansLeFichier { chemin: format!("{}/{}.json", DOSSIER, mois), rang: None }))
+fn lire_partage(racine: &Path, mois: Mois) -> R<Option<std::sync::Arc<FichierDuMois>>> {
+    lire_dans(racine, mois).map_err(|m| m.au_fichier(Path::new(&format!("{}/{}.json", DOSSIER, mois))))
 }
 
 /// Le fichier de `mois` de la forme `T` tel que le geste l'a lu ou ecrit (`socle::forme::partagee`), ou tel que le
 /// brouillon ouvert le tient : chaque lecture des engagements et des paies passe par lui. `None` s'il n'existe pas.
-pub(crate) fn lire_dans<T: FichierDuStock>(racine: &Path, mois: &str) -> Resultat<Option<std::sync::Arc<T>>> {
+pub(crate) fn lire_dans<T: FichierDuStock>(racine: &Path, mois: Mois) -> R<Option<std::sync::Arc<T>>> {
     if let Some(f) = Brouillon::lu::<T>(racine, mois) {
         return Ok(Some(f));
     }
@@ -367,7 +388,7 @@ pub(crate) fn lire_dans<T: FichierDuStock>(racine: &Path, mois: &str) -> Resulta
 
 /// Le fichier de `mois` ne porte-t-il que des engagements importes seuls (`Objet::importe_seul`) ? Un tel mois n'a pas de
 /// saisie : il se lit. Un fichier sans engagement n'est pas de l'import ; un fichier illisible se refuse.
-fn importes_seuls(racine: &Path, mois: &str) -> Resultat<bool> {
+fn importes_seuls(racine: &Path, mois: Mois) -> R<bool> {
     let (_, t) = tous(racine)?;
     let mut es = t.objets.iter().filter(|o| o.fichier == mois).peekable();
     Ok(es.peek().is_some() && es.all(Objet::importe_seul))
@@ -381,7 +402,7 @@ fn importes_seuls(racine: &Path, mois: &str) -> Resultat<bool> {
 #[derive(Debug, Clone)]
 pub struct Objet {
     pub racine: PathBuf,
-    pub fichier: String,
+    pub fichier: Mois,
     pub rang: usize,
     /// L'engagement ecrit. TRAVAIL A FAIRE (chaine A) : il se nomme `ecrit` quand `conges.rs` (l. 468-469) ne le lit
     /// plus sous ce nom.
@@ -405,48 +426,46 @@ impl Objet {
     }
 
     /// Le premier mois de l'engagement : celui de son fichier.
-    pub fn premier_mois(&self) -> &str {
-        &self.fichier
+    pub fn premier_mois(&self) -> Mois {
+        self.fichier
     }
 
     /// Le dernier mois d'un engagement borne (celui de sa fin) ; `None` pour un contrat sans terme.
-    pub fn dernier_mois(&self) -> Resultat<Option<String>> {
+    pub fn dernier_mois(&self) -> R<Option<Mois>> {
         let c = self.carte();
         let mensuel = self.mensuel()?;
-        match c.fin.as_deref().filter(|f| !f.is_empty()) {
-            Some(f) => Ok(Some(Jour::lire(f)?.mois_civil().to_string().max(self.fichier.clone()))),
+        match c.fin {
+            Some(f) => Ok(Some(f.mois_civil().max(self.fichier))),
             None if !mensuel => {
                 // Un contrat d'usage sans fin dite finit a son dernier jour joue ou planifie ; sans jour encore, a son
                 // premier mois : seul un contrat paye au mois court sans terme.
-                let mut jours: Vec<String> = c.dates().iter().chain(c.planning().iter()).map(|j| j.jour().to_string()).collect();
-                jours.sort();
-                let dernier = jours.last().map(|j| j.chars().take(7).collect::<String>()).filter(|m| socle::mois::Mois::lire(m).is_ok());
-                Ok(Some(dernier.into_iter().fold(self.fichier.clone(), String::max)))
+                let dernier = c.dates().iter().chain(c.planning().iter()).map(|j| j.jour().mois_civil()).max();
+                Ok(Some(dernier.into_iter().fold(self.fichier, Mois::max)))
             }
             None => Ok(None),
         }
     }
 
     /// Un contrat paye au mois ?
-    pub fn mensuel(&self) -> Resultat<bool> {
-        self.carte().mensuelle()
+    pub fn mensuel(&self) -> R<bool> {
+        Ok(self.carte().mensuelle()?)
     }
 
     /// Les mois que la saisie a touches : le premier, ceux qui ont des faits, et ceux ou un terme change.
-    pub fn mois_saisis(&self) -> Resultat<Vec<Mois>> {
-        let premier = Mois::lire(&self.fichier)?;
+    pub fn mois_saisis(&self) -> Vec<Mois> {
+        let premier = self.fichier;
         let mut v = vec![premier];
         v.extend(self.brut.saisie.faits.keys().copied().filter(|m| *m > premier));
         v.extend(self.avenants().iter().map(|a| Mois::du_jour(&a.depuis)).filter(|m| *m > premier));
         v.sort();
         v.dedup();
-        Ok(v)
+        v
     }
 
     /// L'engagement touche-t-il `mois` ? Du premier mois a celui de sa fin ; sans terme, de son premier mois a toujours.
     /// Un engagement non actif ne touche plus aucun mois ; un engagement importe seul (`importe_seul`) n'en touche aucun de la saisie : il se
     /// lit (`importe`), rien ne le calcule.
-    pub fn couvre(&self, mois: &str) -> Resultat<bool> {
+    pub fn couvre(&self, mois: Mois) -> R<bool> {
         Ok(!self.est_non_actif() && !self.importe_seul() && self.dans_ses_bornes(mois)?)
     }
 
@@ -459,7 +478,7 @@ impl Objet {
     /// de permanent qui continue ici vit dans le fichier de son premier mois neuf, apres tous ses mois verses
     /// (`importe::ecrire_tous`) : ce mois et les suivants sont de la saisie.
     pub fn importe_seul(&self) -> bool {
-        self.pieces().is_some_and(|p| p.paies.keys().max().is_none_or(|m| m.as_str() >= self.fichier.as_str()))
+        self.pieces().is_some_and(|p| p.paies.keys().max().is_none_or(|m| *m >= self.fichier))
     }
 
     /// N'est-il plus actif ?
@@ -468,21 +487,21 @@ impl Objet {
     }
 
     /// `mois` est-il entre son premier mois et celui de sa fin, qu'il soit actif ou non ?
-    fn dans_ses_bornes(&self, mois: &str) -> Resultat<bool> {
-        if mois < self.fichier.as_str() {
+    fn dans_ses_bornes(&self, mois: Mois) -> R<bool> {
+        if mois < self.fichier {
             return Ok(false);
         }
-        Ok(self.dernier_mois()?.is_none_or(|d| mois <= d.as_str()))
+        Ok(self.dernier_mois()?.is_none_or(|d| mois <= d))
     }
 
     /// Les mois de l'engagement jusqu'a `jusqu_a` : un engagement borne les a tous ; un contrat sans terme, ceux que la
     /// saisie a touches et ceux qui vont jusqu'a `jusqu_a`.
-    pub fn mois_couverts(&self, jusqu_a: &str) -> Resultat<Vec<String>> {
+    pub fn mois_couverts(&self, jusqu_a: Mois) -> R<Vec<Mois>> {
         let fin = match self.dernier_mois()? {
             Some(d) => d,
-            None => self.mois_saisis()?.last().map(Mois::to_string).into_iter().fold(jusqu_a.to_string().max(self.fichier.clone()), String::max),
+            None => self.mois_saisis().last().copied().into_iter().fold(jusqu_a.max(self.fichier), Mois::max),
         };
-        Ok(Mois::lire(&self.fichier)?.jusqu_a(Mois::lire(&fin)?).iter().map(Mois::to_string).collect())
+        Ok(self.fichier.jusqu_a(fin))
     }
 
     /// Valide ?
@@ -501,7 +520,7 @@ impl Objet {
     /// S21.G00.41 (41.001). Un changement en cours de mois y porte aussi les termes de la veille (`avant` : le salaire et
     /// la duree du travail, `saisie::Avant`), qui paient ses jours d'avant (`periodes::bornes`, chaque part par
     /// `droit::periodes::part_du_mois`).
-    pub fn vue(&self, mois: &str) -> Resultat<Option<Carte>> {
+    pub fn vue(&self, mois: Mois) -> R<Option<Carte>> {
         if !self.dans_ses_bornes(mois)? {
             return Ok(None);
         }
@@ -511,26 +530,25 @@ impl Objet {
             premiere.clone()
         } else {
             let mut v = premiere.du_groupe(&[Groupe::Terme, Groupe::Partage]);
-            match self.faits_de(mois)? {
+            match self.faits_de(mois) {
                 Some(f) => v.recouvrir(f),
                 None if !mensuel => v.lignes = Some(self.lignes_du_planning(mois)?),
                 None => {}
             }
             v
         };
-        self.termes_au(&mut v, &Mois::lire(mois)?.dernier_jour());
-        if mois > self.fichier.as_str() && mensuel {
+        self.termes_au(&mut v, &mois.dernier_jour());
+        if mois > self.fichier && mensuel {
             self.avenant_du_mois(&mut v, mois)?;
         }
         for k in Champ::des(&[Groupe::Partage]) {
             v.prendre(premiere, k);
         }
-        if mois > self.fichier.as_str() && !mensuel {
+        if mois > self.fichier && !mensuel {
             // Un contrat d'usage qui ne dit pas son debut commence a son premier jour joue, celui de son premier mois :
             // les mois suivants le declarent (S21.G00.40.001) et ne le prennent pas pour une embauche.
-            let debut = crate::debut_brut(&self.brut);
-            if v.debut.is_none() && !debut.is_empty() {
-                v.debut = Some(debut);
+            if v.debut.is_none() {
+                v.debut = crate::debut_brut(&self.brut);
             }
             v.jours_contrat = Some(NombreLu::from(premiere.jours_du_contrat() as u64));
         }
@@ -538,8 +556,8 @@ impl Objet {
     }
 
     /// Les faits que `mois` (apres le premier) dit de lui seul, s'il en dit.
-    fn faits_de(&self, mois: &str) -> Resultat<Option<&Carte>> {
-        Ok(self.brut.saisie.faits.get(&Mois::lire(mois)?))
+    fn faits_de(&self, mois: Mois) -> Option<&Carte> {
+        self.brut.saisie.faits.get(&mois)
     }
 
     /// Ses avenants, du plus ancien au plus recent.
@@ -567,17 +585,17 @@ impl Objet {
     /// L'avenant de `mois` dans sa vue `v` (voir `vue`) : le dernier jour du mois ou un terme change, et, s'il n'est pas
     /// le 1er, les termes de la veille quand le salaire ou la duree du travail changent (l'avenant change autre chose :
     /// il se date, rien ne se coupe).
-    fn avenant_du_mois(&self, v: &mut Carte, mois: &str) -> Resultat<()> {
-        let Some(j) = self.avenants().iter().map(|a| a.depuis).filter(|j| j.mois_civil().to_string() == mois).max() else { return Ok(()) };
-        v.date_modification = Some(j.iso());
+    fn avenant_du_mois(&self, v: &mut Carte, mois: Mois) -> R<()> {
+        let Some(j) = self.avenants().iter().map(|a| a.depuis).filter(|j| mois.contient(j)).max() else { return Ok(()) };
+        v.date_modification = Some(j);
         if j.jour == 1 {
             return Ok(());
         }
         let a = self.termes_a(&j.plus_jours(-1)?);
-        let quotite = |x: &Carte| -> Resultat<Option<NombreLu>> {
+        let quotite = |x: &Carte| -> R<Option<NombreLu>> {
             Ok(match &x.quotite_contrat {
                 Some(q) => Some(q.clone()),
-                None => x.nature_lue()?.quotite_reference_defaut().and_then(NombreLu::de_f64),
+                None => x.nature_lue()?.quotite_reference_defaut().map(NombreLu::de_decimal),
             })
         };
         let avant = Avant { salaire_mensuel: a.salaire_mensuel.clone(), quotite_contrat: quotite(&a)? };
@@ -593,9 +611,9 @@ impl Objet {
     /// rubrique, au meme taux et au meme lieu, ses jours de `mois` en dates et ceux d'apres au planning ; un cachet, une
     /// journee ou un service par date (une autre unite, des heures, ne se deduit pas d'un nombre de jours : quantite 0, a
     /// completer). Sans planning, aucune ligne.
-    fn lignes_du_planning(&self, mois: &str) -> Resultat<Vec<crate::LignePaie>> {
+    fn lignes_du_planning(&self, mois: Mois) -> R<Vec<crate::LignePaie>> {
         let faits = &self.brut.saisie.faits;
-        let dit = faits.keys().filter(|m| m.to_string().as_str() < mois && m.to_string().as_str() > self.fichier.as_str()).max();
+        let dit = faits.keys().filter(|m| **m < mois && **m > self.fichier).max();
         let source = match dit {
             Some(m) => faits[m].lignes(),
             None => self.carte().lignes(),
@@ -605,23 +623,23 @@ impl Objet {
 }
 
 /// Tous les engagements, fichier par fichier, du plus ancien au plus recent, dans l'ordre de chaque fichier.
-pub fn objets(racine: &Path) -> Resultat<Vec<Objet>> {
+pub fn objets(racine: &Path) -> R<Vec<Objet>> {
     Ok(tous(racine)?.1.objets.clone())
 }
 
 /// Les fichiers des engagements d'une compagnie tels qu'ils viennent d'etre lus : chaque mois, et ce que son fichier
 /// contient (`socle::forme::partagee` : la meme forme tant que les octets sont les memes).
-type Lus = Vec<(String, std::sync::Arc<FichierDuMois>)>;
+type Lus = Vec<(Mois, std::sync::Arc<FichierDuMois>)>;
 
 /// Deux lectures ont-elles trouve exactement les memes fichiers, aux memes octets ?
 fn memes(a: &Lus, b: &Lus) -> bool {
     a.len() == b.len() && a.iter().zip(b).all(|((m, x), (n, y))| m == n && std::sync::Arc::ptr_eq(x, y))
 }
 
-fn lus(racine: &Path) -> Resultat<Lus> {
+fn lus(racine: &Path) -> R<Lus> {
     let mut out = Vec::new();
-    for f in fichiers(racine) {
-        if let Some(v) = lire_partage(racine, &f)? {
+    for f in fichiers(racine)? {
+        if let Some(v) = lire_partage(racine, f)? {
             out.push((f, v));
         }
     }
@@ -632,34 +650,34 @@ fn lus(racine: &Path) -> Resultat<Lus> {
 /// lire un mois ne relit que les objets qui le touchent.
 struct Tires {
     objets: Vec<Objet>,
-    derniers: Vec<Result<Option<String>, String>>,
+    derniers: Vec<R<Option<Mois>>>,
 }
 
 impl Tires {
     /// `mois` est-il entre le premier et le dernier mois de l'objet de rang `i` ?
-    fn dans_ses_bornes(&self, i: usize, mois: &str) -> Resultat<bool> {
+    fn dans_ses_bornes(&self, i: usize, mois: Mois) -> R<bool> {
         let o = &self.objets[i];
-        if mois < o.fichier.as_str() {
+        if mois < o.fichier {
             return Ok(false);
         }
         Ok(match &self.derniers[i] {
-            Ok(Some(d)) => mois <= d.as_str(),
+            Ok(Some(d)) => mois <= *d,
             Ok(None) => true,
             Err(e) => return Err(e.clone()),
         })
     }
 
     /// L'objet de rang `i` touche-t-il `mois` (`Objet::couvre`) ?
-    fn couvre(&self, i: usize, mois: &str) -> Resultat<bool> {
+    fn couvre(&self, i: usize, mois: Mois) -> R<bool> {
         let o = &self.objets[i];
         Ok(!o.est_non_actif() && !o.importe_seul() && self.dans_ses_bornes(i, mois)?)
     }
 
     /// Les objets qui touchent `mois`, dans l'ordre des fichiers.
-    fn du_mois(&self, mois: &str) -> Resultat<Vec<&Objet>> {
+    fn du_mois(&self, mois: Mois) -> R<Vec<&Objet>> {
         let mut out = Vec::new();
         for (i, o) in self.objets.iter().enumerate() {
-            if o.fichier.as_str() <= mois && self.couvre(i, mois)? {
+            if o.fichier <= mois && self.couvre(i, mois)? {
                 out.push(o);
             }
         }
@@ -678,7 +696,7 @@ fn verrouille<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// TOUS LES ENGAGEMENTS D'UNE COMPAGNIE, tires une fois des memes fichiers : ce qu'on en avait tire ne sert que si ce
 /// sont les memes lectures (`memes`) ; pendant un geste, les fichiers se lisent une fois (`socle::forme::geste`).
 /// Partage : on n'y touche pas, et un objet se copie sans recopier ce qu'il porte (`Objet`).
-fn tous(racine: &Path) -> Resultat<(Lus, std::sync::Arc<Tires>)> {
+fn tous(racine: &Path) -> R<(Lus, std::sync::Arc<Tires>)> {
     type Gardes = std::sync::Mutex<std::collections::HashMap<PathBuf, (Lus, std::sync::Arc<Tires>)>>;
     static GARDES: std::sync::OnceLock<Gardes> = std::sync::OnceLock::new();
     let gardes = GARDES.get_or_init(Default::default);
@@ -698,7 +716,7 @@ fn tous(racine: &Path) -> Resultat<(Lus, std::sync::Arc<Tires>)> {
             continue;
         }
         for (rang, e) in m.engagements.iter().enumerate() {
-            objets.push(Objet { racine: racine.to_path_buf(), fichier: f.clone(), rang, brut: std::sync::Arc::new(e.clone()) });
+            objets.push(Objet { racine: racine.to_path_buf(), fichier: *f, rang, brut: std::sync::Arc::new(e.clone()) });
         }
     }
     let derniers = objets.iter().map(Objet::dernier_mois).collect();
@@ -709,7 +727,7 @@ fn tous(racine: &Path) -> Resultat<(Lus, std::sync::Arc<Tires>)> {
 
 /// Les engagements qui touchent `mois`, dans l'ordre de l'ecran : ceux des fichiers d'avant qui courent encore, puis
 /// ceux du mois.
-pub fn objets_du_mois(racine: &Path, mois: &str) -> Resultat<Vec<Objet>> {
+pub fn objets_du_mois(racine: &Path, mois: Mois) -> R<Vec<Objet>> {
     Ok(tous(racine)?.1.du_mois(mois)?.into_iter().cloned().collect())
 }
 
@@ -722,36 +740,37 @@ pub fn objets_du_mois(racine: &Path, mois: &str) -> Resultat<Vec<Objet>> {
 pub struct Identite {
     /// `None` : une carte neuve, qui ne nomme pas encore son salarie.
     pub salarie: Option<String>,
-    pub debut: String,
+    /// `None` : une carte qui ne dit pas encore son debut ni aucun jour.
+    pub debut: Option<Jour>,
     pub rang: usize,
 }
 
 /// L'IDENTITE DE CHAQUE ENGAGEMENT D'UNE LISTE (le plan), dans son ordre.
 pub fn identites(objets: &[Objet]) -> Vec<Identite> {
-    let paires: Vec<(Option<String>, String)> = objets.iter().map(|o| (o.carte().salarie.as_ref().map(ToString::to_string), crate::debut_brut(&o.brut))).collect();
+    let paires: Vec<(Option<String>, Option<Jour>)> =objets.iter().map(|o| (o.carte().salarie.as_ref().map(ToString::to_string), crate::debut_brut(&o.brut))).collect();
     paires
         .iter()
         .enumerate()
-        .map(|(i, (s, d))| Identite { salarie: s.clone(), debut: d.clone(), rang: paires[..i].iter().filter(|(s2, d2)| s2 == s && d2 == d).count() })
+        .map(|(i, (s, d))| Identite { salarie: s.clone(), debut: *d, rang: paires[..i].iter().filter(|(s2, d2)| s2 == s && d2 == d).count() })
         .collect()
 }
 
 /// L'ENGAGEMENT QUE DESIGNE L'IDENTITE `id` (`identites`) dans l'ecran de `mois`, et sa place dans cet ecran (l'ordre
 /// de `vue_du_mois`). Refus : une identite que l'ecran ne montre pas.
-pub fn designe(racine: &Path, mois: &str, id: &Identite) -> Resultat<(usize, Objet)> {
+pub fn designe(racine: &Path, mois: Mois, id: &Identite) -> R<(usize, Objet)> {
     let objets = objets_du_mois(racine, mois)?;
     let k = identites(&objets).iter().position(|x| x == id).ok_or_else(|| {
-        format!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", socle::mois::Mois::en_clair(mois))
+        socle::refus!("{} : l'écran ne montre pas cet engagement ; rechargez le mois. Rien n'est écrit.", mois.libelle(Graphie::Accentuee))
     })?;
     Ok((k, objets.into_iter().nth(k).expect("la place vient de la liste")))
 }
 
 /// Les engagements non actifs qui toucheraient `mois` s'ils l'etaient encore : ce qui se lit d'eux.
-pub fn non_actifs_du_mois(racine: &Path, mois: &str) -> Resultat<Vec<Objet>> {
+pub fn non_actifs_du_mois(racine: &Path, mois: Mois) -> R<Vec<Objet>> {
     let t = tous(racine)?.1;
     let mut out = Vec::new();
     for (i, o) in t.objets.iter().enumerate() {
-        if o.est_non_actif() && o.fichier.as_str() <= mois && t.dans_ses_bornes(i, mois)? {
+        if o.est_non_actif() && o.fichier <= mois && t.dans_ses_bornes(i, mois)? {
             out.push(o.clone());
         }
     }
@@ -759,24 +778,25 @@ pub fn non_actifs_du_mois(racine: &Path, mois: &str) -> Resultat<Vec<Objet>> {
 }
 
 /// Le fichier de l'objet `o`, relu ; refus s'il a disparu.
-fn fichier_de(racine: &Path, o: &Objet) -> Resultat<FichierDuMois> {
-    lire_fichier(racine, &o.fichier)?.ok_or_else(|| format!("{} : le fichier de l'engagement a disparu", o.fichier))
+fn fichier_de(racine: &Path, o: &Objet) -> R<FichierDuMois> {
+    lire_fichier(racine, o.fichier)?.ok_or_else(|| socle::refus!("{} : le fichier de l'engagement a disparu", o.fichier))
 }
 
 /// Efface l'objet `o` de son fichier (meme fichier, meme rang).
-pub fn effacer(racine: &Path, o: &Objet) -> Resultat<PathBuf> {
+pub fn effacer(racine: &Path, o: &Objet) -> R<()> {
     let mut contenu = fichier_de(racine, o)?;
     if contenu.engagements.get(o.rang) != Some(&*o.brut) {
-        return Err(format!("{} : l'engagement {} a change sur le disque ; rien n'est efface", o.fichier, o.rang + 1));
+        return Err(socle::refus!("{} : l'engagement {} a change sur le disque ; rien n'est efface", o.fichier, o.rang + 1));
     }
     contenu.engagements.remove(o.rang);
-    poser(racine, &contenu)
+    poser(racine, &contenu)?;
+    Ok(())
 }
 
 /// LE MOIS DE L'ECRAN (`VueDuMois`) : le mois, ce que son fichier dit par defaut, et la vue de chaque engagement qui le
 /// touche ; `None` quand aucun engagement ne le touche et qu'il n'a pas de fichier. Un engagement valide y dit quand
 /// (`valide` : `{"le"}`).
-pub fn vue_du_mois(racine: &Path, mois: &str) -> Resultat<Option<VueDuMois>> {
+pub fn vue_du_mois(racine: &Path, mois: Mois) -> R<Option<VueDuMois>> {
     Ok(vue_et_empreinte(racine, mois)?.map(|s| {
         socle::fichiers::noter_valeur(&cle_de_saisie(mois, None), s.1.clone());
         s.0.clone()
@@ -785,18 +805,18 @@ pub fn vue_du_mois(racine: &Path, mois: &str) -> Resultat<Option<VueDuMois>> {
 
 /// L'empreinte de la saisie de `mois` (`empreinte_de_saisie`) : celle que `vue_du_mois` note, ou, pour `salarie`, celle
 /// que la paie de ses engagements du mois note ; `None` sans saisie.
-pub fn empreinte_de_la_saisie_du_mois(racine: &Path, mois: &str, salarie: Option<&str>) -> Resultat<Option<String>> {
+pub fn empreinte_de_la_saisie_du_mois(racine: &Path, mois: Mois, salarie: Option<&str>) -> R<Option<String>> {
     Ok(vue_et_empreinte(racine, mois)?.map(|s| if salarie.is_none() { s.1.clone() } else { empreinte_de_saisie(&s.0, salarie) }))
 }
 
 /// La vue de `mois` et son empreinte, faites une fois pour les memes fichiers aux memes octets (`memes`) :
 /// chaque paie qui se verifie relit la saisie des mois qu'elle a lus. La vue d'une ligne lit aussi l'unite de sa rubrique
 /// (`droit::catalogue::rubrique`) : les deux catalogues en font partie.
-pub(crate) fn vue_et_empreinte(racine: &Path, mois: &str) -> Resultat<Option<std::sync::Arc<(VueDuMois, String)>>> {
+pub(crate) fn vue_et_empreinte(racine: &Path, mois: Mois) -> R<Option<std::sync::Arc<(VueDuMois, String)>>> {
     type Saisie = Option<std::sync::Arc<(VueDuMois, String)>>;
     // Le contenu d'un catalogue de rubriques, sans le lire : la meme forme tant que ses octets sont les memes.
     type Catalogue = std::sync::Arc<serde::de::IgnoredAny>;
-    type Vues = std::sync::Mutex<std::collections::HashMap<(PathBuf, String), (Lus, Vec<Catalogue>, Saisie)>>;
+    type Vues = std::sync::Mutex<std::collections::HashMap<(PathBuf, Mois),(Lus, Vec<Catalogue>, Saisie)>>;
     static VUES: std::sync::OnceLock<Vues> = std::sync::OnceLock::new();
     static ABSENT: std::sync::OnceLock<Catalogue> = std::sync::OnceLock::new();
     let vues = VUES.get_or_init(Default::default);
@@ -809,7 +829,7 @@ pub(crate) fn vue_et_empreinte(racine: &Path, mois: &str) -> Resultat<Option<std
             None => ABSENT.get_or_init(|| std::sync::Arc::new(serde::de::IgnoredAny)).clone(),
         });
     }
-    let cle = (racine.to_path_buf(), mois.to_string());
+    let cle = (racine.to_path_buf(), mois);
     if let Some((vus, cs, s)) = verrouille(vues).get(&cle) {
         if memes(vus, &lus) && cs.len() == catalogues.len() && cs.iter().zip(&catalogues).all(|(a, b)| std::sync::Arc::ptr_eq(a, b)) {
             return Ok(s.clone());
@@ -821,7 +841,7 @@ pub(crate) fn vue_et_empreinte(racine: &Path, mois: &str) -> Resultat<Option<std
     let saisie = if (fichier.is_none() || importes_seuls(racine, mois)?) && objets.is_empty() {
         None
     } else {
-        let mut vue = VueDuMois { mois: Mois::lire(mois)?, taux_cachet: fichier.and_then(|f| f.taux_cachet.clone()), engagements: Vec::new() };
+        let mut vue = VueDuMois { mois, taux_cachet: fichier.and_then(|f| f.taux_cachet.clone()), engagements: Vec::new() };
         for o in &objets {
             let Some(mut v) = o.vue(mois)? else { continue };
             if let Some(x) = &o.brut.valide {
@@ -838,11 +858,8 @@ pub(crate) fn vue_et_empreinte(racine: &Path, mois: &str) -> Resultat<Option<std
 
 /// La cle sous laquelle un calcul note la saisie d'un mois qu'il a lue (`socle::fichiers::suivre`) : `saisie <mois>`, ou
 /// `saisie <mois> <salarie>` pour la saisie dont depend la paie de ce salarie dans son mois (`etats::calculer_les_rangs`).
-pub fn cle_de_saisie(mois: &str, salarie: Option<&str>) -> String {
-    match salarie {
-        Some(s) => format!("saisie {} {}", mois, s),
-        None => format!("saisie {}", mois),
-    }
+pub fn cle_de_saisie(mois: Mois, salarie: Option<&str>) -> String {
+    socle::fichiers::LectureDatee::Saisie { mois, salarie: salarie.map(String::from) }.cle()
 }
 
 /// L'empreinte de la saisie d'un mois : ce qu'elle dit, sans ce que le moteur tient seul (la validation) ni le numero du
@@ -872,22 +889,19 @@ pub fn empreinte_de_saisie(vue: &VueDuMois, salarie: Option<&str>) -> String {
 /// Les mois que la saisie a touches : les fichiers, et les mois que chaque engagement a saisis ou couvre jusqu'a sa fin ;
 /// un contrat sans terme, jusqu'au dernier mois ecrit ou jusqu'au mois d'aujourd'hui s'il est plus loin : un CDI de
 /// janvier que rien n'a saisi depuis a une paie, une DSN et des documents chaque mois qu'il court.
-pub fn mois_saisis(racine: &Path) -> Resultat<Vec<Mois>> {
+pub fn mois_saisis(racine: &Path) -> R<Vec<Mois>> {
     let mut v: Vec<Mois> = Vec::new();
-    for m in fichiers(racine) {
-        if !importes_seuls(racine, &m)? {
-            v.push(Mois::lire(&m)?);
+    for m in fichiers(racine)? {
+        if !importes_seuls(racine, m)? {
+            v.push(m);
         }
     }
     let courant = Mois::du_jour(&droit::contexte::aujourdhui_sans_note()?);
     let horizon = v.iter().max().copied().map(|h| h.max(courant));
     for o in objets(racine)?.into_iter().filter(|o| !o.importe_seul()) {
-        v.extend(o.mois_saisis()?);
-        let premier = Mois::lire(&o.fichier)?;
-        let fin = match o.dernier_mois()? {
-            Some(d) => Some(Mois::lire(&d)?),
-            None => horizon.filter(|h| *h >= premier),
-        };
+        v.extend(o.mois_saisis());
+        let premier = o.fichier;
+        let fin = o.dernier_mois()?.or(horizon.filter(|h| *h >= premier));
         if let Some(d) = fin {
             v.extend(premier.jusqu_a(d));
         }
@@ -908,12 +922,13 @@ pub fn mois_saisis(racine: &Path) -> Resultat<Vec<Mois>> {
 /// `etats::modifier`), une identite que l'ecran ne montre pas, un engagement du salarie et du premier jour d'un engagement
 /// importe, des bornes qui laisseraient hors du contrat un mois ou il a des jours payes, un engagement neuf que l'ecran
 /// de `mois` ne montrerait pas.
-pub fn ecrire_la_carte(ctx: &Contexte, mois: &str, id: Option<&Identite>, saisie: &Carte, defauts: &VueDuMois) -> Resultat<Identite> {
+pub fn ecrire_la_carte(ctx: &Contexte, mois: Mois, id: Option<&Identite>, saisie: &Carte, defauts: &VueDuMois) -> R<Identite> {
     let racine = &ctx.racine;
     if let Some(cle) = &saisie.salarie {
-        let debut = saisie.debut_lu();
-        if crate::importe::celui_de(racine, mois, cle, &debut)?.is_some() {
-            return Err(crate::importe::refus(cle, &debut));
+        if let Some(debut) = saisie.debut_lu() {
+            if crate::importe::celui_de(racine, mois, cle, debut)?.is_some() {
+                return Err(refus(crate::importe::refus(cle, debut)));
+            }
         }
     }
     // Un engagement neuf, ou qui n'est encore qu'un brouillon de son premier mois, s'ecrit dans le fichier de son premier
@@ -922,7 +937,7 @@ pub fn ecrire_la_carte(ctx: &Contexte, mois: &str, id: Option<&Identite>, saisie
     let (fichier, rang) = match id.map(|id| designe(racine, mois, id)).transpose()? {
         Some((_, mut o)) if o.fichier == fichier => {
             if o.est_valide() {
-                return Err(format!("{} : cet engagement est validé, il se modifie d'un geste. Rien n'est écrit.", socle::mois::Mois::en_clair(mois)));
+                return Err(socle::refus!("{} : cet engagement est validé, il se modifie d'un geste. Rien n'est écrit.", mois.libelle(Graphie::Accentuee)));
             }
             if mois == o.fichier {
                 refuser_un_second_contrat_au_mois(ctx, saisie, Some(&o))?;
@@ -937,9 +952,9 @@ pub fn ecrire_la_carte(ctx: &Contexte, mois: &str, id: Option<&Identite>, saisie
                 effacer(racine, o)?;
             }
             let neuf = Ecrit { saisie: Saisie { carte: en_forme(saisie)?, ..Saisie::default() }, ..Ecrit::default() };
-            let mut contenu = match lire_fichier(racine, &fichier)? {
+            let mut contenu = match lire_fichier(racine, fichier)? {
                 Some(c) => c,
-                None => FichierDuMois { mois: Mois::lire(&fichier)?, taux_cachet: defauts.taux_cachet.clone(), engagements: Vec::new() },
+                None => FichierDuMois { mois: fichier, taux_cachet: defauts.taux_cachet.clone(), engagements: Vec::new() },
             };
             let rang = contenu.engagements.len();
             contenu.engagements.push(neuf);
@@ -951,14 +966,14 @@ pub fn ecrire_la_carte(ctx: &Contexte, mois: &str, id: Option<&Identite>, saisie
     let k = objets
         .iter()
         .position(|o| o.fichier == fichier && o.rang == rang)
-        .ok_or_else(|| format!("{} : l'engagement écrit ne tombe pas dans ce mois (ses dates le placent ailleurs).", socle::mois::Mois::en_clair(mois)))?;
+        .ok_or_else(|| socle::refus!("{} : l'engagement écrit ne tombe pas dans ce mois (ses dates le placent ailleurs).", mois.libelle(Graphie::Accentuee)))?;
     Ok(identites(&objets).swap_remove(k))
 }
 
 /// LE MOIS DU FICHIER OU S'ECRIT LA CARTE `saisie` de l'ecran de `mois` : celui de son engagement (`id`) ; pour un
 /// engagement neuf, ou qui n'est qu'un brouillon de son premier mois (jamais valide, sans numero donne, sans avenant ni
 /// fait d'un autre mois), le premier mois que ses bornes disent (`mois_d_ecriture`).
-pub fn ou_s_ecrit(racine: &Path, mois: &str, id: Option<&Identite>, saisie: &Carte) -> Resultat<String> {
+pub fn ou_s_ecrit(racine: &Path, mois: Mois, id: Option<&Identite>, saisie: &Carte) -> R<Mois> {
     let Some(id) = id else { return mois_d_ecriture(racine, mois, saisie) };
     let (_, o) = designe(racine, mois, id)?;
     let e = &o.brut;
@@ -973,7 +988,7 @@ pub fn ou_s_ecrit(racine: &Path, mois: &str, id: Option<&Identite>, saisie: &Car
     if o.fichier == mois && brouillon_seul {
         mois_d_ecriture(racine, mois, saisie)
     } else {
-        Ok(o.fichier.clone())
+        Ok(o.fichier)
     }
 }
 
@@ -983,14 +998,11 @@ pub fn ou_s_ecrit(racine: &Path, mois: &str, id: Option<&Identite>, saisie: &Car
 /// cet engagement se designe et se modifie depuis sa carte. Le rang de l'identite (`identites`) ne distingue que des
 /// contrats d'usage du meme jour (deux spectacles) ; deux contrats au mois du meme salarie commencent deux jours
 /// differents (ils se suivent).
-fn refuser_un_second_contrat_au_mois(ctx: &Contexte, e: &Carte, soi: Option<&Objet>) -> Resultat<()> {
+fn refuser_un_second_contrat_au_mois(ctx: &Contexte, e: &Carte, soi: Option<&Objet>) -> R<()> {
     if !e.mensuelle()? {
         return Ok(());
     }
-    let (Some(cle), debut) = (&e.salarie, e.debut_lu()) else { return Ok(()) };
-    if debut.is_empty() {
-        return Ok(());
-    }
+    let (Some(cle), Some(debut)) = (&e.salarie, e.debut_lu()) else { return Ok(()) };
     let tires = tous(&ctx.racine)?.1;
     let mut second = None;
     for o in &tires.objets {
@@ -998,7 +1010,7 @@ fn refuser_un_second_contrat_au_mois(ctx: &Contexte, e: &Carte, soi: Option<&Obj
             && !o.est_non_actif()
             && !o.importe_seul()
             && o.mensuel()?
-            && crate::debut_brut(&o.brut) == debut
+            && crate::debut_brut(&o.brut) == Some(debut)
             && o.carte().salarie.as_ref() == Some(cle)
         {
             second = Some(o);
@@ -1009,12 +1021,9 @@ fn refuser_un_second_contrat_au_mois(ctx: &Contexte, e: &Carte, soi: Option<&Obj
         return Ok(());
     };
     let nature = o.carte().nature_lue()?;
-    let numero: String = o.carte().numero_dit().map(|n| format!(" (n° {})", n)).into_iter().collect();
-    let debut_dit = match Jour::du_texte(&debut) {
-        Some(j) => j.jj_mm_aaaa(),
-        None => debut.clone(),
-    };
-    Err(format!(
+    let numero = crate::numero_dit(o.carte().numero.as_ref());
+    let debut_dit = debut.jj_mm_aaaa();
+    Err(socle::refus!(
         "{} : son {} commencé le {}{} a déjà son engagement ; une carte neuve ne le refait pas, il se modifie depuis sa \
          carte. Un nouveau contrat commence un autre jour. Rien n'est écrit.",
         ctx.nomme(cle),
@@ -1029,31 +1038,29 @@ fn refuser_un_second_contrat_au_mois(ctx: &Contexte, e: &Carte, soi: Option<&Obj
 /// partir du `jour` de ce mois quand il est dit, du 1er sinon. Refus : un engagement valide, un jour qui n'est pas un
 /// jour du contrat dans ce mois, ou des bornes qui laisseraient hors du contrat un mois ou il a des jours payes ; rien
 /// n'est ecrit.
-pub fn poser_la_saisie(ctx: &Contexte, mois: &str, rang: usize, saisie: &Carte, jour: Option<u32>) -> Resultat<()> {
-    let mut o = objet_du_mois(&ctx.racine, mois, rang)?.ok_or_else(|| format!("{} : pas d'engagement de rang {}", mois, rang + 1))?;
+pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: usize, saisie: &Carte, jour: Option<u32>) -> R<()> {
+    let mut o = objet_du_mois(&ctx.racine, mois, rang)?.ok_or_else(|| socle::refus!("{} : pas d'engagement de rang {}", mois, rang + 1))?;
     if o.est_valide() {
-        return Err(format!("{} : l'engagement de rang {} est valide, il ne prend pas de saisie", mois, rang + 1));
+        return Err(socle::refus!("{} : l'engagement de rang {} est valide, il ne prend pas de saisie", mois, rang + 1));
     }
     let le = match jour {
         None => None,
         Some(n) => {
-            let premier = Mois::lire(mois)?.premier_jour();
             let qui = crate::salarie_nomme(ctx, o.carte().salarie.as_deref());
             // AU PREMIER MOIS DE L'ENGAGEMENT, ses termes valent de son debut : un jour n'a rien a dater.
             if mois == o.fichier {
-                return Err(format!(
+                return Err(socle::refus!(
                     "{} : {} est le premier mois de cet engagement, ce qu'il dit vaut depuis le début du contrat ; un jour \
                      n'y date rien. Pour que le contrat commence un autre jour, changez son début (« Début du contrat »). Rien n'est écrit.",
                     qui,
-                    socle::mois::Mois::en_clair(mois)
+                    mois.libelle(Graphie::Accentuee)
                 ));
             }
-            let j = Jour::nouveau(premier.an, premier.mois, n)
-                .ok_or_else(|| format!("{} : « le {} {} » n'est pas un jour de ce mois. Rien n'est écrit.", qui, n, socle::mois::Mois::en_clair(mois)))?;
-            let debut = Jour::lire(o.carte().debut.as_deref().ok_or_else(|| socle::fichiers::absent("debut"))?)?;
-            let fin = o.carte().fin.as_deref().filter(|f| !f.is_empty()).map(Jour::lire).transpose()?;
+            let j = mois.jour(n).ok_or_else(|| socle::refus!("{} : « le {} {} » n'est pas un jour de ce mois. Rien n'est écrit.", qui, n, mois.libelle(Graphie::Accentuee)))?;
+            let debut = o.carte().debut.ok_or_else(|| socle::fichiers::absent("debut"))?;
+            let fin = o.carte().fin;
             if j < debut || fin.is_some_and(|f| j > f) {
-                return Err(format!(
+                return Err(socle::refus!(
                     "{} : le contrat court du {}{} ; un changement au {} n'en est pas un jour. Rien n'est écrit.",
                     qui,
                     debut.jj_mm_aaaa(),
@@ -1071,7 +1078,7 @@ pub fn poser_la_saisie(ctx: &Contexte, mois: &str, rang: usize, saisie: &Carte, 
     if !o.mensuel()? {
         if let Some((depuis, nature)) = o.au_mois_depuis()? {
             if !ctx.emploie_des_permanents_pendant(&depuis, &depuis) {
-                return Err(format!(
+                return Err(socle::refus!(
                     "{} : à partir du {}, ce contrat deviendrait un contrat payé au mois ({}), et la compagnie ne dit pas \
                      qu'elle emploie des salariés au mois ce jour-là. À faire : cocher « La compagnie emploie aussi des \
                      salariés au mois » dans Configuration › Entreprise, à cette date ; sinon garder sa nature. Rien n'est écrit.",
@@ -1088,12 +1095,10 @@ pub fn poser_la_saisie(ctx: &Contexte, mois: &str, rang: usize, saisie: &Carte, 
 
 /// Ce que la carte ecrit pour `mois`, pose sur l'objet `o` : ce que le moteur tient seul ne se prend pas de la saisie,
 /// le numero du contrat ecrit se garde.
-fn poser_sur(o: &mut Objet, mois: &str, saisie: &Carte, le: Option<Jour>) -> Resultat<()> {
+fn poser_sur(o: &mut Objet, mois: Mois, saisie: &Carte, le: Option<Jour>) -> R<()> {
     let mut saisie = en_forme(saisie)?;
-    if saisie.numero_dit().is_none() {
-        if let Some(n) = o.carte().numero_dit() {
-            saisie.numero = Some(n.to_string());
-        }
+    if saisie.numero.is_none() {
+        saisie.numero = o.carte().numero.clone();
     }
     let vue = o.vue(mois)?;
     // Le debut qu'un mois suivant d'un contrat d'usage deduit de son premier jour (`Objet::vue`) n'est pas une saisie.
@@ -1109,7 +1114,7 @@ fn poser_sur(o: &mut Objet, mois: &str, saisie: &Carte, le: Option<Jour>) -> Res
 /// defaut change d'une convention a l'autre (`emplois::Metier::cadre_selon_la_convention`). Une carte ecrite deux fois a
 /// l'identique s'ecrit donc de meme, et sa relecture ne voit aucun changement.
 /// L'apercu lit chaque carte dans cette forme aussi.
-pub fn en_forme(saisie: &Carte) -> Resultat<Carte> {
+pub fn en_forme(saisie: &Carte) -> R<Carte> {
     // Ce que le moteur deduit, ou tient seul.
     let mut saisie = saisie.sans(&[Groupe::Deduit, Groupe::Vue]);
     let catalogue = match saisie.metier.as_deref().filter(|m| !m.is_empty()) {
@@ -1121,8 +1126,7 @@ pub fn en_forme(saisie: &Carte) -> Resultat<Carte> {
     if catalogue.is_some() && saisie.cadre == catalogue {
         saisie.cadre = None;
     }
-    let dite = |x: &Option<String>| x.as_deref().is_some_and(|x| !x.is_empty());
-    if !saisie.nature_lue()?.mensuelle() && saisie.lignes.is_none() && dite(&saisie.debut) && dite(&saisie.fin) {
+    if !saisie.nature_lue()?.mensuelle() && saisie.lignes.is_none() && saisie.debut.is_some() && saisie.fin.is_some() {
         // UN MOIS DU CONTRAT SANS CACHET : un contrat aux bornes dites, sans ligne, s'ecrit `lignes: []` -- la DSN porte
         // le contrat avec un versement a zero, sans bulletin.
         saisie.lignes = Some(Vec::new());
@@ -1136,8 +1140,8 @@ pub fn en_forme(saisie: &Carte) -> Resultat<Carte> {
 /// d'autre (ses lignes, ses conges, ses primes, sa rupture) est le fait du mois, qui ne s'ecrit que s'il dit autre chose
 /// que ce que le mois tient seul (les jours que le planning y met). Ce que tous les mois partagent (`Groupe::Partage`)
 /// va a l'engagement. Les bornes ne laissent pas hors du contrat un mois ou il a des jours payes.
-fn poser_le_mois(o: &mut Objet, mois: &str, saisie: &Carte, le: Option<Jour>) -> Resultat<()> {
-    let fin_du_mois = Mois::lire(mois)?.dernier_jour();
+fn poser_le_mois(o: &mut Objet, mois: Mois, saisie: &Carte, le: Option<Jour>) -> R<()> {
+    let fin_du_mois = mois.dernier_jour();
     let actuels = o.termes_a(&fin_du_mois);
     {
         let carte = &mut o.brut_mut().saisie.carte;
@@ -1148,7 +1152,7 @@ fn poser_le_mois(o: &mut Objet, mois: &str, saisie: &Carte, le: Option<Jour>) ->
         }
     }
     // La fin que la carte dit d'un autre mois que le sien va au mois ou le contrat finit (`Groupe::Fin`).
-    let dernier = o.dernier_mois()?.filter(|d| d != mois);
+    let dernier = o.dernier_mois()?.filter(|d| *d != mois);
     let (reste, de_la_fin) = match &dernier {
         Some(_) => (saisie.sans(&[Groupe::Fin]), saisie.du_groupe(&[Groupe::Fin])),
         None => (saisie.clone(), Carte::default()),
@@ -1162,7 +1166,7 @@ fn poser_le_mois(o: &mut Objet, mois: &str, saisie: &Carte, le: Option<Jour>) ->
     } else {
         let depuis = match le {
             Some(j) => j,
-            None => Mois::lire(mois)?.premier_jour(),
+            None => mois.premier_jour(),
         };
         for k in Champ::des(&[Groupe::Terme]) {
             if actuels.comparable_du(k) != reste.comparable_du(k) {
@@ -1171,36 +1175,35 @@ fn poser_le_mois(o: &mut Objet, mois: &str, saisie: &Carte, le: Option<Jour>) ->
         }
         let faits = reste.du_groupe(&[Groupe::Fait, Groupe::Fin]);
         let seul = if o.mensuel()? { Carte::default() } else { Carte { lignes: Some(o.lignes_du_planning(mois)?), ..Carte::default() } };
-        let m = Mois::lire(mois)?;
         if socle::ecriture::comparable(&faits) == socle::ecriture::comparable(&seul) {
-            o.brut_mut().saisie.faits.remove(&m);
+            o.brut_mut().saisie.faits.remove(&mois);
         } else {
-            o.brut_mut().saisie.faits.insert(m, faits);
+            o.brut_mut().saisie.faits.insert(mois, faits);
         }
     }
     if let Some(d) = dernier.filter(|_| Champ::des(&[Groupe::Fin]).any(|c| de_la_fin.dit(c))) {
-        poser_la_fin(o, &d, &de_la_fin)?;
+        poser_la_fin(o, d, &de_la_fin)?;
     }
     // Les bornes ne laissent pas hors du contrat un mois ou il a des jours payes.
     let mois_des_faits: Vec<Mois> = o.brut.saisie.faits.keys().copied().collect();
     for m in mois_des_faits {
-        if o.dans_ses_bornes(&m.to_string())? {
+        if o.dans_ses_bornes(m)? {
             continue;
         }
         if o.brut.saisie.faits.get(&m).is_some_and(|f| !f.lignes().is_empty()) {
-            let bornes = match (&o.carte().debut, &o.carte().fin) {
+            let bornes = match (o.carte().debut.map(|j| j.iso()), o.carte().fin.map(|j| j.iso())) {
                 (Some(d), Some(f)) => format!("du {} au {}", d, f),
                 (Some(d), None) => format!("du {}, sans fin", d),
                 (None, Some(f)) => format!("jusqu'au {}, sans début", f),
                 (None, None) => "sans début ni fin".to_string(),
             };
-            return Err(format!(
+            return Err(socle::refus!(
                 "Le contrat irait {}, et {} y porte des jours payes : un mois de paie ne tient pas un contrat \
                  qui ne le couvre pas. Rien n'est ecrit. Retirer d'abord les lignes de {}, ou garder des bornes qui le \
                  couvrent.",
                 bornes,
-                socle::mois::Mois::en_clair(&m.to_string()),
-                socle::mois::Mois::en_clair(&m.to_string())
+                m.libelle(Graphie::Accentuee),
+                m.libelle(Graphie::Accentuee)
             ));
         }
         o.brut_mut().saisie.faits.remove(&m);
@@ -1211,29 +1214,29 @@ fn poser_le_mois(o: &mut Objet, mois: &str, saisie: &Carte, le: Option<Jour>) ->
 /// LA FIN DITE SUR LA CARTE D'UN AUTRE MOIS s'ecrit au mois `dernier`, celui ou le contrat finit (`Groupe::Fin`) : au
 /// premier mois s'il finit dans celui-ci, sinon parmi ses faits ; un contrat d'usage dont ce mois n'avait pas de faits
 /// y garde les jours que son planning y met.
-fn poser_la_fin(o: &mut Objet, dernier: &str, de_la_fin: &Carte) -> Resultat<()> {
+fn poser_la_fin(o: &mut Objet, dernier: Mois, de_la_fin: &Carte) -> R<()> {
     if dernier == o.fichier {
         o.brut_mut().saisie.carte.recouvrir(de_la_fin);
         return Ok(());
     }
     let mensuel = o.mensuel()?;
-    let mut faits = match o.faits_de(dernier)? {
+    let mut faits = match o.faits_de(dernier) {
         Some(f) => f.clone(),
         None if mensuel => Carte::default(),
         None => Carte { lignes: Some(o.lignes_du_planning(dernier)?), ..Carte::default() },
     };
     faits.recouvrir(de_la_fin);
-    o.brut_mut().saisie.faits.insert(Mois::lire(dernier)?, faits);
+    o.brut_mut().saisie.faits.insert(dernier, faits);
     Ok(())
 }
 
 /// UN TERME CHANGE A PARTIR DU `depuis` de `mois` : ce que les avenants du mois disaient de lui s'efface (la carte du
 /// mois le redit), et sa nouvelle valeur, celle que dit `saisie` (rien : il se retire), s'ecrit a ce jour, sauf si c'est
 /// deja la sienne la veille. Ce qui precede et les avenants des mois d'apres restent ce qu'ils sont.
-fn dater(o: &mut Objet, terme: Champ, mois: &str, depuis: Jour, saisie: &Carte) -> Resultat<()> {
+fn dater(o: &mut Objet, terme: Champ, mois: Mois, depuis: Jour, saisie: &Carte) -> R<()> {
     {
         let s = &mut o.brut_mut().saisie;
-        for a in s.avenants.iter_mut().filter(|a| a.depuis.mois_civil().to_string() == mois) {
+        for a in s.avenants.iter_mut().filter(|a| mois.contient(&a.depuis)) {
             a.termes.ote(terme);
             a.retires.retain(|c| *c != terme);
         }
@@ -1267,7 +1270,7 @@ impl Objet {
     pub fn d_apres_la_saisie(&self, saisie: &Saisie) -> Objet {
         Objet {
             racine: self.racine.clone(),
-            fichier: self.fichier.clone(),
+            fichier: self.fichier,
             rang: self.rang,
             brut: std::sync::Arc::new(Ecrit { saisie: saisie.clone(), ..Ecrit::default() }),
         }
@@ -1275,37 +1278,36 @@ impl Objet {
 }
 
 /// L'engagement que designe, dans le mois `mois`, le rang `rang` de son ecran.
-pub fn objet_du_mois(racine: &Path, mois: &str, rang: usize) -> Resultat<Option<Objet>> {
+pub fn objet_du_mois(racine: &Path, mois: Mois, rang: usize) -> R<Option<Objet>> {
     Ok(objets_du_mois(racine, mois)?.into_iter().nth(rang))
 }
 
 /// Remplace l'objet `o` dans son fichier (meme fichier, meme rang), tel qu'il est maintenant.
-pub fn reecrire(racine: &Path, o: &Objet) -> Resultat<PathBuf> {
+pub fn reecrire(racine: &Path, o: &Objet) -> R<()> {
     let mut contenu = fichier_de(racine, o)?;
-    let place = contenu.engagements.get_mut(o.rang).ok_or_else(|| format!("{} : l'engagement {} a disparu", o.fichier, o.rang + 1))?;
+    let place = contenu.engagements.get_mut(o.rang).ok_or_else(|| socle::refus!("{} : l'engagement {} a disparu", o.fichier, o.rang + 1))?;
     *place = (*o.brut).clone();
-    poser(racine, &contenu)
+    poser(racine, &contenu)?;
+    Ok(())
 }
 
 /// LE MOIS D'ENTREE DE LA COMPAGNIE DANS LE LOGICIEL : le premier mois qu'elle y paie, celui du plus ancien fichier qui
 /// porte un engagement d'ici (qui n'est pas qu'importe, ni plus actif), ou `mois` s'il vient avant (la carte d'un premier mois, pas
 /// encore ecrite). Les mois repris d'un ancien logiciel (`importe`) sont d'avant lui.
-pub fn mois_d_entree(racine: &Path, mois: &str) -> Resultat<String> {
-    let premier = tous(racine)?.1.objets.iter().find(|o| !o.importe_seul() && !o.est_non_actif()).map(|o| o.fichier.clone());
-    Ok(premier.into_iter().fold(mois.to_string(), String::min))
+pub fn mois_d_entree(racine: &Path, mois: Mois) -> R<Mois> {
+    let premier = tous(racine)?.1.objets.iter().find(|o| !o.importe_seul() && !o.est_non_actif()).map(|o| o.fichier);
+    Ok(premier.into_iter().fold(mois, Mois::min))
 }
 
 /// LE MOIS OU S'ECRIT L'ENGAGEMENT NEUF `e` que la carte de `mois` saisit : un engagement appartient a son premier mois.
 /// Un contrat paye au mois dont le debut tombe dans un mois d'avant la carte, mais pas avant le logiciel
 /// (`commence_avant_le_logiciel`), s'ecrit dans le mois de son debut, comme saisi sur sa carte : ce mois montre ce qui est
 /// a faire (sa paie, sa DPAE). Sinon, `mois`.
-pub fn mois_d_ecriture(racine: &Path, mois: &str, e: &Carte) -> Resultat<String> {
+pub fn mois_d_ecriture(racine: &Path, mois: Mois, e: &Carte) -> R<Mois> {
     let mensuel = e.mensuelle()?;
-    let debut = e.debut_lu();
-    let premier = debut.get(..7).filter(|m| socle::mois::Mois::lire(m).is_ok()).map(String::from);
-    Ok(match premier {
-        Some(p) if mensuel && p.as_str() < mois && !commence_avant_le_logiciel(racine, &debut, mois)? => p,
-        _ => mois.to_string(),
+    Ok(match e.debut_lu() {
+        Some(d) if mensuel && d.mois_civil() < mois && !commence_avant_le_logiciel(racine, d, mois)? => d.mois_civil(),
+        _ => mois,
     })
 }
 
@@ -1317,22 +1319,17 @@ pub fn mois_d_ecriture(racine: &Path, mois: &str, e: &Carte) -> Resultat<String>
 /// identifiante, sans autre borne que le dernier jour du mois declare (cahier technique DSN 2026.1, § 4.4.12,
 /// `atelier/reference/norme-dsn/texte/chapitre-4-controles.txt` ; bloc S21.G00.40, `texte-2027/bloc-S21.G00.40.txt`) ;
 /// son numero, identifiant aussi, se reporte a l'identique d'une DSN a la suivante (§ 2.1.2, `chapitre-2-principes-de-constitution.txt`).
-pub fn commence_avant_le_logiciel(racine: &Path, debut: &str, mois: &str) -> Resultat<bool> {
-    Ok(debut.get(..7).is_some_and(|m| socle::mois::Mois::lire(m).is_ok()) && debut[..7] < *mois_d_entree(racine, mois)?)
-}
-
-/// Le jour `AAAA-MM-JJ` de `mois` qui est le premier, pour les bornes d'un contrat.
-pub fn premier_jour(mois: &str) -> Resultat<Jour> {
-    Mois::lire(mois).map(Mois::premier_jour)
+pub fn commence_avant_le_logiciel(racine: &Path, debut: Jour, mois: Mois) -> R<bool> {
+    Ok(debut.mois_civil() < mois_d_entree(racine, mois)?)
 }
 
 /// Le mois a-t-il une saisie : un fichier, ou un engagement qui le touche ?
-pub fn a_une_saisie(racine: &Path, mois: &str) -> Resultat<bool> {
+pub fn a_une_saisie(racine: &Path, mois: Mois) -> R<bool> {
     if chemin(racine, mois).is_file() && !importes_seuls(racine, mois)? {
         return Ok(true);
     }
     for o in objets(racine)? {
-        if o.fichier.as_str() <= mois && o.couvre(mois)? {
+        if o.fichier <= mois && o.couvre(mois)? {
             return Ok(true);
         }
     }

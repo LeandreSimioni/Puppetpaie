@@ -18,7 +18,7 @@ use envois::drive::{Client, Drive, ErreurGoogle};
 /// `FichierArchive`.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct FichierArchive {
-    pub nom: Option<String>,
+    pub nom: String,
     pub octets: u64,
     pub remplace: bool,
 }
@@ -26,7 +26,7 @@ pub(crate) struct FichierArchive {
 /// `Archivage`.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Archivage {
-    pub mois: String,
+    pub mois: socle::mois::Mois,
     pub racine_drive: String,
     pub compte: Option<String>,
     pub fichiers: Vec<FichierArchive>,
@@ -41,22 +41,19 @@ fn sortie_absente(dossier: &Path) -> ErreurGoogle {
 ///
 /// `client` : `None` pour le vrai (`Client::nouveau`, construit APRES les controles du dossier,
 /// pour qu'un mois absent se dit avant tout refus du client).
-pub(crate) fn archiver(racine: &Path, mois: &str, racine_drive: &str, client: Option<&mut dyn Drive>) -> Result<Archivage, ErreurGoogle> {
-    // `..` ou `../config` archiverait le dossier `config` (coffre et jeton compris), `2026-06/envoi` les fiches de
-    // salaries une a une : seul `AAAA-MM` est un mois.
-    if !socle::mois::Mois::lire(mois).is_ok() {
-        return Err(ErreurGoogle::nouvelle(Classe::Refuse, format!("Mois illisible : '{}' (AAAA-MM attendu).", mois)));
-    }
+pub(crate) fn archiver(racine: &Path, le_mois: socle::mois::Mois, racine_drive: &str, client: Option<&mut dyn Drive>) -> Result<Archivage, ErreurGoogle> {
+    let mois = &le_mois.to_string();
     let dossier = racine.join("sorties").join(mois);
     if !dossier.exists() {
         return Err(sortie_absente(&dossier));
     }
-    let mut fichiers: Vec<std::path::PathBuf> = std::fs::read_dir(&dossier)
-        .map_err(|e| ErreurGoogle::fichier(&e, &dossier))?
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_file())
-        .collect();
+    let mut fichiers: Vec<std::path::PathBuf> = Vec::new();
+    for e in std::fs::read_dir(&dossier).map_err(|e| ErreurGoogle::fichier(&e, &dossier))? {
+        let p = e.map_err(|e| ErreurGoogle::fichier(&e, &dossier))?.path();
+        if p.is_file() {
+            fichiers.push(p);
+        }
+    }
     fichiers.sort();
     if fichiers.is_empty() {
         return Err(sortie_absente(&dossier));
@@ -79,10 +76,10 @@ pub(crate) fn archiver(racine: &Path, mois: &str, racine_drive: &str, client: Op
         let nom_local = f.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| ErreurGoogle::nouvelle(socle::echec::Classe::DefautDuLogiciel, "Défaut du logiciel : une pièce à archiver n'a pas de nom."))?;
         let r = client.televerser(f, &cible, None, deja.get(&nom_local))?;
         let octets = std::fs::metadata(f).map_err(|e| ErreurGoogle::fichier(&e, f))?.len();
-        let nom = r.nom.or(Some(nom_local));
-        deposes.push(FichierArchive { nom, octets, remplace: r.remplace });
+        // Le fichier porte dans Drive le nom sous lequel il y est depose (`televerser`, sans nom : celui du fichier).
+        deposes.push(FichierArchive { nom: nom_local, octets, remplace: r.remplace });
     }
-    Ok(Archivage { mois: mois.to_string(), racine_drive: racine_drive.to_string(), compte: client.compte(), fichiers: deposes })
+    Ok(Archivage { mois: le_mois, racine_drive: racine_drive.to_string(), compte: client.compte(), fichiers: deposes })
 }
 
 /// LE DRIVE JOUE d'une compagnie fictive (ses envois sont joues, `bridage::branchement`) : le depot se deroule, chaque
@@ -101,7 +98,7 @@ impl Drive for DriveJoue {
     }
     fn televerser(&mut self, fichier: &Path, _parent: &str, nom: Option<&str>, _connu: Option<&envois::drive::Distant>) -> Result<envois::drive::Depose, ErreurGoogle> {
         let nom = nom.map(String::from).or_else(|| fichier.file_name().map(|n| n.to_string_lossy().into_owned()));
-        Ok(envois::drive::Depose { nom, ..Default::default() })
+        Ok(envois::drive::Depose { id: None, nom, lien: None, remplace: false })
     }
     fn sous_dossiers(&mut self, _parent: &str) -> Result<Vec<(String, String)>, ErreurGoogle> {
         Ok(Vec::new())

@@ -5,8 +5,8 @@
 
 use crate::outils::typee::{cas_de, code_livre, jouer, lire};
 use droit::forme_bareme::{GrillePas, NombreDate, PasParDefaut, Pile};
-use droit::fiche::Montant;
-use droit::pas::{du_versement, taux_par_defaut, ErreurPas, Triplet, Versement};
+use droit::pas::{du_versement, taux_par_defaut, ErreurPas, TauxDePas, Triplet, Versement};
+use droit::type_taux_pas::TypeDeTauxPas;
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 use socle::forme::Nombre;
@@ -70,7 +70,9 @@ fn pile(b: Bareme, le: Option<Jour>) -> Pile {
             Some(PasParDefaut { abattement_contrats_courts: vues.last().map(|e| NombreDate(e.valeur.0)), grilles: s.grilles, ..PasParDefaut::default() })
         }
     };
-    Pile { pas_taux_par_defaut: section, ..Pile::default() }
+    // Le reste de la pile est celui d'un socle livre : le PAS n'en lit que sa section.
+    let livre: Pile = droit::contexte::socle_livre_lu(2026).unwrap_or_else(|e| panic!("{}", e.phrase)).expect("le socle 2026 est livré");
+    Pile { pas_taux_par_defaut: section, ..livre }
 }
 
 /// Ce que rend le PAS pour un montant : sa valeur, ou son refus (la phrase).
@@ -86,8 +88,8 @@ impl<T> From<Result<T, ErreurPas>> for Rendu<T> {
     fn from(r: Result<T, ErreurPas>) -> Rendu<T> {
         match r {
             Ok(v) => Rendu::Ok(v),
-            Err(ErreurPas::SansGrille(m)) => Rendu::SansGrille(socle::echec::phrase_de(&m).to_string()),
-            Err(autre) => Rendu::Erreur(socle::echec::phrase_de(autre.message()).to_string()),
+            Err(ErreurPas::SansGrille(m)) => Rendu::SansGrille(m.phrase),
+            Err(ErreurPas::Autre(m)) => Rendu::Erreur(m.phrase),
         }
     }
 }
@@ -120,8 +122,8 @@ struct CasDuTaux {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TauxRecu {
-    taux: Option<Montant>,
-    type_taux: Option<String>,
+    taux: Option<TauxDePas>,
+    type_taux: Option<TypeDeTauxPas>,
     identifiant: Option<String>,
 }
 
@@ -135,12 +137,12 @@ struct CasDuVersement {
     recu: Option<TauxRecu>,
 }
 
-fn taux_du_cas(c: &CasDuTaux) -> Suite<Rendu<(String, String)>> {
-    suite(montants().into_iter().map(|m| taux_par_defaut(&pile(c.bareme, c.le), m, c.le, &c.zone).into()).collect())
+fn taux_du_cas(c: &CasDuTaux) -> Suite<Rendu<(String, TypeDeTauxPas)>> {
+    suite(montants().into_iter().map(|m| taux_par_defaut(&pile(c.bareme, c.le), m, c.le, &c.zone).map(|(t, g)| (t.to_string(), g)).into()).collect())
 }
 
 fn versement_du_cas(c: &CasDuVersement) -> Suite<Rendu<Versement>> {
-    let t = c.recu.as_ref().map(|r| Triplet { taux: r.taux.clone(), type_taux: r.type_taux.clone(), identifiant: r.identifiant.clone() });
+    let t = c.recu.as_ref().map(|r| Triplet { taux: r.taux, type_taux: r.type_taux, identifiant: r.identifiant.clone() });
     suite(montants().into_iter().map(|m| du_versement(t.as_ref(), &pile(c.bareme, c.le), m, c.le, c.contrat_court, &c.zone).into()).collect())
 }
 

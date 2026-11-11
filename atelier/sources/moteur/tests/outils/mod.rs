@@ -4,8 +4,6 @@
 //! Déclaré par chaque `main.rs` de groupe (`#[path = "../outils/mod.rs"] mod outils;`) et par les fichiers seuls
 //! (`#[path = "outils/mod.rs"] mod outils;`).
 
-#![allow(dead_code)]
-
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -107,9 +105,14 @@ pub fn ecrire(racine: &Path, rel: &str, v: &Value) {
     std::fs::write(p, serde_json::to_vec_pretty(v).unwrap()).unwrap();
 }
 
-/// Une fiche de la configuration datee, lue par sa forme `F` (`droit::fiche::FicheDatee`) a `jour` (AAAA-MM-JJ).
-pub fn fiche_au<F: droit::fiche::FicheDatee>(datee: &Value, jour: &str) -> Value {
-    socle::ecriture::en_valeur(&droit::fiche::lire_champs::<F>(datee, "test").unwrap().au(&socle::date::Jour::lire(jour).unwrap()))
+/// Une fiche de la configuration datee, lue par sa forme `F` (`droit::fiche::FicheDatee`) au `jour`.
+pub fn fiche_au<F: droit::fiche::FicheDatee>(datee: &Value, jour: socle::date::Jour) -> Value {
+    socle::ecriture::en_valeur(&droit::fiche::lire_saisie::<F>(datee, "test").unwrap().au(&jour))
+}
+
+/// Le mois `numero` de l'annee `an`, que le test ecrit.
+pub fn le_mois(an: i32, numero: u32) -> socle::mois::Mois {
+    socle::mois::Mois::nouveau(an, numero).unwrap()
 }
 
 /// La fiche datee d'une compagnie de test : chaque valeur de `plate` de tout temps (`droit::fiche::dater`), ses notes `_…`
@@ -148,13 +151,13 @@ pub mod compagnie {
 
 
 /// La saisie de `mois` telle que ses engagements la montrent (`engagement::vue_requise`).
-pub fn saisie(racine: &Path, mois: &str) -> Value {
+pub fn saisie(racine: &Path, mois: socle::mois::Mois) -> Value {
     socle::ecriture::en_valeur(&engagement::vue_requise(racine, mois).unwrap())
 }
 
 /// « Valider l'engagement » sur la carte du premier engagement en saisie de `salarie` que l'ecran de `mois` montre,
 /// telle qu'elle est enregistree (son identite).
-pub fn valider_la_carte(racine: &Path, mois: &str, salarie: &str, jour: &str) -> Value {
+pub fn valider_la_carte(racine: &Path, mois: socle::mois::Mois, salarie: &str, jour: &str) -> Value {
     let vue = socle::ecriture::en_valeur(&engagement::stock::vue_du_mois(racine, mois).unwrap().unwrap());
     let es = vue["engagements"].as_array().unwrap();
     let k = es.iter().position(|e| e["salarie"] == salarie && e["valide"].is_null()).expect("une carte en saisie");
@@ -241,14 +244,14 @@ pub fn valider(racine: &Path, mois: &str, engagement: Option<&Value>, saisie: &V
 
 /// L'identite (`engagement::stock::identites`) de la carte du premier engagement de `salarie` dans l'ecran de `mois`
 /// (de numero `numero` s'il est dit).
-pub fn identite(racine: &Path, mois: &str, salarie: &str, numero: Option<&str>) -> engagement::stock::Identite {
+pub fn identite(racine: &Path, mois: socle::mois::Mois, salarie: &str, numero: Option<&str>) -> engagement::stock::Identite {
     let vue = socle::ecriture::en_valeur(&engagement::stock::vue_du_mois(racine, mois).unwrap().unwrap());
     let k = vue["engagements"].as_array().unwrap().iter().position(|e| e["salarie"] == salarie && numero.is_none_or(|n| e["numero"] == n)).expect("la carte");
     identite_a(racine, mois, k)
 }
 
 /// L'identite de la `k`-ieme carte de l'ecran de `mois`.
-pub fn identite_a(racine: &Path, mois: &str, k: usize) -> engagement::stock::Identite {
+pub fn identite_a(racine: &Path, mois: socle::mois::Mois, k: usize) -> engagement::stock::Identite {
     engagement::stock::identites(&engagement::stock::objets_du_mois(racine, mois).unwrap()).swap_remove(k)
 }
 
@@ -313,6 +316,12 @@ pub fn refus(r: &Value) -> (String, String) {
 
 pub fn dec(s: &str) -> Decimal {
     Decimal::from_str(s).unwrap_or_else(|_| panic!("montant illisible : {:?}", s))
+}
+
+/// Un nombre à virgule d'une charge ou d'un fichier, écrit en texte (`nombre("151.67")`) : le JSON le garde tel quel
+/// (`arbitrary_precision`), sans passer par un flottant.
+pub fn nombre(t: &str) -> Value {
+    serde_json::from_str(t).unwrap_or_else(|_| panic!("nombre illisible : {:?}", t))
 }
 
 /// Les rubriques d'une DSN, dans l'ordre : (code, valeur sans apostrophes).
@@ -410,8 +419,7 @@ pub fn aem(zones: &[(usize, &str)], nir: &str, debut: &str, fin: &str, objet: &s
 // ------------------------------------------------------------------ le faux serveur HTTP
 
 #[path = "../../../envois/tests/outils/serveur.rs"]
-mod serveur;
-#[allow(unused_imports)]
+pub mod serveur;
 pub use serveur::*;
 
 /// Une réponse HTTP dont le corps est ce JSON.
@@ -447,5 +455,5 @@ pub fn mandataire() -> (String, Arc<Mutex<Vec<String>>>) {
 // ------------------------------------------------------------------ les oracles (communs aux trois crates)
 
 #[path = "../../../socle/tests/outils/oracles.rs"]
-mod oracles;
+pub mod oracles;
 pub use oracles::*;

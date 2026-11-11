@@ -14,7 +14,7 @@ use std::hash::Hasher;
 use lopdf::{Dictionary, Document, Object, ObjectId};
 use serde::Deserialize;
 
-use crate::description::Refus;
+use crate::description::{illisible, refus, Refus};
 
 /// Un assemblage : `{"format": 1, "pieces": [ … ]}` sur l'entrée standard (`--assembler`).
 #[derive(Debug, Clone, Deserialize)]
@@ -41,12 +41,10 @@ pub struct Piece {
     pub pages: Option<Vec<u32>>,
 }
 
-fn refus<T>(m: String) -> Result<T, Refus> {
-    Err(Refus(m))
-}
-
 /// Les attributs qu'une page hérite de son arbre.
 const HERITES: [&[u8]; 4] = [b"Resources", b"MediaBox", b"CropBox", b"Rotate"];
+/// Au-delà, un arbre des pages qui ne remonte pas à sa racine (un fichier abîmé) se refuse.
+const ANCETRES_MAX: usize = 64;
 
 /// Les octets du PDF assemblé, et vrai quand une pièce était verrouillée : une pièce s'ouvre par
 /// `lecture::ouvrir` (le mot de passe vide), et c'est à qui écrit l'assemblage de le verrouiller
@@ -58,7 +56,7 @@ pub fn assembler(a: &Assemblage) -> Result<(Vec<u8>, bool), Refus> {
         }
     }
     if a.pieces.is_empty() {
-        return refus("assemblage vide : aucune pièce".into());
+        return refus("assemblage vide : aucune pièce");
     }
 
     let mut sortie = Document::with_version("1.7");
@@ -72,7 +70,7 @@ pub fn assembler(a: &Assemblage) -> Result<(Vec<u8>, bool), Refus> {
     for (n, piece) in a.pieces.iter().enumerate() {
         let n = n + 1;
         if !lus.contains_key(&piece.fichier) {
-            let (doc, verrou) = crate::lecture::ouvrir(&piece.fichier, true).map_err(|r| Refus(format!("pièce {} : {}", n, r.0)))?;
+            let (doc, verrou) = crate::lecture::ouvrir(&piece.fichier, true).map_err(|r| r.reformuler(|p| format!("pièce {} : {}", n, p)))?;
             verrouille |= verrou;
             lus.insert(piece.fichier.clone(), doc);
         }
@@ -98,11 +96,11 @@ pub fn assembler(a: &Assemblage) -> Result<(Vec<u8>, bool), Refus> {
         };
         let mut copie = Copie::new(src, id_pages);
         for id in &choix {
-            feuilles.push(Object::Reference(copie.page(&mut sortie, *id)));
+            feuilles.push(Object::Reference(copie.page(&mut sortie, *id)?));
         }
     }
     if feuilles.is_empty() {
-        return refus("assemblage vide : aucune page".into());
+        return refus("assemblage vide : aucune page");
     }
 
     let mut arbre = Dictionary::new();
@@ -119,7 +117,7 @@ pub fn assembler(a: &Assemblage) -> Result<(Vec<u8>, bool), Refus> {
     fusionner_identiques(&mut sortie, &[id_pages, id_racine]);
     sortie.renumber_objects();
     sortie.compress();
-    let octets = genpdfi::pdf_ecriture::compact(&sortie);
+    let octets = crate::ecriture::compact(&sortie)?;
     Ok((octets, verrouille))
 }
 
@@ -146,17 +144,14 @@ impl<'a> Copie<'a> {
     }
 
     /// Copie une page (attributs hérités posés dessus) et rend son identifiant de sortie.
-    fn page(&mut self, sortie: &mut Document, id: ObjectId) -> ObjectId {
+    fn page(&mut self, sortie: &mut Document, id: ObjectId) -> Result<ObjectId, Refus> {
         // Une page demandée deux fois est copiée deux fois : deux pages distinctes dans l'arbre.
         let neuf = sortie.new_object_id();
         self.retenues.insert(id, neuf);
-        let mut dico = match self.src.get_object(id) {
-            Ok(Object::Dictionary(d)) => d.clone(),
-            _ => Dictionary::new(),
-        };
+        let mut dico = crate::lecture::dictionnaire_de(self.src, id)?.clone();
         for cle in HERITES {
-            if dico.get(cle).is_err() {
-                if let Some(v) = self.herite(id, cle) {
+            if !dico.has(cle) {
+                if let Some(v) = self.herite(id, cle)? {
                     dico.set(cle.to_vec(), v);
                 }
             }
@@ -169,26 +164,26 @@ impl<'a> Copie<'a> {
         }
         sortie.objects.insert(neuf, objet);
         self.vider(sortie);
-        neuf
+        Ok(neuf)
     }
 
-    /// La valeur d'un attribut hérité, en remontant l'arbre.
-    fn herite(&self, id: ObjectId, cle: &[u8]) -> Option<Object> {
+    /// La valeur d'un attribut hérité, telle qu'elle s'écrit (une référence reste une référence), en remontant
+    /// l'arbre (ISO 32000-1, 7.7.3.4) ; `None` quand aucun ancêtre ne la porte. `Parent` est une référence, absente à
+    /// la racine (table 30).
+    fn herite(&self, id: ObjectId, cle: &[u8]) -> Result<Option<Object>, Refus> {
         let mut courant = id;
-        for _ in 0..64 {
-            let d = match self.src.get_object(courant) {
-                Ok(Object::Dictionary(d)) => d,
-                _ => return None,
-            };
-            if let Ok(v) = d.get(cle) {
-                return Some(v.clone());
+        for _ in 0..ANCETRES_MAX {
+            let d = crate::lecture::dictionnaire_de(self.src, courant)?;
+            if let Some(v) = crate::lecture::directe(d, cle) {
+                return Ok(Some(v.clone()));
             }
-            courant = match d.get(b"Parent") {
-                Ok(Object::Reference(p)) => *p,
-                _ => return None,
+            courant = match crate::lecture::directe(d, b"Parent") {
+                Some(Object::Reference(p)) => *p,
+                Some(_) => return illisible("/Parent d'un nœud des pages n'est pas une référence"),
+                None => return Ok(None),
             };
         }
-        None
+        illisible(format!("l'arbre des pages remonte au-delà de {} ancêtres", ANCETRES_MAX))
     }
 
     /// Remplace chaque référence par celle de la sortie ; l'objet atteint pour la première fois
@@ -216,27 +211,32 @@ impl<'a> Copie<'a> {
         if let Some(p) = self.table.get(&r) {
             return Object::Reference(*p);
         }
-        match self.src.get_object(r) {
+        match self.src.objects.get(&r) {
             // Une page non retenue (cible d'un lien, retour d'une annotation) ou un nœud de
             // l'arbre : sans eux le dossier ne traînerait pas le reste du fichier.
-            Ok(Object::Dictionary(d))
-                if matches!(d.get(b"Type"), Ok(Object::Name(t)) if t == b"Page" || t == b"Pages") =>
+            Some(Object::Dictionary(d))
+                if matches!(crate::lecture::directe(d, b"Type"), Some(Object::Name(t)) if t == b"Page" || t == b"Pages") =>
             {
                 Object::Null
             }
-            Ok(_) => {
+            Some(_) => {
                 let neuf = sortie.new_object_id();
                 self.table.insert(r, neuf);
                 self.a_faire.push((neuf, r));
                 Object::Reference(neuf)
             }
-            Err(_) => Object::Null,
+            // Une référence à un objet que le fichier n'a pas désigne l'objet nul (ISO 32000-1, 7.3.10).
+            None => Object::Null,
         }
     }
 
     fn vider(&mut self, sortie: &mut Document) {
         while let Some((neuf, vieux)) = self.a_faire.pop() {
-            let mut o = self.src.get_object(vieux).cloned().unwrap_or(Object::Null);
+            // `reference` ne met en file qu'un objet que la source a.
+            let mut o = match self.src.objects.get(&vieux) {
+                Some(o) => o.clone(),
+                None => Object::Null,
+            };
             self.traduire(sortie, &mut o);
             sortie.objects.insert(neuf, o);
         }
@@ -286,7 +286,11 @@ fn ecrire(o: &Object, rep: &HashMap<ObjectId, ObjectId>, out: &mut Vec<u8>) {
             out.extend_from_slice(format!("#{};{};{}", s.content.len(), a, b).as_bytes());
         }
         Object::Reference(r) => {
-            let r = rep.get(r).unwrap_or(r);
+            // Une référence que la fusion n'a pas remplacée reste elle-même.
+            let r = match rep.get(r) {
+                Some(remplacee) => remplacee,
+                None => r,
+            };
             out.extend_from_slice(format!("R{} {};", r.0, r.1).as_bytes());
         }
     }

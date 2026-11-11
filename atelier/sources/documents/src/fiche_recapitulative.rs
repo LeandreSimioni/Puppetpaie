@@ -16,6 +16,7 @@ use crate::etats_paie::{self, Demande, Periode};
 use crate::tableaux_export::{pdf_tableau, qui, totaliser, Section, Tableau, R, TOTAL_GENERAL};
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe, Echec};
+use socle::mois::Mois;
 use socle::num::Decimal;
 
 /// Un refus qui dit « rien sur la periode » : l'etat est laisse de cote.
@@ -24,15 +25,15 @@ fn est_erreur_operation(e: &Echec) -> bool {
 }
 
 fn copie(e: &Echec) -> Echec {
-    Echec { classe: e.classe, message: e.message.clone() }
+    e.clone()
 }
 
 /// CE QUE LES SPECTACLES ET LES SALARIES ONT COUTE dans l'annee `annee`, jusqu'au mois `jusqu_a` : chacun sous sa cle,
 /// dans l'ordre ou les paies le rencontrent.
 #[derive(Debug, Serialize)]
 pub struct CoutsDeLAnnee {
-    pub annee: String,
-    pub jusqu_a: String,
+    pub annee: socle::mois::Annee,
+    pub jusqu_a: Mois,
     #[serde(serialize_with = "en_objet")]
     pub spectacles: Vec<(String, Cout)>,
     #[serde(serialize_with = "en_objet")]
@@ -44,10 +45,10 @@ pub struct CoutsDeLAnnee {
 #[derive(Debug, Serialize)]
 pub struct Cout {
     pub bulletins: i64,
-    pub brut: String,
-    pub charges: String,
-    pub cout: String,
-    pub prevu: String,
+    pub brut: Decimal,
+    pub charges: Decimal,
+    pub cout: Decimal,
+    pub prevu: Decimal,
     pub incomplet: bool,
 }
 
@@ -64,8 +65,19 @@ pub struct Recapitulatifs<'a> {
 }
 
 impl<'a> Recapitulatifs<'a> {
-    pub fn nouveau(ctx: &'a Contexte, mois: Option<String>, annee: Option<String>, toutes: bool, departs: engagement::departs::Departs) -> Self {
-        let demande = Demande { mois, annee, toutes, format: "pdf".to_string(), departs, ..Demande::default() };
+    pub fn nouveau(ctx: &'a Contexte, mois: Option<Mois>, annee: Option<socle::mois::Annee>, toutes: bool, departs: engagement::departs::Departs) -> Self {
+        let demande = Demande {
+            mois,
+            annee,
+            toutes,
+            regroupement: String::new(),
+            format: "pdf".to_string(),
+            coordonnees: false,
+            ecrire: false,
+            logiciel: None,
+            analytique: None,
+            departs,
+        };
         Recapitulatifs { ctx, demande, etats: [None, None] }
     }
 
@@ -73,15 +85,12 @@ impl<'a> Recapitulatifs<'a> {
     /// est seulement saisi pour plus tard se dit a part (`prevu`). Une paie importee dont les pieces ne disaient pas le
     /// cout employeur rend le cumul `incomplet`. Sans annee, ou sans mois cette annee-la : rien.
     pub fn couts_de_l_annee(&mut self) -> R<CoutsDeLAnnee> {
-        let Some(annee) = self.demande.annee.clone() else {
+        let Some(annee) = self.demande.annee else {
             return Err(erreur(Classe::Illisible, "Le coût de l'année se demande pour une année : la dire."));
         };
-        let courant: String = self.ctx.aujourdhui.iso().chars().take(7).collect();
-        let mut out = CoutsDeLAnnee { annee: annee.clone(), jusqu_a: courant.clone(), spectacles: Vec::new(), salaries: Vec::new() };
-        if annee.is_empty() {
-            return Ok(out);
-        }
-        let p = Periode::nouvelle(self.ctx, None, Some(&annee), false, false)?;
+        let courant = self.ctx.aujourdhui.mois_civil();
+        let mut out = CoutsDeLAnnee { annee, jusqu_a: courant, spectacles: Vec::new(), salaries: Vec::new() };
+        let p = Periode::nouvelle(self.ctx, None, Some(annee), false, false)?;
         if p.mois.is_empty() {
             return Ok(out);
         }
@@ -129,7 +138,7 @@ impl<'a> Recapitulatifs<'a> {
         let [spectacles, salaries] = cotes.map(|v| {
             v.into_iter()
                 .map(|(cle, d)| {
-                    (cle, Cout { bulletins: d.bulletins, brut: d.brut.to_string(), charges: d.charges.to_string(), cout: d.cout.to_string(), prevu: d.prevu.to_string(), incomplet: d.incomplet })
+                    (cle, Cout { bulletins: d.bulletins, brut: d.brut, charges: d.charges, cout: d.cout, prevu: d.prevu, incomplet: d.incomplet })
                 })
                 .collect()
         });
@@ -158,7 +167,7 @@ impl<'a> Recapitulatifs<'a> {
     /// prenom ont chacun la leur), en un PDF dans `tmp`. `None` quand aucun des deux n'a rien a dire de
     /// lui. Les avertissements des etats nomment d'autres salaries : la fiche ne les porte pas.
     pub fn pdf(&mut self, cle: &str, tmp: &Path) -> R<Option<PathBuf>> {
-        let fiche = self.ctx.salaries.get(cle).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(cle)))?;
+        let fiche = self.ctx.salaries.get(cle).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))?;
         let lui = qui(fiche)?;
         let mut morceaux: Vec<Vec<u8>> = Vec::new();
         for i in 0..2 {
@@ -188,8 +197,8 @@ impl<'a> Recapitulatifs<'a> {
             return Ok(None);
         }
         let chemin = tmp.join(format!("R_{}.pdf", cle));
-        let octets = crate::fabrique::fusion_octets(&morceaux, tmp).map_err(Echec::from)?;
-        std::fs::write(&chemin, octets).map_err(|e| Echec::from(socle::echec::du_disque(&chemin, &e)))?;
+        let octets = crate::fabrique::fusion_octets(&morceaux, tmp)?;
+        std::fs::write(&chemin, octets).map_err(|e| socle::echec::du_disque(&chemin, &e))?;
         Ok(Some(chemin))
     }
 }

@@ -47,3 +47,10 @@ Où le moteur s'en sert : `logiciel/donnees/norme-dsn-base.json`, P27V01, `regle
 nomenclature » et « la nomenclature NAF 2025 s'applique quelle que soit la version de norme » après la mise en production ;
 `paie/src/naf.rs`, `verifier_pour` : un fichier P27V01 refuse un code NAF rév. 2 de la fiche entreprise. INFÉRENCE : un
 fichier P27V01 n'existe qu'après la mise en production (le schéma « Pour résumer » ne montre P27 qu'après la « MEP P27 »).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `net-entreprises-actualite-naf-2025-en-dsn-janvier-2027-20261008.mht` : `edf313e615f317b4b4890f99f357fb92b99ab79a49bdd76af58b57bfcac6244c`
+- `net-entreprises-actualite-naf-2025-en-dsn-janvier-2027-20261008.txt` : `f9d2bb74cc09ed3838ddf67ed75cd0c89967234ff5d01837d6d41aaebb9518e8`

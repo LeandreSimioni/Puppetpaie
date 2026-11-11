@@ -45,8 +45,8 @@ let NOMENCLATURES_IMPREVUS = null;   // motifs d'arrêt, de reprise, d'absence :
 /** Le nom d'un salarié, tel que la saisie le montre ; sa clé à défaut. */
 function nomDuSalarie(cle) {
   // La saisie écrit parfois le nom tel qu'on l'a tapé (« Audinot ») là où la fiche a sa clé (« AUDINOT ») : même personne.
-  const s = ((ETAT && ETAT.salaries) || []).find((x) => String(x.cle).toUpperCase() === String(cle || "").toUpperCase());
-  return s ? s.libelle : String(cle || "");
+  const s = ETAT.salaries.find((x) => String(x.cle).toUpperCase() === String(cle).toUpperCase());
+  return s ? s.libelle : String(cle);
 }
 
 /* ------------------------------------------------------ lire, et peindre */
@@ -55,10 +55,11 @@ function nomDuSalarie(cle) {
 async function dessinerImprevus(mois) {
   if (!mois) return;
   let imprevus, fins;
+  // Une lecture refusée se dit ; ce qu'elle aurait montré ne se montre pas.
   try { imprevus = await api("imprevus", { mois }); }
-  catch (e) { imprevus = null; }
+  catch (e) { imprevus = null; dire(e.message, "erreur"); }
   try { fins = await api("fins-de-contrat", { mois }); }
-  catch (e) { fins = null; }
+  catch (e) { fins = null; dire(e.message, "erreur"); }
   if (MOIS_AFFICHE && MOIS_AFFICHE !== mois) return;      // on a changé de mois entre-temps
   IMPREVUS = imprevus;
   FINS = fins;
@@ -90,16 +91,17 @@ function peindreDus(mois) {
   const cible = document.getElementById("dus");
   if (!cible) return;
   const rangs = [];
-  ((IMPREVUS && IMPREVUS.imprevus) || []).filter((i) => i.genre === "arret").forEach((a) => {
-    (a.obligations || []).filter((o) => o.du).forEach((o) => rangs.push({ a, o }));
+  if (IMPREVUS) IMPREVUS.imprevus.filter((i) => i.genre === "arret").forEach((a) => {
+    a.obligations.filter((o) => o.du).forEach((o) => rangs.push({ a, o }));
   });
-  ((FINS && FINS.fins) || []).forEach((f) => {
+  if (FINS) FINS.fins.forEach((f) => {
     const o = f.obligation;
     if (f.du) rangs.push({ f, o });
   });
   if (!rangs.length) { cible.innerHTML = ""; return; }
-  // Le plus pressé d'abord (`priorite`, que le moteur donne), puis par date butoir.
-  const rang = (x) => String((x.o && x.o.priorite) ?? 1) + ((x.o && x.o.butoir) || "9");
+  // Le plus pressé d'abord (`priorite`, que le moteur donne), puis par date butoir ; une obligation sans butoir après
+  // celles qui en ont un.
+  const rang = (x) => String(x.o.priorite) + (x.o.butoir || "9");
   rangs.sort((x, y) => rang(x).localeCompare(rang(y)));
   cible.innerHTML = `<h2>Ce qui est dû</h2>
     ${rangs.map((x, k) => (x.a ? rangObligation(x.a, x.o, k) : rangFin(x.f, k))).join("")}`;
@@ -118,13 +120,13 @@ function pastilleDu(o) {
 /** Le « pourquoi » d'une obligation, replié : la phrase du moteur, le délai et son point de départ, les textes. */
 function pourquoiDu(o) {
   if (!o) return "";
-  const depart = o.depart || {};
+  const presume = o.depart && o.depart.presume;
   return `<details class="pourquoi"><summary>pourquoi</summary>
-      <p>${echapper(o.phrase || "")}</p>
+      <p>${echapper(o.phrase)}</p>
       ${o.delai_dit ? `<p>${echapper(o.delai_dit)}</p>` : ""}
-      ${depart.presume ? `<p class="discret"><b>Point de départ présumé</b> ${echapper(depart.presume)}</p>` : ""}
+      ${presume ? `<p class="discret"><b>Point de départ présumé</b> ${echapper(presume)}</p>` : ""}
       ${o.destinataire ? `<p class="discret">${echapper(o.destinataire)}</p>` : ""}
-      ${(o.textes || []).length ? `<ul class="discret">${o.textes.map((t) =>
+      ${o.textes.length ? `<ul class="discret">${o.textes.map((t) =>
         `<li>${echapper(t.reference)}${t.dit ? ` — ${echapper(t.dit)}` : ""}</li>`).join("")}</ul>` : ""}
     </details>`;
 }
@@ -156,17 +158,17 @@ function rangObligation(a, o, k) {
   if (o.connaissance) {
     gestes.push(`<button class="lien" data-geste="connu">Connu le</button>`);
   }
-  return rangDu(k, pastilleDu(o), o.libelle, nomDuSalarie(a.salarie), (o.butoir_dit || ""), gestes.join(""), "", pourquoiDu(o));
+  return rangDu(k, pastilleDu(o), o.libelle, nomDuSalarie(a.salarie), o.butoir_dit, gestes.join(""), "", pourquoiDu(o));
 }
 
 /** Une ligne de ce qui est dû : la pastille, ce qu'il faut faire et pour qui, la date butoir et les gestes ; dessous,
- *  ce qui manque, et le « pourquoi » replié. */
+ *  ce qui manque, et le « pourquoi » replié. Pour qui et la date butoir, quand le moteur les dit. */
 function rangDu(k, pastille, quoi, qui, butoir, gestes, manque, pourquoi) {
   return `<div class="du" data-du="${k}">
       ${pastille}
       <div class="du-corps">
-        <div class="du-quoi"><b>${echapper(quoi)}</b> <span class="discret">${echapper(qui)}</span></div>
-        <div class="du-bas"><span class="du-butoir">${echapper(butoir)}</span><span class="du-gestes">${gestes}</span></div>
+        <div class="du-quoi"><b>${echapper(quoi)}</b> <span class="discret">${qui ? echapper(qui) : ""}</span></div>
+        <div class="du-bas"><span class="du-butoir">${butoir ? echapper(butoir) : ""}</span><span class="du-gestes">${gestes}</span></div>
         ${manque}${pourquoi}
       </div>
     </div>`;
@@ -192,8 +194,8 @@ function brancherObligation(r, a, o) {
    aussi (`mois`) : une échéance manquée ne se tait pas. */
 function rangFin(f, k) {
   const manque = f.a_saisir.length;
-  return rangDu(k, pastilleDeLEtat(f.pastille), (f.obligation && f.obligation.libelle) || "Fin de contrat",
-    f.qui_dit, ((f.obligation || {}).butoir_dit || ""),
+  return rangDu(k, pastilleDeLEtat(f.pastille), f.obligation.libelle,
+    f.qui_dit, f.obligation.butoir_dit,
     `<button class="secondaire petit" data-geste="signaler"${manque ? " disabled" : ""}>Signaler…</button>
      <button class="lien" data-geste="papiers">Papiers de fin</button>`,
     manque ? `<div class="du-manque"><p>${aideDe("a_dire_avant_signaler")}</p>
@@ -231,12 +233,15 @@ async function attendre(test, ms) {
   return null;
 }
 
+/** La carte (`salarie` : son salarié, absent quand aucun n'est choisi) est-elle à ce salarié ? */
+const memeSalarie = (salarie, autre) => !!salarie && salarie.toUpperCase() === String(autre).toUpperCase();
+
 async function allerALaCase(f, champ) {
   if (f.mois && f.mois !== MOIS_AFFICHE) allerAuMois(f.mois);
   const carte = () => {
     if (f.mois && (MOIS_AFFICHE !== f.mois || document.getElementById("engagements").classList.contains("en-lecture"))) return null;
     const siennes = [...document.querySelectorAll("#engagements .engagement")]
-      .filter((d) => salarieDuBloc(d).toUpperCase() === String(f.salarie).toUpperCase());
+      .filter((d) => memeSalarie(salarieDuBloc(d), f.salarie));
     return siennes.find((d) => carteDe(d).numero === f.numero || (f.debut && carteDe(d).debut === f.debut)) || siennes[0] || null;
   };
   let div = await attendre(carte, 15000);
@@ -268,7 +273,8 @@ function carteDe(div) {
   const salarie = salarieDuBloc(div);
   return {
     div, salarie,
-    numero: div.dataset.numeroDe === salarie ? div.dataset.numero || "" : "",
+    // Sans numéro figé, la carte n'en a pas (absent, pas vide).
+    numero: div.dataset.numeroDe === salarie && div.dataset.numero ? div.dataset.numero : undefined,
     debut: debutDuBloc(div),
   };
 }
@@ -342,8 +348,8 @@ function ouvrirRupture(div) {
 function peindreImprevusDesCartes() {
   const cartes = [...document.querySelectorAll("#engagements .engagement")];
   const parCarte = new Map(cartes.map((d) => [d, []]));
-  ((IMPREVUS && IMPREVUS.imprevus) || []).forEach((i) => {
-    const siennes = cartes.filter((d) => salarieDuBloc(d).toUpperCase() === String(i.salarie).toUpperCase());
+  if (IMPREVUS) IMPREVUS.imprevus.forEach((i) => {
+    const siennes = cartes.filter((d) => memeSalarie(salarieDuBloc(d), i.salarie));
     const c = siennes.find((d) => {
       const x = carteDe(d);
       return (i.contrat && x.numero === i.contrat) || (i.contrat_debut && x.debut === i.contrat_debut);
@@ -359,13 +365,13 @@ function peindreImprevusDeLaCarte(div, liste) {
   if (!liste.length) { cible.innerHTML = ""; return; }
   const validee = div.classList.contains("validee");
   cible.innerHTML = liste.map((i, k) => {
-    const jours = (i.cachets || []).filter((c) => c.mois === MOIS_AFFICHE);
+    const jours = i.cachets.filter((c) => c.mois === MOIS_AFFICHE);
     return `<div class="imprevu" data-imprevu="${k}">
         <span class="imprevu-quoi"><b>${echapper(i.quoi)}</b>
           <span class="discret">${echapper(i.periode)}</span></span>
         <span class="imprevu-gestes">${gestesImprevu(i)}</span>
         ${jours.length ? `<div class="imprevu-jours">${echapper(i.paye_pendant)}
-          ${jours.map((c) => (c.jours || []).map((j) => `${echapper(j.phrase)}
+          ${jours.map((c) => c.jours.map((j) => `${echapper(j.phrase)}
             ${validee ? "" : `<button class="lien" data-retirer="${echapper(j.iso)}" data-rubrique="${echapper(c.rubrique)}">retirer ce jour</button>`}`).join(" · ")).join(" · ")}
           ${validee ? `<span class="discret">— ${aideDe("imprevu_valide")}</span>` : ""}
         </div>` : ""}
@@ -377,7 +383,7 @@ function peindreImprevusDeLaCarte(div, liste) {
     r.querySelectorAll("[data-retirer]").forEach((b) => {
       b.onclick = async () => {
         if (!retirerJour(div, b.dataset.rubrique, b.dataset.retirer)) {
-          dire((ETAT.aides || {}).jour_hors_ligne, "erreur");
+          dire(ETAT.aides.jour_hors_ligne, "erreur");
         } else {
           await avantDeQuitter();
         }
@@ -406,7 +412,7 @@ function gestesImprevu(i) {
 }
 
 function brancherGestesImprevu(r, i, apres) {
-  brancherLesGestes(r.querySelector(".imprevu-gestes"), i.gestes || [],
+  brancherLesGestes(r.querySelector(".imprevu-gestes"), i.gestes,
     { titre: nomDuSalarie(i.salarie), dit: [i.quoi, i.periode].filter(Boolean).join(", ") }, apres);
 }
 
@@ -422,7 +428,7 @@ async function contratsDuJour(ou, jour, cible) {
   let r;
   try { r = await api("arret-contrats", { salarie: ou.salarie, jour }); }
   catch (e) { cible.innerHTML = `<span class="erreur">${echapper(e.message)}</span>`; return null; }
-  const contrats = r.contrats || [];
+  const contrats = r.contrats;
   if (!contrats.length) {
     cible.innerHTML = `<span class="erreur">${echapper(r.phrase)}</span>`;
     return null;
@@ -432,7 +438,7 @@ async function contratsDuJour(ou, jour, cible) {
   if (contrats.length === 1) return contrats[0];
   if (sien && sien.numero) return sien;
   cible.innerHTML = `Quel contrat
-    <select id="im-contrat">${contrats.map((c) => `<option value="${echapper(c.numero)}"${c === sien ? " selected" : ""}>${
+    <select id="im-contrat">${contrats.map((c) => `<option value="${c.numero ? echapper(c.numero) : ""}"${c === sien ? " selected" : ""}>${
       echapper(c.dit)}</option>`).join("")}</select>`;
   return { choisir: true, contrats };
 }
@@ -463,10 +469,12 @@ function suivreLaSaisie(c, dite) {
   c.addEventListener("input", () => { c.dataset.tape = "1"; });
 }
 function preremplirCase(c, valeur) {
-  if (!(c.dataset.tape && c.value)) c.value = valeur || "";
+  // Ce que le moteur ne propose pas laisse la case vide.
+  if (!(c.dataset.tape && c.value)) c.value = valeur ? valeur : "";
 }
+/** Ce que la personne a tapé dans la case ; rien de tapé part `null`. */
 function tapeDans(c) {
-  return c.dataset.tape ? c.value : "";
+  return c.dataset.tape && c.value ? c.value : null;
 }
 
 /* -------------------------------------------------- un arrêt de travail
@@ -483,7 +491,7 @@ async function boiteArret(ou) {
   const p = await provenance(ou);
   let n;
   try { n = await nomenclaturesImprevus(); } catch (e) { dire(e.message, "erreur"); return; }
-  const motifs = n.motifs_arret || [];
+  const motifs = n.motifs_arret;
   ouvrirBoite(`
     <h3>Un arrêt de travail — ${echapper(nomDuSalarie(p.salarie))}</h3>
     <label class="champ-boite">Dernier jour travaillé
@@ -531,21 +539,21 @@ async function boiteArret(ou) {
     let r;
     try {
       r = await api("arret-obligations", {
-        motif: val("ar-motif"), dernier_jour: val("ar-dernier"), debut: val("ar-debut"), fin: val("ar-fin"), salarie: p.salarie, ...contratAEnvoyer(trouve),
-        date_accident: val("ar-accident"), connaissance_accident: tapeDans(caseConnu), connaissance_heure: tapeDans(caseHeure),
+        motif: val("ar-motif"), dernier_jour: val("ar-dernier"), debut: val("ar-debut") || null, fin: val("ar-fin") || null, salarie: p.salarie, ...contratAEnvoyer(trouve),
+        date_accident: val("ar-accident") || null, connaissance_accident: tapeDans(caseConnu), connaissance_heure: tapeDans(caseHeure),
       });
-    } catch (e) { ligne.textContent = ""; return; }
-    const os = r.obligations || [];
-    const declaration = os.find((o) => o.cle === "declaration_accident");
+    } catch (e) { ligne.textContent = ""; dire(e.message, "erreur"); return; }
+    const declaration = r.obligations.find((o) => o.cle === "declaration_accident");
     avecDeclaration = !!declaration;
     // Le jour et l'heure dont partent les 48 heures, tels que le moteur les rend (le jour de l'accident, minuit, tant
-    // que rien n'est dit) : dans les cases, modifiables, avec la phrase de l'heure.
-    const connu = (declaration && declaration.connaissance) || {};
-    preremplirCase(caseConnu, connu.jour);
-    preremplirCase(caseHeure, connu.heure);
-    document.getElementById("ar-connu-dit").textContent = connu.heure_dite || "";
+    // que rien n'est dit) : dans les cases, modifiables, avec la phrase de l'heure. `textContent` est nullable : ce que
+    // le moteur ne dit pas laisse la ligne vide.
+    const connu = declaration && declaration.connaissance;
+    preremplirCase(caseConnu, connu && connu.jour);
+    preremplirCase(caseHeure, connu && connu.heure);
+    document.getElementById("ar-connu-dit").textContent = connu && connu.heure_dite;
     majFaits();
-    ligne.textContent = r.ensuite || "";
+    ligne.textContent = r.ensuite;
   };
   const majFaits = () => {
     const m = motif();
@@ -597,7 +605,7 @@ async function boiteAbsence(ou) {
   const p = await provenance(ou);
   let n;
   try { n = await nomenclaturesImprevus(); } catch (e) { dire(e.message, "erreur"); return; }
-  const motifs = n.motifs_suspension || [];
+  const motifs = n.motifs_suspension;
   ouvrirBoite(`
     <h3>Une absence — ${echapper(nomDuSalarie(p.salarie))}</h3>
     <div class="champs-deux">
@@ -647,7 +655,7 @@ async function boiteAbsence(ou) {
    relevé de la caisse, et se reprennent sous la carte. */
 
 async function etapeSuite(i, p, phrase) {
-  const jours = (i.cachets || []);
+  const jours = i.cachets;
   const g = i.a_dire;
   if (!g && !jours.length) {
     fermerBoite();
@@ -662,7 +670,7 @@ async function etapeSuite(i, p, phrase) {
     <h3>Ce qu'il appelle encore</h3>
     ${g ? `<div id="su-geste">${casesDuGeste(g)}</div>` : ""}
     ${jours.length ? `<div class="champ-boite">${aideDe("jours_payes")}
-      <div class="liste-jours">${jours.map((c, k) => (c.jours || []).map((j) => ici(c)
+      <div class="liste-jours">${jours.map((c, k) => c.jours.map((j) => ici(c)
         ? `<label class="coche"><input type="checkbox" data-jour="${k}" value="${echapper(j.iso)}">
              ${echapper(j.phrase)}</label>`
         : `<div class="discret">${echapper(j.phrase_du_mois)}</div>`).join("")).join("")}
@@ -696,10 +704,10 @@ async function etapeSuite(i, p, phrase) {
 /** Écrire le signalement (04 : l'arrêt ; 05 : la reprise anticipée), puis le déposer. Deux gestes et deux boîtes :
  *  écrire un fichier n'engage rien, le déposer engage tout. */
 function boiteSignalerArret(a, nature) {
-  const deja = (a.deja_signale || {})[nature];
+  const deja = a.deja_signale[nature];
   const reprise = nature === "05";
   ouvrirBoite(`
-    <h3>${echapper((a.signaler_titre || {})[nature])} — ${echapper(nomDuSalarie(a.salarie))}</h3>
+    <h3>${echapper(a.signaler_titre[nature])} —${echapper(nomDuSalarie(a.salarie))}</h3>
     <p class="discret">${echapper(a.quoi)}, ${echapper(a.periode)}${
       reprise && a.reprise_dit ? `, ${echapper(a.reprise_dit)}` : ""}</p>
     <p class="note">${aideDe("signalement_dsn")}</p>
@@ -732,11 +740,12 @@ function boiteSignalerArret(a, nature) {
 /** Le jour (et l'heure) où la compagnie a su l'arrêt ou l'accident : le point de départ du délai. Sans lui, le moteur
  *  présume — le plus tôt possible —, et le dit sous « pourquoi ». */
 function boiteConnaissance(a, de, o) {
-  const depart = (o && o.depart) || {};
+  // Le point de départ que le moteur rend (`depart`), quand il en a un.
+  const depart = o.depart;
   ouvrirBoite(`
     <h3>${echapper(o.connaissance.titre)}</h3>
     <p class="discret">${echapper(nomDuSalarie(a.salarie))} — ${echapper(a.quoi)}</p>
-    ${depart.presume ? `<p class="note"><b>Point de départ présumé</b> ${echapper(depart.presume)}</p>` : ""}
+    ${depart && depart.presume ? `<p class="note"><b>Point de départ présumé</b> ${echapper(depart.presume)}</p>` : ""}
     <div class="champs-deux">
       <label class="champ-boite">Le <input type="date" id="co-jour"></label>
       <label class="champ-boite">à
@@ -750,8 +759,8 @@ function boiteConnaissance(a, de, o) {
   // Ce qui est déjà dit compte comme tapé ; le reste n'est que pré-rempli par le moteur.
   const caseJour = document.getElementById("co-jour");
   const caseHeure = document.getElementById("co-heure");
-  suivreLaSaisie(caseJour, depart.saisi);
-  suivreLaSaisie(caseHeure, depart.saisi && !!depart.heure);
+  suivreLaSaisie(caseJour, depart && depart.saisi);
+  suivreLaSaisie(caseHeure, depart && depart.saisi && !!depart.heure);
   preremplirCase(caseJour, o.connaissance.jour);
   preremplirCase(caseHeure, o.connaissance.heure);
   document.getElementById("co-ok").onclick = async () => {
@@ -768,24 +777,25 @@ function boiteConnaissance(a, de, o) {
  *  pas. Il dit où la faire, ce qu'il faut avoir sous la main, et retient qu'elle est faite quand on le lui dit — le
  *  jour, où, la référence —, par la route de `ROUTES_OBLIGATION_FAITE`. Tout vient des champs de l'obligation. */
 function boiteObligationFaite(a, o) {
-  const fait = o.fait || {};
+  // Une obligation hors DSN : ses lieux (`ou`, une liste) ; ce qui en a été dit fait (`fait`), s'il y en a.
+  const fait = o.fait;
   const route = ROUTES_OBLIGATION_FAITE[o.cle];
   ouvrirBoite(`
     <h3>${echapper(o.libelle)} — ${echapper(nomDuSalarie(a.salarie))}</h3>
-    <p class="discret capitale">${echapper(o.butoir_dit || "")}${
+    <p class="discret capitale">${o.butoir_dit ? echapper(o.butoir_dit) : ""}${
       o.destinataire ? ` — ${echapper(o.destinataire)}` : ""}</p>
     <p class="note">${aideDe("hors_dsn")}</p>
-    ${(o.ou || []).map((x) => `<p class="note">${echapper(x.libelle)}</p>`).join("")}
-    ${(o.a_avoir || []).length ? `<details class="pourquoi"><summary>pièces à avoir</summary>
+    ${o.ou.map((x) => `<p class="note">${echapper(x.libelle)}</p>`).join("")}
+    ${o.a_avoir.length ? `<details class="pourquoi"><summary>pièces à avoir</summary>
       <ul class="note">${o.a_avoir.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul></details>` : ""}
     <div class="champs-deux">
-      <label class="champ-boite">Faite le <input type="date" id="da-le" value="${echapper(fait.le || "")}"></label>
+      <label class="champ-boite">Faite le <input type="date" id="da-le"${valeurDeDepart(fait && fait.le)}></label>
       <label class="champ-boite">Où
-        <select id="da-depot">${(o.ou || []).map((x) => `<option value="${echapper(x.code)}"${
-          fait.depot === x.code ? " selected" : ""}>${echapper(x.court || x.code)}</option>`).join("")}</select></label>
+        <select id="da-depot">${o.ou.map((x) => `<option value="${echapper(x.code)}"${
+          fait && fait.depot === x.code ? " selected" : ""}>${echapper(x.court || x.code)}</option>`).join("")}</select></label>
     </div>
     <label class="champ-boite" title="${aideDe("reference_faite")}">Référence
-      <input type="text" id="da-reference" value="${echapper(fait.reference || "")}"></label>
+      <input type="text" id="da-reference"${valeurDeDepart(fait && fait.reference)}></label>
     <div class="actions">
       <button class="secondaire" onclick="fermerBoite()">Annuler</button>
       <button class="primaire" id="da-ok">Enregistrer</button>
@@ -807,7 +817,7 @@ function boiteObligationFaite(a, o) {
 function boiteSignalerFin(mois, f) {
   ouvrirBoite(`
     <h3>Signaler la fin — ${echapper(nomDuSalarie(f.salarie))}</h3>
-    <p class="discret">${echapper(f.nature)} — ${echapper(f.contrat_dit)}</p>
+    <p class="discret">${echapper(f.nature)}${f.contrat_dit ? ` — ${echapper(f.contrat_dit)}` : ""}</p>
     <p class="note">${aideDe("signalement_fin")}</p>
     <details class="pourquoi"><summary>Annule et remplace</summary>
       <label class="champ-boite" title="${aideDe("identifiant_remplace")}">Déclaration remplacée
@@ -840,7 +850,7 @@ async function boitePapiersDeFin(mois, salarie) {
   ouvrirBoite(`
     <h3>Les papiers de fin</h3>
     <p class="discret">${echapper(r.phrase)}</p>
-    ${(r.avertissements || []).map((m) => `<div class="encart attention">${echapper(m)}</div>`).join("")}
+    ${r.avertissements.map((m) => `<div class="encart attention">${echapper(m)}</div>`).join("")}
     <div class="actions">
       <button class="secondaire" id="fp-dossier">Ouvrir le dossier</button>
       <button class="primaire" onclick="fermerBoite()">Fermer</button>
@@ -858,10 +868,10 @@ async function dessinerImprevusDuSalarie(cle) {
   if (!cible || !cle) return;
   let r;
   try { r = await api("imprevus", { salarie: cle }); }
-  catch (e) { cible.innerHTML = ""; return; }
+  catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
   NOMENCLATURES_IMPREVUS = NOMENCLATURES_IMPREVUS || r;
   if (CLE_ACTIVE !== cle) return;      // une autre fiche s'est ouverte entre-temps
-  const liste = (r.imprevus || []).slice().sort((x, y) => y.premier_jour.localeCompare(x.premier_jour));
+  const liste = r.imprevus.slice().sort((x, y) => y.premier_jour.localeCompare(x.premier_jour));
   const apres = async () => { await dessinerImprevusDuSalarie(cle); if (MOIS_AFFICHE) await dessinerImprevus(MOIS_AFFICHE); };
   cible.innerHTML = `
     <div class="fiche-imprevus-tete">
@@ -881,7 +891,7 @@ async function dessinerImprevusDuSalarie(cle) {
 
 /** Ce qui est parti d'un imprévu, et ce qui en reste dû : les morceaux que le moteur dit (`parti`), sur une ligne. */
 function ceQuiEnEstParti(i) {
-  return (i.parti || []).map((p) => p.discret
+  return i.parti.map((p) => p.discret
     ? `<span class="discret">${echapper(p.phrase)}</span>`
     : `${p.pastille ? `${pastilleDeLEtat(p.pastille)} ` : ""}${echapper(p.phrase)}`).join(" · ");
 }

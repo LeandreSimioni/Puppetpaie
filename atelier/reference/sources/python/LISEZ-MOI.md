@@ -79,3 +79,14 @@ tables que Python 3.11.17 avait produites.
 - `atelier/sources/paie/src/nfkd_ascii.rs` (`CHIFFRES`), lu par `dpae.rs` ;
 - `atelier/sources/paie/src/tables_retours.rs` (`DECIMAUX`, `CODECS_*`), lu par `retours.rs` (`est_chiffre`, `codage`) ;
 - `atelier/sources/paie/src/tables_journal.rs` (`ALNUM`), lu par `etats.rs`.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `python-cpython-3.11.17-encodings-aliases-20261015.txt` : `6fdcc49ba23a0203ae6cf28e608f8e6297d7c4d77d52e651db3cb49b9564c6d2`
+- `python-cpython-3.11.17-pyexpat-20261015.txt` : `a71e4173e667bc690a3df2b8b8fe434c64a589fff0160d4aabf8a92149ad2ee5`
+- `python-docs-3.11-codecs-20261015.html` : `36b00c55c4391ec7ec382defbd3b7b0665225937d7ace212a1dc7d380582687e`
+- `python-docs-3.11-re-20261015.html` : `d9a5de6d4ef1af2f3d40dcf6281e19689010b6fb78a265d621771002e66eea72`
+- `python-docs-3.11-stdtypes-20261015.html` : `34fdcea896eb6a94b3d7d167a7beb5f035391f164a9def1119f55ef51eea8abf`
+- `python-releve-codecs-pyexpat-3.11.17-20261015.txt` : `cba28461c5dfb510f8bf6bbdeb5b66547f121e4d84ccaf665965ef74d7ce11aa`

@@ -12,7 +12,7 @@
 //!   `config/entreprise.json`) et les motifs (NIR, IBAN, BIC, courriel, telephone, jeton). C'est ICI que la page et le
 //!   moteur sont mis en forme : la page envoie ce qu'elle a vu, le moteur decide (regle 2). La frontiere passe sur toute
 //!   forme (`serde::Serialize` : une charge de route, ce qu'un refus porte a part) au moment ou elle s'ecrit
-//!   (`EnForme`) : ce qui en sort est un texte, la trace de ce qui est arrive, que le moteur ne relit jamais.
+//!   (`en_frontiere`) : ce qui en sort est un texte, la trace de ce qui est arrive, que le moteur ne relit jamais.
 //! - LE FIL (`noter_route`, `noter_gestes`, `noter_moteur`, `fil`) : les trois dernieres minutes de la fenetre, en memoire
 //!   seulement (rien ne s'ecrit sur le disque au-dela du journal des incidents, qui l'emporte) -- chaque geste de la page
 //!   (clic, champ modifie, boite ouverte, console), chaque route (sa charge mise en forme, sa duree, son issue), ce que la
@@ -32,10 +32,12 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime};
 
 use regex::Regex;
-use serde::ser::{self, Serialize, SerializeMap, SerializeSeq, SerializeStruct, SerializeStructVariant, SerializeTuple, SerializeTupleStruct, SerializeTupleVariant, Serializer};
 use serde::Deserialize;
+use serde::Serialize;
 
+use droit::fiche::{CaseDeFiche, CaseEntreprise, CaseSalarie, NomDeCase};
 use socle::echec::{Echoue, R, FENETRE_MS};
+use socle::ecriture::Arbre;
 use socle::temps::maintenant_ms;
 /// Au plus tant d'actions gardees en memoire, et rendues (les plus recentes).
 const FIL_MAX: usize = 600;
@@ -237,18 +239,25 @@ fn motif_de(nom: &str) -> Option<String> {
     Some(s)
 }
 
-/// La date et la taille d'un fichier, pour savoir s'il a change ; ou ce que le systeme en dit (absent : il se relira).
-fn signature(p: &Path) -> Result<(SystemTime, u64), String> {
-    let m = std::fs::metadata(p).map_err(|e| e.to_string())?;
-    Ok((m.modified().map_err(|e| e.to_string())?, m.len()))
+/// La date et la taille d'un fichier, pour savoir s'il a change ; `None` quand le fichier est absent, ou que le systeme
+/// ne les donne pas (le refus du disque se note) : il se relira.
+fn signature(p: &Path) -> Option<(SystemTime, u64)> {
+    match std::fs::metadata(p).and_then(|m| Ok((m.modified()?, m.len()))) {
+        Ok(s) => Some(s),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            socle::echec::noter_echec(Some(socle::echec::Classe::du_disque(&e)), &format!("{} : {}", p.display(), e));
+            None
+        }
+    }
 }
 
 /// Les textes qu'une fiche datee a portes, champ par champ (`droit::fiche::VoirListe`) : tout ce qui peut nommer une
 /// personne, a quelque date que ce soit.
-struct TextesDeFiche(Vec<(&'static str, Vec<String>)>);
+struct TextesDeFiche(Vec<(CaseDeFiche, Vec<String>)>);
 
 impl droit::fiche::VoirListe for TextesDeFiche {
-    fn liste<T: Serialize>(&mut self, cle: &'static str, liste: &[droit::fiche::Datee<T>]) {
+    fn liste<T: Serialize>(&mut self, cle: CaseDeFiche, liste: &[droit::fiche::Datee<T>]) {
         let textes: Vec<String> = liste.iter().filter_map(|e| e.valeur.as_ref()).filter_map(texte_de).collect();
         if !textes.is_empty() {
             self.0.push((cle, textes));
@@ -264,32 +273,45 @@ impl TextesDeFiche {
     }
 
     /// Tous les textes que le champ `cle` a portes.
-    fn tous<'a>(&'a self, cle: &'a str) -> impl Iterator<Item = &'a String> + 'a {
+    fn tous(&self, cle: impl Into<NomDeCase>) -> impl Iterator<Item = &String> {
+        let cle = CaseDeFiche::Case(cle.into());
         self.0.iter().filter(move |(c, _)| *c == cle).flat_map(|(_, l)| l.iter())
     }
 
     /// Le dernier texte du champ `cle`, sans ses blancs de bord, s'il en a porte un qui dit quelque chose.
-    fn dernier(&self, cle: &str) -> Option<String> {
+    fn dernier(&self, cle: impl Into<NomDeCase>) -> Option<String> {
         self.tous(cle).last().map(|t| t.trim().to_string()).filter(|t| !t.is_empty())
     }
 }
 
 /// Le numero d'un salarie : son `code_salarie` (celui des bulletins), sinon son rang dans les fiches.
 fn numero_de(fiche: &TextesDeFiche, rang: usize) -> String {
-    match fiche.dernier("code_salarie") {
+    match fiche.dernier(CaseSalarie::CodeSalarie) {
         Some(code) => code,
         None => format!("{}", rang + 1),
     }
 }
 
 /// Les champs d'une fiche qui nomment la personne : ceux-la se cherchent dans tout texte.
-const CHAMPS_QUI_NOMMENT: [&str; 13] = [
-    "nom", "prenom", "prenoms", "nom_affichage", "prenom_affichage", "nom_usage", "nom_naissance", "email", "courriel",
-    "adresse", "adresse_affichage", "telephone", "nir",
+const CHAMPS_QUI_NOMMENT: [CaseSalarie; 8] = [
+    CaseSalarie::Nom,
+    CaseSalarie::Prenom,
+    CaseSalarie::NomAffichage,
+    CaseSalarie::PrenomAffichage,
+    CaseSalarie::Email,
+    CaseSalarie::Adresse,
+    CaseSalarie::AdresseAffichage,
+    CaseSalarie::Nir,
 ];
-const CHAMPS_DE_LA_COMPAGNIE: [&str; 11] = [
-    "raison_sociale", "nom_affichage", "enseigne", "siren", "siret", "adresse", "adresse_affichage", "urssaf_compte",
-    "licence_spectacle", "email", "telephone",
+const CHAMPS_DE_LA_COMPAGNIE: [CaseEntreprise; 8] = [
+    CaseEntreprise::RaisonSociale,
+    CaseEntreprise::NomAffichage,
+    CaseEntreprise::Siren,
+    CaseEntreprise::Siret,
+    CaseEntreprise::Adresse,
+    CaseEntreprise::AdresseAffichage,
+    CaseEntreprise::UrssafCompte,
+    CaseEntreprise::LicenceSpectacle,
 ];
 
 fn construire(racine: &Path) -> Personnes {
@@ -322,7 +344,7 @@ fn construire(racine: &Path) -> Personnes {
                         noms.extend(fiche.tous(c).cloned());
                     }
                     // Le prenom et le nom ensemble, dans les deux ordres : « Fanchon Brioche » devient un seul « [salarie n°1] ».
-                    for (p, n) in [("prenom", "nom"), ("prenom_affichage", "nom_affichage"), ("prenom_affichage", "nom_usage")] {
+                    for (p, n) in [(CaseSalarie::Prenom, CaseSalarie::Nom), (CaseSalarie::PrenomAffichage, CaseSalarie::NomAffichage)] {
                         if let (Some(p), Some(n)) = (fiche.dernier(p), fiche.dernier(n)) {
                             noms.push(format!("{} {}", p, n));
                             noms.push(format!("{} {}", n, p));
@@ -331,7 +353,7 @@ fn construire(racine: &Path) -> Personnes {
                     ajouter(noms, format!("salarié n°{}", numero_de(&fiche, rang)), &mut inconnues);
                 }
             }
-            Err(e) => inconnues = Some(format!("les fiches des salariés ne se lisent pas ({})", socle::echec::phrase_de(&e))),
+            Err(e) => inconnues = Some(format!("les fiches des salariés ne se lisent pas ({})", e.phrase)),
         }
     }
     let entreprise = racine.join(droit::contexte::ENTREPRISE);
@@ -351,7 +373,7 @@ fn construire(racine: &Path) -> Personnes {
                 }
                 ajouter(noms, "compagnie".to_string(), &mut inconnues);
             }
-            Err(e) => inconnues = Some(format!("la fiche de l'entreprise ne se lit pas ({})", socle::echec::phrase_de(&e))),
+            Err(e) => inconnues = Some(format!("la fiche de l'entreprise ne se lit pas ({})", e.phrase)),
         }
     }
     tous.sort_by_key(|m| std::cmp::Reverse(m.len()));
@@ -369,7 +391,7 @@ fn construire(racine: &Path) -> Personnes {
     Personnes { une, toutes, inconnues }
 }
 
-type Signatures = (Result<(SystemTime, u64), String>, Result<(SystemTime, u64), String>);
+type Signatures = (Option<(SystemTime, u64)>, Option<(SystemTime, u64)>);
 
 /// Les personnes de la compagnie `racine`, relues quand ses fiches changent. Sans compagnie, personne n'est connu.
 fn personnes(racine: Option<&Path>) -> Arc<Personnes> {
@@ -447,16 +469,16 @@ fn texte_avec(p: &Personnes, s: &str, limite: usize) -> String {
 }
 
 /// La cle de controle d'un NIR (13 chiffres, Corse 2A/2B comprise) : 97 - (NIR mod 97).
-fn cle_nir(n13: &str) -> Result<u64, String> {
+fn cle_nir(n13: &str) -> socle::echec::R<u64> {
     let corse = match &n13[5..7] {
         "2A" | "2a" => Some(1_000_000u64),
         "2B" | "2b" => Some(2_000_000u64),
         _ => None,
     };
     let chiffres: String = n13.chars().map(|c| if c.is_ascii_alphabetic() { '0' } else { c }).collect();
-    let v: u64 = chiffres.parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+    let v: u64 = chiffres.parse().map_err(|e: std::num::ParseIntError| socle::echec::refus(e.to_string()))?;
     let v = match corse {
-        Some(m) => v.checked_sub(m).ok_or_else(|| "département corse hors des nombres".to_string())?,
+        Some(m) => v.checked_sub(m).ok_or_else(|| socle::echec::refus("département corse hors des nombres"))?,
         None => v,
     };
     Ok(97 - v % 97)
@@ -474,13 +496,13 @@ fn forme_nir(s: &str) -> String {
             (Ok(attendue), Ok(k)) if attendue == k => "NIR présent, clé valide".to_string(),
             (Ok(_), Ok(_)) => "NIR présent, clé invalide".to_string(),
             (Ok(_), Err(e)) => format!("NIR présent, clé illisible ({})", e),
-            (Err(e), _) => format!("NIR présent, illisible ({})", e),
+            (Err(e), _) => format!("NIR présent, illisible ({})", e.phrase),
         };
     }
     if lisible(&c) {
         return match cle_nir(&c) {
             Ok(_) => "NIR présent (13 car.), sans clé".to_string(),
-            Err(e) => format!("NIR présent, illisible ({})", e),
+            Err(e) => format!("NIR présent, illisible ({})", e.phrase),
         };
     }
     if c.len() <= 2 && c.chars().all(|x| x.is_ascii_digit()) {
@@ -579,7 +601,7 @@ fn forme_de_genre(p: &Personnes, g: Genre, s: &str) -> String {
 /// endroit, ecrite en une ligne. C'est une trace : le moteur ne la relit jamais.
 pub fn en_forme<T: Serialize + ?Sized>(racine: Option<&Path>, v: &T) -> String {
     let p = personnes(racine);
-    socle::ecriture::json_en_ligne(&EnForme { p: &p, v, genre: None, prof: 0 })
+    socle::ecriture::json_en_ligne(&en_frontiere(&p, Arbre::de(v), None, 0))
 }
 
 /// La valeur d'un champ de la page, telle que le fil la dit : sa forme sous le nom du champ (`nom` : son `name`, son
@@ -612,390 +634,51 @@ pub fn compact(t: &str, limite: usize) -> String {
     }
 }
 
-/// UNE FORME QUI S'ECRIT A TRAVERS LA FRONTIERE : elle s'ecrit comme `v`, chaque texte, chaque nombre sous une cle qui
-/// dit une personne, et chaque cle mis en forme ; une liste garde ses `LISTE_MAX` premiers elements ; au-dela de
-/// `PROFONDEUR_MAX`, « … ».
-struct EnForme<'a, T: ?Sized> {
-    p: &'a Personnes,
-    v: &'a T,
-    /// Le genre de la cle sous laquelle la forme est rangee : il vaut pour tout ce qu'elle porte.
-    genre: Option<Genre>,
-    prof: usize,
-}
-
-impl<T: Serialize + ?Sized> Serialize for EnForme<'_, T> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        if self.prof > PROFONDEUR_MAX {
-            return s.serialize_str("…");
-        }
-        self.v.serialize(Frontiere { s, p: self.p, genre: self.genre, prof: self.prof })
+/// UNE FORME MISE EN FORME A LA FRONTIERE, de son arbre (`socle::ecriture::Arbre`) : chaque texte, chaque nombre sous
+/// une cle qui dit une personne (`genre`, qui vaut pour tout ce que la cle porte), et chaque cle de table, mis en forme ;
+/// une liste garde ses `LISTE_MAX` premiers elements ; au-dela de `PROFONDEUR_MAX`, « … ».
+fn en_frontiere(p: &Personnes, a: Arbre, genre: Option<Genre>, prof: usize) -> Arbre {
+    if prof > PROFONDEUR_MAX {
+        return Arbre::Texte("…".to_string());
     }
-}
-
-/// L'ecrivain de la frontiere : il passe a `s` ce que la forme ecrit, mis en forme.
-struct Frontiere<'a, S> {
-    s: S,
-    p: &'a Personnes,
-    genre: Option<Genre>,
-    prof: usize,
-}
-
-/// Une forme composee (liste, table, structure) qui s'ecrit a travers la frontiere.
-struct Composee<'a, C> {
-    c: C,
-    p: &'a Personnes,
-    genre: Option<Genre>,
-    prof: usize,
-    /// Les elements ecrits, et ceux qui depassent `LISTE_MAX` (une liste).
-    ecrits: usize,
-    reste: usize,
-    /// Le genre de la cle dont la valeur suit (une table).
-    cle: Option<Genre>,
-}
-
-impl<'a, C> Composee<'a, C> {
-    fn de(c: C, p: &'a Personnes, genre: Option<Genre>, prof: usize) -> Composee<'a, C> {
-        Composee { c, p, genre, prof, ecrits: 0, reste: 0, cle: None }
-    }
-}
-
-macro_rules! nombres_en_forme {
-    ($($f:ident : $t:ty),*) => {
-        $(fn $f(self, v: $t) -> Result<S::Ok, S::Error> {
-            match self.genre {
-                Some(g) => self.s.serialize_str(&forme_de_genre(self.p, g, &v.to_string())),
-                None => self.s.$f(v),
+    match a {
+        Arbre::Nul | Arbre::Booleen(_) => a,
+        Arbre::Nombre(t) => match genre {
+            Some(g) => Arbre::Texte(forme_de_genre(p, g, &t)),
+            None => Arbre::Nombre(t),
+        },
+        Arbre::Texte(t) => Arbre::Texte(match genre {
+            Some(g) => forme_de_genre(p, g, &t),
+            None => texte_avec(p, &t, TEXTE_MAX),
+        }),
+        Arbre::Liste(l) => {
+            let n = l.len();
+            let mut out: Vec<Arbre> = l.into_iter().take(LISTE_MAX).map(|x| en_frontiere(p, x, genre, prof + 1)).collect();
+            if n > LISTE_MAX {
+                out.push(Arbre::Texte(format!("… et {} de plus", n - LISTE_MAX)));
             }
-        })*
-    };
-}
-
-impl<'a, S: Serializer> Serializer for Frontiere<'a, S> {
-    type Ok = S::Ok;
-    type Error = S::Error;
-    type SerializeSeq = Composee<'a, S::SerializeSeq>;
-    type SerializeTuple = Composee<'a, S::SerializeTuple>;
-    type SerializeTupleStruct = Composee<'a, S::SerializeTupleStruct>;
-    type SerializeTupleVariant = Composee<'a, S::SerializeTupleVariant>;
-    type SerializeMap = Composee<'a, S::SerializeMap>;
-    type SerializeStruct = Composee<'a, S::SerializeStruct>;
-    type SerializeStructVariant = Composee<'a, S::SerializeStructVariant>;
-
-    fn serialize_bool(self, v: bool) -> Result<S::Ok, S::Error> {
-        self.s.serialize_bool(v)
-    }
-
-    nombres_en_forme!(serialize_i8: i8, serialize_i16: i16, serialize_i32: i32, serialize_i64: i64, serialize_i128: i128,
-        serialize_u8: u8, serialize_u16: u16, serialize_u32: u32, serialize_u64: u64, serialize_u128: u128,
-        serialize_f32: f32, serialize_f64: f64);
-
-    fn serialize_char(self, v: char) -> Result<S::Ok, S::Error> {
-        self.serialize_str(&v.to_string())
-    }
-
-    fn serialize_str(self, v: &str) -> Result<S::Ok, S::Error> {
-        match self.genre {
-            Some(g) => self.s.serialize_str(&forme_de_genre(self.p, g, v)),
-            None => self.s.serialize_str(&texte_avec(self.p, v, TEXTE_MAX)),
+            Arbre::Liste(out)
         }
-    }
-
-    fn serialize_bytes(self, v: &[u8]) -> Result<S::Ok, S::Error> {
-        self.s.serialize_str(&format!("(données de {} octets)", v.len()))
-    }
-
-    fn serialize_none(self) -> Result<S::Ok, S::Error> {
-        self.s.serialize_none()
-    }
-
-    fn serialize_some<T: Serialize + ?Sized>(self, v: &T) -> Result<S::Ok, S::Error> {
-        v.serialize(self)
-    }
-
-    fn serialize_unit(self) -> Result<S::Ok, S::Error> {
-        self.s.serialize_unit()
-    }
-
-    fn serialize_unit_struct(self, nom: &'static str) -> Result<S::Ok, S::Error> {
-        self.s.serialize_unit_struct(nom)
-    }
-
-    fn serialize_unit_variant(self, nom: &'static str, rang: u32, variante: &'static str) -> Result<S::Ok, S::Error> {
-        self.s.serialize_unit_variant(nom, rang, variante)
-    }
-
-    fn serialize_newtype_struct<T: Serialize + ?Sized>(self, _nom: &'static str, v: &T) -> Result<S::Ok, S::Error> {
-        v.serialize(self)
-    }
-
-    fn serialize_newtype_variant<T: Serialize + ?Sized>(self, nom: &'static str, rang: u32, variante: &'static str, v: &T) -> Result<S::Ok, S::Error> {
-        self.s.serialize_newtype_variant(nom, rang, variante, &EnForme { p: self.p, v, genre: self.genre, prof: self.prof + 1 })
-    }
-
-    fn serialize_seq(self, n: Option<usize>) -> Result<Self::SerializeSeq, S::Error> {
-        Ok(Composee::de(self.s.serialize_seq(n)?, self.p, self.genre, self.prof))
-    }
-
-    fn serialize_tuple(self, n: usize) -> Result<Self::SerializeTuple, S::Error> {
-        Ok(Composee::de(self.s.serialize_tuple(n)?, self.p, self.genre, self.prof))
-    }
-
-    fn serialize_tuple_struct(self, nom: &'static str, n: usize) -> Result<Self::SerializeTupleStruct, S::Error> {
-        Ok(Composee::de(self.s.serialize_tuple_struct(nom, n)?, self.p, self.genre, self.prof))
-    }
-
-    fn serialize_tuple_variant(self, nom: &'static str, rang: u32, variante: &'static str, n: usize) -> Result<Self::SerializeTupleVariant, S::Error> {
-        Ok(Composee::de(self.s.serialize_tuple_variant(nom, rang, variante, n)?, self.p, self.genre, self.prof))
-    }
-
-    fn serialize_map(self, n: Option<usize>) -> Result<Self::SerializeMap, S::Error> {
-        Ok(Composee::de(self.s.serialize_map(n)?, self.p, self.genre, self.prof))
-    }
-
-    fn serialize_struct(self, nom: &'static str, n: usize) -> Result<Self::SerializeStruct, S::Error> {
-        Ok(Composee::de(self.s.serialize_struct(nom, n)?, self.p, self.genre, self.prof))
-    }
-
-    fn serialize_struct_variant(self, nom: &'static str, rang: u32, variante: &'static str, n: usize) -> Result<Self::SerializeStructVariant, S::Error> {
-        Ok(Composee::de(self.s.serialize_struct_variant(nom, rang, variante, n)?, self.p, self.genre, self.prof))
-    }
-
-    fn is_human_readable(&self) -> bool {
-        self.s.is_human_readable()
-    }
-}
-
-impl<C: SerializeSeq> SerializeSeq for Composee<'_, C> {
-    type Ok = C::Ok;
-    type Error = C::Error;
-
-    fn serialize_element<T: Serialize + ?Sized>(&mut self, v: &T) -> Result<(), C::Error> {
-        if self.ecrits >= LISTE_MAX {
-            self.reste += 1;
-            return Ok(());
-        }
-        self.ecrits += 1;
-        let e = EnForme { p: self.p, v, genre: self.genre, prof: self.prof + 1 };
-        self.c.serialize_element(&e)
-    }
-
-    fn end(mut self) -> Result<C::Ok, C::Error> {
-        if self.reste > 0 {
-            self.c.serialize_element(&format!("… et {} de plus", self.reste))?;
-        }
-        self.c.end()
-    }
-}
-
-impl<C: SerializeTuple> SerializeTuple for Composee<'_, C> {
-    type Ok = C::Ok;
-    type Error = C::Error;
-
-    fn serialize_element<T: Serialize + ?Sized>(&mut self, v: &T) -> Result<(), C::Error> {
-        let e = EnForme { p: self.p, v, genre: self.genre, prof: self.prof + 1 };
-        self.c.serialize_element(&e)
-    }
-
-    fn end(self) -> Result<C::Ok, C::Error> {
-        self.c.end()
-    }
-}
-
-impl<C: SerializeTupleStruct> SerializeTupleStruct for Composee<'_, C> {
-    type Ok = C::Ok;
-    type Error = C::Error;
-
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, v: &T) -> Result<(), C::Error> {
-        let e = EnForme { p: self.p, v, genre: self.genre, prof: self.prof + 1 };
-        self.c.serialize_field(&e)
-    }
-
-    fn end(self) -> Result<C::Ok, C::Error> {
-        self.c.end()
-    }
-}
-
-impl<C: SerializeTupleVariant> SerializeTupleVariant for Composee<'_, C> {
-    type Ok = C::Ok;
-    type Error = C::Error;
-
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, v: &T) -> Result<(), C::Error> {
-        let e = EnForme { p: self.p, v, genre: self.genre, prof: self.prof + 1 };
-        self.c.serialize_field(&e)
-    }
-
-    fn end(self) -> Result<C::Ok, C::Error> {
-        self.c.end()
-    }
-}
-
-impl<C: SerializeMap> SerializeMap for Composee<'_, C> {
-    type Ok = C::Ok;
-    type Error = C::Error;
-
-    /// Une cle peut etre un nom (des fiches rangees par salarie) : elle se met en forme comme un texte, et dit le genre
-    /// de sa valeur.
-    fn serialize_key<T: Serialize + ?Sized>(&mut self, k: &T) -> Result<(), C::Error> {
-        let Some(cle) = texte_de(k) else { return Err(ser::Error::custom("une clé de table qui n'est pas un texte")) };
-        self.cle = match self.genre {
-            Some(g) => Some(g),
-            None => genre_de_cle(&cle),
-        };
-        let forme = texte_avec(self.p, &cle, 80);
-        self.c.serialize_key(&forme)
-    }
-
-    fn serialize_value<T: Serialize + ?Sized>(&mut self, v: &T) -> Result<(), C::Error> {
-        let e = EnForme { p: self.p, v, genre: self.cle, prof: self.prof + 1 };
-        self.c.serialize_value(&e)
-    }
-
-    fn end(self) -> Result<C::Ok, C::Error> {
-        self.c.end()
-    }
-}
-
-impl<C: SerializeStruct> SerializeStruct for Composee<'_, C> {
-    type Ok = C::Ok;
-    type Error = C::Error;
-
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, cle: &'static str, v: &T) -> Result<(), C::Error> {
-        let genre = match self.genre {
-            Some(g) => Some(g),
-            None => genre_de_cle(cle),
-        };
-        let e = EnForme { p: self.p, v, genre, prof: self.prof + 1 };
-        self.c.serialize_field(cle, &e)
-    }
-
-    fn skip_field(&mut self, cle: &'static str) -> Result<(), C::Error> {
-        self.c.skip_field(cle)
-    }
-
-    fn end(self) -> Result<C::Ok, C::Error> {
-        self.c.end()
-    }
-}
-
-impl<C: SerializeStructVariant> SerializeStructVariant for Composee<'_, C> {
-    type Ok = C::Ok;
-    type Error = C::Error;
-
-    fn serialize_field<T: Serialize + ?Sized>(&mut self, cle: &'static str, v: &T) -> Result<(), C::Error> {
-        let genre = match self.genre {
-            Some(g) => Some(g),
-            None => genre_de_cle(cle),
-        };
-        let e = EnForme { p: self.p, v, genre, prof: self.prof + 1 };
-        self.c.serialize_field(cle, &e)
-    }
-
-    fn skip_field(&mut self, cle: &'static str) -> Result<(), C::Error> {
-        self.c.skip_field(cle)
-    }
-
-    fn end(self) -> Result<C::Ok, C::Error> {
-        self.c.end()
+        // Une cle peut etre un nom (des fiches rangees par salarie) : elle se met en forme comme un texte, et dit le
+        // genre de sa valeur.
+        Arbre::Table(o) => Arbre::Table(
+            o.into_iter()
+                .map(|(k, x)| {
+                    let g = genre.or_else(|| genre_de_cle(&k));
+                    (texte_avec(p, &k, 80), en_frontiere(p, x, g, prof + 1))
+                })
+                .collect(),
+        ),
     }
 }
 
 /// Le texte d'une valeur simple (un texte, un nombre, un booleen, une variante sans donnee), ou `None` pour une forme
-/// composee ou nulle : la cle d'une table, la valeur d'un champ de fiche.
+/// composee ou nulle : la valeur d'un champ de fiche.
 fn texte_de<T: Serialize + ?Sized>(v: &T) -> Option<String> {
-    match v.serialize(EnTexte) {
-        Ok(t) => t,
-        Err(PasUnTexte) => None,
-    }
-}
-
-/// Ce que `EnTexte` refuse : une forme composee.
-#[derive(Debug)]
-struct PasUnTexte;
-
-impl std::fmt::Display for PasUnTexte {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        f.write_str("pas une valeur simple")
-    }
-}
-
-impl std::error::Error for PasUnTexte {}
-
-impl ser::Error for PasUnTexte {
-    fn custom<T: std::fmt::Display>(_pourquoi: T) -> PasUnTexte {
-        PasUnTexte
-    }
-}
-
-/// L'ecrivain d'une valeur simple en texte (`texte_de`).
-struct EnTexte;
-
-macro_rules! simples_en_texte {
-    ($($f:ident : $t:ty),*) => {
-        $(fn $f(self, v: $t) -> Result<Option<String>, PasUnTexte> {
-            Ok(Some(v.to_string()))
-        })*
-    };
-}
-
-impl Serializer for EnTexte {
-    type Ok = Option<String>;
-    type Error = PasUnTexte;
-    type SerializeSeq = ser::Impossible<Option<String>, PasUnTexte>;
-    type SerializeTuple = ser::Impossible<Option<String>, PasUnTexte>;
-    type SerializeTupleStruct = ser::Impossible<Option<String>, PasUnTexte>;
-    type SerializeTupleVariant = ser::Impossible<Option<String>, PasUnTexte>;
-    type SerializeMap = ser::Impossible<Option<String>, PasUnTexte>;
-    type SerializeStruct = ser::Impossible<Option<String>, PasUnTexte>;
-    type SerializeStructVariant = ser::Impossible<Option<String>, PasUnTexte>;
-
-    simples_en_texte!(serialize_bool: bool, serialize_i8: i8, serialize_i16: i16, serialize_i32: i32, serialize_i64: i64,
-        serialize_i128: i128, serialize_u8: u8, serialize_u16: u16, serialize_u32: u32, serialize_u64: u64,
-        serialize_u128: u128, serialize_f32: f32, serialize_f64: f64, serialize_char: char, serialize_str: &str);
-
-    fn serialize_bytes(self, _v: &[u8]) -> Result<Option<String>, PasUnTexte> {
-        Err(PasUnTexte)
-    }
-    fn serialize_none(self) -> Result<Option<String>, PasUnTexte> {
-        Ok(None)
-    }
-    fn serialize_some<T: Serialize + ?Sized>(self, v: &T) -> Result<Option<String>, PasUnTexte> {
-        v.serialize(self)
-    }
-    fn serialize_unit(self) -> Result<Option<String>, PasUnTexte> {
-        Ok(None)
-    }
-    fn serialize_unit_struct(self, _nom: &'static str) -> Result<Option<String>, PasUnTexte> {
-        Ok(None)
-    }
-    fn serialize_unit_variant(self, _nom: &'static str, _rang: u32, variante: &'static str) -> Result<Option<String>, PasUnTexte> {
-        Ok(Some(variante.to_string()))
-    }
-    fn serialize_newtype_struct<T: Serialize + ?Sized>(self, _nom: &'static str, v: &T) -> Result<Option<String>, PasUnTexte> {
-        v.serialize(self)
-    }
-    fn serialize_newtype_variant<T: Serialize + ?Sized>(self, _nom: &'static str, _rang: u32, _variante: &'static str, _v: &T) -> Result<Option<String>, PasUnTexte> {
-        Err(PasUnTexte)
-    }
-    fn serialize_seq(self, _n: Option<usize>) -> Result<Self::SerializeSeq, PasUnTexte> {
-        Err(PasUnTexte)
-    }
-    fn serialize_tuple(self, _n: usize) -> Result<Self::SerializeTuple, PasUnTexte> {
-        Err(PasUnTexte)
-    }
-    fn serialize_tuple_struct(self, _nom: &'static str, _n: usize) -> Result<Self::SerializeTupleStruct, PasUnTexte> {
-        Err(PasUnTexte)
-    }
-    fn serialize_tuple_variant(self, _nom: &'static str, _rang: u32, _variante: &'static str, _n: usize) -> Result<Self::SerializeTupleVariant, PasUnTexte> {
-        Err(PasUnTexte)
-    }
-    fn serialize_map(self, _n: Option<usize>) -> Result<Self::SerializeMap, PasUnTexte> {
-        Err(PasUnTexte)
-    }
-    fn serialize_struct(self, _nom: &'static str, _n: usize) -> Result<Self::SerializeStruct, PasUnTexte> {
-        Err(PasUnTexte)
-    }
-    fn serialize_struct_variant(self, _nom: &'static str, _rang: u32, _variante: &'static str, _n: usize) -> Result<Self::SerializeStructVariant, PasUnTexte> {
-        Err(PasUnTexte)
+    match Arbre::de(v) {
+        Arbre::Booleen(b) => Some(b.to_string()),
+        Arbre::Nombre(t) | Arbre::Texte(t) => Some(t),
+        Arbre::Nul | Arbre::Liste(_) | Arbre::Table(_) => None,
     }
 }
 
@@ -1144,13 +827,15 @@ pub fn noter_moteur(texte: &str) {
 pub struct PageDite {
     pub ecran: String,
     pub fenetre: String,
-    pub echelle: f64,
+    /// Le rapport des pixels de l'ecran aux pixels de la page (`devicePixelRatio` : `1.25`), tel que la page l'ecrit.
+    pub echelle: socle::forme::NombreLu,
     pub langue: String,
     pub langues: String,
     pub fuseau: String,
     pub decalage_minutes: i64,
     pub agent: String,
-    pub memoire_go: Option<f64>,
+    /// La memoire du poste en Go (`navigator.deviceMemory` : `0.5`, `8`), telle que la page l'ecrit.
+    pub memoire_go: Option<socle::forme::NombreLu>,
     pub coeurs: Option<u64>,
 }
 
@@ -1214,7 +899,7 @@ fn page_vue() -> &'static Mutex<Option<PageDite>> {
 pub fn noter_gestes(racine: &Path, texte: &str) {
     let lot: LotDeGestes = match socle::forme::lire_texte(texte, "Les gestes de la page ne se lisent pas.") {
         Ok(l) => l,
-        Err(e) => return noter_moteur(&format!("Les gestes de la page ne se lisent pas : {}", e)),
+        Err(e) => return noter_moteur(&format!("Les gestes de la page ne se lisent pas : {} {:?}", e.phrase, e.a_part)),
     };
     let forme = |s: &str, limite: usize| texte_en_forme(Some(racine), s.trim(), limite);
     if let Some(p) = lot.page {
@@ -1473,7 +1158,9 @@ pub struct Machine {
     pub edition: String,
     pub compagnie: String,
     pub langue_systeme: Option<String>,
-    pub lance_depuis: String,
+    /// Depuis combien de temps le moteur tourne, en mots.
+    #[serde(rename = "lance_depuis")]
+    pub duree_lance: String,
     pub mises_a_jour: Vec<String>,
     pub page: Option<PageDite>,
 }
@@ -1522,10 +1209,10 @@ pub fn machine(racine: &Path) -> Machine {
         compagnie: match crate::installation::est_fictive(racine) {
             Ok(true) => "fictive".to_string(),
             Ok(false) => "réelle (non nommée)".to_string(),
-            Err(e) => socle::echec::phrase_de(&e),
+            Err(e) => e.phrase,
         },
         langue_systeme: langue,
-        lance_depuis: duree_lisible(demarrage().elapsed()),
+        duree_lance: duree_lisible(demarrage().elapsed()),
         mises_a_jour,
         page: page(),
     }
@@ -1537,7 +1224,7 @@ pub fn machine(racine: &Path) -> Machine {
 #[derive(Debug, serde::Serialize)]
 pub struct DepotDit {
     quoi: String,
-    quand: String,
+    quand: socle::paris::HeureDuJournal,
     mode: String,
     accepte: bool,
     retours: Vec<String>,
@@ -1552,39 +1239,34 @@ pub struct EtatDuMois {
     depots: Vec<DepotDit>,
 }
 
-/// L'etat de `mois` (`AAAA-MM`) ; `None` si `mois` n'est pas un mois. Un engagement ou un journal qui ne se lit pas se
-/// refuse.
-pub fn etat_du_mois(racine: &Path, mois: &str) -> R<Option<EtatDuMois>> {
-    let b = mois.as_bytes();
-    if !(b.len() == 7 && b[4] == b'-' && b.iter().enumerate().all(|(i, c)| i == 4 || c.is_ascii_digit())) {
-        return Ok(None);
-    }
-    let objets = engagement::stock::objets_du_mois(racine, mois).map_err(socle::echec::Echec::from)?;
+/// L'etat de `mois`. Un engagement ou un journal qui ne se lit pas se refuse.
+pub fn etat_du_mois(racine: &Path, mois: socle::mois::Mois) -> R<EtatDuMois> {
+    let objets = engagement::stock::objets_du_mois(racine, mois)?;
     let journal = envois::journal::lu(racine)?;
     let du_mois: Vec<DepotDit> = journal
         .lignes
         .iter()
-        .filter(|d| d.mois().is_some_and(|m| m.to_string() == mois))
+        .filter(|d| d.mois() == Some(mois))
         .map(|d| DepotDit {
             quoi: d.acte().nom().to_string(),
-            quand: d.quand().to_string(),
+            quand: d.quand(),
             mode: d.mode().nom().to_string(),
             accepte: d.accepte(),
             retours: d
                 .retours_organisme()
                 .iter()
                 .map(|r| match &r.verdict {
-                    Some(v) => format!("{} {}", r.nature, v),
-                    None => format!("{} sans verdict", r.nature),
+                    Some(v) => format!("{} {}", r.nature_retour, v),
+                    None => format!("{} sans verdict", r.nature_retour),
                 })
                 .collect(),
         })
         .collect();
     let n = du_mois.len();
-    Ok(Some(EtatDuMois {
+    Ok(EtatDuMois {
         saisie: !objets.is_empty(),
         engagements: objets.len(),
         valides: objets.iter().filter(|o| o.est_valide()).count(),
         depots: du_mois.into_iter().skip(n.saturating_sub(8)).collect(),
-    }))
+    })
 }

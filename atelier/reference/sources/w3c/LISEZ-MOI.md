@@ -30,3 +30,10 @@ Les recommandations du W3C se copient et se diffusent avec leur notice (W3C Docu
 `atelier/sources/paie/src/tables_retours.rs`, `NOM_DEBUT` (`Letter` ou `_`) et `NOM_SUITE` (`NameChar`), le deux-points à
 part : écrites par `paie generer-tables` (`src/generer_tables.rs`, `production`) depuis la quatrième édition ; lues par
 `retours::nom_valide` (`controle_expat`).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `w3c-xml-1.0-cinquieme-edition-20081126.html` : `f58a4b9e1e5b8bac13fb55c4e5c7c8c5e2c176aa45ee68e2f1ab2498511927ec`
+- `w3c-xml-1.0-quatrieme-edition-20060816.html` : `a520bc8c34a6ae9a6b9f80440f0edc5d017c8562f6ec259d3888f2a2a3520021`

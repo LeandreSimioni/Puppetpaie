@@ -3,7 +3,6 @@
 //! ce que le droit en rend. `PUPPETPAIE_REECRIRE_ORACLES=1` les reecrit.
 
 use crate::outils::typee::{cas_de, jouer, Rendu};
-use droit::natures::nature;
 use droit::permanents as p;
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
@@ -74,8 +73,14 @@ fn legale(i: p::IndemniteLegale) -> IndemniteLegale {
 }
 
 // Les entrees de chaque fonction : ses arguments, dans l'ordre.
-type Nature = String;
+type Nature = droit::natures::NatureDeContrat;
 type Motif = Option<String>;
+
+/// Le motif de rupture d'un cas (S21.G00.62.002) : un code hors de la liste de la norme est une donnee invalide, que le
+/// test refuse en la nommant.
+fn motif(m: &Motif) -> Option<droit::natures::MotifDeRupture> {
+    m.as_deref().map(|c| droit::natures::MotifDeRupture::du_code(c).unwrap_or_else(|| panic!("le motif {:?} de l'oracle n'est pas un code de S21.G00.62.002 : donnee invalide", c)))
+}
 
 fn arrondir_jours(a: &(Decimal,)) -> Decimal {
     p::arrondir_jours(a.0)
@@ -103,7 +108,7 @@ fn les_conges() {
 }
 
 fn precarite_due(a: &(Nature, Motif)) -> Rendu<Option<String>> {
-    p::precarite_due(&nature(&a.0).unwrap(), a.1.as_deref()).into()
+    p::precarite_due(&a.0.proprietes().unwrap(), motif(&a.1)).into()
 }
 fn indemnite_precarite(a: &(Decimal,)) -> Rendu<Decimal> {
     p::indemnite_precarite(a.0).into()
@@ -112,14 +117,14 @@ fn anciennete_mois(a: &(Jour, Jour)) -> Decimal {
     p::anciennete_mois(&a.0, &a.1)
 }
 fn preavis_mois(a: &(Decimal, Motif)) -> Rendu<Option<Decimal>> {
-    p::preavis_mois(a.0, a.1.as_deref(), false).into()
+    p::preavis_mois(a.0, motif(&a.1), false).into()
 }
 fn salaire_de_reference(a: &(Vec<Decimal>, Vec<Decimal>)) -> SalaireDeReference {
     let s = p::salaire_de_reference(&a.0, &a.1);
     SalaireDeReference { moyenne_12_mois: s.moyenne_12_mois, tiers_3_mois: s.tiers_3_mois, retenu: s.retenu, regle: s.regle.to_string() }
 }
 fn indemnite_licenciement(a: &(Decimal, Decimal, Motif)) -> Rendu<IndemniteLegale> {
-    p::indemnite_licenciement(a.0, a.1, a.2.as_deref()).map(legale).into()
+    p::indemnite_licenciement(a.0, a.1, motif(&a.2)).map(legale).into()
 }
 fn indemnite_mise_a_la_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteLegale> {
     p::indemnite_mise_a_la_retraite(a.0, a.1).map(legale).into()
@@ -131,10 +136,10 @@ fn indemnite_depart_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteDuDepart>
     p::indemnite_depart_retraite(a.0, a.1).map(|i| IndemniteDuDepart { montant: i.montant, du: i.du, mois: i.mois, palier: i.palier, pourquoi: i.pourquoi }).into()
 }
 fn rupture(a: &(Motif,)) -> Rendu<Option<Fin>> {
-    p::rupture(a.0.as_deref()).map(|o| o.map(|(fin, rubrique)| Fin { cle: fin.cle().to_string(), rubrique })).into()
+    p::rupture(motif(&a.0)).map(|o| o.map(|(fin, rubrique)| Fin { cle: fin.cle().to_string(), rubrique })).into()
 }
 fn code_52_permis(a: &(Motif, Motif)) -> Rendu<Option<String>> {
-    p::code_52_permis(a.0.as_deref(), a.1.as_deref()).into()
+    p::code_52_permis(a.0.as_deref(), motif(&a.1)).into()
 }
 
 #[test]
@@ -153,7 +158,7 @@ fn la_fin_du_contrat() {
 }
 
 fn droit_au_maintien(a: &(Option<Nature>, Decimal)) -> Rendu<Option<String>> {
-    let n = a.0.as_deref().map(|n| nature(n).unwrap());
+    let n = a.0.map(|n| n.proprietes().unwrap());
     p::droit_au_maintien(n.as_deref(), a.1).into()
 }
 fn jours_de_carence(a: &(bool, bool)) -> Rendu<i64> {
@@ -175,7 +180,7 @@ fn le_maintien() {
 #[test]
 fn chaque_indemnite_a_le_code_et_le_regime_de_sa_rubrique() {
     let rg = p::regles().unwrap();
-    let r = |code: &str| droit::catalogue::rubrique(std::path::Path::new("/nulle-part"), code, &Jour::lire("2026-10-01").unwrap()).unwrap();
+    let r = |code: &str| droit::catalogue::rubrique(std::path::Path::new("/nulle-part"), code, &Jour::nouveau(2026, 10, 1).unwrap()).unwrap();
     let codes = [
         (rg.conges_payes.indemnite_compensatrice.rubrique.clone(), &rg.conges_payes.indemnite_compensatrice.dsn_bloc52),
         (rg.indemnite_precarite.rubrique.clone(), &rg.indemnite_precarite.dsn_bloc52),

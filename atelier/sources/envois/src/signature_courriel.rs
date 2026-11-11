@@ -15,6 +15,7 @@
 
 use droit::fiche::Lue as _;
 use std::path::Path;
+use socle::echec::R;
 
 use regex::Regex;
 
@@ -47,7 +48,7 @@ pub struct CorpsDeSignature {
 }
 
 /// La signature d'une fiche Entreprise. `Err` : elle est posee mais trop lourde.
-pub fn de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -> Result<Option<Signature>, String> {
+pub fn de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -> R<Option<Signature>> {
     let nom = ent.courriel_nom.portee().map(|n| nom_sur(n.trim()));
     let brut = ent.courriel_signature.portee().map(str::trim);
     if nom.is_none() && brut.is_none() {
@@ -56,7 +57,7 @@ pub fn de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -> Result<Option<Signat
     let mut corps = None;
     if let Some(brut) = brut {
         if let Some(m) = trop_lourde(brut) {
-            return Err(format!("Rien n'est parti : {}. Allegez-la dans la fiche Entreprise.", m));
+            return Err(socle::refus!("Rien n'est parti : {}. Allegez-la dans la fiche Entreprise.", m));
         }
         let html = nettoyer(brut);
         corps = Some(CorpsDeSignature { texte: en_texte(&html), html });
@@ -65,7 +66,7 @@ pub fn de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -> Result<Option<Signat
 }
 
 /// La signature de la compagnie de `racine` (`config/entreprise.json`).
-pub fn du_poste(racine: &Path) -> Result<Option<Signature>, String> {
+pub fn du_poste(racine: &Path) -> R<Option<Signature>> {
     let p = racine.join(droit::contexte::ENTREPRISE);
     if !p.exists() {
         return Ok(None);
@@ -195,10 +196,9 @@ pub fn signer(message: &Message, s: &Signature) -> Message {
     };
     let tete = tete_du_texte(&m.corps);
     m.corps = format!("{}{}\n", tete, s.texte);
-    m.html = if m.html.is_empty() {
-        html_signe(&socle::html::courriel_en_html(tete.trim_end()), s)
-    } else {
-        html_signe(&m.html, s)
-    };
+    m.html = Some(match &m.html {
+        None => html_signe(&socle::html::courriel_en_html(tete.trim_end()), s),
+        Some(html) => html_signe(html, s),
+    });
     m
 }

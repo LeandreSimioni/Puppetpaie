@@ -28,7 +28,6 @@ use sha2::{Digest, Sha256};
 
 use socle::texte::{lignes_du_texte, texte_latin1};
 use socle::echec::R;
-use socle::echec::erreur;
 
 /// Une archive dans une archive dans une archive... s'ouvre jusqu'a cette profondeur, pas au-dela.
 const PROFONDEUR_MAX: usize = 4;
@@ -102,8 +101,8 @@ pub struct Fichier {
     pub doublon_de: Option<String>,
     /// L'archive d'ou il sort.
     pub archive: Option<String>,
-    /// Le mois qu'une DSN declare (`AAAA-MM`).
-    pub mois: Option<String>,
+    /// Le mois qu'une DSN declare.
+    pub mois: Option<socle::mois::Mois>,
 }
 
 /// Le tri d'un dossier : chaque fichier, dans l'ordre du parcours (noms tries, une archive suivie de
@@ -118,12 +117,11 @@ pub struct Tri {
 /// (cree s'il manque ; s'il est sous `dossier`, il n'est pas parcouru), et donne a chaque fichier sa sorte.
 pub fn trier(dossier: &Path, travail: &Path) -> R<Tri> {
     if !dossier.is_dir() {
-        let a_part = socle::echec::APart { chemin: Some(dossier.to_string_lossy().into_owned()), ..Default::default() };
-        return Err(erreur(socle::echec::Classe::Refuse, socle::echec::avec("Le dossier à trier n'existe pas.", a_part)));
+        let a_part = socle::echec::Lieu { chemin: Some(dossier.to_string_lossy().into_owned()), ..Default::default() };
+        return Err(socle::echec::refus_avec("Le dossier à trier n'existe pas.", a_part).reclasser(socle::echec::Classe::Refuse));
     }
-    std::fs::create_dir_all(travail)
-        .map_err(|e| erreur(socle::echec::Classe::Refuse, socle::echec::du_disque(travail, &e)))?;
-    let travail_canon = std::fs::canonicalize(travail).map_err(|e| erreur(socle::echec::Classe::Disque, socle::echec::du_disque(travail, &e)))?;
+    std::fs::create_dir_all(travail).map_err(|e| socle::echec::du_disque(travail, &e).reclasser(socle::echec::Classe::Refuse))?;
+    let travail_canon = std::fs::canonicalize(travail).map_err(|e| socle::echec::du_disque(travail, &e).reclasser(socle::echec::Classe::Disque))?;
     let mut t = Trieur { travail: travail.to_path_buf(), travail_canon, vus: HashMap::new(), fichiers: Vec::new() };
     t.parcourir(dossier, "", None, 0);
     Ok(Tri { dossier: dossier.to_path_buf(), fichiers: t.fichiers })
@@ -240,12 +238,12 @@ impl Trieur {
             match declarations::dsn_lue::lire_une_dsn(&f.disque) {
                 Ok(Some(declarations::dsn_lue::DsnLue { mois: Some(m), .. })) => {
                     f.sorte = Sorte::Dsn;
-                    f.mois = Some(m.to_string());
+                    f.mois = Some(m);
                 }
                 // Une DSN fautive reste une DSN : sa lecture refuse l'import, et dit quoi corriger (`dsn_aem::lire_dsn`).
                 Err(e) => {
                     f.sorte = Sorte::Dsn;
-                    f.raison = Some(e.message);
+                    f.raison = Some(e.phrase);
                 }
                 Ok(_) => {
                     f.sorte = Sorte::Illisible;
@@ -282,10 +280,10 @@ impl Trieur {
         };
         let assaini: String = nom.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') { c } else { '_' }).collect();
         let cible = self.travail.join(format!("{}-{}", assaini, &f.empreinte[..12]));
-        let _ = std::fs::remove_dir_all(&cible);
-        if let Err(e) = std::fs::create_dir_all(&cible) {
+        let pret = socle::fichiers::effacer(&cible).and_then(|()| std::fs::create_dir_all(&cible).map_err(|e| socle::echec::du_disque(&cible, &e)));
+        if let Err(e) = pret {
             f.sorte = Sorte::Illisible;
-            f.raison = Some(format!("le dossier de travail de l'archive ne se cree pas ({})", e));
+            f.raison = Some(format!("le dossier de travail de l'archive ne se cree pas ({})", e.phrase));
             self.fichiers.push(f);
             return;
         }
@@ -315,7 +313,12 @@ impl Trieur {
             };
             let chemin = cible.join(rel);
             if e.is_dir() {
-                let _ = std::fs::create_dir_all(&chemin);
+                if let Err(x) = std::fs::create_dir_all(&chemin) {
+                    let mut r = self.nouveau(format!("{}/{}", f.chemin, brut.trim_end_matches('/')), chemin.clone(), Some(&f.chemin));
+                    r.sorte = Sorte::Illisible;
+                    r.raison = Some(format!("dossier d'archive qui ne se cree pas ({})", x));
+                    refusees.push(r);
+                }
                 continue;
             }
             let mut contenu = Vec::new();
@@ -336,8 +339,10 @@ impl Trieur {
                     let mut r = self.nouveau(format!("{}/{}", f.chemin, brut.trim_end_matches('/')), chemin.clone(), Some(&f.chemin));
                     r.sorte = Sorte::Illisible;
                     r.taille = e.size();
-                    r.raison = Some(format!("entree d'archive qui ne s'extrait pas ({})", m));
-                    let _ = std::fs::remove_file(&chemin);
+                    r.raison = Some(match socle::fichiers::effacer(&chemin) {
+                        Ok(()) => format!("entree d'archive qui ne s'extrait pas ({})", m),
+                        Err(n) => format!("entree d'archive qui ne s'extrait pas ({}), et ce qui en est sorti ne s'efface pas ({})", m, n.phrase),
+                    });
                     refusees.push(r);
                     if total > DECOMPRESSE_MAX {
                         break;
@@ -380,18 +385,21 @@ fn lire_pdf(f: &mut Fichier) {
         Err(crate::releve::Refus::Fabrique(r)) => {
             f.sorte = Sorte::Illisible;
             // Le refus de la fabrique commence par le chemin du disque : seule la cause compte ici.
-            let cause = match r.strip_prefix(&*f.disque.to_string_lossy()) {
+            let cause = match r.phrase.strip_prefix(&*f.disque.to_string_lossy()) {
                 Some(c) => c,
-                None => r.as_str(),
+                None => r.phrase.as_str(),
             }
             .trim_start_matches([' ', ':'])
             .to_string();
-            f.raison = Some(format!("PDF que la fabrique n'ouvre pas : {}", cause));
+            f.raison = Some(match r.classe {
+                fabrique_pdf::Classe::PieceIllisible | fabrique_pdf::Classe::ACorriger => format!("PDF que la fabrique n'ouvre pas : {}", cause),
+                fabrique_pdf::Classe::DefautDuLogiciel => format!("PDF que la fabrique n'ouvre pas, par un défaut du logiciel à signaler au développeur : {}", cause),
+            });
             return;
         }
         Err(crate::releve::Refus::Releve(e)) => {
             f.sorte = Sorte::Illisible;
-            f.raison = Some(format!("PDF dont le releve ne se lit pas ({})", e));
+            f.raison = Some(format!("PDF dont le releve ne se lit pas ({})", e.phrase));
             return;
         }
     };
@@ -425,7 +433,7 @@ fn lire_pdf(f: &mut Fichier) {
 fn lire_aem(f: &mut Fichier, octets: &[u8]) {
     let lignes: Vec<Vec<char>> =
         lignes_du_texte(&texte_latin1(apres_bom(octets))).into_iter().filter(|l| !l.is_empty()).map(|l| l.chars().collect()).collect();
-    let date = |l: &[char], a: usize| socle::date::lire_aaaammjj(&l[a..a + 8].iter().collect::<String>()).is_some();
+    let date = |l: &[char], a: usize| socle::piece::Zone::lue(&l[a..a + 8].iter().collect::<String>(), socle::piece::format::Aaaammjj).valeur().is_some();
     for (i, l) in lignes.iter().enumerate() {
         let marque: String = l.iter().take(AEM_MARQUE.len()).collect();
         let defaut = if marque != AEM_MARQUE {

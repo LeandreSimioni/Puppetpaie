@@ -188,7 +188,8 @@ async function lancerDossier(route, apercu) {
   catch (e) { cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`; return; }
   if (r.envoi) fenetreCourrielsFictifs("documents", repere);
   const lignes = r.salaries.map((c) => `<tr><td>${echapper(c)}</td><td>${
-    Object.entries(r.pages[c] || {}).map(([k, n]) => echapper(r.libelles[k]) + " : " + n + " p.").join(" · ")
+    // Un salarié sans pièce n'a pas de pages.
+    (c in r.pages ? Object.entries(r.pages[c]) : []).map(([k, n]) => echapper(r.libelles[k]) + " : " + n + " p.").join(" · ")
   }</td></tr>`).join("");
   cible.innerHTML = `
     <h3>Dossier — ${echapper(r.periode)}</h3>
@@ -230,7 +231,7 @@ function dessinerQuestions(opt) {
       ${q.has("regroupement") ? `<div class="champ">
         <label for="x-par">Regroupement</label>
         <select id="x-par">
-          ${p.regroupements.filter((r) => (forme.regroupements || []).includes(r.regroupement))
+          ${p.regroupements.filter((r) => forme.regroupements.includes(r.regroupement))
               .map((r) => opt(r.regroupement, r.quoi,
                               r.regroupement === forme.regroupements[0])).join("")}
         </select>
@@ -255,7 +256,7 @@ function dessinerQuestions(opt) {
       ${q.has("format") ? `<div class="champ" id="x-format-champ">
         <label for="x-format">Format</label>
         <select id="x-format">
-          ${p.formats.filter((f) => (forme.formats || []).includes(f.format)).map((f) => opt(f.format,
+          ${p.formats.filter((f) => forme.formats.includes(f.format)).map((f) => opt(f.format,
             f.quoi,
             f.format === "csv")).join("")}
         </select>
@@ -276,10 +277,12 @@ function dessinerQuestions(opt) {
   if (q.has("logiciel")) {
     const retenir = async () => {
       document.getElementById("exports-resultat").innerHTML = "";
+      // « Aucun » ne nomme aucun logiciel : la charge n'en porte pas.
+      const charge = { analytique: document.getElementById("x-analytique").checked };
+      const logiciel = document.getElementById("x-logiciel").value;
+      if (logiciel) charge.logiciel = logiciel;
       try {
-        EXPORTS.compta = await api("retenir-logiciel", {
-          logiciel: document.getElementById("x-logiciel").value,
-          analytique: document.getElementById("x-analytique").checked });
+        EXPORTS.compta = await api("retenir-logiciel", charge);
       } catch (e) { dire(e.message, "erreur"); }
       montrerLogiciel();
     };
@@ -312,7 +315,7 @@ function montrerLogiciel() {
   const porte = choisi ? choisi.analytique
     : c.logiciels.some((l) => l.analytique && f && l.format === f.value);
   document.getElementById("x-analytique-champ").classList.toggle("cachee", !porte);
-  document.getElementById("x-controle").innerHTML = (c.controle || []).map((m) =>
+  document.getElementById("x-controle").innerHTML = c.controle.map((m) =>
     `<div class="encart alerte">${echapper(m)}</div>`).join("") + `<div id="x-courts"></div>`;
   montrerCourts(choisi ? choisi.format : (f ? f.value : ""));
 }
@@ -343,7 +346,7 @@ async function ouvrirCourts(format, phrase) {
       <td>${echapper(l.zone)}</td><td>${echapper(l.long)}</td>
       <td><input type="text" class="x-court" data-i="${i}" size="${l.largeur + 2}" value="${echapper(l.court ?? l.propose)}"></td>
     </tr>`).join("");
-  ouvrirBoite(`<h3>Libellés courts — ${echapper(r.nom || "")}</h3>
+  ouvrirBoite(`<h3>Libellés courts${r.nom ? ` — ${echapper(r.nom)}` : ""}</h3>
     <div class="encart" id="x-courts-dit">${echapper(phrase || r.phrase)}</div>
     <table class="tableau"><tr><th>Zone</th><th>Libellé</th><th>Valeur courte</th></tr>${lignes}</table>
     <div class="actions">
@@ -399,7 +402,7 @@ function dessinerCalendrier(periodes) {
         : d.quand === "mois" && d.periode === periode;
       b.classList.toggle("pris", !!pris);
     });
-    document.getElementById("x-quand-dit").textContent = "— " + dit;
+    document.getElementById("x-quand-dit").textContent = dit ? "— " + dit : "";
     document.getElementById("exports-resultat").innerHTML = "";
   };
   cal.querySelectorAll("button").forEach((b) => {
@@ -409,7 +412,10 @@ function dessinerCalendrier(periodes) {
   const dernier = EXPORTS.mois[EXPORTS.mois.length - 1];
   if (peutMois && dernier) choisir("mois", dernier, moisEnClair(dernier));
   else if (peutAn && annees.length) choisir("annee", annees[0], annees[0]);
-  else choisir("toutes", "", (cal.querySelector("[data-quand=toutes]") || { dataset: {} }).dataset.dit || "");
+  else {
+    const tout = cal.querySelector("[data-quand=toutes]");
+    choisir("toutes", "", tout && tout.dataset.dit);
+  }
 }
 
 async function lancerExport(apercu) {
@@ -571,14 +577,14 @@ function dessinerTableau(r, apercu) {
     <h2>${echapper(r.titre)} — ${echapper(r.periode)}</h2>
     <p class="discret">${echapper(r.phrase)}</p>
     ${r.ecran.personnelles ? `<div class="encart alerte">${echapper(r.ecran.personnelles)}</div>` : ""}
-    ${(r.avertissements || []).map((a) =>
+    ${r.avertissements.map((a) =>
         `<div class="encart info">${echapperLiens(a)}</div>`).join("")}
     <div class="tableau-compta"><table class="compta">
       <tr>${r.colonnes.map((c) => `<th${droite(c) ? ' class="r"' : ""}>${echapper(c.libelle)}</th>`).join("")}</tr>
       ${corps}
       ${r.total ? rang(r.total, "total-general") : ""}
     </table></div>
-    ${(r.sources || []).length ? `<details><summary>Sources</summary><ul>${
+    ${r.sources.length ? `<details><summary>Sources</summary><ul>${
       r.sources.map((x) => `<li class="discret">${echapper(x)}</li>`).join("")}</ul></details>` : ""}
     ${r.fichier ? `<div class="actions">
       <button class="lien" id="x-dossier-2">Ouvrir le dossier</button></div>` : ""}`;
@@ -625,7 +631,7 @@ function dessinerLivre(r, apercu) {
     <h2>${echapper(r.periode)}</h2>
     <p class="discret">${echapper(r.phrase)}</p>
     ${r.ecran.partiels ? `<div class="encart info">${echapper(r.ecran.partiels)}</div>` : ""}
-    ${(r.avertissements || []).map((a) =>
+    ${r.avertissements.map((a) =>
         `<div class="encart info">${echapperLiens(a)}</div>`).join("")}
     <div class="tableau-compta"><table class="compta">
       <tr><th>Mois</th><th>Salarié</th><th>Spectacle</th><th>Brut</th>
@@ -686,7 +692,7 @@ async function lancerExportCompta(annee) {
     <p class="discret">Mois ${r.mois.map((m) => m.slice(5)).join(", ")} — ${r.ecritures.length}
       écritures, débit ${echapper(euros(r.total_debit))} = crédit ${echapper(euros(r.total_credit))}.
       ${r.fichier ? `Écrit : <b>${echapper(r.fichier)}</b>` : ""}</p>
-    ${(r.avertissements || []).map((a) => `<div class="encart info">${echapperLiens(a)}</div>`).join("")}
+    ${r.avertissements.map((a) => `<div class="encart info">${echapperLiens(a)}</div>`).join("")}
     <div class="tableau-compta"><table class="compta">
       <tr><th>Mois</th><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th><th>Analytique</th></tr>
       ${lignes}

@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 
 use socle::date::Jour;
 use socle::fichiers::{forme_en_cache, FormeGardee};
-use socle::num::Resultat;
+use socle::echec::R;
 
 use crate::contexte::{Contexte, ORGANISMES};
 use crate::fiche::{Datee, Lue, Piece};
@@ -99,11 +99,13 @@ forme_notee! {
     pub struct Ctp {
         pub code: String,
         pub qualifiant: String,
-        pub assiette: Option<String>,
-        pub montant: Option<String>,
+        pub assiette: Option<crate::bordereau::AssietteDuBordereau>,
+        pub montant: Option<crate::bordereau::MontantDuBordereau>,
         pub taux_at: Option<TauxAt>,
         pub statut: Option<String>,
-        pub nature: Option<String>,
+        /// La population : `intermittent` ou `permanent` (`ParNature`).
+        #[serde(rename = "nature")]
+        pub population: Option<String>,
         pub effectif_au_moins: Option<i64>,
         pub effectif_sous: Option<i64>,
     }
@@ -159,7 +161,7 @@ pub struct Niveau {
 }
 
 /// LA LECTURE DE `donnees/organismes-base.json`, la seule, une fois tant que le fichier ne change pas.
-pub fn base() -> Resultat<Arc<Base>> {
+pub fn base() -> R<Arc<Base>> {
     static CACHE: OnceLock<FormeGardee<Base>> = OnceLock::new();
     forme_en_cache(&CACHE, "organismes-base.json", "La table livrée des organismes ne se lit pas : le signaler au développeur.", Ok)
 }
@@ -226,16 +228,23 @@ impl Adhesion {
 }
 
 /// Ce que l'ecran saisit d'un contrat (`organismes-enregistrer`, `contrats` : cle -> saisie) : sa reference chez
-/// l'organisme et le code de l'organisme.
+/// l'organisme et le code de l'organisme. Une case vide est absente ou nulle ; `""` se refuse a la porte (`TexteDit`).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Saisie {
-    pub libelle: Option<String>,
-    pub organisme: Option<String>,
+    pub libelle: Option<socle::forme::TexteDit>,
+    pub organisme: Option<socle::forme::TexteDit>,
+}
+
+impl Saisie {
+    /// Une case saisie, sans ses blancs autour et en capitales ; des blancs seuls ne disent rien.
+    fn dite(case: &Option<socle::forme::TexteDit>) -> Option<String> {
+        case.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(str::to_uppercase)
+    }
 }
 
 /// LA LECTURE DE `config/organismes.json`, la seule ; absent, il ne dit rien.
-pub fn fichier_organismes(ctx: &Contexte) -> Resultat<FichierOrganismes> {
+pub fn fichier_organismes(ctx: &Contexte) -> R<FichierOrganismes> {
     let p = ctx.racine.join(socle::fichiers::CONFIG).join(ORGANISMES);
     if !p.is_file() {
         return Ok(FichierOrganismes::default());
@@ -244,9 +253,9 @@ pub fn fichier_organismes(ctx: &Contexte) -> Resultat<FichierOrganismes> {
 }
 
 /// Le numero d'une reference d'adhesion (S21.G00.15.001) : une reference qui n'en est pas un se refuse.
-fn numero_de_reference(reference: &str) -> Resultat<u32> {
+fn numero_de_reference(reference: &str) -> R<u32> {
     reference.trim().parse::<u32>().map_err(|_| {
-        format!("La référence d'adhésion « {} » (S21.G00.15.001) n'est pas un nombre : la corriger dans les organismes de la compagnie.", reference)
+        socle::refus!("La référence d'adhésion « {} » (S21.G00.15.001) n'est pas un nombre : la corriger dans les organismes de la compagnie.", reference)
     })
 }
 
@@ -254,14 +263,14 @@ fn numero_de_reference(reference: &str) -> Resultat<u32> {
 /// periode quelconque du fichier porte. Le fichier ne porte que ce qu'aucun texte ne donne : de lui ne se lisent que les
 /// adhesions, et une adhesion qui recopie un contrat qu'un texte donne entier (`donnes_par_un_texte`) n'est pas une
 /// saisie, sous quelque convention qu'on lise. Son identifiant reste pris : il a pu partir dans une DSN.
-pub fn saisis(ctx: &Contexte) -> Resultat<(Vec<Adhesion>, Vec<u32>)> {
+pub fn saisis(ctx: &Contexte) -> R<(Vec<Adhesion>, Vec<u32>)> {
     let fichier = fichier_organismes(ctx)?;
     let Some(liste) = fichier.adhesions_prevoyance.as_deref() else { return Ok((Vec::new(), Vec::new())) };
     let prises = liste
         .iter()
         .flat_map(|e| e.valeur.dite().into_iter().flatten())
         .map(|a| numero_de_reference(&a.reference))
-        .collect::<Resultat<Vec<u32>>>()?;
+        .collect::<R<Vec<u32>>>()?;
     let au = crate::fiche::valeur_au(liste,&ctx.lue_au);
     let textes = donnes_par_un_texte()?;
     let adhesions: Vec<Adhesion> = au
@@ -280,7 +289,7 @@ pub fn saisis(ctx: &Contexte) -> Resultat<(Vec<Adhesion>, Vec<u32>)> {
 /// Les references de contrat (S21.G00.15.001) qu'un texte livre donne entieres, toutes conventions confondues : les
 /// `libelle` des contrats de `organismes-base.json` et celui de la CASC-SVP (`casc-svp-base.json`). Une contribution de
 /// branche se reconnait a son nom (`saisis`).
-fn donnes_par_un_texte() -> Resultat<Vec<String>> {
+fn donnes_par_un_texte() -> R<Vec<String>> {
     let base = base()?;
     let mut out: Vec<String> =
         base.tous_les_contrats().filter_map(|c| c.libelle.as_deref()).map(|l| l.trim().to_uppercase()).filter(|l| !l.is_empty()).collect();
@@ -295,7 +304,7 @@ fn donnes_par_un_texte() -> Resultat<Vec<String>> {
 
 /// UN CONTRAT ATTENDU d'une compagnie a une date : un contrat qu'un texte exige (`Contrat`), la CASC-SVP, ou une
 /// contribution de branche du bareme. `libelle_defaut` : la reference que l'ecran propose quand rien n'est saisi.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Attendu {
     pub cle: String,
     pub role: Option<String>,
@@ -328,7 +337,8 @@ impl From<&Contrat> for Attendu {
             organisme: c.organisme.clone(),
             organisme_fixe: c.organisme_fixe,
             note: c.note.clone(),
-            ..Attendu::default()
+            libelle_defaut: None,
+            contribution: None,
         }
     }
 }
@@ -358,7 +368,7 @@ impl Attendu {
 }
 
 /// Les contrats que cette compagnie declare a la date du contexte, dans l'ordre ou ils se presentent.
-pub fn attendus(ctx: &Contexte) -> Resultat<Vec<Attendu>> {
+pub fn attendus(ctx: &Contexte) -> R<Vec<Attendu>> {
     let idcc = ctx.entreprise.idcc.portee().map(str::trim);
     let base = base()?;
     let mut out: Vec<Attendu> = base.contrats.tous.iter().map(Attendu::from).collect();
@@ -373,7 +383,12 @@ pub fn attendus(ctx: &Contexte) -> Resultat<Vec<Attendu>> {
             quoi: "CASC-SVP (activités sociales et culturelles)".into(),
             organisme: Some(casc.delegataire),
             organisme_fixe: true,
-            ..Attendu::default()
+            role: None,
+            libelle_defaut: None,
+            depuis: None,
+            jusqu_a: None,
+            contribution: None,
+            note: None,
         });
     }
     // Les contributions de branche en DSN : la convention de la date dit lesquelles (`Contexte::contributions_dsn`).
@@ -391,7 +406,12 @@ pub fn attendus(ctx: &Contexte) -> Resultat<Vec<Attendu>> {
             quoi: format!("Contribution {} (en DSN depuis {})", nom, c.en_dsn_depuis),
             organisme: Some(AUDIENS.into()),
             organisme_fixe: true,
-            ..Attendu::default()
+            role: None,
+            libelle: None,
+            reference: None,
+            depuis: None,
+            jusqu_a: None,
+            note: None,
         });
     }
     out.extend(idcc.and_then(|i| base.contrats.conventions.get(i)).into_iter().flatten().map(Attendu::from));
@@ -426,8 +446,8 @@ pub struct Ligne {
     /// Sa piece (`Attendu::piece`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub piece: Option<Piece>,
-    pub depuis: Option<String>,
-    pub jusqu_a: Option<String>,
+    pub depuis: Option<socle::date::Jour>,
+    pub jusqu_a: Option<socle::date::Jour>,
     pub note: Option<String>,
 }
 
@@ -455,8 +475,8 @@ pub fn ligne(spec: &Attendu, saisi: &[Adhesion]) -> Ligne {
         organisme,
         organisme_fixe: spec.organisme_fixe,
         piece: spec.piece(),
-        depuis: spec.depuis.map(|j| j.iso()),
-        jusqu_a: spec.jusqu_a.map(|j| j.iso()),
+        depuis: spec.depuis,
+        jusqu_a: spec.jusqu_a,
         note: net(&spec.note),
     }
 }
@@ -550,18 +570,18 @@ pub fn composer(
     mut prises: Vec<u32>,
     saisies: &BTreeMap<String, Saisie>,
     exiger: Option<(&(Jour, Jour), bool)>,
-) -> Resultat<Organismes> {
+) -> R<Organismes> {
     // Chaque contrat retenu, avec sa reference quand le texte ou la saisie la disent.
     let mut retenus: Vec<(Attendu, Option<String>, String, String)> = Vec::new();
     for spec in attendus(ctx)? {
         let l = ligne(&spec, saisi);
         let maintenant = saisies.get(spec.cle.trim());
         let libelle = match maintenant {
-            Some(s) if !l.libelle_fixe => net(&s.libelle).map(|t| t.to_uppercase()),
+            Some(s) if !l.libelle_fixe => Saisie::dite(&s.libelle),
             _ => l.libelle.clone(),
         };
         let organisme = match maintenant {
-            Some(s) if !l.organisme_fixe => net(&s.organisme).map(|t| t.to_uppercase()),
+            Some(s) if !l.organisme_fixe => Saisie::dite(&s.organisme),
             _ => l.organisme.clone(),
         };
         let quoi = spec.quoi.trim().to_string();
@@ -572,7 +592,7 @@ pub fn composer(
             if (spec.piece() == Some(Piece::Permanent) && !permanents) || !spec.couvre(periode) {
                 continue;
             }
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : la référence du contrat manque. Elle se lit sur la fiche de paramétrage DSN de l'organisme \
 (« référence contrat »).",
                 quoi
@@ -580,7 +600,7 @@ pub fn composer(
         };
         // Les longueurs du cahier technique : S21.G00.15.001 de 1 a 30, S21.G00.15.002 de 5 a 9.
         if libelle.chars().count() > 30 {
-            return Err(format!("{} : « {} » dépasse 30 caractères, ce que la DSN n'admet pas.", quoi, libelle));
+            return Err(socle::refus!("{} : « {} » dépasse 30 caractères, ce que la DSN n'admet pas.", quoi, libelle));
         }
         let organisme = match organisme {
             Some(o) if (5..=9).contains(&o.chars().count()) && !o.contains(char::is_whitespace) => o,
@@ -589,7 +609,7 @@ pub fn composer(
                     Some(o) => format!("« {} »", o),
                     None => "vide".to_string(),
                 };
-                return Err(format!(
+                return Err(socle::refus!(
                     "{} : le code de l'organisme ({}) a de 5 à 9 caractères sans espace, comme P0983 pour Audiens. Il est \
 sur le certificat d'adhésion et la fiche de paramétrage DSN.",
                     quoi, dit
@@ -645,7 +665,7 @@ sur le certificat d'adhésion et la fiche de paramétrage DSN.",
     let mut adhesions = retenus
         .into_iter()
         .map(|(_, a)| Ok((numero_de_reference(&a.reference)?, a)))
-        .collect::<Resultat<Vec<(u32, Adhesion)>>>()?;
+        .collect::<R<Vec<(u32, Adhesion)>>>()?;
     adhesions.sort_by_key(|(n, _)| *n);
     let adhesions: Vec<Adhesion> = adhesions.into_iter().map(|(_, a)| a).collect();
     Ok(Organismes {

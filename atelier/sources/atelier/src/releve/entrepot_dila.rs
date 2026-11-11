@@ -41,7 +41,7 @@ use crate::EnOrdre;
 pub const ARTICLES: &str = "articles.jsonl.gz";
 pub const ETAT: &str = "etat.json";
 
-type R<T> = Result<T, String>;
+use socle::echec::{refus, R};
 
 // ------------------------------------------------------------------ l'entrepot
 
@@ -97,16 +97,16 @@ impl<A: Article, E: Etat> Entrepot<A, E> {
     /// L'entrepot de `dossier`, lu : chaque ligne en sa forme `A`, l'etat en sa forme `E`.
     pub fn charger(dossier: &Path) -> R<Entrepot<A, E>> {
         let p = dossier.join(ARTICLES);
-        let f = std::fs::File::open(&p).map_err(|e| format!("{} : {}", p.display(), e))?;
+        let f = std::fs::File::open(&p).map_err(|e| refus!("{} : {}", p.display(), e))?;
         let lecteur = BufReader::new(flate2::read::MultiGzDecoder::new(BufReader::new(f)));
         let mut articles = EnOrdre::new();
         for (n, ligne) in lecteur.split(b'\n').enumerate() {
-            let ligne = ligne.map_err(|e| format!("{} : {}", p.display(), e))?;
+            let ligne = ligne.map_err(|e| refus!("{} : {}", p.display(), e))?;
             if ligne.is_empty() {
                 continue;
             }
             let ou = format!("{}, ligne {}", p.display(), n + 1);
-            let texte = String::from_utf8(ligne).map_err(|e| format!("{} : pas de l'UTF-8 ({})", ou, e))?;
+            let texte = String::from_utf8(ligne).map_err(|e| refus!("{} : pas de l'UTF-8 ({})", ou, e))?;
             let a: A = socle::forme::lire_texte(&texte, &format!("{} ne se lit pas.", ou))?;
             let k = cle_de(a.cle());
             articles.poser(k, a);
@@ -128,10 +128,10 @@ impl<A: Article, E: Etat> Entrepot<A, E> {
 
     /// Ecrit les deux fichiers ; `aujourdhui` (AAAA-MM-JJ) devient le jour de la mise a jour.
     pub fn sauver(&mut self, aujourdhui: &str) -> R<()> {
-        std::fs::create_dir_all(&self.dossier).map_err(|e| format!("{} : {}", self.dossier.display(), e))?;
+        std::fs::create_dir_all(&self.dossier).map_err(|e| refus!("{} : {}", self.dossier.display(), e))?;
         let tmp = self.dossier.join(format!("{}.tmp", ARTICLES));
         {
-            let f = std::fs::File::create(&tmp).map_err(|e| format!("{} : {}", tmp.display(), e))?;
+            let f = std::fs::File::create(&tmp).map_err(|e| refus!("{} : {}", tmp.display(), e))?;
             // L'en-tete de `gzip.GzipFile(tmp, "wb", mtime=0)` : le nom du fichier temporaire, la date zero, le niveau 9.
             let mut g = flate2::GzBuilder::new()
                 .filename(format!("{}.tmp", ARTICLES))
@@ -144,17 +144,17 @@ impl<A: Article, E: Etat> Entrepot<A, E> {
             for a in tries {
                 // L'article (sa cle comprise) sur une ligne, cles triees, sans echappement des accents.
                 let ligne = socle::ecriture::json_trie(a);
-                g.write_all(ligne.as_bytes()).and_then(|_| g.write_all(b"\n")).map_err(|e| format!("{} : {}", tmp.display(), e))?;
+                g.write_all(ligne.as_bytes()).and_then(|_| g.write_all(b"\n")).map_err(|e| refus!("{} : {}", tmp.display(), e))?;
             }
-            let mut w = g.finish().map_err(|e| format!("{} : {}", tmp.display(), e))?;
-            w.flush().map_err(|e| format!("{} : {}", tmp.display(), e))?;
+            let mut w = g.finish().map_err(|e| refus!("{} : {}", tmp.display(), e))?;
+            w.flush().map_err(|e| refus!("{} : {}", tmp.display(), e))?;
         }
         let fin = self.dossier.join(ARTICLES);
-        std::fs::rename(&tmp, &fin).map_err(|e| format!("{} : {}", fin.display(), e))?;
+        std::fs::rename(&tmp, &fin).map_err(|e| refus!("{} : {}", fin.display(), e))?;
         self.etat.dater(aujourdhui);
         let p = self.dossier.join(ETAT);
         let texte = socle::ecriture::json_indente(&self.etat, 1);
-        std::fs::write(&p, texte).map_err(|e| format!("{} : {}", p.display(), e))
+        std::fs::write(&p, texte).map_err(|e| refus!("{} : {}", p.display(), e))
     }
 }
 
@@ -195,29 +195,33 @@ fn agent(delai_global: Option<u64>, url: &str) -> R<ureq::Agent> {
 
 impl Source for Reseau {
     fn lire(&self, url: &str, delai: u64) -> R<Vec<u8>> {
-        let mut r = agent(Some(delai), url)?.get(url).call().map_err(|e| format!("{} : {}", url, e))?;
-        r.body_mut().with_config().limit(2 * 1024 * 1024 * 1024).read_to_vec().map_err(|e| format!("{} : {}", url, e))
+        let mut r = agent(Some(delai), url)?.get(url).call().map_err(|e| refus!("{} : {}", url, e))?;
+        r.body_mut().with_config().limit(2 * 1024 * 1024 * 1024).read_to_vec().map_err(|e| refus!("{} : {}", url, e))
     }
 
     fn flux(&self, url: &str) -> R<Box<dyn Read + Send>> {
-        let r = agent(None, url)?.get(url).call().map_err(|e| format!("{} : {}", url, e))?;
+        let r = agent(None, url)?.get(url).call().map_err(|e| refus!("{} : {}", url, e))?;
         Ok(Box::new(r.into_body().into_reader()))
     }
 }
 
 /// Une archive entiere en memoire, avec trois nouvelles tentatives : une coupure de transport n'est pas une reponse.
 pub fn telecharger(source: &dyn Source, url: &str) -> R<Vec<u8>> {
-    let mut derniere = String::new();
-    for n in 0..4u64 {
+    for n in 0..3u64 {
         match source.lire(url, 300) {
             Ok(o) => return Ok(o),
             Err(e) => {
-                derniere = e;
+                eprintln!("essai {} : {}", n + 1, e.en_lignes());
                 source.pause(2 * (n + 1));
             }
         }
     }
-    Err(derniere)
+    let derniere = source.lire(url, 300);
+    if let Err(e) = &derniere {
+        eprintln!("dernier essai : {}", e.en_lignes());
+        source.pause(8);
+    }
+    derniere
 }
 
 /// Une page d'index, un seul essai (120 s).
@@ -338,7 +342,7 @@ fn taille_tar(b: &[u8]) -> R<u64> {
     if t.is_empty() {
         return Ok(0);
     }
-    u64::from_str_radix(t, 8).map_err(|_| format!("archive illisible (tar) : taille « {} »", t))
+    u64::from_str_radix(t, 8).map_err(|_| refus!("archive illisible (tar) : taille « {} »", t))
 }
 
 impl<L: Read> LecteurTar<L> {
@@ -347,9 +351,9 @@ impl<L: Read> LecteurTar<L> {
     }
 
     fn sauter(&mut self, n: u64) -> R<()> {
-        let copie = std::io::copy(&mut (&mut self.r).take(n), &mut std::io::sink()).map_err(|e| format!("archive illisible : {}", e))?;
+        let copie = std::io::copy(&mut (&mut self.r).take(n), &mut std::io::sink()).map_err(|e| refus!("archive illisible : {}", e))?;
         if copie < n {
-            return Err("archive illisible (tar) : fichier tronque".into());
+            return Err(refus("archive illisible (tar) : fichier tronque"));
         }
         Ok(())
     }
@@ -363,7 +367,7 @@ impl<L: Read> LecteurTar<L> {
                 Ok(0) => break,
                 Ok(n) => lu += n,
                 Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(e) => return Err(format!("archive illisible : {}", e)),
+                Err(e) => return Err(refus!("archive illisible : {}", e)),
             }
         }
         // Une archive sans ses blocs de fin, ou coupee entre deux membres : on s'arrete la, comme `kali.rs` avant.
@@ -372,9 +376,9 @@ impl<L: Read> LecteurTar<L> {
 
     fn lire_n(&mut self, n: u64) -> R<Vec<u8>> {
         let mut v = Vec::with_capacity(n.min(1 << 24) as usize);
-        (&mut self.r).take(n).read_to_end(&mut v).map_err(|e| format!("archive illisible : {}", e))?;
+        (&mut self.r).take(n).read_to_end(&mut v).map_err(|e| refus!("archive illisible : {}", e))?;
         if (v.len() as u64) < n {
-            return Err("archive illisible (tar) : fichier tronque".into());
+            return Err(refus("archive illisible (tar) : fichier tronque"));
         }
         Ok(v)
     }
@@ -548,9 +552,8 @@ pub fn premiers_caracteres(s: &str, n: usize) -> &str {
     }
 }
 
-/// Ecrit une ligne sur la sortie standard ; un tuyau ferme n'est pas une erreur.
+/// Ecrit une ligne sur la sortie standard (`socle::dire!` : un tuyau ferme se tait, une autre panne se note ; la sortie
+/// standard part a chaque fin de ligne).
 pub fn dire(t: &str) {
-    let mut o = std::io::stdout().lock();
-    let _ = writeln!(o, "{}", t);
-    let _ = o.flush();
+    socle::dire!("{}", t);
 }

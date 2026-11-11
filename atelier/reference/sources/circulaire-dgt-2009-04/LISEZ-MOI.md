@@ -9,3 +9,10 @@ due au prorata du nombre de mois de présence » (`.txt` l. 212) ; le salaire de
 (l. 192).
 
 **Où le moteur s'en sert** : `logiciel/donnees/permanents-base.json`, `rupture_conventionnelle.indemnite` (sa `source`, une convergence avec R1234-1 et R1234-2) : sous huit mois d'ancienneté, le plancher au prorata des mois complets, au taux de R1234-2 en vigueur (un quart) et non à celui de l'exemple de la circulaire (un cinquième, le taux de 2009) ; `droit::permanents::indemnite_rupture_conventionnelle`.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `travail-circulaire-dgt-2009-04-20090317.pdf` : `4eba314cc2e6eeb442878b71698f4200800ab683caaec940ba4a737a82c894c6`
+- `travail-circulaire-dgt-2009-04-20090317.txt` : `8a2f97b53437855eb2fd4bb59a4391c006a3f0d2b99cbf5054f7de49f8f60bf9`

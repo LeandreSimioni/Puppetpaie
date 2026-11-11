@@ -32,17 +32,17 @@ use crate::diagnostic::{Ecriture, Machine};
 use crate::editeur::{Client, ErreurFilet};
 use socle::ecriture::ecrire_json;
 use socle::echec::R;
-use socle::echec::{erreur, Classe};
+use socle::echec::Classe;
 use socle::fichiers::dossier_du_code;
+use socle::paris::InstantEcrit;
 use regex::Regex;
 use socle::verrou::Verrou;
 
 /// La nature d'un incident.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Nature {
-    /// Un defaut du logiciel (une note qui ne dit pas sa nature en est un).
-    #[default]
+    /// Un defaut du logiciel.
     Logiciel,
     /// Un refus d'usage.
     Refus,
@@ -92,7 +92,7 @@ pub const SANS_OBJET: EtatEnvoi = EtatEnvoi::SansObjet;
 #[serde(deny_unknown_fields)]
 pub struct Envoi {
     pub etat: EtatEnvoi,
-    pub quand: Option<String>,
+    pub quand: Option<InstantEcrit>,
 }
 
 /// UNE LIGNE DU JOURNAL DES INCIDENTS, telle qu'elle s'ecrit.
@@ -100,7 +100,7 @@ pub struct Envoi {
 #[serde(deny_unknown_fields)]
 pub struct Ligne {
     pub quoi: Nature,
-    pub quand: String,
+    pub quand: InstantEcrit,
     pub version: String,
     pub empreinte: String,
     pub ou: String,
@@ -112,7 +112,7 @@ pub struct Ligne {
     pub caviarde: Vec<String>,
     /// Combien de fois il a ete vu, et la derniere.
     pub fois: u64,
-    pub derniere: String,
+    pub derniere: InstantEcrit,
     pub fil: Vec<String>,
     pub ecritures: Vec<Ecriture>,
     pub machine_detail: Machine,
@@ -264,7 +264,6 @@ pub fn version() -> String {
 
 /// Ce que `noter` recoit. `detail` est la forme de ce que l'incident porte (la charge de la route, l'etat du mois) : il
 /// s'ecrit en texte, a travers la frontiere (`diagnostic::en_forme`).
-#[derive(Default)]
 pub struct Note<'a, D: Serialize> {
     pub nature: Nature,
     pub resume: &'a str,
@@ -288,7 +287,7 @@ fn lignes(p: &Path) -> R<Vec<Ligne>> {
 }
 
 fn ecrire_lignes(p: &Path, toutes: &[Ligne]) -> R<()> {
-    ecrire_json(p, toutes, 2).map_err(|m| erreur(Classe::Disque, m))
+    ecrire_json(p, toutes, 2).map_err(|e| e.reclasser(Classe::Disque))
 }
 
 /// `noter` : ajoute une ligne, et la rend ; `None` quand rien n'est a noter (les faux envois d'une fictive).
@@ -315,7 +314,7 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
     };
     trouve.sort_unstable();
     trouve.dedup();
-    let quand = socle::paris::maintenant();
+    let quand = InstantEcrit::maintenant();
     let empreinte = empreinte(n.nature, n.ou, n.quoi);
     let p = chemin(racine);
     let mut toutes = lignes(&p)?;
@@ -325,7 +324,7 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
     let debut = toutes.len().saturating_sub(50);
     let mut doublon = None;
     for (i, l) in toutes.iter().enumerate().skip(debut).rev() {
-        if l.empreinte == empreinte && l.resume == resume && l.envoi.etat == EN_ATTENTE && (0..DOUBLON_SECONDES).contains(&ecart_secondes(&l.derniere, &quand)?) {
+        if l.empreinte == empreinte && l.resume == resume && l.envoi.etat == EN_ATTENTE && (0..DOUBLON_SECONDES).contains(&quand.naif().depuis(l.derniere.naif())) {
             doublon = Some(i);
             break;
         }
@@ -384,30 +383,6 @@ const FIL_PAR_INCIDENT: usize = 100;
 /// Les dernieres ecritures (charges entieres) de la page qu'un incident emporte : de quoi le rejouer.
 const ECRITURES_PAR_INCIDENT: usize = 3;
 
-/// Les secondes entre deux instants `AAAA-MM-JJTHH:MM:SS` (de `b` moins `a`) ; un instant qui ne se lit pas se refuse.
-fn ecart_secondes(a: &str, b: &str) -> R<i64> {
-    fn secondes(s: &str) -> R<i64> {
-        let n = |i: usize, j: usize| -> R<i64> {
-            match s.get(i..j).map(str::parse::<i64>) {
-                Some(Ok(x)) => Ok(x),
-                Some(Err(e)) => Err(erreur(Classe::Illisible, format!("Un instant du journal des incidents ne se lit pas ({}) : {}.", s, e))),
-                None => Err(erreur(Classe::Illisible, format!("Un instant du journal des incidents ne se lit pas ({}).", s))),
-            }
-        };
-        let (an, mois, jour) = (n(0, 4)?, n(5, 7)?, n(8, 10)?);
-        let (h, m, sec) = (n(11, 13)?, n(14, 16)?, n(17, 19)?);
-        // Jours depuis 1970 (civil -> jours, calendrier gregorien).
-        let (y, mo) = if mois <= 2 { (an - 1, mois + 9) } else { (an, mois - 3) };
-        let era = y.div_euclid(400);
-        let yoe = y - era * 400;
-        let doy = (153 * mo + 2) / 5 + jour - 1;
-        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-        let jours = era * 146_097 + doe - 719_468;
-        Ok(jours * 86_400 + h * 3600 + m * 60 + sec)
-    }
-    Ok(secondes(b)? - secondes(a)?)
-}
-
 /// Les classes qui disent un refus, pas un defaut (`nature_de`). Un coffre ferme ou un refus de Google y sont : une
 /// situation d'usage, pas un defaut du logiciel.
 const REFUS_PAR_CLASSE: [Classe; 15] = [
@@ -451,18 +426,21 @@ pub fn depuis_exception<D: Serialize>(racine: &Path, classe: Option<Classe>, mes
     )
 }
 
-/// Ce que porte un recalcul refuse : son mois.
+/// Ce que porte un recalcul refuse : son mois, et ce que le refus porte a part.
 #[derive(Serialize)]
 struct DuMois<'a> {
-    mois: &'a str,
+    mois: socle::mois::Mois,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    a_part: Option<&'a socle::echec::APart>,
 }
 
 /// UN RECALCUL QUE LE MOTEUR REFUSE A LA LECTURE D'UN ENGAGEMENT VALIDE (`engagement::etats::du_mois`) : l'engagement garde
 /// sa paie validee, l'utilisateur n'en voit rien, et l'editeur le recoit comme un incident. Un incident qui ne s'ecrit pas
 /// se dit sur la sortie d'erreur.
-fn recalcul_refuse(racine: &Path, mois: &str, refus: &str) {
-    if let Err(e) = depuis_exception(racine, Some(Classe::RecalculRefuse), refus, None, "engagement::etats::du_mois", DuMois { mois }, None) {
-        eprintln!("Un recalcul refusé ne se note pas au journal des incidents : {}", socle::echec::phrase_de(&e.message));
+fn recalcul_refuse(racine: &Path, mois: socle::mois::Mois, refus: &socle::echec::Echec) {
+    let detail = DuMois { mois, a_part: refus.a_part.as_ref() };
+    if let Err(e) = depuis_exception(racine, Some(Classe::RecalculRefuse), &refus.phrase, None, "engagement::etats::du_mois", detail, None) {
+        eprintln!("Un recalcul refusé ne se note pas au journal des incidents : {}", e.phrase);
     }
 }
 
@@ -492,15 +470,15 @@ fn fichier_court(source: &str) -> String {
 }
 
 /// CE QUE LA PAGE A VU CASSER (`noterIncident`, js/tuyau.js) : ce qu'une erreur, un rejet ou une ressource absente de la
-/// page dit. La page dit toujours le genre, le message, le fichier (vide quand elle ne le sait pas), la ligne (0 : elle
-/// ne la sait pas), le canal et l'ecran ; une ressource absente n'a ni pile ni colonne.
+/// page dit. La page dit toujours le genre, le message, le canal et l'ecran ; le fichier et la ligne, quand elle les
+/// sait ; une ressource absente n'a ni pile ni colonne.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RapportNavigateur {
     pub genre: String,
     pub message: String,
-    pub fichier: String,
-    pub ligne: u64,
+    pub fichier: Option<String>,
+    pub ligne: Option<u64>,
     pub colonne: Option<u64>,
     pub pile: Option<String>,
     pub canal: String,
@@ -519,15 +497,21 @@ struct DetailDeLaPage {
 
 /// `depuis_navigateur` : note ce qui a casse dans l'interface. La page n'envoie
 /// que ce qu'elle a vu ; la nature, l'endroit qui regroupe et le caviardage se
-/// decident ICI. La nature est TOUJOURS `logiciel`. Un endroit que la page ne sait pas (un fichier vide, la ligne 0)
+/// decident ICI. La nature est TOUJOURS `logiciel`. Un endroit que la page ne sait pas (sans fichier, sans ligne)
 /// s'ecrit « interface:? ».
 pub fn depuis_navigateur(racine: &Path, rapport: &RapportNavigateur) -> R<Option<Ligne>> {
     let genre = tete(&rapport.genre, 80);
-    let fichier = fichier_court(&rapport.fichier);
+    let fichier = match rapport.fichier.as_deref().map(fichier_court) {
+        Some(f) if !f.is_empty() => f,
+        _ => "interface".to_string(),
+    };
     let ou = format!(
         "{}:{}",
-        if fichier.is_empty() { "interface".to_string() } else { fichier },
-        if rapport.ligne > 0 { rapport.ligne.to_string() } else { "?".to_string() }
+        fichier,
+        match rapport.ligne {
+            Some(l) => l.to_string(),
+            None => "?".to_string(),
+        }
     );
     let detail = DetailDeLaPage { face: "interface", canal: tete(&rapport.canal, 20), colonne: rapport.colonne, ou_dans_la_page: tete(&rapport.ou_dans_la_page, 120) };
     let resume = format!("{}: {}", genre, rapport.message);
@@ -555,8 +539,8 @@ pub struct Paquet {
     pub genre: String,
     pub resume: String,
     pub combien: u64,
-    pub premiere: String,
-    pub derniere: String,
+    pub premiere: InstantEcrit,
+    pub derniere: InstantEcrit,
     pub versions: Vec<String>,
     pub caviarde: Vec<String>,
 }
@@ -582,8 +566,8 @@ pub fn regrouper(racine: &Path, nature: Option<Nature>) -> R<Vec<Paquet>> {
                     genre: l.genre.clone(),
                     resume: l.resume.clone(),
                     combien: l.fois,
-                    premiere: l.quand.clone(),
-                    derniere: l.quand.clone(),
+                    premiere: l.quand,
+                    derniere: l.quand,
                     versions: vec![l.version.clone()],
                     caviarde: l.caviarde.clone(),
                 },
@@ -591,7 +575,7 @@ pub fn regrouper(racine: &Path, nature: Option<Nature>) -> R<Vec<Paquet>> {
             Some(i) => {
                 let p = &mut paquets[i].1;
                 p.combien += l.fois;
-                p.derniere = l.quand.clone();
+                p.derniere = l.quand;
                 if !p.versions.contains(&l.version) {
                     p.versions.push(l.version.clone());
                 }
@@ -638,7 +622,7 @@ fn pour_texte(racine: &Path, s: &str) -> String {
 #[serde(deny_unknown_fields)]
 pub struct PourLEditeur {
     pub quoi: Nature,
-    pub quand: String,
+    pub quand: InstantEcrit,
     pub version: String,
     pub empreinte: String,
     pub ou: String,
@@ -649,7 +633,7 @@ pub struct PourLEditeur {
     pub caviarde: Vec<String>,
     pub machine: String,
     pub fois: u64,
-    pub derniere: String,
+    pub derniere: InstantEcrit,
     pub fil: Vec<String>,
     pub ecritures: Vec<Ecriture>,
     pub machine_detail: Machine,
@@ -670,7 +654,7 @@ pub fn pour_l_editeur(racine: &Path, l: &Ligne) -> PourLEditeur {
     });
     PourLEditeur {
         quoi: l.quoi,
-        quand: l.quand.clone(),
+        quand: l.quand,
         version: t(&l.version),
         empreinte: l.empreinte.clone(),
         ou: t(&l.ou),
@@ -681,7 +665,7 @@ pub fn pour_l_editeur(racine: &Path, l: &Ligne) -> PourLEditeur {
         caviarde: l.caviarde.clone(),
         machine: machine(),
         fois: l.fois,
-        derniere: l.derniere.clone(),
+        derniere: l.derniere,
         fil: l.fil.iter().map(|x| t(x)).collect(),
         ecritures: l.ecritures.iter().map(|e| Ecriture { il_y_a: e.il_y_a.clone(), route: e.route.clone(), charge: t(&e.charge), issue: t(&e.issue) }).collect(),
         machine_detail: Machine {
@@ -781,7 +765,7 @@ fn systeme() -> String {
 /// donc le nombre pointe entre les crochets, sans lire le mot. Windows 11 garde le « 10.0 » de Windows 10 : c'est le build
 /// (le troisieme nombre) qui les distingue, 22000 et plus pour Windows 11. Sans numero lisible, « Windows » seul : le
 /// moteur ne devine pas lequel (regle 1).
-#[cfg_attr(unix, allow(dead_code))]
+#[cfg(not(unix))]
 fn windows_de_ver(sortie: &str) -> String {
     let Some((entre, _)) = sortie.split_once('[').and_then(|(_, r)| r.split_once(']')) else { return "Windows".to_string() };
     let numero = |m: &&str| m.contains('.') && m.chars().all(|c| c.is_ascii_digit() || c == '.');
@@ -806,7 +790,7 @@ pub fn edition() -> String {
 pub struct AnneeRetenue {
     pub paies: u64,
     pub poste: String,
-    pub parti_le: String,
+    pub parti_le: socle::paris::InstantEcrit,
 }
 
 /// `config/diagnostic.json`, TEL QU'IL S'ECRIT : l'interrupteur de l'envoi (`envoi` : absent ou vrai, les incidents
@@ -838,7 +822,7 @@ pub fn lire_config(racine: &Path) -> R<ConfigDiagnostic> {
 
 /// Ecrit `config/diagnostic.json` de `racine`.
 pub fn ecrire_config(racine: &Path, c: &ConfigDiagnostic) -> R<()> {
-    ecrire_json(&racine.join(DIAGNOSTIC), c, 2).map_err(|m| erreur(Classe::Disque, m))
+    ecrire_json(&racine.join(DIAGNOSTIC), c, 2).map_err(|e| e.reclasser(Classe::Disque))
 }
 
 /// L'ENVOI A L'EDITEUR SE COUPE (une condition de SignPath). `config/diagnostic.json`,
@@ -853,7 +837,7 @@ pub fn envoi_actif(racine: &Path) -> bool {
     match envoi(racine) {
         Ok(actif) => actif,
         Err(e) => {
-            crate::diagnostic::noter_moteur(&format!("Envoi à l'éditeur coupé : {}", socle::echec::phrase_de(&e.message)));
+            crate::diagnostic::noter_moteur(&format!("Envoi à l'éditeur coupé : {}", e.phrase));
             false
         }
     }
@@ -936,7 +920,7 @@ pub fn configuration(racine: &Path) -> R<(String, PathBuf)> {
         return Ok((s, racine.to_path_buf()));
     }
     let code = dossier_du_code();
-    let logiciel = code.parent().ok_or_else(|| erreur(Classe::DefautDuLogiciel, socle::echec::avec("Le dossier du code n'a pas de parent.", socle::echec::APart { chemin: Some(code.to_string_lossy().into_owned()), ..Default::default() })))?;
+    let logiciel = code.parent().ok_or_else(|| socle::echec::refus_avec("Le dossier du code n'a pas de parent.", socle::echec::Lieu { chemin: Some(code.to_string_lossy().into_owned()), ..Default::default() }).reclasser(Classe::DefautDuLogiciel))?;
     let voisin = match logiciel.parent() {
         Some(r) => Some(r.join("prive")),
         None => None,
@@ -976,17 +960,17 @@ pub fn canal(racine: &Path) -> R<Canal> {
 }
 
 /// Passe a `depose` les lignes nommees par (empreinte, quand).
-fn marquer(racine: &Path, cles: &[(String, String)]) -> R<usize> {
+fn marquer(racine: &Path, cles: &[(String, InstantEcrit)]) -> R<usize> {
     if cles.is_empty() {
         return Ok(0);
     }
     let p = chemin(racine);
     let mut toutes = lignes(&p)?;
-    let quand = socle::paris::maintenant();
+    let quand = InstantEcrit::maintenant();
     let mut n = 0;
     for l in toutes.iter_mut() {
         if l.envoi.etat == EN_ATTENTE && cles.iter().any(|(e, w)| *e == l.empreinte && *w == l.quand) {
-            l.envoi = Envoi { etat: DEPOSE, quand: Some(quand.clone()) };
+            l.envoi = Envoi { etat: DEPOSE, quand: Some(quand) };
             n += 1;
         }
     }
@@ -998,7 +982,7 @@ fn marquer(racine: &Path, cles: &[(String, String)]) -> R<usize> {
 
 /// LE BILAN D'UN PASSAGE D'ENVOI DES INCIDENTS : combien sont partis, combien attendent, ce qui n'a pas marche, et si un
 /// autre passage tenait deja le journal.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct BilanIncidents {
     pub envoyes: usize,
     pub reste: usize,
@@ -1014,7 +998,7 @@ fn passage(racine: &Path, bilan: &mut BilanIncidents) -> R<()> {
     }
     let client = match canal(racine)? {
         Canal::Panne(e) => {
-            bilan.erreur = Some(e.message);
+            bilan.erreur = Some(e.dite());
             return Ok(());
         }
         Canal::Pret(c) => c,
@@ -1041,11 +1025,11 @@ fn passage(racine: &Path, bilan: &mut BilanIncidents) -> R<()> {
         let r = match client.rapporter(&contenu) {
             Ok(r) => r,
             Err(e) => {
-                bilan.erreur = Some(e.message);
+                bilan.erreur = Some(e.dite());
                 break;
             }
         };
-        let cles: Vec<(String, String)> = r.recus.into_iter().chain(r.ecartes).collect();
+        let cles: Vec<(String, InstantEcrit)> = r.recus.into_iter().chain(r.ecartes).collect();
         bilan.envoyes += marquer(racine, &cles)?;
     }
     bilan.reste = lire(racine, None, true)?.len();
@@ -1055,7 +1039,8 @@ fn passage(racine: &Path, bilan: &mut BilanIncidents) -> R<()> {
 /// `envoyer` : depose chez l'editeur ce qui attend. Rend un bilan ; ne leve
 /// jamais. Une panne laisse les lignes `en-attente` : le passage suivant reessaie.
 pub fn envoyer(racine: &Path) -> BilanIncidents {
-    let mut bilan = BilanIncidents::default();
+    // Avant le passage : rien d'envoye, rien qui attende, aucun autre passage vu.
+    let mut bilan = BilanIncidents { envoyes: 0, reste: 0, erreur: None, occupe: false };
     let p = chemin(racine);
     if !p.exists() {
         return bilan;
@@ -1064,7 +1049,7 @@ pub fn envoyer(racine: &Path) -> BilanIncidents {
         Ok(true) => {}
         Ok(false) => return bilan,
         Err(e) => {
-            bilan.erreur = Some(e.message);
+            bilan.erreur = Some(e.phrase);
             return bilan;
         }
     }
@@ -1077,12 +1062,12 @@ pub fn envoyer(racine: &Path) -> BilanIncidents {
             return bilan;
         }
         Err(m) => {
-            bilan.erreur = Some(m);
+            bilan.erreur = Some(m.phrase);
             return bilan;
         }
     };
     if let Err(e) = passage(racine, &mut bilan) {
-        bilan.erreur = Some(e.message);
+        bilan.erreur = Some(e.phrase);
     }
     bilan
 }

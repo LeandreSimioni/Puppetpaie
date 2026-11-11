@@ -1,19 +1,15 @@
-//! L'arithmetique de la paie (`eur`, `pct`, les arrondis) et la lecture d'un nombre.
-//!
-//! Un flottant lu ne se convertit jamais directement en decimal : il passe par sa representation la plus courte
-//! (`format!("{}", f64)`, a la forme pres : `24` contre `24.0`, jamais la valeur). `dec` lit donc `24.1` comme le
-//! decimal 24.1, et non comme le binaire le plus proche.
+//! L'arithmetique de la paie (`eur`, `pct`, les arrondis) et la lecture d'un nombre ecrit en texte. Un montant, un taux,
+//! une quantite ne sont que des decimaux : le flottant n'existe qu'a la porte d'un fichier (`forme`).
 
 use rust_decimal::prelude::*;
 use crate::d28::P;
+use crate::echec::{refus_avec, Lieu, R};
 pub use rust_decimal::Decimal;
 
-/// Un refus du moteur : le message dit quoi faire.
-pub type Resultat<T> = Result<T, String>;
-
 /// Le decimal d'un nombre ecrit en texte (`"12.5"`, `" 1e3 "`), blancs autour ignores.
-pub fn dec_texte(s: &str) -> Resultat<Decimal> {
-    Decimal::from_str(s.trim()).or_else(|_| Decimal::from_scientific(s.trim())).map_err(|_| illisible(s))
+#[track_caller]
+pub fn dec_texte(s: &str) -> R<Decimal> {
+    match Decimal::from_str(s.trim()).or_else(|_| Decimal::from_scientific(s.trim())) { Ok(d) => Ok(d), Err(e) => Err(refus_avec(illisible(s), Lieu { detail: Some(e.to_string()), ..Default::default() })) }
 }
 
 /// Le refus d'un nombre qui ne se lit pas, avec le texte en cause.
@@ -31,28 +27,25 @@ pub fn entier_de_chiffres(t: &str) -> Option<i64> {
     Some(b.iter().fold(0i64, |n, c| n * 10 + i64::from(c - b'0')))
 }
 
-/// Le flottant d'un decimal, par sa forme ecrite (`d.to_string()` relu) : un decimal s'ecrit toujours en un nombre que
-/// le flottant lit.
-pub fn flottant(d: Decimal) -> f64 {
-    match d.to_string().parse::<f64>() {
-        Ok(x) => x,
-        Err(e) => unreachable!("un décimal s'écrit en nombre : {} ({})", d, e),
+/// UN ENTIER SIGNE ECRIT EN CHIFFRES : un signe `+` ou `-` facultatif, puis un entier de chiffres seuls
+/// (`entier_de_chiffres`) ; tout autre texte rend `None`.
+pub fn entier_signe(t: &str) -> Option<i64> {
+    match (t.strip_prefix('-'), t.strip_prefix('+')) {
+        (Some(c), _) => entier_de_chiffres(c).map(|n| -n),
+        (None, Some(c)) => entier_de_chiffres(c),
+        (None, None) => entier_de_chiffres(t),
     }
 }
 
-/// Le decimal d'un flottant, par sa forme ecrite la plus courte.
-pub fn dec_f64(x: f64) -> Resultat<Decimal> {
-    if !x.is_finite() {
-        return Err(format!("nombre non fini : {}", x));
+/// LA FORME LA PLUS COURTE D'UN DECIMAL, une decimale au moins (`24` et `24.00` s'ecrivent `24.0`, `0.10` s'ecrit
+/// `0.1`) : celle qu'un nombre a virgule d'un fichier donne a sa lecture (`forme::court`), et que gardent les taux,
+/// quantites et quotites que le calcul lit.
+pub fn court(x: Decimal) -> Decimal {
+    let mut c = x.normalize();
+    if c.scale() == 0 {
+        c.rescale(1);
     }
-    // Un flottant entier garde sa decimale : `1.0`.
-    let mut s = format!("{}", x);
-    if !s.contains(['.', 'e', 'E']) && x.abs() < 1e16 {
-        s.push_str(".0");
-    }
-    Decimal::from_str(&s)
-        .or_else(|_| Decimal::from_scientific(&s))
-        .map_err(|_| format!("nombre hors de portee : {}", s))
+    c
 }
 
 /// Deux decimales, la moitie toujours vers le haut (jamais au pair) : le cent le plus proche, le milieu au cent superieur
@@ -66,16 +59,6 @@ pub fn eur(x: Decimal) -> Decimal {
 /// Un taux en pourcentage applique, arrondi au centime.
 pub fn pct(base: Decimal, taux: Decimal) -> Decimal {
     eur(div(mul(base, taux), Decimal::ONE_HUNDRED))
-}
-
-/// Un flottant a trois decimales (arrondi correct, au pair sur le
-/// demi exact), par sa forme ecrite.
-pub fn round3(x: f64) -> f64 {
-    // Un flottant ecrit par Rust se relit toujours (`NaN` et `inf` compris).
-    match format!("{:.3}", x).parse() {
-        Ok(y) => y,
-        Err(e) => unreachable!("un flottant écrit par Rust se relit : {} ({})", x, e),
-    }
 }
 
 /// Une somme de montants, à deux décimales au moins.
@@ -195,11 +178,41 @@ pub fn entier_lu(t: &str) -> Option<i128> {
     Some(if neg { -n } else { n })
 }
 
+/// UN QUOTIENT DIT A L'ECRAN (des octets en Mo, une duree en secondes) : `n / d` a `chiffres` decimales, exact, la
+/// moitie au pair (`quotient(3_670_016, 1_048_576, 1)` : « 3.5 ») ; `d` nul, `None`.
+pub fn quotient(n: u128, d: u128, chiffres: u32) -> Option<String> {
+    let echelle = 10u128.checked_pow(chiffres)?;
+    let (q, r) = (n.checked_mul(echelle)?.checked_div(d)?, n.checked_mul(echelle)? % d);
+    let q = if r > d - r || (r == d - r && q % 2 == 1) { q + 1 } else { q };
+    if chiffres == 0 {
+        return Some(q.to_string());
+    }
+    Some(format!("{}.{:0width$}", q / echelle, q % echelle, width = chiffres as usize))
+}
+
+/// Une duree en secondes, au dixieme, la moitie loin de zero : un nombre a virgule qu'une reponse rend (« 1.2 »).
+pub fn secondes_au_dixieme(d: std::time::Duration) -> Decimal {
+    let ns = Decimal::from_i128_with_scale(d.as_nanos() as i128, 9);
+    ns.round_dp_with_strategy(1, RoundingStrategy::MidpointAwayFromZero)
+}
+
 /// Deux décimales, la moitié au pair, en texte.
 pub fn q2(d: Decimal) -> String {
     let mut r = d.round_dp(2);
     r.rescale(2);
     r.to_string()
+}
+
+/// UN DECIMAL ECRIT A LA FRANCAISE OU NON, le seul chemin d'un nombre qu'une personne ou une piece ecrit : les blancs
+/// (l'espace, l'insecable, l'insecable fine) separent les milliers et ne comptent pas ; avec une virgule, elle est la
+/// virgule decimale et un point separe les milliers (« 1 512,40 », « 1.512,40 ») ; sans virgule, le point est la virgule
+/// (« 12.80 »). Le reste comme `decimal_lu`.
+pub fn decimal_a_virgule(t: &str) -> Option<Decimal> {
+    let net: String = t.chars().filter(|c| !matches!(c, ' ' | '\u{a0}' | '\u{202f}')).collect();
+    match net.contains(',') {
+        true => decimal_lu(&net.replace('.', "").replace(',', ".")),
+        false => decimal_lu(&net),
+    }
 }
 
 /// Un decimal ecrit en texte : le signe, les chiffres avec un point et des tirets bas entre deux

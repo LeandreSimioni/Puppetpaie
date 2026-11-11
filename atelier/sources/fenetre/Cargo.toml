@@ -9,6 +9,31 @@ publish = false
 [[bin]]
 name = "puppetpaie"
 path = "src/main.rs"
+# Le binaire n'a pas d'essais (le harnais de test leverait le `forbid(dead_code)` sur son `main`).
+test = false
+
+# Les niveaux de l'espace (`atelier/sources/Cargo.toml`, `[workspace.lints.rust]`), que la fenetre, hors de l'espace,
+# porte elle-meme.
+[lints.rust]
+warnings = { level = "deny", priority = -1 }
+unused = { level = "deny", priority = -1 }
+dead_code = "forbid"
+deprecated = "forbid"
+unused_imports = "forbid"
+unused_variables = "forbid"
+unused_assignments = "forbid"
+unused_mut = "forbid"
+unused_must_use = "forbid"
+unused_macros = "forbid"
+unused_unsafe = "forbid"
+unused_parens = "forbid"
+unused_braces = "forbid"
+unused_labels = "forbid"
+unused_doc_comments = "forbid"
+unused_allocation = "forbid"
+path_statements = "forbid"
+unreachable_code = "forbid"
+unreachable_patterns = "forbid"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -21,6 +46,8 @@ routes = { path = "../routes" }
 # La compagnie : l'installation, l'instance unique sur le poste, la mise a jour au lancement.
 compagnie = { path = "../compagnie" }
 fabrique-pdf = { path = "../fabrique-pdf" }
+# Les arguments du processus, que seul `socle::ligne` lit.
+socle = { path = "../socle" }
 tauri = { version = "2", features = [] }
 
 [profile.release]

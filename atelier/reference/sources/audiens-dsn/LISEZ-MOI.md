@@ -77,3 +77,13 @@ qu'à la dernière DSN du trimestre (FAQ DSN des organismes complémentaires, `.
   plafonds par branche (entreprises artistiques et culturelles : triple du minimum, metteur en scène 375 €, chef
   d'orchestre 860 € ; création et évènement : double du minimum dans la limite de 272 € par jour). Où le moteur s'en
   sert : la base de congé du certificat (`documents/src/conges_spectacles.rs`, ticket #363 du privé), à venir.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `audiens-conges-spectacles-mode-emploi-employeur-20261030.txt` : `ce2f2daffa239ae121b9e0b0ad2f1d93200fde96239725a513575d3c6f135ec6`
+- `audiens-declarer-payer-conges-spectacles-20261020.md` : `a233697d4bfcfd77665527bc81f5784499348fca32ddb758be4ca299ea6d565b`
+- `audiens-dossier-dsn-20261020.md` : `5392d50b4516aebac6110d3efb00dfa55a20573a47914be63988f5194c9c0dd7`
+- `audiens-fiche-pratique-plafonds-conges-spectacles-202507.txt` : `1f42ff8769fc23615ed3263915686c16d197b0e2e422b1ce644b64acd005dd71`
+- `audiens-fiche-specificites-conges-spectacles-20261023.txt` : `00cc0df9b18296f09ccbbadcb0a14efeae091d8c0ef2c54044c1c136e43f6ecc`

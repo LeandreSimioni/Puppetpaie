@@ -31,12 +31,18 @@ function fichesDe(nom) {
   return nom === "salarie" ? c.salaries : c.spectacles;
 }
 
+/* L'ordre de deux cases facultatives : une case vide vient avant une case remplie. */
+function comparerCases(x, y, ...options) {
+  if (x == null || y == null) return (y == null) - (x == null);
+  return String(x).localeCompare(String(y), ...options);
+}
+
 function dessinerConfig() {
   const liste = document.getElementById("config-liste");
   dessinerSuppression();
   // Avancé : la place du sous-onglet ouvert (`data-place`), ses routes sans écran dessiné.
   const avance = document.getElementById("config-avance");
-  avance.dataset.auto = (document.querySelector(`.sous-onglets button[data-fiche="${FICHE_ACTIVE}"]`) || {}).dataset?.place || "";
+  avance.dataset.auto = document.querySelector(`.sous-onglets button[data-fiche="${FICHE_ACTIVE}"]`).dataset.place;
   dessinerAvance(avance);
   if (FICHE_ACTIVE === "importer") {
     document.getElementById("config-formulaire").innerHTML = "";
@@ -89,23 +95,21 @@ function dessinerConfig() {
   const courantes = fiches.filter((f) => f.donnees.actif !== false);
   // Les spectacles par titre.
   if (FICHE_ACTIVE === "spectacle") {
-    courantes.sort((a, b) => String(a.donnees.titre || "").localeCompare(
-      String(b.donnees.titre || ""), "fr", { sensitivity: "base" }));
+    courantes.sort((a, b) => comparerCases(a.donnees.titre, b.donnees.titre, "fr", { sensitivity: "base" }));
   }
   // Les numéros d'objet archivés, du plus récent au plus ancien.
   const archivees = fiches.filter((f) => f.donnees.actif === false)
-    .sort((a, b) => String(b.donnees.numero_objet || "").localeCompare(
-      String(a.donnees.numero_objet || "")));
+    .sort((a, b) => comparerCases(b.donnees.numero_objet, a.donnees.numero_objet));
   const rangees = [...courantes, ...archivees];
   const salarie = FICHE_ACTIVE === "salarie";
   // Les mots de la liste, tels que le moteur les dit pour cette sorte de fiche (`configuration.ecran`).
-  const ecran = (ETAT.configuration.ecran || {});
-  const mots = ecran[FICHE_ACTIVE] || {};
+  const ecran = ETAT.configuration.ecran;
+  const mots = ecran[FICHE_ACTIVE];
 
   // UN SPECTACLE, PAS UNE FICHE PAR NUMÉRO. Une fiche archivée du
   // même titre qu'un spectacle actif (un ancien numéro) se montre sous lui,
-  // pas dans les archives.
-  const titreDe = (d) => String(d.titre || "").normalize("NFD")
+  // pas dans les archives. Sans titre, la fiche n'a pas de titre à rapprocher (`null`).
+  const titreDe = (d) => d.titre == null ? null : d.titre.normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
   const sansTitre = (f) => !!f.sans_titre;
   const passees = {};
@@ -115,7 +119,7 @@ function dessinerConfig() {
     archivees.forEach((f) => {
       const t = titreDe(f.donnees);
       if (sansTitre(f) || !titresActifs.has(t)) return;
-      (passees[t] = passees[t] || []).push(f);
+      (passees[t] ||= []).push(f);
       sousUnActif.add(f.cle);
     });
   }
@@ -123,8 +127,8 @@ function dessinerConfig() {
   // titre ; puis les numéros sans titre, groupés -- à nommer si on le sait.
   const archiveesSeules = archivees.filter((f) => !sousUnActif.has(f.cle))
     .sort((a, b) => (sansTitre(a) - sansTitre(b))
-      || titreDe(a.donnees).localeCompare(titreDe(b.donnees))
-      || String(b.donnees.numero_objet || "").localeCompare(String(a.donnees.numero_objet || "")));
+      || comparerCases(titreDe(a.donnees), titreDe(b.donnees))
+      || comparerCases(b.donnees.numero_objet, a.donnees.numero_objet));
 
   // UNE LIGNE PAR FICHE : le nom, ce qui
   // l'identifie, son état, puis les gestes -- « Archiver » dit en toutes
@@ -132,22 +136,22 @@ function dessinerConfig() {
   const rangHtml = (f, trouve) => {
     const d = f.donnees;
     const archive = d.actif === false;
-    const titre = salarie
-      ? `${String(d.nom_affichage || d.nom || "").toUpperCase()} ${d.prenom_affichage || d.prenom || ""}`.trim()
-      : String(d.titre || "").trim();
+    const nom = d.nom_affichage || d.nom;
+    const titre = (salarie ? [nom == null ? null : nom.toUpperCase(), d.prenom_affichage || d.prenom] : [d.titre])
+      .filter((x) => x != null).join(" ").trim();
     // Un numéro d'objet importé sans titre : le moteur le dit (`sans_titre`),
     // la ligne le dit en minuscules.
     const aCompleter = !salarie && sansTitre(f);
-    const autresNumeros = !salarie && !archive && !trouve ? (passees[titreDe(d)] || [])
-      .slice().sort((a, b) => String(b.donnees.numero_objet || "").localeCompare(
-        String(a.donnees.numero_objet || ""))) : [];
+    const anciens = !salarie && !archive && !trouve ? passees[titreDe(d)] : undefined;
+    const autresNumeros = anciens ? anciens.slice()
+      .sort((a, b) => comparerCases(b.donnees.numero_objet, a.donnees.numero_objet)) : [];
     const etat = pastilleDeLEtat(f.pastille);
     return `<div class="rang fiche${archive ? " archivee" : ""}${f.cle === CLE_ACTIVE ? " selectionnee" : ""}"
         data-cle="${echapper(f.cle)}">
       <div class="rang-infos">
         <b class="rang-nom">${aCompleter ? `<span class="a-completer">titre à compléter</span>`
           : echapper(titre || f.cle)}</b>
-        ${echapper(f.quoi_dit || "")}
+        ${echapper(f.quoi_dit)}
         ${trouve ? `<span class="trouve">${echapper(trouve.ou)} : ${echapper(trouve.quoi)}${
           trouve.ancienne ? ` <span class="discret">${echapper(ecran.ancienne)}</span>` : ""}</span>` : ""}
         ${autresNumeros.length ? `<span class="annees"><span>anciens numéros</span>
@@ -171,9 +175,9 @@ function dessinerConfig() {
   // sous-onglet (« SALARIÉS » sous Salariés) est parti.
   liste.innerHTML = `<div class="barre-liste">
       <input type="search" id="config-recherche" class="recherche" autocomplete="off"
-        value="${echapper(RECHERCHE[FICHE_ACTIVE] || "")}"
+        value="${echapper(RECHERCHE[FICHE_ACTIVE])}"
         placeholder="Rechercher">
-      <button class="secondaire" id="config-nouvelle">${echapper(mots.nouvelle || "+")}</button>
+      <button class="secondaire" id="config-nouvelle">${echapper(mots.nouvelle)}</button>
     </div>
     <div id="config-rangs"></div>`
     + (salarie ? fichesAttenduesHtml() : "");
@@ -186,10 +190,11 @@ function dessinerConfig() {
   // quelque part dans la fiche. Elle fouille les archivées aussi -- c'est
   // souvent là qu'on cherche.
   const libelles = {};
-  (ETAT.configuration.description[FICHE_ACTIVE] || []).forEach((c) => { libelles[c.cle] = c.libelle; });
+  ETAT.configuration.description[FICHE_ACTIVE].forEach((c) => { libelles[c.cle] = c.libelle; });
   // Les cases du nom que la ligne lit déjà : une trouvaille dedans ne se redit pas.
   const CASES_DU_NOM = new Set(["nom", "nom_affichage", "prenom", "prenom_affichage", "titre"]);
-  const libelleDe = (cle) => libelles[cle] || libelles[cle.replace(/_affichage$/, "")] || "";
+  // Une case sans libellé n'a pas d'endroit à dire (`ou` absent) : la ligne ne cite pas où l'on a trouvé.
+  const libelleDe = (cle) => libelles[cle] || libelles[cle.replace(/_affichage$/, "")];
   const plat = (t) => String(t).normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   const valeurs = (f) => {
     const out = [];
@@ -211,11 +216,11 @@ function dessinerConfig() {
         if (k.startsWith("_") || k === "historique" || k === "actif") return;
         ajouter(libelleDe(k), v, k);
       });
-    const autresDates = (h) => (h.valeurs || []).filter((e) => !e.en_vigueur)
+    const autresDates = (h) => h.valeurs.filter((e) => !e.en_vigueur)
       .forEach((e) => ajouter(libelleDe(h.champ), e.valeur, h.champ, true));
-    (f.donnees.historique || []).forEach((h) => {
+    f.donnees.historique.forEach((h) => {
       autresDates(h);
-      (h.lignes || []).forEach((l) => l.cases.forEach((c) => autresDates({ ...c, champ: h.champ })));
+      h.lignes.forEach((l) => l.cases.forEach((c) => autresDates({ ...c, champ: h.champ })));
     });
     return out.map((x) => ({ ...x, cle: plat(x.quoi), serre: plat(x.quoi).replace(/\s+/g, "") }));
   };
@@ -228,7 +233,7 @@ function dessinerConfig() {
       if (!v) return null;
       premier = premier || v;
     }
-    return premier || {};
+    return premier;
   };
 
   // Les numéros sans titre (importés des DSN, « A COMPLETER ») en un groupe,
@@ -242,7 +247,7 @@ function dessinerConfig() {
   };
 
   const peindre = () => {
-    const q = plat(RECHERCHE[FICHE_ACTIVE] || "").trim();
+    const q = plat(RECHERCHE[FICHE_ACTIVE]).trim();
     const cible = document.getElementById("config-rangs");
     if (q) {
       const mots = q.split(/\s+/);
@@ -255,10 +260,10 @@ function dessinerConfig() {
     } else {
       cible.innerHTML = `${courantes.length
           ? `<div class="rangs">${courantes.map((f) => rangHtml(f)).join("")}</div>`
-          : `<p class="discret">${echapper(mots.aucun || "")}</p>`}
+          : `<p class="discret">${echapper(mots.aucun)}</p>`}
         ${archiveesSeules.length ? `<label class="coche montrer-archives">
             <input type="checkbox" id="config-archives"${voirArchives ? " checked" : ""}>
-            ${echapper(mots.archives || "")}
+            ${echapper(mots.archives)}
             <span class="discret">(${archiveesSeules.length})</span></label>
           ${voirArchives ? archivesHtml() : ""}` : ""}`;
       const caseArchives = document.getElementById("config-archives");
@@ -318,7 +323,7 @@ let IMPORT_DOSSIER = "";
 /* Le sort d'un fichier ou d'une page (`import::bulletins::SORTS`) : sa pastille,
    telle que la réponse du moteur la donne (`pastilles`). */
 function pastilleSort(sort, pastilles) {
-  return pastilleDeLEtat((pastilles || {})[sort] || { couleur: "gris", mots: String(sort || "?") });
+  return pastilleDeLEtat(pastilles[sort]);
 }
 
 /* « Ouvrir le dossier » n'a de sens que si la page tourne sur le poste,
@@ -336,10 +341,13 @@ const fenetreDuPoste = () => !!window.fenetrePuppetPaie;
    logiciel n'est nommé. Si l'historique est repris, l'état le dit en une
    ligne, et « Relire un dossier » reste pour ce qui manquait. */
 async function dessinerImportation(cible) {
-  let e = null;
-  try { e = await api("importation-etat"); } catch (err) { e = null; }
-  if (!IMPORT_DOSSIER && e && e.dossier) IMPORT_DOSSIER = e.dossier;
-  const deja = e && ((e.reprises && e.reprises.length) || e.contrats);
+  let e;
+  try { e = await api("importation-etat"); } catch (err) {
+    cible.innerHTML = `<div class="encart erreur">${echapper(err.message)}</div>`;
+    return;
+  }
+  if (!IMPORT_DOSSIER) IMPORT_DOSSIER = e.dossier;
+  const deja = e.reprises.length || e.contrats;
   const dossier = `<div class="e-contrat-champs">
       <label style="flex:1">Le dossier
         <span style="display:flex;gap:6px">
@@ -369,7 +377,7 @@ async function dessinerImportation(cible) {
     <div class="carte">
       <div id="import-etat">${vueEtatImportation(e)}</div>
       <div id="import-demarrage"></div>
-      <div id="import-guide">${vueGuideImport(e && e.guide)}
+      <div id="import-guide">${vueGuideImport(e.guide)}
         ${dossier}
         <p><button class="primaire" id="import-tout">Importer</button>
           <button type="button" class="lien" id="import-apercu">Aperçu d'abord</button></p>
@@ -388,26 +396,25 @@ async function dessinerImportation(cible) {
   };
   const ouvrir = document.getElementById("import-ouvrir");
   // Le dossier choisi, sinon la boîte import/ de la compagnie (`dossier` de `importation-etat`), créée si elle manque.
-  if (ouvrir) ouvrir.onclick = () => ouvrirEtDire(document.getElementById("import-dossier").value.trim() || (e && e.dossier) || "", "", true);
+  if (ouvrir) ouvrir.onclick = () => ouvrirEtDire(document.getElementById("import-dossier").value.trim() || e.dossier, "", true);
 }
 
 /* LE GUIDE DE L'IMPORT (`import::guide`, du moteur) : ce qu'on met dans le
    dossier, ce que le logiciel lit de chaque pièce, ce qui restera à dire. La
    page le montre tel quel. */
 function vueGuideImport(g) {
-  if (!g) return "";
-  const pieces = (g.pieces || []).map((p) => `<div class="guide-piece">
+  const pieces = g.pieces.map((p) => `<div class="guide-piece">
       <b>${echapper(p.quoi)}</b>
       <div class="note">${echapper(p.ou)}</div>
-      ${(p.lu || []).length ? `<ul>${p.lu.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul>` : ""}
+      ${p.lu.length ? `<ul>${p.lu.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul>` : ""}
     </div>`).join("");
   return `<h3>Reprendre votre passé</h3>
     <p class="intro">${aideDe("import_intro")}</p>
-    ${(g.a_quoi_sert || []).length ? `<ul>${g.a_quoi_sert.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul>` : ""}
-    <p class="note">${echapper(g.accepte || "")}</p>
+    ${g.a_quoi_sert.length ? `<ul>${g.a_quoi_sert.map((x) => `<li>${echapper(x)}</li>`).join("")}</ul>` : ""}
+    <p class="note">${echapper(g.accepte)}</p>
     <div class="guide-pieces">${pieces}</div>
-    <p class="note">${echapper(g.reste || "")}</p>
-    <p class="note">${echapper(g.rien_n_est_perdu || "")}</p>`;
+    <p class="note">${echapper(g.reste)}</p>
+    <p class="note">${echapper(g.rien_n_est_perdu)}</p>`;
 }
 
 /* « IMPORTER », D'UN GESTE : le moteur reprend tout (`importer`), puis la page
@@ -420,9 +427,9 @@ async function importerDepuisLeGuide() {
   await ecrireImportation();
   rendre();
   // Rien de repris (un dossier vide, des pièces illisibles) : le guide reste, avec ce que le moteur en a dit.
-  let etat = null;
-  try { etat = await api("importation-etat"); } catch (e) { return; }
-  if (!((etat.reprises || []).length || etat.contrats)) return;
+  let etat;
+  try { etat = await api("importation-etat"); } catch (e) { dire(e.message, "erreur"); return; }
+  if (!(etat.reprises.length || etat.contrats)) return;
   const guide = document.getElementById("import-guide");
   if (guide) guide.hidden = true;
   const demarrage = document.getElementById("import-demarrage");
@@ -437,14 +444,13 @@ async function importerDepuisLeGuide() {
    DSN) et une AEM par contrat qu'elle atteste ; les contrats : tous ceux de
    l'historique (`contrats`). Puis ce qui attend l'éditeur (`editeur`). */
 function vueEtatImportation(e) {
-  if (!e) return "";
   const repris = e.repris_dit ? `<div class="rang">
-      <div class="rang-infos"><b class="rang-nom">${echapper(e.repris_titre || "")}</b>
+      <div class="rang-infos"><b class="rang-nom">${echapper(e.repris_titre)}</b>
         ${echapper(e.repris_dit)}</div>
       <div class="rang-etat">${pastilleDeLEtat(e.pastille_repris)}</div>
     </div>` : "";
-  const editeur = (e.editeur || []).map((x) => `<div class="rang">
-      <div class="rang-infos"><b class="rang-nom">${echapper(x.titre_dit || "")}</b>${echapper(x.resume || "")}</div>
+  const editeur = e.editeur.map((x) => `<div class="rang">
+      <div class="rang-infos"><b class="rang-nom">${echapper(x.titre_dit)}</b>${echapper(x.resume)}</div>
       <div class="rang-etat">${pastilleDeLEtat(x.pastille)}</div>
     </div>`).join("");
   return repris + vueNaturesADire(e.a_dire)
@@ -456,7 +462,7 @@ function vueEtatImportation(e) {
    est en CDI ou en CDD : le moteur les nomme (`a_dire`), la page le
    demande, une fois par salarié, sans rien choisir d'avance. */
 function vueNaturesADire(liste) {
-  if (!liste || !liste.length) return "";
+  if (!liste.length) return "";
   // Ce que chaque nature demande avec elle (`demande`, du moteur) : pour un
   // contrat qui court encore, son début, sa fin s'il a un terme, son numéro.
   const CASES = {
@@ -477,9 +483,9 @@ function vueNaturesADire(liste) {
           `<span data-nature-case="${c}" hidden>${CASES[c](x)}</span>`).join("")}</div></div>
       <div class="rang-etat" style="display:flex;gap:6px;align-items:center">
         <select data-nature-choix aria-label="${echapper(x.choix_dit)}">
-          <option value="">— choisir —</option>
-          ${(x.natures || []).map((n) => `<option value="${echapper(n.cle)}"
-             data-demande="${echapper((n.demande || []).join(" "))}">${echapper(n.libelle)}</option>`).join("")}
+          <option value="" data-demande="">— choisir —</option>
+          ${x.natures.map((n) => `<option value="${echapper(n.cle)}"
+             data-demande="${echapper(n.demande.join(" "))}">${echapper(n.libelle)}</option>`).join("")}
         </select>
         <button type="button" class="petit" data-nature-salarie="${echapper(x.salarie)}">Enregistrer</button>
       </div>
@@ -494,7 +500,7 @@ document.addEventListener("change", (ev) => {
   if (!sel) return;
   const rang = sel.closest("[data-nature-rang]");
   const opt = sel.selectedOptions[0];
-  const demande = ((opt && opt.dataset.demande) || "").split(" ").filter((x) => x);
+  const demande = opt.dataset.demande.split(" ").filter((x) => x);
   rang.querySelectorAll("[data-nature-case]").forEach((c) => { c.hidden = !demande.includes(c.dataset.natureCase); });
   rang.querySelector("[data-nature-cases]").hidden = !demande.length;
 });
@@ -510,13 +516,13 @@ document.addEventListener("click", async (ev) => {
   if (!b) return;
   ev.preventDefault();
   const rang = b.closest("[data-nature-rang]");
-  const nature = rang ? rang.querySelector("[data-nature-choix]").value : "";
-  // Une nature vide part telle quelle : c'est le moteur qui la refuse (règle 2).
+  // Une nature non choisie part absente : c'est le moteur qui la refuse (règle 2).
+  const nature = rang.querySelector("[data-nature-choix]").value || null;
   b.disabled = true;
   try {
     const charge = { salarie: b.dataset.natureSalarie, nature };
     rang.querySelectorAll("[data-nature-case]:not([hidden]) [data-nature-champ]").forEach((c) => {
-      charge[c.dataset.natureChamp] = c.value;
+      charge[c.dataset.natureChamp] = c.value || null;
     });
     const r = await api("importation-nature", charge);
     dire(r.phrase, r.couleur);
@@ -550,18 +556,18 @@ async function ouvrirFicheImportee(nom, cle) {
    (`bulletin`, `fichier`, `page`) : la fiche fait foi, il est seulement
    signalé. Une case vide est complétée, et la page dit d'où. */
 function fichesImportees(fiches, titre) {
-  const lignes = (fiches || []).filter((f) => f).map((f) => {
+  const lignes = fiches.map((f) => {
     const etat = pastilleDeLEtat(f.pastille);
     // Ce que le moteur dit de la fiche : d'où elle vient, ce qu'elle reçoit, ce qu'une pièce disait autrement.
     const luDans = f.lu_dans_dit ? `<div class="acte-dernier">${echapper(f.lu_dans_dit)}</div>` : "";
-    const completes = (f.completer || []).map((e) =>
-      `<div class="acte-dernier"><b>${echapper(e.champ)}</b> ${echapper(e.dit || "")}</div>`).join("");
-    const ecarts = (f.ecarts || []).map((e) =>
-      `<div class="acte-dernier"><b>${echapper(e.champ)}</b> — ${echapper(e.dit || "")}</div>`).join("");
+    const completes = f.completer.map((e) =>
+      `<div class="acte-dernier"><b>${echapper(e.champ)}</b> ${echapper(e.dit)}</div>`).join("");
+    const ecarts = f.ecarts.map((e) =>
+      `<div class="acte-dernier"><b>${echapper(e.champ)}</b> — ${echapper(e.dit)}</div>`).join("");
     // UNE VALEUR FAUSSE DES PIÈCES se dit, avec le libellé de sa case ; une
     // case vide n'est pas une faute (ce qu'un acte exige, « Pour démarrer »
     // le dit après l'import).
-    const fautes = (f.anomalies || []).filter((a) => a.gravite === "erreur").map((a) =>
+    const fautes = f.anomalies.filter((a) => a.gravite === "erreur").map((a) =>
       `<div class="acte-dernier faute">${echapper(a.libelle || a.champ)} : ${echapper(a.message)}</div>`).join("");
     const ouvrable = f.etat === "creee" && f.cle && f.nom;
     const reste = fautes ? `<div class="acte-dernier">${ouvrable ? `<button type="button" class="petit" data-ouvrir-fiche="${echapper(f.nom)}"
@@ -578,20 +584,19 @@ function fichesImportees(fiches, titre) {
 /* Le compte rendu, fichier par fichier (`tri.fichiers`) : le chemin dans le
    dossier, le sort, la raison. Un PDF de plusieurs pages déplie ses pages. */
 function compteRenduImport(tri, pastilles) {
-  if (!tri || !tri.fichiers) return "";
-  const comptes = Object.entries(tri.comptes || {}).filter(([, n]) => n > 0)
+  const comptes = Object.entries(tri.comptes).filter(([, n]) => n > 0)
     .map(([s, n]) => `${pastilleSort(s, pastilles)} ${n}`).join(" &nbsp; ");
   const lignes = tri.fichiers.map((f) => {
-    const pages = f.pages && f.pages.length > 1
+    const pages = f.pages.length > 1
       ? `<details class="relire"><summary>${echapper(f.pages_dit)}</summary>${f.pages.map((p) =>
           `<div class="acte-dernier">${echapper(p.page_dit)}
-             ${pastilleSort(p.sort, pastilles)} ${echapper(p.raison || "")}</div>`).join("")}</details>` : "";
+             ${pastilleSort(p.sort, pastilles)} ${echapper(p.raison)}</div>`).join("")}</details>` : "";
     const de = f.de_dit ? ` <span class="discret">${echapper(f.de_dit)}</span>` : "";
     return `<tr><td>${echapper(f.chemin)}${de}</td><td style="white-space:nowrap">${pastilleSort(f.sort, pastilles)}</td>
-      <td>${echapper(f.raison || "")}${pages}</td></tr>`;
+      <td>${echapper(f.raison)}${pages}</td></tr>`;
   }).join("");
   return `<h3>Fichier par fichier</h3>
-    <p class="note">${echapper(tri.dit || "")} &nbsp; ${comptes}</p>
+    <p class="note">${echapper(tri.dit)} &nbsp; ${comptes}</p>
     <table class="tableau-detail"><thead><tr><th>Fichier</th><th>Sort</th><th>Raison</th></tr></thead>
       <tbody>${lignes}</tbody></table>`;
 }
@@ -614,14 +619,14 @@ function piecesImportees(c, titre) {
    noté (`tri.fichiers[].pages[].ecarts`). */
 function ecartsBulletinDsn(tri) {
   const lignes = [];
-  for (const f of (tri && tri.fichiers) || []) {
-    for (const p of f.pages || []) {
-      for (const e of p.ecarts || []) {
+  for (const f of tri.fichiers) {
+    for (const p of f.pages) {
+      for (const e of p.ecarts) {
         lignes.push(`<tr><td>${echapper(p.ou_dit)}</td>
-          <td>${echapper(moisEnClair(p.mois || ""))}</td>
+          <td>${p.mois ? echapper(moisEnClair(p.mois)) : ""}</td>
           <td>${echapper(e.champ_dit)}</td>
-          <td class="nombre">${echapper(e.valeur == null ? "" : e.valeur)}</td>
-          <td class="nombre">${echapper(e.bulletin == null ? "" : e.bulletin)}</td>
+          <td class="nombre">${echapper(e.valeur)}</td>
+          <td class="nombre">${echapper(e.bulletin)}</td>
           <td>${pastilleDeLEtat(e.pastille)}</td></tr>`);
       }
     }
@@ -637,18 +642,18 @@ function ecartsBulletinDsn(tri) {
 /* Les documents qui ne sont pas repris, et pourquoi (`tri.non_repris`, du
    moteur), avec la phrase qui dit que l'import se rejoue. */
 function vueNonRepris(nr, pastilles) {
-  if (!nr || !(nr.fichiers || []).length) return "";
+  if (!nr || !nr.fichiers.length) return "";
   return `<div class="encart attention"><b>Non repris</b>
       ${nr.fichiers.map((f) => `<div class="acte-dernier">${echapper(f.chemin)} ${pastilleSort(f.sort, pastilles)}
-        ${echapper(f.raison || "")}</div>`).join("")}
-      <p>${echapper(nr.phrase || "")}</p>
+        ${echapper(f.raison)}</div>`).join("")}
+      <p>${echapper(nr.phrase)}</p>
     </div>`;
 }
 
 async function rafraichirEtatImportation() {
   const cible = document.getElementById("import-etat");
   if (!cible) return;
-  try { cible.innerHTML = vueEtatImportation(await api("importation-etat")); } catch (e) { /* l'état se relira à la prochaine visite */ }
+  try { cible.innerHTML = vueEtatImportation(await api("importation-etat")); } catch (e) { dire(e.message, "erreur"); }
 }
 
 /* L'aperçu, ou ce qui a été repris. Aucun logiciel n'y est nommé : les
@@ -656,29 +661,29 @@ async function rafraichirEtatImportation() {
 function vueImportation(r) {
   // La couleur de l'encart, et ce que l'import a posé de la configuration,
   // viennent du moteur (`encart`, `parametrage`).
-  const avert = (r.avertissements || []).map((a) => `<div class="encart attention">${echapper(a)}</div>`).join("");
-  const couleur = ENCART_DE_COULEUR[(r.encart || {}).couleur] || "";
-  const pose = (r.parametrage || []).length
+  const avert = r.avertissements.map((a) => `<div class="encart attention">${echapper(a)}</div>`).join("");
+  const couleur = r.encart ? ENCART_DE_COULEUR[r.encart.couleur] : "";
+  const pose = r.parametrage.length
     ? `<p class="note">Posé dans la configuration</p><ul>${r.parametrage.map((p) => `<li>${echapper(p)}</li>`).join("")}</ul>` : "";
   const bouton = r.ecrit
-    ? `<div class="encart ${couleur}"><b>Repris</b> ${(r.fichiers || []).map((f) => echapper(f)).join("<br>")}
+    ? `<div class="encart ${couleur}"><b>Repris</b> ${r.fichiers.map((f) => echapper(f)).join("<br>")}
         ${pose}
         <p class="note">${aideDe("import_copies")}</p></div>`
     : r.rien_a_faire
       ? `<div class="encart ${couleur}">${aideDe("import_rien")}</div>`
       : `<p><button class="primaire" id="import-ecrire">Reprendre</button>
-         <span class="discret">${echapper(r.reprendre || "")}</span>
+         <span class="discret">${echapper(r.reprendre)}</span>
          <span class="note">${aideDe("import_avant_clic")}</span></p>`;
-  return `${vueNonRepris((r.tri || {}).non_repris, r.pastilles)}
+  return `${vueNonRepris(r.tri.non_repris, r.pastilles)}
     ${compteRenduImport(r.tri, r.pastilles)}
     <h3>${echapper(r.titre_dit)}</h3>
     <div class="encart"><b>Déclarations</b>
-      ${echapper(r.declarations_dit || "")}</div>
+      ${echapper(r.declarations_dit)}</div>
     ${bulletinsImportes(r.bulletins)}
     ${piecesImportees(r.certificats, "Certificats Congés Spectacles")}
     ${piecesImportees(r.aem_pdf, "AEM en PDF")}
     ${avert}
-    ${fichesImportees([r.entreprise], "Entreprise")}
+    ${fichesImportees(r.entreprise ? [r.entreprise] : [], "Entreprise")}
     ${fichesImportees(r.salaries, "Salariés")}
     ${fichesImportees(r.spectacles, "Spectacles")}
     ${ecartsBulletinDsn(r.tri)}
@@ -697,7 +702,8 @@ async function apercuImportation() {
   const rendre = occupe(document.getElementById("import-apercu"), "Lecture…");
   cible.innerHTML = `<p class="discret">Lecture…</p>`;
   try {
-    const r = await api("importation-apercu", { dossier: IMPORT_DOSSIER });
+    // Un dossier vide part absent : la boîte import/ de la compagnie.
+    const r = await api("importation-apercu", { dossier: IMPORT_DOSSIER || null });
     cible.innerHTML = vueImportation(r);
     brancherImportation();
   } catch (e) {
@@ -712,7 +718,7 @@ async function ecrireImportation() {
   cible.classList.add("attente");
   occupe(document.getElementById("import-ecrire"), "Reprise…");
   try {
-    const r = await api("importer", { dossier: IMPORT_DOSSIER });
+    const r = await api("importer", { dossier: IMPORT_DOSSIER || null });
     cible.innerHTML = vueImportation(r);
     brancherImportation();
     // Les fiches créées doivent apparaître dans Salariés et Spectacles, et
@@ -875,6 +881,7 @@ const CACHES = {
   entreprise: ["siren", "nic"],
   // `sante_svp` se remplit par les trois cases de la complementaire sante : gardé tel quel, jamais demandé.
   salarie: ["sante_svp"],
+  spectacle: [],
 };
 
 /* Les structures telles qu'elles etaient AVANT la saisie : `lireFormulaire`
@@ -912,12 +919,12 @@ function structureHtml(c, v, sous, a, temps) {
   if (sous.liste) {
     const lignes = Array.isArray(v) ? v : (v ? [v] : []);
     // Les temps des cases de chaque ligne, que le moteur range par la clé de la ligne (le NIC d'un établissement).
-    const deLaLigne = (l) => ((temps || {}).lignes || []).find((x) => l && x.cle === l.nic);
+    const deLaLigne = (l) => (temps ? temps.lignes.find((x) => l && x.cle === l.nic) : undefined);
     corps = `<div class="liste-structure" data-liste="${echapper(c.cle)}">
         ${lignes.map((l, i) => ligneStructure(c.cle, sous, l, i, deLaLigne(l))).join("")}
       </div>
       <button type="button" class="secondaire ajouter-ligne"
-        data-ajouter="${echapper(c.cle)}">${echapper(sous.ajouter || "+")}</button>`;
+        data-ajouter="${echapper(c.cle)}">${echapper(sous.ajouter)}</button>`;
   } else {
     const o = (v && typeof v === "object" && !Array.isArray(v)) ? v : {};
     corps = `<div class="sous-champs">${sous.champs.map(([k, lib, aide, genre = {}]) => {
@@ -965,10 +972,10 @@ function caseSousChamp(parent, k, val, genre) {
     const type = genre.booleen ? "booleen" : "choix";
     const nom = `bouton-${parent}-${k}`;
     return `<div class="boutons-choix" role="radiogroup">
-      <input type="hidden" ${attrs} data-sous-type="${type}" value="${echapper(String(val ?? ""))}">
+      <input type="hidden" ${attrs} data-sous-type="${type}"${valeurDeDepart(val)}>
       ${Object.entries(genre.choix).filter(([v]) => v !== "").map(([v, lib]) => `
       <label class="coche"><input type="radio" name="${echapper(nom)}" value="${echapper(v)}"
-        ${String(val ?? "") === v ? "checked" : ""}>
+        ${val != null && String(val) === v ? "checked" : ""}>
         <span data-choix-libelle="${echapper(v)}">${echapper(lib)}</span></label>`).join("")}
     </div>`;
   }
@@ -977,17 +984,16 @@ function caseSousChamp(parent, k, val, genre) {
     // vrai booleen (`lireFormulaire`).
     const type = genre.booleen ? "booleen" : "choix";
     return `<select ${attrs} data-sous-type="${type}">${Object.entries(genre.choix).map(([v, lib]) =>
-      `<option value="${echapper(v)}" ${String(val ?? "") === v ? "selected" : ""}>${echapper(lib)}</option>`).join("")}</select>`;
+      `<option value="${echapper(v)}" ${(val == null ? v === "" : String(val) === v) ? "selected" : ""}>${echapper(lib)}</option>`).join("")}</select>`;
   }
   if (genre.nombre) {
-    return `<input type="number" step="0.01" min="0" ${attrs} data-sous-type="nombre"
-      value="${echapper(val ?? "")}">`;
+    return `<input type="number" step="0.01" min="0" ${attrs} data-sous-type="nombre"${valeurDeDepart(val)}>`;
   }  // Une date se choisit dans un calendrier, comme partout ; la valeur
   // reste AAAA-MM-JJ. Une valeur ancienne d'une autre forme reste un texte.
-  if (genre.date && /^(\d{4}-\d{2}-\d{2})?$/.test(String(val ?? ""))) {
-    return `<input type="date" ${attrs} value="${echapper(val ?? "")}">`;
+  if (genre.date && (val == null || /^(\d{4}-\d{2}-\d{2})?$/.test(String(val)))) {
+    return `<input type="date" ${attrs}${valeurDeDepart(val)}>`;
   }
-  return `<input ${attrs} value="${echapper(val ?? "")}">`;
+  return `<input ${attrs}${valeurDeDepart(val)}>`;
 }
 
 /* Cocher un bouton écrit sa valeur dans la case cachée du groupe, et la
@@ -1010,22 +1016,22 @@ function ligneStructure(cle, sous, ligne, i, temps) {
   const o = ligne && typeof ligne === "object" ? ligne : {};
   const montres = new Set();
   const sousLaCase = (k) => {
-    const t = ((temps || {}).cases || []).find((x) => (x.champ === k || k.startsWith(x.champ + ".")) && !montres.has(x.champ));
+    const t = temps && temps.cases.find((x) => (x.champ === k || k.startsWith(x.champ + ".")) && !montres.has(x.champ));
     if (!t) return "";
     montres.add(t.champ);
     return lignesDuTemps(t, valeurLisible);
   };
   return `<div class="ligne-structure" data-index="${i}">
-    ${sous.champs.filter(([, , , genre = {}]) => !genre.si || (ETAT.configuration || {})[genre.si]).map(([k, lib, aide, genre = {}]) => {
+    ${sous.champs.filter(([, , , genre]) => !genre.si || ETAT.configuration[genre.si]).map(([k, lib, aide, genre]) => {
       const val = valeurEn(o, k);
       const attrs = `data-liste-de="${echapper(cle)}" data-liste-index="${i}"
           data-sous-cle="${echapper(k)}" ${aide ? `placeholder="${echapper(aide)}"` : ""}`;
-      const v = echapper(val ?? "");
-      const champ = genre.date && /^(\d{4}-\d{2}-\d{2})?$/.test(String(val ?? ""))
-        ? `<input type="date" ${attrs} value="${v}">`
-        : genre.codesAtmp ? `<input ${attrs} list="codes-atmp" maxlength="7" value="${v}">`
-        : genre.decimal ? `<input ${attrs} inputmode="decimal" value="${v}">`
-        : `<input ${attrs} value="${v}">`;
+      const v = valeurDeDepart(val);
+      const champ = genre.date && (val == null || /^(\d{4}-\d{2}-\d{2})?$/.test(String(val)))
+        ? `<input type="date" ${attrs}${v}>`
+        : genre.codesAtmp ? `<input ${attrs} list="codes-atmp" maxlength="7"${v}>`
+        : genre.decimal ? `<input ${attrs} inputmode="decimal"${v}>`
+        : `<input ${attrs}${v}>`;
       return `<label>${echapper(lib)} ${champ}${sousLaCase(k)}</label>`;
     }).join("")}
     <button type="button" class="retirer-ligne" title="retirer cette ligne">✕</button>
@@ -1041,7 +1047,7 @@ let FICHE_COURANTE = null;
  * déroulant, qui montre le métier de la fiche (son code France Travail). La liste est celle des métiers cochés ;
  * on en ajoute dans l'onglet Métiers, pas ici. */
 function METIER_HTML(fiche) {
-  const code = ((fiche || {}).donnees || {}).code_emploi_ft || "";
+  const code = fiche.donnees.code_emploi_ft;
   return `<div class="champ" id="config-metier">
     <label>Métier
       <select id="config-metier-choix">${optionsMetiers(code, "— choisir —")}</select></label>
@@ -1058,7 +1064,7 @@ function METIER_HTML(fiche) {
  * qu'une saisie s'enregistre. */
 const COUTS = {};
 function coutsDe(annee) {
-  if (!COUTS[annee]) COUTS[annee] = api("couts", { annee }).catch(() => null);
+  if (!COUTS[annee]) COUTS[annee] = api("couts", { annee });
   return COUTS[annee];
 }
 function oublierCouts() { Object.keys(COUTS).forEach((k) => delete COUTS[k]); }
@@ -1068,12 +1074,18 @@ async function peindreCoutAnnee() {
   if (!el) return;
   const an = anneeDuJour();
   const ligne = (r, annee) => {
-    const d = r && (r[el.dataset.cote] || {})[el.dataset.coutDe];
+    const d = r[el.dataset.cote][el.dataset.coutDe];
     if (!d || (!d.bulletins && !Number(d.prevu))) return "";
     return `<div><b>${annee}</b> : ${echapper(d.phrase)}</div>`;
   };
   el.innerHTML = `<span class="discret">Coût…</span>`;
-  const [cette, avant] = await Promise.all([coutsDe(an), coutsDe(an - 1)]);
+  let cette, avant;
+  // Un refus se dit à la place du coût, et l'année se redemande à la prochaine fiche ouverte.
+  try { [cette, avant] = await Promise.all([coutsDe(an), coutsDe(an - 1)]); } catch (e) {
+    oublierCouts();
+    if (el.isConnected) el.innerHTML = `<span class="discret">${echapper(e.message)}</span>`;
+    return;
+  }
   if (!el.isConnected) return;
   el.innerHTML = ligne(cette, an) + ligne(avant, an - 1);
 }
@@ -1092,7 +1104,7 @@ async function dessinerMetiers(cible) {
   let r;
   try { r = await api("metiers-catalogue"); }
   catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
-  const sansAccent = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const sansAccent = (t) => String(t).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const peindre = () => {
     const filtre = sansAccent(METIERS_FILTRE.trim());
     const vus = r.metiers.filter((m) => (METIERS_TOUS || m.de_la_convention || m.retenu)
@@ -1160,13 +1172,13 @@ async function dessinerOrganismes(cible) {
   try { r = await api("organismes-contrats", mois); }
   catch (e) { cible.innerHTML = `<p class="discret">${echapper(e.message)}</p>`; return; }
   const champ = (c, k, fixe, place) => fixe
-    ? `<span>${echapper(c[k]) || "—"}</span>`
-    : `<input type="text" data-contrat="${echapper(c.cle)}" data-champ="${k}" value="${echapper(c[k])}"
+    ? `<span>${c[k] == null ? "" : echapper(c[k])}</span>`
+    : `<input type="text" data-contrat="${echapper(c.cle)}" data-champ="${k}"${valeurDeDepart(c[k])}
          placeholder="${place}" maxlength="${k === "libelle" ? 30 : 9}">`;
   // Ce qui est saisi d'un contrat, à une date : sa référence et son organisme.
   const saisi = (v) => v ? [v.libelle, v.organisme].filter(Boolean).join(" · ") : "—";
   // Sous le contrat, sa valeur d'avant et celle à venir ; toutes ses valeurs datées, repliées.
-  const temps = (c) => c.temps ? `${lignesDuTemps(c.temps, saisi)}${(c.temps.valeurs || []).length ? `
+  const temps = (c) => c.temps ? `${lignesDuTemps(c.temps, saisi)}${c.temps.valeurs.length ? `
         <details class="historique-fiche"><summary>${aideDe("historique_titre")}</summary>
           <div class="histoire">${lignesDHistoire(c.temps, c.quoi, saisi)}</div></details>` : ""}` : "";
   const ligne = (c) => `
@@ -1192,7 +1204,7 @@ async function dessinerOrganismes(cible) {
   document.getElementById("organismes-enregistrer").onclick = async () => {
     const contrats = {};
     cible.querySelectorAll("input[data-contrat]").forEach((i) => {
-      (contrats[i.dataset.contrat] ||= {})[i.dataset.champ] = i.value.trim();
+      (contrats[i.dataset.contrat] ||= {})[i.dataset.champ] = i.value.trim() || null;
     });
     try {
       const x = await api("organismes-enregistrer", { contrats, ...mois });
@@ -1208,7 +1220,7 @@ async function dessinerOrganismes(cible) {
  * (`calcul::deduction_forfaitaire`). */
 function DFS_HTML() {
   return `<div class="encart" id="config-dfs">
-    <p>${echapper((ETAT.configuration || {}).deduction_forfaitaire)}</p>
+    <p>${echapper(ETAT.configuration.deduction_forfaitaire)}</p>
     <div class="actions"><button type="button" class="petit secondaire" onclick="ouvrirOptionDfs()">Fiche de l'entreprise</button></div>
   </div>`;
 }
@@ -1282,10 +1294,10 @@ async function brancherAtmp() {
     $("atmp-bouton").textContent = r.inscrire;
     const ou = document.createElement("p");
     ou.className = "aide";
-    ou.textContent = r.ou_le_lire || "";
+    ou.textContent = r.ou_le_lire;
     $("atmp-dit").appendChild(ou);
-    if (!depuis.value) depuis.value = r.propose_depuis || "";
-    const codes = r.codes || [];
+    if (!depuis.value) depuis.value = r.propose_depuis;
+    const codes = r.codes;
     // Les codes que la case et les autres établissements proposent, et ce
     // que le moteur applique à chacun, sous sa ligne.
     let liste = document.getElementById("codes-atmp");
@@ -1297,8 +1309,9 @@ async function brancherAtmp() {
     liste.innerHTML = codes.map((c) =>
       `<option value="${echapper(c.code)}">${echapper(c.code_arrete || c.code)} — ${echapper(c.libelle)}</option>`).join("");
     // Sous la ligne de chaque autre établissement, ses lignes à lui.
-    (r.etablissements || []).forEach((e) => {
-      const p = document.querySelector(`[data-ligne-nic="${CSS.escape(String(e.nic || ""))}"]`);
+    // Un établissement sans NIC n'a pas de ligne où se dire.
+    r.etablissements.filter((e) => e.nic).forEach((e) => {
+      const p = document.querySelector(`[data-ligne-nic="${CSS.escape(e.nic)}"]`);
       if (p) peindreLignesAtmp(p, e);
     });
   };
@@ -1318,7 +1331,7 @@ async function brancherAtmp() {
         const rendre = mettreDeCote();
         const reponse = await demanderDateDEffet(r.avertissement);
         if (rendre) rendre();
-        if (!reponse) { etat.textContent = (ETAT.aides || {}).rien_enregistre || ""; return; }
+        if (!reponse) { etat.textContent = ETAT.aides.rien_enregistre; return; }
         r = await api("enregistrer-fiche", { ...charge, ...reponse, confirme: true });
       }
       etat.textContent = r.phrase;
@@ -1350,7 +1363,7 @@ function SANTE_HTML() {
     <label>Complémentaire santé
       <select id="config-sante-niveau">
         <option value="">— pas encore dite —</option>
-        ${(ETAT.niveaux_sante || []).map((n) =>
+        ${ETAT.niveaux_sante.map((n) =>
           `<option value="${echapper(n.niveau)}">${echapper(n.libelle)}</option>`).join("")}
       </select></label>
     <label class="coche"><input type="checkbox" id="config-sante-conjoint"> conjoint couvert</label>
@@ -1365,8 +1378,8 @@ function SANTE_HTML() {
  * ce salarie deja choisi ; une fiche neuve propose de la faire remplir par
  * la personne elle-meme, par courriel (`demanderFiche`). */
 function enteteSalarie(fiche) {
-  const d = fiche.donnees || {};
-  const nom = `${d.prenom_affichage || d.prenom || ""} ${d.nom_affichage || d.nom || ""}`.trim();
+  const d = fiche.donnees;
+  const nom = [d.prenom_affichage || d.prenom, d.nom_affichage || d.nom].filter((x) => x != null).join(" ").trim();
   if (fiche.cle) {
     return `<div class="entete-fiche">
       <h2>${echapper(nom || fiche.cle)}
@@ -1383,8 +1396,8 @@ function enteteSalarie(fiche) {
     ${d.fiche_recue && fiche.anomalies.some((a) => a.gravite === "erreur")
       ? `<div class="encart">${echapper(d.fiche_recue)}</div>` : ""}`;
   }
-  const lie = !!(ETAT.configuration || {}).boite_liee;
-  const inv = (ETAT.configuration || {}).invitation || {};
+  const lie = ETAT.configuration.boite_liee;
+  const inv = ETAT.configuration.invitation;
   return `<h2>Nouveau salarié</h2>
     <div class="encart invitation">
       <h3>À faire remplir</h3>
@@ -1427,8 +1440,8 @@ async function boiteSuppression() {
   // Une compagnie qui ne se supprime pas : le moteur dit pourquoi.
   if (!q.genre) { dire(q.phrase, "erreur"); return; }
   const reelle = q.genre === "reelle";
-  const s = q.sauvegarde || {};
-  const sauvegarde = reelle && s.liee
+  const s = q.sauvegarde;
+  const sauvegarde = reelle && s && s.liee
     ? `<p>${echapper(s.phrase)}</p>
        <p><button type="button" class="secondaire" id="sup-sauvegarder">Sauvegarder maintenant</button>
        <span class="discret" id="sup-sauvegarde-etat"></span></p>`

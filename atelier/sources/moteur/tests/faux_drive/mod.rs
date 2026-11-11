@@ -6,7 +6,6 @@
 //! de deux homonymes gagne), jamais les sous-dossiers ; `televerser` remplace le fichier `connu` ou en cree un nouveau
 //! (un homonyme reste, rien n'est cherche par nom). Pour `fichiers/restauration.rs` : `sous_dossiers` rend les dossiers
 //! d'un dossier (`root` compris), homonymes compris, sans rien creer ; `telecharger` rend le contenu tel qu'il est tenu.
-#![allow(dead_code)]
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

@@ -8,7 +8,7 @@
 
 use crate::date::Jour;
 use crate::fichiers::{forme_en_cache, FormeGardee};
-use crate::num::Resultat;
+use crate::echec::{refus, R};
 use serde::Deserialize;
 use std::sync::{Arc, OnceLock};
 
@@ -61,7 +61,7 @@ const ILLISIBLE: &str = "Les jours fériés livrés avec le logiciel ne se lisen
 
 /// LA SEULE LECTURE de `feries-base.json`, une fois tant qu'il ne change pas. Une fete dit sa date fixe ou son ecart a
 /// Paques, l'un ou l'autre.
-fn fetes() -> Resultat<Arc<Vec<Fete>>> {
+fn fetes() -> R<Arc<Vec<Fete>>> {
     static CACHE: OnceLock<FormeGardee<Vec<Fete>>> = OnceLock::new();
     forme_en_cache(&CACHE, "feries-base.json", ILLISIBLE, |b: BaseFeries| {
         b.jours
@@ -86,15 +86,15 @@ fn fetes() -> Resultat<Arc<Vec<Fete>>> {
 }
 
 /// Le jour `an`-`mois`-`jour`, ou le refus qui dit ce qui ne va pas (l'annee, le mois, le jour).
-pub fn date_ou_refus(an: i64, mois: i64, jour: i64) -> Resultat<Jour> {
+pub fn date_ou_refus(an: i64, mois: i64, jour: i64) -> R<Jour> {
     if !(1..=9999).contains(&an) {
-        return Err(crate::date::annee_impossible(an));
+        return Err(refus(crate::date::annee_impossible(an)));
     }
     if !(1..=12).contains(&mois) {
-        return Err(crate::mois::mois_impossible(mois));
+        return Err(refus(crate::mois::mois_impossible(mois)));
     }
     Jour::nouveau(an as i32, mois as u32, jour.max(0) as u32)
-        .ok_or_else(|| crate::date::jour_impossible(an, mois, jour))
+        .ok_or_else(|| refus(crate::date::jour_impossible(an, mois, jour)))
 }
 
 fn inserer(out: &mut Jours, jour: Jour, nom: &str) {
@@ -105,7 +105,7 @@ fn inserer(out: &mut Jours, jour: Jour, nom: &str) {
 }
 
 /// Le dimanche de Paques (Meeus, comput gregorien).
-pub fn paques(annee: i32) -> Resultat<Jour> {
+pub fn paques(annee: i32) -> R<Jour> {
     let an = annee as i64;
     let a = an.rem_euclid(19);
     let (b, c) = (an.div_euclid(100), an.rem_euclid(100));
@@ -121,7 +121,7 @@ pub fn paques(annee: i32) -> Resultat<Jour> {
 }
 
 /// Les onze fetes legales de l'annee.
-pub fn feries(annee: i32) -> Resultat<Jours> {
+pub fn feries(annee: i32) -> R<Jours> {
     let mut out = Jours::new();
     let dimanche = paques(annee)?;
     for f in fetes()?.iter() {
@@ -135,7 +135,7 @@ pub fn feries(annee: i32) -> Resultat<Jours> {
 }
 
 /// Ceux que la loi rend chomes : le 1er mai, et lui seul.
-pub fn chomes_de_droit(annee: i32) -> Resultat<Jours> {
+pub fn chomes_de_droit(annee: i32) -> R<Jours> {
     let fetes = fetes()?;
     let noms: Vec<&str> = fetes.iter().filter(|f| f.chome_de_droit).map(|f| f.nom.as_str()).collect();
     Ok(feries(annee)?.into_iter().filter(|(_, n)| noms.contains(&n.as_str())).collect())
@@ -146,7 +146,7 @@ pub const TOUS: &str = "tous";
 
 /// Les feries chomes dans cette entreprise, cette annee. `dits` : ce que sa fiche en dit (`jours_feries_chomes` : `tous`,
 /// `1er mai seulement`) ; rien de dit, le plancher legal.
-pub fn chomes(annee: i32, dits: Option<&str>) -> Resultat<Jours> {
+pub fn chomes(annee: i32, dits: Option<&str>) -> R<Jours> {
     match dits {
         Some(TOUS) => feries(annee),
         _ => chomes_de_droit(annee),
@@ -154,7 +154,7 @@ pub fn chomes(annee: i32, dits: Option<&str>) -> Resultat<Jours> {
 }
 
 /// Les feries chomes d'une periode, annees a cheval comprises.
-pub fn chomes_entre(debut: &Jour, fin: &Jour, dits: Option<&str>) -> Resultat<Jours> {
+pub fn chomes_entre(debut: &Jour, fin: &Jour, dits: Option<&str>) -> R<Jours> {
     let mut out = Jours::new();
     for annee in debut.an..=fin.an {
         for (jour, nom) in chomes(annee, dits)? {

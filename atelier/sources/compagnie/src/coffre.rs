@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use socle::base64::ecrire as base64_ecrire;
 use socle::echec::Classe;
 use socle::json_ascii::dumps;
+use socle::paris::{HeureDeSaisie, MinuteEcrite};
 
 pub const FICHIER: &str = "coffre.bin";
 pub const FICHIER_CLE: &str = "cle-poste.bin";
@@ -87,7 +88,7 @@ struct Contenu {
     #[serde(skip_serializing_if = "Option::is_none")]
     secrets: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    logiciel_pose_le: Option<String>,
+    logiciel_pose_le: Option<HeureDeSaisie>,
 }
 
 /// LES PARAMETRES DE LA DERIVATION DU MOT DE PASSE DU LOGICIEL (scrypt) : ecrits dans le coffre, verifies avant de
@@ -117,7 +118,7 @@ struct Enveloppes {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FichePosee {
-    pose_le: String,
+    pose_le: HeureDeSaisie,
     libelle: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     compte: Option<String>,
@@ -129,7 +130,7 @@ struct FichePosee {
 #[serde(deny_unknown_fields)]
 struct Gardee {
     motdepasse: String,
-    fin: String,
+    fin: MinuteEcrite,
     coffre: String,
 }
 
@@ -141,7 +142,7 @@ pub struct EtatService {
     pub libelle: &'static str,
     pub sert_a: &'static str,
     pub pose: bool,
-    pub pose_le: Option<String>,
+    pub pose_le: Option<HeureDeSaisie>,
     pub variable: &'static str,
     pub dans_environnement: bool,
     pub compte: Option<String>,
@@ -172,34 +173,21 @@ impl Usage {
 
 // ------------------------------------------------------------------ les refus
 
-/// Un refus : sa classe et sa phrase.
-#[derive(Debug, Clone)]
-pub struct Echec {
-    pub classe: Classe,
-    pub message: String,
-}
-
-pub type R<T> = Result<T, Echec>;
-
-/// Le refus du coffre tel qu'un geste le rend (`socle::echec::Echec`) : sa classe et sa phrase.
-pub fn vers_route(x: Echec) -> socle::echec::Echec {
-    socle::echec::Echec { classe: Some(x.classe), message: x.message }
-}
-
-fn echec(classe: Classe, message: impl Into<String>) -> Echec {
-    Echec { classe, message: message.into() }
-}
+use socle::echec::{erreur as echec, Lieu, Echec, R};
 
 /// `Coffre` : le coffre refuse, la phrase est ecrite pour etre lue.
+#[track_caller]
 fn refus(message: impl Into<String>) -> Echec {
     echec(Classe::Coffre, message)
 }
 
 /// Le refus du coffre, son chemin a part.
+#[track_caller]
 fn refus_a(message: impl Into<String>, p: &Path) -> Echec {
-    refus(socle::echec::avec(message, socle::echec::APart { chemin: Some(affiche(p)), ..socle::echec::APart::default() }))
+    Echec { a_part: Some(Lieu { chemin: Some(affiche(p)), ..Lieu::default() }.into()), ..refus(message) }
 }
 
+#[track_caller]
 fn oserr(e: &std::io::Error, p: &Path) -> Echec {
     echec(Classe::Disque, socle::fichiers::panne_fichier(e, p))
 }
@@ -230,7 +218,13 @@ fn resoudre(p: &Path) -> R<PathBuf> {
     let mut reste: Vec<std::ffi::OsString> = Vec::new();
     let mut tete = absolu;
     loop {
-        if let Ok(c) = std::fs::canonicalize(&tete) {
+        let c = match std::fs::canonicalize(&tete) {
+            Ok(c) => Some(c),
+            // Ce qui n'existe pas encore se resout par son parent.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(oserr(&e, &tete)),
+        };
+        if let Some(c) = c {
             let mut sortie = c;
             for r in reste.iter().rev() {
                 if r == ".." {
@@ -401,13 +395,15 @@ fn dossier_de(p: &Path) -> R<()> {
 }
 
 #[cfg(unix)]
-fn permissions(p: &Path, mode: u32) {
+fn permissions(p: &Path, mode: u32) -> R<()> {
     use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(p, std::fs::Permissions::from_mode(mode));
+    std::fs::set_permissions(p, std::fs::Permissions::from_mode(mode)).map_err(|e| oserr(&e, p))
 }
 
 #[cfg(not(unix))]
-fn permissions(_: &Path, _: u32) {}
+fn permissions(_: &Path, _: u32) -> R<()> {
+    Ok(())
+}
 
 fn aleas(n: usize) -> R<Vec<u8>> {
     let mut o = vec![0u8; n];
@@ -563,7 +559,6 @@ pub fn maison_de(env: &dyn Fn(&str) -> Option<String>) -> PathBuf {
         None if cfg!(windows) => env("USERPROFILE"),
         None => None,
     };
-    #[allow(deprecated)]
     match (dit, std::env::home_dir()) {
         (Some(h), _) => PathBuf::from(h),
         (None, Some(h)) => h,
@@ -639,27 +634,27 @@ fn env_non_vide(nom: &str) -> Option<String> {
 pub struct Coffre {
     pub racine: PathBuf,
     pub dossier_cle: PathBuf,
-    /// L'heure locale, `AAAA-MM-JJTHH:MM` : donnee par l'appelant.
-    pub maintenant: String,
+    /// L'heure de Paris a la minute : celle de l'horloge du moteur (`socle::temps`) quand le coffre se fait.
+    pub maintenant: MinuteEcrite,
     /// Les variables d'environnement des services (elles passent devant le coffre).
     pub variables: BTreeMap<String, String>,
 }
 
 impl Coffre {
     /// Le coffre de `racine` avec l'environnement de ce processus.
-    pub fn du_poste(racine: impl Into<PathBuf>, maintenant: &str) -> Coffre {
+    pub fn du_poste(racine: impl Into<PathBuf>) -> Coffre {
         Coffre {
             racine: racine.into(),
             dossier_cle: Coffre::dossier_cle_du_poste(),
-            maintenant: maintenant.to_string(),
+            maintenant: MinuteEcrite::maintenant(),
             variables: SERVICES.iter().filter_map(|s| env_non_vide(s.variable).map(|v| (s.variable.to_string(), v))).collect(),
         }
     }
 
     /// Le coffre de `racine` avec la cle du poste dans `dossier_cle`, sans variable de service : celui que l'administrateur
     /// rescelle (`administrateur.rs`), et que ses essais montent sans toucher a l'environnement du processus.
-    pub fn sur(racine: impl Into<PathBuf>, dossier_cle: impl Into<PathBuf>, maintenant: &str) -> Coffre {
-        Coffre { racine: racine.into(), dossier_cle: dossier_cle.into(), maintenant: maintenant.to_string(), variables: BTreeMap::new() }
+    pub fn sur(racine: impl Into<PathBuf>, dossier_cle: impl Into<PathBuf>, maintenant: MinuteEcrite) -> Coffre {
+        Coffre { racine: racine.into(), dossier_cle: dossier_cle.into(), maintenant, variables: BTreeMap::new() }
     }
 
     /// Le dossier de la cle de CE poste, tel que `du_poste` le trouve.
@@ -667,13 +662,9 @@ impl Coffre {
         dossier_cle_de(&env_du_poste, dossier_portable().as_deref())
     }
 
-    /// L'heure locale `AAAA-MM-JJTHH:MM` : celle qu'on a donnee, sinon l'horloge. Les lecteurs du moteur font leur
-    /// coffre sans heure (`du_poste(racine, "")`) et la seance, elle, expire : une heure vide ne doit pas la rendre eternelle.
-    fn heure(&self) -> String {
-        if !self.maintenant.is_empty() {
-            return self.maintenant.clone();
-        }
-        socle::paris::iso_de_naif(socle::paris::maintenant_naif())[..16].to_string()
+    /// L'heure de ce coffre, a laquelle la seance gardee expire.
+    fn heure(&self) -> MinuteEcrite {
+        self.maintenant
     }
 
     pub fn chemin(&self) -> PathBuf {
@@ -724,7 +715,7 @@ impl Coffre {
         }
         dossier_de(&p)?;
         if let Some(d) = p.parent() {
-            permissions(d, 0o700);
+            permissions(d, 0o700)?;
         }
         let cle = aleas(32)?;
         // 0600 des l'ouverture, et O_EXCL : pas d'instant ou la cle se lit.
@@ -779,7 +770,7 @@ impl Coffre {
         }
         let brut = lire_octets(&p)?;
         let lu = match std::str::from_utf8(&brut) {
-            Ok(t) => socle::forme::lire_texte::<Contenu>(t, "Le coffre ne se lit pas.").map_err(|m| socle::echec::phrase_de(&m)),
+            Ok(t) => socle::forme::lire_texte::<Contenu>(t, "Le coffre ne se lit pas.").map_err(|m| m.phrase),
             Err(e) => Err(e.to_string()),
         };
         match lu {
@@ -791,8 +782,10 @@ impl Coffre {
 
     /// Le refus d'un coffre qui n'est pas au format de cette version : ce qu'il faut reposer ; le chemin et ce qui ne va
     /// pas a part.
+    #[track_caller]
     fn refus_de_format(&self, detail: String) -> Echec {
-        refus(socle::echec::avec(
+        let a_part = Lieu { chemin: Some(affiche(&self.chemin())), detail: Some(detail), ..Lieu::default() };
+        Echec { a_part: Some(a_part.into()), ..refus(
             "Le coffre n'est pas au format de cette version -- il est plus \
              ancien, ou abime. Il ne se convertit pas : le supprimer, avec \
              le jeton Google et la cle de signature qui sont fermes de la \
@@ -803,8 +796,7 @@ impl Coffre {
              \x20 route coffre-poser, service courriel, compte <adresse>\n\
              Puis relier le Drive, et refaire une cle de signature si ce poste \
              publie les mises a jour.",
-            socle::echec::APart { chemin: Some(affiche(&self.chemin())), detail: Some(detail), ..socle::echec::APart::default() },
-        ))
+        ) }
     }
 
     /// Un coffre neuf : (cle maitresse, le contenu a ecrire). L'enveloppe du
@@ -843,7 +835,7 @@ impl Coffre {
         if let Some(cle) = self.cle_poste(false)? {
             match desceller(&cle, &d64(&contenu.enveloppes.poste)?, AAD_POSTE) {
                 Ok(m) => return Ok(Some(m)),
-                Err(x) if x.classe == Classe::Coffre => {}
+                Err(x) if x.classe == Some(Classe::Coffre) => {}
                 Err(x) => return Err(x),
             }
         }
@@ -851,7 +843,7 @@ impl Coffre {
             let r = deriver(mdp, &contenu.kdf).and_then(|k| desceller(&k, &d64(e)?, AAD_MOTDEPASSE));
             return match r {
                 Ok(m) => Ok(Some(m)),
-                Err(x) if x.classe == Classe::Coffre => Ok(None),
+                Err(x) if x.classe == Some(Classe::Coffre) => Ok(None),
                 Err(x) => Err(x),
             };
         }
@@ -886,27 +878,38 @@ impl Coffre {
     /// La cle de CE poste ouvre-t-elle le coffre qui est la ? Vrai aussi sans
     /// coffre : il n'y a rien qui resiste.
     pub fn ouvre_a_ce_poste(&self) -> R<bool> {
-        match self.lire_fichier()? {
-            Some(contenu) => Ok(self.ouvrir_avec(&contenu, None)?.is_some()),
-            None => Ok(true),
-        }
+        let ouvert = match self.lire_fichier()? {
+            Some(contenu) => Some(self.ouvrir_avec(&contenu, None)?.is_some()),
+            None => None,
+        };
+        Ok(ouvert.is_none_or(|o| o))
     }
 
-    /// Les secrets du coffre, descelles : aucun dans un coffre neuf.
+    /// Les secrets du coffre, descelles : un coffre neuf n'en scelle aucun, et l'absence se parcourt.
     fn secrets(&self, contenu: &Contenu, maitresse: &[u8]) -> R<BTreeMap<String, String>> {
-        let Some(scelles) = &contenu.secrets else { return Ok(BTreeMap::new()) };
-        let clair = desceller(maitresse, &d64(scelles)?, &aad_fiches(&contenu.fiches))?;
-        let t = String::from_utf8(clair).map_err(|_| echec(Classe::Illisible, "Les secrets du coffre ne se lisent pas."))?;
-        socle::forme::lire_texte(&t, "Les secrets du coffre ne se lisent pas.").map_err(|m| echec(Classe::Illisible, m))
+        let lus: Option<BTreeMap<String, String>> = contenu
+            .secrets
+            .as_ref()
+            .map(|scelles| {
+                let clair = desceller(maitresse, &d64(scelles)?, &aad_fiches(&contenu.fiches))?;
+                let t = String::from_utf8(clair).map_err(|_| echec(Classe::Illisible, "Les secrets du coffre ne se lisent pas."))?;
+                socle::forme::lire_texte(&t, "Les secrets du coffre ne se lisent pas.").map_err(|m| m.reclasser(Classe::Illisible))
+            })
+            .transpose()?;
+        Ok(lus.into_iter().flatten().collect())
     }
 
+    /// La cle de ce poste ouvre-t-elle l'enveloppe du poste ? Sans cle, elle n'ouvre rien.
     fn poste_ouvre(&self, enveloppes: &Enveloppes, maitresse: &[u8]) -> R<bool> {
-        let Some(cle) = self.cle_poste(false)? else { return Ok(false) };
-        match desceller(&cle, &d64(&enveloppes.poste)?, AAD_POSTE) {
-            Ok(m) => Ok(m == maitresse),
-            Err(x) if x.classe == Classe::Coffre => Ok(false),
-            Err(x) => Err(x),
-        }
+        let ouvre = self
+            .cle_poste(false)?
+            .map(|cle| match desceller(&cle, &d64(&enveloppes.poste)?, AAD_POSTE) {
+                Ok(m) => Ok(m == maitresse),
+                Err(x) if x.classe == Some(Classe::Coffre) => Ok(false),
+                Err(x) => Err(x),
+            })
+            .transpose()?;
+        Ok(ouvre.is_some_and(|o| o))
     }
 
     /// Reecrit le coffre : les fiches en clair, les secrets scelles avec elles.
@@ -920,7 +923,7 @@ impl Coffre {
         let p = self.chemin();
         dossier_de(&p)?;
         std::fs::write(&p, octets).map_err(|e| oserr(&e, &p))?;
-        permissions(&p, 0o600);
+        permissions(&p, 0o600)?;
         Ok(p)
     }
 
@@ -976,22 +979,19 @@ impl Coffre {
         let (maitresse, mut contenu) = self.ouvrir_ou_lever(None)?;
         let mut secrets = self.secrets(&contenu, &maitresse)?;
         secrets.insert(service.into(), motdepasse.into());
-        contenu.fiches.insert(service.into(), FichePosee { pose_le: self.pose_le()?, libelle: fiche.libelle.into(), compte });
+        contenu.fiches.insert(service.into(), FichePosee { pose_le: self.pose_le(), libelle: fiche.libelle.into(), compte });
         self.enregistrer(contenu, &maitresse, &secrets)
     }
 
-    /// `AAAA-MM-JJ HH:MM`.
-    fn pose_le(&self) -> R<String> {
-        if self.maintenant.len() != 16 {
-            return Err(echec(Classe::Illisible, "demande illisible : il faut `maintenant` (AAAA-MM-JJTHH:MM)"));
-        }
-        Ok(self.maintenant.replacen('T', " ", 1))
+    /// L'heure ou un secret se pose (`AAAA-MM-JJ HH:MM`).
+    fn pose_le(&self) -> HeureDeSaisie {
+        HeureDeSaisie::de_la_minute(self.maintenant)
     }
 
     pub fn oublier(&self, service: &str) -> R<bool> {
         service_connu(service)?;
-        let Some(contenu) = self.lire_fichier()? else { return Ok(false) };
-        if !contenu.fiches.contains_key(service) {
+        // Un service que le coffre ne pose pas (ou pas de coffre) : rien a oublier.
+        if !self.lire_fichier()?.is_some_and(|c| c.fiches.contains_key(service)) {
             return Ok(false);
         }
         let (maitresse, mut contenu) = self.ouvrir_ou_lever(None)?;
@@ -1011,7 +1011,7 @@ impl Coffre {
         match self.lire_fichier() {
             Ok(Some(c)) => Ok(c.fiches),
             Ok(None) => Ok(BTreeMap::new()),
-            Err(x) if x.classe == Classe::Coffre => Ok(BTreeMap::new()),
+            Err(x) if x.classe == Some(Classe::Coffre) => Ok(BTreeMap::new()),
             Err(x) => Err(x),
         }
     }
@@ -1056,10 +1056,9 @@ impl Coffre {
         let nom = fiche.nom;
         let usage = Usage::lu(usage)?;
         if usage == Usage::Depot && !confirme {
-            return Err(refus(
-                "Un depot ne puise dans le coffre qu'apres confirmation d'un \
-                 humain. `confirme` doit porter ce qui a ete confirme -- le mois \
-                 recopie, ou la reponse de la fenetre.",
+            return Err(socle::echec::cle(
+                "Un depot ne puise dans le coffre qu'apres confirmation d'un humain : le mois recopie, ou la reponse de la fenetre.",
+                "confirme",
             ));
         }
         if let Some(v) = self.variables.get(fiche.variable) {
@@ -1117,7 +1116,7 @@ impl Coffre {
         }
         let (maitresse, mut c) = self.ouvrir_ou_lever(ancien)?;
         c.enveloppes.motdepasse = Some(b64(&sceller(&deriver(motdepasse, &c.kdf)?, &maitresse, AAD_MOTDEPASSE)?));
-        c.logiciel_pose_le = Some(self.pose_le()?);
+        c.logiciel_pose_le = Some(self.pose_le());
         let secrets = self.secrets(&c, &maitresse)?;
         self.octets_a_ecrire(c, &maitresse, &secrets)
     }
@@ -1126,7 +1125,7 @@ impl Coffre {
     pub fn ouverture_exigee(&self) -> R<bool> {
         match self.lire_fichier() {
             Ok(c) => Ok(c.is_some_and(|c| c.enveloppes.motdepasse.is_some())),
-            Err(x) if x.classe == Classe::Coffre => Ok(false),
+            Err(x) if x.classe == Some(Classe::Coffre) => Ok(false),
             Err(x) => Err(x),
         }
     }
@@ -1154,32 +1153,37 @@ impl Coffre {
         let contenu = match self.lire_fichier() {
             Ok(Some(c)) => c,
             Ok(None) => return Ok(false),
-            Err(x) if x.classe == Classe::Coffre => return Ok(false),
+            Err(x) if x.classe == Some(Classe::Coffre) => return Ok(false),
             Err(x) => return Err(x),
         };
-        let Some(e) = &contenu.enveloppes.motdepasse else { return Ok(false) };
-        let r = deriver(motdepasse, &contenu.kdf).and_then(|k| desceller(&k, &d64(e)?, AAD_MOTDEPASSE));
-        match r {
-            Ok(_) => Ok(true),
-            Err(x) if x.classe == Classe::Coffre => Ok(false),
-            Err(x) => Err(x),
-        }
+        // Sans enveloppe du mot de passe, aucun mot de passe n'ouvre le coffre.
+        let ouvre = contenu
+            .enveloppes
+            .motdepasse
+            .as_ref()
+            .map(|e| match deriver(motdepasse, &contenu.kdf).and_then(|k| desceller(&k, &d64(e)?, AAD_MOTDEPASSE)) {
+                Ok(_) => Ok(true),
+                Err(x) if x.classe == Some(Classe::Coffre) => Ok(false),
+                Err(x) => Err(x),
+            })
+            .transpose()?;
+        Ok(ouvre.is_some_and(|o| o))
     }
 
     // -------------------------------------------- l'ouverture gardee
 
     /// Garde le mot de passe du logiciel jusqu'a `fin` (`AAAA-MM-JJTHH:MM`).
     /// Refuse un mot de passe qui n'ouvre pas le coffre.
-    pub fn garder_ouverture(&self, motdepasse: &str, fin: &str) -> R<String> {
+    pub fn garder_ouverture(&self, motdepasse: &str, fin: MinuteEcrite) -> R<MinuteEcrite> {
         if !self.verifier_ouverture(motdepasse)? {
             return Err(refus("Mot de passe du logiciel refuse : rien n'est garde."));
         }
-        let d = Gardee { motdepasse: motdepasse.into(), fin: fin.into(), coffre: affiche(&resoudre(&self.chemin())?) };
+        let d = Gardee { motdepasse: motdepasse.into(), fin, coffre: affiche(&resoudre(&self.chemin())?) };
         let clair = dumps(&d, None, false, false);
         let p = self.chemin_gardee()?;
         dossier_de(&p)?;
         std::fs::write(&p, sceller(&self.cle_ou_creer()?, clair.as_bytes(), AAD_GARDEE)?).map_err(|e| oserr(&e, &p))?;
-        Ok(fin.to_string())
+        Ok(fin)
     }
 
     /// La gardee dechiffree, s'il y en a une ; `CoffreIllisible` si elle ne s'ouvre pas ou ne se lit pas.
@@ -1189,14 +1193,19 @@ impl Coffre {
         if !existe(&p)? {
             return Ok(None);
         }
-        let illisible = |detail: String| echec(Classe::CoffreIllisible, socle::echec::avec("La seance gardee ne se lit pas.", socle::echec::APart { detail: Some(detail), ..socle::echec::APart::default() }));
+        let illisible = |detail: String| Echec {
+            a_part: Some(Lieu { detail: Some(detail), ..Lieu::default() }.into()),
+            ..echec(Classe::CoffreIllisible, "La seance gardee ne se lit pas.")
+        };
         let clair = match lire_octets(&p).and_then(|o| desceller(&cle, &o, AAD_GARDEE)) {
             Ok(c) => c,
-            Err(x) if x.classe == Classe::Coffre => return Err(illisible(x.message)),
+            Err(x) if x.classe == Some(Classe::Coffre) => return Err(illisible(x.phrase)),
             Err(x) => return Err(x),
         };
         let texte = String::from_utf8(clair).map_err(|e| illisible(e.to_string()))?;
-        socle::forme::lire_texte(&texte, "La seance gardee ne se lit pas.").map(Some).map_err(illisible)
+        socle::forme::lire_texte(&texte, "La seance gardee ne se lit pas.")
+            .map(Some)
+            .map_err(|e| e.reclasser(Classe::CoffreIllisible))
     }
 
     /// Le mot de passe garde, s'il y en a un, pas expire, pour CE coffre, et
@@ -1205,7 +1214,7 @@ impl Coffre {
         let d = match self.gardee() {
             Ok(Some(d)) => d,
             Ok(None) => return Ok(None),
-            Err(x) if x.classe == Classe::CoffreIllisible => {
+            Err(x) if x.classe == Some(Classe::CoffreIllisible) => {
                 self.oublier_ouverture_gardee()?;
                 return Ok(None);
             }
@@ -1226,11 +1235,11 @@ impl Coffre {
     }
 
     /// L'heure de fin de la gardee en cours, sans rien verifier d'autre.
-    pub fn fin_ouverture_gardee(&self) -> R<Option<String>> {
+    pub fn fin_ouverture_gardee(&self) -> R<Option<MinuteEcrite>> {
         let d = match self.gardee() {
             Ok(Some(d)) => d,
             Ok(None) => return Ok(None),
-            Err(x) if x.classe == Classe::CoffreIllisible => return Ok(None),
+            Err(x) if x.classe == Some(Classe::CoffreIllisible) => return Ok(None),
             Err(x) => return Err(x),
         };
         Ok(Some(d.fin).filter(|f| *f >= self.heure()))

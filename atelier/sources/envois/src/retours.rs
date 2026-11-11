@@ -16,9 +16,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
-type Resultat<T> = Result<T, Echec>;
-
-use socle::echec::{erreur as echec, Classe, Echec};
+use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::natures::ListeDeLaNorme;
+use droit::type_declaration::TypeDeLaDeclaration;
+use socle::echec::{erreur as echec, Classe, Echec, R};
+use socle::date::Jour;
+use socle::paris::{DateXsd, HeureDuJournal, HeureXsd, InstantCompact, InstantEcrit, Moment, Naif};
+use socle::piece::format;
+use socle::piece::Zone;
 use socle::texte::blanc;
 
 // ---------------------------------------------------------------- les tables
@@ -69,14 +74,22 @@ pub const ESSAI_REEL: &str = "02";
 pub const RAPPORTS_DEPOT: [&str; 3] = ["CCO", "BAN", "AEE"];
 
 /// Les rubriques DSN du taux de PAS, et ce qu'elles portent.
-const RUBRIQUES_PAS: [(&str, &str); 3] = [
-    ("S21.G00.50.006", "taux"),
-    ("S21.G00.50.007", "type"),
-    ("S21.G00.50.008", "identifiant"),
+const RUBRIQUES_PAS: [(&str, ChampPas); 3] = [
+    ("S21.G00.50.006", ChampPas::Taux),
+    ("S21.G00.50.007", ChampPas::Type),
+    ("S21.G00.50.008", ChampPas::Identifiant),
 ];
 
 /// Noms metier NEODeS des memes rubriques (cahier technique 2026.1, p. 244).
-const NOMS_METIER: [(&str, &str); 3] = [("tauxpas", "taux"), ("typetauxpas", "type"), ("idtauxpas", "identifiant")];
+const NOMS_METIER: [(&str, ChampPas); 3] = [("tauxpas", ChampPas::Taux), ("typetauxpas", ChampPas::Type), ("idtauxpas", ChampPas::Identifiant)];
+
+/// Ce qu'une rubrique du bloc 50 donne d'un taux de PAS (S21.G00.50.006 a .008).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChampPas {
+    Taux,
+    Type,
+    Identifiant,
+}
 
 /// L'archive `nom` (`AAAAMMJJ-hhmmss_natureN_flux.ext`, `releve_retours::archiver_retour`) est-elle celle d'un retour de nature
 /// `nature` ? Son deuxieme segment le dit.
@@ -100,7 +113,7 @@ fn nettoye(s: &str) -> &str {
 }
 
 /// Un chiffre decimal Unicode (le `\d` d'une expression reguliere sur du texte).
-pub fn est_chiffre(c: char) -> bool {
+fn est_chiffre(c: char) -> bool {
     dans(DECIMAUX, c)
 }
 
@@ -217,27 +230,16 @@ fn ajouter(a: &mut Arbre, n: roxmltree::Node) -> usize {
 }
 
 fn dans(table: &[(u32, u32)], c: char) -> bool {
-    let c = c as u32;
-    table
-        .binary_search_by(|&(a, b)| {
-            if c < a {
-                std::cmp::Ordering::Greater
-            } else if c > b {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Equal
-            }
-        })
-        .is_ok()
+    socle::texte::dans_les_plages(table, c)
 }
 
 /// Un nom d'element, d'attribut ou d'instruction tel qu'expat le lit (XML 1.0,
 /// quatrieme edition ; au plus un deux-points, ni en tete ni en queue).
 fn nom_valide(n: &[char]) -> bool {
-    let (Some(&premier), Some(&dernier)) = (n.first(), n.last()) else {
-        return false;
-    };
-    premier != ':' && dernier != ':' && n.iter().filter(|&&c| c == ':').count() <= 1 && dans(NOM_DEBUT, premier) && n[1..].iter().all(|&c| c == ':' || dans(NOM_SUITE, c))
+    // Un nom vide n'en est pas un.
+    n.first().zip(n.last()).is_some_and(|(&premier, &dernier)| {
+        premier != ':' && dernier != ':' && n.iter().filter(|&&c| c == ':').count() <= 1 && dans(NOM_DEBUT, premier) && n[1..].iter().all(|&c| c == ':' || dans(NOM_SUITE, c))
+    })
 }
 
 fn commence_par(c: &[char], i: usize, motif: &str) -> bool {
@@ -335,42 +337,32 @@ fn declaration_valide(d: &[char]) -> bool {
         }
         Some(Some((nom, d[v..i].iter().collect(), i + 1)))
     }
-    let Some(Some((nom, _, mut i))) = pseudo(d, 0) else {
-        return false;
-    };
-    if nom != "version" {
-        return false;
-    }
-    let Some(suite) = pseudo(d, i) else {
-        return false;
-    };
-    let Some((mut nom, mut val, mut j)) = suite else {
-        return true;
-    };
-    if nom == "encoding" {
-        if !val.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
-            return false;
+    // La declaration lue jusqu'au bout ; `None` : elle ne suit pas la grammaire.
+    fn lue(d: &[char]) -> Option<()> {
+        let (nom, _, mut i) = pseudo(d, 0)??;
+        (nom == "version").then_some(())?;
+        let Some((mut nom, mut val, mut j)) = pseudo(d, i)? else {
+            return Some(());
+        };
+        if nom == "encoding" {
+            val.chars().next().filter(|c| c.is_ascii_alphabetic())?;
+            let Some(x) = pseudo(d, j)? else {
+                return Some(());
+            };
+            (nom, val, j) = x;
         }
-        let Some(suite) = pseudo(d, j) else {
-            return false;
-        };
-        let Some(x) = suite else {
-            return true;
-        };
-        (nom, val, j) = x;
+        i = j;
+        (nom == "standalone" && (val == "yes" || val == "no")).then_some(())?;
+        while blanc_xml(d.get(i)) {
+            i += 1;
+        }
+        (i == d.len()).then_some(())
     }
-    i = j;
-    if nom != "standalone" || !(val == "yes" || val == "no") {
-        return false;
-    }
-    while blanc_xml(d.get(i)) {
-        i += 1;
-    }
-    i == d.len()
+    lue(d).is_some()
 }
 
 /// La declaration `<?xml ...?>` de tete, si le texte en commence par une.
-fn controle_declaration(c: &[char]) -> Resultat<()> {
+fn controle_declaration(c: &[char]) -> R<()> {
     if commence_par(c, 0, "<?xml") && blanc_xml(c.get(5)) {
         if let Some(fin) = chercher(c, 5, "?>") {
             if !declaration_valide(&c[5..fin]) {
@@ -384,7 +376,7 @@ fn controle_declaration(c: &[char]) -> Resultat<()> {
 /// Ce qu'expat refuse et que `roxmltree` laisse passer : la declaration mal
 /// ecrite, un nom hors de XML 1.0 quatrieme edition, une reference a un
 /// caractere impossible (`&#xD800;`, `&#x110000;`).
-fn controle_expat(s: &str) -> Resultat<()> {
+fn controle_expat(s: &str) -> R<()> {
     let c: Vec<char> = s.chars().collect();
     let mut i = 0;
     let mut pile: Vec<String> = Vec::new();
@@ -416,7 +408,7 @@ fn controle_expat(s: &str) -> Resultat<()> {
             None => c.len(),
         }
     };
-    let reference = |c: &[char], i: usize| -> Resultat<()> {
+    let reference = |c: &[char], i: usize| -> R<()> {
         // `&#` en c[i..] : chiffres decimaux, ou `x` et chiffres hexadecimaux, puis `;`.
         let (base, mut k) = if c.get(i + 2) == Some(&'x') { (16, i + 3) } else { (10, i + 2) };
         let debut = k;
@@ -565,7 +557,7 @@ fn controle_expat(s: &str) -> Resultat<()> {
 }
 
 /// Un XML déjà en texte : sa déclaration d'encodage est sans effet.
-fn lire_texte(s: &str) -> Resultat<Arbre> {
+fn lire_texte(s: &str) -> R<Arbre> {
     match s.strip_prefix('\u{feff}') {
         Some(t) => lire_texte_nu(t),
         None => lire_texte_nu(s),
@@ -573,7 +565,7 @@ fn lire_texte(s: &str) -> Resultat<Arbre> {
 }
 
 /// Le texte sans son BOM : un second est un caractere de tete que XML refuse.
-fn lire_texte_nu(s: &str) -> Resultat<Arbre> {
+fn lire_texte_nu(s: &str) -> R<Arbre> {
     if s.starts_with('\u{feff}') {
         return Err(mal_forme("XML mal forme : un caractere inattendu"));
     }
@@ -649,7 +641,7 @@ fn codage(nom: &str) -> Codage {
         _ => {}
     }
     let n = normaliser(nom);
-    let a = |t: &[&str]| t.binary_search(&n.as_str()).is_ok();
+    let a = |t: &[&str]| t.contains(&n.as_str());
     if a(CODECS_LATIN1) {
         Codage::Latin1
     } else if a(CODECS_ASCII) {
@@ -674,7 +666,7 @@ fn erreur_codage(c: &Codage, nom: &str) -> Echec {
 }
 
 /// `ET.fromstring(octets)` : l'encodage declare est celui qui decode.
-fn lire_octets(o: &[u8]) -> Resultat<Arbre> {
+fn lire_octets(o: &[u8]) -> R<Arbre> {
     let invalide = || echec(Classe::XmlIllisible, "XML mal forme : un caractere inattendu");
     let incorrect = || echec(Classe::XmlIllisible, "l'encodage declare par le XML n'est pas le sien");
     let (o, bom8) = match o.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
@@ -763,14 +755,14 @@ fn lire_octets(o: &[u8]) -> Resultat<Arbre> {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Bilan {
     pub flux: String,
-    pub recu_le: Option<String>,
+    pub recu_le: Option<Reception>,
     pub essai_reel: Option<String>,
     pub etat_envoi: Option<String>,
     pub etat_declaration: Option<String>,
     pub mois: Option<socle::mois::Mois>,
     pub logiciel: Option<String>,
     pub type_rapport: String,
-    pub type_declaration: Option<String>,
+    pub type_declaration: Option<TypeDeLaDeclaration>,
     pub fraction: Option<String>,
     pub ordre: Option<String>,
     pub salaries: Option<String>,
@@ -810,18 +802,92 @@ impl Bilan {
     }
 }
 
-/// Le mois d'une DSN (S20.G00.05.005, `01MMAAAA`) ; un mois qui ne se lit pas refuse le rapport.
-fn mois_du_rapport(brut: &str) -> Resultat<socle::mois::Mois> {
-    socle::mois::Mois::de_la_dsn(nettoye(brut)).map_err(|m| echec(Classe::Illisible, m))
+/// LA RECEPTION D'UN DEPOT, telle que son bilan la dit : `date_reception` (un `date` de XML Schema) et, s'il la porte,
+/// `heure_reception` (un `time`) ; schema des bilans harmonises, l. 318-327
+/// (`atelier/reference/sources/gip-mds-api-dsn/net-entreprises-dsn-bilans-v02r01-20230703.xsd`). Une heure sans date ne
+/// date rien : le bilan n'a pas de reception. Elle s'ecrit comme elle est lue : `date` ou `dateTheure`, octet pour octet.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Reception {
+    pub date: DateXsd,
+    pub heure: Option<HeureXsd>,
 }
 
-fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> Resultat<Option<Bilan>> {
+impl Reception {
+    /// Le jour de reception, tel qu'ecrit.
+    pub fn jour(&self) -> Jour {
+        self.date.jour
+    }
+
+    /// L'HEURE QUE LE JOURNAL EN GARDE (`HeureDuJournal`) : le jour seul quand le bilan ne dit pas l'heure, l'instant a la
+    /// seconde quand il la dit. Le schema ne dit pas le fuseau d'une heure qui n'en ecrit pas : c'est l'heure telle
+    /// qu'elle est ecrite, tenue pour celle de Paris. Une heure qui ecrit son fuseau se ramene a Paris (`InstantEcrit::de`,
+    /// directive 2000/84/CE). `None` (la reprise ne sait pas dire QUAND, et ne la reprend pas) quand elle ne se ramene pas
+    /// a la seconde de Paris sans rien couper ni supposer : une fraction de seconde non nulle ; une date qui porte un
+    /// fuseau sans heure (le jour de Paris n'y est pas dit), ou un autre fuseau que celui de son heure.
+    pub fn au_journal(&self) -> Option<HeureDuJournal> {
+        let Some(h) = &self.heure else {
+            return self.date.fuseau.is_none().then_some(HeureDuJournal::Jour(self.date.jour));
+        };
+        if !h.a_la_seconde() || self.date.fuseau.is_some_and(|z| h.fuseau.is_none_or(|y| y.secondes() != z.secondes())) {
+            return None;
+        }
+        let local = (self.date.jour.ordinal() - 719_163) * 86_400 + h.seconde;
+        let instant = match h.fuseau {
+            None => InstantEcrit::du_naif(Naif::de_secondes(local)?),
+            Some(z) => InstantEcrit::de(Moment::de_secondes(local - z.secondes())?),
+        };
+        Some(HeureDuJournal::Instant(instant))
+    }
+
+    /// Tel que l'ecran le dit : « 03/09/2026 à 09:36 », ou « 03/09/2026 » sans heure ; l'heure telle qu'ecrite.
+    pub fn dit(&self) -> String {
+        match &self.heure {
+            Some(h) => format!("{} à {}", self.date.jour.jj_mm_aaaa(), h.hh_mm()),
+            None => self.date.jour.jj_mm_aaaa(),
+        }
+    }
+}
+
+impl std::fmt::Display for Reception {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.date.fmt(f)?;
+        match &self.heure {
+            Some(h) => write!(f, "T{}", h),
+            None => Ok(()),
+        }
+    }
+}
+
+impl Serialize for Reception {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+/// La reception que disent les champs `date_reception` et `heure_reception` du rapport (`get`) ; une date ou une heure
+/// qui n'est pas de la forme du schema refuse le rapport.
+fn reception_du_rapport(get: &dyn Fn(&str) -> Option<String>) -> R<Option<Reception>> {
+    let Some(d) = get("date_reception") else { return Ok(None) };
+    let illisible = |element: &str, quoi: &str, t: &str| {
+        socle::echec::cle(format!("La {} de réception d'un bilan ne se lit pas : {} n'est pas une {} de XML Schema.", quoi, socle::date::repr_texte(t), quoi), element).reclasser(Classe::Illisible)
+    };
+    let date = Zone::lue(&d, format::DateXsd).valeur().ok_or_else(|| illisible("date_reception", "date", &d))?;
+    let heure = match get("heure_reception") {
+        Some(h) => Some(Zone::lue(&h, format::HeureXsd).valeur().ok_or_else(|| illisible("heure_reception", "heure", &h))?),
+        None => None,
+    };
+    Ok(Some(Reception { date, heure }))
+}
+
+/// Le mois d'une DSN (S20.G00.05.005, `01MMAAAA`) ; un mois qui ne se lit pas refuse le rapport.
+fn mois_du_rapport(brut: &str) -> R<socle::mois::Mois> {
+    Zone::lue(nettoye(brut), format::MoisDsn).valeur().map_err(|m| m.reclasser(Classe::Illisible))
+}
+
+fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> R<Option<Bilan>> {
     let get = |k: &str| champs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
     let Some(flux) = get("idflux") else { return Ok(None) };
-    let recu_le = match (get("date_reception"), get("heure_reception")) {
-        (Some(d), Some(h)) => Some(format!("{}T{}", d, h)),
-        (d, _) => d,
-    };
+    let recu_le = reception_du_rapport(&get)?;
     Ok(Some(Bilan {
         flux,
         recu_le,
@@ -831,7 +897,7 @@ fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> Resultat<Opt
         mois: get("mois").map(|m| mois_du_rapport(&m)).transpose()?,
         logiciel: get("nom_logiciel"),
         type_rapport: type_rapport.to_string(),
-        type_declaration: get("type"),
+        type_declaration: type_du_retour(get("type").as_deref())?,
         fraction: get("fraction"),
         ordre: get("ordre"),
         salaries: get("salaries"),
@@ -845,7 +911,7 @@ fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> Resultat<Opt
 /// LE BILAN QUE PORTENT LES OCTETS `o` : `None` quand ce n'est pas un rapport de depot (un XML d'une autre forme, ou
 /// sans flux) ; un XML qui ne se lit pas est un refus (sa classe) : la reprise du journal le nomme (`illisibles`), le
 /// rattachement des retours le tient pour une piece sans bilan (`bilan_si_xml`).
-pub fn bilan_d_octets(o: &[u8]) -> Resultat<Option<Bilan>> {
+pub fn bilan_d_octets(o: &[u8]) -> R<Option<Bilan>> {
     let texte = String::from_utf8_lossy(o);
     let arbre = lire_texte(nettoye(&texte))?;
     let racine = arbre.racine();
@@ -869,7 +935,7 @@ pub fn bilan_d_octets(o: &[u8]) -> Resultat<Option<Bilan>> {
 
 /// `bilan_d_octets`, une piece qui n'est pas du XML lisible n'ayant pas de bilan (une archive, un PDF) ; tout autre
 /// refus (un encodage inconnu, un mois illisible) remonte.
-pub fn bilan_si_xml(o: &[u8]) -> Resultat<Option<Bilan>> {
+pub fn bilan_si_xml(o: &[u8]) -> R<Option<Bilan>> {
     match bilan_d_octets(o) {
         Err(Echec { classe: Some(Classe::XmlIllisible), .. }) => Ok(None),
         autre => autre,
@@ -882,12 +948,17 @@ pub fn bilan_si_xml(o: &[u8]) -> Resultat<Option<Bilan>> {
 /// dit d'une declaration : ni salarie, ni contrat, ni date d'evenement (schema des bilans `v01r08`, ceux qu'elle rend ;
 /// specification VT2.2, `atelier/reference/sources/gip-mds-api-dsn/`). Un XML illisible, ou qui
 /// n'est pas un rapport de depot, n'en identifie aucune.
-pub fn declarations_du_bilan(o: &[u8]) -> Resultat<Vec<DeclarationIdentifiee>> {
-    let Some(arbre) = octets_arbre(o)? else { return Ok(Vec::new()) };
-    let racine = arbre.racine();
-    if local(&racine.tag) != "rapport" || !racine.attribut("type").is_some_and(|t| RAPPORTS_DEPOT.contains(&t)) {
-        return Ok(Vec::new());
+pub fn declarations_du_bilan(o: &[u8]) -> R<Vec<DeclarationIdentifiee>> {
+    let mut out = Vec::new();
+    // Un fichier qui n'est pas un XML, ou un rapport qui n'est pas celui d'un depot, n'identifie aucune declaration.
+    let arbre = octets_arbre(o)?.filter(|a| local(&a.racine().tag) == "rapport" && a.racine().attribut("type").is_some_and(|t| RAPPORTS_DEPOT.contains(&t)));
+    if let Some(arbre) = &arbre {
+        out.extend(declarations_de_l_arbre(arbre)?);
     }
+    Ok(out)
+}
+
+fn declarations_de_l_arbre(arbre: &Arbre) -> R<Vec<DeclarationIdentifiee>> {
     let essai_reel = arbre.tous().find(|e| local(&e.tag) == "essai_reel").map(|e| e.texte_net().to_string()).filter(|t| !t.is_empty());
     let mut out = Vec::new();
     for d in arbre.tous().filter(|e| local(&e.tag) == "declaration") {
@@ -902,8 +973,8 @@ pub fn declarations_du_bilan(o: &[u8]) -> Resultat<Vec<DeclarationIdentifiee>> {
         }
         let get = |k: &str| champs.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string());
         out.push(DeclarationIdentifiee {
-            nature: get("nature"),
-            type_declaration: get("type"),
+            nature_declaration: nature_du_retour(get("nature").as_deref())?,
+            type_declaration: type_du_retour(get("type").as_deref())?,
             ordre: get("ordre"),
             siren: get("SIREN"),
             nic: get("nic_affectation"),
@@ -919,9 +990,10 @@ pub fn declarations_du_bilan(o: &[u8]) -> Resultat<Vec<DeclarationIdentifiee>> {
 /// ne le porte pas, et les codes de ses anomalies.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DeclarationIdentifiee {
-    pub nature: Option<String>,
+    #[serde(rename = "nature")]
+    pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
-    pub type_declaration: Option<String>,
+    pub type_declaration: Option<TypeDeLaDeclaration>,
     pub ordre: Option<String>,
     pub siren: Option<String>,
     pub nic: Option<String>,
@@ -930,9 +1002,31 @@ pub struct DeclarationIdentifiee {
     pub codes: Vec<String>,
 }
 
+/// La nature d'une declaration qu'un retour de la norme nomme (S20.G00.05.001), `None` s'il ne la dit pas : un code
+/// hors de la liste de la norme refuse le retour, qui ne se lit pas.
+fn nature_du_retour(code: Option<&str>) -> R<Option<NatureDeLaDeclaration>> {
+    code_du_retour(code, "nature")
+}
+
+/// Le type d'une declaration qu'un retour de la norme nomme (S20.G00.05.002), `None` s'il ne le dit pas : un code hors
+/// de la liste de la norme refuse le retour, qui ne se lit pas.
+fn type_du_retour(code: Option<&str>) -> R<Option<TypeDeLaDeclaration>> {
+    code_du_retour(code, "type")
+}
+
+fn code_du_retour<T: ListeDeLaNorme>(code: Option<&str>, quoi: &str) -> R<Option<T>> {
+    code.map(|c| {
+        T::du_code_de_la_norme(c).ok_or_else(|| {
+            socle::refus!("Le retour porte, en {} de la déclaration ({}), « {} », qui n'est pas un code de sa liste dans la norme : il ne se lit pas.", quoi, T::RUBRIQUE, c)
+                .reclasser(Classe::Illisible)
+        })
+    })
+    .transpose()
+}
+
 /// L'arbre d'octets ; un XML mal forme n'en est pas un (`None`), tout autre refus (un
 /// encodage inconnu) remonte.
-fn octets_arbre(o: &[u8]) -> Resultat<Option<Arbre>> {
+fn octets_arbre(o: &[u8]) -> R<Option<Arbre>> {
     match lire_octets(o) {
         Ok(a) => Ok(Some(a)),
         Err(Echec { classe: Some(Classe::XmlIllisible), .. }) => Ok(None),
@@ -941,12 +1035,11 @@ fn octets_arbre(o: &[u8]) -> Resultat<Option<Arbre>> {
 }
 
 /// `anomalies_du_bilan` : les motifs d'un BAN, en phrases lisibles.
-pub fn anomalies_lisibles_d_octets(o: &[u8]) -> Resultat<Vec<String>> {
-    let Some(arbre) = octets_arbre(o)? else {
-        return Ok(Vec::new());
-    };
+pub fn anomalies_lisibles_d_octets(o: &[u8]) -> R<Vec<String>> {
     let mut out = Vec::new();
-    for a in arbre.tous() {
+    // Un fichier qui n'est pas un XML n'en porte aucune.
+    let arbre = octets_arbre(o)?;
+    for (arbre, a) in arbre.iter().flat_map(|arbre| arbre.tous().map(move |a| (arbre, a))) {
         if local(&a.tag) != "declaration_anomalie" {
             continue;
         }
@@ -979,12 +1072,11 @@ pub struct AnomalieCodee {
 }
 
 /// Les anomalies d'un bilan, en codes.
-pub fn anomalies_codees_d_octets(o: &[u8]) -> Resultat<Vec<AnomalieCodee>> {
-    let Some(arbre) = octets_arbre(o)? else {
-        return Ok(Vec::new());
-    };
+pub fn anomalies_codees_d_octets(o: &[u8]) -> R<Vec<AnomalieCodee>> {
     let mut out = Vec::new();
-    for a in arbre.tous() {
+    // Un fichier qui n'est pas un XML n'en porte aucune.
+    let arbre = octets_arbre(o)?;
+    for (arbre, a) in arbre.iter().flat_map(|arbre| arbre.tous().map(move |a| (arbre, a))) {
         if !matches!(local(&a.tag), "declaration_anomalie" | "envoi_anomalie") {
             continue;
         }
@@ -1009,10 +1101,10 @@ pub fn anomalies_codees_d_octets(o: &[u8]) -> Resultat<Vec<AnomalieCodee>> {
 /// `fusionner_bilans` : un seul bilan par flux, le plus complet. Le bilan de
 /// declaration (CCO, BAN) l'emporte sur l'accuse de transport (AEE).
 pub fn fusionner_bilans(bilans: &[Bilan]) -> Option<Bilan> {
-    let rang = |b: &Bilan| match b.type_rapport.as_str() {
-        "CCO" | "BAN" => 0,
-        "AEE" => 1,
-        _ => 2,
+    // Le bilan de declaration d'abord, puis l'accuse de transport, puis tout autre rapport.
+    let rang = |b: &Bilan| {
+        let t = b.type_rapport.as_str();
+        (!matches!(t, "CCO" | "BAN"), t != "AEE")
     };
     let mut tries: Vec<&Bilan> = bilans.iter().collect();
     tries.sort_by_key(|b| rang(b));
@@ -1030,19 +1122,22 @@ pub fn fusionner_bilans(bilans: &[Bilan]) -> Option<Bilan> {
 /// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`) : sa
 /// publication, sa production, l'OPS et le delegataire, sa nature, son statut, son identifiant et l'adresse de sa piece ;
 /// `libelle`, celui qu'un organisme joue de la compagnie fictive lui donne ; `flux`, l'identifiant du flux qui le porte.
-/// Un champ que la liste ne donne pas est vide.
+/// Un champ que la liste ne donne pas est vide. La publication est `yyyyMMddhhmmss` [14,14] (guide v6.8, « Date de
+/// publication du retour ») ; la DPAE liste ses retours par la meme interface (guide d'implementation de l'API DPAE :
+/// « entièrement compatible avec le mode API disponible pour la DSN », `atelier/reference/norme-dpae/API-DPAE-Guide-Implementation-NAT5492.pdf`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Annonce {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub publication: Option<String>,
+    pub publication: Option<InstantCompact>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub production: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ops: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delegataire: Option<String>,
-    pub nature: String,
+    #[serde(rename = "nature")]
+    pub nature_retour: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub statut: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1056,8 +1151,8 @@ pub struct Annonce {
 
 impl Annonce {
     /// Ce qui distingue un retour : son flux, sa nature, sa publication.
-    pub fn cle(&self) -> (Option<&str>, &str, Option<&str>) {
-        (self.flux.as_deref(), self.nature.as_str(), self.publication.as_deref())
+    pub fn cle(&self) -> (Option<&str>, &str, Option<InstantCompact>) {
+        (self.flux.as_deref(), self.nature_retour.as_str(), self.publication)
     }
 }
 
@@ -1066,7 +1161,7 @@ impl Annonce {
 #[serde(deny_unknown_fields)]
 pub struct Depot {
     pub idflux: String,
-    pub date: String,
+    pub date: socle::paris::InstantCompact,
     pub statut: String,
 }
 
@@ -1115,11 +1210,12 @@ struct FluxJson {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RetourJson {
-    publication: Option<String>,
+    publication: Option<InstantCompact>,
     production: Option<String>,
     ops: Option<String>,
     delegataire: Option<String>,
-    nature: String,
+    #[serde(rename = "nature")]
+    nature_retour: String,
     statut: Option<String>,
     id: Option<String>,
     url: Option<String>,
@@ -1141,15 +1237,23 @@ struct DeclarantJson {
 /// Le declarant que la liste nomme : la releve ne lit que ses depots.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-#[allow(dead_code)]
 struct DepotsDuDeclarant {
-    siret: Option<String>,
-    nom: Option<String>,
-    prenom: Option<String>,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    siret: socle::forme::NonLue,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    nom: socle::forme::NonLue,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    prenom: socle::forme::NonLue,
     depot: Option<UnOuPlusieurs<Depot>>,
 }
 
 const LISTE_ILLISIBLE: &str = "La liste que la plate-forme rend ne se lit pas.";
+
+/// La liste illisible, la cle qui ne va pas a part.
+#[track_caller]
+fn illisible(cle: &str) -> Echec {
+    socle::echec::cle(LISTE_ILLISIBLE, cle).reclasser(Classe::Illisible)
+}
 
 /// Le texte des enfants de `e`, par leur nom local (un enfant vide n'est pas dit).
 fn enfants_textes<'a>(a: &'a Arbre, e: &'a Noeud) -> Vec<(&'a str, &'a str)> {
@@ -1158,11 +1262,11 @@ fn enfants_textes<'a>(a: &'a Arbre, e: &'a Noeud) -> Vec<(&'a str, &'a str)> {
 
 /// Les retours que la plate-forme liste : XML (1.0) ou JSON (2.0). Un champ que la plate-forme ne decrit pas refuse
 /// la liste.
-pub fn liste_retours_d_octets(o: &[u8]) -> Resultat<Vec<Annonce>> {
+pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
     let texte = String::from_utf8_lossy(o);
     let texte = nettoye(&texte);
     if texte.starts_with('{') {
-        let l: ListeJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| echec(Classe::Illisible, m))?;
+        let l: ListeJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| m.reclasser(Classe::Illisible))?;
         let mut out = Vec::new();
         for f in UnOuPlusieurs::en_liste(l.retours.and_then(|r| r.flux)) {
             for r in UnOuPlusieurs::en_liste(f.retour) {
@@ -1171,7 +1275,7 @@ pub fn liste_retours_d_octets(o: &[u8]) -> Resultat<Vec<Annonce>> {
                     production: r.production,
                     ops: r.ops,
                     delegataire: r.delegataire,
-                    nature: r.nature,
+                    nature_retour: r.nature_retour,
                     statut: r.statut,
                     id: r.id,
                     url: r.url,
@@ -1196,12 +1300,13 @@ pub fn liste_retours_d_octets(o: &[u8]) -> Resultat<Vec<Annonce>> {
             if local(&r.tag) != "retour" {
                 continue;
             }
-            let mut a = Annonce { publication: None, production: None, ops: None, delegataire: None, nature: String::new(), statut: None, id: None, url: None, libelle: None, flux: idf.clone() };
+            let mut a = Annonce { publication: None, production: None, ops: None, delegataire: None, nature_retour: String::new(), statut: None, id: None, url: None, libelle: None, flux: idf.clone() };
             let mut nature = None;
             for (nom, t) in enfants_textes(&arbre, r) {
+                let publication = Zone::lue(t, format::InstantCompact).valeur();
                 let t = Some(t.to_string());
                 match nom {
-                    "publication" => a.publication = t,
+                    "publication" => a.publication = Some(publication.ok_or_else(|| illisible("flux.retour.publication"))?),
                     "production" => a.production = t,
                     "ops" => a.ops = t,
                     "delegataire" => a.delegataire = t,
@@ -1209,10 +1314,10 @@ pub fn liste_retours_d_octets(o: &[u8]) -> Resultat<Vec<Annonce>> {
                     "statut" => a.statut = t,
                     "id" => a.id = t,
                     "url" => a.url = t,
-                    autre => return Err(echec(Classe::Illisible, socle::echec::cle(LISTE_ILLISIBLE, &format!("flux.retour.{}", autre)))),
+                    autre => return Err(illisible(&format!("flux.retour.{}", autre))),
                 }
             }
-            a.nature = nature.ok_or_else(|| echec(Classe::Illisible, socle::echec::cle(LISTE_ILLISIBLE, "flux.retour.nature")))?;
+            a.nature_retour = nature.ok_or_else(|| illisible("flux.retour.nature"))?;
             out.push(a);
         }
     }
@@ -1220,11 +1325,11 @@ pub fn liste_retours_d_octets(o: &[u8]) -> Resultat<Vec<Annonce>> {
 }
 
 /// Les depots que la plate-forme liste (depots > declarant > depot{idflux, date, statut}) : XML (1.0) ou JSON (2.0).
-pub fn liste_depots_d_octets(o: &[u8]) -> Resultat<Vec<Depot>> {
+pub fn liste_depots_d_octets(o: &[u8]) -> R<Vec<Depot>> {
     let texte = String::from_utf8_lossy(o);
     let texte = nettoye(&texte);
     if texte.starts_with('{') {
-        let d: DepotsJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| echec(Classe::Illisible, m))?;
+        let d: DepotsJson = socle::forme::lire_texte(texte, LISTE_ILLISIBLE).map_err(|m| m.reclasser(Classe::Illisible))?;
         return Ok(UnOuPlusieurs::en_liste(d.depots.and_then(|x| x.declarant).and_then(|x| x.depot)));
     }
     let arbre = lire_texte(texte)?;
@@ -1232,12 +1337,13 @@ pub fn liste_depots_d_octets(o: &[u8]) -> Resultat<Vec<Depot>> {
     for el in arbre.tous().filter(|el| local(&el.tag) == "depot") {
         let champs = enfants_textes(&arbre, el);
         let champ = |k: &str| {
-            champs.iter().find(|(n, _)| *n == k).map(|(_, t)| t.to_string()).ok_or_else(|| echec(Classe::Illisible, socle::echec::cle(LISTE_ILLISIBLE, &format!("depot.{}", k))))
+            champs.iter().find(|(n, _)| *n == k).map(|(_, t)| t.to_string()).ok_or_else(|| illisible(&format!("depot.{}", k)))
         };
         if let Some((autre, _)) = champs.iter().find(|(n, _)| !["idflux", "date", "statut"].contains(n)) {
-            return Err(echec(Classe::Illisible, socle::echec::cle(LISTE_ILLISIBLE, &format!("depot.{}", autre))));
+            return Err(illisible(&format!("depot.{}", autre)));
         }
-        out.push(Depot { idflux: champ("idflux")?, date: champ("date")?, statut: champ("statut")? });
+        let date = Zone::lue(&champ("date")?, format::InstantCompact).valeur().ok_or_else(|| illisible("depot.date"))?;
+        out.push(Depot { idflux: champ("idflux")?, date, statut: champ("statut")? });
     }
     Ok(out)
 }
@@ -1257,28 +1363,42 @@ impl Entree94 {
         self.identifiant.is_some() && self.nir.is_some()
     }
 
-    fn champ(&mut self, nom: &str) -> &mut Option<String> {
-        match nom {
-            "taux" => &mut self.taux,
-            "type" => &mut self.type_,
-            _ => &mut self.identifiant,
+    fn champ(&mut self, c: ChampPas) -> &mut Option<String> {
+        match c {
+            ChampPas::Taux => &mut self.taux,
+            ChampPas::Type => &mut self.type_,
+            ChampPas::Identifiant => &mut self.identifiant,
         }
     }
 
-    /// Le releve, quand l'entree dit son NIR et son identifiant.
-    fn releve(&self) -> Option<ReleveTauxPas> {
-        Some(ReleveTauxPas { nir: self.nir.clone()?, taux: self.taux.clone(), type_taux: self.type_.clone(), identifiant: self.identifiant.clone()? })
+    /// Le releve, quand l'entree dit son NIR et son identifiant ; un taux ou un type qui n'a pas la forme de la norme
+    /// refuse la piece.
+    fn releve(&self) -> R<Option<ReleveTauxPas>> {
+        let (Some(nir), Some(identifiant)) = (self.nir.clone(), self.identifiant.clone()) else { return Ok(None) };
+        let taux = self.taux.as_deref().map(taux_de_pas).transpose()?;
+        let type_taux = self.type_.as_deref().map(type_de_taux).transpose()?;
+        Ok(Some(ReleveTauxPas { nir, taux, type_taux, identifiant }))
     }
 }
 
+/// Un taux de PAS lu dans un compte rendu (S21.G00.50.006) ; une autre forme refuse la piece.
+fn taux_de_pas(t: &str) -> R<droit::pas::TauxDePas> {
+    droit::pas::TauxDePas::lire(t).ok_or_else(|| echec(Classe::Illisible, format!("Un compte rendu de taux de PAS porte le taux « {} », qui n'a pas la forme de la norme (S21.G00.50.006).", t)))
+}
+
+/// Un type de taux de PAS lu dans un compte rendu (S21.G00.50.007) ; un code hors de la liste refuse la piece.
+fn type_de_taux(t: &str) -> R<droit::type_taux_pas::TypeDeTauxPas> {
+    droit::type_taux_pas::TypeDeTauxPas::du_code(t).ok_or_else(|| echec(Classe::Illisible, format!("Un compte rendu de taux de PAS porte le type « {} », qui n'est pas dans la liste de la norme (S21.G00.50.007).", t)))
+}
+
 /// UN TAUX DE PAS QU'UN COMPTE RENDU DE NATURE 94 COMMUNIQUE : le NIR (13 caracteres), le taux, son type et l'identifiant
-/// (S21.G00.50.006 a .008) ; un taux ou un type que la piece ne dit pas est vide.
+/// (S21.G00.50.006 a .008) ; un taux ou un type que la piece ne dit pas est vide : aucun taux transmis.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ReleveTauxPas {
     pub nir: String,
-    pub taux: Option<String>,
+    pub taux: Option<droit::pas::TauxDePas>,
     #[serde(rename = "type")]
-    pub type_taux: Option<String>,
+    pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant: String,
 }
 
@@ -1321,36 +1441,39 @@ fn valeurs_de(p: &Plat) -> Vec<&str> {
     p.attribs.iter().map(|(_, v)| v.as_str()).chain(std::iter::once(p.texte.as_str())).collect()
 }
 
-fn rubrique_pas(v: &str) -> Option<&'static str> {
+fn rubrique_pas(v: &str) -> Option<ChampPas> {
     RUBRIQUES_PAS.iter().find(|(k, _)| *k == v).map(|(_, c)| *c)
 }
 
-fn pas_rapport_crm(a: &Arbre) -> Vec<ReleveTauxPas> {
+fn pas_rapport_crm(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
     let racine = a.racine();
     if local(&racine.tag) != "rapport" {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let Some(identifiant) = racine.attribut("identifiant").filter(|s| !s.is_empty()) else {
-        return Vec::new();
-    };
     let mut releves = Vec::new();
-    for el in a.tous() {
+    // Un rapport sans identifiant ne transmet aucun taux.
+    let identifiant = racine.attribut("identifiant").filter(|s| !s.is_empty());
+    for (identifiant, el) in identifiant.iter().flat_map(|i| a.tous().map(move |el| (i, el))) {
         if local(&el.tag) != "salarie" {
             continue;
         }
         let champs = enfants_textes(a, el);
         let lu = |k: &str| champs.iter().rev().find(|(n, _)| *n == k).map(|(_, t)| t.to_string());
         let Some(nir) = lu("NIR") else { continue };
-        let (taux, type_taux, identifiant) = match lu("taux_imposition_PAS") {
-            Some(taux) => (taux, "01", identifiant.to_string()),
-            None => ("0.00".to_string(), "13", "-1".to_string()),
+        // Le schema des bilans (net-entreprises-dsn-bilans-v02r01-20230703.xsd) dit `taux_imposition_PAS` facultatif,
+        // sans dire ce que son absence vaut : aucun texte deposé n'en fait un taux, un type ni un identifiant. Le salarie
+        // que le compte rendu nomme sans taux n'a aucun taux transmis (ni taux, ni type) ; ce que sa paie en fait, c'est
+        // le calcul du PAS qui le dit (`droit::pas::situation` : aucun taux de type 01, la grille).
+        let (taux, type_taux) = match lu("taux_imposition_PAS") {
+            Some(t) => (Some(taux_de_pas(&t)?), Some(droit::type_taux_pas::TypeDeTauxPas::TransmisParLaDgfip)),
+            None => (None, None),
         };
-        releves.push(ReleveTauxPas { nir, taux: Some(taux), type_taux: Some(type_taux.to_string()), identifiant });
+        releves.push(ReleveTauxPas { nir, taux, type_taux, identifiant: identifiant.to_string() });
     }
-    releves
+    Ok(releves)
 }
 
-fn pas_par_code(a: &Arbre) -> Vec<ReleveTauxPas> {
+fn pas_par_code(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
     let elements = a_plat(a);
     const RUB: &str = "S21.G00.50.008";
     // Les attributs (clés et valeurs) puis le texte de chaque élément.
@@ -1358,10 +1481,10 @@ fn pas_par_code(a: &Arbre) -> Vec<ReleveTauxPas> {
         .iter()
         .any(|p| p.texte.contains(RUB) || p.attribs.iter().any(|(k, v)| k.contains(RUB) || v.contains(RUB)));
     if !present {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let (mut releves, mut cur) = (Vec::new(), Entree94::default());
-    let mut attente: Option<&str> = None;
+    let mut attente: Option<ChampPas> = None;
     for p in &elements {
         let valeurs = valeurs_de(p);
         for v in &valeurs {
@@ -1397,14 +1520,14 @@ fn pas_par_code(a: &Arbre) -> Vec<ReleveTauxPas> {
     if cur.complete() {
         releves.push(cur);
     }
-    releves.iter().filter_map(Entree94::releve).collect()
+    releves.iter().filter_map(|e| e.releve().transpose()).collect()
 }
 
-fn pas_par_nom_metier(a: &Arbre) -> Vec<ReleveTauxPas> {
+fn pas_par_nom_metier(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
     let elements = a_plat(a);
     let metier = |nom: &str| NOMS_METIER.iter().find(|(k, _)| *k == nom).map(|(_, c)| *c);
     if !elements.iter().any(|p| metier(&p.nom.to_lowercase()).is_some()) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let (mut releves, mut cur) = (Vec::new(), Entree94::default());
     for p in &elements {
@@ -1427,19 +1550,10 @@ fn pas_par_nom_metier(a: &Arbre) -> Vec<ReleveTauxPas> {
     if cur.complete() {
         releves.push(cur);
     }
-    releves.iter().filter_map(Entree94::releve).collect()
+    releves.iter().filter_map(|e| e.releve().transpose()).collect()
 }
 
-/// Un taux : un ou deux chiffres, un point, deux chiffres.
-fn est_taux(v: &str) -> bool {
-    let c: Vec<char> = v.chars().collect();
-    let Some(p) = c.iter().position(|&x| x == '.') else {
-        return false;
-    };
-    (1..=2).contains(&p) && c.len() == p + 3 && c[..p].iter().all(char::is_ascii_digit) && c[p + 1..].iter().all(char::is_ascii_digit)
-}
-
-fn pas_par_balayage(a: &Arbre) -> Vec<ReleveTauxPas> {
+fn pas_par_balayage(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
     let valeurs: Vec<String> = a_plat(a)
         .iter()
         .flat_map(|p| valeurs_de(p).into_iter().filter(|v| !v.is_empty()).map(str::to_string).collect::<Vec<_>>())
@@ -1452,9 +1566,9 @@ fn pas_par_balayage(a: &Arbre) -> Vec<ReleveTauxPas> {
             }
             cur = Entree94 { nir: Some(treize(v)), ..Default::default() };
         } else if cur.nir.as_deref().is_some_and(|n| !n.is_empty()) {
-            if cur.taux.is_none() && est_taux(v) {
+            if cur.taux.is_none() && droit::pas::TauxDePas::lire(v).is_some() {
                 cur.taux = Some(v.clone());
-            } else if cur.type_.is_none() && ["01", "13", "17", "23", "27", "33", "37", "99"].contains(&v.as_str()) {
+            } else if cur.type_.is_none() && droit::type_taux_pas::TypeDeTauxPas::du_code(v).is_some() {
                 cur.type_ = Some(v.clone());
             } else if cur.identifiant.is_none() && (v == "-1" || ((1..=18).contains(&v.chars().count()) && v.chars().all(|c| c.is_ascii_digit()))) {
                 cur.identifiant = Some(v.clone());
@@ -1464,21 +1578,21 @@ fn pas_par_balayage(a: &Arbre) -> Vec<ReleveTauxPas> {
     if cur.complete() {
         releves.push(cur);
     }
-    releves.iter().filter_map(Entree94::releve).collect()
+    releves.iter().filter_map(|e| e.releve().transpose()).collect()
 }
 
 /// `extraire_taux_pas` : les quatre strategies, de la plus sure a la plus large.
-pub fn taux_pas_d_octets(o: &[u8]) -> Resultat<TauxPasLus> {
+pub fn taux_pas_d_octets(o: &[u8]) -> R<TauxPasLus> {
     let texte = String::from_utf8_lossy(o);
     let arbre = lire_texte(&texte)?;
-    let strategies: [(&'static str, fn(&Arbre) -> Vec<ReleveTauxPas>); 4] = [
+    let strategies: [(&'static str, fn(&Arbre) -> R<Vec<ReleveTauxPas>>); 4] = [
         ("rapport CRM nominatif", pas_rapport_crm),
         ("rubriques codees", pas_par_code),
         ("noms metier NEODeS", pas_par_nom_metier),
         ("balayage large", pas_par_balayage),
     ];
     for (nom, f) in strategies {
-        let releves = f(&arbre);
+        let releves = f(&arbre)?;
         if !releves.is_empty() {
             return Ok(TauxPasLus { strategie: Some(nom), releves });
         }
@@ -1523,7 +1637,7 @@ fn mauvais(m: impl Into<String>) -> Echec {
     echec(Classe::ArchiveIllisible, m)
 }
 
-fn cp437(o: &[u8]) -> Resultat<String> {
+fn cp437(o: &[u8]) -> R<String> {
     o.iter()
         .map(|&b| if b < 0x80 { Some(b as char) } else { char::from_u32(CP437[b as usize - 0x80]) })
         .collect::<Option<String>>()
@@ -1531,7 +1645,7 @@ fn cp437(o: &[u8]) -> Resultat<String> {
 }
 
 /// Le nom d'un membre : UTF-8 si le drapeau 11 est leve, cp437 sinon.
-fn nom_zip(o: &[u8], drapeaux: usize) -> Resultat<String> {
+fn nom_zip(o: &[u8], drapeaux: usize) -> R<String> {
     if drapeaux & 0x800 != 0 {
         std::str::from_utf8(o)
             .map(str::to_string)
@@ -1574,7 +1688,7 @@ fn description_compression(t: usize) -> &'static str {
 }
 
 /// `ZipInfo._decodeExtra` : la zone zip64 des tailles et du decalage.
-fn extra_zip64(extra: &[u8], m: &mut Membre) -> Resultat<()> {
+fn extra_zip64(extra: &[u8], m: &mut Membre) -> R<()> {
     let mut e = extra;
     while e.len() >= 4 {
         let (tp, ln) = (u16_le(e, 0), u16_le(e, 2));
@@ -1583,7 +1697,7 @@ fn extra_zip64(extra: &[u8], m: &mut Membre) -> Resultat<()> {
         }
         if tp == 0x0001 {
             let mut d = &e[4..ln + 4];
-            let mut lire = |champ: &str| -> Resultat<u64> {
+            let mut lire = |champ: &str| -> R<u64> {
                 if d.len() < 8 {
                     return Err(mauvais(format!("archive zip64 abimee : {} absent du champ supplementaire", champ)));
                 }
@@ -1607,7 +1721,7 @@ fn extra_zip64(extra: &[u8], m: &mut Membre) -> Resultat<()> {
 }
 
 /// Le repertoire central, dans l'ordre de l'archive.
-fn repertoire_zip(b: &[u8]) -> Resultat<Vec<Membre>> {
+fn repertoire_zip(b: &[u8]) -> R<Vec<Membre>> {
     let pas_un_zip = || mauvais("ce n'est pas une archive zip");
     let taille_fichier = b.len();
     // `_EndRecData`
@@ -1682,7 +1796,8 @@ fn repertoire_zip(b: &[u8]) -> Resultat<Vec<Membre>> {
         };
         let nom_brut = prendre(&mut p, ln_nom);
         let extra = prendre(&mut p, ln_extra);
-        let _ = prendre(&mut p, ln_comm);
+        // Le commentaire de l'entree ne se lit pas : on passe ses octets.
+        p += ln_comm;
         let drapeaux = u16_le(c, 8);
         let original = nom_zip(nom_brut, drapeaux)?;
         // Le nom s'arrete au premier octet nul (`split` rend toujours un premier morceau).
@@ -1699,7 +1814,7 @@ fn repertoire_zip(b: &[u8]) -> Resultat<Vec<Membre>> {
             fin: 0,
         };
         if c[6] > 63 {
-            return Err(echec(Classe::ArchiveNonLue, format!("archive zip de version {:.1} : non lue", c[6] as f64 / 10.0)));
+            return Err(echec(Classe::ArchiveNonLue, format!("archive zip de version {}.{} : non lue", c[6] / 10, c[6] % 10)));
         }
         extra_zip64(extra, &mut m)?;
         m.decalage += concat;
@@ -1724,7 +1839,7 @@ fn crc32(o: &[u8]) -> u64 {
 }
 
 /// `ZipFile.read(nom)`.
-fn lire_membre(b: &[u8], m: &Membre) -> Resultat<Vec<u8>> {
+fn lire_membre(b: &[u8], m: &Membre) -> R<Vec<u8>> {
     if m.decalage < 0 {
         return Err(echec(Classe::Illisible, format!("negative seek value {}", m.decalage)));
     }
@@ -1888,18 +2003,18 @@ fn nom_aer(nom: &str) -> Option<(String, String)> {
     None
 }
 
-/// Une attestation d'une archive de nature 46 : son nom dans l'archive, sa periode (AAAA-MM, quand le nom la dit), le salarie que le nom designe, et le PDF.
+/// Une attestation d'une archive de nature 46 : son nom dans l'archive, sa periode (quand le nom la dit, `MMAAAA`), le salarie que le nom designe, et le PDF.
 #[derive(Debug, Clone)]
 pub struct AttestationAer {
     pub nom_archive: String,
-    pub periode: Option<String>,
+    pub periode: Option<socle::mois::Mois>,
     pub qui: String,
     pub donnees: Vec<u8>,
 }
 
 /// `aer_spectacle` : les attestations d'une archive de nature 46 ; liste vide si
 /// le contenu n'est pas une archive lisible.
-pub fn aer_spectacle(o: &[u8]) -> Resultat<Vec<AttestationAer>> {
+pub fn aer_spectacle(o: &[u8]) -> R<Vec<AttestationAer>> {
     let membres = match repertoire_zip(o) {
         Ok(m) => m,
         Err(e) if e.classe == Some(Classe::ArchiveIllisible) => return Ok(Vec::new()),
@@ -1911,10 +2026,7 @@ pub fn aer_spectacle(o: &[u8]) -> Resultat<Vec<AttestationAer>> {
         // Un dossier, ou un chemin qui ne nomme pas de fichier, n'est pas une attestation.
         let Some(fichier) = nom_de_fichier(&m.nom).filter(|_| !m.nom.ends_with('/')) else { continue };
         let (periode, qui) = match nom_aer(fichier) {
-            Some((mmaaaa, qui)) => {
-                let c: Vec<char> = mmaaaa.chars().collect();
-                (Some(format!("{}-{}", c[2..].iter().collect::<String>(), c[..2].iter().collect::<String>())), qui.replace('_', " "))
-            }
+            Some((mmaaaa, qui)) => (Zone::lue(&mmaaaa, format::Mmaaaa).valeur(), qui.replace('_', " ")),
             None => (None, radical(fichier).to_string()),
         };
         let dernier = match membres.iter().rev().find(|x| x.nom == m.nom) {
@@ -2004,7 +2116,7 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
                 autre => return Err(illisible("témoin bureau", autre)),
             };
             let brut = champ("taux");
-            let taux = socle::num::decimal_lu(&brut.replace(',', ".")).filter(|v| *v > socle::num::Decimal::ZERO && *v < socle::num::Decimal::from(100));
+            let taux = socle::num::decimal_a_virgule(&brut).filter(|v| *v > socle::num::Decimal::ZERO && *v < socle::num::Decimal::from(100));
             let Some(taux) = taux else { return Err(illisible("taux", &brut)) };
             let effet = champ("date_effet");
             let Some(date_effet) = jour_aaaammjj(&effet) else { return Err(illisible("date d'effet", &effet)) };
@@ -2063,7 +2175,7 @@ fn premier_texte<'a>(a: &'a Arbre, e: &'a Noeud, noms: &[&str]) -> &'a str {
 /// (`atelier/reference/sources/gip-mds-api-dsn/gip-mds-specifications-schema-bilans-vt2.2-20201118.txt`) ; les noms
 /// d'elements sont ceux des pieces recues (`v01r08`) et des exemples du guide. `None` : ce n'est pas un rapport
 /// harmonise (un XML d'un autre format, un PDF, une archive), ou il ne se lit pas.
-pub fn lire_rapport(o: &[u8]) -> Resultat<Option<Rapport>> {
+pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
     let Some(arbre) = octets_arbre(o)? else { return Ok(None) };
     let racine = arbre.racine();
     if local(&racine.tag) != "rapport" {
@@ -2083,8 +2195,8 @@ pub fn lire_rapport(o: &[u8]) -> Resultat<Option<Rapport>> {
         let (id, bilan) = (sous_bloc("declaration_identification"), sous_bloc("declaration_bilan"));
         let mois = premier_texte(&arbre, id, &["mois"]);
         declarations.push(DeclarationDuRapport {
-            nature: premier_texte(&arbre, id, &["nature"]).to_string(),
-            type_declaration: premier_texte(&arbre, id, &["type"]).to_string(),
+            nature_declaration: nature_du_retour(Some(premier_texte(&arbre, id, &["nature"])).filter(|t| !t.is_empty()))?,
+            type_declaration: type_du_retour(Some(premier_texte(&arbre, id, &["type"])).filter(|t| !t.is_empty()))?,
             ordre: premier_texte(&arbre, id, &["ordre"]).to_string(),
             mois: if mois.is_empty() { None } else { Some(mois_du_rapport(mois)?) },
             etat: premier_texte(&arbre, bilan, &["etat", "etat_conformite"]).to_string(),
@@ -2158,12 +2270,13 @@ pub struct Rapport {
     pub informations: Vec<InformationCollective>,
 }
 
-/// Une declaration d'un rapport : nature, type, ordre, mois (quand il le dit) et etat.
+/// Une declaration d'un rapport : nature (quand il la dit), type, ordre, mois (quand il le dit) et etat.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DeclarationDuRapport {
-    pub nature: String,
+    #[serde(rename = "nature")]
+    pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
-    pub type_declaration: String,
+    pub type_declaration: Option<TypeDeLaDeclaration>,
     pub ordre: String,
     pub mois: Option<socle::mois::Mois>,
     pub etat: String,
@@ -2197,7 +2310,7 @@ pub struct DonneeCollective {
 }
 
 /// Les noms des membres d'une archive ZIP (une archive d'AER, nature 43 ou 46) ; vide si ce n'en est pas une.
-pub fn membres_du_zip(o: &[u8]) -> Resultat<Vec<String>> {
+pub fn membres_du_zip(o: &[u8]) -> R<Vec<String>> {
     match repertoire_zip(o) {
         Ok(m) => Ok(m.into_iter().map(|x| x.nom).filter(|n| !n.ends_with('/')).collect()),
         Err(e) if e.classe == Some(Classe::ArchiveIllisible) => Ok(Vec::new()),
@@ -2272,13 +2385,42 @@ fn rubrique_texte(a: &Arbre, e: &Noeud, nom: &str) -> Option<String> {
     rubrique_de(a, e, nom).map(str::to_string)
 }
 
+/// `rubrique_de`, un montant signe (RO.B005.R004, CSL 00 : `0\.00|[+-](0|[1-9]\d*)\.\d{2}`, cahier technique NEOReS
+/// 2027.1.0, `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2027.1.0-20260303.txt`) : « + » un
+/// credit, « - » un debit ; une autre forme se refuse.
+fn rubrique_montant(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::num::Decimal>> {
+    rubrique_de(a, e, nom)
+        .map(|t| {
+            let forme = t == "0.00" || (t.starts_with(['+', '-']) && t.len() >= 5 && t.as_bytes()[t.len() - 3] == b'.');
+            forme.then(|| socle::num::decimal_lu(t)).flatten().ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas un montant signé", nom, socle::date::repr_texte(t))))
+        })
+        .transpose()
+}
+
+/// `rubrique_de`, une date : `AAAA-MM-JJ`, la forme d'une rubrique de nature date du cahier technique NEOReS (CSL 00,
+/// `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2026.1.2-20251024.txt`, l. 482) ; une autre forme
+/// se refuse.
+fn rubrique_jour(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::date::Jour>> {
+    rubrique_de(a, e, nom)
+        .map(|t| Zone::lue(t, format::JourIso).valeur().ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas une date AAAA-MM-JJ", nom, socle::date::repr_texte(t)))))
+        .transpose()
+}
+
+/// `rubrique_de`, un instant : `AAAA-MM-JJTHH:MM:SS`, la forme des dates de production d'un retour et de calcul d'un
+/// parametre ([19,19], meme cahier, RO.B002.R011 et RO.B008.R006) ; une autre forme se refuse.
+fn rubrique_instant(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::paris::InstantEcrit>> {
+    rubrique_de(a, e, nom)
+        .map(|t| Zone::lue(t, format::InstantIso).valeur().ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas un instant AAAA-MM-JJTHH:MM:SS", nom, socle::date::repr_texte(t)))))
+        .transpose()
+}
+
 /// UN INDIVIDU D'UN COMPTE RENDU NEOReS (`RO.B006`, `RO.B012`) : nom, prenom, matricule, debut et numero du contrat.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IndividuNeores {
     pub nom: Option<String>,
     pub prenom: Option<String>,
     pub matricule: Option<String>,
-    pub debut_contrat: Option<String>,
+    pub debut_contrat: Option<socle::date::Jour>,
     pub contrat: Option<String>,
 }
 
@@ -2290,8 +2432,8 @@ pub struct DonneeNeores {
     pub declaree: Option<String>,
     pub attendue: Option<String>,
     pub cumul: bool,
-    pub debut: Option<String>,
-    pub fin: Option<String>,
+    pub debut: Option<socle::date::Jour>,
+    pub fin: Option<socle::date::Jour>,
     pub resultat: Option<&'static str>,
     pub acceptees: Vec<String>,
 }
@@ -2300,9 +2442,9 @@ pub struct DonneeNeores {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DetailNeores {
     pub atypie: Option<String>,
-    pub debut: Option<String>,
-    pub fin: Option<String>,
-    pub montant: Option<String>,
+    pub debut: Option<socle::date::Jour>,
+    pub fin: Option<socle::date::Jour>,
+    pub montant: Option<socle::num::Decimal>,
     pub substituable: Option<&'static str>,
     pub rappel: Option<String>,
     pub interlocuteur: Option<String>,
@@ -2339,10 +2481,10 @@ pub struct ParametreNeores {
     pub type_parametre: Option<String>,
     pub libelle: Option<&'static str>,
     pub valeur: Option<String>,
-    pub effet: Option<String>,
-    pub fin: Option<String>,
+    pub effet: Option<socle::date::Jour>,
+    pub fin: Option<socle::date::Jour>,
     pub rubrique: Option<String>,
-    pub calcule_le: Option<String>,
+    pub calcule_le: Option<socle::paris::InstantEcrit>,
 }
 
 /// Une identite (`RO.B009`) : ce qui a ete declare, et la reference.
@@ -2381,10 +2523,10 @@ pub struct Neores {
     pub libelle: Option<String>,
     pub remplace: bool,
     pub organisme: Option<String>,
-    pub debut: Option<String>,
-    pub fin: Option<String>,
-    pub produit_le: Option<String>,
-    pub mois: Option<String>,
+    pub debut: Option<socle::date::Jour>,
+    pub fin: Option<socle::date::Jour>,
+    pub produit_le: Option<socle::paris::InstantEcrit>,
+    pub mois: Option<socle::mois::Mois>,
     pub essai_reel: Option<String>,
     pub ordre: Option<String>,
     pub metier: Option<String>,
@@ -2415,7 +2557,7 @@ fn blocs_sous<'a>(a: &'a Arbre, e: &'a Noeud, nom: &'a str) -> Vec<&'a Noeud> {
 /// - `parametres` (`RO.B008`) et `identites` (`RO.B009`) ; `informations` (`RO.B011`, `RO.B012`, CT 2027.1.0).
 ///
 /// `None` : aucun bloc NEOReS (`RO_B000` a `RO_B012`), ou le fichier ne se lit pas.
-pub fn lire_neores(o: &[u8]) -> Resultat<Option<Neores>> {
+pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
     let Some(a) = octets_arbre(o)? else { return Ok(None) };
     let est_bloc = |n: &Noeud| {
         let t = local(&n.tag);
@@ -2429,12 +2571,14 @@ pub fn lire_neores(o: &[u8]) -> Resultat<Option<Neores>> {
     let (b000, b001, b002, b003) = (premier("RO_B000"), premier("RO_B001"), premier("RO_B002"), premier("RO_B003"));
     let version = a.tous().find(|x| local(&x.tag) == "RO_R001").map(|x| x.texte_net().to_string()).filter(|t| !t.is_empty());
     let declencheur = r(b001, "RO_B001_R001");
-    let individu = |b: &Noeud, p: &str| IndividuNeores {
-        nom: rubrique_texte(&a, b, &format!("{}_R003", p)),
-        prenom: rubrique_texte(&a, b, &format!("{}_R004", p)),
-        matricule: rubrique_texte(&a, b, &format!("{}_R005", p)),
-        debut_contrat: rubrique_texte(&a, b, &format!("{}_R006", p)),
-        contrat: rubrique_texte(&a, b, &format!("{}_R007", p)),
+    let individu = |b: &Noeud, p: &str| -> R<IndividuNeores> {
+        Ok(IndividuNeores {
+            nom: rubrique_texte(&a, b, &format!("{}_R003", p)),
+            prenom: rubrique_texte(&a, b, &format!("{}_R004", p)),
+            matricule: rubrique_texte(&a, b, &format!("{}_R005", p)),
+            debut_contrat: rubrique_jour(&a, b, &format!("{}_R006", p))?,
+            contrat: rubrique_texte(&a, b, &format!("{}_R007", p)),
+        })
     };
     let mut actions = Vec::new();
     for c in a.tous().filter(|x| local(&x.tag) == "RO_B004") {
@@ -2442,25 +2586,27 @@ pub fn lire_neores(o: &[u8]) -> Resultat<Option<Neores>> {
         let mut details = Vec::new();
         for d in blocs_sous(&a, c, "RO_B005") {
             let rd = |nom: &str| rubrique_texte(&a, d, nom);
-            let individus = blocs_sous(&a, d, "RO_B006").into_iter().map(|b| individu(b, "RO_B006")).collect();
+            let individus = blocs_sous(&a, d, "RO_B006").into_iter().map(|b| individu(b, "RO_B006")).collect::<R<_>>()?;
             let donnees = blocs_sous(&a, d, "RO_B007")
                 .into_iter()
-                .map(|b| DonneeNeores {
-                    rubrique: rubrique_texte(&a, b, "RO_B007_R001"),
-                    declaree: rubrique_texte(&a, b, "RO_B007_R002"),
-                    attendue: rubrique_texte(&a, b, "RO_B007_R003"),
-                    cumul: rubrique_de(&a, b, "RO_B007_R004") == Some("01"),
-                    debut: rubrique_texte(&a, b, "RO_B007_R005"),
-                    fin: rubrique_texte(&a, b, "RO_B007_R006"),
-                    resultat: dans_table(&RESULTATS_NEORES, rubrique_de(&a, b, "RO_B007_R009")),
-                    acceptees: blocs_sous(&a, b, "RO_B010").into_iter().filter_map(|v| rubrique_texte(&a, v, "RO_B010_R001")).collect(),
+                .map(|b| {
+                    Ok(DonneeNeores {
+                        rubrique: rubrique_texte(&a, b, "RO_B007_R001"),
+                        declaree: rubrique_texte(&a, b, "RO_B007_R002"),
+                        attendue: rubrique_texte(&a, b, "RO_B007_R003"),
+                        cumul: rubrique_de(&a, b, "RO_B007_R004") == Some("01"),
+                        debut: rubrique_jour(&a, b, "RO_B007_R005")?,
+                        fin: rubrique_jour(&a, b, "RO_B007_R006")?,
+                        resultat: dans_table(&RESULTATS_NEORES, rubrique_de(&a, b, "RO_B007_R009")),
+                        acceptees: blocs_sous(&a, b, "RO_B010").into_iter().filter_map(|v| rubrique_texte(&a, v, "RO_B010_R001")).collect(),
+                    })
                 })
-                .collect();
+                .collect::<R<_>>()?;
             details.push(DetailNeores {
                 atypie: rd("RO_B005_R001"),
-                debut: rd("RO_B005_R002"),
-                fin: rd("RO_B005_R003"),
-                montant: rd("RO_B005_R004"),
+                debut: rubrique_jour(&a, d, "RO_B005_R002")?,
+                fin: rubrique_jour(&a, d, "RO_B005_R003")?,
+                montant: rubrique_montant(&a, d, "RO_B005_R004")?,
                 // CT 2027.1.0 : le caractere substituable et le rappel descendent au detail de l'action (note differentielle, § III).
                 substituable: dans_table(&SUBSTITUABLE_NEORES, rubrique_de(&a, d, "RO_B005_R005")),
                 rappel: rd("RO_B005_R006"),
@@ -2491,16 +2637,18 @@ pub fn lire_neores(o: &[u8]) -> Resultat<Option<Neores>> {
     let parametres = a
         .tous()
         .filter(|x| local(&x.tag) == "RO_B008")
-        .map(|p| ParametreNeores {
-            type_parametre: rubrique_texte(&a, p, "RO_B008_R001"),
-            libelle: dans_table(&TYPES_PARAMETRE_NEORES, rubrique_de(&a, p, "RO_B008_R001")),
-            valeur: rubrique_texte(&a, p, "RO_B008_R002"),
-            effet: rubrique_texte(&a, p, "RO_B008_R003"),
-            fin: rubrique_texte(&a, p, "RO_B008_R004"),
-            rubrique: rubrique_texte(&a, p, "RO_B008_R005"),
-            calcule_le: rubrique_texte(&a, p, "RO_B008_R006"),
+        .map(|p| {
+            Ok(ParametreNeores {
+                type_parametre: rubrique_texte(&a, p, "RO_B008_R001"),
+                libelle: dans_table(&TYPES_PARAMETRE_NEORES, rubrique_de(&a, p, "RO_B008_R001")),
+                valeur: rubrique_texte(&a, p, "RO_B008_R002"),
+                effet: rubrique_jour(&a, p, "RO_B008_R003")?,
+                fin: rubrique_jour(&a, p, "RO_B008_R004")?,
+                rubrique: rubrique_texte(&a, p, "RO_B008_R005"),
+                calcule_le: rubrique_instant(&a, p, "RO_B008_R006")?,
+            })
         })
-        .collect();
+        .collect::<R<_>>()?;
     let identites = a
         .tous()
         .filter(|x| local(&x.tag) == "RO_B009")
@@ -2524,17 +2672,17 @@ pub fn lire_neores(o: &[u8]) -> Resultat<Option<Neores>> {
         .filter(|x| local(&x.tag) == "RO_B011")
         .map(|b| {
             let x = |n: &str| rubrique_texte(&a, b, n);
-            InformationNeores {
+            Ok(InformationNeores {
                 code: x("RO_B011_R001"),
                 libelle: x("RO_B011_R002"),
                 numero: x("RO_B011_R003"),
                 information: x("RO_B011_R004"),
                 reference: x("RO_B011_R005"),
                 aide: x("RO_B011_R006"),
-                individus: blocs_sous(&a, b, "RO_B012").into_iter().map(|i| individu(i, "RO_B012")).collect(),
-            }
+                individus: blocs_sous(&a, b, "RO_B012").into_iter().map(|i| individu(i, "RO_B012")).collect::<R<_>>()?,
+            })
         })
-        .collect();
+        .collect::<R<_>>()?;
     Ok(Some(Neores {
         version,
         declencheur_libelle: dans_table(&DECLENCHEURS_NEORES, declencheur.as_deref()),
@@ -2543,10 +2691,10 @@ pub fn lire_neores(o: &[u8]) -> Resultat<Option<Neores>> {
         libelle: r(b002, "RO_B002_R003"),
         remplace: r(b002, "RO_B002_R004").as_deref() == Some("02"),
         organisme: r(b002, "RO_B002_R005"),
-        debut: r(b002, "RO_B002_R008"),
-        fin: r(b002, "RO_B002_R009"),
-        produit_le: r(b002, "RO_B002_R011"),
-        mois: r(b000, "RO_B000_R006"),
+        debut: b002.map(|b| rubrique_jour(&a, b, "RO_B002_R008")).transpose()?.flatten(),
+        fin: b002.map(|b| rubrique_jour(&a, b, "RO_B002_R009")).transpose()?.flatten(),
+        produit_le: b002.map(|b| rubrique_instant(&a, b, "RO_B002_R011")).transpose()?.flatten(),
+        mois: r(b000, "RO_B000_R006").map(|m| mois_du_jour(&m)).transpose()?,
         essai_reel: r(b000, "RO_B000_R013"),
         ordre: r(b000, "RO_B000_R012"),
         metier: r(b003, "RO_B003_R001"),
@@ -2582,7 +2730,18 @@ const CRITICITES_OC: [(&str, &str); 2] = [("C", "critique : à corriger impérat
 /// attendue, date d'evenement, regroupement) avec leur `ContexteRetourMetier` (rubrique, libelle, valeur) -- d'ou le
 /// salarie (S21.G00.30.002 et .004). `None` : ce n'en est pas un, ou il ne se lit pas (il est en ISO-8859-1, qu'il
 /// declare : guide v6.8, §7.1).
-pub fn lire_crm_oc(o: &[u8]) -> Resultat<Option<CrmOc>> {
+/// Un jour `JJMMAAAA`, et rien d'autre.
+fn jour_jjmmaaaa(t: &str) -> Option<socle::date::Jour> {
+    Zone::lue(t, format::Jjmmaaaa).valeur()
+}
+
+/// Un attribut d'un CRM OC qui n'a pas la forme du schema : le CRM ne se lit pas.
+#[track_caller]
+fn illisible_crm_oc(attribut: &str, valeur: &str) -> Echec {
+    socle::echec::cle(format!("Le compte rendu d'un organisme complémentaire ne se lit pas : {} vaut {}, pas JJMMAAAA.", attribut, socle::date::repr_texte(valeur)), attribut).reclasser(Classe::Illisible)
+}
+
+pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
     let Some(a) = octets_arbre(o)? else { return Ok(None) };
     let racine = a.racine();
     if local(&racine.tag) != "Fichier" || !a.enfants(racine).any(|x| local(&x.tag) == "Declaration") {
@@ -2617,17 +2776,17 @@ pub fn lire_crm_oc(o: &[u8]) -> Resultat<Option<CrmOc>> {
                 libelle_valeur: at(rm, "LibelValRubriqueErreur"),
                 corrigee: at(rm, "ValeurCorrigeeAjoutee"),
                 libelle_corrigee: at(rm, "LibelValCorrigeeAjoutee"),
-                date_evenement: at(rm, "DateEvt"),
+                date_evenement: at(rm, "DateEvt").map(|t| jour_jjmmaaaa(&t).ok_or_else(|| illisible_crm_oc("DateEvt", &t))).transpose()?,
                 salarie: Some(salarie).filter(|s| !s.is_empty()),
                 contexte,
             });
         }
         let code = at(d, "CodeRetourDecla");
         declarations.push(DeclarationOc {
-            nature: at(d, "NatureDecla"),
-            type_declaration: at(d, "TypeDecla"),
+            nature_declaration: nature_du_retour(at(d, "NatureDecla").as_deref())?,
+            type_declaration: type_du_retour(at(d, "TypeDecla").as_deref())?,
             ordre: at(d, "NoOrdreDecla"),
-            mois: at(d, "DateMoisDec").map(|m| mois_de_jjmmaaaa(&m)),
+            mois: at(d, "DateMoisDec").map(|m| mois_du_jour(&m)).transpose()?,
             code_oc: at(d, "CodeOC"),
             code_delegataire: at(d, "CodeDELEG"),
             producteur: at(d, "NomProducteurCRM"),
@@ -2662,11 +2821,12 @@ pub struct CrmOc {
 /// Une `Declaration` du compte rendu.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DeclarationOc {
-    pub nature: Option<String>,
+    #[serde(rename = "nature")]
+    pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
-    pub type_declaration: Option<String>,
+    pub type_declaration: Option<TypeDeLaDeclaration>,
     pub ordre: Option<String>,
-    pub mois: Option<String>,
+    pub mois: Option<socle::mois::Mois>,
     pub code_oc: Option<String>,
     pub code_delegataire: Option<String>,
     pub producteur: Option<String>,
@@ -2710,7 +2870,9 @@ pub struct RetourMetierOc {
     pub libelle_valeur: Option<String>,
     pub corrigee: Option<String>,
     pub libelle_corrigee: Option<String>,
-    pub date_evenement: Option<String>,
+    /// `DateEvt`, `JJMMAAAA` (schema du CRM OC v1.1.4, son motif ;
+    /// `atelier/reference/sources/gip-mds-api-dsn/ctip-crm-dsn-oc-p3-v1.1.4-schema-20230915.xsd`).
+    pub date_evenement: Option<socle::date::Jour>,
     pub salarie: Option<String>,
     pub contexte: Vec<ContexteOc>,
 }
@@ -2724,11 +2886,13 @@ pub struct ContexteOc {
     pub libelle_valeur: Option<String>,
 }
 
-/// `DateMoisDec` est le dernier jour du mois au format JJMMAAAA (exemples de la fiche 692 : « 31032023 ») : `AAAA-MM` ;
-/// une autre forme se montre telle qu'ecrite.
-fn mois_de_jjmmaaaa(brut: &str) -> String {
-    match socle::date::Jour::lire(brut) {
-        Ok(j) if brut.len() == 8 => j.mois_civil().to_string(),
-        _ => brut.to_string(),
+/// Le mois d'un jour que la norme ecrit : `DateMoisDec` d'un compte rendu d'organisme complementaire, au format
+/// JJMMAAAA (schema CRM DSN OC v1.1.4, `atelier/reference/sources/gip-mds-api-dsn/`), et `RO.B000.R006` d'un NEOReS,
+/// `AAAA-MM-01` (cahier technique 2027.1.0, `atelier/reference/sources/neores/`) ; un jour qui ne se lit pas refuse le
+/// compte rendu.
+fn mois_du_jour(brut: &str) -> R<socle::mois::Mois> {
+    match Zone::lue(brut, format::JourEcrit).valeur() {
+        Some(j) => Ok(j.mois_civil()),
+        None => Err(echec(Classe::Illisible, format!("date illisible : {}", socle::date::repr_texte(brut.trim())))),
     }
 }

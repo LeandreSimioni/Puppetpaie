@@ -3,7 +3,7 @@
 //! deposes et que l'Urssaf a preleves (`bordereaux-reels.json` : les blocs 22 et 23 tels qu'ecrits, rien d'autre).
 
 use crate::outils::{dec, lire_donnee};
-use documents::bordereau::{montant, LigneBordereau};
+use documents::bordereau::{montant, LigneBordereau, TauxDeLaLigne};
 use serde::Deserialize;
 use socle::date::Jour;
 
@@ -11,8 +11,8 @@ use socle::date::Jour;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Reels {
-    #[allow(dead_code)]
-    quoi: String,
+    #[serde(deserialize_with = "socle::forme::non_lue")]
+    quoi: socle::forme::NonLue,
     bordereaux: Vec<Reel>,
 }
 
@@ -20,20 +20,16 @@ struct Reels {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Reel {
-    jour: String,
+    jour: Jour,
     declare: String,
     lignes: Vec<[String; 5]>,
-}
-
-fn jour(s: &str) -> Jour {
-    Jour::lire(s).unwrap()
 }
 
 fn l(code: &str, qualifiant: &str, assiette: &str, taux_at: &str) -> LigneBordereau {
     LigneBordereau {
         code: code.into(),
         qualifiant: qualifiant.into(),
-        taux_at: taux_at.into(),
+        taux_at: Some(taux_at).filter(|s| !s.is_empty()).map(|t| TauxDeLaLigne::AtMp(dec(t))),
         assiette: Some(dec(assiette)),
         montant: None,
         commune: None,
@@ -62,7 +58,7 @@ fn un_montant_negatif_s_arrondit_comme_son_oppose_par_inference() {
 
 #[test]
 fn un_ctp_inconnu_fait_refuser() {
-    let e = montant(&[l("000", "920", "100.00", "")], &jour("2026-09-01")).unwrap_err();
+    let e = montant(&[l("000", "920", "100.00", "")], &Jour::nouveau(2026, 9, 1).unwrap()).unwrap_err().phrase;
     assert!(e.contains("000") && e.contains("Rien n'est ecrit"), "{}", e);
 }
 
@@ -72,7 +68,8 @@ fn ligne(c: &[String; 5]) -> LigneBordereau {
     LigneBordereau {
         code: champ(0).into(),
         qualifiant: champ(1).into(),
-        taux_at: champ(2).into(),
+        // Le calcul lit le taux, quelle que soit la ligne qui le porte.
+        taux_at: Some(champ(2)).filter(|s| !s.is_empty()).map(|t| TauxDeLaLigne::AtMp(dec(t))),
         assiette: Some(champ(3)).filter(|s| !s.is_empty()).map(dec),
         montant: Some(champ(4)).filter(|s| !s.is_empty()).map(dec),
         commune: None,
@@ -91,14 +88,14 @@ fn les_75_bordereaux_preleves_se_recalculent_au_centime_sauf_octobre_2025() {
     assert_eq!(bordereaux.len(), 75);
     let mut ecarts = Vec::new();
     for b in bordereaux {
-        let le_jour = b.jour.as_str();
+        let le_jour = b.jour.iso();
         let declare = b.declare.as_str();
         let lignes: Vec<LigneBordereau> = b.lignes.iter().map(ligne).collect();
-        let calcule = montant(&lignes, &jour(le_jour)).unwrap_or_else(|e| panic!("{} : {}", le_jour, e));
+        let calcule = montant(&lignes, &b.jour).unwrap_or_else(|e| panic!("{} : {}", le_jour, e.phrase));
         if calcule != dec(declare) {
             ecarts.push((le_jour, declare, calcule.to_string()));
         }
     }
-    let attendus = [(OCTOBRE_2025.0, OCTOBRE_2025.1, OCTOBRE_2025.2.to_string())];
+    let attendus = [(OCTOBRE_2025.0.to_string(), OCTOBRE_2025.1, OCTOBRE_2025.2.to_string())];
     assert_eq!(ecarts, attendus);
 }

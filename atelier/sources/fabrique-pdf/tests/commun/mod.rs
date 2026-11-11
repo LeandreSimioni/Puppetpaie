@@ -1,7 +1,6 @@
 //! Ce que les tests des modes de lecture et de retouche de PDF (`lecture`, `marquage`,
 //! `verrouillage`) ont en commun : un dossier temporaire, le lancement du programme, un PDF
 //! fabriqué par la fabrique, un PDF écrit à la main (comme un outil tiers le ferait).
-#![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -25,18 +24,20 @@ pub fn lancer(args: &[&str]) -> std::process::Output {
 /// Les octets d'un PDF de `n` pages fabriqué par la fabrique : une ligne « Page k éàç œ » par page.
 pub fn octets_fabrique(n: usize) -> Vec<u8> {
     let documents: Vec<Value> = (1..=n)
-        .map(|k| json!({"blocs": [{"type": "paragraphe", "morceaux": [{"texte": format!("Page {} éàç œ", k)}]}]}))
+        .map(|k| json!({"blocs": [{"type": "paragraphe", "alignement": "gauche", "majuscules": false,
+            "espace_avant": 0, "espace_apres": 0, "retrait": 0,
+            "morceaux": [{"texte": format!("Page {} éàç œ", k), "gras": false, "italique": false}]}]}))
         .collect();
     let desc = json!({
         "format": 1,
-        "page": {"largeur": 400.0, "hauteur": 500.0,
-                 "marges": {"haut": 50.0, "droite": 50.0, "bas": 50.0, "gauche": 50.0}},
-        "police": {"taille": 10.0, "interligne": 1.25, "couleur": "#000000"},
+        "page": {"largeur": 400, "hauteur": 500,
+                 "marges": {"haut": 50, "droite": 50, "bas": 50, "gauche": 50}},
+        "police": {"taille": 10, "interligne": fabrique_pdf::mesure::mesure("1.25"), "couleur": "#000000"},
         "documents": documents
     });
     fabrique_pdf::Description::lire(&desc.to_string())
         .and_then(|d| fabrique_pdf::fabriquer(&d))
-        .unwrap_or_else(|e| panic!("{}", e.0))
+        .unwrap_or_else(|e| panic!("{}", e.phrase))
 }
 
 /// Le même PDF, écrit dans `dossier/nom` ; rend son chemin.
@@ -76,5 +77,11 @@ pub fn pdf_a_la_main(objets: &[String], decalage: usize) -> Vec<u8> {
 pub fn textes(chemin_pdf: &str) -> Vec<String> {
     let r = lancer(&["--texte", chemin_pdf]);
     assert_eq!(r.status.code(), Some(0), "{}", String::from_utf8_lossy(&r.stderr));
-    serde_json::from_slice(&r.stdout).unwrap()
+    textes_de(&r.stdout)
+}
+
+/// Le texte de chaque page que `--texte` écrit (ses morceaux), quand chacun est du texte.
+pub fn textes_de(sortie: &[u8]) -> Vec<String> {
+    let pages: Vec<Vec<String>> = serde_json::from_slice(sortie).unwrap();
+    pages.into_iter().map(|p| p.concat()).collect()
 }

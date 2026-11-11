@@ -116,3 +116,28 @@ de travail », inférence dite). Calcul : `obligations.rs` (`de_l_arret`) ; dite
 (`paie arret declare --attestation`), gardée dans `imprevus/obligations.json`. Le droit du congé de deuil et de ses
 indemnités journalières est relevé depuis LEGI : C. trav. L. 3142-1-1, D. 3142-1-1 (`../code-du-travail/`), CSS L. 331-9,
 D. 331-7, R. 323-10 (`../code-de-la-securite-sociale/`).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `ameli-reglementation-atmp-1er-novembre-2026-20261030.md` : `738499441f64a880a4c6f87e417a6f8967030060d340b8b9d3f33cc26b0d9894`
+- `ameli-reglementation-atmp-1er-novembre-2026-20261030.pdf` : `7b0f0a184c4b8a87eb26654e791755f7bf64a832f56ec69af07381a86f961e9a`
+- `cnam-cerfa-14463-03-declaration-accident-travail-20170907.pdf` : `460611d202108d4cf20bfd45c5c24f1dc7d794ec0b14562cd3c8e509ab22e677`
+- `cnam-cerfa-14463-03-declaration-accident-travail-20170907.txt` : `6ba24ba5faa3575ef2bc7dc4d25f9dc8e1cd4fc1369668987201f3b308520497`
+- `cnda-essentiel-offre-edi-employeurs-20200424.html` : `3c54afce8444b6cfbae7155ac884603905e651e5ce21ca6b50f9f1ea1805ddbb`
+- `cnda-essentiel-offre-edi-employeurs-20200424.txt` : `b0c1fe4c8fba7ee18b1d031ebae497b6d74adb4f29050e62dc91d6783d827071`
+- `cnda-mode-operatoire-referencement-20221003.html` : `aeaab29f47c2f496fd93892e87c80e649a6521d0334fc80ffedac993f03a22aa`
+- `cnda-mode-operatoire-referencement-20221003.txt` : `9ba4149d56b93ace4e8f9a4642d0949a158ddb4321676a03e374e657c88ab99c`
+- `cnda-referencer-logiciel-teleservices-employeurs-20221003.html` : `c1617b7ac3ce3b142cc4e2035e08fc7719cad420dc3c474a492334b7beea3a66`
+- `cnda-referencer-logiciel-teleservices-employeurs-20221003.txt` : `7aa066756e29d1fafbc4090a417f761667799dd22cf8eb67a5cf6d483ae2a677`
+- `net-entreprises-actualite-ajout-reserves-dat-20230118.html` : `ea3fcc54ca2f9dcc1b024e6d4426d4b11e084b157cbcc9119bea6cb815b06de6`
+- `net-entreprises-actualite-ajout-reserves-dat-20230118.txt` : `b321a3f7072d626a6799b8994ca13adc147e0c536422d3c29a429b590f678d89`
+- `net-entreprises-actualite-dat-codes-nationalite-20260608.html` : `bf488289a9fe2d64d436b1f9263c756fb0abf9c2da2e00cd4d48f6e58e17320e`
+- `net-entreprises-actualite-dat-codes-nationalite-20260608.txt` : `f7983e5cef3d9bf26e68579f353593686e2ae8e2bcdca269ec2175f3213b42a2`
+- `net-entreprises-compte-entreprise-dat-20260331.html` : `ef302e067a6ca7114b10c5204220dcf58ae13df1ae267f5da1a579078b27544e`
+- `net-entreprises-compte-entreprise-dat-20260331.txt` : `dda7e37c2278854ebc332f41f84174bfdf0c3d43a7467f4615ca00eb9f5fa906`
+- `net-entreprises-fiche-3029-dat-20250323.html` : `72c765ad5260c216f05f87ee09c710bfd5ab4b6eafec6d20f1b08e0fc7d8788b`
+- `net-entreprises-fiche-3029-dat-20250323.txt` : `674bfb6eec56d1247da50b0b2f8d14230b25d0a75cd27dcb3c0500839a5db559`
+- `service-public-r14587-declarer-accident-travail-20260417.html` : `d497c4f9d408d5949136d4b113b8582e2dd1e97c44cd3505c31d3dd761424b95`
+- `service-public-r14587-declarer-accident-travail-20260417.txt` : `7f35ed5535e2ac8efbf921e42edb942194c9cc2739f64ab86922e1315129901d`

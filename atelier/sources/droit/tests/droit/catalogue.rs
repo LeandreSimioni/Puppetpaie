@@ -8,26 +8,22 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 
-fn jour(s: &str) -> Jour {
-    Jour::lire(s).unwrap()
-}
-
-fn dec(x: f64) -> Decimal {
-    x.to_string().parse().unwrap()
+fn jour(an: i32, mois: u32, j: u32) -> Jour {
+    Jour::nouveau(an, mois, j).unwrap()
 }
 
 #[test]
 fn les_catalogues_et_les_refus() {
     // Une rubrique de la compagnie changee a une date : la nouvelle valeur a partir d'elle, l'ancienne avant.
     let a = chemin_donnee("racines").join("a");
-    let libelle = |j: &str| rubrique(&a, "cachet", &jour(j)).unwrap().libelle;
-    assert_eq!((libelle("2026-12-31"), libelle("2027-01-01")), ("Cachet maison".to_string(), "Cachet maison 2027".to_string()));
+    let libelle = |j: Jour| rubrique(&a, "cachet", &j).unwrap().libelle;
+    assert_eq!((libelle(jour(2026, 12, 31)), libelle(jour(2027, 1, 1))), ("Cachet maison".to_string(), "Cachet maison 2027".to_string()));
     // Un catalogue de compagnie mal decrit se refuse, sans rien remplir a la place.
     let mut refus = 0;
     for entree in std::fs::read_dir(chemin_donnee("racines")).unwrap() {
         let entree = entree.unwrap();
         if entree.file_name().to_string_lossy().starts_with("refus_") {
-            assert!(catalogue(&entree.path(), &jour("2026-10-28")).is_err(), "{:?}", entree.file_name());
+            assert!(catalogue(&entree.path(), &jour(2026, 10, 28)).is_err(), "{:?}", entree.file_name());
             refus += 1;
         }
     }
@@ -43,10 +39,6 @@ struct CasHeures {
     heures_saisies: Option<Decimal>,
 }
 
-fn flottant(d: Decimal) -> f64 {
-    d.to_string().parse().unwrap()
-}
-
 #[test]
 fn les_heures() {
     let racine = chemin_donnee("racines/a");
@@ -55,8 +47,8 @@ fn les_heures() {
     let obtenu = cas
         .into_iter()
         .map(|c| {
-            let r = rubrique(&racine, &c.rubrique, &jour("2026-10-28")).unwrap();
-            let heures = dec(r.heures(flottant(c.quantite), c.heures_saisies.map(flottant)));
+            let r = rubrique(&racine, &c.rubrique, &jour(2026, 10, 28)).unwrap();
+            let heures = r.heures(c.quantite, c.heures_saisies).normalize();
             Ligne { cas: c, attendu: heures }
         })
         .collect();

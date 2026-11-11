@@ -15,14 +15,16 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use droit::fiche::{CaseDeFiche, CaseSalarie};
 use socle::texte::{blanc as espace, strip};
 use socle::date::Jour;
+use socle::echec::R;
 
 pub const ALPHABET_CODE: &str = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 /// Un code a six signes derriere son prefixe (`SIG-` d'une signature, `FIC-` d'une fiche demandee a la personne).
 /// Le systeme qui ne donne pas d'aleas fait refuser : un code devinable ne protege rien.
-pub fn code_au_hasard(prefixe: &str) -> Result<String, String> {
+pub fn code_au_hasard(prefixe: &str) -> R<String> {
     let alphabet = ALPHABET_CODE.as_bytes();
     let limite = 256 - 256 % alphabet.len();
     let mut code = String::from(prefixe);
@@ -39,33 +41,33 @@ pub fn code_au_hasard(prefixe: &str) -> Result<String, String> {
 }
 
 /// `code_fiche` : `FIC-` puis six signes tires au hasard dans `ALPHABET_CODE`.
-pub fn code_fiche() -> Result<String, String> {
+pub fn code_fiche() -> R<String> {
     code_au_hasard("FIC-")
 }
 
 /// Les questions que le questionnaire sait lire : (cle de la reponse, libelle, case de la fiche salarie qu'elle remplit).
 /// Ne se posent que celles dont la case sert a un acte (`posees`) : la liste de `champs-base.json` (`exige_par`, `sinon`).
-pub const QUESTIONS: [(&str, &str, &str); 15] = [
-    ("prenom", "Prénom", "prenom_affichage"),
-    ("nom", "Nom de famille (de naissance)", "nom_affichage"),
-    ("naissance", "Date de naissance (JJ/MM/AAAA)", "date_naissance"),
-    ("lieu", "Commune de naissance", "lieu_naissance_affichage"),
-    ("pays", "Pays de naissance", "pays_naissance"),
-    ("nationalite", "Nationalité", "code_nationalite_dsn"),
-    ("nir", "Numéro de sécurité sociale (15 chiffres)", "nir"),
-    ("sexe", "Sans numéro de sécurité sociale : femme ou homme ?", "sexe"),
-    ("adresse", "Adresse (numéro et rue)", "adresse_affichage"),
-    ("code_postal", "Code postal", "code_postal"),
-    ("commune", "Commune", "commune_affichage"),
-    ("conges", "Numéro Congés Spectacles", "num_conges_spectacles"),
-    ("anniversaire", "Date anniversaire de vos droits France Travail (JJ/MM/AAAA)", "anniversaire_droits"),
-    ("iban", "IBAN (le compte où verser le salaire, sur le RIB)", "banque"),
-    ("bic", "BIC (sur le même RIB)", "banque"),
+pub const QUESTIONS: [(&str, &str, CaseSalarie); 15] = [
+    ("prenom", "Prénom", CaseSalarie::PrenomAffichage),
+    ("nom", "Nom de famille (de naissance)", CaseSalarie::NomAffichage),
+    ("naissance", "Date de naissance (JJ/MM/AAAA)", CaseSalarie::DateNaissance),
+    ("lieu", "Commune de naissance", CaseSalarie::LieuNaissanceAffichage),
+    ("pays", "Pays de naissance", CaseSalarie::PaysNaissance),
+    ("nationalite", "Nationalité", CaseSalarie::CodeNationaliteDsn),
+    ("nir", "Numéro de sécurité sociale (15 chiffres)", CaseSalarie::Nir),
+    ("sexe", "Sans numéro de sécurité sociale : femme ou homme ?", CaseSalarie::Sexe),
+    ("adresse", "Adresse (numéro et rue)", CaseSalarie::AdresseAffichage),
+    ("code_postal", "Code postal", CaseSalarie::CodePostal),
+    ("commune", "Commune", CaseSalarie::CommuneAffichage),
+    ("conges", "Numéro Congés Spectacles", CaseSalarie::NumCongesSpectacles),
+    ("anniversaire", "Date anniversaire de vos droits France Travail (JJ/MM/AAAA)", CaseSalarie::AnniversaireDroits),
+    ("iban", "IBAN (le compte où verser le salaire, sur le RIB)", CaseSalarie::Banque),
+    ("bic", "BIC (sur le même RIB)", CaseSalarie::Banque),
 ];
 
 /// Les questions posees : celles dont la case sert a un acte (`utile`, que l'appelant lit dans `champs-base.json`).
-pub fn posees(utile: &dyn Fn(&str) -> bool) -> Vec<(&'static str, &'static str)> {
-    QUESTIONS.iter().filter(|(_, _, case)| utile(case)).map(|(cle, lib, _)| (*cle, *lib)).collect()
+pub fn posees(utile: &dyn Fn(CaseDeFiche) -> bool) -> Vec<(&'static str, &'static str)> {
+    QUESTIONS.iter().filter(|(_, _, case)| utile((*case).into())).map(|(cle, lib, _)| (*cle, *lib)).collect()
 }
 
 pub const SUJET: &str = "Ta fiche pour {compagnie}";
@@ -274,7 +276,7 @@ fn nombre(t: &str) -> Option<u32> {
 
 /// Une date lue `AAAA-M-J` ou `J/M/AAAA` (separateurs `/`, `.`, `-`, espace), en ISO ; `None` si elle ne se
 /// lit pas ou n'existe pas.
-pub fn date_lue(texte: &str) -> Option<String> {
+pub fn date_lue(texte: &str) -> Option<Jour> {
     let t = strip(texte);
     let c: Vec<char> = t.chars().collect();
     // Les trois groupes de chiffres, separes par `sep`, de largeurs permises.
@@ -301,7 +303,7 @@ pub fn date_lue(texte: &str) -> Option<String> {
         let [j, mo, a] = groupes(&|x| matches!(x, '/' | '.' | '-' | ' '), [(1, 2), (1, 2), (4, 4)])?;
         (a, mo, j)
     };
-    Jour::nouveau(nombre(&a)? as i32, nombre(&mo)?, nombre(&j)?).map(|j| j.iso())
+    Jour::nouveau(nombre(&a)? as i32, nombre(&mo)?, nombre(&j)?)
 }
 
 // LES PAYS QUE LA RELEVE SAIT NOMMER : ceux de la liste livree (`pays.rs`, Code officiel geographique de l'INSEE),
@@ -310,7 +312,7 @@ pub fn date_lue(texte: &str) -> Option<String> {
 
 /// (code ISO, codification UE) d'un pays de la liste nomme en francais, ou de son code a deux lettres ;
 /// `None` pour ce que la liste ne connait pas.
-pub fn pays_lu(texte: &str) -> Result<Option<(String, Option<&'static str>)>, String> {
+pub fn pays_lu(texte: &str) -> R<Option<(String, Option<&'static str>)>> {
     let t = sans_accents(texte).replace('\u{2019}', "'");
     let lu = |p: socle::pays::Pays| (p.code.clone(), Some(socle::pays::codification(&p)));
     if t.chars().count() == 2 && t.chars().all(|c| c.is_ascii_lowercase()) {
@@ -340,9 +342,9 @@ pub struct FicheLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub num_conges_spectacles: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_naissance: Option<String>,
+    pub date_naissance: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub anniversaire_droits: Option<String>,
+    pub anniversaire_droits: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_postal: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -377,7 +379,7 @@ pub struct BanqueLue {
 
 /// `fiche_depuis_reponses` : (les cases lues de la fiche, ce qui n'a pas pu se lire). Rien n'est suppose. Une liste
 /// livree (les pays) qui ne se lit pas refuse.
-pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> Result<(FicheLue, Vec<String>), String> {
+pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue, Vec<String>)> {
     let mut d = FicheLue::default();
     let mut illisible: Vec<String> = Vec::new();
     // Une reponse dite : une question sans reponse, ou a la reponse vide, ne dit rien.
@@ -391,7 +393,7 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> Result<(Fic
     d.num_conges_spectacles = reponse("conges").and_then(|r| dite(&r.replace(' ', "")));
     for (q, cle) in [("naissance", "date_naissance"), ("anniversaire", "anniversaire_droits")] {
         if let Some(r) = reponse(q) {
-            let v = date_lue(r).filter(|v| !v.is_empty());
+            let v = date_lue(r);
             if v.is_none() {
                 illisible.push(format!("{} : « {} »", cle.replace('_', " "), r));
             }

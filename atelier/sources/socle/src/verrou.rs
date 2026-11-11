@@ -8,9 +8,9 @@
 use std::fs::OpenOptions;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
-use crate::num::Resultat;
+use crate::echec::R;
 
 /// Au-dela, un verrou est tenu pour abandonne (10 minutes).
 pub const DELAI_VERROU: i64 = 600;
@@ -47,50 +47,57 @@ pub fn marque(qui: &str, pid: u32, maintenant: &str) -> String {
 
 fn age_secondes(chemin: &Path) -> std::io::Result<i64> {
     let modifie = std::fs::metadata(chemin)?.modified()?;
-    let en_s = |t: SystemTime| match t.duration_since(UNIX_EPOCH) {
-        Ok(d) => d.as_secs_f64(),
-        Err(e) => -e.duration().as_secs_f64(),
-    };
-    Ok((en_s(SystemTime::now()) - en_s(modifie)).trunc() as i64)
+    // Les secondes entieres ecoulees, tronquees vers zero (un fichier date du futur a un age negatif).
+    Ok(match SystemTime::now().duration_since(modifie) {
+        Ok(d) => d.as_secs() as i64,
+        Err(e) => -(e.duration().as_secs() as i64),
+    })
 }
 
 /// Prend le verrou, ou rend qui le tient. Un verrou plus vieux que `delai`
 /// est leve, une fois, puis on retente. Une erreur d'ecriture (dossier
 /// absent...) est une erreur, pas un verrou tenu.
-pub fn prendre(chemin: &Path, marque: &str, delai: i64) -> Resultat<Result<(), Verrouille>> {
-    for essai in [1, 2] {
+pub fn prendre(chemin: &Path, marque: &str, delai: i64) -> R<Result<(), Verrouille>> {
+    let disque = |e: std::io::Error| crate::echec::du_disque(&chemin, &e);
+    let mut leve = false;
+    loop {
         match OpenOptions::new().write(true).create_new(true).open(chemin) {
             Ok(mut f) => {
-                f.write_all(marque.as_bytes()).map_err(|e| crate::echec::du_disque(&chemin, &e))?;
+                f.write_all(marque.as_bytes()).map_err(disque)?;
                 return Ok(Ok(()));
             }
             Err(e) if e.kind() == ErrorKind::AlreadyExists => {
-                // Disparu entre-temps : on retente.
-                let (age, detenteur) = match (
-                    age_secondes(chemin),
-                    std::fs::read(chemin).map(|b| String::from_utf8_lossy(&b).trim().to_string()),
-                ) {
-                    (Ok(a), Ok(d)) => (a, d),
-                    _ => continue,
+                let lu = age_secondes(chemin).and_then(|age| std::fs::read(chemin).map(|b| (age, String::from_utf8_lossy(&b).trim().to_string())));
+                let (age, detenteur) = match lu {
+                    Ok(l) => l,
+                    // Disparu entre-temps : on retente.
+                    Err(e) if e.kind() == ErrorKind::NotFound => continue,
+                    Err(e) => return Err(disque(e)),
                 };
-                if age < delai || essai == 2 {
+                if age < delai || leve {
                     return Ok(Err(Verrouille { chemin: chemin.to_path_buf(), detenteur, age }));
                 }
-                let _ = std::fs::remove_file(chemin);
+                crate::fichiers::effacer(chemin)?;
+                leve = true;
             }
-            Err(e) => return Err(crate::echec::du_disque(&chemin, &e)),
+            Err(e) => return Err(disque(e)),
         }
     }
-    Ok(Ok(()))
 }
 
 /// Retire le verrou s'il porte encore NOTRE marque : si le delai a joue, un
-/// autre l'a peut-etre repris entre-temps.
-pub fn rendre(chemin: &Path, marque: &str) {
-    if let Ok(b) = std::fs::read(chemin) {
-        if String::from_utf8_lossy(&b).trim() == marque {
-            let _ = std::fs::remove_file(chemin);
-        }
+/// autre l'a peut-etre repris entre-temps (ou deja retire).
+pub fn rendre(chemin: &Path, marque: &str) -> R<()> {
+    rendre_au_disque(chemin, marque).map_err(|e| crate::echec::du_disque(&chemin, &e))
+}
+
+/// `rendre`, tel que le disque le dit.
+fn rendre_au_disque(chemin: &Path, marque: &str) -> std::io::Result<()> {
+    match std::fs::read(chemin) {
+        Ok(b) if String::from_utf8_lossy(&b).trim() == marque => crate::fichiers::effacer_du_disque(chemin),
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
     }
 }
 
@@ -101,14 +108,18 @@ pub struct Verrou {
 }
 
 impl Verrou {
-    pub fn prendre(chemin: &Path, marque: &str, delai: i64) -> Resultat<Result<Verrou, Verrouille>> {
+    pub fn prendre(chemin: &Path, marque: &str, delai: i64) -> R<Result<Verrou, Verrouille>> {
         Ok(prendre(chemin, marque, delai)?.map(|_| Verrou { chemin: chemin.to_path_buf(), marque: marque.to_string() }))
     }
 }
 
 impl Drop for Verrou {
     fn drop(&mut self) {
-        rendre(&self.chemin, &self.marque);
+        // A la sortie de sa portee, rien ne remonte : un verrou qui ne se retire pas se note (`echec::noter_echec`, que les
+        // incidents lisent), et le delai le levera.
+        if let Err(e) = rendre_au_disque(&self.chemin, &self.marque) {
+            crate::echec::noter_echec(Some(crate::echec::Classe::du_disque(&e)), &format!("Un verrou ne se retire pas ({}) : {}", self.chemin.display(), e));
+        }
     }
 }
 

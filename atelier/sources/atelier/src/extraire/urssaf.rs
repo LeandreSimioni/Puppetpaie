@@ -39,7 +39,7 @@ use serde::Serialize;
 use super::{date_du_releve, nom_de, EnOrdre, Releve};
 use socle::date::Jour;
 use socle::fichiers::repr;
-use socle::num::Resultat;
+use socle::echec::R;
 use socle::texte::strip;
 
 /// Les caracteres de windows-1252 de 0x80 a 0x9F (`None` : non attribue, l'octet est refuse).
@@ -78,12 +78,12 @@ const CP1252: [Option<char>; 32] = [
     Some('\u{178}'),
 ];
 
-fn cp1252(octets: &[u8], nom: &str) -> Resultat<String> {
+fn cp1252(octets: &[u8], nom: &str) -> R<String> {
     octets
         .iter()
         .map(|&b| match b {
             0x80..=0x9f => {
-                CP1252[(b - 0x80) as usize].ok_or_else(|| format!("{} : octet 0x{:02x} hors de windows-1252", nom, b))
+                CP1252[(b - 0x80) as usize].ok_or_else(|| refus!("{} : octet 0x{:02x} hors de windows-1252", nom, b))
             }
             _ => Ok(b as char),
         })
@@ -166,8 +166,8 @@ impl Table {
         rang.get(j).map(String::as_str)
     }
 
-    fn exige<'a>(&self, rang: &'a [String], nom: &str, fichier: &str) -> Resultat<&'a str> {
-        self.get(rang, nom).ok_or_else(|| format!("{} : colonne {} absente d'un rang", fichier, repr(nom)))
+    fn exige<'a>(&self, rang: &'a [String], nom: &str, fichier: &str) -> R<&'a str> {
+        self.get(rang, nom).ok_or_else(|| refus!("{} : colonne {} absente d'un rang", fichier, repr(nom)))
     }
 }
 
@@ -203,16 +203,16 @@ struct Organisme {
 }
 
 /// Les organismes de la Table des Urssaf (windows-1252 : « Numéro », « Dénomination »), tries par code.
-fn organismes(table: &Path) -> Resultat<Vec<Organisme>> {
+fn organismes(table: &Path) -> R<Vec<Organisme>> {
     let nom = nom_de(table);
-    let octets = std::fs::read(table).map_err(|e| format!("{} illisible ({})", table.display(), e))?;
+    let octets = std::fs::read(table).map_err(|e| refus!("{} illisible ({})", table.display(), e))?;
     let t = Table::lire(&cp1252(&octets, &nom)?, ';');
     let mut liste: Vec<Organisme> = Vec::new();
     for l in &t.rangs {
         let Some(cod) = t.get(l, "Codification").map(strip).filter(|c| c.starts_with('U')) else { continue };
         let code: String = cod.chars().skip(1).collect();
         // Les valeurs du CSV sont entourees d'apostrophes pour qu'un tableur ne mange pas les zeros de tete.
-        let sans_apostrophes = |c: &str| -> Resultat<String> { Ok(strip(t.exige(l, c, &nom)?).trim_matches('\'').to_string()) };
+        let sans_apostrophes = |c: &str| -> R<String> { Ok(strip(t.exige(l, c, &nom)?).trim_matches('\'').to_string()) };
         liste.push(Organisme {
             code,
             codification: cod.to_string(),
@@ -228,9 +228,9 @@ fn organismes(table: &Path) -> Resultat<Vec<Organisme>> {
 /// Ancienne region -> code Urssaf, depuis la liste des sites du reseau. Le filtre `codes` (la Table des Urssaf) tranche
 /// le cas de la Normandie : la liste des sites y porte encore 237 et 257, la Table ne connait que 287. Un site sans code
 /// ou sans region ne dit rien.
-fn par_region(sites: &Path, codes: &BTreeSet<String>) -> Resultat<EnOrdre<String>> {
-    let octets = std::fs::read(sites).map_err(|e| format!("{} illisible ({})", sites.display(), e))?;
-    let texte = String::from_utf8(octets).map_err(|e| format!("{} n'est pas en UTF-8 ({})", sites.display(), e))?;
+fn par_region(sites: &Path, codes: &BTreeSet<String>) -> R<EnOrdre<String>> {
+    let octets = std::fs::read(sites).map_err(|e| refus!("{} illisible ({})", sites.display(), e))?;
+    let texte = String::from_utf8(octets).map_err(|e| refus!("{} n'est pas en UTF-8 ({})", sites.display(), e))?;
     let sans_bom = match texte.strip_prefix('\u{feff}') {
         Some(t) => t,
         None => &texte,
@@ -256,7 +256,7 @@ fn par_region(sites: &Path, codes: &BTreeSet<String>) -> Resultat<EnOrdre<String
         .map(|(r, v)| format!("{}: [{}]", repr(r), v.iter().map(|c| repr(c)).collect::<Vec<_>>().join(", ")))
         .collect();
     if !ambigus.is_empty() {
-        return Err(format!(
+        return Err(refus!(
             "Plusieurs codes Urssaf pour une meme ancienne region : {{{}}}.\n  La deduction ne peut pas trancher toute seule ; \
              relire la source avant d'aller plus loin.",
             ambigus.join(", ")
@@ -267,18 +267,18 @@ fn par_region(sites: &Path, codes: &BTreeSet<String>) -> Resultat<EnOrdre<String
 }
 
 /// Departement -> code Urssaf, par l'ancienne region du COG 2015 (le premier `.txt` de l'archive, en latin-1, tabule).
-fn par_departement(cog: &Path, regions: &EnOrdre<String>, codes: &BTreeSet<String>) -> Resultat<EnOrdre<String>> {
-    let f = std::fs::File::open(cog).map_err(|e| format!("{} illisible ({})", cog.display(), e))?;
-    let mut z = zip::ZipArchive::new(f).map_err(|e| format!("{} : archive illisible ({})", cog.display(), e))?;
+fn par_departement(cog: &Path, regions: &EnOrdre<String>, codes: &BTreeSet<String>) -> R<EnOrdre<String>> {
+    let f = std::fs::File::open(cog).map_err(|e| refus!("{} illisible ({})", cog.display(), e))?;
+    let mut z = zip::ZipArchive::new(f).map_err(|e| refus!("{} : archive illisible ({})", cog.display(), e))?;
     let mut noms = Vec::new();
     for i in 0..z.len() {
-        noms.push(z.by_index_raw(i).map_err(|e| format!("{} : entree {} illisible ({})", cog.display(), i, e))?.name().to_string());
+        noms.push(z.by_index_raw(i).map_err(|e| refus!("{} : entree {} illisible ({})", cog.display(), i, e))?.name().to_string());
     }
-    let nom = noms.into_iter().find(|n| n.ends_with(".txt")).ok_or_else(|| format!("{} : aucun .txt dans l'archive", cog.display()))?;
+    let nom = noms.into_iter().find(|n| n.ends_with(".txt")).ok_or_else(|| refus!("{} : aucun .txt dans l'archive", cog.display()))?;
     let mut octets = Vec::new();
     z.by_name(&nom)
         .and_then(|mut e| e.read_to_end(&mut octets).map_err(Into::into))
-        .map_err(|e| format!("{} : {} illisible ({})", cog.display(), nom, e))?;
+        .map_err(|e| refus!("{} : {} illisible ({})", cog.display(), nom, e))?;
     let t = Table::lire(&latin1(&octets), '\t');
     let mut sortie: Vec<(String, String)> = Vec::new();
     let mut sans = Vec::new();
@@ -300,7 +300,7 @@ fn par_departement(cog: &Path, regions: &EnOrdre<String>, codes: &BTreeSet<Strin
         }
     }
     if !sans.is_empty() {
-        return Err(format!(
+        return Err(refus!(
             "Departements sans code Urssaf : {}.\n  Une source a bouge ; ne pas combler a la main.",
             sans.join(", ")
         ));
@@ -321,7 +321,7 @@ fn par_departement(cog: &Path, regions: &EnOrdre<String>, codes: &BTreeSet<Strin
 }
 
 /// Le releve : les organismes, les anciennes regions, les departements.
-pub fn relever(table: &Path, sites: &Path, cog: &Path, jour: &Jour) -> Resultat<Releve> {
+pub fn relever(table: &Path, sites: &Path, cog: &Path, jour: &Jour) -> R<Releve> {
     let organismes = organismes(table)?;
     let codes: BTreeSet<String> = organismes.iter().map(|o| o.code.clone()).collect();
     let regions = par_region(sites, &codes)?;

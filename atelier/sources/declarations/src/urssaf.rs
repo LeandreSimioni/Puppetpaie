@@ -9,7 +9,7 @@ use serde::Deserialize;
 use std::sync::{Arc, OnceLock};
 
 use socle::fichiers::{forme_en_cache, FormeGardee};
-use socle::num::Resultat;
+use socle::echec::R;
 
 /// `urssaf-dpae-base.json`.
 #[derive(Debug, Clone, Deserialize)]
@@ -37,7 +37,7 @@ pub struct Organisme {
 }
 
 /// La table livree, lue par sa forme.
-pub fn base() -> Resultat<Arc<BaseUrssaf>> {
+pub fn base() -> R<Arc<BaseUrssaf>> {
     static CACHE: OnceLock<FormeGardee<BaseUrssaf>> = OnceLock::new();
     forme_en_cache(&CACHE, "urssaf-dpae-base.json", "La table des Urssaf livrée avec le logiciel ne se lit pas : le signaler au développeur.", Ok)
 }

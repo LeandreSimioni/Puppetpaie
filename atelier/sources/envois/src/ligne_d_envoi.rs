@@ -3,17 +3,11 @@
 //! note ce qui est quand meme parti.
 
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Classe, Echec, R};
+use socle::echec::{Classe, R};
 use socle::mois::Mois;
 
 use crate::journal::{self, EnRoute, Envoi, Ligne, Mode, Version};
 
-
-/// L'erreur d'un envoi : celle du client (`Courriel`), ou, quand des messages etaient deja partis, celle qui le dit
-/// (`CourrielAvecAvertissement`).
-pub fn echec_d_envoi(message: String) -> Echec {
-    erreur(if message.contains("\nATTENTION, ") { Classe::CourrielAvecAvertissement } else { Classe::Courriel }, message)
-}
 
 /// L'envoi par courriel que `qui` fait du mois `mois`, en mode `reel` (une compagnie fictive aussi) : `versions`, celle de
 /// chaque engagement qu'il emporte (`journal::versions_du_mois`).
@@ -26,14 +20,13 @@ pub fn par_courriel<D, Rt>(mois: Option<Mois>, qui: &str, accepte: bool, destina
 
 /// La ligne d'un envoi par courriel, a la fin de `journal/depots.jsonl`.
 pub fn noter(ctx: &Contexte, ligne: Ligne) -> R<Ligne> {
-    journal::noter(&ctx.racine, ligne, None, &socle::paris::maintenant()).map_err(|m| erreur(Classe::Disque, m))
+    journal::noter(&ctx.racine, ligne, None, journal::Datation::Maintenant).map_err(|m| m.reclasser(Classe::Disque))
 }
 
 /// La ligne d'un envoi qui a echoue en route. Le destinataire est celui des messages REELLEMENT partis (`partis`, vide si
 /// aucun) ; l'adresse ou l'envoi a echoue est a part, dans le detail (`echec_a`), avec les partis. Jamais l'expediteur
 /// comme destinataire. `detail` : ce que l'envoi garde d'ordinaire ; `sorte`, la ligne de sa sorte. `versions` : celles
 /// des engagements des salaries servis avant l'echec ; ce qui a atteint le salarie est parti (`departs_des_lignes`).
-#[allow(clippy::too_many_arguments)]
 pub fn noter_echec_d_envoi<D: EnRoute, Rt>(
     ctx: &Contexte,
     sorte: impl FnOnce(Envoi<D, Rt>) -> Ligne,

@@ -22,3 +22,17 @@ les pièces, `articles-20261010.md` le texte.
   « par jour d'engagement » là où l'arrêté dit « journée de travail accomplie » : le moteur suit l'arrêté) ; modèle de
   calcul de l'Urssaf, `… artiste . plafond proratisé` (`../urssaf-mon-entreprise/`, « nombre jours travaillés »).
 - art. 3 bis : les utilisations secondaires ; le moteur ne les traite pas.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `articles-20261010.md` : `58e7b6abbf6d4fcd8ae48ab6f7345fc740f7e8670e0f85981bef3a5a42efc663`
+- `articles-20261015.md` : `154912d457ba35708d07e52c1cbc6e8d1f35313b64c4f243721da03878d18802`
+- `articles-20261103.md` : `3928abeac1729fbd91a2bf4cd8b120c986af538b62c6af946f32a843dc6145e8`
+- `articles-20261110.md` : `656b00a73a79d8eb14f60197bdb90593766fff57c4f02a1a16ea49d1d96ea0ca`
+- `releve.json` : `b6157b53e2fab4e1f5369200aff8cf9082dd35b21cc60425df0e9946df66b1bb`
+- `xml/1.xml` : `3a72dd9ec4fa1a36d25bf9b93d70cbc83046060ba0bf402cddcb153e599affd5`
+- `xml/2.xml` : `14ed482ba4ed2f8536e88a22cc0272141b67b9d5db363d3d0b960a418d3ac2c3`
+- `xml/3.xml` : `3013ded1569b95027c9085d5592f5719cc86076fbe601de78f40f8809a00d9d7`
+- `xml/3_bis.xml` : `2fae2ce0e9715f98379a6c5bf3a7b45e8f0d19184e0b192919592c88e1d04f3c`

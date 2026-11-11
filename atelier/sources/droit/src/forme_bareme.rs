@@ -8,17 +8,19 @@
 
 use std::collections::BTreeMap;
 
+use crate::assiette::Assiette;
+use crate::base_assujettie::BaseAssujettie;
 use crate::fiche::Lue;
 use crate::source::Fondement;
 use serde::Deserialize;
-use socle::forme::Nombre;
+use socle::forme::{Court, Nombre};
 use socle::num::Decimal;
 
 /// Les notes d'une valeur, communes a chaque type : elles ne se lisent pas au calcul.
 macro_rules! forme {
     ($(#[$m:meta])* pub struct $nom:ident { $($corps:tt)* }) => {
         $(#[$m])*
-        #[derive(Debug, Clone, Default, Deserialize)]
+        #[derive(Debug, Clone, Deserialize)]
         #[serde(deny_unknown_fields)]
         pub struct $nom {
             $($corps)*
@@ -51,11 +53,11 @@ impl<'de> Deserialize<'de> for TarifDate {
 
 /// Des composants qui se datent, lus seuls (`Option<ComposantsDates>`).
 #[derive(Debug, Clone, PartialEq)]
-pub struct ComposantsDates(pub Vec<f64>);
+pub struct ComposantsDates(pub Vec<Decimal>);
 
 impl<'de> Deserialize<'de> for ComposantsDates {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        datee::valeur::<D, Vec<f64>>(d).map(ComposantsDates)
+        datee::valeur::<D, Vec<Court>>(d).map(|v| ComposantsDates(v.into_iter().map(|c| c.0).collect()))
     }
 }
 
@@ -76,11 +78,11 @@ pub enum CaseCotisation {
 
 /// Un taux qui se date, lu seul (`Option<TauxDate>`).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct TauxDate(pub f64);
+pub struct TauxDate(pub Decimal);
 
 impl<'de> Deserialize<'de> for TauxDate {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        datee::valeur::<D, f64>(d).map(TauxDate)
+        datee::valeur::<D, Court>(d).map(|c| TauxDate(c.0))
     }
 }
 
@@ -88,7 +90,7 @@ impl<'de> Deserialize<'de> for TauxDate {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Datee {
-    pub depuis: Option<String>,
+    pub depuis: Option<socle::date::Jour>,
     #[serde(deserialize_with = "socle::forme::decimal")]
     pub valeur: Decimal,
     pub source: Fondement,
@@ -109,13 +111,13 @@ enum Ecrite<T> {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Entree<T> {
-    depuis: Option<String>,
+    depuis: Option<socle::date::Jour>,
     valeur: T,
     accord: Option<String>,
-    #[allow(dead_code)]
-    source: Option<Fondement>,
-    #[allow(dead_code)]
-    note: Option<String>,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    source: socle::forme::NonLue,
+    #[serde(default, deserialize_with = "socle::forme::non_lue")]
+    note: socle::forme::NonLue,
 }
 
 /// LA LECTURE EN COURS : le jour ou le bareme se lit, l'organisation patronale de la compagnie (un accord la lie peut-etre
@@ -139,11 +141,11 @@ pub(crate) fn lire_au<T: serde::de::DeserializeOwned>(
     jour: &socle::date::Jour,
     organisation: Option<&str>,
     phrase: &str,
-) -> socle::num::Resultat<(T, Vec<socle::date::Jour>)> {
+) -> socle::echec::R<(T, Vec<socle::date::Jour>)> {
     LECTURE.with(|l| *l.borrow_mut() = Some(Lecture { jour: *jour, organisation: organisation.map(str::to_string), retenues: Vec::new() }));
     let lu = socle::forme::lire_fichier::<T>(fichier, phrase);
     let lecture = LECTURE.with(|l| l.borrow_mut().take());
-    let mut retenues = lecture.ok_or_else(|| "La lecture du barème a perdu ses dates : le signaler au développeur.".to_string())?.retenues;
+    let mut retenues = lecture.ok_or_else(|| socle::echec::refus("La lecture du barème a perdu ses dates : le signaler au développeur."))?.retenues;
     retenues.sort();
     retenues.dedup();
     Ok((lu?, retenues))
@@ -172,22 +174,22 @@ pub(crate) mod datee {
         LECTURE.with(|l| {
             let mut l = l.borrow_mut();
             let lecture = l.as_mut().ok_or_else(|| D::Error::custom("une valeur datée ne se lit qu'à une date"))?;
-            retenir(entrees, lecture).map_err(D::Error::custom)
+            // Le refus devient le texte de l'erreur de serde, ce qu'il porte a part compris, sur sa ligne (`en_lignes`).
+            retenir(entrees, lecture).map_err(|e| D::Error::custom(e.en_lignes()))
         })
     }
 
-    fn retenir<T>(entrees: Vec<Entree<T>>, lecture: &mut super::Lecture) -> Result<T, String> {
+    fn retenir<T>(entrees: Vec<Entree<T>>, lecture: &mut super::Lecture) -> socle::echec::R<T> {
         let mut datees: Vec<(Option<Jour>, T)> = Vec::new();
         for e in entrees {
-            let depuis = e.depuis.as_deref().map(Jour::lire).transpose()?;
             let depuis = match e.accord {
-                None => depuis,
+                None => e.depuis,
                 Some(source) => {
                     let t = crate::minima::table()?;
                     let accord = crate::minima::accord(&t, &source).ok_or_else(|| socle::echec::livree("minima-conventionnels.json", &source))?;
-                    let ecrit = depuis.ok_or_else(|| socle::echec::a_la_cle("Une valeur du barème datée par un accord ne dit pas son jour : le signaler au développeur.", "depuis", &source))?.iso();
-                    match crate::minima::lie_depuis(accord, lecture.organisation.as_deref(), &ecrit) {
-                        Some(j) => Some(Jour::lire(&j)?),
+                    let ecrit = e.depuis.ok_or_else(|| socle::echec::a_la_cle("Une valeur du barème datée par un accord ne dit pas son jour : le signaler au développeur.", "depuis", &source))?;
+                    match crate::minima::lie_depuis(accord, lecture.organisation.as_deref(), ecrit) {
+                        Some(j) => Some(j),
                         None => continue,
                     }
                 }
@@ -200,7 +202,7 @@ pub(crate) mod datee {
             .into_iter()
             .filter(|(j, _)| j.is_none_or(|j| j <= jour))
             .last()
-            .ok_or_else(|| format!("aucune valeur ne s'applique au {}", jour.jj_mm_aaaa()))?;
+            .ok_or_else(|| socle::refus!("aucune valeur ne s'applique au {}", jour.jj_mm_aaaa()))?;
         lecture.retenues.extend(depuis);
         Ok(v)
     }
@@ -292,6 +294,7 @@ pub enum VersementMobiliteEcrit {
 
 forme! {
     /// Le taux du versement mobilite et la commune (code INSEE) de l'etablissement, l'autorite qui le fixe.
+    #[derive(Default)]
     pub struct VersementMobiliteTaux {
         pub taux: Option<Nombre>,
         pub code_insee: Option<String>,
@@ -311,7 +314,8 @@ forme! {
     /// taux, sa cotisation au nominatif.
     pub struct MajorationChomage {
         pub rubrique: String,
-        pub taux: f64,
+        #[serde(deserialize_with = "socle::forme::court")]
+        pub taux: Decimal,
         pub code81: String,
     }
 }
@@ -379,7 +383,7 @@ forme! {
         pub prestations_de_services: Decimal,
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub total: Decimal,
-        pub en_vigueur_depuis: String,
+        pub en_vigueur_depuis: socle::date::Jour,
     }
 }
 
@@ -391,6 +395,7 @@ forme! {
 }
 
 forme! {
+    #[derive(Default)]
     pub struct PasParDefaut {
         pub abattement_contrats_courts: Option<NombreDate>,
         pub grilles: Vec<GrillePas>,
@@ -400,11 +405,11 @@ forme! {
 forme! {
     /// Une grille du taux par defaut (CGI 204 H, III) : ses tranches `[jusqu'a, taux]`.
     pub struct GrillePas {
-        pub depuis: String,
+        pub depuis: socle::date::Jour,
         pub zone: String,
         #[serde(rename = "type")]
-        pub genre: String,
-        pub tranches: Vec<Vec<Option<f64>>>,
+        pub genre: crate::type_taux_pas::TypeDeTauxPas,
+        pub tranches: Vec<Vec<Option<Court>>>,
     }
 }
 
@@ -431,16 +436,16 @@ forme! {
         pub id: String,
         pub famille: Option<String>,
         pub libelle: Option<String>,
-        /// La cle de son assiette dans les bases du calcul (`brut`, `brut_x115`, `t1_journaliere`…).
-        pub base: Option<String>,
+        /// Son assiette dans les bases du calcul.
+        pub base: Option<Assiette>,
         /// Les deux parts, en pourcent ; absente ou nulle : pas de part de ce cote.
         pub taux_pat: Option<TauxDate>,
-        pub taux_sal: Option<f64>,
+        pub taux_sal: Option<Court>,
         /// Une part patronale qui se compose de plusieurs taux, chacun arrondi au centime (`composants`, ou
         /// `composants_pat`) ; la part salariale de meme (`composants_sal`).
-        pub composants: Option<Vec<f64>>,
-        pub composants_pat: Option<Vec<f64>>,
-        pub composants_sal: Option<Vec<f64>>,
+        pub composants: Option<Vec<Court>>,
+        pub composants_pat: Option<Vec<Court>>,
+        pub composants_sal: Option<Vec<Court>>,
         /// Le complement de taux patronal au-dela d'un seuil de SMIC.
         pub complement: Option<Complement>,
         /// La CET des cadres, fondue dans la ligne quand elle est due.
@@ -449,7 +454,7 @@ forme! {
         /// Le type de composant de la base 31 de la DSN (S21.G00.79.001) que la sante pose (`bareme::bareme_sante`).
         pub composant_79: Option<String>,
         /// Le facteur du taux AT/MP de la compagnie (`bareme::bareme_atmp`) : 0,7 pour un artiste (abattement de 30 %).
-        pub facteur_atmp: Option<f64>,
+        pub facteur_atmp: Option<Court>,
         /// Ce qui remplit le taux, quand ce n'est pas le bareme (le taux AT/MP, la prevoyance d'une convention).
         pub rempli_par: Option<String>,
         /// La ligne de la taxe d'apprentissage, que la pile retire d'une compagnie qui n'y est pas assujettie.
@@ -462,10 +467,40 @@ forme! {
     }
 }
 
+impl Rubrique {
+    /// Une rubrique que le moteur compose : son identifiant, et rien d'autre de dit.
+    pub(crate) fn nommee(id: &str) -> Rubrique {
+        Rubrique {
+            id: id.into(),
+            famille: None,
+            libelle: None,
+            base: None,
+            taux_pat: None,
+            taux_sal: None,
+            composants: None,
+            composants_pat: None,
+            composants_sal: None,
+            complement: None,
+            cet_si_depasse: None,
+            masquer_base_et_taux: None,
+            composant_79: None,
+            facteur_atmp: None,
+            rempli_par: None,
+            taxe_apprentissage: None,
+            apres: None,
+            releve_svp_sante: None,
+            a_confirmer: None,
+            source: None,
+            note: None,
+        }
+    }
+}
+
 forme! {
     /// Le taux qui s'ajoute au taux patronal quand la remuneration depasse `seuil_smic` fois le SMIC (sans seuil : toujours).
     pub struct Complement {
-        pub taux: f64,
+        #[serde(deserialize_with = "socle::forme::court")]
+        pub taux: Decimal,
         pub seuil_smic: Option<Nombre>,
     }
 }
@@ -473,8 +508,10 @@ forme! {
 forme! {
     /// Les taux patronal et salarial de la CET.
     pub struct Cet {
-        pub pat: f64,
-        pub sal: f64,
+        #[serde(deserialize_with = "socle::forme::court")]
+        pub pat: Decimal,
+        #[serde(deserialize_with = "socle::forme::court")]
+        pub sal: Decimal,
     }
 }
 
@@ -512,16 +549,17 @@ forme! {
     /// Une modification d'une rubrique du corps par une couche (`rubriques` d'une section) : chaque case qu'elle dit
     /// remplace celle de la rubrique, une case qu'elle ne dit pas (absente ou nulle) ne change pas ; `efface` nomme les
     /// parts que la couche retire (la rubrique n'a plus de part de ce cote : `Rubrique::taux_pat`, `taux_sal`).
+    #[derive(Default)]
     pub struct RubriqueModifiee {
         pub famille: Option<String>,
         pub libelle: Option<String>,
-        pub base: Option<String>,
+        pub base: Option<Assiette>,
         pub taux_pat: Option<TauxDate>,
-        pub taux_sal: Option<f64>,
+        pub taux_sal: Option<Court>,
         pub efface: Option<Vec<Part>>,
         pub composants: Option<ComposantsDates>,
-        pub composants_pat: Option<Vec<f64>>,
-        pub composants_sal: Option<Vec<f64>>,
+        pub composants_pat: Option<Vec<Court>>,
+        pub composants_sal: Option<Vec<Court>>,
         pub cet_si_depasse: Option<Cet>,
         pub rempli_par: Option<String>,
         pub a_confirmer: Option<String>,
@@ -531,15 +569,15 @@ forme! {
 forme! {
     /// Une cotisation individuelle de la DSN (bloc 81), et la base qu'elle declare au bloc 78.
     pub struct CotisationDsn {
-        pub bloc78: String,
+        pub bloc78: BaseAssujettie,
         pub code81: Option<String>,
         pub org: Option<String>,
-        pub base: Option<String>,
+        pub base: Option<Assiette>,
         pub taux: Option<TauxDate>,
-        pub base78: String,
+        pub base78: Assiette,
         /// La base de la ligne s'arrete au plafond de la periode.
         pub plafond: Option<bool>,
-        pub composants: Option<Vec<f64>>,
+        pub composants: Option<Vec<Court>>,
         pub affectation: Option<String>,
         pub organisme: Option<String>,
         /// La cotisation n'est due qu'au-dela de ce multiple du SMIC.
@@ -554,31 +592,76 @@ forme! {
     }
 }
 
-forme! {
-    /// Une modification d'une cotisation du corps par une couche (`cotisations_dsn` d'une categorie, par code81 ou
-    /// `code81:affectation`) : chaque case qu'elle dit remplace celle de la cotisation, une case qu'elle ne dit pas
-    /// (absente ou nulle) ne change pas ; `efface` retire le taux.
-    pub struct CotisationModifiee {
-        pub taux: Option<f64>,
-        pub efface: Option<Vec<CaseCotisation>>,
-        pub composants: Option<Vec<f64>>,
-        pub base: Option<String>,
-        pub base78: Option<String>,
-        pub lignes: Option<Vec<String>>,
+impl CotisationDsn {
+    /// UNE COTISATION QUE LA PILE AJOUTE d'elle-meme (le versement mobilite, le regime local d'Alsace-Moselle) : sa base
+    /// 78 est le brut, son taux porte sur `base`.
+    pub(crate) fn sur_le_brut(bloc78: BaseAssujettie, code81: String, org: String, base: Assiette, taux: Decimal) -> CotisationDsn {
+        CotisationDsn {
+            bloc78,
+            code81: Some(code81),
+            org: Some(org),
+            base: Some(base),
+            taux: Some(TauxDate(taux)),
+            base78: Assiette::Brut,
+            plafond: None,
+            composants: None,
+            affectation: None,
+            organisme: None,
+            seuil_smic: None,
+            cle_total: None,
+            code_insee: None,
+            lignes: None,
+            apres: None,
+            source: None,
+            note: None,
+        }
     }
 }
 
 forme! {
-    /// Une cotisation hors des lignes 81 (S21.G00.54, types 92 et 93) : un taux sur une base, ou la somme de lignes.
-    pub struct CotisationSupplementaire {
-        pub taux_sur_brut: Option<Nombre>,
-        pub base: Option<String>,
-        pub lignes_patronales: Option<Vec<String>>,
+    /// Une modification d'une cotisation du corps par une couche (`cotisations_dsn` d'une categorie, par code81 ou
+    /// `code81:affectation`) : chaque case qu'elle dit remplace celle de la cotisation, une case qu'elle ne dit pas
+    /// (absente ou nulle) ne change pas ; `efface` retire le taux.
+    #[derive(Default)]
+    pub struct CotisationModifiee {
+        pub taux: Option<Court>,
+        pub efface: Option<Vec<CaseCotisation>>,
+        pub composants: Option<Vec<Court>>,
+        pub base: Option<Assiette>,
+        pub base78: Option<Assiette>,
+        pub lignes: Option<Vec<String>>,
+    }
+}
+
+/// Une cotisation hors des lignes 81 (S21.G00.54, types 92 et 93) : un taux sur une base que le bareme nomme, ou la
+/// somme de lignes patronales du bulletin.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum CotisationSupplementaire {
+    SurUneBase(TauxSurUneBase),
+    DesLignes(LignesPatronales),
+}
+
+forme! {
+    /// Un taux sur une base (`CotisationSupplementaire`) : la base est toujours dite. Le bareme ecrit le taux sous la
+    /// cle `taux_sur_brut`, quelle que soit la base.
+    pub struct TauxSurUneBase {
+        #[serde(rename = "taux_sur_brut")]
+        pub taux_sur_la_base: Nombre,
+        pub base: Assiette,
+    }
+}
+
+forme! {
+    /// La somme des parts patronales de lignes du bulletin (`CotisationSupplementaire`).
+    pub struct LignesPatronales {
+        pub lignes_patronales: Vec<String>,
     }
 }
 
 forme! {
     /// La reduction generale des cotisations (CSS L. 241-13), ou ce qu'une couche en complete.
+    #[derive(Default)]
     pub struct ReductionGenerale {
         pub verifie: Option<bool>,
         pub statuts: Option<Vec<String>>,
@@ -605,6 +688,7 @@ forme! {
 
 forme! {
     /// Ce que la DSN declare de la reduction : les codes 81 de ses parts, le CTP du bordereau.
+    #[derive(Default)]
     pub struct ReductionDsn {
         pub code81_urssaf: Option<String>,
         pub code81_chomage: Option<String>,
@@ -629,6 +713,7 @@ forme! {
 
 forme! {
     /// La section d'une categorie (`par_categorie` : cadre, cadre permanent), et ses sections par statut.
+    #[derive(Default)]
     pub struct CoucheCategorie {
         pub verifie: Option<bool>,
         pub plafond_journalier: Option<Nombre>,
@@ -645,6 +730,7 @@ forme! {
 
 forme! {
     /// La section d'une nature de contrat (`par_nature` : permanent) : remplacer, retirer, ajouter des rubriques.
+    #[derive(Default)]
     pub struct CoucheNature {
         pub verifie: Option<bool>,
         pub rubriques: Option<BTreeMap<String, RubriqueModifiee>>,
@@ -664,7 +750,8 @@ forme! {
     /// La contribution CPF-CDD d'un CDD de droit commun (C. trav. L. 6331-6) : un composant de plus a une rubrique.
     pub struct CpfCdd {
         pub rubrique: String,
-        pub taux: f64,
+        #[serde(deserialize_with = "socle::forme::court")]
+        pub taux: Decimal,
         pub cotisation_dsn: CotisationDsn,
     }
 }
@@ -773,11 +860,32 @@ forme! {
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Effet {
     /// Le taux d'une cotisation de la DSN (bloc 81), par son code.
-    TauxDsn { section: Section, code81: String, taux: f64, source: Fondement },
+    TauxDsn {
+        section: Section,
+        code81: String,
+        #[serde(deserialize_with = "socle::forme::court")]
+        taux: Decimal,
+        source: Fondement,
+    },
     /// Le taux patronal d'une rubrique du bulletin (de sa modification, pour une nature).
-    TauxPatronal { section: Section, rubrique: String, taux: f64, source: Fondement },
+    TauxPatronal {
+        section: Section,
+        rubrique: String,
+        #[serde(deserialize_with = "socle::forme::court")]
+        taux: Decimal,
+        source: Fondement,
+    },
     /// Un composant du taux patronal d'une rubrique qu'une nature ajoute.
-    ComposantAjoute { nature: String, rubrique: String, rang: usize, taux: f64, source: Fondement },
+    ComposantAjoute {
+        /// La section `par_nature` qui ajoute la rubrique.
+        #[serde(rename = "nature")]
+        section: String,
+        rubrique: String,
+        rang: usize,
+        #[serde(deserialize_with = "socle::forme::court")]
+        taux: Decimal,
+        source: Fondement,
+    },
     /// Un parametre de la reduction generale d'un statut.
     ReductionGenerale {
         statut: String,
@@ -808,7 +916,7 @@ pub enum ParametreReduction {
 /// Ce que la pile porte a la place d'un effet : un taux, ou un parametre de la reduction.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Lu {
-    Taux(f64),
+    Taux(Decimal),
     Parametre(Decimal),
 }
 
@@ -816,9 +924,8 @@ impl Lu {
     /// Le meme nombre ?
     pub fn meme(&self, autre: &Lu) -> bool {
         match (self, autre) {
-            (Lu::Taux(a), Lu::Taux(b)) => (a - b).abs() < 1e-9,
-            (Lu::Parametre(a), Lu::Parametre(b)) => a == b,
-            _ => false,
+            (Lu::Taux(a), Lu::Taux(b)) | (Lu::Parametre(a), Lu::Parametre(b)) => a == b,
+            (Lu::Taux(_), Lu::Parametre(_)) | (Lu::Parametre(_), Lu::Taux(_)) => false,
         }
     }
 }
@@ -826,7 +933,7 @@ impl Lu {
 impl std::fmt::Display for Lu {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Lu::Taux(t) => write!(f, "{}", socle::ecriture::repr_flottant(*t)),
+            Lu::Taux(t) => write!(f, "{}", socle::num::court(*t)),
             Lu::Parametre(p) => write!(f, "{}", p),
         }
     }
@@ -852,8 +959,8 @@ impl Effet {
             Effet::TauxPatronal { section: Section::Corps, rubrique: id, .. } => rubrique(&pile.rubriques_bulletin, id),
             Effet::TauxPatronal { section: Section::Statut(s), rubrique: id, .. } => rubrique(pile.par_statut.get(s)?.rubriques_bulletin.as_deref()?, id),
             Effet::TauxPatronal { section: Section::Nature(n), rubrique: id, .. } => pile.par_nature.get(n)?.rubriques.as_ref()?.get(id)?.taux_pat.map(|t| Lu::Taux(t.0)),
-            Effet::ComposantAjoute { nature, rubrique: id, rang, .. } => {
-                pile.par_nature.get(nature)?.rubriques_ajoutees.as_ref()?.iter().find(|r| r.id == *id)?.composants.as_ref()?.get(*rang).copied().map(Lu::Taux)
+            Effet::ComposantAjoute { section, rubrique: id, rang, .. } => {
+                pile.par_nature.get(section)?.rubriques_ajoutees.as_ref()?.iter().find(|r| r.id == *id)?.composants.as_ref()?.get(*rang).map(|c| Lu::Taux(c.0))
             }
             Effet::ReductionGenerale { statut, parametre, .. } => {
                 let r = pile.par_statut.get(statut)?.reduction_generale.as_ref()?;
@@ -879,7 +986,7 @@ impl std::fmt::Display for Effet {
             Effet::TauxDsn { section, code81, .. } => write!(f, "{}cotisations_dsn[{}].taux", devant(section), code81),
             Effet::TauxPatronal { section: Section::Nature(n), rubrique, .. } => write!(f, "par_nature.{}.rubriques.{}.taux_pat", n, rubrique),
             Effet::TauxPatronal { section, rubrique, .. } => write!(f, "{}rubriques_bulletin[{}].taux_pat", devant(section), rubrique),
-            Effet::ComposantAjoute { nature, rubrique, rang, .. } => write!(f, "par_nature.{}.rubriques_ajoutees[{}].composants[{}]", nature, rubrique, rang),
+            Effet::ComposantAjoute { section, rubrique, rang, .. } => write!(f, "par_nature.{}.rubriques_ajoutees[{}].composants[{}]", section, rubrique, rang),
             Effet::ReductionGenerale { statut, parametre, .. } => write!(
                 f,
                 "par_statut.{}.reduction_generale.{}",
@@ -894,11 +1001,10 @@ impl std::fmt::Display for Effet {
 }
 
 /// CE QUE LE MOTEUR NE PORTE PAS au-dela d'un seuil, et que la compagnie dit elle-meme dans sa surcouche.
-#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum NonPortee {
     /// Le versement mobilite (`Pile::versement_mobilite`) : un taux et la commune, ou une reponse.
-    #[default]
     VersementMobilite,
 }
 
@@ -922,7 +1028,8 @@ forme! {
 
 forme! {
     pub struct RegimeLocal {
-        pub taux_sal: f64,
+        #[serde(deserialize_with = "socle::forme::court")]
+        pub taux_sal: Decimal,
         pub code81: String,
         pub ctp: String,
     }
@@ -934,7 +1041,7 @@ forme! {
         pub libelle: String,
         pub applicable: bool,
         pub retraite_t1: Option<RetraiteT1ParStatut>,
-        pub adhesion_avant: Option<String>,
+        pub adhesion_avant: Option<socle::date::Jour>,
         pub alias: Option<Vec<String>>,
         pub a_confirmer: Option<String>,
     }
@@ -942,14 +1049,15 @@ forme! {
 
 forme! {
     pub struct RetraiteT1ParStatut {
-        pub artiste: Option<f64>,
-        pub technicien: Option<f64>,
+        pub artiste: Option<Court>,
+        pub technicien: Option<Court>,
     }
 }
 
 forme! {
     pub struct RetraiteT1Repartition {
-        pub taux_droit_commun: f64,
+        #[serde(deserialize_with = "socle::forme::court")]
+        pub taux_droit_commun: Decimal,
         pub ceg: Cet,
         pub avant_1999: String,
         pub par_idcc: BTreeMap<String, RepartitionDeBranche>,
@@ -1050,8 +1158,8 @@ forme! {
         pub famille: Option<String>,
         pub libelle: Option<String>,
         pub base: Option<BaseParPopulation>,
-        pub taux_pat: Option<f64>,
-        pub taux_sal: Option<f64>,
+        pub taux_pat: Option<Court>,
+        pub taux_sal: Option<Court>,
         pub efface: Option<Vec<Part>>,
         pub masquer_base_et_taux: Option<bool>,
         pub par_representation: Option<BTreeMap<String, TauxParPopulation>>,
@@ -1061,18 +1169,23 @@ forme! {
 
 /// Une base, la meme pour tous ou selon la population (intermittent, permanent).
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum BaseParPopulation {
-    Une(String),
-    Par { intermittent: String, permanent: String },
+    Une(Assiette),
+    Par { intermittent: Assiette, permanent: Assiette },
 }
 
 /// Un taux, le meme pour tous ou selon la population.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum TauxParPopulation {
-    Un(f64),
-    Par { intermittent: f64, permanent: f64 },
+    Un(#[serde(deserialize_with = "socle::forme::court")] Decimal),
+    Par {
+        #[serde(deserialize_with = "socle::forme::court")]
+        intermittent: Decimal,
+        #[serde(deserialize_with = "socle::forme::court")]
+        permanent: Decimal,
+    },
 }
 
 forme! {
@@ -1083,13 +1196,16 @@ forme! {
     }
 }
 
-forme! {
-    /// Une contribution de branche que la DSN declare (bloc 82), la somme de lignes du bulletin.
-    pub struct ContributionDsn {
-        pub contribution: String,
-        pub lignes: Vec<String>,
-        pub en_dsn_depuis: String,
-    }
+/// Une contribution de branche que la DSN declare (bloc 82), la somme de lignes du bulletin. Son premier mois en DSN
+/// n'a pas de valeur par defaut : elle ne prend pas la forme `forme!`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContributionDsn {
+    pub contribution: String,
+    pub lignes: Vec<String>,
+    pub en_dsn_depuis: socle::mois::Mois,
+    pub source: Option<Fondement>,
+    pub note: Option<String>,
 }
 
 forme! {
@@ -1103,10 +1219,9 @@ forme! {
 }
 
 /// La case de la fiche entreprise qui dit le secteur d'une convention.
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChampDuSecteur {
-    #[default]
     #[serde(rename = "secteur_2121")]
     Secteur2121,
 }
@@ -1149,7 +1264,9 @@ forme! {
         pub taux: Decimal,
         pub plancher: Option<Nombre>,
         pub plafond: Option<Nombre>,
-        pub assiette: Option<String>,
+        /// L'assiette telle que le texte la dit, en mots : une phrase, que le calcul ne lit pas.
+        #[serde(rename = "assiette")]
+        pub assiette_dite: Option<String>,
         pub collecteur: Option<String>,
         pub avertissement: Option<String>,
     }
@@ -1164,17 +1281,17 @@ pub struct TauxAtmp {
     pub depuis: Option<socle::date::Jour>,
     pub provenance: Option<crate::fiche::ProvenanceAtmp>,
     pub notification: Option<crate::fiche::NotificationAtmp>,
-    pub manque: Option<String>,
+    pub manque: Option<socle::echec::Echec>,
 }
 
 /// LE SOCLE LIVRE `fichier` LU A `jour` (`lire_au`) : la phrase d'un refus est celle d'un bareme que le moteur ne sait pas
 /// lire, la cle a part.
-pub(crate) fn lire_le_socle(fichier: &std::path::Path, jour: &socle::date::Jour, organisation: Option<&str>) -> socle::num::Resultat<(Pile, Vec<socle::date::Jour>)> {
+pub(crate) fn lire_le_socle(fichier: &std::path::Path, jour: &socle::date::Jour, organisation: Option<&str>) -> socle::echec::R<(Pile, Vec<socle::date::Jour>)> {
     lire_au(fichier, jour, organisation, "Le barème de l'année porte une clé ou une valeur que le moteur ne sait pas lire : le signaler au développeur.")
 }
 
 /// LA SURCOUCHE DE LA COMPAGNIE `fichier` : la phrase d'un refus dit ce que la compagnie corrige, la cle a part.
-pub(crate) fn lire_la_surcouche(fichier: &std::path::Path) -> socle::num::Resultat<Surcouche> {
+pub(crate) fn lire_la_surcouche(fichier: &std::path::Path) -> socle::echec::R<Surcouche> {
     socle::forme::lire_fichier(fichier, "Le barème propre à la compagnie (config/baremes) porte une clé ou une valeur que le moteur ne sait pas lire : la corriger, ou le signaler au développeur.")
 }
 

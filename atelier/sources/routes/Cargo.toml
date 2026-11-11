@@ -1,3 +1,6 @@
+[lints]
+workspace = true
+
 [package]
 name = "routes"
 version = "0.1.0"
@@ -28,8 +31,6 @@ compagnie = { path = "../compagnie" }
 # Ce que les pieces d'un autre logiciel disent du passe de la compagnie.
 import = { path = "../import" }
 rust_decimal = { workspace = true }
-# La porte des routes (`enveloppe`) : la charge d'une route se lit, sa reponse s'ecrit.
-serde_json = { workspace = true }
 serde = { workspace = true }
 # Deflate et CRC-32 (le zip du dossier d'un salarie), deja lies par la fabrique de PDF.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
@@ -39,7 +40,5 @@ sha2 = { workspace = true }
 regex = { version = "1", default-features = false, features = ["std", "unicode"] }
 # Les pages d'un PDF du dossier d'un salarie, lues par la fabrique dans le meme processus.
 fabrique-pdf = { path = "../fabrique-pdf" }
-# La liste nominative du CASC-SVP des mois importes : ecriture seule.
-rust_xlsxwriter = "0.90"
 # Les messages de la boite courriel releves pour les fiches (`fiches.rs`) : lecture MIME, bibliothèque éprouvée.
 mailparse = "0.16"

@@ -7,10 +7,9 @@
 //! groupes et par leurs champs (`Champ`), jamais par le nom d'une cle.
 
 use serde::{Deserialize, Serialize};
+use socle::date::Jour;
+use socle::echec::R;
 use socle::forme::NombreLu;
-
-
-use socle::num::Resultat;
 
 use crate::ligne::{DateDeLigne, LignePaie};
 
@@ -111,13 +110,13 @@ carte! {
         #[champ(Terme, Spectacle)]
         pub spectacle: Option<droit::contexte::IdSpectacle>,
         #[champ(Terme, Nature)]
-        pub nature: Option<String>,
+        pub nature: Option<droit::natures::NatureDeContrat>,
         #[champ(Partage, Debut)]
-        pub debut: Option<String>,
+        pub debut: Option<Jour>,
         #[champ(Partage, Fin)]
-        pub fin: Option<String>,
+        pub fin: Option<Jour>,
         #[champ(Partage, Numero)]
-        pub numero: Option<String>,
+        pub numero: Option<crate::numeros::NumeroContrat>,
         #[champ(Terme, Etablissement)]
         pub etablissement: Option<String>,
         #[champ(Terme, Metier)]
@@ -127,13 +126,13 @@ carte! {
         #[champ(Terme, Lieu)]
         pub lieu: Option<String>,
         #[champ(Terme, MotifRecours)]
-        pub motif_recours: Option<String>,
+        pub motif_recours: Option<droit::natures::MotifDeRecours>,
         #[champ(Terme, QuotiteContrat)]
         pub quotite_contrat: Option<NombreLu>,
         #[champ(Terme, QuotiteReference)]
         pub quotite_reference: Option<NombreLu>,
         #[champ(Terme, ModaliteTempsTravail)]
-        pub modalite_temps_travail: Option<String>,
+        pub modalite_temps_travail: Option<droit::natures::ModaliteDuTempsDeTravail>,
         #[champ(Terme, SalaireMensuel)]
         pub salaire_mensuel: Option<NombreLu>,
         #[champ(Terme, Emploi)]
@@ -143,11 +142,11 @@ carte! {
         #[champ(Terme, CodeEmploiFt)]
         pub code_emploi_ft: Option<String>,
         #[champ(Terme, Statut)]
-        pub statut: Option<String>,
+        pub statut: Option<droit::fiche::Statut>,
         #[champ(Terme, StatutConventionnel)]
-        pub statut_conventionnel: Option<String>,
+        pub statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
         #[champ(Terme, StatutCategorielRc)]
-        pub statut_categoriel_rc: Option<String>,
+        pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
         #[champ(Terme, PeriodeEssaiJours)]
         pub periode_essai_jours: Option<NombreLu>,
         #[champ(Terme, PersonneRemplacee)]
@@ -166,7 +165,7 @@ carte! {
         #[champ(Fait, Primes)]
         pub primes: Option<Vec<Prime>>,
         #[champ(Fait, DatePaiement)]
-        pub date_paiement: Option<String>,
+        pub date_paiement: Option<Jour>,
         #[champ(Fait, Jours)]
         pub jours: Option<NombreLu>,
         #[champ(Fait, TauxCachet)]
@@ -182,19 +181,19 @@ carte! {
         #[champ(Fait, FauteGrave)]
         pub faute_grave: Option<bool>,
         #[champ(Fin, MotifRupture)]
-        pub motif_rupture: Option<String>,
+        pub motif_rupture: Option<droit::natures::MotifDeRupture>,
         #[champ(Fin, NotificationRupture)]
-        pub notification_rupture: Option<String>,
+        pub notification_rupture: Option<Jour>,
         #[champ(Fin, EngagementLicenciement)]
-        pub engagement_licenciement: Option<String>,
+        pub engagement_licenciement: Option<Jour>,
         #[champ(Fin, SignatureConvention)]
-        pub signature_convention: Option<String>,
+        pub signature_convention: Option<Jour>,
         #[champ(Fin, Preavis)]
         pub preavis: Option<Preavis>,
         #[champ(Fin, Transaction)]
         pub transaction: Option<String>,
         #[champ(Fin, DernierJourPaye)]
-        pub dernier_jour_paye: Option<String>,
+        pub dernier_jour_paye: Option<Jour>,
         #[champ(Fin, EnDroitALaRetraite)]
         pub en_droit_a_la_retraite: Option<bool>,
         #[champ(Fin, PreavisNonEffectue)]
@@ -208,7 +207,7 @@ carte! {
         #[champ(Deduit, JoursContrat)]
         pub jours_contrat: Option<NombreLu>,
         #[champ(Deduit, DateModification)]
-        pub date_modification: Option<String>,
+        pub date_modification: Option<Jour>,
         #[champ(Deduit, Avant)]
         pub avant: Option<Avant>,
         #[champ(Vue, Valide)]
@@ -232,6 +231,7 @@ impl Champ {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum Valeur {
+    Nature(droit::natures::NatureDeContrat),
     Texte(String),
     Nombre(NombreLu),
     Oui(bool),
@@ -248,6 +248,12 @@ impl Simple for String {
     }
 }
 
+impl Simple for Jour {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Texte(self.iso()))
+    }
+}
+
 impl Simple for droit::contexte::IdSalarie {
     fn simple(&self) -> Option<Valeur> {
         Some(Valeur::Texte(self.to_string()))
@@ -259,6 +265,22 @@ impl Simple for droit::contexte::IdSpectacle {
         Some(Valeur::Texte(self.to_string()))
     }
 }
+
+impl Simple for droit::natures::NatureDeContrat {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Nature(*self))
+    }
+}
+
+macro_rules! choix_simple {
+    ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.as_str().to_string())) } } )* };
+}
+choix_simple!(droit::fiche::Statut, droit::fiche::StatutConventionnel, droit::fiche::StatutCategorielRc, crate::numeros::NumeroContrat);
+
+macro_rules! code_simple {
+    ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.code().to_string())) } } )* };
+}
+code_simple!(droit::natures::MotifDeRecours, droit::natures::MotifDeRupture, droit::natures::ModaliteDuTempsDeTravail);
 
 impl Simple for NombreLu {
     fn simple(&self) -> Option<Valeur> {
@@ -321,11 +343,6 @@ impl Carte {
         socle::ecriture::comparable(self) == socle::ecriture::comparable(&Carte::default())
     }
 
-    /// Le numero du contrat, s'il est dit.
-    pub fn numero_dit(&self) -> Option<&str> {
-        self.numero.as_deref().filter(|s| !s.is_empty())
-    }
-
     /// Les lignes de la carte (aucune si elle n'en dit pas).
     pub fn lignes(&self) -> &[LignePaie] {
         match &self.lignes {
@@ -334,9 +351,9 @@ impl Carte {
         }
     }
 
-    /// Le debut, comme `Engagement` le deduirait : celui qu'elle dit, sinon son premier jour joue ; vide sans aucun.
-    pub fn debut_lu(&self) -> String {
-        crate::debut_de(self.debut.clone(), self.lignes())
+    /// Le debut, comme `Engagement` le deduirait : celui qu'elle dit, sinon son premier jour joue ; `None` sans aucun.
+    pub fn debut_lu(&self) -> Option<Jour> {
+        crate::debut_de(self.debut, self.lignes())
     }
 
     /// Les jours joues de ses lignes de travail (`crate::jours_des_lignes`).
@@ -355,23 +372,23 @@ impl Carte {
     }
 
     /// La nature de son contrat ; une carte qui ne la dit pas se refuse (`crate::PAS_DE_NATURE`).
-    pub fn nature_lue(&self) -> Resultat<std::sync::Arc<droit::natures::Nature>> {
-        match self.nature.as_deref().filter(|n| !n.trim().is_empty()) {
-            Some(n) => droit::natures::nature(n),
+    pub fn nature_lue(&self) -> R<std::sync::Arc<droit::natures::Nature>> {
+        match self.nature {
+            Some(n) => n.proprietes(),
             None => Err(match &self.salarie {
-                Some(s) => format!("{}{}", s, crate::PAS_DE_NATURE),
-                None => format!("Cet engagement{}", crate::PAS_DE_NATURE),
+                Some(s) => crate::a_finir(format!("{}{}", s, crate::PAS_DE_NATURE)),
+                None => crate::a_finir(format!("Cet engagement{}", crate::PAS_DE_NATURE)),
             }),
         }
     }
 
     /// Valide, dans la vue de son mois (un engagement que le calcul compte seulement comme valide ne l'est pas).
     pub fn est_validee(&self) -> bool {
-        self.valide.as_ref().is_some_and(|v| v.le.as_deref().is_some_and(|l| !l.is_empty()))
+        self.valide.as_ref().is_some_and(|v| v.le.is_some())
     }
 
     /// Un contrat paye au mois ?
-    pub fn mensuelle(&self) -> Resultat<bool> {
+    pub fn mensuelle(&self) -> R<bool> {
         Ok(self.nature_lue()?.mensuelle())
     }
 }
@@ -381,18 +398,15 @@ impl Carte {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CongePris {
-    pub debut: Option<String>,
-    pub fin: Option<String>,
+    pub debut: Option<Jour>,
+    pub fin: Option<Jour>,
 }
 
 impl CongePris {
     /// Son premier et son dernier jour, lus ; un jour qui n'est pas dit se refuse en se nommant.
-    pub fn jours(&self) -> Resultat<(socle::date::Jour, socle::date::Jour)> {
-        let lu = |x: &Option<String>, cle: &str| match x {
-            Some(j) => socle::date::Jour::lire(j),
-            None => Err(socle::echec::cle("Des congés pris disent leur premier et leur dernier jour.", cle)),
-        };
-        Ok((lu(&self.debut, "debut")?, lu(&self.fin, "fin")?))
+    pub fn jours(&self) -> R<(Jour, Jour)> {
+        let lu = |x: Option<Jour>, cle: &str| x.ok_or_else(|| socle::echec::cle("Des congés pris disent leur premier et leur dernier jour.", cle));
+        Ok((lu(self.debut, "debut")?, lu(self.fin, "fin")?))
     }
 }
 
@@ -401,8 +415,8 @@ impl CongePris {
 #[serde(deny_unknown_fields)]
 pub struct Prime {
     pub montant: NombreLu,
-    /// Sa rubrique au catalogue (« prime », ou une autre que la carte choisit).
-    pub rubrique: String,
+    /// Sa rubrique au catalogue, que la carte choisit ; `null` tant qu'elle ne la dit pas (le calcul la demande).
+    pub rubrique: Option<String>,
     pub libelle: Option<String>,
 }
 
@@ -412,8 +426,8 @@ pub struct Prime {
 pub struct Preavis {
     #[serde(rename = "type")]
     pub genre: String,
-    pub debut: Option<String>,
-    pub fin: Option<String>,
+    pub debut: Option<Jour>,
+    pub fin: Option<Jour>,
 }
 
 /// Les termes d'avant l'avenant qui change en cours de mois (`droit::periodes::TERMES_D_AVANT`), chacun `null` quand il
@@ -430,7 +444,7 @@ pub struct Avant {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Validee {
-    pub le: Option<String>,
+    pub le: Option<socle::paris::InstantEcrit>,
 }
 
 /// Ce que la saisie d'un mois pose pour tous ses engagements (le cachet par defaut), tel que la paie ecrite le garde

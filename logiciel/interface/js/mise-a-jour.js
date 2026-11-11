@@ -45,21 +45,23 @@
   function phrase(classe, t) {
     const el = boite.querySelector(classe);
     el.hidden = !t;
-    el.textContent = t || "";
+    // `textContent` est nullable : un texte absent laisse l'élément vide.
+    el.textContent = t;
   }
 
   function montrer(e) {
     if (!e || (!e.texte && !e.installee)) { boite.hidden = true; return; }
     boite.hidden = false;
-    boite.title = e.detail || "";
+    if (e.detail) boite.title = e.detail;
+    else boite.removeAttribute("title");
     phrase(".maj-installee", e.installee);
     phrase(".maj-exigee", e.exigee);
     const texte = boite.querySelector(".maj-texte");
     const bouton = boite.querySelector(".maj-redemarrer");
     texte.hidden = !!e.redemarrer || !e.texte;
     bouton.hidden = !e.redemarrer;
-    texte.textContent = e.texte || "";
-    bouton.textContent = e.texte || "";
+    texte.textContent = e.texte;
+    bouton.textContent = e.texte;
     const barre = boite.querySelector(".maj-barre");
     barre.hidden = !e.barre;
     barre.classList.toggle("sans-fin", e.barre && e.progression == null);
@@ -88,7 +90,7 @@
       return;
     }
     bouton.disabled = false;
-    refus.textContent = (r && r.refus && r.refus.phrase) || "";
+    refus.textContent = r.refus.phrase;
   }
 
   /* Dans la page d'une compagnie, l'état arrive avec l'ouverture (

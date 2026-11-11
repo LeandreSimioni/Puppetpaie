@@ -3,14 +3,13 @@
 //! les salaires » (`etats_compta`) et le bloc S21.G00.44 de la DSN de decembre (`declarations::assujettissement`) lisent
 //! les memes fonctions.
 
-
 use droit::fiche::Lue as _;
-use engagement::calcul::Paie;
-use socle::num::{add, eur, mul, sub, Decimal, Resultat};
+use socle::echec::R;
+use socle::num::{add, eur, mul, sub, Decimal};
 use socle::texte::euros;
 
 /// Le champ de la fiche entreprise qui dit la taxe sur les salaires.
-pub const CHAMP_TAXE_SUR_LES_SALAIRES: &str = "taxe_sur_les_salaires";
+pub const CHAMP_TAXE_SUR_LES_SALAIRES: droit::fiche::CaseEntreprise = droit::fiche::CaseEntreprise::TaxeSurLesSalaires;
 
 // ------------------------------------------------------------ la taxe sur les salaires, salarie par salarie
 
@@ -18,8 +17,8 @@ pub const CHAMP_TAXE_SUR_LES_SALAIRES: &str = "taxe_sur_les_salaires";
 /// « La réduction mentionnée au I de l'article L. 136-2 du code de la sécurité sociale n'est pas applicable »).
 /// `abattement` : le facteur de la CSG du bareme (`abattement_csg`, 0,9825). Le calcul de l'etat « taxe sur les
 /// salaires » (`etats_compta`), mis ici pour que la DSN lise le meme.
-pub fn assiette_taxe_sur_les_salaires(p: &Paie, abattement: Decimal) -> Decimal {
-    eur(add(sub(p.base_csg, eur(mul(p.brut, abattement))), p.brut))
+pub fn assiette_taxe_sur_les_salaires(brut: Decimal, base_csg: Decimal, abattement: Decimal) -> Decimal {
+    eur(add(sub(base_csg, eur(mul(brut, abattement))), brut))
 }
 
 /// Les fractions d'une remuneration individuelle annuelle soumises aux taux majores (CGI art. 231, 2 bis) : celle
@@ -56,20 +55,27 @@ pub fn fractions_majorees(base: Decimal, seuil_1: Decimal, seuil_2: Decimal) -> 
 ///   a deduction ; le rapport de l'article 231 vaut donc 100 - `part_tva`. A 90 au moins, la taxe n'est pas due ;
 /// - `sous_franchise` : quand la taxe serait due, le chiffre d'affaires de l'annee precedente n'excede-t-il pas les
 ///   plafonds de l'article 293 B ? (2e alinea) ;
-/// - `association_1679A` : quand la taxe est due, l'abattement de l'article 1679 A s'applique-t-il ?
+/// - `association_1679a` : quand la taxe est due, l'abattement de l'article 1679 A s'applique-t-il ?
 /// Chaque case ne se montre que si la precedente l'appelle (`champs`). Une case qui manque fait refuser la DSN de
 /// decembre, avec ce qu'il faut dire (regle 1 : rien ne se devine).
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegimeTaxeSalaires {
-    /// `Ok(None)` : la taxe n'est pas due ; `Ok(Some(p))` : elle est due sur `p` % des remunerations (le rapport de
-    /// l'article 231, 1) ; `Err` : ce que la fiche doit encore dire.
-    pub decision: Result<Option<Decimal>, String>,
+    pub decision: Decision,
     /// L'abattement des associations (art. 1679 A), quand la taxe est due.
     pub association: bool,
     /// Les cases de la fiche que l'ecran montre, dans l'ordre : chacune parce que la precedente l'appelle.
     pub champs: Vec<&'static str>,
     /// La consequence, en clair, telle que l'ecran l'affiche sous les cases.
     pub consequence: String,
+}
+
+/// Ce que le moteur conclut de la fiche : la taxe n'est pas due ; elle est due sur `p` % des remunerations (le rapport
+/// de l'article 231, 1) ; ou la phrase de ce que la fiche doit encore dire.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Decision {
+    NonDue,
+    DueSur(Decimal),
+    ADire(String),
 }
 
 /// `taxe_sur_les_salaires` de la fiche entreprise `ent`, et ce que le moteur en conclut (CGI art. 231, 1). `plafonds` :
@@ -88,7 +94,7 @@ pub fn regime_taxe_sur_les_salaires(ent: &droit::fiche::ChampsEntreprise, plafon
     let fiche = ent.taxe_sur_les_salaires.dite();
     let mut champs = vec!["tva"];
     let manque = |champs: Vec<&'static str>, quoi: String, consequence: &str| RegimeTaxeSalaires {
-        decision: Err(format!(
+        decision: Decision::ADire(format!(
             "Configuration › Entreprise, « Taxe sur les salaires » : {} (CGI art. 231, 1). Sans cette reponse, la DSN de \
 decembre ne se fait pas.",
             quoi
@@ -98,7 +104,7 @@ decembre ne se fait pas.",
         consequence: consequence.to_string(),
     };
     let non_due = |champs: Vec<&'static str>, pourquoi: &str| RegimeTaxeSalaires {
-        decision: Ok(None),
+        decision: Decision::NonDue,
         association: false,
         champs,
         consequence: format!(
@@ -112,7 +118,7 @@ decembre ne se fait pas.",
             champs.push("part_tva");
             let part = match fiche.and_then(|f| f.part_tva.dite()) {
                 None => None,
-                Some(v) => match v.avec_echelle() {
+                Some(v) => match v.dec() {
                     Ok(p) if p >= Decimal::ZERO && p <= Decimal::ONE_HUNDRED => Some(p),
                     _ => {
                         return manque(
@@ -191,10 +197,10 @@ sur les salaires. Sans réponse, la DSN de décembre ne se fait pas.",
             )
         }
     }
-    champs.push("association_1679A");
-    let association = fiche.is_some_and(|f| f.association_1679A.oui());
+    champs.push("association_1679a");
+    let association = fiche.is_some_and(|f| f.association_1679a.oui());
     RegimeTaxeSalaires {
-        decision: Ok(Some(part_taxee)),
+        decision: Decision::DueSur(part_taxee),
         association,
         champs,
         consequence: format!(
@@ -246,7 +252,7 @@ pub fn plafonds_franchise(bar: Option<&droit::forme_bareme::Pile>) -> Option<(De
 /// La question des plafonds pour les remunerations de `annee` (le chiffre d'affaires de `annee - 1`), depuis le bareme
 /// de `annee` (`bar`, `None` s'il n'y en a pas). Un bareme sans plafonds ne fait pas refuser : la question se pose sans
 /// montants, et le dit ; une date d'entree en vigueur qui ne se lit pas refuse.
-pub fn question_franchise(bar: Option<&droit::forme_bareme::Pile>, annee: i32) -> Resultat<QuestionFranchise> {
+pub fn question_franchise(bar: Option<&droit::forme_bareme::Pile>, annee: i32) -> R<QuestionFranchise> {
     let avant = annee - 1;
     let pf = bar.and_then(|b| b.taxe_sur_les_salaires.as_ref()).map(|t| &t.plafonds_franchise);
     let lus = plafonds_franchise(bar);
@@ -262,12 +268,8 @@ art. 293 B) : ils se lisent dans cet article, pour le chiffre d'affaires de {}. 
             plafonds: None,
         });
     };
-    // Une version de 293 B entree en vigueur en cours d'annee se dit (2025 : le 01/03) ; une date du bareme qui ne se
-    // lit pas est un bareme fautif.
-    let vigueur = match pf {
-        Some(pf) => Some(socle::date::Jour::lire(&pf.en_vigueur_depuis)?),
-        None => None,
-    };
+    // Une version de 293 B entree en vigueur en cours d'annee se dit (2025 : le 01/03).
+    let vigueur = pf.map(|pf| pf.en_vigueur_depuis);
     let depuis = if let Some(j) = vigueur.filter(|j| j.an == annee && (j.mois, j.jour) != (1, 1)) {
         format!(", en vigueur depuis le {}", j.jj_mm_aaaa())
     } else {
@@ -306,8 +308,12 @@ art. 231 et 293 B{depuis}.",
 
 /// Ce que la DSN de decembre lit : `None` si la taxe n'est pas due, sinon la part taxee des remunerations en
 /// pourcentage. Une fiche qui ne dit pas tout : refus, avec ce qu'il faut dire (`regime_taxe_sur_les_salaires`).
-pub fn taxe_sur_les_salaires_de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -> Resultat<Option<Decimal>> {
-    regime_taxe_sur_les_salaires(ent, None).decision
+pub fn taxe_sur_les_salaires_de_la_fiche(ent: &droit::fiche::ChampsEntreprise) -> R<Option<Decimal>> {
+    match regime_taxe_sur_les_salaires(ent, None).decision {
+        Decision::NonDue => Ok(None),
+        Decision::DueSur(p) => Ok(Some(p)),
+        Decision::ADire(phrase) => Err(socle::echec::refus(phrase)),
+    }
 }
 
 

@@ -24,12 +24,15 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::contexte::Contexte;
+use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::type_declaration::TypeDeLaDeclaration;
 use envois::etats;
 use envois::journal::Ligne;
 use envois::retours::{self, AnomalieDuRapport, CrmOc, Neores, Rapport};
-use socle::echec::{erreur, Classe, R};
+use socle::echec::{Classe, Echec, R};
 use socle::ecran::Pastille;
 use socle::mois::Mois;
+use socle::paris::{InstantCompact, InstantEcrit};
 
 use crate::catalogue::{Acte, Ecran, Fiche, Place, Refus, Route, FORME, MOIS};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
@@ -118,20 +121,15 @@ fn phrase_du_statut(statut: &str) -> Option<&'static str> {
 }
 
 /// La nature et le type d'une declaration (S20.G00.05.001 et .002, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt`) ;
-/// une nature que la table ne nomme pas, ou qui n'est pas dite, est une DSN.
-fn nature_dsn(nature: Option<&str>, type_: Option<&str>) -> String {
+/// une nature qui n'est pas dite est une DSN.
+fn nature_dsn(nature: Option<NatureDeLaDeclaration>, type_: Option<TypeDeLaDeclaration>) -> String {
     let n = match nature {
-        Some("01") => "DSN mensuelle",
-        Some("04") => "Signalement arrêt de travail",
-        Some("05") => "Signalement reprise suite à arrêt de travail",
-        Some("07") => "Signalement fin du contrat de travail unique",
-        Some("08") => "Demande de taux de prélèvement à la source",
-        Some("09") => "DSN de substitution",
-        _ => "DSN",
+        Some(n) => n.libelle(),
+        None => "DSN",
     };
     match type_ {
-        Some("03" | "05") => format!("{} (annule et remplace)", n),
-        Some("04") => format!("{} (annulation)", n),
+        Some(t) if t.remplace() => format!("{} (annule et remplace)", n),
+        Some(TypeDeLaDeclaration::Annule) => format!("{} (annulation)", n),
         _ => n.to_string(),
     }
 }
@@ -226,7 +224,7 @@ struct Envoi {
     quoi: &'static str,
     acte: String,
     mode: &'static str,
-    quand: String,
+    quand: socle::paris::HeureDuJournal,
     fichier: Option<String>,
     flux: Option<String>,
     destinataire: Option<String>,
@@ -237,12 +235,13 @@ struct Envoi {
     retours: Vec<RetourLu>,
 }
 
-/// Un retour sous son envoi : son titre, quand, ce qu'il dit, sa pastille, sa piece ; pour un retour d'organisme, ce que
-/// sa piece en dit (`organisme`).
+/// Un retour sous son envoi : son titre, quand (sa reponse, ou la publication d'un retour d'organisme, ecrite telle que
+/// la plate-forme la donne : `envois::retours::Annonce`), ce qu'il dit, sa pastille, sa piece ; pour un retour
+/// d'organisme, ce que sa piece en dit (`organisme`).
 #[derive(Debug, Serialize)]
 struct RetourLu {
     titre: String,
-    quand: Option<String>,
+    quand: Option<InstantEcrit>,
     phrases: Vec<String>,
     pastille: Option<Pastille>,
     piece: Option<String>,
@@ -257,7 +256,8 @@ struct RetourDOrganisme {
     titre_dit: String,
     nature_dit: Option<String>,
     quand_dit: Option<String>,
-    nature: String,
+    #[serde(rename = "nature")]
+    nature_retour: String,
     libelle: String,
     organisme: Option<String>,
     statut: Option<String>,
@@ -294,13 +294,13 @@ impl Anomalie {
 /// CE QUI EST REVENU D'UN CONTRAT PARTI (`envois::etats::revenus`), lu : le contrat ou l'avenant, de qui, et comment (une
 /// reponse « Je signe », une mention a la main, ou son retrait) ; la piece signee s'il y en a une.
 fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) -> RetourLu {
-    let piece = match (r.avenant, r.numero_dit()) {
+    let piece = match (r.avenant, r.numero.as_deref()) {
         (None, Some(n)) => format!("Contrat n° {}", n),
         (None, None) => "Contrat sans numéro".to_string(),
         (Some(a), Some(n)) => format!("Avenant n° {} au contrat n° {}", a, n),
         (Some(a), None) => format!("Avenant n° {} au contrat sans numéro", a),
     };
-    let quand = etats::quand_lisible(&r.quand);
+    let quand = r.quand.dit();
     let (titre, phrase) = if !r.recu {
         (format!("{} : mention « signé » retirée", piece), format!("Mention retirée le {}.", quand))
     } else if r.par_courriel() {
@@ -314,9 +314,9 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
     };
     RetourLu {
         titre: format!("{} — {}", titre, qui_du_contrat(ctx, &r.nom, &r.salarie)),
-        quand: Some(r.quand.clone()),
+        quand: Some(r.quand),
         phrases: vec![phrase],
-        pastille: Some(Pastille::de(if !r.recu { "information" } else { "fait" }, "signé")),
+        pastille: Some(Pastille::de(if !r.recu { socle::ecran::EtatDEcran::Information } else { socle::ecran::EtatDEcran::Fait }, "signé")),
         piece: signe.map(|p| relatif(&ctx.racine, &p)),
         organisme: None,
     }
@@ -325,7 +325,7 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
 /// L'acte d'une ligne du journal, en mots ; un contrat qui repart dit de qui il est.
 fn acte(ctx: &Contexte, l: &Ligne) -> String {
     match l {
-        Ligne::Dsn(e) => nature_dsn(e.detail.nature.as_deref(), e.detail.type_declaration.as_deref()),
+        Ligne::Dsn(e) => nature_dsn(e.detail.nature_declaration, e.detail.type_declaration),
         Ligne::Dpae(_) => "DPAE".into(),
         Ligne::Documents(_) => "Documents aux salariés".into(),
         Ligne::ContratSignature(e) => match (e.detail.main_propre, e.detail.acte.as_deref() == Some("avenant")) {
@@ -339,16 +339,6 @@ fn acte(ctx: &Contexte, l: &Ligne) -> String {
         Ligne::DossierSalarie(_) => "Dossier d'un salarié".into(),
         Ligne::FicheDemande(_) => "Fiche demandée à un salarié".into(),
     }
-}
-
-/// `AAAAMMJJhhmmss` -> `AAAA-MM-JJThh:mm:ss` ; autre chose reste tel quel.
-fn quand_publication(p: &str) -> String {
-    let c: Vec<char> = p.chars().collect();
-    if c.len() >= 14 && c[..14].iter().all(|x| x.is_ascii_digit()) {
-        let s = |a: usize, b: usize| c[a..b].iter().collect::<String>();
-        return format!("{}-{}-{}T{}:{}:{}", s(0, 4), s(4, 6), s(6, 8), s(8, 10), s(10, 12), s(12, 14));
-    }
-    p.to_string()
 }
 
 // ------------------------------------------------------------------ les documents
@@ -372,7 +362,7 @@ const AUTRES: &str = "Autres pièces";
 /// `amorcage_demande::produire` : `Amorcage<motif>_<salarie>_<AAAAMMJJ>.dsn`, et sa note
 /// `Amorcage<motif>_<AAAAMMJJ>_recapitulatif.txt`) : pour qui, et quel jour. Un autre nom se lit tel quel.
 fn nom_lisible(ctx: &Contexte, nom: &str) -> String {
-    let jour = |t: &str| socle::date::lire_aaaammjj(t).map(|j| j.jj_mm_aaaa());
+    let jour = |t: &str| socle::piece::Zone::lue(t, socle::piece::format::Aaaammjj).valeur().map(|j| j.jj_mm_aaaa());
     let Some(reste) = nom.strip_prefix("Amorcage").and_then(|r| r.get(3..)) else { return nom.to_string() };
     if let Some(j) = reste.strip_suffix("_recapitulatif.txt").and_then(jour) {
         return format!("Note des demandes du {}", j);
@@ -417,9 +407,9 @@ pub(crate) fn sorte_de(nom: &str) -> &'static str {
 /// Les documents du mois : les fichiers de `sorties/<mois>/` (`mois_connus`, la liste de l'Historique) et les PDF de
 /// `sorties/<mois>/envoi/` (`pieces_de_l_envoi`). Une archive `.zip` n'est que l'emballage
 /// du fichier de meme nom qui part au depot : elle ne se liste pas.
-fn documents(ctx: &Contexte, mois: &str, lignes: &[Ligne]) -> R<Vec<Document>> {
+fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
     let mut out: Vec<Document> = Vec::new();
-    let noms = crate::ouverture::mois_connus(&ctx.racine)?.into_iter().filter(|(m, _)| m == mois).flat_map(|(_, n)| n);
+    let noms = crate::ouverture::mois_connus(&ctx.racine)?.into_iter().filter(|(m, _)| *m == mois).flat_map(|(_, n)| n);
     for nom in noms.filter(|n| !n.ends_with(".zip")) {
         out.push(Document { sorte: sorte_de(&nom), salarie: None, chemin: format!("sorties/{}/{}", mois, nom), fichier: None, nom });
     }
@@ -478,17 +468,18 @@ fn pieces_du_journal(lignes: &[Ligne]) -> Vec<String> {
 // ------------------------------------------------------------------ les retours, lus
 
 /// Le refus d'un dossier des retours qui ne se lit pas : la phrase en mots, le dossier et l'erreur a part.
-fn retours_illisibles(dossier: &Path, e: std::io::Error) -> String {
-    socle::echec::avec(
+#[track_caller]
+fn retours_illisibles(dossier: &Path, e: std::io::Error) -> Echec {
+    socle::echec::refus_avec(
         "Le dossier des retours ne se lit pas.",
-        socle::echec::APart { chemin: Some(dossier.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() },
+        socle::echec::Lieu { chemin: Some(dossier.to_string_lossy().into_owned()), detail: Some(e.to_string()), ..Default::default() },
     )
 }
 
 /// La piece archivee d'un retour : `retours/[dpae/]AAAAMMJJ-hhmmss_natureN_<flux>.<ext>` (`envois::releve_retours::archiver_retour`,
-/// qui nomme `sansflux` un retour sans flux), celle de sa publication d'abord, sinon la premiere de sa nature pour ce
-/// flux (`etats::archive_du_retour`). Aucune s'il n'y en a pas ; un dossier des retours qui ne se lit pas le dit.
-fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, nature: &str, publication: Option<&str>) -> Result<Option<PathBuf>, String> {
+/// qui nomme `sansflux` un retour sans flux) : celle de sa publication ; sans publication datee, la premiere de sa nature
+/// pour ce flux (`etats::archive_du_retour`). Aucune s'il n'y en a pas ; un dossier des retours qui ne se lit pas le dit.
+fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, nature: &str, publication: Option<InstantCompact>) -> R<Option<PathBuf>> {
     let mut dossier = racine.join(envois::retours::RETOURS);
     if let Some(c) = canal {
         dossier = dossier.join(c);
@@ -515,9 +506,10 @@ fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, natur
         }
     }
     noms.sort();
-    let horo = publication.map(|p| p.chars().take(14).collect::<String>()).filter(|p| p.len() == 14).map(|p| format!("{}-{}", &p[..8], &p[8..]));
+    let horo = publication.map(|p| p.compact()).map(|p| format!("{}-{}", &p[..8], &p[8..]));
+    // Une publication datee n'a que sa piece : celle d'une autre publication du meme flux dirait un autre retour.
     let choisi = match horo {
-        Some(h) => noms.iter().find(|n| n.starts_with(&h)).or(noms.first()),
+        Some(h) => noms.iter().find(|n| n.starts_with(&h)),
         None => noms.first(),
     };
     Ok(choisi.map(|c| dossier.join(c)))
@@ -532,21 +524,68 @@ struct Lecture {
     anomalies: Vec<Anomalie>,
     traduite: bool,
     /// Ce que la piece dit d'elle-meme (un rapport harmonise : `OK`, `ANO`, `KO`), si elle le dit.
-    verdict: Option<&'static str>,
+    verdict: Option<Verdict>,
+}
+
+/// LE VERDICT D'UNE PIECE OU D'UN RETOUR, tel que la norme l'ecrit (guide v6.8, § 3.4.4 « Reponse du service » ; le
+/// rapport harmonise) : traite sans anomalie, refuse, ou traite avec des anomalies non bloquantes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Verdict {
+    Ok,
+    Ko,
+    Ano,
+}
+
+impl Verdict {
+    /// Le verdict qu'un texte de la piece ecrit ; un autre texte (« EN COURS ») n'en est pas un.
+    fn du_texte(t: &str) -> Option<Verdict> {
+        match t {
+            "OK" => Some(Verdict::Ok),
+            "KO" => Some(Verdict::Ko),
+            "ANO" => Some(Verdict::Ano),
+            _ => None,
+        }
+    }
+
+    fn code(self) -> &'static str {
+        match self {
+            Verdict::Ok => "OK",
+            Verdict::Ko => "KO",
+            Verdict::Ano => "ANO",
+        }
+    }
+
+    /// Ce qu'il dit d'une declaration.
+    fn en_mots(self) -> &'static str {
+        match self {
+            Verdict::Ok => "conforme",
+            Verdict::Ko => "refusée",
+            Verdict::Ano => "acceptée avec des anomalies",
+        }
+    }
+
+    /// Ce qu'il dit d'un envoi.
+    fn de_l_envoi(self) -> &'static str {
+        match self {
+            Verdict::Ok => "accepté",
+            Verdict::Ko => "refusé",
+            Verdict::Ano => "accepté avec des anomalies",
+        }
+    }
+
+    /// Sa pastille : OK fait, KO refuse, ANO a corriger (la compagnie le peut).
+    fn a_l_ecran(self) -> socle::ecran::EtatDEcran {
+        match self {
+            Verdict::Ok => socle::ecran::EtatDEcran::Fait,
+            Verdict::Ko => socle::ecran::EtatDEcran::Refuse,
+            Verdict::Ano => socle::ecran::EtatDEcran::AFaire,
+        }
+    }
 }
 
 impl Lecture {
     fn nouvelle(titre: impl Into<String>) -> Lecture {
         Lecture { titre: titre.into(), organisme: None, phrases: Vec::new(), anomalies: Vec::new(), traduite: true, verdict: None }
-    }
-}
-
-fn verdict_en_mots(etat: &str) -> Option<&'static str> {
-    match etat {
-        "OK" => Some("conforme"),
-        "KO" => Some("refusée"),
-        "ANO" => Some("acceptée avec des anomalies"),
-        _ => None,
     }
 }
 
@@ -585,15 +624,15 @@ fn lire_piece(o: &[u8], canal: Option<&str>, nature: &str, format: Option<&str>)
                 let n = aer.len();
                 l.phrases.push(format!("{} attestation{} employeur rematérialisée{} :", n, plur(n, "", "s"), plur(n, "", "s")));
                 for a in &aer {
-                    l.phrases.push(format!("{}{}", a.qui, morceau(" (période ", a.periode.as_deref(), ")")));
+                    l.phrases.push(format!("{}{}", a.qui, morceau(" (période ", a.periode.map(|m| m.to_string()).as_deref(), ")")));
                 }
                 l.phrases.push("Chaque AER se range aussi parmi les documents du mois, prête à partir au salarié.".into());
             }
             Ok(_) => match retours::membres_du_zip(o) {
                 Ok(m) => l.phrases.push(format!("Une archive de {} fichier{}, sans attestation.", m.len(), plur(m.len(), "", "s"))),
-                Err(m) => l.phrases.push(format!("Cette archive ne se lit pas : {}", m.message)),
+                Err(m) => l.phrases.push(format!("Cette archive ne se lit pas : {}", m.phrase)),
             },
-            Err(m) => l.phrases.push(format!("Cette archive ne se lit pas : {}", m.message)),
+            Err(m) => l.phrases.push(format!("Cette archive ne se lit pas : {}", m.phrase)),
         }
         return l;
     }
@@ -602,17 +641,17 @@ fn lire_piece(o: &[u8], canal: Option<&str>, nature: &str, format: Option<&str>)
     match retours::lire_rapport(o) {
         Ok(Some(rapport)) => return rapport_lu(&rapport, o, nature),
         Ok(None) => {}
-        Err(m) => pas_lus.push(m.message),
+        Err(m) => pas_lus.push(m.phrase),
     }
     match retours::lire_neores(o) {
         Ok(Some(crm)) => return neores_lu(&crm),
         Ok(None) => {}
-        Err(m) => pas_lus.push(m.message),
+        Err(m) => pas_lus.push(m.phrase),
     }
     match retours::lire_crm_oc(o) {
         Ok(Some(crm)) => return crm_oc_lu(&crm),
         Ok(None) => {}
-        Err(m) => pas_lus.push(m.message),
+        Err(m) => pas_lus.push(m.phrase),
     }
     let mut l = Lecture::nouvelle("Compte rendu");
     l.traduite = false;
@@ -643,25 +682,19 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: &str) -> Lecture {
         l.phrases.push("Envoi d'essai (test) : rien n'est déclaré ni conservé.".into());
     }
     let etat = lu(&rapport.etat_envoi);
-    let envoi = match etat {
-        Some("OK") => Some("accepté"),
-        Some("KO") => Some("refusé"),
-        Some("ANO") => Some("accepté avec des anomalies"),
-        _ => None,
-    };
-    if let (Some(envoi), Some(etat)) = (envoi, etat) {
-        l.phrases.push(format!("L'envoi est {} ({}).", envoi, etat));
+    if let Some(v) = etat.and_then(Verdict::du_texte) {
+        l.phrases.push(format!("L'envoi est {} ({}).", v.de_l_envoi(), v.code()));
     }
     for d in &rapport.declarations {
         let e = dit(&d.etat);
-        let verdict = match (e.and_then(verdict_en_mots), e) {
+        let verdict = match (e.and_then(Verdict::du_texte).map(Verdict::en_mots), e) {
             (Some(mots), Some(e)) => format!("{} ({})", mots, e),
             (None, Some(e)) => e.to_string(),
             (_, None) => "sans état".to_string(),
         };
         l.phrases.push(format!(
             "{}{}{} : {}.",
-            nature_dsn(dit(&d.nature), dit(&d.type_declaration)),
+            nature_dsn(d.nature_declaration, d.type_declaration),
             morceau(" de ", d.mois.map(|m| m.to_string()).as_deref(), ""),
             morceau(", ordre ", dit(&d.ordre), ""),
             verdict
@@ -680,20 +713,20 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: &str) -> Lecture {
     if nature == retours::NATURE_TAUX_PAS {
         match retours::taux_pas_d_octets(o) {
             Ok(t) => l.phrases.push(format!("{} taux de prélèvement à la source communiqué{}.", t.releves.len(), plur(t.releves.len(), "", "s"))),
-            Err(m) => l.phrases.push(format!("Les taux de prélèvement à la source communiqués ne se lisent pas : {}", m.message)),
+            Err(m) => l.phrases.push(format!("Les taux de prélèvement à la source communiqués ne se lisent pas : {}", m.phrase)),
         }
     }
     l.anomalies = rapport.anomalies.iter().map(Anomalie::du_rapport).collect();
     // LE VERDICT EST CELUI DE LA PIECE : France Travail publie son compte rendu « cinéma, spectacle »
     // (nature 45) toujours au statut ANOBLOQUANTE, même quand il ne relève rien (guide « De la DSN à l'attestation
     // employeur », v3.2, p. 10, dépose dans `net-entreprises-base-connaissances/`). Ce que dit la piece passe devant.
-    let etats: Vec<&str> = etat.into_iter().chain(rapport.declarations.iter().filter_map(|d| dit(&d.etat))).collect();
-    l.verdict = if etats.contains(&"KO") {
-        Some("KO")
-    } else if etats.contains(&"ANO") || !l.anomalies.is_empty() {
-        Some("ANO")
-    } else if etats.contains(&"OK") {
-        Some("OK")
+    let verdicts: Vec<Verdict> = etat.into_iter().chain(rapport.declarations.iter().filter_map(|d| dit(&d.etat))).filter_map(Verdict::du_texte).collect();
+    l.verdict = if verdicts.contains(&Verdict::Ko) {
+        Some(Verdict::Ko)
+    } else if verdicts.contains(&Verdict::Ano) || !l.anomalies.is_empty() {
+        Some(Verdict::Ano)
+    } else if verdicts.contains(&Verdict::Ok) {
+        Some(Verdict::Ok)
     } else {
         None
     };
@@ -703,15 +736,6 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: &str) -> Lecture {
 /// `AAAA-MM-JJ` (ou `AAAA-MM-JJThh:mm:ss`) en `JJ/MM/AAAA` ; autre chose tel quel.
 fn date_lisible(d: &str) -> String {
     etats::quand_lisible(&d.chars().take(10).collect::<String>())
-}
-
-/// `JJMMAAAA` (les dates des comptes rendus des organismes complementaires) en `JJ/MM/AAAA`.
-fn date_oc(d: &str) -> String {
-    let c: Vec<char> = d.chars().collect();
-    if c.len() == 8 && c.iter().all(|x| x.is_ascii_digit()) {
-        return format!("{}/{}/{}", c[..2].iter().collect::<String>(), c[2..4].iter().collect::<String>(), c[4..].iter().collect::<String>());
-    }
-    d.to_string()
 }
 
 /// La premiere lettre en capitale.
@@ -740,10 +764,10 @@ fn neores_lu(crm: &Neores) -> Lecture {
     if crm.essai_reel.as_deref() == Some("01") {
         l.phrases.push("Il répond à un envoi d'essai (test).".into());
     }
-    if let Some(debut) = lu(&crm.debut) {
-        l.phrases.push(match lu(&crm.fin).filter(|f| *f != debut) {
-            None => format!("Période : {}.", date_lisible(debut)),
-            Some(fin) => format!("Période : du {} au {}.", date_lisible(debut), date_lisible(fin)),
+    if let Some(debut) = crm.debut {
+        l.phrases.push(match crm.fin.filter(|f| *f != debut) {
+            None => format!("Période : {}.", debut.jj_mm_aaaa()),
+            Some(fin) => format!("Période : du {} au {}.", debut.jj_mm_aaaa(), fin.jj_mm_aaaa()),
         });
     }
     let metier = morceau(" (", lu(&crm.metier), ")");
@@ -843,12 +867,16 @@ fn neores_lu(crm: &Neores) -> Lecture {
             Some(libelle) => format!("{}{}", libelle, morceau(" (", lu(&p.type_parametre), ")")),
             None => format!("Paramètre{}", morceau(" ", lu(&p.type_parametre), "")),
         };
-        let periode = match (lu(&p.effet), lu(&p.fin)) {
-            (Some(e), Some(f)) => format!(", du {} au {}", date_lisible(e), date_lisible(f)),
-            (Some(e), None) => format!(", à partir du {}", date_lisible(e)),
-            (None, _) => String::new(),
-        };
-        let calcul = morceau(" (calculé le ", lu(&p.calcule_le).map(date_lisible).as_deref(), ")");
+        // Sans jour d'effet, la phrase ne dit pas de periode.
+        let periode: String = p
+            .effet
+            .map(|e| match p.fin {
+                Some(f) => format!(", du {} au {}", e.jj_mm_aaaa(), f.jj_mm_aaaa()),
+                None => format!(", à partir du {}", e.jj_mm_aaaa()),
+            })
+            .into_iter()
+            .collect();
+        let calcul = morceau(" (calculé le ", p.calcule_le.map(|j| j.jour().jj_mm_aaaa()).as_deref(), ")");
         l.phrases.push(format!("{}{}{}{}{}.", majuscule(&quoi), morceau(" : ", lu(&p.valeur), ""), periode, morceau(", rubrique ", lu(&p.rubrique), ""), calcul));
     }
     if crm.parametres.iter().any(|x| lu(&x.type_parametre).is_some_and(|t| t.starts_with('A'))) {
@@ -917,8 +945,8 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
         };
         l.phrases.push(format!(
             "{}{}{} : {}.",
-            nature_dsn(lu(&d.nature), lu(&d.type_declaration)),
-            morceau(" de ", lu(&d.mois), ""),
+            nature_dsn(d.nature_declaration, d.type_declaration),
+            morceau(" de ", d.mois.map(|m| m.to_string()).as_deref(), ""),
             morceau(", vue par ", organisme.as_deref(), ""),
             retour
         ));
@@ -964,8 +992,8 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
             if let Some(c) = joint([lu(&r.corrigee), lu(&r.libelle_corrigee).map(|x| format!("({})", x)).as_deref()], " ") {
                 message.push(format!("{} « {} »", if genre == Some("information") { "pris en compte" } else { "attendu" }, c));
             }
-            if let Some(e) = lu(&r.date_evenement) {
-                message.push(format!("événement du {}", date_oc(e)));
+            if let Some(e) = r.date_evenement {
+                message.push(format!("événement du {}", e.jj_mm_aaaa()));
             }
             l.anomalies.push(Anomalie {
                 code: lu(&r.code).map(String::from),
@@ -991,9 +1019,9 @@ enum PieceDuRetour {
 /// Un retour d'une ligne du journal, lu.
 fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme) -> RetourLu {
     let canal = (ligne.acte() == envois::journal::Acte::Dpae).then_some("dpae");
-    let nature = r.nature.clone();
+    let nature = r.nature_retour.clone();
     let statut = r.statut.as_deref().and_then(dit);
-    let publication = r.publication.as_deref().and_then(dit);
+    let publication = r.publication;
     let flux = dit(ligne.flux());
     let (organisme, format) = match canal {
         Some(_) => (Some("l'Urssaf (DPAE)"), None),
@@ -1017,7 +1045,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
                 }
                 Err(e) => PieceDuRetour::Illisible(format!("la pièce archivée ne se lit pas ({:?})", e.kind())),
             },
-            Err(m) => PieceDuRetour::Illisible(m),
+            Err(m) => PieceDuRetour::Illisible(m.phrase),
         },
     };
     let mut phrases: Vec<String> = Vec::new();
@@ -1026,14 +1054,14 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
         _ => None,
     };
     match (lu_verdict, statut) {
-        (Some(v), Some(s)) if v != s => {
+        (Some(v), Some(s)) if v.code() != s => {
             let sans_anomalie = matches!(&piece, PieceDuRetour::Lue(_, l) if l.anomalies.is_empty());
-            let dit_la_piece = match (v, phrase_du_statut(v)) {
-                ("OK", _) if sans_anomalie => "aucune anomalie",
+            let dit_la_piece = match (v, phrase_du_statut(v.code())) {
+                (Verdict::Ok, _) if sans_anomalie => "aucune anomalie",
                 (_, Some(p)) => p,
-                (autre, None) => autre,
+                (autre, None) => autre.code(),
             };
-            phrases.push(format!("Publié au statut {}, mais la pièce dit : {} ({}).", s, dit_la_piece, v));
+            phrases.push(format!("Publié au statut {}, mais la pièce dit : {} ({}).", s, dit_la_piece, v.code()));
         }
         (_, Some(s)) => {
             if let Some(p) = phrase_du_statut(s) {
@@ -1070,27 +1098,34 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
     };
     // L'organisme que la piece nomme passe devant celui de la nature (« l'organisme complementaire » : lequel).
     let organisme = lu_organisme.or(organisme.map(String::from));
-    let verdict = lu_verdict.or(r.verdict()).map(String::from);
-    // Sa pastille : OK fait, KO refuse, ANO a corriger (la compagnie le peut), le reste une information.
-    let pastille = verdict.as_deref().or(statut).map(|lu| Pastille::de(match lu { "OK" => "fait", "KO" => "refuse", "ANO" => "a_faire", _ => "information" }, lu));
+    let verdict = lu_verdict.map(Verdict::code).or(r.verdict()).map(String::from);
+    // Sa pastille : celle du verdict (`Verdict::a_l_ecran`) ; un statut qui n'est pas un verdict (« EN COURS ») est une
+    // information.
+    let pastille = verdict.as_deref().or(statut).map(|lu| Pastille::de(
+        match Verdict::du_texte(lu) {
+            Some(v) => v.a_l_ecran(),
+            None => socle::ecran::EtatDEcran::Information,
+        },
+        lu,
+    ));
     let titre_dit = match (titre.as_deref().and_then(dit), dit(&libelle)) {
         (Some(t), _) => t.to_string(),
         (None, Some(l)) => l.to_string(),
         (None, None) => format!("retour de nature {}", nature),
     };
     let nature_dit = dit(&nature).map(|n| format!("Nature {} : {}", n, libelle));
-    let quand = publication.map(quand_publication);
+    let quand = publication.map(|p| InstantEcrit::du_naif(p.naif()));
     RetourLu {
         titre: titre_dit.clone(),
-        quand: quand.clone(),
+        quand,
         phrases,
         pastille,
         piece: chemin.map(|p| relatif(racine, &p)),
         organisme: Some(RetourDOrganisme {
             titre_dit,
             nature_dit,
-            quand_dit: quand.as_deref().map(socle::ecran::quand),
-            nature,
+            quand_dit: quand.map(InstantEcrit::dit),
+            nature_retour: nature,
             libelle,
             organisme,
             statut: statut.map(String::from),
@@ -1105,9 +1140,8 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
 
 /// `historique-mois {mois}`.
 fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
-    let mois = le_mois.to_string();
     // Les lignes du mois ; un signalement porte le mois de son evenement.
-    let lignes = envois::journal::lire(&ctx.racine, None, Some(le_mois), false).map_err(|m| erreur(Classe::Disque, m))?;
+    let lignes = envois::journal::lire(&ctx.racine, None, Some(le_mois), false).map_err(|m| m.reclasser(Classe::Disque))?;
     let recus = etats::contrats_recus(&lignes);
     let avenants = etats::avenants_par_contrat(&lignes);
     let mut envois = Vec::new();
@@ -1121,7 +1155,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
                 .iter()
                 .map(|r| RetourLu {
                     titre: if r.abandon { "Demande abandonnée" } else { "Fiche reçue" }.to_string(),
-                    quand: Some(r.quand.clone()),
+                    quand: Some(r.quand),
                     phrases: Vec::new(),
                     pastille: None,
                     piece: None,
@@ -1136,7 +1170,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
             quoi: l.acte().nom(),
             acte: acte(ctx, l),
             mode: l.mode().nom(),
-            quand: l.quand().to_string(),
+            quand: l.quand(),
             fichier: l.fichier().map(String::from),
             flux: dit(l.flux()).map(String::from),
             destinataire: dit(l.destinataire()).map(String::from),
@@ -1149,7 +1183,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
     }
     // Le plus recent en premier : c'est le dernier envoi qu'on vient lire ; a la meme heure, le reel devant son test.
     envois.sort_by(|a, b| (&b.quand, b.mode == "reel").cmp(&(&a.quand, a.mode == "reel")));
-    let documents = documents(ctx, &mois, &lignes)?;
+    let documents = documents(ctx, le_mois, &lignes)?;
     let phrase = format!("Historique de {} : {} documents, {} envois.", le_mois.libelle(socle::mois::Graphie::Accentuee), documents.len(), envois.len());
     Ok(Historique { phrase, mois: le_mois, documents, envois })
 }

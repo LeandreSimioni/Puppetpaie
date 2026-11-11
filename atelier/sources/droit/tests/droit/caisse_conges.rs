@@ -13,19 +13,19 @@
 use droit::caisse_conges::{affilie, douze_mois_ou_plus};
 use droit::contexte::IdSalarie;
 use droit::fiche::{FicheSalarie, SalarieDuContrat};
-use droit::natures::nature;
+use droit::natures::NatureDeContrat as N;
 use socle::date::Jour;
 
 use crate::outils::typee::lu;
 
 #[test]
 fn qui_est_declare_a_la_caisse() {
-    let (cddu, cdd, cdi) = (nature("cddu_spectacle").unwrap(), nature("cdd").unwrap(), nature("cdi").unwrap());
-    let j = |s: &str| Jour::lire(s).unwrap();
+    let (cddu, cdd, cdi) = (N::CdduSpectacle.proprietes().unwrap(), N::Cdd.proprietes().unwrap(), N::Cdi.proprietes().unwrap());
+    let j = |a, m, d| Jour::nouveau(a, m, d).unwrap();
     let comedien = fiche(r#"{"code_emploi_ft": "COM010", "statut": "artiste"}"#, None);
     let regisseur = |idcc: &str| fiche(r#"{"code_emploi_ft": "REG130", "statut": "technicien"}"#, Some(idcc));
     let sans_metier = fiche(r#"{"statut": "technicien"}"#, Some("3090"));
-    let (debut, trois_mois, un_an) = (j("2026-09-01"), j("2026-11-30"), j("2027-08-31"));
+    let (debut, trois_mois, un_an) = (j(2026, 9, 1), j(2026, 11, 30), j(2027, 8, 31));
     assert!(douze_mois_ou_plus(&debut, &un_an).unwrap());
     assert!(affilie(&cddu, &comedien, &debut, Some(&trois_mois)).unwrap());
     assert!(!affilie(&cddu, &comedien, &debut, Some(&un_an)).unwrap(), "un CDDU de douze mois");
@@ -41,7 +41,7 @@ fn qui_est_declare_a_la_caisse() {
     assert!(!affilie(&cdd, &staffeur("3090"), &debut, Some(&trois_mois)).unwrap(), "la liste 7 ne le nomme pas");
     assert!(!affilie(&cdd, &sans_metier, &debut, Some(&trois_mois)).unwrap(), "un metier hors de la nomenclature");
     assert!(!affilie(&cdi, &comedien, &debut, None).unwrap(), "un CDI");
-    assert!(affilie(&cdd, &comedien, &debut, None).unwrap_err().contains("sans terme"));
+    assert!(affilie(&cdd, &comedien, &debut, None).unwrap_err().phrase.contains("sans terme"));
 }
 
 /// La fiche telle que la paie la lit : ses champs, et la convention de l'employeur.

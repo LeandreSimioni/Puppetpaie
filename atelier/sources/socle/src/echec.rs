@@ -35,6 +35,10 @@ classes! {
     Refuse,
     /// Une donnee manque : le champ de la demande, la fiche ou la ligne que la phrase nomme.
     Manque,
+    /// Le taux AT/MP de l'annee manque : la notification de la CARSAT le dit, la fiche Entreprise le porte.
+    TauxAtmpAbsent,
+    /// L'effectif d'une annee manque : celui que l'Urssaf a calcule, ou la date de la premiere embauche.
+    EffectifAbsent,
     /// Une valeur ne se lit pas : la date, le nombre ou la donnee que la phrase dit illisible.
     Illisible,
     /// La demande est mal formee : un champ qu'elle ne connait pas, ou d'une autre forme.
@@ -93,6 +97,8 @@ classes! {
     FabriqueRefus,
     /// Une version plus recente du logiciel est exigee.
     VersionExigee,
+    /// Un code d'une liste de la norme DSN que la version du fichier n'a pas dans sa liste.
+    HorsDeLaVersion,
     /// Une DSN faite par l'ancien logiciel.
     DsnDeLAncienLogiciel,
     /// Les compteurs sont verrouilles.
@@ -157,14 +163,26 @@ impl std::fmt::Display for Classe {
     }
 }
 
-/// Un refus : sa phrase, et sa classe ; `None` pour un refus ordinaire.
-#[derive(Debug)]
+/// UN REFUS : sa classe (`None` pour un refus ordinaire), sa phrase, en mots, pour l'ecran, et ce qu'il porte a part
+/// (`APart` : un lieu, ou la forme de la couche qui refuse), dans sa forme, jamais dans la phrase. Il ne
+/// se construit que par ses constructeurs (`refus`, `refus_avec`, `erreur`, `noter_et`, ceux de ce module), qui notent
+/// l'endroit ou il nait (`noter_echec`).
+#[derive(Debug, Clone)]
 pub struct Echec {
     pub classe: Option<Classe>,
-    pub message: String,
+    pub phrase: String,
+    pub a_part: Option<APart>,
 }
 
+/// Le resultat d'une fonction qui peut refuser.
 pub type R<T> = Result<T, Echec>;
+
+/// Un refus se dit par sa phrase : c'est elle qu'une lecture de serde (`try_from`) rend dans son propre refus.
+impl std::fmt::Display for Echec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.phrase)
+    }
+}
 
 impl Echec {
     /// La classe du refus telle que le journal et les incidents la notent : un refus ordinaire (`None`) s'y nomme
@@ -172,6 +190,58 @@ impl Echec {
     pub fn classe_notee(&self) -> &'static str {
         classe_notee(self.classe)
     }
+
+    /// Le meme refus, sa phrase recomposee par `f` (« <ce qu'on faisait> : <la phrase> ») : sa classe et ce qu'il porte a
+    /// part restent, l'endroit ou il est ne aussi.
+    pub fn reformuler(self, f: impl FnOnce(&str) -> String) -> Echec {
+        Echec { phrase: f(&self.phrase), ..self }
+    }
+
+    /// Le meme refus, rendu dans la classe `classe` : sa phrase, ce qu'il porte a part et l'endroit ou il est ne restent.
+    pub fn reclasser(self, classe: Classe) -> Echec {
+        Echec { classe: Some(classe), ..self }
+    }
+
+    /// Le refus tel qu'un terminal le dit : sa phrase, puis, sur la ligne suivante, ce qu'il porte a part, en objet.
+    pub fn en_lignes(&self) -> String {
+        match &self.a_part {
+            Some(a) => format!("{}\n{}", self.phrase, crate::ecriture::json_en_ligne(a)),
+            None => self.phrase.clone(),
+        }
+    }
+
+    /// Le meme refus, survenu en lisant le fichier `chemin` : son chemin va a part, s'il n'en porte pas deja un. Un refus
+    /// qui porte la forme de sa couche (`APart::Forme`) la garde telle quelle : elle dit ce que sa couche veut dire.
+    pub fn au_fichier(mut self, chemin: &std::path::Path) -> Echec {
+        let chemin = || Some(chemin.to_string_lossy().into_owned());
+        match &mut self.a_part {
+            None => self.a_part = Some(APart::Lieu(Lieu { chemin: chemin(), ..Lieu::default() })),
+            Some(APart::Lieu(a)) => a.chemin = a.chemin.take().or_else(chemin),
+            Some(APart::Forme(_)) => {}
+        }
+        self
+    }
+}
+
+/// UN REFUS ORDINAIRE, en une phrase, son endroit note.
+#[track_caller]
+pub fn refus(phrase: impl Into<String>) -> Echec {
+    noter_et(None, phrase)
+}
+
+/// UN REFUS ORDINAIRE QUI PORTE QUELQUE CHOSE A PART : sa phrase se lit a l'ecran, en mots ; ce qui n'est pas fait pour
+/// l'ecran (le chemin d'un fichier, la cle d'une donnee, le nom d'un fichier livre, ce que le systeme a dit) va dans
+/// `a_part` (un `Lieu`, ou la forme de la couche qui refuse, `APart::forme`), que la reponse de la route rend a cote de
+/// la phrase.
+#[track_caller]
+pub fn refus_avec(phrase: impl Into<String>, a_part: impl Into<APart>) -> Echec {
+    Echec { a_part: Some(a_part.into()), ..noter_et(None, phrase) }
+}
+
+/// Un refus ordinaire qui nomme un dossier ou un fichier : la phrase en mots, le chemin a part (`chemin`).
+#[track_caller]
+pub fn au_chemin(phrase: impl Into<String>, chemin: &std::path::Path) -> Echec {
+    refus_avec(phrase, Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), ..Lieu::default() })
 }
 
 /// La classe d'un refus telle que le journal et les incidents la notent : un refus ordinaire (`None`) s'y nomme
@@ -183,36 +253,18 @@ pub fn classe_notee(classe: Option<Classe>) -> &'static str {
     }
 }
 
-impl From<String> for Echec {
-    #[track_caller]
-    fn from(message: String) -> Self {
-        noter_echec(None, &message);
-        Echec { classe: None, message }
-    }
-}
-
-impl From<&str> for Echec {
-    #[track_caller]
-    fn from(m: &str) -> Self {
-        noter_echec(None, m);
-        Echec { classe: None, message: m.to_string() }
-    }
-}
-
 /// Un echec de classe `classe`, son endroit note.
 #[track_caller]
-pub fn erreur(classe: Classe, message: impl Into<String>) -> Echec {
-    let message = message.into();
-    noter_echec(Some(classe), &message);
-    Echec { classe: Some(classe), message }
+pub fn erreur(classe: Classe, phrase: impl Into<String>) -> Echec {
+    noter_et(Some(classe), phrase)
 }
 
 /// Un echec de classe quelconque (`None` : un refus ordinaire), son endroit note comme pour `erreur`.
 #[track_caller]
-pub fn noter_et(classe: Option<Classe>, message: impl Into<String>) -> Echec {
-    let message = message.into();
-    noter_echec(classe, &message);
-    Echec { classe, message }
+pub fn noter_et(classe: Option<Classe>, phrase: impl Into<String>) -> Echec {
+    let phrase = phrase.into();
+    noter_echec(classe, &phrase);
+    Echec { classe, phrase, a_part: None }
 }
 
 // ===================================================================================================== la memoire
@@ -280,14 +332,55 @@ pub fn echecs_notes() -> MutexGuard<'static, VecDeque<Echoue>> {
 
 // ============================================================================================ ce qui va a part
 
-/// Entre la phrase d'un refus et ce qu'il porte a part : un chemin, une cle, un fichier, une donnee pour la page.
-pub const A_PART: char = '\u{1e}';
+/// CE QU'UN REFUS PORTE A PART, ecrit sans etiquette : l'objet rendu est celui de la variante. Un `Lieu` (un chemin, un
+/// fichier, une cle, ce qui a ete lu), ou la forme que declare la couche qui refuse (l'etat d'un depot, les anomalies
+/// d'une fiche, l'archive alteree), gardee typee jusqu'a la porte, qui l'ecrit une fois ; personne ne la relit.
+#[derive(Clone, serde::Serialize)]
+#[serde(untagged)]
+pub enum APart {
+    Lieu(Lieu),
+    Forme(#[serde(serialize_with = "forme_ecrite")] std::sync::Arc<dyn erased_serde::Serialize + Send + Sync>),
+}
+
+impl APart {
+    /// Ce que porte a part la couche qui refuse, dans sa forme declaree.
+    pub fn forme(f: impl serde::Serialize + Send + Sync + 'static) -> APart {
+        APart::Forme(std::sync::Arc::new(f))
+    }
+
+    /// Le lieu que le refus porte a part, s'il en porte un.
+    pub fn lieu(&self) -> Option<&Lieu> {
+        match self {
+            APart::Lieu(l) => Some(l),
+            APart::Forme(_) => None,
+        }
+    }
+}
+
+impl From<Lieu> for APart {
+    fn from(l: Lieu) -> APart {
+        APart::Lieu(l)
+    }
+}
+
+/// Une forme d'une couche, ecrite telle qu'elle se declare.
+fn forme_ecrite<S: serde::Serializer>(f: &std::sync::Arc<dyn erased_serde::Serialize + Send + Sync>, s: S) -> Result<S::Ok, S::Error> {
+    erased_serde::serialize(f.as_ref(), s)
+}
+
+impl std::fmt::Debug for APart {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            APart::Lieu(l) => f.debug_tuple("Lieu").field(l).finish(),
+            APart::Forme(_) => f.debug_tuple("Forme").field(&crate::ecriture::json_en_ligne(self)).finish(),
+        }
+    }
+}
 
 /// CE QUE LE SOCLE MET A PART D'UN REFUS : le chemin d'un fichier, le nom d'un fichier livre, la cle d'une donnee, ce
-/// qui a ete lu ou ce que le systeme a dit. Ce qui n'est pas dit ne s'ecrit pas. Une couche du dessus porte a part ce
-/// qu'elle a d'autre (l'etat d'un mois, les anomalies d'une fiche) dans sa propre forme (`avec`).
+/// qui a ete lu ou ce que le systeme a dit. Ce qui n'est pas dit ne s'ecrit pas.
 #[derive(Debug, Default, Clone, serde::Serialize)]
-pub struct APart {
+pub struct Lieu {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chemin: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -298,46 +391,15 @@ pub struct APart {
     pub detail: Option<String>,
 }
 
-/// UN REFUS QUI PORTE QUELQUE CHOSE A PART. Sa phrase se lit a l'ecran, en mots ; ce qui n'est pas fait pour l'ecran
-/// (le chemin d'un fichier, la cle d'une donnee, le nom d'un fichier livre) ou ce que la page lit d'autre (l'etat d'un
-/// mois, les anomalies d'une fiche) va dans `plus`, une forme (`APart`, ou celle de la couche qui refuse) qui s'ecrit en
-/// objet, que la reponse de la route rend a cote de la phrase (`separer`) : la fenetre l'ouvre, le LLM le lit. Une
-/// phrase qu'on prefixe garde ce qu'elle porte.
-pub fn avec(phrase: impl Into<String>, plus: impl serde::Serialize) -> String {
-    format!("{}{}{}", phrase.into(), A_PART, crate::ecriture::json_en_ligne(&plus))
-}
-
-/// La phrase d'un refus, sans ce qu'il porte a part (`avec`) : les morceaux du message, chacun sans l'objet qui
-/// l'ouvre.
-pub fn phrase_de(message: &str) -> String {
-    let mut phrase = String::new();
-    for (rang, m) in message.split(A_PART).enumerate() {
-        let debut = match (rang, crate::forme::objet_en_tete(m)) {
-            (0, _) | (_, None) => 0,
-            (_, Some(n)) => n,
-        };
-        phrase.push_str(&m[debut..]);
-    }
-    phrase
-}
-
-impl Echec {
-    /// La phrase du refus, sans ce qu'il porte a part (`phrase_de`).
-    pub fn phrase(&self) -> String {
-        phrase_de(&self.message)
-    }
-}
-
 /// UN FICHIER QUE LE DISQUE REFUSE (absent, interdit, illisible, mal forme) : la phrase dit ce qui arrive, en mots ; le
 /// chemin et la raison du systeme vont a part (`chemin`, `detail`). Un refus du moteur sur ce que le fichier porte (une
 /// phrase, `String`) garde sa phrase, et le chemin va a part.
-pub fn du_disque<E: std::fmt::Display + 'static>(chemin: &std::path::Path, e: &E) -> String {
-    let a_part = |phrase: &str, detail: Option<String>| {
-        avec(phrase, APart { chemin: Some(chemin.to_string_lossy().into_owned()), detail, ..APart::default() })
-    };
+#[track_caller]
+pub fn du_disque<E: std::fmt::Display + 'static>(chemin: &std::path::Path, e: &E) -> Echec {
+    let a_part = |detail: Option<String>| Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), detail, ..Lieu::default() };
     let e_ = e as &dyn std::any::Any;
     if let Some(phrase) = e_.downcast_ref::<String>() {
-        return a_part(phrase, None);
+        return refus_avec(phrase.as_str(), a_part(None));
     }
     let phrase = match e_.downcast_ref::<std::io::Error>().map(std::io::Error::kind) {
         Some(std::io::ErrorKind::NotFound) => "Un fichier de la compagnie manque.",
@@ -346,34 +408,38 @@ pub fn du_disque<E: std::fmt::Display + 'static>(chemin: &std::path::Path, e: &E
         Some(_) => "Le disque refuse un fichier de la compagnie.",
         None => "Un fichier de la compagnie ne se lit pas : il est abîmé.",
     };
-    a_part(phrase, Some(e.to_string()))
+    refus_avec(phrase, a_part(Some(e.to_string())))
 }
 
 /// UNE DONNEE QUI NE SE LIT PAS LA OU ELLE DEVRAIT : `quoi` la dit en mots (« Une paie écrite ne se relit pas. ») ; la cle
 /// et ce qui a ete lu vont a part (`cle`, `detail`).
-pub fn a_la_cle(quoi: &str, cle: &str, detail: impl std::fmt::Display) -> String {
+#[track_caller]
+pub fn a_la_cle(quoi: &str, cle: &str, detail: impl std::fmt::Display) -> Echec {
     let detail = detail.to_string();
-    avec(quoi, APart { cle: Some(cle.to_string()), detail: Some(detail).filter(|d| !d.is_empty()), ..APart::default() })
+    refus_avec(quoi, Lieu { cle: Some(cle.to_string()), detail: Some(detail).filter(|d| !d.is_empty()), ..Lieu::default() })
 }
 
 /// UNE DONNEE LIVREE AVEC LE LOGICIEL QUI MANQUE OU NE SE LIT PAS (un referentiel de `donnees/`) : rien que la compagnie
 /// puisse corriger ; le fichier et la cle vont a part.
-pub fn livree(fichier: &str, cle: &str) -> String {
-    avec(
+#[track_caller]
+pub fn livree(fichier: &str, cle: &str) -> Echec {
+    refus_avec(
         "Une donnée livrée avec le logiciel manque ou ne se lit pas : le signaler au développeur.",
-        APart { fichier: Some(fichier.to_string()), cle: Some(cle.to_string()), ..APart::default() },
+        Lieu { fichier: Some(fichier.to_string()), cle: Some(cle.to_string()), ..Lieu::default() },
     )
 }
 
 /// UNE DEMANDE MAL FORMEE : la charge d'une route n'a pas, a `cle`, ce qu'il faut (`attendu` : « un texte », « une
 /// liste »). La cle va a part.
-pub fn charge(cle: &str, attendu: &str) -> String {
+#[track_caller]
+pub fn charge(cle: &str, attendu: &str) -> Echec {
     self::cle(format!("La demande est mal formée : {} est attendu.", attendu), cle)
 }
 
 /// Un refus en mots, et la cle de la donnee qu'il vise, a part.
-pub fn cle(phrase: impl Into<String>, cle: &str) -> String {
-    avec(phrase, APart { cle: Some(cle.to_string()), ..APart::default() })
+#[track_caller]
+pub fn cle(phrase: impl Into<String>, cle: &str) -> Echec {
+    refus_avec(phrase, Lieu { cle: Some(cle.to_string()), ..Lieu::default() })
 }
 
 /// Une paie ecrite (ce que la validation d'un engagement a garde) qui ne se relit pas : la cle va a part (`a_la_cle`).
@@ -381,9 +447,10 @@ pub const PAIE_ILLISIBLE: &str = "Une paie écrite ne se relit pas : revalider l
 
 /// UN FICHIER DE LA COMPAGNIE QUI NE PORTE PAS CE QU'IL DEVRAIT (une forme inattendue) : la phrase en mots, le chemin et ce
 /// qui ne va pas a part.
-pub fn abime(chemin: &std::path::Path, detail: impl std::fmt::Display) -> String {
-    avec(
+#[track_caller]
+pub fn abime(chemin: &std::path::Path, detail: impl std::fmt::Display) -> Echec {
+    refus_avec(
         "Un fichier de la compagnie ne se lit pas : il est abîmé.",
-        APart { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(detail.to_string()), ..APart::default() },
+        Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(detail.to_string()), ..Lieu::default() },
     )
 }

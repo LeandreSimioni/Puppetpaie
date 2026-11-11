@@ -10,21 +10,20 @@ use rust_decimal::RoundingStrategy;
 use fabrique_pdf::forme as pdf;
 
 use crate::bulletin::{identite_de, FORMAT};
+use fabrique_pdf::mesure::{mesure, Mesure};
 use droit::contexte::EntrepriseDuDocument;
 use droit::fiche::ChampsEntreprise;
-use socle::date::{repr_flottant, Jour};
+use socle::date::Jour;
 use engagement::Engagement;
-use socle::num::{dec_f64, Decimal};
-use socle::echec::{Classe, Echec};
-
-type R<T> = Result<T, Echec>;
+use socle::num::{court, Decimal};
+use socle::echec::{erreur, refus, Classe, Echec, R};
 
 // ------------------------------------------------- le numero d'adherent, et le code que la DSN en tire
 
 /// La cle de la fiche entreprise : le numero d'adherent a la Caisse des Conges Spectacles, le SEUL numero Conges
 /// Spectacles que la compagnie saisit. Il va dans la case COMPTE des certificats, dans les contrats, et la DSN
 /// le declare precede de 97 (`code_dsn`).
-pub const CLE_ADHERENT: &str = "congesspectacles_adherent";
+pub const CLE_ADHERENT: droit::fiche::CaseEntreprise = droit::fiche::CaseEntreprise::CongesspectaclesAdherent;
 
 /// LA FORME ECRITE DU NUMERO D'ADHERENT : la meme valeur, « accolés, sans espaces, ni tiret » et la lettre en capitale,
 /// comme l'exemple de la fiche (970000000001A ; `audiens-fiche-specificites-conges-spectacles-20261023.txt`, l. 80-81).
@@ -50,18 +49,19 @@ pub fn faute_adherent(v: &str) -> Option<String> {
 
 /// Le numero d'adherent de la fiche, de la forme que dit la fiche d'Audiens (`faute_adherent`) ; sinon, refus qui dit
 /// quoi saisir.
-pub fn adherent(ent: &ChampsEntreprise) -> Result<String, String> {
+pub fn adherent(ent: &ChampsEntreprise) -> R<String> {
     let v = match ent.congesspectacles_adherent.remplie() {
         Some(v) => forme_adherent(v),
         _ => {
-            return Err("le numéro d'adhérent Congés Spectacles manque dans la fiche de l'entreprise (Entreprise, « Vos \
-                        numéros chez les organismes ») : dix chiffres suivis d'une lettre, tel qu'il figure sur les \
-                        courriers d'Audiens"
-                .to_string())
+            return Err(refus(
+                "le numéro d'adhérent Congés Spectacles manque dans la fiche de l'entreprise (Entreprise, « Vos \
+                 numéros chez les organismes ») : dix chiffres suivis d'une lettre, tel qu'il figure sur les \
+                 courriers d'Audiens",
+            ))
         }
     };
     match faute_adherent(&v) {
-        Some(faute) => Err(format!("fiche de l'entreprise : {}", faute)),
+        Some(faute) => Err(socle::refus!("fiche de l'entreprise : {}", faute)),
         None => Ok(v),
     }
 }
@@ -73,7 +73,7 @@ pub fn adherent(ent: &ChampsEntreprise) -> Result<String, String> {
 /// norme dit la meme forme (« Indiquer "97", le numero d'affiliation et la cle », CRE-11 : les deux premiers caracteres
 /// dans la table CPCP, ou 97 est la « Caisse de conges spectacles » ; `atelier/reference/norme-dsn/texte/
 /// bloc-S21.G00.40.txt`, l. 921-933). Une cle `congesspectacles_affiliation` qu'une fiche porterait encore n'est pas lue.
-pub fn code_dsn(ent: &ChampsEntreprise) -> Result<String, String> {
+pub fn code_dsn(ent: &ChampsEntreprise) -> R<String> {
     Ok(format!("97{}", adherent(ent)?))
 }
 
@@ -82,140 +82,145 @@ const TIMES_GRAS: &str = "tibo";
 const COURIER: &str = "cour";
 
 /// Le cadre de la signature : x0, y0, x1, y1.
-const SIGNATURE_CADRE: (f64, f64, f64, f64) = (441.84, 775.50, 521.84, 809.10);
-/// La largeur de ce cadre (`largeur_imprimee`).
-pub const SIGNATURE_LARGEUR: f64 = SIGNATURE_CADRE.2 - SIGNATURE_CADRE.0;
+const SIGNATURE_CADRE: (Mesure, Mesure, Mesure, Mesure) = (mesure("441.84"), mesure("775.50"), mesure("521.84"), mesure("809.10"));
+/// La largeur de ce cadre (`largeur_imprimee`) : 80 points.
+pub const SIGNATURE_LARGEUR: Mesure = Mesure::entier(80);
+
+// Les corps du certificat.
+const C7: Mesure = mesure("7.92");
+const C9: Mesure = mesure("9.12");
+const C10: Mesure = mesure("10.08");
+const C13: Mesure = mesure("13.92");
 
 /// (x, ligne de base, texte, police, corps) : le fond imprime.
 #[rustfmt::skip]
-const FOND: &[(f64, f64, &str, &str, f64)] = &[
-    (48.96, 441.12, "CERTIFICAT D'EMPLOI", TIMES_GRAS, 10.08),
-    (48.96, 453.12, "DESTINÉ AU SALARIÉ", TIMES_GRAS, 10.08),
-    (212.16, 441.84, "LES CONGES SPECTACLES", TIMES_GRAS, 13.92),
-    (219.36, 453.12, "Audiens TSA 30400 92177 Vanves Cedex", TIMES_GRAS, 10.08),
-    (435.12, 441.36, "Information des Intermittents", TIMES, 9.12),
-    (456.48, 453.36, "www.audiens.org", TIMES, 9.12),
-    (450.48, 474.24, "Tél. : 0 173 173 434", TIMES, 9.12),
-    (382.32, 484.32, "de 9h30 à 18 h : accueil sur place et téléphone", TIMES, 9.12),
-    (49.92, 504.24,
+const FOND: &[(Mesure, Mesure, &str, &str, Mesure)] = &[
+    (mesure("48.96"), mesure("441.12"), "CERTIFICAT D'EMPLOI", TIMES_GRAS, C10),
+    (mesure("48.96"), mesure("453.12"), "DESTINÉ AU SALARIÉ", TIMES_GRAS, C10),
+    (mesure("212.16"), mesure("441.84"), "LES CONGES SPECTACLES", TIMES_GRAS, C13),
+    (mesure("219.36"), mesure("453.12"), "Audiens TSA 30400 92177 Vanves Cedex", TIMES_GRAS, C10),
+    (mesure("435.12"), mesure("441.36"), "Information des Intermittents", TIMES, C9),
+    (mesure("456.48"), mesure("453.36"), "www.audiens.org", TIMES, C9),
+    (mesure("450.48"), mesure("474.24"), "Tél. : 0 173 173 434", TIMES, C9),
+    (mesure("382.32"), mesure("484.32"), "de 9h30 à 18 h : accueil sur place et téléphone", TIMES, C9),
+    (mesure("49.92"), mesure("504.24"),
      "Si vous n'êtes pas inscrit à notre Caisse, contactez-nous à l'adresse ci-dessus mentionnée afin que nous procédions à votre immatriculation.",
-     TIMES_GRAS, 7.92),
-    (48.00, 513.36,
+     TIMES_GRAS, C7),
+    (mesure("48.00"), mesure("513.36"),
      "Votre demande de congé doit être adressée chaque année, quinze jours au moins avant votre départ en congé, dûment complétée et signée. Votre formulaire de",
-     TIMES, 7.92),
-    (48.00, 522.48,
+     TIMES, C7),
+    (mesure("48.00"), mesure("522.48"),
      "demande de congé vous sera adressé automatiquement chaque début d'année en même temps que les sommes à déclarer à l'administration fiscale. Si tel n'est",
-     TIMES, 7.92),
-    (48.00, 531.83,
+     TIMES, C7),
+    (mesure("48.00"), mesure("531.83"),
      "pas le cas, vous pouvez le demander par courrier ou 24h/24h : sur notre site internet ou notre serveur vocal téléphonique.",
-     TIMES, 7.92),
-    (48.00, 540.95,
+     TIMES, C7),
+    (mesure("48.00"), mesure("540.95"),
      "La loi n°2004-801 du 6 août 2004 relative à la protection des personnes physiques à l'égard des traitements  de données à caractère personnel s'applique aux",
-     TIMES, 7.92),
-    (48.00, 550.07,
+     TIMES, C7),
+    (mesure("48.00"), mesure("550.07"),
      "informations portées sur ce certificat. Elle garantit un droit d'accès et de rectification auprès du service Information des Intermittents.",
-     TIMES, 7.92),
-    (48.00, 579.84, "N° SIRET", TIMES, 13.92),
-    (253.92, 579.84, "COMPTE", TIMES, 13.92),
-    (431.04, 579.84, "N° CE", TIMES, 13.92),
-    (54.96, 614.87, "NIR", TIMES, 13.92),
-    (58.08, 633.36, "NOM DE NAISSANCE", TIMES, 7.92),
-    (58.08, 643.44, "NOM D'USAGE", TIMES, 7.92),
-    (57.84, 653.28, "EMPLOI", TIMES, 7.92),
-    (57.84, 663.36, "CADRE", TIMES, 7.92),
-    (318.96, 633.36, "PRENOM", TIMES, 7.92),
-    (318.96, 643.44, "PSEUDONYME", TIMES, 7.92),
-    (157.44, 683.28, " DATES DE TRAVAIL", TIMES, 10.08),
-    (396.96, 683.28, "    NB JOURS OU CACHETS", TIMES, 10.08),
-    (51.84, 704.88, "DEBUT", TIMES, 13.92),
-    (234.96, 704.88, "FIN", TIMES, 13.92),
-    (70.80, 737.76, "BASE CONGE", TIMES, 13.92),
-    (72.00, 747.36, "Arrondie à l'euro le plus proche", TIMES, 7.92),
-    (318.96, 737.76, "SALAIRE BRUT", TIMES, 13.92),
-    (318.96, 747.36, "Arrondi à l'euro le plus proche", TIMES, 7.92),
-    (354.96, 759.12, "Date :", TIMES, 10.08),
-    (354.00, 771.12, "Nom du signataire", TIMES, 10.08),
-    (354.96, 782.16, "Signature", TIMES, 10.08),
+     TIMES, C7),
+    (mesure("48.00"), mesure("579.84"), "N° SIRET", TIMES, C13),
+    (mesure("253.92"), mesure("579.84"), "COMPTE", TIMES, C13),
+    (mesure("431.04"), mesure("579.84"), "N° CE", TIMES, C13),
+    (mesure("54.96"), mesure("614.87"), "NIR", TIMES, C13),
+    (mesure("58.08"), mesure("633.36"), "NOM DE NAISSANCE", TIMES, C7),
+    (mesure("58.08"), mesure("643.44"), "NOM D'USAGE", TIMES, C7),
+    (mesure("57.84"), mesure("653.28"), "EMPLOI", TIMES, C7),
+    (mesure("57.84"), mesure("663.36"), "CADRE", TIMES, C7),
+    (mesure("318.96"), mesure("633.36"), "PRENOM", TIMES, C7),
+    (mesure("318.96"), mesure("643.44"), "PSEUDONYME", TIMES, C7),
+    (mesure("157.44"), mesure("683.28"), " DATES DE TRAVAIL", TIMES, C10),
+    (mesure("396.96"), mesure("683.28"), "    NB JOURS OU CACHETS", TIMES, C10),
+    (mesure("51.84"), mesure("704.88"), "DEBUT", TIMES, C13),
+    (mesure("234.96"), mesure("704.88"), "FIN", TIMES, C13),
+    (mesure("70.80"), mesure("737.76"), "BASE CONGE", TIMES, C13),
+    (mesure("72.00"), mesure("747.36"), "Arrondie à l'euro le plus proche", TIMES, C7),
+    (mesure("318.96"), mesure("737.76"), "SALAIRE BRUT", TIMES, C13),
+    (mesure("318.96"), mesure("747.36"), "Arrondi à l'euro le plus proche", TIMES, C7),
+    (mesure("354.96"), mesure("759.12"), "Date :", TIMES, C10),
+    (mesure("354.00"), mesure("771.12"), "Nom du signataire", TIMES, C10),
+    (mesure("354.96"), mesure("782.16"), "Signature", TIMES, C10),
 ];
 
 /// Les reperes d'angle, les traits de pliage et les filets : (x1, y1, x2, y2, epaisseur).
 #[rustfmt::skip]
-const TRAITS: &[(f64, f64, f64, f64, f64)] = &[
-    (40.80, 419.28, 63.84, 419.28, 3.12),
-    (42.48, 441.84, 42.48, 418.80, 3.12),
-    (530.88, 419.28, 553.92, 419.28, 3.12),
-    (552.48, 440.88, 552.48, 417.84, 3.12),
-    (40.80, 800.40, 63.84, 800.40, 3.12),
-    (42.48, 801.84, 42.48, 778.80, 3.12),
-    (528.96, 800.40, 552.00, 800.40, 3.12),
-    (551.28, 801.84, 551.28, 778.80, 3.12),
-    (18.96, 279.84, 38.88, 279.84, 0.24),
-    (554.88, 279.84, 574.80, 279.84, 0.24),
-    (48.96, 678.96, 148.80, 678.96, 0.24),
-    (258.96, 678.96, 358.80, 678.96, 0.24),
+const TRAITS: &[(Mesure, Mesure, Mesure, Mesure, Mesure)] = &[
+    (mesure("40.80"), mesure("419.28"), mesure("63.84"), mesure("419.28"), mesure("3.12")),
+    (mesure("42.48"), mesure("441.84"), mesure("42.48"), mesure("418.80"), mesure("3.12")),
+    (mesure("530.88"), mesure("419.28"), mesure("553.92"), mesure("419.28"), mesure("3.12")),
+    (mesure("552.48"), mesure("440.88"), mesure("552.48"), mesure("417.84"), mesure("3.12")),
+    (mesure("40.80"), mesure("800.40"), mesure("63.84"), mesure("800.40"), mesure("3.12")),
+    (mesure("42.48"), mesure("801.84"), mesure("42.48"), mesure("778.80"), mesure("3.12")),
+    (mesure("528.96"), mesure("800.40"), mesure("552.00"), mesure("800.40"), mesure("3.12")),
+    (mesure("551.28"), mesure("801.84"), mesure("551.28"), mesure("778.80"), mesure("3.12")),
+    (mesure("18.96"), mesure("279.84"), mesure("38.88"), mesure("279.84"), mesure("0.24")),
+    (mesure("554.88"), mesure("279.84"), mesure("574.80"), mesure("279.84"), mesure("0.24")),
+    (mesure("48.96"), mesure("678.96"), mesure("148.80"), mesure("678.96"), mesure("0.24")),
+    (mesure("258.96"), mesure("678.96"), mesure("358.80"), mesure("678.96"), mesure("0.24")),
 ];
 
 /// La position de chaque valeur remplie : (champ, x, ligne de base, police, corps).
 #[rustfmt::skip]
-const CASES: &[(&str, f64, f64, &str, f64)] = &[
-    ("dest_nom",       322.80, 157.20, TIMES_GRAS, 10.08),
-    ("dest_adresse",   322.80, 173.28, TIMES, 10.08),
-    ("dest_commune",   322.80, 189.12, TIMES, 10.08),
-    ("dest_pays",      322.80, 221.28, TIMES, 10.08),
-    ("siret",          123.60, 579.60, COURIER, 13.92),
-    ("compte",         338.40, 579.60, COURIER, 13.92),
-    ("num_ce",         503.52, 579.60, COURIER, 13.92),
-    ("nir",            112.80, 614.64, COURIER, 13.92),
-    ("raison_sociale", 318.96, 614.64, COURIER, 13.92),
-    ("nom_naissance",  174.00, 633.36, TIMES, 7.92),
-    ("nom_usage",      174.00, 643.44, TIMES, 7.92),
-    ("emploi",         174.00, 653.28, TIMES, 7.92),
-    ("cadre",          174.00, 663.36, TIMES, 7.92),
-    ("prenom",         390.00, 633.36, TIMES, 7.92),
-    ("pseudonyme",     390.00, 643.44, TIMES, 7.92),
-    ("debut",          126.00, 704.64, COURIER, 13.92),
-    ("fin",            266.88, 704.64, COURIER, 13.92),
-    ("nb_cachets",     457.44, 704.64, COURIER, 13.92),
-    ("base_conge",     248.64, 737.52, COURIER, 13.92),
-    ("salaire_brut",   470.64, 737.52, COURIER, 13.92),
-    ("date",           441.84, 758.16, COURIER, 10.08),
-    ("signataire",     441.84, 771.12, COURIER, 10.08),
-    ("agrement",       105.12, 781.68, TIMES, 10.08),
+const CASES: &[(&str, Mesure, Mesure, &str, Mesure)] = &[
+    ("dest_nom",       mesure("322.80"), mesure("157.20"), TIMES_GRAS, C10),
+    ("dest_adresse",   mesure("322.80"), mesure("173.28"), TIMES, C10),
+    ("dest_commune",   mesure("322.80"), mesure("189.12"), TIMES, C10),
+    ("dest_pays",      mesure("322.80"), mesure("221.28"), TIMES, C10),
+    ("siret",          mesure("123.60"), mesure("579.60"), COURIER, C13),
+    ("compte",         mesure("338.40"), mesure("579.60"), COURIER, C13),
+    ("num_ce",         mesure("503.52"), mesure("579.60"), COURIER, C13),
+    ("nir",            mesure("112.80"), mesure("614.64"), COURIER, C13),
+    ("raison_sociale", mesure("318.96"), mesure("614.64"), COURIER, C13),
+    ("nom_naissance",  mesure("174.00"), mesure("633.36"), TIMES, C7),
+    ("nom_usage",      mesure("174.00"), mesure("643.44"), TIMES, C7),
+    ("emploi",         mesure("174.00"), mesure("653.28"), TIMES, C7),
+    ("cadre",          mesure("174.00"), mesure("663.36"), TIMES, C7),
+    ("prenom",         mesure("390.00"), mesure("633.36"), TIMES, C7),
+    ("pseudonyme",     mesure("390.00"), mesure("643.44"), TIMES, C7),
+    ("debut",          mesure("126.00"), mesure("704.64"), COURIER, C13),
+    ("fin",            mesure("266.88"), mesure("704.64"), COURIER, C13),
+    ("nb_cachets",     mesure("457.44"), mesure("704.64"), COURIER, C13),
+    ("base_conge",     mesure("248.64"), mesure("737.52"), COURIER, C13),
+    ("salaire_brut",   mesure("470.64"), mesure("737.52"), COURIER, C13),
+    ("date",           mesure("441.84"), mesure("758.16"), COURIER, C10),
+    ("signataire",     mesure("441.84"), mesure("771.12"), COURIER, C10),
+    ("agrement",       mesure("105.12"), mesure("781.68"), TIMES, C10),
 ];
 
 /// Le bord droit a ne pas depasser, quand la case a un voisin.
-const LIMITES: &[(&str, f64)] = &[
-    ("siret", 253.92),
-    ("compte", 431.04),
-    ("num_ce", 549.00),
-    ("nir", 318.96),
-    ("raison_sociale", 549.00),
-    ("nom_naissance", 318.96),
-    ("nom_usage", 318.96),
-    ("emploi", 318.96),
-    ("cadre", 318.96),
-    ("prenom", 549.00),
-    ("pseudonyme", 549.00),
-    ("debut", 234.96),
-    ("fin", 396.96),
-    ("nb_cachets", 549.00),
-    ("base_conge", 318.96),
-    ("salaire_brut", 549.00),
-    ("date", 549.00),
-    ("signataire", 549.00),
+const LIMITES: &[(&str, Mesure)] = &[
+    ("siret", mesure("253.92")),
+    ("compte", mesure("431.04")),
+    ("num_ce", mesure("549.00")),
+    ("nir", mesure("318.96")),
+    ("raison_sociale", mesure("549.00")),
+    ("nom_naissance", mesure("318.96")),
+    ("nom_usage", mesure("318.96")),
+    ("emploi", mesure("318.96")),
+    ("cadre", mesure("318.96")),
+    ("prenom", mesure("549.00")),
+    ("pseudonyme", mesure("549.00")),
+    ("debut", mesure("234.96")),
+    ("fin", mesure("396.96")),
+    ("nb_cachets", mesure("549.00")),
+    ("base_conge", mesure("318.96")),
+    ("salaire_brut", mesure("549.00")),
+    ("date", mesure("549.00")),
+    ("signataire", mesure("549.00")),
 ];
 
-const RESPIRATION: f64 = 3.0;
+const RESPIRATION: Mesure = Mesure::entier(3);
 const NOIR: &str = "#000000";
 
 // ---------------------------------------------------------------- chiffres
 
 /// `arrondi_euro` : a l'euro le plus proche, moitie superieure.
-pub fn arrondi_euro(x: Decimal) -> Result<i64, String> {
+pub fn arrondi_euro(x: Decimal) -> R<i64> {
     use rust_decimal::prelude::ToPrimitive;
-    x.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero).to_i64().ok_or_else(|| format!("montant hors de portée : {}", x))
+    x.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero).to_i64().ok_or_else(|| socle::refus!("montant hors de portée : {}", x))
 }
-
 
 // ----------------------------------------------------- decoupage au 31 mars
 
@@ -227,8 +232,8 @@ pub struct ContratCs {
     pub dates_travail: Vec<Jour>,
     pub cachets: i64,
     pub jours: i64,
-    pub heures: Option<f64>,
-    pub taux_cachet: Option<f64>,
+    pub heures: Option<Decimal>,
+    pub taux_cachet: Option<Decimal>,
     pub numero: Option<engagement::numeros::NumeroContrat>,
     /// Un contrat paye au mois : chacun de ses mois payes (`MoisPaye`), dans l'ordre. Vide pour un contrat a l'activite.
     pub mois_payes: Vec<MoisPaye>,
@@ -246,7 +251,7 @@ impl ContratCs {
     pub fn de(e: &Engagement) -> R<ContratCs> {
         Ok(ContratCs {
             debut: e.debut,
-            fin: e.fin.ok_or("un contrat sans fin n'a pas de certificat")?,
+            fin: e.fin.ok_or_else(|| socle::echec::refus("un contrat sans fin n'a pas de certificat"))?,
             dates_travail: e.dates_travail.clone(),
             cachets: e.cachets,
             jours: e.jours,
@@ -295,28 +300,28 @@ pub fn decouper(eng: &ContratCs) -> R<Vec<Periode>> {
         let nb = if eng.cachets != 0 { eng.cachets } else { eng.jours };
         return Ok(vec![(eng.debut, eng.fin, eng.dates_travail.clone(), nb, eng.jours)]);
     }
-    if let Some(h) = eng.heures.filter(|h| *h != 0.0) {
-        return Err(Echec {
-            classe: Some(Classe::Illisible),
-            message: format!(
+    if let Some(h) = eng.heures.filter(|h| !h.is_zero()) {
+        return Err(erreur(
+            Classe::Illisible,
+            format!(
                 "Contrat {} a cheval sur le 31 mars ET porteur d'heures ({} h) : les heures ne sont pas datees, le moteur ne sait pas les repartir entre les deux periodes de conges. Scinder le contrat en deux engagements dans le fichier de paie.",
                 eng.nomme(),
-                repr_flottant(h)
+                court(h)
             ),
-        });
+        ));
     }
     let n = eng.dates_travail.len() as i64;
     if eng.cachets != n || eng.jours != n {
-        return Err(Echec {
-            classe: Some(Classe::Illisible),
-            message: format!(
+        return Err(erreur(
+            Classe::Illisible,
+            format!(
                 "Contrat {} a cheval sur le 31 mars : {} cachet(s) et {} jour(s) declares pour {} date(s) travaillee(s). La repartition entre les deux periodes de conges serait arbitraire. Scinder le contrat en deux engagements dans le fichier de paie.",
                 eng.nomme(),
                 eng.cachets,
                 eng.jours,
                 n
             ),
-        });
+        ));
     }
     let mut periodes = Vec::new();
     let mut debut = eng.debut;
@@ -370,20 +375,20 @@ pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
             paie.brut
         } else {
             match e.taux_cachet {
-                Some(t) => dec_f64(t)? * Decimal::from(*nb),
+                Some(t) => court(t) * Decimal::from(*nb),
                 // Aucun cachet ni jour dans la periode : rien a repartir, quel que soit le taux.
                 None if *nb == 0 => Decimal::ZERO,
                 None => {
-                    return Err(Echec {
-                        classe: Some(Classe::Illisible),
-                        message: format!(
+                    return Err(erreur(
+                        Classe::Illisible,
+                        format!(
                             "Contrat {} a cheval sur le 31 mars : {} cachet(s) dans la periode du {} au {}, et aucun taux de cachet n'est ecrit -- le brut de chaque periode de conges ne se repartit pas sans lui, et le moteur ne l'invente pas. Ecrire le taux sur la ligne de cachet de l'engagement.",
                             e.nomme(),
                             nb,
                             debut.jj_mm_aaaa(),
                             fin.jj_mm_aaaa()
                         ),
-                    })
+                    ))
                 }
             }
         };
@@ -405,13 +410,13 @@ pub fn certificats(paie: &PaieCs, premier_numero: i64) -> R<Vec<Certificat>> {
                 Some(n) => n.to_string(),
                 None => texte_requis(&paie.salarie.nom, "nom")?,
             };
-            return Err(Echec {
-                classe: Some(Classe::Illisible),
-                message: format!(
+            return Err(erreur(
+                Classe::Illisible,
+                format!(
                     "Découpage au 31 mars incohérent pour {} : {} répartis pour un brut de {}.",
                     qui, socle::texte::euros(total), socle::texte::euros(paie.brut)
                 ),
-            });
+            ));
         }
     }
     Ok(out)
@@ -438,7 +443,7 @@ fn periodes_au_mois(e: &ContratCs) -> R<Vec<(Periode, Decimal)>> {
 }
 
 fn cle_absente(k: &str) -> Echec {
-    Echec { classe: Some(Classe::Manque), message: socle::fichiers::absent(k) }
+    socle::fichiers::absent(k).reclasser(Classe::Manque)
 }
 
 // --------------------------------------------------------------------- rendu
@@ -520,11 +525,11 @@ fn valeurs(c: &Certificat, p: &PaieCs, ent: &ChampsEntreprise) -> R<Vec<(&'stati
     Ok(out)
 }
 
-fn largeur_max(champ: &str, x: f64) -> Option<f64> {
-    LIMITES.iter().find(|(c, _)| *c == champ).map(|(_, limite)| limite - RESPIRATION - x)
+fn largeur_max(champ: &str, x: Mesure) -> Option<Mesure> {
+    LIMITES.iter().find(|(c, _)| *c == champ).map(|(_, limite)| *limite - RESPIRATION - x)
 }
 
-fn texte_fixe(x: f64, y: f64, texte: &str, police: &str, corps: f64, largeur: Option<f64>) -> pdf::Bloc {
+fn texte_fixe(x: Mesure, y: Mesure, texte: &str, police: &str, corps: Mesure, largeur: Option<Mesure>) -> pdf::Bloc {
     let (nom, gras) = match police {
         TIMES => (pdf::PoliceFixe::Times, false),
         TIMES_GRAS => (pdf::PoliceFixe::Times, true),
@@ -532,14 +537,14 @@ fn texte_fixe(x: f64, y: f64, texte: &str, police: &str, corps: f64, largeur: Op
     };
     pdf::Bloc::TexteFixe(pdf::TexteFixe {
         texte: texte.to_string(),
-        x: x as f32,
-        y: y as f32,
-        taille: Some(corps as f32),
-        police: Some(nom),
-        gras: gras.then_some(true),
+        x,
+        y,
+        taille: Some(corps),
+        police: nom,
+        gras,
         couleur: Some(NOIR.to_string()),
-        alignement: None,
-        largeur_max: largeur.map(|l| l as f32),
+        alignement: pdf::Alignement::Gauche,
+        largeur_max: largeur,
     })
 }
 
@@ -548,12 +553,12 @@ fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R
         .iter()
         .map(|(x0, y0, x1, y1, ep)| {
             pdf::Bloc::Trait(pdf::Trait {
-                x1: *x0 as f32,
-                y1: *y0 as f32,
-                x2: *x1 as f32,
-                y2: *y1 as f32,
-                epaisseur: Some(*ep as f32),
-                couleur: Some(NOIR.to_string()),
+                x1: *x0,
+                y1: *y0,
+                x2: *x1,
+                y2: *y1,
+                epaisseur: *ep,
+                couleur: NOIR.to_string(),
             })
         })
         .collect();
@@ -571,11 +576,11 @@ fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R
         let svg = signature.extension().is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("svg"));
         blocs.push(pdf::Bloc::ImageFixe(pdf::ImageFixe {
             chemin: chemin_texte(&signature),
-            x: x0 as f32,
-            y: y0 as f32,
-            largeur: (x1 - x0) as f32,
-            hauteur: (y1 - y0) as f32,
-            centree: Some(!svg),
+            x: x0,
+            y: y0,
+            largeur: x1 - x0,
+            hauteur: y1 - y0,
+            centree: !svg,
         }));
     }
     Ok(blocs)
@@ -586,21 +591,26 @@ pub fn chemin_texte(p: &std::path::Path) -> String {
     p.components().collect::<std::path::PathBuf>().to_string_lossy().into_owned()
 }
 
-/// `description` : un document par page, sans marge.
+/// `description` : un document par page, sans marge ; chaque texte dit son corps et sa couleur, la police n'en est que
+/// la base (10 pt, interligne 1,25, noir).
 pub fn description(certs: &[(Certificat, &PaieCs)], ent: &EntrepriseDuDocument) -> R<pdf::Description> {
     let mut documents = Vec::new();
     for (c, p) in certs {
         documents.push(pdf::Document::Blocs(blocs_certificat(c, p, ent)?));
     }
-    let nulle = Some(0.0);
+    let nulle = pdf::Mesure::ZERO;
     Ok(pdf::Description {
         format: FORMAT,
         page: Some(pdf::Page {
-            largeur: Some(595.22),
-            hauteur: Some(842.0),
-            marges: Some(pdf::Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle }),
+            largeur: fabrique_pdf::mesure::mesure("595.22"),
+            hauteur: pdf::Mesure::entier(842),
+            marges: pdf::Marges { haut: nulle, droite: nulle, bas: nulle, gauche: nulle },
         }),
-        police: None,
+        police: Some(pdf::Police {
+            taille: pdf::Mesure::entier(10),
+            interligne: fabrique_pdf::mesure::mesure("1.25"),
+            couleur: NOIR.to_string(),
+        }),
         style: None,
         logo: None,
         titre: Some("Certificats d'emploi Conges Spectacles".to_string()),
@@ -613,10 +623,7 @@ pub fn description(certs: &[(Certificat, &PaieCs)], ent: &EntrepriseDuDocument) 
 /// `ecrire_numerotes` : chaque paie vient avec le N CE qui EST le sien ; la description du PDF.
 pub fn description_numerotee(paires: &[(&PaieCs, i64)], ent: &EntrepriseDuDocument) -> R<pdf::Description> {
     if ent.congesspectacles_adherent.remplie().is_none() {
-        return Err(Echec {
-            classe: Some(Classe::Illisible),
-            message: socle::echec::cle("La fiche entreprise ne dit pas son numéro d'adhérent Congés Spectacles : le saisir dans Configuration › Entreprise.", "congesspectacles_adherent"),
-        });
+        return Err(socle::echec::cle("La fiche entreprise ne dit pas son numéro d'adhérent Congés Spectacles : le saisir dans Configuration › Entreprise.", "congesspectacles_adherent").reclasser(Classe::Illisible));
     }
     let mut tous: Vec<(Certificat, &PaieCs)> = Vec::new();
     for (p, premier) in paires {
@@ -668,8 +675,8 @@ mod tests {
         Jour::nouveau(an, mo, jo).unwrap()
     }
 
-    fn contrat(debut: Jour, fin: Jour, dates: Vec<Jour>, cachets: i64, jours: i64, heures: Option<f64>) -> ContratCs {
-        ContratCs { debut, fin, dates_travail: dates, cachets, jours, heures, taux_cachet: Some(130.0), numero: engagement::numeros::NumeroContrat::lire("FA1.26.01").ok(), mois_payes: Vec::new() }
+    fn contrat(debut: Jour, fin: Jour, dates: Vec<Jour>, cachets: i64, jours: i64, heures: Option<Decimal>) -> ContratCs {
+        ContratCs { debut, fin, dates_travail: dates, cachets, jours, heures, taux_cachet: Some(Decimal::new(1300, 1)), numero: engagement::numeros::NumeroContrat::lire("FA1.26.01").ok(), mois_payes: Vec::new() }
     }
 
     /// L'exercice des conges va du 1er avril au 31 mars
@@ -686,7 +693,7 @@ mod tests {
 
     #[test]
     fn des_heures_sur_le_31_mars_refusent() {
-        let c = contrat(j(2026, 3, 30), j(2026, 4, 1), vec![j(2026, 3, 30)], 1, 1, Some(6.0));
-        assert!(decouper(&c).unwrap_err().message.contains("porteur d'heures (6.0 h)"));
+        let c = contrat(j(2026, 3, 30), j(2026, 4, 1), vec![j(2026, 3, 30)], 1, 1, Some(Decimal::new(60, 1)));
+        assert!(decouper(&c).unwrap_err().phrase.contains("porteur d'heures (6.0 h)"));
     }
 }

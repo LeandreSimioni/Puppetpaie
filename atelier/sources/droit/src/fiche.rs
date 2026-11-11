@@ -17,7 +17,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use socle::date::Jour;
 use socle::mois::Mois;
-use socle::num::{Decimal, Resultat};
+use socle::echec::R;
+use socle::num::Decimal;
 
 use crate::contexte::{IdSalarie, IdSpectacle};
 
@@ -34,7 +35,7 @@ pub trait Lue<T> {
     }
 
     /// La valeur dite, que l'acte exige : sinon le refus nomme la case (`cle`).
-    fn exigee(&self, cle: &str) -> Resultat<&T> {
+    fn exigee(&self, cle: &str) -> R<&T> {
         self.dite().ok_or_else(|| socle::fichiers::absent(cle))
     }
 
@@ -63,7 +64,7 @@ pub trait Lue<T> {
     }
 
     /// Le texte d'une case que l'acte exige : vide, le refus la nomme (`cle`).
-    fn ecrite<'a>(&'a self, cle: &str) -> Resultat<&'a str>
+    fn ecrite<'a>(&'a self, cle: &str) -> R<&'a str>
     where
         T: AsRef<str> + 'a,
     {
@@ -99,7 +100,7 @@ pub trait Choix {
 }
 
 /// LA VALEUR D'UN CHANGEMENT DE CASE (`fiche!`) : `null` vide la case ; sinon elle se lit dans le type de la case. `""`
-/// n'est pas le vide et se refuse (`socle::forme::texte_opt`).
+/// n'est pas le vide et se refuse (`socle::forme::Remplie`).
 pub fn nulle_ou_dite<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<T>, D::Error> {
     match socle::forme::Remplie::<T>::deserialize(d)? {
         socle::forme::Remplie::Nulle => Ok(None),
@@ -130,57 +131,44 @@ impl<'de, C: Deserialize<'de>> Deserialize<'de> for Changements<C> {
 pub enum Montant {
     Entier(i64),
     Naturel(u64),
-    Flottant(f64),
+    /// Un nombre ecrit avec sa virgule, dans sa forme la plus courte (`socle::forme::NombreEcrit::Flottant`).
+    Flottant(Decimal),
     /// Un texte qui se lit en decimal (`socle::num::decimal_lu`).
     Texte(String),
 }
 
 impl Montant {
-    /// Le decimal ; un texte se lit en decimal (`12,5` compris). Un flottant ou un texte illisible se refuse.
-    pub fn decimal(&self) -> Resultat<Decimal> {
+    /// Le decimal ; un texte se lit en decimal (`12,5` compris). Un texte illisible se refuse.
+    pub fn decimal(&self) -> R<Decimal> {
         match self {
             Montant::Entier(i) => Ok(Decimal::from(*i)),
             Montant::Naturel(u) => Ok(Decimal::from(*u)),
-            Montant::Flottant(x) => socle::num::dec_f64(*x),
-            Montant::Texte(s) => socle::num::decimal_lu(s).ok_or_else(|| socle::num::illisible(s)),
-        }
-    }
-
-    /// Le decimal, un flottant gardant son echelle telle qu'elle s'ecrit (`130.0`) ; un texte se lit sans virgule.
-    pub fn avec_echelle(&self) -> Resultat<Decimal> {
-        match self {
-            Montant::Flottant(x) => socle::num::dec_texte(&socle::date::repr_flottant(*x)),
-            Montant::Texte(s) => socle::num::dec_texte(s),
-            autre => autre.decimal(),
-        }
-    }
-
-    /// Le decimal, un flottant par sa forme la plus courte (`socle::num::dec_f64`) ; un texte se lit sans virgule.
-    pub fn dec(&self) -> Resultat<Decimal> {
-        match self {
-            Montant::Flottant(x) => socle::num::dec_f64(*x),
-            Montant::Texte(s) => socle::num::dec_texte(s),
-            autre => autre.decimal(),
-        }
-    }
-
-
-    /// Le flottant ; un texte se lit sans virgule.
-    pub fn flottant(&self) -> Resultat<f64> {
-        match self {
-            Montant::Entier(i) => Ok(*i as f64),
-            Montant::Naturel(u) => Ok(*u as f64),
             Montant::Flottant(x) => Ok(*x),
-            Montant::Texte(s) => s.trim().parse::<f64>().map_err(|_| socle::num::illisible(s)),
+            Montant::Texte(s) => socle::num::decimal_lu(s).ok_or_else(|| socle::echec::refus(socle::num::illisible(s))),
         }
+    }
+
+    /// Le decimal, un nombre a virgule dans sa forme la plus courte, son echelle telle qu'elle s'ecrit (`130.0`) ; un texte
+    /// se lit sans virgule.
+    pub fn dec(&self) -> R<Decimal> {
+        match self {
+            Montant::Texte(s) => socle::num::dec_texte(s),
+            autre => autre.decimal(),
+        }
+    }
+
+    /// Le taux, la quotite ou le coefficient qu'il dit, dans sa forme la plus courte (`socle::num::court`) ; un texte se
+    /// lit sans virgule.
+    pub fn court(&self) -> R<Decimal> {
+        self.dec().map(socle::num::court)
     }
 
     /// L'entier ecrit : un nombre entier, ou un texte qui se lit en entier ; `None` pour un nombre qui n'est pas un
     /// entier ecrit (un naturel hors des entiers signes, un flottant). Un texte illisible se refuse.
-    pub fn entier(&self) -> Resultat<Option<i64>> {
+    pub fn entier(&self) -> R<Option<i64>> {
         match self {
             Montant::Entier(i) => Ok(Some(*i)),
-            Montant::Texte(s) => s.trim().parse().map(Some).map_err(|_| socle::num::illisible(s)),
+            Montant::Texte(s) => s.trim().parse().map(Some).map_err(|_| socle::echec::refus(socle::num::illisible(s))),
             Montant::Naturel(_) | Montant::Flottant(_) => Ok(None),
         }
     }
@@ -190,7 +178,7 @@ impl Montant {
         match self {
             Montant::Entier(i) => i.to_string(),
             Montant::Naturel(u) => u.to_string(),
-            Montant::Flottant(x) => socle::date::repr_flottant(*x),
+            Montant::Flottant(x) => x.to_string(),
             Montant::Texte(s) => s.clone(),
         }
     }
@@ -201,7 +189,7 @@ impl Serialize for Montant {
         match self {
             Montant::Entier(i) => s.serialize_i64(*i),
             Montant::Naturel(u) => s.serialize_u64(*u),
-            Montant::Flottant(x) => s.serialize_f64(*x),
+            Montant::Flottant(x) => socle::forme::ecrire_a_virgule(x, s),
             Montant::Texte(t) => s.serialize_str(t),
         }
     }
@@ -255,9 +243,9 @@ macro_rules! texte_borne {
     (@commun $nom:ident, $unite:literal) => {
         impl $nom {
             /// Le texte `texte`, ou ce qui le refuse.
-            pub fn lire(texte: &str) -> Result<$nom, String> {
+            pub fn lire(texte: &str) -> R<$nom> {
                 match Self::faute(texte) {
-                    Some(f) => Err(f),
+                    Some(f) => Err(socle::echec::refus(f)),
                     None => Ok($nom(texte.to_string())),
                 }
             }
@@ -284,7 +272,7 @@ macro_rules! texte_borne {
 
         impl<'de> Deserialize<'de> for $nom {
             fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                $nom::lire(&String::deserialize(d)?).map_err(serde::de::Error::custom)
+                $nom::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
             }
         }
 
@@ -295,7 +283,7 @@ macro_rules! texte_borne {
     };
     ($(#[$m:meta])* pub struct $nom:ident : $borne:ident $max:literal $unite:literal par $mesure:ident, $phrase:literal;) => {
         $(#[$m])*
-        #[derive(Debug, Clone, PartialEq, Default, Serialize)]
+        #[derive(Debug, Clone, PartialEq, Serialize)]
         #[serde(transparent)]
         pub struct $nom(String);
 
@@ -357,7 +345,7 @@ la DSN écrivent (norme DPAE v5.3, zone « Code NAF » ; DSN, S21.G00.06.003). C
 /// interne à l'établissement, renseignez MT999 » ; la zone en a 10, cadree a droite. La DSN 2027 ecrit la medecine
 /// interne « MT01 - MEDECINE INTERNE ETABLISSEMENT » en S21.G00.11.025 (`declarations::dsn::spst_ecrit`, qui la tire de
 /// `MT999`, `INTERNE`) ; l'identifiant d'un service externe y est defini par une fiche consigne qui n'est pas deposee.
-#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct CodeMedecine(String);
 
@@ -459,10 +447,10 @@ impl EchelonCcneac {
     }
 
     /// L'echelon ecrit `texte`, ou la phrase qui le refuse.
-    pub fn lire(texte: &str) -> Result<EchelonCcneac, String> {
+    pub fn lire(texte: &str) -> R<EchelonCcneac> {
         match socle::num::entier_de_chiffres(texte.trim()).filter(|n| (1..=12).contains(n)) {
             Some(n) => Ok(EchelonCcneac(n as u8)),
-            None => Err(format!(
+            None => Err(socle::refus!(
                 "« {} » n'est pas un échelon de la CCNEAC : la convention en compte douze, de 1 à 12 (art. X.4.1). Écrivez celui que l'employeur a attribué",
                 texte
             )),
@@ -474,7 +462,7 @@ impl EchelonCcneac {
         if texte.is_empty() {
             return None;
         }
-        Self::lire(texte).err()
+        Self::lire(texte).err().map(|e| e.phrase)
     }
 }
 
@@ -489,10 +477,10 @@ impl<'de> Deserialize<'de> for EchelonCcneac {
         let ecrit = match socle::forme::NombreEcrit::deserialize(d)? {
             socle::forme::NombreEcrit::Entier(i) => i.to_string(),
             socle::forme::NombreEcrit::Naturel(u) => u.to_string(),
-            socle::forme::NombreEcrit::Flottant(x) => socle::date::repr_flottant(x),
+            socle::forme::NombreEcrit::Flottant(x) => x.to_string(),
             socle::forme::NombreEcrit::Texte(t) => t,
         };
-        EchelonCcneac::lire(&ecrit).map_err(serde::de::Error::custom)
+        EchelonCcneac::lire(&ecrit).map_err(|e| serde::de::Error::custom(e.phrase))
     }
 }
 
@@ -504,7 +492,7 @@ impl FormeDeCase for EchelonCcneac {
 /// (S10.G00.01.003, X [1,60] : `logiciel/donnees/formats-dsn-base.json`) ; la DPAE, deux lignes de 32 (L_RAISON_SOC_1,
 /// positions 152-183, et L_RAISON_SOC_2, « Nom ou raison sociale (ligne 2) », 510-541 :
 /// `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 249-256 et 374-379).
-#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct RaisonSociale(String);
 
@@ -515,7 +503,7 @@ impl RaisonSociale {
 
     /// Ses deux lignes de la DPAE (`LIGNE` chacune au plus) : la premiere aussi longue que les mots le permettent, la
     /// seconde le reste, vide quand tout tient sur la premiere ; sinon, la phrase qui dit quoi faire.
-    pub fn en_deux_lignes(texte: &str) -> Result<(String, String), String> {
+    pub fn en_deux_lignes(texte: &str) -> R<(String, String)> {
         if caracteres(texte) <= Self::LIGNE {
             return Ok((texte.to_string(), String::new()));
         }
@@ -523,7 +511,7 @@ impl RaisonSociale {
         let deux = (1..=Self::LIGNE).rev().find(|&i| c[i] == ' ').map(|i| (c[..i].iter().collect::<String>(), c[i + 1..].iter().collect::<String>()));
         match deux {
             Some((premiere, seconde)) if caracteres(&seconde) <= Self::LIGNE => Ok((premiere, seconde)),
-            _ => Err(format!(
+            _ => Err(socle::refus!(
                 "« {} » ne tient pas en deux lignes de {} caractères coupées entre deux mots, ce que la DPAE écrit (norme DPAE \
 v5.3, zone « Nom ou raison sociale », lignes 1 et 2). Abrégez le mot le plus long, ou la fin",
                 texte,
@@ -544,7 +532,7 @@ Abrégez-la",
                 Self::LONGUEUR
             ));
         }
-        Self::en_deux_lignes(texte).err()
+        Self::en_deux_lignes(texte).err().map(|e| e.phrase)
     }
 }
 
@@ -560,11 +548,270 @@ pub fn avec_complement(adresse: String, complement: Option<&str>) -> String {
 
 // ------------------------------------------------------------ la forme declaree
 
+/// LES TROIS FICHES : celle de l'entreprise, d'un salarie, d'un spectacle. Une charge ou une table qui nomme une autre
+/// fiche se refuse a la porte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NomDeFiche {
+    Entreprise,
+    Salarie,
+    Spectacle,
+}
+
+impl NomDeFiche {
+    /// Son nom, tel que les charges et `champs-base.json` l'ecrivent.
+    pub fn nom(self) -> &'static str {
+        match self {
+            NomDeFiche::Entreprise => "entreprise",
+            NomDeFiche::Salarie => "salarie",
+            NomDeFiche::Spectacle => "spectacle",
+        }
+    }
+}
+
+impl std::fmt::Display for NomDeFiche {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.nom())
+    }
+}
+
+/// LE NOM D'UNE CASE DECLAREE HORS DES PIECES : un champ d'une fiche ou une case d'une structure, tel que sa forme
+/// l'ecrit. Il ne se fabrique que de la forme (`Declaree`, les cles d'une fiche : `CaseSalarie`, `CaseEntreprise`...) ;
+/// un texte ne devient un nom de case qu'a la porte, contre la forme (`NomDeCase::lire`), et un nom que la forme ne
+/// declare pas s'y refuse. C'est la cle d'une saisie (`declarations::champs::Saisie`) : aucune case ne s'y lit par un
+/// texte. UNE CASE D'UNE PIECE N'EN EST PAS UNE : elle est une `CaseDePiece`, que `fiche!` separe a la declaration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct NomDeCase(&'static str);
+
+impl NomDeCase {
+    /// LA LIGNE DE L'HISTOIRE D'UNE FICHE (`historique`, forme `histoire` de `champs-base.json`) : ce que la route compose
+    /// des listes datees ; elle ne se saisit pas et n'est pas une case de la forme.
+    pub const HISTORIQUE: NomDeCase = NomDeCase("historique");
+
+    /// Le nom, tel que le fichier et la page l'ecrivent.
+    pub fn nom(self) -> &'static str {
+        self.0
+    }
+
+    /// LE NOM `texte` parmi les cases `declarees` (un niveau de la forme), s'il y est.
+    pub fn parmi(declarees: &[Declaree], texte: &str) -> Option<NomDeCase> {
+        declarees.iter().map(|d| d.cle).find(|c| c.0 == texte)
+    }
+
+    /// LE NOM `texte`, s'il est celui d'une case qu'une fiche declare hors de ses pieces (a tout niveau) ou la ligne de
+    /// l'histoire : la seule lecture d'un nom de case. Le nom d'une case d'une piece n'en est pas un (`CaseDePiece::lire`).
+    pub fn lire(texte: &str) -> Option<NomDeCase> {
+        fn dans(d: &[Declaree], texte: &str) -> Option<NomDeCase> {
+            NomDeCase::parmi(d, texte).or_else(|| d.iter().find_map(|x| dans(&x.cases, texte)))
+        }
+        if texte == NomDeCase::HISTORIQUE.0 {
+            return Some(NomDeCase::HISTORIQUE);
+        }
+        [ChampsEntreprise::cases(), ChampsSalarie::cases(), ChampsSpectacle::cases()].iter().flatten().find_map(|d| match d.cle {
+            CaseDeFiche::Case(n) if n.0 == texte => Some(n),
+            CaseDeFiche::Case(_) | CaseDeFiche::Piece(_) => dans(&d.cases, texte),
+        })
+    }
+}
+
+/// UNE CASE D'UNE PIECE (`PieceFermee`), telle que `fiche!` la separe a la declaration : elle n'est pas un `NomDeCase`,
+/// et une saisie ne la lit donc pas par `Saisie::case` ; elle se lit par le seul chemin des pieces, qui la prend
+/// (`declarations::champs::Saisie::piece`). Sa piece est celle que sa forme lui donne (`CaseDePiece::piece`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum CaseDePiece {
+    Salarie(CasePieceSalarie),
+    Entreprise(CasePieceEntreprise),
+}
+
+impl CaseDePiece {
+    /// Son nom, tel que le fichier et la page l'ecrivent.
+    pub fn nom(self) -> &'static str {
+        match self {
+            CaseDePiece::Salarie(c) => c.nom(),
+            CaseDePiece::Entreprise(c) => c.nom(),
+        }
+    }
+
+    /// La piece ou sa forme la range.
+    pub fn piece(self) -> Piece {
+        match self {
+            CaseDePiece::Salarie(c) => c.piece(),
+            CaseDePiece::Entreprise(c) => c.piece(),
+        }
+    }
+
+    /// LE NOM `texte`, s'il est celui d'une case d'une piece : la seule lecture d'une case de piece d'un texte.
+    pub fn lire(texte: &str) -> Option<CaseDePiece> {
+        let salarie = CasePieceSalarie::TOUTES.iter().map(|c| CaseDePiece::Salarie(*c));
+        let entreprise = CasePieceEntreprise::TOUTES.iter().map(|c| CaseDePiece::Entreprise(*c));
+        salarie.chain(entreprise).find(|c| c.nom() == texte)
+    }
+}
+
+impl From<CasePieceSalarie> for CaseDePiece {
+    fn from(c: CasePieceSalarie) -> CaseDePiece {
+        CaseDePiece::Salarie(c)
+    }
+}
+
+impl From<CasePieceEntreprise> for CaseDePiece {
+    fn from(c: CasePieceEntreprise) -> CaseDePiece {
+        CaseDePiece::Entreprise(c)
+    }
+}
+
+impl From<CasePieceSalarie> for CaseDeFiche {
+    fn from(c: CasePieceSalarie) -> CaseDeFiche {
+        CaseDeFiche::Piece(c.into())
+    }
+}
+
+impl From<CasePieceEntreprise> for CaseDeFiche {
+    fn from(c: CasePieceEntreprise) -> CaseDeFiche {
+        CaseDeFiche::Piece(c.into())
+    }
+}
+
+impl std::fmt::Display for CaseDePiece {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.nom())
+    }
+}
+
+/// UNE CASE D'UNE FICHE, de ses pieces ou non : ce que la mecanique de toutes les cases (la table `champs-base.json`, la
+/// saisie case par case, l'ecriture datee, l'historique) nomme sans la lire par son nom. Une lecture qui nomme sa case
+/// prend un `NomDeCase`, ou une `CaseDePiece`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum CaseDeFiche {
+    Case(NomDeCase),
+    Piece(CaseDePiece),
+}
+
+impl CaseDeFiche {
+    /// Son nom, tel que le fichier et la page l'ecrivent.
+    pub fn nom(self) -> &'static str {
+        match self {
+            CaseDeFiche::Case(n) => n.nom(),
+            CaseDeFiche::Piece(p) => p.nom(),
+        }
+    }
+
+    /// Sa piece ; `None` : elle n'est dans aucune, tout calcul la lit.
+    pub fn piece(self) -> Option<Piece> {
+        match self {
+            CaseDeFiche::Case(_) => None,
+            CaseDeFiche::Piece(p) => Some(p.piece()),
+        }
+    }
+
+    /// LE NOM `texte`, s'il est celui d'une case qu'une fiche declare, d'une piece ou non.
+    pub fn lire(texte: &str) -> Option<CaseDeFiche> {
+        NomDeCase::lire(texte).map(CaseDeFiche::Case).or_else(|| CaseDePiece::lire(texte).map(CaseDeFiche::Piece))
+    }
+}
+
+impl From<NomDeCase> for CaseDeFiche {
+    fn from(n: NomDeCase) -> CaseDeFiche {
+        CaseDeFiche::Case(n)
+    }
+}
+
+impl From<&CaseDeFiche> for CaseDeFiche {
+    fn from(c: &CaseDeFiche) -> CaseDeFiche {
+        *c
+    }
+}
+
+impl From<CaseDePiece> for CaseDeFiche {
+    fn from(p: CaseDePiece) -> CaseDeFiche {
+        CaseDeFiche::Piece(p)
+    }
+}
+
+impl std::fmt::Display for CaseDeFiche {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.nom())
+    }
+}
+
+impl Serialize for CaseDeFiche {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.nom())
+    }
+}
+
+/// A la porte : un nom que la forme ne declare pas se refuse.
+impl<'de> Deserialize<'de> for CaseDeFiche {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let t = String::deserialize(d)?;
+        CaseDeFiche::lire(&t).ok_or_else(|| serde::de::Error::custom(format!("la case « {} » n'existe dans aucune fiche", t)))
+    }
+}
+
+impl From<&NomDeCase> for NomDeCase {
+    fn from(n: &NomDeCase) -> NomDeCase {
+        *n
+    }
+}
+
+impl std::fmt::Display for NomDeCase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+impl Serialize for NomDeCase {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.0)
+    }
+}
+
+/// A la porte : un nom que la forme ne declare pas se refuse.
+impl<'de> Deserialize<'de> for NomDeCase {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let t = String::deserialize(d)?;
+        NomDeCase::lire(&t).ok_or_else(|| serde::de::Error::custom(format!("la case « {} » n'existe dans aucune fiche", t)))
+    }
+}
+
+/// Le nom d'une cle de la forme : `r#type` s'ecrit `type`.
+fn nom_ecrit(cle: &'static str) -> NomDeCase {
+    match cle.strip_prefix("r#") {
+        Some(reste) => NomDeCase(reste),
+        None => NomDeCase(cle),
+    }
+}
+
+/// LES CLES D'UNE FORME (`fiche!`, `cases!`) : une variante par case, qui donne son nom tel qu'il s'ecrit (`NomDeCase`).
+macro_rules! cles {
+    ($cles:ident { $( $var:ident = $ecrit:literal ),* $(,)? }) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum $cles {
+            $( $var, )*
+        }
+
+        impl From<$cles> for NomDeCase {
+            fn from(c: $cles) -> NomDeCase {
+                match c {
+                    $( $cles::$var => NomDeCase($ecrit), )*
+                }
+            }
+        }
+
+        impl From<$cles> for CaseDeFiche {
+            fn from(c: $cles) -> CaseDeFiche {
+                CaseDeFiche::Case(c.into())
+            }
+        }
+    };
+}
+
 /// CE QU'UNE CASE DECLARE, pour le test qui la confronte a `champs-base.json` : ses valeurs (un choix) et ses cases (une
-/// structure) ; pour la saisie, la faute que son type refuse (`FormeDeCase::FAUTE`).
+/// structure) ; pour la saisie, la faute que son type refuse (`FormeDeCase::FAUTE`). Sa cle : le nom d'une case d'une
+/// structure, ou la case d'une fiche (`CaseDeFiche`, de ses pieces ou non).
 #[derive(Debug, Clone)]
-pub struct Declaree {
-    pub cle: &'static str,
+pub struct Declaree<K = NomDeCase> {
+    pub cle: K,
     pub valeurs: &'static [&'static str],
     pub cases: Vec<Declaree>,
     pub faute: Option<fn(&str) -> Option<String>>,
@@ -586,12 +833,18 @@ pub trait FormeDeCase {
     }
 }
 
-pub fn declaree<T: FormeDeCase>(cle: &'static str) -> Declaree {
-    let cle = match cle.strip_prefix("r#") {
-        Some(reste) => reste,
-        None => cle,
-    };
-    Declaree { cle, valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR }
+fn declaree<T: FormeDeCase>(cle: &'static str) -> Declaree {
+    Declaree { cle: nom_ecrit(cle), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR }
+}
+
+/// La case d'une fiche, hors de ses pieces.
+fn declaree_de_fiche<T: FormeDeCase>(cle: &'static str) -> Declaree<CaseDeFiche> {
+    Declaree { cle: CaseDeFiche::Case(nom_ecrit(cle)), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR }
+}
+
+/// La case d'une piece d'une fiche.
+fn declaree_de_piece<T: FormeDeCase>(cle: CaseDePiece) -> Declaree<CaseDeFiche> {
+    Declaree { cle: CaseDeFiche::Piece(cle), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR }
 }
 
 impl FormeDeCase for String {}
@@ -600,6 +853,7 @@ impl FormeDeCase for i64 {}
 impl FormeDeCase for Jour {}
 impl FormeDeCase for Mois {}
 impl FormeDeCase for Montant {}
+impl FormeDeCase for socle::paris::InstantCompact {}
 impl<T: FormeDeCase> FormeDeCase for Vec<T> {
     const VALEURS: &'static [&'static str] = T::VALEURS;
     fn cases() -> Vec<Declaree> {
@@ -635,45 +889,44 @@ macro_rules! choix {
     };
 }
 
-/// CE QUI REGARDE LES CASES D'UNE FICHE PAR LEUR NOM, celui que `champs-base.json` donne a chacune (une table qui les
-/// nomme, un bareme, l'import) : chacune lui est donnee typee (`Cases::voir`), qu'il ecrit comme il l'entend.
-pub trait VoirCase {
-    fn case<T: Serialize>(&mut self, cle: &'static str, case: &Option<T>);
-}
-
-/// UNE FICHE QUI SE MONTRE CASE PAR CASE (`cases!`) a qui la regarde (`VoirCase`).
-pub trait Cases {
-    fn voir<V: VoirCase>(&self, v: &mut V);
-}
-
-/// LA CASE `cle` DE `fiche`, ecrite par `s` (une table qui la confronte a ses valeurs l'ecrit dans sa forme) ; `None` :
-/// elle est vide, ou la forme ne la declare pas.
-pub fn case_en<F: Cases + ?Sized, S: Serializer>(fiche: &F, cle: &str, s: S) -> Option<Result<S::Ok, S::Error>> {
-    struct Une<'a, S: Serializer> {
-        cle: &'a str,
-        s: Option<S>,
-        ecrite: Option<Result<S::Ok, S::Error>>,
-    }
-    impl<S: Serializer> VoirCase for Une<'_, S> {
-        fn case<T: Serialize>(&mut self, cle: &'static str, case: &Option<T>) {
-            if let (true, Some(v)) = (cle == self.cle, case) {
-                if let Some(s) = self.s.take() {
-                    self.ecrite = Some(v.serialize(s));
-                }
-            }
-        }
-    }
-    let mut une = Une { cle, s: Some(s), ecrite: None };
-    fiche.voir(&mut une);
-    une.ecrite
-}
-
 /// UNE STRUCTURE DE CASES : chacune un `Option` (`Lue`), une cle inconnue refusee. Ses `notes` (d'une fiche datee) ne sont pas des
 /// cases : des textes qui ne se datent pas, que la fiche porte tels qu'ecrits.
+///
+/// AVEC SES CLES (`cles`) : chaque case dit sa variante, son type, son nom ecrit et son champ
+/// (`Iban(String) = "iban" => iban`), comme les changements de la carte (`engagement::carte::Changement`).
 macro_rules! cases {
+    ($(#[$m:meta])* pub struct $nom:ident, cles $cles:ident { $( $(#[$fm:meta])* $var:ident ( $t:ty ) = $ecrit:literal => $champ:ident ),* $(,)? }) => {
+        cles! { $cles { $( $var = $ecrit ),* } }
+        cases! { @ecrites $(#[$m])* pub struct $nom { $( $(#[$fm])* $champ : $t = $ecrit ),* } }
+    };
+    (@ecrites $(#[$m:meta])* pub struct $nom:ident { $( $(#[$fm:meta])* $champ:ident : $t:ty = $ecrit:literal ),* $(,)? }) => {
+        $(#[$m])*
+        #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+        #[serde(deny_unknown_fields)]
+        pub struct $nom {
+            $( $(#[$fm])* #[serde(rename = $ecrit, skip_serializing_if = "Option::is_none")] pub $champ: Option<$t>, )*
+        }
+        impl FormeDeCase for $nom {
+            fn cases() -> Vec<Declaree> {
+                vec![$(declaree::<$t>($ecrit)),*]
+            }
+        }
+        impl $nom {
+            /// Aucune case n'y est ecrite.
+            pub fn est_vide(&self) -> bool {
+                true $(&& self.$champ.is_none())*
+            }
+
+            /// Les cases que `autre` dit remplacent les siennes.
+            pub fn par_dessus(&mut self, autre: &$nom) {
+                $( if autre.$champ.is_some() {
+                    self.$champ = autre.$champ.clone();
+                } )*
+            }
+        }
+    };
     ($(#[$m:meta])* pub struct $nom:ident { $( $(#[$fm:meta])* $champ:ident : $t:ty ),* $(,)? } $( notes { $( $(#[$nm:meta])* $note:ident ),* $(,)? } )?) => {
         $(#[$m])*
-        #[allow(non_snake_case)] // `association_1679A`, la cle ecrite
         #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
         #[serde(deny_unknown_fields)]
         pub struct $nom {
@@ -694,14 +947,6 @@ macro_rules! cases {
                 true $(&& self.$champ.is_none())*
             }
 
-            /// Les cases `cles` (leurs noms) sont-elles les memes dans `autre` ?
-            pub fn memes_cases(&self, autre: &$nom, cles: &[&str]) -> bool {
-                $( if cles.contains(&stringify!($champ).trim_start_matches("r#")) && self.$champ != autre.$champ {
-                    return false;
-                } )*
-                true
-            }
-
             /// Les cases que `autre` dit remplacent les siennes ; ses notes restent.
             pub fn par_dessus(&mut self, autre: &$nom) {
                 $( if autre.$champ.is_some() {
@@ -709,24 +954,9 @@ macro_rules! cases {
                 } )*
             }
 
-            /// Les cases dont la valeur differe dans `autre`, nommees comme `champs-base.json` les nomme ; ses notes n'en
-            /// sont pas.
-            pub fn cases_differentes(&self, autre: &$nom) -> Vec<&'static str> {
-                let mut out = Vec::new();
-                $( if self.$champ != autre.$champ {
-                    out.push(stringify!($champ).trim_start_matches("r#"));
-                } )*
-                out
-            }
-
             /// Les memes cases, sans ses notes.
             pub fn sans_notes(self) -> $nom {
                 $nom { $( $( $note: None, )* )? ..self }
-            }
-        }
-        impl Cases for $nom {
-            fn voir<V: VoirCase>(&self, v: &mut V) {
-                $( v.case(stringify!($champ).trim_start_matches("r#"), &self.$champ); )*
             }
         }
     };
@@ -828,18 +1058,48 @@ fn vide<T>(case: &&Option<T>) -> bool {
 /// SES PIECES (`pieces`) : les cases que seul un calcul qui tient leur cle lit, rangees chacune dans sa piece
 /// (`PieceFermee`), qui ne s'ouvre que par elle. Le fichier, lui, reste a plat : une case d'une piece s'y ecrit comme
 /// toute autre, et la forme qui la nomme (`Changement`, `Cases`, la liste datee) aussi. Ce que la fiche montre se deduit
-/// de la piece de chaque case (`piece_de`).
+/// de la piece de chaque case (`CaseDeFiche::piece`).
+///
+/// SES CLES SONT SEPAREES : celles des cases hors des pieces (`cles`, un `NomDeCase` chacune), celles des cases des
+/// pieces (`pieces $pcles`, une `CaseDePiece` chacune) ; aucune n'est les deux.
 macro_rules! fiche {
-    ($(#[$m:meta])* pub struct $plate:ident, datee $datee:ident, changement $ch:ident { $( $(#[$fm:meta])* $champ:ident : $t:ty ),* $(,)? }
-     pieces { $( $(#[$pm:meta])* $piece:ident : $genre:ident, $cases:ident, $cle:ty { $( $(#[$pfm:meta])* $pchamp:ident : $pt:ty ),* $(,)? } )* }
+    ($(#[$m:meta])* pub struct $plate:ident, datee $datee:ident, changement $ch:ident, cles $cles:ident { $( $(#[$fm:meta])* $var:ident ( $t:ty ) = $ecrit:literal => $champ:ident ),* $(,)? }
+     pieces $pcles:ident { $( $(#[$pm:meta])* $piece:ident : $genre:ident, $cases:ident, $ouvre:ty { $( $(#[$pfm:meta])* $pvar:ident ( $pt:ty ) = $pecrit:literal => $pchamp:ident ),* $(,)? } )* }
      $( notes { $( $(#[$nm:meta])* $note:ident ),* $(,)? } )?) => {
-        $( cases! { $(#[$pm])* pub struct $cases { $( $(#[$pfm])* $pchamp : $pt ),* } } )*
+        $( cases! { @ecrites $(#[$pm])* pub struct $cases { $( $(#[$pfm])* $pchamp : $pt = $pecrit ),* } } )*
+
+        cles! { $cles { $( $var = $ecrit, )* } }
+
+        /// LES CASES DE SES PIECES : une variante par case, qui n'est pas un `NomDeCase` (`CaseDePiece`).
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        pub enum $pcles {
+            $( $( $pvar, )* )*
+        }
+
+        impl $pcles {
+            /// Toutes, dans l'ordre de la forme.
+            pub const TOUTES: &'static [$pcles] = &[$( $( $pcles::$pvar, )* )*];
+
+            /// Son nom, tel que le fichier et la page l'ecrivent.
+            pub fn nom(self) -> &'static str {
+                match self {
+                    $( $( $pcles::$pvar => $pecrit, )* )*
+                }
+            }
+
+            /// La piece ou sa forme la range.
+            pub fn piece(self) -> Piece {
+                match self {
+                    $( $( $pcles::$pvar => Piece::$genre, )* )*
+                }
+            }
+        }
 
         $(#[$m])*
         #[derive(Debug, Clone, Default, PartialEq)]
         pub struct $plate {
             $( $(#[$fm])* pub $champ: Option<$t>, )*
-            $( $(#[$pm])* pub $piece: PieceFermee<$cases, $cle>, )*
+            $( $(#[$pm])* pub $piece: PieceFermee<$cases, $ouvre>, )*
             $( $( $(#[$nm])* pub $note: Option<String>, )* )?
         }
 
@@ -848,8 +1108,8 @@ macro_rules! fiche {
             fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
                 #[derive(Serialize)]
                 struct APlat<'a> {
-                    $( #[serde(skip_serializing_if = "vide")] $champ: &'a Option<$t>, )*
-                    $( $( #[serde(skip_serializing_if = "vide")] $pchamp: &'a Option<$pt>, )* )*
+                    $( #[serde(rename = $ecrit, skip_serializing_if = "vide")] $champ: &'a Option<$t>, )*
+                    $( $( #[serde(rename = $pecrit, skip_serializing_if = "vide")] $pchamp: &'a Option<$pt>, )* )*
                     $( $( #[serde(skip_serializing_if = "vide")] $note: &'a Option<String>, )* )?
                 }
                 APlat { $( $champ: &self.$champ, )* $( $( $pchamp: &self.$piece.cases.$pchamp, )* )* $( $( $note: &self.$note, )* )? }.serialize(s)
@@ -862,8 +1122,8 @@ macro_rules! fiche {
                 #[derive(Deserialize)]
                 #[serde(deny_unknown_fields)]
                 struct APlat {
-                    $( $champ: Option<$t>, )*
-                    $( $( $pchamp: Option<$pt>, )* )*
+                    $( #[serde(rename = $ecrit)] $champ: Option<$t>, )*
+                    $( $( #[serde(rename = $pecrit)] $pchamp: Option<$pt>, )* )*
                     $( $( $note: Option<String>, )* )?
                 }
                 let p = APlat::deserialize(d)?;
@@ -875,25 +1135,13 @@ macro_rules! fiche {
             }
         }
 
-        impl FormeDeCase for $plate {
-            fn cases() -> Vec<Declaree> {
-                let v = vec![$(declaree::<$t>(stringify!($champ))),*];
-                $( let v: Vec<Declaree> = v.into_iter().chain(<$cases as FormeDeCase>::cases()).collect(); )*
-                v
-            }
-        }
-
         impl $plate {
             /// Les cles de ses notes : des textes qui ne sont pas des cases.
             pub const NOTES: &'static [&'static str] = &[$($( stringify!($note) ),*)?];
 
-            /// La piece de la case `cle` ; `None` : elle n'est dans aucune, tout calcul la lit.
-            pub fn piece_de(cle: &str) -> Option<Piece> {
-                $( $( if stringify!($pchamp) == cle {
-                    return Some(Piece::$genre);
-                } )* )*
-                let _ = cle;
-                None
+            /// Ses cases, celles de ses pieces apres les autres.
+            pub fn cases() -> Vec<Declaree<CaseDeFiche>> {
+                vec![$(declaree_de_fiche::<$t>($ecrit),)* $( $( declaree_de_piece::<$pt>($pcles::$pvar.into()), )* )*]
             }
 
             /// Aucune case n'y est ecrite.
@@ -901,14 +1149,11 @@ macro_rules! fiche {
                 true $(&& self.$champ.is_none())* $( $(&& self.$piece.cases.$pchamp.is_none())* )*
             }
 
-            /// Les cases `cles` (leurs noms) sont-elles les memes dans `autre` ?
-            pub fn memes_cases(&self, autre: &$plate, cles: &[&str]) -> bool {
-                $( if cles.contains(&stringify!($champ)) && self.$champ != autre.$champ {
+            /// Les cases `cles` sont-elles les memes dans `autre` ?
+            pub fn memes_cases(&self, autre: &$plate, cles: &[$cles]) -> bool {
+                $( if cles.contains(&$cles::$var) && self.$champ != autre.$champ {
                     return false;
                 } )*
-                $( $( if cles.contains(&stringify!($pchamp)) && self.$piece.cases.$pchamp != autre.$piece.cases.$pchamp {
-                    return false;
-                } )* )*
                 true
             }
 
@@ -924,13 +1169,13 @@ macro_rules! fiche {
 
             /// Les cases dont la valeur differe dans `autre`, nommees comme `champs-base.json` les nomme ; ses notes n'en
             /// sont pas.
-            pub fn cases_differentes(&self, autre: &$plate) -> Vec<&'static str> {
+            pub fn cases_differentes(&self, autre: &$plate) -> Vec<CaseDeFiche> {
                 let mut out = Vec::new();
                 $( if self.$champ != autre.$champ {
-                    out.push(stringify!($champ));
+                    out.push(CaseDeFiche::Case($cles::$var.into()));
                 } )*
                 $( $( if self.$piece.cases.$pchamp != autre.$piece.cases.$pchamp {
-                    out.push(stringify!($pchamp));
+                    out.push(CaseDeFiche::Piece($pcles::$pvar.into()));
                 } )* )*
                 out
             }
@@ -941,30 +1186,22 @@ macro_rules! fiche {
             }
         }
 
-        /// Ses cases hors de ses pieces : celles d'une piece se regardent dans la piece ouverte (`$cases`, `Cases`).
-        impl Cases for $plate {
-            fn voir<V: VoirCase>(&self, v: &mut V) {
-                $( v.case(stringify!($champ), &self.$champ); )*
-            }
-        }
-
         /// UN CHANGEMENT D'UNE CASE DE LA FICHE, comme ceux de la carte (`engagement::carte::Changement`) :
         /// `{"case": "email", "valeur": "…"}` pose la case ; `null` la vide. Une case que la liste ne nomme pas ne change
         /// pas : la fiche elle-meme n'a pas a distinguer l'absent du nul.
-        #[allow(non_camel_case_types)] // la variante est la case, telle qu'elle s'ecrit
         #[derive(Debug, Clone, PartialEq, Deserialize)]
         #[serde(tag = "case", content = "valeur", deny_unknown_fields)]
         pub enum $ch {
-            $( #[serde(deserialize_with = "nulle_ou_dite")] $champ(Option<$t>), )*
-            $( $( #[serde(deserialize_with = "nulle_ou_dite")] $pchamp(Option<$pt>), )* )*
+            $( #[serde(rename = $ecrit, deserialize_with = "nulle_ou_dite")] $var(Option<$t>), )*
+            $( $( #[serde(rename = $pecrit, deserialize_with = "nulle_ou_dite")] $pvar(Option<$pt>), )* )*
         }
 
         impl $ch {
             /// La case qu'il change, nommee comme `champs-base.json` la nomme.
-            pub fn case(&self) -> &'static str {
+            pub fn case(&self) -> CaseDeFiche {
                 match self {
-                    $( $ch::$champ(_) => stringify!($champ), )*
-                    $( $( $ch::$pchamp(_) => stringify!($pchamp), )* )*
+                    $( $ch::$var(_) => CaseDeFiche::Case(NomDeCase($ecrit)), )*
+                    $( $( $ch::$pvar(_) => CaseDeFiche::Piece($pcles::$pvar.into()), )* )*
                 }
             }
         }
@@ -973,8 +1210,8 @@ macro_rules! fiche {
         #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
         #[serde(deny_unknown_fields)]
         pub struct $datee {
-            $( #[serde(skip_serializing_if = "Option::is_none")] pub $champ: Option<Vec<Datee<$t>>>, )*
-            $( $( #[serde(skip_serializing_if = "Option::is_none")] pub $pchamp: Option<Vec<Datee<$pt>>>, )* )*
+            $( #[serde(rename = $ecrit, skip_serializing_if = "Option::is_none")] pub $champ: Option<Vec<Datee<$t>>>, )*
+            $( $( #[serde(rename = $pecrit, skip_serializing_if = "Option::is_none")] pub $pchamp: Option<Vec<Datee<$pt>>>, )* )*
             $( $( $(#[$nm])* #[serde(skip_serializing_if = "Option::is_none")] pub $note: Option<String>, )* )?
         }
 
@@ -990,13 +1227,13 @@ macro_rules! fiche {
 
             /// Les jours ou le champ `cle` prend une valeur, du plus ancien au plus recent (`None` : la valeur de tout
             /// temps, d'abord) ; aucun pour un champ que la fiche ne dit pas, ou que la forme ne declare pas.
-            pub fn depuis(&self, cle: &str) -> Vec<Option<Jour>> {
-                $( if stringify!($champ) == cle {
+            pub fn depuis(&self, cle: CaseDeFiche) -> Vec<Option<Jour>> {
+                $( if CaseDeFiche::Case(NomDeCase($ecrit)) == cle {
                     let mut j: Vec<Option<Jour>> = self.$champ.iter().flatten().map(|e| e.depuis).collect();
                     j.sort();
                     return j;
                 } )*
-                $( $( if stringify!($pchamp) == cle {
+                $( $( if CaseDeFiche::Piece($pcles::$pvar.into()) == cle {
                     let mut j: Vec<Option<Jour>> = self.$pchamp.iter().flatten().map(|e| e.depuis).collect();
                     j.sort();
                     return j;
@@ -1035,43 +1272,43 @@ macro_rules! fiche {
                 $datee::au(self, jour)
             }
 
-            fn depuis(&self, cle: &str) -> Vec<Option<Jour>> {
+            fn depuis(&self, cle: CaseDeFiche) -> Vec<Option<Jour>> {
                 $datee::depuis(self, cle)
             }
 
             fn changer(&mut self, ch: $ch, depuis: Option<&Jour>, note: Option<&str>) {
                 match ch {
-                    $( $ch::$champ(x) => dater(&mut self.$champ, x, depuis, note), )*
-                    $( $( $ch::$pchamp(x) => dater(&mut self.$pchamp, x, depuis, note), )* )*
+                    $( $ch::$var(x) => dater(&mut self.$champ, x, depuis, note), )*
+                    $( $( $ch::$pvar(x) => dater(&mut self.$pchamp, x, depuis, note), )* )*
                 }
             }
 
             fn appliquer(plate: &mut $plate, ch: $ch) {
                 match ch {
-                    $( $ch::$champ(x) => plate.$champ = x, )*
-                    $( $( $ch::$pchamp(x) => plate.$piece.cases.$pchamp = x, )* )*
+                    $( $ch::$var(x) => plate.$champ = x, )*
+                    $( $( $ch::$pvar(x) => plate.$piece.cases.$pchamp = x, )* )*
                 }
             }
 
-            fn changement(plate: &$plate, cle: &str) -> Option<$ch> {
-                $( if stringify!($champ) == cle {
-                    return Some($ch::$champ(plate.$champ.clone()));
+            fn changement(plate: &$plate, cle: CaseDeFiche) -> Option<$ch> {
+                $( if CaseDeFiche::Case(NomDeCase($ecrit)) == cle {
+                    return Some($ch::$var(plate.$champ.clone()));
                 } )*
-                $( $( if stringify!($pchamp) == cle {
-                    return Some($ch::$pchamp(plate.$piece.cases.$pchamp.clone()));
+                $( $( if CaseDeFiche::Piece($pcles::$pvar.into()) == cle {
+                    return Some($ch::$pvar(plate.$piece.cases.$pchamp.clone()));
                 } )* )*
                 None
             }
 
-            fn case_changee(ch: &$ch) -> &'static str {
+            fn case_changee(ch: &$ch) -> CaseDeFiche {
                 ch.case()
             }
 
-            fn noter(&mut self, plate: &$plate) {
-                $( $( if plate.$note.is_some() {
-                    self.$note = plate.$note.clone();
+            // Une fiche sans notes n'a rien a y lire : `_plate`.
+            fn noter(&mut self, _plate: &$plate) {
+                $( $( if _plate.$note.is_some() {
+                    self.$note = _plate.$note.clone();
                 } )* )?
-                let _ = plate;
             }
 
             fn neuve(plate: &$plate) -> $datee {
@@ -1088,10 +1325,10 @@ macro_rules! fiche {
 
             fn voir_listes<V: VoirListe>(&self, v: &mut V) {
                 $( if let Some(l) = &self.$champ {
-                    v.liste(stringify!($champ), l);
+                    v.liste(CaseDeFiche::Case(NomDeCase($ecrit)), l);
                 } )*
                 $( $( if let Some(l) = &self.$pchamp {
-                    v.liste(stringify!($pchamp), l);
+                    v.liste(CaseDeFiche::Piece($pcles::$pvar.into()), l);
                 } )* )*
             }
         }
@@ -1101,7 +1338,7 @@ macro_rules! fiche {
 /// UNE FICHE DATEE (`fiche!`) : la fiche telle qu'ecrite, chaque champ une liste datee, et sa fiche a un jour
 /// (`Plate`). Elle s'ecrit par `changer` (une case, qui vaut a partir de `depuis`), ses notes par `noter`.
 pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned {
-    type Plate: Cases + Clone + Default + Serialize + DeserializeOwned;
+    type Plate: Clone + Default + Serialize + DeserializeOwned;
     type Changement: DeserializeOwned;
 
     /// Ses champs en vigueur a `jour`, ses notes telles qu'ecrites.
@@ -1109,7 +1346,7 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
 
     /// Les jours ou le champ `cle` prend une valeur, du plus ancien au plus recent (`None` d'abord) ; aucun pour un champ
     /// que la fiche ne dit pas, ou que la forme ne declare pas.
-    fn depuis(&self, cle: &str) -> Vec<Option<Jour>>;
+    fn depuis(&self, cle: CaseDeFiche) -> Vec<Option<Jour>>;
 
     /// LA CASE QUE `ch` CHANGE S'ECRIT DATEE (`dater`) : sa valeur, ou vide.
     fn changer(&mut self, ch: Self::Changement, depuis: Option<&Jour>, note: Option<&str>);
@@ -1118,10 +1355,10 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
     fn appliquer(plate: &mut Self::Plate, ch: Self::Changement);
 
     /// La case `cle` de `plate`, comme un changement qui la poserait (`None` : la forme ne declare pas cette case).
-    fn changement(plate: &Self::Plate, cle: &str) -> Option<Self::Changement>;
+    fn changement(plate: &Self::Plate, cle: CaseDeFiche) -> Option<Self::Changement>;
 
     /// La case que `ch` change, nommee comme `champs-base.json` la nomme.
-    fn case_changee(ch: &Self::Changement) -> &'static str;
+    fn case_changee(ch: &Self::Changement) -> CaseDeFiche;
 
     /// Les notes que `plate` porte remplacent les siennes ; les autres restent.
     fn noter(&mut self, plate: &Self::Plate);
@@ -1136,7 +1373,7 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
 /// CE QUI REGARDE LES LISTES DATEES D'UNE FICHE PAR LEUR NOM (l'historique que l'ecran montre, les gardes qui cherchent
 /// ce qui nomme une personne) : chacune lui est donnee typee (`FicheDatee::voir_listes`).
 pub trait VoirListe {
-    fn liste<T: Serialize>(&mut self, cle: &'static str, liste: &[Datee<T>]);
+    fn liste<T: Serialize>(&mut self, cle: CaseDeFiche, liste: &[Datee<T>]);
 }
 
 /// UNE VALEUR DATEE : de tout temps sans `depuis`, ou a partir de ce jour ; `note` dit d'ou elle vient.
@@ -1194,7 +1431,7 @@ pub struct AVenir<T> {
 /// LA VALEUR D'AVANT DIT UN CHANGEMENT : celle qui precede la suite des valeurs que `meme` tient pour celle en vigueur
 /// (une meme valeur reecrite, d'une autre provenance, n'en est pas une), jusqu'a la veille du debut de cette suite ; vide,
 /// il n'y en a pas. Ses reecritures restent dans `toutes`.
-pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour, meme: impl Fn(&T, &T) -> bool) -> Resultat<Temps<T>> {
+pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour, meme: impl Fn(&T, &T) -> bool) -> R<Temps<T>> {
     let mut toutes: Vec<Datee<T>> = Vec::new();
     for e in valeurs_datees(liste) {
         if toutes.last().is_some_and(|d| d.depuis == e.depuis) {
@@ -1207,7 +1444,7 @@ pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour, meme: impl Fn(&T, &T)
     let pareilles = |a: &Option<T>, b: &Option<T>| match (a, b) {
         (Some(x), Some(y)) => meme(x, y),
         (None, None) => true,
-        _ => false,
+        (Some(_), None) | (None, Some(_)) => false,
     };
     let mut avant = None;
     if let Some(i) = ici {
@@ -1404,7 +1641,7 @@ choix! {
 
 cases! {
     /// Le compte bancaire (IBAN, BIC).
-    pub struct Banque { iban: String, bic: String }
+    pub struct Banque, cles CaseBanque { Iban(String) = "iban" => iban, Bic(String) = "bic" => bic }
 }
 
 cases! {
@@ -1428,12 +1665,23 @@ cases! {
 cases! {
     /// UN TAUX DE PAS RECU (`droit::pas`) : le taux, son type, l'identifiant et l'instant de sa mise a disposition
     /// (AAAAMMJJHHMMSS), et le mois de la DSN a laquelle il repond.
-    pub struct TauxPas { taux: String, r#type: String, identifiant: String, mis_a_disposition: String, en_retour_de: Mois }
+    pub struct TauxPas {
+        taux: crate::pas::TauxDePas,
+        r#type: crate::type_taux_pas::TypeDeTauxPas,
+        identifiant: String,
+        mis_a_disposition: socle::paris::InstantCompact,
+        en_retour_de: Mois,
+    }
 }
 
 cases! {
     /// Le contact de la medecine du travail interne (S20.G00.07).
-    pub struct ContactSanteTravail { nom_prenom_affichage: String, nom_prenom: String, tel: String, email: String }
+    pub struct ContactSanteTravail, cles CaseContactSanteTravail {
+        NomPrenomAffichage(String) = "nom_prenom_affichage" => nom_prenom_affichage,
+        NomPrenom(String) = "nom_prenom" => nom_prenom,
+        Tel(String) = "tel" => tel,
+        Email(String) = "email" => email,
+    }
 }
 
 cases! {
@@ -1451,7 +1699,7 @@ cases! {
 
 cases! {
     /// Le bloc S21.G00.44 : la compagnie doit-elle la taxe sur les salaires.
-    pub struct TaxeSurLesSalaires { tva: Tva, part_tva: Montant, sous_franchise: bool, association_1679A: bool }
+    pub struct TaxeSurLesSalaires { tva: Tva, part_tva: Montant, sous_franchise: bool, association_1679a: bool }
 }
 
 cases! {
@@ -1471,48 +1719,61 @@ cases! {
     /// (`etablissements`), datee comme toute la configuration : le taux vaut a partir de `depuis` (la date d'effet de la
     /// notification), pour l'annee de cette date (`bareme::taux_atmp_de_l_annee`) ; `provenance` dit qui l'a ecrite,
     /// `notification` celle d'ou elle vient.
-    pub struct TauxAtmp { code_risque: String, valeur: Montant, depuis: Jour, provenance: ProvenanceAtmp, notification: NotificationAtmp }
+    pub struct TauxAtmp, cles CaseTauxAtmp {
+        CodeRisque(String) = "code_risque" => code_risque,
+        Valeur(Montant) = "valeur" => valeur,
+        Depuis(Jour) = "depuis" => depuis,
+        Provenance(ProvenanceAtmp) = "provenance" => provenance,
+        Notification(NotificationAtmp) = "notification" => notification,
+    }
 }
 
 cases! {
-    pub struct VersementMobilite { taux: Montant, code_insee: String }
+    pub struct VersementMobilite, cles CaseVersementMobilite { Taux(Montant) = "taux" => taux, CodeInsee(String) = "code_insee" => code_insee }
 }
 
 cases! {
     /// UN AUTRE ETABLISSEMENT que le siege : son SIRET (et le NIC qui s'en lit), son adresse (et la forme declaree qui se
     /// fabrique de la lisible), son ouverture, son taux AT/MP et son versement mobilite.
-    pub struct Etablissement {
-        libelle: String,
-        siret: String,
-        nic: String,
-        adresse_affichage: String,
-        adresse: LigneAdresse,
-        complement_adresse_affichage: String,
-        complement_adresse: LigneAdresse,
-        code_postal: CodePostal,
-        commune_affichage: String,
-        commune: CommuneEmployeur,
-        ouverture: Jour,
-        taux_atmp: TauxAtmp,
-        versement_mobilite: VersementMobilite,
+    pub struct Etablissement, cles CaseEtablissement {
+        Libelle(String) = "libelle" => libelle,
+        Siret(String) = "siret" => siret,
+        Nic(String) = "nic" => nic,
+        AdresseAffichage(String) = "adresse_affichage" => adresse_affichage,
+        Adresse(LigneAdresse) = "adresse" => adresse,
+        ComplementAdresseAffichage(String) = "complement_adresse_affichage" => complement_adresse_affichage,
+        ComplementAdresse(LigneAdresse) = "complement_adresse" => complement_adresse,
+        CodePostal(CodePostal) = "code_postal" => code_postal,
+        CommuneAffichage(String) = "commune_affichage" => commune_affichage,
+        Commune(CommuneEmployeur) = "commune" => commune,
+        Ouverture(Jour) = "ouverture" => ouverture,
+        TauxAtmp(TauxAtmp) = "taux_atmp" => taux_atmp,
+        VersementMobilite(VersementMobilite) = "versement_mobilite" => versement_mobilite,
     }
 }
 
 cases! {
-    pub struct Signataire {
-        prenom_affichage: String,
-        nom_affichage: String,
-        prenom: String,
-        nom: String,
-        fonction: String,
-        tel: Telephone,
-        email: String,
+    pub struct Signataire, cles CaseSignataire {
+        PrenomAffichage(String) = "prenom_affichage" => prenom_affichage,
+        NomAffichage(String) = "nom_affichage" => nom_affichage,
+        Prenom(String) = "prenom" => prenom,
+        Nom(String) = "nom" => nom,
+        Fonction(String) = "fonction" => fonction,
+        Tel(Telephone) = "tel" => tel,
+        Email(String) = "email" => email,
     }
 }
 
 cases! {
     /// Le contact DSN (S20.G00.07).
-    pub struct DeclarantDsn { civilite: Civilite, nom_prenom_affichage: String, nom_prenom: String, tel: Telephone, email: String, qualite: String }
+    pub struct DeclarantDsn, cles CaseDeclarantDsn {
+        Civilite(Civilite) = "civilite" => civilite,
+        NomPrenomAffichage(String) = "nom_prenom_affichage" => nom_prenom_affichage,
+        NomPrenom(String) = "nom_prenom" => nom_prenom,
+        Tel(Telephone) = "tel" => tel,
+        Email(String) = "email" => email,
+        Qualite(String) = "qualite" => qualite,
+    }
 }
 
 cases! {
@@ -1530,159 +1791,159 @@ cases! {
 
 fiche! {
     /// LA FICHE D'UN SALARIE a un jour.
-    pub struct ChampsSalarie, datee FicheSalarieDatee, changement ChangementSalarie {
-        code_salarie: String,
-        initiales_contrat: String,
-        nom_affichage: String,
-        nom: NomDeclare,
-        prenom_affichage: String,
-        prenom: PrenomDeclare,
-        pseudonyme: String,
-        nir: Nir,
-        nir_cle: String,
-        sexe: Sexe,
-        date_naissance: Jour,
-        lieu_naissance: LieuNaissance,
-        lieu_naissance_affichage: String,
-        departement_naissance: DepartementNaissance,
-        pays_naissance: String,
-        code_nationalite_dsn: CodeNationalite,
-        pays_nationalite: String,
-        pays_nationalite_hors_liste: String,
-        adresse: String,
-        adresse_affichage: String,
-        code_postal: String,
-        commune: String,
-        commune_affichage: String,
-        email: String,
-        banque: Banque,
-        num_conges_spectacles: String,
-        emploi_affichage: String,
-        emploi: String,
-        pcs_ese: String,
-        code_emploi_ft: String,
-        statut: Statut,
-        statut_conventionnel: StatutConventionnel,
-        statut_categoriel_rc: StatutCategorielRc,
-        deduction_forfaitaire: ProfessionDfs,
-        deduction_forfaitaire_accord: AccordDfs,
-        statut_boeth: StatutBoeth,
-        classement_conventionnel: String,
-        date_anciennete: Jour,
-        actif: bool,
-        anniversaire_droits: Jour,
-        modele_bulletin: ModeleBulletin,
-        taux_pas: TauxPas,
+    pub struct ChampsSalarie, datee FicheSalarieDatee, changement ChangementSalarie, cles CaseSalarie {
+        CodeSalarie(String) = "code_salarie" => code_salarie,
+        InitialesContrat(String) = "initiales_contrat" => initiales_contrat,
+        NomAffichage(String) = "nom_affichage" => nom_affichage,
+        Nom(NomDeclare) = "nom" => nom,
+        PrenomAffichage(String) = "prenom_affichage" => prenom_affichage,
+        Prenom(PrenomDeclare) = "prenom" => prenom,
+        Pseudonyme(String) = "pseudonyme" => pseudonyme,
+        Nir(Nir) = "nir" => nir,
+        NirCle(String) = "nir_cle" => nir_cle,
+        Sexe(Sexe) = "sexe" => sexe,
+        DateNaissance(Jour) = "date_naissance" => date_naissance,
+        LieuNaissance(LieuNaissance) = "lieu_naissance" => lieu_naissance,
+        LieuNaissanceAffichage(String) = "lieu_naissance_affichage" => lieu_naissance_affichage,
+        DepartementNaissance(DepartementNaissance) = "departement_naissance" => departement_naissance,
+        PaysNaissance(String) = "pays_naissance" => pays_naissance,
+        CodeNationaliteDsn(CodeNationalite) = "code_nationalite_dsn" => code_nationalite_dsn,
+        PaysNationalite(String) = "pays_nationalite" => pays_nationalite,
+        PaysNationaliteHorsListe(String) = "pays_nationalite_hors_liste" => pays_nationalite_hors_liste,
+        Adresse(String) = "adresse" => adresse,
+        AdresseAffichage(String) = "adresse_affichage" => adresse_affichage,
+        CodePostal(String) = "code_postal" => code_postal,
+        Commune(String) = "commune" => commune,
+        CommuneAffichage(String) = "commune_affichage" => commune_affichage,
+        Email(String) = "email" => email,
+        Banque(Banque) = "banque" => banque,
+        NumCongesSpectacles(String) = "num_conges_spectacles" => num_conges_spectacles,
+        EmploiAffichage(String) = "emploi_affichage" => emploi_affichage,
+        Emploi(String) = "emploi" => emploi,
+        PcsEse(String) = "pcs_ese" => pcs_ese,
+        CodeEmploiFt(String) = "code_emploi_ft" => code_emploi_ft,
+        Statut(Statut) = "statut" => statut,
+        StatutConventionnel(StatutConventionnel) = "statut_conventionnel" => statut_conventionnel,
+        StatutCategorielRc(StatutCategorielRc) = "statut_categoriel_rc" => statut_categoriel_rc,
+        DeductionForfaitaire(ProfessionDfs) = "deduction_forfaitaire" => deduction_forfaitaire,
+        DeductionForfaitaireAccord(AccordDfs) = "deduction_forfaitaire_accord" => deduction_forfaitaire_accord,
+        StatutBoeth(StatutBoeth) = "statut_boeth" => statut_boeth,
+        ClassementConventionnel(String) = "classement_conventionnel" => classement_conventionnel,
+        DateAnciennete(Jour) = "date_anciennete" => date_anciennete,
+        Actif(bool) = "actif" => actif,
+        AnniversaireDroits(Jour) = "anniversaire_droits" => anniversaire_droits,
+        ModeleBulletin(ModeleBulletin) = "modele_bulletin" => modele_bulletin,
+        TauxPas(TauxPas) = "taux_pas" => taux_pas,
     }
-    pieces {
+    pieces CasePieceSalarie {
         /// LES CASES D'UN SALARIE AU MOIS : sa complementaire sante, sa prevoyance, ses jours, sa categorie, ses conges
         /// repris. Seul le calcul d'un engagement paye au mois les ouvre (`natures::AuMois`).
         permanent: Permanent, CasesDuPermanent, crate::natures::AuMois {
-            sante_svp: SanteSvp,
-            jours_travailles: Vec<JourDeLaSemaine>,
-            forfait_jours: bool,
-            sante_dispense: String,
-            sante_dispense_depuis: Jour,
-            sante_dispense_jusqu_au: Jour,
-            prevoyance_branche_depuis: Jour,
-            categorie_conventionnelle: CategorieConventionnelle,
-            conges_reprise: CongesReprise,
+            SanteSvp(SanteSvp) = "sante_svp" => sante_svp,
+            JoursTravailles(Vec<JourDeLaSemaine>) = "jours_travailles" => jours_travailles,
+            ForfaitJours(bool) = "forfait_jours" => forfait_jours,
+            SanteDispense(String) = "sante_dispense" => sante_dispense,
+            SanteDispenseDepuis(Jour) = "sante_dispense_depuis" => sante_dispense_depuis,
+            SanteDispenseJusquAu(Jour) = "sante_dispense_jusqu_au" => sante_dispense_jusqu_au,
+            PrevoyanceBrancheDepuis(Jour) = "prevoyance_branche_depuis" => prevoyance_branche_depuis,
+            CategorieConventionnelle(CategorieConventionnelle) = "categorie_conventionnelle" => categorie_conventionnelle,
+            CongesReprise(CongesReprise) = "conges_reprise" => conges_reprise,
         }
         /// LES CASES DU METIER : ce que seule une grille des minima qui vise le metier d'un engagement lit (l'echelon de
         /// la CCNEAC, le poste depuis lequel une anciennete se compte, l'artiste stagiaire, l'experience de la 3241).
         /// Seule une grille trouvee les ouvre (`minima::ParLaGrille`).
         metier: Metier, CasesDuMetier, crate::minima::ParLaGrille {
-            echelon_ccneac: EchelonCcneac,
-            poste_depuis: Jour,
-            stagiaire_ccneac: StagiaireCcneac,
-            experimente_3241: bool,
+            EchelonCcneac(EchelonCcneac) = "echelon_ccneac" => echelon_ccneac,
+            PosteDepuis(Jour) = "poste_depuis" => poste_depuis,
+            StagiaireCcneac(StagiaireCcneac) = "stagiaire_ccneac" => stagiaire_ccneac,
+            Experimente3241(bool) = "experimente_3241" => experimente_3241,
         }
     }
 }
 
 fiche! {
     /// LA FICHE DE L'ENTREPRISE a un jour (son siege et, en `etablissements`, les autres).
-    pub struct ChampsEntreprise, datee FicheEntrepriseDatee, changement ChangementEntreprise {
-        nom_affichage: String,
-        raison_sociale: RaisonSociale,
-        siren: String,
-        nic: String,
-        siret: String,
-        naf: CodeNaf,
-        code_urssaf: String,
-        adresse: LigneAdresse,
-        adresse_affichage: String,
-        complement_adresse: LigneAdresse,
-        complement_adresse_affichage: String,
-        code_postal: CodePostal,
-        commune: CommuneEmployeur,
-        commune_affichage: String,
-        idcc: String,
-        annexe_convention: AnnexeConvention,
-        secteur_2121: Secteur2121,
-        type_radio_1922: TypeRadio1922,
-        cinquante_salaries_3241: bool,
-        urssaf_compte: String,
-        medecine_travail: CodeMedecine,
-        contact_sante_travail: ContactSanteTravail,
-        licence_spectacle: String,
-        france_travail_dossier_recouvrement: String,
-        congesspectacles_adherent: String,
-        affiliation_france_travail: String,
-        retraite_complementaire: String,
-        organisation_patronale: String,
-        organisation_patronale_depuis: Jour,
-        emploie_des_permanents: bool,
-        date_de_versement_intermittents: String,
-        jours_feries_chomes: JoursFeriesChomes,
-        deduction_forfaitaire_option: OptionDfs,
-        premiere_embauche: Jour,
-        taxe_sur_les_salaires: TaxeSurLesSalaires,
-        taxe_apprentissage_motif_non_assujettissement: MotifNonAssujettissement,
-        taux_atmp: TauxAtmp,
-        etablissements: Vec<Etablissement>,
-        signataire: Signataire,
-        declarant_dsn: DeclarantDsn,
-        declarant: Declarant,
-        api_dpae: ApiDpae,
-        banque: Banque,
-        courriel_nom: String,
-        courriel_signature: String,
-        modele_bulletin: ModeleBulletin,
-        conseils: bool,
+    pub struct ChampsEntreprise, datee FicheEntrepriseDatee, changement ChangementEntreprise, cles CaseEntreprise {
+        NomAffichage(String) = "nom_affichage" => nom_affichage,
+        RaisonSociale(RaisonSociale) = "raison_sociale" => raison_sociale,
+        Siren(String) = "siren" => siren,
+        Nic(String) = "nic" => nic,
+        Siret(String) = "siret" => siret,
+        Naf(CodeNaf) = "naf" => naf,
+        CodeUrssaf(String) = "code_urssaf" => code_urssaf,
+        Adresse(LigneAdresse) = "adresse" => adresse,
+        AdresseAffichage(String) = "adresse_affichage" => adresse_affichage,
+        ComplementAdresse(LigneAdresse) = "complement_adresse" => complement_adresse,
+        ComplementAdresseAffichage(String) = "complement_adresse_affichage" => complement_adresse_affichage,
+        CodePostal(CodePostal) = "code_postal" => code_postal,
+        Commune(CommuneEmployeur) = "commune" => commune,
+        CommuneAffichage(String) = "commune_affichage" => commune_affichage,
+        Idcc(String) = "idcc" => idcc,
+        AnnexeConvention(AnnexeConvention) = "annexe_convention" => annexe_convention,
+        Secteur2121(Secteur2121) = "secteur_2121" => secteur_2121,
+        TypeRadio1922(TypeRadio1922) = "type_radio_1922" => type_radio_1922,
+        CinquanteSalaries3241(bool) = "cinquante_salaries_3241" => cinquante_salaries_3241,
+        UrssafCompte(String) = "urssaf_compte" => urssaf_compte,
+        MedecineTravail(CodeMedecine) = "medecine_travail" => medecine_travail,
+        ContactSanteTravail(ContactSanteTravail) = "contact_sante_travail" => contact_sante_travail,
+        LicenceSpectacle(String) = "licence_spectacle" => licence_spectacle,
+        FranceTravailDossierRecouvrement(String) = "france_travail_dossier_recouvrement" => france_travail_dossier_recouvrement,
+        CongesspectaclesAdherent(String) = "congesspectacles_adherent" => congesspectacles_adherent,
+        AffiliationFranceTravail(String) = "affiliation_france_travail" => affiliation_france_travail,
+        RetraiteComplementaire(String) = "retraite_complementaire" => retraite_complementaire,
+        OrganisationPatronale(String) = "organisation_patronale" => organisation_patronale,
+        OrganisationPatronaleDepuis(Jour) = "organisation_patronale_depuis" => organisation_patronale_depuis,
+        EmploieDesPermanents(bool) = "emploie_des_permanents" => emploie_des_permanents,
+        DateDeVersementIntermittents(crate::versement::Versement) = "date_de_versement_intermittents" => date_de_versement_intermittents,
+        JoursFeriesChomes(JoursFeriesChomes) = "jours_feries_chomes" => jours_feries_chomes,
+        DeductionForfaitaireOption(OptionDfs) = "deduction_forfaitaire_option" => deduction_forfaitaire_option,
+        PremiereEmbauche(Jour) = "premiere_embauche" => premiere_embauche,
+        TaxeSurLesSalaires(TaxeSurLesSalaires) = "taxe_sur_les_salaires" => taxe_sur_les_salaires,
+        TaxeApprentissageMotifNonAssujettissement(MotifNonAssujettissement) = "taxe_apprentissage_motif_non_assujettissement" => taxe_apprentissage_motif_non_assujettissement,
+        TauxAtmp(TauxAtmp) = "taux_atmp" => taux_atmp,
+        Etablissements(Vec<Etablissement>) = "etablissements" => etablissements,
+        Signataire(Signataire) = "signataire" => signataire,
+        DeclarantDsn(DeclarantDsn) = "declarant_dsn" => declarant_dsn,
+        Declarant(Declarant) = "declarant" => declarant,
+        ApiDpae(ApiDpae) = "api_dpae" => api_dpae,
+        Banque(Banque) = "banque" => banque,
+        CourrielNom(String) = "courriel_nom" => courriel_nom,
+        CourrielSignature(String) = "courriel_signature" => courriel_signature,
+        ModeleBulletin(ModeleBulletin) = "modele_bulletin" => modele_bulletin,
+        Conseils(bool) = "conseils" => conseils,
     }
-    pieces {
+    pieces CasePieceEntreprise {
         /// LES CASES DE L'ENTREPRISE QUE SEUL LE CALCUL D'UN SALARIE AU MOIS LIT : la subrogation de son maintien, le
         /// jour de son versement, sa prevoyance et sa sante, son plafond a temps partiel, sa sante pendant une suspension
         /// non indemnisee (`natures::AuMois`).
         permanent: Permanent, CasesDesPermanents, crate::natures::AuMois {
-            subrogation_ij: Subrogation,
-            date_de_versement_permanents: String,
-            prevoyance_permanents: PrevoyancePermanents,
-            plafond_temps_partiel: PlafondTempsPartiel,
-            sante_permanents: SantePermanents,
-            sante_suspension_non_indemnisee: SanteSuspension,
+            SubrogationIj(Subrogation) = "subrogation_ij" => subrogation_ij,
+            DateDeVersementPermanents(crate::versement::Versement) = "date_de_versement_permanents" => date_de_versement_permanents,
+            PrevoyancePermanents(PrevoyancePermanents) = "prevoyance_permanents" => prevoyance_permanents,
+            PlafondTempsPartiel(PlafondTempsPartiel) = "plafond_temps_partiel" => plafond_temps_partiel,
+            SantePermanents(SantePermanents) = "sante_permanents" => sante_permanents,
+            SanteSuspensionNonIndemnisee(SanteSuspension) = "sante_suspension_non_indemnisee" => sante_suspension_non_indemnisee,
         }
         /// LES CASES D'UNE COMPAGNIE QUI EMPLOIE DES PERMANENTS : « au moins cinquante salaries », que seule la case
         /// « emploie des permanents » cochee ouvre (`ChampsEntreprise::avec_permanents`).
         avec_permanents: EmploieDesPermanents, CasesAvecPermanents, EmploieDesPermanents {
-            cinquante_salaries_et_plus: bool,
+            CinquanteSalariesEtPlus(bool) = "cinquante_salaries_et_plus" => cinquante_salaries_et_plus,
         }
         /// LA JAUGE DE LA SALLE, que seule la prime d'anciennete d'un technicien de l'annexe I paye au mois lit
         /// (`clauses::prime_anciennete`, que seul le calcul d'un engagement au mois appelle) : la cle de sa grille
         /// (`minima::ParLaGrille`) et celle d'un salarie au mois (`natures::AuMois`).
         metier: MetierAuMois, CasesDuMetierEntreprise, (crate::minima::ParLaGrille, crate::natures::AuMois) {
-            jauge_annexe_1: JaugeAnnexe1,
+            JaugeAnnexe1(JaugeAnnexe1) = "jauge_annexe_1" => jauge_annexe_1,
         }
         /// LA REPRESENTATION DU PERSONNEL : seul un effectif qui laisse un comite exister l'ouvre
         /// (`contexte::UnCsePossible`).
         cse: Cse, CasesDuCse, crate::contexte::UnCsePossible {
-            representation_personnel: RepresentationPersonnel,
+            RepresentationPersonnel(RepresentationPersonnel) = "representation_personnel" => representation_personnel,
         }
         /// L'EXEMPTION DE LA CASC-SVP (3090, art. 4.22 B) : seule une compagnie d'au moins cinquante salaries dotee d'un
         /// comite l'ouvre (`ChampsEntreprise::exemption_casc`).
         casc: Casc, CasesDeLaCasc, ExemptionCasc {
-            casc_svp_exemptee: bool,
+            CascSvpExemptee(bool) = "casc_svp_exemptee" => casc_svp_exemptee,
         }
     }
     notes {
@@ -1704,18 +1965,18 @@ choix! {
 fiche! {
     /// LA FICHE D'UN SPECTACLE a un jour (`config/spectacles.json`). Ses notes, ecrites par l'import, disent d'ou il
     /// vient et le titre que les bulletins de l'ancien logiciel proposent (`declarations::demarrage`).
-    pub struct ChampsSpectacle, datee FicheSpectacleDatee, changement ChangementSpectacle {
-        titre: String,
-        numero_objet: String,
-        code_analytique: String,
-        genre_audiovisuel: GenreAudiovisuel,
-        emission_tv_1734: bool,
-        format_cinema: FormatCinema,
-        derogation_annexe_iii_3097: bool,
-        alias: Vec<String>,
-        actif: bool,
+    pub struct ChampsSpectacle, datee FicheSpectacleDatee, changement ChangementSpectacle, cles CaseSpectacle {
+        Titre(String) = "titre" => titre,
+        NumeroObjet(String) = "numero_objet" => numero_objet,
+        CodeAnalytique(String) = "code_analytique" => code_analytique,
+        GenreAudiovisuel(GenreAudiovisuel) = "genre_audiovisuel" => genre_audiovisuel,
+        EmissionTv1734(bool) = "emission_tv_1734" => emission_tv_1734,
+        FormatCinema(FormatCinema) = "format_cinema" => format_cinema,
+        DerogationAnnexeIii3097(bool) = "derogation_annexe_iii_3097" => derogation_annexe_iii_3097,
+        Alias(Vec<String>) = "alias" => alias,
+        Actif(bool) = "actif" => actif,
     }
-    pieces {}
+    pieces CasePieceSpectacle {}
     notes {
         /// D'ou vient la fiche (ce que l'import a lu).
         note,
@@ -1730,34 +1991,34 @@ fiche! {
     /// UNE RUBRIQUE TELLE QU'UN FICHIER L'ECRIT, case par case : livree (`rubriques-base.json`, de tout temps), ou la
     /// compagnie par-dessus, case par case, datee comme toute la configuration (`config/rubriques-compagnie.json`).
     /// `catalogue::construire` en fait la `Rubrique` du calcul.
-    pub struct ChampsRubrique, datee RubriqueDatee, changement ChangementRubrique {
-        libelle: String,
-        unite: String,
-        nature: String,
-        saisie: Vec<String>,
-        soumis: bool,
-        imposable: bool,
-        conges_spectacles: bool,
-        source: String,
-        sens: String,
-        heures_forfait: Montant,
-        plafond: String,
-        aem: String,
-        dsn_type: String,
-        dsn_autres_bruts: String,
-        annexe: String,
-        plafond_mensuel: i64,
-        plafond_annuel_heures: crate::catalogue::PlafondAnnuelHeures,
-        compte_pour: String,
-        salaire_de_base: bool,
-        retabli: bool,
-        suspension: bool,
-        arret_de_travail: bool,
-        conges_pris: bool,
-        dsn_bloc52: String,
-        dit: String,
+    pub struct ChampsRubrique, datee RubriqueDatee, changement ChangementRubrique, cles CaseRubrique {
+        Libelle(String) = "libelle" => libelle,
+        Unite(String) = "unite" => unite,
+        Nature(crate::catalogue::NatureDeRubrique) = "nature" => nature,
+        Saisie(Vec<String>) = "saisie" => saisie,
+        Soumis(bool) = "soumis" => soumis,
+        Imposable(bool) = "imposable" => imposable,
+        CongesSpectacles(bool) = "conges_spectacles" => conges_spectacles,
+        Source(String) = "source" => source,
+        Sens(String) = "sens" => sens,
+        HeuresForfait(Montant) = "heures_forfait" => heures_forfait,
+        Plafond(String) = "plafond" => plafond,
+        Aem(String) = "aem" => aem,
+        DsnType(String) = "dsn_type" => dsn_type,
+        DsnAutresBruts(crate::autre_revenu_brut::AutreElementDeRevenuBrut) = "dsn_autres_bruts" => dsn_autres_bruts,
+        Annexe(String) = "annexe" => annexe,
+        PlafondMensuel(i64) = "plafond_mensuel" => plafond_mensuel,
+        PlafondAnnuelHeures(crate::catalogue::PlafondAnnuelHeures) = "plafond_annuel_heures" => plafond_annuel_heures,
+        ComptePour(String) = "compte_pour" => compte_pour,
+        SalaireDeBase(bool) = "salaire_de_base" => salaire_de_base,
+        Retabli(bool) = "retabli" => retabli,
+        Suspension(bool) = "suspension" => suspension,
+        ArretDeTravail(bool) = "arret_de_travail" => arret_de_travail,
+        CongesPris(bool) = "conges_pris" => conges_pris,
+        DsnBloc52(String) = "dsn_bloc52" => dsn_bloc52,
+        Dit(String) = "dit" => dit,
     }
-    pieces {}
+    pieces CasePieceRubrique {}
 }
 
 impl ChampsSpectacle {
@@ -1799,7 +2060,7 @@ impl ChampsSalarie {
     }
 
     /// Le pays de naissance tel que la DSN le declare (S21.G00.30.015, `socle::pays::de_naissance`).
-    pub fn pays_de_naissance(&self) -> Resultat<Option<String>> {
+    pub fn pays_de_naissance(&self) -> R<Option<String>> {
         let qui = [self.prenom.portee(), self.nom.portee()].into_iter().flatten().collect::<Vec<_>>().join(" ").trim().to_string();
         self.pays_naissance.as_ref().map(|code| socle::pays::de_naissance(code, &qui)).transpose()
     }
@@ -1829,7 +2090,7 @@ impl ChampsEntreprise {
 
     /// Le NIC du siege, puis celui de chaque autre etablissement : une DSN par etablissement. Chacun s'exige : sans lui,
     /// la DSN de l'etablissement ne s'ecrit pas.
-    pub fn nics(&self) -> Resultat<Vec<String>> {
+    pub fn nics(&self) -> R<Vec<String>> {
         std::iter::once(self.nic.ecrite("nic")).chain(self.secondaires().iter().map(|e| e.nic.ecrite("etablissements.nic"))).map(|n| n.map(str::to_string)).collect()
     }
 
@@ -1990,7 +2251,7 @@ pub type Spectacles = FichierDeFiches<IdSpectacle, FicheSpectacleDatee>;
 /// LA LECTURE D'UN FICHIER DE FICHES (`config/entreprise.json` en `FicheEntrepriseDatee`, `config/salaries.json` en
 /// `Salaries`, `config/spectacles.json` en `Spectacles`), la seule : `fichier` le nomme dans les refus, qui disent la cle
 /// fautive jusqu'a sa case et quoi faire.
-pub fn lire_fichier<T: DeserializeOwned>(chemin: &std::path::Path, fichier: &str) -> Resultat<T> {
+pub fn lire_fichier<T: DeserializeOwned>(chemin: &std::path::Path, fichier: &str) -> R<T> {
     socle::forme::lire_fichier_en_phrase(chemin, |cle, detail| refus_de_fiche(fichier, cle, detail))
 }
 
@@ -2010,16 +2271,10 @@ fn refus_d_ecriture(fichier: &str, chemin: &str, detail: &str) -> String {
     format!("{}{} ne s'écrirait pas : {}. Rien n'est écrit : corriger cette valeur.", fichier, ou, detail)
 }
 
-/// Les champs d'une fiche a un jour (ou toute forme d'une fiche), lus de `v` (une charge, une fiche composee) : le
-/// refus nomme la cle jusqu'a sa case.
-pub fn lire_champs<T: DeserializeOwned>(v: &(impl Serialize + ?Sized), quoi: &str) -> Resultat<T> {
-    socle::forme::lire_en_phrase(&socle::ecriture::en_valeur(v), |chemin, detail| refus_de_fiche(quoi, chemin, detail))
-}
-
 /// CE QU'UNE ECRITURE VA POSER DANS LE FICHIER `fichier`, lu par sa forme avant de s'ecrire : ce qui ne se lit pas se
 /// refuse en nommant la cle jusqu'a sa case, et rien n'est ecrit.
-pub fn lire_saisie<T: DeserializeOwned>(v: &(impl Serialize + ?Sized), fichier: &str) -> Resultat<T> {
-    socle::forme::lire_en_phrase(&socle::ecriture::en_valeur(v), |chemin, detail| refus_d_ecriture(fichier, chemin, detail))
+pub fn lire_saisie<T: DeserializeOwned>(v: &(impl Serialize + ?Sized), fichier: &str) -> R<T> {
+    socle::forme::relire_en_phrase(v, |chemin, detail| refus_d_ecriture(fichier, chemin, detail))
 }
 
 #[cfg(test)]
@@ -2046,7 +2301,7 @@ mod tests {
             assert!(ecrit.contains(garde), "{} manque à la réécriture : {}", garde, ecrit);
         }
         let f = &s.fiches[&IdSalarie::lire("FULLER").unwrap()];
-        assert_eq!(f.au(&Jour::lire("2026-11-01").unwrap()).actif, None);
-        assert!(f.au(&Jour::lire("2026-11-02").unwrap()).actif.oui());
+        assert_eq!(f.au(&Jour::nouveau(2026, 11, 1).unwrap()).actif, None);
+        assert!(f.au(&Jour::nouveau(2026, 11, 2).unwrap()).actif.oui());
     }
 }

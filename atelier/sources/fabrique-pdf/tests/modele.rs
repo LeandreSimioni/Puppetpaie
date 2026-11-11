@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use fabrique_pdf::mesure::mesure;
 use fabrique_pdf::modele::{self, Valeurs};
 use serde_json::{json, Value};
 
@@ -31,7 +32,7 @@ fn ecrire_modele(nom: &str, texte: &str) -> String {
 }
 
 fn fabriquer(v: &Value) -> Result<Vec<u8>, String> {
-    fabrique_pdf::Description::lire(&v.to_string()).and_then(|d| fabrique_pdf::fabriquer(&d)).map_err(|r| r.0)
+    fabrique_pdf::Description::lire(&v.to_string()).and_then(|d| fabrique_pdf::fabriquer(&d)).map_err(|r| r.phrase)
 }
 
 fn refus(v: &Value) -> String {
@@ -57,6 +58,7 @@ fn vals() -> Valeurs {
         ("employeur.signataire", "Jeanne Martin"),
         ("employeur.signataire_fonction", "Présidente"),
         ("salarie.nom_complet", "Paul Dupont"),
+        ("salarie.case_signature", "L'artiste"),
     ])
 }
 
@@ -65,8 +67,8 @@ fn vals() -> Valeurs {
 #[test]
 fn la_grammaire_decoupe_titre_corps_et_marqueurs() {
     let m = modele::lire_modele(PETIT, "petit.modele").unwrap();
-    assert_eq!(m.titre, "Contrat n° {{contrat.numero}}");
-    assert_eq!(m.soustitre, "Pour **{{salarie.nom}}**");
+    assert_eq!(m.titre.as_deref(), Some("Contrat n° {{contrat.numero}}"));
+    assert_eq!(m.soustitre.as_deref(), Some("Pour **{{salarie.nom}}**"));
     assert_eq!(m.annule, vec!["Annule le {{remplace.numero}} du {{remplace.date}}."]);
     // Les lignes se recollent par un espace, une ligne vide sépare deux paragraphes.
     assert_eq!(m.preambule, vec!["**Entre** nous, et vous.", "Deuxième paragraphe."]);
@@ -91,14 +93,14 @@ fn la_cle_modification_et_les_lignes_avant_toute_cle() {
 fn fins_de_ligne_crlf_et_commentaire_indente() {
     let t = "TITRE: T\r\n   # commentaire indenté\r\nARTICLE: A\r\nUn\r\nDeux\r\n";
     let m = modele::lire_modele(t, "m").unwrap();
-    assert_eq!(m.titre, "T");
+    assert_eq!(m.titre.as_deref(), Some("T"));
     assert_eq!(m.articles[0].1, vec!["Un Deux"]);
 }
 
 #[test]
 fn un_modele_sans_article_est_refuse() {
     let e = modele::lire_modele("TITRE: T\nPREAMBULE:\nx\n", "mon.modele").unwrap_err();
-    assert_eq!(e.0, "mon.modele ne contient aucun article");
+    assert_eq!(e.phrase, "mon.modele ne contient aucun article");
 }
 
 // ------------------------------------------------------------- les marqueurs
@@ -121,7 +123,7 @@ fn un_marqueur_inconnu_les_nomme_tous_et_liste_les_disponibles() {
     let v = valeurs(&[("b.y", "1"), ("a.x", "2")]);
     let e = modele::substituer("{{a.x}} {{contrat.inconnu}} {{z.z}} {{contrat.inconnu}}", &v).unwrap_err();
     assert_eq!(
-        e.0,
+        e.phrase,
         "marqueur inconnu dans le modèle de contrat : {{contrat.inconnu}}, {{z.z}}, {{contrat.inconnu}}. \
          Marqueurs disponibles : a.x, b.y"
     );
@@ -168,62 +170,55 @@ fn description_modele(chemin: &str) -> Value {
     })
 }
 
-fn para_json(morceaux: Value, taille: Option<f64>, couleur: Option<&str>, align: &str, avant: f64, apres: f64) -> Value {
-    let mut b = json!({"type": "paragraphe", "morceaux": morceaux});
+/// Un paragraphe ; le corps et les espaces s'écrivent en décimal (`"6.6"`).
+fn para_json(morceaux: Value, taille: Option<&str>, couleur: Option<&str>, align: &str, avant: &str, apres: &str) -> Value {
+    let mut b = json!({"type": "paragraphe", "morceaux": morceaux, "alignement": align, "majuscules": false,
+                       "espace_avant": mesure(avant), "espace_apres": mesure(apres), "retrait": 0});
     if let Some(t) = taille {
-        b["taille"] = json!(t);
+        b["taille"] = json!(mesure(t));
     }
     if let Some(c) = couleur {
         b["couleur"] = json!(c);
-    }
-    if align != "gauche" {
-        b["alignement"] = json!(align);
-    }
-    if avant != 0.0 {
-        b["espace_avant"] = json!(avant);
-    }
-    if apres != 0.0 {
-        b["espace_apres"] = json!(apres);
     }
     b
 }
 
 /// Le même document, écrit à la main en blocs.
 fn description_a_blocs() -> Value {
-    let g = |t: &str| json!({"texte": t, "gras": true});
-    let n = |t: &str| json!({"texte": t});
+    let g = |t: &str| json!({"texte": t, "gras": true, "italique": false});
+    let n = |t: &str| json!({"texte": t, "gras": false, "italique": false});
     let rouge = Some("#B22222");
     let case = |libelle: &str, nom: &str, sous: &str| {
         vec![
-            para_json(json!([g(libelle)]), Some(6.6), rouge, "gauche", 0.0, 0.0),
-            para_json(json!([n(nom)]), None, None, "gauche", 0.0, 0.0),
-            para_json(json!([n(sous)]), Some(7.0), Some("#777777"), "gauche", 0.0, 0.0),
+            para_json(json!([g(libelle)]), Some("6.6"), rouge, "gauche", "0", "0"),
+            para_json(json!([n(nom)]), None, None, "gauche", "0", "0"),
+            para_json(json!([n(sous)]), Some("7"), Some("#777777"), "gauche", "0", "0"),
         ]
     };
     let mut employeur = case("L'employeur", "Jeanne Martin", "Présidente");
-    employeur.push(json!({"type": "espace", "hauteur": 3.0 * 7.5 * 1.25}));
+    employeur.push(json!({"type": "espace", "hauteur": mesure("28.125")}));
     let mut artiste = case("L'artiste", "Paul Dupont", "signature");
-    artiste.push(json!({"type": "espace", "hauteur": 3.0 * 7.5 * 1.25}));
+    artiste.push(json!({"type": "espace", "hauteur": mesure("28.125")}));
     let blocs = vec![
-        para_json(json!([g("Contrat n° C-1")]), Some(11.0), rouge, "gauche", 10.0, 1.0),
-        para_json(json!([n("Pour "), g("DUPONT")]), Some(6.8), Some("#555555"), "justifie", 0.0, 7.0),
-        para_json(json!([g("Annule le X-42 du 01/01/2025.")]), None, None, "justifie", 0.0, 6.0),
-        para_json(json!([g("Entre"), n(" nous, et vous.")]), None, None, "justifie", 0.0, 2.6),
-        para_json(json!([n("Deuxième paragraphe.")]), None, None, "justifie", 0.0, 2.6),
-        para_json(json!([g("Article 1 \u{2014} Objet")]), Some(7.7), rouge, "gauche", 4.5, 1.0),
-        para_json(json!([n("L'artiste DUPONT joue. Suite.")]), None, None, "justifie", 0.0, 2.6),
-        para_json(json!([g("Article 2 \u{2014} Durée")]), Some(7.7), rouge, "gauche", 4.5, 1.0),
-        para_json(json!([n("Du 01/01/2025.")]), None, None, "justifie", 0.0, 2.6),
-        para_json(json!([n("Fait à Paris.")]), None, None, "justifie", 6.0, 2.6),
-        json!({"type": "colonnes", "filet_haut": {"couleur": "#CCCCCC", "epaisseur": 0.5},
-               "espace_avant": 4.0, "marge_interne_haut": 5.0,
-               "colonnes": [{"largeur": 0.5, "blocs": employeur}, {"largeur": 0.5, "blocs": artiste}]}),
+        para_json(json!([g("Contrat n° C-1")]), Some("11"), rouge, "gauche", "10", "1"),
+        para_json(json!([n("Pour "), g("DUPONT")]), Some("6.8"), Some("#555555"), "justifie", "0", "7"),
+        para_json(json!([g("Annule le X-42 du 01/01/2025.")]), None, None, "justifie", "0", "6"),
+        para_json(json!([g("Entre"), n(" nous, et vous.")]), None, None, "justifie", "0", "2.6"),
+        para_json(json!([n("Deuxième paragraphe.")]), None, None, "justifie", "0", "2.6"),
+        para_json(json!([g("Article 1 \u{2014} Objet")]), Some("7.7"), rouge, "gauche", "4.5", "1"),
+        para_json(json!([n("L'artiste DUPONT joue. Suite.")]), None, None, "justifie", "0", "2.6"),
+        para_json(json!([g("Article 2 \u{2014} Durée")]), Some("7.7"), rouge, "gauche", "4.5", "1"),
+        para_json(json!([n("Du 01/01/2025.")]), None, None, "justifie", "0", "2.6"),
+        para_json(json!([n("Fait à Paris.")]), None, None, "justifie", "6", "2.6"),
+        json!({"type": "colonnes", "filet_haut": {"couleur": "#CCCCCC", "epaisseur": mesure("0.5")},
+               "espace_avant": 4, "marge_interne_haut": 5,
+               "colonnes": [{"largeur": mesure("0.5"), "blocs": employeur}, {"largeur": mesure("0.5"), "blocs": artiste}]}),
     ];
     json!({
         "format": 1,
-        "page": {"largeur": 595.0, "hauteur": 842.0,
-                 "marges": {"haut": 106.0, "droite": 59.5, "bas": 46.0, "gauche": 59.5}},
-        "police": {"taille": 7.5, "interligne": 1.25, "couleur": "#2C3E50"},
+        "page": {"largeur": 595, "hauteur": 842,
+                 "marges": {"haut": 106, "droite": mesure("59.5"), "bas": 46, "gauche": mesure("59.5")}},
+        "police": {"taille": mesure("7.5"), "interligne": mesure("1.25"), "couleur": "#2C3E50"},
         "titre": "Contrat n° C-1",
         "documents": [{"blocs": blocs}]
     })
@@ -252,7 +247,8 @@ fn sans_phrase_annule_le_defaut_du_contrat_sert() {
 fn le_vrai_contrat_cddu_passe_avec_tous_ses_marqueurs() {
     let chemin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../logiciel/donnees/modeles/contrat-cddu.modele");
     let texte = std::fs::read_to_string(&chemin).unwrap();
-    let m = modele::lire_modele(&texte, "contrat-cddu.modele").unwrap();
+    // Le modèle se lit.
+    modele::lire_modele(&texte, "contrat-cddu.modele").unwrap();
     // Chaque marqueur qui n'est pas dans un commentaire reçoit une valeur.
     let mut v = Valeurs::new();
     for ligne in texte.lines().filter(|l| !l.trim_start().starts_with('#')) {
@@ -262,7 +258,7 @@ fn le_vrai_contrat_cddu_passe_avec_tous_ses_marqueurs() {
             }
         }
     }
-    for k in ["employeur.signataire", "employeur.signataire_fonction", "salarie.nom_complet"] {
+    for k in ["employeur.signataire", "employeur.signataire_fonction", "salarie.nom_complet", "salarie.case_signature"] {
         v.insert(k.to_string(), "valeur".to_string());
     }
     let d = json!({"format": 2, "style": "contrat",
@@ -291,6 +287,8 @@ fn refus_du_document_modele() {
 
     let mut d = bon.clone();
     d.as_object_mut().unwrap().remove("style");
+    d["page"] = json!({"largeur": 595, "hauteur": 842, "marges": {"haut": 50, "droite": 50, "bas": 50, "gauche": 50}});
+    d["police"] = json!({"taille": 10, "interligne": mesure("1.25"), "couleur": "#000000"});
     assert!(refus(&d).contains("demande un \"style\""));
 
     let mut d = bon.clone();
@@ -368,27 +366,27 @@ fn description_avenant(chemin: &str) -> Value {
 fn l_avenant_donne_le_pdf_des_blocs_equivalents() {
     let chemin = ecrire_modele("avenant.modele", AVENANT);
     let a = fabriquer(&description_avenant(&chemin)).unwrap();
-    let g = |t: &str| json!({"texte": t, "gras": true});
-    let n = |t: &str| json!({"texte": t});
+    let g = |t: &str| json!({"texte": t, "gras": true, "italique": false});
+    let n = |t: &str| json!({"texte": t, "gras": false, "italique": false});
     let rouge = Some("#B22222");
     let cite = |t: &str| {
-        let mut b = para_json(json!([{"texte": t, "italique": true}]), None, None, "justifie", 0.0, 2.6);
-        b["retrait"] = json!(12.0);
+        let mut b = para_json(json!([{"texte": t, "italique": true, "gras": false}]), None, None, "justifie", "0", "2.6");
+        b["retrait"] = json!(12);
         b
     };
     let case = |libelle: &str, nom: &str, sous: &str| {
         vec![
-            para_json(json!([g(libelle)]), Some(6.6), rouge, "gauche", 0.0, 0.0),
-            para_json(json!([n(nom)]), None, None, "gauche", 0.0, 0.0),
-            para_json(json!([n(sous)]), Some(7.0), Some("#777777"), "gauche", 0.0, 0.0),
-            json!({"type": "espace", "hauteur": 3.0 * 7.5 * 1.25}),
+            para_json(json!([g(libelle)]), Some("6.6"), rouge, "gauche", "0", "0"),
+            para_json(json!([n(nom)]), None, None, "gauche", "0", "0"),
+            para_json(json!([n(sous)]), Some("7"), Some("#777777"), "gauche", "0", "0"),
+            json!({"type": "espace", "hauteur": mesure("28.125")}),
         ]
     };
-    let j = |t: &str| para_json(json!([n(t)]), None, None, "justifie", 0.0, 2.6);
-    let h = |t: &str| para_json(json!([g(t)]), Some(7.7), rouge, "gauche", 4.5, 1.0);
+    let j = |t: &str| para_json(json!([n(t)]), None, None, "justifie", "0", "2.6");
+    let h = |t: &str| para_json(json!([g(t)]), Some("7.7"), rouge, "gauche", "4.5", "1");
     let blocs = vec![
-        para_json(json!([g("Avenant n° 2")]), Some(11.0), rouge, "gauche", 10.0, 1.0),
-        para_json(json!([n("Contrat C-1")]), Some(6.8), Some("#555555"), "justifie", 0.0, 7.0),
+        para_json(json!([g("Avenant n° 2")]), Some("11"), rouge, "gauche", "10", "1"),
+        para_json(json!([n("Contrat C-1")]), Some("6.8"), Some("#555555"), "justifie", "0", "7"),
         j("Les parties conviennent de ce qui suit."),
         h("Article 1 \u{2014} Modification de l'article 4 « Rémunération »"),
         j("L'article 4 « Rémunération » disait :"),
@@ -404,17 +402,17 @@ fn l_avenant_donne_le_pdf_des_blocs_equivalents() {
         cite("« Lyon. »"),
         h("Article 3 \u{2014} Autres clauses"),
         j("Le reste ne change pas."),
-        para_json(json!([n("Fait à Paris.")]), None, None, "justifie", 6.0, 2.6),
-        json!({"type": "colonnes", "filet_haut": {"couleur": "#CCCCCC", "epaisseur": 0.5},
-               "espace_avant": 4.0, "marge_interne_haut": 5.0,
-               "colonnes": [{"largeur": 0.5, "blocs": case("L'employeur", "Jeanne Martin", "Présidente")},
-                            {"largeur": 0.5, "blocs": case("L'artiste", "Paul Dupont", "signature")}]}),
+        para_json(json!([n("Fait à Paris.")]), None, None, "justifie", "6", "2.6"),
+        json!({"type": "colonnes", "filet_haut": {"couleur": "#CCCCCC", "epaisseur": mesure("0.5")},
+               "espace_avant": 4, "marge_interne_haut": 5,
+               "colonnes": [{"largeur": mesure("0.5"), "blocs": case("L'employeur", "Jeanne Martin", "Présidente")},
+                            {"largeur": mesure("0.5"), "blocs": case("L'artiste", "Paul Dupont", "signature")}]}),
     ];
     let b = fabriquer(&json!({
         "format": 2,
-        "page": {"largeur": 595.0, "hauteur": 842.0,
-                 "marges": {"haut": 106.0, "droite": 59.5, "bas": 46.0, "gauche": 59.5}},
-        "police": {"taille": 7.5, "interligne": 1.25, "couleur": "#2C3E50"},
+        "page": {"largeur": 595, "hauteur": 842,
+                 "marges": {"haut": 106, "droite": mesure("59.5"), "bas": 46, "gauche": mesure("59.5")}},
+        "police": {"taille": mesure("7.5"), "interligne": mesure("1.25"), "couleur": "#2C3E50"},
         "titre": "Avenant n° 2",
         "documents": [{"blocs": blocs}]
     }))
@@ -438,7 +436,7 @@ fn le_vrai_avenant_passe_avec_tous_ses_marqueurs() {
             }
         }
     }
-    for k in ["employeur.signataire", "employeur.signataire_fonction", "salarie.nom_complet"] {
+    for k in ["employeur.signataire", "employeur.signataire_fonction", "salarie.nom_complet", "salarie.case_signature"] {
         v.insert(k.to_string(), "valeur".to_string());
     }
     let d = json!({"format": 2, "style": "avenant",
@@ -494,23 +492,23 @@ fn description_attestation(chemin: &str, inventaire: &str) -> Value {
 fn l_attestation_coupe_les_valeurs_multilignes_sans_numeroter_ni_signer() {
     let chemin = ecrire_modele("attestation.modele", ATTESTATION);
     let a = fabriquer(&description_attestation(&chemin, "Salaire : 2 200,00\nPrime : 449,06")).unwrap();
-    let n = |t: &str| json!({"texte": t});
-    let g = |t: &str| json!({"texte": t, "gras": true});
-    let j = |t: Value, avant: f64| para_json(t, None, None, "justifie", avant, 2.6);
+    let n = |t: &str| json!({"texte": t, "gras": false, "italique": false});
+    let g = |t: &str| json!({"texte": t, "gras": true, "italique": false});
+    let j = |t: Value, avant: &str| para_json(t, None, None, "justifie", avant, "2.6");
     let blocs = vec![
-        para_json(json!([g("Reçu")]), Some(11.0), Some("#B22222"), "gauche", 10.0, 1.0),
-        j(json!([n("Je soussigné "), g("DUPONT"), n(".")]), 0.0),
-        para_json(json!([g("Inventaire")]), Some(7.7), Some("#B22222"), "gauche", 4.5, 1.0),
-        j(json!([n("Salaire : 2 200,00")]), 0.0),
-        j(json!([n("Prime : 449,06")]), 0.0),
-        j(json!([g("Net : 2 649,06.")]), 0.0),
-        j(json!([n("Fait à Paris.")]), 6.0),
+        para_json(json!([g("Reçu")]), Some("11"), Some("#B22222"), "gauche", "10", "1"),
+        j(json!([n("Je soussigné "), g("DUPONT"), n(".")]), "0"),
+        para_json(json!([g("Inventaire")]), Some("7.7"), Some("#B22222"), "gauche", "4.5", "1"),
+        j(json!([n("Salaire : 2 200,00")]), "0"),
+        j(json!([n("Prime : 449,06")]), "0"),
+        j(json!([g("Net : 2 649,06.")]), "0"),
+        j(json!([n("Fait à Paris.")]), "6"),
     ];
     let b = fabriquer(&json!({
         "format": 2,
-        "page": {"largeur": 595.0, "hauteur": 842.0,
-                 "marges": {"haut": 106.0, "droite": 59.5, "bas": 46.0, "gauche": 59.5}},
-        "police": {"taille": 7.5, "interligne": 1.25, "couleur": "#2C3E50"},
+        "page": {"largeur": 595, "hauteur": 842,
+                 "marges": {"haut": 106, "droite": mesure("59.5"), "bas": 46, "gauche": mesure("59.5")}},
+        "police": {"taille": mesure("7.5"), "interligne": mesure("1.25"), "couleur": "#2C3E50"},
         "titre": "Reçu",
         "documents": [{"blocs": blocs}]
     }))

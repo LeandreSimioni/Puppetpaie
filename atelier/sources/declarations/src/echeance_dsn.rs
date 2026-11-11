@@ -36,7 +36,8 @@
 
 
 use socle::date::Jour;
-use socle::num::Resultat;
+use socle::echec::{refus, R};
+use socle::mois::Mois;
 
 /// L'heure limite du depot le jour de l'echeance (cahier technique DSN 2026.1, § 1.4.2).
 pub const HEURE_LIMITE: &str = "12:00";
@@ -70,7 +71,7 @@ pub struct Echeance {
 }
 
 /// Pourquoi `j` n'est pas un jour ouvre du point de depot, ou `None` s'il l'est.
-pub fn non_ouvre(j: &Jour) -> Resultat<Option<String>> {
+pub fn non_ouvre(j: &Jour) -> R<Option<String>> {
     match j.jour_de_la_semaine() {
         5 => return Ok(Some("samedi".into())),
         6 => return Ok(Some("dimanche".into())),
@@ -80,7 +81,7 @@ pub fn non_ouvre(j: &Jour) -> Resultat<Option<String>> {
 }
 
 /// `nominale`, reportee au premier jour ouvre qui la suit si elle n'en est pas un (R. 133-14, I ; inferences 1 et 2).
-pub fn reporter(nominale: Jour) -> Resultat<Echeance> {
+pub fn reporter(nominale: Jour) -> R<Echeance> {
     let (mut jour, mut sautes) = (nominale, Vec::new());
     while let Some(pourquoi) = non_ouvre(&jour)? {
         sautes.push((jour, pourquoi));
@@ -90,28 +91,16 @@ pub fn reporter(nominale: Jour) -> Resultat<Echeance> {
     Ok(Echeance { nominale, jour, sautes, veille })
 }
 
-/// Le nombre d'un morceau de nom de mois ; refus s'il ne se lit pas.
-fn entier(t: &str) -> Resultat<i64> {
-    t.trim().parse::<i64>().map_err(|_| format!("nombre entier illisible : {}", socle::fichiers::repr(t)))
-}
-
-/// L'echeance de la DSN du mois `mois` (`AAAA-MM`) : le `jour_du_mois` (5 ou 15, `Contexte::echeance_dsn`) du mois
-/// suivant, reporte au premier jour ouvre.
-pub fn du_mois(mois: &str, jour_du_mois: u32) -> Resultat<Echeance> {
-    let (an, mo) = (entier(&mois.chars().take(4).collect::<String>())?, entier(&mois.chars().skip(5).take(2).collect::<String>())?);
-    let (an, mo) = if mo == 12 { (an + 1, 1) } else { (an, mo + 1) };
-    if !(1..=12).contains(&mo) {
-        return Err(socle::mois::mois_impossible(mo));
-    }
-    if !(1..=9999).contains(&an) {
-        return Err(socle::date::annee_impossible(an));
-    }
-    let nominale = Jour::nouveau(an as i32, mo as u32, jour_du_mois).ok_or_else(|| socle::date::jour_impossible(an, mo, jour_du_mois))?;
+/// L'echeance de la DSN du mois `mois` : le `jour_du_mois` (5 ou 15, `Contexte::echeance_dsn`) du mois suivant, reporte
+/// au premier jour ouvre.
+pub fn du_mois(mois: Mois, jour_du_mois: u32) -> R<Echeance> {
+    let suivant = mois.suivant();
+    let nominale = suivant.jour(jour_du_mois).ok_or_else(|| refus(socle::date::jour_impossible(suivant.annee(), suivant.numero(), jour_du_mois)))?;
     reporter(nominale)
 }
 
 /// L'echeance de la DSN du mois `mois` pour cette compagnie (son effectif choisit le 5 ou le 15).
-pub fn de_la_compagnie(ctx: &droit::contexte::Contexte, mois: &str) -> Resultat<Echeance> {
+pub fn de_la_compagnie(ctx: &droit::contexte::Contexte, mois: Mois) -> R<Echeance> {
     du_mois(mois, ctx.echeance_dsn()?)
 }
 
@@ -141,9 +130,9 @@ impl Echeance {
     /// émis jusqu'à 1 mois à l'avance et 3 mois en retard ». INFERENCE : le mois d'avance se compte depuis l'echeance
     /// nominale (le 5 ou le 15 du mois suivant), soit le meme jour du mois declare ; le cahier ne dit pas d'ou il se
     /// compte. Avant ce jour, la DSN est a venir.
-    pub fn premier_depot(&self) -> Resultat<Jour> {
+    pub fn premier_depot(&self) -> R<Jour> {
         let (an, mois) = if self.nominale.mois == 1 { (self.nominale.an - 1, 12) } else { (self.nominale.an, self.nominale.mois - 1) };
-        Jour::nouveau(an, mois, self.nominale.jour).ok_or_else(|| socle::date::jour_impossible(an, mois, self.nominale.jour))
+        Jour::nouveau(an, mois, self.nominale.jour).ok_or_else(|| refus(socle::date::jour_impossible(an, mois, self.nominale.jour)))
     }
 
     /// Pourquoi la date a bouge, ou `None`.
@@ -171,9 +160,9 @@ impl Echeance {
     /// Ce que les routes rendent a cote de leur date (`echeance_depot`).
     pub fn dite(&self) -> EcheanceDite {
         EcheanceDite {
-            jour: self.jour.iso(),
+            jour: self.jour,
             heure: HEURE_LIMITE,
-            nominale: self.nominale.iso(),
+            nominale: self.nominale,
             reportee: self.reportee(),
             pourquoi: self.pourquoi(),
             phrase: self.phrase(),
@@ -188,9 +177,9 @@ impl Echeance {
 /// pourquoi, sa phrase, la veille de l'annule-et-remplace, ses textes et l'inference qu'elle porte.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct EcheanceDite {
-    pub jour: String,
+    pub jour: Jour,
     pub heure: &'static str,
-    pub nominale: String,
+    pub nominale: Jour,
     pub reportee: bool,
     pub pourquoi: Option<String>,
     pub phrase: String,

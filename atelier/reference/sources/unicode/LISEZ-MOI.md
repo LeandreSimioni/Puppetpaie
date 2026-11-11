@@ -78,3 +78,16 @@ voir la passation du lot C.
 Monter de version : déposer les nouveaux fichiers (même nommage), changer les trois constantes `UNICODE_*` de
 `src/generer_tables.rs`, lancer `paie generer-tables`, et lire le `git diff` des tables (rien ne doit disparaître de la
 normalisation).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `unicode-licence-v3-20261015.txt` : `e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96`
+- `unicode-mappings-microsoft-cp1252-20261015.txt` : `f607ae328b4dff5e9bfef725f5fff0ae23f38797f8a5b95998a0d2735c0e8fad`
+- `unicode-mappings-microsoft-cp437-20261015.txt` : `6bad4dabcdf5940227c7d81fab130dcb18a77850b5d79de28b5dc4e047b0aaac`
+- `unicode-norme-18.0.0-chapitre-3-extraits-20261015.md` : `1a1a8356d022232bcff588296945a1795e706587357320818330f0926282a2b4`
+- `unicode-politique-de-stabilite-extraits-20261015.md` : `fc7125301bbb5942a5923a784b22334ca66e2056e18bd9c9690f928f557bee71`
+- `unicode-ucd-18.0.0-derivednormalizationprops-20261015.txt` : `98ac7f67d985fe781e317f6182e885e94cabb0c314769e6dd73e48b226931ccd`
+- `unicode-ucd-18.0.0-derivednumerictype-20261015.txt` : `3dade4d96bd00d71b10022bf70b370090f3ca947f977ad4dc2854e06c4d074f6`
+- `unicode-ucd-18.0.0-unicodedata-20261015.txt` : `0736451de439ae7baf1425136617da495e09ee5afbe6e394374db7009ea08950`

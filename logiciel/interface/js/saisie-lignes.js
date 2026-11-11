@@ -6,7 +6,7 @@
    ===================================================================== */
 /** La rubrique par son code, dans le catalogue rendu par le moteur. */
 function rubriqueDe(code) {
-  return (ETAT.rubriques || []).find((r) => r.code === code);
+  return ETAT.rubriques.find((r) => r.code === code);
 }
 
 /** Le déroulant des rubriques, dans l'ordre où le moteur les rend. CE QUE LA CARTE PROPOSE, LE MOTEUR LE DIT
@@ -14,9 +14,9 @@ function rubriqueDe(code) {
  *  son salarié) ; la page ne connaît aucune rubrique. La rubrique DÉJÀ choisie reste toujours offerte : une saisie ne
  *  change pas sous les doigts. */
 function optionsRubriques(choisie, propose) {
-  const siennes = propose ? new Set(propose.rubriques || []) : null;
+  const siennes = propose ? new Set(propose.rubriques) : null;
   const offerte = (r) => r.code === choisie || !siennes || siennes.has(r.code);
-  return (ETAT.rubriques || []).filter(offerte).map((r) => `<option value="${echapper(r.code)}" ${r.code === choisie ? "selected" : ""}>
+  return ETAT.rubriques.filter(offerte).map((r) => `<option value="${echapper(r.code)}" ${r.code === choisie ? "selected" : ""}>
       ${echapper(r.libelle)}</option>`).join("");
 }
 
@@ -41,8 +41,8 @@ function poserListe(cible, cle, sources, fabriquer) {
 /** Le déroulant des rubriques d'une ligne, depuis la liste commune de ce que la carte propose. La rubrique choisie
  *  qu'elle n'offre pas (une saisie ne change pas sous les doigts) fait une liste à elle. */
 function poserRubriques(select, choisie, propose) {
-  const cle = propose ? (propose.rubriques || []).join(",") : "*";
-  const offerte = !rubriqueDe(choisie) || !propose || (propose.rubriques || []).includes(choisie);
+  const cle = propose ? propose.rubriques.join(",") : "*";
+  const offerte = !rubriqueDe(choisie) || !propose || propose.rubriques.includes(choisie);
   if (offerte) {
     poserListe(select, "rubriques:" + cle, [ETAT.rubriques], () => optionsRubriques(null, propose));
   } else {
@@ -58,24 +58,26 @@ function poserRubriques(select, choisie, propose) {
  *  ce qu'une carte neuve de sa nature propose (`nouvelle_carte.propose`). */
 function proposeDuBloc(div) {
   if (div._propose) return div._propose;
-  const nature = (div.querySelector(".e-nature") || {}).value || (NOUVELLE_CARTE || {}).nature;
-  return ((NOUVELLE_CARTE || {}).propose || {})[nature] || null;
+  // La nature choisie sur la carte, sinon celle d'une carte neuve du mois.
+  const choisie = div.querySelector(".e-nature").value;
+  const propose = NOUVELLE_CARTE.propose[choisie || NOUVELLE_CARTE.nature];
+  return propose ? propose : null;
 }
 
 /** La rubrique d'une ligne neuve, le moteur la dit (la première du déroulant serait « Absence » dans une compagnie
- *  neuve) : celle que la carte propose (`propose.par_defaut`). */
+ *  neuve) : celle que la carte propose (`propose.par_defaut`), absente s'il n'en propose pas. */
 function rubriqueParDefaut(propose) {
-  return (propose && propose.par_defaut) || "";
+  return propose ? propose.par_defaut : undefined;
 }
 
 /** LES DÉROULANTS D'UNE CARTE SUIVENT CE QU'ELLE PROPOSE (la rubrique choisie reste) ; une ligne neuve dont on n'a pas
  *  choisi la rubrique prend celle que la carte propose, et son taux suit (`onchange`). */
 function reposerRubriques(div) {
   const propose = proposeDuBloc(div);
-  const cle = propose ? (propose.rubriques || []).join(",") : "*";
+  const cle = propose ? propose.rubriques.join(",") : "*";
   div.querySelectorAll(".r-code").forEach((s) => {
     const ligne = s.closest(".rubrique");
-    const voulue = ligne && ligne.dataset.parDefaut ? rubriqueParDefaut(propose) : "";
+    const voulue = ligne && ligne.dataset.parDefaut ? rubriqueParDefaut(propose) : undefined;
     if (voulue && voulue !== s.value) {
       poserRubriques(s, voulue, propose);
       s.onchange();
@@ -95,7 +97,7 @@ function peindreCases(r, cases) {
   cases.forEach((c) => { if (r._cases && r._cases[c.case]) garde[c.case] = true; });
   r._cases = garde;
   const ou = r.querySelector(".r-cases");
-  ou.innerHTML = cases.map((c) => `<label class="coche" title="${echapper(c.aide || "")}"><input type="checkbox" data-case="${echapper(c.case)}"
+  ou.innerHTML = cases.map((c) => `<label class="coche"${c.aide ? ` title="${echapper(c.aide)}"` : ""}><input type="checkbox" data-case="${echapper(c.case)}"
     ${garde[c.case] ? "checked" : ""}> ${echapper(c.libelle)}</label>`).join("");
   ou.querySelectorAll("input").forEach((x) => {
     x.onchange = () => { r._cases[x.dataset.case] = x.checked; rafraichirApercu(); };
@@ -116,12 +118,12 @@ function ligneRubrique(l = {}, propose) {
   // fichier dit `base` et `taux_majoration` ; les deux mêmes champs les
   // montrent, « 120 € à 25 % ».
   if (l.base !== undefined || l.taux_majoration !== undefined) {
-    l = { ...l, quantite: l.base ?? "", taux: l.taux_majoration ?? "" };
+    l = { ...l, quantite: l.base, taux: l.taux_majoration };
   }
   // UNE LIGNE AU MONTANT (prime, acompte, indemnité, avantage en nature) : le fichier dit `montant`, que le champ du
   // taux montre.
-  if (l.montant !== undefined) l = { ...l, taux: l.montant ?? "" };
-  if (l.taux === undefined || l.taux === null || l.taux === "") l = { ...l, taux: tauxParDefaut(code) };
+  if (l.montant !== undefined) l = { ...l, taux: l.montant };
+  if (l.taux == null) l = { ...l, taux: tauxParDefaut(code) };
   /* TOUT SUR LA MÊME LIGNE, et elle se lit comme une phrase :
 
        1 cachet à 130 €   Théâtre de la Ville   le 12
@@ -143,14 +145,14 @@ function ligneRubrique(l = {}, propose) {
          qui comptent les cachets. -->
     <button type="button" class="r-jours-btn" title="cocher les jours">—</button>
     <input class="r-quantite" type="number" min="0" step="0.5" placeholder="qté"
-           value="${l.quantite ?? ""}">
+          ${valeurDeDepart(l.quantite)}>
     <select class="r-code"></select>
     <span class="r-mot discret">à</span>
     <input class="r-taux" type="number" min="0" step="0.01" placeholder="taux"
-           value="${l.taux ?? ""}">
+          ${valeurDeDepart(l.taux)}>
     <span class="r-mot discret">€</span>
     <input class="r-lieu" placeholder="lieu — figure au contrat"
-           value="${echapper(l.lieu || "")}">
+          ${valeurDeDepart(l.lieu)}>
     <!-- LE GENRE d'un avantage en nature (repas, logement, véhicule, NTIC,
          autres : S21.G00.54.001) — seulement sur la rubrique qui le demande,
          et ses valeurs viennent du moteur (« genres »). Vide : celui de la
@@ -172,9 +174,9 @@ function ligneRubrique(l = {}, propose) {
          tout le reste de la page lit (joursDe). Les jours cochés dans un
          mois SUIVANT sont le planning de la ligne (data-planning). -->
     <input class="r-jours" type="hidden"
-           value="${echapper((l.dates || []).map((x) => +jourDe(x).slice(8)).join(" "))}">
+          ${valeurDeDepart(l.dates ? l.dates.map((x) => +jourDe(x).slice(8)).join(" ") : undefined)}>
     <input class="r-heures" type="number" min="0" step="0.5" placeholder="heures"
-           value="${l.heures ?? ""}">
+          ${valeurDeDepart(l.heures)}>
     <button class="supprimer" title="retirer cette ligne">&times;</button>
     <!-- LE LIEU PROPRE À UN JOUR : une date du fichier peut dire le sien,
          {"jour", "lieu"} (le moteur l'accepte, \`jours_des_lignes\`). Il se
@@ -185,8 +187,10 @@ function ligneRubrique(l = {}, propose) {
   poserRubriques(div.querySelector(".r-code"), code, propose);
   const majAffichage = () => {
     const r = rubriqueDe(div.querySelector(".r-code").value);
+    // Sans rubrique au catalogue (le déroulant est vide), rien ne se règle sur elle.
+    if (!r) return;
     // Les cases de la ligne sont celles que le moteur dit de sa rubrique (`cles`).
-    const cles = (r && r.cles) || [];
+    const cles = r.cles;
     const veutHeures = cles.includes("heures");
     // `.cachee` et non l'attribut `hidden` : la feuille de style pose
     // `input { display: block }`, qui l'emporterait sur le defaut du
@@ -204,12 +208,12 @@ function ligneRubrique(l = {}, propose) {
     div.querySelector(".r-taux").placeholder = montant ? "montant" : "taux";
     // Ce que la ligne fait, quand le moteur le dit (`dit` de la rubrique : l'acompte).
     const dit = div.querySelector(".r-dit");
-    dit.textContent = (r && r.dit) || "";
-    dit.classList.toggle("cachee", !(r && r.dit));
+    dit.textContent = r.dit ? r.dit : "";
+    dit.classList.toggle("cachee", !r.dit);
     // Une ligne en pourcentage : « base € à taux % », sans jours ni lieu.
     const pct = cles.includes("taux_majoration");
     const mots = div.querySelectorAll(".r-mot");
-    if (r && r.mots) [mots[0].textContent, mots[1].textContent] = r.mots;
+    [mots[0].textContent, mots[1].textContent] = r.mots;
     if (pct) {
       q.placeholder = "base €";
       div.querySelector(".r-taux").placeholder = "%";
@@ -220,32 +224,33 @@ function ligneRubrique(l = {}, propose) {
     }
     // Le genre, sur la rubrique qui en a un : les valeurs sont celles du
     // moteur. Le choix se garde d'une rubrique à l'autre tant qu'il existe.
-    const genres = (r && r.genres) || [];
+    const genres = r.genres;
     const g = div.querySelector(".r-genre");
     g.classList.toggle("cachee", !genres.length);
-    const voulu = g.dataset.pose === "1" ? g.value : (l.genre || "");
-    poserListe(g, "genres:" + (r ? r.code : ""), [genres], () => `<option value="">— genre par défaut —</option>`
+    const voulu = g.dataset.pose === "1" ? g.value : l.genre;
+    poserListe(g, "genres:" + r.code, [genres], () => `<option value="">— genre par défaut —</option>`
       + genres.map((x) => `<option value="${echapper(x.code)}">${echapper(x.code)} — ${
         echapper(x.libelle)}</option>`).join(""));
     g.value = genres.some((x) => x.code === voulu) ? voulu : "";
     g.dataset.pose = "1";
     // Le lieu, sur une nuitée ou un repas : ouvert d'office quand ce n'est pas la métropole.
-    const lieux = (r && r.lieux) || [];
+    const lieux = r.lieux;
     const av = div.querySelector(".r-avance");
     av.classList.toggle("cachee", !lieux.length);
     const t = div.querySelector(".r-territoire");
-    const lieuVoulu = t.dataset.pose === "1" ? t.value : (l.territoire || "");
-    poserListe(t, "lieux:" + (r ? r.code : ""), [lieux], () => lieux.map((x) =>
+    const lieuVoulu = t.dataset.pose === "1" ? t.value : l.territoire;
+    poserListe(t, "lieux:" + r.code, [lieux], () => lieux.map((x) =>
       `<option value="${echapper(x.code)}">${echapper(x.libelle)}</option>`).join(""));
     t.value = lieux.some((x) => x.code === lieuVoulu) ? lieuVoulu : "";
     t.dataset.pose = "1";
-    div.querySelector(".r-territoire-bloc").title = (r && r.lieu_aide) || "";
+    div.querySelector(".r-territoire-bloc").title = r.lieu_aide ? r.lieu_aide : "";
     if (t.value) av.open = true;
   };
   div.querySelector(".r-genre").onchange = rafraichirApercu;
   div.querySelector(".r-territoire").onchange = rafraichirApercu;
   // Les cases cochées de la ligne, gardées jusqu'à ce que le moteur dise lesquelles ont lieu d'être.
-  div._cases = Object.fromEntries((l.cases || []).map((k) => [k, true]));
+  div._cases = {};
+  if (l.cases) l.cases.forEach((k) => { div._cases[k] = true; });
   // Changer la rubrique d'une ligne dont le taux n'a pas été tapé : il suit
   // la rubrique. Un taux de cachet ne devient pas un taux horaire.
   div.dataset.code = code;
@@ -254,8 +259,8 @@ function ligneRubrique(l = {}, propose) {
     if (ev) delete div.dataset.parDefaut;
     const neuf = div.querySelector(".r-code").value;
     const t = div.querySelector(".r-taux");
-    if (t.value === "" || String(tauxParDefaut(div.dataset.code)) === t.value) {
-      t.value = tauxParDefaut(neuf);
+    if (t.value === "" || texteDeLaCase(tauxParDefaut(div.dataset.code)) === t.value) {
+      t.value = texteDeLaCase(tauxParDefaut(neuf));
     }
     div.dataset.code = neuf;
     majAffichage(); rafraichirApercu();
@@ -282,11 +287,12 @@ function ligneRubrique(l = {}, propose) {
     const r = rubriqueDe(div.querySelector(".r-code").value);
     if (r && r.unite === "cachet") {
       const n = joursDe(div.querySelector(".r-jours")).length;
-      div.querySelector(".r-quantite").value = n || "";
+      div.querySelector(".r-quantite").value = n > 0 ? n : "";
     }
     rafraichirApercu();
   };
-  div.dataset.planning = JSON.stringify((l.planning || []).map(jourDe).filter(Boolean));
+  // Le planning de la ligne, tel que la page le tient : les jours des mois suivants, aucun quand la ligne n'en dit pas.
+  div.dataset.planning = JSON.stringify(l.planning ? l.planning.map(jourDe).filter(Boolean) : []);
   div.querySelector(".r-jours-btn").onclick = (ev) => {
     ev.preventDefault();
     ouvrirCalendrier(div);
@@ -315,7 +321,7 @@ function ligneRubrique(l = {}, propose) {
    dans le fichier d'octobre. C'est un plancher, pas une position : les
    autres employeurs du salarié n'y sont pas. */
 function planningDe(ligne) {
-  try { return JSON.parse(ligne.dataset.planning || "[]"); } catch (e) { return []; }
+  return JSON.parse(ligne.dataset.planning);
 }
 
 /** Ce que dit le bouton : « le 12, 13 », puis le planning « +1 nov. +3 déc. ». */
@@ -325,7 +331,11 @@ function majJoursBouton(ligne) {
   const jours = joursDe(ligne.querySelector(".r-jours"));
   const plan = planningDe(ligne);
   const parMois = {};
-  plan.forEach((iso) => { const m = iso.slice(0, 7); parMois[m] = (parMois[m] || 0) + 1; });
+  plan.forEach((iso) => {
+    const m = iso.slice(0, 7);
+    if (!(m in parMois)) parMois[m] = 0;
+    parMois[m] += 1;
+  });
   let texte = jours.length ? jours.join(", ") : "— jours —";
   const suite = Object.keys(parMois).sort()
     .map((m) => `+${parMois[m]} ${MOIS_ABR[+m.slice(5, 7) - 1]}`).join(" ");
@@ -346,12 +356,16 @@ function casesMoisPasse(vue, contrats, avecNom) {
   const nb = new Date(an, mo, 0).getDate();
   const premier = (new Date(an, mo - 1, 1).getDay() + 6) % 7;
   const plage = new Map(), joue = new Map();
+  const ajouter = (carte, iso, libelle) => {
+    if (!carte.has(iso)) carte.set(iso, []);
+    carte.get(iso).push(libelle);
+  };
   contrats.forEach((c) => {
-    const libelle = (avecNom ? c.nom.split(" ")[0] + " · " : "") + (c.titre || "");
-    (c.dates || []).forEach((iso) => joue.set(iso, (joue.get(iso) || []).concat(libelle)));
+    const libelle = libelleDuPasse(c, avecNom);
+    c.dates.forEach((iso) => ajouter(joue, iso, libelle));
     for (let j = 1; j <= nb; j++) {
       const iso = `${vue}-${String(j).padStart(2, "0")}`;
-      if (iso >= c.debut && iso <= c.fin) plage.set(iso, (plage.get(iso) || []).concat(libelle));
+      if (iso >= c.debut && iso <= c.fin) ajouter(plage, iso, libelle);
     }
   });
   let cases = "";
@@ -359,16 +373,22 @@ function casesMoisPasse(vue, contrats, avecNom) {
   for (let j = 1; j <= nb; j++) {
     const iso = `${vue}-${String(j).padStart(2, "0")}`;
     const cls = joue.has(iso) ? "hist-joue" : (plage.has(iso) ? "hist" : "");
-    const titre = (joue.get(iso) || plage.get(iso) || []).join(" / ");
+    const dits = joue.get(iso) || plage.get(iso);
+    const titre = dits ? dits.join(" / ") : "";
     cases += `<span class="c-jour lu ${cls}" ${titre ? `title="${echapper(titre)}"` : ""}>${j}</span>`;
   }
   return JOURS_SEMAINE.map((x) => `<span class="c-sem">${x}</span>`).join("") + cases;
 }
 
+/** Ce qu'un contrat passé dit de lui : le prénom quand plusieurs salariés se montrent, et son titre quand il en a un. */
+function libelleDuPasse(c, avecNom) {
+  return [avecNom ? c.nom.split(" ")[0] : null, c.titre].filter((x) => x != null).join(" · ");
+}
+
 /** Une ligne de la liste des contrats d'un mois passé. */
 function ligneContratPasse(c, avecNom) {
-  return `<div class="c-passe" title="${echapper(c.numero_objet)}">
-      <span>${echapper((avecNom ? c.nom.split(" ")[0] + " · " : "") + (c.titre || ""))}</span>
+  return `<div class="c-passe"${c.numero_objet ? ` title="${echapper(c.numero_objet)}"` : ""}>
+      <span>${echapper(libelleDuPasse(c, avecNom))}</span>
       <span class="discret">${echapper(c.dit)}</span>
     </div>`;
 }
@@ -395,16 +415,15 @@ function ouvrirCalendrier(ligne, moisForce) {
   let vue = mois;                       // le mois affiché, AAAA-MM
   let attente = null;                   // un jour de planning qui attend « Valider »
   // Les contrats passés, par mois affiché, chargés à la demande. `null`
-  // tant qu'on attend le serveur : la grille se dessine sans, puis se redessine.
+  // tant qu'on attend le serveur : la grille se dessine sans, puis se redessine ;
+  // un refus (`erreur`) se dit sous la grille.
   const passes = new Map();
   const salarie = (bloc && salarieDuBloc(bloc)) || null;
   const chargerPasses = (m) => {
     if (passes.has(m)) return;
     passes.set(m, null);
-    api("contrats-passes", { mois: m, salarie }).then((r) => {
-      passes.set(m, r);
-      if (vue === m && cal.isConnected) dessiner();
-    }).catch(() => passes.set(m, {}));
+    api("contrats-passes", { mois: m, salarie }).then((r) => { passes.set(m, r); }, (e) => { passes.set(m, { erreur: e.message }); })
+      .then(() => { if (vue === m && cal.isConnected) dessiner(); });
   };
 
   const dessiner = () => {
@@ -416,8 +435,9 @@ function ouvrirCalendrier(ligne, moisForce) {
     const ici = vue === mois;
     const passe = vue < mois;
     if (passe) chargerPasses(vue);
-    const lu = (passe && passes.get(vue)) || {};
-    const contrats = lu.contrats || [];
+    // Ce qui est lu du mois passé : rien encore (`null`), un refus, ou ses contrats.
+    const lu = passe ? passes.get(vue) : null;
+    const contrats = lu && !lu.erreur ? lu.contrats : [];
     let cases = "";
     for (let i = 0; i < premier && !passe; i++) cases += `<span class="c-vide"></span>`;
     for (let j = 1; j <= nb && !passe; j++) {
@@ -429,11 +449,12 @@ function ouvrirCalendrier(ligne, moisForce) {
         ${horsContrat ? "disabled title=\"après la fin du contrat\"" : ""}>${j}</button>`;
     }
     const nJoues = jours.size, nPlan = plan.size;
-    const listePasses = !passe ? "" : (passes.get(vue) === null
+    const listePasses = !passe ? "" : (lu === null
       ? `<div class="c-passes discret">…</div>`
+      : lu.erreur ? `<div class="c-passes erreur">${echapper(lu.erreur)}</div>`
       : `<div class="c-passes">${contrats.length
           ? contrats.map((c) => ligneContratPasse(c, !salarie)).join("")
-          : `<span class="discret">${echapper(lu.rien_dit || "")}</span>`}
+          : `<span class="discret">${echapper(lu.rien_dit)}</span>`}
         </div>`);
     cal.innerHTML = `
       <div class="c-tete">
@@ -450,7 +471,7 @@ function ouvrirCalendrier(ligne, moisForce) {
         <div class="c-avert">
           <b>Contrat sur plusieurs mois</b>
           <span>${echapper(jjmmaaaa(debutDuBloc(bloc) || mois + "-01"))} → ${echapper(jjmmaaaa(attente))}</span>
-          <p>${echapper((ETAT.aides || {}).plusieurs_mois)}</p>
+          <p>${echapper(ETAT.aides.plusieurs_mois)}</p>
           <div class="c-actions">
             <button type="button" class="secondaire c-annuler">Annuler</button>
             <button type="button" class="primaire c-valider">Valider</button>
@@ -553,10 +574,13 @@ function planningDuBloc(bloc) {
   return [...vus].sort();
 }
 
+/** Le début du contrat d'un bloc : celui que la carte écrit, sinon celui que le moteur rend ; absent s'il n'en dit pas. */
 function debutDuBloc(bloc) {
-  if (!bloc) return "";
-  const ecrit = carteFermee(bloc) ? (engagementLu(bloc) || {}).debut : bloc.querySelector(".e-debut").value;
-  return ecrit || bornesLues(bloc).debut || "";
+  if (!bloc) return undefined;
+  const ecrit = carteFermee(bloc) ? engagementLu(bloc).debut : bloc.querySelector(".e-debut").value;
+  if (ecrit) return ecrit;
+  const lues = bornesLues(bloc);
+  return lues ? lues.debut : undefined;
 }
 
 /** Les jours tapés « 14 15 17 18 », en nombres, sans doublon et triés. */
@@ -578,7 +602,7 @@ function lignesDe(e, nat) {
    ne l'enregistre. Celui du cachet part de ce que le MOTEUR dit (route `saisie`, `defauts.taux_cachet`). */
 const TAUX_PAR_RUBRIQUE = {};
 function tauxParDefaut(code) {
-  return TAUX_PAR_RUBRIQUE[code] ?? "";
+  return TAUX_PAR_RUBRIQUE[code];
 }
 
 /* =======================================================================
@@ -626,7 +650,7 @@ const aUneValeur = (v) => v !== undefined && v !== null && v !== "" && v !== fal
 /** Les champs rares que l'engagement porte, posés dans le formulaire. */
 function poserRares(div, e) {
   const paye = div.querySelector(".e-paye-le");
-  paye.value = e.date_paiement || "";
+  paye.value = texteDeLaCase(e.date_paiement);
   paye.onchange = rafraichirApercu;
   const cible = div.querySelector(".e-rares");
   cible.innerHTML = CHAMPS_RARES.filter((c) => aUneValeur(e[c.cle])).map((c) => c.type === "checkbox"
@@ -654,13 +678,13 @@ function raresDuBloc(div, e) {
  * rien de saisi ne devient invisible. */
 function poserEcrit(div, e) {
   div.querySelectorAll(".e-ecrit-champ").forEach((c) => {
-    c.value = e[c.dataset.cle] ?? "";
+    c.value = texteDeLaCase(e[c.dataset.cle]);
     // Un choix garde sa valeur jusqu'à ce que le moteur dise ses options (`montrerEcrit`).
-    c.dataset.valeur = e[c.dataset.cle] ?? "";
+    c.dataset.valeur = texteDeLaCase(e[c.dataset.cle]);
     c.onchange = rafraichirApercu;
   });
   const n = div.querySelector(".e-numero-dit");
-  if (n) { n.value = e.numero || ""; n.onchange = rafraichirApercu; }
+  if (n) { n.value = texteDeLaCase(e.numero); n.onchange = rafraichirApercu; }
   montrerEcrit(div, []);
 }
 
@@ -669,15 +693,16 @@ function poserEcrit(div, e) {
 function montrerEcrit(div, demandes, modeles) {
   const choix = div.querySelector('.e-ecrit-champ[data-cle="modele_contrat"]');
   if (choix && modeles) {
-    const v = choix.value || choix.dataset.valeur || "";
-    choix.innerHTML = modeles.map((x) => `<option value="${echapper(x.id || "")}">${echapper(x.nom)}</option>`).join("");
-    choix.value = v;
-    choix.dataset.valeur = v;
+    const v = choix.value || choix.dataset.valeur;
+    // Le modèle de base n'a pas d'identifiant : son choix est vide, et la case ne s'écrit pas (`ecritDuBloc`).
+    choix.innerHTML = modeles.map((x) => `<option value="${echapper(texteDeLaCase(x.id))}">${echapper(x.nom)}</option>`).join("");
+    choix.value = texteDeLaCase(v);
+    choix.dataset.valeur = texteDeLaCase(v);
   }
   div.querySelectorAll(".e-ecrit [data-ecrit]").forEach((l) => {
     // La case du numéro ne se montre que demandée : sa valeur est celle du contrat, que toute carte porte.
     const c = l.querySelector(".e-ecrit-champ");
-    l.hidden = !(demandes || []).includes(l.dataset.ecrit) && (!c || c.value.trim() === "");
+    l.hidden = !(demandes && demandes.includes(l.dataset.ecrit)) && (!c || c.value.trim() === "");
   });
   nommerLesCases(div);
 }
@@ -690,7 +715,7 @@ function nommerLesCases(div) {
   if (!d) return;
   const noms = [...d.querySelectorAll(".e-recours-bloc, .e-ecrit [data-ecrit]")]
     .filter((l) => !l.hidden)
-    .map((l) => (l.firstChild.textContent || "").trim().toLowerCase())
+    .map((l) => l.firstChild.textContent.trim().toLowerCase())
     .filter(Boolean);
   if (noms.length) d.dataset.cases = noms.join(", ");
   else delete d.dataset.cases;
@@ -712,7 +737,8 @@ function ecritDuBloc(div, e) {
 
 /** Les jours d'une ligne qui disent leur propre lieu, un champ chacun. */
 function lieuxDesJours(l) {
-  const propres = [...(l.dates || []), ...(l.planning || [])]
+  // Les dates et le planning, quand la forme de la ligne en porte.
+  const propres = [l.dates, l.planning].filter(Boolean).flat()
     .filter((x) => x && typeof x === "object" && x.lieu);
   if (!propres.length) return "";
   return `<span class="discret">lieu propre</span> ` + propres.map((x) =>
@@ -723,13 +749,13 @@ function lieuxDesJours(l) {
 /** Le catalogue des métiers, tel que le moteur le rend (route « etat »),
  *  groupé par famille dans SON ordre. La page ne trie pas, elle affiche. */
 function metierDe(code) {
-  return (ETAT.emplois || []).find((m) => m.code === code) || null;
+  return ETAT.emplois.find((m) => m.code === code) || null;
 }
 
 function optionsMetiers(choisi, vide = "— celui de la fiche —") {
-  const familles = ETAT.familles_emplois || [];
+  const familles = ETAT.familles_emplois;
   const parFamille = {};
-  (ETAT.emplois || []).forEach((m) => { (parFamille[m.famille] ||= []).push(m); });
+  ETAT.emplois.forEach((m) => { (parFamille[m.famille] ||= []).push(m); });
   let html = `<option value="">${echapper(vide)}</option>`;
   familles.forEach((f) => {
     if (!parFamille[f]) return;
@@ -741,7 +767,7 @@ function optionsMetiers(choisi, vide = "— celui de la fiche —") {
   // quel : on ne perd pas un métier parce que l'écran ne le connaît pas.
   // Un métier décoché dans l'onglet Métiers garde son nom là où il est choisi.
   if (choisi && !metierDe(choisi)) {
-    const ailleurs = (ETAT.emplois_autres || []).find((m) => m.code === choisi);
+    const ailleurs = ETAT.emplois_autres.find((m) => m.code === choisi);
     html += `<option value="${echapper(choisi)}">${echapper(ailleurs ? ailleurs.libelle : choisi)}</option>`;
   }
   return html;
@@ -752,19 +778,19 @@ function optionsMetiers(choisi, vide = "— celui de la fiche —") {
 function poserMetiers(select, choisi) {
   poserListe(select, "metiers", [ETAT.emplois, ETAT.familles_emplois], () => optionsMetiers(""));
   if (choisi && !metierDe(choisi)) {
-    const ailleurs = (ETAT.emplois_autres || []).find((m) => m.code === choisi);
+    const ailleurs = ETAT.emplois_autres.find((m) => m.code === choisi);
     const o = document.createElement("option");
     o.value = choisi;
     o.textContent = ailleurs ? ailleurs.libelle : choisi;
     select.appendChild(o);
   }
-  select.value = choisi || "";
+  select.value = texteDeLaCase(choisi);
 }
 
 /** Le déroulant des spectacles, depuis la liste commune. */
 function poserSpectacles(select) {
   poserListe(select, "spectacles", [ETAT.spectacles], () => [`<option value="">— à choisir —</option>`,
-    ...(ETAT.spectacles || []).map(
+    ...ETAT.spectacles.map(
       (s) => `<option value="${echapper(s.cle)}">${echapper(s.titre)}</option>`)].join(""));
 }
 
@@ -809,9 +835,11 @@ function ligneEngagement(e = {}, { fermee = false } = {}) {
     <div class="etats"></div>`;
   // Le numéro et ce qu'il faut pour reconnaître l'engagement de la carte : posés
   // dès la coque, l'état de l'engagement s'y retrouve avant toute ouverture.
-  div.dataset.numero = e.numero || "";
-  // À qui ce numéro appartient : un salarié coché en plus n'en hérite pas.
-  div.dataset.numeroDe = e.numero ? (e.salarie || "") : "";
+  // À qui ce numéro appartient : un salarié coché en plus n'en hérite pas. Sans numéro, la carte n'en porte pas.
+  if (e.numero) {
+    div.dataset.numero = e.numero;
+    if (e.salarie) div.dataset.numeroDe = e.salarie;
+  }
   const mois = document.getElementById("mois").value;
   if (e.debut && mois && e.debut.slice(0, 7) < mois) div.classList.add("en-cours");
   // Son identité, que le moteur a rendue : ce qui la désigne quand elle s'écrit.
@@ -826,11 +854,10 @@ function ligneEngagement(e = {}, { fermee = false } = {}) {
  *  reste : l'enregistrement automatique ne réécrit pas le fichier pour rien. */
 function ouvrirCarte(div) {
   if (!carteFermee(div)) return;
-  const lu = engagementLu(div) || {};
-  construireCarte(div, lu);
+  construireCarte(div, engagementLu(div));
   if (div._paies) peindreChiffres(div, div._total);
   // Les cases du contrat écrit que le moteur a demandées pour cet engagement, au dernier aperçu.
-  const p = (div._paies || [])[0];
+  const p = div._paies ? div._paies[0] : undefined;
   montrerEcrit(div, p && p.contrat ? p.contrat.ecrits : div._ecrits, p && p.contrat ? p.contrat.modeles : div._modeles);
   montrerFaitsAvances(div, p ? p.faits_avances : div._faitsAvances);
   marquerEcrite(div);
@@ -841,7 +868,7 @@ function ouvrirCarte(div) {
  *  case, choisie : on ne perd pas un engagement parce qu'on a archivé quelqu'un. */
 let LISTES_QUI = 0;
 function poserQui(liste, voulu) {
-  const actifs = ETAT.salaries || [];
+  const actifs = ETAT.salaries;
   const connus = new Set(actifs.map((s) => s.cle));
   poserListe(liste, "salaries", [actifs], () => actifs.map(
     (s) => `<label><input type="radio" class="e-qui-case" value="${echapper(s.cle)}"> ${
@@ -859,7 +886,7 @@ function poserQui(liste, voulu) {
 /** Le formulaire d'une carte, posé devant sa coque et branché. */
 function construireCarte(div, e) {
   // QUI : un salarié. Une carte porte un engagement, et un engagement un salarié.
-  const voulu = e.salarie || "";
+  const voulu = e.salarie;
   // LA NATURE DU CONTRAT, écrite sur la carte dès l'ouverture (`nouvelle_carte` de la route saisie), et une case
   // seulement là où elle se choisit. Elle change la forme du bloc : un permanent n'a ni spectacle ni cachets, il a
   // un salaire au mois et des faits (`natures[].carte`).
@@ -1127,27 +1154,27 @@ function construireCarte(div, e) {
   const selNat = div.querySelector(".e-nature");
   // Le déroulant : les natures que le mois propose (`nouvelle_carte.natures` de la route saisie) ; une carte qui a déjà
   // sa nature la garde, même quand le mois n'en propose plus de neuve (un permanent engagé avant).
-  const proposees = NOUVELLE_CARTE.natures || [];
-  const garde = e.nature && !proposees.includes(e.nature) ? e.nature : "";
-  const offertes = () => (ETAT.natures || []).filter((n) => proposees.includes(n.cle) || n.cle === garde);
+  const proposees = NOUVELLE_CARTE.natures;
+  const garde = e.nature && !proposees.includes(e.nature) ? e.nature : undefined;
+  const offertes = () => ETAT.natures.filter((n) => proposees.includes(n.cle) || n.cle === garde);
   poserListe(selNat, garde ? `natures:${garde}` : "natures", [ETAT.natures, proposees], () => offertes().map(
-    (n) => `<option value="${echapper(n.cle)}" title="${echapper(n.aide || "")}">${echapper(n.libelle)}</option>`).join(""));
+    (n) => `<option value="${echapper(n.cle)}" title="${echapper(n.aide)}">${echapper(n.libelle)}</option>`).join(""));
   // Le nom court se lit ; ce qu'il veut dire est dans l'aide du champ, nature par nature.
   div.querySelector(".e-nature-bloc").title = offertes().filter((n) => n.aide).map((n) => `${n.libelle} : ${n.aide}`).join("\n");
-  selNat.value = e.nature || "";
+  selNat.value = texteDeLaCase(e.nature);
   // Une autre nature : ce que l'aperçu proposait pour l'ancienne ne vaut plus, la carte neuve de celle-ci le dit.
   selNat.onchange = () => { div._propose = null; viderBornes(div); majNature(div); rafraichirApercu(); };
   const selSpec = div.querySelector(".e-spectacle");
   poserSpectacles(selSpec);
-  selSpec.value = e.spectacle || "";
+  selSpec.value = texteDeLaCase(e.spectacle);
   selSpec.onchange = rafraichirApercu;
-  // --- l'établissement, s'il y a à choisir (le moteur dit lesquels)
+  // --- l'établissement, s'il y a à choisir (le moteur dit lesquels ; rien quand la compagnie n'a que son siège)
   const selEtab = div.querySelector(".e-etablissement");
-  const etabs = Array.isArray((ETAT.configuration || {}).etablissements) ? ETAT.configuration.etablissements : [];
-  div.querySelector(".e-etablissement-bloc").hidden = !etabs.length;
-  selEtab.innerHTML = etabs.map((x) => `<option value="${echapper(x.nic || "")}">${
-    echapper([x.nom, x.periode_dit].filter(Boolean).join(" — "))}</option>`).join("");
-  selEtab.value = e.etablissement || "";
+  const etabs = ETAT.configuration.etablissements;
+  div.querySelector(".e-etablissement-bloc").hidden = !etabs;
+  selEtab.innerHTML = etabs ? etabs.map((x) => `<option value="${echapper(texteDeLaCase(x.nic))}">${
+    echapper([x.nom, x.periode_dit].filter(Boolean).join(" — "))}</option>`).join("") : "";
+  selEtab.value = texteDeLaCase(e.etablissement);
   selEtab.onchange = rafraichirApercu;
   // --- le métier
   const selMet = div.querySelector(".e-metier");
@@ -1158,7 +1185,8 @@ function construireCarte(div, e) {
     div.querySelector(".e-cadre-bloc").hidden = !m;
     if (m && depuisCatalogue) cadre.checked = !!m.cadre_par_defaut;
   };
-  cadre.checked = e.cadre === true || (e.cadre == null && !!(metierDe(e.metier) || {}).cadre_par_defaut);
+  const metierLu = metierDe(e.metier);
+  cadre.checked = e.cadre === true || (e.cadre == null && !!metierLu && !!metierLu.cadre_par_defaut);
   majCadre(false);
   selMet.onchange = () => { majCadre(true); rafraichirApercu(); };
   cadre.onchange = rafraichirApercu;
@@ -1184,15 +1212,15 @@ function construireCarte(div, e) {
     c.onchange = () => ajusterBloc(div, c);
   });
   // --- le contrat
-  div.querySelector(".e-debut").value = e.debut || "";
-  div.querySelector(".e-fin").value = e.fin || "";
+  div.querySelector(".e-debut").value = texteDeLaCase(e.debut);
+  div.querySelector(".e-fin").value = texteDeLaCase(e.fin);
   div.dataset.forme = formeDePaie(div);
   div.querySelectorAll(".e-debut, .e-fin").forEach((c) => {
     c.onchange = () => { majContrat(div); majRupture(div); rafraichirApercu(); };
   });
   // --- le mois payé d'un permanent, et ses faits
-  div.querySelector(".e-salaire").value = e.salaire_mensuel ?? "";
-  div.querySelector(".e-quotite").value = e.quotite_contrat ?? "";
+  div.querySelector(".e-salaire").value = texteDeLaCase(e.salaire_mensuel);
+  div.querySelector(".e-quotite").value = texteDeLaCase(e.quotite_contrat);
   // Le salaire et la quotité tapés recalculent et s'enregistrent (un
   // permanent repris d'un autre logiciel n'a pas d'autre case qui fasse sa
   // paie). `onchange` : pas un calcul par touche d'un montant.
@@ -1214,30 +1242,31 @@ function construireCarte(div, e) {
   // « à choisir » vide — le moteur dira qu'il manque —, et la transaction
   // sur le défaut de la norme (02, « non »), jamais sur la première venue.
   poserListe(div.querySelector(".e-preavis-type"), "preavis", [ETAT.types_preavis], () =>
-    [`<option value="">— à choisir —</option>`, ...(ETAT.types_preavis || []).map(
+    [`<option value="">— à choisir —</option>`, ...ETAT.types_preavis.map(
       (t) => `<option value="${echapper(t.code)}" data-dates="${t.dates ? 1 : 0}">${
         echapper(t.code)} — ${echapper(t.libelle)}</option>`)].join(""));
   poserListe(div.querySelector(".e-transaction"), "transaction", [ETAT.transaction], () =>
-    (ETAT.transaction || []).map(
+    ETAT.transaction.map(
       (t) => `<option value="${echapper(t.code)}"${t.defaut ? " selected" : ""}>${
         echapper(t.libelle)}</option>`).join(""));
-  const preavis = e.preavis || {};
-  div.dataset.motifRupture = e.motif_rupture || "";
-  div.dataset.motifRecours = e.motif_recours || "";
-  div.querySelector(".e-preavis-type").value = preavis.type || "";
-  div.querySelector(".e-preavis-debut").value = preavis.debut || "";
-  div.querySelector(".e-preavis-fin").value = preavis.fin || "";
-  div.querySelector(".e-notification").value = e.notification_rupture || "";
-  div.querySelector(".e-engagement-licenciement").value = e.engagement_licenciement || "";
-  div.querySelector(".e-signature-convention").value = e.signature_convention || "";
-  div.querySelector(".e-dernier-paye").value = e.dernier_jour_paye || "";
+  // Le préavis, quand l'engagement en dit un : ses trois cases ; sinon elles restent vides.
+  const preavis = e.preavis;
+  if (e.motif_rupture) div.dataset.motifRupture = e.motif_rupture;
+  if (e.motif_recours) div.dataset.motifRecours = e.motif_recours;
+  div.querySelector(".e-preavis-type").value = texteDeLaCase(preavis && preavis.type);
+  div.querySelector(".e-preavis-debut").value = texteDeLaCase(preavis && preavis.debut);
+  div.querySelector(".e-preavis-fin").value = texteDeLaCase(preavis && preavis.fin);
+  div.querySelector(".e-notification").value = texteDeLaCase(e.notification_rupture);
+  div.querySelector(".e-engagement-licenciement").value = texteDeLaCase(e.engagement_licenciement);
+  div.querySelector(".e-signature-convention").value = texteDeLaCase(e.signature_convention);
+  div.querySelector(".e-dernier-paye").value = texteDeLaCase(e.dernier_jour_paye);
   if (e.transaction) div.querySelector(".e-transaction").value = e.transaction;
   div.querySelector(".e-en-droit").value = e.en_droit_a_la_retraite === true ? "oui"
     : e.en_droit_a_la_retraite === false ? "non" : "";
   div.querySelector(".e-preavis-non-effectue").checked = !!e.preavis_non_effectue;
-  div.querySelector(".e-preavis-mois").value = e.preavis_mois ?? "";
+  div.querySelector(".e-preavis-mois").value = texteDeLaCase(e.preavis_mois);
   div.querySelector(".e-precarite-ecartee").checked = e.precarite_due === false;
-  div.querySelector(".e-precarite-pourquoi").value = e.precarite_pourquoi || "";
+  div.querySelector(".e-precarite-pourquoi").value = texteDeLaCase(e.precarite_pourquoi);
   div.querySelector(".e-preavis-type").onchange = () => { majRupture(div); rafraichirApercu(); };
   div.querySelectorAll(".e-rupture input, .e-motif-rupture, .e-transaction, .e-recours, .e-en-droit")
     .forEach((c) => { c.onchange = () => { majRupture(div); rafraichirApercu(); }; });
@@ -1275,7 +1304,7 @@ function construireCarte(div, e) {
   div.querySelector(".e-options").hidden = !(e.metier || e.cadre != null || aUneValeur(e.date_paiement)
     || CHAMPS_RARES.some((c) => aUneValeur(e[c.cle]))
     || ["periode_essai_jours", "personne_remplacee", "repartition_horaire", "clauses_particulieres", "modele_contrat"].some((c) => aUneValeur(e[c]))
-    || nat.mensuelle || e.debut && e.debut.slice(0, 7) < (document.getElementById("mois").value || "")
+    || nat.mensuelle || e.debut && e.debut.slice(0, 7) < document.getElementById("mois").value
     || e.motif_recours || e.motif_rupture);
   return div;
 }
@@ -1283,9 +1312,7 @@ function construireCarte(div, e) {
 /** La nature d'un engagement, telle que `contrats-base.json` la décrit. Une carte la dit toujours : elle s'ouvre
  *  dans la nature choisie (`nouvel-engagement`). */
 function natureDe(cle) {
-  return (ETAT.natures || []).find((n) => n.cle === cle)
-      || { cle: "", libelle: "", mensuelle: false, spectacle: false,
-           signalement_fctu: false, signalement_par_motif: {}, motifs_rupture: [] };
+  return ETAT.natures.find((n) => n.cle === cle);
 }
 
 /** La forme de paie de la nature choisie : au mois, ou à l'usage (cachets,
@@ -1344,7 +1371,7 @@ function majNature(div) {
   if (nat.mensuelle) {
     majContrat(div);
   }
-  div.querySelector(".e-contrat-note").textContent = (ETAT.aides || {})[bornes ? "bornes_au_mois" : "bornes_au_calendrier"] || "";
+  div.querySelector(".e-contrat-note").textContent = ETAT.aides[bornes ? "bornes_au_mois" : "bornes_au_calendrier"];
   // LA DURÉE DU CONTRAT se tape, elle ne se devine pas : la durée de
   // référence d'un temps plein que le moteur donne (`quotite_defaut`) se
   // propose d'un clic, jamais en grisé dans la case, où elle passerait pour
@@ -1353,7 +1380,7 @@ function majNature(div) {
   const pleine = div.querySelector(".e-temps-plein");
   pleine.hidden = nat.quotite_defaut == null;
   if (nat.quotite_defaut != null) {
-    pleine.textContent = nat.temps_plein_dit || "";
+    pleine.textContent = texteDeLaCase(nat.temps_plein_dit);
     pleine.onclick = (ev) => {
       ev.preventDefault();
       quotite.value = nat.quotite_defaut;
@@ -1362,10 +1389,10 @@ function majNature(div) {
     };
   }
   // Le motif de recours : proposé seulement par les natures qui en ont un.
-  const recours = nat.motifs_recours || [];
+  const recours = nat.motifs_recours;
   div.querySelector(".e-recours-bloc").hidden = !recours.length;
   const sel = div.querySelector(".e-recours");
-  const voulu = sel.value || div.dataset.motifRecours || "";
+  const voulu = sel.value || div.dataset.motifRecours;
   poserListe(sel, "recours:" + nat.cle, [recours], () => [`<option value="">— à choisir —</option>`,
     ...recours.map((m) => `<option value="${echapper(m.code)}">${echapper(m.code)} — ${
       echapper(m.libelle)}</option>`)].join(""));
@@ -1394,13 +1421,13 @@ function majRupture(div) {
   const nat = natureDe(div.querySelector(".e-nature").value);
   const bloc = div.querySelector(".e-rupture");
   // Un contrat aux cachets n'écrit pas sa fin : le moteur la donne (`contrat.rupture`).
-  const fin = div.querySelector(".e-fin").value || (div._rupture && div._rupture.fin) || "";
-  const motifs = nat.motifs_rupture || [];
+  const fin = div.querySelector(".e-fin").value || (div._rupture && div._rupture.fin);
+  const motifs = nat.motifs_rupture;
   // LA FIN NE SE DEMANDE QUE LE MOIS OÙ ELLE A LIEU : un CDD de janvier à
   // juin n'a rien à dire de sa fin en janvier. Elle paraît quand la fin du
   // contrat tombe dans le mois affiché (ou avant : une fin avancée), ou
   // quand un motif est déjà dit.
-  const moisAffiche = (document.getElementById("mois") || {}).value || "";
+  const moisAffiche = document.getElementById("mois").value;
   const finCeMois = fin && (!moisAffiche || fin.slice(0, 7) <= moisAffiche);
   const dejaDit = !!(div.querySelector(".e-motif-rupture").value || div.dataset.motifRupture);
   bloc.hidden = !(fin && (finCeMois || dejaDit) && (nat.signalement_fctu || motifs.length));
@@ -1409,20 +1436,22 @@ function majRupture(div) {
   // vide d'une nature dont la fin par défaut ne se signale pas (le CDDU)
   // est ce défaut : la fin à son terme.
   const sel = div.querySelector(".e-motif-rupture");
-  const voulu = sel.value || div.dataset.motifRupture || "";
-  const vide = nat.motif_rupture_vide_dit || "";
-  poserListe(sel, "rupture:" + nat.cle, [nat.motifs_rupture, vide], () => [`<option value="">${echapper(vide)}</option>`,
-    ...(nat.motifs_rupture || []).map(
+  const voulu = sel.value || div.dataset.motifRupture;
+  const vide = nat.motif_rupture_vide_dit;
+  poserListe(sel, "rupture:" + nat.cle, [motifs, vide], () => [`<option value="">${echapper(vide)}</option>`,
+    ...motifs.map(
       (m) => `<option value="${echapper(m.code)}">${echapper(m.code)} — ${echapper(m.libelle)}</option>`)].join(""));
-  sel.value = (nat.motifs_rupture || []).some((m) => m.code === voulu) ? voulu : "";
+  sel.value = motifs.some((m) => m.code === voulu) ? voulu : "";
   // Ce que le moteur dit du motif choisi (ce qu'il ouvre pour le salarié), sous la liste.
   const motifDit = div.querySelector(".e-motif-dit");
-  const dit = ((nat.motifs_rupture || []).find((m) => m.code === sel.value) || {}).dit || "";
-  motifDit.textContent = dit;
+  const motif = motifs.find((m) => m.code === sel.value);
+  const dit = motif && motif.dit;
+  motifDit.textContent = texteDeLaCase(dit);
   motifDit.hidden = !dit;
-  const faits = (nat.faits_de_rupture || {})[sel.value] || [];
+  // Les faits que le motif choisi demande (`faits_de_rupture`, du moteur) ; aucun sans motif.
+  const faits = nat.faits_de_rupture[sel.value];
   div.querySelectorAll(".e-rupture [data-fait]").forEach((l) => {
-    l.hidden = !faits.includes(l.dataset.fait);
+    l.hidden = !(faits && faits.includes(l.dataset.fait));
   });
   // La durée et le pourquoi ne se montrent qu'avec leur case.
   div.querySelector(".e-preavis-mois-l").hidden ||=
@@ -1440,7 +1469,7 @@ function majRupture(div) {
   // Une fin qui ne se signale pas (le CDDU à son terme) ne montre que son
   // motif : le reste ne partirait nulle part.
   const signale = finSeSignale(nat, sel.value);
-  div.querySelector(".e-rupture-dit").textContent = (ETAT.aides || {})[signale ? "fin_signalee" : "fin_derogatoire"] || "";
+  div.querySelector(".e-rupture-dit").textContent = ETAT.aides[signale ? "fin_signalee" : "fin_derogatoire"];
   if (!signale) {
     bloc.querySelectorAll(":scope > label:not(.e-motif-l)").forEach((l) => { l.hidden = true; });
   } else {
@@ -1458,15 +1487,15 @@ function ligneFait(quoi, v = {}) {
   div.className = "fait fait-" + quoi;
   if (quoi === "conges") {
     div.innerHTML = `
-      <label>du <input type="date" class="f-debut" value="${echapper(v.debut || "")}"></label>
-      <label>au <input type="date" class="f-fin" value="${echapper(v.fin || "")}"></label>
+      <label>du <input type="date" class="f-debut"${valeurDeDepart(v.debut)}></label>
+      <label>au <input type="date" class="f-fin"${valeurDeDepart(v.fin)}></label>
       <button class="retirer-fait lien" title="retirer">&#x2715;</button>`;
   } else {
     div.innerHTML = `
-      <label>rubrique <input type="text" class="f-rubrique"
-        value="${echapper(v.rubrique ?? "prime")}"></label>
+      <label>rubrique <input type="text" class="f-rubrique" placeholder="prime"
+       ${valeurDeDepart(v.rubrique)}></label>
       <label>montant <input type="number" step="0.01" class="f-montant"
-        value="${echapper(v.montant ?? "")}"></label>
+       ${valeurDeDepart(v.montant)}></label>
       ${v.libelle ? `<label>libellé <input class="f-libelle" value="${echapper(v.libelle)}"></label>` : ""}
       <button class="retirer-fait lien" title="retirer">&#x2715;</button>`;
   }
@@ -1482,8 +1511,8 @@ function ligneFait(quoi, v = {}) {
 const FAITS = { conges: ".e-conges", primes: ".e-primes" };
 
 function remplirFaits(div, e) {
-  (e.conges_pris || []).forEach((c) => div.querySelector(FAITS.conges).appendChild(ligneFait("conges", c)));
-  (e.primes || []).forEach((p) => div.querySelector(FAITS.primes).appendChild(ligneFait("primes", p)));
+  if (e.conges_pris) e.conges_pris.forEach((c) => div.querySelector(FAITS.conges).appendChild(ligneFait("conges", c)));
+  if (e.primes) e.primes.forEach((p) => div.querySelector(FAITS.primes).appendChild(ligneFait("primes", p)));
 }
 
 /* LES CASES « AVANCÉ » D'UN MOIS PAYÉ : celles que le catalogue marque
@@ -1492,7 +1521,7 @@ function remplirFaits(div, e) {
    moteur dit lesquelles l'engagement appelle (`faits_avances` de l'aperçu) :
    une case se montre appelée, ou quand elle a déjà une valeur. */
 function casesAvancees() {
-  return ((CATALOGUE["valider-engagement"] || {}).cases || []).filter((c) => c.avance);
+  return CATALOGUE["valider-engagement"].cases.filter((c) => c.avance);
 }
 
 function poserFaitsAvances(div, e) {
@@ -1501,19 +1530,20 @@ function poserFaitsAvances(div, e) {
   cible.innerHTML = casesAvancees().map((c) => `
     <label data-fait="${echapper(c.nom)}" hidden>${echapper(c.libelle)}
       <input type="number" step="0.01" min="0" class="e-fait-nombre" data-cle="${echapper(c.nom)}"
-             value="${echapper(e[c.nom] ?? "")}"></label>`).join("");
+            ${valeurDeDepart(e[c.nom])}></label>`).join("");
   cible.querySelectorAll("input").forEach((c) => { c.onchange = rafraichirApercu; });
-  montrerFaitsAvances(div, div._faitsAvances || []);
+  montrerFaitsAvances(div, div._faitsAvances);
 }
 
+/* `appeles` : les faits que le moteur appelle (`faits_avances` de l'aperçu) ; aucun tant que l'aperçu ne les a pas dits. */
 function montrerFaitsAvances(div, appeles) {
   const bloc = div.querySelector(".e-faits-avances");
   if (!bloc) return;
-  div._faitsAvances = appeles || [];
+  div._faitsAvances = appeles;
   let visibles = 0, remplies = 0;
   bloc.querySelectorAll("[data-fait]").forEach((l) => {
     const rempli = l.querySelector("input").value.trim() !== "";
-    l.hidden = !div._faitsAvances.includes(l.dataset.fait) && !rempli;
+    l.hidden = !(appeles && appeles.includes(l.dataset.fait)) && !rempli;
     if (!l.hidden) visibles++;
     if (rempli) remplies++;
   });
@@ -1538,12 +1568,16 @@ function ajouterFait(div, quoi) {
  *  Ce qui est incomplet, en revanche, part tel quel — c'est le moteur qui
  *  dit ce qui manque, pas la page. */
 function faitsDuBloc(div) {
-  const val = (n, s) => (n.querySelector(s) || {}).value || "";
+  // Une case vide, ou absente de la ligne (le libellé d'une prime qui n'en a pas), part absente.
+  const val = (n, s) => {
+    const c = n.querySelector(s);
+    return c && c.value ? c.value : null;
+  };
   const conges = [...div.querySelectorAll(".fait-conges")]
-    .map((f) => ({ debut: val(f, ".f-debut") || null, fin: val(f, ".f-fin") || null }))
+    .map((f) => ({ debut: val(f, ".f-debut"), fin: val(f, ".f-fin") }))
     .filter((c) => c.debut || c.fin);
   const primes = [...div.querySelectorAll(".fait-primes")]
-    .map((f) => ({ montant: +val(f, ".f-montant"), rubrique: val(f, ".f-rubrique"), libelle: val(f, ".f-libelle") || null }))
+    .map((f) => ({ montant: +val(f, ".f-montant"), rubrique: val(f, ".f-rubrique"), libelle: val(f, ".f-libelle") }))
     .filter((p) => p.montant);
   return { conges, primes };
 }
@@ -1557,13 +1591,13 @@ function majContrat(div) {
   if (!d) return;
   const mois = document.getElementById("mois").value;
   const lues = bornesLues(div);
-  const debut = div.querySelector(".e-debut").value || lues.debut || "";
-  const fin = div.querySelector(".e-fin").value || lues.fin || "";
-  const numero = div.dataset.numero || "";
+  const debut = div.querySelector(".e-debut").value || (lues && lues.debut);
+  const fin = div.querySelector(".e-fin").value || (lues && lues.fin);
+  const numero = div.dataset.numero;
   const n = div.querySelector(".e-numero");
   n.hidden = !numero;
-  n.querySelector("span").textContent = numero;
-  n.title = (ETAT.aides || {}).numero_contrat || "";
+  n.querySelector("span").textContent = texteDeLaCase(numero);
+  n.title = ETAT.aides.numero_contrat;
   const s = d.querySelector("summary");
   const enCours = !!(debut && mois && debut.slice(0, 7) < mois);
   const sePoursuit = !!(fin && mois && fin.slice(0, 7) > mois);
@@ -1572,7 +1606,7 @@ function majContrat(div) {
   // la carte tire ses bornes (un contrat au mois, de son début ; les autres, de leurs jours joués).
   if (div._contratDit) { s.textContent = div._contratDit; return; }
   const aide = !debut && natureDe(div.querySelector(".e-nature")?.value).mensuelle ? "debut_au_mois" : "bornes_jouees";
-  s.innerHTML = `Contrat <span class="discret">— ${echapper((ETAT.aides || {})[aide])}</span>`;
+  s.innerHTML = `Contrat <span class="discret">— ${echapper(ETAT.aides[aide])}</span>`;
 }
 
 /** Les listes de salariés et de spectacles de TOUS les blocs, refaites sur
@@ -1612,15 +1646,17 @@ function nouvelleFiche(nom) {
   dessinerConfig();
   // L'ancienneté d'une fiche neuve : celle de son embauche, que le moteur
   // pose à la validation de son premier engagement (à changer, dans Avancé).
+  // Une fiche neuve n'a encore ni anomalie, ni écart, ni pièce ouverte ; ce qu'elle montre, la première réponse le dit.
   const donnees = { actif: true };
-  dessinerFormulaire({ nom, cle: null, donnees, anomalies: [] });
+  dessinerFormulaire({ nom, cle: null, donnees, anomalies: [], ecarts: [], pieces_ouvertes: [] });
   document.getElementById("config-formulaire").scrollIntoView({ behavior: "smooth" });
 }
 
-/** Le salarié de la carte (`""` : aucun choisi). */
+/** Le salarié de la carte, absent quand aucun n'est choisi. */
 function salarieDuBloc(div) {
-  if (carteFermee(div)) return (engagementLu(div) || {}).salarie || "";   // une carte fermée : le sien
-  return (div.querySelector(".e-qui-case:checked") || {}).value || "";
+  if (carteFermee(div)) return engagementLu(div).salarie;   // une carte fermée : le sien
+  const c = div.querySelector(".e-qui-case:checked");
+  return c ? c.value : undefined;
 }
 
 /** Le résumé de la liste refermée : le nom choisi, ou l'invitation. */
@@ -1684,7 +1720,7 @@ function lignesDuBloc(div, mois) {
       montant: nombre(t),
       genre: texte(r.querySelector(".r-genre").value),
       territoire: texte(r.querySelector(".r-territoire").value),
-      cases: Object.keys(r._cases || {}).filter((k) => r._cases[k]),
+      cases: Object.keys(r._cases).filter((k) => r._cases[k]),
       lieu: texte(r.querySelector(".r-lieu").value),
       dates: joursDe(r.querySelector(".r-jours")).map((j) => date(mois + "-" + String(j).padStart(2, "0"))),
       // Le planning de la ligne : les jours cochés dans les mois suivants.
@@ -1696,9 +1732,10 @@ function lignesDuBloc(div, mois) {
 }
 
 /** Les bornes de l'engagement d'une carte, telles que le moteur les lit de ses lignes de travail (`debut`, `fin` de
- *  sa paie dans l'aperçu) ; vides tant que l'aperçu ne les a pas rendues. */
+ *  sa paie dans l'aperçu, chacune absente quand il ne la dit pas) ; aucune (`null`) tant que l'aperçu ne les a pas
+ *  rendues. */
 function bornesLues(div) {
-  return div._bornes || { debut: "", fin: "" };
+  return div._bornes ? div._bornes : null;
 }
 
 /* UNE CARTE NEUVE S'OUVRE DANS LA NATURE QUE LE MOTEUR DIT POUR LE MOIS (`nouvelle_carte` de la route saisie), écrite
@@ -1721,8 +1758,8 @@ async function poserContratsEnCours(mois) {
   let r;
   try {
     r = await api("contrats-en-cours", { mois });
-    CONTRATS_EN_COURS = r.contrats || [];
-  } catch (e) { CONTRATS_EN_COURS = []; return; }
+    CONTRATS_EN_COURS = r.contrats;
+  } catch (e) { CONTRATS_EN_COURS = []; dire(e.message, "erreur"); return; }
   if (MOIS_AFFICHE !== mois) return;
   const restants = CONTRATS_EN_COURS.filter((c) => !c.deja_repris);
   if (!restants.length) return;
@@ -1731,11 +1768,10 @@ async function poserContratsEnCours(mois) {
     // L'engagement vient du moteur (`engagement_de_reprise`) : bornes,
     // numéro, métier, et les lignes déjà datées quand le premier mois a
     // coché son planning. Sinon une ligne de cachets, à dater.
-    const e = { ...(c.engagement || {}), salarie: c.salarie, spectacle: c.spectacle,
-                debut: c.debut, fin: c.fin, numero: c.numero };
-    // Le moteur rend toujours au moins une ligne de cachets, avec le taux
+    // Le moteur rend toujours une ligne de cachets, sans quantité, avec le taux
     // du contrat ou le dernier saisi (`engagement_de_reprise`).
-    e.lignes = (e.lignes || []).map((l) => (l.quantite === 0 ? { ...l, quantite: "" } : l));
+    const e = { ...c.engagement, salarie: c.salarie, spectacle: c.spectacle,
+                debut: c.debut, fin: c.fin, numero: c.numero };
     // Ce que l'engagement repris porte d'autre (la durée de référence,
     // l'emploi et les statuts déclarés…) se montre dans son formulaire
     // (`CHAMPS_RARES`), et s'écrit de là.
@@ -1747,9 +1783,17 @@ async function poserContratsEnCours(mois) {
 
 /** Ce qu'un engagement dit de lui-même en une ligne : son spectacle, ou — quand
  *  il n'en a pas, parce que c'est un permanent — la nature de son contrat.
- *  « — » tout seul derrière un nom, c'est un écran qui a l'air cassé. */
+ *  « — » tout seul derrière un nom, c'est un écran qui a l'air cassé : sans
+ *  l'un ni l'autre, rien (absent). */
 function pourQuoi(ligne) {
-  return ligne.spectacle || ligne.nature || "";
+  return ligne.spectacle || ligne.nature;
+}
+
+/** Qui et pour quoi, sur le bandeau des états d'une carte : le nom, puis son spectacle ou sa nature quand elle en dit. */
+function quiEtPourQuoi(ligne) {
+  const quoi = pourQuoi(ligne);
+  return `<span class="etats-qui">${echapper(texteDeLaCase(ligne.nom))}${
+    quoi ? `\n        <span class="discret">— ${echapper(quoi)}</span>` : ""}</span>`;
 }
 
 /* UN CONTRAT SUR PLUSIEURS MOIS SE VOIT : « c'est
@@ -1778,12 +1822,13 @@ function marquePlurimensuel(contrat, debut, fin) {
     return moisEnTexte(d.getFullYear(), d.getMonth() + 1);
   };
   // Le survol de chaque chevron, tel que le moteur le dit (`contrat.chevrons`).
-  const dits = contrat.chevrons || {};
+  const dits = contrat.chevrons;
   const un = (sens, pas) => {
     const m = voisin(pas);
-    const titre = dits[sens] || "";
-    return `<button type="button" class="chevron-pluri ${sens}" data-mois="${echapper(m)}"
-      title="${echapper(titre)}" aria-label="${echapper(titre)}">${sens === "avant" ? "&#x2039;" : "&#x203A;"}</button>`;
+    const titre = dits[sens];
+    const survol = titre ? ` title="${echapper(titre)}" aria-label="${echapper(titre)}"` : "";
+    return `<button type="button" class="chevron-pluri ${sens}" data-mois="${echapper(m)}"${survol}>${
+      sens === "avant" ? "&#x2039;" : "&#x203A;"}</button>`;
   };
   return (avant ? un("avant", -1) : "") + (apres ? un("apres", 1) : "");
 }

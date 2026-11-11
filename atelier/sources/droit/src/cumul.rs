@@ -9,7 +9,8 @@ use crate::catalogue::{annexes, rubrique};
 use crate::fiche::Lue;
 use crate::contexte::{aujourdhui, Contexte};
 use socle::date::Jour;
-use socle::num::{add, Decimal, Resultat};
+use socle::echec::R;
+use socle::num::{add, Decimal};
 
 /// Les constantes du decompte, lues dans les donnees livrees (le catalogue des rubriques et `annexes`).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -26,11 +27,12 @@ pub struct Constantes {
 
 
 impl Constantes {
-    pub fn lire(racine: &Path, jour: &Jour) -> Resultat<Constantes> {
+    pub fn lire(racine: &Path, jour: &Jour) -> R<Constantes> {
         let cachet = rubrique(racine, "cachet", jour)?;
         let a = annexes()?;
         Ok(Constantes {
-            heures_par_cachet: cachet.heures_forfait.ok_or_else(|| socle::fichiers::absent("cachet.heures_forfait"))? as i64,
+            heures_par_cachet: rust_decimal::prelude::ToPrimitive::to_i64(&cachet.heures_forfait.ok_or_else(|| socle::fichiers::absent("cachet.heures_forfait"))?.trunc())
+                .ok_or_else(|| socle::echec::refus(socle::fichiers::entier_hors_limites("cachet.heures_forfait")))?,
             cachets_par_mois: cachet.plafond_mensuel.ok_or_else(|| socle::fichiers::absent("cachet.plafond_mensuel"))?,
             seuil_heures: a.seuil_heures,
             fenetre_jours: a.fenetre_jours,
@@ -40,7 +42,7 @@ impl Constantes {
 
 /// `plafond_enseignement` : 70 h, ou 120 h a partir de 50 ans a la date
 /// donnee ; sans date de naissance, le plafond bas.
-pub fn plafond_enseignement(racine: &Path, date_naissance: Option<Jour>, a_la_date: Jour) -> Resultat<i64> {
+pub fn plafond_enseignement(racine: &Path, date_naissance: Option<Jour>, a_la_date: Jour) -> R<i64> {
     let r = rubrique(racine, "enseignement", &a_la_date)?;
     let Some(p) = r.plafond_annuel_heures else {
         return Err(socle::echec::livree("rubriques-base.json", "rubriques.enseignement.plafond_annuel_heures"));
@@ -68,8 +70,8 @@ pub struct Declare {
 
 impl Declare {
     /// Le mois de la fin, auquel se rattachent les cachets.
-    pub fn mois(&self) -> String {
-        self.fin.mois_civil().to_string()
+    pub fn mois(&self) -> socle::mois::Mois {
+        self.fin.mois_civil()
     }
 
     pub fn heures_equivalentes(&self, c: &Constantes) -> i64 {
@@ -111,7 +113,7 @@ impl Position {
     }
 
     /// `{mois: cachets declares}`.
-    pub fn cachets_par_mois(&self) -> BTreeMap<String, i64> {
+    pub fn cachets_par_mois(&self) -> BTreeMap<socle::mois::Mois, i64> {
         let mut out = BTreeMap::new();
         for e in &self.engagements {
             *out.entry(e.mois()).or_insert(0) += e.cachets;
@@ -129,7 +131,7 @@ impl Position {
     }
 
     /// Les mois ou le plafond a mordu.
-    pub fn mois_plafonnes(&self) -> Vec<String> {
+    pub fn mois_plafonnes(&self) -> Vec<socle::mois::Mois> {
         self.cachets_par_mois()
             .into_iter()
             .filter(|(_, n)| *n > self.constantes.cachets_par_mois)
@@ -145,11 +147,11 @@ impl Position {
         self.engagements.iter().map(|e| e.heures_enseignement).sum()
     }
 
-    pub fn plafond_enseignement(&self) -> Resultat<i64> {
+    pub fn plafond_enseignement(&self) -> R<i64> {
         plafond_enseignement(&self.racine, self.date_naissance, self.fin)
     }
 
-    pub fn heures_enseignement_retenues(&self) -> Resultat<i64> {
+    pub fn heures_enseignement_retenues(&self) -> R<i64> {
         Ok(self.heures_enseignement().min(self.plafond_enseignement()?))
     }
 
@@ -159,11 +161,11 @@ impl Position {
     }
 
     /// Les heures qui comptent pour les 507 (l'enseignement y entre, plafonne).
-    pub fn heures_ouverture(&self) -> Resultat<i64> {
+    pub fn heures_ouverture(&self) -> R<i64> {
         Ok(self.heures_montant() + self.heures_enseignement_retenues()?)
     }
 
-    pub fn enseignement_perdu(&self) -> Resultat<i64> {
+    pub fn enseignement_perdu(&self) -> R<i64> {
         Ok(self.heures_enseignement() - self.heures_enseignement_retenues()?)
     }
 
@@ -176,11 +178,11 @@ impl Position {
     }
 
     /// Heures restant a acquerir pour atteindre le seuil ; 0 si atteint.
-    pub fn manque(&self) -> Resultat<i64> {
+    pub fn manque(&self) -> R<i64> {
         Ok((self.constantes.seuil_heures - self.heures_ouverture()?).max(0))
     }
 
-    pub fn atteint(&self) -> Resultat<bool> {
+    pub fn atteint(&self) -> R<bool> {
         Ok(self.heures_ouverture()? >= self.constantes.seuil_heures)
     }
 
@@ -189,7 +191,7 @@ impl Position {
         self.fin.moins(&aujourdhui)
     }
 
-    pub fn cachets_manquants(&self) -> Resultat<i64> {
+    pub fn cachets_manquants(&self) -> R<i64> {
         let h = self.constantes.heures_par_cachet;
         Ok(-((-self.manque()?).div_euclid(h)))
     }
@@ -213,13 +215,13 @@ pub fn fenetre_annee_civile(annee: i32, jusquau: Option<Jour>) -> Fenetre {
 }
 
 /// Les 12 mois precedant une date.
-pub fn fenetre_douze_mois(c: &Constantes, fin: Jour) -> Resultat<Fenetre> {
+pub fn fenetre_douze_mois(c: &Constantes, fin: Jour) -> R<Fenetre> {
     Ok((fin.plus_jours(-c.fenetre_jours)?, fin, format!("12 mois au {}", fin.jj_mm_aaaa())))
 }
 
 /// Les 12 mois PRECEDANT la date anniversaire des droits : l'anniversaire est
 /// la fin de la fenetre, jamais son debut.
-pub fn fenetre_anniversaire(c: &Constantes, anniversaire: Jour) -> Resultat<Fenetre> {
+pub fn fenetre_anniversaire(c: &Constantes, anniversaire: Jour) -> R<Fenetre> {
     Ok((
         anniversaire.plus_jours(-c.fenetre_jours)?,
         anniversaire,
@@ -250,7 +252,7 @@ pub fn position(
 }
 
 /// Date de naissance du salarie, ou `None`.
-pub fn naissance(ctx: &Contexte, salarie: &str) -> Resultat<Option<Jour>> {
+pub fn naissance(ctx: &Contexte, salarie: &str) -> R<Option<Jour>> {
     Ok(ctx.salaries.get(salarie).and_then(|f| f.date_naissance.dite().copied()))
 }
 
@@ -268,7 +270,7 @@ pub fn position_droits(
     engagements: &[Declare],
     anniversaire: Option<Jour>,
     a_la_date: Option<Jour>,
-) -> Resultat<Position> {
+) -> R<Position> {
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let f = match anniversaire {
         Some(a) => fenetre_anniversaire(&c, a)?,
@@ -307,18 +309,17 @@ pub struct Colonne {
 pub fn tableau_cumul(
     ctx: &Contexte,
     salarie: &str,
-    mois: &str,
+    mois: socle::mois::Mois,
     engagements: &[Declare],
-) -> Resultat<Vec<Colonne>> {
+) -> R<Vec<Colonne>> {
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
-    let mois = socle::mois::Mois::lire(mois)?;
     let annee = mois.annee();
     let (debut_mois, fin_mois) = (mois.premier_jour(), mois.dernier_jour());
     let ne = naissance(ctx, salarie)?;
     let p_mois = position(ctx, &c, engagements, salarie, &(debut_mois, fin_mois, "periode".to_string()), ne);
     let p_annee = position(ctx, &c, engagements, salarie, &fenetre_annee_civile(annee, Some(fin_mois)), ne);
 
-    let col = |titre: &str, sous: String, p: &Position, reste: Option<i64>, echeance: Option<Jour>| -> Resultat<Colonne> {
+    let col = |titre: &str, sous: String, p: &Position, reste: Option<i64>, echeance: Option<Jour>| -> R<Colonne> {
         Ok(Colonne {
             titre: titre.to_string(),
             sous_titre: sous,
@@ -346,6 +347,6 @@ pub fn tableau_cumul(
 
 /// Date anniversaire des droits, si elle est dans `config/salaries.json`
 /// (`anniversaire_droits`) ; absente tant que France Travail ne l'a pas notifiee.
-pub fn anniversaire_configure(ctx: &Contexte, salarie: &str) -> Resultat<Option<Jour>> {
+pub fn anniversaire_configure(ctx: &Contexte, salarie: &str) -> R<Option<Jour>> {
     Ok(ctx.salaries.get(salarie).and_then(|f| f.anniversaire_droits.dite().copied()))
 }

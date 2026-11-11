@@ -19,11 +19,23 @@
 //! `interface::poste::ouvrir_adresse` (le navigateur). L'essai `garde_reseau` (`tests/fichiers/`) le verifie dans les
 //! sources : une nouvelle sortie qui n'y passerait pas le fait echouer.
 
+use crate::echec::{Echec, R};
 use std::net::IpAddr;
 
 /// La variable du garde-fou. Posee (n'importe quelle valeur) : aucune sortie hors de la machine. Sa valeur peut nommer
 /// un mandataire local (`http://127.0.0.1:<port>`), seule porte alors permise.
 pub const VARIABLE: &str = "PUPPETPAIE_ESSAIS_HORS_RESEAU";
+
+/// UNE CONNEXION VERS LA MACHINE ELLE-MEME (127.0.0.1, le port `port`), en essai comme hors essai : elle ne sort pas, le
+/// garde-fou n'a rien a en refuser. Le type de l'adresse le tient : aucune autre machine ne se nomme ici. `delai` borne
+/// l'attente de la connexion.
+pub fn vers_cette_machine(port: u16, delai: Option<std::time::Duration>) -> std::io::Result<std::net::TcpStream> {
+    let adresse = std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port));
+    match delai {
+        Some(d) => std::net::TcpStream::connect_timeout(&adresse, d),
+        None => std::net::TcpStream::connect(adresse),
+    }
+}
 
 /// Ce que le garde-fou dit d'une sortie.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,18 +87,18 @@ pub fn en_essai() -> bool {
     std::env::var_os(VARIABLE).is_some()
 }
 
-fn refus(hote: &str) -> String {
-    format!(
+fn refus(hote: &str) -> Echec {
+    crate::echec::refus(format!(
         "Garde-fou des essais ({}) : aucune sortie vers {} ; un essai pose un serveur local, ou nomme un faux mandataire local dans cette variable.",
         VARIABLE, hote
-    )
+    ))
 }
 
 /// La decision pour une sortie vers `hote`.
-pub fn sortie_vers(hote: &str) -> Result<Sortie, String> {
+pub fn sortie_vers(hote: &str) -> R<Sortie> {
     // LE FIL DE FOND de la fenetre (`fil_de_fond`) : il tourne avant tout mot de passe, et ne sort jamais.
     if crate::fil_de_fond::ici() {
-        return Err(crate::fil_de_fond::refus(&format!("une sortie vers {}", hote)));
+        return Err(crate::echec::refus(crate::fil_de_fond::refus(&format!("une sortie vers {}", hote))));
     }
     let Some(valeur) = std::env::var_os(VARIABLE) else { return Ok(Sortie::Libre) };
     if est_locale(hote) {
@@ -100,12 +112,12 @@ pub fn sortie_vers(hote: &str) -> Result<Sortie, String> {
 }
 
 /// La decision pour une adresse (`https://...`).
-pub fn sortie(url: &str) -> Result<Sortie, String> {
+pub fn sortie(url: &str) -> R<Sortie> {
     sortie_vers(&hote_de(url))
 }
 
 /// Une connexion directe, sans mandataire possible (IMAP, SMTP, le navigateur) : en essai, vers cette machine seulement.
-pub fn directe(hote: &str) -> Result<(), String> {
+pub fn directe(hote: &str) -> R<()> {
     match sortie_vers(hote)? {
         Sortie::Libre | Sortie::Locale => Ok(()),
         Sortie::ParLaPorte(_) => Err(refus(hote)),
@@ -114,11 +126,11 @@ pub fn directe(hote: &str) -> Result<(), String> {
 
 /// Un agent `ureq` pour `url`, regle par le garde-fou : hors essais, tel quel ; en essai, sans mandataire vers cette
 /// machine, par la porte seule vers dehors, refuse sinon.
-pub fn regler(c: ureq::config::ConfigBuilder<ureq::typestate::AgentScope>, url: &str) -> Result<ureq::config::ConfigBuilder<ureq::typestate::AgentScope>, String> {
+pub fn regler(c: ureq::config::ConfigBuilder<ureq::typestate::AgentScope>, url: &str) -> R<ureq::config::ConfigBuilder<ureq::typestate::AgentScope>> {
     Ok(match sortie(url)? {
         Sortie::Libre => c,
         Sortie::Locale => c.proxy(None),
-        Sortie::ParLaPorte(p) => c.proxy(Some(ureq::Proxy::new(&p).map_err(|e| format!("{} : mandataire illisible ({}) : {}", VARIABLE, p, e))?)),
+        Sortie::ParLaPorte(p) => c.proxy(Some(ureq::Proxy::new(&p).map_err(|e| crate::echec::refus(format!("{} : mandataire illisible ({}) : {}", VARIABLE, p, e)))?)),
     })
 }
 
@@ -135,7 +147,7 @@ mod tests {
             assert!(sortie(url).is_err(), "{}", url);
         }
         assert!(directe("smtp.gmail.com").is_err());
-        assert_eq!(sortie("http://127.0.0.1:8080/x"), Ok(Sortie::Locale));
+        assert_eq!(sortie("http://127.0.0.1:8080/x").ok(), Some(Sortie::Locale));
         assert!(directe("localhost").is_ok());
     }
 }

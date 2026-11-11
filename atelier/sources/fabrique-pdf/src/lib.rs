@@ -1,9 +1,17 @@
 //! La fabrique de PDF de PuppetPaie : le contrat d'interface est `FORMAT.md`.
+// Rien de la fabrique n'appelle de code `unsafe` (l'espace, lui, en a : les appels au systeme de Windows de
+// `compagnie`) ; ses niveaux de lint sont ceux de l'espace, ce refus en plus.
+#![forbid(unsafe_code)]
 
+mod afm;
 pub mod alleger;
 pub mod assemblage;
+mod cff;
 pub mod chiffrement;
 pub mod description;
+mod dessin;
+mod ecriture;
+mod encodages;
 pub mod forme;
 pub mod formulaire;
 pub mod glyphes;
@@ -11,13 +19,15 @@ pub mod inspection;
 pub mod lecture;
 pub mod ligne_de_commande;
 pub mod marquage;
+pub mod mesure;
 pub mod mise_en_page;
 pub mod modele;
 pub mod polices;
+mod sous_ensemble;
 pub mod style_contrat;
 pub mod texte;
 
 pub use assemblage::assembler;
-pub use description::{Refus, FORMAT};
+pub use description::{Classe, Refus, FORMAT};
 pub use forme::Description;
 pub use mise_en_page::fabriquer;

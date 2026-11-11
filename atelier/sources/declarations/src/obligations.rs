@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, OnceLock};
 
 use socle::fichiers::{forme_en_cache, FormeGardee};
-use socle::num::Resultat;
+use socle::echec::{Echec, R};
 
 /// `obligations-base.json` : chaque obligation, son delai, son point de depart et ses textes. Ses `quoi` et `note` ne
 /// servent pas au calcul (la regle d'un jour ouvre est dans le calendrier du moteur, `jours_ouvres_apres`).
@@ -133,8 +133,9 @@ pub struct Suites {
 pub struct Reserves {
     pub libelle: String,
     pub jours_francs: i64,
+    /// Ce d'ou courent les jours francs, en mots (« la déclaration »).
     #[serde(rename = "depuis")]
-    _depuis: String,
+    _point_de_depart: String,
     pub texte: TexteDepose,
     pub inference: String,
 }
@@ -212,12 +213,12 @@ impl DeBase {
     }
 
     /// Le delai `quoi` (`delai`, `delai_sans_subrogation`, `delai_avec_subrogation`), que l'obligation doit porter.
-    pub fn delai_de<'a>(&self, d: &'a Option<Delai>, quoi: &str) -> Resultat<&'a Delai> {
+    pub fn delai_de<'a>(&self, d: &'a Option<Delai>, quoi: &str) -> R<&'a Delai> {
         d.as_ref().ok_or_else(|| livree(&format!("{}.{}", self.libelle, quoi)))
     }
 
     /// Le point de depart presume, que l'obligation doit porter quand elle court de la connaissance.
-    pub fn presume(&self) -> Resultat<String> {
+    pub fn presume(&self) -> R<String> {
         self.connaissance_presumee.clone().ok_or_else(|| livree("connaissance_presumee"))
     }
 
@@ -231,12 +232,13 @@ impl DeBase {
 }
 
 /// Une valeur que la base doit porter, et qu'elle ne porte pas.
-pub fn livree(cle: &str) -> String {
+#[track_caller]
+pub fn livree(cle: &str) -> Echec {
     socle::echec::livree("obligations-base.json", cle)
 }
 
 /// `obligations-base.json`, lu par sa forme (une fois tant que le fichier ne change pas).
-pub fn base() -> Resultat<BaseDesObligations> {
+pub fn base() -> R<BaseDesObligations> {
     static CACHE: OnceLock<FormeGardee<BaseDesObligations>> = OnceLock::new();
     let lue: Arc<BaseDesObligations> =
         forme_en_cache(&CACHE, "obligations-base.json", "Les obligations livrées avec le logiciel ne se lisent pas : le signaler au développeur.", Ok)?;

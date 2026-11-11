@@ -16,7 +16,7 @@ async function dessinerRegularisation() {
   // Les mois qui se corrigent et ceux en retard se disent sur leur ligne,
   // dans « Les mois » : il ne reste ici que les corrections, et le titre se
   // tait quand il n'y en a pas.
-  const mois = r.corrections || [];
+  const mois = r.corrections;
   if (titre) titre.hidden = !mois.length;
   cible.innerHTML = mois.map((m) => `
       <div class="corrections-mois">

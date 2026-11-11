@@ -4,6 +4,7 @@
 
 Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'un organisme privé, n'y sont pas : seule leur transcription y est (`pdftotext -layout` pour un PDF, une feuille de calcul en CSV, feuille par feuille, le texte d'une page HTML), et c'est elle que citent les renvois. Les condensats de `logiciel/donnees/sources.json` et des notes sont ceux des originaux, gardés dans le dépôt privé (`reference-privee/sources/`).
 
+- `adobe-polices/adobe-type1-font-format-20261111.pdf` : transcription (extraits) `adobe-polices/adobe-type1-font-format-extraits-20261111.md`
 - `afdas-1790-plaquette-loisirs-2026-20260929.pdf` : transcription `afdas-1790-plaquette-loisirs-2026-20260929.md`
 - `afdas-2026-plaquette-audiovisuel-dialogue-social-20260929.pdf` : transcription `afdas-2026-plaquette-audiovisuel-dialogue-social-20260929.md`
 - `afdas-contributions-2026-audiovisuel.pdf` : transcription `afdas-2026-plaquette-audiovisuel-dialogue-social-20260929.md`
@@ -21,8 +22,161 @@ Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'u
 - `google-drive-api/google-drive-api-gerer-les-erreurs-20261020.html` : transcription `google-drive-api/google-drive-api-gerer-les-erreurs-20261020.txt`
 - `google-drive-api/google-drive-api-limites-et-quotas-20261020.html` : transcription `google-drive-api/google-drive-api-limites-et-quotas-20261020.txt`
 - `google-drive-api/google-drive-api-televerser-20261020.html` : transcription `google-drive-api/google-drive-api-televerser-20261020.txt`
+- `iso-32000/adobe-iso32000-1-pdf17-20261111.pdf` : transcription (extraits) `iso-32000/adobe-iso32000-1-pdf17-extraits-20261111.md`
 - `spiac-cgt-pav-minima-20260101.xlsx` : transcription `spiac-cgt-pav-minima-20260101.csv`
 - `syndeac-ccneac-artistes-dramatiques-nao-2026.xlsx` : transcription `syndeac-ccneac-artistes-dramatiques-nao-2026.csv`
 - `unedic-circulaire-2016-25-annexes-8-10.pdf` : transcription `unedic-circulaire-2016-25-annexes-8-10.txt`
 - `unicode/unicode-norme-18.0.0-chapitre-3-20261015.html` : transcription (extraits) `unicode/unicode-norme-18.0.0-chapitre-3-extraits-20261015.md`
 - `unicode/unicode-politique-de-stabilite-20261015.html` : transcription (extraits) `unicode/unicode-politique-de-stabilite-extraits-20261015.md`
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `afdas-1790-plaquette-loisirs-2026-20260929.md` : `7dc1279667ce011a247b4e7e713f1cfde12c621e3d0ebcb0e8b95264466c9a57`
+- `afdas-2026-plaquette-audiovisuel-dialogue-social-20260929.md` : `b541f580bccc2ee0f2bd6a0b46ab86917c1f42931d04efa29ede2121325d8657`
+- `audiens-2024-webconf-taux-conventionnels-20260929.md` : `f817c2255a1aceabd61fd0484e8432f59dabd1d81c25a4407ff40f3a5cbd9088`
+- `audiens-2026-webconf-nouveautes-taux-conventionnels-20260929.md` : `6f53d2c088f048c13ef2b521cc13dd34a6939d451ce7de47bee643cc20d0a176`
+- `audiens-3090-prevoyance-sante-fiche-produit-2021.txt` : `68a71e3aae0df7938f2d08b3f4b6d38a4ed04fb427174f7c7c9b055d07a587e5`
+- `audiens-fp-taux-repartition-retraite-2026.txt` : `711a4c5c4ea8c0c1bf22e2186d7d5157d8365f41144b0bb8ea34de859df7c7cc`
+- `bocc-1922-cddu-accord-20071129.md` : `efbe9a9c1824c3f2950dd679c057730c47a1a2e338ef0e88d38d9d975a240956`
+- `bocc-1922-cddu-accord-20071129.pdf` : `dd769b3381e9e3439cd1072c0d1a080acd7a18ce57068d33ae9fab391c920b9d`
+- `bocc-1922-cddu-arrete-extension-20080709.md` : `bb26a87fe107d50118ddb244f13857f614ebf4e79e9a865cb85e1f6611c21d6f`
+- `bocc-1922-cddu-arrete-extension-20080709.pdf` : `375f6a716d8be677be7a3ce2a6c5577998816803ade49d1a4c893702d5b483aa`
+- `bocc-1922-classifications-20081205.md` : `12e7178efd2ef92738002bf2d687d461a827c5eb114bf39ea3042d83122eaab9`
+- `bocc-1922-classifications-20081205.pdf` : `2aa9316ba71c5bc37161e4cf1635ebf0d59231b0417e631bfa33d40553505cf7`
+- `bocc-1922-salaires-20240702.md` : `881745e8235b46d878f0d773a854ad8f301deab1d981a5571ec3538bac21a956`
+- `bocc-1922-salaires-20240702.pdf` : `b43c0a18bce66472a258a9cc0d213186b3ba336ecc24bf217380affbd437275b`
+- `bocc-1922-salaires-20250627.md` : `bd9b0b6ef9874a6cb07756445419e561cde0decb7c6edaec12d0af3657034155`
+- `bocc-1922-salaires-20250627.pdf` : `04ed418bd14cea59c3508320297737eeaee239a42de3fd3c7688d0cad6cae7c6`
+- `bocc-1922-salaires-journalistes-piges-20081205.md` : `0e99910dda45f123602a06f15d20b51e85bb7e7276935e34dd8c98db1f369915`
+- `bocc-1922-salaires-journalistes-piges-20081205.pdf` : `da83275191aabbb0b5f19c20aa895c824cc3accf6b49be31d4eff43a64d5e0f0`
+- `bocc-2121-avenant2-apep-20260929.md` : `90d4c2ac32e1e23c5b9f61aed48e971a9b0b1a95595a3b14d904cd3f7347f68c`
+- `bocc-2121-avenant2-apep-20260929.pdf` : `c22d0932fc281fdded7e222a67ba6c3d7356a616e3742421aa2259f600db2baf`
+- `bocc-2121-nao-phono-20260203.md` : `740214743f9bb245604f2c7c04af958ed727bceadc1800a363e618a44b764fc2`
+- `bocc-2121-nao-phono-20260203.pdf` : `999ba2666b81cdbbb78cc704f4606520bb314ab4429eac01f889164f8303e1ae`
+- `bocc-2121-prevoyance-20241213.pdf` : `2c84b4fab413a5f132893d3170fe833d23b24d47b19daa2058329586a24f5834`
+- `bocc-2121-prevoyance-20241213.txt` : `9c90cb2dea9a5b5e5ef08b9f493e0f6dfde5e649e8de8402c36c2f3b106c4641`
+- `bocc-3241-salaires-cddu-20240614.md` : `830340823703b91f5b747bdee305b44b4132736f16c0e758f958e84fb23ef5e5`
+- `bocc-3241-salaires-cddu-20240614.pdf` : `d074b467ac0f4eced622ee86f1f4948755471d6d3671350c01aeee8d75997d4e`
+- `bocc-3241-salaires-cddu-20260511.md` : `4a4dd221b85e722cb58e8e97ad0d0fc838673fef4423bab6913f64dd6a370c03`
+- `bocc-3241-salaires-cddu-20260511.pdf` : `f67dd9bc768da87dd134b714ac6843a926147a06102509338af0c0537322f723`
+- `bocc-3241-salaires-permanents-20260511.md` : `074ef2b5225726c742d4acb961524882855afc02e3fe6af0197880d45bb9b8e0`
+- `bocc-3241-salaires-permanents-20260511.pdf` : `5e0fe9c213519b671c0cb368baf85475d3bc87891db04ecb259fb052b998bebe`
+- `casc-svp-fiche-codification-dsn-202606.txt` : `28ca6aec6ac3d41c100d98870bf503761f0274e9ef42173f2b74241db74515d6`
+- `casc-svp-modele-liste-nominative.csv` : `6617cb3bad988e27cd4dd142bda8fc5f1fede688f0e2c4e8371c1019570ebd65`
+- `ccneac-accord-nao-2026-signe.pdf` : `203503dfe46890a0d2208dcd14d81dcaff309e8c1c0a92b1f46d944e3a14d851`
+- `ccneac-nao-2026-grilles-transcription-20260929.md` : `274588e629ba487de31bdf0d40791fe2f1a0d63a23d69baa566e672f002ff927`
+- `ccnelac-1790-appel-paritarisme-agepro-20260929.md` : `22d148c63e2e88e42f4fe2f3c2630a4c28839418d9c27ec5203c683b8aaeae9c`
+- `changements-de-version-20260921.md` : `bb8075eaed6248985261b0cd848b38c5a4c926f8015ba6105515ae98ab8babdc`
+- `code-de-la-construction-et-de-l-habitation/articles-20261010.md` : `481e2d1e3299f878c94cf89ec296acbc27fe321d3b7f7fb7fab951ca117e9253`
+- `code-de-la-construction-et-de-l-habitation/articles-20261015.md` : `f2f2a46368f15aa73c3eeeef0979ab07c7b157702fa92f921e03bcc9961ae232`
+- `code-de-la-construction-et-de-l-habitation/articles-20261103.md` : `3863ea67d0bcdcf0ae554c1c8bcff066fcbd93054e04ca9b8a21751dbfd96692`
+- `code-de-la-construction-et-de-l-habitation/articles-20261110.md` : `35b525b6e4c4047ea41fb2040669d622d5776fbd921e025cd9ec099763721ed1`
+- `code-de-la-construction-et-de-l-habitation/releve.json` : `82936937af35ef436e248b1aa7b2659bb116300e1f560264156e32f071a0e551`
+- `code-de-la-construction-et-de-l-habitation/xml/L313-1.xml` : `d227e386400c15558f9f9ec90eb5d9c6a3125f4446b88b76b7f63bd428ae3482`
+- `code-general-des-collectivites-territoriales/articles-20260921.md` : `0367ab41f1b1bb2c2f82a42bab6af70e94284276734563f976b870fbf0dfcf03`
+- `code-general-des-collectivites-territoriales/articles-20260923.md` : `6a1d7314a050361e95bfa8b9e4ac7602cf7745fef8622154547e13b3a2232896`
+- `code-general-des-collectivites-territoriales/articles-20260924.md` : `f4e85cdc25e7f6bad451d88aec7956055841afc0eb4515a58438792cef46452a`
+- `code-general-des-collectivites-territoriales/articles-20261010.md` : `36ef4536ada107ab81eea1a8731d1c0cee602c24a07f588d5d05ec2ea2faa3eb`
+- `code-general-des-collectivites-territoriales/articles-20261015.md` : `47a4b9aca38f9b805de73b56e903f990ed0592240c2f28683abd0f42e993f1ea`
+- `code-general-des-collectivites-territoriales/articles-20261103.md` : `93b50050a4162f2e964d47f36b1308b7441ab8591247aceb698788c7aa328537`
+- `code-general-des-collectivites-territoriales/articles-20261110.md` : `330caa62dba6eb40775420119452041b956b74033017fa87628c07a21682aefe`
+- `code-general-des-collectivites-territoriales/releve.json` : `e6faba4e097679a718383476007762c2106319ca738d6f4ccac2b7ed535a903f`
+- `code-general-des-collectivites-territoriales/xml/L2333-64.xml` : `85b9b5223dee1b8b6066aefa28a2b535b50f7b8bfc14166e0f73ee0bdd28b755`
+- `code-general-des-collectivites-territoriales/xml/L2333-66.xml` : `0366d859b949b6119c111041c0b2bb990f9b144a45d0d7883e891c8d1f5ea0f0`
+- `code-general-des-collectivites-territoriales/xml/L2333-67.xml` : `a2835d9a68359747cdc208d6ddae9ba120f3dc64f0e74c51f3e01209791466a8`
+- `code-general-des-collectivites-territoriales/xml/L2333-68.xml` : `316bc1a45a63833354c3b8b29f0c30a15ebd670db6c8713db6506265d095b8e3`
+- `code-general-des-collectivites-territoriales/xml/L2333-70.xml` : `204a415b84988a8269b25754702cf5560a770ccc70a7a388d25723ec0320933e`
+- `code-general-des-collectivites-territoriales/xml/L2333-71.xml` : `085c7d5881745b1bb04cdf65ec9b8e036424729ce25ae394aeaf812e3796f280`
+- `code-general-des-collectivites-territoriales/xml/L2333-72.xml` : `74497fdfa7914e07b0ed04d700bd6da6ee2352c778b158eba4cc21a276824b77`
+- `code-general-des-collectivites-territoriales/xml/L2333-73.xml` : `fa6eee79a8fb8945f143e8ded4c6567dbfc69fad013bdb06b9a0c23f2d80f8f3`
+- `code-general-des-collectivites-territoriales/xml/L2333-74.xml` : `2ccec3ad41c61e8ac55f6789186811ae5967d49af36aab59f60eb8f9f3112de4`
+- `code-general-des-collectivites-territoriales/xml/L2333-75.xml` : `5a74d9160eb18165c9ecd379a4afc5303157dff0ff8b9fe36c1633b26683cc45`
+- `code-general-des-collectivites-territoriales/xml/L2531-2.xml` : `c2deaf2e54b9001204195ee3908985fd0962abb12c8b8e47dc0e12f492151ef5`
+- `code-general-des-collectivites-territoriales/xml/L2531-3.xml` : `752b495fd0d730bae8976bf86d71dfb777b39f05312986571938bfdb468eea6f`
+- `code-general-des-collectivites-territoriales/xml/L2531-4.xml` : `08ab00e3503a6ff59760be7cfb34c3fa28c546da217a946dad2e0ad6fa724883`
+- `code-general-des-collectivites-territoriales/xml/L2531-6.xml` : `ac6b6fe707e5b08816a050780fec99405376ed3eece5bf3cb21ba65f4b95cd45`
+- `dsn-cahier-technique-2026.1-oeth-extrait.md` : `f2736ccd2701bde5a6c62ee406e6e7de1d02d80627eb39c1c0a2a6c4f58b7109`
+- `editeur-dsn/LISEZMOI.md` : `bf2f26c7c69a00c4e7d52031028dc6fcc0fd02b152b510ce88e31cffcacf33ff`
+- `editeur-dsn/charte-editeurs-revue-forme.pdf` : `212eebfad46f3f6c397f174ff69d7b5cbc7aeccbd6d9307782735bc528b8356c`
+- `editeur-dsn/guide-urssaf-regularisation.pdf` : `7be4aabb6c3b0c7f118d7232e22580e705e01d7d5d8b0080c3328de5a33c4456`
+- `editeur-dsn/guide-urssaf-regularisation.txt` : `58a110144a4d701024dad4cf8de846f40a6ae3e556e4cb0d6366d087ebb24a4b`
+- `editeur-dsn/mode-operatoire-procedure-editeur.pdf` : `7c19e2bf2284d372a60c616b929c0fc96b04b8b860083c7f3afc22160afaf146`
+- `francetravail-100-dsn/LISEZMOI.md` : `34fe17b27a0647e1cbd19f8a715e6a99252ac3392cc35edcd12884f91b4d7ba7`
+- `francetravail-100-dsn/comenolo-aer-cs.txt` : `20cf459d9015620fd35d647e66417f65d4462454e489821e422ebe002e0dc1cc`
+- `francetravail-100-dsn/mescachets-aem-aer-cs-20260903.txt` : `051dce93c2a90c01f2238293ef31091f67bd01bc20e16f62d3594d0b99d46354`
+- `francetravail-100-dsn/movinmotion-fin-des-aem-20260601.txt` : `8f0cc6482530b6a5ed271e73a9508a7ad82a37e422ccdc24c836a37cacaa8d2f`
+- `francetravail-100-dsn/net-entreprises-fiche-2062-derogations-fin-de-contrat-20250905.html` : `fff721e36b5b051c8224b8de1fbf8e16601d1f18dda4c87fc403824496e419f0`
+- `francetravail-100-dsn/net-entreprises-fiche-3344-intermittents-20251113.html` : `218da797a1e0fe6e2e43fbff6e57f470236cea2ccd185880d14f71086f0771eb`
+- `francetravail-100-dsn/towr-fin-aem-20260607.txt` : `e6abf25fe03cd8f6cbff918a016b2f3833179258b24762309e92a442c0489f89`
+- `francetravail-annexe8-notice-liste-emplois.pdf` : `4060cf2b2835e7e39852a10b16c903877c1dcd7a2fff8d450a23bfa10fb39962`
+- `francetravail-nomenclature-emplois-spectacle-20161212.pdf` : `433677e797eef54a45cb0c738602c038ccacb6bffe427fd983525c4e496712f6`
+- `francetravail-nomenclature-emplois-spectacle-20161212.txt` : `7678cc8a7e5de5fdcac0ce91bfbfa3a1a3d4c6871ae66a2317dff4dd8dae1306`
+- `ghs-annexe10-artistes-categories-20211227.txt` : `a8a9243f006aca46200404d2b382bd0cfbcbdefb3633a5e8441351a05a0cc2e7`
+- `insee-cog-2015-departements.zip` : `67ad93d56606e2b48e3560ca35de70abaea1ed267feb5519204daa0a2cdbc1f6`
+- `insee-pcs-ese-2017-fiches/353b.txt` : `9738ee51eddc01a5cc343c9aae291f1288b2280115840918b25a848f8b9b0556`
+- `insee-pcs-ese-2017-fiches/353c.txt` : `53ae5c99aa175d94f5e2e05b9a925b897a8127ce3ec81aae4be6dd1b6943a8da`
+- `insee-pcs-ese-2017-fiches/354b.txt` : `f499486370e0e3b2ee56b3deb869c17fa6fe19e3dab3c3971179b38f136f8d51`
+- `insee-pcs-ese-2017-fiches/354c.txt` : `12de43e53595e4cd0f3fe725840f47acb3646703738145e3e9216c720b3b16d3`
+- `insee-pcs-ese-2017-fiches/354e.txt` : `4a57d0ddf29052a8bbd761ec4436670580abb43c4565fea94102a73a1d07af78`
+- `insee-pcs-ese-2017-fiches/354f.txt` : `a63dc3469a7187094b85e9b5dc14eec6c725c9f809c7b1f605321a70525e8704`
+- `insee-pcs-ese-2017-fiches/465b.txt` : `8bb787f4e7cfbd6b39e53d7e6a91ed4c3efe9b3c33d7f3747a3c8aafce2b898e`
+- `insee-pcs-ese-2017-fiches/637c.txt` : `d2bb5ab088cbb11c273fe2c43ecbccd434bd6c9793c6c9f01d079650aad37864`
+- `insee-pcs-ese-2017-liste.xls` : `611ee453801d3e897654f1ad4607702d75365b4445d5e31f832d75a198aacd3e`
+- `kali-1285-accord-frais-de-sante-20260130-20261011.md` : `efc6ad105a8de3184019bf6622241db933ad3e68955570b79f8bd3ef2a739cf6`
+- `kali-1285-accord-protection-sociale-complementaire-20241217-20261011.md` : `019a15b597480f2c4f43f58cb8e24f25ad99c1ed1b26d6c856015d6180b024bd`
+- `kali-1285-accord-salaires-2024-artistes-20260929.md` : `cbdf2cbf2f5e8b8c673c1cfca4571337bda516a8f979978d9e20c8386e637e39`
+- `kali-1285-activites-connexes-action-culturelle-20260929.md` : `a7624a18aa28e4c6424923712e2e3027ae34b96a33b3b111e7ab095890a0b680`
+- `kali-1285-titre-v-rupture-20260924.md` : `1b70769d36ad1c472d99e528f4a612491268bf324a906c822bec7086a6942814`
+- `kali-1285-titre-vi-duree-du-travail-20261102.md` : `8af595f6675e86f353ae0130107d4638dfd7b670826d5abed6be8906488f6073`
+- `kali-1285-titres-ii-iii-x-xi-xii-20260923.md` : `b34ae71464dec49417db6af5605abc138bac39adf035c40108968da478ada1e3`
+- `kali-1285-x3-remuneration-artistes-20260929.md` : `35c8d86ac3a9a74ed45ea72f81be0694e49754b0d3863b79a803f5cf222c19f7`
+- `kali-1790-avenant-76-forfait-jour-20260929.md` : `6eab49f896ac7f7e05467b567df5431f5a882e730499a619c710ee504fb3a150`
+- `kali-1790-formation-contribution-conventionnelle-afdas-avenants52-63-20260929.md` : `016f11b9268b7472ff47e3b4e0153fbc07a095b8aa4d9b3b5cbdf81d1eddea5b`
+- `kali-1790-paritarisme-avenant14-et-dialogue-social-20260929.md` : `5bb964792c5f427f44b0db93d1d4e995212233719c6c72ad87e428ad7f57f747`
+- `kali-1922-apar-paritarisme-art27-20260929.md` : `0db7b1e7f1f31dcc1a136e6f958adaaa8e79620fb1aecd22e126d22540856ac6`
+- `kali-2121-apep-protocole-paritarisme-avenant2-20260929.md` : `535fc98aa7f04589289d122e55803aeec6a01bc2677fe4d3d890a56b74a48f0e`
+- `kali-2412-cddu-semaine-39h-20260929.md` : `87ab6867073a547679017e468869999b07d5991012446e8f1ee21acfce5c92f7`
+- `kali-2642-titre-ix-annexe-iii-20260925.md` : `30e0ba6a8653631dd2aced97ce698ce416d11d20b3500109cc4f6a22ae733006`
+- `kali-3090-accord-sante-permanents-20240719-20261011.md` : `0a676cee930d56f111df0518c884901a8656f6b20ba483dde3c9bc37c652c4c0`
+- `kali-3090-avenant-2025-administratifs-anciennete-20260929.md` : `9d807f648c598809fcbbb12413c6839ebd80fa226fd9e3c609319b78ace3e251`
+- `kali-3090-titre-viii-duree-du-travail-20261102.md` : `4600e390eccc31c837fc9a53e79bfc6d5884b56a2d30e22f4abaf7f0003e166c`
+- `kali-3090-titres-iv-v-sante-20260923.md` : `f62e95074217f1e8813b5f0f28b7a12c244ef2df788b4c5c7feb8a89765fc811`
+- `kali-3090-titres-vii-x-xi-annexes-20260924.md` : `3ff878db28b57966746f64ae1939b82d9209dd27735365fdb951f91697b624e4`
+- `kali-3097-contributions-prevoyance-20260925.md` : `faf1abcff003133ec29c7de1d553b02d8cc7503a6fefe320c4726898c63f5da0`
+- `kali-3241-annexe6-prevoyance-art1-41-5-20260929.md` : `448d02d8565e22a8db93d893d0b22963f66765f6ab775ceb7fb321f8781cb472`
+- `kali-3241-cddu-m1-m2-20260929.md` : `d4edc969b52a1cd3357529fd4c3803457d164fd7a5ac6a1548757296fdabea8a`
+- `kali-3241-paritarisme-art11-avenant5-20260929.md` : `1738d7a945381c3a86951d76f523259072629a2e50633590aa5260ae4e5d92db`
+- `kali-3241-permanents-art-22-20260929.md` : `768fc5ab15e99dd6256be1f23fc75d5485c80010511a54366de55e10b574e666`
+- `kali-3252-anciennete-3-8-ans-20260929.md` : `80d20e67c4dc81b0f56e1206581a23cf8c4c92a60409e24e2a9b71fccb89bb40`
+- `kali-3252-doublage-directeurs-artistiques-20260929.md` : `5ac8cabfe2f53be6bbcf5293ccb9c7ee1bbadd319b0b8ae5475c4949114f8f30`
+- `kali-3252-frais-sante-art842-financement-20260929.md` : `92d609d60d862c5204fb803884ba54768e9e704c59edec19225263eeb5deef72`
+- `kali-3252-mannequins-annexe-v-avenant-2-20260929.md` : `d2b05a17269eb2e0b2dd9ff3eacac09e9ea5564fa79a7bb3f2eeed041d92a0bb`
+- `kali-entrepot/articles.jsonl.gz` : `c3dab7425d9d050d5076ae4713fe2114ca1c0658d77f42d4f9350574e1bb88a6`
+- `kali-entrepot/etat.json` : `a5e2dacc1521f37aa8eb1ac8d59cfbd3d8029fb9a31e5f41eeace902a57068f2`
+- `lecture-comparee-20260921.md` : `8dc226afbb372b2f089c894a0f609e77787de9840464f2c98f520f966a248f39`
+- `legi-entrepot/articles.jsonl.gz` : `72c8f3bc0d5f98b28ea2232549b33aa178ffec27b5db68229ec3f45fe74d5296`
+- `legi-entrepot/etat.json` : `9959f9cfb436ba7b44459d2a0bb798bae657e4e904c47b94d0085378ce679cb5`
+- `legifrance-1285-accord-salaires-20240502.md` : `6508f70dd6612d1bf4d7c548134224381bda9d9155265f34c5709cef2e6afa2d`
+- `legifrance-1285-prevoyance-titre12-20260919.md` : `a4c603d44222ea0964a6e1e79830453ce3042f776756e18f449de8fd3057d75f`
+- `legifrance-3090-avenant-salaires-20250721.md` : `9a38a50eef6c3047cf7ed62d75111156ba49d80afc071e1bd98006ae2b20f060`
+- `legifrance-3090-prevoyance-titre12-20260919.md` : `e30769d72b578f28588f138e57b281852c59fad9a803e365933ff4d900d4de98`
+- `loi-de-finances-2026/articles-20261010.md` : `3e55013b9968a9abca4bc65f8ef6a715d425291a47fde163c19c192aa23e8914`
+- `loi-de-finances-2026/articles-20261015.md` : `53b954b5ab3f2522f2a07e313804cd3f95d765c738fdd1fae6ed1d4a9291ceb0`
+- `loi-de-finances-2026/articles-20261103.md` : `0e3ec948ca61405bec12e8dfe046a185240937ec35f090c3556c4b2be3b7877b`
+- `loi-de-finances-2026/articles-20261110.md` : `538a9bd5c5ba80a16b5b53068535cfc516e0269371104069c3049fb52466a745`
+- `loi-de-finances-2026/releve.json` : `4add15a034fadd1ad63fb3c6a84fc7b27ecc2c27e4c599f909988fa5612467f1`
+- `loi-de-finances-2026/xml/135.xml` : `a0a4fac96789bbf7d670d2c12c1d9c75ec061ffc9cd433650d325a7a537c6917`
+- `movinmotion-agepro-cotisations-conventionnelles-20260929.md` : `9bf560ded08b1096e195848730bcde3227309f83d82b6c34f5796f6f1b101a14`
+- `spiac-cgt-pav-minima-20260101.csv` : `d8a5c85f4c782c0515735c6de15199b5648e106ef725804730af0ba737eb2bdd`
+- `syndeac-ccneac-artistes-dramatiques-nao-2026.csv` : `8f12f0327abb2e85ef71a49e494014c7783ee54a162a4d26ef35a6afe2dd7c38`
+- `unedic-annexe8-liste-champ-application-20161216.pdf` : `d389d8f31dd31597dbda63a467e4dfa6a75c726817ca94cab6ad686b273bd39b`
+- `unedic-annexe8-liste-champ-application-20161216.txt` : `45f8fcc74bf9bb00281d67fba7e19138e532720c7bba3237b8a5306451eca5be`
+- `unedic-circulaire-2016-25-annexes-8-10.txt` : `d7959bc19982e8c3d8492e41ee9e813c5b9c8afa4c47bfe1086bbf5516fdeac7`
+- `urssaf-codes-types-personnel-20261013.LISEZ-MOI.md` : `4e4df5d86de57ea9ef50b68e354aac98d8588db02d5d38510ebd691d6951a95e`
+- `urssaf-codes-types-personnel-20261013.csv` : `00499ac0a3f9b4b314352f4b941445a3570d2f8789a6382c222d9db1430609b6`
+- `urssaf-codes-types-personnel.csv` : `12b280d883c49c3bcad7971ab9269e372a628d64bfc7f0254def1ce31ab73171`
+- `urssaf-liste-des-sites-et-des-activites.csv` : `95fd488047c8a70ae70d447616ff5433d790bbe5d6e3eb6061dd77bd42423c04`
+- `urssaf-table-des-urssaf-20260618.csv` : `60c86ab3781bd9874e6a8e5cdf06044e8ad36ea7f108039a6f806127f2869ca2`
+- `veille-kali.json` : `58be405cd7ea5147a013aa66fb951ac83dbfa25e44cfc9a4f77089b9eeefecca`

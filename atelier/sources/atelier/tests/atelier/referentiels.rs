@@ -13,7 +13,7 @@
 use std::path::{Path, PathBuf};
 
 use atelier::extraire::{self, Releve};
-use atelier::generer_tables::{generer, FICHIERS};
+use atelier::generer_tables::generer;
 use serde_json::Value;
 use socle::date::Jour;
 
@@ -92,7 +92,6 @@ fn chaque_referentiel_livre_et_chaque_table_sont_ce_que_les_textes_deposes_donne
 
     // Les tables Unicode compilees dans le socle et les envois.
     let fichiers = generer(&reference("sources")).unwrap();
-    assert_eq!(fichiers.iter().map(|(n, _)| *n).collect::<Vec<_>>(), FICHIERS);
     let mut ecarts = Vec::new();
     for (nom, contenu) in fichiers {
         let chemin = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join(nom);

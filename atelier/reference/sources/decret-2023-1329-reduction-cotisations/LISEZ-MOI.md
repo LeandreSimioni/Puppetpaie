@@ -20,3 +20,10 @@ elles-mêmes se lisent dans les articles modifiés (`../legifrance-versions-date
 
 La réduction générale 2025 (`par_statut.technicien.reduction_generale`, `logiciel/donnees/baremes/2025.json`) : il établit
 que D. 241-7 dans sa version du 31/12/2023 (T = 0,3194) est celle du décret de 2023.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `legifrance-decret-2023-1329-20231231.pdf` : `08d32b59a419041a256de256d9cb0b6bcb4f1f1920c057437142eae80164243e`
+- `legifrance-decret-2023-1329-20231231.txt` : `eec5ae9b9953cd769787dbb1dc22fc9bf64ed50605406d0286b154de81de09dc`

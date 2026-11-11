@@ -15,18 +15,18 @@ use socle::date::Jour;
 use crate::natures::Nature;
 
 /// Le contrat doit-il la majoration ? Un CDD d'usage (nature 02, motif 05 : `cpf_cdd::codes_de`) de trois mois au plus :
-/// sa fin tombe avant le meme quantieme, trois mois apres son debut (le dernier jour du mois quand il n'y est pas).
-pub fn due(nat: &Nature, motif_recours: Option<&str>, debut: &Jour, fin: Option<&Jour>) -> bool {
+/// sa fin tombe avant le meme quantieme, trois mois apres son debut (le dernier jour du mois quand il n'y est pas). Un
+/// contrat sans terme n'a pas de duree de trois mois au plus.
+pub fn due(nat: &Nature, motif_recours: Option<crate::natures::MotifDeRecours>, debut: &Jour, fin: Option<&Jour>) -> bool {
     let (nature, _, motif) = crate::cpf_cdd::codes_de(nat, motif_recours);
-    if nature.as_deref() != Some("02") || motif.as_deref() != Some("05") {
+    if nature.as_deref() != Some("02") || motif != Some(crate::natures::MotifDeRecours::ContratDUsage) {
         return false;
     }
-    let Some(fin) = fin else { return false };
     let (mut an, mut mois) = (debut.an, debut.mois + 3);
     if mois > 12 {
         mois -= 12;
         an += 1;
     }
     let dernier = socle::date::jours_du_mois(an, mois);
-    Jour::nouveau(an, mois, debut.jour.min(dernier)).is_some_and(|limite| *fin < limite)
+    fin.is_some_and(|fin| Jour::nouveau(an, mois, debut.jour.min(dernier)).is_some_and(|limite| *fin < limite))
 }

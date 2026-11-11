@@ -11,6 +11,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use fabrique_pdf::mesure::{mesure, Mesure};
 use lopdf::content::Content;
 use lopdf::{Document, Object};
 use serde_json::{json, Value};
@@ -18,6 +19,16 @@ use serde_json::{json, Value};
 // ---------------------------------------------------------------------------
 // Outils.
 // ---------------------------------------------------------------------------
+
+/// `n` points.
+fn pt(n: i64) -> Mesure {
+    Mesure::entier(n)
+}
+
+/// `a` vaut `b` à `tolerance` près (une mesure écrite en décimal).
+fn proche(a: Mesure, b: Mesure, tolerance: &str) -> bool {
+    (a - b).abs() < mesure(tolerance)
+}
 
 fn exemples() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("exemples")
@@ -40,7 +51,7 @@ fn image(nom: &str) -> String {
 
 /// La description en texte, lue par la porte (`Description::lire`) : ces tests éprouvent FORMAT.md.
 fn fabriquer(v: &Value) -> Result<Vec<u8>, String> {
-    fabrique_pdf::Description::lire(&v.to_string()).and_then(|d| fabrique_pdf::fabriquer(&d)).map_err(|r| r.0)
+    fabrique_pdf::Description::lire(&v.to_string()).and_then(|d| fabrique_pdf::fabriquer(&d)).map_err(|r| r.phrase)
 }
 
 fn ok(v: &Value) -> Vec<u8> {
@@ -61,31 +72,82 @@ fn refus(v: &Value) -> String {
 fn base(blocs: Vec<Value>) -> Value {
     json!({
         "format": 1,
-        "page": {"largeur": 400.0, "hauteur": 500.0,
-                 "marges": {"haut": 50.0, "droite": 50.0, "bas": 50.0, "gauche": 50.0}},
-        "police": {"taille": 10.0, "interligne": 1.25, "couleur": "#000000"},
+        "page": {"largeur": 400, "hauteur": 500,
+                 "marges": {"haut": 50, "droite": 50, "bas": 50, "gauche": 50}},
+        "police": {"taille": 10, "interligne": mesure("1.25"), "couleur": "#000000"},
         "documents": [{"blocs": blocs}]
     })
 }
 
+/// `objet`, chaque clé de `plus` posée dessus.
+fn avec(mut objet: Value, plus: Value) -> Value {
+    for (k, v) in plus.as_object().unwrap() {
+        objet[k] = v.clone();
+    }
+    objet
+}
+
+/// Un morceau maigre et droit.
+fn m(texte: &str) -> Value {
+    json!({"texte": texte, "gras": false, "italique": false})
+}
+
+/// Un paragraphe à gauche, tel quel, sans espace ni retrait ; `plus` dit le reste.
+fn paragraphe(morceaux: Vec<Value>, plus: Value) -> Value {
+    avec(json!({"type": "paragraphe", "morceaux": morceaux, "alignement": "gauche", "majuscules": false,
+                "espace_avant": 0, "espace_apres": 0, "retrait": 0}), plus)
+}
+
 fn para(texte: &str) -> Value {
-    json!({"type": "paragraphe", "morceaux": [{"texte": texte}]})
+    paragraphe(vec![m(texte)], json!({}))
 }
 
 fn para_align(texte: &str, alignement: &str) -> Value {
-    json!({"type": "paragraphe", "morceaux": [{"texte": texte}], "alignement": alignement})
+    paragraphe(vec![m(texte)], json!({"alignement": alignement}))
+}
+
+/// Une colonne de tableau à gauche.
+fn col(largeur: Value) -> Value {
+    json!({"largeur": largeur, "alignement": "gauche"})
+}
+
+/// Un tableau sans marge de cellule ni espace autour ; `plus` dit le reste.
+fn tableau(colonnes: Vec<Value>, plus: Value) -> Value {
+    avec(json!({"type": "tableau", "colonnes": colonnes,
+                "marge_cellule": {"haut": 0, "droite": 0, "bas": 0, "gauche": 0},
+                "espace_avant": 0, "espace_apres": 0}), plus)
+}
+
+/// Une ligne de tableau maigre ; `plus` dit le reste.
+fn rangee(cellules: Vec<Value>, plus: Value) -> Value {
+    avec(json!({"cellules": cellules, "gras": false}), plus)
+}
+
+/// Une cellule décrite, maigre, sur une colonne ; `plus` dit le reste.
+fn cellule(plus: Value) -> Value {
+    avec(json!({"gras": false, "etendue": 1}), plus)
+}
+
+/// Des colonnes sans espace avant ni marge interne ; `plus` dit le reste.
+fn colonnes(colonnes: Vec<Value>, plus: Value) -> Value {
+    avec(json!({"type": "colonnes", "colonnes": colonnes, "espace_avant": 0, "marge_interne_haut": 0}), plus)
+}
+
+/// Une image qui occupe sa hauteur.
+fn image_bloc(chemin: &str, largeur: i64) -> Value {
+    json!({"type": "image", "chemin": chemin, "largeur": largeur, "flottante": false})
 }
 
 /// Une ligne de texte relue dans le flux de contenu.
 #[derive(Debug, Clone)]
 struct Ligne {
     page: usize,
-    x: f32,
-    y: f32,
+    x: Mesure,
+    y: Mesure,
     /// Largeur de la ligne, lettres et espacement des mots compris (points).
-    largeur: f32,
+    largeur: Mesure,
     texte: String,
-    mot_espace: f32,
+    mot_espace: Mesure,
 }
 
 fn face(nom: &str) -> Vec<u8> {
@@ -97,12 +159,8 @@ fn face(nom: &str) -> Vec<u8> {
     .unwrap()
 }
 
-fn nombre(o: &Object) -> f32 {
-    match o {
-        Object::Integer(i) => *i as f32,
-        Object::Real(r) => *r,
-        _ => panic!("nombre attendu : {:?}", o),
-    }
+fn nombre(o: &Object) -> Mesure {
+    Mesure::de_l_objet(o).unwrap_or_else(|| panic!("nombre attendu : {:?}", o))
 }
 
 /// Le fichier de Liberation d'une police du PDF, d'après son `BaseFont` (« ABCDEF+LiberationSans-Bold »).
@@ -200,18 +258,18 @@ fn lignes(pdf: &[u8]) -> Vec<Ligne> {
             .collect();
         let contenu = doc.get_page_content(*id).unwrap();
         let ops = Content::decode(&contenu).unwrap().operations;
-        let (mut x, mut y) = (0.0f32, 0.0f32);
+        let (mut x, mut y) = (Mesure::ZERO, Mesure::ZERO);
         let mut police = Vec::new();
-        let mut taille = 10.0f32;
-        let mut largeur = 0.0f32;
-        let mut mot = 0.0f32;
+        let mut taille = pt(10);
+        let mut largeur = Mesure::ZERO;
+        let mut mot = Mesure::ZERO;
         let mut texte = String::new();
         for op in ops {
             match op.operator.as_str() {
                 "BT" => {
-                    largeur = 0.0;
+                    largeur = Mesure::ZERO;
                     texte.clear();
-                    mot = 0.0;
+                    mot = Mesure::ZERO;
                 }
                 "Td" => {
                     x = nombre(&op.operands[0]);
@@ -223,7 +281,7 @@ fn lignes(pdf: &[u8]) -> Vec<Ligne> {
                 }
                 "Tj" | "TJ" => {
                     let f = &faces.iter().find(|(n, _)| **n == police).unwrap().1;
-                    let upem = f.units_per_em() as f32;
+                    let upem = f.units_per_em() as i64;
                     let morceaux: Vec<&Object> = match &op.operands[0] {
                         Object::Array(a) => a.iter().collect(),
                         o => vec![o],
@@ -236,16 +294,16 @@ fn lignes(pdf: &[u8]) -> Vec<Ligne> {
                                     let adv = f
                                         .glyph_index(c)
                                         .and_then(|g| f.glyph_hor_advance(g))
-                                        .unwrap_or(0) as f32;
-                                    largeur += adv / upem * taille;
+                                        .unwrap_or(0) as i64;
+                                    largeur += taille.fois_rapport(adv, upem).unwrap();
                                 }
                             }
                             // Un décalage de TJ, en millièmes de la taille : positif = vers la
                             // gauche. Celui qui suit une espace étire l'espace (justification).
                             n => {
-                                let d = -nombre(n) / 1000.0 * taille;
+                                let d = -(nombre(n) * taille) / 1000;
                                 largeur += d;
-                                if d != 0.0 {
+                                if !d.est_nulle() {
                                     mot = d;
                                 }
                             }
@@ -324,7 +382,7 @@ fn texte_complet(pdf: &[u8]) -> String {
 fn inspecter(pdf: &[u8], nom: &str) -> Value {
     let p = ecrire(nom, pdf);
     let (json, avertissements) =
-        fabrique_pdf::inspection::inspecter(&chemin(&p)).unwrap_or_else(|r| panic!("inspection : {}", r.0));
+        fabrique_pdf::inspection::inspecter(&chemin(&p)).unwrap_or_else(|r| panic!("inspection : {}", r.phrase));
     assert!(avertissements.is_empty(), "{:?}", avertissements);
     serde_json::from_str(&json).unwrap()
 }
@@ -333,13 +391,14 @@ fn inspecter(pdf: &[u8], nom: &str) -> Value {
 fn texte_des_pages(pdf: &[u8], nom: &str) -> Vec<String> {
     let p = ecrire(nom, pdf);
     let (pages, avertissements) =
-        fabrique_pdf::lecture::texte(&chemin(&p)).unwrap_or_else(|r| panic!("lecture : {}", r.0));
+        fabrique_pdf::lecture::texte(&chemin(&p)).unwrap_or_else(|r| panic!("lecture : {}", r.phrase));
     assert!(avertissements.is_empty(), "{:?}", avertissements);
-    pages
+    pages.iter().map(|t| t.lu().unwrap_or_else(|r| panic!("lecture : {}", r.phrase))).collect()
 }
 
-fn nombres(v: &Value) -> Vec<f64> {
-    v.as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect()
+/// Les nombres d'un tableau JSON, lus par leur texte.
+fn nombres(v: &Value) -> Vec<Mesure> {
+    v.as_array().unwrap().iter().map(|x| Mesure::lue(&x.to_string()).unwrap()).collect()
 }
 
 fn ecrire(nom: &str, pdf: &[u8]) -> PathBuf {
@@ -447,16 +506,16 @@ fn paragraphe_accents_euro_et_ponctuation() {
 
 #[test]
 fn paragraphe_morceaux_gras_et_retour_force() {
-    let v = base(vec![json!({"type": "paragraphe", "morceaux": [
-        {"texte": "Entre la société "}, {"texte": "FIL DE FER", "gras": true}, {"texte": ", ci-après"},
-        {"texte": " la première ligne\nla seconde"}]})]);
+    let v = base(vec![paragraphe(vec![
+        m("Entre la société "), json!({"texte": "FIL DE FER", "gras": true, "italique": false}), m(", ci-après"),
+        m(" la première ligne\nla seconde")], json!({}))]);
     let pdf = ok(&v);
     let l = lignes(&pdf);
     assert_eq!(l.len(), 2, "{:?}", l);
     assert_eq!(l[0].texte, "Entre la société FIL DE FER, ci-après la première ligne");
     assert_eq!(l[1].texte, "la seconde");
     // Les deux lignes sont l'une sous l'autre, à l'interligne de 1,25 x 10 pt.
-    assert!((l[0].y - l[1].y - 12.5).abs() < 0.01, "{:?}", l);
+    assert!(proche(l[0].y - l[1].y, mesure("12.5"), "0.01"), "{:?}", l);
     // Le gras est Liberation Sans Bold, embarquée en sous-ensemble : romain et gras, rien d'autre.
     let noms = noms_de_polices(&pdf);
     assert_eq!(noms, ["LiberationSans", "LiberationSans-Bold"], "{:?}", noms);
@@ -465,9 +524,9 @@ fn paragraphe_morceaux_gras_et_retour_force() {
 #[test]
 fn paragraphe_majuscules_taille_couleur_et_espaces() {
     let v = base(vec![
-        json!({"type": "paragraphe", "morceaux": [{"texte": "Titre éàç œuvre"}],
-               "majuscules": true, "taille": 20.0, "couleur": "#FF0000",
-               "espace_avant": 7.0, "espace_apres": 13.0}),
+        paragraphe(vec![m("Titre éàç œuvre")], json!({
+               "majuscules": true, "taille": 20, "couleur": "#FF0000",
+               "espace_avant": 7, "espace_apres": 13})),
         para("Suite"),
     ]);
     let pdf = ok(&v);
@@ -476,9 +535,9 @@ fn paragraphe_majuscules_taille_couleur_et_espaces() {
     assert_eq!(l[1].texte, "Suite");
     // Haut de page 450 ; espace avant 7 ; ligne de 25 pt (20 x 1,25) ; la ligne de base du
     // titre est au milieu de l'interligne (demi-interligne) puis l'ascendante.
-    assert!(l[0].y < 450.0 - 7.0, "{:?}", l);
+    assert!(l[0].y < pt(450 - 7), "{:?}", l);
     // Entre les deux lignes de base : le reste du titre + 13 pt d'espace + le début de la suite.
-    assert!(l[0].y - l[1].y > 13.0 + 10.0, "{:?}", l);
+    assert!(l[0].y - l[1].y > pt(13 + 10), "{:?}", l);
     let brut = String::from_utf8_lossy(&pdf).to_string();
     let contenu = Document::load_mem(&pdf).unwrap();
     let (_, id) = contenu.get_pages().into_iter().next().unwrap();
@@ -493,31 +552,29 @@ fn bloc_espace_ecarte_les_paragraphes() {
     let sans = ok(&base(vec![para("A"), para("B")]));
     let avec = ok(&base(vec![
         para("A"),
-        json!({"type": "espace", "hauteur": 6.0}),
+        json!({"type": "espace", "hauteur": 6}),
         para("B"),
     ]));
     let (a, b) = (lignes(&sans), lignes(&avec));
     let ecart_sans = a[0].y - a[1].y;
     let ecart_avec = b[0].y - b[1].y;
-    assert!((ecart_avec - ecart_sans - 6.0).abs() < 0.01, "{} {}", ecart_sans, ecart_avec);
+    assert!(proche(ecart_avec - ecart_sans, pt(6), "0.01"), "{} {}", ecart_sans, ecart_avec);
 }
 
 #[test]
 fn bloc_colonnes_filet_et_positions() {
-    let v = base(vec![json!({
-        "type": "colonnes",
-        "filet_haut": {"couleur": "#CCCCCC", "epaisseur": 0.5},
-        "espace_avant": 4.0, "marge_interne_haut": 5.0,
-        "colonnes": [
-            {"largeur": 0.25, "blocs": [para("Gauche")]},
-            {"largeur": 0.75, "blocs": [para("Droite"), para("Suite de droite")]}
-        ]})]);
+    let v = base(vec![colonnes(vec![
+            json!({"largeur": mesure("0.25"), "blocs": [para("Gauche")]}),
+            json!({"largeur": mesure("0.75"), "blocs": [para("Droite"), para("Suite de droite")]})
+        ], json!({
+        "filet_haut": {"couleur": "#CCCCCC", "epaisseur": mesure("0.5")},
+        "espace_avant": 4, "marge_interne_haut": 5}))]);
     let pdf = ok(&v);
     let l = lignes(&pdf);
     assert_eq!(l.len(), 3, "{:?}", l);
     // Largeur utile 300 : la première colonne commence à 50, la seconde à 50 + 75.
-    assert!((l[0].x - 50.0).abs() < 0.01, "{:?}", l);
-    assert!((l[1].x - 125.0).abs() < 0.01, "{:?}", l);
+    assert!(proche(l[0].x, pt(50), "0.01"), "{:?}", l);
+    assert!(proche(l[1].x, pt(125), "0.01"), "{:?}", l);
     // Le filet : un trait par colonne, gris clair.
     let doc = Document::load_mem(&pdf).unwrap();
     let (_, id) = doc.get_pages().into_iter().next().unwrap();
@@ -531,7 +588,7 @@ fn bloc_colonnes_filet_et_positions() {
         .find(|o| o.operator == "RG")
         .map(|o| o.operands.iter().map(nombre).collect::<Vec<_>>())
         .unwrap();
-    assert!(gris.iter().all(|c| (c - 0.8).abs() < 0.01), "{:?}", gris);
+    assert!(gris.iter().all(|c| proche(*c, mesure("0.8"), "0.01")), "{:?}", gris);
 }
 
 #[test]
@@ -539,9 +596,9 @@ fn colonnes_ne_se_coupent_pas() {
     // Douze paragraphes remplissent presque la page ; les colonnes (quatre lignes) ne tiennent
     // pas dans ce qui reste et passent entières à la page suivante.
     let mut blocs: Vec<Value> = (1..=31).map(|i| para(&format!("Ligne {}", i))).collect();
-    blocs.push(json!({"type": "colonnes", "colonnes": [
-        {"largeur": 0.5, "blocs": [para("GA1"), para("GA2"), para("GA3"), para("GA4")]},
-        {"largeur": 0.5, "blocs": [para("DR1"), para("DR2")]}]}));
+    blocs.push(colonnes(vec![
+        json!({"largeur": mesure("0.5"), "blocs": [para("GA1"), para("GA2"), para("GA3"), para("GA4")]}),
+        json!({"largeur": mesure("0.5"), "blocs": [para("DR1"), para("DR2")]})], json!({})));
     let pdf = ok(&base(blocs));
     assert_eq!(nb_pages(&pdf), 2);
     let l = lignes(&pdf);
@@ -560,8 +617,7 @@ fn colonnes_ne_se_coupent_pas() {
 #[test]
 fn colonnes_trop_hautes_pour_une_page_sont_refusees() {
     let haut: Vec<Value> = (1..=50).map(|i| para(&format!("L{}", i))).collect();
-    let e = refus(&base(vec![json!({"type": "colonnes", "colonnes": [
-        {"largeur": 1.0, "blocs": haut}]})]));
+    let e = refus(&base(vec![colonnes(vec![json!({"largeur": 1, "blocs": haut})], json!({}))]));
     assert!(e.starts_with("bloc 1 : "), "{}", e);
     assert!(e.contains("colonnes"), "{}", e);
 }
@@ -570,7 +626,7 @@ fn colonnes_trop_hautes_pour_une_page_sont_refusees() {
 fn bloc_image_png_avec_transparence() {
     let pdf = ok(&base(vec![
         para("avant"),
-        json!({"type": "image", "chemin": image("signature.png"), "largeur": 92.0}),
+        image_bloc(&image("signature.png"), 92),
     ]));
     assert_eq!(xobjects(&pdf, 1, "Image"), 1);
     // Le masque de transparence est un objet à part, référencé par l'image.
@@ -593,14 +649,14 @@ fn bloc_image_png_avec_transparence() {
     let ins = inspecter(&pdf, "png.pdf");
     let r = nombres(&ins["pages"][0]["images"][0]);
     let (largeur, hauteur) = (r[2] - r[0], r[3] - r[1]);
-    assert!((largeur - 92.0).abs() < 0.1 && (hauteur - 30.0).abs() < 0.1, "{:?}", r);
+    assert!(proche(largeur, pt(92), "0.1") && proche(hauteur, pt(30), "0.1"), "{:?}", r);
 }
 
 #[test]
 fn bloc_image_jpeg_recopie_tel_quel() {
     let jpeg = std::fs::read(exemples().join("scan.jpg")).unwrap();
     let pdf = ok(&base(vec![
-        json!({"type": "image", "chemin": image("scan.jpg"), "largeur": 150.0}),
+        image_bloc(&image("scan.jpg"), 150),
     ]));
     assert_eq!(xobjects(&pdf, 1, "Image"), 1);
     // Les octets du JPEG sont dans le PDF, sans décompression.
@@ -650,7 +706,7 @@ fn un_logo_trop_fin_est_ramene_a_300_ppi_et_n_est_ecrit_qu_une_fois() {
     // 74 pt de large (le logo du bulletin) : 74 / 72 x 300 = 308,3, soit 309 pixels.
     let mut v = base(vec![para("un")]);
     v["documents"] = json!([{"blocs": [para("un")]}, {"blocs": [para("deux")]}, {"blocs": [para("trois")]}]);
-    v["logo"] = json!({"chemin": logo_trop_fin("logo.png", false), "largeur": 74.0, "marge_haut": 5.0, "marge_droite": 5.0});
+    v["logo"] = json!({"chemin": logo_trop_fin("logo.png", false), "largeur": 74, "marge_haut": 5, "marge_droite": 5});
     let pdf = ok(&v);
     assert_eq!(nb_pages(&pdf), 3);
     for page in 1..=3 {
@@ -669,7 +725,7 @@ fn un_logo_trop_fin_est_ramene_a_300_ppi_et_n_est_ecrit_qu_une_fois() {
     // Le logo garde ses proportions et sa place.
     let ins = inspecter(&pdf, "logo-fin.pdf");
     let r = nombres(&ins["pages"][2]["images"][0]);
-    assert!((r[2] - r[0] - 74.0).abs() < 0.1 && (r[3] - r[1] - 37.0).abs() < 0.1, "{:?}", r);
+    assert!(proche(r[2] - r[0], pt(74), "0.1") && proche(r[3] - r[1], pt(37), "0.1"), "{:?}", r);
     // Et le fichier est léger : le logo de 1 200 pixels y pesait plus de 100 Ko.
     assert!(pdf.len() < 40_000, "{} octets", pdf.len());
 }
@@ -677,7 +733,7 @@ fn un_logo_trop_fin_est_ramene_a_300_ppi_et_n_est_ecrit_qu_une_fois() {
 #[test]
 fn un_jpeg_trop_fin_est_reduit_et_reste_un_jpeg_un_jpeg_a_la_bonne_taille_est_recopie() {
     let mut v = base(vec![para("x")]);
-    v["logo"] = json!({"chemin": logo_trop_fin("logo.jpg", true), "largeur": 74.0, "marge_haut": 5.0, "marge_droite": 5.0});
+    v["logo"] = json!({"chemin": logo_trop_fin("logo.jpg", true), "largeur": 74, "marge_haut": 5, "marge_droite": 5});
     let pdf = ok(&v);
     let images = objets_image(&pdf);
     assert_eq!(images.len(), 1);
@@ -688,9 +744,9 @@ fn un_jpeg_trop_fin_est_reduit_et_reste_un_jpeg_un_jpeg_a_la_bonne_taille_est_re
     // `bloc_image_jpeg_recopie_tel_quel`. Posé sur 74 pt (309 pixels), il ne les dépasse pas d'un quart : recopié
     // aussi. Posé sur 48 pt (200 pixels), il est réduit.
     let mut v = base(vec![para("x")]);
-    v["logo"] = json!({"chemin": image("scan.jpg"), "largeur": 74.0, "marge_haut": 5.0, "marge_droite": 5.0});
+    v["logo"] = json!({"chemin": image("scan.jpg"), "largeur": 74, "marge_haut": 5, "marge_droite": 5});
     assert_eq!(objets_image(&ok(&v))[0].1.get(b"Width").unwrap().as_i64().unwrap(), 368);
-    v["logo"]["largeur"] = json!(48.0);
+    v["logo"]["largeur"] = json!(48);
     assert_eq!(objets_image(&ok(&v))[0].1.get(b"Width").unwrap().as_i64().unwrap(), 200);
 }
 
@@ -710,15 +766,8 @@ fn les_polices_embarquees_n_ont_plus_de_hinting_et_gardent_leurs_contours() {
         let face = ttf_parser::Face::parse(&ttf, 0).unwrap();
         let mut avec_contour = 0;
         for g in 1..face.number_of_glyphs() {
-            struct Rien;
-            impl ttf_parser::OutlineBuilder for Rien {
-                fn move_to(&mut self, _: f32, _: f32) {}
-                fn line_to(&mut self, _: f32, _: f32) {}
-                fn quad_to(&mut self, _: f32, _: f32, _: f32, _: f32) {}
-                fn curve_to(&mut self, _: f32, _: f32, _: f32, _: f32, _: f32, _: f32) {}
-                fn close(&mut self) {}
-            }
-            if face.outline_glyph(ttf_parser::GlyphId(g), &mut Rien).is_some() {
+            // Un glyphe dessine a une boite ; un glyphe vide n'en a pas.
+            if face.glyph_bounding_box(ttf_parser::GlyphId(g)).is_some() {
                 avec_contour += 1;
             }
         }
@@ -733,7 +782,7 @@ fn les_polices_embarquees_n_ont_plus_de_hinting_et_gardent_leurs_contours() {
 #[test]
 fn bloc_image_svg_est_vectoriel() {
     let pdf = ok(&base(vec![
-        json!({"type": "image", "chemin": image("logo.svg"), "largeur": 120.0}),
+        image_bloc(&image("logo.svg"), 120),
     ]));
     assert_eq!(xobjects(&pdf, 1, "Form"), 1, "un SVG devient un objet de formulaire vectoriel");
     assert_eq!(xobjects(&pdf, 1, "Image"), 0, "pas de pixels");
@@ -763,12 +812,12 @@ fn images_reconnues_par_le_contenu_pas_par_l_extension() {
         let p = dossier.join(nom);
         std::fs::write(&p, donnees).unwrap();
         let pdf = ok(&base(vec![
-            json!({"type": "image", "chemin": chemin(&p), "largeur": 100.0}),
+            image_bloc(&chemin(&p), 100),
         ]));
         assert_eq!(xobjects(&pdf, 1, genre), 1, "{}", nom);
         // Le même fichier en logo.
         let mut v = base(vec![para("x")]);
-        v["logo"] = json!({"chemin": chemin(&p), "largeur": 50.0, "marge_haut": 5.0, "marge_droite": 5.0});
+        v["logo"] = json!({"chemin": chemin(&p), "largeur": 50, "marge_haut": 5, "marge_droite": 5});
         let pdf = ok(&v);
         assert_eq!(xobjects(&pdf, 1, genre), 1, "logo {}", nom);
     }
@@ -788,16 +837,15 @@ fn operateurs(pdf: &[u8], page: usize) -> Vec<lopdf::content::Operation> {
 /// Un tableau de trois colonnes (libellé à gauche, deux nombres à droite), cellules de 4 pt de
 /// marge à gauche et à droite, sur la largeur utile de 300 pt de `base`.
 fn tableau3(entete: Vec<Value>, lignes: Vec<Value>) -> Value {
-    json!({"type": "tableau",
-           "colonnes": [{"largeur": 0.5},
-                        {"largeur": 0.25, "alignement": "droite"},
-                        {"largeur": 0.25, "alignement": "droite"}],
-           "marge_cellule": {"haut": 1.0, "droite": 4.0, "bas": 1.0, "gauche": 4.0},
-           "entete": entete, "lignes": lignes})
+    tableau(vec![col(json!(mesure("0.5"))),
+                 json!({"largeur": mesure("0.25"), "alignement": "droite"}),
+                 json!({"largeur": mesure("0.25"), "alignement": "droite"})],
+            json!({"marge_cellule": {"haut": 1, "droite": 4, "bas": 1, "gauche": 4},
+                   "entete": entete, "lignes": lignes}))
 }
 
 fn ligne3(a: &str, b: &str, c: &str) -> Value {
-    json!({"cellules": [a, b, c]})
+    rangee(vec![json!(a), json!(b), json!(c)], json!({}))
 }
 
 #[test]
@@ -809,11 +857,11 @@ fn tableau_colonnes_alignees_nombres_a_droite() {
     let l = lignes(&ok(&v));
     let trouve = |t: &str| l.iter().find(|x| x.texte == t).unwrap_or_else(|| panic!("{} dans {:?}", t, l)).clone();
     // Colonne 1 : de 50 à 200, texte collé à gauche (marge de 4).
-    assert!((trouve("Salaire").x - 54.0).abs() < 0.01, "{:?}", l);
+    assert!(proche(trouve("Salaire").x, pt(54), "0.01"), "{:?}", l);
     // Colonnes 2 et 3 : de 200 à 275 et de 275 à 350 ; le bord droit du texte est à la marge près.
-    for (t, bord) in [("1 234,56", 271.0), ("Base", 271.0), ("9,00", 271.0), ("12,00", 346.0), ("1 000 000,00", 346.0)] {
+    for (t, bord) in [("1 234,56", 271), ("Base", 271), ("9,00", 271), ("12,00", 346), ("1 000 000,00", 346)] {
         let c = trouve(t);
-        assert!((c.x + c.largeur - bord).abs() < 0.05, "{} finit à {} au lieu de {}", t, c.x + c.largeur, bord);
+        assert!(proche(c.x + c.largeur, pt(bord), "0.05"), "{} finit à {} au lieu de {}", t, c.x + c.largeur, bord);
     }
     // L'ordre de lecture : ligne après ligne, de gauche à droite.
     let ordre: Vec<&str> = l.iter().map(|x| x.texte.as_str()).collect();
@@ -829,35 +877,38 @@ fn tableau_cellule_longue_passe_a_la_ligne_et_la_ligne_grandit() {
     assert!(morceaux.len() >= 2, "le libellé doit se replier : {:?}", l);
     // Les nombres restent sur la première ligne, la ligne suivante est sous la dernière du libellé.
     let un = l.iter().find(|x| x.texte == "1").unwrap();
-    assert!((un.y - morceaux[0].y).abs() < 0.01, "{:?}", l);
+    assert!(proche(un.y, morceaux[0].y, "0.01"), "{:?}", l);
     let suite = l.iter().find(|x| x.texte == "suite").unwrap();
-    let plus_bas = morceaux.iter().map(|m| m.y).fold(f32::MAX, f32::min);
+    let plus_bas = morceaux.iter().map(|m| m.y).min().unwrap();
     assert!(suite.y < plus_bas, "la ligne suivante passe sous le libellé replié : {:?}", l);
 }
 
 #[test]
 fn tableau_etendue_gras_fond_filets_et_couleurs() {
-    let v = base(vec![json!({
-        "type": "tableau",
-        "colonnes": [{"largeur": 0.5}, {"largeur": 0.5, "alignement": "droite"}],
-        "filet_lignes": {"couleur": "#E4E4E4", "epaisseur": 0.3},
-        "entete": [{"cellules": ["A", "B"], "fond": "#B22222", "couleur": "#FFFFFF", "gras": true}],
+    let v = base(vec![tableau(
+        vec![col(json!(mesure("0.5"))), json!({"largeur": mesure("0.5"), "alignement": "droite"})],
+        json!({
+        "filet_lignes": {"couleur": "#E4E4E4", "epaisseur": mesure("0.3")},
+        "entete": [rangee(vec![json!("A"), json!("B")], json!({"fond": "#B22222", "couleur": "#FFFFFF", "gras": true}))],
         "lignes": [
-            {"cellules": [{"texte": "Total", "etendue": 2}], "filet_haut": {"couleur": "#B22222", "epaisseur": 0.6}},
-            {"cellules": [{"morceaux": [{"texte": "gris", "couleur": "#777777"}, {"texte": " gras", "gras": true}]}, "9"],
-             "fond": "#F4F0F0"}
-        ]})]);
+            rangee(vec![cellule(json!({"texte": "Total", "etendue": 2}))],
+                   json!({"filet_haut": {"couleur": "#B22222", "epaisseur": mesure("0.6")}})),
+            rangee(vec![cellule(json!({"morceaux": [
+                        {"texte": "gris", "couleur": "#777777", "gras": false, "italique": false},
+                        {"texte": " gras", "gras": true, "italique": false}]})), json!("9")],
+                   json!({"fond": "#F4F0F0"}))
+        ]}))]);
     let pdf = ok(&v);
     let ops = operateurs(&pdf, 1);
     // Deux fonds pleins, une couleur de remplissage rouge puis une grise claire.
     assert_eq!(ops.iter().filter(|o| matches!(o.operator.as_str(), "f" | "f*")).count(), 2);
-    let remplissages: Vec<Vec<f32>> = ops
+    let remplissages: Vec<Vec<Mesure>> = ops
         .iter()
         .filter(|o| o.operator == "rg")
         .map(|o| o.operands.iter().map(nombre).collect())
         .collect();
-    assert!(remplissages.iter().any(|c| (c[0] - 0xB2 as f32 / 255.0).abs() < 0.01 && c[1] < 0.2), "{:?}", remplissages);
-    assert!(remplissages.iter().any(|c| c.iter().all(|x| (x - 0x77 as f32 / 255.0).abs() < 0.01)), "{:?}", remplissages);
+    assert!(remplissages.iter().any(|c| proche(c[0], pt(0xB2) / 255, "0.01") && c[1] < mesure("0.2")), "{:?}", remplissages);
+    assert!(remplissages.iter().any(|c| c.iter().all(|x| proche(*x, pt(0x77) / 255, "0.01"))), "{:?}", remplissages);
     // Filets : un par ligne du corps (2) plus le filet haut explicite de « Total » (3 traits).
     assert_eq!(ops.iter().filter(|o| o.operator == "S").count(), 3);
     // Le texte du bloc, dans l'ordre ; l'en-tête et « gras » sont en Liberation Sans Bold.
@@ -871,9 +922,8 @@ fn tableau_etendue_gras_fond_filets_et_couleurs() {
         .collect();
     assert!(polices.iter().filter(|p| **p == gras).count() >= 3, "{:?}", polices);
     // « Total » s'étend sur les deux colonnes : un texte plus long que la colonne tient sur une ligne.
-    let v = base(vec![json!({
-        "type": "tableau", "colonnes": [{"largeur": 0.2}, {"largeur": 0.8}],
-        "lignes": [{"cellules": [{"texte": "ce libellé ne tient que sur la largeur des deux colonnes réunies", "etendue": 2}]}]})]);
+    let v = base(vec![tableau(vec![col(json!(mesure("0.2"))), col(json!(mesure("0.8")))], json!({
+        "lignes": [rangee(vec![cellule(json!({"texte": "ce libellé ne tient que sur la largeur des deux colonnes réunies", "etendue": 2}))], json!({}))]}))]);
     assert_eq!(lignes(&ok(&v)).len(), 1);
 }
 
@@ -911,14 +961,14 @@ fn tableau_entete_repetee_et_ligne_jamais_coupee() {
 fn tableau_sans_ligne_n_ecrit_que_l_entete_et_se_marge() {
     let v = base(vec![
         para("Avant"),
-        json!({"type": "tableau", "colonnes": [{"largeur": 1.0}],
-               "entete": [{"cellules": ["Seul"]}], "espace_avant": 20.0, "espace_apres": 20.0}),
+        tableau(vec![col(json!(1))], json!({
+               "entete": [rangee(vec![json!("Seul")], json!({}))], "espace_avant": 20, "espace_apres": 20})),
         para("Après"),
     ]);
     let l = lignes(&ok(&v));
     assert_eq!(l.iter().map(|x| x.texte.as_str()).collect::<Vec<_>>(), ["Avant", "Seul", "Après"]);
     // 20 pt avant et après (les marges voisines se fondent avec celles des paragraphes, nulles ici).
-    assert!(l[0].y - l[1].y > 20.0 && l[1].y - l[2].y > 20.0, "{:?}", l);
+    assert!(l[0].y - l[1].y > pt(20) && l[1].y - l[2].y > pt(20), "{:?}", l);
 }
 
 #[test]
@@ -948,42 +998,44 @@ fn tableau_chaque_document_recommence_sur_une_page_neuve() {
 
 #[test]
 fn paragraphe_couleur_par_morceau() {
-    let v = base(vec![json!({"type": "paragraphe", "couleur": "#000000",
-        "morceaux": [{"texte": "noir "}, {"texte": "rouge", "couleur": "#FF0000"}]})]);
+    let v = base(vec![paragraphe(vec![m("noir "), json!({"texte": "rouge", "couleur": "#FF0000", "gras": false, "italique": false})],
+        json!({"couleur": "#000000"}))]);
     let ops = operateurs(&ok(&v), 1);
-    let rg: Vec<Vec<f32>> = ops.iter().filter(|o| o.operator == "rg").map(|o| o.operands.iter().map(nombre).collect()).collect();
-    assert!(rg.iter().any(|c| c[0] > 0.99 && c[1] < 0.01 && c[2] < 0.01), "{:?}", rg);
+    let rg: Vec<Vec<Mesure>> = ops.iter().filter(|o| o.operator == "rg").map(|o| o.operands.iter().map(nombre).collect()).collect();
+    assert!(rg.iter().any(|c| c[0] > mesure("0.99") && c[1] < mesure("0.01") && c[2] < mesure("0.01")), "{:?}", rg);
 }
 
 #[test]
 fn refus_tableau() {
-    let col1 = json!([{"largeur": 1.0}]);
+    let col1 = || vec![col(json!(1))];
+    let t1 = |plus: Value| tableau(col1(), plus);
+    let r = |cellules: Vec<Value>| rangee(cellules, json!({}));
     let cas: Vec<(Value, &str)> = vec![
-        (json!({"type": "tableau", "colonnes": []}), "un tableau sans colonne"),
-        (json!({"type": "tableau", "colonnes": [{"largeur": 0.5}]}), "la somme des largeurs"),
-        (json!({"type": "tableau", "colonnes": col1, "lignes": [{"cellules": ["a", "b"]}]}),
+        (tableau(vec![], json!({})), "un tableau sans colonne"),
+        (tableau(vec![col(json!(mesure("0.5")))], json!({})), "la somme des largeurs"),
+        (t1(json!({"lignes": [r(vec![json!("a"), json!("b")])]})),
          "ligne 1, cellule 2 : la ligne occupe plus que les 1 colonne(s)"),
-        (json!({"type": "tableau", "colonnes": col1, "entete": [{"cellules": [{"texte": "a", "etendue": 0}]}]}),
+        (t1(json!({"entete": [r(vec![cellule(json!({"texte": "a", "etendue": 0}))])]})),
          "en-tête, ligne 1, cellule 1 : etendue doit valoir au moins 1"),
-        (json!({"type": "tableau", "colonnes": col1, "lignes": [{"cellules": [{"texte": "a", "morceaux": []}]}]}),
+        (t1(json!({"lignes": [r(vec![cellule(json!({"texte": "a", "morceaux": []}))])]})),
          "\"texte\" et \"morceaux\" s'excluent"),
-        (json!({"type": "tableau", "colonnes": col1, "lignes": [{"cellules": [3]}]}),
+        (t1(json!({"lignes": [r(vec![json!(3)])]})),
          "une chaîne ou un objet (une cellule)"),
-        (json!({"type": "tableau", "colonnes": col1, "lignes": [{"cellules": ["a"], "fond": "rouge"}]}),
+        (t1(json!({"lignes": [rangee(vec![json!("a")], json!({"fond": "rouge"}))]})),
          "couleur \"rouge\" invalide"),
-        (json!({"type": "tableau", "colonnes": col1, "lignes": [{"cellules": ["a"], "bordure": 1}]}),
+        (t1(json!({"lignes": [rangee(vec![json!("a")], json!({"bordure": 1}))]})),
          "champ inconnu \"bordure\""),
-        (json!({"type": "tableau", "colonnes": col1, "lignes": [{"cellules": [{"texte": "a", "fond": "#000000"}]}]}),
+        (t1(json!({"lignes": [r(vec![cellule(json!({"texte": "a", "fond": "#000000"}))])]})),
          "champ inconnu \"fond\""),
-        (json!({"type": "tableau", "colonnes": [{"largeur": 1.0, "couleur": "#000000"}]}), "champ inconnu \"couleur\""),
-        (json!({"type": "tableau", "colonnes": col1, "marge_cellule": {"haut": -1.0}}), "haut ne peut pas être négatif"),
-        (json!({"type": "tableau", "colonnes": col1, "marge_cellule": {"gauche": 200.0, "droite": 200.0}, "lignes": [{"cellules": ["a"]}]}),
+        (tableau(vec![json!({"largeur": 1, "alignement": "gauche", "couleur": "#000000"})], json!({})), "champ inconnu \"couleur\""),
+        (t1(json!({"marge_cellule": {"haut": -1, "droite": 0, "bas": 0, "gauche": 0}})), "haut ne peut pas être négatif"),
+        (t1(json!({"marge_cellule": {"haut": 0, "droite": 200, "bas": 0, "gauche": 200}, "lignes": [r(vec![json!("a")])]})),
          "plus étroite que les marges"),
-        (json!({"type": "tableau", "colonnes": col1, "filet_lignes": {"couleur": "#000000", "epaisseur": 0.0}}),
+        (t1(json!({"filet_lignes": {"couleur": "#000000", "epaisseur": 0}})),
          "epaisseur doit être positif"),
-        (json!({"type": "tableau", "colonnes": col1, "lignes": [{"cellules": ["漢"]}]}), "n'existe pas dans la police"),
-        (json!({"type": "colonnes", "colonnes": [{"largeur": 1.0, "blocs": [
-            {"type": "tableau", "colonnes": col1}]}]}), "un tableau ne se place pas dans des colonnes"),
+        (t1(json!({"lignes": [r(vec![json!("漢")])]})), "n'existe pas dans la police"),
+        (colonnes(vec![json!({"largeur": 1, "blocs": [t1(json!({}))]})], json!({})),
+         "un tableau ne se place pas dans des colonnes"),
     ];
     for (bloc, attendu) in cas {
         let e = refus(&base(vec![para("x"), bloc.clone()]));
@@ -994,7 +1046,7 @@ fn refus_tableau() {
     }
     // Une ligne plus haute que la page ne se coupe pas : refus, avec le numéro du bloc.
     let haute = (1..=60).map(|i| format!("m{}", i)).collect::<Vec<_>>().join("\n");
-    let e = refus(&base(vec![json!({"type": "tableau", "colonnes": col1, "lignes": [{"cellules": [haute]}]})]));
+    let e = refus(&base(vec![t1(json!({"lignes": [r(vec![json!(haute)])]}))]));
     assert!(e.starts_with("bloc 1 : l'en-tête et la plus haute ligne du tableau occupent"), "{}", e);
 }
 
@@ -1024,18 +1076,18 @@ fn refus_champ_inconnu_partout() {
     for b in [
         json!({"type": "paragraphe", "morceaux": [], "italique": true}),
         json!({"type": "paragraphe", "morceaux": [{"texte": "a", "souligne": true}]}),
-        json!({"type": "espace", "hauteur": 1.0, "couleur": "#000000"}),
-        json!({"type": "image", "chemin": image("logo.svg"), "largeur": 10.0, "hauteur": 10.0}),
-        json!({"type": "colonnes", "colonnes": [{"largeur": 1.0, "blocs": [], "titre": "x"}]}),
-        json!({"type": "colonnes", "bordure": 1, "colonnes": [{"largeur": 1.0, "blocs": []}]}),
+        json!({"type": "espace", "hauteur": 1, "couleur": "#000000"}),
+        json!({"type": "image", "chemin": image("logo.svg"), "largeur": 10, "hauteur": 10}),
+        json!({"type": "colonnes", "colonnes": [{"largeur": 1, "blocs": [], "titre": "x"}]}),
+        json!({"type": "colonnes", "bordure": 1, "colonnes": [{"largeur": 1, "blocs": []}]}),
         json!({"type": "colonnes", "filet_haut": {"couleur": "#000000", "style": "x"},
-               "colonnes": [{"largeur": 1.0, "blocs": []}]}),
+               "colonnes": [{"largeur": 1, "blocs": []}]}),
     ] {
         let e = refus(&base(vec![b.clone()]));
         assert!(e.contains("champ inconnu"), "{} / {}", b, e);
     }
     let mut v = base(vec![para("x")]);
-    v["logo"] = json!({"chemin": image("logo.svg"), "largeur": 10.0, "coin": "haut"});
+    v["logo"] = json!({"chemin": image("logo.svg"), "largeur": 10, "coin": "haut"});
     assert!(refus(&v).contains("champ inconnu \"coin\""));
     let mut v = base(vec![para("x")]);
     v["documents"][0]["titre"] = json!("x");
@@ -1062,57 +1114,57 @@ fn refus_format_absent_ou_inconnu() {
 
 #[test]
 fn refus_image_absente_illisible_ou_inconnue() {
-    let e = refus(&base(vec![json!({"type": "image", "chemin": "/nulle/part/absente.png", "largeur": 50.0})]));
+    let e = refus(&base(vec![image_bloc("/nulle/part/absente.png", 50)]));
     assert!(e.starts_with("bloc 1 : image introuvable : /nulle/part/absente.png"), "{}", e);
     let mut v = base(vec![para("x")]);
-    v["logo"] = json!({"chemin": "/nulle/part/logo.svg", "largeur": 50.0});
+    v["logo"] = json!({"chemin": "/nulle/part/logo.svg", "largeur": 50, "marge_haut": 0, "marge_droite": 0});
     let e = refus(&v);
     assert!(e.contains("logo") && e.contains("introuvable"), "{}", e);
 
     let dossier = dossier_temp("illisibles");
     let faux = dossier.join("faux.png");
     std::fs::write(&faux, b"ceci n'est pas une image").unwrap();
-    let e = refus(&base(vec![json!({"type": "image", "chemin": chemin(&faux), "largeur": 50.0})]));
+    let e = refus(&base(vec![image_bloc(&chemin(&faux), 50)]));
     assert!(e.contains("format d'image non reconnu"), "{}", e);
 
     // Un PNG tronqué : la signature est bonne, le reste est illisible.
     let png = std::fs::read(exemples().join("signature.png")).unwrap();
     let tronque = dossier.join("tronque.png");
     std::fs::write(&tronque, &png[..png.len() / 2]).unwrap();
-    let e = refus(&base(vec![json!({"type": "image", "chemin": chemin(&tronque), "largeur": 50.0})]));
+    let e = refus(&base(vec![image_bloc(&chemin(&tronque), 50)]));
     assert!(e.contains("PNG illisible"), "{}", e);
 
     // Un JPEG tronqué.
     let jpg = std::fs::read(exemples().join("scan.jpg")).unwrap();
     let tronque = dossier.join("tronque.jpg");
     std::fs::write(&tronque, &jpg[..jpg.len() / 3]).unwrap();
-    let e = refus(&base(vec![json!({"type": "image", "chemin": chemin(&tronque), "largeur": 50.0})]));
+    let e = refus(&base(vec![image_bloc(&chemin(&tronque), 50)]));
     assert!(e.contains("JPEG illisible"), "{}", e);
 
     // Un SVG mal formé, un SVG avec texte, un SVG avec dégradé.
     let svg = dossier.join("casse.svg");
     std::fs::write(&svg, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\"><rect").unwrap();
-    let e = refus(&base(vec![json!({"type": "image", "chemin": chemin(&svg), "largeur": 50.0})]));
+    let e = refus(&base(vec![image_bloc(&chemin(&svg), 50)]));
     assert!(e.contains("SVG illisible"), "{}", e);
     let svg = dossier.join("texte.svg");
     std::fs::write(&svg, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"><text x=\"1\" y=\"5\">A</text></svg>").unwrap();
-    let e = refus(&base(vec![json!({"type": "image", "chemin": chemin(&svg), "largeur": 50.0})]));
+    let e = refus(&base(vec![image_bloc(&chemin(&svg), 50)]));
     assert!(e.contains("texte"), "{}", e);
     let svg = dossier.join("degrade.svg");
     std::fs::write(&svg, "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"><defs><linearGradient id=\"g\"><stop offset=\"0\" stop-color=\"red\"/><stop offset=\"1\" stop-color=\"blue\"/></linearGradient></defs><rect width=\"10\" height=\"10\" fill=\"url(#g)\"/></svg>").unwrap();
-    let e = refus(&base(vec![json!({"type": "image", "chemin": chemin(&svg), "largeur": 50.0})]));
+    let e = refus(&base(vec![image_bloc(&chemin(&svg), 50)]));
     assert!(e.contains("dégradé"), "{}", e);
 }
 
 #[test]
 fn refus_valeurs_invalides() {
-    let e = refus(&base(vec![json!({"type": "paragraphe", "morceaux": [{"texte": "a"}], "couleur": "rouge"})]));
+    let e = refus(&base(vec![paragraphe(vec![m("a")], json!({"couleur": "rouge"}))]));
     assert!(e.contains("couleur") && e.contains("#RRGGBB"), "{}", e);
-    let e = refus(&base(vec![json!({"type": "paragraphe", "morceaux": [{"texte": "a"}], "alignement": "milieu"})]));
+    let e = refus(&base(vec![paragraphe(vec![m("a")], json!({"alignement": "milieu"}))]));
     assert!(e.contains("valeur inconnue \"milieu\"") && e.contains("justifie"), "{}", e);
-    let e = refus(&base(vec![json!({"type": "paragraphe", "morceaux": [{"texte": "a"}], "taille": -3.0})]));
+    let e = refus(&base(vec![paragraphe(vec![m("a")], json!({"taille": -3}))]));
     assert!(e.contains("taille"), "{}", e);
-    let e = refus(&base(vec![json!({"type": "espace", "hauteur": -1.0})]));
+    let e = refus(&base(vec![json!({"type": "espace", "hauteur": -1})]));
     assert!(e.contains("hauteur"), "{}", e);
     let e = refus(&base(vec![json!({"type": "espace"})]));
     assert!(e.contains("champ absent \"hauteur\""), "{}", e);
@@ -1120,16 +1172,27 @@ fn refus_valeurs_invalides() {
     assert!(e.contains("champ absent \"morceaux\""), "{}", e);
     let e = refus(&base(vec![json!({"type": "paragraphe", "morceaux": "texte"})]));
     assert!(e.contains("mauvais type"), "{}", e);
-    let e = refus(&base(vec![json!({"type": "colonnes", "colonnes": [
-        {"largeur": 0.5, "blocs": []}, {"largeur": 0.4, "blocs": []}]})]));
+    let e = refus(&base(vec![colonnes(vec![
+        json!({"largeur": mesure("0.5"), "blocs": []}), json!({"largeur": mesure("0.4"), "blocs": []})], json!({}))]));
     assert!(e.contains("somme des largeurs"), "{}", e);
-    let e = refus(&json!({"format": 1, "documents": []}));
+    let mut v = base(vec![]);
+    v["documents"] = json!([]);
+    let e = refus(&v);
     assert!(e.contains("documents"), "{}", e);
     let e = refus(&json!({"format": 1}));
     assert!(e.contains("champ absent \"documents\""), "{}", e);
-    let e = refus(&json!({"format": 1, "page": {"marges": {"haut": 500.0, "bas": 500.0}}, "documents": [{"blocs": []}]}));
+    let mut v = base(vec![]);
+    v["page"]["marges"] = json!({"haut": 500, "droite": 0, "bas": 500, "gauche": 0});
+    let e = refus(&v);
     assert!(e.contains("marges"), "{}", e);
-    let e = fabrique_pdf::Description::lire("{\"format\": 1,").unwrap_err().0;
+    // Sans style, une description dit sa page et sa police.
+    for cle in ["page", "police"] {
+        let mut v = base(vec![para("x")]);
+        v.as_object_mut().unwrap().remove(cle);
+        let e = refus(&v);
+        assert!(e.contains(&format!("elle dit sa \"{}\"", cle)), "{}", e);
+    }
+    let e = fabrique_pdf::Description::lire("{\"format\": 1,").unwrap_err().phrase;
     assert!(e.contains("illisible") && !e.contains('\n'), "{}", e);
 }
 
@@ -1155,10 +1218,10 @@ fn refus_caractere_absent_de_la_police() {
 fn logo_sur_chaque_page_en_haut_a_droite_et_un_document_par_page() {
     let mut v = json!({
         "format": 1,
-        "page": {"largeur": 400.0, "hauteur": 500.0,
-                 "marges": {"haut": 100.0, "droite": 50.0, "bas": 50.0, "gauche": 50.0}},
-        "police": {"taille": 10.0, "interligne": 1.25},
-        "logo": {"chemin": image("logo.svg"), "largeur": 80.0, "marge_haut": 20.0, "marge_droite": 30.0},
+        "page": {"largeur": 400, "hauteur": 500,
+                 "marges": {"haut": 100, "droite": 50, "bas": 50, "gauche": 50}},
+        "police": {"taille": 10, "interligne": mesure("1.25"), "couleur": "#000000"},
+        "logo": {"chemin": image("logo.svg"), "largeur": 80, "marge_haut": 20, "marge_droite": 30},
         "documents": [
             {"blocs": [para("Premier document")]},
             {"blocs": [para("Deuxième document")]},
@@ -1177,10 +1240,10 @@ fn logo_sur_chaque_page_en_haut_a_droite_et_un_document_par_page() {
     // Position du logo (80 x 26,67 pt, à 30 pt du bord droit et 20 pt du haut), par l'inspection.
     let ins = inspecter(&pdf, "logo.pdf");
     let r = nombres(&ins["pages"][4]["traits"][0]);
-    assert!((r[0] - 290.0).abs() < 0.1, "{:?}", r);
-    assert!((r[1] - 20.0).abs() < 0.1, "{:?}", r);
-    assert!((r[2] - 370.0).abs() < 0.1, "{:?}", r);
-    assert!((r[3] - 46.667).abs() < 0.1, "{:?}", r);
+    assert!(proche(r[0], pt(290), "0.1"), "{:?}", r);
+    assert!(proche(r[1], pt(20), "0.1"), "{:?}", r);
+    assert!(proche(r[2], pt(370), "0.1"), "{:?}", r);
+    assert!(proche(r[3], mesure("46.667"), "0.1"), "{:?}", r);
     v["documents"] = json!([{"blocs": []}]);
     assert_eq!(nb_pages(&ok(&v)), 1, "un document vide fait une page (avec son logo)");
 }
@@ -1198,40 +1261,35 @@ fn justification_les_lignes_pleines_finissent_au_bord_droit() {
     assert!(l.len() >= 4, "{:?}", l);
     // Largeur utile : 300 pt, de 50 à 350.
     for ligne in &l[..l.len() - 1] {
-        assert!((ligne.x - 50.0).abs() < 0.01, "{:?}", ligne);
+        assert!(proche(ligne.x, pt(50), "0.01"), "{:?}", ligne);
         assert!(
-            (ligne.x + ligne.largeur - 350.0).abs() < 0.05,
+            proche(ligne.x + ligne.largeur, pt(350), "0.05"),
             "la ligne ne finit pas au bord droit : {:?}",
             ligne
         );
-        assert!(ligne.mot_espace > 0.0, "{:?}", ligne);
+        assert!(ligne.mot_espace > Mesure::ZERO, "{:?}", ligne);
     }
     // La dernière ligne reste à gauche, à son espacement naturel.
     let derniere = l.last().unwrap();
-    assert_eq!(derniere.mot_espace, 0.0);
-    assert!(derniere.x + derniere.largeur < 350.0 - 1.0, "{:?}", derniere);
+    assert_eq!(derniere.mot_espace, Mesure::ZERO);
+    assert!(derniere.x + derniere.largeur < pt(350 - 1), "{:?}", derniere);
     // Le texte, lui, est celui du paragraphe : on recolle les lignes avec une espace.
     let recolle = l.iter().map(|x| x.texte.clone()).collect::<Vec<_>>().join(" ");
     assert_eq!(recolle, LOREM);
     // Et l'inspection voit les mêmes mots, le dernier mot des lignes pleines au bord droit.
     let ins = inspecter(&pdf, "justifie.pdf");
-    let mut par_ligne: BTreeMap<i64, Vec<Vec<f64>>> = BTreeMap::new();
+    let mut par_ligne: BTreeMap<i64, Vec<Vec<Mesure>>> = BTreeMap::new();
     for w in ins["pages"][0]["mots"].as_array().unwrap() {
         let r = nombres(&w["rect"]);
-        par_ligne.entry(r[3].round() as i64).or_default().push(r);
+        par_ligne.entry(r[3].arrondi()).or_default().push(r);
     }
-    let v: Vec<(f64, f64)> = par_ligne
+    let v: Vec<(Mesure, Mesure)> = par_ligne
         .values()
-        .map(|ws| {
-            (
-                ws.iter().map(|w| w[0]).fold(f64::INFINITY, f64::min),
-                ws.iter().map(|w| w[2]).fold(f64::NEG_INFINITY, f64::max),
-            )
-        })
+        .map(|ws| (ws.iter().map(|w| w[0]).min().unwrap(), ws.iter().map(|w| w[2]).max().unwrap()))
         .collect();
     assert_eq!(v.len(), l.len(), "{:?}", v);
     for (x0, x1) in &v[..v.len() - 1] {
-        assert!((x0 - 50.0).abs() < 0.6 && (x1 - 350.0).abs() < 0.6, "{:?}", v);
+        assert!(proche(*x0, pt(50), "0.6") && proche(*x1, pt(350), "0.6"), "{:?}", v);
     }
 }
 
@@ -1242,25 +1300,24 @@ fn justification_les_lignes_finies_par_retour_forcé_restent_a_gauche() {
     let l = lignes(&pdf);
     let finie_par_n = &l[0];
     assert_eq!(finie_par_n.texte, "Première ligne assez courte");
-    assert_eq!(finie_par_n.mot_espace, 0.0, "{:?}", finie_par_n);
+    assert_eq!(finie_par_n.mot_espace, Mesure::ZERO, "{:?}", finie_par_n);
     // La deuxième partie est justifiée sur ses lignes pleines et pas sur sa dernière.
     let milieu: Vec<&Ligne> = l.iter().filter(|x| x.texte != "Fin" && x.texte != finie_par_n.texte).collect();
     assert!(milieu.len() >= 2);
-    assert!(milieu[0].mot_espace > 0.0);
-    assert_eq!(milieu.last().unwrap().mot_espace, 0.0);
+    assert!(milieu[0].mot_espace > Mesure::ZERO);
+    assert_eq!(milieu.last().unwrap().mot_espace, Mesure::ZERO);
     assert_eq!(l.last().unwrap().texte, "Fin");
 }
 
 #[test]
 fn alignements_gauche_centre_droite() {
-    let cas = [("gauche", 50.0), ("centre", -1.0), ("droite", -2.0)];
-    for (al, _) in cas {
+    for al in ["gauche", "centre", "droite"] {
         let pdf = ok(&base(vec![para_align("Un texte court", al)]));
         let l = &lignes(&pdf)[0];
         match al {
-            "gauche" => assert!((l.x - 50.0).abs() < 0.01),
-            "centre" => assert!((l.x + l.largeur / 2.0 - 200.0).abs() < 0.05, "{:?}", l),
-            _ => assert!((l.x + l.largeur - 350.0).abs() < 0.05, "{:?}", l),
+            "gauche" => assert!(proche(l.x, pt(50), "0.01")),
+            "centre" => assert!(proche(l.x + l.largeur / 2, pt(200), "0.05"), "{:?}", l),
+            _ => assert!(proche(l.x + l.largeur, pt(350), "0.05"), "{:?}", l),
         }
     }
 }
@@ -1273,10 +1330,10 @@ fn alignements_gauche_centre_droite() {
 fn meme_description_meme_pdf_a_l_octet_pres() {
     let mut v = base(vec![
         para_align(LOREM, "justifie"),
-        json!({"type": "image", "chemin": image("signature.png"), "largeur": 60.0}),
-        json!({"type": "image", "chemin": image("scan.jpg"), "largeur": 60.0}),
+        image_bloc(&image("signature.png"), 60),
+        image_bloc(&image("scan.jpg"), 60),
     ]);
-    v["logo"] = json!({"chemin": image("logo.svg"), "largeur": 60.0, "marge_haut": 5.0, "marge_droite": 5.0});
+    v["logo"] = json!({"chemin": image("logo.svg"), "largeur": 60, "marge_haut": 5, "marge_droite": 5});
     v["documents"].as_array_mut().unwrap().push(json!({"blocs": [para("Deuxième")]}));
     // Dans le processus : dix fabrications (les tables de hachage tirent un ordre différent à
     // chaque fois).
@@ -1335,8 +1392,8 @@ fn exemple_contrat_deux_pages_texte_logo_et_signatures() {
     // Les deux colonnes de signature sont côte à côte, la seconde à mi-page.
     let gauche = l.iter().find(|x| x.texte == "L’employeur").unwrap();
     let droite = l.iter().find(|x| x.texte == "Le salarié").unwrap();
-    assert!((gauche.x - 52.0).abs() < 0.01);
-    assert!((droite.x - (52.0 + (595.28 - 104.0) / 2.0)).abs() < 0.1, "{:?}", droite);
+    assert!(proche(gauche.x, pt(52), "0.01"));
+    assert!(proche(droite.x, pt(52) + (mesure("595.28") - pt(104)) / 2, "0.1"), "{:?}", droite);
     assert_eq!(gauche.page, droite.page);
 
     let ins = inspecter(&pdf, "contrat.pdf");
@@ -1434,19 +1491,37 @@ fn les_objets_du_pdf_sont_ordonnes_et_le_fichier_se_relit() {
 fn fixe(documents: Vec<Vec<Value>>) -> Value {
     json!({
         "format": 2,
-        "page": {"largeur": 400.0, "hauteur": 500.0,
-                 "marges": {"haut": 0.0, "droite": 0.0, "bas": 0.0, "gauche": 0.0}},
-        "police": {"taille": 10.0, "interligne": 1.25, "couleur": "#000000"},
+        "page": {"largeur": 400, "hauteur": 500,
+                 "marges": {"haut": 0, "droite": 0, "bas": 0, "gauche": 0}},
+        "police": {"taille": 10, "interligne": mesure("1.25"), "couleur": "#000000"},
         "documents": documents.into_iter().map(|b| json!({"blocs": b})).collect::<Vec<_>>()
     })
 }
 
-fn texte_fixe(texte: &str, x: f64, y: f64) -> Value {
-    json!({"type": "texte_fixe", "texte": texte, "x": x, "y": y})
+/// Un texte fixe maigre, en Helvetica, à gauche de `x` ; `plus` dit le reste.
+fn fixe_dit(texte: &str, x: i64, y: i64, plus: Value) -> Value {
+    avec(json!({"type": "texte_fixe", "texte": texte, "x": x, "y": y, "police": "helvetica", "gras": false,
+                "alignement": "gauche"}), plus)
+}
+
+fn texte_fixe(texte: &str, x: i64, y: i64) -> Value {
+    fixe_dit(texte, x, y, json!({}))
+}
+
+/// Un trait noir d'un demi-point ; `plus` dit le reste.
+fn trait_dit(x1: i64, y1: i64, x2: i64, y2: i64, plus: Value) -> Value {
+    avec(json!({"type": "trait", "x1": x1, "y1": y1, "x2": x2, "y2": y2, "epaisseur": mesure("0.5"),
+                "couleur": "#000000"}), plus)
+}
+
+/// Une image fixe posée au coin de sa boîte ; `plus` dit le reste.
+fn image_fixe(chemin: &str, x: i64, y: i64, largeur: i64, hauteur: i64, plus: Value) -> Value {
+    avec(json!({"type": "image_fixe", "chemin": chemin, "x": x, "y": y, "largeur": largeur, "hauteur": hauteur,
+                "centree": false}), plus)
 }
 
 /// Les mots (x0, y0, x1, y1, texte) de la page 1, relevés par l'inspection de la fabrique.
-fn mots(pdf: &[u8], nom: &str) -> Vec<(f64, f64, f64, f64, String)> {
+fn mots(pdf: &[u8], nom: &str) -> Vec<(Mesure, Mesure, Mesure, Mesure, String)> {
     let ins = inspecter(pdf, nom);
     ins["pages"][0]["mots"]
         .as_array()
@@ -1462,23 +1537,21 @@ fn mots(pdf: &[u8], nom: &str) -> Vec<(f64, f64, f64, f64, String)> {
 #[test]
 fn texte_fixe_se_pose_sur_sa_ligne_de_base_en_times_et_courier() {
     let v = fixe(vec![vec![
-        texte_fixe("Bonjour", 100.0, 200.0),
-        json!({"type": "texte_fixe", "texte": "Times", "x": 100.0, "y": 250.0,
-               "police": "times", "gras": true, "taille": 12.0}),
-        json!({"type": "texte_fixe", "texte": "Mono", "x": 100.0, "y": 300.0,
-               "police": "courier", "taille": 10.0}),
+        texte_fixe("Bonjour", 100, 200),
+        fixe_dit("Times", 100, 250, json!({"police": "times", "gras": true, "taille": 12})),
+        fixe_dit("Mono", 100, 300, json!({"police": "courier", "taille": 10})),
     ]]);
     let m = mots(&ok(&v), "fixe_polices.pdf");
     assert_eq!(m.len(), 3, "{:?}", m);
-    for (mot, x, y) in [("Bonjour", 100.0, 200.0), ("Times", 100.0, 250.0), ("Mono", 100.0, 300.0)] {
+    for (mot, x, y) in [("Bonjour", pt(100), pt(200)), ("Times", pt(100), pt(250)), ("Mono", pt(100), pt(300))] {
         let w = m.iter().find(|w| w.4 == mot).unwrap();
-        assert!((w.0 - x).abs() < 0.1, "{} : x0 = {}", mot, w.0);
+        assert!(proche(w.0, x, "0.1"), "{} : x0 = {}", mot, w.0);
         // La ligne de base est entre le haut et le bas de la boîte du mot.
-        assert!(w.1 < y && w.3 > y - 0.01, "{} : boîte {}..{} pour la base {}", mot, w.1, w.3, y);
+        assert!(w.1 < y && w.3 > y - mesure("0.01"), "{} : boîte {}..{} pour la base {}", mot, w.1, w.3, y);
     }
     // Courier : 0,6 em par lettre, 4 lettres de 10 pt.
     let mono = m.iter().find(|w| w.4 == "Mono").unwrap();
-    assert!((mono.2 - mono.0 - 24.0).abs() < 0.1, "{:?}", mono);
+    assert!(proche(mono.2 - mono.0, pt(24), "0.1"), "{:?}", mono);
     let noms = noms_de_polices(&ok(&v));
     assert_eq!(noms, ["LiberationMono", "LiberationSans", "LiberationSerif-Bold"], "{:?}", noms);
 }
@@ -1486,34 +1559,30 @@ fn texte_fixe_se_pose_sur_sa_ligne_de_base_en_times_et_courier() {
 #[test]
 fn texte_fixe_s_aligne_a_droite_et_au_centre_de_x() {
     let v = fixe(vec![vec![
-        json!({"type": "texte_fixe", "texte": "Droite", "x": 300.0, "y": 100.0, "alignement": "droite"}),
-        json!({"type": "texte_fixe", "texte": "Centre", "x": 200.0, "y": 150.0, "alignement": "centre",
-               "police": "times"}),
+        fixe_dit("Droite", 300, 100, json!({"alignement": "droite"})),
+        fixe_dit("Centre", 200, 150, json!({"alignement": "centre", "police": "times"})),
     ]]);
     let m = mots(&ok(&v), "fixe_alignement.pdf");
     let d = m.iter().find(|w| w.4 == "Droite").unwrap();
-    assert!((d.2 - 300.0).abs() < 0.3, "bord droit {}", d.2);
+    assert!(proche(d.2, pt(300), "0.3"), "bord droit {}", d.2);
     let c = m.iter().find(|w| w.4 == "Centre").unwrap();
-    assert!(((c.0 + c.2) / 2.0 - 200.0).abs() < 0.3, "centre {}", (c.0 + c.2) / 2.0);
+    assert!(proche((c.0 + c.2) / 2, pt(200), "0.3"), "centre {}", (c.0 + c.2) / 2);
 }
 
 #[test]
 fn les_coordonnees_partent_du_coin_de_la_page_meme_avec_des_marges() {
-    let mut v = fixe(vec![vec![texte_fixe("Coin", 20.0, 60.0)]]);
-    v["page"]["marges"] = json!({"haut": 40.0, "droite": 30.0, "bas": 40.0, "gauche": 30.0});
+    let mut v = fixe(vec![vec![texte_fixe("Coin", 20, 60)]]);
+    v["page"]["marges"] = json!({"haut": 40, "droite": 30, "bas": 40, "gauche": 30});
     let m = mots(&ok(&v), "fixe_marges.pdf");
-    assert!((m[0].0 - 20.0).abs() < 0.1 && m[0].3 > 59.9 && m[0].1 < 60.0, "{:?}", m);
+    assert!(proche(m[0].0, pt(20), "0.1") && m[0].3 > mesure("59.9") && m[0].1 < pt(60), "{:?}", m);
 }
 
 #[test]
 fn trait_et_image_fixes_se_posent_aux_coordonnees_donnees() {
     let v = fixe(vec![vec![
-        json!({"type": "trait", "x1": 10.0, "y1": 20.0, "x2": 110.0, "y2": 20.0,
-               "epaisseur": 3.0, "couleur": "#FF0000"}),
-        json!({"type": "image_fixe", "chemin": image("signature.png"),
-               "x": 200.0, "y": 300.0, "largeur": 80.0, "hauteur": 20.0}),
-        json!({"type": "image_fixe", "chemin": image("signature.png"), "centree": true,
-               "x": 200.0, "y": 400.0, "largeur": 80.0, "hauteur": 20.0}),
+        trait_dit(10, 20, 110, 20, json!({"epaisseur": 3, "couleur": "#FF0000"})),
+        image_fixe(&image("signature.png"), 200, 300, 80, 20, json!({})),
+        image_fixe(&image("signature.png"), 200, 400, 80, 20, json!({"centree": true})),
     ]]);
     let pdf = ok(&v);
     let ins = inspecter(&pdf, "fixe_trait_image.pdf");
@@ -1522,40 +1591,40 @@ fn trait_et_image_fixes_se_posent_aux_coordonnees_donnees() {
     let traits = page["traits"].as_array().unwrap();
     assert_eq!(traits.len(), 1, "{:?}", traits);
     let t = nombres(&traits[0]);
-    for (obtenu, attendu) in t.iter().zip([10.0, 20.0, 110.0, 20.0]) {
-        assert!((obtenu - attendu).abs() < 0.05, "{:?}", t);
+    for (obtenu, attendu) in t.iter().zip([10, 20, 110, 20]) {
+        assert!(proche(*obtenu, pt(attendu), "0.05"), "{:?}", t);
     }
     // ... et, dans le flux, son épaisseur (3) et sa couleur (rouge), que l'inspection ne rend pas.
     let doc = Document::load_mem(&pdf).unwrap();
     let (_, id) = doc.get_pages().into_iter().next().unwrap();
     let ops = Content::decode(&doc.get_page_content(id).unwrap()).unwrap().operations;
-    let operandes = |op: &str| -> Vec<Vec<f32>> {
+    let operandes = |op: &str| -> Vec<Vec<Mesure>> {
         ops.iter()
             .filter(|o| o.operator == op)
             .map(|o| o.operands.iter().map(nombre).collect())
             .collect()
     };
     let w = operandes("w");
-    assert!(w.len() == 1 && (w[0][0] - 3.0).abs() < 0.001, "{:?}", w);
-    assert_eq!(operandes("RG"), [[1.0, 0.0, 0.0]]);
-    let images: Vec<Vec<f64>> = page["images"].as_array().unwrap().iter().map(nombres).collect();
+    assert!(w.len() == 1 && proche(w[0][0], pt(3), "0.001"), "{:?}", w);
+    assert_eq!(operandes("RG"), [[pt(1), pt(0), pt(0)]]);
+    let images: Vec<Vec<Mesure>> = page["images"].as_array().unwrap().iter().map(nombres).collect();
     assert_eq!(images.len(), 2, "{:?}", images);
     // Dans la boîte 80 x 20, proportions gardées : la hauteur limite, donc plus étroite que 80.
-    for (b, haut) in images.iter().zip([300.0, 400.0]) {
-        assert!(b[2] - b[0] < 80.0 - 0.5 && (b[3] - b[1] - 20.0).abs() < 0.3, "{:?}", b);
-        assert!(b[1] >= haut - 0.2 && b[3] <= haut + 20.2, "{:?}", b);
+    for (b, haut) in images.iter().zip([pt(300), pt(400)]) {
+        assert!(b[2] - b[0] < mesure("79.5") && proche(b[3] - b[1], pt(20), "0.3"), "{:?}", b);
+        assert!(b[1] >= haut - mesure("0.2") && b[3] <= haut + mesure("20.2"), "{:?}", b);
     }
     // Calée en haut à gauche, ou centrée dans la boîte.
-    assert!((images[0][0] - 200.0).abs() < 0.2, "{:?}", images[0]);
-    assert!(((images[1][0] + images[1][2]) / 2.0 - 240.0).abs() < 0.2, "{:?}", images[1]);
+    assert!(proche(images[0][0], pt(200), "0.2"), "{:?}", images[0]);
+    assert!(proche((images[1][0] + images[1][2]) / 2, pt(240), "0.2"), "{:?}", images[1]);
 }
 
 #[test]
 fn un_document_par_page_fixe() {
     let v = fixe(vec![
-        vec![texte_fixe("Page un", 10.0, 50.0)],
-        vec![texte_fixe("Page deux", 10.0, 50.0), texte_fixe("encore", 10.0, 80.0)],
-        vec![texte_fixe("Page trois", 10.0, 50.0)],
+        vec![texte_fixe("Page un", 10, 50)],
+        vec![texte_fixe("Page deux", 10, 50), texte_fixe("encore", 10, 80)],
+        vec![texte_fixe("Page trois", 10, 50)],
     ]);
     let pdf = ok(&v);
     assert_eq!(nb_pages(&pdf), 3);
@@ -1565,45 +1634,40 @@ fn un_document_par_page_fixe() {
 
 #[test]
 fn blocs_fixes_refus_en_une_ligne() {
-    let bien = texte_fixe("x", 1.0, 1.0);
-    let e = refus(&fixe(vec![vec![json!({"type": "texte_fixe", "texte": "a", "x": 1.0, "y": 2.0,
-                                          "police": "comic"})]]));
+    let bien = texte_fixe("x", 1, 1);
+    let e = refus(&fixe(vec![vec![fixe_dit("a", 1, 2, json!({"police": "comic"}))]]));
     assert!(e.contains("comic") && e.contains("helvetica, times, courier"), "{}", e);
-    let e = refus(&fixe(vec![vec![json!({"type": "texte_fixe", "texte": "a", "x": 1.0, "y": 2.0,
-                                          "alignement": "justifie"})]]));
+    let e = refus(&fixe(vec![vec![fixe_dit("a", 1, 2, json!({"alignement": "justifie"}))]]));
     assert!(e.contains("ne se justifie pas"), "{}", e);
-    let e = refus(&fixe(vec![vec![texte_fixe("deux\nlignes", 1.0, 2.0)]]));
+    let e = refus(&fixe(vec![vec![texte_fixe("deux\nlignes", 1, 2)]]));
     assert!(e.contains("une ligne"), "{}", e);
     // Un caractère que la police elle-même n'a pas : un idéogramme.
-    let e = refus(&fixe(vec![vec![texte_fixe("日", 1.0, 2.0)]]));
+    let e = refus(&fixe(vec![vec![texte_fixe("日", 1, 2)]]));
     assert!(e.contains("日") && e.contains("U+65E5"), "{}", e);
     // Un champ manquant ou inconnu.
-    let e = refus(&fixe(vec![vec![json!({"type": "texte_fixe", "texte": "a", "x": 1.0})]]));
+    let e = refus(&fixe(vec![vec![json!({"type": "texte_fixe", "texte": "a", "x": 1})]]));
     assert!(e.contains("\"y\""), "{}", e);
     let e = refus(&fixe(vec![vec![json!({"type": "trait", "x1": 0, "y1": 0, "x2": 1, "y2": 1, "largeur": 2})]]));
     assert!(e.contains("largeur"), "{}", e);
-    let e = refus(&fixe(vec![vec![json!({"type": "trait", "x1": 0, "y1": 0, "x2": 1, "y2": 1,
-                                          "epaisseur": 0})]]));
+    let e = refus(&fixe(vec![vec![trait_dit(0, 0, 1, 1, json!({"epaisseur": 0}))]]));
     assert!(e.contains("epaisseur"), "{}", e);
     // Fixes et blocs qui coulent ne se mêlent pas dans un document.
     let e = refus(&fixe(vec![vec![bien.clone(), para("coule")]]));
     assert!(e.contains("position fixe") && e.contains("bloc 2"), "{}", e);
     // Ni dans des colonnes.
-    let e = refus(&fixe(vec![vec![json!({"type": "colonnes", "colonnes": [
-        {"largeur": 1.0, "blocs": [bien]}]})]]));
+    let e = refus(&fixe(vec![vec![colonnes(vec![json!({"largeur": 1, "blocs": [bien]})], json!({}))]]));
     assert!(e.contains("colonnes") && e.contains("position fixe"), "{}", e);
     // Une image introuvable est un refus, pas un blanc.
-    let e = refus(&fixe(vec![vec![json!({"type": "image_fixe", "chemin": "/nulle/part.png",
-                                          "x": 0, "y": 0, "largeur": 10, "hauteur": 10})]]));
+    let e = refus(&fixe(vec![vec![image_fixe("/nulle/part.png", 0, 0, 10, 10, json!({}))]]));
     assert!(e.contains("introuvable"), "{}", e);
 }
 
 #[test]
 fn meme_description_fixe_meme_pdf() {
     let v = fixe(vec![vec![
-        texte_fixe("Fixe", 10.0, 50.0),
-        json!({"type": "trait", "x1": 0, "y1": 60, "x2": 100, "y2": 60}),
-        json!({"type": "texte_fixe", "texte": "T", "x": 10, "y": 90, "police": "times"}),
+        texte_fixe("Fixe", 10, 50),
+        trait_dit(0, 60, 100, 60, json!({})),
+        fixe_dit("T", 10, 90, json!({"police": "times"})),
     ]]);
     assert_eq!(ok(&v), ok(&v));
 }
@@ -1611,6 +1675,11 @@ fn meme_description_fixe_meme_pdf() {
 // ---------------------------------------------------------------------------
 // L'en-tête et le pied de page répétés.
 // ---------------------------------------------------------------------------
+
+/// Un repère maigre, à 20 pt du bord, aussi sur la première page ; `plus` dit le reste.
+fn repere(plus: Value) -> Value {
+    avec(json!({"gras": false, "distance": 20, "premiere_page": true}), plus)
+}
 
 /// Trois pages de paragraphes (un par ligne de la page de 400 x 500, marges de 50).
 fn pages_repetees(extra: Value) -> Value {
@@ -1624,9 +1693,9 @@ fn pages_repetees(extra: Value) -> Value {
 #[test]
 fn pied_et_entete_repetes_avec_numero_et_total() {
     let v = pages_repetees(json!({
-        "entete_page": {"gauche": "Titre de l'état", "droite": "(suite)", "premiere_page": false},
-        "pied_page": {"gauche": "Période 2026", "centre": "au centre",
-                      "droite": "page {page} sur {pages}", "taille": 6.5, "couleur": "#777777"}
+        "entete_page": repere(json!({"gauche": "Titre de l'état", "droite": "(suite)", "premiere_page": false})),
+        "pied_page": repere(json!({"gauche": "Période 2026", "centre": "au centre",
+                      "droite": "page {page} sur {pages}", "taille": mesure("6.5"), "couleur": "#777777"}))
     }));
     let pdf = ok(&v);
     let n = nb_pages(&pdf);
@@ -1641,15 +1710,15 @@ fn pied_et_entete_repetes_avec_numero_et_total() {
         // L'en-tête saute la première page.
         assert_eq!(de("Titre de l'état"), if p == 1 { 0 } else { 1 });
         let d = l.iter().find(|x| x.page == p && x.texte == pied).unwrap();
-        assert!((d.x + d.largeur - 350.0).abs() < 0.05, "bord droit {}", d.x + d.largeur);
-        assert!((d.y - 20.0).abs() < 0.2, "ligne de base du pied : {}", d.y);
+        assert!(proche(d.x + d.largeur, pt(350), "0.05"), "bord droit {}", d.x + d.largeur);
+        assert!(proche(d.y, pt(20), "0.2"), "ligne de base du pied : {}", d.y);
         let g = l.iter().find(|x| x.page == p && x.texte == "Période 2026").unwrap();
-        assert!((g.x - 50.0).abs() < 0.05);
+        assert!(proche(g.x, pt(50), "0.05"));
         let c = l.iter().find(|x| x.page == p && x.texte == "au centre").unwrap();
-        assert!((c.x + c.largeur / 2.0 - 200.0).abs() < 0.05);
+        assert!(proche(c.x + c.largeur / 2, pt(200), "0.05"));
     }
     let e = l.iter().find(|x| x.page == 2 && x.texte == "Titre de l'état").unwrap();
-    assert!((e.y - 480.0).abs() < 0.2, "ligne de base de l'en-tête : {}", e.y);
+    assert!(proche(e.y, pt(480), "0.2"), "ligne de base de l'en-tête : {}", e.y);
     // Le corps est inchangé : même nombre de pages qu'avec ni pied.
     assert_eq!(n, nb_pages(&ok(&pages_repetees(json!({})))));
     // Deux passes : même description, même PDF.
@@ -1658,7 +1727,7 @@ fn pied_et_entete_repetes_avec_numero_et_total() {
 
 #[test]
 fn pied_sans_total_ne_fait_qu_une_passe_et_numerote() {
-    let pdf = ok(&pages_repetees(json!({"pied_page": {"droite": "{page}"}})));
+    let pdf = ok(&pages_repetees(json!({"pied_page": repere(json!({"droite": "{page}"}))})));
     let l = lignes(&pdf);
     for p in 1..=nb_pages(&pdf) {
         assert!(l.iter().any(|x| x.page == p && x.texte == p.to_string()), "page {}", p);
@@ -1667,13 +1736,13 @@ fn pied_sans_total_ne_fait_qu_une_passe_et_numerote() {
 
 #[test]
 fn refus_entete_et_pied() {
-    let e = refus(&pages_repetees(json!({"pied_page": {"gauche": "a\nb"}})));
+    let e = refus(&pages_repetees(json!({"pied_page": repere(json!({"gauche": "a\nb"}))})));
     assert!(e.contains("pied_page") && e.contains("une ligne"), "{}", e);
-    let e = refus(&pages_repetees(json!({"entete_page": {"gauche": "日"}})));
+    let e = refus(&pages_repetees(json!({"entete_page": repere(json!({"gauche": "日"}))})));
     assert!(e.contains("entete_page") && e.contains("日"), "{}", e);
-    let e = refus(&pages_repetees(json!({"pied_page": {"gauche": "a", "couleurs": 1}})));
+    let e = refus(&pages_repetees(json!({"pied_page": repere(json!({"gauche": "a", "couleurs": 1}))})));
     assert!(e.contains("couleurs"), "{}", e);
-    let e = refus(&pages_repetees(json!({"pied_page": {"gauche": "a", "taille": 0}})));
+    let e = refus(&pages_repetees(json!({"pied_page": repere(json!({"gauche": "a", "taille": 0}))})));
     assert!(e.contains("taille"), "{}", e);
 }
 
@@ -1760,7 +1829,7 @@ fn les_noms_hors_windows_1252_s_impriment_et_s_extraient_justes() {
     let phrase = format!("Entre la compagnie et {}, {} et {}.", NOMS[0], NOMS[1], NOMS[2]);
     let pdf = ok(&base(vec![
         para(&phrase),
-        json!({"type": "paragraphe", "morceaux": [{"texte": "Gras : "}, {"texte": NOMS[0], "gras": true}]}),
+        paragraphe(vec![m("Gras : "), json!({"texte": NOMS[0], "gras": true, "italique": false})], json!({})),
     ]));
     // Le flux : ce que le fichier dit imprimer.
     assert_eq!(texte_complet(&pdf), format!("{}\nGras : {}", phrase, NOMS[0]));
@@ -1791,7 +1860,7 @@ fn le_texte_justifie_s_extrait_juste_avec_des_caracteres_exotiques() {
     let pdf = ok(&base(vec![para_align(&phrase, "justifie")]));
     let l = lignes(&pdf);
     assert!(l.len() > 2, "{:?}", l);
-    assert!(l[0].mot_espace > 0.0, "la première ligne est justifiée : {:?}", l[0]);
+    assert!(l[0].mot_espace > Mesure::ZERO, "la première ligne est justifiée : {:?}", l[0]);
     let relu = l.iter().map(|x| x.texte.clone()).collect::<Vec<_>>().join(" ");
     assert_eq!(relu, phrase);
     let sortie = texte_des_pages(&pdf, "justifie_exotique.pdf")[0].clone();
@@ -1800,9 +1869,9 @@ fn le_texte_justifie_s_extrait_juste_avec_des_caracteres_exotiques() {
 
 #[test]
 fn italique_et_gras_italique_sont_de_vraies_polices() {
-    let v = base(vec![json!({"type": "paragraphe", "morceaux": [
-        {"texte": "droit "}, {"texte": "Łukasz", "italique": true},
-        {"texte": " Zoë", "italique": true, "gras": true}]})]);
+    let v = base(vec![paragraphe(vec![
+        m("droit "), json!({"texte": "Łukasz", "italique": true, "gras": false}),
+        json!({"texte": " Zoë", "italique": true, "gras": true})], json!({}))]);
     let pdf = ok(&v);
     assert_eq!(texte_complet(&pdf), "droit Łukasz Zoë");
     assert_eq!(
@@ -1816,11 +1885,9 @@ fn italique_et_gras_italique_sont_de_vraies_polices() {
 #[test]
 fn serif_et_mono_impriment_aussi_les_caracteres_exotiques() {
     let v = fixe(vec![vec![
-        json!({"type": "texte_fixe", "texte": "Łukasz Wójcik", "x": 100.0, "y": 200.0,
-               "police": "times", "gras": true, "taille": 12.0}),
-        json!({"type": "texte_fixe", "texte": "Ştefan Zoë", "x": 100.0, "y": 250.0,
-               "police": "courier", "gras": true, "taille": 10.0}),
-        json!({"type": "texte_fixe", "texte": "Zoë", "x": 100.0, "y": 300.0, "police": "courier"}),
+        fixe_dit("Łukasz Wójcik", 100, 200, json!({"police": "times", "gras": true, "taille": 12})),
+        fixe_dit("Ştefan Zoë", 100, 250, json!({"police": "courier", "gras": true, "taille": 10})),
+        fixe_dit("Zoë", 100, 300, json!({"police": "courier"})),
     ]]);
     let pdf = ok(&v);
     assert_eq!(texte_complet(&pdf), "Łukasz Wójcik\nŞtefan Zoë\nZoë");

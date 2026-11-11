@@ -15,49 +15,70 @@ use droit::contexte::{aujourdhui, Contexte};
 use socle::date::Jour;
 use crate::dsn::{self, dite, Arret, Fichier, LOGICIEL, VERSION};
 use socle::fichiers::repr;
-use socle::num::Resultat;
+use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::type_declaration::TypeDeLaDeclaration;
 
-pub const ARRET: &str = "04";
-pub const REPRISE: &str = "05";
-pub const NORMALE: &str = "01";
-pub const ANNULE_ET_REMPLACE: &str = "03";
-
-/// Un refus : `Impossible` est `SignalementImpossible`, `Autre` le reste.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Echec {
-    Impossible(String),
-    Autre(String),
+/// LA NATURE D'UN SIGNALEMENT QUE CE MODULE ECRIT (S20.G00.05.001) : l'arret de travail (04), la reprise (05). Son code
+/// est celui de sa nature dans la liste de la norme (`nature`) ; elle s'ecrit et se lit par lui.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum NatureSignalement {
+    Arret,
+    Reprise,
 }
 
-impl From<String> for Echec {
-    fn from(m: String) -> Echec {
-        Echec::Autre(m)
+impl NatureSignalement {
+    /// Les deux, dans l'ordre de leurs codes (celui de `Ord`).
+    pub const TOUS: [NatureSignalement; 2] = [NatureSignalement::Arret, NatureSignalement::Reprise];
+
+    /// Sa nature dans la liste de la norme.
+    pub fn nature(self) -> NatureDeLaDeclaration {
+        match self {
+            NatureSignalement::Arret => NatureDeLaDeclaration::SignalementArret,
+            NatureSignalement::Reprise => NatureDeLaDeclaration::SignalementReprise,
+        }
+    }
+
+    /// Celle de cette nature de la norme, si ce module l'ecrit.
+    pub fn de(n: NatureDeLaDeclaration) -> Option<NatureSignalement> {
+        NatureSignalement::TOUS.into_iter().find(|s| s.nature() == n)
     }
 }
 
+impl serde::Serialize for NatureSignalement {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.nature().serialize(s)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for NatureSignalement {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let n = NatureDeLaDeclaration::deserialize(d)?;
+        NatureSignalement::de(n).ok_or_else(|| {
+            serde::de::Error::custom(format!("La nature de signalement {} n'est ni un arrêt (04) ni une reprise (05).", n))
+        })
+    }
+}
+
+/// Un refus : `Impossible` est `SignalementImpossible`, `Autre` le reste (le refus d'un signalement, `fctu::Echec`).
+pub use crate::fctu::Echec;
+
 type R<T> = Result<T, Echec>;
 
+#[track_caller]
 fn impossible<T>(m: String) -> R<T> {
-    Err(Echec::Impossible(m))
+    Err(Echec::impossible(m))
 }
 
 /// L'arret est-il subroge ? Son code de subrogation est le « oui » de la norme (`droit::arrets::Bloc60`).
-pub fn avec_subrogation(a: &Arret) -> Resultat<bool> {
+pub fn avec_subrogation(a: &Arret) -> socle::echec::R<bool> {
     let bloc = droit::arrets::bloc_60()?;
     let oui = bloc.subrogation_oui()?;
     Ok(dite(&a.saisi.subrogation).is_some_and(|s| s == oui))
 }
 
-fn nature_inconnue(nature: &str) -> String {
-    format!("Nature {} : ce module n'ecrit que {} et {}.", repr(nature), ARRET, REPRISE)
-}
-
 /// Ce que la norme refuse (`Echec::Impossible`) ; rend les avertissements.
-pub fn verifier(a: &Arret, nature: &str, constitution: Option<&Jour>) -> R<Vec<String>> {
+pub fn verifier(a: &Arret, nature: NatureSignalement, constitution: Option<&Jour>) -> R<Vec<String>> {
     let v = &a.saisi;
-    if nature != ARRET && nature != REPRISE {
-        return impossible(nature_inconnue(nature));
-    }
     let bloc = droit::arrets::bloc_60()?;
     let motif = match bloc.motifs_arret.code(&v.motif) {
         Some(m) => m.clone(),
@@ -94,11 +115,11 @@ moteur n'ecrit pas.",
         ));
     }
 
-    let travaille = Jour::lire(&v.dernier_jour_travaille)?;
-    let debut = Jour::lire(&v.debut)?;
-    let fin_prev = Jour::lire(&v.fin_previsionnelle)?;
-    let debut_contrat = Jour::lire(&v.contrat_debut)?;
-    let (accident, subrogation, reprise, reprise_motif) = (dite(&v.date_accident), dite(&v.subrogation), dite(&v.reprise), dite(&v.reprise_motif));
+    let travaille = v.dernier_jour_travaille;
+    let debut = v.debut;
+    let fin_prev = v.fin_previsionnelle;
+    let debut_contrat = v.contrat_debut;
+    let (accident, subrogation, reprise, reprise_motif) = (v.date_accident, dite(&v.subrogation), v.reprise, dite(&v.reprise_motif));
 
     // Le dernier jour travaille est la veille du debut prescrit, ou ce jour meme quand il a ete travaille
     // (S21.G00.60.002) : un arret ne commence pas avant un jour travaille.
@@ -122,7 +143,7 @@ jour que l'avis prescrit, le dernier jour travaillé est la veille ou ce jour m�
         return impossible(format!(
             "Dernier jour travaille ({}) posterieur a la fin previsionnelle de l'arret ({}) -- CCH-12.",
             dernier.jj_mm_aaaa(),
-            v.fin_previsionnelle
+            v.fin_previsionnelle.iso()
         ));
     }
     if dernier < debut_contrat {
@@ -130,7 +151,7 @@ jour que l'avis prescrit, le dernier jour travaillé est la veille ou ce jour m�
             "Dernier jour travaille ({}) anterieur au debut du contrat ({}) -- CCH-18. Ce n'est pas ce \
 contrat-la qui est suspendu.",
             dernier.jj_mm_aaaa(),
-            v.contrat_debut
+            v.contrat_debut.iso()
         ));
     }
 
@@ -142,11 +163,11 @@ obligatoire -- CCH-11.",
                 m_s, libelle
             ));
         };
-        if Jour::lire(accident)? < debut_contrat {
+        if accident < debut_contrat {
             return impossible(format!(
                 "Date de l'accident ({}) anterieure au debut du contrat ({}) -- SIG-14.",
-                accident,
-                v.contrat_debut
+                accident.iso(),
+                v.contrat_debut.iso()
             ));
         }
     } else if accident.is_some() {
@@ -157,7 +178,7 @@ pour un accident de trajet, un accident du travail ou une maladie professionnell
         ));
     }
 
-    if nature == ARRET {
+    if nature == NatureSignalement::Arret {
         let Some(subrogation) = subrogation else {
             return impossible(
                 "La subrogation (S21.G00.60.004) est obligatoire dans un signalement d'arret de travail : dire \
@@ -178,7 +199,7 @@ et a maintenir le salaire."
                 liste.join(", ")
             ));
         }
-        let (sub_debut, sub_fin) = (dite(&v.subrogation_debut), dite(&v.subrogation_fin));
+        let (sub_debut, sub_fin) = (v.subrogation_debut, v.subrogation_fin);
         if avec_subrogation(a)? {
             let (Some(sub_debut), Some(sub_fin)) = (sub_debut, sub_fin) else {
                 return impossible(
@@ -187,11 +208,11 @@ obligatoires -- CCH-11."
                         .into(),
                 );
             };
-            if Jour::lire(sub_fin)? < Jour::lire(sub_debut)? {
+            if sub_fin < sub_debut {
                 return impossible(format!(
                     "Fin de subrogation ({}) anterieure a son debut ({}) -- CCH-12.",
-                    sub_fin,
-                    sub_debut
+                    sub_fin.iso(),
+                    sub_debut.iso()
                 ));
             }
         } else if sub_debut.is_some() || sub_fin.is_some() {
@@ -202,15 +223,14 @@ obligatoires -- CCH-11."
         }
     }
 
-    if let Some(reprise) = reprise {
-        let rep = Jour::lire(reprise)?;
+    if let Some(rep) = reprise {
         if rep < dernier || rep < debut_contrat {
             return impossible(format!(
                 "Date de reprise ({}) anterieure au dernier jour travaille ({}) ou au debut du contrat ({}) -- \
 CCH-11.",
-                reprise,
+                rep.iso(),
                 dernier.jj_mm_aaaa(),
-                v.contrat_debut
+                v.contrat_debut.iso()
             ));
         }
         if rep > fin_prev {
@@ -219,12 +239,12 @@ CCH-11.",
 reprise anticipee, et la rubrique ne doit alors pas etre valorisee (S21.G00.60.010). Si l'arret s'est \
 prolonge, c'est sa fin previsionnelle qui change (S21.G00.60.003, sans nouveau signalement : fiche net-entreprises \
 1983) : prolonger l'arret d'abord.",
-                reprise,
-                v.fin_previsionnelle
+                rep.iso(),
+                v.fin_previsionnelle.iso()
             ));
         }
     }
-    if nature == REPRISE {
+    if nature == NatureSignalement::Reprise {
         let Some(reprise) = reprise else {
             return impossible(
                 "Un signalement de reprise sans date de reprise (S21.G00.60.010, usage O). Et il ne s'emet \
@@ -232,12 +252,12 @@ qu'en cas de reprise ANTICIPEE par rapport a la fin previsionnelle."
                     .into(),
             );
         };
-        if Jour::lire(reprise)? == fin_prev {
+        if reprise == fin_prev {
             return impossible(format!(
                 "Reprise le {}, soit la fin previsionnelle de l'arret : le signalement de reprise ne s'emet \
 qu'en cas de reprise ANTICIPEE (cahier technique §5.4). Rien n'est a declarer ; la DSN mensuelle portera la \
 reprise.",
-                reprise
+                reprise.iso()
             ));
         }
         if reprise_motif.is_none() {
@@ -277,13 +297,12 @@ CCH-12.",
         None => aujourdhui()?,
     };
     for (libelle, case) in [
-        ("Dernier jour travaillé", Some(v.dernier_jour_travaille.as_str()).filter(|c| !c.is_empty())),
-        ("Début de subrogation", dite(&v.subrogation_debut)),
+        ("Dernier jour travaillé", Some(v.dernier_jour_travaille)),
+        ("Début de subrogation", v.subrogation_debut),
         ("Date de reprise", reprise),
         ("Date de l'accident", accident),
     ] {
-        let Some(case) = case else { continue };
-        let le = Jour::lire(case)?;
+        let Some(le) = case else { continue };
         if le > jour {
             avertissements.push(format!(
                 "{} le {}, après le jour où le fichier est fait ({}) : le cahier technique (§4.4.13) le signale sans bloquer, \
@@ -305,19 +324,21 @@ un fait déjà survenu ne se date pas dans le futur.",
 
 /// Les options de `generer`.
 pub struct Options {
-    pub nature: String,
-    pub type_declaration: String,
+    /// La nature de la declaration (S20.G00.05.001).
+    pub nature_declaration: NatureSignalement,
+    pub type_declaration: TypeDeLaDeclaration,
     pub ordre: i64,
     pub remplace: Option<String>,
     pub envoi_test: bool,
     pub date_constitution: Option<Jour>,
 }
 
-impl Default for Options {
-    fn default() -> Options {
+impl Options {
+    /// Un premier signalement d'arret normal, en reel, constitue le jour de son depot.
+    pub fn normale() -> Options {
         Options {
-            nature: ARRET.into(),
-            type_declaration: NORMALE.into(),
+            nature_declaration: NatureSignalement::Arret,
+            type_declaration: TypeDeLaDeclaration::Normale,
             ordre: 1,
             remplace: None,
             envoi_test: false,
@@ -328,21 +349,18 @@ impl Default for Options {
 
 /// Le fichier d'un signalement, pret a deposer. `departs` : ce qui est parti, pour l'identite declaree (`ntt::poser_ntt`).
 pub fn generer(ctx: &Contexte, a: &Arret, o: &Options, departs: &engagement::departs::Departs) -> R<String> {
-    let nature = o.nature.as_str();
-    if nature != ARRET && nature != REPRISE {
-        return impossible(nature_inconnue(nature));
-    }
-    let td = o.type_declaration.as_str();
-    if td != NORMALE && td != ANNULE_ET_REMPLACE {
+    let nature = o.nature_declaration;
+    let td = o.type_declaration;
+    if td != TypeDeLaDeclaration::Normale && td != TypeDeLaDeclaration::AnnuleEtRemplace {
         return impossible(format!(
             "Type de declaration {}. Un signalement d'arret ou de reprise est « 01 - normale » ou « 03 - annule \
 et remplace integral » ; le « 04 - annule » n'existe que pour un FCTU et un signalement d'amorcage (cahier \
 technique §1.4.3.4).",
-            repr(td)
+            repr(td.code())
         ));
     }
     let remplace = o.remplace.as_deref().filter(|r| !r.is_empty());
-    if td == ANNULE_ET_REMPLACE && remplace.is_none() {
+    if td == TypeDeLaDeclaration::AnnuleEtRemplace && remplace.is_none() {
         return impossible(
             "Un annule-et-remplace doit viser la declaration qu'il remplace (S20.G00.05.006) : l'identifiant du \
 dernier envoi VALIDE par le point de depot, lu sur son certificat de conformite. Sans lui, la plate-forme rend \
@@ -350,7 +368,7 @@ B1-208-08."
                 .into(),
         );
     }
-    if td == NORMALE && remplace.is_some() {
+    if td == TypeDeLaDeclaration::Normale && remplace.is_some() {
         return impossible(
             "S20.G00.05.006 est interdite sur un signalement normal (CCH-12) : elle ne s'ecrit que sur un \
 annule-et-remplace (type 03)."
@@ -391,8 +409,8 @@ annule-et-remplace (type 03)."
     dsn::contact_emetteur(&mut f, ent)?;
 
     // ---------------------------------------------------------- S20 declar.
-    f.add("S20.G00.05.001", nature);
-    f.add("S20.G00.05.002", td);
+    f.ecrire_code(nature.nature())?;
+    f.ecrire_code(td)?;
     f.add("S20.G00.05.003", "11");
     f.add("S20.G00.05.004", o.ordre.to_string());
     if let Some(r) = remplace {
@@ -431,22 +449,22 @@ annule-et-remplace (type 03)."
     crate::ntt::poser_ntt(&mut f, ent, &fiche,crate::changements_individu::derniere_declaree(ctx, &fiche, &engagement::imprevus::dernier_jour_declare(arret)?, departs)?.as_ref())?;
 
     // -------------------------------------------------------- S21 contrat
-    f.add("S21.G00.40.001", Jour::lire(&arret.contrat_debut)?.jjmmaaaa());
+    f.add("S21.G00.40.001", arret.contrat_debut.jjmmaaaa());
     f.add_opt("S21.G00.40.009", arret.contrat_numero.as_deref())?;
     f.add_case("S21.G00.40.019", &etab.siret, "siret")?;
 
     if ent.banque.is_none() {
-        return Err(socle::fichiers::absent("banque").into());
+        return Err(Echec::Autre(socle::fichiers::absent("banque")));
     }
     let banque = ent.banque.dite();
-    if nature != REPRISE && avec_subrogation(a)? && !banque.is_some_and(|b| b.iban.remplie().is_some() && b.bic.remplie().is_some()) {
+    if nature != NatureSignalement::Reprise && avec_subrogation(a)? && !banque.is_some_and(|b| b.iban.remplie().is_some() && b.bic.remplie().is_some()) {
         return impossible(
             "Subrogation demandee : l'IBAN et le BIC de la compagnie (S21.G00.60.007 et .008) sont obligatoires \
 -- CCH-11. Ils se lisent dans la fiche entreprise, ils ne se saisissent pas dans l'arret."
                 .into(),
         );
     }
-    dsn::bloc_60(&mut f, a, nature, banque)?;
+    dsn::bloc_60(&mut f, a, nature.nature(), banque)?;
 
     let n = f.lignes.len() + 2;
     f.add("S90.G00.90.001", n);
@@ -460,12 +478,11 @@ annule-et-remplace (type 03)."
 /// L'avertissement d'un signalement de nature `nature` (04 ou 05) dont le motif n'est pas couvert par la DSN
 /// (`sauf_motifs.avertissement`) : la norme l'admet, le moteur ne le refuse pas (regle 7), il dit que l'Assurance Maladie
 /// ne le traite pas et ce qui se fait a la place. `None` pour un motif couvert. Appele par `verifier`.
-pub fn avertissement_hors_dsn(nature: &str, motif: &str) -> Result<Option<String>, String> {
+pub fn avertissement_hors_dsn(nature: NatureSignalement, motif: &str) -> socle::echec::R<Option<String>> {
     let base = crate::obligations::base()?;
     let o = match nature {
-        ARRET => base.obligations.signalement_arret,
-        REPRISE => base.obligations.signalement_reprise,
-        _ => return Ok(None),
+        NatureSignalement::Arret => base.obligations.signalement_arret,
+        NatureSignalement::Reprise => base.obligations.signalement_reprise,
     };
     Ok(o.sauf_motifs.filter(|s| s.codes.iter().any(|m| m == motif)).map(|s| s.avertissement).filter(|t| !t.is_empty()))
 }

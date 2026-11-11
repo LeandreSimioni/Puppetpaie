@@ -4,6 +4,7 @@
 //! 01 normale, 02 normale sans individu, 03 et 05 leurs annule-et-remplace). Fichiers fabriques, NIR et SIREN inventes.
 
 use declarations::dsn_lue::DsnLue;
+use droit::type_declaration::TypeDeLaDeclaration;
 use envois::depot::{basculer_dpae, basculer_dsn, est_reel, renumeroter, verifier};
 
 fn lire(octets: &[u8]) -> DsnLue {
@@ -51,9 +52,9 @@ fn la_bascule_dpae_repasse_chaque_enregistrement_en_tst() {
 #[test]
 fn la_renumerotation_fait_un_annule_et_remplace() {
     let a = lire(&renumeroter(&dsn("01"), "7").unwrap());
-    assert_eq!((a.type_declaration.as_deref(), a.ordre.as_deref()), (Some("03"), Some("7")));
+    assert_eq!((a.type_declaration, a.ordre.as_deref()), (Some(TypeDeLaDeclaration::AnnuleEtRemplace), Some("7")));
     let t = String::from_utf8(dsn("01")).unwrap().replace("S20.G00.05.002,'01'", "S20.G00.05.002,'02'");
-    assert_eq!(lire(&renumeroter(t.as_bytes(), "2").unwrap()).type_declaration.as_deref(), Some("05"));
+    assert_eq!(lire(&renumeroter(t.as_bytes(), "2").unwrap()).type_declaration, Some(TypeDeLaDeclaration::AnnuleEtRemplaceSansIndividu));
     // Sans numero d'ordre, rien ne se renumerote.
     let sans = String::from_utf8(dsn("01")).unwrap().replace("S20.G00.05.004,'1'\r\n", "");
     assert!(renumeroter(sans.as_bytes(), "2").is_err());
@@ -61,19 +62,12 @@ fn la_renumerotation_fait_un_annule_et_remplace() {
 
 #[test]
 fn un_reel_demande_sur_un_fichier_de_test_est_refuse() {
-    assert!(verifier(&lire(&dsn("01")), true, Some("2026-08"), true).is_err());
+    assert!(verifier(&lire(&dsn("01")), true, true).is_err());
 }
 
 #[test]
 fn un_reel_exige_une_preuve_et_jamais_rien() {
     let a = lire(&dsn("02"));
-    assert!(verifier(&a, true, None, false).is_err());
-    assert!(verifier(&a, true, Some(""), false).is_err());
-    assert!(verifier(&a, true, None, true).is_ok());
-    assert!(verifier(&a, true, Some("2026-08"), false).is_ok());
-    assert!(verifier(&a, true, Some("  2026-08 \n"), false).is_ok());
-    // Un mois recopie faux refuse, meme avec la presence prouvee : on ne confirme pas a moitie.
-    for mauvais in ["2026-8", "oui", "2026-07", "  "] {
-        assert!(verifier(&a, true, Some(mauvais), true).is_err(), "{}", mauvais);
-    }
+    assert!(verifier(&a, true, false).is_err());
+    assert!(verifier(&a, true, true).is_ok());
 }

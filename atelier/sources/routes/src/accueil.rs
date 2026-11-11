@@ -9,8 +9,8 @@
 //! pose. La fenetre sert ces routes a l'accueil, avant toute compagnie ouverte (`interface::api::route_de_l_installation`).
 //!
 //! Ouvrir une compagnie dans la fenetre (sa tuile, son mot de passe) n'est pas une route : la route rend son `chemin`, la
-//! fenetre l'ouvre ; en ligne de commande, on la nomme par `--racine`. Le bridage (la demo) est un reglage de l'accueil :
-//! il n'a pas de route, son geste n'existe qu'a l'ecran.
+//! fenetre l'ouvre ; en ligne de commande, on la nomme par `--racine`. Le bridage (la demo) est un reglage de
+//! l'installation : sa route est `basculer`, que le geste secret de l'accueil appelle.
 //!
 //! CE QUE L'ACCUEIL FAIT DES COMPAGNIES : en ajouter une (le « + », `ajouter_venant`), en supprimer une, garder au
 //! deblocage celles qu'on a ajoutees en demo (`suppression`). Ce qu'est une compagnie sur le poste (sa racine, son
@@ -155,6 +155,17 @@ pub const ROUTES: &[Fiche] = &[
         phrase: 140,
         ecran: Ecran::Auto(Place::Accueil, Affiche::new("Ajouter les systèmes qui manquent")),
     },
+    Fiche {
+        route: Route::Basculer,
+        geste: "Brider le logiciel (la démo) ou le débloquer, sur ce poste.",
+        charge: &[],
+        exemple: r#"{}"#,
+        rend: "bride (vrai : la démo), phrase ; un paquet soudé ne change pas",
+        refus: &[OPERATION],
+        acte: Acte::Ecrit,
+        phrase: 80,
+        ecran: ECRAN,
+    },
 ];
 
 /// L'installation de la route : celle de la compagnie nommee (`--racine`), sinon celle du programme.
@@ -163,10 +174,6 @@ pub fn installation(o: &Options) -> PathBuf {
         Some(r) => administrateur::installation_de(r),
         None => compagnies::base(),
     }
-}
-
-fn operation(m: String) -> Echec {
-    erreur(Classe::Refuse, m)
 }
 
 /// La charge de `compagnie-ajouter` : son nom, et d'ou elle vient.
@@ -279,6 +286,13 @@ struct Dit {
     phrase: String,
 }
 
+/// Ce que rend `basculer` : l'etat du logiciel sur ce poste, et sa phrase.
+#[derive(Debug, Serialize)]
+struct Bascule {
+    bride: bool,
+    phrase: String,
+}
+
 /// Ce que rend `compagnies-garder`.
 #[derive(Debug, Serialize)]
 struct Gardees {
@@ -311,6 +325,12 @@ impl Dite for Dit {
     }
 }
 
+impl Dite for Bascule {
+    fn phrase(&self) -> &str {
+        &self.phrase
+    }
+}
+
 impl Dite for Gardees {
     fn phrase(&self) -> &str {
         &self.phrase
@@ -324,26 +344,27 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
     // dossier n'en est pas une, et son parent n'est pas une installation : rien ne s'y ecrit.
     if let Some(r) = &o.racine {
         if !r.join(droit::contexte::ENTREPRISE).is_file() {
-            return Err(operation(socle::echec::avec(
-                "Ce dossier n'est pas celui d'une compagnie. Les routes de l'installation se servent sans lui. Rien n'est écrit.",
-                socle::echec::APart {
-                    chemin: Some(r.to_string_lossy().into_owned()),
-                    detail: Some("--racine nomme une compagnie (le chemin que rend la route compagnies) ; les routes de l'installation se servent sans --racine.".to_string()),
-                    ..socle::echec::APart::default()
-                },
-            )));
+            let lieu = socle::echec::Lieu {
+                chemin: Some(r.to_string_lossy().into_owned()),
+                detail: Some("--racine nomme une compagnie (le chemin que rend la route compagnies) ; les routes de l'installation se servent sans --racine.".to_string()),
+                ..socle::echec::Lieu::default()
+            };
+            return Err(Echec {
+                a_part: Some(lieu.into()),
+                ..erreur(Classe::Refuse, "Ce dossier n'est pas celui d'une compagnie. Les routes de l'installation se servent sans lui. Rien n'est écrit.")
+            });
         }
     }
     let inst = installation(o);
     match nom {
         Route::Compagnies => {
             let super::SansCharge {} = charge.lire()?;
-            let compagnies: Liste = liste(&inst).map_err(operation)?;
+            let compagnies: Liste = liste(&inst).map_err(|e| e.reclasser(Classe::Refuse))?;
             en_json(compagnies)
         }
         Route::CompagnieAjouter => {
             let a: ChargeAjouter = charge.lire()?;
-            let c = ajouter_venant(&inst, &a.nom, a.venue).map_err(operation)?;
+            let c = ajouter_venant(&inst, &a.nom, a.venue).map_err(|e| e.reclasser(Classe::Refuse))?;
             let phrase = if c.reelle {
                 format!("{} est ajoutée.", c.nom)
             } else {
@@ -353,18 +374,18 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
         }
         Route::CompagnieCouleur => {
             let c: ChargeCouleur = charge.lire()?;
-            let couleur = compagnies::poser_couleur(&inst, &c.compagnie, &c.couleur).map_err(operation)?;
+            let couleur = compagnies::poser_couleur(&inst, &c.compagnie, &c.couleur).map_err(|e| e.reclasser(Classe::Refuse))?;
             en_json(Couleur { phrase: format!("Couleur posée : {}.", couleur), couleur })
         }
         Route::CompagnieRemettreAZero => {
             let c: ChargeCompagnie = charge.lire()?;
-            let (n, deja) = compagnies::remettre_a_zero(&inst, &c.compagnie).map_err(operation)?;
+            let (n, deja) = compagnies::remettre_a_zero(&inst, &c.compagnie).map_err(|e| e.reclasser(Classe::Refuse))?;
             en_json(Dit { phrase: format!("{} est {}.", n, if deja { "déjà dans son état d'origine" } else { "revenue à son état d'origine" }) })
         }
         Route::CompagniesGarder => {
             let c: ChargeGarder = charge.lire()?;
             let poste = administrateur::Poste::de_ce_poste();
-            let reponse = suppression::repondre(&inst, &c.garder, &c.ne_pas_garder, &poste, &|_| {}).map_err(operation)?;
+            let reponse = suppression::repondre(&inst, &c.garder, &c.ne_pas_garder, &poste, &|_| {}).map_err(|e| e.reclasser(Classe::Refuse))?;
             let mut phrase = format!("{} compagnie(s) gardée(s), {} supprimée(s).", reponse.gardees.len(), reponse.supprimees.len());
             for e in &reponse.erreurs {
                 phrase.push(' ');
@@ -380,10 +401,16 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
             };
             en_json(tableau)
         }
+        Route::Basculer => {
+            compagnie::bridage::basculer_de(&inst)?;
+            let bride = compagnie::bridage::est_bride_de(&inst);
+            let phrase = if bride { "Le logiciel est bridé : c'est la démo." } else { "Le logiciel est débloqué." }.to_string();
+            en_json(Bascule { bride, phrase })
+        }
         Route::PortableCompleter => {
             let c: ChargePortable = charge.lire()?;
             let cles = compagnie::maj::cles_de_l_editeur();
-            let complete: compagnie::maj::PortableComplete = compagnie::maj::completer_le_portable(&inst, c.portable == Some(true), &cles).map_err(operation)?;
+            let complete: compagnie::maj::PortableComplete = compagnie::maj::completer_le_portable(&inst, c.portable == Some(true), &cles).map_err(|e| e.reclasser(Classe::Refuse))?;
             en_json(complete)
         }
         Route::AdministrateurDeposer => {
@@ -401,7 +428,7 @@ pub fn route(o: &Options, nom: Route, charge: &Charge) -> R<Rendu> {
 }
 
 /// Les compagnies de l'installation, dans l'ordre des tuiles de l'accueil, et ce que l'accueil en dit.
-pub fn liste(inst: &std::path::Path) -> Result<Liste, String> {
+pub fn liste(inst: &std::path::Path) -> R<Liste> {
     let mut cies: Vec<Tuile> = Vec::new();
     for c in compagnies::liste_de(inst)? {
         cies.push(Tuile {
@@ -433,10 +460,10 @@ impl Dite for compagnie::maj::PortableComplete {
 ///
 /// LOGICIEL BRIDE : la compagnie ajoutee est une FICTIVE AJOUTEE (`installation::est_ajoutee`) -- sous `fictives/`, dans
 /// un dossier `ajoutee-…`, avec le marqueur d'une fictive et sa marque. Debloque : une compagnie reelle, sous `compagnies/`.
-pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> Result<Compagnie, String> {
+pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> R<Compagnie> {
     let nom = nom.split_whitespace().collect::<Vec<_>>().join(" ");
     if nom.chars().count() < 2 {
-        return Err("Le nom de la compagnie, s'il vous plait.".into());
+        return Err(socle::echec::refus("Le nom de la compagnie, s'il vous plait."));
     }
     let bride = compagnie::bridage::est_bride_de(inst);
     let (parent, racine_nom) = if bride {
@@ -455,8 +482,8 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> Result<Compagnie,
     // La raison sociale se deduit du nom comme a chaque enregistrement de la fiche (`fiches::deriver` : majuscules SANS
     // ACCENTS, la forme declaree) : la fiche neuve nait sans erreur de configuration.
     let mut saisie = declarations::champs::Saisie::default();
-    saisie.poser("nom_affichage", declarations::champs::Valeur::Texte(nom.clone()));
-    crate::fiches::deriver("entreprise", &mut saisie, false, &|_| true).map_err(|e| e.message)?;
+    saisie.poser(droit::fiche::CaseEntreprise::NomAffichage, declarations::champs::Valeur::Texte(nom.clone()));
+    crate::fiches::deriver(droit::fiche::NomDeFiche::Entreprise, &mut saisie, false, &|_| true)?;
     // Toute la configuration est datee (`droit::fiche::dater`) : la premiere valeur vaut de tout temps.
     // Le jour d'ajout : le plus tot des deux jours (Paris, et celui du moteur, en UTC).
     let creation = socle::temps::jour_de_paris().min(droit::contexte::jour_reel());
@@ -485,9 +512,9 @@ pub fn ajouter_venant(inst: &Path, nom: &str, venue: Venue) -> Result<Compagnie,
     // fictive livree (`maj::marquee_comme_livree` compare « compagnie fictive <nom du dossier> ») : elle n'en est pas une.
     let marqueur = Marqueur {
         copie_de: format!("{} ajoutee sur ce poste", MARQUE_FICTIVE),
-        depuis: None,
+        fictive: None,
         ajoutee: Some(true),
-        quand: Some(socle::paris::maintenant()),
+        quand: Some(socle::paris::InstantEcrit::maintenant()),
         quoi: "Une compagnie fictive ajoutee sur ce poste, le logiciel etant bride : tout s'y fait, rien n'en part vers un organisme ni vers une personne.".to_string(),
     };
     socle::ecriture::ecrire_json(&dossier.join(MARQUEUR), &marqueur, 2)?;

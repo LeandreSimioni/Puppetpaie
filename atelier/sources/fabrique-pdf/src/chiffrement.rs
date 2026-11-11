@@ -17,7 +17,8 @@ use aes::cipher::{BlockDecryptMut, BlockEncrypt, BlockEncryptMut, KeyInit, KeyIv
 use lopdf::{Dictionary, Document, Object, ObjectId, StringFormat};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 
-use crate::description::Refus;
+use crate::description::{illisible, Refus};
+use crate::lecture::{self, directe};
 
 type CbcChiffre256 = cbc::Encryptor<aes::Aes256>;
 type CbcDechiffre256 = cbc::Decryptor<aes::Aes256>;
@@ -28,9 +29,13 @@ type CbcChiffre128 = cbc::Encryptor<aes::Aes128>;
 /// Vaut -3372 en entier signé.
 pub const PERMISSIONS: u32 = 0xFFFF_F0C0 | 4 | 16 | 512;
 
-fn refus<T>(m: impl Into<String>) -> Result<T, Refus> {
-    Err(Refus(m.into()))
-}
+/// Les métadonnées d'un fichier chiffré qui ne dit pas `/EncryptMetadata` le sont aussi : « Default value: true »
+/// (ISO 32000-1, table 21).
+const METADONNEES_CHIFFREES: bool = true;
+
+/// ISO 32000-1, table 20 : `StmF` et `StrF`, « Default value: Identity » ; table 26 : `Identity`, « Input data shall be
+/// passed through without any processing ».
+const FILTRE_PAR_DEFAUT: &[u8] = b"Identity";
 
 /// D'ou viennent les tirages d'un verrou (`verrouiller_avec`) ; `None` : le systeme.
 type Tirage = fn(&mut [u8]) -> Result<(), String>;
@@ -42,8 +47,8 @@ thread_local! {
 fn hasard(n: usize) -> Result<Vec<u8>, Refus> {
     let mut v = vec![0u8; n];
     match TIRAGE.with(|t| t.get()) {
-        Some(tirer) => tirer(&mut v).map_err(|e| Refus(format!("tirage au hasard impossible ({})", e)))?,
-        None => getrandom::getrandom(&mut v).map_err(|e| Refus(format!("tirage au hasard impossible ({})", e)))?,
+        Some(tirer) => tirer(&mut v).map_err(|e| Refus::defaut(format!("tirage au hasard impossible ({})", e)))?,
+        None => getrandom::getrandom(&mut v).map_err(|e| Refus::defaut(format!("tirage au hasard impossible ({})", e)))?,
     }
     Ok(v)
 }
@@ -87,10 +92,11 @@ fn empreinte_r6(mot_de_passe: &[u8], sel: &[u8], u: &[u8]) -> Vec<u8> {
         k = match reste {
             0 => Sha256::digest(&e).to_vec(),
             1 => Sha384::digest(&e).to_vec(),
-            _ => Sha512::digest(&e).to_vec(),
+            2.. => Sha512::digest(&e).to_vec(),
         };
         tour += 1;
-        if tour >= 64 && (*e.last().unwrap_or(&0) as usize) <= tour - 32 {
+        // `e` a la longueur de `k1`, 64 répétitions d'au moins 32 octets : il a un dernier octet.
+        if tour >= 64 && (e[e.len() - 1] as usize) <= tour - 32 {
             break;
         }
     }
@@ -117,22 +123,24 @@ fn chiffrer_donnees(cle: &[u8], donnees: &[u8]) -> Result<Vec<u8>, Refus> {
     let mut sortie = iv.clone();
     sortie.extend(
         CbcChiffre256::new_from_slices(cle, &iv)
-            .map_err(|_| Refus("clé de chiffrement invalide".into()))?
+            .map_err(|e| Refus::defaut(format!("clé de chiffrement invalide ({})", e)))?
             .encrypt_padded_vec_mut::<Pkcs7>(donnees),
     );
     Ok(sortie)
 }
 
-/// L'inverse : les 16 premiers octets sont l'IV. Des données trop courtes ou mal bourrées sont
-/// laissées telles quelles (un objet que l'auteur du fichier n'a pas chiffré).
-fn dechiffrer_donnees(cle: &[u8], donnees: &[u8]) -> Vec<u8> {
+/// L'inverse (ISO 32000-1, 7.6.2 : « the initialization vector is a 16-byte random number that is stored as the first
+/// 16 bytes of the encrypted stream or string » ; « Strings and streams encrypted with AES shall use a padding
+/// scheme that is described in Internet RFC 2898, PKCS #5 »). Des données qui n'ont pas cette forme ne sont pas
+/// chiffrées comme le fichier le dit : la pièce se refuse.
+fn dechiffrer_donnees(cle: &[u8], donnees: &[u8]) -> Result<Vec<u8>, Refus> {
     if donnees.len() < 32 || donnees.len() % 16 != 0 {
-        return donnees.to_vec();
+        return illisible(format!("une donnée chiffrée de {} octets (AES : l'IV, puis des blocs de 16)", donnees.len()));
     }
-    match CbcDechiffre256::new_from_slices(cle, &donnees[..16]) {
-        Ok(d) => d.decrypt_padded_vec_mut::<Pkcs7>(&donnees[16..]).unwrap_or_else(|_| donnees.to_vec()),
-        Err(_) => donnees.to_vec(),
-    }
+    CbcDechiffre256::new_from_slices(cle, &donnees[..16])
+        .map_err(|e| Refus::defaut(format!("clé de chiffrement invalide ({})", e)))?
+        .decrypt_padded_vec_mut::<Pkcs7>(&donnees[16..])
+        .map_err(|e| Refus::illisible(format!("une donnée chiffrée ne se déchiffre pas ({})", e)))
 }
 
 /// Applique `f` à chaque chaîne de l'objet, en profondeur, et aux flux : `fl` à leur contenu.
@@ -162,13 +170,27 @@ fn parcourir(
             let neuf = flux(&s.content)?;
             s.set_content(neuf);
         }
-        _ => {}
+        // Ni chaîne ni flux à chiffrer, en eux ni sous eux.
+        Object::Null | Object::Boolean(_) | Object::Integer(_) | Object::Real(_) | Object::Name(_) | Object::Reference(_) => {}
     }
     Ok(())
 }
 
+/// Le dictionnaire d'un objet (le sien, ou celui de son flux) ; aucun pour un autre objet.
+fn dictionnaire_de(o: &Object) -> Option<&Dictionary> {
+    match o {
+        Object::Dictionary(d) => Some(d),
+        Object::Stream(s) => Some(&s.dict),
+        Object::Null | Object::Boolean(_) | Object::Integer(_) | Object::Real(_) | Object::Name(_) | Object::String(..) | Object::Array(_) | Object::Reference(_) => None,
+    }
+}
+
+/// Les objets de structure, lus directs (avant le déchiffrement) : les flux d'objets et de références (ISO 32000-1,
+/// 7.5.7 et 7.5.8, `/Type /ObjStm`, `/Type /XRef`) et le dictionnaire de linéarisation (annexe F, la clé `Linearized`).
 fn est_de_structure(o: &Object) -> bool {
-    matches!(o.type_name(), Ok(t) if t == "XRef" || t == "ObjStm" || t == "Linearized")
+    dictionnaire_de(o).is_some_and(|d| {
+        matches!(directe(d, b"Type"), Some(Object::Name(n)) if n == b"XRef" || n == b"ObjStm") || directe(d, b"Linearized").is_some()
+    })
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -181,7 +203,7 @@ pub fn verrouiller(octets: &[u8]) -> Result<Vec<u8>, Refus> {
     // Un fichier déjà chiffré (mot de passe vide) est d'abord ouvert : on le verrouille de neuf.
     dechiffrer(&mut doc, b"")?;
     if doc.get_pages().is_empty() {
-        return refus("PDF sans page");
+        return illisible("PDF sans page");
     }
     // Les flux de structure (objets compressés, table de références) sont réécrits par lopdf, et
     // leurs objets ont déjà été lus : on ne les garde pas.
@@ -218,7 +240,7 @@ pub fn verrouiller(octets: &[u8]) -> Result<Vec<u8>, Refus> {
     perms[8] = b'T'; // /EncryptMetadata true
     perms[9..12].copy_from_slice(b"adb");
     perms[12..16].copy_from_slice(&hasard(4)?);
-    let aes = aes::Aes256::new_from_slice(&cle).map_err(|_| Refus("clé de chiffrement invalide".into()))?;
+    let aes = aes::Aes256::new_from_slice(&cle).map_err(|e| Refus::defaut(format!("clé de chiffrement invalide ({})", e)))?;
     aes.encrypt_block((&mut perms).into());
 
     // Chaînes et flux, tous chiffrés (même les métadonnées, comme /EncryptMetadata true le dit).
@@ -264,14 +286,14 @@ pub fn verrouiller(octets: &[u8]) -> Result<Vec<u8>, Refus> {
     doc.trailer.set("ID", Object::Array(vec![id.clone(), id]));
 
     let mut sortie = Vec::new();
-    doc.save_to(&mut sortie).map_err(|e| Refus(format!("écriture du PDF impossible ({})", e)))?;
+    doc.save_to(&mut sortie).map_err(|e| Refus::defaut(format!("écriture du PDF impossible ({})", e)))?;
     Ok(sortie)
 }
 
 /// La clé de fichier chiffrée par la clé dérivée du mot de passe (AES-256-CBC, IV nul, sans bourrage).
 fn chiffrer_cle(cle_derivee: &[u8], cle_fichier: &[u8]) -> Result<Vec<u8>, Refus> {
     Ok(CbcChiffre256::new_from_slices(cle_derivee, &[0u8; 16])
-        .map_err(|_| Refus("clé de chiffrement invalide".into()))?
+        .map_err(|e| Refus::defaut(format!("clé de chiffrement invalide ({})", e)))?
         .encrypt_padded_vec_mut::<NoPadding>(cle_fichier))
 }
 
@@ -281,32 +303,34 @@ fn chiffrer_cle(cle_derivee: &[u8], cle_fichier: &[u8]) -> Result<Vec<u8>, Refus
 
 /// Le dictionnaire `/Encrypt` du fichier (direct dans la queue, ou par référence), et l'objet qui
 /// le porte s'il est indirect.
-fn dictionnaire_de_chiffrement(doc: &Document) -> Option<(Dictionary, Option<ObjectId>)> {
-    match doc.trailer.get(b"Encrypt").ok()? {
-        Object::Dictionary(d) => Some((d.clone(), None)),
-        Object::Reference(id) => match doc.get_object(*id).ok()? {
-            Object::Dictionary(d) => Some((d.clone(), Some(*id))),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-fn octets_de(d: &Dictionary, cle: &[u8]) -> Option<Vec<u8>> {
-    match d.get(cle).ok()? {
-        Object::String(s, _) => Some(s.clone()),
-        _ => None,
+fn dictionnaire_de_chiffrement(doc: &Document) -> Result<Option<(Dictionary, Option<ObjectId>)>, Refus> {
+    let id = match directe(&doc.trailer, b"Encrypt") {
+        None => return Ok(None),
+        Some(Object::Reference(id)) => Some(*id),
+        Some(_) => None,
+    };
+    match lecture::lue(doc, &doc.trailer, b"Encrypt", lecture::dictionnaire)? {
+        Some(d) => Ok(Some((d.clone(), id))),
+        None => Ok(None),
     }
 }
 
 /// Déchiffre `doc` avec ce mot de passe utilisateur (sans effet si le fichier n'est pas chiffré).
 pub fn dechiffrer(doc: &mut Document, mot_de_passe: &[u8]) -> Result<(), Refus> {
-    let (e, id_e) = match dictionnaire_de_chiffrement(doc) {
+    let (e, id_e) = match dictionnaire_de_chiffrement(doc)? {
         Some(x) => x,
         None => return Ok(()),
     };
-    let v = e.get(b"V").ok().and_then(|o| o.as_i64().ok()).unwrap_or(0);
-    let r = e.get(b"R").ok().and_then(|o| o.as_i64().ok()).unwrap_or(0);
+    // V : « The default value if this entry is omitted shall be 0 » (ISO 32000-1, table 20), un algorithme non
+    // documenté que la fabrique ne lit pas (comme lopdf, plus bas) ; R est exigé (table 21).
+    let v = match lecture::lue(doc, &e, b"V", lecture::entier)? {
+        Some(v) => v,
+        None => return illisible("chiffrement illisible : /V manque (0, un algorithme non documenté)"),
+    };
+    let r = match lecture::lue(doc, &e, b"R", lecture::entier)? {
+        Some(r) => r,
+        None => return illisible("chiffrement illisible : /R manque"),
+    };
     if v < 5 {
         // RC4 (V 1 et 2) : lopdf, qui veut le dictionnaire en objet indirect.
         if id_e.is_none() {
@@ -314,61 +338,66 @@ pub fn dechiffrer(doc: &mut Document, mot_de_passe: &[u8]) -> Result<(), Refus> 
             doc.trailer.set("Encrypt", Object::Reference(id));
         }
         return doc.decrypt(mot_de_passe).map_err(|err| {
-            Refus(format!("chiffrement non pris en charge ou mot de passe refusé (V {}, R {} : {})", v, r, err))
+            Refus::illisible(format!("chiffrement non pris en charge ou mot de passe refusé (V {}, R {} : {})", v, r, err))
         });
     }
-    let (u, ue) = match (octets_de(&e, b"U"), octets_de(&e, b"UE")) {
-        (Some(u), Some(ue)) if u.len() >= 48 && ue.len() >= 32 => (u, ue),
-        _ => return refus("chiffrement illisible : /U ou /UE manque"),
+    let (u, ue) = match (lecture::lue(doc, &e, b"U", lecture::chaine)?, lecture::lue(doc, &e, b"UE", lecture::chaine)?) {
+        (Some(u), Some(ue)) if u.len() >= 48 && ue.len() >= 32 => (u.to_vec(), ue.to_vec()),
+        (Some(_) | None, Some(_) | None) => return illisible("chiffrement illisible : /U ou /UE manque"),
     };
     // Le mot de passe utilisateur doit rendre l'empreinte de validation.
     let (empreinte_u, sel_valid, sel_cle) = (&u[..32], &u[32..40], &u[40..48]);
     if empreinte(r, mot_de_passe, sel_valid, b"") != empreinte_u {
-        return refus("le PDF est chiffré et ne s'ouvre pas sans mot de passe");
+        return illisible("le PDF est chiffré et ne s'ouvre pas sans mot de passe");
     }
     let cle_derivee = empreinte(r, mot_de_passe, sel_cle, b"");
     let cle = CbcDechiffre256::new_from_slices(&cle_derivee, &[0u8; 16])
-        .map_err(|_| Refus("clé de chiffrement invalide".into()))?
+        .map_err(|e| Refus::defaut(format!("clé de chiffrement invalide ({})", e)))?
         .decrypt_padded_vec_mut::<NoPadding>(&ue[..32])
-        .map_err(|_| Refus("clé de fichier illisible".into()))?;
+        .map_err(|e| Refus::illisible(format!("clé de fichier illisible ({})", e)))?;
 
-    // Les filtres de chiffrement : seul AESV3 est pris en charge ; `Identity` laisse en clair.
-    let filtre = |nom: &[u8]| -> Result<bool, Refus> {
-        let n = match e.get(nom).ok().and_then(|o| o.as_name().ok()) {
-            Some(n) => n.to_vec(),
-            None => return Ok(false),
+    // Les filtres de chiffrement : seul AESV3 est pris en charge. Un filtre non dit est `Identity`, qui laisse en
+    // clair (ISO 32000-1, table 20, StmF et StrF : « Default value: Identity » ; table 26 : « Input data shall be
+    // passed through without any processing »). Un autre nom est une clé de `/CF` (table 20).
+    let filtre = |cle: &[u8]| -> Result<bool, Refus> {
+        let n = match lecture::lue(doc, &e, cle, lecture::nom)? {
+            Some(n) => n,
+            None => FILTRE_PAR_DEFAUT,
         };
-        if n == b"Identity" {
+        if n == FILTRE_PAR_DEFAUT {
             return Ok(false);
         }
-        let cfm = e
-            .get(b"CF")
-            .ok()
-            .and_then(|o| o.as_dict().ok())
-            .and_then(|cf| cf.get(&n).ok())
-            .and_then(|o| o.as_dict().ok())
-            .and_then(|f| f.get(b"CFM").ok())
-            .and_then(|o| o.as_name().ok());
-        if cfm == Some(b"AESV3") {
-            Ok(true)
-        } else {
-            refus("chiffrement non pris en charge (seul AES-256 l'est)")
+        let cf = match lecture::lue(doc, &e, b"CF", lecture::dictionnaire)? {
+            Some(cf) => cf,
+            None => return illisible(format!("chiffrement illisible : {} nomme /{}, et /CF manque", lecture::nom_de(cle), String::from_utf8_lossy(n))),
+        };
+        let f = match lecture::lue(doc, cf, n, lecture::dictionnaire)? {
+            Some(f) => f,
+            None => return illisible(format!("chiffrement illisible : /CF n'a pas le filtre /{}", String::from_utf8_lossy(n))),
+        };
+        match lecture::lue(doc, f, b"CFM", lecture::nom)? {
+            Some(b"AESV3") => Ok(true),
+            Some(_) | None => illisible("chiffrement non pris en charge (seul AES-256 l'est)"),
         }
     };
     let chiffre_flux = filtre(b"StmF")?;
     let chiffre_chaines = filtre(b"StrF")?;
-    let metadonnees = e.get(b"EncryptMetadata").ok().and_then(|o| o.as_bool().ok()).unwrap_or(true);
+    let metadonnees = match lecture::lue(doc, &e, b"EncryptMetadata", lecture::booleen)? {
+        Some(b) => b,
+        None => METADONNEES_CHIFFREES,
+    };
 
     for (id, objet) in doc.objects.iter_mut() {
         if Some(*id) == id_e || est_de_structure(objet) {
             continue;
         }
-        if !metadonnees && matches!(objet.type_name(), Ok("Metadata")) {
+        if !metadonnees && dictionnaire_de(objet).is_some_and(|d| matches!(directe(d, b"Type"), Some(Object::Name(n)) if n == b"Metadata")) {
             continue;
         }
-        let mut chaine = |d: &[u8]| Ok(if chiffre_chaines { dechiffrer_donnees(&cle, d) } else { d.to_vec() });
-        let mut flux = |d: &[u8]| Ok(if chiffre_flux { dechiffrer_donnees(&cle, d) } else { d.to_vec() });
-        parcourir(objet, &mut chaine, &mut flux)?;
+        let objet_lu = format!("objet {} {}", id.0, id.1);
+        let mut chaine = |d: &[u8]| if chiffre_chaines { dechiffrer_donnees(&cle, d) } else { Ok(d.to_vec()) };
+        let mut flux = |d: &[u8]| if chiffre_flux { dechiffrer_donnees(&cle, d) } else { Ok(d.to_vec()) };
+        parcourir(objet, &mut chaine, &mut flux).map_err(|r| r.reformuler(|p| format!("{} : {}", objet_lu, p)))?;
     }
     if let Some(id) = id_e {
         doc.objects.remove(&id);

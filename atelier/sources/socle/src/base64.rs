@@ -22,7 +22,7 @@ pub fn ecrire(o: &[u8]) -> String {
 }
 
 /// Le texte `t` en octets ; les blancs sont sautes, la lecture s'arrete au premier `=`.
-pub fn lire(t: &str) -> Result<Vec<u8>, String> {
+pub fn lire(t: &str) -> crate::echec::R<Vec<u8>> {
     let mut out = Vec::with_capacity(t.len() / 4 * 3);
     let (mut acc, mut n) = (0u32, 0);
     for c in t.bytes().filter(|c| !c.is_ascii_whitespace()) {

@@ -6,15 +6,15 @@
 //! chiffres (`1e+16`, `1e-05`) et la decimale gardee (`100.0`). Un entier lu hors de 64 bits devient un flottant a la
 //! lecture (pas d'`arbitrary_precision`) : il s'ecrit alors comme le flottant qu'il est devenu.
 //!
-//! C'est un des trois modules du BORD (`forme` lit ; `ecriture` et `json_ascii` ecrivent) : ce qui s'ecrit est une forme
-//! (`serde::Serialize`), que le module seul met en JSON.
+//! C'est un des deux modules du BORD (`forme` lit ; `ecriture` ecrit) : ce qui s'ecrit est une forme
+//! (`serde::Serialize`), que le module seul met en JSON (le JSON ASCII aussi, que `json_ascii` demande ici).
 
 use std::path::Path;
 
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::num::Resultat;
+use crate::echec::R;
 
 /// La forme `v` en valeur JSON, pour l'ecrire. Toute forme du logiciel s'ecrit : ses `Serialize` sont ceux de serde
 /// (derives), et les cles de ses tables sont des textes, des nombres ou des variantes unitaires. Une forme que serde
@@ -23,6 +23,100 @@ pub fn en_valeur<T: Serialize + ?Sized>(v: &T) -> Value {
     match serde_json::to_value(v) {
         Ok(valeur) => valeur,
         Err(e) => unreachable!("une forme du logiciel ne s'écrit pas en JSON ({}) : {}", std::any::type_name::<T>(), e),
+    }
+}
+
+/// LA FORME `t` ECRITE EN OBJET (`forme::Objet`) : `None` si elle s'ecrit autre chose qu'un objet.
+pub fn en_objet<T: Serialize + ?Sized>(t: &T) -> Option<crate::forme::Objet> {
+    match en_valeur(t) {
+        Value::Object(m) => Some(crate::forme::Objet(m)),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => None,
+    }
+}
+
+/// LE JSON ASCII DE `v` (`json_ascii::dumps`) : tout autre caractere en `\uXXXX`, cles triees si `trie` ; sans `indent`,
+/// les separateurs sont `, ` et `: ` (ou `,` et `:` si `serre`).
+pub(crate) fn en_ascii<T: Serialize + ?Sized>(v: &T, indent: Option<usize>, serre: bool, trie: bool) -> String {
+    let mut s = String::new();
+    ecrire_ascii(&en_valeur(v), indent, serre, trie, 0, &mut s);
+    s
+}
+
+fn chaine_ascii(t: &str, s: &mut String) {
+    s.push('"');
+    for c in t.chars() {
+        match c {
+            '"' => s.push_str("\\\""),
+            '\\' => s.push_str("\\\\"),
+            '\n' => s.push_str("\\n"),
+            '\r' => s.push_str("\\r"),
+            '\t' => s.push_str("\\t"),
+            '\u{8}' => s.push_str("\\b"),
+            '\u{c}' => s.push_str("\\f"),
+            ' '..='~' => s.push(c),
+            c => {
+                let mut tampon = [0u16; 2];
+                for u in c.encode_utf16(&mut tampon) {
+                    s.push_str(&format!("\\u{:04x}", u));
+                }
+            }
+        }
+    }
+    s.push('"');
+}
+
+fn ecrire_ascii(v: &Value, indent: Option<usize>, serre: bool, trie: bool, niveau: usize, s: &mut String) {
+    let (sep_item, sep_cle) = match (indent, serre) {
+        (Some(_), _) => (",", ": "),
+        (None, true) => (",", ":"),
+        (None, false) => (", ", ": "),
+    };
+    let retrait = |n: usize| -> String { indent.into_iter().map(|i| format!("\n{}", " ".repeat(i * n))).collect() };
+    match v {
+        Value::Null => s.push_str("null"),
+        Value::Bool(b) => s.push_str(if *b { "true" } else { "false" }),
+        Value::Number(n) => s.push_str(&nombre_ecrit(n)),
+        Value::String(t) => chaine_ascii(t, s),
+        Value::Array(a) => {
+            if a.is_empty() {
+                s.push_str("[]");
+                return;
+            }
+            s.push('[');
+            s.push_str(&retrait(niveau + 1));
+            for (i, x) in a.iter().enumerate() {
+                if i > 0 {
+                    s.push_str(sep_item);
+                    s.push_str(&retrait(niveau + 1));
+                }
+                ecrire_ascii(x, indent, serre, trie, niveau + 1, s);
+            }
+            s.push_str(&retrait(niveau));
+            s.push(']');
+        }
+        Value::Object(o) => {
+            if o.is_empty() {
+                s.push_str("{}");
+                return;
+            }
+            let mut entrees: Vec<(&String, &Value)> = o.iter().collect();
+            if trie {
+                entrees.sort_by(|a, b| a.0.cmp(b.0));
+            }
+            s.push('{');
+            s.push_str(&retrait(niveau + 1));
+            for (i, (k, x)) in entrees.into_iter().enumerate() {
+                if i > 0 {
+                    s.push_str(sep_item);
+                    s.push_str(&retrait(niveau + 1));
+                }
+                chaine_ascii(k, s);
+                s.push_str(sep_cle);
+                ecrire_ascii(x, indent, serre, trie, niveau + 1, s);
+            }
+            s.push_str(&retrait(niveau));
+            s.push('}');
+        }
     }
 }
 
@@ -53,7 +147,7 @@ pub fn json_trie<T: Serialize + ?Sized>(v: &T) -> String {
 }
 
 /// Le JSON de `v` sur une ligne, serre, tel que serde l'ecrit : une ligne d'un journal (JSONL), ou ce qu'un refus porte
-/// a part (`echec::avec`), que `echec::phrase_de` sait retirer.
+/// a part (`Echec::en_lignes`).
 pub fn json_en_ligne<T: Serialize + ?Sized>(v: &T) -> String {
     // Toute forme du logiciel s'ecrit (`en_valeur`).
     match serde_json::to_string(v) {
@@ -63,8 +157,9 @@ pub fn json_en_ligne<T: Serialize + ?Sized>(v: &T) -> String {
 }
 
 /// LA FORME `v` ECRITE SANS CE QUI NE CHANGE RIEN A CE QU'ELLE DIT, pour la comparer ou en tirer une empreinte : les cles
-/// triees, un nombre ecrit comme un flottant (`180` et `180.0` sont le meme taux : la page ecrit l'un, un fichier
-/// l'autre), un nombre ecrit en texte comme ce nombre.
+/// triees, un nombre lu en decimal exact et ecrit dans sa seule forme (`decimal_canonique` : `180` et `180.0` sont le
+/// meme taux, la page ecrit l'un, un fichier l'autre ; `0.1000000000000000001` n'est pas `0.1`), un nombre ecrit en
+/// texte comme ce nombre.
 pub fn canonique<T: Serialize + ?Sized>(v: &T) -> String {
     canonique_de(&en_valeur(v))
 }
@@ -99,17 +194,23 @@ fn canonique_de(v: &Value) -> String {
             format!("{{{}}}", corps.join(","))
         }
         Value::Array(a) => format!("[{}]", a.iter().map(canonique_de).collect::<Vec<_>>().join(",")),
-        Value::Number(n) => match n.as_f64() {
-            Some(f) => format!("{:?}", f),
-            None => n.to_string(),
-        },
-        // Un nombre ecrit en texte : un signe au plus, en tete, un point au plus, et au moins un chiffre ; un tel texte se
-        // lit toujours en flottant.
-        Value::String(t) if nombre_en_texte(t) => match t.parse::<f64>() {
-            Ok(f) => format!("{:?}", f),
-            Err(e) => unreachable!("{} s'écrit en nombre et ne se lit pas : {}", t, e),
-        },
+        // Un nombre, tel qu'il est ecrit : le JSON le garde en texte exact.
+        Value::Number(n) => decimal_canonique(&n.to_string()),
+        // Un nombre ecrit en texte : un signe au plus, en tete, un point au plus, et au moins un chiffre.
+        Value::String(t) if nombre_en_texte(t) => decimal_canonique(t),
         autre => autre.to_string(),
+    }
+}
+
+/// LA SEULE FORME D'UN DECIMAL ECRIT (`-`, des chiffres, un `.`, un exposant `e` signe ou non, comme `nombre_en_texte`, un
+/// entier ou `{:e}` l'ecrivent), lu exactement, chiffre a chiffre, sans flottant ni borne : `<signe><chiffres>e<exposant>`,
+/// sans zero en tete ni en queue des chiffres (`180.0` et `1.8e2` : `18e1` ; `-0.050` : `-5e-2`) ; zero, de tout signe,
+/// s'ecrit `0`.
+fn decimal_canonique(t: &str) -> String {
+    match chiffres_et_puissance(t) {
+        Some((_, chiffres, _)) if chiffres.is_empty() => "0".to_string(),
+        Some((moins, chiffres, puissance)) => format!("{}{}e{}", if moins { "-" } else { "" }, chiffres, puissance - chiffres.len() as i64),
+        None => unreachable!("{} : un decimal ecrit se lit en chiffres", t),
     }
 }
 
@@ -155,14 +256,7 @@ fn ecrire(v: &Value, indent: usize, niveau: usize, s: &mut String) {
         Value::Null => s.push_str("null"),
         Value::Bool(true) => s.push_str("true"),
         Value::Bool(false) => s.push_str("false"),
-        Value::Number(n) => match (n.as_i64(), n.as_u64()) {
-            (Some(i), _) => s.push_str(&i.to_string()),
-            (None, Some(u)) => s.push_str(&u.to_string()),
-            _ => match n.as_f64() {
-                Some(f) => s.push_str(&repr_flottant(f)),
-                None => s.push_str(&n.to_string()),
-            },
-        },
+        Value::Number(n) => s.push_str(&nombre_ecrit(n)),
         Value::String(t) => chaine(t, s),
         Value::Array(a) if a.is_empty() => s.push_str("[]"),
         Value::Object(o) if o.is_empty() => s.push_str("{}"),
@@ -215,22 +309,83 @@ fn chaine(t: &str, s: &mut String) {
     s.push('"');
 }
 
-/// Un flottant ecrit : les plus courts chiffres qui reviennent au meme
-/// flottant, en notation positionnelle pour 1e-4 <= |x| < 1e16, sinon
-/// `d.ddde+XX` (exposant sur deux chiffres au moins).
-pub fn repr_flottant(x: f64) -> String {
-    let negatif = x.is_sign_negative();
-    let signe = if negatif { "-" } else { "" };
-    if x == 0.0 {
-        return format!("{}0.0", signe);
-    }
-    // `{:e}` donne les chiffres les plus courts : `1.2345e-5`.
-    let e = format!("{:e}", x.abs());
-    let (mantisse, exp) = scientifique(&e);
+/// UN NOMBRE DECIMAL ECRIT EN TEXTE (`-`, des chiffres, un `.`, un exposant `e` signe ou non), lu exactement : son
+/// signe, ses chiffres significatifs (sans zero en tete ni en queue, vides pour zero) et la puissance de dix de leur
+/// premier chiffre plus un (`12.5` : `125`, 2 ; `0.05` : `5`, -1). `None` : le texte n'ecrit pas un nombre.
+fn chiffres_et_puissance(t: &str) -> Option<(bool, String, i64)> {
+    let d = decouper(t)?;
+    let tete = d.chiffres.len() - d.chiffres.trim_start_matches('0').len();
+    let significatifs = d.chiffres.trim_matches('0').to_string();
+    let puissance = d.exposant + d.entiers as i64 - tete as i64;
+    Some((d.moins, significatifs, puissance))
+}
+
+/// UN NOMBRE DECIMAL ECRIT EN TEXTE, decoupe (`decouper`) : son signe, tous ses chiffres a la suite (ceux d'avant la
+/// virgule puis ceux d'apres), combien sont avant la virgule, et l'exposant de dix ecrit apres `e` (aucun : 0).
+pub(crate) struct Decoupe {
+    pub(crate) moins: bool,
+    pub(crate) chiffres: String,
+    pub(crate) entiers: usize,
+    pub(crate) exposant: i64,
+}
+
+/// LE SEUL LECTEUR D'UN NOMBRE DECIMAL ECRIT EN TEXTE (`-` ou `+`, des chiffres, un `.` au plus, un exposant `e` signe
+/// ou non), exact, chiffre a chiffre : ce qu'en font l'ecriture d'un nombre (`chiffres_et_puissance`) et un instant
+/// (`paris::Moment::lu`). `None` : le texte n'ecrit pas un nombre (aucun chiffre, un autre signe, un exposant qui ne
+/// tient pas sur 64 bits).
+pub(crate) fn decouper(t: &str) -> Option<Decoupe> {
+    let (moins, corps) = match t.strip_prefix('-') {
+        Some(c) => (true, c),
+        None => (false, sans_plus(t)),
+    };
+    let (mantisse, exposant) = match corps.split_once(['e', 'E']) {
+        Some((m, e)) => (m, exposant_ecrit(e)?),
+        None => (corps, 0),
+    };
     let chiffres: String = mantisse.chars().filter(|c| *c != '.').collect();
-    let chiffres = pair_a_egalite(x.abs(), chiffres, exp);
-    let n = chiffres.len() as i32;
-    let decpt = exp + 1; // x = 0.CHIFFRES * 10^decpt
+    if chiffres.is_empty() || mantisse.matches('.').count() > 1 || !chiffres.bytes().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    // Sans virgule, tous les chiffres sont avant elle.
+    let entiers = match mantisse.find('.') {
+        Some(virgule) => virgule,
+        None => mantisse.len(),
+    };
+    Some(Decoupe { moins, chiffres, entiers, exposant })
+}
+
+/// Le texte sans son `+` de tete, s'il en a un.
+fn sans_plus(t: &str) -> &str {
+    match t.strip_prefix('+') {
+        Some(c) => c,
+        None => t,
+    }
+}
+
+/// L'exposant ecrit apres le `e` d'un nombre (`5`, `+5`, `-05`) ; `None` : ce n'est pas un entier de 64 bits.
+fn exposant_ecrit(e: &str) -> Option<i64> {
+    let (moins, chiffres) = match e.strip_prefix('-') {
+        Some(c) => (true, c),
+        None => (false, sans_plus(e)),
+    };
+    if chiffres.is_empty() || !chiffres.bytes().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let n = chiffres.bytes().try_fold(0i64, |n, c| n.checked_mul(10)?.checked_add(i64::from(c - b'0')))?;
+    Some(if moins { -n } else { n })
+}
+
+/// UN NOMBRE A VIRGULE TEL QUE LES FICHIERS L'ECRIVENT, du texte exact d'un nombre (`None` : ce n'en est pas un) : ses
+/// chiffres significatifs, en notation positionnelle pour 1e-4 <= |x| < 1e16, une decimale au moins (`130.0`, `0.0001`),
+/// sinon `d.ddde+XX` (exposant sur deux chiffres au moins : `1e-05`, `1.5e+16`).
+pub fn a_virgule(t: &str) -> Option<String> {
+    let (moins, chiffres, decpt) = chiffres_et_puissance(t)?;
+    let signe = if moins { "-" } else { "" };
+    if chiffres.is_empty() {
+        return Some(format!("{}0.0", signe));
+    }
+    let n = chiffres.len() as i64;
+    let exp = decpt - 1;
     let corps = if decpt <= -4 || decpt > 16 {
         let mut m = chiffres[..1].to_string();
         if n > 1 {
@@ -245,54 +400,79 @@ pub fn repr_flottant(x: f64) -> String {
     } else {
         format!("{}.{}", &chiffres[..decpt as usize], &chiffres[decpt as usize..])
     };
-    format!("{}{}", signe, corps)
+    Some(format!("{}{}", signe, corps))
 }
 
-/// Un flottant ecrit en notation scientifique (`{:e}`, `1.2345e-5`) : sa mantisse et son exposant. `{:e}` ecrit
-/// toujours les deux ; un texte sans exposant est sa propre mantisse, a l'exposant 0.
-pub fn scientifique(e: &str) -> (&str, i32) {
-    match e.split_once('e') {
-        Some((mantisse, exposant)) => match exposant.parse() {
-            Ok(n) => (mantisse, n),
-            Err(e) => unreachable!("`{{:e}}` écrit un exposant entier, pas {} : {}", exposant, e),
-        },
-        None => (e, 0),
+/// UNE FORME ECRITE, VUE EN ARBRE (ce que `en_valeur` en fait), pour qui la lit sans connaitre son type : la trace d'un
+/// diagnostic, une case de fiche confrontee a une condition. Un nombre y est son texte ecrit (`nombre_ecrit`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Arbre {
+    Nul,
+    Booleen(bool),
+    Nombre(String),
+    Texte(String),
+    Liste(Vec<Arbre>),
+    Table(Vec<(String, Arbre)>),
+}
+
+impl Arbre {
+    /// L'arbre de ce que `v` ecrit.
+    pub fn de<T: Serialize + ?Sized>(v: &T) -> Arbre {
+        fn de_valeur(v: Value) -> Arbre {
+            match v {
+                Value::Null => Arbre::Nul,
+                Value::Bool(b) => Arbre::Booleen(b),
+                Value::Number(n) => Arbre::Nombre(nombre_ecrit(&n)),
+                Value::String(t) => Arbre::Texte(t),
+                Value::Array(a) => Arbre::Liste(a.into_iter().map(de_valeur).collect()),
+                Value::Object(o) => Arbre::Table(o.into_iter().map(|(k, x)| (k, de_valeur(x))).collect()),
+            }
+        }
+        de_valeur(en_valeur(v))
     }
 }
 
-/// Quand la valeur exacte tombe pile entre deux ecritures de meme longueur
-/// (`...403.25` : `.2` et `.3`), la forme ecrite prend la paire (`.2`), la ou Rust prend la
-/// superieure : on rend la paire, si elle revient au meme flottant.
-fn pair_a_egalite(x: f64, chiffres: String, exp: i32) -> String {
-    let n = chiffres.len();
-    let dernier = chiffres.as_bytes()[n - 1] - b'0';
-    if dernier % 2 == 0 {
-        return chiffres;
+impl Serialize for Arbre {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::{SerializeMap, SerializeSeq};
+        match self {
+            Arbre::Nul => s.serialize_unit(),
+            Arbre::Booleen(b) => s.serialize_bool(*b),
+            Arbre::Nombre(t) => crate::forme::nombre_du_texte(t).serialize(s),
+            Arbre::Texte(t) => s.serialize_str(t),
+            Arbre::Liste(a) => {
+                let mut l = s.serialize_seq(Some(a.len()))?;
+                for x in a {
+                    l.serialize_element(x)?;
+                }
+                l.end()
+            }
+            Arbre::Table(o) => {
+                let mut m = s.serialize_map(Some(o.len()))?;
+                for (k, x) in o {
+                    m.serialize_entry(k, x)?;
+                }
+                m.end()
+            }
+        }
     }
-    let mut dessous = chiffres.clone().into_bytes();
-    dessous[n - 1] -= 1;
-    let dessous: String = dessous.into_iter().map(char::from).collect();
-    // La valeur exacte, chiffre par chiffre : `DESSOUS` puis `5` puis des zeros.
-    let exact = format!("{:.800e}", x);
-    let exact: String = scientifique(&exact).0.chars().filter(|c| *c != '.').collect();
-    let egalite = exact.len() > n && exact.starts_with(&dessous) && exact.as_bytes()[n] == b'5' && exact[n + 1..].bytes().all(|c| c == b'0');
-    if !egalite {
-        return chiffres;
+}
+
+/// Le texte d'un nombre JSON tel que les fichiers l'ecrivent : un entier tel quel, un nombre a virgule par `a_virgule`.
+pub fn nombre_ecrit(n: &serde_json::Number) -> String {
+    let t = n.to_string();
+    if n.is_i64() || n.is_u64() {
+        return t;
     }
-    let mut candidat = dessous[..1].to_string();
-    if n > 1 {
-        candidat.push('.');
-        candidat.push_str(&dessous[1..]);
-    }
-    match format!("{}e{}", candidat, exp).parse::<f64>() {
-        Ok(y) if y == x => dessous,
-        _ => chiffres,
+    match a_virgule(&t) {
+        Some(e) => e,
+        None => unreachable!("un nombre JSON s'ecrit en chiffres : {}", t),
     }
 }
 
 /// Ecrit `donnees` dans `chemin` : cree le dossier, ecrit en
 /// LF, le JSON suivi d'un saut de ligne.
-pub fn ecrire_json<T: Serialize + ?Sized>(chemin: &Path, donnees: &T, indent: usize) -> Resultat<()> {
+pub fn ecrire_json<T: Serialize + ?Sized>(chemin: &Path, donnees: &T, indent: usize) -> R<()> {
     if let Some(dossier) = chemin.parent() {
         std::fs::create_dir_all(dossier).map_err(|e| crate::echec::du_disque(&dossier, &e))?;
     }
@@ -325,7 +505,7 @@ pub fn provisoire(chemin: &Path) -> std::path::PathBuf {
 
 
 /// Efface `chemin` s'il existe : le geste qui l'avait lu le relit (`forme::change_pendant_le_geste`).
-pub fn effacer(chemin: &Path) -> Resultat<()> {
+pub fn effacer(chemin: &Path) -> R<()> {
     match std::fs::remove_file(chemin) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(crate::echec::du_disque(&chemin, &e)),
         _ => {}

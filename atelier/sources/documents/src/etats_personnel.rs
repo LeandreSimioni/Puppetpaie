@@ -8,7 +8,9 @@ use droit::fiche::Lue as _;
 use std::collections::BTreeSet;
 
 use droit::contexte::Contexte;
-use socle::echec::{erreur, Classe};
+use socle::echec::Classe;
+use socle::date::Jour;
+use socle::mois::Mois;
 use crate::etats_paie::{finir, titre_spectacle, Demande, Lecture, Periode};
 use socle::num::{eur2, Decimal};
 use crate::tableaux_export::{col_m, col_t, jj, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
@@ -17,19 +19,19 @@ use crate::tableaux_export::{col_m, col_t, jj, qui, refus, section_du_mois, sect
 
 /// Un contrat par mois de paie, vu des etats du personnel.
 struct ContratMois {
-    mois: String,
+    mois: Mois,
     cle: String,
     fiche: droit::fiche::ChampsSalarie,
     salarie: String,
     /// Le numero du contrat, quand il est ecrit (un mois produit l'a fige).
     contrat: Option<String>,
-    nature: String,
+    libelle_nature: String,
     emploi: Option<String>,
     spectacle: Option<String>,
     objet: Option<String>,
-    debut: String,
+    debut: Jour,
     /// La fin du contrat, sinon son dernier jour travaille.
-    fin: Option<String>,
+    fin: Option<Jour>,
     brut: Option<Decimal>,
 }
 
@@ -38,25 +40,23 @@ struct ContratMois {
 fn contrats_de(p: &Periode, lecture: &mut Lecture) -> R<Vec<ContratMois>> {
     let mut out = Vec::new();
     for m in p.mois.clone() {
-        for paie in lecture.paies(&m)?.iter() {
-            let e = &paie.engagement;
-            let emploi = e.emploi.clone().filter(|x| !x.is_empty()).or_else(|| paie.salarie.emploi.en_texte());
+        for paie in lecture.paies(m)?.iter() {
+            let e = paie.engagement();
+            let s = paie.salarie();
+            let emploi = e.emploi.clone().filter(|x| !x.is_empty()).or_else(|| s.emploi.en_texte());
             out.push(ContratMois {
-                mois: m.clone(),
-                cle: paie.salarie.id.to_string(),
-                fiche: paie.salarie.champs.clone(),
-                salarie: qui(&paie.salarie)?,
+                mois: m,
+                cle: s.id.to_string(),
+                fiche: s.champs.clone(),
+                salarie: qui(s)?,
                 contrat: e.numero.as_deref().map(str::to_string),
-                nature: e.nat().map_err(|x| erreur(Classe::Refuse, x))?.libelle.clone(),
+                libelle_nature: e.nat().map_err(|x| x.reclasser(Classe::Refuse))?.libelle.clone(),
                 emploi,
                 spectacle: titre_spectacle(paie),
-                objet: paie.spectacle.as_ref().and_then(|s| s.numero_objet.dite()).cloned(),
-                debut: e.debut.iso(),
-                fin: match e.fin {
-                    Some(f) => Some(f.iso()),
-                    None => e.dates_travail.last().map(|j| j.iso()),
-                },
-                brut: Some(eur2(paie.brut)),
+                objet: paie.spectacle().and_then(|s| s.numero_objet.dite()).cloned(),
+                debut: e.debut,
+                fin: e.fin.or(e.dates_travail.last().copied()),
+                brut: paie.brut().map(eur2),
             });
         }
     }
@@ -72,8 +72,8 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut lignes = Vec::new();
     for c in &contrats {
         let mut l = Ligne::nouvelle();
-        l.t("mois", c.mois.clone()).t("cle", c.cle.clone()).t("salarie", c.salarie.clone()).ot("contrat", c.contrat.clone()).t("nature", c.nature.clone());
-        l.ot("emploi", c.emploi.clone()).ot("spectacle", c.spectacle.clone()).ot("objet", c.objet.clone()).t("debut", jj(&c.debut)).ot("fin", c.fin.as_deref().map(jj));
+        l.m("mois", c.mois).t("cle", c.cle.clone()).t("salarie", c.salarie.clone()).ot("contrat", c.contrat.clone()).t("nature", c.libelle_nature.clone());
+        l.ot("emploi", c.emploi.clone()).ot("spectacle", c.spectacle.clone()).ot("objet", c.objet.clone()).t("debut", c.debut.jj_mm_aaaa()).ot("fin", c.fin.map(|j| j.jj_mm_aaaa()));
         l.od("brut", c.brut);
         lignes.push(l);
     }
@@ -83,7 +83,7 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut t = Tableau::nouveau("contrats", "Liste des contrats", p.libelle.clone());
     t.mois = p.mois.clone();
     t.avertissements = avert;
-    t.sections = sections_de(lignes, |l| l.texte("mois"), section_du_mois, Some(&|l| vec![l.texte("salarie"), l.texte("debut"), l.texte("contrat")]))?;
+    t.sections = sections_de(lignes, |l| l.mois("mois"), section_du_mois, Some(&|l| vec![l.texte("salarie"), l.texte("debut"), l.texte("contrat")]))?;
     t.colonnes = vec![
         col_t("mois", "Mois de paie"),
         col_t("contrat", "Contrat"),
@@ -128,14 +128,14 @@ fn sexe(nir: Option<&str>) -> Option<&'static str> {
 pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
-    let mut vus: BTreeSet<(String, Option<String>, String, Option<String>)> = BTreeSet::new();
+    let mut vus: BTreeSet<(String, Option<String>, Jour, Option<Jour>)> = BTreeSet::new();
     let mut a_preciser: BTreeSet<String> = BTreeSet::new();
-    // (entree AAAA-MM-JJ, nom, contrat) : l'ordre des embauches.
-    let mut rangees: Vec<((String, Option<String>, Option<String>), Ligne)> = Vec::new();
+    // (entree, nom, contrat) : l'ordre des embauches.
+    let mut rangees: Vec<((Jour, Option<String>, Option<String>), Ligne)> = Vec::new();
     let mut lecture = Lecture::nouvelle(ctx, &d.departs);
     for c in contrats_de(&p, &mut lecture)? {
         // Un contrat qui deborde du mois apparait une fois par mois de paie : c'est UNE embauche.
-        if !vus.insert((c.cle.clone(), c.contrat.clone(), c.debut.clone(), c.fin.clone())) {
+        if !vus.insert((c.cle.clone(), c.contrat.clone(), c.debut, c.fin)) {
             continue;
         }
         let f = &c.fiche;
@@ -148,7 +148,7 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             match socle::codification_ue::codification_ue(&f.nationalite()) {
                 Ok(code) => nationalite(&code),
                 Err(pourquoi) => {
-                    a_preciser.insert(format!("{} : {}", c.salarie, pourquoi));
+                    a_preciser.insert(format!("{} : {}", c.salarie, pourquoi.phrase));
                     Some("à préciser dans la fiche")
                 }
             }
@@ -159,7 +159,7 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         // art. D1221-23, 1°), la categorie DSN la suit entre parentheses ; sans pays, la categorie seule. Un pays hors de
         // la liste du logiciel se dit par son code.
         let pays = match f.pays_nationalite.remplie() {
-            Some(code) => match socle::pays::du_code(code).map_err(|m| erreur(Classe::Illisible, m))? {
+            Some(code) => match socle::pays::du_code(code).map_err(|m| m.reclasser(Classe::Illisible))? {
                 Some(p) => Some(p.nom),
                 None => Some(code.to_string()),
             },
@@ -174,9 +174,9 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             },
         );
         l.ot("naissance", f.date_naissance.dite().map(|j| jj(&j.iso()))).ot("sexe", sexe(f.nir.portee()));
-        l.ot("emploi", c.emploi.clone()).ot("qualification", f.statut.dite().map(|s| s.to_string())).t("contrat_type", c.nature.clone()).ot("contrat", c.contrat.clone());
-        l.t("entree", jj(&c.debut)).ot("sortie", c.fin.as_deref().map(jj));
-        rangees.push(((c.debut.clone(), nom, c.contrat.clone()), l));
+        l.ot("emploi", c.emploi.clone()).ot("qualification", f.statut.dite().map(|s| s.to_string())).t("contrat_type", c.libelle_nature.clone()).ot("contrat", c.contrat.clone());
+        l.t("entree", c.debut.jj_mm_aaaa()).ot("sortie", c.fin.map(|j| j.jj_mm_aaaa()));
+        rangees.push(((c.debut, nom, c.contrat.clone()), l));
     }
     rangees.sort_by(|a, b| a.0.cmp(&b.0));
     let mut lignes: Vec<Ligne> = Vec::new();
@@ -298,12 +298,12 @@ fn reponse(r: &str) -> String {
 /// UN ACTE DU JOURNAL DES ENVOIS, tel que le journal des declarations le montre : `moteur` le tire de chaque ligne du
 /// journal (`envois::journal::Ligne`), que ce module ne lit pas.
 pub struct ActeDuJournal {
-    pub quand: String,
+    pub quand: socle::paris::HeureDuJournal,
     /// Sa sorte, telle que le journal l'ecrit (`dsn`, `contrat-signature`...).
     pub quoi: String,
     pub main_propre: bool,
-    /// Le mois qu'il declare (`AAAA-MM`), s'il en declare un.
-    pub mois: Option<String>,
+    /// Le mois qu'il declare, s'il en declare un.
+    pub mois: Option<Mois>,
     pub mode: String,
     pub accepte: bool,
     /// Le fichier parti, s'il y en a un.
@@ -318,15 +318,15 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
     let mut lignes = Vec::new();
     for l in journal {
         // Un acte porte le mois qu'il declare ; un acte annuel se range au mois ou il a eu lieu.
-        let m: String = match &l.mois {
-            Some(m) => m.clone(),
-            None => l.quand.chars().take(7).collect(),
+        let m = match l.mois {
+            Some(m) => m,
+            None => l.quand.jour().mois_civil(),
         };
-        if m.chars().count() != 7 || !p.contient(&m) {
+        if !p.contient(m) {
             continue;
         }
         let mut x = Ligne::nouvelle();
-        x.t("quand", l.quand.replace('T', " ").chars().take(16).collect::<String>());
+        x.t("quand", l.quand.iso().replace('T', " ").chars().take(16).collect::<String>());
         let main_propre = l.quoi == "contrat-signature" && l.main_propre;
         // Un acte que la table ne nomme pas se dit par sa sorte, telle que le journal l'ecrit.
         let acte = match (main_propre, acte_lisible(&l.quoi)) {
@@ -335,7 +335,7 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
             (false, None) => l.quoi.clone(),
         };
         x.t("acte", acte);
-        x.t("mois", m).t("mode", l.mode.clone()).t("issue", if l.accepte { "accepté" } else { "refusé ou échoué" });
+        x.m("mois", m).t("mode", l.mode.clone()).t("issue", if l.accepte { "accepté" } else { "refusé ou échoué" });
         x.ot("fichier", l.fichier.clone()).t("destinataire", l.destinataire.clone()).t("reponse", reponse(&l.reponse)).t("origine", l.origine.clone());
         lignes.push(x);
     }
@@ -343,9 +343,9 @@ pub fn journal_des_declarations(ctx: &Contexte, d: &Demande, journal: &[ActeDuJo
         return Err(refus(format!("Aucun acte au journal sur la période ({}).", p.libelle)));
     }
     let mut t = Tableau::nouveau("journal-des-declarations", "Journal des déclarations et envois", p.libelle.clone());
-    t.mois = lignes.iter().map(|l| l.texte("mois")).collect::<BTreeSet<_>>().into_iter().collect();
+    t.mois = lignes.iter().filter_map(|l| l.mois("mois")).collect::<BTreeSet<_>>().into_iter().collect();
     t.avec_total = false;
-    t.sections = sections_de(lignes, |l| l.texte("mois"), section_du_mois, Some(&|l| vec![l.texte("quand")]))?;
+    t.sections = sections_de(lignes, |l| l.mois("mois"), section_du_mois, Some(&|l| vec![l.texte("quand")]))?;
     t.colonnes = vec![
         col_t("quand", "Date"),
         col_t("acte", "Acte"),

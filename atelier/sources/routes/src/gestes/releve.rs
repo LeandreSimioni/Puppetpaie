@@ -6,7 +6,8 @@ use droit::contexte::Contexte;
 use envois::ordre_signalements::OrdreConnu;
 use envois::releve_retours::{Client, Releve};
 use envois::suites::Suites;
-use socle::echec::{Echec, R};
+use socle::echec::R;
+use socle::paris::Naif;
 use compagnie::consultation::{client_dpae, client_dsn};
 
 /// Fait les suites d'une releve et les reporte sur elle.
@@ -21,7 +22,7 @@ fn avec_les_suites(ctx: &Contexte, r: R<Releve>, s: Suites) -> R<Releve> {
 
 /// Releve les retours DSN (ou, `canal = Some("dpae")` avec un client Urssaf donne, ceux de la DPAE) : `client` donne, ou
 /// celui de la consultation net-entreprises. `canal` : celui de la DSN s'il n'est pas dit.
-pub fn relever_retours(ctx: &Contexte, debut: i64, fin: i64, tout: bool, environnement: &str, client: Option<Client>, canal: Option<&str>) -> R<Releve> {
+pub fn relever_retours(ctx: &Contexte, debut: Naif, fin: Naif, tout: bool, environnement: &str, client: Option<Client>, canal: Option<&str>) -> R<Releve> {
     let canal = match canal {
         Some(c) => c,
         None => envois::releve_retours::CANAL_DSN,
@@ -36,7 +37,7 @@ pub fn relever_retours(ctx: &Contexte, debut: i64, fin: i64, tout: bool, environ
 }
 
 /// Releve les retours de la DPAE : par flux s'il est connu, sinon par plage.
-pub fn relever_retours_dpae(ctx: &Contexte, debut: i64, fin: i64, tout: bool, flux: Option<&str>) -> R<Releve> {
+pub fn relever_retours_dpae(ctx: &Contexte, debut: Naif, fin: Naif, tout: bool, flux: Option<&str>) -> R<Releve> {
     let b = compagnie::bridage::branchement(&ctx.racine)?;
     let client = client_dpae(ctx, b)?;
     let mut s = Suites::default();
@@ -52,7 +53,7 @@ pub fn rattacher_simulation(ctx: &Contexte) -> R<(i64, Vec<String>)> {
     let n = envois::releve_retours::rattacher_simulation(ctx, &mut s);
     let faites = crate::gestes::suites::faire(ctx, s)?;
     if let Some(i) = faites.incidents.into_iter().next() {
-        return Err(Echec::from(i));
+        return Err(socle::echec::refus(i));
     }
     Ok((n?, faites.a_faire))
 }

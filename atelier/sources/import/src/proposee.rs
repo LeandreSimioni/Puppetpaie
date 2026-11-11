@@ -13,14 +13,14 @@ pub const A_COMPLETER: &str = "A COMPLETER";
 
 /// LA FICHE `nom` QUE DIT UNE FORME LUE (`t` : ses champs nommes comme ceux de la fiche), relue par la table de ses
 /// cases : une case vide n'y est pas ; une case qui n'a pas sa forme se refuse, avec son chemin.
-pub fn de<T: Serialize + ?Sized>(nom: &str, t: &T) -> R<Saisie> {
+pub fn de<T: Serialize + ?Sized>(nom: droit::fiche::NomDeFiche, t: &T) -> R<Saisie> {
     Saisie::de_la_fiche(nom, t)
 }
 
 /// Les cases et les notes de `autre` posees dans `s`, a la place de celles qu'il avait.
 pub fn fondre(s: &mut Saisie, autre: &Saisie) {
     for (k, v) in autre.cases() {
-        s.poser(k, v.clone());
+        s.poser(*k, v.clone());
     }
     for (k, t) in autre.notes() {
         s.poser_note(k, t.clone());
@@ -31,8 +31,8 @@ pub fn fondre(s: &mut Saisie, autre: &Saisie) {
 /// garde.
 pub fn completer_de(s: &mut Saisie, autre: &Saisie) {
     for (k, v) in autre.cases() {
-        if s.case(k).is_none() {
-            s.poser(k, v.clone());
+        if s.valeur(*k).is_none() {
+            s.poser(*k, v.clone());
         }
     }
     for (k, t) in autre.notes() {

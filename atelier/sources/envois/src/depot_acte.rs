@@ -44,8 +44,8 @@ pub struct Depot<'a> {
     pub octets: &'a [u8],
     /// Le mois que le fichier declare ; pour un signalement, celui de son evenement (`evenement`).
     pub mois: Mois,
-    /// Le jour de l'evenement qu'un signalement declare (`DsnLue::evenement`, `AAAA-MM-JJ`).
-    pub evenement: Option<String>,
+    /// Le jour de l'evenement qu'un signalement declare (`DsnLue::evenement`).
+    pub evenement: Option<socle::date::Jour>,
     pub reel: bool,
     pub qui: &'a str,
     /// La forme de la preuve d'un depot reel (`""` pour un test).
@@ -61,10 +61,10 @@ pub struct Depot<'a> {
 /// Garde la reponse de l'organisme a cote du journal, en clair, datee. Le nom doit tenir sur tous les systemes (un `?`
 /// est impossible sous Windows), et une reponse n'en ecrase JAMAIS une autre : deux depots dans la meme seconde (un test
 /// puis le reel) prennent `-2`, `-3`... avant `.txt`.
-pub fn archiver_reponse(racine: &Path, quoi: &str, mois: &str, reponse: &str) -> R<PathBuf> {
+pub fn archiver_reponse(racine: &Path, quoi: &str, marque: &str, reponse: &str) -> R<PathBuf> {
     let dossier = racine.join(crate::retours::RETOURS).join("depots");
-    std::fs::create_dir_all(&dossier).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e)))?;
-    let etiquette: String = mois.replace('-', "").chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')).collect();
+    std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
+    let etiquette: String = marque.replace('-', "").chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')).collect();
     let etiquette = if etiquette.is_empty() { "sans-date".to_string() } else { etiquette };
     let iso = socle::paris::maintenant();
     let horo = format!("{}{}{}-{}{}{}", &iso[0..4], &iso[5..7], &iso[8..10], &iso[11..13], &iso[14..16], &iso[17..19]);
@@ -75,11 +75,11 @@ pub fn archiver_reponse(racine: &Path, quoi: &str, mois: &str, reponse: &str) ->
         match std::fs::OpenOptions::new().write(true).create_new(true).open(&p) {
             Ok(mut f) => {
                 use std::io::Write;
-                f.write_all(reponse.as_bytes()).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
+                f.write_all(reponse.as_bytes()).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
                 return Ok(p);
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => rang += 1,
-            Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&p, &e))),
+            Err(e) => return Err(socle::echec::du_disque(&p, &e).reclasser(Classe::Disque)),
         }
     }
 }
@@ -96,21 +96,24 @@ fn envoi_du_depot<D, Rt>(d: &Depot, accepte: bool, destinataire: &str, flux: &st
 
 /// Ajoute la ligne au journal des depots et la rend.
 fn noter(ctx: &Contexte, d: &Depot, ligne: Ligne) -> R<Ligne> {
-    crate::journal::noter(&ctx.racine, ligne, Some(d.chemin), &socle::paris::maintenant()).map_err(|m| erreur(Classe::Disque, m))
+    crate::journal::noter(&ctx.racine, ligne, Some(d.chemin), crate::journal::Datation::Maintenant).map_err(|m| m.reclasser(Classe::Disque))
 }
 
 /// LA TRACE, RELATIVE A LA COMPAGNIE : une compagnie change de dossier, et un chemin absolu ne menerait nulle part.
 fn trace_relative(ctx: &Contexte, t: &Path) -> R<String> {
-    let relative = t.strip_prefix(&ctx.racine).map_err(|_| erreur(Classe::Disque, socle::echec::du_disque(&t, &"La trace d'un dépôt s'écrit hors de la compagnie.".to_string())))?;
+    let relative = t.strip_prefix(&ctx.racine).map_err(|_| socle::echec::du_disque(&t, &"La trace d'un dépôt s'écrit hors de la compagnie.".to_string()).reclasser(Classe::Disque))?;
     Ok(relative.to_string_lossy().replace('\\', "/"))
 }
 
-/// Le depot a echoue : la ligne refusee au journal, l'incident dans les suites, et le refus rendu.
+/// Le depot a echoue : la ligne refusee au journal, l'incident dans les suites, et le refus rendu. Une ligne que le
+/// journal refuse joint son echec a celui du depot : il ne se perd pas.
 fn echec(ctx: &Contexte, quoi: Acte, d: &Depot, ligne: Ligne, e: Echec, suites: &mut Suites) -> Echec {
     let classe = e.classe_notee();
-    let _ = noter(ctx, d, ligne);
-    suites.depot_refuse = Some(DepotRefuse { quoi: quoi.nom().into(), reel: d.reel, classe: classe.into(), message: e.phrase(), repetition: d.repetition.cloned() });
-    e
+    suites.depot_refuse = Some(DepotRefuse { quoi: quoi.nom().into(), reel: d.reel, classe: classe.into(), message: e.phrase.clone(), repetition: d.repetition.cloned() });
+    match noter(ctx, d, ligne) {
+        Ok(_) => e,
+        Err(journal) => e.reformuler(|p| format!("{}\nLe journal des envois ne l'a pas noté : {}", p, journal.phrase)),
+    }
 }
 
 /// LE SIMULATEUR REPOND DANS LE GESTE : rien ne voyage, rien n'oblige a attendre ; les retours d'un depot joue (accuse,
@@ -149,7 +152,7 @@ pub fn deposer_dsn(
         let mut client = Client::dsn(ctx, environnement, d.motdepasse.clone()).map_err(Panne::en_echec)?;
         client.authentifier().map_err(Panne::en_echec)?;
         // La verification est refaite ici : la derniere porte avant le reseau.
-        depot::verifier(&declarations::dsn_lue::lire(d.octets, "")?, d.reel, None, true)?;
+        depot::verifier(&declarations::dsn_lue::lire(d.octets, "")?, d.reel, true)?;
         let mut contenu = d.octets.to_vec();
         if !d.reel {
             contenu = depot::basculer_dsn(&contenu)?;
@@ -166,24 +169,24 @@ pub fn deposer_dsn(
     let reponse = match envoi() {
         Ok(r) => r,
         Err(e) => {
-            let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature: texte(apercu.nature.as_deref()), ordre: texte(apercu.ordre.as_deref()), evenement: d.evenement.clone(), ..Default::default() };
-            let ligne = Ligne::Dsn(envoi_du_depot(d, false, "net-entreprises", "", &e.phrase(), None, detail, false));
+            let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature_declaration: apercu.nature_declaration, ordre: texte(apercu.ordre.as_deref()), evenement: d.evenement, ..DetailDsn::nouveau(false) };
+            let ligne = Ligne::Dsn(envoi_du_depot(d, false, "net-entreprises", "", &e.phrase, None, detail, false));
             return Err(echec(ctx, Acte::Dsn, d, ligne, e, suites));
         }
     };
 
     let flux = crate::etats::flux_de(&reponse);
     // La trace d'un signalement porte le jour de son evenement ; celle d'une mensuelle, son mois.
-    let quand = match &d.evenement {
-        Some(e) => e.clone(),
+    let quand = match d.evenement {
+        Some(e) => e.iso(),
         None => d.mois.to_string(),
     };
     let trace = archiver_reponse(&ctx.racine, "depot-dsn", &quand, &reponse)?;
     let detail = DetailDsn {
         preuve,
-        type_declaration: texte(apercu.type_declaration.as_deref()),
+        type_declaration: apercu.type_declaration,
         // LA NATURE : un signalement se numerote a la suite de tous ceux deja partis (`journal::dernier_ordre_des_signalements`).
-        nature: texte(apercu.nature.as_deref()),
+        nature_declaration: apercu.nature_declaration,
         // LE RANG DECLARE : le prochain annule-et-remplace se numerote au-dessus de cet ordre.
         ordre: texte(apercu.ordre.as_deref()),
         versements: Some(apercu.versements_organismes.iter().map(|m| m.to_string()).collect()),
@@ -193,8 +196,8 @@ pub fn deposer_dsn(
         repetition: d.repetition.cloned(),
         ordre_test,
         etablissement: texte(apercu.etablissement()),
-        evenement: d.evenement.clone(),
-        ..Default::default()
+        evenement: d.evenement,
+        ..DetailDsn::nouveau(false)
     };
     let ligne = Ligne::Dsn(envoi_du_depot(d, true, "net-entreprises", &flux, &reponse, Some(trace_relative(ctx, &trace)?), detail, true));
     let ligne = noter(ctx, d, ligne)?;
@@ -205,7 +208,6 @@ pub fn deposer_dsn(
 /// Depose une DPAE. `contenu` : le fichier tel qu'il part (bascule en test faite) ; `embauches` : ce qu'elle declare
 /// (salarie, numero du contrat, premier jour, fin) ; `client` : le client Urssaf, identifiants deja verifies (le monde
 /// seulement) ; `deja` : le depot precedent du meme fichier.
-#[allow(clippy::too_many_arguments)]
 pub fn deposer_dpae(
     ctx: &Contexte,
     branchement: Branchement,
@@ -233,8 +235,8 @@ pub fn deposer_dpae(
     let reponse = match envoi() {
         Ok(r) => r,
         Err(e) => {
-            let detail = DetailDpae { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), ..Default::default() };
-            let ligne = Ligne::Dpae(envoi_du_depot(d, false, "urssaf", "", &e.phrase(), None, detail, false));
+            let detail = DetailDpae { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), ..DetailDpae::nouveau(false, false) };
+            let ligne = Ligne::Dpae(envoi_du_depot(d, false, "urssaf", "", &e.phrase, None, detail, false));
             return Err(echec(ctx, Acte::Dpae, d, ligne, e, suites));
         }
     };
@@ -243,7 +245,7 @@ pub fn deposer_dpae(
     let flux = crate::etats::flux_de(&reponse);
     // Ce que ce depot a REELLEMENT declare, a la maille de l'embauche : c'est ce qui repondra ensuite a
     // « lesquelles restent a faire ».
-    let detail = DetailDpae { preuve, repetition: d.repetition.cloned(), embauches, ..Default::default() };
+    let detail = DetailDpae { preuve, repetition: d.repetition.cloned(), embauches, ..DetailDpae::nouveau(false, false) };
     let ligne = Ligne::Dpae(envoi_du_depot(d, true, "urssaf", &flux, &reponse, Some(trace_relative(ctx, &trace)?), detail, true));
     let ligne = noter(ctx, d, ligne)?;
     let ligne = repondu_aussitot(ctx, joue, ligne, suites)?;

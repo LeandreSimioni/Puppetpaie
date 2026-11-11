@@ -9,10 +9,12 @@
 use serde::Serialize;
 
 use declarations::champs::{Anomalie, Saisie, Valeur};
+use droit::fiche::{CaseDeFiche, NomDeFiche};
 
-use socle::ecran::{couleur_de_l_etat, Pastille};
+use socle::ecran::{couleur_de_l_etat, EtatDEcran, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
-use socle::mois::Mois;
+use socle::date::Jour;
+use socle::mois::{Graphie, Mois};
 
 // ------------------------------------------------------------------ les sorts
 
@@ -75,21 +77,21 @@ impl Sort {
     /// fait ; repris sous reserve (un libelle que la table ne connait pas), a voir ; non repris parce que quelque chose
     /// manque ou se contredit (`non_repris`), refuse ; laisse expres (deja saisi, annexe, doublon, archive ouverte), une
     /// information.
-    pub fn en_mots(self) -> (&'static str, &'static str) {
+    pub fn en_mots(self) -> (EtatDEcran, &'static str) {
         match self {
-            Sort::Repris => ("fait", "repris"),
-            Sort::DejaRepris => ("fait", "déjà repris"),
-            Sort::LibelleInconnu => ("a_faire", "libellé inconnu"),
-            Sort::DejaSaisi => ("information", "déjà saisi"),
-            Sort::Incoherent => ("refuse", "incohérent"),
-            Sort::Incomplet => ("refuse", "incomplet"),
-            Sort::SansTexte => ("refuse", "sans texte"),
-            Sort::SansEntetes => ("refuse", "tableau introuvable"),
-            Sort::Ambigu => ("refuse", "ambigu"),
-            Sort::Annexe => ("information", "annexe"),
-            Sort::NonReconnu => ("refuse", "non reconnu"),
-            Sort::Doublon => ("information", "doublon"),
-            Sort::Archive => ("information", "archive"),
+            Sort::Repris => (EtatDEcran::Fait, "repris"),
+            Sort::DejaRepris => (EtatDEcran::Fait, "déjà repris"),
+            Sort::LibelleInconnu => (EtatDEcran::AFaire, "libellé inconnu"),
+            Sort::DejaSaisi => (EtatDEcran::Information, "déjà saisi"),
+            Sort::Incoherent => (EtatDEcran::Refuse, "incohérent"),
+            Sort::Incomplet => (EtatDEcran::Refuse, "incomplet"),
+            Sort::SansTexte => (EtatDEcran::Refuse, "sans texte"),
+            Sort::SansEntetes => (EtatDEcran::Refuse, "tableau introuvable"),
+            Sort::Ambigu => (EtatDEcran::Refuse, "ambigu"),
+            Sort::Annexe => (EtatDEcran::Information, "annexe"),
+            Sort::NonReconnu => (EtatDEcran::Refuse, "non reconnu"),
+            Sort::Doublon => (EtatDEcran::Information, "doublon"),
+            Sort::Archive => (EtatDEcran::Information, "archive"),
         }
     }
 }
@@ -132,16 +134,10 @@ impl<T> ParSort<T> {
     }
 }
 
-impl Default for ParSort<usize> {
-    fn default() -> Self {
+impl ParSort<usize> {
+    /// Aucun fichier compte, de chaque sort.
+    pub fn a_zero() -> Self {
         ParSort { repris: 0, deja_repris: 0, libelle_inconnu: 0, deja_saisi: 0, incoherent: 0, incomplet: 0, sans_texte: 0, sans_entetes: 0, ambigu: 0, annexe: 0, non_reconnu: 0, doublon: 0, archive: 0 }
-    }
-}
-
-/// Les pastilles, par defaut : celle de chaque sort.
-impl Default for ParSort<Pastille> {
-    fn default() -> Self {
-        pastilles_des_sorts()
     }
 }
 
@@ -190,12 +186,12 @@ pub struct Origine {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mois: Option<String>,
+    pub mois: Option<Mois>,
 }
 
 impl Origine {
-    pub fn dsn(mois: &str) -> Origine {
-        Origine { source: Source::Dsn, fichier: None, page: None, mois: Some(mois.to_string()) }
+    pub fn dsn(mois: Option<Mois>) -> Origine {
+        Origine { source: Source::Dsn, fichier: None, page: None, mois }
     }
 
     /// Un bulletin : son fichier et sa page, quand on les sait.
@@ -204,18 +200,21 @@ impl Origine {
     }
 
     /// Une piece : ce qu'elle est, son fichier, sa page, son mois.
-    pub fn piece(source: Source, fichier: String, page: usize, mois: Option<String>) -> Origine {
+    pub fn piece(source: Source, fichier: String, page: usize, mois: Option<Mois>) -> Origine {
         Origine { source, fichier: Some(fichier), page: Some(page), mois }
     }
 
     /// « la DSN de mars 2025 », « le bulletin (x.pdf, page 2) », « l'AEM de mars 2025 (x.pdf) ».
     fn en_mots(&self) -> String {
-        let fichier = match (&self.fichier, self.page) {
-            (Some(f), Some(p)) => format!(" ({}, page {})", f, p),
-            (Some(f), None) => format!(" ({})", f),
-            _ => String::new(),
-        };
-        let de_mois: String = self.mois.iter().filter(|m| !m.is_empty()).map(|m| format!(" {}", socle::texte::de(&Mois::en_clair(m)))).collect();
+        let fichier: String = self
+            .fichier
+            .iter()
+            .map(|f| match self.page {
+                Some(p) => format!(" ({}, page {})", f, p),
+                None => format!(" ({})", f),
+            })
+            .collect();
+        let de_mois: String = self.mois.iter().map(|m| format!(" {}", socle::texte::de(&m.libelle(Graphie::Accentuee)))).collect();
         match self.source {
             Source::Aem => format!("l'AEM{}{}", de_mois, fichier),
             Source::Certificat => format!("le certificat Congés Spectacles{}{}", de_mois, fichier),
@@ -255,7 +254,7 @@ pub enum EtatFiche {
 /// Une case vide d'une fiche qu'une piece remplit : sa valeur et d'ou elle vient.
 #[derive(Debug, Clone, Serialize)]
 pub struct Completee {
-    pub champ: String,
+    pub champ: CaseDeFiche,
     pub valeur: Valeur,
     #[serde(flatten)]
     pub origine: Origine,
@@ -266,7 +265,7 @@ pub struct Completee {
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub enum DitPar {
-    Dsn { dsn: Valeur, mois: String },
+    Dsn { dsn: Valeur, mois: Mois },
     Bulletin { bulletin: String, fichier: String, page: usize },
     Certificat { certificat: String, fichier: String, page: usize },
     Aem { aem: String, fichier: String, page: usize },
@@ -275,7 +274,7 @@ pub enum DitPar {
 /// UN ECART : une case que la fiche dit, qu'une piece disait autrement ; la fiche fait foi.
 #[derive(Debug, Clone, Serialize)]
 pub struct Ecart {
-    pub champ: String,
+    pub champ: CaseDeFiche,
     /// La case de la fiche, telle qu'elle est (un texte, ou une structure : la banque).
     pub fiche: Valeur,
     #[serde(flatten)]
@@ -284,23 +283,22 @@ pub struct Ecart {
 }
 
 impl Ecart {
-    pub fn new(champ: &str, fiche: Valeur, par: DitPar) -> Ecart {
+    pub fn new(champ: impl Into<CaseDeFiche>, fiche: Valeur, par: DitPar) -> Ecart {
         let (ou, lu) = match &par {
             DitPar::Certificat { certificat, fichier, page } => (format!("le certificat ({}, page {}) disait", fichier, page), certificat.clone()),
             DitPar::Aem { aem, fichier, page } => (format!("l'AEM ({}, page {}) disait", fichier, page), aem.clone()),
             DitPar::Bulletin { bulletin, fichier, page } => (format!("le bulletin ({}, page {}) disait", fichier, page), bulletin.clone()),
-            DitPar::Dsn { dsn, mois } => (format!("la DSN {} disait", socle::texte::de(&Mois::en_clair(mois))), en_mots(dsn)),
+            DitPar::Dsn { dsn, mois } => (format!("la DSN {} disait", socle::texte::de(&mois.libelle(socle::mois::Graphie::Accentuee))), en_mots(dsn)),
         };
         let dit = format!("{} « {} », la fiche dit « {} » : la fiche fait foi", ou, lu, en_mots(&fiche));
-        Ecart { champ: champ.to_string(), fiche, par, dit }
+        Ecart { champ: champ.into(), fiche, par, dit }
     }
 }
 
 /// UNE FICHE QUE L'IMPORT CREE, COMPLETE OU LAISSE, ou sur laquelle il a a redire.
 #[derive(Debug, Clone, Serialize)]
 pub struct FicheImportee {
-    /// `entreprise`, `salarie` ou `spectacle`.
-    pub nom: &'static str,
+    pub nom: NomDeFiche,
     pub cle: Option<String>,
     pub libelle: String,
     pub etat: EtatFiche,
@@ -319,7 +317,7 @@ pub struct FicheImportee {
 }
 
 impl FicheImportee {
-    pub fn new(nom: &'static str, cle: Option<&str>, libelle: &str, etat: EtatFiche, ecarts: Vec<Ecart>, anomalies: Vec<Anomalie>, donnees: &Saisie) -> FicheImportee {
+    pub fn new(nom: NomDeFiche, cle: Option<&str>, libelle: &str, etat: EtatFiche, ecarts: Vec<Ecart>, anomalies: Vec<Anomalie>, donnees: &Saisie) -> FicheImportee {
         let mut f = FicheImportee {
             nom,
             cle: cle.map(String::from),
@@ -331,7 +329,7 @@ impl FicheImportee {
             completer: Vec::new(),
             lu_dans: None,
             lu_dans_dit: None,
-            pastille: Pastille::de("a_faire", "à créer"),
+            pastille: Pastille::de(EtatDEcran::AFaire, "à créer"),
         };
         f.ajouter_ecarts(ecarts);
         f.poser(donnees, anomalies);
@@ -359,15 +357,15 @@ impl FicheImportee {
     /// (`completer::ajouter`).
     pub fn noter(&mut self, champs: &Saisie, origine: &Origine) {
         for (k, v) in champs.cases() {
-            if !self.completer.iter().any(|c| &c.champ == k) {
-                self.completer.push(Completee { champ: k.clone(), valeur: v.clone(), origine: origine.clone(), dit: String::new() });
+            if !self.completer.iter().any(|c| c.champ == *k) {
+                self.completer.push(Completee { champ: *k, valeur: v.clone(), origine: origine.clone(), dit: String::new() });
             }
         }
     }
 
     /// Le numero d'objet d'un spectacle a creer, en capitales.
     pub fn numero_objet(&self) -> Option<String> {
-        self.donnees.mot("numero_objet").map(|n| n.to_uppercase())
+        self.donnees.mot(droit::fiche::CaseSpectacle::NumeroObjet).map(|n| n.to_uppercase())
     }
 
     /// La fiche s'ecrit-elle : a creer, ou existante avec des cases a completer.
@@ -378,11 +376,11 @@ impl FicheImportee {
     /// Ou elle en est (`pastille`), d'ou elle vient (`lu_dans_dit`), chaque case qu'une piece remplit (`completer.dit`).
     fn dire(&mut self) {
         self.pastille = match self.etat {
-            EtatFiche::Completee => Pastille::de("fait", "complétée"),
-            EtatFiche::Existante if !self.completer.is_empty() => Pastille::de("a_faire", "à compléter"),
-            EtatFiche::Existante => Pastille::de("fait", "existe déjà"),
-            EtatFiche::Creee => Pastille::de("fait", "créée"),
-            EtatFiche::ACreer => Pastille::de("a_faire", "à créer"),
+            EtatFiche::Completee => Pastille::de(EtatDEcran::Fait, "complétée"),
+            EtatFiche::Existante if !self.completer.is_empty() => Pastille::de(EtatDEcran::AFaire, "à compléter"),
+            EtatFiche::Existante => Pastille::de(EtatDEcran::Fait, "existe déjà"),
+            EtatFiche::Creee => Pastille::de(EtatDEcran::Fait, "créée"),
+            EtatFiche::ACreer => Pastille::de(EtatDEcran::AFaire, "à créer"),
         };
         self.lu_dans_dit = self.lu_dans.as_ref().map(|o| format!("Lu dans {}", o.en_mots()));
         let completee = self.etat == EtatFiche::Completee;
@@ -435,7 +433,7 @@ impl EcartPaie {
             "pas" => "prélèvement à la source",
             autre => autre,
         };
-        let pastille = if gagne { Pastille::de("a_faire", "le bulletin l'emporte") } else { Pastille::de("information", "noté") };
+        let pastille = if gagne { Pastille::de(EtatDEcran::AFaire, "le bulletin l'emporte") } else { Pastille::de(EtatDEcran::Information, "noté") };
         EcartPaie { champ, source, valeur, bulletin, le_bulletin_l_emporte: gagne, champ_dit, pastille }
     }
 }
@@ -454,22 +452,19 @@ pub struct InfosPage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub salarie: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub debut: Option<String>,
+    pub debut: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fin: Option<String>,
+    pub fin: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mois: Option<String>,
+    pub mois: Option<Mois>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub paie: Option<EtatPaie>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contrat: Option<EtatContrat>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ecarts: Vec<EcartPaie>,
     /// Ce que le compte des heures, des cachets et des jours a releve.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub compteurs: Vec<String>,
     /// Ce que la page dit d'elle-meme qui ne se retrouve pas : le bulletin fait foi.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub avertissements: Vec<String>,
     /// Le contrat du bulletin, quand un autre contrat atteste aux memes dates est garde.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -502,7 +497,6 @@ pub struct FichierVu {
     pub chemin: String,
     /// La sorte du fichier, au tri (`tri::Sorte::nom`).
     pub sorte: &'static str,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub pages: Vec<PageVu>,
     pub sort: Sort,
     pub raison: String,
@@ -514,7 +508,7 @@ pub struct FichierVu {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub archive: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub mois: Option<String>,
+    pub mois: Option<Mois>,
     /// D'ou il vient : une copie, une archive.
     pub de_dit: Option<String>,
     /// « 3 pages ».
@@ -532,8 +526,8 @@ impl FichierVu {
         let nb = self.pages.len();
         self.pages_dit = socle::ecran::compte(nb, "page", "pages");
         for p in &mut self.pages {
-            p.page_dit = match p.infos.mois.as_deref().filter(|m| !m.is_empty()) {
-                Some(m) => format!("page {} ({})", p.page, Mois::en_clair(m)),
+            p.page_dit = match p.infos.mois {
+                Some(m) => format!("page {} ({})", p.page, m.libelle(Graphie::Accentuee)),
                 None => format!("page {}", p.page),
             };
             p.ou_dit = if nb > 1 { format!("{}, page {}", self.chemin, p.page) } else { self.chemin.clone() };
@@ -557,7 +551,7 @@ pub struct NonRepris {
 }
 
 /// Le dossier lu, fichier par fichier.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct TriVu {
     pub dossier: String,
     pub fichiers: Vec<FichierVu>,
@@ -569,17 +563,24 @@ pub struct TriVu {
     pub dit: String,
 }
 
+impl TriVu {
+    /// Aucun dossier lu encore.
+    pub fn aucun() -> TriVu {
+        TriVu { dossier: String::new(), fichiers: Vec::new(), comptes: ParSort::a_zero(), total: 0, non_repris: None, dit: String::new() }
+    }
+}
+
 // ------------------------------------------------------------------ les pieces lues
 
 /// Les bulletins lus : combien, de quand a quand, ce qu'ils ajoutent.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct BlocBulletins {
     pub pages: usize,
     pub lus: usize,
     pub repris: usize,
     pub par_logiciel: std::collections::BTreeMap<String, usize>,
-    pub du: Option<String>,
-    pub au: Option<String>,
+    pub du: Option<Jour>,
+    pub au: Option<Jour>,
     pub fiches_a_creer: usize,
     pub contrats_nouveaux: usize,
     pub contrats: Vec<ContratLu>,
@@ -590,13 +591,34 @@ pub struct BlocBulletins {
     pub dit: Option<String>,
 }
 
+impl BlocBulletins {
+    /// Aucun bulletin lu encore.
+    pub fn aucun() -> BlocBulletins {
+        BlocBulletins {
+            pages: 0,
+            lus: 0,
+            repris: 0,
+            par_logiciel: std::collections::BTreeMap::new(),
+            du: None,
+            au: None,
+            fiches_a_creer: 0,
+            contrats_nouveaux: 0,
+            contrats: Vec::new(),
+            paies_nouvelles: 0,
+            paies_completees: 0,
+            paies: Vec::new(),
+            dit: None,
+        }
+    }
+}
+
 /// Les certificats Congés Spectacles, ou les AEM en PDF, lus : combien, de quand a quand, ce qu'ils ajoutent, et ce qui
 /// reste a saisir dans une fiche qu'ils creent.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct BlocPieces {
     pub lus: usize,
-    pub du: Option<String>,
-    pub au: Option<String>,
+    pub du: Option<Jour>,
+    pub au: Option<Jour>,
     pub contrats_nouveaux: usize,
     pub contrats: Vec<ContratLu>,
     pub confirmes: usize,
@@ -618,23 +640,23 @@ pub struct Copie {
 // ------------------------------------------------------------------ la reponse
 
 /// CE QUE L'APERCU OU LA REPRISE D'UN DOSSIER REND (`importation-apercu`, `importer`).
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Importation {
     pub phrase: String,
     pub source: String,
     /// Les DSN lues, les fichiers d'AEM lus.
     pub dsn: usize,
     pub aem: usize,
-    pub premier_mois: String,
-    pub dernier_mois: String,
+    pub premier_mois: Option<Mois>,
+    pub dernier_mois: Option<Mois>,
     pub entreprise: Option<FicheImportee>,
     pub salaries: Vec<FicheImportee>,
     pub spectacles: Vec<FicheImportee>,
     /// Les contrats attestes par les AEM deposees.
     pub contrats: usize,
     pub contrats_nouveaux: usize,
-    pub contrats_du: Option<String>,
-    pub contrats_au: Option<String>,
+    pub contrats_du: Option<Jour>,
+    pub contrats_au: Option<Jour>,
     pub contrats_sans_fiche: usize,
     pub avertissements: Vec<String>,
     pub rien_a_faire: bool,
@@ -676,14 +698,6 @@ pub fn n_mots(n: usize, mot: &str) -> String {
     }
 }
 
-/// Un jour (`2026-11-02`) tel qu'une phrase le dit : « 02/11/2026 » ; ce qui n'en est pas un, tel quel.
-fn jour(t: &str) -> String {
-    match socle::date::Jour::du_texte(t) {
-        Some(j) => j.jj_mm_aaaa(),
-        None => t.to_string(),
-    }
-}
-
 impl Importation {
     /// Les fiches de la reponse : l'entreprise, les salaries, les spectacles.
     pub fn fiches_mut(&mut self) -> impl Iterator<Item = &mut FicheImportee> {
@@ -698,11 +712,9 @@ impl Importation {
         let s = |k: usize| if k > 1 { "s" } else { "" };
         let creer = |k: usize| if ecrit { if k > 1 { " créées" } else { " créée" } } else { " à créer" };
         // Les declarations.
-        let periode = if self.premier_mois.is_empty() { String::new() } else { format!(" ({} → {})", Mois::en_clair(&self.premier_mois), Mois::en_clair(&self.dernier_mois)) };
-        let contrats_du_au = match (&self.contrats_du, &self.contrats_au) {
-            (Some(du), Some(au)) => format!(" du {} au {}", jour(du), jour(au)),
-            _ => String::new(),
-        };
+        // Une periode ne se dit qu'avec ses deux bornes.
+        let periode: String = self.premier_mois.zip(self.dernier_mois).map(|(p, d)| format!(" ({} → {})", p.libelle(Graphie::Accentuee), d.libelle(Graphie::Accentuee))).into_iter().collect();
+        let contrats_du_au: String = self.contrats_du.zip(self.contrats_au).map(|(du, au)| format!(" du {} au {}", du.jj_mm_aaaa(), au.jj_mm_aaaa())).into_iter().collect();
         let contrats = if self.contrats > 0 {
             format!(
                 "{} contrat(s) attesté(s){} : {} {} à l'historique, {} déjà connu(s){}",
@@ -738,10 +750,7 @@ impl Importation {
             .into_iter()
             .filter(|x| !x.is_empty())
             .collect();
-            let du = match (&b.du, &b.au) {
-                (Some(d), Some(a)) => format!(" du {} au {}", jour(d), jour(a)),
-                _ => String::new(),
-            };
+            let du: String = b.du.zip(b.au).map(|(d, a)| format!(" du {} au {}", d.jj_mm_aaaa(), a.jj_mm_aaaa())).into_iter().collect();
             format!(
                 "{} bulletin{} lu{} sur {} page{}{} ; {} {}{}.",
                 b.lus,
@@ -769,10 +778,7 @@ impl Importation {
             .into_iter()
             .filter(|x| !x.is_empty())
             .collect();
-            let du = match (&c.du, &c.au) {
-                (Some(d), Some(a)) => format!(" du {} au {}", jour(d), jour(a)),
-                _ => String::new(),
-            };
+            let du: String = c.du.zip(c.au).map(|(d, a)| format!(" du {} au {}", d.jj_mm_aaaa(), a.jj_mm_aaaa())).into_iter().collect();
             c.dit = format!(
                 "{} {} lu{}{}{}.{}",
                 c.lus,
@@ -803,17 +809,14 @@ impl Importation {
         .collect();
         self.reprendre = quoi.join(", ");
         self.fiches_mut().for_each(FicheImportee::dire);
-        self.encart = (self.ecrit || self.rien_a_faire).then(|| Pastille::de("fait", "repris"));
+        self.encart = (self.ecrit || self.rien_a_faire).then(|| Pastille::de(EtatDEcran::Fait, "repris"));
     }
 
     /// La phrase de l'apercu : ce que le dossier lu donne ; rien n'est ecrit.
     pub fn dire_l_apercu(&mut self) {
         self.dire();
         let b = &self.bulletins;
-        let periode = match (&b.du, &b.au) {
-            (Some(du), Some(au)) => format!(" (du {} au {})", socle::ecran::quand(du), socle::ecran::quand(au)),
-            _ => String::new(),
-        };
+        let periode: String = b.du.zip(b.au).map(|(du, au)| format!(" (du {} au {})", du.jj_mm_aaaa(), au.jj_mm_aaaa())).into_iter().collect();
         self.phrase = format!(
             "Dans le dossier lu : {} bulletins lus{}, {} à reprendre, fiches à créer : {} ; DSN : {} ; AEM : {}. Rien n'est écrit.",
             b.lus,
@@ -827,6 +830,6 @@ impl Importation {
 
     /// La couleur de la phrase d'un import fait.
     pub fn fait(&mut self) {
-        self.couleur = Some(couleur_de_l_etat("fait"));
+        self.couleur = Some(couleur_de_l_etat(EtatDEcran::Fait));
     }
 }

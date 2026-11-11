@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use socle::echec::{erreur, Classe, R};
+use socle::echec::{erreur, Classe, Echec, R};
 
 const GARDER_COPIES: usize = 20;
 
@@ -13,7 +13,7 @@ pub fn sauver_avant(chemin: &Path) -> R<()> {
     if !chemin.exists() {
         return Ok(());
     }
-    let io = |e: std::io::Error| erreur(Classe::du_disque(&e), socle::echec::du_disque(chemin, &e));
+    let io = |e: std::io::Error| Echec { classe: Some(Classe::du_disque(&e)), ..socle::echec::du_disque(chemin, &e) };
     let Some(parent) = chemin.parent() else {
         return Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : le fichier à copier n'a pas de dossier."));
     };
@@ -34,7 +34,7 @@ pub fn sauver_avant(chemin: &Path) -> R<()> {
     anciennes.sort();
     if anciennes.len() > GARDER_COPIES {
         for vieille in &anciennes[..anciennes.len() - GARDER_COPIES] {
-            let _ = std::fs::remove_file(dossier.join(vieille));
+            socle::fichiers::effacer(&dossier.join(vieille))?;
         }
     }
     Ok(())

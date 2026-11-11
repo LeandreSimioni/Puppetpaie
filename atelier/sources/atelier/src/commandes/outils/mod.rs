@@ -21,7 +21,7 @@ pub(crate) fn code(r: Result<i32, socle::echec::Echec>) -> i32 {
     match r {
         Ok(c) => c,
         Err(e) => {
-            dire!("! {}", e.message);
+            dire!("! {}", e.en_lignes());
             2
         }
     }
@@ -37,7 +37,7 @@ pub(crate) fn nom(p: &std::path::Path) -> String {
 
 /// La valeur de l'option `nom`, que sa `Spec` pose par defaut : l'analyse l'a toujours ecrite.
 pub(crate) fn avec_defaut<'a>(args: &'a moteur::commandes::analyse::Args, nom: &str) -> Result<&'a str, socle::echec::Echec> {
-    args.texte(nom).ok_or_else(|| socle::echec::Echec { classe: Some(socle::echec::Classe::Illisible), message: format!("--{} n'a pas de valeur : sa `Spec` lui en donne une par defaut.", nom) })
+    args.texte(nom).ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Illisible, format!("--{} n'a pas de valeur : sa `Spec` lui en donne une par defaut.", nom)))
 }
 
 /// Un texte facultatif tel que l'outil l'affiche : `None` quand il n'est pas dit.

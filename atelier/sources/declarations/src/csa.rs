@@ -42,16 +42,18 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 use droit::contexte::Contexte;
+use droit::cotisation_etablissement::CotisationDEtablissement;
 use socle::forme::Nombre;
 use socle::texte::{euros, virgule};
-use socle::num::{add, div, mul, Decimal, Resultat};
+use socle::echec::R;
+use socle::num::{add, div, mul, Decimal};
 
-const MOIS_DE_DECLARATION: &str = "03";
-pub const CODE_CONTRIBUTION: &str = "079";
-pub const CODE_EXONERATION: &str = "080";
+const MOIS_DE_DECLARATION: u32 = 3;
+pub const CODE_CONTRIBUTION: CotisationDEtablissement = CotisationDEtablissement::Csa;
+pub const CODE_EXONERATION: CotisationDEtablissement = CotisationDEtablissement::ExonerationCsa;
 pub const CTP: &str = "998";
 const SEUIL: i64 = 250;
-const SEUIL_DEUX_MILLE: f64 = 2000.0;
+const SEUIL_DEUX_MILLE: i64 = 2000;
 const CODE_ALTERNANTS: &str = "A05";
 const CODE_DENOMINATEUR: &str = "A07";
 
@@ -60,7 +62,7 @@ const CODE_DENOMINATEUR: &str = "A07";
 pub struct Csa {
     pub millesime: i32,
     /// « 079 » (la contribution) ou « 080 » (l'exoneration, a 0.00).
-    pub code: &'static str,
+    pub code: CotisationDEtablissement,
     /// Le montant, a l'euro (L. 6242-1, VII).
     pub montant: Decimal,
     /// Le quotient A05 / A07, en pourcentage.
@@ -74,7 +76,7 @@ pub struct Csa {
 
 impl Csa {
     /// Le bloc S21.G00.82 : (code, montant).
-    pub fn bloc_82(&self) -> (&'static str, Decimal) {
+    pub fn bloc_82(&self) -> (CotisationDEtablissement, Decimal) {
         (self.code, self.montant)
     }
 
@@ -138,7 +140,7 @@ pub(crate) struct Effectifs {
 
 impl Effectifs {
     /// `config/effectifs.json` de la compagnie, lu par sa forme ; sans fichier, aucun effectif.
-    pub(crate) fn lus(ctx: &Contexte) -> Resultat<Effectifs> {
+    pub(crate) fn lus(ctx: &Contexte) -> R<Effectifs> {
         let chemin = ctx.racine.join(droit::contexte::EFFECTIFS);
         if !socle::fichiers::existe(&chemin) {
             return Ok(Effectifs { _quoi: None, annees: None });
@@ -158,11 +160,11 @@ impl Effectifs {
 struct EffectifDuCode {
     valeur: Nombre,
     #[serde(rename = "calcule_le")]
-    _calcule_le: Option<String>,
+    _calcule_le: Option<socle::paris::InstantEcrit>,
     #[serde(rename = "source")]
     _source: Option<String>,
     #[serde(rename = "dit_le")]
-    _dit_le: Option<String>,
+    _dit_le: Option<socle::date::Jour>,
 }
 
 /// La valeur d'un code du CRM 118 pour une annee (`config/effectifs.json`), ou `None`.
@@ -173,20 +175,20 @@ fn effectif_du_118(effectifs: &Effectifs, annee: i32, code: &str) -> Option<Deci
 /// L'effectif « excède deux mille salariés » pour l'annee N : au-dessus les cinq annees civiles N-4 a N (L. 6242-1, V ;
 /// L. 130-1, II, CSS). Une annee a 2 000 ou moins suffit a dire non ; une annee inconnue, sans annee sous le seuil,
 /// refuse.
-fn excede_deux_mille(ctx: &Contexte, n: i32) -> Resultat<bool> {
+fn excede_deux_mille(ctx: &Contexte, n: i32) -> R<bool> {
     let e = ctx.effectif()?;
     let mut inconnues = Vec::new();
     for a in n - 4..=n {
         match e.annee(a) {
-            Some(v) if v > SEUIL_DEUX_MILLE => {}
-            Some(_) => return Ok(false),
+            Some(v) if v <= Decimal::from(SEUIL_DEUX_MILLE) => return Ok(false),
+            Some(_au_dela) => {}
             None => inconnues.push(a.to_string()),
         }
     }
     if inconnues.is_empty() {
         return Ok(true);
     }
-    Err(format!(
+    Err(socle::refus!(
         "Contribution supplementaire a l'apprentissage {} : l'effectif depasse 250 salaries, mais le moteur ne sait pas s'il \
 excede 2 000 (le taux passe de 0,4 a 0,6 %, L. 6242-1, IV) : l'effectif moyen annuel de {} manque. L'Urssaf le renvoie en \
 compte rendu metier de nature 118 (code A01) : relever les retours. Rien n'est ecrit.",
@@ -197,25 +199,21 @@ compte rendu metier de nature 118 (code A01) : relever les retours. Rien n'est e
 
 /// Ce que la DSN de mars de l'annee N+1 porte au titre de N, ou `None` (un autre mois ; une fiche qui ne dit pas cinquante salaries ;
 /// une compagnie qui ne doit pas la taxe d'apprentissage pour N, ou qui n'atteint pas 250 salaries). Le moteur la porte sur l'etablissement principal.
-pub fn declaration(ctx: &Contexte, mois: &str, departs: &engagement::departs::Departs) -> Resultat<Option<Csa>> {
-    if mois.len() != 7 || &mois[5..7] != MOIS_DE_DECLARATION {
+pub fn declaration(ctx: &Contexte, mois: socle::mois::Mois, departs: &engagement::departs::Departs) -> R<Option<Csa>> {
+    if mois.numero() != MOIS_DE_DECLARATION {
         return Ok(None);
     }
-    let n: i32 = mois[..4].parse::<i32>().map_err(|_| format!("mois illisible : {}", mois))? - 1;
+    let n = mois.annee() - 1;
     // Redevable de la taxe d'apprentissage (L. 6242-1, I) : le motif de non-assujettissement de la fiche.
     if droit::apprentissage::taxe_apprentissage_non_due(&ctx.entreprise, n)? {
         return Ok(None);
     }
     // Au moins 250 salaries : l'effectif de l'annee N, la regle des cinq ans (L. 6242-1, V), comme au bloc 44 de decembre ;
     // un grand seuil, que seule une fiche de cinquante salaries et plus atteint (`Effectif::atteint`).
-    let assujettie = ctx.effectif()?.atteint(SEUIL, n + 1).map_err(|m| {
-        format!(
-            "DSN de mars {}, contribution supplementaire a l'apprentissage {} : {}",
-            n + 1,
-            n,
-            m
-        )
-    })?;
+    let assujettie = ctx
+        .effectif()?
+        .atteint(SEUIL, n + 1)
+        .map_err(|m| m.reformuler(|m| format!("DSN de mars {}, contribution supplementaire a l'apprentissage {} : {}", n + 1, n, m)))?;
     if !assujettie {
         return Ok(None);
     }
@@ -223,7 +221,7 @@ pub fn declaration(ctx: &Contexte, mois: &str, departs: &engagement::departs::De
     let (alternants, denominateur) =
         (effectif_du_118(&effectifs, n, CODE_ALTERNANTS), effectif_du_118(&effectifs, n, CODE_DENOMINATEUR));
     let (Some(alternants), Some(denominateur)) = (alternants, denominateur) else {
-        return Err(format!(
+        return Err(socle::refus!(
             "DSN de mars {} : la compagnie compte au moins 250 salaries et doit la taxe d'apprentissage ; la contribution \
 supplementaire a l'apprentissage {} (code du travail L. 6242-1) se calcule sur le quotient de ses alternants, que l'Urssaf \
 calcule et renvoie debut mars en compte rendu metier de nature 118 (fiche net-entreprises 2624) : l'effectif moyen annuel \
@@ -238,7 +236,7 @@ saisissent pas. Rien n'est ecrit.",
         ));
     };
     if denominateur <= Decimal::ZERO {
-        return Err(format!(
+        return Err(socle::refus!(
             "DSN de mars {} : le compte rendu metier 118 donne un effectif de determination du taux d'alternants ({}) nul \
 pour {} : le quotient de la contribution supplementaire a l'apprentissage ne se calcule pas. Rien n'est ecrit.",
             n + 1,
@@ -264,7 +262,7 @@ pour {} : le quotient de la contribution supplementaire a l'apprentissage ne se 
     if quotient >= Decimal::new(3, 0) {
         // L. 6242-1, II, dernier alinea : 3 % et une progression d'au moins 10 % sur l'annee precedente.
         let Some(avant) = effectif_du_118(&effectifs, n - 1, CODE_ALTERNANTS) else {
-            return Err(format!(
+            return Err(socle::refus!(
                 "DSN de mars {} : les alternants font {} % de l'effectif en {}, entre 3 et 5 % : la contribution \
 supplementaire a l'apprentissage n'est pas due si leur effectif a progresse d'au moins 10 % sur {} (L. 6242-1, II). \
 Le logiciel n'a pas l'effectif des alternants de {} (code {} du compte rendu metier 118) : relever les retours \
@@ -291,7 +289,7 @@ de {}. Rien n'est ecrit.",
         alsace = add(alsace, a[1]);
     }
     if add(assiette, alsace).is_zero() {
-        return Err(format!(
+        return Err(socle::refus!(
             "DSN de mars {} : la contribution supplementaire a l'apprentissage {} est due (alternants {} % de l'effectif), \
 et aucune paie validee de {} ne porte d'assiette de la taxe d'apprentissage (CTP 992 ou 993) : elle se calcule sur cette \
 assiette (L. 6242-1, III). Rien n'est ecrit.",

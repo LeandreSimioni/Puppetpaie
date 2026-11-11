@@ -19,6 +19,7 @@
 
 use std::collections::BTreeMap;
 use socle::echec::Classe;
+use socle::paris::Naif;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -94,7 +95,8 @@ pub struct Sauvegarde {
     pub exclus: usize,
     /// Purges entre l'inventaire et l'envoi : pas un incident.
     pub disparus: usize,
-    pub secondes: f64,
+    /// La duree du passage, en secondes, au dixieme.
+    pub secondes: socle::num::Decimal,
     /// Le detail brut de ce qui n'est pas passe (`dossier : erreur`), pour la ligne de commande. La fenetre ne le montre
     /// pas : un dossier reporte au passage suivant n'est pas un incident.
     pub incidents: Vec<String>,
@@ -139,9 +141,9 @@ const FICHIER_ILLISIBLE: &str = "fichier illisible sur ce poste";
 pub fn cause_de(e: &ErreurGoogle) -> &'static str {
     if envois::drive::passagere(e) {
         GOOGLE_INDISPONIBLE
-    } else if e.classe == Some(Classe::DelaiDepasse) || e.message.to_lowercase().contains("timed out") {
+    } else if e.echec.classe == Some(Classe::DelaiDepasse) || e.echec.phrase.to_lowercase().contains("timed out") {
         GOOGLE_MUET
-    } else if e.classe == Some(Classe::Disque) {
+    } else if e.echec.classe == Some(Classe::Disque) {
         FICHIER_ILLISIBLE
     } else {
         GOOGLE_REFUSE
@@ -203,38 +205,31 @@ fn ce_qui_manque(nd: usize, nf: usize) -> String {
 }
 
 /// « depuis 09:51 » le jour meme, « depuis hier », « depuis le 18/10 ».
-fn depuis_quand(depuis: i64, maintenant: i64) -> String {
-    let iso = socle::paris::iso_de_naif(depuis);
-    match maintenant.div_euclid(UNE_JOURNEE) - depuis.div_euclid(UNE_JOURNEE) {
+fn depuis_quand(depuis: Naif, maintenant: Naif) -> String {
+    let iso = depuis.iso();
+    match maintenant.jour().moins(&depuis.jour()) {
         0 => format!("depuis {}", &iso[11..16]),
         1 => "depuis hier".to_string(),
         _ => format!("depuis le {}/{}", &iso[8..10], &iso[5..7]),
     }
 }
 
-/// `AAAA-MM-JJ HH:MM` (l'heure de Paris, comme `quand`) en heure naive ; une heure qui ne se lit pas abime l'index.
-fn naif(quand: &str) -> Result<i64, ErreurGoogle> {
-    socle::paris::naif_de_iso(&quand.replacen(' ', "T", 1)).ok_or_else(|| index_illisible(socle::echec::APart { detail: Some(format!("heure illisible : {}", quand)), ..Default::default() }))
-}
 
 /// La phrase de ce qui persiste dans l'index (`echecs`, `derniere_complete`), a l'heure naive `maintenant`, ou `None`.
-pub fn phrase_persistante(index: &Index, maintenant: i64) -> Result<Option<String>, ErreurGoogle> {
+pub fn phrase_persistante(index: &Index, maintenant: Naif) -> Result<Option<String>, ErreurGoogle> {
     let Some(echecs) = index.echecs.as_ref().filter(|e| !e.is_empty()) else { return Ok(None) };
     // (cle, depuis, cause) de chaque echec, et ceux qui durent.
-    let mut tous: Vec<(&String, i64, &str, bool)> = Vec::new();
+    let mut tous: Vec<(&String, Naif, &str, bool)> = Vec::new();
     for (cle, e) in echecs {
-        let depuis = naif(&e.depuis)?;
-        tous.push((cle, depuis, e.cause.as_str(), e.passages >= PASSAGES_QUI_DURENT || maintenant - depuis >= UNE_JOURNEE));
+        let depuis = e.depuis.naif();
+        tous.push((cle, depuis, e.cause.as_str(), e.passages >= PASSAGES_QUI_DURENT || maintenant.depuis(depuis) >= UNE_JOURNEE));
     }
-    let complete = match &index.derniere_complete {
-        Some(c) => Some(naif(c)?),
-        None => None,
-    };
+    let complete = index.derniere_complete.map(|c| c.naif());
     let durent: Vec<_> = tous.iter().filter(|t| t.3).collect();
     let (retenus, par_l_item): (Vec<_>, bool) = if !durent.is_empty() {
         (durent, true)
     } else {
-        match complete.filter(|c| maintenant - c >= UNE_JOURNEE) {
+        match complete.filter(|c| maintenant.depuis(*c) >= UNE_JOURNEE) {
             Some(_) => (tous.iter().collect(), false),
             None => return Ok(None),
         }
@@ -266,9 +261,17 @@ pub fn souci(racine: &Path) -> Result<Option<String>, ErreurGoogle> {
     }
 }
 
-fn lisible(octets: u64) -> String {
+/// Des octets en mega-octets (2^20), au dixieme : « 3.5 ».
+pub fn mo(octets: u64) -> String {
+    match socle::num::quotient(u128::from(octets), 1_048_576, 1) {
+        Some(t) => t,
+        None => unreachable!("un mega-octet n'est pas nul"),
+    }
+}
+
+pub(crate) fn lisible(octets: u64) -> String {
     if octets >= 1024 * 1024 {
-        format!("{:.1} Mo", octets as f64 / (1024.0 * 1024.0))
+        format!("{} Mo", mo(octets))
     } else if octets >= 1024 {
         format!("{} Ko", octets / 1024)
     } else {
@@ -330,7 +333,7 @@ fn parcourir(racine: &Path, dossier: &Path, sortie: &mut Vec<PathBuf>) -> Result
         };
         if genre.is_dir() {
             parcourir(racine, &chemin, sortie)?;
-        } else if let Ok(rel) = chemin.strip_prefix(racine) {
+        } else if let Some(rel) = socle::fichiers::sous(&chemin, racine) {
             sortie.push(rel.to_path_buf());
         }
     }
@@ -360,7 +363,15 @@ pub fn inventaire(racine: &Path) -> Result<(Vec<(String, Etat)>, usize), ErreurG
             Err(e) => return Err(ErreurGoogle::fichier(&e, &complet)),
         };
         let relatif = rel.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect::<Vec<_>>().join("/");
-        trouves.push((relatif, Etat { octets: m.len(), mtime: socle::paris::mtime(&m) as i64 }));
+        // La date du fichier dit s'il a change depuis son dernier envoi : datee hors du calendrier, elle ne le dit pas, et
+        // la sauvegarde s'arrete en le nommant plutot que de l'envoyer a l'aveugle.
+        let Some(date) = socle::paris::mtime(&m) else {
+            return Err(ErreurGoogle::nouvelle(
+                Classe::Disque,
+                format!("{} est daté hors du calendrier (années 1 à 9999) : régler la date du fichier.", socle::date::repr_texte(&complet.display().to_string())),
+            ));
+        };
+        trouves.push((relatif, Etat { octets: m.len(), mtime: date.entieres() }));
     }
     Ok((trouves, ecartes))
 }
@@ -379,12 +390,12 @@ pub fn chemin_index(racine: &Path) -> PathBuf {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Index {
-    pub quand: String,
+    pub quand: socle::paris::HeureDeSaisie,
     pub racine_drive: String,
     pub dossiers: BTreeMap<String, String>,
     pub fichiers: BTreeMap<String, Etat>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub derniere_complete: Option<String>,
+    pub derniere_complete: Option<socle::paris::HeureDeSaisie>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub echecs: Option<BTreeMap<String, EchecIndexe>>,
 }
@@ -393,15 +404,11 @@ pub struct Index {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EchecIndexe {
-    pub depuis: String,
+    pub depuis: socle::paris::HeureDeSaisie,
     pub passages: i64,
     pub cause: String,
 }
 
-/// Le refus d'un index qui ne se lit pas : la phrase en mots, le detail a part.
-fn index_illisible(a_part: socle::echec::APart) -> ErreurGoogle {
-    ErreurGoogle::nouvelle(Classe::Illisible, socle::echec::avec("L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.", a_part))
-}
 
 /// L'index, ou `None` si aucune sauvegarde ne l'a encore ecrit. Un index qui ne se lit pas se refuse.
 pub fn lire_index(racine: &Path) -> Result<Option<Index>, ErreurGoogle> {
@@ -409,11 +416,11 @@ pub fn lire_index(racine: &Path) -> Result<Option<Index>, ErreurGoogle> {
     if !p.exists() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(&p, "L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.").map(Some).map_err(|m| ErreurGoogle::nouvelle(Classe::Illisible, m))
+    socle::forme::lire_fichier(&p, "L'index de la sauvegarde ne se lit pas : le mettre de côté, la sauvegarde suivante le refait.").map(Some).map_err(|m| ErreurGoogle::from(m.reclasser(Classe::Illisible)))
 }
 
 pub fn ecrire_index(racine: &Path, index: &Index) -> Result<(), ErreurGoogle> {
-    socle::ecriture::ecrire_json(&chemin_index(racine), index, 1).map_err(|e| ErreurGoogle::nouvelle(Classe::Disque, e))
+    socle::ecriture::ecrire_json(&chemin_index(racine), index, 1).map_err(|e| ErreurGoogle::from(e.reclasser(Classe::Disque)))
 }
 
 /// `rien_n_a_bouge` : le disque est-il identique au dernier passage ? SANS RESEAU. Taille et date
@@ -424,7 +431,11 @@ pub fn ecrire_index(racine: &Path, index: &Index) -> Result<(), ErreurGoogle> {
 /// du Drive (`--racine-drive`) laisserait la veille croire que tout est sauvegarde la ou on l'attend. Un index d'une autre
 /// racine (ou qui n'en dit aucune) donne non.
 pub fn rien_n_a_bouge(racine: &Path, racine_drive: &str) -> Result<bool, ErreurGoogle> {
-    let Some(index) = lire_index(racine)? else { return Ok(false) };
+    // Sans index, rien ne dit ce qui est sauvegarde.
+    Ok(lire_index(racine)?.map(|index| comme_l_index(racine, racine_drive, index)).transpose()?.is_some_and(|oui| oui))
+}
+
+fn comme_l_index(racine: &Path, racine_drive: &str, index: Index) -> Result<bool, ErreurGoogle> {
     if index.racine_drive != racine_drive || index.fichiers.is_empty() {
         return Ok(false);
     }
@@ -439,7 +450,7 @@ pub fn rien_n_a_bouge(racine: &Path, racine_drive: &str) -> Result<bool, ErreurG
 /// Ce que dit l'index du dernier passage (`derniere`) : quand, combien, vers quelle racine du Drive. Pour l'affichage.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Derniere {
-    pub quand: String,
+    pub quand: socle::paris::HeureDeSaisie,
     pub fichiers: usize,
     pub racine_drive: String,
 }

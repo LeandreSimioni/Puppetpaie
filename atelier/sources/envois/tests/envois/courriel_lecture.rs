@@ -71,7 +71,7 @@ impl Serialize for Reponses {
 #[serde(deny_unknown_fields)]
 struct DateLue {
     texte: String,
-    attendu: Option<String>,
+    attendu: Option<socle::date::Jour>,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
@@ -91,7 +91,7 @@ fn reecrire() -> bool {
 
 #[test]
 fn la_lecture_des_reponses_et_le_questionnaire_rendent_l_oracle() {
-    let attendu: Oracle = socle::forme::lire_fichier(&chemin(), "L'oracle de la lecture des courriels ne se lit pas.").unwrap_or_else(|e| panic!("{}", socle::echec::phrase_de(&e)));
+    let attendu: Oracle = socle::forme::lire_fichier(&chemin(), "L'oracle de la lecture des courriels ne se lit pas.").unwrap_or_else(|e| panic!("{}", e.phrase));
     assert!(attendu.messages.len() > 200, "le fichier de cas est complet");
     let messages: Vec<MessageLu> = attendu
         .messages
@@ -110,7 +110,12 @@ fn la_lecture_des_reponses_et_le_questionnaire_rendent_l_oracle() {
                 texte: propre,
                 adresse: adresse_de(&m),
                 message_id: identifiant_de(&m),
-                date: date_de(&m, "MAINTENANT"),
+                date: {
+                    // L'heure de la releve, que l'oracle ecrit `MAINTENANT`.
+                    let releve = socle::paris::InstantEcrit::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(1, 1, 1).unwrap(), 0, 0, 0).unwrap());
+                    let lue = date_de(&m, releve);
+                    if lue == releve { "MAINTENANT".to_string() } else { lue.iso() }
+                },
                 defaut_tirets: cas.defaut_tirets,
                 reponses: Reponses(reponses),
                 fiche,
@@ -124,7 +129,7 @@ fn la_lecture_des_reponses_et_le_questionnaire_rendent_l_oracle() {
         corps: fq::CORPS.to_string(),
         html: fq::HTML.to_string(),
         alphabet: fq::ALPHABET_CODE.to_string(),
-        questions: fq::QUESTIONS.iter().map(|(a, b, c)| (a.to_string(), b.to_string(), c.to_string())).collect(),
+        questions: fq::QUESTIONS.iter().map(|(a, b, c)| (a.to_string(), b.to_string(), droit::fiche::NomDeCase::from(*c).to_string())).collect(),
         messages,
         dates: attendu.dates.iter().map(|d| DateLue { texte: d.texte.clone(), attendu: fq::date_lue(&d.texte) }).collect(),
         pays: attendu.pays.iter().map(|p| PaysLu { texte: p.texte.clone(), attendu: fq::pays_lu(&p.texte).unwrap().map(|(c, u)| (c, u.map(str::to_string))) }).collect(),

@@ -3,7 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
-use socle::num::Resultat;
+use socle::echec::R;
+use socle::mois::Mois;
 
 /// Ce que la compagnie dit de ses mois Conges Spectacles regularises hors DSN, sous sa racine.
 pub const CASC_SVP: &str = "config/casc-svp.json";
@@ -21,17 +22,17 @@ pub struct CascSvp {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegularisationNotee {
-    pub annee: String,
-    pub mois: Vec<String>,
-    pub montant: String,
-    pub calcule: String,
-    pub vire_le: String,
-    pub note_le: String,
+    pub annee: socle::mois::Annee,
+    pub mois: Vec<Mois>,
+    pub montant: rust_decimal::Decimal,
+    pub calcule: rust_decimal::Decimal,
+    pub vire_le: socle::date::Jour,
+    pub note_le: socle::date::Jour,
     pub qui: String,
 }
 
 /// `config/casc-svp.json` de la compagnie, lu par sa forme ; `None` s'il n'existe pas (aucune annee notee).
-pub fn lue(ctx: &Contexte) -> Resultat<Option<CascSvp>> {
+pub fn lue(ctx: &Contexte) -> R<Option<CascSvp>> {
     let p = ctx.racine.join(CASC_SVP);
     if !p.exists() {
         return Ok(None);
@@ -41,15 +42,7 @@ pub fn lue(ctx: &Contexte) -> Resultat<Option<CascSvp>> {
 
 /// `mois_regularises` : les mois de `config/casc-svp.json` regularises hors DSN, tries (un fichier absent n'en
 /// regularise aucun).
-pub fn mois_regularises(ctx: &Contexte) -> Resultat<Vec<String>> {
-    let mut mois: Vec<String> = vec![];
-    for reg in lue(ctx)?.iter().flat_map(|d| &d.regularisations) {
-        for m in &reg.mois {
-            if !mois.contains(m) {
-                mois.push(m.clone());
-            }
-        }
-    }
-    mois.sort();
-    Ok(mois)
+pub fn mois_regularises(ctx: &Contexte) -> R<Vec<Mois>> {
+    let mois: std::collections::BTreeSet<Mois> = lue(ctx)?.iter().flat_map(|d| &d.regularisations).flat_map(|r| r.mois.iter().copied()).collect();
+    Ok(mois.into_iter().collect())
 }

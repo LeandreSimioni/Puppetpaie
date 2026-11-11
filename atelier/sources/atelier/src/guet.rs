@@ -31,6 +31,8 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+use socle::echec::{refus, R};
+
 /// Le seuil de l'orchestrateur, fixe, et celui du sous-agent par defaut.
 const SEUIL: u64 = 300_000;
 /// Ce qu'on lit de la fin d'un transcript : assez pour y trouver le dernier tour.
@@ -51,22 +53,22 @@ struct Options {
     transcript: Option<PathBuf>,
 }
 
-fn options(args: &[String]) -> Result<Options, String> {
+fn options(args: &[String]) -> R<Options> {
     let mut o = Options { seuil: SEUIL, commits: false, transcript: None };
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--commits" => o.commits = true,
             "--seuil" | "--transcript" => {
-                let v = args.get(i + 1).ok_or_else(|| format!("{} attend une valeur", args[i]))?;
+                let v = args.get(i + 1).ok_or_else(|| refus!("{} attend une valeur", args[i]))?;
                 if args[i] == "--seuil" {
-                    o.seuil = v.replace('_', "").parse().map_err(|_| format!("--seuil : nombre attendu, pas {:?}", v))?;
+                    o.seuil = v.replace('_', "").parse().map_err(|_| refus!("--seuil : nombre attendu, pas {:?}", v))?;
                 } else {
                     o.transcript = Some(PathBuf::from(v));
                 }
                 i += 1;
             }
-            a => return Err(format!("option inconnue : {}", a)),
+            a => return Err(refus!("option inconnue : {}", a)),
         }
         i += 1;
     }
@@ -74,7 +76,8 @@ fn options(args: &[String]) -> Result<Options, String> {
 }
 
 /// `moteur-atelier guet ...` : le code de sortie (0 quand il sonne, 1 sans transcript, 2 sur une option fausse).
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+    let args: &[String] = &socle::ligne::textes(args);
     if args.iter().any(|a| a == "--aide" || a == "-h" || a == "--help") {
         dire!("{}", AIDE);
         return 0;
@@ -82,14 +85,14 @@ pub fn commande(args: &[String]) -> i32 {
     let o = match options(args) {
         Ok(o) => o,
         Err(m) => {
-            eprintln!("{}\n{}", m, AIDE);
+            eprintln!("{}\n{}", m.en_lignes(), AIDE);
             return 2;
         }
     };
     match guetter(&o) {
         Ok(code) => code,
         Err(m) => {
-            eprintln!("{}", m);
+            eprintln!("{}", m.en_lignes());
             1
         }
     }
@@ -103,11 +106,11 @@ fn dit(u: Option<u64>) -> String {
     }
 }
 
-fn guetter(o: &Options) -> Result<i32, String> {
+fn guetter(o: &Options) -> R<i32> {
     let depot = depot()?;
     let projets = match dossier_maison() {
         Some(m) => m.join(".claude").join("projects"),
-        None => return Err("ni HOME ni USERPROFILE : pas de dossier ~/.claude/projects".to_string()),
+        None => return Err(refus("ni HOME ni USERPROFILE : pas de dossier ~/.claude/projects")),
     };
     let projet = dossier_des_transcripts(&projets, &depot)?;
     let moi = match &projet {
@@ -118,9 +121,9 @@ fn guetter(o: &Options) -> Result<i32, String> {
         (Some(t), _) => t.clone(),
         (None, Some(p)) => match plus_recent(jsonl_des_sous_agents(p)?)? {
             Some(s) => s,
-            None => return Err(format!("aucun transcript de sous-agent sous {}", p.display())),
+            None => return Err(refus!("aucun transcript de sous-agent sous {}", p.display())),
         },
-        (None, None) => return Err(format!("aucun transcript sous {} pour {} ni ses parents", projets.display(), depot.display())),
+        (None, None) => return Err(refus!("aucun transcript sous {} pour {} ni ses parents", projets.display(), depot.display())),
     };
     dire!("guet : {}, seuil {}{}", sous_agent.display(), o.seuil, if o.commits { ", et au prochain commit" } else { "" });
 
@@ -164,18 +167,18 @@ fn guetter(o: &Options) -> Result<i32, String> {
 
 /// Le depot ou l'on est (`git rev-parse --show-toplevel`) ; hors d'un depot, le dossier courant (la seance peut etre
 /// lancee d'un de ses parents).
-fn depot() -> Result<PathBuf, String> {
-    let ici = std::env::current_dir().map_err(|e| format!("le dossier courant ne se lit pas ({})", e))?;
-    let sortie = std::process::Command::new("git").args(["rev-parse", "--show-toplevel"]).current_dir(&ici).output().map_err(|e| format!("git ne se lance pas ({})", e))?;
+fn depot() -> R<PathBuf> {
+    let ici = std::env::current_dir().map_err(|e| refus!("le dossier courant ne se lit pas ({})", e))?;
+    let sortie = std::process::Command::new("git").args(["rev-parse", "--show-toplevel"]).current_dir(&ici).output().map_err(|e| refus!("git ne se lance pas ({})", e))?;
     let lu = String::from_utf8_lossy(&sortie.stdout).trim().to_string();
     Ok(if sortie.status.success() && !lu.is_empty() { PathBuf::from(lu) } else { ici })
 }
 
 /// Le commit de HEAD du depot.
-fn head(depot: &Path) -> Result<String, String> {
-    let sortie = std::process::Command::new("git").arg("-C").arg(depot).args(["rev-parse", "HEAD"]).output().map_err(|e| format!("git ne se lance pas ({})", e))?;
+fn head(depot: &Path) -> R<String> {
+    let sortie = std::process::Command::new("git").arg("-C").arg(depot).args(["rev-parse", "HEAD"]).output().map_err(|e| refus!("git ne se lance pas ({})", e))?;
     if !sortie.status.success() {
-        return Err(format!("{} : git rev-parse HEAD refuse ({})", depot.display(), String::from_utf8_lossy(&sortie.stderr).trim()));
+        return Err(refus!("{} : git rev-parse HEAD refuse ({})", depot.display(), String::from_utf8_lossy(&sortie.stderr).trim()));
     }
     Ok(String::from_utf8_lossy(&sortie.stdout).trim().to_string())
 }
@@ -191,7 +194,7 @@ fn nom_du_dossier(chemin: &Path) -> String {
 }
 
 /// Le dossier de transcripts de la seance : celui du depot ou d'un de ses parents, le plus recent qui porte des `.jsonl`.
-fn dossier_des_transcripts(projets: &Path, depot: &Path) -> Result<Option<PathBuf>, String> {
+fn dossier_des_transcripts(projets: &Path, depot: &Path) -> R<Option<PathBuf>> {
     let mut retenu: Option<(SystemTime, PathBuf)> = None;
     for p in depot.ancestors().map(|d| projets.join(nom_du_dossier(d))) {
         let mut dates = Vec::new();
@@ -207,11 +210,11 @@ fn dossier_des_transcripts(projets: &Path, depot: &Path) -> Result<Option<PathBu
     Ok(retenu.map(|(_, p)| p))
 }
 
-fn date(f: &Path) -> Result<SystemTime, String> {
+fn date(f: &Path) -> R<SystemTime> {
     std::fs::metadata(f).and_then(|m| m.modified()).map_err(|e| socle::echec::du_disque(f, &e))
 }
 
-fn plus_recent(fichiers: Vec<PathBuf>) -> Result<Option<PathBuf>, String> {
+fn plus_recent(fichiers: Vec<PathBuf>) -> R<Option<PathBuf>> {
     let mut dates = Vec::new();
     for f in fichiers {
         dates.push((date(&f)?, f));
@@ -220,7 +223,7 @@ fn plus_recent(fichiers: Vec<PathBuf>) -> Result<Option<PathBuf>, String> {
 }
 
 /// Les entrees d'un dossier ; un dossier qui n'existe pas n'en a aucune.
-fn entrees(dossier: &Path) -> Result<Vec<PathBuf>, String> {
+fn entrees(dossier: &Path) -> R<Vec<PathBuf>> {
     if !dossier.is_dir() {
         return Ok(Vec::new());
     }
@@ -232,12 +235,12 @@ fn entrees(dossier: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 /// Les `*.jsonl` d'un dossier (pas ses sous-dossiers).
-fn jsonl_de(dossier: &Path) -> Result<Vec<PathBuf>, String> {
+fn jsonl_de(dossier: &Path) -> R<Vec<PathBuf>> {
     Ok(entrees(dossier)?.into_iter().filter(|p| p.extension().is_some_and(|x| x == "jsonl") && p.is_file()).collect())
 }
 
 /// Les `*/subagents/*.jsonl` d'un dossier de transcripts.
-fn jsonl_des_sous_agents(dossier: &Path) -> Result<Vec<PathBuf>, String> {
+fn jsonl_des_sous_agents(dossier: &Path) -> R<Vec<PathBuf>> {
     let mut v = Vec::new();
     for p in entrees(dossier)?.into_iter().filter(|p| p.is_dir()) {
         v.extend(jsonl_de(&p.join("subagents"))?);
@@ -246,7 +249,7 @@ fn jsonl_des_sous_agents(dossier: &Path) -> Result<Vec<PathBuf>, String> {
 }
 
 /// Le contexte du dernier tour d'un transcript, s'il en porte un : lit la fin du fichier seulement.
-fn dernier_usage(chemin: &Path) -> Result<Option<u64>, String> {
+fn dernier_usage(chemin: &Path) -> R<Option<u64>> {
     let lire = || -> std::io::Result<(Vec<u8>, bool)> {
         let mut f = std::fs::File::open(chemin)?;
         let taille = f.seek(SeekFrom::End(0))?;
@@ -362,7 +365,7 @@ impl<'de> Deserialize<'de> for Usage {
 /// Le contexte du dernier tour que portent des lignes JSON (une ligne sans usage n'est pas un tour). Quand la lecture
 /// commence au milieu du fichier (`coupee_en_tete`), sa premiere ligne est coupee ; une derniere ligne sans fin de ligne
 /// s'ecrit encore : elles ne se lisent pas, elles ne comptent pas.
-fn dernier_usage_d_octets(octets: &[u8], coupee_en_tete: bool, chemin: &Path) -> Result<Option<u64>, String> {
+fn dernier_usage_d_octets(octets: &[u8], coupee_en_tete: bool, chemin: &Path) -> R<Option<u64>> {
     let lignes: Vec<&[u8]> = octets.split(|&b| b == b'\n' || b == b'\r').collect();
     let en_cours = !octets.ends_with(b"\n");
     for (i, ligne) in lignes.iter().enumerate().rev() {

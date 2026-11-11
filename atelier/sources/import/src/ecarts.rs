@@ -36,7 +36,7 @@ use compagnie::incidents;
 use declarations::champs::Saisie;
 use droit::contexte::Contexte;
 use engagement::ecarts::{Comparaison, Grandeur};
-use socle::echec::{Echec, R};
+use socle::echec::R;
 
 /// L'endroit, dans le journal des incidents.
 pub const OU: &str = "ecarts_import";
@@ -81,20 +81,20 @@ pub enum Detail {
 /// qualite de cadre, d'ou vient le taux AT/MP), et pour un ecart, notre taux, le leur et l'ecart relatif.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Cas {
-    mois: String,
+    mois: socle::mois::Mois,
     #[serde(skip_serializing_if = "Option::is_none")]
     logiciel: Option<String>,
-    nature: String,
+    nature: droit::natures::NatureDeContrat,
     statut: Option<String>,
     cadre: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     taux_atmp: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    notre_taux: Option<String>,
+    notre_taux: Option<socle::num::Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    leur_taux: Option<String>,
+    leur_taux: Option<socle::num::Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ecart_relatif: Option<String>,
+    ecart_relatif: Option<socle::num::Decimal>,
 }
 
 fn montant() -> &'static Regex {
@@ -147,7 +147,7 @@ fn comparees(racine: &Path) -> R<BTreeSet<String>> {
 /// paies qui ne sont plus a comparer : comparees, ou que leurs pieces empechent de comparer (une paie que le calcul a
 /// refusee se compare de nouveau la fois suivante).
 pub fn rapports(ctx: &Contexte) -> R<(Vec<Rapport>, Vec<String>)> {
-    let importes = engagement::importe::tous(&ctx.racine).map_err(Echec::from)?;
+    let importes = engagement::importe::tous(&ctx.racine)?;
     let deja = comparees(&ctx.racine)?;
     let comparaisons: Vec<Comparaison> = importes.iter().flat_map(|i| engagement::ecarts::comparer(&ctx.racine, i, &|e| deja.contains(e))).collect();
     let faites: Vec<String> = comparaisons.iter().filter(|c| !c.a_refaire).map(|c| c.empreinte.clone()).collect();
@@ -166,11 +166,12 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
         Some(l) => l.clone(),
         None => "autre".to_string(),
     };
-    let nombre = |t: Option<socle::num::Decimal>| t.map(socle::num::nombre);
+    // Sa forme la plus courte ; « -0 » est 0.
+    let nombre = |t: Option<socle::num::Decimal>| t.map(|d| if d.is_zero() { socle::num::Decimal::ZERO } else { d.normalize() });
     let cas = |c: &Comparaison, p: &mut Propre| Cas {
-        mois: p.texte(&c.mois),
+        mois: c.mois,
         logiciel: None,
-        nature: p.texte(&c.nature),
+        nature: c.nature,
         statut: p.option(&c.statut),
         cadre: c.cadre,
         taux_atmp: c.taux_atmp,
@@ -185,7 +186,7 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
     for c in comparaisons {
         match &c.ecarts {
             Err(raison) => {
-                let raison = montant().replace_all(&propre.texte(raison), "<MONTANT>").into_owned();
+                let raison = montant().replace_all(&propre.texte(&raison.phrase), "<MONTANT>").into_owned();
                 let x = Cas { logiciel: propre.option(&c.logiciel), taux_atmp: None, ..cas(c, &mut propre) };
                 refus.entry(raison).or_default().push(x);
             }
@@ -264,7 +265,7 @@ pub fn rapporter(ctx: &Contexte) -> R<usize> {
 /// compte pas.
 pub fn noter(ctx: &Contexte) -> R<usize> {
     let racine = &ctx.racine;
-    if engagement::importe::tous(racine).map_err(Echec::from)?.is_empty() {
+    if engagement::importe::tous(racine)?.is_empty() {
         return Ok(0);
     }
     let (rapports, faites) = rapports(ctx)?;
@@ -283,7 +284,7 @@ pub fn noter(ctx: &Contexte) -> R<usize> {
         match incidents::noter(racine, &note) {
             Ok(Some(_)) => notes += 1,
             Ok(None) => {}
-            Err(e) => eprintln!("Un écart d'import ne se note pas au journal des incidents : {}", socle::echec::phrase_de(&e.message)),
+            Err(e) => eprintln!("Un écart d'import ne se note pas au journal des incidents : {}", e.phrase),
         }
     }
     if !faites.is_empty() {
@@ -305,29 +306,30 @@ fn ajouter_les_fiches(ctx: &Contexte, c: &mut Connus) -> R<()> {
     };
     for (_, f) in &ctx.salaries {
         // Les cases que le releve compare, par la table de la fiche.
-        let s = Saisie::de_la_fiche("salarie", &f.champs)?;
-        let t = |k: &str| s.mot(k);
-        for k in &["nom", "nom_affichage"] {
+        let s = Saisie::de_la_fiche(droit::fiche::NomDeFiche::Salarie, &f.champs)?;
+        use droit::fiche::CaseSalarie as S;
+        let t = |k: S| s.mot(k);
+        for k in [S::Nom, S::NomAffichage] {
             pousser(&mut c.noms, t(k));
         }
-        pousser(&mut c.noms, t("code_salarie").filter(|x| x.chars().filter(|c| c.is_alphabetic()).count() >= 2));
-        for k in &["prenom", "prenom_affichage"] {
+        pousser(&mut c.noms, t(S::CodeSalarie).filter(|x| x.chars().filter(|c| c.is_alphabetic()).count() >= 2));
+        for k in [S::Prenom, S::PrenomAffichage] {
             pousser(&mut c.prenoms, t(k));
         }
-        pousser(&mut c.nirs, t("nir"));
-        if let (Some(n), Some(k)) = (t("nir"), t("nir_cle")) {
+        pousser(&mut c.nirs, t(S::Nir));
+        if let (Some(n), Some(k)) = (t(S::Nir), t(S::NirCle)) {
             pousser(&mut c.nirs, Some(format!("{}{}", n, k)));
         }
-        pousser(&mut c.naissances, t("date_naissance"));
-        for k in &["adresse", "adresse_affichage"] {
+        pousser(&mut c.naissances, t(S::DateNaissance));
+        for k in [S::Adresse, S::AdresseAffichage] {
             pousser(&mut c.adresses, t(k));
         }
-        pousser(&mut c.codes_postaux, t("code_postal"));
-        for k in &["commune", "commune_affichage", "lieu_naissance", "lieu_naissance_affichage"] {
+        pousser(&mut c.codes_postaux, t(S::CodePostal));
+        for k in [S::Commune, S::CommuneAffichage, S::LieuNaissance, S::LieuNaissanceAffichage] {
             pousser(&mut c.communes, t(k));
         }
-        pousser(&mut c.courriels, t("email"));
-        pousser(&mut c.conges_spectacles, t("num_conges_spectacles"));
+        pousser(&mut c.courriels, t(S::Email));
+        pousser(&mut c.conges_spectacles, t(S::NumCongesSpectacles));
     }
     let e = &ctx.entreprise;
     for k in [e.raison_sociale.remplie(), e.nom_affichage.remplie(), e.adresse.remplie(), e.adresse_affichage.remplie(), e.complement_adresse.remplie(), e.complement_adresse_affichage.remplie(), e.code_postal.remplie(), e.commune.remplie(), e.commune_affichage.remplie()] {

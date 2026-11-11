@@ -11,7 +11,7 @@ fn usage() -> ! {
 }
 
 fn main() -> std::process::ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args = socle::ligne::arguments();
     match moteur::commandes::ligne_de_commande(&args, Vec::new()) {
         Some(code) => code,
         None => usage(),

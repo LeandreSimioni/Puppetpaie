@@ -44,7 +44,7 @@ fn suites(racine: &Path, notifications: Vec<(Value, PathBuf)>) -> Vec<String> {
 #[test]
 fn la_notification_lue_pose_le_taux_de_l_annee_a_sa_date_d_effet() {
     let racine = ajouter_venant(&dossier_de_test("notification_atmp", "pose"), "Les Tréteaux Notifiés", Venue::Neuve).unwrap().racine;
-    let mut ent = fiche_au::<droit::fiche::FicheEntrepriseDatee>(&lire(&racine, "config/entreprise.json"), "2025-12-15");
+    let mut ent = fiche_au::<droit::fiche::FicheEntrepriseDatee>(&lire(&racine, "config/entreprise.json"), socle::date::Jour::nouveau(2025, 12, 15).unwrap());
     ent["siren"] = json!("123456873");
     ent["nic"] = json!("00017");
     ecrire(&racine, "config/entreprise.json", &datee(&ent));
@@ -52,23 +52,23 @@ fn la_notification_lue_pose_le_taux_de_l_annee_a_sa_date_d_effet() {
     // Effet au 1er janvier : le taux de l'annee, avec la notification pour source.
     let a_faire = suites(&racine, vec![notification(&racine, "n1.xml", "123456873", "00017", &[("923AD", "1.70", "20260101", "20251210")])]);
     assert!(a_faire.is_empty(), "{:?}", a_faire);
-    let jour = |j: &str| socle::date::Jour::lire(j).unwrap();
-    let taux_au = |j: &str| {
+    let jour = |a, m, d| socle::date::Jour::nouveau(a, m, d).unwrap();
+    let taux_au = |j: socle::date::Jour| {
         let f: droit::fiche::FicheEntrepriseDatee = droit::fiche::lire_fichier(&racine.join("config/entreprise.json"), "config/entreprise.json").unwrap();
-        droit::fiche::valeur_au(f.taux_atmp.as_deref().unwrap(), &jour(j)).unwrap()
+        droit::fiche::valeur_au(f.taux_atmp.as_deref().unwrap(), &j).unwrap()
     };
-    let t = taux_au("2026-01-01");
-    assert_eq!((t.code_risque.as_deref(), t.valeur.clone(), t.depuis, t.provenance), (Some("923AD"), Some(droit::fiche::Montant::Flottant(1.7)), Some(jour("2026-01-01")), Some(droit::fiche::ProvenanceAtmp::Notification)), "{:?}", t);
-    assert_eq!(t.notification.and_then(|n| n.effet), Some(jour("2026-01-01")));
+    let t = taux_au(jour(2026, 1, 1));
+    assert_eq!((t.code_risque.as_deref(), t.valeur.clone(), t.depuis, t.provenance), (Some("923AD"), Some(droit::fiche::Montant::Flottant(socle::num::Decimal::new(17, 1))), Some(jour(2026, 1, 1)), Some(droit::fiche::ProvenanceAtmp::Notification)), "{:?}", t);
+    assert_eq!(t.notification.and_then(|n| n.effet), Some(jour(2026, 1, 1)));
 
     // Effet en cours d'annee : le taux d'avant jusqu'a la date d'effet, le notifie ensuite.
     let a_faire = suites(&racine, vec![notification(&racine, "n2.xml", "123456873", "00017", &[("923AD", "1,90", "20260701", "20260615")])]);
     assert!(a_faire.is_empty(), "{:?}", a_faire);
-    let au = |j: &str| taux_au(j).valeur;
-    assert_eq!((au("2026-06-30"), au("2026-07-01")), (Some(droit::fiche::Montant::Flottant(1.7)), Some(droit::fiche::Montant::Flottant(1.9))));
+    let au = |j| taux_au(j).valeur;
+    assert_eq!((au(jour(2026, 6, 30)), au(jour(2026, 7, 1))), (Some(droit::fiche::Montant::Flottant(socle::num::Decimal::new(17, 1))), Some(droit::fiche::Montant::Flottant(socle::num::Decimal::new(19, 1)))));
 
     // Un autre etablissement : rien ne se pose, et cela se dit.
     let a_faire = suites(&racine, vec![notification(&racine, "n3.xml", "987654321", "00011", &[("923AD", "2.10", "20270101", "20261210")])]);
     assert_eq!(a_faire.len(), 1, "{:?}", a_faire);
-    assert_eq!(taux_au("2027-06-01").depuis, Some(jour("2026-07-01")));
+    assert_eq!(taux_au(jour(2027, 6, 1)).depuis, Some(jour(2026, 7, 1)));
 }

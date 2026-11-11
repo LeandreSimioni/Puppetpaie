@@ -7,17 +7,18 @@ use droit::fiche::Lue;
 use droit::clauses;
 use droit::conges::jours_ouvrables;
 use crate::conges::{
-    avertir, compteur_conges, debut_de, dec_de, dec_ou, indemnite_des_jours, info, jour_dit, jours_ouvrables_de,
-    qui, flot, remuneration_du_mois, salarie_de, sub, taux_au_montant,
+    avertir, compteur_conges, debut_de, dec_de, indemnite_des_jours, info, jours_ouvrables_de,
+    qui, remuneration_du_mois, salarie_de, sub, taux_au_montant,
 };
 use crate::saisie::Carte;
 use crate::{Chiffre, LignePaie};
 use droit::contexte::{aujourdhui, Contexte};
-use droit::natures::{AuMois, Nature};
+use droit::natures::{AuMois, MotifDeRupture, Nature};
 use socle::mois::Mois;
 use crate::Avis;
 use socle::texte::{euros, virgule};
-use socle::num::{add, dec_f64, div, eur2, mul, zero2, Decimal, Resultat};
+use socle::echec::R;
+use socle::num::{add, court, div, eur2, mul, zero2, Decimal};
 use droit::permanents::{self, anciennete_mois, arrondir_jours, jours_acquis, IndemniteDePreavis};
 
 /// Les lignes et les avertissements du solde.
@@ -30,13 +31,13 @@ struct Solde {
 }
 
 /// La ligne de `rubrique`, `quantite` x `taux`, telle que le solde l'ecrit.
-fn ligne(rubrique: &str, quantite: Decimal, taux: Decimal) -> Resultat<LignePaie> {
-    Ok(LignePaie::composee(rubrique, dec_f64(flot(quantite))?, dec_f64(flot(taux))?))
+fn ligne(rubrique: &str, quantite: Decimal, taux: Decimal) -> LignePaie {
+    LignePaie::composee(rubrique, court(quantite), court(taux))
 }
 
 /// La ligne d'une indemnite de `rubrique` qui verse `montant` en une fois.
-fn ligne_unique(rubrique: &str, montant: Decimal) -> Resultat<LignePaie> {
-    Ok(LignePaie::composee(rubrique, Decimal::ONE, dec_f64(flot(montant))?))
+fn ligne_unique(rubrique: &str, montant: Decimal) -> LignePaie {
+    LignePaie::composee(rubrique, Decimal::ONE, court(montant))
 }
 
 /// Le plus grand de `a` et `b` : `a` a egalite.
@@ -80,39 +81,31 @@ fn idcc(ctx: &Contexte) -> Option<&str> {
 
 // ------------------------------------------------------------ le profil
 
-fn profil(ctx: &Contexte, e: &Carte) -> Resultat<clauses::Profil> {
+fn profil(ctx: &Contexte, e: &Carte) -> R<clauses::Profil> {
     let fiche = crate::fiche_du_salarie(ctx, e.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?)?.champs;
     clauses::profil(idcc(ctx), &fiche, e.nature_lue()?.au_mois().as_ref(), &dit_par_l_engagement(e)?)
 }
 
 /// Le decimal d'un nombre des clauses, tel qu'il s'ecrit.
-fn de_p(x: clauses::P) -> Resultat<Decimal> {
+fn de_p(x: clauses::P) -> R<Decimal> {
     socle::num::dec_texte(&x.to_string())
 }
 
 /// CE QUE L'ENGAGEMENT `e` DIT DU SALARIE la ou la fiche le dit aussi (`clauses::DitParLEngagement`) : son statut, son
-/// code emploi (`metier`), la case cadre, son debut (`AAAA-MM-JJ`, lu sur ses dix premiers caracteres). Une case vide ne
+/// code emploi (`metier`), la case cadre, son debut. Une case vide ne
 /// dit rien ; la carte n'a pas de case pour la categorie dans la convention, que seule la fiche dit.
-pub(crate) fn dit_par_l_engagement(e: &Carte) -> Resultat<clauses::DitParLEngagement> {
-    let dite = |x: &Option<String>| x.as_deref().filter(|v| !v.is_empty()).map(str::to_string);
-    let debut = match dite(&e.debut) {
-        Some(s) => {
-            let illisible = || format!("date illisible : {}", socle::fichiers::repr(&s));
-            let jour = s.get(..10).filter(|j| j.as_bytes().get(4) == Some(&b'-') && j.as_bytes().get(7) == Some(&b'-')).ok_or_else(illisible)?;
-            Some(socle::date::Jour::lire(jour).map_err(|_| illisible())?)
-        }
-        None => None,
-    };
-    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: dite(&e.statut), metier: dite(&e.metier), cadre: e.cadre, debut })
+pub(crate) fn dit_par_l_engagement(e: &Carte) -> R<clauses::DitParLEngagement> {
+    let metier = e.metier.as_deref().filter(|v| !v.is_empty()).map(str::to_string);
+    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.statut.map(|s| s.as_str().to_string()), metier, cadre: e.cadre, debut: e.debut })
 }
 
 /// L'age au dernier jour du contrat (ou aujourd'hui), en annees revolues.
-fn age(ctx: &Contexte, e: &Carte) -> Resultat<Option<Decimal>> {
+fn age(ctx: &Contexte, e: &Carte) -> R<Option<Decimal>> {
     let fiche = e.salarie.as_ref().map(|s| crate::fiche_du_salarie(ctx, s)).transpose()?;
     let Some(naissance) = fiche.and_then(|f| f.date_naissance.dite().copied()) else {
         return Ok(None);
     };
-    let jour = match jour_dit(&e.fin)? {
+    let jour = match e.fin {
         Some(f) => f,
         None => aujourdhui()?,
     };
@@ -135,16 +128,16 @@ pub struct Preavis {
 /// le dernier jour du mois quand ce quantieme n'existe pas. Lecture : le preavis court du lendemain de la fin saisie (le
 /// texte, L1234-3, le fait courir de la presentation de la lettre, que le moteur ne connait pas). `None` : une duree
 /// qui n'est pas en mois entiers.
-fn terme_du_preavis(fin: &socle::date::Jour, mois: Decimal) -> Resultat<Option<socle::date::Jour>> {
+fn terme_du_preavis(fin: &socle::date::Jour, mois: Decimal) -> R<Option<socle::date::Jour>> {
     if !mois.fract().is_zero() {
         return Ok(None);
     }
-    let n = i32::try_from(mois).map_err(|_| format!("préavis hors du calendrier : {} mois", mois))?;
+    let n = i32::try_from(mois).map_err(|_| socle::refus!("préavis hors du calendrier : {} mois", mois))?;
     let m = socle::mois::Mois::nouveau(fin.an, fin.mois)?.plus(n)?;
     Ok(m.jour(fin.jour.min(m.jours())))
 }
 
-pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, motif: Option<&str>) -> Resultat<Preavis> {
+pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, motif: Option<MotifDeRupture>) -> R<Preavis> {
     let idcc = idcc(ctx);
     let cdd =!e.nature_lue()?.duree_indeterminee;
     let legal = permanents::preavis_mois(anciennete, motif, cdd)?;
@@ -153,8 +146,8 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
     let conv = clauses::preavis_mois(idcc, categorie, anciennete, motif, age(ctx, e)?)?;
     let conv_mois = conv.mois.map(de_p).transpose()?;
     // Une convention qui ne donne pas de duree dit pourquoi ; une qui en donne une dit son article (`clauses::preavis_mois`).
-    let conv_pourquoi = || conv.pourquoi.as_deref().ok_or_else(|| "le préavis de la convention ne donne pas de durée et ne dit pas pourquoi".to_string());
-    let conv_article = || conv.article.as_deref().ok_or_else(|| "le préavis de la convention donne une durée sans dire son article".to_string());
+    let conv_pourquoi = || conv.pourquoi.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention ne donne pas de durée et ne dit pas pourquoi"));
+    let conv_article = || conv.article.as_deref().ok_or_else(|| socle::echec::refus("le préavis de la convention donne une durée sans dire son article"));
     let categorie_dite: String = categorie.map(clauses::categorie_en_mots).into_iter().collect();
     let mut out = Preavis { mois: None, legal, convention: conv_mois, qui: String::new(), dit: String::new(), pourquoi: None };
     let rel = clauses::releve(idcc)?;
@@ -239,7 +232,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
 /// CDD qui finit le vendredi, un CDI qui commence le lundi) ; un jour ferie entre eux n'est pas compte. La saisie de ce
 /// salarie dans les mois lus se note (`stock::cle_de_saisie`) : qu'un CDI s'y valide ou s'en retire, la paie du dernier
 /// mois du CDD se recalcule.
-fn cdi_a_l_issue(ctx: &Contexte, e: &Carte, fin: &socle::date::Jour) -> Resultat<Option<socle::date::Jour>> {
+fn cdi_a_l_issue(ctx: &Contexte, e: &Carte, fin: &socle::date::Jour) -> R<Option<socle::date::Jour>> {
     let salarie = salarie_de(e)?.to_string();
     let debut = debut_de(e)?;
     // Le premier jour de semaine apres le terme (0 = lundi ... 6 = dimanche).
@@ -247,20 +240,20 @@ fn cdi_a_l_issue(ctx: &Contexte, e: &Carte, fin: &socle::date::Jour) -> Resultat
     while reprise.jour_de_la_semaine() >= 5 {
         reprise = reprise.plus_jours(1)?;
     }
-    let mut mois = vec![fin.mois_civil().to_string()];
-    if reprise.mois_civil().to_string() != fin.mois_civil().to_string() {
-        mois.push(reprise.mois_civil().to_string());
+    let mut mois = vec![fin.mois_civil()];
+    if reprise.mois_civil() != fin.mois_civil() {
+        mois.push(reprise.mois_civil());
     }
     let mut trouve = None;
     for m in mois {
-        let Some(s) = crate::stock::vue_et_empreinte(&ctx.racine, &m)? else { continue };
-        socle::fichiers::noter_valeur(&crate::stock::cle_de_saisie(&m, Some(&salarie)), crate::stock::empreinte_de_saisie(&s.0, Some(&salarie)));
+        let Some(s) = crate::stock::vue_et_empreinte(&ctx.racine, m)? else { continue };
+        socle::fichiers::noter_valeur(&crate::stock::cle_de_saisie(m, Some(&salarie)), crate::stock::empreinte_de_saisie(&s.0, Some(&salarie)));
         for x in &s.0.engagements {
             let sien = x.valide.is_some() && x.salarie.as_deref() == Some(salarie.as_str());
             if !sien || !x.nature_lue()?.duree_indeterminee {
                 continue;
             }
-            let Some(j) = x.debut.as_deref().filter(|v| !v.is_empty()).map(socle::date::Jour::lire).transpose()? else { continue };
+            let Some(j) = x.debut else { continue };
             if j > debut && j <= reprise {
                 trouve = Some(j);
             }
@@ -271,17 +264,17 @@ fn cdi_a_l_issue(ctx: &Contexte, e: &Carte, fin: &socle::date::Jour) -> Resultat
 
 /// Les lignes du dernier bulletin : conges non pris, precarite, preavis,
 /// indemnite de rupture. `deja` : les lignes de CE mois deja construites.
-pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois: &str, deja: &[LignePaie]) -> Resultat<(Vec<LignePaie>, Vec<Avis>)> {
+pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois: Mois, deja: &[LignePaie]) -> R<(Vec<LignePaie>, Vec<Avis>)> {
     let nat = e.nature_lue()?;
     let mut stc = Solde::default();
-    let Some(fin) = jour_dit(&e.fin)? else {
+    let Some(fin) = e.fin else {
         return Ok((stc.lignes, stc.avertissements));
     };
-    let salaire = dec_ou(e.salaire_mensuel.as_ref(), Decimal::ZERO)?;
+    let salaire = crate::conges::salaire_mensuel(ctx, e)?;
     let qui = qui(ctx, e);
-    let motif = e.motif_rupture.as_deref();
+    let motif = e.motif_rupture;
     let chomes = ctx.entreprise.feries_chomes();
-    let premier = Mois::lire(mois)?.premier_jour();
+    let premier = mois.premier_jour();
 
     // --- l'indemnite compensatrice de conges payes (L3141-28 ; L1242-16 pour un CDD), quelle que soit la cause de la
     // rupture. L3141-28 « [n'est pas applicable] lorsque l'employeur est tenu d'adherer a une caisse de conges » (L3141-30) :
@@ -308,7 +301,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                  reprise », recopiés du dernier bulletin de l'ancien logiciel.",
                 qui,
                 debut.jj_mm_aaaa(),
-                socle::mois::Mois::en_clair(&premier),
+                premier.libelle(socle::mois::Graphie::Accentuee),
             )));
         }
         let mut pris_ce_mois = Decimal::ZERO;
@@ -321,7 +314,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
             // Le maintien (L3141-24, II, `atelier/reference/sources/code-du-travail/xml/L3141-24.xml`) : ce que le salarie
             // aurait percu s'il avait travaille ces jours, le salaire du mois entier reparti sur les jours ouvrables du
             // mois entier, comme les conges pris (`conges::lignes_du_mois`), quel que soit le jour ou le contrat finit.
-            let ouvrables = Decimal::from(jours_ouvrables(&premier, &socle::mois::Mois::lire(mois)?.dernier_jour(), chomes)?);
+            let ouvrables = Decimal::from(jours_ouvrables(&premier, &mois.dernier_jour(), chomes)?);
             let ouvrables = if ouvrables.is_zero() { Decimal::ONE } else { ouvrables };
             let maintien = eur2(mul(div(salaire, ouvrables), solde));
             // Les jours pris ce mois-ci ont deja consomme le report d'abord :
@@ -331,7 +324,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
             cpt2.reports = sub(cpt.reports, entame);
             let ind = indemnite_des_jours(&cpt2, solde, maintien)?;
             stc.conges_payes = Some((stc.lignes.len(), solde, ind.retenu));
-            stc.lignes.push(ligne(&permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique, solde, taux_au_montant(ind.retenu, solde))?);
+            stc.lignes.push(ligne(&permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique, solde, taux_au_montant(ind.retenu, solde)));
             stc.avertissements.push(info(format!(
                 "{} : {} jour(s) de conges acquis et non pris, payes {} ({}) -- \
                  art. L3141-28, due quelle que soit la cause de la rupture.",
@@ -374,7 +367,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 // Le taux de la loi : la fiche entreprise ne porte aucun accord qui le change.
                 let montant = permanents::indemnite_precarite(total)?;
                 if montant > Decimal::ZERO {
-                    stc.lignes.push(ligne_unique(&permanents::regles()?.indemnite_precarite.rubrique, montant)?);
+                    stc.lignes.push(ligne_unique(&permanents::regles()?.indemnite_precarite.rubrique, montant));
                     let pour_cent = virgule(mul(permanents::regles()?.indemnite_precarite.taux, Decimal::from(100)).normalize());
                     stc.avertissements.push(info(format!(
                         "{} : indemnité de fin de contrat {} % sur {} de \
@@ -431,7 +424,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
             let saisi = dec_de(saisi)?;
             if let Some(m) = mois_preavis {
                 if saisi < m {
-                    return Err(format!(
+                    return Err(socle::refus!(
                         "{} : preavis de {} mois saisi, et {} en donne {}. Un \
                          contrat peut accorder plus que la loi et la convention, \
                          jamais moins.",
@@ -445,7 +438,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 Some(p) => p.clone(),
                 None => "la durée du préavis ne se lit ni de la loi ni de la convention : saisissez-la (préavis, en mois)".to_string(),
             };
-            return Err(format!("{} : preavis non effectue, et {}", qui, pourquoi));
+            return Err(socle::refus!("{} : preavis non effectue, et {}", qui, pourquoi));
         }
         match mois_preavis.filter(|m| !m.is_zero()) {
             Some(m) => {
@@ -466,7 +459,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                 }
                 // La rubrique, et avec elle le code du bloc 52, suit le motif : 023, ou 032 pour le 092 (L1226-14).
                 let rubrique = permanents::rubrique_de_l_indemnite_de_preavis(motif)?;
-                stc.lignes.push(ligne(&rubrique, m, salaire)?);
+                stc.lignes.push(ligne(&rubrique, m, salaire));
                 let article = match indemnite {
                     IndemniteDePreavis::AutreArticle(t) => format!(" Pour ce motif, l'indemnite vient d'un autre article : {}", t),
                     IndemniteDePreavis::ATrancher(t) => format!(
@@ -474,7 +467,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
                          A trancher.",
                         t
                     ),
-                    _ => String::new(),
+                    IndemniteDePreavis::Licenciement | IndemniteDePreavis::Aucune(_) => String::new(),
                 };
                 // L1234-5 : « indemnité de congés payés comprise » ; un mois de travail acquiert ses jours (L3141-3).
                 let jours = mul(permanents::regles()?.conges_payes.acquisition.jours_par_mois, m);
@@ -548,11 +541,10 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
 /// La ligne : la part du delai apres la fin du contrat, le salaire de chaque mois pour ses heures
 /// (`droit::periodes::part_du_mois`) ; DSN 52 « 017 ». Les conges que ces jours acquierent (`conges_du_delai`) s'ajoutent
 /// a l'indemnite compensatrice de conges payes du solde.
-#[allow(clippy::too_many_arguments)]
 fn delai_de_prevenance(
-    ctx: &Contexte, au: &AuMois, e: &Carte, mois: &str, deja: &[LignePaie], fin: &socle::date::Jour, salaire: Decimal, motif: Option<&str>, nat: &Nature,
+    ctx: &Contexte, au: &AuMois, e: &Carte, mois: Mois, deja: &[LignePaie], fin: &socle::date::Jour, salaire: Decimal, motif: Option<MotifDeRupture>, nat: &Nature,
     qui: &str, stc: &mut Solde,
-) -> Resultat<()> {
+) -> R<()> {
     let Some(regle) = permanents::regle_du_delai_de_prevenance(motif)? else {
         return Ok(());
     };
@@ -585,7 +577,7 @@ fn delai_de_prevenance(
         )));
         return Ok(());
     }
-    let Some(notification) = jour_dit(&e.notification_rupture)? else {
+    let Some(notification) = e.notification_rupture else {
         return Err(socle::echec::cle(format!(
             "{} : fin de periode d'essai a l'initiative de l'employeur (034) : la date de notification de la rupture n'est \
              pas dite (« Notifiée le »). Le delai de prevenance de L1221-25 se compte depuis elle, selon la presence \
@@ -595,7 +587,7 @@ fn delai_de_prevenance(
     };
     let debut = debut_de(e)?;
     if notification < debut || notification > *fin {
-        return Err(format!(
+        return Err(socle::refus!(
             "{} : la notification de la rupture ({}) doit tomber entre le debut ({}) et la fin ({}) du contrat.",
             qui,
             notification.iso(),
@@ -633,7 +625,7 @@ fn delai_de_prevenance(
         jours += part.jours;
         j = f.plus_jours(1)?;
     }
-    stc.lignes.push(ligne(&regle.rubrique, fraction, salaire)?);
+    stc.lignes.push(ligne(&regle.rubrique, fraction, salaire));
     let montant = eur2(mul(fraction, salaire));
     let conges = conges_non_effectues(ctx, e, mois, fin, jours_acquis(&fin.plus_jours(1)?, &delai.expiration)?, salaire, montant, stc)?;
     let avantages = avantages_du_mois(ctx, deja)?;
@@ -668,19 +660,17 @@ fn delai_de_prevenance(
 /// jours ouvrables, comme le solde ; L3141-24), s'ajoutent a la ligne de l'indemnite compensatrice de conges payes du
 /// solde, ou en font une. Un salarie dont la caisse des Conges Spectacles paie les conges n'en a pas chez l'employeur
 /// (L3141-30). Rend la phrase qui le dit.
-#[allow(clippy::too_many_arguments)]
 fn conges_non_effectues(
-    ctx: &Contexte, e: &Carte, mois: &str, fin: &socle::date::Jour, jours: Decimal, salaire: Decimal, montant: Decimal,
+    ctx: &Contexte, e: &Carte, mois: Mois, fin: &socle::date::Jour, jours: Decimal, salaire: Decimal, montant: Decimal,
     stc: &mut Solde,
-) -> Resultat<String> {
+) -> R<String> {
     if crate::calcul::saisie_declaree_a_la_caisse_des_conges(ctx, e, fin)? {
         return Ok("ses congés sont payés par la caisse des Congés Spectacles (L3141-30), rien à ajouter.".to_string());
     }
     if jours.is_zero() {
         return Ok("ce temps n'acquiert aucun jour de congé.".to_string());
     }
-    let m = Mois::lire(mois)?;
-    let ouvrables = Decimal::from(jours_ouvrables(&m.premier_jour(), &m.dernier_jour(), ctx.entreprise.feries_chomes())?);
+    let ouvrables = Decimal::from(jours_ouvrables(&mois.premier_jour(), &mois.dernier_jour(), ctx.entreprise.feries_chomes())?);
     let ouvrables = if ouvrables.is_zero() { Decimal::ONE } else { ouvrables };
     let ind = permanents::indemnite_conges(jours, montant, jours, eur2(mul(div(salaire, ouvrables), jours)))?;
     let rubrique = permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique.clone();
@@ -688,7 +678,7 @@ fn conges_non_effectues(
         Some((rang, j, m)) => (rang, add(j, jours), add(m, ind.retenu)),
         None => (stc.lignes.len(), jours, ind.retenu),
     };
-    let l = ligne(&rubrique, total_jours, taux_au_montant(total, total_jours))?;
+    let l = ligne(&rubrique, total_jours, taux_au_montant(total, total_jours));
     match stc.lignes.get_mut(rang) {
         Some(x) => *x = l,
         None => stc.lignes.push(l),
@@ -704,11 +694,11 @@ fn conges_non_effectues(
 }
 
 /// Les avantages en nature que les lignes du mois `deja` portent (leur libelle).
-fn avantages_du_mois(ctx: &Contexte, deja: &[LignePaie]) -> Resultat<Vec<String>> {
+fn avantages_du_mois(ctx: &Contexte, deja: &[LignePaie]) -> R<Vec<String>> {
     let mut out = Vec::new();
     for l in deja {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
-        if r.nature == "avantage_nature" {
+        if r.nature == droit::catalogue::NatureDeRubrique::AvantageNature {
             out.push(r.libelle);
         }
     }
@@ -737,18 +727,18 @@ impl Conventionnelle {
 fn indemnite_de_rupture(
     ctx: &Contexte,
     e: &Carte,
-    mois: &str,
+    mois: Mois,
     anciennete: Decimal,
-    motif: Option<&str>,
+    motif: Option<MotifDeRupture>,
     nat: &Nature,
     stc: &mut Solde,
-) -> Resultat<()> {
+) -> R<()> {
     let qui = qui(ctx, e);
     let Some((fin_cdi, rubrique_sec)) = permanents::rupture(motif)? else {
         return indemnite_de_licenciement(ctx, e, mois, anciennete, motif, nat, stc);
     };
     if !nat.duree_indeterminee {
-        return Err(format!(
+        return Err(socle::refus!(
             "{} : motif de rupture {} ({}) sur un {}. Ces ruptures-la sont \
              celles d'un contrat a duree INDETERMINEE -- leurs articles sont \
              au titre III du livre II, qui ne traite que de lui.",
@@ -832,7 +822,7 @@ fn indemnite_de_rupture(
         if let (true, Some(rc_sec)) = (lic.du, rc_sec) {
             cc.bas = lic.bas;
             cc.haut = lic.haut;
-            let renvoi = lic.article.as_deref().ok_or_else(|| "l'indemnité conventionnelle de licenciement est due sans dire son article".to_string())?;
+            let renvoi = lic.article.as_deref().ok_or_else(|| socle::echec::refus("l'indemnité conventionnelle de licenciement est due sans dire son article"))?;
             cc.article = Some(format!("{} (art. {}, qui renvoie a {})", clauses::nom(idcc), rc_sec.article, renvoi));
         }
         c = cc;
@@ -845,7 +835,7 @@ fn indemnite_de_rupture(
     }
     let conv_pourquoi = c.pourquoi.clone();
     // Une indemnite legale qui n'est pas due dit pourquoi (`permanents`).
-    let pourquoi_legal = || legale.pourquoi.as_deref().ok_or_else(|| format!("{} : l'indemnité légale de {} n'est pas due et ne dit pas pourquoi", qui, quoi));
+    let pourquoi_legal = || legale.pourquoi.as_deref().ok_or_else(|| socle::refus!("{} : l'indemnité légale de {} n'est pas due et ne dit pas pourquoi", qui, quoi));
 
     let du_legal = legale.du;
     let m_legal = if du_legal { legale.montant } else { zero2() };
@@ -858,7 +848,7 @@ fn indemnite_de_rupture(
     if let Some(saisi) = saisi {
         montant = saisi;
         if !du {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : indemnité de {} de {} saisie, et ni la loi ni la \
                  convention ne donnent de montant à quoi la comparer -- {}. \
                  Le moteur ne déclare pas une indemnité dont il ne sait pas \
@@ -870,7 +860,7 @@ fn indemnite_de_rupture(
             ));
         }
         if montant < bas {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : indemnité de {} de {}, INFÉRIEURE au minimum de {} \
                  (loi, {} : {} ; {}). Ce n'est pas au moteur de la \
                  corriger.",
@@ -878,7 +868,7 @@ fn indemnite_de_rupture(
             ));
         }
         if montant > haut && !ouvert {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : indemnité de {} de {}, alors que le montant LÉGAL \
                  est de {} ({}) -- {}. La part au-delà a un autre régime \
                  social -- CSG et CRDS dues dès le premier euro qui dépasse \
@@ -962,16 +952,16 @@ fn indemnite_de_rupture(
     let part_legale = plus_petit(montant, m_legal);
     let supplement = sub(montant, part_legale);
     if part_legale > Decimal::ZERO {
-        stc.lignes.push(ligne_unique(&rubrique, part_legale)?);
+        stc.lignes.push(ligne_unique(&rubrique, part_legale));
     }
     if supplement > Decimal::ZERO {
-        stc.lignes.push(ligne_unique(&supplement_rub, supplement)?);
+        stc.lignes.push(ligne_unique(&supplement_rub, supplement));
     }
     // L137-12 : une contribution patronale sur la part exoneree, due et non calculee.
     let regles = permanents::regles()?;
     let contrib = &regles.regime_des_indemnites_de_rupture.contribution_patronale;
     if let Some(m) = motif {
-        if contrib.motifs.iter().any(|x| x == m) {
+        if contrib.motifs.contains(&m) {
             let taux = contrib.taux;
             stc.avertissements.push(avertir(format!(
                 "{} : l'employeur doit en plus la CONTRIBUTION DE {} % sur la \
@@ -1052,11 +1042,10 @@ fn phrase_de_la_convention(
 }
 
 /// Les deux plafonds de L242-1 II 7° : au-dela, le moteur refuse.
-fn verifier_les_plafonds(ctx: &Contexte, mois: &str, montant: Decimal, quoi: &str, qui: &str) -> Resultat<()> {
+fn verifier_les_plafonds(ctx: &Contexte, mois: Mois, montant: Decimal, quoi: &str, qui: &str) -> R<()> {
     let regles = permanents::regles()?;
     let regles_plafonds = &regles.regime_des_indemnites_de_rupture.plafonds;
-    let an: i32 = mois.chars().take(4).collect::<String>().parse().map_err(|_| format!("nombre entier illisible : {}", mois))?;
-    let (mensuel, _) = ctx.plafond_securite_sociale(an)?;
+    let (mensuel, _) = ctx.plafond_securite_sociale(mois.annee())?;
     let annuel = mul(Decimal::from(mensuel), Decimal::from(12));
     for (combien, quel) in [
         (regles_plafonds.cotisations_exoneration_pass, "exoneree"),
@@ -1064,7 +1053,7 @@ fn verifier_les_plafonds(ctx: &Contexte, mois: &str, montant: Decimal, quoi: &st
     ] {
         let seuil = mul(annuel, combien);
         if montant > seuil {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : indemnité de {} de {}, au-delà de {} plafonds \
                  annuels de Sécurité sociale ({}). Elle n'est plus {} \
                  en entier (L242-1 II 7° du code de la sécurité sociale) et \
@@ -1087,15 +1076,15 @@ fn verifier_les_plafonds(ctx: &Contexte, mois: &str, montant: Decimal, quoi: &st
 fn indemnite_de_licenciement(
     ctx: &Contexte,
     e: &Carte,
-    mois: &str,
+    mois: Mois,
     anciennete: Decimal,
-    motif: Option<&str>,
+    motif: Option<MotifDeRupture>,
     nat: &Nature,
     stc: &mut Solde,
-) -> Resultat<()> {
+) -> R<()> {
     let qui = qui(ctx, e);
     let saisi = e.indemnite_licenciement.as_ref();
-    if saisi.is_none() && !(nat.duree_indeterminee && motif.is_some_and(|m| !m.is_empty())) {
+    if saisi.is_none() && !(nat.duree_indeterminee && motif.is_some()) {
         return Ok(());
     }
     let reference = salaire_de_reference(ctx, e, mois)?;
@@ -1111,7 +1100,7 @@ fn indemnite_de_licenciement(
     if let Some(saisi) = saisi {
         montant = dec_de(saisi)?;
         if montant > haut {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : indemnité de licenciement de {}, alors que \
                  l'indemnité LÉGALE est de {}{}. La part supra-légale et \
                  supra-conventionnelle a un autre régime social (CSG/CRDS \
@@ -1125,7 +1114,7 @@ fn indemnite_de_licenciement(
             ));
         }
         if montant < bas {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : indemnité de licenciement de {}, INFÉRIEURE à ce \
                  qui est dû ({} : loi {}{}).",
                 qui,
@@ -1137,7 +1126,7 @@ fn indemnite_de_licenciement(
         }
     } else {
         if conv_du && conv_bas != conv_haut && conv_haut.is_some_and(|h| h > m_legal) {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : {} se lit de deux façons, qui ne donnent pas le même \
                  montant : {}. La loi donne {}. Ajouter à la paie une \
                  ligne « Indemnité de licenciement » avec le montant retenu, \
@@ -1162,11 +1151,11 @@ fn indemnite_de_licenciement(
     verifier_les_plafonds(ctx, mois, montant, "licenciement", &qui)?;
     let part_legale = plus_petit(montant, m_legal);
     if part_legale > Decimal::ZERO {
-        stc.lignes.push(ligne_unique(&permanents::regles()?.indemnite_licenciement.rubrique, part_legale)?);
+        stc.lignes.push(ligne_unique(&permanents::regles()?.indemnite_licenciement.rubrique, part_legale));
     }
     let supplement = sub(montant, part_legale);
     if supplement > Decimal::ZERO {
-        stc.lignes.push(ligne_unique("indemnite_licenciement_conventionnelle", supplement)?);
+        stc.lignes.push(ligne_unique("indemnite_licenciement_conventionnelle", supplement));
     }
     stc.avertissements.push(info(format!(
         "{} : indemnité de licenciement {} ({} mois d'ancienneté, salaire \
@@ -1198,12 +1187,12 @@ fn indemnite_de_licenciement(
 }
 
 /// L'article d'une indemnite que la convention releve (`clauses::indemnite_licenciement`) : une convention relevee le dit.
-fn article_de(conv: &clauses::Indemnite) -> Resultat<&str> {
+fn article_de(conv: &clauses::Indemnite) -> R<&str> {
     conv.article.as_deref().ok_or_else(|| socle::echec::livree("clauses-conventionnelles-base.json", "indemnite_licenciement.article"))
 }
 
 /// Le nom qu'un administrateur voit dans la liste des rubriques.
-fn libelle_rubrique(ctx: &Contexte, code: &str) -> Resultat<String> {
+fn libelle_rubrique(ctx: &Contexte, code: &str) -> R<String> {
     Ok(rubrique(&ctx.racine, code, &ctx.lue_au)?.libelle)
 }
 
@@ -1213,8 +1202,8 @@ fn indemnite_conventionnelle(
     e: &Carte,
     anciennete: Decimal,
     reference: Decimal,
-    motif: Option<&str>,
-) -> Resultat<clauses::Indemnite> {
+    motif: Option<MotifDeRupture>,
+) -> R<clauses::Indemnite> {
     clauses::indemnite_licenciement(
         idcc(ctx),
         ctx.entreprise.annexe_convention.code(),
@@ -1226,18 +1215,18 @@ fn indemnite_conventionnelle(
     )
 }
 
-fn lectures(conv: &clauses::Indemnite) -> Resultat<String> {
-    let l: Vec<String> = conv.lectures.iter().map(|(n, v)| Ok(format!("{} {}", n.replace('_', " "), euros(de_p(*v)?)))).collect::<Resultat<_>>()?;
+fn lectures(conv: &clauses::Indemnite) -> R<String> {
+    let l: Vec<String> = conv.lectures.iter().map(|(n, v)| Ok(format!("{} {}", n.replace('_', " "), euros(de_p(*v)?)))).collect::<R<_>>()?;
     Ok(l.join(" ; "))
 }
 
 /// Les montants d'une indemnite que la convention doit (`du`).
-fn bas_et_haut(conv: &clauses::Indemnite) -> Resultat<(Decimal, Decimal)> {
+fn bas_et_haut(conv: &clauses::Indemnite) -> R<(Decimal, Decimal)> {
     let manque = || socle::echec::livree("clauses-conventionnelles-base.json", "indemnite_licenciement");
     Ok((de_p(conv.bas.ok_or_else(manque)?)?, de_p(conv.haut.ok_or_else(manque)?)?))
 }
 
-fn dit_conventionnel(conv: &clauses::Indemnite) -> Resultat<String> {
+fn dit_conventionnel(conv: &clauses::Indemnite) -> R<String> {
     if !conv.releve {
         return Ok(String::new());
     }
@@ -1254,7 +1243,7 @@ fn dit_conventionnel(conv: &clauses::Indemnite) -> Resultat<String> {
 }
 
 /// Ce que la convention a dit, pour l'avertissement.
-fn phrase_conventionnelle(conv: &clauses::Indemnite, m_legal: Decimal) -> Resultat<String> {
+fn phrase_conventionnelle(conv: &clauses::Indemnite, m_legal: Decimal) -> R<String> {
     if !conv.releve {
         let pourquoi = match &conv.pourquoi {
             Some(p) => p.clone(),
@@ -1278,26 +1267,25 @@ fn phrase_conventionnelle(conv: &clauses::Indemnite, m_legal: Decimal) -> Result
 }
 
 /// Le salaire de reference des indemnites de fin de contrat (R1234-4), sur les bruts des derniers mois.
-fn salaire_de_reference(ctx: &Contexte, e: &Carte, mois: &str) -> Resultat<permanents::SalaireDeReference> {
+fn salaire_de_reference(ctx: &Contexte, e: &Carte, mois: Mois) -> R<permanents::SalaireDeReference> {
     let (douze, trois) = bruts_precedents(ctx, e, mois)?;
     Ok(permanents::salaire_de_reference(&douze, &trois))
 }
 
 /// Les bruts mensuels des douze et des trois derniers mois (R1234-4) ; faute
 /// de mois produits, le salaire mensuel du contrat.
-fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: &str) -> Resultat<(Vec<Decimal>, Vec<Decimal>)> {
+fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Decimal>, Vec<Decimal>)> {
     let salarie = salarie_de(e)?.to_string();
-    let mois = Mois::lire(mois)?;
     let mut bruts = Vec::new();
     for i in 1..=12 {
-        let nom = mois.plus(-i)?.to_string();
-        if !crate::stock::a_une_saisie(&ctx.racine, &nom)? {
+        let m = mois.plus(-i)?;
+        if !crate::stock::a_une_saisie(&ctx.racine, m)? {
             continue;
         }
-        bruts.push(remuneration_du_mois(ctx, &nom, &salarie)?);
+        bruts.push(remuneration_du_mois(ctx, m, &salarie)?);
     }
     if bruts.is_empty() {
-        let salaire = dec_ou(e.salaire_mensuel.as_ref(), Decimal::ZERO)?;
+        let salaire = crate::conges::salaire_mensuel(ctx, e)?;
         bruts = vec![salaire; 12];
     }
     let trois = bruts.iter().take(3).copied().collect();
@@ -1306,8 +1294,8 @@ fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: &str) -> Resultat<(Vec<Deci
 
 /// Le brut que portent des lignes deja construites, sans les charger : la
 /// meme somme que `calcul.calculer`.
-fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> Resultat<Decimal> {
-    let requis = |x: Option<Decimal>, cle: &str| -> Resultat<Decimal> { x.ok_or_else(|| socle::fichiers::absent(cle)) };
+fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Decimal> {
+    let requis = |x: Option<Decimal>, cle: &str| -> R<Decimal> { x.ok_or_else(|| socle::fichiers::absent(cle)) };
     let mut total = zero2();
     for l in lignes {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
@@ -1322,14 +1310,13 @@ fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> Resultat<Decimal> {
 
 /// La remuneration totale brute versee pendant le contrat (L1243-8) : les mois
 /// produits, plus le mois courant, dont le brut arrive tout calcule.
-fn remuneration_du_contrat(ctx: &Contexte, e: &Carte, mois: &str, ce_mois: Decimal) -> Resultat<Decimal> {
+fn remuneration_du_contrat(ctx: &Contexte, e: &Carte, mois: Mois, ce_mois: Decimal) -> R<Decimal> {
     let salarie = salarie_de(e)?.to_string();
     let mut total = ce_mois;
     let debut = debut_de(e)?;
-    for m in debut.mois_civil().jusqu_a(Mois::lire(mois)?) {
-        let m = m.to_string();
-        if m != mois && crate::stock::a_une_saisie(&ctx.racine, &m)? {
-            total = add(total, remuneration_du_mois(ctx, &m, &salarie)?);
+    for m in debut.mois_civil().jusqu_a(mois) {
+        if m != mois && crate::stock::a_une_saisie(&ctx.racine, m)? {
+            total = add(total, remuneration_du_mois(ctx, m, &salarie)?);
         }
     }
     Ok(total)

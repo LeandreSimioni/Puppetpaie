@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use compagnie::coffre::{Coffre, Echec as EchecCoffre};
+use compagnie::coffre::Coffre;
 use crate::gestes::administrateur::Poste;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, OPERATION};
 use crate::catalogue::Route;
@@ -26,7 +26,6 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::SansCharge;
 use socle::ecran::Pastille;
 use droit::contexte::Contexte;
-use compagnie::coffre::vers_route;
 use envois::google::{jeton_par_rafraichissement, Application, DELAI, PERMISSIONS};
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::MARQUEUR_COPIE;
@@ -275,7 +274,7 @@ pub(crate) struct ServiceDit {
     pub(crate) libelle: &'static str,
     pub(crate) sert_a: &'static str,
     pub(crate) pose: bool,
-    pose_le: Option<String>,
+    pose_le: Option<socle::paris::HeureDeSaisie>,
     pub(crate) environnement: bool,
     compte: Option<String>,
     avec_compte: bool,
@@ -453,8 +452,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 /// Ce que l'administrateur de l'installation est pour la compagnie `racine` (`administrateur::etat`).
 pub fn administrateur_etat(racine: &Path) -> R<crate::gestes::administrateur::EtatAdministrateur> {
     let inst = crate::gestes::administrateur::installation_de(racine);
-    crate::gestes::administrateur::etat(&inst, racine, &Poste::de_ce_poste()).map_err(Echec::from)
-}
+    crate::gestes::administrateur::etat(&inst, racine, &Poste::de_ce_poste())}
 
 /// `administrateur-rattacher` et `administrateur-detacher`, sur le coffre de `poste` : tout se decide dans
 /// `administrateur.rs`. Le mot de passe de l'administrateur vient de la charge (la page), sinon il est tape par un humain ;
@@ -469,7 +467,7 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
             &["Celui qui ouvre les compagnies de l'administrateur.".to_string(), "La frappe ne s'affiche pas.".to_string()],
             "mot de passe (rien ne s'affiche) : ",
         )
-        .map_err(refus)?,
+        .map_err(|e| e.reclasser(Classe::Refuse))?,
     };
     if nom == Route::AdministrateurRattacher {
         // Une compagnie qui a deja son mot de passe le donne aussi : c'est lui que celui de l'administrateur remplace.
@@ -481,9 +479,9 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
             }
             None => None,
         };
-        let noms = adm::rattacher(&inst, racine, &admin, actuel.as_deref(), poste).map_err(refus)?;
+        let noms = adm::rattacher(&inst, racine, &admin, actuel.as_deref(), poste).map_err(|e| e.reclasser(Classe::Refuse))?;
         let phrase = format!("Compagnie rattachée à l'administrateur : {} s'ouvrent avec le même mot de passe.", en_liste(&noms));
-        return Ok(Rattachement { phrase, compagnies: Some(noms), etat: adm::etat(&inst, racine, poste).map_err(Echec::from)? });
+        return Ok(Rattachement { phrase, compagnies: Some(noms), etat: adm::etat(&inst, racine, poste)? });
     }
     let lignes = ["Le NOUVEAU mot de passe de cette compagnie, à elle seule.".to_string(), "La frappe ne s'affiche pas.".to_string()];
     let nouveau = secret_a_poser(charge.nouveau, "PuppetPaie : son propre mot de passe", &lignes)?;
@@ -492,8 +490,8 @@ pub fn administrateur(racine: &Path, nom: Route, charge: ChargeAdministrateur, m
         Some(c) => c,
         None => nouveau.clone(),
     };
-    adm::detacher(&inst, racine, &admin, &nouveau, &confirmation, poste).map_err(refus)?;
-    Ok(Rattachement { phrase: "Compagnie détachée : elle s'ouvre avec son propre mot de passe.".to_string(), compagnies: None, etat: adm::etat(&inst, racine, poste).map_err(Echec::from)? })
+    adm::detacher(&inst, racine, &admin, &nouveau, &confirmation, poste).map_err(|e| e.reclasser(Classe::Refuse))?;
+    Ok(Rattachement { phrase: "Compagnie détachée : elle s'ouvre avec son propre mot de passe.".to_string(), compagnies: None, etat: adm::etat(&inst, racine, poste)? })
 }
 
 /// Des noms en une liste : « A », « A et B », « A, B et C ».
@@ -515,24 +513,22 @@ fn refus(m: impl Into<String>) -> Echec {
 /// `exiger_mot_de_passe` : le mot de passe du logiciel, s'il est pose, pour un acte qui ENGAGE sans rien envoyer. Decide
 /// ICI, jamais par la page. `motdepasse` : celui que la page a fait taper pour la route.
 pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&str>, quoi: &str) -> R<()> {
-    let coffre = compagnie::coffre::Coffre::du_poste(racine, "");
-    let vers = vers_route;
-    if !coffre.ouverture_exigee().map_err(vers)? {
+    let coffre = compagnie::coffre::Coffre::du_poste(racine);
+    if !coffre.ouverture_exigee()? {
         return Ok(());
     }
     let Some(mdp) = motdepasse else {
         // Rien n'a ete tape pour cette charge : le moteur demande lui-meme a un humain (fenetre, terminal), ou il refuse.
         // Un « oui » ne laisse que l'ouverture du coffre pour la suite de la commande ; la seance ne vaut pas ici.
-        let acte = compagnie::demande::Acte::nouveau(quoi, "", "");
+        let acte = compagnie::demande::Acte::nouveau(quoi, None, "");
         return match compagnie::demande::autoriser_acte(racine, &acte) {
             compagnie::demande::Verdict::Accepte => Ok(()),
-            compagnie::demande::Verdict::Refuse(phrase) => Err(erreur(
-                Classe::PreuveInsuffisante,
-                format!("Un mot de passe du logiciel est pose : il faut le taper pour {}. {}", quoi, phrase.replace("Rien n'est parti", "Rien n'a ete modifie")),
-            )),
+            compagnie::demande::Verdict::Refuse(e) => Err(e
+                .reformuler(|m| format!("Un mot de passe du logiciel est pose : il faut le taper pour {}. {}", quoi, m.replace("Rien n'est parti", "Rien n'a ete modifie")))
+                .reclasser(Classe::PreuveInsuffisante)),
         };
     };
-    if !coffre.verifier_ouverture(mdp).map_err(vers)? {
+    if !coffre.verifier_ouverture(mdp)? {
         return Err(erreur(Classe::PreuveInsuffisante, "Mot de passe du logiciel refuse. Rien n'a ete modifie."));
     }
     Ok(())
@@ -542,7 +538,7 @@ pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&str>, quoi:
 fn secret_a_poser(donne: Option<String>, titre: &str, lignes: &[String]) -> R<String> {
     match donne {
         Some(v) => Ok(v),
-        None => compagnie::demande::saisir_deux_fois(titre, lignes, "mot de passe (rien ne s'affiche) : ").map_err(refus),
+        None => compagnie::demande::saisir_deux_fois(titre, lignes, "mot de passe (rien ne s'affiche) : ").map_err(|e| e.reclasser(Classe::Refuse)),
     }
 }
 
@@ -557,23 +553,15 @@ fn actuel(mdp: Option<&str>) -> Option<String> {
 
 /// Le refus du coffre : `Coffre` se rend `Refuse` (la page le montre tel quel), tout le reste (`Disque`...) garde
 /// sa classe.
-fn en_operation(x: EchecCoffre) -> Echec {
-    Echec { classe: Some(if x.classe == Classe::Coffre { Classe::Refuse } else { x.classe }), message: x.message }
-}
-
-/// Le refus du coffre tel quel (`coffre.oublier_ouverture` ne l'attrapait pas).
-fn en_coffre(x: EchecCoffre) -> Echec {
-    Echec { classe: Some(x.classe), message: x.message }
-}
-
-/// L'heure de Paris, a la minute.
-fn maintenant() -> String {
-    let t = socle::temps::secondes();
-    socle::paris::iso_minutes(t)
+fn en_operation(x: Echec) -> Echec {
+    match x.classe {
+        Some(Classe::Coffre) => x.reclasser(Classe::Refuse),
+        _ => x,
+    }
 }
 
 fn coffre(ctx: &Contexte) -> Coffre {
-    Coffre::du_poste(&ctx.racine, &maintenant())
+    Coffre::du_poste(&ctx.racine)
 }
 
 // ------------------------------------------------------------------ le coffre
@@ -647,7 +635,7 @@ fn coffre_poser(ctx: &Contexte, c: ChargePoser, mdp: Option<&str>) -> R<EtatDuCo
                 let conseil: String = v.conseil.iter().map(|c| format!(" — {}", c)).collect();
                 (format!("{} ; connexion refusée : {}{}", quoi, v.message, conseil), "rouge")
             }
-            Err(e) => (format!("{} ; vérification impossible : {}", quoi, e.phrase()), "rouge"),
+            Err(e) => (format!("{} ; vérification impossible : {}", quoi, e.phrase), "rouge"),
         },
     };
     Ok(EtatDuCoffre { phrase, couleur: Some(couleur), ..etat })
@@ -704,8 +692,8 @@ fn ecrire_compte_dpae(ctx: &Contexte, propres: Vec<(&'static str, String)>) -> R
         let case = if cle == "nom" { &mut cfg.nom } else { &mut cfg.prenom };
         *case = Some(v);
     }
-    crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::api_dpae(Some(cfg)), Some(ctx.aujourdhui))?;
-    Ok(droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&ctx.racine.join(droit::contexte::ENTREPRISE), droit::contexte::ENTREPRISE).map_err(Echec::from)?.au(&ctx.aujourdhui))
+    crate::fiches::poser_entreprise(ctx, droit::fiche::ChangementEntreprise::ApiDpae(Some(cfg)), Some(ctx.aujourdhui))?;
+    Ok(droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&ctx.racine.join(droit::contexte::ENTREPRISE), droit::contexte::ENTREPRISE)?.au(&ctx.aujourdhui))
 }
 
 // ------------------------------------------------------------------ le mot de passe du logiciel
@@ -731,11 +719,11 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&str>) -> 
     // UNE COMPAGNIE DE L'ADMINISTRATEUR : son mot de passe est celui de toutes ses compagnies, et il se change pour toutes a
     // la fois (`administrateur::changer`) ; l'actuel les ouvre chacune, tout se prepare puis tout se remplace.
     let inst = crate::gestes::administrateur::installation_de(&ctx.racine);
-    if crate::gestes::administrateur::est_rattachee(&inst, &ctx.racine).map_err(Echec::from)? {
+    if crate::gestes::administrateur::est_rattachee(&inst, &ctx.racine)? {
         let Some(actuel) = actuel else {
             return Err(refus("Tapez le mot de passe actuel de l'administrateur : le nouveau le remplace dans toutes ses compagnies. Rien n'a ete modifie."));
         };
-        crate::gestes::administrateur::changer(&inst, &actuel, &nouveau, &confirmation, &crate::gestes::administrateur::Poste::de_ce_poste()).map_err(refus)?;
+        crate::gestes::administrateur::changer(&inst, &actuel, &nouveau, &confirmation, &crate::gestes::administrateur::Poste::de_ce_poste()).map_err(|e| e.reclasser(Classe::Refuse))?;
         return coffre_etat(ctx);
     }
     coffre(ctx).poser_ouverture(&nouveau, actuel.as_deref()).map_err(en_operation)?;
@@ -744,11 +732,11 @@ fn mot_de_passe_changer(ctx: &Contexte, c: ChargeChanger, mdp: Option<&str>) -> 
 
 /// Plus de mot de passe du logiciel. L'actuel est exige.
 fn mot_de_passe_retirer(ctx: &Contexte, mdp: Option<&str>) -> R<EtatDuCoffre> {
-    if crate::gestes::administrateur::est_rattachee(&crate::gestes::administrateur::installation_de(&ctx.racine), &ctx.racine).map_err(Echec::from)? {
+    if crate::gestes::administrateur::est_rattachee(&crate::gestes::administrateur::installation_de(&ctx.racine), &ctx.racine)? {
         return Err(refus("Cette compagnie est geree par l'administrateur : son mot de passe ouvre aussi les autres. La detacher d'abord (elle recoit alors son propre mot de passe), puis le retirer. Rien n'a ete modifie."));
     }
     exiger_mot_de_passe(&ctx.racine, mdp, "retirer le mot de passe du logiciel")?;
-    coffre(ctx).oublier_ouverture(actuel(mdp).as_deref()).map_err(en_coffre)?;
+    coffre(ctx).oublier_ouverture(actuel(mdp).as_deref())?;
     coffre_etat(ctx)
 }
 
@@ -760,7 +748,7 @@ fn google_oublier(ctx: &Contexte, mdp: Option<&str>) -> R<GoogleOublie> {
     let p = ctx.racine.join(JETON_GOOGLE);
     let efface = p.exists();
     if efface {
-        std::fs::remove_file(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
+        std::fs::remove_file(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
     }
     Ok(GoogleOublie { phrase: "Compte Google délié : la sauvegarde ne va plus au Drive. L'accès accordé côté Google se retire sur myaccount.google.com.", efface })
 }
@@ -782,11 +770,6 @@ fn config(racine: &Path) -> PathBuf {
     racine.join(socle::fichiers::CONFIG)
 }
 
-/// `ErreurGoogle` : la phrase est ecrite pour etre lue.
-#[track_caller]
-fn erreur_google(message: impl Into<String>) -> Echec {
-    erreur(Classe::Google, message)
-}
 
 /// L'APPLICATION GOOGLE TELLE QU'ELLE S'ECRIT (`google.json` de la compagnie, `google-application.json` livre) : son
 /// identifiant et son secret.
@@ -812,28 +795,30 @@ pub(crate) fn identifiants(racine: &Path) -> R<(Application, String)> {
     if p.exists() {
         // Un `google.json` illisible est un refus, pas un plantage.
         let a: ApplicationEcrite = socle::forme::lire_fichier(&p, "L'application Google de la compagnie (google.json) ne se lit pas : la corriger, ou la supprimer pour revenir à celle du logiciel.")
-            .map_err(erreur_google)?;
+            .map_err(|e| e.reclasser(Classe::Google))?;
         if a.client_id.is_empty() || a.client_secret.is_empty() {
-            return Err(erreur_google(socle::echec::avec(
-                "L'application Google de la compagnie est incomplète : il y manque son identifiant ou son secret. La supprimer suffit à revenir à celle du logiciel.",
-                socle::echec::APart { chemin: Some(p.to_string_lossy().into_owned()), ..socle::echec::APart::default() },
-            )));
+            let lieu = socle::echec::Lieu { chemin: Some(p.to_string_lossy().into_owned()), ..socle::echec::Lieu::default() };
+            return Err(Echec {
+                a_part: Some(lieu.into()),
+                ..erreur(Classe::Google, "L'application Google de la compagnie est incomplète : il y manque son identifiant ou son secret. La supprimer suffit à revenir à celle du logiciel.")
+            });
         }
         return Ok((Application { client_id: a.client_id, client_secret: a.client_secret }, p.to_string_lossy().into_owned()));
     }
     let livre = socle::fichiers::dossier_du_code().join(FICHIER_APPLICATION);
     if !livre.exists() {
-        return Err(erreur_google(socle::echec::avec(
-            "L'application Google du logiciel n'est pas renseignée : elle est livrée avec chaque version publiée ; une copie de travail du dépôt ne l'a pas. Sinon, la compagnie peut poser sa propre application Google.",
-            socle::echec::APart {
-                chemin: Some(p.to_string_lossy().into_owned()),
-                fichier: Some(livre.to_string_lossy().into_owned()),
-                detail: Some("« Publier » la pose depuis le secret PUPPETPAIE_GOOGLE_APPLICATION ; celle de la compagnie s'écrit à `chemin` (client_id, client_secret).".to_string()),
-                ..socle::echec::APart::default()
-            },
-        )));
+        let lieu = socle::echec::Lieu {
+            chemin: Some(p.to_string_lossy().into_owned()),
+            fichier: Some(livre.to_string_lossy().into_owned()),
+            detail: Some("« Publier » la pose depuis le secret PUPPETPAIE_GOOGLE_APPLICATION ; celle de la compagnie s'écrit à `chemin` (client_id, client_secret).".to_string()),
+            ..socle::echec::Lieu::default()
+        };
+        return Err(Echec {
+            a_part: Some(lieu.into()),
+            ..erreur(Classe::Google, "L'application Google du logiciel n'est pas renseignée : elle est livrée avec chaque version publiée ; une copie de travail du dépôt ne l'a pas. Sinon, la compagnie peut poser sa propre application Google.")
+        });
     }
-    let a: ApplicationEcrite = socle::forme::lire_fichier(&livre, "L'application Google livrée avec le logiciel ne se lit pas : le signaler au développeur.").map_err(erreur_google)?;
+    let a: ApplicationEcrite = socle::forme::lire_fichier(&livre, "L'application Google livrée avec le logiciel ne se lit pas : le signaler au développeur.").map_err(|e| e.reclasser(Classe::Google))?;
     Ok((Application { client_id: a.client_id, client_secret: a.client_secret }, "le logiciel".into()))
 }
 
@@ -842,7 +827,7 @@ pub(crate) fn identifiants(racine: &Path) -> R<(Application, String)> {
 enum Jeton {
     Absent,
     Lu(JetonEcrit),
-    Illisible(String),
+    Illisible(Echec),
 }
 
 impl Jeton {
@@ -854,15 +839,15 @@ impl Jeton {
         }
         match Jeton::ouvrir(racine, &p) {
             Ok(j) => Jeton::Lu(j),
-            Err(phrase) => Jeton::Illisible(phrase),
+            Err(e) => Jeton::Illisible(e),
         }
     }
 
-    fn ouvrir(racine: &Path, p: &Path) -> Result<JetonEcrit, String> {
+    fn ouvrir(racine: &Path, p: &Path) -> R<JetonEcrit> {
         // Une lecture impossible (droits) se range avec les refus du coffre : l'etat se lit.
         let brut = std::fs::read(p).map_err(|e| socle::echec::du_disque(p, &e))?;
-        let clair = compagnie::coffre::Coffre::du_poste(racine, "").deproteger(&brut, DESCRIPTION).map_err(|e| {
-            format!("{} Pour le jeton Google, le remede est : relier de nouveau le Drive (Configuration > Mots de passe).", e.message)
+        let clair = compagnie::coffre::Coffre::du_poste(racine).deproteger(&brut, DESCRIPTION).map_err(|e| {
+            e.reformuler(|m| format!("{} Pour le jeton Google, le remede est : relier de nouveau le Drive (Configuration > Mots de passe).", m))
         })?;
         let texte = String::from_utf8(clair).map_err(|e| socle::echec::abime(p, e))?;
         socle::forme::lire_texte(&texte, "Le jeton Google ne se lit pas : relier de nouveau le Drive (Configuration › Mots de passe).")
@@ -885,23 +870,25 @@ pub(crate) fn compte_autorise(racine: &Path) -> Option<String> {
 
 /// Le faux Google qui remplace Google : dans l'atelier, celui d'`envois::redirection` ; en essai, celui que l'essai
 /// nomme (`VARIABLE_GOOGLE_ESSAIS`, une adresse locale seulement) ; `None` hors de l'un et de l'autre.
-fn faux_google() -> Option<String> {
+fn faux_google() -> R<Option<String>> {
     #[cfg(feature = "atelier")]
     if let Some(b) = envois::redirection::base(envois::redirection::VARIABLE_GOOGLE) {
-        return Some(b);
+        return Ok(Some(b));
     }
     match std::env::var(VARIABLE_GOOGLE_ESSAIS) {
-        Ok(b) if socle::garde_reseau::en_essai() && envois::redirection::est_locale(&b) => Some(b.trim_end_matches('/').to_string()),
-        Ok(_) | Err(std::env::VarError::NotPresent) | Err(std::env::VarError::NotUnicode(_)) => None,
+        Ok(b) if socle::garde_reseau::en_essai() && envois::redirection::est_locale(&b) => Ok(Some(b.trim_end_matches('/').to_string())),
+        // Hors essai, ou une adresse qui n'est pas locale : le vrai Google.
+        Ok(_) | Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => Err(refus(format!("La variable d'environnement {} n'est pas du texte : elle ne se lit pas.", VARIABLE_GOOGLE_ESSAIS))),
     }
 }
 
 /// Les adresses de Google, ou celles du faux Google (`faux_google`).
-fn adresses_du_poste() -> envois::drive::Adresses {
-    match faux_google() {
+fn adresses_du_poste() -> R<envois::drive::Adresses> {
+    Ok(match faux_google()? {
         Some(b) => envois::drive::Adresses::de_la_base(&b),
         None => envois::drive::Adresses::de_google(),
-    }
+    })
 }
 
 /// LE CLIENT DU DRIVE DE LA COMPAGNIE : refuse une copie de developpement (qui ecrirait dans le Drive de la VRAIE
@@ -915,10 +902,10 @@ pub fn client_drive(racine: &Path) -> Result<envois::drive::Client, envois::driv
     let (rafraichissement, compte) = match Jeton::de(racine) {
         Jeton::Absent => (Ok(None), None),
         Jeton::Lu(j) => (Ok(Some(j.rafraichissement)), Some(j.compte)),
-        Jeton::Illisible(phrase) => (Err(phrase), None),
+        Jeton::Illisible(e) => (Err(envois::drive::ErreurGoogle::from(e.reclasser(Classe::Google))), None),
     };
     let autorisation = envois::drive::Autorisation { application, rafraichissement, compte };
-    Ok(envois::drive::Client::nouveau(autorisation, adresses_du_poste()))
+    Ok(envois::drive::Client::nouveau(autorisation, adresses_du_poste()?))
 }
 
 /// La variable d'un faux Google des essais : sa base locale (`http://127.0.0.1:<port>`), lue en essai seulement
@@ -926,11 +913,11 @@ pub fn client_drive(racine: &Path) -> Result<envois::drive::Client, envois::driv
 pub const VARIABLE_GOOGLE_ESSAIS: &str = "PUPPETPAIE_ESSAIS_GOOGLE";
 
 /// Les adresses de l'autorisation : celles de Google, ou celles du faux Google (`faux_google`).
-fn adresses_de_l_autorisation() -> envois::google_autorisation::Adresses {
-    match faux_google() {
+fn adresses_de_l_autorisation() -> R<envois::google_autorisation::Adresses> {
+    Ok(match faux_google()? {
         Some(b) => envois::google_autorisation::Adresses::de_la_base(&b),
         None => envois::google_autorisation::Adresses::de_google(),
-    }
+    })
 }
 
 /// LIER LE COMPTE GOOGLE (`google-autoriser`) : le mot de passe du logiciel s'il est pose, puis l'autorisation
@@ -939,14 +926,14 @@ fn adresses_de_l_autorisation() -> envois::google_autorisation::Adresses {
 /// le code au moteur, qui scelle le jeton. Rend l'adresse du compte lie. La page et `moteur route` l'appellent pareil.
 fn google_autoriser(ctx: &Contexte, mdp: Option<&str>) -> R<String> {
     exiger_mot_de_passe(&ctx.racine, mdp, "lier le compte Google")?;
-    let (application, _) = identifiants(&ctx.racine).map_err(|e| Echec { classe: Some(Classe::Refuse), message: e.message })?;
+    let (application, _) = identifiants(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))?;
     let dire_url = |u: &str| {
         eprintln!("La fenetre de Google, a ouvrir dans le navigateur si elle ne s'ouvre pas seule : {}", u);
         if let Err(e) = compagnie::poste::ouvrir_adresse(u) {
-            eprintln!("Le navigateur ne s'ouvre pas : {}", e);
+            eprintln!("Le navigateur ne s'ouvre pas : {}", e.phrase);
         }
     };
-    let jeton = envois::google_autorisation::autoriser(&application, &adresses_de_l_autorisation(), envois::google_autorisation::DELAI_AUTORISATION, &dire_url, &|m| eprintln!("{}", m))?;
+    let jeton = envois::google_autorisation::autoriser(&application, &adresses_de_l_autorisation()?,envois::google_autorisation::DELAI_AUTORISATION, &dire_url, &|m| eprintln!("{}", m))?;
     sceller_le_jeton(&ctx.racine, &jeton)
 }
 
@@ -955,13 +942,13 @@ fn google_autoriser(ctx: &Contexte, mdp: Option<&str>) -> R<String> {
 fn sceller_le_jeton(racine: &Path, jeton: &envois::google_autorisation::JetonGoogle) -> R<String> {
     let ecrit = JetonEcrit { rafraichissement: jeton.rafraichissement.clone(), compte: jeton.compte.clone(), permissions: jeton.permissions.clone() };
     let brut = socle::json_ascii::dumps(&ecrit, None, false, false);
-    let scelle = compagnie::coffre::Coffre::du_poste(racine, "")
+    let scelle = compagnie::coffre::Coffre::du_poste(racine)
         .proteger(brut.as_bytes(), DESCRIPTION)
-        .map_err(|e| erreur_google(format!("Le jeton n'a pas pu etre scelle, rien n'est enregistre : {}", e.message)))?;
+        .map_err(|e| e.reformuler(|m| format!("Le jeton n'a pas pu etre scelle, rien n'est enregistre : {}", m)).reclasser(Classe::Google))?;
     let dossier = config(racine);
-    std::fs::create_dir_all(&dossier).map_err(|e| erreur_google(socle::echec::du_disque(&dossier, &e)))?;
+    std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Google))?;
     let chemin = dossier.join(FICHIER_JETON);
-    std::fs::write(&chemin, scelle).map_err(|e| erreur_google(socle::echec::du_disque(&chemin, &e)))?;
+    std::fs::write(&chemin, scelle).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Google))?;
     Ok(jeton.compte.clone())
 }
 
@@ -1003,10 +990,10 @@ fn google_etat(ctx: &Contexte) -> R<EtatGoogle> {
         // Ce que la carte dit du compte lie, son bouton et sa pastille : aucun Drive lie, a faire (la sauvegarde attend) ;
         // lie et l'autorisation tient, fait ; lie mais l'autorisation ne repond pas, a faire.
         let (compte_dit, pastille) = match (&compte, verifie, &probleme) {
-            (None, _, _) => (None, Pastille::de("a_faire", "aucun Drive lié")),
-            (Some(c), true, _) => (Some(c.clone()), Pastille::de("fait", "lié")),
-            (Some(c), false, Some(p)) => (Some(format!("{} : {}", c, p)), Pastille::de("a_faire", "lié, mais")),
-            (Some(c), false, None) => (Some(format!("{} : l'autorisation ne répond pas", c)), Pastille::de("a_faire", "lié, mais")),
+            (None, _, _) => (None, Pastille::de(socle::ecran::EtatDEcran::AFaire, "aucun Drive lié")),
+            (Some(c), true, _) => (Some(c.clone()), Pastille::de(socle::ecran::EtatDEcran::Fait, "lié")),
+            (Some(c), false, Some(p)) => (Some(format!("{} : {}", c, p)), Pastille::de(socle::ecran::EtatDEcran::AFaire, "lié, mais")),
+            (Some(c), false, None) => (Some(format!("{} : l'autorisation ne répond pas", c)), Pastille::de(socle::ecran::EtatDEcran::AFaire, "lié, mais")),
         };
         EtatGoogle {
             phrase: format!("Google Drive : {}.", pastille.mots),
@@ -1033,9 +1020,9 @@ fn google_etat(ctx: &Contexte) -> R<EtatGoogle> {
         return Err(refus);
     }
     let (application, _) = application?;
-    match jeton_par_rafraichissement(&adresses_du_poste().jetons, &application, &jeton.rafraichissement, DELAI)? {
+    match jeton_par_rafraichissement(&adresses_du_poste()?.jetons, &application, &jeton.rafraichissement, DELAI)? {
         Ok(_) => Ok(etat(Some(jeton.compte), true, None, accordees)),
-        Err(probleme) => Ok(etat(Some(jeton.compte), false, Some(probleme), accordees)),
+        Err(probleme) => Ok(etat(Some(jeton.compte), false, Some(probleme.echec.phrase), accordees)),
     }
 }
 
@@ -1093,8 +1080,8 @@ fn coffre_etat(ctx: &Contexte) -> R<EtatDuCoffre> {
 /// L'etat du coffre sur une fiche entreprise donnee : `coffre_poser` le relit sur la fiche qu'il vient d'ecrire, les
 /// rappels y lisent les acces qui manquent (`routes::rappels`).
 pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::ChampsEntreprise) -> R<EtatDuCoffre> {
-    let coffre = compagnie::coffre::Coffre::du_poste(racine, "");
-    let secrets = coffre.services().map_err(vers_route)?;
+    let coffre = compagnie::coffre::Coffre::du_poste(racine);
+    let secrets = coffre.services()?;
     // UNE COMPAGNIE DONT LES ENVOIS SONT JOUES n'a rien a poser : chaque pastille le dit, en gris.
     let simule = compagnie::bridage::branchement(racine)?.joue();
     let mut services = Vec::new();
@@ -1102,16 +1089,16 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
         // Sa pastille : simule, une information ; fourni par l'environnement (il passe devant le coffre), a voir ; pose,
         // fait ; absent, a poser.
         let pastille = if simule {
-            Pastille::de("information", "simulé")
+            Pastille::de(socle::ecran::EtatDEcran::Information, "simulé")
         } else if s.dans_environnement {
-            Pastille::de("a_faire", "fourni par l'environnement")
+            Pastille::de(socle::ecran::EtatDEcran::AFaire, "fourni par l'environnement")
         } else if s.pose {
-            match s.pose_le.as_deref().and_then(|t| t.get(..10)) {
-                Some(le) => Pastille::de("fait", &format!("posé le {}", socle::ecran::quand(le))),
-                None => Pastille::de("fait", "posé"),
+            match s.pose_le {
+                Some(le) => Pastille::de(socle::ecran::EtatDEcran::Fait, &format!("posé le {}", le.jour().jj_mm_aaaa())),
+                None => Pastille::de(socle::ecran::EtatDEcran::Fait, "posé"),
             }
         } else {
-            Pastille::de("a_faire", "absent")
+            Pastille::de(socle::ecran::EtatDEcran::AFaire, "absent")
         };
         let identifiant = identifiant_du_compte(entreprise, s.service)?;
         services.push(ServiceDit {
@@ -1129,8 +1116,8 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
             oublier: None,
         });
     }
-    let mot_de_passe_pose = coffre.ouverture_exigee().map_err(vers_route)?;
-    let cle_poste = coffre.cle_posee().map_err(vers_route)?;
+    let mot_de_passe_pose = coffre.ouverture_exigee()?;
+    let cle_poste = coffre.cle_posee()?;
     Ok(EtatDuCoffre {
         phrase: String::new(),
         services,
@@ -1139,14 +1126,14 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
         cle_poste,
         chemin_cle: coffre.chemin_cle().to_string_lossy().into_owned(),
         // Ce que montrent le filet et le compte Google d'une compagnie fictive, ou rien ne se branche : une information.
-        fictive: Fictive { google: Pastille::de("information", "non lié") },
+        fictive: Fictive { google: Pastille::de(socle::ecran::EtatDEcran::Information, "non lié") },
         // La pastille du mot de passe du logiciel (rattache a l'administrateur, la page dit a combien de compagnies).
         pastille_mot_de_passe: if simule {
-            Pastille::de("information", "simulé")
+            Pastille::de(socle::ecran::EtatDEcran::Information, "simulé")
         } else if mot_de_passe_pose {
-            Pastille::de("fait", "posé")
+            Pastille::de(socle::ecran::EtatDEcran::Fait, "posé")
         } else {
-            Pastille::de("a_faire", "aucun")
+            Pastille::de(socle::ecran::EtatDEcran::AFaire, "aucun")
         },
         couleur: None,
         ecran: None,
@@ -1200,9 +1187,9 @@ fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> R<EcranDuCoffre> {
         s.oublier = Some(format!("Oublier le mot de passe {} ? Les retours et les dépôts ne seront plus possibles jusqu'à ce qu'il soit reposé.", s.libelle));
     }
     let encart = if fictive {
-        Some(super::Encart::de("information", "Compagnie fictive : les champs sont grisés", "Les dépôts de DPAE et de DSN, leurs retours, les courriels et les signatures sont simulés : aucun mot de passe n'est demandé, et rien ne quitte le poste. Dans une compagnie réelle, c'est ici que se posent les accès à net-entreprises, à l'Urssaf et à la boîte courriel."))
+        Some(super::Encart::de(socle::ecran::EtatDEcran::Information, "Compagnie fictive : les champs sont grisés", "Les dépôts de DPAE et de DSN, leurs retours, les courriels et les signatures sont simulés : aucun mot de passe n'est demandé, et rien ne quitte le poste. Dans une compagnie réelle, c'est ici que se posent les accès à net-entreprises, à l'Urssaf et à la boîte courriel."))
     } else if !e.cle_poste {
-        Some(super::Encart::de("information", "Cet ordinateur n'a pas encore sa clé du coffre", "Rien n'est perdu : elle se refait toute seule la prochaine fois que le mot de passe du logiciel est tapé (ou posé, ci-dessous). Elle vit à part des données, pour qu'une sauvegarde n'emporte jamais de quoi ouvrir le coffre."))
+        Some(super::Encart::de(socle::ecran::EtatDEcran::Information, "Cet ordinateur n'a pas encore sa clé du coffre", "Rien n'est perdu : elle se refait toute seule la prochaine fois que le mot de passe du logiciel est tapé (ou posé, ci-dessous). Elle vit à part des données, pour qu'une sauvegarde n'emporte jamais de quoi ouvrir le coffre."))
     } else {
         None
     };

@@ -44,13 +44,13 @@ use std::path::{Path, PathBuf};
 
 use rust_decimal::Decimal;
 
-use documents::bulletin::{fmt_eur, fmt_heures};
+use documents::bulletin::fmt_heures;
 use engagement::calcul::Paie;
 use crate::courriel::Courriel;
-use socle::date::repr_flottant;
+use socle::echec::{refus, Classe, Echec, R};
 
 /// Un courriel, sans le piece jointe lue : `pieces` sont des chemins.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Message {
     pub cle: String,
     pub nom: String,
@@ -58,9 +58,9 @@ pub struct Message {
     pub sujet: String,
     pub corps: String,
     pub pieces: Vec<PathBuf>,
-    /// La meme lettre en HTML, quand elle porte un bouton (le « Je signe » des contrats). Le texte reste la version
-    /// de reference : c'est lui que la page de relecture montre, et lui que lit une messagerie sans HTML.
-    pub html: String,
+    /// La meme lettre en HTML, quand elle porte un bouton (le « Je signe » des contrats) ; aucune sinon. Le texte reste
+    /// la version de reference : c'est lui que la page de relecture montre, et lui que lit une messagerie sans HTML.
+    pub html: Option<String>,
 }
 
 /// Le seul texte de ce depot qui s'adresse a un humain : il porte ses accents. Les champs : `{prenom}`, `{mois}`,
@@ -143,13 +143,9 @@ pub fn formater(modele: &str, champs: &[(&str, String)]) -> String {
     sortie
 }
 
-fn cle_absente(cle: &str) -> String {
-    socle::fichiers::absent(cle)
-}
-
 /// Ce que le salarie declare a son actualisation France Travail du mois (`recap_france_travail`) : une ligne par
 /// contrat, sur ce qui a ete fait DANS LE MOIS. Rien pour un permanent : chaine vide.
-pub fn recap_france_travail(paies: &[&Paie], mois: &str, employeur: &str) -> Result<String, String> {
+pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &str) -> R<String> {
     let mut lignes: Vec<String> = Vec::new();
     for p in paies {
         let e = &p.engagement;
@@ -165,9 +161,8 @@ pub fn recap_france_travail(paies: &[&Paie], mois: &str, employeur: &str) -> Res
         if e.cachets != 0 {
             volume.push(format!("{} cachet{}", e.cachets, if e.cachets > 1 { "s" } else { "" }));
         }
-        if let Some(h) = e.heures.filter(|h| *h != 0.0) {
-            let dec = heures_en_decimal(h)?;
-            volume.push(format!("{} heure{}", fmt_heures(dec), if h > 1.0 { "s" } else { "" }));
+        if let Some(h) = e.heures.filter(|h| !h.is_zero()) {
+            volume.push(format!("{} heure{}", fmt_heures(h), if h > Decimal::ONE { "s" } else { "" }));
         }
         let (premier, dernier) = (dates[0], dates[dates.len() - 1]);
         let periode = if premier == dernier {
@@ -181,10 +176,10 @@ pub fn recap_france_travail(paies: &[&Paie], mois: &str, employeur: &str) -> Res
             volume.join(" et ")
         };
         let mut ligne = format!("  - {} : {}, {} brut", periode, quoi, socle::texte::euros(p.brut));
-        if e.a_cheval()? && !e.dernier_mois()? {
+        if e.a_cheval() && !e.dernier_mois() {
             // Septembre 2026 : France Travail n'a edite AUCUNE attestation pour le contrat du 29/09 au 16/10 -- elle
             // vient a la fin du contrat. Le salarie declare quand meme ses jours du mois.
-            let fin = e.fin.ok_or("un contrat sans fin n'a pas de date de fin")?;
+            let fin = e.fin.ok_or_else(|| socle::echec::refus("un contrat sans fin n'a pas de date de fin"))?;
             ligne.push_str(&format!(" (contrat en cours jusqu'au {} : son attestation viendra à la fin)", fin.jj_mm_aaaa()));
         }
         lignes.push(ligne);
@@ -192,7 +187,6 @@ pub fn recap_france_travail(paies: &[&Paie], mois: &str, employeur: &str) -> Res
     if lignes.is_empty() {
         return Ok(String::new());
     }
-    let m = socle::mois::Mois::lire(mois)?;
     let (an, nom_mois) = (m.annee(), m.nom(socle::mois::Graphie::Accentuee));
     Ok(format!(
         "Pour ton actualisation France Travail {} {}, employeur {} :\n{}\nCe sont les chiffres de ton bulletin ; \
@@ -204,11 +198,6 @@ pub fn recap_france_travail(paies: &[&Paie], mois: &str, employeur: &str) -> Res
     ))
 }
 
-/// Un nombre d'heures en decimal : le flottant tel qu'il s'ecrit (`repr_flottant`).
-fn heures_en_decimal(h: f64) -> Result<Decimal, String> {
-    let t = repr_flottant(h);
-    t.parse::<Decimal>().or_else(|_| Decimal::from_scientific(&t)).map_err(|e| format!("heures illisibles ({}) : {}", t, e))
-}
 
 
 pub fn nom_fichier(prefixe: &str, cle: &str, etiq: &str) -> String {
@@ -237,9 +226,9 @@ pub const CORPS_RENVOI: &str = "Bonjour {prenom},\n\nTa paie {de_mois} {annee} a
 
 /// Ce qu'un renvoi sait de l'envoi precedent : son jour (« 21/10/2026 ») et ce qui a change depuis
 /// (`ce_qui_a_change`, une ligne par fait).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Renvoi {
-    pub envoye_le: String,
+    pub envoye_le: socle::date::Jour,
     pub changements: Vec<String>,
     /// La phrase de la declaration de la correction, son paragraphe compris, ou rien (`routes::documents::choisir`).
     pub declaration: String,
@@ -249,29 +238,29 @@ pub struct Renvoi {
 /// spectacle, ses jours travailles, ses cachets, ses heures, son brut et son net a payer ; et les totaux. Le journal le
 /// garde a chaque envoi des documents (`routes::documents::expedier_envoi`) : c'est l'« ancien » que le courriel de renvoi
 /// compare a la paie refaite. Les montants et les heures s'ecrivent comme le bulletin les ecrit.
-pub fn resume_de(paies: &[&Paie]) -> Result<ResumeDePaie, String> {
+pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
     let mut contrats = Vec::new();
     let (mut brut, mut net) = (Decimal::ZERO, Decimal::ZERO);
     for p in paies {
         let e = &p.engagement;
         let mut dates = e.dates_travail.clone();
         dates.sort();
-        let heures = e.heures.filter(|h| *h != 0.0).map(|h| heures_en_decimal(h).map(fmt_heures)).transpose()?;
+        let heures = e.heures.filter(|h| !h.is_zero()).map(fmt_heures);
         let spectacle = p.spectacle.as_ref().and_then(|s| s.titre.dite()).filter(|t| !t.is_empty()).cloned();
         contrats.push(ContratResume {
-            debut: e.debut.iso(),
-            fin: e.fin.map(|f| f.iso()),
+            debut: e.debut,
+            fin: e.fin,
             spectacle,
-            jours: dates.iter().map(|d| d.iso()).collect(),
+            jours: dates,
             cachets: e.cachets,
             heures,
-            brut: fmt_eur(p.brut),
-            net: fmt_eur(p.net_a_payer),
+            brut: p.brut,
+            net: p.net_a_payer,
         });
         brut += p.brut;
         net += p.net_a_payer;
     }
-    Ok(ResumeDePaie { contrats, brut: fmt_eur(brut), net: fmt_eur(net) })
+    Ok(ResumeDePaie { contrats, brut, net })
 }
 
 /// LE RESUME DE LA PAIE D'UN SALARIE (`resume_de`), tel que le journal le garde avec l'envoi de ses documents.
@@ -279,37 +268,24 @@ pub fn resume_de(paies: &[&Paie]) -> Result<ResumeDePaie, String> {
 #[serde(deny_unknown_fields)]
 pub struct ResumeDePaie {
     pub contrats: Vec<ContratResume>,
-    pub brut: String,
-    pub net: String,
+    pub brut: Decimal,
+    pub net: Decimal,
 }
 
 /// Un contrat du resume : ses bornes, son spectacle, ses jours, ses cachets, ses heures, son brut et son net.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContratResume {
-    pub debut: String,
-    pub fin: Option<String>,
+    pub debut: socle::date::Jour,
+    pub fin: Option<socle::date::Jour>,
     pub spectacle: Option<String>,
-    pub jours: Vec<String>,
+    pub jours: Vec<socle::date::Jour>,
     pub cachets: i64,
     /// Ses heures, s'il en a.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub heures: Option<String>,
-    pub brut: String,
-    pub net: String,
-}
-
-/// Un montant du resume (« 1 234,56 », comme le bulletin l'ecrit), tel qu'une phrase le dit ; tel quel s'il ne se lit pas
-/// en nombre.
-fn en_euros(t: &str) -> String {
-    let nombre = t.chars().filter(|c| !socle::texte::blanc(*c)).collect::<String>().replace(',', ".");
-    match nombre.parse::<Decimal>() {
-        Ok(d) => socle::texte::euros(d),
-        Err(pas_un_nombre) => {
-            drop(pas_un_nombre);
-            t.to_string()
-        }
-    }
+    pub brut: Decimal,
+    pub net: Decimal,
 }
 
 /// CE QUI A CHANGE depuis l'envoi des documents, en lignes pretes pour le courriel : ce qui a change dans les
@@ -320,7 +296,7 @@ fn en_euros(t: &str) -> String {
 pub fn ce_qui_a_change(faits: &[String], ancien: Option<&ResumeDePaie>, nouveau: Option<&ResumeDePaie>) -> Vec<String> {
     let mut out: Vec<String> = faits.iter().map(|f| format!("  - {}", f)).collect();
     if let (Some(a), Some(n)) = (ancien, nouveau) {
-        let (brut_a, brut_n, net_a, net_n) = (en_euros(&a.brut), en_euros(&n.brut), en_euros(&a.net), en_euros(&n.net));
+        let (brut_a, brut_n, net_a, net_n) = (socle::texte::euros(a.brut), socle::texte::euros(n.brut), socle::texte::euros(a.net), socle::texte::euros(n.net));
         if brut_a != brut_n {
             out.push(format!("  - Salaire brut : {} → {}", brut_a, brut_n));
         }
@@ -343,16 +319,15 @@ pub const RIEN_DANS_LE_RESUME: &str = "  - le détail de ton bulletin ; tes jour
 pub fn preparer_avec(
     paies: &[Paie],
     ent: &droit::fiche::ChampsEntreprise,
-    mois: &str,
+    m: socle::mois::Mois,
     dossier: &Path,
     renvois: &std::collections::HashMap<String, Renvoi>,
     a_part: &std::collections::HashMap<String, Vec<&'static str>>,
-) -> Result<Vec<Message>, String> {
-    let m = socle::mois::Mois::lire(mois)?;
+) -> R<Vec<Message>> {
     let (an, etiq, nom_mois) = (m.annee(), m.etiquette(), m.nom(socle::mois::Graphie::Accentuee));
     let mut vus: Vec<String> = Vec::new();
     let mut messages = Vec::new();
-    let cle_de = |s: &droit::fiche::SalarieDuContrat| -> Result<String, String> { Ok(s.id.to_string()) };
+    let cle_de = |s: &droit::fiche::SalarieDuContrat| -> R<String> { Ok(s.id.to_string()) };
     for p in paies {
         let s = &p.salarie;
         let cle = cle_de(s)?;
@@ -360,12 +335,12 @@ pub fn preparer_avec(
             continue;
         }
         vus.push(cle.clone());
-        fn texte<T: AsRef<str>>(c: &Option<T>, k: &str) -> Result<String, String> {
-            c.portee().map(str::to_string).ok_or_else(|| cle_absente(k))
+        fn texte<T: AsRef<str>>(c: &Option<T>, k: &str) -> R<String> {
+            c.portee().map(str::to_string).ok_or_else(|| socle::fichiers::absent(k))
         }
         let email = s.email.dite().filter(|e| !e.is_empty());
         let Some(email) = email else {
-            return Err(format!(
+            return Err(socle::refus!(
                 "Pas d'adresse e-mail pour {} {} : saisir son courriel dans sa fiche, ou imprimer ses documents.",
                 texte(&s.nom, "nom")?,
                 texte(&s.prenom, "prenom")?
@@ -399,15 +374,15 @@ pub fn preparer_avec(
         if a_part_du("attestation_fctu") {
             notes.push(NOTE_SANS_ATTESTATION_FCTU);
         }
-        let nom_affichage = ent.nom_affichage.ecrite("nom_affichage").map_err(|_| cle_absente("nom_affichage"))?.to_string();
-        let mut ft = recap_france_travail(&siennes, mois, &nom_affichage)?;
+        let nom_affichage = ent.nom_affichage.ecrite("nom_affichage").map_err(|_| socle::fichiers::absent("nom_affichage"))?.to_string();
+        let mut ft = recap_france_travail(&siennes, m, &nom_affichage)?;
         if !ft.is_empty() && !notes.is_empty() {
             ft = format!("\n{}", ft);
         }
-        let signataire = ent.signataire.dite().ok_or_else(|| cle_absente("signataire"))?;
+        let signataire = ent.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire"))?;
         let nom_signataire = match signataire.prenom_affichage.remplie() {
             Some(v) => v.to_string(),
-            None => signataire.prenom.ecrite("prenom").map_err(|_| cle_absente("prenom"))?.to_string(),
+            None => signataire.prenom.ecrite("prenom").map_err(|_| socle::fichiers::absent("prenom"))?.to_string(),
         };
         let courts: Vec<&str> = presents.iter().map(|p| p.court).collect();
         let mut champs = vec![
@@ -423,7 +398,7 @@ pub fn preparer_avec(
         ];
         let (sujet, corps) = match renvois.get(&cle) {
             Some(r) => {
-                champs.push(("envoye_le", r.envoye_le.clone()));
+                champs.push(("envoye_le", r.envoye_le.jj_mm_aaaa()));
                 champs.push(("declaration", r.declaration.clone()));
                 champs.push(("changements", if r.changements.is_empty() { RIEN_DANS_LE_RESUME.to_string() } else { r.changements.join("\n") }));
                 (format!("{} {} — documents corrigés : {}", capitaliser(nom_mois), an, enumerer(&courts)), formater(CORPS_RENVOI, &champs))
@@ -437,7 +412,7 @@ pub fn preparer_avec(
             sujet,
             corps,
             pieces,
-            html: String::new(),
+            html: None,
         });
     }
     Ok(messages)
@@ -458,15 +433,16 @@ pub fn envoyer(
     client: &mut dyn Courriel,
     identifiants: Option<&mut Vec<String>>,
     copies: Option<&mut Vec<Vec<u8>>>,
-) -> Result<Vec<String>, String> {
-    envoyer_suivi(messages, expediteur, client, identifiants, copies).map_err(|e| e.message)
+) -> R<Vec<String>> {
+    envoyer_suivi(messages, expediteur, client, identifiants, copies).map_err(|e| e.echec)
 }
 
-/// Un envoi qui a echoue en route : la phrase de l'erreur, les adresses ou les messages sont REELLEMENT partis, et
-/// l'adresse du message qui n'est pas parti (retours Windows, C : le journal les note, jamais l'expediteur).
+/// Un envoi qui a echoue en route : son refus (de classe `Courriel`, ou `CourrielAvecAvertissement` quand des messages
+/// etaient deja partis), les adresses ou les messages sont REELLEMENT partis, et l'adresse du message qui n'est pas parti
+/// (retours Windows, C : le journal les note, jamais l'expediteur).
 #[derive(Debug, Clone)]
 pub struct ErreurEnvoi {
-    pub message: String,
+    pub echec: Echec,
     pub partis: Vec<String>,
     pub echoue: String,
 }
@@ -485,7 +461,7 @@ pub fn envoyer_suivi(
     // LA SIGNATURE DE LA COMPAGNIE : tout courriel passe ici, il la prend ici. Trop lourde, rien ne part.
     let signature = match client.racine().map(crate::signature_courriel::du_poste) {
         Some(Ok(s)) => s,
-        Some(Err(m)) => return Err(ErreurEnvoi { message: m, partis: Vec::new(), echoue: premier.destinataire.clone() }),
+        Some(Err(m)) => return Err(ErreurEnvoi { echec: m.reclasser(Classe::Courriel), partis: Vec::new(), echoue: premier.destinataire.clone() }),
         None => None,
     };
     for message in messages {
@@ -497,22 +473,15 @@ pub fn envoyer_suivi(
             }
             None => (message, None),
         };
-        let brut = en_mime_nomme(message, expediteur, nom).map_err(|m| ErreurEnvoi { message: m, partis: faits.clone(), echoue: message.destinataire.clone() })?;
+        let brut = en_mime_nomme(message, expediteur, nom).map_err(|m| ErreurEnvoi { echec: m.reclasser(Classe::Courriel), partis: faits.clone(), echoue: message.destinataire.clone() })?;
         let ident = match client.envoyer(&brut) {
             Ok(i) => i,
+            Err(e) if faits.is_empty() => return Err(ErreurEnvoi { echec: e, partis: faits, echoue: message.destinataire.clone() }),
             Err(e) => {
-                let phrase = if faits.is_empty() {
-                    e.to_string()
-                } else {
-                    format!(
-                        "{} : {}\nATTENTION, {} message(s) etaient deja partis : {}",
-                        message.destinataire,
-                        e,
-                        faits.len(),
-                        faits.join(", ")
-                    )
-                };
-                return Err(ErreurEnvoi { message: phrase, partis: faits, echoue: message.destinataire.clone() });
+                let echec = e
+                    .reformuler(|p| format!("{} : {}\nATTENTION, {} message(s) etaient deja partis : {}", message.destinataire, p, faits.len(), faits.join(", ")))
+                    .reclasser(Classe::CourrielAvecAvertissement);
+                return Err(ErreurEnvoi { echec, partis: faits, echoue: message.destinataire.clone() });
             }
         };
         faits.push(message.destinataire.clone());
@@ -730,8 +699,7 @@ pub fn type_devine(nom: &str) -> Option<&'static str> {
         ext = &dernier[dernier.len() - e.len()..];
     }
     if ENCODAGES.contains(&ext) {
-        let (b, e) = couper_extension(base);
-        let _ = b;
+        let (_, e) = couper_extension(base);
         ext = e;
     }
     let ext = ext.to_lowercase();
@@ -740,11 +708,8 @@ pub fn type_devine(nom: &str) -> Option<&'static str> {
 
 fn genre_de(nom: &str) -> &'static str {
     // `piece.suffix.lower()` : le suffixe de pathlib (rien pour un nom qui n'est qu'un suffixe, ni pour un point final).
-    let suffixe = match nom.rfind('.') {
-        Some(i) if i > 0 && i + 1 < nom.len() => nom[i..].to_lowercase(),
-        _ => String::new(),
-    };
-    match GENRES.iter().find(|(s, _)| *s == suffixe).map(|(_, g)| *g).or_else(|| type_devine(nom)) {
+    let suffixe: Option<String> = nom.rfind('.').filter(|&i| i > 0 && i + 1 < nom.len()).map(|i| nom[i..].to_lowercase());
+    match GENRES.iter().find(|(s, _)| suffixe.as_deref() == Some(*s)).map(|(_, g)| *g).or_else(|| type_devine(nom)) {
         Some(genre) => genre,
         // Un type que l'extension ne dit pas : des octets (RFC 2046).
         None => "application/octet-stream",
@@ -754,36 +719,37 @@ fn genre_de(nom: &str) -> &'static str {
 /// Ce que `en_mime_nomme` demande au hasard et a l'horloge : de quoi fixer `Date`, `Message-ID` et les frontieres dans
 /// les tests.
 pub struct Hasards<'a> {
-    pub date: String,
+    /// L'instant que l'en-tete `Date` ecrit (`date_de`).
+    pub date: socle::paris::Moment,
     pub message_id: String,
     /// Une frontiere neuve a chaque appel (`=` x15, 19 chiffres, `==`).
-    pub frontiere: &'a mut dyn FnMut() -> Result<String, String>,
+    pub frontiere: &'a mut dyn FnMut() -> R<String>,
 }
 
 /// Le message complet, pieces jointes comprises, tel que `EmailMessage.as_bytes()` l'ecrit, l'expediteur precede du
 /// nom que la compagnie affiche (« Compagnie du Fil <adresse> ») ; sans nom, l'adresse
 /// seule.
-pub fn en_mime_nomme(message: &Message, expediteur: &str, nom: Option<&str>) -> Result<Vec<u8>, String> {
+pub fn en_mime_nomme(message: &Message, expediteur: &str, nom: Option<&str>) -> R<Vec<u8>> {
     let mut frontiere = frontiere_au_hasard;
     let domaine = match expediteur.rsplit_once('@') {
         Some((_, d)) => d,
         None => expediteur,
     };
     let hasards = Hasards {
-        date: date_locale()?,
+        date: socle::temps::secondes(),
         message_id: nouveau_message_id(if domaine.is_empty() { "localhost.localdomain" } else { domaine })?,
         frontiere: &mut frontiere,
     };
     en_mime_complet(message, expediteur, nom, hasards)
 }
 
-pub fn en_mime_avec(message: &Message, expediteur: &str, hasards: Hasards) -> Result<Vec<u8>, String> {
+pub fn en_mime_avec(message: &Message, expediteur: &str, hasards: Hasards) -> R<Vec<u8>> {
     en_mime_complet(message, expediteur, None, hasards)
 }
 
-fn en_mime_complet(message: &Message, expediteur: &str, nom: Option<&str>, hasards: Hasards) -> Result<Vec<u8>, String> {
+fn en_mime_complet(message: &Message, expediteur: &str, nom: Option<&str>, hasards: Hasards) -> R<Vec<u8>> {
     let Hasards { date, message_id, frontiere } = hasards;
-    let adresse = |a: &str| -> Result<(), String> {
+    let adresse = |a: &str| -> R<()> {
         if adresse_simple(a) {
             Ok(())
         } else {
@@ -793,7 +759,7 @@ fn en_mime_complet(message: &Message, expediteur: &str, nom: Option<&str>, hasar
     adresse(expediteur)?;
     adresse(&message.destinataire)?;
     if compte_lignes(&message.sujet) > 1 {
-        return Err("Header values may not contain linefeed or carriage return characters".to_string());
+        return Err(refus("Header values may not contain linefeed or carriage return characters"));
     }
     let mut racine_entetes = vec![
         match nom {
@@ -802,7 +768,7 @@ fn en_mime_complet(message: &Message, expediteur: &str, nom: Option<&str>, hasar
         },
         Entete::Adresse("To", message.destinataire.clone()),
         Entete::Libre("Subject", message.sujet.clone()),
-        Entete::Date(date),
+        Entete::Date(date_de(date)),
         Entete::MessageId(message_id),
     ];
     let mime_version = || Entete::Simple("MIME-Version", "1.0".to_string());
@@ -826,7 +792,7 @@ fn en_mime_complet(message: &Message, expediteur: &str, nom: Option<&str>, hasar
     for piece in &message.pieces {
         let octets = std::fs::read(piece).map_err(|e| socle::echec::du_disque(&piece, &e))?;
         let nom = piece.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| {
-            socle::echec::avec("Une pièce jointe n'a pas de nom.", socle::echec::APart { chemin: Some(piece.to_string_lossy().into_owned()), ..socle::echec::APart::default() })
+            socle::echec::refus_avec("Une pièce jointe n'a pas de nom.", socle::echec::Lieu { chemin: Some(piece.to_string_lossy().into_owned()), ..socle::echec::Lieu::default() })
         })?;
         let genre = genre_de(&nom);
         pieces.push(Noeud {
@@ -843,19 +809,17 @@ fn en_mime_complet(message: &Message, expediteur: &str, nom: Option<&str>, hasar
             corps: Corps::Texte(base64_lignes(&octets, MAXLEN).into_bytes()),
         });
     }
-    let racine = if message.html.is_empty() && pieces.is_empty() {
+    let racine = if message.html.is_none() && pieces.is_empty() {
         // Texte seul : les en-tetes de contenu suivent ceux du message.
         let Noeud { entetes, corps } = texte;
         racine_entetes.extend(entetes);
         racine_entetes.push(mime_version());
         Noeud { entetes: racine_entetes, corps }
     } else {
-        let alternative = if message.html.is_empty() {
-            None
-        } else {
-            let (cte_h, charge_h) = encoder_texte(&message.html);
-            Some(vec![texte.clone(), partie_texte("html", cte_h, charge_h, true)])
-        };
+        let alternative = message.html.as_deref().map(|html| {
+            let (cte_h, charge_h) = encoder_texte(html);
+            vec![texte.clone(), partie_texte("html", cte_h, charge_h, true)]
+        });
         racine_entetes.push(mime_version());
         match (alternative, pieces.is_empty()) {
             (Some(a), true) => {
@@ -911,12 +875,12 @@ struct Noeud {
 }
 
 /// `BytesGenerator._write` : le corps d'abord (la frontiere en depend), puis les en-tetes, une ligne vide, le corps.
-fn ecrire_noeud(n: &Noeud, frontiere: &mut dyn FnMut() -> Result<String, String>) -> Result<Vec<u8>, String> {
+fn ecrire_noeud(n: &Noeud, frontiere: &mut dyn FnMut() -> R<String>) -> R<Vec<u8>> {
     let mut entetes = n.entetes.clone();
     let corps: Vec<u8> = match &n.corps {
         Corps::Texte(t) => t.clone(),
         Corps::Parties(parties) => {
-            let textes: Result<Vec<Vec<u8>>, String> = parties.iter().map(|p| ecrire_noeud(p, frontiere)).collect();
+            let textes: R<Vec<Vec<u8>>> =parties.iter().map(|p| ecrire_noeud(p, frontiere)).collect();
             let textes = textes?;
             let tout = textes.join(&b'\n');
             let b = frontiere_libre(frontiere()?, &tout);
@@ -969,42 +933,35 @@ fn frontiere_libre(base: String, texte: &[u8]) -> String {
 }
 
 /// Huit octets des aleas du systeme ; un systeme qui n'en donne pas refuse.
-fn huit_aleas() -> Result<u64, String> {
+fn huit_aleas() -> R<u64> {
     let mut o = [0u8; 8];
-    socle::temps::aleas(&mut o).map_err(|e| format!("Le systeme ne donne pas d'aleas : {}.", e))?;
+    socle::temps::aleas(&mut o).map_err(|e| e.reformuler(|p| format!("Le systeme ne donne pas d'aleas : {}.", p)))?;
     Ok(u64::from_le_bytes(o))
 }
 
-fn frontiere_au_hasard() -> Result<String, String> {
+fn frontiere_au_hasard() -> R<String> {
     let jeton = huit_aleas()? >> 1;
     Ok(format!("{}{:019}==", "=".repeat(15), jeton))
 }
 
 /// Un identifiant de message (`Message-ID`) neuf, sur le domaine donné.
-pub fn nouveau_message_id(domaine: &str) -> Result<String, String> {
-    let maintenant = std::time::Duration::from_secs_f64(socle::temps::secondes());
-    let centiemes = maintenant.as_millis() / 10;
+pub fn nouveau_message_id(domaine: &str) -> R<String> {
+    let maintenant = socle::temps::secondes();
+    let centiemes = i128::from(maintenant.entieres()) * 100 + i128::from(maintenant.nanosecondes() / 10_000_000);
     Ok(format!("<{}.{}.{}@{}>", centiemes, socle::temps::numero_de_processus(), huit_aleas()?, domaine))
 }
 
-/// La date d'un en-tête de courriel, maintenant, à l'heure de Paris.
-fn date_locale() -> Result<String, String> {
-    let t = socle::temps::secondes().floor() as i64;
-    date_de(t)
-}
-
-/// La date RFC 5322 d'un instant (secondes unix), heure de Paris.
-pub fn date_de(t: i64) -> Result<String, String> {
+/// La date RFC 5322 d'un instant, heure de Paris (§ 3.3, `date-time` ;
+/// `atelier/reference/sources/ietf/ietf-rfc5322-internet-message-format-20081001.txt`).
+fn date_de(t: socle::paris::Moment) -> String {
     const JOURS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const MOIS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     let decalage = socle::paris::decalage(t);
-    let local = t + decalage;
-    let jours = local.div_euclid(86_400);
-    let secondes = local.rem_euclid(86_400);
-    let j = socle::date::Jour::depuis_jours_unix(jours).ok_or("L'horloge du poste donne une date impossible.")?;
+    let local = t.local_naif();
+    let (j, secondes) = (local.jour(), local.seconde_du_jour());
     // Le 01/01/1970 etait un jeudi.
-    let semaine = (jours + 3).rem_euclid(7) as usize;
-    Ok(format!(
+    let semaine = (j.ordinal() - 719_163 + 3).rem_euclid(7) as usize;
+    format!(
         "{}, {:02} {} {:04} {:02}:{:02}:{:02} {}{:02}{:02}",
         JOURS[semaine],
         j.jour,
@@ -1016,7 +973,7 @@ pub fn date_de(t: i64) -> Result<String, String> {
         if decalage < 0 { '-' } else { '+' },
         decalage.abs() / 3600,
         decalage.abs() % 3600 / 60
-    ))
+    )
 }
 
 /// Le nombre de lignes d'un texte, pour le refus d'un en-tête à plusieurs lignes.
@@ -1043,11 +1000,12 @@ fn compte_lignes(s: &str) -> usize {
 
 /// Une adresse `local@domaine` en ASCII, sans nom ni chevrons : la seule forme que ce logiciel ecrit.
 fn adresse_simple(a: &str) -> bool {
-    let Some((local, domaine)) = a.split_once('@') else { return false };
-    let ok_local = !local.is_empty()
-        && local.bytes().all(|c| c.is_ascii_alphanumeric() || b"!#$%&'*+/=?^_`{|}~-.".contains(&c));
-    let ok_domaine = !domaine.is_empty() && domaine.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'.');
-    ok_local && ok_domaine
+    a.split_once('@').is_some_and(|(local, domaine)| {
+        let ok_local = !local.is_empty()
+            && local.bytes().all(|c| c.is_ascii_alphanumeric() || b"!#$%&'*+/=?^_`{|}~-.".contains(&c));
+        let ok_domaine = !domaine.is_empty() && domaine.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'.');
+        ok_local && ok_domaine
+    })
 }
 
 // ------------------------------------------------------------------------------------------- le texte des parties
@@ -1219,7 +1177,7 @@ fn base64_lire(t: &str) -> Option<Vec<u8>> {
 
 // ------------------------------------------------------------------------------------- le pliage des en-tetes
 
-fn plier_entete(e: &Entete) -> Result<String, String> {
+fn plier_entete(e: &Entete) -> R<String> {
     Ok(match e {
         Entete::Adresse(nom, v) => plier_insecable(nom, v),
         Entete::De(nom, adresse) => plier_insecable("From", &de_nomme(nom, adresse)),
@@ -1451,7 +1409,7 @@ fn mot_code(s: &[char]) -> String {
 /// Le texte d'un en-tete libre : les mots codes sont decodes, le blanc entre deux mots codes s'efface.
 fn decoder_libre(s: &str) -> String {
     enum Piece {
-        Blanc(String, bool),
+        Blanc(String),
         Mot(String),
         Code(String),
     }
@@ -1460,17 +1418,15 @@ fn decoder_libre(s: &str) -> String {
     while !reste.is_empty() {
         if reste.starts_with(est_blanc) {
             let fin = jusqu_a(reste, |c: char| !est_espace_unicode(c));
-            pieces.push(Piece::Blanc(reste[..fin].to_string(), false));
+            pieces.push(Piece::Blanc(reste[..fin].to_string()));
             reste = &reste[fin..];
             continue;
         }
         if reste.starts_with("=?") {
             if let Some((texte, suite)) = lire_mot_code(reste) {
                 let n = pieces.len();
-                if n > 1 && matches!(pieces[n - 1], Piece::Blanc(..)) && matches!(pieces[n - 2], Piece::Code(_)) {
-                    if let Piece::Blanc(_, efface) = &mut pieces[n - 1] {
-                        *efface = true;
-                    }
+                if n > 1 && matches!(pieces[n - 1], Piece::Blanc(_)) && matches!(pieces[n - 2], Piece::Code(_)) {
+                    pieces.pop();
                 }
                 pieces.push(Piece::Code(texte));
                 reste = suite;
@@ -1484,8 +1440,7 @@ fn decoder_libre(s: &str) -> String {
     pieces
         .iter()
         .map(|p| match p {
-            Piece::Blanc(_, true) => String::new(),
-            Piece::Blanc(t, false) | Piece::Mot(t) | Piece::Code(t) => t.clone(),
+            Piece::Blanc(t) | Piece::Mot(t) | Piece::Code(t) => t.clone(),
         })
         .collect()
 }
@@ -1556,7 +1511,7 @@ fn plier_en_mot_code(
     lignes: &mut Vec<String>,
     dernier_mot_code: Option<usize>,
     dernier_est_code: bool,
-) -> Result<usize, String> {
+) -> R<usize> {
     let mut a_coder = a_coder.to_string();
     if let Some(pos) = dernier_mot_code {
         let segment = lignes.last().unwrap()[pos..].to_string();
@@ -1618,7 +1573,7 @@ enum Morceau {
 }
 
 /// L'en-tete `nom: valeur` d'un texte libre, plie (nom et `: ` compris, \n final).
-fn plier_libre(nom: &str, valeur: &str) -> Result<String, String> {
+fn plier_libre(nom: &str, valeur: &str) -> R<String> {
     let mut lignes: Vec<String> = vec![format!("{}:", nom)];
     let jetons = jetons_de(valeur);
     if !jetons.is_empty() {

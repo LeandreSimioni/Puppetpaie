@@ -13,7 +13,8 @@ const MENTION: &str = "Signé électroniquement le 02/10/2026 à 09:41\npar Paul
 fn description(modele: Value) -> Value {
     let mut m = json!({"valeurs": {
         "contrat.numero": "C-1", "employeur.signataire": "Jeanne Martin",
-        "employeur.signataire_fonction": "Présidente", "salarie.nom_complet": "Paul Dupont"}});
+        "employeur.signataire_fonction": "Présidente", "salarie.nom_complet": "Paul Dupont",
+        "salarie.case_signature": "L'artiste"}});
     for (k, v) in modele.as_object().unwrap() {
         m[k] = v.clone();
     }
@@ -22,8 +23,8 @@ fn description(modele: Value) -> Value {
 
 fn fabriquer(v: &Value) -> Result<Vec<u8>, String> {
     fabrique_pdf::Description::lire(&v.to_string()).and_then(|d| fabrique_pdf::fabriquer(&d)).map_err(|r| {
-        assert!(!r.0.contains('\n'), "une seule ligne : {:?}", r.0);
-        r.0
+        assert!(!r.phrase.contains('\n'), "une seule ligne : {:?}", r.phrase);
+        r.phrase
     })
 }
 
@@ -58,15 +59,16 @@ fn l_exemplaire_contresigne_est_le_contrat_parti_plus_la_mention() {
     assert_eq!(&signe[..parti.len()], &parti[..]);
     let doc = fabrique_pdf::lecture::charger(&signe).unwrap();
     assert!(doc.trailer.get(b"Encrypt").is_err());
-    let (textes, _) = fabrique_pdf::texte::texte_des_pages(&doc);
+    let (pages, _) = fabrique_pdf::texte::texte_des_pages(&doc);
+    let textes: Vec<String> = pages.iter().map(|p| p.lu().unwrap_or_else(|r| panic!("{}", r.phrase))).collect();
     for l in MENTION.lines() {
         assert!(textes[0].lines().any(|t| t == l), "la ligne {:?} manque : {:?}", l, textes[0]);
     }
     // Une mention qui ne tient pas dans la case, ou un PDF sans case de l'artiste : refus d'une ligne.
-    let e = fabrique_pdf::marquage::contresigner(&parti, "a\nb\nc\nd\ne\nf").unwrap_err().0;
+    let e = fabrique_pdf::marquage::contresigner(&parti, "a\nb\nc\nd\ne\nf").unwrap_err().phrase;
     assert!(e.contains("ne tient pas dans la case") && !e.contains('\n'), "{}", e);
     let mut attestation = description(json!({"texte": MODELE}));
     attestation["style"] = json!("attestation");
     let sans_case = fabriquer(&attestation).unwrap();
-    assert!(fabrique_pdf::marquage::contresigner(&sans_case, MENTION).unwrap_err().0.contains("case de l'artiste"));
+    assert!(fabrique_pdf::marquage::contresigner(&sans_case, MENTION).unwrap_err().phrase.contains("case de l'artiste"));
 }

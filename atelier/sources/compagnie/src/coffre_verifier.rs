@@ -12,7 +12,7 @@
 //! reseau. `verifier_secret` ouvre les vraies connexions.
 
 use socle::echec::Classe;
-use socle::ecran::Pastille;
+use socle::ecran::{EtatDEcran, Pastille};
 
 use crate::boite::Ouverture;
 use crate::coffre::Coffre;
@@ -20,10 +20,7 @@ use droit::contexte::Contexte;
 use socle::echec::erreur;
 use crate::consultation::mot_de_passe_de_consultation;
 use envois::releve_retours::{Client, Panne};
-use socle::echec::Echec;
-
-
-type R<T> = Result<T, Echec>;
+use socle::echec::R;
 
 pub const NET_ENTREPRISES: &str = "net-entreprises";
 pub const URSSAF: &str = "urssaf";
@@ -34,7 +31,7 @@ pub const COURRIEL: &str = "courriel";
 pub type Authentifier<'a> = &'a mut dyn FnMut(&Contexte, &str, Option<String>) -> Result<(), Panne>;
 
 /// De quoi ouvrir la boite : `courriel.verifier` (une seule connexion IMAP).
-pub type OuvrirBoite<'a> = &'a mut dyn FnMut(&Contexte) -> Result<Ouverture, envois::courriel::ErreurCourriel>;
+pub type OuvrirBoite<'a> = &'a mut dyn FnMut(&Contexte) -> R<Ouverture>;
 
 /// LE VERDICT D'UNE TENTATIVE : le service essaye, si la session s'ouvre, la premiere ligne de ce qu'il a repondu, ce
 /// qu'il faut en faire quand la reponse le dit, et sa pastille (la session s'ouvre, fait ; l'organisme refuse, refuse).
@@ -50,7 +47,7 @@ pub struct Verdict {
 
 impl Verdict {
     fn de(service: &'static str, ok: bool, message: String, conseil: Option<&'static str>) -> Verdict {
-        let pastille = if ok { Pastille::de("fait", "OK") } else { Pastille::de("refuse", "refusé") };
+        let pastille = if ok { Pastille::de(EtatDEcran::Fait, "OK") } else { Pastille::de(EtatDEcran::Refuse, "refusé") };
         Verdict { service, ok, message, conseil, pastille }
     }
 }
@@ -79,20 +76,20 @@ pub fn verifier_secret_avec(ctx: &Contexte, service: &str, authentifier: Authent
             return Err(erreur(Classe::Refuse, format!("Service inconnu : « {} ». Connus : {}, {}, {}.", service, NET_ENTREPRISES, URSSAF, COURRIEL)));
         }
     };
-    let coffre = Coffre::du_poste(&ctx.racine, "");
-    if !coffre.disponible(nom).map_err(crate::coffre::vers_route)? {
+    let coffre = Coffre::du_poste(&ctx.racine);
+    if !coffre.disponible(nom)? {
         return Err(erreur(Classe::Refuse, format!("Aucun mot de passe {} : rien à vérifier.", nom)));
     }
     if nom == COURRIEL {
         // La boite : une connexion IMAP, une seule (`courriel.verifier`).
-        let o = boite(ctx).map_err(|e| erreur(Classe::Courriel, e.0))?;
+        let o = boite(ctx)?;
         return Ok(Verdict::de(nom, o.ok, o.message, o.conseil));
     }
     let mdp = mot_de_passe_de_consultation(ctx, nom)?;
     match authentifier(ctx, nom, mdp) {
         Ok(()) => Ok(Verdict::de(nom, true, "session ouverte".into(), None)),
-        Err(p) if p.classe == Classe::Organisme => {
-            let premiere: String = socle::texte::lignes_du_texte(&p.message).first().map(|l| l.to_string()).into_iter().collect();
+        Err(p) if p.echec.classe == Some(Classe::Organisme) => {
+            let premiere: String = socle::texte::lignes_du_texte(&p.echec.phrase).first().map(|l| l.to_string()).into_iter().collect();
             let conseil = if premiere.contains("422") {
                 Some("Le service répond 422 (paramètres invalides) : le plus souvent un mot de passe tronqué à la saisie, pas un compte fautif. Reposez-le.")
             } else if premiere.contains("403") {

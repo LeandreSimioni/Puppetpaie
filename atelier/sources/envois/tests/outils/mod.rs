@@ -1,10 +1,8 @@
 //! Les aides des tests des envois : un dossier par test, le faux serveur HTTP.
 
-#![allow(dead_code)]
-
 use std::path::{Path, PathBuf};
 
-mod serveur;
+pub mod serveur;
 pub use serveur::*;
 
 /// Un dossier vide pour un test, sous le dossier temporaire de Cargo.

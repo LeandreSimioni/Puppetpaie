@@ -16,7 +16,7 @@ use compagnie::maj::{
     PROPRES_A_L_INSTALLATION, SYSTEMES, TOUT_SYSTEME,
 };
 
-type R<T> = Result<T, String>;
+use socle::echec::{au_chemin, du_disque, refus, R};
 
 /// La variable d'environnement ou le flux « Publier » pose la graine (base64) : lue par `publier_depuis_l_environnement`,
 /// jamais affichee.
@@ -30,7 +30,7 @@ const PROGRAMMES_UNIX: [&str; 2] = ["puppetpaie", "moteur"];
 
 fn signer(octets: &[u8], privee: &[u8]) -> R<String> {
     use ed25519_dalek::Signer;
-    let k = <[u8; 32]>::try_from(privee).map_err(|_| "cle privee illisible (32 octets attendus)")?;
+    let k = <[u8; 32]>::try_from(privee).map_err(|_| refus("cle privee illisible (32 octets attendus)"))?;
     Ok(socle::base64::ecrire(&ed25519_dalek::SigningKey::from_bytes(&k).sign(octets).to_bytes()))
 }
 
@@ -51,7 +51,7 @@ fn est_un_dossier(e: &std::fs::DirEntry) -> R<bool> {
 
 /// Le dossier qui porte `logiciel/` (`code`) : les fictives livrees y sont, a cote de lui.
 fn base(code: &Path) -> R<&Path> {
-    code.parent().ok_or_else(|| format!("{} n'a pas de dossier parent : les fictives livrees ne s'y trouvent pas", code.display()))
+    code.parent().ok_or_else(|| au_chemin("Le logiciel n'a pas de dossier parent : les fictives livrées ne s'y trouvent pas.", code))
 }
 
 /// Les fichiers de `logiciel/` pour l'archive, dans l'ordre des noms (meme contenu, meme condensat).
@@ -85,7 +85,7 @@ const HORS_D_UNE_FICTIVE_LIVREE: [&str; 5] =
 fn fictives_livrees(code: &Path) -> R<Vec<PathBuf>> {
     let dossier = base(code)?.join(compagnie::installation::DOSSIER_FICTIVES);
     if !dossier.is_dir() {
-        return Err(format!("aucune compagnie fictive : {} n'existe pas, et une archive sans elles s'ouvrirait bridee sur un accueil vide", dossier.display()));
+        return Err(au_chemin("Aucune compagnie fictive : leur dossier n'existe pas, et une archive sans elles s'ouvrirait bridée sur un accueil vide.", &dossier));
     }
     let mut out = Vec::new();
     let mut n = 0;
@@ -113,10 +113,7 @@ fn fictives_livrees(code: &Path) -> R<Vec<PathBuf>> {
         }
     }
     if n == 0 {
-        return Err(format!(
-            "aucune compagnie fictive dans {} : une archive sans elles s'ouvrirait bridee sur un accueil vide",
-            dossier.display()
-        ));
+        return Err(au_chemin("Aucune compagnie fictive dans leur dossier : une archive sans elles s'ouvrirait bridée sur un accueil vide.", &dossier));
     }
     Ok(out)
 }
@@ -130,7 +127,7 @@ type Entree = (String, PathBuf, bool);
 /// executables, et eux seuls.
 fn entrees_du_logiciel(code: &Path, systeme: &str, tete: &str) -> R<Vec<Entree>> {
     if systeme != TOUT_SYSTEME && !SYSTEMES.contains(&systeme) {
-        return Err(format!("« {} » n'est pas un systeme", systeme));
+        return Err(socle::refus!("« {} » n'est pas un systeme", systeme));
     }
     let mut liste = Vec::new();
     fichiers(code, Path::new(""), &mut liste)?;
@@ -162,7 +159,7 @@ fn entrees_des_fictives(code: &Path) -> R<(Vec<Entree>, Vec<(String, Vec<u8>)>, 
     for rel in fictives_livrees(code)? {
         let r = rel.to_string_lossy().replace('\\', "/");
         let chemin = dossier.join(&rel);
-        let sha = condensat(&std::fs::read(&chemin).map_err(|e| format!("{} : {}", chemin.display(), e))?);
+        let sha = condensat(&std::fs::read(&chemin).map_err(|e| du_disque(&chemin, &e))?);
         toute.update(format!("{}/{}\t{}\n", racine, r, sha).as_bytes());
         if let Some((fictive, dedans)) = r.split_once('/') {
             par_fictive.entry(fictive.to_string()).or_default().update(format!("{}\t{}\n", dedans, sha).as_bytes());
@@ -185,7 +182,8 @@ fn entrees_des_fictives(code: &Path) -> R<(Vec<Entree>, Vec<(String, Vec<u8>)>, 
 /// Un zip deterministe (dates fixes, ordre donne) : les `entrees`, puis les fichiers `en_plus` (nom, octets).
 fn zipper(entrees: &[Entree], en_plus: &[(String, Vec<u8>)]) -> R<Vec<u8>> {
     let mut z = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-    let date = zip::DateTime::from_date_and_time(2020, 1, 1, 0, 0, 0).map_err(|e| format!("{:?}", e))?;
+    let date = zip::DateTime::from_date_and_time(2020, 1, 1, 0, 0, 0)
+        .map_err(|e| socle::echec::refus_avec("La date fixe des entrées de l'archive ne s'écrit pas.", socle::echec::Lieu { detail: Some(format!("{:?}", e)), ..socle::echec::Lieu::default() }))?;
     let options = |executable: bool| {
         zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated)
@@ -193,14 +191,14 @@ fn zipper(entrees: &[Entree], en_plus: &[(String, Vec<u8>)]) -> R<Vec<u8>> {
             .unix_permissions(if executable { 0o755 } else { 0o644 })
     };
     for (nom, chemin, executable) in entrees {
-        z.start_file(nom.as_str(), options(*executable)).map_err(|e| e.to_string())?;
-        z.write_all(&std::fs::read(chemin).map_err(|e| format!("{} : {}", chemin.display(), e))?).map_err(|e| e.to_string())?;
+        z.start_file(nom.as_str(), options(*executable)).map_err(|e| refus(e.to_string()))?;
+        z.write_all(&std::fs::read(chemin).map_err(|e| du_disque(chemin, &e))?).map_err(|e| refus(e.to_string()))?;
     }
     for (nom, octets) in en_plus {
-        z.start_file(nom.as_str(), options(false)).map_err(|e| e.to_string())?;
-        z.write_all(octets).map_err(|e| e.to_string())?;
+        z.start_file(nom.as_str(), options(false)).map_err(|e| refus(e.to_string()))?;
+        z.write_all(octets).map_err(|e| refus(e.to_string()))?;
     }
-    Ok(z.finish().map_err(|e| e.to_string())?.into_inner())
+    Ok(z.finish().map_err(|e| refus(e.to_string()))?.into_inner())
 }
 
 /// L'ARCHIVE DE MISE A JOUR d'un systeme (`SYSTEMES`) ou de tous (`TOUT_SYSTEME`) : LE CONTENU DE `logiciel/` A SA RACINE,
@@ -259,13 +257,13 @@ pub fn marquer_les_fictives(code: &Path) -> R<String> {
     if std::env::var_os(socle::garde_reseau::VARIABLE).is_none() {
         std::env::set_var(socle::garde_reseau::VARIABLE, "1");
     }
-    for (nom, scenario) in routes::scenario::fictives_de_reference(base) {
+    for (nom, scenario) in routes::scenario::fictives_de_reference(base)? {
         let dest = base.join(compagnie::installation::DOSSIER_FICTIVES).join(&nom);
         routes::scenario::livrer(&scenario, &dest, Some(droit::contexte::jour_reel()))?;
     }
     let (_, en_plus, empreinte) = entrees_des_fictives(code)?;
     for (nom, octets) in en_plus {
-        std::fs::write(base.join(&nom), octets).map_err(|e| format!("{} : {}", nom, e))?;
+        std::fs::write(base.join(&nom), octets).map_err(|e| socle::refus!("{} : {}", nom, e))?;
     }
     Ok(empreinte)
 }
@@ -279,12 +277,12 @@ pub fn poser_les_fictives(code: &Path, dossier: &Path) -> R<String> {
     let ecrire = |nom: &str, octets: &[u8]| -> R<()> {
         let dest = dossier.join(nom);
         if let Some(p) = dest.parent() {
-            std::fs::create_dir_all(p).map_err(|e| format!("{} : {}", p.display(), e))?;
+            std::fs::create_dir_all(p).map_err(|e| du_disque(p, &e))?;
         }
-        std::fs::write(&dest, octets).map_err(|e| format!("{} : {}", dest.display(), e))
+        std::fs::write(&dest, octets).map_err(|e| du_disque(&dest, &e))
     };
     for (nom, chemin, _) in entrees {
-        ecrire(&nom, &std::fs::read(&chemin).map_err(|e| format!("{} : {}", chemin.display(), e))?)?;
+        ecrire(&nom, &std::fs::read(&chemin).map_err(|e| du_disque(&chemin, &e))?)?;
     }
     for (nom, octets) in en_plus {
         ecrire(&nom, &octets)?;
@@ -307,13 +305,13 @@ pub struct CleDeGithub {
 fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
     let version = courante(c)?;
     let depot = d.display().to_string();
-    std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&d).map_err(|e| refus(e.to_string()))?;
     if d.join(DERNIERE).exists() {
         // Le `derniere.json` de la Release precedente, lu comme chaque installation le lit (`derniere_lue`).
         let avant = derniere_lue(&lire_depot(&depot, DERNIERE)?)?;
         let av = avant.version.as_str();
         if !plus_recente(&version, av)? {
-            return Err(format!(
+            return Err(socle::refus!(
                 "le depot est deja en {} ; augmenter VERSION (aujourd'hui {}, le fichier s'ecrit AAAA.MM.JJ : {}) avant de publier",
                 version_lue(av),
                 version_lue(&version),
@@ -326,10 +324,10 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     // installation ne pourrait lancer la version : rien n'est publie.
     let presents: Vec<&str> = SYSTEMES.into_iter().filter(|s| programme_de(c, s, "puppetpaie").is_file()).collect();
     if presents.is_empty() {
-        return Err(format!(
-            "aucune fenetre dans {} (ni {}) : aucune installation ne pourrait lancer cette version",
-            c.display(),
-            SYSTEMES.map(|s| programme_de(Path::new(""), s, "puppetpaie").to_string_lossy().replace('\\', "/")).join(", ni ")
+        let attendues = SYSTEMES.map(|s| programme_de(Path::new(""), s, "puppetpaie").to_string_lossy().replace('\\', "/")).join(", ");
+        return Err(socle::echec::refus_avec(
+            "Le logiciel n'a la fenêtre d'aucun système : aucune installation ne pourrait lancer cette version.",
+            socle::echec::Lieu { chemin: Some(c.to_string_lossy().into_owned()), detail: Some(format!("attendue : {}", attendues)), ..socle::echec::Lieu::default() },
         ));
     }
     let mut archives = Archives::default();
@@ -368,14 +366,14 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     }
     // Rien n'est ecrit avant que toutes soient signees et verifiees.
     for (nom, octets) in &faites {
-        std::fs::write(d.join(nom), octets).map_err(|e| e.to_string())?;
+        std::fs::write(d.join(nom), octets).map_err(|e| refus(e.to_string()))?;
     }
     // LES INSTALLATIONS POSEES QUI NE CONNAISSENT QU'UNE ARCHIVE (celle de Windows) lisent a la racine `archive`,
     // `sha256` et `signature` : l'archive de Windows y est nommee, et elles se mettent a jour.
     let windows = archives.windows.clone();
     let manifeste = Publiee {
         version,
-        publiee_le: socle::paris::iso_de_naif(socle::paris::maintenant_naif())[..10].to_string(),
+        publiee_le: socle::paris::maintenant_naif().jour(),
         notes: notes.to_string(),
         calcul: calcul.to_string(),
         exigee: exigee.to_string(),
@@ -413,14 +411,14 @@ pub fn generer_cle_github(dossier: &Path) -> R<CleDeGithub> {
     let fichier = dossier.join("cle-github-graine.txt");
     let fichier_publique = dossier.join("cle-github-publique.txt");
     if fichier.exists() {
-        return Err(format!(
-            "{} existe deja : le coller dans le secret GitHub s'il n'y est pas, puis l'effacer, avant d'en faire une autre",
-            fichier.display()
+        return Err(au_chemin(
+            "La graine d'une clé précédente est encore là : la coller dans le secret GitHub si elle n'y est pas, puis l'effacer, avant d'en faire une autre.",
+            &fichier,
         ));
     }
-    std::fs::create_dir_all(dossier).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(dossier).map_err(|e| refus(e.to_string()))?;
     let mut graine = [0u8; 32];
-    getrandom::fill(&mut graine).map_err(|e| e.to_string())?;
+    getrandom::fill(&mut graine).map_err(|e| refus(e.to_string()))?;
     let publique = socle::base64::ecrire(ed25519_dalek::SigningKey::from_bytes(&graine).verifying_key().as_bytes());
     let mut o = std::fs::OpenOptions::new();
     o.write(true).create_new(true);
@@ -429,10 +427,10 @@ pub fn generer_cle_github(dossier: &Path) -> R<CleDeGithub> {
         use std::os::unix::fs::OpenOptionsExt;
         o.mode(0o600);
     }
-    let mut f = o.open(&fichier).map_err(|e| format!("{} : {}", fichier.display(), e))?;
-    f.write_all(socle::base64::ecrire(&graine).as_bytes()).map_err(|e| e.to_string())?;
+    let mut f = o.open(&fichier).map_err(|e| du_disque(&fichier, &e))?;
+    f.write_all(socle::base64::ecrire(&graine).as_bytes()).map_err(|e| refus(e.to_string()))?;
     graine.fill(0);
-    std::fs::write(&fichier_publique, format!("{}\n", publique)).map_err(|e| e.to_string())?;
+    std::fs::write(&fichier_publique, format!("{}\n", publique)).map_err(|e| refus(e.to_string()))?;
     Ok(CleDeGithub { graine: fichier.display().to_string(), publique: fichier_publique.display().to_string(), cle_publique: publique })
 }
 
@@ -440,19 +438,26 @@ pub fn generer_cle_github(dossier: &Path) -> R<CleDeGithub> {
 /// la cle publique n'est pas reportee (vide) ou si la graine n'est pas la sienne. Aucun message ne porte la graine.
 fn publier_par_graine(logiciel: &Path, sortie: &Path, graine_b64: &str, cle_publique: &str, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
     if cle_publique.is_empty() {
-        return Err("la cle publique de GitHub n'est pas reportee dans le code (compagnie/src/maj.rs, CLE_PUBLIQUE_GITHUB) : rien n'est publie".into());
+        return Err(socle::echec::refus_avec(
+            "La clé publique de GitHub n'est pas reportée dans le logiciel : rien n'est publié.",
+            socle::echec::Lieu { cle: Some("CLE_PUBLIQUE_GITHUB".to_string()), ..socle::echec::Lieu::default() },
+        ));
     }
     // Le refus ne dit pas pourquoi la base64 ne se lit pas : il ne porte rien de la graine.
     let graine = match b64(graine_b64.trim()) {
         Ok(g) if g.len() == 32 => g,
-        _ => return Err(format!("{} illisible (32 octets en base64 attendus)", VARIABLE_GRAINE)),
+        _ => return Err(socle::refus!("{} illisible (32 octets en base64 attendus)", VARIABLE_GRAINE)),
     };
     publier_signe(logiciel, sortie, &graine, cle_publique, notes, calcul, exigee)
 }
 
 /// Le refus d'une graine qui n'est pas celle de la cle publique : rien n'est publie.
-fn autre_graine() -> String {
-    format!("la graine de {} n'est pas celle de CLE_PUBLIQUE_GITHUB : rien n'est publie", VARIABLE_GRAINE)
+#[track_caller]
+fn autre_graine() -> socle::echec::Echec {
+    socle::echec::refus_avec(
+        "La graine de signature n'est pas celle de la clé publique du logiciel : rien n'est publié.",
+        socle::echec::Lieu { cle: Some(VARIABLE_GRAINE.to_string()), ..socle::echec::Lieu::default() },
+    )
 }
 
 /// LA PUBLICATION PAR LE FLUX DE GITHUB (`moteur maj --publier-github --logiciel L --sortie S`) : les archives de `L`
@@ -464,8 +469,8 @@ pub fn publier_depuis_l_environnement(logiciel: &Path, sortie: &Path, notes: &st
     // Le refus ne dit rien de la valeur : c'est la graine.
     let g = match std::env::var(VARIABLE_GRAINE) {
         Ok(g) if !g.trim().is_empty() => g,
-        Ok(_) | Err(std::env::VarError::NotPresent) => return Err(format!("{} absente : rien n'est publie", VARIABLE_GRAINE)),
-        Err(std::env::VarError::NotUnicode(_)) => return Err(format!("{} n'est pas du texte : rien n'est publie", VARIABLE_GRAINE)),
+        Ok(_) | Err(std::env::VarError::NotPresent) => return Err(socle::refus!("{} absente : rien n'est publie", VARIABLE_GRAINE)),
+        Err(std::env::VarError::NotUnicode(_)) => return Err(socle::refus!("{} n'est pas du texte : rien n'est publie", VARIABLE_GRAINE)),
     };
     publier_par_graine(logiciel, sortie, &g, CLE_PUBLIQUE_GITHUB, notes, calcul, exigee)
 }
@@ -504,7 +509,7 @@ mod tests {
         // L'archive de mise a jour ne demande aucune fictive ; celle d'installation, si : decompressee, elle s'ouvrirait
         // bridee sur un accueil vide.
         let octets = archiver(&code, TOUT_SYSTEME).unwrap();
-        assert!(archiver_installation(&code, TOUT_SYSTEME).unwrap_err().contains("aucune compagnie fictive"));
+        assert!(archiver_installation(&code, TOUT_SYSTEME).unwrap_err().phrase.contains("aucune compagnie fictive"));
         une_fictive(&base);
         // Ce qui est du poste et pas de la fictive livree : sa photo d'origine, ses secrets, le journal
         // de la fenetre ; et un dossier qui n'est pas une fictive.
@@ -559,7 +564,7 @@ mod tests {
         assert!(!neuf.join("target").exists());
         // Une archive d'installation n'est pas une mise a jour : refusee, rien n'est ecrit.
         let ailleurs = base.join("maj-installation").join("logiciel");
-        assert!(deballer(&installation, &ailleurs).unwrap_err().contains("archive d'installation"));
+        assert!(deballer(&installation, &ailleurs).unwrap_err().phrase.contains("archive d'installation"));
         assert!(!ailleurs.exists());
         let _ = std::fs::remove_dir_all(&base);
     }

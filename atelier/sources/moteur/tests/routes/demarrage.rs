@@ -21,6 +21,11 @@ use crate::outils::{datee, dossier_de_test, ecrire, fiche_au, lire, reussi, rout
 
 const JOUR: &str = "2026-11-02";
 
+/// `JOUR`, en jour.
+fn le_jour() -> socle::date::Jour {
+    socle::date::Jour::nouveau(2026, 11, 2).unwrap()
+}
+
 fn neuve(test: &str) -> PathBuf {
     ajouter_venant(&dossier_de_test("demarrage", test), "Les Tréteaux Neufs", Venue::Neuve).unwrap().racine
 }
@@ -51,7 +56,7 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
         bareme["par_convention"].as_object().unwrap().keys().filter(|k| !k.starts_with('_')).cloned().collect();
     assert_eq!(conventions.len(), 10, "les dix conventions de 2026 : {:?}", conventions);
     conventions.push(String::new());
-    let fiche = declarations::champs::fiche("entreprise").unwrap();
+    let fiche = declarations::champs::fiche(droit::fiche::NomDeFiche::Entreprise).unwrap();
     for idcc in &conventions {
         for (permanents, spectacle) in [(false, false), (false, true), (true, false), (true, true)] {
             let nom = format!("grille-{}-{}-{}", if idcc.is_empty() { "sans" } else { idcc }, permanents, spectacle);
@@ -61,7 +66,7 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
             fichier.idcc = Some(vec![droit::fiche::Datee { depuis: None, valeur, note: None }]);
             fichier.emploie_des_permanents = Some(vec![droit::fiche::Datee { depuis: None, valeur: Some(permanents), note: None }]);
             ecrire(&racine, "config/entreprise.json", &socle::ecriture::en_valeur(&fichier));
-            let ent = fichier.au(&socle::date::Jour::lire(JOUR).unwrap());
+            let ent = fichier.au(&le_jour());
             if spectacle {
                 ecrire(&racine, "config/spectacles.json", &json!({"266Z00910022": datee(&json!({"titre": "Le Banc", "actif": true}))}));
             }
@@ -74,13 +79,13 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
                 if x["ou"] != json!("Configuration › Entreprise") || champ == "taux_atmp" {
                     continue; // le taux AT/MP a son propre encart, hors des cases de la fiche (`ATMP_HTML`)
                 }
-                let c = fiche.iter().find(|c| c.cle == champ.split('.').next().unwrap()).unwrap_or_else(|| panic!("{} : pas un champ", champ));
-                assert!(montre(&c.cle), "{} : « {} » demande, case masquee", nom, champ);
+                let c = fiche.iter().find(|c| c.cle.nom() == champ.split('.').next().unwrap()).unwrap_or_else(|| panic!("{} : pas un champ", champ));
+                assert!(montre(c.cle.nom()), "{} : « {} » demande, case masquee", nom, champ);
             }
-            let lue = declarations::champs::Saisie::de_la_fiche("entreprise", &ent).unwrap();
+            let lue = declarations::champs::Saisie::de_la_fiche(droit::fiche::NomDeFiche::Entreprise, &ent).unwrap();
             for c in &fiche {
                 if c.exige(&lue) {
-                    assert!(montre(&c.cle), "{} : « {} » exige et masque", nom, c.cle);
+                    assert!(montre(c.cle.nom()), "{} : « {} » exige et masque", nom, c.cle);
                 }
             }
             let demandee = par_champ(&m, "licence_spectacle").len() == 1;
@@ -128,7 +133,7 @@ fn un_matricule_deja_porte_se_refuse() {
         .unwrap()
         .iter()
         .filter(|(k, _)| !k.starts_with('_'))
-        .map(|(_, s)| fiche_au::<droit::fiche::FicheSalarieDatee>(s, JOUR)["code_salarie"].as_str().unwrap_or_default().to_string())
+        .map(|(_, s)| fiche_au::<droit::fiche::FicheSalarieDatee>(s, le_jour())["code_salarie"].as_str().unwrap_or_default().to_string())
         .collect();
     assert_eq!(matricules.len(), 2);
     assert!(matricules.contains(&"1".to_string()) && matricules.contains(&"2".to_string()), "{:?}", matricules);

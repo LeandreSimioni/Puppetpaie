@@ -104,15 +104,7 @@ pub struct RestaurationDite {
     pub a_faire: Vec<String>,
 }
 
-fn lisible(octets: u64) -> String {
-    if octets >= 1024 * 1024 {
-        format!("{:.1} Mo", octets as f64 / (1024.0 * 1024.0))
-    } else if octets >= 1024 {
-        format!("{} Ko", octets / 1024)
-    } else {
-        format!("{} o", octets)
-    }
-}
+use crate::sauvegarde::lisible;
 
 fn md5_de(octets: &[u8]) -> String {
     Md5::digest(octets).iter().map(|b| format!("{:02x}", b)).collect()
@@ -268,19 +260,19 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
             continue;
         };
         let chemin = relatif.split('/').fold(cible.to_path_buf(), |p, s| p.join(s));
-        if std::fs::symlink_metadata(&chemin).is_ok() {
+        if socle::fichiers::present(&chemin)? {
             resultat.incidents.push(format!("{} : il existe deja ici, il est garde tel quel.", relatif));
             continue;
         }
         let contenu = match client.telecharger(&d.id) {
             Ok(c) => c,
-            Err(e) if hors_ligne(&e.message) => {
+            Err(e) if hors_ligne(&e.echec.phrase) => {
                 resultat.hors_ligne = true;
-                resultat.incidents.push(format!("{} : {}", relatif, e));
+                resultat.incidents.push(format!("{} : {}", relatif, e.echec.phrase));
                 break;
             }
             Err(e) => {
-                resultat.incidents.push(format!("{} : {}", relatif, e));
+                resultat.incidents.push(format!("{} : {}", relatif, e.echec.phrase));
                 continue;
             }
         };
@@ -299,7 +291,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
                 verifies.insert(relatif.clone());
             }
             Ok(false) => resultat.incidents.push(format!("{} : il est apparu ici pendant la restauration, il est garde tel quel.", relatif)),
-            Err(e) => resultat.incidents.push(format!("{} : {}", relatif, e)),
+            Err(e) => resultat.incidents.push(format!("{} : {}", relatif, e.phrase)),
         }
     }
 
@@ -324,7 +316,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
     }
     let maintenant = socle::temps::secondes();
     let index = Index {
-        quand: socle::paris::iso_minutes(maintenant).replacen('T', " ", 1),
+        quand: socle::paris::HeureDeSaisie::de(maintenant),
         racine_drive: racine_drive.to_string(),
         dossiers: index_dossiers,
         fichiers,
@@ -336,19 +328,20 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
 }
 
 /// Ecrit `contenu` a `chemin` par un `.part` renomme, SANS JAMAIS REMPLACER : `Ok(false)` si `chemin` existe deja.
-fn ecrire_sans_remplacer(chemin: &Path, contenu: &[u8]) -> Result<bool, String> {
+fn ecrire_sans_remplacer(chemin: &Path, contenu: &[u8]) -> socle::echec::R<bool> {
+    let panne = |e: std::io::Error, p: &Path| socle::echec::erreur(socle::echec::Classe::du_disque(&e), socle::fichiers::panne_fichier(&e, p));
     if let Some(parent) = chemin.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| socle::fichiers::panne_fichier(&e, parent))?;
+        std::fs::create_dir_all(parent).map_err(|e| panne(e, parent))?;
     }
     let mut part = chemin.as_os_str().to_owned();
     part.push(".part");
     let part = PathBuf::from(part);
-    std::fs::write(&part, contenu).map_err(|e| socle::fichiers::panne_fichier(&e, &part))?;
-    if std::fs::symlink_metadata(chemin).is_ok() {
-        let _ = std::fs::remove_file(&part);
+    std::fs::write(&part, contenu).map_err(|e| panne(e, &part))?;
+    if socle::fichiers::present(chemin)? {
+        socle::fichiers::effacer(&part)?;
         return Ok(false);
     }
-    std::fs::rename(&part, chemin).map_err(|e| socle::fichiers::panne_fichier(&e, chemin))?;
+    std::fs::rename(&part, chemin).map_err(|e| panne(e, chemin))?;
     Ok(true)
 }
 
@@ -375,7 +368,7 @@ pub fn a_faire(coffre: &Coffre) -> Vec<String> {
         lignes.extend(a_poser(&tous).into_iter().map(|c| format!("  {}", c)));
     } else {
         match (coffre.ouverture_exigee(), coffre.services(), coffre.ouvre_a_ce_poste()) {
-            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => lignes.push(format!("Le coffre est revenu, mais il ne se lit pas : {}", e.message)),
+            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => lignes.push(format!("Le coffre est revenu, mais il ne se lit pas : {}", e.phrase)),
             (Ok(avec_mot_de_passe), Ok(etat), Ok(ici)) => {
                 let poses: Vec<String> = etat
                     .iter()

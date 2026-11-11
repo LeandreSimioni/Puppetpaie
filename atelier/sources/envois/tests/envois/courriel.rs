@@ -19,5 +19,5 @@ fn boite_simulee_garde_sans_envoyer() {
         std::fs::read_dir(r.join("courriels-simules")).unwrap().map(|e| std::fs::read(e.unwrap().path()).unwrap()).collect();
     assert_eq!(ecrits.len(), 2);
     assert!(ecrits.contains(&m1) && ecrits.contains(&m2));
-    b.fermer();
+    b.fermer().unwrap();
 }

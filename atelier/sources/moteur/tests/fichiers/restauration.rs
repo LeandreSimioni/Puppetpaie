@@ -77,13 +77,13 @@ fn un_dossier_qui_porte_autre_chose_refuse_et_rien_n_est_ecrit_ni_efface() {
     ecrire(&cible, "notes.txt", "notes"); // identique : pas un ecart
     let avant = tout(&cible);
     d.journal.clear();
-    let e = restaurer(&cible, RD, &mut d).unwrap_err();
+    let e = restaurer(&cible, RD, &mut d).unwrap_err().echec;
     assert_eq!(e.classe, Some(socle::echec::Classe::DossierNonVide));
-    assert!(e.message.contains("2 fichier(s)"), "{}", e.message);
-    assert!(e.message.contains("config/entreprise.json (differe de la copie du Drive)"), "{}", e.message);
-    assert!(e.message.contains("paies/2026-07/martin.json (absent de la sauvegarde)"), "{}", e.message);
-    assert!(e.message.contains("Rien n'a ete redescendu, rien n'a ete efface"), "{}", e.message);
-    assert!(!e.message.contains("notes.txt"), "{}", e.message);
+    assert!(e.phrase.contains("2 fichier(s)"), "{}", e.phrase);
+    assert!(e.phrase.contains("config/entreprise.json (differe de la copie du Drive)"), "{}", e.phrase);
+    assert!(e.phrase.contains("paies/2026-07/martin.json (absent de la sauvegarde)"), "{}", e.phrase);
+    assert!(e.phrase.contains("Rien n'a ete redescendu, rien n'a ete efface"), "{}", e.phrase);
+    assert!(!e.phrase.contains("notes.txt"), "{}", e.phrase);
     // Rien de touche : les memes fichiers, le meme contenu, pas d'index, aucun telechargement.
     assert_eq!(tout(&cible), avant);
     assert_eq!(std::fs::read_to_string(cible.join("config/entreprise.json")).unwrap(), "{\"a\": 2}");

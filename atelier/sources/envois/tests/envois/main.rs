@@ -3,8 +3,10 @@
 //! un envoi coupe en route. Rien ne sort de la machine (un faux serveur local). Un fichier seul :
 //! `cargo nextest run --cargo-profile essais -p envois -E 'test(/^<fichier>::/)'`.
 
+// Les aides, dont le faux serveur que les essais du moteur prennent aussi : publiques, chacun n'en prend que ce qu'il
+// emploie.
 #[path = "../outils/mod.rs"]
-mod outils;
+pub mod outils;
 
 mod courriel;
 mod courriel_lecture;

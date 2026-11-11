@@ -3,7 +3,7 @@
 //! Le cache est cle par chemin ET par signature (date de modification,
 //! taille) : un fichier reecrit se relit.
 
-use crate::num::Resultat;
+use crate::echec::{Echec, R};
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
@@ -145,7 +145,7 @@ fn cle_de(genre: &str, chemin: &Path) -> String {
         let r = r.borrow();
         let r = r.last().expect("registre ouvert");
         for (nom, base) in [("racine", &r.racine), ("code", &r.code)] {
-            if let Ok(rel) = chemin.strip_prefix(base) {
+            if let Some(rel) = sous(chemin, base) {
                 return format!("{} {}:{}", genre, nom, chemin_en_barres(rel));
             }
         }
@@ -191,6 +191,64 @@ pub fn noter_valeur(cle: &str, valeur: String) {
             g.entrees.insert(cle.to_string(), valeur);
         }
     });
+}
+
+/// UNE LECTURE NOTEE QUI PORTE UN JOUR OU UN MOIS : sa cle s'ecrit ici (`cle`) et se relit ici (`lue`), la seule porte
+/// par laquelle la cle d'une empreinte ecrite redevient un jour ou un mois.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LectureDatee {
+    /// `pas <salarie> <jour> [<mois>]` : le taux de PAS du salarie a ce jour, pour la paie de ce mois.
+    Pas { salarie: String, le: crate::date::Jour, mois: Option<crate::mois::Mois> },
+    /// `mission <lieu> <jour>` : l'indemnite de mission d'un jour a l'etranger.
+    Mission { lieu: String, jour: crate::date::Jour },
+    /// `mensuels <mois> <salarie>` : les mensuels d'avant d'un salarie.
+    Mensuels { mois: crate::mois::Mois, salarie: String },
+    /// `paies <mois> <salarie>` : les paies validees d'un salarie au mois.
+    Paies { mois: crate::mois::Mois, salarie: String },
+    /// `saisie <mois> [<salarie>]` : la saisie du mois, ou celle d'un salarie.
+    Saisie { mois: crate::mois::Mois, salarie: Option<String> },
+}
+
+impl LectureDatee {
+    /// La cle sous laquelle elle se note.
+    pub fn cle(&self) -> String {
+        match self {
+            LectureDatee::Pas { salarie, le, mois: Some(m) } => format!("pas {} {} {}", salarie, le.iso(), m),
+            LectureDatee::Pas { salarie, le, mois: None } => format!("pas {} {}", salarie, le.iso()),
+            LectureDatee::Mission { lieu, jour } => format!("mission {} {}", lieu, jour.iso()),
+            LectureDatee::Mensuels { mois, salarie } => format!("mensuels {} {}", mois, salarie),
+            LectureDatee::Paies { mois, salarie } => format!("paies {} {}", mois, salarie),
+            LectureDatee::Saisie { mois, salarie: Some(s) } => format!("saisie {} {}", mois, s),
+            LectureDatee::Saisie { mois, salarie: None } => format!("saisie {}", mois),
+        }
+    }
+
+    /// La lecture que nomme la cle `cle` d'une empreinte ecrite ; `None` : ce n'en est pas une ; un jour ou un mois qui
+    /// ne se lit pas refuse.
+    pub fn lue(cle: &str) -> Option<crate::echec::R<LectureDatee>> {
+        use crate::date::Jour;
+        use crate::mois::Mois;
+        if let Some(r) = cle.strip_prefix("pas ") {
+            let mut parts = r.split(' ');
+            let (salarie, jour, mois) = (parts.next()?, parts.next()?, parts.next());
+            return Some((|| Ok(LectureDatee::Pas { salarie: salarie.to_string(), le: Jour::lire(jour)?, mois: mois.map(Mois::lire).transpose()? }))());
+        }
+        if let Some((lieu, jour)) = cle.strip_prefix("mission ").and_then(|r| r.split_once(' ')) {
+            return Some(Jour::lire(jour).map(|jour| LectureDatee::Mission { lieu: lieu.to_string(), jour }));
+        }
+        if let Some((mois, salarie)) = cle.strip_prefix("mensuels ").and_then(|r| r.split_once(' ')) {
+            return Some(Mois::lire(mois).map(|mois| LectureDatee::Mensuels { mois, salarie: salarie.to_string() }));
+        }
+        if let Some((mois, salarie)) = cle.strip_prefix("paies ").and_then(|r| r.split_once(' ')) {
+            return Some(Mois::lire(mois).map(|mois| LectureDatee::Paies { mois, salarie: salarie.to_string() }));
+        }
+        let reste = cle.strip_prefix("saisie ")?;
+        let (mois, salarie) = match reste.split_once(' ') {
+            Some((m, s)) => (m, Some(s.to_string())),
+            None => (reste, None),
+        };
+        Some(Mois::lire(mois).map(|mois| LectureDatee::Saisie { mois, salarie }))
+    }
 }
 
 pub fn sha256_hex(octets: &[u8]) -> String {
@@ -291,9 +349,62 @@ pub fn est_dossier(chemin: &Path) -> bool {
     v
 }
 
+/// Le chemin `chemin` relatif a `base`, s'il est dessous (`Path::strip_prefix`, composant par composant) ; `None` s'il
+/// n'y est pas : un etat, pas une erreur.
+pub fn sous<'a>(chemin: &'a Path, base: &Path) -> Option<&'a Path> {
+    let mut reste = chemin.components();
+    base.components().all(|b| reste.next() == Some(b)).then(|| reste.as_path())
+}
+
+/// `chemin` est-il sur le disque (un lien compte, sans le suivre) ? Le disque qui refuse de le dire se dit.
+pub fn present(chemin: &Path) -> R<bool> {
+    match std::fs::symlink_metadata(chemin) {
+        Ok(_) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(crate::echec::du_disque(chemin, &e)),
+    }
+}
+
+/// EFFACE `chemin`, un fichier ou un dossier entier : un chemin qui n'existe pas est deja efface ; le disque qui refuse
+/// se dit (`echec::du_disque`).
+pub fn effacer(chemin: &Path) -> R<()> {
+    effacer_du_disque(chemin).map_err(|e| crate::echec::du_disque(chemin, &e))
+}
+
+/// `effacer`, tel que le disque le dit.
+pub(crate) fn effacer_du_disque(chemin: &Path) -> std::io::Result<()> {
+    let fait = match std::fs::symlink_metadata(chemin) {
+        Ok(m) if m.is_dir() => std::fs::remove_dir_all(chemin),
+        Ok(_) => std::fs::remove_file(chemin),
+        Err(e) => Err(e),
+    };
+    match fait {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        autre => autre,
+    }
+}
+
+/// UN RESTE QU'ON EFFACE APRES COUP, quand ce qu'il fallait faire est fait (ou a la sortie d'une portee, ou rien ne
+/// remonte) : un echec n'y defait rien ; il se note (`echec::noter_echec`, que les incidents lisent), et le reste s'efface
+/// la fois suivante.
+pub fn effacer_apres_coup(chemin: &Path) {
+    if let Err(e) = effacer_du_disque(chemin) {
+        crate::echec::noter_echec(Some(crate::echec::Classe::du_disque(&e)), &format!("Un reste ne s'efface pas ({}) : {}", chemin.display(), e));
+    }
+}
+
+/// UN NETTOYAGE APRES UN ECHEC : `effacer(chemin)`, et l'echec `premier` rendu ; si le nettoyage lui-meme echoue, sa
+/// phrase suit celle du premier, qui garde sa classe.
+pub fn effacer_apres(premier: crate::echec::Echec, chemin: &Path) -> crate::echec::Echec {
+    match effacer(chemin) {
+        Ok(()) => premier,
+        Err(nettoyage) => premier.reformuler(|p| format!("{}\n{}", p, nettoyage.phrase)),
+    }
+}
+
 /// Les `.json` d'un dossier, tries ; `None` s'il n'existe pas ; le disque qui refuse se dit (`echec::du_disque`). Note :
 /// ce qui apparait ou disparait dans le dossier change l'empreinte.
-pub fn lister(dossier: &Path) -> Resultat<Option<Vec<PathBuf>>> {
+pub fn lister(dossier: &Path) -> R<Option<Vec<PathBuf>>> {
     let n = noms(dossier);
     noter("dossier", dossier, empreinte_des_noms(&n));
     match n {
@@ -301,6 +412,48 @@ pub fn lister(dossier: &Path) -> Resultat<Option<Vec<PathBuf>>> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(crate::echec::du_disque(dossier, &e)),
     }
+}
+
+/// Ce que porte un dossier (fichiers et dossiers), trie par chemin ; `None` s'il n'existe pas ; le disque qui refuse
+/// de le lire se dit (`echec::du_disque`). Rien n'est note : ce n'est pas une entree d'un calcul (`lister`).
+pub fn entrees(dossier: &Path) -> R<Option<Vec<PathBuf>>> {
+    let lus = match std::fs::read_dir(dossier) {
+        Ok(lus) => lus,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(crate::echec::du_disque(dossier, &e)),
+    };
+    let mut v = Vec::new();
+    for e in lus {
+        v.push(e.map_err(|e| crate::echec::du_disque(dossier, &e))?.path());
+    }
+    v.sort();
+    Ok(Some(v))
+}
+
+/// Un fichier ou un dossier qu'un dossier du disque porte sous le nom d'un mois : c'est la porte par laquelle le nom lu
+/// sur le disque devient un mois (`Mois::du_nom`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NommeDUnMois {
+    pub mois: crate::mois::Mois,
+    pub chemin: PathBuf,
+}
+
+/// Ce que `dossier` porte sous le nom d'un mois, trie par chemin (aucun s'il n'existe pas) : les fichiers
+/// `AAAA-MM.<extension>`, ou, sans extension, les dossiers `AAAA-MM`. `noter` : la lecture se note au registre du calcul
+/// (`lister`) ; sinon, rien n'est note (`entrees`). Le disque qui refuse de le lire se dit.
+pub fn nommes_d_un_mois(dossier: &Path, extension: Option<&str>, noter: bool) -> R<Vec<NommeDUnMois>> {
+    let lus = if noter { lister(dossier)? } else { entrees(dossier)? };
+    Ok(lus
+        .into_iter()
+        .flatten()
+        .filter_map(|chemin| {
+            let mois = match extension {
+                Some(x) => chemin.extension().filter(|e| *e == x).and(chemin.file_stem()).and_then(crate::mois::Mois::du_nom),
+                None => chemin.file_name().and_then(crate::mois::Mois::du_nom).filter(|_| chemin.is_dir()),
+            };
+            mois.map(|mois| NommeDUnMois { mois, chemin })
+        })
+        .collect())
 }
 
 /// Le dossier des referentiels livres (`donnees/`) : `PUPPETPAIE_CODE` si posee, sinon
@@ -318,7 +471,7 @@ pub fn dossier_du_code() -> PathBuf {
 /// fichier du code (`dossier_du_code`) se lit une fois. Les caches du moteur la demandaient a chaque service -- mille
 /// fois `norme-dsn-base.json` pour un seul `etat` --, et sous Windows chaque demande ouvre le fichier, que l'antivirus
 /// inspecte. Les fichiers de la compagnie, eux, se relisent toujours : une route les ecrit.
-pub fn signature(chemin: &Path) -> Resultat<Option<(u128, u64)>> {
+pub fn signature(chemin: &Path) -> R<Option<(u128, u64)>> {
     let memo = CODE_FIGE.with(|c| c.borrow().as_ref().filter(|(code, _)| chemin.starts_with(code)).map(|(_, m)| m.get(chemin).copied()));
     match memo {
         Some(Some(s)) => Ok(s),
@@ -337,15 +490,16 @@ pub fn signature(chemin: &Path) -> Resultat<Option<(u128, u64)>> {
 
 /// `None` pour un fichier absent : rien ne se garde de lui ; un fichier qui ne dit pas sa date (illisible, d'avant 1970)
 /// se refuse.
-fn signature_lue(chemin: &Path) -> Resultat<Option<(u128, u64)>> {
+fn signature_lue(chemin: &Path) -> R<Option<(u128, u64)>> {
     // Un fichier absent n'a pas de signature : rien ne se garde de lui.
     if !chemin.is_file() {
         return Ok(None);
     }
-    let illisible = |e: std::io::Error| format!("{} ne dit pas sa date : {}", repr(&chemin.display().to_string()), e);
+    let a_part = |detail: String| crate::echec::Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(detail), ..Default::default() };
+    let illisible = |e: std::io::Error| crate::echec::refus_avec("Un fichier ne dit pas sa date.", a_part(e.to_string()));
     let m = std::fs::metadata(chemin).map_err(illisible)?;
     let d = m.modified().map_err(illisible)?.duration_since(std::time::UNIX_EPOCH).map_err(|e| {
-        format!("{} est daté d'avant 1970 ({} s) : régler la date du fichier.", repr(&chemin.display().to_string()), e.duration().as_secs())
+        crate::echec::refus_avec("Un fichier est daté d'avant 1970 : régler la date du fichier.", a_part(format!("{} s avant 1970", e.duration().as_secs())))
     })?;
     Ok(Some((d.as_nanos(), m.len())))
 }
@@ -387,7 +541,8 @@ pub type FormeGardee<T> = Mutex<Option<(PathBuf, Option<(u128, u64)>, Arc<T>)>>;
 /// construite par `construire` une fois tant que son fichier ne change pas (chemin, date, taille) ; servie du cache, elle
 /// se note quand meme au registre d'un calcul suivi. Un calcul la consulte a chaque champ : elle ne se relit pas a chaque
 /// fois.
-pub fn forme_en_cache<B: serde::de::DeserializeOwned, T>(cache: &'static OnceLock<FormeGardee<T>>, nom: &str, phrase: &str, construire: impl Fn(B) -> Resultat<T>) -> Resultat<Arc<T>> {
+#[track_caller]
+pub fn forme_en_cache<B: serde::de::DeserializeOwned, T>(cache: &'static OnceLock<FormeGardee<T>>, nom: &str, phrase: &str, construire: impl Fn(B) -> R<T>) -> R<Arc<T>> {
     let chemin = dossier_du_code().join(nom);
     let sig = signature(&chemin)?;
     let cache = cache.get_or_init(|| Mutex::new(None));
@@ -455,7 +610,8 @@ pub fn imprimable(c: char) -> bool {
 // la phrase nomme le champ, ce qui etait attendu et ce qui a ete lu.
 
 /// « champ 'prenom' absent ».
-pub fn absent(cle: &str) -> String {
+#[track_caller]
+pub fn absent(cle: &str) -> Echec {
     crate::echec::cle("Il manque une donnée attendue.", cle)
 }
 

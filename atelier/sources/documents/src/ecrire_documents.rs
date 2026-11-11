@@ -15,11 +15,7 @@ use socle::ecriture::json_indente;
 use engagement::calcul::Paie;
 
 fn os(chemin: &std::path::Path, e: std::io::Error) -> Echec {
-    erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e))
-}
-
-fn valeur(m: String) -> Echec {
-    erreur(Classe::Illisible, m)
+    socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque)
 }
 
 /// La suite des numeros de chaque annee, sous la racine de la compagnie.
@@ -72,7 +68,7 @@ pub fn compteurs(racine: &std::path::Path) -> R<Compteurs> {
     socle::forme::lire_fichier_en_phrase(&p, |cle, _| {
         format!("Les compteurs de numéros de la compagnie (config/compteurs.json) ne se lisent pas{} : le fichier se corrige à la main.", if cle.is_empty() { String::new() } else { format!(" ({})", cle) })
     })
-    .map_err(valeur)
+    .map_err(|e| e.reclasser(Classe::Illisible))
 }
 
 /// `Contexte.prochain_continu` : une sequence qui ne repart pas a 1 chaque an. La LECTURE balaie toutes les
@@ -87,7 +83,7 @@ pub fn prendre_le_verrou(ctx: &Contexte, qui: &str) -> R<Verrou> {
     let chemin = socle::verrou::chemin_compteurs(&ctx.racine);
     let maintenant = socle::paris::iso_secondes(socle::temps::secondes()).replace('T', " ");
     let marque = socle::verrou::marque(qui, std::process::id(), &maintenant);
-    match Verrou::prendre(&chemin, &marque, socle::verrou::DELAI_VERROU).map_err(|m| erreur(Classe::Disque, m))? {
+    match Verrou::prendre(&chemin, &marque, socle::verrou::DELAI_VERROU).map_err(|m| m.reclasser(Classe::Disque))? {
         Ok(v) => Ok(v),
         Err(v) => Err(erreur(Classe::CompteursVerrouilles, v.message())),
     }
@@ -137,7 +133,7 @@ impl Reserves {
         }
         let lu = compteurs(&ctx.racine)?.get(&annee.to_string()).and_then(|c| c.de(suite));
         let importe = match suite {
-            Suite::Bulletin => Some(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee).map_err(Echec::from)?),
+            Suite::Bulletin => Some(engagement::numeros::dernier_bulletin_importe(&ctx.racine, annee)?),
             Suite::CertificatCs => None,
         };
         // Une suite se numerote a partir de 1 : le suivant du plus grand numero lu ou importe.
@@ -184,9 +180,9 @@ impl Reserves {
 /// validation (`engagement::numeros`), chaque bulletin sous le sien (ecrit dans la paie a son depart, ou celui que le
 /// compteur propose). `reserves` : les numeros de bulletin qu'un envoi propose, que la route d'envoi ecrit plus loin. Un
 /// mois sans engagement valide n'a rien.
-pub fn paies_aux_numeros_declares(ctx: &Contexte, mois: &str, reserves: Option<&mut Reserves>, departs: &engagement::departs::Departs) -> Result<(engagement::saisie::VueDuMois, Vec<Paie>), Echec> {
+pub fn paies_aux_numeros_declares(ctx: &Contexte, mois: socle::mois::Mois, reserves: Option<&mut Reserves>, departs: &engagement::departs::Departs) -> Result<(engagement::saisie::VueDuMois, Vec<Paie>), Echec> {
     let Some((data, mut paies)) = engagement::etats::validees_du_mois(ctx, mois, departs)? else {
-        return Ok((engagement::saisie::VueDuMois::vide(socle::mois::Mois::lire(mois)?), Vec::new()));
+        return Ok((engagement::saisie::VueDuMois::vide(mois), Vec::new()));
     };
     let annee = data.mois.annee();
     match reserves {

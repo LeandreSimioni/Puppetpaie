@@ -8,14 +8,15 @@
 
 use crate::emplois;
 use crate::fiche::{ChampsSalarie, Lue};
-use crate::natures::AuMois;
+use crate::natures::{AuMois, MotifDeRupture};
 use crate::permanents::PartDuContrat;
 use crate::source::forme_notee as forme;
 use serde::Deserialize;
 use socle::date::Jour;
 use socle::fichiers::{forme_en_cache, repr, FormeGardee};
 use socle::forme::{en_ordre, Nombre};
-use socle::num::{Decimal, Resultat};
+use socle::echec::R;
+use socle::num::Decimal;
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
@@ -88,7 +89,7 @@ forme! {
     pub struct Preavis {
         pub article: String,
         /// Les motifs de rupture (S21.G00.62.002) qui n'ouvrent pas ce preavis, chacun avec la phrase qui le dit.
-        pub motifs_hors_preavis: Option<BTreeMap<String, String>>,
+        pub motifs_hors_preavis: Option<BTreeMap<MotifDeRupture, String>>,
         pub toutes_categories: Option<Vec<TranchePreavis>>,
         pub par_categorie: Option<BTreeMap<String, PreavisDeLaCategorie>>,
         /// Ajoute a l'age du salarie, au licenciement (et a la demission si `supplement_age_demission`).
@@ -132,7 +133,7 @@ forme! {
     pub struct Licenciement {
         pub article: String,
         pub anciennete_minimale_mois: Nombre,
-        pub motifs_sans_indemnite: Option<Vec<String>>,
+        pub motifs_sans_indemnite: Option<Vec<MotifDeRupture>>,
         /// Le bareme, quand il ne depend pas du motif.
         pub taux: Option<Vec<Tranche>>,
         /// Le bareme du motif economique, et celui des autres.
@@ -155,7 +156,7 @@ forme! {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Bareme {
-    pub motifs: Option<Vec<String>>,
+    pub motifs: Option<Vec<MotifDeRupture>>,
     pub taux: Option<Vec<Tranche>>,
     pub bandes: Option<Vec<Bande>>,
 }
@@ -227,7 +228,7 @@ forme! {
         /// Le salaire de reference s'entend hors primes.
         pub hors_primes: Option<bool>,
         /// Les motifs pour lesquels l'annexe renvoie a la loi.
-        pub motifs_legaux_seulement: Option<Vec<String>>,
+        pub motifs_legaux_seulement: Option<Vec<MotifDeRupture>>,
         #[serde(deserialize_with = "en_ordre")]
         pub lectures: Vec<(String, Bareme)>,
     }
@@ -443,7 +444,7 @@ forme! {
 }
 
 /// Le catalogue livre. Une clause que la convention laisse a la loi n'est pas aussi relevee.
-pub fn table() -> Resultat<Arc<Table>> {
+pub fn table() -> R<Arc<Table>> {
     static CACHE: OnceLock<FormeGardee<Table>> = OnceLock::new();
     forme_en_cache(&CACHE, FICHIER, "Les clauses conventionnelles livrées ne se lisent pas : le signaler au développeur.", |t: Table| {
         for (idcc, c) in &t.conventions {
@@ -470,7 +471,7 @@ impl Table {
 }
 
 /// Les clauses relevees de cette convention, ou `None` si elles ne le sont pas (ou si la compagnie n'a pas d'IDCC).
-pub fn releve(idcc: Option<&str>) -> Resultat<Option<Convention>> {
+pub fn releve(idcc: Option<&str>) -> R<Option<Convention>> {
     Ok(table()?.convention(idcc).cloned())
 }
 
@@ -479,7 +480,8 @@ fn p(n: &Nombre) -> P {
     P::depuis(n.0)
 }
 
-fn manque(cle: &str) -> String {
+#[track_caller]
+fn manque(cle: &str) -> socle::echec::Echec {
     socle::echec::livree(FICHIER, cle)
 }
 
@@ -508,7 +510,7 @@ fn mots_du_nom(nom: &str) -> std::collections::BTreeSet<String> {
 /// L'IDCC d'une convention que le bulletin nomme sans son numéro : celle, seule, dont le libellé de la table (le
 /// titre de la convention dans KALI) porte tous les mots distinctifs du nom imprimé. Un nom que plusieurs conventions
 /// portent (« spectacle », « production »), ou qu'aucune ne porte entier, ne donne rien : rien ne se devine (règle 1).
-pub fn idcc_nomme(nom: &str) -> Resultat<Option<String>> {
+pub fn idcc_nomme(nom: &str) -> R<Option<String>> {
     let lus = mots_du_nom(nom);
     if lus.is_empty() {
         return Ok(None);
@@ -533,7 +535,7 @@ pub fn categorie_en_mots(c: &str) -> String {
 
 /// La categorie `c` dite par la convention `idcc`, telle que le bulletin l'imprime (la premiere phrase de son libelle),
 /// ou `None` si la convention ne la nomme pas.
-pub fn categorie_imprimee(idcc: Option<&str>, c: &str) -> Resultat<Option<String>> {
+pub fn categorie_imprimee(idcc: Option<&str>, c: &str) -> R<Option<String>> {
     let t = table()?;
     let dite = t.convention(idcc).and_then(|conv| conv.categories.as_ref()).and_then(|s| s.valeurs.iter().find(|(k, _)| k == c));
     let premiere_phrase = |l: &str| match l.split_once(". ") {
@@ -571,7 +573,7 @@ pub struct Profil {
 
 /// `au_mois` : la cle de la piece d'un permanent, quand l'engagement lu est paye au mois ; sans elle, la categorie que
 /// la fiche dit ne se lit pas (elle n'est demandee qu'a un salarie au mois).
-pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, au_mois: Option<&AuMois>, e: &DitParLEngagement) -> Resultat<Profil> {
+pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, au_mois: Option<&AuMois>, e: &DitParLEngagement) -> R<Profil> {
     let t = table()?;
     let sec = t.convention(idcc).and_then(|c| c.categories.as_ref());
     let code = e.metier.clone().or_else(|| fiche.code_emploi_ft.remplie().map(str::to_string));
@@ -645,7 +647,9 @@ pub struct PreavisDit {
     pub pourquoi: Option<String>,
 }
 
-pub fn preavis_mois(idcc: Option<&str>, categorie: Option<&str>, anciennete: Decimal, motif: Option<&str>, age: Option<Decimal>) -> Resultat<PreavisDit> {
+/// Le motif est un code de la norme (S21.G00.62.002) : les listes d'une convention suivent son texte, plus large que les
+/// motifs qu'une nature permet (089).
+pub fn preavis_mois(idcc: Option<&str>, categorie: Option<&str>, anciennete: Decimal, motif: Option<MotifDeRupture>, age: Option<Decimal>) -> R<PreavisDit> {
     let (a, age) = (P::depuis(anciennete), age.map(P::depuis));
     let rien = |article: Option<String>, pourquoi: String| PreavisDit { mois: None, article, jours: None, pourquoi: Some(pourquoi) };
     let t = table()?;
@@ -657,11 +661,11 @@ pub fn preavis_mois(idcc: Option<&str>, categorie: Option<&str>, anciennete: Dec
         return Ok(rien(None, non_relevees(idcc)));
     };
     let article = format!("{}, art. {}", nom(idcc), sec.article);
-    if let Some(hors) = motif.and_then(|m| sec.motifs_hors_preavis.as_ref().and_then(|h| h.get(m))).filter(|h| !h.is_empty()) {
+    if let Some(hors) = motif.and_then(|m| sec.motifs_hors_preavis.as_ref().and_then(|h| h.get(&m))).filter(|h| !h.is_empty()) {
         return Ok(PreavisDit { mois: Some(P::ZERO), article: Some(article), jours: None, pourquoi: Some(hors.clone()) });
     }
     let categorie = categorie.filter(|c| !c.is_empty());
-    let demission = motif == Some("059");
+    let demission = motif == Some(MotifDeRupture::Demission);
     let tranches: &[TranchePreavis] = match sec.toutes_categories.as_deref() {
         Some(t) if !t.is_empty() => t,
         _ => {
@@ -758,7 +762,7 @@ pub fn par_bandes(bandes: &[Bande], annees: P) -> P {
 
 impl Bareme {
     /// Les mois de salaire de `annees` d'anciennete : par bandes, sinon par tranches.
-    pub fn mois(&self, annees: P) -> Resultat<P> {
+    pub fn mois(&self, annees: P) -> R<P> {
         match (&self.bandes, &self.taux) {
             (Some(b), _) => Ok(par_bandes(b, annees)),
             (None, Some(t)) => Ok(tranches(t, annees)),
@@ -770,7 +774,7 @@ impl Bareme {
 // ----------------------------------------------- l'indemnite de licenciement
 /// La clause d'annexe qui s'applique a ce salarie, ou `None`. Le personnel technique de l'annexe I se lit sur la
 /// GRILLE du metier.
-pub fn clause_d_annexe(idcc: Option<&str>, annexe: Option<&str>, prof: &Profil, motif: Option<&str>) -> Resultat<Option<ClauseDAnnexe>> {
+pub fn clause_d_annexe(idcc: Option<&str>, annexe: Option<&str>, prof: &Profil, motif: Option<MotifDeRupture>) -> R<Option<ClauseDAnnexe>> {
     let t = table()?;
     let par = t
         .convention(idcc)
@@ -784,7 +788,7 @@ pub fn clause_d_annexe(idcc: Option<&str>, annexe: Option<&str>, prof: &Profil, 
         (_, _, Some(c)) if cat == Some("artiste") => Some(c),
         _ => None,
     };
-    Ok(choix.filter(|c| !motif.is_some_and(|mo| c.motifs_legaux_seulement.iter().flatten().any(|m| m == mo))).cloned())
+    Ok(choix.filter(|c| !motif.is_some_and(|mo| c.motifs_legaux_seulement.iter().flatten().any(|m| *m == mo))).cloned())
 }
 
 /// L'indemnite CONVENTIONNELLE de licenciement. `bas` et `haut` sont egaux quand le texte n'a qu'une lecture ; quand
@@ -809,9 +813,9 @@ pub fn indemnite_licenciement(
     prof: &Profil,
     anciennete: Decimal,
     reference: Decimal,
-    motif: Option<&str>,
+    motif: Option<MotifDeRupture>,
     age: Option<Decimal>,
-) -> Resultat<Indemnite> {
+) -> R<Indemnite> {
     let (a, ref_, age) = (P::depuis(anciennete), P::depuis(reference), age.map(P::depuis));
     let pas_releve = |pourquoi: String| Indemnite { releve: false, du: false, bas: None, haut: None, lectures: Vec::new(), hors_primes: false, article: None, pourquoi: Some(pourquoi) };
     let t = table()?;
@@ -823,7 +827,7 @@ pub fn indemnite_licenciement(
         return Ok(pas_releve(non_relevees(idcc)));
     };
     let annees = a.div(P::entier(12));
-    let dans = |l: &[String]| motif.is_some_and(|m| l.iter().any(|x| x == m));
+    let dans = |l: &[MotifDeRupture]| motif.is_some_and(|m| l.contains(&m));
     let mut lectures: Vec<(String, P)> = Vec::new();
     let mut article = format!("{}, art. {}", nom(idcc), sec.article);
     let mut hors_primes = false;
@@ -976,7 +980,7 @@ impl Retraite {
 }
 
 /// L'indemnite conventionnelle de mise a la retraite.
-pub fn indemnite_mise_a_la_retraite(idcc: Option<&str>, anciennete: Decimal, reference: Decimal) -> Resultat<Retraite> {
+pub fn indemnite_mise_a_la_retraite(idcc: Option<&str>, anciennete: Decimal, reference: Decimal) -> R<Retraite> {
     let (anciennete, reference) = (P::depuis(anciennete), P::depuis(reference));
     let t = table()?;
     let conv = t.convention(idcc);
@@ -1022,7 +1026,7 @@ pub fn indemnite_mise_a_la_retraite(idcc: Option<&str>, anciennete: Decimal, ref
 }
 
 /// L'indemnite conventionnelle de depart volontaire a la retraite : un palier, pas un cumul.
-pub fn indemnite_depart_retraite(idcc: Option<&str>, anciennete: Decimal, reference: Decimal) -> Resultat<Retraite> {
+pub fn indemnite_depart_retraite(idcc: Option<&str>, anciennete: Decimal, reference: Decimal) -> R<Retraite> {
     let (anciennete, reference) = (P::depuis(anciennete), P::depuis(reference));
     let t = table()?;
     let conv = t.convention(idcc);
@@ -1088,7 +1092,7 @@ fn grille_technique(m: &emplois::Metier) -> Option<&emplois::Classification3090>
 /// dit ce `metier` et ce `statut` : les conditions de `prime_anciennete`, quelle que soit la nature du contrat (l'art.
 /// 3.1 de l'annexe I nomme le CDI et le CDD du personnel technique, l'art. 3.11 « chaque technicien »). Ce que la carte
 /// ne dit pas encore (son metier, son statut) ne l'ecarte pas.
-pub fn prime_anciennete_possible(idcc: Option<&str>, annexe: Option<&str>, metier: Option<&str>, statut: Option<&str>) -> Resultat<bool> {
+pub fn prime_anciennete_possible(idcc: Option<&str>, annexe: Option<&str>, metier: Option<&str>, statut: Option<&str>) -> R<bool> {
     let t = table()?;
     if prime_de_l_annexe(&t, idcc, annexe).is_none() || statut == Some("artiste") {
         return Ok(false);
@@ -1109,7 +1113,7 @@ pub fn prime_anciennete<'j>(
     e: &DitParLEngagement,
     jour: &Jour,
     jauge: impl FnOnce(&crate::minima::ParLaGrille) -> Option<&'j str>,
-) -> Resultat<Option<Prime>> {
+) -> R<Option<Prime>> {
     let t = table()?;
     let Some(sec) = prime_de_l_annexe(&t, idcc, annexe) else { return Ok(None) };
     let code = e.metier.clone().or_else(|| fiche.code_emploi_ft.remplie().map(str::to_string));
@@ -1126,7 +1130,14 @@ pub fn prime_anciennete<'j>(
     }
     let famille = m.famille();
     let article = format!("{}, {}", nom(idcc), sec.article);
-    let Some(debut) = fiche.date_anciennete.dite().copied().or(e.debut) else { return Ok(None) };
+    // Les « ans de presence » (art. 3.11) partent de la date d'anciennete de la fiche, que le calcul a posee a l'embauche
+    // quand ce contrat l'est (`engagement::calcul::Anciennete`) ; sans elle, la prime ne se calcule pas.
+    let debut = *fiche.date_anciennete.dite().ok_or_else(|| {
+        socle::echec::cle(
+            "La prime d'ancienneté compte les années de présence : la fiche du salarié ne dit pas depuis quand il est dans la compagnie (« Dans la compagnie depuis »).",
+            "date_anciennete",
+        )
+    })?;
     let annees = jour.an as i64 - debut.an as i64 - ((jour.mois, jour.jour) < (debut.mois, debut.jour)) as i64;
     let pourcentage = sec.plafond_pourcentage.min((annees - (sec.apres_annees - 1)).max(0) * sec.pourcentage_par_annee);
     if pourcentage <= 0 {

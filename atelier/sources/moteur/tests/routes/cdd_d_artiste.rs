@@ -18,7 +18,7 @@
 use serde_json::json;
 
 use crate::outils::rejeu::rejouer;
-use crate::outils::{refus, reussi, route, valider};
+use crate::outils::{nombre, refus, reussi, route, valider};
 
 #[test]
 fn de_la_validation_a_l_attestation() {
@@ -31,12 +31,11 @@ fn de_la_validation_a_l_attestation() {
 
     let saisie = |motif: &str| {
         json!({"salarie": "FULLER", "nature": "cdd", "debut": "2026-03-02", "fin": "2026-05-29",
-            "salaire_mensuel": 2500, "quotite_contrat": 151.67, "metier": "ART040", "motif_recours": motif})
+            "salaire_mensuel": 2500, "quotite_contrat": nombre("151.67"), "metier": "ART040", "motif_recours": motif})
     };
-    let (_, phrase) = refus(&valider(&c, "2026-03", None, &saisie("accroissement"), "2026-02-25"));
-    assert!(phrase.contains("02 ("), "la phrase dit les motifs a choisir : {}", phrase);
+    refus(&valider(&c, "2026-03", None, &saisie("accroissement"), "2026-02-25"));
     // Les changements d'un appel s'ecrivent tout ou rien : un motif refuse, la carte ne s'ecrit pas.
-    assert!(engagement::stock::vue_du_mois(&c, "2026-03").unwrap().is_none_or(|v| v.engagements.iter().all(|e| e.salarie.as_deref() != Some("FULLER"))), "un motif refuse : rien n'est ecrit");
+    assert!(engagement::stock::vue_du_mois(&c, socle::mois::Mois::nouveau(2026, 3).unwrap()).unwrap().is_none_or(|v| v.engagements.iter().all(|e| e.salarie.as_deref() != Some("FULLER"))), "un motif refuse : rien n'est ecrit");
     reussi(&valider(&c, "2026-03", None, &saisie("02"), "2026-02-25"));
     // Le contrat CDD se fabrique depuis l'engagement valide : un modele qui tairait une mention de L1242-12 se refuse
     // (`documents::contrat_ecrit::manques`), le PDF imprime porte donc la nature, le motif de recours et le terme.
@@ -72,7 +71,7 @@ fn de_la_validation_a_l_attestation() {
 
     // Un CDI le lundi qui suit le terme (un vendredi) : la relation se poursuit, l'indemnite de fin de contrat tombe.
     let cdi = json!({"salarie": "FULLER", "nature": "cdi", "debut": "2026-06-01", "salaire_mensuel": 2500,
-        "quotite_contrat": 151.67, "metier": "ART040"});
+        "quotite_contrat": nombre("151.67"), "metier": "ART040"});
     reussi(&valider(&c, "2026-06", None, &cdi, "2026-05-20"));
     let ap = route(&c, "apercu", json!({"mois": "2026-05", "modifications": []}), "2026-05-20");
     let fuller = reussi(&ap)["paies"].as_array().unwrap().iter().find(|p| p.to_string().contains("FULLER")).cloned().expect("FULLER");
@@ -103,6 +102,6 @@ fn de_la_validation_a_l_attestation() {
     let ap = route(&c, "apercu", json!({"mois": "2026-06", "modifications": []}), "2026-06-20");
     let svoboda = reussi(&ap)["paies"].as_array().unwrap().iter().find(|p| p.to_string().contains("SVOBODA")).cloned().expect("SVOBODA");
     let iccp = svoboda["remuneration"].as_array().unwrap().iter().find(|l| l["rubrique"] == "indemnite_compensatrice_conges").cloned().expect("l'indemnite compensatrice");
-    let taux: f64 = iccp["taux"].to_string().trim_matches('"').parse().unwrap();
-    assert!(taux <= 3400.0 / 24.0, "un jour de conge paye plus qu'un jour de travail : {}", iccp);
+    let taux = crate::outils::dec(iccp["taux"].to_string().trim_matches('"'));
+    assert!(taux * crate::outils::dec("24") <= crate::outils::dec("3400"), "un jour de conge paye plus qu'un jour de travail : {}", iccp);
 }

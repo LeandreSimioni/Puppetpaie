@@ -26,13 +26,14 @@
 //! retient pour elle.
 
 use std::io::{BufRead, BufReader, ErrorKind, Write};
-use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::net::{Ipv4Addr, TcpListener};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use socle::echec::R;
 
 /// Le fichier, a la racine de l'installation, qui retient son creneau.
 pub const FICHIER: &str = ".fenetre.json";
@@ -100,7 +101,7 @@ struct Retenu {
 }
 
 /// Le dossier d'une installation, tel que le verrou le compare : canonique, sans le prefixe `\\?\` de Windows.
-pub fn dossier_de(inst: &Path) -> Result<String, String> {
+pub fn dossier_de(inst: &Path) -> R<String> {
     let c = std::fs::canonicalize(inst).map_err(|e| socle::echec::du_disque(inst, &e))?;
     let t = c.to_string_lossy();
     Ok(match t.strip_prefix(r"\\?\") {
@@ -110,7 +111,7 @@ pub fn dossier_de(inst: &Path) -> Result<String, String> {
 }
 
 /// Le creneau retenu par l'installation ; `None` sans `.fenetre.json`, ou si le creneau retenu n'est pas dans la plage.
-pub fn creneau_retenu(inst: &Path, plage: Plage) -> Result<Option<u16>, String> {
+pub fn creneau_retenu(inst: &Path, plage: Plage) -> R<Option<u16>> {
     let p = inst.join(FICHIER);
     if !p.is_file() {
         return Ok(None);
@@ -121,7 +122,7 @@ pub fn creneau_retenu(inst: &Path, plage: Plage) -> Result<Option<u16>, String> 
 
 /// Retient `creneau` pour l'installation. Une installation ou l'on n'ecrit pas (un support en lecture seule) garde son
 /// creneau tire de son emplacement : rien ne casse, le port est seulement moins stable -- l'echec n'empeche pas la fenetre.
-fn retenir(inst: &Path, creneau: u16) -> Result<(), String> {
+fn retenir(inst: &Path, creneau: u16) -> R<()> {
     let r = Retenu {
         creneau,
         quoi: "Le creneau de la fenetre de cette installation (moteur/src/interface/instance.rs) : son port de page reste le meme d'un lancement a l'autre, et le navigateur y retrouve ce qu'il a retenu.".to_string(),
@@ -137,7 +138,7 @@ fn creneau_tire(dossier: &str, plage: Plage) -> u16 {
 }
 
 /// Le premier creneau a essayer : le retenu, sinon le tire.
-pub fn creneau_vise(inst: &Path, plage: Plage) -> Result<u16, String> {
+pub fn creneau_vise(inst: &Path, plage: Plage) -> R<u16> {
     Ok(match creneau_retenu(inst, plage)? {
         Some(k) => k,
         None => creneau_tire(&dossier_de(inst)?, plage),
@@ -156,9 +157,9 @@ enum Occupant {
 
 /// Qui tient le verrou au port `port`. `devant` : lui demander de revenir devant (elle ne le fait que si c'est la
 /// sienne, `ici`). Une erreur du systeme qui n'est aucun de ces etats remonte.
-fn demander(port: u16, ici: &str, devant: bool) -> Result<Occupant, String> {
-    let refus = |e: std::io::Error| format!("Le creneau du port {} ne se demande pas : {}", port, e);
-    let mut c = match TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)), DELAI) {
+fn demander(port: u16, ici: &str, devant: bool) -> R<Occupant> {
+    let refus = |e: std::io::Error| socle::refus!("Le creneau du port {} ne se demande pas : {}", port, e);
+    let mut c = match socle::garde_reseau::vers_cette_machine(port, Some(DELAI)) {
         Ok(c) => c,
         Err(e) if matches!(e.kind(), ErrorKind::ConnectionRefused | ErrorKind::TimedOut | ErrorKind::ConnectionReset) => return Ok(Occupant::Personne),
         Err(e) => return Err(refus(e)),
@@ -189,29 +190,37 @@ fn demander(port: u16, ici: &str, devant: bool) -> Result<Occupant, String> {
 /// Le verrou tenu : il repond a qui demande, par le dossier de l'installation, et ramene la fenetre devant quand c'est
 /// la MEME installation qui est relancee (une autre ne fait que demander qui est la). Le fil tient seul la prise ; il la
 /// rend des que le `Verrou` tombe (la prise attend sans bloquer : le fil regarde le drapeau toutes les 50 ms).
-fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static) -> Result<Verrou, String> {
+fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static) -> R<Verrou> {
     let ferme = Arc::new(AtomicBool::new(false));
     let vu = ferme.clone();
-    ecoute.set_nonblocking(true).map_err(|e| format!("Le verrou de la fenetre n'attend pas sans bloquer : {}", e))?;
+    ecoute.set_nonblocking(true).map_err(|e| socle::refus!("Le verrou de la fenetre n'attend pas sans bloquer : {}", e))?;
     std::thread::spawn(move || {
         while !vu.load(Ordering::SeqCst) {
             let c = match ecoute.accept() {
                 Ok((c, _)) => c,
-                // Personne ne demande (`WouldBlock`), ou une demande s'est perdue avant d'etre prise (le demandeur parti) :
-                // le verrou attend la suivante. Il ne rend jamais le creneau tant que la fenetre vit.
-                Err(attente) => {
-                    drop(attente);
+                // Personne ne demande : le verrou attend la suivante. Il ne rend jamais le creneau tant que la fenetre vit.
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(50));
+                    continue;
+                }
+                // Une demande s'est perdue avant d'etre prise (le demandeur parti) : elle se note, le verrou attend la
+                // suivante.
+                Err(perdue) => {
+                    demande_perdue(&perdue);
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
                 }
             };
-            let _ = c.set_nonblocking(false);
-            let _ = c.set_read_timeout(Some(DELAI));
+            // Une demande qui ne se regle pas (attente bloquante, delai) est perdue comme une demande coupee : la suivante.
+            if let Err(perdue) = c.set_nonblocking(false).and_then(|()| c.set_read_timeout(Some(DELAI))) {
+                demande_perdue(&perdue);
+                continue;
+            }
             let mut lecteur = BufReader::new(&c);
             let mut ligne = String::new();
             // Une demande qui ne vient pas a temps, ou coupee : le demandeur est parti, rien a lui repondre.
             if let Err(partie) = lecteur.read_line(&mut ligne) {
-                drop(partie);
+                demande_perdue(&partie);
                 continue;
             }
             let ligne = ligne.trim_end();
@@ -222,7 +231,10 @@ fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static
             } else {
                 continue;
             };
-            let _ = (&c).write_all(format!("{} {}\n", REPONSE, ici).as_bytes());
+            // Le demandeur parti avant la reponse n'attend plus rien ; la fenetre revient devant quand meme.
+            if let Err(parti) = (&c).write_all(format!("{} {}\n", REPONSE, ici).as_bytes()) {
+                demande_perdue(&parti);
+            }
             if verbe && la_bas == ici {
                 devant();
             }
@@ -231,21 +243,27 @@ fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static
     Ok(Verrou { ferme })
 }
 
+/// Une demande au verrou qui se perd (le demandeur parti, la prise coupee) : le fil du verrou n'a personne a qui la
+/// rendre ; elle se note au journal du moteur (`diagnostic`).
+fn demande_perdue(e: &std::io::Error) {
+    super::diagnostic::noter_moteur(&format!("Une demande au verrou de la fenêtre s'est perdue : {}", e));
+}
+
 /// L'ecoute du port `port` ; `None` s'il est tenu (par un autre, ou refuse par le systeme : une plage reservee de Windows).
-fn ecouter(port: u16) -> Result<Option<TcpListener>, String> {
+fn ecouter(port: u16) -> R<Option<TcpListener>> {
     match TcpListener::bind((Ipv4Addr::LOCALHOST, port)) {
         Ok(l) => {
             sans_heritage(&l);
             Ok(Some(l))
         }
         Err(e) if matches!(e.kind(), ErrorKind::AddrInUse | ErrorKind::PermissionDenied) => Ok(None),
-        Err(e) => Err(format!("Le port {} ne s'ecoute pas : {}", port, e)),
+        Err(e) => Err(socle::refus!("Le port {} ne s'ecoute pas : {}", port, e)),
     }
 }
 
 /// LE VERROU DE L'INSTALLATION `inst` (voir l'en-tete). `devant` : ce que fait la fenetre tenue quand la meme
 /// installation est relancee.
-pub fn prendre_de(inst: &Path, plage: Plage, devant: impl Fn() + Send + 'static) -> Result<Instance, String> {
+pub fn prendre_de(inst: &Path, plage: Plage, devant: impl Fn() + Send + 'static) -> R<Instance> {
     let ici = dossier_de(inst)?;
     let retenu = creneau_retenu(inst, plage)?;
     let depart = match retenu {
@@ -265,26 +283,28 @@ pub fn prendre_de(inst: &Path, plage: Plage, devant: impl Fn() + Send + 'static)
         let Some(page) = ecouter(plage.page(k))? else { continue };
         if retenu != Some(k) {
             // Un support en lecture seule ne retient rien (`retenir`) : la fenetre s'ouvre quand meme.
-            let _ = retenir(inst, k);
+            if let Err(lecture_seule) = retenir(inst, k) {
+                super::diagnostic::noter_moteur(&format!("Le créneau de la fenêtre ne se retient pas : {}", lecture_seule.phrase));
+            }
         }
         let verrou = repondre(verrou, ici.clone(), devant)?;
         return Ok(Instance::Tenue(Prise { verrou: Some(verrou), page, port: plage.page(k), creneau: Some(k) }));
     }
     // Aucun creneau : la fenetre s'ouvre quand meme, sans verrou, a un port du systeme.
-    let page = ecouter(0)?.ok_or("Le systeme ne donne aucun port a la fenetre.")?;
-    let port = page.local_addr().map_err(|e| format!("Le port de la fenetre ne se lit pas : {}", e))?.port();
+    let page = ecouter(0)?.ok_or_else(|| socle::echec::refus("Le systeme ne donne aucun port a la fenetre."))?;
+    let port = page.local_addr().map_err(|e| socle::refus!("Le port de la fenetre ne se lit pas : {}", e))?.port();
     Ok(Instance::Tenue(Prise { verrou: None, page, port, creneau: None }))
 }
 
 /// Le verrou de CETTE installation (`installation::base()`), dans la plage du poste.
-pub fn prendre(devant: impl Fn() + Send + 'static) -> Result<Instance, String> {
+pub fn prendre(devant: impl Fn() + Send + 'static) -> R<Instance> {
     prendre_de(&super::installation::base(), Plage::DU_POSTE, devant)
 }
 
 /// LA FENETRE DE L'INSTALLATION `inst` EST-ELLE OUVERTE ? (la mise a jour ne s'applique jamais sous elle). On demande au
 /// creneau qu'elle vise -- le retenu, sinon le tire -- et a ceux qui suivent tant qu'une autre installation les tient :
 /// les memes creneaux que `prendre_de` parcourrait. Un creneau libre arrete la recherche (elle l'aurait pris).
-pub fn ouverte(inst: &Path, plage: Plage) -> Result<bool, String> {
+pub fn ouverte(inst: &Path, plage: Plage) -> R<bool> {
     let ici = dossier_de(inst)?;
     let depart = creneau_vise(inst, plage)?;
     for i in 0..plage.creneaux {
@@ -303,19 +323,19 @@ pub fn ouverte(inst: &Path, plage: Plage) -> Result<bool, String> {
 /// Une prise d'ecoute ne passe jamais a un processus enfant (une route, le relais de la mise a jour). La bibliotheque
 /// standard la cree deja non heritable, mais un fournisseur reseau intercale (un antivirus) peut perdre ce drapeau : un
 /// enfant la gardait alors ouverte apres la mort de la fenetre (port tenu par un PID mort).
+#[cfg(windows)]
 pub fn sans_heritage(l: &TcpListener) {
-    #[cfg(windows)]
-    {
-        use std::os::windows::io::AsRawSocket;
-        extern "system" {
-            fn SetHandleInformation(objet: isize, masque: u32, drapeaux: u32) -> i32;
-        }
-        const HANDLE_FLAG_INHERIT: u32 = 1;
-        // SAFETY : la prise est vivante (empruntee) ; on ne change que son drapeau d'heritage.
-        unsafe {
-            SetHandleInformation(l.as_raw_socket() as isize, HANDLE_FLAG_INHERIT, 0);
-        }
+    use std::os::windows::io::AsRawSocket;
+    extern "system" {
+        fn SetHandleInformation(objet: isize, masque: u32, drapeaux: u32) -> i32;
     }
-    #[cfg(not(windows))]
-    let _ = l;
+    const HANDLE_FLAG_INHERIT: u32 = 1;
+    // SAFETY : la prise est vivante (empruntee) ; on ne change que son drapeau d'heritage.
+    unsafe {
+        SetHandleInformation(l.as_raw_socket() as isize, HANDLE_FLAG_INHERIT, 0);
+    }
 }
+
+/// Hors de Windows, la prise que la bibliotheque standard cree n'est pas heritable, et aucun fournisseur ne s'intercale.
+#[cfg(not(windows))]
+pub fn sans_heritage(_l: &TcpListener) {}

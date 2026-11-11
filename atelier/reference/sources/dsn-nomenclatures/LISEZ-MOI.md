@@ -93,3 +93,15 @@ attendaient cette table (« Reste à déposer ») : elle est ici.
   aux lignes MNATA du cumul P27V01 brut) ; `paie/src/assujettissement.rs` (`taxe_d_apprentissage`, `motifs_mnata`)
   écrit 002 et `44.004` avec le motif de la fiche entreprise quand le bordereau ne paie pas la taxe. Q8 : l'ancienne
   rédaction de L. 6241-1 est relevée (`../code-du-travail/xml-anterieur/L6241-1-anterieures-20261011.md`).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `net-entreprises-neodes-nomenclatures-P26V01-20260924.csv` : `b1753b1bb7cbe781e45b4ff6e4bd7bfc455eae39e2f4baea4e6c740e820c75e1`
+- `net-entreprises-neodes-nomenclatures-P27V01-20260924.csv` : `e6db327b2cd8341f1626ff92df98d2eeb4217650c376a233262765b27296f732`
+- `table-IDCC-20260924.txt` : `8b7f283f8bc01a572d37778414b6381728f2f66c8e851d152dbee01fe2d5fb0d`
+- `table-MNATA-20260924.txt` : `209fd6a0ca7fd589b2ec655823dff193046fdf13dd437d200f3ffd62ef3472e2`
+- `table-PCSESE-20260924.txt` : `ba5b95a22e57868d38c3463aeecdd5822c20fc3d08dc4672bcffc5ad32494667`
+- `tables-PAYS-et-PAY-20260924.txt` : `7877e168354da3f0f0d012e7c06ecebffe6481a3585303554127a7a6cfb64668`
+- `tables-organismes-20260924.txt` : `3d654f23b0ab38b1961d7562d31b3032b68b65741c92e16bf615606ef8f2c635`

@@ -11,7 +11,7 @@ use aes::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use lopdf::{Dictionary, Document, Object};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 
-mod commun;
+pub mod commun;
 use commun::{chemin, dossier_temp, lancer, pdf_fabrique, textes};
 
 fn verrouiller(entree: &str, sortie: &str) -> std::process::Output {
@@ -174,7 +174,7 @@ fn un_autre_mot_de_passe_que_le_vide_est_refuse() {
     assert_eq!(verrouiller(&a, &chemin(&v)).status.code(), Some(0));
     let mut doc = Document::load(&v).unwrap();
     let e = fabrique_pdf::chiffrement::dechiffrer(&mut doc, b"autre").expect_err("refus attendu");
-    assert!(e.0.contains("mot de passe"), "{:?}", e.0);
+    assert!(e.phrase.contains("mot de passe"), "{:?}", e.phrase);
     // le mot de passe propriétaire, lui, est jeté : rien dans le fichier ne le donne, et /O n'est
     // pas celui d'un mot de passe vide
     let mut doc = Document::load(&v).unwrap();

@@ -5,10 +5,11 @@ use std::path::{Path, PathBuf};
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Ecran, Fiche, Place, Refus, FORME, MANQUE, OPERATION};
 use crate::catalogue::Route;
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
-use crate::fiches::{aujourd_hui, creer_dossier, ecrire, en_os, refus};
+use crate::fiches::{aujourd_hui, creer_dossier, ecrire, refus};
 use crate::ouverture::{EcranDeLImage, Identite, ImageIdentite};
 use droit::contexte::Contexte;
 use socle::echec::{Echec, R};
+use socle::num::Decimal;
 
 const QUOI_IDENTITE: Champ = Champ { nom: "quoi", libelle: Affiche::new("Signature, cachet ou logo"), forme: Forme::Texte, sens: "signature, cachet ou logo", avance: false };
 
@@ -36,9 +37,9 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[
             QUOI_IDENTITE,
             Champ { nom: "contenu", libelle: Affiche::new("Image"), forme: Forme::Texte, sens: "l'image en base64 (une adresse data: aussi)", avance: false },
-            Champ { nom: "poids", libelle: Affiche::new("Poids visé en Ko"), forme: Forme::Nombre, sens: "le poids visé de l'image dans chaque document, en Ko (20 si absent)", avance: true },
+            Champ { nom: "poids", libelle: Affiche::new("Poids visé en Ko"), forme: Forme::Nombre, sens: "le poids visé de l'image dans chaque document, en Ko (la route identite en propose un)", avance: false },
         ],
-        exemple: r#"{"quoi":"logo","contenu":"PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4="}"#,
+        exemple: r#"{"quoi":"logo","contenu":"PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4=","poids":20}"#,
         rend: IDENTITE_REND,
         refus: &[Refus { classe: socle::echec::Classe::Refuse, corriger: "une image lisible (PNG, JPEG, SVG), de 2 Mo au plus" }, FORME, MANQUE],
         acte: Acte::Ecrit,
@@ -70,7 +71,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
                 phrase: dire_l_identite(&identite),
                 identite,
                 intro: Some("Ce qui se pose sur les documents de la compagnie : PNG, JPEG ou SVG, 2 Mo au plus. Une image posée part dans chaque document qui la porte : le logiciel l'allège au poids visé."),
-                poids_vise_ko: Some(POIDS_VISE_KO),
+                poids_vise_ko: Some(Decimal::from(POIDS_VISE_KO)),
             })
         }
         Route::PoserIdentite => {
@@ -99,8 +100,8 @@ struct IdentiteDite {
     identite: Identite,
     #[serde(skip_serializing_if = "Option::is_none")]
     intro: Option<&'static str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    poids_vise_ko: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "socle::forme::ecrire_a_virgule_opt")]
+    poids_vise_ko: Option<Decimal>,
 }
 
 /// La charge de `poser-identite` : quoi, l'image en base64 (une adresse data: aussi), et le poids vise en Ko.
@@ -109,14 +110,14 @@ struct IdentiteDite {
 struct ChargePoser {
     quoi: String,
     contenu: String,
-    poids: Option<PoidsVise>,
+    poids: PoidsVise,
 }
 
 /// Le poids vise : un nombre, ou un texte qui en dit un (« 20,5 »).
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
 enum PoidsVise {
-    Nombre(f64),
+    Nombre(socle::forme::Nombre),
     Texte(String),
 }
 
@@ -131,8 +132,8 @@ struct ChargeQuoi {
 
 const IDENTITES: [&str; 3] = ["signature", "cachet", "logo"];
 const OCTETS_MAX: usize = 2 * 1024 * 1024;
-/// Le poids visé d'une image dans chaque document, en Ko, quand la compagnie n'en dit pas d'autre.
-const POIDS_VISE_KO: f64 = 20.0;
+/// Le poids visé d'une image dans chaque document, en Ko, que l'écran propose (`identite`).
+const POIDS_VISE_KO: u32 = 20;
 
 #[track_caller]
 fn identite_inconnue(quoi: &str) -> Echec {
@@ -174,7 +175,7 @@ fn format_de(o: &[u8]) -> Option<&'static str> {
 fn avant(f: &Path) -> R<()> {
     let mut nom = f.as_os_str().to_owned();
     nom.push(".avant");
-    std::fs::rename(f, PathBuf::from(nom)).map_err(|e| en_os(socle::echec::du_disque(&f, &e)))
+    std::fs::rename(f, PathBuf::from(nom)).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(socle::echec::Classe::Disque))
 }
 
 fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> {
@@ -192,30 +193,33 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
         return Err(refus("Le fichier est vide."));
     }
     if octets.len() > OCTETS_MAX {
-        return Err(refus(format!("Le fichier fait {:.1} Mo ; la limite est de 2 Mo.", octets.len() as f64 / 1024.0 / 1024.0)));
+        return Err(refus(format!("Le fichier fait {} Mo ; la limite est de 2 Mo.", mo(octets.len()))));
     }
     format_de(&octets).ok_or_else(|| {
         refus("Ce fichier n'est ni un PNG, ni un JPEG, ni un SVG (ses premiers octets ne sont ceux d'aucun des trois). Rien n'a ete ecrit.")
     })?;
-    let objectif_ko = match &charge.poids {
-        None => POIDS_VISE_KO,
-        Some(p) => {
-            let faute = |dit: &str| format!("Le poids visé est un nombre de Ko, de 1 à {} : {} ne l'est pas.", OCTETS_MAX / 1024, socle::fichiers::repr(dit));
-            let (k, dit) = match p {
-                PoidsVise::Nombre(k) => (*k, k.to_string()),
-                PoidsVise::Texte(s) => (s.trim().replace(',', ".").parse::<f64>().map_err(|e| refus(socle::echec::a_la_cle(&faute(s), "poids", e)))?, s.clone()),
-            };
-            if !(1.0..=OCTETS_MAX as f64 / 1024.0).contains(&k) {
-                return Err(refus(faute(&dit)));
-            }
-            k
+    // Le poids visé est dit par la charge : l'écran le propose (`poids_vise_ko` de `identite`), la personne le garde ou
+    // le change.
+    let faute = |dit: &str| format!("Le poids visé est un nombre de Ko, de 1 à {} : {} ne l'est pas.", OCTETS_MAX / 1024, socle::fichiers::repr(dit));
+    let (objectif_ko, dit) = match &charge.poids {
+        PoidsVise::Nombre(k) => (k.0.normalize(), k.0.normalize().to_string()),
+        PoidsVise::Texte(s) => {
+            let lu = socle::num::decimal_a_virgule(s);
+            (lu.ok_or_else(|| socle::echec::a_la_cle(&faute(s), "poids", "").reclasser(socle::echec::Classe::Refuse))?.normalize(), s.clone())
         }
     };
+    if objectif_ko < Decimal::ONE || objectif_ko > Decimal::from(OCTETS_MAX / 1024) {
+        return Err(refus(faute(&dit)));
+    }
     // L'image part dans chaque document qui la porte : elle est allégée avant d'être posée, à la largeur que les
-    // documents impriment (`documents::largeur_imprimee`) et au poids visé.
+    // documents impriment (`documents::largeur_imprimee`) et au poids visé (en octets, tronque).
     let largeur = documents::largeur_imprimee(quoi).ok_or_else(|| identite_inconnue(quoi))?;
-    let allegee = fabrique_pdf::alleger::alleger(&octets, largeur, (objectif_ko * 1024.0) as usize)
-        .map_err(|r| refus(format!("Le fichier n'est pas lisible : {}. Rien n'a ete ecrit.", r.0)))?;
+    let octets_vises = match rust_decimal::prelude::ToPrimitive::to_usize(&(objectif_ko * Decimal::from(1024)).trunc()) {
+        Some(o) => o,
+        None => unreachable!("un poids de 1 a 2 048 Ko tient en octets"),
+    };
+    let allegee = fabrique_pdf::alleger::alleger(&octets, largeur, octets_vises)
+        .map_err(|r| documents::fabrique::echec(r).reformuler(|p| format!("Le fichier n'est pas lisible : {}. Rien n'a ete ecrit.", p)))?;
     let poids = dire_le_poids(quoi, &allegee, objectif_ko);
     let (octets, format) = (allegee.octets, allegee.format);
     let dossier = dossier_identite(ctx);
@@ -230,12 +234,12 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
         _ => ".svg",
     };
     let cible = dossier.join(format!("{}{}", quoi, extension));
-    std::fs::write(&cible, &octets).map_err(|e| en_os(socle::echec::du_disque(&cible, &e)))?;
+    std::fs::write(&cible, &octets).map_err(|e| socle::echec::du_disque(&cible, &e).reclasser(socle::echec::Classe::Disque))?;
     if quoi == "signature" {
         // Pour qui elle est posee : la personne qui signe CE JOUR-LA.
         let mut registre = crate::ouverture::registre_identite(&dossier)?;
         let signataire = crate::ouverture::signataire_de(&ctx.entreprise);
-        registre.signature = Some(crate::ouverture::PoseePour { de: signataire.nom, le: aujourd_hui().iso() });
+        registre.signature = Some(crate::ouverture::PoseePour { de: signataire.nom, le: aujourd_hui() });
         ecrire(&dossier.join("identite.json"), &registre)?;
     }
     Ok((identite(ctx)?, poids))
@@ -247,12 +251,17 @@ fn ko(octets: usize) -> String {
     if k < 1000 {
         format!("{} Ko", k)
     } else {
-        format!("{:.1} Mo", octets as f64 / 1024.0 / 1024.0).replace('.', ",")
+        format!("{} Mo", mo(octets)).replace('.', ",")
     }
 }
 
+/// Des octets en mega-octets, au dixieme (`compagnie::sauvegarde::mo`).
+fn mo(octets: usize) -> String {
+    compagnie::sauvegarde::mo(octets as u64)
+}
+
 /// Ce que l'image posée pèsera dans chaque document, et pourquoi on l'a allégée.
-fn dire_le_poids(quoi: &str, a: &fabrique_pdf::alleger::Allegee, objectif_ko: f64) -> String {
+fn dire_le_poids(quoi: &str, a: &fabrique_pdf::alleger::Allegee, objectif_ko: Decimal) -> String {
     let nom = match quoi {
         "signature" => "La signature",
         "cachet" => "Le tampon",
@@ -268,7 +277,7 @@ fn dire_le_poids(quoi: &str, a: &fabrique_pdf::alleger::Allegee, objectif_ko: f6
         dit.push_str(&format!(" (l'image reçue : {} ; ramenée à {} pixels de large, ce que les documents impriment)", ko(a.avant), a.largeur));
     }
     dit.push('.');
-    if a.octets.len() as f64 > objectif_ko * 1024.0 {
+    if Decimal::from(a.octets.len()) > objectif_ko * Decimal::from(1024) {
         dit.push_str(&format!(" C'est plus que les {} Ko visés : une image plus simple (moins de détails, moins de couleurs) serait plus légère.", objectif_ko));
     }
     format!("{} {}", dit, pourquoi)
@@ -290,7 +299,7 @@ fn retirer_identite(ctx: &Contexte, charge: ChargeQuoi) -> R<Identite> {
 fn identite(ctx: &Contexte) -> R<Identite> {
     let mut v = crate::ouverture::identite(ctx, &ctx.gabarits())?;
     for (_, e) in v.images_mut() {
-        e.pastille = Some(socle::ecran::Pastille::de(if e.pose || e.automatique { "fait" } else { "a_faire" }, mots_de(e)));
+        e.pastille = Some(socle::ecran::Pastille::de(if e.pose || e.automatique { socle::ecran::EtatDEcran::Fait } else { socle::ecran::EtatDEcran::AFaire }, mots_de(e)));
     }
     Ok(v)
 }
@@ -341,7 +350,7 @@ fn ecran_de_l_identite(v: &mut Identite) {
         // Ce que dit l'image posee (sa forme, son poids, son jour), et les mots de ses gestes.
         // Une image posee dit sa forme, son poids et son jour (`ouverture::identite`).
         let pose_dit = match (e.pose, &e.format, e.octets, &e.quand) {
-            (true, Some(format), Some(octets), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.to_uppercase(), ko(octets as usize), socle::ecran::quand(quand))),
+            (true, Some(format), Some(octets), Some(quand)) => Some(format!("{}, {} dans chaque document, posé le {}", format.to_uppercase(), ko(octets as usize), quand.dit())),
             _ => None,
         };
         e.ecran = Some(EcranDeLImage {

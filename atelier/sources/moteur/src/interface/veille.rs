@@ -66,7 +66,7 @@ impl Veille {
         let etape = if en_cours || sauvegarde_en_cours {
             match routes::gestes::ouverture::etape_en_cours(&self.racine) {
                 Ok(e) => e,
-                Err(e) => Some(e.message),
+                Err(e) => Some(e.phrase),
             }
         } else {
             None
@@ -78,12 +78,12 @@ impl Veille {
     pub fn etat(&self) -> EtatDeLaVeille {
         let (dernier, illisible) = match routes::gestes::ouverture::derniere_ouverture(&self.racine) {
             Ok(t) => (t, None),
-            Err(e) => (None, Some(e.message)),
+            Err(e) => (None, Some(e.phrase)),
         };
         // Un marqueur qui ne se lit pas ne dit pas si les envois sont joues : le bandeau les dit vrais, et l'erreur le dit.
         let (fictive, marqueur) = match compagnie::bridage::branchement(&self.racine) {
             Ok(b) => (b.joue(), None),
-            Err(e) => (false, Some(socle::echec::phrase_de(&e))),
+            Err(e) => (false, Some(e.phrase)),
         };
         let erreur = match (tenu(&self.erreur).clone(), illisible, marqueur) {
             (Some(e), _, _) | (None, Some(e), _) | (None, None, Some(e)) => Some(e),

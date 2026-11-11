@@ -13,6 +13,5 @@
 //! `moteur-atelier scenario ...` est la meme commande.
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    std::process::exit(routes::scenario::commande(&args));
+    std::process::exit(routes::scenario::commande(&socle::ligne::arguments()));
 }

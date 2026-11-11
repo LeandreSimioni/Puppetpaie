@@ -7,7 +7,7 @@ use crate::dsn::Fichier;
 use droit::fiche::Lue as _;
 use socle::fichiers::repr;
 use crate::formats;
-use socle::num::Resultat;
+use socle::echec::R;
 use crate::usages::strip;
 use droit::fiche::{ChampsSalarie, FicheSalarie};
 
@@ -28,13 +28,13 @@ pub fn sexe_de(nir: Option<&str>, sexe: Option<&str>) -> Option<&'static str> {
 }
 
 /// Le NTT de ce salarie dans l'entreprise de SIREN `siren`.
-pub fn numero(siren: &str, salarie: &FicheSalarie) -> Resultat<String> {
+pub fn numero(siren: &str, salarie: &FicheSalarie) -> R<String> {
     let Some(s) = sexe_de(salarie.nir.portee(), salarie.sexe.code()) else {
         let qui = match salarie.nom.remplie() {
             Some(nom) => nom.to_string(),
             None => salarie.id.to_string(),
         };
-        return Err(format!(
+        return Err(socle::refus!(
             "Le numero technique temporaire ({}) de {} ne peut pas etre fabrique : sa fiche ne dit pas le sexe, et le NTT commence par lui (1 ou 2). D'ordinaire il se lit sur le NIR ; sans NIR, il faut le renseigner dans la fiche du salarie.",
             RUBRIQUE, qui
         ));
@@ -51,14 +51,14 @@ pub fn numero(siren: &str, salarie: &FicheSalarie) -> Resultat<String> {
         ));
     }
     let Some(matricule) = salarie.code_salarie.portee().map(strip) else {
-        return Err(format!(
+        return Err(socle::refus!(
             "Le numero technique temporaire ({}) finit par l'identifiant perenne du salarie dans l'entreprise -- son matricule --, et la fiche n'en porte pas.",
             RUBRIQUE
         ));
     };
     let v = format!("{}{}{}", s, siren, matricule);
     if let Some(pourquoi) = faute(&v, &siren)? {
-        return Err(format!(
+        return Err(socle::refus!(
             "Le numero technique temporaire fabrique pour cette fiche, {}, n'est pas declarable : {}.",
             repr(&v),
             pourquoi
@@ -68,7 +68,7 @@ pub fn numero(siren: &str, salarie: &FicheSalarie) -> Resultat<String> {
 }
 
 /// Ce que la norme reproche a ce NTT -- None s'il passe.
-pub fn faute(valeur: &str, siren: &str) -> Resultat<Option<String>> {
+pub fn faute(valeur: &str, siren: &str) -> R<Option<String>> {
     let c: Vec<char> = valeur.chars().collect();
     if c.is_empty() {
         return Ok(Some("il est vide".into()));
@@ -95,8 +95,7 @@ pub fn faute(valeur: &str, siren: &str) -> Resultat<Option<String>> {
             )));
         }
     }
-    let m = formats::mauvaise(RUBRIQUE, valeur)?;
-    Ok(if m.is_empty() { None } else { Some(m) })
+    formats::mauvaise(RUBRIQUE, valeur)
 }
 
 /// Le NIR de la fiche, quand elle le dit.
@@ -106,7 +105,7 @@ pub fn nir_de(salarie: &ChampsSalarie) -> Option<String> {
 
 
 /// S21.G00.30.001, quand il y en a un -- et rien du tout sinon.
-pub fn poser_nir(f: &mut Fichier, salarie: &ChampsSalarie) -> Resultat<()> {
+pub fn poser_nir(f: &mut Fichier, salarie: &ChampsSalarie) -> R<()> {
     if let Some(nir) = nir_de(salarie) {
         f.add(RUBRIQUE_NIR, nir);
     }
@@ -120,7 +119,7 @@ pub fn poser_nir(f: &mut Fichier, salarie: &ChampsSalarie) -> Resultat<()> {
 /// les deux identites declarees par l'employeur », et « le NTT le plus ancien en cours de validite » :
 /// `norme-dsn/texte/bloc-S21.G00.30.txt`, l. 348-354) ; sinon rien. `declaree` : l'identite que la derniere DSN a
 /// declaree pour lui (`changements_individu::Declarations::derniere`, ou `derniere_declaree`).
-pub fn poser_ntt(f: &mut Fichier, ent: &droit::fiche::ChampsEntreprise, salarie: &FicheSalarie, declaree:Option<&crate::changements_individu::Declaree>) -> Resultat<()> {
+pub fn poser_ntt(f: &mut Fichier, ent: &droit::fiche::ChampsEntreprise, salarie: &FicheSalarie, declaree:Option<&crate::changements_individu::Declaree>) -> R<()> {
     if nir_de(salarie).is_none() {
         f.add(RUBRIQUE, numero(ent.siren.ecrite("siren")?, salarie)?);
         return Ok(());
@@ -132,11 +131,11 @@ pub fn poser_ntt(f: &mut Fichier, ent: &droit::fiche::ChampsEntreprise, salarie:
 }
 
 /// CCH-12 et CCH-14, verifies sur le fichier seul, relu (`dsn_lue::lire`).
-pub fn verifier_fichier(texte: &str) -> Resultat<()> {
-    refuser_les_doublons(&crate::dsn_lue::lire(texte.as_bytes(), "").map_err(|e| e.message)?.individus)
+pub fn verifier_fichier(texte: &str) -> R<()> {
+    refuser_les_doublons(&crate::dsn_lue::lire(texte.as_bytes(), "")?.individus)
 }
 
-fn refuser_les_doublons(individus: &[crate::dsn_lue::IndividuDeclare]) -> Resultat<()> {
+fn refuser_les_doublons(individus: &[crate::dsn_lue::IndividuDeclare]) -> R<()> {
     let mut vus_nir: Vec<(&str, &str)> = Vec::new();
     let mut vus_ntt: Vec<(&str, &str)> = Vec::new();
     for i in individus {
@@ -144,9 +143,9 @@ fn refuser_les_doublons(individus: &[crate::dsn_lue::IndividuDeclare]) -> Result
             Some(n) => n,
             None => "Un individu sans nom (S21.G00.30.002)",
         };
-        let nir = Some(i.nir.as_str()).filter(|n| !n.is_empty());
+        let nir = i.nir.as_deref();
         if nir.is_none() && i.ntt.is_none() {
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} est declare sans numero d'inscription au repertoire et sans numero technique temporaire. La norme exige l'un ou l'autre (CCH-12, S21.G00.30.020) : sans cela l'individu n'est identifie par rien.",
                 nom
             ));
@@ -154,7 +153,7 @@ fn refuser_les_doublons(individus: &[crate::dsn_lue::IndividuDeclare]) -> Result
         for (cle, vus, quoi) in [(nir, &mut vus_nir, "NIR"), (i.ntt.as_deref(), &mut vus_ntt, "NTT")] {
             let Some(cle) = cle else { continue };
             if let Some((_, autre)) = vus.iter().find(|(c, _)| *c == cle) {
-                return Err(format!(
+                return Err(socle::refus!(
                     "Le meme {} ({}) identifie deux individus de la meme declaration, {} et {}. La norme l'interdit (CCH-14) : un identifiant qui designe deux personnes rend la declaration intracable.",
                     quoi, cle, autre, nom
                 ));

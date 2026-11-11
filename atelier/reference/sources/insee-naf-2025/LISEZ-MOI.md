@@ -63,3 +63,14 @@ Avant le lot R5b (11/10/2026, séance « documents ») : nulle part. Ce qu'un lo
 (le champ `naf`, « Code APE (NAF) », son contrôle de forme s'il en a un), `paie/src/bulletin.rs` et `avenant.rs` (le
 code imprimé), `amorcage.rs` (`11.002` en P26V01) ; et la page de l'actualité net-entreprises du 08/10/2026
 (`../net-entreprises-actualites/`) pour la DSN.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `insee-naf-2025-correspondances-divisions-59-60-90-91-20260107.txt` : `36e0f728e3bdb4f303647a318b3978cc97be6151ea28742cf8e2369c5acd070a`
+- `insee-naf-2025-correspondances-naf-rev2-vers-naf-2025-20260107.xlsx` : `8746ed6b5ec70dca426a158a9b43b91e97fd71cf34bc0d8094b982b7260397ab`
+- `insee-naf-2025-structure-20241004.xlsx` : `6bbb9b9affc7d547f7b2b4a790043d6c942362d743bf38377d5e32bd7ceba2d7`
+- `insee-naf-2025-structure-divisions-59-60-90-91-20241004.txt` : `40d47bb12c23d9ff4f1a43a0aa86e790b8a151be2a3b9853d6b81fc16c3c0101`
+- `legifrance-decret-2025-736-naf-2025-20250731.mht` : `151a69440762f1246008707948ef73391c8af9faeebbbca738d4d1c8073c596b`
+- `legifrance-decret-2025-736-naf-2025-20250731.txt` : `2e901a99223e9ff0d17a126d4db3b4852231ab0a7403c8638d84e9bb505b57b3`

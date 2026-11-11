@@ -7,6 +7,8 @@
 
 use std::collections::HashMap;
 
+use socle::ligne::Argument;
+
 /// Ce qu'une option attend.
 #[derive(Clone, Copy, PartialEq)]
 pub enum Genre {
@@ -66,10 +68,18 @@ pub struct Spec {
     pub options: &'static [Opt],
 }
 
+/// La valeur d'une option ou d'un positionnel : tapee, le defaut de sa `Spec`, ou un drapeau leve (sans valeur).
+#[derive(Debug)]
+enum Valeur {
+    Tapee(Argument),
+    Defaut(&'static str),
+    Drapeau,
+}
+
 /// Ce qui a ete tape.
 #[derive(Default, Debug)]
 pub struct Args {
-    valeurs: HashMap<String, String>,
+    valeurs: HashMap<String, Valeur>,
 }
 
 impl Args {
@@ -78,13 +88,25 @@ impl Args {
     }
 
     pub fn texte(&self, nom: &str) -> Option<&str> {
-        self.valeurs.get(nom).map(String::as_str)
+        self.valeurs.get(nom).map(|v| match v {
+            Valeur::Tapee(a) => a.texte(),
+            Valeur::Defaut(d) => d,
+            Valeur::Drapeau => "",
+        })
+    }
+
+    /// L'argument tape pour `nom` (un jour, un mois s'en lisent : `socle::ligne::Argument`) ; `None` s'il n'a pas ete tape.
+    pub fn tape(&self, nom: &str) -> Option<&Argument> {
+        match self.valeurs.get(nom) {
+            Some(Valeur::Tapee(a)) => Some(a),
+            Some(Valeur::Defaut(_) | Valeur::Drapeau) | None => None,
+        }
     }
 
     /// La valeur d'une option que sa `Spec` pourvoit d'un defaut (`Opt::avec_defaut`, `Opt::choix`, `Pos::parmi`) : elle
     /// est toujours la ; une commande qui la demande sans defaut se refuse en le disant.
     pub fn exige(&self, nom: &str) -> Result<&str, socle::echec::Echec> {
-        self.texte(nom).ok_or_else(|| socle::echec::Echec { classe: Some(socle::echec::Classe::Manque), message: format!("L'option « {} » n'a pas de valeur.", nom) })
+        self.texte(nom).ok_or_else(|| socle::echec::Echec { classe: Some(socle::echec::Classe::Manque), phrase: format!("L'option « {} » n'a pas de valeur.", nom), a_part: None })
     }
 }
 
@@ -111,29 +133,30 @@ fn liste(c: &[&str]) -> String {
 }
 
 /// Analyse `args` (ce qui suit le nom de la commande). Rend ce qui a ete tape, ou le refus.
-pub fn analyser(spec: &Spec, args: &[String]) -> Result<Args, Refus> {
+pub fn analyser(spec: &Spec, args: &[Argument]) -> Result<Args, Refus> {
     let mut r = Args::default();
     for o in spec.options {
         if let Some(d) = o.defaut {
-            r.valeurs.insert(o.nom.to_string(), d.to_string());
+            r.valeurs.insert(o.nom.to_string(), Valeur::Defaut(d));
         }
     }
-    let mut pos: Vec<&String> = Vec::new();
+    let mut pos: Vec<&Argument> = Vec::new();
     let mut i = 0;
     let mut fin_des_options = false;
     while i < args.len() {
-        let a = &args[i];
+        let arg = &args[i];
+        let a = arg.texte();
         i += 1;
         if fin_des_options || !a.starts_with("--") || a.len() == 2 {
             if !fin_des_options && a == "--" {
                 fin_des_options = true;
                 continue;
             }
-            pos.push(a);
+            pos.push(arg);
             continue;
         }
-        let (brut, valeur_collee) = match a[2..].split_once('=') {
-            Some((n, v)) => (n, Some(v.to_string())),
+        let (brut, valeur_collee) = match arg.option_collee() {
+            Some((n, v)) => (n, Some(v)),
             None => (&a[2..], None),
         };
         // Le nom exact d'abord, puis l'abreviation si une seule option y repond.
@@ -155,13 +178,13 @@ pub fn analyser(spec: &Spec, args: &[String]) -> Result<Args, Refus> {
             if valeur_collee.is_some() {
                 return Err(Refus(format!("l'option --{} ne prend pas de valeur", opt.nom)));
             }
-            r.valeurs.insert(opt.nom.to_string(), String::new());
+            r.valeurs.insert(opt.nom.to_string(), Valeur::Drapeau);
             continue;
         }
         let v = match valeur_collee {
             Some(v) => v,
             None => match args.get(i) {
-                Some(v) if !(v.starts_with("--") && v.len() > 2) => {
+                Some(v) if !(v.texte().starts_with("--") && v.texte().len() > 2) => {
                     i += 1;
                     v.clone()
                 }
@@ -169,27 +192,27 @@ pub fn analyser(spec: &Spec, args: &[String]) -> Result<Args, Refus> {
             },
         };
         if let Genre::Choix(c) = opt.genre {
-            if !c.contains(&v.as_str()) {
-                return Err(Refus(format!("l'option --{} ne prend pas « {} » (choix possibles : {})", opt.nom, v, liste(c))));
+            if !c.contains(&v.texte()) {
+                return Err(Refus(format!("l'option --{} ne prend pas « {} » (choix possibles : {})", opt.nom, v.texte(), liste(c))));
             }
         }
-        r.valeurs.insert(opt.nom.to_string(), v);
+        r.valeurs.insert(opt.nom.to_string(), Valeur::Tapee(v));
     }
     if pos.len() > spec.positionnels.len() {
-        let en_trop: Vec<&str> = pos[spec.positionnels.len()..].iter().map(|s| s.as_str()).collect();
+        let en_trop: Vec<&str> = pos[spec.positionnels.len()..].iter().map(|s| s.texte()).collect();
         return Err(Refus(format!("arguments inconnus : {}", en_trop.join(" "))));
     }
     for (k, p) in spec.positionnels.iter().enumerate() {
         match pos.get(k) {
             Some(v) => {
-                if let Some(c) = p.choix.filter(|c| !c.contains(&v.as_str())) {
-                    return Err(Refus(format!("{} ne prend pas « {} » (choix possibles : {})", p.nom, v, liste(c))));
+                if let Some(c) = p.choix.filter(|c| !c.contains(&v.texte())) {
+                    return Err(Refus(format!("{} ne prend pas « {} » (choix possibles : {})", p.nom, v.texte(), liste(c))));
                 }
-                r.valeurs.insert(p.nom.to_string(), (*v).clone());
+                r.valeurs.insert(p.nom.to_string(), Valeur::Tapee((*v).clone()));
             }
             None => {
                 if let Some(d) = p.defaut {
-                    r.valeurs.insert(p.nom.to_string(), d.to_string());
+                    r.valeurs.insert(p.nom.to_string(), Valeur::Defaut(d));
                 }
             }
         }
@@ -198,7 +221,7 @@ pub fn analyser(spec: &Spec, args: &[String]) -> Result<Args, Refus> {
 }
 
 /// Analyse `args` ; sur un refus, ecrit `usage` puis la phrase sur la sortie d'erreur et rend le code 2.
-pub fn analyser_ou_sortir(spec: &Spec, args: &[String]) -> Result<Args, i32> {
+pub fn analyser_ou_sortir(spec: &Spec, args: &[Argument]) -> Result<Args, i32> {
     analyser(spec, args).map_err(|Refus(m)| {
         eprintln!("{}\nmoteur {} : {}", usage(spec), spec.commande, m);
         2

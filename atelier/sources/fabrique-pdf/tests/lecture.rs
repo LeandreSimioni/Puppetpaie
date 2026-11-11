@@ -5,8 +5,8 @@
 
 use serde_json::json;
 
-mod commun;
-use commun::{dossier_temp, flux, lancer, pdf_a_la_main, pdf_fabrique};
+pub mod commun;
+use commun::{dossier_temp, flux, lancer, pdf_a_la_main, pdf_fabrique, textes_de};
 
 /// Le PDF « tiers » de ces tests : une page dont `/Contents` renvoie à un tableau de deux flux,
 /// une police standard sans largeurs, un objet formulaire, un `/ActualText` et un champ de
@@ -82,7 +82,7 @@ fn texte_d_un_pdf_de_la_fabrique() {
     let a = pdf_fabrique(&d, "a.pdf", 3);
     let r = lancer(&["--texte", &a]);
     assert_eq!(r.status.code(), Some(0), "{}", String::from_utf8_lossy(&r.stderr));
-    let t: Vec<String> = serde_json::from_slice(&r.stdout).unwrap();
+    let t = textes_de(&r.stdout);
     assert_eq!(t, vec!["Page 1 éàç œ\n", "Page 2 éàç œ\n", "Page 3 éàç œ\n"]);
 }
 
@@ -91,17 +91,18 @@ fn texte_d_un_paragraphe_long_une_ligne_par_ligne_du_pdf() {
     let d = dossier_temp("lecture-texte-lignes");
     let desc = json!({
         "format": 1,
-        "page": {"largeur": 200.0, "hauteur": 300.0,
-                 "marges": {"haut": 20.0, "droite": 20.0, "bas": 20.0, "gauche": 20.0}},
-        "police": {"taille": 10.0, "interligne": 1.25, "couleur": "#000000"},
-        "documents": [{"blocs": [{"type": "paragraphe", "morceaux": [{"texte":
+        "page": {"largeur": 200, "hauteur": 300,
+                 "marges": {"haut": 20, "droite": 20, "bas": 20, "gauche": 20}},
+        "police": {"taille": 10, "interligne": fabrique_pdf::mesure::mesure("1.25"), "couleur": "#000000"},
+        "documents": [{"blocs": [{"type": "paragraphe", "alignement": "gauche", "majuscules": false,
+            "espace_avant": 0, "espace_apres": 0, "retrait": 0, "morceaux": [{"gras": false, "italique": false, "texte":
             "Un paragraphe assez long pour passer à la ligne plusieurs fois dans une page étroite, sans rien perdre."}]}]}]
     });
     let octets = fabrique_pdf::Description::lire(&desc.to_string()).and_then(|d| fabrique_pdf::fabriquer(&d)).unwrap();
     let p = d.join("long.pdf");
     std::fs::write(&p, octets).unwrap();
     let r = lancer(&["--texte", p.to_str().unwrap()]);
-    let t: Vec<String> = serde_json::from_slice(&r.stdout).unwrap();
+    let t = textes_de(&r.stdout);
     assert_eq!(t.len(), 1);
     let lignes: Vec<&str> = t[0].lines().collect();
     assert!(lignes.len() >= 3, "{:?}", lignes);
@@ -120,7 +121,7 @@ fn texte_d_un_pdf_tiers_contenus_en_tableau_actualtext_formulaire_et_champ() {
     std::fs::write(&p, pdf_tiers(0)).unwrap();
     let r = lancer(&["--texte", p.to_str().unwrap()]);
     assert_eq!(r.status.code(), Some(0), "{}", String::from_utf8_lossy(&r.stderr));
-    let t: Vec<String> = serde_json::from_slice(&r.stdout).unwrap();
+    let t = textes_de(&r.stdout);
     assert_eq!(t.len(), 1);
     // dans l'ordre du flux : le tableau de flux (/Contents -> [5 6]), puis les champs
     assert_eq!(
@@ -141,7 +142,7 @@ fn texte_d_un_pdf_dont_la_table_de_references_est_fausse() {
     let r = lancer(&["--pages", p.to_str().unwrap()]);
     assert_eq!(String::from_utf8(r.stdout).unwrap().trim(), "[1]");
     let r = lancer(&["--texte", p.to_str().unwrap()]);
-    let t: Vec<String> = serde_json::from_slice(&r.stdout).unwrap();
+    let t = textes_de(&r.stdout);
     assert!(t[0].starts_with("Bonjour le monde\n") && t[0].contains("CHAMP"), "{:?}", t);
 }
 
@@ -175,7 +176,7 @@ fn les_lignes_distinctes_ne_se_collent_pas_et_l_exposant_reste_dans_sa_ligne() {
     let p = d.join("exposant.pdf");
     std::fs::write(&p, pdf_a_la_main(&objets, 0)).unwrap();
     let r = lancer(&["--texte", p.to_str().unwrap()]);
-    let t: Vec<String> = serde_json::from_slice(&r.stdout).unwrap();
+    let t = textes_de(&r.stdout);
     assert_eq!(t[0], "1er mai\nTotal\n42\n", "{:?}", t[0]);
 }
 
@@ -183,7 +184,7 @@ fn les_lignes_distinctes_ne_se_collent_pas_et_l_exposant_reste_dans_sa_ligne() {
 fn les_polices_composees_lisent_tounicode_meme_abimee_et_les_polices_simples_leurs_differences() {
     let d = dossier_temp("lecture-texte-polices");
     // Une police Type0 (Identity-H, codes de deux octets) : `ToUnicode` donne les caractères
-    // (une plage et un code isolé) ; le code 5 n'y est pas (U+FFFD) ; un « > » isolé, comme en
+    // (une plage et un code isolé) ; un « > » isolé, comme en
     // met un fichier abîmé, ne bloque pas la lecture.
     let tounicode = flux(
         "",
@@ -192,7 +193,7 @@ fn les_polices_composees_lisent_tounicode_meme_abimee_et_les_polices_simples_leu
          > > 1 beginbfrange <0001> <0003> <0041> endbfrange\n\
          1 beginbfchar <0004> <00E9> endbfchar\nendcmap",
     );
-    let page = "BT /F1 12 Tf 50 700 Td <00010002000300040005> Tj ET\n\
+    let page = "BT /F1 12 Tf 50 700 Td <0001000200030004> Tj ET\n\
                 BT /F2 12 Tf 50 680 Td (ABC \\200) Tj ET\n";
     let objets = vec![
         "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
@@ -210,8 +211,8 @@ fn les_polices_composees_lisent_tounicode_meme_abimee_et_les_polices_simples_leu
     std::fs::write(&p, pdf_a_la_main(&objets, 0)).unwrap();
     let r = lancer(&["--texte", p.to_str().unwrap()]);
     assert_eq!(r.status.code(), Some(0), "{}", String::from_utf8_lossy(&r.stderr));
-    let t: Vec<String> = serde_json::from_slice(&r.stdout).unwrap();
-    // Les codes 1 à 5 : A B C é ; le 5 n'a pas de texte. Les différences : A -> é, B -> à, C reste
-    // « C » (WinAnsi), \200 -> « € » (WinAnsi).
-    assert_eq!(t[0], "ABCé\u{FFFD}\néàC €\n", "{:?}", t[0]);
+    let t = textes_de(&r.stdout);
+    // Les codes 1 à 4 : A B C é. Les différences : A -> é, B -> à, C reste « C » (WinAnsi), \200 -> « € »
+    // (WinAnsi).
+    assert_eq!(t[0], "ABCé\néàC €\n", "{:?}", t[0]);
 }

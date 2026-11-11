@@ -6,3 +6,10 @@
 
 La date du 1er avril 2022 est celle du site ; la table Urssaf porte le CTP 381 au 04/01/2022 (jour et mois sans doute
 inversés dans la table : c'est une lecture, pas un texte).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `regime-local-cotisation-20261104.mht` : `4c5d8597d9a6e1c07c390cee1767eee07685cd3e5cd74857debc525d36cfc40e`
+- `regime-local-cotisation-20261104.txt` : `bde74e24d02f5dfdad500db8bced209c959e6f44e32fdb26bbbe357380bea35e`

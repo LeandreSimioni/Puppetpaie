@@ -9,7 +9,7 @@ use envois::retours::{
 };
 
 fn releve(nir: &str, identifiant: &str) -> ReleveTauxPas {
-    ReleveTauxPas { nir: nir.to_string(), taux: Some("0.00".to_string()), type_taux: Some("01".to_string()), identifiant: identifiant.to_string() }
+    ReleveTauxPas { nir: nir.to_string(), taux: droit::pas::TauxDePas::lire("0.00"), type_taux: Some(droit::type_taux_pas::TypeDeTauxPas::TransmisParLaDgfip), identifiant: identifiant.to_string() }
 }
 
 const CRM_REEL: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ns2:rapport xmlns:ns2=\"http://www.gip-mds.fr/\" identifiant=\"450189378\" type=\"CRM nominatif\" profil=\"DSN\" version=\"v02r01\"><envoi><envoi_identification><idflux>WSUrBZ50Y4RWJdDpsRsh.3r</idflux></envoi_identification></envoi><declaration><declaration_bilan><etat>OK</etat><salarie><NIR>1990101999999</NIR><matricule>2</matricule><taux_imposition_PAS>0.00</taux_imposition_PAS></salarie><salarie><NIR>2990101999999</NIR><matricule>1</matricule><taux_imposition_PAS>0.00</taux_imposition_PAS></salarie></declaration_bilan></declaration></ns2:rapport>";
@@ -171,7 +171,8 @@ fn les_attestations_d_une_archive_de_nature_46() {
     ]);
     let att = aer_spectacle(&a).unwrap();
     assert_eq!(att.len(), 2);
-    assert_eq!((att[0].periode.as_deref(), att[0].qui.as_str()), (Some("2026-09"), "DUPONT ALICE"));
+    let septembre = socle::mois::Mois::nouveau(2026, 9).ok();
+    assert_eq!((att[0].periode, att[0].qui.as_str()), (septembre, "DUPONT ALICE"));
     assert_eq!(att[0].donnees, b"%PDF-un");
-    assert_eq!((att[1].periode.as_deref(), att[1].qui.as_str()), (Some("2026-09"), "MARTIN PAUL JEAN"));
+    assert_eq!((att[1].periode, att[1].qui.as_str()), (septembre, "MARTIN PAUL JEAN"));
 }

@@ -64,7 +64,7 @@ fn plie(mot: &str) -> String {
 
 /// Le vocabulaire : chaque mot des textes de la table de lecture livree (`bulletin_lu::textes_de_la_table`), et
 /// `MOTS_DES_PIECES`. Une table qui ne se lit pas se refuse : rien ne se masque sans elle.
-fn vocabulaire() -> Result<&'static HashSet<String>, String> {
+fn vocabulaire() -> socle::echec::R<&'static HashSet<String>> {
     static V: OnceLock<HashSet<String>> = OnceLock::new();
     if let Some(v) = V.get() {
         return Ok(v);
@@ -134,8 +134,8 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> socle::echec:
         }
         // Un texte que la fabrique ne releve pas part tel : la raison, masquee comme le reste.
         let pages = match fabrique_pdf::lecture::texte(&f.disque.to_string_lossy()) {
-            Ok((pages, _)) => pages,
-            Err(r) => vec![format!("le texte du document ne se relève pas : {}", r.0)],
+            Ok((pages, _)) => pages.iter().map(fabrique_pdf::texte::TexteDePage::montre).collect(),
+            Err(r) => vec![format!("le texte du document ne se relève pas : {}", r.phrase)],
         };
         let logiciel = c.pages.iter().find_map(|p| p.infos.logiciel.clone());
         let genre = format!("document non lu : famille {}", famille(pages.first().map(String::as_str), logiciel.as_deref(), voc));
@@ -149,7 +149,6 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> socle::echec:
             .map(|p| FormeDePage { page: p.page, sort: p.sort, raison: masquer_avec(&p.raison, voc), releve: f.pages.get(p.page.saturating_sub(1)) })
             .collect();
         let detail = Detail { sort: c.sort, logiciel: logiciel.as_deref(), pages: pages.len(), forme, raison: masquer_avec(&c.raison, voc) };
-        let detail = socle::ecriture::en_valeur(&detail);
         let texte: Vec<String> = pages.iter().enumerate().map(|(k, p)| format!("--- page {} ---\n{}", k + 1, masquer_avec(p.trim_end(), voc))).collect();
         let trace = tete(&texte.join("\n"), TRACE_MAX);
         let resume = format!("Import : un document accepté n'a pas été lu (« {} »). Sa forme, masquée.", c.sort.en_mots().1);
@@ -161,12 +160,11 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> socle::echec:
             detail,
             trace: Some(&trace),
             sans_contexte: true,
-            ..Default::default()
         };
         match incidents::noter(&ctx.racine, &note) {
             Ok(Some(_)) => notes += 1,
             Ok(None) => {}
-            Err(e) => eprintln!("Un document non lu ne se note pas au journal des incidents : {}", socle::echec::phrase_de(&e.message)),
+            Err(e) => eprintln!("Un document non lu ne se note pas au journal des incidents : {}", e.en_lignes()),
         }
     }
     if notes > 0 && incidents::envoi_actif(&ctx.racine) {

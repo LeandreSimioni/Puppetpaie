@@ -29,9 +29,10 @@ async function dessinerModelesContrat(cible, ouvert = null) {
     cible.innerHTML = `<div class="encart erreur">${echapper(e.message)}</div>`;
     return;
   }
-  const estOuvert = (nature, id) => ouvert && ouvert.nature === nature && (ouvert.id || null) === id;
+  // La base n'a pas d'id (`null` dans la réponse, absent de son bloc) : `==` les tient pour égaux.
+  const estOuvert = (nature, id) => ouvert && ouvert.nature === nature && ouvert.id == id;
   const ligne = (n, x) => `
-    <div class="modele-contrat" data-nature="${echapper(n.nature)}" data-id="${echapper(x.id || "")}">
+    <div class="modele-contrat" data-nature="${echapper(n.nature)}"${x.id ? ` data-id="${echapper(x.id)}"` : ""}>
       <div class="modele-entete">
         <b>${echapper(x.nom)}</b>
         ${pastilleDeLEtat(x.pastille)}
@@ -39,7 +40,7 @@ async function dessinerModelesContrat(cible, ouvert = null) {
       ${x.base_changee ? `<div class="encart">${echapper(x.base_changee)}</div>` : ""}
       ${x.manques.length ? `<div class="encart erreur">${x.manques.map(echapper).join("<br>")}</div>` : ""}
       <div class="modele-gestes">
-        ${estOuvert(n.nature, x.id || null)
+        ${estOuvert(n.nature, x.id)
           ? `<button type="button" class="lien" data-ouvrir>Fermer</button>`
           : `<button type="button" class="lien" data-ouvrir>Ouvrir</button>`}
         ${x.defaut ? "" : `<button type="button" class="lien" data-defaut>Choisir par défaut</button>`}
@@ -71,7 +72,7 @@ async function dessinerModelesContrat(cible, ouvert = null) {
   };
   cible.querySelectorAll(".modele-contrat").forEach((bloc) => {
     const nature = bloc.dataset.nature;
-    const id = bloc.dataset.id || null;
+    const id = bloc.dataset.id;
     const ici = estOuvert(nature, id);
     bloc.querySelector("[data-ouvrir]").onclick = () => dessinerModelesContrat(cible, ici ? null : { nature, id, partie: "contrat" });
     const defaut = bloc.querySelector("[data-defaut]");

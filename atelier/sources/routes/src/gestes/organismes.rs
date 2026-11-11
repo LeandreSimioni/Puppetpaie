@@ -4,7 +4,8 @@
 use serde::{Deserialize, Serialize};
 
 use socle::date::Jour;
-use socle::echec::Echec;
+use socle::echec::R;
+use socle::mois::Mois;
 use compagnie::organismes::{enregistrer, lire, ChargeEnregistrer, Lus};
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::temps::TempsDeLaCase;
@@ -12,8 +13,6 @@ use crate::temps::TempsDeLaCase;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, ILLISIBLE, OPERATION};
 use crate::catalogue::Route;
 use crate::catalogue::{Ecran, Place};
-
-type R<T> = Result<T, Echec>;
 
 /// Ou ces routes se voient a l'ecran (une place par module).
 const ECRAN: Ecran = Ecran::Dessine(Place::Organismes);
@@ -51,7 +50,7 @@ pub const ROUTES: &[Fiche] = &[
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeOrganismes {
-    mois: Option<String>,
+    mois: Option<Mois>,
 }
 
 /// CE QUE RENDENT `organismes-contrats` ET `organismes-enregistrer` : la phrase, la convention, s'il reste a saisir, le mois
@@ -61,7 +60,7 @@ pub(crate) struct OrganismesDits {
     phrase: String,
     idcc: Option<String>,
     a_saisir: bool,
-    mois: String,
+    mois: Mois,
     contrats: Vec<ContratDit>,
     encarts: Vec<crate::Encart>,
 }
@@ -88,10 +87,11 @@ pub(crate) struct ContratSaisi {
 /// `adhesions_prevoyance` de `config/organismes.json`, lue contrat par contrat (sa valeur a chaque version, une fois tant
 /// qu'elle ne change pas ; absent d'une version, il n'y est pas saisi).
 fn temps_des_contrats(ctx: &droit::contexte::Contexte) -> R<Vec<TempsDeLaCase<ContratSaisi>>> {
-    let fichier = droit::organismes::fichier_organismes(ctx).map_err(plain)?;
-    let Some(liste) = fichier.adhesions_prevoyance.as_deref() else { return Ok(Vec::new()) };
+    let fichier = droit::organismes::fichier_organismes(ctx)?;
     let mut par_cle: Vec<(String, Vec<droit::fiche::Datee<ContratSaisi>>)> = Vec::new();
-    for version in droit::fiche::valeurs_datees(liste) {
+    // Aucune adhesion saisie : aucun contrat.
+    let versions = fichier.adhesions_prevoyance.as_deref().map(droit::fiche::valeurs_datees);
+    for version in versions.into_iter().flatten() {
         for a in version.valeur.iter().flatten() {
             if !par_cle.iter().any(|(c, _)| c == a.cle.trim()) {
                 par_cle.push((a.cle.trim().to_string(), Vec::new()));
@@ -107,7 +107,7 @@ fn temps_des_contrats(ctx: &droit::contexte::Contexte) -> R<Vec<TempsDeLaCase<Co
     }
     let mut out = Vec::new();
     for (cle, datees) in par_cle {
-        out.extend(crate::temps::d_une_case(&cle, &datees, &ctx.aujourdhui, |a, b| a == b)?);
+        out.extend(crate::temps::d_une_case(crate::temps::CaseDatee::Contrat(cle), &datees, &ctx.aujourdhui, |a, b| a == b)?);
     }
     Ok(out)
 }
@@ -124,7 +124,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
     let (lu, enregistre) = match porte.route {
         Route::OrganismesContrats => {
             let c: ChargeOrganismes = charge.lire()?;
-            (lire(ctx, c.mois.as_deref())?, false)
+            (lire(ctx, c.mois)?, false)
         }
         Route::OrganismesEnregistrer => {
             let c: ChargeEnregistrer = charge.lire()?;
@@ -145,20 +145,13 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
         format!("Contrats de la DSN : {} ; rien à saisir.", n)
     };
     let phrase = if enregistre { format!("Enregistré. {}", p) } else { p };
-    let mut encarts = vec![crate::Encart::de("information", "", "Ce que la DSN déclare de vos adhésions de prévoyance et de santé. La référence du contrat et le code de l'organisme se lisent sur le certificat d'adhésion et sur la fiche de paramétrage DSN de l'organisme. Le reste (organismes payés, Urssaf, taux AT/MP, compte France Travail) vient de la loi, de la convention et de la fiche Entreprise.")];
-    encarts.push(crate::Encart::de("information", "", format!("Les contrats en vigueur en {}.", socle::mois::Mois::en_clair(&lu.mois))));
+    let mois = lu.mois;
+    let mut encarts = vec![crate::Encart::de(socle::ecran::EtatDEcran::Information, "", "Ce que la DSN déclare de vos adhésions de prévoyance et de santé. La référence du contrat et le code de l'organisme se lisent sur le certificat d'adhésion et sur la fiche de paramétrage DSN de l'organisme. Le reste (organismes payés, Urssaf, taux AT/MP, compte France Travail) vient de la loi, de la convention et de la fiche Entreprise.")];
+    encarts.push(crate::Encart::de(socle::ecran::EtatDEcran::Information, "", format!("Les contrats en vigueur en {}.", mois.libelle(socle::mois::Graphie::Accentuee))));
     if lu.a_saisir {
-        encarts.push(crate::Encart::de("a_faire", "", "Une référence de contrat manque : la DSN refuse les salariés que ce contrat couvre tant qu'elle n'est pas enregistrée."));
+        encarts.push(crate::Encart::de(socle::ecran::EtatDEcran::AFaire, "", "Une référence de contrat manque : la DSN refuse les salariés que ce contrat couvre tant qu'elle n'est pas enregistrée."));
     }
-    let en_clair = |j: &Option<String>| -> R<Option<String>> {
-        match j.as_deref().filter(|j| !j.is_empty()) {
-            Some(j) => {
-                let tete = j.get(..10).ok_or_else(|| plain(format!("jour illisible : {}", socle::fichiers::repr(j))))?;
-                Ok(Some(Jour::lire(tete).map_err(plain)?.jj_mm_aaaa()))
-            }
-            None => Ok(None),
-        }
-    };
+    let en_clair = |j: &Option<Jour>| -> R<Option<String>> { Ok(j.map(|j| j.jj_mm_aaaa())) };
     let mut contrats = Vec::new();
     for ligne in lu.lignes {
         let periode = match (en_clair(&ligne.depuis)?, en_clair(&ligne.jusqu_a)?) {
@@ -167,13 +160,8 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
             (None, Some(a)) => format!("Jusqu'au {}.", a),
             (None, None) => String::new(),
         };
-        let temps = temps.iter().position(|t| t.champ == ligne.cle).map(|i| temps.swap_remove(i));
+        let temps = temps.iter().position(|t| matches!(&t.champ, crate::temps::CaseDatee::Contrat(c) if *c == ligne.cle)).map(|i| temps.swap_remove(i));
         contrats.push(ContratDit { ligne, periode, temps });
     }
-    Ok(OrganismesDits { phrase, idcc: lu.idcc, a_saisir: lu.a_saisir, mois: lu.mois, contrats, encarts })
-}
-
-#[track_caller]
-fn plain(m: impl Into<String>) -> Echec {
-    socle::echec::noter_et(None, m)
+    Ok(OrganismesDits { phrase, idcc: lu.idcc, a_saisir: lu.a_saisir, mois, contrats, encarts })
 }

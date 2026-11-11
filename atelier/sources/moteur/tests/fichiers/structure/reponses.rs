@@ -353,6 +353,21 @@ impl Espace {
                     i += 3;
                     continue;
                 }
+                // LES CODES D'UNE LISTE DE LA NORME (`droit::natures::codes_fermes!`) : `Nom, "quoi", "rubrique" { … }`
+                // declare l'enum `Nom`, qui s'ecrit par son code (`impl Serialize` de la macro) : un texte.
+                (J::Mot(m), Some(J::P("!"))) if m == "codes_fermes" && est(v.get(i + 2), "{") => {
+                    let fin = apres_le_groupe(v, i + 2, false);
+                    let mut k = i + 3;
+                    while est(v.get(k), "#") {
+                        k = apres_le_groupe(v, k + 1, false);
+                    }
+                    if let Some(nom) = mot(v.get(k)) {
+                        self.items.push(Item { fichier, nom: nom.to_string(), genre: "type", generiques: Vec::new(), serde: Vec::new(), serialise: true, corps: vec![J::Mot("String".into())] });
+                    }
+                    attrs.clear();
+                    i = fin;
+                    continue;
+                }
                 (J::P("#"), Some(J::P("["))) => {
                     let fin = apres_le_groupe(v, i + 1, false);
                     attrs.push(&v[i + 2..fin - 1]);
@@ -398,6 +413,43 @@ impl Espace {
                     self.items.push(Item { fichier, nom, genre: "struct", generiques: Vec::new(), serde: Vec::new(), serialise: true, corps });
                     attrs.clear();
                     i = fin;
+                    continue;
+                }
+                // LA FICHE PLATE D'UN `fiche! { … }` (`droit::fiche`) : `struct Nom, datee …, changement …, cles … {
+                // Variante(Type) = "cle" => champ, … } pieces … { piece : …, …, … { … } … } notes { note, … }`. La macro
+                // l'ecrit a plat (son `impl Serialize`) : chaque case, celles des pieces comprises, a sa cle, un `Option`
+                // de son type ; chaque note, un `Option<String>`.
+                (J::Mot(m), Some(J::Mot(nom))) if m == "struct" && i < fin_d_un_choix && est(v.get(i + 2), ",") => {
+                    let nom = nom.clone();
+                    let mut corps = vec![J::P("{")];
+                    let mut k = i + 3;
+                    while k < fin_d_un_choix {
+                        if mot(v.get(k)).is_some() && est(v.get(k + 1), "(") {
+                            let f = apres_le_groupe(v, k + 1, false);
+                            if let (true, Some(J::Chaine(cle)), true) = (est(v.get(f), "="), v.get(f + 1), est(v.get(f + 2), "=>")) {
+                                corps.extend([J::Mot(cle.clone()), J::P(":"), J::Mot("Option".into()), J::P("<")]);
+                                corps.extend(v[k + 2..f - 1].iter().cloned());
+                                corps.extend([J::P(">"), J::P(",")]);
+                                k = f + 4;
+                                continue;
+                            }
+                        }
+                        if mot(v.get(k)) == Some("notes") && est(v.get(k + 1), "{") {
+                            let f = apres_le_groupe(v, k + 1, false);
+                            for n in morceaux(&v[k + 2..f - 1], ",", true) {
+                                if let Some(note) = mot(n.last()) {
+                                    corps.extend([J::Mot(note.to_string()), J::P(":"), J::Mot("Option".into()), J::P("<"), J::Mot("String".into()), J::P(">"), J::P(",")]);
+                                }
+                            }
+                            k = f;
+                            continue;
+                        }
+                        k += 1;
+                    }
+                    corps.push(J::P("}"));
+                    self.items.push(Item { fichier, nom, genre: "struct", generiques: Vec::new(), serde: Vec::new(), serialise: true, corps });
+                    attrs.clear();
+                    i = fin_d_un_choix;
                     continue;
                 }
                 (J::Mot(m), Some(J::Mot(nom))) if m == "struct" || m == "enum" || m == "type" => {
@@ -545,11 +597,14 @@ impl Espace {
                 }
             }
         };
-        let chemin = reste.join("/");
+        // La racine d'une crate est son module `lib`.
+        let chemin = match reste.is_empty() {
+            true => "lib".to_string(),
+            false => reste.join("/"),
+        };
         (0..self.fichiers.len()).find(|&n| {
             let p = self.fichiers[n].to_string_lossy().replace('\\', "/");
-            crate_de(n) == racine
-                && (p.ends_with(&format!("/src/{}.rs", chemin)) || p.ends_with(&format!("/src/{}/mod.rs", chemin)) || (chemin.is_empty() && p.ends_with("/src/lib.rs")))
+            crate_de(n) == racine && (p.ends_with(&format!("/src/{}.rs", chemin)) || p.ends_with(&format!("/src/{}/mod.rs", chemin)))
         })
     }
 
@@ -690,8 +745,8 @@ pub struct Formes<'e> {
     deja: HashMap<String, usize>,
 }
 
-const FEUILLES: [&str; 22] = [
-    "String", "str", "bool", "char", "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize", "f32", "f64",
+const FEUILLES: [&str; 20] = [
+    "String", "str", "bool", "char", "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize",
     "Decimal", "PathBuf", "Path", "Number",
 ];
 
@@ -811,7 +866,7 @@ impl<'e> Formes<'e> {
         let f = self.espace.fonction(fichier, &chemin, &nom)?;
         let (ff, retour) = (f.fichier, f.retour.clone());
         let t = match lire_ty(&retour) {
-            Ty::Chemin(s, mut a) if !a.is_empty() && ["R", "Result", "Resultat"].contains(&s.last().unwrap().as_str()) => a.remove(0),
+            Ty::Chemin(s, mut a) if !a.is_empty() && ["R", "Result"].contains(&s.last().unwrap().as_str()) => a.remove(0),
             autre => return Err(format!("la fonction {} ne rend pas un `Result` lisible ({:?})", nom, autre)),
         };
         self.du_type(ff, &t, &HashMap::new()).map(Some)

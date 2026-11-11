@@ -125,7 +125,7 @@ fn fondements(v: &Value, chemin: &str, out: &mut Vec<(String, Fondement)>) {
             for (k, x) in o {
                 let ici = format!("{}/{}", chemin, k);
                 if k == "source" && x.is_object() {
-                    out.push((ici, socle::forme::lire(x, "source illisible").unwrap_or_else(|e| panic!("{} : {}", chemin, e))));
+                    out.push((ici, socle::forme::lire(x, "source illisible").unwrap_or_else(|e| panic!("{} : {}", chemin, e.phrase))));
                 } else {
                     fondements(x, &ici, out);
                 }
@@ -212,7 +212,7 @@ fn chaque_source_est_un_texte_depose_et_sa_citation_s_y_lit() {
     let banque = lu("conseils.json");
     for c in banque["conseils"].as_array().unwrap() {
         let id = c["id"].as_str().unwrap();
-        let sources: Vec<Source> = socle::forme::lire(&c["source"], "").unwrap_or_else(|e| panic!("{} : {}", id, e));
+        let sources: Vec<Source> = socle::forme::lire(&c["source"], "").unwrap_or_else(|e| panic!("{} : {}", id, e.phrase));
         for s in &sources {
             assert!(banque["documents"].get(s.fichier.texte()).is_some(), "{} : le document {} n'a pas de titre lisible", id, s.fichier.texte());
         }

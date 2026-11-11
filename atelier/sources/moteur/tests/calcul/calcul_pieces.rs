@@ -11,20 +11,18 @@ use serde_json::{json, Value};
 const ORACLE: &str = "calcul-pieces.json";
 
 /// Le decimal d'un nombre de l'oracle : un entier tel quel, un flottant par sa forme ecrite la plus courte.
-fn decimal(v: &Value) -> Result<rust_decimal::Decimal, String> {
+fn decimal(v: &Value) -> socle::echec::R<rust_decimal::Decimal> {
     match v {
-        Value::Number(n) => match (n.as_i64(), n.as_u64(), n.as_f64()) {
-            (Some(i), _, _) => Ok(i.into()),
-            (_, Some(u), _) => Ok(u.into()),
-            (_, _, Some(f)) => socle::num::dec_f64(f),
-            _ => Err(format!("nombre illisible : {}", n)),
+        Value::Number(n) => match socle::forme::NombreLu::try_from(n.clone()) {
+            Ok(l) => l.decimal(),
+            Err(e) => match e {},
         },
-        autre => Err(format!("nombre attendu, lu {}", autre)),
+        autre => Err(socle::refus!("nombre attendu, lu {}", autre)),
     }
 }
 
 /// La forme canonique d'un resultat : ses nombres en texte normalise, ses cles en `_` retirees.
-fn canon_valeur(v: &Value) -> Result<Value, String> {
+fn canon_valeur(v: &Value) -> socle::echec::R<Value> {
     Ok(match v {
         Value::Number(_) => Value::String(socle::num::nombre(decimal(v)?)),
         Value::Array(a) => Value::Array(a.iter().map(canon_valeur).collect::<Result<_, _>>()?),
@@ -32,23 +30,23 @@ fn canon_valeur(v: &Value) -> Result<Value, String> {
             o.iter()
                 .filter(|(k, _)| !k.starts_with('_'))
                 .map(|(k, x)| canon_valeur(x).map(|c| (k.clone(), c)))
-                .collect::<Result<serde_json::Map<_, _>, String>>()?,
+                .collect::<socle::echec::R<serde_json::Map<_, _>>>()?,
         ),
         autre => autre.clone(),
     })
 }
 
 /// La section `reduction_generale` d'un bareme de la grille, lue comme la pile la lit.
-fn section(bar: &Value) -> Result<Option<droit::forme_bareme::ReductionGenerale>, String> {
+fn section(bar: &Value) -> socle::echec::R<Option<droit::forme_bareme::ReductionGenerale>> {
     bar.get("reduction_generale").filter(|v| !v.is_null()).map(|v| socle::forme::lire(v, "section illisible")).transpose()
 }
 
 
 /// `{"ok": canon(v)}` ou `{"refus": message}`.
-fn essai(r: Result<Value, String>) -> Value {
+fn essai(r: socle::echec::R<Value>) -> Value {
     match r {
         Ok(v) => json!({"ok": canon_valeur(&v).unwrap()}),
-        Err(e) => json!({"refus": socle::echec::phrase_de(&e)}),
+        Err(e) => json!({"refus": e.phrase}),
     }
 }
 
@@ -60,10 +58,10 @@ fn le_code_du_bloc_54() {
     let racine = dossier_de_test("calcul_pieces", "code_54");
     let mut refus = 0;
     for c in cas.as_array_mut().unwrap() {
-        let r = rubrique(&racine, c[0].as_str().unwrap(), &socle::date::Jour::lire("2026-10-28").unwrap()).unwrap();
+        let r = rubrique(&racine, c[0].as_str().unwrap(), &socle::date::Jour::nouveau(2026, 10, 28).unwrap()).unwrap();
         let vu = socle::forme::lire::<Option<String>>(&c[1]["genre"], "La ligne ne se lit pas.").and_then(|g| code_54(&r, g.as_deref()));
         refus += vu.is_err() as usize;
-        c[2] = essai(vu.map(|o| o.map_or(Value::Null, Value::String)));
+        c[2] = essai(vu.map(|o| o.map_or(Value::Null, |a| Value::String(a.code().to_string()))));
     }
     assert!(refus > 10, "{}", refus);
     oracle(ORACLE, "/code_54", &cas);
@@ -117,7 +115,10 @@ fn le_seuil_de_smic() {
         for b in rel["grilles"][&cle].as_array().unwrap() {
             points += 1;
             let seuil = Some(&g["seuil"]).filter(|s| !s.is_null()).map(decimal).transpose();
-            vus.push(essai(section(bar).and_then(|rg| au_dela_du_seuil(rg.as_ref(), dec(b.as_str().unwrap()), dec(h), seuil?)).map(Value::Bool)));
+            vus.push(essai(section(bar).and_then(|rg| match seuil? {
+                Some(s) => au_dela_du_seuil(rg.as_ref(), dec(b.as_str().unwrap()), dec(h), s),
+                None => Ok(true),
+            }).map(Value::Bool)));
         }
         groupe(g, vus);
     }

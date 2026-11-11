@@ -12,6 +12,7 @@
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use socle::date::Jour;
+use socle::mois::Mois;
 use socle::texte::euros;
 use socle::echec::R;
 use socle::echec::{erreur, Classe};
@@ -23,7 +24,7 @@ use crate::versement_declare::{self, VersementDeclare};
 /// Une correction embarquee : un contrat d'un mois deja declare dont la paie validee presente n'est plus celle que les
 /// DSN parties ont declaree, et les deux paies.
 pub struct Reg {
-    pub mois: String,
+    pub mois: Mois,
     /// La version presente de l'engagement, que la correction declare, et le jour ou elle a ete validee.
     pub version: u64,
     pub decidee_le: Option<Jour>,
@@ -46,18 +47,18 @@ pub struct Reg {
 /// et que son annule-et-remplace n'est plus admis (la veille de l'echeance passee, cahier technique DSN §1.4.2) ; tant qu'il l'est,
 /// sa propre DSN se refait. Un mois dont la DSN est celle de l'ancien logiciel (`engagement::importe::dsn_deposee`) se
 /// corrige toujours ailleurs : sa DSN n'a pas ete faite ici et ne se refait pas ici (regle 4).
-pub fn se_corrige_ailleurs(ctx: &Contexte, departs: &engagement::departs::Departs, mois: &str) -> R<bool> {
+pub fn se_corrige_ailleurs(ctx: &Contexte, departs: &engagement::departs::Departs, mois: Mois) -> R<bool> {
     use engagement::departs::Envoi;
-    if engagement::importe::dsn_deposee(&ctx.racine, mois).map_err(refus_valeur)?.is_some() {
+    if engagement::importe::dsn_deposee(&ctx.racine, mois).map_err(|e| e.reclasser(Classe::Illisible))?.is_some() {
         return Ok(true);
     }
     let partie = departs
         .engagements()
-        .any(|(c, n)| departs.de(c, n).iter().any(|d| d.envoi == Envoi::Dsn && d.par.is_none() && d.mois.as_deref() == Some(mois)));
+        .any(|(c, n)| departs.de(c, n).iter().any(|d| d.envoi == Envoi::Dsn && d.par.is_none() && d.mois == Some(mois)));
     if !partie {
         return Ok(false);
     }
-    let limite = crate::echeance_dsn::de_la_compagnie(ctx, mois).map_err(refus_valeur)?.veille();
+    let limite = crate::echeance_dsn::de_la_compagnie(ctx, mois).map_err(|e| e.reclasser(Classe::Illisible))?.veille();
     Ok(ctx.aujourdhui > limite)
 }
 
@@ -70,15 +71,16 @@ pub struct Due {
 }
 
 /// LES CORRECTIONS DUES DE `mois` dans la DSN de `porteur` : chaque engagement valide du mois dont la paie presente n'est
-/// plus celle que les DSN anterieures a `porteur` ont declaree, ou qu'aucune n'a declare (`engagement::etats::
-/// correction_due`). Corriger, c'est modifier l'engagement et le revalider : rien ne s'ecrit a cote de lui, et un
-/// engagement en saisie n'est pas encore une correction (ce qui n'est pas valide n'est pas paye).
-pub fn corrections_dues(ctx: &Contexte, mois: &str, porteur: &str, departs: &engagement::departs::Departs) -> R<Vec<Due>> {
-    let refus = |m: String| erreur(Classe::MoisNonRegularisable, m);
+/// plus celle que les DSN anterieures a `porteur` ont declaree (`None` : toutes les DSN parties), ou qu'aucune n'a
+/// declare (`engagement::etats::correction_due`). Corriger, c'est modifier l'engagement et le revalider : rien ne s'ecrit
+/// a cote de lui, et un engagement en saisie n'est pas encore une correction (ce qui n'est pas valide n'est pas paye).
+pub fn corrections_dues(ctx: &Contexte, mois: Mois, porteur: Option<Mois>, departs: &engagement::departs::Departs) -> R<Vec<Due>> {
     let mut out = Vec::new();
     for (rang, e) in engagement::etats::du_mois(ctx, mois, departs)?.into_iter().enumerate() {
         let Some(v) = e.valide().cloned() else { continue };
-        if let Some(declarees) = engagement::etats::correction_due(ctx, &v, departs, mois, porteur).map_err(refus)? {
+        if let Some(declarees) =
+            engagement::etats::correction_due(ctx, &v, departs, mois, porteur).map_err(|m| m.reclasser(Classe::MoisNonRegularisable))?
+        {
             out.push(Due { valide: v, rang, declarees });
         }
     }
@@ -89,18 +91,18 @@ pub fn corrections_dues(ctx: &Contexte, mois: &str, porteur: &str, departs: &eng
 /// ailleurs que dans sa DSN (`se_corrige_ailleurs`), chacune avec le versement DECLARE (`versement_declare::dernier_declare`), sa paie
 /// d'avant (telle que declaree, ou telle que la correction portee precedente l'a laissee) et sa paie d'apres (la paie
 /// ecrite de la version presente).
-pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engagement::departs::Departs) -> R<Vec<Reg>> {
+pub fn regularisations_pour(ctx: &Contexte, mois_courant: Mois, departs: &engagement::departs::Departs) -> R<Vec<Reg>> {
     let mut out = Vec::new();
-    for mois in engagement::stock::mois_saisis(&ctx.racine).map_err(refus_valeur)?.into_iter().map(String::from) {
-        if mois.as_str() >= mois_courant {
+    for mois in engagement::stock::mois_saisis(&ctx.racine).map_err(|e| e.reclasser(Classe::Illisible))? {
+        if mois >= mois_courant {
             break;
         }
-        if !se_corrige_ailleurs(ctx, departs, &mois)? {
+        if !se_corrige_ailleurs(ctx, departs, mois)? {
             continue;
         }
-        out.extend(annulations(ctx, departs, &mois, mois_courant)?);
-        let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, &mois)? else { continue };
-        for d in corrections_dues(ctx, &mois, mois_courant, departs)? {
+        out.extend(annulations(ctx, departs, mois, mois_courant)?);
+        let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else { continue };
+        for d in corrections_dues(ctx, mois, Some(mois_courant), departs)? {
             let apres = d.valide.paie(ctx, &data, d.rang)?;
             let version = d.valide.version().ok_or_else(|| {
                 erreur(
@@ -108,9 +110,9 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engage
                     format!("Correction de {} pour {} : la validation de l'engagement ne porte pas son numéro de version, ce qu'elle déclare ne se dit pas. La revalider.", mois, documents::tableaux_export::qui_souple(&apres.salarie)),
                 )
             })?;
-            let decidee_le = decidee_le(d.valide.le())?;
+            let decidee_le = Some(d.valide.le().jour());
             if d.declarees.is_empty() {
-                out.push(ajout(mois.clone(), version, decidee_le, apres)?);
+                out.push(ajout(mois, version, decidee_le, apres)?);
                 continue;
             }
             let numero = apres.engagement.numero.clone();
@@ -133,13 +135,13 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engage
             if numero.is_none() {
                 return Err(refus("le numero sous lequel le contrat a ete declare (S21.G00.40.009) n'est pas connu"));
             }
-            let lu = versement_declare::dernier_declare(ctx, d.valide.objet(), departs, &mois, mois_courant)
-                .map_err(|e| refus(&e))?
-                .ok_or_else(|| refus(&format!("aucune DSN partie (journal/depots.jsonl) n'a declare ce contrat pour {}", mois)))?;
+            let lu = versement_declare::dernier_declare(ctx, d.valide.objet(), departs, mois, mois_courant)
+                .map_err(|e| Echec { a_part: e.a_part, ..refus(&e.phrase) })?
+                .ok_or_else(|| refus(&format!("aucune DSN partie n'a declare ce contrat pour {}", mois)))?;
             // Le taux du bloc 56 : celui de la paie declaree du mois d'origine.
             let taux_pas_origine = lu.versement.taux_pas.clone();
             out.push(Reg {
-                mois: mois.clone(),
+                mois,
                 version,
                 decidee_le,
                 avant: lu.avant,
@@ -161,26 +163,26 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: &str, departs: &engage
 /// (p. 19, « une correction est un evenement connu apres la date de cloture de la paie. Il donne lieu a la declaration
 /// d'une correction dans la DSN suivante ») et §2.1.3.6 (p. 30, l'approche « par annulation et remplacement » : une
 /// « annulation de la declaration initiale accompagnee si opportun d'une declaration corrective » ; ici, aucune).
-fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: &str, mois_courant: &str) -> R<Vec<Reg>> {
+fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: Mois, mois_courant: Mois) -> R<Vec<Reg>> {
     let mut out = Vec::new();
-    for n in engagement::etats::non_actifs_du_mois(ctx, mois).map_err(refus_valeur)? {
-        if n.correction_due(ctx, departs, mois, mois_courant).map_err(refus_valeur)?.is_none() {
+    for n in engagement::etats::non_actifs_du_mois(ctx, mois).map_err(|e| e.reclasser(Classe::Illisible))? {
+        if n.correction_due(ctx, departs, mois, mois_courant).map_err(|e| e.reclasser(Classe::Illisible))?.is_none() {
             continue;
         }
         let lu = versement_declare::dernier_declare(ctx, n.objet(), departs, mois, mois_courant)
-            .map_err(refus_valeur)?
+            .map_err(|e| e.reclasser(Classe::Illisible))?
             .ok_or_else(|| {
                 let numero = match n.objet().carte().numero.as_deref() {
                     Some(numero) => format!("le contrat {}", numero),
                     None => "un contrat sans numero".to_string(),
                 };
-                refus_valeur(format!("{} : aucune DSN partie n'a declare {} de ce mois", mois, numero))
+                erreur(Classe::Illisible, format!("{} : aucune DSN partie n'a declare {} de ce mois", mois, numero))
             })?;
         let apres = lu.avant.annulee();
         out.push(Reg {
-            mois: mois.to_string(),
+            mois,
             version: n.version(),
-            decidee_le: decidee_le(n.le())?,
+            decidee_le: Some(n.le().jour()),
             taux_pas_origine: lu.versement.taux_pas.clone(),
             avant: lu.avant,
             declare: lu.versement,
@@ -197,8 +199,8 @@ pub struct VersionPortee {
     pub salarie: String,
     pub numero: String,
     pub version: u64,
-    /// Le mois corrige (`AAAA-MM`).
-    pub mois: String,
+    /// Le mois corrige.
+    pub mois: Mois,
 }
 
 /// LES VERSIONS QUE PORTENT LES CORRECTIONS `regs` (`regularisations_pour`, lues par la fabrication de la DSN) pour
@@ -209,13 +211,13 @@ pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &str) -> R<Vec<Versio
     let plusieurs = !fiche.secondaires().is_empty();
     let mut out = Vec::new();
     for r in regs {
-        if plusieurs && droit::bareme::etablissement_de(fiche, &r.apres.salarie).map_err(refus_valeur)? != nic {
+        if plusieurs && droit::bareme::etablissement_de(fiche, &r.apres.salarie).map_err(|e| e.reclasser(Classe::Illisible))? != nic {
             continue;
         }
         let numero = r.apres.engagement.numero.clone().ok_or_else(|| {
             erreur(Classe::MoisNonRegularisable, format!("{} : la correction de {} n'a pas de numero de contrat (S21.G00.40.009).", r.mois, documents::tableaux_export::qui_souple(&r.apres.salarie)))
         })?;
-        let v = VersionPortee { salarie: r.apres.salarie.id.to_string(), numero: numero.to_string(), version: r.version, mois: r.mois.clone() };
+        let v = VersionPortee { salarie: r.apres.salarie.id.to_string(), numero: numero.to_string(), version: r.version, mois: r.mois };
         if !out.contains(&v) {
             out.push(v);
         }
@@ -231,7 +233,7 @@ pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &str) -> R<Vec<Versio
 /// net-entreprises 1741 : un contrat que le systeme DSN ne connait pas encore se declare en entier dans la DSN mensuelle
 /// qui le porte), et le versement de la correction declare son net. Son bulletin est celui de son mois, qui part avec
 /// les documents de ce mois (`routes::gestes::depart::fabriquer_documents`).
-fn ajout(mois: String, version: u64, decidee_le: Option<Jour>, apres: Paie) -> R<Reg> {
+fn ajout(mois: Mois, version: u64, decidee_le: Option<Jour>, apres: Paie) -> R<Reg> {
     if apres.engagement.numero.is_none() {
         return Err(erreur(
             Classe::MoisNonRegularisable,
@@ -260,16 +262,15 @@ pub fn resume_regularisations(regs: &[Reg]) -> R<Vec<String>> {
     for r in regs {
         let s = &r.apres.salarie;
         if s.nom.is_none() {
-            return Err(erreur(Classe::Manque, socle::fichiers::absent("nom")));
+            return Err(socle::fichiers::absent("nom").reclasser(Classe::Manque));
         }
+        // Une regularisation corrige un contrat deja declare : son numero se lit (regle 4).
+        let numero = r.apres.engagement.numero.as_deref().ok_or_else(|| socle::fichiers::absent("numero").reclasser(Classe::Manque))?;
         out.push(format!(
             "{}, contrat {} ({}) : brut {} → {}, net {} → {}",
             documents::tableaux_export::qui_souple(s),
-            match r.apres.engagement.numero.as_deref() {
-                Some(n) => n,
-                None => "None",
-            },
-            socle::mois::Mois::en_clair(&r.mois),
+            numero,
+            r.mois.libelle(socle::mois::Graphie::Accentuee),
             euros(r.declare.brut),
             euros(r.apres.brut),
             euros(r.net_deja_verse),
@@ -283,7 +284,7 @@ pub fn resume_regularisations(regs: &[Reg]) -> R<Vec<String>> {
 pub fn pour_la_dsn(regs: &[&Reg]) -> Vec<crate::dsn::Regularisation> {
     regs.iter()
         .map(|r| crate::dsn::Regularisation {
-            mois: r.mois.clone(),
+            mois: r.mois,
             avant: r.avant.clone(),
             declare: r.declare.clone(),
             apres: r.apres.clone(),
@@ -292,18 +293,6 @@ pub fn pour_la_dsn(regs: &[&Reg]) -> Vec<crate::dsn::Regularisation> {
             decidee_le: r.decidee_le,
         })
         .collect()
-}
-
-/// Le jour d'une validation (`le`, son heure ISO) ; `None` pour une validation qui ne la porte pas.
-fn decidee_le(le: &str) -> R<Option<Jour>> {
-    match le.get(..10) {
-        Some(jour) => Jour::lire(jour).map(Some).map_err(refus_valeur),
-        None => Ok(None),
-    }
-}
-
-fn refus_valeur(m: String) -> Echec {
-    erreur(Classe::Illisible, m)
 }
 
 

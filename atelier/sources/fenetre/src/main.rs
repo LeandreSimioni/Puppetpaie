@@ -17,19 +17,20 @@ static APPLICATION: OnceLock<tauri::AppHandle> = OnceLock::new();
 /// Ce qu'il peut demander a la fenetre est borne par `capabilities/fenetre.json`.
 const CADRE: &str = include_str!("cadre.js");
 
-const LARGEUR_MIN: f64 = 700.0;
-const HAUTEUR_MIN: f64 = 500.0;
+// Les tailles de la fenetre, en points entiers.
+const LARGEUR_MIN: u32 = 700;
+const HAUTEUR_MIN: u32 = 500;
 /// La taille d'ouverture qu'on vise : de quoi voir un mois et ses tableaux sans prendre tout l'ecran.
-const LARGEUR_VISEE: f64 = 1360.0;
-const HAUTEUR_VISEE: f64 = 900.0;
+const LARGEUR_VISEE: u32 = 1360;
+const HAUTEUR_VISEE: u32 = 900;
 
 /// La taille d'ouverture, en points : celle qu'on vise, sans depasser neuf dixiemes de la zone de travail de l'ecran
-/// (l'ecran moins la barre des taches), ni descendre sous le minimum. Sans ecran connu, celle qu'on vise.
-fn taille_d_ouverture(ecran: Option<tauri::Monitor>) -> (f64, f64) {
+/// (l'ecran moins la barre des taches, ramenee en points par l'echelle de l'ecran), ni descendre sous le minimum. Sans
+/// ecran connu, celle qu'on vise.
+fn taille_d_ouverture(ecran: Option<tauri::Monitor>) -> (u32, u32) {
     let Some(m) = ecran else { return (LARGEUR_VISEE, HAUTEUR_VISEE) };
-    let echelle = if m.scale_factor() > 0.0 { m.scale_factor() } else { 1.0 };
-    let zone = m.work_area().size;
-    let borne = |vise: f64, dispo: u32, min: f64| vise.min(dispo as f64 / echelle * 0.9).max(min);
+    let zone = m.work_area().size.to_logical::<u32>(m.scale_factor());
+    let borne = |vise: u32, dispo: u32, min: u32| vise.min(dispo * 9 / 10).max(min);
     (borne(LARGEUR_VISEE, zone.width, LARGEUR_MIN), borne(HAUTEUR_VISEE, zone.height, HAUTEUR_MIN))
 }
 
@@ -43,15 +44,15 @@ fn devant() {
 }
 
 fn main() -> std::process::ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args = socle::ligne::arguments();
     // Les sous-commandes du moteur : `route` et `routes` (la ligne de commande, sous Windows la seule), et la fabrique.
-    match args.first().map(String::as_str) {
+    match args.first().map(socle::ligne::Argument::texte) {
         Some("route") => match routes::service::commande("route", &args[1..]) {
             Some(code) => std::process::exit(code),
             None => std::process::exit(2),
         },
         Some("routes") => std::process::exit(routes::catalogue::commande(&args[1..])),
-        Some("pdf") => return fabrique_pdf::ligne_de_commande::executer(&args[1..]),
+        Some("pdf") => return fabrique_pdf::ligne_de_commande::executer(&socle::ligne::textes(&args[1..])),
         Some("interface") => std::process::exit(moteur::interface::commande(&args[1..])),
         // Le lanceur Linux demande si la fenetre peut s'ouvrir : le programme se charge (WebKitGTK est la), et un ecran.
         Some("--peut-ouvrir") => {
@@ -66,7 +67,10 @@ fn main() -> std::process::ExitCode {
         _ => {}
     }
 
-    compagnie::installation::fixer_le_code();
+    if let Err(e) = compagnie::installation::fixer_le_code() {
+        eprintln!("La fenetre ne demarre pas : {}", e.en_lignes());
+        std::process::exit(1);
+    }
     // UNE FENETRE PAR INSTALLATION (`compagnie::instance`). Celle de cette installation est deja
     // ouverte : elle revient devant. Une AUTRE installation ouverte sur le poste ne change rien : chacune a son creneau
     // (son verrou et le port de sa page), et elles s'ouvrent cote a cote.
@@ -123,8 +127,8 @@ fn main() -> std::process::ExitCode {
             WebviewWindowBuilder::new(app, "principale", WebviewUrl::External(url))
                 .title("PuppetPaie")
                 .decorations(false)
-                .inner_size(largeur, hauteur)
-                .min_inner_size(LARGEUR_MIN, HAUTEUR_MIN)
+                .inner_size(largeur.into(), hauteur.into())
+                .min_inner_size(LARGEUR_MIN.into(), HAUTEUR_MIN.into())
                 .center()
                 .initialization_script(CADRE)
                 .data_directory(profil)

@@ -8,18 +8,25 @@ use std::collections::BTreeMap;
 use droit::catalogue::{self, HorsAssiette};
 use droit::contexte::Contexte;
 use socle::echec::{erreur, Classe, Echec, R};
+use socle::mois::Mois;
 use socle::num::{eur2, zero2, Decimal};
 
 use crate::plan_comptable::{compte_du_salarie, Plan, Refus};
 
-fn refus(m: impl Into<String>) -> Echec {
+fn refus(m: String) -> Echec {
     erreur(Classe::Refuse, m)
+}
+
+/// Un compte qui manque au plan comptable de la compagnie : le fichier et la cle a remplir vont a part.
+fn manque_au_plan(m: String, cle: String) -> Echec {
+    socle::echec::refus_avec(m, socle::echec::Lieu { fichier: Some(crate::plan_comptable::PLAN_COMPTABLE.to_string()), cle: Some(cle), ..Default::default() })
+        .reclasser(Classe::Refuse)
 }
 
 /// Une ligne du journal de paie : date, journal, compte, libelle, debit, credit, analytique, auxiliaire.
 pub struct Ecriture {
     pub journal: String,
-    pub date: String,
+    pub date: socle::date::Jour,
     pub compte: String,
     pub libelle: String,
     pub debit: Decimal,
@@ -27,7 +34,7 @@ pub struct Ecriture {
     /// Le spectacle (le brut, les frais) ou le salarie (le net, une retenue) que la ligne porte ; aucun pour une charge,
     /// un tiers ou le prelevement a la source.
     pub analytique: Option<String>,
-    pub mois: String,
+    pub mois: Mois,
     /// Le sous-compte individuel du salarie, quand le plan en tient un (`net.par_salarie`).
     pub auxiliaire: Option<String>,
     /// Le libelle du sous-compte : le salarie.
@@ -38,19 +45,18 @@ pub struct Ecriture {
     pub numero: i64,
 }
 
-/// La date de l'ecriture d'un mois (son dernier jour, AAAA-MM-JJ) et son libelle (« Decembre 2026 »).
-fn date_et_libelle(mois: &str) -> R<(String, String)> {
-    let mois = socle::mois::Mois::lire(mois).map_err(|e| erreur(Classe::Illisible, e))?;
-    Ok((mois.dernier_jour().iso(), mois.libelle(socle::mois::Graphie::Titre)))
+/// La date de l'ecriture d'un mois (son dernier jour) et son libelle (« Decembre 2026 »).
+fn date_et_libelle(mois: Mois) -> (socle::date::Jour, String) {
+    (mois.dernier_jour(), mois.libelle(socle::mois::Graphie::Titre))
 }
 
 /// Une ecriture pour le mois, depuis les paies validees.
 /// Le brut par spectacle, la charge patronale et le tiers par ligne de bulletin, le prelevement a la source retenu
 /// (une dette envers l'Etat, au compte `pas` du plan), le net par salarie -- le net PAYE, apres l'impot, celui du
 /// bulletin. Un identifiant de ligne absent du plan fait refuser : on ne devine pas un compte.
-pub fn ecritures_du_mois(ctx: &Contexte, mois: &str, plan: &Plan, departs: &engagement::departs::Departs) -> R<Vec<Ecriture>> {
-    let paies = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| erreur(Classe::Refuse, m))?;
-    let (date, lib_mois) = date_et_libelle(mois)?;
+pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &engagement::departs::Departs) -> R<Vec<Ecriture>> {
+    let paies = engagement::etats::paies_du_mois(ctx, mois, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
+    let (date, lib_mois) = date_et_libelle(mois);
     let jrn = plan.journal.clone();
     let zero = zero2();
 
@@ -65,7 +71,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: &str, plan: &Plan, departs: &enga
     // comptable general, atelier/reference/sources/plan-comptable-general/LISEZ-MOI.md), tel que la paie le porte. Le PAS d'un
     // mois declare est celui de la paie declaree (`engagement::etats::paie_declaree`), lu et non recalcule au taux du
     // jour (CGI art. 1671 : `prelevement::des_paies`).
-    let pas_des_paies = crate::prelevement::des_paies(ctx, &paies, departs).map_err(refus)?;
+    let pas_des_paies = crate::prelevement::du_mois(ctx, &paies, departs).map_err(|m| m.reclasser(Classe::Refuse))?;
     let mut pas_du_mois = zero;
     // LES RETENUES (une ligne hors assiette de nature `retenue` : acompte, avance, saisie) ne sont pas une charge : un
     // acompte solde une avance deja versee (425 « Personnel - Avances et acomptes et autres comptes debiteurs »), une
@@ -79,91 +85,110 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: &str, plan: &Plan, departs: &enga
     };
     for (p, pas) in paies.iter().zip(&pas_des_paies) {
         // UN PERMANENT N'A PAS DE SPECTACLE : son brut va a sa propre section.
-        let titre = match p.spectacle.as_ref().and_then(|s| s.titre.dite()).filter(|t| !t.is_empty()) {
+        let titre = match p.spectacle().and_then(|s| s.titre.dite()).filter(|t| !t.is_empty()) {
             Some(t) => t.clone(),
-            None => match p.engagement.spectacle.as_deref().filter(|s| !s.is_empty()) {
+            None => match p.engagement().spectacle.as_deref().filter(|s| !s.is_empty()) {
                 Some(s) => s.to_string(),
                 None => "Salariés au mois".to_string(),
             },
         };
-        let brut = eur2(p.brut);
+        let qui = crate::tableaux_export::qui(p.salarie())?;
+        // Une ecriture ne s'equilibre qu'avec chacun de ses montants : celui que les pieces d'une paie importee taisent
+        // ne s'invente pas, l'ecriture se refuse en le nommant.
+        let dit = |m: Option<Decimal>, quoi: &str| -> R<Decimal> {
+            m.map(eur2).ok_or_else(|| refus(format!("{}, {} : les pièces importées ne disent pas {} ; les écritures comptables du mois ne s'écrivent pas sans lui.", qui, mois, quoi)))
+        };
+        let brut = dit(p.brut(), "le brut")?;
         ajouter(&mut brut_par_spectacle, titre.clone(), brut);
-        let qui = crate::tableaux_export::qui(&p.salarie)?;
         let mut retenu = zero;
-        for l in p.remuneration.iter().filter(|l| !l.soumis) {
-            if catalogue::rubrique(&ctx.racine, &l.code, &ctx.lue_au).and_then(|r| r.hors_assiette()).map_err(refus)? != HorsAssiette::Mouvement {
+        for l in p.remuneration().into_iter().filter(|l| !l.soumis) {
+            let Some(code) = l.code.as_deref() else {
+                return Err(refus(format!("La ligne de bulletin « {} » ({}) ne dit pas sa rubrique : rien ne dit si c'est une retenue, elle n'a pas de compte dans le plan comptable.", l.libelle, qui)));
+            };
+            if catalogue::rubrique(&ctx.racine, code, &ctx.lue_au).and_then(|r| r.hors_assiette()).map_err(|m| m.reclasser(Classe::Refuse))? != HorsAssiette::Mouvement {
                 continue;
             }
-            let Some(regle) = plan.retenues.get(&l.code) else {
-                return Err(refus(format!(
-                    "La retenue « {} » ({}) n'a pas de compte dans le plan comptable. L'ajouter dans config/plan-comptable.json sous « retenues » : un compte 425 pour un acompte ou une avance, 427 pour une saisie ou une opposition.",
-                    l.code, l.libelle
-                )));
+            let Some(regle) = plan.retenues.get(code) else {
+                return Err(manque_au_plan(
+                    format!(
+                        "La retenue « {} » ({}) n'a pas de compte dans le plan comptable. L'y ajouter parmi les retenues : un compte 425 pour un acompte ou une avance, 427 pour une saisie ou une opposition.",
+                        code, l.libelle
+                    ),
+                    format!("retenues.{}", code),
+                ));
             };
             // Le libelle du plan, sinon celui de la rubrique.
             let libelle = match &regle.libelle {
                 Some(x) => x.clone(),
                 None => l.libelle.clone(),
             };
-            *retenues.entry((regle.compte.clone(), libelle, qui.clone())).or_insert(zero) += eur2(l.montant);
-            retenu += eur2(l.montant);
+            let montant = dit(l.montant, &format!("le montant de « {} »", l.libelle))?;
+            *retenues.entry((regle.compte.clone(), libelle, qui.clone())).or_insert(zero) += montant;
+            retenu += montant;
         }
         // CE QUE LE NET PORTE EN PLUS DU BRUT : les indemnites non soumises (repas, defraiements) sont payees
         // sans etre du brut ; sans leur ligne au debit, l'ecriture ne s'equilibrerait pas. Les retenues en sont
         // otees : elles ont leur compte.
-        let hors_brut = eur2(p.net_a_payer) - (brut - eur2(p.total_sal)) - retenu;
+        let net_a_payer = dit(p.net_a_payer(), "le net à payer")?;
+        let hors_brut = net_a_payer - (brut - dit(p.total_sal(), "les cotisations salariales")?) - retenu;
         if !hors_brut.is_zero() {
             ajouter(&mut frais_par_spectacle, titre.clone(), hors_brut);
         }
         // Le net paye est le net a payer moins l'impot retenu (le « MONTANT NET À PAYER » du bulletin) ; l'impot va
         // a l'Etat. Une paie sans prelevement ne retient rien.
-        let mut net = eur2(p.net_a_payer);
+        let mut net = net_a_payer;
         if let Some(v) = pas {
-            let prelevement = eur2(v.prelevement);
+            let prelevement = eur2(v.prelevement());
             pas_du_mois += prelevement;
             net -= prelevement;
         }
         ajouter(&mut net_par_salarie, qui.clone(), net);
-        let cle_salarie = p.salarie.id.to_string();
-        let compte = compte_du_salarie(plan, &p.salarie, &cle_salarie).map_err(|r| match r {
+        let cle_salarie = p.salarie().id.to_string();
+        let compte = compte_du_salarie(plan, p.salarie(), &cle_salarie).map_err(|r| match r {
             Refus::Operation(m) => refus(m),
             Refus::Autre(e) => e,
         })?;
-        compte_de.insert(qui, compte);
-        for l in &p.lignes {
+        compte_de.insert(qui.clone(), compte);
+        let reduction_generale = p.validee().and_then(|v| v.reduction_generale.as_ref());
+        for l in p.cotisations() {
             let Some(id) = l.id.as_deref() else {
                 return Err(refus(format!("La ligne de bulletin « {} » ne dit pas sa cotisation : elle n'a pas de compte dans le plan comptable.", l.libelle)));
             };
             let Some(regle) = plan.lignes.get(id) else {
-                return Err(refus(format!(
-                    "La ligne de bulletin « {} » ({}) n'a pas de compte dans le plan comptable. L'ajouter dans config/plan-comptable.json sous « lignes », avec un compte de charge et un compte de tiers.",
-                    id, l.libelle
-                )));
+                return Err(manque_au_plan(
+                    format!(
+                        "La ligne de bulletin « {} » ({}) n'a pas de compte dans le plan comptable. L'y ajouter parmi les lignes, avec un compte de charge et un compte de tiers.",
+                        id, l.libelle
+                    ),
+                    format!("lignes.{}", id),
+                ));
             };
             // Le libelle du plan, sinon celui du bulletin.
             let libelle = match &regle.libelle {
                 Some(x) => x.clone(),
                 None => l.libelle.clone(),
             };
+            // Les parts que la ligne porte ; la colonne qu'un bulletin importe laisse vide n'en porte pas.
+            let (pat, sal) = (l.montant_pat.map(eur2), l.montant_sal.map(eur2));
             if id == "reduction_generale" {
-                if let Some(rg) = &p.reduction_generale {
+                if let (Some(rg), Some(pat)) = (reduction_generale, pat) {
                     // La RGDU : une charge negative, ventilee au tiers de chaque part telle que la paie l'a calculee.
-                    *charge.entry((regle.charge.clone(), libelle)).or_insert(zero) += eur2(l.montant_pat);
+                    *charge.entry((regle.charge.clone(), libelle)).or_insert(zero) += pat;
                     for (part, id_tiers) in [(rg.urssaf, "maladie"), (rg.chomage, "chomage"), (rg.agirc_arrco, "retraite_t1")] {
                         if !part.is_zero() {
-                            let r = plan.lignes.get(id_tiers).ok_or_else(|| erreur(Classe::Manque, socle::fichiers::absent(id_tiers)))?;
+                            let r = plan.lignes.get(id_tiers).ok_or_else(|| socle::fichiers::absent(id_tiers).reclasser(Classe::Manque))?;
                             *tiers.entry(r.tiers.clone()).or_insert(zero) -= part;
                         }
                     }
                     continue;
                 }
             }
-            let (pat, sal) = (eur2(l.montant_pat), eur2(l.montant_sal));
-            if !pat.is_zero() {
+            let parts: Vec<Decimal> = [pat, sal].into_iter().flatten().filter(|x| !x.is_zero()).collect();
+            if let Some(pat) = pat.filter(|x| !x.is_zero()) {
                 *charge.entry((regle.charge.clone(), libelle)).or_insert(zero) += pat;
             }
-            if !pat.is_zero() || !sal.is_zero() {
-                *tiers.entry(regle.tiers.clone()).or_insert(zero) += pat + sal;
+            if !parts.is_empty() {
+                *tiers.entry(regle.tiers.clone()).or_insert(zero) += parts.into_iter().fold(zero, |a, x| a + x);
             }
         }
     }
@@ -185,13 +210,13 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: &str, plan: &Plan, departs: &enga
         }
         out.push(Ecriture {
             journal: jrn.clone(),
-            date: date.clone(),
+            date,
             compte: compte.to_string(),
             libelle: format!("{} -- {}", libelle, lib_mois),
             debit: eur2(debit),
             credit: eur2(credit),
             analytique: analytique.map(str::to_string),
-            mois: mois.to_string(),
+            mois,
             auxiliaire: auxiliaire.map(str::to_string),
             auxiliaire_libelle: auxiliaire.and(analytique).map(str::to_string),
             piece: String::new(),
@@ -261,7 +286,7 @@ pub fn csv_compta(ecritures: &[Ecriture]) -> Vec<u8> {
     };
     rang(&["Journal", "Date", "Compte", "Libelle", "Debit", "Credit", "Analytique"].map(|c| Some(c.to_string())));
     for e in ecritures {
-        let date: String = format!("{}/{}/{}", e.date.chars().skip(8).take(2).collect::<String>(), e.date.chars().skip(5).take(2).collect::<String>(), e.date.chars().take(4).collect::<String>());
+        let date = e.date.jj_mm_aaaa();
         let compte = match &e.auxiliaire {
             Some(a) => a.clone(),
             None => e.compte.clone(),

@@ -55,3 +55,10 @@ Nulle part encore. La rubrique S21.G00.11.025 n'est écrite que pour MT01, en no
 Deux suites possibles, une fois la fiche 3370 lue :
 - écrire la rubrique pour tout SPST ;
 - contrôler le code `medecine_travail` contre ce référentiel (un code absent, comme `MT250`, se refuse).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `datagouv-spst-liste-20261023.html` : `799e34c7923c658a71490b7052c61e0941625f55b88489a4f156429bdfb3eccb`
+- `urssaf-sst-dpae-20261023.csv` : `04dc77d8bb22cf99e64901c85ac6c520fcc2f3ae0806554503f5345e0d563ecb`

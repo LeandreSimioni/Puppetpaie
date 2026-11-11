@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use outils::{copier, dossier_du_processus};
 
 #[path = "outils/mod.rs"]
-mod outils;
+pub mod outils;
 
 struct Banc {
     logiciel: PathBuf,

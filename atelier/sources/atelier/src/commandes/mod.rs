@@ -24,7 +24,7 @@ pub fn commandes() -> Vec<Commande> {
 }
 
 /// La commande de l'atelier `nom`, lancee sur `args` : son code de sortie ; `None` si `nom` n'en est pas une.
-pub fn lancer(nom: &str, args: &[String]) -> Option<i32> {
+pub fn lancer(nom: &str, args: &[socle::ligne::Argument]) -> Option<i32> {
     Some(match nom {
         // Les bulletins fictifs d'un logiciel precedent, pour une compagnie qui s'importe.
         "fabriquer-bulletins" => super::fabriquer_bulletins::commande(args),
@@ -39,6 +39,8 @@ pub fn lancer(nom: &str, args: &[String]) -> Option<i32> {
         "guet" => super::guet::commande(args),
         // Le garde avant commit (le crochet `atelier/.githooks/pre-commit`) : les donnees reelles dans ce que git emporterait.
         "verifier-avant-commit" => super::verifier_avant_commit::commande(args),
+        // Les empreintes des textes deposes, que le garde lit (`empreintes`).
+        "empreintes" => super::empreintes::commande(args),
         // Les scenarios du banc d'essai : rejouer, verifier un banc, elaguer.
         "scenario" => routes::scenario::commande(args),
         _ => return None,

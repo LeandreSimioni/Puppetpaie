@@ -112,10 +112,10 @@ pub fn identifiant_des_entetes(entetes: &[mailparse::MailHeader]) -> Option<Stri
 /// l'implementation ce qu'elle fait d'une forme qu'elle ne decrit pas, pourvu qu'elle ne perde pas le message (§ 4,
 /// l. 1711-1718 : « It is up to the implementation to deal with messages robustly »). Un champ hors
 /// limites (31 fevrier, 24 h, 60 s, decalage de 24 h) est illisible.
-pub fn date_de(m: &ParsedMail, maintenant: &str) -> String {
+pub fn date_de(m: &ParsedMail, maintenant: socle::paris::InstantEcrit) -> socle::paris::InstantEcrit {
     match m.headers.get_first_value("Date").as_deref().and_then(date_lue) {
-        Some(local) => socle::paris::iso_de_naif(local),
-        None => maintenant.to_string(),
+        Some(local) => socle::paris::InstantEcrit::du_naif(local),
+        None => maintenant,
     }
 }
 
@@ -127,18 +127,7 @@ const MOIS: [&str; 24] = [
 
 /// Un entier signe en chiffres ASCII (ni autres ecritures de chiffres, ni `_`).
 fn entier(t: &str) -> Option<i64> {
-    let (signe, chiffres) = if let Some(c) = t.strip_prefix('-') {
-        (-1, c)
-    } else if let Some(c) = t.strip_prefix('+') {
-        (1, c)
-    } else {
-        (1, t)
-    };
-    if chiffres.is_empty() || !chiffres.bytes().all(|b| b.is_ascii_digit()) || chiffres.len() > 15 {
-        return None;
-    }
-    // Quinze chiffres au plus : la valeur tient dans un i64.
-    Some(signe * chiffres.bytes().fold(0i64, |n, b| n * 10 + i64::from(b - b'0')))
+    socle::num::entier_signe(t)
 }
 
 /// (an, mois, jour, heure, minute, seconde, decalage en secondes ou `None`).
@@ -254,8 +243,8 @@ fn parsedate_tz(donnees: &str) -> Option<(i64, i64, i64, i64, i64, i64, Option<i
     Some((an, mois, jour, heure, minute, seconde, decalage))
 }
 
-/// L'en-tete `Date` lu, converti en heure locale naive en secondes, ou `None` quand il est illisible.
-fn date_lue(brut: &str) -> Option<i64> {
+/// L'en-tete `Date` lu, converti en heure locale naive, ou `None` quand il est illisible (ou hors du calendrier).
+fn date_lue(brut: &str) -> Option<socle::paris::Naif> {
     let (an, mois, jour, h, mi, s, decalage) = parsedate_tz(brut)?;
     let (an, mois, jour) = match (i32::try_from(an), u32::try_from(mois), u32::try_from(jour)) {
         (Ok(a), Ok(m), Ok(j)) => (a, m, j),
@@ -266,7 +255,7 @@ fn date_lue(brut: &str) -> Option<i64> {
     if !(0..24).contains(&h) || !(0..60).contains(&mi) || !(0..60).contains(&s) {
         return None;
     }
-    let naif = (j.ordinal() - 719_163) * 86_400 + h * 3_600 + mi * 60 + s;
+    let naif = socle::paris::Naif::du_jour(j, h, mi, s)?;
     match decalage {
         None => Some(naif),
         Some(d) => {
@@ -274,8 +263,8 @@ fn date_lue(brut: &str) -> Option<i64> {
             if d.abs() >= 86_400 {
                 return None;
             }
-            let t = naif - d;
-            Some(t + socle::paris::decalage(t))
+            let t = (j.ordinal() - 719_163) * 86_400 + h * 3_600 + mi * 60 + s - d;
+            Some(socle::paris::Moment::de_secondes(t)?.local_naif())
         }
     }
 }
@@ -360,24 +349,23 @@ fn commence_une_citation(ligne: &str) -> bool {
         || ligne.starts_with("________________")
 }
 
-/// `<debut>.{3,120}<milieu>` puis, si `deux_points`, ` ?:`.
-fn forme_de_citation(ligne: &str, debut: &str, milieu: &str, deux_points: bool) -> bool {
-    let Some(reste) = ligne.strip_prefix(debut) else { return false };
-    let c: Vec<char> = reste.chars().collect();
+/// `<tete>.{3,120}<milieu>` puis, si `deux_points`, ` ?:`.
+fn forme_de_citation(ligne: &str, tete: &str, milieu: &str, deux_points: bool) -> bool {
     let milieu: Vec<char> = milieu.chars().collect();
+    ligne.strip_prefix(tete).is_some_and(|reste| apres_la_tete(&reste.chars().collect::<Vec<char>>(), &milieu, deux_points))
+}
+
+fn apres_la_tete(c: &[char], milieu: &[char], deux_points: bool) -> bool {
     (3..=120.min(c.len())).any(|i| {
         let suite = &c[i..];
-        if !suite.starts_with(&milieu) {
+        if !suite.starts_with(milieu) {
             return false;
         }
         if !deux_points {
             return true;
         }
-        match suite.get(milieu.len()) {
-            Some(':') => true,
-            Some(' ') => suite.get(milieu.len() + 1) == Some(&':'),
-            _ => false,
-        }
+        // Le deux-points suit, aussitot ou apres une espace.
+        suite.get(milieu.len()) == Some(&':') || (suite.get(milieu.len()) == Some(&' ') && suite.get(milieu.len() + 1) == Some(&':'))
     })
 }
 

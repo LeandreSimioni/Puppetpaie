@@ -100,7 +100,8 @@ const fn commence_par_une_capitale(b: &[u8]) -> bool {
     match b {
         [c, ..] if c.is_ascii_uppercase() || c.is_ascii_digit() => true,
         [0xC3, c, ..] => *c >= 0x80 && *c <= 0x9E && *c != 0x97,
-        _ => false,
+        // Un autre premier octet, ou un texte vide.
+        [_, ..] | [] => false,
     }
 }
 

@@ -909,13 +909,13 @@
    "ecran": true
   },
   {
-   "note": "LE BLOC S21.G00.44. La DSN de decembre declare chaque annee si la compagnie\ndoit la taxe sur les salaires (009, avec ses assiettes au taux normal et aux taux majores 015 et\n016) ou non (010). Cela depend de sa TVA, que le moteur ne connait pas : la fiche le dit, et une\nfiche muette fait refuser la DSN de decembre (`assujettissement.rs`). La fiche dit\nle FAIT (`tva` : assujettie ou exoneree ; `part_tva` ; `sous_franchise` ;\n`association_1679A`) et le moteur en conclut si la taxe est due, et sur quelle part\n(`documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires`, CGI art. 231, 1) : la DSN de decembre, l'etat\n« taxe sur les salaires » et l'ecran (route `taxe-sur-les-salaires-regime`) lisent la meme conclusion.",
+   "note": "LE BLOC S21.G00.44. La DSN de decembre declare chaque annee si la compagnie\ndoit la taxe sur les salaires (009, avec ses assiettes au taux normal et aux taux majores 015 et\n016) ou non (010). Cela depend de sa TVA, que le moteur ne connait pas : la fiche le dit, et une\nfiche muette fait refuser la DSN de decembre (`assujettissement.rs`). La fiche dit\nle FAIT (`tva` : assujettie ou exoneree ; `part_tva` ; `sous_franchise` ;\n`association_1679a`) et le moteur en conclut si la taxe est due, et sur quelle part\n(`documents::taxe_sur_les_salaires::regime_taxe_sur_les_salaires`, CGI art. 231, 1) : la DSN de decembre, l'etat\n« taxe sur les salaires » et l'ecran (route `taxe-sur-les-salaires-regime`) lisent la meme conclusion.",
    "cle": "taxe_sur_les_salaires",
    "champs": [
     {"cle": "tva", "libelle": "La compagnie et la TVA", "forme": "choix", "ecran": true, "choix": ["assujettie", "exoneree"], "libelles": {"": "— à dire —", "assujettie": "Assujettie à la TVA", "exoneree": "Exonérée de TVA (ou hors de son champ)"}, "aide": "Assujettie : elle facture la TVA sur ses ventes (billetterie, cessions…) et la déclare. Exonérée : elle ne facture pas de TVA, ou ses activités n'y entrent pas — c'est le cas de beaucoup d'associations."},
     {"cle": "part_tva", "libelle": "Part de vos recettes de l'an dernier soumise à la TVA (%)", "forme": "montant", "ecran": true, "aide": "Vos recettes soumises à la TVA, divisées par toutes vos recettes et produits de l'année, subventions et dons compris. Votre comptable la connaît. À 90 % ou plus, pas de taxe sur les salaires."},
     {"cle": "sous_franchise", "libelle": "Vos recettes de l'an dernier", "forme": "booleen", "ecran": true, "boutons": true, "choix": ["true", "false"], "libelles": {"": "— à dire —", "true": "Sous les deux plafonds", "false": "Au-dessus d'un des plafonds"}, "aide": "Sous les deux plafonds de la franchise en base de TVA (les spectacles vendus, et les recettes en tout, subventions comprises), la compagnie ne doit pas la taxe sur les salaires."},
-    {"cle": "association_1679A", "libelle": "Association loi 1901, syndicat ou mutuelle ?", "forme": "booleen", "ecran": true, "choix": ["true"], "libelles": {"": "Non", "true": "Oui (abattement de l'article 1679 A)"}, "aide": "Une association loi 1901, une fondation reconnue d'utilité publique, un syndicat, une mutuelle de moins de trente salariés : l'abattement de l'article 1679 A s'applique à la taxe due."}
+    {"cle": "association_1679a", "libelle": "Association loi 1901, syndicat ou mutuelle ?", "forme": "booleen", "ecran": true, "choix": ["true"], "libelles": {"": "Non", "true": "Oui (abattement de l'article 1679 A)"}, "aide": "Une association loi 1901, une fondation reconnue d'utilité publique, un syndicat, une mutuelle de moins de trente salariés : l'abattement de l'article 1679 A s'applique à la taxe due."}
    ],
    "libelle": "Taxe sur les salaires",
    "forme": "structure",
@@ -1095,7 +1095,7 @@
     {"cle": "nom_prenom", "libelle": "Nom et prénom déclarés", "forme": "officiel", "derive_de": "nom_prenom_affichage", "ecran": false, "exige_par": ["dsn"]},
     {"cle": "tel", "libelle": "Téléphone", "forme": "texte", "ecran": true, "exemple": "0102030405", "aide": "11 chiffres au plus, ce que la DPAE écrit.", "exige_par": ["dsn"]},
     {"cle": "email", "libelle": "Courriel", "forme": "email", "ecran": true, "exemple": "paie@compagnie.fr", "exige_par": ["dsn"]},
-    {"cle": "qualite", "libelle": "Qualité", "forme": "chiffres", "aide": "S20.G00.07.004 : le moteur l'écrit seul (`dsn::type_du_contact`).", "ecran": false}
+    {"cle": "qualite", "libelle": "Qualité", "forme": "chiffres", "aide": "S20.G00.07.004 : le logiciel l'écrit seul.", "ecran": false}
    ],
    "libelle": "Qui les organismes contactent",
    "forme": "structure",

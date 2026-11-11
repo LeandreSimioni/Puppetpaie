@@ -33,10 +33,10 @@ function saisieDuChamp(forme, j, valeur, choix) {
 }
 
 /** Les cases de `champs` (des champs d'une fiche) : chacune son libellé et sa saisie, ce que `valeurs` en dit d'abord, ses
- *  `choix`. */
+ *  `choix` (une case qu'ils ne nomment pas : rien d'abord, et elle se tape). */
 function casesDesChamps(champs, valeurs, choix) {
   return champs.map((c, j) => `<label class="champ-boite">${echapper(c.libelle)}
-      ${saisieDuChamp(c.forme, j, (valeurs || {})[c.nom], (choix || {})[c.nom])}</label>`).join("");
+      ${saisieDuChamp(c.forme, j, valeurs[c.nom], choix[c.nom])}</label>`).join("");
 }
 
 /** Le « + » d'une liste : un élément de plus à taper. */
@@ -61,7 +61,7 @@ function valeurDuChamp(bloc, forme, j) {
   if (forme === "oui_non") return x.checked ? true : undefined;
   const v = x.value.trim();
   if (!v) return undefined;
-  return forme === "nombre" ? Number(v) : v;
+  return forme === "nombre" ? nombreTape(v) : v;
 }
 
 /** Ce que les cases de `champs` disent, dans `bloc` : un champ vide ne part pas. */
@@ -85,13 +85,13 @@ function phrasesDe(r) {
 /** Dessine dans `cible` (porteuse de `data-auto`, le nom d'une place) les routes automatiques de cette place. */
 function dessinerAvance(cible) {
   if (!cible) return;
-  const place = cible.dataset.auto || "";
+  const place = cible.dataset.auto;
   const routes = Object.values(CATALOGUE).filter((f) => f.affichage === "auto" && f.ecran === place);
   const enveloppe = cible.closest(".avance-auto") || cible;
   enveloppe.hidden = !routes.length;
   cible.innerHTML = routes.map((f, i) => `
     <div class="carte avance-route" data-i="${i}">
-      ${casesDesChamps(f.charge)}
+      ${casesDesChamps(f.charge, {}, {})}
       <p><button class="secondaire" data-faire>${echapper(f.bouton)}</button></p>
       <div data-rendu></div>
     </div>`).join("");
@@ -119,17 +119,17 @@ function dessinerLesAvances() {
 
 /** Les boutons des gestes, chacun son libellé. */
 function boutonsDesGestes(gestes) {
-  return (gestes || []).map((g, k) => `<button class="lien" data-geste="${k}">${echapper(g.libelle)}</button>`).join("");
+  return gestes.map((g, k) => `<button class="lien" data-geste="${k}">${echapper(g.libelle)}</button>`).join("");
 }
 
 /** Les champs de la fiche de la route du geste que sa boîte fait saisir (`cases`), dans l'ordre de la fiche. */
 function champsDuGeste(g) {
-  return ((CATALOGUE[g.route] || {}).charge || []).filter((c) => (g.cases || []).includes(c.nom));
+  return CATALOGUE[g.route].charge.filter((c) => g.cases.includes(c.nom));
 }
 
 /** Ce que la boîte d'un geste dit (`phrases`), puis ses cases. */
 function casesDuGeste(g) {
-  return `${(g.phrases || []).map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
+  return `${g.phrases.map((p) => `<p class="note">${echapper(p)}</p>`).join("")}
     ${casesDesChamps(champsDuGeste(g), g.valeurs, g.choix)}`;
 }
 
@@ -157,7 +157,7 @@ async function faireLeGeste(g, entete, apres) {
     dire(r.phrase);
     await apres();
   };
-  if (!(g.cases || []).length) { await partir(g.charge, false); return; }
+  if (!g.cases.length) { await partir(g.charge, false); return; }
   ouvrirBoite(`
     <h3>${echapper(g.libelle)}${entete.titre ? ` — ${echapper(entete.titre)}` : ""}</h3>
     ${entete.dit ? `<p class="discret">${echapper(entete.dit)}</p>` : ""}

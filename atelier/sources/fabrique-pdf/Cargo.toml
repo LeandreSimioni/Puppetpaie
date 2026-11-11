@@ -9,19 +9,44 @@ publish = false
 [[bin]]
 name = "fabrique-pdf"
 path = "src/main.rs"
+# Ses essais sont dans la bibliotheque et `tests/` (le harnais de test d'un binaire leverait le `forbid(dead_code)` sur
+# son `main`).
+test = false
+
+# Les niveaux de l'espace (`atelier/sources/Cargo.toml`, `[workspace.lints.rust]`), que la fabrique, hors de l'espace,
+# porte elle-meme.
+[lints.rust]
+warnings = { level = "deny", priority = -1 }
+unused = { level = "deny", priority = -1 }
+dead_code = "forbid"
+deprecated = "forbid"
+unused_imports = "forbid"
+unused_variables = "forbid"
+unused_assignments = "forbid"
+unused_mut = "forbid"
+unused_must_use = "forbid"
+unused_macros = "forbid"
+unused_unsafe = "forbid"
+unused_parens = "forbid"
+unused_braces = "forbid"
+unused_labels = "forbid"
+unused_doc_comments = "forbid"
+unused_allocation = "forbid"
+path_statements = "forbid"
+unreachable_code = "forbid"
+unreachable_patterns = "forbid"
 
 [dependencies]
-genpdfi = { path = "genpdfi" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# Décompression des polices de métriques embarquées (voir build.rs).
+# Décompression des polices embarquées (voir build.rs), compression des flux et des pixels.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
-# La lecture des PDF (src/lecture.rs : les formulaires, l'assemblage, le verrou, le marquage) : la version que printpdf
-# embarque deja, donc pas une copie de plus. Son analyseur `nom_parser` lit un PDF des dizaines de fois plus vite que
-# `pom_parser` (que printpdf demande) ; quand les deux sont la, lopdf prend `nom_parser`.
+# Le document PDF en objets : la lecture (src/lecture.rs : les formulaires, l'assemblage, le verrou, le marquage) et
+# l'écriture (src/dessin.rs, src/ecriture.rs). Son analyseur `nom_parser` lit un PDF des dizaines de fois plus vite que
+# `pom_parser`.
 lopdf = { version = "0.31", default-features = false, features = ["nom_parser"] }
 
-# Les largeurs de Liberation, pour l'extraction de texte (déjà là via genpdfi : pas une copie de plus).
+# Les métriques et les glyphes de Liberation : la mise en page, le sous-ensemble embarqué, l'extraction de texte.
 ttf-parser = "0.24"
 # AES-256 (chiffrement PDF 2.0, `--verrouiller`) : de petites briques sans dépendance lourde.
 aes = "0.8"
@@ -29,9 +54,9 @@ cbc = "0.1"
 cipher = { version = "0.4", features = ["alloc", "block-padding"] }
 sha2 = "0.10"
 getrandom = "0.2"
-# Le formulaire (src/formulaire.rs) : un SVG posé dans une page existante (usvg + svg2pdf, son
-# texte mis en tracés avec Liberation), un PNG ou un JPEG lu par `image`. Mêmes versions que celles
-# que printpdf embarque déjà : pas une copie de plus.
+# Les images d'un document (src/dessin.rs) et d'un formulaire (src/formulaire.rs) : un SVG lu par usvg et écrit en
+# objet formulaire par svg2pdf (dans un formulaire, son texte mis en tracés avec Liberation), un PNG ou un JPEG lu
+# par `image`.
 usvg = { version = "0.35", default-features = false, features = ["text"] }
 svg2pdf = "0.8"
 pdf-writer = "0.9"

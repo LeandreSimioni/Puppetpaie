@@ -11,8 +11,8 @@ le fichier, de quand il date, quand on l'a relevé, et son condensat SHA-256
 | Fichier | Contenu | Relevé le | SHA-256 |
 |---|---|---|---|
 | `dsn-cahier-technique-2026.1.pdf` | Cahier technique NEODeS 2026.1 (norme du 6 janvier 2025, en production toute l'année 2026). La référence de chaque rubrique et de chaque contrôle CSL/CCH/CRE. | 03/09/2026 | `76749006…b04ff68536` |
-| `dsn-cahier-technique-2026.1-usages.txt` | Transcription du tableau des usages du cahier 2026.1 (p. 363-371), cellule par cellule, une ligne du tableau par ligne, les cellules séparées par une tabulation. Écrite par `paie extraire transcrire` ; son en-tête porte l'empreinte du PDF. Relue par `paie extraire usages` pour `logiciel/donnees/usages-dsn-base.json`. | 27/10/2026 | (porte `76749006…b04ff68536`) |
-| `dsn-cahier-technique-2026.1-formats.txt` | Transcription du texte du cahier 2026.1, tel que la fabrique de PDF le lit (les définitions des rubriques, leurs longueurs et leurs CSL). Écrite par `paie extraire transcrire` ; son en-tête porte l'empreinte du PDF. Relue par `paie extraire formats` pour `logiciel/donnees/formats-dsn-base.json`. | 27/10/2026 | (porte `76749006…b04ff68536`) |
+| `dsn-cahier-technique-2026.1-usages.txt` | Transcription du tableau des usages du cahier 2026.1 (p. 363-371), cellule par cellule, une ligne du tableau par ligne, les cellules séparées par une tabulation. Écrite par `moteur-atelier extraire transcrire` ; son en-tête porte l'empreinte du PDF. Relue par `moteur-atelier extraire usages` pour `logiciel/donnees/usages-dsn-base.json`. | 27/10/2026 | (porte `76749006…b04ff68536`) |
+| `dsn-cahier-technique-2026.1-formats.txt` | Transcription du texte du cahier 2026.1, tel que la fabrique de PDF le lit (les définitions des rubriques, leurs longueurs, leurs CSL et leurs listes de valeurs). Écrite par `moteur-atelier extraire transcrire` ; son en-tête porte l'empreinte du PDF. Relue par `moteur-atelier extraire formats` pour `logiciel/donnees/formats-dsn-base.json`. | 27/10/2026 | (porte `76749006…b04ff68536`) |
 | `dsn-cahier-technique-2027.1.1.pdf` | Cahier technique NEODeS 2027.1.1 du 10 juin 2026 (norme de janvier 2027). Déposé par Léandre le 18/09/2026. Relu ce jour sur la fin de CDDU, le FCTU, 62.017 et 40.025 : identique à la 2026.1 (voir `../sources/francetravail-100-dsn/LISEZMOI.md`). Découpé en texte le 10/10/2026 (`texte-2027/`, son `LISEZ-MOI.md`) ; ses tables d'usages et de formats relevées le même jour (`logiciel/donnees/usages-dsn-p27v01-base.json`, `formats-dsn-p27v01-base.json`, lot V4a). | 18/09/2026 | `15934486…5bae30bf` |
 | `dsn-guide-implementation-API-v6.8.zip` | Guide d'implémentation de l'API de dépôt (dépôt, consultation des bilans, retours). Source de `moteur/dsn_api.py`. | 03/09/2026 | `36e54492…c874672be690ecb` |
 
@@ -113,25 +113,28 @@ pour ce que les lots V4a et V4b ont codé sur le 2027.1.1 :
 ### Les tables P27V01 refaites sur les classeurs 2027.1.2 (lot R5b, 11/10/2026)
 
 Le CT 2027.1.2 n'est pas servi en PDF : les deux relevés de l'atelier lisent désormais aussi un classeur
-(`paie/src/lecture_xlsx.rs` ; `paie extraire usages` lit la feuille « 1 - Tableau des usages », `paie extraire formats`
-les feuilles « Fields » et « Data Types » : longueur = `Lg Min`/`Lg Max` du type, `csl` = sa `Regexp`). Un PDF du cahier
-(`dsn-cahier-technique-<version>.pdf`) se relève par les mêmes commandes, lu par la fabrique de PDF. Portés en Rust le
-15/10/2026 (`paie/src/extraire/`, l'ancien `atelier/outils/extraire_*.py`) ; `tests/fichiers/extraction.rs` rejoue les
-relevés sur ces fichiers et compare aux tables livrées. Commandes (la sortie se nomme toujours ; `--remplacer` pour
-écraser la table livrée) :
+(`socle/src/lecture_xlsx.rs` ; `moteur-atelier extraire usages` lit la feuille « 1 - Tableau des usages »,
+`moteur-atelier extraire formats` les feuilles « Fields » et « Data Types » : longueur = `Lg Min`/`Lg Max` du type,
+`csl` = sa `Regexp`, `valeurs` = sa liste « Values », `code=libellé;…`). Un PDF du cahier
+(`dsn-cahier-technique-<version>.pdf`) se relève par les mêmes commandes, lu par la fabrique de PDF ; sa liste de valeurs
+est faite des lignes `code - libellé` qui suivent la longueur de la rubrique (le cahier 2026.1 n'a pas de classeur : ses
+listes viennent de là). Portés en Rust le 15/10/2026 (`atelier/sources/atelier/src/extraire/`) ;
+`atelier/sources/atelier/tests/atelier/referentiels.rs` rejoue les relevés sur ces fichiers et compare aux tables
+livrées. Commandes, depuis la racine du dépôt (la sortie se nomme toujours ; `--remplacer` pour écraser la table
+livrée) :
 
 ```
-paie extraire usages atelier/reference/norme-dsn/dsn-tableau-des-usages-2027.1.2-20251224.xlsx logiciel/donnees/usages-dsn-p27v01-base.json --remplacer
-paie extraire formats atelier/reference/norme-dsn/dsn-tableaux-categories-controles-datatypes-usages-2027.1.2-20251224.xlsx logiciel/donnees/formats-dsn-p27v01-base.json --remplacer
-paie extraire transcrire atelier/reference/norme-dsn/dsn-cahier-technique-2026.1.pdf atelier/reference/norme-dsn/dsn-cahier-technique-2026.1-usages.txt atelier/reference/norme-dsn/dsn-cahier-technique-2026.1-formats.txt --remplacer
-paie extraire usages atelier/reference/norme-dsn/dsn-cahier-technique-2026.1-usages.txt logiciel/donnees/usages-dsn-base.json --remplacer
-paie extraire formats atelier/reference/norme-dsn/dsn-cahier-technique-2026.1-formats.txt logiciel/donnees/formats-dsn-base.json --remplacer
+atelier/sources/atelier/bin/linux/moteur-atelier extraire usages atelier/reference/norme-dsn/dsn-tableau-des-usages-2027.1.2-20251224.xlsx logiciel/donnees/usages-dsn-p27v01-base.json --remplacer
+atelier/sources/atelier/bin/linux/moteur-atelier extraire formats atelier/reference/norme-dsn/dsn-tableaux-categories-controles-datatypes-usages-2027.1.2-20251224.xlsx logiciel/donnees/formats-dsn-p27v01-base.json --remplacer
+atelier/sources/atelier/bin/linux/moteur-atelier extraire transcrire atelier/reference/norme-dsn/dsn-cahier-technique-2026.1.pdf atelier/reference/norme-dsn/dsn-cahier-technique-2026.1-usages.txt atelier/reference/norme-dsn/dsn-cahier-technique-2026.1-formats.txt --remplacer
+atelier/sources/atelier/bin/linux/moteur-atelier extraire usages atelier/reference/norme-dsn/dsn-cahier-technique-2026.1-usages.txt logiciel/donnees/usages-dsn-base.json --remplacer
+atelier/sources/atelier/bin/linux/moteur-atelier extraire formats atelier/reference/norme-dsn/dsn-cahier-technique-2026.1-formats.txt logiciel/donnees/formats-dsn-base.json --remplacer
 ```
 
 LE CAHIER EN PDF SE LIT UNE FOIS. Sa lecture par la fabrique de PDF prend deux minutes et demie pour 382 pages :
-`paie extraire transcrire` la fait une fois, à son dépôt, et dépose les deux transcriptions à côté de lui. Les relevés
-lisent ensuite les transcriptions (ils lisent aussi le PDF lui-même, et en tirent le même relevé), et
-`tests/fichiers/extraction.rs` vérifie que l'empreinte que porte chaque transcription est celle du PDF déposé : un PDF
+`moteur-atelier extraire transcrire` la fait une fois, à son dépôt, et dépose les deux transcriptions à côté de lui. Les
+relevés lisent ensuite les transcriptions (ils lisent aussi le PDF lui-même, et en tirent le même relevé), et
+`referentiels.rs` vérifie que l'empreinte que porte chaque transcription est celle du PDF déposé : un PDF
 qui change se transcrit de nouveau.
 
 Le tableau des usages par rubrique du cahier 2026.1 occupe les p. 363-371 ; les p. 372-382 portent le tableau des

@@ -27,7 +27,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     let manifeste = match crate::sources::manifeste(&code) {
         Ok(m) => m,
         Err(m) => {
-            eprintln!("{}", m);
+            eprintln!("{}", m.en_lignes());
             return 1;
         }
     };
@@ -46,7 +46,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     let liste = match liste {
         Ok(l) => l,
         Err(m) => {
-            eprintln!("{}", m);
+            eprintln!("{}", m.en_lignes());
             return 1;
         }
     };

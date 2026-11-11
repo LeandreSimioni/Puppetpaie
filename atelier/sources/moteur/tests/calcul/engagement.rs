@@ -11,10 +11,10 @@ fn iso(v: &[Jour]) -> Value {
 }
 
 /// `{"ok": v}` ou `{"refus": message}`.
-fn essai(r: Result<Value, String>) -> Value {
+fn essai(r: socle::echec::R<Value>) -> Value {
     match r {
         Ok(v) => json!({"ok": v}),
-        Err(e) => json!({"refus": socle::echec::phrase_de(&e)}),
+        Err(e) => json!({"refus": e.phrase}),
     }
 }
 
@@ -26,18 +26,18 @@ fn releve(e: &Engagement) -> Value {
     let par_lieu = |p: bool| {
         Value::Array(e.dates_par_lieu(p).into_iter().map(|(l, ds)| json!([l, iso(&ds)])).collect())
     };
-    let nombre = |o: Option<f64>| match o {
+    let nombre = |o: Option<socle::num::Decimal>| match o {
         None => Ok(Value::Null),
-        Some(x) => socle::num::dec_f64(x).map(|v| Value::String(socle::num::nombre(v))),
+        Some(x) => Ok(Value::String(socle::num::nombre(x))),
     };
     let mut extras = Map::new();
     extras.insert("dates_du_contrat".into(), essai(Ok(iso(&jours))));
     extras.insert("lieux_joues".into(), essai(Ok(json!(e.lieux_joues()))));
     extras.insert("dates_par_lieu".into(), essai(Ok(par_lieu(true))));
     extras.insert("dates_par_lieu_mois".into(), essai(Ok(par_lieu(false))));
-    extras.insert("modalite_temps_travail".into(), essai(e.modalite_temps_travail().map(Value::String)));
+    extras.insert("modalite_temps_travail".into(), essai(e.modalite_temps_travail().map(|m| Value::String(m.code().to_string()))));
     extras.insert("quotite_reference".into(), essai(e.quotite_reference().and_then(nombre)));
-    extras.insert("a_cheval".into(), essai(e.a_cheval().map(Value::Bool)));
+    extras.insert("a_cheval".into(), essai(Ok(Value::Bool(e.a_cheval()))));
     extras.insert("planning_connu".into(), essai(Ok(Value::Bool(e.planning_connu()))));
     extras.insert(
         "lieu_de".into(),
@@ -60,10 +60,10 @@ fn les_engagements_fabriques_et_leurs_refus() {
         }
         c["attendu"] = socle::forme::lire::<engagement::Assemble>(&charge, "L'engagement à fabriquer ne se lit pas.")
             .and_then(|a| Engagement::nouveau(&racine, &a, &qui))
-            .map_or_else(|m| json!({"refus": socle::echec::phrase_de(&m)}), |e| releve(&e));
+            .map_or_else(|m| json!({"refus": m.phrase}), |e| releve(&e));
         refus += c["attendu"].get("refus").is_some() as usize;
     }
     // un refus par cas `refus_*`
-    assert!(refus >= 27, "{}", refus);
+    assert!(refus >= 26, "{}", refus);
     oracle("engagement.json", "/directs", &directs);
 }

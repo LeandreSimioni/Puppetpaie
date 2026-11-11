@@ -11,7 +11,8 @@
 //! `boss/boss-heures-supplementaires-20260601.txt`.
 
 use socle::texte::virgule;
-use socle::num::{Decimal, Resultat};
+use socle::echec::R;
+use socle::num::Decimal;
 
 /// Des heures a une majoration (en pourcent).
 #[derive(Debug, Clone, PartialEq)]
@@ -28,26 +29,26 @@ pub struct Reparties {
 }
 
 /// La loi, a defaut d'accord (`permanents-base.json`, `heures_en_plus`).
-fn loi() -> Resultat<crate::permanents::HeuresEnPlus> {
+fn loi() -> R<crate::permanents::HeuresEnPlus> {
     Ok(crate::permanents::regles()?.heures_en_plus.clone())
 }
 
 /// Ce que la convention `idcc` dit des heures supplementaires, s'il est releve.
-fn supplementaires_de_la_convention(idcc: Option<&str>) -> Resultat<Option<crate::clauses::HeuresSupplementaires>> {
+fn supplementaires_de_la_convention(idcc: Option<&str>) -> R<Option<crate::clauses::HeuresSupplementaires>> {
     Ok(crate::clauses::releve(idcc)?.and_then(|c| c.heures_supplementaires))
 }
 
 /// LA CONVENTION FIXE-T-ELLE LES PALIERS DES HEURES SUPPLEMENTAIRES ? Sinon la loi : 25 % pour les huit premieres
 /// heures de la semaine, 50 % au-dela (L3121-36), et le mois ne dit pas lesquelles sont au-dela de la huitieme d'une
 /// semaine (elles se decomptent par semaine, L3121-29) : la carte le demande (`heures_supplementaires_a_50`).
-pub fn paliers_conventionnels(idcc: Option<&str>) -> Resultat<bool> {
+pub fn paliers_conventionnels(idcc: Option<&str>) -> R<bool> {
     Ok(supplementaires_de_la_convention(idcc)?.is_some_and(|c| c.paliers_annuels.as_ref().is_some_and(|p| !p.is_empty())))
 }
 
 /// LES HEURES SUPPLEMENTAIRES DU MOIS, par majoration. `heures` : celles du mois ; `a_50` : celles d'entre elles qui
 /// passent la huitieme d'une semaine (la loi seule les lit) ; `deja` : celles des mois d'avant dans l'annee, que les
 /// paliers annuels d'une convention et son contingent comptent (1285, VI.9 et VI.12).
-pub fn supplementaires(idcc: Option<&str>, heures: Decimal, a_50: Decimal, deja: Decimal) -> Resultat<Reparties> {
+pub fn supplementaires(idcc: Option<&str>, heures: Decimal, a_50: Decimal, deja: Decimal) -> R<Reparties> {
     let mut r = Reparties::default();
     if heures <= Decimal::ZERO {
         return Ok(r);
@@ -77,7 +78,7 @@ pub fn supplementaires(idcc: Option<&str>, heures: Decimal, a_50: Decimal, deja:
         }
         _ => {
             if a_50 > heures {
-                return Err(format!(
+                return Err(socle::refus!(
                     "{} heures supplémentaires au-delà de la huitième d'une semaine, pour {} heures supplémentaires dans le mois : \
                      les premières sont une part des secondes. Rien n'est calculé.",
                     virgule(a_50), virgule(heures)
@@ -109,17 +110,17 @@ pub fn supplementaires(idcc: Option<&str>, heures: Decimal, a_50: Decimal, deja:
 /// 10 % dans le dixieme des heures du contrat, 25 % jusqu'au tiers ; une convention qui ne fixe pas d'autre taux la
 /// laisse (1285, VI.13 bis : 25 % au-dela du dixieme, rien dans le dixieme). Le plafond : le dixieme sans accord
 /// (L3123-28), le tiers quand la convention le permet ; au-dela, un avis.
-pub fn complementaires(idcc: Option<&str>, heures: Decimal, contrat: Decimal) -> Resultat<Reparties> {
+pub fn complementaires(idcc: Option<&str>, heures: Decimal, contrat: Decimal) -> R<Reparties> {
     let mut r = Reparties::default();
     if heures <= Decimal::ZERO {
         return Ok(r);
     }
     let hc = loi()?.heures_complementaires;
-    let part = |nom: &str| -> Resultat<Decimal> {
+    let part = |nom: &str| -> R<Decimal> {
         match nom {
             "dixieme" => Ok(contrat / Decimal::from(10)),
             "tiers" => Ok(contrat / Decimal::from(3)),
-            autre => Err(format!("heures complémentaires : une part du contrat inconnue, {}", autre)),
+            autre => Err(socle::refus!("heures complémentaires : une part du contrat inconnue, {}", autre)),
         }
     };
     let mut debut = Decimal::ZERO;
@@ -168,18 +169,18 @@ fn ajouter(v: &mut Vec<Palier>, heures: Decimal, majoration: Decimal) {
 }
 
 /// Le taux maximum de la reduction de cotisations salariales (D241-21 : 11,31 %).
-pub fn taux_maximum_de_reduction() -> Resultat<Decimal> {
+pub fn taux_maximum_de_reduction() -> R<Decimal> {
     Ok(loi()?.reduction_salariale.taux_maximum)
 }
 
 /// La deduction patronale par heure supplementaire (D241-24) : 1,50 EUR sous vingt salaries, 0,50 EUR a partir de vingt.
-pub fn deduction_par_heure(au_moins_20: bool) -> Resultat<Decimal> {
+pub fn deduction_par_heure(au_moins_20: bool) -> R<Decimal> {
     let d = loi()?.deduction_patronale;
     Ok(if au_moins_20 { d.au_moins_20_salaries } else { d.moins_de_20_salaries })
 }
 
 /// La limite annuelle de l'exoneration d'impot sur le revenu (CGI 81 quater : 7 500 EUR).
-pub fn limite_de_l_exoneration() -> Resultat<Decimal> {
+pub fn limite_de_l_exoneration() -> R<Decimal> {
     Ok(loi()?.exoneration_impot.limite_annuelle)
 }
 

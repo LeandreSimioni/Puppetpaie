@@ -6,7 +6,6 @@
 use super::dit;
 use moteur::commandes::analyse::{Args, Opt, Spec};
 use moteur::commandes::Cadre;
-use compagnie::taux_pas::ko;
 use socle::echec::Echec;
 
 pub static SPEC: Spec = Spec {
@@ -22,26 +21,6 @@ pub static SPEC: Spec = Spec {
         Opt::drapeau("forcer"),
     ],
 };
-
-/// Les types de taux, cahier technique 2026.1, rubrique S21.G00.50.007 (`atelier/reference/sources/norme-dsn/texte/`).
-const TYPES: [(&str, &str); 8] = [
-    ("01", "Taux transmis par la DGFIP"),
-    ("13", "Bareme mensuel metropole"),
-    ("17", "Bareme mathematique sur base mensuelle metropole"),
-    ("23", "Bareme mensuel Guadeloupe, Reunion et Martinique"),
-    ("27", "Bareme mathematique sur base mensuelle Guadeloupe, Reunion, Martinique"),
-    ("33", "Bareme mensuel Guyane et Mayotte"),
-    ("37", "Bareme mathematique sur base mensuelle Guyane et Mayotte"),
-    ("99", "Indu relatif a un exercice anterieur - pas de taux de PAS"),
-];
-
-/// Le libelle du type de taux `t`, s'il est un code de la norme.
-fn libelle_type(t: Option<&str>) -> &'static str {
-    match TYPES.iter().find(|(c, _)| Some(*c) == t) {
-        Some((_, l)) => l,
-        None => "type hors de la norme",
-    }
-}
 
 pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     super::code(if args.drapeau("demander") {
@@ -77,17 +56,22 @@ fn amorcer(cadre: &Cadre) -> Result<i32, Echec> {
 /// Les taux recus (la fiche de chaque salarie, `droit::pas::recus`), et ce qu'il faudrait demander a la DGFiP.
 fn lire(cadre: &Cadre) -> Result<i32, Echec> {
     let ctx = &cadre.ctx;
-    let diag =droit::pas::diagnostic(ctx, None, None, None).map_err(ko)?;
+    let diag = droit::pas::diagnostic(ctx, None, None, None)?;
     dire!("Taux de prelevement a la source recus\n{}", "-".repeat(62));
     for s in &diag {
         let cle = &s.salarie;
-        let recus = droit::pas::recus(ctx, cle).map_err(ko)?;
+        let recus = droit::pas::recus(ctx, cle)?;
         let Some(e) = recus.last() else {
             dire!("  {:<12} aucun taux recu", cle);
             continue;
         };
-        dire!("  {:<12} taux {:<6} type {} ({})", cle, dit(e.taux.as_deref()), dit(e.r#type.as_deref()), libelle_type(e.r#type.as_deref()));
-        dire!("  {:<12} identifiant {}, mis a disposition {}", "", dit(e.identifiant.as_deref()), dit(e.mis_a_disposition.as_deref()));
+        let ecrit = |t: Option<String>| dit(t.as_deref()).to_string();
+        let libelle = match e.r#type {
+            Some(t) => t.libelle(),
+            None => "None",
+        };
+        dire!("  {:<12} taux {:<6} type {} ({})", cle, ecrit(e.taux.map(|t| t.to_string())), ecrit(e.r#type.map(|t| t.to_string())), libelle);
+        dire!("  {:<12} identifiant {}, mis a disposition {}", "", dit(e.identifiant.as_deref()), ecrit(e.mis_a_disposition.map(|m| m.compact())));
         match s.valable_jusqu_a {
             Some(j) => dire!("  {:<12} {}, jusqu'au {}\n", "", s.libelle, j.jj_mm_aaaa()),
             None => dire!("  {:<12} {}\n", "", s.libelle),
@@ -104,7 +88,7 @@ fn lire(cadre: &Cadre) -> Result<i32, Echec> {
         }
         dire!("\nLes signalements s'ecrivent par `pas --demander` ; la DPAE les fait partir avec elle.");
     }
-    for s in diag.iter().filter(|s| s.situation == droit::pas::SANS_NIR) {
+    for s in diag.iter().filter(|s| s.situation == droit::pas::SituationDuTaux::SansNir) {
         dire!("  {:<12} {} -- rien a demander, c'est le bareme.", s.salarie, s.libelle);
     }
     Ok(0)
@@ -115,13 +99,15 @@ fn lire(cadre: &Cadre) -> Result<i32, Echec> {
 fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     use compagnie::amorcage_demande::{produire, Demande};
     let ctx = &cadre.ctx;
-    let mois = match args.texte("mois") {
-        Some(m) if socle::mois::Mois::du_texte(m).is_some() => m.to_string(),
-        Some(m) => {
-            dire!("--mois attend AAAA-MM, recu {}.", socle::fichiers::repr(m));
-            return Ok(1);
-        }
-        None => match engagement::stock::mois_saisis(&ctx.racine)?.into_iter().map(String::from).last() {
+    let mois = match args.tape("mois") {
+        Some(m) => match m.mois() {
+            Ok(m) => m,
+            Err(e) => {
+                dire!("--mois attend AAAA-MM, recu {} : {}", socle::fichiers::repr(m.texte()), e.phrase);
+                return Ok(1);
+            }
+        },
+        None => match engagement::stock::mois_saisis(&ctx.racine)?.into_iter().last() {
             Some(m) => m,
             None => {
                 dire!("Aucun mois saisi : un signalement d'amorcage declare un contrat (bloc 40), et il n'y en a aucun.");
@@ -130,7 +116,7 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         },
     };
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let paies = declarations::dsn::contrats_du_mois(ctx, &mois, &departs)?;
+    let paies = declarations::dsn::contrats_du_mois(ctx, mois, &departs)?;
     if paies.is_empty() {
         dire!("Aucun engagement valide ne touche {} : rien n'est ecrit.", mois);
         return Ok(1);
@@ -138,7 +124,7 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let salaries: Vec<String> = args.texte("salaries").into_iter().flat_map(|t| t.split(',')).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
     let demande = Demande {
         motif: super::avec_defaut(args, "motif")?,
-        mois: &mois,
+        mois,
         salaries: if salaries.is_empty() { None } else { Some(&salaries) },
         envoi_test: args.drapeau("test"),
         forcer: args.drapeau("forcer"),

@@ -23,7 +23,8 @@ use crate::catalogue::{Ecran, Place};
 use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::SansCharge;
 use socle::ecran::Pastille;
-use socle::echec::{erreur, Classe, R};
+use socle::echec::{Classe, R};
+use socle::paris::InstantEcrit;
 
 const TEXTE: Champ = Champ { nom: "texte", libelle: Affiche::new("Message"), forme: Forme::Texte, sens: "le message, en mots", avance: false };
 const OU: Champ = Champ { nom: "ecran", libelle: Affiche::new("Où l'on était"), forme: Forme::Texte, sens: "où l'on était (l'écran, ou ce que le LLM a tenté : la route, la charge sans donnée personnelle, la réponse)", avance: false };
@@ -95,7 +96,7 @@ pub const ROUTES: &[Fiche] = &[
         route: Route::IncidentNavigateur,
         geste: "Noter ce qui a cassé dans la page.",
         charge: &[Champ { nom: "message", libelle: Affiche::new("Ce que la page a vu"), forme: Forme::Texte, sens: "ce que la page a vu (et genre, fichier, ligne, colonne, pile, canal, ou_dans_la_page)", avance: false }],
-        exemple: r#"{"genre":"TypeError","message":"exemple","fichier":"","ligne":0,"canal":"erreur","ou_dans_la_page":"paie"}"#,
+        exemple: r#"{"genre":"TypeError","message":"exemple","canal":"erreur","ou_dans_la_page":"paie"}"#,
         rend: "note (vrai : noté), empreinte",
         refus: &[OPERATION],
         acte: Acte::Ecrit,
@@ -195,7 +196,7 @@ pub fn sans_compagnie(o: &super::enveloppe::Options) -> std::path::PathBuf {
 /// Une route de ce module, sans compagnie (`sans_compagnie`).
 pub(crate) fn route_sans_compagnie(o: &super::enveloppe::Options, nom: Route, charge: &Charge) -> R<Rendu> {
     let racine = sans_compagnie(o);
-    std::fs::create_dir_all(&racine).map_err(|e| erreur(Classe::du_disque(&e), socle::echec::du_disque(&racine, &e)))?;
+    std::fs::create_dir_all(&racine).map_err(|e| socle::echec::du_disque(&racine, &e).reclasser(Classe::du_disque(&e)))?;
     route_de(&racine, nom, charge)
 }
 
@@ -295,6 +296,8 @@ struct SignalementDit {
     #[serde(flatten)]
     vu: SignalementVu,
     quand_dit: String,
+    /// Le lien du ticket ou l'editeur le suit, en mots (« ticket n° 12 ») ; aucun sans ticket.
+    ticket_dit: Option<String>,
     pastille: Option<Pastille>,
     depart: Pastille,
 }
@@ -340,9 +343,9 @@ struct Groupe {
     combien: u64,
     partis: u64,
     en_attente: u64,
-    premiere: Option<String>,
-    derniere: Option<String>,
-    parti_le: Option<String>,
+    premiere: Option<InstantEcrit>,
+    derniere: Option<InstantEcrit>,
+    parti_le: Option<InstantEcrit>,
     contenu: Contenu,
     dernier_dit: String,
     quoi_dit: &'static str,
@@ -358,7 +361,7 @@ struct Diagnostic {
     total: usize,
     partis: u64,
     en_attente: u64,
-    dernier_envoi: Option<String>,
+    dernier_envoi: Option<InstantEcrit>,
     paies_annuelles: Vec<AnneePartie>,
     groupes: Vec<Groupe>,
     pastille: Pastille,
@@ -418,7 +421,7 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
             let bilan = incidents::envoyer(racine);
             let mut etat = diagnostic_etat(racine)?;
             // La couleur du message qui le dit : un envoi impossible est refuse, sinon parti.
-            etat.couleur = Some(socle::ecran::couleur_de_l_etat(if bilan.erreur.is_some() { "refuse" } else { "fait" }));
+            etat.couleur = Some(socle::ecran::couleur_de_l_etat(if bilan.erreur.is_some() { socle::ecran::EtatDEcran::Refuse } else { socle::ecran::EtatDEcran::Fait }));
             etat.phrase = match &bilan.erreur {
                 Some(e) => format!("Envoi impossible : {}", e),
                 None => format!("{} incident(s) envoyé(s).", bilan.envoyes),
@@ -494,13 +497,13 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
 /// parti, fait ; des incidents en attente, une information (ils partent d'eux-memes).
 fn pastille_du_diagnostic(envoi: bool, total: usize, attente: u64) -> Pastille {
     if !envoi {
-        Pastille::de("information", "désactivé")
+        Pastille::de(socle::ecran::EtatDEcran::Information, "désactivé")
     } else if total == 0 {
-        Pastille::de("fait", "rien à signaler")
+        Pastille::de(socle::ecran::EtatDEcran::Fait, "rien à signaler")
     } else if attente > 0 {
-        Pastille::de("information", &format!("{} en attente", attente))
+        Pastille::de(socle::ecran::EtatDEcran::Information, &format!("{} en attente", attente))
     } else {
-        Pastille::de("fait", "tout est parti")
+        Pastille::de(socle::ecran::EtatDEcran::Fait, "tout est parti")
     }
 }
 
@@ -534,13 +537,13 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
                     combien: 0,
                     partis: 0,
                     en_attente: 0,
-                    premiere: Some(l.quand.clone()),
-                    derniere: Some(l.quand.clone()),
+                    premiere: Some(l.quand),
+                    derniere: Some(l.quand),
                     parti_le: None,
                     contenu: Contenu::Incident(Box::new(incidents::pour_l_editeur(racine, l))),
                     dernier_dit: String::new(),
                     quoi_dit: quoi_dit(l.quoi),
-                    pastille: Pastille::de("information", ""),
+                    pastille: Pastille::de(socle::ecran::EtatDEcran::Information, ""),
                 };
                 groupes.push((cle, g));
                 groupes.len() - 1
@@ -549,16 +552,16 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
         let g = &mut groupes[i].1;
         // Un incident revu (ses doublons, `fois`) compte autant de fois qu'il a eu lieu.
         g.combien += l.fois;
-        g.derniere = Some(l.derniere.clone());
-        g.dernier_dit = format!("dernier le {}", socle::ecran::quand(&l.derniere));
+        g.derniere = Some(l.derniere);
+        g.dernier_dit = format!("dernier le {}", l.derniere.dit());
         if !l.resume.is_empty() {
             g.resume = l.resume.clone();
         }
         g.contenu = Contenu::Incident(Box::new(incidents::pour_l_editeur(racine, l)));
         if l.envoi.etat == DEPOSE {
             g.partis += l.fois;
-            if let Some(q) = &l.envoi.quand {
-                g.parti_le = Some(q.clone());
+            if let Some(q) = l.envoi.quand {
+                g.parti_le = Some(q);
             }
         } else if l.envoi.etat == EN_ATTENTE {
             g.en_attente += l.fois;
@@ -567,12 +570,12 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
     let mut liste: Vec<Groupe> = groupes.into_iter().map(|(_, g)| g).collect();
     for g in liste.iter_mut() {
         g.pastille = match &g.parti_le {
-            _ if g.en_attente > 0 => Pastille::de("information", &format!("{} en attente", g.en_attente)),
-            Some(le) => Pastille::de("fait", &format!("parti le {}", socle::ecran::quand(le))),
-            None => Pastille::de("information", "pas encore parti"),
+            _ if g.en_attente > 0 => Pastille::de(socle::ecran::EtatDEcran::Information, &format!("{} en attente", g.en_attente)),
+            Some(le) => Pastille::de(socle::ecran::EtatDEcran::Fait, &format!("parti le {}", le.dit())),
+            None => Pastille::de(socle::ecran::EtatDEcran::Information, "pas encore parti"),
         };
     }
-    let partis: Vec<String> = liste.iter().filter_map(|g| g.parti_le.clone()).collect();
+    let partis: Vec<InstantEcrit> = liste.iter().filter_map(|g| g.parti_le).collect();
     let (partis_total, en_attente_total) = (liste.iter().map(|g| g.partis).sum::<u64>(), liste.iter().map(|g| g.en_attente).sum::<u64>());
     // LE NOMBRE DE PAIES DE L'ANNEE se voit dans la meme liste : une entree par annee partie, avec exactement ce qui a
     // quitte le poste. Ce n'est pas un incident : il ne compte ni dans `total`, ni dans `partis`.
@@ -586,15 +589,15 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
             combien: 1,
             partis: 1,
             en_attente: 0,
-            premiere: a.parti_le.clone(),
-            derniere: a.parti_le.clone(),
-            parti_le: a.parti_le.clone(),
+            premiere: a.parti_le,
+            derniere: a.parti_le,
+            parti_le: a.parti_le,
             contenu: Contenu::Paies(a.contenu.clone()),
-            dernier_dit: if let Some(q) = &a.parti_le { format!("dernier le {}", socle::ecran::quand(q)) } else { "pas encore parti".to_string() },
+            dernier_dit: if let Some(q) = a.parti_le { format!("dernier le {}", q.dit()) } else { "pas encore parti".to_string() },
             quoi_dit: "nombre de paies",
-            pastille: match &a.parti_le {
-                Some(q) => Pastille::de("fait", &format!("parti le {}", socle::ecran::quand(q))),
-                None => Pastille::de("information", "pas encore parti"),
+            pastille: match a.parti_le {
+                Some(q) => Pastille::de(socle::ecran::EtatDEcran::Fait, &format!("parti le {}", q.dit())),
+                None => Pastille::de(socle::ecran::EtatDEcran::Information, "pas encore parti"),
             },
         });
     }
@@ -603,7 +606,7 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
     let envoi = incidents::envoi(racine)?;
     let dernier_envoi = partis.into_iter().max();
     let total = lignes.len();
-    let ecran = ecran_du_diagnostic(envoi, &serveur, total, partis_total, dernier_envoi.as_deref(), annees.first());
+    let ecran = ecran_du_diagnostic(envoi, &serveur, total, partis_total, dernier_envoi, annees.first());
     Ok(Diagnostic {
         phrase: format!(
             "Signalement des dysfonctionnements : {} ; incidents gardés : {}, partis : {}, en attente : {}.",
@@ -638,11 +641,15 @@ pub(crate) fn signalements_route(racine: &Path) -> R<Signalements> {
             // Son depart, que la boite du message dit juste apres l'envoi : PuppetPaie renvoie de lui-meme ce qui n'est
             // pas parti, rien n'est a faire (une information).
             let (pastille, depart) = match vu.etat {
-                EtatDuMessage::EnCours => (Some(Pastille::de("information", "en cours d'envoi")), Pastille::de("information", "Envoi en cours…")),
-                EtatDuMessage::PasParti => (Some(Pastille::de("information", "pas encore parti")), Pastille::de("information", "Pas encore parti")),
-                EtatDuMessage::Arrive => (None, Pastille::de("fait", "Message envoyé.")),
+                EtatDuMessage::EnCours => (Some(Pastille::de(socle::ecran::EtatDEcran::Information, "en cours d'envoi")), Pastille::de(socle::ecran::EtatDEcran::Information, "Envoi en cours…")),
+                EtatDuMessage::PasParti => (Some(Pastille::de(socle::ecran::EtatDEcran::Information, "pas encore parti")), Pastille::de(socle::ecran::EtatDEcran::Information, "Pas encore parti")),
+                EtatDuMessage::Arrive => (None, Pastille::de(socle::ecran::EtatDEcran::Fait, "Message envoyé.")),
             };
-            SignalementDit { quand_dit: socle::ecran::quand(&vu.garde.quand), pastille, depart, vu }
+            let ticket_dit = vu.garde.ticket.as_ref().map(|_| match vu.garde.ticket_numero {
+                Some(n) => format!("ticket n° {}", n),
+                None => "ticket".to_string(),
+            });
+            SignalementDit { quand_dit: vu.garde.quand.dit(), ticket_dit, pastille, depart, vu }
         })
         .collect();
     let reponses_dit = (non_lues > 0).then(|| socle::ecran::compte(non_lues, "réponse", "réponses"));
@@ -671,12 +678,12 @@ fn phrase_d_envoi(partis: usize, reste: usize, erreur: Option<&str>, occupe: boo
 
 /// Un incident garde : quand, sa nature, ce qu'il dit, et s'il est parti.
 fn phrase_d_incident(l: &Ligne) -> String {
-    format!("{} · {} · {} — {}", socle::ecran::quand(&l.quand), l.quoi.nom(), l.resume, if l.envoi.etat == DEPOSE { "parti" } else { "pas encore parti" })
+    format!("{} · {} · {} — {}", l.quand.dit(), l.quoi.nom(), l.resume, if l.envoi.etat == DEPOSE { "parti" } else { "pas encore parti" })
 }
 
 /// Un paquet d'incidents semblables : combien, sa nature, ce qu'il dit, le dernier.
 fn phrase_de_paquet(p: &Paquet) -> String {
-    format!("{} fois · {} · {} — le dernier le {}", p.combien, p.quoi.nom(), p.resume, socle::ecran::quand(&p.derniere))
+    format!("{} fois · {} · {} — le dernier le {}", p.combien, p.quoi.nom(), p.resume, p.derniere.dit())
 }
 
 /// La boite qui avertit avant de couper l'envoi.
@@ -699,17 +706,17 @@ struct EcranDuDiagnostic {
     rien: &'static str,
 }
 
-fn ecran_du_diagnostic(envoi: bool, serveur: &str, total: usize, partis: u64, dernier_envoi: Option<&str>, annee: Option<&AnneePartie>) -> EcranDuDiagnostic {
+fn ecran_du_diagnostic(envoi: bool, serveur: &str, total: usize, partis: u64, dernier_envoi: Option<InstantEcrit>, annee: Option<&AnneePartie>) -> EcranDuDiagnostic {
     let mut compte = match (envoi, dernier_envoi) {
         (false, _) => Some("désactivé : les incidents restent sur cet ordinateur, rien ne part".to_string()),
-        (true, Some(d)) => Some(format!("{} incident(s) parti(s), le dernier le {}", partis, socle::ecran::quand(d))),
+        (true, Some(d)) => Some(format!("{} incident(s) parti(s), le dernier le {}", partis, d.dit())),
         (true, None) if total > 0 => Some("rien n'est encore parti".to_string()),
         (true, None) => None,
     };
     if let (true, Some(a)) = (envoi, annee) {
         let mut paies = format!("nombre de paies de {}", a.annee);
-        if let Some(q) = &a.parti_le {
-            paies.push_str(&format!(" parti le {}", socle::ecran::quand(q)));
+        if let Some(q) = a.parti_le {
+            paies.push_str(&format!(" parti le {}", q.dit()));
         }
         compte = Some(match compte {
             Some(c) => format!("{} · {}", c, paies),

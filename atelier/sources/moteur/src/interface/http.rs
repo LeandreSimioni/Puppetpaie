@@ -207,8 +207,10 @@ fn ecrire_reponse(flux: &mut TcpStream, r: &Reponse) -> std::io::Result<()> {
 }
 
 fn servir_connexion(flux: TcpStream, traiter: Arc<dyn Fn(Requete) -> Reponse + Send + Sync>) {
-    let _ = flux.set_read_timeout(Some(Duration::from_secs(30)));
-    let _ = flux.set_nodelay(true);
+    // Une connexion qui refuse son delai ou son envoi immediat ne se sert pas : elle s'arrete et le dit.
+    if let Err(e) = flux.set_read_timeout(Some(Duration::from_secs(30))).and_then(|()| flux.set_nodelay(true)) {
+        return fin_de_connexion(e);
+    }
     let mut sortie = match flux.try_clone() {
         Ok(s) => s,
         Err(e) => return fin_de_connexion(e),
@@ -244,7 +246,16 @@ pub fn ecouter(port: u16) -> std::io::Result<(TcpListener, u16)> {
 
 /// Sert pour toujours ; chaque connexion dans son propre fil, chaque requete traitee par `traiter`.
 pub fn servir(ecouteur: TcpListener, traiter: Arc<dyn Fn(Requete) -> Reponse + Send + Sync>) {
-    for flux in ecouteur.incoming().flatten() {
+    for flux in ecouteur.incoming() {
+        // Une connexion que le systeme n'accepte pas se dit, comme celle qui s'arrete (`servir_connexion`) ; l'ecoute
+        // continue pour les suivantes.
+        let flux = match flux {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("Une connexion de la fenêtre n'est pas acceptée : {}.", e);
+                continue;
+            }
+        };
         let t = traiter.clone();
         routes::fil_de_routes(move || servir_connexion(flux, t));
     }

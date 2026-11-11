@@ -4,7 +4,7 @@
 //!
 //! Le contrat : une valeur lue dans `prive/config/` (ou un NIR, un IBAN, un BIC sans la marque d'invention) dans ce que
 //! Git emporterait arrête le commit (code 1), et la sortie dit le fichier et la ligne, jamais la valeur ; sans elle, il
-//! passe (code 0) ; `FICTIVES` et `EXEMPLES_DES_TEXTES` sont honorés ; `--indexes` juge ce que l'index porte.
+//! passe (code 0) ; `FICTIVES` est honoré ; `--indexes` juge ce que l'index porte.
 //!
 //! Le faux dépôt n'a pas de `.gitignore` : `prive/` y est un dossier non suivi que Git listerait, et que le garde écarte
 //! de lui-même.

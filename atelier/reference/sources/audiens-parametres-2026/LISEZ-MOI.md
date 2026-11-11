@@ -83,3 +83,9 @@ convention et de compagnie du barème (`atelier/docs/ARCHITECTURE.md`, « Le bar
 Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'un organisme privé, n'y sont pas : seule leur transcription y est (`pdftotext -layout` pour un PDF, une feuille de calcul en CSV, feuille par feuille, le texte d'une page HTML), et c'est elle que citent les renvois. Les condensats donnés plus haut sont ceux des originaux, gardés dans le dépôt privé (`reference-privee/sources/audiens-parametres-2026/`).
 
 - `Audiens-Parametres-2026.pdf` : transcription `Audiens-Parametres-2026.txt`
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `Audiens-Parametres-2026.txt` : `13460a98d6e06fb85bcf7d4d6a523ae8a937db5d95e00eeada6bed2cd8ffeb79`

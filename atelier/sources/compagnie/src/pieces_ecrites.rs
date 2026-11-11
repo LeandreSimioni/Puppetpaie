@@ -10,11 +10,7 @@ use socle::echec::R;
 use socle::ecriture::ecrire_json;
 
 fn os(chemin: &Path, e: std::io::Error) -> Echec {
-    erreur(Classe::Disque, socle::echec::du_disque(chemin, &e))
-}
-
-fn valeur(m: String) -> Echec {
-    erreur(Classe::Illisible, m)
+    socle::echec::du_disque(chemin, &e).reclasser(Classe::Disque)
 }
 
 /// Le journal des pieces ecrites, sous la racine de la compagnie.
@@ -31,18 +27,18 @@ const DSN_ECRITES: &str = "journal/dsn-ecrites.json";
 pub fn noter_piece_ecrite(racine: &Path, cle: &str, empreinte_saisie: Option<EmpreinteNotee>, versions_portees: Option<Vec<envois::journal::Version>>) -> R<()> {
     let p = racine.join(DSN_ECRITES);
     let mut d = journal_des_ecritures(racine)?;
-    d.insert(cle.to_string(), PieceNotee { quand: socle::paris::maintenant(), empreinte_saisie, versions_portees });
+    d.insert(cle.to_string(), PieceNotee { quand: socle::paris::InstantEcrit::maintenant(), empreinte_saisie, versions_portees });
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent).map_err(|e| os(parent, e))?;
     }
-    ecrire_json(&p, &d, 2).map_err(|m| erreur(Classe::Disque, m))
+    ecrire_json(&p, &d, 2).map_err(|e| e.reclasser(Classe::Disque))
 }
 
 /// UNE PIECE PARTIE NE SE RECRIT JAMAIS (regle 4 de `atelier/AGENTS.md` : ce qui est depose ne se regenere pas) : le
 /// fichier `cible` dont le contenu est celui d'un depot reel accepte, qu'aucun retour n'a refuse (`journal/depots.jsonl`,
 /// par son empreinte), ne s'ecrit pas par-dessus ; `Some(le jour de son depot)`. Chaque ecriture d'une declaration sous
 /// un nom qui ne depend pas de son contenu (un signalement, la DPAE du mois, la DSN mensuelle) le lit avant d'ecrire.
-pub fn partie_le(racine: &Path, cible: &Path) -> R<Option<String>> {
+pub fn partie_le(racine: &Path, cible: &Path) -> R<Option<socle::date::Jour>> {
     if !cible.is_file() {
         return Ok(None);
     }
@@ -52,7 +48,7 @@ pub fn partie_le(racine: &Path, cible: &Path) -> R<Option<String>> {
         .iter()
         .filter(|l| l.reel() && l.accepte() && l.empreinte() == Some(empreinte.as_str()))
         .find(|l| !envois::etats::refuse_par_un_retour(l))
-        .map(|l| l.quand().chars().take(10).collect()))
+        .map(|l| l.quand().jour()))
 }
 
 /// `partie_le`, en refus : `cible` est parti, rien n'est ecrit.
@@ -64,10 +60,7 @@ pub fn refuser_si_partie(racine: &Path, cible: &Path) -> R<()> {
             format!(
                 "{} est parti le {} : ce qui est parti ne se réécrit pas. Rien n'est écrit.",
                 socle::fichiers::nom_du(cible),
-                match socle::date::Jour::lire(&le) {
-                    Ok(j) => j.jj_mm_aaaa(),
-                    Err(e) => return Err(valeur(e)),
-                }
+                le.jj_mm_aaaa()
             ),
         )),
     }
@@ -88,13 +81,13 @@ pub fn journal_des_ecritures(racine: &Path) -> R<std::collections::BTreeMap<Stri
     if !p.exists() {
         return Ok(std::collections::BTreeMap::new());
     }
-    socle::forme::lire_fichier(&p, "Le journal des pièces écrites ne se lit pas.").map_err(valeur)
+    socle::forme::lire_fichier(&p, "Le journal des pièces écrites ne se lit pas.").map_err(|e| e.reclasser(Classe::Illisible))
 }
 
-/// QUAND LE MOTEUR A ECRIT CETTE PIECE (`AAAA-MM-JJTHH:MM`), lu au journal des ecritures (`noter_piece_ecrite`) ; `None`
-/// s'il ne le dit pas. Jamais la date du fichier.
-pub fn ecrit_le(racine: &Path, fichier: &Path) -> R<Option<String>> {
-    Ok(piece_notee(racine, fichier)?.map(|n| n.quand.chars().take(16).collect()))
+/// QUAND LE MOTEUR A ECRIT CETTE PIECE, a la minute, lu au journal des ecritures (`noter_piece_ecrite`) ; `None` s'il ne
+/// le dit pas. Jamais la date du fichier.
+pub fn ecrit_le(racine: &Path, fichier: &Path) -> R<Option<socle::paris::MinuteEcrite>> {
+    Ok(piece_notee(racine, fichier)?.map(|n| socle::paris::MinuteEcrite::du_naif(n.quand.naif())))
 }
 
 /// UNE PIECE NOTEE AU JOURNAL DES ECRITURES, telle que `noter_piece_ecrite` l'ecrit : quand, la paie qu'elle declare, et
@@ -102,7 +95,7 @@ pub fn ecrit_le(racine: &Path, fichier: &Path) -> R<Option<String>> {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PieceNotee {
-    pub quand: String,
+    pub quand: socle::paris::InstantEcrit,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub empreinte_saisie: Option<EmpreinteNotee>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -29,7 +29,7 @@ use crate::sources::Manifeste;
 use crate::EnOrdre;
 use socle::date::Jour;
 
-type R<T> = Result<T, String>;
+use socle::echec::{Echec, R};
 
 pub const BASE: &str = crate::releve::kali::INDEX;
 pub const DOSSIER: &str = "kali-entrepot";
@@ -246,7 +246,7 @@ fn globale(source: &dyn Source) -> R<String> {
     let mut noms: Vec<String> = m.captures_iter(&page).map(|c| c[1].to_string()).collect();
     noms.sort();
     noms.dedup();
-    noms.pop().ok_or_else(|| format!("aucune archive globale KALI a {}", BASE))
+    noms.pop().ok_or_else(|| refus!("aucune archive globale KALI a {}", BASE))
 }
 
 /// Tient l'entrepot a jour : la base entiere la premiere fois (ou une convention nouvelle a suivre, ou `reconstruire`),
@@ -274,7 +274,7 @@ pub fn mettre_a_jour(racine: &Path, reconstruire: bool, manifeste: &Manifeste, s
             let mut ent: EntrepotKali = Entrepot::neuf(&dossier, etat);
             let t0 = Instant::now();
             let n = passer(&mut dila::tar_gz(source.flux(&format!("{}{}", BASE, glob))?), &mut ent.articles, &mut ent.etat.changes, &conteneurs, None)?;
-            dire(&format!("  {} articles gardes en {:.0}s", n, t0.elapsed().as_secs_f64()));
+            dire(&format!("  {} articles gardes en {}s", n, crate::releve::codes::secondes(t0.elapsed())));
             ent.sauver(&jour)?;
             ent
         }
@@ -283,25 +283,25 @@ pub fn mettre_a_jour(racine: &Path, reconstruire: bool, manifeste: &Manifeste, s
         .expect("motif")
         .captures(&ent.etat.global)
         .map(|c| c[1].to_string())
-        .ok_or_else(|| format!("{}/etat.json : « global » sans date ({})", DOSSIER, ent.etat.global))?;
+        .ok_or_else(|| refus!("{}/etat.json : « global » sans date ({})", DOSSIER, ent.etat.global))?;
     let toutes: Vec<String> = dila::livraisons(&dila::page(source, BASE)?, "KALI").into_iter().filter(|l| l[..8] >= *date_globale).collect();
     let lues = ent.lues();
     let neuves: Vec<String> = toutes.iter().filter(|l| !lues.contains(*l)).cloned().collect();
     dire(&format!("== {} livraison(s) nouvelle(s) sur {} ==", neuves.len(), toutes.len()));
     let urls: Vec<String> = neuves.iter().map(|l| format!("{}KALI_{}.tar.gz", BASE, l)).collect();
-    let mut panne: Option<String> = None;
+    let mut panne: Option<Echec> = None;
     dila::en_ordre(source, &urls, 8, |i, octets| {
         let nom = &neuves[i];
         let octets = match octets {
             Ok(o) => o,
             Err(e) => {
                 // Une livraison manquee arrete la suite : la suivante ne s'applique pas par-dessus un trou.
-                dire(&format!("  ! livraison {} : {} -- arret, reprise au prochain passage", nom, e));
+                dire(&format!("  ! livraison {} : {} -- arret, reprise au prochain passage", nom, e.phrase));
                 return false;
             }
         };
         if let Err(e) = passer(&mut dila::archive(&octets), &mut ent.articles, &mut ent.etat.changes, &conteneurs, Some(nom)) {
-            panne = Some(format!("livraison {} : {}", nom, e));
+            panne = Some(e.reformuler(|p| format!("livraison {} : {}", nom, p)));
             return false;
         }
         ent.noter_lue(nom);
@@ -326,7 +326,7 @@ pub fn mettre_a_jour(racine: &Path, reconstruire: bool, manifeste: &Manifeste, s
 pub fn charger(racine: &Path) -> R<EntrepotKali> {
     let dossier = racine.join(DOSSIER);
     if !dila::existe(&dossier) {
-        return Err(format!(
+        return Err(refus!(
             "Pas d'entrepot KALI dans {} : lancer d'abord `moteur-atelier releve-conventions mettre-a-jour`.",
             racine.display()
         ));
@@ -407,7 +407,8 @@ pub fn rendre_recherche(ent: &EntrepotKali, idcc: &str, mot: &str) -> String {
 }
 
 /// `moteur-atelier releve-conventions ...` : rend le code de sortie.
-pub fn commande(args: &[String]) -> i32 {
+pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
+    let args: &[String] = &socle::ligne::textes(args);
     if args.len() < 2 || args.iter().any(|a| a == "-h" || a == "--help" || a == "--aide") {
         eprintln!("{}", USAGE);
         return 2;
@@ -427,14 +428,13 @@ pub fn commande(args: &[String]) -> i32 {
             0
         }
         Err(m) => {
-            eprintln!("{}", m);
+            eprintln!("{}", m.en_lignes());
             1
         }
     };
     match args[0].as_str() {
         "mettre-a-jour" => {
-            compagnie::installation::fixer_le_code();
-            let r = crate::sources::manifeste(&socle::fichiers::dossier_du_code()).and_then(|m| {
+            let r = compagnie::installation::fixer_le_code().and_then(|()| crate::sources::manifeste(&socle::fichiers::dossier_du_code())).and_then(|m| {
                 let jour = droit::contexte::aujourdhui_sans_note()?;
                 mettre_a_jour(racine, args.iter().any(|a| a == "--reconstruire"), &m, &dila::Reseau, &jour).map(|_| String::new())
             });

@@ -76,3 +76,32 @@ Voir le rapport. En une phrase par texte :
 - la Cour de cassation (1982, 1987) : la retenue par heure d'absence est le quotient du salaire mensuel par le nombre d'heures de
   travail du mois considéré ; la DDETS en tire « le salaire horaire réel du mois » ;
 - L1225-54 : le congé parental à temps plein compte pour moitié dans l'ancienneté ; L3141-5 ne l'assimile pas à du travail effectif.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `RAPPORT-20261015.md` : `bea433d3975a8e43b45f5e5ac92a2a29ef6a0cf3d2fec64776a23978e0de357f`
+- `bofip-boi-ir-pas-20-10-10-20200728.html` : `65353696f44b9475ae8fc02c4735aa5dda7fccf3c2f173c7d93e3b7f035d6b0a`
+- `bofip-boi-ir-pas-20-10-10-20200728.txt` : `a95be7069bae2f007c3f85bbdef8944f0b7a5074470841a830883b4fb916a93c`
+- `cass-soc-19820211-80-40359-JURITEXT000007009242.xml` : `01f0f562b1ff7d4c0646d6a4d82ce41efd837cdc6f7ab6920b6aa3d916a5924a`
+- `cass-soc-19870514-84-43854-JURITEXT000007018764.xml` : `48b0221b61027279c01f27f550114d1d128258126a23ce17f17aa19acaccdb02`
+- `dreets-limousin-qr-assmat-retenues-absence-20150101.pdf` : `d33a0c6bea65ee6c3426231d6b7933fbace3dce0512630b733d2b734acc030ec`
+- `dreets-limousin-qr-assmat-retenues-absence-20150101.txt` : `30fa3082924b81ec33d92c36cf3b16eddfb8710844b93db9aa76b5881597661b`
+- `dss-instruction-3c5b-2021-127-suspension-contrat-prevoyance-20210617.pdf` : `efaa41050c382bb44a8e76f6c52c28b1227fb26611cf036b862dbb2ea8f15ece`
+- `dss-instruction-3c5b-2021-127-suspension-contrat-prevoyance-20210617.txt` : `36f952ec116975e6581bdcd534de85a4d6ed2c429d0522e6b9f69f44f3e35c5a`
+- `legi-extrait-code-de-la-securite-sociale-20261015.md` : `1d3abd1e8e81d4220ae74e67387cb817ec0665ade28b7b9caaf44a70ce70415c`
+- `legi-extrait-code-du-travail-20261015.md` : `186379741f88d509532b5cc95c2480c616b281b6a78213c2109460eaa228d53d`
+- `legi-extrait-code-general-des-impots-20261015.md` : `58801605d5b77239e04479a63a6d47e7fe2a122da70fcb39b2c3a7346554923b`
+- `net-entreprises-dsn-solution-technique-pas-v19-20170308.pdf` : `54feccbd9704cc1a2cf3fa4d38c40d1fa1c375df2fc0d669b793443790a06267`
+- `net-entreprises-dsn-solution-technique-pas-v19-20170308.txt` : `29ca84251c695b2ea27431484448e4a9c511988300290dca4fe91bcb441544a3`
+- `net-entreprises-fiche1810-rnf-negative-pas-20250322.html` : `bcbc1e6d525ede4bdc49a311851e69771abf230e116b07355b8f41f954f54a12`
+- `net-entreprises-fiche1810-rnf-negative-pas-20250322.txt` : `b2cb2a8cbd2a3a6430e1434650202744566574335d7d976f032b4a114761fc91`
+- `net-entreprises-fiche2640-volumes-activite-s21g00-53-20260929.html` : `279c019b6ddda91281583e8b75d24f480159e3554e9cb9d318b8a0454d630537`
+- `net-entreprises-fiche2640-volumes-activite-s21g00-53-20260929.txt` : `9c7836271057229360739e825eeea2a46132598a345c3df90db9a597da497ada`
+- `net-entreprises-fiche2693-volumes-activite-exemples-20260929.html` : `b941fe9e5bfd48e9f8cdfca3f014cac787722b2d7466052bf0c5c411e1d54746`
+- `net-entreprises-fiche2693-volumes-activite-exemples-20260929.txt` : `87b75ed906141384b76432a26f464bd3d2faba2adef18e9a7a69265f922f20ae`
+- `net-entreprises-fiche639-conge-parental-invalidite-20260609.html` : `6b1b19d88c64d7eb1660e2c3c135c30a7367b00904c2d707a21860897d95487d`
+- `net-entreprises-fiche639-conge-parental-invalidite-20260609.txt` : `5366706f325831680954e4ee749df8b21d3d9119ce435fd8ac6ab5dd418aac94`
+- `net-entreprises-fiche807-conges-parentaux-familiaux-20260708.html` : `db05d78dbacb45a3ae7dc579b31598fa2474f2654b24c90c45751024b6b76505`
+- `net-entreprises-fiche807-conges-parentaux-familiaux-20260708.txt` : `abd791dd52a655464125423a9ed3d38cd8859b23ffb022bf1ccba92dd3dad77a`

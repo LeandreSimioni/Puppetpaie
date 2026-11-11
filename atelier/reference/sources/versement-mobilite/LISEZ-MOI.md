@@ -20,3 +20,12 @@ Données sous licence Open Database License (ODbL) : republiées ici telles quel
 ## Où le moteur s'en sert
 
 Pas encore : le lot V de la séance 8 y lit le taux à la commune du lieu de travail et à la date de la paie.
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `datagouv-page-jeu-versement-mobilite-20261030.md` : `07673002203cb79254c212dff181b772d54a0471bebde0d91bead5c0161a2f6d`
+- `datagouv-page-jeu-versement-mobilite-20261030.pdf` : `4a096eebef3426c9b0ff416da08a7ccaa0eadb20574271397efc76f80c813a6f`
+- `datagouv-taux-versement-mobilite-par-commune-20261030.csv` : `cc63227d0530e41f662c216468eefc51fcc7f664087d50b2ee9552ec2bde17c6`
+- `urssaf-table-taux-vm-vma-vmrr-20261030.csv` : `5771b850d455efed86b5498e952d0ac2457c67fe2e8f89368240fac6cc5532df`

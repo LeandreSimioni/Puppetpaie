@@ -22,59 +22,38 @@ use socle::echec::R;
 use socle::echec::erreur;
 use socle::echec::{Classe, Echec};
 use crate::retours::{Annonce, Depot};
-use socle::paris::{iso_de_naif, maintenant_naif};
+use socle::date::Jour;
+use socle::num::Decimal;
+use socle::paris::{maintenant_naif, InstantEcrit, Naif};
 
 use crate::branchement::{Branchement, ANCIEN_PREFIXE_FLUX_FICTIF, PREFIXE_FLUX_FICTIF};
 use crate::journal::{Acte, Ligne, RetourOrganisme};
 use crate::suites::Suites;
 
 /// `AAAAMMJJ-HHMMSS` d'une heure locale naive.
-fn horodatage_archive(local: i64) -> String {
-    let iso = iso_de_naif(local);
+fn horodatage_archive(local: Naif) -> String {
+    let iso = local.iso();
     format!("{}{}{}-{}{}{}", &iso[0..4], &iso[5..7], &iso[8..10], &iso[11..13], &iso[14..16], &iso[17..19])
 }
 
 // -------------------------------------------------------------------- les pannes
 
-/// Une panne du transport : `Organisme` (son message et son `code`, le statut HTTP quand il y en a un), ou une autre
-/// panne que la releve ne rattrape pas.
-#[derive(Debug, Clone)]
-pub struct Panne {
-    pub classe: Classe,
-    pub message: String,
-    pub code: Option<i64>,
+/// Une panne de la plate-forme : `crate::transport::EchecApi` (son refus, et le statut HTTP quand il y en a un).
+pub use crate::transport::EchecApi as Panne;
+
+/// Une panne sans statut HTTP.
+#[track_caller]
+fn panne(classe: Classe, message: String) -> Panne {
+    Panne::from(socle::echec::erreur(classe, message))
 }
 
-impl Panne {
-    /// Une panne sans statut HTTP.
-    fn de(classe: Classe, message: String) -> Panne {
-        Panne { classe, message, code: None }
-    }
-
-    /// Une liste que la plate-forme rend et qui ne se lit pas : sa classe, ou `Illisible` quand le refus n'en dit pas.
-    fn de_lecture(e: Echec) -> Panne {
-        let classe = match e.classe {
-            Some(c) => c,
-            None => Classe::Illisible,
-        };
-        Panne::de(classe, e.message)
-    }
-
-    pub fn est_api(&self) -> bool {
-        matches!(self.classe, Classe::Organisme | Classe::DepotRefuse)
-    }
-
-    /// La panne comme un refus de route : sa classe et sa phrase.
-    pub fn en_echec(self) -> Echec {
-        Echec { classe: Some(self.classe), message: self.message }
-    }
-}
-
-/// La panne que le transport rend : sa classe, sa phrase, son statut HTTP.
-impl From<crate::transport::EchecApi> for Panne {
-    fn from(e: crate::transport::EchecApi) -> Panne {
-        Panne { classe: e.classe, message: e.erreur, code: e.code }
-    }
+/// Une liste que la plate-forme rend et qui ne se lit pas : sa classe, ou `Illisible` quand le refus n'en dit pas.
+fn de_lecture(e: Echec) -> Panne {
+    let classe = match e.classe {
+        Some(c) => c,
+        None => Classe::Illisible,
+    };
+    Panne::from(e.reclasser(classe))
 }
 
 // ----------------------------------------------------------------------- le client
@@ -120,7 +99,7 @@ fn adresses_dsn(environnement: &str) -> Result<Adresses, Panne> {
             "https://depot-edit.dsnrg.net-entreprises.fr/deposer-dsn/1.0/",
             SERVICE_DSN_REGIME_GENERAL_TEST,
         ),
-        autre => return Err(Panne::de(Classe::Illisible, format!("environnement inconnu : '{}'", autre))),
+        autre => return Err(panne(Classe::Illisible, format!("environnement inconnu : '{}'", autre))),
     };
     Ok(Adresses {
         authentification: auth.into(),
@@ -157,7 +136,6 @@ fn adresses_dpae(compte: Option<&droit::fiche::ApiDpae>) -> Adresses {
 pub struct Client {
     pub adresses: Adresses,
     pub jeton: Option<String>,
-    pub expire_le: Option<String>,
     pub declarant: crate::transport::Identite,
     motdepasse: Option<String>,
     variable: &'static str,
@@ -171,7 +149,6 @@ impl Client {
         Ok(Client {
             adresses: adresses_dsn(environnement)?,
             jeton: None,
-            expire_le: None,
             declarant,
             motdepasse,
             variable: VARIABLE_MOTDEPASSE,
@@ -187,7 +164,6 @@ impl Client {
         Client {
             adresses: adresses_dpae(compte),
             jeton: None,
-            expire_le: None,
             declarant: crate::transport::Identite { siret, nom: compte.and_then(|c| c.nom.en_texte()), prenom: compte.and_then(|c| c.prenom.en_texte()) },
             motdepasse,
             variable: VARIABLE_MOTDEPASSE_DPAE,
@@ -220,7 +196,6 @@ impl Client {
             jeton: self.jeton.as_deref(),
         })?;
         self.jeton = Some(session.jeton);
-        self.expire_le = session.expire_le;
         Ok(())
     }
 
@@ -237,30 +212,29 @@ impl Client {
     }
 
     /// La consultation d'une plage (heures locales naives).
-    fn consulter(&mut self, base: &str, debut: i64, fin: Option<i64>) -> Result<Vec<u8>, Panne> {
+    fn consulter(&mut self, base: &str, debut: Naif, fin: Option<Naif>) -> Result<Vec<u8>, Panne> {
         self.assurer_session()?;
-        let fin = fin.map(iso_de_naif);
-        Ok(crate::transport::consulter(base, self.jeton.as_deref(), &iso_de_naif(debut), fin.as_deref())?)
+        Ok(crate::transport::consulter(base, self.jeton.as_deref(), debut, fin)?)
     }
 
-    pub fn lister_retours(&mut self, debut: i64, fin: i64) -> Result<Vec<Annonce>, Panne> {
+    pub fn lister_retours(&mut self, debut: Naif, fin: Naif) -> Result<Vec<Annonce>, Panne> {
         let base = self.adresses.retours.clone();
         let brut = self.consulter(&base, debut, Some(fin))?;
-        crate::retours::liste_retours_d_octets(&brut).map_err(Panne::de_lecture)
+        crate::retours::liste_retours_d_octets(&brut).map_err(de_lecture)
     }
 
     /// `Client.lister_depots` : les depots que net-entreprises a vus sur une plage. L'adresse est celle de la consultation
     /// des retours, dont seul le service change (`lister-depots/1.0/` au lieu de `lister-retours-declarant/1.0/`).
-    pub fn lister_depots(&mut self, debut: i64, fin: i64) -> Result<Vec<Depot>, Panne> {
+    pub fn lister_depots(&mut self, debut: Naif, fin: Naif) -> Result<Vec<Depot>, Panne> {
         let base = self.adresses.retours.replace("lister-retours-declarant", "lister-depots");
         let brut = self.consulter(&base, debut, Some(fin))?;
-        crate::retours::liste_depots_d_octets(&brut).map_err(Panne::de_lecture)
+        crate::retours::liste_depots_d_octets(&brut).map_err(de_lecture)
     }
 
     pub fn lister_retours_du_flux(&mut self, idflux: &str) -> Result<Vec<Annonce>, Panne> {
         self.assurer_session()?;
         let (brut, _) = self.appel(&format!("{}{}", self.adresses.retours_flux, idflux))?;
-        crate::retours::liste_retours_d_octets(&brut).map_err(Panne::de_lecture)
+        crate::retours::liste_retours_d_octets(&brut).map_err(de_lecture)
     }
 
     /// Recupere un retour : (contenu brut, type de contenu, s'il est dit).
@@ -276,7 +250,7 @@ impl Client {
     pub fn deposer_octets(&mut self, url: &str, contenu: &[u8], forme: &str) -> Result<(String, Option<String>), Panne> {
         self.assurer_session()?;
         let corps = gzip(contenu)?;
-        let jeton = self.jeton.clone().ok_or_else(|| Panne::de(Classe::Disque, "La session ouverte n'a pas de jeton.".into()))?;
+        let jeton = self.jeton.clone().ok_or_else(|| panne(Classe::Disque, "La session ouverte n'a pas de jeton.".into()))?;
         let (brut, entetes) = crate::transport::depot(url, &jeton, &corps, forme, crate::transport::DELAI_DEPOT)?;
         let texte = String::from_utf8_lossy(&brut).trim_matches(socle::texte::blanc).to_string();
         let ctype = crate::transport::entete(&entetes, "Content-Type").map(str::to_string);
@@ -288,8 +262,8 @@ impl Client {
 fn gzip(donnees: &[u8]) -> Result<Vec<u8>, Panne> {
     use std::io::Write;
     let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-    e.write_all(donnees).map_err(|x| Panne::de(Classe::Disque, x.to_string()))?;
-    e.finish().map_err(|x| Panne::de(Classe::Disque, x.to_string()))
+    e.write_all(donnees).map_err(|x| panne(Classe::Disque, x.to_string()))?;
+    e.finish().map_err(|x| panne(Classe::Disque, x.to_string()))
 }
 
 // ------------------------------------------------------------------ la releve
@@ -302,24 +276,27 @@ pub struct RetourArchive {
 }
 
 /// `ReleveRetours`.
-#[derive(Default)]
 pub struct Releve {
     pub trouves: Vec<Annonce>,
     pub nouveaux: Vec<Annonce>,
     pub archives: Vec<RetourArchive>,
     pub incidents: Vec<String>,
-    /// L'expiration de la session ouverte, quand la plate-forme la dit.
-    pub session_jusqu_a: Option<String>,
     /// Combien de ces retours ont trouve le depot auquel ils repondent.
     pub rattaches: i64,
     /// Ce qu'un retour recu demande de faire (un taux AT/MP a reporter).
     pub a_faire: Vec<String>,
 }
 
-/// La date de publication d'un retour (`AAAAMMJJ…`), en JJ/MM/AAAA ; aucune quand il ne la dit pas.
-pub fn date_publication(r: &Annonce) -> Option<String> {
-    let c: Vec<char> = r.publication.as_deref()?.chars().collect();
-    (c.len() >= 8).then(|| format!("{}{}/{}{}/{}", c[6], c[7], c[4], c[5], c[..4].iter().collect::<String>()))
+impl Releve {
+    /// Un releve ou rien n'est encore trouve.
+    pub fn vide() -> Releve {
+        Releve { trouves: Vec::new(), nouveaux: Vec::new(), archives: Vec::new(), incidents: Vec::new(), rattaches: 0, a_faire: Vec::new() }
+    }
+}
+
+/// Le jour de publication d'un retour, en JJ/MM/AAAA ; aucun quand il ne le dit pas.
+pub fn jour_de_publication_dit(r: &Annonce) -> Option<String> {
+    r.publication.map(|p| p.naif().jour().jj_mm_aaaa())
 }
 
 // ------------------------------------------------------------------ l'archive des retours
@@ -354,17 +331,15 @@ pub(crate) fn archiver_retour(racine: &Path, canal: &str, retour: &Annonce, cont
             ".txt"
         }
     };
-    let publication: Vec<char> = retour.publication.iter().flat_map(|p| p.chars()).take(14).collect();
-    let horo = if publication.len() == 14 {
-        format!("{}-{}", publication[..8].iter().collect::<String>(), publication[8..].iter().collect::<String>())
-    } else {
-        maintenant.to_string()
+    let horo = match retour.publication {
+        Some(p) => horodatage_archive(p.naif()),
+        None => maintenant.to_string(),
     };
     let flux = match retour.flux.as_deref().filter(|f| !f.is_empty()) {
         Some(f) => f,
         None => "sansflux",
     };
-    let nom = format!("{}_nature{}_{}{}", horo, retour.nature, flux, ext);
+    let nom = format!("{}_nature{}_{}{}", horo, retour.nature_retour, flux, ext);
     let dest = dossier_archive(racine, canal)?.join(nom);
     if !dest.exists() {
         std::fs::write(&dest, contenu).map_err(|e| crate::etats::erreur_io(&e, &dest))?;
@@ -387,7 +362,7 @@ fn lire_vus(p: &Path) -> R<Vec<Annonce>> {
     if !p.exists() {
         return Ok(Vec::new());
     }
-    socle::forme::lire_fichier(p, "Le journal des retours vus ne se lit pas.").map_err(Echec::from)
+    socle::forme::lire_fichier(p, "Le journal des retours vus ne se lit pas.")
 }
 
 /// Ajoute au journal du canal les retours qu'il n'a pas encore vus.
@@ -400,7 +375,7 @@ fn noter_vus(ctx: &Contexte, entrees: &[Annonce], canal: &str) -> R<()> {
             deja.push(e.clone());
         }
     }
-    socle::ecriture::ecrire_json(&p, &deja, 2).map_err(Echec::from)
+    socle::ecriture::ecrire_json(&p, &deja, 2)
 }
 
 /// La cle d'un retour : son flux, sa nature, sa publication.
@@ -422,14 +397,15 @@ fn en_echec(p: Panne) -> Echec {
 }
 
 /// Le SI DSN limite l'etendue d'une recherche, on decoupe par jour.
-fn tranches(debut: i64, fin: i64) -> Vec<(i64, i64)> {
+pub fn tranches(debut: Naif, fin: Naif) -> R<Vec<(Naif, Naif)>> {
     let mut v = Vec::new();
     let mut t = debut;
     while t < fin {
-        v.push((t, (t + 86_400).min(fin)));
-        t += 86_400;
+        let suivant = if fin.depuis(t) > 86_400 { t.plus(86_400)? } else { fin };
+        v.push((t, suivant));
+        t = suivant;
     }
-    v
+    Ok(v)
 }
 
 /// LE SIMULATEUR : pose les retours des depots joues qui les attendent, et rend le nombre de
@@ -445,7 +421,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
     let avant = crate::organismes_simules::memoire(&ctx.racine)?;
     let mut memoire = avant.clone();
     let maintenant = maintenant_naif();
-    let pub_ = horodatage_archive(maintenant).replace('-', "");
+    let pub_ = socle::paris::InstantCompact::du_naif(maintenant);
     let mut faits = 0;
     for i in 0..lignes.len() {
         let l = &lignes[i];
@@ -457,13 +433,13 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
             && l.nombre_de_retours() == 0
         {
             let base = |nature: &str, verdict: Option<&str>, libelle: &str| RetourOrganisme {
-                nature: nature.into(),
+                nature_retour: nature.into(),
                 verdict: verdict.map(String::from),
                 anomalies: Some(Vec::new()),
                 dpae: None,
                 libelle: libelle.into(),
                 statut: Some("fictive".into()),
-                publication: Some(pub_.clone()),
+                publication: Some(pub_),
             };
             let mut retours: Vec<RetourOrganisme> = Vec::new();
             if quoi == Acte::Dpae {
@@ -472,7 +448,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
                 m.dpae = Some(Vec::new());
                 retours.push(m);
             } else {
-                match crate::organismes_simules::reponses_dsn(ctx, &mut memoire, &lignes, l, &flux, &pub_)? {
+                match crate::organismes_simules::reponses_dsn(ctx, &mut memoire, &lignes, l, &flux, pub_)? {
                     // Refusee : ses deux bilans, rien d'autre ; le verdict se lit dans la piece.
                     Err(bilans) => {
                         pieces.extend(bilans);
@@ -491,7 +467,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
                         production: None,
                         ops: None,
                         delegataire: None,
-                        nature: r46.nature.clone(),
+                        nature_retour: r46.nature_retour.clone(),
                         statut: r46.statut.clone(),
                         id: None,
                         url: None,
@@ -511,7 +487,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
             faits += 1;
         }
     }
-    crate::journal::ranger(&ctx.racine, rangements).map_err(|m| erreur(Classe::Disque, m))?;
+    crate::journal::ranger(&ctx.racine, rangements).map_err(|m| m.reclasser(Classe::Disque))?;
     crate::organismes_simules::garder(&ctx.racine, &avant, &memoire)?;
     // LE MEME CHEMIN QU'UNE VRAIE : l'archive dans `retours/`, puis le rangement (par `moteur`), qui signe le cadre 5 et la
     // pose dans `sorties/<mois>/envoi/`, ou l'envoi va la chercher.
@@ -524,9 +500,9 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
         for x in &pieces {
             let retour = &x.retour;
             let chemin = archiver(ctx, retour, &x.contenu, Some("application/xml"), "")?;
-            if retour.nature == crate::retours::NATURE_TAUX_PAS {
+            if retour.nature_retour == crate::retours::NATURE_TAUX_PAS {
                 suites.taux_pas.push((retour.clone(), chemin));
-            } else if retour.nature == crate::retours::NATURE_TAUX_ATMP {
+            } else if retour.nature_retour == crate::retours::NATURE_TAUX_ATMP {
                 suites.taux_atmp.push((retour.clone(), chemin));
             }
             contenus.push((crate::etats::cle_du_contenu(&retour), x.contenu.clone()));
@@ -546,35 +522,34 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
     if !l.reel() {
         return Ok(None);
     }
-    if l.nature_dsn().is_some_and(|n| !n.is_empty() && n != "01") {
+    if l.nature_dsn().is_some_and(|n| n != droit::nature_declaration::NatureDeLaDeclaration::Mensuelle) {
         return Ok(None);
     }
-    let (Some(mois), Some(fichier)) = (l.mois().map(|m| m.to_string()), l.fichier().filter(|f| !f.is_empty()).map(String::from)) else { return Ok(None) };
-    let chemin = if Path::new(&fichier).is_absolute() { PathBuf::from(&fichier) } else { ctx.racine.join("sorties").join(&mois).join(&fichier) };
+    let (Some(mois), Some(fichier)) = (l.mois(), l.fichier().filter(|f| !f.is_empty()).map(String::from)) else { return Ok(None) };
+    let chemin = if Path::new(&fichier).is_absolute() { PathBuf::from(&fichier) } else { ctx.racine.join("sorties").join(mois.to_string()).join(&fichier) };
     // Un fichier depose qui n'est plus la n'appelle pas d'attestation jouee.
     let octets = match std::fs::read(&chemin) {
         Ok(o) => o,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&chemin, &e))),
+        Err(e) => return Err(socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque)),
     };
-    crate::aer_fictive::archive(ctx, &octets, &mois, ctx.aujourdhui).map_err(Echec::from)
+    crate::aer_fictive::archive(ctx, &octets, mois, ctx.aujourdhui)
 }
 
 /// Telecharge et archive ce que les organismes ont publie. `debut` et `fin` : heures locales naives
 /// (`maintenant_naif`). `client` : le client du service, avec son mot de passe (le canal DPAE passe le sien, avec
 /// `canal = "dpae"`) ; `None` dans le monde : aucun mot de passe n'est pose, et cela se dit.
-#[allow(clippy::too_many_arguments)]
 pub fn relever_retours(
     ctx: &Contexte,
     branchement: Branchement,
-    debut: i64,
-    fin: i64,
+    debut: Naif,
+    fin: Naif,
     tout: bool,
     client: Option<Client>,
     canal: &str,
     suites: &mut Suites,
 ) -> R<Releve> {
-    let mut releve = Releve::default();
+    let mut releve = Releve::vide();
     match branchement {
         // Rien n'est parti, rien ne revient.
         Branchement::Message(_) => return Ok(releve),
@@ -592,9 +567,9 @@ pub fn relever_retours(
         return Ok(releve);
     };
     match client.authentifier() {
-        Ok(()) => releve.session_jusqu_a = client.expire_le.clone(),
+        Ok(()) => {}
         Err(p) if p.est_api() => {
-            releve.incidents.push(format!("Authentification refusee : {}", p.message));
+            releve.incidents.push(format!("Authentification refusee : {}", p.echec.phrase));
             return Ok(releve);
         }
         Err(p) => return Err(en_echec(p)),
@@ -602,7 +577,7 @@ pub fn relever_retours(
     let connus = deja_vus(ctx, canal)?;
     // UN 404 SUR UNE TRANCHE VEUT DIRE << RIEN SUR CETTE TRANCHE >> ; tout autre code arrete : un 401 ne
     // s'ameliorera pas au jour suivant.
-    for (t0, t1) in tranches(debut, fin) {
+    for (t0, t1) in tranches(debut, fin)? {
         match client.lister_retours(t0, t1) {
             Ok(trouves) => {
                 for r in trouves {
@@ -616,7 +591,7 @@ pub fn relever_retours(
                 if p.code == Some(404) {
                     continue;
                 }
-                releve.incidents.push(format!("Consultation interrompue : {}", p.message));
+                releve.incidents.push(format!("Consultation interrompue : {}", p.echec.phrase));
                 break;
             }
             Err(p) => return Err(en_echec(p)),
@@ -635,23 +610,23 @@ pub fn relever_retours(
             Ok((contenu, ctype)) => {
                 let chemin = archiver(ctx, &r, &contenu, ctype.as_deref(), canal)?;
                 // LE TAUX AT/MP NOTIFIE SE LIT DE LA NOTIFICATION (regle 1) : il se pose dans la surcouche, par les suites.
-                if canal.is_empty() && r.nature == crate::retours::NATURE_TAUX_ATMP {
+                if canal.is_empty() && r.nature_retour == crate::retours::NATURE_TAUX_ATMP {
                     suites.taux_atmp.push((r.clone(), chemin.clone()));
                 }
                 // UN SIGNALEMENT REFUSE B1-208-10 : l'ordre etait deja pris ; la conduite a tenir se dit.
-                if canal.is_empty() && r.nature == "11" {
+                if canal.is_empty() && r.nature_retour == "11" {
                     for d in crate::retours::declarations_du_bilan(&contenu)? {
                         releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_deref()));
                     }
                 }
                 // LE TAUX DU PAS SE LIT DU COMPTE RENDU (regle 1) : il va dans la fiche du salarie, par les suites.
-                if canal.is_empty() && r.nature == crate::retours::NATURE_TAUX_PAS {
+                if canal.is_empty() && r.nature_retour == crate::retours::NATURE_TAUX_PAS {
                     suites.taux_pas.push((r.clone(), chemin.clone()));
                 }
                 releve.archives.push(RetourArchive { retour: r, chemin, contenu });
             }
             Err(p) if p.est_api() => {
-                releve.incidents.push(format!("Telechargement du retour nature {} : {}", r.nature, p.message));
+                releve.incidents.push(format!("Telechargement du retour nature {} : {}", r.nature_retour, p.echec.phrase));
                 rates.push(r);
             }
             Err(p) => return Err(en_echec(p)),
@@ -675,8 +650,7 @@ pub fn relever_retours(
     // UN DEPOT QUE LES RETOURS ATTESTENT EST UN DEPOT : ce qu'un autre logiciel a depose sous le meme compte
     // entre au journal de lui-meme, et le mois qu'il declare n'est plus « en retard ».
     if canal.is_empty() {
-        let maintenant = socle::paris::maintenant()[..16].replacen('T', " ", 1);
-        suites.garder(crate::reprise_journal::reprendre_les_depots(ctx, "releve", &maintenant))?;
+        suites.garder(crate::reprise_journal::reprendre_les_depots(ctx, "releve"))?;
     }
 
     // L'AER SE RANGE DES QU'ELLE ARRIVE : la boite d'envoi la voit (les suites).
@@ -685,7 +659,7 @@ pub fn relever_retours(
             releve
                 .archives
                 .iter()
-                .filter(|a| a.retour.nature == crate::retours::NATURE_AER_SPECTACLE)
+                .filter(|a| a.retour.nature_retour == crate::retours::NATURE_AER_SPECTACLE)
                 .map(|a| a.chemin.clone()),
         );
     }
@@ -695,40 +669,39 @@ pub fn relever_retours(
 /// Les retours de l'API DPAE -- UN AUTRE SERVICE que celui de la DSN, ses archives sont dans `retours/dpae/`. `flux` : le
 /// seul chemin documente (la FAQ) quand on connait l'idflux ; sinon la consultation par plage, sur le canal `dpae`.
 /// `client` : le client Urssaf, avec son mot de passe ; `None` dans le monde : aucun mot de passe n'est pose.
-#[allow(clippy::too_many_arguments)]
 pub fn relever_retours_dpae(
     ctx: &Contexte,
     branchement: Branchement,
-    debut: i64,
-    fin: i64,
+    debut: Naif,
+    fin: Naif,
     tout: bool,
     flux: Option<&str>,
     client: Option<Client>,
     suites: &mut Suites,
 ) -> R<Releve> {
     match branchement {
-        Branchement::Message(_) => return Ok(Releve::default()),
+        Branchement::Message(_) => return Ok(Releve::vide()),
         Branchement::Simulateur => {
-            let mut r = Releve::default();
+            let mut r = Releve::vide();
             r.rattaches = rattacher_simulation(ctx, suites)?;
             return Ok(r);
         }
         Branchement::Monde => {}
     }
     let Some(mut client) = client else {
-        let mut r = Releve::default();
+        let mut r = Releve::vide();
         r.incidents.push("Mot de passe DPAE absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service urssaf`.".into());
         return Ok(r);
     };
     let Some(flux) = flux else {
         return relever_retours(ctx, branchement, debut, fin, tout, Some(client), crate::etats::DPAE, suites);
     };
-    let mut r = Releve::default();
+    let mut r = Releve::vide();
     let trouves = client.authentifier().and_then(|_| client.lister_retours_du_flux(flux));
     match trouves {
         Ok(t) => r.trouves = t,
         Err(p) if p.est_api() => {
-            r.incidents.push(format!("Consultation du flux {} : {}", flux, p.message));
+            r.incidents.push(format!("Consultation du flux {} : {}", flux, p.echec.phrase));
             return Ok(r);
         }
         Err(p) => return Err(en_echec(p)),
@@ -740,7 +713,7 @@ pub fn relever_retours_dpae(
                 let chemin = archiver(ctx, &x, &contenu, ctype.as_deref(), "dpae")?;
                 r.archives.push(RetourArchive { retour: x, chemin, contenu });
             }
-            Err(p) if p.est_api() => r.incidents.push(format!("Telechargement nature {} : {}", x.nature, p.message)),
+            Err(p) if p.est_api() => r.incidents.push(format!("Telechargement nature {} : {}", x.nature_retour, p.echec.phrase)),
             Err(p) => return Err(en_echec(p)),
         }
     }
@@ -754,9 +727,9 @@ pub fn relever_retours_dpae(
 }
 
 /// La derniere journee, comme `suivre_le_depot` et `bilan_de_la_repetition` la relevent : de hier a maintenant.
-pub fn derniere_journee() -> (i64, i64) {
+pub fn derniere_journee() -> R<(Naif, Naif)> {
     let fin = maintenant_naif();
-    (fin - 86_400, fin)
+    Ok((fin.plus(-86_400)?, fin))
 }
 
 // ------------------------------------------------------------------- l'effectif
@@ -769,7 +742,7 @@ fn lire_crm118(contenu: &[u8]) -> R<Option<Vec<Mesure118>>> {
     let mut out = Vec::new();
     for p in crm.parametres {
         let (Some(code), Some(valeur)) = (p.type_parametre, p.valeur) else { continue };
-        let v: f64 = valeur.parse().map_err(|_| erreur(Classe::Illisible, format!("nombre illisible : '{}'", valeur)))?;
+        let v = socle::num::dec_texte(&valeur).map_err(|_| erreur(Classe::Illisible, format!("nombre illisible : '{}'", valeur)))?;
         out.push(Mesure118 { code, valeur: v, debut: p.effet, fin: p.fin, calcule_le: p.calcule_le });
     }
     Ok(Some(out))
@@ -778,10 +751,10 @@ fn lire_crm118(contenu: &[u8]) -> R<Option<Vec<Mesure118>>> {
 /// Un effectif qu'un compte rendu de nature 118 communique : son code, sa valeur, sa periode, le jour de son calcul.
 struct Mesure118 {
     code: String,
-    valeur: f64,
-    debut: Option<String>,
-    fin: Option<String>,
-    calcule_le: Option<String>,
+    valeur: Decimal,
+    debut: Option<Jour>,
+    fin: Option<Jour>,
+    calcule_le: Option<InstantEcrit>,
 }
 
 /// Le code de l'effectif de securite sociale (art. L. 130-1 CSS), celui des seuils de cotisation.
@@ -806,13 +779,14 @@ type Annees = std::collections::BTreeMap<String, std::collections::BTreeMap<Stri
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EffectifEcrit {
-    valeur: f64,
+    #[serde(serialize_with = "socle::forme::ecrire_a_virgule", deserialize_with = "socle::forme::court")]
+    valeur: Decimal,
     #[serde(skip_serializing_if = "Option::is_none")]
-    calcule_le: Option<String>,
+    calcule_le: Option<InstantEcrit>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    dit_le: Option<String>,
+    dit_le: Option<Jour>,
 }
 
 fn chemin_des_effectifs(racine: &Path) -> PathBuf {
@@ -825,14 +799,14 @@ fn effectifs_lus(racine: &Path) -> R<Option<FichierEffectifs>> {
     if !p.exists() {
         return Ok(None);
     }
-    socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie ne se lit pas.").map(Some).map_err(|m| erreur(Classe::Illisible, m))
+    socle::forme::lire_fichier(&p, "Le fichier des effectifs de la compagnie ne se lit pas.").map(Some).map_err(|m| m.reclasser(Classe::Illisible))
 }
 
 /// Ecrit `config/effectifs.json` s'il change : les effectifs par annee et par code.
 fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: Annees) -> R<()> {
     let donnees = FichierEffectifs { quoi: QUOI_EFFECTIFS.to_string(), annees };
     if existant != Some(&donnees) {
-        socle::ecriture::ecrire_json(&chemin_des_effectifs(racine), &donnees, 2).map_err(|m| erreur(Classe::Disque, m))?;
+        socle::ecriture::ecrire_json(&chemin_des_effectifs(racine), &donnees, 2).map_err(|m| m.reclasser(Classe::Disque))?;
     }
     Ok(())
 }
@@ -861,11 +835,11 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     let lecture = match std::fs::read_dir(&dossier) {
         Ok(l) => l,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e))),
+        Err(e) => return Err(socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque)),
     };
     let mut noms: Vec<String> = Vec::new();
     for e in lecture {
-        let nom = e.map_err(|x| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &x)))?.file_name().to_string_lossy().into_owned();
+        let nom = e.map_err(|x| socle::echec::du_disque(&dossier, &x).reclasser(Classe::Disque))?.file_name().to_string_lossy().into_owned();
         if nom.ends_with(".xml") && crate::retours::archive_de_nature(&nom, "118") {
             noms.push(nom);
         }
@@ -874,15 +848,11 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     let mut annees = Annees::new();
     for nom in &noms {
         let p = dossier.join(nom);
-        let octets = std::fs::read(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
+        let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         let Some(mesures) = lire_crm118(&octets)? else { continue };
         for m in mesures {
-            let Some(ref_an) = m.debut.as_ref().or(m.fin.as_ref()) else { continue };
-            let an: String = ref_an.chars().take(4).collect();
-            if an.is_empty() || !an.chars().all(|c| c.is_ascii_digit()) {
-                continue;
-            }
-            let codes = annees.entry(an).or_default();
+            let Some(ref_an) = m.debut.or(m.fin) else { continue };
+            let codes = annees.entry(format!("{:04}", ref_an.an)).or_default();
             if codes.get(&m.code).is_some_and(|deja| deja.calcule_le > m.calcule_le) {
                 continue;
             }
@@ -903,14 +873,14 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
 /// `atelier/reference/sources/code-de-la-securite-sociale/LISEZ-MOI.md`, « L'effectif au sens de la sécurité sociale ») :
 /// une compagnie venue d'un autre logiciel n'a pas les 118 de ses annees passees. `Ok(false)` : un 118 de cette annee
 /// est deja la, et c'est lui qui vaut ; rien n'est ecrit.
-pub fn poser_effectif(racine: &Path, an: i32, valeur: f64, le: &str) -> R<bool> {
+pub fn poser_effectif(racine: &Path, an: i32, valeur: Decimal, le: Jour) -> R<bool> {
     let existant = effectifs_lus(racine)?;
     let mut annees: Annees = existant.iter().flat_map(|f| f.annees.clone()).collect();
     let codes = annees.entry(an.to_string()).or_default();
     if codes.get(A01).is_some_and(|a| a.dit_le.is_none()) {
         return Ok(false);
     }
-    codes.insert(A01.to_string(), EffectifEcrit { valeur, calcule_le: None, source: None, dit_le: Some(le.to_string()) });
+    codes.insert(A01.to_string(), EffectifEcrit { valeur, calcule_le: None, source: None, dit_le: Some(le) });
     ecrire_effectifs(racine, existant.as_ref(), annees)?;
     Ok(true)
 }

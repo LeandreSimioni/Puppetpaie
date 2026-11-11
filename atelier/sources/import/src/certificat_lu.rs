@@ -27,17 +27,18 @@ use std::path::Path;
 
 use socle::date::Jour;
 use socle::num::Decimal;
+use crate::releve::Mesure;
 
 /// Deux mots sont sur le meme rang quand leurs milieux verticaux sont a moins de cela.
-const TOLERANCE: f64 = 4.0;
+const TOLERANCE: Mesure = Mesure::entier(4);
 
 /// Un mot de la page et sa boite.
 #[derive(Clone, Debug)]
 struct Mot {
     texte: String,
-    x0: f64,
-    cy: f64,
-    y0: f64,
+    x0: Mesure,
+    cy: Mesure,
+    y0: Mesure,
 }
 
 /// Les jetons d'une rubrique : minuscules, sans accents, tout ce qui n'est ni lettre ni chiffre lu comme un blanc
@@ -74,7 +75,7 @@ const RANGS: [(&str, &str, &[&str]); 13] = [
 const SUIVANTES: [(&str, &str); 2] = [("fin", "fin"), ("brut", "salaire brut")];
 
 /// Un certificat d'emploi lu.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Certificat {
     pub page: usize,
     /// Quatorze chiffres.
@@ -136,8 +137,8 @@ pub struct PageCertificat {
 }
 
 /// Les pages du PDF qui sont des certificats d'emploi Congés Spectacles, lues. Les autres pages n'y sont pas.
-pub fn lire(chemin: &Path) -> Result<Vec<PageCertificat>, String> {
-    let r = crate::releve::du_pdf(chemin).map_err(|e| e.phrase())?;
+pub fn lire(chemin: &Path) -> socle::echec::R<Vec<PageCertificat>> {
+    let r = crate::releve::du_pdf(chemin).map_err(crate::releve::Refus::en_echec)?;
     Ok(r.releve.pages.iter().enumerate().filter_map(|(i, p)| lire_page(p, i + 1)).collect())
 }
 
@@ -148,15 +149,15 @@ fn mots_de(p: &crate::releve::PageRelevee) -> Vec<Mot> {
         if texte.is_empty() {
             continue;
         }
-        let [x0, y0, _, y1] = m.rect;
-        mots.push(Mot { texte, x0, cy: (y0 + y1) / 2.0, y0 });
+        let [x0, y0, _, y1] = m.rect.connue();
+        mots.push(Mot { texte, x0, cy: (y0 + y1) / 2, y0 });
     }
     mots
 }
 
 /// Les mots en rangs, de haut en bas, chaque rang de gauche a droite.
 fn en_rangs(mut mots: Vec<Mot>) -> Vec<Vec<Mot>> {
-    mots.sort_by(|a, b| a.cy.total_cmp(&b.cy).then(a.x0.total_cmp(&b.x0)));
+    mots.sort_by(|a, b| a.cy.cmp(&b.cy).then(a.x0.cmp(&b.x0)));
     let mut rangs: Vec<Vec<Mot>> = Vec::new();
     for m in mots {
         match rangs.last_mut() {
@@ -165,7 +166,7 @@ fn en_rangs(mut mots: Vec<Mot>) -> Vec<Vec<Mot>> {
         }
     }
     for r in rangs.iter_mut() {
-        r.sort_by(|a, b| a.x0.total_cmp(&b.x0));
+        r.sort_by(|a, b| a.x0.cmp(&b.x0));
     }
     rangs
 }
@@ -224,10 +225,8 @@ fn valeurs(r: &[Mot]) -> Vec<(&'static str, Vec<String>)> {
         };
         let premier = js.get(*debut).map(|j| j.1);
         let dernier = if fin_jeton > *debut { js.get(fin_jeton - 1).map(|j| j.1) } else { None };
-        let mots = match (premier, dernier) {
-            (Some(a), Some(b)) if b >= a => r[a..=b].iter().map(|m| m.texte.clone()).collect(),
-            _ => Vec::new(),
-        };
+        // Les mots du premier au dernier jeton de la case ; une case sans jeton n'en a aucun.
+        let mots: Vec<String> = premier.zip(dernier).filter(|(a, b)| b >= a).into_iter().flat_map(|(a, b)| r[a..=b].iter().map(|m| m.texte.clone())).collect();
         out.push((c, mots));
     }
     out
@@ -292,14 +291,48 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
     if !js.iter().any(|j| contient(j, "conges spectacles")) || !js.iter().any(|j| contient(j, "nb jours ou cachets")) || !js.iter().any(|j| contient(j, "salaire brut")) {
         return None;
     }
-    let mut c = Certificat { page, ..Default::default() };
+    let mut c = Certificat {
+        page,
+        siret: None,
+        compte: None,
+        employeur: None,
+        numero: None,
+        nir: None,
+        cle_nir: None,
+        nom: None,
+        prenom: None,
+        nom_usage: None,
+        pseudonyme: None,
+        nom_complet: None,
+        adresse: Vec::new(),
+        emploi: None,
+        cadre: None,
+        debut: None,
+        fin: None,
+        nombre: None,
+        base_conge: None,
+        brut: None,
+        signe_le: None,
+    };
     let mut fautes: Vec<String> = Vec::new();
     // Le bloc d'adresse : les rangs au-dessus du titre, le premier est le nom.
-    let titre_y = rangs[titre].iter().map(|m| m.y0).fold(f64::MAX, f64::min);
+    let titre_y = rangs[titre].iter().map(|m| m.y0).fold(Mesure::MAX, Mesure::min);
     let bloc: Vec<String> = rangs[..titre].iter().filter(|r| r.iter().all(|m| m.y0 < titre_y)).map(|r| r.iter().map(|m| m.texte.as_str()).collect::<Vec<_>>().join(" ")).collect();
     if let Some((nom, reste)) = bloc.split_first() {
         c.nom_complet = Some(nom.clone());
         c.adresse = reste.to_vec();
+    }
+    // Une case lue qui porte un caractere que rien ne dit ne se lit pas (ISO 32000-1, 9.10.2) : le bloc d'adresse, ou
+    // les rubriques d'un rang.
+    let cy_de = |u: &crate::releve::InconnuReleve| (u.rect.connue()[1] + u.rect.connue()[3]) / 2;
+    if let Some(u) = p.inconnus.iter().find(|u| u.rect.connue()[3] < titre_y) {
+        fautes.push(u.phrase(page, "nom et adresse du salarié"));
+    }
+    for r in &rangs[titre..] {
+        let lues: Vec<&str> = valeurs(r).iter().map(|(cle, _)| *cle).collect();
+        if let (false, Some(u)) = (lues.is_empty(), p.inconnus.iter().find(|u| (cy_de(u) - r[0].cy).abs() <= TOLERANCE)) {
+            fautes.push(u.phrase(page, &lues.join(", ")));
+        }
     }
     for r in &rangs[titre..] {
         for (cle, v) in valeurs(r) {

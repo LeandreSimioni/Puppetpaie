@@ -1,3 +1,6 @@
+[lints]
+workspace = true
+
 [package]
 name = "documents"
 version = "0.1.0"
@@ -15,5 +18,5 @@ rust_decimal = { workspace = true }
 serde = { workspace = true }
 # Le PDF : la description part a la fabrique dans le meme processus.
 fabrique-pdf = { path = "../fabrique-pdf" }
-# Les classeurs .xlsx des etats : ecriture seule.
-rust_xlsxwriter = "0.90"
+# Les classeurs .xlsx des etats (`classeur`) : une archive zip de XML.
+zip = { workspace = true }

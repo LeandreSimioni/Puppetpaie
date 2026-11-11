@@ -11,8 +11,8 @@
 use moteur::commandes::actes::{refuser_si_pas_redirige, Organisme};
 use moteur::commandes::analyse::{Args, Opt, Spec};
 use moteur::commandes::Cadre;
-use socle::date::Jour;
 use socle::echec::Echec;
+use socle::paris::Naif;
 
 pub static SPEC: Spec = Spec {
     commande: "retours",
@@ -31,30 +31,19 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     super::code(faire(cadre, args))
 }
 
-const JOUR: i64 = 86_400;
-
-/// Un jour en heure locale naive (secondes), a minuit.
-fn secondes(j: &Jour) -> i64 {
-    (j.ordinal() - 719_163) * JOUR
-}
-
-fn jour_de(t: i64) -> Result<String, Echec> {
-    match Jour::depuis_jours_unix(t.div_euclid(JOUR)) {
-        Some(j) => Ok(j.jj_mm_aaaa()),
-        None => Err(Echec { classe: Some(socle::echec::Classe::Illisible), message: format!("{} secondes ne tombent pas dans le calendrier.", t) }),
-    }
-}
-
 /// La plage : `--depuis` et `--jusqu-a` (inclus), par defaut les 30 derniers jours.
-fn plage(args: &Args) -> Result<(i64, i64), Echec> {
-    let lire = |t: &str| Jour::lire(t).map_err(|m| Echec { classe: Some(socle::echec::Classe::Illisible), message: m });
-    let fin = match args.texte("jusqu-a") {
-        Some(j) => secondes(&lire(j)?) + JOUR - 1,
+fn plage(args: &Args) -> Result<(Naif, Naif), Echec> {
+    let a = |t: &socle::ligne::Argument, h: i64, m: i64, s: i64| {
+        let j = t.jour().map_err(|e| e.reclasser(socle::echec::Classe::Illisible))?;
+        Naif::du_jour(j, h, m, s).ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Illisible, socle::date::HORS_CALENDRIER))
+    };
+    let fin = match args.tape("jusqu-a") {
+        Some(j) => a(j, 23, 59, 59)?,
         None => socle::paris::maintenant_naif(),
     };
-    let debut = match args.texte("depuis") {
-        Some(j) => secondes(&lire(j)?),
-        None => fin - 30 * JOUR,
+    let debut = match args.tape("depuis") {
+        Some(j) => a(j, 0, 0, 0)?,
+        None => fin.plus(-30 * 86_400)?,
     };
     Ok((debut, fin))
 }
@@ -68,8 +57,8 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let environnement = super::avec_defaut(args, "environnement")?;
     let ou = if dpae { "DPAE".to_string() } else { format!("DSN ({})", environnement) };
     match flux {
-        Some(f) => dire!("Retours {}, du {} au {}, flux {}.", ou, jour_de(debut)?, jour_de(fin)?, f),
-        None => dire!("Retours {}, du {} au {}.", ou, jour_de(debut)?, jour_de(fin)?),
+        Some(f) => dire!("Retours {}, du {} au {}, flux {}.", ou, debut.jour().jj_mm_aaaa(), fin.jour().jj_mm_aaaa(), f),
+        None => dire!("Retours {}, du {} au {}.", ou, debut.jour().jj_mm_aaaa(), fin.jour().jj_mm_aaaa()),
     }
     let tout = args.drapeau("tout");
     // La releve de la DPAE prend le flux s'il est dit ; sans lui, elle releve par plage.
@@ -82,16 +71,16 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         dire!("  {}", i);
     }
     let mut trouves: Vec<&envois::retours::Annonce> = r.trouves.iter().filter(|x| flux.is_none() || x.flux.as_deref() == flux).collect();
-    trouves.sort_by_key(|x| x.publication.clone());
+    trouves.sort_by_key(|x| x.publication);
     dire!("{} retour(s), dont {} nouveau(x).\n", trouves.len(), r.nouveaux.len());
     for x in trouves {
         dire!(
             "  {} {}  nature {:<4} {:<8} {}  flux {}",
             if r.nouveaux.contains(x) { "NEUF" } else { "    " },
-            super::dit(envois::releve_retours::date_publication(x).as_deref()),
-            x.nature,
+            super::dit(envois::releve_retours::jour_de_publication_dit(x).as_deref()),
+            x.nature_retour,
             super::dit(x.statut.as_deref()),
-            envois::retours::libelle_nature(&x.nature),
+            envois::retours::libelle_nature(&x.nature_retour),
             super::dit(x.flux.as_deref())
         );
     }

@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 
+use droit::assiette::Assiette;
 use droit::fiche::Lue;
 
 use socle::forme::NombreLu;
@@ -15,13 +16,14 @@ use droit::reduction::{reduction_au_coefficient, reduction_generale};
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use crate::{Avis, Chiffre, Engagement, LignePaie};
-use socle::num::{dec_f64, eur2, Decimal, Resultat};
+use socle::echec::{refus, R};
+use socle::num::{court, eur2, Decimal};
 
 
 /// Le jour ou l'avenant de la saisie du mois decoupe la paie (`droit::periodes::jour_de_l_avenant`).
-fn jour_de_l_avenant(eng: &Engagement) -> Resultat<Option<Jour>> {
+fn jour_de_l_avenant(eng: &Engagement) -> R<Option<Jour>> {
     let avant = eng.avant.as_ref().map(|a| droit::periodes::TermesDAvant { salaire_mensuel: a.salaire_mensuel.is_some(), quotite_contrat: a.quotite_contrat.is_some() });
-    droit::periodes::jour_de_l_avenant(avant, eng.date_modification.as_deref(), eng.debut_periode()?, eng.fin_periode()?, &eng.qui())
+    droit::periodes::jour_de_l_avenant(avant, eng.date_modification, eng.debut_periode(), eng.fin_periode(), &eng.qui())
 }
 
 /// Les bornes des periodes elementaires de la paie de `eng` : une seule (la periode payee) pour un mois d'un seul
@@ -29,8 +31,8 @@ fn jour_de_l_avenant(eng: &Engagement) -> Resultat<Option<Jour>> {
 /// jours ou sa fiche change une valeur qui choisit la pile ou que le bloc 40 porte avec une rubrique en bloc 41
 /// (`emplois::jours_de_changement`), et au jour de l'avenant que la saisie date en cours de mois avec ses termes
 /// d'avant (`jour_de_l_avenant`).
-pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> Resultat<Vec<(Jour, Jour)>> {
-    let (debut, fin) = (eng.debut_periode()?, eng.fin_periode()?);
+pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> R<Vec<(Jour, Jour)>> {
+    let (debut, fin) = (eng.debut_periode(), eng.fin_periode());
     if eng.periode.is_some() || !eng.nat()?.mensuelle() {
         return Ok(vec![(debut, fin)]);
     }
@@ -49,12 +51,12 @@ pub(crate) fn bornes(ctx: &Contexte, eng: &Engagement) -> Resultat<Vec<(Jour, Jo
 /// Refus : une paie qui porte autre chose que son salaire mensuel. Une prime, un conge, une absence, une prime
 /// d'anciennete ou un solde de tout compte se rattachent a une periode, ou a l'autre, ou aux deux, et rien ne le dit
 /// encore ; le logiciel ne choisit pas.
-pub(crate) fn engagements_des_periodes(ctx: &Contexte, eng: &Engagement, bornes: &[(Jour, Jour)]) -> Resultat<Vec<Engagement>> {
+pub(crate) fn engagements_des_periodes(ctx: &Contexte, eng: &Engagement, bornes: &[(Jour, Jour)]) -> R<Vec<Engagement>> {
     let ligne = match eng.lignes.as_slice() {
         [l] if l.rubrique() == "mois" => l,
         _ => {
             let autres: Vec<String> = eng.lignes.iter().filter(|l| l.rubrique() != "mois").map(|l| l.rubrique().to_string()).collect();
-            return Err(format!(
+            return Err(socle::refus!(
                 "{} : la paie de ce mois se decoupe en periodes elementaires (un changement de statut, de categorie ou de \
 duree du travail le {}), et elle porte {} en plus du salaire mensuel. A quelle periode une telle ligne se rattache (avant \
 le changement, apres, ou les deux) ne se lit nulle part dans la saisie, et le logiciel ne decoupe encore que le salaire \
@@ -73,12 +75,11 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         Some(a) => (terme(&a.salaire_mensuel, "salaire_mensuel")?, terme(&a.quotite_contrat, "quotite_contrat")?),
         None => (salaire_apres, quotite_apres),
     };
-    let fin_mois = eng.fin_mois()?;
-    let debut_mois = Jour::nouveau(fin_mois.an, fin_mois.mois, 1).ok_or_else(|| socle::echec::cle("Le moteur ne calcule pas ce mois : le signaler au développeur.", "engagements_des_periodes"))?;
+    let (debut_mois, fin_mois) = (eng.debut_mois(), eng.fin_mois());
     // Le contrat borne au mois : la regle d'un premier ou d'un dernier mois incomplet le regarde, pas la coupure.
-    let (debut, fin) = (eng.debut_periode()?, eng.fin_periode()?);
+    let (debut, fin) = (eng.debut_periode(), eng.fin_periode());
     let regle = crate::conges::regle_du_mois_incomplet(ctx, &eng.salarie, &debut, &fin, &debut_mois, &fin_mois)?;
-    let au = eng.nat()?.au_mois().ok_or_else(|| format!("{} : ses periodes elementaires sont celles d'un contrat paye au mois, et le sien ne l'est pas : le signaler au développeur.", eng.qui()))?;
+    let au = eng.nat()?.au_mois().ok_or_else(|| socle::refus!("{} : ses periodes elementaires sont celles d'un contrat paye au mois, et le sien ne l'est pas : le signaler au développeur.", eng.qui()))?;
     let horaire = crate::conges::horaire_du_mois(ctx, &au, &eng.salarie, &eng.debut, &debut_mois, &fin_mois)?;
     let mut out = Vec::new();
     for (d, f) in bornes {
@@ -87,28 +88,28 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         let part = droit::periodes::part_du_mois(d, f, &fin_mois, regle, &horaire)?;
         let mut e = eng.clone();
         e.periode = Some((*d, *f));
-        e.quotite_contrat = Some(crate::conges::flot(quotite));
-        let (q, h) = (crate::conges::flot(part.fraction), crate::conges::flot(eur2(quotite)));
+        e.quotite_contrat = Some(court(quotite));
+        let (q, h) = (court(part.fraction), court(eur2(quotite)));
         e.lignes = vec![LignePaie::Composee(crate::ligne::Composee {
             rubrique: "mois".to_string(),
-            quantite: dec_f64(q)?,
-            taux: dec_f64(crate::conges::flot(salaire))?,
-            heures: Some(dec_f64(h)?),
+            quantite: q,
+            taux: court(salaire),
+            heures: Some(h),
             precision: part.sur_le_bulletin(droit::conges::heures_par_jour(quotite, &horaire.jours)),
             dates: Vec::new(),
         })];
         // Les heures que la DSN mesure (S21.G00.53, « heures » d'un contrat paye au mois) : celles de la ligne de la
         // periode, comme `Engagement::nouveau` les tire des lignes du mois.
         let heures = droit::catalogue::rubrique(&ctx.racine, "mois", &ctx.lue_au)?.heures(q, Some(h));
-        e.heures = if heures != 0.0 { Some(heures) } else { None };
+        e.heures = if !heures.is_zero() { Some(heures) } else { None };
         out.push(e);
     }
     Ok(out)
 }
 
-/// Ajoute `x` a `cle` de `m`.
-fn cumuler(m: &mut BTreeMap<String, Decimal>, cle: &str, x: Decimal) {
-    *m.entry(cle.to_string()).or_insert_with(|| Decimal::new(0, 2)) += x;
+/// Ajoute `x` a l'assiette `a` de `m`.
+fn cumuler(m: &mut BTreeMap<Assiette, Decimal>, a: Assiette, x: Decimal) {
+    *m.entry(a).or_insert_with(|| Decimal::new(0, 2)) += x;
 }
 
 /// Remplace la reduction generale de la periode `p` par `rg` : sa ligne, le total patronal et le cout employeur.
@@ -152,11 +153,11 @@ fn statut_dit(s: Option<droit::fiche::Statut>) -> &'static str {
 ///
 /// Refus : un statut artiste / technicien qui change en cours de mois (deux regimes d'assiette, L. 242-10 ; pas un cas
 /// que le lot porte).
-pub(crate) fn assembler(ctx: &Contexte, eng: &Engagement, mut parts: Vec<Paie>) -> Resultat<Paie> {
-    let derniere = parts.last().ok_or("assembler : aucune periode")?;
+pub(crate) fn assembler(ctx: &Contexte, eng: &Engagement, mut parts: Vec<Paie>) -> R<Paie> {
+    let derniere = parts.last().ok_or_else(|| refus("assembler : aucune periode"))?;
     let statut_du_mois = statut(derniere);
     if let Some(p) = parts.iter().find(|p| statut(p) != statut_du_mois) {
-        return Err(format!(
+        return Err(socle::refus!(
             "{} : le statut du salarie passe de << {} >> a << {} >> en cours de mois. Artiste et technicien n'ont pas les \
 memes assiettes (taux reduits, plafond, CSS L. 242-10) : la paie d'un tel mois n'est pas decoupee par le logiciel. \
 Dater le changement au premier jour d'un mois sur la fiche.",
@@ -170,19 +171,19 @@ Dater le changement au premier jour d'un mois sur la fiche.",
     // periodes n'est porte par aucun texte depose. `calcul::dfs_applicable` refuse deja la DFS d'un contrat paye au
     // mois ; ce refus-ci la garde si cela changeait.
     if let Some(p) = parts.iter().find(|p| p.deduction_forfaitaire.is_some()) {
-        return Err(format!(
+        return Err(socle::refus!(
             "{} : la paie de ce mois se decoupe en periodes elementaires, et la periode du {} porte une deduction \
 forfaitaire specifique. Ni la reduction generale sous deduction (bornee a 130 %), ni le plafond annuel de 7 600 EUR ne se \
 partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
             eng.qui(),
-            p.engagement.debut_periode()?.jj_mm_aaaa()
+            p.engagement.debut_periode().jj_mm_aaaa()
         ));
     }
     // La reduction generale du mois, puis sa part dans chaque periode.
     let zero = Decimal::new(0, 2);
     let brut_mois = parts.iter().fold(zero, |a, p| a + p.brut);
     let heures_mois = parts.iter().fold(Decimal::ZERO, |a, p| a + p.heures_travaillees);
-    let caisse = parts.iter().any(|p| p.bases.get(crate::calcul::BRUT_CS).is_some_and(|b| *b > Decimal::ZERO));
+    let caisse = parts.iter().any(|p| p.bases.get(&Assiette::BrutCs).is_some_and(|b| *b > Decimal::ZERO));
     let pile = pile_de_la_paie(ctx, derniere)?;
     let du_mois = reduction_generale(pile.reduction_generale.as_ref(), statut_du_mois.map(|s| s.as_str()), brut_mois, heures_mois, caisse)?;
     for p in parts.iter_mut() {
@@ -195,11 +196,11 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
         poser_reduction(p, rg);
     }
 
-    let derniere = parts.last().ok_or("assembler : aucune periode")?;
+    let derniere = parts.last().ok_or_else(|| refus("assembler : aucune periode"))?;
     let mut e = eng.clone();
     e.lignes = parts.iter().flat_map(|p| p.engagement.lignes.iter().cloned()).collect();
-    let heures: f64 = parts.iter().filter_map(|p| p.engagement.heures).sum();
-    e.heures = if heures != 0.0 { Some(heures) } else { None };
+    let heures: Decimal = parts.iter().filter_map(|p| p.engagement.heures).sum();
+    e.heures = if !heures.is_zero() { Some(court(heures)) } else { None };
     let somme = |f: &dyn Fn(&Paie) -> Decimal| parts.iter().fold(zero, |a, p| a + f(p));
     let mut paie = Paie::nouveau(
         e,
@@ -256,7 +257,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     let mut bases = BTreeMap::new();
     for p in &parts {
         for (k, v) in &p.bases {
-            cumuler(&mut bases, k, *v);
+            cumuler(&mut bases, *k, *v);
         }
     }
     m.bases = bases;
@@ -294,7 +295,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
                 p.brut
             ))
         })
-        .collect::<Resultat<_>>()?;
+        .collect::<R<_>>()?;
     m.avertissements.push(Avis {
         info: true,
         texte: format!(

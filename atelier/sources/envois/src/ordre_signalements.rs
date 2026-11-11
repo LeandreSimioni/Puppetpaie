@@ -29,18 +29,20 @@ use droit::fiche::Lue as _;
 use std::path::Path;
 
 use droit::contexte::Contexte;
+use droit::nature_declaration::NatureDeLaDeclaration;
 use socle::echec::{erreur, Classe};
 use crate::branchement::Branchement;
 use crate::releve_retours::{self, Client};
 use crate::suites::Suites;
 use socle::echec::Echec;
+use socle::mois::Mois;
 
 /// Trois mois de releve : la retention des documents de la plate-forme (guide API v6.8, §8.2). 92 jours couvrent trois
 /// mois civils, quels qu'ils soient.
 pub const JOURS_DE_RELEVE: i64 = 92;
 
 /// Ce que le moteur sait du dernier ordre pris, et ce qu'il doit en dire.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct OrdreConnu {
     /// Le plus grand ordre de signalement connu, 0 si aucun : le prochain signalement part au suivant.
     pub dernier: i64,
@@ -55,7 +57,7 @@ fn siren(ent: &droit::fiche::ChampsEntreprise) -> Result<String, Echec> {
     match (ent.siren.portee(), ent.siret.portee()) {
         (Some(s), _) => Ok(s.to_string()),
         (None, Some(siret)) => Ok(siret.chars().take(9).collect()),
-        (None, None) => Err(Echec::from(socle::fichiers::absent("siren"))),
+        (None, None) => Err(socle::fichiers::absent("siren")),
     }
 }
 
@@ -65,7 +67,7 @@ fn siren(ent: &droit::fiche::ChampsEntreprise) -> Result<String, Echec> {
 pub fn dernier_ordre_des_bilans(racine: &Path, siren: &str) -> Result<Option<(i64, String)>, Echec> {
     let mut dernier: Option<(i64, String)> = None;
     for (nom, p) in bilans_archives(racine)? {
-        let octets = std::fs::read(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
+        let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         // Le flux suit la nature dans le nom, avant l'extension.
         let Some(apres) = nom.splitn(3, '_').nth(2) else { continue };
         let flux = match apres.rsplit_once('.') {
@@ -73,7 +75,7 @@ pub fn dernier_ordre_des_bilans(racine: &Path, siren: &str) -> Result<Option<(i6
             None => apres,
         };
         for d in crate::retours::declarations_du_bilan(&octets)? {
-            let signalement = d.nature.as_deref().is_some_and(|n| crate::depot::SIGNALEMENTS.contains(&n));
+            let signalement = d.nature_declaration.is_some_and(NatureDeLaDeclaration::signalement_envoye);
             if !signalement || d.siren.as_deref() != Some(siren) {
                 continue;
             }
@@ -92,11 +94,11 @@ fn bilans_archives(racine: &Path) -> Result<Vec<(String, std::path::PathBuf)>, E
     let lecture = match std::fs::read_dir(&dossier) {
         Ok(l) => l,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(erreur(Classe::Disque, socle::echec::du_disque(&dossier, &e))),
+        Err(e) => return Err(socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque)),
     };
     let mut noms = Vec::new();
     for e in lecture {
-        let nom = e.map_err(|x| erreur(Classe::Disque, socle::echec::du_disque(&dossier, &x)))?.file_name().to_string_lossy().into_owned();
+        let nom = e.map_err(|x| socle::echec::du_disque(&dossier, &x).reclasser(Classe::Disque))?.file_name().to_string_lossy().into_owned();
         let p = dossier.join(&nom);
         if crate::retours::archive_de_nature(&nom, "11") && p.is_file() {
             noms.push((nom, p));
@@ -110,17 +112,17 @@ fn bilans_archives(racine: &Path) -> Result<Vec<(String, std::path::PathBuf)>, E
 /// lit pas (son fichier a part).
 fn ordre_lu(ordre: Option<&str>, ou: &Path) -> Result<Option<i64>, Echec> {
     ordre
-        .map(|o| o.trim().parse::<i64>().map_err(|_| erreur(Classe::Illisible, socle::echec::du_disque(&ou, &format!("Un numéro d'ordre de déclaration ne se lit pas : {}.", o)))))
+        .map(|o| o.trim().parse::<i64>().map_err(|_| socle::echec::du_disque(&ou, &format!("Un numéro d'ordre de déclaration ne se lit pas : {}.", o)).reclasser(Classe::Illisible)))
         .transpose()
 }
 
 /// Le plus grand ordre des signalements d'ESSAI que ce dossier a deposes (`detail.ordre` des lignes `dsn` en test) :
 /// la base d'essai les garde, et le meme fichier part ensuite en reel. Une ligne qui ne dit pas son ordre n'en donne pas.
 fn dernier_ordre_des_essais(racine: &Path) -> Result<i64, Echec> {
-    let lignes = crate::journal::lire(racine, Some(crate::journal::Acte::Dsn), None, false).map_err(|m| erreur(Classe::Refuse, m))?;
+    let lignes = crate::journal::lire(racine, Some(crate::journal::Acte::Dsn), None, false).map_err(|m| m.reclasser(Classe::Refuse))?;
     let mut dernier = 0;
     for e in lignes.iter().filter_map(crate::journal::Ligne::dsn).filter(|e| e.mode == crate::journal::Mode::Test) {
-        if !e.detail.nature.as_deref().is_some_and(|n| crate::depot::SIGNALEMENTS.contains(&n)) {
+        if !e.detail.nature_declaration.is_some_and(NatureDeLaDeclaration::signalement_envoye) {
             continue;
         }
         if let Some(o) = ordre_lu(e.detail.ordre.as_deref(), &crate::journal::chemin(racine))? {
@@ -136,20 +138,21 @@ fn dernier_ordre_des_essais(racine: &Path) -> Result<i64, Echec> {
 /// ordre ; essais). `client` : le client net-entreprises, avec le mot de passe de consultation que `moteur` a pris (un test
 /// le pointe sur un faux serveur) ; `None` : aucun mot de passe, la plate-forme ne se lit pas et cela se dit.
 pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Option<Client>, suites: &mut Suites) -> Result<OrdreConnu, Echec> {
-    let reels = crate::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|m| erreur(Classe::Refuse, m))?;
+    let reels = crate::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|m| m.reclasser(Classe::Refuse))?;
     let journal = reels.max(dernier_ordre_des_essais(&ctx.racine)?);
     let mut avertissements = Vec::new();
 
     // LA PLATE-FORME : une compagnie fictive n'en a pas ; ailleurs, ce qui empeche de la lire se dit.
     let joue = client.is_none() && branchement.joue();
-    let lue: Result<(), String> = if joue {
-        Ok(())
+    // Ce qui empeche de la lire, en une phrase ; `None` : elle est lue.
+    let pas_lue: Option<String> = if joue {
+        None
     } else {
         let fin = socle::paris::maintenant_naif();
-        match releve_retours::relever_retours(ctx, branchement, fin - JOURS_DE_RELEVE * 86_400, fin, false, client, releve_retours::CANAL_DSN, suites) {
-            Ok(r) if r.incidents.is_empty() => Ok(()),
-            Ok(r) => Err(releve_retours::incidents_en_phrase(&r)),
-            Err(e) => Err(e.message),
+        match fin.plus(-JOURS_DE_RELEVE * 86_400).and_then(|debut| releve_retours::relever_retours(ctx, branchement, debut, fin, false, client, releve_retours::CANAL_DSN, suites)) {
+            Ok(r) if r.incidents.is_empty() => None,
+            Ok(r) => Some(releve_retours::incidents_en_phrase(&r)),
+            Err(e) => Some(e.phrase),
         }
     };
 
@@ -158,7 +161,7 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
         Some((plateforme, _)) => journal.max(*plateforme),
         None => journal,
     };
-    if let Err(pourquoi) = lue {
+    if let Some(pourquoi) = pas_lue {
         avertissements.push(format!(
             "La plate-forme n'a pas pu etre consultee ({}) : l'ordre {} suit le journal de ce dossier et les retours deja archives, qui ne savent que ce que ce dossier a depose et releve. Un signalement depose d'ailleurs sous le meme SIREN (un autre poste, une copie, un essai) peut avoir pris cet ordre : la plate-forme le refuserait (B1-208-10). Pour en etre sur : relever les retours, puis refaire le signalement.",
             pourquoi.trim_end_matches('.'),
@@ -180,7 +183,7 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
 /// La conduite a tenir devant un signalement refuse B1-208-10, ou `None` si ce bilan n'en est pas un. Le bilan ne dit
 /// pas QUEL signalement tient deja cet ordre : la phrase donne les deux cas.
 pub fn conduite_b1_208_10(declaration: &crate::retours::DeclarationIdentifiee, flux: Option<&str>) -> Option<String> {
-    let nature = declaration.nature.as_deref().filter(|n| crate::depot::SIGNALEMENTS.contains(n))?;
+    let nature = declaration.nature_declaration.filter(|n| n.signalement_envoye())?;
     if !declaration.codes.iter().any(|c| c == "B1-208-10") {
         return None;
     }
@@ -201,13 +204,28 @@ pub fn conduite_b1_208_10(declaration: &crate::retours::DeclarationIdentifiee, f
 
 /// Ce que les bilans archives disent des DSN MENSUELLES d'une base (essai ou reel), lu en silence : le compteur d'ordre
 /// lit tous les retours, sans rien montrer, y compris ceux des tests faits ailleurs.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MensuellesVues {
-    /// Le plus grand ordre de mensuelle vu pour ce mois de constitution, 0 si aucun.
-    pub ordre: i64,
+    /// Le plus grand ordre de mensuelle vu pour ce mois de constitution ; aucun si aucune n'est vue.
+    pub ordre: Option<i64>,
     /// Une mensuelle du mois declare a ete ACCEPTEE dans cette base : une normale de plus y serait refusee, le depot
     /// suivant part en annule-et-remplace (cahier technique DSN, §1.4.3.2).
     pub du_mois_acceptee: bool,
+}
+
+/// Le rang de la premiere mensuelle d'un mois civil : le numero d'ordre « est remis a zero a chaque premier jour de mois
+/// civil » (cahier technique DSN 2026.1, p. 136, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt`), la premiere
+/// declaration prend le rang qui suit.
+pub const PREMIER_RANG: i64 = 1;
+
+impl MensuellesVues {
+    /// Le rang de la mensuelle suivante : celui qui suit le plus grand vu, le premier si aucune n'est vue.
+    pub fn suivant(&self) -> i64 {
+        match self.ordre {
+            Some(o) => o + 1,
+            None => PREMIER_RANG,
+        }
+    }
 }
 
 /// L'ordre d'une mensuelle « au cours du mois courant », lu sur la plate-forme. Cahier technique DSN 2026.1, p. 136
@@ -218,7 +236,7 @@ pub struct MensuellesVues {
 /// (l'atelier, un autre poste) ; le journal du dossier ne sait que ce qu'il a envoye.
 ///
 /// Deux lectures, sur les bilans de nature 11 archives dans `retours/` pour ce SIREN et cette base (`essai_reel`) :
-/// - l'ordre de chaque mensuelle (nature 01) recue le mois `constitution` (`AAAA-MM`). Le mois de reception du bilan
+/// - l'ordre de chaque mensuelle (nature 01) recue le mois `constitution`. Le mois de reception du bilan
 ///   (`date_reception`) tient lieu de mois de constitution : la date de constitution est le jour meme ou le fichier
 ///   s'ecrit (`dsn::generer`), et un fichier se depose ce jour-la ou plus tard ; la lecture ne peut donc que surestimer
 ///   l'ordre (un fichier ecrit le 31 et depose le 1er compte pour le mois suivant), jamais le sous-estimer, et trop
@@ -226,28 +244,29 @@ pub struct MensuellesVues {
 /// - le rang que la plate-forme cite dans un refus (« d'ordre 20261021 inferieur (ou egal) au dernier ordre accepte
 ///   20261030 ») : AAAAMM + ordre, exact, quel que soit le jour du bilan.
 ///
-/// `mois` (`AAAA-MM`) : le mois declare (S20.G00.05.005) dont on cherche une mensuelle acceptee.
-pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, constitution: &str, mois: &str) -> Result<MensuellesVues, Echec> {
+/// `mois` : le mois declare (S20.G00.05.005) dont on cherche une mensuelle acceptee.
+pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, constitution: Mois, mois: Mois) -> Result<MensuellesVues, Echec> {
     let base = if essai { crate::retours::ESSAI_TEST } else { crate::retours::ESSAI_REEL };
-    let aaaamm = constitution.replace('-', "");
+    let aaaamm = format!("{:04}{:02}", constitution.annee(), constitution.numero());
     let cite = regex::Regex::new(r"ordre (?:accept\S* )?(\d{7,})").map_err(|e| erreur(Classe::Illisible, e.to_string()))?;
-    let mut vues = MensuellesVues::default();
+    // Avant le premier bilan lu : aucune mensuelle vue.
+    let mut vues = MensuellesVues { ordre: None, du_mois_acceptee: false };
     for (_, p) in bilans_archives(racine)? {
-        let octets = std::fs::read(&p).map_err(|e| erreur(Classe::Disque, socle::echec::du_disque(&p, &e)))?;
+        let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         let Some(bilan) = crate::retours::bilan_si_xml(&octets)? else { continue };
         if bilan.essai_reel.as_deref() != Some(base) {
             continue;
         }
-        let du_mois_recu = bilan.recu_le.as_deref().is_some_and(|r| r.starts_with(constitution));
-        let du_mois_declare = bilan.mois.is_some_and(|m| m.to_string() == mois);
+        let du_mois_recu = bilan.recu_le.as_ref().is_some_and(|r| r.jour().mois_civil() == constitution);
+        let du_mois_declare = bilan.mois == Some(mois);
         let mut du_siren = false;
         for d in crate::retours::declarations_du_bilan(&octets)? {
-            if d.nature.as_deref() != Some(crate::depot::MENSUELLE) || d.siren.as_deref() != Some(siren) {
+            if d.nature_declaration != Some(crate::depot::MENSUELLE) || d.siren.as_deref() != Some(siren) {
                 continue;
             }
             du_siren = true;
             if let Some(o) = ordre_lu(d.ordre.as_deref(), &p)?.filter(|_| du_mois_recu) {
-                vues.ordre = vues.ordre.max(o);
+                vues.ordre = vues.ordre.max(Some(o));
             }
             if du_mois_declare && d.etat.as_deref().is_some_and(|e| e.eq_ignore_ascii_case("OK")) {
                 vues.du_mois_acceptee = true;
@@ -259,7 +278,7 @@ pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, con
         for c in cite.captures_iter(&String::from_utf8_lossy(&octets)) {
             if let Some(reste) = c[1].strip_prefix(aaaamm.as_str()) {
                 if let Some(o) = ordre_lu(Some(reste), &p)? {
-                    vues.ordre = vues.ordre.max(o);
+                    vues.ordre = vues.ordre.max(Some(o));
                 }
             }
         }

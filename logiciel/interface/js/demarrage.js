@@ -52,9 +52,9 @@ function peindreEtatGlobal() {
   if (el.dataset.peint !== html) { el.dataset.peint = html; el.innerHTML = html; }
 }
 
-/** Les conseils de l'ouverture, lus : `{jour, resume}` (un refus : rien à montrer). */
+/** Les conseils de l'ouverture, lus : `{jour, resume}` (un refus se dit, et ce conseil ne se montre pas). */
 function conseilsDe(o) {
-  const lu = (r) => { try { return lectureDe(o, r); } catch (e) { return null; } };
+  const lu = (r) => { try { return lectureDe(o, r); } catch (e) { dire(e.message, "erreur"); return null; } };
   return { jour: lu("conseil-du-jour"), resume: lu("conseils-resume") };
 }
 
@@ -72,7 +72,7 @@ async function demarrer() {
   poserEtat(lectureDe(o, "etat"));
   if (window.poserAuteur) window.poserAuteur(ETAT.auteur);
   dessinerVeille(o.veille);
-  try { dessinerPastilleReponses(lireReponse(o.signalements)); } catch (e) { /* la pastille est un plus */ }
+  try { dessinerPastilleReponses(lireReponse(o.signalements)); } catch (e) { dire(e.message, "erreur"); }
   if (window.miseAJourMontrer) window.miseAJourMontrer(o.maj);
   // Le conseil du jour, quand la compagnie a coché l'option : il ne retient rien.
   dessinerConseils(conseilsDe(o));
@@ -141,8 +141,7 @@ function fenetreNative() {
   // Fermer enregistre d'abord ce qui attend encore (la saisie s'enregistre
   // une seconde apres la derniere frappe), puis ferme.
   document.getElementById("fenetre-fermer").onclick = async () => {
-    clearTimeout(MINUTEUR_SAISIE);
-    await enregistrerSaisie(false).catch(() => false);
+    if (!(await avantDeQuitter())) return;
     f.fermer();
   };
   // Agrandie, le bouton du milieu restaure : il le montre.
