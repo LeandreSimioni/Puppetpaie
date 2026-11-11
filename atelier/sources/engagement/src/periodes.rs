@@ -6,6 +6,7 @@
 
 use std::collections::BTreeMap;
 
+use droit::assiette::Assiette;
 use droit::fiche::Lue;
 
 use socle::forme::NombreLu;
@@ -106,9 +107,9 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
     Ok(out)
 }
 
-/// Ajoute `x` a `cle` de `m`.
-fn cumuler(m: &mut BTreeMap<String, Decimal>, cle: &str, x: Decimal) {
-    *m.entry(cle.to_string()).or_insert_with(|| Decimal::new(0, 2)) += x;
+/// Ajoute `x` a l'assiette `a` de `m`.
+fn cumuler(m: &mut BTreeMap<Assiette, Decimal>, a: Assiette, x: Decimal) {
+    *m.entry(a).or_insert_with(|| Decimal::new(0, 2)) += x;
 }
 
 /// Remplace la reduction generale de la periode `p` par `rg` : sa ligne, le total patronal et le cout employeur.
@@ -182,7 +183,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     let zero = Decimal::new(0, 2);
     let brut_mois = parts.iter().fold(zero, |a, p| a + p.brut);
     let heures_mois = parts.iter().fold(Decimal::ZERO, |a, p| a + p.heures_travaillees);
-    let caisse = parts.iter().any(|p| p.bases.get(crate::calcul::BRUT_CS).is_some_and(|b| *b > Decimal::ZERO));
+    let caisse = parts.iter().any(|p| p.bases.get(&Assiette::BrutCs).is_some_and(|b| *b > Decimal::ZERO));
     let pile = pile_de_la_paie(ctx, derniere)?;
     let du_mois = reduction_generale(pile.reduction_generale.as_ref(), statut_du_mois.map(|s| s.as_str()), brut_mois, heures_mois, caisse)?;
     for p in parts.iter_mut() {
@@ -256,7 +257,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     let mut bases = BTreeMap::new();
     for p in &parts {
         for (k, v) in &p.bases {
-            cumuler(&mut bases, k, *v);
+            cumuler(&mut bases, *k, *v);
         }
     }
     m.bases = bases;

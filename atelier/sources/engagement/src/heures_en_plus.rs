@@ -29,12 +29,6 @@ pub const HEURES_COMPLEMENTAIRES: &str = "heures_complementaires";
 pub const HEURE_SUPPLEMENTAIRE: &str = "heure_supplementaire";
 pub const HEURE_COMPLEMENTAIRE: &str = "heure_complementaire";
 
-/// Dans les bases d'une paie (`Paie::bases`) : la remuneration des heures en plus, leur nombre, et leur montant net
-/// exonere d'impot (S21.G00.58.003 = 01).
-pub const REMUNERATION: &str = "heures_en_plus";
-pub const HEURES: &str = "heures_en_plus_heures";
-pub const EXONERE: &str = "heures_en_plus_exonere";
-
 /// Les lignes du bulletin qui portent la reduction salariale et la deduction patronale.
 pub const REDUCTION: &str = "reduction_heures_en_plus";
 pub const DEDUCTION: &str = "deduction_heures_supplementaires";

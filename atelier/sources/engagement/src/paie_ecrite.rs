@@ -77,8 +77,7 @@ pub struct FormeDePaie<A> {
     pub avertissements: Vec<A>,
     #[serde(with = "nombre")]
     pub base_csg: Decimal,
-    #[serde(with = "nombres")]
-    pub bases: BTreeMap<String, Decimal>,
+    pub bases: BTreeMap<droit::assiette::Assiette, Montant>,
     #[serde(with = "nombre")]
     pub brut: Decimal,
     #[serde(with = "nombre")]
@@ -282,16 +281,19 @@ pub(crate) mod nombre_opt {
     }
 }
 
-/// Des montants par cle, chacun en `nombre`.
-pub(crate) mod nombres {
-    use std::collections::BTreeMap;
-    use serde::{Deserialize, Serialize};
-    use socle::num::Decimal;
-    pub fn serialize<S: serde::Serializer>(m: &BTreeMap<String, Decimal>, s: S) -> Result<S::Ok, S::Error> {
-        m.iter().map(|(k, x)| (k, socle::num::nombre(*x))).collect::<BTreeMap<_, _>>().serialize(s)
+/// UN MONTANT D'UNE PAIE ECRITE, en `nombre` : la valeur de chacune de ses assiettes (`FormeDePaie::bases`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Montant(pub Decimal);
+
+impl Serialize for Montant {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        nombre::serialize(&self.0, s)
     }
-    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<BTreeMap<String, Decimal>, D::Error> {
-        Ok(BTreeMap::<String, socle::forme::Nombre>::deserialize(d)?.into_iter().map(|(k, n)| (k, n.0)).collect())
+}
+
+impl<'de> Deserialize<'de> for Montant {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        nombre::deserialize(d).map(Montant)
     }
 }
 

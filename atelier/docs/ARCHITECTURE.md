@@ -19,7 +19,10 @@ n'entre. Ce qui passe la porte est lu **une fois** et devient un type Rust ; ded
   `ModaliteDuTempsDeTravail`) : chacune est la liste entière de sa rubrique dans la norme (`ListeDeLaNorme`), tenue aux
   listes relevées des versions livrées par un test de structure ; un code propre à une version le dit (`depuis`,
   `jusqu_a`), et la DSN ne l'écrit que dans un fichier de cette version (`dsn::Fichier::ecrire_code`, classe
-  `HorsDeLaVersion`). Le fichier, lu contre elles, dit ceux que chaque nature permet.
+  `HorsDeLaVersion`). Le fichier, lu contre elles, dit ceux que chaque nature permet. Une assiette du calcul aussi
+  (`droit::assiette::Assiette`) : un barème la nomme (`base`, `base78`) et une assiette inconnue le refuse à sa lecture ;
+  elle indexe les bases d'une paie, calculée, écrite ou importée ; ce qui est propre à une assiette (par rubrique de
+  salaire, sa forme abattue) est une de ses propriétés.
 - **La porte des tiers : les réponses de Google.** On ne lit que des clés connues ; seule une réponse de Google peut
   porter en plus des clés qu'on ignore à la porte. Sa forme se déclare elle-même réponse d'un tiers
   (`impl socle::forme::ReponseDUnTiers`, à côté de sa structure, sans `deny_unknown_fields`) et ne se lit que par

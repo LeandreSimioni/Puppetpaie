@@ -716,9 +716,9 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
     let court = droit::natures::contrat_court(&*e.nat()?, t(e.debut), e.fin.map(t), t(fin));
     // « Dans le cas d'une avance faite par un employeur en cas de subrogation des indemnites journalieres : le montant de
     // l'avance s'ajoute a la RNF pour constituer l'assiette du PAS » (S21.G00.50.013, `norme-dsn/texte/bloc-S21.G00.50.txt`) ;
-    // cette avance-la, ce que le BOFiP en soumet (`maintien`, `IJ_ASSIETTE_PAS`).
+    // cette avance-la, ce que le BOFiP en soumet (`maintien`, `Assiette::IjSubrogeesAssiettePas`).
     // Sans subrogation, aucune avance.
-    let avance: Decimal = p.bases.get(crate::maintien::IJ_ASSIETTE_PAS).into_iter().sum();
+    let avance: Decimal = p.bases.get(&droit::assiette::Assiette::IjSubrogeesAssiettePas).into_iter().sum();
     Ok(Some(droit::pas::du_versement(taux.as_ref(), &bareme, p.net_imposable + avance, Some(fin), court, droit::pas::ZONE_DEFAUT)?))
 }
 

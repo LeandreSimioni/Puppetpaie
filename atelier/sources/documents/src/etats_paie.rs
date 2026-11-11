@@ -8,6 +8,7 @@
 //! la periode couvre les mois que des engagements touchent. Le PAS se lit par `prelevement::des_paies` ; aucun numero
 //! n'est consomme. Un montant que la paie ne dit pas (`Paie::dit`) est VIDE, pas zero, et le total ne le compte pas.
 
+use droit::assiette::Assiette;
 use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
@@ -1288,17 +1289,16 @@ pub fn reduction_generale(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 
 // ===================================================== 10. les assiettes
 
-const ASSIETTES: [(&str, &str); 10] = [
-    ("brut", "Brut"),
-    ("brut_cs", "Assiette Congés Spectacles"),
-    ("csg", "Assiette CSG/CRDS"),
-    ("brut_x115", "Brut majoré 115 %"),
-    ("brut_x110", "Brut majoré 110 %"),
-    ("t1", "Tranche 1"),
-    ("t2", "Tranche 2"),
-    ("apec", "Assiette APEC"),
-    ("cet", "Assiette CET"),
-    ("brut_dfs", "Brut après DFS"),
+/// Les assiettes que l'etat nomme, dans son ordre ; les autres suivent sous leur nom.
+const ASSIETTES: [(Assiette, &str); 8] = [
+    (Assiette::Brut, "Brut"),
+    (Assiette::BrutCs, "Assiette Congés Spectacles"),
+    (Assiette::Csg, "Assiette CSG/CRDS"),
+    (Assiette::BrutX115, "Brut majoré 115 %"),
+    (Assiette::BrutX110, "Brut majoré 110 %"),
+    (Assiette::Apec, "Assiette APEC"),
+    (Assiette::Cet, "Assiette CET"),
+    (Assiette::BrutDfs, "Brut après DFS"),
 ];
 
 /// Les assiettes de cotisation de chaque paie de la periode, et son plafond.
@@ -1306,7 +1306,7 @@ pub fn assiettes(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let (avert, mut lignes) = (Vec::new(), Vec::new());
     let mut lecture = Lecture::nouvelle(ctx, &d.departs);
-    let mut vues: BTreeSet<String> = BTreeSet::new();
+    let mut vues: BTreeSet<Assiette> = BTreeSet::new();
     for m in p.mois.clone() {
         for paie in lecture.paies(m)?.iter() {
             let mut l = Ligne::nouvelle();
@@ -1314,25 +1314,24 @@ pub fn assiettes(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             l.d("plafond", eur2(paie.plafond));
             for (k, v) in &paie.bases {
                 l.d(&format!("b_{}", k), eur2(*v));
-                vues.insert(k.clone());
+                vues.insert(*k);
             }
-            if !paie.bases.contains_key("csg") {
-                l.d("b_csg", eur2(paie.base_csg));
-                vues.insert("csg".to_string());
+            if !paie.bases.contains_key(&Assiette::Csg) {
+                l.d(&format!("b_{}", Assiette::Csg), eur2(paie.base_csg));
+                vues.insert(Assiette::Csg);
             }
             lignes.push(l);
         }
     }
-    let connus: Vec<&str> = ASSIETTES.iter().map(|(k, _)| *k).collect();
     let mut cols = vec![col_t("mois", "Mois"), col_t("salarie", "Salarié"), col_t("contrat", "Contrat")];
     for (k, lib) in ASSIETTES {
-        if vues.contains(k) {
+        if vues.contains(&k) {
             cols.push(col_m(&format!("b_{}", k), lib));
         }
     }
     for k in &vues {
-        if !connus.contains(&k.as_str()) {
-            cols.push(col_m(&format!("b_{}", k), k));
+        if !ASSIETTES.iter().any(|(a, _)| a == k) {
+            cols.push(col_m(&format!("b_{}", k), k.nom()));
         }
     }
     cols.push(col_x("plafond", "Plafond appliqué"));

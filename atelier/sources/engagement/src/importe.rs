@@ -29,6 +29,7 @@
 
 use std::collections::BTreeMap;
 
+use droit::assiette::Assiette;
 use droit::fiche::Lue;
 use droit::natures::NatureDeContrat;
 use std::path::{Path, PathBuf};
@@ -656,26 +657,26 @@ impl Importe {
             .collect();
 
         // Les bases, ou le bareme de la paie les range ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
-        let mut bases: BTreeMap<String, Decimal> = BTreeMap::new();
-        bases.insert("brut".into(), brut);
+        let mut bases: BTreeMap<Assiette, Decimal> = BTreeMap::new();
+        bases.insert(Assiette::Brut, brut);
         let fin_periode = engagement.fin_periode();
         let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.debut, engagement.fin.as_ref())?;
         let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.debut, engagement.fin.as_ref()))?;
         for (l, id) in cotisations.iter().filter_map(|l| l.id.as_deref().map(|id| (l, id))).filter(|(l, _)| !l.base.is_zero()) {
-            if let Some(cle) = bar.rubrique(id).and_then(|r| r.base.clone()) {
+            if let Some(cle) = bar.rubrique(id).and_then(|r| r.base) {
                 bases.entry(cle).or_insert(l.base);
             }
         }
         for (code, m) in &p.bases {
-            let mut cles: Vec<String> = bar.cotisations_dsn.iter().filter(|c| c.bloc78 == *code).map(|c| c.base78.clone()).filter(|k| k != "zero").collect();
+            let mut cles: Vec<Assiette> = bar.cotisations_dsn.iter().filter(|c| c.bloc78 == *code).map(|c| c.base78).filter(|k| *k != Assiette::Zero).collect();
             cles.sort();
             cles.dedup();
             if let [cle] = &cles[..] {
-                bases.entry(cle.clone()).or_insert(*m);
+                bases.entry(*cle).or_insert(*m);
             }
         }
-        let base_csg = tu_vaut_zero(bases.get(crate::calcul::CSG).copied());
-        let plafond = ["brut_plafonne", "t1_mensuelle"].iter().find_map(|k| bases.get(*k)).filter(|t| **t < brut).copied();
+        let base_csg = tu_vaut_zero(bases.get(&Assiette::Csg).copied());
+        let plafond = [Assiette::BrutPlafonne, Assiette::T1Mensuelle].iter().find_map(|k| bases.get(k)).filter(|t| **t < brut).copied();
         if plafond.is_none() {
             non_dits.push("plafond");
         }

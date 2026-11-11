@@ -50,9 +50,6 @@ use socle::num::{div, eur2, mul, Decimal};
 /// La rubrique des indemnites journalieres brutes que la compagnie subrogee deduit ; les nettes qu'elle reverse sont de la
 /// piece d'un salarie au mois (`droit::catalogue::RubriqueDuMois::IjssNettes`).
 pub const IJ_BRUTES: &str = "ijss_brutes";
-/// Les cles de `Paie::bases` : ces indemnites nettes, et leur assiette du prelevement a la source.
-pub const IJ_SUBROGEES: &str = "ij_subrogees_nettes";
-pub const IJ_ASSIETTE_PAS: &str = "ij_subrogees_assiette_pas";
 /// Ce que dit le refus d'un mois dont les indemnites journalieres manquent : une saisie a finir (`saisie_incomplete`).
 pub const IJ_A_DIRE: &str = ", à dire sur l'arrêt (« Indemnités journalières »)";
 

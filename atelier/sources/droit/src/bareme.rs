@@ -11,6 +11,7 @@ use crate::forme_bareme::{
     CotisationDsn, CotisationModifiee, CotisationSupplementaire, Part, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, TauxAtmp, TauxDate,
     VersementMobiliteEcrit,
 };
+use crate::assiette::Assiette;
 use crate::natures::{AuMois, Nature};
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, SalarieDuContrat, Statut, StatutCategorielRc};
 use socle::date::Jour;
@@ -548,10 +549,10 @@ fn sans_mutuelle(mut bar: Pile) -> Pile {
 }
 
 /// Pose la cotisation de la mutuelle sur sa rubrique.
-fn poser_mutuelle(mut bar: Pile, base: Option<&str>, total: Decimal, pat: Decimal, libelle: Option<&str>) -> Pile {
+fn poser_mutuelle(mut bar: Pile, base: Option<Assiette>, total: Decimal, pat: Decimal, libelle: Option<&str>) -> Pile {
     for r in bar.rubriques_bulletin.iter_mut().filter(|r| r.id == "mutuelle") {
         if let Some(b) = base {
-            r.base = Some(b.to_string());
+            r.base = Some(b);
         }
         r.taux_pat = Some(TauxDate(flt(rond(mul(total, pat), 4))));
         r.taux_sal = Some(flt(rond(sub(total, mul(total, pat)), 4)));
@@ -565,7 +566,7 @@ fn poser_mutuelle(mut bar: Pile, base: Option<&str>, total: Decimal, pat: Decima
 /// Ce que la convention fait de la ligne mutuelle.
 pub(crate) enum Mutuelle {
     Sans,
-    Pose { base: String, total: Decimal, pat: Decimal },
+    Pose { base: Assiette, total: Decimal, pat: Decimal },
 }
 
 /// Le champ de la fiche entreprise qui dit ce que le contrat de sante de la compagnie fait d'un mois entierement suspendu
@@ -659,7 +660,7 @@ pub fn bareme_sante(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuContrat, n
     match prevoyance::sante_conventionnelle(ent, sal, au_mois, fin)? {
         Some(Mutuelle::Sans) => return Ok(sans_mutuelle(bar)),
         Some(Mutuelle::Pose { base, total, pat }) => {
-            return Ok(poser_mutuelle(bar, Some(&base), total, pat, Some("Complémentaire santé conventionnelle")))
+            return Ok(poser_mutuelle(bar, Some(base), total, pat, Some("Complémentaire santé conventionnelle")))
         }
         None => {}
     }
@@ -699,7 +700,7 @@ la Securite sociale), et pas plus de 100.",
             ));
         }
         let pat = div(part, Decimal::ONE_HUNDRED);
-        return Ok(poser_mutuelle(bar, Some("pss_periode"), total, pat, Some("Complémentaire santé (contrat de l'entreprise)")));
+        return Ok(poser_mutuelle(bar, Some(Assiette::PssPeriode), total, pat, Some("Complémentaire santé (contrat de l'entreprise)")));
     }
     // La dispense d'un permanent 3090 : l'accord du 19/07/2024 (art. 9.1, 9.2,
     // `atelier/reference/sources/kali-3090-accord-sante-permanents-20240719-20261011.md`) rend l'adhesion obligatoire
@@ -1354,20 +1355,14 @@ pub fn bareme_vm(mut bar: Pile, sal: &SalarieDuContrat) -> R<Pile> {
         id: "versement_mobilite".into(),
         famille: Some("AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR".into()),
         libelle: Some("Versement mobilité".into()),
-        base: Some("brut_x115".into()),
+        base: Some(Assiette::BrutX115),
         taux_pat: Some(TauxDate(taux)),
         taux_sal: None,
         ..Rubrique::default()
     });
     bar.cotisations_dsn.push(CotisationDsn {
-        bloc78: "03".into(),
-        code81: Some("081".into()),
-        org: Some(org),
-        base: Some("brut_x115".into()),
-        taux: Some(crate::forme_bareme::TauxDate(taux)),
-        base78: "brut".into(),
         code_insee: Some(vm.code_insee),
-        ..CotisationDsn::default()
+        ..CotisationDsn::sur_le_brut("03", "081".into(), org, Assiette::BrutX115, taux)
     });
     Ok(bar)
 }
@@ -1393,20 +1388,13 @@ ne porte pas le taux du regime local (`regime_local_alsace_moselle`).",
         id: "regime_local".into(),
         famille: Some("SANTÉ".into()),
         libelle: Some("Régime local Alsace-Moselle — maladie".into()),
-        base: Some("brut".into()),
+        base: Some(Assiette::Brut),
         taux_pat: None,
         taux_sal: Some(rl.taux_sal),
         ..Rubrique::default()
     });
-    bar.cotisations_dsn.push(CotisationDsn {
-        bloc78: "03".into(),
-        code81: Some(if rl.code81.is_empty() { "115".into() } else { rl.code81.clone() }),
-        org: Some(org),
-        base: Some("brut".into()),
-        taux: Some(crate::forme_bareme::TauxDate(rl.taux_sal)),
-        base78: "brut".into(),
-        ..CotisationDsn::default()
-    });
+    let code81 = if rl.code81.is_empty() { "115".into() } else { rl.code81.clone() };
+    bar.cotisations_dsn.push(CotisationDsn::sur_le_brut("03", code81, org, Assiette::Brut, rl.taux_sal));
     Ok(bar)
 }
 
@@ -1566,7 +1554,7 @@ pub fn bareme_retraite_t1(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuCont
     let Some(rep) = bar.retraite_t1_repartition.clone() else { return Ok(bar) };
     if nat.is_some_and(|n| n.mensuelle()) {
         match bar.rubrique("retraite_t1") {
-            Some(l) if l.base.as_deref().is_some_and(|b| b.starts_with("t1_mensuelle")) => {}
+            Some(l) if matches!(l.base, Some(Assiette::T1Mensuelle | Assiette::T1MensuelleX115)) => {}
             _ => return Ok(bar),
         }
         if !ent.idcc.est_dite() && !ent.premiere_embauche.est_dite() {

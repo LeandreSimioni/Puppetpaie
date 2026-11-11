@@ -307,7 +307,7 @@ pub struct RetenueArret {
 
 /// UNE INDEMNITE JOURNALIERE SUBROGEE (`maintien::lignes`) : ses jours a son taux, aucune heure (S21.G00.53 : les heures
 /// de l'absence restent celles de sa retenue) ; la nette dit l'assiette du prelevement a la source qu'elle reverse
-/// (`maintien::IJ_ASSIETTE_PAS`). Elle tombe d'un calcul sans indemnite (`maintien::au_net`).
+/// (`Assiette::IjSubrogeesAssiettePas`). Elle tombe d'un calcul sans indemnite (`maintien::au_net`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndemniteJournaliere {

@@ -220,7 +220,7 @@ struct PaieLue {
     /// Le compteur avant le mois que la paie a ecrit (`etats::CONGES_AVANT`).
     avant: Option<Avant>,
     /// Les heures supplementaires payees (`heures_en_plus::HEURE_SUPPLEMENTAIRE`) et le montant net des heures en plus
-    /// exonere d'impot (`heures_en_plus::EXONERE`).
+    /// exonere d'impot (`Assiette::HeuresEnPlusExonere`).
     heures_supplementaires: Decimal,
     exonere: Decimal,
 }
@@ -265,7 +265,7 @@ fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<PaieLue> {
     };
     let heures_supplementaires =
         p.remuneration.iter().filter(|l| l.code == crate::heures_en_plus::HEURE_SUPPLEMENTAIRE).fold(Decimal::ZERO, |a, l| a + l.quantite);
-    let exonere = match p.bases.get(crate::heures_en_plus::EXONERE) {
+    let exonere = match p.bases.get(&droit::assiette::Assiette::HeuresEnPlusExonere) {
         Some(x) => *x,
         None => zero2(),
     };

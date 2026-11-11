@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::assiette::Assiette;
 use crate::fiche::Lue;
 use crate::source::Fondement;
 use serde::Deserialize;
@@ -445,8 +446,8 @@ forme! {
         pub id: String,
         pub famille: Option<String>,
         pub libelle: Option<String>,
-        /// La cle de son assiette dans les bases du calcul (`brut`, `brut_x115`, `t1_journaliere`…).
-        pub base: Option<String>,
+        /// Son assiette dans les bases du calcul.
+        pub base: Option<Assiette>,
         /// Les deux parts, en pourcent ; absente ou nulle : pas de part de ce cote.
         pub taux_pat: Option<TauxDate>,
         pub taux_sal: Option<f64>,
@@ -529,7 +530,7 @@ forme! {
     pub struct RubriqueModifiee {
         pub famille: Option<String>,
         pub libelle: Option<String>,
-        pub base: Option<String>,
+        pub base: Option<Assiette>,
         pub taux_pat: Option<TauxDate>,
         pub taux_sal: Option<f64>,
         pub efface: Option<Vec<Part>>,
@@ -543,14 +544,15 @@ forme! {
 }
 
 forme! {
+    sans_vide
     /// Une cotisation individuelle de la DSN (bloc 81), et la base qu'elle declare au bloc 78.
     pub struct CotisationDsn {
         pub bloc78: String,
         pub code81: Option<String>,
         pub org: Option<String>,
-        pub base: Option<String>,
+        pub base: Option<Assiette>,
         pub taux: Option<TauxDate>,
-        pub base78: String,
+        pub base78: Assiette,
         /// La base de la ligne s'arrete au plafond de la periode.
         pub plafond: Option<bool>,
         pub composants: Option<Vec<f64>>,
@@ -568,6 +570,32 @@ forme! {
     }
 }
 
+impl CotisationDsn {
+    /// UNE COTISATION QUE LA PILE AJOUTE d'elle-meme (le versement mobilite, le regime local d'Alsace-Moselle) : sa base
+    /// 78 est le brut, son taux porte sur `base`.
+    pub(crate) fn sur_le_brut(bloc78: &str, code81: String, org: String, base: Assiette, taux: f64) -> CotisationDsn {
+        CotisationDsn {
+            bloc78: bloc78.into(),
+            code81: Some(code81),
+            org: Some(org),
+            base: Some(base),
+            taux: Some(TauxDate(taux)),
+            base78: Assiette::Brut,
+            plafond: None,
+            composants: None,
+            affectation: None,
+            organisme: None,
+            seuil_smic: None,
+            cle_total: None,
+            code_insee: None,
+            lignes: None,
+            apres: None,
+            source: None,
+            note: None,
+        }
+    }
+}
+
 forme! {
     /// Une modification d'une cotisation du corps par une couche (`cotisations_dsn` d'une categorie, par code81 ou
     /// `code81:affectation`) : chaque case qu'elle dit remplace celle de la cotisation, une case qu'elle ne dit pas
@@ -576,8 +604,8 @@ forme! {
         pub taux: Option<f64>,
         pub efface: Option<Vec<CaseCotisation>>,
         pub composants: Option<Vec<f64>>,
-        pub base: Option<String>,
-        pub base78: Option<String>,
+        pub base: Option<Assiette>,
+        pub base78: Option<Assiette>,
         pub lignes: Option<Vec<String>>,
     }
 }
@@ -586,7 +614,7 @@ forme! {
     /// Une cotisation hors des lignes 81 (S21.G00.54, types 92 et 93) : un taux sur une base, ou la somme de lignes.
     pub struct CotisationSupplementaire {
         pub taux_sur_brut: Option<Nombre>,
-        pub base: Option<String>,
+        pub base: Option<Assiette>,
         pub lignes_patronales: Option<Vec<String>>,
     }
 }
@@ -675,6 +703,7 @@ forme! {
 }
 
 forme! {
+    sans_vide
     /// La contribution CPF-CDD d'un CDD de droit commun (C. trav. L. 6331-6) : un composant de plus a une rubrique.
     pub struct CpfCdd {
         pub rubrique: String,
@@ -1085,8 +1114,8 @@ forme! {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum BaseParPopulation {
-    Une(String),
-    Par { intermittent: String, permanent: String },
+    Une(Assiette),
+    Par { intermittent: Assiette, permanent: Assiette },
 }
 
 /// Un taux, le meme pour tous ou selon la population.

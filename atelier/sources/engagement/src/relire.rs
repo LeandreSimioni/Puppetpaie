@@ -116,7 +116,7 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
     p.numero_bulletin = v.numero_bulletin.clone();
     p.lignes = v.lignes.iter().map(LigneCotisation::de_la_forme).collect();
     p.remuneration = v.remuneration.iter().map(LigneBrut::de_la_forme).collect();
-    p.bases = v.bases.clone();
+    p.bases = v.bases.iter().map(|(a, m)| (*a, m.0)).collect();
     p.reduction_generale = v.reduction_generale.clone();
     p.deduction_forfaitaire = v.deduction_forfaitaire.as_ref().map(DeductionForfaitaire::de_la_forme);
     p.avertissements = v.avertissements.clone();

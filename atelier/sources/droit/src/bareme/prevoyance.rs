@@ -5,6 +5,7 @@
 
 use super::{alsace_moselle, arrondi4, deux_virgule, nom_du_salarie, ChampsEntreprise, Decimal, Jour, Mutuelle, SalarieDuContrat};
 use socle::echec::R;
+use crate::assiette::Assiette;
 use crate::fiche::{ExtensionT2, Lue};
 use crate::natures::AuMois;
 use socle::echec::Lieu;
@@ -68,10 +69,10 @@ forme! {
         pub taux: Option<f64>,
         /// L'assiette de la tranche 1 (celle du bloc `obligatoire` s'applique) et la part de l'employeur, que le catalogue
         /// dit pour chaque bloc.
-        pub base: Option<String>,
+        pub base: Option<Assiette>,
         pub part_patronale: f64,
         pub t2: Option<f64>,
-        pub t2_base: Option<String>,
+        pub t2_base: Option<Assiette>,
         pub t2_part_patronale: Option<f64>,
         pub ventilation: Option<Ventilation>,
         pub a_partir_du: Option<BTreeMap<Jour, Changement>>,
@@ -116,7 +117,7 @@ forme! {
     pub struct Extension {
         pub tous: Option<f64>,
         pub cadres: Option<f64>,
-        pub base: String,
+        pub base: Assiette,
         pub part_patronale: f64,
     }
 }
@@ -147,7 +148,7 @@ forme! {
     /// Ce qu'une annexe de la convention ajoute a son regime.
     pub struct Annexe {
         pub taux: f64,
-        pub base: String,
+        pub base: Assiette,
         pub part_patronale: f64,
     }
 }
@@ -155,7 +156,7 @@ forme! {
 forme! {
     /// Le regime de sante de la branche : un taux au titre du seul salarie, et la part minimale de l'employeur.
     pub struct Sante {
-        pub base: String,
+        pub base: Assiette,
         pub taux: Datees,
         pub taux_alsace_moselle: Option<Datees>,
         /// La part minimale de l'employeur (L. 911-7), que le catalogue dit pour chaque regime de sante.
@@ -445,7 +446,7 @@ fn minimum_t1(reg: &Regime, annexe: Option<&str>, cadre: bool) -> R<Option<(f64,
 pub struct Part {
     pub taux_pat: f64,
     pub taux_sal: f64,
-    pub base: Option<String>,
+    pub base: Option<Assiette>,
     pub obligatoire: bool,
 }
 
