@@ -428,10 +428,8 @@ enum ObjetFixe {
 
 /// Un texte d'une ligne posé dans `zone`, son coin haut gauche en (`x`, `y`) : sa ligne de base est à l'ascendante
 /// sous ce coin. Un texte dont la hauteur ne tient pas sous ce coin, dans la zone, ne se pose pas.
+/// Un texte a position fixe : `tient_sur_la_page` a refuse, a la construction, celui qui sortirait de sa page.
 fn poser_texte(ctx: &Ctx<'_>, dessin: &mut Dessin, zone: Zone, x: Mesure, y: Mesure, style: Style, texte: &str) {
-    if ctx.polices.hauteur(&style) > zone.h - y {
-        return;
-    }
     dessin.texte(zone.x + x, zone.y + y + ctx.polices.ascendante(&style), &[(style, texte)], Mesure::ZERO);
 }
 
@@ -858,6 +856,19 @@ struct Cadre {
     page: (Mesure, Mesure),
 }
 
+/// UN TEXTE A POSITION FIXE TIENT SUR SA PAGE (un texte fixe, un en-tete, un pied) : son haut a `y` depuis le haut de la
+/// page, il ne descend pas sous son bas (`hauteur`). Un texte qui en sortirait ne se dessine pas : il se refuse, en
+/// nommant le document et le texte. C'est un defaut du modele, pas de la saisie : ni police reduite, ni texte coupe.
+fn tient_sur_la_page(ctx: &Ctx<'_>, style: Style, y: Mesure, hauteur: Mesure, document: &str, ou: &str, texte: &str) -> Result<(), Refus> {
+    if ctx.polices.hauteur(&style) > hauteur - y {
+        return refus(format!(
+            "Le document « {} » pose « {} » ({}) sous le bas de sa page : le texte ne se dessinerait pas. C'est un défaut du logiciel, à signaler au développeur.",
+            document, texte, ou
+        ));
+    }
+    Ok(())
+}
+
 fn construire(
     b: &BlocEtiquete,
     ctx: &Ctx<'_>,
@@ -865,6 +876,7 @@ fn construire(
     police: &Police,
     hauteur_page: Mesure,
     cadre: &Cadre,
+    document: &str,
 ) -> Result<Noeud, Refus> {
     let ou = b.etiquette.as_str();
     let noeud = match &b.bloc {
@@ -917,6 +929,7 @@ fn construire(
                 }
                 None => style,
             };
+            tient_sur_la_page(ctx, style, *y - ctx.polices.ascendante(&style), cadre.page.1, document, ou, &texte)?;
             Noeud::Fixe(Fixe {
                 origine: cadre.origine,
                 page: cadre.page,
@@ -1017,7 +1030,7 @@ fn construire(
                 let lc = largeur * *frac;
                 let mut noeuds = Vec::new();
                 for sb in blocs {
-                    noeuds.push(construire(sb, ctx, lc, police, hauteur_page, cadre)?);
+                    noeuds.push(construire(sb, ctx, lc, police, hauteur_page, cadre, document)?);
                 }
                 fondre_marges(&mut noeuds);
                 cols.push((*frac, noeuds));
@@ -1110,8 +1123,13 @@ fn fabriquer_passe(
     for (r, en_bas, nom) in [(&d.entete_page, false, "entete_page"), (&d.pied_page, true, "pied_page")] {
         if let Some(r) = r {
             let style = Style::new(r.taille).couleur(r.couleur).gras(r.gras);
+            // Sa ligne de base, depuis le haut de la page : le pied se mesure depuis le bas (`Decor::poser`).
+            let ligne = if en_bas { d.page.hauteur - r.distance } else { r.distance };
             for t in [&r.gauche, &r.centre, &r.droite] {
                 verifier_texte(&ctx, style, t, nom)?;
+                if !t.is_empty() {
+                    tient_sur_la_page(&ctx, style, ligne - ctx.polices.ascendante(&style), d.page.hauteur, &d.titre, nom, t)?;
+                }
             }
             let image = match &r.image {
                 Some(i) => Some((charger_image(&i.chemin, i.largeur, nom, "image")?, i.descente)),
@@ -1140,7 +1158,7 @@ fn fabriquer_passe(
         }
         let debut = noeuds.len();
         for b in blocs {
-            noeuds.push(construire(b, &ctx, largeur, &d.police, hauteur_page, &cadre)?);
+            noeuds.push(construire(b, &ctx, largeur, &d.police, hauteur_page, &cadre, &d.titre)?);
         }
         fondre_marges(&mut noeuds[debut..]);
     }
