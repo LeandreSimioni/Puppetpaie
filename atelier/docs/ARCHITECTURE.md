@@ -92,8 +92,10 @@ que par la structure :
   `une_liste_de_la_norme_est_celle_des_versions_livrees` (chaque `ListeDeLaNorme` est l'union des listes de valeurs que
   `formats-dsn-*-base.json` relèvent pour sa rubrique, chaque code dans les seules versions que ses bornes disent),
   `un_nombre_de_paie_n_est_jamais_un_flottant` (un montant, un taux, une quantité, des heures… sont des `Decimal` ; le
-  flottant ne reste qu'au dehors, où le format l'impose : un instant, une durée mesurée, la géométrie d'un dessin, la
-  case d'un classeur, la porte du JSON, `socle::forme`), `une_date_est_une_date` (aucun champ ni paramètre dont le nom
+  flottant ne reste qu'au dehors, où le format l'impose : un instant, une durée mesurée, la case d'un classeur, la porte
+  du JSON, `socle::forme` ; une mesure d'un PDF, position, largeur ou corps, fabriqué ou lu, est une
+  `fabrique_pdf::mesure::Mesure`, en millionièmes de point, que les bibliothèques du dessin et de la lecture convertissent
+  à leur porte), `une_date_est_une_date` (aucun champ ni paramètre dont le nom
   dit une date en texte : un `Jour`, un instant de `socle::paris`, une date ou une heure de XML Schema, ou le type qui
   dit sa forme). Les tests de structure sont
   les bienvenus ; un test qui fige un détail ne s'écrit pas.
