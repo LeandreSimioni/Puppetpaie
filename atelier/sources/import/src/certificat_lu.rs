@@ -225,11 +225,8 @@ fn valeurs(r: &[Mot]) -> Vec<(&'static str, Vec<String>)> {
         };
         let premier = js.get(*debut).map(|j| j.1);
         let dernier = if fin_jeton > *debut { js.get(fin_jeton - 1).map(|j| j.1) } else { None };
-        let mots = match (premier, dernier) {
-            (Some(a), Some(b)) if b >= a => r[a..=b].iter().map(|m| m.texte.clone()).collect(),
-            // Aucun jeton dans la case : elle n'a pas de mots.
-            (None, _) | (_, None) | (Some(_), Some(_)) => Vec::new(),
-        };
+        // Les mots du premier au dernier jeton de la case ; une case sans jeton n'en a aucun.
+        let mots: Vec<String> = premier.zip(dernier).filter(|(a, b)| b >= a).into_iter().flat_map(|(a, b)| r[a..=b].iter().map(|m| m.texte.clone())).collect();
         out.push((c, mots));
     }
     out

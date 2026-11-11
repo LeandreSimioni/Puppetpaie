@@ -212,11 +212,14 @@ impl Origine {
 
     /// « la DSN de mars 2025 », « le bulletin (x.pdf, page 2) », « l'AEM de mars 2025 (x.pdf) ».
     fn en_mots(&self) -> String {
-        let fichier = match (&self.fichier, self.page) {
-            (Some(f), Some(p)) => format!(" ({}, page {})", f, p),
-            (Some(f), None) => format!(" ({})", f),
-            (None, _) => String::new(),
-        };
+        let fichier: String = self
+            .fichier
+            .iter()
+            .map(|f| match self.page {
+                Some(p) => format!(" ({}, page {})", f, p),
+                None => format!(" ({})", f),
+            })
+            .collect();
         let de_mois: String = self.mois.iter().map(|m| format!(" {}", socle::texte::de(&m.libelle(Graphie::Accentuee)))).collect();
         match self.source {
             Source::Aem => format!("l'AEM{}{}", de_mois, fichier),
@@ -687,14 +690,9 @@ impl Importation {
         let s = |k: usize| if k > 1 { "s" } else { "" };
         let creer = |k: usize| if ecrit { if k > 1 { " créées" } else { " créée" } } else { " à créer" };
         // Les declarations.
-        let periode = match (self.premier_mois, self.dernier_mois) {
-            (Some(p), Some(d)) => format!(" ({} → {})", p.libelle(Graphie::Accentuee), d.libelle(Graphie::Accentuee)),
-            (None, _) | (_, None) => String::new(),
-        };
-        let contrats_du_au = match (self.contrats_du, self.contrats_au) {
-            (Some(du), Some(au)) => format!(" du {} au {}", du.jj_mm_aaaa(), au.jj_mm_aaaa()),
-            (None, _) | (_, None) => String::new(),
-        };
+        // Une periode ne se dit qu'avec ses deux bornes.
+        let periode: String = self.premier_mois.zip(self.dernier_mois).map(|(p, d)| format!(" ({} → {})", p.libelle(Graphie::Accentuee), d.libelle(Graphie::Accentuee))).into_iter().collect();
+        let contrats_du_au: String = self.contrats_du.zip(self.contrats_au).map(|(du, au)| format!(" du {} au {}", du.jj_mm_aaaa(), au.jj_mm_aaaa())).into_iter().collect();
         let contrats = if self.contrats > 0 {
             format!(
                 "{} contrat(s) attesté(s){} : {} {} à l'historique, {} déjà connu(s){}",
@@ -730,10 +728,7 @@ impl Importation {
             .into_iter()
             .filter(|x| !x.is_empty())
             .collect();
-            let du = match (b.du, b.au) {
-                (Some(d), Some(a)) => format!(" du {} au {}", d.jj_mm_aaaa(), a.jj_mm_aaaa()),
-                (None, _) | (_, None) => String::new(),
-            };
+            let du: String = b.du.zip(b.au).map(|(d, a)| format!(" du {} au {}", d.jj_mm_aaaa(), a.jj_mm_aaaa())).into_iter().collect();
             format!(
                 "{} bulletin{} lu{} sur {} page{}{} ; {} {}{}.",
                 b.lus,
@@ -761,10 +756,7 @@ impl Importation {
             .into_iter()
             .filter(|x| !x.is_empty())
             .collect();
-            let du = match (c.du, c.au) {
-                (Some(d), Some(a)) => format!(" du {} au {}", d.jj_mm_aaaa(), a.jj_mm_aaaa()),
-                (None, _) | (_, None) => String::new(),
-            };
+            let du: String = c.du.zip(c.au).map(|(d, a)| format!(" du {} au {}", d.jj_mm_aaaa(), a.jj_mm_aaaa())).into_iter().collect();
             c.dit = format!(
                 "{} {} lu{}{}{}.{}",
                 c.lus,
@@ -802,10 +794,7 @@ impl Importation {
     pub fn dire_l_apercu(&mut self) {
         self.dire();
         let b = &self.bulletins;
-        let periode = match (b.du, b.au) {
-            (Some(du), Some(au)) => format!(" (du {} au {})", du.jj_mm_aaaa(), au.jj_mm_aaaa()),
-            (None, _) | (_, None) => String::new(),
-        };
+        let periode: String = b.du.zip(b.au).map(|(du, au)| format!(" (du {} au {})", du.jj_mm_aaaa(), au.jj_mm_aaaa())).into_iter().collect();
         self.phrase = format!(
             "Dans le dossier lu : {} bulletins lus{}, {} à reprendre, fiches à créer : {} ; DSN : {} ; AEM : {}. Rien n'est écrit.",
             b.lus,
