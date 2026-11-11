@@ -163,17 +163,19 @@ fn annexe() -> Result<&'static Annexe, Refus> {
     }
 }
 
-/// Ce que montre un code d'un encodage : le nom d'un glyphe, ou un caractère que l'annexe D dit sans nom.
+/// Ce que montre un code d'un encodage : le nom d'un glyphe, ou un caractère que l'annexe D dit sans nom, avec le nom
+/// du glyphe qui le dessine (« typographically the same as »).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Code {
     Nom(&'static str),
-    Caractere(char),
+    Caractere(char, &'static str),
 }
 
 /// Ce que montre chaque code de `e` (`None` : non encodé). Les notes de D.2 s'y appliquent : WinAnsiEncoding, « all
 /// unused codes greater than 40 map to the bullet character » (3), « The hyphen character is also encoded as 255 [...]
-/// The meaning of this duplicate code shall be “soft hyphen” » (5) ; WinAnsiEncoding 240 et MacRomanEncoding 312, « This
-/// duplicate code shall signify a nonbreaking space » (6).
+/// The meaning of this duplicate code shall be “soft hyphen,” but it shall be typographically the same as hyphen » (5) ;
+/// WinAnsiEncoding 240 et MacRomanEncoding 312, « This duplicate code shall signify a nonbreaking space; it shall be
+/// typographically the same as [...] SPACE » (6).
 pub(crate) fn codes(e: Encodage) -> Result<Vec<Option<Code>>, Refus> {
     let a = annexe()?;
     let noms = match e {
@@ -187,15 +189,15 @@ pub(crate) fn codes(e: Encodage) -> Result<Vec<Option<Code>>, Refus> {
     let mut v: Vec<Option<Code>> = noms.iter().map(|n| n.map(Code::Nom)).collect();
     match e {
         Encodage::WinAnsi => {
-            v[0o255] = Some(Code::Caractere('\u{AD}'));
-            v[0o240] = Some(Code::Caractere('\u{A0}'));
+            v[0o255] = Some(Code::Caractere('\u{AD}', "hyphen"));
+            v[0o240] = Some(Code::Caractere('\u{A0}', "space"));
             for c in v.iter_mut().skip(0o41) {
                 if c.is_none() {
                     *c = Some(Code::Nom("bullet"));
                 }
             }
         }
-        Encodage::MacRoman => v[0o312] = Some(Code::Caractere('\u{A0}')),
+        Encodage::MacRoman => v[0o312] = Some(Code::Caractere('\u{A0}', "space")),
         Encodage::Standard | Encodage::MacExpert | Encodage::Symbol | Encodage::ZapfDingbats => {}
     }
     Ok(v)

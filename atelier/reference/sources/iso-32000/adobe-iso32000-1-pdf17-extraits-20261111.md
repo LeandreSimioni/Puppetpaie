@@ -436,6 +436,18 @@ https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf,
 > 5. The hyphen character is also encoded as 255 in WinAnsiEncoding. The meaning of this duplicate code shall be
 > "soft hyphen," but it shall be typographically the same as hyphen.
 
+## 9.6.2.2 Standard Type 1 Fonts (Standard 14 Fonts)
+
+> The PostScript names of 14 Type 1 fonts, known as the standard 14 fonts, are as follows: Times-Roman, Helvetica,
+> Courier, Symbol, Times-Bold, Helvetica-Bold, Courier-Bold, ZapfDingbats, Times-Italic, Helvetica-Oblique,
+> Courier-Oblique, Times-BoldItalic, Helvetica-BoldOblique, Courier-BoldOblique
+>
+> These fonts, or their font metrics and suitable substitution fonts, shall be available to the conforming reader.
+>
+> NOTE The character sets and encodings for these fonts are listed in Annex D. The font metrics files for the standard
+> 14 fonts are available from the ASN Web site (see the Bibliography). For more information on font metrics, see
+> Adobe Technical Note #5004, Adobe Font Metrics File Format Specification.
+
 ## 7.9.2.2 Text String Type
 
 > The text string type shall be used for character strings that shall be encoded in either PDFDocEncoding or the

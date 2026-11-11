@@ -12,8 +12,8 @@
 //!    d'Adobe ; sinon le programme TrueType incorporé (sa « cmap » mène au glyphe, qui dit son
 //!    caractère par son nom ou par la « cmap » Unicode du programme). Un glyphe que rien ne dit est
 //!    un signe inconnu du texte (`Inconnu` : la police, le code), à sa place ; seul le lecteur qui en
-//!    a besoin le refuse. Les largeurs viennent du PDF, ou de Liberation pour les polices standard
-//!    sans `/Widths` ;
+//!    a besoin le refuse. Les largeurs viennent du PDF, ou du fichier de métriques d'Adobe d'une police
+//!    standard sans `/Widths`, que son nom exact désigne (`afm.rs`) ;
 //! 3. la mise en lignes : un caractère prolonge la ligne courante s'il part du bout du précédent
 //!    (à un espace près) sur la même ligne de base ; sinon il ouvre une ligne. C'est la règle de
 //!    MuPDF, pas un tri géométrique : le texte sort dans l'ordre du flux.
@@ -441,8 +441,6 @@ struct Police {
     unicode: HashMap<u32, String>,
     largeurs: HashMap<u32, Mesure>,
     largeur_defaut: Mesure,
-    /// Largeurs tirées de Liberation pour une police standard sans `/Widths`.
-    standard: Option<crate::polices::Metrique>,
     vertical: bool,
     /// Ascendant et descendant (fractions du corps), qui bornent la boîte d'un glyphe pour
     /// `--inspecter` : ceux du fichier de police incorporé, sinon (polices standard) ceux de leur fichier de métriques d'Adobe,
@@ -607,20 +605,10 @@ impl Police {
     /// La largeur du code, en fraction d'em.
     fn largeur(&self, code: u32) -> Mesure {
         let cle = self.cid(code);
-        if let Some(w) = self.largeurs.get(&cle) {
-            return *w / 1000;
+        match self.largeurs.get(&cle) {
+            Some(w) => *w / 1000,
+            None => self.largeur_defaut / 1000,
         }
-        if let (Some(m), Sorte::Simple { encodage }) = (&self.standard, &self.sorte) {
-            if let Lu::Texte(t) = &encodage[code as usize & 0xFF] {
-                let mut c = t.chars();
-                if let (Some(c), None) = (c.next(), c.next()) {
-                    if let Some(w) = m.largeur(c) {
-                        return w;
-                    }
-                }
-            }
-        }
-        self.largeur_defaut / 1000
     }
 }
 
@@ -637,7 +625,7 @@ fn glyphe_du_cid(table: Option<&[u8]>, cid: u32) -> Option<u16> {
 }
 
 /// Un encodage prédéfini (ISO 32000-1, 9.6.6.1 et annexe D) : le texte de chaque code. Un autre nom se refuse.
-fn predefini(nom: &[u8]) -> Result<Vec<Lu>, Refus> {
+fn predefini(nom: &[u8]) -> Result<Vec<Entree>, Refus> {
     let e = match nom {
         b"StandardEncoding" => Encodage::Standard,
         b"MacRomanEncoding" => Encodage::MacRoman,
@@ -650,15 +638,34 @@ fn predefini(nom: &[u8]) -> Result<Vec<Lu>, Refus> {
 
 /// Le texte de chaque code d'un encodage de l'annexe D (`encodages.rs`) : le nom de son glyphe lu par la liste des glyphes
 /// d'Adobe (la liste Zapf Dingbats pour ZapfDingbats) ; un code non encodé ne montre rien (`.notdef`).
-fn de_l_annexe(e: Encodage) -> Result<Vec<Lu>, Refus> {
+fn de_l_annexe(e: Encodage) -> Result<Vec<Entree>, Refus> {
     encodages::codes(e)?
         .into_iter()
         .map(|c| match c {
-            Some(Code::Nom(n)) => lu_du_nom(n, e == Encodage::ZapfDingbats),
-            Some(Code::Caractere(c)) => Ok(Lu::Texte(c.to_string())),
-            None => Ok(Lu::Rien),
+            Some(Code::Nom(n)) => du_nom(n, e == Encodage::ZapfDingbats),
+            Some(Code::Caractere(c, n)) => Ok(Entree { lu: Lu::Texte(c.to_string()), glyphe: Some(n.to_string()) }),
+            None => Ok(Entree::sans_nom(Lu::Rien)),
         })
         .collect()
+}
+
+/// Un code d'une police simple : ce qu'il montre, et le nom de son glyphe quand l'encodage le donne (il mène à la
+/// largeur du glyphe dans le fichier de métriques d'une police standard, `afm.rs`).
+#[derive(Clone)]
+struct Entree {
+    lu: Lu,
+    glyphe: Option<String>,
+}
+
+impl Entree {
+    fn sans_nom(lu: Lu) -> Entree {
+        Entree { lu, glyphe: None }
+    }
+}
+
+/// Le code dont l'encodage nomme le glyphe `nom`.
+fn du_nom(nom: &str, zapf: bool) -> Result<Entree, Refus> {
+    Ok(Entree { lu: lu_du_nom(nom, zapf)?, glyphe: Some(nom.to_string()) })
 }
 
 /// Le texte d'un nom de glyphe (liste des glyphes d'Adobe, `glyphes.rs`) : `.notdef` ne montre rien (9.6.6.2) ; un nom
@@ -706,7 +713,6 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
         unicode: HashMap::new(),
         largeurs: HashMap::new(),
         largeur_defaut: Z,
-        standard: None,
         vertical: false,
         asc: mesure("0.8"),
         desc: mesure("0.2"),
@@ -798,7 +804,6 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
         b"TrueType" => encodage_truetype(doc, fd, encoding, zapf)?,
         _ => encodage_type1(doc, fd, sous_type, &nom_nu, encoding, zapf)?,
     };
-    p.sorte = Sorte::Simple { encodage };
 
     // Les largeurs : `Widths`, à partir de `FirstChar` (ISO 32000-1, table 111 : tous deux exigés, sauf pour les 14
     // polices standard, où ils sont présents ou absents ensemble).
@@ -809,12 +814,23 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
                 p.largeurs.insert(premier + k as u32, largeur_lue(doc, x, "/Widths")?);
             }
         }
-        // Sans `Widths`, une des 14 polices standard, que son `BaseFont` nomme.
+        // Sans `Widths`, une des 14 polices standard que son `BaseFont` nomme exactement (9.6.2.2) : la largeur du
+        // glyphe que l'encodage nomme, dans son fichier de métriques. Un autre nom n'a pas de largeur que la norme dise :
+        // chaque code prend `MissingWidth` (table 111 : « the value of MissingWidth [...] shall be used »).
         None => match base_nom.as_deref() {
-            Some(n) => p.standard = crate::polices::Metrique::pour(n)?,
+            Some(n) => {
+                if let Some(afm) = crate::afm::largeurs(n)? {
+                    for (code, e) in encodage.iter().enumerate() {
+                        if let Some(w) = e.glyphe.as_deref().and_then(|g| afm.get(g)) {
+                            p.largeurs.insert(code as u32, *w);
+                        }
+                    }
+                }
+            }
             None => return illisible("une police simple n'a ni /Widths ni /BaseFont (ISO 32000-1, table 111)"),
         },
     }
+    p.sorte = Sorte::Simple { encodage: encodage.into_iter().map(|e| e.lu).collect() };
     // ISO 32000-1, table 122 : `MissingWidth`, « Default value: 0 » ; une police sans descripteur ne la dit pas.
     p.largeur_defaut = match fd {
         Some(fd) => match lecture::lue(doc, fd, b"MissingWidth", lecture::nombre)? {
@@ -828,7 +844,7 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
 
 /// Les `/Differences` d'un dictionnaire d'encodage : (code, texte du nom) (ISO 32000-1, 9.6.6.1 : un code, puis les
 /// noms des codes qui le suivent ; 9.10.2 : le nom donne le caractère par la liste des glyphes d'Adobe).
-fn differences_de(doc: &Document, e: &Dictionary, zapf: bool) -> Result<Vec<(usize, Lu)>, Refus> {
+fn differences_de(doc: &Document, e: &Dictionary, zapf: bool) -> Result<Vec<(usize, Entree)>, Refus> {
     let mut differences = Vec::new();
     if let Some(v) = lecture::lue(doc, e, b"Differences", lecture::tableau)? {
         let mut code = 0usize;
@@ -841,7 +857,7 @@ fn differences_de(doc: &Document, e: &Dictionary, zapf: bool) -> Result<Vec<(usi
                     }
                 }
                 Some(Object::Name(g)) => {
-                    differences.push((code, lu_du_nom(&String::from_utf8_lossy(g), zapf)?));
+                    differences.push((code, du_nom(&String::from_utf8_lossy(g), zapf)?));
                     code += 1;
                 }
                 Some(_) | None => return illisible("un élément de /Differences n'est ni un code ni un nom de glyphe"),
@@ -852,7 +868,7 @@ fn differences_de(doc: &Document, e: &Dictionary, zapf: bool) -> Result<Vec<(usi
 }
 
 /// `table` mise à jour par `differences` (un code au-delà de 255 n'est pas d'une police simple).
-fn appliquer(table: &mut [Lu], differences: Vec<(usize, Lu)>) {
+fn appliquer(table: &mut [Entree], differences: Vec<(usize, Entree)>) {
     for (code, l) in differences {
         if code < 256 {
             table[code] = l;
@@ -871,8 +887,8 @@ fn sinon_inconnu<T>(r: Result<T, Refus>, inconnu: impl FnOnce(String) -> T) -> R
 }
 
 /// 256 codes inconnus, pour la même raison.
-fn tous_inconnus(pourquoi: String) -> Vec<Lu> {
-    vec![Lu::Inconnu(pourquoi); 256]
+fn tous_inconnus(pourquoi: String) -> Vec<Entree> {
+    vec![Entree::sans_nom(Lu::Inconnu(pourquoi)); 256]
 }
 
 /// Le bit `n` (à partir de 1) des drapeaux d'un descripteur (ISO 32000-1, 9.8.2).
@@ -887,7 +903,7 @@ fn drapeau(drapeaux: i64, n: u32) -> bool {
 /// d'une police symbolique ne dit pas, le code mène au glyphe par la « cmap » du programme (`par_cmap`), et le glyphe
 /// dit son caractère. Les drapeaux ne servent qu'à savoir si la police est non symbolique (table 123 : Nonsymbolic
 /// levé, Symbolic baissé) ; absents ou contradictoires, elle ne l'est pas.
-fn encodage_truetype(doc: &Document, fd: Option<&Dictionary>, encoding: Option<&Object>, zapf: bool) -> Result<Vec<Lu>, Refus> {
+fn encodage_truetype(doc: &Document, fd: Option<&Dictionary>, encoding: Option<&Object>, zapf: bool) -> Result<Vec<Entree>, Refus> {
     let drapeaux = match fd {
         Some(fd) => lecture::lue(doc, fd, b"Flags", lecture::entier)?,
         None => None,
@@ -898,13 +914,13 @@ fn encodage_truetype(doc: &Document, fd: Option<&Dictionary>, encoding: Option<&
         Some(Object::Dictionary(e)) => {
             let mut table = match (lecture::lue(doc, e, b"BaseEncoding", lecture::nom)?, non_symbolique) {
                 (Some(n), _) => predefini(n)?,
-                (None, true) => vec![Lu::Rien; 256],
+                (None, true) => vec![Entree::sans_nom(Lu::Rien); 256],
                 (None, false) => par_cmap(doc, fd, zapf)?,
             };
             appliquer(&mut table, differences_de(doc, e, zapf)?);
             if non_symbolique {
                 for (l, s) in table.iter_mut().zip(predefini(b"StandardEncoding")?) {
-                    if matches!(l, Lu::Rien) {
+                    if matches!(l.lu, Lu::Rien) {
                         *l = s;
                     }
                 }
@@ -921,11 +937,11 @@ fn encodage_truetype(doc: &Document, fd: Option<&Dictionary>, encoding: Option<&
 /// octet précédé de l'octet de tête de sa plage ; sinon la sous-table (1, 0), octet par octet. Le glyphe 0 ne montre
 /// rien ; un autre dit son caractère (`glyphes_du_programme`). Ce que le programme ne permet pas de lire rend chaque code
 /// inconnu.
-fn par_cmap(doc: &Document, fd: Option<&Dictionary>, zapf: bool) -> Result<Vec<Lu>, Refus> {
+fn par_cmap(doc: &Document, fd: Option<&Dictionary>, zapf: bool) -> Result<Vec<Entree>, Refus> {
     sinon_inconnu(lire_par_cmap(doc, fd, zapf), tous_inconnus)
 }
 
-fn lire_par_cmap(doc: &Document, fd: Option<&Dictionary>, zapf: bool) -> Result<Vec<Lu>, Refus> {
+fn lire_par_cmap(doc: &Document, fd: Option<&Dictionary>, zapf: bool) -> Result<Vec<Entree>, Refus> {
     let programme = match fd {
         Some(fd) => lecture::lue(doc, fd, b"FontFile2", lecture::flux)?,
         None => None,
@@ -956,8 +972,8 @@ fn lire_par_cmap(doc: &Document, fd: Option<&Dictionary>, zapf: bool) -> Result<
     glyphes
         .into_iter()
         .map(|g| match g {
-            Some(g) => glyphe_du_programme(&face, &unicode, g, zapf),
-            None => Ok(Lu::Rien),
+            Some(g) => glyphe_du_programme(&face, &unicode, g, zapf).map(Entree::sans_nom),
+            None => Ok(Entree::sans_nom(Lu::Rien)),
         })
         .collect()
 }
@@ -1037,12 +1053,12 @@ fn programme_cid(doc: &Document, desc: &Dictionary, zapf: bool) -> Result<ParPro
 /// dictionnaire, son `BaseEncoding` ou l'encodage implicite, puis ses `Differences` ; sans `Encoding`, l'encodage
 /// implicite. Table 114 : l'encodage implicite d'un programme incorporé est son encodage propre ; sinon StandardEncoding
 /// pour une police non symbolique, et l'encodage propre de la police pour une symbolique.
-fn encodage_type1(doc: &Document, fd: Option<&Dictionary>, sous_type: &[u8], nom_nu: &str, encoding: Option<&Object>, zapf: bool) -> Result<Vec<Lu>, Refus> {
-    let implicite = || -> Result<Vec<Lu>, Refus> {
+fn encodage_type1(doc: &Document, fd: Option<&Dictionary>, sous_type: &[u8], nom_nu: &str, encoding: Option<&Object>, zapf: bool) -> Result<Vec<Entree>, Refus> {
+    let implicite = || -> Result<Vec<Entree>, Refus> {
         // 9.6.6.3 : l'encodage d'une police Type 3 est tout entier dans son `Encoding`, exigé.
         if sous_type == b"Type3" {
             return Ok(match encoding {
-                Some(_) => vec![Lu::Rien; 256],
+                Some(_) => vec![Entree::sans_nom(Lu::Rien); 256],
                 None => tous_inconnus("une police Type 3 n'a pas d'/Encoding, que la norme exige (ISO 32000-1, 9.6.6.3)".to_string()),
             });
         }
@@ -1105,7 +1121,7 @@ fn encodage_type1(doc: &Document, fd: Option<&Dictionary>, sous_type: &[u8], nom
 /// 127) : « The tokens following /Encoding may be StandardEncoding def », ou la suite des « dup index charactername
 /// put », à partir du premier `dup` après `/Encoding`, « followed by an instance of the token def or readonly » (Adobe
 /// Type 1 Font Format, 10.3). Un code qu'elle ne nomme pas est `.notdef`.
-fn encodage_du_programme_type1(doc: &Document, s: &lopdf::Stream, zapf: bool) -> Result<Vec<Lu>, Refus> {
+fn encodage_du_programme_type1(doc: &Document, s: &lopdf::Stream, zapf: bool) -> Result<Vec<Entree>, Refus> {
     let Some(longueur) = lecture::lue(doc, &s.dict, b"Length1", lecture::entier)? else {
         return illisible("le programme Type 1 incorporé n'a pas de /Length1, que la norme exige (ISO 32000-1, table 127)");
     };
@@ -1128,7 +1144,7 @@ fn encodage_du_programme_type1(doc: &Document, s: &lopdf::Stream, zapf: bool) ->
     let Some(premier) = suite.iter().position(|m| m == "dup") else {
         return illisible("l'/Encoding du programme Type 1 n'a ni StandardEncoding ni « dup index charactername put » (Adobe Type 1 Font Format, 10.3)");
     };
-    let mut table = vec![Lu::Rien; 256];
+    let mut table = vec![Entree::sans_nom(Lu::Rien); 256];
     let mut i = premier;
     loop {
         match &suite[i..] {
@@ -1141,7 +1157,7 @@ fn encodage_du_programme_type1(doc: &Document, s: &lopdf::Stream, zapf: bool) ->
                     return illisible(format!("l'/Encoding du programme Type 1 a « dup {} {} put », sans nom (Adobe Type 1 Font Format, 10.3)", index, nom));
                 };
                 if code < 256 {
-                    table[code] = lu_du_nom(nom, zapf)?;
+                    table[code] = du_nom(nom, zapf)?;
                 }
                 i += 4;
             }
@@ -1158,13 +1174,13 @@ fn encodage_du_programme_type1(doc: &Document, s: &lopdf::Stream, zapf: bool) ->
 
 /// L'encodage propre d'un programme compact incorporé (`FontFile3`, `Type1C`) : le nom du glyphe de chaque code, lu
 /// dans le programme (`cff.rs`), par la liste des glyphes d'Adobe ; un code non encodé ne montre rien.
-fn encodage_cff(doc: &Document, s: &lopdf::Stream, zapf: bool) -> Result<Vec<Lu>, Refus> {
+fn encodage_cff(doc: &Document, s: &lopdf::Stream, zapf: bool) -> Result<Vec<Entree>, Refus> {
     let octets = lecture::contenu(doc, s)?;
     crate::cff::noms_des_codes(&octets)?
         .into_iter()
         .map(|n| match n {
-            Some(n) => lu_du_nom(&n, zapf),
-            None => Ok(Lu::Rien),
+            Some(n) => du_nom(&n, zapf),
+            None => Ok(Entree::sans_nom(Lu::Rien)),
         })
         .collect()
 }

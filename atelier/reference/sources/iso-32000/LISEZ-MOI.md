@@ -25,7 +25,7 @@ clé absente, une valeur par défaut ou une forme exigée vient de la norme, don
   0, `Contents` absent = page vide (table 30).
 - `fabrique-pdf/src/texte.rs` (le texte d'une page, `--texte`, `--inspecter`) : la chaîne hexadécimale d'un CMap
   (7.3.4.3) ; `Tf` avant tout texte (table 105) ; les objets formulaire, leur `Matrix`, leurs ressources, `BBox` (table
-  95) et les objets PostScript sans effet (8.8.2) ; les polices (tables 111, 112, 114, 117, 121, 122, 126 ; 9.7.4.3,
+  95) et les objets PostScript sans effet (8.8.2) ; les polices (tables 111, 112, 114, 117, 121, 122, 126 ; 9.6.2.2, les 14 polices standard par leur nom exact ; 9.7.4.3,
   9.7.6.3) ; les annotations et leur apparence (tables 164, 165, 168) ; les propriétés de `BDC` (14.6.2).
 - `fabrique-pdf/src/texte.rs` (`Police::texte`, `predefini`, `differences_de`, `encodage_type1`,
   `encodage_truetype`, `par_cmap`, `programme_cid`) : le texte d'un code dans l'ordre de 9.10.2 : `ToUnicode` ; un
