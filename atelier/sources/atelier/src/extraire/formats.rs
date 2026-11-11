@@ -353,22 +353,22 @@ fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>, notes: &mut Vec<String>
 
 /// La cle d'une case : un entier, un nombre a virgule de valeur entiere et un booleen (0 ou 1) de meme valeur se
 /// confondent ; un texte n'egale qu'un texte.
-fn cle(c: &Cellule) -> String {
-    match c {
+fn cle(c: &Cellule) -> R<String> {
+    Ok(match c {
         Cellule::Texte(s) => format!("t{}", s),
         Cellule::Entier(i) => format!("n{}", i),
-        Cellule::AVirgule(n) => match entier_exact(n) {
+        Cellule::AVirgule(n) => match entier_exact(n)? {
             Some(i) => format!("n{}", i),
             None => format!("f{}", n.ecrit()),
         },
         Cellule::Booleen(b) => format!("n{}", *b as i64),
-    }
+    })
 }
 
-/// L'entier qu'un nombre a virgule vaut exactement (`12.0`), ou `None`.
-fn entier_exact(n: &socle::forme::NombreLu) -> Option<i64> {
+/// L'entier qu'un nombre a virgule vaut exactement (`12.0`), ou `None` ; un nombre qui ne tient pas en decimal refuse.
+fn entier_exact(n: &socle::forme::NombreLu) -> R<Option<i64>> {
     use rust_decimal::prelude::ToPrimitive;
-    n.decimal().ok().filter(|d| d.fract().is_zero()).and_then(|d| d.to_i64())
+    Ok(Some(n.decimal()?).filter(|d| d.fract().is_zero()).and_then(|d| d.to_i64()))
 }
 
 /// La valeur de la derniere colonne titree `nom` (une ligne plus courte que l'en-tete se complete de vides), ou `None`.
@@ -391,7 +391,7 @@ fn entier_de(c: &Cellule) -> R<i64> {
     use rust_decimal::prelude::ToPrimitive;
     match c {
         Cellule::Entier(i) => Ok(*i),
-        Cellule::AVirgule(n) => n.decimal().ok().and_then(|d| d.trunc().to_i64()).ok_or_else(|| refus!("longueur illisible : {}", n.ecrit())),
+        Cellule::AVirgule(n) => n.decimal()?.trunc().to_i64().ok_or_else(|| refus!("longueur illisible : {}", n.ecrit())),
         Cellule::Booleen(b) => Ok(*b as i64),
         Cellule::Texte(s) => {
             strip(s).parse::<i64>().map_err(|_| refus!("longueur illisible : {}", socle::fichiers::repr(s)))
@@ -417,7 +417,7 @@ fn relever_xlsx(
             if premiere.vrai() {
                 let mut valeurs = r.clone();
                 valeurs.resize(entete.len().max(valeurs.len()), None);
-                types.insert(cle(premiere), valeurs);
+                types.insert(cle(premiere)?, valeurs);
             }
         }
     }
@@ -440,7 +440,10 @@ fn relever_xlsx(
             None => Err(refus!("la feuille « Fields » a une ligne sans « {} »", nom)),
         };
         let rid = format!("{}.{}", texte(bloc, "Block Id")?, texte(id, "Id")?);
-        let genre = type_id.and_then(|t| types.get(&cle(t)));
+        let genre = match type_id {
+            Some(t) => types.get(&cle(t)?),
+            None => None,
+        };
         let Some(genre) = genre else {
             sans_type.push(SansType { rubrique: rid, type_: type_id.cloned() });
             continue;

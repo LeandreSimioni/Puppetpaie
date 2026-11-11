@@ -98,7 +98,7 @@ async function dessinerIdentite(cible) {
           l.readAsDataURL(f);
         });
         const poids = cible.querySelector("#identite-poids").value;
-        poidsVise = poids === "" ? null : Number(poids);
+        poidsVise = poids;
         const r = await api("poser-identite", { quoi: ch.dataset.quoi, contenu, poids: poidsVise });
         await dessinerIdentite(cible);
         // Ce que l'image pèsera dans chaque document : le moteur le dit.

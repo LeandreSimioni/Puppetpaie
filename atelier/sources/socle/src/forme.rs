@@ -361,8 +361,8 @@ pub fn table_ou_nombre<'de, A: serde::de::MapAccess<'de>>(mut m: A) -> Result<Ta
     if premiere.as_deref() == Some(CLE_DU_NOMBRE) {
         let texte: String = m.next_value()?;
         return match NombreLu::du_texte(&texte) {
-            Some(n) => Ok(TableOuNombre::Nombre(n)),
-            None => Err(serde::de::Error::custom(format!("{} n'est pas un nombre", texte))),
+            Ok(n) => Ok(TableOuNombre::Nombre(n)),
+            Err(e) => Err(serde::de::Error::custom(format!("{} n'est pas un nombre ({})", texte, e))),
         };
     }
     Ok(TableOuNombre::Table(Table { premiere, reste: m }))
@@ -420,17 +420,8 @@ pub fn decimal_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<crat
     <Option<Nombre> as serde::Deserialize>::deserialize(d).map(|n| n.map(|n| n.0))
 }
 
-/// UN TEXTE QUI PEUT ETRE VIDE : nul, il est vide (`None`) ; un texte vide `""` n'est pas le vide, il se refuse.
-/// `#[serde(deserialize_with = "socle::forme::texte_opt")]` (la cle s'ecrit, nulle).
-pub fn texte_opt<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String>, D::Error> {
-    match <Option<String> as serde::Deserialize>::deserialize(d)? {
-        Some(t) if t.is_empty() => Err(serde::de::Error::custom("un texte vide ne dit rien : le vide s'écrit absent ou null")),
-        t => Ok(t),
-    }
-}
-
 /// UN TEXTE DIT : jamais vide. `Option<TexteDit>` est la case facultative d'une charge : absente ou nulle, elle est vide
-/// (`None`) ; un texte vide `""` ne dit rien et se refuse a la porte, comme `texte_opt`.
+/// (`None`) ; un texte vide `""` ne dit rien et se refuse a la porte.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
 #[serde(transparent)]
 pub struct TexteDit(String);
@@ -694,10 +685,9 @@ impl NombreLu {
         crate::ecriture::nombre_ecrit(&self.0)
     }
 
-    /// Le nombre qu'un texte ecrit (`12`, `1.50`, `1e-5`), exact ; `None` : ce n'est pas un nombre.
-    pub fn du_texte(t: &str) -> Option<NombreLu> {
-        crate::ecriture::a_virgule(t)?;
-        t.parse::<serde_json::Number>().ok().map(NombreLu)
+    /// Le nombre qu'un texte ecrit en JSON (`12`, `1.50`, `1e-5`), exact ; l'erreur dit pourquoi ce n'en est pas un.
+    pub fn du_texte(t: &str) -> Result<NombreLu, serde_json::Error> {
+        t.parse::<serde_json::Number>().map(NombreLu)
     }
 
     /// Un decimal en nombre a virgule : celui que sa forme la plus courte ecrit (`num::court` : `130` s'ecrit `130.0`).

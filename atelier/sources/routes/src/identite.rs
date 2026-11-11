@@ -37,9 +37,9 @@ pub const ROUTES: &[Fiche] = &[
         charge: &[
             QUOI_IDENTITE,
             Champ { nom: "contenu", libelle: Affiche::new("Image"), forme: Forme::Texte, sens: "l'image en base64 (une adresse data: aussi)", avance: false },
-            Champ { nom: "poids", libelle: Affiche::new("Poids visé en Ko"), forme: Forme::Nombre, sens: "le poids visé de l'image dans chaque document, en Ko (20 si absent)", avance: true },
+            Champ { nom: "poids", libelle: Affiche::new("Poids visé en Ko"), forme: Forme::Nombre, sens: "le poids visé de l'image dans chaque document, en Ko (la route identite en propose un)", avance: false },
         ],
-        exemple: r#"{"quoi":"logo","contenu":"PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4="}"#,
+        exemple: r#"{"quoi":"logo","contenu":"PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxIiBoZWlnaHQ9IjEiLz4=","poids":20}"#,
         rend: IDENTITE_REND,
         refus: &[Refus { classe: socle::echec::Classe::Refuse, corriger: "une image lisible (PNG, JPEG, SVG), de 2 Mo au plus" }, FORME, MANQUE],
         acte: Acte::Ecrit,
@@ -110,7 +110,7 @@ struct IdentiteDite {
 struct ChargePoser {
     quoi: String,
     contenu: String,
-    poids: Option<PoidsVise>,
+    poids: PoidsVise,
 }
 
 /// Le poids vise : un nombre, ou un texte qui en dit un (« 20,5 »).
@@ -132,7 +132,7 @@ struct ChargeQuoi {
 
 const IDENTITES: [&str; 3] = ["signature", "cachet", "logo"];
 const OCTETS_MAX: usize = 2 * 1024 * 1024;
-/// Le poids visé d'une image dans chaque document, en Ko, quand la compagnie n'en dit pas d'autre.
+/// Le poids visé d'une image dans chaque document, en Ko, que l'écran propose (`identite`).
 const POIDS_VISE_KO: u32 = 20;
 
 #[track_caller]
@@ -198,23 +198,19 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
     format_de(&octets).ok_or_else(|| {
         refus("Ce fichier n'est ni un PNG, ni un JPEG, ni un SVG (ses premiers octets ne sont ceux d'aucun des trois). Rien n'a ete ecrit.")
     })?;
-    let objectif_ko = match &charge.poids {
-        None => Decimal::from(POIDS_VISE_KO),
-        Some(p) => {
-            let faute = |dit: &str| format!("Le poids visé est un nombre de Ko, de 1 à {} : {} ne l'est pas.", OCTETS_MAX / 1024, socle::fichiers::repr(dit));
-            let (k, dit) = match p {
-                PoidsVise::Nombre(k) => (k.0.normalize(), k.0.normalize().to_string()),
-                PoidsVise::Texte(s) => {
-                    let lu = socle::num::decimal_a_virgule(s);
-                    (lu.ok_or_else(|| socle::echec::a_la_cle(&faute(s), "poids", "").reclasser(socle::echec::Classe::Refuse))?.normalize(), s.clone())
-                }
-            };
-            if k < Decimal::ONE || k > Decimal::from(OCTETS_MAX / 1024) {
-                return Err(refus(faute(&dit)));
-            }
-            k
+    // Le poids visé est dit par la charge : l'écran le propose (`poids_vise_ko` de `identite`), la personne le garde ou
+    // le change.
+    let faute = |dit: &str| format!("Le poids visé est un nombre de Ko, de 1 à {} : {} ne l'est pas.", OCTETS_MAX / 1024, socle::fichiers::repr(dit));
+    let (objectif_ko, dit) = match &charge.poids {
+        PoidsVise::Nombre(k) => (k.0.normalize(), k.0.normalize().to_string()),
+        PoidsVise::Texte(s) => {
+            let lu = socle::num::decimal_a_virgule(s);
+            (lu.ok_or_else(|| socle::echec::a_la_cle(&faute(s), "poids", "").reclasser(socle::echec::Classe::Refuse))?.normalize(), s.clone())
         }
     };
+    if objectif_ko < Decimal::ONE || objectif_ko > Decimal::from(OCTETS_MAX / 1024) {
+        return Err(refus(faute(&dit)));
+    }
     // L'image part dans chaque document qui la porte : elle est allégée avant d'être posée, à la largeur que les
     // documents impriment (`documents::largeur_imprimee`) et au poids visé (en octets, tronque).
     let largeur = documents::largeur_imprimee(quoi).ok_or_else(|| identite_inconnue(quoi))?;

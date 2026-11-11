@@ -223,7 +223,7 @@ pub fn lignes(chemin: &Path, feuille: &str) -> R<Vec<Ligne>> {
                     Some("b") => Cellule::Booleen(v == "1"),
                     _ if v.contains(['.', 'e', 'E']) => Cellule::AVirgule(
                         crate::forme::NombreLu::du_texte(v.trim_matches(crate::texte::blanc))
-                            .ok_or_else(|| refus(format!("{} : nombre illisible {}", c.nom, crate::fichiers::repr(v))))?,
+                            .map_err(|e| refus(format!("{} : nombre illisible {} ({})", c.nom, crate::fichiers::repr(v), e)))?,
                     ),
                     _ => Cellule::Entier(entier(v, "nombre")?),
                 }

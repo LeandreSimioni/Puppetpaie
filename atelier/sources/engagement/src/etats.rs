@@ -981,11 +981,14 @@ fn calculer_les_rangs(ctx: &Contexte, mois: Mois, rangs: &[usize]) -> R<Vec<Paie
             let regles = empreinte::regles(ctx, &fin)?;
             let cle = salarie.to_string();
             let mut siennes = entrees.clone();
-            // Les paies, les mensuels et le taux de PAS d'un autre salarie ne sont pas de son calcul.
-            siennes.retain(|k, _| match LectureDatee::lue(k) {
-                Some(Ok(LectureDatee::Paies { salarie, .. } | LectureDatee::Mensuels { salarie, .. } | LectureDatee::Pas { salarie, .. })) => salarie == cle,
-                _ => true,
-            });
+            // Les paies, les mensuels et le taux de PAS d'un autre salarie ne sont pas de son calcul. La cle d'une lecture
+            // notee par ce calcul se relit, ou le calcul refuse.
+            for k in entrees.keys() {
+                let lue = LectureDatee::lue(k).transpose()?;
+                if matches!(&lue, Some(LectureDatee::Paies { salarie, .. } | LectureDatee::Mensuels { salarie, .. } | LectureDatee::Pas { salarie, .. }) if *salarie != cle) {
+                    siennes.remove(k);
+                }
+            }
             siennes.insert(stock::cle_de_saisie(mois, Some(&salarie)), stock::empreinte_de_saisie(&data, Some(&salarie)));
             siennes.insert(cle_fiches, entree_fiches);
             let (conges, conges_avant) = conges.unzip();

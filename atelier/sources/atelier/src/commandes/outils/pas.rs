@@ -102,8 +102,8 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let mois = match args.tape("mois") {
         Some(m) => match m.mois() {
             Ok(m) => m,
-            Err(_) => {
-                dire!("--mois attend AAAA-MM, recu {}.", socle::fichiers::repr(m.texte()));
+            Err(e) => {
+                dire!("--mois attend AAAA-MM, recu {} : {}", socle::fichiers::repr(m.texte()), e.phrase);
                 return Ok(1);
             }
         },

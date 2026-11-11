@@ -85,8 +85,8 @@ impl Moment {
 
     /// La duree de `avant` a cet instant ; `None` si `avant` est apres.
     pub fn depuis(self, avant: Moment) -> Option<std::time::Duration> {
-        let ns = u64::try_from(self.0 - avant.0).ok()?;
-        Some(std::time::Duration::from_nanos(ns))
+        let ns = self.0.checked_sub(avant.0).filter(|ns| *ns >= 0)?;
+        Some(std::time::Duration::new((ns / NANOS) as u64, (ns % NANOS) as u32))
     }
 
     /// LA GRAINE DES ALEAS EN SUITE FIXE (`temps::aleas`) : les 64 bits du nombre binaire IEEE 754 (double precision) le
@@ -130,30 +130,22 @@ impl Moment {
     /// L'instant d'un nombre de secondes ecrit (`1767600000`, `1793606401.2339187`, `1.7676e9`), exact, arrondi a la
     /// nanoseconde (au pair a egalite) ; `None` s'il ne se lit pas ou sort du calendrier.
     pub(crate) fn lu(texte: &str) -> Option<Moment> {
-        let (moins, corps) = match texte.strip_prefix('-') {
-            Some(c) => (true, c),
-            None => (false, texte),
-        };
-        let (mantisse, exposant) = match corps.split_once(['e', 'E']) {
-            Some((m, e)) => (m, e.strip_prefix('+').unwrap_or(e).parse::<i32>().ok()?),
-            None => (corps, 0),
-        };
-        let (entier, fraction) = mantisse.split_once('.').unwrap_or((mantisse, ""));
-        let chiffres = format!("{}{}", entier, fraction);
-        if chiffres.is_empty() || !chiffres.bytes().all(|c| c.is_ascii_digit()) {
+        let d = crate::ecriture::decouper(texte)?;
+        let moins = d.moins;
+        let chiffres = d.chiffres.trim_start_matches('0');
+        // La valeur vaut `chiffres` x 10^puissance nanosecondes ; 10^39 ne tient plus sur 128 bits.
+        let puissance = d.exposant.checked_sub((d.chiffres.len() - d.entiers) as i64)?.checked_add(9)?;
+        if puissance.unsigned_abs() > 38 {
             return None;
         }
-        let chiffres = chiffres.trim_start_matches('0');
-        // La valeur vaut `chiffres` x 10^puissance nanosecondes.
-        let puissance = exposant - fraction.len() as i32 + 9;
         let mut n: i128 = 0;
         for c in chiffres.bytes() {
             n = n.checked_mul(10)?.checked_add(i128::from(c - b'0'))?;
         }
         let ns = if puissance >= 0 {
-            n.checked_mul(10i128.checked_pow(puissance as u32)?)?
+            n.checked_mul(10i128.pow(puissance as u32))?
         } else {
-            let diviseur = 10i128.checked_pow(puissance.unsigned_abs())?;
+            let diviseur = 10i128.pow(puissance.unsigned_abs() as u32);
             let (q, r) = (n / diviseur, n % diviseur);
             if r > diviseur - r || (r == diviseur - r && q % 2 == 1) { q + 1 } else { q }
         };

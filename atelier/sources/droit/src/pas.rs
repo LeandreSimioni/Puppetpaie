@@ -55,7 +55,9 @@ impl TauxDePas {
         if !(1..=2).contains(&entier.len()) || decimales.len() != 2 || !chiffres(entier) || !chiffres(decimales) {
             return None;
         }
-        socle::num::dec_texte(texte).ok().map(TauxDePas)
+        // Ses chiffres, lus un a un : le taux en centiemes de pourcent.
+        let centiemes = entier.bytes().chain(decimales.bytes()).fold(0i64, |n, b| n * 10 + i64::from(b - b'0'));
+        Some(TauxDePas(Decimal::new(centiemes, 2)))
     }
 
     /// Le taux `d`, s'il s'ecrit dans la forme de la norme (`lire`) ; `None` sinon.

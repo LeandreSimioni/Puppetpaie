@@ -14,7 +14,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use crate::classeur::{Feuille, Style, Vertical};
+use crate::classeur::{Feuille, Style, Vertical, CORPS_DU_CLASSEUR};
+use crate::tableaux_export::Rangee;
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
@@ -679,16 +680,16 @@ fn cellules_totaux(tot: &Totaux, libelle: &str, coordonnees: bool) -> Vec<CelL> 
     c
 }
 
-/// Les lignes du livre dans l'ordre d'ecriture : (cellules, genre) -- genre « », « total », « general ».
-fn rangees_livre(livre: &LivreDePaie) -> Vec<(Vec<CelL>, &'static str)> {
+/// Les lignes du livre dans l'ordre d'ecriture : (cellules, ce qu'est la rangee).
+fn rangees_livre(livre: &LivreDePaie) -> Vec<(Vec<CelL>, Rangee)> {
     let mut out = Vec::new();
     for g in &livre.groupes {
         for l in &g.lignes {
-            out.push((cellules(l, livre.coordonnees), ""));
+            out.push((cellules(l, livre.coordonnees), Rangee::Ligne));
         }
-        out.push((cellules_totaux(&g.totaux, &format!("Total {}", g.libelle), livre.coordonnees), "total"));
+        out.push((cellules_totaux(&g.totaux, &format!("Total {}", g.libelle), livre.coordonnees), Rangee::Total));
     }
-    out.push((cellules_totaux(&livre.totaux, "TOTAL GENERAL", livre.coordonnees), "general"));
+    out.push((cellules_totaux(&livre.totaux, "TOTAL GENERAL", livre.coordonnees), Rangee::General));
     out
 }
 
@@ -728,14 +729,14 @@ pub fn csv_livre(livre: &LivreDePaie) -> Vec<u8> {
 /// `xlsx_livre` : une feuille, les colonnes en place, les montants en nombres (le comptable les additionne).
 pub fn xlsx_livre(livre: &LivreDePaie) -> R<Vec<u8>> {
     let mut ws = Feuille::nouvelle("Livre de paie");
-    ws.texte(0, 0, titre_livre(livre), &Style::gras(Some(13)));
+    ws.texte(0, 0, titre_livre(livre), &Style::gras(13));
     let cl = colonnes_livre(livre);
     let entete = Style { gras: true, retour_a_la_ligne: true, vertical: Some(Vertical::Centre), ..Style::CLASSEUR };
     for (i, c) in cl.iter().enumerate() {
         ws.texte(2, i as u16, *c, &entete);
     }
     let mut ligne: u32 = 3;
-    let ecrire_rang = |ws: &mut Feuille, cel: &[CelL], gras: bool, corps: Option<u32>, ligne: u32| {
+    let ecrire_rang = |ws: &mut Feuille, cel: &[CelL], gras: bool, corps: u32, ligne: u32| {
         for (i, c) in cel.iter().enumerate() {
             let style = Style { gras, corps, ..Style::CLASSEUR };
             match c {
@@ -754,13 +755,13 @@ pub fn xlsx_livre(livre: &LivreDePaie) -> R<Vec<u8>> {
     };
     for g in &livre.groupes {
         for l in &g.lignes {
-            ecrire_rang(&mut ws, &cellules(l, livre.coordonnees), false, None, ligne);
+            ecrire_rang(&mut ws, &cellules(l, livre.coordonnees), false, CORPS_DU_CLASSEUR, ligne);
             ligne += 1;
         }
-        ecrire_rang(&mut ws, &cellules_totaux(&g.totaux, &format!("Total {}", g.libelle), livre.coordonnees), true, None, ligne);
+        ecrire_rang(&mut ws, &cellules_totaux(&g.totaux, &format!("Total {}", g.libelle), livre.coordonnees), true, CORPS_DU_CLASSEUR, ligne);
         ligne += 2;
     }
-    ecrire_rang(&mut ws, &cellules_totaux(&livre.totaux, "TOTAL GENERAL", livre.coordonnees), true, Some(12), ligne);
+    ecrire_rang(&mut ws, &cellules_totaux(&livre.totaux, "TOTAL GENERAL", livre.coordonnees), true, 12, ligne);
     ligne += 1;
     for a in &livre.avertissements {
         ligne += 1;
@@ -784,7 +785,7 @@ pub fn pdf_livre(ctx: &Contexte, livre: &LivreDePaie) -> R<Vec<u8>> {
             CelL::M(Some(d)) => d.to_string().replace('.', ","),
         }
     };
-    let rangs: Vec<(Vec<String>, &str)> = rangees_livre(livre).iter().map(|(c, g)| (c.iter().map(cel).collect(), *g)).collect();
+    let rangs: Vec<(Vec<String>, Rangee)> = rangees_livre(livre).iter().map(|(c, g)| (c.iter().map(cel).collect(), *g)).collect();
     let etiquette = |c: &str| -> String {
         match c {
             "Salarie" => "Salarié",

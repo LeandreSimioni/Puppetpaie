@@ -313,23 +313,66 @@ fn chaine(t: &str, s: &mut String) {
 /// signe, ses chiffres significatifs (sans zero en tete ni en queue, vides pour zero) et la puissance de dix de leur
 /// premier chiffre plus un (`12.5` : `125`, 2 ; `0.05` : `5`, -1). `None` : le texte n'ecrit pas un nombre.
 fn chiffres_et_puissance(t: &str) -> Option<(bool, String, i64)> {
+    let d = decouper(t)?;
+    let tete = d.chiffres.len() - d.chiffres.trim_start_matches('0').len();
+    let significatifs = d.chiffres.trim_matches('0').to_string();
+    let puissance = d.exposant + d.entiers as i64 - tete as i64;
+    Some((d.moins, significatifs, puissance))
+}
+
+/// UN NOMBRE DECIMAL ECRIT EN TEXTE, decoupe (`decouper`) : son signe, tous ses chiffres a la suite (ceux d'avant la
+/// virgule puis ceux d'apres), combien sont avant la virgule, et l'exposant de dix ecrit apres `e` (aucun : 0).
+pub(crate) struct Decoupe {
+    pub(crate) moins: bool,
+    pub(crate) chiffres: String,
+    pub(crate) entiers: usize,
+    pub(crate) exposant: i64,
+}
+
+/// LE SEUL LECTEUR D'UN NOMBRE DECIMAL ECRIT EN TEXTE (`-` ou `+`, des chiffres, un `.` au plus, un exposant `e` signe
+/// ou non), exact, chiffre a chiffre : ce qu'en font l'ecriture d'un nombre (`chiffres_et_puissance`) et un instant
+/// (`paris::Moment::lu`). `None` : le texte n'ecrit pas un nombre (aucun chiffre, un autre signe, un exposant qui ne
+/// tient pas sur 64 bits).
+pub(crate) fn decouper(t: &str) -> Option<Decoupe> {
     let (moins, corps) = match t.strip_prefix('-') {
         Some(c) => (true, c),
-        None => (false, t.strip_prefix('+').unwrap_or(t)),
+        None => (false, sans_plus(t)),
     };
     let (mantisse, exposant) = match corps.split_once(['e', 'E']) {
-        Some((m, e)) => (m, e.strip_prefix('+').unwrap_or(e).parse::<i64>().ok()?),
+        Some((m, e)) => (m, exposant_ecrit(e)?),
         None => (corps, 0),
     };
-    let (entier, fraction) = mantisse.split_once('.').unwrap_or((mantisse, ""));
-    if entier.is_empty() && fraction.is_empty() || !entier.bytes().chain(fraction.bytes()).all(|c| c.is_ascii_digit()) {
+    let chiffres: String = mantisse.chars().filter(|c| *c != '.').collect();
+    if chiffres.is_empty() || mantisse.matches('.').count() > 1 || !chiffres.bytes().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    let chiffres = format!("{}{}", entier, fraction);
-    let tete = chiffres.len() - chiffres.trim_start_matches('0').len();
-    let significatifs = chiffres.trim_matches('0').to_string();
-    let puissance = exposant + entier.len() as i64 - tete as i64;
-    Some((moins, significatifs, puissance))
+    // Sans virgule, tous les chiffres sont avant elle.
+    let entiers = match mantisse.find('.') {
+        Some(virgule) => virgule,
+        None => mantisse.len(),
+    };
+    Some(Decoupe { moins, chiffres, entiers, exposant })
+}
+
+/// Le texte sans son `+` de tete, s'il en a un.
+fn sans_plus(t: &str) -> &str {
+    match t.strip_prefix('+') {
+        Some(c) => c,
+        None => t,
+    }
+}
+
+/// L'exposant ecrit apres le `e` d'un nombre (`5`, `+5`, `-05`) ; `None` : ce n'est pas un entier de 64 bits.
+fn exposant_ecrit(e: &str) -> Option<i64> {
+    let (moins, chiffres) = match e.strip_prefix('-') {
+        Some(c) => (true, c),
+        None => (false, sans_plus(e)),
+    };
+    if chiffres.is_empty() || !chiffres.bytes().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let n = chiffres.bytes().try_fold(0i64, |n, c| n.checked_mul(10)?.checked_add(i64::from(c - b'0')))?;
+    Some(if moins { -n } else { n })
 }
 
 /// UN NOMBRE A VIRGULE TEL QUE LES FICHIERS L'ECRIVENT, du texte exact d'un nombre (`None` : ce n'en est pas un) : ses
@@ -413,11 +456,6 @@ impl Serialize for Arbre {
             }
         }
     }
-}
-
-/// Le nombre ecrit `t` vaut-il zero (`0`, `0.0`, `-0.00`) ?
-pub fn nombre_nul(t: &str) -> bool {
-    decimal_canonique(t) == "0"
 }
 
 /// Le texte d'un nombre JSON tel que les fichiers l'ecrivent : un entier tel quel, un nombre a virgule par `a_virgule`.

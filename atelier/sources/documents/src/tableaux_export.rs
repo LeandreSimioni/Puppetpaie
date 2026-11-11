@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 
 use fabrique_pdf::forme as pdf;
 use fabrique_pdf::mesure::mesure;
-use crate::classeur::{Feuille, Style, Vertical};
+use crate::classeur::{Feuille, Style, Vertical, CORPS_DU_CLASSEUR};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
@@ -412,30 +412,49 @@ pub fn texte(v: Option<&Val>, c: &Colonne) -> String {
     .collect()
 }
 
+/// Ce qu'une rangee d'un tableau est : une ligne, le sous-total d'une section, ou le total general.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Rangee {
+    Ligne,
+    Total,
+    General,
+}
+
+impl Rangee {
+    /// La classe HTML d'un total ; une ligne n'en a pas.
+    fn classe(self) -> Option<&'static str> {
+        match self {
+            Rangee::Ligne => None,
+            Rangee::Total => Some("total"),
+            Rangee::General => Some("general"),
+        }
+    }
+}
+
 /// (cellules, genre) dans l'ordre d'ecriture : lignes, sous-totaux, total.
-fn rangees(t: &Tableau) -> Vec<(&Ligne, &'static str)> {
+fn rangees(t: &Tableau) -> Vec<(&Ligne, Rangee)> {
     let plusieurs = t.sections.len() > 1 && t.sous_totaux;
-    let mut out: Vec<(&Ligne, &'static str)> = Vec::new();
+    let mut out: Vec<(&Ligne, Rangee)> = Vec::new();
     for s in &t.sections {
         for l in &s.lignes {
-            out.push((l, ""));
+            out.push((l, Rangee::Ligne));
         }
         if plusieurs {
             if let Some(tot) = &s.total {
-                out.push((tot, "total"));
+                out.push((tot, Rangee::Total));
             }
         }
     }
     if let Some(tot) = &t.total {
-        out.push((tot, "general"));
+        out.push((tot, Rangee::General));
     }
     out
 }
 
 /// `(texte, genre)` de chaque cellule d'une ligne, `—` pour un montant de ligne que la source ne dit pas.
-fn cellule_lisible(l: &Ligne, c: &Colonne, genre: &str) -> String {
+fn cellule_lisible(l: &Ligne, c: &Colonne, genre: Rangee) -> String {
     let v = l.get(&c.cle);
-    if matches!(v, Some(None)) && c.genre == Genre::Montant && genre.is_empty() {
+    if matches!(v, Some(None)) && c.genre == Genre::Montant && genre == Rangee::Ligne {
         "—".to_string()
     } else {
         texte(v.and_then(|x| x.as_ref()), c)
@@ -470,13 +489,13 @@ pub fn csv_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
     }
     ligne(&mut s, &[]);
     ligne(&mut s, &t.colonnes.iter().map(|c| c.libelle.clone()).collect::<Vec<_>>());
-    let mut precedent = "";
+    let mut precedent = Rangee::Ligne;
     for (d, genre) in rangees(t) {
-        if genre == "general" && precedent == "total" {
+        if genre == Rangee::General && precedent == Rangee::Total {
             ligne(&mut s, &[]);
         }
         ligne(&mut s, &t.colonnes.iter().map(|c| texte(d.val(&c.cle), c)).collect::<Vec<_>>());
-        if genre == "total" {
+        if genre == Rangee::Total {
             ligne(&mut s, &[]);
         }
         precedent = genre;
@@ -601,7 +620,7 @@ pub fn xlsx_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
     let mut ws = Feuille::nouvelle(nom_de_feuille(t)?);
     let mut ligne: u32 = 0;
     for x in entete_texte(t, lire_nom(ctx)) {
-        ws.texte(ligne, 0, x, &Style::gras(Some(13)));
+        ws.texte(ligne, 0, x, &Style::gras(13));
         ligne += 1;
     }
     ligne += 1;
@@ -621,9 +640,9 @@ pub fn xlsx_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
     };
     for (d, genre) in rangees(t) {
         let (gras, corps) = match genre {
-            "general" => (true, Some(12)),
-            "total" => (true, Some(11)),
-            _ => (false, None),
+            Rangee::General => (true, 12),
+            Rangee::Total => (true, CORPS_DU_CLASSEUR),
+            Rangee::Ligne => (false, CORPS_DU_CLASSEUR),
         };
         for (i, c) in t.colonnes.iter().enumerate() {
             let cel = cellule_classeur(d.val(&c.cle), c)?;
@@ -665,14 +684,14 @@ pub fn html_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
         let mut cel = String::new();
         for c in &t.colonnes {
             let v = d.get(&c.cle);
-            let s = if matches!(v, Some(None)) && c.genre == Genre::Montant && genre.is_empty() {
+            let s = if matches!(v, Some(None)) && c.genre == Genre::Montant && genre == Rangee::Ligne {
                 "&mdash;".to_string()
             } else {
                 echapper(&texte(v.and_then(|x| x.as_ref()), c))
             };
             cel.push_str(&format!("<td{}>{}</td>", if c.a_droite() { " class='n'" } else { "" }, s));
         }
-        corps.push_str(&format!("<tr{}>{}</tr>", if genre.is_empty() { String::new() } else { format!(" class='{}'", genre) }, cel));
+        corps.push_str(&format!("<tr{}>{}</tr>", genre.classe().iter().map(|classe| format!(" class='{}'", classe)).collect::<String>(), cel));
     }
     let th: String = t.colonnes.iter().map(|c| format!("<th{}>{}</th>", if c.a_droite() { " class='n'" } else { "" }, echapper(&c.libelle))).collect();
     let nom = lire_nom(ctx);
@@ -712,7 +731,7 @@ const LIGNE_DE_TEXTE: i64 = 40;
 
 /// La largeur de chaque colonne, en fraction de la largeur utile. Une longueur s'y compte en caracteres (gonfles d'un
 /// dixieme pour un total, de trois pour le total general), une largeur en points.
-pub fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], utile: pdf::Mesure) -> Vec<pdf::Mesure> {
+pub(crate) fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, Rangee)], utile: pdf::Mesure) -> Vec<pdf::Mesure> {
     use pdf::Mesure;
     let n = entetes.len();
     let mut plus_long = vec![Mesure::ZERO; n];
@@ -721,11 +740,11 @@ pub fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], ut
     for (i, (libelle, _)) in entetes.iter().enumerate() {
         mot_entete[i] = Mesure::entier(libelle.split(socle::texte::blanc).map(|m| m.chars().count()).fold(0, usize::max) as i64);
     }
-    let gonfle = |caracteres: usize, genre: &str| {
+    let gonfle = |caracteres: usize, genre: Rangee| {
         let (n, d) = match genre {
-            "total" => (11, 10),
-            "general" => (13, 10),
-            _ => (1, 1),
+            Rangee::Total => (11, 10),
+            Rangee::General => (13, 10),
+            Rangee::Ligne => (1, 1),
         };
         match Mesure::entier(caracteres as i64).fois_rapport(n, d) {
             Some(m) => m,
@@ -734,9 +753,9 @@ pub fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], ut
     };
     for (cellules, genre) in rangees {
         for (i, c) in cellules.iter().take(n).enumerate() {
-            plus_long[i] = plus_long[i].max(gonfle(c.chars().count(), genre));
+            plus_long[i] = plus_long[i].max(gonfle(c.chars().count(), *genre));
             for m in c.split(socle::texte::blanc).filter(|m| !m.is_empty()) {
-                plus_long_mot[i] = plus_long_mot[i].max(gonfle(m.chars().count(), genre));
+                plus_long_mot[i] = plus_long_mot[i].max(gonfle(m.chars().count(), *genre));
             }
         }
     }
@@ -798,10 +817,9 @@ fn ligne_de(cellules: Vec<String>) -> pdf::Ligne {
 }
 
 /// La description (FORMAT.md) d'un etat -- A4 paysage, son titre, son tableau, ses
-/// notes. `entetes` : (libelle, a droite) ; `rangees` : (cellules en texte, genre) avec `genre` dans « », « total »
-/// ou « general ».
-pub fn description_pdf(
-    titre: &str, periode: &str, nom: Option<&str>, sous_titre: &str, pied: &str, entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], notes: &[String],
+/// notes. `entetes` : (libelle, a droite) ; `rangees` : (cellules en texte, ce qu'est la rangee).
+pub(crate) fn description_pdf(
+    titre: &str, periode: &str, nom: Option<&str>, sous_titre: &str, pied: &str, entetes: &[(String, bool)], rangees: &[(Vec<String>, Rangee)], notes: &[String],
     sources: &[String],
 ) -> pdf::Description {
     let fr = fractions(entetes, rangees, PAGE_LARGEUR - pdf::Mesure::entier(68));
@@ -814,11 +832,11 @@ pub fn description_pdf(
         .iter()
         .map(|(cellules, genre)| {
             let mut l = ligne_de(cellules.clone());
-            if *genre == "total" {
+            if *genre == Rangee::Total {
                 l.gras = true;
                 l.filet_haut = filets("#999999", mesure("0.5"));
                 l.filet_bas = filets("#999999", mesure("0.5"));
-            } else if *genre == "general" {
+            } else if *genre == Rangee::General {
                 l.gras = true;
                 l.taille = Some(pdf::Mesure::entier(8));
                 l.couleur = Some(ROUGE.to_string());
@@ -905,7 +923,7 @@ pub fn pdf_fabrique(description: &pdf::Description) -> R<Vec<u8>> {
 /// `pdf_tableau` : A4 paysage, l'en-tete des colonnes a chaque page, un pied numerote.
 pub fn pdf_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
     let sous = format!("{}{}", t.periode, if t.donnees_personnelles { " — porte des données personnelles" } else { "" });
-    let rangs: Vec<(Vec<String>, &str)> = rangees(t).into_iter().map(|(d, genre)| (t.colonnes.iter().map(|c| cellule_lisible(d, c, genre)).collect(), genre)).collect();
+    let rangs: Vec<(Vec<String>, Rangee)> = rangees(t).into_iter().map(|(d, genre)| (t.colonnes.iter().map(|c| cellule_lisible(d, c, genre)).collect(), genre)).collect();
     let entetes: Vec<(String, bool)> = t.colonnes.iter().map(|c| (c.libelle.clone(), c.a_droite())).collect();
     let d = description_pdf(&t.titre, &t.periode, lire_nom(ctx), &sous, &format!("{} — {}", t.titre, t.periode), &entetes, &rangs, &t.avertissements, &t.sources);
     pdf_fabrique(&d)

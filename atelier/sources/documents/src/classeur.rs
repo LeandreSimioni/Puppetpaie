@@ -20,12 +20,18 @@ pub enum Vertical {
     Haut,
 }
 
+/// Le corps de la police du classeur, Calibri 11 : celui de toute cellule qui n'en dit pas d'autre.
+pub const CORPS_DU_CLASSEUR: u32 = 11;
+
+/// Le format de nombre « General » d'une cellule qui n'en a pas d'autre (`numFmtId` 0, le premier format predefini).
+const FORMAT_GENERAL: usize = 0;
+
 /// La mise en forme d'une cellule ; par defaut, celle du classeur (Calibri 11, sans rien de plus).
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Style {
     pub gras: bool,
-    /// Le corps de la police, en points ; sans lui, 11.
-    pub corps: Option<u32>,
+    /// Le corps de la police, en points (celui du classeur : `CORPS_DU_CLASSEUR`).
+    pub corps: u32,
     pub retour_a_la_ligne: bool,
     /// Centre horizontalement.
     pub centre: bool,
@@ -36,10 +42,10 @@ pub struct Style {
 
 impl Style {
     /// Celle du classeur : rien de plus que sa police.
-    pub const CLASSEUR: Style = Style { gras: false, corps: None, retour_a_la_ligne: false, centre: false, vertical: None, format: None };
+    pub const CLASSEUR: Style = Style { gras: false, corps: CORPS_DU_CLASSEUR, retour_a_la_ligne: false, centre: false, vertical: None, format: None };
 
-    /// En gras, au corps dit (ou celui du classeur).
-    pub fn gras(corps: Option<u32>) -> Style {
+    /// En gras, au corps dit.
+    pub fn gras(corps: u32) -> Style {
         Style { gras: true, corps, ..Style::CLASSEUR }
     }
 }
@@ -208,14 +214,14 @@ impl Feuille {
 /// `styles` (le premier est celui du classeur).
 fn feuille_de_styles(styles: &[Style]) -> String {
     let mut formats: Vec<&'static str> = Vec::new();
-    let mut polices: Vec<(bool, u32)> = vec![(false, 11)];
+    let mut polices: Vec<(bool, u32)> = vec![(false, CORPS_DU_CLASSEUR)];
     for s in styles {
         if let Some(f) = s.format {
             if !formats.contains(&f) {
                 formats.push(f);
             }
         }
-        let p = (s.gras, s.corps.unwrap_or(11));
+        let p = (s.gras, s.corps);
         if !polices.contains(&p) {
             polices.push(p);
         }
@@ -239,13 +245,19 @@ fn feuille_de_styles(styles: &[Style]) -> String {
     x.push_str("<cellStyleXfs count=\"1\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/></cellStyleXfs>");
     x.push_str(&format!("<cellXfs count=\"{}\">", styles.len()));
     for s in styles {
-        let format = s.format.and_then(|f| formats.iter().position(|x| *x == f)).map_or(0, |i| 164 + i);
-        let police = match polices.iter().position(|p| *p == (s.gras, s.corps.unwrap_or(11))) {
+        let format = match s.format {
+            Some(f) => match formats.iter().position(|x| *x == f) {
+                Some(i) => 164 + i,
+                None => unreachable!("chaque format d'un style est dans la liste des formats"),
+            },
+            None => FORMAT_GENERAL,
+        };
+        let police = match polices.iter().position(|p| *p == (s.gras, s.corps)) {
             Some(i) => i,
             None => unreachable!("chaque police d'un style est dans la liste des polices"),
         };
         let mut attributs = format!("numFmtId=\"{}\" fontId=\"{}\" fillId=\"0\" borderId=\"0\" xfId=\"0\"", format, police);
-        if format != 0 {
+        if format != FORMAT_GENERAL {
             attributs.push_str(" applyNumberFormat=\"1\"");
         }
         if police != 0 {

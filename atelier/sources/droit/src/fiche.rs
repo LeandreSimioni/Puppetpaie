@@ -100,7 +100,7 @@ pub trait Choix {
 }
 
 /// LA VALEUR D'UN CHANGEMENT DE CASE (`fiche!`) : `null` vide la case ; sinon elle se lit dans le type de la case. `""`
-/// n'est pas le vide et se refuse (`socle::forme::texte_opt`).
+/// n'est pas le vide et se refuse (`socle::forme::Remplie`).
 pub fn nulle_ou_dite<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<T>, D::Error> {
     match socle::forme::Remplie::<T>::deserialize(d)? {
         socle::forme::Remplie::Nulle => Ok(None),
@@ -2269,12 +2269,6 @@ compagnie à nouveau (« Ajouter une compagnie », d'un logiciel précédent) ou
 fn refus_d_ecriture(fichier: &str, chemin: &str, detail: &str) -> String {
     let ou = if chemin.is_empty() { String::new() } else { format!(", à « {} »", chemin) };
     format!("{}{} ne s'écrirait pas : {}. Rien n'est écrit : corriger cette valeur.", fichier, ou, detail)
-}
-
-/// Les champs d'une fiche a un jour (ou toute forme d'une fiche), lus de `v` (une charge, une fiche composee) : le
-/// refus nomme la cle jusqu'a sa case.
-pub fn lire_champs<T: DeserializeOwned>(v: &(impl Serialize + ?Sized), quoi: &str) -> R<T> {
-    socle::forme::relire_en_phrase(v, |chemin, detail| refus_de_fiche(quoi, chemin, detail))
 }
 
 /// CE QU'UNE ECRITURE VA POSER DANS LE FICHIER `fichier`, lu par sa forme avant de s'ecrire : ce qui ne se lit pas se

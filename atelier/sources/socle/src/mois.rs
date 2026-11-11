@@ -207,10 +207,11 @@ pub struct Annee(i32);
 impl Annee {
     /// L'annee `an` (1 a 9999) ; refus sinon.
     pub fn nouvelle(an: i64) -> R<Annee> {
-        match i32::try_from(an) {
-            Ok(a) if (1..=9999).contains(&a) => Ok(Annee(a)),
-            Ok(_) | Err(_) => Err(refus(crate::date::annee_impossible(an))),
+        if !(1..=9999).contains(&an) {
+            return Err(refus(crate::date::annee_impossible(an)));
         }
+        // De 1 a 9999, l'annee tient sur 32 bits.
+        Ok(Annee(an as i32))
     }
 
     /// Une annee ecrite `AAAA` (quatre chiffres) ; toute autre forme se refuse.
