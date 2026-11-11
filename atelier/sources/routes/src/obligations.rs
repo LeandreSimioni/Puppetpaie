@@ -750,16 +750,14 @@ pub(crate) struct EnvoiDeLArret {
     pub quand: HeureDuJournal,
 }
 
-/// L'ordre d'une heure du journal et d'une heure de saisie, tel que leurs textes l'ont toujours donne : par le jour ; le
-/// meme jour, un instant du journal (`AAAA-MM-JJTHH:MM:SS`) vient apres toute saisie (`AAAA-MM-JJ HH:MM`), un jour seul
-/// avant.
-fn ordre_ecrit(quand: HeureDuJournal, saisi: HeureDeSaisie) -> std::cmp::Ordering {
-    match quand.jour().cmp(&saisi.jour()) {
-        std::cmp::Ordering::Equal => match quand {
-            HeureDuJournal::Instant(_) => std::cmp::Ordering::Greater,
-            HeureDuJournal::Jour(_) => std::cmp::Ordering::Less,
-        },
-        autre => autre,
+/// L'ordre d'une heure du journal et d'une heure de saisie, toutes deux l'heure de Paris (`socle::paris`) : un instant
+/// du journal se compare a la seconde ; un jour seul (un bilan repris qui ne dit pas son heure) ne vient apres la saisie
+/// que s'il est d'un jour suivant.
+fn ordre(quand: HeureDuJournal, saisi: HeureDeSaisie) -> std::cmp::Ordering {
+    match quand {
+        HeureDuJournal::Instant(i) => i.naif().cmp(&saisi.naif()),
+        HeureDuJournal::Jour(j) if j > saisi.jour() => std::cmp::Ordering::Greater,
+        HeureDuJournal::Jour(_) => std::cmp::Ordering::Less,
     }
 }
 
@@ -785,11 +783,11 @@ fn envoi(envois: &[EnvoiDeLArret], nature: &str) -> Option<Fait> {
 fn rectificatif_du(prolongations: &[Prolongation], envois: &[EnvoiDeLArret]) -> Option<(Depart, Option<Fait>)> {
     let signalements: Vec<&EnvoiDeLArret> = envois.iter().filter(|e| e.nature_declaration == "04").collect();
     let premier = signalements.iter().map(|e| e.quand).min()?;
-    let p = prolongations.iter().filter(|p| p.subrogation_fin != p.subrogation_fin_avant && ordre_ecrit(premier, p.saisi_le).is_lt()).last()?;
+    let p = prolongations.iter().filter(|p| p.subrogation_fin != p.subrogation_fin_avant && ordre(premier, p.saisi_le).is_lt()).last()?;
     let depart = Depart { jour: p.le, minute: None, quoi: "le jour où la prolongation de la subrogation a été saisie".into(), presume: None };
     let rectificatif = signalements
         .iter()
-        .filter(|e| e.type_declaration.as_deref() == Some(declarations::signalement::ANNULE_ET_REMPLACE) && ordre_ecrit(e.quand, p.saisi_le).is_ge())
+        .filter(|e| e.type_declaration.as_deref() == Some(declarations::signalement::ANNULE_ET_REMPLACE) && ordre(e.quand, p.saisi_le).is_ge())
         .map(|e| e.quand)
         .min();
     let fait = match rectificatif {
@@ -1600,5 +1598,34 @@ mod essais {
         };
         assert!(fctu_depose(&ligne("KO"), "fanchon", &fin).unwrap().is_none());
         assert!(fctu_depose(&ligne("OK"), "fanchon", &fin).unwrap().is_some());
+    }
+
+    /// Bug reel : un annule-et-remplace depose a 9 h comptait comme fait pour une prolongation saisie a 15 h le meme
+    /// jour (l'ordre se lisait sur les textes, `T` apres l'espace). Fiche net-entreprises 1983 : le rectificatif suit la
+    /// prolongation ; depose avant elle, il ne porte pas la fin de subrogation nouvelle, et reste du.
+    #[test]
+    fn un_rectificatif_depose_avant_la_prolongation_ne_la_fait_pas() {
+        let jour = |t: &str| Jour::lire(t).unwrap();
+        let signalement = |type_declaration: &str, quand: &str| EnvoiDeLArret {
+            nature_declaration: "04".into(),
+            type_declaration: Some(type_declaration.into()),
+            ordre: None,
+            mois: None,
+            fichier: None,
+            quand: HeureDuJournal::lire(quand).unwrap(),
+        };
+        let prolongation = Prolongation {
+            le: jour("2026-11-03"),
+            saisi_le: HeureDeSaisie::lire("2026-11-03 15:00").unwrap(),
+            qui: "t".into(),
+            fin_avant: jour("2026-11-06"),
+            fin: jour("2026-11-13"),
+            subrogation_fin_avant: Some(jour("2026-11-06")),
+            subrogation_fin: Some(jour("2026-11-13")),
+        };
+        let avant = [signalement("01", "2026-11-02T10:00:00"), signalement("03", "2026-11-03T09:00:00")];
+        assert!(rectificatif_du(std::slice::from_ref(&prolongation), &avant).unwrap().1.is_none());
+        let apres = [signalement("01", "2026-11-02T10:00:00"), signalement("03", "2026-11-03T16:00:00")];
+        assert!(rectificatif_du(std::slice::from_ref(&prolongation), &apres).unwrap().1.is_some());
     }
 }
