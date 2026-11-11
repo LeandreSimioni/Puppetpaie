@@ -9,7 +9,7 @@
 use serde::Serialize;
 
 use declarations::champs::{Anomalie, Saisie, Valeur};
-use droit::fiche::{NomDeCase, NomDeFiche};
+use droit::fiche::{CaseDeFiche, NomDeFiche};
 
 use socle::ecran::{couleur_de_l_etat, EtatDEcran, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
@@ -254,7 +254,7 @@ pub enum EtatFiche {
 /// Une case vide d'une fiche qu'une piece remplit : sa valeur et d'ou elle vient.
 #[derive(Debug, Clone, Serialize)]
 pub struct Completee {
-    pub champ: NomDeCase,
+    pub champ: CaseDeFiche,
     pub valeur: Valeur,
     #[serde(flatten)]
     pub origine: Origine,
@@ -274,7 +274,7 @@ pub enum DitPar {
 /// UN ECART : une case que la fiche dit, qu'une piece disait autrement ; la fiche fait foi.
 #[derive(Debug, Clone, Serialize)]
 pub struct Ecart {
-    pub champ: NomDeCase,
+    pub champ: CaseDeFiche,
     /// La case de la fiche, telle qu'elle est (un texte, ou une structure : la banque).
     pub fiche: Valeur,
     #[serde(flatten)]
@@ -283,7 +283,7 @@ pub struct Ecart {
 }
 
 impl Ecart {
-    pub fn new(champ: impl Into<NomDeCase>, fiche: Valeur, par: DitPar) -> Ecart {
+    pub fn new(champ: impl Into<CaseDeFiche>, fiche: Valeur, par: DitPar) -> Ecart {
         let (ou, lu) = match &par {
             DitPar::Certificat { certificat, fichier, page } => (format!("le certificat ({}, page {}) disait", fichier, page), certificat.clone()),
             DitPar::Aem { aem, fichier, page } => (format!("l'AEM ({}, page {}) disait", fichier, page), aem.clone()),

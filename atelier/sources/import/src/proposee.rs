@@ -20,7 +20,7 @@ pub fn de<T: Serialize + ?Sized>(nom: droit::fiche::NomDeFiche, t: &T) -> R<Sais
 /// Les cases et les notes de `autre` posees dans `s`, a la place de celles qu'il avait.
 pub fn fondre(s: &mut Saisie, autre: &Saisie) {
     for (k, v) in autre.cases() {
-        s.poser(k, v.clone());
+        s.poser(*k, v.clone());
     }
     for (k, t) in autre.notes() {
         s.poser_note(k, t.clone());
@@ -31,8 +31,8 @@ pub fn fondre(s: &mut Saisie, autre: &Saisie) {
 /// garde.
 pub fn completer_de(s: &mut Saisie, autre: &Saisie) {
     for (k, v) in autre.cases() {
-        if s.case(k).is_none() {
-            s.poser(k, v.clone());
+        if s.valeur(*k).is_none() {
+            s.poser(*k, v.clone());
         }
     }
     for (k, t) in autre.notes() {

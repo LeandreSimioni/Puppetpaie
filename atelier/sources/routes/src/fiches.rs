@@ -18,7 +18,7 @@ use compagnie::INTERFACE;
 use declarations::champs::{self, Saisie};
 use documents::fiche_questionnaire as fq;
 use droit::contexte::{Contexte, IdSalarie};
-use droit::fiche::{CaseEntreprise, ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, NomDeCase, NomDeFiche, Piece};
+use droit::fiche::{CaseEntreprise, ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, CaseDeFiche, NomDeFiche, Piece};
 use envois::courriel::Courriel;
 use envois::courriel_lecture as lecture;
 use envois::envoi::{self, Message};
@@ -426,7 +426,7 @@ struct EffectifDit {
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Permanents {
     phrase: &'static str,
-    montres: Vec<NomDeCase>,
+    montres: Vec<CaseDeFiche>,
     pieces_ouvertes: Vec<Piece>,
 }
 
@@ -450,7 +450,7 @@ fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
 /// permanent, celle d'une compagnie qui en emploie) ou pour une case au moins (celle du metier). La page n'ouvre le tiroir
 /// d'une piece que sur elles.
 pub(crate) struct Montres {
-    pub(crate) cases: Vec<NomDeCase>,
+    pub(crate) cases: Vec<CaseDeFiche>,
     pub(crate) pieces_ouvertes: Vec<Piece>,
 }
 
@@ -480,7 +480,7 @@ pub(crate) fn montres(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnee
     let avec_permanents = nom == NomDeFiche::Entreprise && permanents_de(entreprise);
     let du_metier = cases_des_metiers(ctx, nom, cle, donnees)?;
     let (cse, casc) = if nom == NomDeFiche::Entreprise { pieces_de_l_effectif(ctx, entreprise)? } else { (false, false) };
-    let ouverte = |piece: Piece, case: NomDeCase| match piece {
+    let ouverte = |piece: Piece, case: CaseDeFiche| match piece {
         Piece::Permanent => au_mois,
         Piece::EmploieDesPermanents => avec_permanents,
         Piece::Metier | Piece::MetierAuMois => du_metier.contains(&case),
@@ -525,7 +525,7 @@ fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &Saisie) -> R<(bool, bool)> 
 /// l'annexe I, que sa prime
 /// d'anciennete peut viser (`droit::clauses::prime_anciennete_possible`, le metier de la carte ou de la fiche de son
 /// salarie). Un engagement qui n'est plus actif ne demande rien ; une fiche sans engagement, rien.
-fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees: &Saisie) -> R<std::collections::BTreeSet<NomDeCase>> {
+fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees: &Saisie) -> R<std::collections::BTreeSet<CaseDeFiche>> {
     let mut cases = std::collections::BTreeSet::new();
     let dit = |x: Option<&str>| x.map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
     let de_la_fiche = dit(donnees.mot(droit::fiche::CaseSalarie::CodeEmploiFt).as_deref());
@@ -552,7 +552,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees
     }
     for (code, statut, jour, salarie) in &metiers {
         if nom == NomDeFiche::Salarie {
-            cases.extend(engagement::minima::cases_du_metier(ctx, code, jour)?);
+            cases.extend(engagement::minima::cases_du_metier(ctx, code, jour)?.into_iter().map(CaseDeFiche::from));
             continue;
         }
         let ent = &ctx.entreprise;
@@ -561,7 +561,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees
             None => ctx.salarie(salarie)?.statut.dite().map(|s| droit::fiche::Choix::code(s).to_string()),
         };
         if droit::clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), Some(code), statut.as_deref())? {
-            cases.insert(droit::fiche::CaseEntreprise::JaugeAnnexe1.into());
+            cases.insert(droit::fiche::CasePieceEntreprise::JaugeAnnexe1.into());
         }
     }
     Ok(cases)
@@ -1233,7 +1233,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         let p = preparer::<FicheSalarieDatee>(ctx, existante.as_deref(), |plate| {
             let mut nommees = Vec::new();
             for k in dites {
-                let a_remplir = deja.as_ref().is_none_or(|v| vide(v.case(k)));
+                let a_remplir = deja.as_ref().is_none_or(|v| vide(v.valeur(k)));
                 if let (true, Some(ch)) = (a_remplir, <FicheSalarieDatee as droit::fiche::FicheDatee>::changement(&recue, k)) {
                     <FicheSalarieDatee as droit::fiche::FicheDatee>::appliquer(plate, ch);
                     nommees.push(k);

@@ -480,7 +480,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
         };
         if let Some(e) = emplacement {
             e.etat = EtatFiche::Completee;
-            e.completer.retain(|c| faits.case(c.champ).is_some());
+            e.completer.retain(|c| faits.valeur(c.champ).is_some());
         }
         ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.nom)).display().to_string());
         completees += 1;

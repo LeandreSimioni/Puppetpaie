@@ -28,7 +28,7 @@ pub(crate) struct TempsDeLaCase<V> {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub(crate) enum CaseDatee {
-    Case(droit::fiche::NomDeCase),
+    Case(droit::fiche::CaseDeFiche),
     Contrat(String),
 }
 
@@ -88,7 +88,7 @@ pub(crate) fn d_une_case<V: Clone>(champ: CaseDatee, liste: &[droit::fiche::Date
 
 /// LES TEMPS DES CASES DE CHAQUE LIGNE d'une liste datee (`lignes`, chacune nommee), sous la case `champ` de la liste ;
 /// `None` si aucune case d'aucune ligne n'a plus d'une valeur.
-pub(crate) fn d_une_liste<V>(champ: droit::fiche::NomDeCase, lignes: Vec<TempsDUneLigne<V>>) -> Option<TempsDeLaCase<V>> {
+pub(crate) fn d_une_liste<V>(champ: droit::fiche::CaseDeFiche,lignes: Vec<TempsDUneLigne<V>>) -> Option<TempsDeLaCase<V>> {
     let lignes: Vec<TempsDUneLigne<V>> = lignes.into_iter().filter(|l| !l.cases.is_empty()).collect();
     (!lignes.is_empty()).then(|| TempsDeLaCase { champ: CaseDatee::Case(champ), avant: None, a_venir: None, valeurs: Vec::new(), lignes })
 }

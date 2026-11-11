@@ -35,7 +35,7 @@ use regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
 
-use droit::fiche::{CaseEntreprise, CaseSalarie, NomDeCase};
+use droit::fiche::{CaseDeFiche, CaseEntreprise, CaseSalarie, NomDeCase};
 use socle::echec::{Echoue, R, FENETRE_MS};
 use socle::ecriture::Arbre;
 use socle::temps::maintenant_ms;
@@ -254,10 +254,10 @@ fn signature(p: &Path) -> Option<(SystemTime, u64)> {
 
 /// Les textes qu'une fiche datee a portes, champ par champ (`droit::fiche::VoirListe`) : tout ce qui peut nommer une
 /// personne, a quelque date que ce soit.
-struct TextesDeFiche(Vec<(NomDeCase, Vec<String>)>);
+struct TextesDeFiche(Vec<(CaseDeFiche, Vec<String>)>);
 
 impl droit::fiche::VoirListe for TextesDeFiche {
-    fn liste<T: Serialize>(&mut self, cle: NomDeCase, liste: &[droit::fiche::Datee<T>]) {
+    fn liste<T: Serialize>(&mut self, cle: CaseDeFiche, liste: &[droit::fiche::Datee<T>]) {
         let textes: Vec<String> = liste.iter().filter_map(|e| e.valeur.as_ref()).filter_map(texte_de).collect();
         if !textes.is_empty() {
             self.0.push((cle, textes));
@@ -274,7 +274,7 @@ impl TextesDeFiche {
 
     /// Tous les textes que le champ `cle` a portes.
     fn tous(&self, cle: impl Into<NomDeCase>) -> impl Iterator<Item = &String> {
-        let cle = cle.into();
+        let cle = CaseDeFiche::Case(cle.into());
         self.0.iter().filter(move |(c, _)| *c == cle).flat_map(|(_, l)| l.iter())
     }
 

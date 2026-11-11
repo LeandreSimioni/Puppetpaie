@@ -54,7 +54,7 @@ use serde::Serialize;
 use import::bulletin_lu::{self, BulletinLu, Compteurs, Table};
 use declarations::champs::{Saisie, Valeur};
 use droit::contexte::Contexte;
-use droit::fiche::{CaseSalarie, CaseSpectacle, NomDeCase, NomDeFiche};
+use droit::fiche::{CaseDeFiche, CaseSalarie, CaseSpectacle, NomDeCase, NomDeFiche};
 use engagement::importe::EmploiImprime;
 use socle::date::Jour;
 use socle::echec::R;
@@ -1546,7 +1546,7 @@ fn libelle_salarie(fiche: &droit::fiche::ChampsSalarie) -> String {
 /// l'imprime (`identite`) ; l'adresse, le statut, l'anciennete et la cle du NIR, avec le plus recent.
 fn noter_par_champ(entree: &mut FicheImportee, champs: &Saisie, ls: &[&Lu], chemin: &dyn Fn(&Lu) -> String) -> R<()> {
     let Some(dernier) = ls.last() else { return Ok(()) };
-    let par: HashMap<NomDeCase, &Lu> = identite(ls).into_iter().map(|(cle, _, l)| (cle.into(), l)).collect();
+    let par: HashMap<CaseDeFiche, &Lu> = identite(ls).into_iter().map(|(cle, _, l)| (cle.into(), l)).collect();
     let table = declarations::champs::fiche(NomDeFiche::Salarie)?;
     for (k, v) in champs.cases() {
         // Une forme lisible vient du bulletin de sa forme declaree.
@@ -1559,7 +1559,7 @@ fn noter_par_champ(entree: &mut FicheImportee, champs: &Saisie, ls: &[&Lu], chem
             None => *dernier,
         };
         let mut un = Saisie::default();
-        un.poser(k, v.clone());
+        un.poser(*k, v.clone());
         entree.noter(&un, &Origine::bulletin(Some(chemin(l)), Some(l.page)));
     }
     Ok(())
@@ -1644,10 +1644,10 @@ fn ecarts_entreprise(fiche: &Saisie, lue: &Saisie, l: &Lu, chemin: &str) -> Vec<
 fn lisibles_de_la_piece(nom: NomDeFiche, f: &mut Saisie) -> R<()> {
     for c in declarations::champs::fiche(nom)? {
         let Some(source) = c.derive_de else { continue };
-        if f.dite(source).is_some() {
+        if f.valeur(source).is_some_and(Valeur::dite) {
             continue;
         }
-        let Some(v) = f.texte(c.cle).map(str::to_string) else { continue };
+        let Some(v) = f.valeur(c.cle).and_then(Valeur::texte).map(str::to_string) else { continue };
         if v.chars().any(char::is_lowercase) {
             f.poser(source, Valeur::Texte(v));
         }
@@ -1665,16 +1665,17 @@ fn lisibles_de_la_piece_sur(nom: NomDeFiche, fiche: &Saisie, proposees: &Saisie)
     let mut out = Saisie::default();
     for c in declarations::champs::fiche(nom)? {
         let Some(source) = c.derive_de else { continue };
-        let (Some(officiel), Some(lisible)) = (fiche.texte(c.cle), fiche.texte(source)) else { continue };
-        let (Some(officiel_piece), Some(lisible_piece)) = (proposees.texte(c.cle), proposees.texte(source)) else { continue };
-        if lisible_piece == lisible || compare(officiel_piece) != compare(officiel) {
+        let texte = |s: &'_ Saisie, k: CaseDeFiche| s.valeur(k).and_then(Valeur::texte).map(str::to_string);
+        let (Some(officiel), Some(lisible)) = (texte(fiche, c.cle), texte(fiche, source)) else { continue };
+        let (Some(officiel_piece), Some(lisible_piece)) = (texte(proposees, c.cle), texte(proposees, source)) else { continue };
+        if lisible_piece == lisible || compare(&officiel_piece) != compare(&officiel) {
             continue;
         }
         let mut seul = Saisie::default();
         seul.poser(c.cle, Valeur::Texte(officiel.to_string()));
         let reconstitue = seul.comblee(nom)?;
-        if reconstitue.texte(source) == Some(lisible) {
-            out.poser(source, Valeur::Texte(lisible_piece.to_string()));
+        if texte(&reconstitue, source) == Some(lisible) {
+            out.poser(source, Valeur::Texte(lisible_piece));
         }
     }
     Ok(out)

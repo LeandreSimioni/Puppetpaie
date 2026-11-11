@@ -35,9 +35,9 @@
 
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
-use droit::fiche::{CaseEntreprise, CaseSalarie, NomDeCase};
+use droit::fiche::{CaseDeFiche, CaseEntreprise, CasePieceEntreprise, CaseSalarie};
 use socle::date::Jour;
-use Origine::{Entreprise as E, Etablissement, Salarie as S};
+use Origine::{Entreprise as E, Etablissement, PieceDeLEntreprise as PE, Salarie as S};
 use socle::mois::{Graphie, Mois};
 use socle::echec::R;
 
@@ -73,6 +73,8 @@ enum Origine {
     Salarie(CaseSalarie),
     /// Une case de la fiche entreprise, que son historique date.
     Entreprise(CaseEntreprise),
+    /// Une case d'une piece de la fiche entreprise, que son historique date.
+    PieceDeLEntreprise(CasePieceEntreprise),
     /// L'etablissement que la carte de l'engagement dit : il change par un avenant, que la saisie date.
     Etablissement,
 }
@@ -153,7 +155,7 @@ const MODALITES: [Modalite; 20] = [
     // `chapitre-4-controles.txt` l. 1047). 40.084 change avec le temps partiel (un avenant, date par la saisie), avec
     // la renonciation de l'etablissement (la fiche entreprise) ou avec le statut d'artiste, que la loi exclut de la
     // proratisation (`calcul::plafond_temps_partiel`). Absente des DSN de 2026 : rien de declare, pas de bloc 41.
-    d("S21.G00.40.084", "S21.G00.41.066", true, &[S(CaseSalarie::Statut), E(CaseEntreprise::PlafondTempsPartiel)]),
+    d("S21.G00.40.084", "S21.G00.41.066", true, &[S(CaseSalarie::Statut), PE(CasePieceEntreprise::PlafondTempsPartiel)]),
 ];
 
 /// Le bloc 40 d'un contrat tel qu'une DSN partie l'a declare (`dsn::bloc_40_declare`).
@@ -210,9 +212,10 @@ fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, m
     }
     // Sans fiche datee, aucun changement date.
     for origine in md.origines {
-        let (depuis, ou, c): (Vec<Option<Jour>>, &str, NomDeCase) = match *origine {
+        let (depuis, ou, c): (Vec<Option<Jour>>, &str, CaseDeFiche) = match *origine {
             S(c) => (ctx.salarie_brut(p.salarie.id.as_str()).into_iter().flat_map(|b| b.depuis(c.into())).collect(), "la fiche du salarie", c.into()),
             E(c) => (ctx.entreprise_brute().depuis(c.into()), "la fiche entreprise", c.into()),
+            PE(c) => (ctx.entreprise_brute().depuis(c.into()), "la fiche entreprise", c.into()),
             // L'etablissement est de la carte : un avenant le change, que la saisie date (`date_modification`).
             Etablissement => continue,
         };

@@ -73,7 +73,10 @@ que par la structure :
   engagements payés au mois (`engagement::permanents::cle_du_salarie`) ; celle du métier, case par case, par la grille
   du métier de chacun de ses engagements ; celles de l'effectif, par lui ; une pièce qu'aucun engagement ni l'effectif
   ne peut ouvrir ne pose aucune question. Le fichier reste à plat ; la pièce d'une case se lit dans sa forme, jamais dans
-  `champs-base.json`. Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
+  `champs-base.json`. Une case d'une pièce n'est pas un `droit::fiche::NomDeCase` : `fiche!` la déclare à part
+  (`droit::fiche::CaseDePiece`), et une saisie (`declarations::champs::Saisie`) ne la lit pas par `case`, qui ne prend
+  qu'un `NomDeCase`, mais par `piece`, qui prend une `CaseDePiece` ; la mécanique de toutes les cases (la table,
+  l'écriture datée) les nomme ensemble (`droit::fiche::CaseDeFiche`). Une rubrique livrée que seul le calcul d'un salarié au mois paie est rangée à part
   (`au_mois` de `rubriques-base.json`, `droit::catalogue::Rubrique::piece`) ; un contrat d'organisme des permanents
   l'est par son rôle, prévoyance ou santé (`droit::organismes::Attendu::piece`). Aucune étiquette ne dit une pièce. Le
   rejeu des deux fictives le vérifie (`moteur/tests/rejeu.rs`, `aucune_piece_fermee_ne_se_montre`) : le Fil de fer,

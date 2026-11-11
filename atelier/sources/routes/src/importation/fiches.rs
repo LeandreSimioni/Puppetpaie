@@ -44,7 +44,7 @@ fn ecrire<F: SorteDeFiche>(ctx: &Contexte, donnees: &Saisie, note: &str) -> R<(O
 
 /// Les cases que `lue` dit, posees dans `plate` : une fiche vide la prend entiere, ses notes comprises. Rend les cases
 /// posees.
-fn poser_les_cases<F: SorteDeFiche>(plate: &mut F::Plate, lue: F::Plate) -> Vec<droit::fiche::NomDeCase> {
+fn poser_les_cases<F: SorteDeFiche>(plate: &mut F::Plate, lue: F::Plate) -> Vec<droit::fiche::CaseDeFiche> {
     let dites = F::differentes(&F::Plate::default(), &lue);
     if F::differentes(&F::Plate::default(), plate).is_empty() {
         *plate = lue;
@@ -77,8 +77,8 @@ fn completer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, champs: &Saisie
     };
     let au = fiches::vue::<F>(&brute.au(&ctx.lue_au))?;
     let mut ecrits = Saisie::default();
-    for (k, v) in champs.cases().iter().filter(|(k, _)| fiches::vide(au.case(k))) {
-        ecrits.poser(k, v.clone());
+    for (k, v) in champs.cases().iter().filter(|(k, _)| fiches::vide(au.valeur(*k))) {
+        ecrits.poser(*k, v.clone());
     }
     for (k, t) in champs.notes().iter().filter(|(k, _)| au.note(k).is_none_or(|n| n.trim().is_empty())) {
         ecrits.poser_note(k, t.clone());

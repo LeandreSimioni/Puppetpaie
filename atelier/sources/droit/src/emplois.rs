@@ -16,7 +16,7 @@ use socle::echec::R;
 use socle::date::Jour;
 
 use crate::contexte::Contexte;
-use crate::fiche::{CaseSalarie, FicheSalarie, Lue, NomDeCase, Statut, StatutCategorielRc, StatutConventionnel};
+use crate::fiche::{CaseDeFiche, CaseSalarie, FicheSalarie, Lue, Statut, StatutCategorielRc, StatutConventionnel};
 
 /// `emplois-base.json` : le catalogue des metiers, dans l'ordre ou le deroulant les montre, et les noms courts des
 /// conventions. Sa `note` dit le perimetre, les sources et les regles de chaque champ.
@@ -392,7 +392,7 @@ pub fn emploi_du_mois(ctx: &Contexte, cle: &str, debut: &Jour, fin: &Jour) -> R<
         if avant == apres {
             continue;
         }
-        let c = NomDeCase::from(c);
+        let c = CaseDeFiche::from(c);
         let le = ctx.salarie_brut(cle).into_iter().flat_map(|b| b.depuis(c)).flatten().filter(|j| j > debut && j <= fin).last();
         let premier = Jour { jour: 1, ..*debut };
         let suivant = Jour { jour: 1, ..premier.plus_jours(31)? };

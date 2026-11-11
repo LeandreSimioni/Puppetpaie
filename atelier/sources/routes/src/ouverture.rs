@@ -17,7 +17,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::etapes::Moteur;
 use compagnie::etat_dsn::Etat;
 use declarations::champs::{self, Valeur};
-use droit::fiche::{CaseEntreprise, CaseEtablissement, CaseSalarie, CaseSpectacle, NomDeCase, NomDeFiche};
+use droit::fiche::{CaseDeFiche, CaseEntreprise, CaseEtablissement, CaseSalarie, CaseSpectacle, NomDeCase, NomDeFiche};
 use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::catalogue::{self, Rubrique};
 use droit::contexte::Contexte;
@@ -243,13 +243,13 @@ pub(crate) struct VueFiche<P> {
     anomalies: Vec<champs::Anomalie>,
     pastille: PastilleDeFiche,
     sans_titre: bool,
-    montres: Vec<NomDeCase>,
+    montres: Vec<CaseDeFiche>,
     /// Les pieces que les engagements de la fiche ouvrent (`fiches::Montres::pieces_ouvertes`) : la page n'ouvre le tiroir
     /// d'une piece que sur elles.
     pieces_ouvertes: Vec<droit::fiche::Piece>,
     /// Les cases du tiroir « Avancé » qui s'ecartent du cas ordinaire (`champs::Champ::ecart`) : le tiroir s'ouvre pour
     /// elles.
-    ecarts: Vec<NomDeCase>,
+    ecarts: Vec<CaseDeFiche>,
 }
 
 impl<P> VueFiche<P> {
@@ -269,7 +269,7 @@ struct DonneesDeLaFiche<P> {
 }
 
 /// Une case seule, ecrite comme une fiche qui ne porterait qu'elle.
-struct UneCase<'a, T>(NomDeCase, &'a Option<T>);
+struct UneCase<'a, T>(CaseDeFiche, &'a Option<T>);
 
 impl<T: serde::Serialize> serde::Serialize for UneCase<'_, T> {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
@@ -285,14 +285,14 @@ impl<T: serde::Serialize> serde::Serialize for UneCase<'_, T> {
 fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<Vec<TempsDeLaCase<Valeur>>> {
     struct Toutes {
         nom: NomDeFiche,
-        listes: Vec<(NomDeCase, R<Vec<droit::fiche::Datee<Valeur>>>)>,
+        listes: Vec<(CaseDeFiche, R<Vec<droit::fiche::Datee<Valeur>>>)>,
     }
     impl droit::fiche::VoirListe for Toutes {
-        fn liste<T: serde::Serialize>(&mut self, cle: NomDeCase, liste: &[droit::fiche::Datee<T>]) {
+        fn liste<T: serde::Serialize>(&mut self, cle: CaseDeFiche, liste: &[droit::fiche::Datee<T>]) {
             let lue = liste
                 .iter()
                 .map(|e| {
-                    let valeur = champs::Saisie::de_la_fiche(self.nom, &UneCase(cle, &e.valeur))?.case(cle).cloned();
+                    let valeur = champs::Saisie::de_la_fiche(self.nom, &UneCase(cle, &e.valeur))?.valeur(cle).cloned();
                     Ok(droit::fiche::Datee { depuis: e.depuis, valeur, note: e.note.clone() })
                 })
                 .collect();
@@ -323,7 +323,7 @@ fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<V
 /// change pas, avec la note de la version qui l'a changee). Son taux AT/MP a sa case a lui, que `taux-atmp` dit
 /// (`atmp::case_d_un_etablissement`).
 fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Option<TempsDeLaCase<Valeur>>> {
-    type Cases = Vec<(NomDeCase, Vec<droit::fiche::Datee<Valeur>>)>;
+    type Cases = Vec<(CaseDeFiche, Vec<droit::fiche::Datee<Valeur>>)>;
     let Some(liste) = ctx.entreprise_brute().etablissements.as_deref() else { return Ok(None) };
     let principal = ctx.entreprise.nic_principal().map(str::to_string);
     let mut par_nic: Vec<(String, Cases)> = Vec::new();
@@ -342,7 +342,7 @@ fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Optio
                 }
             }
             for (cle, datees) in cases.iter_mut() {
-                let valeur = l.case(*cle).cloned();
+                let valeur = l.valeur(*cle).cloned();
                 if datees.last().is_some_and(|d| d.valeur == valeur) {
                     continue;
                 }

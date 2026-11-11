@@ -1795,35 +1795,6 @@ fn une_seule_fonction_date_une_valeur_de_fiche() {
     assert_eq!(appels.len(), 1, "une valeur de fiche se date par `fiches::ecrire_datee`, et lui seul appelle `FicheDatee::changer` : {:?}", appels);
 }
 
-/// UNE CASE D'UNE PIECE NE SE LIT PAS PAR SON NOM (`droit::fiche::Piece`) : le calcul ne la lit que dans sa piece
-/// ouverte, avec sa cle, et `Cases::voir` ne la regarde pas ; une `Saisie` (la fiche telle que l'ecran la tape, dont la
-/// cle est le nom d'une case declaree, `droit::fiche::NomDeCase`) ne la lit par `case`, `dite`, `mot` ou `texte` que dans
-/// sa porte, `declarations/src/champs.rs`, qui controle ce que la personne ecrit.
-#[test]
-fn une_case_d_une_piece_ne_se_lit_pas_par_son_nom() {
-    use droit::fiche::{ChampsEntreprise, ChampsSalarie, FormeDeCase};
-    let mut rangees: Vec<String> = ChampsEntreprise::cases().iter().filter(|d| ChampsEntreprise::piece_de(d.cle).is_some()).map(|d| d.cle.to_string()).collect();
-    rangees.extend(ChampsSalarie::cases().iter().filter(|d| ChampsSalarie::piece_de(d.cle).is_some()).map(|d| d.cle.to_string()));
-    assert!(!rangees.is_empty(), "aucune case n'est rangee dans une piece");
-    // La porte : le module de la `Saisie`, tel que le compilateur le nomme.
-    let porte = std::any::type_name::<declarations::champs::Saisie>().rsplit_once("::").unwrap().0.to_string();
-    let mut fautes = Vec::new();
-    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
-        let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().replace('\\', "/");
-        if module_de(&rel) == porte {
-            continue;
-        }
-        let t = std::fs::read_to_string(&p).unwrap();
-        for c in &rangees {
-            let lue = regex::Regex::new(&format!(r"\.(?:case|dite|mot|texte)\([^()]*::{}\)", c)).unwrap();
-            if let Some(m) = lue.find(&t) {
-                fautes.push(format!("{} lit la case {} dans une saisie (`{}`)", rel, c, m.as_str()));
-            }
-        }
-    }
-    assert!(fautes.is_empty(), "une case d'une piece se lit par la piece ouverte, avec sa cle :\n{}", fautes.join("\n"));
-}
-
 /// UNE RUBRIQUE D'UN SALARIE AU MOIS NE SE COMPOSE QUE PAR SA CLE (`droit::catalogue::RubriqueDuMois`, la section
 /// `au_mois` de `rubriques-base.json`) : une ligne d'une de ces rubriques n'entre sur une paie que par
 /// `engagement::LignePaie::du_mois` ou `ij_nettes`, qui exigent `natures::AuMois` ; une carte ne les saisit pas
@@ -1874,7 +1845,7 @@ fn une_rubrique_d_un_salarie_au_mois_ne_se_compose_que_par_sa_cle() {
 /// `histoire`) n'est pas une donnee.
 #[test]
 fn champs_base_et_les_fiches_ont_les_memes_cases() {
-    use droit::fiche::{ChampsEntreprise, ChampsSalarie, Declaree, FormeDeCase};
+    use droit::fiche::{ChampsEntreprise, ChampsSalarie, Declaree};
     fn feuilles<'a>(d: &'a [Declaree], devant: &str, out: &mut Vec<(String, &'a Declaree)>) {
         for c in d {
             let chemin = format!("{}{}", devant, c.cle);
@@ -1885,7 +1856,7 @@ fn champs_base_et_les_fiches_ont_les_memes_cases() {
             }
         }
     }
-    fn choix(ou: &str, ligne: &Value, d: &Declaree, fautes: &mut Vec<String>) {
+    fn choix<K>(ou: &str, ligne: &Value, d: &Declaree<K>, fautes: &mut Vec<String>) {
         if ligne["forme"] != json!("choix") {
             return;
         }
@@ -1895,7 +1866,7 @@ fn champs_base_et_les_fiches_ont_les_memes_cases() {
             fautes.push(format!("{} : champs-base offre {:?}, la forme {:?}", ou, ecrits, declares));
         }
     }
-    fn longueur(ou: &str, ligne: &Value, d: &Declaree, fautes: &mut Vec<String>) {
+    fn longueur<K>(ou: &str, ligne: &Value, d: &Declaree<K>, fautes: &mut Vec<String>) {
         let Some((n, unite)) = d.longueur else { return };
         let dite = format!("{} {}", n, unite);
         if !ligne["aide"].as_str().unwrap_or("").contains(&dite) {

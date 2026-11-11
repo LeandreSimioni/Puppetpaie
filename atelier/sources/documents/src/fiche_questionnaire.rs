@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use droit::fiche::{CaseSalarie, NomDeCase};
+use droit::fiche::{CaseDeFiche, CaseSalarie};
 use socle::texte::{blanc as espace, strip};
 use socle::date::Jour;
 use socle::echec::R;
@@ -66,7 +66,7 @@ pub const QUESTIONS: [(&str, &str, CaseSalarie); 15] = [
 ];
 
 /// Les questions posees : celles dont la case sert a un acte (`utile`, que l'appelant lit dans `champs-base.json`).
-pub fn posees(utile: &dyn Fn(NomDeCase) -> bool) -> Vec<(&'static str, &'static str)> {
+pub fn posees(utile: &dyn Fn(CaseDeFiche) -> bool) -> Vec<(&'static str, &'static str)> {
     QUESTIONS.iter().filter(|(_, _, case)| utile((*case).into())).map(|(cle, lib, _)| (*cle, *lib)).collect()
 }
 

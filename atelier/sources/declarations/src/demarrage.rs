@@ -12,7 +12,7 @@ use droit::fiche::Lue as _;
 use serde::Serialize;
 
 use droit::contexte::Contexte;
-use droit::fiche::{CaseEntreprise, ChampsEntreprise, NomDeCase, NomDeFiche};
+use droit::fiche::{CaseDeFiche, CaseEntreprise, ChampsEntreprise, NomDeFiche};
 use socle::date::Jour;
 use socle::echec::{Classe, R};
 
@@ -118,23 +118,23 @@ pub struct PourDemarrer {
 }
 
 /// Le champ `cle` de la fiche entreprise (`champs-base.json`), que cette table doit porter.
-fn champ_entreprise(cle: CaseEntreprise) -> R<crate::champs::Champ> {
-    let cle = NomDeCase::from(cle);
+fn champ_entreprise(cle: impl Into<CaseDeFiche>) -> R<crate::champs::Champ> {
+    let cle = cle.into();
     crate::champs::champ(NomDeFiche::Entreprise, cle)?.ok_or_else(|| socle::echec::livree("champs-base.json", &format!("entreprise.{}", cle)))
 }
 
 /// Le libelle et l'aide du champ `cle` de la fiche entreprise (`champs-base.json`).
-fn champ(cle: CaseEntreprise) -> R<(String, String)> {
+fn champ(cle: impl Into<CaseDeFiche>) -> R<(String, String)> {
     let c = champ_entreprise(cle)?;
     Ok((c.libelle, c.aide))
 }
 
 /// Une ligne qui bloque, sur une case de la fiche entreprise ; une structure dit ses cases (leur nom, leur forme, leurs
 /// valeurs), d'apres la table qui les decrit.
-fn manque_de_la_case(cle: CaseEntreprise, libelle: String, bloque: &str, trouver: String) -> R<Manque> {
-    let nom = NomDeCase::from(cle);
+fn manque_de_la_case(cle: impl Into<CaseDeFiche>, libelle: String, bloque: &str, trouver: String) -> R<Manque> {
+    let nom: CaseDeFiche = cle.into();
     let mut l = Manque::bloquante(nom.nom(), libelle, bloque, ENTREPRISE, Some(nom.nom()), trouver);
-    l.cases = champ_entreprise(cle)?.champs.as_deref().map(crate::champs::cases_dites);
+    l.cases = champ_entreprise(nom)?.champs.as_deref().map(crate::champs::cases_dites);
     Ok(l)
 }
 
@@ -199,10 +199,7 @@ fn une_suspension_non_remuneree(ctx: &Contexte) -> R<Option<droit::natures::AuMo
 /// La ligne d'une case vide qu'un acte exige ou qu'un geste sert (`champs::manquants`), ou elle vit ; celle d'un salarie
 /// dit qui (`salarie` : sa cle et son nom).
 fn ligne(m: crate::champs::Manquant, ou: String, onglet: &str, salarie: Option<(&str, &str)>) -> Manque {
-    let racine = match m.ecran.devant.first() {
-        Some(r) => *r,
-        None => m.ecran.nom,
-    };
+    let racine = m.ecran.champ;
     let (bloque, utile, sinon) = match m.sert {
         crate::champs::Sert::Exigee(actes) => (crate::champs::actes_en_clair(&actes), None, None),
         crate::champs::Sert::Utile { gestes, sinon } => (None, crate::champs::actes_en_clair(&gestes), sinon),
@@ -348,7 +345,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // ne se pose pas (III.3.1.b, `droit::bareme::representation_du_personnel`). Il ne se lit qu'avec la cle de l'effectif
     // (`droit::contexte::Effectif::cse`). Un bareme qui ne se lit pas se dit plus bas, ce qui lui manque.
     let bareme = ctx.bareme(&ctx.aujourdhui);
-    let cle = CaseEntreprise::RepresentationPersonnel;
+    let cle = droit::fiche::CasePieceEntreprise::RepresentationPersonnel;
     let par_representation = |b: &droit::forme_bareme::Pile| b.contributions_conventionnelles.iter().flatten().any(|c| c.par_representation.as_ref().is_some_and(|p| !p.is_empty()));
     // C'est l'effectif de la paie (celui de l'annee d'avant, L. 130-1, I) qui decide (III.3.1.a et b) : inconnu, c'est
     // lui que la contribution demande, pas le CSE.

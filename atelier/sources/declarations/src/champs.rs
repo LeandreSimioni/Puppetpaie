@@ -20,7 +20,7 @@ use std::sync::OnceLock;
 use serde::de::{DeserializeSeed, Deserializer, Error as _, IgnoredAny, MapAccess, SeqAccess, Unexpected, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 
-use droit::fiche::{CaseEntreprise, CaseSalarie, CaseSpectacle, Declaree, FormeDeCase, NomDeCase, NomDeFiche, Piece};
+use droit::fiche::{CaseDeFiche, CaseDePiece, CaseEntreprise, CasePieceEntreprise, CasePieceSalarie, CaseSalarie, CaseSpectacle, Declaree, NomDeCase, NomDeFiche, Piece};
 use socle::date::Jour;
 use socle::echec::Echec;
 use socle::fichiers::dossier_du_code;
@@ -148,6 +148,35 @@ impl std::fmt::Display for Chemin {
     }
 }
 
+/// LE CHEMIN D'UNE CASE DANS SA FICHE : son champ (une case de ses pieces ou non), et, s'il est une structure, le chemin
+/// de la case dans elle (`signataire.fonction`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CheminDeFiche {
+    pub champ: CaseDeFiche,
+    pub dans: Option<Chemin>,
+}
+
+impl CheminDeFiche {
+    /// Le chemin du champ seul.
+    pub fn de(champ: impl Into<CaseDeFiche>) -> CheminDeFiche {
+        CheminDeFiche { champ: champ.into(), dans: None }
+    }
+
+    /// Le champ, si le chemin n'a que lui.
+    pub fn seul(&self) -> Option<CaseDeFiche> {
+        self.dans.is_none().then_some(self.champ)
+    }
+}
+
+impl std::fmt::Display for CheminDeFiche {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.dans {
+            Some(d) => write!(f, "{}.{}", self.champ, d),
+            None => write!(f, "{}", self.champ),
+        }
+    }
+}
+
 impl Serialize for Chemin {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.collect_str(self)
@@ -265,7 +294,7 @@ pub enum Avance {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Champ {
-    pub cle: NomDeCase,
+    pub cle: CaseDeFiche,
     pub libelle: String,
     pub forme: Forme,
     pub aide: String,
@@ -273,16 +302,16 @@ pub struct Champ {
     pub exemple: String,
     pub choix: Vec<String>,
     pub declare: bool,
-    pub derive_de: Option<NomDeCase>,
+    pub derive_de: Option<CaseDeFiche>,
     pub rubrique: Option<String>,
-    /// LA PIECE DE LA CASE, tiree de sa forme (`droit::fiche::ChampsSalarie::piece_de`), jamais de la table ; `None` :
-    /// tout calcul la lit. Posee a la lecture de la table (`table`).
+    /// LA PIECE DE LA CASE, tiree de sa forme (`droit::fiche::CaseDeFiche::piece`), jamais de la table ; `None` : tout
+    /// calcul la lit. Posee a la lecture de la table (`table`).
     #[serde(skip)]
     pub piece: Option<Piece>,
     /// CE QUE SA FORME DECLARE (`droit::fiche::FormeDeCase`) : ses cases, s'il est une structure, que la saisie lit. Posee a
     /// la lecture de la table ; `None` pour la ligne de l'histoire, qui n'est pas une case.
     #[serde(skip)]
-    pub declaree: Option<Declaree>,
+    pub declaree: Option<Declaree<CaseDeFiche>>,
     pub si: Option<Condition>,
     pub si_etablissements: bool,
     pub si_entreprise: Option<Condition>,
@@ -345,11 +374,11 @@ trait Ligne {
 }
 
 impl Ligne for Champ {
-    type Nom = NomDeCase;
-    fn cle(&self) -> &NomDeCase {
+    type Nom = CaseDeFiche;
+    fn cle(&self) -> &CaseDeFiche {
         &self.cle
     }
-    fn derive_de(&self) -> Option<&NomDeCase> {
+    fn derive_de(&self) -> Option<&CaseDeFiche> {
         self.derive_de.as_ref()
     }
 }
@@ -379,7 +408,7 @@ impl Champ {
     }
 
     /// La case que l'ecran montre pour lui : la forme lisible dont il se deduit, ou lui-meme.
-    pub fn a_l_ecran(&self) -> NomDeCase {
+    pub fn a_l_ecran(&self) -> CaseDeFiche {
         match self.derive_de {
             Some(source) => source,
             None => self.cle,
@@ -396,7 +425,7 @@ impl Champ {
     /// `entreprise`) aussi, sa piece est ouverte pour elle (`ouverte(piece, cle)` : la fiche peut avoir un calcul qui la
     /// lit, `routes::fiches::montres`) et la compagnie a plusieurs etablissements s'il les nomme (`si_etablissements`).
     /// La page montre ce que cette fonction dit (`routes::fiches::montres`), et rien d'autre.
-    pub fn montre(&self, donnees: &Saisie, entreprise: Option<&Saisie>, ouverte: impl Fn(Piece, NomDeCase) -> bool, etablissements: bool) -> bool {
+    pub fn montre(&self, donnees: &Saisie, entreprise: Option<&Saisie>, ouverte: impl Fn(Piece, CaseDeFiche) -> bool, etablissements: bool) -> bool {
         self.ecran
             && !self.calcule()
             && condition_remplie(self.si.as_ref(), donnees)
@@ -413,9 +442,9 @@ impl Champ {
     }
 
     fn ecart_de(&self, a: &Avance, donnees: &Saisie, du_code_postal: Option<&str>) -> bool {
-        let mot = match comme_la_page(donnees.case(self.cle)) {
+        let mot = match comme_la_page(donnees.valeur(self.cle)) {
             VueDeLaPage::Vide => return false,
-            VueDeLaPage::Structure => return donnees.dite(self.cle).is_some() && *a != Avance::ToujoursRemplie,
+            VueDeLaPage::Structure => return donnees.valeur(self.cle).is_some_and(Valeur::dite) && *a != Avance::ToujoursRemplie,
             VueDeLaPage::Mot(m) if m.is_empty() || m == "false" => return false,
             VueDeLaPage::Mot(m) => m,
         };
@@ -495,7 +524,7 @@ impl Case {
 
     fn regle(&self) -> Regle<'_> {
         Regle {
-            cle: self.cle.nom,
+            cle: self.cle.nom.into(),
             libelle: &self.libelle,
             forme: self.forme,
             rubrique: None,
@@ -529,7 +558,7 @@ impl Case {
 /// libelle de sa forme, s'il se calcule, ce qu'il bloque ou sert, en clair).
 #[derive(Debug, Clone, Serialize)]
 pub struct Description<'a> {
-    pub cle: NomDeCase,
+    pub cle: CaseDeFiche,
     pub libelle: &'a str,
     pub forme: Forme,
     pub aide: &'a str,
@@ -541,7 +570,7 @@ pub struct Description<'a> {
     pub calcule: bool,
     /// La rubrique part a l'ecran : un compte rendu d'organisme parle de « S21.G00.30.010 en anomalie », pas de
     /// « commune ».
-    pub derive_de: Option<NomDeCase>,
+    pub derive_de: Option<CaseDeFiche>,
     pub rubrique: Option<&'a str>,
     /// La piece de la case (`Champ::piece`) : elle reste dans la description, l'ecran replie le bloc dont aucune case
     /// n'est montree (`montres`).
@@ -631,14 +660,14 @@ fn feuilles(declarees: &[Declaree], devant: &[NomDeCase], out: &mut Vec<Chemin>)
 /// d'une structure que la ligne decrit (`champs`) ; sinon la table ne se lit pas. CHAQUE CASE DANS SA PIECE : celle que sa
 /// forme lui donne, et nulle autre : la table n'a pas de mot pour la dire (`deny_unknown_fields`).
 fn ranger(mut t: Table) -> R<Table> {
-    let fiches: [(NomDeFiche, &mut Vec<Champ>, Vec<Declaree>, fn(NomDeCase) -> Option<Piece>); 3] = [
-        (NomDeFiche::Entreprise, &mut t.entreprise, droit::fiche::ChampsEntreprise::cases(), droit::fiche::ChampsEntreprise::piece_de),
-        (NomDeFiche::Salarie, &mut t.salarie, droit::fiche::ChampsSalarie::cases(), droit::fiche::ChampsSalarie::piece_de),
-        (NomDeFiche::Spectacle, &mut t.spectacle, droit::fiche::ChampsSpectacle::cases(), droit::fiche::ChampsSpectacle::piece_de),
+    let fiches: [(NomDeFiche, &mut Vec<Champ>, Vec<Declaree<CaseDeFiche>>); 3] = [
+        (NomDeFiche::Entreprise, &mut t.entreprise, droit::fiche::ChampsEntreprise::cases()),
+        (NomDeFiche::Salarie, &mut t.salarie, droit::fiche::ChampsSalarie::cases()),
+        (NomDeFiche::Spectacle, &mut t.spectacle, droit::fiche::ChampsSpectacle::cases()),
     ];
     let faute = |ou: String| socle::echec::livree("champs-base.json", &ou);
-    for (nom, champs, declarees, piece_de) in fiches {
-        for c in champs.iter_mut().filter(|c| c.cle != NomDeCase::HISTORIQUE) {
+    for (nom, champs, declarees) in fiches {
+        for c in champs.iter_mut().filter(|c| c.cle != CaseDeFiche::Case(NomDeCase::HISTORIQUE)) {
             let Some(d) = declarees.iter().find(|d| d.cle == c.cle) else {
                 return Err(faute(format!("{}.{} : la fiche {} ne declare pas cette case", nom, c.cle, nom)));
             };
@@ -652,7 +681,7 @@ fn ranger(mut t: Table) -> R<Table> {
                     return Err(faute(format!("{}.{}.{} : une case de la structure sans sa ligne", nom, c.cle, x)));
                 }
             }
-            c.piece = piece_de(c.cle);
+            c.piece = c.cle.piece();
             c.declaree = Some(d.clone());
         }
         if let Some(d) = declarees.iter().find(|d| !champs.iter().any(|c| c.cle == d.cle)) {
@@ -686,12 +715,12 @@ pub fn fiche(nom: NomDeFiche) -> R<Vec<Champ>> {
 
 /// LES FORMES LISIBLES DES STRUCTURES DE LA FICHE `nom` : les cases d'ou une autre case de leur structure se deduit
 /// (`derive_de`). L'ecran les comble ; elles ne se declarent pas.
-pub fn formes_lisibles(nom: NomDeFiche) -> R<Vec<NomDeCase>> {
-    Ok(table(nom)?.iter().flat_map(|c| c.champs.iter().flatten()).filter_map(|c| c.derive_de.as_ref().map(|d| d.nom)).collect())
+pub fn formes_lisibles(nom: NomDeFiche) -> R<Vec<CaseDeFiche>> {
+    Ok(table(nom)?.iter().flat_map(|c| c.champs.iter().flatten()).filter_map(|c| c.derive_de.as_ref().map(|d| d.nom.into())).collect())
 }
 
 /// Le champ `cle` de la fiche `nom`, s'il existe.
-pub fn champ(nom: NomDeFiche, cle: impl Into<NomDeCase>) -> R<Option<Champ>> {
+pub fn champ(nom: NomDeFiche, cle: impl Into<CaseDeFiche>) -> R<Option<Champ>> {
     let cle = cle.into();
     Ok(table(nom)?.iter().find(|c| c.cle == cle).cloned())
 }
@@ -704,14 +733,18 @@ pub fn description(nom: NomDeFiche) -> R<Vec<Description<'static>>> {
 // ------------------------------------------------------------------ la saisie
 
 /// UNE SAISIE : ce que l'ecran, l'import ou l'ouverture proposent pour une fiche, avant sa forme : une table `case connue
-/// -> ce que la personne a tape`. Sa cle est le nom d'une case que la forme declare (`NomDeCase`) : une case que la
-/// table ne decrit pas refuse la saisie a la porte (`Lecture`). Chaque case y est lue dans la forme que sa ligne de la
-/// table lui donne ; ce qui est tape n'est pas encore une valeur de la fiche (`Valeur`) : la verification la lit case
-/// par case (`verifier_fiche`). Une case vide (absente ou nulle) n'y est pas. Les notes de la fiche
+/// -> ce que la personne a tape`. Sa cle est une case que la forme declare (`CaseDeFiche`) : une case que la table ne
+/// decrit pas refuse la saisie a la porte (`Lecture`). Chaque case y est lue dans la forme que sa ligne de la table lui
+/// donne ; ce qui est tape n'est pas encore une valeur de la fiche (`Valeur`) : la verification la lit case par case
+/// (`verifier_fiche`). Une case vide (absente ou nulle) n'y est pas. Les notes de la fiche
 /// (`droit::fiche::est_une_note`) sont des textes a part.
+///
+/// UNE CASE D'UNE PIECE NE SE LIT PAS PAR SON NOM : `case` (et ce qui la lit) ne prend qu'un `NomDeCase`, qu'aucune case
+/// d'une piece n'est ; une piece se lit par `piece`, qui prend une `CaseDePiece`. La mecanique de toutes les cases (la
+/// table, ligne par ligne) passe par `valeur`, qui ne lit l'une que par l'autre.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Saisie {
-    cases: Vec<(NomDeCase, Valeur)>,
+    cases: Vec<(CaseDeFiche, Valeur)>,
     notes: Vec<(String, String)>,
 }
 
@@ -771,6 +804,14 @@ impl Valeur {
         }
     }
 
+    /// Le texte saisi, tel quel (un texte seulement).
+    pub fn texte(&self) -> Option<&str> {
+        match self {
+            Valeur::Texte(t) => Some(t),
+            Valeur::Nombre(_) | Valeur::OuiNon(_) | Valeur::Mots(_) | Valeur::Bloc(_) | Valeur::Lignes(_) => None,
+        }
+    }
+
     /// Le texte d'une valeur qui en a un : un texte tel quel, un nombre tel qu'il s'ecrit.
     pub fn mot(&self) -> Option<String> {
         match self {
@@ -782,10 +823,24 @@ impl Valeur {
 }
 
 impl Saisie {
-    /// La case `cle`, si la saisie la dit.
+    /// La case `cle`, hors des pieces, si la saisie la dit.
     pub fn case(&self, cle: impl Into<NomDeCase>) -> Option<&Valeur> {
-        let cle = cle.into();
+        let cle = CaseDeFiche::Case(cle.into());
         self.cases.iter().find(|(k, _)| *k == cle).map(|(_, v)| v)
+    }
+
+    /// LA CASE `cle` D'UNE PIECE, si la saisie la dit : le seul chemin des pieces.
+    pub fn piece(&self, cle: impl Into<CaseDePiece>) -> Option<&Valeur> {
+        let cle = CaseDeFiche::Piece(cle.into());
+        self.cases.iter().find(|(k, _)| *k == cle).map(|(_, v)| v)
+    }
+
+    /// La case `cle` d'une ligne de la table, d'une piece ou non : l'une par `case`, l'autre par `piece`.
+    pub fn valeur(&self, cle: CaseDeFiche) -> Option<&Valeur> {
+        match cle {
+            CaseDeFiche::Case(n) => self.case(n),
+            CaseDeFiche::Piece(p) => self.piece(p),
+        }
     }
 
     /// La case au bout du chemin `chemin`, de bloc en bloc.
@@ -812,10 +867,7 @@ impl Saisie {
 
     /// Le texte saisi dans la case `cle`, tel quel (un texte seulement).
     pub fn texte(&self, cle: impl Into<NomDeCase>) -> Option<&str> {
-        match self.case(cle) {
-            Some(Valeur::Texte(t)) => Some(t),
-            _ => None,
-        }
+        self.case(cle).and_then(Valeur::texte)
     }
 
     /// La note `cle` de la fiche.
@@ -842,24 +894,24 @@ impl Saisie {
     }
 
     /// Ses cases, dans l'ordre saisi.
-    pub fn cases(&self) -> &[(NomDeCase, Valeur)] {
+    pub fn cases(&self) -> &[(CaseDeFiche, Valeur)] {
         &self.cases
     }
 
-    /// La case `cle`, a changer.
+    /// La case `cle`, hors des pieces, a changer.
     pub fn case_mut(&mut self, cle: impl Into<NomDeCase>) -> Option<&mut Valeur> {
-        let cle = cle.into();
+        let cle = CaseDeFiche::Case(cle.into());
         self.cases.iter_mut().find(|(k, _)| *k == cle).map(|(_, v)| v)
     }
 
     /// La case `cle` retiree : vide.
-    pub fn retirer(&mut self, cle: impl Into<NomDeCase>) {
+    pub fn retirer(&mut self, cle: impl Into<CaseDeFiche>) {
         let cle = cle.into();
         self.cases.retain(|(k, _)| *k != cle);
     }
 
     /// La case `cle` vaut `v`.
-    pub fn poser(&mut self, cle: impl Into<NomDeCase>, v: Valeur) {
+    pub fn poser(&mut self, cle: impl Into<CaseDeFiche>, v: Valeur) {
         let cle = cle.into();
         match self.cases.iter_mut().find(|(k, _)| *k == cle) {
             Some(c) => c.1 = v,
@@ -942,7 +994,7 @@ impl Lecture {
     }
 
     /// LA CASE `cle` ET CE QU'ON EN ATTEND ; une case que la table ne decrit pas : la phrase qui le dit.
-    fn attendu(&self, cle: &str) -> socle::echec::R<(NomDeCase, Attendu)> {
+    fn attendu(&self, cle: &str) -> socle::echec::R<(CaseDeFiche, Attendu)> {
         match self.niveau {
             Niveau::Fiche(fiche, champs) => {
                 let Some(c) = champs.iter().find(|c| c.cle.nom() == cle) else {
@@ -963,14 +1015,14 @@ impl Lecture {
                 let Some(d) = declarees.iter().find(|d| d.cle.nom() == cle) else { return Err(inconnue()) };
                 let chemin = Chemin { devant: self.devant.clone(), nom: d.cle };
                 match cases.iter().find(|s| s.cle == chemin) {
-                    Some(s) => Ok((d.cle, match s.forme {
+                    Some(s) => Ok((d.cle.into(), match s.forme {
                         Forme::Structure | Forme::Histoire => Attendu::Libre(&d.cases),
                         f => Attendu::Simple(f),
                     })),
                     None => {
                         let devant: Vec<NomDeCase> = chemin.noms().collect();
                         if cases.iter().any(|s| s.cle.devant.starts_with(&devant)) {
-                            Ok((d.cle, Attendu::Bloc(self.sous(Niveau::Structure(cases, &d.cases), devant))))
+                            Ok((d.cle.into(), Attendu::Bloc(self.sous(Niveau::Structure(cases, &d.cases), devant))))
                         } else {
                             Err(inconnue())
                         }
@@ -978,7 +1030,7 @@ impl Lecture {
                 }
             }
             Niveau::Libre(declarees) => match declarees.iter().find(|d| d.cle.nom() == cle) {
-                Some(d) => Ok((d.cle, Attendu::Quelconque(&d.cases))),
+                Some(d) => Ok((d.cle.into(), Attendu::Quelconque(&d.cases))),
                 None => Err(socle::refus!("la case « {} » n'existe pas", cle)),
             },
         }
@@ -1150,9 +1202,9 @@ pub enum Sert {
 #[derive(Debug, Clone)]
 pub struct Manquant {
     /// Son chemin dans la fiche (`signataire.fonction`).
-    pub cle: Chemin,
+    pub cle: CheminDeFiche,
     /// La case que l'ecran montre (la forme lisible d'un champ declare : `derive_de`).
-    pub ecran: Chemin,
+    pub ecran: CheminDeFiche,
     /// « Qui signe (fonction) ».
     pub libelle: String,
     pub aide: String,
@@ -1179,10 +1231,10 @@ pub fn manquants(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Manquant>> {
     for c in tous.iter().filter(|c| c.applicable(donnees)) {
         let m = montre(tous, c);
         if let Some(sert) = ce_qu_elle_sert(c.exige_par.as_ref(), c.utile_pour.as_ref(), c.sinon.as_ref()) {
-            if donnees.dite(c.cle).is_none() {
+            if !donnees.valeur(c.cle).is_some_and(Valeur::dite) {
                 out.push(Manquant {
-                    cle: Chemin::de(c.cle),
-                    ecran: Chemin::de(m.cle),
+                    cle: CheminDeFiche::de(c.cle),
+                    ecran: CheminDeFiche::de(m.cle),
                     libelle: m.libelle.clone(),
                     aide: m.aide.clone(),
                     sert,
@@ -1191,7 +1243,7 @@ pub fn manquants(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Manquant>> {
             }
         }
         let Some(cases) = c.champs.as_deref() else { continue };
-        let bloc = match donnees.case(c.cle) {
+        let bloc = match donnees.valeur(c.cle) {
             Some(Valeur::Bloc(b)) => Some(b),
             _ => None,
         };
@@ -1206,8 +1258,8 @@ pub fn manquants(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Manquant>> {
                 None => c.aide.clone(),
             };
             out.push(Manquant {
-                cle: Chemin { devant: std::iter::once(c.cle).chain(s.cle.devant.iter().copied()).collect(), nom: s.cle.nom },
-                ecran: Chemin { devant: std::iter::once(c.cle).chain(ms.cle.devant.iter().copied()).collect(), nom: ms.cle.nom },
+                cle: CheminDeFiche { champ: c.cle, dans: Some(s.cle.clone()) },
+                ecran: CheminDeFiche { champ: c.cle, dans: Some(ms.cle.clone()) },
                 libelle: format!("{} ({})", c.libelle, en_minuscule(&ms.libelle)),
                 aide,
                 sert,
@@ -1220,7 +1272,7 @@ pub fn manquants(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Manquant>> {
 
 /// LES CASES DE LA FICHE `nom` QUI SERVENT A UN ACTE : chacune, ou celle dont elle se deduit (`derive_de`), porte
 /// `exige_par` ou `utile_pour` : la meme liste que `manquants`. Le questionnaire du salarie n'en pose pas d'autre.
-pub fn utiles(nom: NomDeFiche) -> R<Vec<NomDeCase>> {
+pub fn utiles(nom: NomDeFiche) -> R<Vec<CaseDeFiche>> {
     let mut out = Vec::new();
     for c in table(nom)?.iter().filter(|c| c.exige_par.is_some() || c.utile_pour.is_some()) {
         out.push(c.cle);
@@ -1232,7 +1284,7 @@ pub fn utiles(nom: NomDeFiche) -> R<Vec<NomDeCase>> {
 /// LE REFUS D'UN ACTE quand une fiche qu'il lit n'a pas ce qu'il exige (`exige_par`) : tout ce qui manque, d'un coup,
 /// fiche par fiche. `fiches` : (`entreprise` ou `salarie`, qui, la fiche) ; `sauf` : les cases qu'un fait de l'acte ne demande
 /// pas. `None` : rien ne manque.
-pub fn refus_des_manques(acte: &str, fiches: &[(NomDeFiche, String, &Saisie)], sauf: &[NomDeCase]) -> R<Option<String>> {
+pub fn refus_des_manques(acte: &str, fiches: &[(NomDeFiche, String, &Saisie)], sauf: &[CaseDeFiche]) -> R<Option<String>> {
     let mut lignes = Vec::new();
     for (nom, qui, donnees) in fiches {
         let manque: Vec<String> = manquants(*nom, donnees)?
@@ -1532,7 +1584,7 @@ pub fn normaliser(c: &Champ, texte: &str) -> R<String> {
     let v = strip(texte).to_string();
     Ok(match c.forme {
         Forme::Officiel => {
-            let v = ponctuation_propre(&v, [CaseSalarie::Nom, CaseSalarie::Prenom].map(NomDeCase::from).contains(&c.cle));
+            let v = ponctuation_propre(&v, [CaseSalarie::Nom, CaseSalarie::Prenom].map(CaseDeFiche::from).contains(&c.cle));
             let v = sans_caracteres_refuses(c, v)?;
             v.trim_matches(|x| " '.-".contains(x)).to_string()
         }
@@ -1568,21 +1620,21 @@ pub fn personnes() -> [(NomDeCase, Vec<(NomDeCase, NomDeCase)>); 3] {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Comble {
     pub bloc: Option<NomDeCase>,
-    pub cle: NomDeCase,
+    pub cle: CaseDeFiche,
     pub texte: String,
 }
 
 /// `a_combler` : la forme lisible de depart des fiches qui n'en ont pas, tiree de leur forme declaree. Rien n'est ecrit :
 /// c'est une vue, pas une migration.
 pub fn a_combler(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Comble>> {
-    let lieux = [CaseSalarie::Adresse, CaseSalarie::Commune, CaseSalarie::LieuNaissance].map(NomDeCase::from);
+    let lieux = [CaseSalarie::Adresse, CaseSalarie::Commune, CaseSalarie::LieuNaissance].map(CaseDeFiche::from);
     let mut out: Vec<Comble> = Vec::new();
     for c in table(nom)? {
         let Some(source) = c.derive_de else { continue };
-        if donnees.dite(source).is_some() || out.iter().any(|x| x.bloc.is_none() && x.cle == source) {
+        if donnees.valeur(source).is_some_and(Valeur::dite) || out.iter().any(|x| x.bloc.is_none() && x.cle == source) {
             continue;
         }
-        let Some(Valeur::Texte(officiel)) = donnees.case(c.cle) else { continue };
+        let Some(Valeur::Texte(officiel)) = donnees.valeur(c.cle) else { continue };
         if officiel.is_empty() {
             continue;
         }
@@ -1597,7 +1649,7 @@ pub fn a_combler(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Comble>> {
                     continue;
                 }
                 if let Some(Valeur::Texte(o)) = p.case(k) {
-                    out.push(Comble { bloc: Some(cle), cle: lisible, texte: titre(o) });
+                    out.push(Comble { bloc: Some(cle), cle: lisible.into(), texte: titre(o) });
                 }
             }
         }
@@ -1607,7 +1659,7 @@ pub fn a_combler(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Comble>> {
 
 /// `apercu_derive` : ce qui SERAIT declare, sans rien modifier : chaque forme declaree que sa forme lisible donne.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Apercu(pub Vec<(NomDeCase, String)>);
+pub struct Apercu(pub Vec<(CaseDeFiche, String)>);
 
 impl Serialize for Apercu {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
@@ -1619,7 +1671,7 @@ pub fn apercu_derive(nom: NomDeFiche, donnees: &Saisie) -> R<Apercu> {
     let mut out = Vec::new();
     for c in table(nom)? {
         let Some(source) = c.derive_de else { continue };
-        match donnees.dite(source) {
+        match donnees.valeur(source).filter(|v| v.dite()) {
             Some(Valeur::Texte(t)) => out.push((c.cle, normaliser(c, t)?)),
             Some(autre) => out.extend(autre.mot().map(|m| (c.cle, m))),
             None => {}
@@ -1909,7 +1961,7 @@ fn courriel_valide(v: &str) -> bool {
 /// CE QU'UNE CASE EXIGE D'UNE VALEUR SAISIE : sa ligne de la table (un champ de la fiche, ou une case d'une structure).
 #[derive(Clone, Copy)]
 struct Regle<'a> {
-    cle: NomDeCase,
+    cle: CaseDeFiche,
     libelle: &'a str,
     forme: Forme,
     rubrique: Option<&'a str>,
@@ -1924,14 +1976,14 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
     if matches!(valeur, Valeur::Texte(s) if strip(s).is_empty()) {
         return Ok(None);
     }
-    let est = |k: NomDeCase| c.cle == k;
+    let est = |k: CaseDeFiche| c.cle == k;
     if est(CaseSalarie::Banque.into()) {
         return Ok(match valeur {
             Valeur::Bloc(b) => faute_banque(b),
             _ => None,
         });
     }
-    if est(CaseSalarie::JoursTravailles.into()) {
+    if est(CasePieceSalarie::JoursTravailles.into()) {
         return Ok(faute_des_jours(valeur));
     }
     let Valeur::Texte(brut) = valeur else { return Ok(None) };
@@ -1999,8 +2051,9 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
             return Ok(Some(faute));
         }
     }
-    // LE JOUR DU VERSEMENT DES SALAIRES se lit comme la paie le lira (`droit::versement`).
-    if droit::versement::CLES.into_iter().any(|k| est(k.into())) {
+    // LE JOUR DU VERSEMENT DES SALAIRES, des permanents comme des intermittents, se lit comme la paie le lira
+    // (`droit::versement`).
+    if est(CasePieceEntreprise::DateDeVersementPermanents.into()) || est(CaseEntreprise::DateDeVersementIntermittents.into()) {
         return Ok(droit::versement::Versement::lire(v).err().map(|e| e.phrase));
     }
     // LE CODE APE SE RECONNAIT DANS LA NAF REV. 2 OU LA NAF 2025 (`naf.rs`) : les deux sont admises a la saisie,
@@ -2035,7 +2088,7 @@ pub enum Gravite {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Anomalie {
-    pub champ: NomDeCase,
+    pub champ: CaseDeFiche,
     pub gravite: Gravite,
     pub message: String,
     pub forcable: bool,
@@ -2046,12 +2099,12 @@ pub struct Anomalie {
 
 /// Ce qu'une verification constate, avant de dire si l'ecran peut passer outre.
 struct Constat {
-    champ: NomDeCase,
+    champ: CaseDeFiche,
     gravite: Gravite,
     message: String,
 }
 
-fn constat(champ: impl Into<NomDeCase>, gravite: Gravite, message: impl Into<String>) -> Constat {
+fn constat(champ: impl Into<CaseDeFiche>, gravite: Gravite, message: impl Into<String>) -> Constat {
     Constat { champ: champ.into(), gravite, message: message.into() }
 }
 
@@ -2068,7 +2121,7 @@ impl Constat {
 fn fautes_des_types(champs: &[Champ], donnees: &Saisie) -> Vec<Constat> {
     let mut fautes = Vec::new();
     for (c, d) in champs.iter().filter_map(|c| c.declaree.as_ref().map(|d| (c, d))) {
-        match donnees.case(d.cle) {
+        match donnees.valeur(d.cle) {
             Some(Valeur::Texte(t)) => {
                 if let Some(f) = d.faute.and_then(|faute| faute(t)) {
                     fautes.push(constat(c.a_l_ecran(), Gravite::Erreur, f));
@@ -2261,17 +2314,18 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
         }
         // LES BORNES D'UNE DISPENSE DE SANTE (Q13) : elles bornent un motif, et la fin ne precede pas le debut. Ce que
         // le mois en fait est dans `calcul::dispense_de_la_periode`.
-        let (depuis, jusqu_au) = (d.mot(S::SanteDispenseDepuis), d.mot(S::SanteDispenseJusquAu));
-        if (depuis.is_some() || jusqu_au.is_some()) && d.dite(S::SanteDispense).is_none() {
+        let mot = |p: CasePieceSalarie| d.piece(p).filter(|v| v.dite()).and_then(Valeur::mot);
+        let (depuis, jusqu_au) = (mot(CasePieceSalarie::SanteDispenseDepuis), mot(CasePieceSalarie::SanteDispenseJusquAu));
+        if (depuis.is_some() || jusqu_au.is_some()) && !d.piece(CasePieceSalarie::SanteDispense).is_some_and(Valeur::dite) {
             out.push(constat(
-                S::SanteDispense,
+                CasePieceSalarie::SanteDispense,
                 Gravite::Erreur,
                 "la dispense a des dates mais pas de motif : écrire le motif de la dispense (la demande écrite du salarié), ou retirer ses dates".to_string(),
             ));
         }
         if let (Some(a), Some(b)) = (&depuis, &jusqu_au) {
             if date_iso(a).is_some() && date_iso(b).is_some() && b < a {
-                out.push(constat(S::SanteDispenseJusquAu, Gravite::Erreur, format!("la dispense finirait ({}) avant de commencer ({})", b, a)));
+                out.push(constat(CasePieceSalarie::SanteDispenseJusquAu, Gravite::Erreur, format!("la dispense finirait ({}) avant de commencer ({})", b, a)));
             }
         }
         // Le code emploi, le statut et le PCS de la fiche, confrontes au catalogue des metiers. Avertissements, pas
@@ -2308,7 +2362,7 @@ pub fn verifier_fiche(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Anomalie>> {
     let donnees = donnees.comblee(nom)?;
     let mut constats: Vec<Constat> = Vec::new();
     for c in champs {
-        let Some(msg) = verifier_champ(c.regle(), donnees.case(c.cle))? else { continue };
+        let Some(msg) = verifier_champ(c.regle(), donnees.valeur(c.cle))? else { continue };
         // Un champ derive n'est pas saisi : le signaler a l'humain reviendrait
         // a lui reprocher le travail de la machine. On pointe la forme
         // lisible, qui est ce qu'il peut corriger.
@@ -2322,7 +2376,7 @@ pub fn verifier_fiche(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Anomalie>> {
     // UNE REGLE DE FORME PEUT SE TROMPER et la valeur etre juste : son erreur se passe outre a l'ecran (`forcable`).
     // CE QUE L'ECRAN DIT D'UNE ERREUR, d'apres le champ : s'il part dans une declaration (`declare` ; un champ lisible,
     // par la forme declaree qui s'en deduit).
-    let declare = |cle: NomDeCase| champs.iter().any(|c| c.declare && (c.cle == cle || c.derive_de == Some(cle)));
+    let declare = |cle: CaseDeFiche| champs.iter().any(|c| c.declare && (c.cle == cle || c.derive_de == Some(cle)));
     // Une fiche mise de cote ne doit pas crier. Ses fautes restent visibles --
     // et redeviennent des erreurs a la reactivation, ce que le message dit.
     let inactive = donnees.case(CaseSalarie::Actif) == Some(&Valeur::OuiNon(false));
@@ -2389,7 +2443,7 @@ pub fn fautes_des_structures(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Anomali
     let mut out = Vec::new();
     for c in table(nom)? {
         let Some(cases) = c.champs.as_deref() else { continue };
-        let Some(Valeur::Bloc(o)) = donnees.case(c.cle) else { continue };
+        let Some(Valeur::Bloc(o)) = donnees.valeur(c.cle) else { continue };
         for s in cases.iter().filter(|s| matches!(s.forme, Forme::Choix | Forme::Montant | Forme::Date)) {
             if let Some(faute) = verifier_champ(s.regle(), o.au_chemin(&s.cle))? {
                 out.push(constat(c.cle, Gravite::Erreur, format!("« {} » : {}", s.cle, faute)).dit(false, format!("Les cases de « {} » : {}.", c.libelle, cases_dites(cases))));
@@ -2438,7 +2492,7 @@ mod tests {
     #[test]
     fn la_fiche_offre_les_statuts_que_la_norme_admet() {
         let erreur_sur = |champ: CaseSalarie, valeur: &str| -> bool {
-            let champ = NomDeCase::from(champ);
+            let champ = CaseDeFiche::from(champ);
             verifier_fiche(NomDeFiche::Salarie, &une_case(NomDeFiche::Salarie, champ.nom(), valeur)).unwrap().iter().any(|a| a.champ == champ && a.gravite == Gravite::Erreur)
         };
         assert!(erreur_sur(CaseSalarie::StatutCategorielRc, "03"), "03 n'est pas un statut categoriel de retraite complementaire en 2026.1");

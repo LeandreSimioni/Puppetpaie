@@ -441,7 +441,7 @@ pub const RUBRIQUES_COMPAGNIE: &str = "rubriques-compagnie.json";
 fn rubriques_datees(racine: &Path) -> R<bool> {
     struct UneDatee(bool);
     impl VoirListe for UneDatee {
-        fn liste<T: serde::Serialize>(&mut self, _: crate::fiche::NomDeCase, liste: &[Datee<T>]) {
+        fn liste<T: serde::Serialize>(&mut self, _: crate::fiche::CaseDeFiche, liste: &[Datee<T>]) {
             self.0 |= liste.iter().any(|e| e.depuis.is_some());
         }
     }

@@ -168,14 +168,14 @@ pub(crate) fn titre_de(v: Option<&str>) -> Option<String> {
 fn ecarts(nom: NomDeFiche, fiche: &Saisie, declare: &Saisie, mois: socle::mois::Mois) -> R<Vec<Ecart>> {
     let mut out = Vec::new();
     for c in declarations::champs::fiche(nom)? {
-        let (Some(b), Some(a)) = (declare.case(&c.cle).filter(|_| c.declare), fiche.case(&c.cle)) else { continue };
+        let (Some(b), Some(a)) = (declare.valeur(c.cle).filter(|_| c.declare), fiche.valeur(c.cle)) else { continue };
         // Une case vide ou « A COMPLETER » n'est pas un ecart : l'import la complete (`import::completer`).
         if crate::importation::completer::vide(Some(a)) || en_mots(a) == en_mots(b) {
             continue;
         }
         // Une structure (la banque) ne differe que par ce que la DSN en declare : ses notes et autres cases restent.
         if let (Valeur::Bloc(x), Valeur::Bloc(y)) = (a, b) {
-            if y.cases().iter().all(|(k, v)| x.case(k).map(en_mots) == Some(en_mots(v))) {
+            if y.cases().iter().all(|(k, v)| x.valeur(*k).map(en_mots) == Some(en_mots(v))) {
                 continue;
             }
         }

@@ -4278,7 +4278,7 @@ pub fn exiges<'a>(ent: &ChampsEntreprise, salaries: impl Iterator<Item = &'a dro
         saisies.push((droit::fiche::NomDeFiche::Salarie, format!("la fiche de {}", nomme(s)), crate::champs::Saisie::de_la_fiche(droit::fiche::NomDeFiche::Salarie, &s.champs)?));
     }
     let fiches: Vec<(droit::fiche::NomDeFiche, String, &crate::champs::Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
-    let sauf: Vec<droit::fiche::NomDeCase> = if caisse_conges { Vec::new() } else { vec![documents::conges_spectacles::CLE_ADHERENT.into()] };
+    let sauf: Vec<droit::fiche::CaseDeFiche> = if caisse_conges { Vec::new() } else { vec![documents::conges_spectacles::CLE_ADHERENT.into()] };
     match crate::champs::refus_des_manques("dsn", &fiches, &sauf)? {
         Some(m) => Err(refus(m)),
         None => Ok(()),

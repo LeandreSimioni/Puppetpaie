@@ -338,9 +338,9 @@ pub enum ChampDAnciennete {
 
 impl ChampDAnciennete {
     /// La case de la fiche du salarie.
-    pub fn cle(self) -> crate::fiche::CaseSalarie {
+    pub fn cle(self) -> crate::fiche::CasePieceSalarie {
         match self {
-            ChampDAnciennete::PosteDepuis => crate::fiche::CaseSalarie::PosteDepuis,
+            ChampDAnciennete::PosteDepuis => crate::fiche::CasePieceSalarie::PosteDepuis,
         }
     }
 
@@ -415,12 +415,12 @@ impl SiSalarie {
     }
 
     /// Les cases de la fiche du salarie qu'elle nomme.
-    pub fn cases(&self) -> Vec<crate::fiche::CaseSalarie> {
-        use crate::fiche::CaseSalarie;
+    pub fn cases(&self) -> Vec<crate::fiche::CasePieceSalarie> {
+        use crate::fiche::CasePieceSalarie;
         [
-            self.stagiaire_ccneac.is_some().then_some(CaseSalarie::StagiaireCcneac),
-            self.experimente_3241.is_some().then_some(CaseSalarie::Experimente3241),
-            self.forfait_jours.is_some().then_some(CaseSalarie::ForfaitJours),
+            self.stagiaire_ccneac.is_some().then_some(CasePieceSalarie::StagiaireCcneac),
+            self.experimente_3241.is_some().then_some(CasePieceSalarie::Experimente3241),
+            self.forfait_jours.is_some().then_some(CasePieceSalarie::ForfaitJours),
         ]
         .into_iter()
         .flatten()
