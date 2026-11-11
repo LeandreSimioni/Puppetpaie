@@ -810,7 +810,9 @@ fn blanchi(t: &str, textes: bool) -> String {
 /// 3. de repli sur une donnee : ni `#[serde(default…)]`, ni
 ///    `unwrap_or`, `unwrap_or_default`, `unwrap_or_else`, `map_or`, `map_or_else`, ni un bras `None =>` qui fabrique
 ///    une valeur, ni un bras joker (`_ =>`, `_autre =>`, `Some(_) =>`, donc `None | Some(_) =>`) qui en rend une (texte
-///    vide, nombre, booleen, vecteur vide, defaut, `Ok(…)` de l'une d'elles) : un `match` nomme chaque cas qu'il traite.
+///    vide, nombre, booleen, vecteur vide, defaut, `Ok(…)` de l'une d'elles), ni un bras dont le motif a un `_` a la
+///    place d'un element d'un tuple ou d'un champ d'une variante (`(None, _)`, `(_, false)`, `Piece::Blanc(_, true)`)
+///    et qui rend une telle valeur, sur sa ligne ou la suivante : un `match` nomme chaque cas qu'il traite.
 ///    Ni `.or(Some(…))`, ni `.or_else(|| Some(…))` : une valeur fabriquee faute de mieux (une preseance entre deux
 ///    valeurs dites s'ecrit `.or(autre)`). Une donnee absente d'un champ facultatif (`Option`) est vide ; une donnee
 ///    obligatoire absente se refuse.
@@ -838,6 +840,9 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     // Le repli en joker : un bras `_ =>`, `_autre =>` ou `Some(_) =>` (donc `None | Some(_) =>`) qui rend une valeur
     // fabriquee, ou son `Ok(…)`.
     let bras_joker = regex::Regex::new(r#"(?:\b_\w*|\bSome\s*\(\s*_\w*\s*\))\s*=>\s*\{?\s*(?:Ok\()?\s*(?:String::new\(\)|""|-?\d[\w.]*|false\b|true\b|Vec::new\(\)|vec!\s*\[\s*\]|Default::default\(\)|[A-Za-z_][\w:]*::default\(\)|Decimal::\w+|[A-Za-z_][\w:]*::(?:new\(\)|ZERO\b))"#).unwrap();
+    // Le repli en joker d'un tuple : un `_` a la place d'un element d'un tuple ou d'un champ d'une variante, dans le motif
+    // d'un bras qui rend une valeur fabriquee (la meme liste), sur sa ligne ou la suivante.
+    let bras_tuple = regex::Regex::new(r#"(?:\(\s*_\w*\s*,|,\s*_\w*\s*[,)])[^=;{}\n]*=>\s*\{?\s*(?:Ok\()?\s*(?:String::new\(\)|""|-?\d[\w.]*|false\b|true\b|Vec::new\(\)|vec!\s*\[\s*\]|Default::default\(\)|[A-Za-z_][\w:]*::default\(\)|Decimal::\w+|[A-Za-z_][\w:]*::(?:new\(\)|ZERO\b))"#).unwrap();
     // La valeur fabriquee faute de mieux : `.or(Some(…))`, `.or_else(|| Some(…))`.
     let fabriquee = regex::Regex::new(r"\.or\(\s*Some\s*\(|\.or_else\(\s*\|\|\s*Some\s*\(").unwrap();
     let tri = regex::Regex::new(r#"\b(?:starts_with|strip_prefix|trim_start_matches)\s*\(\s*(?:'_'|"_")"#).unwrap();
@@ -884,7 +889,12 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     let dossiers = COUCHES_FERMEES.iter().map(|c| espace().join(c).join("src")).chain([espace().join("fabrique-pdf/src")]);
     for dossier in dossiers {
         for f in sources(&dossier) {
-            for (n, l) in code_seul(&std::fs::read_to_string(&f).unwrap()).lines().enumerate() {
+            let code = code_seul(&std::fs::read_to_string(&f).unwrap());
+            for m in bras_tuple.find_iter(&code) {
+                let n = code[..m.start()].matches('\n').count() + 1;
+                fautes.push(format!("{}:{} : `{}`, un joker de tuple qui rend une valeur : le `match` nomme chaque cas qu'il traite", f.display(), n, m.as_str().split_whitespace().collect::<Vec<_>>().join(" ")));
+            }
+            for (n, l) in code.lines().enumerate() {
                 if let Some(m) = repli.find(l) {
                     fautes.push(format!("{}:{} : `{}`, un repli : une donnée exigée se refuse quand elle manque, une donnée nulle s'écrit `null` et se lit `Option` ; un calcul s'écrit sans repli (`sum`, `fold`, `match`, `?`)", f.display(), n + 1, m.as_str()));
                 }
