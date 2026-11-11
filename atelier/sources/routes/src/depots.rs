@@ -996,19 +996,9 @@ pub(crate) fn lire_octets(chemin: &str) -> R<Vec<u8>> {
     std::fs::read(p).map_err(|e| erreur_io(&e, p))
 }
 
-/// Un chiffre du latin-1 : les chiffres, et les exposants `²`, `³`, `¹`.
-fn chiffre_du_latin1(c: char) -> bool {
-    c.is_ascii_digit() || matches!(c, '\u{b2}' | '\u{b3}' | '\u{b9}')
-}
-
 /// Un jour `JJMMAAAA` du fichier DPAE ; `None` : ce n'est pas un jour.
 fn jour_jjmmaaaa(v: &str) -> Option<Jour> {
-    let t: Vec<char> = v.chars().collect();
-    if t.len() != 8 || !t.iter().all(|c| chiffre_du_latin1(*c)) {
-        return None;
-    }
-    let s = |a: usize, b: usize| t[a..b].iter().collect::<String>();
-    socle::date::jour_iso(&format!("{}-{}-{}", s(4, 8), s(2, 4), s(0, 2)))
+    socle::date::lire_jjmmaaaa(v)
 }
 
 /// La zone `k` d'un enregistrement DPAE relu (`declarations::dpae::relire`), sans ses blancs ; a blanc, elle est vide.

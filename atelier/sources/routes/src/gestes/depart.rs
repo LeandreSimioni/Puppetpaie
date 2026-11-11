@@ -1156,11 +1156,10 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, nom: &str) -> R<PathBu
         for a in archives {
             let n = socle::fichiers::nom_du(&a);
             // Le nom de l'archive commence par l'instant de sa releve, `AAAAMMJJ_HHMMSS`.
-            let quand = match (n.get(..4), n.get(4..6), n.get(6..8), n.get(9..11), n.get(11..13), n.get(13..15)) {
-                (Some(an), Some(mo), Some(j), Some(h), Some(mi), Some(s)) => format!("{}-{}-{}T{}:{}:{}", an, mo, j, h, mi, s),
-                _ => continue,
-            };
-            let quand = InstantEcrit::lire(&quand).ok_or_else(|| erreur(Classe::Illisible, format!("instant illisible : {}", socle::fichiers::repr(&quand))))?;
+            let Some((jour, heure)) = n.get(..15).and_then(|p| p.split_once('_')) else { continue };
+            let quand = socle::paris::InstantCompact::lire(&[jour, heure].concat())
+                .map(|i| InstantEcrit::du_naif(i.naif()))
+                .ok_or_else(|| erreur(Classe::Illisible, format!("instant illisible : {}", socle::fichiers::repr(&n))))?;
             let (jour, instant) = instant_de(quand.into())?;
             let ctx_j = contexte_du_jour(ctx, jour)?;
             socle::temps::pendant(instant, || crate::documents::ranger_aer_detail(&ctx_j, Some(mois), Some(std::slice::from_ref(&a)), false))?;

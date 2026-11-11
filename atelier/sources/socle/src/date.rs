@@ -308,6 +308,15 @@ fn lire_format(format: &[Champ], c: &[char]) -> Option<Jour> {
 }
 
 /// Une date `AAAAMMJJ`, ou `None`.
+/// `JJMMAAAA` (la DSN, la DPAE) : huit chiffres ASCII, et rien d'autre ; `None` sinon, ou hors du calendrier.
+pub fn lire_jjmmaaaa(v: &str) -> Option<Jour> {
+    if v.len() != 8 || !v.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let n = |a: usize, b: usize| v.as_bytes()[a..b].iter().fold(0u32, |x, c| x * 10 + u32::from(c - b'0'));
+    Jour::nouveau(n(4, 8) as i32, n(2, 4), n(0, 2))
+}
+
 pub fn lire_aaaammjj(s: &str) -> Option<Jour> {
     let c: Vec<char> = s.chars().collect();
     lire_format(FORMATS[3], &c)

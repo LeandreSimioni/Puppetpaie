@@ -300,13 +300,8 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
         for ligne in declarations::dpae::relire(&texte) {
             let champ = |k: &str| ligne.iter().find(|(n, _)| *n == k).map(|(_, v)| v.trim().to_string()).filter(|v| !v.is_empty());
             let (Some(nir), Some(emb)) = (champ("nir"), champ("date_embauche")) else { continue };
-            let e: Vec<char> = emb.chars().collect();
-            if e.len() != 8 {
-                continue;
-            }
-            let tr = |a: usize, b: usize| -> String { e[a..b].iter().collect() };
-            let iso = format!("{}-{}-{}", tr(4, 8), tr(2, 4), tr(0, 2));
-            let Some(debut) = socle::date::Jour::du_texte(&iso).filter(|j| j.iso() == iso) else { continue };
+            let Some(debut) = socle::date::lire_jjmmaaaa(&emb) else { continue };
+            let iso = debut.iso();
             let Some((_, cle)) = par_nir.iter().find(|(n, _)| *n == nir) else {
                 // On ne devine pas qui c'est : un NIR qu'on ne reconnait pas est peut-etre une fiche archivee sous une autre cle, ou
                 // une declaration faite pour quelqu'un d'autre.
@@ -317,10 +312,14 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
                 mois = Some(Mois::du_jour(&debut));
             }
             embauches.push(EmbaucheAttestee { salarie: cle.clone(), debut });
-            let h: Vec<char> = champ("horodatage").into_iter().flat_map(|h| h.chars().collect::<Vec<_>>()).collect();
-            if quand.is_none() && h.len() == 12 {
-                let t = |a: usize, b: usize| -> String { h[a..b].iter().collect() };
-                quand = InstantEcrit::lire(&format!("{}-{}-{}T{}:{}:00", t(4, 8), t(2, 4), t(0, 2), t(8, 10), t(10, 12)));
+            // L'horodatage `JJMMAAAAHHMM`.
+            if let (None, Some(h)) = (quand, champ("horodatage").filter(|h| h.len() == 12 && h.is_ascii())) {
+                let heure = socle::num::entier_de_chiffres(&h[8..10]).filter(|x| (0..24).contains(x));
+                let minute = socle::num::entier_de_chiffres(&h[10..12]).filter(|x| (0..60).contains(x));
+                quand = socle::date::lire_jjmmaaaa(&h[..8])
+                    .zip(heure.zip(minute))
+                    .and_then(|(j, (hh, mm))| socle::paris::Naif::du_jour(j, hh, mm, 0))
+                    .map(InstantEcrit::du_naif);
             }
         }
         let Some(flux) = flux_du_nom(&nom) else { continue };
