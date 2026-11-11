@@ -23,6 +23,7 @@ use crate::editeur::Retour;
 use crate::incidents::{self, Canal, EtatEnvoi, PourLEditeur, DEPOSE, EN_ATTENTE};
 use socle::ecriture::ecrire_json;
 use socle::echec::{erreur, Classe, R};
+use socle::paris::{InstantEcrit, MinuteEcrite};
 use socle::verrou::Verrou;
 
 const TEXTE_MAX: usize = 5000;
@@ -259,8 +260,8 @@ pub fn apercu(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Captu
 #[serde(deny_unknown_fields)]
 pub struct EnvoiDuMessage {
     pub etat: EtatEnvoi,
-    pub quand: Option<String>,
-    pub essai: Option<String>,
+    pub quand: Option<InstantEcrit>,
+    pub essai: Option<InstantEcrit>,
     pub erreur: Option<String>,
 }
 
@@ -270,7 +271,7 @@ pub struct EnvoiDuMessage {
 #[serde(deny_unknown_fields)]
 pub struct Signalement {
     pub id: String,
-    pub quand: String,
+    pub quand: MinuteEcrite,
     pub texte: String,
     pub captures: usize,
     pub incidents: usize,
@@ -429,7 +430,7 @@ pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Capt
     let fichier = chemin_corps(racine, &id);
     let ligne = Signalement {
         id: id.clone(),
-        quand: tete(&socle::paris::maintenant(), 16),
+        quand: MinuteEcrite::maintenant(),
         texte: corps.texte.clone(),
         captures: corps.captures.len(),
         incidents: corps.incidents.len(),
@@ -525,11 +526,11 @@ fn passage(racine: &Path) -> R<BilanMessages> {
     };
     effacer_les_partis(racine)?;
     // Ce qui attend part maintenant : la boite le dit « en cours d'envoi ».
-    let essai = socle::paris::maintenant();
+    let essai = InstantEcrit::maintenant();
     let attendent = modifier(racine, |lignes| {
         let mut n = 0;
         for l in lignes.iter_mut().filter(|l| en_attente(l)) {
-            l.envoi.essai = Some(essai.clone());
+            l.envoi.essai = Some(essai);
             l.envoi.erreur = None;
             n += 1;
         }
@@ -605,11 +606,11 @@ fn passage(racine: &Path) -> R<BilanMessages> {
 
 /// La ligne `id` est arrivee chez l'editeur : `depose`, avec ce que le serveur a rendu.
 fn marquer_arrive(racine: &Path, id: &str, r: &Retour) -> R<()> {
-    let quand = socle::paris::maintenant();
+    let quand = InstantEcrit::maintenant();
     let fait = modifier(racine, |lignes| {
         let mut change = false;
         for l in lignes.iter_mut().filter(|l| l.id == id) {
-            l.envoi = EnvoiDuMessage { etat: DEPOSE, quand: Some(quand.clone()), essai: l.envoi.essai.clone(), erreur: None };
+            l.envoi = EnvoiDuMessage { etat: DEPOSE, quand: Some(quand), essai: l.envoi.essai, erreur: None };
             l.numero = Some(r.numero.clone());
             l.ticket = Some(r.ticket.clone()).filter(|t| !t.is_empty());
             l.ticket_numero = r.ticket_numero;

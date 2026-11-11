@@ -32,8 +32,9 @@ use crate::diagnostic::{Ecriture, Machine};
 use crate::editeur::{Client, ErreurFilet};
 use socle::ecriture::ecrire_json;
 use socle::echec::R;
-use socle::echec::{erreur, Classe};
+use socle::echec::Classe;
 use socle::fichiers::dossier_du_code;
+use socle::paris::InstantEcrit;
 use regex::Regex;
 use socle::verrou::Verrou;
 
@@ -92,7 +93,7 @@ pub const SANS_OBJET: EtatEnvoi = EtatEnvoi::SansObjet;
 #[serde(deny_unknown_fields)]
 pub struct Envoi {
     pub etat: EtatEnvoi,
-    pub quand: Option<String>,
+    pub quand: Option<InstantEcrit>,
 }
 
 /// UNE LIGNE DU JOURNAL DES INCIDENTS, telle qu'elle s'ecrit.
@@ -100,7 +101,7 @@ pub struct Envoi {
 #[serde(deny_unknown_fields)]
 pub struct Ligne {
     pub quoi: Nature,
-    pub quand: String,
+    pub quand: InstantEcrit,
     pub version: String,
     pub empreinte: String,
     pub ou: String,
@@ -112,7 +113,7 @@ pub struct Ligne {
     pub caviarde: Vec<String>,
     /// Combien de fois il a ete vu, et la derniere.
     pub fois: u64,
-    pub derniere: String,
+    pub derniere: InstantEcrit,
     pub fil: Vec<String>,
     pub ecritures: Vec<Ecriture>,
     pub machine_detail: Machine,
@@ -315,7 +316,7 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
     };
     trouve.sort_unstable();
     trouve.dedup();
-    let quand = socle::paris::maintenant();
+    let quand = InstantEcrit::maintenant();
     let empreinte = empreinte(n.nature, n.ou, n.quoi);
     let p = chemin(racine);
     let mut toutes = lignes(&p)?;
@@ -325,7 +326,7 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
     let debut = toutes.len().saturating_sub(50);
     let mut doublon = None;
     for (i, l) in toutes.iter().enumerate().skip(debut).rev() {
-        if l.empreinte == empreinte && l.resume == resume && l.envoi.etat == EN_ATTENTE && (0..DOUBLON_SECONDES).contains(&ecart_secondes(&l.derniere, &quand)?) {
+        if l.empreinte == empreinte && l.resume == resume && l.envoi.etat == EN_ATTENTE && (0..DOUBLON_SECONDES).contains(&quand.naif().depuis(l.derniere.naif())) {
             doublon = Some(i);
             break;
         }
@@ -383,30 +384,6 @@ const DOUBLON_SECONDES: i64 = 600;
 const FIL_PAR_INCIDENT: usize = 100;
 /// Les dernieres ecritures (charges entieres) de la page qu'un incident emporte : de quoi le rejouer.
 const ECRITURES_PAR_INCIDENT: usize = 3;
-
-/// Les secondes entre deux instants `AAAA-MM-JJTHH:MM:SS` (de `b` moins `a`) ; un instant qui ne se lit pas se refuse.
-fn ecart_secondes(a: &str, b: &str) -> R<i64> {
-    fn secondes(s: &str) -> R<i64> {
-        let n = |i: usize, j: usize| -> R<i64> {
-            match s.get(i..j).map(str::parse::<i64>) {
-                Some(Ok(x)) => Ok(x),
-                Some(Err(e)) => Err(erreur(Classe::Illisible, format!("Un instant du journal des incidents ne se lit pas ({}) : {}.", s, e))),
-                None => Err(erreur(Classe::Illisible, format!("Un instant du journal des incidents ne se lit pas ({}).", s))),
-            }
-        };
-        let (an, mois, jour) = (n(0, 4)?, n(5, 7)?, n(8, 10)?);
-        let (h, m, sec) = (n(11, 13)?, n(14, 16)?, n(17, 19)?);
-        // Jours depuis 1970 (civil -> jours, calendrier gregorien).
-        let (y, mo) = if mois <= 2 { (an - 1, mois + 9) } else { (an, mois - 3) };
-        let era = y.div_euclid(400);
-        let yoe = y - era * 400;
-        let doy = (153 * mo + 2) / 5 + jour - 1;
-        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-        let jours = era * 146_097 + doe - 719_468;
-        Ok(jours * 86_400 + h * 3600 + m * 60 + sec)
-    }
-    Ok(secondes(b)? - secondes(a)?)
-}
 
 /// Les classes qui disent un refus, pas un defaut (`nature_de`). Un coffre ferme ou un refus de Google y sont : une
 /// situation d'usage, pas un defaut du logiciel.
@@ -558,8 +535,8 @@ pub struct Paquet {
     pub genre: String,
     pub resume: String,
     pub combien: u64,
-    pub premiere: String,
-    pub derniere: String,
+    pub premiere: InstantEcrit,
+    pub derniere: InstantEcrit,
     pub versions: Vec<String>,
     pub caviarde: Vec<String>,
 }
@@ -585,8 +562,8 @@ pub fn regrouper(racine: &Path, nature: Option<Nature>) -> R<Vec<Paquet>> {
                     genre: l.genre.clone(),
                     resume: l.resume.clone(),
                     combien: l.fois,
-                    premiere: l.quand.clone(),
-                    derniere: l.quand.clone(),
+                    premiere: l.quand,
+                    derniere: l.quand,
                     versions: vec![l.version.clone()],
                     caviarde: l.caviarde.clone(),
                 },
@@ -594,7 +571,7 @@ pub fn regrouper(racine: &Path, nature: Option<Nature>) -> R<Vec<Paquet>> {
             Some(i) => {
                 let p = &mut paquets[i].1;
                 p.combien += l.fois;
-                p.derniere = l.quand.clone();
+                p.derniere = l.quand;
                 if !p.versions.contains(&l.version) {
                     p.versions.push(l.version.clone());
                 }
@@ -641,7 +618,7 @@ fn pour_texte(racine: &Path, s: &str) -> String {
 #[serde(deny_unknown_fields)]
 pub struct PourLEditeur {
     pub quoi: Nature,
-    pub quand: String,
+    pub quand: InstantEcrit,
     pub version: String,
     pub empreinte: String,
     pub ou: String,
@@ -652,7 +629,7 @@ pub struct PourLEditeur {
     pub caviarde: Vec<String>,
     pub machine: String,
     pub fois: u64,
-    pub derniere: String,
+    pub derniere: InstantEcrit,
     pub fil: Vec<String>,
     pub ecritures: Vec<Ecriture>,
     pub machine_detail: Machine,
@@ -673,7 +650,7 @@ pub fn pour_l_editeur(racine: &Path, l: &Ligne) -> PourLEditeur {
     });
     PourLEditeur {
         quoi: l.quoi,
-        quand: l.quand.clone(),
+        quand: l.quand,
         version: t(&l.version),
         empreinte: l.empreinte.clone(),
         ou: t(&l.ou),
@@ -684,7 +661,7 @@ pub fn pour_l_editeur(racine: &Path, l: &Ligne) -> PourLEditeur {
         caviarde: l.caviarde.clone(),
         machine: machine(),
         fois: l.fois,
-        derniere: l.derniere.clone(),
+        derniere: l.derniere,
         fil: l.fil.iter().map(|x| t(x)).collect(),
         ecritures: l.ecritures.iter().map(|e| Ecriture { il_y_a: e.il_y_a.clone(), route: e.route.clone(), charge: t(&e.charge), issue: t(&e.issue) }).collect(),
         machine_detail: Machine {
@@ -979,17 +956,17 @@ pub fn canal(racine: &Path) -> R<Canal> {
 }
 
 /// Passe a `depose` les lignes nommees par (empreinte, quand).
-fn marquer(racine: &Path, cles: &[(String, String)]) -> R<usize> {
+fn marquer(racine: &Path, cles: &[(String, InstantEcrit)]) -> R<usize> {
     if cles.is_empty() {
         return Ok(0);
     }
     let p = chemin(racine);
     let mut toutes = lignes(&p)?;
-    let quand = socle::paris::maintenant();
+    let quand = InstantEcrit::maintenant();
     let mut n = 0;
     for l in toutes.iter_mut() {
         if l.envoi.etat == EN_ATTENTE && cles.iter().any(|(e, w)| *e == l.empreinte && *w == l.quand) {
-            l.envoi = Envoi { etat: DEPOSE, quand: Some(quand.clone()) };
+            l.envoi = Envoi { etat: DEPOSE, quand: Some(quand) };
             n += 1;
         }
     }
@@ -1048,7 +1025,7 @@ fn passage(racine: &Path, bilan: &mut BilanIncidents) -> R<()> {
                 break;
             }
         };
-        let cles: Vec<(String, String)> = r.recus.into_iter().chain(r.ecartes).collect();
+        let cles: Vec<(String, InstantEcrit)> = r.recus.into_iter().chain(r.ecartes).collect();
         bilan.envoyes += marquer(racine, &cles)?;
     }
     bilan.reste = lire(racine, None, true)?.len();

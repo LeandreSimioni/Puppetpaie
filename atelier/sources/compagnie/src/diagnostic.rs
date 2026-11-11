@@ -1538,7 +1538,7 @@ pub fn machine(racine: &Path) -> Machine {
 #[derive(Debug, serde::Serialize)]
 pub struct DepotDit {
     quoi: String,
-    quand: String,
+    quand: socle::paris::HeureDuJournal,
     mode: String,
     accepte: bool,
     retours: Vec<String>,
@@ -1563,7 +1563,7 @@ pub fn etat_du_mois(racine: &Path, mois: socle::mois::Mois) -> R<EtatDuMois> {
         .filter(|d| d.mois() == Some(mois))
         .map(|d| DepotDit {
             quoi: d.acte().nom().to_string(),
-            quand: d.quand().to_string(),
+            quand: d.quand(),
             mode: d.mode().nom().to_string(),
             accepte: d.accepte(),
             retours: d

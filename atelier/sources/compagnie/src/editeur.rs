@@ -90,12 +90,13 @@ pub struct Identite {
 }
 
 /// `POST /rapport` : les cles `(empreinte, quand)` recues, et celles que le serveur a ecartees (une ligne mal formee :
-/// le poste la marque deposee quand meme).
+/// le poste la marque deposee quand meme). Le serveur rend le `quand` que le poste a envoye, tel quel
+/// (`rapporter` de `infra/filet/filet_serveur.py`) : l'instant de la ligne.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Rapport {
-    pub recus: Vec<(String, String)>,
-    pub ecartes: Vec<(String, String)>,
+    pub recus: Vec<(String, socle::paris::InstantEcrit)>,
+    pub ecartes: Vec<(String, socle::paris::InstantEcrit)>,
 }
 
 /// `POST /retour` : le numero que l'utilisateur lit, et l'adresse ou l'editeur le suit si elle est deja ouverte (vide
