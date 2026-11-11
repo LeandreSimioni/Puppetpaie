@@ -497,7 +497,7 @@ impl Echeance {
             detail: self.detail.clone(),
             source: self.source.clone(),
             tombe: self.tombe,
-            date: self.date.map(|j| j.iso()),
+            date: self.date,
             quand: self.quand.clone(),
             etat: self.etat,
             en_retard: self.etat == EnRetard,
@@ -534,7 +534,7 @@ pub(crate) struct EcheanceDite {
     pub(crate) source: String,
     /// Le mois ou elle tombe ; `null` sans date butoir.
     pub(crate) tombe: Option<Mois>,
-    pub(crate) date: Option<String>,
+    pub(crate) date: Option<Jour>,
     pub(crate) quand: String,
     pub(crate) etat: EtatEcheance,
     pub(crate) en_retard: bool,
@@ -1244,7 +1244,7 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
             format!("Signaler la fin du contrat de {}", salarie),
             format!("{} s'est terminé le {}.", numero, f.fin.jj_mm_aaaa()),
             Objet::Fin(Box::new(f.clone())),
-        )?;
+        );
         r.mois = Some(f.mois);
         r.salarie = Some(salarie.clone());
         r.etape = if a_saisir.is_empty() { A_PRODUIRE } else { A_SAISIR }.into();
@@ -1276,7 +1276,7 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
                     format!("{} — {}", o.libelle, nom),
                     format!("{}.", resume.en_clair()),
                     Objet::Arret(Box::new(resume.clone())),
-                )?;
+                );
                 r.mois = Some(dernier.mois_civil());
                 r.salarie = Some(a.salarie.clone());
                 out.push(r);
@@ -1297,9 +1297,9 @@ fn du(o: &crate::obligations::Obligation) -> bool {
 
 /// Le rappel d'une obligation : son titre, sa question, et ce que le moteur en a calcule -- la date butoir (`jour`), le
 /// retard, la phrase -- ; `objet` : ce sur quoi elle porte, que la page repasse au geste qui la fait.
-fn rappel_d_obligation(o: &crate::obligations::Obligation, cle: String, titre: String, question: String, objet: Objet) -> R<Echeance> {
+fn rappel_d_obligation(o: &crate::obligations::Obligation, cle: String, titre: String, question: String, objet: Objet) -> Echeance {
     // La date butoir, quand le delai se compte ; une obligation sans date butoir ne tombe dans aucun mois.
-    let butoir = o.butoir.as_deref().map(Jour::lire).transpose()?;
+    let butoir = o.butoir;
     let mut r = Echeance::nouveau(OBLIGATION, cle, titre, question, butoir.map(|j| j.mois_civil()));
     r.etat = if o.etat == crate::obligations::EN_RETARD { EnRetard } else { AFaire };
     r.etape = o.etat.to_string();
@@ -1312,7 +1312,7 @@ fn rappel_d_obligation(o: &crate::obligations::Obligation, cle: String, titre: S
     };
     r.obligation = Some(o.clone());
     r.objet = Some(objet);
-    Ok(r)
+    r
 }
 
 // ------------------------------------------------------------- les DPAE

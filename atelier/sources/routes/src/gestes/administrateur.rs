@@ -38,7 +38,7 @@
 //! Ce qui est hors DSN (la declaration d'accident, l'attestation de salaire) s'affiche avec son echeance et la marche a
 //! suivre : rien ne le depose.
 
-use socle::date::jj_mm_aaaa;
+use socle::date::Jour;
 use socle::echec::Classe;
 use crate::enveloppe::Options;
 use std::path::{Path, PathBuf};
@@ -591,8 +591,10 @@ pub struct Declaration {
     pub titre: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mois: Option<Mois>,
-    pub butoir: Option<String>,
-    pub quand: Option<String>,
+    pub butoir: Option<Jour>,
+    /// Quand, en une phrase (« le 05/12/2026 à 12:00 »).
+    #[serde(rename = "quand")]
+    pub quand_dit: Option<String>,
     pub detail: String,
     pub marche: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -609,7 +611,7 @@ pub struct Declaration {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TableauCompagnie {
-    pub le: String,
+    pub le: Jour,
     pub declarations: Vec<Declaration>,
     pub empreinte: String,
 }
@@ -720,8 +722,8 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 genre: Genre::Dsn,
                 titre: format!("DSN de {}", mois.libelle(socle::mois::Graphie::Accentuee)),
                 mois: Some(mois),
-                butoir: Some(e.jour.iso()),
-                quand: Some(e.phrase.clone()),
+                butoir: Some(e.jour),
+                quand_dit: Some(e.phrase.clone()),
                 detail: r.detail.clone(),
                 marche: marche.map(String::from),
                 ou: None,
@@ -732,10 +734,10 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
         }
         "obligation" => {
             let ob = r.obligation.as_ref().ok_or_else(|| rappel_incomplet("d'obligation"))?;
-            let quand = ob.butoir.as_ref().map(|b| match ob.butoir_heure.as_deref() {
-                Some("24:00") => format!("le {}, jusqu'à minuit", jj_mm_aaaa(b)),
-                Some(h) => format!("le {} à {}", jj_mm_aaaa(b), h),
-                None => format!("le {}", jj_mm_aaaa(b)),
+            let quand_dit = ob.butoir.map(|b| match ob.butoir_heure.as_deref() {
+                Some("24:00") => format!("le {}, jusqu'à minuit", b.jj_mm_aaaa()),
+                Some(h) => format!("le {} à {}", b.jj_mm_aaaa(), h),
+                None => format!("le {}", b.jj_mm_aaaa()),
             });
             let detail = if ob.phrase.is_empty() { r.detail.clone() } else { ob.phrase.clone() };
             let (genre, marche, ou) = if ob.cle.nom().starts_with("signalement_") {
@@ -754,17 +756,17 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 };
                 (Genre::HorsDsn, "Elle ne part pas avec la DSN : à faire sur le service de l'organisme, puis à dire faite dans la compagnie.", lieux)
             };
-            Declaration { cle: r.cle.clone(), en_retard: r.en_retard, genre, titre: r.titre.clone(), mois: None, butoir: ob.butoir.clone(), quand, detail, marche: Some(marche.into()), ou, fichier: None, etape: None, pret: Pret::default() }
+            Declaration { cle: r.cle.clone(), en_retard: r.en_retard, genre, titre: r.titre.clone(), mois: None, butoir: ob.butoir, quand_dit, detail, marche: Some(marche.into()), ou, fichier: None, etape: None, pret: Pret::default() }
         }
         "dpae" => {
-            let jour = r.date.clone().filter(|j| !j.is_empty());
+            let jour = r.date;
             Declaration {
                 cle: r.cle.clone(),
                 en_retard: r.en_retard,
                 genre: Genre::Dpae,
                 titre: r.titre.clone(),
                 mois: None,
-                quand: jour.as_ref().map(|j| format!("le {}", jj_mm_aaaa(j))),
+                quand_dit: jour.map(|j| format!("le {}", j.jj_mm_aaaa())),
                 butoir: jour,
                 detail: r.detail.clone(),
                 marche: Some("La DPAE se dépose dans la compagnie, avant la première heure de travail.".into()),
@@ -790,8 +792,8 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
 }
 
 /// Le plus presse d'abord : en retard, puis par date limite ; sans date, a la fin.
-fn cle_d_urgence(en_retard: bool, butoir: &Option<String>) -> (bool, bool, Option<String>) {
-    (!en_retard, butoir.is_none(), butoir.clone())
+fn cle_d_urgence(en_retard: bool, butoir: &Option<Jour>) -> (bool, bool, Option<Jour>) {
+    (!en_retard, butoir.is_none(), *butoir)
 }
 
 /// LE TABLEAU DE LA COMPAGNIE `ctx` : ses declarations obligatoires, du plus presse au moins presse, chacune avec sa date
@@ -809,7 +811,7 @@ pub(crate) fn tableau_compagnie(ctx: &Contexte) -> R<TableauCompagnie> {
         }
     }
     declarations.sort_by_key(|d| cle_d_urgence(d.en_retard, &d.butoir));
-    let t = TableauCompagnie { le: ctx.aujourdhui.iso(), declarations, empreinte };
+    let t = TableauCompagnie { le: ctx.aujourdhui, declarations, empreinte };
     socle::ecriture::ecrire_json(&ctx.racine.join(TABLEAU), &t, 2)?;
     Ok(t)
 }
@@ -832,7 +834,7 @@ pub struct CompagnieDuTableau {
     pub id: Option<String>,
     pub nom: String,
     pub couleur: Option<String>,
-    pub le: Option<String>,
+    pub le: Option<Jour>,
     pub erreur: Option<String>,
     pub declarations: usize,
     pub pretes_test: usize,
@@ -916,7 +918,7 @@ fn assembler(inst: &Path, par_compagnie: Vec<(PathBuf, R<TableauCompagnie>)>, ga
         cies.push(CompagnieDuTableau { id: id.clone(), nom: nom.clone(), couleur: couleur.clone(), le, erreur, declarations: decl.len(), pretes_test: pt, pretes_reel: pr });
         for d in decl {
             // Sa date limite, telle que la ligne la dit.
-            let limite_dit = d.quand.as_ref().map(|q| if d.en_retard { format!("en retard — c'était {}", q) } else { format!("au plus tard {}", q) });
+            let limite_dit = d.quand_dit.as_ref().map(|q| if d.en_retard { format!("en retard — c'était {}", q) } else { format!("au plus tard {}", q) });
             toutes.push(DeclarationDuTableau { declaration: d, compagnie: nom.clone(), id: id.clone(), couleur: couleur.clone(), limite_dit });
         }
     }
@@ -924,7 +926,7 @@ fn assembler(inst: &Path, par_compagnie: Vec<(PathBuf, R<TableauCompagnie>)>, ga
     let phrases: Vec<String> = toutes
         .iter()
         .map(|d| {
-            let quand: String = d.declaration.quand.iter().map(String::as_str).collect();
+            let quand: String = d.declaration.quand_dit.iter().map(String::as_str).collect();
             format!("{} : {}, {}{}", d.compagnie, d.declaration.titre, if d.declaration.en_retard { "en retard, c'était " } else { "au plus tard " }, quand)
         })
         .collect();
