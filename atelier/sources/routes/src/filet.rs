@@ -419,7 +419,7 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
             let bilan = incidents::envoyer(racine);
             let mut etat = diagnostic_etat(racine)?;
             // La couleur du message qui le dit : un envoi impossible est refuse, sinon parti.
-            etat.couleur = Some(socle::ecran::couleur_de_l_etat(if bilan.erreur.is_some() { "refuse" } else { "fait" }));
+            etat.couleur = Some(socle::ecran::couleur_de_l_etat(if bilan.erreur.is_some() { socle::ecran::EtatDEcran::Refuse } else { socle::ecran::EtatDEcran::Fait }));
             etat.phrase = match &bilan.erreur {
                 Some(e) => format!("Envoi impossible : {}", e),
                 None => format!("{} incident(s) envoyé(s).", bilan.envoyes),
@@ -495,13 +495,13 @@ fn route_de(racine: &Path, nom: Route, charge: &Charge) -> R<Rendu> {
 /// parti, fait ; des incidents en attente, une information (ils partent d'eux-memes).
 fn pastille_du_diagnostic(envoi: bool, total: usize, attente: u64) -> Pastille {
     if !envoi {
-        Pastille::de("information", "désactivé")
+        Pastille::de(socle::ecran::EtatDEcran::Information, "désactivé")
     } else if total == 0 {
-        Pastille::de("fait", "rien à signaler")
+        Pastille::de(socle::ecran::EtatDEcran::Fait, "rien à signaler")
     } else if attente > 0 {
-        Pastille::de("information", &format!("{} en attente", attente))
+        Pastille::de(socle::ecran::EtatDEcran::Information, &format!("{} en attente", attente))
     } else {
-        Pastille::de("fait", "tout est parti")
+        Pastille::de(socle::ecran::EtatDEcran::Fait, "tout est parti")
     }
 }
 
@@ -541,7 +541,7 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
                     contenu: Contenu::Incident(Box::new(incidents::pour_l_editeur(racine, l))),
                     dernier_dit: String::new(),
                     quoi_dit: quoi_dit(l.quoi),
-                    pastille: Pastille::de("information", ""),
+                    pastille: Pastille::de(socle::ecran::EtatDEcran::Information, ""),
                 };
                 groupes.push((cle, g));
                 groupes.len() - 1
@@ -568,9 +568,9 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
     let mut liste: Vec<Groupe> = groupes.into_iter().map(|(_, g)| g).collect();
     for g in liste.iter_mut() {
         g.pastille = match &g.parti_le {
-            _ if g.en_attente > 0 => Pastille::de("information", &format!("{} en attente", g.en_attente)),
-            Some(le) => Pastille::de("fait", &format!("parti le {}", le.dit())),
-            None => Pastille::de("information", "pas encore parti"),
+            _ if g.en_attente > 0 => Pastille::de(socle::ecran::EtatDEcran::Information, &format!("{} en attente", g.en_attente)),
+            Some(le) => Pastille::de(socle::ecran::EtatDEcran::Fait, &format!("parti le {}", le.dit())),
+            None => Pastille::de(socle::ecran::EtatDEcran::Information, "pas encore parti"),
         };
     }
     let partis: Vec<InstantEcrit> = liste.iter().filter_map(|g| g.parti_le).collect();
@@ -594,8 +594,8 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
             dernier_dit: if let Some(q) = a.parti_le { format!("dernier le {}", q.dit()) } else { "pas encore parti".to_string() },
             quoi_dit: "nombre de paies",
             pastille: match a.parti_le {
-                Some(q) => Pastille::de("fait", &format!("parti le {}", q.dit())),
-                None => Pastille::de("information", "pas encore parti"),
+                Some(q) => Pastille::de(socle::ecran::EtatDEcran::Fait, &format!("parti le {}", q.dit())),
+                None => Pastille::de(socle::ecran::EtatDEcran::Information, "pas encore parti"),
             },
         });
     }
@@ -639,9 +639,9 @@ pub(crate) fn signalements_route(racine: &Path) -> R<Signalements> {
             // Son depart, que la boite du message dit juste apres l'envoi : PuppetPaie renvoie de lui-meme ce qui n'est
             // pas parti, rien n'est a faire (une information).
             let (pastille, depart) = match vu.etat {
-                EtatDuMessage::EnCours => (Some(Pastille::de("information", "en cours d'envoi")), Pastille::de("information", "Envoi en cours…")),
-                EtatDuMessage::PasParti => (Some(Pastille::de("information", "pas encore parti")), Pastille::de("information", "Pas encore parti")),
-                EtatDuMessage::Arrive => (None, Pastille::de("fait", "Message envoyé.")),
+                EtatDuMessage::EnCours => (Some(Pastille::de(socle::ecran::EtatDEcran::Information, "en cours d'envoi")), Pastille::de(socle::ecran::EtatDEcran::Information, "Envoi en cours…")),
+                EtatDuMessage::PasParti => (Some(Pastille::de(socle::ecran::EtatDEcran::Information, "pas encore parti")), Pastille::de(socle::ecran::EtatDEcran::Information, "Pas encore parti")),
+                EtatDuMessage::Arrive => (None, Pastille::de(socle::ecran::EtatDEcran::Fait, "Message envoyé.")),
             };
             SignalementDit { quand_dit: vu.garde.quand.dit(), pastille, depart, vu }
         })

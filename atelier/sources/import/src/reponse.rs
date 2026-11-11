@@ -11,7 +11,7 @@ use serde::Serialize;
 use declarations::champs::{Anomalie, Saisie, Valeur};
 use droit::fiche::{NomDeCase, NomDeFiche};
 
-use socle::ecran::{couleur_de_l_etat, Pastille};
+use socle::ecran::{couleur_de_l_etat, EtatDEcran, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
@@ -77,21 +77,21 @@ impl Sort {
     /// fait ; repris sous reserve (un libelle que la table ne connait pas), a voir ; non repris parce que quelque chose
     /// manque ou se contredit (`non_repris`), refuse ; laisse expres (deja saisi, annexe, doublon, archive ouverte), une
     /// information.
-    pub fn en_mots(self) -> (&'static str, &'static str) {
+    pub fn en_mots(self) -> (EtatDEcran, &'static str) {
         match self {
-            Sort::Repris => ("fait", "repris"),
-            Sort::DejaRepris => ("fait", "déjà repris"),
-            Sort::LibelleInconnu => ("a_faire", "libellé inconnu"),
-            Sort::DejaSaisi => ("information", "déjà saisi"),
-            Sort::Incoherent => ("refuse", "incohérent"),
-            Sort::Incomplet => ("refuse", "incomplet"),
-            Sort::SansTexte => ("refuse", "sans texte"),
-            Sort::SansEntetes => ("refuse", "tableau introuvable"),
-            Sort::Ambigu => ("refuse", "ambigu"),
-            Sort::Annexe => ("information", "annexe"),
-            Sort::NonReconnu => ("refuse", "non reconnu"),
-            Sort::Doublon => ("information", "doublon"),
-            Sort::Archive => ("information", "archive"),
+            Sort::Repris => (EtatDEcran::Fait, "repris"),
+            Sort::DejaRepris => (EtatDEcran::Fait, "déjà repris"),
+            Sort::LibelleInconnu => (EtatDEcran::AFaire, "libellé inconnu"),
+            Sort::DejaSaisi => (EtatDEcran::Information, "déjà saisi"),
+            Sort::Incoherent => (EtatDEcran::Refuse, "incohérent"),
+            Sort::Incomplet => (EtatDEcran::Refuse, "incomplet"),
+            Sort::SansTexte => (EtatDEcran::Refuse, "sans texte"),
+            Sort::SansEntetes => (EtatDEcran::Refuse, "tableau introuvable"),
+            Sort::Ambigu => (EtatDEcran::Refuse, "ambigu"),
+            Sort::Annexe => (EtatDEcran::Information, "annexe"),
+            Sort::NonReconnu => (EtatDEcran::Refuse, "non reconnu"),
+            Sort::Doublon => (EtatDEcran::Information, "doublon"),
+            Sort::Archive => (EtatDEcran::Information, "archive"),
         }
     }
 }
@@ -332,7 +332,7 @@ impl FicheImportee {
             completer: Vec::new(),
             lu_dans: None,
             lu_dans_dit: None,
-            pastille: Pastille::de("a_faire", "à créer"),
+            pastille: Pastille::de(EtatDEcran::AFaire, "à créer"),
         };
         f.ajouter_ecarts(ecarts);
         f.poser(donnees, anomalies);
@@ -379,11 +379,11 @@ impl FicheImportee {
     /// Ou elle en est (`pastille`), d'ou elle vient (`lu_dans_dit`), chaque case qu'une piece remplit (`completer.dit`).
     fn dire(&mut self) {
         self.pastille = match self.etat {
-            EtatFiche::Completee => Pastille::de("fait", "complétée"),
-            EtatFiche::Existante if !self.completer.is_empty() => Pastille::de("a_faire", "à compléter"),
-            EtatFiche::Existante => Pastille::de("fait", "existe déjà"),
-            EtatFiche::Creee => Pastille::de("fait", "créée"),
-            EtatFiche::ACreer => Pastille::de("a_faire", "à créer"),
+            EtatFiche::Completee => Pastille::de(EtatDEcran::Fait, "complétée"),
+            EtatFiche::Existante if !self.completer.is_empty() => Pastille::de(EtatDEcran::AFaire, "à compléter"),
+            EtatFiche::Existante => Pastille::de(EtatDEcran::Fait, "existe déjà"),
+            EtatFiche::Creee => Pastille::de(EtatDEcran::Fait, "créée"),
+            EtatFiche::ACreer => Pastille::de(EtatDEcran::AFaire, "à créer"),
         };
         self.lu_dans_dit = self.lu_dans.as_ref().map(|o| format!("Lu dans {}", o.en_mots()));
         let completee = self.etat == EtatFiche::Completee;
@@ -436,7 +436,7 @@ impl EcartPaie {
             "pas" => "prélèvement à la source",
             autre => autre,
         };
-        let pastille = if gagne { Pastille::de("a_faire", "le bulletin l'emporte") } else { Pastille::de("information", "noté") };
+        let pastille = if gagne { Pastille::de(EtatDEcran::AFaire, "le bulletin l'emporte") } else { Pastille::de(EtatDEcran::Information, "noté") };
         EcartPaie { champ, source, valeur, bulletin, le_bulletin_l_emporte: gagne, champ_dit, pastille }
     }
 }
@@ -795,7 +795,7 @@ impl Importation {
         .collect();
         self.reprendre = quoi.join(", ");
         self.fiches_mut().for_each(FicheImportee::dire);
-        self.encart = (self.ecrit || self.rien_a_faire).then(|| Pastille::de("fait", "repris"));
+        self.encart = (self.ecrit || self.rien_a_faire).then(|| Pastille::de(EtatDEcran::Fait, "repris"));
     }
 
     /// La phrase de l'apercu : ce que le dossier lu donne ; rien n'est ecrit.
@@ -819,6 +819,6 @@ impl Importation {
 
     /// La couleur de la phrase d'un import fait.
     pub fn fait(&mut self) {
-        self.couleur = Some(couleur_de_l_etat("fait"));
+        self.couleur = Some(couleur_de_l_etat(EtatDEcran::Fait));
     }
 }

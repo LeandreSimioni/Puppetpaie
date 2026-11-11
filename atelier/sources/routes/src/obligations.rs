@@ -598,7 +598,7 @@ impl Obligation {
             dans_les_temps: None,
             etat: INDETERMINE,
             du: false,
-            pastille: Pastille::de(A_FAIRE, ""),
+            pastille: Pastille::de(socle::ecran::EtatDEcran::AFaire, ""),
             priorite: 1,
             jours_restants: None,
             fait: None,
@@ -614,13 +614,14 @@ impl Obligation {
     /// Ce que l'ecran dit d'une obligation dans l'etat `etat` : est-elle DUE par la compagnie (en retard, a faire, un
     /// delai qui ne se compte pas encore faute d'un fait), et sa pastille (`routes::pastille`).
     fn poser_l_etat(&mut self, etat: &'static str) {
+        use socle::ecran::EtatDEcran;
         let (du, couleur, mots) = match etat {
-            EN_RETARD => (true, EN_RETARD, "en retard"),
-            A_FAIRE => (true, A_FAIRE, "à faire"),
-            INDETERMINE => (true, A_FAIRE, "délai à préciser"),
-            FAIT => (false, FAIT, "fait"),
-            A_VENIR => (false, "information", "à venir"),
-            _ => (false, "information", "à la charge du salarié"),
+            EN_RETARD => (true, EtatDEcran::EnRetard, "en retard"),
+            A_FAIRE => (true, EtatDEcran::AFaire, "à faire"),
+            INDETERMINE => (true, EtatDEcran::AFaire, "délai à préciser"),
+            FAIT => (false, EtatDEcran::Fait, "fait"),
+            A_VENIR => (false, EtatDEcran::Information, "à venir"),
+            _ => (false, EtatDEcran::Information, "à la charge du salarié"),
         };
         self.etat = etat;
         self.du = du;

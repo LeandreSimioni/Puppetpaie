@@ -316,7 +316,7 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
         titre: format!("{} — {}", titre, qui_du_contrat(ctx, &r.nom, &r.salarie)),
         quand: Some(r.quand),
         phrases: vec![phrase],
-        pastille: Some(Pastille::de(if !r.recu { "information" } else { "fait" }, "signé")),
+        pastille: Some(Pastille::de(if !r.recu { socle::ecran::EtatDEcran::Information } else { socle::ecran::EtatDEcran::Fait }, "signé")),
         piece: signe.map(|p| relatif(&ctx.racine, &p)),
         organisme: None,
     }
@@ -1055,7 +1055,15 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
     let organisme = lu_organisme.or(organisme.map(String::from));
     let verdict = lu_verdict.or(r.verdict()).map(String::from);
     // Sa pastille : OK fait, KO refuse, ANO a corriger (la compagnie le peut), le reste une information.
-    let pastille = verdict.as_deref().or(statut).map(|lu| Pastille::de(match lu { "OK" => "fait", "KO" => "refuse", "ANO" => "a_faire", _ => "information" }, lu));
+    let pastille = verdict.as_deref().or(statut).map(|lu| Pastille::de(
+        match lu {
+            "OK" => socle::ecran::EtatDEcran::Fait,
+            "KO" => socle::ecran::EtatDEcran::Refuse,
+            "ANO" => socle::ecran::EtatDEcran::AFaire,
+            _ => socle::ecran::EtatDEcran::Information,
+        },
+        lu,
+    ));
     let titre_dit = match (titre.as_deref().and_then(dit), dit(&libelle)) {
         (Some(t), _) => t.to_string(),
         (None, Some(l)) => l.to_string(),

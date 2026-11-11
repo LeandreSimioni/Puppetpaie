@@ -2125,7 +2125,7 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
                 autre => return Err(illisible("témoin bureau", autre)),
             };
             let brut = champ("taux");
-            let taux = socle::num::decimal_lu(&brut.replace(',', ".")).filter(|v| *v > socle::num::Decimal::ZERO && *v < socle::num::Decimal::from(100));
+            let taux = socle::num::decimal_a_virgule(&brut).filter(|v| *v > socle::num::Decimal::ZERO && *v < socle::num::Decimal::from(100));
             let Some(taux) = taux else { return Err(illisible("taux", &brut)) };
             let effet = champ("date_effet");
             let Some(date_effet) = jour_aaaammjj(&effet) else { return Err(illisible("date d'effet", &effet)) };

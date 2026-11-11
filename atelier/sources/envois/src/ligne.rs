@@ -401,18 +401,18 @@ pub struct PersonneCertifiee {
 impl PersonneCertifiee {
     /// Sa pastille : enregistree, faite ; deja existante, une information ; refusee, refusee.
     pub fn pastille_due(&self) -> socle::ecran::Pastille {
-        use socle::ecran::Pastille;
+        use socle::ecran::{EtatDEcran, Pastille};
         if self.enregistree {
-            Pastille::de("fait", &if self.dossier.is_empty() { "enregistrée".to_string() } else { format!("enregistrée — dossier {}", self.dossier) })
+            Pastille::de(EtatDEcran::Fait, &if self.dossier.is_empty() { "enregistrée".to_string() } else { format!("enregistrée — dossier {}", self.dossier) })
         } else if self.deja_existante {
-            Pastille::de("information", "déjà existante")
+            Pastille::de(EtatDEcran::Information, "déjà existante")
         } else {
             // Ni libelle ni code : le compte rendu dit seulement qu'elle est refusee.
             let mots = match [&self.libelle, &self.code].into_iter().find(|t| !t.is_empty()) {
                 Some(m) => m.as_str(),
                 None => "refusée",
             };
-            Pastille::de("refuse", mots)
+            Pastille::de(EtatDEcran::Refuse, mots)
         }
     }
 }

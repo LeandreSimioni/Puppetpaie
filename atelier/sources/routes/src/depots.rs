@@ -320,13 +320,13 @@ fn encarts_du_depot(apercu: &DepotApercu) -> Vec<Encart> {
     let (deja_depose, reel) = match apercu {
         DepotApercu::Dsn(Dit { apercu: a, .. }) => {
             if let Some(remplace) = &a.remplace {
-                e.push(Encart::de("information", "Annule et remplace", format!("Ce fichier remplace la déclaration {}.", remplace)));
+                e.push(Encart::de(socle::ecran::EtatDEcran::Information, "Annule et remplace", format!("Ce fichier remplace la déclaration {}.", remplace)));
             }
             // Un fichier qui remplace la DSN partie porte son ordre (`apercu_dsn::remplacement_du_fichier`).
             if let (Some(r), Some(ordre)) = (a.remplacement.as_ref().filter(|r| r.fichier_remplace), &a.ordre) {
                 let partie: String = r.etat.dernier_ordre.iter().map(|o| format!(" (ordre {})", o)).collect();
                 e.push(Encart::de(
-                    "a_faire",
+                    socle::ecran::EtatDEcran::AFaire,
                     format!("Annule-et-remplace intégral — ordre {}", ordre),
                     format!(
                         "Il remplace la DSN réelle déjà partie pour ce mois{}, ordres de télépaiement compris : c'est lui qui vaudra. Admis jusqu'au {} à minuit.",
@@ -338,7 +338,7 @@ fn encarts_du_depot(apercu: &DepotApercu) -> Vec<Encart> {
             if a.pas_bareme > 0 {
                 let n = a.pas_bareme;
                 e.push(Encart::de(
-                    "a_faire",
+                    socle::ecran::EtatDEcran::AFaire,
                     format!("Prélèvement à la source : {} versement{} sur {} sur la grille par défaut", n, if n > 1 { "s" } else { "" }, a.pas_versements),
                     "Sans taux transmis par la DGFiP, la grille de l'article 204 H du CGI s'applique ; le dépôt n'est pas bloqué. Elle prélève souvent plus que le taux réel, et le salarié ne récupère la différence qu'à sa déclaration de revenus. Relever les retours avant de déposer peut changer cela.",
                 ));
@@ -349,7 +349,7 @@ fn encarts_du_depot(apercu: &DepotApercu) -> Vec<Encart> {
             let deja = a.embauches.iter().filter(|x| x.deja_declaree).count();
             if deja > 0 {
                 e.push(Encart::de(
-                    "a_faire",
+                    socle::ecran::EtatDEcran::AFaire,
                     format!("{} déjà envoyée{}", socle::ecran::compte(deja, "embauche", "embauches"), if deja > 1 { "s" } else { "" }),
                     "Le fichier porte tout le mois : le déposer les redéclare, et l'Urssaf reçoit deux déclarations pour un seul contrat.",
                 ));
@@ -359,13 +359,13 @@ fn encarts_du_depot(apercu: &DepotApercu) -> Vec<Encart> {
     };
     if let Some(deja) = deja_depose {
         e.push(Encart::de(
-            "a_faire",
+            socle::ecran::EtatDEcran::AFaire,
             "Ce fichier a déjà été déposé",
             format!("Le {}, en mode {}. Redéposer le même fichier ne remplace rien : un annule-et-remplace se produit, il ne se redépose pas.", deja.quand().dit(), if deja.reel() { "réel" } else { "test" }),
         ));
     }
     if !reel {
-        e.push(Encart::de("information", "Envoi de test", "Le fichier est codé envoi de test : déposé pour de vrai, il ne déclarerait rien et rien ne serait conservé."));
+        e.push(Encart::de(socle::ecran::EtatDEcran::Information, "Envoi de test", "Le fichier est codé envoi de test : déposé pour de vrai, il ne déclarerait rien et rien ne serait conservé."));
     }
     e
 }
@@ -812,7 +812,7 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&str>) -> R<Depo
     let phrase = std::iter::once(tranche).chain(fait.suites.iter().cloned()).collect::<Vec<_>>().join(" ");
     // APRES LA DSN REELLE D'UN MOIS QUI A DES SALARIES, la boite d'avis : leurs documents partent de l'etape 4.
     let avis = (reel && quoi == Quoi::Dsn && !declarations::dsn_lue::lire(&lire_octets(&resoudre(&ctx.racine, &fichier)?)?, &fichier)?.individus.is_empty())
-        .then(|| Encart::de("information", "Les documents des salariés", "Ils partent de l'étape 4, « Envoyer les documents », qui dit ce qu'il leur manque encore."));
+        .then(|| Encart::de(socle::ecran::EtatDEcran::Information, "Les documents des salariés", "Ils partent de l'étape 4, « Envoyer les documents », qui dit ce qu'il leur manque encore."));
     etats::poser_les_pastilles(&mut fait.ligne);
     poser_les_pastilles(&mut fait.deja);
     Ok(Deposee { phrase, fait, avis })
@@ -867,11 +867,11 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     // Ce que l'ecran en dit, et en quelle couleur, une fois le depot tranche.
     let nom = if dpae { "La DPAE" } else { "La DSN" };
     let (phrase, etat) = if passe {
-        (format!("{} est passée — retour de l'organisme reçu.", nom), "fait")
+        (format!("{} est passée — retour de l'organisme reçu.", nom), socle::ecran::EtatDEcran::Fait)
     } else if refuse {
-        (format!("{} est refusée — voir le motif dans l'étape.", nom), "refuse")
+        (format!("{} est refusée — voir le motif dans l'étape.", nom), socle::ecran::EtatDEcran::Refuse)
     } else {
-        (format!("{} attend le retour de l'organisme.", nom), "en_attente")
+        (format!("{} attend le retour de l'organisme.", nom), socle::ecran::EtatDEcran::EnAttente)
     };
     Ok(Suivi { fini: passe || refuse, passe, refuse, incident, phrase, couleur: socle::ecran::couleur_de_l_etat(etat) })
 }
@@ -1139,7 +1139,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
             type_contrat,
             deja_declaree: deja,
             // Deja declaree, a voir (elle partirait deux fois) ; a declarer, une information.
-            pastille: if deja { Pastille::de("a_faire", "déjà déclarée") } else { Pastille::de("information", "à déclarer") },
+            pastille: if deja { Pastille::de(socle::ecran::EtatDEcran::AFaire, "déjà déclarée") } else { Pastille::de(socle::ecran::EtatDEcran::Information, "à déclarer") },
         });
     }
     let mois = jours.iter().map(|j| j.mois_civil()).min();

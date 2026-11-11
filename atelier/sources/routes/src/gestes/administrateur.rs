@@ -313,7 +313,7 @@ pub(crate) fn etat(inst: &Path, racine: &Path, poste: &Poste) -> R<EtatAdministr
         question: !fictive && !rattachee && !autres.is_empty() && !pose && !bridee,
         mot_de_passe_pose: pose,
         // La pastille de la compagnie pour l'administrateur : rattachee, faite ; son propre mot de passe, une information.
-        pastille: if rattachee { socle::ecran::Pastille::de("fait", "rattachée") } else { socle::ecran::Pastille::de("information", "son propre mot de passe") },
+        pastille: if rattachee { socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "rattachée") } else { socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Information, "son propre mot de passe") },
         autres,
         autres_dit,
     })

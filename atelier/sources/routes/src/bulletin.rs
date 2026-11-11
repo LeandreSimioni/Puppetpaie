@@ -198,7 +198,7 @@ fn modeles(ctx: &Contexte) -> R<ModelesDuBulletin> {
             description: m.description(),
             apercu_dit: format!("Aperçu du modèle {}", m.nom()),
             apercu: adresse_apercu(*m),
-            pastille: (*m == modele).then(|| socle::ecran::Pastille::de("fait", if choisi.is_none() { "celui de la compagnie (par défaut)" } else { "celui de la compagnie" })),
+            pastille: (*m == modele).then(|| socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, if choisi.is_none() { "celui de la compagnie (par défaut)" } else { "celui de la compagnie" })),
         })
         .collect();
     let dits: Vec<String> = autrement.iter().map(|s| format!("{} ({})", s.nom, s.modele)).collect();

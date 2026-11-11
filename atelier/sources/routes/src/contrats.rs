@@ -993,9 +993,9 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         let pastille = if caduc {
             let quand = if recu { " (signé)".to_string() } else { parti.map(|q| format!(" (parti le {})", q.dit())).into_iter().collect() };
             let pourquoi = if etat.pourquoi.is_empty() { crate::etapes::CONTRAT_A_REFAIRE } else { etat.pourquoi };
-            Some(Pastille::de("a_faire", &format!("{}{}", pourquoi, quand)))
+            Some(Pastille::de(socle::ecran::EtatDEcran::AFaire, &format!("{}{}", pourquoi, quand)))
         } else if en_attente {
-            Some(Pastille::de("en_attente", &attente))
+            Some(Pastille::de(socle::ecran::EtatDEcran::EnAttente, &attente))
         } else {
             None
         };
@@ -1049,7 +1049,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         phrase: format!("Contrats à faire signer : {}.", contrats.len()),
         mois,
         signature: boite_liee.then(|| {
-            Encart::de("information", "Signature d'un clic", "Le contrat part par courriel avec un bouton « Je signe » ; la réponse du salarié est relevée toute seule, et il reçoit son contrat contresigné.")
+            Encart::de(socle::ecran::EtatDEcran::Information, "Signature d'un clic", "Le contrat part par courriel avec un bouton « Je signe » ; la réponse du salarié est relevée toute seule, et il reçoit son contrat contresigné.")
         }),
         rien_a_envoyer: (!contrats.iter().any(|c| c.a_envoyer)).then_some("Aucun contrat à faire partir ce mois-ci."),
         rien_en_attente: (!contrats.iter().any(|c| c.en_attente)).then_some("Aucun contrat n'attend sa signature."),
@@ -1152,23 +1152,23 @@ impl AvenantLu {
             })
             .collect();
         let mut encarts = vec![if ailleurs && n > 0 {
-            Encart::de("information", "", format!(
+            Encart::de(socle::ecran::EtatDEcran::Information, "", format!(
                 "Le contrat a été signé hors de PuppetPaie : l'avenant n° {} ne cite aucun de ses articles, il dit en clair ce qui change, l'ancienne valeur et la nouvelle ; le reste du contrat ne change pas.",
                 self.numero
             ))
         } else if ailleurs {
-            Encart::de("information", "", "Aucun terme du contrat signé hors de PuppetPaie n'a changé : il n'y a rien à modifier.")
+            Encart::de(socle::ecran::EtatDEcran::Information, "", "Aucun terme du contrat signé hors de PuppetPaie n'a changé : il n'y a rien à modifier.")
         } else if n > 0 {
-            Encart::de("information", "", format!(
+            Encart::de(socle::ecran::EtatDEcran::Information, "", format!(
                 "Le contrat parti se compare à l'engagement d'aujourd'hui : {}. L'avenant n° {} cite l'ancien texte et le nouveau ; le reste du contrat ne change pas.",
                 if n > 1 { format!("{} articles ont changé", n) } else { "un article a changé".to_string() },
                 self.numero
             ))
         } else {
-            Encart::de("information", "", "Le contrat parti dit déjà tout ce que dit l'engagement : il n'y a rien à modifier.")
+            Encart::de(socle::ecran::EtatDEcran::Information, "", "Le contrat parti dit déjà tout ce que dit l'engagement : il n'y a rien à modifier.")
         }];
         if n > 0 && self.remplacable && self.boite_liee {
-            encarts.push(Encart::de("information", "", format!(
+            encarts.push(Encart::de(socle::ecran::EtatDEcran::Information, "", format!(
                 "Le contrat n'a pas commencé : il peut aussi être refait en entier. Le nouveau porte en tête « annule et remplace le contrat {} du {} ».",
                 contrat,
                 self.date_contrat.jj_mm_aaaa()

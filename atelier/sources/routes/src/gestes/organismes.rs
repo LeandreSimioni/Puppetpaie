@@ -145,10 +145,10 @@ fn dire(lu: Lus, enregistre: bool, mut temps: Vec<TempsDeLaCase<ContratSaisi>>) 
     };
     let phrase = if enregistre { format!("Enregistré. {}", p) } else { p };
     let mois = lu.mois;
-    let mut encarts = vec![crate::Encart::de("information", "", "Ce que la DSN déclare de vos adhésions de prévoyance et de santé. La référence du contrat et le code de l'organisme se lisent sur le certificat d'adhésion et sur la fiche de paramétrage DSN de l'organisme. Le reste (organismes payés, Urssaf, taux AT/MP, compte France Travail) vient de la loi, de la convention et de la fiche Entreprise.")];
-    encarts.push(crate::Encart::de("information", "", format!("Les contrats en vigueur en {}.", mois.libelle(socle::mois::Graphie::Accentuee))));
+    let mut encarts = vec![crate::Encart::de(socle::ecran::EtatDEcran::Information, "", "Ce que la DSN déclare de vos adhésions de prévoyance et de santé. La référence du contrat et le code de l'organisme se lisent sur le certificat d'adhésion et sur la fiche de paramétrage DSN de l'organisme. Le reste (organismes payés, Urssaf, taux AT/MP, compte France Travail) vient de la loi, de la convention et de la fiche Entreprise.")];
+    encarts.push(crate::Encart::de(socle::ecran::EtatDEcran::Information, "", format!("Les contrats en vigueur en {}.", mois.libelle(socle::mois::Graphie::Accentuee))));
     if lu.a_saisir {
-        encarts.push(crate::Encart::de("a_faire", "", "Une référence de contrat manque : la DSN refuse les salariés que ce contrat couvre tant qu'elle n'est pas enregistrée."));
+        encarts.push(crate::Encart::de(socle::ecran::EtatDEcran::AFaire, "", "Une référence de contrat manque : la DSN refuse les salariés que ce contrat couvre tant qu'elle n'est pas enregistrée."));
     }
     let en_clair = |j: &Option<Jour>| -> R<Option<String>> { Ok(j.map(|j| j.jj_mm_aaaa())) };
     let mut contrats = Vec::new();

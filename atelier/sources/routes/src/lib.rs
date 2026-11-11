@@ -385,7 +385,7 @@ pub(crate) struct Encart {
 }
 
 impl Encart {
-    pub(crate) fn de(etat: &str, titre: impl Into<String>, phrase: impl Into<String>) -> Encart {
+    pub(crate) fn de(etat: socle::ecran::EtatDEcran, titre: impl Into<String>, phrase: impl Into<String>) -> Encart {
         Encart { couleur: couleur_de_l_etat(etat), titre: titre.into(), phrase: phrase.into() }
     }
 

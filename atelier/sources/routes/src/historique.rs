@@ -226,7 +226,16 @@ fn ajout_dit(d: DepotVu) -> AjoutDit {
     };
     let reel = d.mode == Mode::Reel;
     let mots = format!("{}{}", if reel { "dépôt réel" } else { "test" }, if d.accepte { "" } else { " — refusé" });
-    let pastille = socle::ecran::Pastille::de(if !reel { "information" } else if d.accepte { "fait" } else { "refuse" }, &mots);
+    let pastille = socle::ecran::Pastille::de(
+        if !reel {
+            socle::ecran::EtatDEcran::Information
+        } else if d.accepte {
+            socle::ecran::EtatDEcran::Fait
+        } else {
+            socle::ecran::EtatDEcran::Refuse
+        },
+        &mots,
+    );
     AjoutDit { depot: d, dit, origine_dit, pastille }
 }
 
@@ -259,7 +268,7 @@ fn regularisations(ctx: &Contexte) -> R<Regularisations> {
     let mut out = Vec::new();
     for mois in engagement::stock::mois_saisis(&ctx.racine)? {
         let (a_porter, portees) = crate::regularisation::corrections_du_mois(ctx, mois)?;
-        let dite = |correction, etat: &'static str, fait: bool| CorrectionDite { correction, etat, pastille: socle::ecran::Pastille::de(if fait { "fait" } else { "a_faire" }, etat) };
+        let dite = |correction, etat: &'static str, fait: bool| CorrectionDite { correction, etat, pastille: socle::ecran::Pastille::de(if fait { socle::ecran::EtatDEcran::Fait } else { socle::ecran::EtatDEcran::AFaire }, etat) };
         let mut corrections: Vec<CorrectionDite> = portees.into_iter().map(|c| dite(c, "portée", true)).collect();
         corrections.extend(a_porter.into_iter().map(|c| dite(c, "à porter", false)));
         if !corrections.is_empty() {
@@ -369,7 +378,7 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
             dsn_acceptees: acceptees,
             clos: note.cloned(),
             // Sa pastille : close, faite ; ouverte, une information (une annee se clot quand la compagnie le veut).
-            pastille: if note.is_some() { socle::ecran::Pastille::de("fait", "clos") } else { socle::ecran::Pastille::de("information", "ouvert") },
+            pastille: if note.is_some() { socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "clos") } else { socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Information, "ouvert") },
             export,
         });
     }

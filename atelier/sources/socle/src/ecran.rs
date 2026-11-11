@@ -3,13 +3,25 @@
 //! moteur les rend avec ses reponses ; la page ne les compose jamais.
 
 /// LA COULEUR D'UN ETAT : fait, vert ; a faire, en attente, en retard, orange ; refuse, rouge ; le reste, gris.
-pub fn couleur_de_l_etat(etat: &str) -> &'static str {
+pub fn couleur_de_l_etat(etat: EtatDEcran) -> &'static str {
     match etat {
-        "fait" => "vert",
-        "a_faire" | "en_attente" | "en_retard" => "orange",
-        "refuse" => "rouge",
-        _ => "gris",
+        EtatDEcran::Fait => "vert",
+        EtatDEcran::AFaire | EtatDEcran::EnAttente | EtatDEcran::EnRetard => "orange",
+        EtatDEcran::Refuse => "rouge",
+        EtatDEcran::Information | EtatDEcran::Rien => "gris",
     }
+}
+
+/// UN ETAT TEL QUE L'ECRAN LE COLORE (`couleur_de_l_etat`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EtatDEcran {
+    Fait,
+    AFaire,
+    EnAttente,
+    EnRetard,
+    Refuse,
+    Information,
+    Rien,
 }
 
 /// LA PASTILLE D'UN ETAT, telle que la page la dessine : sa couleur (`couleur_de_l_etat`) et ses mots.
@@ -20,7 +32,7 @@ pub struct Pastille {
 }
 
 impl Pastille {
-    pub fn de(etat: &str, mots: &str) -> Pastille {
+    pub fn de(etat: EtatDEcran, mots: &str) -> Pastille {
         Pastille { couleur: couleur_de_l_etat(etat), mots: mots.to_string() }
     }
 }

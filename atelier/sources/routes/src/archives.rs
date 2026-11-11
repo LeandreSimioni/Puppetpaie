@@ -513,7 +513,7 @@ struct CascNotee {
 fn montant_vire(m: &NombreDit) -> R<socle::num::Decimal> {
     match m {
         NombreDit::Nombre(n) => Ok(n.decimal()?.normalize()),
-        NombreDit::Texte(t) => socle::num::decimal_lu(&t.replace(',', "."))
+        NombreDit::Texte(t) => socle::num::decimal_a_virgule(t)
             .ok_or_else(|| socle::echec::refus("Le montant viré ne se lit pas (montant).".to_string()).reclasser(Classe::Illisible)),
     }
 }

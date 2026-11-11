@@ -12,7 +12,7 @@
 //! reseau. `verifier_secret` ouvre les vraies connexions.
 
 use socle::echec::Classe;
-use socle::ecran::Pastille;
+use socle::ecran::{EtatDEcran, Pastille};
 
 use crate::boite::Ouverture;
 use crate::coffre::Coffre;
@@ -47,7 +47,7 @@ pub struct Verdict {
 
 impl Verdict {
     fn de(service: &'static str, ok: bool, message: String, conseil: Option<&'static str>) -> Verdict {
-        let pastille = if ok { Pastille::de("fait", "OK") } else { Pastille::de("refuse", "refusé") };
+        let pastille = if ok { Pastille::de(EtatDEcran::Fait, "OK") } else { Pastille::de(EtatDEcran::Refuse, "refusé") };
         Verdict { service, ok, message, conseil, pastille }
     }
 }

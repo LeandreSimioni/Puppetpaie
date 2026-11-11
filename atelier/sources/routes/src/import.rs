@@ -780,7 +780,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
         dossier: racine.join("import").display().to_string(),
         reprises,
         editeur,
-        pastille_repris: socle::ecran::Pastille::de("fait", "fait"),
+        pastille_repris: socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "fait"),
         attend_editeur,
         a_dire: crate::importation::nature::a_dire(racine)?,
         guide: import::guide::guide(),
@@ -995,9 +995,9 @@ fn message(canal: &'static str, quand: QuandDuMessage, resume: Option<String>, p
     let quoi = if canal == "signalement" { "Message à l'éditeur" } else { "Incident" };
     let titre_dit = format!("{} du {}", quoi, quand.dit());
     let pastille = match (repondu, parti) {
-        (true, _) => socle::ecran::Pastille::de("fait", "réponse reçue"),
-        (false, true) => socle::ecran::Pastille::de("information", "attend l'éditeur"),
-        (false, false) => socle::ecran::Pastille::de("information", "pas encore parti"),
+        (true, _) => socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "réponse reçue"),
+        (false, true) => socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Information, "attend l'éditeur"),
+        (false, false) => socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Information, "pas encore parti"),
     };
     let resume: String = resume.into_iter().collect();
     MessageEditeur { canal, quand, resume, parti, repondu, pastille, titre_dit }

@@ -988,10 +988,10 @@ fn google_etat(ctx: &Contexte) -> R<EtatGoogle> {
         // Ce que la carte dit du compte lie, son bouton et sa pastille : aucun Drive lie, a faire (la sauvegarde attend) ;
         // lie et l'autorisation tient, fait ; lie mais l'autorisation ne repond pas, a faire.
         let (compte_dit, pastille) = match (&compte, verifie, &probleme) {
-            (None, _, _) => (None, Pastille::de("a_faire", "aucun Drive lié")),
-            (Some(c), true, _) => (Some(c.clone()), Pastille::de("fait", "lié")),
-            (Some(c), false, Some(p)) => (Some(format!("{} : {}", c, p)), Pastille::de("a_faire", "lié, mais")),
-            (Some(c), false, None) => (Some(format!("{} : l'autorisation ne répond pas", c)), Pastille::de("a_faire", "lié, mais")),
+            (None, _, _) => (None, Pastille::de(socle::ecran::EtatDEcran::AFaire, "aucun Drive lié")),
+            (Some(c), true, _) => (Some(c.clone()), Pastille::de(socle::ecran::EtatDEcran::Fait, "lié")),
+            (Some(c), false, Some(p)) => (Some(format!("{} : {}", c, p)), Pastille::de(socle::ecran::EtatDEcran::AFaire, "lié, mais")),
+            (Some(c), false, None) => (Some(format!("{} : l'autorisation ne répond pas", c)), Pastille::de(socle::ecran::EtatDEcran::AFaire, "lié, mais")),
         };
         EtatGoogle {
             phrase: format!("Google Drive : {}.", pastille.mots),
@@ -1087,16 +1087,16 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
         // Sa pastille : simule, une information ; fourni par l'environnement (il passe devant le coffre), a voir ; pose,
         // fait ; absent, a poser.
         let pastille = if simule {
-            Pastille::de("information", "simulé")
+            Pastille::de(socle::ecran::EtatDEcran::Information, "simulé")
         } else if s.dans_environnement {
-            Pastille::de("a_faire", "fourni par l'environnement")
+            Pastille::de(socle::ecran::EtatDEcran::AFaire, "fourni par l'environnement")
         } else if s.pose {
             match s.pose_le {
-                Some(le) => Pastille::de("fait", &format!("posé le {}", le.jour().jj_mm_aaaa())),
-                None => Pastille::de("fait", "posé"),
+                Some(le) => Pastille::de(socle::ecran::EtatDEcran::Fait, &format!("posé le {}", le.jour().jj_mm_aaaa())),
+                None => Pastille::de(socle::ecran::EtatDEcran::Fait, "posé"),
             }
         } else {
-            Pastille::de("a_faire", "absent")
+            Pastille::de(socle::ecran::EtatDEcran::AFaire, "absent")
         };
         let identifiant = identifiant_du_compte(entreprise, s.service)?;
         services.push(ServiceDit {
@@ -1124,14 +1124,14 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
         cle_poste,
         chemin_cle: coffre.chemin_cle().to_string_lossy().into_owned(),
         // Ce que montrent le filet et le compte Google d'une compagnie fictive, ou rien ne se branche : une information.
-        fictive: Fictive { google: Pastille::de("information", "non lié") },
+        fictive: Fictive { google: Pastille::de(socle::ecran::EtatDEcran::Information, "non lié") },
         // La pastille du mot de passe du logiciel (rattache a l'administrateur, la page dit a combien de compagnies).
         pastille_mot_de_passe: if simule {
-            Pastille::de("information", "simulé")
+            Pastille::de(socle::ecran::EtatDEcran::Information, "simulé")
         } else if mot_de_passe_pose {
-            Pastille::de("fait", "posé")
+            Pastille::de(socle::ecran::EtatDEcran::Fait, "posé")
         } else {
-            Pastille::de("a_faire", "aucun")
+            Pastille::de(socle::ecran::EtatDEcran::AFaire, "aucun")
         },
         couleur: None,
         ecran: None,
@@ -1185,9 +1185,9 @@ fn ecran_du_coffre(ctx: &Contexte, e: &mut EtatDuCoffre) -> R<EcranDuCoffre> {
         s.oublier = Some(format!("Oublier le mot de passe {} ? Les retours et les dépôts ne seront plus possibles jusqu'à ce qu'il soit reposé.", s.libelle));
     }
     let encart = if fictive {
-        Some(super::Encart::de("information", "Compagnie fictive : les champs sont grisés", "Les dépôts de DPAE et de DSN, leurs retours, les courriels et les signatures sont simulés : aucun mot de passe n'est demandé, et rien ne quitte le poste. Dans une compagnie réelle, c'est ici que se posent les accès à net-entreprises, à l'Urssaf et à la boîte courriel."))
+        Some(super::Encart::de(socle::ecran::EtatDEcran::Information, "Compagnie fictive : les champs sont grisés", "Les dépôts de DPAE et de DSN, leurs retours, les courriels et les signatures sont simulés : aucun mot de passe n'est demandé, et rien ne quitte le poste. Dans une compagnie réelle, c'est ici que se posent les accès à net-entreprises, à l'Urssaf et à la boîte courriel."))
     } else if !e.cle_poste {
-        Some(super::Encart::de("information", "Cet ordinateur n'a pas encore sa clé du coffre", "Rien n'est perdu : elle se refait toute seule la prochaine fois que le mot de passe du logiciel est tapé (ou posé, ci-dessous). Elle vit à part des données, pour qu'une sauvegarde n'emporte jamais de quoi ouvrir le coffre."))
+        Some(super::Encart::de(socle::ecran::EtatDEcran::Information, "Cet ordinateur n'a pas encore sa clé du coffre", "Rien n'est perdu : elle se refait toute seule la prochaine fois que le mot de passe du logiciel est tapé (ou posé, ci-dessous). Elle vit à part des données, pour qu'une sauvegarde n'emporte jamais de quoi ouvrir le coffre."))
     } else {
         None
     };

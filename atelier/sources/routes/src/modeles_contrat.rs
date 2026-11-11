@@ -754,10 +754,10 @@ fn modeles(ctx: &Contexte, devant: &str) -> R<Modeles> {
         let dit = |id: Option<&String>, nom: String, manques: Vec<String>, base_changee: bool| {
             let est_defaut = defaut == id;
             let pastille = match (manques.is_empty(), est_defaut) {
-                (false, _) => Pastille::de("refuse", "incomplet"),
-                (true, true) => Pastille::de("fait", "par défaut"),
-                (true, false) if id.is_none() => Pastille::de("info", "le modèle du logiciel"),
-                (true, false) => Pastille::de("info", "modèle spécial"),
+                (false, _) => Pastille::de(socle::ecran::EtatDEcran::Refuse, "incomplet"),
+                (true, true) => Pastille::de(socle::ecran::EtatDEcran::Fait, "par défaut"),
+                (true, false) if id.is_none() => Pastille::de(socle::ecran::EtatDEcran::Information, "le modèle du logiciel"),
+                (true, false) => Pastille::de(socle::ecran::EtatDEcran::Information, "modèle spécial"),
             };
             ModeleDit { id: id.cloned(), nom, base: id.is_none(), defaut: est_defaut, base_changee: base_changee.then_some(BASE_CHANGEE), manques, pastille }
         };

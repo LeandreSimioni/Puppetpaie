@@ -234,7 +234,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) 
                 paie: p.is_some(),
                 correction,
                 // Un contrat du fichier qui ne dit pas ce que dit la paie : a corriger, la compagnie le peut.
-                pastille_ecarts: (!ecarts.is_empty()).then(|| Pastille::de("a_faire", &ecarts.join(" ; "))),
+                pastille_ecarts: (!ecarts.is_empty()).then(|| Pastille::de(socle::ecran::EtatDEcran::AFaire, &ecarts.join(" ; "))),
                 ecarts,
             });
         }
@@ -259,7 +259,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) 
             numero: n.clone(),
             debut: p.engagement.debut,
             fin: p.engagement.fin,
-            pastille: Pastille::de("a_faire", "absent du fichier"),
+            pastille: Pastille::de(socle::ecran::EtatDEcran::AFaire, "absent du fichier"),
         });
     }
     let conforme = compare && absents.is_empty() && n_ecarts == 0;
@@ -520,7 +520,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
         ordres,
         ordres_erreur,
         // Un depot reel les declenche tous : a regarder (orange) ; joues, rien ne part (une information).
-        couleur_ordres: socle::ecran::couleur_de_l_etat(if compagnie::bridage::branchement(&ctx.racine)?.joue() { "information" } else { "a_faire" }),
+        couleur_ordres: socle::ecran::couleur_de_l_etat(if compagnie::bridage::branchement(&ctx.racine)?.joue() { socle::ecran::EtatDEcran::Information } else { socle::ecran::EtatDEcran::AFaire }),
         deja_depose: deja,
         remplacement,
         recapitulatif,

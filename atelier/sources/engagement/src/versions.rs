@@ -105,7 +105,7 @@ fn en_mots(v: Option<&Valeur>, en_euros: bool) -> String {
             (Some(x), false) => virgule(x),
             (None, _) => n.to_string(),
         },
-        Some(Valeur::Texte(t)) if en_euros => match socle::num::decimal_lu(&t.trim().replace(',', ".")) {
+        Some(Valeur::Texte(t)) if en_euros => match socle::num::decimal_a_virgule(t) {
             Some(x) => euros(x),
             None => t.clone(),
         },

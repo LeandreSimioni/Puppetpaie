@@ -411,15 +411,15 @@ fn fiche_verifiee<F: SorteDeFiche>(
     };
     let archivee = comble.case(CaseSalarie::actif) == Some(&Valeur::OuiNon(false));
     let pastille = if archivee {
-        PastilleDeFiche { pastille: socle::ecran::Pastille::de("information", "archivé"), detail: None }
+        PastilleDeFiche { pastille: socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Information, "archivé"), detail: None }
     } else if erreurs > 0 {
         let (cases, detail) = nommer(true)?;
-        PastilleDeFiche { pastille: socle::ecran::Pastille::de("a_faire", &format!("{} erreur{} : {}", erreurs, pluriel(erreurs), cases)), detail: Some(detail) }
+        PastilleDeFiche { pastille: socle::ecran::Pastille::de(socle::ecran::EtatDEcran::AFaire, &format!("{} erreur{} : {}", erreurs, pluriel(erreurs), cases)), detail: Some(detail) }
     } else if a_verifier > 0 {
         let (cases, detail) = nommer(false)?;
-        PastilleDeFiche { pastille: socle::ecran::Pastille::de("a_faire", &format!("à vérifier : {}", cases)), detail: Some(detail) }
+        PastilleDeFiche { pastille: socle::ecran::Pastille::de(socle::ecran::EtatDEcran::AFaire, &format!("à vérifier : {}", cases)), detail: Some(detail) }
     } else {
-        PastilleDeFiche { pastille: socle::ecran::Pastille::de("fait", "complet"), detail: None }
+        PastilleDeFiche { pastille: socle::ecran::Pastille::de(socle::ecran::EtatDEcran::Fait, "complet"), detail: None }
     };
     // Ce que la ligne de la fiche dit, dans la liste : ce qui l'identifie (le metier et le matricule d'un salarie, le
     // numero d'objet et le code analytique d'un spectacle), et le geste qui l'archive ou la reactive.
@@ -868,7 +868,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     // LES ERREURS DE CONFIGURATION, toutes fiches comptees, que le bandeau montre (orange) : une valeur saisie et fausse,
     // les memes que la pastille de chaque fiche. Une case vide n'en est jamais une : ce qu'un acte exige, « Pour demarrer » le dit.
     let erreurs: usize = entreprise.erreurs() + salaries.iter().map(VueFiche::erreurs).sum::<usize>() + spectacles.iter().map(VueFiche::erreurs).sum::<usize>();
-    let erreurs = (erreurs > 0).then(|| socle::ecran::Pastille::de("a_faire", &format!("{} erreur{} de configuration", erreurs, if erreurs > 1 { "s" } else { "" })));
+    let erreurs = (erreurs > 0).then(|| socle::ecran::Pastille::de(socle::ecran::EtatDEcran::AFaire, &format!("{} erreur{} de configuration", erreurs, if erreurs > 1 { "s" } else { "" })));
     // LA DEDUCTION FORFAITAIRE SPECIFIQUE vue de la fiche d'un salarie : l'option est celle de l'employeur, dans la fiche de
     // l'entreprise ; la fiche du salarie dit si elle s'applique (`calcul::deduction_forfaitaire` decide).
     let description_entreprise = champs::description(NomDeFiche::Entreprise)?;
@@ -1647,7 +1647,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         simulation: joue,
         // Ce que la boite d'un envoi joue en dit.
         coulisses: joue.then(coulisses_fictives),
-        note_fictive: joue.then(|| super::Encart::de("information", "Compagnie fictive", "Rien ne part : la réponse est là aussitôt ; en vrai, elle peut prendre quelques jours.")),
+        note_fictive: joue.then(|| super::Encart::de(socle::ecran::EtatDEcran::Information, "Compagnie fictive", "Rien ne part : la réponse est là aussitôt ; en vrai, elle peut prendre quelques jours.")),
         // UN ENVOI N'A RIEN A PROUVER : joue (`preuve::verifier_preuve` ne demande rien a une fictive), ou refuse
         // avant toute preuve (une fictive ajoutee) ; la page ne demande alors pas le mot de passe du logiciel.
         envoi_sans_mot_de_passe: joue || branchement.refus().is_some(),

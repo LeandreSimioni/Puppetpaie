@@ -203,6 +203,12 @@ pub fn q2(d: Decimal) -> String {
     r.to_string()
 }
 
+/// Un decimal ecrit a la francaise ou non : la virgule vaut le point (« 12,80 », « 12.80 ») ; le reste comme
+/// `decimal_lu`.
+pub fn decimal_a_virgule(t: &str) -> Option<Decimal> {
+    decimal_lu(&t.replace(',', "."))
+}
+
 /// Un decimal ecrit en texte : le signe, les chiffres avec un point et des tirets bas entre deux
 /// chiffres, un exposant. `None` quand le texte n'est pas un nombre.
 pub fn decimal_lu(t: &str) -> Option<Decimal> {

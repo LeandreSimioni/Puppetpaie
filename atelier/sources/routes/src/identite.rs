@@ -205,7 +205,7 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
             let (k, dit) = match p {
                 PoidsVise::Nombre(k) => (k.0.normalize(), k.0.normalize().to_string()),
                 PoidsVise::Texte(s) => {
-                    let lu = socle::num::decimal_lu(&s.trim().replace(',', "."));
+                    let lu = socle::num::decimal_a_virgule(s);
                     (lu.ok_or_else(|| socle::echec::a_la_cle(&faute(s), "poids", "").reclasser(socle::echec::Classe::Refuse))?.normalize(), s.clone())
                 }
             };
@@ -303,7 +303,7 @@ fn retirer_identite(ctx: &Contexte, charge: ChargeQuoi) -> R<Identite> {
 fn identite(ctx: &Contexte) -> R<Identite> {
     let mut v = crate::ouverture::identite(ctx, &ctx.gabarits())?;
     for (_, e) in v.images_mut() {
-        e.pastille = Some(socle::ecran::Pastille::de(if e.pose || e.automatique { "fait" } else { "a_faire" }, mots_de(e)));
+        e.pastille = Some(socle::ecran::Pastille::de(if e.pose || e.automatique { socle::ecran::EtatDEcran::Fait } else { socle::ecran::EtatDEcran::AFaire }, mots_de(e)));
     }
     Ok(v)
 }

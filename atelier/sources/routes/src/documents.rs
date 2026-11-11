@@ -641,7 +641,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
                 sortes: x.pieces.iter().map(|p| crate::historique_mois::sorte_de(&nom_du(p))).collect(),
                 renvoi: renvoi.is_some(),
                 // Un renvoi : des documents corriges, qui remplacent ceux deja partis (a faire partir).
-                pastille: renvoi.map(|r| Pastille::de("a_faire", &format!("documents corrigés — remplacent ceux du {}", r.envoye_le.jj_mm_aaaa()))),
+                pastille: renvoi.map(|r| Pastille::de(socle::ecran::EtatDEcran::AFaire, &format!("documents corrigés — remplacent ceux du {}", r.envoye_le.jj_mm_aaaa()))),
                 changements: renvoi.into_iter().flat_map(changements_dits).collect(),
                 cle: x.cle,
                 nom: x.nom,

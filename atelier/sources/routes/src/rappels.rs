@@ -223,7 +223,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
                 .map(|(i, pose)| {
                     let pastille = match (&pastille_simulee, i + 1 == n) {
                         (Some(p), true) => p.clone(),
-                        _ => Pastille::de("information", "posé pour vous"),
+                        _ => Pastille::de(socle::ecran::EtatDEcran::Information, "posé pour vous"),
                     };
                     PoseVue { pose, pastille }
                 })
@@ -288,12 +288,12 @@ pub(crate) enum EtatEcheance {
 use EtatEcheance::{AFaire, EnRetard, Fait};
 
 impl EtatEcheance {
-    /// Son nom, celui que la couleur lit (`socle::ecran::couleur_de_l_etat`).
-    fn nom(self) -> &'static str {
+    /// L'etat que la couleur lit (`socle::ecran::couleur_de_l_etat`).
+    fn a_l_ecran(self) -> socle::ecran::EtatDEcran {
         match self {
-            AFaire => "a_faire",
-            Fait => "fait",
-            EnRetard => "en_retard",
+            AFaire => socle::ecran::EtatDEcran::AFaire,
+            Fait => socle::ecran::EtatDEcran::Fait,
+            EnRetard => socle::ecran::EtatDEcran::EnRetard,
         }
     }
 
@@ -506,7 +506,7 @@ impl Echeance {
             rappel: self.due,
             etape: self.etape.clone(),
             cochable: self.cochable,
-            pastille: Pastille::de(self.etat.nom(), self.etat.mots()),
+            pastille: Pastille::de(self.etat.a_l_ecran(), self.etat.mots()),
             mois: self.mois,
             annee: self.annee.map(|a| a.to_string()),
             fichier: self.fichier.clone(),
@@ -1388,7 +1388,7 @@ fn acces_proposes(ctx: &Contexte) -> socle::echec::R<(Vec<Manque>, Option<(Pose,
     };
     if !mots.is_empty() {
         let sans_objet = Pose { cle: "acces".into(), libelle: "Les accès aux organismes".into(), texte: texte.into(), ou: OU_DES_ACCES.into(), onglet: "coffre".into(), champ: None };
-        return Ok((Vec::new(), Some((sans_objet, Pastille::de("information", mots)))));
+        return Ok((Vec::new(), Some((sans_objet, Pastille::de(socle::ecran::EtatDEcran::Information, mots)))));
     }
     let etat = super::coffre::coffre_etat_de_la_fiche(&ctx.racine, &ctx.entreprise)?;
     let mut out = Vec::new();

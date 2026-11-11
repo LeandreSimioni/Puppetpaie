@@ -126,19 +126,15 @@ pub(crate) enum EtatCase {
 }
 
 impl EtatCase {
-    fn nom(self) -> &'static str {
-        match self {
-            EtatCase::Fait => "fait",
-            EtatCase::AFaire => "a_faire",
-            EtatCase::EnAttente => "en_attente",
-            EtatCase::Refuse => "refuse",
-            EtatCase::Rien => "rien",
-            EtatCase::Information => "information",
-        }
-    }
-
     fn couleur(self) -> &'static str {
-        couleur_de_l_etat(self.nom())
+        couleur_de_l_etat(match self {
+            EtatCase::Fait => socle::ecran::EtatDEcran::Fait,
+            EtatCase::AFaire => socle::ecran::EtatDEcran::AFaire,
+            EtatCase::EnAttente => socle::ecran::EtatDEcran::EnAttente,
+            EtatCase::Refuse => socle::ecran::EtatDEcran::Refuse,
+            EtatCase::Rien => socle::ecran::EtatDEcran::Rien,
+            EtatCase::Information => socle::ecran::EtatDEcran::Information,
+        })
     }
 }
 

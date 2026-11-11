@@ -22,7 +22,6 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use socle::date::Jour;
@@ -88,10 +87,6 @@ fn champs(ligne: &str) -> Vec<&str> {
     ligne.trim_end_matches(['\r', '\n']).trim_start_matches('\u{feff}').split(';').map(str::trim).collect()
 }
 
-fn decimal(t: &str) -> Result<Decimal, rust_decimal::Error> {
-    Decimal::from_str(&t.replace(',', "."))
-}
-
 /// La premiere ligne d'une table, son en-tete ; une table vide se refuse.
 fn en_tete<'a>(lignes: &mut impl Iterator<Item = &'a str>, fichier: &str) -> R<&'a str> {
     lignes.next().ok_or_else(|| socle::echec::livree(fichier, "en-tête"))
@@ -125,7 +120,7 @@ fn construire_de(indemnites: &str, change: &str, villes: &str) -> R<Tables> {
         let cellule = |i: usize, nom: &str| c.get(i).copied().ok_or_else(|| ou(nom));
         let (code, nom, monnaie) = (cellule(c_code, "code_pays")?, cellule(c_nom, "nom_pays")?, cellule(c_monnaie, "code_monnaie")?);
         let date = Jour::lire(cellule(c_date, "date")?).map_err(|_| ou("date"))?;
-        let montant = decimal(cellule(c_montant, "groupe_1")?).map_err(|_| ou("groupe_1"))?;
+        let montant = socle::num::decimal_a_virgule(cellule(c_montant, "groupe_1")?).ok_or_else(|| ou("groupe_1"))?;
         let e = t.indemnites.entry(code.to_string()).or_insert_with(|| (String::new(), Vec::new()));
         e.1.push(Datee { depuis: date, valeur: (monnaie.to_string(), montant) });
         e.1.sort_by_key(|d| d.depuis);
@@ -144,7 +139,7 @@ fn construire_de(indemnites: &str, change: &str, villes: &str) -> R<Tables> {
         let cellule = |i: usize, nom: &str| c.get(i).copied().ok_or_else(|| ou(nom));
         let (m, code) = (cellule(c_monnaie, "monnaie_source")?, cellule(c_code, "code_pays")?);
         let date = Jour::lire(cellule(c_date, "date")?).map_err(|_| ou("date"))?;
-        let taux = decimal(cellule(c_taux, "taux")?).map_err(|_| ou("taux"))?;
+        let taux = socle::num::decimal_a_virgule(cellule(c_taux, "taux")?).ok_or_else(|| ou("taux"))?;
         let e = t.change.entry((m.to_string(), code.to_string())).or_default();
         e.push(Datee { depuis: date, valeur: taux });
         e.sort_by_key(|d| d.depuis);
