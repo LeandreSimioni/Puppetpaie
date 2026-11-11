@@ -946,7 +946,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     // Ce que l'envoi garde : les deux messages tels qu'ils sont partis.
     let garde = std::path::Path::new(&r.dossier).join("envoyes");
     std::fs::create_dir_all(&garde).map_err(|e| socle::echec::du_disque(&garde, &e).reclasser(Classe::Disque))?;
-    let iso = socle::paris::maintenant();
+    let iso = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
     let horodate = format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]);
     let mut emls: Vec<String> = Vec::new();
     for (m, brut) in messages.iter().zip(&copies) {

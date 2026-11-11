@@ -748,7 +748,7 @@ impl Fenetre {
                 let ChargeJour { jour } = socle::forme::lire_texte(texte, "Il faut {\"jour\": \"AAAA-MM-JJ\"}.")?;
                 let instant = socle::paris::Moment::a_paris(jour, 9, 0, 0).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?;
                 if instant <= socle::temps::secondes() {
-                    return Err(socle::refus!("Le {} n'est pas apres l'instant simule ({}) : le calendrier n'avance que vers demain.", jour.iso(), socle::paris::iso_secondes(socle::temps::secondes())));
+                    return Err(socle::refus!("Le {} n'est pas apres l'instant simule ({}) : le calendrier n'avance que vers demain.", jour.iso(), socle::paris::ecrit::seconde::texte(socle::temps::secondes())));
                 }
                 socle::temps::couler_depuis(instant);
                 if let Some(e) = enr {
@@ -1163,7 +1163,7 @@ fn ajouter_au_journal(chemin: &Path, texte: &str) -> std::io::Result<()> {
 /// La ligne du journal de l'interface pour une route servie : `HH:MM:SS route NOM N ms`, et ` refus CLASSE` quand elle a
 /// refuse. Ni la charge ni la reponse : seulement de quoi mesurer.
 pub fn ligne_de_route(nom: Route, duree: Duration, rendu: &RouteReponse) -> String {
-    let heure = socle::paris::maintenant_naif().iso();
+    let heure = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
     // L'heure seule (`HH:MM:SS`), apres la date de l'horodatage.
     let a_l_heure = match heure.get(11..) {
         Some(h) => h,
@@ -1321,7 +1321,7 @@ fn poser_le_banc(args: &[socle::ligne::Argument]) -> R<Vec<socle::ligne::Argumen
             let neuf_heures = socle::paris::Moment::a_paris(j, 9, 0, 0).ok_or_else(hors_calendrier)?;
             if let Some(t) = dernier.filter(|t| neuf_heures <= *t) {
                 return Err(socle::echec::refus_avec(
-                    format!("Le scénario va déjà jusqu'au {} : ce jour le ferait reculer.", socle::paris::iso_secondes(t)),
+                    format!("Le scénario va déjà jusqu'au {} : ce jour le ferait reculer.", socle::paris::ecrit::seconde::texte(t)),
                     socle::echec::Lieu { detail: Some(j.iso()), ..Default::default() },
                 ));
             }

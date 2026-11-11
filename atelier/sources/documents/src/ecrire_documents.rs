@@ -81,7 +81,7 @@ pub fn prochain_continu(ctx: &Contexte, suite: Suite, defaut: i64) -> R<i64> {
 /// `verrou_compteurs(ctx, qui=...)` : refuse si un autre tient les compteurs.
 pub fn prendre_le_verrou(ctx: &Contexte, qui: &str) -> R<Verrou> {
     let chemin = socle::verrou::chemin_compteurs(&ctx.racine);
-    let maintenant = socle::paris::iso_secondes(socle::temps::secondes()).replace('T', " ");
+    let maintenant = socle::paris::ecrit::seconde::texte(socle::temps::secondes()).replace('T', " ");
     let marque = socle::verrou::marque(qui, std::process::id(), &maintenant);
     match Verrou::prendre(&chemin, &marque, socle::verrou::DELAI_VERROU).map_err(|m| m.reclasser(Classe::Disque))? {
         Ok(v) => Ok(v),

@@ -455,7 +455,7 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &str,
 fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &str, publication: Moment) -> R<Option<Piece>> {
     let depot = l.quand().jour();
     let mois = element(d.mois.map(|m| m.premier_jour().jjmmaaaa()).as_deref());
-    let calcul = socle::paris::maintenant_naif().jour().aaaammjj();
+    let calcul = socle::temps::secondes().jour_de_paris().aaaammjj();
     // Un element facultatif ne s'ecrit que s'il est dit.
     let facultatif = |v: &Option<String>, balise: &str| v.iter().map(|x| format!("<{}>{}</{}>", balise, echappe(x), balise)).collect::<String>();
     let mut taux = String::new();
@@ -527,7 +527,7 @@ fn dsn_de_l_annee(racine: &Path, lignes: &[Ligne], an: i32) -> R<BTreeMap<u32, V
 /// fin bornent l'annee mesuree, comme `releve_retours::reconstruire_effectifs` les lit (inference : le cahier ne dit pas
 /// quelle annee les dates portent ; c'est la forme des 118 recus que le lecteur range).
 fn crm_effectif(an: i32, valeur: Decimal, flux: &str, publication: Moment) -> Piece {
-    let calcule_le = socle::paris::maintenant().chars().take(19).collect::<String>();
+    let calcule_le = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
     let xml = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?><RO><RO_R001>P26V01</RO_R001><RO_B000><RO_B000_R001>{}</RO_B000_R001></RO_B000>\
          <RO_B001><RO_B001_R001>04</RO_B001_R001><RO_B002><RO_B002_R002>{}</RO_B002_R002><RO_B002_R003>Effectifs</RO_B002_R003>\

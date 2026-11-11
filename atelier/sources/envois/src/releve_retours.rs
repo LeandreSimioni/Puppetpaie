@@ -24,7 +24,7 @@ use socle::echec::{Classe, Echec};
 use crate::retours::{Annonce, Depot};
 use socle::date::Jour;
 use socle::num::Decimal;
-use socle::paris::{maintenant_naif, Naif};
+use socle::paris::Moment;
 
 use crate::branchement::{Branchement, ANCIEN_PREFIXE_FLUX_FICTIF, PREFIXE_FLUX_FICTIF};
 use crate::journal::{Acte, Ligne, RetourOrganisme};
@@ -211,13 +211,13 @@ impl Client {
         Ok(crate::transport::appeler(url, self.jeton.as_deref())?)
     }
 
-    /// La consultation d'une plage (heures locales naives).
-    fn consulter(&mut self, base: &str, debut: Naif, fin: Option<Naif>) -> Result<Vec<u8>, Panne> {
+    /// La consultation d'une plage.
+    fn consulter(&mut self, base: &str, debut: Moment, fin: Option<Moment>) -> Result<Vec<u8>, Panne> {
         self.assurer_session()?;
         Ok(crate::transport::consulter(base, self.jeton.as_deref(), debut, fin)?)
     }
 
-    pub fn lister_retours(&mut self, debut: Naif, fin: Naif) -> Result<Vec<Annonce>, Panne> {
+    pub fn lister_retours(&mut self, debut: Moment, fin: Moment) -> Result<Vec<Annonce>, Panne> {
         let base = self.adresses.retours.clone();
         let brut = self.consulter(&base, debut, Some(fin))?;
         crate::retours::liste_retours_d_octets(&brut).map_err(de_lecture)
@@ -225,7 +225,7 @@ impl Client {
 
     /// `Client.lister_depots` : les depots que net-entreprises a vus sur une plage. L'adresse est celle de la consultation
     /// des retours, dont seul le service change (`lister-depots/1.0/` au lieu de `lister-retours-declarant/1.0/`).
-    pub fn lister_depots(&mut self, debut: Naif, fin: Naif) -> Result<Vec<Depot>, Panne> {
+    pub fn lister_depots(&mut self, debut: Moment, fin: Moment) -> Result<Vec<Depot>, Panne> {
         let base = self.adresses.retours.replace("lister-retours-declarant", "lister-depots");
         let brut = self.consulter(&base, debut, Some(fin))?;
         crate::retours::liste_depots_d_octets(&brut).map_err(de_lecture)
@@ -397,11 +397,15 @@ fn en_echec(p: Panne) -> Echec {
 }
 
 /// Le SI DSN limite l'etendue d'une recherche, on decoupe par jour.
-pub fn tranches(debut: Naif, fin: Naif) -> R<Vec<(Naif, Naif)>> {
+pub fn tranches(debut: Moment, fin: Moment) -> R<Vec<(Moment, Moment)>> {
     let mut v = Vec::new();
     let mut t = debut;
     while t < fin {
-        let suivant = if fin.depuis(t) > 86_400 { t.plus(86_400)? } else { fin };
+        let suivant = if fin.depuis(t).is_some_and(|d| d > std::time::Duration::from_secs(86_400)) {
+            t.plus(86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?
+        } else {
+            fin
+        };
         v.push((t, suivant));
         t = suivant;
     }
@@ -535,14 +539,13 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
     crate::aer_fictive::archive(ctx, &octets, mois, ctx.aujourdhui)
 }
 
-/// Telecharge et archive ce que les organismes ont publie. `debut` et `fin` : heures locales naives
-/// (`maintenant_naif`). `client` : le client du service, avec son mot de passe (le canal DPAE passe le sien, avec
+/// Telecharge et archive ce que les organismes ont publie, de `debut` a `fin`. `client` : le client du service, avec son mot de passe (le canal DPAE passe le sien, avec
 /// `canal = "dpae"`) ; `None` dans le monde : aucun mot de passe n'est pose, et cela se dit.
 pub fn relever_retours(
     ctx: &Contexte,
     branchement: Branchement,
-    debut: Naif,
-    fin: Naif,
+    debut: Moment,
+    fin: Moment,
     tout: bool,
     client: Option<Client>,
     canal: &str,
@@ -671,8 +674,8 @@ pub fn relever_retours(
 pub fn relever_retours_dpae(
     ctx: &Contexte,
     branchement: Branchement,
-    debut: Naif,
-    fin: Naif,
+    debut: Moment,
+    fin: Moment,
     tout: bool,
     flux: Option<&str>,
     client: Option<Client>,
@@ -726,9 +729,9 @@ pub fn relever_retours_dpae(
 }
 
 /// La derniere journee, comme `suivre_le_depot` et `bilan_de_la_repetition` la relevent : de hier a maintenant.
-pub fn derniere_journee() -> R<(Naif, Naif)> {
-    let fin = maintenant_naif();
-    Ok((fin.plus(-86_400)?, fin))
+pub fn derniere_journee() -> R<(Moment, Moment)> {
+    let fin = socle::temps::secondes();
+    Ok((fin.plus(-86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?, fin))
 }
 
 // ------------------------------------------------------------------- l'effectif

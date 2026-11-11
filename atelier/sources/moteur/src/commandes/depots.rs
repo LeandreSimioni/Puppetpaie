@@ -9,7 +9,7 @@
 use super::analyse::{Args, Opt, Spec};
 use socle::echec::Classe;
 use socle::date::Jour;
-use socle::paris::Naif;
+use socle::paris::Moment;
 use super::Cadre;
 use envois::releve_retours::{Client, Panne};
 use socle::echec::Echec;
@@ -48,7 +48,7 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
 pub fn derouler(args: &Args, mut client: Client) -> Result<i32, Echec> {
     let environnement = args.exige("environnement")?;
     let (debut, fin) = fenetre(args)?;
-    dire!("Depots {}, du {} au {}.\n", environnement, debut.jour().jj_mm_aaaa(), fin.jour().jj_mm_aaaa());
+    dire!("Depots {}, du {} au {}.\n", environnement, debut.jour_de_paris().jj_mm_aaaa(), fin.jour_de_paris().jj_mm_aaaa());
     let mut depots = Vec::new();
     let tranches = envois::releve_retours::tranches(debut, fin)?;
     let resultat: Result<(), Panne> = (|| {
@@ -96,20 +96,20 @@ fn refus_reseau_ou_plantage(cadre: &Cadre, e: Echec) -> i32 {
     cadre.plantage(e)
 }
 
-/// `j` a `h:m:s`, heure naive.
-fn a(j: Jour, h: i64, m: i64, s: i64) -> Result<Naif, Echec> {
-    Naif::du_jour(j, h, m, s).ok_or_else(|| socle::echec::erreur(Classe::Illisible, socle::date::HORS_CALENDRIER))
+/// `j` a `h:m:s`, heure de Paris.
+fn a(j: Jour, h: i64, m: i64, s: i64) -> Result<Moment, Echec> {
+    Moment::a_paris(j, h, m, s).ok_or_else(|| socle::echec::erreur(Classe::Illisible, socle::date::HORS_CALENDRIER))
 }
 
-/// La plage de recherche, en heures locales naives. Par defaut, les 30 derniers jours.
-fn fenetre(args: &Args) -> Result<(Naif, Naif), Echec> {
+/// La plage de recherche. Par defaut, les 30 derniers jours.
+fn fenetre(args: &Args) -> Result<(Moment, Moment), Echec> {
     let fin = match args.tape("jusqu-a") {
         Some(j) => a(j.jour().map_err(|m| m.reclasser(Classe::Illisible))?, 23, 59, 59)?,
-        None => socle::paris::maintenant_naif(),
+        None => socle::temps::secondes(),
     };
     let debut = match args.tape("depuis") {
         Some(j) => a(j.jour().map_err(|m| m.reclasser(Classe::Illisible))?, 0, 0, 0)?,
-        None => fin.plus(-30 * 86_400)?,
+        None => fin.plus(-30 * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?,
     };
     Ok((debut, fin))
 }

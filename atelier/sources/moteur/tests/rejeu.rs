@@ -22,9 +22,7 @@ fn novembre() -> socle::mois::Mois {
 
 /// L'instant dont les secondes depuis 1970 sont celles de l'heure naive du `jour` a `heure` pile.
 fn instant_naif(jour: socle::date::Jour, heure: i64) -> socle::paris::Moment {
-    let epoque = socle::paris::Naif::du_jour(socle::date::Jour::nouveau(1970, 1, 1).unwrap(), 0, 0, 0).unwrap();
-    let naif = socle::paris::Naif::du_jour(jour, heure, 0, 0).unwrap();
-    socle::paris::Moment::de_secondes(naif.depuis(epoque)).unwrap()
+    socle::paris::Moment::de_secondes((jour.ordinal() - 719_163) * 86_400 + heure * 3_600).unwrap()
 }
 
 /// LES TRETEAUX DU BANC : le petit scenario de la preuve, joue au banc. Une compagnie ajoutee par le « + »

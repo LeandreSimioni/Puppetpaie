@@ -152,9 +152,9 @@ impl Moment {
         Moment::de_nanos(if moins { -ns } else { ns })
     }
 
-    /// Le jour de Paris de cet instant.
+    /// Le jour de Paris de cet instant (l'instant arrondi a la seconde d'avant).
     pub fn jour_de_paris(self) -> Jour {
-        self.local_naif().jour()
+        dans_le_calendrier((self.entieres() + decalage(self)).div_euclid(86_400))
     }
 
     /// Le jour UTC de cet instant.
@@ -162,11 +162,6 @@ impl Moment {
         dans_le_calendrier(self.entieres().div_euclid(86_400))
     }
 
-    /// L'heure de Paris de cet instant, en secondes d'une epoque « naive » (l'instant arrondi a la seconde d'avant).
-    pub fn local_naif(self) -> Naif {
-        let t = self.entieres();
-        Naif(t + decalage(self))
-    }
 
     /// L'instant a la seconde : arrondi a la microseconde (la montre ne dit pas plus fin), puis tronque a la seconde. Le
     /// decalage de Paris est d'heures entieres : la seconde de Paris tombe sur la seconde UTC.
@@ -187,9 +182,10 @@ impl Moment {
         format!("{} à {:02}:{:02}", jour.jj_mm_aaaa(), reste / 3_600, (reste % 3_600) / 60)
     }
 
-    /// Les secondes passees depuis minuit de Paris, ce jour-la (l'instant arrondi a la microseconde, puis tronque).
+    /// Les secondes passees depuis minuit de Paris, ce jour-la (l'instant arrondi a la seconde d'avant, comme
+    /// `jour_de_paris`).
     pub fn seconde_du_jour_de_paris(self) -> i64 {
-        ecrit::local(self).1
+        (self.entieres() + decalage(self)).rem_euclid(86_400)
     }
 }
 
@@ -465,74 +461,6 @@ impl<'de> serde::Deserialize<'de> for Moment {
     }
 }
 
-/// UNE HEURE DE PARIS, en secondes d'une epoque « naive » (l'heure locale lue comme si c'etait de l'UTC) : de quoi
-/// additionner des heures et comparer deux heures locales. Son jour est un jour du calendrier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Naif(i64);
-
-impl Naif {
-    /// `jour` a `heure:minute:seconde` ; `None` si l'heure deborde hors du calendrier.
-    pub fn du_jour(jour: Jour, heure: i64, minute: i64, seconde: i64) -> Option<Naif> {
-        Naif::de_secondes((jour.ordinal() - 719_163) * 86_400 + heure * 3_600 + minute * 60 + seconde)
-    }
-
-    /// L'heure de `local` secondes naives depuis 1970 ; `None` hors du calendrier.
-    pub fn de_secondes(local: i64) -> Option<Naif> {
-        Jour::depuis_jours_unix(local.div_euclid(86_400)).map(|_| Naif(local))
-    }
-
-    /// Les secondes passees depuis minuit, ce jour-la.
-    pub fn seconde_du_jour(self) -> i64 {
-        self.0.rem_euclid(86_400)
-    }
-
-    /// `secondes` plus tard (plus tot : negatives), refuse hors du calendrier.
-    #[track_caller]
-    pub fn plus(self, secondes: i64) -> crate::echec::R<Naif> {
-        match Naif::de_secondes(self.0 + secondes) {
-            Some(n) => Ok(n),
-            None => Err(crate::echec::refus(crate::date::HORS_CALENDRIER)),
-        }
-    }
-
-    /// Les secondes de `self` depuis `avant`.
-    pub fn depuis(self, avant: Naif) -> i64 {
-        self.0 - avant.0
-    }
-
-    /// Le jour de cette heure.
-    pub fn jour(self) -> Jour {
-        dans_le_calendrier(self.0.div_euclid(86_400))
-    }
-
-    /// « 12/09/2026 à 18:18 » : le jour et l'heure a la minute, tels que l'ecran les dit.
-    pub fn dit(self) -> String {
-        let reste = self.0.rem_euclid(86_400);
-        format!("{} à {:02}:{:02}", self.jour().jj_mm_aaaa(), reste / 3_600, (reste % 3_600) / 60)
-    }
-
-    /// `AAAA-MM-JJTHH:MM:SS`.
-    pub fn iso(self) -> String {
-        let j = self.jour();
-        let reste = self.0.rem_euclid(86_400);
-        format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}", j.an, j.mois, j.jour, reste / 3_600, (reste % 3_600) / 60, reste % 60)
-    }
-}
-
-/// UNE HEURE NAIVE ECRITE DANS UN FICHIER (l'enregistrement d'un message) : ses secondes, lues contre le calendrier.
-impl serde::Serialize for Naif {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_i64(self.0)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for Naif {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Naif, D::Error> {
-        let t = i64::deserialize(d)?;
-        Naif::de_secondes(t).ok_or_else(|| serde::de::Error::custom(format!("{} s n'est pas une heure du calendrier (années 1 à 9999)", t)))
-    }
-}
-
 /// L'INSTANT OU LE JOUR : l'instant d'un geste (un envoi, un pas de l'horloge, la reprise d'un certificat DPAE ou d'un
 /// bilan qui dit son heure), ou le jour seul (la reprise d'un bilan qui ne dit que sa date de reception, un geste de
 /// scenario dit d'un jour). Il s'ecrit `AAAA-MM-JJTHH:MM:SS` (l'heure de Paris, `ecrit::seconde`) ou `AAAA-MM-JJ`, et se
@@ -709,7 +637,7 @@ fn deux_chiffres(b: &[u8]) -> Option<u8> {
     (b.len() == 2 && b.iter().all(u8::is_ascii_digit)).then(|| (b[0] - b'0') * 10 + (b[1] - b'0'))
 }
 
-/// Le jour d'un jour unix qu'un `Moment` ou un `Naif` porte : il est dans le calendrier, par leur construction.
+/// Le jour d'un jour unix qu'un `Moment` porte : il est dans le calendrier, par sa construction.
 fn dans_le_calendrier(jours: i64) -> Jour {
     Jour::depuis_jours_unix(jours).expect("un instant est dans le calendrier")
 }
@@ -738,14 +666,6 @@ pub fn decalage(t: Moment) -> i64 {
         Some(d) => d,
         None => unreachable!("un instant est dans le calendrier : {} s", s),
     }
-}
-
-/// L'heure de Paris d'un instant, `AAAA-MM-JJTHH:MM:SS`.
-pub fn iso_secondes(t: Moment) -> String {
-    let local = local_arrondi(t);
-    let j = dans_le_calendrier(local.div_euclid(86_400));
-    let reste = local.rem_euclid(86_400);
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}", j.an, j.mois, j.jour, reste / 3_600, (reste % 3_600) / 60, reste % 60)
 }
 
 /// Les secondes locales de Paris d'un instant, apres l'arrondi a la microseconde (au pair le plus proche) ; elles restent
@@ -829,16 +749,4 @@ mod tests {
         assert_eq!(ecrit::seconde::texte(m), "2026-10-25T02:30:00");
     }
 
-}
-
-/// L'heure de Paris a cet instant (`socle::temps`, donc le temps simule quand il est pose) : `AAAA-MM-JJTHH:MM:SS`,
-/// l'heure d'une ligne de journal.
-pub fn maintenant() -> String {
-    iso_secondes(crate::temps::secondes())
-}
-
-/// L'heure de Paris a cet instant, en secondes d'une epoque « naive » : de quoi additionner des heures et comparer deux
-/// heures locales.
-pub fn maintenant_naif() -> Naif {
-    crate::temps::secondes().local_naif()
 }

@@ -152,9 +152,9 @@ pub fn echapper(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
-/// `AAAAMMJJhhmmss` d'une heure locale, la forme des plages de consultation.
-fn horodatage(n: socle::paris::Naif) -> String {
-    n.iso().chars().filter(char::is_ascii_digit).collect()
+/// `AAAAMMJJhhmmss` d'un instant a l'heure de Paris, la forme des plages de consultation.
+fn horodatage(m: socle::paris::Moment) -> String {
+    socle::paris::ecrit::compacte::texte(m)
 }
 
 // ------------------------------------------------------------------- gzip
@@ -633,8 +633,8 @@ pub fn appeler(url: &str, jeton: Option<&str>) -> Result<(Vec<u8>, Entetes), Ech
     envoyer(&r).map_err(|p| en_erreur_api(url, p))
 }
 
-/// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des heures locales).
-pub fn consulter(base: &str, jeton: Option<&str>, debut: socle::paris::Naif, fin: Option<socle::paris::Naif>) -> Result<Vec<u8>, EchecApi> {
+/// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des heures de Paris).
+pub fn consulter(base: &str, jeton: Option<&str>, debut: socle::paris::Moment, fin: Option<socle::paris::Moment>) -> Result<Vec<u8>, EchecApi> {
     let mut url = base.to_string();
     url.push_str(&horodatage(debut));
     if let Some(fin) = fin {

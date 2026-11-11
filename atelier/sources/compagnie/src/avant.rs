@@ -21,7 +21,7 @@ pub fn sauver_avant(chemin: &Path) -> R<()> {
     std::fs::create_dir_all(&dossier).map_err(io)?;
     let nom = socle::fichiers::nom_du(chemin);
     let maintenant = socle::temps::secondes();
-    let horodatage = socle::paris::iso_secondes(maintenant).replace(['-', ':'], "").replace('T', "-");
+    let horodatage = socle::paris::ecrit::seconde::texte(maintenant).replace(['-', ':'], "").replace('T', "-");
     std::fs::copy(chemin, dossier.join(format!("{}.{}", nom, horodatage))).map_err(io)?;
     let prefixe = format!("{}.", nom);
     let mut anciennes: Vec<String> = Vec::new();

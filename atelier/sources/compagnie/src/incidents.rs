@@ -1062,7 +1062,7 @@ pub fn envoyer(racine: &Path) -> BilanIncidents {
         }
     }
     // Un autre passage est en cours : celui-ci n'a rien a faire.
-    let marque = socle::verrou::marque("incidents", std::process::id(), &socle::paris::maintenant());
+    let marque = socle::verrou::marque("incidents", std::process::id(), &socle::paris::ecrit::seconde::texte(socle::temps::secondes()));
     let _verrou = match Verrou::prendre(&p.with_file_name(".envoi.verrou"), &marque, socle::verrou::DELAI_VERROU) {
         Ok(Ok(v)) => v,
         Ok(Err(socle::verrou::Verrouille { .. })) => {

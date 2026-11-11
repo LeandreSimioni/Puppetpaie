@@ -1013,11 +1013,10 @@ pub(crate) struct Entree {
 
 /// La date et l'heure locales (Paris) au format DOS, a partir de secondes unix.
 fn horodatage_dos(t: socle::paris::Moment) -> (u16, u16) {
-    let local = t.local_naif();
-    let reste = local.seconde_du_jour();
+    let reste = t.seconde_du_jour_de_paris();
     let (h, m, s) = (reste / 3600, (reste % 3600) / 60, reste % 60);
     // Le format DOS commence le 01/01/1980 : un instant d'avant s'y ecrit.
-    let jour = local.jour();
+    let jour = t.jour_de_paris();
     if jour.an < 1980 {
         return ((1 << 5) | 1, 0);
     }
