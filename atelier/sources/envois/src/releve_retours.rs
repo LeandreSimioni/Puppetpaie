@@ -287,10 +287,9 @@ pub struct Releve {
     pub a_faire: Vec<String>,
 }
 
-/// La date de publication d'un retour (`AAAAMMJJ…`), en JJ/MM/AAAA ; aucune quand il ne la dit pas.
-pub fn date_publication(r: &Annonce) -> Option<String> {
-    let c: Vec<char> = r.publication.as_deref()?.chars().collect();
-    (c.len() >= 8).then(|| format!("{}{}/{}{}/{}", c[6], c[7], c[4], c[5], c[..4].iter().collect::<String>()))
+/// Le jour de publication d'un retour, en JJ/MM/AAAA ; aucun quand il ne le dit pas.
+pub fn jour_de_publication_dit(r: &Annonce) -> Option<String> {
+    r.publication.map(|p| p.naif().jour().jj_mm_aaaa())
 }
 
 // ------------------------------------------------------------------ l'archive des retours
@@ -325,11 +324,9 @@ pub(crate) fn archiver_retour(racine: &Path, canal: &str, retour: &Annonce, cont
             ".txt"
         }
     };
-    let publication: Vec<char> = retour.publication.iter().flat_map(|p| p.chars()).take(14).collect();
-    let horo = if publication.len() == 14 {
-        format!("{}-{}", publication[..8].iter().collect::<String>(), publication[8..].iter().collect::<String>())
-    } else {
-        maintenant.to_string()
+    let horo = match retour.publication {
+        Some(p) => horodatage_archive(p.naif()),
+        None => maintenant.to_string(),
     };
     let flux = match retour.flux.as_deref().filter(|f| !f.is_empty()) {
         Some(f) => f,
@@ -417,7 +414,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
     let avant = crate::organismes_simules::memoire(&ctx.racine)?;
     let mut memoire = avant.clone();
     let maintenant = maintenant_naif();
-    let pub_ = horodatage_archive(maintenant).replace('-', "");
+    let pub_ = socle::paris::InstantCompact::du_naif(maintenant);
     let mut faits = 0;
     for i in 0..lignes.len() {
         let l = &lignes[i];
@@ -435,7 +432,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
                 dpae: None,
                 libelle: libelle.into(),
                 statut: Some("fictive".into()),
-                publication: Some(pub_.clone()),
+                publication: Some(pub_),
             };
             let mut retours: Vec<RetourOrganisme> = Vec::new();
             if quoi == Acte::Dpae {
@@ -444,7 +441,7 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
                 m.dpae = Some(Vec::new());
                 retours.push(m);
             } else {
-                match crate::organismes_simules::reponses_dsn(ctx, &mut memoire, &lignes, l, &flux, &pub_)? {
+                match crate::organismes_simules::reponses_dsn(ctx, &mut memoire, &lignes, l, &flux, pub_)? {
                     // Refusee : ses deux bilans, rien d'autre ; le verdict se lit dans la piece.
                     Err(bilans) => {
                         pieces.extend(bilans);

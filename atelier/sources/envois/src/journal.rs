@@ -71,7 +71,7 @@ struct Enregistrement {
     #[serde(rename = "nature", skip_serializing_if = "Option::is_none")]
     nature_retour: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    publication: Option<String>,
+    publication: Option<socle::paris::InstantCompact>,
     #[serde(skip_serializing_if = "Option::is_none")]
     complete: Option<Verdict>,
 }
@@ -511,7 +511,7 @@ pub enum Rangement {
     /// Un compte rendu de plus.
     Retour(RetourOrganisme),
     /// Le verdict du compte rendu de cette nature et de cette publication.
-    Complement { nature_retour: String, publication: Option<String>, verdict: Verdict },
+    Complement { nature_retour: String, publication: Option<socle::paris::InstantCompact>, verdict: Verdict },
 }
 
 /// RANGE CE QUI REVIENT des envois : chaque `(i, rangement)` sur la `i`-ieme ligne du journal lu (`lu`), dans l'ordre.

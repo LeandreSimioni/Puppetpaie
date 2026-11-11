@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
 use socle::echec::{erreur as echec, Classe, Echec, R};
+use socle::paris::InstantCompact;
 use socle::texte::blanc;
 
 // ---------------------------------------------------------------- les tables
@@ -1029,12 +1030,14 @@ pub fn fusionner_bilans(bilans: &[Bilan]) -> Option<Bilan> {
 /// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`) : sa
 /// publication, sa production, l'OPS et le delegataire, sa nature, son statut, son identifiant et l'adresse de sa piece ;
 /// `libelle`, celui qu'un organisme joue de la compagnie fictive lui donne ; `flux`, l'identifiant du flux qui le porte.
-/// Un champ que la liste ne donne pas est vide.
+/// Un champ que la liste ne donne pas est vide. La publication est `yyyyMMddhhmmss` [14,14] (guide v6.8, « Date de
+/// publication du retour ») ; la DPAE liste ses retours par la meme interface (guide d'implementation de l'API DPAE :
+/// « entièrement compatible avec le mode API disponible pour la DSN », `atelier/reference/norme-dpae/API-DPAE-Guide-Implementation-NAT5492.pdf`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Annonce {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub publication: Option<String>,
+    pub publication: Option<InstantCompact>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub production: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1056,8 +1059,8 @@ pub struct Annonce {
 
 impl Annonce {
     /// Ce qui distingue un retour : son flux, sa nature, sa publication.
-    pub fn cle(&self) -> (Option<&str>, &str, Option<&str>) {
-        (self.flux.as_deref(), self.nature_retour.as_str(), self.publication.as_deref())
+    pub fn cle(&self) -> (Option<&str>, &str, Option<InstantCompact>) {
+        (self.flux.as_deref(), self.nature_retour.as_str(), self.publication)
     }
 }
 
@@ -1115,7 +1118,7 @@ struct FluxJson {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RetourJson {
-    publication: Option<String>,
+    publication: Option<InstantCompact>,
     production: Option<String>,
     ops: Option<String>,
     delegataire: Option<String>,
@@ -1206,9 +1209,10 @@ pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
             let mut a = Annonce { publication: None, production: None, ops: None, delegataire: None, nature_retour: String::new(), statut: None, id: None, url: None, libelle: None, flux: idf.clone() };
             let mut nature = None;
             for (nom, t) in enfants_textes(&arbre, r) {
+                let publication = InstantCompact::lire(t);
                 let t = Some(t.to_string());
                 match nom {
-                    "publication" => a.publication = t,
+                    "publication" => a.publication = Some(publication.ok_or_else(|| illisible("flux.retour.publication"))?),
                     "production" => a.production = t,
                     "ops" => a.ops = t,
                     "delegataire" => a.delegataire = t,

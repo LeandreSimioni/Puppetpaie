@@ -442,7 +442,8 @@ pub struct RetourOrganisme {
     pub dpae: Option<Vec<PersonneCertifiee>>,
     pub libelle: String,
     pub statut: Option<String>,
-    pub publication: Option<String>,
+    /// L'heure ou la plate-forme l'a mis a disposition (`retours::Annonce`).
+    pub publication: Option<socle::paris::InstantCompact>,
 }
 
 impl RetourOrganisme {

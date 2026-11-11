@@ -986,11 +986,11 @@ fn correspond(j: &[Jeton], nom: &[char]) -> bool {
 }
 
 /// LA CLE DU CONTENU TELECHARGE D'UN RETOUR (`retours::Annonce`) : son flux, sa nature, sa publication.
-pub type CleDuContenu = (Option<String>, String, Option<String>);
+pub type CleDuContenu = (Option<String>, String, Option<socle::paris::InstantCompact>);
 
 /// La cle du contenu telecharge du retour `r`.
 pub fn cle_du_contenu(r: &Annonce) -> CleDuContenu {
-    (r.flux.clone(), r.nature_retour.clone(), r.publication.clone())
+    (r.flux.clone(), r.nature_retour.clone(), r.publication)
 }
 
 /// La piece archivee du retour `r` d'un envoi `quoi`, dans `retours/` (`retours/dpae/` pour une DPAE) ; son nom porte
@@ -1417,7 +1417,7 @@ mod tests {
         let autre = ligne("dpae", "reel", "2026-06-01T10:00:00", "e1", "f.dsn", true, "WSCCCC", "{\"repetition\": null, \"reconstruit\": false, \"embauches\": [], \"certificat\": false}", "[]");
         let r = journal("rattachement", &[l, autre]);
         let annonce = |flux: &str, nature: &str, publication: &str| Annonce {
-            publication: Some(publication.into()),
+            publication: Some(socle::paris::InstantCompact::lire(publication).unwrap()),
             production: None,
             ops: None,
             delegataire: None,

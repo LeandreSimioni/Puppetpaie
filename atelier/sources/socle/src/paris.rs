@@ -563,6 +563,16 @@ impl InstantCompact {
         InstantEcrit::lire(&iso).map(|i| InstantCompact(i.0))
     }
 
+    /// Une heure naive, a la seconde.
+    pub fn du_naif(n: Naif) -> InstantCompact {
+        InstantCompact(n)
+    }
+
+    /// L'heure naive, telle qu'elle est ecrite.
+    pub fn naif(self) -> Naif {
+        self.0
+    }
+
     /// `AAAAMMJJHHMMSS`.
     pub fn compact(self) -> String {
         self.0.iso().chars().filter(char::is_ascii_digit).collect()

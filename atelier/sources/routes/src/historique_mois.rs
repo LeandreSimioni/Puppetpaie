@@ -30,6 +30,7 @@ use envois::retours::{self, AnomalieDuRapport, CrmOc, Neores, Rapport};
 use socle::echec::{Classe, Echec, R};
 use socle::ecran::Pastille;
 use socle::mois::Mois;
+use socle::paris::{InstantCompact, InstantEcrit};
 
 use crate::catalogue::{Acte, Ecran, Fiche, Place, Refus, Route, FORME, MOIS};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
@@ -237,12 +238,13 @@ struct Envoi {
     retours: Vec<RetourLu>,
 }
 
-/// Un retour sous son envoi : son titre, quand, ce qu'il dit, sa pastille, sa piece ; pour un retour d'organisme, ce que
-/// sa piece en dit (`organisme`).
+/// Un retour sous son envoi : son titre, quand (sa reponse, ou la publication d'un retour d'organisme, ecrite telle que
+/// la plate-forme la donne : `envois::retours::Annonce`), ce qu'il dit, sa pastille, sa piece ; pour un retour
+/// d'organisme, ce que sa piece en dit (`organisme`).
 #[derive(Debug, Serialize)]
 struct RetourLu {
     titre: String,
-    quand: Option<String>,
+    quand: Option<InstantEcrit>,
     phrases: Vec<String>,
     pastille: Option<Pastille>,
     piece: Option<String>,
@@ -315,7 +317,7 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
     };
     RetourLu {
         titre: format!("{} — {}", titre, qui_du_contrat(ctx, &r.nom, &r.salarie)),
-        quand: Some(r.quand.iso()),
+        quand: Some(r.quand),
         phrases: vec![phrase],
         pastille: Some(Pastille::de(if !r.recu { "information" } else { "fait" }, "signé")),
         piece: signe.map(|p| relatif(&ctx.racine, &p)),
@@ -340,16 +342,6 @@ fn acte(ctx: &Contexte, l: &Ligne) -> String {
         Ligne::DossierSalarie(_) => "Dossier d'un salarié".into(),
         Ligne::FicheDemande(_) => "Fiche demandée à un salarié".into(),
     }
-}
-
-/// `AAAAMMJJhhmmss` -> `AAAA-MM-JJThh:mm:ss` ; autre chose reste tel quel.
-fn quand_publication(p: &str) -> String {
-    let c: Vec<char> = p.chars().collect();
-    if c.len() >= 14 && c[..14].iter().all(|x| x.is_ascii_digit()) {
-        let s = |a: usize, b: usize| c[a..b].iter().collect::<String>();
-        return format!("{}-{}-{}T{}:{}:{}", s(0, 4), s(4, 6), s(6, 8), s(8, 10), s(10, 12), s(12, 14));
-    }
-    p.to_string()
 }
 
 // ------------------------------------------------------------------ les documents
@@ -490,7 +482,7 @@ fn retours_illisibles(dossier: &Path, e: std::io::Error) -> Echec {
 /// La piece archivee d'un retour : `retours/[dpae/]AAAAMMJJ-hhmmss_natureN_<flux>.<ext>` (`envois::releve_retours::archiver_retour`,
 /// qui nomme `sansflux` un retour sans flux), celle de sa publication d'abord, sinon la premiere de sa nature pour ce
 /// flux (`etats::archive_du_retour`). Aucune s'il n'y en a pas ; un dossier des retours qui ne se lit pas le dit.
-fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, nature: &str, publication: Option<&str>) -> R<Option<PathBuf>> {
+fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, nature: &str, publication: Option<InstantCompact>) -> R<Option<PathBuf>> {
     let mut dossier = racine.join(envois::retours::RETOURS);
     if let Some(c) = canal {
         dossier = dossier.join(c);
@@ -517,7 +509,7 @@ fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, natur
         }
     }
     noms.sort();
-    let horo = publication.map(|p| p.chars().take(14).collect::<String>()).filter(|p| p.len() == 14).map(|p| format!("{}-{}", &p[..8], &p[8..]));
+    let horo = publication.map(|p| p.compact()).map(|p| format!("{}-{}", &p[..8], &p[8..]));
     let choisi = match horo {
         Some(h) => noms.iter().find(|n| n.starts_with(&h)).or(noms.first()),
         None => noms.first(),
@@ -986,7 +978,7 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
     let canal = (ligne.acte() == envois::journal::Acte::Dpae).then_some("dpae");
     let nature = r.nature_retour.clone();
     let statut = r.statut.as_deref().and_then(dit);
-    let publication = r.publication.as_deref().and_then(dit);
+    let publication = r.publication;
     let flux = dit(ligne.flux());
     let (organisme, format) = match canal {
         Some(_) => (Some("l'Urssaf (DPAE)"), None),
@@ -1072,17 +1064,17 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
         (None, None) => format!("retour de nature {}", nature),
     };
     let nature_dit = dit(&nature).map(|n| format!("Nature {} : {}", n, libelle));
-    let quand = publication.map(quand_publication);
+    let quand = publication.map(|p| InstantEcrit::du_naif(p.naif()));
     RetourLu {
         titre: titre_dit.clone(),
-        quand: quand.clone(),
+        quand,
         phrases,
         pastille,
         piece: chemin.map(|p| relatif(racine, &p)),
         organisme: Some(RetourDOrganisme {
             titre_dit,
             nature_dit,
-            quand_dit: quand.as_deref().map(socle::ecran::quand),
+            quand_dit: quand.map(InstantEcrit::dit),
             nature_retour: nature,
             libelle,
             organisme,
@@ -1113,7 +1105,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
                 .iter()
                 .map(|r| RetourLu {
                     titre: if r.abandon { "Demande abandonnée" } else { "Fiche reçue" }.to_string(),
-                    quand: Some(r.quand.iso()),
+                    quand: Some(r.quand),
                     phrases: Vec::new(),
                     pastille: None,
                     piece: None,

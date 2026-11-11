@@ -72,13 +72,13 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         dire!("  {}", i);
     }
     let mut trouves: Vec<&envois::retours::Annonce> = r.trouves.iter().filter(|x| flux.is_none() || x.flux.as_deref() == flux).collect();
-    trouves.sort_by_key(|x| x.publication.clone());
+    trouves.sort_by_key(|x| x.publication);
     dire!("{} retour(s), dont {} nouveau(x).\n", trouves.len(), r.nouveaux.len());
     for x in trouves {
         dire!(
             "  {} {}  nature {:<4} {:<8} {}  flux {}",
             if r.nouveaux.contains(x) { "NEUF" } else { "    " },
-            super::dit(envois::releve_retours::date_publication(x).as_deref()),
+            super::dit(envois::releve_retours::jour_de_publication_dit(x).as_deref()),
             x.nature_retour,
             super::dit(x.statut.as_deref()),
             envois::retours::libelle_nature(&x.nature_retour),
