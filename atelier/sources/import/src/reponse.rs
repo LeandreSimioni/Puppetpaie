@@ -464,13 +464,10 @@ pub struct InfosPage {
     pub paie: Option<EtatPaie>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contrat: Option<EtatContrat>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub ecarts: Vec<EcartPaie>,
     /// Ce que le compte des heures, des cachets et des jours a releve.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub compteurs: Vec<String>,
     /// Ce que la page dit d'elle-meme qui ne se retrouve pas : le bulletin fait foi.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub avertissements: Vec<String>,
     /// Le contrat du bulletin, quand un autre contrat atteste aux memes dates est garde.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -503,7 +500,6 @@ pub struct FichierVu {
     pub chemin: String,
     /// La sorte du fichier, au tri (`tri::Sorte::nom`).
     pub sorte: &'static str,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub pages: Vec<PageVu>,
     pub sort: Sort,
     pub raison: String,
