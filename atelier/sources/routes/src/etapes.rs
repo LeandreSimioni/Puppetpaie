@@ -298,12 +298,12 @@ struct MoisAOuvrir {
 /// `etat-par-engagement` : la phrase du mois, celle de chaque engagement (ses carres et sa frise), les lignes que la page
 /// lit, et les engagements non actifs du mois.
 #[derive(Debug, Serialize)]
-struct EtatParEngagement<'a> {
+pub(crate) struct EtatParEngagement<'a> {
     phrase: String,
     phrases: Vec<String>,
     mois: Mois,
     engagements: Vec<LigneDePage<'a>>,
-    non_actifs: Vec<NonActif>,
+    non_actifs: &'a [NonActif],
 }
 
 impl Dite for EtatParEngagement<'_> {
@@ -2928,20 +2928,35 @@ impl Dite for MoisAOuvrir {
     }
 }
 
-/// LES DEUX ETATS DE `mois`, servis par une meme lecture (`Moteur`) : celui de chaque engagement (`etat-par-engagement`,
-/// rendu) et le bilan du mois, tels que l'etat garde d'un mois les garde (`etat_garde`).
-pub(crate) fn les_deux_etats(ctx: &Contexte, mois: Mois) -> R<(Rendu, Bilan)> {
+/// LES DEUX ETATS DE `mois`, servis par une meme lecture (`Moteur`) : les lignes de chaque engagement et ceux qui ne sont
+/// pas actifs (ce que `etat-par-engagement` rend : `par_engagement`), et le bilan du mois, tels que l'etat garde d'un mois
+/// les garde (`etat_garde`).
+pub(crate) struct LesDeuxEtats {
+    mois: Mois,
+    lignes: Rc<Vec<Ligne>>,
+    non_actifs: Vec<NonActif>,
+    pub(crate) bilan: Bilan,
+}
+
+impl LesDeuxEtats {
+    /// `etat-par-engagement` : la phrase du mois, et ce que la page lit de chaque engagement.
+    pub(crate) fn par_engagement(&self) -> EtatParEngagement<'_> {
+        let engagements: Vec<LigneDePage> = self.lignes.iter().map(LigneDePage::de).collect();
+        let phrase = match engagements.len() {
+            0 => format!("Aucun engagement enregistré en {}.", self.mois.libelle(socle::mois::Graphie::Accentuee)),
+            n => format!("Engagements du mois : {}.", n),
+        };
+        let phrases = engagements.iter().map(phrase_de_la_ligne).collect();
+        EtatParEngagement { phrase, phrases, mois: self.mois, engagements, non_actifs: &self.non_actifs }
+    }
+}
+
+pub(crate) fn les_deux_etats(ctx: &Contexte, mois: Mois) -> R<LesDeuxEtats> {
     let mut m = Moteur::nouveau(ctx);
     let lignes = m.etat_par_engagement(mois)?;
-    let engagements: Vec<LigneDePage> = lignes.iter().map(LigneDePage::de).collect();
-    let phrase = match engagements.len() {
-        0 => format!("Aucun engagement enregistré en {}.", mois.libelle(socle::mois::Graphie::Accentuee)),
-        n => format!("Engagements du mois : {}.", n),
-    };
-    let phrases = engagements.iter().map(phrase_de_la_ligne).collect();
-    let par = EtatParEngagement { phrase, phrases, mois, engagements, non_actifs: non_actifs(ctx, mois)? };
+    let non_actifs = non_actifs(ctx, mois)?;
     let bilan = m.bilan_du_mois(mois)?;
-    Ok((Rendu::de(&par)?, bilan))
+    Ok(LesDeuxEtats { mois, lignes, non_actifs, bilan })
 }
 
 /// LE MOIS A OUVRIR (`mois-a-ouvrir`), tel que l'etat garde de l'ouverture le garde : le mois, et la reponse rendue.

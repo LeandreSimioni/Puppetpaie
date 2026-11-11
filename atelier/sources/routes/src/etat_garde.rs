@@ -467,10 +467,10 @@ impl Dite for DuMois<'_> {
     }
 }
 
-fn du_mois(racine: &Path, bilan: &Bilan) -> R<Rendu> {
+fn du_mois<'a>(racine: &Path, bilan: &'a Bilan) -> R<DuMois<'a>> {
     let pose = compagnie::coffre::Coffre::du_poste(racine)
         .ouverture_exigee()?;
-    Rendu::de(&DuMois { bilan, mot_de_passe_pose: pose })
+    Ok(DuMois { bilan, mot_de_passe_pose: pose })
 }
 
 /// TOUT L'ECRAN D'UN MOIS, tel que la page le lit (`chargerMois`) : la phrase de ses etapes, le mois, `lectures` (une
@@ -493,7 +493,7 @@ impl EtatDuMois {
     fn ecran(&self, racine: &Path, perime: bool) -> EcranDuMois<'_> {
         let mut lectures: BTreeMap<&'static str, ALaPage> = self.lectures.iter().map(|(r, t)| (r.nom(), ALaPage::Ecrite(t))).collect();
         lectures.insert(Route::EtatParEngagement.nom(), ALaPage::Faite(Reponse::de(Route::EtatParEngagement, Ok(self.par_engagement.clone()))));
-        lectures.insert(Route::EtatDuMois.nom(), ALaPage::Faite(Reponse::de(Route::EtatDuMois, du_mois(racine, &self.bilan))));
+        lectures.insert(Route::EtatDuMois.nom(), ALaPage::Faite(Reponse::de(Route::EtatDuMois, du_mois(racine, &self.bilan).and_then(en_json))));
         EcranDuMois { phrase: self.bilan.phrase(), mois: self.mois, lectures, perime }
     }
 }
@@ -629,8 +629,9 @@ fn refaire_le_mois(o: &Options, ctx: &Contexte, mois: Mois, empreinte: String) -
         let charge = socle::forme::lire_texte(&socle::ecriture::json_en_ligne(&apercu), "La charge de l'aperçu ne s'écrit pas.")?;
         lectures.push((Route::Apercu, lecture(o, Route::Apercu, &charge)));
     }
-    let (par_engagement, bilan) = crate::etapes::les_deux_etats(ctx, mois)?;
-    Ok(EtatDuMois { mois, empreinte, par_engagement, bilan, lectures })
+    let etats = crate::etapes::les_deux_etats(ctx, mois)?;
+    let par_engagement = Rendu::de(&etats.par_engagement())?;
+    Ok(EtatDuMois { mois, empreinte, par_engagement, bilan: etats.bilan, lectures })
 }
 
 /// L'etat de l'ouverture, refait : les lectures de la page qui s'ouvre (`LECTURES_OUVERTURE`), telles quelles, et le
@@ -739,11 +740,15 @@ pub fn route(o: &Options, porte: &Porte, charge: &Charge) -> R<Rendu> {
     match porte.route {
         Route::EtatParEngagement => {
             let ChargeMois { mois } = charge.lire()?;
-            Ok(crate::etapes::les_deux_etats(porte.ctx, mois)?.0)
+            let etats = crate::etapes::les_deux_etats(porte.ctx, mois)?;
+            let par: crate::etapes::EtatParEngagement = etats.par_engagement();
+            en_json(par)
         }
         Route::EtatDuMois => {
             let ChargeMois { mois } = charge.lire()?;
-            du_mois(&porte.ctx.racine, &crate::etapes::les_deux_etats(porte.ctx, mois)?.1)
+            let etats = crate::etapes::les_deux_etats(porte.ctx, mois)?;
+            let dit: DuMois = du_mois(&porte.ctx.racine, &etats.bilan)?;
+            en_json(dit)
         }
         // Hors de la fenetre, l'etat se refait toujours : `attendre` n'y change rien.
         Route::Mois => {
