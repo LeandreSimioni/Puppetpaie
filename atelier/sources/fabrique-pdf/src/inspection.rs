@@ -129,43 +129,6 @@ fn mots_de(ligne: usize, texte: &[Signe], boites: &[Option<Boite>], repere: &Rep
     finir(&mut mot, &mut boite);
 }
 
-/// Une chaîne de texte PDF : UTF-16BE ou UTF-16LE avec marque, UTF-8 avec marque, sinon PDFDocEncoding.
-fn chaine_pdf(s: &[u8]) -> Result<String, Refus> {
-    let utf16 = |o: &[u8], be: bool| -> Result<String, Refus> {
-        if o.len() % 2 == 1 {
-            return illisible(format!("une chaîne en UTF-16 a un nombre impair d'octets ({})", o.len()));
-        }
-        let u: Vec<u16> = o
-            .chunks(2)
-            .map(|p| {
-                let (a, b) = (p[0] as u16, p[1] as u16);
-                if be { (a << 8) | b } else { (b << 8) | a }
-            })
-            .collect();
-        Ok(String::from_utf16_lossy(&u))
-    };
-    let utf8 = s.utf8_chunks().all(|morceau| morceau.invalid().is_empty());
-    if s.starts_with(&[0xFE, 0xFF]) {
-        utf16(&s[2..], true)
-    } else if s.starts_with(&[0xFF, 0xFE]) {
-        utf16(&s[2..], false)
-    } else if s.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        Ok(String::from_utf8_lossy(&s[3..]).into_owned())
-    } else if s.iter().any(|b| *b >= 0x80) && utf8 {
-        // Des octets qui forment de l'UTF-8 valide (sans marque) : MuPDF
-        // les lit comme tels, et un texte en PDFDocEncoding n'a presque jamais cette forme.
-        Ok(String::from_utf8_lossy(s).into_owned())
-    } else {
-        // PDFDocEncoding, annexe D.3 : un code que la table dit « Undefined » se refuse.
-        s.iter()
-            .map(|b| match crate::encodages::pdfdoc(*b)? {
-                Some(c) => Ok(c),
-                None => illisible(format!("une chaîne en PDFDocEncoding porte le code {:#04x}, que la norme laisse sans caractère (ISO 32000-1, annexe D.3)", b)),
-            })
-            .collect()
-    }
-}
-
 /// Un nom lu, en texte.
 fn nom_texte(n: &[u8]) -> String {
     String::from_utf8_lossy(n).into_owned()
@@ -245,7 +208,7 @@ fn metadonnees(doc: &Document, avertissements: &mut Vec<String>) -> Result<std::
     };
     for (cle, valeur) in info.iter() {
         let texte = match lecture::designe(doc, valeur)? {
-            Some(Object::String(s, _)) => match chaine_pdf(s) {
+            Some(Object::String(s, _)) => match crate::encodages::chaine_de_texte(s) {
                 Ok(t) => t,
                 Err(r) => {
                     avertissements.push(format!("métadonnées : {} : {}", lecture::nom_de(cle), r.phrase));

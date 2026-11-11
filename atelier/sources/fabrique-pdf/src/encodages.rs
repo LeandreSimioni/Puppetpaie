@@ -1,12 +1,13 @@
 //! Les encodages prédéfinis (ISO 32000-1, annexe D) : le nom du glyphe de chaque code de StandardEncoding,
 //! MacRomanEncoding, WinAnsiEncoding (D.2), MacExpertEncoding (D.4), des encodages propres de Symbol (D.5) et de
-//! ZapfDingbats (D.6), et le caractère de chaque code de PDFDocEncoding (D.3). Les tables sont celles de la
+//! ZapfDingbats (D.6), et le caractère de chaque code de PDFDocEncoding (D.3), qui avec UTF-16BE fait les chaînes de
+//! texte (7.9.2.2), lues et écrites ici seulement. Les tables sont celles de la
 //! transcription déposée (`atelier/reference/sources/iso-32000/adobe-iso32000-1-annexe-d-20261111.txt`), lue telle
 //! quelle, une fois par processus.
 
 use std::sync::OnceLock;
 
-use crate::description::{defaut, Refus};
+use crate::description::{defaut, illisible, Refus};
 
 const ANNEXE_D: &str = include_str!("../../../reference/sources/iso-32000/adobe-iso32000-1-annexe-d-20261111.txt");
 
@@ -35,6 +36,9 @@ struct Annexe {
     zapf: Noms,
     /// Le caractère de chaque code de PDFDocEncoding (`None` : « Undefined »).
     pdfdoc: Vec<Option<char>>,
+    /// Les codes de PDFDocEncoding que la table ne note pas « U » (« Undefined code point in PDFDocEncoding ») : les
+    /// seuls qu'on écrit.
+    pdfdoc_defini: Vec<bool>,
 }
 
 static ANNEXE: OnceLock<Result<Annexe, Refus>> = OnceLock::new();
@@ -49,6 +53,14 @@ fn octal(t: &str, ligne: &str) -> Result<Option<usize>, Refus> {
         Ok(c) => defaut(format!("l'annexe D déposée donne le code {} (octal {}) : « {} »", c, t, ligne)),
         Err(e) => defaut(format!("l'annexe D déposée a le code {:?} ({}) : « {} »", t, e, ligne)),
     }
+}
+
+/// Un nombre hexadécimal de la transcription, derrière son préfixe (« 0x », « U+ »).
+fn hexadecimal(t: &str, prefixe: &str, ligne: &str) -> Result<u32, Refus> {
+    let Some(h) = t.strip_prefix(prefixe) else {
+        return defaut(format!("l'annexe D déposée a {:?} sans son préfixe {} : « {} »", t, prefixe, ligne));
+    };
+    u32::from_str_radix(h, 16).map_err(|e| Refus::defaut(format!("l'annexe D déposée a {:?} ({}) : « {} »", t, e, ligne)))
 }
 
 /// Pose `nom` au code `code` de `table` : deux noms pour un code sont un défaut de la transcription livrée.
@@ -69,13 +81,16 @@ fn poser(table: &mut Noms, code: Option<usize>, nom: &'static str, ligne: &str) 
 /// dit. Une ligne d'une autre forme est un défaut du logiciel : la transcription est livrée avec lui.
 fn lire() -> Result<Annexe, Refus> {
     let vide = || vec![None; 256];
-    let mut a = Annexe { standard: vide(), mac_roman: vide(), win_ansi: vide(), mac_expert: vide(), symbol: vide(), zapf: vide(), pdfdoc: vec![None; 256] };
+    let mut a = Annexe { standard: vide(), mac_roman: vide(), win_ansi: vide(), mac_expert: vide(), symbol: vide(), zapf: vide(), pdfdoc: vec![None; 256], pdfdoc_defini: vec![false; 256] };
     let mut section = "";
     let mut vus_pdfdoc = 0;
     for ligne in ANNEXE_D.lines() {
         if let Some(titre) = ligne.strip_prefix("## ") {
             // « D.2 », ou « D.2, » pour ses notes.
-            section = titre.split_once(' ').map_or(titre, |(s, _)| s);
+            section = match titre.split_once(' ') {
+                Some((s, _)) => s,
+                None => titre,
+            };
             continue;
         }
         if ligne.starts_with('#') || ligne.trim().is_empty() {
@@ -98,20 +113,26 @@ fn lire() -> Result<Annexe, Refus> {
             "D.2," => {}
             "D.3" => {
                 // Hex Octal Unicode [Notes]
-                let (hex, unicode) = match mots.as_slice() {
-                    [hex, _, unicode] | [hex, _, unicode, _] => (*hex, *unicode),
+                let (hex, unicode, note) = match mots.as_slice() {
+                    [hex, _, unicode] => (*hex, *unicode, None),
+                    [hex, _, unicode, note] => (*hex, *unicode, Some(*note)),
                     _ => return defaut(format!("l'annexe D déposée a, en D.3, la ligne « {} »", ligne)),
                 };
-                let code = hex.strip_prefix("0x").and_then(|h| usize::from_str_radix(h, 16).ok()).filter(|c| *c < 256);
-                let Some(code) = code else {
-                    return defaut(format!("l'annexe D déposée a, en D.3, le code {:?}", hex));
+                let code = match hexadecimal(hex, "0x", ligne)? {
+                    c if c < 256 => c as usize,
+                    c => return defaut(format!("l'annexe D déposée a, en D.3, le code {} : « {} »", c, ligne)),
                 };
                 a.pdfdoc[code] = match unicode {
                     "Undefined" => None,
-                    u => match u.strip_prefix("U+").and_then(|h| u32::from_str_radix(h, 16).ok()).and_then(char::from_u32) {
+                    u => match char::from_u32(hexadecimal(u, "U+", ligne)?) {
                         Some(c) => Some(c),
                         None => return defaut(format!("l'annexe D déposée a, en D.3, le caractère {:?}", u)),
                     },
+                };
+                a.pdfdoc_defini[code] = match note {
+                    None | Some("SR") => a.pdfdoc[code].is_some(),
+                    Some("U") => false,
+                    Some(autre) => return defaut(format!("l'annexe D déposée a, en D.3, la note {:?} : « {} »", autre, ligne)),
                 };
                 vus_pdfdoc += 1;
             }
@@ -180,7 +201,66 @@ pub(crate) fn codes(e: Encodage) -> Result<Vec<Option<Code>>, Refus> {
     Ok(v)
 }
 
-/// Le caractère d'un octet en PDFDocEncoding (D.3) ; `None` pour un code que la table dit « Undefined ».
-pub(crate) fn pdfdoc(b: u8) -> Result<Option<char>, Refus> {
-    Ok(annexe()?.pdfdoc[b as usize])
+/// La marque d'une chaîne de texte en UTF-16BE (ISO 32000-1, 7.9.2.2 : « the first two bytes shall be 254 followed by
+/// 255 »).
+const MARQUE_UTF16BE: [u8; 2] = [254, 255];
+/// Ce qui ouvre et ferme une séquence d'échappement de langue (7.9.2.2 : « The Unicode value U+001B »).
+const ECHAPPEMENT: u16 = 0x1B;
+
+/// Le texte d'une chaîne de texte (ISO 32000-1, 7.9.2.2, `/ActualText`, les métadonnées, un champ de formulaire) :
+/// UTF-16BE quand elle commence par sa marque, PDFDocEncoding sinon (annexe D.3), seules formes que la norme connaît.
+/// Ce qu'elle ne permet pas de lire se refuse : un code que D.3 dit « Undefined », de l'UTF-16 qui n'en est pas (un
+/// nombre impair d'octets, une moitié de paire), une séquence d'échappement mal formée. Une séquence d'échappement de
+/// langue (U+001B, deux octets de langue, deux de pays au choix, U+001B) n'est pas du texte : elle tombe.
+pub(crate) fn chaine_de_texte(s: &[u8]) -> Result<String, Refus> {
+    let Some(utf16) = s.strip_prefix(&MARQUE_UTF16BE) else {
+        let a = annexe()?;
+        return s
+            .iter()
+            .map(|b| match a.pdfdoc[*b as usize] {
+                Some(c) => Ok(c),
+                None => illisible(format!("une chaîne de texte en PDFDocEncoding porte le code {:#04x}, que la norme laisse sans caractère (ISO 32000-1, annexe D.3)", b)),
+            })
+            .collect();
+    };
+    if utf16.len() % 2 == 1 {
+        return illisible(format!("une chaîne de texte en UTF-16BE a un nombre impair d'octets ({} ; ISO 32000-1, 7.9.2.2)", utf16.len()));
+    }
+    let unites: Vec<u16> = utf16.chunks(2).map(|p| u16::from_be_bytes([p[0], p[1]])).collect();
+    let mut texte = Vec::with_capacity(unites.len());
+    let mut i = 0;
+    while i < unites.len() {
+        if unites[i] != ECHAPPEMENT {
+            texte.push(unites[i]);
+            i += 1;
+            continue;
+        }
+        // La langue tient une unité de deux octets, le pays une autre, au choix.
+        match (unites.get(i + 2), unites.get(i + 3)) {
+            (Some(&ECHAPPEMENT), _) => i += 3,
+            (_, Some(&ECHAPPEMENT)) => i += 4,
+            _ => return illisible("une chaîne de texte en UTF-16BE ouvre une séquence d'échappement de langue sans la fermer (ISO 32000-1, 7.9.2.2)"),
+        }
+    }
+    String::from_utf16(&texte).map_err(|e| Refus::illisible(format!("une chaîne de texte marquée UTF-16BE n'en est pas ({} ; ISO 32000-1, 7.9.2.2)", e)))
+}
+
+/// Une chaîne de texte pour `t` (ISO 32000-1, 7.9.2.2) : PDFDocEncoding quand chacun de ses caractères y a un code que
+/// D.3 ne note pas « U », UTF-16BE avec sa marque sinon.
+pub(crate) fn vers_chaine_de_texte(t: &str) -> Result<Vec<u8>, Refus> {
+    let a = annexe()?;
+    let code = |c: char| (0..256).find(|&b| a.pdfdoc_defini[b] && a.pdfdoc[b] == Some(c)).map(|b| b as u8);
+    match t.chars().map(code).collect::<Option<Vec<u8>>>() {
+        Some(octets) => Ok(octets),
+        None => Ok(vers_utf16be(t)),
+    }
+}
+
+/// Une chaîne de texte en UTF-16BE, sa marque en tête (ISO 32000-1, 7.9.2.2).
+pub(crate) fn vers_utf16be(t: &str) -> Vec<u8> {
+    let mut u = MARQUE_UTF16BE.to_vec();
+    for unite in t.encode_utf16() {
+        u.extend_from_slice(&unite.to_be_bytes());
+    }
+    u
 }

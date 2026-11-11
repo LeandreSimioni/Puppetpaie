@@ -32,7 +32,10 @@ fn lire_tables() -> Result<Tables, Refus> {
     };
     for ligne in TABLES.lines() {
         if let Some(titre) = ligne.strip_prefix("## ") {
-            section = titre.split(" : ").next().unwrap_or(titre);
+            section = match titre.split_once(" : ") {
+                Some((s, _)) => s,
+                None => titre,
+            };
             continue;
         }
         if ligne.starts_with('#') || ligne.trim().is_empty() {

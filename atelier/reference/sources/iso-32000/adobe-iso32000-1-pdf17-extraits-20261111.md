@@ -435,3 +435,30 @@ https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf,
 
 > 5. The hyphen character is also encoded as 255 in WinAnsiEncoding. The meaning of this duplicate code shall be
 > "soft hyphen," but it shall be typographically the same as hyphen.
+
+## 7.9.2.2 Text String Type
+
+> The text string type shall be used for character strings that shall be encoded in either PDFDocEncoding or the
+> UTF-16BE Unicode character encoding scheme. PDFDocEncoding can encode all of the ISO Latin 1 character set and is
+> documented in Annex D. UTF-16BE can encode all Unicode characters. [...]
+>
+> For text strings encoded in Unicode, the first two bytes shall be 254 followed by 255. These two bytes represent the
+> Unicode byte order marker, U+FEFF, indicating that the string is encoded in the UTF-16BE (big-endian) encoding scheme
+> specified in the Unicode standard.
+>
+> NOTE 3 This mechanism precludes beginning a string using PDFDocEncoding with the two characters thorn ydieresis,
+> which is unlikely to be a meaningful beginning of a word or phrase.
+>
+> Conforming readers that process PDF files containing Unicode text strings shall be prepared to handle supplementary
+> characters; that is, characters requiring more than two bytes to represent.
+>
+> An escape sequence may appear anywhere in a Unicode text string to indicate the language in which subsequent text
+> shall be written. [...] The escape sequence shall consist of the following elements, in order:
+>
+> a) The Unicode value U+001B (that is, the byte sequence 0 followed by 27).
+>
+> b) A 2- byte ISO 639 language code.
+>
+> c) (Optional) A 2-byte ISO 3166 country code.
+>
+> d) The Unicode value U+001B.

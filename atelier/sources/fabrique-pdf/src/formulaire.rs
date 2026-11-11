@@ -53,68 +53,6 @@ const Q_PAR_DEFAUT: i64 = 0;
 /// that the font shall be auto-sized »).
 const CORPS_AUTOMATIQUE: Mesure = Mesure::ZERO;
 
-// ------------------------------------------------------------------ les chaînes de texte PDF
-
-/// PDFDocEncoding : les octets 0x18–0x1F et 0x80–0xA0 qui diffèrent de Latin-1.
-const PDFDOC: [(u8, char); 41] = [
-    (0x18, '\u{02D8}'), (0x19, '\u{02C7}'), (0x1A, '\u{02C6}'), (0x1B, '\u{02D9}'),
-    (0x1C, '\u{02DD}'), (0x1D, '\u{02DB}'), (0x1E, '\u{02DA}'), (0x1F, '\u{02DC}'),
-    (0x80, '\u{2022}'), (0x81, '\u{2020}'), (0x82, '\u{2021}'), (0x83, '\u{2026}'),
-    (0x84, '\u{2014}'), (0x85, '\u{2013}'), (0x86, '\u{0192}'), (0x87, '\u{2044}'),
-    (0x88, '\u{2039}'), (0x89, '\u{203A}'), (0x8A, '\u{2212}'), (0x8B, '\u{2030}'),
-    (0x8C, '\u{201E}'), (0x8D, '\u{201C}'), (0x8E, '\u{201D}'), (0x8F, '\u{2018}'),
-    (0x90, '\u{2019}'), (0x91, '\u{201A}'), (0x92, '\u{2122}'), (0x93, '\u{FB01}'),
-    (0x94, '\u{FB02}'), (0x95, '\u{0141}'), (0x96, '\u{0152}'), (0x97, '\u{0160}'),
-    (0x98, '\u{0178}'), (0x99, '\u{017D}'), (0x9A, '\u{0131}'), (0x9B, '\u{0142}'),
-    (0x9C, '\u{0153}'), (0x9D, '\u{0161}'), (0x9E, '\u{017E}'), (0x9F, '\u{FFFD}'),
-    (0xA0, '\u{20AC}'),
-];
-
-/// Une chaîne de texte PDF en `String` : UTF-16BE si elle commence par la marque `FE FF`, UTF-8
-/// si elle commence par `EF BB BF` (PDF 2.0), PDFDocEncoding sinon.
-fn chaine_pdf(s: &[u8]) -> Result<String, Refus> {
-    if let Some(r) = s.strip_prefix(&[0xFE, 0xFF]) {
-        if r.len() % 2 == 1 {
-            return illisible(format!("une chaîne en UTF-16 a un nombre impair d'octets ({})", r.len()));
-        }
-        let unites: Vec<u16> = r.chunks(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
-        return Ok(String::from_utf16_lossy(&unites));
-    }
-    if let Some(r) = s.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
-        return Ok(String::from_utf8_lossy(r).into_owned());
-    }
-    // PDFDocEncoding : Latin-1, sauf les octets de `PDFDOC` (ISO 32000-1, annexe D.2).
-    Ok(s.iter()
-        .map(|&b| match PDFDOC.iter().find(|(o, _)| *o == b) {
-            Some((_, c)) => *c,
-            None => b as char,
-        })
-        .collect())
-}
-
-/// Une `String` en chaîne de texte PDF : PDFDocEncoding quand tous ses caractères y sont (ce
-/// qu'écrivent les autres outils pour du français), UTF-16BE avec sa marque sinon.
-fn vers_chaine_pdf(t: &str) -> Vec<u8> {
-    let mut octets = Vec::with_capacity(t.len());
-    for c in t.chars() {
-        let direct = (c as u32) < 0x100
-            && !(0x18..=0x1F).contains(&(c as u32))
-            && !(0x7F..=0xA0).contains(&(c as u32));
-        if direct {
-            octets.push(c as u8);
-        } else if let Some((o, _)) = PDFDOC.iter().find(|(_, x)| *x == c && c != '\u{FFFD}') {
-            octets.push(*o);
-        } else {
-            let mut u = vec![0xFE, 0xFF];
-            for unite in t.encode_utf16() {
-                u.extend_from_slice(&unite.to_be_bytes());
-            }
-            return u;
-        }
-    }
-    octets
-}
-
 // ------------------------------------------------------------------ l'arbre des champs
 
 /// Un champ terminal du formulaire, avec ce qu'il hérite de ses parents.
@@ -227,7 +165,7 @@ fn parcourir(
     }
     let d = lecture::dictionnaire_de(doc, id)?;
     let partiel = match lecture::lue(doc, d, b"T", lecture::chaine)? {
-        Some(t) => Some(chaine_pdf(t)?),
+        Some(t) => Some(crate::encodages::chaine_de_texte(t)?),
         None => None,
     };
     let nom = match (&partiel, parent.is_empty()) {
@@ -382,7 +320,7 @@ fn valeur_lue(doc: &Document, v: Option<&Object>) -> Result<ValeurLue, Refus> {
     };
     Ok(match v {
         None => ValeurLue::Rien,
-        Some(Object::String(s, _)) => ValeurLue::Texte(chaine_pdf(s)?),
+        Some(Object::String(s, _)) => ValeurLue::Texte(crate::encodages::chaine_de_texte(s)?),
         Some(Object::Name(n)) => ValeurLue::Texte(String::from_utf8_lossy(n).into_owned()),
         Some(Object::Integer(i)) => ValeurLue::Entier(*i),
         Some(o @ Object::Real(_)) => match Mesure::de_l_objet(o) {
@@ -1221,7 +1159,7 @@ fn ecrire_champs(doc: &mut Document, valeurs: &[(String, String)], avant: Option
             s.compress().map_err(|e| Refus::defaut(format!("l'apparence du champ « {} » ne se comprime pas ({})", nom, e)))?;
             apparences.push((*w, doc.add_object(Object::Stream(s))));
         }
-        dictionnaire_a_changer(doc, c.id)?.set("V", Object::String(vers_chaine_pdf(&texte), lopdf::StringFormat::Literal));
+        dictionnaire_a_changer(doc, c.id)?.set("V", Object::String(crate::encodages::vers_chaine_de_texte(&texte)?, lopdf::StringFormat::Literal));
         for (w, ap) in apparences {
             let mut a = Dictionary::new();
             a.set("N", Object::Reference(ap));
@@ -1426,7 +1364,7 @@ pub fn ajouter_champs(octets: &[u8], d: &AjoutDeChamps) -> Result<Vec<u8>, Refus
         w.set("Type", Object::Name(b"Annot".to_vec()));
         w.set("Subtype", Object::Name(b"Widget".to_vec()));
         w.set("FT", Object::Name(b"Tx".to_vec()));
-        w.set("T", Object::String(vers_chaine_pdf(&a.nom), lopdf::StringFormat::Literal));
+        w.set("T", Object::String(crate::encodages::vers_chaine_de_texte(&a.nom)?, lopdf::StringFormat::Literal));
         w.set("Rect", Object::Array(r.iter().map(|x| x.en_objet()).collect::<Result<_, _>>()?));
         w.set("P", Object::Reference(page));
         w.set("F", Object::Integer(4));

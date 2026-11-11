@@ -43,8 +43,13 @@ clé absente, une valeur par défaut ou une forme exigée vient de la norme, don
   MacExpertEncoding (D.4), Symbol (D.5), ZapfDingbats (D.6) ; les notes 3 (WinAnsi : un code inutilisé au-delà de 40
   est le « bullet »), 5 (WinAnsi 255, « soft hyphen ») et 6 (WinAnsi 240, MacRoman 312 : « nonbreaking space ») ; le
   caractère de chaque code de PDFDocEncoding (D.3, colonne Unicode ; « Undefined » se refuse ; un code noté « U » qui
-  a pourtant un Unicode dans la table prend celui-ci : inférence, la table donnant les deux), pour `/ActualText`
-  (`texte::texte_pdf`) et les métadonnées (`inspection::chaine_pdf`).
+  a pourtant un Unicode dans la table prend celui-ci : inférence, la table donnant les deux).
+- `fabrique-pdf/src/encodages.rs` (`chaine_de_texte`, `vers_chaine_de_texte`) : une chaîne de texte (7.9.2.2) est
+  en UTF-16BE quand elle commence par les octets 254 255, en PDFDocEncoding (D.3) sinon ; rien d'autre ne se lit (ni
+  UTF-16LE, ni UTF-8, que 7.9.2.2 ne connaît pas) ; la séquence d'échappement de langue tombe ; un code « Undefined »,
+  de l'UTF-16 mal formé ou une séquence ouverte sans être fermée se refusent. L'écriture (la valeur et le nom d'un
+  champ de formulaire) prend PDFDocEncoding quand chaque caractère y a un code que D.3 ne note pas « U », UTF-16BE
+  sinon. Lecteurs : `/ActualText` (`texte.rs`), les métadonnées (`inspection.rs`), les champs (`formulaire.rs`).
 - `fabrique-pdf/src/inspection.rs` (`chiffrement`) : `Filter`, `R`, `P` exigés, `Length` qui vaut 40, `CFM` qui vaut
   `None` (tables 20, 21, 25).
 - `fabrique-pdf/src/formulaire.rs` (les champs) : `Fields` exigé (table 218) ; `Ff` qui vaut 0 (table 220) ; `DA`

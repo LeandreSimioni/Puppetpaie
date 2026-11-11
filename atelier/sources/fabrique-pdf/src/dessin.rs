@@ -707,11 +707,7 @@ impl Dessin {
         let date = || Object::String(b"D:19700101000000+00'00'".to_vec(), StringFormat::Literal);
         let mut info = Dictionary::new();
         if let Some(titre) = titre {
-            let mut titre_utf16 = vec![0xFE, 0xFF];
-            for u in titre.encode_utf16() {
-                titre_utf16.extend_from_slice(&u.to_be_bytes());
-            }
-            info.set("Title", Object::String(titre_utf16, StringFormat::Literal));
+            info.set("Title", Object::String(crate::encodages::vers_utf16be(titre), StringFormat::Literal));
         }
         info.set("Creator", Object::String(b"PuppetPaie".to_vec(), StringFormat::Literal));
         info.set("Producer", Object::String(b"PuppetPaie".to_vec(), StringFormat::Literal));

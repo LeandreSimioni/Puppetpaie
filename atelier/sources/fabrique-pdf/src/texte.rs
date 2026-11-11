@@ -1059,7 +1059,10 @@ fn encodage_type1(doc: &Document, fd: Option<&Dictionary>, sous_type: &[u8], nom
                 Some(b"Type1C") => sinon_inconnu(encodage_cff(doc, s, zapf), tous_inconnus),
                 autre => Ok(tous_inconnus(format!(
                     "l'encodage propre d'un programme incorporé /FontFile3 de sous-type {} n'est pas lu par la fabrique",
-                    autre.map_or("absent".to_string(), lecture::nom_de)
+                    match autre {
+                        Some(n) => lecture::nom_de(n),
+                        None => "absent".to_string(),
+                    }
                 ))),
             };
         }
@@ -1471,20 +1474,6 @@ fn remplacer_images_en_ligne(flux: &[u8]) -> std::borrow::Cow<'_, [u8]> {
     std::borrow::Cow::Owned(sortie)
 }
 
-/// Le texte d'une chaîne PDF : UTF-16BE s'il commence par la marque, sinon PDFDocEncoding (annexe D.3) ; un
-/// code que la table dit « Undefined » se refuse.
-fn texte_pdf(s: &[u8]) -> Result<String, Refus> {
-    if s.starts_with(&[0xFE, 0xFF]) {
-        return utf16(&s[2..]);
-    }
-    s.iter()
-        .map(|b| match encodages::pdfdoc(*b)? {
-            Some(c) => Ok(c),
-            None => illisible(format!("une chaîne en PDFDocEncoding porte le code {:#04x}, que la norme laisse sans caractère (ISO 32000-1, annexe D.3)", b)),
-        })
-        .collect()
-}
-
 /// Le sous-dictionnaire `cle` des ressources (`Font`, `XObject`, `Properties`) : `None` quand il manque, ou que le
 /// contenu n'a pas de ressources.
 fn ressource<'a>(doc: &'a Document, res: Option<&'a Dictionary>, cle: &[u8]) -> Result<Option<&'a Dictionary>, Refus> {
@@ -1692,7 +1681,7 @@ impl<'a> Interprete<'a> {
                         None => None,
                     };
                     let reel = match propres.map(|p| lecture::lue(doc, p, b"ActualText", lecture::chaine)).transpose()?.flatten() {
-                        Some(s) => Some(texte_pdf(s)?),
+                        Some(s) => Some(encodages::chaine_de_texte(s)?),
                         None => None,
                     };
                     match reel {
