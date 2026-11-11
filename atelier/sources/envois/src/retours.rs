@@ -875,15 +875,15 @@ impl Serialize for Reception {
     }
 }
 
-/// La reception que disent `date_reception` et `heure_reception` ; une date ou une heure qui n'est pas de la forme du
-/// schema refuse le rapport.
-fn reception_du_rapport(date: Option<String>, heure: Option<String>) -> R<Option<Reception>> {
-    let Some(d) = date else { return Ok(None) };
+/// La reception que disent les champs `date_reception` et `heure_reception` du rapport (`get`) ; une date ou une heure
+/// qui n'est pas de la forme du schema refuse le rapport.
+fn reception_du_rapport(get: &dyn Fn(&str) -> Option<String>) -> R<Option<Reception>> {
+    let Some(d) = get("date_reception") else { return Ok(None) };
     let illisible = |element: &str, quoi: &str, t: &str| {
         socle::echec::cle(format!("La {} de réception d'un bilan ne se lit pas : {} n'est pas une {} de XML Schema.", quoi, socle::date::repr_texte(t), quoi), element).reclasser(Classe::Illisible)
     };
     let date = DateXsd::lire(&d).ok_or_else(|| illisible("date_reception", "date", &d))?;
-    let heure = match heure {
+    let heure = match get("heure_reception") {
         Some(h) => Some(HeureXsd::lire(&h).ok_or_else(|| illisible("heure_reception", "heure", &h))?),
         None => None,
     };
@@ -898,7 +898,7 @@ fn mois_du_rapport(brut: &str) -> R<socle::mois::Mois> {
 fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> R<Option<Bilan>> {
     let get = |k: &str| champs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
     let Some(flux) = get("idflux") else { return Ok(None) };
-    let recu_le = reception_du_rapport(get("date_reception"), get("heure_reception"))?;
+    let recu_le = reception_du_rapport(&get)?;
     Ok(Some(Bilan {
         flux,
         recu_le,

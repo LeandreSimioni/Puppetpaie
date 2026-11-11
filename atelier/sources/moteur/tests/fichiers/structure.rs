@@ -1040,6 +1040,50 @@ fn un_mois_est_un_mois() {
     assert!(fautes.is_empty(), "un mois est un `socle::mois::Mois`, jamais un texte :\n{}", fautes.join("\n"));
 }
 
+/// UNE DATE EST UNE DATE, JAMAIS UN TEXTE : aucune source du logiciel (tests a part, commentaires blanchis) n'a de champ
+/// ni de parametre dont le nom dit une date, un jour ou un instant en `String`, `&str`, `Option<String>`, `Vec<String>`
+/// ou `impl Into<String>` : c'est un `socle::date::Jour`, un `socle::mois::MoisOuJour`, l'un des instants de
+/// `socle::paris` (`InstantEcrit`, `MinuteEcrite`, `HeureDeSaisie`, `HeureDuJournal`, `MinuteDite`, `MinuteUtc`,
+/// `InstantCompact`), une date ou une heure de XML Schema (`DateXsd`, `HeureXsd`), ou le type qui dit sa forme a lui
+/// (`droit::versement::Versement`, `envois::retours::Reception`...). Un nom dit une date quand il est un mot du temps
+/// (`date`, `dates`, `jour`, `quand`, `instant`, `le`, `debut`, `fin`, `du`, `au`, `depuis`, `jusqu_au`, `echeance`,
+/// `butoir`, `horodatage`, `effet`, `naissance`), quand il commence par l'un d'eux suivi de ce qu'il date
+/// (`date_naissance`, `debut_contrat`, `fin_previsionnelle`), ou quand il finit par la preposition d'une date (`pose_le`,
+/// `vire_le`, `contrats_du`, `actif_depuis`, `valable_jusqu_au`). Ce qui n'en est pas une le dit par son nom : une phrase
+/// qui dit une date (`quand_dit`, `date_dite`, `quand_lisible`, `jour_affichage`), une heure du jour (`heure`, `HH:MM`),
+/// un compte (`jours`). Une variable locale (`let`) n'est ni un champ ni une signature.
+#[test]
+fn une_date_est_une_date() {
+    const MOTS: [&str; 17] =
+        ["date", "dates", "jour", "quand", "instant", "le", "debut", "fin", "du", "au", "depuis", "jusqu_au", "echeance", "butoir", "horodatage", "effet", "naissance"];
+    const TETES: [&str; 8] = ["date", "debut", "fin", "quand", "jour", "butoir", "echeance", "instant"];
+    const PREPOSITIONS: [&str; 5] = ["_le", "_du", "_au", "_depuis", "_jusqu_au"];
+    const PHRASES: [&str; 6] = ["_dit", "_dite", "_dits", "_lisible", "_libelle", "_affichage"];
+    let champ = regex::Regex::new(
+        r"(\blet\s+(?:mut\s+)?)?\b_*([a-z0-9_]+)\s*:\s*(?:impl\s+(?:Into\s*<\s*String\s*>|AsRef\s*<\s*str\s*>)|&\s*(?:'[a-z_]+\s+)?(?:mut\s+)?str\b|String\b|(?:Option|Vec)\s*<\s*(?:&\s*(?:'[a-z_]+\s+)?str|String)\s*>)",
+    )
+    .unwrap();
+    let dit_une_date = |nom: &str| {
+        let nom = nom.trim_start_matches('_');
+        !PHRASES.iter().any(|p| nom.ends_with(p))
+            && (MOTS.contains(&nom)
+                || TETES.iter().any(|t| nom.strip_prefix(t).is_some_and(|r| r.starts_with('_')))
+                || PREPOSITIONS.iter().any(|p| nom.len() > p.len() && nom.ends_with(p)))
+    };
+    let mut fautes = Vec::new();
+    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
+        let rel = p.strip_prefix(espace()).unwrap().display().to_string();
+        for (n, l) in code_seul(&std::fs::read_to_string(&p).unwrap()).lines().enumerate() {
+            for c in champ.captures_iter(l) {
+                if c.get(1).is_none() && dit_une_date(&c[2]) {
+                    fautes.push(format!("{}:{} : `{}`", rel, n + 1, c[0].trim()));
+                }
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "une date est un `Jour` ou un instant de `socle::paris`, jamais un texte :\n{}", fautes.join("\n"));
+}
+
 /// UN NOMBRE DE PAIE EST UN DECIMAL, JAMAIS UN FLOTTANT : aucune source du logiciel (tests a part, commentaires et textes
 /// blanchis) ne type en `f32` ou `f64` (seul, ou dans `Option`, `Vec`, `Box`, un tableau) un champ, un parametre, une
 /// variable, une constante ou la valeur rendue d'une fonction dont un mot du nom (entre ses `_`, au singulier) dit un
