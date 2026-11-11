@@ -9,6 +9,7 @@ clé absente, une valeur par défaut ou une forme exigée vient de la norme, don
 | fichier | d'où | relevé |
 |---|---|---|
 | `adobe-iso32000-1-pdf17-extraits-20261111.md` | **transcription** (extraits, mot pour mot) de https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf (HTTP 200, 22 491 828 octets, sha256 `9de0ca9e8570d6209e8bd48a355be8eb6ec376acfc3fc3ae97cd8730351417ff` ; « PDF 32000-1:2008 », © Adobe Systems Incorporated 2008) ; l'original va dans `reference-privee/sources/iso-32000/` du privé | 11/11/2026 |
+| `adobe-iso32000-1-annexe-d-20261111.txt` | **transcription** des tables de l'annexe D (« Character Sets and Encodings ») du même original, pages 653 à 672 : D.2 (nom, codes STD MAC WIN PDF, et ses notes 1 à 6 mot pour mot), D.3 (PDFDocEncoding : code, Unicode, notes), D.4 (MacExpertEncoding), D.5 (Symbol), D.6 (ZapfDingbats) ; une entrée par ligne, dans l'ordre des tables ; la colonne CHAR (le dessin du caractère) n'est pas transcrite. Relevée du texte de l'original (`pdftotext -layout`), les pieds de page écartés ; 229, 256, 165, 189 et 188 entrées, aucun code en double dans une colonne | 11/11/2026 |
 
 ## Où le moteur s'en sert
 
@@ -28,15 +29,22 @@ clé absente, une valeur par défaut ou une forme exigée vient de la norme, don
   9.7.6.3) ; les annotations et leur apparence (tables 164, 165, 168) ; les propriétés de `BDC` (14.6.2).
 - `fabrique-pdf/src/texte.rs` (`Police::texte`, `predefini`, `differences_de`, `encodage_type1`,
   `encodage_truetype`, `par_cmap`, `programme_cid`) : le texte d'un code dans l'ordre de 9.10.2 : `ToUnicode` ; un
-  encodage prédéfini (9.6.6.1, annexe D et sa note 5 : le « soft hyphen » de WinAnsi) ou les noms des `Differences`,
+  encodage prédéfini (9.6.6.1, annexe D) ou les noms des `Differences`,
   lus par la liste des glyphes d'Adobe (`adobe-polices/`) ; l'encodage implicite (table 114) : l'encodage propre d'un
   programme Type 1 incorporé (9.6.6.2, table 127 `Length1`), StandardEncoding pour une police non symbolique non
-  incorporée, aucun pour une Type 3 (9.6.6.3) ; une TrueType sans encodage ou symbolique : la « cmap » du programme,
+  incorporée, ceux de D.5 et D.6 pour Symbol et ZapfDingbats non incorporées, aucun pour une Type 3 (9.6.6.3) ; une TrueType sans encodage ou symbolique : la « cmap » du programme,
   sous-table (3, 0) puis (1, 0) (9.6.6.4), le dictionnaire d'une non symbolique complété par StandardEncoding ; une
   police CID TrueType : `CIDToGIDMap` (table 117). Le glyphe d'un programme dit son caractère par son nom, sinon par
   la « cmap » Unicode du programme ; ce que rien ne dit est un caractère inconnu du texte (`texte::Inconnu` : la
   police, le code), que seul le lecteur qui en a besoin refuse (9.10.2 : « there is no way to determine what the
   character code represents ») : `import::bulletin_lu`, `aem_lu`, `certificat_lu` (la case), `TexteDePage::lu`.
+- `fabrique-pdf/src/encodages.rs` (`codes`, `pdfdoc`) : la transcription de l'annexe D, lue telle quelle
+  (`include_str!`) : le nom du glyphe de chaque code de StandardEncoding, MacRomanEncoding, WinAnsiEncoding (D.2),
+  MacExpertEncoding (D.4), Symbol (D.5), ZapfDingbats (D.6) ; les notes 3 (WinAnsi : un code inutilisé au-delà de 40
+  est le « bullet »), 5 (WinAnsi 255, « soft hyphen ») et 6 (WinAnsi 240, MacRoman 312 : « nonbreaking space ») ; le
+  caractère de chaque code de PDFDocEncoding (D.3, colonne Unicode ; « Undefined » se refuse ; un code noté « U » qui
+  a pourtant un Unicode dans la table prend celui-ci : inférence, la table donnant les deux), pour `/ActualText`
+  (`texte::texte_pdf`) et les métadonnées (`inspection::chaine_pdf`).
 - `fabrique-pdf/src/inspection.rs` (`chiffrement`) : `Filter`, `R`, `P` exigés, `Length` qui vaut 40, `CFM` qui vaut
   `None` (tables 20, 21, 25).
 - `fabrique-pdf/src/formulaire.rs` (les champs) : `Fields` exigé (table 218) ; `Ff` qui vaut 0 (table 220) ; `DA`

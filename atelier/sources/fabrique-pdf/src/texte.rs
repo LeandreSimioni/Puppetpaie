@@ -27,6 +27,7 @@ use lopdf::content::Content;
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
 use crate::description::{defaut, illisible, Classe, Refus};
+use crate::encodages::{self, Code, Encodage};
 use crate::glyphes;
 use crate::lecture;
 use crate::mesure::{mesure, Mesure};
@@ -646,24 +647,29 @@ fn glyphe_du_cid(table: Option<&[u8]>, cid: u32) -> Option<u16> {
     }
 }
 
-/// Un encodage prédéfini (ISO 32000-1, 9.6.6.1 et annexe D) : le texte de chaque code. Annexe D, note 5 du tableau D.1 :
-/// le code 255 (octal) de WinAnsiEncoding est le « soft hyphen » (U+00AD). Un autre nom se refuse.
+/// Un encodage prédéfini (ISO 32000-1, 9.6.6.1 et annexe D) : le texte de chaque code. Un autre nom se refuse.
 fn predefini(nom: &[u8]) -> Result<Vec<Lu>, Refus> {
-    let nom = match nom {
-        b"StandardEncoding" | b"MacRomanEncoding" | b"MacExpertEncoding" | b"WinAnsiEncoding" => String::from_utf8_lossy(nom).into_owned(),
+    let e = match nom {
+        b"StandardEncoding" => Encodage::Standard,
+        b"MacRomanEncoding" => Encodage::MacRoman,
+        b"MacExpertEncoding" => Encodage::MacExpert,
+        b"WinAnsiEncoding" => Encodage::WinAnsi,
         autre => return illisible(format!("l'encodage {} n'est pas un encodage prédéfini (ISO 32000-1, 9.6.6.1)", lecture::nom_de(autre))),
     };
-    Ok((0..=255u8)
-        .map(|b| {
-            if b == 0xAD && nom == "WinAnsiEncoding" {
-                return Lu::Texte("\u{AD}".to_string());
-            }
-            match Document::decode_text(Some(&nom), &[b]).chars().next() {
-                Some(c) => Lu::Texte(c.to_string()),
-                None => Lu::Rien,
-            }
+    de_l_annexe(e)
+}
+
+/// Le texte de chaque code d'un encodage de l'annexe D (`encodages.rs`) : le nom de son glyphe lu par la liste des glyphes
+/// d'Adobe (la liste Zapf Dingbats pour ZapfDingbats) ; un code non encodé ne montre rien (`.notdef`).
+fn de_l_annexe(e: Encodage) -> Result<Vec<Lu>, Refus> {
+    encodages::codes(e)?
+        .into_iter()
+        .map(|c| match c {
+            Some(Code::Nom(n)) => lu_du_nom(n, e == Encodage::ZapfDingbats),
+            Some(Code::Caractere(c)) => Ok(Lu::Texte(c.to_string())),
+            None => Ok(Lu::Rien),
         })
-        .collect())
+        .collect()
 }
 
 /// Le texte d'un nom de glyphe (liste des glyphes d'Adobe, `glyphes.rs`) : `.notdef` ne montre rien (9.6.6.2) ; un nom
@@ -1061,10 +1067,13 @@ fn encodage_type1(doc: &Document, fd: Option<&Dictionary>, sous_type: &[u8], nom
             Some(f) => drapeau(f, 3),
             None => nom_nu == "Symbol" || nom_nu == "ZapfDingbats",
         };
-        match symbolique {
-            false => predefini(b"StandardEncoding"),
-            true => Ok(tous_inconnus(format!(
-                "l'encodage propre de la police symbolique {}, non incorporée, n'est pas déposé (ISO 32000-1, annexe D)",
+        // Annexe D.5 et D.6 : les encodages propres des deux polices standard symboliques.
+        match (symbolique, nom_nu) {
+            (false, _) => predefini(b"StandardEncoding"),
+            (true, "Symbol") => de_l_annexe(Encodage::Symbol),
+            (true, "ZapfDingbats") => de_l_annexe(Encodage::ZapfDingbats),
+            (true, _) => Ok(tous_inconnus(format!(
+                "la police symbolique {} n'incorpore pas son programme, seul à dire son encodage propre (ISO 32000-1, table 114)",
                 nom_nu
             ))),
         }
@@ -1444,14 +1453,18 @@ fn remplacer_images_en_ligne(flux: &[u8]) -> std::borrow::Cow<'_, [u8]> {
     std::borrow::Cow::Owned(sortie)
 }
 
-/// Le texte d'une chaîne PDF : UTF-16BE s'il commence par la marque, sinon Latin-1 (approchant
-/// PDFDocEncoding).
+/// Le texte d'une chaîne PDF : UTF-16BE s'il commence par la marque, sinon PDFDocEncoding (annexe D.3) ; un
+/// code que la table dit « Undefined » se refuse.
 fn texte_pdf(s: &[u8]) -> Result<String, Refus> {
     if s.starts_with(&[0xFE, 0xFF]) {
-        utf16(&s[2..])
-    } else {
-        Ok(s.iter().map(|b| *b as char).collect())
+        return utf16(&s[2..]);
     }
+    s.iter()
+        .map(|b| match encodages::pdfdoc(*b)? {
+            Some(c) => Ok(c),
+            None => illisible(format!("une chaîne en PDFDocEncoding porte le code {:#04x}, que la norme laisse sans caractère (ISO 32000-1, annexe D.3)", b)),
+        })
+        .collect()
 }
 
 /// Le sous-dictionnaire `cle` des ressources (`Font`, `XObject`, `Properties`) : `None` quand il manque, ou que le

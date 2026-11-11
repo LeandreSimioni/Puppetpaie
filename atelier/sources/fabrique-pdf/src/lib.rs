@@ -6,6 +6,7 @@ pub mod chiffrement;
 pub mod description;
 mod dessin;
 mod ecriture;
+mod encodages;
 pub mod forme;
 pub mod formulaire;
 pub mod glyphes;

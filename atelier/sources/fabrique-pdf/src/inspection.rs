@@ -129,22 +129,6 @@ fn mots_de(ligne: usize, texte: &[Signe], boites: &[Option<Boite>], repere: &Rep
     finir(&mut mot, &mut boite);
 }
 
-/// La table PDFDocEncoding au-delà de Latin-1 (ISO 32000-1, annexe D.2).
-fn pdfdoc(b: u8) -> char {
-    const BAS: [char; 8] = ['\u{2D8}', '\u{2C7}', '\u{2C6}', '\u{2D9}', '\u{2DD}', '\u{2DB}', '\u{2DA}', '\u{2DC}'];
-    const HAUT: [char; 33] = [
-        '\u{2022}', '\u{2020}', '\u{2021}', '\u{2026}', '\u{2014}', '\u{2013}', '\u{192}', '\u{2044}', '\u{2039}', '\u{203A}',
-        '\u{2212}', '\u{2030}', '\u{201E}', '\u{201C}', '\u{201D}', '\u{2018}', '\u{2019}', '\u{201A}', '\u{2122}', '\u{FB01}',
-        '\u{FB02}', '\u{141}', '\u{152}', '\u{160}', '\u{178}', '\u{17D}', '\u{131}', '\u{142}', '\u{153}', '\u{161}', '\u{17E}',
-        '\u{FFFD}', '\u{20AC}',
-    ];
-    match b {
-        0x18..=0x1F => BAS[(b - 0x18) as usize],
-        0x80..=0xA0 => HAUT[(b - 0x80) as usize],
-        _ => b as char,
-    }
-}
-
 /// Une chaîne de texte PDF : UTF-16BE ou UTF-16LE avec marque, UTF-8 avec marque, sinon PDFDocEncoding.
 fn chaine_pdf(s: &[u8]) -> Result<String, Refus> {
     let utf16 = |o: &[u8], be: bool| -> Result<String, Refus> {
@@ -172,7 +156,13 @@ fn chaine_pdf(s: &[u8]) -> Result<String, Refus> {
         // les lit comme tels, et un texte en PDFDocEncoding n'a presque jamais cette forme.
         Ok(String::from_utf8_lossy(s).into_owned())
     } else {
-        Ok(s.iter().map(|b| pdfdoc(*b)).collect())
+        // PDFDocEncoding, annexe D.3 : un code que la table dit « Undefined » se refuse.
+        s.iter()
+            .map(|b| match crate::encodages::pdfdoc(*b)? {
+                Some(c) => Ok(c),
+                None => illisible(format!("une chaîne en PDFDocEncoding porte le code {:#04x}, que la norme laisse sans caractère (ISO 32000-1, annexe D.3)", b)),
+            })
+            .collect()
     }
 }
 
