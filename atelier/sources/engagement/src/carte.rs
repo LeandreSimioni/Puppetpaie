@@ -359,7 +359,7 @@ impl CarteValide {
     /// que la vue deduit (`Groupe::Deduit`) et ce qu'elle dit de l'engagement ecrit (`Groupe::Vue`) ne sont pas des cases.
     pub fn depuis(c: &Carte, qui: &str) -> R<CarteValide> {
         let Some(nature) = c.nature else {
-            return Err(socle::refus!("{}{}", qui, crate::PAS_DE_NATURE));
+            return Err(crate::a_finir(format!("{}{}", qui, crate::PAS_DE_NATURE)));
         };
         let cases = CarteValide::cases_de(nature);
         let nat = nature.proprietes()?;
@@ -389,9 +389,9 @@ impl CarteValide {
         }
         let manques: Vec<&str> = cases.iter().filter(|(x, e)| *e == Exige::Obligatoire && !remplie(c, *x)).map(|(x, _)| libelle(*x)).collect();
         if !manques.is_empty() {
-            return Err(socle::refus!("{}{}{} ({}).", qui, A_REMPLIR, guillemets(&manques), libelle_nature));
+            return Err(crate::a_finir(format!("{}{}{} ({}).", qui, A_REMPLIR, guillemets(&manques), libelle_nature)));
         }
-        let manquante = || socle::refus!("{}{}({})", qui, A_REMPLIR, libelle_nature);
+        let manquante = || crate::a_finir(format!("{}{}({})", qui, A_REMPLIR, libelle_nature));
         Ok(match nature {
             NatureDeContrat::CdduSpectacle => CarteValide::CdduSpectacle(Cddu::tiree(c).ok_or_else(manquante)?),
             NatureDeContrat::Cdi => CarteValide::Cdi(Cdi::tiree(c).ok_or_else(manquante)?),
@@ -466,7 +466,7 @@ impl Brouillon {
     /// qu'elle dit de l'engagement ecrit (`Groupe::Vue`) ne sont pas des cases. `qui` : le salarie que le refus nomme.
     pub fn de_la_carte(c: &Carte, qui: &str) -> R<Brouillon> {
         let Some(n) = c.nature else {
-            return Err(socle::refus!("{}{}", qui, crate::PAS_DE_NATURE));
+            return Err(crate::a_finir(format!("{}{}", qui, crate::PAS_DE_NATURE)));
         };
         let cases = Brouillon::cases(n);
         let de_trop: Vec<&str> = Champ::TOUS

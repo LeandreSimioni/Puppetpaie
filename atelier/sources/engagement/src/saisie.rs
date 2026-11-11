@@ -381,8 +381,8 @@ impl Carte {
         match self.nature {
             Some(n) => n.proprietes(),
             None => Err(match &self.salarie {
-                Some(s) => socle::refus!("{}{}", s, crate::PAS_DE_NATURE),
-                None => socle::refus!("Cet engagement{}", crate::PAS_DE_NATURE),
+                Some(s) => crate::a_finir(format!("{}{}", s, crate::PAS_DE_NATURE)),
+                None => crate::a_finir(format!("Cet engagement{}", crate::PAS_DE_NATURE)),
             }),
         }
     }

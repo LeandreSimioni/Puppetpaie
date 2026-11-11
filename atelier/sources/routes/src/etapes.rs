@@ -706,7 +706,7 @@ fn plur(k: usize, un: &'static str, des: &'static str) -> &'static str {
 /// `engagement::saisie_incomplete`) -- gardent leur classe ; tout autre est
 /// celui du moteur.
 pub(crate) fn classer_saisie(e: Echec) -> Echec {
-    let incomplete = engagement::saisie_incomplete(&e.phrase);
+    let incomplete = engagement::saisie_incomplete(&e);
     Echec { classe: if incomplete { Some(Classe::SaisieIncomplete) } else { None }, ..e }
 }
 

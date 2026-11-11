@@ -278,7 +278,7 @@ impl Engagement {
         // Un contrat permanent ne se deduit pas de ses dates.
         // Une nature se dit, elle ne se devine pas (regle 6).
         let Some(nature) = v.nature else {
-            return Err(socle::echec::cle(format!("{}{}", qui, PAS_DE_NATURE), "nature"));
+            return Err(socle::echec::cle(format!("{}{}", qui, PAS_DE_NATURE), "nature").reclasser(socle::echec::Classe::SaisieIncomplete));
         };
         let nat = nature.proprietes()?;
         let mensuel = nat.mensuelle();
@@ -978,7 +978,7 @@ pub(crate) fn engagements(
         let jours = if nat.mensuelle() { Vec::new() } else { carte.dates() };
         // `lignes: []` ecrit est un mois du contrat sans cachet ; une ligne sans date est incomplete.
         if jours.is_empty() && !nat.mensuelle() && !carte.lignes().is_empty() {
-            return Err(socle::refus!("{}{} Sans eux il n'y a ni début, ni fin, ni contrat.", qui, PAS_DE_JOUR));
+            return Err(a_finir(format!("{}{} Sans eux il n'y a ni début, ni fin, ni contrat.", qui, PAS_DE_JOUR)));
         }
         if nat.mensuelle() {
             frais_d_un_mois_paye(ctx, carte.lignes(), &qui)?;
@@ -1149,8 +1149,11 @@ const LIGNE_A_DIRE: &str = " : saisissez ";
 const QUANTITE_SANS_COMPTE: &str = " : saisissez un nombre plus grand que zéro";
 /// Une journee de plus de 24 heures (`duree::plus_d_une_journee`) : une faute de frappe, a corriger comme une saisie pas finie.
 pub(crate) const JOURNEE_DE_PLUS_DE_24: &str = ", et une journée n'a que 24 heures";
-const SAISIE_INCOMPLETE: [&str; 7] =
-    [carte::A_REMPLIR, PAS_DE_NATURE, PAS_DE_JOUR, LIGNE_A_DIRE, QUANTITE_SANS_COMPTE, JOURNEE_DE_PLUS_DE_24, crate::maintien::IJ_A_DIRE];
+
+/// LE REFUS D'UNE SAISIE PAS ENCORE FINIE : sa classe le dit (`Classe::SaisieIncomplete`), que `saisie_incomplete` lit.
+pub(crate) fn a_finir(phrase: impl Into<String>) -> Echec {
+    refus(phrase).reclasser(socle::echec::Classe::SaisieIncomplete)
+}
 
 /// LE TARIF DE LA CONVENTION d'une rubrique a ce jour (`tarifs_conventionnels.<code>` de la couche de la convention du
 /// bareme, liste datee : l'avenant qui le fixe et sa date d'effet y sont cites). `None` : la convention n'en fixe pas, ou
@@ -1637,7 +1640,7 @@ fn lignes_dites(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<()> {
         };
         if let Some(quantite) = quantite {
             let Some(dite) = quantite else {
-                return Err(socle::refus!("{}{}{} de {}.", qui, LIGNE_A_DIRE, quoi, ligne));
+                return Err(a_finir(format!("{}{}{} de {}.", qui, LIGNE_A_DIRE, quoi, ligne)));
             };
             let a_venir_seulement = l.dates().is_empty() && !l.planning().is_empty();
             if dite < Decimal::ZERO || (dite.is_zero() && !a_venir_seulement) {
@@ -1651,7 +1654,7 @@ fn lignes_dites(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<()> {
                     ),
                     None => (String::new(), String::new()),
                 };
-                return Err(socle::refus!(
+                return Err(a_finir(format!(
                     "{} : {} de {}{} est {}{}{}, ou retirez la ligne (×).",
                     qui,
                     quoi,
@@ -1660,22 +1663,22 @@ fn lignes_dites(ctx: &Contexte, lignes: &[LignePaie], qui: &str) -> R<()> {
                     dite,
                     QUANTITE_SANS_COMPTE,
                     carte
-                ));
+                )));
             }
         }
         if taux.is_none() {
-            return Err(socle::refus!("{}{}{} de {}.", qui, LIGNE_A_DIRE, prix, ligne));
+            return Err(a_finir(format!("{}{}{} de {}.", qui, LIGNE_A_DIRE, prix, ligne)));
         }
     }
     match duree::plus_d_une_journee(ctx, lignes, qui)? {
-        Some(phrase) => Err(refus(phrase)),
+        Some(phrase) => Err(a_finir(phrase)),
         None => Ok(()),
     }
 }
 
-/// Ce refus de `engagements` dit-il une saisie pas encore finie ([`SAISIE_INCOMPLETE`]) ? Sa premiere ligne le dit.
-pub fn saisie_incomplete(message: &str) -> bool {
-    message.lines().next().is_some_and(|tete| SAISIE_INCOMPLETE.iter().any(|p| tete.contains(p)))
+/// Ce refus de `engagements` dit-il une saisie pas encore finie (`a_finir`) ? Sa classe le dit.
+pub fn saisie_incomplete(e: &Echec) -> bool {
+    e.classe == Some(socle::echec::Classe::SaisieIncomplete)
 }
 
 /// REGLE 1 : une ligne dont la rubrique demande ses heures (`heures` dans sa `saisie`, aucun forfait --
@@ -1693,7 +1696,7 @@ fn heures_dites(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<()> {
         if quantite.is_zero() || l.heures().is_some_and(|h| !h.is_zero()) {
             continue;
         }
-        return Err(socle::refus!(
+        return Err(a_finir(format!(
             "{}{}ses heures par {} sur sa ligne {} (« {} »).\nCette rubrique n'a pas de forfait d'heures, comme le \
              cachet en a un : ses heures sont un fait, que la DSN, l'AEM, les Congés Spectacles et l'assurance chômage \
              comptent, et le logiciel ne les devine pas.",
@@ -1702,7 +1705,7 @@ fn heures_dites(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<()> {
             r.unite,
             i + 1,
             r.libelle
-        ));
+        )));
     }
     Ok(())
 }
@@ -2044,7 +2047,7 @@ pub fn engagements_de_la_saisie(ctx: &Contexte, data: &saisie::VueDuMois) -> R<V
 pub fn refus_de_saisie_incomplete(ctx: &Contexte, data: &saisie::VueDuMois) -> Option<Echec> {
     let vide: LignesPermanent = &|_, _, _| Ok((Vec::new(), Vec::new(), None));
     match engagements(ctx, data, vide) {
-        Err(m) if saisie_incomplete(&m.phrase) => Some(m),
+        Err(m) if saisie_incomplete(&m) => Some(m),
         _ => None,
     }
 }

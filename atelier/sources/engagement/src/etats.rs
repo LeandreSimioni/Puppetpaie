@@ -222,7 +222,7 @@ impl Valide {
     /// La paie ecrite de `mois` (`{"paie", "fiches", "pas"?, "empreinte", "recalcul"?}`), si elle l'est ; une paie ecrite
     /// qui ne se lit pas se refuse.
     pub fn paie_ecrite(&self, mois: Mois) -> R<Option<Arc<PaieEcrite>>> {
-        if self.refus.as_ref().is_some_and(|r| crate::saisie_incomplete(&r.phrase)) {
+        if self.refus.as_ref().is_some_and(crate::saisie_incomplete) {
             return Ok(None);
         }
         match &self.en_cours {
@@ -412,7 +412,7 @@ fn lu_et_rafraichi(ctx: &Contexte, mois: Mois, departs: &Departs, passage: bool)
     for (_, m) in &refus {
         // Une saisie a finir est l'affaire de l'utilisateur : ce qui lit la paie la lui dit, l'editeur n'en est pas averti.
         let vu = (m.phrase.as_str(), m.a_part.as_ref().map(socle::ecriture::json_en_ligne));
-        if !temoins.contains(&vu) && !crate::saisie_incomplete(&m.phrase) {
+        if !temoins.contains(&vu) && !crate::saisie_incomplete(m) {
             if let Some(temoin) = TEMOIN.get() {
                 temoin(&ctx.racine, mois, m);
             }
@@ -431,7 +431,7 @@ fn lu_et_rafraichi(ctx: &Contexte, mois: Mois, departs: &Departs, passage: bool)
         };
         let sien = refus.iter().find(|(r, _)| r.is_none_or(|r| r == i));
         let Some((_, m)) = sien else { continue };
-        if v.paie_ecrite(mois)?.is_none() || (!parti && crate::saisie_incomplete(&m.phrase)) {
+        if v.paie_ecrite(mois)?.is_none() || (!parti && crate::saisie_incomplete(m)) {
             v.refus = Some(m.clone());
         }
     }

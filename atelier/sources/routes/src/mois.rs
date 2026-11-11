@@ -488,7 +488,7 @@ fn taux_d_une_ligne(ctx: &Contexte, l: &LignePaie) -> R<Option<Decimal>> {
 fn avec_les_lignes_calculees_des_permanents(ctx: &Contexte, saisie: VueDuMois) -> R<VueDuMois> {
     let paies = match engagement::lue_sans_paie(ctx, &saisie) {
         Ok(p) => p,
-        Err(m) if engagement::saisie_incomplete(&m.phrase) => return Ok(saisie),
+        Err(m) if engagement::saisie_incomplete(&m) => return Ok(saisie),
         Err(m) => return Err(m),
     };
     let mut engagements = Vec::new();
@@ -1290,13 +1290,13 @@ fn ajuster(ctx: &Contexte, c: ChargeAjuster) -> R<Ajuste> {
 /// dit sobrement ; l'ecran enregistre a chaque frappe, donc ce ne sont pas des
 /// defauts du logiciel.
 pub(crate) fn refus_du_calcul(ctx: &Contexte, data: &VueDuMois, e: Echec) -> Echec {
-    if engagement::saisie_incomplete(&e.phrase) {
-        return e.reclasser(Classe::SaisieIncomplete);
+    if engagement::saisie_incomplete(&e) {
+        return e;
     }
-    if let Some(m) = engagement::refus_de_saisie_incomplete(ctx, data) {
-        return m.reclasser(Classe::SaisieIncomplete);
+    match engagement::refus_de_saisie_incomplete(ctx, data) {
+        Some(m) => m,
+        None => e,
     }
-    e
 }
 
 /// LE MOIS QUE L'APERCU ET LE MONTANT VISE CALCULENT : ses engagements tels qu'ils sont ecrits (le brouillon enregistre

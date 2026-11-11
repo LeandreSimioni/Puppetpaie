@@ -362,7 +362,7 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
     // Les indemnites de la caisse, jour par jour du mois (rang depuis le premier jour d'absence).
     let ij = match indemnites_des_jours(imp, dr.origine, &premier, &dernier, &debut, &fin)? {
         Ok(ij) => ij,
-        Err(majoree) => return Err(refus(refus_des_indemnites(&qui, mois, &premier, &dernier, majoree))),
+        Err(majoree) => return Err(crate::a_finir(refus_des_indemnites(&qui, mois, &premier, &dernier, majoree))),
     };
     let ij_de = |a: &Jour, b: &Jour| -> R<(Decimal, Decimal)> {
         let (mut sb, mut sn) = (Decimal::ZERO, Decimal::ZERO);
