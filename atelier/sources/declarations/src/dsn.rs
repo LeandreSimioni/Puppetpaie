@@ -2200,7 +2200,7 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour,
         let Some(supp) = supp else { continue };
         let montant = match supp {
             CotisationSupplementaire::DesLignes(l) => somme_lignes(p, &l.lignes_patronales, true),
-            CotisationSupplementaire::SurUneBase(t) => pct(base(&bases(p, &bp)?, t.base)?, t.taux_sur_brut.0),
+            CotisationSupplementaire::SurUneBase(t) => pct(base(&bases(p, &bp)?, t.base)?, t.taux_sur_la_base.0),
         };
         let montant = rond(montant);
         if montant.is_zero() {

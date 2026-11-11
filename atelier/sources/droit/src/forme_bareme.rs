@@ -622,9 +622,11 @@ pub enum CotisationSupplementaire {
 
 forme! {
     sans_vide
-    /// Un taux sur une base (`CotisationSupplementaire`) : la base est toujours dite.
+    /// Un taux sur une base (`CotisationSupplementaire`) : la base est toujours dite. Le bareme ecrit le taux sous la
+    /// cle `taux_sur_brut`, quelle que soit la base.
     pub struct TauxSurUneBase {
-        pub taux_sur_brut: Nombre,
+        #[serde(rename = "taux_sur_brut")]
+        pub taux_sur_la_base: Nombre,
         pub base: Assiette,
     }
 }
