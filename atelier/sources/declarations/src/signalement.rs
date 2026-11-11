@@ -15,9 +15,46 @@ use droit::contexte::{aujourdhui, Contexte};
 use socle::date::Jour;
 use crate::dsn::{self, dite, Arret, Fichier, LOGICIEL, VERSION};
 use socle::fichiers::repr;
+use droit::nature_declaration::NatureDeLaDeclaration;
 
-pub const ARRET: &str = "04";
-pub const REPRISE: &str = "05";
+/// LA NATURE D'UN SIGNALEMENT QUE CE MODULE ECRIT (S20.G00.05.001) : l'arret de travail (04), la reprise (05). Son code
+/// est celui de sa nature dans la liste de la norme (`nature`) ; elle s'ecrit et se lit par lui.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NatureSignalement {
+    Arret,
+    Reprise,
+}
+
+impl NatureSignalement {
+    /// Sa nature dans la liste de la norme.
+    pub fn nature(self) -> NatureDeLaDeclaration {
+        match self {
+            NatureSignalement::Arret => NatureDeLaDeclaration::SignalementArret,
+            NatureSignalement::Reprise => NatureDeLaDeclaration::SignalementReprise,
+        }
+    }
+
+    /// Celle de cette nature de la norme, si ce module l'ecrit.
+    pub fn de(n: NatureDeLaDeclaration) -> Option<NatureSignalement> {
+        [NatureSignalement::Arret, NatureSignalement::Reprise].into_iter().find(|s| s.nature() == n)
+    }
+}
+
+impl serde::Serialize for NatureSignalement {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.nature().serialize(s)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for NatureSignalement {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let n = NatureDeLaDeclaration::deserialize(d)?;
+        NatureSignalement::de(n).ok_or_else(|| {
+            serde::de::Error::custom(format!("La nature de signalement {} n'est ni un arrêt (04) ni une reprise (05).", n))
+        })
+    }
+}
+
 pub const NORMALE: &str = "01";
 pub const ANNULE_ET_REMPLACE: &str = "03";
 
@@ -38,16 +75,9 @@ pub fn avec_subrogation(a: &Arret) -> socle::echec::R<bool> {
     Ok(dite(&a.saisi.subrogation).is_some_and(|s| s == oui))
 }
 
-fn nature_inconnue(nature: &str) -> String {
-    format!("Nature {} : ce module n'ecrit que {} et {}.", repr(nature), ARRET, REPRISE)
-}
-
 /// Ce que la norme refuse (`Echec::Impossible`) ; rend les avertissements.
-pub fn verifier(a: &Arret, nature: &str, constitution: Option<&Jour>) -> R<Vec<String>> {
+pub fn verifier(a: &Arret, nature: NatureSignalement, constitution: Option<&Jour>) -> R<Vec<String>> {
     let v = &a.saisi;
-    if nature != ARRET && nature != REPRISE {
-        return impossible(nature_inconnue(nature));
-    }
     let bloc = droit::arrets::bloc_60()?;
     let motif = match bloc.motifs_arret.code(&v.motif) {
         Some(m) => m.clone(),
@@ -147,7 +177,7 @@ pour un accident de trajet, un accident du travail ou une maladie professionnell
         ));
     }
 
-    if nature == ARRET {
+    if nature == NatureSignalement::Arret {
         let Some(subrogation) = subrogation else {
             return impossible(
                 "La subrogation (S21.G00.60.004) est obligatoire dans un signalement d'arret de travail : dire \
@@ -213,7 +243,7 @@ prolonge, c'est sa fin previsionnelle qui change (S21.G00.60.003, sans nouveau s
             ));
         }
     }
-    if nature == REPRISE {
+    if nature == NatureSignalement::Reprise {
         let Some(reprise) = reprise else {
             return impossible(
                 "Un signalement de reprise sans date de reprise (S21.G00.60.010, usage O). Et il ne s'emet \
@@ -294,7 +324,7 @@ un fait déjà survenu ne se date pas dans le futur.",
 /// Les options de `generer`.
 pub struct Options {
     /// La nature de la declaration (S20.G00.05.001).
-    pub nature_declaration: String,
+    pub nature_declaration: NatureSignalement,
     pub type_declaration: String,
     pub ordre: i64,
     pub remplace: Option<String>,
@@ -305,7 +335,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Options {
         Options {
-            nature_declaration: ARRET.into(),
+            nature_declaration: NatureSignalement::Arret,
             type_declaration: NORMALE.into(),
             ordre: 1,
             remplace: None,
@@ -317,10 +347,7 @@ impl Default for Options {
 
 /// Le fichier d'un signalement, pret a deposer. `departs` : ce qui est parti, pour l'identite declaree (`ntt::poser_ntt`).
 pub fn generer(ctx: &Contexte, a: &Arret, o: &Options, departs: &engagement::departs::Departs) -> R<String> {
-    let nature = o.nature_declaration.as_str();
-    if nature != ARRET && nature != REPRISE {
-        return impossible(nature_inconnue(nature));
-    }
+    let nature = o.nature_declaration;
     let td = o.type_declaration.as_str();
     if td != NORMALE && td != ANNULE_ET_REMPLACE {
         return impossible(format!(
@@ -380,7 +407,7 @@ annule-et-remplace (type 03)."
     dsn::contact_emetteur(&mut f, ent)?;
 
     // ---------------------------------------------------------- S20 declar.
-    f.add("S20.G00.05.001", nature);
+    f.ecrire_code(nature.nature())?;
     f.add("S20.G00.05.002", td);
     f.add("S20.G00.05.003", "11");
     f.add("S20.G00.05.004", o.ordre.to_string());
@@ -428,14 +455,14 @@ annule-et-remplace (type 03)."
         return Err(Echec::Autre(socle::fichiers::absent("banque")));
     }
     let banque = ent.banque.dite();
-    if nature != REPRISE && avec_subrogation(a)? && !banque.is_some_and(|b| b.iban.remplie().is_some() && b.bic.remplie().is_some()) {
+    if nature != NatureSignalement::Reprise && avec_subrogation(a)? && !banque.is_some_and(|b| b.iban.remplie().is_some() && b.bic.remplie().is_some()) {
         return impossible(
             "Subrogation demandee : l'IBAN et le BIC de la compagnie (S21.G00.60.007 et .008) sont obligatoires \
 -- CCH-11. Ils se lisent dans la fiche entreprise, ils ne se saisissent pas dans l'arret."
                 .into(),
         );
     }
-    dsn::bloc_60(&mut f, a, nature, banque)?;
+    dsn::bloc_60(&mut f, a, nature.nature(), banque)?;
 
     let n = f.lignes.len() + 2;
     f.add("S90.G00.90.001", n);
@@ -449,12 +476,11 @@ annule-et-remplace (type 03)."
 /// L'avertissement d'un signalement de nature `nature` (04 ou 05) dont le motif n'est pas couvert par la DSN
 /// (`sauf_motifs.avertissement`) : la norme l'admet, le moteur ne le refuse pas (regle 7), il dit que l'Assurance Maladie
 /// ne le traite pas et ce qui se fait a la place. `None` pour un motif couvert. Appele par `verifier`.
-pub fn avertissement_hors_dsn(nature: &str, motif: &str) -> socle::echec::R<Option<String>> {
+pub fn avertissement_hors_dsn(nature: NatureSignalement, motif: &str) -> socle::echec::R<Option<String>> {
     let base = crate::obligations::base()?;
     let o = match nature {
-        ARRET => base.obligations.signalement_arret,
-        REPRISE => base.obligations.signalement_reprise,
-        _ => return Ok(None),
+        NatureSignalement::Arret => base.obligations.signalement_arret,
+        NatureSignalement::Reprise => base.obligations.signalement_reprise,
     };
     Ok(o.sauf_motifs.filter(|s| s.codes.iter().any(|m| m == motif)).map(|s| s.avertissement).filter(|t| !t.is_empty()))
 }

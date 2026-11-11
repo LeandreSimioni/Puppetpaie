@@ -13,6 +13,7 @@ use rust_decimal::RoundingStrategy;
 
 use droit::assiette::Assiette;
 use droit::base_assujettie::BaseAssujettie;
+use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::bordereau::{AssietteDuBordereau, MontantDuBordereau};
 use droit::bareme::{self, bareme_applique, EntrepriseLue};
 use droit::fiche::{ChampsEntreprise, DeclarantDsn, Lue};
@@ -257,7 +258,7 @@ fn type_du_contact(decl: &DeclarantDsn) -> &str {
 /// deposee, et que le code de la DPAE soit cet identifiant serait une inference (la rubrique est conditionnelle).
 fn spst_ecrit(f: &Fichier, ent_e: &ChampsEntreprise) -> R<Option<String>> {
     let interne = ent_e.medecine_travail.dite().is_some_and(droit::fiche::CodeMedecine::interne);
-    if !interne || f.norme()?.version.as_str() < "P27V01" || !usage_admet(f, "S21.G00.11.025", "01")? {
+    if !interne || f.norme()?.version.as_str() < "P27V01" || !usage_admet(f, "S21.G00.11.025", NatureDeLaDeclaration::Mensuelle)? {
         return Ok(None);
     }
     Ok(Some("MT01".to_string()))
@@ -488,7 +489,7 @@ fn arrets_du_contrat<'a>(arrets: &[&'a Arret], p: &Paie) -> R<Vec<&'a Arret>> {
 /// `atelier/reference/norme-dsn/texte/tableaux-des-usages.txt`, bloc S21.G00.60) : la subrogation (60.004 a 60.008) est
 /// C en 01, O ou C en 04, I en 05 et en 07 ; la date de l'accident (60.012), I en 01 et en 07. `nature` est celle du
 /// fichier, jamais une autre.
-pub fn bloc_60(f: &mut Fichier, a: &Arret, nature: &str, banque: Option<&droit::fiche::Banque>) -> R<()> {
+pub fn bloc_60(f: &mut Fichier, a: &Arret, nature: NatureDeLaDeclaration, banque: Option<&droit::fiche::Banque>) -> R<()> {
     let v = &a.saisi;
     f.add("S21.G00.60.001", &v.motif);
     // La veille du debut prescrit, ou ce jour s'il a ete travaille (S21.G00.60.002, `imprevus::dernier_jour_declare`).
@@ -1495,8 +1496,8 @@ contrat). Rien n'est ecrit.",
 // ------------------------------------------------------------ les blocs
 
 /// La rubrique est-elle admise pour cette nature dans le tableau des usages de la version du fichier ?
-pub fn usage_admet(f: &Fichier, rubrique: &str, nature_dsn: &str) -> R<bool> {
-    f.norme()?.admet(rubrique, nature_dsn)
+pub fn usage_admet(f: &Fichier, rubrique: &str, nature_dsn: NatureDeLaDeclaration) -> R<bool> {
+    f.norme()?.admet(rubrique, nature_dsn.code())
 }
 
 /// LA LICENCE D'ENTREPRENEUR DE SPECTACLES d'un contrat (S21.G00.40.049). « La licence est obligatoire pour toute
@@ -1509,7 +1510,7 @@ pub fn usage_admet(f: &Fichier, rubrique: &str, nature_dsn: &str) -> R<bool> {
 /// spectacle, `spectacle`, dans une convention ou la case se montre) et ne l'ecrit pas sinon : une production
 /// audiovisuelle n'en a pas, ni un lieu en 1790 qui n'engage pour aucun spectacle. Une valeur vide ne s'ecrit
 /// jamais : `X [1,100]`.
-fn licence_du_contrat(f: &mut Fichier, nature_dsn: &str, ent: &ChampsEntreprise, spectacle: bool) -> R<()> {
+fn licence_du_contrat(f: &mut Fichier, nature_dsn: NatureDeLaDeclaration, ent: &ChampsEntreprise, spectacle: bool) -> R<()> {
     let licence = ent.licence_spectacle.ecrite("licence_spectacle")?.to_string();
     if !licence.trim().is_empty() {
         return si_admise(f, nature_dsn, "S21.G00.40.049", Some(licence));
@@ -1520,7 +1521,7 @@ fn licence_du_contrat(f: &mut Fichier, nature_dsn: &str, ent: &ChampsEntreprise,
     Ok(())
 }
 
-fn si_admise(f: &mut Fichier, nature_dsn: &str, rubrique: &str, valeur: Option<String>) -> R<()> {
+fn si_admise(f: &mut Fichier, nature_dsn: NatureDeLaDeclaration, rubrique: &str, valeur: Option<String>) -> R<()> {
     if usage_admet(f, rubrique, nature_dsn)? {
         f.add_opt(rubrique, valeur)?;
     }
@@ -1725,7 +1726,7 @@ profession intermediaire, 06 employe, 07 ouvrier), et {}. Il ne se devine pas : 
 #[allow(clippy::too_many_arguments)]
 pub fn bloc_contrat(
     f: &mut Fichier, p: &Paie, ent: &ChampsEntreprise, orgs: &Organismes, rang: i64, bar: &BaremeDuMois, fin_de_contrat: bool,
-    arrets: &[&Arret], nature_dsn: &str, emplois: &str,
+    arrets: &[&Arret], nature_dsn: NatureDeLaDeclaration, emplois: &str,
 ) -> R<()> {
     bloc_contrat_fctu(f, p, ent, orgs, rang, bar, fin_de_contrat, arrets, nature_dsn, None, emplois)
 }
@@ -1736,7 +1737,7 @@ pub fn bloc_contrat(
 #[allow(clippy::too_many_arguments)]
 pub fn bloc_contrat_fctu(
     f: &mut Fichier, p: &Paie, ent: &ChampsEntreprise, orgs: &Organismes, rang: i64, bar: &BaremeDuMois, fin_de_contrat: bool,
-    arrets: &[&Arret], nature_dsn: &str, fin_fctu: Option<&crate::fctu::FinDeContrat>, emplois: &str,
+    arrets: &[&Arret], nature_dsn: NatureDeLaDeclaration, fin_fctu: Option<&crate::fctu::FinDeContrat>, emplois: &str,
 ) -> R<()> {
     let e = &p.engagement;
     let s = &p.salarie;
@@ -2004,10 +2005,10 @@ declare {} h ; ses quatre heures sont des heures supplementaires, payees comme t
 ///   dit rien d'un salarie que la loi exclut ; 02 (« Non ») est ce que le calcul fait, le plafond entier ;
 /// - temps plein, contrat d'usage : rien.
 /// Le forfait jour reduit (40.011 = 20) n'existe pas dans le moteur (aucune nature ne l'a) : un cas a porter.
-fn proratisation_du_plafond(f: &mut Fichier, p: &Paie, nature_dsn: &str) -> R<()> {
+fn proratisation_du_plafond(f: &mut Fichier, p: &Paie, nature_dsn: NatureDeLaDeclaration) -> R<()> {
     use engagement::calcul::PlafondTempsPartiel as P;
     let r = "S21.G00.40.084";
-    let usage = crate::usages::usage_en(f.norme()?, r, nature_dsn)?;
+    let usage = crate::usages::usage_en(f.norme()?, r, nature_dsn.code())?;
     if usage != "O" && usage != "C" {
         return Ok(());
     }
@@ -2297,7 +2298,7 @@ pub fn net_social(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe: i6
 /// Les blocs 78, 79 et 81 d'une paie.
 #[allow(clippy::too_many_arguments)]
 pub fn bases_et_cotisations(
-    f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, debut: &Jour, fin: &Jour, signe: i64, nature_dsn: &str,
+    f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, debut: &Jour, fin: &Jour, signe: i64, nature_dsn: NatureDeLaDeclaration,
     bases_exclues: &[BaseAssujettie],
 ) -> R<()> {
     let e = &p.engagement;
@@ -2469,7 +2470,7 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
     // « Pour tout changement intervenant en cours de mois, il convient de ventiler les bases assujetties par periodes »
     // (fiche net-entreprises 1265, l. 52) ; FAQ Agirc-Arrco « Changement de situation en cours de mois ».
     for q in p.elementaires() {
-        bases_et_cotisations(f, q, bar, rang, &q.engagement.debut_periode(), &q.engagement.fin_periode(), 1, "01", &[])?;
+        bases_et_cotisations(f, q, bar, rang, &q.engagement.debut_periode(), &q.engagement.fin_periode(), 1, NatureDeLaDeclaration::Mensuelle, &[])?;
     }
     Ok(())
 }
@@ -2751,7 +2752,7 @@ doit le citer, et on ne le devine pas. Rien n'est ecrit.",
         annuler_le_declare(f, r, &["78", "79", "81"])?;
     }
     if !apres.engagement.sans_paie() {
-        bases_et_cotisations(f, apres, bar_o, rang, &debut_c, &fin_c, 1, "01", &[])?;
+        bases_et_cotisations(f, apres, bar_o, rang, &debut_c, &fin_c, 1, NatureDeLaDeclaration::Mensuelle, &[])?;
     }
     Ok(())
 }
@@ -4198,7 +4199,7 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: Mois, etats: &[engagement::et
             let ent_e = bareme::fiche_de_l_etablissement(&ent, &nic)?;
             let mut f = Fichier::en_norme(crate::norme::de_la_mensuelle(m)?);
             let refs: Vec<&Paie> = autres.iter().collect();
-            bloc_contrat(&mut f, &declaree, &ent_e, orgs, 1, &bar, true, &[], "01", emplois_multiples(&declaree, &refs))?;
+            bloc_contrat(&mut f, &declaree, &ent_e, orgs, 1, &bar, true, &[], NatureDeLaDeclaration::Mensuelle, emplois_multiples(&declaree, &refs))?;
             let bloc: Vec<(String, String)> = f
                 .lignes
                 .iter()
@@ -4609,7 +4610,7 @@ certificat de conformite du depot precedent.",
     f.add_complement("S10.G00.01.009", &ent.complement_adresse);
     contact_emetteur(&mut f, &ent)?;
 
-    f.add("S20.G00.05.001", "01");
+    f.ecrire_code(NatureDeLaDeclaration::Mensuelle)?;
     f.add("S20.G00.05.002", &type_declaration);
     f.add("S20.G00.05.003", &o.fraction);
     f.add("S20.G00.05.004", o.ordre);
@@ -4629,7 +4630,7 @@ certificat de conformite du depot precedent.",
     f.add_case("S21.G00.06.002", &ent.nic, "nic")?;
     // Le code APEN (06.003) et le code APET (11.002) : obligatoires en P26V01, retires de la norme P27V01 (cahier
     // 2027.1.1, p. 142 et 145 ; usages p. 371 ). Le tableau des usages de la version du fichier en decide.
-    if usage_admet(&f, "S21.G00.06.003", "01")? {
+    if usage_admet(&f, "S21.G00.06.003", NatureDeLaDeclaration::Mensuelle)? {
         f.add_case("S21.G00.06.003", &ent.naf, "naf")?;
     }
     f.add_case("S21.G00.06.004", &ent.adresse, "adresse")?;
@@ -4659,7 +4660,7 @@ certificat de conformite du depot precedent.",
         ("S21.G00.11.005", &ent_e.commune.en_texte(), "commune"),
         ("S21.G00.11.022", &ent_e.idcc, "idcc"),
     ] {
-        if rubrique == "S21.G00.11.002" && !usage_admet(&f, rubrique, "01")? {
+        if rubrique == "S21.G00.11.002" && !usage_admet(&f, rubrique, NatureDeLaDeclaration::Mensuelle)? {
             continue;
         }
         f.add_case(rubrique, case, cle)?;
@@ -4946,7 +4947,7 @@ certificat de conformite du depot precedent.",
         for (i, p) in lot.iter().enumerate() {
             let siens: Vec<&Arret> = arrets_du_contrat(&arrets_du_mois, p)?;
             let debut_bloc = f.lignes.len();
-            bloc_contrat(&mut f, p, &ent_e, &orgs, i as i64 + 1, &bar, true, &siens, "01", emplois_multiples(p, &periode))?;
+            bloc_contrat(&mut f, p, &ent_e, &orgs, i as i64 + 1, &bar, true, &siens, NatureDeLaDeclaration::Mensuelle, emplois_multiples(p, &periode))?;
             // Ce qui a change depuis la derniere DSN deposee du contrat : le bloc S21.G00.41, sous son bloc 40.
             let declare = bloc_40_declare(ctx, p, mois, &etats_du_mois, departs, &orgs)?;
             crate::changements_contrat::poser(&mut f, debut_bloc, ctx, p, mois, &nics_courant_d_abord, declare.as_ref())?;
@@ -4984,7 +4985,7 @@ certificat de conformite du depot precedent.",
                     let fin = groupe.iter().any(|x| ajoute(x) || x.apres.engagement.fin != x.avant.engagement.fin);
                     let debut_bloc = f.lignes.len();
                     let siens: Vec<&Arret> = arrets_du_contrat(&arrets_du_mois, &dernier.apres)?;
-                    bloc_contrat(&mut f, &dernier.apres, &ent_e, &orgs, rg, &b, fin, &siens, "01", emplois_multiples(&dernier.apres, &autres))?;
+                    bloc_contrat(&mut f, &dernier.apres, &ent_e, &orgs, rg, &b, fin, &siens, NatureDeLaDeclaration::Mensuelle, emplois_multiples(&dernier.apres, &autres))?;
                     // UNE DATE DE DEBUT CORRIGEE : l'ancienne, lue dans ce qui a ete declare, sous le bloc 40 (fiche 1952) --
                     // une fois, depuis la correction du dernier mois qui a declare le contrat.
                     let declarant = groupe.iter().copied().filter(|x| !ajoute(x)).fold(None, |a: Option<&Regularisation>, x| match a {
@@ -5197,7 +5198,7 @@ mod tests {
     // Le tableau des usages (`atelier/reference/norme-dsn/dsn-cahier-technique-2026.1-usages.txt`).
     #[test]
     fn statut_boeth_admis_en_mensuelle() {
-        assert!(usage_admet(&Fichier::en_norme(crate::norme::Norme::connue("P26V01").unwrap()), "S21.G00.40.072", "01").unwrap());
+        assert!(usage_admet(&Fichier::en_norme(crate::norme::Norme::connue("P26V01").unwrap()), "S21.G00.40.072", NatureDeLaDeclaration::Mensuelle).unwrap());
     }
 
     // `atelier/reference/norme-dsn/texte/bloc-S21.G00.50.txt`, `bloc-S21.G00.56.txt` (la somme est une inference, `pas_retenu`).

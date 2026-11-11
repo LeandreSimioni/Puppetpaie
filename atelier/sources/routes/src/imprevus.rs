@@ -31,6 +31,7 @@ use crate::SansCharge;
 use socle::ecran::Pastille;
 use declarations::signalement;
 use droit::contexte::{Contexte, IdSalarie};
+use droit::nature_declaration::NatureDeLaDeclaration;
 use engagement::calcul::Paie;
 use droit::arrets::{Bloc60, CodeDuBloc60};
 use engagement::imprevus::{self, ArretSaisi, GenreSuspension, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, ARRET, SUSPENSION};
@@ -214,32 +215,7 @@ struct ChargeArretIndemnites {
     jours_deja_indemnises: Option<u32>,
 }
 
-/// La nature d'un signalement d'arret (S20.G00.05.001) : 04, l'arret ; 05, la reprise.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-pub(crate) enum NatureSignalement {
-    #[serde(rename = "04")]
-    Arret,
-    #[serde(rename = "05")]
-    Reprise,
-}
-
-impl NatureSignalement {
-    pub(crate) fn code(self) -> &'static str {
-        match self {
-            NatureSignalement::Arret => signalement::ARRET,
-            NatureSignalement::Reprise => signalement::REPRISE,
-        }
-    }
-
-    /// La nature que dit un code (S20.G00.05.001) ; un autre code se refuse.
-    pub(crate) fn du_code(code: &str) -> R<NatureSignalement> {
-        match code {
-            signalement::ARRET => Ok(NatureSignalement::Arret),
-            signalement::REPRISE => Ok(NatureSignalement::Reprise),
-            autre => Err(erreur(Classe::Illisible, format!("La nature de signalement {} n'est ni un arrêt (04) ni une reprise (05).", autre))),
-        }
-    }
-}
+pub(crate) use declarations::signalement::NatureSignalement;
 
 /// La charge de `arret-signaler`. `remplace` : l'identifiant du signalement qu'il annule et remplace ; `ordre` : son
 /// numero d'ordre (absent : le suivant) ; `le` : son jour de constitution (absent : aujourd'hui). Le geste qu'offre le
@@ -745,19 +721,19 @@ fn envois_de_l_arret(ctx: &Contexte, a: &ArretSaisi) -> R<Vec<crate::obligations
 
 /// Les mois des DSN mensuelles qui ont reporte l'imprevu (nature 01).
 fn reporte_par(envois: &[crate::obligations::EnvoiDeLArret]) -> Vec<Mois> {
-    envois.iter().filter(|x| x.nature_declaration == "01").filter_map(|x| x.mois).collect()
+    envois.iter().filter(|x| x.nature_declaration == NatureDeLaDeclaration::Mensuelle).filter_map(|x| x.mois).collect()
 }
 
 /// Un signalement de cette nature (04, 05) est-il parti pour cet arret ?
-fn envoye(ctx: &Contexte, a: &ArretSaisi, nature: &str) -> R<bool> {
-    Ok(envois_de_l_arret(ctx, a)?.iter().any(|x| x.nature_declaration == nature))
+fn envoye(ctx: &Contexte, a: &ArretSaisi, nature: NatureSignalement) -> R<bool> {
+    Ok(envois_de_l_arret(ctx, a)?.iter().any(|x| x.nature_declaration == nature.nature()))
 }
 
 /// Le jour ou le signalement NORMAL (type 01) de cette nature (04, 05) est parti pour cet arret, s'il l'est
 /// (`obligations::ce_qui_est_parti` : un depot reel accepte, que le bilan n'a pas refuse).
-fn parti_le(ctx: &Contexte, a: &ArretSaisi, nature: &str) -> R<Option<Jour>> {
+fn parti_le(ctx: &Contexte, a: &ArretSaisi, nature: NatureSignalement) -> R<Option<Jour>> {
     let envois = envois_de_l_arret(ctx, a)?;
-    Ok(envois.iter().filter(|x| x.nature_declaration == nature && x.type_declaration.as_deref() == Some(signalement::NORMALE)).map(|x| x.quand).min().map(|q| q.jour()))
+    Ok(envois.iter().filter(|x| x.nature_declaration == nature.nature() && x.type_declaration.as_deref() == Some(signalement::NORMALE)).map(|x| x.quand).min().map(|q| q.jour()))
 }
 
 /// Le nom d'un signalement : `<base>.dsn` ; un annule-et-remplace, `<base>_AR<ordre>.dsn`, a cote du signalement parti
@@ -1189,8 +1165,8 @@ struct ADire<'a> {
 
 impl Dit {
     fn de(x: ADire) -> R<Dit> {
-        let deja = |nature: &str| {
-            let n = x.signalements.iter().filter(|s| s.nature_declaration == nature).count();
+        let deja = |nature: NatureSignalement| {
+            let n = x.signalements.iter().filter(|s| s.nature_declaration == nature.nature()).count();
             (n > 0).then(|| format!("Déjà signalé {} fois", n))
         };
         Ok(Dit {
@@ -1204,7 +1180,7 @@ impl Dit {
             reprise_dit: x.reprise.map(|r| format!("reprise le {}", r.jj_mm_aaaa())),
             paye_pendant: if x.arret { "Payé pendant l'arrêt" } else { "Payé pendant l'absence" },
             signaler_titre: SignalerTitre { arret: "Signaler l'arrêt", reprise: "Signaler la reprise" },
-            deja_signale: DejaSignale { arret: deja("04"), reprise: deja("05") },
+            deja_signale: DejaSignale { arret: deja(NatureSignalement::Arret), reprise: deja(NatureSignalement::Reprise) },
         })
     }
 }
@@ -1231,7 +1207,7 @@ fn ce_qui_est_parti(prolongations: &[Prolongation], signalements: &[crate::oblig
         parti.push(dite(format!("prolongé jusqu'au {} (avis du {})", p.fin.jj_mm_aaaa(), p.le.jj_mm_aaaa())));
     }
     for s in signalements {
-        let quoi = if s.nature_declaration == "05" { "reprise signalée" } else if s.type_declaration.as_deref() == Some("03") { "signalement rectifié" } else { "signalé" };
+        let quoi = if s.nature_declaration == NatureDeLaDeclaration::SignalementReprise { "reprise signalée" } else if s.type_declaration.as_deref() == Some("03") { "signalement rectifié" } else { "signalé" };
         parti.push(dite(format!("{} le {}", quoi, s.quand.dit())));
     }
     if !reporte_par_dit.is_empty() {
@@ -1319,7 +1295,7 @@ fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cache
     let designe = Designe::Arret { salarie: a.salarie.clone(), dernier_jour: a.dernier_jour_travaille };
     let a_dire = if ouvert { Some(geste_des_indemnites(ctx, &designe, a, majoree)?) } else { None };
     let cours = en_cours(ctx, a)?;
-    let reprise_corrigeable = a.reprise.is_some() && !envoye(ctx, a, signalement::REPRISE)?;
+    let reprise_corrigeable = a.reprise.is_some() && !envoye(ctx, a, NatureSignalement::Reprise)?;
     let gestes = gestes_d_un_arret(n, a, &base, cours, reprise_corrigeable, a_dire.as_ref())?;
     let dit = Dit::de(ADire {
         arret: true,
@@ -1646,7 +1622,7 @@ tombent, est à corriger.",
             ));
         }
     }
-    if a.subrogation_fin != avant.subrogation_fin && envoye(ctx, &avant, signalement::ARRET)? {
+    if a.subrogation_fin != avant.subrogation_fin && envoye(ctx, &avant, NatureSignalement::Arret)? {
         avertissements.push(
             "Le signalement d'arrêt est déjà parti avec l'ancienne fin de subrogation : un signalement d'arrêt annule et \
 remplace porte la nouvelle, le plus vite possible (fiche net-entreprises 1983). Il paraît dans ce qui est dû."
@@ -1760,7 +1736,7 @@ reprendre (une fin plus tot), ou corriger les DSN deposees.",
 
 /// Ce que la norme refuse (`SignalementImpossible`, une valeur `Illisible`) ; les avertissements ne servent pas ici.
 fn verifier(arret: &ArretSaisi) -> R<()> {
-    match signalement::verifier(&declarations::dsn::Arret { saisi: arret.clone() }, signalement::ARRET, None) {
+    match signalement::verifier(&declarations::dsn::Arret { saisi: arret.clone() }, NatureSignalement::Arret, None) {
         Ok(_) => Ok(()),
         Err(signalement::Echec::Impossible(m)) => Err(m.reclasser(Classe::Illisible)),
         Err(signalement::Echec::Autre(e)) => Err(e),
@@ -2132,7 +2108,7 @@ fn prochain_ordre(ctx: &Contexte) -> R<(i64, Vec<String>)> {
 /// prolongation ou une reprise saisie depuis ne la change pas. L'annule-et-remplace a son nom (`_AR<ordre>`) : le
 /// fichier parti reste tel qu'il est parti.
 pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: Option<&ArretSaisi>) -> R<ReponseSignalement> {
-    let nature = c.nature.code();
+    let nature = c.nature;
     let remplace = remplace_dit(&c.remplace)?;
     let arret = match alors {
         Some(a) => a.clone(),
@@ -2169,7 +2145,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
     let cible = ctx.racine.join("sorties").join(dernier.mois_civil().to_string()).join(&nom);
     compagnie::pieces_ecrites::refuser_si_partie(&ctx.racine, &cible)?;
     let options = signalement::Options {
-        nature_declaration: nature.to_string(),
+        nature_declaration: nature,
         type_declaration: type_declaration.to_string(),
         ordre,
         remplace,
@@ -2210,7 +2186,8 @@ fn libelle_motif(n: &Bloc60, a: &ArretSaisi) -> R<String> {
 /// Un arret resume (`ArretResume`).
 pub(crate) fn resume_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi) -> R<ArretResume> {
     let envois = envois_de_l_arret(ctx, a)?;
-    let (signalements, mois): (Vec<_>, Vec<_>) = envois.into_iter().filter(|e| matches!(e.nature_declaration.as_str(), "04" | "05" | "01")).partition(|e| e.nature_declaration != "01");
+    let (signalements, mois): (Vec<_>, Vec<_>) = envois.into_iter().filter(|e| NatureSignalement::de(e.nature_declaration).is_some() || e.nature_declaration == NatureDeLaDeclaration::Mensuelle)
+        .partition(|e| e.nature_declaration != NatureDeLaDeclaration::Mensuelle);
     let mois: Vec<Mois> = mois.into_iter().filter_map(|e| e.mois).collect();
     let motif_libelle = libelle_motif(n, a)?;
     let signale = !signalements.is_empty();

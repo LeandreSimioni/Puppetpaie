@@ -1283,7 +1283,7 @@ fn refaire_le_signalement(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne
     let nom = socle::fichiers::nom_du(cible);
     let manque = |quoi: &str| erreur(Classe::Illisible, format!("journal : {} sans {}", nom, quoi));
     let detail = l.dsn().map(|e| e.detail.clone()).ok_or_else(|| manque("son signalement"))?;
-    let nature = detail.nature_declaration.clone().ok_or_else(|| manque("sa nature"))?;
+    let nature = detail.nature_declaration.ok_or_else(|| manque("sa nature"))?;
     let ordre: i64 = detail.ordre.as_deref().ok_or_else(|| manque("son numero d'ordre"))?.trim().parse().map_err(|_| manque("numero d'ordre lisible"))?;
     if matches!(detail.type_declaration.as_deref(), Some(t) if !t.is_empty() && t != "01") {
         return Err(erreur(Classe::Refuse, format!("{} annulait et remplaçait un signalement : il ne se refait pas ; le fichier a été déplacé ou effacé.", nom)));
@@ -1292,7 +1292,7 @@ fn refaire_le_signalement(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne
     let ctx_j = contexte_du_jour(ctx, jour)?;
     let premier = || l.versions().and_then(|v| v.first()).map(|v| v.salarie.to_string()).ok_or_else(|| manque("le salarie qu'il signale"));
     let refaire = || -> R<()> {
-        match nature.as_str() {
+        match nature {
             declarations::amorcage::NATURE => {
                 let motif = nom.strip_prefix("Amorcage").and_then(|r| r.get(..2)).ok_or_else(|| manque("le motif de son amorcage"))?.to_string();
                 let paies = paies_emportees(&ctx_j, mois, l)?;
@@ -1317,7 +1317,9 @@ fn refaire_le_signalement(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne
                 let premier = premier()?;
                 let evenement = detail.evenement.ok_or_else(|| manque("l'evenement qu'il signale"))?;
                 let dernier = crate::imprevus::dernier_jour_saisi(&ctx_j, &premier, evenement)?;
-                let nature = crate::imprevus::NatureSignalement::du_code(n)?;
+                let nature = crate::imprevus::NatureSignalement::de(n).ok_or_else(|| {
+                    erreur(Classe::Illisible, format!("La nature de signalement {} n'est ni un arrêt (04) ni une reprise (05).", n))
+                })?;
                 let charge = crate::imprevus::ChargeArretSignaler::refait(premier.clone(), dernier, nature, ordre, jour);
                 let mut rendu = Ok(());
                 for a in crate::imprevus::etats_d_alors(&ctx_j, &premier, &dernier, compagnie::maintenant())? {

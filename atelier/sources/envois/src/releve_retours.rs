@@ -515,7 +515,7 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
     if !l.reel() {
         return Ok(None);
     }
-    if l.nature_dsn().is_some_and(|n| !n.is_empty() && n != "01") {
+    if l.nature_dsn().is_some_and(|n| n != droit::nature_declaration::NatureDeLaDeclaration::Mensuelle) {
         return Ok(None);
     }
     let (Some(mois), Some(fichier)) = (l.mois(), l.fichier().filter(|f| !f.is_empty()).map(String::from)) else { return Ok(None) };

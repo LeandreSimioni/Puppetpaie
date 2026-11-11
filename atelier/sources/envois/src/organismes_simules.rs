@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
+use droit::nature_declaration::NatureDeLaDeclaration;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, R};
 
@@ -322,11 +323,6 @@ fn dsn_deposee(racine: &Path, l: &Ligne) -> R<Option<DsnLue>> {
     declarations::dsn_lue::lire(&octets, fichier).map(Some)
 }
 
-/// La nature de la DSN que la ligne porte, quand la ligne la dit.
-fn nature_dsn(l: &Ligne) -> Option<&str> {
-    l.dsn().and_then(|e| e.detail.nature_declaration.as_deref()).filter(|n| !n.is_empty())
-}
-
 fn reelle(l: &Ligne) -> bool {
     l.reel()
 }
@@ -357,7 +353,7 @@ fn refus_pour(memoire: &mut Memoire, l: &Ligne, flux: &str) -> R<Option<RefusAnn
 /// gip-mds-specifications-schema-bilans-vt2.2-20201118.txt` : `envoi`, `idflux`, `essai_reel`, `envoi_etat` ;
 /// `declaration`, sa `declaration_identification`, son bilan `etat` et `mois`, ses anomalies `code`, `categorie`,
 /// `message`, `identifiant` de la rubrique).
-fn bilans_refuses(flux: &str, publication: InstantCompact, l: &Ligne, nature: &str, refus: &RefusAnnonce) -> R<Vec<Piece>> {
+fn bilans_refuses(flux: &str, publication: InstantCompact, l: &Ligne, nature: NatureDeLaDeclaration, refus: &RefusAnnonce) -> R<Vec<Piece>> {
     let mois = mois_de(l)?;
     let mois_dsn = format!("01{:02}{}", mois.numero(), mois.annee());
     let envoi = format!("<envoi><idflux>{}</idflux><essai_reel>02</essai_reel><envoi_etat>OK</envoi_etat></envoi>", echappe(flux));
@@ -370,7 +366,7 @@ fn bilans_refuses(flux: &str, publication: InstantCompact, l: &Ligne, nature: &s
          <declaration_bilan><etat>KO</etat><mois>{}</mois><declaration_anomalie><code>{}</code><categorie>Bloquante</categorie>\
          <message>{}</message><identifiant>{}</identifiant></declaration_anomalie></declaration_bilan></declaration>",
         envoi,
-        echappe(nature),
+        nature,
         mois_dsn,
         echappe(&refus.code),
         echappe(&refus.message),
@@ -487,7 +483,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &str, publicatio
          <rang>1</rang><nature>{}</nature><type>{}</type><mois>{}</mois><SIREN>{}</SIREN><nic_affectation>{}</nic_affectation>\
          </declaration_identification><declaration_bilan><etat>OK</etat>{}</declaration_bilan></declaration></ns2:rapport>",
         echappe(flux),
-        element(d.nature_declaration.as_deref()),
+        element(d.nature_declaration.map(NatureDeLaDeclaration::code)),
         element(d.type_declaration.as_deref()),
         mois,
         element(d.entreprise.siren.as_deref()),
@@ -504,7 +500,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &str, publicatio
 fn dsn_de_l_annee(racine: &Path, lignes: &[Ligne], an: i32) -> R<BTreeMap<u32, Vec<DsnLue>>> {
     let mut dernieres: BTreeMap<(Mois, Option<&str>), &Ligne> = BTreeMap::new();
     for l in lignes {
-        if l.acte() != crate::journal::Acte::Dsn || !reelle(l) || !l.accepte() || nature_dsn(l) != Some("01") {
+        if l.acte() != crate::journal::Acte::Dsn || !reelle(l) || !l.accepte() || l.nature_dsn() != Some(NatureDeLaDeclaration::Mensuelle) {
             continue;
         }
         let Some(mois) = l.mois().filter(|m| m.annee() == an) else { continue };
@@ -551,7 +547,7 @@ fn crm_effectif(an: i32, valeur: f64, flux: &str, publication: InstantCompact) -
 /// `Ok(pieces)` a ajouter (le taux du PAS, a une DSN mensuelle comme a un signalement d'amorcage ; l'effectif de l'annee
 /// precedente a la premiere DSN mensuelle d'une annee). Une DSN du journal dit sa nature.
 pub fn reponses_dsn(ctx: &Contexte, memoire: &mut Memoire, lignes: &[Ligne], l: &Ligne, flux: &str, publication: InstantCompact) -> R<Result<Vec<Piece>, Vec<Piece>>> {
-    let nature = nature_dsn(l).ok_or_else(|| socle::echec::cle("Une DSN du journal ne dit pas sa nature.", "nature"))?;
+    let nature = l.nature_dsn().ok_or_else(|| socle::echec::cle("Une DSN du journal ne dit pas sa nature.", "nature"))?;
     if let Some(r) = refus_pour(memoire, l, flux)? {
         return Ok(Err(bilans_refuses(flux, publication, l, nature, &r)?));
     }
@@ -566,7 +562,7 @@ pub fn reponses_dsn(ctx: &Contexte, memoire: &mut Memoire, lignes: &[Ligne], l: 
         }
         return Ok(Ok(pieces));
     }
-    if nature != "01" {
+    if nature != NatureDeLaDeclaration::Mensuelle {
         return Ok(Ok(pieces));
     }
     if let Some(d) = dsn_deposee(&ctx.racine, l)? {

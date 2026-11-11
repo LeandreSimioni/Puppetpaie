@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::base_assujettie::BaseAssujettie;
+use droit::nature_declaration::NatureDeLaDeclaration;
 
 use socle::date::Jour;
 use socle::echec::{erreur, refus, Classe, Echec, R};
@@ -375,8 +376,8 @@ pub struct DsnLue {
     pub nature_envoi: Option<String>,
     /// Le Siren de l'emetteur (S10.G00.01.001) : celui du cabinet quand un tiers depose (`EntrepriseDeclaree`).
     pub emetteur: Option<String>,
-    /// La nature de la declaration (S20.G00.05.001 : `01` mensuelle, un signalement sinon ; `NATURES`).
-    pub nature_declaration: Option<String>,
+    /// La nature de la declaration (S20.G00.05.001 : `01` mensuelle, un signalement sinon).
+    pub nature_declaration: Option<NatureDeLaDeclaration>,
     /// Le mois principal declare (S20.G00.05.005) ; un signalement n'en declare pas.
     pub mois: Option<Mois>,
     /// Le type, la fraction et le numero d'ordre de la declaration (S20.G00.05.002, .003, .004), et l'identifiant de
@@ -409,17 +410,7 @@ pub struct DsnLue {
 /// La nature d'un envoi reel (S10.G00.00.005 ; `01` : un test).
 pub const NATURE_REEL: &str = "02";
 /// La nature d'une DSN mensuelle (S20.G00.05.001).
-pub const MENSUELLE: &str = "01";
-/// Les natures de declaration (S20.G00.05.001), en clair.
-pub const NATURES: [(&str, &str); 7] = [
-    ("01", "DSN mensuelle"),
-    ("04", "signalement arrêt de travail"),
-    ("05", "signalement reprise suite à arrêt de travail"),
-    ("07", "signalement fin de contrat de travail unique"),
-    ("08", "signalement amorçage des données variables"),
-    ("09", "DSN de substitution"),
-    ("10", "signalement déclaration préalable à l'embauche"),
-];
+pub const MENSUELLE: NatureDeLaDeclaration = NatureDeLaDeclaration::Mensuelle;
 
 impl DsnLue {
     /// Un envoi reel (S10.G00.00.005), pas un test.
@@ -429,21 +420,17 @@ impl DsnLue {
 
     /// La nature de la declaration (S20.G00.05.001), obligatoire dans toute declaration (tableau des usages) : une DSN
     /// qui ne la dit pas refuse, en le disant.
-    pub fn nature(&self) -> R<&str> {
-        self.nature_declaration.as_deref().ok_or_else(|| erreur(Classe::Refuse, "La DSN ne porte pas sa nature (S20.G00.05.001, obligatoire) : elle ne se lit pas."))
+    pub fn nature(&self) -> R<NatureDeLaDeclaration> {
+        self.nature_declaration.ok_or_else(|| erreur(Classe::Refuse, "La DSN ne porte pas sa nature (S20.G00.05.001, obligatoire) : elle ne se lit pas."))
     }
 
     pub fn est_signalement(&self) -> bool {
-        self.nature_declaration.as_deref().is_some_and(|n| crate::norme::SIGNALEMENTS.contains(&n))
+        self.nature_declaration.is_some_and(NatureDeLaDeclaration::signalement_envoye)
     }
 
     /// La nature en clair ; `None` si la DSN ne la porte pas.
     pub fn nature_lisible(&self) -> Option<String> {
-        let n = self.nature_declaration.as_deref()?;
-        Some(match NATURES.iter().find(|(c, _)| *c == n) {
-            Some((_, l)) => l.to_string(),
-            None => format!("nature {}", n),
-        })
+        self.nature_declaration.map(|n| n.libelle().to_string())
     }
 
     /// L'etablissement declare (le premier S21.G00.11.001).
@@ -459,7 +446,7 @@ impl DsnLue {
         premier(|c| c.dernier_jour_travaille)
             .or_else(|| premier(|c| c.fin_declaree))
             .or_else(|| self.contrats.first().and_then(|c| c.debut))
-            .or_else(|| self.depot.filter(|_| self.nature_declaration.as_deref() == Some(crate::amorcage::NATURE)))
+            .or_else(|| self.depot.filter(|_| self.nature_declaration == Some(crate::amorcage::NATURE)))
     }
 
     /// LE MOIS QUE LE FICHIER DECLARE (S20.G00.05.005) ; un signalement se date par son evenement, et se range dans le
@@ -818,7 +805,8 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
     let mut fautes = Fautes::default();
     let (mut mois, mut depot): (Option<Mois>, Option<Jour>) = (None, None);
     let (mut type_declaration, mut fraction, mut ordre, mut remplace): (Option<String>, Option<String>, Option<String>, Option<String>) = (None, None, None, None);
-    let (mut logiciel, mut nature_envoi, mut nature): (Option<String>, Option<String>, Option<String>) = (None, None, None);
+    let (mut logiciel, mut nature_envoi): (Option<String>, Option<String>) = (None, None);
+    let mut nature: Option<NatureDeLaDeclaration> = None;
     let mut versements_organismes: Vec<Decimal> = Vec::new();
     let mut e = EntrepriseDeclaree::default();
     let mut individus: Vec<IndividuDeclare> = Vec::new();
@@ -868,7 +856,10 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
         match k {
             "S10.G00.00.001" => premier(&mut logiciel, &plein),
             "S10.G00.00.005" => premier(&mut nature_envoi, &plein),
-            "S20.G00.05.001" => premier(&mut nature, &plein),
+            "S20.G00.05.001" => {
+                let n = fautes.code(k, &v);
+                nature = nature.or(n);
+            }
             "S20.G00.05.003" => premier(&mut fraction, &plein),
             "S20.G00.05.006" => premier(&mut remplace, &plein),
             "S21.G00.20.005" => versements_organismes.extend(fautes.montant(k, &v)),

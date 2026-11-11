@@ -632,8 +632,8 @@ pub fn dernier_ordre_des_signalements(racine: &Path) -> R<i64> {
     let mut dernier = 0;
     for l in lire(racine, Some(Acte::Dsn), None, true)? {
         let Some(e) = l.dsn() else { continue };
-        let signalement = match e.detail.nature_declaration.as_deref().filter(|n| !n.is_empty()) {
-            Some(n) => declarations::norme::SIGNALEMENTS.contains(&n),
+        let signalement = match e.detail.nature_declaration {
+            Some(n) => n.signalement_envoye(),
             None => e.mois.is_none(),
         };
         if !signalement {

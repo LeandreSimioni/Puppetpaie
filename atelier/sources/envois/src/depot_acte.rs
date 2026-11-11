@@ -166,7 +166,7 @@ pub fn deposer_dsn(
     let reponse = match envoi() {
         Ok(r) => r,
         Err(e) => {
-            let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature_declaration: texte(apercu.nature_declaration.as_deref()), ordre: texte(apercu.ordre.as_deref()), evenement: d.evenement, ..Default::default() };
+            let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature_declaration: apercu.nature_declaration, ordre: texte(apercu.ordre.as_deref()), evenement: d.evenement, ..Default::default() };
             let ligne = Ligne::Dsn(envoi_du_depot(d, false, "net-entreprises", "", &e.phrase, None, detail, false));
             return Err(echec(ctx, Acte::Dsn, d, ligne, e, suites));
         }
@@ -183,7 +183,7 @@ pub fn deposer_dsn(
         preuve,
         type_declaration: texte(apercu.type_declaration.as_deref()),
         // LA NATURE : un signalement se numerote a la suite de tous ceux deja partis (`journal::dernier_ordre_des_signalements`).
-        nature_declaration: texte(apercu.nature_declaration.as_deref()),
+        nature_declaration: apercu.nature_declaration,
         // LE RANG DECLARE : le prochain annule-et-remplace se numerote au-dessus de cet ordre.
         ordre: texte(apercu.ordre.as_deref()),
         versements: Some(apercu.versements_organismes.iter().map(|m| m.to_string()).collect()),

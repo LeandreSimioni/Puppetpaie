@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::contexte::Contexte;
+use droit::nature_declaration::NatureDeLaDeclaration;
 use envois::etats;
 use envois::journal::Ligne;
 use envois::retours::{self, AnomalieDuRapport, CrmOc, Neores, Rapport};
@@ -120,15 +121,16 @@ fn phrase_du_statut(statut: &str) -> Option<&'static str> {
 
 /// La nature et le type d'une declaration (S20.G00.05.001 et .002, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt`) ;
 /// une nature que la table ne nomme pas, ou qui n'est pas dite, est une DSN.
-fn nature_dsn(nature: Option<&str>, type_: Option<&str>) -> String {
+fn nature_dsn(nature: Option<NatureDeLaDeclaration>, type_: Option<&str>) -> String {
+    use NatureDeLaDeclaration as N;
     let n = match nature {
-        Some("01") => "DSN mensuelle",
-        Some("04") => "Signalement arrêt de travail",
-        Some("05") => "Signalement reprise suite à arrêt de travail",
-        Some("07") => "Signalement fin du contrat de travail unique",
-        Some("08") => "Demande de taux de prélèvement à la source",
-        Some("09") => "DSN de substitution",
-        _ => "DSN",
+        Some(N::Mensuelle) => "DSN mensuelle",
+        Some(N::SignalementArret) => "Signalement arrêt de travail",
+        Some(N::SignalementReprise) => "Signalement reprise suite à arrêt de travail",
+        Some(N::SignalementFinDeContrat) => "Signalement fin du contrat de travail unique",
+        Some(N::SignalementAmorcage) => "Demande de taux de prélèvement à la source",
+        Some(N::Substitution) => "DSN de substitution",
+        Some(N::SignalementDpae) | None => "DSN",
     };
     match type_ {
         Some("03" | "05") => format!("{} (annule et remplace)", n),
@@ -328,7 +330,7 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
 /// L'acte d'une ligne du journal, en mots ; un contrat qui repart dit de qui il est.
 fn acte(ctx: &Contexte, l: &Ligne) -> String {
     match l {
-        Ligne::Dsn(e) => nature_dsn(e.detail.nature_declaration.as_deref(), e.detail.type_declaration.as_deref()),
+        Ligne::Dsn(e) => nature_dsn(e.detail.nature_declaration, e.detail.type_declaration.as_deref()),
         Ligne::Dpae(_) => "DPAE".into(),
         Ligne::Documents(_) => "Documents aux salariés".into(),
         Ligne::ContratSignature(e) => match (e.detail.main_propre, e.detail.acte.as_deref() == Some("avenant")) {
@@ -655,7 +657,7 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: &str) -> Lecture {
         };
         l.phrases.push(format!(
             "{}{}{} : {}.",
-            nature_dsn(dit(&d.nature_declaration), dit(&d.type_declaration)),
+            nature_dsn(dit(&d.nature_declaration).and_then(NatureDeLaDeclaration::du_code), dit(&d.type_declaration)),
             morceau(" de ", d.mois.map(|m| m.to_string()).as_deref(), ""),
             morceau(", ordre ", dit(&d.ordre), ""),
             verdict
@@ -902,7 +904,7 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
         };
         l.phrases.push(format!(
             "{}{}{} : {}.",
-            nature_dsn(lu(&d.nature_declaration), lu(&d.type_declaration)),
+            nature_dsn(lu(&d.nature_declaration).and_then(NatureDeLaDeclaration::du_code), lu(&d.type_declaration)),
             morceau(" de ", d.mois.map(|m| m.to_string()).as_deref(), ""),
             morceau(", vue par ", organisme.as_deref(), ""),
             retour

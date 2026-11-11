@@ -20,11 +20,6 @@ use std::sync::Arc;
 const BASE: &str = "norme-dsn-base.json";
 pub const RUBRIQUE: &str = "S10.G00.00.006";
 
-/// Les natures de declaration (S20.G00.05.001) d'un signalement que le logiciel envoie : arret de travail (04), reprise
-/// (05), fin du contrat de travail unique (07), amorcage des donnees variables (08) ; la mensuelle est 01
-/// (`atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt`).
-pub const SIGNALEMENTS: [&str; 4] = ["04", "05", "07", "08"];
-
 /// UNE DONNEE LIVREE (`logiciel/donnees/<nom>`) EN SA FORME `T`, lue une fois par contenu (`socle::forme::partagee`) et
 /// notee au registre d'un calcul suivi : absente ou fausse, rien que la compagnie puisse corriger.
 pub(crate) fn livree<T: serde::de::DeserializeOwned + Send + Sync + 'static>(nom: &str) -> R<Arc<T>> {

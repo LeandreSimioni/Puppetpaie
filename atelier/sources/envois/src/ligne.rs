@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use droit::contexte::IdSalarie;
+use droit::nature_declaration::NatureDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
 use socle::mois::Mois;
 
@@ -276,13 +277,13 @@ impl Ligne {
     }
 
     /// La nature d'une DSN (`01` mensuelle, `04` `05` `07` `08` un signalement) ; `None` si la ligne ne la dit pas.
-    pub fn nature_dsn(&self) -> Option<&str> {
-        self.dsn().and_then(|e| e.detail.nature_declaration.as_deref())
+    pub fn nature_dsn(&self) -> Option<NatureDeLaDeclaration> {
+        self.dsn().and_then(|e| e.detail.nature_declaration)
     }
 
     /// Une DSN de signalement (arret, reprise, fin de contrat, amorcage).
     pub fn signalement(&self) -> bool {
-        self.nature_dsn().is_some_and(|n| declarations::norme::SIGNALEMENTS.contains(&n))
+        self.nature_dsn().is_some_and(NatureDeLaDeclaration::signalement_envoye)
     }
 }
 
@@ -322,7 +323,7 @@ pub struct DetailDsn {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fraction: Option<String>,
     #[serde(rename = "nature", skip_serializing_if = "Option::is_none")]
-    pub nature_declaration: Option<String>,
+    pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ordre: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

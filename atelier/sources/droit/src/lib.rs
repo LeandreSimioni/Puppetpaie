@@ -28,6 +28,7 @@ pub mod maintien;
 pub mod majoration_chomage;
 pub mod minima;
 pub mod missions;
+pub mod nature_declaration;
 pub mod natures;
 pub mod organismes;
 pub mod pas;

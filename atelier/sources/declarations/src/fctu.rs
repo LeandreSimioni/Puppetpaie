@@ -18,7 +18,7 @@ use engagement::Engagement;
 use socle::echec::{Classe, R};
 use socle::fichiers::repr;
 
-pub const NATURE: &str = "07";
+pub const NATURE: droit::nature_declaration::NatureDeLaDeclaration = droit::nature_declaration::NatureDeLaDeclaration::SignalementFinDeContrat;
 /// CCH-14 (cahier technique p. 293) : la base assujettie de prevoyance n'a
 /// pas sa place dans un signalement de fin de contrat.
 const BASES_INTERDITES: [BaseAssujettie; 1] = [BaseAssujettie::PrevoyanceSanteRetraite];
@@ -482,7 +482,7 @@ ou un annule.",
     crate::dsn::contact_emetteur(&mut f, ent0)?;
 
     // ---------------------------------------------------------- S20 declaration
-    f.add("S20.G00.05.001", NATURE);
+    f.ecrire_code(NATURE)?;
     f.add("S20.G00.05.002", type_declaration);
     f.add("S20.G00.05.003", "11");
     f.add("S20.G00.05.004", o.ordre);

@@ -18,7 +18,7 @@ use crate::fctu::Echec;
 use socle::fichiers::repr;
 use socle::echec::R;
 
-pub const NATURE: &str = "08";
+pub const NATURE: droit::nature_declaration::NatureDeLaDeclaration = droit::nature_declaration::NatureDeLaDeclaration::SignalementAmorcage;
 pub const EMBAUCHE: &str = "01";
 pub const CHANGEMENT_DE_LOGICIEL: &str = "07";
 
@@ -203,7 +203,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
     crate::dsn::contact_emetteur(&mut f, ent)?;
 
     // ---------------------------------------------------------- S20 declaration
-    f.add("S20.G00.05.001", NATURE);
+    f.ecrire_code(NATURE)?;
     f.add("S20.G00.05.002", &o.type_declaration);
     f.add("S20.G00.05.003", "11");
     f.add("S20.G00.05.004", o.ordre);

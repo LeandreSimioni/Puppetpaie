@@ -40,6 +40,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
+use droit::nature_declaration::NatureDeLaDeclaration;
 use engagement::imprevus::{ArretSaisi, Imprevu, Prolongation};
 use socle::date::Jour;
 use socle::ecran::Pastille;
@@ -740,7 +741,7 @@ impl Obligation {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct EnvoiDeLArret {
     #[serde(rename = "nature")]
-    pub nature_declaration: String,
+    pub nature_declaration: NatureDeLaDeclaration,
     #[serde(rename = "type")]
     pub type_declaration: Option<String>,
     ordre: Option<i64>,
@@ -762,7 +763,7 @@ fn ordre(quand: HeureDuJournal, saisi: HeureDeSaisie) -> std::cmp::Ordering {
 }
 
 /// Le premier envoi de cette nature parti pour l'arret (`ce_qui_est_parti`).
-fn envoi(envois: &[EnvoiDeLArret], nature: &str) -> Option<Fait> {
+fn envoi(envois: &[EnvoiDeLArret], nature: NatureDeLaDeclaration) -> Option<Fait> {
     let e = envois.iter().filter(|e| e.nature_declaration == nature).min_by(|a, b| a.quand.cmp(&b.quand))?;
     let le = e.quand.jour();
     Some(Fait {
@@ -781,7 +782,7 @@ fn envoi(envois: &[EnvoiDeLArret], nature: &str) -> Option<Fait> {
 /// 03 (annule et remplace) depose apres sa saisie. L'ordre se lit sur les heures de saisie et de depot, toutes deux a
 /// l'horloge (`saisi_le`, `quand`).
 fn rectificatif_du(prolongations: &[Prolongation], envois: &[EnvoiDeLArret]) -> Option<(Depart, Option<Fait>)> {
-    let signalements: Vec<&EnvoiDeLArret> = envois.iter().filter(|e| e.nature_declaration == "04").collect();
+    let signalements: Vec<&EnvoiDeLArret> = envois.iter().filter(|e| e.nature_declaration == NatureDeLaDeclaration::SignalementArret).collect();
     let premier = signalements.iter().map(|e| e.quand).min()?;
     let p = prolongations.iter().filter(|p| p.subrogation_fin != p.subrogation_fin_avant && ordre(premier, p.saisi_le).is_lt()).last()?;
     let depart = Depart { jour: p.le, minute: None, quoi: "le jour où la prolongation de la subrogation a été saisie".into(), presume: None };
@@ -912,7 +913,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
     for e in envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, true).filter(|l| l.accepte() && !envois::etats::refuse_par_un_retour(l)).filter_map(envois::journal::Ligne::dsn) {
         let (mois, quand) = (e.mois, e.quand());
         let d = &e.detail;
-        let Some(nature) = d.nature_declaration.clone() else { continue };
+        let Some(nature) = d.nature_declaration else { continue };
         let type_declaration = d.type_declaration.clone();
         let ordre = match d.ordre.as_deref().map(str::trim).filter(|o| !o.is_empty()) {
             Some(o) => Some(o.parse::<i64>().map_err(|x| erreur(Classe::Illisible, format!("L'ordre {} d'une DSN du journal des envois ne se lit pas ({}).", repr(o), x)))?),
@@ -920,11 +921,12 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
         };
         let du_salarie = e.versions.iter().flatten().any(|x| x.salarie.as_str() == salarie);
         let dans = |m: &dyn std::fmt::Display| e.fichier.as_ref().map(|nom| format!("sorties/{}/{}", m, nom));
-        match (nature.as_str(), dj, mois) {
-            ("04" | "05", Some(dj), _) if declare_lu.is_some() && d.evenement == declare_lu && du_salarie => {
+        use NatureDeLaDeclaration as N;
+        match (nature, dj, mois) {
+            (N::SignalementArret | N::SignalementReprise, Some(dj), _) if declare_lu.is_some() && d.evenement == declare_lu && du_salarie => {
                 partis.push(EnvoiDeLArret { fichier: dans(&dj.mois_civil()), nature_declaration: nature, type_declaration, ordre, mois: None, quand });
             }
-            ("01", _, Some(mois)) if reporte(mois, quand)? => {
+            (N::Mensuelle, _, Some(mois)) if reporte(mois, quand)? => {
                 partis.push(EnvoiDeLArret { fichier: dans(&mois), nature_declaration: nature, type_declaration, ordre, mois: Some(mois), quand });
             }
             _ => {}
@@ -1000,7 +1002,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
     let o = &n.signalement_arret;
     if !parmi(o.sauf()) {
         match (debut, connu_de_l_arret(o)?) {
-            (Some(debut), Some(depart)) => out.push(signalement_dsn(ctx, &mut cal, aujourdhui, CleDObligation::SignalementArret, o, subrogation, depart, debut, envoi(envois, "04"))?),
+            (Some(debut), Some(depart)) => out.push(signalement_dsn(ctx, &mut cal, aujourdhui, CleDObligation::SignalementArret, o, subrogation, depart, debut, envoi(envois, NatureDeLaDeclaration::SignalementArret))?),
             _ => out.push(Obligation::squelette(CleDObligation::SignalementArret, o).indeterminee("Le début de cet arrêt est illisible : le délai ne se compte pas.")),
         }
     }
@@ -1106,7 +1108,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
     if let (Some(rep), Some(fin)) = (a.reprise, a.fin) {
         if rep < fin && !parmi(o.sauf()) {
             let depart = Depart { jour: rep, minute: None, quoi: "la reprise".into(), presume: None };
-            out.push(signalement_dsn(ctx, &mut cal, aujourdhui, CleDObligation::SignalementReprise, o, subrogation, depart, rep, envoi(envois, "05"))?);
+            out.push(signalement_dsn(ctx, &mut cal, aujourdhui, CleDObligation::SignalementReprise, o, subrogation, depart, rep, envoi(envois, NatureDeLaDeclaration::SignalementReprise))?);
         }
     }
     Ok(out.into_iter().map(Obligation::dire_le_butoir).collect())
@@ -1605,7 +1607,7 @@ mod essais {
     fn un_rectificatif_depose_avant_la_prolongation_ne_la_fait_pas() {
         let jour = |t: &str| Jour::lire(t).unwrap();
         let signalement = |type_declaration: &str, quand: &str| EnvoiDeLArret {
-            nature_declaration: "04".into(),
+            nature_declaration: NatureDeLaDeclaration::SignalementArret,
             type_declaration: Some(type_declaration.into()),
             ordre: None,
             mois: None,
