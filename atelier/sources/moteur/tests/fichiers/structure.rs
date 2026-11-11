@@ -813,10 +813,15 @@ fn blanchi(t: &str, textes: bool) -> String {
 ///    tri par le `_` de tete (`starts_with('_')`, `strip_prefix("_")`, `trim_start_matches('_')`) ;
 /// 3. de repli sur une donnee : ni `#[serde(default…)]`, ni
 ///    `unwrap_or`, `unwrap_or_default`, `unwrap_or_else`, `map_or`, `map_or_else`, ni un bras `None =>` qui fabrique
-///    une valeur. Une donnee absente d'un champ facultatif (`Option`) est vide ; une donnee obligatoire absente se refuse.
-/// 4. d'erreur avalee : ni `.ok()`, ni `let Ok(..) = .. else`, ni
-///    `is_ok_and`, ni `is_err_and`. Une erreur remonte (`?`) ; un etat qui n'est pas une erreur (un nom qu'aucune fiche
-///    ne porte, un texte qui n'est pas une adresse) se dit par un `match` qui le nomme.
+///    une valeur, ni un bras joker (`_ =>`, `_autre =>`, `Some(_) =>`, donc `None | Some(_) =>`) qui en rend une (texte
+///    vide, nombre, booleen, vecteur vide, defaut, `Ok(…)` de l'une d'elles) : un `match` nomme chaque cas qu'il traite.
+///    Ni `.or(Some(…))`, ni `.or_else(|| Some(…))` : une valeur fabriquee faute de mieux (une preseance entre deux
+///    valeurs dites s'ecrit `.or(autre)`). Une donnee absente d'un champ facultatif (`Option`) est vide ; une donnee
+///    obligatoire absente se refuse.
+/// 4. d'erreur avalee : ni `.ok()`, ni `let Ok(..) = .. else`, ni `if let Ok(..)`, ni `.is_ok()`, ni
+///    `is_ok_and`, ni `is_err_and`, ni `let _ = …(…)` qui jette ce qu'un appel rend (un `Result`). Une erreur remonte
+///    (`?`) ; un etat qui n'est pas une erreur (un nom qu'aucune fiche ne porte, un texte qui n'est pas une adresse) se
+///    dit par un `match` qui le nomme.
 /// Le verrou n'a aucune exception : quand il echoue, on corrige le code ou la donnee.
 #[test]
 fn une_couche_fermee_ne_lit_que_des_formes() {
@@ -834,6 +839,11 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     let repli = regex::Regex::new(r"\b(?:unwrap_or(?:_default|_else)?|map_or(?:_else)?)\b|\bserde\s*\([^\]]*\bdefault\b").unwrap();
     // Le repli en `match` : un bras `None =>` qui fabrique une valeur (texte vide, nombre, booleen, vecteur vide, defaut).
     let bras_vide = regex::Regex::new(r#"\bNone\s*=>\s*\{?\s*(?:String::new\(\)|""|-?\d[\w.]*|false\b|true\b|Vec::new\(\)|vec!\s*\[\s*\]|Default::default\(\)|[A-Za-z_][\w:]*::default\(\)|Decimal::\w+|[A-Za-z_][\w:]*::(?:new\(\)|ZERO\b))"#).unwrap();
+    // Le repli en joker : un bras `_ =>`, `_autre =>` ou `Some(_) =>` (donc `None | Some(_) =>`) qui rend une valeur
+    // fabriquee, ou son `Ok(…)`.
+    let bras_joker = regex::Regex::new(r#"(?:\b_\w*|\bSome\s*\(\s*_\w*\s*\))\s*=>\s*\{?\s*(?:Ok\()?\s*(?:String::new\(\)|""|-?\d[\w.]*|false\b|true\b|Vec::new\(\)|vec!\s*\[\s*\]|Default::default\(\)|[A-Za-z_][\w:]*::default\(\)|Decimal::\w+|[A-Za-z_][\w:]*::(?:new\(\)|ZERO\b))"#).unwrap();
+    // La valeur fabriquee faute de mieux : `.or(Some(…))`, `.or_else(|| Some(…))`.
+    let fabriquee = regex::Regex::new(r"\.or\(\s*Some\s*\(|\.or_else\(\s*\|\|\s*Some\s*\(").unwrap();
     let tri = regex::Regex::new(r#"\b(?:starts_with|strip_prefix|trim_start_matches)\s*\(\s*(?:'_'|"_")"#).unwrap();
     // Une cle en `_` que la forme elle-meme nomme.
     let nommee = regex::Regex::new(r#"\b(?:rename|alias)\s*=\s*"_"#).unwrap();
@@ -867,9 +877,11 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
             }
         }
     }
-    // Une erreur ecartee sans etre remontee : `.ok()`, un `let Ok(..) else`, `is_ok_and`, `is_err_and`, `is_err()`, et tout
-    // motif `Err(_)` (`Err(_x)`) qui ignore sa valeur (`match`, `if let`, `matches!`).
-    let avalee = regex::Regex::new(r"\.ok\(\)|\blet\s+Ok\s*\(.*\belse\b|\bis_ok_and\b|\bis_err_and\b|\.is_err\(\)|\bErr\s*\(\s*_\w*\s*\)").unwrap();
+    // Une erreur ecartee sans etre remontee : `.ok()`, un `let Ok(..) else`, un `if let Ok(..)` (son `Err` n'est pas dit),
+    // `.is_ok()`, `is_ok_and`, `is_err_and`, `is_err()`, tout motif `Err(_)` (`Err(_x)`) qui ignore sa valeur (`match`,
+    // `if let`, `matches!`), et `let _ = …(…)`, qui jette ce qu'un appel rend (`let _ = x;`, une variable tue, n'appelle
+    // rien).
+    let avalee = regex::Regex::new(r"\.ok\(\)|\blet\s+Ok\s*\(.*\belse\b|\bif\s+let\s+Ok\s*\(|\.is_ok\(\)|\bis_ok_and\b|\bis_err_and\b|\.is_err\(\)|\bErr\s*\(\s*_\w*\s*\)|\blet\s+_\s*=\s*[^;]*\(").unwrap();
     for couche in COUCHES_FERMEES {
         for f in sources(&espace().join(couche).join("src")) {
             for (n, l) in code_seul(&std::fs::read_to_string(&f).unwrap()).lines().enumerate() {
@@ -878,6 +890,12 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
                 }
                 if let Some(m) = bras_vide.find(l) {
                     fautes.push(format!("{}:{} : `{}`, un repli déguisé en `match` : un vide reste vide (`Option` porté jusqu'au lecteur) ou se refuse, il ne devient pas une valeur", f.display(), n + 1, m.as_str()));
+                }
+                if let Some(m) = bras_joker.find(l) {
+                    fautes.push(format!("{}:{} : `{}`, un joker qui rend une valeur : le `match` nomme chaque cas qu'il traite", f.display(), n + 1, m.as_str()));
+                }
+                if let Some(m) = fabriquee.find(l) {
+                    fautes.push(format!("{}:{} : `{}`, une valeur fabriquée faute de mieux : une absence reste vide ou se refuse", f.display(), n + 1, m.as_str()));
                 }
                 if let Some(m) = avalee.find(l) {
                     fautes.push(format!("{}:{} : `{}`, une erreur avalée : elle remonte (`?`), ou un `match` nomme l'état qu'elle dit", f.display(), n + 1, m.as_str()));
