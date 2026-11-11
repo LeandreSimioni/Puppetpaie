@@ -719,8 +719,16 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
         // d'un élément) sont exigés.
         let mut espaces = vec![(2, 0, 0xFFFF)];
         let mut cmap_cid = None;
+        // Un CMap prédéfini autre qu'Identity (table 118) n'est pas déposé : ses CID ne se lisent pas, le programme ne
+        // dit donc pas le caractère d'un code (seul `ToUnicode` le dit).
+        let mut non_depose = None;
         match lecture::valeur(doc, d, b"Encoding")? {
-            Some(Object::Name(n)) => p.vertical = n.ends_with(b"-V"),
+            Some(Object::Name(n)) => {
+                p.vertical = n.ends_with(b"-V");
+                if n.as_slice() != b"Identity-H" && n.as_slice() != b"Identity-V" {
+                    non_depose = Some(format!("le CMap prédéfini {} n'est pas déposé, rien ne dit le CID de ce code (ISO 32000-1, 9.10.2)", lecture::nom_de(n)));
+                }
+            }
             Some(Object::Stream(s)) => {
                 let c = lire_cmap(&lecture::contenu(doc, s)?)?;
                 if !c.espaces.is_empty() {
@@ -739,9 +747,10 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
         if inspecter {
             (p.asc, p.desc) = ascendant_descendant(doc, descripteur(doc, desc)?, base_nom.as_deref())?;
         }
-        let programme = match p.unicode.is_empty() {
-            true => sinon_inconnu(programme_cid(doc, desc, zapf), ParProgramme::Aucun)?,
-            false => ParProgramme::Aucun("/ToUnicode ne dit pas ce code".to_string()),
+        let programme = match (p.unicode.is_empty(), non_depose) {
+            (_, Some(pourquoi)) => ParProgramme::Aucun(pourquoi),
+            (true, None) => sinon_inconnu(programme_cid(doc, desc, zapf), ParProgramme::Aucun)?,
+            (false, None) => ParProgramme::Aucun("/ToUnicode ne dit pas ce code".to_string()),
         };
         p.sorte = Sorte::Composee { espaces, cmap_cid, programme };
         // ISO 32000-1, table 117 : `DW`, « Default value: 1000 ».
