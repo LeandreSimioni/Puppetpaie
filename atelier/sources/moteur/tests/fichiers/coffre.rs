@@ -4,14 +4,14 @@
 use crate::outils::chemin_unique;
 use compagnie::coffre::{deriver, Coffre, Kdf, CONSULTATION};
 use socle::json_ascii::dumps;
-use socle::paris::MinuteEcrite;
+use socle::paris::Moment;
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Le `jour` d'octobre 2026 a `heure`:`minute`.
-fn minute(jour: u32, heure: i64, minute: i64) -> MinuteEcrite {
-    MinuteEcrite::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(2026, 10, jour).unwrap(), heure, minute, 0).unwrap())
+fn minute(jour: u32, heure: i64, minute: i64) -> Moment {
+    Moment::a_paris(socle::date::Jour::nouveau(2026, 10, jour).unwrap(), heure, minute, 0).unwrap()
 }
 
 fn dossier() -> PathBuf {

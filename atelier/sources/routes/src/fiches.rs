@@ -321,7 +321,7 @@ fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
     let phrase = match (erreurs.is_empty(), &s) {
         (false, _) => format!("Sauvegarde : {}", erreurs.join(" ")),
         (true, None) => "Aucune sauvegarde faite.".to_string(),
-        (true, Some(d)) => format!("Dernière sauvegarde : {}, {} fichiers.", d.quand, d.fichiers),
+        (true, Some(d)) => format!("Dernière sauvegarde : {}, {} fichiers.", socle::paris::ecrit::saisie::texte(d.quand), d.fichiers),
     };
     Ok(SauvegardeFaite { phrase, sauvegarde: s, erreur: (!erreurs.is_empty()).then(|| erreurs.join(" ")) })
 }

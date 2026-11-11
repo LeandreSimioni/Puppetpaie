@@ -801,7 +801,8 @@ pub(crate) struct ArretResume {
     reprise: Option<Jour>,
     reprise_motif: Option<String>,
     note: Option<String>,
-    saisi_le: socle::paris::HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    saisi_le: socle::paris::Moment,
     /// Un signalement en est parti : `etat` le dit a la page.
     #[serde(skip)]
     pub signale: bool,
@@ -909,7 +910,8 @@ pub(crate) struct ResumeDeSuspension {
     premier_jour: Jour,
     dernier_jour: Jour,
     note: Option<String>,
-    saisi_le: socle::paris::HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    saisi_le: socle::paris::Moment,
     reporte_par_dit: Vec<String>,
     cachets: Vec<Cachet>,
     gestes: Vec<GesteDImprevu>,
@@ -2030,7 +2032,7 @@ enum Trace<'a> {
 }
 
 impl Trace<'_> {
-    fn quand(&self) -> socle::paris::HeureDeSaisie {
+    fn quand(&self) -> socle::paris::Moment {
         match self {
             Trace::Prolongation(p) => p.saisi_le,
             Trace::Reprise(r) => r.saisi_le,
@@ -2057,7 +2059,7 @@ impl Trace<'_> {
 /// la fin prescrite et la fin de subrogation d'avant, une reprise (`reprises`) la reprise et son motif d'avant. Une saisie
 /// de la minute meme a pu preceder l'instant ou le suivre : chacun de ces etats est rendu, du plus recent au plus ancien ;
 /// l'empreinte de ce qui est parti dit lequel c'etait (`gestes::depart::refaire_le_signalement`).
-pub(crate) fn etats_d_alors(ctx: &Contexte, salarie: &str, dernier_jour: &Jour, instant: socle::paris::HeureDeSaisie) -> R<Vec<ArretSaisi>> {
+pub(crate) fn etats_d_alors(ctx: &Contexte, salarie: &str, dernier_jour: &Jour, instant: socle::paris::Moment) -> R<Vec<ArretSaisi>> {
     let (_, _, lu) = l_arret(ctx, &cle_du_nom(ctx, salarie)?, dernier_jour)?;
     let mut traces: Vec<Trace> = lu.prolongations.iter().map(Trace::Prolongation).chain(lu.reprises.iter().map(Trace::Reprise)).collect();
     traces.sort_by_key(|t| t.quand());

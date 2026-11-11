@@ -19,7 +19,7 @@
 
 use std::collections::BTreeMap;
 use socle::echec::Classe;
-use socle::paris::Naif;
+use socle::paris::Moment;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -205,31 +205,38 @@ fn ce_qui_manque(nd: usize, nf: usize) -> String {
 }
 
 /// « depuis 09:51 » le jour meme, « depuis hier », « depuis le 18/10 ».
-fn depuis_quand(depuis: Naif, maintenant: Naif) -> String {
-    let iso = depuis.iso();
-    match maintenant.jour().moins(&depuis.jour()) {
-        0 => format!("depuis {}", &iso[11..16]),
+fn depuis_quand(depuis: Moment, maintenant: Moment) -> String {
+    let jour = depuis.jour_de_paris();
+    match maintenant.jour_de_paris().moins(&jour) {
+        0 => {
+            let s = depuis.seconde_du_jour_de_paris();
+            format!("depuis {:02}:{:02}", s / 3_600, (s % 3_600) / 60)
+        }
         1 => "depuis hier".to_string(),
-        _ => format!("depuis le {}/{}", &iso[8..10], &iso[5..7]),
+        _ => format!("depuis le {:02}/{:02}", jour.jour, jour.mois),
     }
 }
 
+/// `maintenant` est-il une journee au moins apres `depuis` ?
+fn une_journee_apres(maintenant: Moment, depuis: Moment) -> bool {
+    maintenant.depuis(depuis).is_some_and(|d| d.as_secs() >= UNE_JOURNEE as u64)
+}
 
-/// La phrase de ce qui persiste dans l'index (`echecs`, `derniere_complete`), a l'heure naive `maintenant`, ou `None`.
-pub fn phrase_persistante(index: &Index, maintenant: Naif) -> Result<Option<String>, ErreurGoogle> {
+/// La phrase de ce qui persiste dans l'index (`echecs`, `derniere_complete`), a l'instant `maintenant`, ou `None`.
+pub fn phrase_persistante(index: &Index, maintenant: Moment) -> Result<Option<String>, ErreurGoogle> {
     let Some(echecs) = index.echecs.as_ref().filter(|e| !e.is_empty()) else { return Ok(None) };
     // (cle, depuis, cause) de chaque echec, et ceux qui durent.
-    let mut tous: Vec<(&String, Naif, &str, bool)> = Vec::new();
+    let mut tous: Vec<(&String, Moment, &str, bool)> = Vec::new();
     for (cle, e) in echecs {
-        let depuis = e.depuis.naif();
-        tous.push((cle, depuis, e.cause.as_str(), e.passages >= PASSAGES_QUI_DURENT || maintenant.depuis(depuis) >= UNE_JOURNEE));
+        let depuis = e.depuis;
+        tous.push((cle, depuis, e.cause.as_str(), e.passages >= PASSAGES_QUI_DURENT || une_journee_apres(maintenant, depuis)));
     }
-    let complete = index.derniere_complete.map(|c| c.naif());
+    let complete = index.derniere_complete;
     let durent: Vec<_> = tous.iter().filter(|t| t.3).collect();
     let (retenus, par_l_item): (Vec<_>, bool) = if !durent.is_empty() {
         (durent, true)
     } else {
-        match complete.filter(|c| maintenant.depuis(*c) >= UNE_JOURNEE) {
+        match complete.filter(|c| une_journee_apres(maintenant, *c)) {
             Some(_) => (tous.iter().collect(), false),
             None => return Ok(None),
         }
@@ -256,7 +263,7 @@ pub fn phrase_persistante(index: &Index, maintenant: Naif) -> Result<Option<Stri
 /// la fenetre le montre a la place de la sauvegarde.
 pub fn souci(racine: &Path) -> Result<Option<String>, ErreurGoogle> {
     match lire_index(racine)? {
-        Some(index) => phrase_persistante(&index, socle::paris::maintenant_naif()),
+        Some(index) => phrase_persistante(&index, socle::temps::secondes()),
         None => Ok(None),
     }
 }
@@ -390,12 +397,13 @@ pub fn chemin_index(racine: &Path) -> PathBuf {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Index {
-    pub quand: socle::paris::HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    pub quand: socle::paris::Moment,
     pub racine_drive: String,
     pub dossiers: BTreeMap<String, String>,
     pub fichiers: BTreeMap<String, Etat>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub derniere_complete: Option<socle::paris::HeureDeSaisie>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::saisie::option")]
+    pub derniere_complete: Option<socle::paris::Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub echecs: Option<BTreeMap<String, EchecIndexe>>,
 }
@@ -404,7 +412,8 @@ pub struct Index {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EchecIndexe {
-    pub depuis: socle::paris::HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    pub depuis: socle::paris::Moment,
     pub passages: i64,
     pub cause: String,
 }
@@ -450,7 +459,8 @@ fn comme_l_index(racine: &Path, racine_drive: &str, index: Index) -> Result<bool
 /// Ce que dit l'index du dernier passage (`derniere`) : quand, combien, vers quelle racine du Drive. Pour l'affichage.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Derniere {
-    pub quand: socle::paris::HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    pub quand: socle::paris::Moment,
     pub fichiers: usize,
     pub racine_drive: String,
 }

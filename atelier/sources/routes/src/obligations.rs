@@ -46,7 +46,7 @@ use engagement::imprevus::{ArretSaisi, Imprevu, Prolongation};
 use socle::date::Jour;
 use socle::ecran::Pastille;
 use socle::forme::TexteDit;
-use socle::paris::{HeureDeSaisie, HeureDuJournal};
+use socle::paris::{HeureDuJournal, Moment};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
 use socle::echec::R;
 pub use declarations::obligations::{CleDObligation, Ou, TexteDepose};
@@ -402,7 +402,8 @@ impl CeQueDitLaCompagnie<'_> {
 pub(crate) struct ConnaissanceSaisie {
     jour: Jour,
     heure: Option<String>,
-    saisi_le: HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    saisi_le: Moment,
 }
 
 /// Ce que la compagnie a connu : l'arret, ou l'accident.
@@ -793,10 +794,10 @@ pub(crate) struct EnvoiDeLArret {
 /// L'ordre d'une heure du journal et d'une heure de saisie, toutes deux l'heure de Paris (`socle::paris`) : un instant
 /// du journal se compare a la seconde ; un jour seul (un bilan repris qui ne dit pas son heure) ne vient apres la saisie
 /// que s'il est d'un jour suivant.
-fn ordre(quand: HeureDuJournal, saisi: HeureDeSaisie) -> std::cmp::Ordering {
+fn ordre(quand: HeureDuJournal, saisi: Moment) -> std::cmp::Ordering {
     match quand {
-        HeureDuJournal::Instant(i) => i.naif().cmp(&saisi.naif()),
-        HeureDuJournal::Jour(j) if j > saisi.jour() => std::cmp::Ordering::Greater,
+        HeureDuJournal::Instant(i) => i.naif().cmp(&saisi.local_naif()),
+        HeureDuJournal::Jour(j) if j > saisi.jour_de_paris() => std::cmp::Ordering::Greater,
         HeureDuJournal::Jour(_) => std::cmp::Ordering::Less,
     }
 }
@@ -938,8 +939,8 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
     let reporte = |mois: socle::mois::Mois, quand: HeureDuJournal| -> R<bool> {
         if traverses.contains(&mois) {
             return Ok(match quand {
-                HeureDuJournal::Instant(i) => socle::paris::MinuteEcrite::du_naif(i.naif()).naif() >= saisi.naif(),
-                HeureDuJournal::Jour(j) => j > saisi.jour(),
+                HeureDuJournal::Instant(i) => socle::paris::MinuteEcrite::du_naif(i.naif()).naif() >= saisi.local_naif(),
+                HeureDuJournal::Jour(j) => j > saisi.jour_de_paris(),
             });
         }
         // Sans arret, rien ne se reporte.
@@ -1429,7 +1430,8 @@ pub struct ObligationFaite {
     heure: Option<String>,
     depot: String,
     reference: Option<String>,
-    saisi_le: HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    saisi_le: Moment,
 }
 
 fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsDeLArret> {
@@ -1640,7 +1642,7 @@ mod essais {
         };
         let prolongation = Prolongation {
             le: jour(3),
-            saisi_le: HeureDeSaisie::de_la_minute(socle::paris::MinuteEcrite::du_naif(a(3, 15))),
+            saisi_le: Moment::a_paris(jour(3), 15, 0, 0).unwrap(),
             qui: "t".into(),
             fin_avant: jour(6),
             fin: jour(13),

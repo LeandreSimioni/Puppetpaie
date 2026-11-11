@@ -167,7 +167,8 @@ pub struct ChargeSupprimer {
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct SauvegardeAProposer {
     liee: bool,
-    derniere: Option<socle::paris::HeureDeSaisie>,
+    #[serde(with = "socle::paris::ecrit::saisie::option")]
+    derniere: Option<socle::paris::Moment>,
     phrase: String,
 }
 

@@ -456,7 +456,7 @@ impl Arret {
     fn saisi_apres_la_derniere_dsn(&self, numero: &str, mois: Mois, departs: &engagement::departs::Departs) -> bool {
         // Une date du journal (« 2026-10-15T10:00:00 ») et une date de saisie (« 2026-11-03 11:39 ») a la minute.
         let minute = |t: &str| t.replacen('T', " ", 1).chars().take(16).collect::<String>();
-        let saisi = self.saisi.saisi_le.iso();
+        let saisi = socle::paris::ecrit::saisie::texte(self.saisi.saisi_le);
         let mut avant: Option<String> = None;
         for d in departs.de(&self.saisi.salarie, numero).iter().filter(|d| d.envoi == engagement::departs::Envoi::Dsn) {
             // Le mois que la DSN declarait : celui qui la porte (une correction), sinon le sien.
@@ -5336,7 +5336,7 @@ mod tests {
                 ij_nette_majoree: None,
                 prolongations: Vec::new(),
                 reprises: Vec::new(),
-                saisi_le: socle::paris::HeureDeSaisie::de_la_minute(socle::paris::MinuteEcrite::du_naif(socle::paris::Naif::du_jour(j(2026, 6, 21), 10, 0, 0).unwrap())),
+                saisi_le: socle::paris::Moment::a_paris(j(2026, 6, 21), 10, 0, 0).unwrap(),
                 qui: "interface".into(),
                 note: None,
             },

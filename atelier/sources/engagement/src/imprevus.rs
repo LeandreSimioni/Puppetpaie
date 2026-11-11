@@ -96,7 +96,8 @@ pub struct ArretSaisi {
     pub ij_nette_majoree: Option<Chiffre>,
     pub prolongations: Vec<Prolongation>,
     pub reprises: Vec<RepriseNotee>,
-    pub saisi_le: socle::paris::HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    pub saisi_le: socle::paris::Moment,
     pub qui: String,
     pub note: Option<String>,
 }
@@ -107,7 +108,8 @@ pub struct ArretSaisi {
 #[serde(deny_unknown_fields)]
 pub struct Prolongation {
     pub le: Jour,
-    pub saisi_le: socle::paris::HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    pub saisi_le: socle::paris::Moment,
     pub qui: String,
     pub fin_avant: Jour,
     pub fin: Jour,
@@ -120,7 +122,8 @@ pub struct Prolongation {
 #[serde(deny_unknown_fields)]
 pub struct RepriseNotee {
     pub le: Jour,
-    pub saisi_le: socle::paris::HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    pub saisi_le: socle::paris::Moment,
     pub qui: String,
     pub reprise_avant: Option<Jour>,
     pub reprise_motif_avant: Option<String>,
@@ -140,7 +143,8 @@ pub struct SuspensionSaisie {
     pub motif: String,
     pub debut: Jour,
     pub fin: Jour,
-    pub saisi_le: socle::paris::HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    pub saisi_le: socle::paris::Moment,
     pub qui: String,
     pub note: Option<String>,
 }

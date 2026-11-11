@@ -170,7 +170,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     // L'index n'est ecrit qu'a la fin, et seulement pour ce qui est passe.
     let fichiers: BTreeMap<String, Etat> = presents.iter().filter(|(r, _)| !en_echec.contains(r)).map(|(r, e)| (r.clone(), *e)).collect();
     let maintenant = socle::temps::secondes();
-    let quand = socle::paris::HeureDeSaisie::de(maintenant);
+    let quand = maintenant.a_la_minute();
     // CE QUI RESTE EN ECHEC, D'UN PASSAGE A L'AUTRE : de quoi dire ce qui persiste (`souci`). Un passage hors ligne ne compte
     // pas (il n'a rien essaye) : il garde les echecs tels quels. Un passage sans rien de reporte les efface. Les deux cles ne
     // s'ecrivent que s'il y a un echec : l'index d'une sauvegarde complete reste celui d'avant.
@@ -185,7 +185,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                 let cle = r.cle();
                 let e = match anciens.get(&cle) {
                     Some(a) => EchecIndexe { depuis: a.depuis.clone(), passages: a.passages + 1, cause: r.cause.clone() },
-                    None => EchecIndexe { depuis: socle::paris::HeureDeSaisie::de(maintenant), passages: 1, cause: r.cause.clone() },
+                    None => EchecIndexe { depuis: maintenant.a_la_minute(), passages: 1, cause: r.cause.clone() },
                 };
                 (cle, e)
             })
@@ -206,7 +206,7 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
         derniere_complete,
         echecs: (!echecs.is_empty()).then_some(echecs),
     };
-    resultat.persistant = phrase_persistante(&nouvel_index, socle::paris::maintenant_naif())?;
+    resultat.persistant = phrase_persistante(&nouvel_index, socle::temps::secondes())?;
     ecrire_index(racine, &nouvel_index)?;
     resultat.secondes = socle::num::secondes_au_dixieme(socle::temps::duree(debut));
     Ok(resultat)
