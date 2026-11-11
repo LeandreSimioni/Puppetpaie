@@ -206,7 +206,7 @@ pub fn rendre_simulee(racine: &Path) -> R<()> {
         copie_de: format!("{} {} sur le banc d'essai", compagnie::installation::MARQUE_FICTIVE, nom),
         depuis: None,
         ajoutee: None,
-        quand: Some(socle::paris::maintenant()),
+        quand: Some(socle::paris::InstantEcrit::maintenant()),
         quoi: "Une compagnie ajoutee par le « + », devenue fictive aux envois SIMULES sur le banc d'essai de l'atelier (scenario.rs, geste `simuler`) : ses DPAE, DSN et courriels sont joues, rien ne part.".to_string(),
     };
     socle::ecriture::ecrire_json(&racine.join(compagnie::installation::MARQUEUR), &marqueur, 2)
@@ -815,7 +815,7 @@ fn poser_livree(racine: &Path, dest: &Path, fin: Option<Moment>) -> R<()> {
         copie_de: format!("{} {}", compagnie::installation::MARQUE_FICTIVE, nom),
         depuis: None,
         ajoutee: None,
-        quand: fin.map(heure),
+        quand: fin.map(socle::paris::InstantEcrit::de),
         quoi: "Compagnie FICTIVE de reference, livree avec le logiciel : le rejeu de son scenario (atelier/fictives/). Ses envois sont joues, rien n'en part.".to_string(),
     };
     socle::ecriture::ecrire_json(&dest.join(compagnie::installation::MARQUEUR), &marqueur, 2)

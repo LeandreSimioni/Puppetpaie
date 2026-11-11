@@ -355,7 +355,7 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
         };
         // Ce que la ligne de l'annee dit : ses mois, ses DSN acceptees, sa cloture et son export compta.
         let note = clos.get(a);
-        let clos_dit: String = note.iter().map(|c| format!(" · clos le {}", socle::ecran::quand(&c.le))).collect();
+        let clos_dit: String = note.iter().map(|c| format!(" · clos le {}", c.le.dit())).collect();
         let export_dit = match &export {
             Some(ExportDeLAnnee { ecrit: Some(e), .. }) => format!(" · export compta du {}", e.dit()),
             Some(_) => " · export compta".to_string(),

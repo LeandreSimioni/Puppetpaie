@@ -24,6 +24,7 @@ use droit::contexte::Contexte;
 use socle::echec::erreur;
 use socle::mois::Mois;
 use socle::num::{zero2, Decimal};
+use socle::paris::InstantEcrit;
 use socle::echec::{Echec, R};
 use crate::dossier_salarie::{entree_ecrite, entree_fichier, zip, Entree};
 use documents::ecritures_comptables::{csv_compta, ecritures_du_mois, Ecriture};
@@ -47,9 +48,8 @@ fn est_une_erreur_d_operation(e: &Echec) -> bool {
 }
 
 /// L'heure de Paris, a la seconde.
-fn maintenant() -> String {
-    let t = socle::temps::secondes();
-    socle::paris::iso_secondes(t)
+fn maintenant() -> InstantEcrit {
+    InstantEcrit::maintenant()
 }
 
 
@@ -80,7 +80,7 @@ pub(crate) struct ExportCompta {
 #[derive(Debug, Serialize)]
 pub(crate) struct EcritureRendue {
     journal: String,
-    date: String,
+    date: socle::date::Jour,
     compte: String,
     libelle: String,
     debit: String,
@@ -135,7 +135,7 @@ impl ExportCompta {
                 .into_iter()
                 .map(|e| EcritureRendue {
                     journal: e.journal,
-                    date: e.date.iso(),
+                    date: e.date,
                     compte: e.compte,
                     libelle: e.libelle,
                     debit: e.debit.to_string(),
@@ -292,7 +292,7 @@ pub(crate) struct Exercices {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ExerciceNote {
-    pub(crate) le: String,
+    pub(crate) le: InstantEcrit,
     qui: String,
     archive: String,
     octets: u64,
@@ -306,7 +306,7 @@ pub(crate) struct ExerciceNote {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ExerciceRouvertNote {
-    le: String,
+    le: InstantEcrit,
     qui: String,
     archive: String,
     octets: u64,
@@ -315,7 +315,7 @@ struct ExerciceRouvertNote {
     forcee: bool,
     sans_dsn: Vec<Mois>,
     annee: String,
-    rouvert_le: String,
+    rouvert_le: InstantEcrit,
     rouvert_par: String,
 }
 
@@ -371,7 +371,7 @@ fn fichiers_sous(d: &Path, out: &mut Vec<PathBuf>) -> R<()> {
 pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> R<ExerciceClos> {
     let mut tous = lire_exercices(&ctx.racine)?;
     if let Some(clos) = tous.de(annee) {
-        return Err(refus(format!("L'exercice {} est déjà clos (le {}).", annee, clos.le.chars().take(10).collect::<String>())));
+        return Err(refus(format!("L'exercice {} est déjà clos (le {}).", annee, clos.le.jour().iso())));
     }
     let an: i64 = annee.parse().map_err(|_| erreur(Classe::Illisible, format!("nombre entier illisible : {}", socle::fichiers::repr(annee))))?;
     if an >= i64::from(ctx.aujourdhui.an) {
@@ -497,7 +497,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
     tous.clos.insert(
         annee.to_string(),
         ExerciceNote {
-            le: le.clone(),
+            le,
             qui: qui.to_string(),
             archive: relatif,
             octets: octets.len() as u64,
@@ -516,7 +516,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct ExerciceClos {
     pub(crate) annee: String,
-    le: String,
+    le: InstantEcrit,
     archive: String,
     octets: usize,
     empreinte: String,
@@ -528,7 +528,7 @@ pub(crate) struct ExerciceClos {
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct ExerciceRouvert {
     pub(crate) annee: String,
-    etait_clos_depuis: String,
+    etait_clos_depuis: InstantEcrit,
     archive: String,
 }
 
@@ -558,7 +558,7 @@ fn rouvrir_exercice(ctx: &Contexte, annee: &str, qui: &str) -> R<ExerciceRouvert
     let Some(clos) = tous.clos.remove(annee) else {
         return Err(refus(format!("L'exercice {} n'est pas clos.", annee)));
     };
-    let (etait_clos_depuis, archive) = (clos.le.clone(), clos.archive.clone());
+    let (etait_clos_depuis, archive) = (clos.le, clos.archive.clone());
     let ExerciceNote { le, qui: clos_par, archive: a, octets, empreinte, fichiers, forcee, sans_dsn } = clos;
     tous.rouverts.push(ExerciceRouvertNote {
         le,

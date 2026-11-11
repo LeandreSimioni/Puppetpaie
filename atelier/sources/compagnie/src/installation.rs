@@ -150,7 +150,7 @@ pub struct Marqueur {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ajoutee: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub quand: Option<String>,
+    pub quand: Option<socle::paris::InstantEcrit>,
     pub quoi: String,
 }
 

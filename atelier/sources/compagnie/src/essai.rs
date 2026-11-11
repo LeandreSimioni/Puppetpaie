@@ -452,7 +452,7 @@ pub fn monter(dossier: &Path, depuis: &str, texte: Option<&str>) -> R<Montage> {
     if let Some(s) = &src {
         copier(s, dossier, s)?;
         retirer_les_depots_de_dsn(dossier)?;
-        let quand = socle::paris::iso_secondes(socle::temps::secondes());
+        let quand = socle::paris::InstantEcrit::maintenant();
         let marqueur = crate::installation::Marqueur {
             copie_de: format!("{} (moteur essai monter, identite de {}), depuis la compagnie fictive {}", MARQUE_ESSAI, VARIABLE, nom),
             depuis: Some(nom.clone()),

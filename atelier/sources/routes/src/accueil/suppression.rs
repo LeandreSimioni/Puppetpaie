@@ -307,7 +307,7 @@ fn garder(inst: &Path, racine: &Path) -> R<Compagnie> {
     }
     let mention = FichierDemo {
         creee_le,
-        gardee_le: socle::paris::maintenant(),
+        gardee_le: socle::paris::InstantEcrit::maintenant(),
         mois: engagement::stock::mois_saisis(racine)?,
         quoi: QUOI_DEMO.to_string(),
     };
@@ -386,8 +386,8 @@ pub struct Reponse {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 struct FichierDemo {
-    creee_le: String,
-    gardee_le: String,
+    creee_le: socle::paris::InstantEcrit,
+    gardee_le: socle::paris::InstantEcrit,
     mois: Vec<Mois>,
     quoi: String,
 }
@@ -407,8 +407,8 @@ fn lire_la_demo(racine: &Path) -> R<Option<FichierDemo>> {
 /// saisis en demo, et la phrase.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct MentionDemo {
-    creee_le: String,
-    gardee_le: String,
+    creee_le: socle::paris::InstantEcrit,
+    gardee_le: socle::paris::InstantEcrit,
     mois: Vec<Mois>,
     phrase: String,
 }
@@ -416,13 +416,11 @@ pub(crate) struct MentionDemo {
 /// La mention de demo de la compagnie ; `None` : une compagnie qui n'a pas ete creee en demo.
 pub(crate) fn mention(racine: &Path) -> R<Option<MentionDemo>> {
     let Some(d) = lire_la_demo(racine)? else { return Ok(None) };
-    let jour = |t: &str| envois::etats::quand_lisible(&t.chars().take(10).collect::<String>());
-    let (creee, gardee) = (jour(&d.creee_le), jour(&d.gardee_le));
-    let depuis = if creee.is_empty() { String::new() } else { format!(" le {}", creee) };
     Ok(Some(MentionDemo {
         phrase: format!(
-            "Compagnie créée en démo{}, gardée le {}. Les paies faites en démo n'ont été ni déclarées ni envoyées par PuppetPaie : aucune DPAE, aucun contrat envoyé à la signature, aucune DSN déposée, aucun document envoyé.",
-            depuis, gardee
+            "Compagnie créée en démo le {}, gardée le {}. Les paies faites en démo n'ont été ni déclarées ni envoyées par PuppetPaie : aucune DPAE, aucun contrat envoyé à la signature, aucune DSN déposée, aucun document envoyé.",
+            d.creee_le.jour().jj_mm_aaaa(),
+            d.gardee_le.jour().jj_mm_aaaa()
         ),
         creee_le: d.creee_le,
         gardee_le: d.gardee_le,
