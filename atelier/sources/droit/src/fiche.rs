@@ -634,25 +634,6 @@ pub trait Cases {
     fn voir<V: VoirCase>(&self, v: &mut V);
 }
 
-/// LA CASE `cle` DE `fiche`, telle qu'elle s'ecrit (une table qui la confronte a ses valeurs la lit dans cette forme) ;
-/// `None` : elle est vide, ou la forme ne la declare pas.
-pub fn case_ecrite<F: Cases + ?Sized>(fiche: &F, cle: &str) -> Option<socle::ecriture::Arbre> {
-    struct Une<'a> {
-        cle: &'a str,
-        ecrite: Option<socle::ecriture::Arbre>,
-    }
-    impl VoirCase for Une<'_> {
-        fn case<T: Serialize>(&mut self, cle: &'static str, case: &Option<T>) {
-            if let (true, Some(v), None) = (cle == self.cle, case, &self.ecrite) {
-                self.ecrite = Some(socle::ecriture::Arbre::de(v));
-            }
-        }
-    }
-    let mut une = Une { cle, ecrite: None };
-    fiche.voir(&mut une);
-    une.ecrite
-}
-
 /// UNE STRUCTURE DE CASES : chacune un `Option` (`Lue`), une cle inconnue refusee. Ses `notes` (d'une fiche datee) ne sont pas des
 /// cases : des textes qui ne se datent pas, que la fiche porte tels qu'ecrits.
 macro_rules! cases {

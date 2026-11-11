@@ -13,9 +13,6 @@ use std::sync::{Arc, OnceLock};
 /// Les types de contrat de la DPAE (Format 120 v5.3, C_TYPE_CONTRAT).
 pub const TYPES_CONTRAT_DPAE: [(&str, &str); 3] = [("1", "CDD"), ("2", "CDI"), ("3", "CTT")];
 
-/// Une date civile (an, mois, jour) : le minimum pour `contrat_court`.
-pub type Jour = (i32, u32, u32);
-
 /// La face de paie d'une nature : aux cachets et aux heures, ou au mois.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -906,30 +903,23 @@ impl Proprietes {
 
 pub const DUREE_CONTRAT_COURT_MOIS: u32 = 2;
 
-use socle::date::jours_du_mois;
-
-/// La meme quantieme, n mois plus tard, ramenee au dernier jour du mois.
-fn dans_n_mois(depuis: Jour, mois: u32) -> Jour {
-    let rang = depuis.1 - 1 + mois;
-    let an = depuis.0 + (rang / 12) as i32;
-    let m = rang % 12 + 1;
-    (an, m, depuis.2.min(jours_du_mois(an, m)))
-}
+use socle::date::Jour;
 
 /// L'abattement contrats courts s'applique-t-il a ce versement ? `debut` et
 /// `fin` sont les bornes du CONTRAT SIGNE (`fin` a `None` : terme imprecis),
-/// `le` la date du versement.
-pub fn contrat_court(nat: &Nature, debut: Jour, fin: Option<Jour>, le: Jour) -> bool {
+/// `le` la date du versement. Le terme : la meme quantieme deux mois plus tard, ramenee au dernier jour du mois
+/// (`Jour::plus_mois`).
+pub fn contrat_court(nat: &Nature, debut: Jour, fin: Option<Jour>, le: Jour) -> R<bool> {
     if nat.duree_indeterminee {
-        return false;
+        return Ok(false);
     }
-    let terme = dans_n_mois(debut, DUREE_CONTRAT_COURT_MOIS);
+    let terme = debut.plus_mois(i64::from(DUREE_CONTRAT_COURT_MOIS))?;
     if let Some(f) = fin {
         if f > terme {
-            return false;
+            return Ok(false);
         }
     }
-    le <= terme
+    Ok(le <= terme)
 }
 
 // ------------------------------------------------------------------- lecture

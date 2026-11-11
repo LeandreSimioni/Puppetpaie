@@ -285,9 +285,9 @@ forme_notee! {
         pub heures: Option<Nombre>,
         pub categories: Option<Vec<String>>,
         pub codes: Option<Vec<String>>,
-        pub si_spectacle: Option<BTreeMap<String, Attendu>>,
-        pub si_entreprise: Option<BTreeMap<String, Attendu>>,
-        pub si_salarie: Option<BTreeMap<String, Attendu>>,
+        pub si_spectacle: Option<SiSpectacle>,
+        pub si_entreprise: Option<SiEntreprise>,
+        pub si_salarie: Option<SiSalarie>,
         pub anciennete: Option<Anciennete>,
         pub duree_contrat_max_jours: Option<i64>,
         pub remplace: Option<Vec<String>>,
@@ -309,9 +309,9 @@ forme_notee! {
         pub groupe: Option<String>,
         pub categories: Option<Vec<String>>,
         pub codes: Option<Vec<String>>,
-        pub si_spectacle: Option<BTreeMap<String, Attendu>>,
-        pub si_entreprise: Option<BTreeMap<String, Attendu>>,
-        pub si_salarie: Option<BTreeMap<String, Attendu>>,
+        pub si_spectacle: Option<SiSpectacle>,
+        pub si_entreprise: Option<SiEntreprise>,
+        pub si_salarie: Option<SiSalarie>,
         pub anciennete: Option<Anciennete>,
         pub duree_contrat_max_jours: Option<i64>,
         #[serde(deserialize_with = "socle::forme::en_ordre")]
@@ -323,17 +323,117 @@ forme_notee! {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Anciennete {
-    pub champ: String,
+    pub champ: ChampDAnciennete,
     pub ans: i64,
+}
+
+/// LA CASE D'OU SE COMPTE UNE ANCIENNETE (`anciennete.champ`) : une date de la fiche du salarie, qu'une grille nomme.
+/// Une autre se refuse a la lecture de la table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChampDAnciennete {
+    /// Le poste occupe depuis (`ChampsSalarie::metier`, `poste_depuis`).
+    PosteDepuis,
+}
+
+impl ChampDAnciennete {
+    /// La case, nommee comme `champs-base.json` la nomme.
+    pub fn cle(self) -> &'static str {
+        match self {
+            ChampDAnciennete::PosteDepuis => "poste_depuis",
+        }
+    }
+
+    /// Sa date dans les cases du metier de la fiche ; `None` : la fiche ne la dit pas.
+    pub fn dans(self, metier: &crate::fiche::CasesDuMetier) -> Option<Jour> {
+        match self {
+            ChampDAnciennete::PosteDepuis => metier.poste_depuis,
+        }
+    }
+}
+
+/// La case attendue `attendu` est-elle celle de la fiche ? Aucune attente : oui ; une case vide ne remplit aucune
+/// attente.
+fn vaut<T: PartialEq>(attendu: &Option<T>, case: &Option<T>) -> bool {
+    attendu.as_ref().is_none_or(|a| case.as_ref() == Some(a))
+}
+
+/// CE QU'UNE CONDITION DE GRILLE ATTEND DU SPECTACLE DE LA PAIE (`si_spectacle`) : chaque case qu'elle nomme, dans la
+/// forme de la fiche (`droit::fiche::ChampsSpectacle`) ; une case qu'elle ne declare pas se refuse a la lecture.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SiSpectacle {
+    pub genre_audiovisuel: Option<crate::fiche::GenreAudiovisuel>,
+    pub derogation_annexe_iii_3097: Option<bool>,
+}
+
+impl SiSpectacle {
+    /// Le spectacle `sp` remplit-il la condition ? Une paie sans spectacle ne remplit aucune condition sur lui.
+    pub fn remplie(&self, sp: Option<&crate::fiche::ChampsSpectacle>) -> bool {
+        match sp {
+            Some(sp) => vaut(&self.genre_audiovisuel, &sp.genre_audiovisuel) && vaut(&self.derogation_annexe_iii_3097, &sp.derogation_annexe_iii_3097),
+            None => self.genre_audiovisuel.is_none() && self.derogation_annexe_iii_3097.is_none(),
+        }
+    }
+}
+
+/// CE QU'UNE CONDITION DE GRILLE ATTEND DE LA FICHE ENTREPRISE (`si_entreprise`), dans sa forme
+/// (`droit::fiche::ChampsEntreprise`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SiEntreprise {
+    pub type_radio_1922: Option<crate::fiche::TypeRadio1922>,
+    pub cinquante_salaries_3241: Option<bool>,
+}
+
+impl SiEntreprise {
+    pub fn remplie(&self, ent: &crate::fiche::ChampsEntreprise) -> bool {
+        vaut(&self.type_radio_1922, &ent.type_radio_1922) && vaut(&self.cinquante_salaries_3241, &ent.cinquante_salaries_3241)
+    }
+}
+
+/// CE QU'UNE CONDITION DE GRILLE ATTEND DE LA FICHE DU SALARIE (`si_salarie`), dans sa forme : des cases du metier
+/// (`ChampsSalarie::metier`), et le forfait en jours, case d'un permanent (`ChampsSalarie::permanent`).
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SiSalarie {
+    pub stagiaire_ccneac: Option<crate::fiche::StagiaireCcneac>,
+    pub experimente_3241: Option<bool>,
+    pub forfait_jours: Option<bool>,
+}
+
+impl SiSalarie {
+    /// Les cases du metier `metier` (que la grille trouvee ouvre) et celles d'un permanent `permanent` (`None` : le
+    /// contrat n'est pas paye au mois, elles ne disent rien) remplissent-elles la condition ?
+    pub fn remplie(&self, metier: &crate::fiche::CasesDuMetier, permanent: Option<&crate::fiche::CasesDuPermanent>) -> bool {
+        vaut(&self.stagiaire_ccneac, &metier.stagiaire_ccneac)
+            && vaut(&self.experimente_3241, &metier.experimente_3241)
+            && match permanent {
+                Some(p) => vaut(&self.forfait_jours, &p.forfait_jours),
+                None => self.forfait_jours.is_none(),
+            }
+    }
+
+    /// Les cases qu'elle nomme, comme `champs-base.json` les nomme.
+    pub fn cases(&self) -> Vec<&'static str> {
+        [
+            self.stagiaire_ccneac.is_some().then_some("stagiaire_ccneac"),
+            self.experimente_3241.is_some().then_some("experimente_3241"),
+            self.forfait_jours.is_some().then_some("forfait_jours"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
 }
 
 /// LES CONDITIONS D'UNE GRILLE OU D'UNE MAJORATION, telles que l'engagement les confronte a une ligne de paie.
 pub struct Conditions<'a> {
     pub categories: Option<&'a [String]>,
     pub codes: Option<&'a [String]>,
-    pub si_spectacle: Option<&'a BTreeMap<String, Attendu>>,
-    pub si_entreprise: Option<&'a BTreeMap<String, Attendu>>,
-    pub si_salarie: Option<&'a BTreeMap<String, Attendu>>,
+    pub si_spectacle: Option<&'a SiSpectacle>,
+    pub si_entreprise: Option<&'a SiEntreprise>,
+    pub si_salarie: Option<&'a SiSalarie>,
     pub anciennete: Option<&'a Anciennete>,
     pub duree_contrat_max_jours: Option<i64>,
 }
@@ -362,48 +462,6 @@ impl Majoration {
             si_salarie: self.si_salarie.as_ref(),
             anciennete: self.anciennete.as_ref(),
             duree_contrat_max_jours: self.duree_contrat_max_jours,
-        }
-    }
-}
-
-/// Ce qu'une condition de grille (`si_*`) attend d'une case : cochee ou non, ou une valeur.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(untagged)]
-pub enum Attendu {
-    Oui(bool),
-    Valeur(String),
-}
-
-/// Une case lue pour une condition : si elle dit quelque chose (`vraie`), et son texte (vide si elle ne dit rien).
-#[derive(Debug, Clone, PartialEq, Default)]
-pub struct CaseLue {
-    pub vraie: bool,
-    pub texte: String,
-}
-
-/// LA CASE `cle` DE `fiche` LUE POUR UNE CONDITION (`fiche::case_en`) : absente, nulle ou vide, elle ne dit rien
-/// (`None`) ; dite, un oui ou un nombre non nul la rend vraie, et son texte est celui qu'elle ecrit (`True`, `12`, `1.5`,
-/// le texte tel quel). Une case de plusieurs valeurs ne se confronte a aucune condition : elle se refuse.
-pub fn case_lue<F: crate::fiche::Cases + ?Sized>(fiche: &F, cle: &str) -> R<Option<CaseLue>> {
-    use socle::ecriture::Arbre;
-    let lue = match crate::fiche::case_ecrite(fiche, cle) {
-        None | Some(Arbre::Nul) => return Ok(None),
-        Some(Arbre::Booleen(b)) => CaseLue { vraie: b, texte: if b { "True" } else { "False" }.into() },
-        Some(Arbre::Nombre(t)) => CaseLue { vraie: !socle::ecriture::nombre_nul(&t), texte: t },
-        Some(Arbre::Texte(t)) => CaseLue { vraie: !t.is_empty(), texte: t },
-        Some(Arbre::Liste(_) | Arbre::Table(_)) => {
-            return Err(socle::echec::a_la_cle("Une condition de grille des minima nomme une case de plusieurs valeurs, qu'elle ne lit pas : le signaler au développeur.", cle, ""))
-        }
-    };
-    Ok(Some(lue).filter(|l| !l.texte.is_empty()))
-}
-
-impl Attendu {
-    /// La case lue est-elle celle qu'on attend ?
-    pub fn vaut(&self, lu: &CaseLue) -> bool {
-        match self {
-            Attendu::Oui(b) => lu.vraie == *b,
-            Attendu::Valeur(v) => lu.texte == *v,
         }
     }
 }
@@ -471,21 +529,6 @@ pub fn plus_bas<T>(v: Vec<T>, valeur: impl Fn(&T) -> Decimal) -> Option<T> {
         }
     }
     mini.map(|(_, x)| x)
-}
-
-/// Les dix premiers caracteres d'une date, AAAA-MM-JJ ou AAAAMMJJ.
-pub fn iso(s: &str) -> Option<Jour> {
-    let s: String = s.chars().take(10).collect();
-    let c = s.as_bytes();
-    let n = |a: usize, b: usize| -> Option<u32> {
-        let x = s.get(a..b)?;
-        x.bytes().try_fold(0u32, |n, c| c.is_ascii_digit().then(|| n * 10 + u32::from(c - b'0')))
-    };
-    match c.len() {
-        10 if c[4] == b'-' && c[7] == b'-' => Jour::nouveau(n(0, 4)? as i32, n(5, 7)?, n(8, 10)?),
-        8 => Jour::nouveau(n(0, 4)? as i32, n(4, 6)?, n(6, 8)?),
-        _ => None,
-    }
 }
 
 /// Les annees revolues de `a` au `b` (une anciennete, un age).

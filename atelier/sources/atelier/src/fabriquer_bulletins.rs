@@ -460,13 +460,12 @@ fn calculer(b: &Bulletin, avant: &Cumuls) -> R<Calcule> {
     // LE « PLAFOND URSSAF » IMPRIME, PAR LA REGLE DU MOTEUR (`plafond.rs`, qui cite ses textes) et le PSS d'un texte
     // (`pss`) : le prorata calendaire pour un permanent, les journees de l'artiste engage moins de cinq jours, le
     // prorata des jours remuneres pour les autres intermittents.
-    let t = |j: &Jour| (j.an, j.mois, j.jour);
     let resoudre = pss;
     let plafond = if b.permanent {
-        droit::plafond::plafond_permanent(t(&b.debut), t(&b.fin), None, &resoudre)
+        droit::plafond::plafond_permanent(b.debut, b.fin, None, &resoudre)
     } else {
-        let dates: Vec<_> = jours_travailles.iter().map(t).collect();
-        droit::plafond::plafond_urssaf(t(&b.debut), t(&b.fin), jetons(&b.statut).concat() == "artiste", &resoudre, &dates)
+        let dates: Vec<Jour> = jours_travailles.iter().copied().collect();
+        droit::plafond::plafond_urssaf(b.debut, b.fin, jetons(&b.statut).concat() == "artiste", &resoudre, &dates)
     }
     .map_err(|m| m.reformuler(|p| format!("bulletin {} : {}", b.rang, p)))?;
     let assiette_csg = eur2(brut * assiette_csg());

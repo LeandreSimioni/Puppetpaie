@@ -331,10 +331,6 @@ fn rond(x: Decimal) -> Decimal {
     bordereau::euro(x)
 }
 
-fn tuple(j: Jour) -> (i32, u32, u32) {
-    (j.an, j.mois, j.jour)
-}
-
 fn cle_salarie(p: &Paie) -> String {
     p.salarie.id.to_string()
 }
@@ -2036,7 +2032,7 @@ fn pas_du_versement(
 
 pub fn court(p: &Paie, le: Jour) -> R<bool> {
     let e = &p.engagement;
-    Ok(contrat_court(&*e.nat()?, tuple(e.debut), e.fin.map(tuple), tuple(le)))
+    contrat_court(&*e.nat()?, e.debut, e.fin, le)
 }
 
 /// Les quatre blocs 51 d'une paie, et les activites 53 sous le 002.

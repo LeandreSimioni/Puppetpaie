@@ -712,8 +712,7 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
     let fin = e.fin_periode();
     let taux = droit::pas::taux_dgfip(ctx, &cle, Some(e.date_du_versement()?), Some(e.mois))?;
     let bareme = ctx.bareme(&Jour { an: fin.an, mois: fin.mois, jour: 1 })?;
-    let t = |j: Jour| (j.an, j.mois, j.jour);
-    let court = droit::natures::contrat_court(&*e.nat()?, t(e.debut), e.fin.map(t), t(fin));
+    let court = droit::natures::contrat_court(&*e.nat()?, e.debut, e.fin, fin)?;
     // « Dans le cas d'une avance faite par un employeur en cas de subrogation des indemnites journalieres : le montant de
     // l'avance s'ajoute a la RNF pour constituer l'assiette du PAS » (S21.G00.50.013, `norme-dsn/texte/bloc-S21.G00.50.txt`) ;
     // cette avance-la, ce que le BOFiP en soumet (`maintien`, `Assiette::IjSubrogeesAssiettePas`).
@@ -745,8 +744,7 @@ pub fn prelevement_de_la_correction(
     let cle = apres.salarie.id.to_string();
     let taux = droit::pas::taux_dgfip(ctx, &cle, Some(fin), Some(versement))?;
     let bareme = ctx.bareme(&debut)?;
-    let t = |j: Jour| (j.an, j.mois, j.jour);
-    let court = droit::natures::contrat_court(&*e.nat()?, t(e.debut), e.fin.map(t), t(fin));
+    let court = droit::natures::contrat_court(&*e.nat()?, e.debut, e.fin, fin)?;
     let versement = droit::pas::du_versement(taux.as_ref(), &bareme, difference, Some(fin), court, droit::pas::ZONE_DEFAUT)?;
     let prelevement = if difference < Decimal::ZERO {
         match taux_origine.filter(|t| !t.is_empty()) {

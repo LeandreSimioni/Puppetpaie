@@ -31,15 +31,12 @@
 //! - CSS D. 242-19 : la valeur horaire (dans le bareme, `plafond_securite_sociale`).
 //!
 //! Les plafonds (PSS) ne sont pas dans le code : le module recoit un resolveur `annee -> (mensuel, horaire)`
-//! (`Contexte::plafond_securite_sociale` en production). Un refus du resolveur passe tel quel. Les dates sont des
-//! `(an, mois, jour)`.
+//! (`Contexte::plafond_securite_sociale` en production). Un refus du resolveur passe tel quel.
 
+use socle::date::Jour;
 use socle::echec::R;
 use socle::num::{add, div, eur, mul, Decimal};
 use std::collections::BTreeSet;
-
-/// Une date civile : (an, mois, jour).
-pub type Jour = (i32, u32, u32);
 
 /// Un resolveur de PSS : annee -> (mensuel, horaire). `Err` = `PlafondInconnu`.
 pub type Pss<'a> = &'a dyn Fn(i32) -> R<(Decimal, Decimal)>;
@@ -54,23 +51,6 @@ pub const HEURES_PAR_JOURNEE: i64 = 12;
 
 use socle::date::jours_du_mois;
 
-/// Numero du jour (algorithme du jour civil) : la difference de deux numeros
-/// est le nombre de jours entre les dates.
-fn numero(j: Jour) -> i64 {
-    let (a, m, d) = (j.0 as i64, j.1 as i64, j.2 as i64);
-    let a = if m <= 2 { a - 1 } else { a };
-    let ere = a.div_euclid(400);
-    let aa = a - ere * 400;
-    let mp = (m + 9) % 12;
-    let jda = (153 * mp + 2) / 5 + d - 1;
-    let jj = aa * 365 + aa / 4 - aa / 100 + jda;
-    ere * 146097 + jj
-}
-
-fn iso(j: Jour) -> String {
-    format!("{:04}-{:02}-{:02}", j.0, j.1, j.2)
-}
-
 // ----------------------------------------------------------------- le calcul
 
 /// (PSS mensuel, PSS horaire) de l'annee, tronques a l'entier.
@@ -83,21 +63,21 @@ fn valeurs(annee: i32, pss: Pss) -> R<(Decimal, Decimal)> {
 /// somme. Les deux bornes sont incluses.
 pub fn prorata_calendaire(debut: Jour, fin: Jour, pss: Pss) -> R<Decimal> {
     if fin < debut {
-        return Err(socle::refus!("fin {} anterieure au debut {}", iso(fin), iso(debut)));
+        return Err(socle::refus!("fin {} anterieure au debut {}", fin.iso(), debut.iso()));
     }
     let mut total = Decimal::ZERO;
     let mut jour = debut;
     while jour <= fin {
-        let dans_le_mois = jours_du_mois(jour.0, jour.1);
-        let derniere = (jour.0, jour.1, dans_le_mois);
+        let dans_le_mois = jour.jours_du_mois();
+        let derniere = Jour { jour: dans_le_mois, ..jour };
         let borne = fin.min(derniere);
-        let jours = borne.2 - jour.2 + 1;
-        let (mensuel, _) = valeurs(jour.0, pss)?;
+        let jours = borne.jour - jour.jour + 1;
+        let (mensuel, _) = valeurs(jour.an, pss)?;
         total = add(total, div(mul(mensuel, Decimal::from(jours)), Decimal::from(dans_le_mois)));
-        jour = if borne.1 == 12 {
-            (borne.0 + 1, 1, 1)
+        jour = if borne.mois == 12 {
+            Jour { an: borne.an + 1, mois: 1, jour: 1 }
         } else {
-            (borne.0, borne.1 + 1, 1)
+            Jour { mois: borne.mois + 1, jour: 1, ..borne }
         };
     }
     Ok(total)
@@ -106,9 +86,9 @@ pub fn prorata_calendaire(debut: Jour, fin: Jour, pss: Pss) -> R<Decimal> {
 /// Le nombre de jours calendaires de la periode d'engagement continu, bornes incluses (du 24 au 24 fait un jour).
 pub fn duree_engagement(debut: Jour, fin: Jour) -> R<i64> {
     if fin < debut {
-        return Err(socle::refus!("fin {} anterieure au debut {}", iso(fin), iso(debut)));
+        return Err(socle::refus!("fin {} anterieure au debut {}", fin.iso(), debut.iso()));
     }
-    Ok(numero(fin) - numero(debut) + 1)
+    Ok(fin.moins(&debut) + 1)
 }
 
 /// Vrai quand l'arrete du 24/01/1975, art. 3, al. 2 s'applique : un artiste engage moins de cinq jours continus.
@@ -122,7 +102,7 @@ pub fn plafond_journees(dates: &[Jour], pss: Pss) -> R<Decimal> {
     let journees: BTreeSet<Jour> = dates.iter().copied().collect();
     let mut total = Decimal::ZERO;
     for j in journees {
-        let (_, horaire) = valeurs(j.0, pss)?;
+        let (_, horaire) = valeurs(j.an, pss)?;
         total = add(total, mul(horaire, Decimal::from(HEURES_PAR_JOURNEE)));
     }
     Ok(total)
@@ -135,7 +115,7 @@ pub fn plafond_jours_remuneres(dates: &[Jour], pss: Pss) -> R<Decimal> {
     let jours: BTreeSet<Jour> = dates.iter().copied().collect();
     let mut par_mois: std::collections::BTreeMap<(i32, u32), i64> = Default::default();
     for j in jours {
-        *par_mois.entry((j.0, j.1)).or_default() += 1;
+        *par_mois.entry((j.an, j.mois)).or_default() += 1;
     }
     let mut total = Decimal::ZERO;
     for ((an, mois), n) in par_mois {
@@ -158,7 +138,7 @@ fn journees_illisibles(debut: Jour, fin: Jour, court: bool, dites: i64, datees: 
     socle::refus!(
         "Contrat du {} au {} : {}, et la saisie dit {} jour(s) travaille(s) pour {} date(s). Dater chaque journee de \
          travail sur les lignes de paie : elle ne se devine pas.",
-        iso(debut), iso(fin), regle, dites, datees)
+        debut.iso(), fin.iso(), regle, dites, datees)
 }
 
 /// Le plafond d'un contrat d'intermittent, arrondi au centime, pour les journees `dates` (celles d'une paie, ou de
@@ -171,7 +151,7 @@ pub fn plafond_urssaf(debut: Jour, fin: Jour, artiste: bool, pss: Pss, dates: &[
         return Err(journees_illisibles(debut, fin, court, 0, 0));
     }
     if let Some(j) = dates.iter().find(|j| **j < debut || **j > fin) {
-        return Err(socle::refus!("journee de travail le {} hors du contrat du {} au {}", iso(*j), iso(debut), iso(fin)));
+        return Err(socle::refus!("journee de travail le {} hors du contrat du {} au {}", j.iso(), debut.iso(), fin.iso()));
     }
     if court {
         Ok(eur(plafond_journees(dates, pss)?))
@@ -240,7 +220,7 @@ pub fn pour_paie(e: &EngagementPlafond, pss: Pss) -> R<Decimal> {
         return Err(socle::refus!(
             "journee de travail le {} hors de la periode de paie du {} au {} : le plafond se retient pour chaque paie \
              (R. 242-2 CSS), sur les jours de cette paie",
-            iso(*j), iso(e.debut_periode), iso(e.fin_periode)));
+            j.iso(), e.debut_periode.iso(), e.fin_periode.iso()));
     }
     plafond_urssaf(e.debut, e.fin, e.artiste, pss, &e.dates_travail)
 }

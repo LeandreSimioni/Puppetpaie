@@ -18,7 +18,7 @@ use droit::contexte::Contexte;
 use socle::date::{repr_texte, Jour};
 use droit::emplois;
 use crate::{Avis, Engagement};
-use droit::minima::{ans_revolus, grille_au, palier, plancher, plus_bas, signataire, table, case_lue, CaseLue, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
+use droit::minima::{ans_revolus, grille_au, palier, plancher, plus_bas, signataire, table, Conditions, Convention, Grille, Minimum, Par, Plancher, SpectacleDuContrat, Table};
 use socle::texte::{euros, virgule};
 use socle::echec::{refus, Echec, R};
 use socle::num::{add, div, mul, sub, Decimal};
@@ -27,12 +27,6 @@ use socle::num::{add, div, mul, sub, Decimal};
 pub fn idcc_du_contrat(idcc: &str, sp: Option<&droit::fiche::Spectacle>, sal: &droit::fiche::ChampsSalarie) -> R<String> {
     let Some(sp) = sp.filter(|s| s.emission_tv_1734.dite() == Some(&true)) else { return Ok(idcc.to_string()) };
     droit::minima::idcc_du_contrat(idcc, &SpectacleDuContrat { emission_tv_1734: true, cle: &sp.cle }, sal)
-}
-
-/// La case `cle` du spectacle de la paie lue pour une condition (`droit::minima::case_lue`) ; `None` : la paie n'a pas de
-/// spectacle.
-fn case_du_spectacle(sp: Option<&droit::fiche::Spectacle>, cle: &str) -> R<Option<CaseLue>> {
-    Ok(sp.map(|s| case_lue(&s.champs, cle)).transpose()?.flatten())
 }
 
 fn cachet(c: &str) -> bool {
@@ -125,20 +119,12 @@ struct Cx<'a> {
 }
 
 impl<'a> Cx<'a> {
-    /// LA CASE `cle` DE LA FICHE DU SALARIE qu'une condition de grille nomme (`droit::minima::case_lue`) : une case du
-    /// metier, par la cle de la grille ; une case de la piece d'un permanent (le forfait en jours) ne se lit que pour un
-    /// contrat paye au mois ; pour un autre, elle ne dit rien.
-    fn case_du_salarie(&self, cle: &str) -> R<Option<CaseLue>> {
-        if let Some(lue) = case_lue(&self.fiche.champs, cle)? {
-            return Ok(Some(lue));
-        }
-        if let Some(lue) = case_lue(self.fiche.metier.ouvrir(&self.par_la_grille), cle)? {
-            return Ok(Some(lue));
-        }
-        match self.paie.engagement.nat()?.au_mois() {
-            Some(au) => case_lue(self.fiche.permanent.ouvrir(&au), cle),
-            None => Ok(None),
-        }
+    /// LES CASES DE LA FICHE DU SALARIE qu'une condition de grille lit (`droit::minima::SiSalarie`) : celles du metier,
+    /// par la cle de la grille ; celles de la piece d'un permanent (le forfait en jours) ne se lisent que pour un contrat
+    /// paye au mois ; pour un autre, elles ne disent rien.
+    fn condition_du_salarie(&self, si: &droit::minima::SiSalarie) -> R<bool> {
+        let au = self.paie.engagement.nat()?.au_mois();
+        Ok(si.remplie(self.fiche.metier.ouvrir(&self.par_la_grille), au.as_ref().map(|au| self.fiche.permanent.ouvrir(au))))
     }
 
     /// Les lignes de minima du metier dans la 3090, annexe par annexe (hors catalogue : aucune).
@@ -347,8 +333,8 @@ impl<'a> Cx<'a> {
         let Some(presents) = cddu.and_then(|m| m.get(&fonction)).map(|f| f.genres()).filter(|p| !p.is_empty()) else {
             return Ok(None);
         };
-        let genre = case_du_spectacle(self.paie.spectacle.as_ref(), "genre_audiovisuel")?.map(|c| c.texte);
-        let (semaine, dit) = if let Some((g, s)) = presents.iter().find(|(g, _)| genre.as_deref() == Some(*g)) {
+        let genre = self.paie.spectacle.as_ref().and_then(|s| s.champs.genre_audiovisuel).map(|g| g.as_str());
+        let (semaine, dit) = if let Some((g, s)) = presents.iter().find(|(g, _)| genre == Some(*g)) {
             (*s, format!("programme de {}", g))
         } else {
             let (g, s) = plus_bas(presents, |x| x.1).unwrap();
@@ -415,7 +401,7 @@ impl<'a> Cx<'a> {
                 }
             }
             let mut dit = format!("{} la semaine de 39 h (annexe I du titre II)", euros(semaine));
-            if case_du_spectacle(spec, "derogation_annexe_iii_3097")?.is_some_and(|c| c.vraie) {
+            if spec.is_some_and(|s| s.champs.derogation_annexe_iii_3097 == Some(true)) {
                 let a = c.annexe_iii.as_ref().ok_or_else(|| manque("3097.annexe_iii"))?;
                 if semaine > a.socle {
                     semaine = add(a.socle, div(mul(sub(semaine, a.socle), a.part_au_dela), Decimal::ONE_HUNDRED));
@@ -429,8 +415,7 @@ impl<'a> Cx<'a> {
             let Some(reference) = self.ligne_de_minima("3097").filter(|r| !r.is_empty()) else {
                 return Ok(None);
             };
-            let fmt = case_du_spectacle(spec, "format_cinema")?.map(|c| c.texte);
-            let fmt = fmt.as_deref();
+            let fmt = spec.and_then(|s| s.champs.format_cinema).map(|f| f.as_str());
             let (grille, quoi) = if reference == "acteur" {
                 let cl = if fmt == Some("long") { "long" } else { "court" };
                 let sous = if fmt == Some("long") || fmt == Some("court") {
@@ -476,20 +461,15 @@ impl<'a> Cx<'a> {
             }
         }
         // Les conditions nomment les cases du spectacle, de la fiche entreprise et de celle du salarie.
-        for (cl, attendu) in c.si_spectacle.into_iter().flatten() {
-            // Une paie sans spectacle ne remplit aucune condition sur lui.
-            if !case_du_spectacle(self.paie.spectacle.as_ref(), cl)?.is_some_and(|lu| attendu.vaut(&lu)) {
-                return Ok(false);
-            }
-        }
         // Une case qui ne dit rien ne remplit aucune condition.
-        for (cl, attendu) in c.si_entreprise.into_iter().flatten() {
-            if !case_lue(self.ent, cl)?.is_some_and(|lu| attendu.vaut(&lu)) {
-                return Ok(false);
-            }
+        if c.si_spectacle.is_some_and(|si| !si.remplie(self.paie.spectacle.as_ref().map(|s| &s.champs))) {
+            return Ok(false);
         }
-        for (cl, attendu) in c.si_salarie.into_iter().flatten() {
-            if !self.case_du_salarie(cl)?.is_some_and(|lu| attendu.vaut(&lu)) {
+        if c.si_entreprise.is_some_and(|si| !si.remplie(self.ent)) {
+            return Ok(false);
+        }
+        if let Some(si) = c.si_salarie {
+            if !self.condition_du_salarie(si)? {
                 return Ok(false);
             }
         }
@@ -502,19 +482,17 @@ impl<'a> Cx<'a> {
         // L'anciennete, en dernier : elle ne se demande que si tout le reste vise la ligne. Seule la compagnie sait depuis
         // quand ; sans la case, le calcul refuse en la nommant.
         if let Some(a) = c.anciennete {
-            let Some(depuis) = self.case_du_salarie(&a.champ)? else {
+            let Some(depuis) = a.champ.dans(self.fiche.metier.ouvrir(&self.par_la_grille)) else {
                 return Err(socle::echec::cle(
                     format!(
                         "La fiche de {} ne dit pas la date d'où se compte son ancienneté, et un minimum de la convention en dépend : il change après {} ans. La dire sur sa fiche.",
                         crate::qui_de(self.fiche)?,
                         a.ans
                     ),
-                    &a.champ,
+                    a.champ.cle(),
                 ));
             };
-            let Some(n) = droit::minima::iso(&depuis.texte).map(|d| ans_revolus(d, jour_de_paie(self.paie))) else {
-                return Err(socle::echec::a_la_cle("Une date de la fiche du salarié ne se lit pas : la corriger sur sa fiche.", &a.champ, &depuis.texte));
-            };
+            let n = ans_revolus(depuis, jour_de_paie(self.paie));
             if n < a.ans {
                 return Ok(false);
             }
@@ -1179,8 +1157,8 @@ pub fn cases_du_metier(ctx: &Contexte, code: &str, jour: &Jour) -> R<BTreeSet<St
             && c.codes.is_none_or(|codes| codes.iter().any(|x| *x == m.code))
     };
     let nommees = |c: &Conditions, lues: &mut BTreeSet<String>| {
-        lues.extend(c.anciennete.map(|a| a.champ.clone()));
-        lues.extend(c.si_salarie.into_iter().flat_map(|s| s.keys().cloned()));
+        lues.extend(c.anciennete.map(|a| a.champ.cle().to_string()));
+        lues.extend(c.si_salarie.into_iter().flat_map(|s| s.cases()).map(str::to_string));
     };
     let grilles = grille.grilles.iter().flatten().chain(grille.grilles_complementaires.iter().flatten());
     for gr in grilles.filter(|gr| gr.statut.as_deref().is_none_or(|st| st == "tous" || st == statut)) {

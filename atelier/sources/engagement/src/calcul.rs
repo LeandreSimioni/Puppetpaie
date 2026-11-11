@@ -938,10 +938,6 @@ fn pss_du_contexte(ctx: &Contexte) -> impl Fn(i32) -> socle::echec::R<(Decimal, 
     move |a| ctx.plafond_securite_sociale(a).map(|(m, h)| (Decimal::from(m), Decimal::from(h)))
 }
 
-fn tuple(j: &Jour) -> (i32, u32, u32) {
-    (j.an, j.mois, j.jour)
-}
-
 /// `bareme_applique(&ctx.bareme(fin), sal, nat, fin, caisse)`, garde : la pile ne
 /// depend que des fichiers du bareme, de la fiche entreprise, du salarie, de
 /// la nature, de la caisse de conges et du jour. Un mois et ses mois anterieurs la recomposaient a
@@ -1846,7 +1842,7 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
             PlafondTempsPartiel::Proratise => Some(duree_du_temps_partiel(e)?),
             _ => None,
         };
-        return plafond_permanent(tuple(&e.debut_periode()), tuple(&e.fin_periode()), tp, &pss_du_contexte(ctx));
+        return plafond_permanent(e.debut_periode(), e.fin_periode(), tp, &pss_du_contexte(ctx));
     }
     let artiste = match statut_de(sal)? {
         "artiste" => true,
@@ -1861,12 +1857,12 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
     let ep = EngagementPlafond {
         mensuelle: nat.mensuelle(),
         artiste,
-        debut_periode: tuple(&e.debut_periode()),
-        fin_periode: tuple(&e.fin_periode()),
-        debut: tuple(&e.debut),
+        debut_periode: e.debut_periode(),
+        fin_periode: e.fin_periode(),
+        debut: e.debut,
         // Un contrat paye a l'engagement a son terme (`Engagement::fin` : `None` seulement pour un permanent ouvert).
-        fin: tuple(&e.fin.ok_or_else(|| socle::fichiers::absent("fin"))?),
-        dates_travail: e.dates_travail.iter().map(tuple).collect(),
+        fin: e.fin.ok_or_else(|| socle::fichiers::absent("fin"))?,
+        dates_travail: e.dates_travail.clone(),
         jours: e.jours,
     };
     pour_paie(&ep, &pss_du_contexte(ctx))
@@ -1891,7 +1887,7 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
 /// xii-20260923.md`, l. 73), le plafond que R. 242-2 corrige ; elle suit le plafond corrige, comme la retraite
 /// complementaire (`plafond_de_l_engagement`). Textes : `atelier/reference/sources/plafond-temps-partiel/LISEZ-MOI.md`.
 pub(crate) fn plafond_de_la_sante(ctx: &Contexte, e: &Engagement) -> R<Decimal> {
-    plafond_permanent(tuple(&e.debut_periode()), tuple(&e.fin_periode()), None, &pss_du_contexte(ctx))
+    plafond_permanent(e.debut_periode(), e.fin_periode(), None, &pss_du_contexte(ctx))
 }
 
 /// Le plafond d'un salarie a temps partiel, et ce que S21.G00.40.084 en declare.
