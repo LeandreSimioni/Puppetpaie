@@ -95,8 +95,8 @@ async function boitePieces(ligne, acte) {
       </li>`).join("")}</ul>`
     : montre.vide ? `<p class="discret">${echapper(montre.vide)}</p>` : "";
   ouvrirBoite(`
-    <h3>${echapper(titre)} — ${echapper(ligne.nom)}</h3>
-    <p class="discret">${echapper(pourQuoi(ligne))}, ${echapper(ligne.periode_dit)}</p>
+    <h3>${echapper([titre, ligne.nom].filter(Boolean).join(" — "))}</h3>
+    <p class="discret">${echapper([pourQuoi(ligne), ligne.periode_dit].filter(Boolean).join(", "))}</p>
     ${carre.phrase ? `<p>${echapper(carre.phrase)}</p>` : ""}
     ${montre.encart ? `<div class="encart attention"><b>${echapper(montre.encart.titre)}</b>
       ${echapper(montre.encart.texte)}</div>` : ""}
@@ -143,9 +143,7 @@ function peindreEtats() {
     if (div.classList.contains("en-modification") && div._ligne) {
       const ligne = etatDeLaCarte(div) || div._ligne;
       div._ligne = ligne;
-      poserEtats(cible, `<span class="etats-qui">${echapper(ligne.nom)}
-          <span class="discret">— ${echapper(pourQuoi(ligne))}</span></span>`
-        + bandeauEtats(ligne) + bandeauValidation(ligne));
+      poserEtats(cible, quiEtPourQuoi(ligne) + bandeauEtats(ligne) + bandeauValidation(ligne));
       brancherValidation(div, ligne);
       brancherRecu(div);
       return;
@@ -174,9 +172,7 @@ function peindreEtats() {
     }
     // Un contrat sur plusieurs mois : son chevron est au bord de la case.
     div._ligne = ligne;
-    poserEtats(cible, `<span class="etats-qui">${echapper(ligne.nom)}
-        <span class="discret">— ${echapper(pourQuoi(ligne))}</span></span>`
-      + bandeauEtats(ligne) + bandeauValidation(ligne));
+    poserEtats(cible, quiEtPourQuoi(ligne) + bandeauEtats(ligne) + bandeauValidation(ligne));
     brancherValidation(div, ligne);
     brancherRecu(div);
     fermerEdition(div, !!ligne.valide);

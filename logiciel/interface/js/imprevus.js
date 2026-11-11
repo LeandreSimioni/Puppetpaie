@@ -233,12 +233,15 @@ async function attendre(test, ms) {
   return null;
 }
 
+/** La carte (`salarie` : son salarié, absent quand aucun n'est choisi) est-elle à ce salarié ? */
+const memeSalarie = (salarie, autre) => !!salarie && salarie.toUpperCase() === String(autre).toUpperCase();
+
 async function allerALaCase(f, champ) {
   if (f.mois && f.mois !== MOIS_AFFICHE) allerAuMois(f.mois);
   const carte = () => {
     if (f.mois && (MOIS_AFFICHE !== f.mois || document.getElementById("engagements").classList.contains("en-lecture"))) return null;
     const siennes = [...document.querySelectorAll("#engagements .engagement")]
-      .filter((d) => salarieDuBloc(d).toUpperCase() === String(f.salarie).toUpperCase());
+      .filter((d) => memeSalarie(salarieDuBloc(d), f.salarie));
     return siennes.find((d) => carteDe(d).numero === f.numero || (f.debut && carteDe(d).debut === f.debut)) || siennes[0] || null;
   };
   let div = await attendre(carte, 15000);
@@ -346,7 +349,7 @@ function peindreImprevusDesCartes() {
   const cartes = [...document.querySelectorAll("#engagements .engagement")];
   const parCarte = new Map(cartes.map((d) => [d, []]));
   if (IMPREVUS) IMPREVUS.imprevus.forEach((i) => {
-    const siennes = cartes.filter((d) => salarieDuBloc(d).toUpperCase() === String(i.salarie).toUpperCase());
+    const siennes = cartes.filter((d) => memeSalarie(salarieDuBloc(d), i.salarie));
     const c = siennes.find((d) => {
       const x = carteDe(d);
       return (i.contrat && x.numero === i.contrat) || (i.contrat_debut && x.debut === i.contrat_debut);

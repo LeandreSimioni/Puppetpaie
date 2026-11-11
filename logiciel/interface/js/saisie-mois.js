@@ -708,8 +708,9 @@ function majAvisDemo(mois) {
 let IMPORTES = [];
 
 /* CE QU'UNE CARTE NEUVE DU MOIS PEUT ÊTRE (`nouvelle_carte` de la route `saisie`) : sa nature d'ouverture, les natures
- * que le mois propose, si elle se choisit, et l'aide d'un mois vide. Le moteur le dit, mois par mois. */
-let NOUVELLE_CARTE = { nature: "", natures: [], nature_au_choix: false, aide_vide: "apercu_vide" };
+ * que le mois propose, si elle se choisit, et l'aide d'un mois vide. Le moteur le dit, mois par mois : il est lu avant
+ * que la première carte ou l'aperçu ne se dessine (`chargerMois`). */
+let NOUVELLE_CARTE = null;
 
 const CASES_IMPORTEES = [
   ["brut", "Brut"], ["net_imposable", "Net imposable"], ["net_a_payer", "Net à payer"],

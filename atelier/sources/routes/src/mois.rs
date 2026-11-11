@@ -321,11 +321,11 @@ struct Reprise {
     lignes: [LigneAReprendre; 1],
 }
 
-/// La ligne de cachets d'un contrat repris : aucun cachet encore, au taux du contrat ou au dernier saisi.
+/// La ligne de cachets d'un contrat repris : au taux du contrat ou au dernier saisi, sans quantite (aucun cachet n'est
+/// encore dit : la case est vide, pas zero).
 #[derive(Debug, Serialize)]
 struct LigneAReprendre {
     rubrique: &'static str,
-    quantite: u8,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
     taux: Option<Decimal>,
     dates: [Jour; 0],
@@ -679,7 +679,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             debut,
             fin,
             numero: numero.clone(),
-            lignes: [LigneAReprendre { rubrique: "cachet", quantite: 0, taux, dates: [] }],
+            lignes: [LigneAReprendre { rubrique: "cachet", taux, dates: [] }],
         };
         out.push(EnCours {
             nom: ctx.nomme(&salarie),
