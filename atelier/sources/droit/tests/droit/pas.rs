@@ -71,7 +71,7 @@ fn pile(b: Bareme, le: Option<Jour>) -> Pile {
         }
     };
     // Le reste de la pile est celui d'un socle livre : le PAS n'en lit que sa section.
-    let livre: Pile = lire(&code_livre(), "baremes/2026.json");
+    let livre: Pile = droit::contexte::socle_livre_lu(2026).unwrap_or_else(|e| panic!("{}", e.phrase)).expect("le socle 2026 est livré");
     Pile { pas_taux_par_defaut: section, ..livre }
 }
 

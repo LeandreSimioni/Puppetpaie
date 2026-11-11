@@ -1057,11 +1057,11 @@ mod tests {
 
     /// Un arret tel que le moteur l'ecrit : chaque cle y est, nulle quand elle n'a pas de valeur.
     fn arret_entier() -> Cles {
-        cles(&[("genre", r#""arret""#), ("salarie", r#""X""#), ("contrat_debut", r#""2026-01-01""#), ("contrat_numero", r#""N""#),
+        cles(&[("genre", r#""arret""#), ("salarie", r#""X""#), ("contrat_debut", r#""2026-01-01""#), ("contrat_numero", r#""XX1.26.01""#),
             ("motif", r#""01""#), ("dernier_jour_travaille", r#""2026-02-02""#), ("debut", r#""2026-02-03""#), ("fin_previsionnelle", r#""2026-02-10""#),
             ("subrogation", "null"), ("subrogation_debut", "null"), ("subrogation_fin", "null"), ("reprise", "null"), ("reprise_motif", "null"),
             ("date_accident", "null"), ("jours_deja_indemnises", "null"), ("ij_brute", "null"), ("ij_nette", "null"), ("ij_brute_majoree", "null"),
-            ("ij_nette_majoree", "null"), ("prolongations", "[]"), ("reprises", "[]"), ("saisi_le", r#""2026-02-03 10:00""#), ("qui", r#""interface""#), ("note", r#""""#)])
+            ("ij_nette_majoree", "null"), ("prolongations", "[]"), ("reprises", "[]"), ("saisi_le", r#""2026-02-03 10:00""#), ("qui", r#""interface""#), ("note", "null")])
     }
 
     /// S21.G00.60.002 : « la veille de la date de debut de la prescription de l'arret de travail, sauf [...] arret prescrit
