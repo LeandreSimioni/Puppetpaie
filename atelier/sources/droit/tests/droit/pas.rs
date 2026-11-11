@@ -70,7 +70,9 @@ fn pile(b: Bareme, le: Option<Jour>) -> Pile {
             Some(PasParDefaut { abattement_contrats_courts: vues.last().map(|e| NombreDate(e.valeur.0)), grilles: s.grilles, ..PasParDefaut::default() })
         }
     };
-    Pile { pas_taux_par_defaut: section, ..Pile::default() }
+    // Le reste de la pile est celui d'un socle livre : le PAS n'en lit que sa section.
+    let livre: Pile = lire(&code_livre(), "baremes/2026.json");
+    Pile { pas_taux_par_defaut: section, ..livre }
 }
 
 /// Ce que rend le PAS pour un montant : sa valeur, ou son refus (la phrase).

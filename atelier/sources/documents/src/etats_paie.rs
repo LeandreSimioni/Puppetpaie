@@ -36,7 +36,7 @@ pub const SAISIE: &str = "saisie";
 pub const IMPORTE: &str = "importe";
 
 /// Ce qu'un etat demande : la periode (une seule des trois), le format, ce qui ne sort que sur demande.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Demande {
     pub mois: Option<Mois>,
     pub annee: Option<Annee>,
@@ -730,14 +730,14 @@ pub fn xlsx_livre(livre: &LivreDePaie) -> R<Vec<u8>> {
     let mut ws = Feuille::nouvelle("Livre de paie");
     ws.texte(0, 0, titre_livre(livre), &Style::gras(Some(13)));
     let cl = colonnes_livre(livre);
-    let entete = Style { gras: true, retour_a_la_ligne: true, vertical: Some(Vertical::Centre), ..Style::default() };
+    let entete = Style { gras: true, retour_a_la_ligne: true, vertical: Some(Vertical::Centre), ..Style::CLASSEUR };
     for (i, c) in cl.iter().enumerate() {
         ws.texte(2, i as u16, *c, &entete);
     }
     let mut ligne: u32 = 3;
     let ecrire_rang = |ws: &mut Feuille, cel: &[CelL], gras: bool, corps: Option<u32>, ligne: u32| {
         for (i, c) in cel.iter().enumerate() {
-            let style = Style { gras, corps, ..Style::default() };
+            let style = Style { gras, corps, ..Style::CLASSEUR };
             match c {
                 CelL::T(t) => {
                     if !t.is_empty() {
@@ -764,7 +764,7 @@ pub fn xlsx_livre(livre: &LivreDePaie) -> R<Vec<u8>> {
     ligne += 1;
     for a in &livre.avertissements {
         ligne += 1;
-        ws.texte(ligne, 0, format!("! {}", a), &Style::default());
+        ws.texte(ligne, 0, format!("! {}", a), &Style::CLASSEUR);
         ligne += 1;
     }
     for (i, nom) in cl.iter().enumerate() {
@@ -855,7 +855,10 @@ pub fn lignes_livre(ctx: &Contexte, p: &Periode, avert: &mut Vec<String>, depart
         regroupement: "salarie".to_string(),
         format: "csv".to_string(),
         departs: departs.clone(),
-        ..Demande::default()
+        coordonnees: false,
+        ecrire: false,
+        logiciel: None,
+        analytique: None,
     };
     let livre = livre_de_paie(ctx, &d)?;
     avert.extend(livre.avertissements.iter().filter(|a| !a.starts_with("Numéros de contrat")).cloned());

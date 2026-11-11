@@ -39,11 +39,10 @@ use regex::Regex;
 use socle::verrou::Verrou;
 
 /// La nature d'un incident.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Nature {
-    /// Un defaut du logiciel (une note qui ne dit pas sa nature en est un).
-    #[default]
+    /// Un defaut du logiciel.
     Logiciel,
     /// Un refus d'usage.
     Refus,
@@ -265,7 +264,6 @@ pub fn version() -> String {
 
 /// Ce que `noter` recoit. `detail` est la forme de ce que l'incident porte (la charge de la route, l'etat du mois) : il
 /// s'ecrit en texte, a travers la frontiere (`diagnostic::en_forme`).
-#[derive(Default)]
 pub struct Note<'a, D: Serialize> {
     pub nature: Nature,
     pub resume: &'a str,
@@ -984,7 +982,7 @@ fn marquer(racine: &Path, cles: &[(String, InstantEcrit)]) -> R<usize> {
 
 /// LE BILAN D'UN PASSAGE D'ENVOI DES INCIDENTS : combien sont partis, combien attendent, ce qui n'a pas marche, et si un
 /// autre passage tenait deja le journal.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct BilanIncidents {
     pub envoyes: usize,
     pub reste: usize,
@@ -1041,7 +1039,8 @@ fn passage(racine: &Path, bilan: &mut BilanIncidents) -> R<()> {
 /// `envoyer` : depose chez l'editeur ce qui attend. Rend un bilan ; ne leve
 /// jamais. Une panne laisse les lignes `en-attente` : le passage suivant reessaie.
 pub fn envoyer(racine: &Path) -> BilanIncidents {
-    let mut bilan = BilanIncidents::default();
+    // Avant le passage : rien d'envoye, rien qui attende, aucun autre passage vu.
+    let mut bilan = BilanIncidents { envoyes: 0, reste: 0, erreur: None, occupe: false };
     let p = chemin(racine);
     if !p.exists() {
         return bilan;

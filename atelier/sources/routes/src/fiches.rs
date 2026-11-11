@@ -314,7 +314,7 @@ impl Dite for Permanents {
 /// La sauvegarde seule, comme la seconde moitie d'un passage de la veille (`gestes::ouverture`).
 fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
     use crate::gestes::ouverture::{ouverture, Clients, Options};
-    let opt = Options { sauvegarde_seule: true, incidents_editeur: false, ..Options::default() };
+    let opt = Options { sauvegarde_seule: true, incidents_editeur: false, ..Options::entiere() };
     let r = ouverture(ctx, &opt, Clients::default(), None)?;
     let erreurs: Vec<String> = r.manquants.into_iter().chain(r.incidents).collect();
     let s = compagnie::sauvegarde::derniere(&ctx.racine).map_err(|e| e.echec)?;
@@ -1088,7 +1088,7 @@ pub(crate) fn fiches_attendues(ctx: &Contexte) -> R<Vec<Attendue>> {
 // ------------------------------------------------------------------ la releve
 
 /// Ce que la releve a fait : combien de demandes attendaient, les fiches creees, ce qui l'a empechee.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ReleveFiches {
     pub attendues: usize,
     /// Chaque fiche creee ou completee.
@@ -1122,9 +1122,8 @@ impl ReleveFiches {
 /// `client` : la boite, ouverte ici quand l'appelant n'en donne pas -- la personne fictive de la compagnie fictive, ou la
 /// vraie boite ; sans boite, un incident et rien d'autre. `qui` : `interface`, ou `veille`.
 pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, qui: &str) -> R<ReleveFiches> {
-    let mut r = ReleveFiches::default();
     let attendues = fiches_attendues(ctx)?;
-    r.attendues = attendues.len();
+    let mut r = ReleveFiches { attendues: attendues.len(), recues: Vec::new(), incidents: Vec::new() };
     if attendues.is_empty() {
         return Ok(r);
     }

@@ -1382,12 +1382,6 @@ pub struct Recherche(std::sync::Mutex<Point>);
 /// La recherche du lancement, celle que l'indicateur montre.
 pub static RECHERCHE: Recherche = Recherche::nouvelle();
 
-impl Default for Recherche {
-    fn default() -> Self {
-        Recherche::nouvelle()
-    }
-}
-
 impl Etape {
     /// Le nom que l'etat donne a l'etape.
     pub fn nom(self) -> &'static str {

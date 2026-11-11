@@ -1070,7 +1070,7 @@ struct DateChangee {
 
 /// LA DPAE D'UN ENGAGEMENT : a declarer (la liste des DPAE a faire), partie (`fait` : quand, ou quand elle a ete
 /// refusee), et ce que le journal des envois en dit (`envois::etats::etat_des_embauches`, lu tel qu'il est).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 struct EtatDpae {
     date_changee: Option<DateChangee>,
     a_declarer: bool,
@@ -1090,7 +1090,7 @@ pub(crate) struct CdiEnCours {
 
 /// LA PASTILLE CONTRAT D'UN ENGAGEMENT (`etat_signature`). `fait` : quand le contrat (ou son dernier avenant) est parti ;
 /// `par`, `recu`, `avenant` : ce que le journal des envois en dit (`envois::etats`), lu tel qu'il est.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub(crate) struct Signature {
     pub(crate) fait: Option<HeureDuJournal>,
     pub(crate) par: Option<&'static str>,
@@ -1110,7 +1110,7 @@ impl Signature {
 }
 
 /// LA PASTILLE DOCUMENTS d'un engagement pour un mois (`etat_documents`).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 struct EtatDocuments {
     fait: Option<HeureDuJournal>,
     caduc: bool,
@@ -1124,11 +1124,22 @@ impl EtatDocuments {
 }
 
 /// Les etats des envois d'un engagement ; rien, pour un engagement auquel il manque un fait.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 struct Etats {
     dpae: EtatDpae,
     signature: Signature,
     documents: EtatDocuments,
+}
+
+impl Etats {
+    /// Ceux d'un engagement auquel il manque un fait : rien n'est a declarer, rien n'est parti.
+    fn sans_envoi() -> Etats {
+        Etats {
+            dpae: EtatDpae { date_changee: None, a_declarer: false, fait: None, passee: false, refusee: false, anomalies: None, dossier: None, deja_existante: false },
+            signature: Signature { fait: None, par: None, recu: None, caduc: false, pourquoi: "", avenant: None, avenant_attendu: false, cdi_en_cours: None },
+            documents: EtatDocuments { fait: None, caduc: false, pourquoi: "" },
+        }
+    }
 }
 
 /// CE QUE LES ETAPES LISENT D'UN ENGAGEMENT DU MOIS : qui, quoi, quand, son contrat, ses echeances, son etablissement,
@@ -1734,7 +1745,7 @@ impl<'a> Moteur<'a> {
             recalcul: None,
             contrat: ContratDit::ACompleter(ContratACompleter { premier_mois, repris: false, anterieur }),
             pieces: Vec::new(),
-            etats: Etats::default(),
+            etats: Etats::sans_envoi(),
             a_completer: Some(manque.to_string()),
         })
     }
@@ -2839,8 +2850,7 @@ pub(crate) fn etat_signature(
     a_refaire_signer: bool, ailleurs: bool,
 ) -> Signature {
     let recu = if renvoye { None } else { recu.cloned() };
-    let s = Signature { fait, ..Signature::default() };
-    let parti = s.parti();
+    let parti = fait.is_some();
     // Un contrat signe hors du logiciel (`ailleurs`) vaut un contrat parti : un terme qui change s'y dit par un avenant.
     let caduc = (parti || ailleurs) && a_refaire_signer;
     // L'AVENANT : le dernier parti. Pas encore revenu, il laisse la pastille orange.
@@ -2852,13 +2862,14 @@ pub(crate) fn etat_signature(
         (true, true) => CONTRAT_AILLEURS_A_MODIFIER,
     };
     Signature {
+        fait,
         par: if parti { par } else { None },
         recu,
         caduc,
         pourquoi,
         avenant: dernier,
         avenant_attendu: attendu,
-        ..s
+        cdi_en_cours: None,
     }
 }
 

@@ -513,7 +513,7 @@ impl Engagement {
             jours,
             jours_contrat,
             date_paiement: v.date_paiement.clone(),
-            versement: Default::default(),
+            versement: droit::versement::Versement::FinDuMois,
             taux_cachet,
             cachets,
             heures,

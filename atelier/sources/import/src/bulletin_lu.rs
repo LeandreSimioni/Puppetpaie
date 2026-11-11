@@ -902,7 +902,7 @@ pub struct LignePaie {
     pub heures: Option<Decimal>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct Cotisation {
     /// La cle de la famille (`familles` de la table) sous laquelle la ligne est ecrite.
     pub famille: Option<String>,

@@ -355,7 +355,6 @@ struct Page {
     numero: usize,
 }
 
-#[derive(Default)]
 pub(crate) struct Dossier {
     pub(crate) salaries: Vec<String>,
     pub(crate) categories: Vec<&'static str>,
@@ -1235,7 +1234,16 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
             tous
         }
     };
-    let mut d = Dossier { categories: cats.clone(), periode: p.libelle(), ..Dossier::default() };
+    let mut d = Dossier {
+        salaries: Vec::new(),
+        categories: cats.clone(),
+        periode: p.libelle(),
+        fichiers: Vec::new(),
+        pages: Ordonnee::default(),
+        avertissements: Vec::new(),
+        refus: Vec::new(),
+        deposes_vus: HashSet::new(),
+    };
 
     let racine_tmp = Temporaire::nouveau_dans(&std::env::temp_dir(), "puppetpaie-dossier")?;
     let tmp = racine_tmp.0.as_path();

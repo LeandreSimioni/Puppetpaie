@@ -141,7 +141,7 @@ pub fn cotisation_de(l: &LigneCotisation) -> String {
 }
 
 /// Une ligne de cotisation du bulletin importe.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct Lue {
     libelle: String,
     base: Option<Decimal>,

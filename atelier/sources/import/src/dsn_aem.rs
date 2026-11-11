@@ -74,7 +74,6 @@ pub struct PaieDeclaree {
 }
 
 /// Les listes gardent l'ordre ou les cles sont apparues.
-#[derive(Default)]
 pub struct LectureDsn {
     pub fichiers: usize,
     pub salaries: Vec<SalarieDeclare>,
@@ -112,7 +111,22 @@ pub(crate) struct ConventionsDuMois {
 impl LectureDsn {
     /// Aucune DSN lue : le dossier n'en a pas.
     pub fn aucune() -> LectureDsn {
-        LectureDsn::default()
+        LectureDsn {
+            fichiers: 0,
+            salaries: Vec::new(),
+            objets: Vec::new(),
+            entreprise: EntrepriseDeclaree::default(),
+            licences: Vec::new(),
+            premier_mois: None,
+            dernier_mois: None,
+            illisibles: Vec::new(),
+            etablissements: BTreeSet::new(),
+            nics_siege: BTreeSet::new(),
+            paies: BTreeMap::new(),
+            atmp: BTreeMap::new(),
+            adhesions: Vec::new(),
+            conventions: Vec::new(),
+        }
     }
 
     /// LES CONVENTIONS QUI DIVERGENT, dites : des contrats d'une meme DSN qui declarent d'autres conventions que
@@ -175,7 +189,7 @@ fn nom_de(f: &Path) -> String {
 /// Toutes les DSN d'un dossier, la plus recente faisant foi par salarie. Une DSN fautive refuse
 /// (`declarations::dsn_lue::lire`).
 pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
-    let mut out = LectureDsn::default();
+    let mut out = LectureDsn::aucune();
     let mut lues: Vec<(Mois, DsnLue)> = Vec::new();
     for f in declarations::dsn_lue::fichiers(dossier)? {
         // Une DSN sans mois principal (S20.G00.05.005) ne dit pas quel mois elle declare : elle est ignoree, en le disant.
@@ -407,7 +421,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
 pub(crate) const AEM_SIRET: (usize, usize) = (50, 64);
 
 /// Ce qu'une piece (DSN, AEM) dit de son employeur.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Employeur {
     /// Les Siren qu'elle porte (un, d'ordinaire ; une AEM en porte un par enregistrement).
     pub sirens: std::collections::BTreeSet<String>,
@@ -425,7 +439,7 @@ pub fn employeur_dsn(chemin: &Path) -> Result<Employeur, Echec> {
 /// Une AEM : le Siret de chaque enregistrement (`AEM_SIRET`), ramene a son Siren. Un fichier que le tri a lu et qui ne
 /// se lit plus se refuse.
 pub fn employeur_aem(chemin: &Path) -> Result<Employeur, Echec> {
-    let mut e = Employeur::default();
+    let mut e = Employeur { sirens: std::collections::BTreeSet::new(), illisibles: 0 };
     let octets = std::fs::read(chemin).map_err(|x| socle::echec::du_disque(chemin, &x).reclasser(socle::echec::Classe::Disque))?;
     for ligne in lignes_du_texte(&texte_latin1(&octets)) {
         let l: Vec<char> = ligne.chars().collect();
@@ -515,7 +529,7 @@ mod tests_parametrage {
         std::fs::write(&f, lignes.join("\n")).unwrap();
         let lu = super::lire_dsn(&d).unwrap();
         std::fs::remove_dir_all(&d).ok();
-        let c = lu.entreprise.declarant_dsn.clone().unwrap_or_default();
+        let c = lu.entreprise.declarant_dsn.clone().unwrap();
         assert_eq!((c.nom_prenom.as_str(), c.tel.as_deref(), c.civilite.as_deref()), ("FONTAINE CLAIRE", Some("0478000000"), Some("02")));
         assert_eq!(lu.atmp.get(&2025), Some(&(socle::mois::Mois::nouveau(2025, 12).unwrap(), "923AD".to_string(), socle::num::decimal_lu("1.65"))));
         assert_eq!(lu.adhesions[0].libelle, "PREV SPECT VIVANT PRIV");

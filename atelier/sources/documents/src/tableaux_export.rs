@@ -605,7 +605,7 @@ pub fn xlsx_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
         ligne += 1;
     }
     ligne += 1;
-    let entete = Style { gras: true, retour_a_la_ligne: true, vertical: Some(Vertical::Centre), ..Style::default() };
+    let entete = Style { gras: true, retour_a_la_ligne: true, vertical: Some(Vertical::Centre), ..Style::CLASSEUR };
     for (i, c) in t.colonnes.iter().enumerate() {
         ws.texte(ligne, i as u16, c.libelle.clone(), &entete);
     }
@@ -627,12 +627,12 @@ pub fn xlsx_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
         };
         for (i, c) in t.colonnes.iter().enumerate() {
             let cel = cellule_classeur(d.val(&c.cle), c)?;
-            let style = Style { gras, corps, format: if matches!(cel, Cel::Nombre(_)) { nombre_de(c) } else { None }, ..Style::default() };
+            let style = Style { gras, corps, format: if matches!(cel, Cel::Nombre(_)) { nombre_de(c) } else { None }, ..Style::CLASSEUR };
             ecrire_cellule(&mut ws, ligne, i as u16, &cel, &style);
         }
         ligne += 1;
     }
-    let simple = Style::default();
+    let simple = Style::CLASSEUR;
     for a in &t.avertissements {
         ligne += 1;
         ws.texte(ligne, 0, format!("! {}", a), &simple);

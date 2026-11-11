@@ -15,7 +15,7 @@ use std::ops::{Add, AddAssign, Div, Mul, Neg, Sub, SubAssign};
 /// Un millionième : l'échelle d'une `Mesure`.
 const UN: i64 = 1_000_000;
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Mesure(i64);
 
 /// Une mesure écrite dans le code, en décimal : `mesure("7.5")`, `mesure("-0.25")` (un signe, des chiffres, au plus

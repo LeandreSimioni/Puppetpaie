@@ -169,7 +169,7 @@ pub fn deposer_dsn(
     let reponse = match envoi() {
         Ok(r) => r,
         Err(e) => {
-            let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature_declaration: apercu.nature_declaration, ordre: texte(apercu.ordre.as_deref()), evenement: d.evenement, ..Default::default() };
+            let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature_declaration: apercu.nature_declaration, ordre: texte(apercu.ordre.as_deref()), evenement: d.evenement, ..DetailDsn::nouveau(false) };
             let ligne = Ligne::Dsn(envoi_du_depot(d, false, "net-entreprises", "", &e.phrase, None, detail, false));
             return Err(echec(ctx, Acte::Dsn, d, ligne, e, suites));
         }
@@ -197,7 +197,7 @@ pub fn deposer_dsn(
         ordre_test,
         etablissement: texte(apercu.etablissement()),
         evenement: d.evenement,
-        ..Default::default()
+        ..DetailDsn::nouveau(false)
     };
     let ligne = Ligne::Dsn(envoi_du_depot(d, true, "net-entreprises", &flux, &reponse, Some(trace_relative(ctx, &trace)?), detail, true));
     let ligne = noter(ctx, d, ligne)?;
@@ -235,7 +235,7 @@ pub fn deposer_dpae(
     let reponse = match envoi() {
         Ok(r) => r,
         Err(e) => {
-            let detail = DetailDpae { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), ..Default::default() };
+            let detail = DetailDpae { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), ..DetailDpae::nouveau(false, false) };
             let ligne = Ligne::Dpae(envoi_du_depot(d, false, "urssaf", "", &e.phrase, None, detail, false));
             return Err(echec(ctx, Acte::Dpae, d, ligne, e, suites));
         }
@@ -245,7 +245,7 @@ pub fn deposer_dpae(
     let flux = crate::etats::flux_de(&reponse);
     // Ce que ce depot a REELLEMENT declare, a la maille de l'embauche : c'est ce qui repondra ensuite a
     // « lesquelles restent a faire ».
-    let detail = DetailDpae { preuve, repetition: d.repetition.cloned(), embauches, ..Default::default() };
+    let detail = DetailDpae { preuve, repetition: d.repetition.cloned(), embauches, ..DetailDpae::nouveau(false, false) };
     let ligne = Ligne::Dpae(envoi_du_depot(d, true, "urssaf", &flux, &reponse, Some(trace_relative(ctx, &trace)?), detail, true));
     let ligne = noter(ctx, d, ligne)?;
     let ligne = repondu_aussitot(ctx, joue, ligne, suites)?;

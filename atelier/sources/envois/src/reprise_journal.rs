@@ -204,7 +204,6 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
         let (Some(quand), Some(piece)) = (heure_du_bilan(b), d.pieces.last()) else { continue };
         let salaries = b.salaries.as_deref().map(|s| s.trim().parse::<usize>().map_err(|_| socle::echec::cle("Le nombre de salariés d'un bilan ne se lit pas.", "salaries").reclasser(Classe::Illisible))).transpose()?;
         let detail = DetailDsn {
-            reconstruit: true,
             logiciel: b.logiciel.clone(),
             type_declaration: b.type_declaration,
             fraction: b.fraction.clone(),
@@ -215,7 +214,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
             etat_declaration: b.etat_declaration.clone(),
             verdict_connu: Some(b.etat_declaration.is_some()),
             pieces: Some(d.pieces.clone()),
-            ..Default::default()
+            ..DetailDsn::nouveau(true)
         };
         let reponse = match &b.certificat {
             Some(c) => c.as_str(),
@@ -413,7 +412,7 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
                 .iter()
                 .map(|x| Ok(crate::journal::EmbaucheDeclaree { salarie: droit::contexte::IdSalarie::lire(&x.salarie)?, numero: None, debut: x.debut, fin: None }))
                 .collect::<R<Vec<_>>>()?;
-            let detail = crate::journal::DetailDpae { reconstruit: true, embauches, certificat: true, ..Default::default() };
+            let detail = crate::journal::DetailDpae { embauches, ..crate::journal::DetailDpae::nouveau(true, true) };
             let mut e = Envoi::nouveau(vue.mode, qui, vue.accepte, "urssaf-dpae", SANS_CERTIFICAT, detail);
             e.mois = a.mois;
             e.flux = a.flux.clone();

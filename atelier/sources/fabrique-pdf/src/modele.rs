@@ -22,7 +22,7 @@ pub const CLES: [&str; 7] = [
 ];
 
 /// Un modèle lu : des textes bruts (marqueurs et `**gras**` encore en place).
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Modele {
     pub titre: String,
     pub soustitre: String,
@@ -96,7 +96,15 @@ fn paragraphes(tampon: &[&str]) -> Vec<String> {
 /// Découpe le texte d'un modèle en titre, préambule, articles et signatures (`lire_modele`).
 /// `nom` est ce qu'on nomme dans les refus (le chemin du fichier).
 pub fn lire_modele(texte: &str, nom: &str) -> Result<Modele, Refus> {
-    let mut m = Modele::default();
+    let mut m = Modele {
+        titre: String::new(),
+        soustitre: String::new(),
+        preambule: Vec::new(),
+        articles: Vec::new(),
+        signatures: Vec::new(),
+        annule: Vec::new(),
+        modification: Vec::new(),
+    };
     let mut cle: Option<&str> = None;
     let mut titre_art = String::new();
     let mut tampon: Vec<&str> = Vec::new();

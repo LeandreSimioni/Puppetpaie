@@ -692,7 +692,23 @@ pub(crate) fn apercu_lu(
         contrats_sans_fiche: sans_fiche,
         avertissements,
         rien_a_faire,
-        ..Importation::default()
+        phrase: String::new(),
+        contrats_nouveaux: 0,
+        ecrit: false,
+        fichiers: Vec::new(),
+        copie: None,
+        tri: import::reponse::TriVu::aucun(),
+        bulletins: import::reponse::BlocBulletins::aucun(),
+        certificats: None,
+        aem_pdf: None,
+        depots_repris: None,
+        parametrage: Vec::new(),
+        declarations_dit: String::new(),
+        titre_dit: "",
+        reprendre: String::new(),
+        pastilles: import::reponse::pastilles_des_sorts(),
+        encart: None,
+        couleur: None,
     };
     Ok(Apercu {
         reponse,
@@ -870,7 +886,6 @@ impl QuandDuMessage {
 }
 
 /// Une source reprise : combien, de quand a quand, quel jour.
-#[derive(Default)]
 struct Reprise {
     nombre: usize,
     du: Option<MoisOuJour>,
@@ -878,11 +893,18 @@ struct Reprise {
     le: Option<Jour>,
 }
 
+impl Reprise {
+    /// Rien de repris encore.
+    fn aucune() -> Reprise {
+        Reprise { nombre: 0, du: None, au: None, le: None }
+    }
+}
+
 /// `reprises` de `importation-etat` : DSN, AEM, certificats Congés Spectacles, bulletins, dans cet ordre, celles qui ont
 /// repris quelque chose.
 fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], paies: &[engagement::importe::PaieLue]) -> R<Vec<RepriseVue>> {
     use engagement::importe::{Attestation, Declaration};
-    let (mut aem, mut contrats_bulletins, mut certificats) = (Reprise::default(), Reprise::default(), Reprise::default());
+    let (mut aem, mut contrats_bulletins, mut certificats) = (Reprise::aucune(), Reprise::aucune(), Reprise::aucune());
     for c in contrats {
         let cible = match c.contrat.atteste_par {
             Attestation::Bulletin => &mut contrats_bulletins,
@@ -891,7 +913,7 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], p
         };
         cible.voir(c.debut.map(MoisOuJour::Jour), c.fin.map(MoisOuJour::Jour), c.contrat.importe_le);
     }
-    let (mut dsn, mut bulletins) = (Reprise::default(), Reprise::default());
+    let (mut dsn, mut bulletins) = (Reprise::aucune(), Reprise::aucune());
     // Les DSN reprises : une par mois declare (la phrase de l'etat dit des declarations, pas des versements).
     let mut mois_dsn: BTreeSet<socle::mois::Mois> = BTreeSet::new();
     for x in paies {

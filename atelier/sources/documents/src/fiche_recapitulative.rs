@@ -66,7 +66,18 @@ pub struct Recapitulatifs<'a> {
 
 impl<'a> Recapitulatifs<'a> {
     pub fn nouveau(ctx: &'a Contexte, mois: Option<Mois>, annee: Option<socle::mois::Annee>, toutes: bool, departs: engagement::departs::Departs) -> Self {
-        let demande = Demande { mois, annee, toutes, format: "pdf".to_string(), departs, ..Demande::default() };
+        let demande = Demande {
+            mois,
+            annee,
+            toutes,
+            regroupement: String::new(),
+            format: "pdf".to_string(),
+            coordonnees: false,
+            ecrire: false,
+            logiciel: None,
+            analytique: None,
+            departs,
+        };
         Recapitulatifs { ctx, demande, etats: [None, None] }
     }
 

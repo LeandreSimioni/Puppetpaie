@@ -293,7 +293,7 @@ fn fichiers_de(dossier: &Path) -> R<Vec<(String, PathBuf)>> {
 // ------------------------------------------------------------------ le rejeu
 
 /// Ce qu'on demande au rejeu.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct OptionsRejeu {
     /// Rejouer aussi les routes qui n'avaient rien ecrit.
     pub lectures: bool,
@@ -301,8 +301,15 @@ pub struct OptionsRejeu {
     pub jusqu_au: Option<Jour>,
 }
 
+impl OptionsRejeu {
+    /// Le rejeu entier, des seules routes qui ont ecrit.
+    pub fn entier() -> OptionsRejeu {
+        OptionsRejeu { lectures: false, jusqu_au: None }
+    }
+}
+
 /// Ce que le rejeu a fait.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Rejeu {
     /// Les compagnies rejouees, dans l'ordre de leur « + » : (dossier relatif a l'installation, racine).
     pub compagnies: Vec<(String, PathBuf)>,
@@ -495,7 +502,17 @@ fn rejouer_les_gestes(
     arrets: &[Jour],
     lire_au: &mut dyn FnMut(Jour, &Rejeu),
 ) -> R<Rejeu> {
-    let mut r = Rejeu::default();
+    // Avant le premier geste : rien de rejoue.
+    let mut r = Rejeu {
+        compagnies: Vec::new(),
+        routes_rejouees: 0,
+        lectures_ecartees: 0,
+        autres_compagnies: 0,
+        laisses: 0,
+        horloge: Vec::new(),
+        fin: None,
+        ecarts: Vec::new(),
+    };
     let mut arrets = arrets.iter().copied().peekable();
     // LA LECTURE D'UN SOIR, avant le premier geste du lendemain. Ce qu'elle tire d'aleas ne change rien : chaque geste
     // repart des siens a son instant (`temps::figer`).
@@ -741,7 +758,7 @@ fn contenu(p: &Path, racine: &Path) -> R<Vec<u8>> {
 /// ecriture de fond), ou un ecart du rejeu. Rend les differences, en phrases (vide : le scenario suffit).
 pub fn verifier(scenario: &Path, inst: &Path, travail: &Path) -> R<Vec<String>> {
     socle::fichiers::effacer(travail)?;
-    let r = rejouer(scenario, travail, &OptionsRejeu::default())?;
+    let r = rejouer(scenario, travail, &OptionsRejeu::entier())?;
     let mut ecarts: Vec<String> = r.ecarts.iter().map(|e| format!("au rejeu, {}", e)).collect();
     for (rel, rejouee) in &r.compagnies {
         let banc = inst.join(rel);
@@ -843,7 +860,7 @@ const USAGE: &str = "scenario rejouer <scenario> <installation neuve> [--lecture
 /// LA LIGNE DE COMMANDE DES SCENARIOS : `moteur-atelier scenario ...` (le banc) et l'exemple `vie_fictive` (sans le binaire
 /// de l'atelier). `rejouer`, `verifier`, `elaguer`. Rend le code de sortie : 1 a la moindre difference.
 pub fn commande(args: &[socle::ligne::Argument]) -> i32 {
-    let mut options = OptionsRejeu::default();
+    let mut options = OptionsRejeu::entier();
     let mut a: Vec<&str> = Vec::new();
     let mut it = args.iter();
     while let Some(x) = it.next() {

@@ -156,7 +156,8 @@ fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()
             quoi: &d.classe,
             resume: &d.message,
             detail: DetailDuDepotRefuse { reel: d.reel, apres_test_conforme: apres_test, repetition: d.repetition.as_ref() },
-            ..Default::default()
+            trace: None,
+            sans_contexte: false,
         },
     )?;
     Ok(())
@@ -164,7 +165,7 @@ fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()
 
 /// Ce que l'incident d'un depot refuse porte au developpeur : reel ou test, s'il suivait une repetition conforme, et
 /// cette repetition.
-#[derive(Default, serde::Serialize)]
+#[derive(serde::Serialize)]
 struct DetailDuDepotRefuse<'a> {
     reel: bool,
     apres_test_conforme: bool,

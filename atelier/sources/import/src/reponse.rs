@@ -134,16 +134,10 @@ impl<T> ParSort<T> {
     }
 }
 
-impl Default for ParSort<usize> {
-    fn default() -> Self {
+impl ParSort<usize> {
+    /// Aucun fichier compte, de chaque sort.
+    pub fn a_zero() -> Self {
         ParSort { repris: 0, deja_repris: 0, libelle_inconnu: 0, deja_saisi: 0, incoherent: 0, incomplet: 0, sans_texte: 0, sans_entetes: 0, ambigu: 0, annexe: 0, non_reconnu: 0, doublon: 0, archive: 0 }
-    }
-}
-
-/// Les pastilles, par defaut : celle de chaque sort.
-impl Default for ParSort<Pastille> {
-    fn default() -> Self {
-        pastilles_des_sorts()
     }
 }
 
@@ -557,7 +551,7 @@ pub struct NonRepris {
 }
 
 /// Le dossier lu, fichier par fichier.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct TriVu {
     pub dossier: String,
     pub fichiers: Vec<FichierVu>,
@@ -569,10 +563,17 @@ pub struct TriVu {
     pub dit: String,
 }
 
+impl TriVu {
+    /// Aucun dossier lu encore.
+    pub fn aucun() -> TriVu {
+        TriVu { dossier: String::new(), fichiers: Vec::new(), comptes: ParSort::a_zero(), total: 0, non_repris: None, dit: String::new() }
+    }
+}
+
 // ------------------------------------------------------------------ les pieces lues
 
 /// Les bulletins lus : combien, de quand a quand, ce qu'ils ajoutent.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct BlocBulletins {
     pub pages: usize,
     pub lus: usize,
@@ -590,9 +591,30 @@ pub struct BlocBulletins {
     pub dit: Option<String>,
 }
 
+impl BlocBulletins {
+    /// Aucun bulletin lu encore.
+    pub fn aucun() -> BlocBulletins {
+        BlocBulletins {
+            pages: 0,
+            lus: 0,
+            repris: 0,
+            par_logiciel: std::collections::BTreeMap::new(),
+            du: None,
+            au: None,
+            fiches_a_creer: 0,
+            contrats_nouveaux: 0,
+            contrats: Vec::new(),
+            paies_nouvelles: 0,
+            paies_completees: 0,
+            paies: Vec::new(),
+            dit: None,
+        }
+    }
+}
+
 /// Les certificats Congés Spectacles, ou les AEM en PDF, lus : combien, de quand a quand, ce qu'ils ajoutent, et ce qui
 /// reste a saisir dans une fiche qu'ils creent.
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct BlocPieces {
     pub lus: usize,
     pub du: Option<Jour>,
@@ -618,7 +640,7 @@ pub struct Copie {
 // ------------------------------------------------------------------ la reponse
 
 /// CE QUE L'APERCU OU LA REPRISE D'UN DOSSIER REND (`importation-apercu`, `importer`).
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Importation {
     pub phrase: String,
     pub source: String,

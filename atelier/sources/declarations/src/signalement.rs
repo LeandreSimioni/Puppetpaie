@@ -333,8 +333,9 @@ pub struct Options {
     pub date_constitution: Option<Jour>,
 }
 
-impl Default for Options {
-    fn default() -> Options {
+impl Options {
+    /// Un premier signalement d'arret normal, en reel, constitue le jour de son depot.
+    pub fn normale() -> Options {
         Options {
             nature_declaration: NatureSignalement::Arret,
             type_declaration: TypeDeLaDeclaration::Normale,

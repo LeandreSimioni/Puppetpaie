@@ -75,7 +75,7 @@ const RANGS: [(&str, &str, &[&str]); 13] = [
 const SUIVANTES: [(&str, &str); 2] = [("fin", "fin"), ("brut", "salaire brut")];
 
 /// Un certificat d'emploi lu.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Certificat {
     pub page: usize,
     /// Quatorze chiffres.
@@ -291,7 +291,29 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
     if !js.iter().any(|j| contient(j, "conges spectacles")) || !js.iter().any(|j| contient(j, "nb jours ou cachets")) || !js.iter().any(|j| contient(j, "salaire brut")) {
         return None;
     }
-    let mut c = Certificat { page, ..Default::default() };
+    let mut c = Certificat {
+        page,
+        siret: None,
+        compte: None,
+        employeur: None,
+        numero: None,
+        nir: None,
+        cle_nir: None,
+        nom: None,
+        prenom: None,
+        nom_usage: None,
+        pseudonyme: None,
+        nom_complet: None,
+        adresse: Vec::new(),
+        emploi: None,
+        cadre: None,
+        debut: None,
+        fin: None,
+        nombre: None,
+        base_conge: None,
+        brut: None,
+        signe_le: None,
+    };
     let mut fautes: Vec<String> = Vec::new();
     // Le bloc d'adresse : les rangs au-dessus du titre, le premier est le nom.
     let titre_y = rangs[titre].iter().map(|m| m.y0).fold(Mesure::MAX, Mesure::min);

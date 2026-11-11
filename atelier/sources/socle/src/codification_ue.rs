@@ -55,7 +55,7 @@ pub fn code_du_pays(iso: &str) -> &'static str {
 /// CE QU'UNE FICHE DIT DE LA NATIONALITE : le code choisi (`code_nationalite_dsn`), le pays de la liste
 /// (`pays_nationalite`), le pays ecrit hors de la liste (`pays_nationalite_hors_liste`), chacun sans blancs et `None`
 /// quand elle ne le dit pas ; et qui elle nomme, pour les refus.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Nationalite {
     pub code: Option<String>,
     pub pays: Option<String>,

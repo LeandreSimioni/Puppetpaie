@@ -98,7 +98,7 @@ impl Drive for DriveJoue {
     }
     fn televerser(&mut self, fichier: &Path, _parent: &str, nom: Option<&str>, _connu: Option<&envois::drive::Distant>) -> Result<envois::drive::Depose, ErreurGoogle> {
         let nom = nom.map(String::from).or_else(|| fichier.file_name().map(|n| n.to_string_lossy().into_owned()));
-        Ok(envois::drive::Depose { nom, ..Default::default() })
+        Ok(envois::drive::Depose { id: None, nom, lien: None, remplace: false })
     }
     fn sous_dossiers(&mut self, _parent: &str) -> Result<Vec<(String, String)>, ErreurGoogle> {
         Ok(Vec::new())

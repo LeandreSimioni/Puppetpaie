@@ -824,13 +824,12 @@ pub fn bareme_prevoyance(mut bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuC
                 rubriques.push(rr);
                 if let Some(t2) = t2 {
                     rubriques.push(Rubrique {
-                        id: "prevoyance_t2".into(),
                         famille: famille.clone(),
                         libelle: Some(if t2.obligatoire { "Prévoyance Tranche 2" } else { "Prévoyance Tranche 2 (extension conventionnelle)" }.into()),
                         base: Some(t2.base.clone()),
                         taux_pat: Some(TauxDate(t2.taux_pat)),
                         taux_sal: Some(Court(t2.taux_sal)),
-                        ..Rubrique::default()
+                        ..Rubrique::nommee("prevoyance_t2")
                     });
                 }
             }
@@ -1089,7 +1088,6 @@ pub fn bareme_convention(mut bar: Pile, ent: &EntrepriseLue, nat: Option<&Nature
         }
         let j = c.apres.as_deref().and_then(|a| rang(&rubriques, a));
         let nouvelle = Rubrique {
-            id: c.id.clone(),
             famille: c.famille.clone(),
             libelle: c.libelle.clone(),
             base,
@@ -1098,7 +1096,7 @@ pub fn bareme_convention(mut bar: Pile, ent: &EntrepriseLue, nat: Option<&Nature
             masquer_base_et_taux: c.masquer_base_et_taux,
             source: c.source.clone(),
             note: c.note.clone(),
-            ..Rubrique::default()
+            ..Rubrique::nommee(&c.id)
         };
         insere(&mut rubriques, j, nouvelle);
     }
@@ -1148,7 +1146,7 @@ pub fn bareme_applique(
 
 /// LA COMPAGNIE QUE LA PILE LIT : sa fiche au jour du bareme, et son effectif de l'annee (`contexte::effectif_de`), que
 /// la representation du personnel confronte (CCNEAC, III.3.1 : `representation_du_personnel`).
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EntrepriseLue {
     pub fiche: ChampsEntreprise,
     /// L'effectif connu le plus recent avant l'annee (`contexte::Effectif::valeur`) : la CCNEAC fixe le FNAS par lui
@@ -1343,13 +1341,11 @@ pub fn bareme_vm(mut bar: Pile, sal: &SalarieDuContrat) -> R<Pile> {
     // circulaire Acoss 2013-019, § 1.3) -- celle du FNAL, `majoration_conges_115`, qui vaut 1 pour un permanent.
     // Le 78.004 reste le brut. Textes : atelier/reference/sources/majoration-caisses-conges/LISEZ-MOI.md.
     bar.rubriques_bulletin.push(Rubrique {
-        id: "versement_mobilite".into(),
         famille: Some("AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR".into()),
         libelle: Some("Versement mobilité".into()),
         base: Some(Assiette::BrutX115),
         taux_pat: Some(TauxDate(taux)),
-        taux_sal: None,
-        ..Rubrique::default()
+        ..Rubrique::nommee("versement_mobilite")
     });
     bar.cotisations_dsn.push(CotisationDsn {
         code_insee: Some(vm.code_insee),
@@ -1376,13 +1372,11 @@ ne porte pas le taux du regime local (`regime_local_alsace_moselle`).",
     };
     let org = org_urssaf(&bar)?;
     bar.rubriques_bulletin.push(Rubrique {
-        id: "regime_local".into(),
         famille: Some("SANTÉ".into()),
         libelle: Some("Régime local Alsace-Moselle — maladie".into()),
         base: Some(Assiette::Brut),
-        taux_pat: None,
         taux_sal: Some(Court(rl.taux_sal)),
-        ..Rubrique::default()
+        ..Rubrique::nommee("regime_local")
     });
     let code81 = if rl.code81.is_empty() { "115".into() } else { rl.code81.clone() };
     bar.cotisations_dsn.push(CotisationDsn::sur_le_brut(BaseAssujettie::BruteDeplafonnee, code81, org, Assiette::Brut, rl.taux_sal));

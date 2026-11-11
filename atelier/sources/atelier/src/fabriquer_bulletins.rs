@@ -414,7 +414,7 @@ fn pct(base: Decimal, taux: Option<Decimal>) -> Option<Decimal> {
 
 // --------------------------------------------------------------------------------------------- le calcul du faux bulletin
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 struct Cumuls {
     cachets: Decimal,
     heures: Decimal,
@@ -986,7 +986,11 @@ pub fn fabriquer(d: DescriptionLue, gabarit: Option<Gabarit>, dossier: &Path) ->
     let mut pages = Vec::new();
     for k in ordre {
         let b = &desc.bulletins[k];
-        let annee = cumuls.entry((b.salarie, b.fin.an)).or_default();
+        // Le premier bulletin de l'annee part de cumuls nuls.
+        let annee = cumuls.entry((b.salarie, b.fin.an)).or_insert_with(|| {
+            let z = Decimal::ZERO;
+            Cumuls { cachets: z, heures: z, jours: z, brut: z, plafond: z, cout: z, net_imposable: z, pas: z }
+        });
         let c = calculer(b, annee)?;
         *annee = c.annee.clone();
         // CoolPaie numerote ses bulletins dans l'annee : `k/annee`.

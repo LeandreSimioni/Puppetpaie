@@ -283,7 +283,7 @@ macro_rules! texte_borne {
     };
     ($(#[$m:meta])* pub struct $nom:ident : $borne:ident $max:literal $unite:literal par $mesure:ident, $phrase:literal;) => {
         $(#[$m])*
-        #[derive(Debug, Clone, PartialEq, Default, Serialize)]
+        #[derive(Debug, Clone, PartialEq, Serialize)]
         #[serde(transparent)]
         pub struct $nom(String);
 
@@ -345,7 +345,7 @@ la DSN écrivent (norme DPAE v5.3, zone « Code NAF » ; DSN, S21.G00.06.003). C
 /// interne à l'établissement, renseignez MT999 » ; la zone en a 10, cadree a droite. La DSN 2027 ecrit la medecine
 /// interne « MT01 - MEDECINE INTERNE ETABLISSEMENT » en S21.G00.11.025 (`declarations::dsn::spst_ecrit`, qui la tire de
 /// `MT999`, `INTERNE`) ; l'identifiant d'un service externe y est defini par une fiche consigne qui n'est pas deposee.
-#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct CodeMedecine(String);
 
@@ -492,7 +492,7 @@ impl FormeDeCase for EchelonCcneac {
 /// (S10.G00.01.003, X [1,60] : `logiciel/donnees/formats-dsn-base.json`) ; la DPAE, deux lignes de 32 (L_RAISON_SOC_1,
 /// positions 152-183, et L_RAISON_SOC_2, « Nom ou raison sociale (ligne 2) », 510-541 :
 /// `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 249-256 et 374-379).
-#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct RaisonSociale(String);
 

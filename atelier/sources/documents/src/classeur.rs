@@ -21,7 +21,7 @@ pub enum Vertical {
 }
 
 /// La mise en forme d'une cellule ; par defaut, celle du classeur (Calibri 11, sans rien de plus).
-#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Style {
     pub gras: bool,
     /// Le corps de la police, en points ; sans lui, 11.
@@ -35,9 +35,12 @@ pub struct Style {
 }
 
 impl Style {
+    /// Celle du classeur : rien de plus que sa police.
+    pub const CLASSEUR: Style = Style { gras: false, corps: None, retour_a_la_ligne: false, centre: false, vertical: None, format: None };
+
     /// En gras, au corps dit (ou celui du classeur).
     pub fn gras(corps: Option<u32>) -> Style {
-        Style { gras: true, corps, ..Style::default() }
+        Style { gras: true, corps, ..Style::CLASSEUR }
     }
 }
 
@@ -50,7 +53,7 @@ enum Valeur {
 }
 
 /// UNE FEUILLE, le seul contenu d'un classeur qu'on ecrit.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Feuille {
     nom: String,
     cellules: BTreeMap<(u32, u16), (Valeur, Style)>,
@@ -66,7 +69,7 @@ pub struct Feuille {
 impl Feuille {
     /// Une feuille vide, nommee.
     pub fn nouvelle(nom: &str) -> Feuille {
-        Feuille { nom: nom.to_string(), ..Feuille::default() }
+        Feuille { nom: nom.to_string(), cellules: BTreeMap::new(), largeurs: Vec::new(), hauteurs: BTreeMap::new(), figees: None, fusions: Vec::new() }
     }
 
     /// Un texte en (`ligne`, `colonne`), a partir de 0.
@@ -107,7 +110,7 @@ impl Feuille {
 
     /// Les octets du classeur.
     pub fn octets(&self) -> R<Vec<u8>> {
-        let mut styles: Vec<Style> = vec![Style::default()];
+        let mut styles: Vec<Style> = vec![Style::CLASSEUR];
         for (_, s) in self.cellules.values() {
             if !styles.contains(s) {
                 styles.push(s.clone());

@@ -65,7 +65,6 @@ pub(crate) fn code_admis<T: droit::natures::ListeDeLaNorme>(norme: &crate::norme
 }
 
 /// L'accumulateur de lignes DSN, et la version de la norme du fichier qu'il fabrique.
-#[derive(Default)]
 pub struct Fichier {
     pub lignes: Vec<String>,
     norme: Option<crate::norme::Norme>,
@@ -79,7 +78,7 @@ pub struct Fichier {
 impl Fichier {
     /// Un morceau de fichier sans version (un bloc qu'on insere, un essai) : il ne decide d'aucune rubrique.
     pub fn nouveau() -> Fichier {
-        Fichier::default()
+        Fichier { lignes: Vec::new(), norme: None, contrat_unique: false }
     }
 
     /// Le fichier d'une version de la norme : `S10.G00.00.006` s'ecrit depuis elle (`ecrire_la_version`), et les
@@ -568,8 +567,9 @@ pub struct Options {
     pub remplacee_versait_pas: Option<bool>,
 }
 
-impl Default for Options {
-    fn default() -> Options {
+impl Options {
+    /// Une premiere DSN mensuelle normale (fraction 11), en reel, constituee le jour de son depot.
+    pub fn normale() -> Options {
         Options {
             date_constitution: None,
             fraction: "11".into(),

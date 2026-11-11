@@ -20,17 +20,6 @@ use socle::num::Decimal;
 macro_rules! forme {
     ($(#[$m:meta])* pub struct $nom:ident { $($corps:tt)* }) => {
         $(#[$m])*
-        #[derive(Debug, Clone, Default, Deserialize)]
-        #[serde(deny_unknown_fields)]
-        pub struct $nom {
-            $($corps)*
-            pub source: Option<Fondement>,
-            pub note: Option<String>,
-        }
-    };
-    // Une forme qui porte un jour exige : elle n'a pas de valeur vide.
-    (sans_vide $(#[$m:meta])* pub struct $nom:ident { $($corps:tt)* }) => {
-        $(#[$m])*
         #[derive(Debug, Clone, Deserialize)]
         #[serde(deny_unknown_fields)]
         pub struct $nom {
@@ -305,6 +294,7 @@ pub enum VersementMobiliteEcrit {
 
 forme! {
     /// Le taux du versement mobilite et la commune (code INSEE) de l'etablissement, l'autorite qui le fixe.
+    #[derive(Default)]
     pub struct VersementMobiliteTaux {
         pub taux: Option<Nombre>,
         pub code_insee: Option<String>,
@@ -366,7 +356,6 @@ forme! {
 }
 
 forme! {
-    sans_vide
     pub struct TaxeSurLesSalaires {
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub taux_normal: Decimal,
@@ -389,7 +378,6 @@ forme! {
 }
 
 forme! {
-    sans_vide
     pub struct PlafondsFranchise {
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub prestations_de_services: Decimal,
@@ -407,6 +395,7 @@ forme! {
 }
 
 forme! {
+    #[derive(Default)]
     pub struct PasParDefaut {
         pub abattement_contrats_courts: Option<NombreDate>,
         pub grilles: Vec<GrillePas>,
@@ -414,7 +403,6 @@ forme! {
 }
 
 forme! {
-    sans_vide
     /// Une grille du taux par defaut (CGI 204 H, III) : ses tranches `[jusqu'a, taux]`.
     pub struct GrillePas {
         pub depuis: socle::date::Jour,
@@ -479,6 +467,35 @@ forme! {
     }
 }
 
+impl Rubrique {
+    /// Une rubrique que le moteur compose : son identifiant, et rien d'autre de dit.
+    pub(crate) fn nommee(id: &str) -> Rubrique {
+        Rubrique {
+            id: id.into(),
+            famille: None,
+            libelle: None,
+            base: None,
+            taux_pat: None,
+            taux_sal: None,
+            composants: None,
+            composants_pat: None,
+            composants_sal: None,
+            complement: None,
+            cet_si_depasse: None,
+            masquer_base_et_taux: None,
+            composant_79: None,
+            facteur_atmp: None,
+            rempli_par: None,
+            taxe_apprentissage: None,
+            apres: None,
+            releve_svp_sante: None,
+            a_confirmer: None,
+            source: None,
+            note: None,
+        }
+    }
+}
+
 forme! {
     /// Le taux qui s'ajoute au taux patronal quand la remuneration depasse `seuil_smic` fois le SMIC (sans seuil : toujours).
     pub struct Complement {
@@ -532,6 +549,7 @@ forme! {
     /// Une modification d'une rubrique du corps par une couche (`rubriques` d'une section) : chaque case qu'elle dit
     /// remplace celle de la rubrique, une case qu'elle ne dit pas (absente ou nulle) ne change pas ; `efface` nomme les
     /// parts que la couche retire (la rubrique n'a plus de part de ce cote : `Rubrique::taux_pat`, `taux_sal`).
+    #[derive(Default)]
     pub struct RubriqueModifiee {
         pub famille: Option<String>,
         pub libelle: Option<String>,
@@ -549,7 +567,6 @@ forme! {
 }
 
 forme! {
-    sans_vide
     /// Une cotisation individuelle de la DSN (bloc 81), et la base qu'elle declare au bloc 78.
     pub struct CotisationDsn {
         pub bloc78: BaseAssujettie,
@@ -605,6 +622,7 @@ forme! {
     /// Une modification d'une cotisation du corps par une couche (`cotisations_dsn` d'une categorie, par code81 ou
     /// `code81:affectation`) : chaque case qu'elle dit remplace celle de la cotisation, une case qu'elle ne dit pas
     /// (absente ou nulle) ne change pas ; `efface` retire le taux.
+    #[derive(Default)]
     pub struct CotisationModifiee {
         pub taux: Option<Court>,
         pub efface: Option<Vec<CaseCotisation>>,
@@ -625,7 +643,6 @@ pub enum CotisationSupplementaire {
 }
 
 forme! {
-    sans_vide
     /// Un taux sur une base (`CotisationSupplementaire`) : la base est toujours dite. Le bareme ecrit le taux sous la
     /// cle `taux_sur_brut`, quelle que soit la base.
     pub struct TauxSurUneBase {
@@ -636,7 +653,6 @@ forme! {
 }
 
 forme! {
-    sans_vide
     /// La somme des parts patronales de lignes du bulletin (`CotisationSupplementaire`).
     pub struct LignesPatronales {
         pub lignes_patronales: Vec<String>,
@@ -645,6 +661,7 @@ forme! {
 
 forme! {
     /// La reduction generale des cotisations (CSS L. 241-13), ou ce qu'une couche en complete.
+    #[derive(Default)]
     pub struct ReductionGenerale {
         pub verifie: Option<bool>,
         pub statuts: Option<Vec<String>>,
@@ -671,6 +688,7 @@ forme! {
 
 forme! {
     /// Ce que la DSN declare de la reduction : les codes 81 de ses parts, le CTP du bordereau.
+    #[derive(Default)]
     pub struct ReductionDsn {
         pub code81_urssaf: Option<String>,
         pub code81_chomage: Option<String>,
@@ -695,6 +713,7 @@ forme! {
 
 forme! {
     /// La section d'une categorie (`par_categorie` : cadre, cadre permanent), et ses sections par statut.
+    #[derive(Default)]
     pub struct CoucheCategorie {
         pub verifie: Option<bool>,
         pub plafond_journalier: Option<Nombre>,
@@ -711,6 +730,7 @@ forme! {
 
 forme! {
     /// La section d'une nature de contrat (`par_nature` : permanent) : remplacer, retirer, ajouter des rubriques.
+    #[derive(Default)]
     pub struct CoucheNature {
         pub verifie: Option<bool>,
         pub rubriques: Option<BTreeMap<String, RubriqueModifiee>>,
@@ -727,7 +747,6 @@ forme! {
 }
 
 forme! {
-    sans_vide
     /// La contribution CPF-CDD d'un CDD de droit commun (C. trav. L. 6331-6) : un composant de plus a une rubrique.
     pub struct CpfCdd {
         pub rubrique: String,
@@ -982,11 +1001,10 @@ impl std::fmt::Display for Effet {
 }
 
 /// CE QUE LE MOTEUR NE PORTE PAS au-dela d'un seuil, et que la compagnie dit elle-meme dans sa surcouche.
-#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum NonPortee {
     /// Le versement mobilite (`Pile::versement_mobilite`) : un taux et la commune, ou une reponse.
-    #[default]
     VersementMobilite,
 }
 
@@ -1201,10 +1219,9 @@ forme! {
 }
 
 /// La case de la fiche entreprise qui dit le secteur d'une convention.
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ChampDuSecteur {
-    #[default]
     #[serde(rename = "secteur_2121")]
     Secteur2121,
 }

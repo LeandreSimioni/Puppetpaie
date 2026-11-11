@@ -164,7 +164,7 @@ pub struct PaieVersee {
 }
 
 /// Une ligne de remuneration que le bulletin imprime ; `rubrique` : celle du catalogue a laquelle l'import l'a rattachee.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LigneImprimee {
     pub quantite: Option<Decimal>,
@@ -194,7 +194,7 @@ pub struct DatesTravaillees {
 }
 
 /// Une ligne de cotisation que le bulletin imprime ; `cotisation` : celle du bareme que l'import lui a donnee.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CotisationImprimee {
     pub famille: Option<String>,
@@ -223,7 +223,7 @@ pub struct EmploiImprime {
 
 /// Le bulletin qui a complete la paie : sa copie, sa page, le logiciel qui l'a fait, son numero, le numero du contrat
 /// qu'il imprime.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BulletinSource {
     pub fichier: String,
@@ -625,7 +625,7 @@ impl Importe {
         // LES LIGNES DE REMUNERATION QUE LES PIECES DISENT : celles du bulletin ; a defaut, le brut que la DSN declare.
         let mut lignes_lues = p.lignes.clone();
         if lignes_lues.is_empty() {
-            lignes_lues.push(LigneImprimee { libelle: "brut déclaré".into(), montant: brut, soumis: true, ..Default::default() });
+            lignes_lues.push(LigneImprimee { libelle: "brut déclaré".into(), montant: brut, soumis: true, quantite: None, taux: None, rubrique: None, heures: None });
         }
         let quotite = p.quotite.map(socle::num::court);
         let mut engagement = crate::Engagement {
@@ -646,7 +646,7 @@ impl Importe {
             jours: 0,
             jours_contrat: 0,
             date_paiement: p.verse_le,
-            versement: Default::default(),
+            versement: droit::versement::Versement::FinDuMois,
             taux_cachet: None,
             cachets: 0,
             heures: None,

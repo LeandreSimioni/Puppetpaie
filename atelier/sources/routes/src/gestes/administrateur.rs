@@ -567,11 +567,16 @@ impl Etape {
 }
 
 /// Ce qui est pret a partir : en test (ecrit, pas encore essaye), en reel (teste, conforme, et le fichier est reel).
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pret {
     pub test: bool,
     pub reel: bool,
+}
+
+impl Pret {
+    /// Rien de pret : aucun fichier ecrit a deposer.
+    pub const RIEN: Pret = Pret { test: false, reel: false };
 }
 
 /// UNE DECLARATION DU TABLEAU D'UNE COMPAGNIE, telle qu'elle se garde (`TableauCompagnie`) : sa cle (celle du rappel),
@@ -724,7 +729,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 ou: Vec::new(),
                 fichier: None,
                 etape: None,
-                pret: Pret::default(),
+                pret: Pret::RIEN,
             }
         }
         "obligation" => {
@@ -753,7 +758,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 };
                 (Genre::HorsDsn, "Elle ne part pas avec la DSN : à faire sur le service de l'organisme, puis à dire faite dans la compagnie.", lieux)
             };
-            Declaration { cle: r.cle.clone(), en_retard: r.en_retard, genre, titre: r.titre.clone(), mois: None, butoir: ob.butoir, quand_dit, detail, marche: Some(marche.into()), ou, fichier: None, etape: None, pret: Pret::default() }
+            Declaration { cle: r.cle.clone(), en_retard: r.en_retard, genre, titre: r.titre.clone(), mois: None, butoir: ob.butoir, quand_dit, detail, marche: Some(marche.into()), ou, fichier: None, etape: None, pret: Pret::RIEN }
         }
         "dpae" => {
             let jour = r.date;
@@ -770,7 +775,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 ou: Vec::new(),
                 fichier: None,
                 etape: None,
-                pret: Pret::default(),
+                pret: Pret::RIEN,
             }
         }
         _ => return Ok(None),

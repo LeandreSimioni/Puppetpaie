@@ -24,7 +24,7 @@ fn a(jour: u32, heure: i64) -> journal::Datation {
 }
 
 fn dsn(mode: Mode) -> Ligne {
-    Ligne::Dsn(envoi(mode, DetailDsn::default()))
+    Ligne::Dsn(envoi(mode, DetailDsn::nouveau(false)))
 }
 
 fn fiche(code: &str) -> Ligne {
@@ -37,7 +37,7 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
     let l1 = journal::noter(&d, dsn(Mode::Reel), None, a(3, 10)).unwrap();
     assert_eq!((l1.quand().iso(), l1.nombre_de_retours()), ("2026-10-03T10:00:00".to_string(), 0));
     let avant = std::fs::read(journal::chemin(&d)).unwrap();
-    journal::noter(&d, Ligne::Dpae(envoi(Mode::Test, journal::DetailDpae::default())), None, a(3, 11)).unwrap();
+    journal::noter(&d, Ligne::Dpae(envoi(Mode::Test, journal::DetailDpae::nouveau(false, false))), None, a(3, 11)).unwrap();
     assert!(std::fs::read(journal::chemin(&d)).unwrap().starts_with(&avant), "ce qui etait ecrit au journal a ete reecrit");
     assert_eq!(journal::lire(&d, None, None, false).unwrap().len(), 2);
     assert_eq!(journal::lire(&d, Some(Acte::Dpae), None, false).unwrap().len(), 1);

@@ -443,8 +443,9 @@ impl Ecrit {
 
 /// Ecrit ce que l'apercu `imp` annonce : les fiches (et leur place dans `reponse`), puis les engagements importes
 /// (`engagements_importes` : les contrats des AEM et des bulletins, les paies versees).
-fn ecrire(ctx: &Contexte, imp: &crate::import::Apercu, reponse: &mut Importation, note: &str) -> R<Ecrit> {
+fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecrit> {
     let aujourdhui = ctx.date;
+    let reponse = &mut imp.reponse;
     // Les fiches, comme celles de l'ecran (`forcer` : une fiche importee avec des anomalies est ecrite quand meme).
     let mut ecrits: BTreeSet<String> = BTreeSet::new();
     let mut restent_a_creer = 0usize;
@@ -636,10 +637,10 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
     let aujourdhui = ctx.date;
     let dossier = crate::import::dossier_import(ctx, charge)?;
     // 1. Le dossier tel qu'il est : son compte rendu (pour l'ecran), et la copie de ce qu'il reprend.
-    let (tri, copie, noms, deposes) = crate::importation::bulletins::lire_dossier(ctx, &dossier, &HashMap::new(), |mut lu| {
+    let (tri, copie, noms, deposes) = crate::importation::bulletins::lire_dossier(ctx, &dossier, &HashMap::new(), |lu| {
         let (copie, noms) = copier_repris(ctx, &lu)?;
         crate::importation::incident::noter_les_non_lus(ctx, &lu)?;
-        let tri = std::mem::take(&mut lu.ap.reponse.tri);
+        let tri = lu.ap.reponse.tri;
         // La copie se relit sous le nom du fichier depose.
         let deposes: HashMap<String, String> = lu.copies.iter().map(|(i, nom)| (nom.clone(), lu.tri.fichiers[*i].chemin.clone())).collect();
         Ok((tri, copie, noms, deposes))
@@ -665,18 +666,18 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
         Err(e) => return Err(socle::fichiers::effacer_apres(e, &relu)),
     };
 
-    let mut reponse = std::mem::take(&mut imp.reponse);
     // Le compte rendu est celui du dossier lu (`tri`) : ses chemins, ses fichiers non repris (la relecture ne les voit pas).
     if !copie.differents.is_empty() {
-        reponse.avertissements.push(avertissement_differents(&copie.differents, "ce dossier"));
+        imp.reponse.avertissements.push(avertissement_differents(&copie.differents, "ce dossier"));
     }
     if let Some(alerte) = alerte_apres_import(ctx)? {
-        reponse.avertissements.push(alerte);
+        imp.reponse.avertissements.push(alerte);
     }
-    reponse.tri = tri;
-    reponse.source = dossier.display().to_string();
+    imp.reponse.tri = tri;
+    imp.reponse.source = dossier.display().to_string();
     let note = format!("Importe du dossier import/ le {}", aujourdhui.jj_mm_aaaa());
-    let e = ecrire(ctx, &imp, &mut reponse, &note)?;
+    let e = ecrire(ctx, &mut imp, &note)?;
+    let mut reponse = imp.reponse;
     reponse.avertissements.extend(e.avertissements.iter().cloned());
     reponse.contrats_nouveaux = e.contrats_aem;
     reponse.bulletins.contrats_nouveaux = e.contrats_bulletins;

@@ -145,7 +145,7 @@ const fn pt(n: i64) -> Mesure {
 }
 
 /// Ce qu'une AEM en PDF dit, page par page.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Aem {
     pub page: usize,
     /// Le mois de l'attestation.
@@ -560,7 +560,43 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
         (!t.is_empty()).then_some(t)
     };
 
-    let mut a = Aem { page, ..Default::default() };
+    // Une AEM (pas une AER) dont chaque case se lit ci-dessous ; la case « en cours » n'est cochee que lue.
+    let mut a = Aem {
+        page,
+        mois: None,
+        numero: None,
+        siret: None,
+        ape: None,
+        idcc: None,
+        employeur: None,
+        employeur_code_postal: None,
+        employeur_commune: None,
+        adherent: None,
+        nir: None,
+        cle_nir: None,
+        nom: None,
+        prenom: None,
+        nom_usage: None,
+        naissance: None,
+        rue: None,
+        code_postal: None,
+        commune: None,
+        emploi: None,
+        numero_objet: None,
+        cadre: None,
+        statut: None,
+        embauche: None,
+        fin_contrat: None,
+        en_cours: false,
+        heures: None,
+        cachets_isoles: None,
+        cachets_groupes: None,
+        jours: None,
+        brut: None,
+        corrige: None,
+        aer: false,
+        faute: None,
+    };
     // Le mois : ses chiffres, imprimes case a case (« 0 4 20 2 3 ») : MM puis AAAA.
     let chiffres: String = lu("mois", Some(0)).iter().take_while(|m| m.chars().all(|c| c.is_ascii_digit())).map(String::as_str).collect();
     a.mois = socle::piece::Zone::lue(&chiffres, socle::piece::format::Mmaaaa).valeur();

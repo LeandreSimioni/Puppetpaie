@@ -483,7 +483,6 @@ pub fn entete<'a>(e: &'a Entetes, nom: &str) -> Option<&'a str> {
 }
 
 /// Ce qu'on envoie : une requete du guide.
-#[derive(Default)]
 pub struct Requete<'a> {
     pub url: &'a str,
     pub jeton: Option<&'a str>,
@@ -500,6 +499,13 @@ pub struct Requete<'a> {
     pub sans_gzip: bool,
     /// Une autre methode que GET ou POST (`PATCH` du Drive) ; elle part avec son corps, meme vide.
     pub methode: Option<&'a str>,
+}
+
+impl<'a> Requete<'a> {
+    /// Un GET de `url`, sans jeton, sans corps ni en-tete de plus, qui demande `gzip`.
+    pub fn get(url: &'a str, delai: u64) -> Requete<'a> {
+        Requete { url, jeton: None, donnees: None, content_type: None, corps_gzip: false, post: false, delai, entetes: &[], sans_gzip: false, methode: None }
+    }
 }
 
 /// Le corps de la reponse (decompresse si `Content-Encoding: gzip`) et ses
@@ -623,7 +629,7 @@ fn en_erreur_api(url: &str, p: Panne) -> EchecApi {
 
 /// Un GET sous le jeton de la session : le corps et les en-tetes ; une panne en `Organisme`.
 pub fn appeler(url: &str, jeton: Option<&str>) -> Result<(Vec<u8>, Entetes), EchecApi> {
-    let r = Requete { url, jeton, delai: DELAI_APPEL, ..Default::default() };
+    let r = Requete { jeton, ..Requete::get(url, DELAI_APPEL) };
     envoyer(&r).map_err(|p| en_erreur_api(url, p))
 }
 
@@ -736,14 +742,10 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
     );
     let url = a.url;
     let r = Requete {
-        url,
         jeton: a.jeton,
         donnees: Some(corps.as_bytes()),
         content_type: Some("application/xml"),
-        corps_gzip: false,
-        post: false,
-        delai: DELAI_APPEL,
-        ..Default::default()
+        ..Requete::get(url, DELAI_APPEL)
     };
     let (brut, _) = envoyer(&r).map_err(|p| en_erreur_api(url, p))?;
     let jeton: String = brut.iter().map(|&b| if b < 0x80 { b as char } else { '\u{fffd}' }).collect();
@@ -755,14 +757,12 @@ Trois facons de le fournir, dans cet ordre de priorite :\n\n\
 /// raconte, `dsn` (`DepotRefuse`) ou `dpae` (`Organisme`).
 pub fn depot(url: &str, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64) -> Result<(Vec<u8>, Entetes), EchecApi> {
     let r = Requete {
-        url,
         jeton: Some(jeton),
         donnees: Some(corps_gzip),
         content_type: Some("text/plain"),
         corps_gzip: true,
         post: true,
-        delai,
-        ..Default::default()
+        ..Requete::get(url, delai)
     };
     envoyer(&r).map_err(|p| match (forme, p) {
             ("dsn", Panne::Statut { code, corps }) => match corps {

@@ -654,7 +654,7 @@ pub(crate) fn exporter_objet(ctx: &Contexte, c: &ChargeExporter) -> R<Exporte> {
         departs: envois::journal::lu(&ctx.racine).map(|j| j.departs)?,
     };
     if etat == "regularisation-casc-svp" {
-        let demande = crate::importation::casc::Demande { mois: d.mois, annee: d.annee, toutes_les_annees: d.toutes, boite_liee: crate::ouverture::boite_liee(ctx)?, ..Default::default() };
+        let demande = crate::importation::casc::Demande { mois: d.mois, annee: d.annee, toutes_les_annees: d.toutes, boite_liee: crate::ouverture::boite_liee(ctx)?, jusqu_a: None, annees: Vec::new(), vire_le: Vec::new() };
         let mut r = crate::importation::casc::regularisation(ctx, &demande)?;
         if d.ecrire {
             crate::importation::casc::ecrire(ctx, &mut r)?;
@@ -878,7 +878,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     annees_voulues.sort();
 
     // La boite et la preuve, puis le dossier, ecrit : la liste nominative jointe est celle du jour.
-    let mut r = regularisation(ctx, &Demande { toutes_les_annees: true, annees: annees_voulues.clone(), vire_le: dates.clone(), ..Default::default() })?;
+    let mut r = regularisation(ctx, &Demande { mois: None, annee: None, toutes_les_annees: true, jusqu_a: None, annees: annees_voulues.clone(), vire_le: dates.clone(), boite_liee: false })?;
     let manquent: Vec<String> = annees_voulues.iter().filter(|a| !r.annees.iter().any(|x| x.annee == **a)).map(|a| a.to_string()).collect();
     if !manquent.is_empty() {
         return Err(refus(format!("Rien a regulariser pour {} (deja fait, ou aucune DSN deposee). Rien n'est parti.", manquent.join(", "))));

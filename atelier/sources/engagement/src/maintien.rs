@@ -247,7 +247,7 @@ pub fn subrogation(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> R<Option<(
 // ------------------------------------------------------------------ le mois
 
 /// Ce que les arrets d'un permanent donnent a son mois, tous arrets du mois ensemble.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct DuMois {
     /// Le complement de la loi, brut.
     pub loi: Decimal,
@@ -268,7 +268,7 @@ pub struct DuMois {
 /// Ce qu'il faut pour reconstituer une garantie nette : la part du salaire retiree et son pourcentage, suite par suite
 /// de jours ; les indemnites nettes que le salarie percoit hors du bulletin (sans subrogation) et celles des jours que le
 /// texte n'indemnise pas.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AuNet {
     pub texte: String,
     pub net: bool,
@@ -445,7 +445,16 @@ pub fn ajouter(ctx: &Contexte, e: &crate::saisie::Carte, imp: &ArretSaisi, nat: 
         match t {
             Texte::Loi => out.loi += complement,
             Texte::Convention if r.base == Base::Net || r.plafond_net => {
-                let a = out.au_net.get_or_insert_with(AuNet::default);
+                // Les sommes de la garantie nette, a zero avant sa premiere suite de jours.
+                let a = out.au_net.get_or_insert_with(|| AuNet {
+                    texte: r.texte.clone(),
+                    net: false,
+                    plafond_net: false,
+                    parts: Vec::new(),
+                    ij_nettes_hors_bulletin: Decimal::ZERO,
+                    ij_nettes_hors_garantie: Decimal::ZERO,
+                    complement_brut: Decimal::ZERO,
+                });
                 a.texte = r.texte.clone();
                 a.net |= r.base == Base::Net;
                 a.plafond_net |= r.plafond_net;
@@ -901,7 +910,11 @@ mod tests {
                 convention_brut: Some(Decimal::from(conv)),
                 ij_subrogees_brutes: Decimal::from(ij),
                 ij_subrogees_jours: if ij > 0 { 10 } else { 0 },
-                ..DuMois::default()
+                au_net: None,
+                ij_subrogees_nettes: Decimal::ZERO,
+                assiette_pas: Decimal::ZERO,
+                heures: Decimal::ZERO,
+                avis: Vec::new(),
             };
             let au = droit::natures::NatureDeContrat::Cdi.proprietes().unwrap().au_mois().unwrap();
             let l = lignes(&m, Mois::nouveau(2026, 3).unwrap(), &au);

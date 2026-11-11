@@ -165,14 +165,10 @@ pub fn jeton_par_rafraichissement(adresse: &str, application: &Application, rafr
         ("grant_type", "refresh_token".into()),
     ]);
     let requete = Requete {
-        url: adresse,
-        jeton: None,
         donnees: Some(corps.as_bytes()),
         content_type: Some("application/x-www-form-urlencoded"),
-        corps_gzip: false,
         post: true,
-        delai,
-        ..Default::default()
+        ..Requete::get(adresse, delai)
     };
     match envoyer(&requete) {
         Ok((brut, _)) => {

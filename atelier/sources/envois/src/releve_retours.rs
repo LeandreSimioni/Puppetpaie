@@ -276,7 +276,6 @@ pub struct RetourArchive {
 }
 
 /// `ReleveRetours`.
-#[derive(Default)]
 pub struct Releve {
     pub trouves: Vec<Annonce>,
     pub nouveaux: Vec<Annonce>,
@@ -286,6 +285,13 @@ pub struct Releve {
     pub rattaches: i64,
     /// Ce qu'un retour recu demande de faire (un taux AT/MP a reporter).
     pub a_faire: Vec<String>,
+}
+
+impl Releve {
+    /// Un releve ou rien n'est encore trouve.
+    pub fn vide() -> Releve {
+        Releve { trouves: Vec::new(), nouveaux: Vec::new(), archives: Vec::new(), incidents: Vec::new(), rattaches: 0, a_faire: Vec::new() }
+    }
 }
 
 /// Le jour de publication d'un retour, en JJ/MM/AAAA ; aucun quand il ne le dit pas.
@@ -543,7 +549,7 @@ pub fn relever_retours(
     canal: &str,
     suites: &mut Suites,
 ) -> R<Releve> {
-    let mut releve = Releve::default();
+    let mut releve = Releve::vide();
     match branchement {
         // Rien n'est parti, rien ne revient.
         Branchement::Message(_) => return Ok(releve),
@@ -674,23 +680,23 @@ pub fn relever_retours_dpae(
     suites: &mut Suites,
 ) -> R<Releve> {
     match branchement {
-        Branchement::Message(_) => return Ok(Releve::default()),
+        Branchement::Message(_) => return Ok(Releve::vide()),
         Branchement::Simulateur => {
-            let mut r = Releve::default();
+            let mut r = Releve::vide();
             r.rattaches = rattacher_simulation(ctx, suites)?;
             return Ok(r);
         }
         Branchement::Monde => {}
     }
     let Some(mut client) = client else {
-        let mut r = Releve::default();
+        let mut r = Releve::vide();
         r.incidents.push("Mot de passe DPAE absent : ni dans l'environnement, ni dans le coffre. `route coffre-poser, service urssaf`.".into());
         return Ok(r);
     };
     let Some(flux) = flux else {
         return relever_retours(ctx, branchement, debut, fin, tout, Some(client), crate::etats::DPAE, suites);
     };
-    let mut r = Releve::default();
+    let mut r = Releve::vide();
     let trouves = client.authentifier().and_then(|_| client.lister_retours_du_flux(flux));
     match trouves {
         Ok(t) => r.trouves = t,

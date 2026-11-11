@@ -53,7 +53,7 @@ pub fn rejouer(nom: &str, dossier: &Path) -> (routes::scenario::Rejeu, PathBuf) 
 pub fn rejouer_dossier(sc: &Path, dossier: &Path) -> (routes::scenario::Rejeu, PathBuf) {
     let _un = UN_A_LA_FOIS.lock().unwrap_or_else(|p| p.into_inner());
     let nom = sc.display();
-    let r = routes::scenario::rejouer(sc, &dossier.join("installation"), &routes::scenario::OptionsRejeu::default())
+    let r = routes::scenario::rejouer(sc, &dossier.join("installation"), &routes::scenario::OptionsRejeu::entier())
         .unwrap_or_else(|m| panic!("le scenario {} ne se rejoue pas : {}", nom, m.en_lignes()));
     assert!(r.ecarts.is_empty(), "le rejeu de {} s'ecarte de l'enregistrement :\n{}", nom, r.ecarts.join("\n"));
     let racine = r.compagnies.first().map(|(_, p)| p.clone()).unwrap_or_else(|| panic!("le scenario {} n'ajoute aucune compagnie", nom));
@@ -125,7 +125,7 @@ impl Soir<'_> {
 pub fn rejouer_et_lire(nom: &str, dossier: &Path, jours: &[socle::date::Jour], mut lire: impl FnMut(&Soir)) -> (routes::scenario::Rejeu, PathBuf) {
     let _un = UN_A_LA_FOIS.lock().unwrap_or_else(|p| p.into_inner());
     let mut lus = 0;
-    let r = routes::scenario::rejouer_et_lire(&scenario(nom), &dossier.join("installation"), &Default::default(), jours, &mut |jour, r| {
+    let r = routes::scenario::rejouer_et_lire(&scenario(nom), &dossier.join("installation"), &routes::scenario::OptionsRejeu::entier(), jours, &mut |jour, r| {
         let (_, racine) = r.compagnies.first().unwrap_or_else(|| panic!("le scenario {} n'a pas encore de compagnie le {}", nom, jour.iso()));
         lire(&Soir { jour: jour.iso(), racine });
         lus += 1;

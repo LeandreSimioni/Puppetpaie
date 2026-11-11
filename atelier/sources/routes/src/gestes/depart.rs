@@ -132,7 +132,7 @@ impl Forme {
             ordre: self.ordre,
             etablissement: self.etablissement.clone(),
             remplacee_versait_pas: self.remplacee_versait_pas,
-            ..Default::default()
+            ..declarations::dsn::Options::normale()
         }
     }
 }

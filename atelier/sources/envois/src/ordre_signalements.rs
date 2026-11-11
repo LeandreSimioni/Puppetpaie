@@ -42,7 +42,7 @@ use socle::mois::Mois;
 pub const JOURS_DE_RELEVE: i64 = 92;
 
 /// Ce que le moteur sait du dernier ordre pris, et ce qu'il doit en dire.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct OrdreConnu {
     /// Le plus grand ordre de signalement connu, 0 si aucun : le prochain signalement part au suivant.
     pub dernier: i64,
@@ -204,7 +204,7 @@ pub fn conduite_b1_208_10(declaration: &crate::retours::DeclarationIdentifiee, f
 
 /// Ce que les bilans archives disent des DSN MENSUELLES d'une base (essai ou reel), lu en silence : le compteur d'ordre
 /// lit tous les retours, sans rien montrer, y compris ceux des tests faits ailleurs.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MensuellesVues {
     /// Le plus grand ordre de mensuelle vu pour ce mois de constitution, 0 si aucun.
     pub ordre: i64,
@@ -234,7 +234,8 @@ pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, con
     let base = if essai { crate::retours::ESSAI_TEST } else { crate::retours::ESSAI_REEL };
     let aaaamm = format!("{:04}{:02}", constitution.annee(), constitution.numero());
     let cite = regex::Regex::new(r"ordre (?:accept\S* )?(\d{7,})").map_err(|e| erreur(Classe::Illisible, e.to_string()))?;
-    let mut vues = MensuellesVues::default();
+    // Avant le premier bilan lu : aucune mensuelle vue.
+    let mut vues = MensuellesVues { ordre: 0, du_mois_acceptee: false };
     for (_, p) in bilans_archives(racine)? {
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         let Some(bilan) = crate::retours::bilan_si_xml(&octets)? else { continue };

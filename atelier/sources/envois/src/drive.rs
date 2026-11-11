@@ -168,7 +168,7 @@ pub struct Distant {
 }
 
 /// Ce que Drive rend d'un depot (`{id, name, webViewLink}`), plus `remplace`.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Depose {
     pub id: Option<String>,
     pub nom: Option<String>,
@@ -306,16 +306,7 @@ impl Client {
     fn appel_une_fois(&mut self, url: &str, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<Vec<u8>, ErreurGoogle> {
         let autorisation = format!("Bearer {}", self.jeton_acces()?);
         let entetes = [("Authorization", autorisation.as_str())];
-        let requete = Requete {
-            url,
-            jeton: None,
-            donnees,
-            content_type,
-            delai: DELAI_APPEL,
-            entetes: &entetes,
-            methode,
-            ..Default::default()
-        };
+        let requete = Requete { donnees, content_type, entetes: &entetes, methode, ..Requete::get(url, DELAI_APPEL) };
         match envoyer(&requete) {
             Ok((brut, _)) => Ok(brut),
             Err(panne) => {

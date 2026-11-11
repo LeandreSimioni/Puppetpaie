@@ -50,7 +50,7 @@ use crate::courriel::Courriel;
 use socle::echec::{refus, Classe, Echec, R};
 
 /// Un courriel, sans le piece jointe lue : `pieces` sont des chemins.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Message {
     pub cle: String,
     pub nom: String,

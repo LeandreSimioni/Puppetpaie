@@ -88,6 +88,8 @@ que par la structure :
   `un_verrou_n_a_ni_liste_ni_filtre` (aucun verrou ne nomme un source pour l'écarter ; un endroit unique se compte, ou
   se nomme par son type) :
   `une_couche_fermee_ne_lit_que_des_formes` (le JSON au bord seulement, ni clé libre, ni repli, ni erreur avalée),
+  `un_defaut_n_invente_aucune_valeur` (`Default` sur un type dont chaque champ a un vide qui ne dit rien : une
+  `Option`, une liste, un autre de ces types ; aucune `enum` ; un autre type se construit en disant chaque champ),
   `chaque_forme_lue_refuse_une_cle_inconnue` (`deny_unknown_fields`, ou la forme se déclare elle-même réponse d'un
   tiers : « Le corps et ses portes »),
   `une_crate_ne_prend_qu_a_celles_du_dessous`, `l_atelier_reste_hors_du_logiciel`, `l_engagement_ne_lit_pas_le_journal`,

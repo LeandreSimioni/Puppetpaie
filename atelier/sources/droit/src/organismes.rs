@@ -304,7 +304,7 @@ fn donnes_par_un_texte() -> R<Vec<String>> {
 
 /// UN CONTRAT ATTENDU d'une compagnie a une date : un contrat qu'un texte exige (`Contrat`), la CASC-SVP, ou une
 /// contribution de branche du bareme. `libelle_defaut` : la reference que l'ecran propose quand rien n'est saisi.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Attendu {
     pub cle: String,
     pub role: Option<String>,
@@ -337,7 +337,8 @@ impl From<&Contrat> for Attendu {
             organisme: c.organisme.clone(),
             organisme_fixe: c.organisme_fixe,
             note: c.note.clone(),
-            ..Attendu::default()
+            libelle_defaut: None,
+            contribution: None,
         }
     }
 }
@@ -382,7 +383,12 @@ pub fn attendus(ctx: &Contexte) -> R<Vec<Attendu>> {
             quoi: "CASC-SVP (activités sociales et culturelles)".into(),
             organisme: Some(casc.delegataire),
             organisme_fixe: true,
-            ..Attendu::default()
+            role: None,
+            libelle_defaut: None,
+            depuis: None,
+            jusqu_a: None,
+            contribution: None,
+            note: None,
         });
     }
     // Les contributions de branche en DSN : la convention de la date dit lesquelles (`Contexte::contributions_dsn`).
@@ -400,7 +406,12 @@ pub fn attendus(ctx: &Contexte) -> R<Vec<Attendu>> {
             quoi: format!("Contribution {} (en DSN depuis {})", nom, c.en_dsn_depuis),
             organisme: Some(AUDIENS.into()),
             organisme_fixe: true,
-            ..Attendu::default()
+            role: None,
+            libelle: None,
+            reference: None,
+            depuis: None,
+            jusqu_a: None,
+            note: None,
         });
     }
     out.extend(idcc.and_then(|i| base.contrats.conventions.get(i)).into_iter().flatten().map(Attendu::from));

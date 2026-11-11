@@ -198,7 +198,6 @@ pub struct Regularisation {
 }
 
 /// Ce que demande une regularisation (`regularisation`).
-#[derive(Default)]
 pub struct Demande {
     pub mois: Option<Mois>,
     pub annee: Option<Annee>,
@@ -635,8 +634,8 @@ const FUSIONS: [(u32, u16, u32, u16); 7] = [(0, 0, 1, 25), (0, 26, 0, 29), (0, 3
 fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path, fichiers: &mut Vec<std::path::PathBuf>) -> R<()> {
     use documents::classeur::{Feuille, Style, Vertical};
     let mut ws = Feuille::nouvelle("Feuil1");
-    let titre = Style { gras: true, retour_a_la_ligne: true, centre: true, vertical: Some(Vertical::Centre), ..Style::default() };
-    let entete = Style { retour_a_la_ligne: true, vertical: Some(Vertical::Haut), ..Style::default() };
+    let titre = Style { gras: true, retour_a_la_ligne: true, centre: true, vertical: Some(Vertical::Centre), ..Style::CLASSEUR };
+    let entete = Style { retour_a_la_ligne: true, vertical: Some(Vertical::Haut), ..Style::CLASSEUR };
     for (a, b, c, d) in FUSIONS {
         ws.fusionner(a, b, c, d, &titre);
     }
@@ -646,7 +645,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
     ws.hauteur(2, 132);
     ws.figer(3);
     ws.largeur(0, 36, 14);
-    let simple = Style::default();
+    let simple = Style::CLASSEUR;
     let siret = ctx.entreprise.siret.ecrite("siret").map_err(|e| e.reclasser(Classe::Refuse))?.to_string();
     let aujourdhui = droit::contexte::jour_reel().jj_mm_aaaa();
     let mut cumul: Vec<((Annee, Option<String>), Decimal)> = Vec::new();
@@ -727,7 +726,7 @@ pub use declarations::casc::RegularisationNotee;
 /// La route `casc-regularise` note qu'une annee est regularisee. S'ecrit
 /// APRES le virement, jamais avant.
 pub fn marquer_regularise(ctx: &Contexte, annee: Annee, vire_le: Jour, montant: Decimal, qui: &str, aujourd_hui: Jour) -> R<RegularisationNotee> {
-    let r = regularisation(ctx, &Demande { annee: Some(annee), ..Default::default() })?;
+    let r = regularisation(ctx, &Demande { mois: None, annee: Some(annee), toutes_les_annees: false, jusqu_a: None, annees: Vec::new(), vire_le: Vec::new(), boite_liee: false })?;
     let p = fichier_suivi(ctx);
     let mut d = match declarations::casc::lue(ctx).map_err(|m| m.reclasser(Classe::Illisible))? {
         Some(d) => d,

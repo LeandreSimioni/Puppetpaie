@@ -183,7 +183,7 @@ fn un_engagement_non_actif_fait_annuler_ce_qui_a_ete_declare_pour_lui() {
     assert_eq!(brut(&decembre), brut(&novembre).into_iter().map(|m| -m).collect::<Vec<_>>());
 
     // Partie sur la version du non actif, la correction ne ressort plus et ne se porte plus en janvier.
-    let mut e = envois::journal::Envoi::nouveau(envois::journal::Mode::Reel, "test", true, "", "", envois::journal::DetailDsn::default());
+    let mut e = envois::journal::Envoi::nouveau(envois::journal::Mode::Reel, "test", true, "", "", envois::journal::DetailDsn::nouveau(false));
     e.mois = Some(socle::mois::Mois::nouveau(2026, 12).unwrap());
     e.versions = Some(serde_json::from_value(json!([{"salarie": "FULLER", "numero": "FU1.26.01", "version": na.version(), "mois": "2026-11"}])).unwrap());
     let date = envois::journal::Datation::Lue { quand: socle::paris::InstantEcrit::du_naif(socle::paris::Naif::du_jour(jour(2027, 1, 5), 10, 0, 0).unwrap()).into(), origine: "le test".into() };

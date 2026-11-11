@@ -104,8 +104,9 @@ pub struct Options {
     pub sauvegarde_seule: bool,
 }
 
-impl Default for Options {
-    fn default() -> Options {
+impl Options {
+    /// L'ouverture entiere : tout se releve, se depose chez l'editeur et se sauvegarde, sur trente jours de retours.
+    pub fn entiere() -> Options {
         Options {
             sauvegarder: true,
             retours: true,
@@ -152,7 +153,7 @@ pub struct ChargeOuverture {
 impl Options {
     /// Les options d'une charge de route : un passage ordinaire, et ce que la charge dit autrement.
     pub(crate) fn de_la_charge(c: ChargeOuverture) -> Options {
-        let mut o = Options::default();
+        let mut o = Options::entiere();
         o.sauvegarder = c.sauvegarder != Some(false);
         o.retours = c.retours != Some(false);
         o.signatures = c.signatures != Some(false);
@@ -788,7 +789,7 @@ pub fn ouverture(ctx: &Contexte, opt: &Options, mut clients: Clients<'_>, mut ap
         }
         if retours {
             dire_l_etape(ctx, "Compagnie fictive : retours des dépôts joués…")?;
-            let mut releve = Releve::default();
+            let mut releve = Releve::vide();
             match crate::gestes::releve::rattacher_simulation(ctx) {
                 Ok((n, a_faire)) => (releve.rattaches, releve.a_faire) = (n, a_faire),
                 // L'ouverture ne doit pas tomber.

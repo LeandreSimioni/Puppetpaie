@@ -302,12 +302,10 @@ pub fn autoriser(
         ("redirect_uri", redirection),
     ]);
     let reponse: ReponseJeton = appeler(&Requete {
-        url: &adresses.jetons,
         donnees: Some(corps.as_bytes()),
         content_type: Some("application/x-www-form-urlencoded"),
         post: true,
-        delai: DELAI,
-        ..Default::default()
+        ..Requete::get(&adresses.jetons, DELAI)
     })?;
     let non_vide = |t: Option<String>| t.filter(|x| !x.is_empty());
     let Some(rafraichissement) = non_vide(reponse.refresh_token) else {
@@ -336,7 +334,7 @@ pub fn autoriser(
 
     let autorisation = format!("Bearer {}", acces);
     let entetes = [("Authorization", autorisation.as_str())];
-    let infos: ReponseCompte = appeler(&Requete { url: &adresses.compte, entetes: &entetes, delai: DELAI, ..Default::default() })?;
+    let infos: ReponseCompte = appeler(&Requete { entetes: &entetes, ..Requete::get(&adresses.compte, DELAI) })?;
     let Some(compte) = non_vide(infos.email) else {
         return Err(refus("Google n'a pas donne l'adresse du compte : aucune autorisation enregistree. Recommencer."));
     };

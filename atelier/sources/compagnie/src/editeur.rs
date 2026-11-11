@@ -326,14 +326,12 @@ pub fn poster<C: Serialize + ?Sized, T: DeserializeOwned>(serveur: &str, action:
     let mut en_tetes: Vec<(&str, &str)> = vec![("User-Agent", "PuppetPaie-filet"), ("Accept-Encoding", "identity")];
     en_tetes.extend_from_slice(entetes);
     let r = Requete {
-        url: &url,
         donnees: Some(donnees.as_bytes()),
         content_type: Some("application/json"),
         post: true,
-        delai,
         entetes: &en_tetes,
         sans_gzip: true,
-        ..Default::default()
+        ..Requete::get(&url, delai)
     };
     match envoyer(&r) {
         Ok((brut, _)) => {

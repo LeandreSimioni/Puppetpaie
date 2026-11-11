@@ -788,7 +788,6 @@ fn pourquoi(p: &(dyn std::any::Any + Send)) -> String {
     "sans phrase".to_string()
 }
 
-#[derive(Default)]
 struct EtatDeLaFile {
     /// Les cles a verifier, dans l'ordre ou elles se feront.
     attente: VecDeque<Cle>,
@@ -819,7 +818,6 @@ pub struct Fil {
     reveil: Condvar,
 }
 
-#[derive(Default)]
 struct EtatDuFil {
     files: Vec<Arc<FileDesEtats>>,
     devant: Option<Arc<FileDesEtats>>,
@@ -833,7 +831,9 @@ struct EtatDuFil {
 impl Fil {
     /// Un fil, qui tourne aussitot (il attend du travail).
     pub fn nouveau() -> Arc<Fil> {
-        let f = Arc::new(Fil { etat: Mutex::new(EtatDuFil::default()), reveil: Condvar::new() });
+        // Aucune file encore, la premiere servie en tete, aucun jour suivi.
+        let etat = EtatDuFil { files: Vec::new(), devant: None, tour: 0, jour: None, arrete: false };
+        let f = Arc::new(Fil { etat: Mutex::new(etat), reveil: Condvar::new() });
         let fil = f.clone();
         crate::fil_de_routes(move || {
             socle::fil_de_fond::marquer();
@@ -870,7 +870,16 @@ impl Fil {
         let f = Arc::new(FileDesEtats {
             o,
             racine: racine.to_path_buf(),
-            etat: Mutex::new(EtatDeLaFile::default()),
+            // Rien a verifier, aucune demande encore (numero 0), rien d'affiche.
+            etat: Mutex::new(EtatDeLaFile {
+                attente: VecDeque::new(),
+                voulu: HashMap::new(),
+                fait: HashMap::new(),
+                numero: 0,
+                affiche: None,
+                en_cours: None,
+                arretee: false,
+            }),
             signal: Condvar::new(),
             fil: self.clone(),
         });

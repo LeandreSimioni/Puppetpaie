@@ -1340,7 +1340,6 @@ struct LigneCourante {
     boites: Vec<Option<Place>>,
 }
 
-#[derive(Default)]
 struct Mise {
     lignes: Vec<Vec<Signe>>,
     /// Garder la boîte de chaque caractère (`--inspecter`) : `boites[k]` est celle de `lignes[k]`.
@@ -1987,7 +1986,8 @@ fn lire_la_page(doc: &Document, id: ObjectId, inspecter: bool) -> Result<Interpr
         Some(_) => Some(lecture::cadre_de(doc, id)?),
         None => None,
     };
-    let mise = Mise { garder: inspecter, ..Mise::default() };
+    // Rien de pose encore : le stylo a l'origine.
+    let mise = Mise { lignes: Vec::new(), garder: inspecter, boites: Vec::new(), courante: None, stylo: (Mesure::ZERO, Mesure::ZERO) };
     let releve = if inspecter { Some(Releve::default()) } else { None };
     let mut it = Interprete { doc, polices: HashMap::new(), mise, cadre, actuel: None, releve, annotation: false };
     it.relever_polices(res)?;

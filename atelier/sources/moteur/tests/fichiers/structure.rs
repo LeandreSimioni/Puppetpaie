@@ -954,6 +954,321 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     assert!(fautes.is_empty(), "une couche fermée ne lit que des formes, entières ({} écarts) :\n{}", fautes.len(), fautes.join("\n"));
 }
 
+/// UN DEFAUT N'INVENTE AUCUNE VALEUR (atelier/AGENTS.md, « Un champ facultatif ne s'écrit que s'il est rempli » : un
+/// repli, c'est une absence qui devient une valeur) : dans les couches et la fabrique de PDF, `Default` (dérivé, ou écrit
+/// `impl Default for`) ne vaut que pour un type dont chaque champ a un vide qui ne dit rien : une `Option`, une liste
+/// (`Vec`, `VecDeque`, une table, un ensemble), un marqueur (`PhantomData`, `NonLue`), un paramètre du type, un autre de
+/// ces types, ou l'un d'eux sous `Arc`, `Rc`, `Box`, `Mutex`, `RwLock`, `RefCell`. Un nombre, un booléen, un texte, un
+/// n-uplet, une variante n'ont pas de vide : leur défaut serait une valeur fabriquée (0, faux, « », la première
+/// variante). Un tel type se construit en disant chaque champ, ou par un constructeur qui dit ce qu'il construit ; aucune
+/// `enum` n'a de `Default`. Une macro se lit dépliée (ses répétitions `$( … )*` ôtées). Un nom porté par plusieurs types
+/// n'est sûr que si chacun l'est.
+#[test]
+fn un_defaut_n_invente_aucune_valeur() {
+    /// Un `Default` a juger : le type, ses parametres, ceux de l'`impl` et les arguments qu'elle lui donne, ses champs.
+    struct AJuger {
+        nom: String,
+        params: Vec<String>,
+        de_l_impl: Vec<String>,
+        args: Vec<String>,
+        champs: Vec<String>,
+        ou: String,
+    }
+    let vides = ["Option", "Vec", "VecDeque", "BTreeMap", "BTreeSet", "HashMap", "HashSet", "IndexMap", "IndexSet", "PhantomData", "NonLue"];
+    let enveloppes = ["Arc", "Rc", "Box", "Mutex", "RwLock", "RefCell"];
+    let derive = regex::Regex::new(r"#\[\s*derive\s*\(([^)]*)\)\s*\]").unwrap();
+    let defaut = regex::Regex::new(r"\bDefault\b").unwrap();
+    let type_ou_enum = regex::Regex::new(r"^(?:pub(?:\([^)]*\))?\s+)?(struct|enum)\s+(\$?\w+)").unwrap();
+    let structure = regex::Regex::new(r"\bstruct\s+(\$?\w+)").unwrap();
+    let enumeration = regex::Regex::new(r"\benum\s+(\w+)").unwrap();
+    let ecrit = regex::Regex::new(r"^\s*(?:std::default::)?Default\s+for\s+(\w+)").unwrap();
+    let une_impl = regex::Regex::new(r"\bimpl\b").unwrap();
+    let mut definis: Vec<(String, Vec<String>, Vec<String>)> = Vec::new();
+    let mut enums: BTreeSet<String> = BTreeSet::new();
+    let mut a_juger: Vec<AJuger> = Vec::new();
+    let mut impls: Vec<(String, Vec<String>, Vec<String>, String)> = Vec::new();
+    let mut fautes = Vec::new();
+    let dossiers = COUCHES_FERMEES.iter().map(|c| espace().join(c).join("src")).chain([espace().join("fabrique-pdf/src")]);
+    for dossier in dossiers {
+        for f in sources(&dossier) {
+            let code = code_seul(&std::fs::read_to_string(&f).unwrap());
+            let c: Vec<char> = code.chars().collect();
+            // Les positions se comptent en caracteres : le code est relu en `Vec<char>`.
+            let rang = |octet: usize| code[..octet].chars().count();
+            let ou = |i: usize| format!("{}:{}", f.display(), c[..i].iter().filter(|x| **x == '\n').count() + 1);
+            for m in structure.captures_iter(&code) {
+                let fin = rang(m.get(0).unwrap().end());
+                let (params, champs) = definition(&c, fin);
+                definis.push((m[1].to_string(), params, champs));
+            }
+            for m in enumeration.captures_iter(&code) {
+                enums.insert(m[1].to_string());
+            }
+            for m in derive.captures_iter(&code) {
+                if !defaut.is_match(&m[1]) {
+                    continue;
+                }
+                let mut i = rang(m.get(0).unwrap().end());
+                // Les attributs qui suivent, et ceux qu'une macro repete (`$(#[$m])*`).
+                loop {
+                    while c.get(i).is_some_and(|x| x.is_whitespace()) {
+                        i += 1;
+                    }
+                    if c.get(i) == Some(&'#') && c.get(i + 1) == Some(&'[') {
+                        i = ferme(&c, i + 1) + 1;
+                    } else if c.get(i) == Some(&'$') && c.get(i + 1) == Some(&'(') {
+                        i = ferme(&c, i + 1) + 1;
+                        while c.get(i).is_some_and(|x| matches!(x, '*' | '+' | '?')) {
+                            i += 1;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                let reste: String = c[i..].iter().collect();
+                let Some(t) = type_ou_enum.captures(&reste) else { continue };
+                if &t[1] == "enum" {
+                    fautes.push(format!("{} : `{}` dérive `Default` : une variante n'est pas un vide, elle se dit", ou(i), &t[2]));
+                    continue;
+                }
+                let (params, champs) = definition(&c, i + reste[..t.get(0).unwrap().end()].chars().count());
+                a_juger.push(AJuger { nom: t[2].to_string(), de_l_impl: params.clone(), args: params.clone(), params, champs, ou: ou(i) });
+            }
+            // `impl<…> Default for Nom<…>` : ses parametres, et les arguments qu'il donne au type.
+            for m in une_impl.find_iter(&code) {
+                let mut i = rang(m.end());
+                while c.get(i).is_some_and(|x| x.is_whitespace()) {
+                    i += 1;
+                }
+                let mut de_l_impl = Vec::new();
+                if c.get(i) == Some(&'<') {
+                    let fin = chevron(&c, i);
+                    de_l_impl = parametres(&c[i + 1..fin].iter().collect::<String>());
+                    i = fin + 1;
+                }
+                let reste: String = c[i..].iter().collect();
+                let Some(e) = ecrit.captures(&reste) else { continue };
+                let mut j = i + reste[..e.get(0).unwrap().end()].chars().count();
+                let mut args = Vec::new();
+                if c.get(j) == Some(&'<') {
+                    let fin = chevron(&c, j);
+                    args = au_premier_niveau(&c[j + 1..fin].iter().collect::<String>());
+                    j = fin + 1;
+                }
+                impls.push((e[1].to_string(), de_l_impl, args, ou(j)));
+            }
+        }
+    }
+    for (nom, de_l_impl, args, ou) in impls {
+        if enums.contains(&nom) {
+            fautes.push(format!("{} : `Default` écrit pour `{}` : une variante n'est pas un vide, elle se dit", ou, nom));
+            continue;
+        }
+        let siens: Vec<&(String, Vec<String>, Vec<String>)> = definis.iter().filter(|d| d.0 == nom).collect();
+        if siens.is_empty() {
+            fautes.push(format!("{} : `Default` écrit pour `{}`, que le verrou ne trouve défini nulle part", ou, nom));
+        }
+        for (_, params, champs) in siens {
+            a_juger.push(AJuger { nom: nom.clone(), params: params.clone(), de_l_impl: de_l_impl.clone(), args: args.clone(), champs: champs.clone(), ou: ou.clone() });
+        }
+    }
+    // Un champ a un vide qui ne dit rien : la forme de son type, ou un type deja sur (`surs`).
+    fn vide(ty: &str, j: &AJuger, surs: &BTreeSet<String>, vides: &[&str], enveloppes: &[&str]) -> bool {
+        let ty = ty.trim();
+        if let Some(k) = j.params.iter().position(|p| p == ty) {
+            return match j.args.get(k) {
+                Some(a) if j.de_l_impl.contains(a) => true,
+                Some(a) => a != ty && vide(a, j, surs, vides, enveloppes),
+                None => false,
+            };
+        }
+        let (tete, dedans) = match ty.find('<') {
+            Some(i) if ty.ends_with('>') => (&ty[..i], Some(&ty[i + 1..ty.len() - 1])),
+            _ => (ty, None),
+        };
+        let tete = tete.rsplit("::").next().unwrap().trim();
+        if vides.contains(&tete) {
+            return true;
+        }
+        if enveloppes.contains(&tete) {
+            return dedans.is_some_and(|d| vide(d, j, surs, vides, enveloppes));
+        }
+        surs.contains(tete)
+    }
+    let mut surs: BTreeSet<String> = BTreeSet::new();
+    loop {
+        let noms: BTreeSet<&String> = a_juger.iter().map(|j| &j.nom).collect();
+        let nouveaux: Vec<String> = noms
+            .into_iter()
+            .filter(|n| !surs.contains(*n) && a_juger.iter().filter(|j| &j.nom == *n).all(|j| j.champs.iter().all(|t| vide(t, j, &surs, &vides, &enveloppes))))
+            .cloned()
+            .collect();
+        if nouveaux.is_empty() {
+            break;
+        }
+        surs.extend(nouveaux);
+    }
+    for j in &a_juger {
+        if let Some(t) = j.champs.iter().find(|t| !vide(t, j, &surs, &vides, &enveloppes)) {
+            fautes.push(format!("{} : `{}` a un `Default`, et son champ `{}` n'a pas de vide : son défaut serait une valeur fabriquée ; la construction dit chaque champ", j.ou, j.nom, t.trim()));
+        }
+    }
+    assert!(fautes.is_empty(), "un défaut n'invente aucune valeur ({} écarts) :\n{}", fautes.len(), fautes.join("\n"));
+}
+
+/// L'indice de ce qui ferme l'ouvrant `c[i]` (`(`, `[` ou `{`), en comptant ses semblables.
+fn ferme(c: &[char], i: usize) -> usize {
+    let (ouvre, clos) = match c[i] {
+        '(' => ('(', ')'),
+        '[' => ('[', ']'),
+        _ => ('{', '}'),
+    };
+    let mut prof = 0i64;
+    for (k, x) in c.iter().enumerate().skip(i) {
+        if *x == ouvre {
+            prof += 1;
+        } else if *x == clos {
+            prof -= 1;
+            if prof == 0 {
+                return k;
+            }
+        }
+    }
+    c.len()
+}
+
+/// L'indice du `>` qui ferme le `<` en `c[i]` (la fleche `->` n'en est pas un).
+fn chevron(c: &[char], i: usize) -> usize {
+    let mut prof = 0i64;
+    for (k, x) in c.iter().enumerate().skip(i) {
+        match x {
+            '<' => prof += 1,
+            '>' if k > 0 && c[k - 1] == '-' => {}
+            '>' => {
+                prof -= 1;
+                if prof == 0 {
+                    return k;
+                }
+            }
+            _ => {}
+        }
+    }
+    c.len()
+}
+
+/// Les morceaux de `t` separes par une virgule hors de toute parenthese, crochet, accolade ou chevron, non vides.
+fn au_premier_niveau(t: &str) -> Vec<String> {
+    let c: Vec<char> = t.chars().collect();
+    let (mut prof, mut debut, mut v) = (0i64, 0, Vec::new());
+    for (k, x) in c.iter().enumerate() {
+        match x {
+            '(' | '[' | '{' | '<' => prof += 1,
+            '>' if k > 0 && c[k - 1] == '-' => {}
+            ')' | ']' | '}' | '>' => prof -= 1,
+            ',' if prof == 0 => {
+                v.push(c[debut..k].iter().collect::<String>());
+                debut = k + 1;
+            }
+            _ => {}
+        }
+    }
+    v.push(c[debut..].iter().collect::<String>());
+    v.into_iter().map(|m| m.trim().to_string()).filter(|m| !m.is_empty()).collect()
+}
+
+/// Les noms des parametres d'un type ou d'une `impl` (`'a, T: Borne, const N: usize` : `T`, `N`).
+fn parametres(t: &str) -> Vec<String> {
+    au_premier_niveau(t)
+        .into_iter()
+        .filter(|p| !p.starts_with('\''))
+        .map(|p| p.trim_start_matches("const ").split([':', '=']).next().unwrap().trim().to_string())
+        .collect()
+}
+
+/// Le texte `t` sans les repetitions d'une macro : `$( … )*` (ou `+`, `?`, avec ou sans separateur) laisse son contenu,
+/// suivi d'une virgule.
+fn deplie(t: &str) -> String {
+    let c: Vec<char> = t.chars().collect();
+    let mut out = String::new();
+    let mut i = 0;
+    while i < c.len() {
+        if c[i] == '$' && c.get(i + 1) == Some(&'(') {
+            let fin = ferme(&c, i + 1);
+            out.push_str(&deplie(&c[i + 2..fin.min(c.len())].iter().collect::<String>()));
+            out.push(',');
+            let mut j = fin + 1;
+            let repete = |x: Option<&char>| x.is_some_and(|x| matches!(x, '*' | '+' | '?'));
+            if !repete(c.get(j)) && repete(c.get(j + 1)) {
+                j += 1;
+            }
+            if repete(c.get(j)) {
+                j += 1;
+            }
+            i = j;
+        } else {
+            out.push(c[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Les parametres et les types des champs d'un `struct` dont le nom finit en `c[i]` : `{ a: A, … }`, `(A, …)`, ou rien.
+fn definition(c: &[char], mut i: usize) -> (Vec<String>, Vec<String>) {
+    while c.get(i).is_some_and(|x| x.is_whitespace()) {
+        i += 1;
+    }
+    let mut params = Vec::new();
+    if c.get(i) == Some(&'<') {
+        let fin = chevron(c, i);
+        params = parametres(&c[i + 1..fin.min(c.len())].iter().collect::<String>());
+        i = fin + 1;
+    }
+    while c.get(i).is_some_and(|x| !matches!(x, '{' | '(' | ';')) {
+        i += 1;
+    }
+    if !matches!(c.get(i), Some('{' | '(')) {
+        return (params, Vec::new());
+    }
+    let fin = ferme(c, i);
+    let corps = deplie(&c[i + 1..fin.min(c.len())].iter().collect::<String>());
+    let champs = au_premier_niveau(&corps).into_iter().map(|champ| type_du_champ(&champ)).filter(|t| !t.is_empty()).collect();
+    (params, champs)
+}
+
+/// Le type d'un champ (`#[…] pub nom: Type`, ou `pub Type` d'un n-uplet), sans ses attributs ni sa visibilite.
+fn type_du_champ(champ: &str) -> String {
+    let c: Vec<char> = champ.chars().collect();
+    let mut i = 0;
+    loop {
+        while c.get(i).is_some_and(|x| x.is_whitespace()) {
+            i += 1;
+        }
+        if c.get(i) == Some(&'#') && c.get(i + 1) == Some(&'[') {
+            i = ferme(&c, i + 1) + 1;
+        } else {
+            break;
+        }
+    }
+    let reste: String = c[i.min(c.len())..].iter().collect();
+    let reste = reste.trim();
+    let reste = match reste.strip_prefix("pub") {
+        Some(r) if r.starts_with('(') => {
+            let rc: Vec<char> = r.chars().collect();
+            rc[(ferme(&rc, 0) + 1).min(rc.len())..].iter().collect::<String>()
+        }
+        Some(r) if r.starts_with(char::is_whitespace) => r.to_string(),
+        _ => reste.to_string(),
+    };
+    let rc: Vec<char> = reste.chars().collect();
+    // Le deux-points du nom : seul, hors d'un chemin (`::`).
+    let deux_points = (0..rc.len()).find(|&k| rc[k] == ':' && rc.get(k + 1) != Some(&':') && (k == 0 || rc[k - 1] != ':'));
+    match deux_points {
+        Some(k) => rc[k + 1..].iter().collect::<String>().trim().to_string(),
+        None => reste.trim().to_string(),
+    }
+}
+
 /// L'engagement ne lit pas le journal : le moteur le lit une fois par geste (`envois::journal::lu`) et lui passe ce qui
 /// est parti. Le compilateur tient le code : `engagement` est sous `envois` (`une_crate_ne_prend_qu_a_celles_du_dessous`),
 /// il n'en prend rien. Reste le disque : aucun texte d'`engagement` (code et essais, commentaires blanchis) n'est le

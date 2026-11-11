@@ -687,10 +687,10 @@ mod tests {
         }
         let ko = vec![retour("10", "OK"), retour("11", "KO")];
         let lignes = vec![
-            Ligne::Dsn(envoi("ALPHA", ko.clone(), DetailDsn::default())),
-            Ligne::Dsn(envoi("BETA", vec![], DetailDsn { reconstruit: true, etat_declaration: Some("KO".into()), ..Default::default() })),
-            Ligne::Dpae(envoi("GAMMA", ko, DetailDpae::default())),
-            Ligne::Dsn(envoi("DELTA", vec![retour("11", "OK")], DetailDsn::default())),
+            Ligne::Dsn(envoi("ALPHA", ko.clone(), DetailDsn::nouveau(false))),
+            Ligne::Dsn(envoi("BETA", vec![], DetailDsn { etat_declaration: Some("KO".into()), ..DetailDsn::nouveau(true) })),
+            Ligne::Dpae(envoi("GAMMA", ko, DetailDpae::nouveau(false, false))),
+            Ligne::Dsn(envoi("DELTA", vec![retour("11", "OK")], DetailDsn::nouveau(false))),
         ];
         let d = departs_des_lignes(&lignes);
         for refusee in ["ALPHA", "BETA", "GAMMA"] {

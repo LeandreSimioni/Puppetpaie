@@ -71,7 +71,7 @@ impl Dite for EmploisRendus {
 }
 
 /// `config/metiers-ajoutes.json` : les metiers que la compagnie a coches ou decoches dans Configuration > Metiers.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct MetiersAjoutes {
     quoi: String,
@@ -91,7 +91,7 @@ impl MetiersAjoutes {
     pub(crate) fn lire(racine: &Path) -> R<MetiersAjoutes> {
         let p = racine.join(METIERS_AJOUTES);
         if !p.exists() {
-            return Ok(MetiersAjoutes::default());
+            return Ok(MetiersAjoutes { quoi: QUOI_METIERS.into(), codes: Vec::new(), retires: Vec::new() });
         }
         socle::forme::lire_fichier(&p, "Les métiers retenus par la compagnie ne se lisent pas : effacez leur fichier, puis cochez-les de nouveau dans Configuration › Métiers.")
             .map_err(|m| m.reclasser(socle::echec::Classe::Illisible))

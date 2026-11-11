@@ -130,7 +130,7 @@ const PLUS_PETIT_SEUIL: i64 = 11;
 /// Les effectifs A01 connus, par annee civile (`config/effectifs.json`) : ceux que l'Urssaf renvoie en compte rendu de
 /// nature 118, que le releve des retours y ecrit, et ceux que la compagnie dit pour une annee sans 118
 /// (`envois::releve_retours::poser_effectif`), qu'un 118 de la meme annee remplace.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Effectif {
     pub annees: BTreeMap<i32, Decimal>,
     /// L'annee de la premiere embauche (fiche entreprise) : avant elle, zero.
@@ -1422,7 +1422,18 @@ impl Contexte {
         // Sans surcouche, la compagnie n'a rien change au socle de l'annee.
         let surcouche = match socle::fichiers::existe(&p) {
             true => crate::forme_bareme::lire_la_surcouche(&p)?,
-            false if fichier_du_socle(&dossier, an).is_some() => Surcouche { annee: an, socle: an, ..Surcouche::default() },
+            false if fichier_du_socle(&dossier, an).is_some() => Surcouche {
+                annee: an,
+                socle: an,
+                quoi: None,
+                versement_mobilite: None,
+                rubriques: None,
+                cotisations_dsn: None,
+                par_statut: None,
+                par_nature: None,
+                source: None,
+                note: None,
+            },
             false => {
                 return Err(socle::refus!(
                     "Le logiciel n'a pas les taux de {} (SMIC, plafond de la Sécurité sociale, cotisations) : il a ceux de {}. Une paie de {} ne se calcule pas avec cette version.",

@@ -586,7 +586,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     }
     ap.reponse.avertissements.extend(avertissements_aem);
 
-    let mut reponse = std::mem::take(&mut ap.reponse);
+    let mut reponse = ap.reponse;
     let seuil = Mois::nouveau(ctx.aujourdhui.an - 1, ctx.aujourdhui.mois)?;
     let mut nouvelles_fiches = 0usize;
     let chemin_de = |l: &Lu| tri.fichiers[l.fichier].chemin.clone();
@@ -685,7 +685,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             // La fiche que les DSN creent, completee de ce que le bulletin imprime et qu'elles ne portent pas (3d).
             completer_a_creer(&mut ap.a_creer, &mut reponse, NomDeFiche::Entreprise, None, &proposees)?;
         } else if reponse.entreprise.is_none() {
-            creer_l_entreprise(ctx, &mut ap, &mut reponse, proposees, None)?;
+            creer_l_entreprise(ctx, &mut ap.a_creer, &mut reponse, proposees, None)?;
             nouvelles_fiches += 1;
         }
     }
@@ -712,7 +712,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         } else if ap.a_creer.iter().any(|a| a.nom == NomDeFiche::Entreprise) {
             completer_a_creer(&mut ap.a_creer, &mut reponse, NomDeFiche::Entreprise, None, &proposees)?;
         } else if reponse.entreprise.is_none() {
-            creer_l_entreprise(ctx, &mut ap, &mut reponse, proposees, Some(origine_cert(dernier)))?;
+            creer_l_entreprise(ctx, &mut ap.a_creer, &mut reponse, proposees, Some(origine_cert(dernier)))?;
             nouvelles_fiches += 1;
             *fiches_certificats.entry(dernier.source()).or_default() += 1;
         }
@@ -1281,7 +1281,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // 9. Le compte rendu, fichier par fichier.
     let mut fichiers: Vec<FichierVu> = Vec::new();
     let mut copies: BTreeMap<usize, String> = BTreeMap::new();
-    let mut comptes: ParSort<usize> = ParSort::default();
+    let mut comptes = ParSort::a_zero();
     for (i, f) in tri.fichiers.iter().enumerate() {
         // Ce que le tri dit du fichier ; ce qu'il en dit sans raison, sa sorte.
         let tri_raison = match &f.raison {
@@ -1495,7 +1495,7 @@ fn completer_a_creer(a_creer: &mut [ACreer], reponse: &mut Importation, nom: Nom
 
 /// L'entreprise que l'import cree des pieces (`origine` : la piece qui la donne, quand ce n'est ni une DSN ni un
 /// bulletin), sous le nom que la personne lui a donne.
-fn creer_l_entreprise(ctx: &Contexte, ap: &mut Apercu, reponse: &mut Importation, mut e: Saisie, origine: Option<Origine>) -> R<()> {
+fn creer_l_entreprise(ctx: &Contexte, a_creer: &mut Vec<ACreer>, reponse: &mut Importation, mut e: Saisie, origine: Option<Origine>) -> R<()> {
     ri::garder_le_nom(ctx, &mut e)?;
     let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Entreprise, &e)?;
     let libelle = match e.mot(droit::fiche::CaseEntreprise::RaisonSociale) {
@@ -1505,7 +1505,7 @@ fn creer_l_entreprise(ctx: &Contexte, ap: &mut Apercu, reponse: &mut Importation
     let mut entree = FicheImportee::new(NomDeFiche::Entreprise, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e);
     entree.lu_dans = origine;
     reponse.entreprise = Some(entree);
-    ap.a_creer.push(ACreer { nom: NomDeFiche::Entreprise, rang: None, donnees: e });
+    a_creer.push(ACreer { nom: NomDeFiche::Entreprise, rang: None, donnees: e });
     Ok(())
 }
 
@@ -1683,7 +1683,7 @@ fn lisibles_de_la_piece_sur(nom: NomDeFiche, fiche: &Saisie, proposees: &Saisie)
 /// La fiche d'un salarie qu'aucune fiche ni aucune DSN ne porte : ce que ses bulletins impriment, champ par champ le
 /// plus recent (`ls` dans l'ordre du temps).
 fn fiche_salarie(nir: &str, ls: &[&Lu], idcc: Option<&str>) -> R<Saisie> {
-    let mut s = SalarieLu { nir: nir.to_string(), ..SalarieLu::default() };
+    let mut s = SalarieLu::de(nir);
     for (cle, v, _) in identite(ls) {
         if let Some(case) = s.case(cle) {
             *case = Some(v);
@@ -1704,7 +1704,7 @@ fn fiche_salarie(nir: &str, ls: &[&Lu], idcc: Option<&str>) -> R<Saisie> {
 }
 
 /// CE QU'UNE PIECE IMPRIME D'UN SALARIE, sous les cases de sa fiche.
-#[derive(Serialize, Default)]
+#[derive(Serialize)]
 struct SalarieLu {
     nir: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1732,6 +1732,24 @@ struct SalarieLu {
 }
 
 impl SalarieLu {
+    /// Un salarie a son NIR, dont aucune case n'est encore lue.
+    fn de(nir: &str) -> SalarieLu {
+        SalarieLu {
+            nir: nir.to_string(),
+            nir_cle: None,
+            nom: None,
+            prenom: None,
+            date_naissance: None,
+            num_conges_spectacles: None,
+            emploi: None,
+            code_salarie: None,
+            adresse: None,
+            code_postal: None,
+            commune: None,
+            date_anciennete: None,
+        }
+    }
+
     /// La case de texte d'identite `cle` (`identite`) ; la date de naissance, un jour, se pose a part.
     fn case(&mut self, cle: CaseSalarie) -> Option<&mut Option<String>> {
         match cle {
@@ -2088,7 +2106,6 @@ fn fiche_de_certificats(nir: &str, ls: &[&Attestee], idcc: Option<&str>) -> R<Sa
     let dernier = |g: &dyn Fn(&import::certificat_lu::Certificat) -> Option<String>| ls.iter().rev().find_map(|l| g(&l.c).filter(|x| !x.trim().is_empty()));
     let adresse = ls.iter().rev().find_map(|l| adresse_lue(&l.c.adresse));
     let s = SalarieLu {
-        nir: nir.to_string(),
         nir_cle: ls.iter().rev().find_map(|l| l.c.cle_nir.clone()).or_else(|| declarations::champs::cle_nir(nir)),
         nom: dernier(&|c| c.nom.clone()),
         prenom: dernier(&|c| c.prenom.clone()),
@@ -2098,7 +2115,7 @@ fn fiche_de_certificats(nir: &str, ls: &[&Attestee], idcc: Option<&str>) -> R<Sa
         code_postal: adresse.as_ref().map(|a| a.1.clone()),
         commune: adresse.as_ref().map(|a| a.2.clone()),
         date_anciennete: ls.iter().filter_map(|l| l.c.debut).min(),
-        ..SalarieLu::default()
+        ..SalarieLu::de(nir)
     };
     let cadre = ls.iter().rev().find_map(|l| l.c.cadre).map(|c| if c { "cadre" } else { "non cadre" });
     let statut = ls.iter().rev().find_map(|l| l.aem.as_ref().and_then(|a| a.statut));

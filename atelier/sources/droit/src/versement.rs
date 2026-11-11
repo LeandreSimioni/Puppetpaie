@@ -47,9 +47,8 @@ pub const CLES: [crate::fiche::CaseEntreprise; 2] = [crate::fiche::CaseEntrepris
 const FORMES: &str = "vide (le dernier jour du mois), « fin du contrat », « le 25 » ou « le 5 du mois suivant »";
 
 /// Le jour du versement que la compagnie a choisi.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Versement {
-    #[default]
     FinDuMois,
     FinDuContrat,
     /// Le quantieme, dans le mois de la paie ou le suivant.

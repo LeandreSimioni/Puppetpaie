@@ -947,7 +947,7 @@ const COMPTA: &str = "config/compta.json";
 /// `config/compta.json` : le logiciel du comptable (vide : aucun) et l'analytique, retenus une fois pour toutes. Lu par
 /// `ChoixCompta::lu` seule (les ecritures comptables, la page des exports), ecrit par `ChoixCompta::ecrire` seule
 /// (`retenir-logiciel`).
-#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChoixCompta {
     #[serde(rename = "quoi")]
@@ -966,7 +966,7 @@ impl ChoixCompta {
     pub fn lu(racine: &std::path::Path) -> R<ChoixCompta> {
         let chemin = racine.join(COMPTA);
         if !chemin.exists() {
-            return Ok(ChoixCompta::default());
+            return Ok(ChoixCompta::nouveau(String::new(), false));
         }
         socle::forme::lire_fichier(&chemin, "Le logiciel du comptable retenu (config/compta.json) ne se lit pas.").map_err(|m| m.reclasser(Classe::Illisible))
     }

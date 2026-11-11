@@ -161,7 +161,6 @@ pub(crate) fn noter_les_non_lus(ctx: &Contexte, lu: &DossierLu) -> socle::echec:
             detail,
             trace: Some(&trace),
             sans_contexte: true,
-            ..Default::default()
         };
         match incidents::noter(&ctx.racine, &note) {
             Ok(Some(_)) => notes += 1,

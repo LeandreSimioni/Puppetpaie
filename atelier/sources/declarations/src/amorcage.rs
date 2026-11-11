@@ -162,6 +162,61 @@ un manque du logiciel.",
     Ok(())
 }
 
+/// La pile d'une declaration qui ne declare aucun taux (le taux AT/MP est interdit en nature 08) : l'annee, et aucune
+/// valeur ni aucune cotisation. Aucun calcul ne la lit.
+fn pile_sans_taux(annee: i32) -> droit::forme_bareme::Pile {
+    use socle::num::Decimal;
+    use std::collections::BTreeMap;
+    droit::forme_bareme::Pile {
+        annee,
+        quoi: None,
+        smic_horaire: Vec::new(),
+        heures_par_cachet: Decimal::ZERO,
+        logement_grand_deplacement: None,
+        repas_deplacement: None,
+        frais_hors_metropole: None,
+        taxe_sur_les_salaires: None,
+        solde_taxe_apprentissage: None,
+        pas_taux_par_defaut: None,
+        plafond_securite_sociale: None,
+        sante_obligatoire: None,
+        abattement_csg: Decimal::ZERO,
+        majoration_conges_115: Decimal::ZERO,
+        majoration_conges_110: Decimal::ZERO,
+        plafond_journalier: None,
+        t2_multiple: None,
+        apec_multiple: None,
+        plafonds_des_intermittents: None,
+        rubriques_bulletin: Vec::new(),
+        cotisations_dsn: Vec::new(),
+        cotisation_prevoyance_retraite_supp: None,
+        cotisation_sante_patronale: None,
+        reduction_generale: None,
+        majoration_chomage_cddu: None,
+        statuts: Vec::new(),
+        par_statut: BTreeMap::new(),
+        deduction_forfaitaire: None,
+        par_categorie: BTreeMap::new(),
+        par_nature: BTreeMap::new(),
+        par_caisse_conges: None,
+        risques_atmp: None,
+        seuils_effectif: None,
+        regime_local_alsace_moselle: None,
+        versement_mobilite: None,
+        par_organisation_patronale: BTreeMap::new(),
+        retraite_t1_repartition: None,
+        par_convention: BTreeMap::new(),
+        contributions_conventionnelles: None,
+        tarifs_conventionnels: None,
+        contributions_dsn: None,
+        secteurs: None,
+        taux_atmp: None,
+        etablissement: None,
+        source: None,
+        note: None,
+    }
+}
+
 /// Le fichier d'un signalement d'amorcage, pret a deposer.
 pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::departs::Departs) -> Result<String, Echec> {
     verifier(paie, &o.motif, o.type_declaration, o.remplace.as_deref())?;
@@ -175,7 +230,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
         None => aujourdhui()?,
     };
     // Le bareme ne sert a rien ici : le taux AT/MP est interdit en nature 08.
-    let bar = crate::dsn::BaremeDuMois::nouveau(droit::forme_bareme::Pile::default(), droit::bareme::EntrepriseLue { fiche: ent.clone(), effectif: None, cse: None, cinquante: None, taux_lus: false });
+    let bar = crate::dsn::BaremeDuMois::nouveau(pile_sans_taux(e.debut.an), droit::bareme::EntrepriseLue { fiche: ent.clone(), effectif: None, cse: None, cinquante: None, taux_lus: false });
     let remplace = o.remplace.as_deref().filter(|r| !r.is_empty());
 
     // La version de la norme d'un signalement suit le jour ou il est constitue (`norme-dsn-base.json`, une inference).

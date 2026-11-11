@@ -395,8 +395,9 @@ pub struct Options {
     pub date_constitution: Option<Jour>,
 }
 
-impl Default for Options {
-    fn default() -> Options {
+impl Options {
+    /// Un premier signalement normal, en reel, constitue le jour de son depot.
+    pub fn normale() -> Options {
         Options { type_declaration: TypeDeLaDeclaration::Normale, ordre: 1, remplace: None, envoi_test: false, date_constitution: None }
     }
 }

@@ -25,13 +25,16 @@ const EPS_LIGNE: Mesure = Mesure::millioniemes(2_835);
 const MARGE_SOUS_CELLULE: Mesure = Mesure::millioniemes(141_732);
 
 /// Une taille posée : la largeur (la plus grande) et la hauteur (la somme) de ce qui a été posé.
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct Taille {
     l: Mesure,
     h: Mesure,
 }
 
 impl Taille {
+    /// Rien de posé.
+    const RIEN: Taille = Taille { l: Mesure::ZERO, h: Mesure::ZERO };
+
     fn new(l: Mesure, h: Mesure) -> Taille {
         Taille { l, h }
     }
@@ -43,16 +46,19 @@ impl Taille {
 }
 
 /// Ce qu'un bloc a posé dans la zone qu'on lui donne, et s'il lui en reste pour la page suivante.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct Rendu {
     taille: Taille,
     encore: bool,
 }
 
 impl Rendu {
+    /// Rien n'a été posé, et rien ne reste pour la page suivante.
+    const VIDE: Rendu = Rendu { taille: Taille::RIEN, encore: false };
+
     /// Rien n'a tenu : tout à la page suivante.
     fn rien() -> Rendu {
-        Rendu { taille: Taille::default(), encore: true }
+        Rendu { taille: Taille::RIEN, encore: true }
     }
 }
 
@@ -324,7 +330,7 @@ impl Paragraphe {
     }
 
     fn rendre(&mut self, ctx: &Ctx<'_>, dessin: &mut Dessin, mut zone: Zone) -> Rendu {
-        let mut r = Rendu::default();
+        let mut r = Rendu::VIDE;
         let max = zone.l;
         if self.lignes.is_none() {
             self.lignes = Some(mettre_en_lignes(ctx.polices, &self.morceaux, max).into());
@@ -509,7 +515,7 @@ impl Noeud {
         match self {
             Noeud::Image { image, fait } => {
                 if *fait {
-                    return Rendu::default();
+                    return Rendu::VIDE;
                 }
                 if image.hauteur() > zone.h {
                     // Ne tient pas ici : à la page suivante.
@@ -521,16 +527,16 @@ impl Noeud {
             }
             Noeud::Fixe(f) => {
                 f.poser(ctx, dessin, zone);
-                Rendu::default()
+                Rendu::VIDE
             }
             Noeud::ImageFlottante(image) => {
                 // Elle se pose même au ras du bas.
                 dessin.image(image, zone.x, zone.y);
-                Rendu::default()
+                Rendu::VIDE
             }
             Noeud::Saut { fait } => {
                 if *fait {
-                    return Rendu::default();
+                    return Rendu::VIDE;
                 }
                 // Pas une taille nulle : elle arrêterait la mise en page si le saut ouvrait une page.
                 *fait = true;
@@ -538,7 +544,7 @@ impl Noeud {
             }
             Noeud::Espace { hauteur, fait } => {
                 if *fait {
-                    return Rendu::default();
+                    return Rendu::VIDE;
                 }
                 *fait = true;
                 // Un espace qui déborde de la page est absorbé par le saut de page.
@@ -592,7 +598,7 @@ impl Colonnes {
 
     fn rendre(&mut self, ctx: &Ctx<'_>, dessin: &mut Dessin, zone: Zone) -> Rendu {
         if self.fait {
-            return Rendu::default();
+            return Rendu::VIDE;
         }
         let largeur = zone.l;
         let besoin = self.hauteur(ctx, largeur);
@@ -1176,7 +1182,7 @@ fn fabriquer_passe(
         let n = dessin.nombre_de_pages();
         let mut zone = decor.poser(&ctx, &mut dessin, n);
         // Les blocs se posent l'un sous l'autre tant que la page a de la place.
-        let mut pose = Rendu::default();
+        let mut pose = Rendu::VIDE;
         while zone.h > Mesure::ZERO && suivant < noeuds.len() {
             let r = noeuds[suivant].rendre(&ctx, &mut dessin, zone);
             zone.decaler(Mesure::ZERO, r.taille.h);
@@ -1191,7 +1197,7 @@ fn fabriquer_passe(
         if !pose.encore {
             break;
         }
-        if pose.taille == Taille::default() {
+        if pose.taille == Taille::RIEN {
             return refus("écriture du PDF impossible : un bloc ne tient pas sur une page neuve");
         }
     }

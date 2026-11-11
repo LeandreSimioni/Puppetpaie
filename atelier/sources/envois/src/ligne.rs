@@ -309,7 +309,7 @@ pub struct Ouverture {
 /// LE DETAIL D'UNE DSN : ce que le fichier deposé declare (sa nature, son type, son ordre, son etablissement, ses
 /// versements), ce qui l'a ouverte, ce qui l'a fait echouer (`erreur`) ; pour un depot repris des retours
 /// (`reconstruit`), ce que son bilan en dit.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DetailDsn {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -354,6 +354,34 @@ pub struct DetailDsn {
     pub pieces: Option<Vec<String>>,
 }
 
+impl DetailDsn {
+    /// Le detail d'un depot de ce logiciel (`reconstruit` faux) ou repris des retours, dont rien d'autre n'est encore dit.
+    pub fn nouveau(reconstruit: bool) -> DetailDsn {
+        DetailDsn {
+            preuve: None,
+            erreur: None,
+            reconstruit,
+            logiciel: None,
+            type_declaration: None,
+            fraction: None,
+            nature_declaration: None,
+            ordre: None,
+            versements: None,
+            salaries: None,
+            contrats: None,
+            pas_bareme: None,
+            repetition: None,
+            ordre_test: None,
+            etablissement: None,
+            evenement: None,
+            etat_envoi: None,
+            etat_declaration: None,
+            verdict_connu: None,
+            pieces: None,
+        }
+    }
+}
+
 /// Une embauche qu'une DPAE declare : le salarie, le numero du contrat de son engagement, son premier et son dernier
 /// jour.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -367,7 +395,7 @@ pub struct EmbaucheDeclaree {
 
 /// LE DETAIL D'UNE DPAE : ce qui l'a ouverte, ses embauches, ce qui l'a fait echouer ; pour une DPAE reprise des
 /// certificats (`reconstruit`), les embauches qu'ils attestent.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DetailDpae {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -378,6 +406,13 @@ pub struct DetailDpae {
     pub repetition: Option<Ouverture>,
     pub embauches: Vec<EmbaucheDeclaree>,
     pub certificat: bool,
+}
+
+impl DetailDpae {
+    /// Le detail d'un depot de ce logiciel (`reconstruit` faux) ou repris des certificats, sans embauche encore dite.
+    pub fn nouveau(reconstruit: bool, certificat: bool) -> DetailDpae {
+        DetailDpae { preuve: None, erreur: None, reconstruit, repetition: None, embauches: Vec::new(), certificat }
+    }
 }
 
 /// Une personne du certificat de conformite d'une DPAE (nature 41, `declarations::dpae::lire_certificat`).

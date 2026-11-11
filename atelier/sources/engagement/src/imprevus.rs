@@ -792,7 +792,18 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
     let qui = crate::conges::qui(ctx, e);
     let (mut lignes, mut avert, mut absents) = (Vec::new(), Vec::new(), 0i64);
     let nat = e.nature_lue()?;
-    let mut maintien = crate::maintien::DuMois::default();
+    // Les sommes du mois, a zero avant le premier arret.
+    let mut maintien = crate::maintien::DuMois {
+        loi: Decimal::ZERO,
+        convention_brut: None,
+        au_net: None,
+        ij_subrogees_brutes: Decimal::ZERO,
+        ij_subrogees_nettes: Decimal::ZERO,
+        ij_subrogees_jours: 0,
+        assiette_pas: Decimal::ZERO,
+        heures: Decimal::ZERO,
+        avis: Vec::new(),
+    };
     // Le taux de l'heure d'absence : le salaire du mois sur ses heures de travail (Cass. soc. 11/02/1982).
     let heures_du_mois = eur2(mul(m.heures_par_jour, Decimal::from(m.jours_payes)));
     let taux_horaire = if heures_du_mois > Decimal::ZERO { Some(taux_exact(m.salaire_du_mois, heures_du_mois)) } else { None };
