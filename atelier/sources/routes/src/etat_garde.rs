@@ -291,10 +291,10 @@ const HORS_DE_L_ECRAN: [&str; 7] = [
 /// (la configuration dit si la boite courriel est liee, `boite_liee` : rien n'en est lu ici, ni ailleurs dans
 /// l'empreinte), et l'adresse de la boite posee dans l'environnement (`COURRIEL_COMPTE`). Ce qui ne s'y lit pas reste
 /// dehors (`HORS_DE_L_ECRAN` : les signalements se lisent a chaque ouverture, a cote).
-pub(crate) fn empreinte_de(racine: &Path, cle: &str, jour: &str) -> String {
+pub(crate) fn empreinte_de(racine: &Path, cle: &str, jour: socle::date::Jour) -> String {
     let ouverture = cle == OUVERTURE;
     let mut h = Sha256::new();
-    let mut marques = vec![env!("PAIE_SOURCES").to_string(), jour.to_string(), absolu(racine), absolu(&socle::fichiers::dossier_du_code())];
+    let mut marques = vec![env!("PAIE_SOURCES").to_string(), jour.iso(), absolu(racine), absolu(&socle::fichiers::dossier_du_code())];
     if ouverture {
         let compte = match std::env::var("COURRIEL_COMPTE") {
             Ok(c) => c,
@@ -334,7 +334,7 @@ pub(crate) fn empreinte_de(racine: &Path, cle: &str, jour: &str) -> String {
 
 /// L'empreinte de l'etat `cle` de la compagnie `racine`, au jour `jour`.
 fn empreinte(racine: &Path, cle: Cle, jour: &Jour) -> String {
-    empreinte_de(racine, &cle.to_string(), &jour.iso())
+    empreinte_de(racine, &cle.to_string(), *jour)
 }
 
 /// Le jour de l'empreinte : celui d'un `Contexte` (`aujourdhui`, que `date` ne regle pas).

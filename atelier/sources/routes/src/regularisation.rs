@@ -304,7 +304,7 @@ fn avant_apres(mois: Mois, avant: Option<&Paie>, apres: &Paie) -> R<Correction> 
         infos_dit: format!("{} — {}", contrat, montants),
         portee_dit: "prochaine DSN".to_string(),
         salarie: apres.salarie.id.to_string(),
-        debut: apres.engagement.debut.iso(),
+        debut: apres.engagement.debut,
         nom: nom_de(apres),
         spectacle: apres.titre()?,
         numero: apres.engagement.numero.clone(),
@@ -312,7 +312,7 @@ fn avant_apres(mois: Mois, avant: Option<&Paie>, apres: &Paie) -> R<Correction> 
         avant: r_avant,
         apres: r_apres,
         delta: ecart,
-        dates,
+        dates_dites: dates,
         portee_par: None,
         portee_par_dit: None,
     })
@@ -327,14 +327,16 @@ pub(crate) struct Correction {
     infos_dit: String,
     portee_dit: String,
     pub(crate) salarie: String,
-    debut: String,
+    debut: socle::date::Jour,
     nom: String,
     spectacle: String,
     numero: Option<NumeroContrat>,
     avant: Option<Resume>,
     apres: Resume,
     delta: Option<Ecart>,
-    dates: Option<String>,
+    /// Ses dates changees, en une phrase.
+    #[serde(rename = "dates")]
+    dates_dites: Option<String>,
     ajout: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) portee_par: Option<Mois>,

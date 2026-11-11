@@ -380,9 +380,9 @@ pub(crate) struct Dossier {
 
 // ------------------------------------------------------------------ les noms de fichier
 
-/// Les noms d'un dossier qui commencent par `debut` et finissent par `fin`, dans
+/// Les noms d'un dossier qui commencent par `prefixe` et finissent par `suffixe`, dans
 /// l'ordre des noms.
-fn noms_commencant_finissant(dossier: &Path, debut: &str, fin: &str) -> R<Vec<String>> {
+fn noms_commencant_finissant(dossier: &Path, prefixe: &str, suffixe: &str) -> R<Vec<String>> {
     let disque = |e: &std::io::Error| socle::echec::du_disque(dossier, e).reclasser(Classe::du_disque(e));
     let lecture = match std::fs::read_dir(dossier) {
         Ok(l) => l,
@@ -393,7 +393,7 @@ fn noms_commencant_finissant(dossier: &Path, debut: &str, fin: &str) -> R<Vec<St
     let mut out: Vec<String> = Vec::new();
     for e in lecture {
         let n = e.map_err(|x| disque(&x))?.file_name().to_string_lossy().into_owned();
-        if n.len() >= debut.len() + fin.len() && n.starts_with(debut) && n.ends_with(fin) {
+        if n.len() >= prefixe.len() + suffixe.len() && n.starts_with(prefixe) && n.ends_with(suffixe) {
             out.push(n);
         }
     }

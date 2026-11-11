@@ -455,10 +455,10 @@ fn phrase_du_groupe(nom: &str, g: &Groupe) -> Option<String> {
 }
 
 /// LA PHRASE DU MOIS : ce qu'en disent ses cases, l'une apres l'autre (`phrase_du_groupe`) ; un mois sans engagement le
-/// dit une fois en tete (`debut`), sans redire ses etapes qui n'ont rien a faire.
-fn phrase_du_mois(debut: Option<String>, etapes: &[Etape]) -> String {
+/// dit une fois en tete (`tete`), sans redire ses etapes qui n'ont rien a faire.
+fn phrase_du_mois(tete: Option<String>, etapes: &[Etape]) -> String {
     let cases = etapes.iter().flat_map(|e| &e.groupes).filter_map(|g| g.phrase.clone());
-    let morceaux: Vec<String> = debut.into_iter().chain(cases).collect();
+    let morceaux: Vec<String> = tete.into_iter().chain(cases).collect();
     format!("{}.", morceaux.join(". "))
 }
 
