@@ -388,7 +388,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             cachets_isoles: entier(&nom("SAL_NB_CACHET_")),
             cachets_groupes: None,
             jours: None,
-            brut: v(&nom("SAL_MONTANT_")).and_then(|t| socle::num::decimal_lu(&t.replace([' ', '\u{a0}'], "").replace(',', "."))),
+            brut: v(&nom("SAL_MONTANT_")).and_then(|t| socle::num::decimal_a_virgule(&t)),
             corrige: None,
             aer: true,
             faute: None,

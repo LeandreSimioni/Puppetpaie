@@ -144,8 +144,7 @@ fn pss(annee: i32) -> R<(Decimal, Decimal)> {
         let Some(c) = texte.lines().map(|l| l.split(';').collect::<Vec<&str>>()).find(|c| c.len() >= 4 && c[0] == code && c[3].trim() == effet) else {
             return Ok(None);
         };
-        let ecrit = c[2].replace([' ', '\u{a0}'], "").replace(',', ".");
-        ecrit.parse::<Decimal>().map(Some).map_err(|e| refus!("{} : {} au {} : {} ne se lit pas en nombre ({})", chemin.display(), code, effet, c[2], e))
+        socle::num::decimal_a_virgule(c[2]).map(Some).ok_or_else(|| refus!("{} : {} au {} : {} ne se lit pas en nombre", chemin.display(), code, effet, c[2]))
     };
     match (valeur("PSS_M_METROP")?, valeur("PSS_H_METROP")?) {
         (Some(m), Some(h)) => Ok((m, h)),

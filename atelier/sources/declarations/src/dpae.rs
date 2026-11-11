@@ -724,11 +724,43 @@ fn tranche(r: &[char], a: usize, b: usize) -> String {
     r[a..b].iter().collect()
 }
 
+/// UN ENREGISTREMENT DPAE RELU : les zones (`CHAMPS`) qu'on en lit, chacune sans ses blancs ; a blanc, elle est vide.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnregistrementRelu {
+    /// `JJMMAAAAHHMM`, sans secondes.
+    pub horodatage: Option<String>,
+    pub nom: Option<String>,
+    pub prenom: Option<String>,
+    pub nir: Option<String>,
+    /// `JJMMAAAA`.
+    pub date_naissance: Option<String>,
+    /// `JJMMAAAA`.
+    pub date_embauche: Option<String>,
+    pub type_contrat: Option<String>,
+    /// `JJMMAAAA`, la fin prevue du CDD.
+    pub date_fin: Option<String>,
+}
+
 /// Chaque enregistrement par ses zones (`CHAMPS`).
-pub fn relire(contenu: &str) -> Vec<Vec<(&'static str, String)>> {
+pub fn relire(contenu: &str) -> Vec<EnregistrementRelu> {
     lire_enregistrements(contenu)
         .iter()
-        .map(|r| CHAMPS.iter().map(|(k, a, b)| (*k, tranche(r, *a, *b))).collect())
+        .map(|r| {
+            let zone = |nom: &str| {
+                let (a, b) = champ(nom);
+                Some(tranche(r, a, b).trim_matches(socle::texte::blanc).to_string()).filter(|v| !v.is_empty())
+            };
+            EnregistrementRelu {
+                horodatage: zone("horodatage"),
+                nom: zone("nom"),
+                prenom: zone("prenom"),
+                nir: zone("nir"),
+                date_naissance: zone("date_naissance"),
+                date_embauche: zone("date_embauche"),
+                type_contrat: zone("type_contrat"),
+                date_fin: zone("date_fin"),
+            }
+        })
         .collect()
 }
 

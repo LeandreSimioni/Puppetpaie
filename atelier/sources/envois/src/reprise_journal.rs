@@ -298,9 +298,8 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
         let texte: String = octets.iter().map(|&b| b as char).collect();
         let (mut embauches, mut quand, mut mois) = (Vec::new(), None, None);
         for ligne in declarations::dpae::relire(&texte) {
-            let champ = |k: &str| ligne.iter().find(|(n, _)| *n == k).map(|(_, v)| v.trim().to_string()).filter(|v| !v.is_empty());
-            let (Some(nir), Some(emb)) = (champ("nir"), champ("date_embauche")) else { continue };
-            let Some(debut) = socle::date::lire_jjmmaaaa(&emb) else { continue };
+            let (Some(nir), Some(emb)) = (ligne.nir.clone(), ligne.date_embauche.as_deref()) else { continue };
+            let Some(debut) = socle::date::lire_jjmmaaaa(emb) else { continue };
             let iso = debut.iso();
             let Some((_, cle)) = par_nir.iter().find(|(n, _)| *n == nir) else {
                 // On ne devine pas qui c'est : un NIR qu'on ne reconnait pas est peut-etre une fiche archivee sous une autre cle, ou
@@ -313,7 +312,7 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
             }
             embauches.push(EmbaucheAttestee { salarie: cle.clone(), debut });
             // L'horodatage `JJMMAAAAHHMM`.
-            if let (None, Some(h)) = (quand, champ("horodatage").filter(|h| h.len() == 12 && h.is_ascii())) {
+            if let (None, Some(h)) = (quand, ligne.horodatage.as_deref().filter(|h| h.len() == 12 && h.is_ascii())) {
                 let heure = socle::num::entier_de_chiffres(&h[8..10]).filter(|x| (0..24).contains(x));
                 let minute = socle::num::entier_de_chiffres(&h[10..12]).filter(|x| (0..60).contains(x));
                 quand = socle::date::lire_jjmmaaaa(&h[..8])

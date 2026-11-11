@@ -487,12 +487,12 @@ fn capitales(t: &str) -> String {
 /// Un nombre saisi (`12,5`, `1.5 %`), ecrit en nombre ; vide, rien.
 fn nombre_saisi(v: Option<&Valeur>, quoi: &str) -> R<Option<NombreLu>> {
     let Some(brut) = mot_de(v) else { return Ok(None) };
-    let brut = brut.replace(',', ".").replace('%', "");
+    let brut = brut.replace('%', "");
     let brut = brut.trim();
     if brut.is_empty() {
         return Ok(None);
     }
-    let d = socle::num::decimal_lu(brut).ok_or_else(|| erreur(Classe::Refuse, format!("{} illisible : {}.", quoi, brut)))?;
+    let d = socle::num::decimal_a_virgule(brut).ok_or_else(|| erreur(Classe::Refuse, format!("{} illisible : {}.", quoi, brut)))?;
     Ok(Some(NombreLu::de_decimal(d)))
 }
 

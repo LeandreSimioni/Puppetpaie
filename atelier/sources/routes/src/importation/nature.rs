@@ -331,13 +331,12 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
             }
             Demande::Salaire | Demande::Quotite => {
                 let v = charge.lu(champ).ok_or_else(manque)?;
-                let s = v.replace([' ', '\u{a0}'], "").replace(',', ".");
                 let (cle, quoi) = if champ == Demande::Salaire {
                     (&mut contrat.salaire_mensuel, "un salaire mensuel brut")
                 } else {
                     (&mut contrat.quotite_contrat, "une durée du travail en heures par mois")
                 };
-                match socle::num::decimal_lu(&s).filter(|d| *d > socle::num::Decimal::ZERO).map(socle::forme::NombreLu::de_decimal) {
+                match socle::num::decimal_a_virgule(&v).filter(|d| *d > socle::num::Decimal::ZERO).map(socle::forme::NombreLu::de_decimal) {
                     Some(n) => *cle = Some(n),
                     None => return Err(refus(format!("« {} » n'est pas {} : rien n'a été écrit.", v, quoi))),
                 };

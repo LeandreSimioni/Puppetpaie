@@ -1262,7 +1262,7 @@ fn essai_dans_son_plafond(ctx: &Contexte, eng: &Engagement, nat: &Nature, sal: &
     let Some(v) = crate::ligne::dite(&eng.ecrit.periode_essai_jours) else { return Ok(()) };
     // Une virgule decimale se lit comme un point ; un texte qui n'est pas un nombre se refuse.
     let lu = match v {
-        crate::Chiffre::Texte(t) => socle::num::dec_texte(&t.replace(',', ".")).map_err(|_| refus(socle::num::illisible(t)))?,
+        crate::Chiffre::Texte(t) => socle::num::decimal_a_virgule(t).ok_or_else(|| refus(socle::num::illisible(t)))?,
         nombre => nombre.dec()?,
     };
     let jours = rust_decimal::prelude::ToPrimitive::to_i64(&lu.ceil()).ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&lu.to_string())))?;

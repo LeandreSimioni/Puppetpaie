@@ -153,11 +153,10 @@ pub fn lire_nombre(texte: &str) -> Option<Decimal> {
     if !t.starts_with(|c: char| c.is_ascii_digit()) || !t.chars().all(|c| c.is_ascii_digit() || matches!(c, ',' | '.' | ' ')) {
         return None;
     }
-    let s = if t.contains(',') { t.replace(['.', ' '], "").replace(',', ".") } else { t.replace(' ', "") };
-    if s.matches('.').count() > 1 || s.ends_with('.') {
+    if t.ends_with([',', '.']) {
         return None;
     }
-    socle::num::decimal_lu(&s).map(|d| if negatif { -d } else { d })
+    socle::num::decimal_a_virgule(t).map(|d| if negatif { -d } else { d })
 }
 
 /// Le texte sans son signe moins de tete.

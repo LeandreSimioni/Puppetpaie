@@ -508,7 +508,7 @@ fn valeur_en_clair(ctx: &Contexte, nat: &droit::natures::Nature, terme: &str, v:
     let nombre = || -> R<socle::num::Decimal> {
         match v {
             Valeur::Nombre(n) => engagement::Chiffre::Nombre(n.clone()).dec(),
-            Valeur::Texte(s) => s.trim().replace(',', ".").parse().map_err(|_| refus(socle::num::illisible(s))),
+            Valeur::Texte(s) => socle::num::decimal_a_virgule(s).ok_or_else(|| refus(socle::num::illisible(s))),
             Valeur::Oui(_) | Valeur::Nature(_) => Err(socle::refus!("{} : un nombre est attendu, lu {}", terme, texte)),
         }
     };

@@ -455,8 +455,8 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &str,
 /// n'est ecrit par aucun texte depose : la piece n'en porte pas. `None` quand la CARSAT n'a rien a notifier.
 fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &str, publication: InstantCompact) -> R<Option<Piece>> {
     let depot = l.quand().jour();
-    let mois = element(d.mois.map(|m| format!("01{:02}{}", m.numero(), m.annee())).as_deref());
-    let calcul = socle::paris::maintenant().chars().take(10).collect::<String>().replace('-', "");
+    let mois = element(d.mois.map(|m| m.premier_jour().jjmmaaaa()).as_deref());
+    let calcul = socle::paris::maintenant_naif().jour().aaaammjj();
     // Un element facultatif ne s'ecrit que s'il est dit.
     let facultatif = |v: &Option<String>, balise: &str| v.iter().map(|x| format!("<{}>{}</{}>", balise, echappe(x), balise)).collect::<String>();
     let mut taux = String::new();

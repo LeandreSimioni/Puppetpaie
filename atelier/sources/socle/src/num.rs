@@ -203,10 +203,16 @@ pub fn q2(d: Decimal) -> String {
     r.to_string()
 }
 
-/// Un decimal ecrit a la francaise ou non : la virgule vaut le point (« 12,80 », « 12.80 ») ; le reste comme
-/// `decimal_lu`.
+/// UN DECIMAL ECRIT A LA FRANCAISE OU NON, le seul chemin d'un nombre qu'une personne ou une piece ecrit : les blancs
+/// (l'espace, l'insecable, l'insecable fine) separent les milliers et ne comptent pas ; avec une virgule, elle est la
+/// virgule decimale et un point separe les milliers (« 1 512,40 », « 1.512,40 ») ; sans virgule, le point est la virgule
+/// (« 12.80 »). Le reste comme `decimal_lu`.
 pub fn decimal_a_virgule(t: &str) -> Option<Decimal> {
-    decimal_lu(&t.replace(',', "."))
+    let net: String = t.chars().filter(|c| !matches!(c, ' ' | '\u{a0}' | '\u{202f}')).collect();
+    match net.contains(',') {
+        true => decimal_lu(&net.replace('.', "").replace(',', ".")),
+        false => decimal_lu(&net),
+    }
 }
 
 /// Un decimal ecrit en texte : le signe, les chiffres avec un point et des tirets bas entre deux

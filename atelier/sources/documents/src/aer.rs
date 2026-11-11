@@ -218,14 +218,14 @@ impl Cadre5 {
 /// milliers (espace) s'ote ; tout autre texte refuse : une quantite qu'on ne sait pas lire ne se compare pas.
 pub fn quantite(v: Option<&str>) -> socle::echec::R<Option<Decimal>> {
     let Some(v) = v else { return Ok(None) };
-    let t: String = v.chars().filter(|c| !c.is_whitespace() && *c != '\u{a0}').collect::<String>().replace(',', ".");
+    let t: String = v.chars().filter(|c| !c.is_whitespace() && *c != '\u{a0}').collect();
     if t.is_empty() {
         return Ok(None);
     }
-    if !t.chars().all(|c| c.is_ascii_digit() || c == '.') {
+    if !t.chars().all(|c| c.is_ascii_digit() || c == '.' || c == ',') {
         return Err(socle::refus!("quantite illisible : {}", socle::fichiers::repr(&t)));
     }
-    socle::num::decimal_lu(&t).map(|d| Some(d.normalize())).ok_or_else(|| socle::refus!("quantite illisible : {}", socle::fichiers::repr(&t)))
+    socle::num::decimal_a_virgule(&t).map(|d| Some(d.normalize())).ok_or_else(|| socle::refus!("quantite illisible : {}", socle::fichiers::repr(&t)))
 }
 
 /// Deux quantites concordent-elles ? Une quantite que rien ne dit (une case vide de l'attestation, des heures que

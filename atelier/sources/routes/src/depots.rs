@@ -1001,16 +1001,6 @@ fn jour_jjmmaaaa(v: &str) -> Option<Jour> {
     socle::date::lire_jjmmaaaa(v)
 }
 
-/// La zone `k` d'un enregistrement DPAE relu (`declarations::dpae::relire`), sans ses blancs ; a blanc, elle est vide.
-fn zone<'a>(e: &'a [(&'static str, String)], k: &str) -> R<Option<&'a str>> {
-    let v = e
-        .iter()
-        .find(|(n, _)| *n == k)
-        .map(|(_, v)| v.trim_matches(socle::texte::blanc))
-        .ok_or_else(|| socle::echec::a_la_cle("Défaut du logiciel : une zone de la DPAE relue manque.", k, "").reclasser(Classe::DefautDuLogiciel))?;
-    Ok(Some(v).filter(|v| !v.is_empty()))
-}
-
 /// L'identite d'une fiche, telle qu'une DPAE l'ecrit (`apercu_depot_dpae`).
 struct IdentiteDeFiche {
     cle: String,
@@ -1084,7 +1074,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
     let mut lignes = Vec::new();
     let mut jours: Vec<Jour> = Vec::new();
     for e in &enrs {
-        let Some(j) = zone(e, "date_embauche")?.and_then(jour_jjmmaaaa) else { continue };
+        let Some(j) = e.date_embauche.as_deref().and_then(jour_jjmmaaaa) else { continue };
         let m_e = j.mois_civil();
         if !mois_vus.contains(&m_e) {
             for etat in engagement::etats::tels_qu_ecrits(ctx, m_e, &departs)? {
@@ -1103,14 +1093,16 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
     for e in &enrs {
         // Sans NIR, la DPAE declare un numero temporaire (zone a blanc) : l'embauche se reconnait a l'identite qu'elle
         // porte, nom, prenom et date de naissance (`dpae::enregistrement`).
-        let trouve: Option<&IdentiteDeFiche> = match zone(e, "nir")? {
+        let trouve: Option<&IdentiteDeFiche> = match e.nir.as_deref() {
             Some(nir) => fiches.iter().find(|f| f.nir.as_deref() == Some(nir)),
             None => {
-                let (nom, prenom, naissance) = (zone(e, "nom")?, zone(e, "prenom")?, zone(e, "date_naissance")?.map(jour_jjmmaaaa));
+                let (nom, prenom, naissance) = (e.nom.as_deref(), e.prenom.as_deref(), e.date_naissance.as_deref().map(jour_jjmmaaaa));
                 fiches.iter().find(|f| nom.is_some() && f.nom.as_deref() == nom && f.prenom.as_deref() == prenom && f.naissance.map(Some) == naissance)
             }
         };
-        let debut = zone(e, "date_embauche")?
+        let debut = e
+            .date_embauche
+            .as_deref()
             .and_then(jour_jjmmaaaa)
             .ok_or_else(|| erreur(Classe::Illisible, "Une embauche du fichier DPAE ne porte pas sa date d'embauche (JJMMAAAA)."))?;
         jours.push(debut);
@@ -1120,7 +1112,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
             None => "salarié inconnu de la configuration".to_string(),
         };
         // La nature de l'engagement, par son nom court ; sans engagement, le type que le fichier ecrit (Format 120).
-        let type_contrat = match (id.as_ref().and_then(|k| natures.get(k)), zone(e, "type_contrat")?) {
+        let type_contrat = match (id.as_ref().and_then(|k| natures.get(k)), e.type_contrat.as_deref()) {
             (Some(n), _) => Some(n.clone()),
             (None, Some(t)) => Some(match droit::natures::TYPES_CONTRAT_DPAE.iter().find(|(k, _)| *k == t) {
                 Some((_, l)) => l.to_string(),
@@ -1135,7 +1127,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
             nom,
             debut,
             numero,
-            fin: zone(e, "date_fin")?.and_then(jour_jjmmaaaa),
+            fin: e.date_fin.as_deref().and_then(jour_jjmmaaaa),
             type_contrat,
             deja_declaree: deja,
             // Deja declaree, a voir (elle partirait deux fois) ; a declarer, une information.

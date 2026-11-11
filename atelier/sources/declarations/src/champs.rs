@@ -1333,41 +1333,6 @@ fn tranche(s: &str, a: usize, b: usize) -> String {
     s.chars().skip(a).take(b.saturating_sub(a)).collect()
 }
 
-/// Le texte est-il un nombre a virgule ? (`nan`, `inf`, `1e5`,
-/// `1_000` en sont ; une virgule non.)
-fn nombre_valide(t: &str) -> bool {
-    let t = strip(t);
-    if t.is_empty() {
-        return false;
-    }
-    let sans = t.trim_start_matches(['+', '-']);
-    if t.len() - sans.len() > 1 {
-        return false;
-    }
-    let bas = sans.to_ascii_lowercase();
-    if matches!(bas.as_str(), "nan" | "inf" | "infinity") {
-        return true;
-    }
-    // Un tiret bas ne se tolere qu'entre deux chiffres.
-    let c: Vec<char> = sans.chars().collect();
-    for (i, x) in c.iter().enumerate() {
-        if *x == '_' && !(i > 0 && i + 1 < c.len() && c[i - 1].is_ascii_digit() && c[i + 1].is_ascii_digit()) {
-            return false;
-        }
-    }
-    let net: String = sans.chars().filter(|x| *x != '_').collect();
-    // Des chiffres, un point au plus (avec au moins un chiffre), puis un exposant `e` signe ou non.
-    let (mantisse, exposant) = match net.split_once(['e', 'E']) {
-        Some((m, e)) => (m, Some(e)),
-        None => (net.as_str(), None),
-    };
-    let exposant_bon = exposant.is_none_or(|e| {
-        let e = e.strip_prefix(['+', '-']).unwrap_or(e);
-        !e.is_empty() && e.bytes().all(|c| c.is_ascii_digit())
-    });
-    let (entier, fraction) = mantisse.split_once('.').unwrap_or((mantisse, ""));
-    exposant_bon && !(entier.is_empty() && fraction.is_empty()) && entier.bytes().chain(fraction.bytes()).all(|c| c.is_ascii_digit())
-}
 
 /// Une date ISO : AAAA-MM-JJ, AAAAMMJJ, et les semaines ISO.
 fn date_iso(s: &str) -> Option<Jour> {
@@ -2007,7 +1972,7 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
     if c.forme == Forme::Email && !courriel_valide(v) {
         return Ok(Some("adresse de courriel attendue".into()));
     }
-    if c.forme == Forme::Montant && !nombre_valide(&v.replace(',', ".")) {
+    if c.forme == Forme::Montant && socle::num::decimal_a_virgule(v).is_none() {
         return Ok(Some("nombre attendu".into()));
     }
     if let (Forme::Choix, Some(choix)) = (c.forme, c.choix) {
