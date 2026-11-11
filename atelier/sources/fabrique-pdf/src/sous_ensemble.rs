@@ -9,7 +9,6 @@
 //!   même texte, mêmes octets.
 
 use std::collections::BTreeSet;
-use std::convert::TryInto;
 
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat};
 
@@ -29,25 +28,51 @@ struct ObjetsDePolice {
     tounicode: ObjectId,
 }
 
+/// Le dictionnaire de l'objet `id`, s'il en est un.
+fn dictionnaire(pdf: &Document, id: ObjectId) -> Option<&Dictionary> {
+    match pdf.objects.get(&id) {
+        Some(Object::Dictionary(d)) => Some(d),
+        _ => None,
+    }
+}
+
+/// La référence que `cle` porte dans `d`, s'il en porte une.
+fn reference(d: &Dictionary, cle: &[u8]) -> Option<ObjectId> {
+    match crate::lecture::directe(d, cle) {
+        Some(Object::Reference(r)) => Some(*r),
+        _ => None,
+    }
+}
+
+/// Le nom que `cle` porte dans `d`, s'il en porte un.
+fn nom<'a>(d: &'a Dictionary, cle: &[u8]) -> Option<&'a [u8]> {
+    match crate::lecture::directe(d, cle) {
+        Some(Object::Name(n)) => Some(n),
+        _ => None,
+    }
+}
+
+/// La police descendante d'une police `Type0` (son unique `DescendantFonts`), en ligne ou par référence.
+fn descendante<'a>(pdf: &'a Document, type0: &'a Dictionary) -> Option<&'a Dictionary> {
+    match crate::lecture::directe(type0, b"DescendantFonts") {
+        Some(Object::Array(a)) => match a.first()? {
+            Object::Dictionary(d) => Some(d),
+            Object::Reference(r) => dictionnaire(pdf, *r),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Les objets d'une police telle que la fabrique l'écrit (`embarquer`) ; `None` pour une police d'une autre forme.
 fn objets_de(pdf: &Document, id: ObjectId) -> Option<ObjetsDePolice> {
-    let type0 = pdf.get_dictionary(id).ok()?;
-    if type0.get(b"Subtype").ok()?.as_name().ok()? != b"Type0" {
+    let type0 = dictionnaire(pdf, id)?;
+    if nom(type0, b"Subtype") != Some(b"Type0") {
         return None;
     }
-    let descendante = match type0.get(b"DescendantFonts").ok()?.as_array().ok()?.first()? {
-        Object::Dictionary(d) => d.clone(),
-        Object::Reference(r) => pdf.get_dictionary(*r).ok()?.clone(),
-        _ => return None,
-    };
-    let descripteur = descendante.get(b"FontDescriptor").ok()?.as_reference().ok()?;
-    let fichier = pdf
-        .get_dictionary(descripteur)
-        .ok()?
-        .get(b"FontFile2")
-        .ok()?
-        .as_reference()
-        .ok()?;
-    let tounicode = type0.get(b"ToUnicode").ok()?.as_reference().ok()?;
+    let descripteur = reference(descendante(pdf, type0)?, b"FontDescriptor")?;
+    let fichier = reference(dictionnaire(pdf, descripteur)?, b"FontFile2")?;
+    let tounicode = reference(type0, b"ToUnicode")?;
     Some(ObjetsDePolice {
         type0: id,
         descripteur,
@@ -56,13 +81,12 @@ fn objets_de(pdf: &Document, id: ObjectId) -> Option<ObjetsDePolice> {
     })
 }
 
-/// Les octets (décomprimés) d'un flux.
-fn octets_du_flux(pdf: &Document, id: ObjectId) -> Option<Vec<u8>> {
-    let flux = pdf.get_object(id).ok()?.as_stream().ok()?;
-    Some(
-        flux.decompressed_content()
-            .unwrap_or_else(|_| flux.content.clone()),
-    )
+/// Les octets (décomprimés) d'un flux ; `None` quand l'objet n'est pas un flux.
+fn octets_du_flux(pdf: &Document, id: ObjectId) -> Result<Option<Vec<u8>>, Refus> {
+    match pdf.objects.get(&id) {
+        Some(Object::Stream(flux)) => Ok(Some(crate::lecture::contenu(pdf, flux)?)),
+        _ => Ok(None),
+    }
 }
 
 /// Empreinte FNV-1a de 64 bits, pour le nom du sous-ensemble.
@@ -83,13 +107,13 @@ fn empreinte(nom: &str, caracteres: &BTreeSet<char>) -> u64 {
     h
 }
 
-fn nom_postscript(face: &ttf_parser::Face<'_>) -> String {
+fn nom_postscript(face: &ttf_parser::Face<'_>) -> Result<String, Refus> {
     face.names()
         .into_iter()
         .find(|n| n.name_id == ttf_parser::name_id::POST_SCRIPT_NAME && n.is_unicode())
         .and_then(|n| n.to_string())
         .filter(|n| !n.is_empty() && n.is_ascii() && !n.contains(char::is_whitespace))
-        .unwrap_or_else(|| "Police".to_string())
+        .ok_or_else(|| interne("police interne sans nom PostScript".to_string()))
 }
 
 /// La table `ToUnicode` : chaque code (le point de code) rend le caractère lui-même.
@@ -140,14 +164,26 @@ pub fn embarquer(pdf: &mut Document, donnees: &[u8], caracteres: &BTreeSet<char>
     let type0 = pdf.add_object(Object::Dictionary(t0));
     let objets = ObjetsDePolice { type0, descripteur, fichier, tounicode };
     couper(pdf, &objets, donnees, caracteres)?;
-    comprimer_police(pdf, &objets);
+    comprimer_police(pdf, &objets)?;
     Ok(type0)
+}
+
+/// Des chiffres hexadécimaux, leur valeur ; `None` quand ce n'en sont pas.
+fn hexa(h: &str) -> Option<u32> {
+    if h.is_empty() {
+        return None;
+    }
+    h.chars().try_fold(0u32, |v, c| v.checked_mul(16)?.checked_add(c.to_digit(16)?))
 }
 
 /// Les codes que rend une table `ToUnicode` de la fabrique : chaque code rend le caractère de même
 /// numéro (`table_tounicode`, en plages ou code par code). `None` pour toute autre table.
 fn codes_identite(table: &[u8]) -> Option<BTreeSet<char>> {
-    let texte = std::str::from_utf8(table).ok()?;
+    // La fabrique écrit sa table en ASCII.
+    if !table.is_ascii() {
+        return None;
+    }
+    let texte = String::from_utf8_lossy(table);
     let mut codes = BTreeSet::new();
     let mut mode = "";
     let mut hex: Vec<u32> = Vec::new();
@@ -164,7 +200,7 @@ fn codes_identite(table: &[u8]) -> Option<BTreeSet<char>> {
                 mode = "";
             }
             m if m.starts_with('<') && m.ends_with('>') && !mode.is_empty() => {
-                hex.push(u32::from_str_radix(&m[1..m.len() - 1], 16).ok()?);
+                hex.push(hexa(&m[1..m.len() - 1])?);
                 let n = if mode == "beginbfchar" { 2 } else { 3 };
                 if hex.len() == n {
                     let (debut, fin, dest) = if n == 2 { (hex[0], hex[0], hex[1]) } else { (hex[0], hex[1], hex[2]) };
@@ -187,42 +223,29 @@ fn codes_identite(table: &[u8]) -> Option<BTreeSet<char>> {
 /// Une police que la fabrique a embarquée dans `pdf` depuis le fichier `donnees` (même nom PostScript,
 /// codes `Identity-H` = point de code, table `ToUnicode` de la fabrique) : la police `Type0` et les
 /// caractères qu'elle porte ; toutes, dans l'ordre des numéros.
-pub fn polices_de_la_fabrique(pdf: &Document, donnees: &[u8]) -> Vec<(ObjectId, BTreeSet<char>)> {
+pub fn polices_de_la_fabrique(pdf: &Document, donnees: &[u8]) -> Result<Vec<(ObjectId, BTreeSet<char>)>, Refus> {
     let mut trouvees = Vec::new();
-    let Ok(face) = ttf_parser::Face::parse(donnees, 0) else { return trouvees };
-    let ps = nom_postscript(&face);
+    let face = ttf_parser::Face::parse(donnees, 0).map_err(|e| interne(format!("police interne illisible : {:?}", e)))?;
+    let ps = nom_postscript(&face)?;
     for (id, o) in &pdf.objects {
-        let Ok(d) = o.as_dict() else { continue };
-        if d.get(b"Subtype").and_then(Object::as_name).ok() != Some(b"Type0")
-            || d.get(b"Encoding").and_then(Object::as_name).ok() != Some(b"Identity-H")
-        {
+        let Object::Dictionary(d) = o else { continue };
+        if nom(d, b"Subtype") != Some(b"Type0") || nom(d, b"Encoding") != Some(b"Identity-H") {
             continue;
         }
-        let nom = d.get(b"BaseFont").and_then(Object::as_name).ok().unwrap_or(b"");
-        if nom.len() != 7 + ps.len() || nom[6] != b'+' || &nom[7..] != ps.as_bytes() {
+        let Some(base) = nom(d, b"BaseFont") else { continue };
+        if base.len() != 7 + ps.len() || base[6] != b'+' || &base[7..] != ps.as_bytes() {
             continue;
         }
         let Some(objets) = objets_de(pdf, *id) else { continue };
-        let a_sa_table = pdf
-            .get_dictionary(*id)
-            .ok()
-            .and_then(|t| t.get(b"DescendantFonts").ok()?.as_array().ok()?.first().cloned())
-            .and_then(|f| match f {
-                Object::Dictionary(f) => Some(f),
-                Object::Reference(r) => pdf.get_dictionary(r).ok().cloned(),
-                _ => None,
-            })
-            .map(|f| f.get(b"CIDToGIDMap").and_then(Object::as_reference).is_ok())
-            .unwrap_or(false);
-        if !a_sa_table {
+        if !descendante(pdf, d).is_some_and(|f| reference(f, b"CIDToGIDMap").is_some()) {
             continue;
         }
-        let Some(table) = octets_du_flux(pdf, objets.tounicode) else { continue };
+        let Some(table) = octets_du_flux(pdf, objets.tounicode)? else { continue };
         if let Some(codes) = codes_identite(&table) {
             trouvees.push((*id, codes));
         }
     }
-    trouvees
+    Ok(trouvees)
 }
 
 /// Élargit la police `type0` de la fabrique (`polices_de_la_fabrique`) à `caracteres` : le sous-ensemble est
@@ -231,25 +254,24 @@ pub fn polices_de_la_fabrique(pdf: &Document, donnees: &[u8]) -> Vec<(ObjectId, 
 pub fn elargir(pdf: &mut Document, type0: ObjectId, donnees: &[u8], caracteres: &BTreeSet<char>) -> Result<(), Refus> {
     let objets = objets_de(pdf, type0).ok_or_else(|| interne("police introuvable".to_string()))?;
     couper(pdf, &objets, donnees, caracteres)?;
-    comprimer_police(pdf, &objets);
+    comprimer_police(pdf, &objets)?;
     Ok(())
 }
 
-fn comprimer_police(pdf: &mut Document, objets: &ObjetsDePolice) {
-    let gid = pdf
-        .get_dictionary(objets.type0)
-        .ok()
-        .and_then(|d| d.get(b"DescendantFonts").ok())
-        .and_then(|o| o.as_array().ok())
-        .and_then(|a| a.first())
-        .and_then(|o| o.as_dict().ok())
-        .and_then(|d| d.get(b"CIDToGIDMap").ok())
-        .and_then(|o| o.as_reference().ok());
+fn comprimer_police(pdf: &mut Document, objets: &ObjetsDePolice) -> Result<(), Refus> {
+    let gid = match dictionnaire(pdf, objets.type0) {
+        Some(t) => match descendante(pdf, t) {
+            Some(f) => reference(f, b"CIDToGIDMap"),
+            None => None,
+        },
+        None => None,
+    };
     for id in [Some(objets.fichier), Some(objets.tounicode), gid].iter().flatten() {
-        if let Ok(Object::Stream(s)) = pdf.get_object_mut(*id) {
-            let _ = s.compress();
+        if let Some(Object::Stream(s)) = pdf.objects.get_mut(id) {
+            s.compress().map_err(|e| interne(format!("un flux de police ne se comprime pas ({})", e)))?;
         }
     }
+    Ok(())
 }
 
 fn couper(
@@ -261,8 +283,8 @@ fn couper(
     let face = ttf_parser::Face::parse(donnees, 0)
         .map_err(|e| interne(format!("Failed to parse font: {:?}", e)))?;
     // Une mesure en unités de la police, en millièmes d'em, à l'entier le plus proche.
-    let upem = face.units_per_em() as i64;
-    let en_mille = |v: i64| Mesure::entier(v).fois_rapport(1000, upem).map_or(0, Mesure::arrondi);
+    let upem = std::num::NonZeroI64::new(face.units_per_em() as i64).ok_or_else(|| interne("police interne sans unités".to_string()))?;
+    let en_mille = |v: i64| Mesure::entier(v).fois(1000, upem).arrondi();
 
     // Les glyphes dans l'ordre des caractères : le .notdef d'abord, puis un par caractère.
     let mut voulus: Vec<u16> = Vec::new();
@@ -281,7 +303,7 @@ fn couper(
         .collect();
 
     // Le nom : six lettres tirées de l'empreinte, puis le nom PostScript.
-    let ps = nom_postscript(&face);
+    let ps = nom_postscript(&face)?;
     let mut h = empreinte(&ps, caracteres);
     let mut etiquette = String::new();
     for _ in 0..6 {
@@ -295,13 +317,13 @@ fn couper(
     for (code, origine, _) in &glyphes {
         let l = face
             .glyph_hor_advance(ttf_parser::GlyphId(*origine))
-            .unwrap_or(0) as i64;
+            .ok_or_else(|| interne(format!("le glyphe {} de la police n'a pas d'avance", origine)))? as i64;
         largeurs.push(Object::Integer(*code as i64));
         largeurs.push(Object::Array(vec![Object::Integer(en_mille(l))]));
     }
 
     // Code -> glyphe du sous-ensemble (deux octets par code, 0 pour les codes inemployés).
-    let plus_grand = glyphes.iter().map(|(c, _, _)| *c as usize).max().unwrap_or(0);
+    let plus_grand = glyphes.iter().fold(0, |m, (c, _, _)| m.max(*c as usize));
     let mut cid_vers_gid = vec![0u8; 2 * (plus_grand + 1)];
     for (code, _, nouveau) in &glyphes {
         let i = 2 * *code as usize;
@@ -332,7 +354,10 @@ fn couper(
     // Le descripteur.
     let bbox = face.global_bounding_box();
     // L'angle de l'italique, que `ttf_parser` rend en flottant : lu par son texte.
-    let angle = face.italic_angle().and_then(Mesure::par_son_texte).unwrap_or(Mesure::ZERO);
+    let angle = face
+        .italic_angle()
+        .and_then(Mesure::par_son_texte)
+        .ok_or_else(|| interne("police interne sans angle d'italique lisible (table post)".to_string()))?;
     let mut drapeaux = 32; // jeu de caractères non symbolique
     if face.is_monospaced() {
         drapeaux |= 1;
@@ -340,7 +365,7 @@ fn couper(
     if face.is_italic() || !angle.est_nulle() {
         drapeaux |= 64;
     }
-    let hauteur_capitale = face.capital_height().unwrap_or(face.ascender()) as i64;
+    let hauteur_capitale = face.capital_height().ok_or_else(|| interne("police interne sans hauteur des capitales (table OS/2)".to_string()))? as i64;
     let mut descripteur = Dictionary::new();
     descripteur.set("Type", Object::Name(b"FontDescriptor".to_vec()));
     descripteur.set("FontName", Object::Name(nom.clone().into_bytes()));
@@ -394,11 +419,13 @@ fn couper(
 // ---------------------------------------------------------------------------------------------
 
 fn u16_en(d: &[u8], i: usize) -> Option<u16> {
-    Some(u16::from_be_bytes(d.get(i..i + 2)?.try_into().ok()?))
+    let o = d.get(i..i + 2)?;
+    Some(u16::from_be_bytes([o[0], o[1]]))
 }
 
 fn u32_en(d: &[u8], i: usize) -> Option<u32> {
-    Some(u32::from_be_bytes(d.get(i..i + 4)?.try_into().ok()?))
+    let o = d.get(i..i + 4)?;
+    Some(u32::from_be_bytes([o[0], o[1], o[2], o[3]]))
 }
 
 /// La somme de contrôle d'une table (somme des mots de 32 bits, la fin complétée de zéros).

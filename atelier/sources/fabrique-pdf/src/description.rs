@@ -302,7 +302,12 @@ pub fn francais(e: &serde_json::Error) -> String {
             .collect::<Vec<_>>()
             .join(", ")
     };
-    let nom = |reste: &str| -> String { reste.split('`').next().unwrap_or("").to_string() };
+    let nom = |reste: &str| -> String {
+        match reste.split_once('`') {
+            Some((n, _)) => n.to_string(),
+            None => reste.to_string(),
+        }
+    };
     let corps = if let Some(reste) = msg.strip_prefix("unknown field `") {
         let n = nom(reste);
         match reste.find("expected ") {
@@ -367,17 +372,14 @@ fn traduit_type(t: &str) -> String {
 
 /// Lit « #RRGGBB » (majuscules ou minuscules).
 pub fn couleur(texte: &str, ou: &str) -> Result<Rvb, Refus> {
-    let bon = texte.len() == 7
-        && texte.starts_with('#')
-        && texte[1..].chars().all(|c| c.is_ascii_hexdigit());
-    if !bon {
-        return refus(format!(
-            "{} : couleur \"{}\" invalide (attendu : \"#RRGGBB\")",
-            ou, texte
-        ));
+    let chiffres: Option<Vec<u8>> = match texte.strip_prefix('#') {
+        Some(h) if h.len() == 6 => h.chars().map(|c| c.to_digit(16).map(|d| d as u8)).collect(),
+        Some(_) | None => None,
+    };
+    match chiffres.as_deref() {
+        Some(&[a, b, c, d, e, f]) => Ok((a * 16 + b, c * 16 + d, e * 16 + f)),
+        Some(_) | None => refus(format!("{} : couleur \"{}\" invalide (attendu : \"#RRGGBB\")", ou, texte)),
     }
-    let v = |i: usize| u8::from_str_radix(&texte[i..i + 2], 16).unwrap_or(0);
-    Ok((v(1), v(3), v(5)))
 }
 
 fn positif_ou_nul(v: Mesure, nom: &str, ou: &str) -> Result<Mesure, Refus> {

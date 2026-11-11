@@ -132,6 +132,11 @@ impl Mesure {
         (d != 0).then(|| borne(quotient_arrondi(self.0 as i128 * n as i128, d as i128)))
     }
 
+    /// `self` fois `n / d` en un seul arrondi, `d` non nul par son type.
+    pub fn fois(self, n: i64, d: std::num::NonZeroI64) -> Mesure {
+        borne(quotient_arrondi(self.0 as i128 * n as i128, d.get() as i128))
+    }
+
     /// La racine carrée (d'une mesure positive ou nulle ; une mesure négative n'en a pas : `None`), arrondie au
     /// millionième le plus proche.
     pub fn racine(self) -> Option<Mesure> {

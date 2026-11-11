@@ -8,10 +8,9 @@
 //! Le texte s'écrit avec des polices embarquées en sous-ensemble (`sous_ensemble`) : codes de deux octets qui sont
 //! le point de code Unicode, et seuls les glyphes imprimés.
 
-use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroI64;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat};
 
@@ -80,50 +79,54 @@ impl Style {
 
 /// Un fichier de police et ses métriques, en unités de la police.
 struct Fonte {
-    donnees: Arc<Vec<u8>>,
-    unites: i64,
+    face: ttf_parser::Face<'static>,
+    unites: NonZeroI64,
     /// La hauteur au-dessus et au-dessous de la ligne de base (`hhea`, la seconde négative).
     ascendante: i64,
     descendante: i64,
-    /// Le glyphe et l'avance de chaque caractère déjà mesuré (`None` : la police ne l'a pas).
-    glyphes: RefCell<HashMap<char, (Option<u16>, i64)>>,
+    /// L'avance de chaque glyphe, par son numéro (`hmtx`), lue une fois : le glyphe 0 est `.notdef`.
+    avances: Vec<i64>,
 }
 
 impl Fonte {
-    fn lire(donnees: Arc<Vec<u8>>) -> Result<Fonte, Refus> {
-        let face = ttf_parser::Face::parse(&donnees, 0).or_else(|e| defaut(format!("police interne illisible : {}", e)))?;
-        let unites = face.units_per_em() as i64;
-        if unites == 0 {
+    fn lire(donnees: &'static [u8]) -> Result<Fonte, Refus> {
+        let face = ttf_parser::Face::parse(donnees, 0).or_else(|e| defaut(format!("police interne illisible : {}", e)))?;
+        let Some(unites) = NonZeroI64::new(face.units_per_em() as i64) else {
             return defaut("police interne illisible : sans unités");
-        }
+        };
         let hhea = face.tables().hhea;
         let (ascendante, descendante) = (hhea.ascender as i64, hhea.descender as i64);
-        Ok(Fonte { donnees, unites, ascendante, descendante, glyphes: RefCell::new(HashMap::new()) })
+        let avances = (0..face.number_of_glyphs())
+            .map(|g| match face.glyph_hor_advance(ttf_parser::GlyphId(g)) {
+                Some(a) => Ok(a as i64),
+                None => defaut(format!("police interne illisible : le glyphe {} n'a pas d'avance", g)),
+            })
+            .collect::<Result<Vec<i64>, Refus>>()?;
+        if avances.is_empty() {
+            return defaut("police interne illisible : sans glyphe");
+        }
+        Ok(Fonte { face, unites, ascendante, descendante, avances })
     }
 
     /// Le glyphe du caractère (`None` : la police ne l'a pas) et son avance ; un caractère absent a l'avance du
     /// glyphe `.notdef`.
     fn glyphe(&self, c: char) -> (Option<u16>, i64) {
-        if let Some(g) = self.glyphes.borrow().get(&c) {
-            return *g;
-        }
-        let g = match ttf_parser::Face::parse(&self.donnees, 0) {
-            Ok(face) => {
-                let id = face.glyph_index(c).filter(|g| g.0 != 0);
-                let avance = face.glyph_hor_advance(id.unwrap_or(ttf_parser::GlyphId(0))).unwrap_or(0) as i64;
-                (id.map(|g| g.0), avance)
-            }
-            Err(_) => (None, 0),
+        let id = self.face.glyph_index(c).filter(|g| g.0 != 0).map(|g| g.0);
+        let numero = match id {
+            Some(g) => g as usize,
+            None => NOTDEF,
         };
-        self.glyphes.borrow_mut().insert(c, g);
-        g
+        (id, self.avances[numero])
     }
 
     /// `v` unités de la police, au corps `corps`, en points.
     fn en_points(&self, v: i64, corps: Mesure) -> Mesure {
-        corps.fois_rapport(v, self.unites).unwrap_or(Mesure::ZERO)
+        corps.fois(v, self.unites)
     }
 }
+
+/// Le glyphe `.notdef` d'une police TrueType : le premier.
+const NOTDEF: usize = 0;
 
 /// Les polices d'un document : les huit fichiers de Liberation.
 pub struct Polices {
@@ -180,6 +183,11 @@ pub const SVG_NON_PRIS_EN_CHARGE: &str = "SVG avec dégradé, motif, transparenc
 /// La résolution, en pixels par pouce, à laquelle une image est ramenée à sa largeur posée : celle de l'impression
 /// courante. Au-delà, les pixels ne s'impriment ni ne se voient, ils ne font que peser.
 const RESOLUTION: i64 = 300;
+/// Un point PDF est le 72e d'un pouce.
+const POINTS_PAR_POUCE: NonZeroI64 = match NonZeroI64::new(72) {
+    Some(n) => n,
+    None => panic!("72 n'est pas nul"),
+};
 
 /// La qualité d'un JPEG réencodé après réduction (sur 100).
 const QUALITE_JPEG: u8 = 90;
@@ -248,11 +256,11 @@ impl Image {
         };
         // On décode toujours : un fichier tronqué ou corrompu est un refus, pas un blanc.
         let decodee = image::load_from_memory_with_format(donnees, format_image).map_err(|e| format!("{} illisible : {}", nom, e))?;
-        if decodee.width() == 0 || decodee.height() == 0 {
+        let (Some(large), true) = (NonZeroI64::new(decodee.width() as i64), decodee.height() > 0) else {
             return Err(format!("{} vide", nom));
-        }
+        };
         // Les proportions posées sont celles de l'original : la réduction arrondit les pixels.
-        let hauteur = largeur.fois_rapport(decodee.height() as i64, decodee.width() as i64).unwrap_or(Mesure::ZERO);
+        let hauteur = largeur.fois(decodee.height() as i64, large);
         let (decodee, reduite) = reduire(decodee, largeur);
         let (l, h) = (decodee.width(), decodee.height());
         let contenu = match (format, composantes_jpeg(donnees)) {
@@ -319,12 +327,11 @@ impl Image {
         svg2pdf::convert_tree_into(&arbre, svg2pdf::Options::default(), &mut morceau, depart);
         pdf.extend(&morceau);
         let lu = Document::load_mem(&pdf.finish()).map_err(|e| format!("SVG illisible : {}", e))?;
-        let forme = lu
-            .get_object((depart.get() as u32, 0))
-            .ok()
-            .and_then(|o| o.as_stream().ok())
-            .cloned()
-            .ok_or_else(|| "SVG illisible : la conversion n'a rien donné".to_string())?;
+        let forme = match lu.get_object((depart.get() as u32, 0)) {
+            Ok(Object::Stream(s)) => s.clone(),
+            Ok(_) => return Err("SVG illisible : la conversion ne donne pas un objet formulaire".to_string()),
+            Err(e) => return Err(format!("SVG illisible : la conversion n'a rien donné ({})", e)),
+        };
         // Un objet formulaire qui en cite d'autres (dégradés, motifs, états de transparence, images intégrées)
         // demande plus que des tracés et des aplats unis.
         let mut cites = Vec::new();
@@ -333,7 +340,10 @@ impl Image {
             return Err(SVG_NON_PRIS_EN_CHARGE.into());
         }
         let contenu = Contenu::Svg { source: donnees.to_vec() };
-        let hauteur = largeur.fois_rapport(h.en_millioniemes(), l.en_millioniemes()).unwrap_or(Mesure::ZERO);
+        let Some(large) = NonZeroI64::new(l.en_millioniemes()) else {
+            return Err("SVG sans dimensions".into());
+        };
+        let hauteur = largeur.fois(h.en_millioniemes(), large);
         Ok(Image { contenu: Rc::new(contenu), forme: Some(Rc::new(forme)), largeur, hauteur })
     }
 }
@@ -341,7 +351,7 @@ impl Image {
 /// L'image ramenée à `RESOLUTION` à la largeur `largeur` (en points), si elle la dépasse de plus d'un quart (en
 /// deçà, l'écart ne vaut pas un rééchantillonnage) ; `true` si elle a été réduite.
 fn reduire(image: image::DynamicImage, largeur: Mesure) -> (image::DynamicImage, bool) {
-    let cible = largeur.fois_rapport(RESOLUTION, 72).map_or(1, Mesure::plafond).clamp(1, u32::MAX as i64) as u32;
+    let cible = largeur.fois(RESOLUTION, POINTS_PAR_POUCE).plafond().clamp(1, u32::MAX as i64) as u32;
     if image.width() <= cible + cible / 4 {
         return (image, false);
     }
@@ -519,12 +529,16 @@ impl Dessin {
                 page.contenu.push_str(&format!("/F{} {} Tf\n", f, st.corps));
             }
             let codes: Vec<char> = t.chars().collect();
-            if espace.est_nulle() || !codes.contains(&' ') {
-                page.contenu.push_str(&format!("{} Tj\n", hexa(&codes)));
-                continue;
-            }
+            // Sans espace à étirer (ou sans corps, où rien ne s'étire), le texte tel quel.
+            let rapport = match (espace * Mesure::entier(1000)).sur(st.corps) {
+                Some(r) if !espace.est_nulle() && codes.contains(&' ') => r,
+                Some(_) | None => {
+                    page.contenu.push_str(&format!("{} Tj\n", hexa(&codes)));
+                    continue;
+                }
+            };
             // Un décalage positif recule le glyphe suivant : l'étirement est son opposé.
-            let etirement = -(espace * Mesure::entier(1000)).sur(st.corps).unwrap_or(Mesure::ZERO).arrondie(2);
+            let etirement = -rapport.arrondie(2);
             let mut tableau = String::from("[");
             let mut debut = 0;
             for (i, c) in codes.iter().enumerate() {
@@ -634,11 +648,11 @@ impl Dessin {
                         m.set("ColorSpace", Object::Name(b"DeviceGray".to_vec()));
                         m.set("BitsPerComponent", Object::Integer(8));
                         let mut masque = Stream::new(m, a.clone());
-                        crate::ecriture::predire_image(&mut masque);
+                        crate::ecriture::predire_image(&mut masque)?;
                         d.set("SMask", Object::Reference(doc.add_object(Object::Stream(masque))));
                     }
                     let mut s = Stream::new(d, donnees.clone());
-                    crate::ecriture::predire_image(&mut s);
+                    crate::ecriture::predire_image(&mut s)?;
                     Object::Stream(s)
                 }
                 (Contenu::Svg { .. }, Some(forme)) => Object::Stream((**forme).clone()),
@@ -708,7 +722,7 @@ impl Dessin {
         doc.trailer.set("ID", Object::Array(vec![identifiant(), identifiant()]));
         doc.compress();
         crate::ecriture::canonique(&mut doc);
-        Ok(crate::ecriture::compact(&doc))
+        crate::ecriture::compact(&doc)
     }
 }
 

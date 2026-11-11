@@ -25,17 +25,17 @@
 //! (comme `--marquer`).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::io::Write;
 
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 use serde::Serialize;
 
 use crate::description::{defaut, illisible, refus, Refus};
 use crate::forme::{AjoutDeChamps, Alignement, Remplissage};
-use crate::marquage::{cadre, flux_existants, q_ouverts};
+use crate::lecture;
+use crate::marquage::{flux_existants, q_ouverts};
 use crate::marquage::nb;
 use crate::mesure::{mesure, Mesure};
-use crate::texte::{dico, herite, nombres};
+use std::num::NonZeroI64;
 
 
 /// Arrondi à deux décimales, pour le JSON rendu.
@@ -45,22 +45,10 @@ fn r2(v: Mesure) -> Mesure {
 
 const Z: Mesure = Mesure::ZERO;
 
-/// Une page sans cadre lisible : A4 (595 x 842).
-const A4: [Mesure; 4] = [Z, Z, Mesure::entier(595), Mesure::entier(842)];
-
-fn suivre<'a>(doc: &'a Document, o: &'a Object) -> &'a Object {
-    let mut o = o;
-    for _ in 0..32 {
-        match o {
-            Object::Reference(id) => match doc.objects.get(id) {
-                Some(x) => o = x,
-                None => return &Object::Null,
-            },
-            _ => return o,
-        }
-    }
-    o
-}
+/// Les drapeaux d'un champ qui n'en dit pas (ISO 32000-1, table 220 : `Ff`, « Default value: 0 »).
+const FF_PAR_DEFAUT: i64 = 0;
+/// La justification d'un champ qui n'en dit pas (table 222 : `Q`, « Default value: 0 (left-justified) »).
+const Q_PAR_DEFAUT: i64 = 0;
 
 // ------------------------------------------------------------------ les chaînes de texte PDF
 
@@ -81,17 +69,24 @@ const PDFDOC: [(u8, char); 41] = [
 
 /// Une chaîne de texte PDF en `String` : UTF-16BE si elle commence par la marque `FE FF`, UTF-8
 /// si elle commence par `EF BB BF` (PDF 2.0), PDFDocEncoding sinon.
-fn chaine_pdf(s: &[u8]) -> String {
+fn chaine_pdf(s: &[u8]) -> Result<String, Refus> {
     if let Some(r) = s.strip_prefix(&[0xFE, 0xFF]) {
-        let unites: Vec<u16> = r.chunks(2).map(|c| u16::from_be_bytes([c[0], *c.get(1).unwrap_or(&0)])).collect();
-        return String::from_utf16_lossy(&unites);
+        if r.len() % 2 == 1 {
+            return illisible(format!("une chaîne en UTF-16 a un nombre impair d'octets ({})", r.len()));
+        }
+        let unites: Vec<u16> = r.chunks(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
+        return Ok(String::from_utf16_lossy(&unites));
     }
     if let Some(r) = s.strip_prefix(&[0xEF, 0xBB, 0xBF]) {
-        return String::from_utf8_lossy(r).into_owned();
+        return Ok(String::from_utf8_lossy(r).into_owned());
     }
-    s.iter()
-        .map(|&b| PDFDOC.iter().find(|(o, _)| *o == b).map(|(_, c)| *c).unwrap_or(b as char))
-        .collect()
+    // PDFDocEncoding : Latin-1, sauf les octets de `PDFDOC` (ISO 32000-1, annexe D.2).
+    Ok(s.iter()
+        .map(|&b| match PDFDOC.iter().find(|(o, _)| *o == b) {
+            Some((_, c)) => *c,
+            None => b as char,
+        })
+        .collect())
 }
 
 /// Une `String` en chaîne de texte PDF : PDFDocEncoding quand tous ses caractères y sont (ce
@@ -144,46 +139,71 @@ struct Herite {
     maxlen: Option<i64>,
 }
 
-fn entier(doc: &Document, o: Option<&Object>) -> Option<i64> {
-    match o.map(|o| suivre(doc, o)) {
-        Some(Object::Integer(i)) => Some(*i),
-        Some(o @ Object::Real(_)) => Mesure::de_l_objet(o).map(Mesure::tronque),
-        _ => None,
+/// Au-delà, un arbre des champs qui ne finit pas (un fichier abîmé) se refuse.
+const PROFONDEUR_MAX: usize = 32;
+
+/// Le catalogue du document.
+fn catalogue(doc: &Document) -> Result<&Dictionary, Refus> {
+    match lecture::directe(&doc.trailer, b"Root") {
+        Some(Object::Reference(id)) => lecture::dictionnaire_de(doc, *id),
+        Some(_) => illisible("/Root n'est pas une référence"),
+        None => illisible("le PDF n'a pas de catalogue (/Root)"),
     }
 }
 
-fn chaine_brute(doc: &Document, o: Option<&Object>) -> Option<Vec<u8>> {
-    match o.map(|o| suivre(doc, o)) {
-        Some(Object::String(s, _)) => Some(s.clone()),
-        _ => None,
+/// Le dictionnaire de l'objet `id`, à changer.
+fn dictionnaire_a_changer(doc: &mut Document, id: ObjectId) -> Result<&mut Dictionary, Refus> {
+    match doc.objects.get_mut(&id) {
+        Some(Object::Dictionary(d)) => Ok(d),
+        Some(Object::Stream(s)) => Ok(&mut s.dict),
+        Some(_) => illisible(format!("l'objet {} {} n'est pas un dictionnaire", id.0, id.1)),
+        None => illisible(format!("l'objet {} {} manque", id.0, id.1)),
+    }
+}
+
+/// `elements` ajoutés au tableau `cle` de l'objet `id` (`/Annots` d'une page, `/Fields` du formulaire) : le tableau
+/// en ligne, ou celui que sa référence désigne ; créé s'il n'existe pas.
+fn ajouter_au_tableau(doc: &mut Document, id: ObjectId, cle: &[u8], elements: Vec<Object>) -> Result<(), Refus> {
+    match lecture::directe(lecture::dictionnaire_de(doc, id)?, cle).cloned() {
+        Some(Object::Reference(tab)) => match doc.objects.get_mut(&tab) {
+            Some(Object::Array(v)) => v.extend(elements),
+            Some(_) | None => return illisible(format!("{} ne désigne pas un tableau", lecture::nom_de(cle))),
+        },
+        Some(Object::Array(mut v)) => {
+            v.extend(elements);
+            dictionnaire_a_changer(doc, id)?.set(cle.to_vec(), Object::Array(v));
+        }
+        Some(_) => return illisible(format!("{} n'est pas un tableau", lecture::nom_de(cle))),
+        None => dictionnaire_a_changer(doc, id)?.set(cle.to_vec(), Object::Array(elements)),
+    }
+    Ok(())
+}
+
+/// Le numéro de l'objet que `o` désigne, exigé indirect (`quoi` le nomme dans un refus).
+fn reference(o: &Object, quoi: &str) -> Result<ObjectId, Refus> {
+    match o {
+        Object::Reference(id) => Ok(*id),
+        _ => illisible(format!("{} n'est pas une référence", quoi)),
     }
 }
 
 /// Les champs terminaux du formulaire, dans l'ordre de `/Fields`. Un PDF sans formulaire n'en a
-/// aucun.
-fn lister(doc: &Document) -> (Vec<Champ>, Option<Vec<u8>>) {
-    let catalogue = match doc.catalog() {
-        Ok(c) => c,
-        Err(_) => return (Vec::new(), None),
+/// aucun. `Fields` est exigé dans `/AcroForm`, un tableau de références (ISO 32000-1, table 218).
+fn lister(doc: &Document) -> Result<(Vec<Champ>, Option<Vec<u8>>), Refus> {
+    let Some(acro) = lecture::lue(doc, catalogue(doc)?, b"AcroForm", lecture::dictionnaire)? else {
+        return Ok((Vec::new(), None));
     };
-    let acro = match catalogue.get(b"AcroForm").ok().and_then(|o| dico(doc, o)) {
-        Some(a) => a,
-        None => return (Vec::new(), None),
-    };
-    let da_formulaire = chaine_brute(doc, acro.get(b"DA").ok());
-    let racines: Vec<Object> = match acro.get(b"Fields").ok().map(|o| suivre(doc, o)) {
-        Some(Object::Array(v)) => v.clone(),
-        _ => Vec::new(),
+    let da_formulaire = lecture::lue(doc, acro, b"DA", lecture::chaine)?.map(<[u8]>::to_vec);
+    let Some(racines) = lecture::lue(doc, acro, b"Fields", lecture::tableau)? else {
+        return illisible("/AcroForm n'a pas de /Fields, que la norme exige (ISO 32000-1, table 218)");
     };
     let mut out = Vec::new();
     let mut vus = BTreeSet::new();
     let base = Herite { da: da_formulaire.clone(), ..Herite::default() };
-    for r in &racines {
-        if let Object::Reference(id) = r {
-            parcourir(doc, *id, "", &base, &mut out, &mut vus, 0);
-        }
+    for r in racines {
+        parcourir(doc, reference(r, "un élément de /Fields")?, "", &base, &mut out, &mut vus, 0)?;
     }
-    (out, da_formulaire)
+    Ok((out, da_formulaire))
 }
 
 fn parcourir(
@@ -194,97 +214,112 @@ fn parcourir(
     out: &mut Vec<Champ>,
     vus: &mut BTreeSet<ObjectId>,
     prof: usize,
-) {
-    if prof > 32 || !vus.insert(id) {
-        return;
+) -> Result<(), Refus> {
+    if prof > PROFONDEUR_MAX {
+        return illisible(format!("l'arbre des champs descend au-delà de {} niveaux", PROFONDEUR_MAX));
     }
-    let d = match doc.get_dictionary(id) {
-        Ok(d) => d,
-        Err(_) => return,
+    // Un nœud déjà parcouru (cité deux fois) ne donne pas un second champ.
+    if !vus.insert(id) {
+        return Ok(());
+    }
+    let d = lecture::dictionnaire_de(doc, id)?;
+    let partiel = match lecture::lue(doc, d, b"T", lecture::chaine)? {
+        Some(t) => Some(chaine_pdf(t)?),
+        None => None,
     };
-    let partiel = chaine_brute(doc, d.get(b"T").ok()).map(|t| chaine_pdf(&t));
     let nom = match (&partiel, parent.is_empty()) {
         (Some(t), true) => t.clone(),
         (Some(t), false) => format!("{}.{}", parent, t),
         (None, _) => parent.to_string(),
     };
+    // ISO 32000-1, tables 220, 222 et 229 : `FT`, `Ff`, `V`, `DA`, `Q` et `MaxLen` s'héritent.
     let mut h = herite.clone();
-    if let Ok(Object::Name(n)) = d.get(b"FT").map(|o| suivre(doc, o)) {
-        h.ft = Some(n.clone());
+    if let Some(n) = lecture::lue(doc, d, b"FT", lecture::nom)? {
+        h.ft = Some(n.to_vec());
     }
-    if let Some(f) = entier(doc, d.get(b"Ff").ok()) {
+    if let Some(f) = lecture::lue(doc, d, b"Ff", lecture::entier)? {
         h.ff = Some(f);
     }
-    if let Ok(v) = d.get(b"V") {
-        h.v = Some(suivre(doc, v).clone());
+    if let Some(v) = lecture::valeur(doc, d, b"V")? {
+        h.v = Some(v.clone());
     }
-    if let Some(da) = chaine_brute(doc, d.get(b"DA").ok()) {
-        h.da = Some(da);
+    if let Some(da) = lecture::lue(doc, d, b"DA", lecture::chaine)? {
+        h.da = Some(da.to_vec());
     }
-    if let Some(q) = entier(doc, d.get(b"Q").ok()) {
+    if let Some(q) = lecture::lue(doc, d, b"Q", lecture::entier)? {
         h.q = Some(q);
     }
-    if let Some(m) = entier(doc, d.get(b"MaxLen").ok()) {
+    if let Some(m) = lecture::lue(doc, d, b"MaxLen", lecture::entier)? {
         h.maxlen = Some(m);
     }
-    let enfants: Vec<ObjectId> = match d.get(b"Kids").ok().map(|o| suivre(doc, o)) {
-        Some(Object::Array(v)) => v.iter().filter_map(|o| o.as_reference().ok()).collect(),
-        _ => Vec::new(),
-    };
-    // Les enfants qui ont un nom sont des champs ; les autres sont les widgets de celui-ci.
-    let (champs_enfants, widgets): (Vec<ObjectId>, Vec<ObjectId>) = enfants
-        .into_iter()
-        .partition(|k| doc.get_dictionary(*k).map(|kd| kd.has(b"T")).unwrap_or(false));
-    for k in &champs_enfants {
-        parcourir(doc, *k, &nom, &h, out, vus, prof + 1);
+    let mut enfants: Vec<ObjectId> = Vec::new();
+    if let Some(v) = lecture::lue(doc, d, b"Kids", lecture::tableau)? {
+        for o in v {
+            enfants.push(reference(o, "un élément de /Kids")?);
+        }
     }
-    let mut widgets = widgets;
+    // Les enfants qui ont un nom sont des champs ; les autres sont les widgets de celui-ci.
+    let mut champs_enfants = Vec::new();
+    let mut widgets = Vec::new();
+    for k in enfants {
+        match lecture::dictionnaire_de(doc, k)?.has(b"T") {
+            true => champs_enfants.push(k),
+            false => widgets.push(k),
+        }
+    }
+    for k in &champs_enfants {
+        parcourir(doc, *k, &nom, &h, out, vus, prof + 1)?;
+    }
     if champs_enfants.is_empty() && widgets.is_empty() {
         widgets.push(id); // champ et widget fusionnés
     }
     if !champs_enfants.is_empty() && widgets.is_empty() {
-        return; // un nœud intermédiaire, pas un champ
+        return Ok(()); // un nœud intermédiaire, pas un champ
     }
     out.push(Champ {
         id,
         nom,
         ft: h.ft,
-        ff: h.ff.unwrap_or(0),
+        ff: match h.ff {
+            Some(f) => f,
+            None => FF_PAR_DEFAUT,
+        },
         v: h.v,
         da: h.da,
-        q: h.q.unwrap_or(0),
+        q: match h.q {
+            Some(q) => q,
+            None => Q_PAR_DEFAUT,
+        },
         maxlen: h.maxlen,
         widgets,
     });
+    Ok(())
 }
 
 /// L'annotation → (numéro de page à partir de 1, page).
-fn pages_des_annotations(doc: &Document) -> HashMap<ObjectId, (usize, ObjectId)> {
+fn pages_des_annotations(doc: &Document) -> Result<HashMap<ObjectId, (usize, ObjectId)>, Refus> {
     let mut m = HashMap::new();
     for (n, id) in doc.get_pages() {
-        let annots = doc.get_dictionary(id).ok().and_then(|d| d.get(b"Annots").ok()).map(|o| suivre(doc, o));
-        if let Some(Object::Array(v)) = annots {
+        if let Some(v) = lecture::lue(doc, lecture::dictionnaire_de(doc, id)?, b"Annots", lecture::tableau)? {
             for a in v {
+                // Une annotation écrite en ligne n'a pas de numéro : aucun champ ne la nomme.
                 if let Object::Reference(r) = a {
                     m.entry(*r).or_insert((n as usize, id));
                 }
             }
         }
     }
-    m
+    Ok(m)
 }
 
 /// Le rectangle d'un widget dans le repère de PyMuPDF : en points, origine en haut à gauche de la
-/// page visible, y vers le bas.
-fn rect_vu(doc: &Document, widget: ObjectId, page: ObjectId) -> Option<[Mesure; 4]> {
-    let r = nombres(doc, doc.get_dictionary(widget).ok()?.get(b"Rect").ok());
-    if r.len() != 4 {
-        return None;
-    }
-    let c = cadre(doc, page).unwrap_or(A4);
-    let (x0, x1) = (r[0].min(r[2]), r[0].max(r[2]));
-    let (y0, y1) = (r[1].min(r[3]), r[1].max(r[3]));
-    Some([r2(x0 - c[0]), r2(c[3] - y1), r2(x1 - c[0]), r2(c[3] - y0)])
+/// page visible, y vers le bas. `Rect` est exigé (ISO 32000-1, table 164).
+fn rect_vu(doc: &Document, widget: ObjectId, page: ObjectId) -> Result<[Mesure; 4], Refus> {
+    let Some([x0, y0, x1, y1]) = lecture::rectangle(doc, lecture::dictionnaire_de(doc, widget)?, b"Rect")? else {
+        return illisible("un widget n'a pas de /Rect, que la norme exige (ISO 32000-1, table 164)");
+    };
+    let c = lecture::cadre_de(doc, page)?;
+    Ok([r2(x0 - c[0]), r2(c[3] - y1), r2(x1 - c[0]), r2(c[3] - y0)])
 }
 
 fn type_de(ft: &Option<Vec<u8>>) -> &'static str {
@@ -337,20 +372,25 @@ pub struct ChampLu {
     pub rect: Option<[Mesure; 4]>,
 }
 
-fn valeur_lue(doc: &Document, v: &Option<Object>) -> ValeurLue {
-    match v.as_ref().map(|o| suivre(doc, o)) {
-        None | Some(Object::Null) => ValeurLue::Rien,
-        Some(Object::String(s, _)) => ValeurLue::Texte(chaine_pdf(s)),
+fn valeur_lue(doc: &Document, v: Option<&Object>) -> Result<ValeurLue, Refus> {
+    let v = match v {
+        Some(o) => lecture::designe(doc, o)?,
+        None => None,
+    };
+    Ok(match v {
+        None => ValeurLue::Rien,
+        Some(Object::String(s, _)) => ValeurLue::Texte(chaine_pdf(s)?),
         Some(Object::Name(n)) => ValeurLue::Texte(String::from_utf8_lossy(n).into_owned()),
         Some(Object::Integer(i)) => ValeurLue::Entier(*i),
         Some(o @ Object::Real(_)) => match Mesure::de_l_objet(o) {
             Some(r) => ValeurLue::Reel(r),
-            None => ValeurLue::Rien,
+            None => return illisible("/V d'un champ est un nombre que la fabrique ne lit pas"),
         },
         Some(Object::Boolean(b)) => ValeurLue::Booleen(*b),
-        Some(Object::Array(a)) => ValeurLue::Liste(a.iter().map(|x| valeur_lue(doc, &Some(x.clone()))).collect()),
-        Some(_) => ValeurLue::Rien,
-    }
+        Some(Object::Array(a)) => ValeurLue::Liste(a.iter().map(|x| valeur_lue(doc, Some(x))).collect::<Result<_, _>>()?),
+        // Un dictionnaire ou un flux (le texte riche d'un champ, 12.7.3.4) : rien qui se dise en une valeur.
+        Some(Object::Dictionary(_) | Object::Stream(_) | Object::Reference(_) | Object::Null) => ValeurLue::Rien,
+    })
 }
 
 /// La sortie de `--champs` : une ligne de JSON, `{"NOM": {"valeur", "type", "lecture_seule", "page", "rect"}}`,
@@ -370,27 +410,25 @@ pub fn champs(octets: &[u8]) -> Result<Vec<ChampLu>, Refus> {
     let doc = crate::lecture::charger(octets)?;
     let doc = if doc.is_encrypted() {
         let mut d = doc;
-        if d.decrypt("").is_err() {
-            return illisible("le PDF ne s'ouvre pas sans mot de passe");
-        }
+        d.decrypt("").map_err(|e| Refus::illisible(format!("le PDF ne s'ouvre pas sans mot de passe ({})", e)))?;
         d
     } else {
         doc
     };
-    let (liste, _) = lister(&doc);
-    let pages = pages_des_annotations(&doc);
+    let (liste, _) = lister(&doc)?;
+    let pages = pages_des_annotations(&doc)?;
     let mut out: Vec<ChampLu> = Vec::new();
     let mut vus = BTreeSet::new();
     for c in liste {
         let premier = c.widgets.iter().find_map(|w| pages.get(w).map(|p| (*w, *p)));
         let (page, rect) = match premier {
-            Some((w, (n, page))) => (Some(n), rect_vu(&doc, w, page)),
+            Some((w, (n, page))) => (Some(n), Some(rect_vu(&doc, w, page)?)),
             None => (None, None),
         };
         // Un nom porté par deux champs : le premier, comme PyPDF.
         if vus.insert(c.nom.clone()) {
             out.push(ChampLu {
-                valeur: valeur_lue(&doc, &c.v),
+                valeur: valeur_lue(&doc, c.v.as_ref())?,
                 genre: type_de(&c.ft),
                 lecture_seule: c.ff & 1 != 0,
                 page,
@@ -404,39 +442,41 @@ pub fn champs(octets: &[u8]) -> Result<Vec<ChampLu>, Refus> {
 
 // ------------------------------------------------------------------ l'apparence d'un champ texte
 
-/// Ce que `/DA` dit : le corps (0 = automatique) et l'opérateur de couleur (`0 g`).
-fn lire_da(da: &[u8]) -> (Mesure, String) {
+/// La couleur d'un `/DA` qui n'en dit pas : celle de l'état graphique initial, « Initial value: black » (ISO 32000-1,
+/// table 52).
+const NOIR: &str = "0 g";
+
+/// Ce que `/DA` dit : le corps (0 = automatique) et l'opérateur de couleur (`0 g`). Un opérateur sans ses nombres se
+/// refuse.
+fn lire_da(da: &[u8]) -> Result<(Mesure, String), Refus> {
     let texte = String::from_utf8_lossy(da);
     let jetons: Vec<&str> = texte.split_whitespace().collect();
     let mut corps = Z;
-    let mut couleur = "0 g".to_string();
+    let mut couleur = NOIR.to_string();
     for (i, j) in jetons.iter().enumerate() {
-        let operandes = |n: usize| -> Option<Vec<Mesure>> {
-            if i < n {
-                return None;
+        let operandes = |n: usize| -> Result<Vec<Mesure>, Refus> {
+            let lus = match i.checked_sub(n) {
+                Some(debut) => jetons[debut..i].iter().map(|x| Mesure::lue(x)).collect::<Option<Vec<Mesure>>>(),
+                None => None,
+            };
+            match lus {
+                Some(v) => Ok(v),
+                None => illisible(format!("/DA « {} » : {} n'a pas ses {} nombres", texte, j, n)),
             }
-            jetons[i - n..i].iter().map(|x| Mesure::lue(x)).collect()
         };
-        match *j {
+        let n = match *j {
             "Tf" => {
-                if let Some(v) = operandes(1) {
-                    corps = v[0];
-                }
+                corps = operandes(1)?[0];
+                continue;
             }
-            "g" | "rg" | "k" => {
-                let n = match *j {
-                    "g" => 1,
-                    "rg" => 3,
-                    _ => 4,
-                };
-                if let Some(v) = operandes(n) {
-                    couleur = format!("{} {}", v.iter().map(|x| nb(*x)).collect::<Vec<_>>().join(" "), j);
-                }
-            }
-            _ => {}
-        }
+            "g" => 1,
+            "rg" => 3,
+            "k" => 4,
+            _ => continue,
+        };
+        couleur = format!("{} {}", operandes(n)?.iter().map(|x| nb(*x)).collect::<Vec<_>>().join(" "), j);
     }
-    (corps, couleur)
+    Ok((corps, couleur))
 }
 
 const COMB: i64 = 1 << 24;
@@ -444,15 +484,42 @@ const MULTILIGNE: i64 = 1 << 12;
 const MOT_DE_PASSE: i64 = 1 << 13;
 /// L'interligne des champs multilignes, en corps (celui de MuPDF).
 const INTERLIGNE: Mesure = mesure("1.116");
+const INTERLIGNE_NON_NULLE: NonZeroI64 = match NonZeroI64::new(INTERLIGNE.en_millioniemes()) {
+    Some(n) => n,
+    None => panic!("l'interligne n'est pas nul"),
+};
 
 struct Metriques<'a> {
     face: ttf_parser::Face<'a>,
+    /// L'avance de chaque glyphe, par son numéro (`hmtx`), lue une fois : le glyphe 0 est `.notdef`.
+    avances: Vec<i64>,
 }
 
+/// Le glyphe `.notdef` d'une police TrueType : le premier.
+const NOTDEF: usize = 0;
+
 impl<'a> Metriques<'a> {
-    /// L'avance du caractère, en unités de la police (0 s'il n'y est pas).
+    fn de(face: ttf_parser::Face<'a>) -> Result<Metriques<'a>, Refus> {
+        let avances = (0..face.number_of_glyphs())
+            .map(|g| match face.glyph_hor_advance(ttf_parser::GlyphId(g)) {
+                Some(a) => Ok(a as i64),
+                None => defaut(format!("police interne illisible : le glyphe {} n'a pas d'avance", g)),
+            })
+            .collect::<Result<Vec<i64>, Refus>>()?;
+        if avances.is_empty() {
+            return defaut("police interne illisible : sans glyphe");
+        }
+        Ok(Metriques { face, avances })
+    }
+
+    /// L'avance du caractère, en unités de la police ; un caractère qu'elle n'a pas (le remplissage les refuse
+    /// avant) aurait celle de `.notdef`.
     fn unites(&self, c: char) -> i64 {
-        self.face.glyph_index(c).and_then(|g| self.face.glyph_hor_advance(g)).map_or(0, |a| a as i64)
+        let numero = match self.face.glyph_index(c) {
+            Some(g) => g.0 as usize,
+            None => NOTDEF,
+        };
+        self.avances[numero]
     }
     fn largeur(&self, c: char, corps: Mesure) -> Mesure {
         corps * self.unites(c) / self.face.units_per_em() as i64
@@ -500,18 +567,27 @@ fn couper(m: &Metriques, texte: &str, corps: Mesure, large: Mesure) -> Vec<Strin
 }
 
 /// Le flux de l'apparence d'un champ texte de `l` × `h` points.
-fn flux_apparence(m: &Metriques, c: &Champ, texte: &str, l: Mesure, h: Mesure, police: &str) -> Vec<u8> {
-    let (mut corps, couleur) = lire_da(c.da.as_deref().unwrap_or(b"0 g /Helv 0 Tf"));
+fn flux_apparence(m: &Metriques, c: &Champ, texte: &str, l: Mesure, h: Mesure, police: &str) -> Result<Vec<u8>, Refus> {
+    // ISO 32000-1, table 222 : `DA` est exigé (héritable) d'un champ de texte variable.
+    let Some(da) = c.da.as_deref() else {
+        return illisible(format!("le champ « {} » n'a pas de /DA, que la norme exige (ISO 32000-1, table 222)", c.nom));
+    };
+    let (mut corps, couleur) = lire_da(da)?;
     let multiligne = c.ff & MULTILIGNE != 0;
-    let comb = c.ff & COMB != 0 && c.maxlen.unwrap_or(0) > 0 && !multiligne;
+    // Un champ en peigne (`Comb`) a ses `MaxLen` cases (table 229).
+    let peigne = match c.maxlen {
+        Some(n) if c.ff & COMB != 0 && n > 0 && !multiligne => Some(n),
+        Some(_) | None => None,
+    };
+    let comb = peigne.is_some();
     let (deux, quatre) = (Mesure::entier(2), Mesure::entier(4));
     if corps <= Z {
         // Corps automatique : ce qui tient en hauteur (12 au plus), puis en largeur sur une ligne.
-        corps = (h - quatre).sur(INTERLIGNE).unwrap_or(Z).clamp(quatre, Mesure::entier(12));
+        corps = (h - quatre).fois(Mesure::UN.en_millioniemes(), INTERLIGNE_NON_NULLE).clamp(quatre, Mesure::entier(12));
         if !multiligne && !comb {
             let lt = m.largeur_texte(texte, corps);
-            if lt > l - quatre && lt > Z {
-                corps = corps.fois_rapport((l - quatre).en_millioniemes(), lt.en_millioniemes()).unwrap_or(corps).max(quatre);
+            if let (Some(large), true) = (NonZeroI64::new(lt.en_millioniemes()), lt > l - quatre && lt > Z) {
+                corps = corps.fois((l - quatre).en_millioniemes(), large).max(quatre);
             }
         }
     }
@@ -519,8 +595,7 @@ fn flux_apparence(m: &Metriques, c: &Champ, texte: &str, l: Mesure, h: Mesure, p
     s.push_str("/Tx BMC\nq\n");
     s.push_str(&format!("1 1 {} {} re\nW\nn\nBT\n{}\n/{} {} Tf\n", nb(l - deux), nb(h - deux), couleur, police, nb(corps)));
     let base_une_ligne = (h - corps) / 2 + corps * mesure("0.2");
-    if comb {
-        let n = c.maxlen.unwrap_or(1).max(1);
+    if let Some(n) = peigne {
         let case = l / n;
         for (i, ch) in texte.chars().enumerate() {
             let x = case * i as i64 + (case - m.largeur(ch, corps)) / 2;
@@ -530,23 +605,25 @@ fn flux_apparence(m: &Metriques, c: &Champ, texte: &str, l: Mesure, h: Mesure, p
         let lignes = couper(m, texte, corps, l - quatre);
         for (i, ligne) in lignes.iter().enumerate() {
             let y = h - deux - INTERLIGNE * corps * (i as i64 + 1);
-            let x = aligner(c.q, m.largeur_texte(ligne, corps), l);
+            let x = aligner(c.q, m.largeur_texte(ligne, corps), l)?;
             s.push_str(&format!("1 0 0 1 {} {} Tm\n<{}> Tj\n", nb(x), nb(y), hex(ligne)));
         }
     } else {
-        let x = aligner(c.q, m.largeur_texte(texte, corps), l);
+        let x = aligner(c.q, m.largeur_texte(texte, corps), l)?;
         s.push_str(&format!("1 0 0 1 {} {} Tm\n<{}> Tj\n", nb(x), nb(base_une_ligne), hex(texte)));
     }
     s.push_str("ET\nQ\nEMC\n");
-    s.into_bytes()
+    Ok(s.into_bytes())
 }
 
-/// L'abscisse du texte selon `/Q` : 0 à gauche, 1 centré, 2 à droite (à 2 pt du bord).
-fn aligner(q: i64, largeur: Mesure, l: Mesure) -> Mesure {
+/// L'abscisse du texte selon `/Q` : 0 à gauche, 1 centré, 2 à droite (à 2 pt du bord) ; ISO 32000-1, table 222 n'en
+/// connaît pas d'autre.
+fn aligner(q: i64, largeur: Mesure, l: Mesure) -> Result<Mesure, Refus> {
     match q {
-        1 => (l - largeur) / 2,
-        2 => l - Mesure::entier(2) - largeur,
-        _ => Mesure::entier(2),
+        0 => Ok(Mesure::entier(2)),
+        1 => Ok((l - largeur) / 2),
+        2 => Ok(l - Mesure::entier(2) - largeur),
+        autre => illisible(format!("/Q vaut {}, la norme ne connaît que 0, 1 et 2", autre)),
     }
 }
 
@@ -576,12 +653,6 @@ fn sorte(octets: &[u8]) -> Option<&'static str> {
     None
 }
 
-fn comprimer(donnees: &[u8]) -> Vec<u8> {
-    let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
-    let _ = e.write_all(donnees);
-    e.finish().unwrap_or_default()
-}
-
 fn flux_image(largeur: u32, hauteur: u32, espace: &str, filtre: &str, donnees: Vec<u8>) -> Stream {
     let mut d = Dictionary::new();
     d.set("Type", Object::Name(b"XObject".to_vec()));
@@ -595,7 +666,7 @@ fn flux_image(largeur: u32, hauteur: u32, espace: &str, filtre: &str, donnees: V
 }
 
 /// Des pixels bruts (8 bits), comprimés avec les prédicteurs PNG (`ecriture::predire_image`).
-fn flux_pixels(largeur: u32, hauteur: u32, espace: &str, pixels: Vec<u8>) -> Stream {
+fn flux_pixels(largeur: u32, hauteur: u32, espace: &str, pixels: Vec<u8>) -> Result<Stream, Refus> {
     let mut d = Dictionary::new();
     d.set("Type", Object::Name(b"XObject".to_vec()));
     d.set("Subtype", Object::Name(b"Image".to_vec()));
@@ -604,13 +675,13 @@ fn flux_pixels(largeur: u32, hauteur: u32, espace: &str, pixels: Vec<u8>) -> Str
     d.set("ColorSpace", Object::Name(espace.as_bytes().to_vec()));
     d.set("BitsPerComponent", Object::Integer(8));
     let mut s = Stream::new(d, pixels).with_compression(false);
-    crate::ecriture::predire_image(&mut s);
-    if s.dict.get(b"Filter").is_err() {
+    crate::ecriture::predire_image(&mut s)?;
+    if !s.dict.has(b"Filter") {
         let brut = std::mem::take(&mut s.content);
         s.dict.set("Filter", Object::Name(b"FlateDecode".to_vec()));
-        s.set_content(comprimer(&brut));
+        s.set_content(crate::ecriture::comprimer(&brut)?);
     }
-    s
+    Ok(s)
 }
 
 /// Les composantes et la taille d'un JPEG, lues dans son en-tête de trame (SOFn).
@@ -663,10 +734,10 @@ fn image_matricielle(doc: &mut Document, octets: &[u8], sorte: &str, nom: &str) 
         rgba.pixels().flat_map(|p| [p[0], p[1], p[2]]).collect()
     };
     let espace = if gris { "DeviceGray" } else { "DeviceRGB" };
-    let mut flux = flux_pixels(l, h, espace, couleurs);
+    let mut flux = flux_pixels(l, h, espace, couleurs)?;
     if !opaque {
         let alpha: Vec<u8> = rgba.pixels().map(|p| p[3]).collect();
-        let masque = doc.add_object(Object::Stream(flux_pixels(l, h, "DeviceGray", alpha)));
+        let masque = doc.add_object(Object::Stream(flux_pixels(l, h, "DeviceGray", alpha)?));
         flux.dict.set("SMask", Object::Reference(masque));
     }
     let id = doc.add_object(Object::Stream(flux));
@@ -786,13 +857,13 @@ fn ecrire_textes(doc: &mut Document, forme: ObjectId, lignes: &[LigneSvg], haute
     let romain = crate::polices::sans_regulier()?;
     let gras = crate::polices::sans_gras()?;
     let faces = [
-        ttf_parser::Face::parse(&romain, 0).map_err(|e| Refus::defaut(format!("police interne illisible : {:?}", e)))?,
-        ttf_parser::Face::parse(&gras, 0).map_err(|e| Refus::defaut(format!("police interne illisible : {:?}", e)))?,
+        Metriques::de(ttf_parser::Face::parse(romain, 0).map_err(|e| Refus::defaut(format!("police interne illisible : {:?}", e)))?)?,
+        Metriques::de(ttf_parser::Face::parse(gras, 0).map_err(|e| Refus::defaut(format!("police interne illisible : {:?}", e)))?)?,
     ];
     let mut caracteres = [BTreeSet::new(), BTreeSet::new()];
     for m in lignes.iter().flat_map(|l| &l.morceaux) {
         for c in m.texte.chars() {
-            if faces[m.gras as usize].glyph_index(c).is_none() {
+            if faces[m.gras as usize].face.glyph_index(c).is_none() {
                 return refus(format!("le texte du SVG : le caractère « {} » (U+{:04X}) n'existe pas dans la police Liberation", c, c as u32));
             }
             caracteres[m.gras as usize].insert(c);
@@ -806,15 +877,23 @@ fn ecrire_textes(doc: &mut Document, forme: ObjectId, lignes: &[LigneSvg], haute
             noms[i] = nom;
         }
     }
-    let avance = |m: &Morceau| -> Mesure {
-        let f = &faces[m.gras as usize];
-        let em = f.units_per_em() as i64;
-        m.texte.chars().filter_map(|c| f.glyph_index(c)).map(|g| m.corps * f.glyph_hor_advance(g).unwrap_or(0) as i64 / em).sum()
+    // Chaque caractère est dans sa police (plus haut).
+    let avance = |m: &Morceau| -> Mesure { faces[m.gras as usize].largeur_texte(&m.texte, m.corps) };
+    let mut flux = match doc.get_object(forme) {
+        Ok(Object::Stream(f)) => f.clone(),
+        Ok(_) => return defaut("le SVG converti n'a pas d'objet formulaire"),
+        Err(e) => return defaut(format!("le SVG converti n'a pas d'objet formulaire ({})", e)),
     };
-    let srgb = match doc.get_object(forme) {
-        Ok(Object::Stream(s)) => s.dict.get(b"Resources").ok().and_then(|r| dico(doc, r)).and_then(|r| r.get(b"ColorSpace").ok()).and_then(|c| dico(doc, c)).map_or(false, |c| c.has(b"srgb")),
-        _ => false,
+    let ressources_lues = lecture::lue(doc, &flux.dict, b"Resources", lecture::dictionnaire)?;
+    let espaces = match ressources_lues {
+        Some(r) => lecture::lue(doc, r, b"ColorSpace", lecture::dictionnaire)?,
+        None => None,
     };
+    let srgb = espaces.is_some_and(|c| c.has(b"srgb"));
+    let mut ressources = Dictionary::new();
+    if let Some(r) = ressources_lues {
+        ressources.extend(r);
+    }
     // Le repère du SVG (y vers le bas) comme svg2pdf le pose, puis chaque ligne dans le sien.
     let mut s = format!("q\n1 0 0 -1 0 {} cm\n", nb(hauteur));
     for l in lignes {
@@ -840,22 +919,16 @@ fn ecrire_textes(doc: &mut Document, forme: ObjectId, lignes: &[LigneSvg], haute
         s.push_str("ET\nQ\n");
     }
     s.push_str("Q\n");
-    let mut ressources: Dictionary = match doc.get_object(forme) {
-        Ok(Object::Stream(f)) => f.dict.get(b"Resources").ok().and_then(|r| dico(doc, r)).cloned().unwrap_or_default(),
-        _ => return defaut("le SVG converti n'a pas d'objet formulaire"),
-    };
     ressources.set("Font", Object::Dictionary(polices));
-    let Ok(Object::Stream(flux)) = doc.get_object_mut(forme) else {
-        return defaut("le SVG converti n'a pas d'objet formulaire");
-    };
-    let mut contenu = flux.decompressed_content().unwrap_or_else(|_| flux.content.clone());
+    let mut contenu = lecture::contenu(doc, &flux)?;
     contenu.push(b'\n');
     contenu.extend_from_slice(s.as_bytes());
     flux.dict.set("Resources", Object::Dictionary(ressources));
     flux.dict.remove(b"Filter");
     flux.dict.remove(b"DecodeParms");
-    flux.set_content(comprimer(&contenu));
+    flux.set_content(crate::ecriture::comprimer(&contenu)?);
     flux.dict.set("Filter", Object::Name(b"FlateDecode".to_vec()));
+    doc.objects.insert(forme, Object::Stream(flux));
     Ok(())
 }
 
@@ -868,7 +941,7 @@ fn image_svg(doc: &mut Document, octets: &[u8], nom: &str, avant: Option<&Docume
     use usvg::{TreeParsing, TreeTextToPath};
     let mut polices = usvg::fontdb::Database::new();
     for donnees in crate::polices::toutes()? {
-        polices.load_font_data(donnees.as_ref().clone());
+        polices.load_font_data(donnees.to_vec());
     }
     polices.set_sans_serif_family("Liberation Sans");
     polices.set_serif_family("Liberation Serif");
@@ -1012,7 +1085,7 @@ pub fn remplir(octets: &[u8], d: &Remplissage) -> Result<Vec<u8>, Refus> {
         poser_images(&mut doc, &poses, Some(&avant))?;
     }
     doc.prune_objects();
-    Ok(crate::ecriture::ajouter(&lus, &avant, &doc))
+    crate::ecriture::ajouter(&lus, &avant, &doc)
 }
 
 fn lire_pose(im: &crate::forme::ImagePosee, rang: usize) -> Result<Pose, Refus> {
@@ -1042,11 +1115,11 @@ fn lire_pose(im: &crate::forme::ImagePosee, rang: usize) -> Result<Pose, Refus> 
 /// reçu, dont les objets restent tels quels) ; sinon, un sous-ensemble neuf de ces seuls caractères.
 pub(crate) fn police_pour(doc: &mut Document, donnees: &[u8], caracteres: &BTreeSet<char>, avant: Option<&Document>) -> Result<ObjectId, Refus> {
     let echec = |e: Refus| e.reformuler(|p| format!("police impossible à embarquer : {}", p));
-    let candidates = crate::sous_ensemble::polices_de_la_fabrique(doc, donnees);
+    let candidates = crate::sous_ensemble::polices_de_la_fabrique(doc, donnees)?;
     if let Some((id, _)) = candidates.iter().find(|(_, portes)| caracteres.is_subset(portes)) {
         return Ok(*id);
     }
-    if let Some((id, portes)) = candidates.into_iter().find(|(id, _)| avant.map_or(true, |a| !a.objects.contains_key(id))) {
+    if let Some((id, portes)) = candidates.into_iter().find(|(id, _)| avant.is_none_or(|a| !a.objects.contains_key(id))) {
         let tous: BTreeSet<char> = portes.union(caracteres).copied().collect();
         crate::sous_ensemble::elargir(doc, id, donnees, &tous).map_err(echec)?;
         return Ok(id);
@@ -1059,7 +1132,7 @@ pub(crate) fn police_pour(doc: &mut Document, donnees: &[u8], caracteres: &BTree
 /// puis, pour ce qui lui manque, un sous-ensemble neuf de ces seuls caractères (`police_pour`). Un texte qui passe de
 /// l'une à l'autre change de police entre deux `Tj`, sans changer de place.
 pub(crate) fn polices_pour_ajout(doc: &mut Document, donnees: &[u8], caracteres: &BTreeSet<char>, avant: &Document) -> Result<Vec<(ObjectId, BTreeSet<char>)>, Refus> {
-    let meilleure = crate::sous_ensemble::polices_de_la_fabrique(doc, donnees)
+    let meilleure = crate::sous_ensemble::polices_de_la_fabrique(doc, donnees)?
         .into_iter()
         .filter(|(id, _)| avant.objects.contains_key(id))
         .map(|(id, portes)| (id, caracteres.intersection(&portes).copied().collect::<BTreeSet<char>>()))
@@ -1078,14 +1151,15 @@ pub(crate) fn polices_pour_ajout(doc: &mut Document, donnees: &[u8], caracteres:
 
 /// Les valeurs écrites dans leurs champs, l'apparence régénérée ; `avant` : voir `police_pour`.
 fn ecrire_champs(doc: &mut Document, valeurs: &[(String, String)], avant: Option<&Document>) -> Result<(), Refus> {
-    let (liste, _) = lister(doc);
+    let (liste, _) = lister(doc)?;
     let mut par_nom: HashMap<&str, &Champ> = HashMap::new();
     for c in &liste {
         par_nom.entry(c.nom.as_str()).or_insert(c);
     }
     // Tout se vérifie avant d'écrire quoi que ce soit.
     let donnees = crate::polices::sans_regulier()?;
-    let face = ttf_parser::Face::parse(&donnees, 0).map_err(|e| Refus::defaut(format!("police interne illisible : {:?}", e)))?;
+    let metriques = Metriques::de(ttf_parser::Face::parse(donnees, 0).map_err(|e| Refus::defaut(format!("police interne illisible : {:?}", e)))?)?;
+    let face = &metriques.face;
     let mut caracteres = BTreeSet::new();
     for (nom, texte) in valeurs {
         let c = match par_nom.get(nom.as_str()) {
@@ -1119,19 +1193,17 @@ fn ecrire_champs(doc: &mut Document, valeurs: &[(String, String)], avant: Option
             caracteres.insert(ch);
         }
     }
-    let police = if caracteres.is_empty() { None } else { Some(police_pour(doc, &donnees, &caracteres, avant)?) };
-    let metriques = Metriques { face };
+    let police = if caracteres.is_empty() { None } else { Some(police_pour(doc, donnees, &caracteres, avant)?) };
     for (nom, texte) in valeurs {
         let texte = texte.replace("\r\n", "\n").replace('\r', "\n");
         let c = par_nom[nom.as_str()];
         let mut apparences = Vec::new();
         for w in &c.widgets {
-            let r = nombres(doc, doc.get_dictionary(*w).ok().and_then(|d| d.get(b"Rect").ok()));
-            if r.len() != 4 {
-                continue;
-            }
-            let (l, h) = ((r[2] - r[0]).abs(), (r[3] - r[1]).abs());
-            let flux = flux_apparence(&metriques, c, &texte, l, h, "PPChamp");
+            let Some(r) = lecture::rectangle(doc, lecture::dictionnaire_de(doc, *w)?, b"Rect")? else {
+                return illisible(format!("un widget du champ « {} » n'a pas de /Rect, que la norme exige (ISO 32000-1, table 164)", nom));
+            };
+            let (l, h) = (r[2] - r[0], r[3] - r[1]);
+            let flux = flux_apparence(&metriques, c, &texte, l, h, "PPChamp")?;
             let mut dict = Dictionary::new();
             dict.set("Type", Object::Name(b"XObject".to_vec()));
             dict.set("Subtype", Object::Name(b"Form".to_vec()));
@@ -1144,18 +1216,14 @@ fn ecrire_champs(doc: &mut Document, valeurs: &[(String, String)], avant: Option
             }
             dict.set("Resources", Object::Dictionary(ressources));
             let mut s = Stream::new(dict, flux);
-            let _ = s.compress();
+            s.compress().map_err(|e| Refus::defaut(format!("l'apparence du champ « {} » ne se comprime pas ({})", nom, e)))?;
             apparences.push((*w, doc.add_object(Object::Stream(s))));
         }
-        if let Ok(o) = doc.get_object_mut(c.id).and_then(Object::as_dict_mut) {
-            o.set("V", Object::String(vers_chaine_pdf(&texte), lopdf::StringFormat::Literal));
-        }
+        dictionnaire_a_changer(doc, c.id)?.set("V", Object::String(vers_chaine_pdf(&texte), lopdf::StringFormat::Literal));
         for (w, ap) in apparences {
-            if let Ok(o) = doc.get_object_mut(w).and_then(Object::as_dict_mut) {
-                let mut a = Dictionary::new();
-                a.set("N", Object::Reference(ap));
-                o.set("AP", Object::Dictionary(a));
-            }
+            let mut a = Dictionary::new();
+            a.set("N", Object::Reference(ap));
+            dictionnaire_a_changer(doc, w)?.set("AP", Object::Dictionary(a));
         }
     }
     Ok(())
@@ -1169,14 +1237,11 @@ fn poser_images(doc: &mut Document, poses: &[Pose], avant: Option<&Document>) ->
             Some(id) => *id,
             None => return refus(format!("pas de page {} : le PDF en a {}", p.page, pages.len())),
         };
-        let rotation = match herite(doc, page, b"Rotate") {
-            Some(Object::Integer(r)) => r.rem_euclid(360),
-            _ => 0,
-        };
+        let rotation = lecture::rotation_de(doc, page)?;
         if rotation != 0 {
             return refus(format!("la page {} est tournée ({}°) : on n'y pose pas d'image", p.page, rotation));
         }
-        let c = cadre(doc, page).unwrap_or(A4);
+        let c = lecture::cadre_de(doc, page)?;
         let dedans = [p.rect[0] + p.marge, p.rect[1] + p.marge, p.rect[2] - p.marge, p.rect[3] - p.marge];
         let (cl, ch) = (dedans[2] - dedans[0], dedans[3] - dedans[1]);
         if cl <= Z || ch <= Z {
@@ -1203,10 +1268,7 @@ fn poser_images(doc: &mut Document, poses: &[Pose], avant: Option<&Document>) ->
     }
     for (n, liste) in par_page {
         let id = pages[&(n as u32)];
-        let mut ressources: Dictionary =
-            herite(doc, id, b"Resources").and_then(|o| dico(doc, o)).cloned().unwrap_or_default();
-        let mut xobjets: Dictionary =
-            ressources.get(b"XObject").ok().and_then(|o| dico(doc, o)).cloned().unwrap_or_default();
+        let (mut ressources, mut xobjets) = lecture::ressources_et(doc, id, b"XObject")?;
         let mut flux = String::new();
         let mut rang = 1;
         for (objet, m) in liste {
@@ -1223,8 +1285,8 @@ fn poser_images(doc: &mut Document, poses: &[Pose], avant: Option<&Document>) ->
             ));
         }
         ressources.set("XObject", Object::Dictionary(xobjets));
-        let anciens = flux_existants(doc, id);
-        let ouverts = q_ouverts(doc, id);
+        let anciens = flux_existants(doc, id)?;
+        let ouverts = q_ouverts(doc, id)?;
         let avant = doc.add_object(Object::Stream(Stream::new(Dictionary::new(), b"q\n".to_vec())));
         let apres = doc.add_object(Object::Stream(Stream::new(Dictionary::new(), "Q\n".repeat(ouverts + 1).into_bytes())));
         let images = doc.add_object(Object::Stream(Stream::new(Dictionary::new(), flux.into_bytes())));
@@ -1304,10 +1366,10 @@ pub fn ajouter_champs(octets: &[u8], d: &AjoutDeChamps) -> Result<Vec<u8>, Refus
         ajouts.push(lire_ajout(c, i + 1)?);
     }
     let mut doc = crate::lecture::charger(octets)?;
-    if doc.trailer.get(b"Encrypt").is_ok() {
+    if doc.trailer.has(b"Encrypt") {
         return illisible("le PDF est chiffré : on n'y ajoute rien");
     }
-    let (existants, _) = lister(&doc);
+    let (existants, _) = lister(&doc)?;
     let mut noms: BTreeSet<String> = existants.into_iter().map(|c| c.nom).collect();
     for a in &ajouts {
         if !noms.insert(a.nom.clone()) {
@@ -1331,11 +1393,12 @@ pub fn ajouter_champs(octets: &[u8], d: &AjoutDeChamps) -> Result<Vec<u8>, Refus
         f
     }));
     let racine = doc.trailer.get(b"Root").and_then(Object::as_reference).map_err(|e| Refus::illisible(format!("PDF sans catalogue ({})", e)))?;
-    let acro_existant: Option<Object> = doc.get_dictionary(racine).ok().and_then(|c| c.get(b"AcroForm").ok()).cloned();
+    let acro_existant: Option<Object> = lecture::directe(lecture::dictionnaire_de(&doc, racine)?, b"AcroForm").cloned();
     let acro_id = match acro_existant {
         Some(Object::Reference(id)) => id,
         Some(Object::Dictionary(dico_inline)) => doc.add_object(Object::Dictionary(dico_inline)),
-        _ => doc.add_object(Object::Dictionary(Dictionary::new())),
+        Some(_) => return illisible("/AcroForm du catalogue n'est pas un dictionnaire"),
+        None => doc.add_object(Object::Dictionary(Dictionary::new())),
     };
     {
         let acro = doc.get_object_mut(acro_id).and_then(Object::as_dict_mut).map_err(|e| Refus::illisible(format!("formulaire illisible ({})", e)))?;
@@ -1350,15 +1413,13 @@ pub fn ajouter_champs(octets: &[u8], d: &AjoutDeChamps) -> Result<Vec<u8>, Refus
             acro.set("DR", Object::Dictionary(dr));
         }
     }
-    if let Ok(c) = doc.get_object_mut(racine).and_then(Object::as_dict_mut) {
-        c.set("AcroForm", Object::Reference(acro_id));
-    }
+    dictionnaire_a_changer(&mut doc, racine)?.set("AcroForm", Object::Reference(acro_id));
 
     // Les widgets (champ et widget fusionnés), dans `/Annots` de leur page et dans `/Fields`.
     let mut nouveaux: Vec<ObjectId> = Vec::new();
     for a in &ajouts {
         let page = pages[&(a.page as u32)];
-        let c = cadre(&doc, page).unwrap_or(A4);
+        let c = lecture::cadre_de(&doc, page)?;
         let r = [c[0] + a.rect[0], c[3] - a.rect[3], c[0] + a.rect[2], c[3] - a.rect[1]];
         let mut w = Dictionary::new();
         w.set("Type", Object::Name(b"Annot".to_vec()));
@@ -1373,46 +1434,10 @@ pub fn ajouter_champs(octets: &[u8], d: &AjoutDeChamps) -> Result<Vec<u8>, Refus
         w.set("DA", Object::String(format!("/Helv {} Tf 0 g", nb(a.taille)).into_bytes(), lopdf::StringFormat::Literal));
         let id = doc.add_object(Object::Dictionary(w));
         nouveaux.push(id);
-        let annots: Option<Object> = doc.get_dictionary(page).ok().and_then(|p| p.get(b"Annots").ok()).cloned();
-        match annots {
-            Some(Object::Reference(tab)) => {
-                if let Ok(Object::Array(v)) = doc.get_object_mut(tab) {
-                    v.push(Object::Reference(id));
-                }
-            }
-            Some(Object::Array(mut v)) => {
-                v.push(Object::Reference(id));
-                if let Ok(p) = doc.get_object_mut(page).and_then(Object::as_dict_mut) {
-                    p.set("Annots", Object::Array(v));
-                }
-            }
-            _ => {
-                if let Ok(p) = doc.get_object_mut(page).and_then(Object::as_dict_mut) {
-                    p.set("Annots", Object::Array(vec![Object::Reference(id)]));
-                }
-            }
-        }
+        ajouter_au_tableau(&mut doc, page, b"Annots", vec![Object::Reference(id)])?;
     }
-    let champs_existants: Option<Object> = doc.get_dictionary(acro_id).ok().and_then(|a| a.get(b"Fields").ok()).cloned();
     let refs: Vec<Object> = nouveaux.iter().map(|id| Object::Reference(*id)).collect();
-    match champs_existants {
-        Some(Object::Reference(tab)) => {
-            if let Ok(Object::Array(v)) = doc.get_object_mut(tab) {
-                v.extend(refs);
-            }
-        }
-        Some(Object::Array(mut v)) => {
-            v.extend(refs);
-            if let Ok(a) = doc.get_object_mut(acro_id).and_then(Object::as_dict_mut) {
-                a.set("Fields", Object::Array(v));
-            }
-        }
-        _ => {
-            if let Ok(a) = doc.get_object_mut(acro_id).and_then(Object::as_dict_mut) {
-                a.set("Fields", Object::Array(refs));
-            }
-        }
-    }
+    ajouter_au_tableau(&mut doc, acro_id, b"Fields", refs)?;
 
     // Les valeurs, avec leur apparence (le même chemin que `remplir`), puis la lecture seule.
     let valeurs: Vec<(String, String)> = ajouts.iter().filter_map(|a| a.valeur.clone().map(|v| (a.nom.clone(), v))).collect();
@@ -1421,11 +1446,9 @@ pub fn ajouter_champs(octets: &[u8], d: &AjoutDeChamps) -> Result<Vec<u8>, Refus
     }
     for (a, id) in ajouts.iter().zip(&nouveaux) {
         if a.lecture_seule {
-            if let Ok(w) = doc.get_object_mut(*id).and_then(Object::as_dict_mut) {
-                w.set("Ff", Object::Integer(1));
-            }
+            dictionnaire_a_changer(&mut doc, *id)?.set("Ff", Object::Integer(1));
         }
     }
     doc.prune_objects();
-    Ok(crate::ecriture::compact(&doc))
+    crate::ecriture::compact(&doc)
 }

@@ -18,9 +18,9 @@ use std::collections::BTreeSet;
 use lopdf::content::Content;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 
-use crate::description::{illisible, refus, Refus};
+use crate::description::{defaut, illisible, refus, Refus};
+use crate::lecture;
 use crate::mesure::{mesure, Mesure};
-use crate::texte::{contenu_de_page, dico, herite, nombres};
 
 /// Le corps de la marque, en points.
 pub const CORPS: Mesure = Mesure::entier(6);
@@ -36,49 +36,29 @@ pub(crate) fn nb(v: Mesure) -> String {
     v.arrondie(4).to_string()
 }
 
-/// Le cadre visible de la page (`CropBox` dans `MediaBox`) : x0, y0, x1, y1.
-pub(crate) fn cadre(doc: &Document, page: ObjectId) -> Option<[Mesure; 4]> {
-    let v = nombres(doc, herite(doc, page, b"MediaBox"));
-    if v.len() != 4 {
-        return None;
-    }
-    let mut c = [v[0].min(v[2]), v[1].min(v[3]), v[0].max(v[2]), v[1].max(v[3])];
-    let r = nombres(doc, herite(doc, page, b"CropBox"));
-    if r.len() == 4 {
-        let r = [r[0].min(r[2]), r[1].min(r[3]), r[0].max(r[2]), r[1].max(r[3])];
-        let croise = [c[0].max(r[0]), c[1].max(r[1]), c[2].min(r[2]), c[3].min(r[3])];
-        if croise[2] > croise[0] && croise[3] > croise[1] {
-            c = croise;
-        }
-    }
-    Some(c)
-}
-
 /// Les flux de contenu de la page, par référence (`/Contents` est un flux, un tableau de flux, ou
-/// la référence d'un tableau).
-pub(crate) fn flux_existants(doc: &Document, page: ObjectId) -> Vec<Object> {
-    let contenu = match doc.get_dictionary(page).ok().and_then(|d| d.get(b"Contents").ok()) {
-        Some(c) => c.clone(),
-        None => return Vec::new(),
-    };
-    match &contenu {
-        Object::Array(v) => v.clone(),
-        Object::Reference(id) => match doc.objects.get(id) {
-            Some(Object::Array(v)) => v.clone(),
-            Some(Object::Stream(_)) => vec![contenu.clone()],
-            _ => Vec::new(),
+/// la référence d'un tableau ; absent, la page est vide : ISO 32000-1, table 30).
+pub(crate) fn flux_existants(doc: &Document, page: ObjectId) -> Result<Vec<Object>, Refus> {
+    let mut flux = Vec::new();
+    match lecture::directe(lecture::dictionnaire_de(doc, page)?, b"Contents") {
+        Some(Object::Array(v)) => flux.extend(v.iter().cloned()),
+        Some(contenu @ Object::Reference(id)) => match doc.objects.get(id) {
+            Some(Object::Array(v)) => flux.extend(v.iter().cloned()),
+            Some(Object::Stream(_)) => flux.push(contenu.clone()),
+            // Une référence à un objet absent désigne l'objet nul : la clé est absente (7.3.10).
+            Some(Object::Null) | None => {}
+            Some(_) => return illisible("/Contents n'est ni un flux ni un tableau de flux"),
         },
-        _ => Vec::new(),
+        Some(_) => return illisible("/Contents n'est ni un flux ni un tableau de flux"),
+        None => {}
     }
+    Ok(flux)
 }
 
-/// Combien de `q` l'ancien contenu laisse ouverts (0 s'il est équilibré ou illisible).
-pub(crate) fn q_ouverts(doc: &Document, page: ObjectId) -> usize {
-    let flux = contenu_de_page(doc, page);
-    let contenu = match Content::decode(&flux) {
-        Ok(c) => c,
-        Err(_) => return 0,
-    };
+/// Combien de `q` l'ancien contenu laisse ouverts (0 s'il est équilibré).
+pub(crate) fn q_ouverts(doc: &Document, page: ObjectId) -> Result<usize, Refus> {
+    let flux = lecture::contenu_de_page(doc, page)?;
+    let contenu = Content::decode(&flux).map_err(|e| Refus::illisible(format!("le contenu de la page ne se lit pas ({})", e)))?;
     let mut profondeur: i64 = 0;
     for op in &contenu.operations {
         match op.operator.as_str() {
@@ -87,7 +67,7 @@ pub(crate) fn q_ouverts(doc: &Document, page: ObjectId) -> usize {
             _ => {}
         }
     }
-    profondeur as usize
+    Ok(profondeur as usize)
 }
 
 /// Le flux de la marque : position et sens de lecture selon la rotation de la page.
@@ -149,20 +129,11 @@ pub fn marquer(octets: &[u8], texte: &str) -> Result<Vec<u8>, Refus> {
         return illisible("PDF sans page");
     }
     for id in pages {
-        let c = match cadre(&doc, id) {
-            Some(c) => c,
-            None => [Mesure::ZERO, Mesure::ZERO, Mesure::entier(595), Mesure::entier(842)],
-        };
-        let rotation = match herite(&doc, id, b"Rotate") {
-            Some(Object::Integer(r)) => r.rem_euclid(360),
-            _ => 0,
-        };
+        let c = lecture::cadre_de(&doc, id)?;
+        let rotation = lecture::rotation_de(&doc, id)?;
 
         // Les ressources de la page, recopiées, avec la police de la marque.
-        let mut ressources: Dictionary =
-            herite(&doc, id, b"Resources").and_then(|o| dico(&doc, o)).cloned().unwrap_or_default();
-        let mut polices: Dictionary =
-            ressources.get(b"Font").ok().and_then(|o| dico(&doc, o)).cloned().unwrap_or_default();
+        let (mut ressources, mut polices) = lecture::ressources_et(&doc, id, b"Font")?;
         let mut nom_police = "PPMarque".to_string();
         while polices.has(nom_police.as_bytes()) {
             nom_police.push('x');
@@ -171,8 +142,8 @@ pub fn marquer(octets: &[u8], texte: &str) -> Result<Vec<u8>, Refus> {
         ressources.set("Font", Object::Dictionary(polices));
 
         // Le contenu : q, l'ancien, les Q qui le referment, la marque.
-        let anciens = flux_existants(&doc, id);
-        let ouverts = q_ouverts(&doc, id);
+        let anciens = flux_existants(&doc, id)?;
+        let ouverts = q_ouverts(&doc, id)?;
         let avant = doc.add_object(Object::Stream(Stream::new(Dictionary::new(), b"q\n".to_vec())));
         let apres = doc.add_object(Object::Stream(Stream::new(Dictionary::new(), "Q\n".repeat(ouverts + 1).into_bytes())));
         let marque = doc.add_object(Object::Stream(Stream::new(
@@ -247,7 +218,10 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
                 Some(g) if (c as u32) <= 0xFFFF => g,
                 _ => return refus(format!("la mention de signature : le caractère « {} » (U+{:04X}) n'existe pas dans la police Liberation", c, c as u32)),
             };
-            unites += face.glyph_hor_advance(gid).unwrap_or(0) as i64;
+            let Some(avance) = face.glyph_hor_advance(gid) else {
+                return defaut(format!("police interne illisible : le glyphe de « {} » n'a pas d'avance", c));
+            };
+            unites += avance as i64;
             caracteres.insert(c);
         }
         let avance = taille * unites / em;
@@ -263,7 +237,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
     // Les cases : la ligne « signature » de la colonne de droite, sa boîte (repère de la page).
     let mut cases: Vec<(ObjectId, Mesure)> = Vec::new();
     for id in doc.get_pages().values().copied() {
-        let lue = crate::texte::inspecter_page(&doc, id).map_err(|m| Refus::illisible(format!("page illisible ({})", m)))?;
+        let lue = crate::texte::inspecter_page(&doc, id).map_err(|r| r.reformuler(|m| format!("page illisible ({})", m)))?;
         for (texte, boites) in &lue.lignes {
             let Some(Some(b)) = boites.first() else { continue };
             if texte.trim() != sc::LIBELLE_CASE_ARTISTE || (b[0] - x_case).abs() > Mesure::entier(2) {
@@ -307,7 +281,9 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
             // Des morceaux par police : chacun continue où le précédent s'arrête.
             let mut morceaux: Vec<(usize, String)> = Vec::new();
             for c in l.chars() {
-                let k = polices_case.iter().position(|(_, portes)| portes.contains(&c)).unwrap_or(0);
+                let Some(k) = polices_case.iter().position(|(_, portes)| portes.contains(&c)) else {
+                    return defaut(format!("la mention de signature : aucune police de la case ne porte « {} »", c));
+                };
                 match morceaux.last_mut() {
                     Some((p, m)) if *p == k => m.push_str(&format!("{:04X}", c as u32)),
                     _ => morceaux.push((k, format!("{:04X}", c as u32))),
@@ -325,8 +301,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
         }
     }
     for (id, flux) in par_page {
-        let mut ressources: Dictionary = herite(&doc, id, b"Resources").and_then(|o| dico(&doc, o)).cloned().unwrap_or_default();
-        let mut polices: Dictionary = ressources.get(b"Font").ok().and_then(|o| dico(&doc, o)).cloned().unwrap_or_default();
+        let (mut ressources, mut polices) = lecture::ressources_et(&doc, id, b"Font")?;
         // Chaque police de la case sous le nom qu'elle a déjà sur la page, ou sous un nom libre.
         let mut flux = String::from_utf8_lossy(&flux).into_owned();
         for (k, (police, _)) in polices_case.iter().enumerate() {
@@ -345,17 +320,13 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
             flux = flux.replace(&format!("{{police{}}}", k), &nom_police);
         }
         ressources.set("Font", Object::Dictionary(polices));
-        let anciens = flux_existants(&doc, id);
-        let ouverts = q_ouverts(&doc, id);
-        let flux = flux.into_bytes();
-        let comprime = |o: Vec<u8>| {
-            let mut s = Stream::new(Dictionary::new(), o);
-            let _ = s.compress();
-            Object::Stream(s)
-        };
+        let anciens = flux_existants(&doc, id)?;
+        let ouverts = q_ouverts(&doc, id)?;
+        let mut case = Stream::new(Dictionary::new(), flux.into_bytes());
+        case.compress().map_err(|e| Refus::defaut(format!("le flux de la case ne se comprime pas ({})", e)))?;
         let avant = neuf.add_object(Object::Stream(Stream::new(Dictionary::new(), b"q\n".to_vec())));
         let apres = neuf.add_object(Object::Stream(Stream::new(Dictionary::new(), "Q\n".repeat(ouverts + 1).into_bytes())));
-        let case = neuf.add_object(comprime(flux));
+        let case = neuf.add_object(Object::Stream(case));
         let mut contenu = vec![Object::Reference(avant)];
         contenu.extend(anciens);
         contenu.push(Object::Reference(apres));
@@ -365,5 +336,5 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
         page.set("Contents", Object::Array(contenu));
     }
     neuf.prune_objects();
-    Ok(crate::ecriture::ajouter(octets, &doc, &neuf))
+    crate::ecriture::ajouter(octets, &doc, &neuf)
 }

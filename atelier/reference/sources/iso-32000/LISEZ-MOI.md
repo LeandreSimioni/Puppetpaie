@@ -17,3 +17,18 @@ clé absente, une valeur par défaut ou une forme exigée vient de la norme, don
 - `fabrique-pdf/src/chiffrement.rs` (`dechiffrer`) : `V` absent vaut 0, un algorithme non documenté (table 20) ; `R`
   est exigé (table 21) ; `StmF` et `StrF` absents valent `Identity` (table 20), qui laisse en clair (table 26) ;
   `EncryptMetadata` absent vaut `true` (table 21) ; l'IV en tête et le bourrage PKCS #5 d'une donnée AES (7.6.2).
+- `fabrique-pdf/src/lecture.rs` (`contenu`, `herite`, `cadre_de`, `rotation_de`, `ressources_de_page`,
+  `contenu_de_page`) : les filtres d'un flux (table 5) ; l'héritage d'un attribut de page (7.7.3.4) ; `Resources` et
+  `MediaBox` exigés, `CropBox` qui vaut `MediaBox`, `Rotate` multiple de 90 qui vaut 0, `Contents` absent = page vide
+  (table 30).
+- `fabrique-pdf/src/texte.rs` (le texte d'une page, `--texte`, `--inspecter`) : la chaîne hexadécimale d'un CMap
+  (7.3.4.3) ; `Tf` avant tout texte (table 105) ; les objets formulaire, leur `Matrix`, leurs ressources, `BBox` (table
+  95) et les objets PostScript sans effet (8.8.2) ; les polices (tables 111, 112, 114, 117, 121, 122, 126 ; 9.7.4.3,
+  9.7.6.3) ; les annotations et leur apparence (tables 164, 165, 168) ; les propriétés de `BDC` (14.6.2).
+  **Inférence** : sans encodage de base dit, une TrueType se lit en WinAnsiEncoding (le choix de MuPDF) ; la norme
+  renvoie à l'encodage du programme de la police, que la fabrique ne lit pas.
+- `fabrique-pdf/src/inspection.rs` (`chiffrement`) : `Filter`, `R`, `P` exigés, `Length` qui vaut 40, `CFM` qui vaut
+  `None` (tables 20, 21, 25).
+- `fabrique-pdf/src/formulaire.rs` (les champs) : `Fields` exigé (table 218) ; `Ff` qui vaut 0 (table 220) ; `DA`
+  exigé, `Q` qui vaut 0 et n'a que trois valeurs (table 222) ; `MaxLen` (table 229) ; la couleur initiale noire d'un
+  `DA` qui n'en dit pas (table 52) ; le corps 0, automatique (12.7.3.3).

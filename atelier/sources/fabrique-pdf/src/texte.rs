@@ -21,13 +21,20 @@ use std::rc::Rc;
 use lopdf::content::Content;
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
+use crate::description::{defaut, illisible, Refus};
 use crate::glyphes::GLYPHES;
+use crate::lecture;
 use crate::mesure::{mesure, Mesure};
 
 type Mat = [Mesure; 6];
 const ID: Mat = [Mesure::UN, Mesure::ZERO, Mesure::ZERO, Mesure::UN, Mesure::ZERO, Mesure::ZERO];
-static NUL: Object = Object::Null;
 const Z: Mesure = Mesure::ZERO;
+/// Le CID d'un code que le CMap ne nomme pas (ISO 32000-1, 9.7.6.3).
+const CID_SANS_CORRESPONDANCE: u32 = 0;
+/// La largeur d'un glyphe d'une police CID que `W` ne dit pas, sans `DW` (ISO 32000-1, table 117).
+const LARGEUR_CID_PAR_DEFAUT: Mesure = Mesure::entier(1000);
+/// La largeur d'un code d'une police simple que `Widths` ne dit pas, sans `MissingWidth` (ISO 32000-1, table 122).
+const LARGEUR_MANQUANTE_PAR_DEFAUT: Mesure = Mesure::ZERO;
 
 /// Un nombre lu, en entier positif (un code, un numéro de caractère) : sa partie entière, bornée.
 fn entier_u32(m: Mesure) -> u32 {
@@ -56,52 +63,22 @@ fn point(m: &Mat, x: Mesure, y: Mesure) -> (Mesure, Mesure) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Lecture des objets.
+// Lecture des objets (`lecture.rs`, strictement).
 // ---------------------------------------------------------------------------------------------
 
-pub(crate) fn suivre<'a>(doc: &'a Document, o: &'a Object) -> &'a Object {
-    doc.dereference(o).map(|(_, o)| o).unwrap_or(&NUL)
-}
-
-pub(crate) fn nombre(doc: &Document, o: &Object) -> Option<Mesure> {
-    Mesure::de_l_objet(suivre(doc, o))
-}
-
-pub(crate) fn dico<'a>(doc: &'a Document, o: &'a Object) -> Option<&'a Dictionary> {
-    match suivre(doc, o) {
-        Object::Dictionary(d) => Some(d),
-        Object::Stream(s) => Some(&s.dict),
-        _ => None,
+/// La matrice d'un objet formulaire : `Matrix`, « Default value: the identity matrix » (ISO 32000-1, table 95).
+fn matrice_de_formulaire(doc: &Document, d: &Dictionary) -> Result<Mat, Refus> {
+    match lecture::matrice(doc, d, b"Matrix")? {
+        Some(m) => Ok(m),
+        None => Ok(ID),
     }
 }
 
-fn nom<'a>(doc: &'a Document, o: &'a Object) -> Option<&'a [u8]> {
-    match suivre(doc, o) {
-        Object::Name(n) => Some(n.as_slice()),
-        _ => None,
-    }
-}
-
-pub(crate) fn nombres(doc: &Document, o: Option<&Object>) -> Vec<Mesure> {
-    match o.map(|o| suivre(doc, o)) {
-        Some(Object::Array(v)) => v.iter().filter_map(|x| nombre(doc, x)).collect(),
-        _ => Vec::new(),
-    }
-}
-
-fn matrice(doc: &Document, o: Option<&Object>) -> Mat {
-    let v = nombres(doc, o);
-    if v.len() == 6 {
-        [v[0], v[1], v[2], v[3], v[4], v[5]]
-    } else {
-        ID
-    }
-}
-
-fn contenu_du_flux(o: &Object) -> Vec<u8> {
-    match o {
-        Object::Stream(s) => s.decompressed_content().unwrap_or_else(|_| s.content.clone()),
-        _ => Vec::new(),
+/// Le dictionnaire de `cle`, exigé : un refus qui dit `quoi` quand il manque.
+fn exige<'a, T>(doc: &'a Document, d: &'a Dictionary, cle: &[u8], quoi: &str, lire: impl Fn(&'a Object) -> Result<T, &'static str>) -> Result<T, Refus> {
+    match lecture::lue(doc, d, cle, lire)? {
+        Some(v) => Ok(v),
+        None => illisible(format!("{} n'a pas de {}, que la norme exige", quoi, lecture::nom_de(cle))),
     }
 }
 
@@ -117,7 +94,7 @@ enum Jeton {
     Ferme,
 }
 
-fn jetons(octets: &[u8]) -> Vec<Jeton> {
+fn jetons(octets: &[u8]) -> Result<Vec<Jeton>, Refus> {
     let mut v = Vec::new();
     let mut i = 0;
     while i < octets.len() {
@@ -132,20 +109,25 @@ fn jetons(octets: &[u8]) -> Vec<Jeton> {
             b'>' if octets.get(i + 1) == Some(&b'>') => i += 2,
             b'>' => i += 1,
             b'<' => {
-                let mut chiffres = Vec::new();
+                // ISO 32000-1, 7.3.4.3 : les blancs s'ignorent ; « If the final digit of a hexadecimal string is
+                // missing [...] the final digit shall be assumed to be 0 ».
+                let mut chiffres: Vec<u8> = Vec::new();
                 i += 1;
                 while i < octets.len() && octets[i] != b'>' {
-                    if octets[i].is_ascii_hexdigit() {
-                        chiffres.push(octets[i]);
+                    match octets[i] {
+                        c @ b'0'..=b'9' => chiffres.push(c - b'0'),
+                        c @ b'a'..=b'f' => chiffres.push(c - b'a' + 10),
+                        c @ b'A'..=b'F' => chiffres.push(c - b'A' + 10),
+                        c if c.is_ascii_whitespace() => {}
+                        c => return illisible(format!("une table CMap a le caractère {:?} dans une chaîne hexadécimale", c as char)),
                     }
                     i += 1;
                 }
                 i += 1;
                 if chiffres.len() % 2 == 1 {
-                    chiffres.push(b'0');
+                    chiffres.push(0);
                 }
-                let hex = |b: u8| (b as char).to_digit(16).unwrap_or(0) as u8;
-                v.push(Jeton::Hex(chiffres.chunks(2).map(|p| hex(p[0]) * 16 + hex(p[1])).collect()));
+                v.push(Jeton::Hex(chiffres.chunks(2).map(|p| p[0] * 16 + p[1]).collect()));
             }
             b'[' => {
                 v.push(Jeton::Ouvre);
@@ -187,20 +169,24 @@ fn jetons(octets: &[u8]) -> Vec<Jeton> {
             }
         }
     }
-    v
+    Ok(v)
 }
 
 fn entier(octets: &[u8]) -> u32 {
     octets.iter().take(4).fold(0u32, |a, b| (a << 8) | *b as u32)
 }
 
-/// UTF-16BE (ou un seul octet : Latin-1) d'une destination de `ToUnicode`.
-fn utf16(octets: &[u8]) -> String {
+/// UTF-16BE (ou un seul octet : Latin-1) d'une destination de `ToUnicode`, ou d'une chaîne marquée UTF-16BE. Un
+/// nombre impair d'octets n'est pas de l'UTF-16 : il se refuse.
+fn utf16(octets: &[u8]) -> Result<String, Refus> {
     if octets.len() == 1 {
-        return (octets[0] as char).to_string();
+        return Ok((octets[0] as char).to_string());
     }
-    let unites: Vec<u16> = octets.chunks(2).map(|p| ((p[0] as u16) << 8) | *p.get(1).unwrap_or(&0) as u16).collect();
-    String::from_utf16_lossy(&unites)
+    if octets.len() % 2 == 1 {
+        return illisible(format!("un texte en UTF-16 a un nombre impair d'octets ({})", octets.len()));
+    }
+    let unites: Vec<u16> = octets.chunks(2).map(|p| ((p[0] as u16) << 8) | p[1] as u16).collect();
+    Ok(String::from_utf16_lossy(&unites))
 }
 
 /// Une table CMap lue : espaces de codes, `ToUnicode` (code -> texte) et `cid` (code -> CID).
@@ -212,8 +198,13 @@ struct Cmap {
     plages_cid: Vec<(u32, u32, u32)>,
 }
 
-fn lire_cmap(octets: &[u8]) -> Cmap {
-    let t = jetons(octets);
+/// Un CID écrit en décimal dans une table CMap.
+fn cid_ecrit(n: &str) -> Result<u32, Refus> {
+    n.parse().map_err(|e| Refus::illisible(format!("une table CMap donne le CID {:?}, qui n'est pas un nombre ({})", n, e)))
+}
+
+fn lire_cmap(octets: &[u8]) -> Result<Cmap, Refus> {
+    let t = jetons(octets)?;
     let mut c = Cmap::default();
     let mut i = 0;
     while i < t.len() {
@@ -234,7 +225,7 @@ fn lire_cmap(octets: &[u8]) -> Cmap {
             }
             "beginbfchar" => {
                 while let (Some(Jeton::Hex(a)), Some(Jeton::Hex(b))) = (t.get(i), t.get(i + 1)) {
-                    c.unicode.insert(entier(a), utf16(b));
+                    c.unicode.insert(entier(a), utf16(b)?);
                     i += 2;
                 }
             }
@@ -247,13 +238,14 @@ fn lire_cmap(octets: &[u8]) -> Cmap {
                             i += 1;
                             // La destination est celle du premier code ; chacun des suivants
                             // avance son dernier caractère d'autant.
-                            let chars: Vec<char> = utf16(d).chars().collect();
-                            for k in 0..=fin.saturating_sub(debut).min(0xFFFF) {
-                                if let Some(dernier) = chars.last() {
-                                    let mut s = chars.clone();
+                            let chars: Vec<char> = utf16(d)?.chars().collect();
+                            if let Some((dernier, tete)) = chars.split_last() {
+                                for k in 0..=fin.saturating_sub(debut).min(0xFFFF) {
                                     let n = (*dernier as u32).wrapping_add(k);
-                                    *s.last_mut().unwrap() = char::from_u32(n).unwrap_or('\u{FFFD}');
-                                    c.unicode.insert(debut + k, s.into_iter().collect());
+                                    let Some(avance) = char::from_u32(n) else {
+                                        return illisible(format!("une plage ToUnicode mène hors d'Unicode ({:X})", n));
+                                    };
+                                    c.unicode.insert(debut + k, tete.iter().chain([&avance]).collect());
                                 }
                             }
                         }
@@ -261,7 +253,7 @@ fn lire_cmap(octets: &[u8]) -> Cmap {
                             i += 1;
                             let mut k = 0;
                             while let Some(Jeton::Hex(d)) = t.get(i) {
-                                c.unicode.insert(debut + k, utf16(d));
+                                c.unicode.insert(debut + k, utf16(d)?);
                                 k += 1;
                                 i += 1;
                             }
@@ -275,7 +267,7 @@ fn lire_cmap(octets: &[u8]) -> Cmap {
             }
             "begincidchar" => {
                 while let (Some(Jeton::Hex(a)), Some(Jeton::Mot(n))) = (t.get(i), t.get(i + 1)) {
-                    c.cid.insert(entier(a), n.parse().unwrap_or(0));
+                    c.cid.insert(entier(a), cid_ecrit(n)?);
                     i += 2;
                 }
             }
@@ -283,14 +275,14 @@ fn lire_cmap(octets: &[u8]) -> Cmap {
                 while let (Some(Jeton::Hex(a)), Some(Jeton::Hex(b)), Some(Jeton::Mot(n))) =
                     (t.get(i), t.get(i + 1), t.get(i + 2))
                 {
-                    c.plages_cid.push((entier(a), entier(b), n.parse().unwrap_or(0)));
+                    c.plages_cid.push((entier(a), entier(b), cid_ecrit(n)?));
                     i += 3;
                 }
             }
             _ => {}
         }
     }
-    c
+    Ok(c)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -336,46 +328,72 @@ fn englobante(m: &Mat, x0: Mesure, y0: Mesure, x1: Mesure, y1: Mesure) -> Boite 
 /// L'ascendant et le descendant d'une police (fractions du corps). Comme MuPDF : ceux du fichier de
 /// police incorporé (`hhea`) ; pour une police standard non incorporée, ceux des polices de
 /// remplacement de MuPDF (mesurés) ; sinon le `/FontDescriptor` ; sinon 0,8 et 0,2.
-fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: &str) -> (Mesure, Mesure) {
-    let fichier = fd.and_then(|d| {
-        [b"FontFile2".as_slice(), b"FontFile3", b"FontFile"].iter().find_map(|cle| d.get(cle).ok().map(|o| suivre(doc, o)))
-    });
-    if let Some(flux) = fichier {
-        let octets = contenu_du_flux(flux);
-        if let Ok(face) = ttf_parser::Face::parse(&octets, 0) {
-            let em = face.units_per_em() as i64;
-            let (a, d) = (Mesure::entier(face.ascender() as i64) / em, Mesure::entier(-(face.descender() as i64)) / em);
-            if a > Z && a <= Mesure::entier(2) && (Z..=Mesure::UN).contains(&d) {
-                return (a, d);
+fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Option<&str>) -> Result<(Mesure, Mesure), Refus> {
+    let mut programme = None;
+    if let Some(d) = fd {
+        for cle in [b"FontFile2".as_slice(), b"FontFile3", b"FontFile"] {
+            if let Some(s) = lecture::lue(doc, d, cle, lecture::flux)? {
+                programme = Some((cle, s));
+                break;
             }
         }
-    } else {
-        let n = base_font.to_ascii_lowercase();
-        let n = n.rsplit('+').next().unwrap_or("");
-        let gras = n.contains("bold");
-        if n.contains("helvetica") || n == "arial" || n == "arialmt" || n.starts_with("arial,") || n.starts_with("arial-") {
-            return if gras { (mesure("1.07"), mesure("0.307")) } else { (mesure("1.075"), mesure("0.299")) };
+    }
+    match programme {
+        Some((cle, s)) => {
+            // `ttf_parser` lit un programme TrueType (`FontFile2`) ou OpenType (`FontFile3` de sous-type `OpenType`,
+            // ISO 32000-1, table 126) ; un programme Type 1 ou CFF nu ne se lit pas ici : le descripteur dit ses mesures.
+            let opentype = cle == b"FontFile3" && lecture::lue(doc, &s.dict, b"Subtype", lecture::nom)? == Some(b"OpenType".as_slice());
+            if cle == b"FontFile2" || opentype {
+                let octets = lecture::contenu(doc, s)?;
+                let face = ttf_parser::Face::parse(&octets, 0)
+                    .map_err(|e| Refus::illisible(format!("le programme incorporé d'une police ({}) ne se lit pas ({})", lecture::nom_de(cle), e)))?;
+                let em = face.units_per_em() as i64;
+                let (a, d) = (Mesure::entier(face.ascender() as i64) / em, Mesure::entier(-(face.descender() as i64)) / em);
+                if a > Z && a <= Mesure::entier(2) && (Z..=Mesure::UN).contains(&d) {
+                    return Ok((a, d));
+                }
+            }
         }
-        if n.contains("times") {
-            return if gras { (mesure("1.044"), mesure("0.341")) } else { (mesure("1.053"), mesure("0.281")) };
-        }
-        if n.contains("courier") {
-            return (mesure("0.932"), mesure("0.317"));
+        None => {
+            if let Some(base) = base_font {
+                let minuscules = base.to_ascii_lowercase();
+                // Le nom sans le préfixe d'un sous-ensemble (« ABCDEF+ », ISO 32000-1, 9.6.4).
+                let n = match minuscules.rsplit_once('+') {
+                    Some((_, apres)) => apres,
+                    None => minuscules.as_str(),
+                };
+                let gras = n.contains("bold");
+                if n.contains("helvetica") || n == "arial" || n == "arialmt" || n.starts_with("arial,") || n.starts_with("arial-") {
+                    return Ok(if gras { (mesure("1.07"), mesure("0.307")) } else { (mesure("1.075"), mesure("0.299")) });
+                }
+                if n.contains("times") {
+                    return Ok(if gras { (mesure("1.044"), mesure("0.341")) } else { (mesure("1.053"), mesure("0.281")) });
+                }
+                if n.contains("courier") {
+                    return Ok((mesure("0.932"), mesure("0.317")));
+                }
+            }
         }
     }
-    let lire = |cle: &[u8]| fd.and_then(|d| d.get(cle).ok()).and_then(|o| nombre(doc, o));
-    match (lire(b"Ascent"), lire(b"Descent")) {
+    let (ascent, descent) = match fd {
+        Some(d) => (lecture::lue(doc, d, b"Ascent", lecture::nombre)?, lecture::lue(doc, d, b"Descent", lecture::nombre)?),
+        None => (None, None),
+    };
+    Ok(match (ascent, descent) {
         (Some(a), Some(d)) if a > Z && a <= Mesure::entier(1500) && d.abs() <= Mesure::entier(1000) => (a / 1000, d.abs() / 1000),
         _ => (mesure("0.8"), mesure("0.2")),
-    }
+    })
 }
 
 impl Police {
     /// Les codes d'une chaîne : (code, nombre d'octets).
-    fn codes(&self, s: &[u8]) -> Vec<(u32, usize)> {
+    fn codes(&self, s: &[u8]) -> Result<Vec<(u32, usize)>, Refus> {
         if !self.composee {
-            return s.iter().map(|b| (*b as u32, 1)).collect();
+            return Ok(s.iter().map(|b| (*b as u32, 1)).collect());
         }
+        let Some(plus_court) = self.espaces.iter().map(|e| e.0).min() else {
+            return illisible("une police composée n'a aucun espace de codes");
+        };
         let mut v = Vec::new();
         let mut i = 0;
         while i < s.len() {
@@ -387,15 +405,19 @@ impl Police {
                     break;
                 }
             }
-            // Hors de tout espace de codes : on consomme l'octet-plus-petit de l'espace le plus court.
-            let (code, n) = pris.unwrap_or_else(|| {
-                let n = self.espaces.iter().map(|e| e.0).min().unwrap_or(2).min(s.len() - i);
-                (entier(&s[i..i + n]), n)
-            });
+            // Un code hors de tout espace de codes se lit sur la longueur de l'espace le plus court (ISO 32000-1,
+            // 9.7.6.3, a).
+            let (code, n) = match pris {
+                Some(p) => p,
+                None => {
+                    let n = plus_court.min(s.len() - i);
+                    (entier(&s[i..i + n]), n)
+                }
+            };
             v.push((code, n));
             i += n;
         }
-        v
+        Ok(v)
     }
 
     fn cid(&self, code: u32) -> u32 {
@@ -405,26 +427,25 @@ impl Police {
                 if let Some(v) = c.cid.get(&code) {
                     return *v;
                 }
-                c.plages_cid
-                    .iter()
-                    .find(|(a, b, _)| code >= *a && code <= *b)
-                    .map(|(a, _, n)| n + (code - a))
-                    .unwrap_or(0)
+                match c.plages_cid.iter().find(|(a, b, _)| code >= *a && code <= *b) {
+                    Some((a, _, n)) => n + (code - a),
+                    // ISO 32000-1, 9.7.6.3 : « If the CMap does not contain either a character mapping or a notdef
+                    // mapping for the code, [...] the glyph for CID 0 shall be substituted ».
+                    None => CID_SANS_CORRESPONDANCE,
+                }
             }
         }
     }
 
-    fn texte(&self, code: u32) -> String {
+    /// Le texte d'un code ; `None` quand l'encodage d'une police simple ne lui donne aucun caractère.
+    fn texte(&self, code: u32) -> Option<String> {
         if let Some(t) = self.unicode.get(&code) {
-            return t.clone();
+            return Some(t.clone());
         }
         if self.composee {
-            return "\u{FFFD}".to_string();
+            return Some("\u{FFFD}".to_string());
         }
-        match self.encodage.get(code as usize).copied().flatten() {
-            Some(c) => c.to_string(),
-            None => String::new(),
-        }
+        self.encodage.get(code as usize).copied().flatten().map(|c| c.to_string())
     }
 
     /// La largeur du code, en fraction d'em.
@@ -444,20 +465,30 @@ impl Police {
     }
 }
 
+/// Des chiffres hexadécimaux, leur valeur ; `None` quand un caractère n'en est pas un (le nom n'est pas de cette forme).
+fn hexadecimal(h: &str) -> Option<u32> {
+    h.chars().try_fold(0u32, |v, c| Some(v * 16 + c.to_digit(16)?))
+}
+
+/// Le caractère d'un nom de glyphe : la liste de glyphes d'Adobe, ou un nom `uniXXXX` / `uXXXX[XX]` ; `None` pour un
+/// nom qu'aucune de ces formes ne dit.
 fn nom_de_glyphe(n: &str) -> Option<char> {
-    if let Ok(i) = GLYPHES.binary_search_by(|(g, _)| (*g).cmp(n)) {
-        return char::from_u32(GLYPHES[i].1 as u32);
+    let i = GLYPHES.partition_point(|(g, _)| *g < n);
+    if let Some((g, u)) = GLYPHES.get(i) {
+        if *g == n {
+            return char::from_u32(*u as u32);
+        }
     }
     if let Some(h) = n.strip_prefix("uni") {
-        if h.len() >= 4 {
-            if let Ok(v) = u32::from_str_radix(&h[..4], 16) {
+        if h.len() >= 4 && h.is_char_boundary(4) {
+            if let Some(v) = hexadecimal(&h[..4]) {
                 return char::from_u32(v);
             }
         }
     }
     if let Some(h) = n.strip_prefix('u') {
         if (4..=6).contains(&h.len()) {
-            if let Ok(v) = u32::from_str_radix(h, 16) {
+            if let Some(v) = hexadecimal(h) {
                 return char::from_u32(v);
             }
         }
@@ -479,13 +510,23 @@ fn base_encodage(nom: &str) -> Vec<Option<char>> {
         .collect()
 }
 
-/// Le `/BaseFont` d'une police (vide s'il n'y en a pas).
-pub(crate) fn nom_de_base(doc: &Document, d: &Dictionary) -> String {
-    d.get(b"BaseFont").ok().and_then(|o| nom(doc, o)).map(|n| String::from_utf8_lossy(n).into_owned()).unwrap_or_default()
+/// Le `/BaseFont` d'une police ; `None` pour une police qui n'en a pas (Type 3, ISO 32000-1, table 112).
+pub(crate) fn nom_de_base(doc: &Document, d: &Dictionary) -> Result<Option<String>, Refus> {
+    Ok(lecture::lue(doc, d, b"BaseFont", lecture::nom)?.map(|n| String::from_utf8_lossy(n).into_owned()))
 }
 
-fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Police {
-    let sous_type = d.get(b"Subtype").ok().and_then(|o| nom(doc, o)).unwrap_or(b"");
+/// Le descripteur d'une police (`FontDescriptor`), s'il y en a un.
+fn descripteur<'a>(doc: &'a Document, d: &'a Dictionary) -> Result<Option<&'a Dictionary>, Refus> {
+    lecture::lue(doc, d, b"FontDescriptor", lecture::dictionnaire)
+}
+
+/// Un nombre d'un tableau de largeurs (`W`, `Widths`).
+fn largeur_lue(doc: &Document, o: &Object, cle: &str) -> Result<Mesure, Refus> {
+    lecture::element(doc, o, &format!("un élément de {}", cle), lecture::nombre)
+}
+
+fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Police, Refus> {
+    let sous_type = exige(doc, d, b"Subtype", "une police", lecture::nom)?;
     let composee = sous_type == b"Type0";
     let mut p = Police {
         composee,
@@ -500,102 +541,117 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Police {
         asc: mesure("0.8"),
         desc: mesure("0.2"),
     };
-    if let Some(o) = d.get(b"ToUnicode").ok() {
-        let c = lire_cmap(&contenu_du_flux(suivre(doc, o)));
-        p.unicode = c.unicode;
+    if let Some(s) = lecture::lue(doc, d, b"ToUnicode", lecture::flux)? {
+        p.unicode = lire_cmap(&lecture::contenu(doc, s)?)?.unicode;
     }
+    let base_nom = nom_de_base(doc, d)?;
     if composee {
-        match d.get(b"Encoding").ok().map(|o| suivre(doc, o)) {
+        // ISO 32000-1, table 121 : `Encoding` (un CMap prédéfini nommé, ou un flux) et `DescendantFonts` (un tableau
+        // d'un élément) sont exigés.
+        match lecture::valeur(doc, d, b"Encoding")? {
             Some(Object::Name(n)) => p.vertical = n.ends_with(b"-V"),
-            Some(s @ Object::Stream(_)) => {
-                let c = lire_cmap(&contenu_du_flux(s));
+            Some(Object::Stream(s)) => {
+                let c = lire_cmap(&lecture::contenu(doc, s)?)?;
                 if !c.espaces.is_empty() {
                     p.espaces = c.espaces.clone();
                 }
                 p.cmap_cid = Some(c);
             }
-            _ => {}
+            Some(_) => return illisible("/Encoding d'une police composée n'est ni un nom ni un flux"),
+            None => return illisible("une police composée n'a pas d'/Encoding, que la norme exige (ISO 32000-1, table 121)"),
         }
-        let desc = d
-            .get(b"DescendantFonts")
-            .ok()
-            .and_then(|o| match suivre(doc, o) {
-                Object::Array(v) => v.first(),
-                _ => None,
-            })
-            .and_then(|o| dico(doc, o));
-        if let Some(desc) = desc {
-            if inspecter {
-                let fd = desc.get(b"FontDescriptor").ok().and_then(|o| dico(doc, o));
-                (p.asc, p.desc) = ascendant_descendant(doc, fd, &nom_de_base(doc, d));
-            }
-            p.largeur_defaut = desc.get(b"DW").ok().and_then(|o| nombre(doc, o)).unwrap_or(Mesure::entier(1000));
-            if let Some(Object::Array(w)) = desc.get(b"W").ok().map(|o| suivre(doc, o)) {
-                let mut i = 0;
-                while i < w.len() {
-                    let premier = match nombre(doc, &w[i]) {
-                        Some(n) => entier_u32(n),
-                        None => break,
-                    };
-                    match w.get(i + 1).map(|o| suivre(doc, o)) {
-                        Some(Object::Array(liste)) => {
-                            for (k, x) in liste.iter().enumerate() {
-                                if let Some(v) = nombre(doc, x) {
-                                    p.largeurs.insert(premier + k as u32, v);
-                                }
-                            }
-                            i += 2;
+        let descendantes = exige(doc, d, b"DescendantFonts", "une police composée", lecture::tableau)?;
+        let desc = match descendantes {
+            [une] => lecture::element(doc, une, "la police de /DescendantFonts", lecture::dictionnaire)?,
+            v => return illisible(format!("/DescendantFonts a {} éléments, la norme en veut un (ISO 32000-1, table 121)", v.len())),
+        };
+        if inspecter {
+            (p.asc, p.desc) = ascendant_descendant(doc, descripteur(doc, desc)?, base_nom.as_deref())?;
+        }
+        // ISO 32000-1, table 117 : `DW`, « Default value: 1000 ».
+        p.largeur_defaut = match lecture::lue(doc, desc, b"DW", lecture::nombre)? {
+            Some(dw) => dw,
+            None => LARGEUR_CID_PAR_DEFAUT,
+        };
+        if let Some(w) = lecture::lue(doc, desc, b"W", lecture::tableau)? {
+            // ISO 32000-1, 9.7.4.3 : « c [w1 w2 ... wn] » ou « cfirst clast w ».
+            let mut i = 0;
+            while i < w.len() {
+                let premier = entier_u32(largeur_lue(doc, &w[i], "/W")?);
+                match w.get(i + 1).map(|o| lecture::designe(doc, o)).transpose()?.flatten() {
+                    Some(Object::Array(liste)) => {
+                        for (k, x) in liste.iter().enumerate() {
+                            p.largeurs.insert(premier + k as u32, largeur_lue(doc, x, "/W")?);
                         }
-                        Some(_) => {
-                            let dernier = entier_u32(w.get(i + 1).and_then(|o| nombre(doc, o)).unwrap_or(Z));
-                            let v = w.get(i + 2).and_then(|o| nombre(doc, o)).unwrap_or(Z);
-                            for c in premier..=dernier.min(premier + 0xFFFF) {
-                                p.largeurs.insert(c, v);
-                            }
-                            i += 3;
-                        }
-                        None => break,
+                        i += 2;
                     }
+                    Some(o) => {
+                        let dernier = entier_u32(largeur_lue(doc, o, "/W")?);
+                        let Some(x) = w.get(i + 2) else {
+                            return illisible("/W s'arrête après un « cfirst clast » sans largeur");
+                        };
+                        let v = largeur_lue(doc, x, "/W")?;
+                        for c in premier..=dernier.min(premier + 0xFFFF) {
+                            p.largeurs.insert(c, v);
+                        }
+                        i += 3;
+                    }
+                    None => return illisible("/W s'arrête après un premier code, sans ses largeurs"),
                 }
             }
         }
-        return p;
+        return Ok(p);
     }
 
     // Police simple : l'encodage.
+    let fd = descripteur(doc, d)?;
     if inspecter {
-        (p.asc, p.desc) = ascendant_descendant(doc, d.get(b"FontDescriptor").ok().and_then(|o| dico(doc, o)), &nom_de_base(doc, d));
+        (p.asc, p.desc) = ascendant_descendant(doc, fd, base_nom.as_deref())?;
     }
-    let base_nom = d.get(b"BaseFont").ok().and_then(|o| nom(doc, o)).map(|n| String::from_utf8_lossy(n).into_owned());
     let mut base: Option<String> = None;
     let mut differences: Vec<(usize, char)> = Vec::new();
-    match d.get(b"Encoding").ok().map(|o| suivre(doc, o)) {
+    match lecture::valeur(doc, d, b"Encoding")? {
         Some(Object::Name(n)) => base = Some(String::from_utf8_lossy(n).into_owned()),
         Some(Object::Dictionary(e)) => {
-            if let Some(n) = e.get(b"BaseEncoding").ok().and_then(|o| nom(doc, o)) {
+            if let Some(n) = lecture::lue(doc, e, b"BaseEncoding", lecture::nom)? {
                 base = Some(String::from_utf8_lossy(n).into_owned());
             }
-            if let Some(Object::Array(v)) = e.get(b"Differences").ok().map(|o| suivre(doc, o)) {
+            if let Some(v) = lecture::lue(doc, e, b"Differences", lecture::tableau)? {
+                // ISO 32000-1, 9.6.6.1 : un code, puis les noms des codes qui le suivent.
                 let mut code = 0usize;
                 for x in v {
-                    match suivre(doc, x) {
-                        o @ (Object::Integer(_) | Object::Real(_)) => code = Mesure::de_l_objet(o).map_or(0, entier_u32) as usize,
-                        Object::Name(g) => {
+                    match lecture::designe(doc, x)? {
+                        Some(Object::Integer(c)) => {
+                            code = match usize::try_from(*c) {
+                                Ok(c) => c,
+                                Err(e) => return illisible(format!("/Differences donne le code {} ({})", c, e)),
+                            }
+                        }
+                        Some(Object::Name(g)) => {
                             if let Some(c) = nom_de_glyphe(&String::from_utf8_lossy(g)) {
                                 differences.push((code, c));
                             }
                             code += 1;
                         }
-                        _ => {}
+                        Some(_) | None => return illisible("un élément de /Differences n'est ni un code ni un nom de glyphe"),
                     }
                 }
             }
         }
-        _ => {}
+        Some(_) => return illisible("/Encoding d'une police simple n'est ni un nom ni un dictionnaire"),
+        None => {}
     }
-    let base = base.unwrap_or_else(|| {
-        if sous_type == b"TrueType" { "WinAnsiEncoding" } else { "StandardEncoding" }.to_string()
-    });
+    // Sans encodage de base dit, la norme renvoie à l'encodage propre du programme de la police, et à StandardEncoding
+    // pour une police non symbolique qui n'est pas incorporée (ISO 32000-1, table 114) ; la fabrique ne lit pas
+    // l'encodage d'un programme de police : StandardEncoding, et WinAnsiEncoding pour une TrueType (le choix de MuPDF,
+    // qu'aucun texte déposé ne fonde).
+    let base = match base {
+        Some(b) => b,
+        None => match sous_type {
+            b"TrueType" => "WinAnsiEncoding".to_string(),
+            _ => "StandardEncoding".to_string(),
+        },
+    };
     p.encodage = base_encodage(&base);
     for (code, c) in differences {
         if code < 256 {
@@ -603,28 +659,30 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Police {
         }
     }
 
-    // Les largeurs.
-    let premier = entier_u32(d.get(b"FirstChar").ok().and_then(|o| nombre(doc, o)).unwrap_or(Z));
-    let mut a_des_largeurs = false;
-    if let Some(Object::Array(w)) = d.get(b"Widths").ok().map(|o| suivre(doc, o)) {
-        a_des_largeurs = true;
-        for (k, x) in w.iter().enumerate() {
-            if let Some(v) = nombre(doc, x) {
-                p.largeurs.insert(premier + k as u32, v);
+    // Les largeurs : `Widths`, à partir de `FirstChar` (ISO 32000-1, table 111 : tous deux exigés, sauf pour les 14
+    // polices standard, où ils sont présents ou absents ensemble).
+    match lecture::lue(doc, d, b"Widths", lecture::tableau)? {
+        Some(w) => {
+            let premier = entier_u32(exige(doc, d, b"FirstChar", "une police qui a des /Widths", lecture::nombre)?);
+            for (k, x) in w.iter().enumerate() {
+                p.largeurs.insert(premier + k as u32, largeur_lue(doc, x, "/Widths")?);
             }
         }
+        // Sans `Widths`, une des 14 polices standard, que son `BaseFont` nomme.
+        None => match base_nom.as_deref() {
+            Some(n) => p.standard = crate::polices::Metrique::pour(n)?,
+            None => return illisible("une police simple n'a ni /Widths ni /BaseFont (ISO 32000-1, table 111)"),
+        },
     }
-    p.largeur_defaut = d
-        .get(b"FontDescriptor")
-        .ok()
-        .and_then(|o| dico(doc, o))
-        .and_then(|fd| fd.get(b"MissingWidth").ok())
-        .and_then(|o| nombre(doc, o))
-        .unwrap_or(Z);
-    if !a_des_largeurs {
-        p.standard = crate::polices::Metrique::pour(base_nom.as_deref().unwrap_or(""));
-    }
-    p
+    // ISO 32000-1, table 122 : `MissingWidth`, « Default value: 0 » ; une police sans descripteur ne la dit pas.
+    p.largeur_defaut = match fd {
+        Some(fd) => match lecture::lue(doc, fd, b"MissingWidth", lecture::nombre)? {
+            Some(m) => m,
+            None => LARGEUR_MANQUANTE_PAR_DEFAUT,
+        },
+        None => LARGEUR_MANQUANTE_PAR_DEFAUT,
+    };
+    Ok(p)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -689,7 +747,10 @@ impl Mise {
                 let d = (p.0 - self.stylo.0, p.1 - self.stylo.1);
                 let le_long = d.0 * l.dir.0 + d.1 * l.dir.1;
                 let en_travers = -d.0 * l.dir.1 + d.1 * l.dir.0;
-                let ecart = le_long.sur(taille).unwrap_or(Z);
+                // Le corps n'est pas nul (plus haut) : le quotient existe.
+                let Some(ecart) = le_long.sur(taille) else {
+                    return;
+                };
                 if en_travers.abs() <= taille * DECALAGE_MAX {
                     if ecart >= -ESPACE_MAX && ecart < ESPACE_MIN {
                         nouvelle = false;
@@ -761,7 +822,7 @@ struct Interprete<'a> {
     polices: HashMap<ObjectId, Rc<Police>>,
     mise: Mise,
     /// Le cadre de la page (x0, y0, x1, y1) : le texte tout entier hors de lui n'est pas lu.
-    cadre: Option<[Mesure; 4]>,
+    cadre: [Mesure; 4],
     /// Le `/ActualText` en cours : son texte, le premier glyphe (origine, direction, corps) et
     /// l'avance totale des glyphes qu'il remplace.
     actuel: Option<Actuel>,
@@ -870,7 +931,7 @@ fn remplacer_images_en_ligne(flux: &[u8]) -> std::borrow::Cow<'_, [u8]> {
                     flux[k] == b'E'
                         && flux[k + 1] == b'I'
                         && (k == 0 || blanc(flux[k - 1]))
-                        && flux.get(k + 2).map_or(true, |c| blanc(*c) || delim(*c))
+                        && !matches!(flux.get(k + 2), Some(c) if !blanc(*c) && !delim(*c))
                 });
                 if let Some(k) = fin {
                     sortie.extend_from_slice(&flux[copie..debut]);
@@ -887,11 +948,23 @@ fn remplacer_images_en_ligne(flux: &[u8]) -> std::borrow::Cow<'_, [u8]> {
 
 /// Le texte d'une chaîne PDF : UTF-16BE s'il commence par la marque, sinon Latin-1 (approchant
 /// PDFDocEncoding).
-fn texte_pdf(s: &[u8]) -> String {
+fn texte_pdf(s: &[u8]) -> Result<String, Refus> {
     if s.starts_with(&[0xFE, 0xFF]) {
         utf16(&s[2..])
     } else {
-        s.iter().map(|b| *b as char).collect()
+        Ok(s.iter().map(|b| *b as char).collect())
+    }
+}
+
+/// Au-delà, des objets formulaire imbriqués (qui se citent l'un l'autre) se refusent.
+const PROFONDEUR_MAX: usize = 12;
+
+/// La police du texte : « There is no initial value for either font or size; they shall be specified explicitly by
+/// using Tf before any text is shown » (ISO 32000-1, 9.3.1).
+fn police_choisie(e: &Etat) -> Result<&Rc<Police>, Refus> {
+    match &e.police {
+        Some(p) => Ok(p),
+        None => illisible("du texte se montre avant tout Tf, sans police"),
     }
 }
 
@@ -914,42 +987,52 @@ impl<'a> Interprete<'a> {
         }
     }
 
-    fn police(&mut self, res: &Dictionary, nom_police: &[u8]) -> Option<Rc<Police>> {
+    /// La police que `Tf` nomme : « the name of a font resource in the Font subdictionary of the current resource
+    /// dictionary » (ISO 32000-1, 9.3.1) ; une police que les ressources n'ont pas se refuse.
+    fn police(&mut self, res: &Dictionary, nom_police: &[u8]) -> Result<Rc<Police>, Refus> {
         let doc = self.doc;
-        let polices = res.get(b"Font").ok().and_then(|o| dico(doc, o))?;
-        let entree = polices.get(nom_police).ok()?;
+        let Some(polices) = lecture::lue(doc, res, b"Font", lecture::dictionnaire)? else {
+            return illisible(format!("Tf nomme la police {}, et les ressources n'ont pas de /Font", lecture::nom_de(nom_police)));
+        };
+        let Some(entree) = polices.as_hashmap().get(nom_police) else {
+            return illisible(format!("Tf nomme la police {}, que les ressources n'ont pas", lecture::nom_de(nom_police)));
+        };
+        let quoi = format!("la police {}", lecture::nom_de(nom_police));
         if let Object::Reference(id) = entree {
             if let Some(p) = self.polices.get(id) {
-                return Some(p.clone());
+                return Ok(p.clone());
             }
-            let d = dico(doc, entree)?;
-            let p = Rc::new(charger_police(doc, d, self.releve.is_some()));
+            let d = lecture::element(doc, entree, &quoi, lecture::dictionnaire)?;
+            let p = Rc::new(charger_police(doc, d, self.releve.is_some()).map_err(|r| r.reformuler(|m| format!("{} : {}", quoi, m)))?);
             self.polices.insert(*id, p.clone());
-            return Some(p);
+            return Ok(p);
         }
-        let d = dico(doc, entree)?;
-        Some(Rc::new(charger_police(doc, d, self.releve.is_some())))
+        let d = lecture::element(doc, entree, &quoi, lecture::dictionnaire)?;
+        Ok(Rc::new(charger_police(doc, d, self.releve.is_some()).map_err(|r| r.reformuler(|m| format!("{} : {}", quoi, m)))?))
     }
 
     /// Relève les `/BaseFont` des polices d'un dictionnaire de ressources (page ou formulaire suivi),
     /// dans l'ordre, sans doublon.
-    fn relever_polices(&mut self, res: &Dictionary) {
-        if self.releve.is_none() || self.annotation {
-            return;
+    fn relever_polices(&mut self, res: &Dictionary) -> Result<(), Refus> {
+        if self.annotation {
+            return Ok(());
         }
         let doc = self.doc;
-        let polices = match res.get(b"Font").ok().and_then(|o| dico(doc, o)) {
-            Some(p) => p,
-            None => return,
+        let Some(r) = self.releve.as_mut() else {
+            return Ok(());
         };
-        for (_, entree) in polices.iter() {
-            let nom = dico(doc, entree).map(|d| nom_de_base(doc, d)).unwrap_or_default();
-            if let Some(r) = self.releve.as_mut() {
+        let Some(polices) = lecture::lue(doc, res, b"Font", lecture::dictionnaire)? else {
+            return Ok(());
+        };
+        for (cle, entree) in polices.iter() {
+            let d = lecture::element(doc, entree, &format!("la police {}", lecture::nom_de(cle)), lecture::dictionnaire)?;
+            if let Some(nom) = nom_de_base(doc, d)? {
                 if !nom.is_empty() && !r.polices.contains(&nom) {
                     r.polices.push(nom);
                 }
             }
         }
+        Ok(())
     }
 
     /// Le flux tel que l'analyseur le lira : pour `--inspecter`, les images en ligne remplacées.
@@ -961,12 +1044,10 @@ impl<'a> Interprete<'a> {
         }
     }
 
-    fn executer(&mut self, flux: &[u8], res: &Dictionary, ctm: Mat, profondeur: usize) {
+    fn executer(&mut self, flux: &[u8], res: &Dictionary, ctm: Mat, profondeur: usize) -> Result<(), Refus> {
+        let doc = self.doc;
         let flux = self.preparer(flux);
-        let contenu = match Content::decode(&flux) {
-            Ok(c) => c,
-            Err(_) => return,
-        };
+        let contenu = Content::decode(&flux).map_err(|e| Refus::illisible(format!("un flux de contenu ne se lit pas ({})", e)))?;
         let mut e = Etat { ctm, tc: Z, tw: Z, th: Mesure::UN, tl: Z, police: None, taille: Z, rendu: 0, rise: Z };
         let mut pile: Vec<Etat> = Vec::new();
         let mut tm = ID;
@@ -977,7 +1058,12 @@ impl<'a> Interprete<'a> {
         let mut points: Vec<(Mesure, Mesure)> = Vec::new();
         for op in &contenu.operations {
             let a = &op.operands;
-            let num = |i: usize| a.get(i).and_then(|o| nombre(self.doc, o)).unwrap_or(Z);
+            let num = |i: usize| -> Result<Mesure, Refus> {
+                match a.get(i) {
+                    Some(o) => lecture::element(doc, o, &format!("l'opérande {} de {}", i + 1, op.operator), lecture::nombre),
+                    None => illisible(format!("{} n'a pas son opérande {}", op.operator, i + 1)),
+                }
+            };
             match op.operator.as_str() {
                 "q" => pile.push(e.clone()),
                 "Q" => {
@@ -985,34 +1071,35 @@ impl<'a> Interprete<'a> {
                         e = s;
                     }
                 }
-                "cm" => e.ctm = mul(&[num(0), num(1), num(2), num(3), num(4), num(5)], &e.ctm),
+                "cm" => e.ctm = mul(&[num(0)?, num(1)?, num(2)?, num(3)?, num(4)?, num(5)?], &e.ctm),
                 "BT" => {
                     tm = ID;
                     tlm = ID;
                 }
-                "Tc" => e.tc = num(0),
-                "Tw" => e.tw = num(0),
-                "Tz" => e.th = num(0) / 100,
-                "TL" => e.tl = num(0),
-                "Tr" => e.rendu = num(0).tronque(),
-                "Ts" => e.rise = num(0),
+                "Tc" => e.tc = num(0)?,
+                "Tw" => e.tw = num(0)?,
+                "Tz" => e.th = num(0)? / 100,
+                "TL" => e.tl = num(0)?,
+                "Tr" => e.rendu = num(0)?.tronque(),
+                "Ts" => e.rise = num(0)?,
                 "Tf" => {
-                    if let Some(Object::Name(n)) = a.first() {
-                        e.police = self.police(res, n);
+                    match a.first() {
+                        Some(Object::Name(n)) => e.police = Some(self.police(res, n)?),
+                        Some(_) | None => return illisible("Tf ne nomme pas de police"),
                     }
-                    e.taille = num(1);
+                    e.taille = num(1)?;
                 }
                 "Td" => {
-                    tlm = mul(&translation(num(0), num(1)), &tlm);
+                    tlm = mul(&translation(num(0)?, num(1)?), &tlm);
                     tm = tlm;
                 }
                 "TD" => {
-                    e.tl = -num(1);
-                    tlm = mul(&translation(num(0), num(1)), &tlm);
+                    e.tl = -num(1)?;
+                    tlm = mul(&translation(num(0)?, num(1)?), &tlm);
                     tm = tlm;
                 }
                 "Tm" => {
-                    tlm = [num(0), num(1), num(2), num(3), num(4), num(5)];
+                    tlm = [num(0)?, num(1)?, num(2)?, num(3)?, num(4)?, num(5)?];
                     tm = tlm;
                 }
                 "T*" => {
@@ -1022,30 +1109,32 @@ impl<'a> Interprete<'a> {
                 "Tj" | "'" | "\"" => {
                     if op.operator != "Tj" {
                         if op.operator == "\"" {
-                            e.tw = num(0);
-                            e.tc = num(1);
+                            e.tw = num(0)?;
+                            e.tc = num(1)?;
                         }
                         tlm = mul(&translation(Z, -e.tl), &tlm);
                         tm = tlm;
                     }
-                    if let Some(Object::String(s, _)) = a.last() {
-                        self.montrer(&e, &mut tm, s);
+                    match a.last() {
+                        Some(Object::String(s, _)) => self.montrer(&e, &mut tm, s)?,
+                        Some(_) | None => return illisible(format!("{} ne montre pas une chaîne", op.operator)),
                     }
                 }
                 "TJ" => {
-                    if let Some(Object::Array(v)) = a.first() {
-                        for x in v {
-                            match x {
-                                Object::String(s, _) => self.montrer(&e, &mut tm, s),
-                                Object::Integer(_) | Object::Real(_) => {
-                                    let n = nombre(self.doc, x).unwrap_or(Z);
-                                    let vertical = e.police.as_ref().map(|p| p.vertical).unwrap_or(false);
-                                    let t = -(n * e.taille) / 1000;
-                                    let d = if vertical { translation(Z, t) } else { translation(t * e.th, Z) };
-                                    tm = mul(&d, &tm);
-                                }
-                                _ => {}
+                    let Some(Object::Array(v)) = a.first() else {
+                        return illisible("TJ ne montre pas un tableau");
+                    };
+                    for x in v {
+                        match x {
+                            Object::String(s, _) => self.montrer(&e, &mut tm, s)?,
+                            Object::Integer(_) | Object::Real(_) => {
+                                let n = lecture::element(doc, x, "un décalage de TJ", lecture::nombre)?;
+                                let vertical = police_choisie(&e)?.vertical;
+                                let t = -(n * e.taille) / 1000;
+                                let d = if vertical { translation(Z, t) } else { translation(t * e.th, Z) };
+                                tm = mul(&d, &tm);
                             }
+                            _ => return illisible("un élément de TJ n'est ni une chaîne ni un nombre"),
                         }
                     }
                 }
@@ -1053,20 +1142,25 @@ impl<'a> Interprete<'a> {
                 // fait de même : Word écrit ainsi ses espaces, par exemple).
                 "BMC" => marques.push(false),
                 "BDC" => {
+                    // ISO 32000-1, 14.6.2 : les propriétés, un dictionnaire en ligne ou le nom d'une ressource de
+                    // `/Properties`.
                     let propres = match a.get(1) {
-                        Some(Object::Name(n)) => res
-                            .get(b"Properties")
-                            .ok()
-                            .and_then(|o| dico(self.doc, o))
-                            .and_then(|p| p.get(n).ok())
-                            .and_then(|o| dico(self.doc, o)),
-                        Some(o) => dico(self.doc, o),
+                        Some(Object::Name(n)) => {
+                            let Some(p) = lecture::lue(doc, res, b"Properties", lecture::dictionnaire)? else {
+                                return illisible(format!("BDC nomme {}, et les ressources n'ont pas de /Properties", lecture::nom_de(n)));
+                            };
+                            match lecture::lue(doc, p, n, lecture::dictionnaire)? {
+                                Some(d) => d,
+                                None => return illisible(format!("BDC nomme {}, que /Properties n'a pas", lecture::nom_de(n))),
+                            }
+                        }
+                        Some(o) => lecture::element(doc, o, "les propriétés de BDC", lecture::dictionnaire)?,
+                        None => return illisible("BDC n'a pas ses propriétés"),
+                    };
+                    let reel = match lecture::lue(doc, propres, b"ActualText", lecture::chaine)? {
+                        Some(s) => Some(texte_pdf(s)?),
                         None => None,
                     };
-                    let reel = propres.and_then(|d| d.get(b"ActualText").ok()).and_then(|o| match suivre(self.doc, o) {
-                        Object::String(s, _) => Some(texte_pdf(s)),
-                        _ => None,
-                    });
                     match reel {
                         Some(t) if self.actuel.is_none() => {
                             self.actuel = Some(Actuel { texte: t, premier: None, adv: Z, trm: ID, asc: mesure("0.8"), desc: mesure("0.2") });
@@ -1081,19 +1175,19 @@ impl<'a> Interprete<'a> {
                     }
                 }
                 // Les chemins : leur boîte, relevée quand ils sont peints.
-                "m" | "l" => points.push(point(&e.ctm, num(0), num(1))),
+                "m" | "l" => points.push(point(&e.ctm, num(0)?, num(1)?)),
                 "c" => {
                     for k in 0..3 {
-                        points.push(point(&e.ctm, num(2 * k), num(2 * k + 1)));
+                        points.push(point(&e.ctm, num(2 * k)?, num(2 * k + 1)?));
                     }
                 }
                 "v" | "y" => {
                     for k in 0..2 {
-                        points.push(point(&e.ctm, num(2 * k), num(2 * k + 1)));
+                        points.push(point(&e.ctm, num(2 * k)?, num(2 * k + 1)?));
                     }
                 }
                 "re" => {
-                    let (x, y, w, h) = (num(0), num(1), num(2), num(3));
+                    let (x, y, w, h) = (num(0)?, num(1)?, num(2)?, num(3)?);
                     for (px, py) in [(x, y), (x + w, y), (x + w, y + h), (x, y + h)] {
                         points.push(point(&e.ctm, px, py));
                     }
@@ -1112,67 +1206,72 @@ impl<'a> Interprete<'a> {
                     }
                 }
                 "Do" => {
-                    if profondeur < 12 {
-                        if let Some(Object::Name(n)) = a.first() {
-                            self.objet(res, n, &e.ctm, profondeur);
-                        }
+                    if profondeur >= PROFONDEUR_MAX {
+                        return illisible(format!("des objets formulaire imbriqués au-delà de {}", PROFONDEUR_MAX));
+                    }
+                    match a.first() {
+                        Some(Object::Name(n)) => self.objet(res, n, &e.ctm, profondeur)?,
+                        Some(_) | None => return illisible("Do ne nomme pas d'objet"),
                     }
                 }
                 _ => {}
             }
         }
+        Ok(())
     }
 
-    /// Un objet formulaire (`Do`) : son flux, sous sa matrice, avec ses ressources (ou celles de
-    /// l'appelant).
-    fn objet(&mut self, res: &Dictionary, nom_obj: &[u8], ctm: &Mat, profondeur: usize) {
+    /// Un objet extérieur (`Do`) : une image (sa boîte), ou un objet formulaire (son flux, sous sa matrice, avec ses
+    /// ressources).
+    fn objet(&mut self, res: &Dictionary, nom_obj: &[u8], ctm: &Mat, profondeur: usize) -> Result<(), Refus> {
         let doc = self.doc;
-        let xo = match res.get(b"XObject").ok().and_then(|o| dico(doc, o)) {
-            Some(x) => x,
-            None => return,
+        let quoi = format!("l'objet {}", lecture::nom_de(nom_obj));
+        let Some(xo) = lecture::lue(doc, res, b"XObject", lecture::dictionnaire)? else {
+            return illisible(format!("Do nomme {}, et les ressources n'ont pas de /XObject", quoi));
         };
-        let o = match xo.get(nom_obj) {
-            Ok(o) => suivre(doc, o),
-            Err(_) => return,
+        let s = match lecture::lue(doc, xo, nom_obj, lecture::flux)? {
+            Some(s) => s,
+            None => return illisible(format!("Do nomme {}, que /XObject n'a pas", quoi)),
         };
-        let s = match o {
-            Object::Stream(s) => s,
-            _ => return,
-        };
-        let sous_type = s.dict.get(b"Subtype").ok().and_then(|o| nom(doc, o));
-        if sous_type == Some(b"Image") {
-            if let Some(r) = self.releve.as_mut() {
-                r.images.push(englobante(ctm, Z, Z, Mesure::UN, Mesure::UN));
+        // ISO 32000-1, 8.8 : `Subtype` (exigé) est `Image`, `Form` ou `PS` ; un objet PostScript n'a « no effect
+        // either when viewing the document on-screen or when printing it to a non-PostScript device » (8.8.2).
+        match exige(doc, &s.dict, b"Subtype", &quoi, lecture::nom)? {
+            b"Image" => {
+                if let Some(r) = self.releve.as_mut() {
+                    r.images.push(englobante(ctm, Z, Z, Mesure::UN, Mesure::UN));
+                }
+                Ok(())
             }
-            return;
+            b"PS" => Ok(()),
+            b"Form" => {
+                let m = matrice_de_formulaire(doc, &s.dict)?;
+                // ISO 32000-1, table 95 : sans ressources propres, un objet formulaire prend celles du contenu où il est
+                // posé (« all named resources used in the form XObject shall be included in the resource dictionary of
+                // each page object on which the form XObject appears », PDF 1.1).
+                let res_form = match lecture::lue(doc, &s.dict, b"Resources", lecture::dictionnaire)? {
+                    Some(r) => {
+                        self.relever_polices(r)?;
+                        r
+                    }
+                    None => res,
+                };
+                let flux = lecture::contenu(doc, s)?;
+                self.executer(&flux, res_form, mul(&m, ctm), profondeur + 1)
+            }
+            autre => illisible(format!("{} est de sous-type {}, que la norme ne connaît pas", quoi, lecture::nom_de(autre))),
         }
-        if sous_type != Some(b"Form") {
-            return;
-        }
-        let m = matrice(doc, s.dict.get(b"Matrix").ok());
-        let propres = s.dict.get(b"Resources").ok().and_then(|o| dico(doc, o)).cloned();
-        if let Some(r) = &propres {
-            self.relever_polices(r);
-        }
-        let res_form = propres.unwrap_or_else(|| res.clone());
-        let flux = contenu_du_flux(o);
-        self.executer(&flux, &res_form, mul(&m, ctm), profondeur + 1);
     }
 
     /// Montre une chaîne : un caractère par code, le texte avance de la largeur de chaque glyphe.
-    fn montrer(&mut self, e: &Etat, tm: &mut Mat, chaine: &[u8]) {
-        let police = match &e.police {
-            Some(p) => p.clone(),
-            None => return,
-        };
-        for (code, n) in police.codes(chaine) {
+    fn montrer(&mut self, e: &Etat, tm: &mut Mat, chaine: &[u8]) -> Result<(), Refus> {
+        let police = police_choisie(e)?.clone();
+        for (code, n) in police.codes(chaine)? {
             let w0 = police.largeur(code);
             let trm = mul(&[e.taille * e.th, Z, Z, e.taille, Z, e.rise], &mul(tm, &e.ctm));
             let texte = police.texte(code);
             let visible = self.dans_le_cadre(&trm, w0);
             let boite = englobante(&trm, Z, -police.desc, w0, police.asc);
             // Le corps rendu : la racine du déterminant de la matrice de rendu (positive : sa valeur absolue).
-            let taille = (trm[0] * trm[3] - trm[1] * trm[2]).abs().racine().unwrap_or(Z);
+            let taille = (trm[0] * trm[3] - trm[1] * trm[2]).abs().racine().ok_or_else(|| Refus::defaut("une valeur absolue sans racine"))?;
             if let Some(a) = &mut self.actuel {
                 // Sous un `/ActualText` : on ne garde que la position du premier glyphe et
                 // l'avance totale ; le texte réel se pose à la fermeture.
@@ -1183,7 +1282,7 @@ impl<'a> Interprete<'a> {
                 a.adv += w0;
             } else if visible {
                 let dir = if police.vertical { (trm[2], trm[3]) } else { (trm[0], trm[1]) };
-                for (k, c) in texte.chars().enumerate() {
+                for (k, c) in texte.iter().flat_map(|t| t.chars()).enumerate() {
                     self.mise.caractere(c, (trm[4], trm[5]), dir, taille, if k == 0 { Some(w0) } else { None }, boite);
                 }
             }
@@ -1197,13 +1296,11 @@ impl<'a> Interprete<'a> {
                 mul(&translation(tx * e.th, Z), tm)
             };
         }
+        Ok(())
     }
 
     fn dans_le_cadre(&self, trm: &Mat, w0: Mesure) -> bool {
-        let c = match &self.cadre {
-            Some(c) => c,
-            None => return true,
-        };
+        let c = &self.cadre;
         let p = (trm[4], trm[5]);
         let q = (p.0 + w0 * trm[0], p.1 + w0 * trm[1]);
         let (x0, x1) = (p.0.min(q.0), p.0.max(q.0));
@@ -1216,133 +1313,94 @@ impl<'a> Interprete<'a> {
 // Les pages.
 // ---------------------------------------------------------------------------------------------
 
-/// Un attribut hérité de l'arbre des pages.
-pub(crate) fn herite<'a>(doc: &'a Document, page: ObjectId, cle: &[u8]) -> Option<&'a Object> {
-    let mut courant = page;
-    for _ in 0..64 {
-        let d = doc.get_dictionary(courant).ok()?;
-        if let Ok(v) = d.get(cle) {
-            return Some(suivre(doc, v));
-        }
-        courant = d.get(b"Parent").ok()?.as_reference().ok()?;
-    }
-    None
-}
+/// Les drapeaux d'une annotation qui ne se montre pas : Hidden (2) et NoView (32) (ISO 32000-1, 12.5.3, table 165).
+const CACHEE: i64 = 2 | 32;
+/// Les drapeaux d'une annotation qui n'en dit pas (ISO 32000-1, table 164 : « Default value: 0 »).
+const DRAPEAUX_PAR_DEFAUT: i64 = 0;
 
-pub(crate) fn cadre_de(doc: &Document, page: ObjectId) -> Option<[Mesure; 4]> {
-    let v = nombres(doc, herite(doc, page, b"MediaBox"));
-    if v.len() != 4 {
-        return None;
+/// L'échelle d'un côté de l'apparence : ce qui l'amène sur le rectangle de l'annotation (ISO 32000-1, 12.5.5). Une
+/// apparence sans épaisseur de ce côté n'a rien à étirer.
+fn echelle(rect: (Mesure, Mesure), boite: (Mesure, Mesure)) -> Mesure {
+    match (rect.1 - rect.0).sur(boite.1 - boite.0) {
+        Some(s) if boite.1 > boite.0 => s,
+        Some(_) | None => Mesure::UN,
     }
-    let mut c = [v[0].min(v[2]), v[1].min(v[3]), v[0].max(v[2]), v[1].max(v[3])];
-    let r = nombres(doc, herite(doc, page, b"CropBox"));
-    if r.len() == 4 {
-        c = [c[0].max(r[0].min(r[2])), c[1].max(r[1].min(r[3])), c[2].min(r[0].max(r[2])), c[3].min(r[1].max(r[3]))];
-    }
-    if c[2] <= c[0] || c[3] <= c[1] {
-        return None;
-    }
-    Some(c)
-}
-
-/// Les flux de contenu d'une page, bout à bout (un saut de ligne entre deux : un opérateur ne
-/// s'étend jamais sur deux flux). `/Contents` est un flux, un tableau de flux, ou une référence à
-/// un tableau (ce que `Document::get_page_content` de lopdf ne lit pas).
-pub(crate) fn contenu_de_page(doc: &Document, id: ObjectId) -> Vec<u8> {
-    fn ramasser(doc: &Document, o: &Object, sortie: &mut Vec<u8>, prof: usize) {
-        match suivre(doc, o) {
-            s @ Object::Stream(_) => {
-                sortie.extend_from_slice(&contenu_du_flux(s));
-                sortie.push(b'\n');
-            }
-            Object::Array(v) if prof < 4 => v.iter().for_each(|x| ramasser(doc, x, sortie, prof + 1)),
-            _ => {}
-        }
-    }
-    let mut sortie = Vec::new();
-    if let Some(c) = doc.get_dictionary(id).ok().and_then(|d| d.get(b"Contents").ok()) {
-        ramasser(doc, c, &mut sortie, 0);
-    }
-    sortie
 }
 
 /// Lit une page : son contenu, puis l'apparence de ses annotations (champs de formulaire). Avec
 /// `inspecter`, l'interpréteur garde en plus la boîte des caractères, les images, les chemins
 /// peints et les polices.
-fn lire_la_page(doc: &Document, id: ObjectId, inspecter: bool) -> Result<Interprete<'_>, String> {
-    let res = herite(doc, id, b"Resources").and_then(|o| dico(doc, o)).cloned().unwrap_or_default();
+fn lire_la_page(doc: &Document, id: ObjectId, inspecter: bool) -> Result<Interprete<'_>, Refus> {
+    let res = lecture::ressources_de_page(doc, id)?;
     let mise = Mise { garder: inspecter, ..Mise::default() };
     let releve = if inspecter { Some(Releve::default()) } else { None };
-    let mut it = Interprete { doc, polices: HashMap::new(), mise, cadre: cadre_de(doc, id), actuel: None, releve, annotation: false };
-    it.relever_polices(&res);
-    let flux = contenu_de_page(doc, id);
+    let mut it = Interprete { doc, polices: HashMap::new(), mise, cadre: lecture::cadre_de(doc, id)?, actuel: None, releve, annotation: false };
+    it.relever_polices(res)?;
+    let flux = lecture::contenu_de_page(doc, id)?;
     if !flux.is_empty() {
-        if Content::decode(&it.preparer(&flux)).is_err() {
-            return Err("contenu de page illisible".to_string());
-        }
-        it.executer(&flux, &res, ID, 0);
+        it.executer(&flux, res, ID, 0)?;
     }
     // Les annotations (Popup, cachées ou sans apparence exclues).
-    let annots: Vec<Object> = match doc.get_dictionary(id).ok().and_then(|d| d.get(b"Annots").ok()) {
-        Some(o) => match suivre(doc, o) {
-            Object::Array(v) => v.clone(),
-            _ => Vec::new(),
-        },
-        None => Vec::new(),
+    let annots = match lecture::lue(doc, lecture::dictionnaire_de(doc, id)?, b"Annots", lecture::tableau)? {
+        Some(v) => v,
+        None => &[],
     };
     it.annotation = true;
-    for a in &annots {
-        let d = match dico(doc, a) {
-            Some(d) => d,
-            None => continue,
+    for a in annots {
+        let d = lecture::element(doc, a, "une annotation de /Annots", lecture::dictionnaire)?;
+        // ISO 32000-1, table 164 : `F`, « Default value: 0 » ; `Subtype` est exigé.
+        let drapeaux = match lecture::lue(doc, d, b"F", lecture::entier)? {
+            Some(f) => f,
+            None => DRAPEAUX_PAR_DEFAUT,
         };
-        let drapeaux = d.get(b"F").ok().and_then(|o| nombre(doc, o)).unwrap_or(Z).tronque();
-        if drapeaux & (2 | 32) != 0 || d.get(b"Subtype").ok().and_then(|o| nom(doc, o)) == Some(b"Popup") {
+        if drapeaux & CACHEE != 0 || exige(doc, d, b"Subtype", "une annotation", lecture::nom)? == b"Popup" {
             continue;
         }
-        let ap = match d.get(b"AP").ok().and_then(|o| dico(doc, o)).and_then(|ap| ap.get(b"N").ok()) {
-            Some(n) => suivre(doc, n),
-            None => continue,
+        // Table 168 : `N` est exigé dans `AP`, un flux ou un dictionnaire d'états, que `AS` choisit (table 164 :
+        // exigé quand `AP` a des sous-dictionnaires). Un état que `N` n'a pas ne se dessine pas.
+        let Some(ap) = lecture::lue(doc, d, b"AP", lecture::dictionnaire)? else {
+            continue;
         };
-        // L'apparence : un flux, ou un dictionnaire d'états choisi par /AS.
-        let flux_ap = match ap {
-            Object::Stream(_) => ap,
-            Object::Dictionary(etats) => {
-                let etat = d.get(b"AS").ok().and_then(|o| nom(doc, o));
-                match etat.and_then(|n| etats.get(n).ok()).map(|o| suivre(doc, o)) {
-                    Some(s @ Object::Stream(_)) => s,
-                    _ => continue,
+        let s = match lecture::valeur(doc, ap, b"N")? {
+            Some(Object::Stream(s)) => s,
+            Some(Object::Dictionary(etats)) => {
+                let etat = exige(doc, d, b"AS", "une annotation dont l'apparence a des états", lecture::nom)?;
+                match lecture::lue(doc, etats, etat, lecture::flux)? {
+                    Some(s) => s,
+                    None => continue,
                 }
             }
-            _ => continue,
+            Some(_) => return illisible("/N de l'apparence d'une annotation n'est ni un flux ni un dictionnaire"),
+            None => return illisible("l'apparence d'une annotation n'a pas de /N, que la norme exige (ISO 32000-1, table 168)"),
         };
-        let s = match flux_ap {
-            Object::Stream(s) => s,
-            _ => continue,
+        let rect = exige(doc, d, b"Rect", "une annotation", |o| Ok(o))?;
+        let rect = lecture::rectangle_de(doc, rect, "/Rect")?;
+        let bbox = match lecture::rectangle(doc, &s.dict, b"BBox")? {
+            Some(b) => b,
+            None => return illisible("l'apparence d'une annotation n'a pas de /BBox, que la norme exige (ISO 32000-1, table 95)"),
         };
-        let rect = nombres(doc, d.get(b"Rect").ok());
-        let bbox = nombres(doc, s.dict.get(b"BBox").ok());
-        if rect.len() != 4 || bbox.len() != 4 {
-            continue;
-        }
-        let m = matrice(doc, s.dict.get(b"Matrix").ok());
+        let m = matrice_de_formulaire(doc, &s.dict)?;
         let coins = [point(&m, bbox[0], bbox[1]), point(&m, bbox[2], bbox[1]), point(&m, bbox[0], bbox[3]), point(&m, bbox[2], bbox[3])];
         let (bx0, bx1) = coins.iter().fold((Mesure::MAX, Mesure::MIN), |(a, b), p| (a.min(p.0), b.max(p.0)));
         let (by0, by1) = coins.iter().fold((Mesure::MAX, Mesure::MIN), |(a, b), p| (a.min(p.1), b.max(p.1)));
-        let (rx0, rx1) = (rect[0].min(rect[2]), rect[0].max(rect[2]));
-        let (ry0, ry1) = (rect[1].min(rect[3]), rect[1].max(rect[3]));
-        let sx = if bx1 > bx0 { (rx1 - rx0).sur(bx1 - bx0).unwrap_or(Mesure::UN) } else { Mesure::UN };
-        let sy = if by1 > by0 { (ry1 - ry0).sur(by1 - by0).unwrap_or(Mesure::UN) } else { Mesure::UN };
+        let (rx0, rx1) = (rect[0], rect[2]);
+        let (ry0, ry1) = (rect[1], rect[3]);
+        let sx = echelle((rx0, rx1), (bx0, bx1));
+        let sy = echelle((ry0, ry1), (by0, by1));
         let a_m = [sx, Z, Z, sy, rx0 - bx0 * sx, ry0 - by0 * sy];
-        let res_ap = s.dict.get(b"Resources").ok().and_then(|o| dico(doc, o)).cloned().unwrap_or_else(|| res.clone());
-        let contenu = contenu_du_flux(flux_ap);
-        it.executer(&contenu, &res_ap, mul(&m, &a_m), 1);
+        // Sans ressources propres, celles de la page (table 95, comme un objet formulaire).
+        let res_ap = match lecture::lue(doc, &s.dict, b"Resources", lecture::dictionnaire)? {
+            Some(r) => r,
+            None => res,
+        };
+        let contenu = lecture::contenu(doc, s)?;
+        it.executer(&contenu, res_ap, mul(&m, &a_m), 1)?;
     }
     Ok(it)
 }
 
 /// Le texte d'une page : son contenu, puis l'apparence de ses annotations (champs de formulaire).
-fn texte_de_page(doc: &Document, id: ObjectId) -> Result<String, String> {
+fn texte_de_page(doc: &Document, id: ObjectId) -> Result<String, Refus> {
     Ok(lire_la_page(doc, id, false)?.mise.finir())
 }
 
@@ -1355,22 +1413,24 @@ pub(crate) struct PageLue {
     pub polices: Vec<String>,
 }
 
-pub(crate) fn inspecter_page(doc: &Document, id: ObjectId) -> Result<PageLue, String> {
+pub(crate) fn inspecter_page(doc: &Document, id: ObjectId) -> Result<PageLue, Refus> {
     let it = lire_la_page(doc, id, true)?;
-    let releve = it.releve.unwrap_or_default();
+    let Some(releve) = it.releve else {
+        return defaut("une page inspectée sans son relevé");
+    };
     Ok(PageLue { lignes: it.mise.finir_avec_boites(), images: releve.images, traits: releve.traits, polices: releve.polices })
 }
 
-/// Le texte de chaque page du document. Une page dont le contenu est illisible donne un texte vide
-/// et un avertissement (rendu à l'appelant) : le reste du document se lit.
+/// Le texte de chaque page du document. Une page qui ne se lit pas donne un texte vide et un avertissement qui dit
+/// pourquoi (rendu à l'appelant, qui en décide) : le reste du document se lit.
 pub fn texte_des_pages(doc: &Document) -> (Vec<String>, Vec<String>) {
     let mut textes = Vec::new();
     let mut avertissements = Vec::new();
     for (n, id) in doc.get_pages() {
         match texte_de_page(doc, id) {
             Ok(t) => textes.push(t),
-            Err(m) => {
-                avertissements.push(format!("page {} : {}", n, m));
+            Err(r) => {
+                avertissements.push(format!("page {} : {}", n, r.phrase));
                 textes.push(String::new());
             }
         }

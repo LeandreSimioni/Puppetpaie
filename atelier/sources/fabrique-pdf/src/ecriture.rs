@@ -21,6 +21,7 @@ use std::io::Write;
 use lopdf::xref::XrefEntry;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat};
 
+use crate::description::{illisible, Refus};
 use crate::mesure::{mesure, Mesure};
 
 /// Le nombre d'objets d'un flux d'objets : un lecteur décompresse le flux entier pour en lire un.
@@ -119,10 +120,11 @@ fn dictionnaire(out: &mut Vec<u8>, d: &Dictionary) {
     out.extend_from_slice(b">>");
 }
 
-fn comprimer(donnees: &[u8]) -> Vec<u8> {
+/// Les données comprimées (Flate, zlib).
+pub(crate) fn comprimer(donnees: &[u8]) -> Result<Vec<u8>, Refus> {
     let mut e = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::best());
-    let _ = e.write_all(donnees);
-    e.finish().unwrap_or_default()
+    e.write_all(donnees).map_err(|x| Refus::defaut(format!("la compression d'un flux échoue ({})", x)))?;
+    e.finish().map_err(|x| Refus::defaut(format!("la compression d'un flux échoue ({})", x)))
 }
 
 /// Un objet que la table des références ou la structure du fichier ne laissent pas dans un flux d'objets :
@@ -143,9 +145,9 @@ fn ecrire_objets(
     objets: &BTreeMap<ObjectId, Object>,
     mut libre: u32,
     en_flux: bool,
-) -> (BTreeMap<u32, XrefEntry>, u32) {
+) -> Result<(BTreeMap<u32, XrefEntry>, u32), Refus> {
     let mut table = BTreeMap::new();
-    let mut groupes: Vec<Vec<(u32, &Object)>> = vec![Vec::new()];
+    let mut groupes: Vec<Vec<(u32, &Object)>> = Vec::new();
     for (id, o) in objets {
         if refait(o) {
             continue;
@@ -156,10 +158,10 @@ fn ecrire_objets(
             ecrire_objet(out, o);
             out.extend_from_slice(b"\nendobj\n");
         } else {
-            if groupes.last().map_or(0, Vec::len) >= PAR_FLUX {
-                groupes.push(Vec::new());
+            match groupes.last_mut() {
+                Some(g) if g.len() < PAR_FLUX => g.push((id.0, o)),
+                Some(_) | None => groupes.push(vec![(id.0, o)]),
             }
-            groupes.last_mut().unwrap().push((id.0, o));
         }
     }
     for groupe in groupes.into_iter().filter(|g| !g.is_empty()) {
@@ -188,10 +190,10 @@ fn ecrire_objets(
         d.set("Filter", Object::Name(b"FlateDecode".to_vec()));
         table.insert(numero, XrefEntry::Normal { offset: out.len() as u32, generation: 0 });
         out.extend_from_slice(format!("{} 0 obj\n", numero).as_bytes());
-        ecrire_objet(out, &Object::Stream(Stream::new(d, comprimer(&tete))));
+        ecrire_objet(out, &Object::Stream(Stream::new(d, comprimer(&tete)?)));
         out.extend_from_slice(b"\nendobj\n");
     }
-    (table, libre)
+    Ok((table, libre))
 }
 
 /// Le nombre d'octets qu'il faut pour écrire `v`.
@@ -205,7 +207,7 @@ fn largeur(v: u64) -> usize {
 
 /// Le flux des références (ISO 32000-1, 7.5.8), numéro `numero`, écrit à la fin de `out` : les entrées de
 /// `table`, groupées en sections contiguës, et le dictionnaire de queue `queue`.
-fn flux_de_references(out: &mut Vec<u8>, mut table: BTreeMap<u32, XrefEntry>, numero: u32, mut queue: Dictionary) {
+fn flux_de_references(out: &mut Vec<u8>, mut table: BTreeMap<u32, XrefEntry>, numero: u32, mut queue: Dictionary) -> Result<(), Refus> {
     let debut = out.len();
     table.insert(numero, XrefEntry::Normal { offset: debut as u32, generation: 0 });
     let champ = |e: &XrefEntry| -> (u8, u64, u64) {
@@ -216,8 +218,9 @@ fn flux_de_references(out: &mut Vec<u8>, mut table: BTreeMap<u32, XrefEntry>, nu
             XrefEntry::UnusableFree => (0, 0, 65535),
         }
     };
-    let w2 = table.values().map(|e| largeur(champ(e).1)).max().unwrap_or(1);
-    let w3 = table.values().map(|e| largeur(champ(e).2)).max().unwrap_or(1);
+    // Un nombre s'écrit sur un octet au moins (`largeur`).
+    let w2 = table.values().fold(1, |w, e| w.max(largeur(champ(e).1)));
+    let w3 = table.values().fold(1, |w, e| w.max(largeur(champ(e).2)));
     let colonnes = 1 + w2 + w3;
     let mut sections: Vec<(u32, u32)> = Vec::new();
     let mut lignes: Vec<Vec<u8>> = Vec::new();
@@ -255,15 +258,16 @@ fn flux_de_references(out: &mut Vec<u8>, mut table: BTreeMap<u32, XrefEntry>, nu
     parametres.set("Columns", Object::Integer(colonnes as i64));
     queue.set("DecodeParms", Object::Dictionary(parametres));
     out.extend_from_slice(format!("{} 0 obj\n", numero).as_bytes());
-    ecrire_objet(out, &Object::Stream(Stream::new(queue, comprimer(&donnees))));
+    ecrire_objet(out, &Object::Stream(Stream::new(queue, comprimer(&donnees)?)));
     out.extend_from_slice(format!("\nendobj\nstartxref\n{}\n%%EOF\n", debut).as_bytes());
+    Ok(())
 }
 
 /// Les clés de queue qu'une écriture reprend : la racine, les informations, l'identifiant (et le chiffrement).
 fn queue_reprise(trailer: &Dictionary) -> Dictionary {
     let mut q = Dictionary::new();
     for k in [&b"Root"[..], b"Info", b"ID", b"Encrypt"] {
-        if let Ok(v) = trailer.get(k) {
+        if let Some(v) = crate::lecture::directe(trailer, k) {
             q.set(k.to_vec(), v.clone());
         }
     }
@@ -271,30 +275,32 @@ fn queue_reprise(trailer: &Dictionary) -> Dictionary {
 }
 
 /// La version écrite : au moins 1.5 (les flux d'objets).
-fn version(v: &str) -> String {
-    let n = Mesure::lue(v).unwrap_or(mesure("1.5"));
-    if n < mesure("1.5") {
-        "1.5".into()
-    } else {
-        v.trim().to_string()
-    }
+fn version(v: &str) -> Result<String, Refus> {
+    let Some(n) = Mesure::lue(v) else {
+        return illisible(format!("la version du PDF « {} » ne se lit pas", v));
+    };
+    Ok(if n < mesure("1.5") { "1.5".into() } else { v.trim().to_string() })
+}
+
+/// Le plus grand numéro d'objet de `doc`.
+fn plus_grand_numero(doc: &Document) -> u32 {
+    doc.objects.keys().fold(doc.max_id, |m, k| m.max(k.0))
 }
 
 /// Le document `doc` entier, au plus court (voir l'en-tête du module). Un document chiffré s'écrit à
 /// l'ancienne (ses chaînes sont chiffrées objet par objet).
-pub fn compact(doc: &Document) -> Vec<u8> {
-    let chiffre = doc.trailer.get(b"Encrypt").is_ok();
+pub fn compact(doc: &Document) -> Result<Vec<u8>, Refus> {
+    let chiffre = doc.trailer.has(b"Encrypt");
     let mut out = Vec::new();
-    out.extend_from_slice(format!("%PDF-{}\n", if chiffre { doc.version.clone() } else { version(&doc.version) }).as_bytes());
+    out.extend_from_slice(format!("%PDF-{}\n", if chiffre { doc.version.clone() } else { version(&doc.version)? }).as_bytes());
     out.extend_from_slice(b"%\xe2\xe3\xcf\xd3\n");
-    let plus_grand = doc.objects.keys().map(|k| k.0).max().unwrap_or(0).max(doc.max_id);
-    let (table, libre) = ecrire_objets(&mut out, &doc.objects, plus_grand + 1, !chiffre);
+    let (table, libre) = ecrire_objets(&mut out, &doc.objects, plus_grand_numero(doc) + 1, !chiffre)?;
     if chiffre {
         table_classique(&mut out, &table, libre, queue_reprise(&doc.trailer), true);
     } else {
-        flux_de_references(&mut out, table, libre, queue_reprise(&doc.trailer));
+        flux_de_references(&mut out, table, libre, queue_reprise(&doc.trailer))?;
     }
-    out
+    Ok(out)
 }
 
 /// La table classique (ISO 32000-1, 7.5.4) des entrées `table`, puis la queue ; `entier` : un fichier entier
@@ -337,7 +343,7 @@ fn table_classique(out: &mut Vec<u8>, table: &BTreeMap<u32, XrefEntry>, taille: 
 /// le document : les objets de `apres` neufs ou changés s'écrivent à la suite des octets d'avant, laissés
 /// tels quels. La table suit celle d'avant : un flux si `avant` en a
 /// un, une table classique sinon. Rien de changé : `avant` tel quel.
-pub fn ajouter(avant: &[u8], doc_avant: &Document, apres: &Document) -> Vec<u8> {
+pub fn ajouter(avant: &[u8], doc_avant: &Document, apres: &Document) -> Result<Vec<u8>, Refus> {
     let mut changes: BTreeMap<ObjectId, Object> = BTreeMap::new();
     let mut a = Vec::new();
     let mut b = Vec::new();
@@ -345,84 +351,85 @@ pub fn ajouter(avant: &[u8], doc_avant: &Document, apres: &Document) -> Vec<u8> 
         if refait(o) {
             continue;
         }
-        let pareil = match doc_avant.objects.get(id) {
-            Some(x) => {
-                a.clear();
-                b.clear();
-                ecrire_objet(&mut a, x);
-                ecrire_objet(&mut b, o);
-                a == b
-            }
-            None => false,
-        };
+        let pareil = doc_avant.objects.get(id).is_some_and(|x| {
+            a.clear();
+            b.clear();
+            ecrire_objet(&mut a, x);
+            ecrire_objet(&mut b, o);
+            a == b
+        });
         if !pareil {
             changes.insert(*id, o.clone());
         }
     }
     if changes.is_empty() {
-        return avant.to_vec();
+        return Ok(avant.to_vec());
     }
     let mut out = avant.to_vec();
     if out.last() != Some(&b'\n') {
         out.push(b'\n');
     }
-    let plus_grand = apres.objects.keys().map(|k| k.0).max().unwrap_or(0).max(apres.max_id).max(doc_avant.max_id);
+    let plus_grand = plus_grand_numero(apres).max(doc_avant.max_id);
     // Les objets de la mise à jour s'écrivent un par un, jamais dans un flux d'objets : un lecteur qui charge tous
     // les flux d'objets du fichier garde parfois la première version d'un objet (lopdf 0.31 le fait), alors qu'un
     // objet écrit à part l'emporte toujours.
     // La forme de la dernière table d'avant, lue à l'endroit où `startxref` la place : le mot `xref`, ou un flux.
-    let en_flux = !avant.get(doc_avant.xref_start..).map_or(false, |t| t.trim_ascii_start().starts_with(b"xref"))
-        && doc_avant.trailer.get(b"Encrypt").is_err();
-    let (table, libre) = ecrire_objets(&mut out, &changes, plus_grand + 1, false);
+    let classique = avant.get(doc_avant.xref_start..).is_some_and(|t| t.trim_ascii_start().starts_with(b"xref"));
+    let en_flux = !classique && !doc_avant.trailer.has(b"Encrypt");
+    let (table, libre) = ecrire_objets(&mut out, &changes, plus_grand + 1, false)?;
     let mut queue = queue_reprise(&apres.trailer);
     queue.set("Prev", Object::Integer(doc_avant.xref_start as i64));
     if en_flux {
-        flux_de_references(&mut out, table, libre, queue);
+        flux_de_references(&mut out, table, libre, queue)?;
     } else {
         table_classique(&mut out, &table, libre, queue, false);
     }
-    out
+    Ok(out)
 }
 
 /// Les pixels d'une image (8 bits par composante, gris ou RVB) comprimés avec les prédicteurs PNG avant le Flate :
 /// chaque ligne s'écrit avec le filtre PNG qui donne la plus petite somme des écarts, et le flux le dit
 /// (`DecodeParms`, `Predictor 15`, PDF 1.7 § 7.4.4.4). Un Flate seul garde presque entiers un dégradé ou un bord
 /// lissé. Tout autre flux reste tel quel, de même qu'une image que le Flate seul écrit déjà plus court.
-pub fn predire_image(s: &mut Stream) {
-    let name = |s: &Stream, k: &[u8]| s.dict.get(k).ok().and_then(|o| o.as_name().ok()).map(|n| n.to_vec());
-    let int = |s: &Stream, k: &[u8]| s.dict.get(k).ok().and_then(|o| o.as_i64().ok());
-    if name(s, b"Subtype").as_deref() != Some(b"Image") || s.dict.get(b"DecodeParms").is_ok() {
-        return;
+pub fn predire_image(s: &mut Stream) -> Result<(), Refus> {
+    let name = |s: &Stream, k: &[u8]| match crate::lecture::directe(&s.dict, k) {
+        Some(Object::Name(n)) => Some(n.clone()),
+        Some(_) | None => None,
+    };
+    let int = |s: &Stream, k: &[u8]| match crate::lecture::directe(&s.dict, k) {
+        Some(Object::Integer(i)) => Some(*i),
+        Some(_) | None => None,
+    };
+    if name(s, b"Subtype").as_deref() != Some(b"Image") || s.dict.has(b"DecodeParms") {
+        return Ok(());
     }
-    let raw = match s.dict.get(b"Filter").ok() {
+    let raw = match crate::lecture::directe(&s.dict, b"Filter") {
         None => s.content.clone(),
         Some(f) => {
-            let flate = match f {
-                Object::Name(n) => n.as_slice() == b"FlateDecode",
-                Object::Array(a) => a.len() == 1 && a[0].as_name().ok() == Some(&b"FlateDecode"[..]),
-                _ => false,
-            };
+            // Flate seul, en nom ou en tableau d'un nom ; un autre filtre (le DCTDecode d'un JPEG) laisse l'image telle quelle.
+            let flate = matches!(f, Object::Name(n) if n.as_slice() == b"FlateDecode")
+                || matches!(f, Object::Array(a) if matches!(a.as_slice(), [Object::Name(n)] if n.as_slice() == b"FlateDecode"));
             if !flate {
-                return;
+                return Ok(());
             }
             let mut out = Vec::new();
             use std::io::Read as _;
-            if flate2::read::ZlibDecoder::new(&s.content[..]).read_to_end(&mut out).is_err() {
-                return;
-            }
+            flate2::read::ZlibDecoder::new(&s.content[..])
+                .read_to_end(&mut out)
+                .map_err(|e| Refus::defaut(format!("une image écrite par la fabrique ne se décomprime pas ({})", e)))?;
             out
         }
     };
     let colors = match name(s, b"ColorSpace").as_deref() {
         Some(b"DeviceRGB") => 3usize,
         Some(b"DeviceGray") => 1,
-        _ => return,
+        _ => return Ok(()),
     };
-    let (Some(w), Some(h), Some(8)) = (int(s, b"Width"), int(s, b"Height"), int(s, b"BitsPerComponent")) else { return };
+    let (Some(w), Some(h), Some(8)) = (int(s, b"Width"), int(s, b"Height"), int(s, b"BitsPerComponent")) else { return Ok(()) };
     let (w, h) = (w as usize, h as usize);
     let row = w * colors;
     if w == 0 || h == 0 || raw.len() != row * h {
-        return;
+        return Ok(());
     }
     let mut filtered = Vec::with_capacity((row + 1) * h);
     let zero = vec![0u8; row];
@@ -457,9 +464,9 @@ pub fn predire_image(s: &mut Stream) {
         filtered.push(best_type);
         filtered.extend_from_slice(&best);
     }
-    let packed = comprimer(&filtered);
-    if s.dict.get(b"Filter").is_ok() && packed.len() >= s.content.len() {
-        return;
+    let packed = comprimer(&filtered)?;
+    if s.dict.has(b"Filter") && packed.len() >= s.content.len() {
+        return Ok(());
     }
     let mut parms = Dictionary::new();
     parms.set("Predictor", Object::Integer(15));
@@ -469,6 +476,7 @@ pub fn predire_image(s: &mut Stream) {
     s.dict.set("Filter", Object::Name(b"FlateDecode".to_vec()));
     s.dict.set("DecodeParms", Object::Dictionary(parms));
     s.set_content(packed);
+    Ok(())
 }
 
 /// Le prédicteur PNG de Paeth.

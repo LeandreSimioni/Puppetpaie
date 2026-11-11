@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use lopdf::{Dictionary, Document, Object};
+use lopdf::{Dictionary, Document, Object, ObjectId};
 
 use crate::description::{illisible, Refus};
 use crate::mesure::Mesure;
@@ -258,4 +258,193 @@ pub fn flux(o: &Object) -> Result<&lopdf::Stream, &'static str> {
         Object::Stream(s) => Ok(s),
         _ => Err("un flux"),
     }
+}
+
+/// Un élément de tableau (ou un opérande), désigné et lu par `lire` : exigé, un refus qui dit `quoi` quand il est nul
+/// ou d'un autre type.
+pub fn element<'a, T>(doc: &'a Document, o: &'a Object, quoi: &str, lire: impl Fn(&'a Object) -> Result<T, &'static str>) -> Result<T, Refus> {
+    match designe(doc, o)? {
+        Some(x) => lire(x).map_err(|attendu| Refus::illisible(format!("{} n'est pas {}", quoi, attendu))),
+        None => illisible(format!("{} est nul", quoi)),
+    }
+}
+
+/// Un tableau de nombres (`quoi` le nomme dans un refus).
+pub fn nombres_de(doc: &Document, o: &Object, quoi: &str) -> Result<Vec<Mesure>, Refus> {
+    let v = tableau(o).map_err(|attendu| Refus::illisible(format!("{} n'est pas {}", quoi, attendu)))?;
+    v.iter().map(|x| element(doc, x, &format!("un élément de {}", quoi), nombre)).collect()
+}
+
+/// Le tableau de nombres de `cle` : `None` absent, un refus quand un élément n'est pas un nombre.
+pub fn nombres(doc: &Document, d: &Dictionary, cle: &[u8]) -> Result<Option<Vec<Mesure>>, Refus> {
+    match valeur(doc, d, cle)? {
+        Some(o) => Ok(Some(nombres_de(doc, o, &nom_de(cle))?)),
+        None => Ok(None),
+    }
+}
+
+/// Un rectangle (ISO 32000-1, 7.9.5 : quatre nombres, deux coins opposés), ses coins remis dans l'ordre (x0, y0, x1,
+/// y1) ; un refus quand ce ne sont pas quatre nombres.
+pub fn rectangle_de(doc: &Document, o: &Object, quoi: &str) -> Result<[Mesure; 4], Refus> {
+    match nombres_de(doc, o, quoi)?.as_slice() {
+        &[a, b, c, e] => Ok([a.min(c), b.min(e), a.max(c), b.max(e)]),
+        v => illisible(format!("{} a {} nombres, un rectangle en a quatre", quoi, v.len())),
+    }
+}
+
+/// Le rectangle de `cle` : `None` absent.
+pub fn rectangle(doc: &Document, d: &Dictionary, cle: &[u8]) -> Result<Option<[Mesure; 4]>, Refus> {
+    match valeur(doc, d, cle)? {
+        Some(o) => Ok(Some(rectangle_de(doc, o, &nom_de(cle))?)),
+        None => Ok(None),
+    }
+}
+
+/// La matrice de `cle` (six nombres, ISO 32000-1, 8.3.4) : `None` absente, un refus quand ce ne sont pas six nombres.
+pub fn matrice(doc: &Document, d: &Dictionary, cle: &[u8]) -> Result<Option<[Mesure; 6]>, Refus> {
+    match nombres(doc, d, cle)?.as_deref() {
+        Some(&[a, b, c, e, f, g]) => Ok(Some([a, b, c, e, f, g])),
+        Some(v) => illisible(format!("{} a {} nombres, une matrice en a six", nom_de(cle), v.len())),
+        None => Ok(None),
+    }
+}
+
+/// Les filtres que la fabrique sait défaire (ceux de lopdf).
+const FILTRES_LUS: [&[u8]; 2] = [b"FlateDecode", b"LZWDecode"];
+
+/// Les données d'un flux, ses filtres défaits. ISO 32000-1, table 5 : `Filter` est facultatif (un nom, ou un tableau de
+/// zéro, un ou plusieurs noms) ; sans filtre, les données sont telles quelles. Un filtre que la fabrique ne sait pas
+/// défaire se refuse en le nommant.
+pub fn contenu(doc: &Document, s: &lopdf::Stream) -> Result<Vec<u8>, Refus> {
+    let mut filtres: Vec<&[u8]> = Vec::new();
+    match valeur(doc, &s.dict, b"Filter")? {
+        Some(Object::Name(n)) => filtres.push(n.as_slice()),
+        Some(Object::Array(v)) => {
+            for x in v {
+                filtres.push(element(doc, x, "un élément de /Filter", nom)?);
+            }
+        }
+        Some(_) => return illisible("/Filter n'est ni un nom ni un tableau de noms"),
+        None => {}
+    }
+    if let Some(f) = filtres.iter().find(|f| !FILTRES_LUS.contains(f)) {
+        return illisible(format!("un flux est encodé par {}, que la fabrique ne défait pas", nom_de(f)));
+    }
+    match filtres.is_empty() {
+        true => Ok(s.content.clone()),
+        false => s.decompressed_content().map_err(|e| Refus::illisible(format!("un flux ne se décompresse pas ({})", e))),
+    }
+}
+
+/// Le dictionnaire de l'objet `id`.
+pub fn dictionnaire_de(doc: &Document, id: ObjectId) -> Result<&Dictionary, Refus> {
+    match doc.objects.get(&id) {
+        Some(o) => dictionnaire(o).map_err(|attendu| Refus::illisible(format!("l'objet {} {} n'est pas {}", id.0, id.1, attendu))),
+        None => illisible(format!("l'objet {} {} manque", id.0, id.1)),
+    }
+}
+
+/// Au-delà, un arbre des pages qui ne remonte pas à sa racine (un fichier abîmé) se refuse.
+const ANCETRES_MAX: usize = 64;
+
+/// Un attribut héritable d'une page, désigné : le sien, sinon celui de son plus proche ancêtre (ISO 32000-1, 7.7.3.4 :
+/// « If such an attribute is omitted from a page object, its value shall be inherited from an ancestor node in the
+/// page tree ») ; `None` quand aucun ne le porte. `Parent` est une référence (table 30), absente à la racine.
+pub fn herite<'a>(doc: &'a Document, page: ObjectId, cle: &[u8]) -> Result<Option<&'a Object>, Refus> {
+    let mut courant = page;
+    for _ in 0..ANCETRES_MAX {
+        let d = dictionnaire_de(doc, courant)?;
+        if let Some(v) = valeur(doc, d, cle)? {
+            return Ok(Some(v));
+        }
+        courant = match directe(d, b"Parent") {
+            Some(Object::Reference(id)) => *id,
+            Some(_) => return illisible("/Parent d'un nœud des pages n'est pas une référence"),
+            None => return Ok(None),
+        };
+    }
+    illisible(format!("l'arbre des pages remonte au-delà de {} ancêtres", ANCETRES_MAX))
+}
+
+/// Les ressources d'une page : `Resources` est exigé, héritable (ISO 32000-1, table 30).
+pub fn ressources_de_page(doc: &Document, page: ObjectId) -> Result<&Dictionary, Refus> {
+    match herite(doc, page, b"Resources")? {
+        Some(o) => dictionnaire(o).map_err(|attendu| Refus::illisible(format!("/Resources de la page n'est pas {}", attendu))),
+        None => illisible("la page n'a pas de /Resources, que la norme exige (ISO 32000-1, table 30)"),
+    }
+}
+
+/// Les ressources d'une page recopiées, et leur sous-dictionnaire `cle` (`Font`, `XObject`) recopié à part, pour y
+/// poser une ressource : des ressources qui n'ont pas `cle` n'ont encore aucune ressource de cette sorte.
+pub fn ressources_et(doc: &Document, page: ObjectId, cle: &[u8]) -> Result<(Dictionary, Dictionary), Refus> {
+    let res = ressources_de_page(doc, page)?;
+    let mut sorte = Dictionary::new();
+    if let Some(p) = lue(doc, res, cle, dictionnaire)? {
+        sorte.extend(p);
+    }
+    Ok((res.clone(), sorte))
+}
+
+/// Le rectangle héritable `cle` d'une page.
+fn rectangle_herite(doc: &Document, page: ObjectId, cle: &[u8]) -> Result<Option<[Mesure; 4]>, Refus> {
+    match herite(doc, page, cle)? {
+        Some(o) => Ok(Some(rectangle_de(doc, o, &nom_de(cle))?)),
+        None => Ok(None),
+    }
+}
+
+/// La partie visible d'une page (x0, y0, x1, y1) : sa `MediaBox`, exigée et héritable, coupée par sa `CropBox`, qui
+/// vaut la `MediaBox` quand elle manque (ISO 32000-1, table 30). Une page sans surface se refuse.
+pub fn cadre_de(doc: &Document, page: ObjectId) -> Result<[Mesure; 4], Refus> {
+    let m = match rectangle_herite(doc, page, b"MediaBox")? {
+        Some(m) => m,
+        None => return illisible("la page n'a pas de /MediaBox, que la norme exige (ISO 32000-1, table 30)"),
+    };
+    let c = match rectangle_herite(doc, page, b"CropBox")? {
+        Some(r) => [m[0].max(r[0]), m[1].max(r[1]), m[2].min(r[2]), m[3].min(r[3])],
+        None => m,
+    };
+    match c[2] > c[0] && c[3] > c[1] {
+        true => Ok(c),
+        false => illisible("la partie visible de la page (/MediaBox, /CropBox) n'a pas de surface"),
+    }
+}
+
+/// La rotation d'une page, en degrés, entre 0 et 270 : `Rotate`, héritable, « shall be a multiple of 90. Default
+/// value: 0 » (ISO 32000-1, table 30) ; une autre valeur se refuse.
+pub fn rotation_de(doc: &Document, page: ObjectId) -> Result<i64, Refus> {
+    match herite(doc, page, b"Rotate")? {
+        Some(o) => match entier(o) {
+            Ok(r) if r % 90 == 0 => Ok(r.rem_euclid(360)),
+            Ok(r) => illisible(format!("/Rotate vaut {}, qui n'est pas un multiple de 90", r)),
+            Err(attendu) => illisible(format!("/Rotate n'est pas {}", attendu)),
+        },
+        None => Ok(0),
+    }
+}
+
+/// Au-delà, des tableaux de contenus imbriqués se refusent.
+const IMBRICATION_MAX: usize = 4;
+
+/// Les flux de contenu d'une page, bout à bout (un saut de ligne entre deux : un opérateur ne s'étend jamais sur deux
+/// flux). `Contents` est un flux ou un tableau de flux ; absent, la page est vide (ISO 32000-1, table 30).
+pub fn contenu_de_page(doc: &Document, page: ObjectId) -> Result<Vec<u8>, Refus> {
+    fn ramasser(doc: &Document, o: &Object, sortie: &mut Vec<u8>, prof: usize) -> Result<(), Refus> {
+        match designe(doc, o)? {
+            Some(Object::Stream(s)) => {
+                sortie.extend_from_slice(&contenu(doc, s)?);
+                sortie.push(b'\n');
+                Ok(())
+            }
+            Some(Object::Array(v)) if prof < IMBRICATION_MAX => v.iter().try_for_each(|x| ramasser(doc, x, sortie, prof + 1)),
+            Some(Object::Array(_)) => illisible(format!("/Contents imbrique plus de {} tableaux", IMBRICATION_MAX)),
+            Some(_) => illisible("/Contents n'est ni un flux ni un tableau de flux"),
+            None => illisible("un élément de /Contents est nul"),
+        }
+    }
+    let mut sortie = Vec::new();
+    if let Some(c) = valeur(doc, dictionnaire_de(doc, page)?, b"Contents")? {
+        ramasser(doc, c, &mut sortie, 0)?;
+    }
+    Ok(sortie)
 }
