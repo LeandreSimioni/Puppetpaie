@@ -19,7 +19,7 @@ use socle::echec::{erreur, refus_avec, Lieu, Classe};
 use socle::mois::{Graphie, Mois};
 use documents::etats_paie::{finir, lignes_livre, Demande, Lecture, Periode};
 use socle::num::{add, div, eur2, mul, zero2, Decimal};
-use documents::tableaux_export::{col_m, col_n, col_t, col_x, libelle_mois, montant, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
+use documents::tableaux_export::{col_m, col_n, col_t, col_x, libelle_mois, qui, refus, section_du_mois, sections_de, Ligne, Section, Tableau, R};
 
 // ------------------------------------------------------------------ outils
 
@@ -500,7 +500,7 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
                     "921" => "921 — assiette déplafonnée".to_string(),
                     q => q.to_string(),
                 });
-                let taux_at = if b.taux_at.is_empty() { None } else { Some(montant(&b.taux_at)?) };
+                let taux_at = b.taux_at.map(documents::bordereau::TauxDeLaLigne::taux);
                 l.od("taux_at", taux_at).od("assiette", if b.montant.is_some() { None } else { b.assiette }).od("montant", b.montant);
                 lignes.push(l);
             }

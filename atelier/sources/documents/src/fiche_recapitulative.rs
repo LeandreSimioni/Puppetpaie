@@ -45,10 +45,10 @@ pub struct CoutsDeLAnnee {
 #[derive(Debug, Serialize)]
 pub struct Cout {
     pub bulletins: i64,
-    pub brut: String,
-    pub charges: String,
-    pub cout: String,
-    pub prevu: String,
+    pub brut: Decimal,
+    pub charges: Decimal,
+    pub cout: Decimal,
+    pub prevu: Decimal,
     pub incomplet: bool,
 }
 
@@ -130,7 +130,7 @@ impl<'a> Recapitulatifs<'a> {
         let [spectacles, salaries] = cotes.map(|v| {
             v.into_iter()
                 .map(|(cle, d)| {
-                    (cle, Cout { bulletins: d.bulletins, brut: d.brut.to_string(), charges: d.charges.to_string(), cout: d.cout.to_string(), prevu: d.prevu.to_string(), incomplet: d.incomplet })
+                    (cle, Cout { bulletins: d.bulletins, brut: d.brut, charges: d.charges, cout: d.cout, prevu: d.prevu, incomplet: d.incomplet })
                 })
                 .collect()
         });

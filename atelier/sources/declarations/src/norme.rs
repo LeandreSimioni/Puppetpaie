@@ -50,8 +50,8 @@ struct Version {
     libelle: String,
     /// Les mois principaux declares d'une DSN mensuelle en cette version.
     mensuelle: Plage<Mois>,
-    /// Les jours de constitution (`AAAA-MM-JJ`) d'un signalement en cette version.
-    signalements: Plage<String>,
+    /// Les jours de constitution d'un signalement en cette version.
+    signalements: Plage<Jour>,
     /// La table des usages (un fichier de `logiciel/donnees/`).
     usages: String,
     /// La table des formats.
@@ -65,7 +65,7 @@ struct Version {
     note: String,
 }
 
-/// Une plage de mois ou de jours, bornes ouvertes si absentes ; les jours se comparent en textes de meme forme.
+/// Une plage de mois ou de jours, bornes ouvertes si absentes.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Plage<T> {
@@ -75,7 +75,24 @@ struct Plage<T> {
     note: String,
 }
 
-impl<T: PartialOrd + std::fmt::Display> Plage<T> {
+/// Une borne d'une plage, telle que la donnee l'ecrit (`AAAA-MM`, `AAAA-MM-JJ`).
+trait Borne: PartialOrd {
+    fn ecrite(&self) -> String;
+}
+
+impl Borne for Mois {
+    fn ecrite(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl Borne for Jour {
+    fn ecrite(&self) -> String {
+        self.iso()
+    }
+}
+
+impl<T: Borne> Plage<T> {
     fn couvre(&self, v: &T) -> bool {
         self.du.as_ref().is_none_or(|d| d <= v) && self.au.as_ref().is_none_or(|a| v <= a)
     }
@@ -83,7 +100,7 @@ impl<T: PartialOrd + std::fmt::Display> Plage<T> {
     /// « du 2027-01 au 2027-12 », « ... » pour une borne ouverte.
     fn dite(&self) -> String {
         let borne = |b: &Option<T>| match b {
-            Some(b) => b.to_string(),
+            Some(b) => b.ecrite(),
             None => "...".to_string(),
         };
         format!("du {} au {}", borne(&self.du), borne(&self.au))
@@ -219,7 +236,7 @@ impl Norme {
 /// La plage d'une version que `quelle` choisit (la mensuelle, les signalements).
 type QuellePlage<T> = fn(&Version) -> &Plage<T>;
 
-fn choisir<T: PartialOrd + std::fmt::Display>(quelle: QuellePlage<T>, valeur: &T) -> R<Option<Norme>> {
+fn choisir<T: Borne>(quelle: QuellePlage<T>, valeur: &T) -> R<Option<Norme>> {
     let b = base()?;
     let siennes: Vec<&String> = b.versions.iter().filter(|(_, e)| quelle(e).couvre(valeur)).map(|(k, _)| k).collect();
     match siennes.as_slice() {
@@ -229,13 +246,13 @@ fn choisir<T: PartialOrd + std::fmt::Display>(quelle: QuellePlage<T>, valeur: &T
             "{} : {} versions couvrent {} ({}) -- la donnee se contredit, rien n'est ecrit.",
             BASE,
             siennes.len(),
-            valeur,
+            valeur.ecrite(),
             siennes.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
         )),
     }
 }
 
-fn plages<T: PartialOrd + std::fmt::Display>(quelle: QuellePlage<T>) -> R<String> {
+fn plages<T: Borne>(quelle: QuellePlage<T>) -> R<String> {
     Ok(base()?.versions.iter().map(|(k, e)| format!("{} {}", k, quelle(e).dite())).collect::<Vec<_>>().join(" ; "))
 }
 
@@ -257,7 +274,7 @@ La norme d'une annee se livre avec une mise a jour du logiciel. Rien n'est ecrit
 /// La version d'un signalement (arret, reprise, fin de contrat unique, amorcage), d'apres le jour ou il est constitue
 /// (S20.G00.05.007) : un signalement n'a pas de mois principal declare.
 pub fn du_signalement(constitution: &Jour) -> R<Norme> {
-    match choisir(|e| &e.signalements, &constitution.iso())? {
+    match choisir(|e| &e.signalements, constitution)? {
         Some(n) => Ok(n),
         None => Err(refus_avec(
             format!(

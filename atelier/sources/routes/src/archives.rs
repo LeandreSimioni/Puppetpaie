@@ -509,20 +509,20 @@ struct CascNotee {
     notee: RegularisationNotee,
 }
 
-/// Un montant ecrit en texte (« 12.80 », « 12,80 »), tel qu'une phrase le dit en euros ; un montant qui ne se lit pas
-/// se refuse.
-fn en_euros(t: &str) -> R<String> {
-    match t.trim().replace(',', ".").parse() {
-        Ok(d) => Ok(socle::texte::euros(d)),
-        Err(e) => Err(socle::echec::a_la_cle("Le montant viré ne se lit pas.", "montant", e).reclasser(Classe::Illisible)),
+/// Le montant vire, ecrit en nombre ou en texte (« 12.80 », « 12,80 ») ; un montant qui ne se lit pas se refuse.
+fn montant_vire(m: &NombreDit) -> R<socle::num::Decimal> {
+    match m {
+        NombreDit::Nombre(n) => Ok(n.decimal()?.normalize()),
+        NombreDit::Texte(t) => socle::num::decimal_lu(&t.replace(',', "."))
+            .ok_or_else(|| socle::echec::refus("Le montant viré ne se lit pas (montant).".to_string()).reclasser(Classe::Illisible)),
     }
 }
 
 /// Note qu'une annee de CASC-SVP est regularisee (apres le virement).
 fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
     let aujourd_hui = socle::paris::InstantEcrit::maintenant().jour();
-    let notee = marquer_regularise(ctx, &c.annee.texte()?, c.vire_le, &c.montant.texte()?,INTERFACE, aujourd_hui)?;
-    let montant = en_euros(&notee.montant)?;
+    let notee = marquer_regularise(ctx, &c.annee.texte()?, c.vire_le, montant_vire(&c.montant)?, INTERFACE, aujourd_hui)?;
+    let montant = socle::texte::euros(notee.montant);
     Ok(CascNotee { phrase: format!("CASC-SVP {} notée régularisée : {} virés le {}.", notee.annee, montant, notee.vire_le.jj_mm_aaaa()), notee })
 }
 
@@ -933,11 +933,11 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
             .map(|(_, d)| *d)
             .ok_or_else(|| socle::echec::a_la_cle("Défaut du logiciel : une année régularisée n'a pas la date de son virement.", "annee", a).reclasser(Classe::DefautDuLogiciel))
     };
-    let annees = r.annees.iter().map(|a| Ok(journal::AnneeCasc { annee: a.annee.clone(), vire_le: date_de(&a.annee)?, montant: a.cotisation.to_string() })).collect::<R<Vec<_>>>()?;
+    let annees = r.annees.iter().map(|a| Ok(journal::AnneeCasc { annee: a.annee.clone(), vire_le: date_de(&a.annee)?, montant: a.cotisation })).collect::<R<Vec<_>>>()?;
     let mut detail = journal::DetailCasc {
         annees,
         mois: r.mois.iter().map(|m| m.mois).collect(),
-        total: r.total.to_string(),
+        total: r.total,
         expediteur: compte.clone(),
         eml: Vec::new(),
         partis: None,
@@ -969,7 +969,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     let auj = socle::paris::InstantEcrit::maintenant().jour();
     let mut annees: Vec<RegularisationNotee> = Vec::new();
     for a in &r.annees {
-        annees.push(marquer_regularise(ctx, &a.annee, date_de(&a.annee)?, &a.cotisation.to_string(), qui, auj)?);
+        annees.push(marquer_regularise(ctx, &a.annee, date_de(&a.annee)?, a.cotisation, qui, auj)?);
     }
     let dites: Vec<&str> = annees.iter().map(|a| a.annee.as_str()).collect();
     let notee = if dites.len() > 1 { "notées régularisées" } else { "notée régularisée" };

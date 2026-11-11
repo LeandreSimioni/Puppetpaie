@@ -1247,7 +1247,9 @@ forme! {
         pub taux: Decimal,
         pub plancher: Option<Nombre>,
         pub plafond: Option<Nombre>,
-        pub assiette: Option<String>,
+        /// L'assiette telle que le texte la dit, en mots : une phrase, que le calcul ne lit pas.
+        #[serde(rename = "assiette")]
+        pub assiette_dite: Option<String>,
         pub collecteur: Option<String>,
         pub avertissement: Option<String>,
     }

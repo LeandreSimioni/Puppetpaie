@@ -90,11 +90,11 @@ pub struct Cas {
     #[serde(skip_serializing_if = "Option::is_none")]
     taux_atmp: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    notre_taux: Option<String>,
+    notre_taux: Option<socle::num::Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    leur_taux: Option<String>,
+    leur_taux: Option<socle::num::Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ecart_relatif: Option<String>,
+    ecart_relatif: Option<socle::num::Decimal>,
 }
 
 fn montant() -> &'static Regex {
@@ -166,7 +166,8 @@ fn rapports_de(ctx: &Contexte, comparaisons: &[Comparaison]) -> R<Vec<Rapport>> 
         Some(l) => l.clone(),
         None => "autre".to_string(),
     };
-    let nombre = |t: Option<socle::num::Decimal>| t.map(socle::num::nombre);
+    // Sa forme la plus courte ; « -0 » est 0.
+    let nombre = |t: Option<socle::num::Decimal>| t.map(|d| if d.is_zero() { socle::num::Decimal::ZERO } else { d.normalize() });
     let cas = |c: &Comparaison, p: &mut Propre| Cas {
         mois: c.mois,
         logiciel: None,

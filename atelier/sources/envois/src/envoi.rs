@@ -44,7 +44,7 @@ use std::path::{Path, PathBuf};
 
 use rust_decimal::Decimal;
 
-use documents::bulletin::{fmt_eur, fmt_heures};
+use documents::bulletin::fmt_heures;
 use engagement::calcul::Paie;
 use crate::courriel::Courriel;
 use socle::echec::{refus, Classe, Echec, R};
@@ -254,13 +254,13 @@ pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
             jours: dates,
             cachets: e.cachets,
             heures,
-            brut: fmt_eur(p.brut),
-            net: fmt_eur(p.net_a_payer),
+            brut: p.brut,
+            net: p.net_a_payer,
         });
         brut += p.brut;
         net += p.net_a_payer;
     }
-    Ok(ResumeDePaie { contrats, brut: fmt_eur(brut), net: fmt_eur(net) })
+    Ok(ResumeDePaie { contrats, brut, net })
 }
 
 /// LE RESUME DE LA PAIE D'UN SALARIE (`resume_de`), tel que le journal le garde avec l'envoi de ses documents.
@@ -268,8 +268,8 @@ pub fn resume_de(paies: &[&Paie]) -> R<ResumeDePaie> {
 #[serde(deny_unknown_fields)]
 pub struct ResumeDePaie {
     pub contrats: Vec<ContratResume>,
-    pub brut: String,
-    pub net: String,
+    pub brut: Decimal,
+    pub net: Decimal,
 }
 
 /// Un contrat du resume : ses bornes, son spectacle, ses jours, ses cachets, ses heures, son brut et son net.
@@ -284,21 +284,8 @@ pub struct ContratResume {
     /// Ses heures, s'il en a.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub heures: Option<String>,
-    pub brut: String,
-    pub net: String,
-}
-
-/// Un montant du resume (« 1 234,56 », comme le bulletin l'ecrit), tel qu'une phrase le dit ; tel quel s'il ne se lit pas
-/// en nombre.
-fn en_euros(t: &str) -> String {
-    let nombre = t.chars().filter(|c| !socle::texte::blanc(*c)).collect::<String>().replace(',', ".");
-    match nombre.parse::<Decimal>() {
-        Ok(d) => socle::texte::euros(d),
-        Err(pas_un_nombre) => {
-            drop(pas_un_nombre);
-            t.to_string()
-        }
-    }
+    pub brut: Decimal,
+    pub net: Decimal,
 }
 
 /// CE QUI A CHANGE depuis l'envoi des documents, en lignes pretes pour le courriel : ce qui a change dans les
@@ -309,7 +296,7 @@ fn en_euros(t: &str) -> String {
 pub fn ce_qui_a_change(faits: &[String], ancien: Option<&ResumeDePaie>, nouveau: Option<&ResumeDePaie>) -> Vec<String> {
     let mut out: Vec<String> = faits.iter().map(|f| format!("  - {}", f)).collect();
     if let (Some(a), Some(n)) = (ancien, nouveau) {
-        let (brut_a, brut_n, net_a, net_n) = (en_euros(&a.brut), en_euros(&n.brut), en_euros(&a.net), en_euros(&n.net));
+        let (brut_a, brut_n, net_a, net_n) = (socle::texte::euros(a.brut), socle::texte::euros(n.brut), socle::texte::euros(a.net), socle::texte::euros(n.net));
         if brut_a != brut_n {
             out.push(format!("  - Salaire brut : {} → {}", brut_a, brut_n));
         }

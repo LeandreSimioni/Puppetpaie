@@ -144,7 +144,9 @@ forme! {
     /// Une contribution annuelle de l'entreprise, hors DSN et hors bulletin (le FCAP-SVP de la 3090).
     pub struct Financement {
         pub taux: Nombre,
-        pub assiette: String,
+        /// L'assiette telle que le texte la dit, en mots : une phrase, que le calcul ne lit pas.
+        #[serde(rename = "assiette")]
+        pub assiette_dite: String,
         pub plancher: Nombre,
         pub plafond: Nombre,
     }

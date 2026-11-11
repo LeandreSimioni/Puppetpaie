@@ -3,7 +3,7 @@
 //! deposes et que l'Urssaf a preleves (`bordereaux-reels.json` : les blocs 22 et 23 tels qu'ecrits, rien d'autre).
 
 use crate::outils::{dec, lire_donnee};
-use documents::bordereau::{montant, LigneBordereau};
+use documents::bordereau::{montant, LigneBordereau, TauxDeLaLigne};
 use serde::Deserialize;
 use socle::date::Jour;
 
@@ -33,7 +33,7 @@ fn l(code: &str, qualifiant: &str, assiette: &str, taux_at: &str) -> LigneBorder
     LigneBordereau {
         code: code.into(),
         qualifiant: qualifiant.into(),
-        taux_at: taux_at.into(),
+        taux_at: Some(taux_at).filter(|s| !s.is_empty()).map(|t| TauxDeLaLigne::AtMp(dec(t))),
         assiette: Some(dec(assiette)),
         montant: None,
         commune: None,
@@ -72,7 +72,8 @@ fn ligne(c: &[String; 5]) -> LigneBordereau {
     LigneBordereau {
         code: champ(0).into(),
         qualifiant: champ(1).into(),
-        taux_at: champ(2).into(),
+        // Le calcul lit le taux, quelle que soit la ligne qui le porte.
+        taux_at: Some(champ(2)).filter(|s| !s.is_empty()).map(|t| TauxDeLaLigne::AtMp(dec(t))),
         assiette: Some(champ(3)).filter(|s| !s.is_empty()).map(dec),
         montant: Some(champ(4)).filter(|s| !s.is_empty()).map(dec),
         commune: None,

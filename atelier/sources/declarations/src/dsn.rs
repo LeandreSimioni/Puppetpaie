@@ -19,7 +19,7 @@ use droit::bordereau::{AssietteDuBordereau, MontantDuBordereau};
 use droit::bareme::{self, bareme_applique, EntrepriseLue};
 use droit::fiche::{ChampsEntreprise, DeclarantDsn, Lue};
 use droit::forme_bareme::{CotisationDsn, CotisationSupplementaire, Pile, Rubrique};
-use documents::bordereau::{self, Destinataire, LigneBordereau};
+use documents::bordereau::{self, Destinataire, LigneBordereau, TauxDeLaLigne};
 use droit::reduction::au_dela_du_seuil;
 use engagement::calcul::Paie;
 use engagement::etats::PrelevementDeLaCorrection;
@@ -314,10 +314,17 @@ fn fmt_f(x: Decimal, n: u32) -> String {
 
 /// Deux decimales, jamais « -0.00 ».
 pub fn mt(x: Decimal) -> String {
+    a_deux_decimales(x).to_string()
+}
+
+/// Le montant a deux decimales, tel que la DSN l'ecrit (`mt`), jamais -0.00.
+pub fn a_deux_decimales(x: Decimal) -> Decimal {
     if x.is_zero() {
-        "0.00".into()
+        Decimal::new(0, 2)
     } else {
-        fmt_f(x, 2)
+        let mut q = x.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+        q.rescale(2);
+        q
     }
 }
 
@@ -3126,9 +3133,9 @@ fn lire(v: &[(String, Decimal)], cle: &str) -> Option<Decimal> {
     v.iter().find(|(k, _)| k == cle).map(|(_, x)| *x)
 }
 
-fn taux_at_du_ctp(ctp: &Ctp, bar: &Pile) -> R<String> {
+fn taux_at_du_ctp(ctp: &Ctp, bar: &Pile) -> R<Option<TauxDeLaLigne>> {
     if ctp.taux_at.is_none() {
-        return Ok(String::new());
+        return Ok(None);
     }
     // LE TAUX DU BAREME DU MOIS DECLARE : il peut changer en cours d'annee (1,69 puis 1,65 au 01/06/2025) ; `taux_at` du CTP
     // dit seulement « cette ligne porte le taux AT » ("bareme"), le taux ne se recopie pas.
@@ -3142,11 +3149,26 @@ fn taux_at_du_ctp(ctp: &Ctp, bar: &Pile) -> R<String> {
     if ctp.statut.as_deref() == Some("artiste") {
         valeur = mul(valeur, Decimal::new(70, 2));
     }
-    let q = valeur.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
-    Ok(format!("{:0>5}", fmt_f(q, 2)))
+    Ok(Some(TauxDeLaLigne::AtMp(a_deux_chiffres(valeur))))
 }
 
-fn ligne(code: String, qualifiant: String, taux_at: String, assiette: Option<Decimal>, montant: Option<Decimal>, commune: Option<String>) -> LigneBordereau {
+/// Un taux arrondi a deux decimales (au pair), son echelle posee.
+fn a_deux_chiffres(t: Decimal) -> Decimal {
+    let mut q = t.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
+    q.rescale(2);
+    q
+}
+
+/// Le taux d'une ligne 23 tel que S21.G00.23.003 l'ecrit : le taux AT/MP sur cinq caracteres, celui du versement
+/// mobilite tel quel, deux decimales chacun.
+fn taux_23(t: TauxDeLaLigne) -> String {
+    match t {
+        TauxDeLaLigne::AtMp(t) => format!("{:0>5}", fmt_f(t, 2)),
+        TauxDeLaLigne::Mobilite(t) => fmt_f(t, 2),
+    }
+}
+
+fn ligne(code: String, qualifiant: String, taux_at: Option<TauxDeLaLigne>, assiette: Option<Decimal>, montant: Option<Decimal>, commune: Option<String>) -> LigneBordereau {
     LigneBordereau { code, qualifiant, taux_at, assiette, montant, commune }
 }
 
@@ -3154,8 +3176,8 @@ fn ecrire_lignes_23(f: &mut Fichier, lignes: &[LigneBordereau]) -> R<()> {
     for l in lignes {
         f.add("S21.G00.23.001", &l.code);
         f.add("S21.G00.23.002", &l.qualifiant);
-        if !l.taux_at.is_empty() {
-            f.add("S21.G00.23.003", &l.taux_at);
+        if let Some(t) = l.taux_at {
+            f.add("S21.G00.23.003", taux_23(t));
         }
         // Un montant (23.005), ou une assiette (23.004) : une ligne qui n'a ni l'un ni l'autre ne s'ecrit pas a zero.
         match l.montant {
@@ -3489,7 +3511,7 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             if assiette.is_zero() {
                 continue;
             }
-            lignes.push(ligne(code.into(), "920".into(), fmt_f(vm.taux, 2), Some(rond(assiette)), None, Some(vm.code_insee.clone())));
+            lignes.push(ligne(code.into(), "920".into(), Some(TauxDeLaLigne::Mobilite(a_deux_chiffres(vm.taux))), Some(rond(assiette)), None, Some(vm.code_insee.clone())));
         }
     }
     let mut local = zero();
@@ -3506,20 +3528,20 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             .map(|r| r.ctp.clone())
             .filter(|c| !c.is_empty())
             .ok_or_else(|| socle::echec::livree("baremes", "regime_local_alsace_moselle.ctp"))?;
-        lignes.push(ligne(code, "920".into(), String::new(), Some(rond(local)), None, None));
+        lignes.push(ligne(code, "920".into(), None, Some(rond(local)), None, None));
     }
     if let Some(s) = solde_ta {
-        lignes.push(ligne("995".into(), "920".into(), String::new(), Some(s.assiette), None, None));
+        lignes.push(ligne("995".into(), "920".into(), None, Some(s.assiette), None, None));
     }
     if let Some(d) = doeth {
         for (ctp, montant) in d.bordereau() {
-            lignes.push(ligne(ctp, "920".into(), String::new(), Some(montant), None, None));
+            lignes.push(ligne(ctp, "920".into(), None, Some(montant), None, None));
         }
     }
     // La contribution supplementaire a l'apprentissage de mars : le CTP 998, son montant en 23.004 (taux de 100 %),
     // comme le CTP 730 de l'OETH (guide Urssaf du 12/03/2026, l. 2453-2458 ; `csa`).
     if let Some((ctp, montant)) = csa.and_then(crate::csa::Csa::bordereau) {
-        lignes.push(ligne(ctp.into(), "920".into(), String::new(), Some(montant), None, None));
+        lignes.push(ligne(ctp.into(), "920".into(), None, Some(montant), None, None));
     }
     Ok(lignes)
 }
@@ -5115,8 +5137,8 @@ mod tests {
             regularisations: vec![crate::casc::RegularisationNotee {
                 annee: "2024".into(),
                 mois: regularises.iter().map(|m| Mois::lire(m).unwrap()).collect(),
-                montant: "0.00".into(),
-                calcule: "0.00".into(),
+                montant: rust_decimal::Decimal::new(0, 2),
+                calcule: rust_decimal::Decimal::new(0, 2),
                 vire_le: Jour::lire("2025-01-15").unwrap(),
                 note_le: Jour::lire("2025-01-16").unwrap(),
                 qui: "test".into(),

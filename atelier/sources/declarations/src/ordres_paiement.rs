@@ -148,12 +148,12 @@ pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> 
             (None, "date non dite par la DSN".to_string(), SOURCE_AUCUNE)
         };
         let credit = bordereau::credit(o.destinataire, &organisme, o.reste, o.deduit)
-            .map(|c| CreditEnClair { reste: crate::dsn::mt(c.reste), deduit: crate::dsn::mt(c.deduit), titre: c.titre, que_faire: c.que_faire, source: c.source });
+            .map(|c| CreditEnClair { reste: crate::dsn::a_deux_decimales(c.reste), deduit: crate::dsn::a_deux_decimales(c.deduit), titre: c.titre, que_faire: c.que_faire, source: c.source });
         out.push(OrdreEnClair {
             organisme,
             identifiant: o.organisme.clone(),
             objet,
-            montant: crate::dsn::mt(o.montant),
+            montant: crate::dsn::a_deux_decimales(o.montant),
             periode: PeriodeEnClair { du: debut, au: fin },
             date,
             quand_dit,
@@ -170,7 +170,7 @@ pub struct OrdreEnClair {
     pub organisme: String,
     pub identifiant: String,
     pub objet: String,
-    pub montant: String,
+    pub montant: rust_decimal::Decimal,
     pub periode: PeriodeEnClair,
     pub date: Option<Jour>,
     /// La phrase de la page (« le 15/11/2026 », « date non dite par la DSN »).
@@ -191,8 +191,8 @@ pub struct PeriodeEnClair {
 /// fait.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CreditEnClair {
-    pub reste: String,
-    pub deduit: String,
+    pub reste: rust_decimal::Decimal,
+    pub deduit: rust_decimal::Decimal,
     pub titre: String,
     pub que_faire: String,
     pub source: &'static str,

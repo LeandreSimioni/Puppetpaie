@@ -1389,16 +1389,9 @@ fn en_objet<S: serde::Serializer>(v: &[(String, CoutDit)], s: S) -> Result<S::Ok
 
 dites!(EffectifDit, CoutsDits, DemandeOubliee);
 
-/// Une somme que le cout ecrit (en texte, `Cout`), en euros.
-fn euros_ecrits(somme: &str) -> R<String> {
-    match socle::num::decimal_lu(somme.trim()) {
-        Some(d) => Ok(socle::texte::euros(d)),
-        None => Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : une somme du coût de l'année ne se lit pas ({}).", somme))),
-    }
-}
-
 /// `couts` : le cout de l'annee, au jour du contexte (`documents::fiche_recapitulative::Recapitulatifs::couts_de_l_annee`).
 fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
+    use socle::texte::euros;
     let mut r = documents::fiche_recapitulative::Recapitulatifs::nouveau(ctx, None, Some(c.annee.to_string()), false, envois::journal::lu(&ctx.racine).map(|j| j.departs)?);
     let couts = r.couts_de_l_annee()?;
     let bulletins = |x: &documents::fiche_recapitulative::Cout| socle::ecran::compte(x.bulletins as usize, "bulletin", "bulletins");
@@ -1407,13 +1400,11 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
         liste
             .into_iter()
             .map(|(k, x)| {
-                let prevu = socle::num::decimal_lu(x.prevu.trim())
-                    .ok_or_else(|| erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : une somme du coût de l'année ne se lit pas ({}).", x.prevu)))?;
                 // Rien de saisi pour la suite de l'annee : la phrase n'en dit rien.
-                let prevu: String = (!prevu.is_zero()).then(|| format!(" · + {} déjà saisis pour la suite de l'année", socle::texte::euros(prevu))).into_iter().collect();
+                let prevu: String = (!x.prevu.is_zero()).then(|| format!(" · + {} déjà saisis pour la suite de l'année", euros(x.prevu))).into_iter().collect();
                 let phrase = format!(
                     "coût employeur {} — brut {}, charges {}, {}{}{}",
-                    euros_ecrits(&x.cout)?, euros_ecrits(&x.brut)?, euros_ecrits(&x.charges)?, bulletins(&x),
+                    euros(x.cout), euros(x.brut), euros(x.charges), bulletins(&x),
                     if x.incomplet { ", coût incomplet avant PuppetPaie" } else { "" },
                     prevu
                 );
@@ -1424,8 +1415,8 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
     let mut total = socle::num::Decimal::ZERO;
     let mut phrases = Vec::new();
     for (nom, x) in &couts.spectacles {
-        total += socle::num::decimal_lu(x.cout.trim()).ok_or_else(|| erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : une somme du coût de l'année ne se lit pas ({}).", x.cout)))?;
-        phrases.push(format!("{} : {} ({}, brut {})", nom, euros_ecrits(&x.cout)?, bulletins(x), euros_ecrits(&x.brut)?));
+        total += x.cout;
+        phrases.push(format!("{} : {} ({}, brut {})", nom, euros(x.cout), bulletins(x), euros(x.brut)));
     }
     let phrase = format!(
         "Coût de {}, jusqu'à {} : {} pour {}.",

@@ -716,7 +716,7 @@ pub struct DetailContresigne {
 pub struct AnneeCasc {
     pub annee: String,
     pub vire_le: socle::date::Jour,
-    pub montant: String,
+    pub montant: rust_decimal::Decimal,
 }
 
 /// LE DETAIL DE LA REGULARISATION CASC-SVP envoyee a Audiens et au CASC-SVP : ses annees, ses mois, son total, les
@@ -726,7 +726,7 @@ pub struct AnneeCasc {
 pub struct DetailCasc {
     pub annees: Vec<AnneeCasc>,
     pub mois: Vec<Mois>,
-    pub total: String,
+    pub total: rust_decimal::Decimal,
     pub expediteur: String,
     pub eml: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -978,8 +978,3 @@ pub fn qui_souple(fiche: &droit::fiche::ChampsSalarie) -> String {
     [fiche.nom.portee(), fiche.prenom_affichage.portee().or(fiche.prenom.portee())].into_iter().flatten().collect::<Vec<_>>().join(" ")
 }
 
-/// Un montant ecrit en texte, a deux decimales ; un texte qui n'est pas un nombre se refuse.
-pub fn montant(t: &str) -> R<Decimal> {
-    let d = socle::num::decimal_lu(t).ok_or_else(|| erreur(Classe::CalculImpossible, socle::num::illisible(t)))?;
-    Ok(socle::num::eur2(d))
-}

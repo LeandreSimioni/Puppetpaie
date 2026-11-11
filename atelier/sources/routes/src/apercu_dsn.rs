@@ -86,16 +86,15 @@ impl ContratLu {
 #[derive(Debug, Serialize)]
 struct VersementDuFichier {
     date: Option<Jour>,
-    net_verse: Option<String>,
-    net_fiscal: Option<String>,
-    taux_pas: Option<String>,
-    montant_pas: Option<String>,
+    net_verse: Option<Decimal>,
+    net_fiscal: Option<Decimal>,
+    taux_pas: Option<Decimal>,
+    montant_pas: Option<Decimal>,
 }
 
 impl VersementDuFichier {
     fn de(v: &VersementLu) -> VersementDuFichier {
-        let t = |m: Option<Decimal>| m.map(|m| m.to_string());
-        VersementDuFichier { date: v.verse_le, net_verse: t(v.net_verse), net_fiscal: t(v.net_imposable), taux_pas: t(v.taux_pas), montant_pas: t(v.pas) }
+        VersementDuFichier { date: v.verse_le, net_verse: v.net_verse, net_fiscal: v.net_imposable, taux_pas: v.taux_pas, montant_pas: v.pas }
     }
 }
 

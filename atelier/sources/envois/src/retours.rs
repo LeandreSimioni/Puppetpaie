@@ -1464,11 +1464,17 @@ fn pas_rapport_crm(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
         let champs = enfants_textes(a, el);
         let lu = |k: &str| champs.iter().rev().find(|(n, _)| *n == k).map(|(_, t)| t.to_string());
         let Some(nir) = lu("NIR") else { continue };
-        let (taux, type_taux, identifiant) = match lu("taux_imposition_PAS") {
-            Some(taux) => (taux, "01", identifiant.to_string()),
-            None => ("0.00".to_string(), "13", "-1".to_string()),
+        // Le schema des bilans (net-entreprises-dsn-bilans-v02r01-20230703.xsd) dit `taux_imposition_PAS` facultatif,
+        // sans dire ce que son absence vaut : aucun texte deposé n'en fait un taux, un type ni un identifiant.
+        let Some(taux) = lu("taux_imposition_PAS") else {
+            return Err(echec(Classe::Illisible, "Un compte rendu de taux de PAS (nature 94) nomme un salarié sans lui donner de taux (taux_imposition_PAS) : le taux non transmis ne se lit pas.".to_string()));
         };
-        releves.push(ReleveTauxPas { nir, taux: Some(taux_de_pas(&taux)?), type_taux: Some(type_de_taux(type_taux)?), identifiant });
+        releves.push(ReleveTauxPas {
+            nir,
+            taux: Some(taux_de_pas(&taux)?),
+            type_taux: Some(droit::type_taux_pas::TypeDeTauxPas::TransmisParLaDgfip),
+            identifiant: identifiant.to_string(),
+        });
     }
     Ok(releves)
 }
@@ -2388,6 +2394,18 @@ fn rubrique_texte(a: &Arbre, e: &Noeud, nom: &str) -> Option<String> {
     rubrique_de(a, e, nom).map(str::to_string)
 }
 
+/// `rubrique_de`, un montant signe (RO.B005.R004, CSL 00 : `0\.00|[+-](0|[1-9]\d*)\.\d{2}`, cahier technique NEOReS
+/// 2027.1.0, `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2027.1.0-20260303.txt`) : « + » un
+/// credit, « - » un debit ; une autre forme se refuse.
+fn rubrique_montant(a: &Arbre, e: &Noeud, nom: &str) -> R<Option<socle::num::Decimal>> {
+    rubrique_de(a, e, nom)
+        .map(|t| {
+            let forme = t == "0.00" || (t.starts_with(['+', '-']) && t.len() >= 5 && t.as_bytes()[t.len() - 3] == b'.');
+            forme.then(|| socle::num::decimal_lu(t)).flatten().ok_or_else(|| echec(Classe::Illisible, format!("{} : {} n'est pas un montant signé", nom, socle::date::repr_texte(t))))
+        })
+        .transpose()
+}
+
 /// `rubrique_de`, une date : `AAAA-MM-JJ`, la forme d'une rubrique de nature date du cahier technique NEOReS (CSL 00,
 /// `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2026.1.2-20251024.txt`, l. 482) ; une autre forme
 /// se refuse.
@@ -2435,7 +2453,7 @@ pub struct DetailNeores {
     pub atypie: Option<String>,
     pub debut: Option<socle::date::Jour>,
     pub fin: Option<socle::date::Jour>,
-    pub montant: Option<String>,
+    pub montant: Option<socle::num::Decimal>,
     pub substituable: Option<&'static str>,
     pub rappel: Option<String>,
     pub interlocuteur: Option<String>,
@@ -2597,7 +2615,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
                 atypie: rd("RO_B005_R001"),
                 debut: rubrique_jour(&a, d, "RO_B005_R002")?,
                 fin: rubrique_jour(&a, d, "RO_B005_R003")?,
-                montant: rd("RO_B005_R004"),
+                montant: rubrique_montant(&a, d, "RO_B005_R004")?,
                 // CT 2027.1.0 : le caractere substituable et le rappel descendent au detail de l'action (note differentielle, § III).
                 substituable: dans_table(&SUBSTITUABLE_NEORES, rubrique_de(&a, d, "RO_B005_R005")),
                 rappel: rd("RO_B005_R006"),

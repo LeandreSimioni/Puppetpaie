@@ -527,13 +527,7 @@ fn deja_faites(ctx: &Contexte) -> R<String> {
     let d = declarations::casc::lue(ctx).map_err(|m| m.reclasser(Classe::Illisible))?;
     Ok(d.iter()
         .flat_map(|d| &d.regularisations)
-        .map(|x| {
-            let montant = match socle::num::decimal_lu(&x.montant.trim().replace(',', ".")) {
-                Some(m) => euros(m),
-                None => x.montant.clone(),
-            };
-            format!("{} ({}, viré le {})", x.annee, montant, x.vire_le.jj_mm_aaaa())
-        })
+        .map(|x| format!("{} ({}, viré le {})", x.annee, euros(x.montant), x.vire_le.jj_mm_aaaa()))
         .collect::<Vec<_>>()
         .join(", "))
 }
@@ -732,7 +726,7 @@ pub use declarations::casc::RegularisationNotee;
 
 /// La route `casc-regularise` note qu'une annee est regularisee. S'ecrit
 /// APRES le virement, jamais avant.
-pub fn marquer_regularise(ctx: &Contexte, annee: &str, vire_le: Jour, montant: &str, qui: &str, aujourd_hui: Jour) -> R<RegularisationNotee> {
+pub fn marquer_regularise(ctx: &Contexte, annee: &str, vire_le: Jour, montant: Decimal, qui: &str, aujourd_hui: Jour) -> R<RegularisationNotee> {
     let r = regularisation(ctx, &Demande { annee: Some(annee.to_string()), ..Default::default() })?;
     let p = fichier_suivi(ctx);
     let mut d = match declarations::casc::lue(ctx).map_err(|m| m.reclasser(Classe::Illisible))? {
@@ -746,8 +740,8 @@ pub fn marquer_regularise(ctx: &Contexte, annee: &str, vire_le: Jour, montant: &
     let entree = RegularisationNotee {
         annee: annee.to_string(),
         mois: r.mois.iter().map(|m| m.mois).collect(),
-        montant: montant.to_string(),
-        calcule: calcule.to_string(),
+        montant,
+        calcule,
         vire_le,
         note_le: aujourd_hui,
         qui: qui.to_string(),

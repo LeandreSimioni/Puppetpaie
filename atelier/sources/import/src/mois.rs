@@ -225,27 +225,27 @@ fn dpae_de(journal: &std::collections::HashMap<etats::Paire, socle::paris::Heure
     EtatDeCarte { couleur: "gris", courte: "avant PuppetPaie", phrase: "DPAE faite avant PuppetPaie : aucun certificat de l'Urssaf n'est relevé pour cette embauche".to_string() }
 }
 
-/// Les montants qu'une piece importee porte, chacun en texte exact ; un montant qu'aucune ne porte n'y est pas.
+/// Les montants qu'une piece importee porte, chacun exact ; un montant qu'aucune ne porte n'y est pas.
 #[derive(Debug, Clone, Default, Serialize)]
 pub(crate) struct Montants {
     #[serde(skip_serializing_if = "Option::is_none")]
-    brut: Option<String>,
+    brut: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    net_imposable: Option<String>,
+    net_imposable: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    net_a_payer: Option<String>,
+    net_a_payer: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pas: Option<String>,
+    pas: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    net_verse: Option<String>,
+    net_verse: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cotisations_salariales: Option<String>,
+    cotisations_salariales: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cotisations_patronales: Option<String>,
+    cotisations_patronales: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cout_employeur: Option<String>,
+    cout_employeur: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    net_avant_impot: Option<String>,
+    net_avant_impot: Option<Decimal>,
 }
 
 /// D'ou vient chaque montant : la DSN, le bulletin, l'AEM, l'historique.
@@ -337,7 +337,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieLue>, contrat: Option<&Co
 
     // Les montants, et d'ou chacun vient : le bulletin fait foi sur ceux qu'il imprime (`import::bulletins::completer`).
     let (mut montants, mut sources) = (Montants::default(), Sources::default());
-    let lus: [(&str, fn(&PaieVersee) -> Option<Decimal>, for<'a> fn(&'a mut Montants, &'a mut Sources) -> (&'a mut Option<String>, &'a mut Option<&'static str>)); 9] = [
+    let lus: [(&str, fn(&PaieVersee) -> Option<Decimal>, for<'a> fn(&'a mut Montants, &'a mut Sources) -> (&'a mut Option<Decimal>, &'a mut Option<&'static str>)); 9] = [
         ("brut", |p| p.brut, |m, s| (&mut m.brut, &mut s.brut)),
         ("net_imposable", |p| p.net_imposable, |m, s| (&mut m.net_imposable, &mut s.net_imposable)),
         ("net_a_payer", |p| p.net_a_payer, |m, s| (&mut m.net_a_payer, &mut s.net_a_payer)),
@@ -357,7 +357,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieLue>, contrat: Option<&Co
         };
         if let Some(v) = v {
             let (m, s) = place(&mut montants, &mut sources);
-            *m = Some(v.to_string());
+            *m = Some(v);
             *s = Some(match source {
                 Some(s) => s,
                 None => "historique",

@@ -53,11 +53,27 @@ const NOM_TABLE: &str = "urssaf-codes-types-personnel.csv";
 pub struct LigneBordereau {
     pub code: String,
     pub qualifiant: String,
-    /// Le taux AT/MP en texte, vide si la ligne n'en porte pas.
-    pub taux_at: String,
+    /// Le taux que la ligne porte (S21.G00.23.003), a deux decimales ; vide si elle n'en porte pas.
+    pub taux_at: Option<TauxDeLaLigne>,
     pub assiette: Option<Decimal>,
     pub montant: Option<Decimal>,
     pub commune: Option<String>,
+}
+
+/// LE TAUX QU'UNE LIGNE 23 PORTE (S21.G00.23.003) : le taux AT/MP de la ligne d'un CTP qui le porte, ou celui du
+/// versement mobilite de l'autorite (format Z).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TauxDeLaLigne {
+    AtMp(Decimal),
+    Mobilite(Decimal),
+}
+
+impl TauxDeLaLigne {
+    pub fn taux(self) -> Decimal {
+        match self {
+            TauxDeLaLigne::AtMp(t) | TauxDeLaLigne::Mobilite(t) => t,
+        }
+    }
 }
 
 /// Une ligne de la table : effet, fin, format, taux plafonne, taux deplafonne, libelle.
@@ -250,12 +266,9 @@ urssaf-codes-types-personnel). Rien n'est ecrit.",
             jour.jj_mm_aaaa()
         ));
     };
-    let at = if l.taux_at.is_empty() {
-        Decimal::ZERO
-    } else {
-        Decimal::from_str(l.taux_at.trim()).map_err(|_| refus(socle::num::illisible(&l.taux_at)))?
-    };
     let cent = Decimal::ONE_HUNDRED;
+    // La part du taux AT/MP que la ligne porte, valorisee a part ; une ligne sans taux AT n'en a pas.
+    let part_at = |a: Decimal| -> Option<Decimal> { l.taux_at.map(|at| euro(div(mul(a, at.taux()), cent))) };
     match t.format.as_str() {
         // F et R : le CTP porte le signe negatif, le montant (23.005) s'ecrit positif (tableau DIDA de l'Urssaf,
         // `chomage-permanents/urssaf-equivalence-dida-20260611.csv`, CTP 003 et 004 ; guide Urssaf du 04/06/2026, format R).
@@ -265,7 +278,7 @@ urssaf-codes-types-personnel). Rien n'est ecrit.",
         }
         "Z" => {
             let a = l.assiette.ok_or_else(|| socle::fichiers::absent("assiette"))?;
-            Ok(euro(div(mul(a, at), cent)))
+            part_at(a).ok_or_else(|| socle::fichiers::absent("taux_at"))
         }
         "A" | "C" | "D" | "E" | "K" => {
             let plafonne = l.qualifiant == "921";
@@ -280,7 +293,11 @@ Rien n'est ecrit.",
                 ));
             };
             let a = l.assiette.ok_or_else(|| socle::fichiers::absent("assiette"))?;
-            Ok(euro(div(mul(a, tx), cent)) + euro(div(mul(a, at), cent)))
+            let principale = euro(div(mul(a, tx), cent));
+            Ok(match part_at(a) {
+                Some(at) => principale + at,
+                None => principale,
+            })
         }
         fmt => Err(socle::refus!(
             "CTP {} ({}) : format {} de la table de l'Urssaf, que le moteur ne sait pas \

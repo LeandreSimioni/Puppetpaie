@@ -54,7 +54,7 @@ pub enum Annonce {
 #[serde(deny_unknown_fields)]
 pub struct TauxPasAnnonce {
     pub salarie: String,
-    pub taux: String,
+    pub taux: Decimal,
 }
 
 /// La CARSAT notifie ce taux a l'etablissement.
@@ -62,7 +62,7 @@ pub struct TauxPasAnnonce {
 #[serde(deny_unknown_fields)]
 pub struct TauxAtmpAnnonce {
     pub code_risque: String,
-    pub taux: String,
+    pub taux: Decimal,
     pub date_effet: Jour,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bureau: Option<String>,
@@ -124,17 +124,11 @@ fn ecrire(racine: &Path, m: &Memoire) -> R<()> {
     socle::ecriture::ecrire_json(&chemin(racine), m, 2).map_err(|m| m.reclasser(Classe::Disque))
 }
 
-/// Un taux annonce en pourcentage (« 7,50 » ou « 7.50 »).
-fn taux_annonce(taux: &str, cle: &str, quoi: &str) -> R<Decimal> {
-    let t = taux.replace(',', ".");
-    socle::num::dec_texte(&t).map_err(|e| socle::echec::a_la_cle(quoi, cle, format!("{} : {}", taux, e.phrase)).reclasser(Classe::Illisible))
-}
-
 /// Un nombre a deux decimales ecrites, le demi au pair.
-fn deux_decimales(x: Decimal) -> String {
+fn deux_decimales(x: Decimal) -> Decimal {
     let mut q = x.round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointNearestEven);
     q.rescale(2);
-    q.to_string()
+    q
 }
 
 /// Un texte facultatif d'une annonce : vide, il n'est pas dit.
@@ -168,7 +162,7 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
     };
     match annonce.clone() {
         Annonce::TauxPas(t) => {
-            let n = taux_annonce(&t.taux, "taux_pas.taux", "Le taux de prélèvement annoncé ne se lit pas.")?;
+            let n = t.taux;
             if t.salarie.is_empty() || !(Decimal::ZERO..=Decimal::ONE_HUNDRED).contains(&n) {
                 return Err(socle::echec::cle("Le taux de prélèvement annoncé dit le salarié et un taux entre 0 et 100.", "taux_pas").reclasser(Classe::Illisible));
             }
@@ -176,7 +170,7 @@ pub fn annoncer(racine: &Path, branchement: Branchement, annonce: &Annonce) -> R
         }
         Annonce::TauxAtmp(t) => {
             let code = t.code_risque.replace(['.', ' '], "").to_uppercase();
-            let n = taux_annonce(&t.taux, "taux_atmp.taux", "Le taux AT/MP annoncé ne se lit pas.")?;
+            let n = t.taux;
             if code.len() != 5 || !(Decimal::ZERO..Decimal::from(20)).contains(&n) || n.is_zero() {
                 return Err(socle::echec::cle("Le taux AT/MP annoncé dit un code risque de 5 caractères, un taux en pourcentage et une date d'effet AAAA-MM-JJ.", "taux_atmp").reclasser(Classe::Illisible));
             }
@@ -390,7 +384,7 @@ fn bilans_refuses(flux: &str, publication: InstantCompact, l: &Ligne, nature: Na
 /// LE TAUX DE SIMULATION d'un salarie dont le scenario n'annonce aucun taux : la DGFiP simulee le connait comme la vraie
 /// connait celui de tout contribuable identifie. Il ne vient d'aucun texte ni d'aucun avis d'imposition : c'est un
 /// nombre tire du NIR (FNV-1a), stable d'un compte rendu a l'autre, de 0,00 % a 12,00 % par dixieme.
-fn taux_de_simulation(nir: &str) -> String {
+fn taux_de_simulation(nir: &str) -> Decimal {
     let h = nir.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3));
     deux_decimales(Decimal::new((h % 121) as i64, 1))
 }
@@ -405,11 +399,11 @@ fn taux_de_simulation(nir: &str) -> String {
 /// `taux_imposition_PAS`). `None` quand la declaration ne porte aucun salarie de la compagnie.
 fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &str, publication: InstantCompact) -> R<Option<Piece>> {
     let depot = l.quand().jour();
-    let mut taux: BTreeMap<String, String> = BTreeMap::new();
+    let mut taux: BTreeMap<String, Decimal> = BTreeMap::new();
     for a in &memoire.annonces {
         let Some(t) = &a.taux_pas else { continue };
         if a.le <= depot {
-            taux.insert(t.salarie.clone(), t.taux.clone());
+            taux.insert(t.salarie.clone(), t.taux);
         }
     }
     let mut salaries = String::new();
@@ -422,14 +416,14 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &str,
         }
         // Le taux annonce ; sans annonce, celui de la simulation.
         let t = match taux.get(cle.as_str()) {
-            Some(t) => t.clone(),
+            Some(t) => *t,
             None => taux_de_simulation(&nir),
         };
         salaries.push_str(&format!(
             "<salarie><NIR>{}</NIR><matricule>{}</matricule><taux_imposition_PAS>{}</taux_imposition_PAS></salarie>",
             echappe(&nir),
             element(ind.code_salarie.as_deref()),
-            echappe(&t)
+            t
         ));
     }
     if salaries.is_empty() {
@@ -477,7 +471,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &str, publicatio
             facultatif(&t.section, "section"),
             echappe(&t.code_risque),
             facultatif(&t.bureau, "temoin_bureau"),
-            echappe(&t.taux),
+            t.taux,
             t.date_effet.aaaammjj(),
             calcul
         ));

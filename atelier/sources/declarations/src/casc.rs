@@ -24,8 +24,8 @@ pub struct CascSvp {
 pub struct RegularisationNotee {
     pub annee: String,
     pub mois: Vec<Mois>,
-    pub montant: String,
-    pub calcule: String,
+    pub montant: rust_decimal::Decimal,
+    pub calcule: rust_decimal::Decimal,
     pub vire_le: socle::date::Jour,
     pub note_le: socle::date::Jour,
     pub qui: String,
