@@ -2,6 +2,7 @@
 
 pub mod alleger;
 pub mod assemblage;
+mod cff;
 pub mod chiffrement;
 pub mod description;
 mod dessin;

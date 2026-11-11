@@ -1049,14 +1049,21 @@ fn encodage_type1(doc: &Document, fd: Option<&Dictionary>, sous_type: &[u8], nom
             });
         }
         let (programme, compact) = match fd {
-            Some(fd) => (lecture::lue(doc, fd, b"FontFile", lecture::flux)?, lecture::lue(doc, fd, b"FontFile3", lecture::flux)?.is_some()),
-            None => (None, false),
+            Some(fd) => (lecture::lue(doc, fd, b"FontFile", lecture::flux)?, lecture::lue(doc, fd, b"FontFile3", lecture::flux)?),
+            None => (None, None),
         };
         if let Some(s) = programme {
             return sinon_inconnu(encodage_du_programme_type1(doc, s, zapf), tous_inconnus);
         }
-        if compact {
-            return Ok(tous_inconnus("l'encodage propre d'un programme compact incorporé (/FontFile3) n'est pas lu par la fabrique".to_string()));
+        if let Some(s) = compact {
+            // Table 126 : `FontFile3` de sous-type `Type1C` (un programme CFF nu) ou `OpenType`.
+            return match lecture::lue(doc, &s.dict, b"Subtype", lecture::nom)? {
+                Some(b"Type1C") => sinon_inconnu(encodage_cff(doc, s, zapf), tous_inconnus),
+                autre => Ok(tous_inconnus(format!(
+                    "l'encodage propre d'un programme incorporé /FontFile3 de sous-type {} n'est pas lu par la fabrique",
+                    autre.map_or("absent".to_string(), lecture::nom_de)
+                ))),
+            };
         }
         // 9.6.6.1 : les deux polices standard symboliques sont Symbol et ZapfDingbats ; table 123 : le drapeau Symbolic.
         let drapeaux = match fd {
@@ -1146,6 +1153,19 @@ fn encodage_du_programme_type1(doc: &Document, s: &lopdf::Stream, zapf: bool) ->
             }
         }
     }
+}
+
+/// L'encodage propre d'un programme compact incorporé (`FontFile3`, `Type1C`) : le nom du glyphe de chaque code, lu
+/// dans le programme (`cff.rs`), par la liste des glyphes d'Adobe ; un code non encodé ne montre rien.
+fn encodage_cff(doc: &Document, s: &lopdf::Stream, zapf: bool) -> Result<Vec<Lu>, Refus> {
+    let octets = lecture::contenu(doc, s)?;
+    crate::cff::noms_des_codes(&octets)?
+        .into_iter()
+        .map(|n| match n {
+            Some(n) => lu_du_nom(&n, zapf),
+            None => Ok(Lu::Rien),
+        })
+        .collect()
 }
 
 /// Les mots d'un texte PostScript : les noms avec leur `/`, les chaînes et les commentaires sautés, les délimiteurs
