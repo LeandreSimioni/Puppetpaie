@@ -415,7 +415,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
     // Un administrateur, pour son tableau et son dépôt groupé : la compagnie est rattachée à son registre, après les
     // exemples du mot de passe du logiciel (celui d'une compagnie seule).
     let inst = c.parent().unwrap().parent().unwrap();
-    let registre = json!({"quoi": "Le registre de l'administrateur.", "compagnies": [{"dossier": c.strip_prefix(inst).unwrap().to_string_lossy(), "depuis": "2026-01-02T09:00:00"}]});
+    let registre = json!({"quoi": "Le registre de l'administrateur.", "compagnies": [{"dossier": c.strip_prefix(inst).unwrap().to_string_lossy(), "depuis": "2026-01-02T09:00"}]});
     let mut phrases_fautives = Vec::new();
     for f in &fiches {
         if (f.route == Route::AdministrateurTableau || f.route == Route::AdministrateurDeposer) && !inst.join("administrateur.json").exists() {
@@ -527,7 +527,7 @@ fn installation_a_part(c: &Path, test: &str) -> (PathBuf, PathBuf) {
 fn administrateur(c: &Path, route: Route, exemple: Value) -> Value {
     const ADMIN: &str = "administrateur-essai-1";
     let (inst, a) = installation_a_part(c, route.nom());
-    let poste = Poste { dossier_cle: inst.join("cle-du-poste"), maintenant: "2026-11-02T10:00".into() };
+    let poste = Poste { dossier_cle: inst.join("cle-du-poste"), maintenant: socle::paris::MinuteEcrite::lire("2026-11-02T10:00").unwrap() };
     poste.coffre(&a).poser_ouverture(ADMIN, None).unwrap();
     let b = ajouter_venant(&inst, "Seconde", Venue::Neuve).unwrap().racine;
     let mut charge = exemple;

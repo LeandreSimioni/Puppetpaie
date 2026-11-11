@@ -718,7 +718,7 @@ pub(crate) fn boite_liee(ctx: &Contexte) -> R<bool> {
     if compagnie::bridage::branchement(&ctx.racine)?.joue() {
         return Ok(true);
     }
-    let coffre = compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
+    let coffre = compagnie::coffre::Coffre::du_poste(&ctx.racine);
     // L'adresse posee dans l'environnement, sinon celle du coffre.
     let adresse = match std::env::var("COURRIEL_COMPTE") {
         Ok(a) if !a.is_empty() => a,

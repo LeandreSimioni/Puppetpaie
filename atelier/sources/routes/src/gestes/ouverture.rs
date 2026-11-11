@@ -645,7 +645,7 @@ fn age_de_la_derniere(precedente: &Trace) -> i64 {
 
 /// Le coffre dit-il que `service` est pose (ou dans l'environnement) ? `Err` : le coffre refuse de s'ouvrir.
 fn coffre_dispo(ctx: &Contexte, service: &str) -> R<bool> {
-    compagnie::coffre::Coffre::du_poste(&ctx.racine, "").disponible(service)
+    compagnie::coffre::Coffre::du_poste(&ctx.racine).disponible(service)
 }
 
 /// Une seule phrase pour l'absence de reseau, pas une erreur par dossier et par organisme. Les erreurs

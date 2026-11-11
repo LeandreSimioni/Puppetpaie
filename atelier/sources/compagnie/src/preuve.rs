@@ -94,7 +94,7 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, quand: M
     if !presse.is_empty() {
         return Err(erreur(Classe::VersionExigee, format!("Rien n'est parti : {}.", presse)));
     }
-    let coffre = crate::coffre::Coffre::du_poste(&ctx.racine, "");
+    let coffre = crate::coffre::Coffre::du_poste(&ctx.racine);
     if !coffre.ouverture_exigee()? {
         return Err(erreur(
             Classe::PreuveInsuffisante,
@@ -123,7 +123,7 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, quand: M
 /// fenetre, il vaut confirmation), puis le coffre. Ce qui autorise a y puiser pour un depot REEL, c'est la
 /// preuve verifiee juste avant par l'appelant. Ce qui SORT d'ici est un secret : il va directement au client.
 pub fn motdepasse_organisme(ctx: &Contexte, service: &str, ouverture: Option<&str>) -> R<Option<String>> {
-    let coffre = crate::coffre::Coffre::du_poste(&ctx.racine, "");
+    let coffre = crate::coffre::Coffre::du_poste(&ctx.racine);
     if !coffre.disponible(service)? {
         return Err(erreur(
             Classe::Refuse,

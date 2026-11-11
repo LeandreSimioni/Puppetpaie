@@ -694,7 +694,7 @@ fn compte_de_la_boite(ctx: &Contexte) -> R<String> {
     let a = match std::env::var("COURRIEL_COMPTE") {
         Ok(a) => a,
         Err(std::env::VarError::NotPresent) => {
-            let coffre = compagnie::coffre::Coffre::du_poste(&ctx.racine, "");
+            let coffre = compagnie::coffre::Coffre::du_poste(&ctx.racine);
             coffre.compte_pose("courriel")?.ok_or_else(|| {
                 erreur(Classe::Manque, "Le compte de la boîte courriel n'est pas posé : route coffre-poser, service courriel, compte <adresse>.")
             })?

@@ -162,7 +162,7 @@ fn question_de_la_seance(heures: i64, essai: u8, precedent_refuse: bool) -> Ques
 /// Pose la question jusqu'a `ESSAIS` fois ; rend le mot de passe qui ouvre le coffre de `racine`, ou la phrase du refus.
 /// Le mot de passe sort d'ici vers l'appelant interne seul (jamais vers un agent) ; rien d'autre n'en garde trace.
 fn obtenir(racine: &Path, canal: &dyn Canal, question: impl Fn(u8, bool) -> Question) -> R<String> {
-    let coffre = Coffre::du_poste(racine, "");
+    let coffre = Coffre::du_poste(racine);
     let mut refuse = false;
     for essai in 1..=ESSAIS {
         match canal.demander(&question(essai, refuse)) {
@@ -183,7 +183,7 @@ fn obtenir(racine: &Path, canal: &dyn Canal, question: impl Fn(u8, bool) -> Ques
 }
 
 fn sans_mot_de_passe_pose(racine: &Path) -> Option<Echec> {
-    match Coffre::du_poste(racine, "").ouverture_exigee() {
+    match Coffre::du_poste(racine).ouverture_exigee() {
         Ok(true) => None,
         Ok(false) => Some(refus(
             "Aucun mot de passe du logiciel n'est pose : rien ne peut partir en reel. Le poser d'abord (la fenetre PuppetPaie le demande a sa premiere ouverture). Rien n'est parti.",
@@ -225,9 +225,9 @@ pub fn ouvrir_seance(racine: &Path) -> Verdict {
         }
         let Some(canal) = canal_installe() else { return Err(refus(SANS_HUMAIN)) };
         let m = obtenir(racine, canal.as_ref(), |essai, refuse| question_de_la_seance(HEURES_SEANCE, essai, refuse))?;
-        let maintenant = socle::paris::maintenant_naif();
-        let fin = maintenant.plus(HEURES_SEANCE * 3600)?.iso()[..16].to_string();
-        Coffre::du_poste(racine, &maintenant.iso()[..16]).garder_ouverture(&m, &fin)?;
+        let coffre = Coffre::du_poste(racine);
+        let fin = socle::paris::MinuteEcrite::du_naif(coffre.maintenant.naif().plus(HEURES_SEANCE * 3600)?);
+        coffre.garder_ouverture(&m, fin)?;
         retenir_mot_de_passe_tape(&m);
         Ok(())
     };
@@ -749,7 +749,7 @@ mod tests {
         }
 
         fn coffre_a(&self) -> Coffre {
-            Coffre { racine: self.racine.clone(), dossier_cle: self.poste_a.clone(), maintenant: "2026-10-08T10:00".into(), variables: Default::default() }
+            Coffre { racine: self.racine.clone(), dossier_cle: self.poste_a.clone(), maintenant: socle::paris::MinuteEcrite::lire("2026-10-08T10:00").unwrap(), variables: Default::default() }
         }
     }
 

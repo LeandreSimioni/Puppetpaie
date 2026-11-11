@@ -221,7 +221,8 @@ impl InstantEcrit {
 }
 
 impl MinuteEcrite {
-    /// L'heure de Paris de cet instant, comme `iso_minutes` l'ecrit.
+    /// L'heure de Paris de cet instant, tronquee a la minute (la fraction de seconde s'arrondit d'abord a la
+    /// microseconde, au pair le plus proche).
     pub fn de(t: Moment) -> MinuteEcrite {
         MinuteEcrite::du_naif(Naif(local_arrondi(t)))
     }
@@ -272,6 +273,11 @@ impl HeureDeSaisie {
     /// L'heure de Paris de cet instant, tronquee a la minute.
     pub fn de(t: Moment) -> HeureDeSaisie {
         HeureDeSaisie(MinuteEcrite::de(t).0)
+    }
+
+    /// La meme minute, ecrite en heure de saisie.
+    pub fn de_la_minute(m: MinuteEcrite) -> HeureDeSaisie {
+        HeureDeSaisie(m.0)
     }
 
     /// L'heure de Paris a cet instant (`socle::temps`), tronquee a la minute.
@@ -655,16 +661,6 @@ fn local_arrondi(t: Moment) -> i64 {
     }
 }
 
-/// Un instant a l'heure de
-/// Paris : `AAAA-MM-JJTHH:MM`. La fraction de seconde s'arrondit a la
-/// microseconde (au pair le plus proche) avant de tronquer aux minutes.
-pub fn iso_minutes(t: Moment) -> String {
-    let local = local_arrondi(t);
-    let j = dans_le_calendrier(local.div_euclid(86_400));
-    let reste = local.rem_euclid(86_400);
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}", j.an, j.mois, j.jour, reste / 3_600, (reste % 3_600) / 60)
-}
-
 /// LA DATE DE MODIFICATION D'UN FICHIER, une donnee du dehors : les secondes et la fraction en nanosecondes,
 /// additionnees en flottant, lues contre le calendrier ; `None` : le systeme date le fichier hors du calendrier. Son
 /// lecteur dit ce que l'absence veut dire pour lui.
@@ -705,8 +701,8 @@ mod tests {
         let t = Jour::nouveau(2026, 3, 29).unwrap().ordinal() - 719_163;
         assert_eq!(decalage(a(t * 86_400 + 3_599)), 3_600);
         assert_eq!(decalage(a(t * 86_400 + 3_600)), 7_200);
-        assert_eq!(iso_minutes(a(t * 86_400 + 3_599)), "2026-03-29T01:59");
-        assert_eq!(iso_minutes(a(t * 86_400 + 3_600)), "2026-03-29T03:00");
+        assert_eq!(MinuteEcrite::de(a(t * 86_400 + 3_599)).iso(), "2026-03-29T01:59");
+        assert_eq!(MinuteEcrite::de(a(t * 86_400 + 3_600)).iso(), "2026-03-29T03:00");
     }
 
     /// Directive 2000/84/CE, art. 3 : la période « se termine […] à 1 heure du matin, temps universel, le dernier dimanche
@@ -717,8 +713,8 @@ mod tests {
         let t = Jour::nouveau(2026, 10, 25).unwrap().ordinal() - 719_163;
         assert_eq!(decalage(a(t * 86_400 + 3_599)), 7_200);
         assert_eq!(decalage(a(t * 86_400 + 3_600)), 3_600);
-        assert_eq!(iso_minutes(a(t * 86_400 + 3_599)), "2026-10-25T02:59");
-        assert_eq!(iso_minutes(a(t * 86_400 + 3_600)), "2026-10-25T02:00");
+        assert_eq!(MinuteEcrite::de(a(t * 86_400 + 3_599)).iso(), "2026-10-25T02:59");
+        assert_eq!(MinuteEcrite::de(a(t * 86_400 + 3_600)).iso(), "2026-10-25T02:00");
     }
 
 }

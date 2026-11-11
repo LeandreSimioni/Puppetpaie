@@ -65,7 +65,7 @@ impl Cadre {
     /// `demande::ouvrir_seance`. Un refus ne coupe pas la commande : le secret vient peut-etre de
     /// l'environnement, et sinon la lecture du coffre dira elle-meme ce qui manque. La phrase est dite.
     pub fn ouvrir_le_coffre(&self) {
-        let c = ::compagnie::coffre::Coffre::du_poste(&self.racine, "");
+        let c = ::compagnie::coffre::Coffre::du_poste(&self.racine);
         match c.ouvre_a_ce_poste() {
             Ok(true) => return,
             Ok(false) => {}

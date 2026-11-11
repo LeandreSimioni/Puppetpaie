@@ -76,7 +76,7 @@ pub fn verifier_secret_avec(ctx: &Contexte, service: &str, authentifier: Authent
             return Err(erreur(Classe::Refuse, format!("Service inconnu : « {} ». Connus : {}, {}, {}.", service, NET_ENTREPRISES, URSSAF, COURRIEL)));
         }
     };
-    let coffre = Coffre::du_poste(&ctx.racine, "");
+    let coffre = Coffre::du_poste(&ctx.racine);
     if !coffre.disponible(nom)? {
         return Err(erreur(Classe::Refuse, format!("Aucun mot de passe {} : rien à vérifier.", nom)));
     }

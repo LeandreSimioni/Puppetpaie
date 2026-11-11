@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use socle::base64::ecrire as base64_ecrire;
 use socle::echec::Classe;
 use socle::json_ascii::dumps;
+use socle::paris::{HeureDeSaisie, MinuteEcrite};
 
 pub const FICHIER: &str = "coffre.bin";
 pub const FICHIER_CLE: &str = "cle-poste.bin";
@@ -87,7 +88,7 @@ struct Contenu {
     #[serde(skip_serializing_if = "Option::is_none")]
     secrets: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    logiciel_pose_le: Option<String>,
+    logiciel_pose_le: Option<HeureDeSaisie>,
 }
 
 /// LES PARAMETRES DE LA DERIVATION DU MOT DE PASSE DU LOGICIEL (scrypt) : ecrits dans le coffre, verifies avant de
@@ -117,7 +118,7 @@ struct Enveloppes {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FichePosee {
-    pose_le: String,
+    pose_le: HeureDeSaisie,
     libelle: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     compte: Option<String>,
@@ -129,7 +130,7 @@ struct FichePosee {
 #[serde(deny_unknown_fields)]
 struct Gardee {
     motdepasse: String,
-    fin: String,
+    fin: MinuteEcrite,
     coffre: String,
 }
 
@@ -141,7 +142,7 @@ pub struct EtatService {
     pub libelle: &'static str,
     pub sert_a: &'static str,
     pub pose: bool,
-    pub pose_le: Option<String>,
+    pub pose_le: Option<HeureDeSaisie>,
     pub variable: &'static str,
     pub dans_environnement: bool,
     pub compte: Option<String>,
@@ -626,27 +627,27 @@ fn env_non_vide(nom: &str) -> Option<String> {
 pub struct Coffre {
     pub racine: PathBuf,
     pub dossier_cle: PathBuf,
-    /// L'heure locale, `AAAA-MM-JJTHH:MM` : donnee par l'appelant.
-    pub maintenant: String,
+    /// L'heure de Paris a la minute : celle de l'horloge du moteur (`socle::temps`) quand le coffre se fait.
+    pub maintenant: MinuteEcrite,
     /// Les variables d'environnement des services (elles passent devant le coffre).
     pub variables: BTreeMap<String, String>,
 }
 
 impl Coffre {
     /// Le coffre de `racine` avec l'environnement de ce processus.
-    pub fn du_poste(racine: impl Into<PathBuf>, maintenant: &str) -> Coffre {
+    pub fn du_poste(racine: impl Into<PathBuf>) -> Coffre {
         Coffre {
             racine: racine.into(),
             dossier_cle: Coffre::dossier_cle_du_poste(),
-            maintenant: maintenant.to_string(),
+            maintenant: MinuteEcrite::maintenant(),
             variables: SERVICES.iter().filter_map(|s| env_non_vide(s.variable).map(|v| (s.variable.to_string(), v))).collect(),
         }
     }
 
     /// Le coffre de `racine` avec la cle du poste dans `dossier_cle`, sans variable de service : celui que l'administrateur
     /// rescelle (`administrateur.rs`), et que ses essais montent sans toucher a l'environnement du processus.
-    pub fn sur(racine: impl Into<PathBuf>, dossier_cle: impl Into<PathBuf>, maintenant: &str) -> Coffre {
-        Coffre { racine: racine.into(), dossier_cle: dossier_cle.into(), maintenant: maintenant.to_string(), variables: BTreeMap::new() }
+    pub fn sur(racine: impl Into<PathBuf>, dossier_cle: impl Into<PathBuf>, maintenant: MinuteEcrite) -> Coffre {
+        Coffre { racine: racine.into(), dossier_cle: dossier_cle.into(), maintenant, variables: BTreeMap::new() }
     }
 
     /// Le dossier de la cle de CE poste, tel que `du_poste` le trouve.
@@ -654,13 +655,9 @@ impl Coffre {
         dossier_cle_de(&env_du_poste, dossier_portable().as_deref())
     }
 
-    /// L'heure locale `AAAA-MM-JJTHH:MM` : celle qu'on a donnee, sinon l'horloge. Les lecteurs du moteur font leur
-    /// coffre sans heure (`du_poste(racine, "")`) et la seance, elle, expire : une heure vide ne doit pas la rendre eternelle.
-    fn heure(&self) -> String {
-        if !self.maintenant.is_empty() {
-            return self.maintenant.clone();
-        }
-        socle::paris::maintenant_naif().iso()[..16].to_string()
+    /// L'heure de ce coffre, a laquelle la seance gardee expire.
+    fn heure(&self) -> MinuteEcrite {
+        self.maintenant
     }
 
     pub fn chemin(&self) -> PathBuf {
@@ -964,16 +961,13 @@ impl Coffre {
         let (maitresse, mut contenu) = self.ouvrir_ou_lever(None)?;
         let mut secrets = self.secrets(&contenu, &maitresse)?;
         secrets.insert(service.into(), motdepasse.into());
-        contenu.fiches.insert(service.into(), FichePosee { pose_le: self.pose_le()?, libelle: fiche.libelle.into(), compte });
+        contenu.fiches.insert(service.into(), FichePosee { pose_le: self.pose_le(), libelle: fiche.libelle.into(), compte });
         self.enregistrer(contenu, &maitresse, &secrets)
     }
 
-    /// `AAAA-MM-JJ HH:MM`.
-    fn pose_le(&self) -> R<String> {
-        if self.maintenant.len() != 16 {
-            return Err(echec(Classe::Illisible, "demande illisible : il faut `maintenant` (AAAA-MM-JJTHH:MM)"));
-        }
-        Ok(self.maintenant.replacen('T', " ", 1))
+    /// L'heure ou un secret se pose (`AAAA-MM-JJ HH:MM`).
+    fn pose_le(&self) -> HeureDeSaisie {
+        HeureDeSaisie::de_la_minute(self.maintenant)
     }
 
     pub fn oublier(&self, service: &str) -> R<bool> {
@@ -1104,7 +1098,7 @@ impl Coffre {
         }
         let (maitresse, mut c) = self.ouvrir_ou_lever(ancien)?;
         c.enveloppes.motdepasse = Some(b64(&sceller(&deriver(motdepasse, &c.kdf)?, &maitresse, AAD_MOTDEPASSE)?));
-        c.logiciel_pose_le = Some(self.pose_le()?);
+        c.logiciel_pose_le = Some(self.pose_le());
         let secrets = self.secrets(&c, &maitresse)?;
         self.octets_a_ecrire(c, &maitresse, &secrets)
     }
@@ -1157,16 +1151,16 @@ impl Coffre {
 
     /// Garde le mot de passe du logiciel jusqu'a `fin` (`AAAA-MM-JJTHH:MM`).
     /// Refuse un mot de passe qui n'ouvre pas le coffre.
-    pub fn garder_ouverture(&self, motdepasse: &str, fin: &str) -> R<String> {
+    pub fn garder_ouverture(&self, motdepasse: &str, fin: MinuteEcrite) -> R<MinuteEcrite> {
         if !self.verifier_ouverture(motdepasse)? {
             return Err(refus("Mot de passe du logiciel refuse : rien n'est garde."));
         }
-        let d = Gardee { motdepasse: motdepasse.into(), fin: fin.into(), coffre: affiche(&resoudre(&self.chemin())?) };
+        let d = Gardee { motdepasse: motdepasse.into(), fin, coffre: affiche(&resoudre(&self.chemin())?) };
         let clair = dumps(&d, None, false, false);
         let p = self.chemin_gardee()?;
         dossier_de(&p)?;
         std::fs::write(&p, sceller(&self.cle_ou_creer()?, clair.as_bytes(), AAD_GARDEE)?).map_err(|e| oserr(&e, &p))?;
-        Ok(fin.to_string())
+        Ok(fin)
     }
 
     /// La gardee dechiffree, s'il y en a une ; `CoffreIllisible` si elle ne s'ouvre pas ou ne se lit pas.
@@ -1218,7 +1212,7 @@ impl Coffre {
     }
 
     /// L'heure de fin de la gardee en cours, sans rien verifier d'autre.
-    pub fn fin_ouverture_gardee(&self) -> R<Option<String>> {
+    pub fn fin_ouverture_gardee(&self) -> R<Option<MinuteEcrite>> {
         let d = match self.gardee() {
             Ok(Some(d)) => d,
             Ok(None) => return Ok(None),

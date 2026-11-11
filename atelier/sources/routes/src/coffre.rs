@@ -274,7 +274,7 @@ pub(crate) struct ServiceDit {
     pub(crate) libelle: &'static str,
     pub(crate) sert_a: &'static str,
     pub(crate) pose: bool,
-    pose_le: Option<String>,
+    pose_le: Option<socle::paris::HeureDeSaisie>,
     pub(crate) environnement: bool,
     compte: Option<String>,
     avec_compte: bool,
@@ -513,7 +513,7 @@ fn refus(m: impl Into<String>) -> Echec {
 /// `exiger_mot_de_passe` : le mot de passe du logiciel, s'il est pose, pour un acte qui ENGAGE sans rien envoyer. Decide
 /// ICI, jamais par la page. `motdepasse` : celui que la page a fait taper pour la route.
 pub(crate) fn exiger_mot_de_passe(racine: &Path, motdepasse: Option<&str>, quoi: &str) -> R<()> {
-    let coffre = compagnie::coffre::Coffre::du_poste(racine, "");
+    let coffre = compagnie::coffre::Coffre::du_poste(racine);
     if !coffre.ouverture_exigee()? {
         return Ok(());
     }
@@ -560,14 +560,8 @@ fn en_operation(x: Echec) -> Echec {
     }
 }
 
-/// L'heure de Paris, a la minute.
-fn maintenant() -> String {
-    let t = socle::temps::secondes();
-    socle::paris::iso_minutes(t)
-}
-
 fn coffre(ctx: &Contexte) -> Coffre {
-    Coffre::du_poste(&ctx.racine, &maintenant())
+    Coffre::du_poste(&ctx.racine)
 }
 
 // ------------------------------------------------------------------ le coffre
@@ -852,7 +846,7 @@ impl Jeton {
     fn ouvrir(racine: &Path, p: &Path) -> R<JetonEcrit> {
         // Une lecture impossible (droits) se range avec les refus du coffre : l'etat se lit.
         let brut = std::fs::read(p).map_err(|e| socle::echec::du_disque(p, &e))?;
-        let clair = compagnie::coffre::Coffre::du_poste(racine, "").deproteger(&brut, DESCRIPTION).map_err(|e| {
+        let clair = compagnie::coffre::Coffre::du_poste(racine).deproteger(&brut, DESCRIPTION).map_err(|e| {
             e.reformuler(|m| format!("{} Pour le jeton Google, le remede est : relier de nouveau le Drive (Configuration > Mots de passe).", m))
         })?;
         let texte = String::from_utf8(clair).map_err(|e| socle::echec::abime(p, e))?;
@@ -946,7 +940,7 @@ fn google_autoriser(ctx: &Contexte, mdp: Option<&str>) -> R<String> {
 fn sceller_le_jeton(racine: &Path, jeton: &envois::google_autorisation::JetonGoogle) -> R<String> {
     let ecrit = JetonEcrit { rafraichissement: jeton.rafraichissement.clone(), compte: jeton.compte.clone(), permissions: jeton.permissions.clone() };
     let brut = socle::json_ascii::dumps(&ecrit, None, false, false);
-    let scelle = compagnie::coffre::Coffre::du_poste(racine, "")
+    let scelle = compagnie::coffre::Coffre::du_poste(racine)
         .proteger(brut.as_bytes(), DESCRIPTION)
         .map_err(|e| e.reformuler(|m| format!("Le jeton n'a pas pu etre scelle, rien n'est enregistre : {}", m)).reclasser(Classe::Google))?;
     let dossier = config(racine);
@@ -1084,7 +1078,7 @@ fn coffre_etat(ctx: &Contexte) -> R<EtatDuCoffre> {
 /// L'etat du coffre sur une fiche entreprise donnee : `coffre_poser` le relit sur la fiche qu'il vient d'ecrire, les
 /// rappels y lisent les acces qui manquent (`routes::rappels`).
 pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::ChampsEntreprise) -> R<EtatDuCoffre> {
-    let coffre = compagnie::coffre::Coffre::du_poste(racine, "");
+    let coffre = compagnie::coffre::Coffre::du_poste(racine);
     let secrets = coffre.services()?;
     // UNE COMPAGNIE DONT LES ENVOIS SONT JOUES n'a rien a poser : chaque pastille le dit, en gris.
     let simule = compagnie::bridage::branchement(racine)?.joue();
@@ -1097,8 +1091,8 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
         } else if s.dans_environnement {
             Pastille::de("a_faire", "fourni par l'environnement")
         } else if s.pose {
-            match s.pose_le.as_deref().and_then(|t| t.get(..10)) {
-                Some(le) => Pastille::de("fait", &format!("posé le {}", socle::ecran::quand(le))),
+            match s.pose_le {
+                Some(le) => Pastille::de("fait", &format!("posé le {}", le.jour().jj_mm_aaaa())),
                 None => Pastille::de("fait", "posé"),
             }
         } else {

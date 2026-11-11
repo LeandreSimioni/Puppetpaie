@@ -13,7 +13,6 @@
 //! d'erreur ou sur le terminal, jamais sur la sortie standard d'un programme qui lirait du JSON.
 
 use super::actes::est_refus;
-use routes::gestes::administrateur::maintenant_minutes;
 use super::analyse::{Args, Opt, Pos, Spec};
 use super::Cadre;
 use compagnie::coffre::Coffre;
@@ -47,7 +46,7 @@ fn vers(e: Echec) -> Echec {
 }
 
 fn faire(cadre: &Cadre) -> Result<i32, Echec> {
-    let c = Coffre::du_poste(&cadre.racine, "");
+    let c = Coffre::du_poste(&cadre.racine);
     dire!("Coffre : {}", c.chemin().display());
     dire!("  scelle (AES-256-GCM). Cle de ce poste : {}", c.chemin_cle().display());
     if !c.cle_posee().map_err(vers)? {
@@ -89,7 +88,7 @@ fn faire(cadre: &Cadre) -> Result<i32, Echec> {
 /// `coffre seance` : taper le mot de passe du logiciel UNE fois ; les commandes suivantes ouvrent le coffre sans le redemander, 12 h
 /// au plus. `coffre seance fermer` la clot. Jamais une preuve d'acte reel.
 fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
-    let coffre = Coffre::du_poste(&cadre.racine, &maintenant_minutes());
+    let coffre = Coffre::du_poste(&cadre.racine);
     if args.texte("service") == Some("fermer") {
         let fermee = coffre.oublier_ouverture_gardee()?;
         dire!("{}", if fermee { "Seance fermee." } else { "Aucune seance ouverte." });
@@ -97,7 +96,7 @@ fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     }
     if let Some(fin) = coffre.fin_ouverture_gardee()? {
         if coffre.ouverture_gardee()?.is_some() {
-            dire!("Seance deja ouverte, jusqu'au {}.", fin.replace('T', " a "));
+            dire!("Seance deja ouverte, jusqu'au {}.", fin.iso().replace('T', " a "));
             return Ok(0);
         }
     }
@@ -109,7 +108,7 @@ fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
                 .ok_or_else(|| Echec { classe: Some(socle::echec::Classe::Coffre), phrase: "La seance acceptee n'a pas ete gardee : rien ne la dit.".into(), a_part: None })?;
             dire!(
                 "Seance ouverte jusqu'au {} : le coffre s'ouvre sans redemander le mot de passe du logiciel. Un depot REEL le redemande toujours.",
-                fin.replace('T', " a ")
+                fin.iso().replace('T', " a ")
             );
             Ok(0)
         }

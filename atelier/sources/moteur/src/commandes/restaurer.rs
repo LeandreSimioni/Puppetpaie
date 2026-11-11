@@ -78,7 +78,7 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
         Ok(r) => r,
         Err(e) => return refus(e.echec.classe, &e.echec.en_lignes()),
     };
-    let reste = restauration::a_faire(&compagnie::coffre::Coffre::du_poste(&cible, ""));
+    let reste = restauration::a_faire(&compagnie::coffre::Coffre::du_poste(&cible));
     let code = if r.incidents.is_empty() { 0 } else { 1 };
     if json {
         dire!("{}", socle::ecriture::json_en_ligne(&Restauree { ok: code == 0, resultat: r.dite(reste) }));

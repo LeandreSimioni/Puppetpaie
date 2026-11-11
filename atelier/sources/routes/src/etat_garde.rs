@@ -445,7 +445,7 @@ impl Dite for DuMois<'_> {
 }
 
 fn du_mois(racine: &Path, bilan: &Bilan) -> R<Rendu> {
-    let pose = compagnie::coffre::Coffre::du_poste(racine, "")
+    let pose = compagnie::coffre::Coffre::du_poste(racine)
         .ouverture_exigee()?;
     Rendu::de(&DuMois { bilan, mot_de_passe_pose: pose })
 }

@@ -14,7 +14,7 @@ use socle::echec::{Classe, Echec, R};
 pub const SERVICE: &str = "courriel";
 
 fn coffre_de(racine: &Path) -> Coffre {
-    Coffre::du_poste(racine, "")
+    Coffre::du_poste(racine)
 }
 
 /// La boite ne s'ouvre pas : un refus de classe `Courriel`.

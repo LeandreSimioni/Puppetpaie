@@ -46,6 +46,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use compagnie::coffre::Coffre;
+use socle::paris::MinuteEcrite;
 use compagnie::installation::{self as compagnies, Compagnie};
 use crate::catalogue::Route;
 use crate::depots::{ChargeDeposer, Designation, Quoi};
@@ -72,25 +73,19 @@ const QUOI_DU_REGISTRE: &str = "Les compagnies que gere l'administrateur de ce l
 #[derive(Clone, Debug)]
 pub struct Poste {
     pub dossier_cle: PathBuf,
-    /// `AAAA-MM-JJTHH:MM` : le coffre note quand un mot de passe est pose.
-    pub maintenant: String,
+    /// L'heure de Paris a la minute : le coffre note quand un mot de passe est pose.
+    pub maintenant: MinuteEcrite,
 }
 
 impl Poste {
     /// Ce poste-ci : la cle la ou `Coffre::du_poste` la trouve, l'heure de Paris.
     pub fn de_ce_poste() -> Poste {
-        Poste { dossier_cle: Coffre::dossier_cle_du_poste(), maintenant: maintenant_minutes() }
+        Poste { dossier_cle: Coffre::dossier_cle_du_poste(), maintenant: MinuteEcrite::maintenant() }
     }
 
     pub fn coffre(&self, racine: &Path) -> Coffre {
-        Coffre::sur(racine, &self.dossier_cle, &self.maintenant)
+        Coffre::sur(racine, &self.dossier_cle, self.maintenant)
     }
-}
-
-/// L'heure de Paris, a la minute : ce que le coffre note comme date de pose.
-pub fn maintenant_minutes() -> String {
-    let t = socle::temps::secondes();
-    socle::paris::iso_minutes(t)
 }
 
 // ------------------------------------------------------------------ le registre
@@ -108,7 +103,7 @@ struct Registre {
 #[serde(deny_unknown_fields)]
 struct EntreeRegistre {
     dossier: String,
-    depuis: String,
+    depuis: MinuteEcrite,
 }
 
 /// L'installation d'une compagnie : `<installation>/compagnies/<nom>` ou `<installation>/prive` (ou `fictives/<nom>`).
@@ -452,7 +447,7 @@ pub fn rattacher(inst: &Path, racine: &Path, admin: &str, actuel: Option<&str>, 
     for r in nouvelles.iter().chain(std::iter::once(&racine.to_path_buf())) {
         if let Some(dossier) = relatif(inst, r)? {
             if !entrees.iter().any(|x| x.dossier == dossier) {
-                entrees.push(EntreeRegistre { dossier, depuis: poste.maintenant.clone() });
+                entrees.push(EntreeRegistre { dossier, depuis: poste.maintenant });
             }
         }
     }
