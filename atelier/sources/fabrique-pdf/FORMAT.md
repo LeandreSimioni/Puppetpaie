@@ -148,8 +148,9 @@ largeur, une page), par le numéro du bloc (« bloc 12 : … »).
 - `remplace` ne va qu'avec le style `contrat`, `modifications` qu'avec
   `avenant`, et `signature` pas avec `attestation` (pas de case) : sinon refus.
 - Pour les styles `contrat` et `avenant`, les valeurs `employeur.signataire`,
-  `employeur.signataire_fonction` et `salarie.nom_complet` sont celles du
-  bloc de signatures : absentes, c'est un refus.
+  `employeur.signataire_fonction`, `salarie.nom_complet` et
+  `salarie.case_signature` (le titre de la case du salarié : « L'artiste »,
+  « Le salarié ») sont celles du bloc de signatures : absentes, c'est un refus.
 
 ### La grammaire du `.modele`
 

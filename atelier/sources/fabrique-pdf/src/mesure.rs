@@ -166,11 +166,15 @@ impl Mesure {
 
     /// L'objet PDF qui l'écrit, pour `lopdf` : un entier s'il l'est, sinon un réel, que `lopdf` garde en flottant et
     /// qui se lit depuis son texte.
-    pub fn en_objet(self) -> lopdf::Object {
+    pub fn en_objet(self) -> Result<lopdf::Object, crate::description::Refus> {
         if self.0 % UN == 0 {
-            lopdf::Object::Integer(self.0 / UN)
+            Ok(lopdf::Object::Integer(self.0 / UN))
         } else {
-            lopdf::Object::Real(self.to_string().parse().unwrap_or_default())
+            let texte = self.to_string();
+            texte
+                .parse()
+                .map(lopdf::Object::Real)
+                .map_err(|e| crate::description::Refus::defaut(format!("la mesure {} ne s'écrit pas en réel PDF ({})", texte, e)))
         }
     }
 
@@ -196,7 +200,7 @@ impl Mesure {
             _ => (false, t),
         };
         let (mantisse, exposant) = match t.find(['e', 'E']) {
-            Some(i) => (&t[..i], t[i + 1..].parse::<i32>().ok()?),
+            Some(i) => (&t[..i], exposant(&t[i + 1..])?),
             None => (t, 0),
         };
         let (entiere, fraction) = match mantisse.find('.') {
@@ -222,7 +226,7 @@ impl Mesure {
             if chiffres.len() as i64 + decale > 30 {
                 return None;
             }
-            chiffres.parse::<i128>().ok()? * 10i128.pow(decale as u32)
+            entier_de(chiffres) * 10i128.pow(decale as u32)
         } else {
             // On garde les chiffres jusqu'au millionième, plus un pour l'arrondi.
             let garde = chiffres.len() as i64 + decale;
@@ -233,12 +237,34 @@ impl Mesure {
                 return None;
             }
             let (tete, reste) = chiffres.split_at(garde as usize);
-            let tete: i128 = if tete.is_empty() { 0 } else { tete.parse().ok()? };
-            tete + if reste.as_bytes()[0] >= b'5' { 1 } else { 0 }
+            entier_de(tete) + if reste.as_bytes()[0] >= b'5' { 1 } else { 0 }
         };
         let valeur = if negatif { -valeur } else { valeur };
-        i64::try_from(valeur).ok().map(Mesure)
+        if valeur > i64::MAX as i128 || valeur < i64::MIN as i128 {
+            return None;
+        }
+        Some(Mesure(valeur as i64))
     }
+}
+
+/// Des chiffres décimaux (vérifiés, 30 au plus : ils tiennent dans un i128) en entier ; aucun chiffre vaut 0.
+fn entier_de(chiffres: &str) -> i128 {
+    chiffres.bytes().fold(0, |n, c| n * 10 + (c - b'0') as i128)
+}
+
+/// L'exposant d'un nombre écrit (`-7` de `1e-7`) : un signe facultatif et des chiffres ; `None` s'il n'en est pas un,
+/// ou sort de ce qu'un nombre de mesure peut porter.
+fn exposant(t: &str) -> Option<i32> {
+    let (negatif, chiffres) = match t.as_bytes().first()? {
+        b'-' => (true, &t[1..]),
+        b'+' => (false, &t[1..]),
+        _ => (false, t),
+    };
+    if chiffres.is_empty() || chiffres.len() > 9 || !chiffres.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let n = entier_de(chiffres) as i32;
+    Some(if negatif { -n } else { n })
 }
 
 /// La racine carrée entière de `n` (par défaut), par la méthode de Newton, partie d'au-dessus de la racine.

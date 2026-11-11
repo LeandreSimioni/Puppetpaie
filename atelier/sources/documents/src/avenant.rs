@@ -321,6 +321,9 @@ pub(crate) fn parties(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalari
     // « en qualité d'administratrice », « de président » : l'élision devant la fonction de qui signe.
     poser(Marqueur::EmployeurQualiteDe, de_devant(&fonction).to_string());
     poser(Marqueur::EmployeurSignataireFonction, fonction);
+    // La case du salarie au bas du contrat : « L'artiste » d'un engagement ; celui d'un permanent dit « Le salarié »
+    // (`contrat_ecrit::marqueurs_au_mois`, qui suit).
+    poser(Marqueur::SalarieCaseSignature, "L'artiste".into());
     let s = fiche;
     poser(Marqueur::SalarieNom, case(&s.nom, "nom")?);
     poser(Marqueur::SalariePrenom, lisible(&s.prenom_affichage, &s.prenom, "prenom")?);

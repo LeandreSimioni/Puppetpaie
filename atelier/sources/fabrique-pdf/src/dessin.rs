@@ -671,7 +671,7 @@ impl Dessin {
             page.set("Parent", Object::Reference(arbre));
             page.set(
                 "MediaBox",
-                Object::Array(vec![Object::Integer(0), Object::Integer(0), self.largeur.en_objet(), self.hauteur.en_objet()]),
+                Object::Array(vec![Object::Integer(0), Object::Integer(0), self.largeur.en_objet()?, self.hauteur.en_objet()?]),
             );
             page.set("Resources", Object::Dictionary(ressources));
             if !p.contenu.is_empty() {

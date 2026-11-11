@@ -1135,7 +1135,7 @@ fn ecrire_champs(doc: &mut Document, valeurs: &[(String, String)], avant: Option
             let mut dict = Dictionary::new();
             dict.set("Type", Object::Name(b"XObject".to_vec()));
             dict.set("Subtype", Object::Name(b"Form".to_vec()));
-            dict.set("BBox", Object::Array(vec![0.into(), 0.into(), l.en_objet(), h.en_objet()]));
+            dict.set("BBox", Object::Array(vec![0.into(), 0.into(), l.en_objet()?, h.en_objet()?]));
             let mut ressources = Dictionary::new();
             if let Some(p) = police {
                 let mut polices = Dictionary::new();
@@ -1365,7 +1365,7 @@ pub fn ajouter_champs(octets: &[u8], d: &AjoutDeChamps) -> Result<Vec<u8>, Refus
         w.set("Subtype", Object::Name(b"Widget".to_vec()));
         w.set("FT", Object::Name(b"Tx".to_vec()));
         w.set("T", Object::String(vers_chaine_pdf(&a.nom), lopdf::StringFormat::Literal));
-        w.set("Rect", Object::Array(r.iter().map(|x| x.en_objet()).collect()));
+        w.set("Rect", Object::Array(r.iter().map(|x| x.en_objet()).collect::<Result<_, _>>()?));
         w.set("P", Object::Reference(page));
         w.set("F", Object::Integer(4));
         w.set("Ff", Object::Integer(0));

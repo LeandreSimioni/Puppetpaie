@@ -572,7 +572,8 @@ impl Noeud {
 
 impl Colonnes {
     fn epaisseur_filet(&self) -> Mesure {
-        self.filet.map(|(_, e)| e).unwrap_or(Mesure::ZERO)
+        // Sans filet, aucune épaisseur.
+        self.filet.iter().map(|&(_, e)| e).sum()
     }
 
     fn hauteur_contenu(&self, ctx: &Ctx<'_>, largeur: Mesure) -> Mesure {
@@ -629,7 +630,7 @@ impl Tableau {
     fn paragraphe(&self, c: &CelluleTableau, taille: Mesure) -> Paragraphe {
         let mut para = Paragraphe::new(c.alignement, self.interligne);
         for m in &c.morceaux {
-            let st = Style::new(taille).couleur(m.couleur.unwrap_or((0, 0, 0))).gras(m.gras).italique(m.italique);
+            let st = Style::new(taille).couleur(m.couleur).gras(m.gras).italique(m.italique);
             para.pousser(st, m.texte.replace("\r\n", "\n").replace('\r', "\n"));
         }
         para
@@ -880,12 +881,12 @@ fn construire(
 ) -> Result<Noeud, Refus> {
     let ou = b.etiquette.as_str();
     let noeud = match &b.bloc {
-        Bloc::Paragraphe { morceaux, taille, couleur, alignement, espace_avant, espace_apres, retrait } => {
+        Bloc::Paragraphe { morceaux, taille, alignement, espace_avant, espace_apres, retrait } => {
             let mut para = Paragraphe::new(*alignement, police.interligne);
             for m in morceaux {
                 let texte = m.texte.replace("\r\n", "\n").replace('\r', "\n");
                 verifier_texte(ctx, style_du_morceau(m), &texte, ou)?;
-                let st = Style::new(*taille).couleur(m.couleur.unwrap_or(*couleur)).gras(m.gras).italique(m.italique);
+                let st = Style::new(*taille).couleur(m.couleur).gras(m.gras).italique(m.italique);
                 para.pousser(st, texte);
             }
             Noeud::Paragraphe { avant: *espace_avant, apres: *espace_apres, para, retrait: *retrait, commence: false }

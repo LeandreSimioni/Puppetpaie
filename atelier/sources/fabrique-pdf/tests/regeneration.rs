@@ -13,7 +13,8 @@ const MENTION: &str = "Signé électroniquement le 02/10/2026 à 09:41\npar Paul
 fn description(modele: Value) -> Value {
     let mut m = json!({"valeurs": {
         "contrat.numero": "C-1", "employeur.signataire": "Jeanne Martin",
-        "employeur.signataire_fonction": "Présidente", "salarie.nom_complet": "Paul Dupont"}});
+        "employeur.signataire_fonction": "Présidente", "salarie.nom_complet": "Paul Dupont",
+        "salarie.case_signature": "L'artiste"}});
     for (k, v) in modele.as_object().unwrap() {
         m[k] = v.clone();
     }

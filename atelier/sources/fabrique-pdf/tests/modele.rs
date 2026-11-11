@@ -58,6 +58,7 @@ fn vals() -> Valeurs {
         ("employeur.signataire", "Jeanne Martin"),
         ("employeur.signataire_fonction", "Présidente"),
         ("salarie.nom_complet", "Paul Dupont"),
+        ("salarie.case_signature", "L'artiste"),
     ])
 }
 
@@ -264,7 +265,7 @@ fn le_vrai_contrat_cddu_passe_avec_tous_ses_marqueurs() {
             }
         }
     }
-    for k in ["employeur.signataire", "employeur.signataire_fonction", "salarie.nom_complet"] {
+    for k in ["employeur.signataire", "employeur.signataire_fonction", "salarie.nom_complet", "salarie.case_signature"] {
         v.insert(k.to_string(), "valeur".to_string());
     }
     let d = json!({"format": 2, "style": "contrat",
@@ -440,7 +441,7 @@ fn le_vrai_avenant_passe_avec_tous_ses_marqueurs() {
             }
         }
     }
-    for k in ["employeur.signataire", "employeur.signataire_fonction", "salarie.nom_complet"] {
+    for k in ["employeur.signataire", "employeur.signataire_fonction", "salarie.nom_complet", "salarie.case_signature"] {
         v.insert(k.to_string(), "valeur".to_string());
     }
     let d = json!({"format": 2, "style": "avenant",

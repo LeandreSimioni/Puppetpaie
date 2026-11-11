@@ -160,8 +160,8 @@ pub struct Morceau {
     pub texte: String,
     pub gras: bool,
     pub italique: bool,
-    /// None : la couleur du bloc.
-    pub couleur: Option<Rvb>,
+    /// La sienne, ou celle du bloc (de la cellule, de la ligne) qui la porte.
+    pub couleur: Rvb,
 }
 
 /// Un trait : couleur et épaisseur.
@@ -187,9 +187,9 @@ pub struct LigneTableau {
 #[derive(Debug, Clone)]
 pub enum Bloc {
     Paragraphe {
+        /// Chacun dans sa couleur, ou celle du paragraphe.
         morceaux: Vec<Morceau>,
         taille: Mesure,
-        couleur: Rvb,
         alignement: Alignement,
         espace_avant: Mesure,
         espace_apres: Mesure,
@@ -420,15 +420,12 @@ fn taille_ou(valeur: Option<Mesure>, heritee: Mesure, nom: &str, ou: &str) -> Re
 /// Les styles de modèle connus, pour le message d'erreur.
 const STYLES: &str = "contrat, avenant, attestation";
 
-fn morceau(m: &f::Morceau, majuscules: bool, ou: &str) -> Result<Morceau, Refus> {
+fn morceau(m: &f::Morceau, majuscules: bool, couleur_du_bloc: Rvb, ou: &str) -> Result<Morceau, Refus> {
     Ok(Morceau {
         texte: if majuscules { m.texte.to_uppercase() } else { m.texte.clone() },
         gras: m.gras.unwrap_or(false),
         italique: m.italique.unwrap_or(false),
-        couleur: match &m.couleur {
-            Some(c) => Some(couleur(c, ou)?),
-            None => None,
-        },
+        couleur: couleur_ou(&m.couleur, couleur_du_bloc, ou)?,
     })
 }
 
@@ -436,14 +433,14 @@ fn lire_bloc(bloc: &f::Bloc, etiquette: &str, police: &Police) -> Result<Bloc, R
     match bloc {
         f::Bloc::Paragraphe(p) => {
             let majuscules = p.majuscules.unwrap_or(false);
+            let couleur_du_bloc = couleur_ou(&p.couleur, police.couleur, etiquette)?;
             let mut morceaux = Vec::new();
             for m in &p.morceaux {
-                morceaux.push(morceau(m, majuscules, etiquette)?);
+                morceaux.push(morceau(m, majuscules, couleur_du_bloc, etiquette)?);
             }
             Ok(Bloc::Paragraphe {
                 morceaux,
                 taille: taille_ou(p.taille, police.taille, "taille", etiquette)?,
-                couleur: couleur_ou(&p.couleur, police.couleur, etiquette)?,
                 alignement: p.alignement.unwrap_or(Alignement::Gauche),
                 espace_avant: longueur(p.espace_avant, "espace_avant", etiquette)?,
                 espace_apres: longueur(p.espace_apres, "espace_apres", etiquette)?,
@@ -615,7 +612,7 @@ fn lire_ligne(
                 texte: m.texte.clone(),
                 gras: m.gras.unwrap_or(false) || gras_cellule || gras_ligne,
                 italique: m.italique.unwrap_or(false),
-                couleur: Some(couleur_ou(&m.couleur, couleur_cellule, &ou_c)?),
+                couleur: couleur_ou(&m.couleur, couleur_cellule, &ou_c)?,
             });
         }
         cellules.push(CelluleTableau {
