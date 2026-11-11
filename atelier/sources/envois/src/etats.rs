@@ -543,8 +543,9 @@ pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, InstantEcrit>, avena
     }
 }
 
-/// Ce que les comptes rendus d'une DSN ou d'une DPAE disent, a la suite de `prefixe` (`le` : quand elle est partie).
-fn resume_des_retours(prefixe: &str, le: &str, retours: &[RetourOrganisme]) -> String {
+/// Ce que les comptes rendus d'une DSN ou d'une DPAE disent, a la suite de `prefixe` (`le_dit` : quand elle est partie,
+/// en mots).
+fn resume_des_retours(prefixe: &str, le_dit: &str, retours: &[RetourOrganisme]) -> String {
     let Some(dernier) = retours.last() else { return format!("{} — pas encore de retour", prefixe) };
     let refus: Vec<&RetourOrganisme> = retours.iter().filter(|r| r.ko()).collect();
     let certificat = retours.iter().rev().find(|r| r.nature_retour == NATURE_CERTIFICAT_DPAE);
@@ -556,7 +557,7 @@ fn resume_des_retours(prefixe: &str, le: &str, retours: &[RetourOrganisme]) -> S
             }
         }
         let suite = if motifs.is_empty() { String::new() } else { format!(" : {}", motifs.join(" ; ")) };
-        return format!("envoyé {} — REFUSÉ{}", le, suite);
+        return format!("envoyé {} — REFUSÉ{}", le_dit, suite);
     }
     if let Some(c) = certificat {
         let dossiers: Vec<&str> = c.personnes().into_iter().flatten().filter(|l| l.enregistree && !l.dossier.is_empty()).map(|l| l.dossier.as_str()).collect();

@@ -40,11 +40,11 @@ impl Echeance {
         Self::dire(mots, &self.jour.jj_mm(), self.heure)
     }
 
-    fn dire(mots: &str, jour: &str, heure: &str) -> String {
+    fn dire(mots: &str, jour_dit: &str, heure: &str) -> String {
         if heure.is_empty() {
-            format!("{mots} {jour}")
+            format!("{mots} {jour_dit}")
         } else {
-            format!("{mots} {jour} {heure}")
+            format!("{mots} {jour_dit} {heure}")
         }
     }
 }

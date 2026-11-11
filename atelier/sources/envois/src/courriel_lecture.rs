@@ -360,9 +360,9 @@ fn commence_une_citation(ligne: &str) -> bool {
         || ligne.starts_with("________________")
 }
 
-/// `<debut>.{3,120}<milieu>` puis, si `deux_points`, ` ?:`.
-fn forme_de_citation(ligne: &str, debut: &str, milieu: &str, deux_points: bool) -> bool {
-    let Some(reste) = ligne.strip_prefix(debut) else { return false };
+/// `<tete>.{3,120}<milieu>` puis, si `deux_points`, ` ?:`.
+fn forme_de_citation(ligne: &str, tete: &str, milieu: &str, deux_points: bool) -> bool {
+    let Some(reste) = ligne.strip_prefix(tete) else { return false };
     let c: Vec<char> = reste.chars().collect();
     let milieu: Vec<char> = milieu.chars().collect();
     (3..=120.min(c.len())).any(|i| {

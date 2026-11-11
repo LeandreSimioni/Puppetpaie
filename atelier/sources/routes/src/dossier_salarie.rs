@@ -603,14 +603,14 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<String>)> 
 }
 
 /// Un certificat du : `(salarie, debut du contrat, paie du certificat)`.
-pub(crate) type Du = (String, String, Option<PaieCs>);
+pub(crate) type Du = (String, socle::date::Jour, Option<PaieCs>);
 
 /// `certificats_dus` : un certificat par contrat qui FINIT, pour le contrat entier quand il deborde
 /// du mois. Rend les certificats (dans l'ordre ou ils sont dus) et les avertissements.
 pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec<String>)> {
     let mut dus: Vec<Du> = Vec::new();
     let mut avertissements = Vec::new();
-    let poser = |dus: &mut Vec<Du>, cle: String, debut: String, v: Option<PaieCs>| match dus.iter_mut().find(|d| d.0 == cle && d.1 == debut) {
+    let poser = |dus: &mut Vec<Du>, cle: String, debut: socle::date::Jour, v: Option<PaieCs>| match dus.iter_mut().find(|d| d.0 == cle && d.1 == debut) {
         Some(d) => d.2 = v,
         None => dus.push((cle, debut, v)),
     };
@@ -623,7 +623,7 @@ pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec
         if !p.declaree_a_la_caisse_des_conges()? {
             continue;
         }
-        let (cle, debut) = (cle_de(p), p.engagement.debut.iso());
+        let (cle, debut) = (cle_de(p), p.engagement.debut);
         if !p.engagement.dernier_mois() {
             poser(&mut dus, cle, debut, None);
         } else if !p.engagement.a_cheval() {
@@ -774,13 +774,13 @@ fn mois_puppetpaie(
         let (pour_cs, avert) = certificats_dus(ctx, &paies)?;
         d.avertissements.extend(avert.into_iter().map(|a| format!("{} : {}", lib, a)));
         let ecrits = engagement::etats::numeros_des_documents(ctx, le_mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?;
-        let trouve = |cle: &str, debut: &str| pour_cs.iter().find(|(c, de, _)| c == cle && de == debut).and_then(|(_, _, v)| v.as_ref());
+        let trouve = |cle: &str, debut: socle::date::Jour| pour_cs.iter().find(|(c, de, _)| c == cle && *de == debut).and_then(|(_, _, v)| v.as_ref());
         // Chaque certificat parti, et tous les N CE de l'archive du mois.
         let mut tous: Vec<i64> = Vec::new();
         let mut paires: Vec<(String, Vec<(&PaieCs, i64)>)> = Vec::new();
         for (i, p) in paies.iter().enumerate() {
             let cle = cle_de(p);
-            let (Some(pc), Some(n)) = (trouve(&cle, &p.engagement.debut.iso()), ecrits.get(i).and_then(|e| e.premier_ce)) else { continue };
+            let (Some(pc), Some(n)) = (trouve(&cle, p.engagement.debut), ecrits.get(i).and_then(|e| e.premier_ce)) else { continue };
             let combien = conges_spectacles::decouper(&pc.engagement)?.len() as i64;
             tous.extend(n..n + combien);
             if cles.contains(&cle) {

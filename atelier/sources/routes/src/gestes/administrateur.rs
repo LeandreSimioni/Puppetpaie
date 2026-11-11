@@ -734,7 +734,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
         }
         "obligation" => {
             let ob = r.obligation.as_ref().ok_or_else(|| rappel_incomplet("d'obligation"))?;
-            let quand_dit = ob.butoir.map(|b| match ob.butoir_heure.as_deref() {
+            let quand_dit = ob.butoir.map(|b| match ob.heure_du_butoir.as_deref() {
                 Some("24:00") => format!("le {}, jusqu'à minuit", b.jj_mm_aaaa()),
                 Some(h) => format!("le {} à {}", b.jj_mm_aaaa(), h),
                 None => format!("le {}", b.jj_mm_aaaa()),

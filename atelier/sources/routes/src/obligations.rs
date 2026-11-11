@@ -546,7 +546,9 @@ pub struct Obligation {
     #[serde(skip_serializing_if = "Option::is_none")]
     depart: Option<DepartDit>,
     pub butoir: Option<Jour>,
-    pub butoir_heure: Option<String>,
+    /// L'heure du jour butoir, `HH:MM` (`24:00` : jusqu'a minuit).
+    #[serde(rename = "butoir_heure")]
+    pub heure_du_butoir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     dans_les_temps: Option<bool>,
     pub etat: &'static str,
@@ -581,7 +583,7 @@ impl Obligation {
             delai: None,
             depart: None,
             butoir: None,
-            butoir_heure: None,
+            heure_du_butoir: None,
             dans_les_temps: None,
             etat: INDETERMINE,
             du: false,
@@ -636,7 +638,7 @@ impl Obligation {
             self.depart = Some(d.dit());
         }
         self.butoir = Some(butoir);
-        self.butoir_heure = butoir_minute.map(|mn| if mn == 1440 { "24:00".to_string() } else { heure_lisible(mn) });
+        self.heure_du_butoir = butoir_minute.map(|mn| if mn == 1440 { "24:00".to_string() } else { heure_lisible(mn) });
         let restants = butoir.moins(&aujourdhui);
         let (etat, phrase) = match &fait {
             Some(f) => {
@@ -709,7 +711,7 @@ impl Obligation {
     pub(crate) fn butoir_en_clair(&self) -> Option<String> {
         let jour = self.butoir?;
         // Jusqu'a minuit, le jour se dit seul.
-        let heure: String = self.butoir_heure.as_deref().filter(|h| !h.is_empty() && *h != "24:00").map(|h| format!(" à {}", h)).into_iter().collect();
+        let heure: String = self.heure_du_butoir.as_deref().filter(|h| !h.is_empty() && *h != "24:00").map(|h| format!(" à {}", h)).into_iter().collect();
         Some(format!("au plus tard le {}{}", jour.jj_mm_aaaa(), heure))
     }
 

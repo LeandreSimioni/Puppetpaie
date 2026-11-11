@@ -61,10 +61,10 @@ pub struct Depot<'a> {
 /// Garde la reponse de l'organisme a cote du journal, en clair, datee. Le nom doit tenir sur tous les systemes (un `?`
 /// est impossible sous Windows), et une reponse n'en ecrase JAMAIS une autre : deux depots dans la meme seconde (un test
 /// puis le reel) prennent `-2`, `-3`... avant `.txt`.
-pub fn archiver_reponse(racine: &Path, quoi: &str, date: &str, reponse: &str) -> R<PathBuf> {
+pub fn archiver_reponse(racine: &Path, quoi: &str, marque: &str, reponse: &str) -> R<PathBuf> {
     let dossier = racine.join(crate::retours::RETOURS).join("depots");
     std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
-    let etiquette: String = date.replace('-', "").chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')).collect();
+    let etiquette: String = marque.replace('-', "").chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')).collect();
     let etiquette = if etiquette.is_empty() { "sans-date".to_string() } else { etiquette };
     let iso = socle::paris::maintenant();
     let horo = format!("{}{}{}-{}{}{}", &iso[0..4], &iso[5..7], &iso[8..10], &iso[11..13], &iso[14..16], &iso[17..19]);
