@@ -615,21 +615,25 @@ impl Engagement {
     /// caisse Agirc-Arrco, qui proratise elle-meme le plafond d'un « 20 » sur 40.013 / 40.012 (cahier CT2026, l. 3325-3343,
     /// `atelier/reference/sources/agirc-arrco/`), le proratiserait a tort, alors que la paie ne le fait pas
     /// (`calcul::duree_du_temps_partiel`, la meme plus courte des durees).
+    /// La modalite que la nature fixe passe devant (le CDDU : 99, salarie non concerne, `contrats-base.json`), puis celle
+    /// qui est saisie ; sans l'une ni l'autre, sans quotite de reference, elle ne se dit pas : refus.
     pub fn modalite_temps_travail(&self) -> R<ModaliteDuTempsDeTravail> {
+        let nat = self.nat()?;
+        if let Some(m) = nat.modalite_fixee() {
+            return Ok(m);
+        }
         if let Some(m) = self.modalite_temps_travail_saisie {
             return Ok(m);
         }
-        let nat = self.nat()?;
         let reference = match (self.quotite_reference()?, nat.quotite_reference_defaut().filter(|_| nat.mensuelle())) {
             (Some(r), Some(legale)) => Some(r.min(legale)),
             (r, _) => r,
         };
         let contrat = self.quotite()?;
-        Ok(match reference {
-            None => ModaliteDuTempsDeTravail::TempsPlein,
-            Some(r) if contrat >= r => ModaliteDuTempsDeTravail::TempsPlein,
-            Some(_) => ModaliteDuTempsDeTravail::TempsPartiel,
-        })
+        let reference = reference.ok_or_else(|| {
+            socle::refus!("La quotité de référence de ce contrat manque (la durée collective du travail, en heures par mois) : sans elle, le temps plein ou partiel ne se dit pas.")
+        })?;
+        Ok(if contrat >= reference { ModaliteDuTempsDeTravail::TempsPlein } else { ModaliteDuTempsDeTravail::TempsPartiel })
     }
 
     /// Le contrat commence ce mois-ci : contrat a imprimer, DPAE a faire.

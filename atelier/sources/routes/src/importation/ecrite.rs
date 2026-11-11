@@ -267,7 +267,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
             }
         }
     }
-    let permanent = |c: &ContratLu| c.contrat.nature_a_dire || c.contrat.nature.is_some_and(|n| permanents.contains(&n));
+    let permanent = |c: &ContratLu| c.contrat.nature.is_none_or(|n| permanents.contains(&n));
     let mut groupes: Vec<Groupe> = Vec::new();
     for c in contrats {
         groupes.push(Groupe { salarie: c.salarie.clone(), debut: c.debut, fin: c.fin, contrat: Some(c), paies: Vec::new() });

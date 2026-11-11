@@ -661,12 +661,11 @@ fn controler_secteur(pile: &Pile, fiche: &ChampsEntreprise) -> R<()> {
     if sec.portes.iter().any(|p| Some(p.as_str()) == dit) {
         return Ok(());
     }
+    // Les secteurs viennent de la couche d'une convention : celle que la fiche dit.
+    let idcc = fiche.idcc.portee().ok_or_else(|| socle::refus!("Le barème porte les secteurs d'une convention que la fiche Entreprise ne dit pas."))?;
     Err(socle::refus!(
         "Convention {} : {}\n  Fiche Entreprise, « {} » : {}. Portés : {}.",
-        match fiche.idcc.portee() {
-            Some(idcc) => idcc,
-            None => "None",
-        },
+        idcc,
         sec.refus,
         sec.libelle,
         match dit {

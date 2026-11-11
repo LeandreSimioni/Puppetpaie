@@ -88,9 +88,8 @@ pub struct ContratAtteste {
     pub brut: Option<Decimal>,
     /// La base conge qu'un certificat Congés Spectacles porte, pour le contrat entier.
     pub base_conge: Option<Decimal>,
-    /// Le bulletin d'un permanent ne dit pas la nature de son contrat : elle se demande apres l'import (`import::nature`).
-    pub nature_a_dire: bool,
-    /// La nature dite, quand l'import relit un contrat dont elle a ete dite.
+    /// La nature du contrat, que la piece atteste (`ContratAtteste::vide`) ou qui a ete dite ; `None` : elle reste a dire
+    /// (le bulletin d'un permanent ne la porte pas : elle se demande apres l'import, `import::nature`).
     pub nature: Option<NatureDeContrat>,
     pub numero_bulletin: Option<String>,
     /// Le numero du contrat qu'un bulletin imprime (il se lit, il ne se tire pas : regle 4).
@@ -317,8 +316,8 @@ impl PaieVersee {
 }
 
 impl ContratAtteste {
-    /// Un contrat dont on ne sait encore que ce qui l'atteste.
-    pub fn vide(atteste_par: Attestation) -> ContratAtteste {
+    /// Un contrat dont on ne sait encore que ce qui l'atteste, et la nature que la piece atteste (`None` : a dire).
+    pub fn vide(atteste_par: Attestation, nature: Option<NatureDeContrat>) -> ContratAtteste {
         ContratAtteste {
             atteste_par,
             numero_objet: None,
@@ -328,8 +327,7 @@ impl ContratAtteste {
             heures_enseignement: None,
             brut: None,
             base_conge: None,
-            nature_a_dire: false,
-            nature: None,
+            nature,
             numero_bulletin: None,
             numero_contrat: None,
             numero_attestation: None,
@@ -395,16 +393,11 @@ impl Importe {
         &self.pieces().paies
     }
 
-    /// La nature du contrat : celle qui a ete dite (l'engagement), sinon celle que la piece atteste ; une piece qui ne la
-    /// porte pas et ne la laisse pas a dire est celle d'un contrat d'usage : son bulletin porte une marque du spectacle
-    /// (numero d'objet ou Congés Spectacles, `routes::importation::bulletins` ; seul celui qui n'en a aucune la laisse a dire).
-    /// `None` : elle reste a dire (`a_dire`).
+    /// La nature du contrat : celle qui a ete dite (l'engagement), sinon celle que la piece atteste
+    /// (`routes::importation::bulletins` : une AEM, un certificat Congés Spectacles, un bulletin qui porte une marque du
+    /// spectacle). `None` : elle reste a dire (`a_dire`).
     pub fn nature(&self) -> Option<NatureDeContrat> {
-        match self.nature_dite() {
-            Some(n) => Some(n),
-            None if self.contrat().is_some_and(|c| c.nature_a_dire) => None,
-            None => Some(NatureDeContrat::CdduSpectacle),
-        }
+        self.nature_dite()
     }
 
     /// LA NATURE SOUS LAQUELLE CE QUI A ETE VERSE SE RANGE (`paie`) : la sienne (`nature`) ; tant qu'elle reste a dire,
@@ -423,7 +416,7 @@ impl Importe {
         self.carte().nature.or_else(|| self.contrat().and_then(|c| c.nature))
     }
 
-    /// Sa nature reste-t-elle a dire ? Le bulletin d'un permanent ne la porte pas (`nature_a_dire`), et personne ne l'a
+    /// Sa nature reste-t-elle a dire ? Le bulletin d'un permanent ne la porte pas (`ContratAtteste::nature`), et personne ne l'a
     /// dite.
     pub fn a_dire(&self) -> bool {
         self.nature().is_none()
@@ -474,7 +467,6 @@ impl Importe {
         let Some(contrat) = self.contrat() else { return Ok(None) };
         let mut contrat = contrat.clone();
         if let Some(n) = self.nature_dite() {
-            contrat.nature_a_dire = false;
             contrat.nature = Some(n);
         }
         // Importe le jour ou il l'a ete la premiere fois ; sinon, aujourd'hui, par cet import.

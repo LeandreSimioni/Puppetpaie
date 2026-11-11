@@ -264,13 +264,12 @@ pub fn resume_regularisations(regs: &[Reg]) -> R<Vec<String>> {
         if s.nom.is_none() {
             return Err(socle::fichiers::absent("nom").reclasser(Classe::Manque));
         }
+        // Une regularisation corrige un contrat deja declare : son numero se lit (regle 4).
+        let numero = r.apres.engagement.numero.as_deref().ok_or_else(|| socle::fichiers::absent("numero").reclasser(Classe::Manque))?;
         out.push(format!(
             "{}, contrat {} ({}) : brut {} → {}, net {} → {}",
             documents::tableaux_export::qui_souple(s),
-            match r.apres.engagement.numero.as_deref() {
-                Some(n) => n,
-                None => "None",
-            },
+            numero,
             r.mois.libelle(socle::mois::Graphie::Accentuee),
             euros(r.declare.brut),
             euros(r.apres.brut),

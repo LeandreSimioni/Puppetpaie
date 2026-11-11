@@ -54,6 +54,7 @@ use serde::Serialize;
 use import::bulletin_lu::{self, BulletinLu, Compteurs, Table};
 use declarations::champs::{Saisie, Valeur};
 use droit::contexte::Contexte;
+use droit::natures::NatureDeContrat;
 use droit::fiche::{CaseDeFiche, CaseSalarie, CaseSpectacle, NomDeCase, NomDeFiche};
 use engagement::importe::EmploiImprime;
 use socle::date::Jour;
@@ -2022,19 +2023,19 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &str, chemin: &str) -> R<(Compte, 
     let (debut, fin) = (l.b.debut, l.b.fin);
     let compte = Compte { heures, cachets, jours, brut };
     let plein = |x: &Option<String>| x.clone().filter(|s| !s.trim().is_empty());
-    let mut a = ContratAtteste::vide(Attestation::Bulletin);
-    a.numero_objet = plein(&l.b.numero_objet);
-    (a.heures, a.cachets, a.jours, a.brut) = (Some(heures), Some(cachets), Some(jours), Some(brut));
-    a.heures_enseignement = enseignement.filter(|h| *h > 0);
     // LA NATURE DU CONTRAT : aucun des bulletins lus ne l'imprime en mention (`bulletins-lecture-base.json`), et rien sur la
     // page ne la fixe a coup sur. Deux marques disent un engagement du spectacle : la cotisation Congés Spectacles
     // (due pour l'artiste ou le technicien qui n'est pas employe douze mois de suite, D. 7121-41 du code du travail,
     // `atelier/reference/sources/caisse-conges-affiliation/LISEZ-MOI.md`) et le numero d'objet (interdit hors des
-    // natures 02 et 10, CCH-11 : regle 6). Avec l'une d'elles, le contrat est un CDDU (`engagement::importe::Importe::nature`).
+    // natures 02 et 10, CCH-11 : regle 6). Avec l'une d'elles, le bulletin atteste un CDDU.
     // Sans aucune, c'est le contrat d'un permanent -- CDI ou CDD de droit commun, que le bulletin ne dit pas et qu'on ne
-    // devine pas : il est marque « a dire », se demande apres l'import (`import::nature`), et ne se compare ni ne se
-    // reprend en attendant (`Importe::nature_rangee` dit sous quelle nature ce qui a ete verse se range).
-    a.nature_a_dire = !marque_d_intermittent(&l.b);
+    // devine pas : sa nature reste a dire, se demande apres l'import (`import::nature`), et le contrat ne se compare ni ne
+    // se reprend en attendant (`Importe::nature_rangee` dit sous quelle nature ce qui a ete verse se range).
+    let nature = marque_d_intermittent(&l.b).then_some(NatureDeContrat::CdduSpectacle);
+    let mut a = ContratAtteste::vide(Attestation::Bulletin, nature);
+    a.numero_objet = plein(&l.b.numero_objet);
+    (a.heures, a.cachets, a.jours, a.brut) = (Some(heures), Some(cachets), Some(jours), Some(brut));
+    a.heures_enseignement = enseignement.filter(|h| *h > 0);
     a.numero_bulletin = plein(&l.b.numero);
     // Le numero du contrat, quand le bulletin l'imprime : il se lit, il ne se tire pas (regle 4).
     a.numero_contrat = plein(&l.b.contrat);
@@ -2179,7 +2180,9 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: &str, copie: &str) -> R<(C
     let pluriel = |n: i64, mot: &str| format!("{} {}{}", n, mot, if n > 1 { "s" } else { "" });
     let quoi: Vec<String> = [(heures, "heure"), (cachets, "cachet"), (jours, "jour")].iter().filter_map(|x| x.0.filter(|n| *n > 0).map(|n| pluriel(n, x.1))).collect();
     let plein = |x: &Option<String>| x.clone().filter(|s| !s.trim().is_empty());
-    let mut c = ContratAtteste::vide(Attestation::Aem);
+    // L'AEM est l'attestation des annexes 8 et 10, celle d'un contrat d'usage du spectacle (Unédic, circulaire 2016-25,
+    // `atelier/reference/sources/unedic-circulaire-2016-25-annexes-8-10.txt`).
+    let mut c = ContratAtteste::vide(Attestation::Aem, Some(NatureDeContrat::CdduSpectacle));
     c.numero_objet = plein(&a.numero_objet);
     (c.heures, c.cachets, c.jours, c.brut) = (heures, cachets, jours, Some(brut));
     c.numero_attestation = plein(&a.numero);
@@ -2216,7 +2219,9 @@ fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<&
     };
     let mut brut = brut;
     brut.rescale(2);
-    let mut a = ContratAtteste::vide(Attestation::Certificat);
+    // Le certificat Congés Spectacles atteste un engagement du spectacle (D. 7121-41 du code du travail,
+    // `atelier/reference/sources/caisse-conges-affiliation/LISEZ-MOI.md`) : un contrat d'usage.
+    let mut a = ContratAtteste::vide(Attestation::Certificat, Some(NatureDeContrat::CdduSpectacle));
     (a.heures, a.cachets, a.jours, a.brut) = (Some(0), Some(cachets), Some(jours), Some(brut));
     a.numero_certificat = c.numero.clone();
     a.base_conge = c.base_conge;

@@ -1835,11 +1835,8 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         None => return Err(refus("S21.G00.40.012 : la quotite de reference manque.")),
     }
     f.add("S21.G00.40.013", qt(quotite));
-    // La modalite que la nature fixe, sinon celle de l'engagement.
-    f.ecrire_code(match nat.modalite_fixee() {
-        Some(m) => m,
-        None => e.modalite_temps_travail()?,
-    })?;
+    // La modalite que la nature fixe, sinon celle de l'engagement (`Engagement::modalite_temps_travail`).
+    f.ecrire_code(e.modalite_temps_travail()?)?;
     if bareme::alsace_moselle(&bar.entreprise.fiche, &p.salarie) {
         f.add("S21.G00.40.016", "01");
     } else {

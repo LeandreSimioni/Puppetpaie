@@ -157,7 +157,7 @@ struct Lue {
 pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&str) -> bool) -> Vec<Comparaison> {
     let brut = imp.objet().carte();
     let contrat = imp.contrat();
-    // UN CONTRAT DONT LA NATURE RESTE A DIRE (`nature_a_dire`, celui d'un permanent : `import::nature`) ne se compare
+    // UN CONTRAT DONT LA NATURE RESTE A DIRE (sans `nature`, celui d'un permanent : `import::nature`) ne se compare
     // pas encore : une nature ne se devine pas (regle 6). Il se compare une fois sa nature dite.
     let paies = imp.paies();
     // Le nombre de jours travailles que le bulletin compte (son cumul « Jours ») : celui que la paie du mois porte (le

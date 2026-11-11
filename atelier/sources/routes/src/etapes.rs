@@ -2954,32 +2954,33 @@ pub(crate) fn le_mois_a_ouvrir(ctx: &Contexte) -> R<(Mois, Rendu)> {
 /// bornes du contrat, le spectacle, la nature ; pas les taux ni les cachets. Un test de DPAE fait sur une autre empreinte
 /// ne vaut plus.
 fn empreinte_de_l_embauche(e: &engagement::Engagement, sal: &droit::fiche::ChampsSalarie) -> String {
-    let r = |t: &str| socle::fichiers::repr(t);
-    // Une case vide s'ecrit `None`, comme la fin et le spectacle.
-    let o = |t: Option<&str>| match t {
-        Some(x) => r(x),
-        None => "None".to_string(),
+    /// Ce que l'empreinte couvre, ecrit en JSON : une case vide y est `null`.
+    #[derive(serde::Serialize)]
+    struct Embauche<'a> {
+        debut: Jour,
+        fin: Option<Jour>,
+        spectacle: Option<String>,
+        nir: Option<&'a str>,
+        nom: Option<&'a str>,
+        prenom: Option<&'a str>,
+        date_naissance: Option<Jour>,
+        lieu_naissance: Option<&'a str>,
+        departement_naissance: Option<&'a str>,
+        sexe: Option<&'a str>,
+        nature: &'a str,
+    }
+    let embauche = Embauche {
+        debut: e.debut,
+        fin: e.fin,
+        spectacle: e.spectacle.as_ref().map(|s| s.to_string()),
+        nir: sal.nir.portee(),
+        nom: sal.nom.portee(),
+        prenom: sal.prenom.portee(),
+        date_naissance: sal.date_naissance.dite().copied(),
+        lieu_naissance: sal.lieu_naissance.portee(),
+        departement_naissance: sal.departement_naissance.portee(),
+        sexe: sal.sexe.code(),
+        nature: e.nature.cle(),
     };
-    // La derniere place est celle d'une case `nationalite` que la fiche n'a pas : vide, comme l'empreinte l'a toujours ecrite.
-    let ident: Vec<String> = vec![
-        o(sal.nir.portee()), o(sal.nom.portee()), o(sal.prenom.portee()), o(sal.date_naissance.dite().map(|j| j.iso()).as_deref()),
-        o(sal.lieu_naissance.portee()), o(sal.departement_naissance.portee()), o(sal.sexe.code()), r(""),
-    ];
-    let fin = match e.fin {
-        Some(f) => f.iso(),
-        None => "None".to_string(),
-    };
-    let spectacle = match &e.spectacle {
-        Some(s) => s.to_string(),
-        None => "None".to_string(),
-    };
-    let brut = format!(
-        "({}, {}, {}, ({}), {})",
-        socle::fichiers::repr(&e.debut.iso()),
-        socle::fichiers::repr(&fin),
-        socle::fichiers::repr(&spectacle),
-        ident.join(", "),
-        socle::fichiers::repr(e.nature.cle())
-    );
-    sha256_hex(brut.as_bytes())[..16].to_string()
+    sha256_hex(socle::ecriture::json_en_ligne(&embauche).as_bytes())[..16].to_string()
 }

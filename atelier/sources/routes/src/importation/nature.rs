@@ -2,7 +2,7 @@
 //! (un engagement importe, `importation::bulletins::engagement`) ; aucun gabarit n'imprime sa nature. Un bulletin
 //! qui porte une marque du spectacle (numero d'objet, cotisation Congés Spectacles) atteste un CDDU
 //! (`engagement::importe::Importe::nature`). Un bulletin qui n'en porte aucune est celui d'un permanent : CDI ou CDD de
-//! droit commun, que rien ne dit. Son contrat est marque `nature_a_dire` ; ce module :
+//! droit commun, que rien ne dit. Son contrat n'a pas de `nature` ; ce module :
 //!
 //! - `a_dire` : les salaries dont un contrat repris attend sa nature, avec les natures qu'on peut lui donner
 //!   (celles d'un permanent : `contrats-base.json`, paie « mensuelle ») et, pour chacune, ce qu'il faut dire avec elle
@@ -350,7 +350,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
     }
     // La nature va sur l'engagement de chaque contrat a dire ; ce qui definit le contrat qui court encore, sur le sien.
     let ecrits = engagement::importe::completer(&ctx.racine, |e, pieces| {
-        let a_dire = pieces.contrat.as_ref().is_some_and(|c| c.nature_a_dire);
+        let a_dire = pieces.contrat.as_ref().is_some_and(|c| c.nature.is_none());
         if e.salarie.as_deref() != Some(salarie.as_str()) || !a_dire || e.nature.is_some() {
             return false;
         }

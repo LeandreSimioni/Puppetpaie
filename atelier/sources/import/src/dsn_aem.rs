@@ -315,7 +315,9 @@ pub struct ContratAtteste {
 pub fn ligne_du_contrat(c: &ContratAtteste, salarie: &str) -> engagement::importe::ContratLu {
     use engagement::importe::{Attestation, ContratAtteste as Atteste, ContratLu};
     let plein = |s: &str| Some(s.to_string()).filter(|s| !s.trim().is_empty());
-    let mut a = Atteste::vide(Attestation::Aem);
+    // L'AEM est l'attestation des annexes 8 et 10, celle d'un contrat d'usage du spectacle (Unédic, circulaire 2016-25,
+    // `atelier/reference/sources/unedic-circulaire-2016-25-annexes-8-10.txt`).
+    let mut a = Atteste::vide(Attestation::Aem, Some(droit::natures::NatureDeContrat::CdduSpectacle));
     a.numero_objet = plein(&c.numero_objet);
     (a.heures, a.cachets, a.jours) = (Some(c.heures as i64), Some(c.cachets as i64), Some(c.jours as i64));
     a.brut = Some(c.brut);
