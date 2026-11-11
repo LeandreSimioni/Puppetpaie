@@ -79,7 +79,14 @@ que par la structure :
   rejeu des deux fictives le vérifie (`moteur/tests/rejeu.rs`, `aucune_piece_fermee_ne_se_montre`) : le Fil de fer,
   sans permanent, et un intermittent de l'Hôtel de Bourgogne ne voient aucune case d'une pièce qu'aucun de leurs
   engagements n'ouvre.
-- **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions :
+- **Les niveaux du compilateur** (`[workspace.lints.rust]` de `atelier/sources/Cargo.toml`, repris par chaque crate ;
+  les mêmes dans `fabrique-pdf/` et `fenetre/`) : aucun avertissement, et le code mort, les imports et variables
+  inutiles, le déprécié interdits (`forbid`). Aucun attribut ne les lève (`aucun_attribut_ne_leve_un_lint`) : une clé
+  connue qu'on ne lit pas est une `socle::forme::NonLue`, qui n'en garde rien ; un code mort se supprime ; un code
+  propre à une cible se range sous son `cfg`.
+- **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions, ce que tient
+  `un_verrou_n_a_ni_liste_ni_filtre` (aucun verrou ne nomme un source pour l'écarter ; un endroit unique se compte, ou
+  se nomme par son type) :
   `une_couche_fermee_ne_lit_que_des_formes` (le JSON au bord seulement, ni clé libre, ni repli, ni erreur avalée),
   `chaque_forme_lue_refuse_une_cle_inconnue` (`deny_unknown_fields`, ou la forme se déclare elle-même réponse d'un
   tiers : « Le corps et ses portes »),
