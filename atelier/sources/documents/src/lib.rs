@@ -5,6 +5,7 @@ pub mod aer;
 pub mod avenant;
 pub mod bordereau;
 pub mod bulletin;
+pub mod cachet;
 pub mod conges_spectacles;
 pub mod contrat;
 pub mod contrat_ecrit;
@@ -35,7 +36,7 @@ pub fn largeur_imprimee(quoi: &str) -> Option<Mesure> {
         "logo" => Some(bulletin::LOGO_LARGEUR),
         "signature" => [
             fabrique_pdf::style_contrat::SIGNATURE_LARGEUR,
-            mesure_du_document(conges_spectacles::SIGNATURE_LARGEUR),
+            conges_spectacles::SIGNATURE_LARGEUR,
             { let r = aer::cadre_signature([Mesure::ZERO, Mesure::ZERO, aer::CASE_SIGNATURE, Mesure::UN]); r[2] - r[0] },
         ]
         .into_iter()
@@ -46,9 +47,3 @@ pub fn largeur_imprimee(quoi: &str) -> Option<Mesure> {
 }
 
 pub use fabrique_pdf::forme::Mesure;
-
-/// Un nombre d'un document, en mesure de la fabrique de PDF (`fabrique_pdf::forme::Mesure`, en nombre exact) : lu par
-/// son texte, sa forme la plus courte. Une mesure d'un document est celle d'une page.
-pub fn mesure_du_document(x: f64) -> Mesure {
-    Mesure::par_son_texte(x).expect("une mesure d'un document tient dans une page")
-}

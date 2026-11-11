@@ -1115,7 +1115,7 @@ impl Fenetre {
                 Ok(c) => c.entreprise,
                 Err(e) => return Reponse::nouvelle(500, "text/plain; charset=utf-8", e.phrase),
             };
-            return match engagement::cachet::svg(&ent) {
+            return match documents::cachet::svg(&ent) {
                 Some(d) => Reponse::nouvelle(200, "image/svg+xml; charset=utf-8", d),
                 None => rien(),
             };

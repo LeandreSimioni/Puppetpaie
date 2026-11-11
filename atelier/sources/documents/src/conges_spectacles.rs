@@ -10,7 +10,7 @@ use rust_decimal::RoundingStrategy;
 use fabrique_pdf::forme as pdf;
 
 use crate::bulletin::{identite_de, FORMAT};
-use crate::mesure_du_document;
+use fabrique_pdf::mesure::{mesure, Mesure};
 use droit::contexte::EntrepriseDuDocument;
 use droit::fiche::ChampsEntreprise;
 use socle::date::Jour;
@@ -82,130 +82,136 @@ const TIMES_GRAS: &str = "tibo";
 const COURIER: &str = "cour";
 
 /// Le cadre de la signature : x0, y0, x1, y1.
-const SIGNATURE_CADRE: (f64, f64, f64, f64) = (441.84, 775.50, 521.84, 809.10);
-/// La largeur de ce cadre (`largeur_imprimee`).
-pub const SIGNATURE_LARGEUR: f64 = SIGNATURE_CADRE.2 - SIGNATURE_CADRE.0;
+const SIGNATURE_CADRE: (Mesure, Mesure, Mesure, Mesure) = (mesure("441.84"), mesure("775.50"), mesure("521.84"), mesure("809.10"));
+/// La largeur de ce cadre (`largeur_imprimee`) : 80 points.
+pub const SIGNATURE_LARGEUR: Mesure = Mesure::entier(80);
+
+// Les corps du certificat.
+const C7: Mesure = mesure("7.92");
+const C9: Mesure = mesure("9.12");
+const C10: Mesure = mesure("10.08");
+const C13: Mesure = mesure("13.92");
 
 /// (x, ligne de base, texte, police, corps) : le fond imprime.
 #[rustfmt::skip]
-const FOND: &[(f64, f64, &str, &str, f64)] = &[
-    (48.96, 441.12, "CERTIFICAT D'EMPLOI", TIMES_GRAS, 10.08),
-    (48.96, 453.12, "DESTINÉ AU SALARIÉ", TIMES_GRAS, 10.08),
-    (212.16, 441.84, "LES CONGES SPECTACLES", TIMES_GRAS, 13.92),
-    (219.36, 453.12, "Audiens TSA 30400 92177 Vanves Cedex", TIMES_GRAS, 10.08),
-    (435.12, 441.36, "Information des Intermittents", TIMES, 9.12),
-    (456.48, 453.36, "www.audiens.org", TIMES, 9.12),
-    (450.48, 474.24, "Tél. : 0 173 173 434", TIMES, 9.12),
-    (382.32, 484.32, "de 9h30 à 18 h : accueil sur place et téléphone", TIMES, 9.12),
-    (49.92, 504.24,
+const FOND: &[(Mesure, Mesure, &str, &str, Mesure)] = &[
+    (mesure("48.96"), mesure("441.12"), "CERTIFICAT D'EMPLOI", TIMES_GRAS, C10),
+    (mesure("48.96"), mesure("453.12"), "DESTINÉ AU SALARIÉ", TIMES_GRAS, C10),
+    (mesure("212.16"), mesure("441.84"), "LES CONGES SPECTACLES", TIMES_GRAS, C13),
+    (mesure("219.36"), mesure("453.12"), "Audiens TSA 30400 92177 Vanves Cedex", TIMES_GRAS, C10),
+    (mesure("435.12"), mesure("441.36"), "Information des Intermittents", TIMES, C9),
+    (mesure("456.48"), mesure("453.36"), "www.audiens.org", TIMES, C9),
+    (mesure("450.48"), mesure("474.24"), "Tél. : 0 173 173 434", TIMES, C9),
+    (mesure("382.32"), mesure("484.32"), "de 9h30 à 18 h : accueil sur place et téléphone", TIMES, C9),
+    (mesure("49.92"), mesure("504.24"),
      "Si vous n'êtes pas inscrit à notre Caisse, contactez-nous à l'adresse ci-dessus mentionnée afin que nous procédions à votre immatriculation.",
-     TIMES_GRAS, 7.92),
-    (48.00, 513.36,
+     TIMES_GRAS, C7),
+    (mesure("48.00"), mesure("513.36"),
      "Votre demande de congé doit être adressée chaque année, quinze jours au moins avant votre départ en congé, dûment complétée et signée. Votre formulaire de",
-     TIMES, 7.92),
-    (48.00, 522.48,
+     TIMES, C7),
+    (mesure("48.00"), mesure("522.48"),
      "demande de congé vous sera adressé automatiquement chaque début d'année en même temps que les sommes à déclarer à l'administration fiscale. Si tel n'est",
-     TIMES, 7.92),
-    (48.00, 531.83,
+     TIMES, C7),
+    (mesure("48.00"), mesure("531.83"),
      "pas le cas, vous pouvez le demander par courrier ou 24h/24h : sur notre site internet ou notre serveur vocal téléphonique.",
-     TIMES, 7.92),
-    (48.00, 540.95,
+     TIMES, C7),
+    (mesure("48.00"), mesure("540.95"),
      "La loi n°2004-801 du 6 août 2004 relative à la protection des personnes physiques à l'égard des traitements  de données à caractère personnel s'applique aux",
-     TIMES, 7.92),
-    (48.00, 550.07,
+     TIMES, C7),
+    (mesure("48.00"), mesure("550.07"),
      "informations portées sur ce certificat. Elle garantit un droit d'accès et de rectification auprès du service Information des Intermittents.",
-     TIMES, 7.92),
-    (48.00, 579.84, "N° SIRET", TIMES, 13.92),
-    (253.92, 579.84, "COMPTE", TIMES, 13.92),
-    (431.04, 579.84, "N° CE", TIMES, 13.92),
-    (54.96, 614.87, "NIR", TIMES, 13.92),
-    (58.08, 633.36, "NOM DE NAISSANCE", TIMES, 7.92),
-    (58.08, 643.44, "NOM D'USAGE", TIMES, 7.92),
-    (57.84, 653.28, "EMPLOI", TIMES, 7.92),
-    (57.84, 663.36, "CADRE", TIMES, 7.92),
-    (318.96, 633.36, "PRENOM", TIMES, 7.92),
-    (318.96, 643.44, "PSEUDONYME", TIMES, 7.92),
-    (157.44, 683.28, " DATES DE TRAVAIL", TIMES, 10.08),
-    (396.96, 683.28, "    NB JOURS OU CACHETS", TIMES, 10.08),
-    (51.84, 704.88, "DEBUT", TIMES, 13.92),
-    (234.96, 704.88, "FIN", TIMES, 13.92),
-    (70.80, 737.76, "BASE CONGE", TIMES, 13.92),
-    (72.00, 747.36, "Arrondie à l'euro le plus proche", TIMES, 7.92),
-    (318.96, 737.76, "SALAIRE BRUT", TIMES, 13.92),
-    (318.96, 747.36, "Arrondi à l'euro le plus proche", TIMES, 7.92),
-    (354.96, 759.12, "Date :", TIMES, 10.08),
-    (354.00, 771.12, "Nom du signataire", TIMES, 10.08),
-    (354.96, 782.16, "Signature", TIMES, 10.08),
+     TIMES, C7),
+    (mesure("48.00"), mesure("579.84"), "N° SIRET", TIMES, C13),
+    (mesure("253.92"), mesure("579.84"), "COMPTE", TIMES, C13),
+    (mesure("431.04"), mesure("579.84"), "N° CE", TIMES, C13),
+    (mesure("54.96"), mesure("614.87"), "NIR", TIMES, C13),
+    (mesure("58.08"), mesure("633.36"), "NOM DE NAISSANCE", TIMES, C7),
+    (mesure("58.08"), mesure("643.44"), "NOM D'USAGE", TIMES, C7),
+    (mesure("57.84"), mesure("653.28"), "EMPLOI", TIMES, C7),
+    (mesure("57.84"), mesure("663.36"), "CADRE", TIMES, C7),
+    (mesure("318.96"), mesure("633.36"), "PRENOM", TIMES, C7),
+    (mesure("318.96"), mesure("643.44"), "PSEUDONYME", TIMES, C7),
+    (mesure("157.44"), mesure("683.28"), " DATES DE TRAVAIL", TIMES, C10),
+    (mesure("396.96"), mesure("683.28"), "    NB JOURS OU CACHETS", TIMES, C10),
+    (mesure("51.84"), mesure("704.88"), "DEBUT", TIMES, C13),
+    (mesure("234.96"), mesure("704.88"), "FIN", TIMES, C13),
+    (mesure("70.80"), mesure("737.76"), "BASE CONGE", TIMES, C13),
+    (mesure("72.00"), mesure("747.36"), "Arrondie à l'euro le plus proche", TIMES, C7),
+    (mesure("318.96"), mesure("737.76"), "SALAIRE BRUT", TIMES, C13),
+    (mesure("318.96"), mesure("747.36"), "Arrondi à l'euro le plus proche", TIMES, C7),
+    (mesure("354.96"), mesure("759.12"), "Date :", TIMES, C10),
+    (mesure("354.00"), mesure("771.12"), "Nom du signataire", TIMES, C10),
+    (mesure("354.96"), mesure("782.16"), "Signature", TIMES, C10),
 ];
 
 /// Les reperes d'angle, les traits de pliage et les filets : (x1, y1, x2, y2, epaisseur).
 #[rustfmt::skip]
-const TRAITS: &[(f64, f64, f64, f64, f64)] = &[
-    (40.80, 419.28, 63.84, 419.28, 3.12),
-    (42.48, 441.84, 42.48, 418.80, 3.12),
-    (530.88, 419.28, 553.92, 419.28, 3.12),
-    (552.48, 440.88, 552.48, 417.84, 3.12),
-    (40.80, 800.40, 63.84, 800.40, 3.12),
-    (42.48, 801.84, 42.48, 778.80, 3.12),
-    (528.96, 800.40, 552.00, 800.40, 3.12),
-    (551.28, 801.84, 551.28, 778.80, 3.12),
-    (18.96, 279.84, 38.88, 279.84, 0.24),
-    (554.88, 279.84, 574.80, 279.84, 0.24),
-    (48.96, 678.96, 148.80, 678.96, 0.24),
-    (258.96, 678.96, 358.80, 678.96, 0.24),
+const TRAITS: &[(Mesure, Mesure, Mesure, Mesure, Mesure)] = &[
+    (mesure("40.80"), mesure("419.28"), mesure("63.84"), mesure("419.28"), mesure("3.12")),
+    (mesure("42.48"), mesure("441.84"), mesure("42.48"), mesure("418.80"), mesure("3.12")),
+    (mesure("530.88"), mesure("419.28"), mesure("553.92"), mesure("419.28"), mesure("3.12")),
+    (mesure("552.48"), mesure("440.88"), mesure("552.48"), mesure("417.84"), mesure("3.12")),
+    (mesure("40.80"), mesure("800.40"), mesure("63.84"), mesure("800.40"), mesure("3.12")),
+    (mesure("42.48"), mesure("801.84"), mesure("42.48"), mesure("778.80"), mesure("3.12")),
+    (mesure("528.96"), mesure("800.40"), mesure("552.00"), mesure("800.40"), mesure("3.12")),
+    (mesure("551.28"), mesure("801.84"), mesure("551.28"), mesure("778.80"), mesure("3.12")),
+    (mesure("18.96"), mesure("279.84"), mesure("38.88"), mesure("279.84"), mesure("0.24")),
+    (mesure("554.88"), mesure("279.84"), mesure("574.80"), mesure("279.84"), mesure("0.24")),
+    (mesure("48.96"), mesure("678.96"), mesure("148.80"), mesure("678.96"), mesure("0.24")),
+    (mesure("258.96"), mesure("678.96"), mesure("358.80"), mesure("678.96"), mesure("0.24")),
 ];
 
 /// La position de chaque valeur remplie : (champ, x, ligne de base, police, corps).
 #[rustfmt::skip]
-const CASES: &[(&str, f64, f64, &str, f64)] = &[
-    ("dest_nom",       322.80, 157.20, TIMES_GRAS, 10.08),
-    ("dest_adresse",   322.80, 173.28, TIMES, 10.08),
-    ("dest_commune",   322.80, 189.12, TIMES, 10.08),
-    ("dest_pays",      322.80, 221.28, TIMES, 10.08),
-    ("siret",          123.60, 579.60, COURIER, 13.92),
-    ("compte",         338.40, 579.60, COURIER, 13.92),
-    ("num_ce",         503.52, 579.60, COURIER, 13.92),
-    ("nir",            112.80, 614.64, COURIER, 13.92),
-    ("raison_sociale", 318.96, 614.64, COURIER, 13.92),
-    ("nom_naissance",  174.00, 633.36, TIMES, 7.92),
-    ("nom_usage",      174.00, 643.44, TIMES, 7.92),
-    ("emploi",         174.00, 653.28, TIMES, 7.92),
-    ("cadre",          174.00, 663.36, TIMES, 7.92),
-    ("prenom",         390.00, 633.36, TIMES, 7.92),
-    ("pseudonyme",     390.00, 643.44, TIMES, 7.92),
-    ("debut",          126.00, 704.64, COURIER, 13.92),
-    ("fin",            266.88, 704.64, COURIER, 13.92),
-    ("nb_cachets",     457.44, 704.64, COURIER, 13.92),
-    ("base_conge",     248.64, 737.52, COURIER, 13.92),
-    ("salaire_brut",   470.64, 737.52, COURIER, 13.92),
-    ("date",           441.84, 758.16, COURIER, 10.08),
-    ("signataire",     441.84, 771.12, COURIER, 10.08),
-    ("agrement",       105.12, 781.68, TIMES, 10.08),
+const CASES: &[(&str, Mesure, Mesure, &str, Mesure)] = &[
+    ("dest_nom",       mesure("322.80"), mesure("157.20"), TIMES_GRAS, C10),
+    ("dest_adresse",   mesure("322.80"), mesure("173.28"), TIMES, C10),
+    ("dest_commune",   mesure("322.80"), mesure("189.12"), TIMES, C10),
+    ("dest_pays",      mesure("322.80"), mesure("221.28"), TIMES, C10),
+    ("siret",          mesure("123.60"), mesure("579.60"), COURIER, C13),
+    ("compte",         mesure("338.40"), mesure("579.60"), COURIER, C13),
+    ("num_ce",         mesure("503.52"), mesure("579.60"), COURIER, C13),
+    ("nir",            mesure("112.80"), mesure("614.64"), COURIER, C13),
+    ("raison_sociale", mesure("318.96"), mesure("614.64"), COURIER, C13),
+    ("nom_naissance",  mesure("174.00"), mesure("633.36"), TIMES, C7),
+    ("nom_usage",      mesure("174.00"), mesure("643.44"), TIMES, C7),
+    ("emploi",         mesure("174.00"), mesure("653.28"), TIMES, C7),
+    ("cadre",          mesure("174.00"), mesure("663.36"), TIMES, C7),
+    ("prenom",         mesure("390.00"), mesure("633.36"), TIMES, C7),
+    ("pseudonyme",     mesure("390.00"), mesure("643.44"), TIMES, C7),
+    ("debut",          mesure("126.00"), mesure("704.64"), COURIER, C13),
+    ("fin",            mesure("266.88"), mesure("704.64"), COURIER, C13),
+    ("nb_cachets",     mesure("457.44"), mesure("704.64"), COURIER, C13),
+    ("base_conge",     mesure("248.64"), mesure("737.52"), COURIER, C13),
+    ("salaire_brut",   mesure("470.64"), mesure("737.52"), COURIER, C13),
+    ("date",           mesure("441.84"), mesure("758.16"), COURIER, C10),
+    ("signataire",     mesure("441.84"), mesure("771.12"), COURIER, C10),
+    ("agrement",       mesure("105.12"), mesure("781.68"), TIMES, C10),
 ];
 
 /// Le bord droit a ne pas depasser, quand la case a un voisin.
-const LIMITES: &[(&str, f64)] = &[
-    ("siret", 253.92),
-    ("compte", 431.04),
-    ("num_ce", 549.00),
-    ("nir", 318.96),
-    ("raison_sociale", 549.00),
-    ("nom_naissance", 318.96),
-    ("nom_usage", 318.96),
-    ("emploi", 318.96),
-    ("cadre", 318.96),
-    ("prenom", 549.00),
-    ("pseudonyme", 549.00),
-    ("debut", 234.96),
-    ("fin", 396.96),
-    ("nb_cachets", 549.00),
-    ("base_conge", 318.96),
-    ("salaire_brut", 549.00),
-    ("date", 549.00),
-    ("signataire", 549.00),
+const LIMITES: &[(&str, Mesure)] = &[
+    ("siret", mesure("253.92")),
+    ("compte", mesure("431.04")),
+    ("num_ce", mesure("549.00")),
+    ("nir", mesure("318.96")),
+    ("raison_sociale", mesure("549.00")),
+    ("nom_naissance", mesure("318.96")),
+    ("nom_usage", mesure("318.96")),
+    ("emploi", mesure("318.96")),
+    ("cadre", mesure("318.96")),
+    ("prenom", mesure("549.00")),
+    ("pseudonyme", mesure("549.00")),
+    ("debut", mesure("234.96")),
+    ("fin", mesure("396.96")),
+    ("nb_cachets", mesure("549.00")),
+    ("base_conge", mesure("318.96")),
+    ("salaire_brut", mesure("549.00")),
+    ("date", mesure("549.00")),
+    ("signataire", mesure("549.00")),
 ];
 
-const RESPIRATION: f64 = 3.0;
+const RESPIRATION: Mesure = Mesure::entier(3);
 const NOIR: &str = "#000000";
 
 // ---------------------------------------------------------------- chiffres
@@ -519,11 +525,11 @@ fn valeurs(c: &Certificat, p: &PaieCs, ent: &ChampsEntreprise) -> R<Vec<(&'stati
     Ok(out)
 }
 
-fn largeur_max(champ: &str, x: f64) -> Option<f64> {
-    LIMITES.iter().find(|(c, _)| *c == champ).map(|(_, limite)| limite - RESPIRATION - x)
+fn largeur_max(champ: &str, x: Mesure) -> Option<Mesure> {
+    LIMITES.iter().find(|(c, _)| *c == champ).map(|(_, limite)| *limite - RESPIRATION - x)
 }
 
-fn texte_fixe(x: f64, y: f64, texte: &str, police: &str, corps: f64, largeur: Option<f64>) -> pdf::Bloc {
+fn texte_fixe(x: Mesure, y: Mesure, texte: &str, police: &str, corps: Mesure, largeur: Option<Mesure>) -> pdf::Bloc {
     let (nom, gras) = match police {
         TIMES => (pdf::PoliceFixe::Times, false),
         TIMES_GRAS => (pdf::PoliceFixe::Times, true),
@@ -531,14 +537,14 @@ fn texte_fixe(x: f64, y: f64, texte: &str, police: &str, corps: f64, largeur: Op
     };
     pdf::Bloc::TexteFixe(pdf::TexteFixe {
         texte: texte.to_string(),
-        x: mesure_du_document(x),
-        y: mesure_du_document(y),
-        taille: Some(mesure_du_document(corps)),
+        x,
+        y,
+        taille: Some(corps),
         police: Some(nom),
         gras: gras.then_some(true),
         couleur: Some(NOIR.to_string()),
         alignement: None,
-        largeur_max: largeur.map(mesure_du_document),
+        largeur_max: largeur,
     })
 }
 
@@ -547,11 +553,11 @@ fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R
         .iter()
         .map(|(x0, y0, x1, y1, ep)| {
             pdf::Bloc::Trait(pdf::Trait {
-                x1: mesure_du_document(*x0),
-                y1: mesure_du_document(*y0),
-                x2: mesure_du_document(*x1),
-                y2: mesure_du_document(*y1),
-                epaisseur: Some(mesure_du_document(*ep)),
+                x1: *x0,
+                y1: *y0,
+                x2: *x1,
+                y2: *y1,
+                epaisseur: Some(*ep),
                 couleur: Some(NOIR.to_string()),
             })
         })
@@ -570,10 +576,10 @@ fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R
         let svg = signature.extension().is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("svg"));
         blocs.push(pdf::Bloc::ImageFixe(pdf::ImageFixe {
             chemin: chemin_texte(&signature),
-            x: mesure_du_document(x0),
-            y: mesure_du_document(y0),
-            largeur: mesure_du_document(x1) - mesure_du_document(x0),
-            hauteur: mesure_du_document(y1) - mesure_du_document(y0),
+            x: x0,
+            y: y0,
+            largeur: x1 - x0,
+            hauteur: y1 - y0,
             centree: Some(!svg),
         }));
     }

@@ -10,7 +10,7 @@
 #[path = "../../../atelier/src/bulletins_fictifs.rs"]
 mod fabrique;
 pub use fabrique::*;
-use fabrique_pdf::forme::Bloc;
+use fabrique_pdf::forme::{Bloc, Mesure};
 
 // ------------------------------------------------------------------------------------------- gabarit A
 
@@ -35,26 +35,26 @@ pub fn identite_a() -> Identite {
 
 /// Les cotisations fictives de CoolPaie (montants inventes) ; `B` : la base (le brut), `C` : la base de la CSG.
 pub const COTISATIONS_A: [RangA; 20] = [
-    (33.9, "SANTE", "", "", "", "", "", ""),
-    (33.9, "Sécurité sociale - Maladie Maternité Invalidité Décès", "sante", "B", "7,000", "24,50", "", ""),
-    (33.9, "Complémentaire Incapacité Invalidité Décès (Audiens)", "sante", "B", "1,040", "5,20", "0,120", "0,60"),
-    (33.9, "ACCIDENTS DU TRAVAIL - MALADIES", "", "", "", "", "", ""),
-    (40.0, "PROFESSIONNELLES", "accidents_du_travail", "B", "1,050", "5,25", "", ""),
-    (33.9, "RETRAITE", "", "", "", "", "", ""),
-    (33.9, "Sécurité sociale plafonnée", "retraite", "B", "8,550", "29,95", "6,900", "24,15"),
-    (33.9, "Sécurité sociale déplafonnée", "retraite", "B", "2,020", "7,40", "0,400", "1,40"),
-    (33.9, "Complémentaire Tranche 1", "retraite", "B", "5,290", "28,70", "4,010", "26,50"),
-    (33.9, "FAMILLE", "famille", "B", "3,450", "12,10", "", ""),
-    (33.9, "ASSURANCE CHOMAGE", "", "", "", "", "", ""),
-    (33.9, "Chômage", "assurance_chomage", "B", "4,550", "48,75", "2,400", "12,00"),
-    (33.9, "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR", "", "", "", "", "", ""),
-    (33.9, "autres contributions dues par l'employeur", "autres_contributions", "B", "2,836", "14,18", "", ""),
-    (33.9, "CONGES SPECTACLES", "conges_spectacles", "B", "15,500", "77,50", "", ""),
-    (33.9, "COTISATIONS STATUTAIRES OU PREVUES PAR LA", "", "", "", "", "", ""),
-    (40.0, "CONVENTION COLLECTIVE", "cotisations_conventionnelles", "", "", "2,00", "", ""),
-    (33.9, "CSG déductible à l'impôt sur le revenu", "csg", "C", "", "", "6,800", "33,32"),
-    (33.9, "CSG/CRDS non déductible à l'impôt sur le revenu", "csg", "C", "", "", "2,900", "14,21"),
-    (33.9, "EXONERATIONS ET ALLEGEMENTS DE COTISATIONS", "exonerations", "", "100,000", "-27,30", "", "0,00"),
+    (m("33.9"), "SANTE", "", "", "", "", "", ""),
+    (m("33.9"), "Sécurité sociale - Maladie Maternité Invalidité Décès", "sante", "B", "7,000", "24,50", "", ""),
+    (m("33.9"), "Complémentaire Incapacité Invalidité Décès (Audiens)", "sante", "B", "1,040", "5,20", "0,120", "0,60"),
+    (m("33.9"), "ACCIDENTS DU TRAVAIL - MALADIES", "", "", "", "", "", ""),
+    (m("40"), "PROFESSIONNELLES", "accidents_du_travail", "B", "1,050", "5,25", "", ""),
+    (m("33.9"), "RETRAITE", "", "", "", "", "", ""),
+    (m("33.9"), "Sécurité sociale plafonnée", "retraite", "B", "8,550", "29,95", "6,900", "24,15"),
+    (m("33.9"), "Sécurité sociale déplafonnée", "retraite", "B", "2,020", "7,40", "0,400", "1,40"),
+    (m("33.9"), "Complémentaire Tranche 1", "retraite", "B", "5,290", "28,70", "4,010", "26,50"),
+    (m("33.9"), "FAMILLE", "famille", "B", "3,450", "12,10", "", ""),
+    (m("33.9"), "ASSURANCE CHOMAGE", "", "", "", "", "", ""),
+    (m("33.9"), "Chômage", "assurance_chomage", "B", "4,550", "48,75", "2,400", "12,00"),
+    (m("33.9"), "AUTRES CONTRIBUTIONS DUES PAR L'EMPLOYEUR", "", "", "", "", "", ""),
+    (m("33.9"), "autres contributions dues par l'employeur", "autres_contributions", "B", "2,836", "14,18", "", ""),
+    (m("33.9"), "CONGES SPECTACLES", "conges_spectacles", "B", "15,500", "77,50", "", ""),
+    (m("33.9"), "COTISATIONS STATUTAIRES OU PREVUES PAR LA", "", "", "", "", "", ""),
+    (m("40"), "CONVENTION COLLECTIVE", "cotisations_conventionnelles", "", "", "2,00", "", ""),
+    (m("33.9"), "CSG déductible à l'impôt sur le revenu", "csg", "C", "", "", "6,800", "33,32"),
+    (m("33.9"), "CSG/CRDS non déductible à l'impôt sur le revenu", "csg", "C", "", "", "2,900", "14,21"),
+    (m("33.9"), "EXONERATIONS ET ALLEGEMENTS DE COTISATIONS", "exonerations", "", "100,000", "-27,30", "", "0,00"),
 ];
 
 /// Le total des cotisations de `COTISATIONS_A` : (employeur, salarie).
@@ -240,32 +240,32 @@ pub fn b_cachets() -> B {
         lignes: vec![("3", "Cachets isolés", "110,00", "330,00")],
         brut: ("MONTANT BRUT", "330,00"),
         cotisations: vec![
-            (39.0, "Santé", s, s, s, s, s),
-            (74.0, "Sécurité Sociale - Maladie Maternité Invalidité Décès", "sante", s, s, s, "23,10"),
-            (74.0, "Prévoyance, Incapacité, Invalidité, Décès, Autres", "sante", "330,00", "0,120", "0,40", "3,66"),
-            (39.0, "Accidents du travail & maladies professionnelles", "accidents_du_travail", s, s, s, "3,47"),
-            (39.0, "Retraite", s, s, s, s, s),
-            (74.0, "Sécurité Sociale Vieillesse plafonnée", "retraite", "330,00", "4,830", "15,94", "19,77"),
-            (74.0, "Sécurité Sociale Vieillesse déplafonnée", "retraite", "330,00", "0,280", "0,92", "4,88"),
-            (74.0, "Retraite complémentaire, CEG et CET T1", "retraite", "330,00", "5,300", "17,49", "18,94"),
-            (39.0, "Famille", "famille", s, s, s, "11,62"),
-            (39.0, "Assurance chômage", "assurance_chomage", "330,00", "2,400", "7,92", "32,18"),
-            (39.0, "Congés Spectacles", "conges_spectacles", s, s, s, "51,15"),
-            (39.0, "Autres charges dues par l\u{2019}employeur", "autres_contributions", s, s, s, "10,37"),
-            (39.0, "Cotisations statutaires ou prévues par la convention collective", "cotisations_conventionnelles", s, s, s, "3,37"),
-            (39.0, "CSG déductible de l'impôt sur le revenu", "csg", "324,23", "6,800", "22,05", s),
-            (39.0, "CSG/CRDS non déductible de l'impôt sur le revenu", "csg", "324,23", "2,900", "9,40", s),
+            (m("39"), "Santé", s, s, s, s, s),
+            (m("74"), "Sécurité Sociale - Maladie Maternité Invalidité Décès", "sante", s, s, s, "23,10"),
+            (m("74"), "Prévoyance, Incapacité, Invalidité, Décès, Autres", "sante", "330,00", "0,120", "0,40", "3,66"),
+            (m("39"), "Accidents du travail & maladies professionnelles", "accidents_du_travail", s, s, s, "3,47"),
+            (m("39"), "Retraite", s, s, s, s, s),
+            (m("74"), "Sécurité Sociale Vieillesse plafonnée", "retraite", "330,00", "4,830", "15,94", "19,77"),
+            (m("74"), "Sécurité Sociale Vieillesse déplafonnée", "retraite", "330,00", "0,280", "0,92", "4,88"),
+            (m("74"), "Retraite complémentaire, CEG et CET T1", "retraite", "330,00", "5,300", "17,49", "18,94"),
+            (m("39"), "Famille", "famille", s, s, s, "11,62"),
+            (m("39"), "Assurance chômage", "assurance_chomage", "330,00", "2,400", "7,92", "32,18"),
+            (m("39"), "Congés Spectacles", "conges_spectacles", s, s, s, "51,15"),
+            (m("39"), "Autres charges dues par l\u{2019}employeur", "autres_contributions", s, s, s, "10,37"),
+            (m("39"), "Cotisations statutaires ou prévues par la convention collective", "cotisations_conventionnelles", s, s, s, "3,37"),
+            (m("39"), "CSG déductible de l'impôt sur le revenu", "csg", "324,23", "6,800", "22,05", s),
+            (m("39"), "CSG/CRDS non déductible de l'impôt sur le revenu", "csg", "324,23", "2,900", "9,40", s),
         ],
         total: ("TOTAL COTISATIONS ET CONTRIB. OBLIGATOIRES", "74,12", "182,51"),
         apres_total: vec![
-            (39.0, "Cotisations et contributions sociales facultatives", s, s, s, s, s),
-            (74.0, "Mutuelle fictive facultative", "cotisations_facultatives", "330,00", "0,500", "1,65", "1,65"),
+            (m("39"), "Cotisations et contributions sociales facultatives", s, s, s, s, s),
+            (m("74"), "Mutuelle fictive facultative", "cotisations_facultatives", "330,00", "0,500", "1,65", "1,65"),
         ],
         net_social: Some("255,88"),
         non_soumis: vec![("2", "Défraiement non soumis", "18,50", "37,00")],
         net_avant_impot: "291,23",
-        entete_pas: vec![(280.9, "base"), (339.0, "taux personnalisé"), (442.2, "montant"), (502.7, "cumul annuel")],
-        pas: ("IMPOT SUR LE REVENU PRELEVE A LA SOURCE", vec![(316.1, "263,90"), (412.2, "1,10"), (487.0, "2,90"), (563.0, "2,90")]),
+        entete_pas: vec![(m("280.9"), "base"), (m("339"), "taux personnalisé"), (m("442.2"), "montant"), (m("502.7"), "cumul annuel")],
+        pas: ("IMPOT SUR LE REVENU PRELEVE A LA SOURCE", vec![(m("316.1"), "263,90"), (m("412.2"), "1,10"), (m("487"), "2,90"), (m("563"), "2,90")]),
         net_imposable: Some(("263,90", "1 263,90")),
         cumuls: vec![("Cachets", "3,00", "7,00"), ("Jours", "2,00", "6,00"), ("Salaire brut", "330,00", "1 120,00")],
         net_paye: "288,33",
@@ -292,22 +292,22 @@ pub fn b_activite_partielle() -> B {
         ],
         brut: ("Salaire brut", "0,00"),
         cotisations: vec![
-            (38.0, "SANTE", s, s, s, s, s),
-            (73.0, "Complémentaire Incapacité Invalidité Décès", "sante", s, s, s, "1,50"),
-            (38.0, "CONGES SPECTACLES", "conges_spectacles", s, s, s, "52,00"),
-            (38.0, "CSG déductible de l'impôt sur le revenu", s, s, s, s, s),
-            (73.0, "CSG déductible de l'impôt sur le revenu", "csg", "330,12", "3,800", "12,54", s),
-            (73.0, "CSG - écrêtement sur ret. déductible", "csg", "-12,54", "100,000", "-12,54", s),
-            (38.0, "CSG/CRDS non déductible de l'impôt sur le revenu", "csg", "331,50", "2,900", "9,61", s),
-            (73.0, "CSG - écrêtement sur ret. non déductible", "csg", "-9,51", "100,000", "-9,51", s),
+            (m("38"), "SANTE", s, s, s, s, s),
+            (m("73"), "Complémentaire Incapacité Invalidité Décès", "sante", s, s, s, "1,50"),
+            (m("38"), "CONGES SPECTACLES", "conges_spectacles", s, s, s, "52,00"),
+            (m("38"), "CSG déductible de l'impôt sur le revenu", s, s, s, s, s),
+            (m("73"), "CSG déductible de l'impôt sur le revenu", "csg", "330,12", "3,800", "12,54", s),
+            (m("73"), "CSG - écrêtement sur ret. déductible", "csg", "-12,54", "100,000", "-12,54", s),
+            (m("38"), "CSG/CRDS non déductible de l'impôt sur le revenu", "csg", "331,50", "2,900", "9,61", s),
+            (m("73"), "CSG - écrêtement sur ret. non déductible", "csg", "-9,51", "100,000", "-9,51", s),
         ],
         total: ("Total des Cotisations et Contributions", "0,10", "53,50"),
         apres_total: vec![],
         net_social: None,
         non_soumis: vec![("3", "Indemnisation cachet en activité partielle", "112,00", "336,00")],
         net_avant_impot: "335,90",
-        entete_pas: vec![(341.0, "base"), (394.0, "taux non personnalisé"), (515.0, "montant")],
-        pas: ("Impôt sur le revenu prélevé à la source", vec![(374.0, "0,00"), (452.0, "0,00"), (558.0, "0,00")]),
+        entete_pas: vec![(m("341"), "base"), (m("394"), "taux non personnalisé"), (m("515"), "montant")],
+        pas: ("Impôt sur le revenu prélevé à la source", vec![(m("374"), "0,00"), (m("452"), "0,00"), (m("558"), "0,00")]),
         net_imposable: None,
         cumuls: vec![("Jours", "3,00", "4,00"), ("Salaire brut", "", ""), ("Net imposable", "335,98", "410,00"), ("Montant PAS", "0,00", "0,00")],
         net_paye: "335,90",
@@ -349,50 +349,50 @@ pub fn page_certificat<S: AsRef<str>>(c: &Certificat<S>) -> Vec<Bloc> {
     let date = |d: &str| if c.dates_a_barres { d.to_string() } else { d.replace('/', " ") };
     let siret = c.siret.as_ref();
     let nir = c.nir.as_ref();
-    grand(&mut b, 322.8, 150.0, &format!("{} {}", c.prenom.as_ref(), c.nom.as_ref()), 11.0);
-    grand(&mut b, 322.8, 166.0, c.adresse[0].as_ref(), 11.0);
-    grand(&mut b, 322.8, 182.0, c.adresse[1].as_ref(), 11.0);
-    grand(&mut b, 49.0, 432.0, "CERTIFICAT D'EMPLOI", 11.0);
-    grand(&mut b, 212.0, 430.0, "LES CONGES SPECTACLES", 14.0);
-    grand(&mut b, 49.0, 444.0, "DESTINÉ AU SALARIÉ", 11.0);
-    grand(&mut b, 48.0, 568.0, "N° SIRET", 14.0);
-    grand(&mut b, 123.6, 568.0, &format!("{} {}", &siret[..siret.len().min(9)], &siret[siret.len().min(9)..]), 14.0);
-    grand(&mut b, 253.9, 568.0, "COMPTE", 14.0);
-    grand(&mut b, 338.4, 568.0, c.compte.as_ref(), 14.0);
-    grand(&mut b, 431.0, 568.0, "N° CE", 14.0);
-    grand(&mut b, 503.5, 568.0, c.numero.as_ref(), 14.0);
-    grand(&mut b, 55.0, 603.0, "NIR", 14.0);
-    grand(&mut b, 112.8, 603.0, &nir[..nir.len().min(13)], 14.0);
-    grand(&mut b, 229.7, 603.0, &nir[nir.len().min(13)..], 14.0);
-    grand(&mut b, 319.0, 603.0, c.employeur.as_ref(), 14.0);
-    grand(&mut b, 58.1, 626.3, "NOM DE NAISSANCE", 9.0);
-    grand(&mut b, 174.0, 626.3, c.nom.as_ref(), 9.0);
-    grand(&mut b, 319.0, 626.3, "PRENOM", 9.0);
-    grand(&mut b, 390.0, 626.3, c.prenom.as_ref(), 9.0);
-    grand(&mut b, 58.1, 636.4, "NOM D'USAGE", 9.0);
-    grand(&mut b, 319.0, 636.4, "PSEUDONYME", 9.0);
-    grand(&mut b, 57.8, 646.2, "EMPLOI", 9.0);
-    grand(&mut b, 174.0, 646.2, c.emploi.as_ref(), 9.0);
-    grand(&mut b, 57.8, 656.3, "CADRE", 9.0);
-    grand(&mut b, 174.0, 656.3, if c.cadre { "OUI" } else { "NON" }, 9.0);
-    grand(&mut b, 160.0, 674.3, "DATES DE TRAVAIL", 11.0);
-    grand(&mut b, 407.0, 674.3, "NB JOURS OU CACHETS", 11.0);
-    grand(&mut b, 51.8, 693.0, "DEBUT", 14.0);
-    grand(&mut b, 126.0, 693.0, &date(c.debut.as_ref()), 14.0);
-    grand(&mut b, 235.0, 693.0, "FIN", 14.0);
-    grand(&mut b, 266.9, 693.0, &date(c.fin.as_ref()), 14.0);
-    grand(&mut b, 457.4, 693.0, c.nombre.as_ref(), 14.0);
-    grand(&mut b, 70.8, 725.4, "BASE CONGE", 14.0);
-    grand(&mut b, 248.6, 725.4, c.base_conge.as_ref(), 14.0);
-    grand(&mut b, 319.0, 725.4, "SALAIRE BRUT", 14.0);
-    grand(&mut b, 470.6, 725.4, c.brut.as_ref(), 14.0);
-    grand(&mut b, 72.0, 740.3, "Arrondie à l'euro le plus proche", 8.0);
-    grand(&mut b, 319.0, 740.3, "Arrondi à l'euro le plus proche", 8.0);
-    grand(&mut b, 355.0, 752.0, "Date :", 9.0);
-    grand(&mut b, 441.8, 752.0, &date(c.fin.as_ref()), 9.0);
-    grand(&mut b, 354.0, 764.0, "Nom du signataire", 9.0);
-    grand(&mut b, 105.1, 774.0, "N° d'agrément :", 9.0);
-    grand(&mut b, 355.0, 774.0, "Signature", 9.0);
+    grand(&mut b, m("322.8"), m("150"), &format!("{} {}", c.prenom.as_ref(), c.nom.as_ref()), m("11"));
+    grand(&mut b, m("322.8"), m("166"), c.adresse[0].as_ref(), m("11"));
+    grand(&mut b, m("322.8"), m("182"), c.adresse[1].as_ref(), m("11"));
+    grand(&mut b, m("49"), m("432"), "CERTIFICAT D'EMPLOI", m("11"));
+    grand(&mut b, m("212"), m("430"), "LES CONGES SPECTACLES", m("14"));
+    grand(&mut b, m("49"), m("444"), "DESTINÉ AU SALARIÉ", m("11"));
+    grand(&mut b, m("48"), m("568"), "N° SIRET", m("14"));
+    grand(&mut b, m("123.6"), m("568"), &format!("{} {}", &siret[..siret.len().min(9)], &siret[siret.len().min(9)..]), m("14"));
+    grand(&mut b, m("253.9"), m("568"), "COMPTE", m("14"));
+    grand(&mut b, m("338.4"), m("568"), c.compte.as_ref(), m("14"));
+    grand(&mut b, m("431"), m("568"), "N° CE", m("14"));
+    grand(&mut b, m("503.5"), m("568"), c.numero.as_ref(), m("14"));
+    grand(&mut b, m("55"), m("603"), "NIR", m("14"));
+    grand(&mut b, m("112.8"), m("603"), &nir[..nir.len().min(13)], m("14"));
+    grand(&mut b, m("229.7"), m("603"), &nir[nir.len().min(13)..], m("14"));
+    grand(&mut b, m("319"), m("603"), c.employeur.as_ref(), m("14"));
+    grand(&mut b, m("58.1"), m("626.3"), "NOM DE NAISSANCE", m("9"));
+    grand(&mut b, m("174"), m("626.3"), c.nom.as_ref(), m("9"));
+    grand(&mut b, m("319"), m("626.3"), "PRENOM", m("9"));
+    grand(&mut b, m("390"), m("626.3"), c.prenom.as_ref(), m("9"));
+    grand(&mut b, m("58.1"), m("636.4"), "NOM D'USAGE", m("9"));
+    grand(&mut b, m("319"), m("636.4"), "PSEUDONYME", m("9"));
+    grand(&mut b, m("57.8"), m("646.2"), "EMPLOI", m("9"));
+    grand(&mut b, m("174"), m("646.2"), c.emploi.as_ref(), m("9"));
+    grand(&mut b, m("57.8"), m("656.3"), "CADRE", m("9"));
+    grand(&mut b, m("174"), m("656.3"), if c.cadre { "OUI" } else { "NON" }, m("9"));
+    grand(&mut b, m("160"), m("674.3"), "DATES DE TRAVAIL", m("11"));
+    grand(&mut b, m("407"), m("674.3"), "NB JOURS OU CACHETS", m("11"));
+    grand(&mut b, m("51.8"), m("693"), "DEBUT", m("14"));
+    grand(&mut b, m("126"), m("693"), &date(c.debut.as_ref()), m("14"));
+    grand(&mut b, m("235"), m("693"), "FIN", m("14"));
+    grand(&mut b, m("266.9"), m("693"), &date(c.fin.as_ref()), m("14"));
+    grand(&mut b, m("457.4"), m("693"), c.nombre.as_ref(), m("14"));
+    grand(&mut b, m("70.8"), m("725.4"), "BASE CONGE", m("14"));
+    grand(&mut b, m("248.6"), m("725.4"), c.base_conge.as_ref(), m("14"));
+    grand(&mut b, m("319"), m("725.4"), "SALAIRE BRUT", m("14"));
+    grand(&mut b, m("470.6"), m("725.4"), c.brut.as_ref(), m("14"));
+    grand(&mut b, m("72"), m("740.3"), "Arrondie à l'euro le plus proche", m("8"));
+    grand(&mut b, m("319"), m("740.3"), "Arrondi à l'euro le plus proche", m("8"));
+    grand(&mut b, m("355"), m("752"), "Date :", m("9"));
+    grand(&mut b, m("441.8"), m("752"), &date(c.fin.as_ref()), m("9"));
+    grand(&mut b, m("354"), m("764"), "Nom du signataire", m("9"));
+    grand(&mut b, m("105.1"), m("774"), "N° d'agrément :", m("9"));
+    grand(&mut b, m("355"), m("774"), "Signature", m("9"));
     b
 }
 
@@ -441,67 +441,67 @@ pub struct Aem<S = &'static str> {
 pub fn page_aem<S: AsRef<str>>(a: &Aem<S>) -> Vec<Bloc> {
     let mut b = Vec::new();
     // Une ligne : chaque texte a son abscisse, repoussee au-dela du precedent (un blanc de 10 points entre deux).
-    let ligne = |b: &mut Vec<Bloc>, y: f64, textes: &[(f64, &str)]| {
-        let mut fin = 0.0f64;
+    let ligne = |b: &mut Vec<Bloc>, y: i64, textes: &[(i64, &str)]| {
+        let mut fin = Mesure::ZERO;
         for (x, texte) in textes {
             if texte.is_empty() {
                 continue;
             }
-            let x = x.max(fin + 10.0);
-            t(b, x, y, texte);
-            fin = x + 6.5 * texte.chars().count() as f64;
+            let x = Mesure::entier(*x).max(fin + Mesure::entier(10));
+            t(b, x, Mesure::entier(y), texte);
+            fin = x + m("6.5") * texte.chars().count() as i64;
         }
     };
     let jma = |d: &S| -> Vec<String> { d.as_ref().split('/').map(String::from).collect() };
     let coche = |l: &str, oui: bool| if oui { format!("{} Ñ", l) } else { l.to_string() };
     let (mm, an) = a.mois.as_ref().split_once('/').unwrap_or(("00", "0000"));
     let (n, e, f) = (jma(&a.naissance), jma(&a.embauche), jma(&a.fin));
-    ligne(&mut b, 35.0, &[(40.0, "ACTIVITÉS RELEVANT DES ANNEXES 8 et 10 au règlement de l'Assurance Chômage")]);
-    ligne(&mut b, 47.0, &[(40.0, "À REMPLIR PAR L'EMPLOYEUR ET À REMETTRE AU SALARIÉ")]);
+    ligne(&mut b, 35, &[(40, "ACTIVITÉS RELEVANT DES ANNEXES 8 et 10 au règlement de l'Assurance Chômage")]);
+    ligne(&mut b, 47, &[(40, "À REMPLIR PAR L'EMPLOYEUR ET À REMETTRE AU SALARIÉ")]);
     ligne(
         &mut b,
-        78.0,
-        &[(30.0, "1 ATTESTATION (AEM)"), (0.0, "MOIS"), (0.0, &mm[..1]), (0.0, &mm[1..]), (0.0, "20"), (0.0, &an[2..3]), (0.0, &an[3..]), (0.0, "ATTESTATION N°"), (0.0, a.numero.as_ref())],
+        78,
+        &[(30, "1 ATTESTATION (AEM)"), (0, "MOIS"), (0, &mm[..1]), (0, &mm[1..]), (0, "20"), (0, &an[2..3]), (0, &an[3..]), (0, "ATTESTATION N°"), (0, a.numero.as_ref())],
     );
-    ligne(&mut b, 104.0, &[(30.0, "AEM INITIALE Ñ"), (0.0, "COMPLÉMENTAIRE"), (0.0, "RECTIFICATIVE POSITIVE"), (0.0, "OU NÉGATIVE")]);
-    ligne(&mut b, 114.0, &[(300.0, "N° DE L'ATTESTATION INITIALE")]);
-    ligne(&mut b, 130.0, &[(30.0, "2 EMPLOYEUR")]);
-    ligne(&mut b, 146.0, &[(30.0, "N° SIRET"), (0.0, a.siret.as_ref()), (0.0, "Code APE/NAF"), (0.0, a.ape.as_ref()), (0.0, "N° d'affiliation"), (0.0, "99999999999")]);
-    ligne(&mut b, 158.0, &[(30.0, "N° IDCC"), (0.0, a.idcc.as_ref()), (0.0, "Si différent, N° IDCC de la prestation de travail")]);
-    ligne(&mut b, 172.0, &[(30.0, "Raison sociale"), (0.0, a.employeur.as_ref())]);
-    ligne(&mut b, 184.0, &[(30.0, "Code Postal"), (0.0, a.employeur_code_postal.as_ref()), (0.0, "Commune"), (0.0, a.employeur_commune.as_ref()), (0.0, "Courriel")]);
-    ligne(&mut b, 198.0, &[(30.0, "N° d'affiliation à la caisse OUI Ñ"), (0.0, a.adherent.as_ref()), (0.0, "NON")]);
-    ligne(&mut b, 207.0, &[(30.0, "de congés spectacles")]);
-    ligne(&mut b, 230.0, &[(30.0, "3 SALARIE")]);
-    ligne(&mut b, 246.0, &[(30.0, "Nom de famille"), (0.0, a.nom.as_ref()), (0.0, "Prénom"), (0.0, a.prenom.as_ref())]);
-    ligne(&mut b, 256.0, &[(30.0, "(Nom de naissance)")]);
-    ligne(&mut b, 270.0, &[(30.0, "Nom d'usage")]);
-    ligne(&mut b, 286.0, &[(30.0, "NIR"), (0.0, a.nir.as_ref()), (0.0, "Date de naissance"), (0.0, &n[0]), (0.0, &n[1]), (0.0, &n[2])]);
-    ligne(&mut b, 302.0, &[(30.0, "Adresse"), (0.0, a.rue.as_ref())]);
-    ligne(&mut b, 318.0, &[(30.0, "Code Postal"), (0.0, a.code_postal.as_ref()), (0.0, "Commune"), (0.0, a.commune.as_ref())]);
-    ligne(&mut b, 340.0, &[(30.0, "4 PRESTATION DE TRAVAIL")]);
-    ligne(&mut b, 356.0, &[(30.0, "Emploi occupé"), (0.0, a.emploi.as_ref()), (0.0, "Numéro Objet"), (0.0, a.objet.as_ref())]);
+    ligne(&mut b, 104, &[(30, "AEM INITIALE Ñ"), (0, "COMPLÉMENTAIRE"), (0, "RECTIFICATIVE POSITIVE"), (0, "OU NÉGATIVE")]);
+    ligne(&mut b, 114, &[(300, "N° DE L'ATTESTATION INITIALE")]);
+    ligne(&mut b, 130, &[(30, "2 EMPLOYEUR")]);
+    ligne(&mut b, 146, &[(30, "N° SIRET"), (0, a.siret.as_ref()), (0, "Code APE/NAF"), (0, a.ape.as_ref()), (0, "N° d'affiliation"), (0, "99999999999")]);
+    ligne(&mut b, 158, &[(30, "N° IDCC"), (0, a.idcc.as_ref()), (0, "Si différent, N° IDCC de la prestation de travail")]);
+    ligne(&mut b, 172, &[(30, "Raison sociale"), (0, a.employeur.as_ref())]);
+    ligne(&mut b, 184, &[(30, "Code Postal"), (0, a.employeur_code_postal.as_ref()), (0, "Commune"), (0, a.employeur_commune.as_ref()), (0, "Courriel")]);
+    ligne(&mut b, 198, &[(30, "N° d'affiliation à la caisse OUI Ñ"), (0, a.adherent.as_ref()), (0, "NON")]);
+    ligne(&mut b, 207, &[(30, "de congés spectacles")]);
+    ligne(&mut b, 230, &[(30, "3 SALARIE")]);
+    ligne(&mut b, 246, &[(30, "Nom de famille"), (0, a.nom.as_ref()), (0, "Prénom"), (0, a.prenom.as_ref())]);
+    ligne(&mut b, 256, &[(30, "(Nom de naissance)")]);
+    ligne(&mut b, 270, &[(30, "Nom d'usage")]);
+    ligne(&mut b, 286, &[(30, "NIR"), (0, a.nir.as_ref()), (0, "Date de naissance"), (0, &n[0]), (0, &n[1]), (0, &n[2])]);
+    ligne(&mut b, 302, &[(30, "Adresse"), (0, a.rue.as_ref())]);
+    ligne(&mut b, 318, &[(30, "Code Postal"), (0, a.code_postal.as_ref()), (0, "Commune"), (0, a.commune.as_ref())]);
+    ligne(&mut b, 340, &[(30, "4 PRESTATION DE TRAVAIL")]);
+    ligne(&mut b, 356, &[(30, "Emploi occupé"), (0, a.emploi.as_ref()), (0, "Numéro Objet"), (0, a.objet.as_ref())]);
     // « Non » au-dessus de « cadre » : « Non cadre » sur deux rangs, comme le formulaire.
-    ligne(&mut b, 366.0, &[(150.0, "Non")]);
+    ligne(&mut b, 366, &[(150, "Non")]);
     ligne(
         &mut b,
-        374.0,
-        &[(30.0, &coche("Cadre", a.cadre)), (150.0, &coche("cadre", !a.cadre)), (0.0, "Réalisateur"), (0.0, &coche("Artiste", a.artiste)), (0.0, &coche("Technicien", !a.artiste)), (0.0, "Ouvrier")],
+        374,
+        &[(30, &coche("Cadre", a.cadre)), (150, &coche("cadre", !a.cadre)), (0, "Réalisateur"), (0, &coche("Artiste", a.artiste)), (0, &coche("Technicien", !a.artiste)), (0, "Ouvrier")],
     );
-    ligne(&mut b, 392.0, &[(30.0, "Date d'embauche"), (0.0, &e[0]), (0.0, &e[1]), (0.0, &e[2]), (0.0, "à Contrat en cours")]);
-    ligne(&mut b, 404.0, &[(30.0, "Sinon à Date de fin du contrat de travail"), (0.0, &f[0]), (0.0, &f[1]), (0.0, &f[2])]);
-    ligne(&mut b, 414.0, &[(30.0, "(Date de début du contrat)")]);
+    ligne(&mut b, 392, &[(30, "Date d'embauche"), (0, &e[0]), (0, &e[1]), (0, &e[2]), (0, "à Contrat en cours")]);
+    ligne(&mut b, 404, &[(30, "Sinon à Date de fin du contrat de travail"), (0, &f[0]), (0, &f[1]), (0, &f[2])]);
+    ligne(&mut b, 414, &[(30, "(Date de début du contrat)")]);
     // Les en-tetes des nombres, sur deux rangs, et les nombres a leur aplomb.
-    ligne(&mut b, 432.0, &[(40.0, "Nombre d'"), (110.0, "HEURES"), (200.0, "Nombre de"), (330.0, "Nombre de")]);
-    ligne(&mut b, 442.0, &[(40.0, "effectuées"), (200.0, "CACHETS*"), (330.0, "JOURS")]);
-    ligne(&mut b, 452.0, &[(180.0, "isolés"), (240.0, "groupés"), (330.0, "travaillés")]);
-    ligne(&mut b, 470.0, &[(122.0, a.heures.as_ref()), (186.0, a.isoles.as_ref()), (250.0, a.groupes.as_ref()), (345.0, a.jours.as_ref())]);
-    ligne(&mut b, 484.0, &[(100.0, "* Uniquement pour les artistes (voir notice)")]);
-    ligne(&mut b, 500.0, &[(150.0, "RÉMUNERATION VERSÉES AU COURS DU MOIS")]);
-    ligne(&mut b, 512.0, &[(40.0, "SALAIRES BRUTS"), (220.0, "SALAIRES BRUTS")]);
-    ligne(&mut b, 521.0, &[(220.0, "soumis à contributions d'assurance chômage *")]);
-    ligne(&mut b, 536.0, &[(55.0, a.brut.as_ref()), (235.0, a.brut.as_ref())]);
-    ligne(&mut b, 600.0, &[(30.0, "5 AUTHENTIFICATION PAR L'EMPLOYEUR")]);
+    ligne(&mut b, 432, &[(40, "Nombre d'"), (110, "HEURES"), (200, "Nombre de"), (330, "Nombre de")]);
+    ligne(&mut b, 442, &[(40, "effectuées"), (200, "CACHETS*"), (330, "JOURS")]);
+    ligne(&mut b, 452, &[(180, "isolés"), (240, "groupés"), (330, "travaillés")]);
+    ligne(&mut b, 470, &[(122, a.heures.as_ref()), (186, a.isoles.as_ref()), (250, a.groupes.as_ref()), (345, a.jours.as_ref())]);
+    ligne(&mut b, 484, &[(100, "* Uniquement pour les artistes (voir notice)")]);
+    ligne(&mut b, 500, &[(150, "RÉMUNERATION VERSÉES AU COURS DU MOIS")]);
+    ligne(&mut b, 512, &[(40, "SALAIRES BRUTS"), (220, "SALAIRES BRUTS")]);
+    ligne(&mut b, 521, &[(220, "soumis à contributions d'assurance chômage *")]);
+    ligne(&mut b, 536, &[(55, a.brut.as_ref()), (235, a.brut.as_ref())]);
+    ligne(&mut b, 600, &[(30, "5 AUTHENTIFICATION PAR L'EMPLOYEUR")]);
     b
 }
 

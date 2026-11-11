@@ -30,31 +30,22 @@
 //! RIEN N'EST INVENTE. Une valeur absente d'`entreprise.json` ne s'ecrit pas :
 //! la ligne saute. Un cachet qui afficherait un SIRET vide ou << None >> serait
 //! pire que pas de cachet, et la case n'est exigee par aucun formulaire.
+//!
+//! Le dessin se mesure en `Mesure` (des millioniemes exacts) : chaque coordonnee s'ecrit ensuite a six chiffres
+//! significatifs (`format_g`).
 
 use droit::fiche::Lue;
+use fabrique_pdf::mesure::{mesure, Mesure};
+use rust_decimal::RoundingStrategy;
+use socle::num::Decimal;
 
-/// Une coordonnee du dessin, ecrite comme `"%g" % x` : six chiffres significatifs, sans zeros inutiles.
-fn format_g(x: f64) -> String {
-    if x == 0.0 {
-        return "0".into();
-    }
-    if !x.is_finite() {
-        return if x.is_nan() { "nan" } else if x > 0.0 { "inf" } else { "-inf" }.into();
-    }
-    let t = format!("{:.5e}", x);
-    let (m, e) = t.split_once('e').unwrap();
-    let e: i32 = e.parse().unwrap();
-    let rogner = |s: String| -> String {
-        if s.contains('.') {
-            s.trim_end_matches('0').trim_end_matches('.').to_string()
-        } else {
-            s
-        }
-    };
-    if !(-4..6).contains(&e) {
-        format!("{}e{}{:02}", rogner(m.to_string()), if e < 0 { '-' } else { '+' }, e.abs())
-    } else {
-        rogner(format!("{:.*}", (5 - e) as usize, x))
+/// Une coordonnee du dessin, ecrite a six chiffres significatifs (au pair a egalite), sans zero inutile : `12.3457`,
+/// `300`, `0`. Le dessin reste entre 1e-4 et 1e6 : la notation positionnelle suffit.
+fn format_g(x: Mesure) -> String {
+    let d = Decimal::new(x.en_millioniemes(), 6);
+    match d.round_sf_with_strategy(6, RoundingStrategy::MidpointNearestEven) {
+        Some(r) => r.normalize().to_string(),
+        None => unreachable!("une mesure tient dans un decimal : {}", x),
     }
 }
 
@@ -62,10 +53,10 @@ fn format_g(x: f64) -> String {
 /// d'un tampon rectangulaire courant ; il tient dans la case cachet de l'AER
 /// (160 x 79 points) sans rogner.
 pub const ENCRE: &str = "#1a2e73";
-pub const LARGEUR: f64 = 300.0;
-pub const HAUTEUR: f64 = 150.0;
+pub const LARGEUR: Mesure = Mesure::entier(300);
+pub const HAUTEUR: Mesure = Mesure::entier(150);
 /// Le tampon ne touche pas le bord de la case.
-pub const MARGE: f64 = 3.0;
+pub const MARGE: Mesure = Mesure::entier(3);
 
 /// Ce que le cachet porte : le nom, le lieu, les numeros.
 #[derive(Debug, Clone, PartialEq)]
@@ -113,18 +104,21 @@ pub fn lignes(ent: &droit::fiche::ChampsEntreprise) -> Lignes {
     Lignes { nom, lieu, numeros }
 }
 
-/// Le corps le plus grand auquel `texte` tient dans `large`.
+/// Le corps le plus grand auquel `texte` tient dans `large`, et 5 au moins.
 ///
-/// Sans mesure de police reelle : une largeur moyenne par caractere suffit
+/// Sans mesure de police reelle : une largeur moyenne par caractere (`etroit`, une fraction du corps) suffit
 /// pour du texte court, et le SVG n'a pas d'unite de mesure a nous rendre.
 /// Mieux vaut un tampon un rien plus petit qu'un tampon qui deborde.
-fn corps_qui_tient(texte: &str, large: f64, depart: f64, etroit: f64) -> f64 {
-    if texte.is_empty() {
+fn corps_qui_tient(texte: &str, large: Mesure, depart: Mesure, etroit: Mesure) -> Mesure {
+    let n = texte.chars().count() as i64;
+    if n == 0 {
         return depart;
     }
-    let tient = large / (texte.chars().count() as f64 * etroit);
-    let m = if depart < tient { depart } else { tient };
-    if 5.0 > m { 5.0 } else { m }
+    let tient = match large.sur(etroit * n) {
+        Some(t) => t,
+        None => unreachable!("un caractere a une largeur"),
+    };
+    depart.min(tient).max(Mesure::entier(5))
 }
 
 /// `&`, `<` et `>`, et rien d'autre.
@@ -144,9 +138,9 @@ pub fn svg(ent: &droit::fiche::ChampsEntreprise) -> Option<String> {
         return None;
     }
 
-    let dedans = 16.0;
-    let utile = LARGEUR - 2.0 * dedans;
-    let milieu = LARGEUR / 2.0;
+    let dedans = Mesure::entier(16);
+    let utile = LARGEUR - dedans * 2;
+    let milieu = LARGEUR / 2;
     let police = "Helvetica,Arial,sans-serif";
 
     // LA MISE EN PAGE SE CALCULE AVANT DE S'ECRIRE, et c'est ce qui evite le
@@ -159,25 +153,30 @@ pub fn svg(ent: &droit::fiche::ChampsEntreprise) -> Option<String> {
     // blanc au-dessus), on mesure, et on comprime si besoin. Le resultat est
     // ensuite CENTRE verticalement : un tampon dont le texte pend vers le haut
     // ou vers le bas se voit tout de suite.
-    let mut items: Vec<(Option<String>, f64, u32, f64)> = Vec::new();
+    let mut items: Vec<(Option<String>, Mesure, u32, Mesure)> = Vec::new();
     if let Some(nom) = &t.nom {
-        items.push((Some(nom.to_uppercase()), corps_qui_tient(nom, utile, 22.0, 0.62), 700, 0.0));
-        items.push((None, 0.0, 0, 9.0)); // le filet
+        items.push((Some(nom.to_uppercase()), corps_qui_tient(nom, utile, Mesure::entier(22), mesure("0.62")), 700, Mesure::ZERO));
+        items.push((None, Mesure::ZERO, 0, Mesure::entier(9))); // le filet
     }
     for (i, ligne) in t.lieu.iter().enumerate() {
-        items.push((Some(ligne.clone()), corps_qui_tient(ligne, utile, 11.5, 0.52), 400, if i == 0 { 7.0 } else { 3.0 }));
+        let blanc = if i == 0 { Mesure::entier(7) } else { Mesure::entier(3) };
+        items.push((Some(ligne.clone()), corps_qui_tient(ligne, utile, mesure("11.5"), mesure("0.52")), 400, blanc));
     }
     for (i, ligne) in t.numeros.iter().enumerate() {
-        items.push((Some(ligne.clone()), corps_qui_tient(ligne, utile, 10.0, 0.52), 400, if i == 0 { 6.0 } else { 2.5 }));
+        let blanc = if i == 0 { Mesure::entier(6) } else { mesure("2.5") };
+        items.push((Some(ligne.clone()), corps_qui_tient(ligne, utile, Mesure::entier(10), mesure("0.52")), 400, blanc));
     }
 
-    let haut_utile = HAUTEUR - 2.0 * dedans;
-    let mut total = items.iter().fold(0.0, |s, (_, corps, _, blanc)| s + (blanc + corps));
+    let haut_utile = HAUTEUR - dedans * 2;
+    let mut total: Mesure = items.iter().map(|(_, corps, _, blanc)| *blanc + *corps).sum();
     if total > haut_utile {
         // Tout retrecit du meme rapport : les proportions du tampon tiennent,
         // et rien ne sort du cadre.
-        let k = haut_utile / total;
-        items = items.into_iter().map(|(txt, corps, gras, blanc)| (txt, corps * k, gras, blanc * k)).collect();
+        let reduit = |m: Mesure| match m.fois_rapport(haut_utile.en_millioniemes(), total.en_millioniemes()) {
+            Some(r) => r,
+            None => unreachable!("le total depasse la hauteur utile : il n'est pas nul"),
+        };
+        items = items.into_iter().map(|(txt, corps, gras, blanc)| (txt, reduit(corps), gras, reduit(blanc))).collect();
         total = haut_utile;
     }
 
@@ -191,26 +190,26 @@ pub fn svg(ent: &droit::fiche::ChampsEntreprise) -> Option<String> {
         ),
         format!(
             "<rect x=\"4\" y=\"4\" width=\"{}\" height=\"{}\" rx=\"12\" fill=\"none\" stroke=\"{}\" stroke-width=\"4\"/>",
-            format_g(LARGEUR - 8.0),
-            format_g(HAUTEUR - 8.0),
+            format_g(LARGEUR - Mesure::entier(8)),
+            format_g(HAUTEUR - Mesure::entier(8)),
             ENCRE
         ),
         format!(
             "<rect x=\"11\" y=\"11\" width=\"{}\" height=\"{}\" rx=\"7\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.2\"/>",
-            format_g(LARGEUR - 22.0),
-            format_g(HAUTEUR - 22.0),
+            format_g(LARGEUR - Mesure::entier(22)),
+            format_g(HAUTEUR - Mesure::entier(22)),
             ENCRE
         ),
     ];
-    let mut y = dedans + (haut_utile - total) / 2.0;
+    let mut y = dedans + (haut_utile - total) / 2;
     for (texte, corps, gras, blanc) in &items {
-        y += blanc + corps;
+        y += *blanc + *corps;
         match texte {
             None => out.push(format!(
                 "<line x1=\"{}\" y1=\"{}\" x2=\"{}\" y2=\"{}\" stroke=\"{}\" stroke-width=\"1\"/>",
-                format_g(milieu - utile / 3.0),
+                format_g(milieu - utile / 3),
                 format_g(y),
-                format_g(milieu + utile / 3.0),
+                format_g(milieu + utile / 3),
                 format_g(y),
                 ENCRE
             )),

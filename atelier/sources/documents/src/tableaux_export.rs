@@ -20,7 +20,6 @@ use std::path::{Path, PathBuf};
 
 use fabrique_pdf::forme as pdf;
 use fabrique_pdf::mesure::mesure;
-use crate::mesure_du_document;
 use rust_xlsxwriter::{Format, FormatAlign, Workbook, Worksheet};
 use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
@@ -728,57 +727,71 @@ pub fn html_tableau(t: &Tableau, ctx: Option<&Contexte>) -> R<Vec<u8>> {
     Ok(page.into_bytes())
 }
 
-const PAGE_LARGEUR: f64 = 841.89;
-const PAGE_HAUTEUR: f64 = 595.28;
+const PAGE_LARGEUR: pdf::Mesure = pdf::Mesure::milliemes(841_890);
+const PAGE_HAUTEUR: pdf::Mesure = pdf::Mesure::milliemes(595_280);
 const ROUGE: &str = "#B22222";
 const ENCRE: &str = "#2C3E50";
 
-const CHASSE: f64 = 3.9;
-const CHASSE_ENTETE: f64 = 4.2;
-const MARGE_CELLULE: f64 = 3.0;
-const LIGNE_DE_TEXTE: f64 = 40.0;
+const CHASSE: pdf::Mesure = mesure("3.9");
+const CHASSE_ENTETE: pdf::Mesure = mesure("4.2");
+const MARGE_CELLULE: pdf::Mesure = pdf::Mesure::entier(3);
+/// La ligne de texte la plus longue, en caracteres, avant qu'elle raccourcisse.
+const LIGNE_DE_TEXTE: i64 = 40;
 
-/// La largeur de chaque colonne, en fraction de la largeur utile.
-pub fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], utile: f64) -> Vec<f64> {
+/// La largeur de chaque colonne, en fraction de la largeur utile. Une longueur s'y compte en caracteres (gonfles d'un
+/// dixieme pour un total, de trois pour le total general), une largeur en points.
+pub fn fractions(entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], utile: pdf::Mesure) -> Vec<pdf::Mesure> {
+    use pdf::Mesure;
     let n = entetes.len();
-    let mut plus_long = vec![0.0f64; n];
-    let mut plus_long_mot = vec![0.0f64; n];
-    let mut mot_entete = vec![0.0f64; n];
+    let mut plus_long = vec![Mesure::ZERO; n];
+    let mut plus_long_mot = vec![Mesure::ZERO; n];
+    let mut mot_entete = vec![Mesure::ZERO; n];
     for (i, (libelle, _)) in entetes.iter().enumerate() {
-        mot_entete[i] = libelle.split(socle::texte::blanc).map(|m| m.chars().count()).fold(0, usize::max) as f64;
+        mot_entete[i] = Mesure::entier(libelle.split(socle::texte::blanc).map(|m| m.chars().count()).fold(0, usize::max) as i64);
     }
-    let gonfle = |genre: &str| match genre {
-        "total" => 1.1,
-        "general" => 1.3,
-        _ => 1.0,
+    let gonfle = |caracteres: usize, genre: &str| {
+        let (n, d) = match genre {
+            "total" => (11, 10),
+            "general" => (13, 10),
+            _ => (1, 1),
+        };
+        match Mesure::entier(caracteres as i64).fois_rapport(n, d) {
+            Some(m) => m,
+            None => unreachable!("un rapport de dix"),
+        }
     };
     for (cellules, genre) in rangees {
         for (i, c) in cellules.iter().take(n).enumerate() {
-            plus_long[i] = plus_long[i].max(c.chars().count() as f64 * gonfle(genre));
+            plus_long[i] = plus_long[i].max(gonfle(c.chars().count(), genre));
             for m in c.split(socle::texte::blanc).filter(|m| !m.is_empty()) {
-                plus_long_mot[i] = plus_long_mot[i].max(m.chars().count() as f64 * gonfle(genre));
+                plus_long_mot[i] = plus_long_mot[i].max(gonfle(m.chars().count(), genre));
             }
         }
     }
     let texte: Vec<bool> = entetes.iter().map(|(_, a_droite)| !a_droite).collect();
-    let besoins = |ligne: f64| -> Vec<f64> {
+    let besoins = |ligne: i64| -> Vec<Mesure> {
         (0..n)
             .map(|i| {
-                let lg = if texte[i] { plus_long[i].min(ligne).max(plus_long_mot[i]) } else { plus_long[i] };
-                (lg * CHASSE).max(mot_entete[i] * CHASSE_ENTETE) + 2.0 * MARGE_CELLULE
+                let lg = if texte[i] { plus_long[i].min(Mesure::entier(ligne)).max(plus_long_mot[i]) } else { plus_long[i] };
+                (lg * CHASSE).max(mot_entete[i] * CHASSE_ENTETE) + MARGE_CELLULE * 2
             })
             .collect()
     };
-    let somme_de = |b: &[f64]| b.iter().fold(0.0, |a, x| a + x);
+    let somme_de = |b: &[Mesure]| b.iter().sum::<Mesure>();
     // La ligne de texte la plus longue, en caracteres : elle raccourcit jusqu'a ce que les colonnes tiennent.
     let mut ligne = LIGNE_DE_TEXTE;
     let mut b = besoins(ligne);
-    while somme_de(&b) > utile && ligne > 8.0 {
-        ligne -= 2.0;
+    while somme_de(&b) > utile && ligne > 8 {
+        ligne -= 2;
         b = besoins(ligne);
     }
     let total = somme_de(&b);
-    b.iter().map(|x| x / total).collect()
+    b.iter()
+        .map(|x| match x.sur(total) {
+            Some(f) => f,
+            None => unreachable!("chaque colonne a sa marge : le total n'est pas nul"),
+        })
+        .collect()
 }
 
 fn filets(couleur: &str, epaisseur: pdf::Mesure) -> Option<pdf::Filet> {
@@ -820,11 +833,11 @@ pub fn description_pdf(
     titre: &str, periode: &str, nom: Option<&str>, sous_titre: &str, pied: &str, entetes: &[(String, bool)], rangees: &[(Vec<String>, &str)], notes: &[String],
     sources: &[String],
 ) -> pdf::Description {
-    let fr = fractions(entetes, rangees, PAGE_LARGEUR - 68.0);
+    let fr = fractions(entetes, rangees, PAGE_LARGEUR - pdf::Mesure::entier(68));
     let colonnes = fr
         .iter()
         .zip(entetes)
-        .map(|(f, e)| pdf::ColonneTableau { largeur: mesure_du_document(*f), alignement: e.1.then_some(pdf::Alignement::Droite) })
+        .map(|(f, e)| pdf::ColonneTableau { largeur: *f, alignement: e.1.then_some(pdf::Alignement::Droite) })
         .collect();
     let lignes = rangees
         .iter()
@@ -878,8 +891,8 @@ pub fn description_pdf(
     pdf::Description {
         format: crate::bulletin::FORMAT,
         page: Some(pdf::Page {
-            largeur: Some(mesure_du_document(PAGE_LARGEUR)),
-            hauteur: Some(mesure_du_document(PAGE_HAUTEUR)),
+            largeur: Some(PAGE_LARGEUR),
+            hauteur: Some(PAGE_HAUTEUR),
             marges: Some(pdf::Marges { haut: Some(pt(40)), droite: Some(pt(34)), bas: Some(pt(40)), gauche: Some(pt(34)) }),
         }),
         police: Some(pdf::Police { taille: Some(pt(7)), interligne: Some(mesure("1.25")), couleur: Some(ENCRE.to_string()) }),

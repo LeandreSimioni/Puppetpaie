@@ -11,7 +11,6 @@
 //! (`pour_l_ecran`), viser un montant (`viser`), la saisie lue sans paie et le preavis. Un document ou une declaration
 //! ne lit que les paies ecrites d'un engagement valide.
 
-pub mod cachet;
 pub mod calcul;
 pub mod carte;
 pub mod conges;
