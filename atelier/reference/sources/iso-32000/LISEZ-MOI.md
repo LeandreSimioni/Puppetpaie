@@ -25,8 +25,13 @@ clé absente, une valeur par défaut ou une forme exigée vient de la norme, don
   (7.3.4.3) ; `Tf` avant tout texte (table 105) ; les objets formulaire, leur `Matrix`, leurs ressources, `BBox` (table
   95) et les objets PostScript sans effet (8.8.2) ; les polices (tables 111, 112, 114, 117, 121, 122, 126 ; 9.7.4.3,
   9.7.6.3) ; les annotations et leur apparence (tables 164, 165, 168) ; les propriétés de `BDC` (14.6.2).
-  **Inférence** : sans encodage de base dit, une TrueType se lit en WinAnsiEncoding (le choix de MuPDF) ; la norme
-  renvoie à l'encodage du programme de la police, que la fabrique ne lit pas.
+- `fabrique-pdf/src/texte.rs` (`encodage_truetype`, `glyphes_par_cmap`, `Police::texte`) : l'encodage d'une police
+  TrueType simple (9.6.3, 9.6.6.4) : son descripteur et ses drapeaux exigés (tables 111, 122), Symbolic ou
+  Nonsymbolic, l'un seulement (table 123) ; non symbolique, MacRomanEncoding ou WinAnsiEncoding nommé, ou le
+  dictionnaire (`BaseEncoding`, `Differences`, puis StandardEncoding pour ce qui reste) ; symbolique ou sans
+  `Encoding`, la table « cmap » du programme incorporé, sous-table (3, 0) puis (1, 0), et le texte d'un code qui y
+  montre un glyphe par `ToUnicode` seulement, sinon refus (9.10.2 : « there is no way to determine what the character
+  code represents »).
 - `fabrique-pdf/src/inspection.rs` (`chiffrement`) : `Filter`, `R`, `P` exigés, `Length` qui vaut 40, `CFM` qui vaut
   `None` (tables 20, 21, 25).
 - `fabrique-pdf/src/formulaire.rs` (les champs) : `Fields` exigé (table 218) ; `Ff` qui vaut 0 (table 220) ; `DA`

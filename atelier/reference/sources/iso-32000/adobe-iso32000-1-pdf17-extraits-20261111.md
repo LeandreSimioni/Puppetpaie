@@ -259,3 +259,78 @@ https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf,
 ## Table 229 – Additional entry specific to a text field
 
 > MaxLen integer (Optional; inheritable) The maximum length of the field's text, in characters.
+
+## 9.6.3 TrueType Fonts
+
+> A TrueType font dictionary may contain the same entries as a Type 1 font dictionary (see Table 111), with these
+> differences: [...]
+
+## Table 111 (suite) – Entries in a Type 1 font dictionary
+
+> FontDescriptor dictionary (Required except for the standard 14 fonts; shall be an indirect reference) A font
+> descriptor describing the font's metrics other than its glyph widths (see 9.8, "Font Descriptors").
+
+## 9.6.6.4 Encodings for TrueType Fonts
+
+> A TrueType font program's built-in encoding maps directly from character codes to glyph descriptions by means of
+> an internal data structure called a "cmap" (not to be confused with the CMap described in 9.7.5, "CMaps"). [...]
+>
+> A "cmap" table may contain one or more subtables that represent multiple encodings intended for use on different
+> platforms (such as Mac OS and Windows). Each subtable shall be identified by the two numbers, such as (3, 1), that
+> represent a combination of a platform ID and a platform-specific encoding ID, respectively. [...]
+>
+> The following paragraphs describe the treatment of TrueType font encodings beginning with PDF 1.3.
+>
+> If the font has a named Encoding entry of either MacRomanEncoding or WinAnsiEncoding, or if the font descriptor's
+> Nonsymbolic flag (see Table 123) is set, the conforming reader shall create a table that maps from character codes
+> to glyph names:
+>
+> - If the Encoding entry is one of the names MacRomanEncoding or WinAnsiEncoding, the table shall be initialized
+>   with the mappings described in Annex D.
+> - If the Encoding entry is a dictionary, the table shall be initialized with the entries from the dictionary's
+>   BaseEncoding entry (see Table 114). Any entries in the Differences array shall be used to update the table.
+>   Finally, any undefined entries in the table shall be filled using StandardEncoding.
+>
+> [...]
+>
+> When the font has no Encoding entry, or the font descriptor's Symbolic flag is set (in which case the Encoding entry
+> is ignored), this shall occur:
+>
+> - If the font contains a (3, 0) subtable, the range of character codes shall be one of these: 0x0000 - 0x00FF,
+>   0xF000 - 0xF0FF, 0xF100 - 0xF1FF, or 0xF200 - 0xF2FF. Depending on the range of codes, each byte from the string
+>   shall be prepended with the high byte of the range, to form a two-byte character, which shall be used to select
+>   the associated glyph description from the subtable.
+> - Otherwise, if the font contains a (1, 0) subtable, single bytes from the string shall be used to look up the
+>   associated glyph descriptions from the subtable.
+>
+> If a character cannot be mapped in any of the ways described previously, a conforming reader may supply a mapping
+> of its choosing.
+
+## Table 122 (suite) – Entries common to all font descriptors
+
+> Flags integer (Required) A collection of flags defining various characteristics of the font (see 9.8.2, "Font
+> Descriptor Flags").
+
+## Table 123 – Font flags
+
+> 3 Symbolic Font contains glyphs outside the Adobe standard Latin character set. This flag and the Nonsymbolic flag
+> shall not both be set or both be clear.
+>
+> 6 Nonsymbolic Font uses the Adobe standard Latin character set or a subset of it.
+
+## 9.10.2 Mapping Character Codes to Unicode Values
+
+> A conforming reader can use these methods, in the priority given, to map a character code to a Unicode value. [...]
+>
+> - If the font dictionary contains a ToUnicode CMap (see 9.10.3, "ToUnicode CMaps"), use that CMap to convert the
+>   character code to Unicode.
+> - If the font is a simple font that uses one of the predefined encodings MacRomanEncoding, MacExpertEncoding, or
+>   WinAnsiEncoding, or that has an encoding whose Differences array includes only character names taken from the
+>   Adobe standard Latin character set and the set of named characters in the Symbol font (see Annex D): a) Map the
+>   character code to a character name according to Table D.1 and the font's Differences array. b) Look up the
+>   character name in the Adobe Glyph List (see the Bibliography) to obtain the corresponding Unicode value.
+>
+> [...]
+>
+> If these methods fail to produce a Unicode value, there is no way to determine what the character code represents
+> in which case a conforming reader may choose a character code of their choosing.

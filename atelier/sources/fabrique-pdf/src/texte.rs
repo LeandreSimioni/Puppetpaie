@@ -300,6 +300,9 @@ struct Police {
     unicode: HashMap<u32, String>,
     /// Polices simples : le caractère de chaque code d'après l'encodage.
     encodage: Vec<Option<char>>,
+    /// Une TrueType lue par la « cmap » de son programme (ISO 32000-1, 9.6.6.4) : pour chaque code, s'il montre un
+    /// glyphe. Son texte ne vient que de `ToUnicode` (9.10.2).
+    par_cmap: Option<Vec<bool>>,
     largeurs: HashMap<u32, Mesure>,
     largeur_defaut: Mesure,
     /// Largeurs tirées de Liberation pour une police standard sans `/Widths`.
@@ -437,15 +440,26 @@ impl Police {
         }
     }
 
-    /// Le texte d'un code ; `None` quand l'encodage d'une police simple ne lui donne aucun caractère.
-    fn texte(&self, code: u32) -> Option<String> {
+    /// Le texte d'un code ; `None` quand l'encodage d'une police simple ne lui donne aucun caractère. Le glyphe qu'une
+    /// TrueType lue par sa « cmap » montre sans `ToUnicode` se refuse : « there is no way to determine what the
+    /// character code represents » (ISO 32000-1, 9.10.2).
+    fn texte(&self, code: u32) -> Result<Option<String>, Refus> {
         if let Some(t) = self.unicode.get(&code) {
-            return Some(t.clone());
+            return Ok(Some(t.clone()));
         }
         if self.composee {
-            return Some("\u{FFFD}".to_string());
+            return Ok(Some("\u{FFFD}".to_string()));
         }
-        self.encodage.get(code as usize).copied().flatten().map(|c| c.to_string())
+        if let Some(glyphes) = &self.par_cmap {
+            return match glyphes.get(code as usize) {
+                Some(true) => illisible(format!(
+                    "le code {} d'une police TrueType symbolique ou sans encodage montre un glyphe que rien ne dit (ni /ToUnicode, ni encodage : ISO 32000-1, 9.10.2)",
+                    code
+                )),
+                Some(false) | None => Ok(None),
+            };
+        }
+        Ok(self.encodage.get(code as usize).copied().flatten().map(|c| c.to_string()))
     }
 
     /// La largeur du code, en fraction d'em.
@@ -534,6 +548,7 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
         cmap_cid: None,
         unicode: HashMap::new(),
         encodage: Vec::new(),
+        par_cmap: None,
         largeurs: HashMap::new(),
         largeur_defaut: Z,
         standard: None,
@@ -608,55 +623,11 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
     if inspecter {
         (p.asc, p.desc) = ascendant_descendant(doc, fd, base_nom.as_deref())?;
     }
-    let mut base: Option<String> = None;
-    let mut differences: Vec<(usize, char)> = Vec::new();
-    match lecture::valeur(doc, d, b"Encoding")? {
-        Some(Object::Name(n)) => base = Some(String::from_utf8_lossy(n).into_owned()),
-        Some(Object::Dictionary(e)) => {
-            if let Some(n) = lecture::lue(doc, e, b"BaseEncoding", lecture::nom)? {
-                base = Some(String::from_utf8_lossy(n).into_owned());
-            }
-            if let Some(v) = lecture::lue(doc, e, b"Differences", lecture::tableau)? {
-                // ISO 32000-1, 9.6.6.1 : un code, puis les noms des codes qui le suivent.
-                let mut code = 0usize;
-                for x in v {
-                    match lecture::designe(doc, x)? {
-                        Some(Object::Integer(c)) => {
-                            code = match usize::try_from(*c) {
-                                Ok(c) => c,
-                                Err(e) => return illisible(format!("/Differences donne le code {} ({})", c, e)),
-                            }
-                        }
-                        Some(Object::Name(g)) => {
-                            if let Some(c) = nom_de_glyphe(&String::from_utf8_lossy(g)) {
-                                differences.push((code, c));
-                            }
-                            code += 1;
-                        }
-                        Some(_) | None => return illisible("un élément de /Differences n'est ni un code ni un nom de glyphe"),
-                    }
-                }
-            }
-        }
-        Some(_) => return illisible("/Encoding d'une police simple n'est ni un nom ni un dictionnaire"),
-        None => {}
-    }
-    // Sans encodage de base dit, la norme renvoie à l'encodage propre du programme de la police, et à StandardEncoding
-    // pour une police non symbolique qui n'est pas incorporée (ISO 32000-1, table 114) ; la fabrique ne lit pas
-    // l'encodage d'un programme de police : StandardEncoding, et WinAnsiEncoding pour une TrueType (le choix de MuPDF,
-    // qu'aucun texte déposé ne fonde).
-    let base = match base {
-        Some(b) => b,
-        None => match sous_type {
-            b"TrueType" => "WinAnsiEncoding".to_string(),
-            _ => "StandardEncoding".to_string(),
-        },
-    };
-    p.encodage = base_encodage(&base);
-    for (code, c) in differences {
-        if code < 256 {
-            p.encodage[code] = Some(c);
-        }
+    let encoding = lecture::valeur(doc, d, b"Encoding")?;
+    if sous_type == b"TrueType" {
+        p.encodage = encodage_truetype(doc, fd, encoding, &mut p.par_cmap)?;
+    } else {
+        p.encodage = encodage_simple(doc, encoding)?;
     }
 
     // Les largeurs : `Widths`, à partir de `FirstChar` (ISO 32000-1, table 111 : tous deux exigés, sauf pour les 14
@@ -683,6 +654,140 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
         None => LARGEUR_MANQUANTE_PAR_DEFAUT,
     };
     Ok(p)
+}
+
+/// Les `/Differences` d'un dictionnaire d'encodage : (code, caractère) (ISO 32000-1, 9.6.6.1 : un code, puis les noms
+/// des codes qui le suivent ; un nom que la liste de glyphes ne connaît pas ne donne pas de caractère).
+fn differences_de(doc: &Document, e: &Dictionary) -> Result<Vec<(usize, char)>, Refus> {
+    let mut differences = Vec::new();
+    if let Some(v) = lecture::lue(doc, e, b"Differences", lecture::tableau)? {
+        let mut code = 0usize;
+        for x in v {
+            match lecture::designe(doc, x)? {
+                Some(Object::Integer(c)) => {
+                    code = match usize::try_from(*c) {
+                        Ok(c) => c,
+                        Err(e) => return illisible(format!("/Differences donne le code {} ({})", c, e)),
+                    }
+                }
+                Some(Object::Name(g)) => {
+                    if let Some(c) = nom_de_glyphe(&String::from_utf8_lossy(g)) {
+                        differences.push((code, c));
+                    }
+                    code += 1;
+                }
+                Some(_) | None => return illisible("un élément de /Differences n'est ni un code ni un nom de glyphe"),
+            }
+        }
+    }
+    Ok(differences)
+}
+
+/// `table` mise à jour par `differences`.
+fn appliquer(mut table: Vec<Option<char>>, differences: Vec<(usize, char)>) -> Vec<Option<char>> {
+    for (code, c) in differences {
+        if code < 256 {
+            table[code] = Some(c);
+        }
+    }
+    table
+}
+
+/// Le bit `n` (à partir de 1) des drapeaux d'un descripteur (ISO 32000-1, 9.8.2).
+fn drapeau(drapeaux: i64, n: u32) -> bool {
+    drapeaux & (1 << (n - 1)) != 0
+}
+
+/// L'encodage d'une police TrueType simple, selon ISO 32000-1, 9.6.6.4 « Encodings for TrueType Fonts ».
+///
+/// Une police au `Encoding` nommé MacRomanEncoding ou WinAnsiEncoding, ou dont le descripteur lève le drapeau
+/// Nonsymbolic, se lit par une table code → nom de glyphe : l'encodage nommé (annexe D), ou celui du dictionnaire,
+/// « initialized with the entries from the dictionary's BaseEncoding entry », mis à jour par `Differences`, et dont
+/// « any undefined entries in the table shall be filled using StandardEncoding ». Une police sans `Encoding`, ou au
+/// drapeau Symbolic levé (`Encoding` alors ignoré), se lit par la table « cmap » de son programme : la sous-table (3, 0),
+/// sinon (1, 0) ; ses codes n'ont de caractère que par `ToUnicode` (9.10.2), `par_cmap` dit lesquels montrent un glyphe.
+/// Ce que la norme ne permet pas de lire se refuse.
+fn encodage_truetype(doc: &Document, fd: Option<&Dictionary>, encoding: Option<&Object>, par_cmap: &mut Option<Vec<bool>>) -> Result<Vec<Option<char>>, Refus> {
+    // ISO 32000-1, table 111 : `FontDescriptor`, exigé hors des 14 polices standard ; table 122 : `Flags`, exigé.
+    let Some(fd) = fd else {
+        return illisible("une police TrueType n'a pas de /FontDescriptor, que la norme exige (ISO 32000-1, table 111)");
+    };
+    let drapeaux = exige(doc, fd, b"Flags", "le descripteur d'une police TrueType", lecture::entier)?;
+    // Table 123 : Symbolic (bit 3) et Nonsymbolic (bit 6) « shall not both be set or both be clear ».
+    let symbolique = match (drapeau(drapeaux, 3), drapeau(drapeaux, 6)) {
+        (true, false) => true,
+        (false, true) => false,
+        (true, true) | (false, false) => {
+            return illisible(format!("les drapeaux {} d'une police TrueType lèvent Symbolic et Nonsymbolic ensemble, ou aucun des deux (ISO 32000-1, table 123)", drapeaux))
+        }
+    };
+    match (symbolique, encoding) {
+        (false, Some(Object::Name(n))) => match n.as_slice() {
+            b"MacRomanEncoding" | b"WinAnsiEncoding" => Ok(base_encodage(&String::from_utf8_lossy(n))),
+            autre => illisible(format!("une police TrueType non symbolique a l'encodage {}, dont 9.6.6.4 d'ISO 32000-1 ne dit pas la lecture", lecture::nom_de(autre))),
+        },
+        (false, Some(Object::Dictionary(e))) => {
+            let table = match lecture::lue(doc, e, b"BaseEncoding", lecture::nom)? {
+                Some(n) => base_encodage(&String::from_utf8_lossy(n)),
+                None => vec![None; 256],
+            };
+            let standard = base_encodage("StandardEncoding");
+            Ok(appliquer(table, differences_de(doc, e)?).into_iter().zip(standard).map(|(c, s)| c.or(s)).collect())
+        }
+        (false, Some(_)) => illisible("/Encoding d'une police simple n'est ni un nom ni un dictionnaire"),
+        (true, _) | (false, None) => {
+            *par_cmap = Some(glyphes_par_cmap(doc, fd)?);
+            Ok(vec![None; 256])
+        }
+    }
+}
+
+/// Pour chaque code d'un octet, s'il montre un glyphe par la table « cmap » du programme incorporé (ISO 32000-1,
+/// 9.6.6.4) : la sous-table (3, 0), dont les codes sont dans 0x0000-0x00FF, 0xF000-0xF0FF, 0xF100-0xF1FF ou
+/// 0xF200-0xF2FF, chaque octet précédé de l'octet de tête de sa plage ; sinon la sous-table (1, 0), octet par octet.
+fn glyphes_par_cmap(doc: &Document, fd: &Dictionary) -> Result<Vec<bool>, Refus> {
+    let Some(programme) = lecture::lue(doc, fd, b"FontFile2", lecture::flux)? else {
+        return illisible("une police TrueType sans encodage lisible n'incorpore pas son programme : la norme lit ses codes par la table « cmap » du programme (ISO 32000-1, 9.6.6.4)");
+    };
+    let octets = lecture::contenu(doc, programme)?;
+    let face = ttf_parser::Face::parse(&octets, 0).map_err(|e| Refus::illisible(format!("le programme incorporé d'une police TrueType ne se lit pas ({})", e)))?;
+    let Some(cmap) = face.tables().cmap else {
+        return illisible("le programme incorporé d'une police TrueType n'a pas de table « cmap » (ISO 32000-1, 9.6.6.4)");
+    };
+    let sous_table = |plateforme: ttf_parser::PlatformId, codage: u16| cmap.subtables.into_iter().find(|s| s.platform_id == plateforme && s.encoding_id == codage);
+    let montre = |s: &ttf_parser::cmap::Subtable, code: u32| s.glyph_index(code).is_some_and(|g| g.0 != 0);
+    if let Some(s) = sous_table(ttf_parser::PlatformId::Windows, 0) {
+        let plages: Vec<u32> = [0x00u32, 0xF0, 0xF1, 0xF2].into_iter().filter(|h| (0..=255u32).any(|c| montre(&s, h << 8 | c))).collect();
+        return match plages.as_slice() {
+            [h] => Ok((0..=255u32).map(|c| montre(&s, h << 8 | c)).collect()),
+            [] => Ok(vec![false; 256]),
+            _ => illisible("la sous-table (3, 0) d'une police TrueType couvre plusieurs plages de codes, la norme n'en lit qu'une (ISO 32000-1, 9.6.6.4)"),
+        };
+    }
+    match sous_table(ttf_parser::PlatformId::Macintosh, 0) {
+        Some(s) => Ok((0..=255u32).map(|c| montre(&s, c)).collect()),
+        None => illisible("le programme incorporé d'une police TrueType n'a ni sous-table « cmap » (3, 0) ni (1, 0) (ISO 32000-1, 9.6.6.4)"),
+    }
+}
+
+/// L'encodage d'une police simple qui n'est pas TrueType : l'encodage nommé, ou le dictionnaire (`BaseEncoding`, sinon
+/// StandardEncoding) et ses `Differences`. Table 114 : StandardEncoding est l'encodage implicite d'une police non
+/// symbolique non incorporée ; celui d'un programme incorporé est son encodage propre, que la fabrique ne lit pas pour
+/// une police Type 1 : elle y lit StandardEncoding aussi.
+fn encodage_simple(doc: &Document, encoding: Option<&Object>) -> Result<Vec<Option<char>>, Refus> {
+    let (table, differences) = match encoding {
+        Some(Object::Name(n)) => (base_encodage(&String::from_utf8_lossy(n)), Vec::new()),
+        Some(Object::Dictionary(e)) => {
+            let base = match lecture::lue(doc, e, b"BaseEncoding", lecture::nom)? {
+                Some(n) => String::from_utf8_lossy(n).into_owned(),
+                None => "StandardEncoding".to_string(),
+            };
+            (base_encodage(&base), differences_de(doc, e)?)
+        }
+        Some(_) => return illisible("/Encoding d'une police simple n'est ni un nom ni un dictionnaire"),
+        None => (base_encodage("StandardEncoding"), Vec::new()),
+    };
+    Ok(appliquer(table, differences))
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1267,7 +1372,7 @@ impl<'a> Interprete<'a> {
         for (code, n) in police.codes(chaine)? {
             let w0 = police.largeur(code);
             let trm = mul(&[e.taille * e.th, Z, Z, e.taille, Z, e.rise], &mul(tm, &e.ctm));
-            let texte = police.texte(code);
+            let texte = police.texte(code)?;
             let visible = self.dans_le_cadre(&trm, w0);
             let boite = englobante(&trm, Z, -police.desc, w0, police.asc);
             // Le corps rendu : la racine du déterminant de la matrice de rendu (positive : sa valeur absolue).
