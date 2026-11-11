@@ -429,7 +429,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
             Route::CompagnieSupprimer => {
                 let autre = c.parent().unwrap().join("ajoutee-a-supprimer");
                 crate::outils::copier(&c.join("config"), &autre.join("config"));
-                std::fs::write(autre.join("COPIE-DE-DEVELOPPEMENT.json"), json!({"copie_de": "compagnie fictive ajoutee", "ajoutee": true, "quand": "2026-11-09T09:00", "quoi": "ajoutee"}).to_string()).unwrap();
+                std::fs::write(autre.join("COPIE-DE-DEVELOPPEMENT.json"), json!({"copie_de": "compagnie fictive ajoutee", "ajoutee": true, "quand": "2026-11-09T09:00:00", "quoi": "ajoutee"}).to_string()).unwrap();
                 let r = route(&autre, f.nom(), exemple, "2026-11-02");
                 assert!(!autre.exists(), "compagnie-supprimer : la compagnie est encore la");
                 r

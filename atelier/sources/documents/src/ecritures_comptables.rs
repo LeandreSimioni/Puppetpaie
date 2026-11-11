@@ -19,7 +19,7 @@ fn refus(m: String) -> Echec {
 
 /// Un compte qui manque au plan comptable de la compagnie : le fichier et la cle a remplir vont a part.
 fn manque_au_plan(m: String, cle: String) -> Echec {
-    socle::echec::refus_avec(m, socle::echec::Lieu { fichier: Some("config/plan-comptable.json".to_string()), cle: Some(cle), ..Default::default() })
+    socle::echec::refus_avec(m, socle::echec::Lieu { fichier: Some(crate::plan_comptable::PLAN_COMPTABLE.to_string()), cle: Some(cle), ..Default::default() })
         .reclasser(Classe::Refuse)
 }
 
