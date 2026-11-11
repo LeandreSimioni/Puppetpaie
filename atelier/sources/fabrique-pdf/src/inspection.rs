@@ -224,20 +224,30 @@ const IDENTITE: &str = "Identity";
 /// Table 25 : `CFM`, « Default value: None ».
 const CFM_PAR_DEFAUT: &str = "None";
 
-/// Le dictionnaire `/Info`, chaînes décodées (`{}` s'il n'y en a pas).
-fn metadonnees(doc: &Document) -> Result<std::collections::BTreeMap<String, String>, Refus> {
+/// Le dictionnaire `/Info`, chaînes décodées (`{}` s'il n'y en a pas). Une entrée qui ne se lit pas n'empêche pas de
+/// lire le reste du fichier (le texte n'en a pas besoin) : elle manque, et un avertissement dit pourquoi.
+fn metadonnees(doc: &Document, avertissements: &mut Vec<String>) -> Result<std::collections::BTreeMap<String, String>, Refus> {
     let mut m = std::collections::BTreeMap::new();
     let Some(info) = lecture::lue(doc, &doc.trailer, b"Info", lecture::dictionnaire)? else {
         return Ok(m);
     };
     for (cle, valeur) in info.iter() {
         let texte = match lecture::designe(doc, valeur)? {
-            Some(Object::String(s, _)) => chaine_pdf(s)?,
+            Some(Object::String(s, _)) => match chaine_pdf(s) {
+                Ok(t) => t,
+                Err(r) => {
+                    avertissements.push(format!("métadonnées : {} : {}", lecture::nom_de(cle), r.phrase));
+                    continue;
+                }
+            },
             Some(Object::Name(n)) => nom_texte(n),
             Some(Object::Integer(i)) => i.to_string(),
             Some(o @ Object::Real(_)) => match Mesure::de_l_objet(o) {
                 Some(r) => r.to_string(),
-                None => return illisible(format!("/Info : {} n'est pas un nombre que la fabrique lit", lecture::nom_de(cle))),
+                None => {
+                    avertissements.push(format!("métadonnées : {} n'est pas un nombre que la fabrique lit", lecture::nom_de(cle)));
+                    continue;
+                }
             },
             Some(Object::Boolean(b)) => b.to_string(),
             // Un tableau, un dictionnaire, un flux : rien qui se dise en une chaîne ; une clé nulle est absente.
@@ -285,7 +295,7 @@ pub fn inspecter(chemin: &str) -> Result<(String, Vec<String>), Refus> {
     crate::chiffrement::dechiffrer(&mut doc, b"").map_err(dans)?;
     let mut avertissements = Vec::new();
     let pages = doc.get_pages().into_iter().map(|(n, id)| page_de(&doc, n, id, &mut avertissements)).collect::<Result<_, _>>().map_err(dans)?;
-    let inspection = Inspection { chiffrement: chiffre, metadonnees: metadonnees(&doc).map_err(dans)?, pages };
+    let inspection = Inspection { chiffrement: chiffre, metadonnees: metadonnees(&doc, &mut avertissements).map_err(dans)?, pages };
     let json = serde_json::to_string(&inspection).map_err(|e| Refus::defaut(format!("{} : {}", chemin, e)))?;
     Ok((json, avertissements))
 }

@@ -4,6 +4,7 @@
 
 Ce dossier est dans le dépôt public de PuppetPaie. Les originaux suivants, d'un organisme privé, n'y sont pas : seule leur transcription y est (`pdftotext -layout` pour un PDF, une feuille de calcul en CSV, feuille par feuille, le texte d'une page HTML), et c'est elle que citent les renvois. Les condensats de `logiciel/donnees/sources.json` et des notes sont ceux des originaux, gardés dans le dépôt privé (`reference-privee/sources/`).
 
+- `adobe-polices/adobe-type1-font-format-20261111.pdf` : transcription (extraits) `adobe-polices/adobe-type1-font-format-extraits-20261111.md`
 - `afdas-1790-plaquette-loisirs-2026-20260929.pdf` : transcription `afdas-1790-plaquette-loisirs-2026-20260929.md`
 - `afdas-2026-plaquette-audiovisuel-dialogue-social-20260929.pdf` : transcription `afdas-2026-plaquette-audiovisuel-dialogue-social-20260929.md`
 - `afdas-contributions-2026-audiovisuel.pdf` : transcription `afdas-2026-plaquette-audiovisuel-dialogue-social-20260929.md`

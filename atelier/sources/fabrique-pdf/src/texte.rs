@@ -6,9 +6,13 @@
 //! 1. un interpréteur du flux de contenu (états graphiques, matrices, opérateurs de texte,
 //!    objets formulaire, apparences des annotations — MuPDF dessine les champs de formulaire, et
 //!    leur texte sort avec celui de la page) qui rend des caractères positionnés ;
-//! 2. les polices : table `ToUnicode` quand la police en a une (elle l'emporte, comme dans
-//!    MuPDF), sinon l'encodage de la police simple (WinAnsi, MacRoman, Standard, `/Differences`) ;
-//!    les largeurs viennent du PDF, ou de Liberation pour les polices standard sans `/Widths` ;
+//! 2. les polices, dans l'ordre d'ISO 32000-1, 9.10.2 : la table `ToUnicode` quand la police en a
+//!    une ; sinon les noms de glyphes de l'encodage d'une police simple (un encodage prédéfini, les
+//!    `/Differences`, l'encodage propre d'un programme Type 1 incorporé) lus par la liste des glyphes
+//!    d'Adobe ; sinon le programme TrueType incorporé (sa « cmap » mène au glyphe, qui dit son
+//!    caractère par son nom ou par la « cmap » Unicode du programme). Un glyphe que rien ne dit se
+//!    refuse quand il se montre, en nommant la police. Les largeurs viennent du PDF, ou de
+//!    Liberation pour les polices standard sans `/Widths` ;
 //! 3. la mise en lignes : un caractère prolonge la ligne courante s'il part du bout du précédent
 //!    (à un espace près) sur la même ligne de base ; sinon il ouvre une ligne. C'est la règle de
 //!    MuPDF, pas un tri géométrique : le texte sort dans l'ordre du flux.
@@ -21,8 +25,8 @@ use std::rc::Rc;
 use lopdf::content::Content;
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
-use crate::description::{defaut, illisible, Refus};
-use crate::glyphes::GLYPHES;
+use crate::description::{defaut, illisible, Classe, Refus};
+use crate::glyphes;
 use crate::lecture;
 use crate::mesure::{mesure, Mesure};
 
@@ -289,20 +293,44 @@ fn lire_cmap(octets: &[u8]) -> Result<Cmap, Refus> {
 // Les polices.
 // ---------------------------------------------------------------------------------------------
 
+/// Ce qu'un code (ou un glyphe) d'une police montre, en texte.
+#[derive(Clone)]
+enum Lu {
+    /// Ses caractères.
+    Texte(String),
+    /// Aucun glyphe (`.notdef`) : aucun caractère.
+    Rien,
+    /// Un glyphe dont ni le PDF ni la norme ne disent le caractère : pourquoi. Il se refuse quand il se montre
+    /// (ISO 32000-1, 9.10.2 : « there is no way to determine what the character code represents »).
+    Inconnu(String),
+}
+
+/// D'une police composée sans `ToUnicode` pour un code, ce que son programme dit de chaque glyphe.
+enum ParProgramme {
+    /// Un programme TrueType (CIDFontType2) : le CID mène au glyphe par `CIDToGIDMap` (ses octets ; `None` : Identity,
+    /// la valeur par défaut, table 117), et chaque glyphe dit ses caractères par son nom ou par la « cmap » Unicode du
+    /// programme.
+    Glyphes { cid_gid: Option<Vec<u8>>, lus: HashMap<u16, Lu> },
+    /// Rien ne dit le caractère d'un glyphe : pourquoi.
+    Aucun(String),
+}
+
+/// Une police simple, ou composée.
+enum Sorte {
+    /// Le texte de chaque code (256) d'après l'encodage.
+    Simple { encodage: Vec<Lu> },
+    /// Les espaces de codes (longueur en octets, plus petit, plus grand), la table des CID d'un CMap incorporé (`None` :
+    /// Identity), et ce que le programme dit des glyphes.
+    Composee { espaces: Vec<(usize, u32, u32)>, cmap_cid: Option<Cmap>, programme: ParProgramme },
+}
+
 /// Ce que l'interpréteur sait d'une police : décoder une chaîne en codes, et dire pour chaque code
 /// son texte et sa largeur (millièmes d'em).
 struct Police {
-    composee: bool,
-    /// Polices composées : les espaces de codes (longueur en octets, plus petit, plus grand), et
-    /// la table des CID d'un CMap incorporé (`None` : Identity).
-    espaces: Vec<(usize, u32, u32)>,
-    cmap_cid: Option<Cmap>,
+    /// Son `/BaseFont`, pour nommer la police dans un refus.
+    nom: String,
+    sorte: Sorte,
     unicode: HashMap<u32, String>,
-    /// Polices simples : le caractère de chaque code d'après l'encodage.
-    encodage: Vec<Option<char>>,
-    /// Une TrueType lue par la « cmap » de son programme (ISO 32000-1, 9.6.6.4) : pour chaque code, s'il montre un
-    /// glyphe. Son texte ne vient que de `ToUnicode` (9.10.2).
-    par_cmap: Option<Vec<bool>>,
     largeurs: HashMap<u32, Mesure>,
     largeur_defaut: Mesure,
     /// Largeurs tirées de Liberation pour une police standard sans `/Widths`.
@@ -330,9 +358,11 @@ fn englobante(m: &Mat, x0: Mesure, y0: Mesure, x1: Mesure, y1: Mesure) -> Boite 
 
 /// L'ascendant et le descendant d'une police (fractions du corps). Comme MuPDF : ceux du fichier de
 /// police incorporé (`hhea`) ; pour une police standard non incorporée, ceux des polices de
-/// remplacement de MuPDF (mesurés) ; sinon le `/FontDescriptor` ; sinon 0,8 et 0,2.
+/// remplacement de MuPDF (mesurés) ; sinon le `/FontDescriptor` ; sinon 0,8 et 0,2. Un programme incorporé qui ne se
+/// lit pas laisse la place au descripteur, qui dit les mêmes mesures (`Ascent`, `Descent`, table 122) ; sans lui, refus.
 fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Option<&str>) -> Result<(Mesure, Mesure), Refus> {
     let mut programme = None;
+    let mut programme_illisible = None;
     if let Some(d) = fd {
         for cle in [b"FontFile2".as_slice(), b"FontFile3", b"FontFile"] {
             if let Some(s) = lecture::lue(doc, d, cle, lecture::flux)? {
@@ -348,12 +378,15 @@ fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Opti
             let opentype = cle == b"FontFile3" && lecture::lue(doc, &s.dict, b"Subtype", lecture::nom)? == Some(b"OpenType".as_slice());
             if cle == b"FontFile2" || opentype {
                 let octets = lecture::contenu(doc, s)?;
-                let face = ttf_parser::Face::parse(&octets, 0)
-                    .map_err(|e| Refus::illisible(format!("le programme incorporé d'une police ({}) ne se lit pas ({})", lecture::nom_de(cle), e)))?;
-                let em = face.units_per_em() as i64;
-                let (a, d) = (Mesure::entier(face.ascender() as i64) / em, Mesure::entier(-(face.descender() as i64)) / em);
-                if a > Z && a <= Mesure::entier(2) && (Z..=Mesure::UN).contains(&d) {
-                    return Ok((a, d));
+                match ttf_parser::Face::parse(&octets, 0) {
+                    Ok(face) => {
+                        let em = face.units_per_em() as i64;
+                        let (a, d) = (Mesure::entier(face.ascender() as i64) / em, Mesure::entier(-(face.descender() as i64)) / em);
+                        if a > Z && a <= Mesure::entier(2) && (Z..=Mesure::UN).contains(&d) {
+                            return Ok((a, d));
+                        }
+                    }
+                    Err(e) => programme_illisible = Some(format!("le programme incorporé d'une police ({}) ne se lit pas ({}), et son descripteur ne dit pas ses mesures", lecture::nom_de(cle), e)),
                 }
             }
         }
@@ -382,19 +415,21 @@ fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Opti
         Some(d) => (lecture::lue(doc, d, b"Ascent", lecture::nombre)?, lecture::lue(doc, d, b"Descent", lecture::nombre)?),
         None => (None, None),
     };
-    Ok(match (ascent, descent) {
-        (Some(a), Some(d)) if a > Z && a <= Mesure::entier(1500) && d.abs() <= Mesure::entier(1000) => (a / 1000, d.abs() / 1000),
-        _ => (mesure("0.8"), mesure("0.2")),
-    })
+    match (ascent, descent, programme_illisible) {
+        (Some(a), Some(d), _) if a > Z && a <= Mesure::entier(1500) && d.abs() <= Mesure::entier(1000) => Ok((a / 1000, d.abs() / 1000)),
+        (_, _, Some(pourquoi)) => illisible(pourquoi),
+        (_, _, None) => Ok((mesure("0.8"), mesure("0.2"))),
+    }
 }
 
 impl Police {
     /// Les codes d'une chaîne : (code, nombre d'octets).
     fn codes(&self, s: &[u8]) -> Result<Vec<(u32, usize)>, Refus> {
-        if !self.composee {
-            return Ok(s.iter().map(|b| (*b as u32, 1)).collect());
-        }
-        let Some(plus_court) = self.espaces.iter().map(|e| e.0).min() else {
+        let espaces = match &self.sorte {
+            Sorte::Simple { .. } => return Ok(s.iter().map(|b| (*b as u32, 1)).collect()),
+            Sorte::Composee { espaces, .. } => espaces,
+        };
+        let Some(plus_court) = espaces.iter().map(|e| e.0).min() else {
             return illisible("une police composée n'a aucun espace de codes");
         };
         let mut v = Vec::new();
@@ -403,7 +438,7 @@ impl Police {
             let mut pris = None;
             for n in 1..=4usize.min(s.len() - i) {
                 let code = entier(&s[i..i + n]);
-                if self.espaces.iter().any(|(l, a, b)| *l == n && code >= *a && code <= *b) {
+                if espaces.iter().any(|(l, a, b)| *l == n && code >= *a && code <= *b) {
                     pris = Some((code, n));
                     break;
                 }
@@ -424,7 +459,11 @@ impl Police {
     }
 
     fn cid(&self, code: u32) -> u32 {
-        match &self.cmap_cid {
+        let cmap_cid = match &self.sorte {
+            Sorte::Simple { .. } => return code,
+            Sorte::Composee { cmap_cid, .. } => cmap_cid,
+        };
+        match cmap_cid {
             None => code,
             Some(c) => {
                 if let Some(v) = c.cid.get(&code) {
@@ -440,38 +479,50 @@ impl Police {
         }
     }
 
-    /// Le texte d'un code ; `None` quand l'encodage d'une police simple ne lui donne aucun caractère. Le glyphe qu'une
-    /// TrueType lue par sa « cmap » montre sans `ToUnicode` se refuse : « there is no way to determine what the
-    /// character code represents » (ISO 32000-1, 9.10.2).
+    /// Le texte d'un code (ISO 32000-1, 9.10.2) : `ToUnicode` d'abord ; puis l'encodage d'une police simple, ou le
+    /// programme d'une police composée. `None` quand le code ne montre aucun glyphe ; un glyphe dont rien ne dit le
+    /// caractère se refuse, en nommant la police.
     fn texte(&self, code: u32) -> Result<Option<String>, Refus> {
         if let Some(t) = self.unicode.get(&code) {
             return Ok(Some(t.clone()));
         }
-        if self.composee {
-            return Ok(Some("\u{FFFD}".to_string()));
+        let lu = match &self.sorte {
+            Sorte::Simple { encodage } => encodage[code as usize & 0xFF].clone(),
+            Sorte::Composee { programme: ParProgramme::Aucun(pourquoi), .. } => Lu::Inconnu(pourquoi.clone()),
+            Sorte::Composee { programme: ParProgramme::Glyphes { cid_gid, lus }, .. } => {
+                let cid = self.cid(code);
+                match glyphe_du_cid(cid_gid.as_deref(), cid) {
+                    Some(g) => match lus.get(&g) {
+                        Some(l) => l.clone(),
+                        None => Lu::Inconnu(format!("son CID {} mène au glyphe {}, que le programme n'a pas", cid, g)),
+                    },
+                    None => Lu::Inconnu(format!("son CID {} dépasse /CIDToGIDMap", cid)),
+                }
+            }
+        };
+        match lu {
+            Lu::Texte(t) => Ok(Some(t)),
+            Lu::Rien => Ok(None),
+            Lu::Inconnu(pourquoi) => illisible(format!(
+                "la police {} montre le code {} sans /ToUnicode : {} ; rien ne dit son caractère (ISO 32000-1, 9.10.2)",
+                self.nom, code, pourquoi
+            )),
         }
-        if let Some(glyphes) = &self.par_cmap {
-            return match glyphes.get(code as usize) {
-                Some(true) => illisible(format!(
-                    "le code {} d'une police TrueType symbolique ou sans encodage montre un glyphe que rien ne dit (ni /ToUnicode, ni encodage : ISO 32000-1, 9.10.2)",
-                    code
-                )),
-                Some(false) | None => Ok(None),
-            };
-        }
-        Ok(self.encodage.get(code as usize).copied().flatten().map(|c| c.to_string()))
     }
 
     /// La largeur du code, en fraction d'em.
     fn largeur(&self, code: u32) -> Mesure {
-        let cle = if self.composee { self.cid(code) } else { code };
+        let cle = self.cid(code);
         if let Some(w) = self.largeurs.get(&cle) {
             return *w / 1000;
         }
-        if let Some(m) = &self.standard {
-            if let Some(c) = self.encodage.get(code as usize).copied().flatten() {
-                if let Some(w) = m.largeur(c) {
-                    return w;
+        if let (Some(m), Sorte::Simple { encodage }) = (&self.standard, &self.sorte) {
+            if let Lu::Texte(t) = &encodage[code as usize & 0xFF] {
+                let mut c = t.chars();
+                if let (Some(c), None) = (c.next(), c.next()) {
+                    if let Some(w) = m.largeur(c) {
+                        return w;
+                    }
                 }
             }
         }
@@ -479,49 +530,46 @@ impl Police {
     }
 }
 
-/// Des chiffres hexadécimaux, leur valeur ; `None` quand un caractère n'en est pas un (le nom n'est pas de cette forme).
-fn hexadecimal(h: &str) -> Option<u32> {
-    h.chars().try_fold(0u32, |v, c| Some(v * 16 + c.to_digit(16)?))
+/// Le glyphe d'un CID par `CIDToGIDMap` (table 117 : deux octets par CID, poids fort d'abord ; `None` : Identity) ;
+/// `None` quand le CID dépasse la table.
+fn glyphe_du_cid(table: Option<&[u8]>, cid: u32) -> Option<u16> {
+    match table {
+        None => (cid <= u16::MAX as u32).then_some(cid as u16),
+        Some(t) => {
+            let i = 2 * cid as usize;
+            t.get(i..i + 2).map(|p| u16::from_be_bytes([p[0], p[1]]))
+        }
+    }
 }
 
-/// Le caractère d'un nom de glyphe : la liste de glyphes d'Adobe, ou un nom `uniXXXX` / `uXXXX[XX]` ; `None` pour un
-/// nom qu'aucune de ces formes ne dit.
-fn nom_de_glyphe(n: &str) -> Option<char> {
-    let i = GLYPHES.partition_point(|(g, _)| *g < n);
-    if let Some((g, u)) = GLYPHES.get(i) {
-        if *g == n {
-            return char::from_u32(*u as u32);
-        }
-    }
-    if let Some(h) = n.strip_prefix("uni") {
-        if h.len() >= 4 && h.is_char_boundary(4) {
-            if let Some(v) = hexadecimal(&h[..4]) {
-                return char::from_u32(v);
-            }
-        }
-    }
-    if let Some(h) = n.strip_prefix('u') {
-        if (4..=6).contains(&h.len()) {
-            if let Some(v) = hexadecimal(h) {
-                return char::from_u32(v);
-            }
-        }
-    }
-    None
-}
-
-fn base_encodage(nom: &str) -> Vec<Option<char>> {
-    (0..=255u8)
+/// Un encodage prédéfini (ISO 32000-1, 9.6.6.1 et annexe D) : le texte de chaque code. Annexe D, note 5 du tableau D.1 :
+/// le code 255 (octal) de WinAnsiEncoding est le « soft hyphen » (U+00AD). Un autre nom se refuse.
+fn predefini(nom: &[u8]) -> Result<Vec<Lu>, Refus> {
+    let nom = match nom {
+        b"StandardEncoding" | b"MacRomanEncoding" | b"MacExpertEncoding" | b"WinAnsiEncoding" => String::from_utf8_lossy(nom).into_owned(),
+        autre => return illisible(format!("l'encodage {} n'est pas un encodage prédéfini (ISO 32000-1, 9.6.6.1)", lecture::nom_de(autre))),
+    };
+    Ok((0..=255u8)
         .map(|b| {
-            // WinAnsi met un trait d'union au code 0xAD ; MuPDF, lui, y lit le trait d'union
-            // conditionnel (U+00AD) de Windows-1252, et c'est ce qui se retrouve dans son texte.
             if b == 0xAD && nom == "WinAnsiEncoding" {
-                return Some('\u{AD}');
+                return Lu::Texte("\u{AD}".to_string());
             }
-            let s = Document::decode_text(Some(nom), &[b]);
-            s.chars().next()
+            match Document::decode_text(Some(&nom), &[b]).chars().next() {
+                Some(c) => Lu::Texte(c.to_string()),
+                None => Lu::Rien,
+            }
         })
-        .collect()
+        .collect())
+}
+
+/// Le texte d'un nom de glyphe (liste des glyphes d'Adobe, `glyphes.rs`) : `.notdef` ne montre rien (9.6.6.2) ; un nom
+/// que la liste ne dit pas est inconnu.
+fn lu_du_nom(nom: &str, zapf: bool) -> Result<Lu, Refus> {
+    Ok(match glyphes::caracteres(nom, zapf)? {
+        Some(t) => Lu::Texte(t),
+        None if nom == ".notdef" => Lu::Rien,
+        None => Lu::Inconnu(format!("son glyphe /{} n'a pas de nom que la liste des glyphes d'Adobe dise", nom)),
+    })
 }
 
 /// Le `/BaseFont` d'une police ; `None` pour une police qui n'en a pas (Type 3, ISO 32000-1, table 112).
@@ -541,14 +589,22 @@ fn largeur_lue(doc: &Document, o: &Object, cle: &str) -> Result<Mesure, Refus> {
 
 fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Police, Refus> {
     let sous_type = exige(doc, d, b"Subtype", "une police", lecture::nom)?;
-    let composee = sous_type == b"Type0";
+    let base_nom = nom_de_base(doc, d)?;
+    let nom = match &base_nom {
+        Some(n) => n.clone(),
+        None => format!("sans /BaseFont, de sous-type {}", lecture::nom_de(sous_type)),
+    };
+    // Le nom sans le préfixe d'un sous-ensemble (« ABCDEF+ », ISO 32000-1, 9.6.4).
+    let nom_nu = match nom.split_once('+') {
+        Some((_, apres)) => apres.to_string(),
+        None => nom.clone(),
+    };
+    // La spécification de la liste des glyphes : la liste Zapf Dingbats vaut pour la police ZapfDingbats.
+    let zapf = nom_nu == "ZapfDingbats";
     let mut p = Police {
-        composee,
-        espaces: vec![(2, 0, 0xFFFF)],
-        cmap_cid: None,
+        nom,
+        sorte: Sorte::Simple { encodage: Vec::new() },
         unicode: HashMap::new(),
-        encodage: Vec::new(),
-        par_cmap: None,
         largeurs: HashMap::new(),
         largeur_defaut: Z,
         standard: None,
@@ -559,18 +615,19 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
     if let Some(s) = lecture::lue(doc, d, b"ToUnicode", lecture::flux)? {
         p.unicode = lire_cmap(&lecture::contenu(doc, s)?)?.unicode;
     }
-    let base_nom = nom_de_base(doc, d)?;
-    if composee {
+    if sous_type == b"Type0" {
         // ISO 32000-1, table 121 : `Encoding` (un CMap prédéfini nommé, ou un flux) et `DescendantFonts` (un tableau
         // d'un élément) sont exigés.
+        let mut espaces = vec![(2, 0, 0xFFFF)];
+        let mut cmap_cid = None;
         match lecture::valeur(doc, d, b"Encoding")? {
             Some(Object::Name(n)) => p.vertical = n.ends_with(b"-V"),
             Some(Object::Stream(s)) => {
                 let c = lire_cmap(&lecture::contenu(doc, s)?)?;
                 if !c.espaces.is_empty() {
-                    p.espaces = c.espaces.clone();
+                    espaces = c.espaces.clone();
                 }
-                p.cmap_cid = Some(c);
+                cmap_cid = Some(c);
             }
             Some(_) => return illisible("/Encoding d'une police composée n'est ni un nom ni un flux"),
             None => return illisible("une police composée n'a pas d'/Encoding, que la norme exige (ISO 32000-1, table 121)"),
@@ -583,6 +640,11 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
         if inspecter {
             (p.asc, p.desc) = ascendant_descendant(doc, descripteur(doc, desc)?, base_nom.as_deref())?;
         }
+        let programme = match p.unicode.is_empty() {
+            true => sinon_inconnu(programme_cid(doc, desc, zapf), ParProgramme::Aucun)?,
+            false => ParProgramme::Aucun("/ToUnicode ne dit pas ce code".to_string()),
+        };
+        p.sorte = Sorte::Composee { espaces, cmap_cid, programme };
         // ISO 32000-1, table 117 : `DW`, « Default value: 1000 ».
         p.largeur_defaut = match lecture::lue(doc, desc, b"DW", lecture::nombre)? {
             Some(dw) => dw,
@@ -624,11 +686,11 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
         (p.asc, p.desc) = ascendant_descendant(doc, fd, base_nom.as_deref())?;
     }
     let encoding = lecture::valeur(doc, d, b"Encoding")?;
-    if sous_type == b"TrueType" {
-        p.encodage = encodage_truetype(doc, fd, encoding, &mut p.par_cmap)?;
-    } else {
-        p.encodage = encodage_simple(doc, encoding)?;
-    }
+    let encodage = match sous_type {
+        b"TrueType" => encodage_truetype(doc, fd, encoding, zapf)?,
+        _ => encodage_type1(doc, fd, sous_type, &nom_nu, encoding, zapf)?,
+    };
+    p.sorte = Sorte::Simple { encodage };
 
     // Les largeurs : `Widths`, à partir de `FirstChar` (ISO 32000-1, table 111 : tous deux exigés, sauf pour les 14
     // polices standard, où ils sont présents ou absents ensemble).
@@ -656,9 +718,9 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
     Ok(p)
 }
 
-/// Les `/Differences` d'un dictionnaire d'encodage : (code, caractère) (ISO 32000-1, 9.6.6.1 : un code, puis les noms
-/// des codes qui le suivent ; un nom que la liste de glyphes ne connaît pas ne donne pas de caractère).
-fn differences_de(doc: &Document, e: &Dictionary) -> Result<Vec<(usize, char)>, Refus> {
+/// Les `/Differences` d'un dictionnaire d'encodage : (code, texte du nom) (ISO 32000-1, 9.6.6.1 : un code, puis les
+/// noms des codes qui le suivent ; 9.10.2 : le nom donne le caractère par la liste des glyphes d'Adobe).
+fn differences_de(doc: &Document, e: &Dictionary, zapf: bool) -> Result<Vec<(usize, Lu)>, Refus> {
     let mut differences = Vec::new();
     if let Some(v) = lecture::lue(doc, e, b"Differences", lecture::tableau)? {
         let mut code = 0usize;
@@ -671,9 +733,7 @@ fn differences_de(doc: &Document, e: &Dictionary) -> Result<Vec<(usize, char)>, 
                     }
                 }
                 Some(Object::Name(g)) => {
-                    if let Some(c) = nom_de_glyphe(&String::from_utf8_lossy(g)) {
-                        differences.push((code, c));
-                    }
+                    differences.push((code, lu_du_nom(&String::from_utf8_lossy(g), zapf)?));
                     code += 1;
                 }
                 Some(_) | None => return illisible("un élément de /Differences n'est ni un code ni un nom de glyphe"),
@@ -683,14 +743,28 @@ fn differences_de(doc: &Document, e: &Dictionary) -> Result<Vec<(usize, char)>, 
     Ok(differences)
 }
 
-/// `table` mise à jour par `differences`.
-fn appliquer(mut table: Vec<Option<char>>, differences: Vec<(usize, char)>) -> Vec<Option<char>> {
-    for (code, c) in differences {
+/// `table` mise à jour par `differences` (un code au-delà de 255 n'est pas d'une police simple).
+fn appliquer(table: &mut [Lu], differences: Vec<(usize, Lu)>) {
+    for (code, l) in differences {
         if code < 256 {
-            table[code] = Some(c);
+            table[code] = l;
         }
     }
-    table
+}
+
+/// Ce que le programme d'une police ne permet pas de lire ne se refuse que lorsqu'un code qui en dépend se montre : le
+/// refus d'une pièce illisible devient la raison d'un glyphe inconnu (`inconnu`) ; un défaut du logiciel remonte.
+fn sinon_inconnu<T>(r: Result<T, Refus>, inconnu: impl FnOnce(String) -> T) -> Result<T, Refus> {
+    match r {
+        Ok(v) => Ok(v),
+        Err(Refus { classe: Classe::PieceIllisible, phrase }) => Ok(inconnu(phrase)),
+        Err(autre) => Err(autre),
+    }
+}
+
+/// 256 codes inconnus, pour la même raison.
+fn tous_inconnus(pourquoi: String) -> Vec<Lu> {
+    vec![Lu::Inconnu(pourquoi); 256]
 }
 
 /// Le bit `n` (à partir de 1) des drapeaux d'un descripteur (ISO 32000-1, 9.8.2).
@@ -698,56 +772,58 @@ fn drapeau(drapeaux: i64, n: u32) -> bool {
     drapeaux & (1 << (n - 1)) != 0
 }
 
-/// L'encodage d'une police TrueType simple, selon ISO 32000-1, 9.6.6.4 « Encodings for TrueType Fonts ».
-///
-/// Une police au `Encoding` nommé MacRomanEncoding ou WinAnsiEncoding, ou dont le descripteur lève le drapeau
-/// Nonsymbolic, se lit par une table code → nom de glyphe : l'encodage nommé (annexe D), ou celui du dictionnaire,
-/// « initialized with the entries from the dictionary's BaseEncoding entry », mis à jour par `Differences`, et dont
-/// « any undefined entries in the table shall be filled using StandardEncoding ». Une police sans `Encoding`, ou au
-/// drapeau Symbolic levé (`Encoding` alors ignoré), se lit par la table « cmap » de son programme : la sous-table (3, 0),
-/// sinon (1, 0) ; ses codes n'ont de caractère que par `ToUnicode` (9.10.2), `par_cmap` dit lesquels montrent un glyphe.
-/// Ce que la norme ne permet pas de lire se refuse.
-fn encodage_truetype(doc: &Document, fd: Option<&Dictionary>, encoding: Option<&Object>, par_cmap: &mut Option<Vec<bool>>) -> Result<Vec<Option<char>>, Refus> {
-    // ISO 32000-1, table 111 : `FontDescriptor`, exigé hors des 14 polices standard ; table 122 : `Flags`, exigé.
-    let Some(fd) = fd else {
-        return illisible("une police TrueType n'a pas de /FontDescriptor, que la norme exige (ISO 32000-1, table 111)");
+/// L'encodage d'une police TrueType simple. Le texte suit 9.10.2 (ISO 32000-1) : un encodage nommé (MacRoman,
+/// MacExpert, WinAnsi) ou les noms des `Differences` donnent le caractère, quels que soient les drapeaux. Pour le reste,
+/// 9.6.6.4 : un dictionnaire d'une police non symbolique part de son `BaseEncoding` (sinon d'une table vide), et « any
+/// undefined entries in the table shall be filled using StandardEncoding » ; sans `Encoding`, ou ce que le dictionnaire
+/// d'une police symbolique ne dit pas, le code mène au glyphe par la « cmap » du programme (`par_cmap`), et le glyphe
+/// dit son caractère. Les drapeaux ne servent qu'à savoir si la police est non symbolique (table 123 : Nonsymbolic
+/// levé, Symbolic baissé) ; absents ou contradictoires, elle ne l'est pas.
+fn encodage_truetype(doc: &Document, fd: Option<&Dictionary>, encoding: Option<&Object>, zapf: bool) -> Result<Vec<Lu>, Refus> {
+    let drapeaux = match fd {
+        Some(fd) => lecture::lue(doc, fd, b"Flags", lecture::entier)?,
+        None => None,
     };
-    let drapeaux = exige(doc, fd, b"Flags", "le descripteur d'une police TrueType", lecture::entier)?;
-    // Table 123 : Symbolic (bit 3) et Nonsymbolic (bit 6) « shall not both be set or both be clear ».
-    let symbolique = match (drapeau(drapeaux, 3), drapeau(drapeaux, 6)) {
-        (true, false) => true,
-        (false, true) => false,
-        (true, true) | (false, false) => {
-            return illisible(format!("les drapeaux {} d'une police TrueType lèvent Symbolic et Nonsymbolic ensemble, ou aucun des deux (ISO 32000-1, table 123)", drapeaux))
-        }
-    };
-    match (symbolique, encoding) {
-        (false, Some(Object::Name(n))) => match n.as_slice() {
-            b"MacRomanEncoding" | b"WinAnsiEncoding" => Ok(base_encodage(&String::from_utf8_lossy(n))),
-            autre => illisible(format!("une police TrueType non symbolique a l'encodage {}, dont 9.6.6.4 d'ISO 32000-1 ne dit pas la lecture", lecture::nom_de(autre))),
-        },
-        (false, Some(Object::Dictionary(e))) => {
-            let table = match lecture::lue(doc, e, b"BaseEncoding", lecture::nom)? {
-                Some(n) => base_encodage(&String::from_utf8_lossy(n)),
-                None => vec![None; 256],
+    let non_symbolique = drapeaux.is_some_and(|f| drapeau(f, 6) && !drapeau(f, 3));
+    match encoding {
+        Some(Object::Name(n)) => predefini(n),
+        Some(Object::Dictionary(e)) => {
+            let mut table = match (lecture::lue(doc, e, b"BaseEncoding", lecture::nom)?, non_symbolique) {
+                (Some(n), _) => predefini(n)?,
+                (None, true) => vec![Lu::Rien; 256],
+                (None, false) => par_cmap(doc, fd, zapf)?,
             };
-            let standard = base_encodage("StandardEncoding");
-            Ok(appliquer(table, differences_de(doc, e)?).into_iter().zip(standard).map(|(c, s)| c.or(s)).collect())
+            appliquer(&mut table, differences_de(doc, e, zapf)?);
+            if non_symbolique {
+                for (l, s) in table.iter_mut().zip(predefini(b"StandardEncoding")?) {
+                    if matches!(l, Lu::Rien) {
+                        *l = s;
+                    }
+                }
+            }
+            Ok(table)
         }
-        (false, Some(_)) => illisible("/Encoding d'une police simple n'est ni un nom ni un dictionnaire"),
-        (true, _) | (false, None) => {
-            *par_cmap = Some(glyphes_par_cmap(doc, fd)?);
-            Ok(vec![None; 256])
-        }
+        Some(_) => illisible("/Encoding d'une police simple n'est ni un nom ni un dictionnaire"),
+        None => par_cmap(doc, fd, zapf),
     }
 }
 
-/// Pour chaque code d'un octet, s'il montre un glyphe par la table « cmap » du programme incorporé (ISO 32000-1,
-/// 9.6.6.4) : la sous-table (3, 0), dont les codes sont dans 0x0000-0x00FF, 0xF000-0xF0FF, 0xF100-0xF1FF ou
-/// 0xF200-0xF2FF, chaque octet précédé de l'octet de tête de sa plage ; sinon la sous-table (1, 0), octet par octet.
-fn glyphes_par_cmap(doc: &Document, fd: &Dictionary) -> Result<Vec<bool>, Refus> {
-    let Some(programme) = lecture::lue(doc, fd, b"FontFile2", lecture::flux)? else {
-        return illisible("une police TrueType sans encodage lisible n'incorpore pas son programme : la norme lit ses codes par la table « cmap » du programme (ISO 32000-1, 9.6.6.4)");
+/// Le texte de chaque code d'un octet lu par la « cmap » du programme TrueType incorporé (ISO 32000-1, 9.6.6.4) : la
+/// sous-table (3, 0), dont les codes sont dans 0x0000-0x00FF, 0xF000-0xF0FF, 0xF100-0xF1FF ou 0xF200-0xF2FF, chaque
+/// octet précédé de l'octet de tête de sa plage ; sinon la sous-table (1, 0), octet par octet. Le glyphe 0 ne montre
+/// rien ; un autre dit son caractère (`glyphes_du_programme`). Ce que le programme ne permet pas de lire rend chaque code
+/// inconnu.
+fn par_cmap(doc: &Document, fd: Option<&Dictionary>, zapf: bool) -> Result<Vec<Lu>, Refus> {
+    sinon_inconnu(lire_par_cmap(doc, fd, zapf), tous_inconnus)
+}
+
+fn lire_par_cmap(doc: &Document, fd: Option<&Dictionary>, zapf: bool) -> Result<Vec<Lu>, Refus> {
+    let programme = match fd {
+        Some(fd) => lecture::lue(doc, fd, b"FontFile2", lecture::flux)?,
+        None => None,
+    };
+    let Some(programme) = programme else {
+        return illisible("une police TrueType sans encodage lisible n'incorpore pas son programme, dont la « cmap » mène du code au glyphe (ISO 32000-1, 9.6.6.4)");
     };
     let octets = lecture::contenu(doc, programme)?;
     let face = ttf_parser::Face::parse(&octets, 0).map_err(|e| Refus::illisible(format!("le programme incorporé d'une police TrueType ne se lit pas ({})", e)))?;
@@ -755,39 +831,255 @@ fn glyphes_par_cmap(doc: &Document, fd: &Dictionary) -> Result<Vec<bool>, Refus>
         return illisible("le programme incorporé d'une police TrueType n'a pas de table « cmap » (ISO 32000-1, 9.6.6.4)");
     };
     let sous_table = |plateforme: ttf_parser::PlatformId, codage: u16| cmap.subtables.into_iter().find(|s| s.platform_id == plateforme && s.encoding_id == codage);
-    let montre = |s: &ttf_parser::cmap::Subtable, code: u32| s.glyph_index(code).is_some_and(|g| g.0 != 0);
-    if let Some(s) = sous_table(ttf_parser::PlatformId::Windows, 0) {
-        let plages: Vec<u32> = [0x00u32, 0xF0, 0xF1, 0xF2].into_iter().filter(|h| (0..=255u32).any(|c| montre(&s, h << 8 | c))).collect();
-        return match plages.as_slice() {
-            [h] => Ok((0..=255u32).map(|c| montre(&s, h << 8 | c)).collect()),
-            [] => Ok(vec![false; 256]),
-            _ => illisible("la sous-table (3, 0) d'une police TrueType couvre plusieurs plages de codes, la norme n'en lit qu'une (ISO 32000-1, 9.6.6.4)"),
-        };
+    let glyphe = |s: &ttf_parser::cmap::Subtable, code: u32| s.glyph_index(code).map(|g| g.0).filter(|g| *g != 0);
+    let glyphes: Vec<Option<u16>> = match (sous_table(ttf_parser::PlatformId::Windows, 0), sous_table(ttf_parser::PlatformId::Macintosh, 0)) {
+        (Some(s), _) => {
+            let plages: Vec<u32> = [0x00u32, 0xF0, 0xF1, 0xF2].into_iter().filter(|h| (0..=255u32).any(|c| glyphe(&s, h << 8 | c).is_some())).collect();
+            match plages.as_slice() {
+                [h] => (0..=255u32).map(|c| glyphe(&s, h << 8 | c)).collect(),
+                [] => vec![None; 256],
+                _ => return illisible("la sous-table (3, 0) d'une police TrueType couvre plusieurs plages de codes, la norme n'en lit qu'une (ISO 32000-1, 9.6.6.4)"),
+            }
+        }
+        (None, Some(s)) => (0..=255u32).map(|c| glyphe(&s, c)).collect(),
+        (None, None) => return illisible("le programme incorporé d'une police TrueType n'a ni sous-table « cmap » (3, 0) ni (1, 0) (ISO 32000-1, 9.6.6.4)"),
+    };
+    let unicode = unicode_du_programme(&face);
+    glyphes
+        .into_iter()
+        .map(|g| match g {
+            Some(g) => glyphe_du_programme(&face, &unicode, g, zapf),
+            None => Ok(Lu::Rien),
+        })
+        .collect()
+}
+
+/// Les caractères que la « cmap » Unicode d'un programme ((0, x), (3, 1), (3, 10)) donne à chaque glyphe.
+fn unicode_du_programme(face: &ttf_parser::Face) -> HashMap<u16, Vec<char>> {
+    let mut par_glyphe: HashMap<u16, Vec<char>> = HashMap::new();
+    if let Some(cmap) = face.tables().cmap {
+        for s in cmap.subtables.into_iter().filter(|s| s.is_unicode()) {
+            s.codepoints(|cp| {
+                if let (Some(g), Some(c)) = (s.glyph_index(cp), char::from_u32(cp)) {
+                    let v = par_glyphe.entry(g.0).or_default();
+                    if !v.contains(&c) {
+                        v.push(c);
+                    }
+                }
+            });
+        }
     }
-    match sous_table(ttf_parser::PlatformId::Macintosh, 0) {
-        Some(s) => Ok((0..=255u32).map(|c| montre(&s, c)).collect()),
-        None => illisible("le programme incorporé d'une police TrueType n'a ni sous-table « cmap » (3, 0) ni (1, 0) (ISO 32000-1, 9.6.6.4)"),
+    par_glyphe
+}
+
+/// Le texte d'un glyphe d'un programme incorporé : son nom (table « post », ou le jeu de caractères d'un programme
+/// compact) lu par la liste des glyphes d'Adobe ; sinon le seul caractère que la « cmap » Unicode du programme lui
+/// donne. Un glyphe sans nom lisible, sans caractère ou avec plusieurs est inconnu.
+fn glyphe_du_programme(face: &ttf_parser::Face, unicode: &HashMap<u16, Vec<char>>, g: u16, zapf: bool) -> Result<Lu, Refus> {
+    if let Some(nom) = face.glyph_name(ttf_parser::GlyphId(g)) {
+        if let l @ (Lu::Texte(_) | Lu::Rien) = lu_du_nom(nom, zapf)? {
+            return Ok(l);
+        }
+    }
+    Ok(match unicode.get(&g).map(Vec::as_slice) {
+        Some([c]) => Lu::Texte(c.to_string()),
+        Some(plusieurs) if !plusieurs.is_empty() => Lu::Inconnu(format!(
+            "son glyphe {} vaut {} caractères dans le programme ({})",
+            g,
+            plusieurs.len(),
+            plusieurs.iter().map(|c| format!("U+{:04X}", *c as u32)).collect::<Vec<_>>().join(", ")
+        )),
+        Some(_) | None => Lu::Inconnu(format!("son glyphe {} n'a ni nom de la liste des glyphes d'Adobe ni caractère dans le programme", g)),
+    })
+}
+
+/// Ce que le programme d'une police CID dit de ses glyphes : un programme TrueType (`CIDFontType2`, `FontFile2`), son
+/// `CIDToGIDMap` (table 117 : un flux, ou Identity, la valeur par défaut). Une police CID Type 0 (programme compact)
+/// ne nomme pas ses glyphes.
+fn programme_cid(doc: &Document, desc: &Dictionary, zapf: bool) -> Result<ParProgramme, Refus> {
+    let sous_type = exige(doc, desc, b"Subtype", "la police de /DescendantFonts", lecture::nom)?;
+    if sous_type != b"CIDFontType2" {
+        return illisible(format!("une police CID de sous-type {} n'a pas de noms de glyphes que la fabrique lise", lecture::nom_de(sous_type)));
+    }
+    let programme = match descripteur(doc, desc)? {
+        Some(fd) => lecture::lue(doc, fd, b"FontFile2", lecture::flux)?,
+        None => None,
+    };
+    let Some(programme) = programme else {
+        return illisible("une police CID TrueType n'incorpore pas son programme");
+    };
+    let cid_gid = match lecture::valeur(doc, desc, b"CIDToGIDMap")? {
+        Some(Object::Name(n)) if n.as_slice() == b"Identity" => None,
+        Some(Object::Stream(s)) => Some(lecture::contenu(doc, s)?),
+        Some(_) => return illisible("/CIDToGIDMap n'est ni un flux ni /Identity (ISO 32000-1, table 117)"),
+        None => None,
+    };
+    let octets = lecture::contenu(doc, programme)?;
+    let face = ttf_parser::Face::parse(&octets, 0).map_err(|e| Refus::illisible(format!("le programme incorporé d'une police CID TrueType ne se lit pas ({})", e)))?;
+    let unicode = unicode_du_programme(&face);
+    let mut lus = HashMap::new();
+    lus.insert(0, Lu::Rien);
+    for g in 1..face.number_of_glyphs() {
+        lus.insert(g, glyphe_du_programme(&face, &unicode, g, zapf)?);
+    }
+    Ok(ParProgramme::Glyphes { cid_gid, lus })
+}
+
+/// L'encodage d'une police simple qui n'est pas TrueType (Type 1, MMType1, Type 3) : l'encodage nommé ; ou le
+/// dictionnaire, son `BaseEncoding` ou l'encodage implicite, puis ses `Differences` ; sans `Encoding`, l'encodage
+/// implicite. Table 114 : l'encodage implicite d'un programme incorporé est son encodage propre ; sinon StandardEncoding
+/// pour une police non symbolique, et l'encodage propre de la police pour une symbolique.
+fn encodage_type1(doc: &Document, fd: Option<&Dictionary>, sous_type: &[u8], nom_nu: &str, encoding: Option<&Object>, zapf: bool) -> Result<Vec<Lu>, Refus> {
+    let implicite = || -> Result<Vec<Lu>, Refus> {
+        // 9.6.6.3 : l'encodage d'une police Type 3 est tout entier dans son `Encoding`, exigé.
+        if sous_type == b"Type3" {
+            return Ok(match encoding {
+                Some(_) => vec![Lu::Rien; 256],
+                None => tous_inconnus("une police Type 3 n'a pas d'/Encoding, que la norme exige (ISO 32000-1, 9.6.6.3)".to_string()),
+            });
+        }
+        let (programme, compact) = match fd {
+            Some(fd) => (lecture::lue(doc, fd, b"FontFile", lecture::flux)?, lecture::lue(doc, fd, b"FontFile3", lecture::flux)?.is_some()),
+            None => (None, false),
+        };
+        if let Some(s) = programme {
+            return sinon_inconnu(encodage_du_programme_type1(doc, s, zapf), tous_inconnus);
+        }
+        if compact {
+            return Ok(tous_inconnus("l'encodage propre d'un programme compact incorporé (/FontFile3) n'est pas lu par la fabrique".to_string()));
+        }
+        // 9.6.6.1 : les deux polices standard symboliques sont Symbol et ZapfDingbats ; table 123 : le drapeau Symbolic.
+        let drapeaux = match fd {
+            Some(fd) => lecture::lue(doc, fd, b"Flags", lecture::entier)?,
+            None => None,
+        };
+        let symbolique = match drapeaux {
+            Some(f) => drapeau(f, 3),
+            None => nom_nu == "Symbol" || nom_nu == "ZapfDingbats",
+        };
+        match symbolique {
+            false => predefini(b"StandardEncoding"),
+            true => Ok(tous_inconnus(format!(
+                "l'encodage propre de la police symbolique {}, non incorporée, n'est pas déposé (ISO 32000-1, annexe D)",
+                nom_nu
+            ))),
+        }
+    };
+    match encoding {
+        Some(Object::Name(n)) => predefini(n),
+        Some(Object::Dictionary(e)) => {
+            let mut table = match lecture::lue(doc, e, b"BaseEncoding", lecture::nom)? {
+                Some(n) => predefini(n)?,
+                None => implicite()?,
+            };
+            appliquer(&mut table, differences_de(doc, e, zapf)?);
+            Ok(table)
+        }
+        Some(_) => illisible("/Encoding d'une police simple n'est ni un nom ni un dictionnaire"),
+        None => implicite(),
     }
 }
 
-/// L'encodage d'une police simple qui n'est pas TrueType : l'encodage nommé, ou le dictionnaire (`BaseEncoding`, sinon
-/// StandardEncoding) et ses `Differences`. Table 114 : StandardEncoding est l'encodage implicite d'une police non
-/// symbolique non incorporée ; celui d'un programme incorporé est son encodage propre, que la fabrique ne lit pas pour
-/// une police Type 1 : elle y lit StandardEncoding aussi.
-fn encodage_simple(doc: &Document, encoding: Option<&Object>) -> Result<Vec<Option<char>>, Refus> {
-    let (table, differences) = match encoding {
-        Some(Object::Name(n)) => (base_encodage(&String::from_utf8_lossy(n)), Vec::new()),
-        Some(Object::Dictionary(e)) => {
-            let base = match lecture::lue(doc, e, b"BaseEncoding", lecture::nom)? {
-                Some(n) => String::from_utf8_lossy(n).into_owned(),
-                None => "StandardEncoding".to_string(),
-            };
-            (base_encodage(&base), differences_de(doc, e)?)
-        }
-        Some(_) => return illisible("/Encoding d'une police simple n'est ni un nom ni un dictionnaire"),
-        None => (base_encodage("StandardEncoding"), Vec::new()),
+/// L'encodage propre d'un programme Type 1 incorporé (`FontFile`), lu dans sa partie en clair (`Length1`, exigé, table
+/// 127) : « The tokens following /Encoding may be StandardEncoding def », ou la suite des « dup index charactername
+/// put », à partir du premier `dup` après `/Encoding`, « followed by an instance of the token def or readonly » (Adobe
+/// Type 1 Font Format, 10.3). Un code qu'elle ne nomme pas est `.notdef`.
+fn encodage_du_programme_type1(doc: &Document, s: &lopdf::Stream, zapf: bool) -> Result<Vec<Lu>, Refus> {
+    let Some(longueur) = lecture::lue(doc, &s.dict, b"Length1", lecture::entier)? else {
+        return illisible("le programme Type 1 incorporé n'a pas de /Length1, que la norme exige (ISO 32000-1, table 127)");
     };
-    Ok(appliquer(table, differences))
+    let octets = lecture::contenu(doc, s)?;
+    let clair = match usize::try_from(longueur) {
+        Ok(l) => octets.get(..l),
+        Err(e) => return illisible(format!("/Length1 vaut {} ({})", longueur, e)),
+    };
+    let Some(clair) = clair else {
+        return illisible(format!("/Length1 ({}) ne mesure pas la partie en clair du programme Type 1 ({} octets)", longueur, octets.len()));
+    };
+    let mots = mots_postscript(clair);
+    let Some(debut) = mots.iter().position(|m| m == "/Encoding") else {
+        return illisible("la partie en clair du programme Type 1 n'a pas d'/Encoding (Adobe Type 1 Font Format, 10.3)");
+    };
+    let suite = &mots[debut + 1..];
+    if suite.first().map(String::as_str) == Some("StandardEncoding") {
+        return predefini(b"StandardEncoding");
+    }
+    let Some(premier) = suite.iter().position(|m| m == "dup") else {
+        return illisible("l'/Encoding du programme Type 1 n'a ni StandardEncoding ni « dup index charactername put » (Adobe Type 1 Font Format, 10.3)");
+    };
+    let mut table = vec![Lu::Rien; 256];
+    let mut i = premier;
+    loop {
+        match &suite[i..] {
+            [dup, index, nom, put, ..] if dup == "dup" && put == "put" => {
+                let code = match index.parse::<usize>() {
+                    Ok(c) => c,
+                    Err(e) => return illisible(format!("l'/Encoding du programme Type 1 a « dup {} {} put » ({} ; Adobe Type 1 Font Format, 10.3)", index, nom, e)),
+                };
+                let Some(nom) = nom.strip_prefix('/') else {
+                    return illisible(format!("l'/Encoding du programme Type 1 a « dup {} {} put », sans nom (Adobe Type 1 Font Format, 10.3)", index, nom));
+                };
+                if code < 256 {
+                    table[code] = lu_du_nom(nom, zapf)?;
+                }
+                i += 4;
+            }
+            [fin, ..] if fin == "def" || fin == "readonly" => return Ok(table),
+            reste => {
+                return illisible(format!(
+                    "l'/Encoding du programme Type 1 a {:?} dans sa suite de « dup index charactername put » (Adobe Type 1 Font Format, 10.3)",
+                    reste.iter().take(4).collect::<Vec<_>>()
+                ))
+            }
+        }
+    }
+}
+
+/// Les mots d'un texte PostScript : les noms avec leur `/`, les chaînes et les commentaires sautés, les délimiteurs
+/// seuls.
+fn mots_postscript(o: &[u8]) -> Vec<String> {
+    let delimiteur = |c: u8| matches!(c, b'(' | b')' | b'<' | b'>' | b'[' | b']' | b'{' | b'}' | b'/' | b'%');
+    let blanc = |c: u8| matches!(c, 0 | b'\t' | b'\n' | 0x0C | b'\r' | b' ');
+    let mut mots = Vec::new();
+    let mut i = 0;
+    while i < o.len() {
+        let c = o[i];
+        if blanc(c) {
+            i += 1;
+        } else if c == b'%' {
+            while i < o.len() && o[i] != b'\n' && o[i] != b'\r' {
+                i += 1;
+            }
+        } else if c == b'(' {
+            let mut prof = 0;
+            while i < o.len() {
+                match o[i] {
+                    b'\\' => i += 1,
+                    b'(' => prof += 1,
+                    b')' => {
+                        prof -= 1;
+                        if prof == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+            i += 1;
+        } else if delimiteur(c) && c != b'/' {
+            mots.push((c as char).to_string());
+            i += 1;
+        } else {
+            let debut = i;
+            i += 1;
+            while i < o.len() && !blanc(o[i]) && !delimiteur(o[i]) {
+                i += 1;
+            }
+            mots.push(String::from_utf8_lossy(&o[debut..i]).into_owned());
+        }
+    }
+    mots
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -926,8 +1218,9 @@ struct Interprete<'a> {
     doc: &'a Document,
     polices: HashMap<ObjectId, Rc<Police>>,
     mise: Mise,
-    /// Le cadre de la page (x0, y0, x1, y1) : le texte tout entier hors de lui n'est pas lu.
-    cadre: [Mesure; 4],
+    /// Le cadre de la page (x0, y0, x1, y1) : le texte tout entier hors de lui n'est pas lu. `None` : la page ne dit
+    /// pas son support (`MediaBox`), rien n'est hors de lui.
+    cadre: Option<[Mesure; 4]>,
     /// Le `/ActualText` en cours : son texte, le premier glyphe (origine, direction, corps) et
     /// l'avance totale des glyphes qu'il remplace.
     actuel: Option<Actuel>,
@@ -1061,6 +1354,15 @@ fn texte_pdf(s: &[u8]) -> Result<String, Refus> {
     }
 }
 
+/// Le sous-dictionnaire `cle` des ressources (`Font`, `XObject`, `Properties`) : `None` quand il manque, ou que le
+/// contenu n'a pas de ressources.
+fn ressource<'a>(doc: &'a Document, res: Option<&'a Dictionary>, cle: &[u8]) -> Result<Option<&'a Dictionary>, Refus> {
+    match res {
+        Some(r) => lecture::lue(doc, r, cle, lecture::dictionnaire),
+        None => Ok(None),
+    }
+}
+
 /// Au-delà, des objets formulaire imbriqués (qui se citent l'un l'autre) se refusent.
 const PROFONDEUR_MAX: usize = 12;
 
@@ -1094,9 +1396,9 @@ impl<'a> Interprete<'a> {
 
     /// La police que `Tf` nomme : « the name of a font resource in the Font subdictionary of the current resource
     /// dictionary » (ISO 32000-1, 9.3.1) ; une police que les ressources n'ont pas se refuse.
-    fn police(&mut self, res: &Dictionary, nom_police: &[u8]) -> Result<Rc<Police>, Refus> {
+    fn police(&mut self, res: Option<&Dictionary>, nom_police: &[u8]) -> Result<Rc<Police>, Refus> {
         let doc = self.doc;
-        let Some(polices) = lecture::lue(doc, res, b"Font", lecture::dictionnaire)? else {
+        let Some(polices) = ressource(doc, res, b"Font")? else {
             return illisible(format!("Tf nomme la police {}, et les ressources n'ont pas de /Font", lecture::nom_de(nom_police)));
         };
         let Some(entree) = polices.as_hashmap().get(nom_police) else {
@@ -1118,7 +1420,7 @@ impl<'a> Interprete<'a> {
 
     /// Relève les `/BaseFont` des polices d'un dictionnaire de ressources (page ou formulaire suivi),
     /// dans l'ordre, sans doublon.
-    fn relever_polices(&mut self, res: &Dictionary) -> Result<(), Refus> {
+    fn relever_polices(&mut self, res: Option<&Dictionary>) -> Result<(), Refus> {
         if self.annotation {
             return Ok(());
         }
@@ -1126,7 +1428,7 @@ impl<'a> Interprete<'a> {
         let Some(r) = self.releve.as_mut() else {
             return Ok(());
         };
-        let Some(polices) = lecture::lue(doc, res, b"Font", lecture::dictionnaire)? else {
+        let Some(polices) = ressource(doc, res, b"Font")? else {
             return Ok(());
         };
         for (cle, entree) in polices.iter() {
@@ -1149,7 +1451,7 @@ impl<'a> Interprete<'a> {
         }
     }
 
-    fn executer(&mut self, flux: &[u8], res: &Dictionary, ctm: Mat, profondeur: usize) -> Result<(), Refus> {
+    fn executer(&mut self, flux: &[u8], res: Option<&Dictionary>, ctm: Mat, profondeur: usize) -> Result<(), Refus> {
         let doc = self.doc;
         let flux = self.preparer(flux);
         let contenu = Content::decode(&flux).map_err(|e| Refus::illisible(format!("un flux de contenu ne se lit pas ({})", e)))?;
@@ -1248,21 +1550,17 @@ impl<'a> Interprete<'a> {
                 "BMC" => marques.push(false),
                 "BDC" => {
                     // ISO 32000-1, 14.6.2 : les propriétés, un dictionnaire en ligne ou le nom d'une ressource de
-                    // `/Properties`.
+                    // `/Properties`. Elles ne servent qu'à son `/ActualText` : des propriétés que le PDF ne donne pas
+                    // n'en ont pas.
                     let propres = match a.get(1) {
-                        Some(Object::Name(n)) => {
-                            let Some(p) = lecture::lue(doc, res, b"Properties", lecture::dictionnaire)? else {
-                                return illisible(format!("BDC nomme {}, et les ressources n'ont pas de /Properties", lecture::nom_de(n)));
-                            };
-                            match lecture::lue(doc, p, n, lecture::dictionnaire)? {
-                                Some(d) => d,
-                                None => return illisible(format!("BDC nomme {}, que /Properties n'a pas", lecture::nom_de(n))),
-                            }
-                        }
-                        Some(o) => lecture::element(doc, o, "les propriétés de BDC", lecture::dictionnaire)?,
-                        None => return illisible("BDC n'a pas ses propriétés"),
+                        Some(Object::Name(n)) => match ressource(doc, res, b"Properties")? {
+                            Some(p) => lecture::lue(doc, p, n, lecture::dictionnaire)?,
+                            None => None,
+                        },
+                        Some(o) => lecture::designe(doc, o)?.map(|o| lecture::element(doc, o, "les propriétés de BDC", lecture::dictionnaire)).transpose()?,
+                        None => None,
                     };
-                    let reel = match lecture::lue(doc, propres, b"ActualText", lecture::chaine)? {
+                    let reel = match propres.map(|p| lecture::lue(doc, p, b"ActualText", lecture::chaine)).transpose()?.flatten() {
                         Some(s) => Some(texte_pdf(s)?),
                         None => None,
                     };
@@ -1327,10 +1625,10 @@ impl<'a> Interprete<'a> {
 
     /// Un objet extérieur (`Do`) : une image (sa boîte), ou un objet formulaire (son flux, sous sa matrice, avec ses
     /// ressources).
-    fn objet(&mut self, res: &Dictionary, nom_obj: &[u8], ctm: &Mat, profondeur: usize) -> Result<(), Refus> {
+    fn objet(&mut self, res: Option<&Dictionary>, nom_obj: &[u8], ctm: &Mat, profondeur: usize) -> Result<(), Refus> {
         let doc = self.doc;
         let quoi = format!("l'objet {}", lecture::nom_de(nom_obj));
-        let Some(xo) = lecture::lue(doc, res, b"XObject", lecture::dictionnaire)? else {
+        let Some(xo) = ressource(doc, res, b"XObject")? else {
             return illisible(format!("Do nomme {}, et les ressources n'ont pas de /XObject", quoi));
         };
         let s = match lecture::lue(doc, xo, nom_obj, lecture::flux)? {
@@ -1354,8 +1652,8 @@ impl<'a> Interprete<'a> {
                 // each page object on which the form XObject appears », PDF 1.1).
                 let res_form = match lecture::lue(doc, &s.dict, b"Resources", lecture::dictionnaire)? {
                     Some(r) => {
-                        self.relever_polices(r)?;
-                        r
+                        self.relever_polices(Some(r))?;
+                        Some(r)
                     }
                     None => res,
                 };
@@ -1405,7 +1703,9 @@ impl<'a> Interprete<'a> {
     }
 
     fn dans_le_cadre(&self, trm: &Mat, w0: Mesure) -> bool {
-        let c = &self.cadre;
+        let Some(c) = &self.cadre else {
+            return true;
+        };
         let p = (trm[4], trm[5]);
         let q = (p.0 + w0 * trm[0], p.1 + w0 * trm[1]);
         let (x0, x1) = (p.0.min(q.0), p.0.max(q.0));
@@ -1435,11 +1735,22 @@ fn echelle(rect: (Mesure, Mesure), boite: (Mesure, Mesure)) -> Mesure {
 /// Lit une page : son contenu, puis l'apparence de ses annotations (champs de formulaire). Avec
 /// `inspecter`, l'interpréteur garde en plus la boîte des caractères, les images, les chemins
 /// peints et les polices.
+///
+/// Ce qui ne sert pas au texte ne se lit pas, et ne refuse donc rien : une page sans `Resources` n'a aucune ressource
+/// (un `Tf` qui en nomme une se refuse alors) ; sans `MediaBox`, `--texte` ne coupe rien (`--inspecter`, qui place
+/// chaque mot dans la page, l'exige : `inspection::page_de`).
 fn lire_la_page(doc: &Document, id: ObjectId, inspecter: bool) -> Result<Interprete<'_>, Refus> {
-    let res = lecture::ressources_de_page(doc, id)?;
+    let res = match lecture::herite(doc, id, b"Resources")? {
+        Some(o) => Some(lecture::element(doc, o, "/Resources de la page", lecture::dictionnaire)?),
+        None => None,
+    };
+    let cadre = match lecture::herite(doc, id, b"MediaBox")? {
+        Some(_) => Some(lecture::cadre_de(doc, id)?),
+        None => None,
+    };
     let mise = Mise { garder: inspecter, ..Mise::default() };
     let releve = if inspecter { Some(Releve::default()) } else { None };
-    let mut it = Interprete { doc, polices: HashMap::new(), mise, cadre: lecture::cadre_de(doc, id)?, actuel: None, releve, annotation: false };
+    let mut it = Interprete { doc, polices: HashMap::new(), mise, cadre, actuel: None, releve, annotation: false };
     it.relever_polices(res)?;
     let flux = lecture::contenu_de_page(doc, id)?;
     if !flux.is_empty() {
@@ -1452,31 +1763,37 @@ fn lire_la_page(doc: &Document, id: ObjectId, inspecter: bool) -> Result<Interpr
     };
     it.annotation = true;
     for a in annots {
-        let d = lecture::element(doc, a, "une annotation de /Annots", lecture::dictionnaire)?;
-        // ISO 32000-1, table 164 : `F`, « Default value: 0 » ; `Subtype` est exigé.
+        // Une annotation nulle (7.3.10) n'est pas là.
+        let Some(d) = lecture::designe(doc, a)? else {
+            continue;
+        };
+        let d = lecture::element(doc, d, "une annotation de /Annots", lecture::dictionnaire)?;
+        // ISO 32000-1, table 164 : `F`, « Default value: 0 ». Le sous-type ne sert qu'à écarter une Popup.
         let drapeaux = match lecture::lue(doc, d, b"F", lecture::entier)? {
             Some(f) => f,
             None => DRAPEAUX_PAR_DEFAUT,
         };
-        if drapeaux & CACHEE != 0 || exige(doc, d, b"Subtype", "une annotation", lecture::nom)? == b"Popup" {
+        if drapeaux & CACHEE != 0 || lecture::lue(doc, d, b"Subtype", lecture::nom)? == Some(b"Popup".as_slice()) {
             continue;
         }
-        // Table 168 : `N` est exigé dans `AP`, un flux ou un dictionnaire d'états, que `AS` choisit (table 164 :
-        // exigé quand `AP` a des sous-dictionnaires). Un état que `N` n'a pas ne se dessine pas.
+        // Table 168 : l'apparence normale `N`, un flux ou un dictionnaire d'états, que `AS` choisit (table 164). Une
+        // apparence sans `N`, des états sans `AS`, un état que `N` n'a pas : rien n'est choisi, rien ne se dessine.
         let Some(ap) = lecture::lue(doc, d, b"AP", lecture::dictionnaire)? else {
             continue;
         };
         let s = match lecture::valeur(doc, ap, b"N")? {
             Some(Object::Stream(s)) => s,
             Some(Object::Dictionary(etats)) => {
-                let etat = exige(doc, d, b"AS", "une annotation dont l'apparence a des états", lecture::nom)?;
+                let Some(etat) = lecture::lue(doc, d, b"AS", lecture::nom)? else {
+                    continue;
+                };
                 match lecture::lue(doc, etats, etat, lecture::flux)? {
                     Some(s) => s,
                     None => continue,
                 }
             }
             Some(_) => return illisible("/N de l'apparence d'une annotation n'est ni un flux ni un dictionnaire"),
-            None => return illisible("l'apparence d'une annotation n'a pas de /N, que la norme exige (ISO 32000-1, table 168)"),
+            None => continue,
         };
         let rect = exige(doc, d, b"Rect", "une annotation", |o| Ok(o))?;
         let rect = lecture::rectangle_de(doc, rect, "/Rect")?;
@@ -1495,7 +1812,7 @@ fn lire_la_page(doc: &Document, id: ObjectId, inspecter: bool) -> Result<Interpr
         let a_m = [sx, Z, Z, sy, rx0 - bx0 * sx, ry0 - by0 * sy];
         // Sans ressources propres, celles de la page (table 95, comme un objet formulaire).
         let res_ap = match lecture::lue(doc, &s.dict, b"Resources", lecture::dictionnaire)? {
-            Some(r) => r,
+            Some(r) => Some(r),
             None => res,
         };
         let contenu = lecture::contenu(doc, s)?;

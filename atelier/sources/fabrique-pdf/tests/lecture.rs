@@ -184,7 +184,7 @@ fn les_lignes_distinctes_ne_se_collent_pas_et_l_exposant_reste_dans_sa_ligne() {
 fn les_polices_composees_lisent_tounicode_meme_abimee_et_les_polices_simples_leurs_differences() {
     let d = dossier_temp("lecture-texte-polices");
     // Une police Type0 (Identity-H, codes de deux octets) : `ToUnicode` donne les caractères
-    // (une plage et un code isolé) ; le code 5 n'y est pas (U+FFFD) ; un « > » isolé, comme en
+    // (une plage et un code isolé) ; un « > » isolé, comme en
     // met un fichier abîmé, ne bloque pas la lecture.
     let tounicode = flux(
         "",
@@ -193,7 +193,7 @@ fn les_polices_composees_lisent_tounicode_meme_abimee_et_les_polices_simples_leu
          > > 1 beginbfrange <0001> <0003> <0041> endbfrange\n\
          1 beginbfchar <0004> <00E9> endbfchar\nendcmap",
     );
-    let page = "BT /F1 12 Tf 50 700 Td <00010002000300040005> Tj ET\n\
+    let page = "BT /F1 12 Tf 50 700 Td <0001000200030004> Tj ET\n\
                 BT /F2 12 Tf 50 680 Td (ABC \\200) Tj ET\n";
     let objets = vec![
         "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
@@ -212,7 +212,7 @@ fn les_polices_composees_lisent_tounicode_meme_abimee_et_les_polices_simples_leu
     let r = lancer(&["--texte", p.to_str().unwrap()]);
     assert_eq!(r.status.code(), Some(0), "{}", String::from_utf8_lossy(&r.stderr));
     let t: Vec<String> = serde_json::from_slice(&r.stdout).unwrap();
-    // Les codes 1 à 5 : A B C é ; le 5 n'a pas de texte. Les différences : A -> é, B -> à, C reste
-    // « C » (WinAnsi), \200 -> « € » (WinAnsi).
-    assert_eq!(t[0], "ABCé\u{FFFD}\néàC €\n", "{:?}", t[0]);
+    // Les codes 1 à 4 : A B C é. Les différences : A -> é, B -> à, C reste « C » (WinAnsi), \200 -> « € »
+    // (WinAnsi).
+    assert_eq!(t[0], "ABCé\néàC €\n", "{:?}", t[0]);
 }

@@ -309,12 +309,14 @@ pub fn matrice(doc: &Document, d: &Dictionary, cle: &[u8]) -> Result<Option<[Mes
     }
 }
 
-/// Les filtres que la fabrique sait défaire (ceux de lopdf).
-const FILTRES_LUS: [&[u8]; 2] = [b"FlateDecode", b"LZWDecode"];
+/// Les filtres de compression que lopdf défait.
+const FILTRES_DE_LOPDF: [&[u8]; 2] = [b"FlateDecode", b"LZWDecode"];
+/// Les filtres d'écriture que la fabrique défait elle-même (ISO 32000-1, 7.4.2, 7.4.3, 7.4.5).
+const FILTRES_ECRITS: [&[u8]; 3] = [b"ASCIIHexDecode", b"ASCII85Decode", b"RunLengthDecode"];
 
 /// Les données d'un flux, ses filtres défaits. ISO 32000-1, table 5 : `Filter` est facultatif (un nom, ou un tableau de
-/// zéro, un ou plusieurs noms) ; sans filtre, les données sont telles quelles. Un filtre que la fabrique ne sait pas
-/// défaire se refuse en le nommant.
+/// zéro, un ou plusieurs noms, appliqués dans l'ordre) ; sans filtre, les données sont telles quelles. Flate et LZW
+/// (lopdf) ; ASCIIHex, ASCII85 et RunLength (7.4.2, 7.4.3, 7.4.5). Un autre filtre se refuse en le nommant.
 pub fn contenu(doc: &Document, s: &lopdf::Stream) -> Result<Vec<u8>, Refus> {
     let mut filtres: Vec<&[u8]> = Vec::new();
     match valeur(doc, &s.dict, b"Filter")? {
@@ -327,13 +329,149 @@ pub fn contenu(doc: &Document, s: &lopdf::Stream) -> Result<Vec<u8>, Refus> {
         Some(_) => return illisible("/Filter n'est ni un nom ni un tableau de noms"),
         None => {}
     }
-    if let Some(f) = filtres.iter().find(|f| !FILTRES_LUS.contains(f)) {
+    if let Some(f) = filtres.iter().find(|f| !FILTRES_DE_LOPDF.contains(f) && !FILTRES_ECRITS.contains(f)) {
         return illisible(format!("un flux est encodé par {}, que la fabrique ne défait pas", nom_de(f)));
     }
-    match filtres.is_empty() {
-        true => Ok(s.content.clone()),
-        false => s.decompressed_content().map_err(|e| Refus::illisible(format!("un flux ne se décompresse pas ({})", e))),
+    if filtres.is_empty() {
+        return Ok(s.content.clone());
     }
+    if filtres.iter().all(|f| FILTRES_DE_LOPDF.contains(f)) {
+        return s.decompressed_content().map_err(|e| Refus::illisible(format!("un flux ne se décompresse pas ({})", e)));
+    }
+    // Table 5 : `DecodeParms`, un dictionnaire pour un seul filtre, un tableau (un élément par filtre, nul pour un
+    // filtre sans paramètre) pour plusieurs.
+    let parametres: Vec<Option<&Dictionary>> = match (valeur(doc, &s.dict, b"DecodeParms")?, filtres.len()) {
+        (None, n) => vec![None; n],
+        (Some(o), 1) => vec![Some(dictionnaire(o).map_err(|attendu| Refus::illisible(format!("/DecodeParms d'un seul filtre n'est pas {}", attendu)))?)],
+        (Some(Object::Array(v)), n) if v.len() == n => v
+            .iter()
+            .map(|x| match designe(doc, x)? {
+                Some(p) => dictionnaire(p).map(Some).map_err(|attendu| Refus::illisible(format!("un élément de /DecodeParms n'est pas {}", attendu))),
+                None => Ok(None),
+            })
+            .collect::<Result<_, _>>()?,
+        (Some(_), n) => return illisible(format!("/DecodeParms n'est pas un tableau d'un élément par filtre ({} filtres)", n)),
+    };
+    let mut donnees = s.content.clone();
+    for (f, p) in filtres.iter().zip(parametres) {
+        donnees = match *f {
+            b"ASCIIHexDecode" => ascii_hex(&donnees)?,
+            b"ASCII85Decode" => ascii_85(&donnees)?,
+            b"RunLengthDecode" => longueurs(&donnees)?,
+            compression => {
+                let mut d = Dictionary::new();
+                d.set("Filter", Object::Name(compression.to_vec()));
+                if let Some(p) = p {
+                    d.set("DecodeParms", Object::Dictionary(p.clone()));
+                }
+                lopdf::Stream::new(d, donnees)
+                    .decompressed_content()
+                    .map_err(|e| Refus::illisible(format!("un flux ne se décompresse pas par {} ({})", nom_de(compression), e)))?
+            }
+        };
+    }
+    Ok(donnees)
+}
+
+/// Un blanc (ISO 32000-1, 7.2.2, table 1).
+fn blanc(c: u8) -> bool {
+    matches!(c, 0 | b'\t' | b'\n' | 0x0C | b'\r' | b' ')
+}
+
+/// ASCIIHexDecode (7.4.2) : deux chiffres par octet, les blancs ignorés, `>` pour fin ; un chiffre seul à la fin est
+/// suivi d'un 0 ; un autre caractère est une erreur.
+fn ascii_hex(o: &[u8]) -> Result<Vec<u8>, Refus> {
+    let mut chiffres = Vec::new();
+    for &c in o {
+        match c {
+            b'>' => break,
+            b'0'..=b'9' => chiffres.push(c - b'0'),
+            b'a'..=b'f' => chiffres.push(c - b'a' + 10),
+            b'A'..=b'F' => chiffres.push(c - b'A' + 10),
+            c if blanc(c) => {}
+            c => return illisible(format!("un flux ASCIIHexDecode a le caractère {:?} (ISO 32000-1, 7.4.2)", c as char)),
+        }
+    }
+    if chiffres.len() % 2 == 1 {
+        chiffres.push(0);
+    }
+    Ok(chiffres.chunks(2).map(|p| p[0] * 16 + p[1]).collect())
+}
+
+/// ASCII85Decode (7.4.3) : cinq caractères de `!` à `u` pour quatre octets, `z` pour quatre zéros, `~>` pour fin, les
+/// blancs ignorés ; un dernier groupe de n + 1 caractères donne n octets. Un autre caractère, ou un groupe impossible,
+/// est une erreur.
+fn ascii_85(o: &[u8]) -> Result<Vec<u8>, Refus> {
+    let mut sortie = Vec::new();
+    let mut groupe: Vec<u32> = Vec::new();
+    let mut i = 0;
+    while i < o.len() {
+        let c = o[i];
+        i += 1;
+        match c {
+            b'~' => match o.get(i) {
+                Some(b'>') => break,
+                _ => return illisible("un flux ASCII85Decode a un « ~ » qui n'ouvre pas sa fin « ~> » (ISO 32000-1, 7.4.3)"),
+            },
+            b'z' if groupe.is_empty() => sortie.extend_from_slice(&[0, 0, 0, 0]),
+            b'!'..=b'u' => {
+                groupe.push((c - b'!') as u32);
+                if groupe.len() == 5 {
+                    let n = groupe.iter().try_fold(0u32, |v, d| v.checked_mul(85).and_then(|v| v.checked_add(*d)));
+                    let Some(n) = n else {
+                        return illisible("un flux ASCII85Decode a un groupe qui dépasse quatre octets (ISO 32000-1, 7.4.3)");
+                    };
+                    sortie.extend_from_slice(&n.to_be_bytes());
+                    groupe.clear();
+                }
+            }
+            c if blanc(c) => {}
+            c => return illisible(format!("un flux ASCII85Decode a le caractère {:?} (ISO 32000-1, 7.4.3)", c as char)),
+        }
+    }
+    match groupe.len() {
+        0 => {}
+        1 => return illisible("un flux ASCII85Decode finit par un groupe d'un seul caractère (ISO 32000-1, 7.4.3)"),
+        n => {
+            // Le groupe complété de `u` (84), le plus grand chiffre : ses n - 1 premiers octets sont ceux de l'encodeur.
+            let complet = groupe.iter().copied().chain(std::iter::repeat(84)).take(5);
+            let valeur = complet.fold(Some(0u32), |v, d| v.and_then(|v| v.checked_mul(85)).and_then(|v| v.checked_add(d)));
+            let Some(valeur) = valeur else {
+                return illisible("un flux ASCII85Decode a un dernier groupe qui dépasse quatre octets (ISO 32000-1, 7.4.3)");
+            };
+            sortie.extend_from_slice(&valeur.to_be_bytes()[..n - 1]);
+        }
+    }
+    Ok(sortie)
+}
+
+/// RunLengthDecode (7.4.5) : une longueur de 0 à 127, puis longueur + 1 octets tels quels ; de 129 à 255, un octet
+/// répété 257 - longueur fois ; 128, la fin.
+fn longueurs(o: &[u8]) -> Result<Vec<u8>, Refus> {
+    let mut sortie = Vec::new();
+    let mut i = 0;
+    while i < o.len() {
+        let l = o[i] as usize;
+        i += 1;
+        match l {
+            128 => break,
+            0..=127 => {
+                let Some(morceau) = o.get(i..i + l + 1) else {
+                    return illisible("un flux RunLengthDecode s'arrête au milieu d'une suite (ISO 32000-1, 7.4.5)");
+                };
+                sortie.extend_from_slice(morceau);
+                i += l + 1;
+            }
+            _ => {
+                let Some(&octet) = o.get(i) else {
+                    return illisible("un flux RunLengthDecode s'arrête avant l'octet à répéter (ISO 32000-1, 7.4.5)");
+                };
+                sortie.extend(std::iter::repeat(octet).take(257 - l));
+                i += 1;
+            }
+        }
+    }
+    Ok(sortie)
 }
 
 /// Le dictionnaire de l'objet `id`.
