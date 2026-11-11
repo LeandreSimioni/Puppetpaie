@@ -941,15 +941,23 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
 }
 
 /// L'engagement ne lit pas le journal : le moteur le lit une fois par geste (`envois::journal::lu`) et lui passe ce qui
-/// est parti.
+/// est parti. Le compilateur tient le code : `engagement` est sous `envois` (`une_crate_ne_prend_qu_a_celles_du_dessous`),
+/// il n'en prend rien. Reste le disque : aucun texte d'`engagement` (code et essais, commentaires blanchis) n'est le
+/// dossier du journal (`envois::journal::JOURNAL`, tel que le code le declare) ni un chemin dessous.
 #[test]
 fn l_engagement_ne_lit_pas_le_journal() {
-    for p in sources(&espace().join("engagement/src")) {
-        for (n, l) in std::fs::read_to_string(&p).unwrap().lines().enumerate() {
-            let code = l.split("//").next().unwrap();
-            assert!(!code.contains("\"journal"), "{}:{} lit le journal : {}", p.display(), n + 1, l.trim());
+    let journal = envois::journal::JOURNAL;
+    let dessous = format!("{}/", journal);
+    let mut fautes = Vec::new();
+    for p in sources(&espace().join("engagement")) {
+        let t = std::fs::read_to_string(&p).unwrap();
+        for (ligne, _, _, commentaire, texte) in jetons_rs(&t) {
+            if !commentaire && (texte == journal || texte.starts_with(&dessous)) {
+                fautes.push(format!("{}:{} : {:?}", p.strip_prefix(espace()).unwrap().display(), ligne, texte));
+            }
         }
     }
+    assert!(fautes.is_empty(), "l'engagement ne lit pas le journal : le moteur le lit (`envois::journal::lu`) et lui passe ce qui est parti :\n{}", fautes.join("\n"));
 }
 
 /// UN REFUS EST UN `Echec`, JAMAIS UN TEXTE : aucune source du logiciel (tests a part, commentaires blanchis) n'ecrit
