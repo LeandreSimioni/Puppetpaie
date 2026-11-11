@@ -179,12 +179,10 @@ pub const ZONE_DEFAUT: &str = "metropole";
 fn section(bareme: &Pile) -> RPas<&PasParDefaut> {
     bareme.pas_taux_par_defaut.as_ref().ok_or_else(|| {
         ErreurPas::SansGrille(refus(
-            "Le bareme ne porte pas de section `pas_taux_par_defaut` : sans \
-             elle, le moteur ne sait pas quel taux appliquer a qui n'a pas de \
-             taux DGFiP.\n\
-             Elle se releve sur BOI-BAREME-000037 (grilles des taux par \
-             defaut et abattement pour les contrats courts), et le socle \
-             livre de l'annee en cours la porte.",
+            "Le barème ne donne pas les taux par défaut du prélèvement à la \
+             source : sans eux, le moteur ne sait pas quel taux appliquer à qui \
+             n'a pas de taux de la DGFiP. Le barème livré de l'année en cours \
+             les donne : mettre le logiciel à jour.",
         ))
     })
 }

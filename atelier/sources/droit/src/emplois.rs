@@ -335,8 +335,8 @@ pub struct ChampsDuMetier {
 pub fn resoudre(code: &str, cadre: Option<bool>, feminin: bool, idcc: Option<&str>) -> R<ChampsDuMetier> {
     let m = metier(code)?.ok_or_else(|| {
         socle::refus!(
-            "Metier {} inconnu : ni dans le catalogue (emplois-base.json), ni \
-             dans la nomenclature France Travail (nomenclature-emplois-ft.json).",
+            "Métier {} inconnu : ni dans le catalogue des emplois, ni dans la \
+             nomenclature de France Travail.",
             repr(code))
     })?;
     let est_cadre = match cadre.or_else(|| m.cadre_par_defaut(idcc)) {
