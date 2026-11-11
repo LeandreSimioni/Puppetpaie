@@ -100,10 +100,7 @@ impl Temporaire {
 
 impl Drop for Temporaire {
     fn drop(&mut self) {
-        // A la sortie de sa portee, rien ne remonte : un dossier qui ne s'efface pas est note a la naissance de son echec
-        // (`echec::noter_echec`, que les incidents lisent).
-        if let Err(note) = socle::fichiers::effacer(&self.0) {
-            std::mem::drop(note);
-        }
+        // A la sortie de sa portee, rien ne remonte : un dossier qui ne s'efface pas se note (`effacer_apres_coup`).
+        socle::fichiers::effacer_apres_coup(&self.0);
     }
 }

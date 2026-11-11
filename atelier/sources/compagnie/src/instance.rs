@@ -198,24 +198,29 @@ fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static
         while !vu.load(Ordering::SeqCst) {
             let c = match ecoute.accept() {
                 Ok((c, _)) => c,
-                // Personne ne demande (`WouldBlock`), ou une demande s'est perdue avant d'etre prise (le demandeur parti) :
-                // le verrou attend la suivante. Il ne rend jamais le creneau tant que la fenetre vit.
-                Err(attente) => {
-                    drop(attente);
+                // Personne ne demande : le verrou attend la suivante. Il ne rend jamais le creneau tant que la fenetre vit.
+                Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(50));
+                    continue;
+                }
+                // Une demande s'est perdue avant d'etre prise (le demandeur parti) : elle se note, le verrou attend la
+                // suivante.
+                Err(perdue) => {
+                    demande_perdue(&perdue);
                     std::thread::sleep(Duration::from_millis(50));
                     continue;
                 }
             };
             // Une demande qui ne se regle pas (attente bloquante, delai) est perdue comme une demande coupee : la suivante.
             if let Err(perdue) = c.set_nonblocking(false).and_then(|()| c.set_read_timeout(Some(DELAI))) {
-                drop(perdue);
+                demande_perdue(&perdue);
                 continue;
             }
             let mut lecteur = BufReader::new(&c);
             let mut ligne = String::new();
             // Une demande qui ne vient pas a temps, ou coupee : le demandeur est parti, rien a lui repondre.
             if let Err(partie) = lecteur.read_line(&mut ligne) {
-                drop(partie);
+                demande_perdue(&partie);
                 continue;
             }
             let ligne = ligne.trim_end();
@@ -228,7 +233,7 @@ fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static
             };
             // Le demandeur parti avant la reponse n'attend plus rien ; la fenetre revient devant quand meme.
             if let Err(parti) = (&c).write_all(format!("{} {}\n", REPONSE, ici).as_bytes()) {
-                drop(parti);
+                demande_perdue(&parti);
             }
             if verbe && la_bas == ici {
                 devant();
@@ -236,6 +241,12 @@ fn repondre(ecoute: TcpListener, ici: String, devant: impl Fn() + Send + 'static
         }
     });
     Ok(Verrou { ferme })
+}
+
+/// Une demande au verrou qui se perd (le demandeur parti, la prise coupee) : le fil du verrou n'a personne a qui la
+/// rendre ; elle se note au journal du moteur (`diagnostic`).
+fn demande_perdue(e: &std::io::Error) {
+    super::diagnostic::noter_moteur(&format!("Une demande au verrou de la fenêtre s'est perdue : {}", e));
 }
 
 /// L'ecoute du port `port` ; `None` s'il est tenu (par un autre, ou refuse par le systeme : une plage reservee de Windows).
@@ -273,7 +284,7 @@ pub fn prendre_de(inst: &Path, plage: Plage, devant: impl Fn() + Send + 'static)
         if retenu != Some(k) {
             // Un support en lecture seule ne retient rien (`retenir`) : la fenetre s'ouvre quand meme.
             if let Err(lecture_seule) = retenir(inst, k) {
-                drop(lecture_seule);
+                super::diagnostic::noter_moteur(&format!("Le créneau de la fenêtre ne se retient pas : {}", lecture_seule.phrase));
             }
         }
         let verrou = repondre(verrou, ici.clone(), devant)?;

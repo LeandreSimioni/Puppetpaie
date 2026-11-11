@@ -156,12 +156,18 @@ pub fn dans_la_fenetre(o: &Options, route: Route, charge: &Charge) -> Reponse {
 /// `moteur route [--racine R] [--date D]` : la demande lue en sa forme (`Demande::lire`), sans ses secrets
 /// (`Charge::sans_les_secrets` : l'entree standard est celle d'un programme), puis servie.
 pub fn commande(o: &Options, entree: &str) -> Reponse {
+    commande_et_route(o, entree).1
+}
+
+/// `commande`, et la route que la demande nomme : aucune, pour une demande qui ne se lit pas (sa reponse est le refus
+/// qui le dit).
+pub(crate) fn commande_et_route(o: &Options, entree: &str) -> (Option<Route>, Reponse) {
     match Demande::lire(entree) {
         Ok(mut d) => {
             d.charge.sans_les_secrets(d.route);
-            servir_la_route(o, d.route, &d.charge)
+            (Some(d.route), servir_la_route(o, d.route, &d.charge))
         }
-        Err(e) => Reponse::refusee(Refus::de(None, e)),
+        Err(e) => (None, Reponse::refusee(Refus::de(None, e))),
     }
 }
 

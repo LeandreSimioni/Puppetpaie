@@ -116,11 +116,8 @@ pub fn genre(inst: &Path, racine: &Path) -> R<Genre> {
 pub fn supprimable(inst: &Path, racine: &Path) -> R<bool> {
     Ok(match sorte(inst, racine)? {
         Ok(Genre::Ajoutee | Genre::Reelle) => true,
-        // Elle ne se supprime pas : la page ne le propose pas, la route dira pourquoi si on le lui demande.
-        Err(pourquoi) => {
-            drop(pourquoi);
-            false
-        }
+        // Elle ne se supprime pas : la page ne le propose pas, la route dira pourquoi si on le lui demande (`question`).
+        Err(socle::echec::Echec { .. }) => false,
     })
 }
 

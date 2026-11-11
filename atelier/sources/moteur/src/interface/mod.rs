@@ -526,10 +526,10 @@ impl Fenetre {
             Some(j) => j,
             None => self.local.join("interface.log"),
         };
-        // Le journal de la fenetre n'a personne a qui dire qu'il ne s'ecrit pas : l'echec est note a sa naissance
-        // (`echec::noter_echec`, que les incidents lisent), et la fenetre continue.
-        if let Err(note) = ajouter_au_journal(&chemin, texte) {
-            drop(note);
+        // Le journal de la fenetre n'a personne a qui dire qu'il ne s'ecrit pas : l'echec se note (`echec::noter_echec`,
+        // que les incidents lisent), et la fenetre continue.
+        if let Err(e) = ajouter_au_journal(&chemin, texte) {
+            socle::echec::noter_echec(Some(socle::echec::Classe::du_disque(&e)), &format!("Le journal de la fenêtre ne s'écrit pas ({}) : {}", chemin.display(), e));
         }
     }
 
@@ -1151,12 +1151,12 @@ impl Fenetre {
 }
 
 /// Ajoute `texte` au journal `chemin` (cree avec son dossier) ; le disque qui refuse se dit.
-fn ajouter_au_journal(chemin: &Path, texte: &str) -> R<()> {
+fn ajouter_au_journal(chemin: &Path, texte: &str) -> std::io::Result<()> {
     if let Some(d) = chemin.parent() {
-        std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(d, &e))?;
+        std::fs::create_dir_all(d)?;
     }
-    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(chemin).map_err(|e| socle::echec::du_disque(chemin, &e))?;
-    f.write_all(texte.as_bytes()).map_err(|e| socle::echec::du_disque(chemin, &e))
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(chemin)?;
+    f.write_all(texte.as_bytes())
 }
 
 /// La ligne du journal de l'interface pour une route servie : `HH:MM:SS route NOM N ms`, et ` refus CLASSE` quand elle a

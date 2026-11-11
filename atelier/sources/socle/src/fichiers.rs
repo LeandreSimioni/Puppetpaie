@@ -368,24 +368,28 @@ pub fn present(chemin: &Path) -> R<bool> {
 /// EFFACE `chemin`, un fichier ou un dossier entier : un chemin qui n'existe pas est deja efface ; le disque qui refuse
 /// se dit (`echec::du_disque`).
 pub fn effacer(chemin: &Path) -> R<()> {
+    effacer_du_disque(chemin).map_err(|e| crate::echec::du_disque(chemin, &e))
+}
+
+/// `effacer`, tel que le disque le dit.
+pub(crate) fn effacer_du_disque(chemin: &Path) -> std::io::Result<()> {
     let fait = match std::fs::symlink_metadata(chemin) {
         Ok(m) if m.is_dir() => std::fs::remove_dir_all(chemin),
         Ok(_) => std::fs::remove_file(chemin),
         Err(e) => Err(e),
     };
     match fait {
-        Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(crate::echec::du_disque(chemin, &e)),
+        autre => autre,
     }
 }
 
 /// UN RESTE QU'ON EFFACE APRES COUP, quand ce qu'il fallait faire est fait (ou a la sortie d'une portee, ou rien ne
-/// remonte) : un echec n'y defait rien ; il est note a sa naissance (`echec::noter_echec`, que les incidents lisent), et
-/// le reste s'efface la fois suivante.
+/// remonte) : un echec n'y defait rien ; il se note (`echec::noter_echec`, que les incidents lisent), et le reste s'efface
+/// la fois suivante.
 pub fn effacer_apres_coup(chemin: &Path) {
-    if let Err(note) = effacer(chemin) {
-        std::mem::drop(note);
+    if let Err(e) = effacer_du_disque(chemin) {
+        crate::echec::noter_echec(Some(crate::echec::Classe::du_disque(&e)), &format!("Un reste ne s'efface pas ({}) : {}", chemin.display(), e));
     }
 }
 

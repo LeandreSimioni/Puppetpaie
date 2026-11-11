@@ -88,11 +88,16 @@ pub fn prendre(chemin: &Path, marque: &str, delai: i64) -> R<Result<(), Verrouil
 /// Retire le verrou s'il porte encore NOTRE marque : si le delai a joue, un
 /// autre l'a peut-etre repris entre-temps (ou deja retire).
 pub fn rendre(chemin: &Path, marque: &str) -> R<()> {
+    rendre_au_disque(chemin, marque).map_err(|e| crate::echec::du_disque(&chemin, &e))
+}
+
+/// `rendre`, tel que le disque le dit.
+fn rendre_au_disque(chemin: &Path, marque: &str) -> std::io::Result<()> {
     match std::fs::read(chemin) {
-        Ok(b) if String::from_utf8_lossy(&b).trim() == marque => crate::fichiers::effacer(chemin),
+        Ok(b) if String::from_utf8_lossy(&b).trim() == marque => crate::fichiers::effacer_du_disque(chemin),
         Ok(_) => Ok(()),
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(crate::echec::du_disque(&chemin, &e)),
+        Err(e) => Err(e),
     }
 }
 
@@ -110,10 +115,10 @@ impl Verrou {
 
 impl Drop for Verrou {
     fn drop(&mut self) {
-        // A la sortie de sa portee, rien ne remonte : un verrou qui ne se retire pas est note a la naissance de son echec
-        // (`echec::noter_echec`, que les incidents lisent), et le delai le levera.
-        if let Err(note) = rendre(&self.chemin, &self.marque) {
-            std::mem::drop(note);
+        // A la sortie de sa portee, rien ne remonte : un verrou qui ne se retire pas se note (`echec::noter_echec`, que les
+        // incidents lisent), et le delai le levera.
+        if let Err(e) = rendre_au_disque(&self.chemin, &self.marque) {
+            crate::echec::noter_echec(Some(crate::echec::Classe::du_disque(&e)), &format!("Un verrou ne se retire pas ({}) : {}", self.chemin.display(), e));
         }
     }
 }

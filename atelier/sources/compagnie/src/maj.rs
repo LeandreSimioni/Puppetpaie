@@ -1867,10 +1867,10 @@ pub fn noter(inst: &Path, t: &str) {
     let ecrit = std::fs::create_dir_all(&d)
         .and_then(|()| std::fs::OpenOptions::new().create(true).append(true).open(&chemin))
         .and_then(|mut f| writeln!(f, "{} {}", MinuteEcrite::maintenant(), t));
-    // Le journal de la mise a jour n'a personne a qui dire qu'il ne s'ecrit pas : son echec est note a sa naissance
+    // Le journal de la mise a jour n'a personne a qui dire qu'il ne s'ecrit pas : son echec se note
     // (`echec::noter_echec`, que les incidents lisent).
     if let Err(e) = ecrit {
-        std::mem::drop(socle::echec::du_disque(&chemin, &e));
+        socle::echec::noter_echec(Some(socle::echec::Classe::du_disque(&e)), &format!("Le journal de la mise à jour ne s'écrit pas ({}) : {}", chemin.display(), e));
     }
 }
 

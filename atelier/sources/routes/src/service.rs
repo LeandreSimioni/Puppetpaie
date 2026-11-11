@@ -91,17 +91,10 @@ pub fn commande(quoi: &str, args: &[Argument]) -> Option<i32> {
         std::env::set_var("PUPPETPAIE_AUJOURDHUI", d.iso());
     }
     let _canaux = compagnie::demande::installer(canal);
-    let reponse = match lue {
-        Ok(_) => crate::commande(&o, entree.trim_start_matches('\u{feff}')),
-        Err(e) => Reponse::refusee(Refus::nouveau(Classe::DemandeIllisible, format!("L'entrée standard ne se lit pas : {}.", e))),
-    };
-    // Une demande qui ne se lit pas n'a pas de route : sa reponse est deja le refus qui le dit.
-    let nom = match crate::enveloppe::Demande::lire(entree.trim_start_matches('\u{feff}')) {
-        Ok(d) => Some(d.route),
-        Err(refusee) => {
-            drop(refusee);
-            None
-        }
+    // Une demande qui ne se lit pas n'a pas de route : sa reponse est le refus qui le dit.
+    let (nom, reponse) = match lue {
+        Ok(_) => crate::commande_et_route(&o, entree.trim_start_matches('\u{feff}')),
+        Err(e) => (None, Reponse::refusee(Refus::nouveau(Classe::DemandeIllisible, format!("L'entrée standard ne se lit pas : {}.", e)))),
     };
     // LE MESSAGE AU DEVELOPPEUR PART AUSSITOT, comme la fenetre le fait partir en fond (`interface::api`) : le processus
     // attend son depart, sans changer ce que la route a rendu. Ce qui ne part pas attend sa ligne, la veille suivante
