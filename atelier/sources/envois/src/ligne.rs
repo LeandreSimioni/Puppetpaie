@@ -714,7 +714,7 @@ pub struct DetailContresigne {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AnneeCasc {
-    pub annee: String,
+    pub annee: socle::mois::Annee,
     pub vire_le: socle::date::Jour,
     pub montant: rust_decimal::Decimal,
 }

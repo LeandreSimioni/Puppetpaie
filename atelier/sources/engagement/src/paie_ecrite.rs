@@ -134,12 +134,10 @@ pub struct Cle {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FormeDeCotisation {
-    /// La cotisation de la ligne ; vide pour une ligne que l'import n'a pas qualifiee.
-    #[serde(deserialize_with = "socle::forme::texte_opt")]
-    pub id: Option<String>,
-    /// Sa famille ; vide pour une ligne que l'import n'a pas qualifiee.
-    #[serde(deserialize_with = "socle::forme::texte_opt")]
-    pub famille: Option<String>,
+    /// La cotisation de la ligne.
+    pub id: String,
+    /// Sa famille.
+    pub famille: String,
     pub libelle: String,
     #[serde(with = "nombre")]
     pub base: Decimal,

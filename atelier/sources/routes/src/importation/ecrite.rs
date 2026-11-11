@@ -115,8 +115,7 @@ fn alerte_apres_import(ctx: &Contexte) -> R<Option<String>> {
         for b in d.paies().iter().filter_map(|p| p.mesures.brut) {
             masse += b;
         }
-        let an = format!("{:04}", m.annee());
-        let Some(taux) = base.taux.de(&an) else { return Ok(None) };
+        let Some(taux) = base.taux.de(m.annee_civile()) else { return Ok(None) };
         let cot = (masse * taux / Decimal::from(100)).round_dp_with_strategy(2, rust_decimal::RoundingStrategy::MidpointAwayFromZero);
         par_mois.push((m, cot));
     }

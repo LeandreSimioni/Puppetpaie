@@ -623,8 +623,8 @@ impl PaieDuMois {
                 .lignes
                 .iter()
                 .map(|l| CotisationDuMois {
-                    id: l.id.clone(),
-                    famille: l.famille.clone(),
+                    id: Some(l.id.clone()),
+                    famille: Some(l.famille.clone()),
                     libelle: l.libelle.clone(),
                     base: Some(l.base),
                     taux_pat: l.taux_pat,

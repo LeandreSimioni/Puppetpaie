@@ -51,10 +51,10 @@ pub fn de(racine: &std::path::Path, p: &Paie, numero: &str, fin: &Jour) -> R<Opt
     let objets = crate::stock::objets(racine)?;
     let siens: Vec<&Objet> = objets.iter().filter(|o| !o.est_non_actif() && o.carte().salarie.as_ref() == Some(&p.salarie.id)).collect();
     // Les garanties : ce que la paie qui finit cotise, et chaque paie de l'engagement avant elle.
-    let mut ids: Vec<String> = p.lignes.iter().filter_map(|l| l.id.clone()).collect();
+    let mut ids: Vec<String> = p.lignes.iter().map(|l| l.id.clone()).collect();
     for o in siens.iter().filter(|o| o.carte().numero.as_deref() == Some(numero)) {
         for paie in crate::paies::presentes(o)?.into_values() {
-            ids.extend(paie.paie.lignes.into_iter().filter_map(|l| l.id));
+            ids.extend(paie.paie.lignes.into_iter().map(|l| l.id));
         }
     }
     let prevoyance = ids.iter().any(|i| i == "prevoyance" || i.starts_with("prevoyance_"));

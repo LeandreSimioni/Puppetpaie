@@ -91,6 +91,11 @@ impl Mois {
         self.an
     }
 
+    /// Son annee civile.
+    pub fn annee_civile(self) -> Annee {
+        Annee::du_mois(self)
+    }
+
     /// Le numero du mois, de 1 a 12.
     pub fn numero(self) -> u32 {
         self.numero
@@ -193,6 +198,62 @@ impl Mois {
             m = m.suivant();
         }
         sortie
+    }
+}
+
+/// UNE ANNEE CIVILE, de 0001 a 9999 : la cle d'une annee de salaires (la CASC-SVP se regularise et se taxe par annee,
+/// `donnees/casc-svp-base.json`). Elle se lit une fois (`Annee::lire`, ou `serde`) et s'ecrit `AAAA`, en texte dans le
+/// JSON (`"2025"`) ; l'ordre est celui du calendrier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Annee(i32);
+
+impl Annee {
+    /// L'annee `an` (1 a 9999) ; refus sinon.
+    pub fn nouvelle(an: i64) -> R<Annee> {
+        match i32::try_from(an) {
+            Ok(a) if (1..=9999).contains(&a) => Ok(Annee(a)),
+            Ok(_) | Err(_) => Err(refus(crate::date::annee_impossible(an))),
+        }
+    }
+
+    /// Une annee ecrite `AAAA` (quatre chiffres) ; toute autre forme se refuse.
+    pub fn lire(texte: &str) -> R<Annee> {
+        let b = texte.as_bytes();
+        if !(b.len() == 4 && b.iter().all(u8::is_ascii_digit)) {
+            return Err(refus(format!("année illisible : {} (attendu : AAAA)", repr_texte(texte))));
+        }
+        Annee::nouvelle(b.iter().fold(0i64, |n, c| n * 10 + i64::from(c - b'0')))
+    }
+
+    /// L'annee du mois `m`.
+    pub fn du_mois(m: Mois) -> Annee {
+        Annee(m.an)
+    }
+
+    /// Son numero (2025).
+    pub fn nombre(self) -> i32 {
+        self.0
+    }
+}
+
+impl std::fmt::Display for Annee {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:04}", self.0)
+    }
+}
+
+/// La lecture de serde (`try_from = "String"`), dont le refus se dit dans le sien.
+impl TryFrom<String> for Annee {
+    type Error = Echec;
+    fn try_from(s: String) -> R<Annee> {
+        Annee::lire(&s)
+    }
+}
+
+impl From<Annee> for String {
+    fn from(a: Annee) -> String {
+        a.to_string()
     }
 }
 

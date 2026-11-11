@@ -212,10 +212,10 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LigneCotisation {
-    /// La cotisation de la ligne ; `None` pour une ligne importee que l'import n'a pas qualifiee.
-    pub id: Option<String>,
-    /// Sa famille ; `None` de meme.
-    pub famille: Option<String>,
+    /// La cotisation de la ligne.
+    pub id: String,
+    /// Sa famille.
+    pub famille: String,
     pub libelle: String,
     pub base: Decimal,
     pub taux_pat: Option<Decimal>,
@@ -226,9 +226,9 @@ pub struct LigneCotisation {
 }
 
 impl LigneCotisation {
-    /// Est-elle la ligne de la cotisation `id` ? Une ligne sans cotisation n'est aucune.
+    /// Est-elle la ligne de la cotisation `id` ?
     pub fn est(&self, id: &str) -> bool {
-        self.id.as_deref() == Some(id)
+        self.id == id
     }
 
     /// Sa forme ecrite : un taux en decimal par sa forme la plus courte.
@@ -554,8 +554,8 @@ fn bref(l: &LigneBrut) -> String {
 /// La ligne du bulletin qui porte la reduction generale `rg` d'un brut `brut`.
 pub(crate) fn ligne_de_reduction(rg: &ReductionGenerale, brut: Decimal) -> LigneCotisation {
     LigneCotisation {
-        id: Some("reduction_generale".into()),
-        famille: Some(FAMILLE_ALLEGEMENTS.into()),
+        id: "reduction_generale".into(),
+        famille: FAMILLE_ALLEGEMENTS.into(),
         libelle: "Réduction générale dégressive unique".into(),
         base: brut,
         taux_pat: None,
@@ -1665,8 +1665,8 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             }
         }
         lignes.push(LigneCotisation {
-            id: Some(id),
-            famille: Some(r.famille.clone().ok_or_else(|| socle::fichiers::absent("famille"))?),
+            id,
+            famille: r.famille.clone().ok_or_else(|| socle::fichiers::absent("famille"))?,
             libelle: r.libelle.clone().ok_or_else(|| socle::fichiers::absent("libelle"))?,
             base,
             taux_pat,

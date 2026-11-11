@@ -47,14 +47,14 @@ forme_notee! {
     /// Le taux de la cotisation, en pourcentage, par annee de salaires (`AAAA`).
     pub struct TauxCasc {
         #[serde(deserialize_with = "socle::forme::en_ordre")]
-        pub par_annee: Vec<(String, Nombre)>,
+        pub par_annee: Vec<(socle::mois::Annee, Nombre)>,
     }
 }
 
 impl TauxCasc {
     /// Le taux de l'annee `an`, s'il est releve.
-    pub fn de(&self, an: &str) -> Option<socle::num::Decimal> {
-        self.par_annee.iter().find(|(a, _)| a == an).map(|(_, t)| t.0)
+    pub fn de(&self, an: socle::mois::Annee) -> Option<socle::num::Decimal> {
+        self.par_annee.iter().find(|(a, _)| *a == an).map(|(_, t)| t.0)
     }
 }
 

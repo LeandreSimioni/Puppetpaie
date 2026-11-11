@@ -22,7 +22,7 @@ pub struct CascSvp {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegularisationNotee {
-    pub annee: String,
+    pub annee: socle::mois::Annee,
     pub mois: Vec<Mois>,
     pub montant: rust_decimal::Decimal,
     pub calcule: rust_decimal::Decimal,

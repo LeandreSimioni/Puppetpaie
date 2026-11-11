@@ -712,7 +712,7 @@ fn base_de_la_paie(p: &Paie, a: Assiette) -> Option<Decimal> {
 fn somme_lignes(p: &Paie, ids: &[String], patronale_seule: bool) -> Decimal {
     p.lignes
         .iter()
-        .filter(|l| l.id.as_ref().is_some_and(|i| ids.contains(i)))
+        .filter(|l| ids.contains(&l.id))
         .fold(zero(), |s, l| add(s, if patronale_seule { l.montant_pat } else { add(l.montant_pat, l.montant_sal) }))
 }
 
@@ -1029,10 +1029,7 @@ fn sans_la_cet(p: &Paie, l: &engagement::calcul::LigneCotisation, r: &Rubrique) 
         return Err(refus!(
             "La ligne « {} » du bulletin ({} de part patronale sur {}) ne se refait pas, CET comprise, à partir de \
 ses taux : la part de la CET (146 en 2026, 148 en 2027) ne s'en sépare pas sans deviner. Rien n'est écrit.",
-            match l.id.as_deref() {
-                Some(id) => id,
-                None => l.libelle.as_str(),
-            },
+            l.id,
             socle::texte::euros(l.montant_pat),
             socle::texte::euros(l.base)
         ));
@@ -5151,7 +5148,7 @@ mod tests {
         let notee = crate::casc::CascSvp {
             quoi: "Les annees de CASC-SVP regularisees hors DSN.".into(),
             regularisations: vec![crate::casc::RegularisationNotee {
-                annee: "2024".into(),
+                annee: socle::mois::Annee::lire("2024").unwrap(),
                 mois: regularises.iter().map(|m| Mois::lire(m).unwrap()).collect(),
                 montant: rust_decimal::Decimal::new(0, 2),
                 calcule: rust_decimal::Decimal::new(0, 2),

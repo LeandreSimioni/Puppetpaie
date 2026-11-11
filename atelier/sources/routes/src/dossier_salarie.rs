@@ -104,6 +104,14 @@ impl AnneeDite {
             AnneeDite::Texte(t) => t.clone(),
         }
     }
+
+    /// L'annee dite, lue (`AAAA`) ; une annee qui n'en est pas une se refuse.
+    pub(crate) fn annee(&self) -> socle::echec::R<socle::mois::Annee> {
+        match self {
+            AnneeDite::Nombre(n) => socle::mois::Annee::nouvelle(*n),
+            AnneeDite::Texte(t) => socle::mois::Annee::lire(t),
+        }
+    }
 }
 
 /// La demande d'un dossier (la charge de `dossier-salarie` ; `dossier-envoyer` la compose) : les salaries (aucun :
