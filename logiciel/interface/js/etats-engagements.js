@@ -22,9 +22,9 @@ function etatDeLaCarte(div) {
 
 /** Le bandeau d'une ligne : un carré par acte. */
 function bandeauEtats(ligne, gestes = true) {
-  return `<div class="etats-actes">` + (ligne.carres || []).map((c, i) => {
+  return `<div class="etats-actes">` + ligne.carres.map((c, i) => {
     const clic = gestes && !!c.action;
-    const classe = c.coupee ? "en-attente" : (c.couleur || "gris");
+    const classe = c.coupee ? "en-attente" : c.couleur;
     return `<span class="etat-acte ${classe}${clic ? " cliquable" : ""}"
         ${clic ? `data-carre="${i}" tabindex="0" role="button"` : ""}
         title="${echapper(c.phrase + (clic ? " — " + c.action.libelle : ""))}">
@@ -40,7 +40,7 @@ function brancherRecu(div) {
       ev.preventDefault();
       ev.stopPropagation();
       const ligne = (s.closest(".engagement") || div)._ligne;
-      const c = ligne && (ligne.carres || [])[+s.dataset.carre];
+      const c = ligne && ligne.carres[+s.dataset.carre];
       if (!c || !c.action) return;
       const mois = document.getElementById("mois").value;
       ouvrirGeste(c.action, mois);
@@ -81,18 +81,19 @@ async function boitePieces(ligne, acte) {
   } catch (e) { dire(e.message, "erreur"); return; }
   // Le moteur rend, avec le carré (`carres[].pieces`), ce que le détail montre : la phrase sans pièce, l'encart d'un
   // contrat qui n'est plus le bon, et les gestes.
-  const sienne = (lu.engagements || []).find((l) => l.salarie === ligne.salarie && l.debut === ligne.debut) || ligne;
-  const carre = (sienne.carres || []).find((c) => c.cle === acte) || {};
-  const montre = carre.pieces || { gestes: [] };
-  const titre = carre.titre || "";
-  const pieces = (acte === "dpae" ? r.dpae : r.contrat) || [];
+  // Le carré d'un acte qui a des pièces (la DPAE, la signature du contrat) les porte toujours.
+  const sienne = lu.engagements.find((l) => l.salarie === ligne.salarie && l.debut === ligne.debut) || ligne;
+  const carre = sienne.carres.find((c) => c.cle === acte);
+  const montre = carre.pieces;
+  const titre = carre.titre;
+  const pieces = acte === "dpae" ? r.dpae : r.contrat;
   const liste = pieces.length
     ? `<ul class="liste-pieces">${pieces.map((p, i) => `<li>
-        <span><b>${echapper(p.quoi)}</b> — ${echapper(p.quand_dit || "")}
+        <span><b>${echapper(p.quoi)}</b> — ${echapper(p.quand_dit)}
           ${p.existe ? "" : `<br><span class="discret">${aideDe("piece_absente")}</span>`}</span>
         <button class="secondaire p-ouvrir" data-i="${i}" ${p.existe ? "" : "disabled"}>Ouvrir</button>
       </li>`).join("")}</ul>`
-    : `<p class="discret">${echapper(montre.vide || "")}</p>`;
+    : montre.vide ? `<p class="discret">${echapper(montre.vide)}</p>` : "";
   ouvrirBoite(`
     <h3>${echapper(titre)} — ${echapper(ligne.nom)}</h3>
     <p class="discret">${echapper(pourQuoi(ligne))}, ${echapper(ligne.periode_dit)}</p>
@@ -192,12 +193,10 @@ async function dessinerEtatsDesEngagements(mois) {
     r.engagements.forEach((l) => { ETATS_ENGAGEMENTS.set(JSON.stringify(l.engagement), l); });
     peindreNonActifs(r.non_actifs);
   } catch (e) {
-    // Mois jamais enregistré, spectacle manquant, saisie en cours : il n'y a
-    // rien à peindre, et rien d'alarmant à dire. La saisie, elle, marche.
-    // On ne sait rien des engagements : les cartes restent comme elles sont.
-    // Un état vide les ouvrait TOUTES en formulaire, validées comprises, et le
-    // refus du moteur (dit dans « Les étapes ») se lisait « tout s'est ouvert ».
+    // On ne sait rien des engagements : les cartes restent comme elles sont, et le refus se dit.
+    // Un état vide les ouvrait TOUTES en formulaire, validées comprises.
     ETATS_ENGAGEMENTS = null;
+    dire(e.message, "erreur");
   }
   peindreEtats();
 }
@@ -238,8 +237,8 @@ const BOUTON_RETIRER = `<button class="lien retirer-engagement">Retirer cet enga
 function bandeauValidation(ligne) {
   if (ligne.valide) {
     return `${recalculDe(ligne)}<div class="validation faite">
-      <span><b>Engagement validé</b> ${echapper(ligne.valide_dit || "")}
-        ${(ligne.carres || []).filter((c) => c.lien).map((c) =>
+      <span><b>Engagement validé</b> ${ligne.valide_dit ? echapper(ligne.valide_dit) : ""}
+        ${ligne.carres.filter((c) => c.lien).map((c) =>
           ` · <button class="lien v-pieces" data-acte="${echapper(c.cle)}">${echapper(c.lien)}</button>`).join("")}
         ${ligne.versions ? ` · ${versionsDe(ligne)}` : ""}</span>
       <span class="boutons">
@@ -282,7 +281,7 @@ function brancherValidation(div, ligne) {
 async function validerLaCarte(div) {
   clearTimeout(MINUTEUR_SAISIE);
   const mois = document.getElementById("mois").value;
-  if (!carteAEcrire(div, mois)) { dire((ETAT.aides || {}).qui_engage, "erreur"); return; }
+  if (!carteAEcrire(div, mois)) { dire(ETAT.aides.qui_engage, "erreur"); return; }
   try {
     await aSonTour(async () => {
       const attente = ecrituresEnAttente().find(([d]) => d === div);
@@ -307,7 +306,7 @@ function brancherRetirer(div) {
     const mois = document.getElementById("mois").value;
     clearTimeout(MINUTEUR_SAISIE);
     await enregistrerSaisie(true);
-    if (!div.dataset.engagement) { div.remove(); rafraichirApercu(); dire((ETAT.aides || {}).engagement_retire); return; }
+    if (!div.dataset.engagement) { div.remove(); rafraichirApercu(); dire(ETAT.aides.engagement_retire); return; }
     const charge = { mois, engagement: JSON.parse(div.dataset.engagement), confirme: false };
     try {
       let r = await api("retirer-engagement", charge);
@@ -343,7 +342,7 @@ function peindreNonActifs(liste) {
   const cible = document.getElementById("engagements");
   if (!cible) return;
   cible.querySelectorAll(".engagement-non-actif").forEach((d) => d.remove());
-  (liste || []).forEach((n) => {
+  liste.forEach((n) => {
     const d = document.createElement("div");
     d.className = "engagement-non-actif";
     d.innerHTML = `<div class="na-ligne">
@@ -373,13 +372,13 @@ function ouvrirEnModification(div) {
 /** Ce que montre une carte ouverte pour être modifiée. */
 function carteOuverte(div) {
   LIRE_LES_MODIFICATIONS = true;
-  try { return engagementDuBloc(div, document.getElementById("mois").value) || {}; } finally { LIRE_LES_MODIFICATIONS = false; }
+  try { return engagementDuBloc(div, document.getElementById("mois").value); } finally { LIRE_LES_MODIFICATIONS = false; }
 }
 
 /** CE QU'ON A CHANGÉ SUR UNE CARTE OUVERTE POUR ÊTRE MODIFIÉE, case par case depuis son ouverture : les changements que
  *  « Modifier l'engagement » écrit, et que l'aperçu et le montant visé calculent avant. */
 function changementsOuverts(div) {
-  return changementsDeCases(JSON.parse(div._ouverte || "{}"), carteOuverte(div));
+  return changementsDeCases(JSON.parse(div._ouverte), carteOuverte(div));
 }
 
 /** Referme la carte telle qu'elle est enregistrée : le mois se relit, ce qu'on y a tapé s'efface. */
@@ -424,7 +423,7 @@ async function modifierLaCarte(div) {
 function boiteAvertissement(a) {
   return new Promise((repondre) => {
     ouvrirBoite(`<h3>Modifier l'engagement</h3>
-      ${(a.engagements || []).map((e) => `<div class="encart attention"><b>${echapper(e.qui)}</b>
+      ${a.engagements.map((e) => `<div class="encart attention"><b>${echapper(e.qui)}</b>
         ${e.consequences.length ? `<ul>${e.consequences.map((c) => `<li>${echapper(c)}</li>`).join("")}</ul>` : ""}</div>`).join("")}
       ${a.jour ? `<p>${echapper(a.jour)}</p>
         <label>le <input id="av-jour" class="jour-du-mois" type="number" min="1" max="31" step="1" value="1"></label>` : ""}
@@ -468,7 +467,7 @@ async function boiteDpae(mois) {
     dire(e.message, "erreur");
     return;
   }
-  const lignes = r.engagements || [];
+  const lignes = r.engagements;
   if (!lignes.length) { dire(r.phrase); return; }
   // Le moteur dit, par engagement (`dpae_choix`), s'il se coche, s'il est coché
   // d'avance, son état en mots et sa couleur.
@@ -480,7 +479,7 @@ async function boiteDpae(mois) {
     <div class="liste-choix">
       ${lignes.map((l, i) => {
         const e = l.etats.dpae;
-        const c = l.dpae_choix || {};
+        const c = l.dpae_choix;
         const etat = `<br>${pastilleDeLEtat({ couleur: c.couleur, mots: c.phrase })}`;
         return `<label class="choix ${c.cochable ? "" : "grise"}">
           <input type="checkbox" class="d-qui" data-i="${i}" ${c.cochee ? "checked" : ""}
