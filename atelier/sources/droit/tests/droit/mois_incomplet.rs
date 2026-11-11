@@ -5,8 +5,8 @@ use droit::periodes::{part_du_mois, regle_du_mois_incomplet, Horaire, RegleDuMoi
 use socle::date::Jour;
 use socle::num::{div, Decimal};
 
-fn j(t: &str) -> Jour {
-    socle::forme::lire_texte(&format!("\"{}\"", t), "jour").unwrap()
+fn j(an: i32, mois: u32, jour: u32) -> Jour {
+    Jour::nouveau(an, mois, jour).unwrap()
 }
 
 /// Les jours travailles qu'une fiche ecrit `v`, lus par leur forme comme la fiche les lit.
@@ -24,15 +24,15 @@ fn jours_ecrits(texte: &str) -> socle::echec::R<JoursTravailles> {
 fn un_mois_incomplet_se_paie_a_l_horaire_reel() {
     let (h, lv) = (RegleDuMoisIncomplet::HoraireReel, Horaire::du_lundi_au_vendredi());
     // L'entree au lundi 12/01/2026 : 15 jours ouvres sur les 22 de janvier (le jeudi 1er, ferie, en est un).
-    let entree = part_du_mois(&j("2026-01-12"), &j("2026-01-31"), &j("2026-01-31"), h, &lv).unwrap();
+    let entree = part_du_mois(&j(2026, 1, 12), &j(2026, 1, 31), &j(2026, 1, 31), h, &lv).unwrap();
     assert_eq!((entree.jours, entree.jours_du_mois), (15, 22));
     assert_eq!(entree.fraction, div(Decimal::from(15), Decimal::from(22)));
     assert_eq!(entree.sur_le_bulletin(Decimal::from(7)).as_deref(), Some("105 h sur les 154 h du mois"));
     // La sortie au mercredi 25/02/2026 : 18 jours ouvres sur 20, et non 25 jours sur 28.
-    let sortie = part_du_mois(&j("2026-02-01"), &j("2026-02-25"), &j("2026-02-28"), h, &lv).unwrap();
+    let sortie = part_du_mois(&j(2026, 2, 1), &j(2026, 2, 25), &j(2026, 2, 28), h, &lv).unwrap();
     assert_eq!((sortie.jours, sortie.jours_du_mois), (18, 20));
     // Janvier 2024 entier : 23 jours ouvres, et tout le salaire.
-    let entier = part_du_mois(&j("2024-01-01"), &j("2024-01-31"), &j("2024-01-31"), h, &lv).unwrap();
+    let entier = part_du_mois(&j(2024, 1, 1), &j(2024, 1, 31), &j(2024, 1, 31), h, &lv).unwrap();
     assert_eq!((entier.jours_du_mois, entier.fraction), (23, Decimal::ONE));
     assert_eq!(regle_du_mois_incomplet(Some("3090"), "artiste", true), h);
     assert_eq!(regle_du_mois_incomplet(Some("1285"), "technicien", true), h);
@@ -48,7 +48,7 @@ fn les_heures_du_mois_se_comptent_sur_les_jours_travailles_de_la_fiche() {
         .unwrap();
     assert_eq!(jours.en_mots(), "du mardi au samedi");
     let horaire = Horaire { jours, feries_non_payes: Vec::new() };
-    let p = part_du_mois(&j("2026-10-15"), &j("2026-10-31"), &j("2026-10-31"), RegleDuMoisIncomplet::HoraireReel, &horaire)
+    let p = part_du_mois(&j(2026, 10, 15), &j(2026, 10, 31), &j(2026, 10, 31), RegleDuMoisIncomplet::HoraireReel, &horaire)
         .unwrap();
     assert_eq!((p.jours, p.jours_du_mois), (13, 23));
     assert_eq!(p.sur_le_bulletin(droit::conges::heures_par_jour(Decimal::new(15167, 2), &jours)).as_deref(), Some("91 h sur les 161 h du mois"));
@@ -64,17 +64,17 @@ fn les_heures_du_mois_se_comptent_sur_les_jours_travailles_de_la_fiche() {
 fn un_ferie_chome_ne_se_paie_qu_apres_trois_mois_d_anciennete() {
     let tous = "tous";
     let lv = JoursTravailles::du_lundi_au_vendredi();
-    let avril = feries_non_payes(&j("2026-04-01"), &j("2026-04-30"), Some(tous), &lv, &j("2026-01-12")).unwrap();
+    let avril = feries_non_payes(&j(2026, 4, 1), &j(2026, 4, 30), Some(tous), &lv, &j(2026, 1, 12)).unwrap();
     assert_eq!(avril.iter().map(|(d, _)| d.iso()).collect::<Vec<_>>(), ["2026-04-06"]);
     let horaire = Horaire { jours: lv, feries_non_payes: avril };
-    let p = part_du_mois(&j("2026-04-01"), &j("2026-04-30"), &j("2026-04-30"), RegleDuMoisIncomplet::HoraireReel, &horaire)
+    let p = part_du_mois(&j(2026, 4, 1), &j(2026, 4, 30), &j(2026, 4, 30), RegleDuMoisIncomplet::HoraireReel, &horaire)
         .unwrap();
     assert_eq!((p.jours, p.jours_du_mois), (21, 22));
-    let mai = feries_non_payes(&j("2026-05-01"), &j("2026-05-31"), Some(tous), &lv, &j("2026-02-15")).unwrap();
+    let mai = feries_non_payes(&j(2026, 5, 1), &j(2026, 5, 31), Some(tous), &lv, &j(2026, 2, 15)).unwrap();
     assert_eq!(mai.iter().map(|(d, _)| d.iso()).collect::<Vec<_>>(), ["2026-05-08"]);
     // Trois mois d'anciennete : rien. Un ferie que la compagnie travaille est un jour de travail.
-    assert!(feries_non_payes(&j("2026-04-01"), &j("2026-04-30"), Some(tous), &lv, &j("2025-12-01")).unwrap().is_empty());
-    assert!(feries_non_payes(&j("2026-04-01"), &j("2026-05-31"), Some("1er mai seulement"), &lv, &j("2026-03-02")).unwrap().is_empty());
+    assert!(feries_non_payes(&j(2026, 4, 1), &j(2026, 4, 30), Some(tous), &lv, &j(2025, 12, 1)).unwrap().is_empty());
+    assert!(feries_non_payes(&j(2026, 4, 1), &j(2026, 5, 31), Some("1er mai seulement"), &lv, &j(2026, 3, 2)).unwrap().is_empty());
 }
 
 /// CCN 1285, art. X.3 (`atelier/reference/sources/kali-1285-x3-remuneration-artistes-20260929.md`, l. 20) : le premier
@@ -84,7 +84,7 @@ fn un_ferie_chome_ne_se_paie_qu_apres_trois_mois_d_anciennete() {
 fn le_premier_mois_d_un_artiste_de_la_1285_se_paie_au_vingt_et_unieme() {
     let r = regle_du_mois_incomplet(Some("1285"), "artiste", true);
     assert_eq!(r, RegleDuMoisIncomplet::Ccneac1285Artiste);
-    let p = part_du_mois(&j("2026-01-12"), &j("2026-01-31"), &j("2026-01-31"), r, &Horaire::du_lundi_au_vendredi()).unwrap();
+    let p = part_du_mois(&j(2026, 1, 12), &j(2026, 1, 31), &j(2026, 1, 31), r, &Horaire::du_lundi_au_vendredi()).unwrap();
     assert_eq!((p.jours, p.jours_du_mois), (15, 21));
     assert_eq!(p.fraction, div(Decimal::from(15), Decimal::from(21)));
 }

@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use crate::outils::rejeu::{rejouer_dossier, scenario};
-use crate::outils::{dossier_de_test, reussi, route, valider_la_carte};
+use crate::outils::{dossier_de_test, le_mois, reussi, route, valider_la_carte};
 
 /// LA DEMANDE DE TAUX PART AVEC LA DPAE : deposee en test (route `deposer`, la DPAE du mois designee), la DPAE d'une
 /// embauche sans taux de PAS emporte, dans le meme geste et le meme mode, le signalement d'amorcage (nature 08, motif 01) que sa
@@ -16,7 +16,7 @@ fn la_dpae_deposee_emporte_la_demande_de_taux() {
     std::fs::write(sc.join("gestes.jsonl"), debut.join("\n") + "\n").unwrap();
     let (_, c) = rejouer_dossier(&sc, &d);
     let jour = "2026-11-20";
-    reussi(&valider_la_carte(&c, "2026-11", "FULLER", jour));
+    reussi(&valider_la_carte(&c, le_mois(2026, 11), "FULLER", jour));
 
     reussi(&route(&c, "deposer", json!({"quoi": "dpae", "mois": "2026-11", "reel": false}), jour));
 
@@ -39,7 +39,7 @@ fn une_dpae_a_qui_il_manque_une_case_refuse_au_lieu_de_reprendre_la_partie() {
     std::fs::write(sc.join("gestes.jsonl"), debut.join("\n") + "\n").unwrap();
     let (_, c) = rejouer_dossier(&sc, &d);
     let jour = "2026-11-20";
-    reussi(&valider_la_carte(&c, "2026-11", "FULLER", jour));
+    reussi(&valider_la_carte(&c, le_mois(2026, 11), "FULLER", jour));
     reussi(&route(&c, "deposer", json!({"quoi": "dpae", "mois": "2026-11", "reel": false}), jour));
     let lignes = || -> usize {
         let j = crate::outils::journal(&c);

@@ -20,13 +20,9 @@ struct Reels {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Reel {
-    jour: String,
+    jour: Jour,
     declare: String,
     lignes: Vec<[String; 5]>,
-}
-
-fn jour(s: &str) -> Jour {
-    socle::forme::lire_texte(&format!("\"{}\"", s), "jour").unwrap()
 }
 
 fn l(code: &str, qualifiant: &str, assiette: &str, taux_at: &str) -> LigneBordereau {
@@ -62,7 +58,7 @@ fn un_montant_negatif_s_arrondit_comme_son_oppose_par_inference() {
 
 #[test]
 fn un_ctp_inconnu_fait_refuser() {
-    let e = montant(&[l("000", "920", "100.00", "")], &jour("2026-09-01")).unwrap_err().phrase;
+    let e = montant(&[l("000", "920", "100.00", "")], &Jour::nouveau(2026, 9, 1).unwrap()).unwrap_err().phrase;
     assert!(e.contains("000") && e.contains("Rien n'est ecrit"), "{}", e);
 }
 
@@ -92,14 +88,14 @@ fn les_75_bordereaux_preleves_se_recalculent_au_centime_sauf_octobre_2025() {
     assert_eq!(bordereaux.len(), 75);
     let mut ecarts = Vec::new();
     for b in bordereaux {
-        let le_jour = b.jour.as_str();
+        let le_jour = b.jour.iso();
         let declare = b.declare.as_str();
         let lignes: Vec<LigneBordereau> = b.lignes.iter().map(ligne).collect();
-        let calcule = montant(&lignes, &jour(le_jour)).unwrap_or_else(|e| panic!("{} : {}", le_jour, e.phrase));
+        let calcule = montant(&lignes, &b.jour).unwrap_or_else(|e| panic!("{} : {}", le_jour, e.phrase));
         if calcule != dec(declare) {
             ecarts.push((le_jour, declare, calcule.to_string()));
         }
     }
-    let attendus = [(OCTOBRE_2025.0, OCTOBRE_2025.1, OCTOBRE_2025.2.to_string())];
+    let attendus = [(OCTOBRE_2025.0.to_string(), OCTOBRE_2025.1, OCTOBRE_2025.2.to_string())];
     assert_eq!(ecarts, attendus);
 }

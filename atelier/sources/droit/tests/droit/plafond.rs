@@ -28,11 +28,11 @@ struct Cas {
     #[serde(rename = "_note")]
     _note: String,
     /// debut, fin, statut, journees remunerees, plafond attendu, ce que le cas montre.
-    dates: Vec<(String, String, String, Vec<String>, Decimal, String)>,
+    dates: Vec<(Jour, Jour, String, Vec<Jour>, Decimal, String)>,
     /// debut, fin de la periode d'un permanent, plafond attendu.
-    mensuel: Vec<(String, String, Decimal)>,
+    mensuel: Vec<(Jour, Jour, Decimal)>,
     /// debut, fin, statut, ce que le cas montre : un contrat sans journee remuneree datee.
-    sans_date: Vec<(String, String, String, String)>,
+    sans_date: Vec<(Jour, Jour, String, String)>,
 }
 
 /// Du bareme livre, la seule section que ce test lit : le plafond de la securite sociale.
@@ -50,10 +50,6 @@ struct Pss {
 /// Le plafond de chaque annee d'une table `{annee: (mensuel, horaire)}`.
 fn pss_depuis_table(table: &HashMap<i32, (i64, i64)>) -> impl Fn(i32) -> R<(Decimal, Decimal)> + '_ {
     move |annee| table.get(&annee).map(|(m, h)| (Decimal::from(*m), Decimal::from(*h))).ok_or_else(|| socle::refus!("pas de plafond pour {}", annee))
-}
-
-fn jour(s: &str) -> Jour {
-    socle::forme::lire_texte(&format!("\"{}\"", s), "jour").unwrap()
 }
 
 /// Le jour (an, mois, jour).
@@ -179,19 +175,18 @@ fn les_dates_et_le_mensuel() {
     let t = table();
     let pss = pss_depuis_table(&t);
     for (debut, fin, statut, journees, voulu, quoi) in &c.dates {
-        let dates: Vec<Jour> = journees.iter().map(|d| jour(d)).collect();
-        let lu = plafond_urssaf(jour(debut), jour(fin), statut == "artiste", &pss, &dates).unwrap();
+        let lu = plafond_urssaf(*debut, *fin, statut == "artiste", &pss, journees).unwrap();
         assert_eq!(lu, *voulu, "{}", quoi);
     }
     for (debut, fin, voulu) in &c.mensuel {
         let e = EngagementPlafond {
             mensuelle: true,
             artiste: true,
-            debut_periode: jour(debut),
-            fin_periode: jour(fin),
+            debut_periode: *debut,
+            fin_periode: *fin,
             debut: j(0, 1, 1), fin: j(0, 1, 1), dates_travail: vec![], jours: 0,
         };
-        assert_eq!(pour_paie(&e, &pss).unwrap(), *voulu, "{} {}", debut, fin);
+        assert_eq!(pour_paie(&e, &pss).unwrap(), *voulu, "{:?} {:?}", debut, fin);
     }
     // pour_paie d'un intermittent = plafond_urssaf avec ses dates.
     let e = EngagementPlafond {
@@ -218,7 +213,7 @@ fn les_dates_et_le_mensuel() {
     assert!(err.contains("hors de la periode de paie"), "{}", err);
     // Sans jour remunere date, rien ne se compte : refus.
     for (debut, fin, statut, quoi) in &c.sans_date {
-        let err = plafond_urssaf(jour(debut), jour(fin), statut == "artiste", &pss, &[]).unwrap_err().phrase;
+        let err = plafond_urssaf(*debut, *fin, statut == "artiste", &pss, &[]).unwrap_err().phrase;
         assert!(err.contains("0 jour(s) travaille(s) pour 0 date(s)"), "{} : {}", quoi, err);
     }
 }

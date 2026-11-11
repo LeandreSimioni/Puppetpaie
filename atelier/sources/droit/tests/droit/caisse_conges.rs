@@ -21,11 +21,11 @@ use crate::outils::typee::lu;
 #[test]
 fn qui_est_declare_a_la_caisse() {
     let (cddu, cdd, cdi) = (N::CdduSpectacle.proprietes().unwrap(), N::Cdd.proprietes().unwrap(), N::Cdi.proprietes().unwrap());
-    let j = |s: &str| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", s), "jour").unwrap();
+    let j = |a, m, d| Jour::nouveau(a, m, d).unwrap();
     let comedien = fiche(r#"{"code_emploi_ft": "COM010", "statut": "artiste"}"#, None);
     let regisseur = |idcc: &str| fiche(r#"{"code_emploi_ft": "REG130", "statut": "technicien"}"#, Some(idcc));
     let sans_metier = fiche(r#"{"statut": "technicien"}"#, Some("3090"));
-    let (debut, trois_mois, un_an) = (j("2026-09-01"), j("2026-11-30"), j("2027-08-31"));
+    let (debut, trois_mois, un_an) = (j(2026, 9, 1), j(2026, 11, 30), j(2027, 8, 31));
     assert!(douze_mois_ou_plus(&debut, &un_an).unwrap());
     assert!(affilie(&cddu, &comedien, &debut, Some(&trois_mois)).unwrap());
     assert!(!affilie(&cddu, &comedien, &debut, Some(&un_an)).unwrap(), "un CDDU de douze mois");

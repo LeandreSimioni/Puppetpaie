@@ -14,28 +14,28 @@ use crate::outils::typee::{code_livre, lire, lu};
 fn un_accord_lie_l_adherente_des_sa_date_et_toute_compagnie_des_son_extension() {
     let t: droit::minima::Table = lire(&code_livre(), "minima-conventionnels.json");
     let a = accord(&t, "kali-1285-accord-salaires-20260701").expect("l'accord de 2026 de la 1285 est dans la table");
-    let j = |t: &str| socle::forme::lire_texte::<socle::date::Jour>(&format!("\"{}\"", t), "jour").unwrap();
-    let lie = |org: Option<&str>, depuis: &str| lie_depuis(a, org, j(depuis)).map(|x| x.iso());
+    let j = |a, m, d| socle::date::Jour::nouveau(a, m, d).unwrap();
+    let lie = |org: Option<&str>, depuis: socle::date::Jour| lie_depuis(a, org, depuis).map(|x| x.iso());
 
     // Les minima (01/08) et les indemnites (01/09), pour une adherente d'un signataire (sous un nom ou sous un autre).
     for org in ["SYNDEAC", "syndeac", "Les Forces musicales", "Scène Ensemble"] {
-        assert_eq!(lie(Some(org), "2026-08-01").as_deref(), Some("2026-08-01"), "{}", org);
-        assert_eq!(lie(Some(org), "2026-09-01").as_deref(), Some("2026-09-01"), "{}", org);
+        assert_eq!(lie(Some(org), j(2026, 8, 1)).as_deref(), Some("2026-08-01"), "{}", org);
+        assert_eq!(lie(Some(org), j(2026, 9, 1)).as_deref(), Some("2026-09-01"), "{}", org);
     }
     // Sans adhesion, ou adherente d'une organisation qui n'a pas signe : le jour de la publication de l'extension.
     for org in [None, Some(""), Some("UNE AUTRE ORGANISATION")] {
-        assert_eq!(lie(org, "2026-08-01").as_deref(), Some("2026-09-19"), "{:?}", org);
-        assert_eq!(lie(org, "2026-09-01").as_deref(), Some("2026-09-19"), "{:?}", org);
+        assert_eq!(lie(org, j(2026, 8, 1)).as_deref(), Some("2026-09-19"), "{:?}", org);
+        assert_eq!(lie(org, j(2026, 9, 1)).as_deref(), Some("2026-09-19"), "{:?}", org);
     }
     // Un accord qui n'est pas etendu ne lie que les adherentes.
     let non_etendu: droit::minima::Convention = lu(r#"{"signataires": ["SYNDEAC"]}"#);
-    assert_eq!(lie_depuis(&non_etendu, Some("SYNDEAC"), j("2026-08-01")), Some(j("2026-08-01")));
-    assert_eq!(lie_depuis(&non_etendu, None, j("2026-08-01")), None);
+    assert_eq!(lie_depuis(&non_etendu, Some("SYNDEAC"), j(2026, 8, 1)), Some(j(2026, 8, 1)));
+    assert_eq!(lie_depuis(&non_etendu, None, j(2026, 8, 1)), None);
 
     // La grille du jour suit la meme date : celle de l'accord des qu'il lie la compagnie, celle d'avant jusque-la.
-    let depuis = |org: Option<&str>, jour: &str| grille_au(&t, "1285", org, Some(j(jour))).unwrap().1.map(|x| x.iso());
-    assert_eq!(depuis(Some("SYNDEAC"), "2026-07-31"), None);
-    assert_eq!(depuis(Some("SYNDEAC"), "2026-08-01").as_deref(), Some("2026-08-01"));
-    assert_eq!(depuis(None, "2026-09-18"), None);
-    assert_eq!(depuis(None, "2026-09-19").as_deref(), Some("2026-09-19"));
+    let depuis = |org: Option<&str>, jour: socle::date::Jour| grille_au(&t, "1285", org, Some(jour)).unwrap().1.map(|x| x.iso());
+    assert_eq!(depuis(Some("SYNDEAC"), j(2026, 7, 31)), None);
+    assert_eq!(depuis(Some("SYNDEAC"), j(2026, 8, 1)).as_deref(), Some("2026-08-01"));
+    assert_eq!(depuis(None, j(2026, 9, 18)), None);
+    assert_eq!(depuis(None, j(2026, 9, 19)).as_deref(), Some("2026-09-19"));
 }

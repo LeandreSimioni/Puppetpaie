@@ -13,9 +13,14 @@ fn envoi<D, R>(mode: Mode, detail: D) -> Envoi<D, R> {
     e
 }
 
-/// La ligne datee de `instant`, que le test dit.
-fn a(instant: &str) -> journal::Datation {
-    journal::Datation::Lue { quand: socle::forme::lire_texte(&format!("\"{}\"", instant), "quand").unwrap(), origine: "le test".into() }
+/// Le `jour` d'octobre 2026 a `heure` pile.
+fn instant(jour: u32, heure: i64) -> socle::paris::InstantEcrit {
+    socle::paris::InstantEcrit::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(2026, 10, jour).unwrap(), heure, 0, 0).unwrap())
+}
+
+/// La ligne datee du `jour` d'octobre 2026 a `heure`, que le test dit.
+fn a(jour: u32, heure: i64) -> journal::Datation {
+    journal::Datation::Lue { quand: instant(jour, heure).into(), origine: "le test".into() }
 }
 
 fn dsn(mode: Mode) -> Ligne {
@@ -29,10 +34,10 @@ fn fiche(code: &str) -> Ligne {
 #[test]
 fn noter_ajoute_a_la_fin_et_lire_filtre() {
     let d = dossier_de_test("journal", "ajouts");
-    let l1 = journal::noter(&d, dsn(Mode::Reel), None, a("2026-10-03T10:00:00")).unwrap();
+    let l1 = journal::noter(&d, dsn(Mode::Reel), None, a(3, 10)).unwrap();
     assert_eq!((l1.quand().iso(), l1.nombre_de_retours()), ("2026-10-03T10:00:00".to_string(), 0));
     let avant = std::fs::read(journal::chemin(&d)).unwrap();
-    journal::noter(&d, Ligne::Dpae(envoi(Mode::Test, journal::DetailDpae::default())), None, a("2026-10-03T11:00:00")).unwrap();
+    journal::noter(&d, Ligne::Dpae(envoi(Mode::Test, journal::DetailDpae::default())), None, a(3, 11)).unwrap();
     assert!(std::fs::read(journal::chemin(&d)).unwrap().starts_with(&avant), "ce qui etait ecrit au journal a ete reecrit");
     assert_eq!(journal::lire(&d, None, None, false).unwrap().len(), 2);
     assert_eq!(journal::lire(&d, Some(Acte::Dpae), None, false).unwrap().len(), 1);
@@ -41,13 +46,13 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
 
     // DEUX POSTES (regle 9 b) : chacun ajoute au meme journal ce qu'il a fait, et range le meme retour ; leurs journaux mis
     // bout a bout disent tout, sans rien compter deux fois.
-    journal::noter(&d, fiche("F-1"), None, a("2026-10-03T12:00:00")).unwrap();
+    journal::noter(&d, fiche("F-1"), None, a(3, 12)).unwrap();
     let e = dossier_de_test("journal", "second-poste");
     std::fs::create_dir_all(e.join("journal")).unwrap();
     std::fs::copy(journal::chemin(&d), journal::chemin(&e)).unwrap();
-    let retour = RetourFiche { code: "F-1".into(), abandon: true, salarie: None, illisible: None, erreurs: None, quand: socle::forme::lire_texte("\"2026-10-04T08:00:00\"", "quand").unwrap(), qui: "t".into(), de: None, message: None, reponse: "".into() };
+    let retour = RetourFiche { code: "F-1".into(), abandon: true, salarie: None, illisible: None, erreurs: None, quand: instant(4, 8), qui: "t".into(), de: None, message: None, reponse: "".into() };
     for (poste, quoi) in [(&d, fiche("F-2")), (&e, dsn(Mode::Test))] {
-        journal::noter(poste, quoi, None, a("2026-10-04T09:00:00")).unwrap();
+        journal::noter(poste, quoi, None, a(4, 9)).unwrap();
         journal::rattacher(poste, |l| l.acte() == Acte::FicheDemande, Revenu::Fiche(retour.clone())).unwrap();
     }
     let mut reunis = std::fs::read(journal::chemin(&d)).unwrap();
@@ -78,8 +83,8 @@ fn l_empreinte_reste_comparable_a_celles_du_journal() {
     let d = dossier_de_test("journal", "empreinte");
     let f = d.join("DSN.dsn");
     std::fs::write(&f, b"abc").unwrap();
-    let l = journal::noter(&d, dsn(Mode::Reel), Some(&f), a("2026-10-03T10:00:00")).unwrap();
+    let l = journal::noter(&d, dsn(Mode::Reel), Some(&f), a(3, 10)).unwrap();
     assert_eq!((l.fichier(), l.empreinte()), (Some("DSN.dsn"), Some("ba7816bf8f01cfea")));
-    let l = journal::noter(&d, dsn(Mode::Reel), Some(&d.join("absent.dsn")), a("2026-10-03T10:00:00")).unwrap();
+    let l = journal::noter(&d, dsn(Mode::Reel), Some(&d.join("absent.dsn")), a(3, 10)).unwrap();
     assert_eq!((l.fichier(), l.empreinte()), (Some("absent.dsn"), None));
 }

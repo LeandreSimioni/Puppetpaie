@@ -28,7 +28,7 @@ pub(crate) struct Eng {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cadre: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub debut: Option<String>,
+    pub debut: Option<Jour>,
 }
 
 /// Un profil de la grille (`{categorie, grille}`).
@@ -86,16 +86,12 @@ pub(crate) fn champs(texte: &str) -> R<ChampsSalarie> {
     socle::forme::lire_texte(texte, "la fiche du releve")
 }
 
-/// Ce qu'un engagement dit du salarie, lu comme le lit `engagement::solde` : une case vide ne dit rien, un debut
-/// illisible refuse.
+/// Ce qu'un engagement dit du salarie, lu comme le lit `engagement::solde` : une case vide ne dit rien ; un debut
+/// illisible, sa forme l'a refuse.
 pub(crate) fn dit(e: Option<&Eng>) -> R<DitParLEngagement> {
     let Some(e) = e else { return Ok(DitParLEngagement::default()) };
     let dite = |v: &Option<String>| v.clone().filter(|s| !s.is_empty());
-    let debut = match dite(&e.debut) {
-        Some(s) => Some(s.get(..10).filter(|j| j.as_bytes().get(4) == Some(&b'-') && j.as_bytes().get(7) == Some(&b'-')).and_then(|j| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", j), "debut").ok()).ok_or_else(|| socle::echec::refus("date illisible"))?),
-        None => None,
-    };
-    Ok(DitParLEngagement { categorie_conventionnelle: dite(&e.categorie_conventionnelle), statut: dite(&e.statut), metier: dite(&e.metier), cadre: e.cadre, debut })
+    Ok(DitParLEngagement { categorie_conventionnelle: dite(&e.categorie_conventionnelle), statut: dite(&e.statut), metier: dite(&e.metier), cadre: e.cadre, debut: e.debut })
 }
 
 pub(crate) fn profil_de(p: &Prof) -> Profil {
@@ -565,17 +561,17 @@ fn prime_d_anciennete() {
 /// 20261020.md`, l. 763). Un jour ouvrable va du lundi au samedi.
 #[test]
 fn la_remise_du_contrat_suit_l1242_13_et_la_1285_pour_ses_musiciens() {
-    let j = |s: &str| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", s), "jour").unwrap();
+    let j = |m, d| Jour::nouveau(2026, m, d).unwrap();
     // Un vendredi : le samedi, puis le lundi (le dimanche n'est pas ouvrable).
-    let loi = droit::echeances::remise_du_contrat(&j("2026-11-20"), Some("3090"), Some("ART170"), None).unwrap();
-    assert_eq!(loi.jour, j("2026-11-23"));
+    let loi = droit::echeances::remise_du_contrat(&j(11, 20), Some("3090"), Some("ART170"), None).unwrap();
+    assert_eq!(loi.jour, j(11, 23));
     assert!(loi.source.contains("L. 1242-13"), "{}", loi.source);
     // Le meme musicien sous la 1285 : quinze jours ouvrables avant le jeudi 10/12, sans compter les dimanches.
-    let musicien = droit::echeances::remise_du_contrat(&j("2026-12-10"), Some("1285"), Some("ART170"), None).unwrap();
-    assert_eq!(musicien.jour, j("2026-11-23"));
+    let musicien = droit::echeances::remise_du_contrat(&j(12, 10), Some("1285"), Some("ART170"), None).unwrap();
+    assert_eq!(musicien.jour, j(11, 23));
     assert!(musicien.source.contains("1285") && musicien.source.contains("XV"), "{}", musicien.source);
     // Un metier hors du titre XV, sous la 1285 : la loi seule.
-    let autre = droit::echeances::remise_du_contrat(&j("2026-12-10"), Some("1285"), Some("ZZZ999"), None).unwrap();
-    assert_eq!(autre.jour, j("2026-12-12"));
+    let autre = droit::echeances::remise_du_contrat(&j(12, 10), Some("1285"), Some("ZZZ999"), None).unwrap();
+    assert_eq!(autre.jour, j(12, 12));
     assert!(autre.source.contains("L. 1242-13"), "{}", autre.source);
 }

@@ -5132,7 +5132,7 @@ mod tests {
     use std::path::PathBuf;
 
     /// Un dossier de compagnie temporaire : fiches vides, `config/casc-svp.json` des mois regularises.
-    fn ctx_dsn(nom: &str, regularises: &[&str]) -> Contexte {
+    fn ctx_dsn(nom: &str, regularises: &[Mois]) -> Contexte {
         let racine: PathBuf = std::env::temp_dir().join(format!("puppetpaie-dsn-{}-{}", std::process::id(), nom));
         let _ = std::fs::remove_dir_all(&racine);
         let cfg = racine.join(socle::fichiers::CONFIG);
@@ -5144,7 +5144,7 @@ mod tests {
             quoi: "Les annees de CASC-SVP regularisees hors DSN.".into(),
             regularisations: vec![crate::casc::RegularisationNotee {
                 annee: socle::mois::Annee::nouvelle(2024).unwrap(),
-                mois: regularises.iter().map(|m| socle::forme::lire_texte::<Mois>(&format!("\"{}\"", m), "mois").unwrap()).collect(),
+                mois: regularises.to_vec(),
                 montant: rust_decimal::Decimal::new(0, 2),
                 calcule: rust_decimal::Decimal::new(0, 2),
                 vire_le: Jour::nouveau(2025, 1, 15).unwrap(),
@@ -5190,10 +5190,10 @@ mod tests {
     #[test]
     fn pas_de_casc_hors_3090_avant_2025_ni_sur_un_mois_regularise() {
         let o = orgs_casc();
-        let m = |t: &str| socle::forme::lire_texte::<Mois>(&format!("\"{}\"", t), "mois").unwrap();
-        assert!(casc_svp(&ctx_dsn("b1", &[]), &ChampsEntreprise { idcc: Some("1285".into()), ..Default::default() }, &o, m("2026-09")).unwrap().is_none());
-        assert!(casc_svp(&ctx_dsn("b2", &[]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &o, m("2024-12")).unwrap().is_none());
-        assert!(casc_svp(&ctx_dsn("b3", &["2026-08"]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &o, m("2026-08")).unwrap().is_none());
+        let m = |an, numero| Mois::nouveau(an, numero).unwrap();
+        assert!(casc_svp(&ctx_dsn("b1", &[]), &ChampsEntreprise { idcc: Some("1285".into()), ..Default::default() }, &o, m(2026, 9)).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b2", &[]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &o, m(2024, 12)).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b3", &[m(2026, 8)]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &o, m(2026, 8)).unwrap().is_none());
     }
 
     // S21.G00.20.002 de France Travail (`atelier/reference/sources/francetravail-100-dsn/net-entreprises-fiche-3344-intermittents-20251113.html`).
@@ -5302,22 +5302,25 @@ mod tests {
 
     // ------------------------------------------------------------ l'arret de travail
 
-    fn arret(reprise: Option<&str>, fin_previsionnelle: &str) -> Arret {
-        let j = |t: &str| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", t), "jour").unwrap();
+    fn j(an: i32, mois: u32, jour: u32) -> Jour {
+        Jour::nouveau(an, mois, jour).unwrap()
+    }
+
+    fn arret(reprise: Option<Jour>, fin_previsionnelle: Jour) -> Arret {
         Arret {
             saisi: engagement::imprevus::ArretSaisi {
                 genre: engagement::imprevus::GenreArret::Arret,
                 salarie: "Audinot".into(),
-                contrat_debut: j("2025-09-01"),
+                contrat_debut: j(2025, 9, 1),
                 contrat_numero: Some(engagement::numeros::NumeroContrat::lire("AU.25.01").unwrap()),
                 motif: "01".into(),
-                dernier_jour_travaille: j("2026-06-20"),
-                debut: j("2026-06-21"),
-                fin_previsionnelle: j(fin_previsionnelle),
+                dernier_jour_travaille: j(2026, 6, 20),
+                debut: j(2026, 6, 21),
+                fin_previsionnelle,
                 subrogation: Some("02".into()),
                 subrogation_debut: None,
                 subrogation_fin: None,
-                reprise: reprise.map(j),
+                reprise,
                 reprise_motif: reprise.map(|_| "01".to_string()),
                 date_accident: None,
                 jours_deja_indemnises: None,
@@ -5327,7 +5330,7 @@ mod tests {
                 ij_nette_majoree: None,
                 prolongations: Vec::new(),
                 reprises: Vec::new(),
-                saisi_le: socle::forme::lire_texte::<socle::paris::HeureDeSaisie>("\"2026-06-21 10:00\"", "saisi_le").unwrap(),
+                saisi_le: socle::paris::HeureDeSaisie::de_la_minute(socle::paris::MinuteEcrite::du_naif(socle::paris::Naif::du_jour(j(2026, 6, 21), 10, 0, 0).unwrap())),
                 qui: "interface".into(),
                 note: None,
             },
@@ -5339,13 +5342,12 @@ mod tests {
     /// travail » (S21.G00.60.010, p. 269) : le dernier jour d'arret est la veille.
     #[test]
     fn un_arret_repris_le_premier_du_mois_ne_couvre_pas_ce_mois() {
-        let j = |s: &str| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", s), "jour").unwrap();
-        let (juin, juillet) = ((j("2026-06-01"), j("2026-06-30")), (j("2026-07-01"), j("2026-07-31")));
-        let repris_le_1er = arret(Some("2026-07-01"), "2026-07-03");
+        let (juin, juillet) = ((j(2026, 6, 1), j(2026, 6, 30)), (j(2026, 7, 1), j(2026, 7, 31)));
+        let repris_le_1er = arret(Some(j(2026, 7, 1)), j(2026, 7, 3));
         assert!(repris_le_1er.couvre(&juin.0, &juin.1).unwrap());
         assert!(!repris_le_1er.couvre(&juillet.0, &juillet.1).unwrap(), "aucun jour d'arret en juillet");
-        assert!(arret(Some("2026-07-02"), "2026-07-03").couvre(&juillet.0, &juillet.1).unwrap(), "le 1er juillet est arrete");
-        assert!(arret(None, "2026-07-01").couvre(&juillet.0, &juillet.1).unwrap(), "la fin previsionnelle est un jour d'arret");
-        assert!(!arret(None, "2026-06-30").couvre(&juillet.0, &juillet.1).unwrap());
+        assert!(arret(Some(j(2026, 7, 2)), j(2026, 7, 3)).couvre(&juillet.0, &juillet.1).unwrap(), "le 1er juillet est arrete");
+        assert!(arret(None, j(2026, 7, 1)).couvre(&juillet.0, &juillet.1).unwrap(), "la fin previsionnelle est un jour d'arret");
+        assert!(!arret(None, j(2026, 6, 30)).couvre(&juillet.0, &juillet.1).unwrap());
     }
 }

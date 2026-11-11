@@ -5,10 +5,6 @@ use droit::conges::jours_ouvrables;
 use serde_json::{json, Value};
 use socle::date::Jour;
 
-fn jour(s: &str) -> Jour {
-    socle::forme::lire_texte(&format!("\"{}\"", s), "jour").unwrap()
-}
-
 fn err(e: socle::echec::Echec) -> Value {
     json!({"err": e.en_lignes()})
 }
@@ -20,7 +16,9 @@ fn jours_ouvrables_selon_les_feries_chomes() {
     cas.as_array_mut().unwrap().retain(|c| c[0].is_string());
     for c in cas.as_array_mut().unwrap() {
         let dits = c[0].as_str().filter(|d| *d != "<absent>");
-        c[3] = jours_ouvrables(&jour(c[1].as_str().unwrap()), &jour(c[2].as_str().unwrap()), dits).map_or_else(err, |n| json!(n));
+        // Le cas, lu par sa forme : (feries chomes, du, au).
+        let (_, du, au): (Value, Jour, Jour) = serde_json::from_value(Value::Array(c.as_array().unwrap()[..3].to_vec())).unwrap();
+        c[3] = jours_ouvrables(&du, &au, dits).map_or_else(err, |n| json!(n));
     }
     assert!(!cas.as_array().unwrap().is_empty());
     oracle("conges.json", "/jours_ouvrables", &cas);

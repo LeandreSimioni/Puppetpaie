@@ -369,13 +369,13 @@ mod tests {
     }
 
     /// Une fiche datee : chaque valeur de tout temps, puis `apres` (champ, depuis, valeur).
-    fn fiche(valeurs: &str, apres: &[(&str, &str, &str)]) -> FicheSalarieDatee {
+    fn fiche(valeurs: &str, apres: &[(&str, Jour, &str)]) -> FicheSalarieDatee {
         use droit::fiche::FicheDatee;
         let mut f = FicheSalarieDatee::neuve(&lue(valeurs));
         for (champ, depuis, v) in apres {
             let changement = format!(r#"{{"case": {}, "valeur": {}}}"#, socle::ecriture::json_en_ligne(champ), socle::ecriture::json_en_ligne(v));
             let ch = socle::forme::lire_texte(&changement, "le changement").unwrap();
-            f.changer(ch, Some(&socle::forme::lire_texte::<Jour>(&format!("\"{}\"", depuis), "depuis").unwrap()), None);
+            f.changer(ch, Some(depuis), None);
         }
         f
     }
@@ -394,12 +394,12 @@ mod tests {
     #[test]
     fn un_changement_date_porte_l_ancienne_valeur_et_un_non_date_refuse() {
         let s = lue(r#"{"nir": "2901075999009", "nom": "DUVAL", "prenom": "LUCILE", "date_naissance": "1990-10-02", "code_salarie": "6"}"#);
-        let b = fiche(r#"{"nom": "CLAIRON"}"#, &[("nom", "2026-09-15", "DUVAL")]);
+        let b = fiche(r#"{"nom": "CLAIRON"}"#, &[("nom", Jour::nouveau(2026, 9, 15).unwrap(), "DUVAL")]);
         let mut f = Fichier::nouveau();
         ecrire(&mut f, &s, Some(&b), Some(&declaree()), fin().mois_civil(), &fin()).unwrap();
         assert_eq!(f.lignes, vec!["S21.G00.31.001,'15092026'", "S21.G00.31.009,'CLAIRON'"]);
         // Une fiche qui n'a jamais porte la valeur declaree ne date rien.
-        let b = fiche(r#"{"nom": "AUTRE"}"#, &[("nom", "2026-09-15", "DUVAL")]);
+        let b = fiche(r#"{"nom": "AUTRE"}"#, &[("nom", Jour::nouveau(2026, 9, 15).unwrap(), "DUVAL")]);
         let e = ecrire(&mut Fichier::nouveau(), &s, Some(&b), Some(&declaree()), fin().mois_civil(), &fin()).unwrap_err();
         assert!(e.phrase.contains("nom de famille") && e.phrase.contains("CLAIRON") && e.phrase.contains("DUVAL"), "{}", e.phrase);
     }
@@ -413,7 +413,7 @@ mod tests {
 
     #[test]
     fn l_identite_du_mois_ignore_un_changement_posterieur() {
-        let b = fiche(r#"{"nom": "CLAIRON", "adresse": "ANCIENNE"}"#, &[("nom", "2026-10-02", "DUVAL"), ("adresse", "2026-10-02", "NOUVELLE")]);
+        let b = fiche(r#"{"nom": "CLAIRON", "adresse": "ANCIENNE"}"#, &[("nom", Jour::nouveau(2026, 10, 2).unwrap(), "DUVAL"), ("adresse", Jour::nouveau(2026, 10, 2).unwrap(), "NOUVELLE")]);
         let s = FicheSalarie { id: droit::contexte::IdSalarie::lire("DUVAL").unwrap(), champs: lue(r#"{"nom": "DUVAL", "adresse": "NOUVELLE"}"#) };
         let m = identite_du_mois(&s, Some(&b), &fin()).unwrap();
         assert_eq!(m.nom.portee(), Some("CLAIRON"));

@@ -20,7 +20,7 @@ fn un_technicien_ne_se_paie_pas_au_service() {
     let id = reussi(&saisir(&c, "2026-03", None, &carte_de(repetition), "2026-02-25"))["engagement"].clone();
     let (_, phrase) = refus(&route(&c, "valider-engagement", json!({"mois": "2026-03", "engagement": id}), "2026-02-25"));
     assert!(phrase.contains("heure"), "le refus dit de le payer a l'heure : {}", phrase);
-    let mars = crate::outils::saisie(&c, "2026-03");
+    let mars = crate::outils::saisie(&c, crate::outils::le_mois(2026, 3));
     let carte = mars["engagements"].as_array().unwrap().iter().find(|e| e["salarie"] == "CRAIG").unwrap();
     assert!(carte["valide"].is_null(), "un refus ne valide rien : {}", carte);
     reussi(&valider(&c, "2026-03", Some(&id), &carte_de(heures), "2026-02-25"));

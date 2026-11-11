@@ -1031,10 +1031,6 @@ pub(crate) fn racine_d_essai(fictive: bool) -> std::path::PathBuf {
 mod tests {
     use super::*;
 
-    fn jour(t: &str) -> Jour {
-        socle::forme::lire_texte(&format!("\"{}\"", t), "jour").unwrap()
-    }
-
     /// Tout ce que la racine porte : chemins relatifs et octets.
     fn photo(racine: &Path) -> Vec<(String, Vec<u8>)> {
         fn marche(d: &Path, racine: &Path, out: &mut Vec<(String, Vec<u8>)>) {
@@ -1062,15 +1058,15 @@ mod tests {
         std::fs::write(r.join("engagements").join("2026-10.json"), "{}").unwrap();
         let avant = photo(&r);
         assert!(HorlogeFictive::verifier(&r).unwrap().is_none());
-        assert_eq!(rattraper(&r, Some(jour("2027-03-01")), true).unwrap(), Vec::<String>::new());
-        assert_eq!(rattraper(&r, Some(jour("2027-03-01")), false).unwrap(), Vec::<String>::new());
+        assert_eq!(rattraper(&r, Jour::nouveau(2027, 3, 1), true).unwrap(), Vec::<String>::new());
+        assert_eq!(rattraper(&r, Jour::nouveau(2027, 3, 1), false).unwrap(), Vec::<String>::new());
         assert_eq!(photo(&r), avant, "pas meme config/horloge.json");
         assert!(!r.join(FICHIER_HORLOGE).exists());
         // Un marqueur de copie de developpement qui n'est PAS une compagnie fictive ne suffit pas.
         std::fs::write(r.join("COPIE-DE-DEVELOPPEMENT.json"), r#"{"copie_de": "prive", "quoi": "copie"}"#).unwrap();
         let avant = photo(&r);
         assert!(HorlogeFictive::verifier(&r).unwrap().is_none());
-        assert_eq!(rattraper(&r, Some(jour("2027-03-01")), true).unwrap(), Vec::<String>::new());
+        assert_eq!(rattraper(&r, Jour::nouveau(2027, 3, 1), true).unwrap(), Vec::<String>::new());
         assert_eq!(photo(&r), avant);
         // Un marqueur illisible se refuse : il ne dit pas si les envois sont joues.
         std::fs::write(r.join("COPIE-DE-DEVELOPPEMENT.json"), "{ pas du json").unwrap();

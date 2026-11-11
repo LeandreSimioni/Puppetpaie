@@ -101,7 +101,8 @@ que par la structure :
   `aucun_flottant_dans_le_code` (aucun `.rs` du dépôt n'écrit `f32`, `f64` ni un nombre à virgule : un montant est un
   `Decimal`, une mesure d'un PDF une `fabrique_pdf::mesure::Mesure`, le reste des entiers),
   `un_texte_ne_devient_un_jour_qu_a_sa_porte` (aucune fonction publique de `socle` ne rend un jour, un mois ou un
-  instant d'un texte, aucun ne s'en construit par un trait). Les tests de structure sont
+  instant d'un texte, aucun ne s'en construit par un trait ; hors de `socle`, aucune lecture ne vise un type du temps
+  nu ni ne lit un texte JSON qui n'est qu'une chaine : un essai ecrit son jour par `Jour::nouveau`). Les tests de structure sont
   les bienvenus ; un test qui fige un détail ne s'écrit pas.
 - **Un texte ne devient un jour, un mois ou un instant qu'à sa porte**, et c'est la visibilité qui le garde : les
   lectures d'un texte (`Mois::lire`, `Jour::du_texte`, les `lire` de `socle::paris`) sont privées à `socle`. Hors de

@@ -120,8 +120,8 @@ pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise, eff: &crate::contexte::Eff
 mod tests {
     use super::*;
 
-    fn j(s: &str) -> Jour {
-        socle::forme::lire_texte(&format!("\"{}\"", s), "jour").unwrap()
+    fn j(an: i32, mois: u32, jour: u32) -> Jour {
+        Jour::nouveau(an, mois, jour).unwrap()
     }
 
     /// Thalie Sante des intermittents n'existe qu'a partir du 01/01/2026 (`DateDebutValidite="01012026"`,
@@ -130,14 +130,14 @@ mod tests {
     /// le mois ou il s'ouvre.
     #[test]
     fn un_contrat_ne_vaut_que_pour_la_periode_qu_il_couvre() {
-        let thalie = Some(j("2026-01-01"));
-        assert!(!en_vigueur(thalie, None, &j("2025-12-01"), &j("2025-12-31")));
-        assert!(en_vigueur(thalie, None, &j("2026-01-01"), &j("2026-01-31")));
-        let clos = (Some(j("2025-01-01")), Some(j("2026-06-30")));
-        assert!(en_vigueur(clos.0, clos.1, &j("2026-06-01"), &j("2026-06-30")));
-        assert!(!en_vigueur(clos.0, clos.1, &j("2026-07-01"), &j("2026-07-31")));
-        assert!(en_vigueur(Some(j("2026-03-15")), None, &j("2026-03-01"), &j("2026-03-31")));
-        assert!(en_vigueur(None, None, &j("2025-01-01"), &j("2025-01-31")));
+        let thalie = Some(j(2026, 1, 1));
+        assert!(!en_vigueur(thalie, None, &j(2025, 12, 1), &j(2025, 12, 31)));
+        assert!(en_vigueur(thalie, None, &j(2026, 1, 1), &j(2026, 1, 31)));
+        let clos = (Some(j(2025, 1, 1)), Some(j(2026, 6, 30)));
+        assert!(en_vigueur(clos.0, clos.1, &j(2026, 6, 1), &j(2026, 6, 30)));
+        assert!(!en_vigueur(clos.0, clos.1, &j(2026, 7, 1), &j(2026, 7, 31)));
+        assert!(en_vigueur(Some(j(2026, 3, 15)), None, &j(2026, 3, 1), &j(2026, 3, 31)));
+        assert!(en_vigueur(None, None, &j(2025, 1, 1), &j(2025, 1, 31)));
     }
 
     /// L'adhesion CASC-SVP d'une 3090 est celle de la fiche de codification, sans rien de la compagnie

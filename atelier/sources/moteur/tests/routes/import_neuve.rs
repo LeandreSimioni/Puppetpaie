@@ -26,19 +26,24 @@ use crate::outils::{dossier_de_test, fiche_au, lire, reussi};
 
 const JOUR: &str = "2026-10-03";
 
+/// `JOUR`, en jour.
+fn le_jour() -> socle::date::Jour {
+    socle::date::Jour::nouveau(2026, 10, 3).unwrap()
+}
+
 fn route(racine: &Path, nom: &str, charge: Value) -> Value {
     crate::outils::route(racine, nom, charge, JOUR)
 }
 
 /// La fiche entreprise ecrite, lue au jour du test.
 fn entreprise_lue(racine: &Path) -> Value {
-    fiche_au::<droit::fiche::FicheEntrepriseDatee>(&lire(racine, "config/entreprise.json"), JOUR)
+    fiche_au::<droit::fiche::FicheEntrepriseDatee>(&lire(racine, "config/entreprise.json"), le_jour())
 }
 
 /// Les fiches des salaries ecrites, lues au jour du test.
 fn salaries_lus(racine: &Path) -> Value {
     let brutes = lire(racine, "config/salaries.json");
-    Value::Object(brutes.as_object().unwrap().iter().filter(|(k, _)| !k.starts_with('_')).map(|(k, v)| (k.clone(), fiche_au::<droit::fiche::FicheSalarieDatee>(v, JOUR))).collect())
+    Value::Object(brutes.as_object().unwrap().iter().filter(|(k, _)| !k.starts_with('_')).map(|(k, v)| (k.clone(), fiche_au::<droit::fiche::FicheSalarieDatee>(v, le_jour()))).collect())
 }
 
 /// Les contrats attestes des engagements importes, chacun avec son salarie.

@@ -655,10 +655,10 @@ mod tests {
         std::fs::create_dir_all(racine.join(crate::retours::RETOURS)).unwrap();
         std::fs::create_dir_all(racine.join(socle::fichiers::CONFIG)).unwrap();
         // Ce que la compagnie a dit : l'annee que le 118 mesure le remplace, l'autre reste.
-        let j = |t: &str| socle::forme::lire_texte::<socle::date::Jour>(&format!("\"{}\"", t), "jour").unwrap();
-        assert!(crate::releve_retours::poser_effectif(&racine, 2026, Decimal::from(3), j("2027-01-05")).unwrap());
-        assert!(crate::releve_retours::poser_effectif(&racine, 2025, Decimal::from(2), j("2027-01-05")).unwrap());
-        let p = crm_effectif(2026, Decimal::new(1142, 2),"FICTIF-000000000001", socle::forme::lire_texte::<InstantCompact>("\"20270215100000\"", "publication").unwrap());
+        let j = |a, m, d| socle::date::Jour::nouveau(a, m, d).unwrap();
+        assert!(crate::releve_retours::poser_effectif(&racine, 2026, Decimal::from(3), j(2027, 1, 5)).unwrap());
+        assert!(crate::releve_retours::poser_effectif(&racine, 2025, Decimal::from(2), j(2027, 1, 5)).unwrap());
+        let p = crm_effectif(2026, Decimal::new(1142, 2),"FICTIF-000000000001", InstantCompact::du_naif(socle::paris::Naif::du_jour(j(2027, 2, 15), 10, 0, 0).unwrap()));
         let chemin = crate::releve_retours::archiver_retour(&racine, "", &p.retour, &p.contenu, Some("application/xml"), "20270215-100000").unwrap();
         assert!(chemin.file_name().unwrap().to_string_lossy().contains("_nature118_"));
         crate::releve_retours::reconstruire_effectifs(&racine).unwrap();
@@ -666,7 +666,7 @@ mod tests {
         let e = droit::contexte::effectif_de(&racine, &fiche).unwrap();
         assert_eq!(e.annees.get(&2026), Some(&socle::num::Decimal::new(1142, 2)));
         assert_eq!(e.annees.get(&2025), Some(&socle::num::Decimal::from(2)));
-        assert!(!crate::releve_retours::poser_effectif(&racine, 2026, Decimal::from(3), j("2027-03-01")).unwrap());
+        assert!(!crate::releve_retours::poser_effectif(&racine, 2026, Decimal::from(3), j(2027, 3, 1)).unwrap());
         let _ = std::fs::remove_dir_all(&racine);
     }
 }

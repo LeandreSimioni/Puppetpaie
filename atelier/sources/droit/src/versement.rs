@@ -207,8 +207,8 @@ pub fn refus(qui: &str, verse: &Jour, mois: Mois, fin_cirque: Option<&Jour>) -> 
 mod tests {
     use super::*;
 
-    fn j(t: &str) -> Jour {
-        socle::forme::lire_texte(&format!("\"{}\"", t), "jour").unwrap()
+    fn j(an: i32, mois: u32, jour: u32) -> Jour {
+        Jour::nouveau(an, mois, jour).unwrap()
     }
 
     /// CCH-13 de S21.G00.50.001 : au plus tard le dernier jour du mois qui suit le mois principal declare ; le 5 du mois
@@ -216,22 +216,22 @@ mod tests {
     #[test]
     fn un_versement_apres_le_mois_qui_suit_se_refuse() {
         let decembre = Mois::nouveau(2026, 12).unwrap();
-        let cinq = Versement::lire("le 5 du mois suivant").unwrap().jour(decembre, j("2026-12-31")).unwrap();
-        assert_eq!(cinq, j("2027-01-05"));
+        let cinq = Versement::lire("le 5 du mois suivant").unwrap().jour(decembre, j(2026, 12, 31)).unwrap();
+        assert_eq!(cinq, j(2027, 1, 5));
         assert_eq!(refus("X", &cinq, decembre, None).unwrap(), None);
-        assert_eq!(refus("X", &j("2027-01-31"), decembre, None).unwrap(), None);
-        assert!(refus("X", &j("2027-02-01"), decembre, None).unwrap().is_some_and(|m| m.contains("CCH-13")));
+        assert_eq!(refus("X", &j(2027, 1, 31), decembre, None).unwrap(), None);
+        assert!(refus("X", &j(2027, 2, 1), decembre, None).unwrap().is_some_and(|m| m.contains("CCH-13")));
     }
 
     /// CCNEAC, art. X.3.5.4 : le salaire d'un artiste de cirque en CDD se regle au plus tard la premiere semaine du mois
     /// qui suit la fin du contrat.
     #[test]
     fn un_artiste_de_cirque_de_la_1285_est_paye_la_premiere_semaine_qui_suit_son_contrat() {
-        let fin = j("2026-10-28");
+        let fin = j(2026, 10, 28);
         let octobre = fin.mois_civil();
-        assert_eq!(refus("X", &j("2026-11-07"), octobre, Some(&fin)).unwrap(), None);
-        assert!(refus("X", &j("2026-11-10"), octobre, Some(&fin)).unwrap().is_some_and(|m| m.contains("X.3.5.4")));
+        assert_eq!(refus("X", &j(2026, 11, 7), octobre, Some(&fin)).unwrap(), None);
+        assert!(refus("X", &j(2026, 11, 10), octobre, Some(&fin)).unwrap().is_some_and(|m| m.contains("X.3.5.4")));
         // Hors du cirque de la 1285, le 10 du mois suivant passe.
-        assert_eq!(refus("X", &j("2026-11-10"), octobre, None).unwrap(), None);
+        assert_eq!(refus("X", &j(2026, 11, 10), octobre, None).unwrap(), None);
     }
 }

@@ -944,24 +944,20 @@ mod tests {
     const SALARIE_SANS_NIR: &str = r#"{"nom": "Dupont", "prenom": "Alice", "sexe": "1",
         "date_naissance": "1985-03-07", "lieu_naissance": "Tours", "departement_naissance": "37", "emploi": "Comedienne"}"#;
 
-    fn jour(t: &str) -> Jour {
-        socle::forme::lire_texte(&format!("\"{}\"", t), "jour").unwrap()
-    }
-
-    fn embauche_de(fiche: &str, nature: N, fin: Option<&str>) -> Embauche {
+    fn embauche_de(fiche: &str, nature: N, fin: Option<Jour>) -> Embauche {
         Embauche {
             salarie: droit::fiche::SalarieDuContrat::de(droit::fiche::FicheSalarie {
                 id: droit::contexte::IdSalarie::lire("DUPONT").unwrap(),
                 champs: socle::forme::lire_texte(fiche, "la fiche du test").unwrap(),
             }),
-            debut: jour("2026-10-01"),
-            fin: fin.map(jour),
+            debut: Jour::nouveau(2026, 10, 1).unwrap(),
+            fin,
             nature,
             spectacle: None,
         }
     }
 
-    fn embauche(nature: N, fin: Option<&str>) -> Embauche {
+    fn embauche(nature: N, fin: Option<Jour>) -> Embauche {
         embauche_de(SALARIE, nature, fin)
     }
 
@@ -986,7 +982,7 @@ mod tests {
     }
 
     fn parametres<'a>(ent: Option<&'a EntrepriseDuDocument>, code: Option<&str>, chemins: &'a Chemins) -> Parametres<'a> {
-        Parametres { horodatage: socle::forme::lire_texte::<MinuteEcrite>("\"2026-10-03T14:07\"", "horodatage").unwrap(), heure_embauche: "0800".into(), code_urssaf: code.map(String::from), ent, chemins }
+        Parametres { horodatage: MinuteEcrite::du_naif(socle::paris::Naif::du_jour(Jour::nouveau(2026, 10, 3).unwrap(), 14, 7, 0).unwrap()), heure_embauche: "0800".into(), code_urssaf: code.map(String::from), ent, chemins }
     }
 
     fn enr(e: &Embauche, ent: Option<&EntrepriseDuDocument>, code: Option<&str>) -> R<String> {
@@ -1007,7 +1003,7 @@ mod tests {
         let m = enr(&e, None, None).unwrap_err().phrase;
         assert!(m.contains("date de fin"), "{}", m);
         // Avec son terme, il part, type 1 (CDD) et date de fin dans la case.
-        let e = embauche(N::Cdd, Some("2026-12-31"));
+        let e = embauche(N::Cdd, Jour::nouveau(2026, 12, 31));
         let t = enr(&e, None, None).unwrap();
         assert_eq!(zone(&t, "type_contrat"), "1");
         assert_eq!(zone(&t, "date_fin"), "31122026");
@@ -1020,13 +1016,13 @@ mod tests {
         assert_eq!(zone(&t, "type_contrat"), "2");
         assert_eq!(zone(&t, "date_fin"), " ".repeat(8));
         // Une fin portee par un CDI n'est pas declaree : il n'a pas de terme.
-        let e = embauche(N::Cdi, Some("2026-12-31"));
+        let e = embauche(N::Cdi, Jour::nouveau(2026, 12, 31));
         assert_eq!(zone(&enr(&e, None, None).unwrap(), "date_fin"), " ".repeat(8));
     }
 
     #[test]
     fn un_cdd_d_usage_est_un_cdd_avec_terme() {
-        let e = embauche(N::CdduSpectacle, Some("2026-10-05"));
+        let e = embauche(N::CdduSpectacle, Jour::nouveau(2026, 10, 5));
         let t = enr(&e, None, None).unwrap();
         assert_eq!(zone(&t, "type_contrat"), "1");
         assert_eq!(zone(&t, "date_fin"), "05102026");
@@ -1134,11 +1130,11 @@ mod tests {
 
     #[test]
     fn un_cddu_ecrit_000_en_periode_d_essai_les_autres_la_laissent_a_blanc() {
-        let e = embauche(N::CdduSpectacle, Some("2026-10-05"));
+        let e = embauche(N::CdduSpectacle, Jour::nouveau(2026, 10, 5));
         assert_eq!(zone(&enr(&e, None, None).unwrap(), "jours_essai"), "000");
         let e = embauche(N::Cdi, None);
         assert_eq!(zone(&enr(&e, None, None).unwrap(), "jours_essai"), "   ");
-        let e = embauche(N::Cdd, Some("2026-12-31"));
+        let e = embauche(N::Cdd, Jour::nouveau(2026, 12, 31));
         assert_eq!(zone(&enr(&e, None, None).unwrap(), "jours_essai"), "   ");
     }
 

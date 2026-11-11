@@ -544,9 +544,8 @@ mod tests {
         socle::forme::lire_texte(texte, "le taux").unwrap()
     }
 
-    /// Un jour `AAAA-MM-JJ`, lu par sa forme.
-    fn jour(t: &str) -> Jour {
-        socle::forme::lire_texte(&format!("\"{}\"", t), "jour").unwrap()
+    fn jour(an: i32, mois: u32, j: u32) -> Jour {
+        Jour::nouveau(an, mois, j).unwrap()
     }
 
     fn recu(taux: &str, id: &str, le: &str, retour: Option<&str>) -> TauxPas {
@@ -569,13 +568,13 @@ mod tests {
     fn un_taux_vaut_pour_tout_paiement_a_partir_de_sa_mise_a_disposition() {
         let taux = |id: &str, le: &str| recu("9.40", id, le, None);
         let recus = vec![taux("480747943", "20260313070000"), taux("985249073", "20260415100000")];
-        let id = |le: &str| en_vigueur(&recus, jour(le), None).and_then(|e| e.identifiant.clone());
-        assert_eq!(id("2026-03-12"), None);
-        assert_eq!(id("2026-03-13"), Some("480747943".to_string()));
-        assert_eq!(id("2026-03-14"), Some("480747943".to_string()));
-        assert_eq!(id("2026-04-14"), Some("480747943".to_string()));
-        assert_eq!(id("2026-04-15"), Some("985249073".to_string()));
-        assert_eq!(id("2024-12-31"), None);
+        let id = |le: Jour| en_vigueur(&recus, le, None).and_then(|e| e.identifiant.clone());
+        assert_eq!(id(jour(2026, 3, 12)), None);
+        assert_eq!(id(jour(2026, 3, 13)), Some("480747943".to_string()));
+        assert_eq!(id(jour(2026, 3, 14)), Some("480747943".to_string()));
+        assert_eq!(id(jour(2026, 4, 14)), Some("480747943".to_string()));
+        assert_eq!(id(jour(2026, 4, 15)), Some("985249073".to_string()));
+        assert_eq!(id(jour(2024, 12, 31)), None);
     }
 
     /// BOI-IR-PAS-30-10-20, § 70, exemple 1 (`atelier/reference/sources/bofip/BOI-IR-PAS-30-10-20-20181203.html`) :
@@ -598,15 +597,15 @@ mod tests {
     fn le_taux_en_retour_de_la_dsn_d_un_mois_vaut_pour_les_mois_qui_suivent() {
         let taux = |id: &str, le: &str, retour: Option<&str>| recu("2.30", id, le, retour);
         let recus = vec![taux("157352475", "20261005194311", Some("2026-09")), taux("713288315", "20261221184328", Some("2026-12"))];
-        let id = |le: &str, mois: &str| en_vigueur(&recus, jour(le), Some(socle::forme::lire_texte::<Mois>(&format!("\"{}\"", mois), "mois").unwrap())).and_then(|e| e.identifiant.clone());
-        assert_eq!(id("2026-12-31", "2026-12"), Some("157352475".to_string()));
-        assert_eq!(id("2027-01-05", "2026-12"), Some("157352475".to_string()));
-        assert_eq!(id("2027-01-31", "2027-01"), Some("713288315".to_string()));
+        let id = |le: Jour, mois: Mois| en_vigueur(&recus, le, Some(mois)).and_then(|e| e.identifiant.clone());
         let decembre = Mois::nouveau(2026, 12).unwrap();
+        assert_eq!(id(jour(2026, 12, 31), decembre), Some("157352475".to_string()));
+        assert_eq!(id(jour(2027, 1, 5), decembre), Some("157352475".to_string()));
+        assert_eq!(id(jour(2027, 1, 31), Mois::nouveau(2027, 1).unwrap()), Some("713288315".to_string()));
         let demande = vec![taux("480747943", "20261221184328", None)];
-        assert!(en_vigueur(&demande, jour("2026-12-31"), Some(decembre)).is_some());
-        let mad = jour("2026-12-21");
-        assert_eq!(date_d_effet(mad, Some(decembre)), jour("2027-01-01"));
+        assert!(en_vigueur(&demande, jour(2026, 12, 31), Some(decembre)).is_some());
+        let mad = jour(2026, 12, 21);
+        assert_eq!(date_d_effet(mad, Some(decembre)), jour(2027, 1, 1));
         assert_eq!(date_d_effet(mad, Some(decembre.precedent())), mad);
         assert_eq!(date_d_effet(mad, None), mad);
     }

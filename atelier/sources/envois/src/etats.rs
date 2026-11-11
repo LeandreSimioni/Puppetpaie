@@ -1405,8 +1405,8 @@ mod tests {
         let l = ligne("dsn", "test", "2026-06-01T10:00:00", "e1", "f.dsn", true, "WSBBBB", "{\"repetition\": null, \"ordre_test\": null, \"reconstruit\": false}", "[]");
         let autre = ligne("dpae", "reel", "2026-06-01T10:00:00", "e1", "f.dsn", true, "WSCCCC", "{\"repetition\": null, \"reconstruit\": false, \"embauches\": [], \"certificat\": false}", "[]");
         let r = journal("rattachement", &[l, autre]);
-        let annonce = |flux: &str, nature: &str, publication: &str| Annonce {
-            publication: Some(socle::forme::lire_texte::<socle::paris::InstantCompact>(&format!("\"{}\"", publication), "publication").unwrap()),
+        let annonce = |flux: &str, nature: &str, seconde: i64| Annonce {
+            publication: Some(socle::paris::InstantCompact::du_naif(socle::paris::Naif::du_jour(Jour::nouveau(2026, 6, 1).unwrap(), 11, 0, seconde).unwrap())),
             production: None,
             ops: None,
             delegataire: None,
@@ -1417,7 +1417,7 @@ mod tests {
             libelle: None,
             flux: Some(flux.into()),
         };
-        let retours = vec![annonce("WSBBBB", "11", "20260601110001"), annonce("WSINCONNU", "11", "20260601110002"), annonce("WSCCCC", "20", "20260601110003")];
+        let retours = vec![annonce("WSBBBB", "11", 1), annonce("WSINCONNU", "11", 2), annonce("WSCCCC", "20", 3)];
         let mut contenus = HashMap::new();
         contenus.insert(cle_du_contenu(&retours[0]), BAN_KO.as_bytes().to_vec());
         let mut inc = Vec::new();

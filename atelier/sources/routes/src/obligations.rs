@@ -1628,28 +1628,29 @@ mod essais {
     /// prolongation ; depose avant elle, il ne porte pas la fin de subrogation nouvelle, et reste du.
     #[test]
     fn un_rectificatif_depose_avant_la_prolongation_ne_la_fait_pas() {
-        let jour = |t: &str| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", t), "jour").unwrap();
-        let signalement = |type_declaration: TypeDeLaDeclaration, quand: &str| EnvoiDeLArret {
+        let jour = |j| Jour::nouveau(2026, 11, j).unwrap();
+        let a = |j, heure| socle::paris::Naif::du_jour(jour(j), heure, 0, 0).unwrap();
+        let signalement = |type_declaration: TypeDeLaDeclaration, j, heure| EnvoiDeLArret {
             nature_declaration: NatureDeLaDeclaration::SignalementArret,
             type_declaration: Some(type_declaration),
             ordre: None,
             mois: None,
             fichier: None,
-            quand: socle::forme::lire_texte::<HeureDuJournal>(&format!("\"{}\"", quand), "quand").unwrap(),
+            quand: HeureDuJournal::from(socle::paris::InstantEcrit::du_naif(a(j, heure))),
         };
         let prolongation = Prolongation {
-            le: jour("2026-11-03"),
-            saisi_le: socle::forme::lire_texte::<HeureDeSaisie>("\"2026-11-03 15:00\"", "saisi_le").unwrap(),
+            le: jour(3),
+            saisi_le: HeureDeSaisie::de_la_minute(socle::paris::MinuteEcrite::du_naif(a(3, 15))),
             qui: "t".into(),
-            fin_avant: jour("2026-11-06"),
-            fin: jour("2026-11-13"),
-            subrogation_fin_avant: Some(jour("2026-11-06")),
-            subrogation_fin: Some(jour("2026-11-13")),
+            fin_avant: jour(6),
+            fin: jour(13),
+            subrogation_fin_avant: Some(jour(6)),
+            subrogation_fin: Some(jour(13)),
         };
         use TypeDeLaDeclaration::{AnnuleEtRemplace, Normale};
-        let avant = [signalement(Normale, "2026-11-02T10:00:00"), signalement(AnnuleEtRemplace, "2026-11-03T09:00:00")];
+        let avant = [signalement(Normale, 2, 10), signalement(AnnuleEtRemplace, 3, 9)];
         assert!(rectificatif_du(std::slice::from_ref(&prolongation), &avant).unwrap().1.is_none());
-        let apres = [signalement(Normale, "2026-11-02T10:00:00"), signalement(AnnuleEtRemplace, "2026-11-03T16:00:00")];
+        let apres = [signalement(Normale, 2, 10), signalement(AnnuleEtRemplace, 3, 16)];
         assert!(rectificatif_du(std::slice::from_ref(&prolongation), &apres).unwrap().1.is_some());
     }
 }

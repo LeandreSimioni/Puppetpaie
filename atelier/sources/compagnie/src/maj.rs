@@ -2028,7 +2028,7 @@ mod tests {
 
     /// La version 2026.11.01 prete dans `<racine>/maj/`, telle que `telecharger` l'ecrit.
     fn poser_la_prete(racine: &Path) {
-        let p = Prete { version: "2026.11.01".into(), quand: socle::forme::lire_texte::<MinuteEcrite>("\"2026-11-01T09:00\"", "quand").unwrap(), archives: vec![SYSTEME.into()], notes: String::new(), calcul: String::new(), exigee: String::new() };
+        let p = Prete { version: "2026.11.01".into(), quand: MinuteEcrite::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(2026, 11, 1).unwrap(), 9, 0, 0).unwrap()), archives: vec![SYSTEME.into()], notes: String::new(), calcul: String::new(), exigee: String::new() };
         ecrire_prete(&racine.join("maj"), &p).unwrap();
     }
 

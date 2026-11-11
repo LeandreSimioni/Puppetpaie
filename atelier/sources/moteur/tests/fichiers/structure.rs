@@ -531,7 +531,7 @@ fn installation_a_part(c: &Path, test: &str) -> (PathBuf, PathBuf) {
 fn administrateur(c: &Path, route: Route, exemple: Value) -> Value {
     const ADMIN: &str = "administrateur-essai-1";
     let (inst, a) = installation_a_part(c, route.nom());
-    let poste = Poste { dossier_cle: inst.join("cle-du-poste"), maintenant: socle::forme::lire_texte("\"2026-11-02T10:00\"", "maintenant").unwrap() };
+    let poste = Poste { dossier_cle: inst.join("cle-du-poste"), maintenant: socle::paris::MinuteEcrite::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(2026, 11, 2).unwrap(), 10, 0, 0).unwrap()) };
     poste.coffre(&a).poser_ouverture(ADMIN, None).unwrap();
     let b = ajouter_venant(&inst, "Seconde", Venue::Neuve).unwrap().racine;
     let mut charge = exemple;
@@ -1077,7 +1077,10 @@ fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
 /// porte (`Deserialize`) ou par une porte qui dit son origine dans son type (`socle::ligne::Argument`,
 /// `socle::piece::Zone`, `Mois::du_nom`, `socle::fichiers::LectureDatee`). Ce verrou garde cette visibilite : aucune
 /// fonction publique de `socle` ne rend un type du temps d'un parametre texte (`&str`, `String`, `impl AsRef<str>`,
-/// `impl Into<String>`), et aucun type du temps n'implemente `FromStr`, ni `TryFrom` ou `PartialEq` d'un texte.
+/// `impl Into<String>`), et aucun type du temps n'implemente `FromStr`, ni `TryFrom` ou `PartialEq` d'un texte. Hors de
+/// `socle`, code et essais, la forme seule n'est pas une porte : aucune lecture ne vise un type du temps nu (`lire_texte`,
+/// `lire`, `from_str`, `from_value`, `from_slice` vers lui, ou son `deserialize`), et aucune ne lit un texte JSON qui n'est
+/// qu'une chaine ; un essai ecrit son jour ou son mois par `Jour::nouveau` ou `Mois::nouveau`.
 #[test]
 fn un_texte_ne_devient_un_jour_qu_a_sa_porte() {
     let modules: Vec<(String, String)> = [std::any::type_name::<socle::date::Jour>(), std::any::type_name::<socle::mois::Mois>(), std::any::type_name::<socle::paris::Moment>()]
@@ -1113,6 +1116,33 @@ fn un_texte_ne_devient_un_jour_qu_a_sa_porte() {
             if du_temps.iter().any(|n| *n == c[1]) {
                 fautes.push(format!("{}:{} : `{}`, un texte qui devient un type du temps", rel, ligne(c.get(0).unwrap().start()), c[0].trim()));
             }
+        }
+    }
+    let vers_le_temps =
+        regex::Regex::new(r"\b(?:lire_texte\w*|lire|from_str|from_value|from_slice)\s*::\s*<\s*(?:Option\s*<\s*)?(?:\w+\s*::\s*)*([A-Z]\w*)").unwrap();
+    let son_deserialize = regex::Regex::new(r"(?:\b([A-Z]\w*)\s*::|<\s*(?:\w+\s*::\s*)*([A-Z]\w*)\s+as\s+(?:\w+\s*::\s*)*Deserialize\s*>\s*::)\s*deserialize\s*\(").unwrap();
+    let chaine_seule = regex::Regex::new(r#"\blire_texte\w*\s*(?:::\s*<[^(]*>)?\s*\(\s*&?\s*(?:format!\s*\(\s*)?"\\""#).unwrap();
+    let mut fichiers = Vec::new();
+    sources_hors_cibles(&espace(), &mut fichiers);
+    for p in fichiers.iter().filter(|p| !p.starts_with(espace().join(&modules[0].0))) {
+        let rel = p.strip_prefix(espace()).unwrap().display().to_string();
+        let brut = std::fs::read_to_string(p).unwrap();
+        let code = code_seul(&brut);
+        let ligne = |i: usize| code[..i].matches('\n').count() + 1;
+        for c in vers_le_temps.captures_iter(&code) {
+            if du_temps.iter().any(|n| *n == c[1]) {
+                fautes.push(format!("{}:{} : `{}`, une lecture qui vise un type du temps nu", rel, ligne(c.get(0).unwrap().start()), c[0].trim()));
+            }
+        }
+        for c in son_deserialize.captures_iter(&code) {
+            if du_temps.iter().any(|n| Some(n.as_str()) == c.get(1).or(c.get(2)).map(|m| m.as_str())) {
+                fautes.push(format!("{}:{} : `{}`, un type du temps lu sans sa forme", rel, ligne(c.get(0).unwrap().start()), c[0].trim()));
+            }
+        }
+        // Le texte de l'appel se lit dans le source tel qu'il est ecrit : `code_seul` blanchit les chaines.
+        for m in chaine_seule.find_iter(&brut) {
+            let l = brut[..m.start()].matches('\n').count() + 1;
+            fautes.push(format!("{}:{} : `{}`, un texte JSON qui n'est qu'une chaine", rel, l, m.as_str().trim()));
         }
     }
     assert!(fautes.is_empty(), "un texte ne devient un jour, un mois ou un instant qu'a sa porte :\n{}", fautes.join("\n"));

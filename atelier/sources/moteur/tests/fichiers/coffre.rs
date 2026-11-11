@@ -9,6 +9,11 @@ use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+/// Le `jour` d'octobre 2026 a `heure`:`minute`.
+fn minute(jour: u32, heure: i64, minute: i64) -> MinuteEcrite {
+    MinuteEcrite::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(2026, 10, jour).unwrap(), heure, minute, 0).unwrap())
+}
+
 fn dossier() -> PathBuf {
     let d = chemin_unique("coffre");
     std::fs::create_dir_all(&d).unwrap();
@@ -19,7 +24,7 @@ fn dossier() -> PathBuf {
 fn coffre() -> Coffre {
     let base = dossier();
     std::fs::create_dir_all(base.join("racine/config")).unwrap();
-    Coffre { racine: base.join("racine"), dossier_cle: base.join("poste"), maintenant: socle::forme::lire_texte::<MinuteEcrite>("\"2026-10-03T14:05\"", "maintenant").unwrap(), variables: BTreeMap::new() }
+    Coffre { racine: base.join("racine"), dossier_cle: base.join("poste"), maintenant: minute(3, 14, 5), variables: BTreeMap::new() }
 }
 
 /// Le meme coffre vu d'un autre poste.
@@ -131,7 +136,7 @@ fn scrypt_est_celui_de_la_rfc_7914_et_refuse_les_parametres_d_un_fichier_piege()
 fn l_ouverture_gardee_vaut_pour_son_coffre_et_expire() {
     let c = coffre();
     c.poser_ouverture("sesame-123", None).unwrap();
-    let fin = socle::forme::lire_texte::<MinuteEcrite>("\"2026-10-04T02:05\"", "fin").unwrap();
+    let fin = minute(4, 2, 5);
     assert!(c.garder_ouverture("faux-faux", fin).unwrap_err().phrase.starts_with("Mot de passe du logiciel refuse"));
     assert_eq!(c.ouverture_gardee().unwrap(), None);
     c.garder_ouverture("sesame-123", fin).unwrap();
@@ -143,7 +148,7 @@ fn l_ouverture_gardee_vaut_pour_son_coffre_et_expire() {
     assert_eq!(autre.ouverture_gardee().unwrap(), None);
     assert!(c.chemin_gardee().unwrap().exists());
     // expiree : elle s'efface
-    let tard = Coffre { racine: c.racine.clone(), dossier_cle: c.dossier_cle.clone(), maintenant: socle::forme::lire_texte::<MinuteEcrite>("\"2026-10-04T02:06\"", "maintenant").unwrap(), variables: BTreeMap::new() };
+    let tard = Coffre { racine: c.racine.clone(), dossier_cle: c.dossier_cle.clone(), maintenant: minute(4, 2, 6), variables: BTreeMap::new() };
     assert_eq!(tard.fin_ouverture_gardee().unwrap(), None);
     assert_eq!(tard.ouverture_gardee().unwrap(), None);
     assert!(!c.chemin_gardee().unwrap().exists());
@@ -161,7 +166,7 @@ fn la_cle_du_poste_posee_par_plusieurs_a_la_fois_est_une_seule() {
         .map(|i| {
             let (racine, poste, b) = (c.racine.clone(), c.dossier_cle.clone(), barriere.clone());
             std::thread::spawn(move || {
-                let k = Coffre { racine, dossier_cle: poste, maintenant: socle::forme::lire_texte::<MinuteEcrite>("\"2026-10-03T14:05\"", "maintenant").unwrap(), variables: BTreeMap::new() };
+                let k = Coffre { racine, dossier_cle: poste, maintenant: minute(3, 14, 5), variables: BTreeMap::new() };
                 b.wait();
                 k.proteger(format!("secret {}", i).as_bytes(), "essai").map_err(|e| format!("{:?}", e))
             })

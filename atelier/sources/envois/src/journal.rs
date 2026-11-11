@@ -677,7 +677,7 @@ mod tests {
         fn envoi<D>(salarie: &str, retours: Vec<RetourOrganisme>, detail: D) -> Envoi<D, RetourOrganisme> {
             let mut e = Envoi::nouveau(Mode::Reel, "t", true, "", "", detail);
             e.mois = Some(Mois::nouveau(2026, 6).unwrap());
-            e.quand = socle::forme::lire_texte("\"2026-07-05T10:00:00\"", "quand").unwrap();
+            e.quand = socle::paris::InstantEcrit::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(2026, 7, 5).unwrap(), 10, 0, 0).unwrap()).into();
             e.retours = retours;
             e.versions = Some(vec![Version { salarie: droit::contexte::IdSalarie::lire(salarie).unwrap(), numero: engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap(), version: 1, mois: None }]);
             e

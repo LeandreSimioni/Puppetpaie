@@ -1854,9 +1854,9 @@ mod tests_risques_atmp {
         assert_eq!(taux_de_l_arrete(&gestion, false, false), None);
         let sans = risques_de(&socle).into_iter().find(|r| r.code == SANS_NOTIFICATION).unwrap();
         assert_eq!(taux_de_l_arrete(&sans, true, false), None);
-        let ouvert = |le: &str| Etablissement { ouverture: Some(socle::forme::lire_texte(&format!("\"{}\"", le), "jour").unwrap()), ..Etablissement::default() };
-        assert!(etablissement_neuf(&ouvert("2024-06-01"), 2026));
-        assert!(!etablissement_neuf(&ouvert("2023-12-01"), 2026));
+        let ouvert = |an, mois| Etablissement { ouverture: socle::date::Jour::nouveau(an, mois, 1), ..Etablissement::default() };
+        assert!(etablissement_neuf(&ouvert(2024, 6), 2026));
+        assert!(!etablissement_neuf(&ouvert(2023, 12), 2026));
     }
 
     /// Un taux vaut a partir de sa date ; celui d'un risque sans TC ne vaut que pour l'annee de cette date (inference : la

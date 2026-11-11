@@ -12,13 +12,13 @@ fn le_plafond_d_enseignement_suit_l_age_a_la_date() {
     let fiche = outils::lire(&outils::code_livre(), "rubriques-base.json")["rubriques"]["enseignement"]["plafond_annuel_heures"].clone();
     assert_eq!(fiche, json!({"moins_de_50_ans": 70, "50_ans_et_plus": 120}));
     let racine = outils::dossier_de_test("cumul", "plafond");
-    let j = |s: &str| socle::forme::lire_texte::<Jour>(&format!("\"{}\"", s), "jour").unwrap();
-    let plafond = |naissance: Option<&str>, date: &str| plafond_enseignement(&racine, naissance.map(j), j(date)).unwrap();
-    assert_eq!(plafond(None, "2026-09-27"), 70, "sans date de naissance, le plafond bas");
-    assert_eq!(plafond(Some("1976-09-27"), "2026-09-27"), 120, "50 ans le jour meme");
-    assert_eq!(plafond(Some("1976-09-28"), "2026-09-27"), 70, "50 ans le lendemain");
-    assert_eq!(plafond(Some("1976-02-29"), "2026-02-28"), 70, "ne un 29 fevrier : pas encore 50 ans le 28");
-    assert_eq!(plafond(Some("1976-02-29"), "2026-03-01"), 120);
-    assert_eq!(plafond(Some("1975-12-31"), "2025-12-31"), 120);
-    assert_eq!(plafond(Some("2010-05-05"), "2026-09-27"), 70);
+    let j = |a, m, d| Jour::nouveau(a, m, d).unwrap();
+    let plafond = |naissance: Option<Jour>, date: Jour| plafond_enseignement(&racine, naissance, date).unwrap();
+    assert_eq!(plafond(None, j(2026, 9, 27)), 70, "sans date de naissance, le plafond bas");
+    assert_eq!(plafond(Some(j(1976, 9, 27)), j(2026, 9, 27)), 120, "50 ans le jour meme");
+    assert_eq!(plafond(Some(j(1976, 9, 28)), j(2026, 9, 27)), 70, "50 ans le lendemain");
+    assert_eq!(plafond(Some(j(1976, 2, 29)), j(2026, 2, 28)), 70, "ne un 29 fevrier : pas encore 50 ans le 28");
+    assert_eq!(plafond(Some(j(1976, 2, 29)), j(2026, 3, 1)), 120);
+    assert_eq!(plafond(Some(j(1975, 12, 31)), j(2025, 12, 31)), 120);
+    assert_eq!(plafond(Some(j(2010, 5, 5)), j(2026, 9, 27)), 70);
 }

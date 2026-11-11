@@ -761,7 +761,7 @@ mod tests {
         }
 
         fn coffre_a(&self) -> Coffre {
-            Coffre { racine: self.racine.clone(), dossier_cle: self.poste_a.clone(), maintenant: socle::forme::lire_texte("\"2026-10-08T10:00\"", "maintenant").unwrap(), variables: Default::default() }
+            Coffre { racine: self.racine.clone(), dossier_cle: self.poste_a.clone(), maintenant: socle::paris::MinuteEcrite::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(2026, 10, 8).unwrap(), 10, 0, 0).unwrap()), variables: Default::default() }
         }
     }
 

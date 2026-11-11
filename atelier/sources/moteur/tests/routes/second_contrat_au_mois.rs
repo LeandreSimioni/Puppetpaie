@@ -19,7 +19,7 @@ fn une_carte_neuve_ne_refait_pas_le_cdi_qui_court() {
     let (_, c) = rejouer_dossier(&sc, &d);
 
     let saisie = json!({"salarie": "SVOBODA", "nature": "cdi", "debut": "2026-01-05", "salaire_mensuel": 3400, "quotite_contrat": nombre("151.67")});
-    let id = json!(identite(&c, "2026-01", "SVOBODA", None));
+    let id = json!(identite(&c, crate::outils::le_mois(2026, 1), "SVOBODA", None));
     reussi(&valider(&c, "2026-01", Some(&id), &saisie, "2026-01-05"));
 
     let ecrits = || {
