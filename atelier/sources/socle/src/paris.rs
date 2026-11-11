@@ -628,16 +628,6 @@ impl MinuteUtc {
     pub fn iso(self) -> String {
         format!("{}Z", MinuteEcrite(self.0).iso())
     }
-
-    /// LA PORTE DE LA REPONSE DU SERVEUR (`serde(deserialize_with)`) : `""` tant qu'il n'a pas repondu, et la, seulement,
-    /// le vide vaut « pas repondu » ; sinon une minute UTC.
-    pub fn ou_vide<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<MinuteUtc>, D::Error> {
-        let s = <String as serde::Deserialize>::deserialize(d)?;
-        if s.is_empty() {
-            return Ok(None);
-        }
-        MinuteUtc::lire(&s).map(Some).ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas une heure AAAA-MM-JJTHH:MMZ", crate::date::repr_texte(&s))))
-    }
 }
 
 impl std::fmt::Display for MinuteUtc {

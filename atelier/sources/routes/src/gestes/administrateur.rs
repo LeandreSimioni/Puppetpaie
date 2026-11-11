@@ -982,8 +982,11 @@ pub fn tableau(o: &Options, inst: &Path, relever: bool) -> R<TableauAdministrate
                         continue;
                     }
                 }
-                // La compagnie ne se refait pas : la ligne qui suit le dit (le meme `refaire_compagnie`).
-                Err(e) => drop(e),
+                // La compagnie ne se refait pas : sa ligne le dit.
+                Err(e) => {
+                    par.push((r, Err(e)));
+                    continue;
+                }
             }
         }
         let t = refaire_compagnie(o, &r);

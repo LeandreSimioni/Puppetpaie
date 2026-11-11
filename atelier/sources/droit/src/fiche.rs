@@ -938,11 +938,8 @@ macro_rules! fiche {
 
             /// La piece de la case `cle` ; `None` : elle n'est dans aucune, tout calcul la lit.
             pub fn piece_de(cle: NomDeCase) -> Option<Piece> {
-                $( $( if nom_ecrit(stringify!($pchamp)) == cle {
-                    return Some(Piece::$genre);
-                } )* )*
-                let _ = cle;
-                None
+                let pieces: &[(&str, Piece)] = &[$( $( (stringify!($pchamp), Piece::$genre), )* )*];
+                pieces.iter().find(|(c, _)| nom_ecrit(c) == cle).map(|(_, p)| *p)
             }
 
             /// Aucune case n'y est ecrite.
@@ -1109,11 +1106,11 @@ macro_rules! fiche {
                 ch.case()
             }
 
-            fn noter(&mut self, plate: &$plate) {
-                $( $( if plate.$note.is_some() {
-                    self.$note = plate.$note.clone();
+            // Une fiche sans notes n'a rien a y lire : `_plate`.
+            fn noter(&mut self, _plate: &$plate) {
+                $( $( if _plate.$note.is_some() {
+                    self.$note = _plate.$note.clone();
                 } )* )?
-                let _ = plate;
             }
 
             fn neuve(plate: &$plate) -> $datee {

@@ -859,10 +859,11 @@ pub(crate) type OrdreDeDepot = (u8, Option<i64>, String, std::cmp::Reverse<Optio
 fn sans_annule_et_remplace(nom: &str) -> (String, Option<i64>) {
     if let Some(corps) = nom.strip_suffix(".dsn").or_else(|| nom.strip_suffix(".DSN")) {
         if let Some(i) = corps.rfind("_AR") {
-            match corps[i + 3..].parse::<i64>() {
-                Ok(n) => return (format!("{}.dsn", &corps[..i]), Some(n)),
-                // Ce qui suit `_AR` n'est pas un numero : le nom n'est pas celui d'un annule-et-remplace.
-                Err(pas_un_numero) => drop(pas_un_numero),
+            // Ce qui suit `_AR` n'est pas un numero : le nom n'est pas celui d'un annule-et-remplace.
+            let suite = &corps[i + 3..];
+            let numero = if suite.is_empty() { None } else { suite.bytes().try_fold(0i64, |n, b| if b.is_ascii_digit() { n.checked_mul(10)?.checked_add(i64::from(b - b'0')) } else { None }) };
+            if let Some(n) = numero {
+                return (format!("{}.dsn", &corps[..i]), Some(n));
             }
         }
     }

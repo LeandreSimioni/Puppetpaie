@@ -610,18 +610,15 @@ fn deballer_ce_qui(octets: &[u8], neuf: &Path, garder: &dyn Fn(&str) -> bool) ->
         if let Some(p) = chemin.parent() {
             std::fs::create_dir_all(p).map_err(|e| refus(e.to_string()))?;
         }
-        // Un programme d'un systeme Unix : `archiver` l'a marque executable, il le redevient ici.
-        let executable = f.unix_mode().is_some_and(|m| m & 0o111 != 0);
         let mut o = Vec::new();
         f.read_to_end(&mut o).map_err(|e| refus(e.to_string()))?;
         std::fs::write(&chemin, o).map_err(|e| refus(e.to_string()))?;
+        // Un programme d'un systeme Unix : `archiver` l'a marque executable, il le redevient ici.
         #[cfg(unix)]
-        if executable {
+        if f.unix_mode().is_some_and(|m| m & 0o111 != 0) {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&chemin, std::fs::Permissions::from_mode(0o755)).map_err(|e| socle::echec::du_disque(&chemin, &e))?;
         }
-        #[cfg(not(unix))]
-        let _ = executable;
     }
     Ok(())
 }

@@ -599,11 +599,17 @@ fn rejouer_les_gestes(
                 // Comme une route : l'etat refait reussit, ou refuse, comme il l'a fait au banc (`ok`, vrai s'il est tu).
                 let attendu = g.a_reussi();
                 match refait {
-                    Err(e) if attendu => r.ecarts.push(format!("geste {} ({}) : l'etat de {} refuse au rejeu : {}", n, heure(t), cle, e.phrase)),
-                    Ok(()) if !attendu => r.ecarts.push(format!("geste {} ({}) : l'etat de {} reussit au rejeu, refuse a l'enregistrement", n, heure(t), cle)),
-                    // Le refus attendu, le meme qu'au banc.
-                    Err(refus) => drop(refus),
-                    Ok(()) => {}
+                    // Refuse au banc, il refuse au rejeu : rien a dire.
+                    Err(e) => {
+                        if attendu {
+                            r.ecarts.push(format!("geste {} ({}) : l'etat de {} refuse au rejeu : {}", n, heure(t), cle, e.phrase));
+                        }
+                    }
+                    Ok(()) => {
+                        if !attendu {
+                            r.ecarts.push(format!("geste {} ({}) : l'etat de {} reussit au rejeu, refuse a l'enregistrement", n, heure(t), cle));
+                        }
+                    }
                 }
             }
             // Au banc, la compagnie ouverte joue son horloge dans sa veille, la route `ouverture` qui suit (`veille`) : le

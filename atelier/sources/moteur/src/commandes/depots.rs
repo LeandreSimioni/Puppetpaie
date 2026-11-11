@@ -41,15 +41,14 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     };
     let environnement = args.exige("environnement")?;
     let client = Client::dsn(&cadre.ctx, environnement, Some(mdp)).map_err(|p| Echec { classe: None, ..p.echec })?;
-    derouler(cadre, args, client)
+    derouler(args, client)
 }
 
 /// Le compte rendu, avec un client donne (un test le pointe sur un faux serveur local).
-pub fn derouler(cadre: &Cadre, args: &Args, mut client: Client) -> Result<i32, Echec> {
+pub fn derouler(args: &Args, mut client: Client) -> Result<i32, Echec> {
     let environnement = args.exige("environnement")?;
     let (debut, fin) = fenetre(args)?;
     dire!("Depots {}, du {} au {}.\n", environnement, debut.jour().jj_mm_aaaa(), fin.jour().jj_mm_aaaa());
-    let _ = cadre;
     let mut depots = Vec::new();
     let tranches = envois::releve_retours::tranches(debut, fin)?;
     let resultat: Result<(), Panne> = (|| {

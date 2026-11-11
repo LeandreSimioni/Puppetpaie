@@ -122,8 +122,39 @@ pub struct Reponses {
 pub struct ReponseDuServeur {
     pub numero: String,
     pub reponse: String,
-    #[serde(deserialize_with = "socle::paris::MinuteUtc::ou_vide")]
-    pub repondu_le: Option<socle::paris::MinuteUtc>,
+    pub repondu_le: HeureDeReponse,
+}
+
+/// L'HEURE D'UNE REPONSE, telle que le serveur du filet l'ecrit (`infra/filet/filet_serveur.py`) : `""` tant que
+/// l'editeur n'a pas repondu, sinon une minute UTC. Le `""` est un contrat avec les versions installees, qui le lisent en
+/// texte strict : le serveur ne change pas, et il se lit ici, a la porte, comme le cas qu'il nomme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeureDeReponse {
+    /// `""` : pas de reponse.
+    Aucune,
+    Le(socle::paris::MinuteUtc),
+}
+
+impl HeureDeReponse {
+    /// La minute de la reponse ; `None` : pas de reponse.
+    pub fn minute(self) -> Option<socle::paris::MinuteUtc> {
+        match self {
+            HeureDeReponse::Aucune => None,
+            HeureDeReponse::Le(m) => Some(m),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for HeureDeReponse {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<HeureDeReponse, D::Error> {
+        let s = String::deserialize(d)?;
+        if s.is_empty() {
+            return Ok(HeureDeReponse::Aucune);
+        }
+        socle::paris::MinuteUtc::lire(&s)
+            .map(HeureDeReponse::Le)
+            .ok_or_else(|| serde::de::Error::custom(format!("{} n'est pas une heure AAAA-MM-JJTHH:MMZ", socle::date::repr_texte(&s))))
+    }
 }
 
 /// `POST /paies` : ce que le serveur a recu.

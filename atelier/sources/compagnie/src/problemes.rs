@@ -684,7 +684,7 @@ pub fn relever_reponses(racine: &Path) -> R<usize> {
         for l in lignes.iter_mut().filter(|l| l.reponse.is_none()) {
             let Some(x) = recues.iter().rev().find(|x| l.numero.as_deref() == Some(x.numero.as_str())) else { continue };
             l.reponse = Some(tete(&x.reponse, 2000));
-            l.repondu_le = x.repondu_le;
+            l.repondu_le = x.repondu_le.minute();
             l.lu = Some(false);
             n += 1;
         }
