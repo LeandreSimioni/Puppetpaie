@@ -28,14 +28,28 @@ const PLACES: [Place; 14] = [
 ];
 
 
-/// LES CRATES DU LOGICIEL, de bas en haut : ce que le `moteur` livre porte.
-const LE_LOGICIEL: [&str; 10] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "routes", "moteur"];
-
-/// LES CRATES DE L'ESPACE, de bas en haut : le logiciel, puis l'atelier, au-dessus de tout, que rien ne prend.
-const ORDRE: [&str; 11] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "routes", "moteur", "atelier"];
-
 fn espace() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
+}
+
+/// La liste `cle` (`members`, `default-members`) du `Cargo.toml` de l'espace, dans son ordre.
+fn liste_de_l_espace(cle: &str) -> Vec<String> {
+    let espace_toml = std::fs::read_to_string(espace().join("Cargo.toml")).unwrap();
+    let l = espace_toml.lines().find(|l| l.starts_with(&format!("{} = [", cle))).unwrap_or_else(|| panic!("Cargo.toml de l'espace : pas de `{}`", cle));
+    l.split('"').skip(1).step_by(2).map(str::to_string).collect()
+}
+
+/// LES CRATES DE L'ESPACE, de bas en haut, telles que son `Cargo.toml` les declare (`members`) : le logiciel, puis
+/// l'atelier, au-dessus de tout, que rien ne prend. Chacune ne prend qu'a celles d'avant elle
+/// (`une_crate_ne_prend_qu_a_celles_du_dessous`).
+fn membres() -> Vec<String> {
+    liste_de_l_espace("members")
+}
+
+/// LES CRATES DU LOGICIEL, de bas en haut : ce que le `moteur` livre porte, tel que le `Cargo.toml` de l'espace le dit
+/// (`default-members`).
+fn le_logiciel() -> Vec<String> {
+    liste_de_l_espace("default-members")
 }
 
 /// Les fichiers `.rs` sous `d`.
@@ -176,7 +190,7 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
     let mut chemins = Vec::new();
     // LES PHRASES DE REFUS que les sources du logiciel construisent, toutes : la page et la ligne de commande les
     // affichent (`refus_rs`). Les outils de l'atelier (la crate `atelier`) ne sont pas le logiciel.
-    for crate_ in LE_LOGICIEL {
+    for crate_ in le_logiciel() {
         for p in sources(&espace().join(crate_).join("src")) {
             let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
             for (ligne, phrase, chemin) in refus_rs(&std::fs::read_to_string(&p).unwrap()) {
@@ -721,15 +735,16 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
     }
 }
 
-/// Les crates de l'espace, de bas en haut (`ORDRE`) : chacune ne prend qu'a celles d'en dessous.
+/// Les crates de l'espace, de bas en haut (`membres`) : chacune ne prend qu'a celles d'en dessous.
 #[test]
 fn une_crate_ne_prend_qu_a_celles_du_dessous() {
-    for (rang, nom) in ORDRE.iter().enumerate() {
+    let ordre = membres();
+    for (rang, nom) in ordre.iter().enumerate() {
         let t = std::fs::read_to_string(espace().join(nom).join("Cargo.toml")).unwrap();
         let deps = t.split("\n[dependencies]").nth(1).unwrap_or("").split("\n[").next().unwrap();
         for l in deps.lines() {
             let dep = l.split([' ', '=']).next().unwrap_or("");
-            if let Some(r) = ORDRE.iter().position(|x| *x == dep) {
+            if let Some(r) = ordre.iter().position(|x| *x == dep) {
                 assert!(r < rang, "{} prend a {}, qui n'est pas en dessous", nom, dep);
             }
         }
@@ -744,33 +759,29 @@ fn une_crate_ne_prend_qu_a_celles_du_dessous() {
 
 /// L'ATELIER N'ENTRE JAMAIS DANS LE LOGICIEL : la crate `atelier` (le binaire `moteur-atelier`) allume la feature
 /// `atelier` de ce qu'elle prend, et Cargo unifie les features de ce qu'il construit ensemble. Elle est donc hors de
-/// `default-members` de l'espace (la suite ne l'allume jamais), et aucun manifeste ne la prend, ni l'espace (toute
-/// section, essais compris) ni la fenetre.
+/// `default-members` de l'espace (la suite ne l'allume jamais), au-dessus de tout le logiciel, et aucun manifeste ne la
+/// prend, ni l'espace (toute section, essais compris) ni la fenetre.
 #[test]
 fn l_atelier_reste_hors_du_logiciel() {
-    let espace_toml = std::fs::read_to_string(espace().join("Cargo.toml")).unwrap();
-    let liste = |cle: &str| -> Vec<String> {
-        let l = espace_toml.lines().find(|l| l.starts_with(&format!("{} = [", cle))).unwrap_or_else(|| panic!("Cargo.toml de l'espace : pas de `{}`", cle));
-        l.split('"').skip(1).step_by(2).map(str::to_string).collect()
-    };
-    assert_eq!(liste("members"), ORDRE, "les membres de l'espace sont ses crates, de bas en haut");
-    assert_eq!(liste("default-members"), LE_LOGICIEL, "`default-members` porte le logiciel, et lui seul : jamais l'atelier");
-    let prend = regex::Regex::new(r#"^atelier\s*=|path\s*=\s*"\.\./atelier""#).unwrap();
-    for nom in LE_LOGICIEL.iter().chain(&["fenetre", "fabrique-pdf"]) {
-        let t = std::fs::read_to_string(espace().join(nom).join("Cargo.toml")).unwrap();
-        let mut section = "";
-        for l in t.lines() {
-            if l.starts_with('[') {
-                section = l;
-            } else if section.contains("dependencies") {
-                assert!(!prend.is_match(l), "{}/Cargo.toml prend la crate `atelier` ({}) : {}", nom, section, l);
+    let (membres, logiciel) = (membres(), le_logiciel());
+    assert_eq!(membres[..logiciel.len()], logiciel[..], "`default-members` porte le logiciel, de bas en haut, et les membres hors du logiciel viennent au-dessus");
+    let hors: Vec<&String> = membres[logiciel.len()..].iter().collect();
+    assert!(hors.iter().any(|h| *h == "atelier"), "l'atelier est un membre de l'espace, hors de `default-members`");
+    for h in hors {
+        let prend = regex::Regex::new(&format!(r#"^{}\s*=|path\s*=\s*"\.\./{}""#, h, h)).unwrap();
+        for nom in logiciel.iter().map(String::as_str).chain(["fenetre", "fabrique-pdf"]) {
+            let t = std::fs::read_to_string(espace().join(nom).join("Cargo.toml")).unwrap();
+            let mut section = "";
+            for l in t.lines() {
+                if l.starts_with('[') {
+                    section = l;
+                } else if section.contains("dependencies") {
+                    assert!(!prend.is_match(l), "{}/Cargo.toml prend la crate `{}` ({}) : {}", nom, h, section, l);
+                }
             }
         }
     }
 }
-
-/// LES COUCHES FERMEES, de bas en haut (l'ordre de `une_crate_ne_prend_qu_a_celles_du_dessous`) : toutes.
-const COUCHES_FERMEES: [&str; 11] = ORDRE;
 
 /// LES PORTES : les couches qui ont la bibliotheque du JSON, telles que leur `Cargo.toml` le dit (ses dependances, ou
 /// celles de ses essais). Le socle lit et ecrit les fichiers, les charges et les reponses des routes : il la prend pour
@@ -851,7 +862,8 @@ fn blanchi_entier(t: &str, textes: bool) -> String {
 /// Le verrou n'a aucune exception : quand il echoue, on corrige le code ou la donnee.
 #[test]
 fn une_couche_fermee_ne_lit_que_des_formes() {
-    assert_eq!(COUCHES_FERMEES, ORDRE[..COUCHES_FERMEES.len()], "les couches se ferment de bas en haut, dans l'ordre des crates");
+    // Les couches fermees : toutes les crates de l'espace (`membres`).
+    let couches = membres();
     // Les portes ont la bibliotheque du JSON : hors du bord, leur JSON brut se lit au texte. Toute autre couche fermee ne
     // l'a pas, ni pour son code ni pour ses tests : le compilateur refuse qu'elle en touche.
     let json = regex::Regex::new(r#"\bjson!|\bserde_json::|\bMap\s*<|\.get\("|[A-Za-z0-9_)\]]\s*\[""#).unwrap();
@@ -860,7 +872,7 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     // que si elle a un binaire (`[[bin]]`), dont ses essais lisent ce qu'il rend : son code n'en touche pas, le
     // compilateur le refuse.
     let bord = bord();
-    for couche in COUCHES_FERMEES {
+    for couche in couches.iter().map(String::as_str) {
         let sien = bord.iter().any(|b| b.split("::").next() == Some(couche));
         let binaire = std::fs::read_to_string(espace().join(couche).join("Cargo.toml")).unwrap().contains("\n[[bin]]");
         match a_le_json(couche) {
@@ -894,7 +906,7 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     let tri = regex::Regex::new(r#"\b(?:starts_with|strip_prefix|trim_start_matches)\s*\(\s*(?:'_'|"_")"#).unwrap();
     // Une cle en `_` que la forme elle-meme nomme.
     let nommee = regex::Regex::new(r#"\b(?:rename|alias)\s*=\s*"_"#).unwrap();
-    for couche in COUCHES_FERMEES {
+    for couche in couches.iter().map(String::as_str) {
         let src = espace().join(couche).join("src");
         let porte = a_le_json(couche).0;
         for f in sources(&src) {
@@ -933,7 +945,7 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     // Les points 3 et 4 valent pour les couches et pour la fabrique de PDF (`fabrique-pdf`, son propre espace Cargo,
     // que les couches prennent) ; le point 1 ne s'y applique pas tel quel : la fabrique est sa propre porte (sa forme
     // lue une fois par `forme::lire`, sa ligne de commande, `--inspecter` et `--champs`, qui rendent du JSON).
-    let dossiers = COUCHES_FERMEES.iter().map(|c| espace().join(c).join("src")).chain([espace().join("fabrique-pdf/src")]);
+    let dossiers = couches.iter().map(|c| espace().join(c).join("src")).chain([espace().join("fabrique-pdf/src")]);
     for dossier in dossiers {
         for f in sources(&dossier) {
             let code = code_seul(&std::fs::read_to_string(&f).unwrap());
@@ -1008,7 +1020,7 @@ fn un_defaut_n_invente_aucune_valeur() {
     let mut a_juger: Vec<AJuger> = Vec::new();
     let mut impls: Vec<(String, Vec<String>, Vec<String>, String)> = Vec::new();
     let mut fautes = Vec::new();
-    let dossiers = COUCHES_FERMEES.iter().map(|c| espace().join(c).join("src")).chain([espace().join("fabrique-pdf/src")]);
+    let dossiers = membres().into_iter().map(|c| espace().join(c).join("src")).chain([espace().join("fabrique-pdf/src")]);
     for dossier in dossiers {
         for f in sources(&dossier) {
             let code = code_seul(&std::fs::read_to_string(&f).unwrap());
@@ -1317,7 +1329,7 @@ fn l_engagement_ne_lit_pas_le_journal() {
 fn un_refus_n_est_jamais_un_texte() {
     let texte = regex::Regex::new(r"Result<.*,\s*String\s*>|\btype\s+Err(?:or)?\s*=\s*String\b|\bphrase_de\b|\bobjet_en_tete\b|echec::(A_PART|avec)\b").unwrap();
     let mut fautes = Vec::new();
-    for p in ORDRE.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
+    for p in membres().iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
         for (n, l) in code_seul(&std::fs::read_to_string(&p).unwrap()).lines().enumerate() {
             if let Some(m) = texte.find(l) {
                 fautes.push(format!("{}:{} : `{}`", p.strip_prefix(espace()).unwrap().display(), n + 1, m.as_str()));
@@ -1336,7 +1348,7 @@ fn une_nature_de_contrat_est_une_enum() {
     use droit::natures::NatureDeContrat;
     let mut fautes = Vec::new();
     let mut vues: Vec<Vec<String>> = vec![Vec::new(); NatureDeContrat::TOUTES.len()];
-    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
+    for p in le_logiciel().iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
         let rel = p.strip_prefix(espace()).unwrap().display().to_string();
         let texte = std::fs::read_to_string(&p).unwrap();
         for (ligne, _, _, commentaire, t) in jetons_rs(&sans_tests(&texte)) {
@@ -1790,7 +1802,7 @@ fn une_seule_fonction_date_une_valeur_de_fiche() {
     let fin = debut + texte[debut..].find("\n}\n").unwrap();
     assert_eq!(texte[..debut].matches("FicheDatee::changer(").count() + texte[fin..].matches("FicheDatee::changer(").count(), 0, "seul `ecrire_datee` date une case d'une fiche");
     // Dans tout le code qui prend a la fiche, ce seul appel : `ecrire_datee`.
-    let appels: Vec<String> = ORDRE[1..]
+    let appels: Vec<String> = membres()[1..]
         .iter()
         .flat_map(|c| sources(&espace().join(c).join("src")))
         .flat_map(|p| {
@@ -1818,7 +1830,7 @@ fn une_rubrique_d_un_salarie_au_mois_ne_se_compose_que_par_sa_cle() {
     let composition = module(std::any::type_name::<engagement::LignePaie>());
     let mut fautes = Vec::new();
     let mut ecrits: Vec<Vec<String>> = vec![Vec::new(); codes.len()];
-    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
+    for p in le_logiciel().iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
         let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().replace('\\', "/");
         // Les tests d'un fichier lisent ce qu'ils veulent ; le code, ses textes compris.
         let t = blanchi(&std::fs::read_to_string(&p).unwrap(), false);
@@ -2464,14 +2476,14 @@ fn textes_html(t: &str) -> Vec<String> {
 }
 
 /// UN SEUL ENDROIT DU LOGICIEL ECRIT UN MONTANT TEL QU'ON LE LIT (« 1 234,50 € », `socle::texte::euros`) : dans les
-/// sources du logiciel (les crates livrees, `LE_LOGICIEL`), un seul litteral met « € » ou « EUR » derriere une valeur
+/// sources du logiciel (les crates livrees, `le_logiciel`), un seul litteral met « € » ou « EUR » derriere une valeur
 /// qu'il compose (`{}`, `{:.2}`…) ou commence par un blanc suivi de « € » (le suffixe qu'on colle a un nombre). Un
 /// second est une fonction qui refait la mise en forme. Le verrou ne nomme pas l'endroit : il en compte un. L'atelier,
 /// qui imite l'imprime d'autres logiciels, n'est pas le logiciel.
 #[test]
 fn un_seul_endroit_ecrit_un_montant() {
     let mut endroits = Vec::new();
-    for crate_ in LE_LOGICIEL {
+    for crate_ in le_logiciel() {
         for p in sources(&espace().join(crate_).join("src")) {
             let t = std::fs::read_to_string(&p).unwrap();
             for (ligne, l) in litteraux_rs(&t) {
@@ -3004,7 +3016,7 @@ fn chaque_forme_lue_refuse_une_cle_inconnue() {
     let mut ecrites: BTreeSet<String> = BTreeSet::new();
     // (fichier, ligne, nom, attributs, a des cles, se declare reponse d'un tiers)
     let mut formes: Vec<(String, usize, String, String, bool, bool)> = Vec::new();
-    for crate_ in ORDRE {
+    for crate_ in membres() {
         for f in sources(&espace().join(crate_).join("src")) {
             let texte = std::fs::read_to_string(&f).unwrap();
             let brut: Vec<String> = blanchi(&texte, false).lines().map(String::from).collect();
@@ -3103,7 +3115,7 @@ fn scripts_de(html: &str) -> String {
 fn la_page_ne_lit_que_ce_que_les_routes_rendent() {
     let depot = espace().join("../..");
     let mut fichiers = Vec::new();
-    for crate_ in ORDRE {
+    for crate_ in membres() {
         fichiers.extend(sources(&espace().join(crate_).join("src")));
     }
     fichiers.sort();
