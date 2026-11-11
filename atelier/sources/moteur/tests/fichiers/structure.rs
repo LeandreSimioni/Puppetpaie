@@ -882,8 +882,12 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     // `if let`, `matches!`), et `let _ = …(…)`, qui jette ce qu'un appel rend (`let _ = x;`, une variable tue, n'appelle
     // rien).
     let avalee = regex::Regex::new(r"\.ok\(\)|\blet\s+Ok\s*\(.*\belse\b|\bif\s+let\s+Ok\s*\(|\.is_ok\(\)|\bis_ok_and\b|\bis_err_and\b|\.is_err\(\)|\bErr\s*\(\s*_\w*\s*\)|\blet\s+_\s*=\s*[^;]*\(").unwrap();
-    for couche in COUCHES_FERMEES {
-        for f in sources(&espace().join(couche).join("src")) {
+    // Les points 3 et 4 valent pour les couches et pour la fabrique de PDF (`fabrique-pdf`, son propre espace Cargo,
+    // que les couches prennent) ; le point 1 ne s'y applique pas tel quel : la fabrique est sa propre porte (sa forme
+    // lue une fois par `forme::lire`, sa ligne de commande, `--inspecter` et `--champs`, qui rendent du JSON).
+    let dossiers = COUCHES_FERMEES.iter().map(|c| espace().join(c).join("src")).chain([espace().join("fabrique-pdf/src")]);
+    for dossier in dossiers {
+        for f in sources(&dossier) {
             for (n, l) in code_seul(&std::fs::read_to_string(&f).unwrap()).lines().enumerate() {
                 if let Some(m) = repli.find(l) {
                     fautes.push(format!("{}:{} : `{}`, un repli : une donnée exigée se refuse quand elle manque, une donnée nulle s'écrit `null` et se lit `Option` ; un calcul s'écrit sans repli (`sum`, `fold`, `match`, `?`)", f.display(), n + 1, m.as_str()));
