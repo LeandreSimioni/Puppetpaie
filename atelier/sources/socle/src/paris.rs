@@ -247,7 +247,8 @@ pub mod ecrit {
                 lu(&s).ok_or_else(|| serde::de::Error::custom(format!($message, crate::date::repr_texte(&s))))
             }
 
-            /// Un `Option<Moment>` dans cette forme : absent ou `null`, `None` (le champ porte aussi `#[serde(default)]`).
+            /// Un `Option<Moment>` dans cette forme : `null`, `None` ; une cle absente ne se lit `None` que si le champ porte
+            /// `#[serde(default)]` (un champ omis quand il est vide).
             pub mod option {
                 use super::Moment;
 
@@ -422,7 +423,7 @@ pub mod ecrit {
 
     /// L'heure d'un geste de scenario (`heure`), ecrite a la main ou par le banc : un jour `AAAA-MM-JJ`, une minute
     /// `AAAA-MM-JJTHH:MM` ou une seconde `AAAA-MM-JJTHH:MM:SS`, heure de Paris ; elle s'ecrit comme l'instant ou le jour
-    /// (le banc n'ecrit que la seconde). Un `Option` : absent ou `null`, `None` (le champ porte aussi `#[serde(default)]`).
+    /// (le banc n'ecrit que la seconde). Un `Option` : `null`, `None` ; une cle absente, `None` si le champ porte `#[serde(default)]`.
     pub mod heure_du_geste {
         pub mod option {
             use crate::paris::InstantOuJour;

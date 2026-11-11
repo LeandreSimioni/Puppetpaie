@@ -398,6 +398,8 @@ fn en_echec(p: Panne) -> Echec {
 
 /// Le SI DSN limite l'etendue d'une recherche, on decoupe par jour.
 pub fn tranches(debut: Moment, fin: Moment) -> R<Vec<(Moment, Moment)>> {
+    // La requete ecrit ses bornes a la seconde : une fraction ne fait pas une tranche de plus.
+    let (debut, fin) = (debut.a_la_seconde(), fin.a_la_seconde());
     let mut v = Vec::new();
     let mut t = debut;
     while t < fin {

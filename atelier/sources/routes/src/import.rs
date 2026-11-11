@@ -864,30 +864,13 @@ struct RepriseVue {
 #[derive(Debug, Serialize)]
 struct MessageEditeur {
     canal: &'static str,
-    quand: QuandDuMessage,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    quand: socle::paris::Moment,
     resume: String,
     parti: bool,
     repondu: bool,
     pastille: socle::ecran::Pastille,
     titre_dit: String,
-}
-
-/// Quand un message a l'editeur a ete note : un incident a la seconde (`compagnie::incidents::Ligne`), un message de la
-/// boite a la minute (`compagnie::problemes::Signalement`), chacun dans sa forme.
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(untagged)]
-enum QuandDuMessage {
-    Incident(#[serde(with = "socle::paris::ecrit::seconde")] socle::paris::Moment),
-    Signalement(#[serde(with = "socle::paris::ecrit::minute")] socle::paris::Moment),
-}
-
-impl QuandDuMessage {
-    fn dit(self) -> String {
-        match self {
-            QuandDuMessage::Incident(i) => i.dit(),
-            QuandDuMessage::Signalement(m) => m.dit(),
-        }
-    }
 }
 
 /// Une source reprise : combien, de quand a quand, quel jour.
@@ -1005,21 +988,21 @@ fn attend_l_editeur(racine: &Path) -> R<Vec<MessageEditeur>> {
         }
         let parti = l.envoi.etat == compagnie::incidents::DEPOSE;
         let dit = if l.resume.is_empty() { l.genre } else { l.resume };
-        out.push(message("incident", QuandDuMessage::Incident(l.quand), Some(dit), parti, false));
+        out.push(message("incident", l.quand,Some(dit), parti, false));
     }
     for s in compagnie::problemes::signalements(racine)? {
         if !parle_d_import(&s.garde.texte) {
             continue;
         }
         let (parti, repondu) = (s.etat == compagnie::problemes::EtatDuMessage::Arrive, s.garde.reponse.is_some());
-        out.push(message("signalement", QuandDuMessage::Signalement(s.garde.quand), Some(s.garde.texte), parti, repondu));
+        out.push(message("signalement", s.garde.quand,Some(s.garde.texte), parti, repondu));
     }
     Ok(out)
 }
 
 /// Un message a l'editeur, son titre et sa pastille : la reponse recue, faite ; le reste attend l'editeur, rien que la
 /// compagnie ait a faire.
-fn message(canal: &'static str, quand: QuandDuMessage, resume: Option<String>, parti: bool, repondu: bool) -> MessageEditeur {
+fn message(canal: &'static str, quand: socle::paris::Moment,resume: Option<String>, parti: bool, repondu: bool) -> MessageEditeur {
     let quoi = if canal == "signalement" { "Message à l'éditeur" } else { "Incident" };
     let titre_dit = format!("{} du {}", quoi, quand.dit());
     let pastille = match (repondu, parti) {
