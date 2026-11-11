@@ -177,6 +177,13 @@ pub struct Echec {
 /// Le resultat d'une fonction qui peut refuser.
 pub type R<T> = Result<T, Echec>;
 
+/// Un refus se dit par sa phrase : c'est elle qu'une lecture de serde (`try_from`) rend dans son propre refus.
+impl std::fmt::Display for Echec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.phrase)
+    }
+}
+
 impl Echec {
     /// La classe du refus telle que le journal et les incidents la notent : un refus ordinaire (`None`) s'y nomme
     /// `Exception`.

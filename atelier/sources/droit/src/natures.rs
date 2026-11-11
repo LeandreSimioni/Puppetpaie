@@ -419,13 +419,13 @@ fn code_fixe<T: ListeDeLaNorme>(codes: &mut BTreeMap<String, CodeFixe>) -> Resul
         None => Ok(None),
         Some(c) => T::du_code_de_la_norme(&c.valeur).map(Some).ok_or_else(|| {
             let connus: Vec<&str> = T::toutes().iter().map(|m| m.code_de_la_norme()).collect();
-            format!("{} {} : {} inconnu. Connus : {}.", T::RUBRIQUE, T::quoi(), repr(&c.valeur), connus.join(", "))
+            socle::echec::refus(format!("{} {} : {} inconnu. Connus : {}.", T::RUBRIQUE, T::quoi(), repr(&c.valeur), connus.join(", ")))
         }),
     }
 }
 
 impl TryFrom<BTreeMap<String, CodeFixe>> for CodesFixes {
-    type Error = String;
+    type Error = socle::echec::Echec;
     fn try_from(mut codes: BTreeMap<String, CodeFixe>) -> Result<CodesFixes, Self::Error> {
         let modalite = code_fixe(&mut codes)?;
         let motif_recours = code_fixe(&mut codes)?;

@@ -75,7 +75,7 @@ impl Adresses {
 
     /// Les adresses d'un Google qui repond a `base` (un serveur local).
     pub fn de_la_base(base: &str) -> Adresses {
-        Adresses { jetons: format!("{}/token", base), compte: format!("{}/userinfo", base) }
+        Adresses { jetons: crate::google::jetons_de_la_base(base), compte: format!("{}/userinfo", base) }
     }
 }
 

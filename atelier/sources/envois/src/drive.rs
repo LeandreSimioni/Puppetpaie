@@ -219,7 +219,7 @@ impl Adresses {
 
     /// Les adresses d'un Google qui repond a `base` (un serveur local).
     pub fn de_la_base(base: &str) -> Adresses {
-        Adresses { jetons: format!("{}/token", base), fichiers: format!("{}/drive/v3/files", base), televersement: format!("{}/upload/drive/v3/files", base) }
+        Adresses { jetons: crate::google::jetons_de_la_base(base), fichiers: format!("{}/drive/v3/files", base), televersement: format!("{}/upload/drive/v3/files", base) }
     }
 }
 

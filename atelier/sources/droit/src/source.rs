@@ -27,15 +27,39 @@ fn sans_code(s: &str) -> &str {
     }
 }
 
+/// CE QU'UNE SOURCE ECRITE A DE FAUX, a sa lecture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FauteDeSource {
+    /// Le chemin n'est pas sous `atelier/reference/` (ni le mode d'emploi), ou remonte (`..`).
+    HorsDeLaReference,
+    /// Un `#` hors d'un entrepot de la DILA, ou un entrepot sans son code.
+    CodeDEntrepot,
+    /// Une source seule sans son fichier, son emetteur ou sa citation.
+    SourceIncomplete,
+    /// Une convergence qui porte autre chose que ses sources et son raisonnement.
+    ConvergenceMelee,
+}
+
+impl std::fmt::Display for FauteDeSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            FauteDeSource::HorsDeLaReference => "ce fichier n'est pas un texte déposé dans la référence de l'atelier",
+            FauteDeSource::CodeDEntrepot => "un article d'un entrepôt de la DILA nomme son code après le fichier, et lui seul",
+            FauteDeSource::SourceIncomplete => "une source nomme son fichier, son émetteur et sa citation",
+            FauteDeSource::ConvergenceMelee => "une convergence porte ses sources et son raisonnement, et rien d'autre",
+        })
+    }
+}
+
 impl TryFrom<String> for CheminDepose {
-    type Error = String;
-    fn try_from(s: String) -> Result<Self, Self::Error> {
+    type Error = FauteDeSource;
+    fn try_from(s: String) -> Result<Self, FauteDeSource> {
         let fichier = sans_code(&s);
         if !(fichier.starts_with("atelier/reference/") || fichier == MODE_D_EMPLOI) || fichier.contains("..") {
-            return Err("ce fichier n'est pas un texte déposé dans la référence de l'atelier".to_string());
+            return Err(FauteDeSource::HorsDeLaReference);
         }
         if s.contains('#') != fichier.ends_with(".jsonl.gz") {
-            return Err("un article d'un entrepôt de la DILA nomme son code après le fichier, et lui seul".to_string());
+            return Err(FauteDeSource::CodeDEntrepot);
         }
         Ok(CheminDepose(s))
     }
@@ -124,8 +148,8 @@ struct FondementLu {
 }
 
 impl TryFrom<FondementLu> for Fondement {
-    type Error = String;
-    fn try_from(l: FondementLu) -> Result<Self, Self::Error> {
+    type Error = FauteDeSource;
+    fn try_from(l: FondementLu) -> Result<Self, FauteDeSource> {
         match (l.sources, l.raisonnement) {
             (Some(sources), Some(raisonnement)) if l.fichier.is_none() && l.emetteur.is_none() && l.article.is_none() && l.citation.is_none() => {
                 Ok(Fondement::Convergence { sources, raisonnement })
@@ -135,9 +159,9 @@ impl TryFrom<FondementLu> for Fondement {
             }
             (None, None) => match (l.fichier, l.emetteur, l.citation) {
                 (Some(fichier), Some(emetteur), Some(citation)) => Ok(Fondement::Texte(vec![Source { fichier, emetteur, article: l.article, citation, annexe: l.annexe }])),
-                _ => Err("une source nomme son fichier, son émetteur et sa citation".to_string()),
+                _ => Err(FauteDeSource::SourceIncomplete),
             },
-            _ => Err("une convergence porte ses sources et son raisonnement, et rien d'autre".to_string()),
+            _ => Err(FauteDeSource::ConvergenceMelee),
         }
     }
 }

@@ -13,6 +13,11 @@ use crate::transport::{envoyer, Panne, Requete};
 /// L'adresse des jetons de Google.
 pub const JETONS: &str = "https://oauth2.googleapis.com/token";
 
+/// L'adresse des jetons d'un Google qui repond a `base` (un serveur local), au meme chemin que `JETONS`.
+pub fn jetons_de_la_base(base: &str) -> String {
+    format!("{}/token", base)
+}
+
 /// Les permissions que le logiciel demande : les fichiers qu'il cree dans le Drive, et l'adresse du compte.
 pub const PERMISSIONS: [&str; 2] =
     ["https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/userinfo.email"];

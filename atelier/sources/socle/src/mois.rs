@@ -254,11 +254,11 @@ impl std::str::FromStr for Mois {
     }
 }
 
-/// La lecture de serde (`try_from = "String"`), dont l'erreur est un texte qu'elle rend dans son propre refus.
+/// La lecture de serde (`try_from = "String"`), dont le refus se dit dans le sien.
 impl TryFrom<String> for Mois {
-    type Error = String;
-    fn try_from(s: String) -> Result<Mois, Self::Error> {
-        Mois::lire(&s).map_err(|e| e.phrase)
+    type Error = crate::echec::Echec;
+    fn try_from(s: String) -> crate::echec::R<Mois> {
+        Mois::lire(&s)
     }
 }
 

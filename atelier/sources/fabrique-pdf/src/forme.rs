@@ -144,14 +144,30 @@ struct DocumentDit {
     modele: Option<Modele>,
 }
 
+/// Ce qu'un document ecrit a de faux : il dit ses blocs ou son modele, l'un des deux.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FauteDeDocument {
+    BlocsEtModele,
+    NiBlocsNiModele,
+}
+
+impl std::fmt::Display for FauteDeDocument {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            FauteDeDocument::BlocsEtModele => "un document : \"blocs\" et \"modele\" s'excluent",
+            FauteDeDocument::NiBlocsNiModele => "un document dit ses \"blocs\" ou son \"modele\"",
+        })
+    }
+}
+
 impl TryFrom<DocumentDit> for Document {
-    type Error = String;
-    fn try_from(d: DocumentDit) -> Result<Document, String> {
+    type Error = FauteDeDocument;
+    fn try_from(d: DocumentDit) -> Result<Document, FauteDeDocument> {
         match (d.blocs, d.modele) {
             (Some(b), None) => Ok(Document::Blocs(b)),
             (None, Some(m)) => Ok(Document::Modele(m)),
-            (Some(_), Some(_)) => Err("un document : \"blocs\" et \"modele\" s'excluent".to_string()),
-            (None, None) => Err("un document dit ses \"blocs\" ou son \"modele\"".to_string()),
+            (Some(_), Some(_)) => Err(FauteDeDocument::BlocsEtModele),
+            (None, None) => Err(FauteDeDocument::NiBlocsNiModele),
         }
     }
 }

@@ -985,9 +985,9 @@ impl std::fmt::Display for IdSalarie {
 }
 
 impl TryFrom<String> for IdSalarie {
-    type Error = String;
-    fn try_from(s: String) -> Result<IdSalarie, Self::Error> {
-        IdSalarie::lire(&s).map_err(|e| e.phrase)
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<IdSalarie> {
+        IdSalarie::lire(&s)
     }
 }
 
@@ -1075,9 +1075,9 @@ impl std::fmt::Display for IdSpectacle {
 }
 
 impl TryFrom<String> for IdSpectacle {
-    type Error = String;
-    fn try_from(s: String) -> Result<IdSpectacle, Self::Error> {
-        IdSpectacle::lire(&s).map_err(|e| e.phrase)
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<IdSpectacle> {
+        IdSpectacle::lire(&s)
     }
 }
 
