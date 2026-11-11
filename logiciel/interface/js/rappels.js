@@ -22,12 +22,12 @@
  * refus, comme `api`. Sans elle, on demande. */
 let RAPPELS_MONTRES = null;   // ce que la boîte de l'ouverture a montré : `{liste, ech, manques}`, ou null
 async function montrerRappels(lu = api) {
-  let r, ech = null;
-  try { r = await lu("rappels"); } catch (e) { return; }
-  try { ech = await lu("echeancier"); } catch (e) { ech = null; }
-  let manques = [];
-  try { manques = await lireDemarrage(lu); } catch (e) { manques = []; }
-  const liste = r.rappels || [];
+  // Une lecture refusée se dit ; l'échéancier ou la liste « Pour démarrer » refusés, la boîte montre le reste.
+  let r, ech = null, manques = [];
+  try { r = await lu("rappels"); } catch (e) { dire(e.message, "erreur"); return; }
+  try { ech = await lu("echeancier"); } catch (e) { dire(e.message, "erreur"); }
+  try { manques = await lireDemarrage(lu); } catch (e) { dire(e.message, "erreur"); }
+  const liste = r.rappels;
   // L'ÉCHÉANCIER : « un pop-up au démarrage : on est le…,
   // bienvenue sur PuppetPaie, n'oublie pas de faire la DSN ». Elle s'ouvrait
   // aussi une fois par jour quand rien n'attendait : elle n'apparaît
@@ -43,26 +43,32 @@ async function montrerRappels(lu = api) {
  * chose (le même jour, les mêmes choses à faire). La mémoire est celle de la
  * fenêtre (`sessionStorage`) : le logiciel rouvert la montre de nouveau. */
 function dejaMontres(montres) {
-  const cle = "rappels-montres:" + ((montres.ech && montres.ech.compagnie) || "");
+  // La clé nomme la compagnie quand l'échéancier la dit (`null` sinon : une seule mémoire).
+  const cle = "rappels-montres:" + JSON.stringify(montres.ech ? montres.ech.compagnie : null);
   const empreinte = JSON.stringify(montres);
   try {
     if (sessionStorage.getItem(cle) === empreinte) return true;
     sessionStorage.setItem(cle, empreinte);
-  } catch (e) { /* sans mémoire, la boîte s'ouvre */ }
+  } catch (e) {
+    // Le navigateur refuse sa mémoire : la boîte s'ouvre, et le refus se dit.
+    dire(e.message, "erreur");
+  }
   return false;
 }
 
 /* CE QUE LE MOTEUR A POSÉ DE LUI-MÊME (`pour-demarrer`, `poses`) : dit avec
  * ce qui manque, en information, avec le lien vers sa case. */
 let POSES_DEMARRAGE = [];
+/** La case où mène un lien de manque, quand la ligne en nomme une. */
+const attributChamp = (champ) => (champ ? ` data-manque-champ="${echapper(champ)}"` : "");
 function htmlPoses() {
   if (!POSES_DEMARRAGE.length) return "";
   return `<div class="rappel demarrage-poses">
     <h3>Posé pour vous</h3>
     <ul class="rappel-liste">${POSES_DEMARRAGE.map((p) => `
       <li>${pastilleDeLEtat(p.pastille)}
-        <button type="button" class="lien" data-manque-champ="${echapper(p.champ || "")}"
-          data-manque-onglet="${echapper(p.onglet || "")}"><b>${echapper(p.libelle)}</b></button>
+        <button type="button" class="lien"${attributChamp(p.champ)}
+          data-manque-onglet="${echapper(p.onglet)}"><b>${echapper(p.libelle)}</b></button>
         <div class="note">${echapper(p.texte)}</div></li>`).join("")}</ul>
   </div>`;
 }
@@ -81,17 +87,18 @@ let DEMARRAGE = { titre: "", note: "", manques: [] };
  * taux AT/MP, un accès : la ligne mène à sa place). Une case de structure se
  * dessine seule, dans sa structure. */
 function caseDuManque(m) {
-  const conf = ETAT.configuration || {};
+  const conf = ETAT.configuration;
   const nom = ["salarie", "spectacle", "entreprise"].includes(m.onglet) ? m.onglet : null;
   if (!nom || !m.case) return null;
   const fiche = nom === "entreprise" ? conf.entreprise
-    : ((nom === "salarie" ? conf.salaries : conf.spectacles) || []).find((f) => f.cle === (m.salarie || m.spectacle));
+    : (nom === "salarie" ? conf.salaries : conf.spectacles).find((f) => f.cle === (m.salarie || m.spectacle));
   if (!fiche) return null;
   const [racine, ...reste] = m.case.split(".");
-  let c = ((conf.description || {})[nom] || []).find((x) => x.cle === racine);
+  let c = conf.description[nom].find((x) => x.cle === racine);
   if (!c || c.calcule || c.ecran === false) return null;
   if (reste.length) {
-    const sous = (c.champs || []).find((s) => s.cle === reste.join("."));
+    // Une case de structure : la structure dit ses cases (`champs`).
+    const sous = c.champs && c.champs.find((s) => s.cle === reste.join("."));
     if (!sous) return null;
     c = { ...c, champs: [sous] };
   }
@@ -106,43 +113,46 @@ function caseDuManque(m) {
 function caseDemarrageHtml(k) {
   if (k.racine === "code_emploi_ft") {
     return `<div class="champ"><label>Métier
-      <select data-cle="code_emploi_ft">${optionsMetiers(k.fiche.donnees.code_emploi_ft || "", "— choisir —")}</select></label></div>`;
+      <select data-cle="code_emploi_ft">${optionsMetiers(k.fiche.donnees.code_emploi_ft, "— choisir —")}</select></label></div>`;
   }
   return champDeFiche(k.c, k.affiche, k.nom).replace(/^(\s*<div class="champ[^"]*"[^>]*?)\s+hidden(?=[\s>])/, "$1");
 }
 
 function htmlDemarrage(manques) {
-  if (!manques || !manques.length) return htmlPoses();
+  if (!manques.length) return htmlPoses();
   const n = ++DEMARRAGE_LISTES;
   // CHAQUE CHOSE MÈNE À SA PLACE : `ou` est un lien qui y conduit (la fiche,
-  // l'onglet), sous la case.
-  const lien = (m) => `<button type="button" class="lien" data-manque-champ="${echapper(m.champ || "")}"
-        data-manque-onglet="${echapper(m.onglet || "")}" data-manque-fiche="${m.salarie ? "salarie" : m.spectacle ? "spectacle" : ""}" data-manque-cle="${echapper(m.salarie || m.spectacle || "")}">${echapper(m.ou || "")}</button>`;
+  // l'onglet), sous la case ; la fiche d'un salarié ou d'un spectacle, quand la ligne en nomme un.
+  const qui = (m) => (m.salarie ? ` data-manque-fiche="salarie" data-manque-cle="${echapper(m.salarie)}"`
+    : m.spectacle ? ` data-manque-fiche="spectacle" data-manque-cle="${echapper(m.spectacle)}"` : "");
+  const lien = (m) => `<button type="button" class="lien"${attributChamp(m.champ)}
+        data-manque-onglet="${echapper(m.onglet)}"${qui(m)}>${echapper(m.ou)}</button>`;
+  const pour = (m) => (m.pour ? `<div class="note">${echapper(m.pour)}</div>` : "");
   const ligne = (m) => {
     const i = manques.indexOf(m);
     const k = caseDuManque(m);
     if (!k) {
       return `<li class="demarrage-ligne">
         <b>${echapper(m.libelle)}</b> ${lien(m)}
-        <div class="note">${echapper(m.pour || "")}</div>
+        ${pour(m)}
         ${m.trouver ? `<details><summary>Où le trouver</summary><p class="note">${echapper(m.trouver)}</p></details>` : ""}
       </li>`;
     }
     return `<li class="demarrage-ligne" data-demarrage="${i}">
       <div class="demarrage-case">${caseDemarrageHtml(k)}</div>
-      <div class="note">${echapper(m.pour || "")}</div>
+      ${pour(m)}
       <div class="actions">${lien(m)}</div>
     </li>`;
   };
   const entreprise = manques.filter((m) => !m.qui);
-  const qui = [...new Set(manques.filter((m) => m.qui).map((m) => m.qui))];
+  const lesQui = [...new Set(manques.filter((m) => m.qui).map((m) => m.qui))];
   const aRemplir = manques.some((m) => caseDuManque(m));
   return `
     <div class="rappel demarrage demarrage-liste" data-demarrage-liste="${n}">
       ${DEMARRAGE.titre ? `<h3>${echapper(DEMARRAGE.titre)}</h3>` : ""}
       ${DEMARRAGE.note ? `<p class="note">${echapper(DEMARRAGE.note)}</p>` : ""}
       ${entreprise.length ? `<ul class="rappel-liste">${entreprise.map(ligne).join("")}</ul>` : ""}
-      ${qui.map((q) => `<h4>${echapper(q)}</h4>
+      ${lesQui.map((q) => `<h4>${echapper(q)}</h4>
         <ul class="rappel-liste">${manques.filter((m) => m.qui === q).map(ligne).join("")}</ul>`).join("")}
       <div class="anomalie" data-demarrage-dit hidden></div>
       <div class="actions">
@@ -169,7 +179,7 @@ function brancherDemarrage(conteneur) {
  * complétée : le moteur remplace la structure (`enregistrer-fiche`). */
 function changementsDemarrage(liste) {
   const parFiche = new Map();
-  const memes = (a, b) => JSON.stringify(a ?? "") === JSON.stringify(b ?? "");
+  const memes = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   // Une case de structure dont aucune sous-case n'est remplie (`signataire`, `banque`) est vide, comme une case seule.
   const vide = (v) => v === null || v === undefined || v === "" || (typeof v === "object" && Object.values(v).every(vide));
   const fondre = (a, b) => {
@@ -222,7 +232,9 @@ async function enregistrerDemarrage(liste) {
     }
   } catch (e) {
     if (bouton) bouton.disabled = false;
-    const anomalies = (((e.detail || {}).a_part || {}).anomalies || []).filter((a) => a.gravite === "erreur");
+    // Un refus de fiche porte ses anomalies à part (`a_part.anomalies`) ; un autre refus, sa phrase.
+    const aPart = e.detail && e.detail.a_part;
+    const anomalies = aPart && aPart.anomalies ? aPart.anomalies.filter((a) => a.gravite === "erreur") : [];
     dit.textContent = anomalies.length ? anomalies.map((a) => `${a.libelle || a.champ} : ${a.message}`).join(" ; ") : e.message;
     dit.hidden = false;
     await relireEtat();
@@ -252,7 +264,7 @@ async function quitterDemarrage() {
 /* La liste relue, partout où elle est peinte ; la fiche Entreprise, si elle
  * est ouverte et qu'on n'y a rien tapé, montre ce qui vient de s'écrire. */
 async function repeindreDemarrage() {
-  try { await lireDemarrage(api); } catch (e) { return; }
+  try { await lireDemarrage(api); } catch (e) { dire(e.message, "erreur"); return; }
   document.querySelectorAll(".demarrage-liste").forEach((l) => {
     const neuf = document.createElement("div");
     neuf.innerHTML = htmlDemarrage(DEMARRAGE.manques);
@@ -284,8 +296,8 @@ document.addEventListener("click", async (e) => {
 /* `pour-demarrer`, lu : la liste et ce que le moteur a posé. */
 async function lireDemarrage(lu) {
   const pd = await lu("pour-demarrer");
-  DEMARRAGE = { titre: pd.titre || "", note: pd.note || "", manques: pd.manques || [] };
-  POSES_DEMARRAGE = pd.poses || [];
+  DEMARRAGE = { titre: pd.titre, note: pd.note, manques: pd.manques };
+  POSES_DEMARRAGE = pd.poses;
   return DEMARRAGE.manques;
 }
 
@@ -330,7 +342,7 @@ async function allerAuManque(champ, onglet, nom, cle) {
   Promise.resolve(DEMARRAGE_PEINT).then(viser, viser);
 }
 document.addEventListener("click", (e) => {
-  const b = e.target.closest && e.target.closest("[data-manque-champ]");
+  const b = e.target.closest && e.target.closest("[data-manque-onglet]");
   if (!b) return;
   e.preventDefault();
   allerAuManque(b.dataset.manqueChamp, b.dataset.manqueOnglet, b.dataset.manqueFiche, b.dataset.manqueCle);
@@ -343,8 +355,8 @@ function peindreDemarrage(conteneur) {
   return DEMARRAGE_PEINT;
 }
 async function peindreDemarrageDans(conteneur) {
-  let manques = [];
-  try { manques = await lireDemarrage(api); } catch (e) { return; }
+  let manques;
+  try { manques = await lireDemarrage(api); } catch (e) { dire(e.message, "erreur"); return; }
   conteneur.innerHTML = htmlDemarrage(manques);
   const b = conteneur.querySelector("[data-aller-configuration]");
   if (b) b.remove();
@@ -367,7 +379,7 @@ function htmlEcheancier(ech) {
         data-fait="${x.etat === "fait" ? "non" : "oui"}">${echapper(x.bouton_coche)}</button>` : ""}
     </li>`;
   const parMois = {};
-  (ech.a_venir || []).forEach((x) => { (parMois[x.tombe] = parMois[x.tombe] || []).push(x); });
+  ech.a_venir.forEach((x) => { (parMois[x.tombe] ||= []).push(x); });
   const annee = Object.keys(parMois).map((m) => `
     <li><b>${echapper(moisEnClair(m))}</b>
       <ul>${parMois[m].map((x) => `<li>${echapper(x.titre)}${x.etat === "fait" ? " ✓" : ""}</li>`).join("")}</ul>
@@ -378,8 +390,8 @@ function htmlEcheancier(ech) {
   // UNE CHOSE SE DIT UNE FOIS : la DSN qu'un rappel réclame
   // (`rappel`, le moteur le dit) se dit dans ce rappel, sous l'en-tête, avec
   // sa date et son geste ; ici elle se dirait en double.
-  const ceMois = (ech.ce_mois || []).filter((x) => (x.etat !== "fait" || x.cochable) && !x.rappel);
-  const ditAilleurs = (ech.ce_mois || []).some((x) => x.rappel);
+  const ceMois = ech.ce_mois.filter((x) => (x.etat !== "fait" || x.cochable) && !x.rappel);
+  const ditAilleurs = ech.ce_mois.some((x) => x.rappel);
   return `
     <div class="accueil">
       <p class="accueil-date">${echapper(ech.date_dit)}</p>
@@ -399,7 +411,7 @@ function boiteRappels(liste, ech, manques = [], fermerDit = "Fermer") {
         ? ` <span class="discret">— ${echapper(r.quand)}</span>` : ""}</h3>
       ${r.question ? `<p class="rappel-question">${echapper(r.question)}</p>` : ""}
       ${r.detail ? `<p class="note">${echapper(r.detail)}</p>` : ""}
-      ${r.spectacles && r.spectacles.length ? `<ul class="rappel-liste">${r.spectacles.map((s) =>
+      ${r.spectacles.length ? `<ul class="rappel-liste">${r.spectacles.map((s) =>
         `<li>${echapper(s.titre)} <span class="discret">— ${echapper(s.numero_objet || "aucun numéro")}</span></li>`).join("")}</ul>` : ""}
       <div class="actions">${boutonRappel(r, i)}</div>
     </div>`).join("");
@@ -429,7 +441,7 @@ function boiteRappels(liste, ech, manques = [], fermerDit = "Fermer") {
         await api("echeance-faite", { cle: b.dataset.echeance, fait: b.dataset.fait === "oui" });
         const ech2 = await api("echeancier");
         const r2 = await api("rappels");
-        boiteRappels(r2.rappels || [], ech2, manques, r2.fermer_dit);
+        boiteRappels(r2.rappels, ech2, manques, r2.fermer_dit);
       } catch (e) { dire(e.message, "erreur"); }
     };
   });
@@ -448,7 +460,7 @@ function boutonRappel(r, i) {
 async function agirSurRappel(r) {
   if (!(await quitterDemarrage())) return;
   fermerBoite();
-  const mois = ((r.action || {}).charge || {}).mois;
+  const mois = r.action && r.action.charge.mois;
   // Un geste qui porte sur un mois l'ouvre d'abord : la boîte s'ouvre sur lui.
   if (mois) {
     document.querySelector('.onglets button[data-vue="paie"]').click();
@@ -462,7 +474,7 @@ async function agirSurRappel(r) {
  * demande seulement lesquels continuent. Tout est coché ; décocher archive,
  * et une fiche archivée se réactive d'un clic dans Configuration. */
 function boiteRevueSpectacles(r, charge) {
-  const lignes = (r.spectacles || []).map((s, i) => `
+  const lignes = r.spectacles.map((s, i) => `
     <label class="coche"><input type="checkbox" class="rv-garde" data-cle="${echapper(s.cle)}" checked>
       ${echapper(s.nomme)}${s.numero_objet ? ` <span class="discret">${echapper(s.numero_objet)}</span>` : ""}</label>`).join("");
   ouvrirBoite(`
