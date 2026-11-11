@@ -1785,7 +1785,12 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         let cch = match nat.unite_quotite() {
             "12" | "20" => " CCH-12",
             "10" | "21" => " CCH-13",
-            _ => "",
+            autre => {
+                return Err(refus!(
+                    "La norme DSN ne plafonne la quotité qu'en unités 10, 12, 20 et 21 (CCH-12 et CCH-13 du bloc 40) ; la nature {} la compte en unité « {} » : le signaler au développeur.",
+                    nat.libelle, autre
+                ))
+            }
         };
         Err(refus!(
             "Contrat {} du {} au {} : {} de {}, et la norme DSN la plafonne a {} en unite << {} >> \
@@ -2095,10 +2100,9 @@ pub fn mesures_d_activite(p: &Paie) -> R<Vec<(String, Decimal, String)>> {
         let valeur = match u.mesure {
             Mesure::Jours => Decimal::from(e.jours),
             Mesure::Cachets => Decimal::from(e.cachets),
-            Mesure::Heures => match e.heures {
-                Some(h) if !h.is_zero() => h,
-                _ => Decimal::ZERO,
-            },
+            // Les heures sont la somme de celles des lignes (ARCHITECTURE, « Heures, cachets et jours ») : sans ligne en
+            // heures, aucune.
+            Mesure::Heures => e.heures.iter().filter(|h| !h.is_zero()).fold(Decimal::ZERO, |a, h| a + *h),
         };
         if u.si_non_nul == Some(true) && valeur.is_zero() {
             continue;
@@ -3413,9 +3417,8 @@ const CODE81_DEDUCTION_HEURES: &str = "021";
 /// Les seuils d'effectif d'un mois, pour les CTP qui en dependent (`effectif_au_moins`, `effectif_sous` d'une ligne de
 /// `ctp_urssaf`) : l'effectif A01 que l'Urssaf renvoie en CRM 118 (`config/effectifs.json`, regle 8), la regle des cinq
 /// annees civiles consecutives (L. 130-1, II, CSS ; `Effectif::atteint`), pour payer l'annee du mois. Comme
-/// l'echeance de la DSN (`Contexte::echeance_dsn`), un effectif que le moteur ne connait pas tient le seuil pour non
-/// franchi : le bareme du mois l'a deja exige s'il porte `seuils_effectif` (`contexte::controler_effectif` refuse alors
-/// de payer), et seul un bareme complet pris tel quel (sans `seuils_effectif`) passe sans lui.
+/// l'echeance de la DSN (`Contexte::echeance_dsn`), un effectif qu'un seuil demande et que le moteur ne connait pas se
+/// refuse en nommant les annees qui manquent.
 pub struct Seuils {
     effectif: droit::contexte::Effectif,
     an: i32,
@@ -3426,13 +3429,11 @@ impl Seuils {
         Ok(Seuils { effectif: ctx.effectif()?, an: mois.annee() })
     }
 
-    fn atteint(&self, seuil: i64) -> bool {
-        matches!(self.effectif.atteint(seuil, self.an), Ok(true))
-    }
-
-    /// La ligne `ctp` du fichier des organismes s'ecrit-elle a l'effectif de ce mois ?
-    fn retient(&self, ctp: &Ctp) -> bool {
-        ctp.effectif_au_moins.is_none_or(|s| self.atteint(s)) && ctp.effectif_sous.is_none_or(|s| !self.atteint(s))
+    /// La ligne `ctp` du fichier des organismes s'ecrit-elle a l'effectif de ce mois ? Un effectif qu'un seuil demande et
+    /// que le moteur ne connait pas se refuse en nommant les annees qui manquent (`Effectif::atteint`).
+    fn retient(&self, ctp: &Ctp) -> R<bool> {
+        let atteint = |seuil: Option<i64>| seuil.map(|s| self.effectif.atteint(s, self.an)).transpose();
+        Ok(atteint(ctp.effectif_au_moins)?.is_none_or(|a| a) && atteint(ctp.effectif_sous)?.is_none_or(|a| !a))
     }
 }
 
@@ -3461,7 +3462,7 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
         ));
     }
     for ctp in ctps {
-        if !effectif.retient(ctp) {
+        if !effectif.retient(ctp)? {
             continue;
         }
         let (valeur, par_montant) = valeur_ctp(&somme, ctp)?;
@@ -3545,7 +3546,7 @@ fn lignes_regularisees(
     let mut lignes = Vec::new();
     let ctps = crate::assujettissement::ctp_sans_la_taxe_non_due(orgs.ctp_urssaf().to_vec(), taxe_apprentissage_non_due_du_mois(ent, mois_o)?);
     for ctp in &ctps {
-        if !effectif.retient(ctp) {
+        if !effectif.retient(ctp)? {
             continue;
         }
         let (corrige, par_montant) = valeur_ctp(&apres, ctp)?;

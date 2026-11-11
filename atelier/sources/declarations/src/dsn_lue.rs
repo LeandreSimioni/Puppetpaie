@@ -930,8 +930,10 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
             }
             "S21.G00.20.001" => blocs20.push([v, String::new(), String::new(), String::new()]),
             "S21.G00.20.002" | "S21.G00.20.003" | "S21.G00.20.004" => {
-                if let Some(b) = blocs20.last_mut() {
-                    b[match k { "S21.G00.20.002" => 1, "S21.G00.20.003" => 2, _ => 3 }] = v;
+                // Le rang de la rubrique dans son bloc : 002, 003, 004 vont en 1, 2, 3.
+                let rang = ["S21.G00.20.002", "S21.G00.20.003", "S21.G00.20.004"].iter().position(|r| *r == k).map(|i| i + 1);
+                if let (Some(b), Some(rang)) = (blocs20.last_mut(), rang) {
+                    b[rang] = v;
                 }
             }
             "S21.G00.30.001" => individus.push(IndividuDeclare { nir: v, ..IndividuDeclare::default() }),

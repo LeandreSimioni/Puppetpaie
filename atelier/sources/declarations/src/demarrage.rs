@@ -352,8 +352,8 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     let par_representation = |b: &droit::forme_bareme::Pile| b.contributions_conventionnelles.iter().flatten().any(|c| c.par_representation.as_ref().is_some_and(|p| !p.is_empty()));
     // C'est l'effectif de la paie (celui de l'annee d'avant, L. 130-1, I) qui decide (III.3.1.a et b) : inconnu, c'est
     // lui que la contribution demande, pas le CSE.
-    if let Ok(b) = &bareme {
-        if par_representation(b) {
+    match bareme {
+        Ok(b) if par_representation(&b) => {
             let cse = effectif.cse(an);
             let dit = cse.as_ref().is_some_and(|k| ent.cse.ouvrir(k).representation_personnel.est_dite());
             match effectif.valeur(an) {
@@ -373,14 +373,13 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
                 )?),
             }
         }
-    }
-    // L'effectif qui manque est demande plus haut.
-    if let Err(e) = bareme {
-        match e.classe {
+        Ok(_) => {}
+        // L'effectif qui manque est demande plus haut.
+        Err(e) => match e.classe {
             Some(Classe::TauxAtmpAbsent) => out.push(manque("taux_atmp", format!("Le taux AT/MP {}", an), "toute paie", ENTREPRISE, Some("taux_atmp"), e.phrase)?),
             Some(Classe::EffectifAbsent) => {}
             _ => out.push(manque("bareme", format!("Le barème {}", an), "toute paie", ENTREPRISE, None, e.phrase)?),
-        }
+        },
     }
     // La sante d'un permanent suspendu sans indemnisation tout un mois : hors de la 3090, aucun texte ne la dit, et le mois
     // refuse tant que la fiche ne repond pas (`calcul::sante_de_la_suspension`). Elle ne se demande que si une suspension

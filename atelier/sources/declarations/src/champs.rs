@@ -2007,7 +2007,9 @@ fn fautes_des_types(nom: &str, champs: &[Champ], donnees: &Saisie) -> Vec<Consta
     let cases = match nom {
         "entreprise" => <droit::fiche::ChampsEntreprise as droit::fiche::FormeDeCase>::cases(),
         "salarie" => <droit::fiche::ChampsSalarie as droit::fiche::FormeDeCase>::cases(),
-        _ => Vec::new(),
+        // La fiche d'un spectacle n'a pas de forme typee : rien n'y est hors borne. `table` a refuse tout autre nom.
+        "spectacle" => Vec::new(),
+        autre => return vec![constat(autre, Gravite::Erreur, format!("fiche inconnue : {}", socle::fichiers::repr(autre)))],
     };
     let saisie = |cle: &str| match champs.iter().find(|c| c.cle == cle).and_then(|c| c.derive_de.clone()) {
         Some(source) => source,
@@ -2193,7 +2195,7 @@ fn controles_croises(nom: &str, d: &Saisie) -> R<Vec<Constat>> {
         let fiche = socle::codification_ue::Nationalite::nouvelle(code.as_deref(), pays_n.as_deref(), hors.as_deref(), qui);
         let pays_inconnu = match d.dite("pays_nationalite") {
             Some(Valeur::Texte(p)) => socle::pays::du_code(p)?.is_none(),
-            _ => false,
+            Some(Valeur::Nombre(_) | Valeur::OuiNon(_) | Valeur::Mots(_) | Valeur::Bloc(_) | Valeur::Lignes(_)) | None => false,
         };
         let hors_liste = d.dite("pays_nationalite_hors_liste").is_some();
         if let Some(m) = socle::codification_ue::faute_hors_liste(&fiche)? {

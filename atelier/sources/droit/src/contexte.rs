@@ -309,7 +309,7 @@ rendu de nature 118 de l'Urssaf le remplace à son arrivée.{}",
 // ----------------------------------------- les baremes : socle, convention, fusion
 
 /// Les annees dont le socle est livre.
-fn annees_du_socle(dossier: &Path) -> R<Vec<i32>> {
+pub fn annees_du_socle(dossier: &Path) -> R<Vec<i32>> {
     // Un dossier absent ne livre aucune annee.
     let mut v: Vec<i32> = socle::fichiers::lister(dossier)?
         .into_iter()

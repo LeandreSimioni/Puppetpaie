@@ -60,32 +60,16 @@ fn organismes(ctx: &Contexte) -> R<Vec<(String, String)>> {
         .collect())
 }
 
-/// Les annees dont le socle est livre (`baremes.annees()`).
-fn annees_du_socle(ctx: &Contexte) -> Vec<i32> {
-    let mut out: Vec<i32> = Vec::new();
-    if let Ok(l) = std::fs::read_dir(ctx.code.join("baremes")) {
-        for e in l.flatten() {
-            let nom = e.file_name().to_string_lossy().into_owned();
-            if let Some(stem) = nom.strip_suffix(".json") {
-                if !stem.is_empty() && stem.chars().all(|c| c.is_ascii_digit()) {
-                    if let Ok(n) = stem.parse() {
-                        out.push(n);
-                    }
-                }
-            }
-        }
-    }
-    out.sort();
-    out
-}
-
 /// Ce que la convention `idcc` fait payer hors du bulletin (`hors_bulletin`), dans le socle livre de l'annee `an`, a
 /// defaut dans le plus recent livre.
 fn hors_bulletin(ctx: &Contexte, an: i32, idcc: &str) -> R<Option<droit::forme_bareme::HorsBulletin>> {
     let socle = match droit::contexte::socle_livre_lu(an).map_err(|e| e.reclasser(Classe::Disque))? {
         Some(s) => s,
         None => {
-            let derniere = annees_du_socle(ctx).into_iter().max().ok_or_else(|| erreur(Classe::Illisible, "max() arg is an empty sequence"))?;
+            let derniere = droit::contexte::annees_du_socle(&ctx.code.join("baremes"))?
+                .into_iter()
+                .max()
+                .ok_or_else(|| erreur(Classe::Illisible, "Aucun barème n'est livré avec le logiciel : le signaler au développeur."))?;
             match droit::contexte::socle_livre_lu(derniere).map_err(|e| e.reclasser(Classe::Disque))? {
                 Some(s) => s,
                 None => return Ok(None),

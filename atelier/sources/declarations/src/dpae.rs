@@ -415,7 +415,8 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
     let sexe = match ntt::sexe_de(s.nir.portee(), s.sexe.code()) {
         Some("1") => "M",
         Some("2") => "F",
-        _ => "",
+        Some(autre) => return Err(socle::refus!("Le sexe « {} » n'est ni 1 ni 2 : le signaler au développeur.", autre)),
+        None => return Err(refus("La DPAE écrit le sexe du salarié (zone SEXE) : ni son NIR ni sa fiche ne le disent.")),
     };
     poser(&mut buf, "horodatage", &horodatage_dpae(p.horodatage))?;
     // Les zones du salarie, chacune entiere dans le jeu que la norme lui admet (`Jeu`) : la fiche les tient a leur longueur.
