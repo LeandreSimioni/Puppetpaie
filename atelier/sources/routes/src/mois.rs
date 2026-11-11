@@ -388,7 +388,6 @@ struct CeQuiChange {
     index: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     salaire_mensuel: Option<Option<socle::forme::NombreLu>>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     lignes: Vec<TauxQuiChange>,
 }
 
@@ -1935,7 +1934,7 @@ struct EcritsSeuls {
     ecrits: Vec<&'static str>,
     /// Les modeles que sa case `modele_contrat` offre ; vide tant que la carte ne dit pas sa nature : les modeles sont
     /// ceux d'une nature.
-    modeles: Option<Vec<crate::modeles_contrat::ModeleAuChoix>>,
+    modeles: Vec<crate::modeles_contrat::ModeleAuChoix>,
 }
 
 /// Une paie de l'apercu : calculee, ou a completer.
@@ -2163,7 +2162,10 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                     fin,
                     avertissements: [],
                     informations: [],
-                    contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, mois)?, modeles: e.nature.map(|n| crate::modeles_contrat::au_choix(ctx, n)).transpose()? },
+                    contrat: EcritsSeuls { ecrits: champs_du_contrat_ecrit_en_saisie(ctx, e, mois)?, modeles: match e.nature {
+                        Some(n) => crate::modeles_contrat::au_choix(ctx, n)?,
+                        None => Vec::new(),
+                    } },
                     propose: engagement::proposees::de_la_carte(ctx, e, &data.mois.premier_jour())?,
                 }));
                 // Une carte a completer n'a pas de total.

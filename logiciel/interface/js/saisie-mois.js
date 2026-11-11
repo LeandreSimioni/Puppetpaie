@@ -13,9 +13,9 @@
 
 /** L'engagement de la saisie lue qu'une carte montre (celui de son identité, `data-engagement`), ou `undefined`. */
 function engagementLu(div) {
-  const ids = (SAISIE && SAISIE.identites) || [];
-  const i = ids.findIndex((id) => JSON.stringify(id) === div.dataset.engagement);
-  return i < 0 ? undefined : ((SAISIE && SAISIE.engagements) || [])[i];
+  if (!SAISIE) return undefined;      // le mois n'est pas encore lu
+  const i = SAISIE.identites.findIndex((id) => JSON.stringify(id) === div.dataset.engagement);
+  return i < 0 ? undefined : SAISIE.engagements[i];
 }
 
 /** Une carte fermée : son formulaire n'est pas construit. */
@@ -39,7 +39,7 @@ function finSeSignale(nat, motif) {
 function ruptureDuBloc(div, nat, fin, e) {
   // Un contrat aux cachets n'écrit pas sa fin : le moteur la donne (`contrat.rupture`, son dernier jour travaillé).
   if (!(fin || (div._rupture && div._rupture.fin))) return;
-  if (!(nat.motifs_rupture || []).length && !nat.signalement_fctu) return;
+  if (!nat.motifs_rupture.length && !nat.signalement_fctu) return;
   const dans = (s) => div.querySelector(s).value;
   if (dans(".e-motif-rupture")) e.motif_rupture = dans(".e-motif-rupture");
   // Le reste ne part que si cette fin SE SIGNALE : le moteur le dit, motif
@@ -47,7 +47,8 @@ function ruptureDuBloc(div, nat, fin, e) {
   // dans la DSN du mois ; rompu avant, il se signale (fiche 2062).
   if (!finSeSignale(nat, e.motif_rupture)) return;
   // Les faits du motif, seulement ceux que le moteur a demandés.
-  const faits = (nat.faits_de_rupture || {})[e.motif_rupture] || [];
+  // Un motif que le moteur ne nomme pas ne demande aucun fait.
+  const faits = e.motif_rupture in nat.faits_de_rupture ? nat.faits_de_rupture[e.motif_rupture] : [];
   if (faits.includes("notification_rupture") && dans(".e-notification"))
     e.notification_rupture = dans(".e-notification");
   if (faits.includes("engagement_licenciement") && dans(".e-engagement-licenciement"))
@@ -90,7 +91,7 @@ function engagementDuBloc(div, mois) {
   const cadre = div.querySelector(".e-cadre").checked;
   const debut = div.querySelector(".e-debut").value;
   const fin = div.querySelector(".e-fin").value;
-  const numeroDuBloc = div.dataset.numero || "";
+  const numeroDuBloc = div.dataset.numero;
   const nat = natureDe(div.querySelector(".e-nature").value);
   const faits = faitsDuBloc(div);
   const salaire = div.querySelector(".e-salaire").value;
@@ -98,7 +99,7 @@ function engagementDuBloc(div, mois) {
   const salarie = salarieDuBloc(div);
   if (!salarie) return undefined;
   // LE NUMÉRO EST CELUI D'UN CONTRAT, DONC D'UN SALARIÉ : celui de la carte s'il est le sien.
-  const numero = div.dataset.numeroDe === salarie ? numeroDuBloc : "";
+  const numero = div.dataset.numeroDe === salarie ? numeroDuBloc : undefined;
   // Une carte dit sa nature ; un permanent n'a pas de spectacle (`natures[].carte` de la route etat).
   const e = { salarie, nature: nat.cle };
   if (!nat.mensuelle && spectacle) e.spectacle = spectacle;
@@ -202,24 +203,25 @@ async function calculerApercu(lu) {
     // La lecture du mois ne calcule que les engagements qui se calculent : elle ne sert que si elle les a tous.
     let deLu = null;
     if (lu) {
-      try { deLu = lireReponse(lu); } catch (e) { deLu = null; }
-      if (deLu && (deLu.paies || []).length !== engagements.length) deLu = null;
+      // Une lecture refusée se dit, et l'aperçu se demande au moteur.
+      try { deLu = lireReponse(lu); } catch (e) { deLu = null; dire(e.message, "erreur"); }
+      if (deLu && deLu.paies.length !== engagements.length) deLu = null;
     }
     const a = deLu ? structuredClone(deLu) : await apercuDuMois(document.getElementById("mois").value);
     cible.innerHTML = vueApercu(a);
     // Les dates resolues, sous chaque engagement : ce que le moteur a compris. Chaque paie porte l'identité de son
     // engagement (`engagement`, `null` pour une carte pas encore écrite) : une carte prend celle de son identité.
-    const ids = (a.paies || []).map((p) => (p && p.engagement ? JSON.stringify(p.engagement) : null));
+    const ids = a.paies.map((p) => (p && p.engagement ? JSON.stringify(p.engagement) : null));
     const neuves = ids.flatMap((id, j) => (id == null ? [j] : []));
     const rangs = blocs.map((div) => {
       if (div.dataset.engagement) { const j = ids.indexOf(div.dataset.engagement); return j < 0 ? null : j; }
       return salarieDuBloc(div) && neuves.length ? neuves.shift() : null;
     });
     blocs.forEach((div, i) => {
-      const part = rangs[i] == null ? [] : [(a.paies || [])[rangs[i]]].filter(Boolean);
+      const part = rangs[i] == null ? [] : [a.paies[rangs[i]]];
       const p = part[0];
       // Les bornes de l'engagement, telles que le moteur les lit (ses lignes de travail) : la ligne du contrat les montre.
-      div._bornes = p ? { debut: p.debut || "", fin: p.fin || "" } : null;
+      div._bornes = p ? { debut: p.debut, fin: p.fin } : null;
       div._contratDit = p ? p.contrat_dit : null;
       majContrat(div);
       // CE QUE SA CARTE PROPOSE, le moteur le dit pour cet engagement (`propose` : ses rubriques, celle d'une ligne
@@ -245,13 +247,12 @@ async function calculerApercu(lu) {
           manques.map((x) => `<div>${erreurEnClair(x.a_completer)}</div>`).join("")}</div>`;
         return;
       }
-      div._total = part.length ? (a.blocs || [])[rangs[i]] : null;
+      div._total = part.length ? a.blocs[rangs[i]] : null;
       peindreChiffres(div, div._total);
       div._paies = part;
       // LES CASES DES LIGNES DE FRAIS : celles que le moteur désigne (`cases`, le rang de la ligne dans la saisie).
-      const cases = (p && p.cases) || [];
       [...div.querySelectorAll(".rubrique")].filter(ligneEnvoyee).forEach((r, k) => {
-        peindreCases(r, cases.filter((c) => c.ligne === k));
+        peindreCases(r, p ? p.cases.filter((c) => c.ligne === k) : []);
       });
       // La rupture que le moteur propose pour cet engagement (`contrat.rupture`) : la porte « Imprévu… » et la fin.
       div._rupture = (p && p.contrat && p.contrat.rupture) || null;
@@ -262,7 +263,7 @@ async function calculerApercu(lu) {
       // ne le portait pas encore.
       // Un numéro que la carte demande de dire (`contrat.ecrits`) ne se reprend pas de l'aperçu : vide, le moteur le donne.
       if (p && p.numero_contrat && p.contrat && !p.contrat.premier_mois
-          && !(p.contrat.ecrits || []).includes("numero") && !div.dataset.numero) {
+          && !p.contrat.ecrits.includes("numero") && !div.dataset.numero) {
         div.dataset.numero = p.numero_contrat;
         div.dataset.numeroDe = salarieDuBloc(div);
         majContrat(div);
@@ -291,7 +292,8 @@ async function calculerApercu(lu) {
         + avisDuBloc(part, "informations").map(
           (a) => `<div class="encart info avis-engagement">${echapperLiens(a)}</div>`).join("")
         // La case d'une fiche que cet engagement appelle (`a_dire`, comme « Pour démarrer ») : sa phrase, et le lien qui y mène.
-        + part.flatMap((x) => (x && x.a_dire) || []).map((m) => `<div class="encart info avis-engagement">${echapper(m.trouver)}
+        // `a_dire` : au plus une case, quand l'engagement en appelle une.
+        + part.filter((x) => x.a_dire).flatMap((x) => x.a_dire).map((m) => `<div class="encart info avis-engagement">${echapper(m.trouver)}
             <button type="button" class="lien" data-manque-champ="${echapper(m.champ)}" data-manque-onglet="${echapper(m.onglet)}"
               data-manque-fiche="salarie" data-manque-cle="${echapper(m.salarie)}">${echapper(m.ou)}</button></div>`).join("")
         // Le conseil que la saisie appelle, au plus un par carte, quand la compagnie a coché l'option.
@@ -317,7 +319,7 @@ function erreurEnClair(e) {
 
 /* Ce que le moteur dit de l'engagement de la carte (`avertissements`, `informations`), tel qu'il le dit. */
 function avisDuBloc(part, liste = "avertissements") {
-  return part.flatMap((x) => x[liste] || []);
+  return part.flatMap((x) => x[liste]);
 }
 
 /* L'ENGAGEMENT VALIDÉ, EN UNE LIGNE D'AGENDA.
@@ -337,7 +339,7 @@ function avisDuBloc(part, liste = "avertissements") {
 function peindreCarte(div) {
   const cible = div.querySelector(".e-resume");
   if (!cible) return;
-  const ligne = div._ligne, ps = div._paies || [];
+  const ligne = div._ligne, ps = div._paies;
   if (!div.classList.contains("validee") || !ligne) {
     cible.innerHTML = "";
     cible.classList.remove("ouvrable");
@@ -345,13 +347,14 @@ function peindreCarte(div) {
     cible.removeAttribute("role");
     return;
   }
-  const p = ps[0];
+  // L'aperçu peut n'être pas encore arrivé (`_paies`), ou dire une paie à compléter (sans jours ni nature).
+  const p = ps && ps[0];
   const mois = document.getElementById("mois").value;
   // QUAND. Les jours travaillés du mois ; un permanent n'en a pas : son mois.
-  const dates = p ? (p.dates_travail || []).filter((d) => d.startsWith(mois)) : [];
+  const dates = p && p.dates_travail ? p.dates_travail.filter((d) => d.startsWith(mois)) : [];
   const jours = dates.length ? joursEnClair(dates)
     : (p && p.nature && p.nature.mensuelle ? "mois" : "");
-  const moisCourt = MOIS_COURTS[parseInt(mois.slice(5, 7), 10) - 1] || "";
+  const moisCourt = MOIS_COURTS[parseInt(mois.slice(5, 7), 10) - 1];
   // POUR QUOI. Le spectacle, puis ce qui est payé en mots, et un contrat repris d'un ancien logiciel.
   const pourquoi = [pourQuoi(ligne), p && p.paye_dit, ligne.repris_dit].filter(Boolean).join(" · ");
   // Un contrat sur plusieurs mois porte sa pastille à côté du nom.
@@ -398,7 +401,7 @@ function versionsDe(ligne) {
 
 /** La frise : par version, sa date, ce qui a changé depuis la précédente, et ce qui est parti sur elle. */
 function boiteFrise(ligne) {
-  const vs = ligne.versions.versions || [];
+  const vs = ligne.versions.versions;
   ouvrirBoite(`
     <h3>${echapper(ligne.nom)}</h3>
     <p class="discret">${echapper([pourQuoi(ligne), ligne.periode_dit].filter(Boolean).join(", "))}</p>
@@ -446,7 +449,7 @@ function peindreChiffres(div, total) {
  * rejoue sa paie jusqu'à tomber juste. */
 async function ajusterBloc(div, champ) {
   const note = div.querySelector(".e-chiffres-note");
-  const montant = (champ.value || "").trim();
+  const montant = champ.value.trim();
   // Vidée : on ne vise plus rien, et l'aperçu remettra le nombre calculé.
   if (montant === "") { rafraichirApercu(); return; }
   if (!salarieDuBloc(div)) {
@@ -477,12 +480,11 @@ async function ajusterBloc(div, champ) {
 
 /** Les taux que le moteur a trouvés, réécrits dans les cases. */
 function appliquerAjustement(div, r) {
-  const e = (r.engagements || [])[0];
-  if (!e) return;
+  const e = r.engagements[0];
   // Les lignes que la carte a enregistrées (`lignesDuBloc`), dans le même ordre : une ligne vide n'est pas partie,
   // donc elle ne compte pas dans les rangs.
   const rangs = [...div.querySelectorAll(".rubrique")].filter(ligneEnvoyee);
-  (e.lignes || []).forEach((l) => {
+  e.lignes.forEach((l) => {
     const cible = rangs[l.rang];
     if (cible) cible.querySelector(".r-taux").value = l.taux;
   });
@@ -493,7 +495,7 @@ function appliquerAjustement(div, r) {
 /* LE MOIS, EN DEUX NOMBRES : ce qu'on vire (le net) et ce que le mois coûte à la compagnie, puis une ligne par salarié,
  * son net, le coût et le brut au survol. Le moteur les somme (`total_net`, `total_cout`, `par_salarie` de l'aperçu). */
 function vueApercu(a) {
-  const groupes = a.par_salarie || [];
+  const groupes = a.par_salarie;
   // Ce que les chiffres ne comptent pas (un engagement à compléter, ou aucun), le moteur le dit (`phrase_du_mois`).
   const phrase = a.phrase_du_mois ? `<p class="discret">${echapper(a.phrase_du_mois)}</p>` : "";
   if (!groupes.length) return phrase;
@@ -539,17 +541,18 @@ async function chargerMois(mois, repeint = false) {
   // laisse tomber, sinon il repeindrait l'écran par-dessus le bon.
   if (DEMANDE_MOIS !== mois) return;
   // L'identité de chaque engagement, dans l'ordre de `engagements` : ce par quoi sa carte le désigne.
-  SAISIE = { ...r.saisie, identites: r.identites || [] };
-  IMPORTES = r.importes || [];
+  SAISIE = { ...r.saisie, identites: r.identites };
+  IMPORTES = r.importes;
   NOUVELLE_CARTE = r.nouvelle_carte;
   MOIS_AFFICHE = mois;
   document.getElementById("mois").value = mois;
   afficherMoisChoisi();
   // LE TAUX DU CACHET D'UNE LIGNE NEUVE, LE MOTEUR LE DIT (`defauts.taux_cachet`) ; chaque autre rubrique part du
   // dernier taux que le mois lui donne. Ce n'est qu'une commodité de saisie, à l'écran.
-  const defauts = r.defauts || {};
+  const defauts = r.defauts;
   if (defauts.taux_cachet != null) TAUX_PAR_RUBRIQUE.cachet = +defauts.taux_cachet;
-  (SAISIE.engagements || []).forEach((e) => (e.lignes || []).forEach((l) => {
+  // Une carte sans ligne de paie n'en écrit pas (`lignes` absent).
+  SAISIE.engagements.forEach((e) => e.lignes && e.lignes.forEach((l) => {
     if (!(+l.taux > 0) || !l.rubrique || l.rubrique === "cachet") return;
     TAUX_PAR_RUBRIQUE[l.rubrique] = +l.taux;
   }));
@@ -579,7 +582,7 @@ async function chargerMois(mois, repeint = false) {
   }
   cible.innerHTML = "";
   // Une carte par engagement : une carte porte un salarié.
-  const groupes = (SAISIE.engagements || []).map((e, i) => ({ ...e, id: (SAISIE.identites || [])[i] }));
+  const groupes = SAISIE.engagements.map((e, i) => ({ ...e, id: SAISIE.identites[i] }));
   const ouvertes = avant.length === groupes.length ? avant.map((div) => !carteFermee(div)) : [];
   groupes.forEach((g, i) => cible.appendChild(ligneEngagement(g, { fermee: !ouvertes[i] })));
   if (deplies) {
@@ -656,7 +659,8 @@ async function repeindreLeMois(mois, ancien, frais) {
   const cles = new Set([...Object.keys(ancien.lectures), ...Object.keys(frais.lectures)]);
   if ([...cles].every(memes)) return;
   const enCours = !toutEstEcrit();
-  const saisieDe = (lu) => JSON.stringify(((lu.lectures.saisie || {}).resultat || {}).saisie);
+  // La lecture `saisie` d'un mois, telle qu'elle est arrivée (son résultat, ou son refus) : deux lectures se comparent.
+  const saisieDe = (lu) => JSON.stringify(lu.lectures.saisie);
   if (!enCours && (saisieDe(ancien) !== saisieDe(frais) || !memes("contrats-en-cours"))) {
     await chargerMois(mois, true);
     return;
@@ -665,14 +669,14 @@ async function repeindreLeMois(mois, ancien, frais) {
   try {
     const r = await api("saisie", { mois });
     if (MOIS_AFFICHE !== mois) return;
-    const defauts = r.defauts || {};
+    const defauts = r.defauts;
     if (defauts.taux_cachet != null) TAUX_PAR_RUBRIQUE.cachet = +defauts.taux_cachet;
     afficherRappelsMois();
-    IMPORTES = r.importes || [];
+    IMPORTES = r.importes;
     NOUVELLE_CARTE = r.nouvelle_carte;
     majAvisDuMois(mois, r.ferme_aux_neufs ? "" : r.phrase);
     dessinerMoisImporte(r.ferme_aux_neufs, r);
-  } catch (e) { /* la saisie se lit telle quelle : rien à changer */ }
+  } catch (e) { dire(e.message, "erreur"); }
   if (!enCours) calculerApercu(frais.lectures.apercu);
   await Promise.allSettled([
     dessinerActions(mois),
@@ -685,7 +689,7 @@ async function repeindreLeMois(mois, ancien, frais) {
  *  mois importé. Ce que le moteur refuse d'y écrire, il le dit à l'écriture. */
 function majAvisDuMois(mois, phrase) {
   majAvisDemo(mois);
-  noteSaisie(phrase || "");
+  noteSaisie(phrase);
 }
 
 /** UN MOIS SAISI EN DÉMO, dans une compagnie gardée au déblocage : la mention du moteur (route `etat`,
@@ -693,7 +697,7 @@ function majAvisDuMois(mois, phrase) {
 function majAvisDemo(mois) {
   const avis = document.getElementById("avis-demo");
   const d = ETAT && ETAT.demo;
-  avis.hidden = !(d && (d.mois || []).includes(mois));
+  avis.hidden = !(d && d.mois.includes(mois));
   if (!avis.hidden) avis.textContent = d.phrase;
 }
 
@@ -717,16 +721,17 @@ const CASES_IMPORTEES = [
 /** `ferme` : la phrase du moteur quand le mois ne reçoit pas d'engagement neuf (`ferme_aux_neufs` de la route `saisie`) ;
  *  « + un engagement » se cache, la phrase se lit à sa place. `r` : la réponse de `saisie` (son en-tête, `importes_titre`
  *  et `importes_dit`). */
-function dessinerMoisImporte(ferme, r = {}) {
+function dessinerMoisImporte(ferme, r) {
   const cible = document.getElementById("mois-importe");
   document.getElementById("ajouter-engagement").hidden = !!ferme;
   if (!IMPORTES.length) { cible.hidden = true; cible.innerHTML = ""; return; }
-  const moisCourt = MOIS_COURTS[parseInt(MOIS_AFFICHE.slice(5, 7), 10) - 1] || "";
+  const moisCourt = MOIS_COURTS[parseInt(MOIS_AFFICHE.slice(5, 7), 10) - 1];
   cible.innerHTML = `
-    <p class="mi-tete"><b>${echapper(r.importes_titre || "")}</b> <span class="discret">— ${echapper(r.importes_dit || "")}</span></p>
+    <p class="mi-tete"><b>${echapper(r.importes_titre)}</b> <span class="discret">— ${echapper(r.importes_dit)}</span></p>
     ${IMPORTES.map((p, i) => carteImportee(p, i, moisCourt)).join("")}
     <p class="discret mi-ferme"></p>`;
-  cible.querySelector(".mi-ferme").textContent = ferme || "";
+  // `textContent` est nullable : un mois ouvert aux engagements neufs ne dit rien ici.
+  cible.querySelector(".mi-ferme").textContent = ferme;
   ouvrirLesCartesImportees(cible);
   cible.hidden = false;
 }
@@ -744,11 +749,10 @@ function ouvrirLesCartesImportees(cible) {
 
 function carteImportee(p, i, moisCourt) {
   // QUAND : les jours travaillés que le bulletin imprime ; sans eux, la période du contrat, telle que le moteur la dit.
-  const jours = p.dates.length ? joursEnClair(p.dates)
-    : (p.periode || "");
+  const jours = p.dates.length ? joursEnClair(p.dates) : p.periode;
   const pastille = (cle, titre) => {
-    const e = p.etats[cle] || {};
-    return `<span class="etat-acte ${e.couleur || "gris"}" title="${echapper(e.phrase || "")}">
+    const e = p.etats[cle];
+    return `<span class="etat-acte ${e.couleur}" title="${echapper(e.phrase)}">
       <i class="carre"></i>${echapper(titre)}</span>`;
   };
   // LE MONTANT : le net à payer ; sans lui (une DSN seule ne le déclare pas), le brut, et la carte le dit.
@@ -766,21 +770,23 @@ function carteImportee(p, i, moisCourt) {
       <span class="ci-valeur">${valeur ? echapper(valeur) : `<i>${echapper(absent ? absent.dit : "—")}</i>`}</span>${
       valeur && source ? `<span class="ci-source">${echapper(source)}</span>` : ""}${pourquoi}</div>`;
   };
-  const lignes = (p.lignes || []).length ? `
+  // Une case qu'une ligne du bulletin n'imprime pas reste vide.
+  const cellule = (v) => (v ? echapper(v) : "");
+  const lignes = p.lignes.length ? `
     <table class="ci-lignes"><tr><th>Ligne du bulletin</th><th class="nombre">Quantité</th><th class="nombre">Taux</th><th class="nombre">Montant</th></tr>
-      ${p.lignes.map((l) => `<tr><td>${echapper(l.libelle || "")}</td><td class="nombre">${echapper(l.quantite || "")}</td>
+      ${p.lignes.map((l) => `<tr><td>${cellule(l.libelle)}</td><td class="nombre">${cellule(l.quantite)}</td>
         <td class="nombre">${l.taux ? echapper(euros(l.taux)) : ""}</td><td class="nombre">${l.montant ? echapper(euros(l.montant)) : ""}</td></tr>`).join("")}
     </table>` : "";
   return `
     <div class="carte-importee${p.manque.length ? " incomplete" : ""}" data-rang="${i}">
       <div class="e-resume">
-        <div class="carte-quand" title="${echapper(p.dates.length ? p.dates.map(jjmmaaaa).join(", ") : (ETAT.aides || {}).importe_dates)}">
+        <div class="carte-quand" title="${echapper(p.dates.length ? p.dates.map(jjmmaaaa).join(", ") : ETAT.aides.importe_dates)}">
           <b class="${jours.includes(" · ") || jours.includes(" – ") ? "epars" : ""}">${echapper(jours)}</b><span>${echapper(moisCourt)}</span></div>
-        <div class="carte-qui" title="${echapper(p.origine_dit || "")}">
-          <span class="carte-nom"><b>${echapper(p.nom)}</b> <span class="mot-etat">importé</span></span>
+        <div class="carte-qui"${p.origine_dit ? ` title="${echapper(p.origine_dit)}"` : ""}>
+          <span class="carte-nom"><b>${cellule(p.nom)}</b> <span class="mot-etat">importé</span></span>
           <span class="discret">${echapper(p.quoi_dit)}</span></div>
         <div class="carte-actes"><div class="etats-actes">${pastille("dpae", "DPAE")}${pastille("signature", "Contrat")}${pastille("documents", "Documents")}</div></div>
-        <div class="carte-net" title="${echapper(p.net_titre || "") || aideDe("importe_brut")}">${net}</div>
+        <div class="carte-net" title="${p.net_titre ? echapper(p.net_titre) : aideDe("importe_brut")}">${net}</div>
       </div>
       ${manque}
       <div class="ci-cases" hidden>
@@ -791,10 +797,10 @@ function carteImportee(p, i, moisCourt) {
           ${casePlate("Début", p.debut ? jjmmaaaa(p.debut) : "", "", "debut")}
           ${casePlate("Fin", p.fin ? jjmmaaaa(p.fin) : "", "", "fin")}
           ${casePlate("Jours travaillés", p.dates.map((d) => d.slice(8, 10)).join(" · "), "bulletin", "dates")}
-          ${casePlate("Cachets", p.cachets != null ? String(p.cachets) : "", p.atteste_par || "", "cachets")}
-          ${casePlate("Heures", p.heures != null ? String(p.heures) : "", p.atteste_par || "", "cachets")}
+          ${casePlate("Cachets", p.cachets != null ? String(p.cachets) : "", p.atteste_par, "cachets")}
+          ${casePlate("Heures", p.heures != null ? String(p.heures) : "", p.atteste_par, "cachets")}
           ${CASES_IMPORTEES.map(([k, mot]) => casePlate(mot, p.montants[k] ? euros(p.montants[k]) : "",
-              p.sources[k] || "", k)).join("")}
+              p.sources[k], k)).join("")}
         </div>
         ${lignes}
       </div>
@@ -827,13 +833,14 @@ async function enregistrerEnPartant(attente, chargement) {
   try {
     for (const [div, carte] of attente) await ecrireLaCarte(div, carte, mois, appelerMoteur);
     oublierCouts();
-    appelerMoteur("etat").then((e) => { ETAT.historique = e.historique; }, () => {});
+    appelerMoteur("etat").then((e) => { ETAT.historique = e.historique; }, (e) => dire(e.message, "erreur"));
   } catch (e) {
     dire(e.message, "erreur");
     return;
   }
   // Le mois affiché se vérifie quand il est peint (la vérification part tout de suite : le moteur refait l'état).
-  if (DEMANDE_MOIS) verifierLeMois(DEMANDE_MOIS, chargement.catch(() => {}));
+  // Un chargement refusé se dit ; la vérification n'attend que sa fin.
+  if (DEMANDE_MOIS) verifierLeMois(DEMANDE_MOIS, chargement.catch((e) => dire(e.message, "erreur")));
 }
 
 /* LE CHOIX DU MOIS. « Un truc simple, qu'on puisse cliquer sur
@@ -881,7 +888,7 @@ function dessinerGrilleMois() {
   const grille = document.getElementById("mois-grille");
   const choisi = document.getElementById("mois").value;
   const ceMois = aujourdhuiIso().slice(0, 7);   // le mois du moteur
-  const saisis = new Map((ETAT.historique || []).map((h) => [h.mois, h.saisi_dit]));
+  const saisis = new Map(ETAT.historique.map((h) => [h.mois, h.saisi_dit]));
   grille.innerHTML = `
     <div class="choix-mois-annee">
       <button type="button" class="choix-mois-pas" data-annee="-1" aria-label="Année précédente">&lsaquo;</button>
@@ -935,7 +942,8 @@ document.addEventListener("click", (e) => {
   const c = e.target;
   if (!(c instanceof HTMLInputElement) || !/^(date|month|datetime-local)$/.test(c.type)) return;
   if (c.disabled || c.readOnly || typeof c.showPicker !== "function") return;
-  try { c.showPicker(); } catch (err) { /* déjà ouvert, ou refusé : l'icône reste */ }
+  // Le navigateur qui refuse d'ouvrir le choix le dit ; l'icône de la case reste.
+  try { c.showPicker(); } catch (err) { dire(err.message, "erreur"); }
 });
 
 /* Quitter l'onglet ou fermer la fenêtre : on écrit ce qui attend encore. Une
@@ -1055,6 +1063,7 @@ async function ecrireLaCarte(div, carte, mois, appel = api) {
 let ENREGISTREMENT = Promise.resolve(false);
 function aSonTour(appel) {
   const tour = ENREGISTREMENT.then(appel);
+  // La file continue après un échec : celui-ci revient à qui a demandé ce tour (`tour`), qui le dit.
   ENREGISTREMENT = tour.catch(() => false);
   return tour;
 }
@@ -1087,7 +1096,7 @@ async function enregistrerLesCartes(silencieux) {
   oublierCouts();
   // L'heure du moteur (`enregistre_a`), pas celle du navigateur : au banc, le temps est simulé. Un engagement auquel il
   // manque un fait s'enregistre aussi : sa carte dit ce qui manque.
-  noteSaisie(enregistre + (aCompleter ? " — " + ((ETAT.aides || {}).a_completer || "") : ""));
+  noteSaisie(enregistre + (aCompleter ? " — " + ETAT.aides.a_completer : ""));
   ETAT.historique = await api("etat").then((e) => e.historique);
   // Ce qui vient d'être enregistré compte dans la colonne « ce qui part », et la fin d'un contrat comme les jours payés
   // pendant un imprévu se lisent sur ce qui est enregistré.
@@ -1117,7 +1126,8 @@ window.addEventListener("pagehide", () => {
       method: "POST", keepalive: true,
       headers: { "Content-Type": "application/json", "X-Jeton": JETON },
       body: JSON.stringify({ mois, carte: carteVisee(div, carte), changements }),
-    }).catch(() => {});
+    // La page part : un échec ne se lit que si elle revient (le cache du navigateur), et il se dit alors.
+    }).catch((e) => dire(e.message, "erreur"));
   });
 });
 
