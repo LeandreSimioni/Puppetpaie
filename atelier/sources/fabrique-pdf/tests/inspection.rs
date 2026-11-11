@@ -196,8 +196,18 @@ fn page_tournee() {
     assert_eq!(p["rotation"], 90);
     assert_eq!(p["polices"], json!(["Helvetica"]));
     let b = boite(&p["mots"][0]["rect"]);
-    // Helvetica non incorporée : ascendant 1,075 et descendant 0,299 (ceux de MuPDF), corps 10
-    assert!(proche(b[0], pt(30), "0.01") && proche(b[1], mesure("79.25"), "0.01") && proche(b[3], mesure("92.99"), "0.01"), "{:?}", b);
+    // Helvetica non incorporée, corps 10, ligne de base à 100 - 10 = 90 depuis le haut. L'AFM d'Adobe
+    // (atelier/reference/sources/adobe-polices/adobe-core14-afm-20261111/Helvetica.afm) : « Ascender 718 »,
+    // « Descender -207 », et les avances « N T » 611, « N o », « N u », « N n », « N e » 556, « N r » 333 (un Tj ne
+    // crène pas) : haut 90 - 7,18 = 82,82, bas 90 + 2,07 = 92,07, droite 30 + 31,68 = 61,68.
+    assert!(
+        proche(b[0], pt(30), "0.01")
+            && proche(b[1], mesure("82.82"), "0.01")
+            && proche(b[2], mesure("61.68"), "0.01")
+            && proche(b[3], mesure("92.07"), "0.01"),
+        "{:?}",
+        b
+    );
     assert_eq!(boite(&p["traits"][0]), [20, 20, 60, 40].map(pt));
 }
 
