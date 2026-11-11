@@ -1000,7 +1000,14 @@ pub(crate) fn fiche_de_l_engagement(ctx: &Contexte, eng: &Engagement) -> R<Salar
     } else {
         convention_de_l_employeur(ctx, emploi_de(&ctx.salarie_au(cle, &eng.debut)?, &emploi)?)
     };
-    Ok(anciennete_a_l_embauche(etablissement_du_contrat(fiche, eng), eng))
+    let mut fiche = etablissement_du_contrat(fiche, eng);
+    // L'embauche que ce contrat est (`Anciennete::Embauche`) date l'anciennete que la fiche ne dit pas encore ; une
+    // anciennete ni dite ni lue reste vide, et ce qui la lit refuse en la nommant.
+    match Anciennete::de(&ctx.racine, &fiche.fiche.champs, cle, eng.debut)? {
+        Anciennete::Embauche(j) => fiche.fiche.champs.date_anciennete = Some(j),
+        Anciennete::Dite(_) | Anciennete::NonDite => {}
+    }
+    Ok(fiche)
 }
 
 /// LA CONVENTION DE L'EMPLOYEUR sur la fiche que la paie lit (`droit::caisse_conges::IDCC_DE_L_EMPLOYEUR`) : l'IDCC de
@@ -1020,23 +1027,44 @@ pub fn etablissement_du_contrat(mut fiche: SalarieDuContrat, eng: &Engagement) -
     fiche
 }
 
-/// L'ANCIENNETE DANS L'ENTREPRISE (S21.G00.86.003, `norme-dsn/texte/bloc-S21.G00.86.txt`) d'une fiche qui ne la date pas
-/// encore : elle part de l'embauche, le premier jour de ce contrat, qui est le premier du salarie (la validation de son
-/// premier engagement la pose sur sa fiche, `routes::fiches::poser_anciennete_a_l_embauche`, ou elle se change).
-/// INFERENCE : l'anciennete dans l'entreprise commence a l'entree dans l'entreprise.
-fn anciennete_a_l_embauche(mut fiche: SalarieDuContrat, eng: &Engagement) -> SalarieDuContrat {
-    if !fiche.date_anciennete.est_dite() {
-        fiche.fiche.champs.date_anciennete = Some(eng.debut);
-    }
-    fiche
+/// L'ANCIENNETE DANS L'ENTREPRISE d'un salarie pour un contrat (S21.G00.86.003, « l'anciennete dans l'entreprise » :
+/// `norme-dsn/texte/bloc-S21.G00.86.txt` ; la 3090, annexe I, art. 3.11, compte des « ans de presence » :
+/// `kali-3090-titres-vii-x-xi-annexes-20260924.md`). Seule la compagnie la connait (la case « Dans la compagnie depuis »,
+/// `date_anciennete`), sauf un fait que le moteur lit : un salarie qu'aucun engagement anterieur ne nomme chez la
+/// compagnie, saisi ou importe, entre chez elle par ce contrat, et son anciennete part de son premier jour. INFERENCE :
+/// l'anciennete dans l'entreprise commence a l'entree dans l'entreprise. La validation et le calcul la lisent ici
+/// (`routes::fiches::poser_anciennete_a_l_embauche`, `fiche_de_l_engagement`), et nulle part ailleurs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Anciennete {
+    /// La date que la fiche dit.
+    Dite(Jour),
+    /// Aucun engagement anterieur : ce contrat est l'embauche, qui commence ce jour-la.
+    Embauche(Jour),
+    /// Ni dite, ni lue : un engagement anterieur nomme le salarie, la fiche ne dit pas depuis quand il est la.
+    NonDite,
 }
 
-/// LA DATE D'ANCIENNETE DANS L'ENTREPRISE de `fiche` pour un contrat qui commence le `debut` : celle que la fiche dit,
-/// sinon l'embauche, le premier jour de ce contrat (`anciennete_a_l_embauche`).
-pub(crate) fn date_d_anciennete(fiche: &ChampsSalarie, debut: &Jour) -> Jour {
-    match fiche.date_anciennete.dite() {
-        Some(d) => *d,
-        None => *debut,
+impl Anciennete {
+    /// L'anciennete de `fiche` (le salarie de cle `cle`) pour un contrat qui commence le `debut`.
+    pub fn de(racine: &std::path::Path, fiche: &ChampsSalarie, cle: &str, debut: Jour) -> R<Anciennete> {
+        if let Some(d) = fiche.date_anciennete.dite() {
+            return Ok(Anciennete::Dite(*d));
+        }
+        let anterieur = crate::stock::objets(racine)?
+            .iter()
+            .any(|o| o.carte().salarie.as_ref().is_some_and(|s| s.as_str() == cle) && o.carte().debut.is_some_and(|d| d < debut));
+        Ok(if anterieur { Anciennete::NonDite } else { Anciennete::Embauche(debut) })
+    }
+
+    /// Le jour d'ou elle part ; non dite, le calcul qui la lit refuse en nommant la case.
+    pub fn jour(self) -> R<Jour> {
+        match self {
+            Anciennete::Dite(j) | Anciennete::Embauche(j) => Ok(j),
+            Anciennete::NonDite => Err(socle::echec::cle(
+                "La fiche du salarié ne dit pas depuis quand il est dans la compagnie, et un engagement d'avant le nomme : le dire sur sa fiche (« Dans la compagnie depuis »).",
+                "date_anciennete",
+            )),
+        }
     }
 }
 

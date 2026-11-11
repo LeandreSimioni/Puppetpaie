@@ -71,7 +71,7 @@ pub(crate) fn regle_du_mois_incomplet(
 /// L'horaire de `salarie` pour le mois [`debut_mois`, `fin_mois`] (`droit::periodes::Horaire`) : ses jours travailles,
 /// lus sur sa fiche (`droit::conges::JoursTravailles`), et les feries chomes du mois que l'entreprise ne lui doit pas
 /// (`droit::conges::feries_non_payes`, L3133-3), son anciennete comptee depuis sa fiche (« Dans la compagnie depuis »)
-/// ou, sans elle, depuis le debut de son contrat `debut_contrat` (la date que la validation pose sur la fiche).
+/// ou depuis son embauche, quand ce contrat l'est (`calcul::Anciennete`) ; ni l'une ni l'autre : refus.
 pub(crate) fn horaire_du_mois(
     ctx: &Contexte,
     au: &AuMois,
@@ -82,7 +82,7 @@ pub(crate) fn horaire_du_mois(
 ) -> R<droit::periodes::Horaire> {
     let fiche = ctx.salarie(salarie)?;
     let jours = droit::conges::JoursTravailles::de_la_fiche(&fiche, au)?;
-    let anciennete = crate::calcul::date_d_anciennete(&fiche, debut_contrat);
+    let anciennete = crate::calcul::Anciennete::de(&ctx.racine, &fiche, salarie, *debut_contrat)?.jour()?;
     let feries_non_payes = droit::conges::feries_non_payes(debut_mois, fin_mois, ctx.entreprise.feries_chomes(), &jours, &anciennete)?;
     Ok(droit::periodes::Horaire { jours, feries_non_payes })
 }
@@ -1156,11 +1156,18 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     let cle = salarie.clone();
     // Les annees de presence que les suspensions laissent (L1225-54 : `imprevus::anciennete_depuis`).
     let mut sur_l_anciennete = Vec::new();
-    let depuis = crate::calcul::date_d_anciennete(&fiche, &debut_saisi);
-    let (retenu, dit) = crate::imprevus::anciennete_depuis(&ctx.racine, &cle, &depuis, &fin_mois)?;
-    if retenu != depuis {
+    // L'anciennete dite, ou l'embauche que ce contrat est (`calcul::Anciennete`) ; ni l'une ni l'autre, la prime qui la
+    // lit refuse en nommant la case (`clauses::prime_anciennete`).
+    let depuis = match crate::calcul::Anciennete::de(&ctx.racine, &fiche, &cle, debut_saisi)? {
+        crate::calcul::Anciennete::Dite(j) | crate::calcul::Anciennete::Embauche(j) => Some(j),
+        crate::calcul::Anciennete::NonDite => None,
+    };
+    if let Some(depuis) = depuis {
+        let (retenu, dit) = crate::imprevus::anciennete_depuis(&ctx.racine, &cle, &depuis, &fin_mois)?;
         fiche.date_anciennete = Some(retenu);
-        sur_l_anciennete = dit;
+        if retenu != depuis {
+            sur_l_anciennete = dit;
+        }
     }
     let ent = &ctx.entreprise;
     let jauge = |cle: &droit::minima::ParLaGrille| ent.metier.ouvrir(&(*cle, *au)).jauge_annexe_1.dite().map(droit::fiche::Choix::code);
