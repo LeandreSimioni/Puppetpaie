@@ -160,17 +160,6 @@ pub fn usage(norme: &Norme, rubrique: &str, nature: NatureDeLaDeclaration) -> R<
     Ok(table_de(norme)?.usages.get(rubrique).map(|e| e.pour(nature)))
 }
 
-/// Ce que `usage_en` rend pour une rubrique que le tableau n'a pas.
-const INCONNUE: &str = "";
-
-/// 'O', 'C', 'I', 'N' -- ou "" si la rubrique est inconnue du tableau de cette version.
-pub fn usage_en(norme: &Norme, rubrique: &str, nature: NatureDeLaDeclaration) -> R<String> {
-    Ok(match usage(norme, rubrique, nature)? {
-        Some(u) => u.lettre().to_string(),
-        None => INCONNUE.to_string(),
-    })
-}
-
 /// Les rubriques ecrites que cette nature n'admet pas : (rubrique, usage, `None` si le tableau ne la connait pas).
 pub fn interdites(texte: &str, nature: NatureDeLaDeclaration, norme: &Norme) -> R<Vec<(String, Option<Usage>)>> {
     let mut vues = HashSet::new();
@@ -260,8 +249,7 @@ mod tests {
     }
 
     /// Le releve de `moteur-atelier extraire usages`, sur le PDF 2027.1.1 puis sur les classeurs
-    /// 2027.1.2 (fiches 3357 et 3358) : 20 rubriques ajoutees, 2 retirees, 11.024 qui change d'usage en
-    /// mensuelle (N9) ; le 2027.1.2 passe 40.084 de O a C en mensuelle (journal de maintenance, evolution 21).
+    /// 2027.1.2 (fiches 3357 et 3358) : 20 rubriques ajoutees, 2 retirees.
     /// `atelier/reference/norme-dsn/dsn-tableau-des-usages-2027.1.2-20251224.xlsx`, `dsn-journal-maintenance-2027.1.2-20260615.txt`.
     #[test]
     fn les_usages_2027_sont_ceux_du_cahier_2027() {
@@ -272,9 +260,5 @@ mod tests {
         let ajoutees: Vec<&String> = b.keys().filter(|k| !a.contains_key(*k)).collect();
         assert_eq!(retirees, ["S21.G00.06.003", "S21.G00.11.002"]);
         assert_eq!(ajoutees.len(), 20, "{:?}", ajoutees);
-        let mensuelle = NatureDeLaDeclaration::Mensuelle;
-        assert_eq!(usage_en(&p27, "S21.G00.40.084", mensuelle).unwrap(), "C");
-        assert_eq!(usage_en(&p26, "S21.G00.11.024", mensuelle).unwrap(), "I");
-        assert_eq!(usage_en(&p27, "S21.G00.11.024", mensuelle).unwrap(), "C");
     }
 }
