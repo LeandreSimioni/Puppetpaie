@@ -88,13 +88,16 @@ fn role_nomme(libelle: &str) -> Option<&'static str> {
 /// contrat a saisir et une seule adhesion libre : c'est la sienne. Sinon, un contrat a saisir de role prevoyance ou
 /// sante recoit l'adhesion libre dont le libelle nomme ce role, et elle seule (inference : la compagnie a nomme son
 /// contrat par ce qu'il couvre). Ce qui ne se rattache pas ainsi se dit, et « Pour demarrer » le demande.
-fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
+fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) -> socle::echec::R<()> {
     if lecture.adhesions.is_empty() {
-        return;
+        return Ok(());
     }
     let (ecran, attendus) = match (compagnie::organismes::lire(ctx, None), droit::organismes::attendus(ctx)) {
         (Ok(e), Ok(a)) => (e, a),
-        (Err(e), _) | (_, Err(e)) => return faits.push(format!("Les contrats de la DSN reprise ne se posent pas : {}", e.phrase)),
+        (Err(e), _) | (_, Err(e)) => {
+            faits.push(format!("Les contrats de la DSN reprise ne se posent pas : {}", e.phrase));
+            return Ok(());
+        }
     };
     let lignes = ecran.lignes();
     let fixes: Vec<String> = lignes.iter().filter_map(libelle_de).map(|l| l.to_uppercase()).collect();
@@ -103,7 +106,7 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
     let libres: Vec<&Adhesion> =
         lecture.adhesions.iter().filter(|a| !libelle(a).is_empty() && !fixes.contains(&libelle(a).to_uppercase())).collect();
     if a_saisir.is_empty() || libres.is_empty() {
-        return;
+        return Ok(());
     }
     // Le role du contrat attendu d'une ligne (`prevoyance`, `sante`), s'il en a un.
     let role_de = |l: &Ligne| attendus.iter().find(|s| s.cle.trim() == l.cle).and_then(|s| s.role.as_deref()).map(str::trim).map(str::to_string);
@@ -123,7 +126,10 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
     let organisme = |a: &Adhesion| a.organisme.as_deref().map(str::trim).map(str::to_string);
     let mut saisies = std::collections::BTreeMap::new();
     for (l, a, _) in &paires {
-        saisies.insert(l.cle.clone(), droit::organismes::Saisie { libelle: Some(libelle(a)), organisme: organisme(a) });
+        // La saisie est celle de l'ecran (`organismes-enregistrer`) : une case vide ne s'y ecrit pas `""`.
+        let libelle = socle::forme::TexteDit::lire(&libelle(a))?;
+        let organisme = organisme(a).as_deref().map(socle::forme::TexteDit::lire).transpose()?;
+        saisies.insert(l.cle.clone(), droit::organismes::Saisie { libelle: Some(libelle), organisme });
     }
     let enregistre = match saisies.is_empty() {
         true => false,
@@ -157,6 +163,7 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
             restes.join(", ")
         ));
     }
+    Ok(())
 }
 
 /// Ce que les DSN reprises de la compagnie (`historique/bulletins/`) disent de sa configuration, pose ; rend ce qui l'a ete.
@@ -170,7 +177,10 @@ pub(crate) fn parametrer(ctx: &Contexte) -> Vec<String> {
     }
     let mut faits = Vec::new();
     poser_atmp(ctx, &lecture, &mut faits);
-    poser_organismes(ctx, &lecture, &mut faits);
+    // Ce qui ne se pose pas se dit, et l'import reste fait (voir l'en-tete).
+    if let Err(e) = poser_organismes(ctx, &lecture, &mut faits) {
+        faits.push(format!("Les contrats de la DSN reprise ne se posent pas : {}", e.phrase));
+    }
     poser_taux_pas(ctx, &mut faits);
     faits
 }
@@ -216,7 +226,7 @@ pub(crate) fn poser_organismes_repris(ctx: &Contexte) -> socle::echec::R<Vec<Str
     let lecture = import::dsn_aem::lire_dsn(&ctx.racine.join("historique").join("bulletins"))?;
     let mut faits = Vec::new();
     if lecture.fichiers > 0 {
-        poser_organismes(ctx, &lecture, &mut faits);
+        poser_organismes(ctx, &lecture, &mut faits)?;
     }
     Ok(faits)
 }

@@ -477,13 +477,14 @@ fn fiche_verifiee<F: SorteDeFiche>(
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct ChoixEtablissement {
     periode_dit: Option<String>,
-    nic: String,
+    /// Le NIC de l'etablissement ; aucun pour le siege (un engagement du siege n'en ecrit pas).
+    nic: Option<String>,
     nom: String,
     ouverture: Option<String>,
     fermeture: Option<String>,
 }
 
-/// CE QU'UN ENGAGEMENT CHOISIT quand la compagnie a d'autres etablissements que le siege : le siege (`nic` vide) puis
+/// CE QU'UN ENGAGEMENT CHOISIT quand la compagnie a d'autres etablissements que le siege : le siege (`nic` absent) puis
 /// chacun, nomme par son nom et sa commune, avec son ouverture, et son dernier jour s'il est ferme (un engagement passe
 /// le garde). `None` : un seul etablissement, rien a choisir.
 pub(crate) fn choix_d_etablissement(ctx: &Contexte) -> R<Option<Vec<ChoixEtablissement>>> {
@@ -499,7 +500,7 @@ pub(crate) fn choix_d_etablissement(ctx: &Contexte) -> R<Option<Vec<ChoixEtablis
         Some(commune) => format!("Le siège, {}", commune),
         None => "Le siège".to_string(),
     };
-    let mut out = vec![ChoixEtablissement { periode_dit: None, nic: String::new(), nom: nom_du_siege, ouverture: None, fermeture: None }];
+    let mut out = vec![ChoixEtablissement { periode_dit: None, nic: None, nom: nom_du_siege, ouverture: None, fermeture: None }];
     for (e, fermeture) in autres {
         // Un etablissement se choisit par son NIC : sans lui, il ne se choisit pas.
         let Some(nic) = e.nic.en_texte() else { continue };
@@ -511,7 +512,7 @@ pub(crate) fn choix_d_etablissement(ctx: &Contexte) -> R<Option<Vec<ChoixEtablis
             None => format!("ouvert le {}", o.jj_mm_aaaa()),
         });
         let nom = if nom.is_empty() { nic.clone() } else { nom };
-        out.push(ChoixEtablissement { periode_dit, nom, nic, ouverture: e.ouverture.map(|j| j.iso()), fermeture: fermeture.map(|j| j.iso()) });
+        out.push(ChoixEtablissement { periode_dit, nom, nic: Some(nic), ouverture: e.ouverture.map(|j| j.iso()), fermeture: fermeture.map(|j| j.iso()) });
     }
     Ok(Some(out))
 }

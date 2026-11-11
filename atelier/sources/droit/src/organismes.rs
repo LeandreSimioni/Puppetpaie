@@ -228,12 +228,19 @@ impl Adhesion {
 }
 
 /// Ce que l'ecran saisit d'un contrat (`organismes-enregistrer`, `contrats` : cle -> saisie) : sa reference chez
-/// l'organisme et le code de l'organisme.
+/// l'organisme et le code de l'organisme. Une case vide est absente ou nulle ; `""` se refuse a la porte (`TexteDit`).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Saisie {
-    pub libelle: Option<String>,
-    pub organisme: Option<String>,
+    pub libelle: Option<socle::forme::TexteDit>,
+    pub organisme: Option<socle::forme::TexteDit>,
+}
+
+impl Saisie {
+    /// Une case saisie, sans ses blancs autour et en capitales ; des blancs seuls ne disent rien.
+    fn dite(case: &Option<socle::forme::TexteDit>) -> Option<String> {
+        case.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(str::to_uppercase)
+    }
 }
 
 /// LA LECTURE DE `config/organismes.json`, la seule ; absent, il ne dit rien.
@@ -559,11 +566,11 @@ pub fn composer(
         let l = ligne(&spec, saisi);
         let maintenant = saisies.get(spec.cle.trim());
         let libelle = match maintenant {
-            Some(s) if !l.libelle_fixe => net(&s.libelle).map(|t| t.to_uppercase()),
+            Some(s) if !l.libelle_fixe => Saisie::dite(&s.libelle),
             _ => l.libelle.clone(),
         };
         let organisme = match maintenant {
-            Some(s) if !l.organisme_fixe => net(&s.organisme).map(|t| t.to_uppercase()),
+            Some(s) if !l.organisme_fixe => Saisie::dite(&s.organisme),
             _ => l.organisme.clone(),
         };
         let quoi = spec.quoi.trim().to_string();

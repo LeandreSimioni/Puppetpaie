@@ -345,7 +345,7 @@ impl Carte {
 
     /// Le numero du contrat, s'il est dit.
     pub fn numero_dit(&self) -> Option<&str> {
-        self.numero.as_deref().filter(|s| !s.is_empty())
+        self.numero.as_deref()
     }
 
     /// Les lignes de la carte (aucune si elle n'en dit pas).
@@ -420,8 +420,8 @@ impl CongePris {
 #[serde(deny_unknown_fields)]
 pub struct Prime {
     pub montant: NombreLu,
-    /// Sa rubrique au catalogue (« prime », ou une autre que la carte choisit).
-    pub rubrique: String,
+    /// Sa rubrique au catalogue, que la carte choisit ; `null` tant qu'elle ne la dit pas (le calcul la demande).
+    pub rubrique: Option<String>,
     pub libelle: Option<String>,
 }
 

@@ -1172,7 +1172,7 @@ function construireCarte(div, e) {
   const selEtab = div.querySelector(".e-etablissement");
   const etabs = ETAT.configuration.etablissements;
   div.querySelector(".e-etablissement-bloc").hidden = !etabs;
-  selEtab.innerHTML = etabs ? etabs.map((x) => `<option value="${echapper(x.nic)}">${
+  selEtab.innerHTML = etabs ? etabs.map((x) => `<option value="${echapper(texteDeLaCase(x.nic))}">${
     echapper([x.nom, x.periode_dit].filter(Boolean).join(" — "))}</option>`).join("") : "";
   selEtab.value = texteDeLaCase(e.etablissement);
   selEtab.onchange = rafraichirApercu;

@@ -58,9 +58,9 @@ impl NumeroContrat {
         Ok(NumeroContrat(texte.to_string()))
     }
 
-    /// Le numero d'un texte dit : absent ou vide, aucun ; une autre forme que celle de la norme se refuse.
+    /// Le numero d'un texte dit : absent, aucun ; une autre forme que celle de la norme (le texte vide compris) se refuse.
     pub fn du_texte(t: Option<&str>) -> R<Option<NumeroContrat>> {
-        t.filter(|n| !n.is_empty()).map(NumeroContrat::lire).transpose()
+        t.map(NumeroContrat::lire).transpose()
     }
 
     pub fn as_str(&self) -> &str {
