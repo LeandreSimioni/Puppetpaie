@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use crate::description::{refus, Refus};
+use crate::description::{defaut, Refus};
 
 // Comprimées par build.rs (zlib) : 0,4 Mo de moins dans le programme.
 static REGULIER_Z: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/LiberationSans-Regular.ttf.z"));
@@ -39,7 +39,7 @@ fn decomprimer(z: &'static [u8]) -> Result<Arc<Vec<u8>>, Refus> {
     let mut ttf = Vec::new();
     flate2::read::ZlibDecoder::new(z)
         .read_to_end(&mut ttf)
-        .or_else(|e| refus(format!("police interne illisible : {}", e)))?;
+        .or_else(|e| defaut(format!("police interne illisible : {}", e)))?;
     let f = Arc::new(ttf);
     DECOMPRIMEES.lock().unwrap_or_else(|e| e.into_inner()).push((cle, f.clone()));
     Ok(f)

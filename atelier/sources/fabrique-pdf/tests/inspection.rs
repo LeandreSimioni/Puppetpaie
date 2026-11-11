@@ -70,7 +70,7 @@ fn contrat(largeur: Mesure, hauteur: Mesure) -> Vec<u8> {
     });
     fabrique_pdf::Description::lire(&desc.to_string())
         .and_then(|d| fabrique_pdf::fabriquer(&d))
-        .unwrap_or_else(|e| panic!("{}", e.0))
+        .unwrap_or_else(|e| panic!("{}", e.phrase))
 }
 
 #[test]

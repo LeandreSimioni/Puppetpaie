@@ -223,7 +223,7 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
         None => unreachable!("un poids de 1 a 2 048 Ko tient en octets"),
     };
     let allegee = fabrique_pdf::alleger::alleger(&octets, largeur, octets_vises)
-        .map_err(|r| refus(format!("Le fichier n'est pas lisible : {}. Rien n'a ete ecrit.", r.0)))?;
+        .map_err(|r| documents::fabrique::echec(r).reformuler(|p| format!("Le fichier n'est pas lisible : {}. Rien n'a ete ecrit.", p)))?;
     let poids = dire_le_poids(quoi, &allegee, objectif_ko);
     let (octets, format) = (allegee.octets, allegee.format);
     let dossier = dossier_identite(ctx);

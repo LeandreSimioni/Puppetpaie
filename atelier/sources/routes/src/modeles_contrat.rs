@@ -829,7 +829,7 @@ fn lire(ctx: &Contexte, c: ChargeLire) -> R<ModeleRendu> {
     let texte = texte_de(&nat, s, c.partie)?;
     // Un texte sans paragraphe ne se lit pas : aucun geste n'en laisse (chacun verifie le modele), il ne vient que d'un
     // fichier ecrit a la main, et se refuse.
-    let lu = fabrique_pdf::modele::lire_modele(&texte, &nom).map_err(|r| refus(format!("{} : le supprimer et copier la base à nouveau.", r.0)))?;
+    let lu = fabrique_pdf::modele::lire_modele(&texte, &nom).map_err(|r| documents::fabrique::echec(r).reformuler(|p| format!("{} : le supprimer et copier la base à nouveau.", p)))?;
     let articles = lu
         .articles
         .iter()

@@ -7,7 +7,18 @@ use std::path::{Path, PathBuf};
 
 use fabrique_pdf::assemblage::{Assemblage, Piece};
 use fabrique_pdf::Description;
-use socle::echec::{erreur, refus, Classe, R};
+use socle::echec::{erreur, Classe, R};
+
+/// LE REFUS DE LA FABRIQUE, LU PAR SA CLASSE (jamais par sa phrase), sur une ligne : un defaut du logiciel (un modele
+/// livre qui sort de sa page, une police interne illisible), une piece recue illisible, ou ce que l'appelant corrige.
+pub fn echec(r: fabrique_pdf::Refus) -> socle::echec::Echec {
+    let classe = match r.classe {
+        fabrique_pdf::Classe::DefautDuLogiciel => Classe::DefautDuLogiciel,
+        fabrique_pdf::Classe::PieceIllisible => Classe::Illisible,
+        fabrique_pdf::Classe::ACorriger => Classe::FabriqueRefus,
+    };
+    erreur(classe, r.phrase.replace('\n', " ").trim().to_string())
+}
 
 /// Ecrit le PDF de `description` dans `chemin` et rend le chemin.
 pub fn ecrire(description: &Description, chemin: &Path) -> R<PathBuf> {
@@ -22,19 +33,20 @@ pub fn ecrire(description: &Description, chemin: &Path) -> R<PathBuf> {
     Ok(chemin.to_path_buf())
 }
 
-/// Le PDF de `description` ecrit a `chemin` ; un refus de la fabrique, sur une ligne, sous la classe `FabriqueRefus`.
+/// Le PDF de `description` ecrit a `chemin` ; un refus de la fabrique dans sa classe (`echec`), un refus du disque
+/// dans la sienne.
 pub fn ecrire_pdf(description: &Description, chemin: &Path) -> R<()> {
-    ecrire(description, chemin).map(|_| ()).map_err(|m| m.reformuler(|p| p.replace('\n', " ").trim().to_string()).reclasser(Classe::FabriqueRefus))
+    ecrire(description, chemin).map(|_| ())
 }
 
 /// Les octets du PDF de `description`, sans fichier.
 pub fn fabriquer_octets(description: &Description) -> R<Vec<u8>> {
-    fabrique_pdf::fabriquer(description).map_err(|r| refus(r.0.replace('\n', " ")))
+    fabrique_pdf::fabriquer(description).map_err(echec)
 }
 
 /// Le PDF verrouille en AES-256 (mot de passe utilisateur vide, impression et copie seules).
 pub fn verrouiller(octets: &[u8]) -> R<Vec<u8>> {
-    fabrique_pdf::chiffrement::verrouiller_avec(octets, |o| socle::temps::aleas(o).map_err(|e| e.phrase)).map_err(|r| refus(r.0.replace('\n', " ")))
+    fabrique_pdf::chiffrement::verrouiller_avec(octets, |o| socle::temps::aleas(o).map_err(|e| e.phrase)).map_err(echec)
 }
 
 // ------------------------------------------------------------------ l'assemblage
@@ -52,15 +64,12 @@ pub fn fusion_pieces(pieces: &[(PathBuf, Option<Vec<usize>>)]) -> R<Vec<u8>> {
             })
             .collect(),
     };
-    let refus = |m: &str| {
-        erreur(Classe::Refuse, format!(
-            "Assemblage impossible : la fabrique de PDF refuse la fusion ({}). Aucun PDF n'est assemblé autrement.",
-            m.replace('\n', " ").trim()
-        ))
+    let dire = |m: socle::echec::Echec| {
+        m.reformuler(|p| format!("Assemblage impossible : la fabrique de PDF refuse la fusion ({}). Aucun PDF n'est assemblé autrement.", p))
     };
-    match fabrique_pdf::assemblage::assembler(&assemblage).map_err(|r| refus(&r.0))? {
+    match fabrique_pdf::assemblage::assembler(&assemblage).map_err(|r| dire(echec(r)))? {
         // Une piece verrouillee (un PDF venu d'ailleurs, tel qu'il a ete depose) garde son verrou dans ce qui la porte.
-        (octets, true) => verrouiller(&octets).map_err(|m| refus(&m.phrase)),
+        (octets, true) => verrouiller(&octets).map_err(dire),
         (octets, false) => Ok(octets),
     }
 }

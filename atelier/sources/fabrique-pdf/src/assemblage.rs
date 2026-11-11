@@ -14,7 +14,7 @@ use std::hash::Hasher;
 use lopdf::{Dictionary, Document, Object, ObjectId};
 use serde::Deserialize;
 
-use crate::description::Refus;
+use crate::description::{refus, Refus};
 
 /// Un assemblage : `{"format": 1, "pieces": [ … ]}` sur l'entrée standard (`--assembler`).
 #[derive(Debug, Clone, Deserialize)]
@@ -41,10 +41,6 @@ pub struct Piece {
     pub pages: Option<Vec<u32>>,
 }
 
-fn refus<T>(m: String) -> Result<T, Refus> {
-    Err(Refus(m))
-}
-
 /// Les attributs qu'une page hérite de son arbre.
 const HERITES: [&[u8]; 4] = [b"Resources", b"MediaBox", b"CropBox", b"Rotate"];
 
@@ -58,7 +54,7 @@ pub fn assembler(a: &Assemblage) -> Result<(Vec<u8>, bool), Refus> {
         }
     }
     if a.pieces.is_empty() {
-        return refus("assemblage vide : aucune pièce".into());
+        return refus("assemblage vide : aucune pièce");
     }
 
     let mut sortie = Document::with_version("1.7");
@@ -72,7 +68,7 @@ pub fn assembler(a: &Assemblage) -> Result<(Vec<u8>, bool), Refus> {
     for (n, piece) in a.pieces.iter().enumerate() {
         let n = n + 1;
         if !lus.contains_key(&piece.fichier) {
-            let (doc, verrou) = crate::lecture::ouvrir(&piece.fichier, true).map_err(|r| Refus(format!("pièce {} : {}", n, r.0)))?;
+            let (doc, verrou) = crate::lecture::ouvrir(&piece.fichier, true).map_err(|r| r.reformuler(|p| format!("pièce {} : {}", n, p)))?;
             verrouille |= verrou;
             lus.insert(piece.fichier.clone(), doc);
         }
@@ -102,7 +98,7 @@ pub fn assembler(a: &Assemblage) -> Result<(Vec<u8>, bool), Refus> {
         }
     }
     if feuilles.is_empty() {
-        return refus("assemblage vide : aucune page".into());
+        return refus("assemblage vide : aucune page");
     }
 
     let mut arbre = Dictionary::new();

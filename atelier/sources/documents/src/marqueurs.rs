@@ -217,6 +217,6 @@ impl ModeleLu {
 
     /// Son decoupage en titre, preambule, articles et signatures (`fabrique_pdf::modele::lire_modele`).
     pub fn decoupe(&self, nom: &str) -> R<fabrique_pdf::modele::Modele> {
-        fabrique_pdf::modele::lire_modele(&self.texte, nom).map_err(|r| erreur(Classe::Illisible, r.0))
+        fabrique_pdf::modele::lire_modele(&self.texte, nom).map_err(crate::fabrique::echec)
     }
 }

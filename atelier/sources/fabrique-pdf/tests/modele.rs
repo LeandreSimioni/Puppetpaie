@@ -32,7 +32,7 @@ fn ecrire_modele(nom: &str, texte: &str) -> String {
 }
 
 fn fabriquer(v: &Value) -> Result<Vec<u8>, String> {
-    fabrique_pdf::Description::lire(&v.to_string()).and_then(|d| fabrique_pdf::fabriquer(&d)).map_err(|r| r.0)
+    fabrique_pdf::Description::lire(&v.to_string()).and_then(|d| fabrique_pdf::fabriquer(&d)).map_err(|r| r.phrase)
 }
 
 fn refus(v: &Value) -> String {
@@ -99,7 +99,7 @@ fn fins_de_ligne_crlf_et_commentaire_indente() {
 #[test]
 fn un_modele_sans_article_est_refuse() {
     let e = modele::lire_modele("TITRE: T\nPREAMBULE:\nx\n", "mon.modele").unwrap_err();
-    assert_eq!(e.0, "mon.modele ne contient aucun article");
+    assert_eq!(e.phrase, "mon.modele ne contient aucun article");
 }
 
 // ------------------------------------------------------------- les marqueurs
@@ -122,7 +122,7 @@ fn un_marqueur_inconnu_les_nomme_tous_et_liste_les_disponibles() {
     let v = valeurs(&[("b.y", "1"), ("a.x", "2")]);
     let e = modele::substituer("{{a.x}} {{contrat.inconnu}} {{z.z}} {{contrat.inconnu}}", &v).unwrap_err();
     assert_eq!(
-        e.0,
+        e.phrase,
         "marqueur inconnu dans le modèle de contrat : {{contrat.inconnu}}, {{z.z}}, {{contrat.inconnu}}. \
          Marqueurs disponibles : a.x, b.y"
     );

@@ -33,17 +33,37 @@ fn lire_entree() -> Result<String, String> {
         .map_err(|e| format!("lecture de l'entrée standard impossible : {}", e))?;
     let texte = String::from_utf8(entree)
         .map_err(|_| "description illisible : l'entrée n'est pas de l'UTF-8".to_string())?;
-    Ok(texte.strip_prefix('\u{feff}').unwrap_or(&texte).to_string())
+    match texte.strip_prefix('\u{feff}') {
+        Some(sans_marque) => Ok(sans_marque.to_string()),
+        None => Ok(texte),
+    }
+}
+
+/// Une réponse en JSON sur la sortie standard.
+fn en_json<T: serde::Serialize>(valeur: &T) -> ExitCode {
+    match serde_json::to_string(valeur) {
+        Ok(json) => {
+            println!("{}", json);
+            ExitCode::SUCCESS
+        }
+        Err(e) => echec(&format!("écriture du JSON impossible : {}", e), 1),
+    }
 }
 
 /// Écrit `octets` dans `sortie`. Un échec efface le fichier partiel — sauf si `sortie` est aussi
-/// le fichier d'entrée (`--marquer a.pdf a.pdf …`) : celui-là n'est jamais effacé.
+/// le fichier d'entrée (`--marquer a.pdf a.pdf …`) : celui-là n'est jamais effacé ; un effacement qui échoue se dit
+/// à la suite.
 fn ecrire(sortie: &str, octets: &[u8], entree: Option<&str>) -> Result<(), ExitCode> {
     if let Err(e) = std::fs::write(sortie, octets) {
-        if entree != Some(sortie) {
-            let _ = std::fs::remove_file(sortie);
-        }
-        return Err(echec(&format!("écriture impossible de {} : {}", sortie, e), 1));
+        let reste = match entree != Some(sortie) {
+            true => match std::fs::remove_file(sortie) {
+                Ok(()) => String::new(),
+                Err(f) if f.kind() == std::io::ErrorKind::NotFound => String::new(),
+                Err(f) => format!(" ; le fichier partiel n'a pas pu être effacé ({})", f),
+            },
+            false => String::new(),
+        };
+        return Err(echec(&format!("écriture impossible de {} : {}{}", sortie, e, reste), 1));
     }
     Ok(())
 }
@@ -83,15 +103,15 @@ pub fn executer(args: &[String]) -> ExitCode {
             };
             let assemblage = match crate::assemblage::Assemblage::lire(&texte) {
                 Ok(a) => a,
-                Err(r) => return echec(&r.0, 1),
+                Err(r) => return echec(&r.phrase, 1),
             };
             let octets = match crate::assembler(&assemblage) {
                 Ok((o, false)) => o,
                 Ok((o, true)) => match crate::chiffrement::verrouiller(&o) {
                     Ok(o) => o,
-                    Err(r) => return echec(&r.0, 1),
+                    Err(r) => return echec(&r.phrase, 1),
                 },
-                Err(r) => return echec(&r.0, 1),
+                Err(r) => return echec(&r.phrase, 1),
             };
             match ecrire(sortie, &octets, None) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -100,11 +120,8 @@ pub fn executer(args: &[String]) -> ExitCode {
         }
         // Le nombre de pages de chaque PDF : un tableau JSON (FORMAT.md, « Lire un PDF »).
         [a, fichiers @ ..] if a == "--pages" && !fichiers.is_empty() => match crate::lecture::pages(fichiers) {
-            Ok(n) => {
-                println!("{}", serde_json::to_string(&n).unwrap_or_default());
-                ExitCode::SUCCESS
-            }
-            Err(r) => echec(&r.0, 1),
+            Ok(n) => en_json(&n),
+            Err(r) => echec(&r.phrase, 1),
         },
         // Le texte de chaque page d'un PDF : un tableau JSON de chaînes.
         [a, fichier] if a == "--texte" => match crate::lecture::texte(fichier) {
@@ -112,10 +129,9 @@ pub fn executer(args: &[String]) -> ExitCode {
                 for m in avertissements {
                     eprintln!("{} : {}", fichier, m);
                 }
-                println!("{}", serde_json::to_string(&textes).unwrap_or_default());
-                ExitCode::SUCCESS
+                en_json(&textes)
             }
-            Err(r) => echec(&r.0, 1),
+            Err(r) => echec(&r.phrase, 1),
         },
         // L'inspection d'un PDF : une ligne de JSON (FORMAT.md, « Inspecter un PDF »).
         [a, fichier] if a == "--inspecter" => match crate::inspection::inspecter(fichier) {
@@ -126,7 +142,7 @@ pub fn executer(args: &[String]) -> ExitCode {
                 println!("{}", json);
                 ExitCode::SUCCESS
             }
-            Err(r) => echec(&r.0, 1),
+            Err(r) => echec(&r.phrase, 1),
         },
         // Un texte en pied de chaque page d'un PDF existant (FORMAT.md, « Marquer un PDF »).
         [a, entree, sortie, texte] if a == "--marquer" => {
@@ -136,7 +152,7 @@ pub fn executer(args: &[String]) -> ExitCode {
             };
             let marque = match crate::marquage::marquer(&octets, texte) {
                 Ok(o) => o,
-                Err(r) => return echec(&format!("{} : {}", entree, r.0), 1),
+                Err(r) => return echec(&format!("{} : {}", entree, r.phrase), 1),
             };
             match ecrire(sortie, &marque, Some(entree)) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -151,7 +167,7 @@ pub fn executer(args: &[String]) -> ExitCode {
             };
             let chiffre = match crate::chiffrement::verrouiller(&octets) {
                 Ok(o) => o,
-                Err(r) => return echec(&format!("{} : {}", entree, r.0), 1),
+                Err(r) => return echec(&format!("{} : {}", entree, r.phrase), 1),
             };
             match ecrire(sortie, &chiffre, Some(entree)) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -169,12 +185,12 @@ pub fn executer(args: &[String]) -> ExitCode {
                     println!("{}", v);
                     ExitCode::SUCCESS
                 }
-                Err(r) => echec(&format!("{} : {}", fichier, r.0), 1),
+                Err(r) => echec(&format!("{} : {}", fichier, r.phrase), 1),
             }
         }
         // Remplit des champs texte et pose des images ; la description JSON arrive sur l'entrée.
         [a, entree, sortie] if a == "--remplir" => {
-            let remplissage = match lire_entree().and_then(|t| crate::forme::Remplissage::lire(&t).map_err(|r| r.0)) {
+            let remplissage = match lire_entree().and_then(|t| crate::forme::Remplissage::lire(&t).map_err(|r| r.phrase)) {
                 Ok(r) => r,
                 Err(m) => return echec(&format!("{} : {}", entree, m), 1),
             };
@@ -184,7 +200,7 @@ pub fn executer(args: &[String]) -> ExitCode {
             };
             let rempli = match crate::formulaire::remplir(&octets, &remplissage) {
                 Ok(o) => o,
-                Err(r) => return echec(&format!("{} : {}", entree, r.0), 1),
+                Err(r) => return echec(&format!("{} : {}", entree, r.phrase), 1),
             };
             match ecrire(sortie, &rempli, Some(entree)) {
                 Ok(()) => ExitCode::SUCCESS,
@@ -192,13 +208,13 @@ pub fn executer(args: &[String]) -> ExitCode {
             }
         }
         [sortie] if !sortie.starts_with("--") => {
-            let description = match lire_entree().and_then(|t| Description::lire(&t).map_err(|r| r.0)) {
+            let description = match lire_entree().and_then(|t| Description::lire(&t).map_err(|r| r.phrase)) {
                 Ok(d) => d,
                 Err(m) => return echec(&m, 1),
             };
             let octets = match fabriquer(&description) {
                 Ok(o) => o,
-                Err(r) => return echec(&r.0, 1),
+                Err(r) => return echec(&r.phrase, 1),
             };
             match ecrire(sortie, &octets, None) {
                 Ok(()) => ExitCode::SUCCESS,

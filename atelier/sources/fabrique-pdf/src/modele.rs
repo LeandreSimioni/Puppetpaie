@@ -186,9 +186,9 @@ impl Modele {
 /// Lit le fichier `chemin` (UTF-8) et le découpe.
 pub fn lire_fichier(chemin: &str) -> Result<Modele, Refus> {
     let octets = std::fs::read(chemin)
-        .map_err(|e| Refus(format!("modèle illisible : {} : {}", chemin, e)))?;
+        .map_err(|e| Refus::illisible(format!("modèle illisible : {} : {}", chemin, e)))?;
     let texte = String::from_utf8(octets)
-        .map_err(|_| Refus(format!("modèle illisible : {} n'est pas de l'UTF-8", chemin)))?;
+        .map_err(|e| Refus::illisible(format!("modèle illisible : {} n'est pas de l'UTF-8 ({})", chemin, e.utf8_error())))?;
     lire_modele(&texte, chemin)
 }
 

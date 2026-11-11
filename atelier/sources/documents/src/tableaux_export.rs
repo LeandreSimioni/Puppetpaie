@@ -899,7 +899,7 @@ pub fn description_pdf(
 
 /// `pdf_fabrique` : les octets du PDF mis en page par la fabrique. Un refus de la fabrique est `Refuse`.
 pub fn pdf_fabrique(description: &pdf::Description) -> R<Vec<u8>> {
-    fabrique_pdf::fabriquer(description).map_err(|r| refus(format!("PDF impossible : la fabrique de PDF refuse cet état ({}). Aucun PDF n'est fait autrement.", r.0.replace('\n', " "))))
+    fabrique_pdf::fabriquer(description).map_err(|r| crate::fabrique::echec(r).reformuler(|p| format!("PDF impossible : la fabrique de PDF refuse cet état ({}). Aucun PDF n'est fait autrement.", p)))
 }
 
 /// `pdf_tableau` : A4 paysage, l'en-tete des colonnes a chaque page, un pied numerote.

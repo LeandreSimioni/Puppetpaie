@@ -32,7 +32,7 @@ pub const DISTANCE_REPERE: Mesure = Mesure::entier(20);
 
 /// Lit `texte` en `T`, strictement ; un refus est une ligne de français.
 pub fn lire<T: serde::de::DeserializeOwned>(texte: &str, quoi: &str) -> Result<T, Refus> {
-    serde_json::from_str(texte).map_err(|e| Refus(format!("{} illisible : {}", quoi, francais(&e))))
+    serde_json::from_str(texte).map_err(|e| Refus::a_corriger(format!("{} illisible : {}", quoi, francais(&e))))
 }
 
 // ---------------------------------------------------------------------------

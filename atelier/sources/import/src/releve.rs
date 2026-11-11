@@ -73,8 +73,8 @@ pub struct Releve {
 
 /// Pourquoi un PDF ne se releve pas.
 pub enum Refus {
-    /// La fabrique ne l'ouvre pas (sa raison, qui commence par le chemin).
-    Fabrique(String),
+    /// La fabrique ne l'ouvre pas : son refus, dans sa classe (sa phrase commence par le chemin).
+    Fabrique(fabrique_pdf::Refus),
     /// Le releve rendu ne se lit pas : son refus.
     Releve(Echec),
 }
@@ -84,7 +84,7 @@ impl Refus {
     #[track_caller]
     pub fn en_echec(self) -> Echec {
         match self {
-            Refus::Fabrique(r) => socle::echec::refus(format!("PDF que la fabrique n'ouvre pas : {}", r)),
+            Refus::Fabrique(r) => documents::fabrique::echec(r).reformuler(|p| format!("PDF que la fabrique n'ouvre pas : {}", p)),
             Refus::Releve(e) => e.reformuler(|p| format!("releve du PDF illisible ({})", p)),
         }
     }
@@ -121,13 +121,14 @@ impl Drop for Releves {
 
 /// Le releve du PDF `chemin`. Un fichier dont la taille ou la date ne se lisent pas ne s'ouvre pas : la fabrique le dit.
 pub fn du_pdf(chemin: &Path) -> Result<Rc<Releve>, Refus> {
-    let meta = std::fs::metadata(chemin).map_err(|e| Refus::Fabrique(format!("{} illisible ({})", chemin.display(), e)))?;
-    let date = meta.modified().map_err(|e| Refus::Fabrique(format!("{} illisible ({})", chemin.display(), e)))?;
+    let illisible = |e: std::io::Error| Refus::Fabrique(fabrique_pdf::Refus::illisible(format!("{} illisible ({})", chemin.display(), e)));
+    let meta = std::fs::metadata(chemin).map_err(illisible)?;
+    let date = meta.modified().map_err(illisible)?;
     let cle: Cle = (chemin.to_path_buf(), meta.len(), date);
     if let Some(r) = MEMO.with(|m| m.borrow().1.get(&cle).cloned()) {
         return Ok(r);
     }
-    let (texte, avertissements) = fabrique_pdf::inspection::inspecter(&chemin.to_string_lossy()).map_err(|r| Refus::Fabrique(r.0))?;
+    let (texte, avertissements) = fabrique_pdf::inspection::inspecter(&chemin.to_string_lossy()).map_err(Refus::Fabrique)?;
     let releve: Inspection = socle::forme::lire_texte(&texte, "Le relevé du PDF n'a pas la forme que la fabrique écrit.").map_err(Refus::Releve)?;
     let r = Rc::new(Releve { releve, avertissements });
     MEMO.with(|m| {

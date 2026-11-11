@@ -12,20 +12,63 @@ use crate::style_contrat;
 pub use crate::forme::{Alignement, PoliceFixe};
 pub use crate::mesure::Mesure;
 
-/// Un refus : une ligne de français, prête à être affichée telle quelle.
+/// À qui revient un refus de la fabrique : son lecteur lit cette classe, jamais la phrase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Classe {
+    /// Un défaut du logiciel : ce que la fabrique tient d'elle-même ou du moteur ne tient pas (un modèle livré qui
+    /// sort de sa page, une police interne illisible, un PDF qui ne s'écrit pas) ; à signaler au développeur.
+    DefautDuLogiciel,
+    /// Une pièce reçue (un PDF, une image, un modèle de contrat) que la fabrique ne lit pas, ou qui porte ce qu'elle
+    /// ne connaît pas : la phrase la nomme.
+    PieceIllisible,
+    /// Ce que l'appelant doit corriger : la description, le remplissage ou les champs demandés.
+    ACorriger,
+}
+
+/// Un refus : sa classe, et sa phrase, une ligne de français prête à être affichée telle quelle.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Refus(pub String);
+pub struct Refus {
+    pub classe: Classe,
+    pub phrase: String,
+}
+
+impl Refus {
+    pub fn defaut(phrase: impl Into<String>) -> Refus {
+        Refus { classe: Classe::DefautDuLogiciel, phrase: phrase.into() }
+    }
+    pub fn illisible(phrase: impl Into<String>) -> Refus {
+        Refus { classe: Classe::PieceIllisible, phrase: phrase.into() }
+    }
+    pub fn a_corriger(phrase: impl Into<String>) -> Refus {
+        Refus { classe: Classe::ACorriger, phrase: phrase.into() }
+    }
+    /// Le même refus, sa phrase recomposée par `f` (« pièce 2 : <la phrase> ») : sa classe reste.
+    pub fn reformuler(self, f: impl FnOnce(&str) -> String) -> Refus {
+        Refus { phrase: f(&self.phrase), ..self }
+    }
+}
 
 impl std::fmt::Display for Refus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.phrase)
     }
 }
 
 impl std::error::Error for Refus {}
 
+/// Ce que l'appelant doit corriger (`Classe::ACorriger`).
 pub fn refus<T>(message: impl Into<String>) -> Result<T, Refus> {
-    Err(Refus(message.into()))
+    Err(Refus::a_corriger(message))
+}
+
+/// Une pièce reçue qui ne se lit pas (`Classe::PieceIllisible`).
+pub fn illisible<T>(message: impl Into<String>) -> Result<T, Refus> {
+    Err(Refus::illisible(message))
+}
+
+/// Un défaut du logiciel (`Classe::DefautDuLogiciel`).
+pub fn defaut<T>(message: impl Into<String>) -> Result<T, Refus> {
+    Err(Refus::defaut(message))
 }
 
 /// Le numéro du format que cette fabrique parle (`--version`). Le 2 ajoute les documents « modèle »

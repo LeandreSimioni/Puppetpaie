@@ -71,7 +71,7 @@ pub fn pdf_octets(pages: Vec<Vec<Bloc>>) -> socle::echec::R<Vec<u8>> {
         entete_page: None,
         pied_page: None,
     };
-    fabrique_pdf::fabriquer(&d).map_err(|r| socle::refus!("la fabrique refuse : {}", r.0))
+    fabrique_pdf::fabriquer(&d).map_err(|r| socle::refus!("la fabrique refuse : {}", r.phrase))
 }
 
 /// Un PDF d'une page par liste de blocs, A4 (les tests : un refus arrete le test).

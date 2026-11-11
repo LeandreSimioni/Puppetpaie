@@ -107,14 +107,14 @@ fn proche(a: Mesure, b: Mesure) -> bool {
 
 /// Les champs, tels que `--champs` les écrit.
 fn champs(o: &[u8]) -> Value {
-    serde_json::from_str(&fabrique_pdf::formulaire::champs_json(o).unwrap_or_else(|e| panic!("{}", e.0))).unwrap()
+    serde_json::from_str(&fabrique_pdf::formulaire::champs_json(o).unwrap_or_else(|e| panic!("{}", e.phrase))).unwrap()
 }
 
 /// Le remplissage en texte, lu par la porte (`--remplir`).
 fn remplir(o: &[u8], d: Value) -> Result<Vec<u8>, String> {
     fabrique_pdf::forme::Remplissage::lire(&d.to_string())
         .and_then(|r| fabrique_pdf::formulaire::remplir(o, &r))
-        .map_err(|e| e.0)
+        .map_err(|e| e.phrase)
 }
 
 fn remplir_ok(o: &[u8], d: Value) -> Vec<u8> {
@@ -960,7 +960,7 @@ fn remplir_deux_fois_de_suite_remplace_la_valeur() {
 fn ajouter(o: &[u8], d: Value) -> Result<Vec<u8>, String> {
     fabrique_pdf::forme::lire::<fabrique_pdf::forme::AjoutDeChamps>(&d.to_string(), "description")
         .and_then(|a| fabrique_pdf::formulaire::ajouter_champs(o, &a))
-        .map_err(|e| e.0)
+        .map_err(|e| e.phrase)
 }
 
 #[test]

@@ -514,7 +514,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
     };
     let dessin = documents::fabrique::fabriquer_octets(&description)?;
     let champs = AjoutDeChamps { format: fabrique_pdf::FORMAT, champs: f.0 };
-    fabrique_pdf::formulaire::ajouter_champs(&dessin, &champs).map_err(|r| refus(r.0.replace('\n', " ")))
+    fabrique_pdf::formulaire::ajouter_champs(&dessin, &champs).map_err(documents::fabrique::echec)
 }
 
 /// Le nom d'un PDF dans l'archive, au motif de France Travail (`retours::nom_aer`) : le SIRET, la periode `MMAAAA`, le

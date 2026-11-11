@@ -432,8 +432,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
         let mut imprime: Vec<documents::aer::Ligne> = Vec::new();
         for att in groupe {
             let champs = documents::aer::champs(&att.donnees).map_err(|e| match e {
-                AerEchec::Fabrique(m) => socle::echec::refus(m),
-                AerEchec::Autre(e) => e,
+                AerEchec::Fabrique(e) | AerEchec::Autre(e) => e,
                 AerEchec::Ecarts(e) => socle::echec::refus(e.join("; ")),
             })?;
             imprime.extend(documents::aer::lire_quantites(&champs)?);
@@ -463,8 +462,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
             match authentifier(&att.donnees, &a) {
                 Ok(octets) => signees.push(octets),
                 Err(AerEchec::Ecarts(e)) => return Err(socle::echec::refus(e.join("; "))),
-                Err(AerEchec::Fabrique(m)) => return Err(socle::echec::refus(m)),
-                Err(AerEchec::Autre(e)) => return Err(e),
+                Err(AerEchec::Fabrique(e) | AerEchec::Autre(e)) => return Err(e),
             }
         }
         let donnees = if signees.len() == 1 { signees.remove(0) } else { documents::fabrique::fusion_octets(&signees, &std::env::temp_dir())? };

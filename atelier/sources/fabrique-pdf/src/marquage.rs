@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 use lopdf::content::Content;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 
-use crate::description::Refus;
+use crate::description::{illisible, refus, Refus};
 use crate::mesure::{mesure, Mesure};
 use crate::texte::{contenu_de_page, dico, herite, nombres};
 
@@ -30,10 +30,6 @@ pub const X: Mesure = Mesure::entier(34);
 pub const DISTANCE_DU_BAS: Mesure = Mesure::entier(12);
 /// Son gris (rouge = vert = bleu).
 pub const GRIS: Mesure = mesure("0.45");
-
-fn refus<T>(m: impl Into<String>) -> Result<T, Refus> {
-    Err(Refus(m.into()))
-}
 
 /// Un nombre pour un flux de contenu : quatre décimales au plus, sans zéros inutiles.
 pub(crate) fn nb(v: Mesure) -> String {
@@ -127,8 +123,8 @@ fn flux_de_marque(nom_police: &str, codes: &str, c: [Mesure; 4], rotation: i64) 
 pub fn marquer(octets: &[u8], texte: &str) -> Result<Vec<u8>, Refus> {
     let texte = texte.replace("\r\n", " ").replace(['\r', '\n'], " ");
     let mut doc = crate::lecture::charger(octets)?;
-    if doc.trailer.get(b"Encrypt").is_ok() {
-        return refus("le PDF est chiffré : on ne le marque pas");
+    if doc.trailer.has(b"Encrypt") {
+        return illisible("le PDF est chiffré : on ne le marque pas");
     }
     if texte.is_empty() {
         return Ok(octets.to_vec());
@@ -136,7 +132,7 @@ pub fn marquer(octets: &[u8], texte: &str) -> Result<Vec<u8>, Refus> {
 
     // La police : Liberation Sans, réduite aux caractères du texte.
     let donnees = crate::polices::sans_regulier()?;
-    let face = ttf_parser::Face::parse(&donnees, 0).map_err(|e| Refus(format!("police interne illisible : {:?}", e)))?;
+    let face = ttf_parser::Face::parse(&donnees, 0).map_err(|e| Refus::defaut(format!("police interne illisible : {:?}", e)))?;
     let mut caracteres = BTreeSet::new();
     for c in texte.chars() {
         if c as u32 > 0xFFFF || face.glyph_index(c).is_none() {
@@ -145,12 +141,12 @@ pub fn marquer(octets: &[u8], texte: &str) -> Result<Vec<u8>, Refus> {
         caracteres.insert(c);
     }
     let police = crate::sous_ensemble::embarquer(&mut doc, &donnees, &caracteres)
-        .map_err(|e| Refus(format!("police impossible à embarquer : {}", e.0)))?;
+        .map_err(|e| e.reformuler(|p| format!("police impossible à embarquer : {}", p)))?;
     let codes: String = texte.chars().map(|c| format!("{:04X}", c as u32)).collect();
 
     let pages: Vec<ObjectId> = doc.get_pages().values().copied().collect();
     if pages.is_empty() {
-        return refus("PDF sans page");
+        return illisible("PDF sans page");
     }
     for id in pages {
         let c = match cadre(&doc, id) {
@@ -191,13 +187,13 @@ pub fn marquer(octets: &[u8], texte: &str) -> Result<Vec<u8>, Refus> {
         let page = doc
             .get_object_mut(id)
             .and_then(Object::as_dict_mut)
-            .map_err(|e| Refus(format!("page illisible ({})", e)))?;
+            .map_err(|e| Refus::illisible(format!("page illisible ({})", e)))?;
         page.set("Resources", Object::Dictionary(ressources));
         page.set("Contents", Object::Array(contenu));
     }
 
     let mut sortie = Vec::new();
-    doc.save_to(&mut sortie).map_err(|e| Refus(format!("écriture du PDF impossible ({})", e)))?;
+    doc.save_to(&mut sortie).map_err(|e| Refus::defaut(format!("écriture du PDF impossible ({})", e)))?;
     Ok(sortie)
 }
 
@@ -223,14 +219,14 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
     if lignes.iter().all(|l| l.trim().is_empty()) {
         return refus("la mention de signature est vide");
     }
-    let doc = Document::load_mem(octets).map_err(|e| Refus(format!("n'est pas un PDF lisible ({})", e)))?;
-    if doc.trailer.get(b"Encrypt").is_ok() {
-        return refus("le PDF est chiffré : on ne le contresigne pas");
+    let doc = Document::load_mem(octets).map_err(|e| Refus::illisible(format!("n'est pas un PDF lisible ({})", e)))?;
+    if doc.trailer.has(b"Encrypt") {
+        return illisible("le PDF est chiffré : on ne le contresigne pas");
     }
 
     // La police de la case : Liberation Sans, ses mesures (`hhea`, comme la mise en page).
     let donnees = crate::polices::sans_regulier()?;
-    let face = ttf_parser::Face::parse(&donnees, 0).map_err(|e| Refus(format!("police interne illisible : {:?}", e)))?;
+    let face = ttf_parser::Face::parse(&donnees, 0).map_err(|e| Refus::defaut(format!("police interne illisible : {:?}", e)))?;
     let em = face.units_per_em() as i64;
     let (asc, desc, ecart) = (
         Mesure::entier(face.ascender() as i64) / em,
@@ -267,7 +263,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
     // Les cases : la ligne « signature » de la colonne de droite, sa boîte (repère de la page).
     let mut cases: Vec<(ObjectId, Mesure)> = Vec::new();
     for id in doc.get_pages().values().copied() {
-        let lue = crate::texte::inspecter_page(&doc, id).map_err(|m| Refus(format!("page illisible ({})", m)))?;
+        let lue = crate::texte::inspecter_page(&doc, id).map_err(|m| Refus::illisible(format!("page illisible ({})", m)))?;
         for (texte, boites) in &lue.lignes {
             let Some(Some(b)) = boites.first() else { continue };
             if texte.trim() != sc::LIBELLE_CASE_ARTISTE || (b[0] - x_case).abs() > Mesure::entier(2) {
@@ -281,7 +277,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
         }
     }
     if cases.is_empty() {
-        return refus("le PDF n'a pas de case de l'artiste (la ligne « signature » de la colonne de droite)");
+        return illisible("le PDF n'a pas de case de l'artiste (la ligne « signature » de la colonne de droite)");
     }
 
     // Le contrat parti reste en tête ; ce qui suit ne porte que la case : son texte (dans la police du contrat,
@@ -364,7 +360,7 @@ pub fn contresigner(octets: &[u8], mention: &str) -> Result<Vec<u8>, Refus> {
         contenu.extend(anciens);
         contenu.push(Object::Reference(apres));
         contenu.push(Object::Reference(case));
-        let page = neuf.get_object_mut(id).and_then(Object::as_dict_mut).map_err(|e| Refus(format!("page illisible ({})", e)))?;
+        let page = neuf.get_object_mut(id).and_then(Object::as_dict_mut).map_err(|e| Refus::illisible(format!("page illisible ({})", e)))?;
         page.set("Resources", Object::Dictionary(ressources));
         page.set("Contents", Object::Array(contenu));
     }

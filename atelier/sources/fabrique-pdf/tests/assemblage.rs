@@ -34,7 +34,7 @@ fn source(dossier: &Path, nom: &str, textes: &[&str]) -> String {
     });
     let octets = fabrique_pdf::Description::lire(&desc.to_string())
         .and_then(|d| fabrique_pdf::fabriquer(&d))
-        .unwrap_or_else(|e| panic!("{}", e.0));
+        .unwrap_or_else(|e| panic!("{}", e.phrase));
     let p = dossier.join(nom);
     std::fs::write(&p, octets).unwrap();
     chemin(&p)
@@ -42,8 +42,8 @@ fn source(dossier: &Path, nom: &str, textes: &[&str]) -> String {
 
 fn assembler(v: &Value) -> Result<Vec<u8>, String> {
     fabrique_pdf::assemblage::Assemblage::lire(&v.to_string()).and_then(|a| fabrique_pdf::assembler(&a)).map(|(o, _)| o).map_err(|r| {
-        assert!(!r.0.contains('\n'), "le message doit tenir sur une ligne : {:?}", r.0);
-        r.0
+        assert!(!r.phrase.contains('\n'), "le message doit tenir sur une ligne : {:?}", r.phrase);
+        r.phrase
     })
 }
 

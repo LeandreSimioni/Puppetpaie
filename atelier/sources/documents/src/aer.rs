@@ -135,8 +135,8 @@ pub fn attestation_fctu(e: &engagement::Engagement) -> socle::echec::R<bool> {
 pub enum Echec {
     /// `AttestationInexacte` : un chiffre ne correspond pas a la paie du mois.
     Ecarts(Vec<String>),
-    /// La fabrique de PDF refuse (`FabriqueRefus`) : sa phrase.
-    Fabrique(String),
+    /// La fabrique de PDF refuse : son refus, dans sa classe (`fabrique::echec`).
+    Fabrique(socle::echec::Echec),
     /// Tout autre refus (une cle absente de la fiche, un jour illisible...).
     Autre(socle::echec::Echec),
 }
@@ -150,7 +150,7 @@ impl From<socle::echec::Echec> for Echec {
 type R<T> = Result<T, Echec>;
 
 fn fabrique<T>(r: Result<T, fabrique_pdf::Refus>) -> R<T> {
-    r.map_err(|e| Echec::Fabrique(e.0.replace('\n', " ")))
+    r.map_err(|e| Echec::Fabrique(crate::fabrique::echec(e)))
 }
 
 /// Ce qu'on appose. Rien n'est invente : tout vient d'entreprise.json.

@@ -347,7 +347,7 @@ pub fn mentions(nat: &Nature) -> R<Vec<(Marqueur, String, bool)>> {
 pub fn manques(nat: &Nature, texte: &str, valeurs: Option<&Valeurs>) -> R<Vec<String>> {
     let m = match fabrique_pdf::modele::lire_modele(texte, "le modèle") {
         Ok(m) => m,
-        Err(r) => return Ok(vec![format!("Ce modèle ne se lit pas : {}.", r.0)]),
+        Err(r) => return Ok(vec![format!("Ce modèle ne se lit pas : {}.", r.phrase)]),
     };
     let (mut dits, ecrits) = champs_cites(&m, &crate::marqueurs::DU_REMPLACEMENT, &[]);
     for (cle, pourquoi, si_dite) in mentions(nat)? {
@@ -425,7 +425,7 @@ fn champs_cites(m: &fabrique_pdf::modele::Modele, annulation: &[Marqueur], parto
 pub fn manques_de_l_avenant(texte: &str) -> Vec<String> {
     let m = match fabrique_pdf::modele::lire_modele(texte, "le modèle d'avenant") {
         Ok(m) => m,
-        Err(r) => return vec![format!("Ce modèle d'avenant ne se lit pas : {}.", r.0)],
+        Err(r) => return vec![format!("Ce modèle d'avenant ne se lit pas : {}.", r.phrase)],
     };
     let (mut dits, _) = champs_cites(&m, &[], &CHAMPS_DE_L_AVENANT.map(|(c, _)| c));
     if m.modification.is_empty() {

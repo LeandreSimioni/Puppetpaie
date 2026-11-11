@@ -250,35 +250,29 @@ fn erreur_operation(message: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, message)
 }
 
-/// Un refus de la fabrique de PDF (`FabriqueRefus`) : sa ligne de francais.
-#[track_caller]
-fn refus_fabrique(m: String) -> Echec {
-    erreur(Classe::FabriqueRefus, m.replace('\n', " ").trim().to_string())
-}
-
 // ------------------------------------------------------------------ la fabrique de PDF
 
 fn texte_pdf(chemin: &Path) -> R<Vec<String>> {
-    fabrique_pdf::lecture::texte(&chemin.to_string_lossy()).map(|(t, _)| t).map_err(|r| refus_fabrique(r.0))
+    fabrique_pdf::lecture::texte(&chemin.to_string_lossy()).map(|(t, _)| t).map_err(documents::fabrique::echec)
 }
 
 fn pages_pdf(chemin: &Path) -> R<usize> {
     fabrique_pdf::lecture::pages(&[chemin.to_string_lossy().into_owned()])
         .map(|n| n[0])
-        .map_err(|r| refus_fabrique(r.0))
+        .map_err(documents::fabrique::echec)
 }
 
 fn compter(octets: &[u8]) -> R<usize> {
-    fabrique_pdf::lecture::charger(octets).map(|d| d.get_pages().len()).map_err(|r| refus_fabrique(r.0))
+    fabrique_pdf::lecture::charger(octets).map(|d| d.get_pages().len()).map_err(documents::fabrique::echec)
 }
 
 /// Le pied « reedite » sur chaque page d'un PDF du dossier de travail, en place.
 fn marquer(chemin: &Path, aujourdhui: &Jour) -> R<()> {
     let nom = chemin.to_string_lossy().into_owned();
-    let octets = std::fs::read(chemin).map_err(|e| refus_fabrique(format!("{} illisible ({})", nom, e)))?;
+    let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(chemin, &e))?;
     let pied = PIED_REEDITE.replace("{}", &aujourdhui.jj_mm_aaaa());
-    let marque = fabrique_pdf::marquage::marquer(&octets, &pied).map_err(|r| refus_fabrique(format!("{} : {}", nom, r.0)))?;
-    std::fs::write(chemin, marque).map_err(|e| refus_fabrique(format!("écriture impossible de {} : {}", nom, e)))
+    let marque = fabrique_pdf::marquage::marquer(&octets, &pied).map_err(|r| documents::fabrique::echec(r).reformuler(|p| format!("{} : {}", nom, p)))?;
+    std::fs::write(chemin, marque).map_err(|e| socle::echec::du_disque(chemin, &e))
 }
 
 // ------------------------------------------------------------------ la periode

@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream, StringFormat};
 
-use crate::description::{refus, Refus, Rvb};
+use crate::description::{defaut, Refus, Rvb};
 use crate::marquage::nb;
 use crate::mesure::Mesure;
 
@@ -91,10 +91,10 @@ struct Fonte {
 
 impl Fonte {
     fn lire(donnees: Arc<Vec<u8>>) -> Result<Fonte, Refus> {
-        let face = ttf_parser::Face::parse(&donnees, 0).or_else(|e| refus(format!("police interne illisible : {}", e)))?;
+        let face = ttf_parser::Face::parse(&donnees, 0).or_else(|e| defaut(format!("police interne illisible : {}", e)))?;
         let unites = face.units_per_em() as i64;
         if unites == 0 {
-            return refus("police interne illisible : sans unités");
+            return defaut("police interne illisible : sans unités");
         }
         let hhea = face.tables().hhea;
         let (ascendante, descendante) = (hhea.ascender as i64, hhea.descender as i64);
@@ -642,7 +642,7 @@ impl Dessin {
                     Object::Stream(s)
                 }
                 (Contenu::Svg { .. }, Some(forme)) => Object::Stream((**forme).clone()),
-                (Contenu::Svg { .. }, None) => return refus("écriture du PDF impossible : un SVG sans dessin"),
+                (Contenu::Svg { .. }, None) => return defaut("écriture du PDF impossible : un SVG sans dessin"),
             };
             images.push(doc.add_object(objet));
         }

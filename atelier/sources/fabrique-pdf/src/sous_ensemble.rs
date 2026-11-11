@@ -17,7 +17,7 @@ use crate::description::Refus;
 use crate::mesure::Mesure;
 
 fn interne(message: String) -> Refus {
-    Refus(message)
+    Refus::defaut(message)
 }
 
 /// Les objets d'une police embarquée : la police `Type0`, son descripteur, son fichier et sa table

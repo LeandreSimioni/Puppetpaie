@@ -385,13 +385,16 @@ fn lire_pdf(f: &mut Fichier) {
         Err(crate::releve::Refus::Fabrique(r)) => {
             f.sorte = Sorte::Illisible;
             // Le refus de la fabrique commence par le chemin du disque : seule la cause compte ici.
-            let cause = match r.strip_prefix(&*f.disque.to_string_lossy()) {
+            let cause = match r.phrase.strip_prefix(&*f.disque.to_string_lossy()) {
                 Some(c) => c,
-                None => r.as_str(),
+                None => r.phrase.as_str(),
             }
             .trim_start_matches([' ', ':'])
             .to_string();
-            f.raison = Some(format!("PDF que la fabrique n'ouvre pas : {}", cause));
+            f.raison = Some(match r.classe {
+                fabrique_pdf::Classe::PieceIllisible | fabrique_pdf::Classe::ACorriger => format!("PDF que la fabrique n'ouvre pas : {}", cause),
+                fabrique_pdf::Classe::DefautDuLogiciel => format!("PDF que la fabrique n'ouvre pas, par un défaut du logiciel à signaler au développeur : {}", cause),
+            });
             return;
         }
         Err(crate::releve::Refus::Releve(e)) => {

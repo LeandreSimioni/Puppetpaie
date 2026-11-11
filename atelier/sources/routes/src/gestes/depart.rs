@@ -1372,7 +1372,7 @@ pub(crate) fn contresigner(ctx: &Contexte, lignes: &[envois::journal::Ligne], co
         return Err(refus(format!("{} est parti sans son empreinte : rien ne dit que c'est lui qu'on contresigne. Relancer la demande de signature.", nom)));
     };
     let octets = contrat_parti(ctx, lignes, rang, envoye, &empreinte)?;
-    let contresigne = fabrique_pdf::marquage::contresigner(&octets, mention).map_err(|r| erreur(Classe::FabriqueRefus, format!("{} : {}", nom, r.0)))?;
+    let contresigne = fabrique_pdf::marquage::contresigner(&octets, mention).map_err(|r| documents::fabrique::echec(r).reformuler(|p| format!("{} : {}", nom, p)))?;
     if let Some(parent) = signe.parent() {
         std::fs::create_dir_all(parent).map_err(|e| os(parent, e))?;
     }

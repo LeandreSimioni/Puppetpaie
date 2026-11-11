@@ -359,7 +359,7 @@ pub(crate) fn parties(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalari
 
 /// Le paragraphe tel qu'il se LIT sur le contrat imprime.
 fn texte_brut(texte: &str, vals: &modele::Valeurs) -> R<String> {
-    let t = modele::texte_brut(texte, vals).map_err(|r| refus(r.0))?;
+    let t = modele::texte_brut(texte, vals).map_err(crate::fabrique::echec)?;
     if t.contains(INVALIDE) {
         return Err(refus("une valeur du modele n'est pas un texte"));
     }

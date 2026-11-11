@@ -30,16 +30,13 @@ use std::io::Write;
 use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 use serde::Serialize;
 
-use crate::description::Refus;
+use crate::description::{defaut, illisible, refus, Refus};
 use crate::forme::{AjoutDeChamps, Alignement, Remplissage};
 use crate::marquage::{cadre, flux_existants, q_ouverts};
 use crate::marquage::nb;
 use crate::mesure::{mesure, Mesure};
 use crate::texte::{dico, herite, nombres};
 
-fn refus<T>(m: impl Into<String>) -> Result<T, Refus> {
-    Err(Refus(m.into()))
-}
 
 /// Arrondi à deux décimales, pour le JSON rendu.
 fn r2(v: Mesure) -> Mesure {
@@ -361,8 +358,8 @@ fn valeur_lue(doc: &Document, v: &Option<Object>) -> ValeurLue {
 pub fn champs_json(octets: &[u8]) -> Result<String, Refus> {
     let mut morceaux: Vec<String> = Vec::new();
     for c in champs(octets)? {
-        let nom = serde_json::to_string(&c.nom).map_err(|e| Refus(e.to_string()))?;
-        let champ = serde_json::to_string(&c).map_err(|e| Refus(e.to_string()))?;
+        let nom = serde_json::to_string(&c.nom).map_err(|e| Refus::defaut(e.to_string()))?;
+        let champ = serde_json::to_string(&c).map_err(|e| Refus::defaut(e.to_string()))?;
         morceaux.push(format!("{}:{}", nom, champ));
     }
     Ok(format!("{{{}}}", morceaux.join(",")))
@@ -374,7 +371,7 @@ pub fn champs(octets: &[u8]) -> Result<Vec<ChampLu>, Refus> {
     let doc = if doc.is_encrypted() {
         let mut d = doc;
         if d.decrypt("").is_err() {
-            return refus("le PDF ne s'ouvre pas sans mot de passe");
+            return illisible("le PDF ne s'ouvre pas sans mot de passe");
         }
         d
     } else {
@@ -652,10 +649,10 @@ fn image_matricielle(doc: &mut Document, octets: &[u8], sorte: &str, nom: &str) 
     }
     let format = if sorte == "png" { image::ImageFormat::Png } else { image::ImageFormat::Jpeg };
     let img = image::load_from_memory_with_format(octets, format)
-        .map_err(|e| Refus(format!("l'image {} est illisible ({})", nom, e)))?;
+        .map_err(|e| Refus::illisible(format!("l'image {} est illisible ({})", nom, e)))?;
     let (l, h) = (img.width(), img.height());
     if l == 0 || h == 0 {
-        return refus(format!("l'image {} est vide", nom));
+        return illisible(format!("l'image {} est vide", nom));
     }
     let rgba = img.to_rgba8();
     let opaque = rgba.pixels().all(|p| p[3] == 255);
@@ -789,8 +786,8 @@ fn ecrire_textes(doc: &mut Document, forme: ObjectId, lignes: &[LigneSvg], haute
     let romain = crate::polices::sans_regulier()?;
     let gras = crate::polices::sans_gras()?;
     let faces = [
-        ttf_parser::Face::parse(&romain, 0).map_err(|e| Refus(format!("police interne illisible : {:?}", e)))?,
-        ttf_parser::Face::parse(&gras, 0).map_err(|e| Refus(format!("police interne illisible : {:?}", e)))?,
+        ttf_parser::Face::parse(&romain, 0).map_err(|e| Refus::defaut(format!("police interne illisible : {:?}", e)))?,
+        ttf_parser::Face::parse(&gras, 0).map_err(|e| Refus::defaut(format!("police interne illisible : {:?}", e)))?,
     ];
     let mut caracteres = [BTreeSet::new(), BTreeSet::new()];
     for m in lignes.iter().flat_map(|l| &l.morceaux) {
@@ -845,11 +842,11 @@ fn ecrire_textes(doc: &mut Document, forme: ObjectId, lignes: &[LigneSvg], haute
     s.push_str("Q\n");
     let mut ressources: Dictionary = match doc.get_object(forme) {
         Ok(Object::Stream(f)) => f.dict.get(b"Resources").ok().and_then(|r| dico(doc, r)).cloned().unwrap_or_default(),
-        _ => return refus("le SVG converti n'a pas d'objet formulaire"),
+        _ => return defaut("le SVG converti n'a pas d'objet formulaire"),
     };
     ressources.set("Font", Object::Dictionary(polices));
     let Ok(Object::Stream(flux)) = doc.get_object_mut(forme) else {
-        return refus("le SVG converti n'a pas d'objet formulaire");
+        return defaut("le SVG converti n'a pas d'objet formulaire");
     };
     let mut contenu = flux.decompressed_content().unwrap_or_else(|_| flux.content.clone());
     contenu.push(b'\n');
@@ -887,7 +884,7 @@ fn image_svg(doc: &mut Document, octets: &[u8], nom: &str, avant: Option<&Docume
         ..usvg::Options::default()
     };
     let mut arbre = usvg::Tree::from_data(octets, &options)
-        .map_err(|e| Refus(format!("le SVG {} est illisible ({})", nom, e)))?;
+        .map_err(|e| Refus::illisible(format!("le SVG {} est illisible ({})", nom, e)))?;
     let textes = match textes_simples(&arbre) {
         Some(t) => {
             for (noeud, _) in &t {
@@ -902,7 +899,7 @@ fn image_svg(doc: &mut Document, octets: &[u8], nom: &str, avant: Option<&Docume
     };
     let (l, h) = match (lu(arbre.size.width()), lu(arbre.size.height())) {
         (Some(l), Some(h)) if l > Z && h > Z => (l, h),
-        _ => return refus(format!("le SVG {} n'a pas de taille", nom)),
+        _ => return illisible(format!("le SVG {} n'a pas de taille", nom)),
     };
 
     // svg2pdf écrit dans un PDF minimal, que lopdf relit ; on en garde l'objet formulaire et ce
@@ -918,7 +915,7 @@ fn image_svg(doc: &mut Document, octets: &[u8], nom: &str, avant: Option<&Docume
     let mut morceau = pdf_writer::Chunk::new();
     svg2pdf::convert_tree_into(&arbre, svg2pdf::Options::default(), &mut morceau, depart);
     pdf.extend(&morceau);
-    let source = Document::load_mem(&pdf.finish()).map_err(|e| Refus(format!("le SVG {} n'a pas pu être converti ({})", nom, e)))?;
+    let source = Document::load_mem(&pdf.finish()).map_err(|e| Refus::defaut(format!("le SVG {} n'a pas pu être converti ({})", nom, e)))?;
     let id = importer(doc, &source, (depart.get() as u32, 0))?;
     if !textes.is_empty() {
         ecrire_textes(doc, id, &textes, h, avant)?;
@@ -935,12 +932,12 @@ fn importer(doc: &mut Document, source: &Document, racine: ObjectId) -> Result<O
         if nouveaux.contains_key(&id) {
             continue;
         }
-        let o = source.get_object(id).map_err(|_| Refus("objet manquant dans le SVG converti".into()))?;
+        let o = source.get_object(id).map_err(|e| Refus::defaut(format!("objet manquant dans le SVG converti ({})", e)))?;
         nouveaux.insert(id, doc.new_object_id());
         references(o, &mut a_faire);
     }
     for (ancien, nouveau) in &nouveaux {
-        let mut o = source.get_object(*ancien).map_err(|_| Refus("objet manquant dans le SVG converti".into()))?.clone();
+        let mut o = source.get_object(*ancien).map_err(|e| Refus::defaut(format!("objet manquant dans le SVG converti ({})", e)))?.clone();
         renumeroter(&mut o, &nouveaux);
         doc.objects.insert(*nouveau, o);
     }
@@ -1004,8 +1001,8 @@ pub fn remplir(octets: &[u8], d: &Remplissage) -> Result<Vec<u8>, Refus> {
     // Le formulaire reçu reste tel quel, octet pour octet : ce qu'on y écrit (les valeurs, leur apparence,
     // la police, les images) s'ajoute à la fin, en mise à jour incrémentale (ISO 32000-1, 7.5.6).
     let (avant, lus) = crate::lecture::charger_avec_octets(octets)?;
-    if avant.trailer.get(b"Encrypt").is_ok() {
-        return refus("le PDF est chiffré : on ne le remplit pas");
+    if avant.trailer.has(b"Encrypt") {
+        return illisible("le PDF est chiffré : on ne le remplit pas");
     }
     let mut doc = avant.clone();
     if !valeurs.is_empty() {
@@ -1031,9 +1028,9 @@ fn lire_pose(im: &crate::forme::ImagePosee, rang: usize) -> Result<Pose, Refus> 
         Some(_) => return refus(format!("image {} : « marge » doit être un nombre positif", rang)),
     };
     let (octets, nom) = match (&im.fichier, &im.svg) {
-        (Some(f), None) => (std::fs::read(f).map_err(|e| Refus(format!("image {} illisible ({})", f, e)))?, f.clone()),
+        (Some(f), None) => (std::fs::read(f).map_err(|e| Refus::illisible(format!("image {} illisible ({})", f, e)))?, f.clone()),
         (None, Some(s)) => (s.as_bytes().to_vec(), format!("de l'image {}", rang)),
-        _ => return refus(format!("image {} : il faut « fichier » ou « svg », l'un des deux", rang)),
+        (Some(_), Some(_)) | (None, None) => return refus(format!("image {} : il faut « fichier » ou « svg », l'un des deux", rang)),
     };
     Ok(Pose { page: im.page, rect: im.rect, marge, octets, nom })
 }
@@ -1044,7 +1041,7 @@ fn lire_pose(im: &crate::forme::ImagePosee, rang: usize) -> Result<Pose, Refus> 
 /// une police ajoutée par cette écriture-ci quand il s'écrit en mise à jour incrémentale (`avant` : le document
 /// reçu, dont les objets restent tels quels) ; sinon, un sous-ensemble neuf de ces seuls caractères.
 pub(crate) fn police_pour(doc: &mut Document, donnees: &[u8], caracteres: &BTreeSet<char>, avant: Option<&Document>) -> Result<ObjectId, Refus> {
-    let echec = |e: Refus| Refus(format!("police impossible à embarquer : {}", e.0));
+    let echec = |e: Refus| e.reformuler(|p| format!("police impossible à embarquer : {}", p));
     let candidates = crate::sous_ensemble::polices_de_la_fabrique(doc, donnees);
     if let Some((id, _)) = candidates.iter().find(|(_, portes)| caracteres.is_subset(portes)) {
         return Ok(*id);
@@ -1088,7 +1085,7 @@ fn ecrire_champs(doc: &mut Document, valeurs: &[(String, String)], avant: Option
     }
     // Tout se vérifie avant d'écrire quoi que ce soit.
     let donnees = crate::polices::sans_regulier()?;
-    let face = ttf_parser::Face::parse(&donnees, 0).map_err(|e| Refus(format!("police interne illisible : {:?}", e)))?;
+    let face = ttf_parser::Face::parse(&donnees, 0).map_err(|e| Refus::defaut(format!("police interne illisible : {:?}", e)))?;
     let mut caracteres = BTreeSet::new();
     for (nom, texte) in valeurs {
         let c = match par_nom.get(nom.as_str()) {
@@ -1188,7 +1185,7 @@ fn poser_images(doc: &mut Document, poses: &[Pose], avant: Option<&Document>) ->
         let image = match sorte(&p.octets) {
             Some("svg") => image_svg(doc, &p.octets, &p.nom, avant)?,
             Some(s) => image_matricielle(doc, &p.octets, s, &p.nom)?,
-            None => return refus(format!("l'image {} n'est ni un SVG, ni un PNG, ni un JPEG", p.nom)),
+            None => return illisible(format!("l'image {} n'est ni un SVG, ni un PNG, ni un JPEG", p.nom)),
         };
         // Le plus grand rectangle aux proportions de l'image qui tient dans la case, centré.
         // La largeur remplit la case si cl / l ≤ ch / h, c'est-à-dire cl × h ≤ ch × l ; sinon la hauteur.
@@ -1197,7 +1194,7 @@ fn poser_images(doc: &mut Document, poses: &[Pose], avant: Option<&Document>) ->
         let (dl, dh) = match (largeur_d_abord, ch.fois_rapport(l, h), cl.fois_rapport(h, l)) {
             (true, _, Some(dh)) => (cl, dh),
             (false, Some(dl), _) => (dl, ch),
-            _ => return refus(format!("l'image {} n'a pas de taille", p.nom)),
+            _ => return illisible(format!("l'image {} n'a pas de taille", p.nom)),
         };
         let x = c[0] + dedans[0] + (cl - dl) / 2;
         let haut = dedans[1] + (ch - dh) / 2;
@@ -1238,7 +1235,7 @@ fn poser_images(doc: &mut Document, poses: &[Pose], avant: Option<&Document>) ->
         let page = doc
             .get_object_mut(id)
             .and_then(Object::as_dict_mut)
-            .map_err(|e| Refus(format!("page illisible ({})", e)))?;
+            .map_err(|e| Refus::illisible(format!("page illisible ({})", e)))?;
         page.set("Resources", Object::Dictionary(ressources));
         page.set("Contents", Object::Array(contenu));
     }
@@ -1308,7 +1305,7 @@ pub fn ajouter_champs(octets: &[u8], d: &AjoutDeChamps) -> Result<Vec<u8>, Refus
     }
     let mut doc = crate::lecture::charger(octets)?;
     if doc.trailer.get(b"Encrypt").is_ok() {
-        return refus("le PDF est chiffré : on n'y ajoute rien");
+        return illisible("le PDF est chiffré : on n'y ajoute rien");
     }
     let (existants, _) = lister(&doc);
     let mut noms: BTreeSet<String> = existants.into_iter().map(|c| c.nom).collect();
@@ -1333,7 +1330,7 @@ pub fn ajouter_champs(octets: &[u8], d: &AjoutDeChamps) -> Result<Vec<u8>, Refus
         f.set("Encoding", Object::Name(b"WinAnsiEncoding".to_vec()));
         f
     }));
-    let racine = doc.trailer.get(b"Root").and_then(Object::as_reference).map_err(|_| Refus("PDF sans catalogue".into()))?;
+    let racine = doc.trailer.get(b"Root").and_then(Object::as_reference).map_err(|e| Refus::illisible(format!("PDF sans catalogue ({})", e)))?;
     let acro_existant: Option<Object> = doc.get_dictionary(racine).ok().and_then(|c| c.get(b"AcroForm").ok()).cloned();
     let acro_id = match acro_existant {
         Some(Object::Reference(id)) => id,
@@ -1341,7 +1338,7 @@ pub fn ajouter_champs(octets: &[u8], d: &AjoutDeChamps) -> Result<Vec<u8>, Refus
         _ => doc.add_object(Object::Dictionary(Dictionary::new())),
     };
     {
-        let acro = doc.get_object_mut(acro_id).and_then(Object::as_dict_mut).map_err(|e| Refus(format!("formulaire illisible ({})", e)))?;
+        let acro = doc.get_object_mut(acro_id).and_then(Object::as_dict_mut).map_err(|e| Refus::illisible(format!("formulaire illisible ({})", e)))?;
         if !acro.has(b"DA") {
             acro.set("DA", Object::String(b"/Helv 0 Tf 0 g".to_vec(), lopdf::StringFormat::Literal));
         }

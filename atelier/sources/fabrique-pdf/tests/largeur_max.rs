@@ -68,7 +68,7 @@ fn proche(a: Mesure, b: Mesure, tolerance: &str) -> bool {
 }
 
 fn fabriquer(blocs: Vec<Value>) -> Vec<u8> {
-    lue(description(blocs)).unwrap_or_else(|e| panic!("{}", e.0))
+    lue(description(blocs)).unwrap_or_else(|e| panic!("{}", e.phrase))
 }
 
 /// La description en texte, lue par la porte puis fabriquée.
@@ -150,6 +150,6 @@ fn largeur_max_ne_change_ni_l_alignement_ni_les_autres_blocs() {
 fn une_largeur_max_nulle_ou_negative_est_refusee() {
     for v in [0, -5] {
         let e = lue(description(vec![texte_fixe("x", pt(10), json!({"largeur_max": v}))])).expect_err("refus attendu");
-        assert!(e.0.contains("largeur_max") && !e.0.contains('\n'), "{:?}", e.0);
+        assert!(e.phrase.contains("largeur_max") && !e.phrase.contains('\n'), "{:?}", e.phrase);
     }
 }

@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use std::path::Path;
 
 use crate::description::{
-    refus, resoudre, Alignement, Bloc, BlocEtiquete, CelluleTableau, Filet, LigneTableau, Morceau, Police,
+    defaut, illisible, refus, resoudre, Alignement, Bloc, BlocEtiquete, CelluleTableau, Filet, LigneTableau, Morceau, Police,
     PoliceFixe, Refus, Repere, Rvb, CORPS_PLANCHER,
 };
 use crate::dessin::{Dessin, Famille, Image, Polices, Style};
@@ -825,10 +825,10 @@ fn charger_image(chemin: &str, largeur: Mesure, ou: &str, quoi: &str) -> Result<
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             return refus(format!("{} : {} introuvable : {}", ou, quoi, chemin))
         }
-        Err(e) => return refus(format!("{} : {} illisible ({}) : {}", ou, quoi, e, chemin)),
+        Err(e) => return illisible(format!("{} : {} illisible ({}) : {}", ou, quoi, e, chemin)),
     };
-    let svg = Path::new(chemin).extension().map(|e| e.eq_ignore_ascii_case("svg")).unwrap_or(false);
-    Image::lire(&donnees, largeur, svg).map_err(|e| Refus(format!("{} : {} {} : {}", ou, quoi, chemin, e)))
+    let svg = Path::new(chemin).extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"));
+    Image::lire(&donnees, largeur, svg).map_err(|e| Refus::illisible(format!("{} : {} {} : {}", ou, quoi, chemin, e)))
 }
 
 /// Refuse un texte dont un caractère manque à la police elle-même (un idéogramme, un emoji) : tout ce que
@@ -861,7 +861,7 @@ struct Cadre {
 /// nommant le document et le texte. C'est un defaut du modele, pas de la saisie : ni police reduite, ni texte coupe.
 fn tient_sur_la_page(ctx: &Ctx<'_>, style: Style, y: Mesure, hauteur: Mesure, document: &str, ou: &str, texte: &str) -> Result<(), Refus> {
     if ctx.polices.hauteur(&style) > hauteur - y {
-        return refus(format!(
+        return defaut(format!(
             "Le document « {} » pose « {} » ({}) sous le bas de sa page : le texte ne se dessinerait pas. C'est un défaut du logiciel, à signaler au développeur.",
             document, texte, ou
         ));

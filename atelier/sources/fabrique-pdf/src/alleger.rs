@@ -54,7 +54,7 @@ fn png(image: &DynamicImage) -> Result<Vec<u8>, Refus> {
     };
     PngEncoder::new_with_quality(&mut o, CompressionType::Best, FilterType::Adaptive)
         .write_image(image.as_bytes(), image.width(), image.height(), image.color())
-        .map_err(|e| Refus(format!("l'image n'a pas pu être écrite en PNG ({})", e)))?;
+        .map_err(|e| Refus::defaut(format!("l'image n'a pas pu être écrite en PNG ({})", e)))?;
     Ok(o)
 }
 
@@ -63,7 +63,7 @@ fn jpeg(image: &DynamicImage, qualite: u8) -> Result<Vec<u8>, Refus> {
     let image = if image.color().has_color() { DynamicImage::ImageRgb8(image.to_rgb8()) } else { DynamicImage::ImageLuma8(image.to_luma8()) };
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut o, qualite)
         .encode_image(&image)
-        .map_err(|e| Refus(format!("l'image n'a pas pu être écrite en JPEG ({})", e)))?;
+        .map_err(|e| Refus::defaut(format!("l'image n'a pas pu être écrite en JPEG ({})", e)))?;
     Ok(o)
 }
 
@@ -105,13 +105,13 @@ fn ecrire(image: &DynamicImage, objectif: usize) -> Result<(Vec<u8>, &'static st
 /// `octets` (PNG, JPEG ou SVG) allégée pour être imprimée sur `largeur_points` au plus, à `objectif` octets au
 /// plus si la résolution le permet (voir l'en-tête du module).
 pub fn alleger(octets: &[u8], largeur_points: Mesure, objectif: usize) -> Result<Allegee, Refus> {
-    let format = format_de(octets).ok_or_else(|| Refus("ni un PNG, ni un JPEG, ni un SVG".into()))?;
+    let format = format_de(octets).ok_or_else(|| Refus::illisible("ni un PNG, ni un JPEG, ni un SVG"))?;
     if format == "svg" {
         return Ok(Allegee { octets: octets.to_vec(), format, largeur: 0, avant: octets.len(), telle_quelle: true });
     }
-    let image = image::load_from_memory(octets).map_err(|e| Refus(format!("l'image est illisible ({})", e)))?;
+    let image = image::load_from_memory(octets).map_err(|e| Refus::illisible(format!("l'image est illisible ({})", e)))?;
     if image.width() == 0 || image.height() == 0 {
-        return Err(Refus("l'image est vide".into()));
+        return Err(Refus::illisible("l'image est vide"));
     }
     let cible = pixels(largeur_points, RESOLUTION);
     if image.width() <= cible + cible / 4 && octets.len() <= objectif {

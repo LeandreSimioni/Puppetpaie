@@ -51,7 +51,7 @@ fn image(nom: &str) -> String {
 
 /// La description en texte, lue par la porte (`Description::lire`) : ces tests éprouvent FORMAT.md.
 fn fabriquer(v: &Value) -> Result<Vec<u8>, String> {
-    fabrique_pdf::Description::lire(&v.to_string()).and_then(|d| fabrique_pdf::fabriquer(&d)).map_err(|r| r.0)
+    fabrique_pdf::Description::lire(&v.to_string()).and_then(|d| fabrique_pdf::fabriquer(&d)).map_err(|r| r.phrase)
 }
 
 fn ok(v: &Value) -> Vec<u8> {
@@ -331,7 +331,7 @@ fn texte_complet(pdf: &[u8]) -> String {
 fn inspecter(pdf: &[u8], nom: &str) -> Value {
     let p = ecrire(nom, pdf);
     let (json, avertissements) =
-        fabrique_pdf::inspection::inspecter(&chemin(&p)).unwrap_or_else(|r| panic!("inspection : {}", r.0));
+        fabrique_pdf::inspection::inspecter(&chemin(&p)).unwrap_or_else(|r| panic!("inspection : {}", r.phrase));
     assert!(avertissements.is_empty(), "{:?}", avertissements);
     serde_json::from_str(&json).unwrap()
 }
@@ -340,7 +340,7 @@ fn inspecter(pdf: &[u8], nom: &str) -> Value {
 fn texte_des_pages(pdf: &[u8], nom: &str) -> Vec<String> {
     let p = ecrire(nom, pdf);
     let (pages, avertissements) =
-        fabrique_pdf::lecture::texte(&chemin(&p)).unwrap_or_else(|r| panic!("lecture : {}", r.0));
+        fabrique_pdf::lecture::texte(&chemin(&p)).unwrap_or_else(|r| panic!("lecture : {}", r.phrase));
     assert!(avertissements.is_empty(), "{:?}", avertissements);
     pages
 }
@@ -1130,7 +1130,7 @@ fn refus_valeurs_invalides() {
     assert!(e.contains("champ absent \"documents\""), "{}", e);
     let e = refus(&json!({"format": 1, "page": {"marges": {"haut": 500, "bas": 500}}, "documents": [{"blocs": []}]}));
     assert!(e.contains("marges"), "{}", e);
-    let e = fabrique_pdf::Description::lire("{\"format\": 1,").unwrap_err().0;
+    let e = fabrique_pdf::Description::lire("{\"format\": 1,").unwrap_err().phrase;
     assert!(e.contains("illisible") && !e.contains('\n'), "{}", e);
 }
 
