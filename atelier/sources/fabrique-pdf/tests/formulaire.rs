@@ -495,7 +495,7 @@ fn remplir_un_refus_n_ecrit_rien_en_ligne_de_commande() {
     let octets_avant = std::fs::read(&entree).unwrap();
     let cas = [
         json!({"format": 3, "champs": {"NOM": "bon", "CODE": "refusé"}}),
-        json!({"format": 3, "champs": {"NOM": "bon"}, "images": [{"page": 9, "rect": [0, 0, 10, 10], "svg": "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'/>"}]}),
+        json!({"format": 3, "champs": {"NOM": "bon"}, "images": [{"page": 9, "rect": [0, 0, 10, 10], "marge": 0, "svg": "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'/>"}]}),
         json!({"format": 2, "champs": {"NOM": "bon"}}),
         json!({"champs": {"NOM": "bon"}}),
         json!({"format": 3, "bidule": 1}),
@@ -675,8 +675,8 @@ fn image_png_opaque_n_a_pas_de_smask() {
     let sortie = remplir_ok(
         &formulaire(None),
         json!({"format": 3, "images": [
-            {"page": 2, "rect": [50, 50, 150, 100], "fichier": rgb},
-            {"page": 2, "rect": [50, 120, 150, 170], "fichier": chemin(&p)}]}),
+            {"page": 2, "rect": [50, 50, 150, 100], "marge": 0, "fichier": rgb},
+            {"page": 2, "rect": [50, 120, 150, 170], "marge": 0, "fichier": chemin(&p)}]}),
     );
     let doc = charge(&sortie);
     for nom in ["PPImage1", "PPImage2"] {
@@ -724,7 +724,7 @@ fn image_le_type_se_lit_dans_les_octets_pas_dans_l_extension() {
         .unwrap();
     let sortie = remplir_ok(
         &formulaire(None),
-        json!({"format": 3, "images": [{"page": 1, "rect": [10, 10, 60, 60], "fichier": chemin(&vrai)}]}),
+        json!({"format": 3, "images": [{"page": 1, "rect": [10, 10, 60, 60], "marge": 0, "fichier": chemin(&vrai)}]}),
     );
     let doc = charge(&sortie);
     let (_, x) = xobjet(&doc, PAGE1, "PPImage1");
@@ -738,7 +738,7 @@ fn remplir_garde_le_formulaire_recu_et_n_ajoute_qu_une_police_par_fichier() {
     let recu = formulaire(None);
     let sortie = remplir_ok(
         &recu,
-        json!({"format": 3, "champs": {"NOM": "Dupont"}, "images": [{"page": 1, "rect": [300, 100, 400, 160], "svg": SVG_TEXTE}]}),
+        json!({"format": 3, "champs": {"NOM": "Dupont"}, "images": [{"page": 1, "rect": [300, 100, 400, 160], "marge": 0, "svg": SVG_TEXTE}]}),
     );
     assert!(sortie.starts_with(&recu), "le formulaire reçu reste en tête");
     let doc = charge(&sortie);
@@ -754,8 +754,8 @@ fn remplir_garde_le_formulaire_recu_et_n_ajoute_qu_une_police_par_fichier() {
 
 #[test]
 fn image_svg_le_meme_dessin_chaque_fois() {
-    let a = remplir_ok(&formulaire(None), json!({"format": 3, "images": [{"page": 1, "rect": [0, 0, 100, 40], "svg": SVG_TEXTE}]}));
-    let b = remplir_ok(&formulaire(None), json!({"format": 3, "images": [{"page": 1, "rect": [0, 0, 100, 40], "svg": SVG_TEXTE}]}));
+    let a = remplir_ok(&formulaire(None), json!({"format": 3, "images": [{"page": 1, "rect": [0, 0, 100, 40], "marge": 0, "svg": SVG_TEXTE}]}));
+    let b = remplir_ok(&formulaire(None), json!({"format": 3, "images": [{"page": 1, "rect": [0, 0, 100, 40], "marge": 0, "svg": SVG_TEXTE}]}));
     assert_eq!(a, b);
 }
 
@@ -788,8 +788,8 @@ fn image_le_contenu_ancien_est_intact_et_les_images_viennent_par_dessus() {
     let sortie = remplir_ok(
         &e,
         json!({"format": 3, "champs": {"NOM": "Bonjour"}, "images": [
-            {"page": 1, "rect": [10, 10, 60, 60], "fichier": f},
-            {"page": 1, "rect": [70, 10, 120, 60], "svg": SVG_TEXTE}]}),
+            {"page": 1, "rect": [10, 10, 60, 60], "marge": 0, "fichier": f},
+            {"page": 1, "rect": [70, 10, 120, 60], "marge": 0, "svg": SVG_TEXTE}]}),
     );
     let doc = charge(&sortie);
     let ids = contenus(&doc, PAGE1);
@@ -828,8 +828,8 @@ fn image_une_page_a_une_seule_image_garde_la_cle_xobject_existante() {
     let sortie = remplir_ok(
         &formulaire(None),
         json!({"format": 3, "images": [
-            {"page": 1, "rect": [10, 10, 60, 60], "fichier": f},
-            {"page": 2, "rect": [10, 10, 60, 60], "fichier": f}]}),
+            {"page": 1, "rect": [10, 10, 60, 60], "marge": 0, "fichier": f},
+            {"page": 2, "rect": [10, 10, 60, 60], "marge": 0, "fichier": f}]}),
     );
     let doc = charge(&sortie);
     assert_eq!(poses(&doc, PAGE1).len(), 1);
@@ -844,15 +844,15 @@ fn image_les_refus() {
     let une = |im: Value| json!({"format": 3, "images": [im]});
 
     // une page qui n'existe pas
-    let m = refus(&e, une(json!({"page": 5, "rect": [10, 10, 60, 60], "fichier": bon})));
+    let m = refus(&e, une(json!({"page": 5, "rect": [10, 10, 60, 60], "marge": 0, "fichier": bon})));
     assert!(m.contains("page 5"), "{}", m);
-    refus(&e, une(json!({"page": 0, "rect": [10, 10, 60, 60], "fichier": bon})));
+    refus(&e, une(json!({"page": 0, "rect": [10, 10, 60, 60], "marge": 0, "fichier": bon})));
     // un rectangle inversé, ou vide
-    let m = refus(&e, une(json!({"page": 1, "rect": [60, 10, 10, 60], "fichier": bon})));
+    let m = refus(&e, une(json!({"page": 1, "rect": [60, 10, 10, 60], "marge": 0, "fichier": bon})));
     assert!(m.contains("rect"), "{}", m);
-    refus(&e, une(json!({"page": 1, "rect": [10, 60, 60, 10], "fichier": bon})));
-    refus(&e, une(json!({"page": 1, "rect": [10, 10, 10, 60], "fichier": bon})));
-    refus(&e, une(json!({"page": 1, "rect": [10, 10, 60], "fichier": bon})));
+    refus(&e, une(json!({"page": 1, "rect": [10, 60, 60, 10], "marge": 0, "fichier": bon})));
+    refus(&e, une(json!({"page": 1, "rect": [10, 10, 10, 60], "marge": 0, "fichier": bon})));
+    refus(&e, une(json!({"page": 1, "rect": [10, 10, 60], "marge": 0, "fichier": bon})));
     // une marge qui mange la case
     let m = refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60], "marge": 25, "fichier": bon})));
     assert!(m.contains("marge"), "{}", m);
@@ -860,23 +860,23 @@ fn image_les_refus() {
     // un fichier qui n'est pas une image
     let texte = d.join("note.txt");
     std::fs::write(&texte, "ceci n'est pas une image").unwrap();
-    let m = refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60], "fichier": chemin(&texte)})));
+    let m = refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60], "marge": 0, "fichier": chemin(&texte)})));
     assert!(m.contains("note.txt"), "{}", m);
     // un fichier absent
-    refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60], "fichier": chemin(&d.join("absent.png"))})));
+    refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60], "marge": 0, "fichier": chemin(&d.join("absent.png"))})));
     // un PNG tronqué
     let tronque = d.join("tronque.png");
     let octets = std::fs::read(&bon).unwrap();
     std::fs::write(&tronque, &octets[..octets.len() / 2]).unwrap();
-    refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60], "fichier": chemin(&tronque)})));
+    refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60], "marge": 0, "fichier": chemin(&tronque)})));
     // ni « fichier » ni « svg », ou les deux
-    refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60]})));
-    refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60], "fichier": bon, "svg": SVG_TEXTE})));
+    refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60], "marge": 0})));
+    refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60], "marge": 0, "fichier": bon, "svg": SVG_TEXTE})));
     // une clé inconnue dans l'image
-    let m = refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60], "fichier": bon, "angle": 90})));
+    let m = refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60], "marge": 0, "fichier": bon, "angle": 90})));
     assert!(m.contains("angle"), "{}", m);
     // un SVG qui n'en est pas un
-    refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60], "svg": "<svg>pas fermé"})));
+    refus(&e, une(json!({"page": 1, "rect": [10, 10, 60, 60], "marge": 0, "svg": "<svg>pas fermé"})));
     // « images » n'est pas une liste
     refus(&e, json!({"format": 3, "images": {"page": 1}}));
 }
@@ -887,16 +887,16 @@ fn image_une_page_tournee_est_refusee() {
     let bon = png(&d, "bon.png", 10, 10, false);
     let tournee = formulaire(Some(90));
     // la page 1 n'est pas tournée : elle reçoit l'image
-    remplir_ok(&tournee, json!({"format": 3, "images": [{"page": 1, "rect": [10, 10, 60, 60], "fichier": bon}]}));
+    remplir_ok(&tournee, json!({"format": 3, "images": [{"page": 1, "rect": [10, 10, 60, 60], "marge": 0, "fichier": bon}]}));
     // la page 2 l'est : refus, même avec des champs bons à côté
     let m = refus(
         &tournee,
-        json!({"format": 3, "champs": {"NOM": "x"}, "images": [{"page": 2, "rect": [10, 10, 60, 60], "fichier": bon}]}),
+        json!({"format": 3, "champs": {"NOM": "x"}, "images": [{"page": 2, "rect": [10, 10, 60, 60], "marge": 0, "fichier": bon}]}),
     );
     assert!(m.contains("page 2") && m.contains("tournée"), "{}", m);
     // 0 et 360 ne sont pas des rotations
-    remplir_ok(&formulaire(Some(360)), json!({"format": 3, "images": [{"page": 2, "rect": [10, 10, 60, 60], "fichier": bon}]}));
-    refus(&formulaire(Some(-90)), json!({"format": 3, "images": [{"page": 2, "rect": [10, 10, 60, 60], "fichier": bon}]}));
+    remplir_ok(&formulaire(Some(360)), json!({"format": 3, "images": [{"page": 2, "rect": [10, 10, 60, 60], "marge": 0, "fichier": bon}]}));
+    refus(&formulaire(Some(-90)), json!({"format": 3, "images": [{"page": 2, "rect": [10, 10, 60, 60], "marge": 0, "fichier": bon}]}));
 }
 
 #[test]
@@ -912,7 +912,7 @@ fn image_dans_le_cadre_d_une_page_decalee() {
     let f = png(&d, "a.png", 10, 10, false);
     let sortie = remplir_ok(
         &pdf_a_la_main(&objets, 0),
-        json!({"format": 3, "images": [{"page": 1, "rect": [40, 100, 140, 120], "fichier": f}]}),
+        json!({"format": 3, "images": [{"page": 1, "rect": [40, 100, 140, 120], "marge": 0, "fichier": f}]}),
     );
     let doc = charge(&sortie);
     let p = poses(&doc, (3, 0));
@@ -929,7 +929,7 @@ fn deux_appels_identiques_donnent_les_memes_octets() {
     let description = json!({"format": 3,
         "champs": {"NOM": "Bonjour", "PEIGNE": "AB", "NOTE": "Une note assez longue pour passer à la ligne dans la case", "CENTRE": "Łukasz", "PARENT.ENFANT": "Paris"},
         "images": [{"page": 1, "rect": [10, 10, 80, 80], "marge": 3, "fichier": f},
-                   {"page": 2, "rect": [10, 10, 130, 70], "svg": SVG_TEXTE}]});
+                   {"page": 2, "rect": [10, 10, 130, 70], "marge": 0, "svg": SVG_TEXTE}]});
     let e = formulaire(None);
     let a = remplir_ok(&e, description.clone());
     let b = remplir_ok(&e, description.clone());
@@ -967,9 +967,10 @@ fn ajouter(o: &[u8], d: Value) -> Result<Vec<u8>, String> {
 fn ajouter_champs_a_un_document_de_la_fabrique_se_relit_et_se_remplit() {
     let base = octets_fabrique(2);
     let d = json!({"format": 3, "champs": [
-        {"nom": "IMPRIME", "page": 1, "rect": [60, 100, 160, 116], "valeur": "12/10/2026", "lecture_seule": true, "taille": 9},
-        {"nom": "A_REMPLIR", "page": 2, "rect": [60, 200, 260, 216], "taille": 9},
-        {"nom": "CENTRE", "page": 1, "rect": [60, 130, 160, 146], "valeur": "2", "alignement": "centre"}
+        {"nom": "IMPRIME", "page": 1, "rect": [60, 100, 160, 116], "valeur": "12/10/2026", "lecture_seule": true, "taille": 9,
+         "alignement": "gauche"},
+        {"nom": "A_REMPLIR", "page": 2, "rect": [60, 200, 260, 216], "taille": 9, "lecture_seule": false, "alignement": "gauche"},
+        {"nom": "CENTRE", "page": 1, "rect": [60, 130, 160, 146], "valeur": "2", "lecture_seule": false, "alignement": "centre"}
     ]});
     let o = ajouter(&base, d).unwrap();
     let c = champs(&o);
@@ -1001,14 +1002,22 @@ fn ajouter_champs_a_un_document_de_la_fabrique_se_relit_et_se_remplit() {
 #[test]
 fn ajouter_champs_refuse_sans_rien_rendre() {
     let base = octets_fabrique(1);
+    // Un champ X à gauche, où l'on peut écrire ; `plus` dit le reste.
+    let champ = |plus: Value| {
+        let mut c = json!({"nom": "X", "page": 1, "lecture_seule": false, "alignement": "gauche"});
+        for (k, v) in plus.as_object().unwrap() {
+            c[k] = v.clone();
+        }
+        c
+    };
     let un = |c: Value| ajouter(&base, json!({"format": 3, "champs": [c]})).unwrap_err();
-    assert!(un(json!({"nom": "X", "page": 2, "rect": [0, 0, 10, 10], "valeur": "a"})).contains("pas de page 2"));
-    assert!(un(json!({"nom": "X", "page": 1, "rect": [10, 0, 0, 10], "valeur": "a"})).contains("rect"));
-    assert!(un(json!({"nom": "X", "page": 1, "rect": [0, 0, 10, 10], "lecture_seule": true})).contains("sans valeur"));
-    assert!(un(json!({"nom": "X", "page": 1, "rect": [0, 0, 10, 10], "valeur": "漢"})).contains("police"));
+    assert!(un(champ(json!({"page": 2, "rect": [0, 0, 10, 10], "valeur": "a"}))).contains("pas de page 2"));
+    assert!(un(champ(json!({"rect": [10, 0, 0, 10], "valeur": "a"}))).contains("rect"));
+    assert!(un(champ(json!({"rect": [0, 0, 10, 10], "lecture_seule": true}))).contains("sans valeur"));
+    assert!(un(champ(json!({"rect": [0, 0, 10, 10], "valeur": "漢"}))).contains("police"));
     let deux = ajouter(&base, json!({"format": 3, "champs": [
-        {"nom": "X", "page": 1, "rect": [0, 0, 10, 10]}, {"nom": "X", "page": 1, "rect": [0, 20, 10, 30]}]}));
+        champ(json!({"rect": [0, 0, 10, 10]})), champ(json!({"rect": [0, 20, 10, 30]}))]}));
     assert!(deux.unwrap_err().contains("déjà un champ"));
-    let deja = ajouter(&base, json!({"format": 3, "champs": [{"nom": "X", "page": 1, "rect": [0, 0, 10, 10]}]})).unwrap();
-    assert!(ajouter(&deja, json!({"format": 3, "champs": [{"nom": "X", "page": 1, "rect": [0, 20, 10, 30]}]})).unwrap_err().contains("déjà un champ"));
+    let deja = ajouter(&base, json!({"format": 3, "champs": [champ(json!({"rect": [0, 0, 10, 10]}))]})).unwrap();
+    assert!(ajouter(&deja, json!({"format": 3, "champs": [champ(json!({"rect": [0, 20, 10, 30]}))]})).unwrap_err().contains("déjà un champ"));
 }

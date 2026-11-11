@@ -52,7 +52,9 @@ fn proche(a: Mesure, b: Mesure, tolerance: &str) -> bool {
 
 /// Un contrat de la fabrique : un titre, un paragraphe, une image, un tableau cadré, sur 2 pages.
 fn contrat(largeur: Mesure, hauteur: Mesure) -> Vec<u8> {
-    let para = |t: &str| json!({"type": "paragraphe", "morceaux": [{"texte": t}]});
+    let para = |t: &str| json!({"type": "paragraphe", "morceaux": [{"texte": t, "gras": false, "italique": false}],
+                                "alignement": "gauche", "majuscules": false, "espace_avant": 0, "espace_apres": 0,
+                                "retrait": 0});
     let desc = json!({
         "format": 1,
         "page": {"largeur": largeur, "hauteur": hauteur,
@@ -61,11 +63,13 @@ fn contrat(largeur: Mesure, hauteur: Mesure) -> Vec<u8> {
         "titre": "Contrat éàç — DUPONT",
         "documents": [{"blocs": [
             para("Bonjour le monde"),
-            json!({"type": "image", "chemin": chemin(&exemples().join("signature.png")), "largeur": 92}),
+            json!({"type": "image", "chemin": chemin(&exemples().join("signature.png")), "largeur": 92, "flottante": false}),
             json!({"type": "tableau",
-                   "colonnes": [{"largeur": mesure("0.6")}, {"largeur": mesure("0.4"), "alignement": "droite"}],
+                   "colonnes": [{"largeur": mesure("0.6"), "alignement": "gauche"}, {"largeur": mesure("0.4"), "alignement": "droite"}],
+                   "marge_cellule": {"haut": 0, "droite": 0, "bas": 0, "gauche": 0}, "espace_avant": 0, "espace_apres": 0,
                    "filets_cellules": {"couleur": "#000000", "epaisseur": mesure("0.5")},
-                   "lignes": [{"cellules": ["Salaire brut", "1 234,56"]}, {"cellules": ["Net", "987,65"]}]}),
+                   "lignes": [{"cellules": ["Salaire brut", "1 234,56"], "gras": false},
+                              {"cellules": ["Net", "987,65"], "gras": false}]}),
         ]}, {"blocs": [para("Deuxième page")]}]
     });
     fabrique_pdf::Description::lire(&desc.to_string())

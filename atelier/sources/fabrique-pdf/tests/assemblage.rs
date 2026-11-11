@@ -23,7 +23,9 @@ fn chemin(p: &Path) -> String {
 fn source(dossier: &Path, nom: &str, textes: &[&str]) -> String {
     let documents: Vec<Value> = textes
         .iter()
-        .map(|t| json!({"blocs": [{"type": "paragraphe", "morceaux": [{"texte": t}]}]}))
+        .map(|t| json!({"blocs": [{"type": "paragraphe", "alignement": "gauche", "majuscules": false,
+            "espace_avant": 0, "espace_apres": 0, "retrait": 0,
+            "morceaux": [{"texte": t, "gras": false, "italique": false}]}]}))
         .collect();
     let desc = json!({
         "format": 1,

@@ -172,29 +172,21 @@ fn description_modele(chemin: &str) -> Value {
 
 /// Un paragraphe ; le corps et les espaces s'écrivent en décimal (`"6.6"`).
 fn para_json(morceaux: Value, taille: Option<&str>, couleur: Option<&str>, align: &str, avant: &str, apres: &str) -> Value {
-    let mut b = json!({"type": "paragraphe", "morceaux": morceaux});
+    let mut b = json!({"type": "paragraphe", "morceaux": morceaux, "alignement": align, "majuscules": false,
+                       "espace_avant": mesure(avant), "espace_apres": mesure(apres), "retrait": 0});
     if let Some(t) = taille {
         b["taille"] = json!(mesure(t));
     }
     if let Some(c) = couleur {
         b["couleur"] = json!(c);
     }
-    if align != "gauche" {
-        b["alignement"] = json!(align);
-    }
-    if !mesure(avant).est_nulle() {
-        b["espace_avant"] = json!(mesure(avant));
-    }
-    if !mesure(apres).est_nulle() {
-        b["espace_apres"] = json!(mesure(apres));
-    }
     b
 }
 
 /// Le même document, écrit à la main en blocs.
 fn description_a_blocs() -> Value {
-    let g = |t: &str| json!({"texte": t, "gras": true});
-    let n = |t: &str| json!({"texte": t});
+    let g = |t: &str| json!({"texte": t, "gras": true, "italique": false});
+    let n = |t: &str| json!({"texte": t, "gras": false, "italique": false});
     let rouge = Some("#B22222");
     let case = |libelle: &str, nom: &str, sous: &str| {
         vec![
@@ -294,6 +286,8 @@ fn refus_du_document_modele() {
 
     let mut d = bon.clone();
     d.as_object_mut().unwrap().remove("style");
+    d["page"] = json!({"largeur": 595, "hauteur": 842, "marges": {"haut": 50, "droite": 50, "bas": 50, "gauche": 50}});
+    d["police"] = json!({"taille": 10, "interligne": mesure("1.25"), "couleur": "#000000"});
     assert!(refus(&d).contains("demande un \"style\""));
 
     let mut d = bon.clone();
@@ -371,11 +365,11 @@ fn description_avenant(chemin: &str) -> Value {
 fn l_avenant_donne_le_pdf_des_blocs_equivalents() {
     let chemin = ecrire_modele("avenant.modele", AVENANT);
     let a = fabriquer(&description_avenant(&chemin)).unwrap();
-    let g = |t: &str| json!({"texte": t, "gras": true});
-    let n = |t: &str| json!({"texte": t});
+    let g = |t: &str| json!({"texte": t, "gras": true, "italique": false});
+    let n = |t: &str| json!({"texte": t, "gras": false, "italique": false});
     let rouge = Some("#B22222");
     let cite = |t: &str| {
-        let mut b = para_json(json!([{"texte": t, "italique": true}]), None, None, "justifie", "0", "2.6");
+        let mut b = para_json(json!([{"texte": t, "italique": true, "gras": false}]), None, None, "justifie", "0", "2.6");
         b["retrait"] = json!(12);
         b
     };
@@ -497,8 +491,8 @@ fn description_attestation(chemin: &str, inventaire: &str) -> Value {
 fn l_attestation_coupe_les_valeurs_multilignes_sans_numeroter_ni_signer() {
     let chemin = ecrire_modele("attestation.modele", ATTESTATION);
     let a = fabriquer(&description_attestation(&chemin, "Salaire : 2 200,00\nPrime : 449,06")).unwrap();
-    let n = |t: &str| json!({"texte": t});
-    let g = |t: &str| json!({"texte": t, "gras": true});
+    let n = |t: &str| json!({"texte": t, "gras": false, "italique": false});
+    let g = |t: &str| json!({"texte": t, "gras": true, "italique": false});
     let j = |t: Value, avant: &str| para_json(t, None, None, "justifie", avant, "2.6");
     let blocs = vec![
         para_json(json!([g("Reçu")]), Some("11"), Some("#B22222"), "gauche", "10", "1"),

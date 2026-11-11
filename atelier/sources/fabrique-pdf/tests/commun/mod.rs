@@ -25,7 +25,9 @@ pub fn lancer(args: &[&str]) -> std::process::Output {
 /// Les octets d'un PDF de `n` pages fabriqué par la fabrique : une ligne « Page k éàç œ » par page.
 pub fn octets_fabrique(n: usize) -> Vec<u8> {
     let documents: Vec<Value> = (1..=n)
-        .map(|k| json!({"blocs": [{"type": "paragraphe", "morceaux": [{"texte": format!("Page {} éàç œ", k)}]}]}))
+        .map(|k| json!({"blocs": [{"type": "paragraphe", "alignement": "gauche", "majuscules": false,
+            "espace_avant": 0, "espace_apres": 0, "retrait": 0,
+            "morceaux": [{"texte": format!("Page {} éàç œ", k), "gras": false, "italique": false}]}]}))
         .collect();
     let desc = json!({
         "format": 1,

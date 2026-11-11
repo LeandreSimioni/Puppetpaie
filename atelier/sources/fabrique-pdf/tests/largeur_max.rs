@@ -17,7 +17,8 @@ fn description(blocs: Vec<Value>) -> Value {
 }
 
 fn texte_fixe(texte: &str, taille: Mesure, extra: Value) -> Value {
-    let mut b = json!({"type": "texte_fixe", "texte": texte, "x": 20, "y": 100, "taille": taille});
+    let mut b = json!({"type": "texte_fixe", "texte": texte, "x": 20, "y": 100, "taille": taille,
+                       "police": "helvetica", "gras": false, "alignement": "gauche"});
     for (k, v) in extra.as_object().unwrap() {
         b[k] = v.clone();
     }
