@@ -20,9 +20,9 @@ use std::sync::OnceLock;
 use serde::de::{DeserializeSeed, Deserializer, Error as _, IgnoredAny, MapAccess, SeqAccess, Unexpected, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 
-use droit::fiche::{CaseEntreprise, CaseSalarie, CaseSpectacle, Declaree, FormeDeCase, NomDeCase, Piece};
+use droit::fiche::{CaseEntreprise, CaseSalarie, CaseSpectacle, Declaree, FormeDeCase, NomDeCase, NomDeFiche, Piece};
 use socle::date::Jour;
-use socle::echec::{erreur, Classe, Echec};
+use socle::echec::Echec;
 use socle::fichiers::dossier_du_code;
 use socle::forme::NombreLu;
 use socle::texte::sans_accent;
@@ -627,10 +627,10 @@ fn feuilles(declarees: &[Declaree], devant: &[NomDeCase], out: &mut Vec<Chemin>)
 /// d'une structure que la ligne decrit (`champs`) ; sinon la table ne se lit pas. CHAQUE CASE DANS SA PIECE : celle que sa
 /// forme lui donne, et nulle autre : la table n'a pas de mot pour la dire (`deny_unknown_fields`).
 fn ranger(mut t: Table) -> R<Table> {
-    let fiches: [(&str, &mut Vec<Champ>, Vec<Declaree>, fn(NomDeCase) -> Option<Piece>); 3] = [
-        ("entreprise", &mut t.entreprise, droit::fiche::ChampsEntreprise::cases(), droit::fiche::ChampsEntreprise::piece_de),
-        ("salarie", &mut t.salarie, droit::fiche::ChampsSalarie::cases(), droit::fiche::ChampsSalarie::piece_de),
-        ("spectacle", &mut t.spectacle, droit::fiche::ChampsSpectacle::cases(), droit::fiche::ChampsSpectacle::piece_de),
+    let fiches: [(NomDeFiche, &mut Vec<Champ>, Vec<Declaree>, fn(NomDeCase) -> Option<Piece>); 3] = [
+        (NomDeFiche::Entreprise, &mut t.entreprise, droit::fiche::ChampsEntreprise::cases(), droit::fiche::ChampsEntreprise::piece_de),
+        (NomDeFiche::Salarie, &mut t.salarie, droit::fiche::ChampsSalarie::cases(), droit::fiche::ChampsSalarie::piece_de),
+        (NomDeFiche::Spectacle, &mut t.spectacle, droit::fiche::ChampsSpectacle::cases(), droit::fiche::ChampsSpectacle::piece_de),
     ];
     let faute = |ou: String| socle::echec::livree("champs-base.json", &ou);
     for (nom, champs, declarees, piece_de) in fiches {
@@ -659,7 +659,7 @@ fn ranger(mut t: Table) -> R<Table> {
 }
 
 /// Les champs de la fiche `nom` (`entreprise`, `salarie`, `spectacle`), tels que la table livree les decrit.
-fn table(nom: &str) -> R<&'static [Champ]> {
+fn table(nom: NomDeFiche) -> R<&'static [Champ]> {
     let chemin = dossier_du_code().join("champs-base.json");
     let t = TABLE
         .get_or_init(|| socle::forme::lire_fichier::<Table>(&chemin, "La table des cases des fiches, livrée, ne se lit pas : le signaler au développeur.").and_then(ranger))
@@ -668,33 +668,32 @@ fn table(nom: &str) -> R<&'static [Champ]> {
     // Lu une fois par processus (le code livre ne change pas sous la fenetre), mais note a chaque usage : un calcul
     // suivi dans un processus deja chaud a les memes entrees qu'un processus neuf.
     socle::fichiers::noter_si_besoin(&chemin);
-    match nom {
-        "entreprise" => Ok(&t.entreprise),
-        "salarie" => Ok(&t.salarie),
-        "spectacle" => Ok(&t.spectacle),
-        autre => Err(erreur(Classe::Manque, format!("fiche inconnue : {}", socle::fichiers::repr(autre)))),
-    }
+    Ok(match nom {
+        NomDeFiche::Entreprise => &t.entreprise,
+        NomDeFiche::Salarie => &t.salarie,
+        NomDeFiche::Spectacle => &t.spectacle,
+    })
 }
 
 /// Les champs d'une fiche (`entreprise`, `salarie`, `spectacle`).
-pub fn fiche(nom: &str) -> R<Vec<Champ>> {
+pub fn fiche(nom: NomDeFiche) -> R<Vec<Champ>> {
     Ok(table(nom)?.to_vec())
 }
 
 /// LES FORMES LISIBLES DES STRUCTURES DE LA FICHE `nom` : les cases d'ou une autre case de leur structure se deduit
 /// (`derive_de`). L'ecran les comble ; elles ne se declarent pas.
-pub fn formes_lisibles(nom: &str) -> R<Vec<NomDeCase>> {
+pub fn formes_lisibles(nom: NomDeFiche) -> R<Vec<NomDeCase>> {
     Ok(table(nom)?.iter().flat_map(|c| c.champs.iter().flatten()).filter_map(|c| c.derive_de.as_ref().map(|d| d.nom)).collect())
 }
 
 /// Le champ `cle` de la fiche `nom`, s'il existe.
-pub fn champ(nom: &str, cle: impl Into<NomDeCase>) -> R<Option<Champ>> {
+pub fn champ(nom: NomDeFiche, cle: impl Into<NomDeCase>) -> R<Option<Champ>> {
     let cle = cle.into();
     Ok(table(nom)?.iter().find(|c| c.cle == cle).cloned())
 }
 
 /// `description(nom_fiche)` : chaque champ, tel que l'interface le lit.
-pub fn description(nom: &str) -> R<Vec<Description<'static>>> {
+pub fn description(nom: NomDeFiche) -> R<Vec<Description<'static>>> {
     Ok(table(nom)?.iter().map(Champ::description).collect())
 }
 
@@ -866,12 +865,12 @@ impl Saisie {
 
     /// LA FICHE TYPEE `fiche` (`droit::fiche`) DANS LA FORME D'UNE SAISIE de la fiche `nom`, pour etre verifiee comme ce
     /// que l'ecran saisit : ce qu'elle ecrit, relu par la table (`socle::forme::relire_selon`).
-    pub fn de_la_fiche<F: Serialize + ?Sized>(nom: &str, fiche: &F) -> R<Saisie> {
+    pub fn de_la_fiche<F: Serialize + ?Sized>(nom: NomDeFiche, fiche: &F) -> R<Saisie> {
         socle::forme::relire_selon(fiche, lecture(nom)?, "Une fiche ne se relit pas dans la table de ses cases : le signaler au développeur.")
     }
 
     /// La saisie, ses formes lisibles comblees (`a_combler`).
-    pub fn comblee(&self, nom: &str) -> R<Saisie> {
+    pub fn comblee(&self, nom: NomDeFiche) -> R<Saisie> {
         let mut s = self.clone();
         for c in a_combler(nom, self)? {
             match c.bloc {
@@ -906,7 +905,7 @@ enum Attendu {
 /// niveau), ou les cases d'une structure que la table ne decrit pas, que sa forme declare.
 #[derive(Debug, Clone, Copy)]
 enum Niveau {
-    Fiche(&'static [Champ]),
+    Fiche(NomDeFiche, &'static [Champ]),
     Structure(&'static [Case], &'static [Declaree]),
     Libre(&'static [Declaree]),
 }
@@ -916,14 +915,13 @@ enum Niveau {
 /// qu'elle connait. `devant` : le chemin d'un bloc dans sa structure (`taux` pour la case `taux.t1_cadre`).
 #[derive(Debug, Clone)]
 pub struct Lecture {
-    fiche: String,
     niveau: Niveau,
     devant: Vec<NomDeCase>,
 }
 
 /// La lecture d'une saisie de la fiche `nom`.
-pub fn lecture(nom: &str) -> R<Lecture> {
-    Ok(Lecture { fiche: nom.to_string(), niveau: Niveau::Fiche(table(nom)?), devant: Vec::new() })
+pub fn lecture(nom: NomDeFiche) -> R<Lecture> {
+    Ok(Lecture { niveau: Niveau::Fiche(nom, table(nom)?), devant: Vec::new() })
 }
 
 /// Les cases que la forme d'une ligne declare (`Champ::declaree`) ; la ligne de l'histoire n'en a pas.
@@ -936,16 +934,16 @@ fn sous_cases(c: &'static Champ) -> &'static [Declaree] {
 
 impl Lecture {
     fn sous(&self, niveau: Niveau, devant: Vec<NomDeCase>) -> Lecture {
-        Lecture { fiche: self.fiche.clone(), niveau, devant }
+        Lecture { niveau, devant }
     }
 
     /// LA CASE `cle` ET CE QU'ON EN ATTEND ; une case que la table ne decrit pas : la phrase qui le dit.
     fn attendu(&self, cle: &str) -> Result<(NomDeCase, Attendu), String> {
         match self.niveau {
-            Niveau::Fiche(champs) => {
+            Niveau::Fiche(fiche, champs) => {
                 let Some(c) = champs.iter().find(|c| c.cle.nom() == cle) else {
                     let connues: Vec<&str> = champs.iter().filter(|c| !c.calcule()).map(|c| c.cle.nom()).collect();
-                    return Err(format!("la case « {} » n'existe pas dans la fiche {} ; ses cases sont : {}", cle, self.fiche, connues.join(", ")));
+                    return Err(format!("la case « {} » n'existe pas dans la fiche {} ; ses cases sont : {}", cle, fiche, connues.join(", ")));
                 };
                 let a = match (c.forme, c.champs.as_deref(), &c.ligne) {
                     (Forme::Histoire, _, _) => Attendu::Histoire,
@@ -998,7 +996,7 @@ impl<'de> Visitor<'de> for Lecture {
     fn visit_map<A: MapAccess<'de>>(self, mut m: A) -> Result<Saisie, A::Error> {
         let mut s = Saisie::default();
         while let Some(cle) = m.next_key::<String>()? {
-            if matches!(self.niveau, Niveau::Fiche(_)) && droit::fiche::est_une_note(&cle) {
+            if matches!(self.niveau, Niveau::Fiche(..)) && droit::fiche::est_une_note(&cle) {
                 if let Some(t) = m.next_value::<Option<String>>()? {
                     s.notes.push((cle, t));
                 }
@@ -1104,7 +1102,7 @@ impl<'de> Visitor<'de> for Attendu {
         };
         match self {
             Attendu::Bloc(l) => l.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
-            Attendu::Libre(d) | Attendu::Quelconque(d) => Lecture { fiche: String::new(), niveau: Niveau::Libre(d), devant: Vec::new() }.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
+            Attendu::Libre(d) | Attendu::Quelconque(d) => Lecture { niveau: Niveau::Libre(d), devant: Vec::new() }.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
             _ => Err(A::Error::invalid_type(Unexpected::Map, &self)),
         }
     }
@@ -1171,7 +1169,7 @@ fn ce_qu_elle_sert(exige_par: Option<&Vec<String>>, utile_pour: Option<&Vec<Stri
 /// CE QUI MANQUE A LA FICHE `donnees` (`entreprise`, `salarie`) pour les actes de la compagnie : chaque champ, et chaque
 /// case de structure, qui porte `exige_par` ou `utile_pour`, s'il s'applique (`si`, `exige_si` ; une case suit sa
 /// structure) et qu'il est vide. Un champ declare se dit par sa forme lisible (`derive_de`).
-pub fn manquants(nom: &str, donnees: &Saisie) -> R<Vec<Manquant>> {
+pub fn manquants(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Manquant>> {
     let tous = table(nom)?;
     let mut out = Vec::new();
     for c in tous.iter().filter(|c| c.applicable(donnees)) {
@@ -1218,7 +1216,7 @@ pub fn manquants(nom: &str, donnees: &Saisie) -> R<Vec<Manquant>> {
 
 /// LES CASES DE LA FICHE `nom` QUI SERVENT A UN ACTE : chacune, ou celle dont elle se deduit (`derive_de`), porte
 /// `exige_par` ou `utile_pour` : la meme liste que `manquants`. Le questionnaire du salarie n'en pose pas d'autre.
-pub fn utiles(nom: &str) -> R<Vec<NomDeCase>> {
+pub fn utiles(nom: NomDeFiche) -> R<Vec<NomDeCase>> {
     let mut out = Vec::new();
     for c in table(nom)?.iter().filter(|c| c.exige_par.is_some() || c.utile_pour.is_some()) {
         out.push(c.cle);
@@ -1230,10 +1228,10 @@ pub fn utiles(nom: &str) -> R<Vec<NomDeCase>> {
 /// LE REFUS D'UN ACTE quand une fiche qu'il lit n'a pas ce qu'il exige (`exige_par`) : tout ce qui manque, d'un coup,
 /// fiche par fiche. `fiches` : (`entreprise` ou `salarie`, qui, la fiche) ; `sauf` : les cases qu'un fait de l'acte ne demande
 /// pas. `None` : rien ne manque.
-pub fn refus_des_manques(acte: &str, fiches: &[(&str, String, &Saisie)], sauf: &[NomDeCase]) -> R<Option<String>> {
+pub fn refus_des_manques(acte: &str, fiches: &[(NomDeFiche, String, &Saisie)], sauf: &[NomDeCase]) -> R<Option<String>> {
     let mut lignes = Vec::new();
     for (nom, qui, donnees) in fiches {
-        let manque: Vec<String> = manquants(nom, donnees)?
+        let manque: Vec<String> = manquants(*nom, donnees)?
             .into_iter()
             .filter(|m| matches!(&m.sert, Sert::Exigee(actes) if actes.iter().any(|a| a == acte)) && !m.cle.seul().is_some_and(|c| sauf.contains(&c)))
             .map(|m| format!("« {} »", m.libelle))
@@ -1607,7 +1605,7 @@ pub struct Comble {
 
 /// `a_combler` : la forme lisible de depart des fiches qui n'en ont pas, tiree de leur forme declaree. Rien n'est ecrit :
 /// c'est une vue, pas une migration.
-pub fn a_combler(nom: &str, donnees: &Saisie) -> R<Vec<Comble>> {
+pub fn a_combler(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Comble>> {
     let lieux = [CaseSalarie::adresse, CaseSalarie::commune, CaseSalarie::lieu_naissance].map(NomDeCase::from);
     let mut out: Vec<Comble> = Vec::new();
     for c in table(nom)? {
@@ -1622,7 +1620,7 @@ pub fn a_combler(nom: &str, donnees: &Saisie) -> R<Vec<Comble>> {
         let t = if lieux.contains(&c.cle) { lieu_lisible(officiel) } else { titre(officiel) };
         out.push(Comble { bloc: None, cle: source, texte: t });
     }
-    if nom == "entreprise" {
+    if nom == NomDeFiche::Entreprise {
         for (cle, officiels) in personnes() {
             let Some(Valeur::Bloc(p)) = donnees.case(cle) else { continue };
             for (k, lisible) in officiels {
@@ -1648,7 +1646,7 @@ impl Serialize for Apercu {
     }
 }
 
-pub fn apercu_derive(nom: &str, donnees: &Saisie) -> R<Apercu> {
+pub fn apercu_derive(nom: NomDeFiche, donnees: &Saisie) -> R<Apercu> {
     let mut out = Vec::new();
     for c in table(nom)? {
         let Some(source) = c.derive_de else { continue };
@@ -2150,7 +2148,7 @@ fn texte_dit(d: &Saisie, cle: impl Into<NomDeCase>) -> Option<String> {
 }
 
 /// Ce qu'aucun champ ne peut verifier seul.
-fn controles_croises(nom: &str, d: &Saisie) -> R<Vec<Constat>> {
+fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
     use CaseEntreprise as E;
     use CaseSalarie as S;
     use CaseSpectacle as P;
@@ -2158,7 +2156,7 @@ fn controles_croises(nom: &str, d: &Saisie) -> R<Vec<Constat>> {
 
     // UNE AUTRE URSSAF QUE CELLE DE L'ADRESSE : permis, mais dit, et par le moteur, pour que la
     // ligne de commande l'entende comme la fenetre. C'est l'Urssaf du territoire qui recoit DPAE et DSN.
-    if nom == "entreprise" {
+    if nom == NomDeFiche::Entreprise {
         if let Some(choisi) = texte_dit(d, E::code_urssaf) {
             let deduit = match d.mot(E::code_postal) {
                 Some(cp) => crate::urssaf::base()?.du_code_postal(&cp),
@@ -2177,7 +2175,7 @@ fn controles_croises(nom: &str, d: &Saisie) -> R<Vec<Constat>> {
         }
     }
 
-    if nom == "spectacle" {
+    if nom == NomDeFiche::Spectacle {
         // LE TITRE QUE L'IMPORT N'A PAS TROUVE : un numero d'objet seul (la DSN ne porte pas le titre) recoit « A COMPLETER ».
         // Ce n'est pas un titre : le contrat et le bulletin l'imprimeraient tel quel.
         if texte_dit(d, P::titre).is_some_and(|t| t.eq_ignore_ascii_case("A COMPLETER")) {
@@ -2198,7 +2196,7 @@ fn controles_croises(nom: &str, d: &Saisie) -> R<Vec<Constat>> {
         }
     }
 
-    if nom == "salarie" {
+    if nom == NomDeFiche::Salarie {
         let nir = texte_dit(d, S::nir);
         let cle = texte_dit(d, S::nir_cle);
         // SANS NIR, LA FICHE N'EST PAS INCOMPLETE : elle est celle d'un salarie
@@ -2326,7 +2324,7 @@ fn controles_croises(nom: &str, d: &Saisie) -> R<Vec<Constat>> {
         }
     }
 
-    if nom == "entreprise" {
+    if nom == NomDeFiche::Entreprise {
         let (siret, siren, nic) = (d.mot(E::siret), d.mot(E::siren), d.mot(E::nic));
         if let (Some(siret), Some(siren), Some(nic)) = (&siret, &siren, &nic) {
             let somme = format!("{}{}", siren, nic);
@@ -2345,7 +2343,7 @@ fn controles_croises(nom: &str, d: &Saisie) -> R<Vec<Constat>> {
 
 /// `verifier_fiche` : toutes les anomalies d'une fiche, champ par champ, puis
 /// les croisees.
-pub fn verifier_fiche(nom: &str, donnees: &Saisie) -> R<Vec<Anomalie>> {
+pub fn verifier_fiche(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Anomalie>> {
     let champs = table(nom)?;
     let donnees = donnees.comblee(nom)?;
     let mut constats: Vec<Constat> = Vec::new();
@@ -2427,7 +2425,7 @@ pub fn cases_dites(cases: &[Case]) -> String {
 /// LES CASES D'UNE STRUCTURE (`champs`) DONT LA VALEUR N'A PAS SA FORME (une valeur hors de sa liste, un nombre, une date),
 /// que l'ecriture `donnees` ajouterait a la fiche : sa forme les refuserait (`droit::fiche`). Cela ne se force pas. Une
 /// case que la table ne decrit pas, elle, a deja refuse la saisie a la porte (`Lecture`).
-pub fn fautes_des_structures(nom: &str, donnees: &Saisie) -> R<Vec<Anomalie>> {
+pub fn fautes_des_structures(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Anomalie>> {
     let mut out = Vec::new();
     for c in table(nom)? {
         let Some(cases) = c.champs.as_deref() else { continue };
@@ -2455,7 +2453,7 @@ mod tests {
     use super::*;
 
     /// Une saisie d'une seule case texte, lue selon la table comme une fiche (`Saisie::de_la_fiche`).
-    fn une_case(nom: &str, cle: &str, valeur: &str) -> Saisie {
+    fn une_case(nom: NomDeFiche, cle: &str, valeur: &str) -> Saisie {
         Saisie::de_la_fiche(nom, &std::collections::BTreeMap::from([(cle, valeur)])).unwrap()
     }
 
@@ -2466,7 +2464,7 @@ mod tests {
     #[test]
     fn la_fiche_entreprise_admet_un_code_des_deux_nomenclatures() {
         let faute_naf = |code: &str| -> Option<String> {
-            verifier_fiche("entreprise", &une_case("entreprise", "naf", code)).unwrap().into_iter().find(|a| a.champ == CaseEntreprise::naf.into()).map(|a| a.message)
+            verifier_fiche(NomDeFiche::Entreprise, &une_case(NomDeFiche::Entreprise, "naf", code)).unwrap().into_iter().find(|a| a.champ == CaseEntreprise::naf.into()).map(|a| a.message)
         };
         assert_eq!(faute_naf("9001Z"), None, "NAF rev. 2");
         assert_eq!(faute_naf("9020Y"), None, "NAF 2025");
@@ -2481,7 +2479,7 @@ mod tests {
     fn la_fiche_offre_les_statuts_que_la_norme_admet() {
         let erreur_sur = |champ: CaseSalarie, valeur: &str| -> bool {
             let champ = NomDeCase::from(champ);
-            verifier_fiche("salarie", &une_case("salarie", champ.nom(), valeur)).unwrap().iter().any(|a| a.champ == champ && a.gravite == Gravite::Erreur)
+            verifier_fiche(NomDeFiche::Salarie, &une_case(NomDeFiche::Salarie, champ.nom(), valeur)).unwrap().iter().any(|a| a.champ == champ && a.gravite == Gravite::Erreur)
         };
         assert!(erreur_sur(CaseSalarie::statut_categoriel_rc, "03"), "03 n'est pas un statut categoriel de retraite complementaire en 2026.1");
         for rc in ["01", "02", "04"] {

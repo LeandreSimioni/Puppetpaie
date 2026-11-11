@@ -332,11 +332,12 @@ fn contrats_choisis(ctx: &Contexte, choisis: &Choisis, mois: Mois, paies: &[Paie
 /// avenant est un contrat : il passe par le meme controle.
 fn controler_contrat<'a>(ctx: &'a Contexte, salaries: impl Iterator<Item = (&'a str, &'a ChampsSalarie)>) -> R<()> {
     use declarations::champs::Saisie;
-    let mut saisies: Vec<(&str, String, Saisie)> = vec![("entreprise", "la fiche entreprise".into(), Saisie::de_la_fiche("entreprise", &ctx.entreprise)?)];
+    use droit::fiche::NomDeFiche;
+    let mut saisies: Vec<(NomDeFiche, String, Saisie)> = vec![(NomDeFiche::Entreprise, "la fiche entreprise".into(), Saisie::de_la_fiche(NomDeFiche::Entreprise, &ctx.entreprise)?)];
     for (cle, s) in salaries {
-        saisies.push(("salarie", format!("la fiche de {}", nom_ou_cle(s, cle)), Saisie::de_la_fiche("salarie", s)?));
+        saisies.push((NomDeFiche::Salarie, format!("la fiche de {}", nom_ou_cle(s, cle)), Saisie::de_la_fiche(NomDeFiche::Salarie, s)?));
     }
-    let fiches: Vec<(&str, String, &Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
+    let fiches: Vec<(NomDeFiche, String, &Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
     match declarations::champs::refus_des_manques("contrat", &fiches, &[])? {
         Some(m) => Err(refus(m)),
         None => Ok(()),

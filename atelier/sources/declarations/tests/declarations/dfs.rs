@@ -40,26 +40,26 @@ fn la_fiche_salarie_dit_une_profession_et_son_accord_la_fiche_entreprise_l_optio
     // La fiche salarie dit la PROFESSION de l'article 5 de l'annexe IV du CGI (plus une categorie, « 20 » ou
     // « 25 »), et l'accord du salarie quand l'option repose sur lui ; la fiche entreprise dit l'option de l'employeur
     // (arrete du 4 septembre 2025, art. 9, I, al. 2 et 3). Le moteur verifie les valeurs (`champs::verifier_fiche`).
-    let erreur = |nom: &str, cle: &str, v: &str| -> bool {
+    let erreur = |nom: droit::fiche::NomDeFiche, cle: &str, v: &str| -> bool {
         declarations::champs::verifier_fiche(nom, &saisie(nom, &[(cle, v)])).unwrap().iter().any(|a| a.champ.nom() == cle && a.gravite == Gravite::Erreur)
     };
-    assert!(erreur("salarie", "deduction_forfaitaire", "25"), "une categorie n'est plus une profession");
+    assert!(erreur(droit::fiche::NomDeFiche::Salarie, "deduction_forfaitaire", "25"), "une categorie n'est plus une profession");
     for profession in ["musicien", "choriste", "chef_orchestre", "regisseur_theatre", "artiste_dramatique", "artiste_lyrique",
                        "artiste_choregraphique", "artiste_cinematographique", ""] {
-        assert!(!erreur("salarie", "deduction_forfaitaire", profession), "{}", profession);
+        assert!(!erreur(droit::fiche::NomDeFiche::Salarie, "deduction_forfaitaire", profession), "{}", profession);
     }
     for accord in ["contrat", "consentement_annuel", "refus", ""] {
-        assert!(!erreur("salarie", "deduction_forfaitaire_accord", accord), "{}", accord);
+        assert!(!erreur(droit::fiche::NomDeFiche::Salarie, "deduction_forfaitaire_accord", accord), "{}", accord);
     }
-    assert!(erreur("salarie", "deduction_forfaitaire_accord", "oui"));
+    assert!(erreur(droit::fiche::NomDeFiche::Salarie, "deduction_forfaitaire_accord", "oui"));
     for option in ["accord_collectif", "accord_cse", "accord_individuel", ""] {
-        assert!(!erreur("entreprise", "deduction_forfaitaire_option", option), "{}", option);
+        assert!(!erreur(droit::fiche::NomDeFiche::Entreprise, "deduction_forfaitaire_option", option), "{}", option);
     }
-    assert!(erreur("entreprise", "deduction_forfaitaire_option", "oui"));
+    assert!(erreur(droit::fiche::NomDeFiche::Entreprise, "deduction_forfaitaire_option", "oui"));
     // Les professions de la fiche sont celles du bareme de l'annee, et aucune autre.
     let bar: Bareme = lire(&crate::outils::code_livre(), "baremes/2026.json");
     let du_bareme: Vec<String> = bar.deduction_forfaitaire.professions.into_keys().collect();
-    let champs = declarations::champs::fiche("salarie").unwrap();
+    let champs = declarations::champs::fiche(droit::fiche::NomDeFiche::Salarie).unwrap();
     let c = champs.iter().find(|c| c.cle == droit::fiche::CaseSalarie::deduction_forfaitaire.into()).unwrap();
     let mut de_la_fiche: Vec<String> = c.choix.iter().filter(|x| !x.is_empty()).cloned().collect();
     de_la_fiche.sort();

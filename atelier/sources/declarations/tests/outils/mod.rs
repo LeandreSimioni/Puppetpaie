@@ -22,7 +22,7 @@ pub fn lire<T: DeserializeOwned>(racine: &Path, rel: &str) -> T {
 
 /// La saisie de la fiche `nom` qui dit ces cases-la (des textes), lue selon la table comme une fiche
 /// (`Saisie::de_la_fiche`).
-pub fn saisie(nom: &str, cases: &[(&str, &str)]) -> declarations::champs::Saisie {
+pub fn saisie(nom: droit::fiche::NomDeFiche, cases: &[(&str, &str)]) -> declarations::champs::Saisie {
     let fiche: std::collections::BTreeMap<&str, &str> = cases.iter().copied().collect();
     declarations::champs::Saisie::de_la_fiche(nom, &fiche).unwrap_or_else(|e| panic!("{}", e.phrase))
 }

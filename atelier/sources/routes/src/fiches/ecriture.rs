@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use declarations::champs::{self, Anomalie, Apercu, Gravite, Saisie, Valeur};
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
-use droit::fiche::{NomDeCase, CaseEntreprise, ChampsEntreprise, ChampsSalarie, ChampsSpectacle, FicheDatee, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, Lue as _};
+use droit::fiche::{NomDeCase, NomDeFiche, CaseEntreprise, ChampsEntreprise, ChampsSalarie, ChampsSpectacle, FicheDatee, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, Lue as _};
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::forme::NombreLu;
@@ -25,7 +25,7 @@ use compagnie::avant::sauver_avant;
 
 /// UNE SORTE DE FICHE : sa forme datee, son nom (celui de `champs-base.json`), son fichier, et ce qui lui est propre.
 pub(crate) trait SorteDeFiche: FicheDatee {
-    const NOM: &'static str;
+    const NOM: NomDeFiche;
     const FICHIER: &'static str;
     /// Les cases qui s'ecrivent a part (`ecrire_a_part`).
     fn a_part() -> Vec<NomDeCase> {
@@ -78,7 +78,7 @@ pub(crate) trait SorteDeFiche: FicheDatee {
 }
 
 impl SorteDeFiche for FicheEntrepriseDatee {
-    const NOM: &'static str = "entreprise";
+    const NOM: NomDeFiche = NomDeFiche::Entreprise;
     const FICHIER: &'static str = droit::contexte::ENTREPRISE;
     type Fichier = FicheEntrepriseDatee;
 
@@ -224,7 +224,7 @@ pub(crate) fn inscrire_etablissements(ctx: &Contexte, liste: &[droit::fiche::Eta
 }
 
 impl SorteDeFiche for FicheSalarieDatee {
-    const NOM: &'static str = "salarie";
+    const NOM: NomDeFiche = NomDeFiche::Salarie;
     const FICHIER: &'static str = droit::contexte::SALARIES;
     type Fichier = droit::fiche::Salaries;
 
@@ -302,7 +302,7 @@ rapproche chacun de ses déclarations par lui. En choisir un autre, ou laisser l
 }
 
 impl SorteDeFiche for FicheSpectacleDatee {
-    const NOM: &'static str = "spectacle";
+    const NOM: NomDeFiche = NomDeFiche::Spectacle;
     const FICHIER: &'static str = droit::contexte::SPECTACLES;
     type Fichier = droit::fiche::Spectacles;
 
@@ -404,7 +404,7 @@ pub(crate) fn reporter<F: SorteDeFiche>(plate: &mut F::Plate, avant: &Saisie, ap
 /// LES SAISIES QUE L'ECRAN ENVOIE, chacune lue par la table de sa fiche (`champs::lecture`) : une case qui n'a pas sa
 /// forme se refuse avec son chemin, une case que la table ne decrit pas aussi.
 macro_rules! saisie_de {
-    ($($t:ident = $nom:literal),*) => {
+    ($($t:ident = $nom:expr),*) => {
         $(
             pub(crate) struct $t(Saisie);
             impl<'de> Deserialize<'de> for $t {
@@ -416,7 +416,7 @@ macro_rules! saisie_de {
         )*
     };
 }
-saisie_de!(SaisieEntreprise = "entreprise", SaisieSalarie = "salarie", SaisieSpectacle = "spectacle");
+saisie_de!(SaisieEntreprise = NomDeFiche::Entreprise, SaisieSalarie = NomDeFiche::Salarie, SaisieSpectacle = NomDeFiche::Spectacle);
 
 /// UNE FICHE EN COURS DE SAISIE (`verifier-fiche`) :`{"nom": …, "donnees": {…}}`.
 #[derive(Deserialize)]
@@ -432,11 +432,11 @@ pub(crate) enum SaisieDeFiche {
 
 impl SaisieDeFiche {
     /// Le nom de la fiche, et sa saisie.
-    pub(crate) fn ouverte(self) -> (&'static str, Saisie) {
+    pub(crate) fn ouverte(self) -> (NomDeFiche, Saisie) {
         match self {
-            SaisieDeFiche::Entreprise(s) => ("entreprise", s.0),
-            SaisieDeFiche::Salarie(s) => ("salarie", s.0),
-            SaisieDeFiche::Spectacle(s) => ("spectacle", s.0),
+            SaisieDeFiche::Entreprise(s) => (NomDeFiche::Entreprise, s.0),
+            SaisieDeFiche::Salarie(s) => (NomDeFiche::Salarie, s.0),
+            SaisieDeFiche::Spectacle(s) => (NomDeFiche::Spectacle, s.0),
         }
     }
 }
@@ -457,11 +457,11 @@ pub(crate) enum FicheEnCours {
 
 impl FicheEnCours {
     /// Le nom de la fiche, la cle du salarie quand elle est dite, et sa saisie.
-    pub(crate) fn ouverte(self) -> (&'static str, Option<IdSalarie>, Saisie) {
+    pub(crate) fn ouverte(self) -> (NomDeFiche, Option<IdSalarie>, Saisie) {
         match self {
-            FicheEnCours::Entreprise { donnees } => ("entreprise", None, donnees.0),
-            FicheEnCours::Salarie { cle, donnees } => ("salarie", cle, donnees.0),
-            FicheEnCours::Spectacle { donnees } => ("spectacle", None, donnees.0),
+            FicheEnCours::Entreprise { donnees } => (NomDeFiche::Entreprise, None, donnees.0),
+            FicheEnCours::Salarie { cle, donnees } => (NomDeFiche::Salarie, cle, donnees.0),
+            FicheEnCours::Spectacle { donnees } => (NomDeFiche::Spectacle, None, donnees.0),
         }
     }
 }
@@ -509,7 +509,7 @@ fn fautif(c: &champs::Champ, actuel: &Valeur) -> R<bool> {
 /// `source` disent (a l'ecriture : celles que l'ecran change ; a la verification : toutes). Sans `forcer`, seul ce qui
 /// est vide ou ne respecte pas sa norme se remplit. Le departement de naissance et les initiales du contrat d'un salarie
 /// ne s'ecrivent que dans une case vide : ils se remplissent quelles que soient les cases `source`.
-pub(crate) fn deriver(nom: &str, d: &mut Saisie, forcer: bool, source: &dyn Fn(NomDeCase) -> bool) -> R<()> {
+pub(crate) fn deriver(nom: NomDeFiche, d: &mut Saisie, forcer: bool, source: &dyn Fn(NomDeCase) -> bool) -> R<()> {
     use droit::fiche::{CaseBanque, CaseEntreprise as E, CaseSalarie as S};
     for c in champs::fiche(nom)? {
         let Some(src) = c.derive_de.filter(|s| source(*s)) else { continue };
@@ -525,7 +525,7 @@ pub(crate) fn deriver(nom: &str, d: &mut Saisie, forcer: bool, source: &dyn Fn(N
         }
         d.poser(c.cle, Valeur::Texte(attendu));
     }
-    if nom == "entreprise" {
+    if nom == NomDeFiche::Entreprise {
         // Le numero d'adherent Conges Spectacles s'ecrit dans sa forme (`conges_spectacles::forme_adherent`) : « 0123
         // 450001-f » est la meme valeur que « 0123450001F ».
         let cle = documents::conges_spectacles::CLE_ADHERENT;
@@ -556,7 +556,7 @@ pub(crate) fn deriver(nom: &str, d: &mut Saisie, forcer: bool, source: &dyn Fn(N
             }
         }
     }
-    if nom == "salarie" {
+    if nom == NomDeFiche::Salarie {
         // LE DEPARTEMENT DE NAISSANCE SE LIT DANS LE NIR (regle 2 : la page le montre, le moteur l'ecrit) : ses 6e et 7e
         // caracteres sont le departement de naissance, 99 pour une personne nee a l'etranger (S21.G00.30.001 et .014,
         // `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.30.txt`). Il ne s'ecrit que dans une case vide : une
@@ -627,7 +627,7 @@ fn deriver_siren_nic(d: &mut Saisie, source: &dyn Fn(NomDeCase) -> bool) {
 fn deriver_etablissements(d: &mut Saisie) -> R<()> {
     use droit::fiche::{CaseEntreprise as E, CaseEtablissement as Et, CaseTauxAtmp, CaseVersementMobilite};
     let Some(Valeur::Lignes(lignes)) = d.case(E::etablissements).cloned() else { return Ok(()) };
-    let fiche = champs::fiche("entreprise")?;
+    let fiche = champs::fiche(NomDeFiche::Entreprise)?;
     let mut sortie = Vec::new();
     for mut o in lignes {
         if let Some(siret) = o.texte(Et::siret).map(|s| s.chars().filter(|c| !c.is_whitespace()).collect::<String>()) {
@@ -755,8 +755,8 @@ fn avait_une_valeur(avant: Option<&Valeur>) -> bool {
 /// moins de cinq ans) : la changer la corrige, elle ne change pas a une date. De meme l'anciennete d'un salarie, le jour
 /// ou il est entre dans l'entreprise (« Dans la compagnie depuis », d'ou se compte S21.G00.86.003 a la fin de chaque mois
 /// declare : `norme-dsn/texte-2027/bloc-S21.G00.86.txt`, l. 91-95). Elles s'ecrivent sans date d'effet.
-fn faits_sans_date() -> [(&'static str, NomDeCase); 2] {
-    [("entreprise", CaseEntreprise::premiere_embauche.into()), ("salarie", droit::fiche::CaseSalarie::date_anciennete.into())]
+fn faits_sans_date() -> [(NomDeFiche, NomDeCase); 2] {
+    [(NomDeFiche::Entreprise, CaseEntreprise::premiere_embauche.into()), (NomDeFiche::Salarie, droit::fiche::CaseSalarie::date_anciennete.into())]
 }
 
 /// LES CASES `cles` QUI CHANGENT LA FICHE `avant` (telle que l'ecran l'a montree) en `apres` ET DEMANDENT LEUR DATE
@@ -766,7 +766,7 @@ fn faits_sans_date() -> [(&'static str, NomDeCase); 2] {
 /// refait pas (regle 4), seul ce qui reste a faire la lit. Sauf `premiere_datee` : une valeur qui, par nature, ne vaut
 /// qu'a partir d'un jour (le taux de PAS recu, « le taux personnalise ne s'applique que pour l'avenir »,
 /// BOI-IR-PAS-30-10-50 § 20, `bofip/BOI-IR-PAS-30-10-50-20190227.html`). Une fiche neuve n'a rien a dater.
-fn changements_a_dater(nom: &str, avant: &Saisie, apres: &Saisie, cles: &[NomDeCase], premiere_datee: bool) -> R<Vec<NomDeCase>> {
+fn changements_a_dater(nom: NomDeFiche, avant: &Saisie, apres: &Saisie, cles: &[NomDeCase], premiere_datee: bool) -> R<Vec<NomDeCase>> {
     if avant.cases().is_empty() {
         return Ok(Vec::new());
     }
@@ -850,7 +850,7 @@ pub(crate) fn ecrire_datee<F: SorteDeFiche>(
 }
 
 /// Les libelles des cases a dater, sans un champ calcule qui change avec la case d'ou il derive (le meme fait).
-fn libelles_a_dater(nom: &str, a_dater: &[NomDeCase]) -> R<Vec<String>> {
+fn libelles_a_dater(nom: NomDeFiche, a_dater: &[NomDeCase]) -> R<Vec<String>> {
     let fiche = champs::fiche(nom)?;
     let derive_d_un_change = |k: &NomDeCase| fiche.iter().find(|c| c.cle == *k).and_then(|c| c.derive_de).is_some_and(|s| a_dater.contains(&s));
     Ok(a_dater
@@ -923,7 +923,7 @@ struct FicheRefusee {
 }
 
 /// La fiche porte au moins une erreur : elle n'est pas ecrite.
-fn fiche_refusee(nom: &str, anomalies: &[Anomalie]) -> R<Echec> {
+fn fiche_refusee(nom: NomDeFiche, anomalies: &[Anomalie]) -> R<Echec> {
     let mut phrases = Vec::new();
     for a in anomalies.iter().filter(|a| a.gravite == Gravite::Erreur) {
         phrases.push(match champs::champ(nom, a.champ)?.map(|c| c.libelle).filter(|l| !l.is_empty()) {
@@ -937,7 +937,7 @@ fn fiche_refusee(nom: &str, anomalies: &[Anomalie]) -> R<Echec> {
 }
 
 /// Pose sur chaque anomalie le libelle de sa case, celui que la fiche montre.
-pub(crate) fn avec_libelles(nom: &str, anomalies: &mut [Anomalie]) -> R<()> {
+pub(crate) fn avec_libelles(nom: NomDeFiche, anomalies: &mut [Anomalie]) -> R<()> {
     let champs = champs::fiche(nom)?;
     for a in anomalies.iter_mut() {
         // Le code PCS-ESE ne se tape pas : la fiche le remplit du metier choisi (`emplois.rs`).
@@ -1002,7 +1002,7 @@ pub(crate) fn ecrire_fiche<F: SorteDeFiche>(ctx: &Contexte, p: Preparee<F>, forc
     }
     let mut contenu = lire_fichier::<F>(ctx)?;
     let avant_fichier = contenu.clone();
-    let cle = match (F::NOM != "entreprise", p.cle) {
+    let cle = match (F::NOM != NomDeFiche::Entreprise, p.cle) {
         // UNE FICHE NEUVE : la cle se fabrique ici et nulle part ailleurs.
         (true, None) => Some(cle_neuve::<F>(&p.vue_apres, &contenu)?),
         (_, cle) => cle,
@@ -1034,7 +1034,7 @@ fn cle_neuve<F: SorteDeFiche>(d: &Saisie, existants: &F::Fichier) -> R<String> {
     };
     use droit::fiche::{CaseSalarie as S, CaseSpectacle as P};
     let dit = |k: NomDeCase| d.mot(k).map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
-    let candidats: Vec<String> = if F::NOM == "salarie" {
+    let candidats: Vec<String> = if F::NOM == NomDeFiche::Salarie {
         let base = dit(S::nom.into()).or_else(|| dit(S::nom_affichage.into())).map(|n| propre(&n, false));
         let prenom = dit(S::prenom.into()).or_else(|| dit(S::prenom_affichage.into())).map(|p| propre(&p, false));
         let ensemble = base.as_ref().map(|b| format!("{}-{}", b, prenom.iter().cloned().collect::<String>()));
@@ -1049,7 +1049,7 @@ fn cle_neuve<F: SorteDeFiche>(d: &Saisie, existants: &F::Fichier) -> R<String> {
     };
     let candidats: Vec<String> = candidats.into_iter().filter(|c| !c.is_empty() && !c.starts_with('-') && !c.ends_with('-')).collect();
     let Some(dernier) = candidats.last() else {
-        return Err(refus(format!("Impossible de nommer cette fiche {} : il lui faut au moins un {}.", F::NOM, if F::NOM == "salarie" { "nom" } else { "titre" })));
+        return Err(refus(format!("Impossible de nommer cette fiche {} : il lui faut au moins un {}.", F::NOM, if F::NOM == NomDeFiche::Salarie { "nom" } else { "titre" })));
     };
     if let Some(c) = candidats.iter().find(|c| !F::contient(existants, c)) {
         return Ok(c.clone());
@@ -1118,7 +1118,7 @@ fn avertissement<F: SorteDeFiche>(ctx: &Contexte, p: &Preparee<F>) -> R<Option<A
 
 /// Chaque valeur a dater, telle que la boite la montre ; un champ declare dit aussi ce que sa valeur sortante a deja
 /// servi a declarer.
-fn changements_dits(ctx: &Contexte, nom: &str, avant: &Saisie, apres: &Saisie, a_dater: &[NomDeCase]) -> R<Vec<ChangementDit>> {
+fn changements_dits(ctx: &Contexte, nom: NomDeFiche, avant: &Saisie, apres: &Saisie, a_dater: &[NomDeCase]) -> R<Vec<ChangementDit>> {
     let fiche = champs::fiche(nom)?;
     let comble = avant.comblee(nom)?;
     let mut sortie = Vec::new();
@@ -1240,7 +1240,7 @@ pub(crate) fn enregistrer_fiche(ctx: &Contexte, charge: ChargeEnregistrer) -> R<
 fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Changement>) -> R<FicheEnregistree> {
     let Enregistrement { cle, changements, depuis, note, forcer, confirme } = e;
     // L'entreprise est le fichier entier : elle n'a pas de cle.
-    let cle = cle.filter(|_| F::NOM != "entreprise");
+    let cle = cle.filter(|_| F::NOM != NomDeFiche::Entreprise);
     let p = preparer::<F>(ctx, cle.as_deref(), |plate| {
         changements
             .0
@@ -1261,7 +1261,7 @@ fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Changement>
         }
         depuis = depuis.or(a.depuis);
     }
-    let neuve = F::NOM != "entreprise" && cle.is_none();
+    let neuve = F::NOM != NomDeFiche::Entreprise && cle.is_none();
     let note = note.as_deref().map(str::trim).filter(|n| !n.is_empty());
     let e = ecrire_fiche::<F>(ctx, p, if forcer { Forcer::Forme } else { Forcer::Rien }, depuis, note)?;
     let en_erreur = e.anomalies.iter().any(|a| a.gravite == Gravite::Erreur);
@@ -1324,10 +1324,10 @@ pub(crate) fn verifier_fiche(s: SaisieDeFiche) -> R<FicheVerifiee> {
 }
 
 /// Ce que le moteur PROPOSERAIT pour une case encore vide.
-fn suggestions(nom: &str, d: &Saisie) -> R<BTreeMap<NomDeCase, Suggestion>> {
+fn suggestions(nom: NomDeFiche, d: &Saisie) -> R<BTreeMap<NomDeCase, Suggestion>> {
     use droit::fiche::CaseSalarie as S;
     let mut propose = BTreeMap::new();
-    if nom == "salarie" {
+    if nom == NomDeFiche::Salarie {
         if let Some(dep) = texte(d, S::nir).and_then(champs::departement_du_nir) {
             let mut trouvees = vec![(S::departement_naissance, dep.clone())];
             if dep != "99" {
@@ -1339,7 +1339,7 @@ fn suggestions(nom: &str, d: &Saisie) -> R<BTreeMap<NomDeCase, Suggestion>> {
                 }
             }
         }
-    } else if nom == "entreprise" && texte(d, CaseEntreprise::code_urssaf).is_none() {
+    } else if nom == NomDeFiche::Entreprise && texte(d, CaseEntreprise::code_urssaf).is_none() {
         if let Some(code) = texte(d, CaseEntreprise::code_postal).map(|cp| declarations::urssaf::base().map(|b| b.du_code_postal(cp))).transpose()?.flatten() {
             propose.insert(
                 CaseEntreprise::code_urssaf.into(),

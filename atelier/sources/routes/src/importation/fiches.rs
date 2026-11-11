@@ -5,7 +5,7 @@
 
 use declarations::champs::{self, Anomalie, Saisie};
 use droit::contexte::Contexte;
-use droit::fiche::{FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee};
+use droit::fiche::{FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, NomDeFiche};
 use socle::echec::{erreur, Classe, R};
 
 use crate::fiches::{self, Forcer, SorteDeFiche};
@@ -15,7 +15,7 @@ use crate::fiches::{self, Forcer, SorteDeFiche};
 /// montre telles : verifier la fiche avant derivation ferait crier chaque champ que le bulletin ou la DSN imprime en
 /// minuscules (« 3 quai de la Fosse ») « doit etre en MAJUSCULES » sous sa forme lisible, alors que l'ecriture le declare
 /// bien en majuscules. Chaque anomalie porte le libelle de sa case (`libelle`), celui que la fiche montre.
-pub(crate) fn verifier_comme_a_l_ecriture(nom: &str, donnees: &Saisie) -> R<Vec<Anomalie>> {
+pub(crate) fn verifier_comme_a_l_ecriture(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Anomalie>> {
     let mut s = donnees.clone();
     fiches::deriver(nom, &mut s, true, &|_| true)?;
     let mut anomalies = champs::verifier_fiche(nom, &s)?;
@@ -25,12 +25,11 @@ pub(crate) fn verifier_comme_a_l_ecriture(nom: &str, donnees: &Saisie) -> R<Vec<
 
 /// UNE FICHE QUE L'IMPORT CREE, ecrite comme celles de l'ecran (`fiches::ecrire_fiche`, `forcer` : une fiche importee
 /// avec des anomalies est ecrite quand meme). Rend sa cle et ses anomalies, chacune avec le libelle de sa case.
-pub(crate) fn ecrire_fiche(ctx: &Contexte, nom: &str, donnees: &Saisie, note: &str) -> R<(Option<String>, Vec<Anomalie>)> {
+pub(crate) fn ecrire_fiche(ctx: &Contexte, nom: NomDeFiche, donnees: &Saisie, note: &str) -> R<(Option<String>, Vec<Anomalie>)> {
     match nom {
-        "entreprise" => ecrire::<FicheEntrepriseDatee>(ctx, donnees, note),
-        "salarie" => ecrire::<FicheSalarieDatee>(ctx, donnees, note),
-        "spectacle" => ecrire::<FicheSpectacleDatee>(ctx, donnees, note),
-        autre => Err(erreur(Classe::Refuse, format!("Fiche inconnue : {}", socle::fichiers::repr(autre)))),
+        NomDeFiche::Entreprise => ecrire::<FicheEntrepriseDatee>(ctx, donnees, note),
+        NomDeFiche::Salarie => ecrire::<FicheSalarieDatee>(ctx, donnees, note),
+        NomDeFiche::Spectacle => ecrire::<FicheSpectacleDatee>(ctx, donnees, note),
     }
 }
 
@@ -63,12 +62,11 @@ fn poser_les_cases<F: SorteDeFiche>(plate: &mut F::Plate, lue: F::Plate) -> Vec<
 /// qu'elle est sur le disque, si elle y est vide ou « A COMPLETER » -- et seulement alors : une case remplie depuis
 /// l'apercu reste ce qu'elle est. Une case vide n'avait rien declare : la valeur qui la remplit vaut de tout temps
 /// (`fiches::poser`). Rend les cases ecrites.
-pub(crate) fn completer_fiche(ctx: &Contexte, nom: &str, cle: Option<&str>, champs: &Saisie) -> R<Saisie> {
+pub(crate) fn completer_fiche(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, champs: &Saisie) -> R<Saisie> {
     match nom {
-        "entreprise" => completer::<FicheEntrepriseDatee>(ctx, cle, champs),
-        "salarie" => completer::<FicheSalarieDatee>(ctx, cle, champs),
-        "spectacle" => completer::<FicheSpectacleDatee>(ctx, cle, champs),
-        autre => Err(erreur(Classe::Refuse, format!("Fiche inconnue : {}", socle::fichiers::repr(autre)))),
+        NomDeFiche::Entreprise => completer::<FicheEntrepriseDatee>(ctx, cle, champs),
+        NomDeFiche::Salarie => completer::<FicheSalarieDatee>(ctx, cle, champs),
+        NomDeFiche::Spectacle => completer::<FicheSpectacleDatee>(ctx, cle, champs),
     }
 }
 

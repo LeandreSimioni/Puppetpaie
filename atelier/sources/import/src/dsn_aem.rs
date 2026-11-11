@@ -42,13 +42,13 @@ impl SalarieDeclare {
             #[serde(flatten)]
             emploi: &'a Option<EmploiDeclare>,
         }
-        crate::proposee::de("salarie", &Fiche { individu: &self.individu, emploi: &self.emploi })
+        crate::proposee::de(droit::fiche::NomDeFiche::Salarie, &Fiche { individu: &self.individu, emploi: &self.emploi })
     }
 }
 
 /// La fiche Entreprise que la DSN remplit (`champs-base.json`), telle que les fiches la lisent.
 pub fn fiche_entreprise(e: &EntrepriseDeclaree) -> socle::echec::R<Saisie> {
-    crate::proposee::de("entreprise", e)
+    crate::proposee::de(droit::fiche::NomDeFiche::Entreprise, e)
 }
 
 /// Un numero d'objet spectacle, vu dans une DSN ou dans une AEM.

@@ -8,6 +8,7 @@
 //! sous-ensemble que la table des formats emploie (classes, groupes,
 //! alternatives, `? * + {n,m}`, `\d \s`, `^ $`), prouve contre `re`.
 
+use droit::fiche::{CaseEntreprise, CaseSalarie, CaseSpectacle, NomDeCase, NomDeFiche};
 use socle::fichiers::repr;
 use crate::norme::Norme;
 use socle::echec::{refus, refus_avec, Lieu, R};
@@ -16,43 +17,73 @@ use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, OnceLock};
 
-// Les rubriques de la table des formats qui se saisissent dans une fiche :
-// (rubrique, fiche, champ), tels que `champs.champ_de_rubrique` les rend.
-const SAISIES: [(&str, &str, &str); 33] = [
-    ("S10.G00.01.003", "entreprise", "raison_sociale"),
-    ("S21.G00.06.001", "entreprise", "siren"),
-    ("S21.G00.06.002", "entreprise", "nic"),
-    ("S21.G00.06.003", "entreprise", "naf"),
-    ("S21.G00.06.004", "entreprise", "adresse"),
-    ("S21.G00.06.005", "entreprise", "code_postal"),
-    ("S21.G00.06.006", "entreprise", "commune"),
-    ("S21.G00.06.007", "entreprise", "complement_adresse"),
-    ("S21.G00.11.022", "entreprise", "idcc"),
-    ("S21.G00.20.002", "entreprise", "france_travail_dossier_recouvrement"),
-    ("S21.G00.30.001", "salarie", "nir"),
-    ("S21.G00.30.002", "salarie", "nom"),
-    ("S21.G00.30.004", "salarie", "prenom"),
-    ("S21.G00.30.006", "salarie", "date_naissance"),
-    ("S21.G00.30.007", "salarie", "lieu_naissance"),
-    ("S21.G00.30.008", "salarie", "adresse"),
-    ("S21.G00.30.009", "salarie", "code_postal"),
-    ("S21.G00.30.010", "salarie", "commune"),
-    ("S21.G00.30.013", "salarie", "code_nationalite_dsn"),
-    ("S21.G00.30.014", "salarie", "departement_naissance"),
-    ("S21.G00.30.015", "salarie", "pays_naissance"),
-    ("S21.G00.30.018", "salarie", "email"),
-    ("S21.G00.30.019", "salarie", "code_salarie"),
-    ("S21.G00.40.002", "salarie", "statut_conventionnel"),
-    ("S21.G00.40.003", "salarie", "statut_categoriel_rc"),
-    ("S21.G00.40.004", "salarie", "pcs_ese"),
-    ("S21.G00.40.005", "salarie", "code_emploi_ft"),
-    ("S21.G00.40.006", "salarie", "emploi"),
-    ("S21.G00.40.017", "entreprise", "idcc"),
-    ("S21.G00.40.019", "entreprise", "siret"),
-    ("S21.G00.40.022", "entreprise", "congesspectacles_adherent"),
-    ("S21.G00.40.050", "spectacle", "numero_objet"),
-    ("S21.G00.40.072", "salarie", "statut_boeth"),
-];
+/// La case d'une fiche ou se saisit une rubrique de la table des formats.
+#[derive(Clone, Copy)]
+enum Saisie {
+    Entreprise(CaseEntreprise),
+    Salarie(CaseSalarie),
+    Spectacle(CaseSpectacle),
+}
+
+impl Saisie {
+    fn fiche(self) -> NomDeFiche {
+        match self {
+            Saisie::Entreprise(_) => NomDeFiche::Entreprise,
+            Saisie::Salarie(_) => NomDeFiche::Salarie,
+            Saisie::Spectacle(_) => NomDeFiche::Spectacle,
+        }
+    }
+
+    fn case(self) -> NomDeCase {
+        match self {
+            Saisie::Entreprise(c) => c.into(),
+            Saisie::Salarie(c) => c.into(),
+            Saisie::Spectacle(c) => c.into(),
+        }
+    }
+}
+
+// Les rubriques de la table des formats qui se saisissent dans une fiche : (rubrique, case).
+const SAISIES: [(&str, Saisie); 33] = {
+    use CaseEntreprise as E;
+    use CaseSalarie as S;
+    use Saisie::{Entreprise as En, Salarie as Sa};
+    [
+        ("S10.G00.01.003", En(E::raison_sociale)),
+        ("S21.G00.06.001", En(E::siren)),
+        ("S21.G00.06.002", En(E::nic)),
+        ("S21.G00.06.003", En(E::naf)),
+        ("S21.G00.06.004", En(E::adresse)),
+        ("S21.G00.06.005", En(E::code_postal)),
+        ("S21.G00.06.006", En(E::commune)),
+        ("S21.G00.06.007", En(E::complement_adresse)),
+        ("S21.G00.11.022", En(E::idcc)),
+        ("S21.G00.20.002", En(E::france_travail_dossier_recouvrement)),
+        ("S21.G00.30.001", Sa(S::nir)),
+        ("S21.G00.30.002", Sa(S::nom)),
+        ("S21.G00.30.004", Sa(S::prenom)),
+        ("S21.G00.30.006", Sa(S::date_naissance)),
+        ("S21.G00.30.007", Sa(S::lieu_naissance)),
+        ("S21.G00.30.008", Sa(S::adresse)),
+        ("S21.G00.30.009", Sa(S::code_postal)),
+        ("S21.G00.30.010", Sa(S::commune)),
+        ("S21.G00.30.013", Sa(S::code_nationalite_dsn)),
+        ("S21.G00.30.014", Sa(S::departement_naissance)),
+        ("S21.G00.30.015", Sa(S::pays_naissance)),
+        ("S21.G00.30.018", Sa(S::email)),
+        ("S21.G00.30.019", Sa(S::code_salarie)),
+        ("S21.G00.40.002", Sa(S::statut_conventionnel)),
+        ("S21.G00.40.003", Sa(S::statut_categoriel_rc)),
+        ("S21.G00.40.004", Sa(S::pcs_ese)),
+        ("S21.G00.40.005", Sa(S::code_emploi_ft)),
+        ("S21.G00.40.006", Sa(S::emploi)),
+        ("S21.G00.40.017", En(E::idcc)),
+        ("S21.G00.40.019", En(E::siret)),
+        ("S21.G00.40.022", En(E::congesspectacles_adherent)),
+        ("S21.G00.40.050", Saisie::Spectacle(CaseSpectacle::numero_objet)),
+        ("S21.G00.40.072", Sa(S::statut_boeth)),
+    ]
+};
 
 // ------------------------------------------------------ le moteur d'expressions
 
@@ -475,7 +506,7 @@ pub fn mauvaises(texte: &str, norme: &Norme) -> R<Vec<(String, String, String)>>
     Ok(out)
 }
 
-fn dire(norme: &Norme, r: &str, v: &str, pourquoi: &str, libelle: Option<&str>, ou: Option<&(&str, &str, &str)>) -> R<String> {
+fn dire(norme: &Norme, r: &str, v: &str, pourquoi: &str, libelle: Option<&str>, ou: Option<&(&str, Saisie)>) -> R<String> {
     let libelle: String = libelle.iter().map(|l| format!(" ({})", l)).collect();
     let ou = match ou {
         None => return Ok(format!("    {} = '{}' : {}{}", r, v, pourquoi, libelle)),
@@ -490,7 +521,11 @@ fn dire(norme: &Norme, r: &str, v: &str, pourquoi: &str, libelle: Option<&str>, 
     };
     Ok(format!(
         "    {} : {}{} -- fiche {}, champ {} (la valeur n'est pas recopiee ici : elle est dans la fiche)",
-        r, pourquoi, libelle, ou.1, ou.2
+        r,
+        pourquoi,
+        libelle,
+        ou.1.fiche(),
+        ou.1.case()
     ))
 }
 
@@ -504,7 +539,7 @@ pub fn verifier_fichier(texte: &str) -> R<()> {
         return crate::norme::verifier_les_valeurs(texte, &norme);
     }
     let usages = crate::usages::table_de(&norme)?;
-    let mut saisies: Vec<&(&str, &str, &str)> = Vec::new();
+    let mut saisies: Vec<&(&str, Saisie)> = Vec::new();
     for (r, _, _) in &mauv {
         if let Some(s) = SAISIES.iter().find(|s| s.0 == r) {
             if !saisies.iter().any(|x| x.0 == s.0) {

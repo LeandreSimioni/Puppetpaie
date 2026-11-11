@@ -13,7 +13,7 @@ pub const A_COMPLETER: &str = "A COMPLETER";
 
 /// LA FICHE `nom` QUE DIT UNE FORME LUE (`t` : ses champs nommes comme ceux de la fiche), relue par la table de ses
 /// cases : une case vide n'y est pas ; une case qui n'a pas sa forme se refuse, avec son chemin.
-pub fn de<T: Serialize + ?Sized>(nom: &str, t: &T) -> R<Saisie> {
+pub fn de<T: Serialize + ?Sized>(nom: droit::fiche::NomDeFiche, t: &T) -> R<Saisie> {
     Saisie::de_la_fiche(nom, t)
 }
 

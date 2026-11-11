@@ -28,7 +28,7 @@ use crate::catalogue::{Ecran, Place};
 use crate::enveloppe::{self, en_json, Charge, Dite, Porte, Rendu};
 use declarations::champs::{Saisie, Valeur};
 use droit::contexte::Contexte;
-use droit::fiche::CaseEntreprise;
+use droit::fiche::{CaseEntreprise, NomDeFiche};
 use socle::date::Jour;
 use socle::echec::{Classe, R};
 use socle::mois::MoisOuJour;
@@ -165,7 +165,7 @@ pub(crate) fn titre_de(v: Option<&str>) -> Option<String> {
 }
 
 /// Les champs DECLARES que la DSN disait autrement que la fiche.
-fn ecarts(nom: &str, fiche: &Saisie, declare: &Saisie, mois: socle::mois::Mois) -> R<Vec<Ecart>> {
+fn ecarts(nom: NomDeFiche, fiche: &Saisie, declare: &Saisie, mois: socle::mois::Mois) -> R<Vec<Ecart>> {
     let mut out = Vec::new();
     for c in declarations::champs::fiche(nom)? {
         let (Some(b), Some(a)) = (declare.case(&c.cle).filter(|_| c.declare), fiche.case(&c.cle)) else { continue };
@@ -186,7 +186,7 @@ fn ecarts(nom: &str, fiche: &Saisie, declare: &Saisie, mois: socle::mois::Mois) 
 
 /// La fiche d'un salarie telle qu'elle est, case par case.
 fn vue_salarie(ctx: &Contexte, cle: &str) -> R<Saisie> {
-    proposee::de("salarie", &ctx.salaries[cle].champs)
+    proposee::de(NomDeFiche::Salarie, &ctx.salaries[cle].champs)
 }
 
 /// CE QU'UNE FICHE NEUVE RECOIT D'UNE DSN, a cote de son identite et de son emploi (`SalarieDeclare::fiche`).
@@ -248,8 +248,8 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
         actif: true,
     };
     let mut f = decl.fiche()?;
-    proposee::fondre(&mut f, &proposee::de("salarie", &de_la_dsn)?);
-    f.comblee("salarie")
+    proposee::fondre(&mut f, &proposee::de(NomDeFiche::Salarie, &de_la_dsn)?);
+    f.comblee(NomDeFiche::Salarie)
 }
 
 /// LA FICHE ENTREPRISE QUE LES PIECES DONNENT, a cote de ce qu'elles declarent : son Siret, sa licence, son nom en clair.
@@ -268,14 +268,14 @@ pub(crate) struct EntrepriseDesPieces {
 /// La fiche entreprise `f`, comblee de ses formes lisibles ; son nom en clair, celui de sa raison sociale en capitales
 /// initiales, quand rien ne le dit.
 pub(crate) fn entreprise_comblee(f: &Saisie) -> R<Saisie> {
-    let mut f = f.comblee("entreprise")?;
+    let mut f = f.comblee(NomDeFiche::Entreprise)?;
     if f.mot(CaseEntreprise::nom_affichage).is_none() {
         if let Some(t) = titre_de(f.mot(CaseEntreprise::raison_sociale).as_deref()) {
             #[derive(Serialize)]
             struct Nom {
                 nom_affichage: String,
             }
-            proposee::fondre(&mut f, &proposee::de("entreprise", &Nom { nom_affichage: t })?);
+            proposee::fondre(&mut f, &proposee::de(NomDeFiche::Entreprise, &Nom { nom_affichage: t })?);
         }
     }
     Ok(f)
@@ -289,13 +289,13 @@ fn fiche_entreprise(lecture: &dsn_aem::LectureDsn) -> R<Saisie> {
         _ => None,
     };
     let pieces = EntrepriseDesPieces { siret, licence_spectacle: lecture.licences.first().map(|l| l.1.clone()) };
-    proposee::fondre(&mut e, &proposee::de("entreprise", &pieces)?);
+    proposee::fondre(&mut e, &proposee::de(NomDeFiche::Entreprise, &pieces)?);
     entreprise_comblee(&e)
 }
 
 /// Une fiche que l'import creerait : ou elle va dans la reponse, et ce qu'elle porte.
 pub(crate) struct ACreer {
-    pub(crate) nom: &'static str,
+    pub(crate) nom: NomDeFiche,
     /// Le rang dans `salaries` ou `spectacles` de la reponse ; rien pour l'entreprise.
     pub(crate) rang: Option<usize>,
     pub(crate) donnees: Saisie,
@@ -384,7 +384,7 @@ pub(crate) fn garder_le_nom(ctx: &Contexte, e: &mut Saisie) -> R<()> {
         nom_affichage: dit(ctx.entreprise.nom_affichage.remplie().map(str::to_string)),
         raison_sociale: dit(ctx.entreprise.raison_sociale.en_texte().remplie().map(str::to_string)),
     };
-    proposee::fondre(e, &proposee::de("entreprise", &nom)?);
+    proposee::fondre(e, &proposee::de(NomDeFiche::Entreprise, &nom)?);
     Ok(())
 }
 
@@ -477,30 +477,30 @@ pub(crate) fn apercu_lu(
         let mut e = fiche_entreprise(&lecture)?;
         garder_le_nom(ctx, &mut e)?;
         if ctx.entreprise.siren.is_none() {
-            let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("entreprise", &e)?;
+            let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Entreprise, &e)?;
             let libelle = match e.mot(CaseEntreprise::raison_sociale) {
                 Some(r) => r,
                 None => "?".to_string(),
             };
-            entreprise = Some(FicheImportee::new("entreprise", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e));
-            a_creer_liste.push(ACreer { nom: "entreprise", rang: None, donnees: e });
+            entreprise = Some(FicheImportee::new(NomDeFiche::Entreprise, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e));
+            a_creer_liste.push(ACreer { nom: NomDeFiche::Entreprise, rang: None, donnees: e });
             a_creer += 1;
         } else {
             let libelle = match ctx.entreprise.raison_sociale.portee() {
                 Some(r) => r.to_string(),
                 None => "?".to_string(),
             };
-            let fiche = proposee::de("entreprise", &ctx.entreprise)?;
+            let fiche = proposee::de(NomDeFiche::Entreprise, &ctx.entreprise)?;
             // L'entreprise ne se lit que dans les DSN : sans DSN, rien a quoi comparer la fiche.
             let mut ec = Vec::new();
             if let Some(m) = lecture.dernier_mois {
-                ec = ecarts("entreprise", &fiche, &dsn_aem::fiche_entreprise(&lecture.entreprise)?, m)?;
+                ec = ecarts(NomDeFiche::Entreprise, &fiche, &dsn_aem::fiche_entreprise(&lecture.entreprise)?, m)?;
             }
-            let mut f = FicheImportee::new("entreprise", None, &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
-            let champs = crate::importation::completer::champs_a_completer("entreprise", &fiche, &e)?;
+            let mut f = FicheImportee::new(NomDeFiche::Entreprise, None, &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
+            let champs = crate::importation::completer::champs_a_completer(NomDeFiche::Entreprise, &fiche, &e)?;
             f.noter(&champs, &Origine::dsn(lecture.dernier_mois));
             entreprise = Some(f);
-            crate::importation::completer::ajouter(&mut a_completer, "entreprise", None, &champs);
+            crate::importation::completer::ajouter(&mut a_completer, NomDeFiche::Entreprise, None, &champs);
         }
     }
 
@@ -519,18 +519,18 @@ pub(crate) fn apercu_lu(
         let libelle = libelle_de(&decl.individu);
         if let Some(cle) = par_nir.get(&decl.nir) {
             let fiche = vue_salarie(ctx, cle)?;
-            let ec = ecarts("salarie", &fiche, &decl.fiche()?, decl.mois)?;
-            let mut entree = FicheImportee::new("salarie", Some(cle), &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
-            let champs = crate::importation::completer::champs_a_completer("salarie", &fiche, &fiche_salarie(decl)?)?;
+            let ec = ecarts(NomDeFiche::Salarie, &fiche, &decl.fiche()?, decl.mois)?;
+            let mut entree = FicheImportee::new(NomDeFiche::Salarie, Some(cle), &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
+            let champs = crate::importation::completer::champs_a_completer(NomDeFiche::Salarie, &fiche, &fiche_salarie(decl)?)?;
             entree.noter(&champs, &Origine::dsn(Some(decl.mois)));
-            crate::importation::completer::ajouter(&mut a_completer, "salarie", Some(cle), &champs);
+            crate::importation::completer::ajouter(&mut a_completer, NomDeFiche::Salarie, Some(cle), &champs);
             salaries.push(entree);
             continue;
         }
         let donnees = fiche_salarie(decl)?;
-        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("salarie", &donnees)?;
-        salaries.push(FicheImportee::new("salarie", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
-        a_creer_liste.push(ACreer { nom: "salarie", rang: Some(salaries.len() - 1), donnees });
+        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Salarie, &donnees)?;
+        salaries.push(FicheImportee::new(NomDeFiche::Salarie, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
+        a_creer_liste.push(ACreer { nom: NomDeFiche::Salarie, rang: Some(salaries.len() - 1), donnees });
         cles_a_venir.insert(decl.nir.clone());
         a_creer += 1;
     }
@@ -590,7 +590,7 @@ pub(crate) fn apercu_lu(
                 Some(t) => t.to_string(),
                 None => "?".to_string(),
             };
-            spectacles.push(FicheImportee::new("spectacle", Some(cle), &format!("{} ({})", titre, o.numero), EtatFiche::Existante, Vec::new(), Vec::new(), &vide));
+            spectacles.push(FicheImportee::new(NomDeFiche::Spectacle, Some(cle), &format!("{} ({})", titre, o.numero), EtatFiche::Existante, Vec::new(), Vec::new(), &vide));
             continue;
         }
         let source = if o.aem { "AEM" } else { "DSN" };
@@ -604,10 +604,10 @@ pub(crate) fn apercu_lu(
             titre_propose: None,
             titre_lu_dans: None,
         };
-        let donnees = proposee::de("spectacle", &sp)?;
-        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
+        let donnees = proposee::de(NomDeFiche::Spectacle, &sp)?;
+        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Spectacle, &donnees)?;
         spectacles.push(FicheImportee::new(
-            "spectacle",
+            NomDeFiche::Spectacle,
             None,
             &format!("numéro d'objet {}, sans titre (déclarations de {} à {})", o.numero, o.premier, o.dernier),
             EtatFiche::ACreer,
@@ -615,7 +615,7 @@ pub(crate) fn apercu_lu(
             anomalies,
             &donnees,
         ));
-        a_creer_liste.push(ACreer { nom: "spectacle", rang: Some(spectacles.len() - 1), donnees });
+        a_creer_liste.push(ACreer { nom: NomDeFiche::Spectacle, rang: Some(spectacles.len() - 1), donnees });
         a_creer += 1;
     }
 

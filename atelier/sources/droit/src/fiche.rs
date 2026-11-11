@@ -548,6 +548,33 @@ pub fn avec_complement(adresse: String, complement: Option<&str>) -> String {
 
 // ------------------------------------------------------------ la forme declaree
 
+/// LES TROIS FICHES : celle de l'entreprise, d'un salarie, d'un spectacle. Une charge ou une table qui nomme une autre
+/// fiche se refuse a la porte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NomDeFiche {
+    Entreprise,
+    Salarie,
+    Spectacle,
+}
+
+impl NomDeFiche {
+    /// Son nom, tel que les charges et `champs-base.json` l'ecrivent.
+    pub fn nom(self) -> &'static str {
+        match self {
+            NomDeFiche::Entreprise => "entreprise",
+            NomDeFiche::Salarie => "salarie",
+            NomDeFiche::Spectacle => "spectacle",
+        }
+    }
+}
+
+impl std::fmt::Display for NomDeFiche {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.nom())
+    }
+}
+
 /// LE NOM D'UNE CASE DECLAREE : un champ d'une fiche ou une case d'une structure, tel que sa forme l'ecrit. Il ne se
 /// fabrique que de la forme (`Declaree`, les cles d'une fiche : `CaseSalarie`, `CaseEntreprise`...) ; un texte ne
 /// devient un nom de case qu'a la porte, contre la forme (`NomDeCase::lire`), et un nom que la forme ne declare pas s'y

@@ -18,7 +18,7 @@ use compagnie::INTERFACE;
 use declarations::champs::{self, Saisie};
 use documents::fiche_questionnaire as fq;
 use droit::contexte::{Contexte, IdSalarie};
-use droit::fiche::{CaseEntreprise, ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, NomDeCase, Piece};
+use droit::fiche::{CaseEntreprise, ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, NomDeCase, NomDeFiche, Piece};
 use envois::courriel::Courriel;
 use envois::courriel_lecture as lecture;
 use envois::envoi::{self, Message};
@@ -289,7 +289,7 @@ struct FichesRelevees {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeActiver {
-    nom: String,
+    nom: NomDeFiche,
     cle: String,
     actif: bool,
 }
@@ -435,7 +435,7 @@ pub(crate) struct Permanents {
 /// quand on coche ou decoche la case des permanents.
 fn permanents(ctx: &Contexte, charge: FicheEnCours) -> R<Permanents> {
     let (nom, cle, donnees) = charge.ouverte();
-    let entreprise = if nom == "entreprise" { donnees.clone() } else { Saisie::de_la_fiche("entreprise", &ctx.entreprise)? };
+    let entreprise = if nom == NomDeFiche::Entreprise { donnees.clone() } else { Saisie::de_la_fiche(NomDeFiche::Entreprise, &ctx.entreprise)? };
     let jour = ctx.aujourdhui;
     let p = engagement::permanents::Permanents::de(ctx, &jour, &jour)?;
     let Montres { cases, pieces_ouvertes } = montres(ctx, nom, cle.as_ref().map(IdSalarie::as_str), &donnees, &entreprise, &p)?;
@@ -469,16 +469,16 @@ fn permanents_de(entreprise: &Saisie) -> bool {
 /// telle qu'elle est saisie. Celles du metier, par la grille du metier de ses engagements (la jauge de la salle, par un
 /// engagement paye au mois : `cases_des_metiers`). Celles que l'effectif ouvre, par lui (`pieces_de_l_effectif`). La
 /// page ne montre que ces cases-la.
-pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie, entreprise: &Saisie, p: &engagement::permanents::Permanents) -> R<Montres> {
+pub(crate) fn montres(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees: &Saisie, entreprise: &Saisie, p: &engagement::permanents::Permanents) -> R<Montres> {
     let au_mois = match (nom, cle) {
-        ("entreprise", _) => permanents_de(entreprise) || !p.dus.is_empty(),
-        ("salarie", Some(c)) => engagement::permanents::cle_du_salarie(ctx, c)?.is_some(),
+        (NomDeFiche::Entreprise, _) => permanents_de(entreprise) || !p.dus.is_empty(),
+        (NomDeFiche::Salarie,Some(c)) => engagement::permanents::cle_du_salarie(ctx, c)?.is_some(),
         // Un salarie pas encore enregistre n'a aucun engagement ; une autre fiche n'a pas la piece d'un permanent.
         (_autre_fiche, _) => false,
     };
-    let avec_permanents = nom == "entreprise" && permanents_de(entreprise);
+    let avec_permanents = nom == NomDeFiche::Entreprise && permanents_de(entreprise);
     let du_metier = cases_des_metiers(ctx, nom, cle, donnees)?;
-    let (cse, casc) = if nom == "entreprise" { pieces_de_l_effectif(ctx, entreprise)? } else { (false, false) };
+    let (cse, casc) = if nom == NomDeFiche::Entreprise { pieces_de_l_effectif(ctx, entreprise)? } else { (false, false) };
     let ouverte = |piece: Piece, case: NomDeCase| match piece {
         Piece::Permanent => au_mois,
         Piece::EmploieDesPermanents => avec_permanents,
@@ -487,10 +487,10 @@ pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sa
         Piece::Casc => casc,
     };
     let etablissements = super::ouverture::choix_d_etablissement(ctx)?.is_some();
-    let autre = (nom != "entreprise").then_some(entreprise);
+    let autre = (nom != NomDeFiche::Entreprise).then_some(entreprise);
     let cases = champs::fiche(nom)?.iter().filter(|c| c.montre(donnees, autre, &ouverte, etablissements)).map(|c| c.cle).collect();
     // Les cases du metier d'un salarie ; la jauge de la salle, sur la fiche de l'entreprise.
-    let metier = if nom == "entreprise" { Piece::MetierAuMois } else { Piece::Metier };
+    let metier = if nom == NomDeFiche::Entreprise { Piece::MetierAuMois } else { Piece::Metier };
     let pieces_ouvertes = [(Piece::Permanent, au_mois), (Piece::EmploieDesPermanents, avec_permanents), (metier, !du_metier.is_empty()), (Piece::Cse, cse), (Piece::Casc, casc)]
         .into_iter()
         .filter_map(|(piece, ouverte)| ouverte.then_some(piece))
@@ -512,7 +512,7 @@ fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &Saisie) -> R<(bool, bool)> 
     let lue = cinquante.is_some() || ctx.contribution_par_representation(&jour)?;
     let Some(cinquante) = cinquante else { return Ok((lue, false)) };
     let mut saisie = ctx.entreprise.clone();
-    reporter::<FicheEntrepriseDatee>(&mut saisie, &Saisie::de_la_fiche("entreprise", &ctx.entreprise)?, entreprise)?;
+    reporter::<FicheEntrepriseDatee>(&mut saisie, &Saisie::de_la_fiche(NomDeFiche::Entreprise, &ctx.entreprise)?, entreprise)?;
     Ok((lue, saisie.exemption_casc(&cinquante, &cse).is_some()))
 }
 
@@ -524,7 +524,7 @@ fn pieces_de_l_effectif(ctx: &Contexte, entreprise: &Saisie) -> R<(bool, bool)> 
 /// l'annexe I, que sa prime
 /// d'anciennete peut viser (`droit::clauses::prime_anciennete_possible`, le metier de la carte ou de la fiche de son
 /// salarie). Un engagement qui n'est plus actif ne demande rien ; une fiche sans engagement, rien.
-fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Saisie) -> R<std::collections::BTreeSet<NomDeCase>> {
+fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees: &Saisie) -> R<std::collections::BTreeSet<NomDeCase>> {
     let mut cases = std::collections::BTreeSet::new();
     let dit = |x: Option<&str>| x.map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
     let de_la_fiche = dit(donnees.mot(droit::fiche::CaseSalarie::code_emploi_ft).as_deref());
@@ -536,8 +536,8 @@ fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sai
             let s = &e.saisie;
             let Some(salarie) = s.carte.salarie.as_ref().map(IdSalarie::as_str) else { continue };
             let du_salarie = match (nom, cle) {
-                ("salarie", Some(c)) if c == salarie => de_la_fiche.clone(),
-                ("entreprise", _) if paye_au_mois(s)? => dit(ctx.salarie(salarie)?.code_emploi_ft.portee()),
+                (NomDeFiche::Salarie,Some(c)) if c == salarie => de_la_fiche.clone(),
+                (NomDeFiche::Entreprise, _) if paye_au_mois(s)? => dit(ctx.salarie(salarie)?.code_emploi_ft.portee()),
                 _ => continue,
             };
             // La carte au premier jour de son mois, chaque avenant au jour ou il vaut.
@@ -550,7 +550,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sai
         }
     }
     for (code, statut, jour, salarie) in &metiers {
-        if nom == "salarie" {
+        if nom == NomDeFiche::Salarie {
             cases.extend(engagement::minima::cases_du_metier(ctx, code, jour)?);
             continue;
         }
@@ -755,20 +755,20 @@ pub(crate) fn aujourd_hui() -> Jour {
 
 /// Seul `actif` change, a partir d'aujourd'hui (archiver, c'est ne plus proposer a partir de ce jour ; ce qui precede
 /// reste ce qu'il etait), par l'ecrivain de la fiche (`poser`).
-pub(crate) fn activer_fiche(ctx: &Contexte, nom: &str, cle: &str, actif: bool) -> R<()> {
+pub(crate) fn activer_fiche(ctx: &Contexte, nom: NomDeFiche, cle: &str, actif: bool) -> R<()> {
     let jour = Some(ctx.aujourdhui);
     match nom {
-        "salarie" => poser::<FicheSalarieDatee>(ctx, Some(cle), vec![ChangementSalarie::actif(Some(actif))], jour, None),
-        "spectacle" => poser::<FicheSpectacleDatee>(ctx, Some(cle), vec![ChangementSpectacle::actif(Some(actif))], jour, None),
-        autre => Err(refus(format!("Seuls un salarie ou un spectacle s'activent : {}.", socle::fichiers::repr(autre)))),
+        NomDeFiche::Salarie => poser::<FicheSalarieDatee>(ctx, Some(cle), vec![ChangementSalarie::actif(Some(actif))], jour, None),
+        NomDeFiche::Spectacle => poser::<FicheSpectacleDatee>(ctx, Some(cle), vec![ChangementSpectacle::actif(Some(actif))], jour, None),
+        NomDeFiche::Entreprise => Err(refus(format!("Seuls un salarie ou un spectacle s'activent : {}.", socle::fichiers::repr(NomDeFiche::Entreprise.nom())))),
     }
 }
 
 fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {
-    let (nom, cle, actif) = (c.nom.as_str(), c.cle.as_str(), c.actif);
+    let (nom, cle, actif) = (c.nom, c.cle.as_str(), c.actif);
     activer_fiche(ctx, nom, cle, actif)?;
     // Le nom que la liste montre : le salarie par son nom, le spectacle par son titre ; la cle seule si la fiche n'en a pas.
-    let nomme = if nom == "salarie" {
+    let nomme = if nom == NomDeFiche::Salarie {
         let id = ctx.cle_du_salarie(cle).map_err(|m| m.reclasser(Classe::Manque))?;
         ctx.salarie(&id).map_err(|m| m.reclasser(Classe::Manque))?.nomme()
     } else {
@@ -780,8 +780,8 @@ fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {
         None => cle.to_string(),
     };
     let phrase = match (nom, actif) {
-        ("salarie", true) => format!("{} : fiche réactivée.", qui),
-        ("salarie", false) => format!("{} : fiche archivée.", qui),
+        (NomDeFiche::Salarie,true) => format!("{} : fiche réactivée.", qui),
+        (NomDeFiche::Salarie,false) => format!("{} : fiche archivée.", qui),
         (_, true) => format!("Spectacle « {} » réactivé.", qui),
         (_, false) => format!("Spectacle « {} » archivé.", qui),
     };
@@ -838,12 +838,12 @@ use crate::catalogue::{Ecran, Place};
 /// LE DERNIER MOIS PARTI pour la fiche `nom` (`cle` pour un salarie) : le dernier dont les documents ou la DSN sont
 /// partis (`engagement::departs`), ou que l'ancien logiciel a verse et declare (un engagement importe), pour ce salarie,
 /// ou pour quiconque quand c'est la fiche de l'entreprise. `None` : aucun ; une fiche de spectacle n'en a pas.
-pub(crate) fn dernier_mois_parti(ctx: &Contexte, nom: &str, cle: Option<&str>) -> R<Option<socle::mois::Mois>> {
+pub(crate) fn dernier_mois_parti(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>) -> R<Option<socle::mois::Mois>> {
     use engagement::departs::Envoi;
-    if nom == "spectacle" {
+    if nom == NomDeFiche::Spectacle {
         return Ok(None);
     }
-    let sien = |c: &str| nom == "entreprise" || Some(c) == cle;
+    let sien = |c: &str| nom == NomDeFiche::Entreprise || Some(c) == cle;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let partis = departs
         .engagements()
@@ -863,8 +863,8 @@ pub(crate) fn dernier_mois_parti(ctx: &Contexte, nom: &str, cle: Option<&str>) -
 /// LA DATE QU'UN CHANGEMENT DE FICHE PROPOSE, et pourquoi : le premier jour du mois qui suit le dernier mois parti
 /// (`dernier_mois_parti`) : ce qui est parti garde ce qu'il a dit, le reste prend la valeur nouvelle. Aucun mois parti :
 /// le premier jour du mois en cours. Une autre date se choisit, dans le passe aussi : ce qui est parti se corrige alors.
-pub(crate) fn date_proposee(ctx: &Contexte, nom: &str, cle: Option<&str>) -> R<(Jour, String)> {
-    let qui = if nom == "entreprise" { "" } else { " pour ce salarié" };
+pub(crate) fn date_proposee(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>) -> R<(Jour, String)> {
+    let qui = if nom == NomDeFiche::Entreprise { "" } else { " pour ce salarié" };
     Ok(match dernier_mois_parti(ctx, nom, cle)? {
         Some(m) => {
             let phrase = format!(
@@ -1018,7 +1018,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: Option<&str>
     };
     let expediteur = client.compte().to_lowercase();
     let code = fq::code_fiche().map_err(|e| e.reclasser(Classe::Disque))?;
-    let utiles = champs::utiles("salarie")?;
+    let utiles = champs::utiles(NomDeFiche::Salarie)?;
     let q = fq::questionnaire(&code, &fq::posees(&|c| utiles.contains(&c)), &|_| String::new());
     let sujet = envoi::formater(fq::SUJET, &[("compagnie", compagnie.clone())]);
     let prenom: Option<String> = prenom.map(|p| strip(p).to_string());
@@ -1260,7 +1260,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         // Les cases vides qu'elle remplit valent de tout temps ; ce qu'elle change d'une fiche qui existe se date comme un
         // changement de l'ecran (`date_proposee`).
         let depuis = match &existante {
-            Some(k) => Some(date_proposee(ctx, "salarie", Some(k))?.0),
+            Some(k) => Some(date_proposee(ctx, NomDeFiche::Salarie, Some(k))?.0),
             None => None,
         };
         let f = ecrire_fiche::<FicheSalarieDatee>(ctx, p, Forcer::Tout, depuis, Some(&note))?;
@@ -1318,7 +1318,7 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
         // Le compte fabrique des fictives, a la cle juste (`socle::iban::faute_iban`).
         ("iban", "FR7630001007941234567890185".to_string()),
     ]);
-    let utiles = champs::utiles("salarie")?;
+    let utiles = champs::utiles(NomDeFiche::Salarie)?;
     // Une question que la personne fictive ne sait pas, elle la laisse sans reponse.
     let rempli = fq::questionnaire(code, &fq::posees(&|c| utiles.contains(&c)), &|cle| reponses.get(cle).into_iter().cloned().collect());
     let sujet = match bouton {
@@ -1448,7 +1448,7 @@ pub(crate) fn poser_courriel(ctx: &Contexte, cle: &str, email: &str) -> R<()> {
         plate.email = Some(email.trim().to_string());
         vec![droit::fiche::CaseSalarie::email.into()]
     })?;
-    let (depuis, _) = date_proposee(ctx, "salarie", Some(cle))?;
+    let (depuis, _) = date_proposee(ctx, NomDeFiche::Salarie, Some(cle))?;
     ecrire_fiche::<FicheSalarieDatee>(ctx, p, Forcer::Rien, Some(depuis), None)?;
     Ok(())
 }

@@ -17,7 +17,7 @@ use std::collections::HashMap;
 #[test]
 fn la_fiche_dit_l_ancien_03_avant_la_dsn() {
     let erreurs = |s: Saisie| -> Vec<Anomalie> {
-        declarations::champs::verifier_fiche("salarie", &s)
+        declarations::champs::verifier_fiche(droit::fiche::NomDeFiche::Salarie, &s)
             .unwrap()
             .into_iter()
             .filter(|a| a.champ == droit::fiche::CaseSalarie::code_nationalite_dsn.into() && a.gravite == Gravite::Erreur)
@@ -26,7 +26,7 @@ fn la_fiche_dit_l_ancien_03_avant_la_dsn() {
     let avec = |k: &[(&str, &str)]| {
         let mut cases = vec![("nom", "ANDERSEN"), ("prenom", "INGRID"), ("sexe", "2")];
         cases.extend_from_slice(k);
-        saisie("salarie", &cases)
+        saisie(droit::fiche::NomDeFiche::Salarie, &cases)
     };
     assert_eq!(erreurs(avec(&[("code_nationalite_dsn", "03")])).len(), 1, "un 03 sans pays se dit dans la fiche");
     assert!(erreurs(avec(&[("code_nationalite_dsn", "03"), ("pays_nationalite", "NO")])).is_empty());

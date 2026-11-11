@@ -325,7 +325,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         let an = annee_de(m);
         for p in paies {
             // Les colonnes de l'etat nomment les cases de la fiche, lue par sa table.
-            let fiche = Saisie::de_la_fiche("salarie", &p.salarie.champs)?;
+            let fiche = Saisie::de_la_fiche(droit::fiche::NomDeFiche::Salarie, &p.salarie.champs)?;
             use droit::fiche::CaseSalarie as S;
             let champ = |cle: S| fiche.mot(cle);
             let brut = p.brut;

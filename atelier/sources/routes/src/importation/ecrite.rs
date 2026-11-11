@@ -22,12 +22,22 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use droit::contexte::Contexte;
+use droit::fiche::NomDeFiche;
 use engagement::importe::{Attestation, ContratLu, Declaration, PaieLue, PaieVersee};
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::num::Decimal;
 use socle::echec::{Classe, Echec, R};
 use import::reponse::{Copie, EtatFiche, Importation};
+
+/// Le fichier de `config/` ou s'ecrit la fiche `nom`.
+fn fichier_de(nom: NomDeFiche) -> &'static str {
+    match nom {
+        NomDeFiche::Entreprise => "entreprise.json",
+        NomDeFiche::Salarie => "salaries.json",
+        NomDeFiche::Spectacle => "spectacles.json",
+    }
+}
 
 fn en_os(e: &std::io::Error, p: &Path) -> Echec {
     socle::echec::du_disque(p, e).reclasser(Classe::Disque)
@@ -442,10 +452,10 @@ fn ecrire(ctx: &Contexte, imp: &crate::import::Apercu, reponse: &mut Importation
     for a in &imp.a_creer {
         let (cle, anomalies) = crate::importation::fiches::ecrire_fiche(ctx, a.nom, &a.donnees, note)?;
         let emplacement = match (a.nom, a.rang) {
-            ("entreprise", _) => reponse.entreprise.as_mut(),
-            ("salarie", Some(i)) => reponse.salaries.get_mut(i),
-            (_, Some(i)) => reponse.spectacles.get_mut(i),
-            _ => None,
+            (NomDeFiche::Entreprise, _) => reponse.entreprise.as_mut(),
+            (NomDeFiche::Salarie, Some(i)) => reponse.salaries.get_mut(i),
+            (NomDeFiche::Spectacle, Some(i)) => reponse.spectacles.get_mut(i),
+            (NomDeFiche::Salarie | NomDeFiche::Spectacle, None) => None,
         };
         let Some(emplacement) = emplacement else {
             restent_a_creer += 1;
@@ -454,12 +464,7 @@ fn ecrire(ctx: &Contexte, imp: &crate::import::Apercu, reponse: &mut Importation
         emplacement.cle = cle;
         emplacement.etat = EtatFiche::Creee;
         emplacement.anomalies = anomalies;
-        let fichier = match a.nom {
-            "entreprise" => "entreprise.json",
-            "salarie" => "salaries.json",
-            _ => "spectacles.json",
-        };
-        ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier).display().to_string());
+        ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.nom)).display().to_string());
     }
     // Les fiches qui existent : ce qui y est vide ou « A COMPLETER » (`import::completer`), rien d'autre.
     let mut completees = 0usize;
@@ -469,20 +474,15 @@ fn ecrire(ctx: &Contexte, imp: &crate::import::Apercu, reponse: &mut Importation
             continue;
         }
         let emplacement = match a.nom {
-            "entreprise" => reponse.entreprise.as_mut(),
-            "salarie" => reponse.salaries.iter_mut().find(|e| e.cle.as_deref() == a.cle.as_deref()),
-            _ => reponse.spectacles.iter_mut().find(|e| e.cle.as_deref() == a.cle.as_deref()),
+            NomDeFiche::Entreprise => reponse.entreprise.as_mut(),
+            NomDeFiche::Salarie => reponse.salaries.iter_mut().find(|e| e.cle.as_deref() == a.cle.as_deref()),
+            NomDeFiche::Spectacle => reponse.spectacles.iter_mut().find(|e| e.cle.as_deref() == a.cle.as_deref()),
         };
         if let Some(e) = emplacement {
             e.etat = EtatFiche::Completee;
             e.completer.retain(|c| faits.case(c.champ).is_some());
         }
-        let fichier = match a.nom {
-            "entreprise" => "entreprise.json",
-            "salarie" => "salaries.json",
-            _ => "spectacles.json",
-        };
-        ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier).display().to_string());
+        ecrits.insert(ctx.racine.join(socle::fichiers::CONFIG).join(fichier_de(a.nom)).display().to_string());
         completees += 1;
     }
     crate::fiches::dater_licences_suivantes(ctx, &imp.licences, Some(note))?;

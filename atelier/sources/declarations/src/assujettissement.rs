@@ -349,7 +349,7 @@ mod tests {
         let motifs = droit::apprentissage::motifs_mnata().unwrap();
         assert_eq!(motifs.len(), 19);
         assert_eq!(motifs.iter().find(|(c, _)| c == "007").map(|(_, l)| l.as_str()), Some("Associations sans but lucratif"));
-        let champ = crate::champs::champ("entreprise", droit::apprentissage::CHAMP_MOTIF_TAXE_APPRENTISSAGE).unwrap().unwrap();
+        let champ = crate::champs::champ(droit::fiche::NomDeFiche::Entreprise, droit::apprentissage::CHAMP_MOTIF_TAXE_APPRENTISSAGE).unwrap().unwrap();
         let choix: Vec<String> = champ.choix.iter().map(|c| c.to_string()).filter(|c| !c.is_empty()).collect();
         assert_eq!(choix, motifs.iter().map(|(c, _)| c.clone()).collect::<Vec<_>>());
     }

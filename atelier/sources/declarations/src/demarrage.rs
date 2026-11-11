@@ -12,7 +12,7 @@ use droit::fiche::Lue as _;
 use serde::Serialize;
 
 use droit::contexte::Contexte;
-use droit::fiche::{CaseEntreprise, ChampsEntreprise, NomDeCase};
+use droit::fiche::{CaseEntreprise, ChampsEntreprise, NomDeCase, NomDeFiche};
 use socle::date::Jour;
 use socle::echec::{Classe, R};
 
@@ -120,7 +120,7 @@ pub struct PourDemarrer {
 /// Le champ `cle` de la fiche entreprise (`champs-base.json`), que cette table doit porter.
 fn champ_entreprise(cle: CaseEntreprise) -> R<crate::champs::Champ> {
     let cle = NomDeCase::from(cle);
-    crate::champs::champ("entreprise", cle)?.ok_or_else(|| socle::echec::livree("champs-base.json", &format!("entreprise.{}", cle)))
+    crate::champs::champ(NomDeFiche::Entreprise, cle)?.ok_or_else(|| socle::echec::livree("champs-base.json", &format!("entreprise.{}", cle)))
 }
 
 /// Le libelle et l'aide du champ `cle` de la fiche entreprise (`champs-base.json`).
@@ -154,7 +154,7 @@ fn manque_de_la_case(cle: CaseEntreprise, libelle: String, bloque: &str, trouver
 ///   sans spectacle n'a rien a dire ; l'audiovisuel ne voit pas la case.
 pub fn licence_exigee(ent: &ChampsEntreprise, spectacle: bool) -> R<bool> {
     let c = champ_entreprise(CaseEntreprise::licence_spectacle)?;
-    let ent = crate::champs::Saisie::de_la_fiche("entreprise", ent)?;
+    let ent = crate::champs::Saisie::de_la_fiche(NomDeFiche::Entreprise, ent)?;
     Ok(c.exige(&ent) || (spectacle && crate::champs::condition_remplie(c.si.as_ref(), &ent)))
 }
 
@@ -240,7 +240,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // CE QUE LES ACTES EXIGENT DES FICHES (`exige_par` de `champs-base.json`, que chaque acte lit aussi :
     // `champs::refus_des_manques`) : l'entreprise, puis chaque salarie actif ; ce qui ne bloque rien dit ce qui se passe
     // sans lui (`sinon`).
-    for m in crate::champs::manquants("entreprise", &crate::champs::Saisie::de_la_fiche("entreprise", ent)?)? {
+    for m in crate::champs::manquants(NomDeFiche::Entreprise, &crate::champs::Saisie::de_la_fiche(NomDeFiche::Entreprise, ent)?)? {
         if m.cle.seul() == Some(documents::conges_spectacles::CLE_ADHERENT.into()) && !intermittents {
             continue;
         }
@@ -252,7 +252,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             Some(n) => n,
             None => cle.to_string(),
         };
-        for m in crate::champs::manquants("salarie", &crate::champs::Saisie::de_la_fiche("salarie", &s.champs)?)? {
+        for m in crate::champs::manquants(NomDeFiche::Salarie, &crate::champs::Saisie::de_la_fiche(NomDeFiche::Salarie, &s.champs)?)? {
             out.push(ligne(m, format!("Configuration › Salariés, la fiche de {}", nom), "salarie", Some((cle, &nom))));
         }
     }
@@ -264,7 +264,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             Some(t) => t.to_string(),
             None => cle.to_string(),
         };
-        for m in crate::champs::manquants("spectacle", &crate::champs::Saisie::de_la_fiche("spectacle", sp)?)? {
+        for m in crate::champs::manquants(NomDeFiche::Spectacle, &crate::champs::Saisie::de_la_fiche(NomDeFiche::Spectacle, sp)?)? {
             let mut l = ligne(m, format!("Configuration › Spectacles, la fiche de {}", titre), "spectacle", None);
             l.cle = format!("{}.{}", l.cle, cle);
             l.spectacle = Some(cle.to_string());

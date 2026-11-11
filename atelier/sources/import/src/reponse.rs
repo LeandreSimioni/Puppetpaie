@@ -9,7 +9,7 @@
 use serde::Serialize;
 
 use declarations::champs::{Anomalie, Saisie, Valeur};
-use droit::fiche::NomDeCase;
+use droit::fiche::{NomDeCase, NomDeFiche};
 
 use socle::ecran::{couleur_de_l_etat, Pastille};
 use engagement::importe::{ContratLu, PaieLue};
@@ -301,8 +301,7 @@ impl Ecart {
 /// UNE FICHE QUE L'IMPORT CREE, COMPLETE OU LAISSE, ou sur laquelle il a a redire.
 #[derive(Debug, Clone, Serialize)]
 pub struct FicheImportee {
-    /// `entreprise`, `salarie` ou `spectacle`.
-    pub nom: &'static str,
+    pub nom: NomDeFiche,
     pub cle: Option<String>,
     pub libelle: String,
     pub etat: EtatFiche,
@@ -321,7 +320,7 @@ pub struct FicheImportee {
 }
 
 impl FicheImportee {
-    pub fn new(nom: &'static str, cle: Option<&str>, libelle: &str, etat: EtatFiche, ecarts: Vec<Ecart>, anomalies: Vec<Anomalie>, donnees: &Saisie) -> FicheImportee {
+    pub fn new(nom: NomDeFiche, cle: Option<&str>, libelle: &str, etat: EtatFiche, ecarts: Vec<Ecart>, anomalies: Vec<Anomalie>, donnees: &Saisie) -> FicheImportee {
         let mut f = FicheImportee {
             nom,
             cle: cle.map(String::from),

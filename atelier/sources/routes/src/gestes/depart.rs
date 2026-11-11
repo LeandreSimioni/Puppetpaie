@@ -764,7 +764,8 @@ fn numero_en_nom(n: &str) -> String {
 /// annexes VIII et X) ; tout ce qui manque, d'un coup, avant que rien ne s'ecrive.
 fn exiges_des_bulletins<'a>(ent: &droit::fiche::ChampsEntreprise, paies: impl Iterator<Item = &'a Paie>) -> R<()> {
     use declarations::champs::Saisie;
-    let mut saisies: Vec<(&str, String, Saisie)> = vec![("entreprise", "la fiche entreprise".to_string(), Saisie::de_la_fiche("entreprise", ent)?)];
+    use droit::fiche::NomDeFiche;
+    let mut saisies: Vec<(NomDeFiche, String, Saisie)> = vec![(NomDeFiche::Entreprise, "la fiche entreprise".to_string(), Saisie::de_la_fiche(NomDeFiche::Entreprise, ent)?)];
     let mut spectacles: Vec<&str> = Vec::new();
     for p in paies {
         let Some(sp) = p.spectacle.as_ref() else { continue };
@@ -776,9 +777,9 @@ fn exiges_des_bulletins<'a>(ent: &droit::fiche::ChampsEntreprise, paies: impl It
             Some(titre) => format!("Spectacles, la fiche de {}", titre),
             None => format!("Spectacles, la fiche {}", sp.cle),
         };
-        saisies.push(("spectacle", qui, Saisie::de_la_fiche("spectacle", &sp.champs)?));
+        saisies.push((NomDeFiche::Spectacle, qui, Saisie::de_la_fiche(NomDeFiche::Spectacle, &sp.champs)?));
     }
-    let fiches: Vec<(&str, String, &Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
+    let fiches: Vec<(NomDeFiche, String, &Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
     match declarations::champs::refus_des_manques("bulletin", &fiches, &[])? {
         Some(m) => Err(erreur(Classe::Refuse, m)),
         None => Ok(()),

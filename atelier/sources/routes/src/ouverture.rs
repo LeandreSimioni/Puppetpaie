@@ -17,7 +17,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::etapes::Moteur;
 use compagnie::etat_dsn::Etat;
 use declarations::champs::{self, Valeur};
-use droit::fiche::{CaseEntreprise, CaseEtablissement, CaseSalarie, CaseSpectacle, NomDeCase};
+use droit::fiche::{CaseEntreprise, CaseEtablissement, CaseSalarie, CaseSpectacle, NomDeCase, NomDeFiche};
 use droit::catalogue::{self, Rubrique};
 use droit::contexte::Contexte;
 use droit::emplois::{self};
@@ -235,7 +235,7 @@ pub(crate) struct VueFiche<P> {
     titre_dit: String,
     erreurs_titre: Option<String>,
     erreurs_note: &'static str,
-    nom: &'static str,
+    nom: NomDeFiche,
     cle: Option<String>,
     donnees: DonneesDeLaFiche<P>,
     declare: champs::Apercu,
@@ -283,7 +283,7 @@ impl<T: serde::Serialize> serde::Serialize for UneCase<'_, T> {
 /// que sa ligne de `champs-base.json` lui donne ; une case qui n'a qu'une valeur n'en a pas. La page les met en page.
 fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<Vec<TempsDeLaCase<Valeur>>> {
     struct Toutes {
-        nom: &'static str,
+        nom: NomDeFiche,
         listes: Vec<(NomDeCase, R<Vec<droit::fiche::Datee<Valeur>>>)>,
     }
     impl droit::fiche::VoirListe for Toutes {
@@ -325,7 +325,7 @@ fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Optio
     let principal = ctx.entreprise.nic_principal().map(str::to_string);
     let mut par_nic: Vec<(String, Cases)> = Vec::new();
     for version in droit::fiche::valeurs_datees(liste) {
-        let lue = champs::Saisie::de_la_fiche("entreprise", &UneCase(CaseEntreprise::etablissements.into(), &version.valeur))?;
+        let lue = champs::Saisie::de_la_fiche(NomDeFiche::Entreprise, &UneCase(CaseEntreprise::etablissements.into(), &version.valeur))?;
         let Some(Valeur::Lignes(lignes)) = lue.case(CaseEntreprise::etablissements) else { continue };
         for l in lignes {
             let Some(nic) = l.mot(CaseEtablissement::nic).filter(|n| Some(n) != principal.as_ref()) else { continue };
@@ -424,7 +424,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
     // numero d'objet et le code analytique d'un spectacle), et le geste qui l'archive ou la reactive.
     let lu = |k: NomDeCase| comble.mot(k).map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
     // Un spectacle dont l'import n'a lu que le numero d'objet porte le titre « A COMPLETER » : la page le range a part.
-    let sans_titre = nom == "spectacle" && lu(CaseSpectacle::titre.into()).is_some_and(|t| t.eq_ignore_ascii_case(import::proposee::A_COMPLETER));
+    let sans_titre = nom == NomDeFiche::Spectacle && lu(CaseSpectacle::titre.into()).is_some_and(|t| t.eq_ignore_ascii_case(import::proposee::A_COMPLETER));
     // Ce que l'en-tete de la fiche dit : le titre d'un spectacle, et les champs a corriger.
     let titre_dit = match (cle, lu(CaseSpectacle::titre.into())) {
         (None, _) => "Nouveau spectacle".to_string(),
@@ -439,7 +439,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
     };
     let erreurs_note = if erreurs > 1 { "marqués ci-dessous" } else { "marqué ci-dessous" };
     let quoi = match nom {
-        "salarie" => [
+        NomDeFiche::Salarie => [
             lu(CaseSalarie::emploi_affichage.into()).or_else(|| lu(CaseSalarie::emploi.into())),
             lu(CaseSalarie::code_salarie.into()).map(|m| format!("matricule {}", m)),
         ],
@@ -447,7 +447,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
     };
     let quoi_dit = quoi.into_iter().flatten().collect::<Vec<_>>().join(" · ");
     let geste_dit = if archivee { "Réactiver" } else { "Archiver" };
-    let matricule_dit = lu(CaseSalarie::code_salarie.into()).filter(|_| nom == "salarie").map(|m| format!("matricule {}", m));
+    let matricule_dit = lu(CaseSalarie::code_salarie.into()).filter(|_| nom == NomDeFiche::Salarie).map(|m| format!("matricule {}", m));
     let super::fiches::Montres { cases: montres, pieces_ouvertes } = super::fiches::montres(ctx, nom, cle, &comble, ent, p)?;
     // L'organisme Urssaf que le code postal de la compagnie donne : le cas ordinaire du code Urssaf.
     let du_code_postal = match ctx.entreprise.code_postal.portee() {
@@ -845,7 +845,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let jour = ctx.aujourdhui;
     // La fiche de l'entreprise : ses autres etablissements sont ceux que la fiche dit en dernier (`etablissements::ecrire`),
     // ceux qui ouvrent plus tard compris ; les temps de leurs cases se disent ligne par ligne.
-    let ent = champs::Saisie::de_la_fiche("entreprise", &ctx.entreprise)?;
+    let ent = champs::Saisie::de_la_fiche(NomDeFiche::Entreprise, &ctx.entreprise)?;
     let autres = ctx.etablissements_dits();
     let montree = droit::fiche::ChampsEntreprise { etablissements: (!autres.is_empty()).then_some(autres), ..ctx.entreprise.clone() };
     let mut temps = temps_de(Some(ctx.entreprise_brute()), &jour)?;
@@ -870,7 +870,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let erreurs = (erreurs > 0).then(|| socle::ecran::Pastille::de("a_faire", &format!("{} erreur{} de configuration", erreurs, if erreurs > 1 { "s" } else { "" })));
     // LA DEDUCTION FORFAITAIRE SPECIFIQUE vue de la fiche d'un salarie : l'option est celle de l'employeur, dans la fiche de
     // l'entreprise ; la fiche du salarie dit si elle s'applique (`calcul::deduction_forfaitaire` decide).
-    let description_entreprise = champs::description("entreprise")?;
+    let description_entreprise = champs::description(NomDeFiche::Entreprise)?;
     let deduction = match ctx.entreprise.deduction_forfaitaire_option.code() {
         None => "La compagnie ne l'applique pas : c'est une option de l'employeur, qui se règle dans la fiche de l'entreprise (« Avancé — cas particuliers »). Une fois l'option posée, la profession et l'accord du salarié se disent ici.".to_string(),
         Some(option) => {
@@ -933,7 +933,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
         spectacles,
         compteurs,
         erreurs,
-        description: Descriptions { entreprise: description_entreprise, salarie: champs::description("salarie")?, spectacle: champs::description("spectacle")? },
+        description: Descriptions { entreprise: description_entreprise, salarie: champs::description(NomDeFiche::Salarie)?, spectacle: champs::description(NomDeFiche::Spectacle)? },
         etablissements: choix_d_etablissement(ctx)?,
         versement_mobilite_des_etablissements,
         bareme,

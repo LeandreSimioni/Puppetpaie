@@ -54,7 +54,7 @@ use serde::Serialize;
 use import::bulletin_lu::{self, BulletinLu, Compteurs, Table};
 use declarations::champs::{Saisie, Valeur};
 use droit::contexte::Contexte;
-use droit::fiche::{CaseSalarie, CaseSpectacle, NomDeCase};
+use droit::fiche::{CaseSalarie, CaseSpectacle, NomDeCase, NomDeFiche};
 use engagement::importe::EmploiImprime;
 use socle::date::Jour;
 use socle::echec::R;
@@ -501,7 +501,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         gardes.push(l);
     }
     let lus = gardes;
-    let nirs_dsn: HashSet<String> = ap.a_creer.iter().filter(|a| a.nom == "salarie").filter_map(ACreer::nir).collect();
+    let nirs_dsn: HashSet<String> = ap.a_creer.iter().filter(|a| a.nom == NomDeFiche::Salarie).filter_map(ACreer::nir).collect();
 
     // LA CONVENTION COLLECTIVE DE L'IMPORT : celle de la fiche Entreprise, sinon celle que les DSN declarent
     // (S21.G00.11.022, S21.G00.40.017), sinon celle que les bulletins impriment, sinon celle des AEM (`EMP_IDCC`, « N°
@@ -601,27 +601,27 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let proposees = fiche_salarie(nir, &siens, convention_des(rangs).as_deref())?;
         if let Some(cle) = par_nir.get(nir) {
             let fiche = &ctx.salaries[cle.as_str()];
-            let vue = proposee::de("salarie", &fiche.champs)?;
+            let vue = proposee::de(NomDeFiche::Salarie, &fiche.champs)?;
             let ec = ecarts_salarie(&vue, &siens, &chemin_de);
             // Ce qui y est vide, de ce que les bulletins impriment (la fiche qu'ils creeraient) ; ce que la DSN complete
             // deja garde la valeur de la DSN (`completer::ajouter`).
-            let champs = completer::champs_a_completer("salarie", &vue, &proposees)?;
-            let entree = fiche_existante(&mut reponse.salaries, "salarie", cle, || libelle_salarie(fiche));
+            let champs = completer::champs_a_completer(NomDeFiche::Salarie, &vue, &proposees)?;
+            let entree = fiche_existante(&mut reponse.salaries, NomDeFiche::Salarie, cle, || libelle_salarie(fiche));
             entree.ajouter_ecarts(ec);
             noter_par_champ(entree, &champs, &siens, &chemin_de)?;
-            completer::ajouter(&mut ap.a_completer, "salarie", Some(cle), &champs);
+            completer::ajouter(&mut ap.a_completer, NomDeFiche::Salarie, Some(cle), &champs);
             continue;
         }
         if nirs_dsn.contains(nir) {
             // LA DSN LA CREE, LE BULLETIN LA COMPLETE : ce que la DSN ne porte pas (le n° Congés Spectacles,
             // une adresse qu'elle n'a pas) vient du bulletin ; ce que la DSN donne reste.
-            completer_a_creer(&mut ap.a_creer, &mut reponse, "salarie", Some(nir), &proposees)?;
+            completer_a_creer(&mut ap.a_creer, &mut reponse, NomDeFiche::Salarie, Some(nir), &proposees)?;
             continue;
         }
-        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("salarie", &proposees)?;
+        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Salarie, &proposees)?;
         let libelle = libelle_propose(&proposees);
-        reponse.salaries.push(FicheImportee::new("salarie", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &proposees));
-        ap.a_creer.push(ACreer { nom: "salarie", rang: Some(reponse.salaries.len() - 1), donnees: proposees });
+        reponse.salaries.push(FicheImportee::new(NomDeFiche::Salarie, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &proposees));
+        ap.a_creer.push(ACreer { nom: NomDeFiche::Salarie, rang: Some(reponse.salaries.len() - 1), donnees: proposees });
         nouvelles_fiches += 1;
     }
 
@@ -646,22 +646,22 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let proposees = fiche_de_certificats(nir, &siens, convention_cert.as_deref())?;
         if let Some(cle) = par_nir.get(nir) {
             let fiche = &ctx.salaries[cle.as_str()];
-            let champs = completer::champs_a_completer("salarie", &proposee::de("salarie", &fiche.champs)?, &proposees)?;
-            let entree = fiche_existante(&mut reponse.salaries, "salarie", cle, || libelle_salarie(fiche));
+            let champs = completer::champs_a_completer(NomDeFiche::Salarie, &proposee::de(NomDeFiche::Salarie, &fiche.champs)?, &proposees)?;
+            let entree = fiche_existante(&mut reponse.salaries, NomDeFiche::Salarie, cle, || libelle_salarie(fiche));
             entree.noter(&champs, &origine_cert(dernier));
-            completer::ajouter(&mut ap.a_completer, "salarie", Some(cle), &champs);
+            completer::ajouter(&mut ap.a_completer, NomDeFiche::Salarie, Some(cle), &champs);
             continue;
         }
-        if ap.a_creer.iter().any(|a| a.nom == "salarie" && a.nir().as_deref() == Some(nir.as_str())) {
-            completer_a_creer(&mut ap.a_creer, &mut reponse, "salarie", Some(nir), &proposees)?;
+        if ap.a_creer.iter().any(|a| a.nom == NomDeFiche::Salarie && a.nir().as_deref() == Some(nir.as_str())) {
+            completer_a_creer(&mut ap.a_creer, &mut reponse, NomDeFiche::Salarie, Some(nir), &proposees)?;
             continue;
         }
-        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("salarie", &proposees)?;
+        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Salarie, &proposees)?;
         let libelle = libelle_propose(&proposees);
-        let mut entree = FicheImportee::new("salarie", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &proposees);
+        let mut entree = FicheImportee::new(NomDeFiche::Salarie, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &proposees);
         entree.lu_dans = Some(origine_cert(dernier));
         reponse.salaries.push(entree);
-        ap.a_creer.push(ACreer { nom: "salarie", rang: Some(reponse.salaries.len() - 1), donnees: proposees });
+        ap.a_creer.push(ACreer { nom: NomDeFiche::Salarie, rang: Some(reponse.salaries.len() - 1), donnees: proposees });
         nouvelles_fiches += 1;
         *fiches_certificats.entry(dernier.source()).or_default() += 1;
         *salaries_certificats.entry(dernier.source()).or_default() += 1;
@@ -674,16 +674,16 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     if let Some(dernier) = lus.iter().rev().find(|l| siret_lu(&l.b).is_some()).or(lus.last()) {
         let proposees = fiche_entreprise(&lus, dernier)?;
         if siren_fiche.is_some() {
-            let vue = proposee::de("entreprise", &ctx.entreprise)?;
+            let vue = proposee::de(NomDeFiche::Entreprise, &ctx.entreprise)?;
             let ec = ecarts_entreprise(&vue, &proposees, dernier, &chemin_de(dernier));
             let entree = entreprise_existante(&mut reponse, ctx);
             entree.ajouter_ecarts(ec);
-            let champs = completer::champs_a_completer("entreprise", &vue, &proposees)?;
+            let champs = completer::champs_a_completer(NomDeFiche::Entreprise, &vue, &proposees)?;
             entree.noter(&champs, &Origine::bulletin(Some(chemin_de(dernier)), Some(dernier.page)));
-            completer::ajouter(&mut ap.a_completer, "entreprise", None, &champs);
+            completer::ajouter(&mut ap.a_completer, NomDeFiche::Entreprise, None, &champs);
         } else if reponse.entreprise.as_ref().is_some_and(|e| e.etat == EtatFiche::ACreer) {
             // La fiche que les DSN creent, completee de ce que le bulletin imprime et qu'elles ne portent pas (3d).
-            completer_a_creer(&mut ap.a_creer, &mut reponse, "entreprise", None, &proposees)?;
+            completer_a_creer(&mut ap.a_creer, &mut reponse, NomDeFiche::Entreprise, None, &proposees)?;
         } else if reponse.entreprise.is_none() {
             creer_l_entreprise(ctx, &mut ap, &mut reponse, proposees, None)?;
             nouvelles_fiches += 1;
@@ -706,11 +706,11 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             }
             let entree = entreprise_existante(&mut reponse, ctx);
             entree.ajouter_ecarts(ec);
-            let champs = completer::champs_a_completer("entreprise", &proposee::de("entreprise", &ctx.entreprise)?, &proposees)?;
+            let champs = completer::champs_a_completer(NomDeFiche::Entreprise, &proposee::de(NomDeFiche::Entreprise, &ctx.entreprise)?, &proposees)?;
             entree.noter(&champs, &origine_cert(dernier));
-            completer::ajouter(&mut ap.a_completer, "entreprise", None, &champs);
-        } else if ap.a_creer.iter().any(|a| a.nom == "entreprise") {
-            completer_a_creer(&mut ap.a_creer, &mut reponse, "entreprise", None, &proposees)?;
+            completer::ajouter(&mut ap.a_completer, NomDeFiche::Entreprise, None, &champs);
+        } else if ap.a_creer.iter().any(|a| a.nom == NomDeFiche::Entreprise) {
+            completer_a_creer(&mut ap.a_creer, &mut reponse, NomDeFiche::Entreprise, None, &proposees)?;
         } else if reponse.entreprise.is_none() {
             creer_l_entreprise(ctx, &mut ap, &mut reponse, proposees, Some(origine_cert(dernier)))?;
             nouvelles_fiches += 1;
@@ -757,9 +757,9 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         struct CodeAnalytique {
             code_analytique: String,
         }
-        let code = |x: &String| proposee::de("spectacle", &CodeAnalytique { code_analytique: x.clone() });
+        let code = |x: &String| proposee::de(NomDeFiche::Spectacle, &CodeAnalytique { code_analytique: x.clone() });
         if let Some(cle) = connus.get(numero) {
-            let fiche = proposee::de("spectacle", &ctx.spectacles[cle])?;
+            let fiche = proposee::de(NomDeFiche::Spectacle, &ctx.spectacles[cle])?;
             let mut ec = Vec::new();
             // UN TITRE VIDE OU « A COMPLETER » (celui que l'import des DSN donne, la DSN ne portant pas le titre) recoit
             // le titre propose ; un vrai titre saisi reste, et l'ecart avec la ligne « Spectacle » est seulement signale.
@@ -773,7 +773,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             if let Some(x) = &analytique {
                 proposees = code(x)?;
             }
-            let mut champs = completer::champs_a_completer("spectacle", &fiche, &proposees)?;
+            let mut champs = completer::champs_a_completer(NomDeFiche::Spectacle, &fiche, &proposees)?;
             // Le titre se propose a une fiche sans titre qui n'en a pas deja un a valider : comme toute case, la
             // proposition ne remplit qu'une case vide.
             if completer::vide(fiche.case(CaseSpectacle::titre)) && fiche.note(declarations::demarrage::TITRE_PROPOSE).is_none_or(|t| t.trim().is_empty()) {
@@ -784,21 +784,21 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                 Some(t) => t,
                 None => "?".to_string(),
             };
-            let entree = fiche_existante(&mut reponse.spectacles, "spectacle", cle, || format!("{} ({})", titre_de_la_fiche, numero));
+            let entree = fiche_existante(&mut reponse.spectacles, NomDeFiche::Spectacle, cle, || format!("{} ({})", titre_de_la_fiche, numero));
             entree.ajouter_ecarts(ec);
             entree.noter(&champs, &origine);
-            completer::ajouter(&mut ap.a_completer, "spectacle", Some(cle), &champs);
+            completer::ajouter(&mut ap.a_completer, NomDeFiche::Spectacle, Some(cle), &champs);
             continue;
         }
         let deja_la = reponse.spectacles.iter().position(|e| e.etat == EtatFiche::ACreer && e.numero_objet().as_deref() == Some(numero.as_str()));
         if let Some(rang) = deja_la {
             // Un objet que les DSN ou les AEM creent : le bulletin lui propose son titre.
-            let Some(a) = ap.a_creer.iter_mut().find(|a| a.nom == "spectacle" && a.rang == Some(rang)) else { continue };
+            let Some(a) = ap.a_creer.iter_mut().find(|a| a.nom == NomDeFiche::Spectacle && a.rang == Some(rang)) else { continue };
             proposition(&mut a.donnees);
             if let Some(x) = &analytique {
                 proposee::completer_de(&mut a.donnees, &code(x)?);
             }
-            let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("spectacle", &a.donnees)?;
+            let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Spectacle, &a.donnees)?;
             reponse.spectacles[rang].poser(&a.donnees, anomalies);
             continue;
         }
@@ -814,14 +814,14 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             titre_propose: propose.as_ref().map(|p| p.0.clone()),
             titre_lu_dans: propose.as_ref().map(|p| p.1),
         };
-        let donnees = proposee::de("spectacle", &sp)?;
-        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
+        let donnees = proposee::de(NomDeFiche::Spectacle, &sp)?;
+        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Spectacle, &donnees)?;
         let libelle = match &propose {
             Some((t, _)) => format!("numéro d'objet {}, titre proposé « {} » (bulletins de {} à {})", numero, t, premier, dernier),
             None => format!("numéro d'objet {}, sans titre (bulletins de {} à {})", numero, premier, dernier),
         };
-        reponse.spectacles.push(FicheImportee::new("spectacle", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
-        ap.a_creer.push(ACreer { nom: "spectacle", rang: Some(reponse.spectacles.len() - 1), donnees });
+        reponse.spectacles.push(FicheImportee::new(NomDeFiche::Spectacle, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
+        ap.a_creer.push(ACreer { nom: NomDeFiche::Spectacle, rang: Some(reponse.spectacles.len() - 1), donnees });
         nouvelles_fiches += 1;
     }
     // 7b. Les numeros d'objet des AEM en PDF qu'aucune fiche, aucune DSN ni aucun bulletin ne connait : un spectacle a
@@ -834,7 +834,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     }
     for (numero, mois) in objets_aem {
         let deja_la = reponse.spectacles.iter().any(|e| e.numero_objet().as_deref() == Some(numero.as_str()));
-        let a_creer = ap.a_creer.iter().any(|a| a.nom == "spectacle" && a.donnees.mot(CaseSpectacle::numero_objet).map(|n| n.to_uppercase()).as_deref() == Some(numero.as_str()));
+        let a_creer = ap.a_creer.iter().any(|a| a.nom == NomDeFiche::Spectacle && a.donnees.mot(CaseSpectacle::numero_objet).map(|n| n.to_uppercase()).as_deref() == Some(numero.as_str()));
         if connus.contains_key(&numero) || deja_la || a_creer {
             continue;
         }
@@ -849,11 +849,11 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             titre_propose: None,
             titre_lu_dans: None,
         };
-        let donnees = proposee::de("spectacle", &sp)?;
-        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("spectacle", &donnees)?;
+        let donnees = proposee::de(NomDeFiche::Spectacle, &sp)?;
+        let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Spectacle, &donnees)?;
         let libelle = format!("numéro d'objet {}, sans titre (AEM de {} à {})", numero, premier, dernier);
-        reponse.spectacles.push(FicheImportee::new("spectacle", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
-        ap.a_creer.push(ACreer { nom: "spectacle", rang: Some(reponse.spectacles.len() - 1), donnees });
+        reponse.spectacles.push(FicheImportee::new(NomDeFiche::Spectacle, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &donnees));
+        ap.a_creer.push(ACreer { nom: NomDeFiche::Spectacle, rang: Some(reponse.spectacles.len() - 1), donnees });
         nouvelles_fiches += 1;
     }
 
@@ -1475,7 +1475,7 @@ fn infos_de(l: &Lu, salarie: Option<&str>) -> InfosPage {
 
 /// Une fiche que l'import cree des DSN (`a_creer` ; un salarie par son NIR, ou l'entreprise), completee de ce que les
 /// bulletins impriment et qu'elle n'a pas ; ses anomalies se refont, et la reponse montre la fiche completee.
-fn completer_a_creer(a_creer: &mut [ACreer], reponse: &mut Importation, nom: &str, nir: Option<&str>, proposees: &Saisie) -> R<()> {
+fn completer_a_creer(a_creer: &mut [ACreer], reponse: &mut Importation, nom: NomDeFiche, nir: Option<&str>, proposees: &Saisie) -> R<()> {
     let Some(a) = a_creer.iter_mut().find(|a| a.nom == nom && nir.is_none_or(|n| a.nir().as_deref() == Some(n))) else {
         return Ok(());
     };
@@ -1487,7 +1487,7 @@ fn completer_a_creer(a_creer: &mut [ACreer], reponse: &mut Importation, nom: &st
     proposee::fondre(&mut a.donnees, &champs);
     let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(nom, &a.donnees)?;
     let entree = match (nom, a.rang) {
-        ("entreprise", _) => reponse.entreprise.as_mut(),
+        (NomDeFiche::Entreprise, _) => reponse.entreprise.as_mut(),
         (_, Some(i)) => reponse.salaries.get_mut(i),
         _ => None,
     };
@@ -1501,15 +1501,15 @@ fn completer_a_creer(a_creer: &mut [ACreer], reponse: &mut Importation, nom: &st
 /// bulletin), sous le nom que la personne lui a donne.
 fn creer_l_entreprise(ctx: &Contexte, ap: &mut Apercu, reponse: &mut Importation, mut e: Saisie, origine: Option<Origine>) -> R<()> {
     ri::garder_le_nom(ctx, &mut e)?;
-    let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture("entreprise", &e)?;
+    let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Entreprise, &e)?;
     let libelle = match e.mot(droit::fiche::CaseEntreprise::raison_sociale) {
         Some(r) => r,
         None => "?".to_string(),
     };
-    let mut entree = FicheImportee::new("entreprise", None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e);
+    let mut entree = FicheImportee::new(NomDeFiche::Entreprise, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e);
     entree.lu_dans = origine;
     reponse.entreprise = Some(entree);
-    ap.a_creer.push(ACreer { nom: "entreprise", rang: None, donnees: e });
+    ap.a_creer.push(ACreer { nom: NomDeFiche::Entreprise, rang: None, donnees: e });
     Ok(())
 }
 
@@ -1519,7 +1519,7 @@ fn libelle_propose(f: &Saisie) -> String {
 }
 
 /// La fiche existante `cle` de la liste, ajoutee (`libelle`) si la reponse ne la porte pas encore.
-fn fiche_existante<'a>(liste: &'a mut Vec<FicheImportee>, nom: &'static str, cle: &str, libelle: impl FnOnce() -> String) -> &'a mut FicheImportee {
+fn fiche_existante<'a>(liste: &'a mut Vec<FicheImportee>, nom: NomDeFiche, cle: &str, libelle: impl FnOnce() -> String) -> &'a mut FicheImportee {
     let rang = match liste.iter().position(|e| e.cle.as_deref() == Some(cle)) {
         Some(i) => i,
         None => {
@@ -1537,7 +1537,7 @@ fn entreprise_existante<'a>(reponse: &'a mut Importation, ctx: &Contexte) -> &'a
             Some(r) => r,
             None => "?",
         };
-        FicheImportee::new("entreprise", None, libelle, EtatFiche::Existante, Vec::new(), Vec::new(), &Saisie::default())
+        FicheImportee::new(NomDeFiche::Entreprise, None, libelle, EtatFiche::Existante, Vec::new(), Vec::new(), &Saisie::default())
     })
 }
 
@@ -1551,7 +1551,7 @@ fn libelle_salarie(fiche: &droit::fiche::ChampsSalarie) -> String {
 fn noter_par_champ(entree: &mut FicheImportee, champs: &Saisie, ls: &[&Lu], chemin: &dyn Fn(&Lu) -> String) -> R<()> {
     let Some(dernier) = ls.last() else { return Ok(()) };
     let par: HashMap<NomDeCase, &Lu> = identite(ls).into_iter().map(|(cle, _, l)| (cle.into(), l)).collect();
-    let table = declarations::champs::fiche("salarie")?;
+    let table = declarations::champs::fiche(NomDeFiche::Salarie)?;
     for (k, v) in champs.cases() {
         // Une forme lisible vient du bulletin de sa forme declaree.
         let base = match completer::forme_declaree_de(&table, *k) {
@@ -1645,7 +1645,7 @@ fn ecarts_entreprise(fiche: &Saisie, lue: &Saisie, l: &Lu, chemin: &str) -> Vec<
 /// Un texte tout en capitales (CoolPaie imprime ainsi noms et adresses) n'en dit pas la casse : sa forme lisible se
 /// fait comme ailleurs (`champs::combler_affichage`). Sans cela, « La Fanfare des Toits » devenait « La Fanfare Des
 /// Toits ».
-fn lisibles_de_la_piece(nom: &str, f: &mut Saisie) -> R<()> {
+fn lisibles_de_la_piece(nom: NomDeFiche, f: &mut Saisie) -> R<()> {
     for c in declarations::champs::fiche(nom)? {
         let Some(source) = c.derive_de else { continue };
         if f.dite(source).is_some() {
@@ -1665,7 +1665,7 @@ fn lisibles_de_la_piece(nom: &str, f: &mut Saisie) -> R<()> {
 /// la DSN a perdu (« CHAMPMESLÉ », « Séraphine »), sa forme lisible (`lisibles_de_la_piece`, `champs::combler_affichage`)
 /// remplace la reconstitution ; la forme declaree s'en derive a l'ecriture, au seul endroit qui la derive. Une forme
 /// lisible que la fiche ne tient pas de la forme declaree (le metier du catalogue) reste la sienne.
-fn lisibles_de_la_piece_sur(nom: &str, fiche: &Saisie, proposees: &Saisie) -> R<Saisie> {
+fn lisibles_de_la_piece_sur(nom: NomDeFiche, fiche: &Saisie, proposees: &Saisie) -> R<Saisie> {
     let mut out = Saisie::default();
     for c in declarations::champs::fiche(nom)? {
         let Some(source) = c.derive_de else { continue };
@@ -1757,11 +1757,11 @@ fn salarie_propose(s: SalarieLu, metier: &EmploiImprime) -> R<Saisie> {
     struct Actif {
         actif: bool,
     }
-    let mut f = proposee::de("salarie", &s)?;
-    proposee::fondre(&mut f, &proposee::de("salarie", metier)?);
-    lisibles_de_la_piece("salarie", &mut f)?;
-    let mut f = f.comblee("salarie")?;
-    proposee::fondre(&mut f, &proposee::de("salarie", &Actif { actif: true })?);
+    let mut f = proposee::de(NomDeFiche::Salarie, &s)?;
+    proposee::fondre(&mut f, &proposee::de(NomDeFiche::Salarie, metier)?);
+    lisibles_de_la_piece(NomDeFiche::Salarie, &mut f)?;
+    let mut f = f.comblee(NomDeFiche::Salarie)?;
+    proposee::fondre(&mut f, &proposee::de(NomDeFiche::Salarie, &Actif { actif: true })?);
     Ok(f)
 }
 
@@ -1890,8 +1890,8 @@ struct EntrepriseLue {
 /// La fiche de l'entreprise que proposent ses pieces : ce qu'elles impriment, ses formes lisibles (celles que la piece
 /// imprime en minuscules, `lisibles_de_la_piece`), et son nom en clair (`routes::import::entreprise_comblee`).
 fn entreprise_proposee(e: EntrepriseLue) -> R<Saisie> {
-    let mut f = proposee::de("entreprise", &e)?;
-    lisibles_de_la_piece("entreprise", &mut f)?;
+    let mut f = proposee::de(NomDeFiche::Entreprise, &e)?;
+    lisibles_de_la_piece(NomDeFiche::Entreprise, &mut f)?;
     ri::entreprise_comblee(&f)
 }
 
@@ -2144,7 +2144,7 @@ fn statut_de(ctx: &Contexte, par_nir: &HashMap<String, String>, a_creer: &[ACree
     if let Some(s) = par_nir.get(nir).and_then(|k| ctx.salaries.get(k.as_str())).and_then(|f| f.statut.dite()) {
         return Ok(Some(s.as_str().to_string()));
     }
-    if let Some(s) = a_creer.iter().filter(|a| a.nom == "salarie" && a.nir().as_deref() == Some(nir)).find_map(|a| a.donnees.mot(CaseSalarie::statut)) {
+    if let Some(s) = a_creer.iter().filter(|a| a.nom == NomDeFiche::Salarie && a.nir().as_deref() == Some(nir)).find_map(|a| a.donnees.mot(CaseSalarie::statut)) {
         return Ok(Some(s));
     }
     let femme = declarations::ntt::sexe_de(Some(nir), None) == Some("2");

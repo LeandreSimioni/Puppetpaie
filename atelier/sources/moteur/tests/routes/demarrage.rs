@@ -51,7 +51,7 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
         bareme["par_convention"].as_object().unwrap().keys().filter(|k| !k.starts_with('_')).cloned().collect();
     assert_eq!(conventions.len(), 10, "les dix conventions de 2026 : {:?}", conventions);
     conventions.push(String::new());
-    let fiche = declarations::champs::fiche("entreprise").unwrap();
+    let fiche = declarations::champs::fiche(droit::fiche::NomDeFiche::Entreprise).unwrap();
     for idcc in &conventions {
         for (permanents, spectacle) in [(false, false), (false, true), (true, false), (true, true)] {
             let nom = format!("grille-{}-{}-{}", if idcc.is_empty() { "sans" } else { idcc }, permanents, spectacle);
@@ -77,7 +77,7 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
                 let c = fiche.iter().find(|c| c.cle.nom() == champ.split('.').next().unwrap()).unwrap_or_else(|| panic!("{} : pas un champ", champ));
                 assert!(montre(c.cle.nom()), "{} : « {} » demande, case masquee", nom, champ);
             }
-            let lue = declarations::champs::Saisie::de_la_fiche("entreprise", &ent).unwrap();
+            let lue = declarations::champs::Saisie::de_la_fiche(droit::fiche::NomDeFiche::Entreprise, &ent).unwrap();
             for c in &fiche {
                 if c.exige(&lue) {
                     assert!(montre(c.cle.nom()), "{} : « {} » exige et masque", nom, c.cle);

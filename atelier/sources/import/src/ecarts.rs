@@ -305,7 +305,7 @@ fn ajouter_les_fiches(ctx: &Contexte, c: &mut Connus) -> R<()> {
     };
     for (_, f) in &ctx.salaries {
         // Les cases que le releve compare, par la table de la fiche.
-        let s = Saisie::de_la_fiche("salarie", &f.champs)?;
+        let s = Saisie::de_la_fiche(droit::fiche::NomDeFiche::Salarie, &f.champs)?;
         use droit::fiche::CaseSalarie as S;
         let t = |k: S| s.mot(k);
         for k in [S::nom, S::nom_affichage] {

@@ -12,7 +12,7 @@
 //! confrontent case par case, chacune une saisie de sa fiche (`declarations::champs::Saisie`).
 
 use declarations::champs::{Champ, Saisie, Valeur};
-use droit::fiche::{CaseSalarie, NomDeCase};
+use droit::fiche::{CaseSalarie, NomDeCase, NomDeFiche};
 use socle::echec::R;
 
 /// Une case qui ne dit rien : absente, un texte blanc ou « A COMPLETER » (sans casse), une liste ou une structure vides.
@@ -37,7 +37,7 @@ fn jamais() -> [NomDeCase; 2] {
 /// la fiche, vide dans `fiche`, pleine dans `proposees`. Un champ officiel dont la forme lisible est remplie se derive
 /// d'elle a l'ecriture : il n'est pas complete. La forme lisible (`*_affichage`) d'un champ complete suit, quand elle
 /// est vide : celle que la piece donne, sinon celle que l'ecran en ferait (`Saisie::comblee`).
-pub(crate) fn champs_a_completer(nom: &str, fiche: &Saisie, proposees: &Saisie) -> R<Saisie> {
+pub(crate) fn champs_a_completer(nom: NomDeFiche, fiche: &Saisie, proposees: &Saisie) -> R<Saisie> {
     let champs = declarations::champs::fiche(nom)?;
     let mut out = Saisie::default();
     for c in &champs {
@@ -75,14 +75,14 @@ pub(crate) fn champs_a_completer(nom: &str, fiche: &Saisie, proposees: &Saisie) 
 
 /// Une fiche existante que l'import completerait : laquelle (`cle` ; rien pour l'entreprise), et ses cases.
 pub(crate) struct ACompleter {
-    pub(crate) nom: &'static str,
+    pub(crate) nom: NomDeFiche,
     pub(crate) cle: Option<String>,
     pub(crate) champs: Saisie,
 }
 
 /// Ajoute des cases a completer. LA PREMIERE PIECE QUI DONNE UNE CASE LA GARDE : les DSN passent avant les bulletins,
 /// comme pour une fiche que l'import cree (le bulletin complete la fiche que la DSN cree, il ne la reecrit pas).
-pub(crate) fn ajouter(liste: &mut Vec<ACompleter>, nom: &'static str, cle: Option<&str>, champs: &Saisie) {
+pub(crate) fn ajouter(liste: &mut Vec<ACompleter>, nom: NomDeFiche, cle: Option<&str>, champs: &Saisie) {
     if !champs.est_dite() {
         return;
     }

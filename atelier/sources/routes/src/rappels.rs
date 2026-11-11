@@ -247,7 +247,7 @@ fn revue_spectacles(ctx: &Contexte, charge: ChargeRevue) -> socle::echec::R<Revu
     }
     let archives: Vec<String> = actifs.iter().filter(|c| !garder.contains(**c)).map(|c| c.to_string()).collect();
     for cle in &archives {
-        crate::fiches::activer_fiche(ctx, "spectacle", cle, false)?;
+        crate::fiches::activer_fiche(ctx, droit::fiche::NomDeFiche::Spectacle, cle, false)?;
     }
     marquer_echeance(ctx, &format!("{}:{}", REVUE_SPECTACLES, annee), true, "interface")?;
     let continuent: Vec<String> = garder.into_iter().collect();
