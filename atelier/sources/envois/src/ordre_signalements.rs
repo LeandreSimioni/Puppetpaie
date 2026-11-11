@@ -75,7 +75,7 @@ pub fn dernier_ordre_des_bilans(racine: &Path, siren: &str) -> Result<Option<(i6
             None => apres,
         };
         for d in crate::retours::declarations_du_bilan(&octets)? {
-            let signalement = d.nature_declaration.as_deref().and_then(NatureDeLaDeclaration::du_code).is_some_and(NatureDeLaDeclaration::signalement_envoye);
+            let signalement = d.nature_declaration.is_some_and(NatureDeLaDeclaration::signalement_envoye);
             if !signalement || d.siren.as_deref() != Some(siren) {
                 continue;
             }
@@ -183,7 +183,7 @@ pub fn dernier_ordre_connu(ctx: &Contexte, branchement: Branchement, client: Opt
 /// La conduite a tenir devant un signalement refuse B1-208-10, ou `None` si ce bilan n'en est pas un. Le bilan ne dit
 /// pas QUEL signalement tient deja cet ordre : la phrase donne les deux cas.
 pub fn conduite_b1_208_10(declaration: &crate::retours::DeclarationIdentifiee, flux: Option<&str>) -> Option<String> {
-    let nature = declaration.nature_declaration.as_deref().and_then(NatureDeLaDeclaration::du_code).filter(|n| n.signalement_envoye())?;
+    let nature = declaration.nature_declaration.filter(|n| n.signalement_envoye())?;
     if !declaration.codes.iter().any(|c| c == "B1-208-10") {
         return None;
     }
@@ -246,7 +246,7 @@ pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, con
         let du_mois_declare = bilan.mois == Some(mois);
         let mut du_siren = false;
         for d in crate::retours::declarations_du_bilan(&octets)? {
-            if d.nature_declaration.as_deref().and_then(NatureDeLaDeclaration::du_code) != Some(crate::depot::MENSUELLE) || d.siren.as_deref() != Some(siren) {
+            if d.nature_declaration != Some(crate::depot::MENSUELLE) || d.siren.as_deref() != Some(siren) {
                 continue;
             }
             du_siren = true;

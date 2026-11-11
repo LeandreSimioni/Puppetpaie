@@ -657,7 +657,7 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: &str) -> Lecture {
         };
         l.phrases.push(format!(
             "{}{}{} : {}.",
-            nature_dsn(dit(&d.nature_declaration).and_then(NatureDeLaDeclaration::du_code), dit(&d.type_declaration)),
+            nature_dsn(d.nature_declaration, dit(&d.type_declaration)),
             morceau(" de ", d.mois.map(|m| m.to_string()).as_deref(), ""),
             morceau(", ordre ", dit(&d.ordre), ""),
             verdict
@@ -904,7 +904,7 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
         };
         l.phrases.push(format!(
             "{}{}{} : {}.",
-            nature_dsn(lu(&d.nature_declaration).and_then(NatureDeLaDeclaration::du_code), lu(&d.type_declaration)),
+            nature_dsn(d.nature_declaration, lu(&d.type_declaration)),
             morceau(" de ", d.mois.map(|m| m.to_string()).as_deref(), ""),
             morceau(", vue par ", organisme.as_deref(), ""),
             retour

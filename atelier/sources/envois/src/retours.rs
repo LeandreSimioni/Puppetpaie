@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
+use droit::nature_declaration::NatureDeLaDeclaration;
 use socle::echec::{erreur as echec, Classe, Echec, R};
 use socle::paris::InstantCompact;
 use socle::texte::blanc;
@@ -901,7 +902,7 @@ pub fn declarations_du_bilan(o: &[u8]) -> R<Vec<DeclarationIdentifiee>> {
         }
         let get = |k: &str| champs.iter().find(|(n, _)| *n == k).map(|(_, v)| v.to_string());
         out.push(DeclarationIdentifiee {
-            nature_declaration: get("nature"),
+            nature_declaration: nature_du_retour(get("nature").as_deref())?,
             type_declaration: get("type"),
             ordre: get("ordre"),
             siren: get("SIREN"),
@@ -919,7 +920,7 @@ pub fn declarations_du_bilan(o: &[u8]) -> R<Vec<DeclarationIdentifiee>> {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DeclarationIdentifiee {
     #[serde(rename = "nature")]
-    pub nature_declaration: Option<String>,
+    pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
     pub type_declaration: Option<String>,
     pub ordre: Option<String>,
@@ -928,6 +929,18 @@ pub struct DeclarationIdentifiee {
     pub etat: Option<String>,
     pub essai_reel: Option<String>,
     pub codes: Vec<String>,
+}
+
+/// La nature d'une declaration qu'un retour de la norme nomme (S20.G00.05.001), `None` s'il ne la dit pas : un code
+/// hors de la liste de la norme refuse le retour, qui ne se lit pas.
+fn nature_du_retour(code: Option<&str>) -> R<Option<NatureDeLaDeclaration>> {
+    code.map(|c| {
+        NatureDeLaDeclaration::du_code(c).ok_or_else(|| {
+            socle::refus!("Le retour porte, en nature de la déclaration (S20.G00.05.001), « {} », qui n'est pas un code de sa liste dans la norme : il ne se lit pas.", c)
+                .reclasser(Classe::Illisible)
+        })
+    })
+    .transpose()
 }
 
 /// L'arbre d'octets ; un XML mal forme n'en est pas un (`None`), tout autre refus (un
@@ -2095,7 +2108,7 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
         let (id, bilan) = (sous_bloc("declaration_identification"), sous_bloc("declaration_bilan"));
         let mois = premier_texte(&arbre, id, &["mois"]);
         declarations.push(DeclarationDuRapport {
-            nature_declaration: premier_texte(&arbre, id, &["nature"]).to_string(),
+            nature_declaration: nature_du_retour(Some(premier_texte(&arbre, id, &["nature"])).filter(|t| !t.is_empty()))?,
             type_declaration: premier_texte(&arbre, id, &["type"]).to_string(),
             ordre: premier_texte(&arbre, id, &["ordre"]).to_string(),
             mois: if mois.is_empty() { None } else { Some(mois_du_rapport(mois)?) },
@@ -2170,11 +2183,11 @@ pub struct Rapport {
     pub informations: Vec<InformationCollective>,
 }
 
-/// Une declaration d'un rapport : nature, type, ordre, mois (quand il le dit) et etat.
+/// Une declaration d'un rapport : nature (quand il la dit), type, ordre, mois (quand il le dit) et etat.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DeclarationDuRapport {
     #[serde(rename = "nature")]
-    pub nature_declaration: String,
+    pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
     pub type_declaration: String,
     pub ordre: String,
@@ -2671,7 +2684,7 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
         }
         let code = at(d, "CodeRetourDecla");
         declarations.push(DeclarationOc {
-            nature_declaration: at(d, "NatureDecla"),
+            nature_declaration: nature_du_retour(at(d, "NatureDecla").as_deref())?,
             type_declaration: at(d, "TypeDecla"),
             ordre: at(d, "NoOrdreDecla"),
             mois: at(d, "DateMoisDec").map(|m| mois_du_jour(&m)).transpose()?,
@@ -2710,7 +2723,7 @@ pub struct CrmOc {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DeclarationOc {
     #[serde(rename = "nature")]
-    pub nature_declaration: Option<String>,
+    pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
     pub type_declaration: Option<String>,
     pub ordre: Option<String>,
