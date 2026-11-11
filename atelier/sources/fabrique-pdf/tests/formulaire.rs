@@ -7,6 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use fabrique_pdf::mesure::{mesure, Mesure};
 use lopdf::{Document, Object, ObjectId};
 use serde_json::{json, Value};
 
@@ -27,7 +28,12 @@ const WIDGET_ENFANT: ObjectId = (16, 0);
 
 const CONTENU_PAGE1: &str = "q 1 0 0 1 0 0 cm\nBT /F1 12 Tf 50 780 Td (Page un) Tj ET\n";
 const CONTENU_PAGE2: &str = "BT /F1 12 Tf 50 780 Td (Page deux) Tj ET\n";
-const HAUTEUR: f64 = 842.0;
+const HAUTEUR: Mesure = Mesure::entier(842);
+
+/// `n` points.
+fn pt(n: i64) -> Mesure {
+    Mesure::entier(n)
+}
 
 /// Le formulaire d'essai : deux pages 595 × 842 (`rotation` : le `/Rotate` de la page 2).
 ///
@@ -91,16 +97,12 @@ fn charge(o: &[u8]) -> Document {
     Document::load_mem(o).unwrap()
 }
 
-fn num(o: &Object) -> f64 {
-    match o {
-        Object::Integer(i) => *i as f64,
-        Object::Real(r) => *r as f64,
-        autre => panic!("un nombre est attendu : {:?}", autre),
-    }
+fn num(o: &Object) -> Mesure {
+    Mesure::de_l_objet(o).unwrap_or_else(|| panic!("un nombre est attendu : {:?}", o))
 }
 
-fn proche(a: f64, b: f64) -> bool {
-    (a - b).abs() < 0.011
+fn proche(a: Mesure, b: Mesure) -> bool {
+    (a - b).abs() < mesure("0.011")
 }
 
 /// Les champs, tels que `--champs` les écrit.
@@ -157,7 +159,7 @@ fn deflate(octets: &[u8]) -> Vec<u8> {
     sortie
 }
 
-fn bbox(dict: &lopdf::Dictionary) -> Vec<f64> {
+fn bbox(dict: &lopdf::Dictionary) -> Vec<Mesure> {
     dict.get(b"BBox").unwrap().as_array().unwrap().iter().map(num).collect()
 }
 
@@ -169,14 +171,14 @@ fn valeur_pdf(doc: &Document, id: ObjectId) -> Vec<u8> {
 }
 
 /// Les `Tm` (x, y) et le texte du `Tj` qui suit, d'un flux d'apparence (codes de 4 chiffres hexa).
-fn lignes(flux: &str) -> Vec<(f64, f64, String)> {
+fn lignes(flux: &str) -> Vec<(Mesure, Mesure, String)> {
     let mut out = Vec::new();
-    let mut tm: Option<(f64, f64)> = None;
+    let mut tm: Option<(Mesure, Mesure)> = None;
     for l in flux.lines() {
         if let Some(r) = l.strip_suffix(" Tm") {
-            let v: Vec<f64> = r.split_whitespace().map(|x| x.parse().unwrap()).collect();
+            let v: Vec<Mesure> = r.split_whitespace().map(|x| x.parse().unwrap()).collect();
             assert_eq!(v.len(), 6, "{}", l);
-            assert_eq!((v[0], v[1], v[2], v[3]), (1.0, 0.0, 0.0, 1.0), "{}", l);
+            assert_eq!((v[0], v[1], v[2], v[3]), (pt(1), pt(0), pt(0), pt(1)), "{}", l);
             tm = Some((v[4], v[5]));
         } else if let Some(h) = l.strip_suffix("> Tj") {
             let h = h.strip_prefix('<').unwrap();
@@ -196,11 +198,11 @@ fn hex(t: &str) -> String {
     t.chars().map(|c| format!("{:04X}", c as u32)).collect()
 }
 
-fn largeur(t: &str, corps: f64) -> f64 {
+fn largeur(t: &str, corps: Mesure) -> Mesure {
     let donnees = fabrique_pdf::polices::sans_regulier().unwrap();
     let face = ttf_parser::Face::parse(&donnees, 0).unwrap();
-    let em = face.units_per_em() as f64;
-    t.chars().map(|c| face.glyph_index(c).and_then(|g| face.glyph_hor_advance(g)).unwrap_or(0) as f64 / em * corps).sum()
+    let unites: i64 = t.chars().map(|c| face.glyph_index(c).and_then(|g| face.glyph_hor_advance(g)).unwrap_or(0) as i64).sum();
+    corps.fois_rapport(unites, face.units_per_em() as i64).unwrap()
 }
 
 
@@ -224,7 +226,7 @@ fn champs_noms_complets_types_pages_et_rectangles() {
     assert_eq!(serde_json::from_str::<Value>(&ligne).unwrap(), c);
 
     // y0 = hauteur de la page - y1 du /Rect
-    assert_eq!(c["NOM"]["rect"], json!([100.0, 126.0, 300.0, 142.0]));
+    assert_eq!(c["NOM"]["rect"], json!([100, 126, 300, 142]));
     assert_eq!(c["NOM"]["page"], json!(1));
     assert_eq!(c["NOM"]["type"], json!("texte"));
     assert_eq!(c["NOM"]["lecture_seule"], json!(false));
@@ -232,11 +234,11 @@ fn champs_noms_complets_types_pages_et_rectangles() {
 
     assert_eq!(c["CODE"]["valeur"], json!("Été"));
     assert_eq!(c["CODE"]["lecture_seule"], json!(true));
-    assert_eq!(c["CODE"]["rect"], json!([100.0, HAUTEUR - 696.0, 200.0, HAUTEUR - 680.0]));
+    assert_eq!(c["CODE"]["rect"], json!([100, HAUTEUR - pt(696), 200, HAUTEUR - pt(680)]));
 
     assert_eq!(c["PEIGNE"]["valeur"], Value::Null);
-    assert_eq!(c["PEIGNE"]["rect"], json!([100.0, 176.0, 140.0, 192.0]));
-    assert_eq!(c["NOTE"]["rect"], json!([100.0, 282.0, 200.0, 342.0]));
+    assert_eq!(c["PEIGNE"]["rect"], json!([100, 176, 140, 192]));
+    assert_eq!(c["NOTE"]["rect"], json!([100, 282, 200, 342]));
 
     // page 2, /V en UTF-16BE
     assert_eq!(c["CENTRE"]["page"], json!(2));
@@ -245,7 +247,7 @@ fn champs_noms_complets_types_pages_et_rectangles() {
     // la hiérarchie : le nom complet, et le widget séparé donne page et rectangle
     assert_eq!(c["PARENT.ENFANT"]["type"], json!("texte"));
     assert_eq!(c["PARENT.ENFANT"]["page"], json!(2));
-    assert_eq!(c["PARENT.ENFANT"]["rect"], json!([100.0, 222.0, 300.0, 242.0]));
+    assert_eq!(c["PARENT.ENFANT"]["rect"], json!([100, 222, 300, 242]));
     assert!(o.get("PARENT").is_none() && o.get("ENFANT").is_none());
 
     // la case : un bouton, dont la valeur est un nom
@@ -266,7 +268,7 @@ fn champs_le_rect_suit_le_cadre_de_la_page_visible() {
     ];
     let c = champs(&pdf_a_la_main(&objets, 0));
     // x : 50 - 10 ; y0 = 420 - 320 ; y1 = 420 - 300
-    assert_eq!(c["A"]["rect"], json!([40.0, 100.0, 140.0, 120.0]));
+    assert_eq!(c["A"]["rect"], json!([40, 100, 140, 120]));
 }
 
 #[test]
@@ -316,14 +318,14 @@ fn remplir_ecrit_v_et_une_apparence_a_la_taille_du_rect() {
     assert!(doc.get_dictionary(WIDGET_ENFANT).unwrap().get(b"V").is_err());
 
     for (w, l, h, texte) in [
-        (NOM, 200.0, 16.0, "Bonjour"),
-        (NOTE, 100.0, 60.0, "Une note"),
-        (CENTRE, 100.0, 16.0, "AB"),
-        (WIDGET_ENFANT, 200.0, 20.0, "Paris"),
+        (NOM, 200, 16, "Bonjour"),
+        (NOTE, 100, 60, "Une note"),
+        (CENTRE, 100, 16, "AB"),
+        (WIDGET_ENFANT, 200, 20, "Paris"),
     ] {
         let (flux, dict) = apparence(&doc, w);
         let b = bbox(&dict);
-        assert_eq!(b, vec![0.0, 0.0, l, h], "BBox de {:?}", w);
+        assert_eq!(b, vec![pt(0), pt(0), pt(l), pt(h)], "BBox de {:?}", w);
         assert_eq!(dict.get(b"Subtype").unwrap().as_name().unwrap(), b"Form");
         // le texte en codes de la police embarquée
         assert!(flux.contains(&format!("<{}> Tj", hex(texte))), "{:?} : {}", w, flux);
@@ -390,24 +392,24 @@ fn remplir_peigne_un_tm_par_caractere_centre_dans_sa_case() {
     let sortie = remplir_ok(&formulaire(None), json!({"format": 3, "champs": {"PEIGNE": "AB"}}));
     let doc = charge(&sortie);
     let (flux, dict) = apparence(&doc, PEIGNE);
-    assert_eq!(bbox(&dict), vec![0.0, 0.0, 40.0, 16.0]);
+    assert_eq!(bbox(&dict), vec![pt(0), pt(0), pt(40), pt(16)]);
     assert_eq!(flux.matches(" Tm\n").count(), 2, "{}", flux);
     let l = lignes(&flux);
     assert_eq!(l.len(), 2);
-    let case = 40.0 / 2.0;
+    let case = pt(40) / 2;
     for (i, (x, y, t)) in l.iter().enumerate() {
         let c = "AB".chars().nth(i).unwrap();
         assert_eq!(t, &c.to_string());
         // centré : le milieu du caractère est le milieu de sa case
-        let milieu = x + largeur(t, 7.0) / 2.0;
-        assert!(proche(milieu, i as f64 * case + case / 2.0), "caractère {} : milieu {}", i, milieu);
-        assert!(proche(*y, (16.0 - 7.0) / 2.0 + 0.2 * 7.0), "y = {}", y);
+        let milieu = *x + largeur(t, pt(7)) / 2;
+        assert!(proche(milieu, case * i as i64 + case / 2), "caractère {} : milieu {}", i, milieu);
+        assert!(proche(*y, (pt(16) - pt(7)) / 2 + mesure("0.2") * pt(7)), "y = {}", y);
     }
     // un seul caractère : il va dans la première case
     let un = remplir_ok(&formulaire(None), json!({"format": 3, "champs": {"PEIGNE": "A"}}));
     let l = lignes(&apparence(&charge(&un), PEIGNE).0);
     assert_eq!(l.len(), 1);
-    assert!(proche(l[0].0 + largeur("A", 7.0) / 2.0, 10.0));
+    assert!(proche(l[0].0 + largeur("A", pt(7)) / 2, pt(10)));
 }
 
 #[test]
@@ -421,11 +423,11 @@ fn remplir_multiligne_coupe_la_valeur_longue_sur_plusieurs_lignes() {
     let recolle: Vec<&str> = l.iter().map(|(_, _, t)| t.as_str()).collect();
     assert_eq!(recolle.join(" "), longue);
     for (i, (x, y, t)) in l.iter().enumerate() {
-        assert!(proche(*x, 2.0), "x = {}", x);
+        assert!(proche(*x, pt(2)), "x = {}", x);
         // depuis le haut, lignes de 1,116 × corps
-        assert!(proche(*y, 60.0 - 2.0 - 1.116 * 7.0 * (i as f64 + 1.0)), "ligne {} : y = {}", i, y);
+        assert!(proche(*y, pt(60 - 2) - mesure("1.116") * pt(7) * (i as i64 + 1)), "ligne {} : y = {}", i, y);
         // chaque ligne tient à 2 pt des bords
-        assert!(largeur(t, 7.0) <= 96.0 + 0.01, "{:?} : {}", t, largeur(t, 7.0));
+        assert!(largeur(t, pt(7)) <= mesure("96.01"), "{:?} : {}", t, largeur(t, pt(7)));
     }
     // un saut de ligne de la valeur fait une ligne
     let sauts = remplir_ok(&formulaire(None), json!({"format": 3, "champs": {"NOTE": "ab\ncd"}}));
@@ -437,7 +439,7 @@ fn remplir_multiligne_coupe_la_valeur_longue_sur_plusieurs_lignes() {
 fn remplir_centre_selon_q() {
     let sortie = remplir_ok(&formulaire(None), json!({"format": 3, "champs": {"CENTRE": "AB"}}));
     let l = lignes(&apparence(&charge(&sortie), CENTRE).0);
-    let attendu = (100.0 - largeur("AB", 7.0)) / 2.0;
+    let attendu = (pt(100) - largeur("AB", pt(7))) / 2;
     assert!(proche(l[0].0, attendu), "x = {}, attendu {}", l[0].0, attendu);
 }
 
@@ -569,14 +571,15 @@ fn jpeg(d: &Path, nom: &str, l: u32, h: u32) -> (String, Vec<u8>) {
 
 /// Ce qu'on attend de `cm` : le plus grand rectangle aux proportions de l'image (`l` × `h`) qui
 /// tient dans le `rect` moins la `marge`, centré ; origine du PDF en bas à gauche.
-fn attendu_cm(rect: [f64; 4], marge: f64, l: f64, h: f64) -> [f64; 6] {
-    let (x0, y0, x1, y1) = (rect[0] + marge, rect[1] + marge, rect[2] - marge, rect[3] - marge);
+fn attendu_cm(rect: [i64; 4], marge: i64, l: i64, h: i64) -> [Mesure; 6] {
+    let (r, m) = (rect.map(pt), pt(marge));
+    let (x0, y0, x1, y1) = (r[0] + m, r[1] + m, r[2] - m, r[3] - m);
     let (cl, ch) = (x1 - x0, y1 - y0);
-    let k = (cl / l).min(ch / h);
-    let (dl, dh) = (l * k, h * k);
-    let x = x0 + (cl - dl) / 2.0;
-    let haut = y0 + (ch - dh) / 2.0;
-    [dl, 0.0, 0.0, dh, x, HAUTEUR - haut - dh]
+    // La plus grande taille aux proportions l × h : la largeur limite si cl / l ≤ ch / h.
+    let (dl, dh) = if cl * pt(h) <= ch * pt(l) { (cl, cl.fois_rapport(h, l).unwrap()) } else { (ch.fois_rapport(l, h).unwrap(), ch) };
+    let x = x0 + (cl - dl) / 2;
+    let haut = y0 + (ch - dh) / 2;
+    [dl, pt(0), pt(0), dh, x, HAUTEUR - haut - dh]
 }
 
 /// Les identifiants du `/Contents` d'une page (toujours un tableau après une pose d'image).
@@ -594,13 +597,13 @@ fn texte_flux(doc: &Document, id: ObjectId) -> String {
 }
 
 /// Le dernier flux de la page (les images) → les `cm` posées, dans l'ordre, et les noms `Do`.
-fn poses(doc: &Document, page: ObjectId) -> Vec<([f64; 6], String)> {
+fn poses(doc: &Document, page: ObjectId) -> Vec<([Mesure; 6], String)> {
     let flux = texte_flux(doc, *contenus(doc, page).last().unwrap());
     let mut out = Vec::new();
-    let mut cm: Option<[f64; 6]> = None;
+    let mut cm: Option<[Mesure; 6]> = None;
     for l in flux.lines() {
         if let Some(r) = l.strip_suffix(" cm") {
-            let v: Vec<f64> = r.split_whitespace().map(|x| x.parse().unwrap()).collect();
+            let v: Vec<Mesure> = r.split_whitespace().map(|x| x.parse().unwrap()).collect();
             cm = Some([v[0], v[1], v[2], v[3], v[4], v[5]]);
         } else if let Some(n) = l.strip_prefix('/').and_then(|r| r.strip_suffix(" Do")) {
             out.push((cm.take().unwrap(), n.to_string()));
@@ -624,7 +627,7 @@ fn xobjet(doc: &Document, page: ObjectId, nom: &str) -> (ObjectId, Object) {
     (id, doc.get_object(id).unwrap().clone())
 }
 
-fn verifie_cm(obtenu: [f64; 6], attendu: [f64; 6]) {
+fn verifie_cm(obtenu: [Mesure; 6], attendu: [Mesure; 6]) {
     for (a, b) in obtenu.iter().zip(attendu.iter()) {
         assert!(proche(*a, *b), "cm {:?} attendu {:?}", obtenu, attendu);
     }
@@ -634,7 +637,7 @@ fn verifie_cm(obtenu: [f64; 6], attendu: [f64; 6]) {
 fn image_png_avec_transparence_a_un_smask() {
     let d = dossier_temp("formulaire-png-alpha");
     let f = png(&d, "alpha.png", 40, 20, true);
-    let rect = [100.0, 100.0, 200.0, 180.0];
+    let rect = [100, 100, 200, 180];
     let sortie = remplir_ok(&formulaire(None), json!({"format": 3, "images": [{"page": 1, "rect": rect, "marge": 5, "fichier": f}]}));
     let doc = charge(&sortie);
     let (_, x) = xobjet(&doc, PAGE1, "PPImage1");
@@ -642,8 +645,8 @@ fn image_png_avec_transparence_a_un_smask() {
     assert_eq!(s.dict.get(b"Subtype").unwrap().as_name().unwrap(), b"Image");
     assert_eq!(s.dict.get(b"Filter").unwrap().as_name().unwrap(), b"FlateDecode");
     assert_eq!(s.dict.get(b"ColorSpace").unwrap().as_name().unwrap(), b"DeviceRGB");
-    assert_eq!(num(s.dict.get(b"Width").unwrap()), 40.0);
-    assert_eq!(num(s.dict.get(b"Height").unwrap()), 20.0);
+    assert_eq!(num(s.dict.get(b"Width").unwrap()), pt(40));
+    assert_eq!(num(s.dict.get(b"Height").unwrap()), pt(20));
     let masque = s.dict.get(b"SMask").expect("la transparence passe en /SMask").as_reference().unwrap();
     let m = doc.get_object(masque).unwrap().as_stream().unwrap();
     assert_eq!(m.dict.get(b"ColorSpace").unwrap().as_name().unwrap(), b"DeviceGray");
@@ -658,8 +661,8 @@ fn image_png_avec_transparence_a_un_smask() {
     let p = poses(&doc, PAGE1);
     assert_eq!(p.len(), 1);
     assert_eq!(p[0].1, "PPImage1");
-    verifie_cm(p[0].0, attendu_cm(rect, 5.0, 40.0, 20.0));
-    verifie_cm(p[0].0, [90.0, 0.0, 0.0, 45.0, 105.0, 679.5]);
+    verifie_cm(p[0].0, attendu_cm(rect, 5, 40, 20));
+    verifie_cm(p[0].0, [pt(90), pt(0), pt(0), pt(45), pt(105), mesure("679.5")]);
 }
 
 #[test]
@@ -685,30 +688,30 @@ fn image_png_opaque_n_a_pas_de_smask() {
     // carré 30 × 30 dans 100 × 50 : 50 × 50, centré
     let p = poses(&doc, PAGE2);
     assert_eq!(p.len(), 2);
-    verifie_cm(p[0].0, attendu_cm([50.0, 50.0, 150.0, 100.0], 0.0, 30.0, 30.0));
-    verifie_cm(p[0].0, [50.0, 0.0, 0.0, 50.0, 75.0, 742.0]);
-    verifie_cm(p[1].0, attendu_cm([50.0, 120.0, 150.0, 170.0], 0.0, 10.0, 10.0));
+    verifie_cm(p[0].0, attendu_cm([50, 50, 150, 100], 0, 30, 30));
+    verifie_cm(p[0].0, [50, 0, 0, 50, 75, 742].map(pt));
+    verifie_cm(p[1].0, attendu_cm([50, 120, 150, 170], 0, 10, 10));
 }
 
 #[test]
 fn image_jpeg_rvb_passe_tel_quel() {
     let d = dossier_temp("formulaire-jpeg");
     let (f, octets) = jpeg(&d, "tampon.jpg", 30, 20);
-    let rect = [300.0, 200.0, 400.0, 300.0];
+    let rect = [300, 200, 400, 300];
     let sortie = remplir_ok(&formulaire(None), json!({"format": 3, "images": [{"page": 1, "rect": rect, "marge": 2, "fichier": f}]}));
     let doc = charge(&sortie);
     let (_, x) = xobjet(&doc, PAGE1, "PPImage1");
     let s = x.as_stream().unwrap();
     assert_eq!(s.dict.get(b"Filter").unwrap().as_name().unwrap(), b"DCTDecode");
     assert_eq!(s.dict.get(b"ColorSpace").unwrap().as_name().unwrap(), b"DeviceRGB");
-    assert_eq!(num(s.dict.get(b"Width").unwrap()), 30.0);
-    assert_eq!(num(s.dict.get(b"Height").unwrap()), 20.0);
+    assert_eq!(num(s.dict.get(b"Width").unwrap()), pt(30));
+    assert_eq!(num(s.dict.get(b"Height").unwrap()), pt(20));
     assert_eq!(s.content, octets, "aucune recompression");
     assert!(s.dict.get(b"SMask").is_err());
     // 3:2 dans 96 × 96 : 96 × 64
     let p = poses(&doc, PAGE1);
-    verifie_cm(p[0].0, attendu_cm(rect, 2.0, 30.0, 20.0));
-    verifie_cm(p[0].0, [96.0, 0.0, 0.0, 64.0, 302.0, 842.0 - 202.0 - 16.0 - 64.0]);
+    verifie_cm(p[0].0, attendu_cm(rect, 2, 30, 20));
+    verifie_cm(p[0].0, [96, 0, 0, 64, 302, 842 - 202 - 16 - 64].map(pt));
 }
 
 #[test]
@@ -768,11 +771,12 @@ fn image_les_proportions_sont_gardees_dans_les_deux_sens() {
             {"page": 1, "rect": [10, 100, 110, 180], "marge": 0, "fichier": haute}]}),
     );
     let p = poses(&charge(&sortie), PAGE1);
-    verifie_cm(p[0].0, attendu_cm([10.0, 10.0, 110.0, 90.0], 0.0, 60.0, 10.0));
-    verifie_cm(p[0].0, [100.0, 0.0, 0.0, 100.0 / 6.0, 10.0, 842.0 - 10.0 - (80.0 - 100.0 / 6.0) / 2.0 - 100.0 / 6.0]);
-    verifie_cm(p[1].0, attendu_cm([10.0, 100.0, 110.0, 180.0], 0.0, 10.0, 60.0));
+    verifie_cm(p[0].0, attendu_cm([10, 10, 110, 90], 0, 60, 10));
+    let sixieme = pt(100) / 6;
+    verifie_cm(p[0].0, [pt(100), pt(0), pt(0), sixieme, pt(10), pt(842 - 10) - (pt(80) - sixieme) / 2 - sixieme]);
+    verifie_cm(p[1].0, attendu_cm([10, 100, 110, 180], 0, 10, 60));
     // le rapport largeur / hauteur de la pose est celui de l'image
-    assert!(proche(p[0].0[0] / p[0].0[3], 6.0) && proche(p[1].0[0] / p[1].0[3], 1.0 / 6.0));
+    assert!(proche(p[0].0[0].sur(p[0].0[3]).unwrap(), pt(6)) && proche(p[1].0[0].sur(p[1].0[3]).unwrap(), pt(1) / 6));
 }
 
 #[test]
@@ -913,7 +917,7 @@ fn image_dans_le_cadre_d_une_page_decalee() {
     let doc = charge(&sortie);
     let p = poses(&doc, (3, 0));
     // 20 × 20 centré dans 100 × 20 : x = 10 + 40 + 40, haut = 100 → y = 420 - 100 - 20
-    verifie_cm(p[0].0, [20.0, 0.0, 0.0, 20.0, 90.0, 300.0]);
+    verifie_cm(p[0].0, [20, 0, 0, 20, 90, 300].map(pt));
 }
 
 // ------------------------------------------------------------------------------ déterminisme
@@ -973,8 +977,8 @@ fn ajouter_champs_a_un_document_de_la_fabrique_se_relit_et_se_remplit() {
     assert_eq!(c["IMPRIME"]["valeur"], json!("12/10/2026"));
     assert_eq!(c["IMPRIME"]["lecture_seule"], json!(true));
     assert_eq!(c["IMPRIME"]["page"], json!(1));
-    let r: Vec<f64> = c["IMPRIME"]["rect"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect();
-    assert!(proche(r[0], 60.0) && proche(r[1], 100.0) && proche(r[2], 160.0) && proche(r[3], 116.0), "{:?}", r);
+    let r: Vec<Mesure> = c["IMPRIME"]["rect"].as_array().unwrap().iter().map(|x| Mesure::lue(&x.to_string()).unwrap()).collect();
+    assert!(proche(r[0], pt(60)) && proche(r[1], pt(100)) && proche(r[2], pt(160)) && proche(r[3], pt(116)), "{:?}", r);
     assert_eq!(c["A_REMPLIR"]["valeur"], Value::Null);
     assert_eq!(c["A_REMPLIR"]["lecture_seule"], json!(false));
     assert_eq!(c["A_REMPLIR"]["page"], json!(2));

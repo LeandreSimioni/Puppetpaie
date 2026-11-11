@@ -29,9 +29,9 @@ pub fn octets_fabrique(n: usize) -> Vec<u8> {
         .collect();
     let desc = json!({
         "format": 1,
-        "page": {"largeur": 400.0, "hauteur": 500.0,
-                 "marges": {"haut": 50.0, "droite": 50.0, "bas": 50.0, "gauche": 50.0}},
-        "police": {"taille": 10.0, "interligne": 1.25, "couleur": "#000000"},
+        "page": {"largeur": 400, "hauteur": 500,
+                 "marges": {"haut": 50, "droite": 50, "bas": 50, "gauche": 50}},
+        "police": {"taille": 10, "interligne": fabrique_pdf::mesure::mesure("1.25"), "couleur": "#000000"},
         "documents": documents
     });
     fabrique_pdf::Description::lire(&desc.to_string())

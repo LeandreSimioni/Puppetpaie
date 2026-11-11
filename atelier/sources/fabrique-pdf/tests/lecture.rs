@@ -91,9 +91,9 @@ fn texte_d_un_paragraphe_long_une_ligne_par_ligne_du_pdf() {
     let d = dossier_temp("lecture-texte-lignes");
     let desc = json!({
         "format": 1,
-        "page": {"largeur": 200.0, "hauteur": 300.0,
-                 "marges": {"haut": 20.0, "droite": 20.0, "bas": 20.0, "gauche": 20.0}},
-        "police": {"taille": 10.0, "interligne": 1.25, "couleur": "#000000"},
+        "page": {"largeur": 200, "hauteur": 300,
+                 "marges": {"haut": 20, "droite": 20, "bas": 20, "gauche": 20}},
+        "police": {"taille": 10, "interligne": fabrique_pdf::mesure::mesure("1.25"), "couleur": "#000000"},
         "documents": [{"blocs": [{"type": "paragraphe", "morceaux": [{"texte":
             "Un paragraphe assez long pour passer à la ligne plusieurs fois dans une page étroite, sans rien perdre."}]}]}]
     });

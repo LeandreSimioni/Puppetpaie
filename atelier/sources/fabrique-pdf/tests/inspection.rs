@@ -5,6 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
+use fabrique_pdf::mesure::{mesure, Mesure};
 use serde_json::{json, Value};
 
 mod commun;
@@ -28,35 +29,42 @@ fn ecrire(dossier: &Path, nom: &str, octets: &[u8]) -> String {
     chemin(&p)
 }
 
-fn f(v: &Value) -> f64 {
-    v.as_f64().unwrap()
+/// Un nombre du JSON, lu par son texte.
+fn f(v: &Value) -> Mesure {
+    Mesure::lue(&v.to_string()).unwrap()
 }
 
-fn boite(v: &Value) -> [f64; 4] {
+fn boite(v: &Value) -> [Mesure; 4] {
     let a = v.as_array().unwrap();
     assert_eq!(a.len(), 4);
     [f(&a[0]), f(&a[1]), f(&a[2]), f(&a[3])]
 }
 
-fn proche(a: f64, b: f64, tolerance: f64) -> bool {
-    (a - b).abs() <= tolerance
+/// `n` points.
+fn pt(n: i64) -> Mesure {
+    Mesure::entier(n)
+}
+
+/// `a` vaut `b` à `tolerance` près (une mesure écrite en décimal).
+fn proche(a: Mesure, b: Mesure, tolerance: &str) -> bool {
+    (a - b).abs() <= mesure(tolerance)
 }
 
 /// Un contrat de la fabrique : un titre, un paragraphe, une image, un tableau cadré, sur 2 pages.
-fn contrat(largeur: f64, hauteur: f64) -> Vec<u8> {
+fn contrat(largeur: Mesure, hauteur: Mesure) -> Vec<u8> {
     let para = |t: &str| json!({"type": "paragraphe", "morceaux": [{"texte": t}]});
     let desc = json!({
         "format": 1,
         "page": {"largeur": largeur, "hauteur": hauteur,
-                 "marges": {"haut": 50.0, "droite": 50.0, "bas": 50.0, "gauche": 50.0}},
-        "police": {"taille": 10.0, "interligne": 1.25, "couleur": "#000000"},
+                 "marges": {"haut": 50, "droite": 50, "bas": 50, "gauche": 50}},
+        "police": {"taille": 10, "interligne": mesure("1.25"), "couleur": "#000000"},
         "titre": "Contrat éàç — DUPONT",
         "documents": [{"blocs": [
             para("Bonjour le monde"),
-            json!({"type": "image", "chemin": chemin(&exemples().join("signature.png")), "largeur": 92.0}),
+            json!({"type": "image", "chemin": chemin(&exemples().join("signature.png")), "largeur": 92}),
             json!({"type": "tableau",
-                   "colonnes": [{"largeur": 0.6}, {"largeur": 0.4, "alignement": "droite"}],
-                   "filets_cellules": {"couleur": "#000000", "epaisseur": 0.5},
+                   "colonnes": [{"largeur": mesure("0.6")}, {"largeur": mesure("0.4"), "alignement": "droite"}],
+                   "filets_cellules": {"couleur": "#000000", "epaisseur": mesure("0.5")},
                    "lignes": [{"cellules": ["Salaire brut", "1 234,56"]}, {"cellules": ["Net", "987,65"]}]}),
         ]}, {"blocs": [para("Deuxième page")]}]
     });
@@ -68,14 +76,14 @@ fn contrat(largeur: f64, hauteur: f64) -> Vec<u8> {
 #[test]
 fn contrat_de_la_fabrique_taille_mots_image_traits_polices_metadonnees() {
     let d = dossier_temp("inspection-contrat");
-    let pdf = ecrire(&d, "contrat.pdf", &contrat(400.0, 500.0));
+    let pdf = ecrire(&d, "contrat.pdf", &contrat(pt(400), pt(500)));
     let j = inspecter(&pdf);
     assert!(j["chiffrement"].is_null());
     assert_eq!(j["metadonnees"]["Title"], "Contrat éàç — DUPONT");
     let pages = j["pages"].as_array().unwrap();
     assert_eq!(pages.len(), 2);
     let p = &pages[0];
-    assert_eq!((f(&p["largeur"]), f(&p["hauteur"])), (400.0, 500.0));
+    assert_eq!((f(&p["largeur"]), f(&p["hauteur"])), (pt(400), pt(500)));
     assert_eq!(p["rotation"], 0);
 
     // Les polices : Liberation Sans, avec son préfixe de sous-ensemble.
@@ -87,10 +95,10 @@ fn contrat_de_la_fabrique_taille_mots_image_traits_polices_metadonnees() {
     let mots = p["mots"].as_array().unwrap();
     let bonjour = mots.iter().find(|m| m["texte"] == "Bonjour").expect("le mot Bonjour");
     let b = boite(&bonjour["rect"]);
-    assert!(proche(b[0], 50.0, 1.0), "x0 = marge gauche : {:?}", b);
-    assert!(b[1] >= 50.0 && b[3] < 80.0, "juste sous la marge haute : {:?}", b);
-    assert!(b[3] - b[1] > 9.0 && b[3] - b[1] < 13.0, "hauteur d'un corps de 10 : {:?}", b);
-    assert!(b[2] - b[0] > 25.0 && b[2] - b[0] < 45.0, "largeur de « Bonjour » : {:?}", b);
+    assert!(proche(b[0], pt(50), "1"), "x0 = marge gauche : {:?}", b);
+    assert!(b[1] >= pt(50) && b[3] < pt(80), "juste sous la marge haute : {:?}", b);
+    assert!(b[3] - b[1] > pt(9) && b[3] - b[1] < pt(13), "hauteur d'un corps de 10 : {:?}", b);
+    assert!(b[2] - b[0] > pt(25) && b[2] - b[0] < pt(45), "largeur de « Bonjour » : {:?}", b);
     assert_eq!(bonjour["ligne"], 0);
     let le = mots.iter().find(|m| m["texte"] == "le").unwrap();
     let monde = mots.iter().find(|m| m["texte"] == "monde").unwrap();
@@ -101,7 +109,7 @@ fn contrat_de_la_fabrique_taille_mots_image_traits_polices_metadonnees() {
     let images = p["images"].as_array().unwrap();
     assert_eq!(images.len(), 1);
     let i = boite(&images[0]);
-    assert!(proche(i[2] - i[0], 92.0, 0.1) && proche(i[0], 50.0, 0.1), "{:?}", i);
+    assert!(proche(i[2] - i[0], pt(92), "0.1") && proche(i[0], pt(50), "0.1"), "{:?}", i);
     assert!(i[1] > b[3] && i[3] > i[1], "sous le paragraphe : {:?}", i);
 
     // Les traits : le cadre de chaque cellule (4 cellules, filets de 0,5 pt dessinés en rectangles
@@ -110,7 +118,7 @@ fn contrat_de_la_fabrique_taille_mots_image_traits_polices_metadonnees() {
     assert!(traits.len() >= 4, "{} traits", traits.len());
     for t in traits {
         let t = boite(t);
-        assert!(t[0] >= 0.0 && t[2] <= 400.0 && t[1] >= 0.0 && t[3] <= 500.0 && t[0] <= t[2] && t[1] <= t[3], "{:?}", t);
+        assert!(t[0] >= Mesure::ZERO && t[2] <= pt(400) && t[1] >= Mesure::ZERO && t[3] <= pt(500) && t[0] <= t[2] && t[1] <= t[3], "{:?}", t);
     }
 
     // Le texte des mots, ligne par ligne, redonne celui de --texte (espaces ramenés à un).
@@ -139,17 +147,17 @@ fn contrat_de_la_fabrique_taille_mots_image_traits_polices_metadonnees() {
 #[test]
 fn page_paysage() {
     let d = dossier_temp("inspection-paysage");
-    let pdf = ecrire(&d, "paysage.pdf", &contrat(841.89, 595.28));
+    let pdf = ecrire(&d, "paysage.pdf", &contrat(mesure("841.89"), mesure("595.28")));
     let j = inspecter(&pdf);
     let p = &j["pages"][0];
-    assert_eq!((f(&p["largeur"]), f(&p["hauteur"])), (841.89, 595.28));
+    assert_eq!((f(&p["largeur"]), f(&p["hauteur"])), (mesure("841.89"), mesure("595.28")));
     assert_eq!(p["rotation"], 0);
 }
 
 #[test]
 fn pdf_verrouille_se_lit_et_dit_son_chiffrement() {
     let d = dossier_temp("inspection-verrou");
-    let clair = ecrire(&d, "clair.pdf", &contrat(400.0, 500.0));
+    let clair = ecrire(&d, "clair.pdf", &contrat(pt(400), pt(500)));
     let verrouille = chemin(&d.join("verrouille.pdf"));
     assert_eq!(lancer(&["--verrouiller", &clair, &verrouille]).status.code(), Some(0));
     let (a, b) = (inspecter(&clair), inspecter(&verrouille));
@@ -180,13 +188,13 @@ fn page_tournee() {
     let pdf = ecrire(&d, "tournee.pdf", &pdf_a_la_main(&objets, 0));
     let j = inspecter(&pdf);
     let p = &j["pages"][0];
-    assert_eq!((f(&p["largeur"]), f(&p["hauteur"])), (100.0, 200.0));
+    assert_eq!((f(&p["largeur"]), f(&p["hauteur"])), (pt(100), pt(200)));
     assert_eq!(p["rotation"], 90);
     assert_eq!(p["polices"], json!(["Helvetica"]));
     let b = boite(&p["mots"][0]["rect"]);
     // Helvetica non incorporée : ascendant 1,075 et descendant 0,299 (ceux de MuPDF), corps 10
-    assert!(proche(b[0], 30.0, 0.01) && proche(b[1], 79.25, 0.01) && proche(b[3], 92.99, 0.01), "{:?}", b);
-    assert_eq!(boite(&p["traits"][0]), [20.0, 20.0, 60.0, 40.0]);
+    assert!(proche(b[0], pt(30), "0.01") && proche(b[1], mesure("79.25"), "0.01") && proche(b[3], mesure("92.99"), "0.01"), "{:?}", b);
+    assert_eq!(boite(&p["traits"][0]), [20, 20, 60, 40].map(pt));
 }
 
 #[test]
@@ -220,16 +228,16 @@ fn images_en_ligne_chemins_peints_et_formulaires() {
     let pdf = ecrire(&d, "dessins.pdf", &pdf_a_la_main(&objets, 0));
     let p = &inspecter(&pdf)["pages"][0];
 
-    let traits: Vec<[f64; 4]> = p["traits"].as_array().unwrap().iter().map(boite).collect();
+    let traits: Vec<[Mesure; 4]> = p["traits"].as_array().unwrap().iter().map(boite).collect();
     // y vers le bas : hauteur 300, donc y_haut = 300 − y_pdf
     assert_eq!(traits.len(), 4, "{:?}", traits);
-    assert_eq!(traits[0], [150.0, 130.0, 170.0, 150.0], "rempli puis tracé : un seul dessin");
-    assert_eq!(traits[1], [10.0, 240.0, 110.0, 290.0]);
-    assert_eq!(traits[2], [20.0, 220.0, 60.0, 280.0]);
-    assert_eq!(traits[3], [0.0, 190.0, 10.0, 200.0], "le rectangle du formulaire, décalé de 100 vers le haut");
+    assert_eq!(traits[0], [150, 130, 170, 150].map(pt), "rempli puis tracé : un seul dessin");
+    assert_eq!(traits[1], [10, 240, 110, 290].map(pt));
+    assert_eq!(traits[2], [20, 220, 60, 280].map(pt));
+    assert_eq!(traits[3], [0, 190, 10, 200].map(pt), "le rectangle du formulaire, décalé de 100 vers le haut");
 
-    let images: Vec<[f64; 4]> = p["images"].as_array().unwrap().iter().map(boite).collect();
-    assert_eq!(images, vec![[20.0, 230.0, 70.0, 270.0], [100.0, 80.0, 130.0, 100.0]]);
+    let images: Vec<[Mesure; 4]> = p["images"].as_array().unwrap().iter().map(boite).collect();
+    assert_eq!(images, vec![[20, 230, 70, 270].map(pt), [100, 80, 130, 100].map(pt)]);
 
     assert_eq!(p["polices"], json!(["Helvetica", "Courier"]));
     let mots: Vec<&str> = p["mots"].as_array().unwrap().iter().map(|m| m["texte"].as_str().unwrap()).collect();
@@ -256,7 +264,7 @@ fn metadonnees_en_utf16_et_pdfdocencoding() {
     let j = inspecter(&sans);
     assert_eq!(j["metadonnees"], json!({}));
     assert_eq!(j["pages"][0]["mots"], json!([]));
-    assert_eq!((f(&j["pages"][0]["largeur"]), f(&j["pages"][0]["hauteur"])), (100.0, 100.0));
+    assert_eq!((f(&j["pages"][0]["largeur"]), f(&j["pages"][0]["hauteur"])), (pt(100), pt(100)));
 }
 
 #[test]
