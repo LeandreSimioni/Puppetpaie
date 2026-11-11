@@ -335,24 +335,3 @@ pub(crate) fn date_du_releve(jour: &Jour) -> String {
     jour.jj_mm_aaaa()
 }
 
-/// La somme de flottants : le premier terme, puis la somme compensee de Neumaier, la
-/// compensation ajoutee a la fin si elle est non nulle et finie. Les frontieres des tableaux du cahier (`usages.rs`) sont des
-/// moyennes : ce calcul redonne, au dernier bit, celles du referentiel livre.
-pub(crate) fn somme_compensee(valeurs: &[f64]) -> f64 {
-    let Some((premier, reste)) = valeurs.split_first() else { return 0.0 };
-    let mut f = 0.0 + premier;
-    let mut c = 0.0;
-    for &x in reste {
-        let t = f + x;
-        if f.abs() >= x.abs() {
-            c += (f - t) + x;
-        } else {
-            c += (x - t) + f;
-        }
-        f = t;
-    }
-    if c != 0.0 && c.is_finite() {
-        f += c;
-    }
-    f
-}
