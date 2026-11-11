@@ -594,10 +594,7 @@ fn oxygene(ecritures: &[Ecriture], env: &Envoi) -> R<Vec<u8>> {
         let section = env.section(e);
         let mut z: BTreeMap<&str, String> = zones.iter().map(|k| (k.as_str(), String::new())).collect();
         // Le poste analytique d'une ligne ventilee : celui que la compagnie dit ; sinon la zone reste vide.
-        let poste = match (&section, &env.plan.poste_analytique) {
-            (Some(_), Some(p)) => tenir("Oxygène", "CODAGE", p, 9)?,
-            (None, _) | (Some(_), None) => String::new(),
-        };
+        let poste: String = section.as_ref().and(env.plan.poste_analytique.as_ref()).map(|p| tenir("Oxygène", "CODAGE", p, 9)).transpose()?.into_iter().collect();
         let section = ou_vide(section);
         for (k, v) in [
             ("NUMJL", e.journal.clone()),
