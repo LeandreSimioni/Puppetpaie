@@ -589,8 +589,8 @@ pub struct Declaration {
     pub quand_dit: Option<String>,
     pub detail: String,
     pub marche: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ou: Option<Vec<String>>,
+    /// Les services ou elle se fait (une declaration hors DSN qui les nomme) ; aucun pour les autres.
+    pub ou: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fichier: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -718,7 +718,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 quand_dit: Some(e.phrase.clone()),
                 detail: r.detail.clone(),
                 marche: marche.map(String::from),
-                ou: None,
+                ou: Vec::new(),
                 fichier: None,
                 etape: None,
                 pret: Pret::default(),
@@ -739,12 +739,12 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 } else {
                     "Compléter le contrat dans la compagnie, puis écrire le signalement."
                 };
-                (Genre::Signalement, marche, None)
+                (Genre::Signalement, marche, Vec::new())
             } else {
                 // HORS DSN : la declaration d'accident, l'attestation de salaire. Le logiciel ne la fait pas : ou la faire.
-                let lieux: Option<Vec<String>> = match &ob.ou {
-                    Some(declarations::obligations::Ou::Lieux(l)) => Some(l.iter().map(|x| x.libelle.clone()).collect()),
-                    Some(declarations::obligations::Ou::Phrase(_)) | None => None,
+                let lieux: Vec<String> = match &ob.ou {
+                    Some(declarations::obligations::Ou::Lieux(l)) => l.iter().map(|x| x.libelle.clone()).collect(),
+                    Some(declarations::obligations::Ou::Phrase(_)) | None => Vec::new(),
                 };
                 (Genre::HorsDsn, "Elle ne part pas avec la DSN : à faire sur le service de l'organisme, puis à dire faite dans la compagnie.", lieux)
             };
@@ -762,7 +762,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
                 butoir: jour,
                 detail: r.detail.clone(),
                 marche: Some("La DPAE se dépose dans la compagnie, avant la première heure de travail.".into()),
-                ou: None,
+                ou: Vec::new(),
                 fichier: None,
                 etape: None,
                 pret: Pret::default(),

@@ -77,7 +77,7 @@ const CALE: &str = r#"<script>
   window.appel = (nom, charge) => fetch("/api/" + nom, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Jeton": JETON },
-      body: JSON.stringify(charge || {}),
+      body: JSON.stringify(charge),
     }).then(lire, parti);
   document.addEventListener("DOMContentLoaded", () => window.dispatchEvent(new Event("pywebviewready")));
 })();
