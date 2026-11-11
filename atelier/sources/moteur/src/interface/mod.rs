@@ -513,11 +513,10 @@ impl Fenetre {
             Some(j) => j,
             None => self.local.join("interface.log"),
         };
-        if let Some(d) = chemin.parent() {
-            let _ = std::fs::create_dir_all(d);
-        }
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&chemin) {
-            let _ = f.write_all(texte.as_bytes());
+        // Le journal de la fenetre n'a personne a qui dire qu'il ne s'ecrit pas : l'echec est note a sa naissance
+        // (`echec::noter_echec`, que les incidents lisent), et la fenetre continue.
+        if let Err(note) = ajouter_au_journal(&chemin, texte) {
+            drop(note);
         }
     }
 
@@ -602,9 +601,9 @@ impl Fenetre {
         // le `Contexte`), et la fenetre pourra en servir plusieurs a la fois.
         let journal = racine.join(JOURNAL_INTERFACE);
         if let Some(d) = journal.parent() {
-            let _ = std::fs::create_dir_all(d);
+            std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(d, &e))?;
         }
-        let _ = std::fs::write(&journal, "");
+        std::fs::write(&journal, "").map_err(|e| socle::echec::du_disque(&journal, &e))?;
         *tenu(&self.journal) = Some(journal);
         self.ecrire(&format!("Compagnie : {}\n", racine.display()));
         // La compagnie choisie passe devant les autres sur le fil des le choix : son calcul local se fait pendant qu'on
@@ -1125,8 +1124,12 @@ impl Fenetre {
         }
         let dossier = racine.join("gabarits").join("identite");
         for (ext, mime) in [(".png", "image/png"), (".jpg", "image/jpeg"), (".svg", "image/svg+xml")] {
-            if let Ok(o) = std::fs::read(dossier.join(format!("{}{}", quoi, ext))) {
-                return Reponse::nouvelle(200, mime, o);
+            let f = dossier.join(format!("{}{}", quoi, ext));
+            match std::fs::read(&f) {
+                Ok(o) => return Reponse::nouvelle(200, mime, o),
+                // Pas d'image dans ce format : le suivant.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Reponse::nouvelle(500, "text/plain; charset=utf-8", socle::echec::du_disque(&f, &e).phrase),
             }
         }
         rien()
@@ -1136,6 +1139,15 @@ impl Fenetre {
     pub fn adresse(&self, hote: &str, port: u16) -> String {
         format!("http://{}:{}/?jeton={}", hote, port, self.jeton)
     }
+}
+
+/// Ajoute `texte` au journal `chemin` (cree avec son dossier) ; le disque qui refuse se dit.
+fn ajouter_au_journal(chemin: &Path, texte: &str) -> R<()> {
+    if let Some(d) = chemin.parent() {
+        std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(d, &e))?;
+    }
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(chemin).map_err(|e| socle::echec::du_disque(chemin, &e))?;
+    f.write_all(texte.as_bytes()).map_err(|e| socle::echec::du_disque(chemin, &e))
 }
 
 /// La ligne du journal de l'interface pour une route servie : `HH:MM:SS route NOM N ms`, et ` refus CLASSE` quand elle a
@@ -1169,10 +1181,17 @@ pub fn preparer_l_installation() {
         compagnie::maj::noter(&inst, &t);
     }
     // Une compagnie supprimee dont un fichier resistait (`suppression::effacer`) : son reste cache part maintenant.
-    let restes = suppression::effacer_les_restes(&inst);
-    if !restes.is_empty() {
-        let noms: Vec<String> = restes.iter().map(|p| p.display().to_string()).collect();
-        compagnie::maj::noter(&inst, &format!("Restes de compagnies supprimees effaces : {}.", noms.join(", ")));
+    match suppression::effacer_les_restes(&inst) {
+        Ok(restes) => {
+            if !restes.partis.is_empty() {
+                let noms: Vec<String> = restes.partis.iter().map(|p| p.display().to_string()).collect();
+                compagnie::maj::noter(&inst, &format!("Restes de compagnies supprimees effaces : {}.", noms.join(", ")));
+            }
+            for phrase in &restes.resistent {
+                compagnie::maj::noter(&inst, &format!("Un reste de compagnie supprimee resiste, il s'effacera au lancement suivant : {}", phrase));
+            }
+        }
+        Err(e) => compagnie::maj::noter(&inst, &format!("Les restes de compagnies supprimees ne se cherchent pas : {}", e.phrase)),
     }
 }
 
@@ -1382,9 +1401,14 @@ pub fn commande(args: &[String]) -> i32 {
     // (la page interroge la veille chaque minute).
     if let Some(mut p) = navigateur {
         let debut = Instant::now();
-        let _ = p.wait();
-        if debut.elapsed() > Duration::from_secs(5) {
-            return 0;
+        match p.wait() {
+            Ok(_ferme) => {
+                if debut.elapsed() > Duration::from_secs(5) {
+                    return 0;
+                }
+            }
+            // Le navigateur ne se laisse pas attendre : le guet du silence arretera la fenetre.
+            Err(e) => f.ecrire(&format!("Le navigateur ne se laisse pas attendre ({}) : la fenetre s'arretera apres cinq minutes sans page.\n", e)),
         }
     }
     if options.sans_navigateur {

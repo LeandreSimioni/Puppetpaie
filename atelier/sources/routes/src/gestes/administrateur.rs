@@ -351,10 +351,7 @@ fn remplacer(chemin: &Path, octets: &[u8]) -> R<()> {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600)).map_err(|e| socle::echec::du_disque(&tmp, &e))?;
     }
-    std::fs::rename(&tmp, chemin).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        socle::echec::du_disque(&chemin, &e)
-    })
+    std::fs::rename(&tmp, chemin).map_err(|e| socle::fichiers::effacer_apres(socle::echec::du_disque(&chemin, &e), &tmp))
 }
 
 /// Le fichier `chemin` tel qu'il est, pour le remettre (`None` : il n'existe pas).
@@ -966,12 +963,25 @@ pub fn tableau(o: &Options, inst: &Path, relever: bool) -> R<TableauAdministrate
     let mut par = Vec::new();
     for r in rattachees(inst)? {
         if relever {
-            // Ce qui se releve ou non se voit dans le tableau refait juste apres : le releve n'en dit rien de plus.
-            if let Ok(t) = refaire_compagnie(o, &r) {
-                for d in t.declarations.iter().filter(|d| d.etape == Some(Etape::EnTest)) {
-                    let charge = en_charge(designation(d)?)?;
-                    let _ = crate::servir_la_route(&o_de(o, &r), Route::BilanRepetition, &charge);
+            // Ce qui est parti en test et attend son compte rendu se releve ; ce qui en revient se voit dans le tableau
+            // refait juste apres. Un releve refuse se dit a la ligne de sa compagnie, a la place de son tableau.
+            match refaire_compagnie(o, &r) {
+                Ok(t) => {
+                    let mut refuse = None;
+                    for d in t.declarations.iter().filter(|d| d.etape == Some(Etape::EnTest)) {
+                        let charge = en_charge(designation(d)?)?;
+                        if let Some(x) = crate::servir_la_route(&o_de(o, &r), Route::BilanRepetition, &charge).refus() {
+                            refuse = Some(Echec { classe: x.classe, phrase: x.phrase.clone(), a_part: None });
+                            break;
+                        }
+                    }
+                    if let Some(e) = refuse {
+                        par.push((r, Err(e)));
+                        continue;
+                    }
                 }
+                // La compagnie ne se refait pas : la ligne qui suit le dit (le meme `refaire_compagnie`).
+                Err(e) => drop(e),
             }
         }
         let t = refaire_compagnie(o, &r);

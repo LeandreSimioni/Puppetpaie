@@ -658,9 +658,13 @@ pub(crate) fn importer(ctx: &Contexte, charge: &crate::import::ChargeDossier) ->
         let frais_avant = Contexte::nouveau(&ctx.racine, None)?;
         crate::importation::bulletins::lire_dossier(&frais_avant, &relu, &deposes, |lu| Ok(lu.ap))
     };
-    let rendu = relire();
-    let _ = std::fs::remove_dir_all(&relu);
-    let mut imp = rendu?;
+    let mut imp = match relire() {
+        Ok(a) => {
+            socle::fichiers::effacer(&relu)?;
+            a
+        }
+        Err(e) => return Err(socle::fichiers::effacer_apres(e, &relu)),
+    };
 
     let mut reponse = std::mem::take(&mut imp.reponse);
     // Le compte rendu est celui du dossier lu (`tri`) : ses chemins, ses fichiers non repris (la relecture ne les voit pas).

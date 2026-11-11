@@ -132,14 +132,16 @@ pub(crate) fn dossier_import(ctx: &Contexte, charge: &ChargeDossier) -> R<PathBu
         None => boite.clone(),
         Some(s) => PathBuf::from(crate::depots::normaliser(s)),
     };
-    // Le dossier nomme est-il la boite : sous la racine de la compagnie, sous son nom. Un parent qui ne se resout pas
-    // n'est pas la racine.
-    let la_boite = d == boite
-        || (d.file_name() == boite.file_name()
-            && match (d.parent().map(Path::canonicalize), ctx.racine.canonicalize()) {
-                (Some(Ok(p)), Ok(r)) => p == r,
-                _ => false,
-            });
+    // Le dossier nomme est-il la boite : sous la racine de la compagnie, sous son nom. Un parent qui n'existe pas n'est
+    // pas la racine ; un disque qui refuse de le dire se dit.
+    let parent = match d.parent().map(Path::canonicalize) {
+        Some(Ok(p)) => Some(p),
+        Some(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Some(Err(e)) => return Err(socle::echec::du_disque(&d, &e)),
+        None => None,
+    };
+    let racine = ctx.racine.canonicalize().map_err(|e| socle::echec::du_disque(&ctx.racine, &e))?;
+    let la_boite = d == boite || (d.file_name() == boite.file_name() && parent.as_ref() == Some(&racine));
     if la_boite && !d.exists() {
         std::fs::create_dir_all(&d).map_err(|e| socle::echec::du_disque(&d, &e).reclasser(Classe::Disque))?;
     }
@@ -750,7 +752,8 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let periode = match (bornes.first(), bornes.last()) {
         (Some(du), Some(au)) if du == au => format!(", en {}", en_clair(du)),
         (Some(du), Some(au)) => format!(", {} à {}", socle::texte::de(&en_clair(du)), en_clair(au)),
-        _ => String::new(),
+        // Aucune borne : la phrase ne dit pas de periode.
+        (None, _) | (_, None) => String::new(),
     };
     let repris_dit = (!quoi.is_empty()).then(|| format!("{}{}", quoi.join(", "), periode));
     let le = importe_le.iter().chain(reprises.iter().filter_map(|r| r.le.as_ref())).max();

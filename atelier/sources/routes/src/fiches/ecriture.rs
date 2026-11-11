@@ -686,7 +686,8 @@ pub(crate) fn sans_valeur(v: Option<&Valeur>) -> bool {
         || match v {
             Some(Valeur::OuiNon(b)) => !b,
             Some(Valeur::Bloc(b)) => b.cases().iter().all(|(_, x)| sans_valeur(Some(x))),
-            _ => false,
+            // Une valeur simple non vide, une liste non vide (`vide` a dit le reste) : elle a une valeur.
+            None | Some(Valeur::Texte(_) | Valeur::Nombre(_) | Valeur::Mots(_) | Valeur::Lignes(_)) => false,
         }
 }
 
@@ -730,7 +731,8 @@ fn meme_case(a: Option<&Valeur>, b: Option<&Valeur>) -> bool {
 fn seulement_completee(avant: &Valeur, apres: &Valeur) -> bool {
     match (avant, apres) {
         (Valeur::Bloc(a), Valeur::Bloc(b)) => a.cases().iter().filter(|(_, x)| !sans_valeur(Some(x))).all(|(k, x)| b.case(k).is_some_and(|y| meme(x, y))),
-        _ => false,
+        // Autre chose qu'une structure, d'un cote ou de l'autre : rien ne s'y complete.
+        (Valeur::Texte(_) | Valeur::Nombre(_) | Valeur::OuiNon(_) | Valeur::Mots(_) | Valeur::Lignes(_) | Valeur::Bloc(_), _) => false,
     }
 }
 

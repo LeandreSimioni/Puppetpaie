@@ -121,7 +121,10 @@ pub fn ouvrir(url: &str, profil: &std::path::Path, journal: &dyn Fn(&str)) -> Op
                     }
                 };
                 if !reel.to_string_lossy().contains("/snap/") {
-                    let _ = std::fs::create_dir_all(profil);
+                    // Un profil que la fenetre ne cree pas, le navigateur tente de le creer lui-meme : la fenetre le note.
+                    if let Err(e) = std::fs::create_dir_all(profil) {
+                        journal(&format!("Le profil {} ne se crée pas ({}).\n", profil.display(), e));
+                    }
                     a.insert(0, format!("--user-data-dir={}", profil.display()));
                 }
                 (exe, a)

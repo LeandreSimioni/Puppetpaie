@@ -899,7 +899,8 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
             let annees = match (de, a) {
                 (Some(de), Some(a)) if de != a => format!(" de {}–{}", de, a),
                 (Some(de), _) => format!(" de {}", de),
-                _ => String::new(),
+                // Aucun numero ne dit son annee : la phrase n'en dit pas.
+                (None, _) => String::new(),
             };
             Some(format!("{} numéro{} sans titre, trouvé{} dans les DSN{} : les nommer si vous savez à quel spectacle ils étaient (cliquer sur la ligne).", n, s, s, annees))
         }
@@ -1097,7 +1098,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<String>)]) 
             Etat::Importee => import::mois::dsn_de_l_ancien_logiciel(ctx, le_mois)?.is_some_and(|d| d.engagements > 0),
             Etat::Passee => m.etat_remplacement(le_mois, None)?.a_envoyer,
             Etat::Attente => false,
-            _ => true,
+            Etat::Refusee | Etat::SansTrace | Etat::ADeposer => true,
         };
         // CE QUE LA PASTILLE DIT, et sa couleur (`socle::ecran::couleur_de_l_etat`) : une DSN qui attend son bilan, ou dont
         // l'ancien logiciel garde la trace, n'est rien que la compagnie ait a faire -- une information, en gris.
@@ -1606,8 +1607,8 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         // avant toute preuve (une fictive ajoutee) ; la page ne demande alors pas le mot de passe du logiciel.
         envoi_sans_mot_de_passe: joue || branchement.refus().is_some(),
         // SUPPRIMER LA COMPAGNIE : la Configuration ne le propose que si elle se supprime -- jamais une
-        // fictive livree, qui se remet a zero (`accueil::suppression::genre`).
-        supprimable: crate::accueil::suppression::genre(&crate::gestes::administrateur::installation_de(&ctx.racine), &ctx.racine).is_ok(),
+        // fictive livree, qui se remet a zero (`accueil::suppression::sorte`).
+        supprimable: crate::accueil::suppression::supprimable(&crate::gestes::administrateur::installation_de(&ctx.racine), &ctx.racine)?,
         suppression: "Tout son dossier est effacé de ce poste : fiches, paies, documents, journaux.",
         // UNE COMPAGNIE CREEE EN DEMO PUIS GARDEE : sa mention, et les mois saisis en demo, ou la page la montre.
         demo: crate::accueil::suppression::mention(&ctx.racine)?,
@@ -1680,8 +1681,8 @@ pub(crate) struct Version {
     courante: String,
     depot: String,
     prete: Option<String>,
-    calcul: String,
-    exigee: String,
+    calcul: Option<String>,
+    exigee: Option<String>,
     signee: bool,
     avant: Option<String>,
     phrase: String,
@@ -1697,13 +1698,11 @@ pub(crate) fn version() -> R<Version> {
     let prete = compagnie::maj::prete(&inst).map_err(|e| e.reclasser(Classe::Illisible))?;
     let courante_v = compagnie::maj::courante(&code)?;
     let avant = if code.join(".avant").join("donnees").is_dir() { Some(compagnie::maj::courante(&code.join(".avant"))?) } else { None };
-    let dite = match &prete {
-        Some(p) if !p.version.is_empty() => format!(" La version {} est prête.", p.version),
-        _ => String::new(),
-    };
+    // Une version prete se dit dans la phrase ; sans elle, la phrase n'en dit rien.
+    let dite: String = prete.iter().filter(|p| !p.version.is_empty()).map(|p| format!(" La version {} est prête.", p.version)).collect();
     let (prete, calcul, exigee) = match prete {
-        Some(p) => (Some(p.version), p.calcul, p.exigee),
-        None => (None, String::new(), String::new()),
+        Some(p) => (Some(p.version), Some(p.calcul), Some(p.exigee)),
+        None => (None, None, None),
     };
     Ok(Version {
         phrase: format!("Version installée : {}.{}", courante_v, dite),

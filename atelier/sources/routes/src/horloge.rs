@@ -310,10 +310,7 @@ pub(crate) fn dernier_rattrapage(racine: &Path, aujourdhui: Option<Jour>) -> R<V
         None => droit::contexte::aujourdhui()?,
     };
     // Une horloge qui n'a jamais joue, ou rien ce jour-la, n'a rien a dire.
-    match memoire(racine)?.and_then(|m| m.dernier) {
-        Some(dernier) if dernier.le == jour => Ok(dernier.fait),
-        _ => Ok(Vec::new()),
-    }
+    Ok(memoire(racine)?.and_then(|m| m.dernier).filter(|dernier| dernier.le == jour).into_iter().flat_map(|dernier| dernier.fait).collect())
 }
 
 /// LA MEMOIRE DE L'HORLOGE (`config/horloge.json`) : le dernier jour joue, les mois dont tout est fait (chacun avec
@@ -519,14 +516,12 @@ fn les_pas_du_mois(d: &HorlogeFictive, ctx: &Contexte, le_mois: Mois, calendrier
             geste: Geste::Signes { mois: le_mois, debut },
         });
     }
-    if let Ok(apercu) = crate::contrats::signature_apercu(ctx, le_mois) {
-        for c in apercu.contrats {
-            let Some(quand) = revalide_le(ctx, mois, &c.salarie, c.debut)? else { continue };
-            if quand.jour() > jour {
-                continue;
-            }
-            calendrier.push(Pas { quand, quoi: String::new(), geste: Geste::Avenant { mois: le_mois, salarie: c.salarie, debut: c.debut, nom: c.nom } });
+    for c in crate::contrats::signature_apercu(ctx, le_mois)?.contrats {
+        let Some(quand) = revalide_le(ctx, mois, &c.salarie, c.debut)? else { continue };
+        if quand.jour() > jour {
+            continue;
         }
+        calendrier.push(Pas { quand, quoi: String::new(), geste: Geste::Avenant { mois: le_mois, salarie: c.salarie, debut: c.debut, nom: c.nom } });
     }
     calendrier.extend(signalements_dus(ctx, le_mois, jour, false)?);
 

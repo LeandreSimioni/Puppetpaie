@@ -132,9 +132,10 @@ pub(crate) fn apercu_dossier(ctx: &Contexte, dossier: &Path) -> R<Importation> {
 /// ce que l'import dit d'un fichier (« lu dans… », le compte rendu) le nomme ainsi.
 pub(crate) fn lire_dossier<T>(ctx: &Contexte, dossier: &Path, deposes: &HashMap<String, String>, suite: impl FnOnce(DossierLu) -> R<T>) -> R<T> {
     let travail = ri::dossier_de_travail();
-    let rendu = trier_et_lire(ctx, dossier, &travail, deposes).and_then(suite);
-    let _ = std::fs::remove_dir_all(&travail);
-    rendu
+    match trier_et_lire(ctx, dossier, &travail, deposes).and_then(suite) {
+        Ok(t) => socle::fichiers::effacer(&travail).map(|()| t),
+        Err(e) => Err(socle::fichiers::effacer_apres(e, &travail)),
+    }
 }
 
 /// Le nom de la copie d'un fichier dans `historique/bulletins/` : l'empreinte, rien de personnel. `None` pour ce qui ne
@@ -1084,8 +1085,12 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             }
         };
         infos.contrat = Some(etat_contrat);
-        if let Ok(c) = &l.compteurs {
-            infos.compteurs = c.avertissements.clone();
+        match &l.compteurs {
+            Ok(c) => infos.compteurs = c.avertissements.clone(),
+            // Des compteurs qui ne se lisent pas : le contrat atteste le dit deja (`atteste`, plus haut).
+            Err(dit_plus_haut) => {
+                let _ = dit_plus_haut;
+            }
         }
         let inconnus: Vec<String> = l
             .b
@@ -1328,7 +1333,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let repris = match f.sorte {
             Sorte::Dsn | Sorte::Aem => matches!(sort, Sort::Repris | Sort::DejaRepris),
             Sorte::PdfTexte => ps.iter().any(|p| matches!(p.sort, Sort::Repris | Sort::LibelleInconnu | Sort::DejaRepris)),
-            _ => false,
+            Sorte::PdfSansTexte | Sorte::Archive | Sorte::Doublon | Sorte::Illisible | Sorte::Autre => false,
         };
         let copie = nom_copie(f).filter(|_| repris);
         if let Some(c) = &copie {
@@ -1792,7 +1797,7 @@ pub(crate) fn statut_et_metier(statut: Option<&str>, emploi: Option<&str>, femme
         f.emploi_affichage = Some(r.emploi_affichage);
         f.pcs_ese = r.pcs_ese.or(f.pcs_ese);
         f.code_emploi_ft = r.code_emploi_ft.or(f.code_emploi_ft);
-        f.statut = f.statut.or(Some(r.statut));
+        f.statut.get_or_insert(r.statut);
         f.statut_conventionnel = r.statut_conventionnel.or(f.statut_conventionnel);
         f.statut_categoriel_rc = Some(r.statut_categoriel_rc);
     }

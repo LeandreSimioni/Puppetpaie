@@ -47,6 +47,23 @@ fn os(chemin: &Path, e: std::io::Error) -> Echec {
     socle::echec::du_disque(chemin, &e).reclasser(Classe::Disque)
 }
 
+/// Les fichiers des dossiers `dossiers` (un dossier absent n'en a aucun) ; un dossier qui ne se lit pas se dit.
+fn fichiers_dans(dossiers: &[PathBuf]) -> R<Vec<PathBuf>> {
+    let mut v = Vec::new();
+    for d in dossiers {
+        if !socle::fichiers::present(d)? {
+            continue;
+        }
+        for e in std::fs::read_dir(d).map_err(|e| os(d, e))? {
+            let p = e.map_err(|e| os(d, e))?.path();
+            if p.is_file() {
+                v.push(p);
+            }
+        }
+    }
+    Ok(v)
+}
+
 
 // ------------------------------------------------------------- le journal des pieces ecrites
 
@@ -1042,23 +1059,20 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, nom: &str) -> R<PathBu
                     continue;
                 }
                 // Cet envoi ne refait que cette piece : ce qu'il ecrirait d'autre n'est pas le dernier etat parti.
-                let fichiers = || -> Vec<PathBuf> {
-                    [sortie.clone(), sortie.join("envoi")].iter().flat_map(|d| std::fs::read_dir(d).into_iter().flatten().flatten().map(|e| e.path())).filter(|p| p.is_file()).collect()
-                };
-                let avant = fichiers();
+                let dossiers = [sortie.clone(), sortie.join("envoi")];
+                let avant = fichiers_dans(&dossiers)?;
                 let de_cote = piece.with_extension("pdf.presente");
                 let presente = piece.exists();
                 if presente {
                     std::fs::rename(&piece, &de_cote).map_err(|e| os(&piece, e))?;
                 }
                 let fait = refaire_les_documents(ctx, mois, &lignes, *rang, true).and_then(|_| std::fs::rename(&piece, sortie.join(nom)).map_err(|e| os(&piece, e)));
-                for f in fichiers().into_iter().filter(|f| !avant.contains(f) && *f != sortie.join(nom)) {
-                    let _ = std::fs::remove_file(f);
-                }
+                let nettoye = fichiers_dans(&dossiers).and_then(|apres| apres.into_iter().filter(|f| !avant.contains(f) && *f != sortie.join(nom)).try_for_each(|f| socle::fichiers::effacer(&f)));
                 if presente {
                     std::fs::rename(&de_cote, &piece).map_err(|e| os(&de_cote, e))?;
                 }
                 fait?;
+                nettoye?;
                 return Ok(sortie.join(nom));
             }
             return Err(refus(format!("{} : aucun envoi de documents de {} n'a fait partir le bulletin n° {}.", nom, mois.libelle(Graphie::Accentuee), numero)));
@@ -1255,13 +1269,11 @@ fn garder_si_identique(l: &envois::journal::Ligne, ecrits: &[PathBuf]) -> R<()> 
     if l.empreinte() == Some(envois::journal::empreinte(&ecrit).as_str()) {
         return Ok(());
     }
-    for f in ecrits {
-        let _ = std::fs::remove_file(f);
-    }
-    Err(erreur(
+    let refus = erreur(
         Classe::Refuse,
         format!("{} ne se refait pas à l'identique de ce qui est parti : le fichier a été déplacé ou effacé.", socle::fichiers::nom_du(premier)),
-    ))
+    );
+    Err(ecrits.iter().fold(refus, |e, f| socle::fichiers::effacer_apres(e, f)))
 }
 
 /// LA DPAE QUE DIT LA LIGNE `l` (`cible` : son enregistrement), refaite par la fonction qui l'a ecrite
@@ -1331,7 +1343,8 @@ fn refaire_le_signalement(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne
                 for a in crate::imprevus::etats_d_alors(&ctx_j, &premier, &dernier, compagnie::maintenant())? {
                     crate::imprevus::signaler_l_arret(&ctx_j, &charge, Some(&a))?;
                     rendu = garder_si_identique(l, &[cible.to_path_buf()]);
-                    if rendu.is_ok() {
+                    // Un etat d'alors qui ne redonne pas l'empreinte : le suivant s'essaie ; le dernier refus est rendu.
+                    if matches!(rendu, Ok(())) {
                         break;
                     }
                 }
@@ -1371,18 +1384,24 @@ pub(crate) fn contresigner(ctx: &Contexte, lignes: &[envois::journal::Ligne], co
 /// l'a ecrit (celle-ci, ou une plus ancienne qui a fait partir les memes octets : la relance d'un avenant reprend le
 /// PDF parti). Refus quand rien ne redonne l'empreinte. Le fichier `envoye` n'est pas reecrit.
 fn contrat_parti(ctx: &Contexte, lignes: &[envois::journal::Ligne], rang: usize, envoye: &Path, empreinte: &str) -> R<Vec<u8>> {
-    if let Ok(o) = std::fs::read(envoye) {
-        if envois::journal::empreinte(&o) == empreinte {
-            return Ok(o);
-        }
+    match std::fs::read(envoye) {
+        Ok(o) if envois::journal::empreinte(&o) == empreinte => return Ok(o),
+        // Le fichier a change, ou n'est plus la : il se refait.
+        Ok(_change) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(os(envoye, e)),
     }
     let nom = socle::fichiers::nom_du(envoye);
     let refait = envoye.with_extension("pdf.refait");
     let a_empreinte = |l: &envois::journal::Ligne| l.signature().is_some_and(|s| s.detail.contrats.iter().any(|c| c.fichier == nom && c.empreinte.as_deref() == Some(empreinte)));
     for r in (0..=rang).rev().filter(|r| a_empreinte(&lignes[*r])) {
-        let fait = refaire_le_contrat(ctx, lignes, r, envoye, &refait).and_then(|_| std::fs::read(&refait).map_err(|e| os(&refait, e)));
-        let _ = std::fs::remove_file(&refait);
-        let o = fait?;
+        let o = match refaire_le_contrat(ctx, lignes, r, envoye, &refait).and_then(|_| std::fs::read(&refait).map_err(|e| os(&refait, e))) {
+            Ok(o) => {
+                socle::fichiers::effacer(&refait)?;
+                o
+            }
+            Err(e) => return Err(socle::fichiers::effacer_apres(e, &refait)),
+        };
         if envois::journal::empreinte(&o) == empreinte {
             return Ok(o);
         }
@@ -1465,18 +1484,14 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
             pareils = crate::gestes::signature::clauses_du_contrat(&ctx_j, p, &ent).map(|refaites| refaites == *cl);
         }
     }
-    let pareils = match pareils {
-        Ok(p) => p,
-        Err(e) => {
-            let _ = std::fs::remove_file(vers);
-            return Err(e);
-        }
-    };
-    if !pareils {
-        let _ = std::fs::remove_file(vers);
-        return Err(erreur(Classe::Refuse, format!("{} ne se refait pas à l'identique de ce qui est parti : le fichier a été déplacé ou effacé.", nom)));
+    match pareils {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(socle::fichiers::effacer_apres(
+            erreur(Classe::Refuse, format!("{} ne se refait pas à l'identique de ce qui est parti : le fichier a été déplacé ou effacé.", nom)),
+            vers,
+        )),
+        Err(e) => Err(socle::fichiers::effacer_apres(e, vers)),
     }
-    Ok(())
 }
 
 /// Le nom d'une archive de retour d'AER : `<instant>_nature46_…`, la nature 46 de France Travail.

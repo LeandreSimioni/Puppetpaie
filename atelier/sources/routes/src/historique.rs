@@ -416,7 +416,7 @@ struct Archive {
 /// Un fichier depose dans le Drive : son nom, ses octets, s'il en remplace un.
 #[derive(Debug, Serialize)]
 struct FichierDepose {
-    nom: Option<String>,
+    nom: String,
     octets: u64,
     remplace: bool,
 }

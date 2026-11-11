@@ -1001,9 +1001,16 @@ impl FileDesEtats {
         e.en_cours = None;
         // L'OUVERTURE FAITE, le mois qu'elle ouvre passe devant : la page le demande juste apres.
         if e.affiche.is_none() {
-            if let Ok(Garde::Ouverture(o)) = &rendu {
-                if let Some(m) = o.ouvre {
-                    Self::inscrire(&mut e, Cle::Mois(m), true);
+            match &rendu {
+                Ok(Garde::Ouverture(o)) => {
+                    if let Some(m) = o.ouvre {
+                        Self::inscrire(&mut e, Cle::Mois(m), true);
+                    }
+                }
+                // Un autre etat, ou un refus (garde ci-dessous avec son passage) : rien ne passe devant.
+                Ok(_autre) => {}
+                Err(garde_avec_le_passage) => {
+                    let _ = garde_avec_le_passage;
                 }
             }
         }

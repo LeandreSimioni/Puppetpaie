@@ -477,8 +477,8 @@ fn retours_illisibles(dossier: &Path, e: std::io::Error) -> Echec {
 }
 
 /// La piece archivee d'un retour : `retours/[dpae/]AAAAMMJJ-hhmmss_natureN_<flux>.<ext>` (`envois::releve_retours::archiver_retour`,
-/// qui nomme `sansflux` un retour sans flux), celle de sa publication d'abord, sinon la premiere de sa nature pour ce
-/// flux (`etats::archive_du_retour`). Aucune s'il n'y en a pas ; un dossier des retours qui ne se lit pas le dit.
+/// qui nomme `sansflux` un retour sans flux) : celle de sa publication ; sans publication datee, la premiere de sa nature
+/// pour ce flux (`etats::archive_du_retour`). Aucune s'il n'y en a pas ; un dossier des retours qui ne se lit pas le dit.
 fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, nature: &str, publication: Option<InstantCompact>) -> R<Option<PathBuf>> {
     let mut dossier = racine.join(envois::retours::RETOURS);
     if let Some(c) = canal {
@@ -507,8 +507,9 @@ fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&str>, natur
     }
     noms.sort();
     let horo = publication.map(|p| p.compact()).map(|p| format!("{}-{}", &p[..8], &p[8..]));
+    // Une publication datee n'a que sa piece : celle d'une autre publication du meme flux dirait un autre retour.
     let choisi = match horo {
-        Some(h) => noms.iter().find(|n| n.starts_with(&h)).or(noms.first()),
+        Some(h) => noms.iter().find(|n| n.starts_with(&h)),
         None => noms.first(),
     };
     Ok(choisi.map(|c| dossier.join(c)))

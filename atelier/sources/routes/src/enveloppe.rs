@@ -234,7 +234,7 @@ pub trait Dite: Serialize {
 
 /// LE RENDU D'UNE ROUTE, ecrit en JSON une fois, a la porte : un objet dont la `phrase` est en tete.
 #[derive(Clone, Debug)]
-pub struct Rendu(Value);
+pub struct Rendu(Map<String, Value>);
 
 impl Rendu {
     /// Ce qu'une route branchee rend (`Dite`), ecrit. Une phrase vide est un defaut du logiciel : la route le refuse.
@@ -243,8 +243,8 @@ impl Rendu {
             return Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la route n'a pas rendu de phrase."));
         }
         match serde_json::to_value(t) {
-            Ok(v @ Value::Object(_)) => Ok(Rendu(v)),
-            Ok(_) => Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la route a rendu autre chose qu'un objet.")),
+            Ok(Value::Object(o)) => Ok(Rendu(o)),
+            Ok(Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_)) => Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la route a rendu autre chose qu'un objet.")),
             Err(e) => Err(Echec { a_part: Some(Lieu { detail: Some(e.to_string()), ..Lieu::default() }.into()), ..erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la réponse de la route ne s'écrit pas.") }),
         }
     }
@@ -256,25 +256,22 @@ impl Rendu {
 
     /// Les cles qu'il porte, pour dire au developpeur ce qu'une reponse sans phrase rendait.
     pub fn cles(&self) -> Vec<&str> {
-        match &self.0 {
-            Value::Object(o) => o.keys().map(String::as_str).collect(),
-            _ => Vec::new(),
-        }
+        self.0.keys().map(String::as_str).collect()
     }
 
     /// Les phrases qu'il porte, a toute profondeur (`phrases_rendues`).
     pub fn phrases(&self) -> Vec<&str> {
-        phrases_rendues(&self.0)
+        phrases_de_l_objet(&self.0)
     }
 
     /// La plus longue de ses phrases, en caracteres (`plus_longue_phrase`).
     pub fn plus_longue_phrase(&self) -> usize {
-        plus_longue_phrase(&self.0)
+        plus_longue_phrase_de_l_objet(&self.0)
     }
 
     /// Le rendu en JSON, pris.
     fn en_valeur(self) -> Value {
-        self.0
+        Value::Object(self.0)
     }
 }
 
@@ -283,35 +280,44 @@ impl Rendu {
 /// de la route (`Fiche::phrase`).
 pub fn plus_longue_phrase(v: &Value) -> usize {
     match v {
-        Value::Object(o) => o
-            .iter()
-            .map(|(k, x)| match (k.as_str(), x) {
-                ("phrase", Value::String(p)) => p.chars().count(),
-                _ => plus_longue_phrase(x),
-            })
-            .fold(0, usize::max),
+        Value::Object(o) => plus_longue_phrase_de_l_objet(o),
         Value::Array(a) => a.iter().map(plus_longue_phrase).fold(0, usize::max),
-        _ => 0,
+        // Une valeur seule n'est la phrase de rien : elle n'en porte aucune.
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => 0,
     }
+}
+
+/// `plus_longue_phrase` d'un objet.
+fn plus_longue_phrase_de_l_objet(o: &Map<String, Value>) -> usize {
+    o.iter()
+        .map(|(k, x)| match (k.as_str(), x) {
+            ("phrase", Value::String(p)) => p.chars().count(),
+            (_, x) => plus_longue_phrase(x),
+        })
+        .fold(0, usize::max)
 }
 
 /// LES PHRASES QUE REND UNE ROUTE, celles que l'ecran lit : la `phrase`, les `phrases` et les `aides` de la reponse et de
 /// chaque ligne qu'elle porte, a toute profondeur.
 pub fn phrases_rendues(v: &Value) -> Vec<&str> {
-    let mut out = Vec::new();
     match v {
-        Value::Object(o) => {
-            for (k, x) in o {
-                match (k.as_str(), x) {
-                    ("phrase", Value::String(p)) => out.push(p.as_str()),
-                    ("phrases", Value::Array(l)) => out.extend(l.iter().filter_map(Value::as_str)),
-                    ("aides", Value::Object(a)) => out.extend(a.values().filter_map(Value::as_str)),
-                    _ => out.extend(phrases_rendues(x)),
-                }
-            }
+        Value::Object(o) => phrases_de_l_objet(o),
+        Value::Array(a) => a.iter().flat_map(phrases_rendues).collect(),
+        // Une valeur seule n'est la phrase de rien.
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => Vec::new(),
+    }
+}
+
+/// `phrases_rendues` d'un objet.
+fn phrases_de_l_objet(o: &Map<String, Value>) -> Vec<&str> {
+    let mut out = Vec::new();
+    for (k, x) in o {
+        match (k.as_str(), x) {
+            ("phrase", Value::String(p)) => out.push(p.as_str()),
+            ("phrases", Value::Array(l)) => out.extend(l.iter().filter_map(Value::as_str)),
+            ("aides", Value::Object(a)) => out.extend(a.values().filter_map(Value::as_str)),
+            (_, x) => out.extend(phrases_rendues(x)),
         }
-        Value::Array(a) => out.extend(a.iter().flat_map(phrases_rendues)),
-        _ => {}
     }
     out
 }
@@ -471,7 +477,7 @@ struct ReponseEcrite<'a> {
 
 impl Serialize for Reponse {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        ReponseEcrite { ok: self.issue.is_ok(), ecrit: self.ecrit, resultat: self.resultat(), refus: self.issue.as_ref().err() }.serialize(s)
+        ReponseEcrite { ok: self.est_rendue(), ecrit: self.ecrit, resultat: self.resultat(), refus: self.issue.as_ref().err() }.serialize(s)
     }
 }
 
@@ -517,7 +523,7 @@ impl Reponse {
 
     /// La route a-t-elle rendu (et non refuse) ?
     pub fn est_rendue(&self) -> bool {
-        self.issue.is_ok()
+        self.refus().is_none()
     }
 
     /// Ce que la route a rendu, s'il y a lieu.

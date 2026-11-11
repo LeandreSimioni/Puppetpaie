@@ -1132,7 +1132,15 @@ pub(crate) fn manques_de_la_saisie(ctx: &Contexte, data: &VueDuMois) -> Vec<Opti
         }
     };
     let valides: Vec<Option<Echec>> = tous.iter().map(a_dire).collect();
-    if valides.iter().all(Option::is_none) && (tous.iter().all(SaisieCarte::est_validee) || engagement::pour_l_ecran(ctx, data).is_ok()) {
+    let se_calcule = || match engagement::pour_l_ecran(ctx, data) {
+        Ok(_) => true,
+        // Le refus de la saisie entiere : chaque engagement dit le sien ci-dessous, a son rang.
+        Err(dit_a_son_rang) => {
+            let _ = dit_a_son_rang;
+            false
+        }
+    };
+    if valides.iter().all(Option::is_none) && (tous.iter().all(SaisieCarte::est_validee) || se_calcule()) {
         return vec![None; tous.len()];
     }
     let mut gardes: Vec<SaisieCarte> = Vec::new();

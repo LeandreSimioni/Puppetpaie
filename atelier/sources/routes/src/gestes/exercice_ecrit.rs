@@ -232,18 +232,23 @@ pub(crate) fn empreintes_des_saisies(racine: &Path, annee: &str) -> R<BTreeMap<S
 /// l'horloge d'une fictive (`horloge::l_annee`) : `Compta_<annee>.csv` existe, et les saisies de l'annee sont celles
 /// qu'il a lues -- les empreintes notees au journal des ecritures en l'ecrivant (`empreintes_des_saisies`). Jamais la
 /// date des fichiers : une fictive decompressee chez un visiteur a des dates qui ne disent rien. Un export dont le
-/// journal ne dit pas ce qu'il a lu (ecrit avant cette note, ou livre avec une fictive) : le moteur ne sait pas que les
-/// saisies ont change depuis, il ne le redemande pas.
+/// journal ne dit pas ce qu'il a lu n'est pas celui du moteur (pose a la main) : il ne compte pas, comme une DSN que le
+/// moteur n'a pas notee (`depart::mois_ecrit`).
 pub(crate) fn export_compta_a_jour(racine: &Path, annee: &str) -> R<bool> {
+    use compagnie::pieces_ecrites::EmpreinteNotee;
     let f = racine.join("sorties").join("exercices").join(format!("Compta_{}.csv", annee));
     if !f.is_file() {
         return Ok(false);
     }
-    Ok(match compagnie::pieces_ecrites::piece_notee(racine, &f)?.and_then(|n| n.empreinte_saisie) {
-        Some(compagnie::pieces_ecrites::EmpreinteNotee::Annee(lues)) => lues == empreintes_des_saisies(racine, annee)?,
-        // Le journal ne dit pas ce que l'export a lu : le moteur ne sait pas que les saisies ont change depuis.
-        _ => true,
-    })
+    match compagnie::pieces_ecrites::piece_notee(racine, &f)?.and_then(|n| n.empreinte_saisie) {
+        Some(EmpreinteNotee::Annee(lues)) => Ok(lues == empreintes_des_saisies(racine, annee)?),
+        Some(EmpreinteNotee::Saisie(saisie)) => Err(socle::echec::erreur(
+            Classe::DefautDuLogiciel,
+            format!("Défaut du logiciel : l'export compta {} est noté avec l'empreinte d'un seul mois ({}), et non celles de l'année.", annee, saisie),
+        )),
+        // Le moteur ne l'a pas note : il ne l'a pas ecrit.
+        None => Ok(false),
+    }
 }
 
 /// La charge de `export-compta` : l'annee, du mois au mois (toute l'annee sans eux), et l'apercu (rien n'est ecrit).

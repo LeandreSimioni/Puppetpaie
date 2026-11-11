@@ -101,9 +101,12 @@ pub fn commande(quoi: &str, args: &[String]) -> Option<i32> {
         }
     };
     // LE MESSAGE AU DEVELOPPEUR PART AUSSITOT, comme la fenetre le fait partir en fond (`interface::api`) : le processus
-    // attend son depart, sans changer ce que la route a rendu.
+    // attend son depart, sans changer ce que la route a rendu. Ce qui ne part pas attend sa ligne, la veille suivante
+    // reessaie, et le refus se note, comme dans la fenetre (`interface::api::signalements_en_fond`).
     if nom == Some(Route::SignalementEnvoyer) && reponse.est_rendue() {
-        let _ = crate::servir_la_route(&o, Route::SignalementsPartir, &crate::enveloppe::Charge::vide());
+        if let Some(x) = crate::servir_la_route(&o, Route::SignalementsPartir, &crate::enveloppe::Charge::vide()).refus() {
+            compagnie::diagnostic::noter_moteur(&format!("Les messages au développeur ne partent pas : {}", x.phrase));
+        }
     }
     if texte_seul {
         // Une demande sans route lisible : son texte ne nomme aucune route.

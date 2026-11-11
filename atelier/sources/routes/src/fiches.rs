@@ -315,7 +315,7 @@ impl Dite for Permanents {
 fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
     use crate::gestes::ouverture::{ouverture, Clients, Options};
     let opt = Options { sauvegarde_seule: true, incidents_editeur: false, ..Options::default() };
-    let r = ouverture(ctx, &opt, Clients::default(), None);
+    let r = ouverture(ctx, &opt, Clients::default(), None)?;
     let erreurs: Vec<String> = r.manquants.into_iter().chain(r.incidents).collect();
     let s = compagnie::sauvegarde::derniere(&ctx.racine).map_err(|e| e.echec)?;
     let phrase = match (erreurs.is_empty(), &s) {
@@ -473,7 +473,8 @@ pub(crate) fn montres(ctx: &Contexte, nom: &str, cle: Option<&str>, donnees: &Sa
     let au_mois = match (nom, cle) {
         ("entreprise", _) => permanents_de(entreprise) || !p.dus.is_empty(),
         ("salarie", Some(c)) => engagement::permanents::cle_du_salarie(ctx, c)?.is_some(),
-        _ => false,
+        // Un salarie pas encore enregistre n'a aucun engagement ; une autre fiche n'a pas la piece d'un permanent.
+        (_autre_fiche, _) => false,
     };
     let avec_permanents = nom == "entreprise" && permanents_de(entreprise);
     let du_metier = cases_des_metiers(ctx, nom, cle, donnees)?;
@@ -1399,11 +1400,10 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
         liste
             .into_iter()
             .map(|(k, x)| {
-                let prevu = match socle::num::decimal_lu(x.prevu.trim()) {
-                    Some(p) if !p.is_zero() => format!(" · + {} déjà saisis pour la suite de l'année", socle::texte::euros(p)),
-                    Some(_) => String::new(),
-                    None => return Err(erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : une somme du coût de l'année ne se lit pas ({}).", x.prevu))),
-                };
+                let prevu = socle::num::decimal_lu(x.prevu.trim())
+                    .ok_or_else(|| erreur(Classe::DefautDuLogiciel, format!("Défaut du logiciel : une somme du coût de l'année ne se lit pas ({}).", x.prevu)))?;
+                // Rien de saisi pour la suite de l'annee : la phrase n'en dit rien.
+                let prevu: String = (!prevu.is_zero()).then(|| format!(" · + {} déjà saisis pour la suite de l'année", socle::texte::euros(prevu))).into_iter().collect();
                 let phrase = format!(
                     "coût employeur {} — brut {}, charges {}, {}{}{}",
                     euros_ecrits(&x.cout)?, euros_ecrits(&x.brut)?, euros_ecrits(&x.charges)?, bulletins(&x),

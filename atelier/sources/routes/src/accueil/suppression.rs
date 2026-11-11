@@ -85,24 +85,42 @@ fn de_l_installation(inst: &Path, racine: &Path) -> R<bool> {
     Ok(r == i.join("prive") || r.parent().is_some_and(|p| p == i.join("compagnies") || p == i.join(installation::DOSSIER_FICTIVES)))
 }
 
-/// Ce qu'est `racine` pour sa suppression, ou pourquoi elle ne se supprime pas.
-pub fn genre(inst: &Path, racine: &Path) -> R<Genre> {
+/// Ce qu'est `racine` pour sa suppression : son genre, ou le refus qui dit pourquoi elle ne se supprime pas. Un disque
+/// qui ne laisse pas le savoir est une autre erreur : elle remonte seule.
+pub fn sorte(inst: &Path, racine: &Path) -> R<R<Genre>> {
     if !de_l_installation(inst, racine)? {
-        return Err(refus_avec(
+        return Ok(Err(refus_avec(
             "Ce dossier n'est pas une compagnie de ce logiciel : rien n'a été supprimé.",
             Lieu { chemin: Some(racine.to_string_lossy().into_owned()), ..Default::default() },
-        ));
+        )));
     }
     if installation::est_ajoutee(racine)? {
-        return Ok(Genre::Ajoutee);
+        return Ok(Ok(Genre::Ajoutee));
     }
     if installation::est_fictive(racine)? {
-        return Err(refus("Une compagnie fictive livrée ne se supprime pas : elle se remet à zéro, depuis sa tuile de l'accueil."));
+        return Ok(Err(refus("Une compagnie fictive livrée ne se supprime pas : elle se remet à zéro, depuis sa tuile de l'accueil.")));
     }
     if installation::est_copie(racine) {
-        return Err(refus("Une copie de test ne se supprime pas depuis le logiciel."));
+        return Ok(Err(refus("Une copie de test ne se supprime pas depuis le logiciel.")));
     }
-    Ok(Genre::Reelle)
+    Ok(Ok(Genre::Reelle))
+}
+
+/// Ce qu'est `racine` pour sa suppression, ou pourquoi elle ne se supprime pas (`sorte`).
+pub fn genre(inst: &Path, racine: &Path) -> R<Genre> {
+    sorte(inst, racine)?
+}
+
+/// `racine` se supprime-t-elle (`sorte`) ?
+pub fn supprimable(inst: &Path, racine: &Path) -> R<bool> {
+    Ok(match sorte(inst, racine)? {
+        Ok(Genre::Ajoutee | Genre::Reelle) => true,
+        // Elle ne se supprime pas : la page ne le propose pas, la route dira pourquoi si on le lui demande.
+        Err(pourquoi) => {
+            drop(pourquoi);
+            false
+        }
+    })
 }
 
 /// LA QUESTION de la suppression, telle que la page la pose (route `compagnie-supprimer`, sans `confirme`) : le nom, le genre, et pour
@@ -111,7 +129,7 @@ pub fn genre(inst: &Path, racine: &Path) -> R<Genre> {
 pub fn question(racine: &Path) -> R<Suppression> {
     let inst = crate::gestes::administrateur::installation_de(racine);
     let nom = installation::nom_de(racine)?;
-    let g = match genre(&inst, racine) {
+    let g = match sorte(&inst, racine)? {
         Ok(g) => g,
         Err(e) => return Ok(Suppression { phrase: e.phrase, ..Suppression::de(nom) }),
     };
@@ -233,7 +251,8 @@ pub fn supprimer(inst: &Path, racine: &Path, motdepasse: Option<&str>, poste: &P
         prouver(racine, &nom, motdepasse, poste)?;
     }
     avant(racine);
-    let _ = poste.coffre(racine).oublier_ouverture_gardee();
+    // L'ouverture gardee de son coffre part avec elle ; qu'il y en ait eu une ou non ne change rien.
+    poste.coffre(racine).oublier_ouverture_gardee()?;
     crate::gestes::administrateur::oublier(inst, racine)?;
     effacer(racine)?;
     Ok(nom)
@@ -259,17 +278,33 @@ fn effacer(racine: &Path) -> R<()> {
     Ok(())
 }
 
-/// AU LANCEMENT : les restes d'une suppression qui ne s'etaient pas effaces. Rend ceux qui sont partis.
-pub fn effacer_les_restes(inst: &Path) -> Vec<PathBuf> {
-    let mut partis = Vec::new();
+/// Les restes d'une suppression, au lancement : ceux qui sont partis, et la phrase de chacun qui resiste encore (il reste
+/// cache, et s'efface au lancement suivant).
+pub struct Restes {
+    pub partis: Vec<PathBuf>,
+    pub resistent: Vec<String>,
+}
+
+/// AU LANCEMENT : les restes d'une suppression qui ne s'etaient pas effaces. Un dossier de l'installation qui ne se lit
+/// pas se dit.
+pub fn effacer_les_restes(inst: &Path) -> R<Restes> {
+    let mut r = Restes { partis: Vec::new(), resistent: Vec::new() };
     for d in [inst.to_path_buf(), inst.join("compagnies"), inst.join(installation::DOSSIER_FICTIVES)] {
-        for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
-            if e.file_name().to_string_lossy().starts_with(PREFIXE_RESTE) && std::fs::remove_dir_all(e.path()).is_ok() {
-                partis.push(e.path());
+        if !socle::fichiers::present(&d)? {
+            continue;
+        }
+        for e in std::fs::read_dir(&d).map_err(|e| socle::echec::du_disque(&d, &e))? {
+            let e = e.map_err(|e| socle::echec::du_disque(&d, &e))?;
+            if !e.file_name().to_string_lossy().starts_with(PREFIXE_RESTE) {
+                continue;
+            }
+            match socle::fichiers::effacer(&e.path()) {
+                Ok(()) => r.partis.push(e.path()),
+                Err(resiste) => r.resistent.push(resiste.phrase),
             }
         }
     }
-    partis
+    Ok(r)
 }
 
 // ------------------------------------------------------------------ au deblocage
@@ -313,8 +348,7 @@ fn garder(inst: &Path, racine: &Path) -> R<Compagnie> {
     };
     socle::ecriture::ecrire_json(&racine.join(FICHIER_DEMO), &mention, 2)?;
     if let Err(e) = std::fs::rename(racine, &cible) {
-        let _ = std::fs::remove_file(racine.join(FICHIER_DEMO));
-        return Err(socle::refus!("{} ne se garde pas ({}) : rien n'a changé.", nom, e));
+        return Err(socle::fichiers::effacer_apres(socle::refus!("{} ne se garde pas ({}) : rien n'a changé.", nom, e), &racine.join(FICHIER_DEMO)));
     }
     // Sans marqueur : une compagnie reelle. S'il ne s'efface pas, elle resterait une fictive ajoutee hors de `fictives/` :
     // le dire, plutot que la laisser envoyer sans le savoir... ou ne jamais envoyer.

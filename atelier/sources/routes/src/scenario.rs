@@ -443,7 +443,7 @@ fn poser_les_pieces(scenario: &Path, racine: &Path, travail: &Path, rang: usize,
             }
             continue;
         }
-        let _ = std::fs::remove_dir_all(&cible);
+        socle::fichiers::effacer(&cible)?;
         std::fs::create_dir_all(&cible).map_err(|e| refus!("{} : {}", cible.display(), e))?;
         for (rel, source) in &fichiers {
             let dest = cible.join(rel);
@@ -638,12 +638,13 @@ fn rejouer_les_gestes(
                 r.routes_rejouees += 1;
                 let ok = rep.est_rendue();
                 // Ce que l'horloge de la fictive a joue (la route `horloge-rattraper`, ou la veille par `ouverture`), date du geste.
+                // Ces deux routes seules font jouer l'horloge ; une autre n'en dit rien.
                 let jouees = match route {
-                    Some(Route::HorlogeRattraper) => rep.textes("phrases"),
-                    Some(Route::Ouverture) => rep.textes("horloge"),
-                    _ => Vec::new(),
+                    Some(Route::HorlogeRattraper) => Some("phrases"),
+                    Some(Route::Ouverture) => Some("horloge"),
+                    Some(_) | None => None,
                 };
-                r.horloge.extend(jouees.iter().map(|p| format!("{} {}", heure(t), p)));
+                r.horloge.extend(jouees.iter().flat_map(|cle| rep.textes(cle)).map(|p| format!("{} {}", heure(t), p)));
                 let attendu = g.a_reussi();
                 if ok != attendu {
                     let refus: String = rep.refus().map(|e| format!(" : {}", e.phrase)).into_iter().collect();
@@ -727,24 +728,13 @@ fn hors_comparaison(rel: &str) -> bool {
     rel == compagnie::installation::JOURNAL_INTERFACE || rel == compagnie::incidents::INCIDENTS || rel == "ouverture.etat.json" || rel.ends_with(crate::gestes::ouverture::ETAPE)
 }
 
-/// Les fichiers d'une compagnie, relatifs (barres droites), hors caches.
-fn fichiers_compares(racine: &Path) -> BTreeMap<String, PathBuf> {
-    fn parcourir(base: &Path, d: &Path, out: &mut BTreeMap<String, PathBuf>) {
-        for e in std::fs::read_dir(d).into_iter().flatten().flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                parcourir(base, &p, out);
-            } else if let Ok(r) = p.strip_prefix(base) {
-                let r = r.to_string_lossy().replace('\\', "/");
-                if !hors_comparaison(&r) {
-                    out.insert(r, p.clone());
-                }
-            }
-        }
+/// Les fichiers d'une compagnie, relatifs (barres droites), hors caches. Une compagnie que le banc n'a pas n'a aucun
+/// fichier ; un dossier qui ne se lit pas se dit.
+fn fichiers_compares(racine: &Path) -> R<BTreeMap<String, PathBuf>> {
+    if !socle::fichiers::present(racine)? {
+        return Ok(BTreeMap::new());
     }
-    let mut out = BTreeMap::new();
-    parcourir(racine, racine, &mut out);
-    out
+    Ok(fichiers_de(racine)?.into_iter().filter(|(r, _)| !hors_comparaison(r)).collect())
 }
 
 /// Le contenu d'un fichier, le chemin de sa compagnie remplace par `<racine>` (un journal note des chemins).
@@ -761,12 +751,12 @@ fn contenu(p: &Path, racine: &Path) -> R<Vec<u8>> {
 /// (`temps::aleas`) : toute difference est un geste qui a ecrit sans etre enregistre (un fichier touche hors de la page, une
 /// ecriture de fond), ou un ecart du rejeu. Rend les differences, en phrases (vide : le scenario suffit).
 pub fn verifier(scenario: &Path, inst: &Path, travail: &Path) -> R<Vec<String>> {
-    let _ = std::fs::remove_dir_all(travail);
+    socle::fichiers::effacer(travail)?;
     let r = rejouer(scenario, travail, &OptionsRejeu::default())?;
     let mut ecarts: Vec<String> = r.ecarts.iter().map(|e| format!("au rejeu, {}", e)).collect();
     for (rel, rejouee) in &r.compagnies {
         let banc = inst.join(rel);
-        let (a, b) = (fichiers_compares(&banc), fichiers_compares(rejouee));
+        let (a, b) = (fichiers_compares(&banc)?, fichiers_compares(rejouee)?);
         for (f, p) in &a {
             let Some(q) = b.get(f) else {
                 ecarts.push(format!("{}/{} : au banc, pas au rejeu (ecrit sans etre enregistre ?)", rel, f));
@@ -821,7 +811,7 @@ fn hors_livraison(rel: &str) -> bool {
 pub fn livrer(scenario: &Path, dest: &Path, jusqu_au: Option<Jour>) -> R<Rejeu> {
     let nom = dest.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| refus!("{} : un dossier est attendu", dest.display()))?;
     let travail = std::env::temp_dir().join(format!("puppetpaie-livrer-{}-{}", nom, std::process::id()));
-    let _ = std::fs::remove_dir_all(&travail);
+    socle::fichiers::effacer(&travail)?;
     let rendu = rejouer(scenario, &travail, &OptionsRejeu { lectures: false, jusqu_au }).and_then(|r| {
         if !r.ecarts.is_empty() {
             return Err(refus!("le scenario {} s'ecarte au rejeu :\n{}", scenario.display(), r.ecarts.join("\n")));
@@ -830,8 +820,10 @@ pub fn livrer(scenario: &Path, dest: &Path, jusqu_au: Option<Jour>) -> R<Rejeu> 
         poser_livree(racine, dest, r.fin)?;
         Ok(r)
     });
-    let _ = std::fs::remove_dir_all(&travail);
-    rendu
+    match rendu {
+        Ok(r) => socle::fichiers::effacer(&travail).map(|()| r),
+        Err(e) => Err(socle::fichiers::effacer_apres(e, &travail)),
+    }
 }
 
 /// POSE LA COMPAGNIE REJOUEE `racine` dans `dest` (remplace), marquee fictive livree (`compagnies::MARQUE_FICTIVE` suivie
@@ -839,7 +831,7 @@ pub fn livrer(scenario: &Path, dest: &Path, jusqu_au: Option<Jour>) -> R<Rejeu> 
 /// dernier geste rejoue.
 fn poser_livree(racine: &Path, dest: &Path, fin: Option<Moment>) -> R<()> {
     let nom = dest.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| refus!("{} : un dossier est attendu", dest.display()))?;
-    let _ = std::fs::remove_dir_all(dest);
+    socle::fichiers::effacer(dest)?;
     for (rel, source) in fichiers_de(racine)?.into_iter().filter(|(rel, _)| !hors_livraison(rel)) {
         let cible = dest.join(&rel);
         if let Some(d) = cible.parent() {

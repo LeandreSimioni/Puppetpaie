@@ -776,7 +776,8 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
             l.fichier().is_some_and(|f| f.starts_with("DSN_")) && de == nic
         }
         Ligne::Dpae(e) => voulues.as_ref().is_none_or(|v| e.detail.embauches.iter().map(|x| (x.salarie.to_string(), x.numero.as_deref().map(str::to_string))).collect::<BTreeSet<_>>() == *v),
-        _ => false,
+        // `filtrer` n'a rendu que des lignes de l'acte demande, une DSN ou une DPAE.
+        Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
     });
     Ok(ligne.and_then(Ligne::fichier).map(|f| ctx.racine.join("sorties").join(mois.to_string()).join(f).to_string_lossy().into_owned()))
 }

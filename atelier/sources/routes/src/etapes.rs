@@ -836,7 +836,7 @@ struct SaisieEtCorrections<'a> {
 /// Une DSN qui ne se lit pas, ou dont le numero d'ordre n'est pas un nombre, se refuse.
 pub(crate) fn ordre_de_depot(nom: &str, chemin: &Path) -> R<OrdreDeDepot> {
     use std::cmp::Reverse;
-    if suffixe(nom).to_lowercase() != ".dsn" {
+    if !a_l_extension(nom, ".dsn") {
         return Ok((0, None, String::new(), Reverse(None), Reverse(nom.to_string())));
     }
     let apercu = declarations::dsn_lue::lire(&crate::depots::lire_octets(&chemin.to_string_lossy())?, nom)?;
@@ -859,20 +859,19 @@ pub(crate) type OrdreDeDepot = (u8, Option<i64>, String, std::cmp::Reverse<Optio
 fn sans_annule_et_remplace(nom: &str) -> (String, Option<i64>) {
     if let Some(corps) = nom.strip_suffix(".dsn").or_else(|| nom.strip_suffix(".DSN")) {
         if let Some(i) = corps.rfind("_AR") {
-            if let Ok(n) = corps[i + 3..].parse::<i64>() {
-                return (format!("{}.dsn", &corps[..i]), Some(n));
+            match corps[i + 3..].parse::<i64>() {
+                Ok(n) => return (format!("{}.dsn", &corps[..i]), Some(n)),
+                // Ce qui suit `_AR` n'est pas un numero : le nom n'est pas celui d'un annule-et-remplace.
+                Err(pas_un_numero) => drop(pas_un_numero),
             }
         }
     }
     (nom.to_string(), None)
 }
 
-/// L'extension d'un nom de fichier.
-fn suffixe(nom: &str) -> &str {
-    match nom.rfind('.') {
-        Some(i) if i > 0 && i + 1 < nom.len() => &nom[i..],
-        _ => "",
-    }
+/// Le nom de fichier porte-t-il l'extension `ext` (`.dsn`), a la casse pres ? Un nom sans extension n'en porte aucune.
+fn a_l_extension(nom: &str, ext: &str) -> bool {
+    nom.rfind('.').filter(|&i| i > 0 && i + 1 < nom.len()).is_some_and(|i| nom[i..].eq_ignore_ascii_case(ext))
 }
 
 /// Le nom d'un fichier sans sa dernière extension.
@@ -1197,7 +1196,8 @@ struct Carre {
     couleur: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     coupee: Option<bool>,
-    reste: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reste: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     lien: Option<Option<&'static str>>,
     titre: &'static str,
@@ -1697,10 +1697,10 @@ impl<'a> Moteur<'a> {
                 ranges.sort_by(|a, b| a.0.cmp(&b.0));
                 Ok(ranges.into_iter().map(|(_, (_, chemin))| Deposable { chemin: chemin.to_string_lossy().into_owned() }).collect())
             };
-            let dsn: Vec<_> = tous.iter().filter(|f| suffixe(&f.0).to_lowercase() == ".dsn").collect();
+            let dsn: Vec<_> = tous.iter().filter(|f| a_l_extension(&f.0, ".dsn")).collect();
             let dpae: Vec<_> = tous
                 .iter()
-                .filter(|f| f.0.starts_with("DPAE_") && suffixe(&f.0).to_lowercase() == ".txt" && !radical(&f.0).ends_with("_recapitulatif"))
+                .filter(|f| f.0.starts_with("DPAE_") && a_l_extension(&f.0, ".txt") && !radical(&f.0).ends_with("_recapitulatif"))
                 .collect();
             Deposables { dsn: ranger(dsn)?, dpae: ranger(dpae)? }
         };
@@ -1924,7 +1924,8 @@ impl<'a> Moteur<'a> {
         for f in fichiers.de(quoi) {
             let de_l_etablissement = match (quoi == DSN, nic) {
                 (true, Some(n)) => declarations::dsn_lue::lire(&crate::depots::lire_octets(&f.chemin)?, "")?.etablissement() == Some(n),
-                _ => true,
+                // Une DPAE, ou une DSN sans etablissement demande : le premier fichier, quel qu'il soit.
+                (true, None) | (false, _) => true,
             };
             if de_l_etablissement {
                 trouve = Some(f.clone());
@@ -2438,7 +2439,7 @@ fn le_jour_de(t: Option<Jour>) -> R<String> {
 }
 
 /// Un carre, son etat et sa phrase.
-fn carre(cle: QuelleEtape, nom: impl Into<String>, etat: EtatCase, phrase: String, action: Option<Geste>, reste: &'static str) -> Carre {
+fn carre(cle: QuelleEtape, nom: impl Into<String>, etat: EtatCase, phrase: String, action: Option<Geste>, reste: Option<&'static str>) -> Carre {
     Carre { cle, nom: nom.into(), etat, phrase, action, pieces: None, couleur: etat.couleur(), coupee: None, reste, lien: None, titre: if cle == QuelleEtape::Dpae { "DPAE" } else { "Contrat" } }
 }
 
@@ -2452,9 +2453,9 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
     // A COMPLETER, OU A VALIDER : rien n'est parti de lui ; chaque carre qui l'attend dit ce qui reste, sans geste.
     if p.a_completer.is_some() || !p.valide() {
         let attend = |cle: QuelleEtape, nom: &str, point: &str| match (point, p.a_completer.as_deref()) {
-            (A_COMPLETER, Some(manque)) => carre(cle, nom, EtatCase::AFaire, format!("À compléter avant de valider : {}", manque), None, "à compléter"),
-            (A_VALIDER, _) => carre(cle, nom, EtatCase::AFaire, format!("{} après la validation", nom), None, "à valider"),
-            _ => carre(cle, nom, EtatCase::Fait, "Rien à faire ici pour cet engagement".into(), None, ""),
+            (A_COMPLETER, Some(manque)) => carre(cle, nom, EtatCase::AFaire, format!("À compléter avant de valider : {}", manque), None, Some("à compléter")),
+            (A_VALIDER, _) => carre(cle, nom, EtatCase::AFaire, format!("{} après la validation", nom), None, Some("à valider")),
+            _ => carre(cle, nom, EtatCase::Fait, "Rien à faire ici pour cet engagement".into(), None, None),
         };
         return Ok(vec![attend(QuelleEtape::Dpae, "DPAE", pt.dpae), attend(QuelleEtape::Signature, "Contrat", pt.contrat), attend(QuelleEtape::Documents, "Documents", pt.documents)]);
     }
@@ -2482,7 +2483,7 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
         _ => (EtatCase::Fait, format!("DPAE déposée {}, retour pas encore arrivé", le_jour_de(d.fait.map(HeureDuJournal::jour))?), None),
     };
     let pieces = Pieces { vide: Some("Aucune DPAE déposée pour cette embauche.".into()), encart: None, gestes: Vec::new() };
-    let dpae = Carre { pieces: Some(pieces), ..carre(QuelleEtape::Dpae, "DPAE", etat, phrase, geste, "") };
+    let dpae = Carre { pieces: Some(pieces), ..carre(QuelleEtape::Dpae, "DPAE", etat, phrase, geste, None) };
 
     let cdi = &s.cdi_en_cours;
     let ailleurs = p.contrat.ailleurs();
@@ -2514,19 +2515,19 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
         _ if !p.contrat.ecrit() => (EtatCase::Fait, "Pas de contrat à faire signer ici".to_string(), None),
         _ => (EtatCase::Fait, format!("Contrat signé {}", le_jour_de(s.recu.map(InstantEcrit::jour))?), None),
     };
-    let contrat = Carre { pieces: Some(pieces_du_contrat(p, mois, s, dossier)), ..carre(QuelleEtape::Signature, nom_contrat, etat, phrase, geste, "") };
+    let contrat = Carre { pieces: Some(pieces_du_contrat(p, mois, s, dossier)), ..carre(QuelleEtape::Signature, nom_contrat, etat, phrase, geste, None) };
 
     let (etat, phrase, geste) = match pt.documents {
         "a_renvoyer" => (EtatCase::AFaire, format!("Documents à renvoyer : {}", o.pourquoi), route(envoyer_documents(mois, "Renvoyer les documents corrigés…".into()))),
         "a_envoyer" => (EtatCase::AFaire, "Documents à envoyer".to_string(), route(envoyer_documents(mois, "Envoyer les documents…".into()))),
         _ => (EtatCase::Fait, format!("Documents partis {}", le_jour_de(o.fait.map(HeureDuJournal::jour))?), None),
     };
-    let documents = carre(QuelleEtape::Documents, "Documents", etat, phrase, geste, "");
-    // CE QUI RESTE, EN UN MOT, sur le carre meme (la phrase entiere est l'infobulle).
+    let documents = carre(QuelleEtape::Documents, "Documents", etat, phrase, geste, None);
+    // CE QUI RESTE, EN UN MOT, sur le carre meme (la phrase entiere est l'infobulle) ; un point fait n'a rien qui reste.
     let restes = [
-        match pt.dpae { "refuse" => "refusée", "a_faire" => "à déposer", _ => "" },
-        match pt.contrat { "a_envoyer" => "à envoyer", "a_refaire" => "à refaire signer", "en_attente" => "signature attendue", _ => "" },
-        match pt.documents { "a_renvoyer" => "à renvoyer", "a_envoyer" => "à envoyer", _ => "" },
+        match pt.dpae { "refuse" => Some("refusée"), "a_faire" => Some("à déposer"), _ => None },
+        match pt.contrat { "a_envoyer" => Some("à envoyer"), "a_refaire" => Some("à refaire signer"), "en_attente" => Some("signature attendue"), _ => None },
+        match pt.documents { "a_renvoyer" => Some("à renvoyer"), "a_envoyer" => Some("à envoyer"), _ => None },
     ];
     // LE LIEN DU DETAIL vers ce qui est parti : seulement quand une piece est passee par le logiciel, ou vers le contrat
     // signe hors du logiciel, que son dossier garde.

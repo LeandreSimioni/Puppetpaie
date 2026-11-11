@@ -595,23 +595,25 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
             return dit;
         }
     };
-    let teste = |f: &Path| -> bool {
-        let (Ok(octets), Ok(lignes)) = (std::fs::read(f), envois::journal::lu(&ctx.racine).map(|j| j.lignes)) else { return false };
+    // Le fichier a-t-il deja sa repetition conforme ? Un fichier ou un journal qui ne se lit pas se dit.
+    let teste = |f: &Path| -> R<bool> {
+        let octets = std::fs::read(f).map_err(|e| socle::echec::du_disque(f, &e))?;
+        let lignes = envois::journal::lu(&ctx.racine)?.lignes;
         let nom = socle::fichiers::nom_du(f);
-        etats::repetition(&lignes, Acte::Dsn, &envois::journal::empreinte(&octets), &nom).conforme.is_some()
+        Ok(etats::repetition(&lignes, Acte::Dsn, &envois::journal::empreinte(&octets), &nom).conforme.is_some())
     };
     let mut releve = false;
     let mut parties: Vec<String> = Vec::new();
     for (l, f) in retenues.iter().zip(&fichiers) {
         let fichier = f.to_string_lossy().into_owned();
-        let mut fait = if reel && !teste(f) { deposer_dsn(ctx, &fichier, false, preuve, qui, false, contournement).map(|_| ()) } else { Ok(()) };
-        if fait.is_ok() {
-            fait = deposer_dsn(ctx, &fichier, reel, preuve, qui, false, contournement).map(|_| ());
-        }
+        let repete = if reel { teste(f).and_then(|deja| if deja { Ok(()) } else { deposer_dsn(ctx, &fichier, false, preuve, qui, false, contournement).map(|_| ()) }) } else { Ok(()) };
+        let mut fait = repete.and_then(|()| deposer_dsn(ctx, &fichier, reel, preuve, qui, false, contournement).map(|_| ()));
         if reel && !releve && matches!(&fait, Err(e) if e.classe == Some(Classe::RepetitionManquante)) {
             releve = true;
-            let _ = envois::releve_retours::derniere_journee().and_then(|(debut, fin)| crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None));
-            fait = deposer_dsn(ctx, &fichier, reel, preuve, qui, false, contournement).map(|_| ());
+            // Le releve qui se refuse est la raison de cette demande restee a faire : il le dit a sa place.
+            fait = envois::releve_retours::derniere_journee()
+                .and_then(|(debut, fin)| crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None))
+                .and_then(|_| deposer_dsn(ctx, &fichier, reel, preuve, qui, false, contournement).map(|_| ()));
         }
         let qui_demande = ctx.nomme(&l.salarie);
         match fait {

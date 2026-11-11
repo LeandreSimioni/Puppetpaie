@@ -396,7 +396,8 @@ fn remplacement_du_fichier(m: &mut Moteur, a: &DsnLue, mois: Mois) -> R<Remplace
             let n = entier_lu(ordre).ok_or_else(|| erreur(Classe::Illisible, format!("nombre entier illisible : {}", repr(ordre))))?;
             r.dernier_ordre.is_none_or(|d| n > i128::from(d))
         }
-        _ => false,
+        // Une declaration qui ne remplace pas, sans ordre, ou rien de depose : le fichier ne remplace rien.
+        (Some(_) | None, Some(_) | None) => false,
     };
     Ok(RemplacementDuFichier { etat: r, fichier_remplace: remplace })
 }

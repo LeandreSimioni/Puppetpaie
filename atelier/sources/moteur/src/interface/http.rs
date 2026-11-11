@@ -207,8 +207,10 @@ fn ecrire_reponse(flux: &mut TcpStream, r: &Reponse) -> std::io::Result<()> {
 }
 
 fn servir_connexion(flux: TcpStream, traiter: Arc<dyn Fn(Requete) -> Reponse + Send + Sync>) {
-    let _ = flux.set_read_timeout(Some(Duration::from_secs(30)));
-    let _ = flux.set_nodelay(true);
+    // Une connexion qui refuse son delai ou son envoi immediat ne se sert pas : elle s'arrete et le dit.
+    if let Err(e) = flux.set_read_timeout(Some(Duration::from_secs(30))).and_then(|()| flux.set_nodelay(true)) {
+        return fin_de_connexion(e);
+    }
     let mut sortie = match flux.try_clone() {
         Ok(s) => s,
         Err(e) => return fin_de_connexion(e),

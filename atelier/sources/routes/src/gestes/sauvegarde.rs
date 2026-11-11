@@ -31,9 +31,10 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
     };
     let (presents, ecartes) = inventaire(racine)?;
     let index = lire_index(racine)?;
-    let mut dossiers: BTreeMap<String, String> = match &index {
-        Some(i) if !tout => i.dossiers.clone(),
-        _ => BTreeMap::new(),
+    let mut dossiers: BTreeMap<String, String> = match (&index, tout) {
+        (Some(i), false) => i.dossiers.clone(),
+        // Tout renvoyer, ou aucun index : aucun dossier n'est connu d'avance, chacun se cherche dans Drive.
+        (Some(_), true) | (None, _) => BTreeMap::new(),
     };
 
     let mut resultat = Sauvegarde {
@@ -140,13 +141,13 @@ pub fn sauvegarder(racine: &Path, racine_drive: &str, tout: bool, client: Option
                 // ou renvoye par `tout`) ; « neuf » est ce qui est CREE.
                 Ok(Some(if connu.is_some() { EtatFichier::Modifie } else { EtatFichier::Neuf }))
             };
-            let fait = faire();
-            if fait.is_ok() {
-                indisponibles_de_suite = 0;
-            }
-            match fait {
-                Ok(None) => resultat.identiques += 1,
+            match faire() {
+                Ok(None) => {
+                    indisponibles_de_suite = 0;
+                    resultat.identiques += 1;
+                }
                 Ok(Some(etat)) => {
+                    indisponibles_de_suite = 0;
                     let octets = etat_de[relatif.as_str()].octets;
                     resultat.deposes.push(Fichier { relatif: relatif.clone(), octets, etat });
                     resultat.octets_deposes += octets;

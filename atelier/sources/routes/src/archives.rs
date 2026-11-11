@@ -412,7 +412,8 @@ fn exports_periodes(ctx: &Contexte) -> R<ExportsPossibles> {
         (Some(premier), Some(dernier)) => {
             engagement::permanents::Permanents::de(ctx, &premier.premier_jour(), &dernier.dernier_jour())?.ouverts()
         }
-        _ => false,
+        // Aucun mois a exporter : aucun permanent n'y est.
+        (None, _) | (_, None) => false,
     };
     let annees = annees_de(&mois);
     let taxe_due = taxe_due_une_annee(ctx, &annees)?;
