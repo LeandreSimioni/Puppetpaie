@@ -9,9 +9,9 @@ Trois rôles, trois méthodes (`journal/methodes/` du privé).
 
 - **L'orchestrateur** est la séance que Léandre a ouverte : il parle à Léandre, **tout le temps**, et lui dit les choses
   simplement, avec une image ou un exemple plutôt qu'un résumé ; il trie ce qui remonte pour que Léandre ne reçoive
-  que des décisions. Il découpe, lance les sous-agents, fusionne, lance **la** suite complète (en arrière-plan : il reste
-  disponible pour Léandre), pousse, ouvre la PR, commente et ferme les tickets, écrit le journal. « À la fin de la
-  séance », « on ferme le ticket » : c'est lui (`methodes/ORCHESTRATEUR.md`).
+  que des décisions. Il découpe, lance les sous-agents, fusionne, lance **la** suite complète avant chaque PR (en
+  arrière-plan : il reste disponible pour Léandre), pousse, ouvre la PR, commente et ferme les tickets, écrit le
+  journal. « À la fin de la séance », « on ferme le ticket » : c'est lui (`methodes/ORCHESTRATEUR.md`).
 - **Le trieur des retours** (un Opus, bientôt lancé seul de temps en temps) ne croit aucun retour sur parole : il le
   rejoue, le vérifie contre les textes, le range, et prépare pour chaque vrai problème un traitement justifié que
   Léandre n'a plus qu'à accepter ou refuser ; il ne change pas le logiciel (`methodes/TRIER-LES-RETOURS.md`).
@@ -19,9 +19,11 @@ Trois rôles, trois méthodes (`journal/methodes/` du privé).
   la suite complète, un push, une PR, une fusion, un ticket, le journal, un mot à Léandre. Au doute, sa consigne tranche.
 - **Une seule vérification, à l'arrivée** : l'exécutant code et ne vérifie que les types (`cargo check`, `--tests`
   compris) ; il ne compile pas le programme, ne lance aucun test, ne livre aucune fictive. L'orchestrateur, à l'arrivée
-  du lot, compile une fois, lance les tests, compare les fictives et **corrige lui-même** les petits écarts, sans
-  renvoyer le lot ; une grosse casse devient un lot. **Une consigne ne parle ni de compilation ni de preuve** (modèle :
-  `journal/methodes/CONSIGNE-EXECUTANT.md` du privé) ; si elle demande de compiler, de tester ou de livrer, c'est une faute de
+  de chaque lot, compile ce que le lot touche, lance les tests des crates touchées (et le rejeu des fictives si le lot
+  touche au calcul ou aux déclarations), relit le diff lui-même, puis le fait lire par un agent neuf, en lecture seule,
+  qui y cherche un repli ou une erreur avalée déguisés ; il **corrige lui-même** les petits écarts, sans renvoyer le
+  lot ; une grosse casse devient un lot. Le lot suivant ne part que si tout est propre. **Une consigne ne parle ni de
+  compilation ni de preuve** (modèle : `journal/methodes/CONSIGNE-EXECUTANT.md` du privé) ; si elle demande de compiler, de tester ou de livrer, c'est une faute de
   l'orchestrateur : l'exécutant suit cette règle, pas la consigne.
 
 ## Par quoi on commence
@@ -47,17 +49,18 @@ graisse** (taux, imports, fonctions avancées) : un lot de graisse attend que le
 soient droits.
 
 - **Un garde-fou se met dans la structure, jamais dans une consigne ni dans le code** : le type d'abord (un champ
-  obligatoire n'est pas `Option`), puis le verrou des dépendances et le test de structure. Un verrou n'a aucune
-  exception : une passation qui garde une lecture par nom (`.get("…")`, `json!`, `Value`) ou la dit « légitime » n'est
-  pas finie, l'orchestrateur la renvoie comme travail. Un repli de métier se range : la valeur vient d'un texte (dans la
-  donnée, avec sa `source`) ; seule la compagnie la connaît (une case de sa fiche, et le calcul refuse en la nommant) ;
-  technique (l'erreur remonte). Clippy n'est pas validé.
+  obligatoire n'est pas `Option`) et le compilateur, puis la visibilité, les `Cargo.toml` et quelques tests de structure
+  courts (`docs/ARCHITECTURE.md`, « Les garde-fous sont dans la structure ») ; jamais un verrou qui lit le texte du code.
+  L'orchestrateur relit le diff de chaque lot ; un repli, quelle que soit sa forme, se corrige ; un verrou n'a aucune
+  liste d'exceptions. Un repli de métier se range : la valeur vient d'un texte (dans la donnée, avec sa `source`) ;
+  seule la compagnie la connaît (une case de sa fiche, et le calcul refuse en la nommant) ; technique (l'erreur remonte).
 
 - **Le code dit ce qui est** : un commentaire donne le *pourquoi* (le texte déposé), jamais l'historique ; celui
   qu'on croise s'efface.
 - **Les mots** : l'**engagement** est au centre et porte ses calculs ; le **contrat** est ce qu'il fait signer ; la
   **paie** part avec le bulletin et ne nomme jamais l'engagement. Tout document se fabrique depuis l'engagement validé,
-  sans recalcul.
+  sans recalcul. **Une notion, un type** : chaque notion a son seul type, que dit « Le glossaire »
+  (`docs/ARCHITECTURE.md`) ; un type neuf est une notion du glossaire, sinon Léandre décide.
 - **Un seul chemin pour chaque chose** ; un second se ferme dans le commit qui ouvre le premier. **Une carte écrit
   l'engagement de son salarié, et lui seul** ; le mois n'est jamais une unité d'écriture ; un mois importé ne reçoit pas
   d'engagement neuf. L'engagement ne lit pas le journal ; le moteur le lit une fois par geste (`envois::journal::lu`) ;
@@ -85,11 +88,11 @@ soient droits.
 c'est le même geste : la même route, la même réponse, les mêmes phrases, les mêmes refus. **Il n'y a ni « côté écran »,
 ni « côté LLM »**, et on ne les distingue jamais, que ce soit dans un ticket, une consigne, un plan ou un commit : une
 chose est faite quand la route la fait. La page ne parle au moteur que par `/api/<route>`, qui sert la même chose ; le
-pont de la fenêtre ne fait que sa liste `FENETRE`.
+pont de la fenêtre ne fait que ses listes `NOMS_ACCUEIL` et `NOMS_LOGICIEL` (`moteur/src/interface/mod.rs`).
 
 **Chaque route porte sa fiche dans son code**, brève, d'où `moteur routes` tire le catalogue. **Rien du métier ne
 s'écrit à côté** : un manque, où qu'on le voie, est un manque de la route. Rien ne se débranche : gardé par
-`tests/fichiers/structure.rs`, sans liste d'exceptions, et prouvé en jouant (tout cliquer ; une compagnie créée depuis
+`moteur/tests/fichiers/structure.rs`, sans liste d'exceptions, et prouvé en jouant (tout cliquer ; une compagnie créée depuis
 zéro).
 
 **Le moteur rend, la page lit la réponse** et n'a que ses règles d'affichage. **Où chaque route
@@ -107,7 +110,11 @@ par son nom dans le JS : on lit sa fiche.
 - **Un lot dit ce qu'il touche** : chaque fonction, clé, format changés, et **chaque lecteur** trouvé par `grep`.
 - **La preuve joue chaque lecteur** (route ou banc, avant et après), par l'orchestrateur à l'arrivée, notée avec ce
   qu'elle n'a pas joué. **Ce n'est pas un test de plus.**
-- Le rejeu des fictives (`banc.js verifier`) suit chaque fusion qui touche un domaine ; avant, un lot n'est pas « fini ».
+- **La vérification se fait à l'arrivée de chaque lot**, pas à la fin : compilé, testé, relu par l'orchestrateur puis
+  par un agent neuf (« Une seule vérification, à l'arrivée ») : une passation crue sur parole cache ses replis, et des
+  lots compilés ensemble à la fin empilent les rouges.
+- Le rejeu des fictives (`cargo test --profile essais -p moteur --test rejeu`) suit chaque lot qui touche au calcul ou
+  aux déclarations ; avant, un lot n'est pas « fini ».
 - **Aucune attente fixe** : on attend un état ; une lenteur se cherche à la cause.
 
 ## Une séance, par tickets
@@ -128,17 +135,21 @@ par son nom dans le JS : on lit sa fiche.
 - **Opus par défaut**, pour coder comme pour juger ; Sonnet ou Haiku seulement quand une méthode le dit (le tamis de
   `methodes/FONDER-UN-TAUX.md`) ; au plus quatre Opus en même temps.
 - **Un lot de code** : un Opus dessine chaque forme neuve sur une ou deux routes en modèle, puis on propage par lots
-  disjoints, par crate et non par route (un Opus tient 150 à 200 appelants), en commitant à chaque étape.
-- **L'orchestrateur** regarde chaque worktree toutes les 30 minutes, relit à la fusion les tests modifiés, décide seul
-  du relais (contexte proche de 500 000 jetons, ou une heure sans commit) ; jamais de limite de temps dans une consigne,
-  ni de message à un Opus qui a fini.
+  disjoints, par crate et non par route, en commitant à chaque étape. **Un lot nomme ses endroits**, un par un, au plus
+  150, avec ce que chacun devient ; l'agent ne touche à rien d'autre.
+- **Une notion, un type** : le garde-fou est le type et le compilateur, pas un verrou qui lit le texte du code ; une
+  consigne dit « ton travail n'est pas de faire passer un verrou ».
+- **Aucun sujet nouveau sans l'accord de Léandre** : ce qu'on découvre en route va dans un ticket, pas dans le lot.
+- **L'orchestrateur** regarde chaque worktree toutes les 30 minutes, relit à la fusion les tests modifiés ; un agent qui
+  sature (contexte proche de 500 000 jetons, ou une heure sans commit), il redécoupe son lot au lieu de le relayer ;
+  jamais de limite de temps dans une consigne, ni de message à un Opus qui a fini.
 - **Un agent qui travaille ne se dérange pas** : l'orchestrateur ne lui écrit que si Léandre le demande. Quelques mots
   de Léandre ne sont pas une consigne : l'orchestrateur reformule et fait confirmer avant de transmettre, car l'agent
   prend sa parole pour sûre. Un choix de l'agent qui surprend se comprend en lui demandant sa logique, jamais en la
   supposant.
 - **En tête de chaque consigne** : un test de l'ancien parcours qui casse se supprime ; aucune donnée destinée à être
   remplacée ne se convertit ; aucun test de plus de 30 secondes (sauf le rejeu d'une fictive entière,
-  `tests/rejeu.rs`) ; rien en fond ; aucun acte réel lancé à la main.
+  `moteur/tests/rejeu.rs`) ; rien en fond ; aucun acte réel lancé à la main.
 - **Les cibles Cargo**, l'orchestrateur les choisit, une par worktree, gardée d'un lot à l'autre (une cible neuve coûte
   une longue compilation) ; **deux chaînes au plus**, deux worktrees gardés où les lots se suivent. Une cible qui change
   de checkout se nettoie d'abord (`cargo clean --profile essais -p <crate>`), sinon elle masque le code présent.
@@ -181,7 +192,6 @@ une règle sans texte déposé est un souvenir.
 ```
 prive/config/coffre.bin          les mots de passe net-entreprises, Urssaf et de la boîte courriel
 prive/config/google-jeton.bin    le jeton du compte Google
-prive/config/maj-cle-privee.bin  la clé qui signe les mises à jour (éditeur)
 ```
 
 **Ne jamais lire, afficher, copier ni recopier leur contenu**, ni en extraire une valeur, ni en les décodant ni par
@@ -199,7 +209,7 @@ dit ce qui est posé, et cela suffit.
 | **déposer une DSN ou une DPAE en réel, envoyer, faire signer** | **le mot de passe du logiciel, tapé par un humain au moment de l'acte**, à l'écran comme en ligne de commande |
 | **approuver une publication** (environnement `publication`) | **jamais un agent** : les sessions Claude agissent sous l'identité de Léandre ; seul Léandre approuve |
 
-**Deux mots de passe, deux chemins, pas d'autre.** Ouvrir le coffre = la séance (`moteur coffre seance --fenetre`, 12 h,
+**Deux mots de passe, deux chemins, pas d'autre.** Ouvrir le coffre = la séance (`moteur coffre seance`, 12 h,
 avant la première commande qui touche au coffre ; jamais `getpass` ; sans terminal, refus). Un acte réel = le popup, à
 chaque fois ; la séance n'est jamais une preuve. **Ne pas contourner** : un agent ne tape pas le mot de passe, ne pose
 pas `PUPPETPAIE_MOTDEPASSE` ni la variable d'un organisme, n'ouvre pas le coffre dans un script ; le LLM ne voit ni le
@@ -212,28 +222,30 @@ mécaniquement impossible (`PreuveInsuffisante`) ; un dépôt de test passe par 
 ## Faire tourner le code dans le conteneur, et les tests
 
 **Pour reproduire, on ne compile pas** : `echo '{"route":"…","charge":{…}}' | PUPPETPAIE_CODE=logiciel/donnees
-atelier/sources/moteur/bin/linux/moteur route --racine <copie d'une fictive>`.
+atelier/sources/moteur/bin/linux/moteur route --racine <copie d'une fictive>` (ce binaire est celui de la dernière
+publication : il peut retarder sur les sources).
 
-**Une PR dont la suite est rouge ne se fusionne pas.** La suite complète (`cargo nextest run --cargo-profile essais`,
-dans `atelier/sources`) ne se lance qu'**une fois par séance, à la fin, par l'orchestrateur** ; à l'arrivée d'un lot,
-il ne lance que les binaires que le lot touche (`-E 'binary(routes)'`). Avant, `rm -rf "${CARGO_TARGET_DIR:-target}/tmp"`
-(les dossiers de travail des tests, ~3 Go).
+**Une PR dont la suite est rouge ne se fusionne pas.** La suite complète (`cargo test --profile essais --no-fail-fast`,
+dans `atelier/sources`) se lance **une fois avant chaque PR, par l'orchestrateur**, en arrière-plan ; à l'arrivée d'un
+lot, il ne lance que les tests des crates que le lot touche (`-p <crate>` ; dans `moteur`, le binaire concerné :
+`-p moteur --test routes`, `--test rejeu`…). Avant, `rm -rf "${CARGO_TARGET_DIR:-target}/tmp"` (les dossiers de travail
+des tests, ~3 Go).
 
 - **On compile peu** (Léandre : « on code et après on compile », pas « tout le temps parce qu'on peut ») : l'exécutant,
-  `cargo check` seulement ; l'orchestrateur, une compilation à l'arrivée du lot ; après une correction, seul ce qui
-  était rouge se relance. Une référence déjà fabriquée ne se refait pas.
+  `cargo check` seulement ; l'orchestrateur, à l'arrivée du lot, ce que le lot touche ; après une correction, seul ce
+  qui était rouge se relance. Une référence déjà fabriquée ne se refait pas.
 - **Le nombre de tests ne monte pas** : un test par règle d'un texte déposé, un par bug réel échappé, un rejeu par
   fictive ; **les tests de structure sont les bienvenus** ; un test qui fige un détail ne s'écrit pas. Les tests
   éprouvent des fonctionnements d'ensemble, ils ne rattrapent pas les erreurs des agents. Un test monte sa
   propre compagnie (`outils::dossier_de_test`).
-- **Aucun test ne sort de la machine** : gardé par `tests/fichiers/garde_reseau.rs`.
+- **Aucun test ne sort de la machine** : gardé par `moteur/tests/fichiers/garde_reseau.rs`.
 - **L'atelier** (la crate `atelier`, son binaire du nuage `moteur-atelier`, jamais livré : les relevés des textes, les
   outils, les scénarios du banc) est hors de `default-members` : la suite ci-dessus ne le construit pas. Il allume la
   feature `atelier` de ce qu'il prend, donc il se construit et se teste dans sa propre cible (`<cible>-atelier`,
   `-p atelier`) ; ce qui est sous `#[cfg(feature = "atelier")]` y compile sans avertissement. **Le dépôt le garde
   compilé** (`atelier/sources/atelier/bin/linux/moteur-atelier`) : le garde avant commit et la publication s'en servent
-  sans rien compiler. Un lot qui change l'atelier le refait (`cargo build --release -p atelier`, puis copier le binaire)
-  dans le même commit.
+  sans rien compiler. L'exécutant ne le compile jamais ; quand un lot change l'atelier, l'orchestrateur le refait à
+  l'arrivée du lot (`cargo build --release -p atelier`, dans la cible de l'atelier, puis copier le binaire).
 
 ## Les règles de fond du logiciel
 

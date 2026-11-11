@@ -6,13 +6,13 @@ le change dans le même commit.
 ## Le corps et ses portes
 
 **Tout est en Rust**, et le logiciel est un corps solide sous une peau solide, percée de quelques portes seulement : les
-routes (la page et le LLM), les fichiers, les imports. À la porte, on choisit ce qui entre ; partout ailleurs, rien
+routes (la page comme la ligne de commande), les fichiers, les imports. À la porte, on choisit ce qui entre ; partout ailleurs, rien
 n'entre. Ce qui passe la porte est lu **une fois** et devient un type Rust ; dedans ne circulent que des types.
 
 - **Une donnée lue est une forme, déclarée une fois.** Fichier, barème, charge ou réponse d'une route : une structure
   `serde` (`deny_unknown_fields`), lue par `socle::forme`, écrite par `socle::ecriture`. Le JSON brut ne se touche
   qu'au bord, ces deux modules : tout autre passe par eux (la charge et la réponse d'une route y sont un
-  `socle::forme::Objet`, qui ne se lit qu'en une forme ; le JSON ASCII s'écrit dans `socle::ecriture`). Aucune lecture par clé
+  `socle::forme::Objet`, qui ne se lit qu'en une forme ; le JSON ASCII s'écrit dans `socle::json_ascii`). Aucune lecture par clé
   texte, aucune clé libre, aucun repli (une donnée facultative absente est `None`, une donnée exigée absente se refuse),
   aucune erreur avalée. Les états impossibles ne s'écrivent pas : une nature de contrat est une `enum`
   (`droit::natures::NatureDeContrat`), dont `contrats-base.json` dit les propriétés ; un motif de recours ou de rupture
@@ -54,7 +54,8 @@ garde-fou que le compilateur ou un test de structure tient ne s'oublie pas. On n
 que par la structure :
 
 - **Le verrou des dépendances** : `serde_json` n'est au `Cargo.toml` que du `socle`, la porte (`moteur` et `atelier`
-  l'ont pour leurs essais) ; une autre crate qui voudrait lire du JSON brut ne compile pas.
+  l'ont pour leurs essais ; `fabrique-pdf`, hors de l'espace, l'a aussi : à ranger, #419) ; une autre crate qui
+  voudrait lire du JSON brut ne compile pas.
 - **L'ordre des crates** : chaque crate ne prend qu'à celles du dessous (« Les parties ») ; le calcul n'est que dans
   `engagement`.
 - **Les pièces d'une fiche** : une case qu'un seul genre de calcul lit est rangée, dans le type, dans sa pièce
@@ -109,7 +110,13 @@ que par la structure :
   `un_texte_ne_devient_un_jour_qu_a_sa_porte` (aucune fonction publique de `socle` ne rend un jour, un mois ou un
   instant d'un texte, aucun ne s'en construit par un trait ; hors de `socle`, aucune lecture ne vise un type du temps
   nu ni ne lit un texte JSON qui n'est qu'une chaine : un essai ecrit son jour par `Jour::nouveau`). Les tests de structure sont
-  les bienvenus ; un test qui fige un détail ne s'écrit pas.
+  les bienvenus ; un test qui fige un détail ne s'écrit pas. Cette liste se réduira au verrou simple (#419).
+- **Le verrou simple, la cible** : un verrou qui lit le texte du code se contourne en réécrivant le repli sans changer ce
+  qu'il fait ; le garde-fou est le type et le compilateur. Restent donc : le compilateur sans appel (les niveaux
+  ci-dessus) ; la visibilité (les lectures privées au `socle`) ; trois tests courts, sans liste (aucun flottant ; toute
+  forme lue refuse une clé inconnue ; aucune « valeur par défaut si absent » : `unwrap_or`, `unwrap_or_default`,
+  `unwrap_or_else`, `map_or`…) ; `une_crate_ne_prend_qu_a_celles_du_dessous`, lu dans les `Cargo.toml` ; et « seul le
+  `socle` dépend de `serde_json` », tenu par les `Cargo.toml`. Le reste des verrous par expression régulière part.
 - **Un texte ne devient un jour, un mois ou un instant qu'à sa porte**, et c'est la visibilité qui le garde : les
   lectures d'un texte (`Mois::lire`, `Jour::du_texte`, les `lire` de `socle::paris`) sont privées à `socle`. Hors de
   `socle`, il entre par la forme qui le porte (`Deserialize` d'une charge, d'un fichier, d'une pièce), ou par une porte
@@ -123,11 +130,87 @@ que par la structure :
 
 ## Compiler peu
 
-Le découpage en crates sert aussi le temps : on code, et on compile après. Pendant le travail, `cargo check` (types
-seulement, quelques secondes) ; les tests de la crate qu'on touche, de temps en temps ; la compilation complète et la
-suite, **une fois, à la fin**, par l'orchestrateur, qui règle alors ce qui casse. Avec des agents qui font peu
-d'erreurs, compiler toutes les trente secondes ne coûte que du temps. La règle de travail est dans `AGENTS.md` (« Une
+Le découpage en crates sert aussi le temps : on code, et on compile après. Pendant le travail, `cargo check` seulement
+(types, quelques secondes) ; à l'arrivée de chaque lot, l'orchestrateur compile ce que le lot touche et ce qui en
+dépend, et lance les tests de ces crates seules (plus le rejeu des fictives si le lot touche au calcul ou aux
+déclarations) ; la suite complète, **une fois avant chaque PR**. Compiler toutes les trente secondes ne coûte que du
+temps ; ne compiler qu'à la fin laisse s'empiler les rouges. La règle de travail est dans `AGENTS.md` (« Une
 seule vérification, à l'arrivée », « On compile peu »).
+
+## Le glossaire
+
+**Une notion, un type ; une façon d'écrire n'est pas un type** : elle se dit dans la forme du fichier qui la porte (la
+DSN, le journal, la saisie, l'UTC du filet), et son lecteur rend le type de la notion. Un type neuf est une notion de
+ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemins sont relatifs à `atelier/sources/`.
+« À unifier (#419) » : le code a encore plusieurs types pour la notion, le type nommé est la cible. « À créer
+(#419) » : la notion circule encore en `String`, `Decimal` ou entier nu.
+
+**Le temps**
+
+| notion | ce que c'est | son type |
+|---|---|---|
+| instant | un point du temps, à la nanoseconde ; aussi « à la minute près » | `Moment` (`socle/src/paris.rs`) ; à unifier (#419) : `Naif`, `InstantEcrit`, `MinuteEcrite`, `HeureDeSaisie`, `MinuteDite`, `MinuteUtc`, `InstantCompact`, `HeureXsd` sont des écritures ; `HeureDuJournal`, `HeureDuGeste` (instant ou jour), `HeureDeReponse` (instant ou « pas encore » : `Option<Moment>`) |
+| jour | un jour civil | `Jour` (`socle/src/date.rs`) ; à unifier (#419) : `DateXsd` ; les marqueurs de `socle::piece::format` sont des formats de zone |
+| mois | un mois civil, clé d'une paie | `Mois` (`socle/src/mois.rs`) ; `Graphie` dit comment s'écrit son nom |
+| mois ou jour | le mois d'un acte ou le jour d'un événement | `MoisOuJour` (`socle/src/mois.rs`) |
+| année | une année civile | `Annee` (`socle/src/mois.rs`) ; à unifier (#419) : des `i32` |
+| période | deux jours bornes, du … au … | à créer (#419) : `Periode` ; aujourd'hui `(Jour, Jour)`, `documents::etats_paie::Periode` et d'autres |
+| durée de droit | des jours ou des mois de calendrier | `droit::maintien::Duree` |
+| durée mesurée | un temps écoulé | `std::time::Duration` ; à unifier (#419) : `envois::ligne::Durees` (des millisecondes : une écriture) |
+
+**L'argent et les quantités**
+
+| notion | ce que c'est | son type |
+|---|---|---|
+| montant | une somme en euros, au centime | à créer (#419) : `Montant` (`socle`) ; aujourd'hui `Decimal`, `engagement::paie_ecrite::Montant`, `droit::fiche::Montant` ; `engagement::ligne::Montant` est une ligne au montant, à renommer |
+| taux | un pourcentage appliqué à une base | à créer (#419) : `Taux` ; aujourd'hui `Decimal`, `droit::forme_bareme::Taux` (une forme) ; le taux de PAS est sa notion à lui, `droit::pas::TauxDePas` |
+| quantité | des heures, des cachets, des jours : trois grandeurs indépendantes | à créer (#419) : `Heures`, `Cachets`, `Jours` ; aujourd'hui `Decimal`, `i64`, `engagement::ligne::Chiffre` |
+| nombre lu | un nombre tel qu'un fichier l'écrit | pas une notion : `socle::forme::Court`, `Nombre`, `NombreEcrit`, `NombreLu` sont des écritures, lues à la porte |
+
+**Les identifiants**
+
+| notion | ce que c'est | son type |
+|---|---|---|
+| NIR | le numéro de sécurité sociale | `droit::fiche::Nir` ; à unifier (#419) : des champs `nir` en `String` |
+| NTT | le numéro technique temporaire, sans NIR | à créer (#419) |
+| SIREN, NIC, SIRET | l'entreprise, l'établissement, les deux | à créer (#419) : `Siren`, `Nic`, `Siret` |
+| IBAN, BIC | un compte bancaire | à créer (#419) : `Iban`, `Bic` (les contrôles sont dans `socle/src/iban.rs`) |
+| numéro de contrat | S21.G00.40.009 : il se lit, ne se recalcule pas | `NumeroContrat` (`engagement/src/numeros.rs`) |
+| numéro d'objet spectacle | S21.G00.40.019, natures 02 et 10 | à créer (#419) |
+| IDCC | l'identifiant d'une convention collective : la notion « convention » | à créer (#419) ; `minima::Convention`, `clauses::Convention`, `forme_bareme::Convention` sont des formes de fichiers |
+| code d'organisme | Urssaf, institution de prévoyance, caisse | à créer (#419) |
+| salarié | la clé de sa fiche | `IdSalarie` (`droit/src/contexte.rs`) |
+| spectacle | la clé de sa fiche | `IdSpectacle` (`droit/src/contexte.rs`) |
+| compagnie | l'identifiant d'une compagnie | à créer (#419) (`Compagnie.id` en `String`) |
+| matricule, licence, PCS-ESE, code emploi France Travail | | à créer (#419) |
+| code NAF, code postal | | `CodeNaf`, `CodePostal` (`droit/src/fiche.rs`) |
+
+**Les codes de la norme** : une liste fermée par rubrique (`droit::natures::ListeDeLaNorme`) : `NatureDeContrat`,
+`MotifDeRecours`, `MotifDeRupture`, `ModaliteDuTempsDeTravail`, `BaseAssujettie`, `CotisationDEtablissement`,
+`NatureDeLaDeclaration`, `TypeDeLaDeclaration`… ; les choix d'une fiche (`StatutConventionnel`, `Civilite`, `Sexe`…)
+aussi. À créer (#419), une liste par rubrique : le type de cotisation (S21.G00.81.001), le CTP Urssaf, le code d'option
+de prévoyance, les codes du bloc 60, du préavis, de l'indemnité.
+
+**Le métier**
+
+| notion | ce que c'est | son type |
+|---|---|---|
+| engagement | ce qu'une compagnie engage d'un salarié, et ses calculs | `Engagement` (`engagement/src/lib.rs`) ; sa forme écrite est une forme |
+| contrat | ce que l'engagement fait signer et déclare : son numéro et ses termes | à unifier (#419) : `ContratEcrit`, `ContratParti`, `ContratLu`, `ContratAtteste`, `ContratDeclare`… sont des lectures, à ranger par origine ; `droit::organismes::Contrat` est un contrat d'organisme, à renommer |
+| paie | ce qui part avec le bulletin d'un mois | `engagement::calcul::Paie` ; à unifier (#419) : `PaieEcrite`, `PaieImportee`, `PaieLue`… ; `droit::natures::Paie` (à l'activité ou au mois) est une autre notion, à renommer |
+| ligne de paie | une ligne datée : cachet, heures, prime, frais | `engagement::ligne::LignePaie` ; une date de ligne, `DateDeLigne` |
+| salarié | une personne que la compagnie emploie | `IdSalarie` et `droit::fiche::FicheSalarie` ; `SalarieDuContrat`, la fiche figée d'un contrat |
+| compagnie | l'employeur et son installation | `compagnie::installation::Compagnie` |
+| spectacle | une production | `IdSpectacle` et `droit::fiche::Spectacle` |
+| fiche | entreprise, salarié ou spectacle, datée | `droit::fiche::NomDeFiche`, `Datee<T>` ; `routes::catalogue::Fiche`, la fiche d'une route, est une autre notion, à renommer |
+| case | un champ d'une fiche | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` (`droit/src/fiche.rs`) ; `engagement::ligne::Case` (un `Option<Decimal>`) est mal nommé |
+| rubrique | une ligne du catalogue de paie | `droit::catalogue::Rubrique` (sa définition) ; son code : à créer (#419), `CodeDeRubrique` |
+| assiette | ce sur quoi une cotisation se calcule | `droit::assiette::Assiette` |
+| barème | les taux d'un jour, en trois étages | `droit::forme_bareme::Pile` |
+| emploi | ce que fait le salarié | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres ; le code d'emploi, à créer |
+| statut | artiste ou technicien | `droit::fiche::Statut` |
+| établissement | un lieu d'emploi | son `Nic`, à créer (#419) |
+| effectif | l'effectif que l'Urssaf calcule | `droit::contexte::Effectif` |
 
 ## Le principe
 
@@ -197,13 +280,14 @@ L'espace Cargo `atelier/sources/` a une crate par partie ; chaque flèche descen
 | `documents` | contrat, avenant, bulletin, certificat Congés Spectacles, AER, questionnaire, récapitulatif annuel, bordereau, prélèvement, états de paie, du personnel et de comptabilité, plan comptable | ne calcule rien |
 | `declarations` | DSN mensuelle et signalements, DPAE, régularisations, bloc 44, CSA, OETH, CASC-SVP, et la norme qui les contrôle (usages, formats, natures, champs) ; prend à `documents` | ne calcule rien, n'envoie rien |
 | `envois` | ce qui part et revient : net-entreprises, DPAE, signature, courriel, Drive, retours et bilans ; le journal de ce qui est parti ; le branchement (le monde, le simulateur, le message) ; prend à `declarations` et à `documents` ce qui part | ne fabrique rien, n'ouvre jamais le coffre |
-| `compagnie` | ce qui garde la compagnie et la fait vivre à côté de ses engagements : l'installation qui la porte sur le poste (`installation`, `instance`), le coffre et ses deux mots de passe, la preuve d'un acte réel (`preuve`) et sa demande (`demande`), la sauvegarde et la restauration, la mise à jour (`maj`), le bridage, le filet, les incidents et les signalements, le journal des pièces écrites, l'état de la DSN d'un mois (`etat_dsn`), les organismes et les taux de PAS reçus | ne prend rien aux routes |
+| `compagnie` | ce qui garde la compagnie et la fait vivre à côté de ses engagements : l'installation qui la porte sur le poste (`installation`, `instance`), le coffre et ses deux mots de passe, la preuve d'un acte réel (`preuve`) et sa demande (`demande`), la sauvegarde et la restauration, la mise à jour (`maj`), le bridage, les incidents et les signalements, le journal des pièces écrites, l'état de la DSN d'un mois (`etat_dsn`), les organismes et les taux de PAS reçus | ne prend rien aux routes |
 | `import` | le passé d'une compagnie tenu dans un autre logiciel, tel que ses pièces le disent : le tri de la boîte aux lettres, les DSN et AEM (`dsn_aem`), le lecteur unique des bulletins (`bulletin_lu`), les certificats et les AEM en PDF, ce qu'une pièce atteste (`attestes`), les fiches proposées, le mois importé, les écarts de calcul, le caviardage | n'écrit rien pour une route : c'est `routes/src/importation/` |
 | `routes` | `moteur route` : la porte (`lib.rs` : l'aiguillage ; `enveloppe`, `catalogue`), une route par geste de l'écran, et ce qu'elles font ; seules à décider, la ligne de commande et la page ne font que les appeler (règle 2) | ne prend rien à l'interface, aux commandes ni à l'atelier |
 | `moteur` | la ligne de commande (`moteur`), la page, la publication par GitHub, en dossiers (ci-dessous) | ne touche pas le JSON brut (la porte est aux routes) ; ne connaît aucune commande de l'atelier |
+| `fabrique-pdf` | la fabrique des PDF : les modèles, la mise en page, le marquage, la lecture ; hors de l'espace Cargo (`exclude`), prise par `documents` et ce qui est au-dessus | ne prend aucune crate de l'espace |
 | `atelier` | tout ce qui n'est pas le logiciel, dans le binaire du nuage `moteur-atelier` (la ligne de commande du moteur, plus la sienne) : le relevé des textes (`releve/` : LEGI, KALI, les missions de la DGFiP), les référentiels extraits (`extraire/`), les tables Unicode (`generer_tables`), la vérification avant commit, le guet, la veille des sources (`sources`), la fabrique des bulletins fictifs, les outils sur une compagnie (`commandes/outils/`), la redirection vers de faux serveurs, et les commandes `scenario` du banc | n'est jamais livré ; rien ne le prend, et il est hors de `default-members` (il allume la feature `atelier` de ce qu'il prend) |
 
-À part : `fenetre/` (la fenêtre Tauri, programme `puppetpaie`, qui ne fait qu'afficher la page) et `fabrique-pdf/`.
+À part : `fenetre/` (la fenêtre Tauri, programme `puppetpaie`, qui ne fait qu'afficher la page).
 
 **Ce que porte `routes/src/`**, à côté d'une route par fichier :
 
@@ -267,12 +351,12 @@ par engagement désignée par son salarié et son numéro de contrat, et sous `v
 version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le même brouillon que l'engagement.
 
 - **Sa forme** (`engagement/src/stock.rs`) : son premier mois en clair (salarié, spectacle, `debut`, `fin`, lignes de
-  paie datées…). Un terme du contrat (nature, salaire, durée du travail, emploi, spectacle… : `TERMES`) qui change
+  paie datées…). Un terme du contrat (nature, salaire, durée du travail, emploi, spectacle… : `engagement::saisie::Groupe::Terme`) qui change
   ensuite s'écrit sous `termes`, une liste datée par terme (`[{"depuis": "AAAA-MM-JJ", "valeur"}]`, la forme de la
   configuration ; `null` : retiré), et vaut de son jour au changement suivant : le mois de la carte qui le change est le
   « à partir de » (le 1er, ou le jour dit). Ce qu'un mois d'après dit de lui seul (lignes, congés pris, primes, rupture)
   s'écrit sous `faits`, à ce mois. Le salarié, les bornes et le numéro de contrat sont ceux de l'engagement dans tous
-  ses mois (`PARTAGES`). La vue d'un mois se lit à la date, sans relire les mois d'entre-deux : chaque terme au dernier
+  ses mois (`saisie::Groupe::Partage`). La vue d'un mois se lit à la date, sans relire les mois d'entre-deux : chaque terme au dernier
   jour du mois, les faits du mois ; un contrat d'usage sans faits ce mois-là prend les jours que le planning du dernier
   mois qui en dit y met ; un contrat au mois dont un terme change dans le mois y porte l'avenant daté
   (`date_modification`, et `avant` quand il change en cours de mois), déduits. Le fichier d'un mois porte aussi les
@@ -314,7 +398,7 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
   se refait pas ici (règle 4) : ce que la saisie ajoute à ce mois se déclare dans la DSN suivante. L'AER ne se fabrique
   pas : France Travail la renvoie, et elle se vérifie contre les paies écrites.
 - **Une pièce partie dont le fichier manque se refait pour se lire** (`depart::piece_partie`, route `piece-partie`, que
-  `ouvrir-piece` demande ; l'Historique liste ce que le journal dit parti, fichier présent ou non, et un mois y lit aussi
+  la page appelle avant d'ouvrir le chemin rendu ; l'Historique liste ce que le journal dit parti, fichier présent ou non, et un mois y lit aussi
   les signalements de ses jours). Elle se refait par la fonction qui l'a fabriquée, depuis ce que sa ligne du journal
   porte : les engagements dans la version qu'elle a emportée (`versions`), au jour et à l'heure où elle a été écrite (le
   journal des écritures, `dsn-ecrites.json`, sinon l'instant de la ligne ; `socle::temps::pendant`), sous le numéro
@@ -332,7 +416,7 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
 - **Un contrat rompu n'a pas d'avenant** (code du travail L. 1243-1, `reference/sources/code-du-travail/`) : la rupture
   d'un CDD avant son terme met fin au contrat signé, elle ne le modifie pas. Une saisie qui ne diffère du contrat parti
   que par sa rupture (le motif, la fin et le préavis qu'il appelle, les jours d'après la fin retirés) ne le rend pas à
-  refaire signer (`routes::contrats::seule_la_rupture`, lu par `routes::etapes::a_refaire_du_mois`) ; ce qui change en
+  refaire signer (`engagement::etats::seule_la_rupture`, lu par `routes::etapes::a_refaire_du_mois`) ; ce qui change en
   même temps (un taux) en fait un avenant.
 - **Un contrat signé hors du logiciel a ses avenants** (`engagement::signe_ailleurs` : commencé avant le logiciel, ou
   repris d'un ancien logiciel ; code du travail R. 1221-40). Il ne se fait pas signer ici ; ce qu'il disait est ce que dit
@@ -349,10 +433,10 @@ version passée ; `engagement::paies` seul lit et écrit ce fichier, dans le mê
   qu'il livre), « un autre engagement du salarié a changé », « un arrêt ou une absence a changé », « configuration de la compagnie modifiée ». L'écran le montre
   (« Recalculé le JJ/MM/AAAA : … »). Sans chiffre changé, rien ne se dit. Un recalcul que le moteur refuse
   garde la paie validée et se note en incident pour l'éditeur (le témoin des recalculs refusés, `compagnie::incidents`).
-- **Modifier…** (route `valider-engagement`, `valide: false`) repasse l'engagement en saisie. Si les documents d'un de
-  ses mois sont partis, le moteur pose d'abord sa question (`etats::QUESTION_DOCUMENTS_PARTIS`) et ne bouge qu'avec la
-  réponse (`confirme`) ; sa validation se garde (`precedente`) jusqu'à la suivante, qui reprend telles quelles les paies des mois partis si la
-  saisie de leur mois n'a pas changé, et en fait une version si quelque chose est parti sur elle.
+- **Modifier…** (route `modifier-engagement`) écrit ses `changements` sur la carte d'un engagement validé et le
+  revalide. Si ce qui est parti le demande, la route rend un avertissement et n'écrit rien sans `confirme` ; la
+  revalidation reprend telles quelles les paies des mois partis si la saisie de leur mois n'a pas changé, et en fait une
+  version si quelque chose est parti sur elle.
 - **Le numéro de contrat** (`engagement/src/numeros.rs`, règle 4) s'écrit dans l'engagement à sa validation
   (`numeros::a_la_validation`) : le suivant du plus haut que portent, pour le même salarié et la même année, les
   engagements et ce qui est parti. Tout ce qui part (le contrat signé ou imprimé, la DPAE, la DSN, le bulletin) le lit
@@ -369,9 +453,9 @@ bulletin, une AEM. Le format est dans le `README.md`.
 
 Ce que ça impose au moteur :
 
-- `dates_engagement` (`engagement/src/lib.rs`) est le **seul endroit** qui sache où
+- `jours_des_lignes` (`engagement/src/lib.rs`) est le **seul endroit** qui sache où
   chercher les jours d'un engagement : dans ses lignes de travail (une ligne de frais n'en fait
-  aucun, `ligne_de_frais`), et nulle part
+  aucun, `LignePaie::frais`), et nulle part
   ailleurs. La lecture d'un engagement (`Engagement::nouveau`) passe par lui, et le décompte des droits (`cumul.rs`)
   lit ce qu'elle a lu.
 - **Une seule écriture.** `Engagement` exige
@@ -380,9 +464,8 @@ Ce que ça impose au moteur :
   taux de la première ligne `cachet`. Un
   engagement portant `dates`, `cachets`, `heures` ou `taux_horaire` est
   refusé, avec ce que le moteur a vu et ce qu'une saisie porte.
-- `date::d` (`socle/src/date.rs`) accepte `{"jour": …, "lieu": …}` en plus des quatre formats de
-  date : une date détaillée est une date, tout ce qui parcourt des jours
-  continue de marcher sans le savoir.
+- Une date de ligne est une `engagement::ligne::DateDeLigne` : nue (un jour), ou détaillée `{"jour": …, "lieu": …}` ;
+  une date détaillée est une date, tout ce qui parcourt des jours continue de marcher sans le savoir.
 - La construction d'un `Engagement` (`engagement/src/lib.rs`) réunit les deux écritures et n'en
   laisse qu'une : `dates_travail` reste une liste de dates triées, le lieu part
   dans `lieux` (`lieu_de()`, `lieux_joues()`). Le contrat groupe les dates par
@@ -408,7 +491,7 @@ datée, vérifiable**.
   (déduit de l'annexe, jamais saisi), `cadre_par_defaut`,
   `statut_conventionnel` (40.002 : cadre → 04, artiste et agent de maîtrise
   → 05, administratif non cadre → 06, employé technique → 07),
-  `classification_3090` et `minima`. `droit::emplois::resoudre(code, cadre, feminin)`
+  `classification_3090` et `minima`. `droit::emplois::resoudre`
   rend sept champs : les six déclarés et le libellé lisible
   (`emploi_affichage`, au féminin si la fiche dit sexe 2). La lecture de l'engagement les
   pose tous les sept sur l'engagement, sauf ce que l'engagement écrit
@@ -562,18 +645,17 @@ et contrats saisis par la compagnie (`config/organismes.json`, le reste se compo
 `droit::organismes`, `Contexte::organismes` ; enregistrer pour un mois écrit à partir de son premier
 jour) et les rubriques propres à la compagnie (`config/rubriques-compagnie.json`,
 lues par `catalogue::catalogue(racine, jour)`) sont datés de même. Une seule
-lecture, `contexte::fiche_au`, sur la même `valeur_au` que les barèmes ; une
-valeur non datée se refuse avec la phrase qui dit quoi faire
-(`contexte::non_datee`). Le
+lecture, `droit::fiche::valeur_au` ; une valeur non datée ne passe pas la forme
+`Datee`. Le
 `Contexte` garde les fiches datées et les lit à `lue_au` ; `Contexte::au(jour)`
 et `du_mois(mois)` donnent le contexte d'une période. Le calcul d'une période
 lit tout à sa fin (`calculer_periode`), la DSN d'un mois et ses documents à son
 dernier jour (`dsn::generer`, `entreprise_du_mois`, et toute route qui porte un
 `mois`, `routes::dans_la_fenetre`), et le barème d'un jour applique la
-convention de ce jour. On écrit par `contexte::dater`, et seulement par lui : la
+convention de ce jour. On écrit par `droit::fiche::dater`, et seulement par lui : la
 première valeur d'un champ s'y écrit de tout temps, quelle que soit la date
 donnée ; changer une valeur existante exige sa date d'effet
-(`routes::fiches::ecrire_datee`, l'écran la demande alors) ; ce qui précède
+(`ecrire_datee`, `routes/src/fiches/ecriture.rs` ; l'écran la demande alors) ; ce qui précède
 garde l'ancienne valeur. Ce qu'une case datée dit à un jour (sa valeur en vigueur, la dernière d'avant, la prochaine à
 venir, chacune avec sa note, et toutes) se lit par `fiche::temps_au`, seule (la valeur d'avant dit un changement : jamais une case vide, ni la même valeur
 réécrite) : la route de chaque fiche le rend à la date du jour sous chaque case (`historique` de la fiche, les autres
@@ -688,9 +770,9 @@ sont celles de sa **période de paie** (le contrat borné au mois) : un contrat
 d'octobre à décembre compte ses cachets d'octobre en octobre.
 
 Le bulletin se compte lui-même : `documents::bulletin` passe les paies qu'il
-imprime à `lire_engagements(ctx, Some(paies))`, qui les substitue à celles de
-leur mois. Les conseils (`compagnie/conseils.rs`) et la position des droits
-(`service::droits`) lisent la même chose.
+imprime à `Passe::engagements(Some(paies))` (`engagement::cumul`), qui les substitue à celles de
+leur mois. Les conseils (`routes/src/gestes/conseils.rs`) et la position des droits
+(`routes/src/archives.rs`) lisent la même chose.
 
 ### Le modèle d'un contrat, et le contrat parti
 
@@ -884,8 +966,8 @@ et `debut_periode`/`fin_periode` (le contrat borné au mois). La DSN en tire :
 `Engagement.planning` (jours des mois suivants, lus sous `planning` sur les
 lignes, avec leur lieu dans `planning_lieux`) ne compte ni dans
 `dates_travail`, ni dans les cachets, ni dans la DSN : il donne `fin` par
-défaut, `dates_du_contrat()` pour le contrat imprimé, et la reprise du
-mois suivant (`engagement_de_reprise`). Le contrat entier recomposé pour le
+défaut, `dates_du_contrat()` pour le contrat imprimé, et les lignes du
+mois suivant (`lignes_du_planning`). Le contrat entier recomposé pour le
 certificat CS (`paie_du_contrat_entier`) retire le planning des lignes :
 chaque mois a payé le sien.
 
@@ -947,7 +1029,7 @@ temporaire** `S21.G00.30.020` (CCH-12), et le moteur le fabrique :
 | ce qui l'écrit | `ntt::poser_nir` / `ntt::poser_ntt`, appelés par les émetteurs de bloc 30 — `dsn.rs`, `fctu.rs`, `signalement.rs`, `amorcage.rs` |
 | les règles | CSL-11 (commence par 1 ou 2), CSL-12 (aucun espace), CCH-13 (caractères 2 à 10 = le SIREN), longueur [11,40] — trois d'entre elles ne sont **pas** dans le relevé des formats, comme pour le NIR |
 | quand les deux partent ensemble | la déclaration du mois où le NIR a pris effet : « le NTT doit être renseigné sur la première DSN où le NIR est attribué », pour raccorder les deux identités |
-| ce qui le date | l'arrivée du NIR sur une fiche qui existait est un changement daté (`routes::fiches::changements_a_dater`) : la fiche dit « sans NIR » jusqu'à la veille — seule case qui, en se remplissant, demande sa date |
+| ce qui le date | l'arrivée du NIR sur une fiche qui existait est un changement daté (`changements_a_dater`, `routes/src/fiches/ecriture.rs`) : la fiche dit « sans NIR » jusqu'à la veille — seule case qui, en se remplissant, demande sa date |
 | ce qu'il n'est pas | une donnée de gestion : il n'ouvre **aucun droit**, et ne s'imprime ni sur un bulletin, ni sur un contrat, ni sur un certificat |
 
 Deux conséquences hors DSN : la **DPAE** part alors avec sa zone NIR à blanc,
@@ -1040,7 +1122,7 @@ salarié découvert pendant un an.
 
 Le catalogue porte **dix** conventions : 1285, 1790, 1922, 2121, 2412, 2642, 3090, 3097, 3241 et 3252. Une convention
 qui n'y est pas refuse, et une convention relevée mais pas confirmée (`applicable: false`) refuse aussi, en disant ce
-qui a été lu (`prevoyance::regime`, dans `droit/src/bareme.rs`). La **1285 (CCNEAC)**, le secteur
+qui a été lu (`prevoyance::regime`, dans `droit/src/bareme/prevoyance.rs`). La **1285 (CCNEAC)**, le secteur
 subventionné, y porte — non cadres 0,95 % T1,
 cadres 1,50 % T1 + 0,81 % T2, 100 % patronal, dus dès l'embauche (art.
 XII.2.1.2 et XII.2.1.5), la tranche 2 allant du plafond à **quatre**
@@ -1050,7 +1132,7 @@ toutes ses livraisons quotidiennes jusqu'à la veille, pour lire la version
 **en vigueur** de chaque article. Elle porte aussi la **santé** des
 permanents, qui est un taux de la convention et non un contrat à niveaux :
 0,81 % du PMSS en 2026, 0,89 % au 01/01/2027, au moins pour moitié patronal
-(XII.2.1.10 et 11) — `droit::bareme::sante_conventionnelle`.
+(XII.2.1.10 et 11) — `droit::bareme::prevoyance::sante_conventionnelle`.
 
 Un écart est à connaître : la CCNEAC ajoute à l'interbranche, **pour ses
 intermittents cadres techniciens seulement** (XII.2.2.1), 0,45 % en TA et
@@ -1163,7 +1245,7 @@ ses nombres sont relevés, pas confirmés, et le refus dit ce qu'il reste à rel
   sans rien de la compagnie), et `dsn::places_par_contrat` réserve autant
   d'identifiants d'affiliation de plus : trois pour la 3090, quatre pour la 1285.
 
-`droit::contexte::fusionner` empile les trois, et `Contexte::bareme_brut` (`droit/src/contexte.rs`) est
+`Contexte::empiler` (`droit/src/contexte.rs`) empile les trois, sous `Contexte::bareme`, et c'est
 le seul endroit qui le fait : le reste du moteur lit un barème déjà fondu et
 n'a pas à savoir d'où vient quel nombre.
 
@@ -1228,7 +1310,7 @@ un seuil n'est franchi qu'après cinq années consécutives (L. 130-1, II) — e
   couche n'est pas relevée (`par_organisation_patronale`) et un **second
   établissement** incomplet (adresse, taux AT/MP) ; complet, il a sa propre DSN
   (`droit/src/contexte.rs`, `declarations/src/dsn.rs`). Le contrôle (`contexte::controler`) est appelé dans
-  `Contexte::bareme_brut`, seul endroit que les deux fronts traversent.
+  `Contexte::pile_lue`, par où passe toute lecture du barème.
 
 ### Le barème a deux axes, pas un
 
@@ -1559,7 +1641,7 @@ période commune »*.
 
 `dsn::generer` le fait : le bloc 60 s'écrit sous le bloc 40 du
 contrat suspendu, entre le contrat et la fin de contrat (l'ordre de
-l'arborescence : 41, 60, 62, 65, 70, 71). La fabrication de la DSN du mois (`compagnie/depart.rs`,
+l'arborescence : 41, 60, 62, 65, 70, 71). La fabrication de la DSN du mois (`routes/src/gestes/depart.rs`,
 `fabriquer_dsn`) lit les arrêts qui croisent le mois et les annonce dans les avertissements — y compris quand
 l'arrêt n'a **jamais été signalé**, parce que la mensuelle ne remplace pas le
 signalement : elle le répète.
@@ -1583,7 +1665,7 @@ cette liste qui donne son rang au prochain annule-et-remplace — le cahier
 technique (§1.4.3.4) exige une séquence croissante par événement — et un
 dépôt de **test** n'y écrit rien : il n'a rien déclaré.
 
-Le dépôt passe par le même `depot-dsn` qu'une mensuelle. Deux adaptations
+Le dépôt passe par la même route `deposer` qu'une mensuelle. Deux adaptations
 seulement : un signalement n'a pas de mois principal déclaré (la rubrique y
 est interdite), donc c'est le **jour de l'événement** qui s'affiche et se
 recopie ; et le garde-fou « une DSN réelle est déjà partie pour ce mois » ne
@@ -1659,7 +1741,7 @@ Trois garde-fous, tous dans le moteur (`compagnie/src/preuve.rs`, `routes/src/ge
   logiciel tapé au moment de l'acte (`README.md`) ; la séance qui ouvre le
   coffre n'en est jamais une. Sans mot de passe posé, rien ne part du tout.
   Une version exigée et pas encore installée bloque tout dépôt réel
-  (`depot_acte::exigee_en_attente`).
+  (`compagnie::preuve::exigee_en_attente`).
 - **Pas deux fois.** Une DSN réelle déjà partie pour le mois ne repart pas
   (`DsnDejaDeposee`), une embauche déjà déclarée n'est plus à déclarer.
   Une déclaration **refusée** repart sans forcer —
@@ -1782,7 +1864,7 @@ compagnie ce qu'elle change d'un calcul de paie : l'indicateur la montre avec la
 lancement qui suit son installation (« PuppetPaie X est en place. Elle change un calcul de paie : … » ;
 `maj/appliquee.json`, qui passe à `vue: true`) ; une version sans phrase `calcul` ne dit rien de plus que « Logiciel à
 jour ». Une version **exigée** bloque tout dépôt réel tant qu'elle n'est pas installée
-(`depot_acte::exigee_en_attente`), et l'indicateur le dit, sans survol.
+(`compagnie::preuve::exigee_en_attente`), et l'indicateur le dit, sans survol.
 
 **Quatre archives de mise à jour par version** : une par système
 (`windows`, `linux`, `mac` : les fichiers communs et les programmes de ce
@@ -1924,10 +2006,10 @@ vit dans `moteur/tests/` ; un test qui n'appelle qu'une crate sur des valeurs vi
 | déclarations | `declarations/`, `moteur/tests/dsn/` | 90 | la norme : usages, formats, blocs, ordre, échéances |
 | envois | `envois/` | 40 | la lecture des retours réels transcrits, le garde-fou réseau, aucun envoi réel sans mot de passe |
 | routes | `routes/`, `moteur/tests/routes/`, `interface_fichiers.rs`, `interface_http.rs`, `moteur/src/interface/` | 20 | une route refuse et rien n'est écrit ; l'ouverture |
-| compagnie | `moteur/tests/fichiers/` (coffre, mise à jour, sauvegarde, restauration, archivage, bridage, essai, installations, Drive, banque des conseils), `tests/routes/compagnie_supprimee.rs`, `demarrage.rs`, `tests/drive_jeton.rs`, `compagnie/` | 40 | le coffre et ses deux mots de passe, la signature des mises à jour et la forme des archives, la sauvegarde et la restauration, le bridage |
+| compagnie | `moteur/tests/fichiers/` (coffre, mise à jour, sauvegarde, restauration, bridage, essai, installations, Drive, banque des conseils), `tests/routes/compagnie_supprimee.rs`, `demarrage.rs`, `tests/drive_jeton.rs`, `compagnie/` | 40 | le coffre et ses deux mots de passe, la signature des mises à jour et la forme des archives, la sauvegarde et la restauration, le bridage |
 | import | `moteur/tests/fichiers/bulletin_lu.rs`, `caviardage.rs`, `tests/routes/import_neuve.rs`, `import/` | 15 | un passé importé se relit (bulletins, DSN) ; ce qui part chez l'éditeur ne désigne personne |
 | atelier | `atelier/tests/atelier/` (`donnees_reelles.rs`, `verifier_avant_commit.rs`, `referentiels.rs` : sa propre cible), `moteur/tests/fichiers/garde_reseau.rs`, `moteur/tests/atelier.rs`, la garde de l'horloge | 15 | les garde-fous de `atelier/AGENTS.md` ; la fidélité des référentiels livrés aux textes déposés ; le binaire livré ne porte rien de l'atelier |
 | parcours | `moteur/tests/rejeu.rs` | 4 | un scénario joué de bout en bout à l'horloge, ses sorties comparées à un oracle |
 
-Total visé : environ 350, plafond 400. La commande, et ce qu'un exécutant lance : `atelier/AGENTS.md`, « Faire
-tourner le code dans le conteneur, et les tests ».
+Total visé : environ 350, plafond 400. La commande : `atelier/AGENTS.md`, « Faire tourner le code dans le conteneur,
+et les tests ».
