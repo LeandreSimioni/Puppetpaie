@@ -283,7 +283,7 @@ pub struct VersementLu {
     pub net_verse: Option<Decimal>,
     /// .006 a .008.
     pub taux_pas: Option<Decimal>,
-    pub type_pas: Option<String>,
+    pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant_pas: Option<String>,
     /// .009.
     pub pas: Option<Decimal>,
@@ -323,7 +323,7 @@ pub struct Nets {
     pub net_imposable: Option<Decimal>,
     pub net_verse: Option<Decimal>,
     pub taux_pas: Option<Decimal>,
-    pub type_pas: Option<String>,
+    pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant_pas: Option<String>,
     pub pas: Option<Decimal>,
 }
@@ -478,7 +478,7 @@ impl DsnLue {
     }
 
     pub fn pas_bareme(&self) -> usize {
-        self.versements.iter().filter(|v| v.type_pas.as_deref().is_some_and(|t| t != "01")).count()
+        self.versements.iter().filter(|v| v.type_pas.is_some_and(|t| !t.transmis())).count()
     }
 
     /// Les contrats de l'individu `nir`.
@@ -560,7 +560,7 @@ impl DsnLue {
                 net_imposable: v.net_imposable,
                 net_verse: v.net_verse,
                 taux_pas: v.taux_pas,
-                type_pas: v.type_pas.clone(),
+                type_pas: v.type_pas,
                 identifiant_pas: v.identifiant_pas.clone(),
                 pas: v.pas,
             });
@@ -1040,7 +1040,10 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 let t = fautes.nombre(k, &v);
                 versement.into_iter().for_each(|x| x.taux_pas = t);
             }
-            "S21.G00.50.007" => versement.into_iter().for_each(|x| x.type_pas = plein.clone()),
+            "S21.G00.50.007" => {
+                let t = fautes.code(k, &v);
+                versement.into_iter().for_each(|x| x.type_pas = t);
+            }
             "S21.G00.50.008" => versement.into_iter().for_each(|x| x.identifiant_pas = plein.clone()),
             "S21.G00.50.009" => {
                 let m = fautes.montant(k, &v);

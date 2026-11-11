@@ -68,11 +68,11 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
         let r = envois::retours::releves_vers_salaries(&lus.releves, &nirs);
         for x in &r.rattaches {
             // La mise a disposition est celle du compte rendu ; sans elle, le taux ne se date pas.
-            let mis_a_disposition = retour.publication.map(|p| p.compact()).ok_or_else(|| socle::echec::erreur(Classe::Illisible, format!("Un compte rendu de taux de PAS ne dit pas sa date de mise à disposition ({}).", socle::fichiers::nom_du(chemin))))?;
+            let mis_a_disposition = retour.publication.ok_or_else(|| socle::echec::erreur(Classe::Illisible, format!("Un compte rendu de taux de PAS ne dit pas sa date de mise à disposition ({}).", socle::fichiers::nom_du(chemin))))?;
             tous.push(compagnie::taux_pas::TauxRecu {
                 salarie: x.salarie.clone(),
-                taux: x.releve.taux.clone(),
-                type_taux: x.releve.type_taux.clone(),
+                taux: x.releve.taux,
+                type_taux: x.releve.type_taux,
                 identifiant: x.releve.identifiant.clone(),
                 mis_a_disposition,
                 en_retour_de,

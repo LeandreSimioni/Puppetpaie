@@ -420,7 +420,7 @@ forme! {
         pub depuis: socle::date::Jour,
         pub zone: String,
         #[serde(rename = "type")]
-        pub genre: String,
+        pub genre: crate::type_taux_pas::TypeDeTauxPas,
         pub tranches: Vec<Vec<Option<Court>>>,
     }
 }

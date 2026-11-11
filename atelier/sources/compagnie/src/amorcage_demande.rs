@@ -9,7 +9,6 @@
 //! si une demande est partie depuis le dernier taux recu pour lui et que sa reponse est encore attendue (`en_cours`). Ce qui
 //! ne se demande pas se dit : un salarie sans NIR, une demande deja partie.
 
-use droit::fiche::Lue as _;
 use socle::echec::Classe;
 use std::path::PathBuf;
 
@@ -66,10 +65,6 @@ fn gauche(t: &str, n: usize) -> String {
     format!("{}{}", t, " ".repeat(n.saturating_sub(t.chars().count())))
 }
 
-/// Les chiffres d'un instant (`AAAA-MM-JJTHH:MM:SS` -> `AAAAMMJJHHMMSS`).
-fn chiffres(t: &str) -> String {
-    t.chars().filter(char::is_ascii_digit).collect()
-}
 
 /// Le jour ouvre qui tombe `combien` jours ouvres apres `depart` -- ni samedi, ni dimanche, ni fete legale.
 fn jours_ouvres_apres(depart: Jour, combien: i64) -> R<Jour> {
@@ -104,14 +99,18 @@ pub fn en_cours(ctx: &Contexte, cle: &str) -> R<Option<EnCours>> {
         .filter(|l| l.accepte() && l.nature_dsn() == Some(declarations::amorcage::NATURE) && pour_lui(l) && !envois::etats::refuse_par_un_retour(l))
         .last();
     let Some(l) = derniere else { return Ok(None) };
-    let quand = l.quand().to_string();
+    // L'heure de la demande ; un jour seul compte de son debut.
+    let partie = match l.quand() {
+        socle::paris::HeureDuJournal::Instant(i) => Some(i.naif()),
+        socle::paris::HeureDuJournal::Jour(j) => socle::paris::Naif::du_jour(j, 0, 0, 0),
+    }
+    .ok_or_else(|| erreur(Classe::Illisible, "Le jour d'une demande de taux partie ne se lit pas au journal."))?;
     // Un taux recu depuis la demande y a repondu.
     let recus = droit::pas::recus(ctx, cle).map_err(|e| e.reclasser(Classe::Illisible))?;
-    if recus.last().and_then(|r| r.mis_a_disposition.portee()).is_some_and(|d| chiffres(d) >= chiffres(&quand)) {
+    if recus.last().and_then(|r| r.mis_a_disposition).is_some_and(|d| d.naif() >= partie) {
         return Ok(None);
     }
-    let le_jour = quand.get(..10).ok_or_else(|| erreur(Classe::Illisible, "Le jour d'une demande de taux partie ne se lit pas au journal."))?;
-    let jour = Jour::lire(le_jour).map_err(|e| e.reclasser(Classe::Illisible))?;
+    let jour = l.quand().jour();
     let avant = jours_ouvres_apres(jour, 5)?;
     Ok((ctx.aujourdhui <= avant).then_some(EnCours { quand: jour, avant }))
 }
@@ -136,14 +135,14 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
         let mut besoin: Option<(usize, droit::pas::Situation)> = None;
         for (i, p) in paies.iter().enumerate().filter(|(_, p)| cle_de(p) == *cle) {
             let s = droit::pas::situation(ctx, cle, Some(p.engagement.date_du_versement().map_err(|e| e.reclasser(Classe::Illisible))?), Some(p.engagement.mois)).map_err(|e| e.reclasser(Classe::Illisible))?;
-            if s.situation == droit::pas::SANS_NIR || s.a_demander {
+            if s.situation == droit::pas::SituationDuTaux::SansNir || s.a_demander {
                 besoin = Some((i, s));
                 break;
             }
         }
         let Some((i, s)) = besoin else { continue };
         // SANS NIR, LA DGFiP N'A PERSONNE A QUI REPONDRE : la demande ne part pas, et cela se dit.
-        if s.situation == droit::pas::SANS_NIR {
+        if s.situation == droit::pas::SituationDuTaux::SansNir {
             lignes.push(Ligne { salarie: cle.clone(), libelle: s.libelle.to_string(), contrat: None, pourquoi_pas: "sans NIR dans sa fiche, la DGFiP n'a personne à qui répondre".into(), indice: i });
             continue;
         }

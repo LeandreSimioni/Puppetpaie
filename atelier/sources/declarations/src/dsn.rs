@@ -2025,7 +2025,7 @@ pub fn bloc_anciennete(f: &mut Fichier, p: &Paie, jours: i64) -> R<()> {
 /// assistants maternels et familiaux, que seuls PAJEmploi et les departements declarent : le moteur ne l'ecrit pas.
 fn pas_du_versement(
     taux_pas: Option<&Triplet>, bar: &Pile, montant: Decimal, le: Jour, court: bool,
-) -> R<(Option<droit::fiche::Montant>, Option<String>, Option<String>, Decimal)> {
+) -> R<(Option<droit::fiche::Montant>, Option<droit::type_taux_pas::TypeDeTauxPas>, Option<String>, Decimal)> {
     let r = pas::du_versement(taux_pas, bar, montant, Some(le), court, ZONE_DEFAUT)?;
     Ok((r.taux, r.type_taux, r.identifiant, r.montant_soumis))
 }
@@ -2403,8 +2403,9 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
         }
     };
     f.add_ecrit("S21.G00.50.006", taux.as_ref().map(droit::fiche::Montant::ecrit))?;
-    f.add_ecrit("S21.G00.50.007", type_taux.clone())?;
-    if type_taux.as_deref() == Some("01") {
+    let type_taux = type_taux.ok_or_else(|| absente("S21.G00.50.007"))?;
+    f.ecrire_code(type_taux)?;
+    if type_taux.transmis() {
         f.add_ecrit("S21.G00.50.008", identifiant.clone())?;
     }
     f.add("S21.G00.50.009", mt(pct(soumis, droit::pas::taux_du_versement(taux.as_ref())?)));
@@ -2691,8 +2692,9 @@ fn bloc_regularisation(
     let v = &pas_c.versement;
     let (taux, type_taux, identifiant, soumis) = (&v.taux, &v.type_taux, &v.identifiant, v.montant_soumis);
     f.add_ecrit("S21.G00.50.006", taux.as_ref().map(droit::fiche::Montant::ecrit))?;
-    f.add_ecrit("S21.G00.50.007", type_taux.clone())?;
-    if type_taux.as_deref() == Some("01") {
+    let type_taux = type_taux.ok_or_else(|| absente("S21.G00.50.007"))?;
+    f.ecrire_code(type_taux)?;
+    if type_taux.transmis() {
         f.add_ecrit("S21.G00.50.008", identifiant.clone())?;
     }
     let indu = d_ni < Decimal::ZERO;

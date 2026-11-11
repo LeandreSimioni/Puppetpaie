@@ -5,8 +5,8 @@
 
 use crate::outils::typee::{cas_de, code_livre, jouer, lire};
 use droit::forme_bareme::{GrillePas, NombreDate, PasParDefaut, Pile};
-use droit::fiche::Montant;
-use droit::pas::{du_versement, taux_par_defaut, ErreurPas, Triplet, Versement};
+use droit::pas::{du_versement, taux_par_defaut, ErreurPas, TauxDePas, Triplet, Versement};
+use droit::type_taux_pas::TypeDeTauxPas;
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 use socle::forme::Nombre;
@@ -120,8 +120,8 @@ struct CasDuTaux {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TauxRecu {
-    taux: Option<Montant>,
-    type_taux: Option<String>,
+    taux: Option<TauxDePas>,
+    type_taux: Option<TypeDeTauxPas>,
     identifiant: Option<String>,
 }
 
@@ -135,12 +135,12 @@ struct CasDuVersement {
     recu: Option<TauxRecu>,
 }
 
-fn taux_du_cas(c: &CasDuTaux) -> Suite<Rendu<(String, String)>> {
-    suite(montants().into_iter().map(|m| taux_par_defaut(&pile(c.bareme, c.le), m, c.le, &c.zone).into()).collect())
+fn taux_du_cas(c: &CasDuTaux) -> Suite<Rendu<(String, TypeDeTauxPas)>> {
+    suite(montants().into_iter().map(|m| taux_par_defaut(&pile(c.bareme, c.le), m, c.le, &c.zone).map(|(t, g)| (t.to_string(), g)).into()).collect())
 }
 
 fn versement_du_cas(c: &CasDuVersement) -> Suite<Rendu<Versement>> {
-    let t = c.recu.as_ref().map(|r| Triplet { taux: r.taux.clone(), type_taux: r.type_taux.clone(), identifiant: r.identifiant.clone() });
+    let t = c.recu.as_ref().map(|r| Triplet { taux: r.taux, type_taux: r.type_taux, identifiant: r.identifiant.clone() });
     suite(montants().into_iter().map(|m| du_versement(t.as_ref(), &pile(c.bareme, c.le), m, c.le, c.contrat_court, &c.zone).into()).collect())
 }
 

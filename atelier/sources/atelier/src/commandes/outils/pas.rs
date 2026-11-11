@@ -22,26 +22,6 @@ pub static SPEC: Spec = Spec {
     ],
 };
 
-/// Les types de taux, cahier technique 2026.1, rubrique S21.G00.50.007 (`atelier/reference/sources/norme-dsn/texte/`).
-const TYPES: [(&str, &str); 8] = [
-    ("01", "Taux transmis par la DGFIP"),
-    ("13", "Bareme mensuel metropole"),
-    ("17", "Bareme mathematique sur base mensuelle metropole"),
-    ("23", "Bareme mensuel Guadeloupe, Reunion et Martinique"),
-    ("27", "Bareme mathematique sur base mensuelle Guadeloupe, Reunion, Martinique"),
-    ("33", "Bareme mensuel Guyane et Mayotte"),
-    ("37", "Bareme mathematique sur base mensuelle Guyane et Mayotte"),
-    ("99", "Indu relatif a un exercice anterieur - pas de taux de PAS"),
-];
-
-/// Le libelle du type de taux `t`, s'il est un code de la norme.
-fn libelle_type(t: Option<&str>) -> &'static str {
-    match TYPES.iter().find(|(c, _)| Some(*c) == t) {
-        Some((_, l)) => l,
-        None => "type hors de la norme",
-    }
-}
-
 pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     super::code(if args.drapeau("demander") {
         demander(cadre, args)
@@ -85,8 +65,13 @@ fn lire(cadre: &Cadre) -> Result<i32, Echec> {
             dire!("  {:<12} aucun taux recu", cle);
             continue;
         };
-        dire!("  {:<12} taux {:<6} type {} ({})", cle, dit(e.taux.as_deref()), dit(e.r#type.as_deref()), libelle_type(e.r#type.as_deref()));
-        dire!("  {:<12} identifiant {}, mis a disposition {}", "", dit(e.identifiant.as_deref()), dit(e.mis_a_disposition.as_deref()));
+        let ecrit = |t: Option<String>| dit(t.as_deref()).to_string();
+        let libelle = match e.r#type {
+            Some(t) => t.libelle(),
+            None => "None",
+        };
+        dire!("  {:<12} taux {:<6} type {} ({})", cle, ecrit(e.taux.map(|t| t.to_string())), ecrit(e.r#type.map(|t| t.to_string())), libelle);
+        dire!("  {:<12} identifiant {}, mis a disposition {}", "", dit(e.identifiant.as_deref()), ecrit(e.mis_a_disposition.map(|m| m.compact())));
         match s.valable_jusqu_a {
             Some(j) => dire!("  {:<12} {}, jusqu'au {}\n", "", s.libelle, j.jj_mm_aaaa()),
             None => dire!("  {:<12} {}\n", "", s.libelle),
@@ -103,7 +88,7 @@ fn lire(cadre: &Cadre) -> Result<i32, Echec> {
         }
         dire!("\nLes signalements s'ecrivent par `pas --demander` ; la DPAE les fait partir avec elle.");
     }
-    for s in diag.iter().filter(|s| s.situation == droit::pas::SANS_NIR) {
+    for s in diag.iter().filter(|s| s.situation == droit::pas::SituationDuTaux::SansNir) {
         dire!("  {:<12} {} -- rien a demander, c'est le bareme.", s.salarie, s.libelle);
     }
     Ok(0)

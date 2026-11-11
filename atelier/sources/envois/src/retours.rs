@@ -72,14 +72,22 @@ pub const ESSAI_REEL: &str = "02";
 pub const RAPPORTS_DEPOT: [&str; 3] = ["CCO", "BAN", "AEE"];
 
 /// Les rubriques DSN du taux de PAS, et ce qu'elles portent.
-const RUBRIQUES_PAS: [(&str, &str); 3] = [
-    ("S21.G00.50.006", "taux"),
-    ("S21.G00.50.007", "type"),
-    ("S21.G00.50.008", "identifiant"),
+const RUBRIQUES_PAS: [(&str, ChampPas); 3] = [
+    ("S21.G00.50.006", ChampPas::Taux),
+    ("S21.G00.50.007", ChampPas::Type),
+    ("S21.G00.50.008", ChampPas::Identifiant),
 ];
 
 /// Noms metier NEODeS des memes rubriques (cahier technique 2026.1, p. 244).
-const NOMS_METIER: [(&str, &str); 3] = [("tauxpas", "taux"), ("typetauxpas", "type"), ("idtauxpas", "identifiant")];
+const NOMS_METIER: [(&str, ChampPas); 3] = [("tauxpas", ChampPas::Taux), ("typetauxpas", ChampPas::Type), ("idtauxpas", ChampPas::Identifiant)];
+
+/// Ce qu'une rubrique du bloc 50 donne d'un taux de PAS (S21.G00.50.006 a .008).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChampPas {
+    Taux,
+    Type,
+    Identifiant,
+}
 
 /// L'archive `nom` (`AAAAMMJJ-hhmmss_natureN_flux.ext`, `releve_retours::archiver_retour`) est-elle celle d'un retour de nature
 /// `nature` ? Son deuxieme segment le dit.
@@ -1358,18 +1366,32 @@ impl Entree94 {
         self.identifiant.is_some() && self.nir.is_some()
     }
 
-    fn champ(&mut self, nom: &str) -> &mut Option<String> {
-        match nom {
-            "taux" => &mut self.taux,
-            "type" => &mut self.type_,
-            _ => &mut self.identifiant,
+    fn champ(&mut self, c: ChampPas) -> &mut Option<String> {
+        match c {
+            ChampPas::Taux => &mut self.taux,
+            ChampPas::Type => &mut self.type_,
+            ChampPas::Identifiant => &mut self.identifiant,
         }
     }
 
-    /// Le releve, quand l'entree dit son NIR et son identifiant.
-    fn releve(&self) -> Option<ReleveTauxPas> {
-        Some(ReleveTauxPas { nir: self.nir.clone()?, taux: self.taux.clone(), type_taux: self.type_.clone(), identifiant: self.identifiant.clone()? })
+    /// Le releve, quand l'entree dit son NIR et son identifiant ; un taux ou un type qui n'a pas la forme de la norme
+    /// refuse la piece.
+    fn releve(&self) -> R<Option<ReleveTauxPas>> {
+        let (Some(nir), Some(identifiant)) = (self.nir.clone(), self.identifiant.clone()) else { return Ok(None) };
+        let taux = self.taux.as_deref().map(taux_de_pas).transpose()?;
+        let type_taux = self.type_.as_deref().map(type_de_taux).transpose()?;
+        Ok(Some(ReleveTauxPas { nir, taux, type_taux, identifiant }))
     }
+}
+
+/// Un taux de PAS lu dans un compte rendu (S21.G00.50.006) ; une autre forme refuse la piece.
+fn taux_de_pas(t: &str) -> R<droit::pas::TauxDePas> {
+    droit::pas::TauxDePas::lire(t).ok_or_else(|| echec(Classe::Illisible, format!("Un compte rendu de taux de PAS porte le taux « {} », qui n'a pas la forme de la norme (S21.G00.50.006).", t)))
+}
+
+/// Un type de taux de PAS lu dans un compte rendu (S21.G00.50.007) ; un code hors de la liste refuse la piece.
+fn type_de_taux(t: &str) -> R<droit::type_taux_pas::TypeDeTauxPas> {
+    droit::type_taux_pas::TypeDeTauxPas::du_code(t).ok_or_else(|| echec(Classe::Illisible, format!("Un compte rendu de taux de PAS porte le type « {} », qui n'est pas dans la liste de la norme (S21.G00.50.007).", t)))
 }
 
 /// UN TAUX DE PAS QU'UN COMPTE RENDU DE NATURE 94 COMMUNIQUE : le NIR (13 caracteres), le taux, son type et l'identifiant
@@ -1377,9 +1399,9 @@ impl Entree94 {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ReleveTauxPas {
     pub nir: String,
-    pub taux: Option<String>,
+    pub taux: Option<droit::pas::TauxDePas>,
     #[serde(rename = "type")]
-    pub type_taux: Option<String>,
+    pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant: String,
 }
 
@@ -1422,17 +1444,17 @@ fn valeurs_de(p: &Plat) -> Vec<&str> {
     p.attribs.iter().map(|(_, v)| v.as_str()).chain(std::iter::once(p.texte.as_str())).collect()
 }
 
-fn rubrique_pas(v: &str) -> Option<&'static str> {
+fn rubrique_pas(v: &str) -> Option<ChampPas> {
     RUBRIQUES_PAS.iter().find(|(k, _)| *k == v).map(|(_, c)| *c)
 }
 
-fn pas_rapport_crm(a: &Arbre) -> Vec<ReleveTauxPas> {
+fn pas_rapport_crm(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
     let racine = a.racine();
     if local(&racine.tag) != "rapport" {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Some(identifiant) = racine.attribut("identifiant").filter(|s| !s.is_empty()) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut releves = Vec::new();
     for el in a.tous() {
@@ -1446,12 +1468,12 @@ fn pas_rapport_crm(a: &Arbre) -> Vec<ReleveTauxPas> {
             Some(taux) => (taux, "01", identifiant.to_string()),
             None => ("0.00".to_string(), "13", "-1".to_string()),
         };
-        releves.push(ReleveTauxPas { nir, taux: Some(taux), type_taux: Some(type_taux.to_string()), identifiant });
+        releves.push(ReleveTauxPas { nir, taux: Some(taux_de_pas(&taux)?), type_taux: Some(type_de_taux(type_taux)?), identifiant });
     }
-    releves
+    Ok(releves)
 }
 
-fn pas_par_code(a: &Arbre) -> Vec<ReleveTauxPas> {
+fn pas_par_code(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
     let elements = a_plat(a);
     const RUB: &str = "S21.G00.50.008";
     // Les attributs (clés et valeurs) puis le texte de chaque élément.
@@ -1459,10 +1481,10 @@ fn pas_par_code(a: &Arbre) -> Vec<ReleveTauxPas> {
         .iter()
         .any(|p| p.texte.contains(RUB) || p.attribs.iter().any(|(k, v)| k.contains(RUB) || v.contains(RUB)));
     if !present {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let (mut releves, mut cur) = (Vec::new(), Entree94::default());
-    let mut attente: Option<&str> = None;
+    let mut attente: Option<ChampPas> = None;
     for p in &elements {
         let valeurs = valeurs_de(p);
         for v in &valeurs {
@@ -1498,14 +1520,14 @@ fn pas_par_code(a: &Arbre) -> Vec<ReleveTauxPas> {
     if cur.complete() {
         releves.push(cur);
     }
-    releves.iter().filter_map(Entree94::releve).collect()
+    releves.iter().filter_map(|e| e.releve().transpose()).collect()
 }
 
-fn pas_par_nom_metier(a: &Arbre) -> Vec<ReleveTauxPas> {
+fn pas_par_nom_metier(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
     let elements = a_plat(a);
     let metier = |nom: &str| NOMS_METIER.iter().find(|(k, _)| *k == nom).map(|(_, c)| *c);
     if !elements.iter().any(|p| metier(&p.nom.to_lowercase()).is_some()) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let (mut releves, mut cur) = (Vec::new(), Entree94::default());
     for p in &elements {
@@ -1528,19 +1550,10 @@ fn pas_par_nom_metier(a: &Arbre) -> Vec<ReleveTauxPas> {
     if cur.complete() {
         releves.push(cur);
     }
-    releves.iter().filter_map(Entree94::releve).collect()
+    releves.iter().filter_map(|e| e.releve().transpose()).collect()
 }
 
-/// Un taux : un ou deux chiffres, un point, deux chiffres.
-fn est_taux(v: &str) -> bool {
-    let c: Vec<char> = v.chars().collect();
-    let Some(p) = c.iter().position(|&x| x == '.') else {
-        return false;
-    };
-    (1..=2).contains(&p) && c.len() == p + 3 && c[..p].iter().all(char::is_ascii_digit) && c[p + 1..].iter().all(char::is_ascii_digit)
-}
-
-fn pas_par_balayage(a: &Arbre) -> Vec<ReleveTauxPas> {
+fn pas_par_balayage(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
     let valeurs: Vec<String> = a_plat(a)
         .iter()
         .flat_map(|p| valeurs_de(p).into_iter().filter(|v| !v.is_empty()).map(str::to_string).collect::<Vec<_>>())
@@ -1553,9 +1566,9 @@ fn pas_par_balayage(a: &Arbre) -> Vec<ReleveTauxPas> {
             }
             cur = Entree94 { nir: Some(treize(v)), ..Default::default() };
         } else if cur.nir.as_deref().is_some_and(|n| !n.is_empty()) {
-            if cur.taux.is_none() && est_taux(v) {
+            if cur.taux.is_none() && droit::pas::TauxDePas::lire(v).is_some() {
                 cur.taux = Some(v.clone());
-            } else if cur.type_.is_none() && ["01", "13", "17", "23", "27", "33", "37", "99"].contains(&v.as_str()) {
+            } else if cur.type_.is_none() && droit::type_taux_pas::TypeDeTauxPas::du_code(v).is_some() {
                 cur.type_ = Some(v.clone());
             } else if cur.identifiant.is_none() && (v == "-1" || ((1..=18).contains(&v.chars().count()) && v.chars().all(|c| c.is_ascii_digit()))) {
                 cur.identifiant = Some(v.clone());
@@ -1565,21 +1578,21 @@ fn pas_par_balayage(a: &Arbre) -> Vec<ReleveTauxPas> {
     if cur.complete() {
         releves.push(cur);
     }
-    releves.iter().filter_map(Entree94::releve).collect()
+    releves.iter().filter_map(|e| e.releve().transpose()).collect()
 }
 
 /// `extraire_taux_pas` : les quatre strategies, de la plus sure a la plus large.
 pub fn taux_pas_d_octets(o: &[u8]) -> R<TauxPasLus> {
     let texte = String::from_utf8_lossy(o);
     let arbre = lire_texte(&texte)?;
-    let strategies: [(&'static str, fn(&Arbre) -> Vec<ReleveTauxPas>); 4] = [
+    let strategies: [(&'static str, fn(&Arbre) -> R<Vec<ReleveTauxPas>>); 4] = [
         ("rapport CRM nominatif", pas_rapport_crm),
         ("rubriques codees", pas_par_code),
         ("noms metier NEODeS", pas_par_nom_metier),
         ("balayage large", pas_par_balayage),
     ];
     for (nom, f) in strategies {
-        let releves = f(&arbre);
+        let releves = f(&arbre)?;
         if !releves.is_empty() {
             return Ok(TauxPasLus { strategie: Some(nom), releves });
         }

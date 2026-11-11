@@ -699,6 +699,7 @@ impl FormeDeCase for i64 {}
 impl FormeDeCase for Jour {}
 impl FormeDeCase for Mois {}
 impl FormeDeCase for Montant {}
+impl FormeDeCase for socle::paris::InstantCompact {}
 impl<T: FormeDeCase> FormeDeCase for Vec<T> {
     const VALEURS: &'static [&'static str] = T::VALEURS;
     fn cases() -> Vec<Declaree> {
@@ -1467,7 +1468,13 @@ cases! {
 cases! {
     /// UN TAUX DE PAS RECU (`droit::pas`) : le taux, son type, l'identifiant et l'instant de sa mise a disposition
     /// (AAAAMMJJHHMMSS), et le mois de la DSN a laquelle il repond.
-    pub struct TauxPas { taux: String, r#type: String, identifiant: String, mis_a_disposition: String, en_retour_de: Mois }
+    pub struct TauxPas {
+        taux: crate::pas::TauxDePas,
+        r#type: crate::type_taux_pas::TypeDeTauxPas,
+        identifiant: String,
+        mis_a_disposition: socle::paris::InstantCompact,
+        en_retour_de: Mois,
+    }
 }
 
 cases! {

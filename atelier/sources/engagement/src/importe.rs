@@ -141,7 +141,7 @@ pub struct PaieVersee {
     pub cout_employeur: Option<Decimal>,
     pub pas: Option<Decimal>,
     pub taux_pas: Option<Decimal>,
-    pub type_pas: Option<String>,
+    pub type_pas: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant_pas: Option<String>,
     pub verse_le: Option<Jour>,
     /// Le depot de la DSN qui la declare, et la copie de son fichier.
@@ -703,7 +703,7 @@ impl Importe {
         c.bases = bases;
         c.pas = p.pas.map(|prelevement| droit::pas::Versement {
             taux: p.taux_pas.map(socle::num::court).map(droit::fiche::Montant::Flottant),
-            type_taux: p.type_pas.clone(),
+            type_taux: p.type_pas,
             identifiant: p.identifiant_pas.clone(),
             abattement: zero,
             montant_soumis: tu_vaut_zero(p.net_imposable),

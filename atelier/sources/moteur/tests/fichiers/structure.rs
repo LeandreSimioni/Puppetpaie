@@ -1029,6 +1029,7 @@ fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
     confronter::<droit::cotisation_etablissement::CotisationDEtablissement>(&mut fautes);
     confronter::<droit::nature_declaration::NatureDeLaDeclaration>(&mut fautes);
     confronter::<droit::type_declaration::TypeDeLaDeclaration>(&mut fautes);
+    confronter::<droit::type_taux_pas::TypeDeTauxPas>(&mut fautes);
     assert!(fautes.is_empty(), "une liste de la norme declaree en `enum` est l'union des listes livrees :\n{}", fautes.join("\n"));
 }
 
