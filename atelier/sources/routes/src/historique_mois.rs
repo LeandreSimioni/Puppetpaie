@@ -120,17 +120,11 @@ fn phrase_du_statut(statut: &str) -> Option<&'static str> {
 }
 
 /// La nature et le type d'une declaration (S20.G00.05.001 et .002, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt`) ;
-/// une nature que la table ne nomme pas, ou qui n'est pas dite, est une DSN.
+/// une nature qui n'est pas dite est une DSN.
 fn nature_dsn(nature: Option<NatureDeLaDeclaration>, type_: Option<&str>) -> String {
-    use NatureDeLaDeclaration as N;
     let n = match nature {
-        Some(N::Mensuelle) => "DSN mensuelle",
-        Some(N::SignalementArret) => "Signalement arrêt de travail",
-        Some(N::SignalementReprise) => "Signalement reprise suite à arrêt de travail",
-        Some(N::SignalementFinDeContrat) => "Signalement fin du contrat de travail unique",
-        Some(N::SignalementAmorcage) => "Demande de taux de prélèvement à la source",
-        Some(N::Substitution) => "DSN de substitution",
-        Some(N::SignalementDpae) | None => "DSN",
+        Some(n) => n.libelle(),
+        None => "DSN",
     };
     match type_ {
         Some("03" | "05") => format!("{} (annule et remplace)", n),

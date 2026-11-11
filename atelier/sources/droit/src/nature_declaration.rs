@@ -18,16 +18,17 @@ codes_fermes! {
 }
 
 impl NatureDeLaDeclaration {
-    /// La nature en clair.
+    /// La nature en clair, telle que la personne la lit (le signalement d'amorcage est, pour elle, la demande du taux de
+    /// prelevement a la source qu'il porte).
     pub fn libelle(self) -> &'static str {
         match self {
             NatureDeLaDeclaration::Mensuelle => "DSN mensuelle",
-            NatureDeLaDeclaration::SignalementArret => "signalement arrêt de travail",
-            NatureDeLaDeclaration::SignalementReprise => "signalement reprise suite à arrêt de travail",
-            NatureDeLaDeclaration::SignalementFinDeContrat => "signalement fin de contrat de travail unique",
-            NatureDeLaDeclaration::SignalementAmorcage => "signalement amorçage des données variables",
+            NatureDeLaDeclaration::SignalementArret => "Signalement arrêt de travail",
+            NatureDeLaDeclaration::SignalementReprise => "Signalement reprise suite à arrêt de travail",
+            NatureDeLaDeclaration::SignalementFinDeContrat => "Signalement fin du contrat de travail unique",
+            NatureDeLaDeclaration::SignalementAmorcage => "Demande de taux de prélèvement à la source",
             NatureDeLaDeclaration::Substitution => "DSN de substitution",
-            NatureDeLaDeclaration::SignalementDpae => "signalement déclaration préalable à l'embauche",
+            NatureDeLaDeclaration::SignalementDpae => "Signalement déclaration préalable à l'embauche",
         }
     }
 
