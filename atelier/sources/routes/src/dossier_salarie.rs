@@ -98,13 +98,6 @@ pub(crate) enum AnneeDite {
 }
 
 impl AnneeDite {
-    pub(crate) fn texte(&self) -> String {
-        match self {
-            AnneeDite::Nombre(n) => n.to_string(),
-            AnneeDite::Texte(a) => a.to_string(),
-        }
-    }
-
     /// L'annee dite ; une annee qui n'en est pas une se refuse.
     pub(crate) fn annee(&self) -> socle::echec::R<socle::mois::Annee> {
         match self {

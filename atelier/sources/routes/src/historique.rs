@@ -313,7 +313,7 @@ struct ExercicesDits {
 #[derive(Debug, serde::Serialize)]
 struct ExerciceDit {
     infos_dit: String,
-    annee: String,
+    annee: socle::mois::Annee,
     mois: Vec<socle::mois::Mois>,
     dsn_acceptees: Vec<socle::mois::Mois>,
     clos: Option<crate::gestes::exercice_ecrit::ExerciceNote>,
@@ -344,11 +344,11 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
     let lus = crate::gestes::exercice_ecrit::lire_exercices(&ctx.racine)?;
     let clos = lus.clos();
     let mois_tous: Vec<socle::mois::Mois> = mois_connus(&ctx.racine)?.into_iter().map(|(m, _)| m).collect();
-    let mut annees: BTreeSet<String> = mois_tous.iter().map(|m| format!("{:04}", m.annee())).collect();
-    annees.extend(clos.keys().cloned());
+    let mut annees: BTreeSet<socle::mois::Annee> = mois_tous.iter().map(|m| m.annee_civile()).collect();
+    annees.extend(clos.keys().copied());
     let mut out = Vec::new();
-    for a in annees.iter().rev() {
-        let mut mois: Vec<socle::mois::Mois> = mois_tous.iter().filter(|x| format!("{:04}", x.annee()) == *a).copied().collect();
+    for &a in annees.iter().rev() {
+        let mut mois: Vec<socle::mois::Mois> = mois_tous.iter().filter(|x| x.annee_civile() == a).copied().collect();
         mois.sort();
         let fichier = format!("Compta_{}.csv", a);
         let chemin = ctx.racine.join("sorties").join("exercices").join(&fichier);
@@ -363,7 +363,7 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
             false => None,
         };
         // Ce que la ligne de l'annee dit : ses mois, ses DSN acceptees, sa cloture et son export compta.
-        let note = clos.get(a);
+        let note = clos.get(&a);
         let clos_dit: String = note.iter().map(|c| format!(" · clos le {}", c.le.dit())).collect();
         let export_dit = match &export {
             Some(ExportDeLAnnee { ecrit: Some(e), .. }) => format!(" · export compta du {}", e.dit()),
@@ -373,7 +373,7 @@ fn etat_exercices(ctx: &Contexte) -> R<Vec<ExerciceDit>> {
         let infos_dit = format!("{} mois · {}{}{}", mois.len(), socle::ecran::compte(acceptees.len(), "DSN acceptée", "DSN acceptées"), clos_dit, export_dit);
         out.push(ExerciceDit {
             infos_dit,
-            annee: a.clone(),
+            annee: a,
             mois,
             dsn_acceptees: acceptees,
             clos: note.cloned(),

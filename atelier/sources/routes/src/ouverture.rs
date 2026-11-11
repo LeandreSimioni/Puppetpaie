@@ -1138,7 +1138,7 @@ fn bilan_des_mois(m: &mut Moteur, ctx: &Contexte, mois: &[(Mois, Vec<String>)]) 
             a_faire,
             sortes,
             fichiers: noms.clone(),
-            clos: Some(m.exercice_clos(le_mois.annee())?),
+            clos: Some(m.exercice_clos(le_mois.annee_civile())?),
         });
     }
     Ok(out)

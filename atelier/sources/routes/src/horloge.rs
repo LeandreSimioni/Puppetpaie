@@ -59,7 +59,7 @@ use crate::contrats::{AvenantVoulu, ChargeRecu, ChargeSignature, ContratASigner,
 use droit::contexte::Contexte;
 use envois::courriel::Courriel;
 use socle::date::Jour;
-use socle::mois::Mois;
+use socle::mois::{Annee, Mois};
 use socle::paris::InstantEcrit;
 use compagnie::preuve::Preuve;
 use crate::gestes::depot_acte;
@@ -792,18 +792,20 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
             fait
         }
         Geste::Cloture { annee } => pas(d, quoi, quand, |ctx| {
-            let a_des_paies = engagement::stock::mois_saisis(&ctx.racine)?.iter().any(|m| m.annee() == *annee);
-            if Moteur::nouveau(ctx).exercice_clos(*annee)? || !a_des_paies {
+            let annee = Annee::nouvelle(i64::from(*annee))?;
+            let a_des_paies = engagement::stock::mois_saisis(&ctx.racine)?.iter().any(|m| m.annee_civile() == annee);
+            if Moteur::nouveau(ctx).exercice_clos(annee)? || !a_des_paies {
                 return Ok(false);
             }
-            crate::gestes::exercice_ecrit::cloturer(ctx, &annee.to_string(), false, QUI_HORLOGE)?;
+            crate::gestes::exercice_ecrit::cloturer(ctx, annee, false, QUI_HORLOGE)?;
             Ok(true)
         }),
         Geste::Export { annee } => pas(d, quoi, quand, |ctx| {
-            if !Moteur::nouveau(ctx).exercice_clos(*annee)? ||crate::gestes::exercice_ecrit::export_compta_a_jour(&ctx.racine, &annee.to_string())? {
+            let annee = Annee::nouvelle(i64::from(*annee))?;
+            if !Moteur::nouveau(ctx).exercice_clos(annee)? || crate::gestes::exercice_ecrit::export_compta_a_jour(&ctx.racine, annee)? {
                 return Ok(false);
             }
-            crate::gestes::exercice_ecrit::export_compta(ctx, &annee.to_string(), 1, 12, true)?;
+            crate::gestes::exercice_ecrit::export_compta(ctx, annee, 1, 12, true)?;
             Ok(true)
         }),
     }
@@ -969,11 +971,11 @@ fn annee_finie(d: &HorlogeFictive, annee: i32) -> R<bool> {
         return Ok(false);
     }
     let ctx = d.contexte()?;
-    let a = annee.to_string();
-    if !engagement::stock::mois_saisis(&ctx.racine)?.iter().any(|m| m.annee() == annee) {
+    let annee = Annee::nouvelle(i64::from(annee))?;
+    if !engagement::stock::mois_saisis(&ctx.racine)?.iter().any(|m| m.annee_civile() == annee) {
         return Ok(true);
     }
-    Ok(Moteur::nouveau(&ctx).exercice_clos(annee)? &&crate::gestes::exercice_ecrit::export_compta_a_jour(&ctx.racine, &a)?)
+    Ok(Moteur::nouveau(&ctx).exercice_clos(annee)? && crate::gestes::exercice_ecrit::export_compta_a_jour(&ctx.racine, annee)?)
 }
 
 // ------------------------------------------------------------------ les routes

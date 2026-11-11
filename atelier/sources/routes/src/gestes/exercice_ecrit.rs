@@ -22,7 +22,7 @@ use sha2::{Digest, Sha256};
 
 use droit::contexte::Contexte;
 use socle::echec::erreur;
-use socle::mois::Mois;
+use socle::mois::{Annee, Mois};
 use socle::num::{zero2, Decimal};
 use socle::paris::InstantEcrit;
 use socle::echec::{Echec, R};
@@ -64,7 +64,7 @@ fn dsn_acceptee(ctx: &Contexte, mois: Mois) -> R<bool> {
 
 /// L'export compta d'un exercice.
 pub(crate) struct ExportCompta {
-    pub(crate) annee: String,
+    pub(crate) annee: Annee,
     pub(crate) du: u32,
     pub(crate) au: u32,
     pub(crate) mois: Vec<Mois>,
@@ -96,7 +96,7 @@ pub(crate) struct EcritureRendue {
 #[derive(Debug, Serialize)]
 pub(crate) struct ExportComptaRendu {
     phrase: String,
-    annee: String,
+    annee: Annee,
     du: u32,
     au: u32,
     mois: Vec<Mois>,
@@ -162,7 +162,7 @@ fn dossier_exercices(ctx: &Contexte) -> PathBuf {
 
 /// Le journal de paie de l'annee (ou de `du` a `au`), et son fichier CSV.
 /// Les mois pris sont ceux qui ont une saisie.
-pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrire: bool) -> R<ExportCompta> {
+pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecrire: bool) -> R<ExportCompta> {
     let plan = plan_comptable(ctx)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let propre = ctx.racine.join(documents::plan_comptable::PLAN_COMPTABLE);
@@ -212,15 +212,15 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: &str, du: u32, au: u32, ecrir
         compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&f), lues, None)?;
         fichier = Some(f);
     }
-    Ok(ExportCompta { annee: annee.to_string(), du, au, mois, ecritures, total_debit, total_credit, fichier, plan: origine.to_string(), avertissements: avert })
+    Ok(ExportCompta { annee, du, au, mois, ecritures, total_debit, total_credit, fichier, plan: origine.to_string(), avertissements: avert })
 }
 
 /// LES SAISIES DE L'ANNEE, PAR LEUR EMPREINTE : `{"AAAA-MM": empreinte}` pour chaque mois saisi de l'annee, l'empreinte
 /// de sa saisie (`engagement::stock::empreinte_de_la_saisie_du_mois` : ce qu'elle dit qui change la paie). Une saisie
 /// illisible se refuse. L'export compta de l'annee la note en s'ecrivant (`noter_piece_ecrite`) : c'est ce qu'il a lu.
-pub(crate) fn empreintes_des_saisies(racine: &Path, annee: &str) -> R<BTreeMap<String, String>> {
+pub(crate) fn empreintes_des_saisies(racine: &Path, annee: Annee) -> R<BTreeMap<String, String>> {
     let mut m = BTreeMap::new();
-    for mois in engagement::stock::mois_saisis(racine).map_err(|e| e.reclasser(Classe::Refuse))?.into_iter().filter(|x| format!("{:04}", x.annee()) == annee) {
+    for mois in engagement::stock::mois_saisis(racine).map_err(|e| e.reclasser(Classe::Refuse))?.into_iter().filter(|x| x.annee_civile() == annee) {
         if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, mois, None).map_err(|e| e.reclasser(Classe::Refuse))? {
             m.insert(mois.to_string(), e);
         }
@@ -234,7 +234,7 @@ pub(crate) fn empreintes_des_saisies(racine: &Path, annee: &str) -> R<BTreeMap<S
 /// date des fichiers : une fictive decompressee chez un visiteur a des dates qui ne disent rien. Un export dont le
 /// journal ne dit pas ce qu'il a lu n'est pas celui du moteur (pose a la main) : il ne compte pas, comme une DSN que le
 /// moteur n'a pas notee (`depart::mois_ecrit`).
-pub(crate) fn export_compta_a_jour(racine: &Path, annee: &str) -> R<bool> {
+pub(crate) fn export_compta_a_jour(racine: &Path, annee: Annee) -> R<bool> {
     use compagnie::pieces_ecrites::EmpreinteNotee;
     let f = racine.join("sorties").join("exercices").join(format!("Compta_{}.csv", annee));
     if !f.is_file() {
@@ -271,7 +271,7 @@ pub(crate) fn export_compta_route(ctx: &Contexte, c: ChargeExportCompta) -> R<Ex
         Some(m) => m,
         None => DECEMBRE,
     };
-    Ok(export_compta(ctx, &c.annee.texte(), du, au, c.apercu != Some(true))?.rendu())
+    Ok(export_compta(ctx, c.annee.annee()?, du, au, c.apercu != Some(true))?.rendu())
 }
 
 /// Le premier et le dernier mois d'une annee.
@@ -288,7 +288,7 @@ pub(crate) const EXERCICES: &str = "config/exercices.json";
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Exercices {
-    clos: BTreeMap<String, ExerciceNote>,
+    clos: BTreeMap<Annee, ExerciceNote>,
     rouverts: Vec<ExerciceRouvertNote>,
 }
 
@@ -319,19 +319,19 @@ struct ExerciceRouvertNote {
     fichiers: u64,
     forcee: bool,
     sans_dsn: Vec<Mois>,
-    annee: String,
+    annee: Annee,
     rouvert_le: InstantEcrit,
     rouvert_par: String,
 }
 
 impl Exercices {
-    /// La cloture de l'annee `annee` (`AAAA`), ou `None`.
-    pub(crate) fn de(&self, annee: &str) -> Option<&ExerciceNote> {
-        self.clos.get(annee)
+    /// La cloture de l'annee `annee`, ou `None`.
+    pub(crate) fn de(&self, annee: Annee) -> Option<&ExerciceNote> {
+        self.clos.get(&annee)
     }
 
     /// Les annees closes, et leur cloture.
-    pub(crate) fn clos(&self) -> &BTreeMap<String, ExerciceNote> {
+    pub(crate) fn clos(&self) -> &BTreeMap<Annee, ExerciceNote> {
         &self.clos
     }
 }
@@ -373,13 +373,12 @@ fn fichiers_sous(d: &Path, out: &mut Vec<PathBuf>) -> R<()> {
 /// Fige l'annee et reunit ce qu'il faut garder en un zip. Refuse si un mois
 /// de l'annee qui a des paies n'a pas de DSN reelle acceptee (`forcer` passe outre, et c'est ecrit dans
 /// `exercices.json`), une annee deja close, et l'annee en cours.
-pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> R<ExerciceClos> {
+pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) -> R<ExerciceClos> {
     let mut tous = lire_exercices(&ctx.racine)?;
     if let Some(clos) = tous.de(annee) {
         return Err(refus(format!("L'exercice {} est déjà clos (le {}).", annee, clos.le.jour().iso())));
     }
-    let an: i64 = annee.parse().map_err(|_| erreur(Classe::Illisible, format!("nombre entier illisible : {}", socle::fichiers::repr(annee))))?;
-    if an >= i64::from(ctx.aujourdhui.an) {
+    if annee.nombre() >= ctx.aujourdhui.an {
         return Err(refus(format!("L'exercice {} n'est pas fini : on clôture une année passée.", annee)));
     }
     let mois = mois_de_l_annee(ctx, annee)?;
@@ -441,7 +440,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
     }
     // Les retours des organismes : les fichiers dont le nom commence par l'annee (AAAAMMJJ-HHMMSS_nature..). Ceux de
     // janvier suivant qui repondent a la DSN de decembre sont pris aussi : ils portent sur l'annee close.
-    let suivante = format!("{}01", an + 1);
+    let (de_l_annee, suivante) = (annee.to_string(), format!("{}01", annee.nombre() + 1));
     // Les retours DSN a la racine des retours, ceux des DPAE sous `dpae/`.
     let canaux: [(PathBuf, &str); 2] = [(ctx.racine.join(envois::retours::RETOURS), ""), (ctx.racine.join(envois::retours::RETOURS_DPAE), "dpae/")];
     for (d, prefixe) in canaux {
@@ -453,7 +452,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
             }
             noms.sort_by(|a, b| a.1.cmp(&b.1));
             for (nom, p) in noms {
-                if p.is_file() && (nom.starts_with(annee) || nom.starts_with(&suivante)) {
+                if p.is_file() && (nom.starts_with(&de_l_annee) || nom.starts_with(&suivante)) {
                     entrees.push(entree_fichier(&p, format!("retours/{}{}", prefixe, nom))?);
                 }
             }
@@ -498,7 +497,7 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
     let le = maintenant();
     let relatif = archive.strip_prefix(&ctx.racine).map_err(|e| refus(e.to_string()))?.to_string_lossy().replace('\\', "/");
     tous.clos.insert(
-        annee.to_string(),
+        annee,
         ExerciceNote {
             le,
             qui: qui.to_string(),
@@ -511,14 +510,14 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: &str, forcer: bool, qui: &str) -> 
         },
     );
     ecrire_exercices(ctx, &tous)?;
-    Ok(ExerciceClos { annee: annee.to_string(), le, archive: archive.to_string_lossy().into_owned(), octets: octets.len(), empreinte, fichiers: n, manques })
+    Ok(ExerciceClos { annee, le, archive: archive.to_string_lossy().into_owned(), octets: octets.len(), empreinte, fichiers: n, manques })
 }
 
 /// Un exercice clos : l'annee, quand, l'archive (son chemin, sa taille, son empreinte, le nombre de fichiers qu'elle
 /// reunit), et ce qui n'a pu s'y archiver.
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct ExerciceClos {
-    pub(crate) annee: String,
+    pub(crate) annee: Annee,
     le: InstantEcrit,
     archive: String,
     octets: usize,
@@ -530,7 +529,7 @@ pub(crate) struct ExerciceClos {
 /// Un exercice rouvert : l'annee, depuis quand il etait clos, et son archive, qui reste.
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct ExerciceRouvert {
-    pub(crate) annee: String,
+    pub(crate) annee: Annee,
     etait_clos_depuis: InstantEcrit,
     archive: String,
 }
@@ -556,9 +555,9 @@ pub(crate) struct ChargeCloture {
 
 /// Retire la cloture. L'archive reste sur le disque : elle dit ce
 /// qu'etait l'annee au moment ou on l'a fermee.
-fn rouvrir_exercice(ctx: &Contexte, annee: &str, qui: &str) -> R<ExerciceRouvert> {
+fn rouvrir_exercice(ctx: &Contexte, annee: Annee, qui: &str) -> R<ExerciceRouvert> {
     let mut tous = lire_exercices(&ctx.racine)?;
-    let Some(clos) = tous.clos.remove(annee) else {
+    let Some(clos) = tous.clos.remove(&annee) else {
         return Err(refus(format!("L'exercice {} n'est pas clos.", annee)));
     };
     let (etait_clos_depuis, archive) = (clos.le, clos.archive.clone());
@@ -572,24 +571,24 @@ fn rouvrir_exercice(ctx: &Contexte, annee: &str, qui: &str) -> R<ExerciceRouvert
         fichiers,
         forcee,
         sans_dsn,
-        annee: annee.to_string(),
+        annee,
         rouvert_le: maintenant(),
         rouvert_par: qui.to_string(),
     });
     ecrire_exercices(ctx, &tous)?;
-    Ok(ExerciceRouvert { annee: annee.to_string(), etait_clos_depuis, archive })
+    Ok(ExerciceRouvert { annee, etait_clos_depuis, archive })
 }
 
 /// La route `cloture` : clore l'annee, ou la rouvrir.
 pub(crate) fn cloture_route(ctx: &Contexte, c: ChargeCloture) -> R<Cloture> {
-    let annee = c.annee.texte();
+    let annee = c.annee.annee()?;
     // Qui ecrit : la ligne de commande le dit (`cli`), la page non (l'interface).
     let qui = match c.qui {
         Some(q) => q.to_string(),
         None => compagnie::INTERFACE.to_string(),
     };
     if c.rouvrir == Some(true) {
-        return rouvrir_exercice(ctx, &annee, &qui).map(Cloture::Rouverte);
+        return rouvrir_exercice(ctx, annee, &qui).map(Cloture::Rouverte);
     }
-    cloturer(ctx, &annee, c.forcer == Some(true), &qui).map(Cloture::Close)
+    cloturer(ctx, annee, c.forcer == Some(true), &qui).map(Cloture::Close)
 }

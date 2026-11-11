@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 use droit::contexte::Contexte;
 use socle::date::Jour;
-use socle::mois::{Graphie, Mois};
+use socle::mois::{Annee, Graphie, Mois};
 use engagement;
 use compagnie::etat_dsn;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus as RefusFiche, FORME, OPERATION};
@@ -479,8 +479,8 @@ impl Echeance {
             CLOTURE | EXPORT_COMPTA | REVUE_SPECTACLES => {
                 let Some(annee) = self.annee else { return Ok(None) };
                 match self.quoi.as_str() {
-                    CLOTURE => action(Route::Cloture, ChargeAnnee { annee: annee.to_string() }, None, format!("Clôturer {}", annee)),
-                    EXPORT_COMPTA => action(Route::ExportCompta, ChargeAnnee { annee: annee.to_string() }, None, "Exporter pour la compta".into()),
+                    CLOTURE => action(Route::Cloture, ChargeAnnee { annee: Annee::nouvelle(i64::from(annee))? }, None, format!("Clôturer {}", annee)),
+                    EXPORT_COMPTA => action(Route::ExportCompta, ChargeAnnee { annee: Annee::nouvelle(i64::from(annee))? }, None, "Exporter pour la compta".into()),
                     // Tous continuent, tant qu'on n'en a pas décoché un : la boîte s'ouvre ainsi.
                     _ => {
                         let charge = ChargeRevue { annee, continuent: self.spectacles.iter().map(|s| s.cle.clone()).collect() };
@@ -754,7 +754,7 @@ fn annuelles(st: &Etat, base: &EcheancierBase) -> R<Vec<Echeance>> {
 
 /// L'export compta de l'annee passee : du des janvier, tant que l'annee n'est pas close et que l'export n'est pas a jour.
 fn export_compta(st: &Etat, annee: i32) -> R<Option<Echeance>> {
-    if annee != st.aujourdhui.an - 1 || crate::gestes::exercice_ecrit::export_compta_a_jour(&st.ctx.racine, &annee.to_string())? {
+    if annee != st.aujourdhui.an - 1 || crate::gestes::exercice_ecrit::export_compta_a_jour(&st.ctx.racine, Annee::nouvelle(i64::from(annee))?)? {
         return Ok(None);
     }
     let mut r = Echeance::nouveau(
@@ -775,7 +775,7 @@ fn annuelle(st: &Etat, e: &Annuelle, annee: i32, faites: &Cochees, premier: Opti
     let cle = e.cle.as_str();
     let precedente = annee - 1;
     // La cloture d'une annee dont aucun mois n'est dans PuppetPaie (tenue ailleurs) ne concerne pas ce dossier.
-    if e.fait_par == FaitPar::ExerciceClos && mois_de_l_annee(ctx, &precedente.to_string())?.is_empty() {
+    if e.fait_par == FaitPar::ExerciceClos && mois_de_l_annee(ctx, Annee::nouvelle(i64::from(precedente))?)?.is_empty() {
         return Ok(None);
     }
     // Une revue des spectacles sans spectacle n'a rien a revoir.
@@ -838,7 +838,7 @@ fn annuelles_de<'a>(base: &'a EcheancierBase, idcc: Option<&'a str>) -> impl Ite
 /// Vrai, faux, ou `None` quand on ne peut pas le savoir.
 fn fait_annuel(ctx: &Contexte, e: &Annuelle, annee: i32, faites: &Cochees) -> R<Option<bool>> {
     if e.fait_par == FaitPar::ExerciceClos {
-        return Ok(Some(exercice_clos(ctx, &(annee - 1).to_string())?.is_some()));
+        return Ok(Some(exercice_clos(ctx, Annee::nouvelle(i64::from(annee) - 1)?)?.is_some()));
     }
     // Le taux AT/MP se saisit dans la page : pose pour l'annee (ou un taux collectif que l'annee reprend d'elle-meme,
     // `Contexte::taux_atmp_de`), il vaut releve.
@@ -1007,13 +1007,13 @@ fn date_en_clair(j: &Jour) -> String {
 // -------------------------------------------------------------- l'exercice
 
 /// La cloture de l'annee (ou `None`).
-pub(crate) fn exercice_clos(ctx: &Contexte, annee: &str) -> R<Option<crate::gestes::exercice_ecrit::ExerciceNote>> {
+pub(crate) fn exercice_clos(ctx: &Contexte, annee: Annee) -> R<Option<crate::gestes::exercice_ecrit::ExerciceNote>> {
     Ok(crate::gestes::exercice_ecrit::lire_exercices(&ctx.racine)?.de(annee).cloned())
 }
 
 /// Les mois de l'annee connus du dossier.
-pub(crate) fn mois_de_l_annee(ctx: &Contexte, annee: &str) -> R<Vec<Mois>> {
-    let mut v: Vec<Mois> = super::ouverture::mois_connus(&ctx.racine)?.into_iter().map(|m| m.0).filter(|m| format!("{:04}", m.annee()) == annee).collect();
+pub(crate) fn mois_de_l_annee(ctx: &Contexte, annee: Annee) -> R<Vec<Mois>> {
+    let mut v: Vec<Mois> = super::ouverture::mois_connus(&ctx.racine)?.into_iter().map(|m| m.0).filter(|m| m.annee_civile() == annee).collect();
     v.sort();
     Ok(v)
 }

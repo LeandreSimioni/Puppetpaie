@@ -178,7 +178,7 @@ pub(crate) struct ChargeObligationDArret {
 /// La charge du geste d'une echeance de l'annee (`cloture`, `export-compta`) : l'annee.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ChargeAnnee {
-    pub(crate) annee: String,
+    pub(crate) annee: socle::mois::Annee,
 }
 
 macro_rules! charge_du_geste {
@@ -2376,8 +2376,8 @@ impl<'a> Moteur<'a> {
     // ------------------------------------------------------- les autres routes
 
     /// `exercice_clos` : l'annee `annee` est-elle close (`gestes::exercice_ecrit::lire_exercices`) ?
-    pub(crate) fn exercice_clos(&self, annee: i32) -> R<bool> {
-        Ok(crate::gestes::exercice_ecrit::lire_exercices(self.racine())?.de(&annee.to_string()).is_some())
+    pub(crate) fn exercice_clos(&self, annee: socle::mois::Annee) -> R<bool> {
+        Ok(crate::gestes::exercice_ecrit::lire_exercices(self.racine())?.de(annee).is_some())
     }
 
     /// `mois_a_ouvrir` : le plus ancien mois passe dont une etape n'est pas
@@ -2388,7 +2388,7 @@ impl<'a> Moteur<'a> {
         self.ecrit = true;
         // Un mois passe sans engagement dont la DSN est due (ce que les rappels reclament) s'ouvre aussi.
         for m in crate::rappels::mois_a_parcourir(self.ctx, self.ctx.aujourdhui)? {
-            if m >= courant || self.exercice_clos(m.annee())? {
+            if m >= courant || self.exercice_clos(m.annee_civile())? {
                 continue;
             }
             let reste = self.etapes_restantes(m)?;
