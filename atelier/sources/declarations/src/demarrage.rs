@@ -494,7 +494,12 @@ fn conges_a_reprendre(ctx: &Contexte) -> R<Vec<(String, String, Jour)>> {
 /// l'arrete de l'annee (`droit::bareme::risques_atmp`, `atelier/reference/sources/tarification-atmp/`).
 pub fn poses(ctx: &Contexte) -> R<Vec<Pose>> {
     let an = ctx.aujourdhui.an;
-    let Some(Ok(t)) = ctx.taux_atmp_de(an) else { return Ok(Vec::new()) };
+    // Sans taux AT/MP de l'annee, le moteur n'en a pose aucun ; un taux qui ne se lit pas se refuse.
+    Ok(ctx.taux_atmp_de(an).transpose()?.map(|t| pose_atmp(an, t)).transpose()?.flatten().into_iter().collect())
+}
+
+/// Le taux AT/MP `t` de l'annee `an`, s'il est pose par le moteur (sa `provenance`).
+fn pose_atmp(an: i32, t: droit::forme_bareme::TauxAtmp) -> R<Option<Pose>> {
     let d_ou = match (&t.notification, t.provenance) {
         (Some(n), Some(droit::fiche::ProvenanceAtmp::Notification)) => format!(
             "Ceux de la notification de la CARSAT du {}, en vigueur depuis le {} : le logiciel les a lus dans les retours de la DSN.",
@@ -510,7 +515,8 @@ pub fn poses(ctx: &Contexte) -> R<Vec<Pose>> {
             "Le taux collectif de l'arrêté de {} pour ce risque « TC », le même pour toutes les compagnies qui y sont classées (code de la sécurité sociale, art. D. 242-6-14) : le logiciel l'a inscrit. Si votre notification AT/MP (compte AT/MP sur net-entreprises) en dit un autre, inscrivez-le.",
             t.depuis.exigee("taux_atmp.depuis")?.an
         ),
-        _ => return Ok(Vec::new()),
+        // Un taux que la compagnie a inscrit elle-meme : le moteur n'a rien pose.
+        _ => return Ok(None),
     };
     let risque = match &t.code_risque {
         Some(code) => droit::contexte::socle_livre_lu(an)?.and_then(|s| droit::bareme::risques_de(&s).into_iter().find(|r| r.code == *code)),
@@ -523,14 +529,14 @@ pub fn poses(ctx: &Contexte) -> R<Vec<Pose>> {
     };
     let taux: String = t.valeur.iter().map(|v| format!(", taux {}", format!("{:.2} %", v.round_dp(2)).replace('.', ","))).collect();
     let de: String = risque.iter().map(|r| format!("« {} » ", r.libelle)).collect();
-    Ok(vec![Pose {
+    Ok(Some(Pose {
         cle: "taux_atmp".into(),
         libelle: format!("Accidents du travail : code risque {}{} en {}", nom, taux, an),
         texte: format!("{}{}", de, d_ou),
         ou: ENTREPRISE.0.into(),
         onglet: ENTREPRISE.1.into(),
         champ: Some("taux_atmp".into()),
-    }])
+    }))
 }
 
 /// `pour-demarrer`. `proposes` : les propositions qui ne se tirent pas des fiches (les acces aux organismes, que le

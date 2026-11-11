@@ -95,8 +95,7 @@ pub fn faute(valeur: &str, siren: &str) -> R<Option<String>> {
             )));
         }
     }
-    let m = formats::mauvaise(RUBRIQUE, valeur)?;
-    Ok(if m.is_empty() { None } else { Some(m) })
+    formats::mauvaise(RUBRIQUE, valeur)
 }
 
 /// Le NIR de la fiche, quand elle le dit.

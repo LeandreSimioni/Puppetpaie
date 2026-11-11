@@ -306,8 +306,12 @@ pub fn plan_comptable(ctx: &Contexte) -> R<Plan> {
 /// Ce qui, dans le plan comptable, ne
 /// passerait pas dans ce format -- avant l'export.
 pub fn controler_plan(ctx: &Contexte, format: &str) -> R<Vec<String>> {
+    // Un format dont les tables ne bornent pas les zones n'a rien qui depasse.
+    Ok(tables().limites.get(format).map(|lim| controler_contre(ctx, format, lim)).transpose()?.into_iter().flatten().collect())
+}
+
+fn controler_contre(ctx: &Contexte, format: &str, lim: &Limite) -> R<Vec<String>> {
     let plan = plan_comptable(ctx)?;
-    let Some(lim) = tables().limites.get(format) else { return Ok(Vec::new()) };
     let (lim_journal, nom_format) = (lim.journal, lim.nom.as_str());
     let mut comptes: HashSet<String> = HashSet::new();
     for c in [&plan.brut.compte, &plan.net.compte, &plan.pas.compte] {

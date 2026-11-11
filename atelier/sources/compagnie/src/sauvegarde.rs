@@ -431,7 +431,11 @@ pub fn ecrire_index(racine: &Path, index: &Index) -> Result<(), ErreurGoogle> {
 /// du Drive (`--racine-drive`) laisserait la veille croire que tout est sauvegarde la ou on l'attend. Un index d'une autre
 /// racine (ou qui n'en dit aucune) donne non.
 pub fn rien_n_a_bouge(racine: &Path, racine_drive: &str) -> Result<bool, ErreurGoogle> {
-    let Some(index) = lire_index(racine)? else { return Ok(false) };
+    // Sans index, rien ne dit ce qui est sauvegarde.
+    Ok(lire_index(racine)?.map(|index| comme_l_index(racine, racine_drive, index)).transpose()?.is_some_and(|oui| oui))
+}
+
+fn comme_l_index(racine: &Path, racine_drive: &str, index: Index) -> Result<bool, ErreurGoogle> {
     if index.racine_drive != racine_drive || index.fichiers.is_empty() {
         return Ok(false);
     }

@@ -159,16 +159,14 @@ pub fn comparer(racine: &Path, imp: &Importe, deja: &dyn Fn(&str) -> bool) -> Ve
     let contrat = imp.contrat();
     // UN CONTRAT DONT LA NATURE RESTE A DIRE (`nature_a_dire`, celui d'un permanent : `import::nature`) ne se compare
     // pas encore : une nature ne se devine pas (regle 6). Il se compare une fois sa nature dite.
-    let Some(nature) = imp.nature() else {
-        return Vec::new();
-    };
     let paies = imp.paies();
     // Le nombre de jours travailles que le bulletin compte (son cumul « Jours ») : celui que la paie du mois porte (le
     // mois d'un permanent), sinon celui du contrat quand il n'a qu'une paie.
     let du_contrat = contrat.and_then(|c| c.jours).filter(|_| paies.len() == 1);
-    paies
-        .iter()
-        .filter_map(|(&mois, p)| {
+    imp.nature()
+        .into_iter()
+        .flat_map(|nature| paies.iter().map(move |paie| (nature, paie)))
+        .filter_map(|(nature, (&mois, p))| {
             let empreinte = empreinte(imp, mois, p);
             if deja(&empreinte) {
                 return None;

@@ -105,7 +105,7 @@ fn rubriques_calculees(o: &Oracle) -> Vec<(String, String, String, Vec<String>)>
     o.rubriques
         .iter()
         .map(|(r, v, _, _)| {
-            let mauvaise = formats::mauvaise_en(&p26(), r, v).unwrap();
+            let mauvaise: String = formats::mauvaise_en(&p26(), r, v).unwrap().into_iter().collect();
             let refuses = formats::caracteres_refuses_en(&p26(), r, v).unwrap().iter().map(|c| c.to_string()).collect();
             (r.clone(), v.clone(), mauvaise, refuses)
         })

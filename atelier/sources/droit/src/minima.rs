@@ -568,8 +568,7 @@ pub fn accord<'a>(t: &'a Table, id: &str) -> Option<&'a Convention> {
 
 /// La compagnie adherente de `organisation` l'est-elle d'une organisation d'employeurs signataire de l'accord ?
 pub fn signataire(accord: &Convention, organisation: Option<&str>) -> bool {
-    let Some(s) = organisation.map(sigle).filter(|s| !s.is_empty()) else { return false };
-    accord.signataires.iter().flatten().any(|x| sigle(x) == s)
+    organisation.map(sigle).filter(|s| !s.is_empty()).is_some_and(|s| accord.signataires.iter().flatten().any(|x| sigle(x) == s))
 }
 
 /// LE JOUR OU UNE STIPULATION D'UN ACCORD, DATEE `depuis` PAR L'ACCORD, LIE LA COMPAGNIE ADHERENTE DE `organisation` :

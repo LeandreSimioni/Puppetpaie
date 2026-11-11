@@ -857,8 +857,7 @@ remplit (voir par_nature.permanent.rubriques.prevoyance).",
 /// cinquante salaries ni comite (`fiche::ChampsEntreprise::exemption_casc`), elle n'a pas de sens et la contribution
 /// est due.
 pub fn casc_exemptee(ent: &ChampsEntreprise, cinquante: Option<&crate::contexte::CinquanteSalaries>, cse: Option<&crate::contexte::UnCsePossible>) -> bool {
-    let (Some(cinquante), Some(cse)) = (cinquante, cse) else { return false };
-    ent.exemption_casc(cinquante, cse).is_some_and(|cle| ent.casc.ouvrir(&cle).casc_svp_exemptee.oui())
+    cinquante.zip(cse).and_then(|(cinquante, cse)| ent.exemption_casc(cinquante, cse)).is_some_and(|cle| ent.casc.ouvrir(&cle).casc_svp_exemptee.oui())
 }
 
 /// Retire la CASC-SVP (rubrique `ccn` de la 3090) d'une entreprise exemptee.

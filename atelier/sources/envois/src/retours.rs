@@ -236,10 +236,10 @@ fn dans(table: &[(u32, u32)], c: char) -> bool {
 /// Un nom d'element, d'attribut ou d'instruction tel qu'expat le lit (XML 1.0,
 /// quatrieme edition ; au plus un deux-points, ni en tete ni en queue).
 fn nom_valide(n: &[char]) -> bool {
-    let (Some(&premier), Some(&dernier)) = (n.first(), n.last()) else {
-        return false;
-    };
-    premier != ':' && dernier != ':' && n.iter().filter(|&&c| c == ':').count() <= 1 && dans(NOM_DEBUT, premier) && n[1..].iter().all(|&c| c == ':' || dans(NOM_SUITE, c))
+    // Un nom vide n'en est pas un.
+    n.first().zip(n.last()).is_some_and(|(&premier, &dernier)| {
+        premier != ':' && dernier != ':' && n.iter().filter(|&&c| c == ':').count() <= 1 && dans(NOM_DEBUT, premier) && n[1..].iter().all(|&c| c == ':' || dans(NOM_SUITE, c))
+    })
 }
 
 fn commence_par(c: &[char], i: usize, motif: &str) -> bool {
@@ -337,38 +337,28 @@ fn declaration_valide(d: &[char]) -> bool {
         }
         Some(Some((nom, d[v..i].iter().collect(), i + 1)))
     }
-    let Some(Some((nom, _, mut i))) = pseudo(d, 0) else {
-        return false;
-    };
-    if nom != "version" {
-        return false;
-    }
-    let Some(suite) = pseudo(d, i) else {
-        return false;
-    };
-    let Some((mut nom, mut val, mut j)) = suite else {
-        return true;
-    };
-    if nom == "encoding" {
-        if !val.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
-            return false;
+    // La declaration lue jusqu'au bout ; `None` : elle ne suit pas la grammaire.
+    fn lue(d: &[char]) -> Option<()> {
+        let (nom, _, mut i) = pseudo(d, 0)??;
+        (nom == "version").then_some(())?;
+        let Some((mut nom, mut val, mut j)) = pseudo(d, i)? else {
+            return Some(());
+        };
+        if nom == "encoding" {
+            val.chars().next().filter(|c| c.is_ascii_alphabetic())?;
+            let Some(x) = pseudo(d, j)? else {
+                return Some(());
+            };
+            (nom, val, j) = x;
         }
-        let Some(suite) = pseudo(d, j) else {
-            return false;
-        };
-        let Some(x) = suite else {
-            return true;
-        };
-        (nom, val, j) = x;
+        i = j;
+        (nom == "standalone" && (val == "yes" || val == "no")).then_some(())?;
+        while blanc_xml(d.get(i)) {
+            i += 1;
+        }
+        (i == d.len()).then_some(())
     }
-    i = j;
-    if nom != "standalone" || !(val == "yes" || val == "no") {
-        return false;
-    }
-    while blanc_xml(d.get(i)) {
-        i += 1;
-    }
-    i == d.len()
+    lue(d).is_some()
 }
 
 /// La declaration `<?xml ...?>` de tete, si le texte en commence par une.
@@ -959,11 +949,16 @@ pub fn bilan_si_xml(o: &[u8]) -> R<Option<Bilan>> {
 /// specification VT2.2, `atelier/reference/sources/gip-mds-api-dsn/`). Un XML illisible, ou qui
 /// n'est pas un rapport de depot, n'en identifie aucune.
 pub fn declarations_du_bilan(o: &[u8]) -> R<Vec<DeclarationIdentifiee>> {
-    let Some(arbre) = octets_arbre(o)? else { return Ok(Vec::new()) };
-    let racine = arbre.racine();
-    if local(&racine.tag) != "rapport" || !racine.attribut("type").is_some_and(|t| RAPPORTS_DEPOT.contains(&t)) {
-        return Ok(Vec::new());
+    let mut out = Vec::new();
+    // Un fichier qui n'est pas un XML, ou un rapport qui n'est pas celui d'un depot, n'identifie aucune declaration.
+    let arbre = octets_arbre(o)?.filter(|a| local(&a.racine().tag) == "rapport" && a.racine().attribut("type").is_some_and(|t| RAPPORTS_DEPOT.contains(&t)));
+    if let Some(arbre) = &arbre {
+        out.extend(declarations_de_l_arbre(arbre)?);
     }
+    Ok(out)
+}
+
+fn declarations_de_l_arbre(arbre: &Arbre) -> R<Vec<DeclarationIdentifiee>> {
     let essai_reel = arbre.tous().find(|e| local(&e.tag) == "essai_reel").map(|e| e.texte_net().to_string()).filter(|t| !t.is_empty());
     let mut out = Vec::new();
     for d in arbre.tous().filter(|e| local(&e.tag) == "declaration") {
@@ -1041,11 +1036,10 @@ fn octets_arbre(o: &[u8]) -> R<Option<Arbre>> {
 
 /// `anomalies_du_bilan` : les motifs d'un BAN, en phrases lisibles.
 pub fn anomalies_lisibles_d_octets(o: &[u8]) -> R<Vec<String>> {
-    let Some(arbre) = octets_arbre(o)? else {
-        return Ok(Vec::new());
-    };
     let mut out = Vec::new();
-    for a in arbre.tous() {
+    // Un fichier qui n'est pas un XML n'en porte aucune.
+    let arbre = octets_arbre(o)?;
+    for (arbre, a) in arbre.iter().flat_map(|arbre| arbre.tous().map(move |a| (arbre, a))) {
         if local(&a.tag) != "declaration_anomalie" {
             continue;
         }
@@ -1079,11 +1073,10 @@ pub struct AnomalieCodee {
 
 /// Les anomalies d'un bilan, en codes.
 pub fn anomalies_codees_d_octets(o: &[u8]) -> R<Vec<AnomalieCodee>> {
-    let Some(arbre) = octets_arbre(o)? else {
-        return Ok(Vec::new());
-    };
     let mut out = Vec::new();
-    for a in arbre.tous() {
+    // Un fichier qui n'est pas un XML n'en porte aucune.
+    let arbre = octets_arbre(o)?;
+    for (arbre, a) in arbre.iter().flat_map(|arbre| arbre.tous().map(move |a| (arbre, a))) {
         if !matches!(local(&a.tag), "declaration_anomalie" | "envoi_anomalie") {
             continue;
         }
@@ -1457,11 +1450,10 @@ fn pas_rapport_crm(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
     if local(&racine.tag) != "rapport" {
         return Ok(Vec::new());
     }
-    let Some(identifiant) = racine.attribut("identifiant").filter(|s| !s.is_empty()) else {
-        return Ok(Vec::new());
-    };
     let mut releves = Vec::new();
-    for el in a.tous() {
+    // Un rapport sans identifiant ne transmet aucun taux.
+    let identifiant = racine.attribut("identifiant").filter(|s| !s.is_empty());
+    for (identifiant, el) in identifiant.iter().flat_map(|i| a.tous().map(move |el| (i, el))) {
         if local(&el.tag) != "salarie" {
             continue;
         }

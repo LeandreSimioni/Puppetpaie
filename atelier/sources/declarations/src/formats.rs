@@ -409,43 +409,43 @@ fn expressions(norme: &Norme, rubrique: &str) -> R<Arc<Vec<Regex>>> {
     Ok(v)
 }
 
-/// Pour une saisie : pourquoi la valeur ne va pas dans l'une des versions livrees (la premiere qui la refuse) -- ""
-/// si elle va dans toutes, ou si on ne sait pas.
-pub fn mauvaise(rubrique: &str, valeur: &str) -> R<String> {
+/// Pour une saisie : pourquoi la valeur ne va pas dans l'une des versions livrees (la premiere qui la refuse) ; `None`
+/// si aucune n'a rien a lui redire (`mauvaise_en`).
+pub fn mauvaise(rubrique: &str, valeur: &str) -> R<Option<String>> {
     for n in crate::norme::versions()? {
-        let m = mauvaise_en(&n, rubrique, valeur)?;
-        if !m.is_empty() {
-            return Ok(m);
+        if let Some(m) = mauvaise_en(&n, rubrique, valeur)? {
+            return Ok(Some(m));
         }
     }
-    Ok(String::new())
+    Ok(None)
 }
 
 /// Pour une saisie : les caracteres dont le retrait fait passer la valeur, dans la premiere version livree qui la
 /// refuse.
 pub fn caracteres_refuses(rubrique: &str, valeur: &str) -> R<Vec<char>> {
     for n in crate::norme::versions()? {
-        if !mauvaise_en(&n, rubrique, valeur)?.is_empty() {
+        if mauvaise_en(&n, rubrique, valeur)?.is_some() {
             return caracteres_refuses_en(&n, rubrique, valeur);
         }
     }
     Ok(vec![])
 }
 
-/// Pourquoi cette valeur ne va pas dans cette version -- "" si elle va, ou si on ne sait pas.
-pub fn mauvaise_en(norme: &Norme, rubrique: &str, valeur: &str) -> R<String> {
-    let Some(fmt) = format_en(norme, rubrique)? else { return Ok(String::new()) };
+/// Pourquoi cette valeur ne va pas dans cette version ; `None` si elle va, ou si la version n'a pas de format pour la
+/// rubrique (elle ne la connait pas : elle n'a rien a en redire).
+pub fn mauvaise_en(norme: &Norme, rubrique: &str, valeur: &str) -> R<Option<String>> {
+    let Some(fmt) = format_en(norme, rubrique)? else { return Ok(None) };
     let [mini, maxi] = fmt.longueur;
     let n = valeur.chars().count();
     if !(mini <= n && n <= maxi) {
-        return Ok(format!("longueur {}, attendue entre {} et {}", n, mini, maxi));
+        return Ok(Some(format!("longueur {}, attendue entre {} et {}", n, mini, maxi)));
     }
     let exprs = expressions(norme, rubrique)?;
     if !exprs.is_empty() && !exprs.iter().any(|e| e.fullmatch(valeur)) {
         let motifs: Vec<&str> = exprs.iter().map(|e| e.motif.as_str()).collect();
-        return Ok(format!("ne suit pas {}", motifs.join(" ni ")));
+        return Ok(Some(format!("ne suit pas {}", motifs.join(" ni "))));
     }
-    Ok(String::new())
+    Ok(None)
 }
 
 /// Les caracteres dont le retrait suffit a faire passer la valeur, dans cette version.
@@ -489,8 +489,7 @@ pub fn mauvaises(texte: &str, norme: &Norme) -> R<Vec<(String, String, String)>>
     let mut out = Vec::new();
     for ligne in lignes(texte) {
         if let Some((r, v)) = ligne_valeur(strip(ligne)) {
-            let pourquoi = mauvaise_en(norme, r, v)?;
-            if !pourquoi.is_empty() {
+            if let Some(pourquoi) = mauvaise_en(norme, r, v)? {
                 out.push((r.to_string(), v.to_string(), pourquoi));
             }
         }
@@ -576,12 +575,12 @@ mod tests {
     #[test]
     fn les_formats_2027_sont_ceux_du_cahier_2027() {
         let (p26, p27) = (Norme::connue("P26V01").unwrap(), Norme::connue("P27V01").unwrap());
-        assert!(mauvaise_en(&p26, "S21.G00.40.070", "13").unwrap().starts_with("ne suit pas"));
-        assert_eq!(mauvaise_en(&p27, "S21.G00.40.070", "13").unwrap(), "");
-        assert_eq!(mauvaise_en(&p27, "S21.G00.41.045", "45").unwrap(), "");
-        assert_eq!(mauvaise_en(&p26, "S21.G00.30.006", "01011899").unwrap(), "");
-        assert!(mauvaise_en(&p27, "S21.G00.30.006", "01011899").unwrap().starts_with("ne suit pas"));
-        assert!(!mauvaise("S21.G00.30.006", "01011899").unwrap().is_empty());
-        assert_eq!(mauvaise("S21.G00.30.006", "01011990").unwrap(), "");
+        assert!(mauvaise_en(&p26, "S21.G00.40.070", "13").unwrap().unwrap().starts_with("ne suit pas"));
+        assert_eq!(mauvaise_en(&p27, "S21.G00.40.070", "13").unwrap(), None);
+        assert_eq!(mauvaise_en(&p27, "S21.G00.41.045", "45").unwrap(), None);
+        assert_eq!(mauvaise_en(&p26, "S21.G00.30.006", "01011899").unwrap(), None);
+        assert!(mauvaise_en(&p27, "S21.G00.30.006", "01011899").unwrap().unwrap().starts_with("ne suit pas"));
+        assert!(mauvaise("S21.G00.30.006", "01011899").unwrap().is_some());
+        assert_eq!(mauvaise("S21.G00.30.006", "01011990").unwrap(), None);
     }
 }

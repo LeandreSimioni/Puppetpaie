@@ -1314,15 +1314,17 @@ impl Contexte {
     }
 
     /// LA CASE DES PERMANENTS, SUR UNE PERIODE : la fiche Entreprise dit-elle, a un jour au moins de `debut..=fin`, que la
-    /// compagnie emploie des salaries payes au mois (`emploie_des_permanents`, datee par son historique) ? Absent vaut NON.
+    /// compagnie emploie des salaries payes au mois (`emploie_des_permanents`, datee par son historique) ? Une case
+    /// jamais cochee ne le dit pas.
     /// La seule lecture de la case : elle ne regle que ce que le moteur PROPOSE (un CDI ou un CDD neuf), jamais ce qui est
     /// du a un permanent deja engage (`engagement::permanents::Permanents`). Lue au premier jour, puis a chaque jour ou
     /// la case change dans la periode.
     pub fn emploie_des_permanents_pendant(&self, debut: &Jour, fin: &Jour) -> bool {
-        let Some(liste) = self.fiches.entreprise.emploie_des_permanents.as_deref() else { return false };
-        std::iter::once(*debut)
-            .chain(liste.iter().filter_map(|e| e.depuis).filter(|j| j > debut && j <= fin))
-            .any(|j| crate::fiche::valeur_au(liste, &j).oui())
+        self.fiches.entreprise.emploie_des_permanents.as_deref().is_some_and(|liste| {
+            std::iter::once(*debut)
+                .chain(liste.iter().filter_map(|e| e.depuis).filter(|j| j > debut && j <= fin))
+                .any(|j| crate::fiche::valeur_au(liste, &j).oui())
+        })
     }
 
     /// Idem pour les spectacles.
@@ -1546,12 +1548,17 @@ depuis le plus recent.",
     /// dependent que de la convention : un bareme que l'effectif ou le taux AT/MP rendent illisible les a quand meme.
     /// Une annee sans socle, ou une fiche sans convention couverte, n'en a aucune (le refus se dit au bareme).
     pub fn contributions_dsn(&self, jour: &Jour) -> R<Vec<crate::forme_bareme::ContributionDsn>> {
-        let Some(fichier) = fichier_du_socle(&self.code.join("baremes"), jour.an) else { return Ok(Vec::new()) };
+        Ok(self.dans_la_couche(jour, |couche| couche.contributions_dsn.iter().flatten().cloned().collect::<Vec<_>>())?.into_iter().flatten().collect())
+    }
+
+    /// Ce que `lire` tire de la couche de la convention que la fiche entreprise nomme a `jour`, dans le socle de l'annee ;
+    /// `None` : une annee sans socle, une fiche sans convention, ou une convention que le socle ne couvre pas.
+    fn dans_la_couche<T>(&self, jour: &Jour, lire: impl FnOnce(&CoucheConvention) -> T) -> R<Option<T>> {
+        let Some(fichier) = fichier_du_socle(&self.code.join("baremes"), jour.an) else { return Ok(None) };
         let ent = self.entreprise_au(jour);
-        let Some(idcc) = ent.idcc.portee() else { return Ok(Vec::new()) };
+        let Some(idcc) = ent.idcc.portee() else { return Ok(None) };
         let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite().map(String::as_str))?;
-        let Some(couche) = convention(&socle_an, idcc)? else { return Ok(Vec::new()) };
-        Ok(couche.contributions_dsn.iter().flatten().cloned().collect())
+        Ok(convention(&socle_an, idcc)?.map(lire))
     }
 
     /// LA CONVENTION QUE LA FICHE ENTREPRISE NOMME A `jour` FAIT-ELLE DEPENDRE UNE CONTRIBUTION DE LA REPRESENTATION DU
@@ -1559,12 +1566,8 @@ depuis le plus recent.",
     /// Lu dans la couche de la convention du socle de l'annee, comme `contributions_dsn` ; une annee sans socle, ou une
     /// fiche sans convention, n'en a aucune.
     pub fn contribution_par_representation(&self, jour: &Jour) -> R<bool> {
-        let Some(fichier) = fichier_du_socle(&self.code.join("baremes"), jour.an) else { return Ok(false) };
-        let ent = self.entreprise_au(jour);
-        let Some(idcc) = ent.idcc.portee() else { return Ok(false) };
-        let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite().map(String::as_str))?;
-        let Some(couche) = convention(&socle_an, idcc)? else { return Ok(false) };
-        Ok(couche.contributions_conventionnelles.iter().flatten().any(|c| c.par_representation.as_ref().is_some_and(|p| !p.is_empty())))
+        let depend = |couche: &CoucheConvention| couche.contributions_conventionnelles.iter().flatten().any(|c| c.par_representation.as_ref().is_some_and(|p| !p.is_empty()));
+        Ok(self.dans_la_couche(jour, depend)?.is_some_and(|d| d))
     }
 
     /// Le bareme resolu a ce jour, garde et partage : il se lit sans se copier ; ce qui le change (la pile d'un contrat,

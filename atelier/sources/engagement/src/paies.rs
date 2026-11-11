@@ -119,8 +119,7 @@ pub fn de_la_version(o: &Objet, n: u64, mois: Mois) -> R<Option<PaieEcrite>> {
 
 /// Toutes les paies ecrites de `mois` de l'engagement `o` : la presente, puis celles des versions passees.
 pub fn ecrites(o: &Objet, mois: Mois) -> R<Vec<PaieEcrite>> {
-    let Some(e) = entree(o, mois)? else { return Ok(Vec::new()) };
-    Ok(e.presente.into_iter().chain(e.versions.into_values()).collect())
+    Ok(entree(o, mois)?.into_iter().flat_map(|e| e.presente.into_iter().chain(e.versions.into_values())).collect())
 }
 
 /// Les mois qui ont un fichier de paies, du plus ancien au plus recent.

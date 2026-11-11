@@ -75,22 +75,25 @@ pub fn intermittent(nat: &Nature, sal: &SalarieDuContrat) -> R<bool> {
     if !nat.mensuelle() {
         return Ok(true);
     }
-    let Some(code) = sal.code_emploi_ft.portee().map(str::trim).filter(|c| !c.is_empty() && !c.eq_ignore_ascii_case("999SPT")) else {
-        return Ok(false);
+    // Un emploi permanent (999SPT), ou sans code, n'a pas de metier du catalogue.
+    let code = sal.code_emploi_ft.portee().map(str::trim).filter(|c| !c.is_empty() && !c.eq_ignore_ascii_case("999SPT"));
+    let metier = match code {
+        Some(code) => emplois::metier(code)?.map(|m| (code, m)),
+        None => None,
     };
-    let Some(m) = emplois::metier(code)? else {
-        return Ok(false);
-    };
-    match m.annexe() {
-        10 => Ok(true),
-        8 => {
-            let idcc = sal.idcc_de_l_employeur.as_deref().ok_or_else(|| {
-                socle::echec::refus("La convention collective de l'employeur n'est pas dite : la liste de l'annexe 8 qui nomme le métier en dépend (Configuration › Entreprise).")
-            })?;
-            Ok(m.nomme_par_l_annexe8(idcc))
+    let range = |(code, m): (&str, emplois::Metier)| -> R<bool> {
+        match m.annexe() {
+            10 => Ok(true),
+            8 => {
+                let idcc = sal.idcc_de_l_employeur.as_deref().ok_or_else(|| {
+                    socle::echec::refus("La convention collective de l'employeur n'est pas dite : la liste de l'annexe 8 qui nomme le métier en dépend (Configuration › Entreprise).")
+                })?;
+                Ok(m.nomme_par_l_annexe8(idcc))
+            }
+            autre => Err(socle::refus!("Le métier {} est rangé à l'annexe {} : l'assurance chômage n'en a que deux, la 8 (technicien) et la 10 (artiste). Le signaler au développeur.", code, autre)),
         }
-        autre => Err(socle::refus!("Le métier {} est rangé à l'annexe {} : l'assurance chômage n'en a que deux, la 8 (technicien) et la 10 (artiste). Le signaler au développeur.", code, autre)),
-    }
+    };
+    Ok(metier.map(range).transpose()?.is_some_and(|oui| oui))
 }
 
 /// Le technicien d'un CDD de droit commun que la liste de l'annexe 8 de la convention de l'employeur ne nomme pas

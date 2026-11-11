@@ -1949,6 +1949,9 @@ fn attendre_fin(_pid: u32, inst: &Path) -> R<bool> {
     Ok(false)
 }
 
+/// Le code de sortie du relais appele sans `--code`, ou sans `--installation` ni `--racine` : il n'a rien a relayer.
+const RELAIS_MAL_APPELE: i32 = 2;
+
 /// Le relais (`puppetpaie maj-relais --installation I --code C --attendre PID`) : attend la fin du programme qui l'a
 /// lance, bascule, et lance la fenetre (la neuve, ou l'ancienne si la bascule a echoue). Ecrit ce qui s'est passe dans le
 /// journal de la mise a jour. `--racine R` (la compagnie dont `maj/` porte la version prete) au lieu de `--installation` :
@@ -1957,13 +1960,13 @@ fn attendre_fin(_pid: u32, inst: &Path) -> R<bool> {
 pub fn relais(args: &[socle::ligne::Argument]) -> i32 {
     let args = socle::ligne::textes(args);
     let valeur = |n: &str| args.iter().position(|a| a == n).and_then(|i| args.get(i + 1)).map(PathBuf::from);
-    let Some(code) = valeur("--code") else { return 2 };
+    let Some(code) = valeur("--code") else { return RELAIS_MAL_APPELE };
     let maj = match (valeur("--installation"), valeur("--racine")) {
         (Some(i), _) => dossier_maj(&i),
         (None, Some(r)) => dossier_maj(&r),
-        _ => return 2,
+        (None, None) => return RELAIS_MAL_APPELE,
     };
-    let Some(inst) = code.parent().map(Path::to_path_buf) else { return 2 };
+    let Some(inst) = code.parent().map(Path::to_path_buf) else { return RELAIS_MAL_APPELE };
     let pid = valeur("--attendre").and_then(|p| p.to_str().map(str::parse::<u32>));
     let attendu = match pid {
         Some(Ok(p)) => match attendre_fin(p, &inst) {

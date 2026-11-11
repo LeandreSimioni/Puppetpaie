@@ -1117,7 +1117,13 @@ fn fabriquer(ec: &Ecrivain, ecr: &[Ecriture], env: &Envoi) -> R<Fabrique> {
 /// de compte trop long, avec sa valeur courte validee si elle tient. Les memes ecrivains que l'export, qui ne s'ecrit
 /// pas : la page des libelles courts lit ce que l'export refuserait.
 pub fn trop_longs(ctx: &Contexte, format: &str, departs: &engagement::departs::Departs) -> R<Vec<Depasse>> {
-    let Some(ec) = ecrivain(format).filter(|_| FormatBorne::de(format).is_some()) else { return Ok(Vec::new()) };
+    let Some(ec) = ecrivain(format) else {
+        return Err(socle::refus!("Le format d'export « {} » n'existe pas.", format));
+    };
+    // Un format qui ne borne pas ses zones n'a rien de trop long.
+    if FormatBorne::de(format).is_none() {
+        return Ok(Vec::new());
+    }
     let (plan, _) = crate::plan_comptable::plan(ctx)?;
     // Mois par mois : un mois dont les ecritures se refusent (sa paie incomplete) ne s'exporte pas, et son refus est
     // celui de son export : il se dit ici aussi.

@@ -455,14 +455,11 @@ fn lire_csv(texte: &str, delim: char) -> Vec<Vec<String>> {
 /// (`atelier/reference/`), et la table livree en est la copie conforme (`sources.json`).
 fn libelles_ctp(ctx: &Contexte) -> R<Vec<(String, String)>> {
     let p = ctx.code.join("urssaf-codes-types-personnel.csv");
-    if !p.exists() {
-        return Ok(Vec::new());
-    }
     let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
     let texte = String::from_utf8_lossy(&octets).into_owned();
     let rangs = lire_csv(texte.trim_start_matches('\u{feff}'), ';');
-    let Some((entete, corps)) = rangs.split_first() else { return Ok(Vec::new()) };
     let illisible = |quoi: &str| refus_avec(format!("La table des codes de l'Urssaf livrée ne dit pas {} : le signaler au développeur.", quoi), Lieu { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }).reclasser(Classe::Illisible);
+    let Some((entete, corps)) = rangs.split_first() else { return Err(illisible("son en-tête")) };
     let col = |nom: &str| entete.iter().position(|e| e == nom).ok_or_else(|| illisible(&format!("sa colonne « {} »", nom)));
     let (i_code, i_lib, i_fin) = (col("Code")?, col("Libellé")?, col("Date de fin")?);
     let mut out: Vec<(String, String)> = Vec::new();

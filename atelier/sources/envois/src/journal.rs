@@ -496,17 +496,20 @@ pub enum Revenu {
 pub fn rattacher(racine: &Path, envoi: impl Fn(&Ligne) -> bool, retour: Revenu) -> R<Option<Ligne>> {
     let mut trouvee = None;
     ajouter(racine, |j, _| {
-        let Some(i) = j.lignes.iter().rposition(|l| envoi(l)) else { return Ok(Vec::new()) };
-        let sien = matches!((&j.lignes[i], &retour), (Ligne::ContratSignature(_), Revenu::Contrat(_)) | (Ligne::FicheDemande(_), Revenu::Fiche(_)));
-        if !sien {
-            return Err(socle::refus!("journal : ce retour ne revient pas d'un envoi {}", j.lignes[i].acte().nom()));
-        }
-        trouvee = Some(i);
-        let r = match &retour {
-            Revenu::Contrat(r) => Retour::Contrat(r.clone()),
-            Revenu::Fiche(r) => Retour::Fiche(r.clone()),
+        trouvee = j.lignes.iter().rposition(|l| envoi(l));
+        let ranger = |i: usize| -> R<Enregistrement> {
+            let sien = matches!((&j.lignes[i], &retour), (Ligne::ContratSignature(_), Revenu::Contrat(_)) | (Ligne::FicheDemande(_), Revenu::Fiche(_)));
+            if !sien {
+                return Err(socle::refus!("journal : ce retour ne revient pas d'un envoi {}", j.lignes[i].acte().nom()));
+            }
+            let r = match &retour {
+                Revenu::Contrat(r) => Retour::Contrat(r.clone()),
+                Revenu::Fiche(r) => Retour::Fiche(r.clone()),
+            };
+            Ok(Enregistrement { a: Some(j.ids[i].clone()), retour: Some(r), ..Default::default() })
         };
-        Ok(vec![Enregistrement { a: Some(j.ids[i].clone()), retour: Some(r), ..Default::default() }])
+        // Aucune ligne ne le porte : rien ne s'ecrit.
+        Ok(trouvee.map(ranger).transpose()?.into_iter().collect())
     })?;
     Ok(match trouvee {
         Some(i) => lu(racine)?.lignes.get(i).cloned(),

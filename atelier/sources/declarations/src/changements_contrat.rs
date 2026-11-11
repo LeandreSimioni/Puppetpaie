@@ -317,9 +317,9 @@ intermediaires, ou ne garder qu'un changement.",
 }
 
 /// Les blocs S21.G00.41 du contrat de `p`, dont le bloc 40 vient d'etre ecrit (`ecrit`), dans la DSN mensuelle de
-/// `mois` de l'etablissement `nics[0]`, en norme `norme` ; `declare` : son bloc 40 declare (`dsn::bloc_40_declare`). Vide au
-/// premier mois du contrat ou quand rien n'a encore ete declare.
-fn blocs_41(ctx: &Contexte, p: &Paie, mois: Mois, norme: &crate::norme::Norme, nics: &[String], ecrit: &[(String, String)], declare: Option<&Declare>) -> R<Vec<Vec<(String, String)>>> {
+/// `mois` de l'etablissement `nics[0]`, en norme `norme` ; `decl` : son bloc 40 declare (`dsn::bloc_40_declare`). Vide au
+/// premier mois du contrat.
+fn blocs_41(ctx: &Contexte, p: &Paie, mois: Mois, norme: &crate::norme::Norme, nics: &[String], ecrit: &[(String, String)], decl: &Declare) -> R<Vec<Vec<(String, String)>>> {
     let e = &p.engagement;
     if e.numero.as_deref().is_none_or(str::is_empty) {
         return Ok(Vec::new());
@@ -327,7 +327,6 @@ fn blocs_41(ctx: &Contexte, p: &Paie, mois: Mois, norme: &crate::norme::Norme, n
     if e.premier_mois() {
         return Ok(Vec::new());
     }
-    let Some(decl) = declare else { return Ok(Vec::new()) };
     let fin_m = mois.dernier_jour();
     let mut identifiants = Vec::new();
     // L'IDENTIFIANT : la date de debut. Il ne change jamais en silence : l'ancienne se declare dans un bloc Changements
@@ -420,7 +419,9 @@ pub fn poser(f: &mut crate::dsn::Fichier, debut: usize, ctx: &Contexte, p: &Paie
         }
         fin += 1;
     }
-    let blocs = blocs_41(ctx, p, mois, f.norme()?, nics, &ecrit, declare)?;
+    // Rien de declare : aucun changement a declarer.
+    let norme = f.norme()?;
+    let blocs: Vec<Vec<(String, String)>> = declare.map(|d| blocs_41(ctx, p, mois, norme, nics, &ecrit, d)).transpose()?.into_iter().flatten().collect();
     let neuves: Vec<String> = blocs.into_iter().flatten().map(|(k, v)| format!("{},'{}'", k, v)).collect();
     f.lignes.splice(fin..fin, neuves);
     Ok(())

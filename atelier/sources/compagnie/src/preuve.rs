@@ -37,20 +37,20 @@ fn cle_de_version(v: &str) -> R<Vec<i64>> {
 }
 
 /// La raison pour laquelle une version telechargee et pas encore appliquee est
-/// indispensable avant de declarer -- ou `""`.
+/// indispensable avant de declarer ; `None` : aucune ne l'est.
 /// La version prete est celle de l'INSTALLATION du contexte (`<installation>/logiciel/donnees` = `ctx.code`).
 #[cfg(not(feature = "atelier"))]
-fn exigee_en_attente(ctx: &Contexte) -> R<String> {
+fn exigee_en_attente(ctx: &Contexte) -> R<Option<String>> {
     let code = ctx.code.parent().map(std::path::Path::to_path_buf).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : le dossier des données livrées n'est dans aucun dossier."))?;
-    let Some(p) = crate::maj::prete(&code.join(".."))? else { return Ok(String::new()) };
+    let Some(p) = crate::maj::prete(&code.join(".."))? else { return Ok(None) };
     let (exigee, version) = (p.exigee, p.version);
     if exigee.is_empty() || cle_de_version(&version)? <= cle_de_version(&crate::maj::courante(&code).map_err(|e| e.reclasser(Classe::Illisible))?)? {
-        return Ok(String::new());
+        return Ok(None);
     }
-    Ok(format!(
+    Ok(Some(format!(
         "la version {} est indispensable avant de declarer ({}) : fermez et rouvrez PuppetPaie, elle s'appliquera au demarrage",
         version, exigee
-    ))
+    )))
 }
 
 /// La forme de preuve retenue, ou un refus. Aucun acte sans elle.
@@ -92,8 +92,7 @@ fn verifier_preuve_du_logiciel(ctx: &Contexte, preuve: Option<&Preuve>, quand: M
         return Ok("fictive".into());
     }
     // Une version EXIGEE attend d'etre appliquee : l'ancienne ferait une declaration fausse.
-    let presse = exigee_en_attente(ctx)?;
-    if !presse.is_empty() {
+    if let Some(presse) = exigee_en_attente(ctx)? {
         return Err(erreur(Classe::VersionExigee, format!("Rien n'est parti : {}.", presse)));
     }
     let coffre = crate::coffre::Coffre::du_poste(&ctx.racine);

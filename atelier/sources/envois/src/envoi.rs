@@ -1002,11 +1002,12 @@ fn compte_lignes(s: &str) -> usize {
 
 /// Une adresse `local@domaine` en ASCII, sans nom ni chevrons : la seule forme que ce logiciel ecrit.
 fn adresse_simple(a: &str) -> bool {
-    let Some((local, domaine)) = a.split_once('@') else { return false };
-    let ok_local = !local.is_empty()
-        && local.bytes().all(|c| c.is_ascii_alphanumeric() || b"!#$%&'*+/=?^_`{|}~-.".contains(&c));
-    let ok_domaine = !domaine.is_empty() && domaine.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'.');
-    ok_local && ok_domaine
+    a.split_once('@').is_some_and(|(local, domaine)| {
+        let ok_local = !local.is_empty()
+            && local.bytes().all(|c| c.is_ascii_alphanumeric() || b"!#$%&'*+/=?^_`{|}~-.".contains(&c));
+        let ok_domaine = !domaine.is_empty() && domaine.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'.');
+        ok_local && ok_domaine
+    })
 }
 
 // ------------------------------------------------------------------------------------------- le texte des parties

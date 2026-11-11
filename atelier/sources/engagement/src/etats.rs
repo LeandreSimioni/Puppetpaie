@@ -326,8 +326,9 @@ pub fn signe_ailleurs(ctx: &Contexte, o: &Objet) -> R<bool> {
     let c = o.carte();
     let nat = c.nature_lue()?;
     let salarie = c.salarie.as_deref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
-    let Some(debut) = crate::debut_brut(&o.brut) else { return Ok(false) };
-    crate::signe_ailleurs_de(&ctx.racine, &nat, salarie, debut, c.numero.as_deref(), o.fichier)
+    // Un engagement sans debut n'a pas de contrat.
+    let signe = crate::debut_brut(&o.brut).map(|debut| crate::signe_ailleurs_de(&ctx.racine, &nat, salarie, debut, c.numero.as_deref(), o.fichier));
+    Ok(signe.transpose()?.is_some_and(|oui| oui))
 }
 
 /// Qui est l'engagement `o`, pour une phrase de l'ecran : « MARTIN Lou (contrat du 20/11/2026) » (`crate::salarie_nomme`).
@@ -663,11 +664,14 @@ impl PaieDuMois {
 /// Le calcul qui les lit note leur empreinte (`paies <mois> <salarie>`, `empreinte_des_paies_validees`), et elle seule :
 /// une paie validee de ce salarie qui change fait recalculer ses mois qui l'ont lue ; celle d'un autre salarie, non.
 pub fn paies_validees(ctx: &Contexte, mois: Mois, salarie: &str) -> R<Vec<Paie>> {
-    let Some(saisie) = stock::vue_et_empreinte(&ctx.racine, mois)? else { return Ok(Vec::new()) };
-    let data = &saisie.0;
-    let valides = valides_lues(ctx, mois, Some(salarie))?;
-    socle::fichiers::noter_valeur(&LectureDatee::Paies { mois, salarie: salarie.to_string() }.cle(), empreinte_des_paies(&valides, mois)?);
-    valides.iter().map(|(i, v)| v.paie(ctx, data, *i)).collect()
+    // Un mois sans saisie n'a aucune paie validee.
+    let lire = |saisie: std::sync::Arc<(crate::saisie::VueDuMois, String)>| -> R<Vec<Paie>> {
+        let data = &saisie.0;
+        let valides = valides_lues(ctx, mois, Some(salarie))?;
+        socle::fichiers::noter_valeur(&LectureDatee::Paies { mois, salarie: salarie.to_string() }.cle(), empreinte_des_paies(&valides, mois)?);
+        valides.iter().map(|(i, v)| v.paie(ctx, data, *i)).collect()
+    };
+    Ok(stock::vue_et_empreinte(&ctx.racine, mois)?.map(lire).transpose()?.into_iter().flatten().collect())
 }
 
 /// L'empreinte des paies validees de `mois` telles qu'un calcul les lit (`paies_validees`) : celles du salarie `salarie`
@@ -1320,9 +1324,9 @@ fn saisie_comptee_valide(ctx: &Contexte, o: &Objet, mois: Mois, salarie: Option<
 /// chose que sa validation mise de cote, ou celle-ci ne dit pas tout ce qu'un envoi emporte (`a_revalider`). Faux pour un
 /// engagement qui n'a pas ete rouvert.
 pub fn a_revalider_rouvert(ctx: &Contexte, mois: Mois, rang: usize) -> R<bool> {
-    let Some(o) = stock::objet_du_mois(&ctx.racine, mois, rang)? else { return Ok(false) };
-    let Some(p) = &o.brut.precedente else { return Ok(false) };
-    Ok(p.saisie.as_ref() != Some(&saisie_de(&o)) || a_revalider(ctx, &o, stock::Version::Presente(p)).is_some())
+    Ok(stock::objet_du_mois(&ctx.racine, mois, rang)?.is_some_and(|o| {
+        o.brut.precedente.as_ref().is_some_and(|p| p.saisie.as_ref() != Some(&saisie_de(&o)) || a_revalider(ctx, &o, stock::Version::Presente(p)).is_some())
+    }))
 }
 
 /// LE MOIS OU LE CONTRAT CHANGE entre la version `passee` d'un engagement valide (sa saisie gardee) et son present : le
@@ -1700,9 +1704,12 @@ fn clauses_de(c: &Carte, mensuel: bool) -> Carte {
 }
 
 /// Les clauses d'une saisie gardee (`saisie_de`) : celles de son premier mois, chaque changement d'une clause, et
-/// celles que les faits de chaque mois d'apres disent.
-fn clauses(saisie: Option<&stock::Saisie>, mensuel: bool) -> stock::Saisie {
-    let Some(s) = saisie else { return stock::Saisie::default() };
+/// celles que les faits de chaque mois d'apres disent. Une version sans saisie n'en dit aucune.
+fn clauses(saisie: Option<&stock::Saisie>, mensuel: bool) -> Option<stock::Saisie> {
+    saisie.map(|s| clauses_de_la_saisie(s, mensuel))
+}
+
+fn clauses_de_la_saisie(s: &stock::Saisie, mensuel: bool) -> stock::Saisie {
     let avenants = s
         .avenants
         .iter()
@@ -1759,7 +1766,7 @@ pub fn a_refaire_parmi(ctx: &Contexte, v: &Valide, departs: &Departs, sorte: &dy
     // date apres lui (`stock::DATES`) est un changement que le salarie n'a pas signe.
     let contrat_parti = derniers.keys().any(|(sorte, _)| *sorte == 0);
     if sorte(Envoi::Contrat) && !contrat_parti && signe_ailleurs(ctx, &v.objet)? {
-        if !clauses(presente, mensuel).avenants.is_empty() {
+        if clauses(presente, mensuel).is_some_and(|c| !c.avenants.is_empty()) {
             out.push(ARefaire::Avenant { depuis: None });
         }
     }
@@ -1774,7 +1781,7 @@ pub fn a_refaire_parmi(ctx: &Contexte, v: &Valide, departs: &Departs, sorte: &dy
         match d.envoi {
             Envoi::Contrat => {
                 let partie = passee.saisie();
-                if clauses(partie, mensuel) != clauses(presente, mensuel) && !seule_la_rupture(partie, presente) {
+                if clauses(partie, mensuel) != clauses(presente, mensuel) && !partie.zip(presente).is_some_and(|(partie, presente)| seule_la_rupture(partie, presente)) {
                     out.push(ARefaire::Avenant { depuis: Some(d.version) });
                 }
             }
@@ -1821,10 +1828,8 @@ const DE_LA_RUPTURE: [Champ; 10] = [
 /// quand la saisie `presente` ne differe de la saisie `partie` (celle sur laquelle le contrat est parti) que par la rupture
 /// qu'elle porte : son motif (`motif_rupture`, absent de la partie), la fin et le preavis qu'il appelle, et les jours de
 /// travail d'apres la fin retires (une ligne garde ses jours jusqu'a la fin, et sa quantite ne croit pas).
-fn seule_la_rupture(partie: Option<&stock::Saisie>, presente: Option<&stock::Saisie>) -> bool {
-    let (Some(partie), Some(presente)) = (partie, presente) else { return false };
+fn seule_la_rupture(partie: &stock::Saisie, presente: &stock::Saisie) -> bool {
     let motif_dit = |s: &stock::Saisie| s.carte.motif_rupture.is_some();
-    let Some(fin) = presente.carte.fin else { return false };
     if !motif_dit(presente) || motif_dit(partie) {
         return false;
     }
@@ -1838,7 +1843,7 @@ fn seule_la_rupture(partie: Option<&stock::Saisie>, presente: Option<&stock::Sai
     if reste(partie) != reste(presente) {
         return false;
     }
-    crate::lignes_coupees_a_la_fin(partie.carte.lignes(), presente.carte.lignes(), fin)
+    presente.carte.fin.is_some_and(|fin| crate::lignes_coupees_a_la_fin(partie.carte.lignes(), presente.carte.lignes(), fin))
 }
 
 #[cfg(test)]
@@ -1869,10 +1874,10 @@ mod tests_rupture {
                 ..carte(ligne(3, taux))
             })
         };
-        assert!(seule_la_rupture(Some(&partie), Some(&rompu(150))));
-        assert!(!seule_la_rupture(Some(&partie), Some(&rompu(180))), "un taux change avec la rupture se refait signer");
+        assert!(seule_la_rupture(&partie, &rompu(150)));
+        assert!(!seule_la_rupture(&partie, &rompu(180)), "un taux change avec la rupture se refait signer");
         let raccourci = saisie(carte(ligne(3, 150)));
-        assert!(!seule_la_rupture(Some(&partie), Some(&raccourci)), "sans motif de rupture, des jours retires sont un avenant");
+        assert!(!seule_la_rupture(&partie, &raccourci), "sans motif de rupture, des jours retires sont un avenant");
     }
 }
 

@@ -408,7 +408,11 @@ impl Champ {
     /// La case du tiroir « Avancé » s'ecarte-t-elle du cas ordinaire dans la fiche `donnees` (`Avance`) ? `du_code_postal` :
     /// l'organisme Urssaf que le code postal de la compagnie donne. Vide ou « non » n'est jamais un ecart.
     pub fn ecart(&self, donnees: &Saisie, du_code_postal: Option<&str>) -> bool {
-        let Some(a) = &self.avance else { return false };
+        // Une case hors du tiroir n'a pas de cas ordinaire dont s'ecarter.
+        self.avance.as_ref().is_some_and(|a| self.ecart_de(a, donnees, du_code_postal))
+    }
+
+    fn ecart_de(&self, a: &Avance, donnees: &Saisie, du_code_postal: Option<&str>) -> bool {
         let mot = match comme_la_page(donnees.case(self.cle)) {
             VueDeLaPage::Vide => return false,
             VueDeLaPage::Structure => return donnees.dite(self.cle).is_some() && *a != Avance::ToujoursRemplie,
@@ -1516,7 +1520,7 @@ fn sans_caracteres_refuses(c: &Champ, v: String) -> R<String> {
             essai = essai.replace(*r, remplacant);
         }
         let essai = essai.split(espace).filter(|m| !m.is_empty()).collect::<Vec<_>>().join(" ");
-        if !essai.is_empty() && crate::formats::mauvaise(rubrique, &essai)?.is_empty() {
+        if !essai.is_empty() && crate::formats::mauvaise(rubrique, &essai)?.is_none() {
             return Ok(essai);
         }
     }
@@ -1703,7 +1707,7 @@ fn explication_nir(nir: &str) -> R<Option<String>> {
             "plus de cinq « 9 » a la suite en fin de numero : la norme ne l'admet pas (CCH-16). C'est la marque d'un numero complete au juge -- il vaut mieux une fiche qui refuse qu'une declaration qui identifie la mauvaise personne".into(),
         ));
     }
-    if crate::formats::mauvaise(RUBRIQUE_NIR, v)?.is_empty() {
+    if crate::formats::mauvaise(RUBRIQUE_NIR, v)?.is_none() {
         return Ok(None);
     }
     for (deb, fin, nom, attendu, _) in MORCEAUX_NIR {
@@ -1780,19 +1784,12 @@ pub fn luhn(numero: &str) -> bool {
     if !tous_chiffres(numero) {
         return false;
     }
-    let (mut total, mut pair) = (0u32, false);
-    for c in numero.chars().rev() {
-        let Some(mut n) = c.to_digit(10) else { return false };
-        if pair {
-            n *= 2;
-            if n > 9 {
-                n -= 9;
-            }
-        }
-        total += n;
-        pair = !pair;
-    }
-    total % 10 == 0
+    // Un numero qui n'est pas fait de chiffres n'a pas de cle.
+    let chiffres: Option<Vec<u32>> = numero.chars().rev().map(|c| c.to_digit(10)).collect();
+    chiffres.is_some_and(|chiffres| {
+        let total: u32 = chiffres.iter().enumerate().map(|(i, &n)| if i % 2 == 1 { if n * 2 > 9 { n * 2 - 9 } else { n * 2 } } else { n }).sum();
+        total % 10 == 0
+    })
 }
 
 /// LE COMPTE BANCAIRE D'UNE FICHE (`banque`, de l'entreprise ou d'un salarie) : la faute de son IBAN, puis de son BIC.
@@ -1847,10 +1844,9 @@ fn faute_de_rubrique(forme: Forme, rubrique: Option<&str>, valeur: &str) -> R<Op
         return Ok(None);
     }
     let Some(v) = forme_declarative(forme, valeur).filter(|v| !v.is_empty()) else { return Ok(None) };
-    let mut pourquoi = crate::formats::mauvaise(rubrique, &v)?;
-    if pourquoi.is_empty() {
+    let Some(mut pourquoi) = crate::formats::mauvaise(rubrique, &v)? else {
         return Ok(None);
-    }
+    };
     let refuses = crate::formats::caracteres_refuses(rubrique, &v)?;
     if !refuses.is_empty() {
         let liste: Vec<String> = refuses.iter().map(|c| format!("\u{ab} {} \u{bb}", c)).collect();
@@ -1902,13 +1898,12 @@ fn courriel_valide(v: &str) -> bool {
     if c.iter().filter(|x| **x == '@').count() != 1 || c.iter().any(|x| espace(*x)) {
         return false;
     }
-    let Some(a) = c.iter().position(|x| *x == '@') else { return false };
-    if a == 0 {
-        return false;
-    }
-    let domaine = &c[a + 1..];
-    // un point avec au moins un caractere avant et un apres, dans le domaine
-    (1..domaine.len().saturating_sub(1)).any(|i| domaine[i] == '.')
+    // Une arobase qui n'est pas la premiere lettre, puis un point avec au moins un caractere avant et un apres, dans le
+    // domaine.
+    c.iter().position(|x| *x == '@').filter(|a| *a > 0).is_some_and(|a| {
+        let domaine = &c[a + 1..];
+        (1..domaine.len().saturating_sub(1)).any(|i| domaine[i] == '.')
+    })
 }
 
 /// CE QU'UNE CASE EXIGE D'UNE VALEUR SAISIE : sa ligne de la table (un champ de la fiche, ou une case d'une structure).

@@ -128,7 +128,9 @@ fn entree_tient(ctx: &Contexte, k: &str, v: &str) -> R<bool> {
     if let Some(salarie) = crate::imprevus::salarie_de_l_entree(k) {
         return Ok(v == crate::imprevus::empreinte_du_salarie(racine, salarie)?);
     }
-    let Some((genre, p)) = fichiers::chemin_de(k, racine, &code) else { return Ok(false) };
+    let Some((genre, p)) = fichiers::chemin_de(k, racine, &code) else {
+        return Err(socle::refus!("L'empreinte d'une paie note la lecture « {} », que le registre des lectures n'écrit pas : le signaler au développeur.", k));
+    };
     Ok(match genre.as_str() {
         "fichier" => v == fichiers::empreinte_fichier(&p),
         "existe" => v == if p.exists() { "oui" } else { "non" },

@@ -351,12 +351,14 @@ fn commence_une_citation(ligne: &str) -> bool {
 
 /// `<tete>.{3,120}<milieu>` puis, si `deux_points`, ` ?:`.
 fn forme_de_citation(ligne: &str, tete: &str, milieu: &str, deux_points: bool) -> bool {
-    let Some(reste) = ligne.strip_prefix(tete) else { return false };
-    let c: Vec<char> = reste.chars().collect();
     let milieu: Vec<char> = milieu.chars().collect();
+    ligne.strip_prefix(tete).is_some_and(|reste| apres_la_tete(&reste.chars().collect::<Vec<char>>(), &milieu, deux_points))
+}
+
+fn apres_la_tete(c: &[char], milieu: &[char], deux_points: bool) -> bool {
     (3..=120.min(c.len())).any(|i| {
         let suite = &c[i..];
-        if !suite.starts_with(&milieu) {
+        if !suite.starts_with(milieu) {
             return false;
         }
         if !deux_points {

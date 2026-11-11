@@ -448,23 +448,29 @@ impl Arret {
         if !self.couvre(&origine, &debut_mois.plus_jours(-1)?)? {
             return Ok(false);
         }
+        // Un contrat sans numero n'a rien declare.
+        Ok(self.saisi.contrat_numero.as_deref().is_some_and(|numero| self.saisi_apres_la_derniere_dsn(numero, mois, departs)))
+    }
+
+    /// L'arret a-t-il ete saisi apres le depart de la derniere DSN mensuelle d'un mois anterieur a `mois` qui declarait le
+    /// contrat `numero`, et avant celui de la DSN de `mois` ?
+    fn saisi_apres_la_derniere_dsn(&self, numero: &str, mois: Mois, departs: &engagement::departs::Departs) -> bool {
         // Une date du journal (« 2026-10-15T10:00:00 ») et une date de saisie (« 2026-11-03 11:39 ») a la minute.
         let minute = |t: &str| t.replacen('T', " ", 1).chars().take(16).collect::<String>();
         let saisi = self.saisi.saisi_le.iso();
-        let Some(numero) = self.saisi.contrat_numero.as_deref() else { return Ok(false) };
         let mut avant: Option<String> = None;
         for d in departs.de(&self.saisi.salarie, numero).iter().filter(|d| d.envoi == engagement::departs::Envoi::Dsn) {
             // Le mois que la DSN declarait : celui qui la porte (une correction), sinon le sien.
             let Some(declarante) = d.par.or(d.mois) else { continue };
             let le = minute(&d.le.iso());
             if declarante == mois && le < saisi {
-                return Ok(false);
+                return false;
             }
             if declarante < mois && avant.as_ref().is_none_or(|a| le > *a) {
                 avant = Some(le);
             }
         }
-        Ok(avant.is_some_and(|a| a < saisi))
+        avant.is_some_and(|a| a < saisi)
     }
 
     /// L'arret suspend-il le contrat de cette paie ? La regle des imprevus (`imprevus::du_contrat`) : le meme salarie, la
@@ -818,7 +824,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     let bases = bases(p, &bar)?;
     let mut out: Vec<Cotisation> = Vec::new();
     for c in &bar.cotisations_dsn {
-        if c.seuil_smic.is_some() && !au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, p.heures_travaillees, c.seuil_smic.map(|n| n.0))? {
+        if c.seuil_smic.map(|n| au_dela_du_seuil(bar.reduction_generale.as_ref(), p.brut, p.heures_travaillees, n.0)).transpose()? == Some(false) {
             continue;
         }
         let bloc78 = c.bloc78;
@@ -3964,23 +3970,26 @@ pub struct SoldeTa {
 /// dans la version sur laquelle la DSN est partie), ou sa paie ecrite si aucune DSN ne l'a encore declaree. Un
 /// engagement en saisie n'y est pas : rien ne part de lui. `nic` : les seuls salaries de cet etablissement.
 pub fn paies_declarees_du_mois(ctx: &Contexte, mois: Mois, nic: Option<&str>, departs: &engagement::departs::Departs) -> R<Vec<Paie>> {
-    let Some(data) = engagement::stock::vue_du_mois(&ctx.racine, mois)? else { return Ok(Vec::new()) };
-    let ctx_m = ctx.du_mois(mois)?;
-    let mut out = Vec::new();
-    for (i, e) in engagement::etats::du_mois(ctx, mois, departs)?.iter().enumerate() {
-        let Some(v) = e.valide() else { continue };
-        let p = match engagement::etats::paie_declaree(&ctx_m, v.objet(), departs, mois)? {
-            Some(p) => p,
-            None => v.paie(ctx, &data, i)?,
-        };
-        if let Some(n) = nic {
-            if bareme::etablissement_de(&ctx_m.entreprise, &p.salarie)? != n {
-                continue;
+    // Un mois sans saisie n'a rien declare.
+    let declarees = |data: engagement::saisie::VueDuMois| -> R<Vec<Paie>> {
+        let ctx_m = ctx.du_mois(mois)?;
+        let mut out = Vec::new();
+        for (i, e) in engagement::etats::du_mois(ctx, mois, departs)?.iter().enumerate() {
+            let Some(v) = e.valide() else { continue };
+            let p = match engagement::etats::paie_declaree(&ctx_m, v.objet(), departs, mois)? {
+                Some(p) => p,
+                None => v.paie(ctx, &data, i)?,
+            };
+            if let Some(n) = nic {
+                if bareme::etablissement_de(&ctx_m.entreprise, &p.salarie)? != n {
+                    continue;
+                }
             }
+            out.push(p);
         }
-        out.push(p);
-    }
-    Ok(out)
+        Ok(out)
+    };
+    Ok(engagement::stock::vue_du_mois(&ctx.racine, mois)?.map(declarees).transpose()?.into_iter().flatten().collect())
 }
 
 /// LES ASSIETTES DES CTP `codes` que le bordereau Urssaf de `mois` porte pour l'etablissement `nic` sur les paies

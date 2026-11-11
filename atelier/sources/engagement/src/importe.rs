@@ -817,10 +817,12 @@ pub fn continue_par(racine: &Path, e: &Carte) -> R<Option<Importe>> {
 /// salarie, debut et numero : c'est lui, ou le contrat d'usage qu'il continue ici (`continue_par`). L'ecran le dit sur
 /// la carte. Faux sans numero.
 pub fn vient_d_un_ancien_logiciel(racine: &Path, salarie: &str, debut: Jour, numero: Option<&str>) -> R<bool> {
-    let Some(numero) = numero.filter(|n| !n.is_empty()) else { return Ok(false) };
-    Ok(tous(racine)?.iter().any(|i| {
-        i.carte().salarie.as_deref() == Some(salarie) && i.carte().debut == Some(debut) && i.carte().numero.as_deref() == Some(numero)
-    }))
+    let vient = |numero: &str| -> R<bool> {
+        Ok(tous(racine)?.iter().any(|i| {
+            i.carte().salarie.as_deref() == Some(salarie) && i.carte().debut == Some(debut) && i.carte().numero.as_deref() == Some(numero)
+        }))
+    };
+    Ok(numero.filter(|n| !n.is_empty()).map(vient).transpose()?.is_some_and(|oui| oui))
 }
 
 /// LE NUMERO QU'UNE DSN DE L'ANCIEN LOGICIEL A DECLARE pour l'engagement `o` : celui de sa derniere paie importee

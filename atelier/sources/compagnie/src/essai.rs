@@ -236,8 +236,7 @@ impl Variable {
         // technique 2026.1, p. 139, `norme-dsn/texte/bloc-S20.G00.07.txt`), pas un intitule.
         for (cle, t, rubriques) in self.rubriques() {
             for r in rubriques {
-                let pourquoi = declarations::formats::mauvaise(r, t)?;
-                if !pourquoi.is_empty() {
+                if let Some(pourquoi) = declarations::formats::mauvaise(r, t)? {
                     return Err(mal_formee(cle, &format!("ne tient pas dans {} de la DSN : {}", r, pourquoi)));
                 }
             }

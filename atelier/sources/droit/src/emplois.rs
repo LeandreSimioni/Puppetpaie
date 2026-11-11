@@ -425,7 +425,9 @@ vaut pour tout ce mois-ci) ou le {} (il vaut a partir du mois suivant).",
 /// se decoupe en periodes elementaires (`periodes::bornes` ; norme DSN 2026.1, § 2.1.3.2, p. 28 : « passage de non
 /// cadre a cadre en cours de periode de paie »). Vide : le mois se paie d'un seul tenant.
 pub fn jours_de_changement(ctx: &Contexte, cle: &str, debut: &Jour, fin: &Jour) -> R<Vec<Jour>> {
-    let Some(brute) = ctx.salarie_brut(cle) else { return Ok(Vec::new()) };
+    let Some(brute) = ctx.salarie_brut(cle) else {
+        return Err(socle::refus!("La fiche salarié « {} » n'existe pas : sa paie au mois ne se découpe pas.", cle));
+    };
     let mut jours: Vec<Jour> = Vec::new();
     for c in UNE_VALEUR_PAR_MOIS {
         jours.extend(brute.depuis(c.into()).into_iter().flatten().filter(|j| j > debut && j <= fin));

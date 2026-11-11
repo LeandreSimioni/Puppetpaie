@@ -147,10 +147,9 @@ pub fn reduction_generale_sous_dfs(
 }
 
 /// La remuneration du contrat depasse-t-elle `seuil_smic` fois le SMIC de reference (SMIC horaire de la reduction x
-/// heures remunerees) ? Sans seuil (le fichier n'en pose pas) : toujours. Un seuil sans SMIC de reference ou sans heures
-/// ne se compare pas : il se refuse.
-pub fn au_dela_du_seuil(rg: Option<&Parametres>, brut: Decimal, heures: Decimal, seuil_smic: Option<Decimal>) -> R<bool> {
-    let Some(seuil) = seuil_smic else { return Ok(true) };
+/// heures remunerees) ? Une ligne sans seuil (le fichier n'en pose pas) n'appelle pas cette question : elle vaut
+/// toujours. Un seuil sans SMIC de reference ou sans heures ne se compare pas : il se refuse.
+pub fn au_dela_du_seuil(rg: Option<&Parametres>, brut: Decimal, heures: Decimal, seuil: Decimal) -> R<bool> {
     let smic = requis(rg.and_then(|r| r.smic_horaire_reference).map(|n| n.0), "reduction_generale.smic_horaire_reference")?;
     if heures <= Decimal::ZERO {
         return Err(socle::echec::refus("Un seuil de SMIC se compare à des heures rémunérées : la paie n'en porte aucune."));
