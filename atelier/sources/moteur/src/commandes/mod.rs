@@ -210,6 +210,13 @@ fn executer(args: &[Argument], de_l_atelier: Vec<Commande>) -> i32 {
     };
     let cadre = Cadre { racine, o, ctx, aujourdhui, commande: c.nom };
     // La demande du mot de passe du logiciel est celle du moteur : fenetre s'il y en a une, sinon le terminal.
-    let _canaux = ::compagnie::demande::installer(Rc::new(::compagnie::demande::Reel::du_poste()));
+    let reel = match ::compagnie::demande::Reel::du_poste() {
+        Ok(r) => r,
+        Err(m) => {
+            eprintln!("{}", m.en_lignes());
+            return 1;
+        }
+    };
+    let _canaux = ::compagnie::demande::installer(Rc::new(reel));
     (c.executer)(&cadre, &a)
 }

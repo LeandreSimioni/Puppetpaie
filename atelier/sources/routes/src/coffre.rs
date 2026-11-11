@@ -870,23 +870,25 @@ pub(crate) fn compte_autorise(racine: &Path) -> Option<String> {
 
 /// Le faux Google qui remplace Google : dans l'atelier, celui d'`envois::redirection` ; en essai, celui que l'essai
 /// nomme (`VARIABLE_GOOGLE_ESSAIS`, une adresse locale seulement) ; `None` hors de l'un et de l'autre.
-fn faux_google() -> Option<String> {
+fn faux_google() -> R<Option<String>> {
     #[cfg(feature = "atelier")]
     if let Some(b) = envois::redirection::base(envois::redirection::VARIABLE_GOOGLE) {
-        return Some(b);
+        return Ok(Some(b));
     }
     match std::env::var(VARIABLE_GOOGLE_ESSAIS) {
-        Ok(b) if socle::garde_reseau::en_essai() && envois::redirection::est_locale(&b) => Some(b.trim_end_matches('/').to_string()),
-        Ok(_) | Err(std::env::VarError::NotPresent) | Err(std::env::VarError::NotUnicode(_)) => None,
+        Ok(b) if socle::garde_reseau::en_essai() && envois::redirection::est_locale(&b) => Ok(Some(b.trim_end_matches('/').to_string())),
+        // Hors essai, ou une adresse qui n'est pas locale : le vrai Google.
+        Ok(_) | Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => Err(refus(format!("La variable d'environnement {} n'est pas du texte : elle ne se lit pas.", VARIABLE_GOOGLE_ESSAIS))),
     }
 }
 
 /// Les adresses de Google, ou celles du faux Google (`faux_google`).
-fn adresses_du_poste() -> envois::drive::Adresses {
-    match faux_google() {
+fn adresses_du_poste() -> R<envois::drive::Adresses> {
+    Ok(match faux_google()? {
         Some(b) => envois::drive::Adresses::de_la_base(&b),
         None => envois::drive::Adresses::de_google(),
-    }
+    })
 }
 
 /// LE CLIENT DU DRIVE DE LA COMPAGNIE : refuse une copie de developpement (qui ecrirait dans le Drive de la VRAIE
@@ -903,7 +905,7 @@ pub fn client_drive(racine: &Path) -> Result<envois::drive::Client, envois::driv
         Jeton::Illisible(e) => (Err(envois::drive::ErreurGoogle::from(e.reclasser(Classe::Google))), None),
     };
     let autorisation = envois::drive::Autorisation { application, rafraichissement, compte };
-    Ok(envois::drive::Client::nouveau(autorisation, adresses_du_poste()))
+    Ok(envois::drive::Client::nouveau(autorisation, adresses_du_poste()?))
 }
 
 /// La variable d'un faux Google des essais : sa base locale (`http://127.0.0.1:<port>`), lue en essai seulement
@@ -911,11 +913,11 @@ pub fn client_drive(racine: &Path) -> Result<envois::drive::Client, envois::driv
 pub const VARIABLE_GOOGLE_ESSAIS: &str = "PUPPETPAIE_ESSAIS_GOOGLE";
 
 /// Les adresses de l'autorisation : celles de Google, ou celles du faux Google (`faux_google`).
-fn adresses_de_l_autorisation() -> envois::google_autorisation::Adresses {
-    match faux_google() {
+fn adresses_de_l_autorisation() -> R<envois::google_autorisation::Adresses> {
+    Ok(match faux_google()? {
         Some(b) => envois::google_autorisation::Adresses::de_la_base(&b),
         None => envois::google_autorisation::Adresses::de_google(),
-    }
+    })
 }
 
 /// LIER LE COMPTE GOOGLE (`google-autoriser`) : le mot de passe du logiciel s'il est pose, puis l'autorisation
@@ -931,7 +933,7 @@ fn google_autoriser(ctx: &Contexte, mdp: Option<&str>) -> R<String> {
             eprintln!("Le navigateur ne s'ouvre pas : {}", e.phrase);
         }
     };
-    let jeton = envois::google_autorisation::autoriser(&application, &adresses_de_l_autorisation(), envois::google_autorisation::DELAI_AUTORISATION, &dire_url, &|m| eprintln!("{}", m))?;
+    let jeton = envois::google_autorisation::autoriser(&application, &adresses_de_l_autorisation()?,envois::google_autorisation::DELAI_AUTORISATION, &dire_url, &|m| eprintln!("{}", m))?;
     sceller_le_jeton(&ctx.racine, &jeton)
 }
 
@@ -1018,7 +1020,7 @@ fn google_etat(ctx: &Contexte) -> R<EtatGoogle> {
         return Err(refus);
     }
     let (application, _) = application?;
-    match jeton_par_rafraichissement(&adresses_du_poste().jetons, &application, &jeton.rafraichissement, DELAI)? {
+    match jeton_par_rafraichissement(&adresses_du_poste()?.jetons, &application, &jeton.rafraichissement, DELAI)? {
         Ok(_) => Ok(etat(Some(jeton.compte), true, None, accordees)),
         Err(probleme) => Ok(etat(Some(jeton.compte), false, Some(probleme.echec.phrase), accordees)),
     }

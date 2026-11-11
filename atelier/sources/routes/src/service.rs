@@ -66,11 +66,13 @@ pub fn commande(quoi: &str, args: &[Argument]) -> Option<i32> {
     let args: Vec<&Argument> = args.iter().filter(|a| a.texte() != "--texte").collect();
     // Les referentiels : ceux de l'installation du programme, comme pour toute autre entree ; un dossier du code qui ne se
     // trouve pas refuse la route.
-    let lues = options(&args)?.and_then(|o| compagnie::installation::fixer_le_code().map(|()| o));
+    let lues = options(&args)?
+        .and_then(|o| compagnie::installation::fixer_le_code().map(|()| o))
+        .and_then(|o| compagnie::demande::canal_de_la_route(&racine_de(&o)).map(|canal| (o, canal)));
     let mut entree = String::new();
     let lue = std::io::stdin().read_to_string(&mut entree);
-    let o = match lues {
-        Ok(o) => o,
+    let (o, canal) = match lues {
+        Ok(lu) => lu,
         Err(e) => {
             // Une date qui ne se lit pas, ou le dossier du code introuvable : la route ne se sert pas, sa reponse est le
             // refus qui le dit.
@@ -88,7 +90,7 @@ pub fn commande(quoi: &str, args: &[Argument]) -> Option<i32> {
     if let Some(d) = o.date {
         std::env::set_var("PUPPETPAIE_AUJOURDHUI", d.iso());
     }
-    let _canaux = compagnie::demande::installer(compagnie::demande::canal_de_la_route(&racine_de(&o)));
+    let _canaux = compagnie::demande::installer(canal);
     let reponse = match lue {
         Ok(_) => crate::commande(&o, entree.trim_start_matches('\u{feff}')),
         Err(e) => Reponse::refusee(Refus::nouveau(Classe::DemandeIllisible, format!("L'entrée standard ne se lit pas : {}.", e))),

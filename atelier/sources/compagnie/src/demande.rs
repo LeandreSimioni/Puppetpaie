@@ -324,12 +324,16 @@ pub const VARIABLE_ESSAIS: &str = "PUPPETPAIE_ESSAIS_DEMANDE";
 /// (`garde_reseau::en_essai`, que Cargo pose) et pour une compagnie dont les envois sont joues (une fictive : rien n'y part
 /// ni n'y engage), la fausse demande tape ce que `VARIABLE_ESSAIS` dit : les exemples des fiches du coffre se jouent ainsi
 /// sans humain. Une compagnie reelle n'a jamais que le canal du poste.
-pub fn canal_de_la_route(racine: &Path) -> Rc<dyn Canal> {
-    let fausse = variable(VARIABLE_ESSAIS).filter(|_| socle::garde_reseau::en_essai() && matches!(crate::bridage::branchement(racine), Ok(b) if b.joue()));
-    match fausse {
+pub fn canal_de_la_route(racine: &Path) -> R<Rc<dyn Canal>> {
+    // Le branchement de la compagnie ne se lit que pour la fausse demande des essais ; s'il ne se lit pas, la route refuse.
+    let fausse = match variable(VARIABLE_ESSAIS)? {
+        Some(m) if socle::garde_reseau::en_essai() && crate::bridage::branchement(racine)?.joue() => Some(m),
+        Some(_) | None => None,
+    };
+    Ok(match fausse {
         Some(m) => Rc::new(Fausse::mot(&m)),
-        None => Rc::new(Reel::du_poste()),
-    }
+        None => Rc::new(Reel::du_poste()?),
+    })
 }
 
 // ------------------------------------------------------------------ le canal reel
@@ -346,17 +350,17 @@ pub struct Reel {
 
 impl Reel {
     /// Les canaux de CE poste, d'apres l'environnement du processus.
-    pub fn du_poste() -> Reel {
-        let env = |n: &str| variable(n).filter(|v| !v.is_empty());
-        Reel { ecran: ecran_present(&env), fenetre: fenetre_native(), terminal: terminal_du_poste() }
+    pub fn du_poste() -> R<Reel> {
+        Ok(Reel { ecran: ecran_present()?, fenetre: fenetre_native(), terminal: terminal_du_poste() })
     }
 }
 
-/// La variable d'environnement `nom`, si elle est posee et se lit.
-fn variable(nom: &str) -> Option<String> {
+/// La variable d'environnement `nom` : absente, ou son texte ; posee sans etre du texte, elle se refuse en se nommant.
+fn variable(nom: &str) -> R<Option<String>> {
     match std::env::var(nom) {
-        Ok(v) => Some(v),
-        Err(std::env::VarError::NotPresent | std::env::VarError::NotUnicode(_)) => None,
+        Ok(v) => Ok(Some(v)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(std::env::VarError::NotUnicode(_)) => Err(refus(format!("La variable d'environnement {} n'est pas du texte : elle ne se lit pas.", nom))),
     }
 }
 
@@ -372,11 +376,12 @@ fn invite<'a>(q: &'a Question, de_base: &'a str) -> &'a str {
 }
 
 /// Y a-t-il un ecran ? Linux : un serveur d'affichage nomme ; Windows et macOS : oui (la session est graphique).
-pub fn ecran_present(env: &dyn Fn(&str) -> Option<String>) -> bool {
+fn ecran_present() -> R<bool> {
     if cfg!(any(windows, target_os = "macos")) {
-        return true;
+        return Ok(true);
     }
-    env("DISPLAY").is_some() || env("WAYLAND_DISPLAY").is_some()
+    let nomme = |n: &str| -> R<bool> { Ok(variable(n)?.is_some_and(|v| !v.is_empty())) };
+    Ok(nomme("DISPLAY")? || nomme("WAYLAND_DISPLAY")?)
 }
 
 /// LA FENETRE : la boite de dialogue du systeme, comme pour choisir un dossier (`interface::api::choisir_dossier`) --
