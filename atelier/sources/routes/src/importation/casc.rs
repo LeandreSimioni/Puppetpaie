@@ -20,6 +20,7 @@ use std::collections::BTreeMap;
 
 use declarations::champs::Saisie;
 use droit::contexte::Contexte;
+use socle::date::Jour;
 use socle::ecriture::ecrire_json;
 use socle::echec::R;
 use socle::echec::erreur;
@@ -32,22 +33,14 @@ fn refus(m: impl Into<String>) -> socle::echec::Echec {
     erreur(Classe::Refuse, m)
 }
 
-fn jjmmaaaa(iso: &str) -> String {
-    if iso.is_empty() {
-        return String::new();
-    }
-    let c: Vec<char> = iso.chars().collect();
-    let t = |a: usize, b: usize| -> String { c.iter().skip(a).take(b - a).collect() };
-    format!("{}/{}/{}", t(8, 10), t(5, 7), t(0, 4))
-}
 
 /// Ce qui a ete verse a un salarie un mois importe, tel que l'engagement importe le porte.
 struct Versee {
     salarie: droit::fiche::FicheSalarie,
     brut: Decimal,
     numero: Option<String>,
-    debut: Option<String>,
-    fin: Option<String>,
+    debut: Option<Jour>,
+    fin: Option<Jour>,
     /// Les cachets, heures et jours que le contrat atteste, quand il tient dans le mois.
     activite: BTreeMap<&'static str, Decimal>,
 }
@@ -62,7 +55,7 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
         let Some(brut) = p.paie.brut else { continue };
         let cle = p.salarie.clone();
         let salarie = ctx.salaries.get(cle.as_str()).cloned().ok_or_else(|| refus(format!("{} : la fiche du salarie « {} » d'un engagement importe n'existe pas.", mois, cle)))?;
-        let (debut, fin) = (p.paie.debut.map(|j| j.iso()), p.paie.fin.map(|j| j.iso()));
+        let (debut, fin) = (p.paie.debut, p.paie.fin);
         let mut activite = BTreeMap::new();
         if let Some(c) = i.contrat_lu()? {
             if du_mois(&c.debut) && du_mois(&c.fin) {
@@ -109,7 +102,7 @@ pub struct SalarieReg {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nir: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_naissance: Option<String>,
+    pub date_naissance: Option<Jour>,
     pub adresse: String,
     pub masse: Decimal,
 }
@@ -124,7 +117,7 @@ pub struct IndividuReg {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prenom: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_naissance: Option<String>,
+    pub date_naissance: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adresse: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -141,9 +134,9 @@ pub struct ContratReg {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub numero: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub debut: Option<String>,
+    pub debut: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fin: Option<String>,
+    pub fin: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pcs_ese: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -158,9 +151,9 @@ pub struct EmploiReg {
     pub contrat: ContratReg,
     pub activite: BTreeMap<&'static str, Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub debut: Option<String>,
+    pub debut: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fin: Option<String>,
+    pub fin: Option<Jour>,
     pub brut: Decimal,
     pub fichier: String,
 }
@@ -212,8 +205,8 @@ pub struct Demande {
     pub toutes_les_annees: bool,
     pub jusqu_a: Option<Mois>,
     pub annees: Vec<String>,
-    /// {annee: AAAA-MM-JJ}
-    pub vire_le: Vec<(String, String)>,
+    /// (annee, jour du virement)
+    pub vire_le: Vec<(String, Jour)>,
     /// La boite courriel de la compagnie est-elle liee ? Le dossier le recopie (`Regularisation::boite_liee`).
     pub boite_liee: bool,
 }
@@ -356,7 +349,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
                             annee: an.clone(),
                             salarie: [champ("nom"), champ("prenom")].into_iter().flatten().collect::<Vec<_>>().join(" "),
                             nir: Some(nir.clone()),
-                            date_naissance: champ("date_naissance"),
+                            date_naissance: p.salarie.champs.date_naissance.dite().copied(),
                             adresse: adresse.join(" "),
                             masse: Decimal::ZERO,
                         },
@@ -369,20 +362,20 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
                 nir: champ("nir"),
                 nom: champ("nom"),
                 prenom: champ("prenom"),
-                date_naissance: champ("date_naissance"),
+                date_naissance: p.salarie.champs.date_naissance.dite().copied(),
                 adresse: champ("adresse"),
                 code_postal: champ("code_postal"),
                 commune: champ("commune"),
                 email: champ("email"),
             };
-            let contrat = ContratReg { numero: p.numero.clone(), debut: p.debut.clone(), fin: p.fin.clone(), pcs_ese: champ("pcs_ese"), emploi: champ("emploi") };
+            let contrat = ContratReg { numero: p.numero.clone(), debut: p.debut, fin: p.fin, pcs_ese: champ("pcs_ese"), emploi: champ("emploi") };
             emplois.push(EmploiReg {
                 annee: an.clone(),
                 mois: *m,
                 individu,
                 activite: p.activite.clone(),
-                debut: p.debut.clone(),
-                fin: p.fin.clone(),
+                debut: p.debut,
+                fin: p.fin,
                 contrat,
                 brut,
                 fichier: source.clone(),
@@ -452,12 +445,11 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
         }
         tableau.push(format!("| **{}, à {} %** | **{}** | **{}** |", a.annee, virgule(a.taux), euros(a.masse), euros(a.cotisation)));
     }
-    let dates: Vec<(&String, &String)> = d.vire_le.iter().filter(|(_, v)| !v.is_empty()).map(|(k, v)| (k, v)).collect();
     let virements: Vec<String> = annees
         .iter()
         .map(|a| {
             // Une date de virement que la demande ne dit pas reste a remplir a la main.
-            let date = match dates.iter().find(|(k, _)| **k == a.annee).map(|(_, v)| jjmmaaaa(v)).filter(|j| !j.is_empty()) {
+            let date = match d.vire_le.iter().find(|(k, _)| *k == a.annee).map(|(_, v)| v.jj_mm_aaaa()) {
                 Some(j) => j,
                 None => "__/__/____".to_string(),
             };
@@ -538,7 +530,7 @@ fn deja_faites(ctx: &Contexte) -> R<String> {
                 Some(m) => euros(m),
                 None => x.montant.clone(),
             };
-            format!("{} ({}, viré le {})", x.annee, montant, jjmmaaaa(&x.vire_le.iso()))
+            format!("{} ({}, viré le {})", x.annee, montant, x.vire_le.jj_mm_aaaa())
         })
         .collect::<Vec<_>>()
         .join(", "))
@@ -572,7 +564,7 @@ pub fn ecrire(ctx: &Contexte, r: &mut Regularisation) -> R<()> {
         &["annee", "salarie", "NIR", "date de naissance", "adresse", "masse"],
         r.salaries
             .iter()
-            .map(|s| vec![s.annee.clone(), s.salarie.clone(), cellule(&s.nir), cellule(&s.date_naissance), s.adresse.clone(), virgule(&s.masse)])
+            .map(|s| vec![s.annee.clone(), s.salarie.clone(), cellule(&s.nir), s.date_naissance.map(|j| j.iso()).unwrap_or_default(), s.adresse.clone(), virgule(&s.masse)])
             .collect(),
     )?);
     for (nom, c) in [("CASC-SVP_courriel-audiens.txt", &r.courriel_audiens), ("CASC-SVP_courriel-casc.txt", &r.courriel_casc)] {
@@ -694,12 +686,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
             }
         };
         let cle_nir = cellule(&nir.as_deref().and_then(declarations::champs::cle_nir));
-        let jj = |iso: &Option<String>| -> String {
-            match iso {
-                Some(t) if !t.is_empty() => jjmmaaaa(t),
-                _ => String::new(),
-            }
-        };
+        let jj = |j: &Option<Jour>| -> String { j.map(|j| j.jj_mm_aaaa()).unwrap_or_default() };
         let textes: Vec<(u16, String)> = vec![
             (0, "CASC-SVP".to_string()),
             (1, siret.clone()),
@@ -754,7 +741,7 @@ pub use declarations::casc::RegularisationNotee;
 
 /// La route `casc-regularise` note qu'une annee est regularisee. S'ecrit
 /// APRES le virement, jamais avant.
-pub fn marquer_regularise(ctx: &Contexte, annee: &str, vire_le: &str, montant: &str, qui: &str, aujourd_hui: &str) -> R<RegularisationNotee> {
+pub fn marquer_regularise(ctx: &Contexte, annee: &str, vire_le: Jour, montant: &str, qui: &str, aujourd_hui: Jour) -> R<RegularisationNotee> {
     let r = regularisation(ctx, &Demande { annee: Some(annee.to_string()), ..Default::default() })?;
     let p = fichier_suivi(ctx);
     let mut d = match declarations::casc::lue(ctx).map_err(|m| m.reclasser(Classe::Illisible))? {
@@ -770,8 +757,8 @@ pub fn marquer_regularise(ctx: &Contexte, annee: &str, vire_le: &str, montant: &
         mois: r.mois.iter().map(|m| m.mois).collect(),
         montant: montant.to_string(),
         calcule: calcule.to_string(),
-        vire_le: socle::date::Jour::lire(vire_le).map_err(|m| m.reclasser(Classe::Illisible))?,
-        note_le: socle::date::Jour::lire(aujourd_hui).map_err(|m| m.reclasser(Classe::Illisible))?,
+        vire_le,
+        note_le: aujourd_hui,
         qui: qui.to_string(),
     };
     d.regularisations.push(entree.clone());

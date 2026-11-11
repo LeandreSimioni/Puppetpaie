@@ -18,7 +18,6 @@ use socle::mois::{Mois, MoisOuJour};
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, FORME, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
 use crate::documents::{client_courriel, expediteur_de, refus, Ouvrir};
-use crate::engagement::maintenant;
 
 use documents::etats_compta::ChoixCompta;
 use documents::plan_comptable::{controler_plan, tables};
@@ -26,7 +25,7 @@ use droit::contexte::Contexte;
 use envois::envoi::{self, Message};
 use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
 use envois::journal;
-use socle::date::jour_iso;
+use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::{nom_du, repr};
 use socle::html::courriel_en_html;
@@ -496,7 +495,7 @@ impl NombreDit {
 #[serde(deny_unknown_fields)]
 struct ChargeCascRegularise {
     annee: NombreDit,
-    vire_le: String,
+    vire_le: Jour,
     montant: NombreDit,
 }
 
@@ -519,10 +518,10 @@ fn en_euros(t: &str) -> R<String> {
 
 /// Note qu'une annee de CASC-SVP est regularisee (apres le virement).
 fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
-    let aujourd_hui = maintenant();
-    let notee = marquer_regularise(ctx, &c.annee.texte(), &c.vire_le, &c.montant.texte(), INTERFACE, &aujourd_hui[..10])?;
+    let aujourd_hui = socle::paris::InstantEcrit::maintenant().jour();
+    let notee = marquer_regularise(ctx, &c.annee.texte(), c.vire_le, &c.montant.texte(), INTERFACE, aujourd_hui)?;
     let montant = en_euros(&notee.montant)?;
-    Ok(CascNotee { phrase: format!("CASC-SVP {} notée régularisée : {} virés le {}.", notee.annee, montant, socle::ecran::quand(&notee.vire_le.iso())), notee })
+    Ok(CascNotee { phrase: format!("CASC-SVP {} notée régularisée : {} virés le {}.", notee.annee, montant, notee.vire_le.jj_mm_aaaa()), notee })
 }
 
 /// La charge de `exporter` : l'etat (le livre de paie sans lui), la periode (le mois, l'annee, ou toutes les annees),
@@ -850,16 +849,6 @@ fn actes_du_journal(ctx: &Contexte) -> R<Vec<documents::etats_personnel::ActeDuJ
         .collect())
 }
 
-/// Un jour ISO en JJ/MM/AAAA.
-fn jjmmaaaa(iso: &str) -> String {
-    if iso.is_empty() {
-        return String::new();
-    }
-    let c: Vec<char> = iso.chars().collect();
-    let t = |a: usize, b: usize| -> String { c.iter().skip(a).take(b - a).collect() };
-    format!("{}/{}/{}", t(8, 10), t(5, 7), t(0, 4))
-}
-
 /// Envoie les deux courriels de la regularisation, APRES les virements.
 /// Irreversible. `vire_le` : {annee: AAAA-MM-JJ}, une date par virement fait ; le dossier envoye est celui de ces
 /// annees-la, exactement.
@@ -872,29 +861,23 @@ fn jjmmaaaa(iso: &str) -> String {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeCasc {
-    vire_le: std::collections::BTreeMap<String, String>,
+    vire_le: std::collections::BTreeMap<String, Jour>,
 }
 
 fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir: Ouvrir) -> R<CascEnvoyee> {
     let qui = INTERFACE;
     use crate::importation::casc::{ecrire, regularisation, Demande};
     let aujourdhui = socle::temps::jour_de_paris();
-    let mut dates: Vec<(String, String)> = Vec::new();
-    for (a, texte) in &c.vire_le {
-        let Some(jour) = jour_iso(texte) else {
-            return Err(refus(format!("Date du virement {} illisible : {} (attendu AAAA-MM-JJ). Rien n'est parti.", a, repr(texte))));
-        };
+    let mut dates: Vec<(String, Jour)> = Vec::new();
+    for (a, &jour) in &c.vire_le {
         if jour > aujourdhui {
             return Err(refus(format!(
                 "Le virement {} est date du {}, qui n'est pas encore arrive : le courriel annonce un virement FAIT. Rien n'est parti.",
                 a,
-                jjmmaaaa(&jour.iso())
+                jour.jj_mm_aaaa()
             )));
         }
-        match dates.iter_mut().find(|(k, _)| k == a) {
-            Some(e) => e.1 = jour.iso(),
-            None => dates.push((a.clone(), jour.iso())),
-        }
+        dates.push((a.clone(), jour));
     }
     if dates.is_empty() {
         return Err(refus("Aucune date de virement : les courriels annoncent des virements faits, ils partent apres. Rien n'est parti."));
@@ -945,10 +928,10 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
         dates
             .iter()
             .find(|(k, _)| k == a)
-            .map(|(_, d)| d.clone())
+            .map(|(_, d)| *d)
             .ok_or_else(|| socle::echec::a_la_cle("Défaut du logiciel : une année régularisée n'a pas la date de son virement.", "annee", a).reclasser(Classe::DefautDuLogiciel))
     };
-    let annees = r.annees.iter().map(|a| Ok(journal::AnneeCasc { annee: a.annee.clone(), vire_le: socle::date::Jour::lire(&date_de(&a.annee)?).map_err(|m| m.reclasser(Classe::Illisible))?, montant: a.cotisation.to_string() })).collect::<R<Vec<_>>>()?;
+    let annees = r.annees.iter().map(|a| Ok(journal::AnneeCasc { annee: a.annee.clone(), vire_le: date_de(&a.annee)?, montant: a.cotisation.to_string() })).collect::<R<Vec<_>>>()?;
     let mut detail = journal::DetailCasc {
         annees,
         mois: r.mois.iter().map(|m| m.mois).collect(),
@@ -981,10 +964,10 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     detail.eml = emls.clone();
     noter(ctx, journal::Ligne::RegularisationCasc(par_courriel(None, qui, true, &partis.join(", "), &format!("{} courriel(s) envoye(s)", partis.len()), detail, None)))?;
     // Les annees regularisees : leurs mois sortent des dossiers suivants. S'ecrit APRES le virement, jamais avant.
-    let auj = socle::paris::maintenant();
+    let auj = socle::paris::InstantEcrit::maintenant().jour();
     let mut annees: Vec<RegularisationNotee> = Vec::new();
     for a in &r.annees {
-        annees.push(marquer_regularise(ctx, &a.annee, &date_de(&a.annee)?,&a.cotisation.to_string(), qui, &auj[..10])?);
+        annees.push(marquer_regularise(ctx, &a.annee, date_de(&a.annee)?, &a.cotisation.to_string(), qui, auj)?);
     }
     let dites: Vec<&str> = annees.iter().map(|a| a.annee.as_str()).collect();
     let notee = if dites.len() > 1 { "notées régularisées" } else { "notée régularisée" };

@@ -184,12 +184,6 @@ pub(super) fn refus(m: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, m)
 }
 
-/// L'heure de Paris, a la seconde.
-pub(super) fn maintenant() -> String {
-    let t = socle::temps::secondes();
-    socle::paris::iso_secondes(t)
-}
-
 /// L'ENGAGEMENT QU'UNE CARTE MONTRE : celui que designe son identite, que le moteur lui a rendue
 /// (`engagement::stock::identites`). Refus : une identite que l'ecran de `mois` ne montre pas.
 fn designe(ctx: &Contexte, mois: Mois, id: &Identite) -> R<(usize, engagement::stock::Objet)> {
