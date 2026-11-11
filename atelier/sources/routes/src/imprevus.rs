@@ -574,11 +574,6 @@ fn refus(m: impl Into<String>) -> Echec {
     erreur(Classe::Refuse, m)
 }
 
-/// Un jour ecrit dans un imprevu ou une carte, lu ; illisible, il se refuse.
-fn jour(t: &str) -> R<Jour> {
-    Jour::lire(t).map_err(|m| m.reclasser(Classe::Illisible))
-}
-
 
 /// Un numero de contrat tel qu'une phrase le dit.
 fn numero_dit(n: &Option<String>) -> String {
@@ -1136,7 +1131,7 @@ struct Cachet {
 
 #[derive(Debug, Clone, Serialize)]
 struct JourPaye {
-    iso: String,
+    iso: Jour,
     phrase: String,
     phrase_du_mois: String,
 }
@@ -1220,7 +1215,7 @@ fn cachet_dit(c: imprevus::CachetPaye) -> R<Cachet> {
     let mut jours = Vec::new();
     for j in &c.dates {
         let le = format!("{} le {}", c.libelle, j.jj_mm_aaaa());
-        jours.push(JourPaye { iso: j.iso(), phrase_du_mois: format!("{}, {}", le, mois_dit), phrase: le });
+        jours.push(JourPaye { iso: *j, phrase_du_mois: format!("{}, {}", le, mois_dit), phrase: le });
     }
     Ok(Cachet { lu: c, jours })
 }
@@ -1774,13 +1769,13 @@ fn verifier(arret: &ArretSaisi) -> R<()> {
 
 /// Le dernier jour travaille saisi de l'arret de ce salarie dont un signalement a declare `declare` (S21.G00.60.002,
 /// `imprevus::dernier_jour_declare`) : ce qui designe l'arret aux routes ; `declare` lui-meme si aucun arret ne le porte.
-pub(crate) fn dernier_jour_saisi(ctx: &Contexte, salarie: &str, declare: &str) -> R<Jour> {
+pub(crate) fn dernier_jour_saisi(ctx: &Contexte, salarie: &str, declare: Jour) -> R<Jour> {
     for a in tous_les_arrets(ctx)? {
-        if a.salarie == salarie && magasin(imprevus::dernier_jour_declare(&a))?.iso() == declare {
+        if a.salarie == salarie && magasin(imprevus::dernier_jour_declare(&a))? == declare {
             return Ok(a.dernier_jour_travaille);
         }
     }
-    jour(declare)
+    Ok(declare)
 }
 
 /// `{"arret": resume, "phrase"}` : l'arret tel que la page le lit (`resume`, avec les cachets qui tombent dedans), et ce

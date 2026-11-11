@@ -293,7 +293,7 @@ pub fn deposer_dsn_dans(
     depot::verifier(&apercu, reel, true)?;
     // LE MOIS QUE LE FICHIER DECLARE ; un signalement se date par son evenement, sa ligne par le mois de ce jour.
     let le_mois = apercu.mois_declare().ok_or_else(|| erreur(Classe::Refuse, format!("Ce fichier ne dit pas le mois qu'il déclare ({}). Rien n'est parti.", declarations::dsn_lue::SANS_MOIS)))?;
-    let evenement = if apercu.est_signalement() { apercu.evenement().map(|j| j.iso()) } else { None };
+    let evenement = if apercu.est_signalement() { apercu.evenement() } else { None };
     if let Some(n) = ordre_d_essai {
         if reel || apercu.est_signalement() || n < 1 {
             return Err(erreur(

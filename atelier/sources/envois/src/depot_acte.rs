@@ -44,8 +44,8 @@ pub struct Depot<'a> {
     pub octets: &'a [u8],
     /// Le mois que le fichier declare ; pour un signalement, celui de son evenement (`evenement`).
     pub mois: Mois,
-    /// Le jour de l'evenement qu'un signalement declare (`DsnLue::evenement`, `AAAA-MM-JJ`).
-    pub evenement: Option<String>,
+    /// Le jour de l'evenement qu'un signalement declare (`DsnLue::evenement`).
+    pub evenement: Option<socle::date::Jour>,
     pub reel: bool,
     pub qui: &'a str,
     /// La forme de la preuve d'un depot reel (`""` pour un test).
@@ -166,7 +166,7 @@ pub fn deposer_dsn(
     let reponse = match envoi() {
         Ok(r) => r,
         Err(e) => {
-            let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature_declaration: texte(apercu.nature_declaration.as_deref()), ordre: texte(apercu.ordre.as_deref()), evenement: d.evenement.clone(), ..Default::default() };
+            let detail = DetailDsn { preuve, erreur: Some(e.classe_notee().into()), repetition: d.repetition.cloned(), nature_declaration: texte(apercu.nature_declaration.as_deref()), ordre: texte(apercu.ordre.as_deref()), evenement: d.evenement, ..Default::default() };
             let ligne = Ligne::Dsn(envoi_du_depot(d, false, "net-entreprises", "", &e.phrase, None, detail, false));
             return Err(echec(ctx, Acte::Dsn, d, ligne, e, suites));
         }
@@ -174,8 +174,8 @@ pub fn deposer_dsn(
 
     let flux = crate::etats::flux_de(&reponse);
     // La trace d'un signalement porte le jour de son evenement ; celle d'une mensuelle, son mois.
-    let quand = match &d.evenement {
-        Some(e) => e.clone(),
+    let quand = match d.evenement {
+        Some(e) => e.iso(),
         None => d.mois.to_string(),
     };
     let trace = archiver_reponse(&ctx.racine, "depot-dsn", &quand, &reponse)?;
@@ -193,7 +193,7 @@ pub fn deposer_dsn(
         repetition: d.repetition.cloned(),
         ordre_test,
         etablissement: texte(apercu.etablissement()),
-        evenement: d.evenement.clone(),
+        evenement: d.evenement,
         ..Default::default()
     };
     let ligne = Ligne::Dsn(envoi_du_depot(d, true, "net-entreprises", &flux, &reponse, Some(trace_relative(ctx, &trace)?), detail, true));

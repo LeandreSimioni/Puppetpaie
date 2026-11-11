@@ -55,7 +55,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 use socle::echec::{refus, R};
-use socle::paris::Moment;
+use socle::paris::{InstantEcrit, MinuteEcrite, Moment};
 use socle::refus;
 
 use compagnie::installation::Venue;
@@ -80,9 +80,9 @@ pub struct Geste {
     /// L'instant, en secondes UTC (le banc).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quand: Option<Moment>,
-    /// L'instant a Paris (`AAAA-MM-JJ`, ou `AAAA-MM-JJTHH:MM[:SS]`), ecrit a la main ou par le banc pour qui le relit.
+    /// L'instant a Paris, ecrit a la main ou par le banc pour qui le relit.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub heure: Option<String>,
+    pub heure: Option<HeureDuGeste>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub geste: Option<Genre>,
     /// La route, par son nom : un nom qu'aucune route ne porte se rejoue comme le moteur le refuse.
@@ -228,7 +228,62 @@ pub fn relatif(inst: &Path, racine: &Path) -> R<String> {
 
 /// L'heure lisible d'un instant, a Paris.
 fn heure(t: Moment) -> String {
-    socle::paris::iso_secondes(t)
+    InstantEcrit::de(t).iso()
+}
+
+/// L'INSTANT D'UN GESTE A PARIS, tel que le scenario l'ecrit : un jour (`AAAA-MM-JJ`, a 9 h), une minute
+/// (`AAAA-MM-JJTHH:MM`) ou une seconde (`AAAA-MM-JJTHH:MM:SS`, ce que le banc ecrit). Il se lit et s'ecrit dans l'une de
+/// ces trois formes, octet pour octet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HeureDuGeste {
+    Jour(Jour),
+    Minute(MinuteEcrite),
+    Seconde(InstantEcrit),
+}
+
+impl HeureDuGeste {
+    /// L'une des trois formes, et rien d'autre ; `None` sinon.
+    pub fn lire(texte: &str) -> Option<HeureDuGeste> {
+        InstantEcrit::lire(texte)
+            .map(HeureDuGeste::Seconde)
+            .or_else(|| MinuteEcrite::lire(texte).map(HeureDuGeste::Minute))
+            .or_else(|| Jour::du_texte(texte).filter(|j| j.iso() == texte).map(HeureDuGeste::Jour))
+    }
+
+    /// Sa forme ecrite.
+    pub fn iso(self) -> String {
+        match self {
+            HeureDuGeste::Jour(j) => j.iso(),
+            HeureDuGeste::Minute(m) => m.iso(),
+            HeureDuGeste::Seconde(s) => s.iso(),
+        }
+    }
+
+    /// L'instant qu'il dit ; un jour seul, a 9 h.
+    fn instant(self) -> Option<Moment> {
+        let n = match self {
+            HeureDuGeste::Jour(j) => return Moment::a_paris(j, 9, 0, 0),
+            HeureDuGeste::Minute(m) => m.naif(),
+            HeureDuGeste::Seconde(s) => s.naif(),
+        };
+        let s = n.seconde_du_jour();
+        Moment::a_paris(n.jour(), s / 3_600, s % 3_600 / 60, s % 60)
+    }
+}
+
+impl Serialize for HeureDuGeste {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.iso())
+    }
+}
+
+impl<'de> Deserialize<'de> for HeureDuGeste {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<HeureDuGeste, D::Error> {
+        let s = String::deserialize(d)?;
+        HeureDuGeste::lire(&s).ok_or_else(|| {
+            serde::de::Error::custom(format!("{} : une date (AAAA-MM-JJ) ou une heure de Paris (AAAA-MM-JJTHH:MM[:SS]) est attendue", socle::fichiers::repr(&s)))
+        })
+    }
 }
 
 /// Les fichiers d'un dossier, relatifs a lui (barres droites), dans l'ordre des noms.
@@ -299,31 +354,12 @@ fn instant_ecrit(g: &Geste) -> R<Option<Moment>> {
     if let Some(t) = g.quand {
         return Ok(Some(t));
     }
-    let texte = match (&g.heure, g.geste) {
-        (Some(h), _) => h.as_str(),
-        (None, Some(Genre::Jour)) => {
-            let jour = g.jour.ok_or_else(|| refus("un geste `jour` sans jour"))?;
-            return Ok(Some(Moment::a_paris(jour, 9, 0, 0).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?));
-        }
+    let h = match (g.heure, g.geste) {
+        (Some(h), _) => h,
+        (None, Some(Genre::Jour)) => HeureDuGeste::Jour(g.jour.ok_or_else(|| refus("un geste `jour` sans jour"))?),
         _ => return Ok(None),
     };
-    let illisible = || refus!("{} : une date (AAAA-MM-JJ) ou une heure de Paris (AAAA-MM-JJTHH:MM) est attendue", socle::fichiers::repr(texte));
-    // Un jour seul a lieu a 9 h.
-    let (jour, hms) = match texte.split_once('T') {
-        Some((j, hms)) => (j, hms),
-        None => (texte, "09:00"),
-    };
-    let jour = Jour::lire(jour).map_err(|_| illisible())?;
-    let parts: Vec<i64> = hms.split(':').map(|x| x.parse::<i64>().map_err(|_| illisible())).collect::<Result<_, _>>()?;
-    let (h, m, s) = match parts.as_slice() {
-        [h, m] => (*h, *m, 0),
-        [h, m, s] => (*h, *m, *s),
-        _ => return Err(illisible()),
-    };
-    if !(0..24).contains(&h) || !(0..60).contains(&m) || !(0..60).contains(&s) {
-        return Err(illisible());
-    }
-    Ok(Some(Moment::a_paris(jour, h, m, s).ok_or_else(illisible)?))
+    Ok(Some(h.instant().ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?))
 }
 
 /// L'instant d'une seconde apres `t`.
@@ -462,7 +498,7 @@ fn racine_nommee(racines: &BTreeMap<String, PathBuf>, derniere: &Option<PathBuf>
 
 /// Le jour a Paris d'un instant.
 fn jour_de(t: Moment) -> Jour {
-    Jour::lire(&heure(t)[..10]).expect("un instant se lit en jour")
+    InstantEcrit::de(t).jour()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1032,7 +1068,7 @@ mod enregistreur {
         /// Ecrit la ligne du geste `g`, au rang suivant et a son instant.
         fn ecrire(&self, n: &mut u64, g: Geste, quand: Moment) -> R<()> {
             *n += 1;
-            let ligne = Geste { n: Some(*n), quand: Some(quand), heure: Some(heure(quand)), ..g };
+            let ligne = Geste { n: Some(*n), quand: Some(quand), heure: Some(HeureDuGeste::Seconde(InstantEcrit::de(quand))), ..g };
             let f = self.dossier.join(GESTES);
             let mut fichier = std::fs::OpenOptions::new().create(true).append(true).open(&f).map_err(|e| refus!("{} : {}", f.display(), e))?;
             writeln!(fichier, "{}", socle::ecriture::json_en_ligne(&ligne)).map_err(|e| refus!("{} : {}", f.display(), e))

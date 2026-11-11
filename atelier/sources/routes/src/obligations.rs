@@ -881,7 +881,6 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
     let dj = lu.arret().map(|a| a.dernier_jour_travaille);
     let arret = lu.arret().map(|saisi| declarations::dsn::Arret { saisi: saisi.clone() });
     let declare_lu = lu.arret().map(engagement::imprevus::dernier_jour_declare).transpose().map_err(|m| m.reclasser(Classe::Illisible))?;
-    let declare = declare_lu.map(|j| j.iso());
     // Les mois qu'un arret traverse ; une suspension, ou un arret repris avant son jour declare, n'en traverse aucun.
     let mut traverses: Vec<socle::mois::Mois> = Vec::new();
     if let Some(p) = declare_lu {
@@ -922,7 +921,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
         let du_salarie = e.versions.iter().flatten().any(|x| x.salarie.as_str() == salarie);
         let dans = |m: &dyn std::fmt::Display| e.fichier.as_ref().map(|nom| format!("sorties/{}/{}", m, nom));
         match (nature.as_str(), dj, mois) {
-            ("04" | "05", Some(dj), _) if declare.is_some() && d.evenement == declare && du_salarie => {
+            ("04" | "05", Some(dj), _) if declare_lu.is_some() && d.evenement == declare_lu && du_salarie => {
                 partis.push(EnvoiDeLArret { fichier: dans(&dj.mois_civil()), nature_declaration: nature, type_declaration, ordre, mois: None, quand });
             }
             ("01", _, Some(mois)) if reporte(mois, quand)? => {
@@ -1142,12 +1141,11 @@ pub(crate) fn fin_signalee_le(journal: &[envois::journal::Ligne], cle: &str, fin
 /// (`DsnLue::evenement`), dont le fichier est celui que `fin-contrat-signaler` ecrit pour ce salarie.
 fn fctu_depose(journal: &[envois::journal::Ligne], cle: &str, fin: &Jour) -> R<Option<Fait>> {
     let nom = format!("SignalementFinContrat_{}_{}.dsn", cle.to_uppercase(), fin.aaaammjj()).to_uppercase();
-    let fin_iso = fin.iso();
     let premier = envois::journal::filtrer(journal, Some(envois::journal::Acte::Dsn), None, true)
         .filter(|l| l.accepte())
         // Un signalement refuse au bilan n'est pas recu (cahier technique DSN, `norme-dsn/texte/chapitre-4-controles.txt` §4.2) : il reste du.
         .filter(|l| !envois::etats::refuse_par_un_retour(l))
-        .filter(|l| evenement_de(l) == Some(fin_iso.as_str()) && l.fichier().is_some_and(|f| f.to_uppercase() == nom))
+        .filter(|l| evenement_de(l) == Some(*fin) && l.fichier().is_some_and(|f| f.to_uppercase() == nom))
         .min_by_key(|l| l.quand());
     let Some(l) = premier else { return Ok(None) };
     let le = l.quand().jour();
@@ -1158,9 +1156,9 @@ fn fctu_depose(journal: &[envois::journal::Ligne], cle: &str, fin: &Jour) -> R<O
     }))
 }
 
-/// Le jour de l'evenement qu'un signalement declare (`AAAA-MM-JJ`), s'il en declare un.
-fn evenement_de(l: &envois::journal::Ligne) -> Option<&str> {
-    l.dsn().and_then(|e| e.detail.evenement.as_deref())
+/// Le jour de l'evenement qu'un signalement declare, s'il en declare un.
+fn evenement_de(l: &envois::journal::Ligne) -> Option<Jour> {
+    l.dsn().and_then(|e| e.detail.evenement)
 }
 
 // ------------------------------------------------------------------ les routes

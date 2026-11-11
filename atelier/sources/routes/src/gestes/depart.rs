@@ -1315,8 +1315,8 @@ fn refaire_le_signalement(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne
             n => {
                 // L'arret tel qu'il etait a l'ecriture : celui de ses etats d'alors que l'empreinte reconnait.
                 let premier = premier()?;
-                let evenement = detail.evenement.clone().ok_or_else(|| manque("l'evenement qu'il signale"))?;
-                let dernier = crate::imprevus::dernier_jour_saisi(&ctx_j, &premier, &evenement)?;
+                let evenement = detail.evenement.ok_or_else(|| manque("l'evenement qu'il signale"))?;
+                let dernier = crate::imprevus::dernier_jour_saisi(&ctx_j, &premier, evenement)?;
                 let nature = crate::imprevus::NatureSignalement::du_code(n)?;
                 let charge = crate::imprevus::ChargeArretSignaler::refait(premier.clone(), dernier, nature, ordre, jour);
                 let mut rendu = Ok(());

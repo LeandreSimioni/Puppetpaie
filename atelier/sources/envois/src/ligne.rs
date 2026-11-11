@@ -338,10 +338,10 @@ pub struct DetailDsn {
     pub ordre_test: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub etablissement: Option<String>,
-    /// Le jour de l'evenement qu'un signalement declare (`AAAA-MM-JJ` : le dernier jour travaille d'un arret, la fin d'un
-    /// contrat...) ; la ligne porte le mois de ce jour.
+    /// Le jour de l'evenement qu'un signalement declare (le dernier jour travaille d'un arret, la fin d'un contrat...) ; la
+    /// ligne porte le mois de ce jour.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub evenement: Option<String>,
+    pub evenement: Option<socle::date::Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub etat_envoi: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
