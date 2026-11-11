@@ -187,7 +187,7 @@ impl serde::Serialize for Moment {
 
 impl<'de> serde::Deserialize<'de> for Moment {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Moment, D::Error> {
-        let t = serde_json::Number::deserialize(d)?.to_string();
+        let t = crate::forme::nombre_en_texte(d)?;
         Moment::lu(&t).ok_or_else(|| serde::de::Error::custom(format!("{} s n'est pas un instant du calendrier (années 1 à 9999)", t)))
     }
 }

@@ -11,7 +11,8 @@ n'entre. Ce qui passe la porte est lu **une fois** et devient un type Rust ; ded
 
 - **Une donnée lue est une forme, déclarée une fois.** Fichier, barème, charge ou réponse d'une route : une structure
   `serde` (`deny_unknown_fields`), lue par `socle::forme`, écrite par `socle::ecriture`. Le JSON brut ne se touche
-  qu'au bord : `socle::forme`, `socle::ecriture`, `socle::json_ascii`, `routes::enveloppe`. Aucune lecture par clé
+  qu'au bord, ces deux modules : tout autre passe par eux (la charge et la réponse d'une route y sont un
+  `socle::forme::Objet`, qui ne se lit qu'en une forme ; le JSON ASCII s'écrit dans `socle::ecriture`). Aucune lecture par clé
   texte, aucune clé libre, aucun repli (une donnée facultative absente est `None`, une donnée exigée absente se refuse),
   aucune erreur avalée. Les états impossibles ne s'écrivent pas : une nature de contrat est une `enum`
   (`droit::natures::NatureDeContrat`), dont `contrats-base.json` dit les propriétés ; un motif de recours ou de rupture
@@ -52,8 +53,8 @@ Un garde-fou écrit dans le code ou dans une consigne finit contourné (un agent
 garde-fou que le compilateur ou un test de structure tient ne s'oublie pas. On ne garde donc une règle d'architecture
 que par la structure :
 
-- **Le verrou des dépendances** : `serde_json` n'est au `Cargo.toml` que des portes, `socle` et `routes` (`moteur` et
-  `atelier` l'ont pour leurs essais) ; une autre crate qui voudrait lire du JSON brut ne compile pas.
+- **Le verrou des dépendances** : `serde_json` n'est au `Cargo.toml` que du `socle`, la porte (`moteur` et `atelier`
+  l'ont pour leurs essais) ; une autre crate qui voudrait lire du JSON brut ne compile pas.
 - **L'ordre des crates** : chaque crate ne prend qu'à celles du dessous (« Les parties ») ; le calcul n'est que dans
   `engagement`.
 - **Les pièces d'une fiche** : une case qu'un seul genre de calcul lit est rangée, dans le type, dans sa pièce

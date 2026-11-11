@@ -6,8 +6,8 @@
 //! chiffres (`1e+16`, `1e-05`) et la decimale gardee (`100.0`). Un entier lu hors de 64 bits devient un flottant a la
 //! lecture (pas d'`arbitrary_precision`) : il s'ecrit alors comme le flottant qu'il est devenu.
 //!
-//! C'est un des trois modules du BORD (`forme` lit ; `ecriture` et `json_ascii` ecrivent) : ce qui s'ecrit est une forme
-//! (`serde::Serialize`), que le module seul met en JSON.
+//! C'est un des deux modules du BORD (`forme` lit ; `ecriture` ecrit) : ce qui s'ecrit est une forme
+//! (`serde::Serialize`), que le module seul met en JSON (le JSON ASCII aussi, que `json_ascii` demande ici).
 
 use std::path::Path;
 
@@ -23,6 +23,100 @@ pub fn en_valeur<T: Serialize + ?Sized>(v: &T) -> Value {
     match serde_json::to_value(v) {
         Ok(valeur) => valeur,
         Err(e) => unreachable!("une forme du logiciel ne s'écrit pas en JSON ({}) : {}", std::any::type_name::<T>(), e),
+    }
+}
+
+/// LA FORME `t` ECRITE EN OBJET (`forme::Objet`) : `None` si elle s'ecrit autre chose qu'un objet.
+pub fn en_objet<T: Serialize + ?Sized>(t: &T) -> Option<crate::forme::Objet> {
+    match en_valeur(t) {
+        Value::Object(m) => Some(crate::forme::Objet(m)),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => None,
+    }
+}
+
+/// LE JSON ASCII DE `v` (`json_ascii::dumps`) : tout autre caractere en `\uXXXX`, cles triees si `trie` ; sans `indent`,
+/// les separateurs sont `, ` et `: ` (ou `,` et `:` si `serre`).
+pub(crate) fn en_ascii<T: Serialize + ?Sized>(v: &T, indent: Option<usize>, serre: bool, trie: bool) -> String {
+    let mut s = String::new();
+    ecrire_ascii(&en_valeur(v), indent, serre, trie, 0, &mut s);
+    s
+}
+
+fn chaine_ascii(t: &str, s: &mut String) {
+    s.push('"');
+    for c in t.chars() {
+        match c {
+            '"' => s.push_str("\\\""),
+            '\\' => s.push_str("\\\\"),
+            '\n' => s.push_str("\\n"),
+            '\r' => s.push_str("\\r"),
+            '\t' => s.push_str("\\t"),
+            '\u{8}' => s.push_str("\\b"),
+            '\u{c}' => s.push_str("\\f"),
+            ' '..='~' => s.push(c),
+            c => {
+                let mut tampon = [0u16; 2];
+                for u in c.encode_utf16(&mut tampon) {
+                    s.push_str(&format!("\\u{:04x}", u));
+                }
+            }
+        }
+    }
+    s.push('"');
+}
+
+fn ecrire_ascii(v: &Value, indent: Option<usize>, serre: bool, trie: bool, niveau: usize, s: &mut String) {
+    let (sep_item, sep_cle) = match (indent, serre) {
+        (Some(_), _) => (",", ": "),
+        (None, true) => (",", ":"),
+        (None, false) => (", ", ": "),
+    };
+    let retrait = |n: usize| -> String { indent.into_iter().map(|i| format!("\n{}", " ".repeat(i * n))).collect() };
+    match v {
+        Value::Null => s.push_str("null"),
+        Value::Bool(b) => s.push_str(if *b { "true" } else { "false" }),
+        Value::Number(n) => s.push_str(&nombre_ecrit(n)),
+        Value::String(t) => chaine_ascii(t, s),
+        Value::Array(a) => {
+            if a.is_empty() {
+                s.push_str("[]");
+                return;
+            }
+            s.push('[');
+            s.push_str(&retrait(niveau + 1));
+            for (i, x) in a.iter().enumerate() {
+                if i > 0 {
+                    s.push_str(sep_item);
+                    s.push_str(&retrait(niveau + 1));
+                }
+                ecrire_ascii(x, indent, serre, trie, niveau + 1, s);
+            }
+            s.push_str(&retrait(niveau));
+            s.push(']');
+        }
+        Value::Object(o) => {
+            if o.is_empty() {
+                s.push_str("{}");
+                return;
+            }
+            let mut entrees: Vec<(&String, &Value)> = o.iter().collect();
+            if trie {
+                entrees.sort_by(|a, b| a.0.cmp(b.0));
+            }
+            s.push('{');
+            s.push_str(&retrait(niveau + 1));
+            for (i, (k, x)) in entrees.into_iter().enumerate() {
+                if i > 0 {
+                    s.push_str(sep_item);
+                    s.push_str(&retrait(niveau + 1));
+                }
+                chaine_ascii(k, s);
+                s.push_str(sep_cle);
+                ecrire_ascii(x, indent, serre, trie, niveau + 1, s);
+            }
+            s.push_str(&retrait(niveau));
+            s.push('}');
+        }
     }
 }
 

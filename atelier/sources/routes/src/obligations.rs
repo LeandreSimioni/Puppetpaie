@@ -1603,7 +1603,6 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
 #[cfg(test)]
 mod essais {
     use super::*;
-    use serde_json::json;
 
     /// Bug reel : un signalement de fin de contrat accepte au transport puis refuse au bilan se disait fait. Le bilan
     /// tranche (cahier technique DSN, `norme-dsn/texte/chapitre-4-controles.txt` §4.2) : refuse, il reste du.
@@ -1611,11 +1610,14 @@ mod essais {
     fn un_signalement_de_fin_refuse_au_bilan_reste_du() {
         let fin = Jour::nouveau(2026, 3, 13).unwrap();
         let ligne = |verdict: &str| -> Vec<envois::journal::Ligne> {
-            vec![serde_json::from_value(json!({"quoi": "dsn", "mode": "reel", "accepte": true, "mois": "2026-03", "quand": "2026-03-14T10:00:00", "origine": "",
+            let texte = format!(
+                r#"{{"quoi": "dsn", "mode": "reel", "accepte": true, "mois": "2026-03", "quand": "2026-03-14T10:00:00", "origine": "",
                     "fichier": "SignalementFinContrat_FANCHON_20260313.dsn", "empreinte": null, "qui": "t", "destinataire": "", "flux": "", "reponse": "", "trace": null,
-                    "detail": {"nature": "07", "evenement": "2026-03-13", "reconstruit": false, "repetition": null, "ordre_test": null},
-                    "retours": [{"nature": "11", "verdict": verdict, "libelle": "", "statut": null, "publication": null}]}))
-            .unwrap()]
+                    "detail": {{"nature": "07", "evenement": "2026-03-13", "reconstruit": false, "repetition": null, "ordre_test": null}},
+                    "retours": [{{"nature": "11", "verdict": "{}", "libelle": "", "statut": null, "publication": null}}]}}"#,
+                verdict
+            );
+            vec![socle::forme::lire_texte(&texte, "une ligne du journal").unwrap()]
         };
         assert!(fctu_depose(&ligne("KO"), "fanchon", &fin).unwrap().is_none());
         assert!(fctu_depose(&ligne("OK"), "fanchon", &fin).unwrap().is_some());

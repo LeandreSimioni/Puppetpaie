@@ -456,13 +456,14 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
         };
         assert_eq!(r["ok"], json!(true), "{} refuse l'exemple de sa fiche : {}", f.nom(), r);
         assert!(r["resultat"]["phrase"].as_str().is_some_and(|p| !p.trim().is_empty()), "{} : sa phrase manque (moteur route --texte ne rend que des phrases, celles que l'écran lit) : {}", f.nom(), r);
-        for p in routes::phrases_rendues(&r["resultat"]) {
+        let resultat: socle::forme::Objet = socle::forme::lire(&r["resultat"], "le résultat d'une route").unwrap();
+        for p in routes::phrases_rendues(&resultat) {
             if let Some(d) = routes::affiche::defaut(p, usize::MAX, false) {
                 phrases_fautives.push(format!("{} : « {} » : {}", f.nom(), p, d.corriger()));
             }
         }
         if f.phrase > 0 {
-            let n = routes::plus_longue_phrase(&r["resultat"]);
+            let n = routes::plus_longue_phrase(&resultat);
             assert!(n <= f.phrase, "{} : une phrase qu'elle rend (la sienne, ou celle d'une de ses lignes) passe sa place ({}) : {} caractères : {}", f.nom(), f.phrase, n, r);
         }
     }
@@ -772,8 +773,8 @@ fn l_atelier_reste_hors_du_logiciel() {
 const COUCHES_FERMEES: [&str; 11] = ORDRE;
 
 /// LES PORTES : les couches qui ont la bibliotheque du JSON, telles que leur `Cargo.toml` le dit (ses dependances, ou
-/// celles de ses essais). Le socle lit et ecrit les fichiers ; les routes recoivent la charge d'une route et rendent sa
-/// reponse : elles la prennent pour leur code, et chacune a un module du bord. Le moteur ne l'a que pour ses essais
+/// celles de ses essais). Le socle lit et ecrit les fichiers, les charges et les reponses des routes : il la prend pour
+/// son code, et a les modules du bord. Le moteur ne l'a que pour ses essais
 /// (`moteur/tests/`, qui lisent une reponse telle que la page la recoit), l'atelier aussi (`atelier/tests/`, qui lisent
 /// les referentiels livres) : ils n'ont aucun module du bord, leur code n'en touche donc pas. Hors de leur bord, leur JSON
 /// brut se lit au texte.
@@ -784,10 +785,14 @@ fn a_le_json(couche: &str) -> (bool, bool) {
     (cargo.lines().any(|l| l.trim_start().starts_with("serde_json")), pour_le_code)
 }
 
-/// LE BORD : les seuls modules ou le JSON brut se touche, parce qu'ils sont la porte d'entree et de sortie des formes.
-/// `forme` lit (une donnee, un texte, un fichier, en sa structure `serde`) ; `ecriture` et `json_ascii` ecrivent une forme ;
-/// `routes::enveloppe` lit la charge d'une route et ecrit sa reponse.
-const BORD: [&str; 4] = ["socle::forme", "socle::ecriture", "socle::json_ascii", "routes::enveloppe"];
+/// LE BORD : les seuls modules ou le JSON brut se touche, parce qu'ils sont la porte d'entree et de sortie des formes,
+/// tels que le compilateur les nomme (le module d'un de leurs types). `forme` lit (une donnee, un texte, un fichier, en
+/// sa structure `serde` ; un objet qui passe une porte, `forme::Objet`) ; `ecriture` ecrit une forme. Tout autre module
+/// passe par eux.
+fn bord() -> [String; 2] {
+    let module = |nom: &str| nom.rsplit_once("::").unwrap().0.to_string();
+    [module(std::any::type_name::<socle::forme::Objet>()), module(std::any::type_name::<socle::ecriture::Arbre>())]
+}
 
 /// Un source Rust sans ses parties de test, ses commentaires blanchis et ses textes vides entre leurs guillemets : le
 /// code seul, a ses lignes.
@@ -821,7 +826,7 @@ fn blanchi_entier(t: &str, textes: bool) -> String {
 /// UNE COUCHE FERMEE NE LIT QUE DES FORMES, ENTIERES (atelier/AGENTS.md, « Chaque forme est declaree une fois, en
 /// Rust ») : aucune de ses sources (tests a part, commentaires blanchis) n'a
 /// 1. de JSON brut : la couche (code et tests) n'a pas `serde_json` dans son `Cargo.toml`, le compilateur refuse qu'elle
-///    en touche ; les portes (`a_le_json`), qui l'ont, n'en touchent que dans le bord (`BORD`) : ailleurs, ni `json!`, ni
+///    en touche ; les portes (`a_le_json`), qui l'ont, n'en touchent que dans le bord (`bord`) : ailleurs, ni `json!`, ni
 ///    `serde_json::`, ni `Map<`, ni lecture par cle (`.get("…")`, `x["…"]`) ;
 /// 2. de cle libre : aucune cle en `_` nommee par une forme (`rename = "_…"`, `alias = "_…"`) ni, dans le bord, par un
 ///    texte (`"_cle"`, `"_{}"`) ; hors du bord, ou aucun JSON ne se touche, un tel texte est un nom de fichier ; aucun
@@ -854,8 +859,9 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     // Une couche ne prend la bibliotheque du JSON pour son code que si elle a un module du bord ; pour ses seuls essais,
     // que si elle a un binaire (`[[bin]]`), dont ses essais lisent ce qu'il rend : son code n'en touche pas, le
     // compilateur le refuse.
+    let bord = bord();
     for couche in COUCHES_FERMEES {
-        let sien = BORD.iter().any(|b| b.split("::").next() == Some(couche));
+        let sien = bord.iter().any(|b| b.split("::").next() == Some(couche));
         let binaire = std::fs::read_to_string(espace().join(couche).join("Cargo.toml")).unwrap().contains("\n[[bin]]");
         match a_le_json(couche) {
             (_, true) if !sien => fautes.push(format!("{}/Cargo.toml prend serde_json pour son code sans avoir de module du bord : une couche fermée ne lit que des formes, par `socle::forme`", couche)),
@@ -896,7 +902,7 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
             let texte = std::fs::read_to_string(&f).unwrap();
             let ou = |n: usize| format!("{}:{}", f.display(), n);
             for (n, l) in code_seul(&texte).lines().enumerate() {
-                if porte && !BORD.contains(&module.as_str()) {
+                if porte && !bord.contains(&module) {
                     if let Some(m) = json.find(l) {
                         fautes.push(format!("{} : `{}`, du JSON brut hors du bord : déclare la forme (`serde`, `deny_unknown_fields`) ; la lecture passe par `socle::forme`, l'écriture par `socle::ecriture`", ou(n + 1), m.as_str().trim()));
                     }
@@ -912,7 +918,7 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
             }
             // Hors du bord, aucun JSON brut ne se touche (point 1) : un texte en `_` y est un morceau de nom de fichier ou
             // de champ, jamais une cle. Dans le bord, il en serait une.
-            for (n, s) in litteraux_rs(&sans_tests(&texte)).into_iter().filter(|_| BORD.contains(&module.as_str())) {
+            for (n, s) in litteraux_rs(&sans_tests(&texte)).into_iter().filter(|_| bord.contains(&module)) {
                 if s.starts_with('_') && s.chars().nth(1).is_some_and(|c| c.is_alphanumeric() || c == '{') {
                     fautes.push(format!("{} : `\"{}\"`, une clé libre : une donnée est un champ nommé de sa forme", ou(n), s));
                 }

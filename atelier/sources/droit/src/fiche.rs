@@ -2274,13 +2274,13 @@ fn refus_d_ecriture(fichier: &str, chemin: &str, detail: &str) -> String {
 /// Les champs d'une fiche a un jour (ou toute forme d'une fiche), lus de `v` (une charge, une fiche composee) : le
 /// refus nomme la cle jusqu'a sa case.
 pub fn lire_champs<T: DeserializeOwned>(v: &(impl Serialize + ?Sized), quoi: &str) -> R<T> {
-    socle::forme::lire_en_phrase(&socle::ecriture::en_valeur(v), |chemin, detail| refus_de_fiche(quoi, chemin, detail))
+    socle::forme::relire_en_phrase(v, |chemin, detail| refus_de_fiche(quoi, chemin, detail))
 }
 
 /// CE QU'UNE ECRITURE VA POSER DANS LE FICHIER `fichier`, lu par sa forme avant de s'ecrire : ce qui ne se lit pas se
 /// refuse en nommant la cle jusqu'a sa case, et rien n'est ecrit.
 pub fn lire_saisie<T: DeserializeOwned>(v: &(impl Serialize + ?Sized), fichier: &str) -> R<T> {
-    socle::forme::lire_en_phrase(&socle::ecriture::en_valeur(v), |chemin, detail| refus_d_ecriture(fichier, chemin, detail))
+    socle::forme::relire_en_phrase(v, |chemin, detail| refus_d_ecriture(fichier, chemin, detail))
 }
 
 #[cfg(test)]

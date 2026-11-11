@@ -2,8 +2,8 @@
 //! rend (`Rendu`, que sa forme `Dite` ecrit) et de ce qu'elle refuse (`Refus`), et la reponse que l'ecran
 //! (`/api/<route>`) et le LLM (`moteur route`) lisent, la meme (`Reponse`).
 //!
-//! Le JSON ne se touche qu'ici, a la porte : la demande se lit en sa forme, la charge en celle de sa route
-//! (`Charge::lire`), ce que la route rend s'ecrit une fois (`Rendu::de`), la reponse une fois (`Reponse::en_json`).
+//! A la porte : la demande se lit en sa forme, la charge en celle de sa route (`Charge::lire`), ce que la route rend
+//! s'ecrit une fois (`Rendu::de`), la reponse une fois (`Reponse::en_json`).
 //!
 //! LA REPONSE :
 //! - rendue : `{"ok": true, "ecrit": …, "resultat": {"phrase": "…", …}}` ;
@@ -14,15 +14,16 @@
 //! `corriger`, ce que la fiche de la route dit de corriger pour cette classe, quand elle le dit ; `a_part`, ce que le
 //! refus porte hors de sa phrase (un chemin, une cle, l'etat d'un mois, les anomalies d'une fiche : `socle::echec::APart`).
 //!
-//! C'EST LE BORD DU MOTEUR : le seul module des routes ou le JSON se touche (lire la demande, ecrire la reponse, lire les
-//! phrases d'un rendu pour les controler a la porte : `Rendu::phrases`). Ailleurs, une route lit sa charge en sa forme
-//! et rend la sienne.
+//! LA PORTE DU MOTEUR, SANS JSON A ELLE : la demande, la charge et le rendu passent la porte en objets du socle
+//! (`socle::forme::Objet`), qui ne se lisent qu'en une forme ; ce que l'enveloppe en voit sans forme (le mot de passe
+//! d'une charge, les phrases d'un rendu pour les controler a la porte : `Rendu::phrases`) se dit par leurs textes. Une
+//! route lit sa charge en sa forme et rend la sienne.
 
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 
 use socle::echec::{erreur, Classe, Echec, Lieu, R};
+use socle::forme::{FormeDesTextes, Objet};
 
 use super::catalogue::{self, Route};
 
@@ -51,8 +52,9 @@ impl Demande {
     /// La demande ecrite `texte` : un refus si ce n'est pas du JSON (`DemandeIllisible`), si elle n'a pas sa forme
     /// (`MalFormee`), ou si elle nomme une route qui n'existe pas (`RouteInconnue`, le nom a part).
     pub fn lire(texte: &str) -> R<Demande> {
-        let v: Value = serde_json::from_str(texte).map_err(|e| illisible(e.to_string()))?;
-        let d: DemandeEcrite = socle::forme::lire(&v, "La demande est mal formée : elle porte sa route et sa charge.").map_err(|m| m.reclasser(Classe::MalFormee))?;
+        const MAL_FORMEE: &str = "La demande est mal formée : elle porte sa route et sa charge.";
+        let o = Objet::du_texte(texte, "La demande ne se lit pas : ce n'est pas du JSON.", MAL_FORMEE)?;
+        let d: DemandeEcrite = o.lire(&[], MAL_FORMEE).map_err(|m| m.reclasser(Classe::MalFormee))?;
         Ok(Demande { route: route_nommee(&d.route)?, charge: d.charge })
     }
 }
@@ -84,33 +86,22 @@ struct Nomme {
 /// LA CHARGE D'UNE ROUTE, telle qu'elle arrive a la porte : un objet, qui ne se lit qu'en la forme de sa route
 /// (`lire`). Le mot de passe du logiciel qu'elle porte est a l'enveloppe (`mot_de_passe`). Elle s'ecrit telle qu'elle
 /// est arrivee (l'exemple d'une fiche, au catalogue).
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct Charge(Value);
+pub struct Charge(Objet);
 
-impl<'de> serde::Deserialize<'de> for Charge {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Charge, D::Error> {
-        Ok(Charge(Value::Object(Map::deserialize(d)?)))
-    }
-}
+/// Le refus d'une charge qui n'est pas un objet.
+const CHARGE_MAL_FORMEE: &str = "La demande est mal formée : sa charge est un objet {…}.";
 
 impl Charge {
     /// La charge d'une route qui ne prend rien : `{}`.
     pub fn vide() -> Charge {
-        Charge(Value::Object(Map::new()))
-    }
-
-    /// La charge ecrite en JSON `v` (le corps d'une demande de la page) : un objet, sinon un refus (`MalFormee`).
-    fn de(v: Value) -> R<Charge> {
-        match v {
-            Value::Object(_) => Ok(Charge(v)),
-            _ => Err(erreur(Classe::MalFormee, "La demande est mal formée : sa charge est un objet {…}.")),
-        }
+        Charge(Objet::default())
     }
 
     /// La charge ecrite depuis sa forme `t` : ce qu'une route du moteur demande a une autre (la veille a l'ouverture).
     pub fn de_forme<T: Serialize>(t: &T) -> R<Charge> {
-        Charge::de(socle::ecriture::en_valeur(t))
+        socle::ecriture::en_objet(t).map(Charge).ok_or_else(|| erreur(Classe::MalFormee, CHARGE_MAL_FORMEE))
     }
 
     /// La charge ecrite en texte (le corps d'une demande de la page ; vide : `{}`), ou le refus de la demande illisible.
@@ -119,23 +110,19 @@ impl Charge {
             return Ok(Charge::vide());
         }
         let texte = std::str::from_utf8(corps).map_err(|e| illisible(e.to_string()))?;
-        Charge::de(socle::forme::lire_texte(texte, "La demande ne se lit pas : ce n'est pas du JSON.").map_err(|m| m.reclasser(Classe::DemandeIllisible))?)
+        Objet::du_texte(texte, "La demande ne se lit pas : ce n'est pas du JSON.", CHARGE_MAL_FORMEE).map(Charge)
     }
 
     /// LA CHARGE LUE EN SA FORME `T` (`serde`, `deny_unknown_fields`), sans le mot de passe de l'enveloppe : une cle que
     /// la forme ne connait pas, une cle qui manque, une valeur d'une autre forme la refusent (`MalFormee`), la cle
     /// fautive a part ; rien ne s'ecrit.
     pub fn lire<T: DeserializeOwned>(&self) -> R<T> {
-        let mut v = self.0.clone();
-        if let Value::Object(m) = &mut v {
-            m.remove(MOT_DE_PASSE);
-        }
-        socle::forme::lire(&v, "La demande est mal formée.").map_err(|m| m.reclasser(Classe::MalFormee))
+        self.0.lire(&[MOT_DE_PASSE], "La demande est mal formée.").map_err(|m| m.reclasser(Classe::MalFormee))
     }
 
     /// Le mot de passe du logiciel tape pour cette route, s'il est donne (un texte non vide).
     pub fn mot_de_passe(&self) -> Option<&str> {
-        self.0.get(MOT_DE_PASSE).and_then(Value::as_str).filter(|m| !m.is_empty())
+        self.0.texte(MOT_DE_PASSE).filter(|m| !m.is_empty())
     }
 
     /// LE MOIS DE LA CHARGE, s'il est donne : une route qui porte un mois se sert sous la configuration de ce mois
@@ -147,8 +134,9 @@ impl Charge {
         struct MoisDeLaCharge {
             mois: socle::mois::Mois,
         }
-        match self.0.get("mois").filter(|m| m.as_str().is_some_and(|m| !m.is_empty())) {
-            Some(m) => socle::forme::lire::<MoisDeLaCharge>(&Value::Object(Map::from_iter([("mois".to_string(), m.clone())])), "Le mois de la demande ne se lit pas : il s'écrit AAAA-MM, de 01 à 12.")
+        match self.0.reduit_au_texte("mois") {
+            Some(m) => m
+                .lire::<MoisDeLaCharge>(&[], "Le mois de la demande ne se lit pas : il s'écrit AAAA-MM, de 01 à 12.")
                 .map(|l| Some(l.mois))
                 .map_err(|e| e.reclasser(Classe::Illisible)),
             None => Ok(None),
@@ -158,40 +146,29 @@ impl Charge {
     /// LE TEXTE QUE LA CHARGE PORTE A `cle`, s'il y en a un : un dossier ou un fichier qu'une route lit (le banc d'essai le
     /// recopie dans son scenario, `scenario`).
     pub fn texte(&self, cle: &str) -> Option<&str> {
-        self.0.get(cle).and_then(Value::as_str)
+        self.0.texte(cle)
     }
 
     /// La charge qui porte le texte `texte` a `cle` (le rejeu d'un scenario y nomme la piece qu'il a posee).
     pub(crate) fn poser_texte(&mut self, cle: &str, texte: String) {
-        if let Value::Object(m) = &mut self.0 {
-            m.insert(cle.to_string(), Value::String(texte));
-        }
+        self.0.poser_texte(cle, texte);
     }
 
     /// LA CHARGE SANS AUCUN MOT DE PASSE TAPE : la valeur de toute cle `motdepasse…` qui porte un texte, a toute
     /// profondeur, vide. Un scenario du banc la garde ainsi (l'enregistreur, dans l'atelier seulement).
     #[cfg(feature = "atelier")]
     pub(crate) fn sans_les_mots_de_passe(&self) -> Charge {
-        fn vider(v: &Value) -> Value {
-            match v {
-                Value::Object(o) => Value::Object(o.iter().map(|(k, x)| (k.clone(), if k.starts_with(MOT_DE_PASSE) && x.is_string() { Value::String(String::new()) } else { vider(x) })).collect()),
-                Value::Array(a) => Value::Array(a.iter().map(vider).collect()),
-                x => x.clone(),
-            }
-        }
-        Charge(vider(&self.0))
+        Charge(self.0.vider_les_textes(MOT_DE_PASSE))
     }
 
     /// LA CHARGE D'UN PROGRAMME (`moteur route` : un LLM, un script) SANS SES SECRETS : aucun secret ne s'y lit. Le mot
     /// de passe du logiciel de toute route, et ceux d'une route du coffre (`routes::coffre::SECRETS`), en sont retires ;
     /// la route les demande alors elle-meme a un humain.
     pub(crate) fn sans_les_secrets(&mut self, route: Route) {
-        if let Value::Object(m) = &mut self.0 {
-            m.remove(MOT_DE_PASSE);
-            if catalogue::dans(super::coffre::ROUTES, route).is_some() {
-                for s in super::coffre::SECRETS {
-                    m.remove(s);
-                }
+        self.0.retirer(MOT_DE_PASSE);
+        if catalogue::dans(super::coffre::ROUTES, route).is_some() {
+            for s in super::coffre::SECRETS {
+                self.0.retirer(s);
             }
         }
     }
@@ -240,7 +217,7 @@ pub trait Dite: Serialize {
 
 /// LE RENDU D'UNE ROUTE, ecrit en JSON une fois, a la porte : un objet dont la `phrase` est en tete.
 #[derive(Clone, Debug)]
-pub struct Rendu(Map<String, Value>);
+pub struct Rendu(Objet);
 
 impl Rendu {
     /// Ce qu'une route branchee rend (`Dite`), ecrit. Une phrase vide est un defaut du logiciel : la route le refuse.
@@ -248,84 +225,41 @@ impl Rendu {
         if t.phrase().trim().is_empty() {
             return Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la route n'a pas rendu de phrase."));
         }
-        match serde_json::to_value(t) {
-            Ok(Value::Object(o)) => Ok(Rendu(o)),
-            Ok(Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_)) => Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la route a rendu autre chose qu'un objet.")),
-            Err(e) => Err(Echec { a_part: Some(Lieu { detail: Some(e.to_string()), ..Lieu::default() }.into()), ..erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la réponse de la route ne s'écrit pas.") }),
-        }
+        socle::ecriture::en_objet(t).map(Rendu).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : la route a rendu autre chose qu'un objet."))
     }
 
     /// A-t-il sa phrase, un texte non vide ?
     pub(crate) fn a_sa_phrase(&self) -> bool {
-        matches!(self.0.get("phrase"), Some(Value::String(p)) if !p.trim().is_empty())
+        self.0.texte("phrase").is_some_and(|p| !p.trim().is_empty())
     }
 
     /// Les cles qu'il porte, pour dire au developpeur ce qu'une reponse sans phrase rendait.
     pub fn cles(&self) -> Vec<&str> {
-        self.0.keys().map(String::as_str).collect()
+        self.0.cles()
     }
 
     /// Les phrases qu'il porte, a toute profondeur (`phrases_rendues`).
     pub fn phrases(&self) -> Vec<&str> {
-        phrases_de_l_objet(&self.0)
+        phrases_rendues(&self.0)
     }
 
     /// La plus longue de ses phrases, en caracteres (`plus_longue_phrase`).
     pub fn plus_longue_phrase(&self) -> usize {
-        plus_longue_phrase_de_l_objet(&self.0)
-    }
-
-    /// Le rendu en JSON, pris.
-    fn en_valeur(self) -> Value {
-        Value::Object(self.0)
+        plus_longue_phrase(&self.0)
     }
 }
 
 /// LA PLUS LONGUE DES PHRASES QUE REND UNE ROUTE, en caracteres : la sienne, et celle de chaque ligne qu'elle porte (la
 /// `phrase` d'une carte, d'un carre, de la frise d'un engagement), a toute profondeur. Chacune s'affiche dans la place
 /// de la route (`Fiche::phrase`).
-pub fn plus_longue_phrase(v: &Value) -> usize {
-    match v {
-        Value::Object(o) => plus_longue_phrase_de_l_objet(o),
-        Value::Array(a) => a.iter().map(plus_longue_phrase).fold(0, usize::max),
-        // Une valeur seule n'est la phrase de rien : elle n'en porte aucune.
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => 0,
-    }
-}
-
-/// `plus_longue_phrase` d'un objet.
-fn plus_longue_phrase_de_l_objet(o: &Map<String, Value>) -> usize {
-    o.iter()
-        .map(|(k, x)| match (k.as_str(), x) {
-            ("phrase", Value::String(p)) => p.chars().count(),
-            (_, x) => plus_longue_phrase(x),
-        })
-        .fold(0, usize::max)
+pub fn plus_longue_phrase(o: &Objet) -> usize {
+    o.textes_sous(&[("phrase", FormeDesTextes::Texte)]).iter().map(|p| p.chars().count()).fold(0, usize::max)
 }
 
 /// LES PHRASES QUE REND UNE ROUTE, celles que l'ecran lit : la `phrase`, les `phrases` et les `aides` de la reponse et de
 /// chaque ligne qu'elle porte, a toute profondeur.
-pub fn phrases_rendues(v: &Value) -> Vec<&str> {
-    match v {
-        Value::Object(o) => phrases_de_l_objet(o),
-        Value::Array(a) => a.iter().flat_map(phrases_rendues).collect(),
-        // Une valeur seule n'est la phrase de rien.
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => Vec::new(),
-    }
-}
-
-/// `phrases_rendues` d'un objet.
-fn phrases_de_l_objet(o: &Map<String, Value>) -> Vec<&str> {
-    let mut out = Vec::new();
-    for (k, x) in o {
-        match (k.as_str(), x) {
-            ("phrase", Value::String(p)) => out.push(p.as_str()),
-            ("phrases", Value::Array(l)) => out.extend(l.iter().filter_map(Value::as_str)),
-            ("aides", Value::Object(a)) => out.extend(a.values().filter_map(Value::as_str)),
-            (_, x) => out.extend(phrases_rendues(x)),
-        }
-    }
-    out
+pub fn phrases_rendues(o: &Objet) -> Vec<&str> {
+    o.textes_sous(&[("phrase", FormeDesTextes::Texte), ("phrases", FormeDesTextes::Liste), ("aides", FormeDesTextes::Table)])
 }
 
 /// Ce qu'une route branchee rend, ecrit (`Rendu::de`) : la fin de chaque bras de son module.
@@ -428,7 +362,7 @@ impl APart {
     /// CE QUE LE REFUS PORTE A PART, `a` (un `Lieu`, ou la forme de la couche qui refuse), lu en cette forme-ci : ecrit
     /// une fois, relu strict. Ce qui ne s'y lit pas est refuse.
     fn de(a: &socle::echec::APart) -> R<APart> {
-        socle::forme::lire(&socle::ecriture::en_valeur(a), "Ce qu'un refus porte à part ne se lit pas.")
+        socle::forme::relire(a, "Ce qu'un refus porte à part ne se lit pas.")
     }
 }
 
@@ -467,7 +401,7 @@ impl Refus {
 #[derive(Clone, Debug)]
 pub struct Reponse {
     ecrit: bool,
-    issue: Result<Value, Refus>,
+    issue: Result<Objet, Refus>,
 }
 
 /// La reponse telle qu'elle s'ecrit (`Reponse::en_json`).
@@ -476,7 +410,7 @@ struct ReponseEcrite<'a> {
     ok: bool,
     ecrit: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    resultat: Option<&'a Value>,
+    resultat: Option<&'a Objet>,
     #[serde(skip_serializing_if = "Option::is_none")]
     refus: Option<&'a Refus>,
 }
@@ -494,7 +428,7 @@ impl Serialize for Reponse {
 struct ReponseLue {
     ok: bool,
     ecrit: bool,
-    resultat: Option<Value>,
+    resultat: Option<Objet>,
     refus: Option<Refus>,
 }
 
@@ -502,7 +436,7 @@ impl<'de> Deserialize<'de> for Reponse {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Reponse, D::Error> {
         let r = ReponseLue::deserialize(d)?;
         let issue = match (r.ok, r.resultat, r.refus) {
-            (true, Some(v @ Value::Object(_)), None) => Ok(v),
+            (true, Some(o), None) => Ok(o),
             (false, None, Some(refus)) => Err(refus),
             _ => return Err(serde::de::Error::custom("une réponse rendue porte son résultat (un objet), une réponse refusée son refus, et rien d'autre")),
         };
@@ -513,7 +447,7 @@ impl<'de> Deserialize<'de> for Reponse {
 impl Reponse {
     /// La reponse de la route `route` : ce qu'elle a rendu, ou son refus.
     pub fn de(route: Route, rendu: R<Rendu>) -> Reponse {
-        Reponse { ecrit: super::est_une_ecriture(route), issue: rendu.map(Rendu::en_valeur).map_err(|e| Refus::de(Some(route), e)) }
+        Reponse { ecrit: super::est_une_ecriture(route), issue: rendu.map(|r| r.0).map_err(|e| Refus::de(Some(route), e)) }
     }
 
     /// Le refus d'une demande qui n'a pas atteint de route (illisible, mal formee, une route inconnue) : rien ne s'est
@@ -533,7 +467,7 @@ impl Reponse {
     }
 
     /// Ce que la route a rendu, s'il y a lieu.
-    fn resultat(&self) -> Option<&Value> {
+    fn resultat(&self) -> Option<&Objet> {
         match &self.issue {
             Ok(v) => Some(v),
             Err(Refus { .. }) => None,
@@ -549,7 +483,7 @@ impl Reponse {
     /// le refus. Un rendu qui n'a pas la forme attendue est un defaut du logiciel.
     pub fn lire<T: DeserializeOwned>(&self) -> Result<T, Refus> {
         match &self.issue {
-            Ok(v) => socle::forme::lire(v, "Défaut du logiciel : la réponse d'une route ne se relit pas.").map_err(|m| Refus::de(None, m.reclasser(Classe::DefautDuLogiciel))),
+            Ok(o) => o.lire(&[], "Défaut du logiciel : la réponse d'une route ne se relit pas.").map_err(|m| Refus::de(None, m.reclasser(Classe::DefautDuLogiciel))),
             Err(r) => Err(r.clone()),
         }
     }
@@ -558,7 +492,7 @@ impl Reponse {
     /// `horloge-rattraper`, `horloge` de `ouverture`) ; aucun pour un refus.
     pub fn textes(&self, cle: &str) -> Vec<String> {
         match &self.issue {
-            Ok(v) => v.get(cle).and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(String::from).collect(),
+            Ok(o) => o.textes(cle).into_iter().map(String::from).collect(),
             Err(Refus { .. }) => Vec::new(),
         }
     }
@@ -571,13 +505,10 @@ impl Reponse {
         }
     }
 
-    /// La reponse en JSON : ce que `moteur route` imprime et ce que `/api/<route>` rend. Un rendu et un refus sont des
-    /// objets et des textes : leur ecriture ne refuse pas.
-    pub fn en_json(&self) -> Value {
-        match serde_json::to_value(self) {
-            Ok(v) => v,
-            Err(e) => serde_json::json!({"ok": false, "ecrit": self.ecrit, "refus": {"classe": Classe::DefautDuLogiciel, "phrase": format!("Défaut du logiciel : la réponse ne s'écrit pas ({}).", e)}}),
-        }
+    /// La reponse en JSON, sur une ligne : ce que `moteur route` imprime et ce que `/api/<route>` rend. Un rendu et un
+    /// refus sont des objets et des textes : leur ecriture ne refuse pas.
+    pub fn en_json(&self) -> String {
+        socle::ecriture::json_en_ligne(self)
     }
 
     /// `moteur route --texte` : ce que l'ecran lit de la reponse, sans la composer, et jamais du JSON. Rendue : la phrase de
@@ -592,8 +523,8 @@ impl Reponse {
             }
             Ok(r) => r,
         };
-        let mut lignes: Vec<String> = r.get("phrase").and_then(Value::as_str).filter(|p| !p.is_empty()).map(String::from).into_iter().collect();
-        lignes.extend(r.get("phrases").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(String::from));
+        let mut lignes: Vec<String> = r.texte("phrase").filter(|p| !p.is_empty()).map(String::from).into_iter().collect();
+        lignes.extend(r.textes("phrases").into_iter().map(String::from));
         if lignes.is_empty() {
             lignes.push(format!("La route {} n'a pas rendu de phrase.", route));
         }

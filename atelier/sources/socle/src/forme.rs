@@ -5,8 +5,8 @@
 //! seule fonction qui la lit ; son refus est une phrase du moteur, la cle fautive (son chemin dans la donnee) et ce qui ne
 //! va pas a part (`echec::Lieu`).
 //!
-//! C'est un des trois modules du BORD (avec `ecriture` et `json_ascii`, qui ecrivent) : le seul endroit d'une couche
-//! fermee ou le JSON se manipule sans forme (`moteur/tests/fichiers/structure.rs`, `une_couche_fermee_ne_lit_que_des_formes`).
+//! C'est un des deux modules du BORD (avec `ecriture`, qui ecrit) : les seuls endroits ou le JSON se manipule sans forme
+//! (`moteur/tests/fichiers/structure.rs`, `une_couche_fermee_ne_lit_que_des_formes`) ; tout autre module passe par eux.
 
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
@@ -49,6 +49,132 @@ pub fn lire_reponse_tiers<T: ReponseDUnTiers>(texte: &str, phrase: &str) -> R<T>
     lire_texte(texte, phrase)
 }
 
+/// UNE FORME ECRITE (`Serialize`) RELUE EN `T` : ce qu'elle ecrit, lu par `lire`.
+#[track_caller]
+pub fn relire<T: DeserializeOwned>(t: &(impl serde::Serialize + ?Sized), phrase: &str) -> R<T> {
+    lire(&crate::ecriture::en_valeur(t), phrase)
+}
+
+/// UN OBJET JSON QUI PASSE UNE PORTE AVANT D'ETRE LU EN SA FORME : la charge d'une route, que sa route lit
+/// (`routes::enveloppe::Charge`), ce qu'une route rend, que la porte controle et que le moteur relit
+/// (`routes::enveloppe::Rendu`). Il ne se lit qu'en une forme (`lire`) ; ce que l'enveloppe en voit sans forme (le mot de
+/// passe qu'elle porte, les phrases qu'une reponse rend) se dit par ses textes, a une cle que l'enveloppe nomme. Son
+/// JSON ne se touche qu'ici et dans `ecriture` (`ecriture::en_objet`).
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+#[serde(transparent)]
+pub struct Objet(pub(crate) serde_json::Map<String, Value>);
+
+/// Un objet, et rien d'autre.
+impl<'de> serde::Deserialize<'de> for Objet {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Objet, D::Error> {
+        serde_json::Map::deserialize(d).map(Objet)
+    }
+}
+
+/// LA FORME D'UN TEXTE QU'UN OBJET PORTE A UNE CLE (`Objet::textes_sous`) : un texte, une liste de textes, une table
+/// dont les valeurs sont des textes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FormeDesTextes {
+    Texte,
+    Liste,
+    Table,
+}
+
+impl Objet {
+    /// LE TEXTE JSON `texte`, UN OBJET : un texte qui n'est pas du JSON se refuse par `illisible`
+    /// (`Classe::DemandeIllisible`) ; une autre valeur qu'un objet, par `pas_un_objet` (`Classe::MalFormee`).
+    #[track_caller]
+    pub fn du_texte(texte: &str, illisible: &str, pas_un_objet: &str) -> R<Objet> {
+        match lire_texte::<Value>(texte, illisible).map_err(|e| e.reclasser(crate::echec::Classe::DemandeIllisible))? {
+            Value::Object(m) => Ok(Objet(m)),
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => Err(crate::echec::erreur(crate::echec::Classe::MalFormee, pas_un_objet)),
+        }
+    }
+
+    /// L'OBJET LU EN SA FORME `T`, sans ses cles `sans` (ce que l'enveloppe porte a cote de la forme) : comme `lire`.
+    #[track_caller]
+    pub fn lire<T: DeserializeOwned>(&self, sans: &[&str], phrase: &str) -> R<T> {
+        let mut m = self.0.clone();
+        for c in sans {
+            m.remove(*c);
+        }
+        lire(&Value::Object(m), phrase)
+    }
+
+    /// L'objet reduit a sa cle `cle`, si elle porte un texte non vide (une cle que l'enveloppe lit en sa forme, seule).
+    pub fn reduit_au_texte(&self, cle: &str) -> Option<Objet> {
+        let v = self.0.get(cle).filter(|v| v.as_str().is_some_and(|t| !t.is_empty()))?;
+        Some(Objet(serde_json::Map::from_iter([(cle.to_string(), v.clone())])))
+    }
+
+    /// Le texte que l'objet porte a `cle`, s'il en porte un.
+    pub fn texte(&self, cle: &str) -> Option<&str> {
+        self.0.get(cle).and_then(Value::as_str)
+    }
+
+    /// Les textes de la liste que l'objet porte a `cle` ; aucun s'il n'y porte pas de liste.
+    pub fn textes(&self, cle: &str) -> Vec<&str> {
+        self.0.get(cle).and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect()
+    }
+
+    /// LES TEXTES QUE L'OBJET PORTE AUX CLES `cles`, A TOUTE PROFONDEUR : a chaque cle nommee qui porte un texte de la
+    /// forme dite, ce texte (ou ceux de sa liste, ou les valeurs de sa table) ; toute autre valeur se parcourt.
+    pub fn textes_sous(&self, cles: &[(&str, FormeDesTextes)]) -> Vec<&str> {
+        fn de_la_valeur<'a>(v: &'a Value, cles: &[(&str, FormeDesTextes)], out: &mut Vec<&'a str>) {
+            match v {
+                Value::Object(o) => de_l_objet(o, cles, out),
+                Value::Array(a) => a.iter().for_each(|x| de_la_valeur(x, cles, out)),
+                // Une valeur seule n'est le texte de rien.
+                Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+            }
+        }
+        fn de_l_objet<'a>(o: &'a serde_json::Map<String, Value>, cles: &[(&str, FormeDesTextes)], out: &mut Vec<&'a str>) {
+            for (k, x) in o {
+                let forme = cles.iter().find(|(c, _)| c == k).map(|(_, f)| *f);
+                match (forme, x) {
+                    (Some(FormeDesTextes::Texte), Value::String(t)) => out.push(t.as_str()),
+                    (Some(FormeDesTextes::Liste), Value::Array(l)) => out.extend(l.iter().filter_map(Value::as_str)),
+                    (Some(FormeDesTextes::Table), Value::Object(t)) => out.extend(t.values().filter_map(Value::as_str)),
+                    (Some(_) | None, x) => de_la_valeur(x, cles, out),
+                }
+            }
+        }
+        let mut out = Vec::new();
+        de_l_objet(&self.0, cles, &mut out);
+        out
+    }
+
+    /// Ses cles, dans leur ordre.
+    pub fn cles(&self) -> Vec<&str> {
+        self.0.keys().map(String::as_str).collect()
+    }
+
+    /// L'objet sans sa cle `cle`.
+    pub fn retirer(&mut self, cle: &str) {
+        self.0.remove(cle);
+    }
+
+    /// L'objet qui porte le texte `texte` a `cle`.
+    pub fn poser_texte(&mut self, cle: &str, texte: String) {
+        self.0.insert(cle.to_string(), Value::String(texte));
+    }
+
+    /// L'OBJET SANS LES TEXTES DES CLES QUI COMMENCENT PAR `prefixe`, a toute profondeur : chacun vide.
+    pub fn vider_les_textes(&self, prefixe: &str) -> Objet {
+        fn vider(v: &Value, prefixe: &str) -> Value {
+            match v {
+                Value::Object(o) => Value::Object(vider_l_objet(o, prefixe)),
+                Value::Array(a) => Value::Array(a.iter().map(|x| vider(x, prefixe)).collect()),
+                x => x.clone(),
+            }
+        }
+        fn vider_l_objet(o: &serde_json::Map<String, Value>, prefixe: &str) -> serde_json::Map<String, Value> {
+            o.iter().map(|(k, x)| (k.clone(), if k.starts_with(prefixe) && x.is_string() { Value::String(String::new()) } else { vider(x, prefixe) })).collect()
+        }
+        Objet(vider_l_objet(&self.0, prefixe))
+    }
+}
+
 /// UNE CLE CONNUE QUE LE LOGICIEL NE LIT PAS : une note d'un fichier (`quoi`, `note`, `source` : atelier/AGENTS.md,
 /// « Chaque forme est declaree une fois »), ou une valeur que le fichier porte pour qui l'ecrit. La forme la nomme, pour
 /// refuser toute cle inconnue (`deny_unknown_fields`), et n'en garde rien : son type ne porte aucune valeur
@@ -68,7 +194,7 @@ pub fn non_lue<'de, D: serde::Deserializer<'de>>(d: D) -> Result<NonLue, D::Erro
 /// UNE FORME QUE SA TABLE TYPE (`DeserializeSeed` : une saisie de fiche, que la table des cases lit case par case selon
 /// la forme de chacune, `declarations::champs::Lecture`) : la donnee `v` lue selon `table`, dans son texte, comme `lire`.
 #[track_caller]
-pub fn lire_selon<S, U>(v: &Value, table: S, phrase: &str) -> R<U>
+fn lire_selon<S, U>(v: &Value, table: S, phrase: &str) -> R<U>
 where
     S: for<'de> serde::de::DeserializeSeed<'de, Value = U>,
 {
@@ -197,6 +323,12 @@ fn decimal_ecrit(t: &str) -> crate::echec::R<crate::num::Decimal> {
         d.rescale(1);
     }
     Ok(d)
+}
+
+/// UN NOMBRE LU TEL QU'IL EST ECRIT (un instant en secondes, `paris::Moment`) : son texte, sans passer par un flottant.
+pub fn nombre_en_texte<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    use serde::Deserialize;
+    serde_json::Number::deserialize(d).map(|n| n.to_string())
 }
 
 /// LE TEXTE D'UN NOMBRE A VIRGULE QUE LE LECTEUR JSON REND : `arbitrary_precision` le passe en objet a cle privee, que
@@ -642,11 +774,12 @@ where
     d.deserialize_map(Lues(note, std::marker::PhantomData))
 }
 
-/// `lire`, quand la phrase du refus nomme elle-meme la cle fautive : `phrase(chemin, detail)` la compose (le fichier
-/// d'une compagnie, qu'elle corrige : `droit::fiche`).
+/// UNE FORME ECRITE (`Serialize` : une charge, une fiche composee) RELUE EN `T`, quand la phrase du refus nomme
+/// elle-meme la cle fautive : `phrase(chemin, detail)` la compose (le fichier d'une compagnie, qu'elle corrige :
+/// `droit::fiche`).
 #[track_caller]
-pub fn lire_en_phrase<T: DeserializeOwned>(v: &Value, phrase: impl Fn(&str, &str) -> String) -> R<T> {
-    let texte = v.to_string();
+pub fn relire_en_phrase<T: DeserializeOwned>(t: &(impl serde::Serialize + ?Sized), phrase: impl Fn(&str, &str) -> String) -> R<T> {
+    let texte = crate::ecriture::en_valeur(t).to_string();
     let mut d = serde_json::Deserializer::from_str(&texte);
     match serde_path_to_error::deserialize(&mut d) { Ok(t) => Ok(t), Err(e) => Err(refus_en_phrase(&phrase, &e)) }
 }
