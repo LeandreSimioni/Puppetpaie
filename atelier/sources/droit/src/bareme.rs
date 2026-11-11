@@ -963,7 +963,11 @@ par_caisse_conges['{}'] marquee \"verifie\": true. Le payer comme sa nature le d
             continue;
         }
         let i = rang(d_avant, id).ok_or_else(|| {
-            socle::refus!("par_caisse_conges['{}'] reprend la rubrique {} du corps du bareme {}, qui ne la porte pas.", cle, id, annee(&out))
+            socle::echec::a_la_cle(
+                "Le barème de l'année est incomplet : le signaler au développeur.",
+                &format!("par_caisse_conges.{}", cle),
+                format!("reprend la rubrique {} du corps du bareme {}, qui ne la porte pas", id, annee(&out)),
+            )
         })?;
         // A sa place : apres la rubrique qui la precede dans le corps, si elle est la ; sinon a la fin.
         let apres = d_avant[..i].iter().rev().find_map(|r| rang(&out.rubriques_bulletin, &r.id));
@@ -1618,14 +1622,13 @@ fn ajouter_cotisations(cots: &mut Vec<CotisationDsn>, ajouts: &[CotisationDsn], 
             )
         })?;
         let i = cots.iter().rposition(|c| code81(c) == Some(apres.as_str()) && c.base78 == a.base78).ok_or_else(|| {
-            socle::refus!(
-                "Bareme {} : par_categorie['{}'].cotisations_ajoutees ajoute la cotisation {} apres une cotisation {} sur \
-la base {}, que la pile de bareme de ce contrat ne declare pas. Elle ne se place pas au hasard.",
-                an,
-                nom,
-                cite,
-                apres,
-                a.base78
+            socle::echec::a_la_cle(
+                "Le barème de l'année est incomplet : une cotisation ajoutée ne se place pas au hasard. Le signaler au développeur.",
+                &format!("par_categorie.{}.cotisations_ajoutees", nom),
+                format!(
+                    "bareme {} : la cotisation {} se place apres une cotisation {} sur la base {}, que la pile de bareme de ce contrat ne declare pas",
+                    an, cite, apres, a.base78
+                ),
             )
         })?;
         cots.insert(i + 1, x);

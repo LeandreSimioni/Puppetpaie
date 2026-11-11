@@ -358,11 +358,6 @@ pub fn format_en(norme: &Norme, rubrique: &str) -> R<Option<Format>> {
     Ok(table_de(norme)?.formats.get(rubrique).cloned())
 }
 
-/// Les codes de la liste de valeurs de la rubrique dans cette version, `None` si la table ne lui en donne pas.
-pub fn liste_en(norme: &Norme, rubrique: &str) -> R<Option<Vec<String>>> {
-    Ok(table_de(norme)?.formats.get(rubrique).and_then(|f| f.valeurs.as_ref()).map(|v| v.keys().cloned().collect()))
-}
-
 /// Pour une saisie : le format de la premiere version livree qui en donne un, `None` si aucune.
 pub fn format_de(rubrique: &str) -> R<Option<Format>> {
     for n in crate::norme::versions()? {

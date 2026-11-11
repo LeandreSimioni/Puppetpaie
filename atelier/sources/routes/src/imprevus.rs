@@ -695,7 +695,7 @@ fn trouver_suspension(ctx: &Contexte, cle: &str, debut: &Jour) -> R<Option<(usiz
 /// L'arret de ce salarie a ce dernier jour travaille, ou le refus qui dit ou les lire.
 fn l_arret(ctx: &Contexte, cle: &str, dernier: &Jour) -> R<(usize, Vec<Imprevu>, ArretSaisi)> {
     trouver_arret(ctx, cle, dernier)?.ok_or_else(|| {
-        refus(format!("Aucun arret de {} dont le dernier jour travaille soit le {}. La route `arrets` les liste.", cle, dernier.jj_mm_aaaa()))
+        refus(format!("Aucun arret de {} dont le dernier jour travaille soit le {} : choisir un arret de la liste.", cle, dernier.jj_mm_aaaa()))
     })
 }
 

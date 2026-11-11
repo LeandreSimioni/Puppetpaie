@@ -414,8 +414,9 @@ struct CodesFixes {
     autres: BTreeMap<String, CodeFixe>,
 }
 
-/// La valeur fixe de la liste `T`, otee de `codes` : un code que la liste n'a pas se refuse.
-fn code_fixe<T: ListeDeLaNorme>(codes: &mut BTreeMap<String, CodeFixe>) -> Result<Option<T>, String> {
+/// La valeur fixe de la liste `T`, otee de `codes` : un code que la liste n'a pas se refuse, par l'erreur que la lecture
+/// de serde attend (`CodesFixes::try_from`).
+fn code_fixe<T: ListeDeLaNorme>(codes: &mut BTreeMap<String, CodeFixe>) -> Result<Option<T>, <CodesFixes as TryFrom<BTreeMap<String, CodeFixe>>>::Error> {
     match codes.remove(T::RUBRIQUE) {
         None => Ok(None),
         Some(c) => T::du_code_de_la_norme(&c.valeur).map(Some).ok_or_else(|| {
@@ -427,7 +428,7 @@ fn code_fixe<T: ListeDeLaNorme>(codes: &mut BTreeMap<String, CodeFixe>) -> Resul
 
 impl TryFrom<BTreeMap<String, CodeFixe>> for CodesFixes {
     type Error = String;
-    fn try_from(mut codes: BTreeMap<String, CodeFixe>) -> Result<CodesFixes, String> {
+    fn try_from(mut codes: BTreeMap<String, CodeFixe>) -> Result<CodesFixes, Self::Error> {
         let modalite = code_fixe(&mut codes)?;
         let motif_recours = code_fixe(&mut codes)?;
         Ok(CodesFixes { modalite, motif_recours, autres: codes })

@@ -758,12 +758,15 @@ fn telecharger(inst: &Path, depot: &str, d: &Publiee, cles: &[&str], suivi: &Rec
     }
     let dite = courante(&neuf).map_err(au_controle)?;
     if dite != version {
-        return Err(au_controle(socle::refus!("l'archive dit {}, derniere.json dit {}", version_lue(&dite), version_lue(version))));
+        return Err(au_controle(socle::refus!("l'archive dit {}, l'annonce de la dernière version dit {}", version_lue(&dite), version_lue(version))));
     }
     // Le programme de chaque systeme doit y etre, meme sans compagnie a controler.
     if let Some(s) = systemes.iter().find(|s| !programme_de(&neuf, s, "puppetpaie").is_file()) {
         let _ = std::fs::remove_dir_all(&cible);
-        return Err(au_controle(socle::refus!("le programme de {} manque dans l'archive ({})", s, programme_de(Path::new(""), s, "puppetpaie").display())));
+        return Err(au_controle(socle::echec::refus_avec(
+            format!("le programme de {} manque dans l'archive", s),
+            socle::echec::Lieu { chemin: Some(programme_de(Path::new(""), s, "puppetpaie").to_string_lossy().into_owned()), ..Default::default() },
+        )));
     }
     // Le programme neuf lit la configuration de chaque compagnie de l'installation (sans compagnie, il n'y a rien a lire).
     for racine in compagnies_de(inst).map_err(au_controle)? {

@@ -90,7 +90,11 @@ impl Fichier {
     /// La version de la norme de ce fichier ; un morceau sans version refuse de decider.
     pub fn norme(&self) -> R<&crate::norme::Norme> {
         self.norme.as_ref().ok_or_else(|| {
-            refus("Fichier DSN sans version de la norme : les rubriques qu'il admet ne se decident pas (`Fichier::en_norme`).")
+            socle::echec::a_la_cle(
+                "Une DSN s'écrit sans version de la norme : les rubriques qu'elle admet ne se décident pas. Le signaler au développeur.",
+                "S10.G00.00.006",
+                "Fichier::en_norme",
+            )
         })
     }
 
@@ -3578,12 +3582,15 @@ fn lignes_regularisees(
             // qu'aurait deduit le montant negatif.
             let qualifiant = ctp.qualifiant.clone();
             let regularisation = ctp_de_regularisation(&code, &siens, bar_o)?.ok_or_else(|| {
-                refus!(
-                    "Correction de {} : la ligne {} ({}) du bordereau Urssaf baisse de {}, et le barème du mois ne dit pas sous quel CTP se régularise cette réduction (`reduction_generale.dsn.ctp_regularisation`) : un montant de réduction ne s'écrit pas négatif (guide déclaratif Urssaf, § 8.2). Rien n'est écrit.",
-                    mois_o,
-                    code,
-                    qualifiant,
-                    socle::texte::euros(-v)
+                socle::echec::cle(
+                    format!(
+                        "Correction de {} : la ligne {} ({}) du bordereau Urssaf baisse de {}, et le barème du mois ne dit pas sous quel CTP se régularise cette réduction : un montant de réduction ne s'écrit pas négatif (guide déclaratif Urssaf, § 8.2). Rien n'est écrit.",
+                        mois_o,
+                        code,
+                        qualifiant,
+                        socle::texte::euros(-v)
+                    ),
+                    "reduction_generale.dsn.ctp_regularisation",
                 )
             })?;
             lignes.push(ligne(regularisation, qualifiant, taux_at, Some(-v), None, None));

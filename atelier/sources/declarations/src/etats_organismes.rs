@@ -215,10 +215,14 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         }
     }
     if !manque.is_empty() {
-        return Err(refus(format!(
-            "Lignes de bulletin sans organisme dans le plan comptable : {}. Les ajouter dans config/plan-comptable.json sous « lignes » : on ne devine pas à qui une cotisation est due.",
-            manque.into_iter().collect::<Vec<_>>().join(", ")
-        )));
+        return Err(refus_avec(
+            format!(
+                "Lignes de bulletin sans organisme dans le plan comptable : {}. Les y ajouter parmi les lignes : on ne devine pas à qui une cotisation est due.",
+                manque.into_iter().collect::<Vec<_>>().join(", ")
+            ),
+            Lieu { fichier: Some("config/plan-comptable.json".to_string()), cle: Some("lignes".to_string()), ..Default::default() },
+        )
+        .reclasser(Classe::Refuse));
     }
     let mois_dits = |s: &BTreeSet<Mois>| s.iter().map(|m| m.libelle(Graphie::Accentuee)).collect::<Vec<_>>().join(", ");
     if !sans_bulletin.is_empty() {
@@ -691,7 +695,8 @@ pub fn afdas_2642(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut lignes = Vec::new();
     for (an, masse, masse_permanents) in par_an {
         let Some(hb) = hors_bulletin(ctx, annee_entiere(&an)?, &idcc)? else {
-            return Err(refus(format!("Le barème {} ne porte pas les contributions Afdas de la {} (`par_convention.{}.hors_bulletin`).", an, idcc, idcc)));
+            return Err(socle::echec::cle(format!("Le barème {} ne porte pas les contributions Afdas de la {}.", an, idcc), &format!("par_convention.{}.hors_bulletin", idcc))
+                .reclasser(Classe::Refuse));
         };
         let mut cpnef = zero;
         if let Some(c) = &hb.cpnef_dialogue_social {
@@ -788,12 +793,11 @@ pub fn paritarisme_branche(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for (an, masse) in par_an {
         let f = hors_bulletin(ctx, annee_entiere(&an)?, &idcc)?.and_then(|h| h.financement_paritarisme);
         let Some(f) = f else {
-            return Err(refus(format!(
-                "La convention {} n'a pas de paritarisme annuel hors DSN dans le barème {} (`par_convention.{}.hors_bulletin.financement_paritarisme`).",
-                idcc,
-                an,
-                idcc
-            )));
+            return Err(socle::echec::cle(
+                format!("La convention {} n'a pas de paritarisme annuel hors DSN dans le barème {}.", idcc, an),
+                &format!("par_convention.{}.hors_bulletin.financement_paritarisme", idcc),
+            )
+            .reclasser(Classe::Refuse));
         };
         let taux = f.taux;
         let mut m = eur2(div(mul(masse, taux), Decimal::ONE_HUNDRED));

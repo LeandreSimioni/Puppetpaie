@@ -966,7 +966,8 @@ fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
     fn confronter<T: ListeDeLaNorme>(fautes: &mut Vec<String>) {
         let mut union = BTreeSet::new();
         for n in declarations::norme::versions().unwrap() {
-            let Some(liste) = declarations::formats::liste_en(&n, T::RUBRIQUE).unwrap() else {
+            let valeurs = declarations::formats::format_en(&n, T::RUBRIQUE).unwrap().and_then(|f| f.valeurs);
+            let Some(liste) = valeurs.map(|v| v.into_keys().collect::<Vec<String>>()) else {
                 fautes.push(format!("{} ({}) : la table des formats de {} n'en a pas la liste", T::quoi(), T::RUBRIQUE, n.version));
                 continue;
             };

@@ -353,6 +353,21 @@ impl Espace {
                     i += 3;
                     continue;
                 }
+                // LES CODES D'UNE LISTE DE LA NORME (`droit::natures::codes_fermes!`) : `Nom, "quoi", "rubrique" { … }`
+                // declare l'enum `Nom`, qui s'ecrit par son code (`impl Serialize` de la macro) : un texte.
+                (J::Mot(m), Some(J::P("!"))) if m == "codes_fermes" && est(v.get(i + 2), "{") => {
+                    let fin = apres_le_groupe(v, i + 2, false);
+                    let mut k = i + 3;
+                    while est(v.get(k), "#") {
+                        k = apres_le_groupe(v, k + 1, false);
+                    }
+                    if let Some(nom) = mot(v.get(k)) {
+                        self.items.push(Item { fichier, nom: nom.to_string(), genre: "type", generiques: Vec::new(), serde: Vec::new(), serialise: true, corps: vec![J::Mot("String".into())] });
+                    }
+                    attrs.clear();
+                    i = fin;
+                    continue;
+                }
                 (J::P("#"), Some(J::P("["))) => {
                     let fin = apres_le_groupe(v, i + 1, false);
                     attrs.push(&v[i + 2..fin - 1]);

@@ -3,7 +3,7 @@
 //! Le cache est cle par chemin ET par signature (date de modification,
 //! taille) : un fichier reecrit se relit.
 
-use crate::echec::{refus, Echec, R};
+use crate::echec::{Echec, R};
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
@@ -342,10 +342,11 @@ fn signature_lue(chemin: &Path) -> R<Option<(u128, u64)>> {
     if !chemin.is_file() {
         return Ok(None);
     }
-    let illisible = |e: std::io::Error| refus(format!("{} ne dit pas sa date : {}", repr(&chemin.display().to_string()), e));
+    let a_part = |detail: String| crate::echec::Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), detail: Some(detail), ..Default::default() };
+    let illisible = |e: std::io::Error| crate::echec::refus_avec("Un fichier ne dit pas sa date.", a_part(e.to_string()));
     let m = std::fs::metadata(chemin).map_err(illisible)?;
     let d = m.modified().map_err(illisible)?.duration_since(std::time::UNIX_EPOCH).map_err(|e| {
-        refus(format!("{} est daté d'avant 1970 ({} s) : régler la date du fichier.", repr(&chemin.display().to_string()), e.duration().as_secs()))
+        crate::echec::refus_avec("Un fichier est daté d'avant 1970 : régler la date du fichier.", a_part(format!("{} s avant 1970", e.duration().as_secs())))
     })?;
     Ok(Some((d.as_nanos(), m.len())))
 }

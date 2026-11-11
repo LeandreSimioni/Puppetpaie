@@ -230,7 +230,12 @@ pub fn taux_par_defaut(bareme: &Pile, montant: Decimal, le: Option<Jour>, zone: 
     for t in &g.tranches {
         let (bas, haut, taux) = match t.as_slice() {
             [Some(b), h, Some(x)] => (b.0, h.map(|h| h.0), x.0),
-            _ => return Err(ErreurPas::Autre(socle::refus!("tranche de la grille du PAS illisible (bas, haut, taux attendus) : {:?}", t))),
+            _ => {
+                return Err(ErreurPas::Autre(socle::echec::refus_avec(
+                    "Une tranche de la grille du PAS ne se lit pas : elle porte un bas, un haut et un taux.",
+                    socle::echec::Lieu { cle: Some("pas_taux_par_defaut".to_string()), detail: Some(format!("{:?}", t)), ..Default::default() },
+                )))
+            }
         };
         // La derniere tranche n'a pas de haut.
         if montant >= bas && haut.is_none_or(|h| montant < h) {

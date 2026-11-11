@@ -17,6 +17,12 @@ fn refus(m: String) -> Echec {
     erreur(Classe::Refuse, m)
 }
 
+/// Un compte qui manque au plan comptable de la compagnie : le fichier et la cle a remplir vont a part.
+fn manque_au_plan(m: String, cle: String) -> Echec {
+    socle::echec::refus_avec(m, socle::echec::Lieu { fichier: Some("config/plan-comptable.json".to_string()), cle: Some(cle), ..Default::default() })
+        .reclasser(Classe::Refuse)
+}
+
 /// Une ligne du journal de paie : date, journal, compte, libelle, debit, credit, analytique, auxiliaire.
 pub struct Ecriture {
     pub journal: String,
@@ -95,10 +101,13 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
                 continue;
             }
             let Some(regle) = plan.retenues.get(&l.code) else {
-                return Err(refus(format!(
-                    "La retenue « {} » ({}) n'a pas de compte dans le plan comptable. L'ajouter dans config/plan-comptable.json sous « retenues » : un compte 425 pour un acompte ou une avance, 427 pour une saisie ou une opposition.",
-                    l.code, l.libelle
-                )));
+                return Err(manque_au_plan(
+                    format!(
+                        "La retenue « {} » ({}) n'a pas de compte dans le plan comptable. L'y ajouter parmi les retenues : un compte 425 pour un acompte ou une avance, 427 pour une saisie ou une opposition.",
+                        l.code, l.libelle
+                    ),
+                    format!("retenues.{}", l.code),
+                ));
             };
             // Le libelle du plan, sinon celui de la rubrique.
             let libelle = match &regle.libelle {
@@ -135,10 +144,13 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
                 return Err(refus(format!("La ligne de bulletin « {} » ne dit pas sa cotisation : elle n'a pas de compte dans le plan comptable.", l.libelle)));
             };
             let Some(regle) = plan.lignes.get(id) else {
-                return Err(refus(format!(
-                    "La ligne de bulletin « {} » ({}) n'a pas de compte dans le plan comptable. L'ajouter dans config/plan-comptable.json sous « lignes », avec un compte de charge et un compte de tiers.",
-                    id, l.libelle
-                )));
+                return Err(manque_au_plan(
+                    format!(
+                        "La ligne de bulletin « {} » ({}) n'a pas de compte dans le plan comptable. L'y ajouter parmi les lignes, avec un compte de charge et un compte de tiers.",
+                        id, l.libelle
+                    ),
+                    format!("lignes.{}", id),
+                ));
             };
             // Le libelle du plan, sinon celui du bulletin.
             let libelle = match &regle.libelle {

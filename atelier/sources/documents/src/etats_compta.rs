@@ -695,7 +695,7 @@ const POSITIONS_QUADRA_COMPTE: [(&str, usize); 12] = [
 fn compte_quadra(compte: &str) -> R<String> {
     if compte.chars().count() > 8 {
         return Err(refus(format!(
-            "Quadra : le compte « {} » a plus de 8 caractères, la largeur de la zone. Choisir dans le plan comptable de la compagnie un sous-compte qui tient (par exemple « 421{{code:03}} » plutôt que « 421{{cle}} »).",
+            "Quadra : le compte « {} » a plus de 8 caractères, la largeur de la zone. Choisir dans le plan comptable de la compagnie un sous-compte qui tient (par exemple 421 suivi du numéro du salarié sur trois chiffres, plutôt que 421 suivi de son nom).",
             compte
         )));
     }
@@ -1517,7 +1517,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 /// reste a payer apres franchise, decote et abattement. Se calcule sur une ANNEE (ses seuils sont annuels).
 pub fn taxe_sur_les_salaires(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let Some(annee) = d.annee.as_deref().filter(|a| !a.is_empty()) else {
-        return Err(refus("La taxe sur les salaires se calcule sur une ANNÉE (ses seuils sont annuels) : --annee AAAA."));
+        return Err(socle::echec::cle("La taxe sur les salaires se calcule sur une ANNÉE (ses seuils sont annuels) : choisir l'année.", "annee"));
     };
     // Qui doit la taxe, et sur quelle part : le meme regime que la DSN de decembre (`assujettissement`, CGI art. 231, 1).
     // NE PAS SAVOIR N'EST PAS UNE ERREUR : l'etat le dit, et dit quoi repondre.

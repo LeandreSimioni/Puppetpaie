@@ -389,10 +389,11 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
             }
         }
         let taux = base.taux.de(&an).ok_or_else(|| {
-            refus(format!(
-                "Le taux de la CASC-SVP pour {} n'est pas releve (donnees/casc-svp-base.json) : l'export refuse plutot que de prolonger celui d'une autre annee.",
-                an
-            ))
+            socle::echec::refus_avec(
+                format!("Le taux de la CASC-SVP pour {} n'est pas releve : l'export refuse plutot que de prolonger celui d'une autre annee.", an),
+                socle::echec::Lieu { fichier: Some("donnees/casc-svp-base.json".to_string()), cle: Some(format!("taux.{}", an)), ..Default::default() },
+            )
+            .reclasser(Classe::Refuse)
         })?;
         let mut cot = (masse * taux / Decimal::from(100)).round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
         cot.rescale(2);

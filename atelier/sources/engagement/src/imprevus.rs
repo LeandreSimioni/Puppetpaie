@@ -345,7 +345,7 @@ fn siens_sans_noter(racine: &Path, cle: &str) -> R<Vec<Imprevu>> {
     if !dossier(racine).is_dir() {
         return Ok(Vec::new());
     }
-    let illisible = |e: std::io::Error| socle::refus!("{} ne se lit pas : {}", repr(&dossier(racine).display().to_string()), e);
+    let illisible = |e: std::io::Error| socle::echec::du_disque(&dossier(racine), &e);
     let mut fichiers: Vec<PathBuf> = Vec::new();
     for f in std::fs::read_dir(dossier(racine)).map_err(illisible)? {
         let p = f.map_err(illisible)?.path();

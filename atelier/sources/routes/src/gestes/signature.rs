@@ -985,7 +985,11 @@ fn avenant_ecrit(
         Some(Repris { fichier, .. }) => {
             let f = dossier.join(fichier);
             if fichier.is_empty() || !f.is_file() {
-                return Err(refus(format!("L'avenant n° {} de {} n'est plus dans {} : il ne repart pas tel quel. Rien n'est parti.", a.numero, salarie, dossier.display())));
+                return Err(socle::echec::refus_avec(
+                    format!("L'avenant n° {} de {} n'est plus dans les envois de son mois : il ne repart pas tel quel. Rien n'est parti.", a.numero, salarie),
+                    socle::echec::Lieu { chemin: Some(dossier.to_string_lossy().into_owned()), fichier: Some(fichier.clone()), ..Default::default() },
+                )
+                .reclasser(Classe::Refuse));
             }
             f
         }

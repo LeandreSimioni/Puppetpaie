@@ -1156,12 +1156,17 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, nom: &str) -> R<PathBu
                 return Ok(f);
             }
         }
-        return Err(refus(format!(
-            "{} vient de France Travail : elle ne se refait pas, elle se relit dans retours/, où son retour (nature 46) manque ; le fichier a été déplacé ou effacé.",
-            nom
-        )));
+        return Err(socle::echec::refus_avec(
+            "Cette attestation vient de France Travail : elle ne se refait pas, elle se relit dans ses retours, où son retour (nature 46) manque ; le fichier a été déplacé ou effacé.",
+            socle::echec::Lieu { chemin: Some(envois::retours::RETOURS.to_string()), fichier: Some(nom.to_string()), ..Default::default() },
+        )
+        .reclasser(Classe::Refuse));
     }
-    Err(refus(format!("{} n'est plus dans sorties/{} : le journal dit qu'il est parti, le fichier a été déplacé ou effacé.", nom, mois)))
+    Err(socle::echec::refus_avec(
+        "Ce document n'est plus dans les sorties de son mois : le journal dit qu'il est parti, le fichier a été déplacé ou effacé.",
+        socle::echec::Lieu { chemin: Some(format!("sorties/{}", mois)), fichier: Some(nom.to_string()), ..Default::default() },
+    )
+    .reclasser(Classe::Refuse))
 }
 
 /// Le contexte de la compagnie au jour `jour`, ce jour-la etant aujourd'hui : celui de la route qui a fabrique une piece.

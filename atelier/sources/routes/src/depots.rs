@@ -724,10 +724,13 @@ pub fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcriture)> {
         return fichier.map(|f| (f.to_string(), DitALEcriture::default())).ok_or_else(|| socle::fichiers::absent("fichier").reclasser(Classe::Manque));
     };
     if fichier.is_some() {
-        return Err(refus(
-            "`fichier` et `mois` désignent deux déclarations : `fichier` seul pour un signalement écrit, `mois` seul pour la \
+        return Err(socle::echec::a_la_cle(
+            "Le fichier et le mois désignent deux déclarations : le fichier seul pour un signalement écrit, le mois seul pour la \
              déclaration du mois. Rien n'est parti.",
-        ));
+            "fichier",
+            "mois",
+        )
+        .reclasser(Classe::Refuse));
     }
     if d.quoi == Quoi::Dsn {
         // UNE DSN PARTIE EN REEL NE SE REFAIT QUE SI CE QU'ELLE A EMPORTE EST A CORRIGER (regle 4) : un engagement du

@@ -414,7 +414,10 @@ fn retirer_les_depots_de_dsn(dossier: &Path) -> R<()> {
 /// reprend l'identite de la variable. Un dossier qui existe et qui n'en est pas une, s'il n'est pas vide, est refuse.
 pub fn monter(dossier: &Path, fictive: &str, texte: Option<&str>) -> R<Montage> {
     let texte = texte.filter(|t| !t.trim().is_empty()).ok_or_else(|| {
-        socle::refus!("{} absente : elle porte l'identite de la compagnie (un objet JSON sur une ligne ; ses cles : `moteur essai monter --aide`). La poser dans les reglages de l'environnement, puis ouvrir une nouvelle seance. Rien n'est ecrit.", VARIABLE)
+        refus_avec(
+            format!("{} absente : elle porte l'identite de la compagnie (un objet JSON sur une ligne). La poser dans les reglages de l'environnement, puis ouvrir une nouvelle seance. Rien n'est ecrit.", VARIABLE),
+            socle::echec::Lieu { detail: Some("ses cles : moteur essai monter --aide".to_string()), ..Default::default() },
+        )
     })?;
     let id = Identite::lire(texte)?;
     if let Some(d) = depot_englobant(dossier)? {

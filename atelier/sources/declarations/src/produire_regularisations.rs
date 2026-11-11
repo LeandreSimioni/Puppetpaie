@@ -137,7 +137,7 @@ pub fn regularisations_pour(ctx: &Contexte, mois_courant: Mois, departs: &engage
             }
             let lu = versement_declare::dernier_declare(ctx, d.valide.objet(), departs, mois, mois_courant)
                 .map_err(|e| Echec { a_part: e.a_part, ..refus(&e.phrase) })?
-                .ok_or_else(|| refus(&format!("aucune DSN partie (journal/depots.jsonl) n'a declare ce contrat pour {}", mois)))?;
+                .ok_or_else(|| refus(&format!("aucune DSN partie n'a declare ce contrat pour {}", mois)))?;
             // Le taux du bloc 56 : celui de la paie declaree du mois d'origine.
             let taux_pas_origine = lu.versement.taux_pas.clone();
             out.push(Reg {

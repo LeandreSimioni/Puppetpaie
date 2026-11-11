@@ -894,7 +894,7 @@ fn apercu(ctx: &Contexte, c: ChargeApercu) -> R<Apercu> {
     let p = paies
         .into_iter()
         .find(|p| p.salarie.id.to_string() == vise.salarie && p.engagement.debut == vise.debut)
-        .ok_or_else(|| refus(format!("Aucun engagement validé de {} du {} en {} : en choisir un de la liste (`engagements` de modele-contrat).", vise.salarie, vise.debut.jj_mm_aaaa(), vise.mois.etiquette())))?;
+        .ok_or_else(|| refus(format!("Aucun engagement validé de {} du {} en {} : en choisir un de la liste.", vise.salarie, vise.debut.jj_mm_aaaa(), vise.mois.etiquette())))?;
     let modele = modele_lu(nom.clone(), s.is_none(), &texte_de(&nat, s, Partie::Contrat)?, &texte_de(&nat, s, Partie::Avenant)?)?;
     let ent = documents::avenant::ent_du_mois(ctx, vise.mois);
     let d = ctx.racine.join("sorties").join("apercus");

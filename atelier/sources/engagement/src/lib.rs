@@ -1347,12 +1347,14 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
             etrangeres.push(out.len());
         } else if let (Some(taux), false) = (taux, de_l_annexe) {
             let erreur_bareme = |cle: &str| {
-                socle::refus!(
-                    "{} : le barème {} ne porte pas la limite d'exonération de la ligne à {} (`{}`). Rien n'est calculé.",
-                    qui,
-                    jour.an,
-                    socle::texte::euros(taux),
-                    cle
+                socle::echec::cle(
+                    format!(
+                        "{} : le barème {} ne porte pas la limite d'exonération de la ligne à {}. Rien n'est calculé.",
+                        qui,
+                        jour.an,
+                        socle::texte::euros(taux)
+                    ),
+                    cle,
                 )
             };
             let limite = match ou.as_deref() {

@@ -1044,10 +1044,9 @@ impl Coffre {
         let nom = fiche.nom;
         let usage = Usage::lu(usage)?;
         if usage == Usage::Depot && !confirme {
-            return Err(refus(
-                "Un depot ne puise dans le coffre qu'apres confirmation d'un \
-                 humain. `confirme` doit porter ce qui a ete confirme -- le mois \
-                 recopie, ou la reponse de la fenetre.",
+            return Err(socle::echec::cle(
+                "Un depot ne puise dans le coffre qu'apres confirmation d'un humain : le mois recopie, ou la reponse de la fenetre.",
+                "confirme",
             ));
         }
         if let Some(v) = self.variables.get(fiche.variable) {

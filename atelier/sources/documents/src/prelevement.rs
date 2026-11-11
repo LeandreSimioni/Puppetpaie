@@ -52,10 +52,13 @@ pub fn des_paies(ctx: &Contexte, paies: &[Paie], departs: &engagement::departs::
             continue;
         }
         let v = pa.pas.clone().ok_or_else(|| {
-            socle::refus!(
-                "{} : la paie de {} ne porte pas de prelevement a la source (paie ecrite illisible : `pas`). Revalider l'engagement.",
-                pa.salarie.id.to_string(),
-                pa.engagement.mois
+            socle::echec::cle(
+                format!(
+                    "{} : la paie de {} ne porte pas de prelevement a la source. Revalider l'engagement.",
+                    pa.salarie.id.to_string(),
+                    pa.engagement.mois
+                ),
+                "pas",
             )
         })?;
         out.push(Some(v));
