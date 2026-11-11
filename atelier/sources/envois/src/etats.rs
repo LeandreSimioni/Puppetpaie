@@ -1428,7 +1428,7 @@ mod tests {
             libelle: None,
             flux: Some(flux.into()),
         };
-        let retours = vec![annonce("WSBBBB", "11", "p1"), annonce("WSINCONNU", "11", "p2"), annonce("WSCCCC", "20", "p3")];
+        let retours = vec![annonce("WSBBBB", "11", "20260601110001"), annonce("WSINCONNU", "11", "20260601110002"), annonce("WSCCCC", "20", "20260601110003")];
         let mut contenus = HashMap::new();
         contenus.insert(cle_du_contenu(&retours[0]), BAN_KO.as_bytes().to_vec());
         let mut inc = Vec::new();
