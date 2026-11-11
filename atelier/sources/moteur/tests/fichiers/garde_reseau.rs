@@ -2,9 +2,10 @@
 //! `moteur` qu'un essai lance : un essai ne joint jamais un serveur reel (celui de l'editeur, net-entreprises, l'Urssaf,
 //! Google, la DILA, le depot des versions, une boite courriel). Cargo pose la variable (`.cargo/config.toml`, `[env]`) ;
 //! ces essais verifient, dans les sources, que rien ne la contourne :
-//! - chaque fichier du moteur qui ouvre une connexion vers dehors passe par `garde_reseau` (sauf ceux qui ne parlent
-//!   qu'a la machine elle-meme, nommes ici avec leur raison) ;
+//! - chaque fichier du moteur dont le code ouvre une connexion passe par `garde_reseau` : il l'appelle, ou il l'est (une
+//!   connexion vers la machine elle-meme se demande a `garde_reseau::vers_cette_machine`) ;
 //! - chaque essai qui lance un programme dans un environnement vide (`env_clear`) y repose la variable.
+//! Ni l'un ni l'autre n'ecarte un fichier : ils lisent le code, commentaires et textes blanchis.
 //!
 //! La preuve par le comportement est dans `incidents_filet` (`sans_serveur_pose_rien_ne_sort_vers_le_serveur_de_l_editeur`)
 //! et dans le moteur (`garde_reseau::tests`).
@@ -28,19 +29,24 @@ fn espace() -> PathBuf {
 }
 
 /// Ce qui ouvre une connexion (ou un navigateur) vers une adresse.
-const SORTIES: [&str; 8] = ["ureq::Agent", "ureq::get(", "ureq::post(", "TcpStream::connect", "SmtpTransport::", "UdpSocket", "\"xdg-open\"", "rundll32"];
+const SORTIES: [&str; 8] = ["ureq::Agent", "ureq::get(", "ureq::post(", "TcpStream::connect", "SmtpTransport::", "UdpSocket", "xdg-open", "rundll32"];
 
 /// Les crates de l'espace, dont les envois, ou vivent les transports, et l'atelier, qui telecharge les textes.
 const CRATES: [&str; 11] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "routes", "moteur", "atelier"];
 
-/// Les fichiers qui n'ouvrent de connexion que vers la machine elle-meme, nommes dans leur crate (`src/...`), ou qu'elle soit.
-const LOCAUX: [(&str, &str); 2] = [
-    ("src/instance.rs", "le verrou d'une installation : la fenetre deja ouverte, sur 127.0.0.1"),
-    ("src/google_autorisation.rs", "reveille son propre ecouteur local (127.0.0.1) ; l'echange de jetons passe par `transport`"),
-];
+/// Le code d'un source, commentaires et textes blanchis, sauf les textes qui nomment un programme a lancer (`xdg-open`,
+/// `rundll32`) : ce qui ouvre une connexion s'y lit.
+fn code(f: &Path) -> String {
+    let t = std::fs::read_to_string(f).unwrap();
+    let c: String = crate::structure::code_sans_textes(&t).into_iter().collect();
+    let programmes = crate::structure::litteraux_rs(&t).into_iter().filter(|(_, s)| SORTIES.contains(&s.as_str())).map(|(_, s)| s);
+    c + "\n" + &programmes.collect::<Vec<_>>().join("\n")
+}
 
 #[test]
 fn chaque_sortie_du_moteur_passe_par_le_garde_fou() {
+    // Le module du garde-fou, tel que le compilateur le nomme (`socle::garde_reseau`).
+    let garde = std::any::type_name_of_val(&socle::garde_reseau::en_essai).rsplit_once("::").unwrap().0.to_string();
     let racine = espace();
     let mut fichiers = Vec::new();
     for c in CRATES {
@@ -49,22 +55,14 @@ fn chaque_sortie_du_moteur_passe_par_le_garde_fou() {
     let mut fautifs = Vec::new();
     for f in fichiers {
         let rel = f.strip_prefix(&racine).unwrap().to_string_lossy().replace('\\', "/");
-        if rel == "socle/src/garde_reseau.rs" || LOCAUX.iter().any(|(l, _)| rel.ends_with(l)) {
-            continue;
-        }
-        let texte = std::fs::read_to_string(&f).unwrap();
-        let ouvre = texte.lines().filter(|l| !l.trim_start().starts_with("//")).any(|l| SORTIES.iter().any(|s| l.contains(s)));
-        if ouvre && !texte.contains("garde_reseau::") {
+        let module = crate::structure::module_de(&rel);
+        let code = code(&f);
+        let ouvre = SORTIES.iter().any(|s| code.contains(s));
+        if ouvre && module != garde && !code.contains("garde_reseau::") {
             fautifs.push(rel);
         }
     }
     assert!(fautifs.is_empty(), "ces fichiers ouvrent une connexion sans passer par `garde_reseau` : {:?}", fautifs);
-    // Les fichiers locaux le restent : aucune autre sortie n'y est apparue.
-    for (l, _) in LOCAUX {
-        let f = CRATES.iter().map(|c| racine.join(c).join(l)).find(|p| p.exists()).unwrap_or_else(|| panic!("{} : dans aucune crate de l'espace", l));
-        let texte = std::fs::read_to_string(f).unwrap();
-        assert!(!texte.contains("ureq::") && !texte.contains("SmtpTransport"), "{} : une sortie HTTP ou SMTP, hors du garde-fou", l);
-    }
 }
 
 #[test]
@@ -78,13 +76,10 @@ fn chaque_environnement_vide_d_un_essai_repose_le_garde_fou() {
     }
     let mut fautifs = Vec::new();
     for f in fichiers {
-        if f.ends_with("fichiers/garde_reseau.rs") {
-            continue;
-        }
-        let texte = std::fs::read_to_string(&f).unwrap();
+        let texte: String = crate::structure::code_sans_textes(&std::fs::read_to_string(&f).unwrap()).into_iter().collect();
         let lignes: Vec<&str> = texte.lines().collect();
         for (i, l) in lignes.iter().enumerate() {
-            if l.trim_start().starts_with("//") || !l.contains("env_clear()") {
+            if !l.contains("env_clear()") {
                 continue;
             }
             if !lignes[i..(i + 3).min(lignes.len())].iter().any(|x| x.contains("garde_reseau::VARIABLE")) {

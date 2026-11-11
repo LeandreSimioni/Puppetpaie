@@ -277,7 +277,7 @@ pub fn autoriser(
             // Reveille le fil, qui attend une connexion, pour qu'il rende le port.
             fini.store(true, Ordering::SeqCst);
             // Un reveil qui echoue laisse le fil a sa connexion suivante : le port se rend alors.
-            if let Err(rate) = TcpStream::connect(adresse) {
+            if let Err(rate) = socle::garde_reseau::vers_cette_machine(adresse.port(), None) {
                 drop(rate);
             }
             return Err(refus(format!(

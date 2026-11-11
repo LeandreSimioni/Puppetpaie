@@ -26,7 +26,7 @@
 //! retient pour elle.
 
 use std::io::{BufRead, BufReader, ErrorKind, Write};
-use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::net::{Ipv4Addr, TcpListener};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -159,7 +159,7 @@ enum Occupant {
 /// sienne, `ici`). Une erreur du systeme qui n'est aucun de ces etats remonte.
 fn demander(port: u16, ici: &str, devant: bool) -> R<Occupant> {
     let refus = |e: std::io::Error| socle::refus!("Le creneau du port {} ne se demande pas : {}", port, e);
-    let mut c = match TcpStream::connect_timeout(&SocketAddr::from((Ipv4Addr::LOCALHOST, port)), DELAI) {
+    let mut c = match socle::garde_reseau::vers_cette_machine(port, Some(DELAI)) {
         Ok(c) => c,
         Err(e) if matches!(e.kind(), ErrorKind::ConnectionRefused | ErrorKind::TimedOut | ErrorKind::ConnectionReset) => return Ok(Occupant::Personne),
         Err(e) => return Err(refus(e)),

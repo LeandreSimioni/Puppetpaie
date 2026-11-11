@@ -34,9 +34,16 @@ const DU_CODE: [&str; 10] = [
     "atelier/PuppetPaie.",
 ];
 
-/// LA SIGNATURE DE L'EDITEUR : l'editeur et la compagnie du poste portent le meme nom, et le logiciel le signe en un seul
-/// fichier (la mention de l'auteur et ses sites). Le verrou du nom le laisse passer, lui seul.
-const SIGNATURE: &str = "atelier/sources/compagnie/src/auteur.rs";
+/// LA SIGNATURE DE L'EDITEUR : l'editeur et la compagnie du poste portent le meme nom, et le logiciel le signe
+/// (`compagnie::auteur` : la mention de l'auteur et ses sites). Le verrou du nom laisse passer ces valeurs-la, telles que
+/// le logiciel les porte, et elles seules : il ne nomme aucun fichier.
+fn signature() -> Vec<String> {
+    let a = compagnie::auteur::auteur();
+    let mut v: Vec<String> = [a.phrase, a.nom, a.adresse].into_iter().chain(compagnie::auteur::SITES).map(str::to_lowercase).collect();
+    // La plus longue d'abord : la phrase contient le nom.
+    v.sort_by_key(|s| std::cmp::Reverse(s.len()));
+    v
+}
 
 fn depot() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -54,17 +61,23 @@ fn ligne(o: &[u8], i: usize) -> usize {
 fn rien_de_la_compagnie_reelle_n_est_ecrit_dans_ce_qui_part() {
     let (mut nirs, mut noms) = (Vec::new(), Vec::new());
     let deposes = atelier::empreintes::lues(&depot()).unwrap_or_else(|m| panic!("les empreintes des textes déposés se lisent : {}", m.phrase));
+    let signature = signature();
     for rel in part() {
         let Ok(o) = std::fs::read(depot().join(&rel)) else { continue };
         if !depose_tel_quel(&deposes, &rel, &o) {
             nirs.extend(nirs_non_inventes(&o).into_iter().map(|(i, _)| format!("{}:{}", rel, ligne(&o, i))));
         }
-        if rel != SIGNATURE && DU_CODE.iter().any(|d| rel.starts_with(d)) {
+        if DU_CODE.iter().any(|d| rel.starts_with(d)) {
             if rel.to_lowercase().contains(NOM_REEL) {
                 noms.push(rel.clone());
             }
-            let position = o.to_ascii_lowercase().windows(NOM_REEL.len()).position(|w| w == NOM_REEL.as_bytes());
-            noms.extend(position.map(|i| format!("{}:{}", rel, ligne(&o, i))));
+            // La signature de l'editeur, blanchie a sa place (meme longueur : les lignes restent).
+            let mut bas = String::from_utf8_lossy(&o).to_lowercase();
+            for s in &signature {
+                bas = bas.replace(s.as_str(), &" ".repeat(s.len()));
+            }
+            let position = bas.find(NOM_REEL);
+            noms.extend(position.map(|i| format!("{}:{}", rel, ligne(bas.as_bytes(), i))));
         }
     }
     let mut echec = String::new();

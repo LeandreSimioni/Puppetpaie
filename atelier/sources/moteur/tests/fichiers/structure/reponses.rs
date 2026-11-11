@@ -560,11 +560,14 @@ impl Espace {
                 }
             }
         };
-        let chemin = reste.join("/");
+        // La racine d'une crate est son module `lib`.
+        let chemin = match reste.is_empty() {
+            true => "lib".to_string(),
+            false => reste.join("/"),
+        };
         (0..self.fichiers.len()).find(|&n| {
             let p = self.fichiers[n].to_string_lossy().replace('\\', "/");
-            crate_de(n) == racine
-                && (p.ends_with(&format!("/src/{}.rs", chemin)) || p.ends_with(&format!("/src/{}/mod.rs", chemin)) || (chemin.is_empty() && p.ends_with("/src/lib.rs")))
+            crate_de(n) == racine && (p.ends_with(&format!("/src/{}.rs", chemin)) || p.ends_with(&format!("/src/{}/mod.rs", chemin)))
         })
     }
 

@@ -52,6 +52,12 @@ fn sources(d: &Path) -> Vec<PathBuf> {
     v
 }
 
+/// Le module d'un source de l'espace, depuis son chemin relatif (`crate/src/a/b.rs` ou `crate/src/a/b/mod.rs` :
+/// `crate::a::b`), tel que le compilateur le nomme.
+pub(crate) fn module_de(rel: &str) -> String {
+    rel.trim_end_matches(".rs").trim_end_matches("/mod").replacen("/src/", "::", 1).replace('/', "::")
+}
+
 /// UNE EXPLICATION S'ECRIT SOUS `quoi`, `note` OU `source`, et sous aucune cle en `_` : aucun fichier JSON livre
 /// (`logiciel/donnees/`, a tous les niveaux) n'en porte une.
 #[test]
@@ -113,8 +119,9 @@ fn chaque_route_dit_brievement_ce_qu_elle_fait() {
 /// CE QUE L'ECRAN AFFICHE EST FAIT POUR L'ECRAN (`routes::affiche`) : le bouton de chaque route sous « Avancé » et le
 /// libelle de chaque champ, tels que le catalogue les rend a la page (`routes --avance`), et le libelle, l'aide et les
 /// choix de chaque case de `donnees/champs-base.json` : brefs, sans fichier, chemin ni terme de code ; un libelle ou un
-/// bouton commence par une capitale. Les phrases que rendent les routes passent la meme verification
-/// (`l_exemple_de_chaque_fiche_est_accepte`). Le sens long, qui peut nommer un fichier, est celui du LLM (`sens`, `geste`).
+/// bouton commence par une capitale ; chaque case, que la page la montre ou non, et chaque refus des sources du logiciel.
+/// Les phrases que rendent les routes passent la meme verification (`l_exemple_de_chaque_fiche_est_accepte`). Le sens
+/// long d'une fiche de route (`sens`, `geste`) peut nommer un fichier.
 #[test]
 fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
     use routes::affiche::{defaut, COURT};
@@ -151,9 +158,8 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
     let base: Value = serde_json::from_str(&std::fs::read_to_string(espace().join("../../logiciel/donnees/champs-base.json")).unwrap()).unwrap();
     let mut toutes = Vec::new();
     cases(&base, "", &mut toutes);
-    // Une case que l'ecran ne montre pas (`ecran: false`, et ce qu'elle porte) est pour le LLM.
-    let cachees: Vec<String> = toutes.iter().filter(|(_, c)| c["ecran"] == json!(false)).map(|(ou, _)| ou.clone()).collect();
-    for (ou, c) in toutes.iter().filter(|(ou, _)| !cachees.iter().any(|x| ou == x || ou.starts_with(&format!("{}.", x)))) {
+    // Chaque case, que la page la montre ou non : la ligne de commande la lit de meme (« un seul logiciel »).
+    for (ou, c) in &toutes {
         voir(format!("champs-base.json {} : libelle", ou), c["libelle"].as_str().unwrap_or(""), CASE, true);
         if let Some(a) = c["aide"].as_str().filter(|a| !a.is_empty()) {
             voir(format!("champs-base.json {} : aide", ou), a, AIDE, false);
@@ -168,12 +174,10 @@ fn ce_que_l_ecran_affiche_est_fait_pour_l_ecran() {
         }
     }
     let mut chemins = Vec::new();
-    // LES PHRASES DE REFUS que les sources construisent : la page les affiche, le LLM les lit (`refus_rs`). Les refus des
-    // outils de l'atelier (la crate `atelier`, hors de cette liste), du scenario du banc (la forme d'un fichier de
-    // scenario) et de la publication (le journal du workflow « Publier ») vont au developpeur.
+    // LES PHRASES DE REFUS que les sources du logiciel construisent, toutes : la page et la ligne de commande les
+    // affichent (`refus_rs`). Les outils de l'atelier (la crate `atelier`) ne sont pas le logiciel.
     for crate_ in LE_LOGICIEL {
-        let (scenario, publication) = (espace().join("routes/src/scenario.rs"), espace().join("moteur/src/publication"));
-        for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| *p != scenario && !p.starts_with(&publication)) {
+        for p in sources(&espace().join(crate_).join("src")) {
             let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
             for (ligne, phrase, chemin) in refus_rs(&std::fs::read_to_string(&p).unwrap()) {
                 if chemin {
@@ -650,9 +654,9 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
     // LE GESTE QU'OFFRE UNE ETAPE OU UN RAPPEL EST UNE ROUTE (`routes::etapes::action(Route, charge, puis, libelle)` : la
     // route qu'il ouvre, celle de l'acte qui suit, que le compilateur garde) : l'ecran ouvre sa boite d'apres elle, le LLM
     // l'appelle.
-    for f in ["etapes.rs", "rappels.rs"] {
-        let source = lu(&format!("atelier/sources/routes/src/{}", f));
-        assert!(!source.contains("\"geste\":"), "routes/{} nomme un geste hors du catalogue : un geste est `action(route, charge, puis, libelle)`", f);
+    for p in sources(&espace().join("routes/src")) {
+        let code = blanchi(&std::fs::read_to_string(&p).unwrap(), false);
+        assert!(!code.contains("\"geste\":"), "{} nomme un geste hors du catalogue : un geste est `action(route, charge, puis, libelle)`", p.display());
     }
     let html = (lu("logiciel/interface/index.html") + &lu("atelier/sources/moteur/src/interface/pages/accueil.html")).replace("&amp;", "&");
     for p in PLACES {
@@ -687,9 +691,12 @@ fn la_page_et_la_ligne_de_commande_ont_le_meme_catalogue() {
             Ecran::Auto(p, _) => {
                 assert!(f.charge.iter().all(|c| c.forme != routes::catalogue::Forme::Objet), "{} s'affiche sous « Avancé » : aucun champ de sa charge n'est un objet, que la page ne saisit pas d'une case", f.nom());
                 let porte = format!("data-auto=\"{}\"", p.nom());
-                let configuration = p.nom().starts_with("Configuration › ") && html.contains("id=\"config-avance\"");
+                // Un sous-onglet (`data-fiche`) de cette place : son « Avancé » est celui des sous-onglets, qui prend la
+                // place de l'onglet ouvert (`config-avance`, `js/configuration.js`).
+                let sous_onglet = regex::Regex::new(&format!(r#"data-fiche="[^"]*"[^>]*data-place="{}""#, regex::escape(p.nom()))).unwrap();
+                let par_l_onglet = sous_onglet.is_match(&html) && html.contains("id=\"config-avance\"");
                 assert!(
-                    configuration || html.contains(&porte) || fichiers_de(p).iter().any(|x| lu(x).contains(&porte)),
+                    par_l_onglet || html.contains(&porte) || fichiers_de(p).iter().any(|x| lu(x).contains(&porte)),
                     "{} : sa place ({}) n'a pas son « Avancé » (data-auto) : appelle js/avance.js là où la page l'ouvre", f.nom(), p.nom()
                 );
             }
@@ -783,7 +790,12 @@ fn code_seul(t: &str) -> String {
 
 /// Un source Rust sans ses parties de test, ses commentaires blanchis (et ses textes vides, si `textes`), a ses lignes.
 fn blanchi(t: &str, textes: bool) -> String {
-    let mut c: Vec<char> = sans_tests(t).chars().collect();
+    blanchi_entier(&sans_tests(t), textes)
+}
+
+/// Un source Rust entier, ses parties de test comprises, ses commentaires blanchis (et ses textes vides, si `textes`).
+fn blanchi_entier(t: &str, textes: bool) -> String {
+    let mut c: Vec<char> = t.chars().collect();
     for (_, debut, fin, commentaire, _) in jetons_rs(&c.iter().collect::<String>()) {
         if !commentaire && !textes {
             continue;
@@ -966,9 +978,8 @@ fn un_refus_n_est_jamais_un_texte() {
 fn une_nature_de_contrat_est_une_enum() {
     use droit::natures::NatureDeContrat;
     let champ = regex::Regex::new(r"\bnature\s*:\s*(?:Option\s*<\s*)?String\b(?:[^:]|$)").unwrap();
-    let declaration = espace().join("droit/src/natures.rs");
     let mut fautes = Vec::new();
-    let mut vues = vec![0; NatureDeContrat::TOUTES.len()];
+    let mut vues: Vec<Vec<String>> = vec![Vec::new(); NatureDeContrat::TOUTES.len()];
     for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
         let rel = p.strip_prefix(espace()).unwrap().display().to_string();
         let texte = std::fs::read_to_string(&p).unwrap();
@@ -979,15 +990,13 @@ fn une_nature_de_contrat_est_une_enum() {
         }
         for (ligne, _, _, commentaire, t) in jetons_rs(&sans_tests(&texte)) {
             let Some(i) = NatureDeContrat::TOUTES.iter().position(|n| !commentaire && n.cle() == t) else { continue };
-            vues[i] += 1;
-            if p != declaration {
-                fautes.push(format!("{}:{} : la cle {:?} en texte", rel, ligne, t));
-            }
+            vues[i].push(format!("{}:{}", rel, ligne));
         }
     }
+    // Chaque cle s'ecrit une fois en tout : la ou elle est declaree (`NatureDeContrat::cle`), et nulle part ailleurs.
     for (n, vu) in NatureDeContrat::TOUTES.iter().zip(&vues) {
-        if *vu != 1 {
-            fautes.push(format!("la cle {:?} s'ecrit {} fois dans droit/src/natures.rs : une seule, `NatureDeContrat::cle`", n.cle(), vu));
+        if vu.len() != 1 {
+            fautes.push(format!("la cle {:?} s'ecrit {} fois en texte ({}) : une seule, `NatureDeContrat::cle`", n.cle(), vu.len(), vu.join(", ")));
         }
     }
     assert!(fautes.is_empty(), "une nature de contrat est une `NatureDeContrat`, sa cle ne s'ecrit qu'une fois :\n{}", fautes.join("\n"));
@@ -1222,6 +1231,93 @@ fn aucun_attribut_ne_leve_un_lint() {
     assert!(fautes.is_empty(), "aucun attribut ne leve un lint : le code se corrige ({} écarts) :\n{}", fautes.len(), fautes.join("\n"));
 }
 
+/// LE VERROU DES VERROUS : un verrou vise un comportement ou un type, partout ; il n'ecarte aucun fichier. Aucun `.rs` du
+/// depot (les verrous et le garde avant commit compris, celui-ci aussi) n'a
+/// 1. de liste de fichiers : un tableau (`[…]`) dont un element est un texte qui nomme un source (`….rs`, un dossier
+///    sous `…/src/`) ;
+/// 2. de filtre par nom de fichier : un tel texte compare (`==`, `!=`, `assert_eq!`, `assert_ne!`) ou cherche dans un
+///    chemin (`ends_with`, `starts_with`, `contains`, `strip_prefix`, `strip_suffix`), ou un chemin fait d'un tel texte
+///    (`let x = ….join("….rs")`, `const X: &str = "….rs"`) puis compare ou cherche de meme ;
+/// 3. de marque en commentaire qu'un verrou chercherait (`contains("// …")`) : une exemption ecrite a cote du code.
+/// Ce qu'il attrape se corrige dans le verrou, qui regarde tout, et dans le code qu'il attrape alors. Il n'a lui-meme ni
+/// liste ni exemption.
+#[test]
+fn un_verrou_n_a_ni_liste_ni_filtre() {
+    // Un texte qui nomme un source : un fichier `….rs`, ou un chemin sous un `src/`.
+    let source = |s: &str| {
+        let morceaux: Vec<&str> = s.split('/').collect();
+        let sous_src = morceaux.iter().position(|m| *m == "src").is_some_and(|i| i > 0 && !morceaux[i + 1..].iter().any(|m| m.contains('.')));
+        (s.len() > 3 && s.ends_with(".rs")) || sous_src
+    };
+    let cherche = ["ends_with(", "starts_with(", "contains(", "strip_prefix(", "strip_suffix("];
+    let compare = regex::Regex::new(r"(?:assert_eq|assert_ne)!\(\s*[^,()]*,\s*$").unwrap();
+    let liaison = regex::Regex::new(r"(?:\blet\s+(?:mut\s+)?|\bconst\s+|\bstatic\s+)(\([^)]*\)|\w+)[^=;]*=[^;]*$").unwrap();
+    let mut fichiers = Vec::new();
+    sources_hors_cibles(&espace(), &mut fichiers);
+    fichiers.sort();
+    let mut fautes = Vec::new();
+    for p in fichiers {
+        let rel = p.strip_prefix(espace()).unwrap().display().to_string();
+        let t = std::fs::read_to_string(&p).unwrap();
+        let code = code_sans_textes(&t);
+        let mut lies: Vec<String> = Vec::new();
+        for (ligne, debut, fin, s) in litteraux_rs_places(&t) {
+            let avant: String = code[debut.saturating_sub(400)..debut].iter().collect::<String>();
+            let avant = avant.trim_end();
+            let apres: String = code[fin.min(code.len())..].iter().take(80).collect::<String>();
+            let apres = apres.trim_start();
+            if s.trim_start().starts_with("//") && avant.ends_with("contains(") {
+                fautes.push(format!("{}:{} : `contains(\"{}\")`, une marque en commentaire", rel, ligne, s));
+            }
+            if !source(&s) {
+                continue;
+            }
+            // Les ouvrants qui l'enferment, du plus proche : un `[` avant tout appel fait une liste (un n-uplet `(…)` s'y
+            // traverse, l'appel `f(…)` ou le bloc `{…}` arretent).
+            let mut profondeur = 0i64;
+            let mut en_liste = false;
+            let lu: Vec<char> = avant.chars().collect();
+            for (i, ch) in lu.iter().enumerate().rev() {
+                match ch {
+                    ')' | ']' | '}' => profondeur += 1,
+                    '(' | '[' | '{' if profondeur > 0 => profondeur -= 1,
+                    '[' => {
+                        // `#[…]` et `#![…]` sont des attributs (`#[path = "…"]`), `vec![…]` une liste.
+                        let devant: String = lu[..i].iter().rev().filter(|x| !x.is_whitespace()).take(2).collect();
+                        en_liste = !(devant.starts_with('#') || devant == "!#");
+                        break;
+                    }
+                    '(' if !lu[..i].iter().rev().find(|x| !x.is_whitespace()).is_some_and(|x| x.is_alphanumeric() || matches!(x, '_' | '!' | '>')) => {}
+                    '(' | '{' => break,
+                    _ => {}
+                }
+            }
+            if en_liste {
+                fautes.push(format!("{}:{} : « {} », une liste de fichiers", rel, ligne, s));
+            }
+            let compare_ici = avant.ends_with("==") || avant.ends_with("!=") || apres.starts_with("==") || apres.starts_with("!=") || compare.is_match(avant);
+            if compare_ici || cherche.iter().any(|c| avant.ends_with(c) || avant.ends_with(&format!("{}&", c))) {
+                fautes.push(format!("{}:{} : « {} », un filtre par nom de fichier", rel, ligne, s));
+            }
+            // Le chemin fait de ce texte : les noms que la ligne lie.
+            let debut_de_ligne = avant.rfind(['\n', ';', '{']).map(|i| i + 1).unwrap_or(0);
+            if let Some(c) = liaison.captures(&avant[debut_de_ligne..]) {
+                lies.extend(c[1].split(|x: char| !(x.is_alphanumeric() || x == '_')).filter(|x| !x.is_empty() && *x != "mut").map(str::to_string));
+            }
+        }
+        let code: String = code.into_iter().collect();
+        for nom in lies {
+            let e = regex::escape(&nom);
+            let usage = regex::Regex::new(&format!(r"(?:==|!=)\s*&?\*?{e}\b|\b{e}\s*(?:==|!=)|(?:ends_with|starts_with|strip_prefix|strip_suffix|contains)\(\s*&?{e}\b|(?:assert_eq|assert_ne)!\(\s*[^,()]*,\s*&?{e}\b")).unwrap();
+            if let Some(m) = usage.find(&code) {
+                let n = code[..m.start()].matches('\n').count() + 1;
+                fautes.push(format!("{}:{} : `{}`, un filtre par nom de fichier (`{}` nomme un source)", rel, n, m.as_str(), nom));
+            }
+        }
+    }
+    assert!(fautes.is_empty(), "un verrou n'a ni liste ni filtre : il regarde tout, et ce qu'il attrape se corrige ({} écarts) :\n{}", fautes.len(), fautes.join("\n"));
+}
+
 /// Les fichiers `.rs` sous `d`, hors des cibles de compilation (`target`).
 fn sources_hors_cibles(d: &Path, sortie: &mut Vec<PathBuf>) {
     for e in std::fs::read_dir(d).unwrap().flatten() {
@@ -1239,7 +1335,7 @@ fn sources_hors_cibles(d: &Path, sortie: &mut Vec<PathBuf>) {
 /// Un source Rust dont les commentaires (de ligne et de bloc, imbriques), les textes (`"…"`, `b"…"`, `r#"…"#`,
 /// `br"…"`) et les caracteres (`'…'`, `b'…'`, `'\u{…}'`) sont blanchis, ses sauts de ligne gardes : ce qui reste est
 /// le code que le compilateur lit.
-fn code_sans_textes(t: &str) -> Vec<char> {
+pub(crate) fn code_sans_textes(t: &str) -> Vec<char> {
     let mut c: Vec<char> = t.chars().collect();
     let n = c.len();
     let ident = |x: char| x.is_alphanumeric() || x == '_';
@@ -1323,9 +1419,9 @@ fn code_sans_textes(t: &str) -> Vec<char> {
 
 /// UNE VALEUR D'UNE FICHE (entreprise, salarie, spectacle) SE DATE A UN SEUL ENDROIT : `routes::fiches::ecrire_datee`, que
 /// l'ecran, les gestes d'une case et l'import appellent, et qui la date par la forme de la fiche
-/// (`droit::fiche::FicheDatee::changer`, et dessous `droit::fiche::dater`, la seule fonction qui date). Ailleurs dans le
-/// moteur, `droit::fiche::dater` ne date que le fichier des organismes ; une fiche neuve (`FicheDatee::neuve`) n'a rien a
-/// dater.
+/// (`droit::fiche::FicheDatee::changer`, et dessous `droit::fiche::dater`, la seule fonction qui date) : dans tout le
+/// code au-dessus du droit, un seul appel de `FicheDatee::changer`, le sien. Une fiche neuve (`FicheDatee::neuve`) n'a
+/// rien a dater.
 #[test]
 fn une_seule_fonction_date_une_valeur_de_fiche() {
     let fiches = espace().join("routes/src/fiches/ecriture.rs");
@@ -1333,15 +1429,16 @@ fn une_seule_fonction_date_une_valeur_de_fiche() {
     let debut = texte.find("pub(crate) fn ecrire_datee<").unwrap();
     let fin = debut + texte[debut..].find("\n}\n").unwrap();
     assert_eq!(texte[..debut].matches("FicheDatee::changer(").count() + texte[fin..].matches("FicheDatee::changer(").count(), 0, "seul `ecrire_datee` date une case d'une fiche");
-    assert_eq!(texte.matches("FicheDatee::changer(").count(), 1, "`ecrire_datee` date ses cases en un seul endroit");
-    for p in ["compagnie", "import", "routes", "moteur", "atelier"].into_iter().flat_map(|c| sources(&espace().join(c).join("src"))).filter(|p| *p != fiches) {
-        let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
-        let t = std::fs::read_to_string(&p).unwrap();
-        assert!(!t.contains("FicheDatee::changer("), "{} date une valeur de fiche : il passe par `fiches::ecrire_datee`", rel);
-        if t.contains("fiche::dater(") {
-            assert_eq!(rel, "compagnie/src/organismes.rs", "{} date une valeur de fiche : il passe par `fiches::ecrire_datee`", rel);
-        }
-    }
+    // Dans tout le code qui prend a la fiche, ce seul appel : `ecrire_datee`.
+    let appels: Vec<String> = ORDRE[1..]
+        .iter()
+        .flat_map(|c| sources(&espace().join(c).join("src")))
+        .flat_map(|p| {
+            let n = code_seul(&std::fs::read_to_string(&p).unwrap()).matches("FicheDatee::changer(").count();
+            std::iter::repeat_n(p.strip_prefix(espace()).unwrap().display().to_string(), n)
+        })
+        .collect();
+    assert_eq!(appels.len(), 1, "une valeur de fiche se date par `fiches::ecrire_datee`, et lui seul appelle `FicheDatee::changer` : {:?}", appels);
 }
 
 /// UNE CASE D'UNE PIECE NE SE LIT PAS PAR SON NOM (`droit::fiche::Piece`) : le calcul ne la lit que dans sa piece
@@ -1354,10 +1451,14 @@ fn une_case_d_une_piece_ne_se_lit_pas_par_son_nom() {
     let mut rangees: Vec<String> = ChampsEntreprise::cases().iter().filter(|d| ChampsEntreprise::piece_de(d.cle).is_some()).map(|d| d.cle.to_string()).collect();
     rangees.extend(ChampsSalarie::cases().iter().filter(|d| ChampsSalarie::piece_de(d.cle).is_some()).map(|d| d.cle.to_string()));
     assert!(!rangees.is_empty(), "aucune case n'est rangee dans une piece");
-    let porte = espace().join("declarations/src/champs.rs");
+    // La porte : le module de la `Saisie`, tel que le compilateur le nomme.
+    let porte = std::any::type_name::<declarations::champs::Saisie>().rsplit_once("::").unwrap().0.to_string();
     let mut fautes = Vec::new();
-    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))).filter(|p| *p != porte) {
-        let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
+    for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
+        let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().replace('\\', "/");
+        if module_de(&rel) == porte {
+            continue;
+        }
         let t = std::fs::read_to_string(&p).unwrap();
         for c in &rangees {
             let lue = regex::Regex::new(&format!(r"\.(?:case|dite|mot|texte)\([^()]*::{}\)", c)).unwrap();
@@ -1380,23 +1481,34 @@ fn une_rubrique_d_un_salarie_au_mois_ne_se_compose_que_par_sa_cle() {
     let base: Value = serde_json::from_str(&std::fs::read_to_string(espace().join("../../logiciel/donnees/rubriques-base.json")).unwrap()).unwrap();
     let codes: Vec<String> = base["au_mois"].as_object().unwrap().keys().cloned().collect();
     assert!(!codes.is_empty(), "rubriques-base.json n'a pas de section au_mois");
-    let enumeration = espace().join("droit/src/catalogue.rs");
-    let composition = espace().join("engagement/src/ligne.rs");
+    // L'enum et la ligne qui la compose, telles que le compilateur les nomme : leurs modules.
+    let module = |nom: &str| nom.rsplit_once("::").unwrap().0.to_string();
+    let enumeration = module(std::any::type_name::<droit::catalogue::RubriqueDuMois>());
+    let composition = module(std::any::type_name::<engagement::LignePaie>());
     let mut fautes = Vec::new();
+    let mut ecrits: Vec<Vec<String>> = vec![Vec::new(); codes.len()];
     for p in LE_LOGICIEL.iter().flat_map(|c| sources(&espace().join(c).join("src"))) {
-        let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
-        let tout = std::fs::read_to_string(&p).unwrap();
-        // Les tests d'un fichier lisent ce qu'ils veulent.
-        let t = tout.split("#[cfg(test)]").next().unwrap_or("");
-        if p != enumeration {
-            fautes.extend(codes.iter().filter(|c| t.contains(&format!("\"{}\"", c))).map(|c| format!("{} ecrit le code {}", rel, c)));
+        let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().replace('\\', "/");
+        // Les tests d'un fichier lisent ce qu'ils veulent ; le code, ses textes compris.
+        let t = blanchi(&std::fs::read_to_string(&p).unwrap(), false);
+        for (i, c) in codes.iter().enumerate() {
+            if t.contains(&format!("\"{}\"", c)) {
+                ecrits[i].push(rel.clone());
+            }
         }
-        if p != enumeration && p != composition {
-            for v in ["IndemniteCongesPayes", "IjssNettes"] {
-                if t.contains(&format!("{}.code()", v)) {
-                    fautes.push(format!("{} prend le code de {} hors de la ligne qui la compose", rel, v));
+        let ici = module_de(&rel);
+        if ici != enumeration && ici != composition {
+            for v in droit::catalogue::RubriqueDuMois::TOUTES {
+                if t.contains(&format!("{:?}.code()", v)) {
+                    fautes.push(format!("{} prend le code de {:?} hors de la ligne qui la compose", rel, v));
                 }
             }
+        }
+    }
+    // Chaque code s'ecrit en texte a un seul endroit : son enum.
+    for (c, ou) in codes.iter().zip(&ecrits) {
+        if ou.len() != 1 {
+            fautes.push(format!("le code {} s'ecrit en texte dans {} fichiers ({:?}) : un seul, son enum", c, ou.len(), ou));
         }
     }
     assert!(fautes.is_empty(), "une rubrique d'un salarie au mois se compose par sa cle (`LignePaie::du_mois`) :\n{}", fautes.join("\n"));
@@ -1988,35 +2100,29 @@ fn textes_html(t: &str) -> Vec<String> {
     v
 }
 
-/// UN SEUL ENDROIT ECRIT UN MONTANT TEL QU'ON LE LIT : `socle::texte::euros` (« 1 234,50 € »), et une quantite par
-/// `socle::texte::virgule`. Hors de `socle/src/texte.rs`, aucun litteral des sources ne met « € » ou « EUR » derriere
-/// une valeur qu'il compose (`{}`, `{:.2}`…), ni ne commence par un blanc suivi de « € » (le suffixe qu'on colle a un
-/// nombre) : c'est le signe d'une fonction qui refait la mise en forme. Un fichier dont une norme impose la forme d'un
-/// montant (un format d'organisme, l'imprime d'un autre logiciel) l'ecrit sans « € », ou porte, sur la ligne du
-/// litteral, la marque `// forme imposée :` suivie de la norme.
+/// UN SEUL ENDROIT DU LOGICIEL ECRIT UN MONTANT TEL QU'ON LE LIT (« 1 234,50 € », `socle::texte::euros`) : dans les
+/// sources du logiciel (les crates livrees, `LE_LOGICIEL`), un seul litteral met « € » ou « EUR » derriere une valeur
+/// qu'il compose (`{}`, `{:.2}`…) ou commence par un blanc suivi de « € » (le suffixe qu'on colle a un nombre). Un
+/// second est une fonction qui refait la mise en forme. Le verrou ne nomme pas l'endroit : il en compte un. L'atelier,
+/// qui imite l'imprime d'autres logiciels, n'est pas le logiciel.
 #[test]
 fn un_seul_endroit_ecrit_un_montant() {
-    let maison = espace().join("socle/src/texte.rs");
-    let mut fautes = Vec::new();
-    for crate_ in ORDRE {
-        for p in sources(&espace().join(crate_).join("src")).into_iter().filter(|p| *p != maison) {
+    let mut endroits = Vec::new();
+    for crate_ in LE_LOGICIEL {
+        for p in sources(&espace().join(crate_).join("src")) {
             let t = std::fs::read_to_string(&p).unwrap();
-            let lignes: Vec<&str> = t.lines().collect();
             for (ligne, l) in litteraux_rs(&t) {
-                if lignes.get(ligne - 1).is_some_and(|x| x.contains("// forme imposée :")) {
-                    continue;
-                }
                 if met_des_euros(&l) {
                     let rel = p.strip_prefix(espace()).unwrap().to_string_lossy().into_owned();
-                    fautes.push(format!("{}:{} : « {} »", rel, ligne, l));
+                    endroits.push(format!("{}:{} : « {} »", rel, ligne, l));
                 }
             }
         }
     }
     assert!(
-        fautes.is_empty(),
-        "{} litteral(aux) mettent un montant en forme : un montant s'ecrit par `socle::texte::euros` (ou `euros_de` pour une valeur), une quantite par `socle::texte::virgule` ; un format impose par une norme porte `// forme imposée : <la norme>` sur sa ligne :\n{}",
-        fautes.len(), fautes.join("\n")
+        endroits.len() == 1,
+        "{} litteral(aux) du logiciel mettent un montant en forme, un seul le fait : un montant s'ecrit par `socle::texte::euros` (ou `euros_de` pour une valeur), une quantite par `socle::texte::virgule` :\n{}",
+        endroits.len(), endroits.join("\n")
     );
 }
 
@@ -2045,7 +2151,7 @@ fn met_des_euros(l: &str) -> bool {
 
 /// Les litteraux de chaine d'un source Rust (hors commentaires), avec la ligne ou chacun commence ; une fin de ligne
 /// echappee (`\` puis le blanc qui suit) est retiree, comme le fait le compilateur.
-fn litteraux_rs(t: &str) -> Vec<(usize, String)> {
+pub(crate) fn litteraux_rs(t: &str) -> Vec<(usize, String)> {
     jetons_rs(t).into_iter().filter(|j| !j.3).map(|(l, _, _, _, s)| (l, s)).collect()
 }
 

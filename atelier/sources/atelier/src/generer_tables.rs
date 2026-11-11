@@ -37,8 +37,11 @@ pub const CP1252: &str = "unicode/unicode-mappings-microsoft-cp1252-20261015.txt
 pub const XML_4E: &str = "w3c/w3c-xml-1.0-quatrieme-edition-20060816.html";
 pub const CODECS: &str = "python/python-releve-codecs-pyexpat-3.11.17-20261015.txt";
 
-/// Les quatre fichiers ecrits, dans l'ordre.
-pub const FICHIERS: [&str; 4] = ["socle/src/tables_nfkc.rs", "socle/src/nfkd_ascii.rs", "envois/src/tables_retours.rs", "envois/src/tables_journal.rs"];
+/// Les quatre fichiers ecrits.
+const TABLES_NFKC: &str = "socle/src/tables_nfkc.rs";
+const NFKD_ASCII: &str = "socle/src/nfkd_ascii.rs";
+const TABLES_RETOURS: &str = "envois/src/tables_retours.rs";
+const TABLES_JOURNAL: &str = "envois/src/tables_journal.rs";
 
 const FIN: u32 = 0x110000;
 
@@ -465,10 +468,10 @@ fn tables_journal(u: &Ucd) -> R<String> {
     Ok(s)
 }
 
-/// Les quatre fichiers (`FICHIERS`, dans l'ordre) et leur contenu, depuis les textes de `sources`.
+/// Les quatre fichiers et leur contenu, depuis les textes de `sources`.
 pub fn generer(sources: &Path) -> R<Vec<(&'static str, String)>> {
     let u = Ucd::lire(sources)?;
-    Ok(vec![(FICHIERS[0], tables_nfkc(&u)?), (FICHIERS[1], nfkd_ascii(&u)?), (FICHIERS[2], tables_retours(sources, &u)?), (FICHIERS[3], tables_journal(&u)?)])
+    Ok(vec![(TABLES_NFKC, tables_nfkc(&u)?), (NFKD_ASCII, nfkd_ascii(&u)?), (TABLES_RETOURS, tables_retours(sources, &u)?), (TABLES_JOURNAL, tables_journal(&u)?)])
 }
 
 /// `moteur-atelier generer-tables SOURCES SRC`.

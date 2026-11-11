@@ -26,6 +26,17 @@ use std::net::IpAddr;
 /// un mandataire local (`http://127.0.0.1:<port>`), seule porte alors permise.
 pub const VARIABLE: &str = "PUPPETPAIE_ESSAIS_HORS_RESEAU";
 
+/// UNE CONNEXION VERS LA MACHINE ELLE-MEME (127.0.0.1, le port `port`), en essai comme hors essai : elle ne sort pas, le
+/// garde-fou n'a rien a en refuser. Le type de l'adresse le tient : aucune autre machine ne se nomme ici. `delai` borne
+/// l'attente de la connexion.
+pub fn vers_cette_machine(port: u16, delai: Option<std::time::Duration>) -> std::io::Result<std::net::TcpStream> {
+    let adresse = std::net::SocketAddr::from((std::net::Ipv4Addr::LOCALHOST, port));
+    match delai {
+        Some(d) => std::net::TcpStream::connect_timeout(&adresse, d),
+        None => std::net::TcpStream::connect(adresse),
+    }
+}
+
 /// Ce que le garde-fou dit d'une sortie.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Sortie {

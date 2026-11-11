@@ -300,9 +300,9 @@ pub fn page_a<S: AsRef<str>>(a: &A<S>) -> Vec<Bloc> {
     if a.mode {
         t(b_, m("255.2"), y + m("14"), "mode de règlement : Virement");
     }
-    grand(b_, m("469.5"), y + m("32"), &format!("{} €", s(&a.net_a_payer)), m("14")); // forme imposée : l'imprimé du logiciel imité
+    grand(b_, m("469.5"), y + m("32"), &format!("{} €", s(&a.net_a_payer)), m("14"));
     t(b_, m("439.7"), y + m("51"), "Total versé par l'employeur");
-    grand(b_, m("478.9"), y + m("72"), &format!("{} €", s(&a.total_verse)), m("11")); // forme imposée : l'imprimé du logiciel imité
+    grand(b_, m("478.9"), y + m("72"), &format!("{} €", s(&a.total_verse)), m("11"));
     grand(b_, m("31"), m("810"), "coolpaie 4.0.0.8.312", m("7"));
     b
 }
@@ -492,16 +492,16 @@ pub fn page_b<S: AsRef<str>>(p: &B<S>) -> Vec<Bloc> {
             r(b_, m("220"), y, s(cumul));
         }
     }
-    grand(b_, m("493.3"), m("765"), &format!("{} €", s(&p.net_paye)), m("14")); // forme imposée : l'imprimé du logiciel imité
+    grand(b_, m("493.3"), m("765"), &format!("{} €", s(&p.net_paye)), m("14"));
     t(b_, m("445"), m("787"), "Total versé par");
     t(b_, m("450.2"), m("795"), "l'employeur");
     if p.allegement {
         t(b_, m("510"), m("787"), "Allègement de");
         t(b_, m("506"), m("795"), "cotisations empl.");
-        grand(b_, m("460"), m("812"), &format!("{} €", s(&p.total_verse)), m("11")); // forme imposée : l'imprimé du logiciel imité
+        grand(b_, m("460"), m("812"), &format!("{} €", s(&p.total_verse)), m("11"));
         grand(b_, m("532"), m("812"), "0,00 €", m("11"));
     } else {
-        grand(b_, m("524.7"), m("792"), &format!("{} €", s(&p.total_verse)), m("11")); // forme imposée : l'imprimé du logiciel imité
+        grand(b_, m("524.7"), m("792"), &format!("{} €", s(&p.total_verse)), m("11"));
     }
     grand(b_, m("504.7"), m("828"), "GHS - sPAIEctacle ©", m("6.5"));
     b
