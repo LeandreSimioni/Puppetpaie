@@ -771,11 +771,18 @@ fn l_atelier_reste_hors_du_logiciel() {
 /// LES COUCHES FERMEES, de bas en haut (l'ordre de `une_crate_ne_prend_qu_a_celles_du_dessous`) : toutes.
 const COUCHES_FERMEES: [&str; 11] = ORDRE;
 
-/// LES PORTES : les couches qui ont la bibliotheque du JSON. Le socle lit et ecrit les fichiers ; les routes recoivent
-/// la charge d'une route et rendent sa reponse. Le moteur ne l'a que pour ses essais (`moteur/tests/`, qui lisent une
-/// reponse telle que la page la recoit), l'atelier aussi (`atelier/tests/`, qui lisent les referentiels livres) : ils
-/// n'ont aucun module du bord, leur code n'en touche donc pas. Hors de leur bord, leur JSON brut se lit au texte.
-const PORTES: [&str; 4] = ["socle", "routes", "moteur", "atelier"];
+/// LES PORTES : les couches qui ont la bibliotheque du JSON, telles que leur `Cargo.toml` le dit (ses dependances, ou
+/// celles de ses essais). Le socle lit et ecrit les fichiers ; les routes recoivent la charge d'une route et rendent sa
+/// reponse : elles la prennent pour leur code, et chacune a un module du bord. Le moteur ne l'a que pour ses essais
+/// (`moteur/tests/`, qui lisent une reponse telle que la page la recoit), l'atelier aussi (`atelier/tests/`, qui lisent
+/// les referentiels livres) : ils n'ont aucun module du bord, leur code n'en touche donc pas. Hors de leur bord, leur JSON
+/// brut se lit au texte.
+fn a_le_json(couche: &str) -> (bool, bool) {
+    let cargo = std::fs::read_to_string(espace().join(couche).join("Cargo.toml")).unwrap();
+    // Les sections du manifeste, chacune son titre (`[dependencies]`) et ses lignes.
+    let pour_le_code = cargo.split("\n[").any(|s| s.starts_with("dependencies]") && s.lines().any(|l| l.trim_start().starts_with("serde_json")));
+    (cargo.lines().any(|l| l.trim_start().starts_with("serde_json")), pour_le_code)
+}
 
 /// LE BORD : les seuls modules ou le JSON brut se touche, parce qu'ils sont la porte d'entree et de sortie des formes.
 /// `forme` lit (une donnee, un texte, un fichier, en sa structure `serde`) ; `ecriture` et `json_ascii` ecrivent une forme ;
@@ -814,7 +821,7 @@ fn blanchi_entier(t: &str, textes: bool) -> String {
 /// UNE COUCHE FERMEE NE LIT QUE DES FORMES, ENTIERES (atelier/AGENTS.md, « Chaque forme est declaree une fois, en
 /// Rust ») : aucune de ses sources (tests a part, commentaires blanchis) n'a
 /// 1. de JSON brut : la couche (code et tests) n'a pas `serde_json` dans son `Cargo.toml`, le compilateur refuse qu'elle
-///    en touche ; les portes (`PORTES`), qui l'ont, n'en touchent que dans le bord (`BORD`) : ailleurs, ni `json!`, ni
+///    en touche ; les portes (`a_le_json`), qui l'ont, n'en touchent que dans le bord (`BORD`) : ailleurs, ni `json!`, ni
 ///    `serde_json::`, ni `Map<`, ni lecture par cle (`.get("…")`, `x["…"]`) ;
 /// 2. de cle libre : aucune cle en `_` nommee par une forme (`rename = "_…"`, `alias = "_…"`) ni, dans le bord, par un
 ///    texte (`"_cle"`, `"_{}"`) ; hors du bord, ou aucun JSON ne se touche, un tel texte est un nom de fichier ; aucun
@@ -844,10 +851,16 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     // l'a pas, ni pour son code ni pour ses tests : le compilateur refuse qu'elle en touche.
     let json = regex::Regex::new(r#"\bjson!|\bserde_json::|\bMap\s*<|\.get\("|[A-Za-z0-9_)\]]\s*\[""#).unwrap();
     let mut fautes = Vec::new();
-    for couche in COUCHES_FERMEES.iter().filter(|c| !PORTES.contains(c)) {
-        let cargo = std::fs::read_to_string(espace().join(couche).join("Cargo.toml")).unwrap();
-        if cargo.contains("serde_json") {
-            fautes.push(format!("{}/Cargo.toml prend serde_json : une couche fermée ne lit que des formes, par `socle::forme` (ses tests aussi : un texte lu par la porte)", couche));
+    // Une couche ne prend la bibliotheque du JSON pour son code que si elle a un module du bord ; pour ses seuls essais,
+    // que si elle a un binaire (`[[bin]]`), dont ses essais lisent ce qu'il rend : son code n'en touche pas, le
+    // compilateur le refuse.
+    for couche in COUCHES_FERMEES {
+        let sien = BORD.iter().any(|b| b.split("::").next() == Some(couche));
+        let binaire = std::fs::read_to_string(espace().join(couche).join("Cargo.toml")).unwrap().contains("\n[[bin]]");
+        match a_le_json(couche) {
+            (_, true) if !sien => fautes.push(format!("{}/Cargo.toml prend serde_json pour son code sans avoir de module du bord : une couche fermée ne lit que des formes, par `socle::forme`", couche)),
+            (true, false) if !binaire => fautes.push(format!("{}/Cargo.toml prend serde_json pour ses essais sans avoir de binaire : ses tests lisent un texte par la porte", couche)),
+            (true, _) | (false, _) => {}
         }
     }
     let repli = regex::Regex::new(r"\b(?:unwrap_or(?:_default|_else)?|map_or(?:_else)?)\b").unwrap();
@@ -877,12 +890,13 @@ fn une_couche_fermee_ne_lit_que_des_formes() {
     let nommee = regex::Regex::new(r#"\b(?:rename|alias)\s*=\s*"_"#).unwrap();
     for couche in COUCHES_FERMEES {
         let src = espace().join(couche).join("src");
+        let porte = a_le_json(couche).0;
         for f in sources(&src) {
             let module = format!("{}::{}", couche, f.strip_prefix(&src).unwrap().with_extension("").to_string_lossy().replace(std::path::MAIN_SEPARATOR, "::"));
             let texte = std::fs::read_to_string(&f).unwrap();
             let ou = |n: usize| format!("{}:{}", f.display(), n);
             for (n, l) in code_seul(&texte).lines().enumerate() {
-                if PORTES.contains(&couche) && !BORD.contains(&module.as_str()) {
+                if porte && !BORD.contains(&module.as_str()) {
                     if let Some(m) = json.find(l) {
                         fautes.push(format!("{} : `{}`, du JSON brut hors du bord : déclare la forme (`serde`, `deny_unknown_fields`) ; la lecture passe par `socle::forme`, l'écriture par `socle::ecriture`", ou(n + 1), m.as_str().trim()));
                     }
