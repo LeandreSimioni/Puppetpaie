@@ -1395,7 +1395,7 @@ fn type_de_taux(t: &str) -> R<droit::type_taux_pas::TypeDeTauxPas> {
 }
 
 /// UN TAUX DE PAS QU'UN COMPTE RENDU DE NATURE 94 COMMUNIQUE : le NIR (13 caracteres), le taux, son type et l'identifiant
-/// (S21.G00.50.006 a .008) ; un taux ou un type que la piece ne dit pas est vide.
+/// (S21.G00.50.006 a .008) ; un taux ou un type que la piece ne dit pas est vide : aucun taux transmis.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ReleveTauxPas {
     pub nir: String,
@@ -1465,16 +1465,14 @@ fn pas_rapport_crm(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
         let lu = |k: &str| champs.iter().rev().find(|(n, _)| *n == k).map(|(_, t)| t.to_string());
         let Some(nir) = lu("NIR") else { continue };
         // Le schema des bilans (net-entreprises-dsn-bilans-v02r01-20230703.xsd) dit `taux_imposition_PAS` facultatif,
-        // sans dire ce que son absence vaut : aucun texte deposé n'en fait un taux, un type ni un identifiant.
-        let Some(taux) = lu("taux_imposition_PAS") else {
-            return Err(echec(Classe::Illisible, "Un compte rendu de taux de PAS (nature 94) nomme un salarié sans lui donner de taux (taux_imposition_PAS) : le taux non transmis ne se lit pas.".to_string()));
+        // sans dire ce que son absence vaut : aucun texte deposé n'en fait un taux, un type ni un identifiant. Le salarie
+        // que le compte rendu nomme sans taux n'a aucun taux transmis (ni taux, ni type) ; ce que sa paie en fait, c'est
+        // le calcul du PAS qui le dit (`droit::pas::situation` : aucun taux de type 01, la grille).
+        let (taux, type_taux) = match lu("taux_imposition_PAS") {
+            Some(t) => (Some(taux_de_pas(&t)?), Some(droit::type_taux_pas::TypeDeTauxPas::TransmisParLaDgfip)),
+            None => (None, None),
         };
-        releves.push(ReleveTauxPas {
-            nir,
-            taux: Some(taux_de_pas(&taux)?),
-            type_taux: Some(droit::type_taux_pas::TypeDeTauxPas::TransmisParLaDgfip),
-            identifiant: identifiant.to_string(),
-        });
+        releves.push(ReleveTauxPas { nir, taux, type_taux, identifiant: identifiant.to_string() });
     }
     Ok(releves)
 }
