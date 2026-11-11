@@ -11,3 +11,9 @@
   collecteur dispose d'un taux transmis par la DGFiP qui est encore valide ».
 - Le moteur : un compte rendu sans taux transmis ne fait pas oublier un taux transmis encore valide ; la grille ne
   s'applique que s'il n'en reste aucun de valide (`droit::pas::en_vigueur`, ticket #429).
+
+## Empreintes
+
+Le SHA-256 de chaque fichier de ce dossier, tel que déposé (`moteur-atelier empreintes`).
+
+- `dgfip-comptes-rendus-metier-pas-20261111.pdf` : `ce2b60a63ad889b3c92a8a6de6a14a6105e92ee48c33e0732505869d23d2bf9f`

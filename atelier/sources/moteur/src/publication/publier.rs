@@ -509,7 +509,7 @@ mod tests {
         // L'archive de mise a jour ne demande aucune fictive ; celle d'installation, si : decompressee, elle s'ouvrirait
         // bridee sur un accueil vide.
         let octets = archiver(&code, TOUT_SYSTEME).unwrap();
-        assert!(archiver_installation(&code, TOUT_SYSTEME).unwrap_err().phrase.contains("aucune compagnie fictive"));
+        assert!(archiver_installation(&code, TOUT_SYSTEME).unwrap_err().phrase.contains("Aucune compagnie fictive"));
         une_fictive(&base);
         // Ce qui est du poste et pas de la fictive livree : sa photo d'origine, ses secrets, le journal
         // de la fenetre ; et un dossier qui n'est pas une fictive.
