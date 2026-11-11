@@ -149,8 +149,9 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 
 | notion | ce que c'est | son type |
 |---|---|---|
-| instant | un point du temps, à la nanoseconde ; aussi « à la minute près » | `Moment` (`socle/src/paris.rs`) ; à unifier (#419) : `Naif`, `InstantEcrit`, `MinuteEcrite`, `HeureDeSaisie`, `MinuteDite`, `MinuteUtc`, `InstantCompact`, `HeureXsd` sont des écritures ; `HeureDuJournal`, `HeureDuGeste` (instant ou jour), `HeureDeReponse` (instant ou « pas encore » : `Option<Moment>`) |
-| jour | un jour civil | `Jour` (`socle/src/date.rs`) ; à unifier (#419) : `DateXsd` ; les marqueurs de `socle::piece::format` sont des formats de zone |
+| instant | un point du temps, à la nanoseconde ; aussi « à la minute près » | `Moment` (`socle/src/paris.rs`) ; ses écritures (à la seconde, à la minute, la saisie, la française, l'UTC du filet, le bloc de la plate-forme DSN, les secondes locales) sont les modules de `socle::paris::ecrit`, dits par l'attribut serde du champ ; « pas encore » : `Option<Moment>` |
+| instant ou jour | l'instant d'un geste, ou le jour seul (un bilan qui ne dit que sa date, un geste de scénario dit d'un jour) | `InstantOuJour` (`socle/src/paris.rs`) |
+| jour | un jour civil | `Jour` (`socle/src/date.rs`) ; les marqueurs de `socle::piece::format` sont des formats de zone |
 | mois | un mois civil, clé d'une paie | `Mois` (`socle/src/mois.rs`) ; `Graphie` dit comment s'écrit son nom |
 | mois ou jour | le mois d'un acte ou le jour d'un événement | `MoisOuJour` (`socle/src/mois.rs`) |
 | année | une année civile | `Annee` (`socle/src/mois.rs`) ; à unifier (#419) : des `i32` |
