@@ -177,7 +177,7 @@ pub struct FormeDeRemuneration {
     pub conges_pris: bool,
     pub dsn_bloc52: Option<String>,
     pub arret_de_travail: bool,
-    pub dsn_autres_bruts: Option<String>,
+    pub dsn_autres_bruts: Option<droit::autre_revenu_brut::AutreElementDeRevenuBrut>,
     pub precision: Option<String>,
     pub designation: String,
 }

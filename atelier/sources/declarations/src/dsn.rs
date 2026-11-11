@@ -20,6 +20,7 @@ use droit::bareme::{self, bareme_applique, EntrepriseLue};
 use droit::fiche::{ChampsEntreprise, DeclarantDsn, Lue};
 use droit::forme_bareme::{CotisationDsn, CotisationSupplementaire, Pile, Rubrique};
 use documents::bordereau::{self, Destinataire, LigneBordereau, TauxDeLaLigne};
+use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::reduction::au_dela_du_seuil;
 use engagement::calcul::Paie;
 use engagement::etats::PrelevementDeLaCorrection;
@@ -2159,14 +2160,11 @@ pub fn primes_et_indemnites(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour,
 pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour, fin: &Jour, signe: i64) -> R<()> {
     let e = &p.engagement;
     for l in &p.remuneration {
-        let code = match l.dsn_autres_bruts.as_deref().filter(|c| !c.is_empty()) {
-            Some(c) => c,
-            None => continue,
-        };
+        let Some(code) = l.dsn_autres_bruts else { continue };
         if l.montant.is_zero() {
             continue;
         }
-        f.add("S21.G00.54.001", code);
+        f.ecrire_code(code)?;
         f.add("S21.G00.54.002", ms(l.montant, signe));
         f.add("S21.G00.54.003", debut.jjmmaaaa());
         f.add("S21.G00.54.004", fin.jjmmaaaa());
@@ -2179,7 +2177,7 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour,
     if p.deduction_forfaitaire.is_some() {
         let deduction = sub(p.brut, brut_du_51(p));
         if !deduction.is_zero() {
-            f.add("S21.G00.54.001", "10");
+            f.ecrire_code(AutreElementDeRevenuBrut::DeductionForfaitaireSpecifique)?;
             f.add("S21.G00.54.002", ms(deduction, signe));
             f.add("S21.G00.54.003", debut.jjmmaaaa());
             f.add("S21.G00.54.004", fin.jjmmaaaa());
@@ -2187,7 +2185,10 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour,
         }
     }
     let bp = bareme_de(p, bar)?;
-    for (type_54, supp) in [("92", &bp.cotisation_sante_patronale), ("93", &bp.cotisation_prevoyance_retraite_supp)] {
+    for (type_54, supp) in [
+        (AutreElementDeRevenuBrut::CotisationPatronaleSante, &bp.cotisation_sante_patronale),
+        (AutreElementDeRevenuBrut::CotisationPrevoyanceRetraiteSupplementaire, &bp.cotisation_prevoyance_retraite_supp),
+    ] {
         let Some(supp) = supp else { continue };
         let montant = match supp {
             CotisationSupplementaire::DesLignes(l) => somme_lignes(p, &l.lignes_patronales, true),
@@ -2197,7 +2198,7 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour,
         if montant.is_zero() {
             continue;
         }
-        f.add("S21.G00.54.001", type_54);
+        f.ecrire_code(type_54)?;
         f.add("S21.G00.54.002", ms(montant, signe));
         f.add("S21.G00.54.003", debut.jjmmaaaa());
         f.add("S21.G00.54.004", fin.jjmmaaaa());

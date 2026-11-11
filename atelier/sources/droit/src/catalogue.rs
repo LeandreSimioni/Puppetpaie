@@ -7,6 +7,7 @@
 //! range par libelle.
 
 use serde::Deserialize;
+use crate::autre_revenu_brut::AutreElementDeRevenuBrut;
 use socle::echec::Lieu;
 use socle::fichiers::{dossier_du_code, repr, signature};
 use socle::echec::R;
@@ -73,50 +74,7 @@ pub enum HorsAssiette {
     Mouvement,
 }
 
-/// Les cinq avantages en nature du bloc 54.
-pub const AVANTAGES_EN_NATURE: [&str; 5] = ["02", "03", "04", "05", "06"];
-
 pub const COMPTE_POUR: [&str; 2] = ["droits_et_montant", "ouverture_des_droits"];
-
-/// Les valeurs de S21.G00.54.001 (cahier technique NEODeS 2026.1).
-pub const AUTRES_BRUTS: &[(&str, &str)] = &[
-    ("01", "Somme versee par un tiers"),
-    ("02", "Avantage en nature : repas"),
-    ("03", "Avantage en nature : logement"),
-    ("04", "Avantage en nature : vehicule"),
-    ("05", "Avantage en nature : NTIC"),
-    ("06", "Avantage en nature : autres"),
-    ("07", "Frais professionnels rembourses au forfait"),
-    ("08", "Frais professionnels pris en charge par l'employeur"),
-    ("09", "Frais professionnels rembourses au reel"),
-    ("10", "Deduction forfaitaire specifique"),
-    ("11", "Participation y compris supplement"),
-    ("12", "Interessement y compris supplement"),
-    ("14", "Abondement au plan d'epargne entreprise (PEE)"),
-    ("15", "Abondement au plan d'epargne interentreprises (PEI)"),
-    ("16", "Abondement a un plan d'epargne pour la retraite collectif"),
-    ("17", "Participation patronale au financement des titres-restaurant"),
-    ("18", "Participation patronale aux frais de transports publics"),
-    ("19", "Participation patronale aux frais de transports personnels"),
-    ("25", "Droit d'auteur"),
-    ("26", "Droit de doublage"),
-    ("27", "Droit de rediffusion"),
-    ("31", "Avantages de preretraite verses par l'employeur"),
-    ("33", "Sommes d'un CET reaffectees a un plan d'epargne retraite"),
-    ("34", "[FP] Prestations familiales"),
-    ("35", "Frais professionnels reintegres dans l'assiette (DFS)"),
-    ("36", "Sommes provenant d'un CET converties en points RAFP"),
-    ("37", "Participation et interessement verses immediatement"),
-    ("50", "Potentiel nouveau type A"),
-    ("51", "Potentiel nouveau type B"),
-    ("90", "Participation au financement des services a la personne"),
-    ("91", "Participation de l'employeur aux cheques vacances"),
-    ("92", "Cotisation patronale frais de sante"),
-    ("93", "Cotisation prevoyance et retraite supplementaire"),
-    ("94", "Potentiel nouveau type C"),
-    ("95", "Potentiel nouveau type D"),
-    ("96", "Potentiel nouveau type E"),
-];
 
 /// Le plafond annuel d'heures d'une rubrique (l'enseignement, annexe X) : selon l'age du salarie.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, serde::Serialize)]
@@ -144,7 +102,7 @@ pub struct Rubrique {
     pub plafond: Option<String>,
     pub aem: Option<String>,
     pub dsn_type: Option<String>,
-    pub dsn_autres_bruts: Option<String>,
+    pub dsn_autres_bruts: Option<crate::autre_revenu_brut::AutreElementDeRevenuBrut>,
     pub annexe: Option<String>,
     pub plafond_mensuel: Option<i64>,
     pub plafond_annuel_heures: Option<PlafondAnnuelHeures>,
@@ -199,14 +157,6 @@ impl Rubrique {
                 "Rubrique {} : `heures_forfait` sur une rubrique dont l'unite \
                  est l'heure. Les heures y sont un fait, pas un forfait : \
                  elles compteraient deux fois.", repr(code))));
-        }
-        if let Some(c) = &self.dsn_autres_bruts {
-            if !AUTRES_BRUTS.iter().any(|(k, _)| k == c) {
-                return Err(mal_decrite(code, format!(
-                    "Rubrique {} : `dsn_autres_bruts` vaut {}, qui n'est pas une \
-                     valeur de S21.G00.54.001. Voir AUTRES_BRUTS, releve dans le \
-                     cahier technique NEODeS 2026.1.", repr(code), repr(c))));
-            }
         }
         Ok(())
     }
@@ -596,16 +546,21 @@ pub fn rubrique(racine: &Path, code: &str, jour: &Jour) -> R<Rubrique> {
 
 /// Le code S21.G00.54.001 de cette ligne de paie, ou `None` : `genre` de la
 /// saisie precise lequel des cinq avantages en nature.
-pub fn code_54(r: &Rubrique, genre: Option<&str>) -> R<Option<String>> {
-    let Some(code) = &r.dsn_autres_bruts else { return Ok(None) };
-    let Some(genre) = genre.map(str::trim).filter(|g| !g.is_empty()).map(str::to_string) else {
-        return Ok(Some(code.clone()));
+pub fn code_54(r: &Rubrique, genre: Option<&str>) -> R<Option<AutreElementDeRevenuBrut>> {
+    let Some(code) = r.dsn_autres_bruts else { return Ok(None) };
+    let Some(genre) = genre.map(str::trim).filter(|g| !g.is_empty()) else {
+        return Ok(Some(code));
     };
-    if !AVANTAGES_EN_NATURE.contains(&code.as_str()) {
-        return Err(socle::echec::a_la_cle(&format!("La ligne « {} » dit le genre d'un avantage en nature, et ce n'en est pas un : retirer ce genre.", r.libelle), "genre", repr_texte(&genre)));
+    if !code.avantage_en_nature() {
+        return Err(socle::echec::a_la_cle(&format!("La ligne « {} » dit le genre d'un avantage en nature, et ce n'en est pas un : retirer ce genre.", r.libelle), "genre", repr_texte(genre)));
     }
-    if !AVANTAGES_EN_NATURE.contains(&genre.as_str()) {
-        return Err(socle::echec::a_la_cle(&format!("La ligne « {} » porte un genre d'avantage en nature inconnu : le choisir dans la liste.", r.libelle), "genre", format!("{} ; connus : {}", repr_texte(&genre), AVANTAGES_EN_NATURE.join(", "))));
+    let avantages: Vec<AutreElementDeRevenuBrut> = AutreElementDeRevenuBrut::TOUS.iter().copied().filter(|a| a.avantage_en_nature()).collect();
+    match avantages.iter().copied().find(|a| a.code() == genre) {
+        Some(a) => Ok(Some(a)),
+        None => Err(socle::echec::a_la_cle(
+            &format!("La ligne « {} » porte un genre d'avantage en nature inconnu : le choisir dans la liste.", r.libelle),
+            "genre",
+            format!("{} ; connus : {}", repr_texte(genre), avantages.iter().map(|a| a.code()).collect::<Vec<_>>().join(", ")),
+        )),
     }
-    Ok(Some(genre))
 }

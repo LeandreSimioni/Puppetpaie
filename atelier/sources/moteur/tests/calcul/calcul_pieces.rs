@@ -61,7 +61,7 @@ fn le_code_du_bloc_54() {
         let r = rubrique(&racine, c[0].as_str().unwrap(), &socle::date::Jour::lire("2026-10-28").unwrap()).unwrap();
         let vu = socle::forme::lire::<Option<String>>(&c[1]["genre"], "La ligne ne se lit pas.").and_then(|g| code_54(&r, g.as_deref()));
         refus += vu.is_err() as usize;
-        c[2] = essai(vu.map(|o| o.map_or(Value::Null, Value::String)));
+        c[2] = essai(vu.map(|o| o.map_or(Value::Null, |a| Value::String(a.code().to_string()))));
     }
     assert!(refus > 10, "{}", refus);
     oracle(ORACLE, "/code_54", &cas);

@@ -1790,7 +1790,7 @@ fiche! {
         plafond: String,
         aem: String,
         dsn_type: String,
-        dsn_autres_bruts: String,
+        dsn_autres_bruts: crate::autre_revenu_brut::AutreElementDeRevenuBrut,
         annexe: String,
         plafond_mensuel: i64,
         plafond_annuel_heures: crate::catalogue::PlafondAnnuelHeures,

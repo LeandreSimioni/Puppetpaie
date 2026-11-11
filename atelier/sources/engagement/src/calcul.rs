@@ -54,7 +54,7 @@ pub struct LigneBrut {
     pub conges_pris: bool,
     pub dsn_bloc52: Option<String>,
     pub arret_de_travail: bool,
-    pub dsn_autres_bruts: Option<String>,
+    pub dsn_autres_bruts: Option<droit::autre_revenu_brut::AutreElementDeRevenuBrut>,
     /// Ce que la ligne dit d'elle-meme sur le bulletin quand sa quantite ne suffit pas : la part payee d'un mois incomplet
     /// (`droit::periodes::PartDuMois::sur_le_bulletin`).
     pub precision: Option<String>,
@@ -141,7 +141,7 @@ impl LigneBrut {
             conges_pris: self.conges_pris,
             dsn_bloc52: self.dsn_bloc52.clone(),
             arret_de_travail: self.arret_de_travail,
-            dsn_autres_bruts: self.dsn_autres_bruts.clone(),
+            dsn_autres_bruts: self.dsn_autres_bruts,
             precision: self.precision.clone(),
             designation: self.designation(),
         }
@@ -165,7 +165,7 @@ impl LigneBrut {
             conges_pris: f.conges_pris,
             dsn_bloc52: f.dsn_bloc52.clone(),
             arret_de_travail: f.arret_de_travail,
-            dsn_autres_bruts: f.dsn_autres_bruts.clone(),
+            dsn_autres_bruts: f.dsn_autres_bruts,
             precision: f.precision.clone(),
         }
     }

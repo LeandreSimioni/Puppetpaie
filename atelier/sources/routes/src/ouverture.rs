@@ -18,6 +18,7 @@ use crate::etapes::Moteur;
 use compagnie::etat_dsn::Etat;
 use declarations::champs::{self, Valeur};
 use droit::fiche::{CaseEntreprise, CaseEtablissement, CaseSalarie, CaseSpectacle, NomDeCase, NomDeFiche};
+use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::catalogue::{self, Rubrique};
 use droit::contexte::Contexte;
 use droit::emplois::{self};
@@ -1163,9 +1164,49 @@ fn historique(m: &mut Moteur, ctx: &Contexte) -> R<(Vec<MoisDuBilan>, Option<Str
 
 // ----------------------------------------------------------- les referentiels
 
-/// Ce que la liste du genre dit des cinq avantages en nature du bloc 54 (`catalogue::AVANTAGES_EN_NATURE` ;
-/// `catalogue::AUTRES_BRUTS` donne leur libelle de la norme).
-const GENRES_EN_CLAIR: [(&str, &str); 5] = [("02", "repas"), ("03", "logement"), ("04", "véhicule"), ("05", "NTIC"), ("06", "autres")];
+/// Ce que la liste du genre dit des cinq avantages en nature du bloc 54 (`AutreElementDeRevenuBrut::avantage_en_nature`).
+fn genre_en_clair(a: AutreElementDeRevenuBrut) -> Option<&'static str> {
+    match a {
+        AutreElementDeRevenuBrut::AvantageRepas => Some("repas"),
+        AutreElementDeRevenuBrut::AvantageLogement => Some("logement"),
+        AutreElementDeRevenuBrut::AvantageVehicule => Some("véhicule"),
+        AutreElementDeRevenuBrut::AvantageNtic => Some("NTIC"),
+        AutreElementDeRevenuBrut::AvantageAutres => Some("autres"),
+        AutreElementDeRevenuBrut::SommeVerseeParUnTiers
+        | AutreElementDeRevenuBrut::FraisRemboursesAuForfait
+        | AutreElementDeRevenuBrut::FraisPrisEnChargeParLEmployeur
+        | AutreElementDeRevenuBrut::FraisRemboursesAuReel
+        | AutreElementDeRevenuBrut::DeductionForfaitaireSpecifique
+        | AutreElementDeRevenuBrut::Participation
+        | AutreElementDeRevenuBrut::Interessement
+        | AutreElementDeRevenuBrut::AbondementPee
+        | AutreElementDeRevenuBrut::AbondementPei
+        | AutreElementDeRevenuBrut::AbondementRetraiteCollectif
+        | AutreElementDeRevenuBrut::TitresRestaurant
+        | AutreElementDeRevenuBrut::TransportsPublics
+        | AutreElementDeRevenuBrut::TransportsPersonnels
+        | AutreElementDeRevenuBrut::DroitDAuteur
+        | AutreElementDeRevenuBrut::DroitDeDoublage
+        | AutreElementDeRevenuBrut::DroitDeRediffusion
+        | AutreElementDeRevenuBrut::AvantagesDePreretraite
+        | AutreElementDeRevenuBrut::CetVersUneEpargneRetraite
+        | AutreElementDeRevenuBrut::PrestationsFamiliales
+        | AutreElementDeRevenuBrut::FraisReintegresDfs
+        | AutreElementDeRevenuBrut::CetEnPointsRafp
+        | AutreElementDeRevenuBrut::ParticipationInteressementImmediats
+        | AutreElementDeRevenuBrut::NouveauTypeA
+        | AutreElementDeRevenuBrut::NouveauTypeB
+        | AutreElementDeRevenuBrut::PpveVerseeImmediatement
+        | AutreElementDeRevenuBrut::PpveAffecteeAUnPlan
+        | AutreElementDeRevenuBrut::ServicesALaPersonne
+        | AutreElementDeRevenuBrut::ChequesVacances
+        | AutreElementDeRevenuBrut::CotisationPatronaleSante
+        | AutreElementDeRevenuBrut::CotisationPrevoyanceRetraiteSupplementaire
+        | AutreElementDeRevenuBrut::NouveauTypeC
+        | AutreElementDeRevenuBrut::NouveauTypeD
+        | AutreElementDeRevenuBrut::NouveauTypeE => None,
+    }
+}
 
 /// L'aide du choix « Lieu » d'une ligne de frais.
 const LIEU_AIDE: &str = "Où dort et mange le salarié : hors de la métropole, la limite exonérée change ; à l'étranger, c'est l'indemnité du pays pour la nuitée et les repas du jour.";
@@ -1209,7 +1250,7 @@ pub(crate) struct RubriqueDeLaPage {
     plafond: Option<String>,
     aem: Option<String>,
     dsn_type: Option<String>,
-    dsn_autres_bruts: Option<String>,
+    dsn_autres_bruts: Option<AutreElementDeRevenuBrut>,
     annexe: Option<String>,
     soumis: bool,
     imposable: bool,
@@ -1246,11 +1287,11 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
     .map(|(c, _)| c)
     .collect();
     // Les valeurs de `genre`, quand la rubrique le demande : les cinq avantages en nature du bloc 54.
-    let avec_genre = r.saisie.iter().any(|s| s == "genre") && r.dsn_autres_bruts.as_deref().is_some_and(|c| catalogue::AVANTAGES_EN_NATURE.contains(&c));
+    let avec_genre = r.saisie.iter().any(|s| s == "genre") && r.dsn_autres_bruts.is_some_and(AutreElementDeRevenuBrut::avantage_en_nature);
     let genres: Vec<Choix> = if avec_genre {
-        GENRES_EN_CLAIR
+        AutreElementDeRevenuBrut::TOUS
             .iter()
-            .map(|(g, libelle)| Choix { code: g.to_string(), libelle: libelle.to_string(), defaut: Some(Some(*g) == r.dsn_autres_bruts.as_deref()) })
+            .filter_map(|g| genre_en_clair(*g).map(|libelle| Choix { code: g.code().to_string(), libelle: libelle.to_string(), defaut: Some(Some(*g) == r.dsn_autres_bruts) }))
             .collect()
     } else {
         vec![]
@@ -1280,7 +1321,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         plafond: r.plafond.clone(),
         aem: r.aem.clone(),
         dsn_type: r.dsn_type.clone(),
-        dsn_autres_bruts: r.dsn_autres_bruts.clone(),
+        dsn_autres_bruts: r.dsn_autres_bruts,
         annexe: r.annexe.clone(),
         soumis: r.soumis,
         imposable: r.imposable,
