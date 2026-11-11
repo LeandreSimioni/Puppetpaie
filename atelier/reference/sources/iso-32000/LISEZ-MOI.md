@@ -38,7 +38,16 @@ clé absente, une valeur par défaut ou une forme exigée vient de la norme, don
   la « cmap » Unicode du programme ; ce que rien ne dit est un caractère inconnu du texte (`texte::Inconnu` : la
   police, le code), que seul le lecteur qui en a besoin refuse (9.10.2 : « there is no way to determine what the
   character code represents ») : `import::bulletin_lu`, `aem_lu`, `certificat_lu` (la case), `TexteDePage::lu`.
-- `fabrique-pdf/src/encodages.rs` (`codes`, `pdfdoc`) : la transcription de l'annexe D, lue telle quelle
+- `fabrique-pdf/src/texte.rs` (`charger_police`, `Police::codes`, `programme_cid`, `encodage_type1`) : une police
+  composée dont le CMap prédéfini (table 118, autre qu'Identity) n'est pas déposé n'a ni CID ni largeur lus (son code
+  n'avance pas le texte) ; ses codes ne se découpent que par l'espace de codes de son `ToUnicode` (9.10.3 :
+  « consistent with the encoding that the font uses »), sans lui chaque chaîne est un seul caractère inconnu, qui
+  nomme le CMap. Une police CID compacte sans `ToUnicode` : sa collection (`CIDSystemInfo`, table 116) nomme la table
+  d'Adobe (`<Registry>-<Ordering>-UCS2`, 9.10.2) qui dirait le caractère et qui n'est pas déposée, ou dit qu'aucune
+  table ne le dit ; c'est un caractère inconnu. Un programme `FontFile3` de sous-type `OpenType` (table 127) d'une
+  police simple sans encodage de base : sa « cmap » se lit comme celle d'une TrueType (9.6.6.4 ; lecture décidée pour
+  ce programme, la norme ne parlant que de TrueType : inférence).
+- `fabrique-pdf/src/encodages.rs` (`codes`) : la transcription de l'annexe D, lue telle quelle
   (`include_str!`) : le nom du glyphe de chaque code de StandardEncoding, MacRomanEncoding, WinAnsiEncoding (D.2),
   MacExpertEncoding (D.4), Symbol (D.5), ZapfDingbats (D.6) ; les notes 3 (WinAnsi : un code inutilisé au-delà de 40
   est le « bullet »), 5 (WinAnsi 255, « soft hyphen ») et 6 (WinAnsi 240, MacRoman 312 : « nonbreaking space ») ; le

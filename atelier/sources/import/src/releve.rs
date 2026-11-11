@@ -63,7 +63,8 @@ pub struct PageRelevee {
 #[serde(deny_unknown_fields)]
 pub struct InconnuReleve {
     pub police: String,
-    pub code: u32,
+    /// Les octets du code, en hexadecimal entre chevrons (`texte::Inconnu`).
+    pub code: String,
     pub pourquoi: String,
     pub rect: Boite,
     pub ligne: usize,
@@ -73,7 +74,7 @@ impl InconnuReleve {
     /// La phrase qui le nomme, sur la page `page`, pour la case `case` qui en a besoin.
     pub fn phrase(&self, page: usize, case: &str) -> String {
         format!(
-            "page {} : la case « {} » porte un caractère que rien ne dit (la police {} montre le code {} sans /ToUnicode : {} ; ISO 32000-1, 9.10.2)",
+            "page {} : la case « {} » porte un caractère que rien ne dit (la police {} montre le code {} : {} ; ISO 32000-1, 9.10.2)",
             page, case, self.police, self.code, self.pourquoi
         )
     }

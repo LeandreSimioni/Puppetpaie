@@ -36,7 +36,7 @@ struct Mot {
 #[derive(Serialize)]
 struct InconnuVu {
     police: String,
-    code: u32,
+    code: String,
     pourquoi: String,
     rect: Boite,
     ligne: usize,
@@ -109,7 +109,7 @@ fn mots_de(ligne: usize, texte: &[Signe], boites: &[Option<Boite>], repere: &Rep
             Signe::Inconnu(i) => {
                 finir(&mut mot, &mut boite);
                 if let Some(b) = b {
-                    inconnus.push(InconnuVu { police: i.police.clone(), code: i.code, pourquoi: i.pourquoi.clone(), rect: repere.boite(b), ligne });
+                    inconnus.push(InconnuVu { police: i.police.clone(), code: i.code.clone(), pourquoi: i.pourquoi.clone(), rect: repere.boite(b), ligne });
                 }
                 continue;
             }

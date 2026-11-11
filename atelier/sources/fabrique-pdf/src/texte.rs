@@ -313,15 +313,27 @@ enum Lu {
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 pub struct Inconnu {
     pub police: String,
-    pub code: u32,
+    /// Les octets du code, en hexadécimal entre chevrons (« <0041> ») : ceux de la chaîne entière quand rien ne dit où
+    /// un code finit.
+    pub code: String,
     pub pourquoi: String,
+}
+
+/// Des octets d'une chaîne, écrits comme une chaîne hexadécimale du PDF (ISO 32000-1, 7.3.4.3).
+fn code_ecrit(octets: &[u8]) -> String {
+    let mut t = String::from("<");
+    for o in octets {
+        t.push_str(&format!("{:02X}", o));
+    }
+    t.push('>');
+    t
 }
 
 impl Inconnu {
     /// La phrase qui le nomme, sur la page `page`.
     pub fn phrase(&self, page: u32) -> String {
         format!(
-            "page {} : la police {} montre le code {} sans /ToUnicode : {} ; rien ne dit son caractère (ISO 32000-1, 9.10.2)",
+            "page {} : la police {} montre le code {} : {} ; rien ne dit son caractère (ISO 32000-1, 9.10.2)",
             page, self.police, self.code, self.pourquoi
         )
     }
@@ -430,6 +442,11 @@ enum Sorte {
     /// Les espaces de codes (longueur en octets, plus petit, plus grand), la table des CID d'un CMap incorporé (`None` :
     /// Identity), et ce que le programme dit des glyphes.
     Composee { espaces: Vec<(usize, u32, u32)>, cmap_cid: Option<Cmap>, programme: ParProgramme },
+    /// Une police composée dont le CMap prédéfini (table 118) n'est pas déposé : ses CID, donc ses largeurs (`W`, par
+    /// CID), ne se lisent pas, et un code n'avance pas le texte. Ses codes ne se découpent que par l'espace de codes de
+    /// son `ToUnicode` (9.10.3 : « consistent with the encoding that the font uses ») ; sans lui (`espaces` à `None`),
+    /// chaque chaîne qu'elle montre est un seul caractère inconnu.
+    NonDeposee { cmap: String, espaces: Option<Vec<(usize, u32, u32)>> },
 }
 
 /// Ce que l'interpréteur sait d'une police : décoder une chaîne en codes, et dire pour chaque code
@@ -518,11 +535,18 @@ fn ascendant_descendant(doc: &Document, fd: Option<&Dictionary>, base_font: Opti
 }
 
 impl Police {
-    /// Les codes d'une chaîne : (code, nombre d'octets).
-    fn codes(&self, s: &[u8]) -> Result<Vec<(u32, usize)>, Refus> {
+    /// Les codes d'une chaîne : (code, nombre d'octets) ; ou pourquoi rien ne dit où un code finit (un CMap prédéfini
+    /// non déposé, sans `ToUnicode` qui dise ses espaces de codes).
+    fn codes(&self, s: &[u8]) -> Result<Result<Vec<(u32, usize)>, String>, Refus> {
         let espaces = match &self.sorte {
-            Sorte::Simple { .. } => return Ok(s.iter().map(|b| (*b as u32, 1)).collect()),
-            Sorte::Composee { espaces, .. } => espaces,
+            Sorte::Simple { .. } => return Ok(Ok(s.iter().map(|b| (*b as u32, 1)).collect())),
+            Sorte::Composee { espaces, .. } | Sorte::NonDeposee { espaces: Some(espaces), .. } => espaces,
+            Sorte::NonDeposee { cmap, espaces: None } => {
+                return Ok(Err(format!(
+                    "le CMap prédéfini {} n'est pas déposé et la police n'a pas de /ToUnicode : rien ne dit où ses codes finissent, ni leurs CID (ISO 32000-1, 9.10.2)",
+                    cmap
+                )))
+            }
         };
         let Some(plus_court) = espaces.iter().map(|e| e.0).min() else {
             return illisible("une police composée n'a aucun espace de codes");
@@ -550,14 +574,22 @@ impl Police {
             v.push((code, n));
             i += n;
         }
-        Ok(v)
+        Ok(Ok(v))
     }
 
-    fn cid(&self, code: u32) -> u32 {
+    /// Le CID d'un code (le code lui-même pour une police simple, où `Widths` est par code) ; `None` quand le CMap
+    /// qui le dirait n'est pas déposé.
+    fn cid(&self, code: u32) -> Option<u32> {
         let cmap_cid = match &self.sorte {
-            Sorte::Simple { .. } => return code,
+            Sorte::Simple { .. } => return Some(code),
             Sorte::Composee { cmap_cid, .. } => cmap_cid,
+            Sorte::NonDeposee { .. } => return None,
         };
+        Some(Self::cid_par(cmap_cid.as_ref(), code))
+    }
+
+    /// Le CID d'un code d'une police composée par son CMap incorporé (`None` : Identity).
+    fn cid_par(cmap_cid: Option<&Cmap>, code: u32) -> u32 {
         match cmap_cid {
             None => code,
             Some(c) => {
@@ -577,15 +609,16 @@ impl Police {
     /// Les signes d'un code (ISO 32000-1, 9.10.2) : `ToUnicode` d'abord ; puis l'encodage d'une police simple, ou le
     /// programme d'une police composée. Aucun quand le code ne montre aucun glyphe ; un glyphe dont rien ne dit le
     /// caractère est un signe inconnu, qui nomme la police et le code.
-    fn signes(&self, code: u32) -> Vec<Signe> {
+    fn signes(&self, code: u32, octets: &[u8]) -> Vec<Signe> {
         if let Some(t) = self.unicode.get(&code) {
             return t.chars().map(Signe::Caractere).collect();
         }
         let lu = match &self.sorte {
             Sorte::Simple { encodage } => encodage[code as usize & 0xFF].clone(),
+            Sorte::NonDeposee { cmap, .. } => Lu::Inconnu(format!("/ToUnicode ne dit pas ce code, et le CMap prédéfini {} n'est pas déposé", cmap)),
             Sorte::Composee { programme: ParProgramme::Aucun(pourquoi), .. } => Lu::Inconnu(pourquoi.clone()),
-            Sorte::Composee { programme: ParProgramme::Glyphes { cid_gid, lus }, .. } => {
-                let cid = self.cid(code);
+            Sorte::Composee { programme: ParProgramme::Glyphes { cid_gid, lus }, cmap_cid, .. } => {
+                let cid = Self::cid_par(cmap_cid.as_ref(), code);
                 match glyphe_du_cid(cid_gid.as_deref(), cid) {
                     Some(g) => match lus.get(&g) {
                         Some(l) => l.clone(),
@@ -598,13 +631,16 @@ impl Police {
         match lu {
             Lu::Texte(t) => t.chars().map(Signe::Caractere).collect(),
             Lu::Rien => Vec::new(),
-            Lu::Inconnu(pourquoi) => vec![Signe::Inconnu(Inconnu { police: self.nom.clone(), code, pourquoi })],
+            Lu::Inconnu(pourquoi) => vec![Signe::Inconnu(Inconnu { police: self.nom.clone(), code: code_ecrit(octets), pourquoi })],
         }
     }
 
-    /// La largeur du code, en fraction d'em.
+    /// La largeur du code, en fraction d'em. Le code d'un CMap non déposé n'a pas de CID, donc pas de largeur lue : il
+    /// n'avance pas le texte.
     fn largeur(&self, code: u32) -> Mesure {
-        let cle = self.cid(code);
+        let Some(cle) = self.cid(code) else {
+            return Z;
+        };
         match self.largeurs.get(&cle) {
             Some(w) => *w / 1000,
             None => self.largeur_defaut / 1000,
@@ -717,22 +753,28 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
         asc: mesure("0.8"),
         desc: mesure("0.2"),
     };
+    // Les espaces de codes de `ToUnicode`, « consistent with the encoding that the font uses » (9.10.3).
+    let mut espaces_unicode = None;
     if let Some(s) = lecture::lue(doc, d, b"ToUnicode", lecture::flux)? {
-        p.unicode = lire_cmap(&lecture::contenu(doc, s)?)?.unicode;
+        let c = lire_cmap(&lecture::contenu(doc, s)?)?;
+        if !c.espaces.is_empty() {
+            espaces_unicode = Some(c.espaces);
+        }
+        p.unicode = c.unicode;
     }
     if sous_type == b"Type0" {
         // ISO 32000-1, table 121 : `Encoding` (un CMap prédéfini nommé, ou un flux) et `DescendantFonts` (un tableau
         // d'un élément) sont exigés.
         let mut espaces = vec![(2, 0, 0xFFFF)];
         let mut cmap_cid = None;
-        // Un CMap prédéfini autre qu'Identity (table 118) n'est pas déposé : ses CID ne se lisent pas, le programme ne
-        // dit donc pas le caractère d'un code (seul `ToUnicode` le dit).
+        // Un CMap prédéfini autre qu'Identity (table 118) n'est pas déposé : ni l'espace de ses codes ni ses CID ne se
+        // lisent (seul `ToUnicode` dit alors quelque chose).
         let mut non_depose = None;
         match lecture::valeur(doc, d, b"Encoding")? {
             Some(Object::Name(n)) => {
                 p.vertical = n.ends_with(b"-V");
                 if n.as_slice() != b"Identity-H" && n.as_slice() != b"Identity-V" {
-                    non_depose = Some(format!("le CMap prédéfini {} n'est pas déposé, rien ne dit le CID de ce code (ISO 32000-1, 9.10.2)", lecture::nom_de(n)));
+                    non_depose = Some(lecture::nom_de(n));
                 }
             }
             Some(Object::Stream(s)) => {
@@ -753,12 +795,11 @@ fn charger_police(doc: &Document, d: &Dictionary, inspecter: bool) -> Result<Pol
         if inspecter {
             (p.asc, p.desc) = ascendant_descendant(doc, descripteur(doc, desc)?, base_nom.as_deref())?;
         }
-        let programme = match (p.unicode.is_empty(), non_depose) {
-            (_, Some(pourquoi)) => ParProgramme::Aucun(pourquoi),
-            (true, None) => sinon_inconnu(programme_cid(doc, desc, zapf), ParProgramme::Aucun)?,
-            (false, None) => ParProgramme::Aucun("/ToUnicode ne dit pas ce code".to_string()),
+        p.sorte = match (p.unicode.is_empty(), non_depose) {
+            (_, Some(cmap)) => Sorte::NonDeposee { cmap, espaces: espaces_unicode },
+            (true, None) => Sorte::Composee { espaces, cmap_cid, programme: sinon_inconnu(programme_cid(doc, desc, zapf), ParProgramme::Aucun)? },
+            (false, None) => Sorte::Composee { espaces, cmap_cid, programme: ParProgramme::Aucun("/ToUnicode ne dit pas ce code".to_string()) },
         };
-        p.sorte = Sorte::Composee { espaces, cmap_cid, programme };
         // ISO 32000-1, table 117 : `DW`, « Default value: 1000 ».
         p.largeur_defaut = match lecture::lue(doc, desc, b"DW", lecture::nombre)? {
             Some(dw) => dw,
@@ -909,13 +950,17 @@ fn encodage_truetype(doc: &Document, fd: Option<&Dictionary>, encoding: Option<&
         None => None,
     };
     let non_symbolique = drapeaux.is_some_and(|f| drapeau(f, 6) && !drapeau(f, 3));
+    let programme = match fd {
+        Some(fd) => lecture::lue(doc, fd, b"FontFile2", lecture::flux)?,
+        None => None,
+    };
     match encoding {
         Some(Object::Name(n)) => predefini(n),
         Some(Object::Dictionary(e)) => {
             let mut table = match (lecture::lue(doc, e, b"BaseEncoding", lecture::nom)?, non_symbolique) {
                 (Some(n), _) => predefini(n)?,
                 (None, true) => vec![Entree::sans_nom(Lu::Rien); 256],
-                (None, false) => par_cmap(doc, fd, zapf)?,
+                (None, false) => par_cmap(doc, programme, zapf)?,
             };
             appliquer(&mut table, differences_de(doc, e, zapf)?);
             if non_symbolique {
@@ -928,31 +973,28 @@ fn encodage_truetype(doc: &Document, fd: Option<&Dictionary>, encoding: Option<&
             Ok(table)
         }
         Some(_) => illisible("/Encoding d'une police simple n'est ni un nom ni un dictionnaire"),
-        None => par_cmap(doc, fd, zapf),
+        None => par_cmap(doc, programme, zapf),
     }
 }
 
-/// Le texte de chaque code d'un octet lu par la « cmap » du programme TrueType incorporé (ISO 32000-1, 9.6.6.4) : la
+/// Le texte de chaque code d'un octet lu par la « cmap » du programme incorporé, TrueType (`FontFile2`) ou OpenType
+/// (`FontFile3` de sous-type `OpenType`, table 126, lu « comme une TrueType ») (ISO 32000-1, 9.6.6.4) : la
 /// sous-table (3, 0), dont les codes sont dans 0x0000-0x00FF, 0xF000-0xF0FF, 0xF100-0xF1FF ou 0xF200-0xF2FF, chaque
 /// octet précédé de l'octet de tête de sa plage ; sinon la sous-table (1, 0), octet par octet. Le glyphe 0 ne montre
 /// rien ; un autre dit son caractère (`glyphes_du_programme`). Ce que le programme ne permet pas de lire rend chaque code
 /// inconnu.
-fn par_cmap(doc: &Document, fd: Option<&Dictionary>, zapf: bool) -> Result<Vec<Entree>, Refus> {
-    sinon_inconnu(lire_par_cmap(doc, fd, zapf), tous_inconnus)
+fn par_cmap(doc: &Document, programme: Option<&lopdf::Stream>, zapf: bool) -> Result<Vec<Entree>, Refus> {
+    sinon_inconnu(lire_par_cmap(doc, programme, zapf), tous_inconnus)
 }
 
-fn lire_par_cmap(doc: &Document, fd: Option<&Dictionary>, zapf: bool) -> Result<Vec<Entree>, Refus> {
-    let programme = match fd {
-        Some(fd) => lecture::lue(doc, fd, b"FontFile2", lecture::flux)?,
-        None => None,
-    };
+fn lire_par_cmap(doc: &Document, programme: Option<&lopdf::Stream>, zapf: bool) -> Result<Vec<Entree>, Refus> {
     let Some(programme) = programme else {
-        return illisible("une police TrueType sans encodage lisible n'incorpore pas son programme, dont la « cmap » mène du code au glyphe (ISO 32000-1, 9.6.6.4)");
+        return illisible("une police sans encodage lisible n'incorpore pas de programme TrueType ou OpenType, dont la « cmap » mènerait du code au glyphe (ISO 32000-1, 9.6.6.4)");
     };
     let octets = lecture::contenu(doc, programme)?;
-    let face = ttf_parser::Face::parse(&octets, 0).map_err(|e| Refus::illisible(format!("le programme incorporé d'une police TrueType ne se lit pas ({})", e)))?;
+    let face = ttf_parser::Face::parse(&octets, 0).map_err(|e| Refus::illisible(format!("le programme incorporé d'une police TrueType ou OpenType ne se lit pas ({})", e)))?;
     let Some(cmap) = face.tables().cmap else {
-        return illisible("le programme incorporé d'une police TrueType n'a pas de table « cmap » (ISO 32000-1, 9.6.6.4)");
+        return illisible("le programme incorporé d'une police TrueType ou OpenType n'a pas de table « cmap » (ISO 32000-1, 9.6.6.4)");
     };
     let sous_table = |plateforme: ttf_parser::PlatformId, codage: u16| cmap.subtables.into_iter().find(|s| s.platform_id == plateforme && s.encoding_id == codage);
     let glyphe = |s: &ttf_parser::cmap::Subtable, code: u32| s.glyph_index(code).map(|g| g.0).filter(|g| *g != 0);
@@ -1023,7 +1065,19 @@ fn glyphe_du_programme(face: &ttf_parser::Face, unicode: &HashMap<u16, Vec<char>
 fn programme_cid(doc: &Document, desc: &Dictionary, zapf: bool) -> Result<ParProgramme, Refus> {
     let sous_type = exige(doc, desc, b"Subtype", "la police de /DescendantFonts", lecture::nom)?;
     if sous_type != b"CIDFontType2" {
-        return illisible(format!("une police CID de sous-type {} n'a pas de noms de glyphes que la fabrique lise", lecture::nom_de(sous_type)));
+        // Une police CID compacte : son CID ne dit son caractère que par sa collection (9.10.2, étapes b à e ; table
+        // 116), et les tables d'Adobe (« Adobe-Japan1-UCS2 »…) qui le diraient ne sont pas déposées.
+        let collection = exige(doc, desc, b"CIDSystemInfo", "la police de /DescendantFonts", lecture::dictionnaire)?;
+        let registre = exige(doc, collection, b"Registry", "/CIDSystemInfo", lecture::chaine)?;
+        let ordre = exige(doc, collection, b"Ordering", "/CIDSystemInfo", lecture::chaine)?;
+        let nom = format!("{}-{}", String::from_utf8_lossy(registre), String::from_utf8_lossy(ordre));
+        return illisible(match nom.as_str() {
+            "Adobe-GB1" | "Adobe-CNS1" | "Adobe-Japan1" | "Adobe-Korea1" => format!(
+                "son CID est de la collection {n}, et la table {n}-UCS2 d'Adobe qui dirait son caractère n'est pas déposée (ISO 32000-1, 9.10.2)",
+                n = nom
+            ),
+            _ => format!("son CID est de la collection {}, dont la norme ne dit pas les caractères (ISO 32000-1, 9.10.2)", nom),
+        });
     }
     let programme = match descripteur(doc, desc)? {
         Some(fd) => lecture::lue(doc, fd, b"FontFile2", lecture::flux)?,
@@ -1070,16 +1124,16 @@ fn encodage_type1(doc: &Document, fd: Option<&Dictionary>, sous_type: &[u8], nom
             return sinon_inconnu(encodage_du_programme_type1(doc, s, zapf), tous_inconnus);
         }
         if let Some(s) = compact {
-            // Table 126 : `FontFile3` de sous-type `Type1C` (un programme CFF nu) ou `OpenType`.
+            // Table 126 : `FontFile3` de sous-type `Type1C` (un programme CFF nu) ou `OpenType` (sa « cmap » se lit
+            // comme celle d'une TrueType) ; un autre sous-type n'est pas d'une police simple.
             return match lecture::lue(doc, &s.dict, b"Subtype", lecture::nom)? {
                 Some(b"Type1C") => sinon_inconnu(encodage_cff(doc, s, zapf), tous_inconnus),
-                autre => Ok(tous_inconnus(format!(
-                    "l'encodage propre d'un programme incorporé /FontFile3 de sous-type {} n'est pas lu par la fabrique",
-                    match autre {
-                        Some(n) => lecture::nom_de(n),
-                        None => "absent".to_string(),
-                    }
+                Some(b"OpenType") => par_cmap(doc, Some(s), zapf),
+                Some(autre) => Ok(tous_inconnus(format!(
+                    "le programme incorporé /FontFile3 est de sous-type {}, qui n'est pas d'une police simple (ISO 32000-1, table 127)",
+                    lecture::nom_de(autre)
                 ))),
+                None => Ok(tous_inconnus("le programme incorporé /FontFile3 n'a pas de /Subtype, que la norme exige (ISO 32000-1, table 127)".to_string())),
             };
         }
         // 9.6.6.1 : les deux polices standard symboliques sont Symbol et ZapfDingbats ; table 123 : le drapeau Symbolic.
@@ -1800,31 +1854,47 @@ impl<'a> Interprete<'a> {
         }
     }
 
-    /// Montre une chaîne : un caractère par code, le texte avance de la largeur de chaque glyphe.
+    /// Pose les signes d'un code (ou d'une chaîne entière que rien ne découpe) à la position du texte, d'avance `w0`.
+    fn poser(&mut self, police: &Police, e: &Etat, tm: &Mat, signes: Vec<Signe>, w0: Mesure) -> Result<(), Refus> {
+        let trm = mul(&[e.taille * e.th, Z, Z, e.taille, Z, e.rise], &mul(tm, &e.ctm));
+        let visible = self.dans_le_cadre(&trm, w0);
+        let boite = englobante(&trm, Z, -police.desc, w0, police.asc);
+        // Le corps rendu : la racine du déterminant de la matrice de rendu (positive : sa valeur absolue).
+        let taille = (trm[0] * trm[3] - trm[1] * trm[2]).abs().racine().ok_or_else(|| Refus::defaut("une valeur absolue sans racine"))?;
+        if let Some(a) = &mut self.actuel {
+            // Sous un `/ActualText` : on ne garde que la position du premier glyphe et
+            // l'avance totale ; le texte réel se pose à la fermeture.
+            if a.premier.is_none() {
+                a.premier = Some(((trm[4], trm[5]), (trm[0], trm[1]), taille));
+                (a.trm, a.asc, a.desc) = (trm, police.asc, police.desc);
+            }
+            a.adv += w0;
+        } else if visible {
+            let dir = if police.vertical { (trm[2], trm[3]) } else { (trm[0], trm[1]) };
+            for (k, c) in signes.into_iter().enumerate() {
+                self.mise.caractere(c, (trm[4], trm[5]), dir, taille, if k == 0 { Some(w0) } else { None }, boite);
+            }
+        }
+        Ok(())
+    }
+
+    /// Montre une chaîne : un caractère par code, le texte avance de la largeur de chaque glyphe. Une chaîne que rien
+    /// ne découpe en codes est un seul caractère inconnu, qui n'avance pas le texte (sa largeur n'est pas lue).
     fn montrer(&mut self, e: &Etat, tm: &mut Mat, chaine: &[u8]) -> Result<(), Refus> {
         let police = police_choisie(e)?.clone();
-        for (code, n) in police.codes(chaine)? {
-            let w0 = police.largeur(code);
-            let trm = mul(&[e.taille * e.th, Z, Z, e.taille, Z, e.rise], &mul(tm, &e.ctm));
-            let signes = police.signes(code);
-            let visible = self.dans_le_cadre(&trm, w0);
-            let boite = englobante(&trm, Z, -police.desc, w0, police.asc);
-            // Le corps rendu : la racine du déterminant de la matrice de rendu (positive : sa valeur absolue).
-            let taille = (trm[0] * trm[3] - trm[1] * trm[2]).abs().racine().ok_or_else(|| Refus::defaut("une valeur absolue sans racine"))?;
-            if let Some(a) = &mut self.actuel {
-                // Sous un `/ActualText` : on ne garde que la position du premier glyphe et
-                // l'avance totale ; le texte réel se pose à la fermeture.
-                if a.premier.is_none() {
-                    a.premier = Some(((trm[4], trm[5]), (trm[0], trm[1]), taille));
-                    (a.trm, a.asc, a.desc) = (trm, police.asc, police.desc);
-                }
-                a.adv += w0;
-            } else if visible {
-                let dir = if police.vertical { (trm[2], trm[3]) } else { (trm[0], trm[1]) };
-                for (k, c) in signes.into_iter().enumerate() {
-                    self.mise.caractere(c, (trm[4], trm[5]), dir, taille, if k == 0 { Some(w0) } else { None }, boite);
-                }
+        let codes = match police.codes(chaine)? {
+            Ok(codes) => codes,
+            Err(pourquoi) => {
+                let inconnu = Signe::Inconnu(Inconnu { police: police.nom.clone(), code: code_ecrit(chaine), pourquoi });
+                return self.poser(&police, e, tm, vec![inconnu], Z);
             }
+        };
+        let mut debut = 0;
+        for (code, n) in codes {
+            let w0 = police.largeur(code);
+            let signes = police.signes(code, &chaine[debut..debut + n]);
+            debut += n;
+            self.poser(&police, e, tm, signes, w0)?;
             let mut tx = w0 * e.taille + e.tc;
             if n == 1 && code == 32 {
                 tx += e.tw;

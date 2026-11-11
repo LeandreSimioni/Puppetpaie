@@ -448,6 +448,42 @@ https://opensource.adobe.com/dc-acrobat-sdk-docs/pdfstandards/PDF32000_2008.pdf,
 > 14 fonts are available from the ASN Web site (see the Bibliography). For more information on font metrics, see
 > Adobe Technical Note #5004, Adobe Font Metrics File Format Specification.
 
+## Table 127 (suite) – Additional entries in an embedded font stream dictionary
+
+> Subtype name (Required if referenced from FontFile3; PDF 1.2) A name specifying the format of the embedded font
+> program. The name shall be Type1C for Type 1 compact fonts, CIDFontType0C for Type 0 compact CIDFonts, or OpenType
+> for OpenType fonts.
+
+## 9.10.2 (suite) Mapping Character Codes to Unicode Values, étapes a) à c)
+
+> a) Map the character code to a character identifier (CID) according to the font's CMap.
+>
+> b) Obtain the registry and ordering of the character collection used by the font's CMap (for example, Adobe and
+> Japan1) from its CIDSystemInfo dictionary.
+>
+> c) Construct a second CMap name by concatenating the registry and ordering obtained in step (b) in the format
+> registry–ordering–UCS2 (for example, Adobe–Japan1–UCS2).
+>
+> [...]
+>
+> If these methods fail to produce a Unicode value, there is no way to determine what the character code represents
+> in which case a conforming reader may choose a character code of their choosing.
+
+## 9.10.3 ToUnicode CMaps
+
+> The CMap defined in the ToUnicode entry of the font dictionary shall follow the syntax for CMaps introduced in
+> 9.7.5, "CMaps" [...]. This CMap differs from an ordinary one in these ways: [...]
+>
+> • The CMap file shall contain begincodespacerange and endcodespacerange operators that are consistent with the
+> encoding that the font uses. In particular, for a simple font, the codespace shall be one byte long.
+
+## Table 116 – Entries in a CIDSystemInfo dictionary
+
+> Registry ASCII string (Required) A string identifying the issuer of the character collection. [...]
+>
+> Ordering ASCII string (Required) A string that uniquely names the character collection within the specified
+> registry.
+
 ## 7.9.2.2 Text String Type
 
 > The text string type shall be used for character strings that shall be encoded in either PDFDocEncoding or the

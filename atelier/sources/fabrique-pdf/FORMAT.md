@@ -539,9 +539,10 @@ pour `--texte`, aussi : chiffré avec un autre mot de passe que le vide) ; **2**
   Un PDF chiffré se compte sans être déchiffré.
 - `--texte` : un tableau, **une entrée par page, dans l'ordre des pages** ; chaque page est le
   tableau de ses morceaux : une chaîne, ou **un caractère que rien ne dit**, tel qu'il est,
-  `{"police": "ABCDEF+Nom", "code": 12, "pourquoi": "…"}` (ISO 32000-1, 9.10.2 : ni `ToUnicode`,
+  `{"police": "ABCDEF+Nom", "code": "<0C>", "pourquoi": "…"}` (ISO 32000-1, 9.10.2 : ni `ToUnicode`,
   ni l'encodage, ni le programme de la police ne disent son caractère ; ce n'est ni U+FFFD ni un
-  caractère deviné). Une page sans texte (un scan) donne `[]`. Mis bout à bout, les morceaux font
+  caractère deviné). `code` en donne les octets, en hexadécimal entre chevrons : ceux de la chaîne
+  entière quand rien ne dit où un code finit (un CMap prédéfini non déposé, sans `ToUnicode`). Une page sans texte (un scan) donne `[]`. Mis bout à bout, les morceaux font
   le texte de `page.get_text()` : **une ligne par `\n`, un `\n` après la dernière**, pas de ligne
   vide entre les blocs. Une page dont le contenu est illisible donne `[]` et **une ligne
   d'avertissement** sur la sortie d'erreur (code 0) : le reste du document se lit.
@@ -564,11 +565,15 @@ l'écrit**, comme MuPDF. Ce que MuPDF fait en plus, la fabrique le fait :
   caractères de nos PDF : aucun n'est mal classé. Un texte en tableau (un libellé puis, plus à
   droite, sa valeur) donne donc deux lignes, comme avec PyMuPDF.
 - *Les polices.* La table `ToUnicode`, quand la police en a une, donne le texte (elle l'emporte,
-  comme dans MuPDF) ; sinon l'encodage de la police simple (WinAnsi, MacRoman, Standard,
-  `/Differences` avec les noms de glyphes d'Adobe, `uniXXXX`) ; une police composée sans
-  `ToUnicode` donne U+FFFD. Les largeurs viennent de `/Widths` ou `/W` ; Liberation tient lieu
-  de métrique aux polices standard (Helvetica, Times, Courier) citées sans largeurs. Le 0xAD de
-  WinAnsi est le trait d'union conditionnel (U+00AD), comme chez MuPDF.
+  comme dans MuPDF) ; sinon l'encodage de la police simple (les encodages de l'annexe D,
+  `/Differences` avec les noms de glyphes d'Adobe, `uniXXXX`, l'encodage propre d'un programme
+  Type 1 ou CFF, la « cmap » d'un programme TrueType ou OpenType) ; une police composée sans
+  `ToUnicode` : le programme TrueType (ses noms de glyphes) ; un caractère que rien ne dit est un
+  morceau à part (plus haut). Les largeurs viennent de `/Widths` ou `/W` ; une des 14 polices
+  standard citée sans largeurs, **sous son nom exact**, prend celles de son fichier de métriques
+  d'Adobe (AFM), par le nom du glyphe ; un autre nom prend `MissingWidth`. Un code d'un CMap
+  prédéfini non déposé n'a pas de largeur lue : il n'avance pas le texte. Le 0xAD de WinAnsi est
+  le trait d'union conditionnel (U+00AD).
 - *Les annotations.* MuPDF dessine les champs de formulaire : leur apparence (`/AP /N`, état
   `/AS`, calée sur `/Rect`) est lue **après** le contenu de la page, sauf les annotations
   cachées ou `Popup`. Les AEM de CoolPaie sont des formulaires : leurs champs sortent dans le texte.
@@ -582,7 +587,7 @@ glyphes de symboles (MuPDF prend l'avance du glyphe dans le fichier de police, l
 de `/Widths` : un espace de plus ou de moins après une case ou une puce) ; les polices en
 petites capitales dont les codes sont des minuscules (MuPDF lit la capitale dans le nom du
 glyphe) ; les caractères de la zone privée de Wingdings (MuPDF les traduit en flèches, la
-fabrique les rend tels quels) ; les polices CFF et Type 3 sans `ToUnicode` ; le texte vertical et
+fabrique les rend tels quels) ; les polices CID compactes et Type 3 sans `ToUnicode` ; le texte vertical et
 les pages dont `/Rotate` change le sens de lecture ne sont pas retraités. Mesuré sur nos PDF
 (README.md) : 254 pages sur 255 des exports de CoolPaie et 120 sur 124 de celles de PuppetPaie
 (contrats, avenants, bulletins, certificats, y compris verrouillés) ont **le même texte que
