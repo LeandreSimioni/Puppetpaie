@@ -40,9 +40,9 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     };
     refuser_si_pas_redirige(cadre, Organisme::Dsn, "le depot de test")?;
     // Un mois tape (`AAAA-MM`) designe la DSN du mois, comme la route (`depots::designee`) ; tout autre texte, un fichier.
-    let designee = match fichier.mois() {
-        Ok(m) => routes::depots::designee(&cadre.ctx, &routes::depots::Designation::du_mois(routes::depots::Quoi::Dsn, m))?.0,
-        Err(_) => fichier.texte().to_string(),
+    let designee = match fichier.designe_un_mois() {
+        Some(m) => routes::depots::designee(&cadre.ctx, &routes::depots::Designation::du_mois(routes::depots::Quoi::Dsn, m))?.0,
+        None => fichier.texte().to_string(),
     };
     // Un depot de test n'engage rien : il lui faut seulement le secret de l'organisme, donc le coffre ouvert.
     cadre.ouvrir_le_coffre();

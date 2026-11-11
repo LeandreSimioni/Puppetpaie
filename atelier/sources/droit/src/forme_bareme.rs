@@ -1151,7 +1151,7 @@ forme! {
 
 /// Une base, la meme pour tous ou selon la population (intermittent, permanent).
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum BaseParPopulation {
     Une(Assiette),
     Par { intermittent: Assiette, permanent: Assiette },
@@ -1159,7 +1159,7 @@ pub enum BaseParPopulation {
 
 /// Un taux, le meme pour tous ou selon la population.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum TauxParPopulation {
     Un(#[serde(deserialize_with = "socle::forme::court")] Decimal),
     Par {

@@ -42,4 +42,10 @@ impl Argument {
     pub fn mois(&self) -> R<Mois> {
         Mois::lire(&self.0)
     }
+
+    /// Le mois `AAAA-MM` que l'argument designe, s'il en est un (un argument qui dit un mois ou un fichier) ; `None` : ce
+    /// n'est pas un mois.
+    pub fn designe_un_mois(&self) -> Option<Mois> {
+        Mois::du_texte(&self.0)
+    }
 }

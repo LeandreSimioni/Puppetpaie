@@ -2605,26 +2605,51 @@ fn tout_ce_qui_est_public_sert_le_logiciel() {
     );
 }
 
-/// Le code d'un source Rust sans ses parties `#[cfg(test)]` (un module, une fonction ou un `use` a la marge).
+/// Le code d'un source Rust sans ses parties `#[cfg(test)]`, blanchies a leurs lignes : chaque item que l'attribut
+/// marque, ou qu'il soit (a la marge, dans un `impl`, un champ), de l'attribut a ce qui le finit dans le code (textes et
+/// commentaires blanchis) : son `;` ou sa `,` hors de toute parenthese, l'accolade qui ferme son corps, ou l'accolade qui
+/// ferme ce qui le contient. Rien d'autre ne s'ecarte.
 fn sans_tests(t: &str) -> String {
-    let mut v = Vec::new();
-    let mut lignes = t.lines();
-    while let Some(l) = lignes.next() {
-        if l != "#[cfg(test)]" {
-            v.push(l);
+    let code: Vec<char> = blanchi_entier(t, true).chars().collect();
+    let mut c: Vec<char> = t.chars().collect();
+    let marque: Vec<char> = "#[cfg(test)]".chars().collect();
+    let mut i = 0;
+    while i + marque.len() <= code.len() {
+        if code[i..i + marque.len()] != marque[..] {
+            i += 1;
             continue;
         }
-        if let Some(item) = lignes.next() {
-            if !item.trim_end().ends_with(';') {
-                for x in lignes.by_ref() {
-                    if x == "}" {
+        let (mut j, mut profondeur) = (i + marque.len(), 0i32);
+        while j < code.len() {
+            match code[j] {
+                '{' | '(' | '[' => profondeur += 1,
+                '}' | ')' | ']' => {
+                    profondeur -= 1;
+                    if profondeur < 0 {
+                        break;
+                    }
+                    if profondeur == 0 && code[j] == '}' {
+                        j += 1;
                         break;
                     }
                 }
+                ';' | ',' if profondeur == 0 => {
+                    j += 1;
+                    break;
+                }
+                _ => {}
+            }
+            j += 1;
+        }
+        let n = c.len();
+        for x in c.iter_mut().take(j.min(n)).skip(i) {
+            if *x != '\n' {
+                *x = ' ';
             }
         }
+        i = j;
     }
-    v.join("\n")
+    c.into_iter().collect()
 }
 
 /// LA CARTE VALIDE A UNE VARIANTE PAR NATURE DE `contrats-base.json` (`droit::natures::NatureDeContrat`). Les motifs
@@ -2637,39 +2662,89 @@ fn la_carte_valide_a_une_variante_par_nature() {
     assert_eq!(ecrites, NatureDeContrat::TOUTES.iter().map(|n| n.cle()).collect::<BTreeSet<_>>(), "une variante de la carte par nature du fichier");
 }
 
-/// UNE FORME LUE REFUSE CE QU'ELLE NE CONNAIT PAS : chaque structure derivee de `Deserialize` porte
-/// `#[serde(deny_unknown_fields)]` (atelier/AGENTS.md, « Chaque forme est declaree une fois, en Rust »), ou se lit par une
-/// autre forme qui la porte (`try_from`), ou se declare elle-meme, dans son fichier, reponse d'un tiers
-/// (`impl socle::forme::ReponseDUnTiers for <elle>`) : elle ne se lit alors que par la porte des tiers
-/// (`socle::forme::lire_reponse_tiers`), qui ignore les cles que le tiers ajoute.
+/// UNE FORME LUE REFUSE CE QU'ELLE NE CONNAIT PAS (atelier/AGENTS.md, « Chaque forme est declaree une fois, en Rust ») :
+/// chaque type derive de `Deserialize` (son `derive` sur une ligne ou plusieurs, hors des tests) qui a des cles -- une
+/// structure a champs nommes, une `enum` qui a une variante a champs nommes -- porte `#[serde(deny_unknown_fields)]`,
+/// ou se declare elle-meme, dans son fichier, reponse d'un tiers (`impl socle::forme::ReponseDUnTiers for <elle>`) :
+/// elle ne se lit alors que par la porte des tiers (`socle::forme::lire_reponse_tiers`), qui ignore les cles que le
+/// tiers ajoute. Un type qui se lit entier par un autre (`try_from`, `from`) le nomme : cet autre est une forme que ce
+/// verrou tient (derivee de `Deserialize` dans l'espace), une lecture ecrite a la main (`impl Deserialize for`), ou un
+/// type sans champ nomme (un texte, un nombre, un booleen, une liste, une table) ; un type `transparent` se lit par son
+/// seul champ, que le compilateur type.
 #[test]
 fn chaque_forme_lue_refuse_une_cle_inconnue() {
-    let mut fautes = Vec::new();
+    let derive = regex::Regex::new(r"#\[\s*derive\s*\([^\]]*\bDeserialize\b").unwrap();
+    let declaration = regex::Regex::new(r"^\s*(?:pub(?:\s*\([^)]*\))?\s+)?(struct|enum)\s+([A-Za-z_]\w*)").unwrap();
+    let par_un_autre = regex::Regex::new(r#"\b(?:try_from|from)\s*=\s*"([^"]+)""#).unwrap();
+    // Les types de Rust et de la norme JSON qui n'ont pas de champ nomme : un texte, un nombre, un booleen, une liste, une
+    // table (ses cles sont des donnees, pas des champs).
+    let sans_champ = ["String", "str", "bool", "char", "u8", "u16", "u32", "u64", "usize", "i8", "i16", "i32", "i64", "isize", "Number", "Vec", "BTreeMap", "HashMap"];
+    // Un type dont la lecture est ecrite a la main (`impl Deserialize for`) : sa porte est son code.
+    let a_la_main = regex::Regex::new(r"\bimpl\s*<[^>]*>\s*(?:serde::)?Deserialize\s*<[^>]*>\s*for\s+([A-Za-z_]\w*)").unwrap();
+    let mut ecrites: BTreeSet<String> = BTreeSet::new();
+    // (fichier, ligne, nom, attributs, a des cles, se declare reponse d'un tiers)
+    let mut formes: Vec<(String, usize, String, String, bool, bool)> = Vec::new();
     for crate_ in ORDRE {
         for f in sources(&espace().join(crate_).join("src")) {
             let texte = std::fs::read_to_string(&f).unwrap();
-            let lignes: Vec<&str> = texte.lines().collect();
-            for (i, l) in lignes.iter().enumerate() {
-                if !(l.trim_start().starts_with("#[derive(") && l.contains("Deserialize")) {
+            let brut: Vec<String> = blanchi(&texte, false).lines().map(String::from).collect();
+            let code: Vec<String> = code_seul(&texte).lines().map(String::from).collect();
+            ecrites.extend(code.iter().flat_map(|l| a_la_main.captures_iter(l).map(|c| c[1].to_string()).collect::<Vec<_>>()));
+            for (i, l) in code.iter().enumerate() {
+                let Some(d) = declaration.captures(l) else { continue };
+                // Les attributs : les lignes au-dessus, jusqu'a la fin de l'item d'avant (`;`, `}`) ou au debut de ce
+                // qui le contient (`{`), et le debut de la ligne de la declaration.
+                let mut debut = i;
+                while debut > 0 && !code[debut - 1].trim_end().ends_with([';', '}', '{']) {
+                    debut -= 1;
+                }
+                let attributs = brut[debut..=i].join(" ");
+                if !derive.is_match(&attributs) {
                     continue;
                 }
-                let suite: Vec<&str> = lignes[i + 1..].iter().take_while(|x| !x.contains("struct ") && !x.contains("enum ")).copied().collect();
-                let declare = lignes.get(i + 1 + suite.len()).copied().unwrap_or("");
-                let attributs = suite.join(" ");
-                if !declare.contains("struct ") || attributs.contains("deny_unknown_fields") || attributs.contains("try_from") {
-                    continue;
+                // Le corps, du `{` de la declaration a l'accolade qui le ferme : une cle est un `{` a la profondeur 1 d'une
+                // `enum` (une variante a champs nommes), ou le corps meme d'une structure.
+                let (mut profondeur, mut corps, mut cles) = (0i32, false, false);
+                'corps: for x in &code[i..] {
+                    for ch in x.chars() {
+                        match ch {
+                            '{' => {
+                                profondeur += 1;
+                                corps = true;
+                                cles |= (&d[1] == "struct" && profondeur == 1) || (&d[1] == "enum" && profondeur == 2);
+                            }
+                            '}' => {
+                                profondeur -= 1;
+                                if profondeur == 0 {
+                                    break 'corps;
+                                }
+                            }
+                            ';' | '(' if !corps && profondeur == 0 => break 'corps,
+                            _ => {}
+                        }
+                    }
                 }
-                let nom: String = declare.split("struct ").nth(1).unwrap_or("").chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
-                let tiers = |l: &&str| {
-                    let l = l.trim_start();
-                    l.starts_with("impl ") && l.contains("ReponseDUnTiers for ") && l.split("ReponseDUnTiers for ").nth(1).is_some_and(|r| r.trim_start().starts_with(&format!("{} ", nom)) || r.trim_start().starts_with(&format!("{}{{", nom)))
-                };
-                if nom.is_empty() || !lignes.iter().any(tiers) {
-                    fautes.push(format!("{}:{}", f.display(), i + 1));
-                }
+                let nom = d[2].to_string();
+                let tiers = brut.iter().any(|x| x.contains("ReponseDUnTiers for ") && x.split("ReponseDUnTiers for ").nth(1).is_some_and(|r| r.trim_start().split(|c: char| !(c.is_alphanumeric() || c == '_')).next() == Some(nom.as_str())));
+                formes.push((f.display().to_string(), i + 1, nom, attributs, cles, tiers));
             }
         }
     }
+    let derivees: BTreeSet<&str> = formes.iter().map(|x| x.2.as_str()).collect();
+    let mut fautes = Vec::new();
+    for (f, ligne, nom, attributs, cles, tiers) in &formes {
+        if let Some(autre) = par_un_autre.captures(attributs) {
+            let t = autre[1].split('<').next().and_then(|x| x.rsplit("::").next()).map(str::trim);
+            if !t.is_some_and(|t| derivees.contains(t) || ecrites.contains(t) || sans_champ.contains(&t)) {
+                fautes.push(format!("{}:{} : {} se lit par « {} », qui n'est ni une forme tenue par ce verrou, ni une lecture ecrite a la main, ni un type sans champ", f, ligne, nom, &autre[1]));
+            }
+            continue;
+        }
+        if *cles && !attributs.contains("deny_unknown_fields") && !attributs.contains("transparent") && !tiers {
+            fautes.push(format!("{}:{} : {}", f, ligne, nom));
+        }
+    }
+    assert!(formes.len() > 100, "le verrou ne trouve que {} formes lues : il ne les voit plus", formes.len());
     assert!(fautes.is_empty(), "une forme lue sans deny_unknown_fields, qui ne se declare pas reponse d'un tiers (`socle::forme::ReponseDUnTiers`) :\n{}", fautes.join("\n"));
 }
 
@@ -2702,7 +2777,8 @@ fn scripts_de(html: &str) -> String {
 /// `en_json(…)` : `structure/reponses.rs`) a la forme que `serde` ecrit de son type ; chaque champ que la page lit sur
 /// ce qu'elle a recu de cette route (`structure/page.rs`, qui dit ce qui se suit et ce qui ne se suit pas) est un champ de
 /// cette forme. Un champ renomme d'un cote et pas de l'autre fait echouer le test, la route, la cle et la ligne nommees.
-/// Les routes que la page appelle et dont la reponse n'est pas encore une structure (un `json!`) se nomment, a typer.
+/// Chaque route rend une structure : une route dont la reponse n'en est pas une (ou ne se suit pas jusqu'a son type)
+/// fait echouer le test, nommee.
 #[test]
 fn la_page_ne_lit_que_ce_que_les_routes_rendent() {
     let depot = espace().join("../..");
@@ -2781,9 +2857,14 @@ fn la_page_ne_lit_que_ce_que_les_routes_rendent() {
         .map(|(v, n)| format!("{} ({})", n, declarees.get(v).map(|f| e.nom_du_fichier(*f, &espace())).unwrap_or_default()))
         .collect();
     toutes.sort_by(|a, b| a.split(" (").nth(1).cmp(&b.split(" (").nth(1)));
-    eprintln!(
-        "{} champs lus verifies ; {} routes typees ; la page appelle {} routes dont la reponse n'est pas une structure (a typer) : {}\nnon typees ({}) :\n{}",
-        verifies, routes.len(), a_typer.len(), a_typer.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "), toutes.len(), toutes.join("\n")
+    // Chaque route rend une structure : celle que la page lit, et toutes les autres.
+    assert!(
+        a_typer.is_empty() && toutes.is_empty(),
+        "la reponse d'une route n'est pas une structure (`en_json` d'un type `Serialize`) : la page en lit {} ({}) ; non typees ({}) :\n{}",
+        a_typer.len(),
+        a_typer.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "),
+        toutes.len(),
+        toutes.join("\n")
     );
 }
 
