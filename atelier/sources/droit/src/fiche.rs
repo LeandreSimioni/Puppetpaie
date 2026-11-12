@@ -434,7 +434,7 @@ texte_borne! {
 /// CE QU'UNE NOTION LUE PORTE AVEC SON TEXTE : elle se lit de son seul lecteur (`lire`, a la lecture du fichier comme a
 /// la porte) et se refuse a la saisie par sa faute (`FormeDeCase::FAUTE`) ; elle s'ecrit telle qu'elle a ete lue.
 macro_rules! notion_lue {
-    ($nom:ident) => {
+    ($nom:ident, faute a part) => {
         impl AsRef<str> for $nom {
             fn as_ref(&self) -> &str {
                 &self.0
@@ -463,6 +463,9 @@ macro_rules! notion_lue {
         impl FormeDeCase for $nom {
             const FAUTE: Option<fn(&str) -> Option<String>> = Some($nom::faute);
         }
+    };
+    ($nom:ident) => {
+        notion_lue!($nom, faute a part);
 
         impl $nom {
             /// Ce qui refuse `texte` a la saisie, en une phrase qui dit quoi faire ; rien pour un texte vide (la case vide
@@ -595,6 +598,43 @@ impl Siret {
         cle_de_luhn_juste(&self.0)
     }
 }
+
+/// UN IBAN (ISO 13616) : sa forme et sa cle sont celles de `socle::iban::faute_iban` (S21.G00.20.004 de la DSN, et le
+/// communique IBAN de la Banque centrale de Turquie : `atelier/reference/sources/iban/`), qui le lit compacte (sans
+/// blancs, en majuscules : `socle::iban::iban_compact`). Il se garde tel qu'il est ecrit.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct Iban(String);
+
+impl Iban {
+    /// L'IBAN `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<Iban> {
+        match socle::iban::faute_iban(texte) {
+            Some(f) => Err(socle::refus!("« {} » n'est pas un IBAN : {}", texte, f)),
+            None => Ok(Iban(texte.to_string())),
+        }
+    }
+}
+
+notion_lue!(Iban);
+
+/// UN BIC (ISO 9362) : sa forme est celle de `socle::iban::faute_bic` (S21.G00.20.003 de la DSN), qui le lit compacte.
+/// Il se garde tel qu'il est ecrit.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct Bic(String);
+
+impl Bic {
+    /// Le BIC `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<Bic> {
+        match socle::iban::faute_bic(texte) {
+            Some(f) => Err(socle::refus!("« {} » n'est pas un BIC : {}", texte, f)),
+            None => Ok(Bic(texte.to_string())),
+        }
+    }
+}
+
+notion_lue!(Bic);
 
 /// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
 /// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,
@@ -1811,7 +1851,7 @@ choix! {
 
 cases! {
     /// Le compte bancaire (IBAN, BIC).
-    pub struct Banque, cles CaseBanque { Iban(String) = "iban" => iban, Bic(String) = "bic" => bic }
+    pub struct Banque, cles CaseBanque { Iban(Iban) = "iban" => iban, Bic(Bic) = "bic" => bic }
 }
 
 cases! {

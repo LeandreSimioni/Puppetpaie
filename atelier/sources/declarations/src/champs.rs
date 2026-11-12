@@ -1810,13 +1810,6 @@ fn valeur_decimale(c: char) -> Option<u32> {
     ZEROS.iter().find(|z| (**z..**z + 10).contains(&p)).map(|z| p - z).or_else(|| (0x1FBF0..0x1FBFA).contains(&p).then(|| p - 0x1FBF0))
 }
 
-/// LE COMPTE BANCAIRE D'UNE FICHE (`banque`, de l'entreprise ou d'un salarie) : la faute de son IBAN, puis de son BIC.
-fn faute_banque(b: &Saisie) -> Option<String> {
-    use droit::fiche::CaseBanque;
-    let texte = |k: CaseBanque| b.texte(k).map(str::trim).filter(|s| !s.is_empty());
-    texte(CaseBanque::Iban).and_then(socle::iban::faute_iban).or_else(|| texte(CaseBanque::Bic).and_then(socle::iban::faute_bic))
-}
-
 /// LES JOURS TRAVAILLES D'UN PERMANENT : ceux que le calcul lira (`droit::conges::JoursTravailles`) ; la faute, dite sans
 /// le nom du salarie que la fiche montre deja.
 fn faute_des_jours(v: &Valeur) -> Option<String> {
@@ -1943,12 +1936,6 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
         return Ok(None);
     }
     let est = |k: CaseDeFiche| c.cle == k;
-    if est(CaseSalarie::Banque.into()) {
-        return Ok(match valeur {
-            Valeur::Bloc(b) => faute_banque(b),
-            _ => None,
-        });
-    }
     if est(CasePieceSalarie::JoursTravailles.into()) {
         return Ok(faute_des_jours(valeur));
     }

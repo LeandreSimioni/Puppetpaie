@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::base_assujettie::BaseAssujettie;
-use droit::fiche::{Idcc, Nic, Siren};
+use droit::fiche::{Bic, Iban, Idcc, Nic, Siren};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 
@@ -30,6 +30,9 @@ const SIREN: &str = "un SIREN (9 chiffres)";
 const NIC: &str = "un NIC (5 chiffres)";
 /// Ce que porte une rubrique d'IDCC (S21.G00.11.022, S21.G00.40.017, X [4,4]) : `droit::fiche::Idcc`.
 const IDCC: &str = "un IDCC (4 chiffres)";
+/// Ce que portent les rubriques du compte preleve (S21.G00.20.003, .004) : `droit::fiche::Bic`, `Iban`.
+const BIC: &str = "un BIC (ISO 9362)";
+const IBAN: &str = "un IBAN (ISO 13616) à la clé juste";
 
 // ------------------------------------------------------------------ la forme
 
@@ -38,8 +41,17 @@ const IDCC: &str = "un IDCC (4 chiffres)";
 /// que le moteur y ecrit (`dsn.rs`).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Banque {
-    pub bic: String,
-    pub iban: String,
+    pub bic: Bic,
+    pub iban: Iban,
+}
+
+/// Un versement a un organisme (bloc S21.G00.20) tel que la lecture le garde : l'identifiant de l'organisme (.001),
+/// l'entite d'affectation (.002), le BIC et l'IBAN du compte preleve (.003, .004).
+struct Bloc20 {
+    organisme: String,
+    affectation: String,
+    bic: Option<Bic>,
+    iban: Option<Iban>,
 }
 
 /// Un contact chez le declare (S20.G00.07 : « nom et prenom » en une rubrique, .001 ; telephone .002 ; courriel .003 ;
@@ -932,7 +944,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
     let (mut nic_siege, mut adresse_siege, mut code_postal_siege, mut commune_siege, mut apet) = (None, None, None, None, None);
     let mut etablissements: Vec<Nic> = Vec::new();
     // Les versements aux organismes (bloc 20) : identifiant, entite d'affectation, BIC, IBAN.
-    let mut blocs20: Vec<[String; 4]> = Vec::new();
+    let mut blocs20: Vec<Bloc20> = Vec::new();
     let mut contacts: Vec<Contact> = Vec::new();
     let mut adhesions: Vec<Adhesion> = Vec::new();
     let mut rattachements: Vec<String> = Vec::new();
@@ -1037,12 +1049,22 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                     *if k == "S21.G00.15.002" { &mut a.organisme } else { &mut a.reference } = plein;
                 }
             }
-            "S21.G00.20.001" => blocs20.push([v, String::new(), String::new(), String::new()]),
-            "S21.G00.20.002" | "S21.G00.20.003" | "S21.G00.20.004" => {
-                // Le rang de la rubrique dans son bloc : 002, 003, 004 vont en 1, 2, 3.
-                let rang = ["S21.G00.20.002", "S21.G00.20.003", "S21.G00.20.004"].iter().position(|r| *r == k).map(|i| i + 1);
-                if let (Some(b), Some(rang)) = (blocs20.last_mut(), rang) {
-                    b[rang] = v;
+            "S21.G00.20.001" => blocs20.push(Bloc20 { organisme: v, affectation: String::new(), bic: None, iban: None }),
+            "S21.G00.20.002" => {
+                if let Some(b) = blocs20.last_mut() {
+                    b.affectation = v;
+                }
+            }
+            "S21.G00.20.003" => {
+                let bic = fautes.lue(k, &v, BIC, Bic::lire);
+                if let Some(b) = blocs20.last_mut() {
+                    b.bic = bic;
+                }
+            }
+            "S21.G00.20.004" => {
+                let iban = fautes.lue(k, &v, IBAN, Iban::lire);
+                if let Some(b) = blocs20.last_mut() {
+                    b.iban = iban;
                 }
             }
             "S21.G00.30.001" => individus.push(IndividuDeclare::de(plein)),
@@ -1220,13 +1242,12 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
     // choisit pas). Le dossier de recouvrement France Travail : l'entite d'affectation (20.002) du versement a France
     // Travail, « identifiant attribue par le centre de recouvrement Spectacle (CS suivi de 8 caracteres numeriques) »
     // (p. 155), que le moteur ecrit depuis `france_travail_dossier_recouvrement`.
-    let comptes: BTreeSet<(&str, &str)> =
-        blocs20.iter().filter(|b| !b[2].is_empty() && !b[3].is_empty()).map(|b| (b[2].as_str(), b[3].as_str())).collect();
+    let comptes: BTreeSet<(&Bic, &Iban)> = blocs20.iter().filter_map(|b| b.bic.as_ref().zip(b.iban.as_ref())).collect();
     if let (1, Some((bic, iban))) = (comptes.len(), comptes.iter().next()) {
-        e.banque = Some(Banque { bic: bic.to_string(), iban: iban.to_string() });
+        e.banque = Some(Banque { bic: (*bic).clone(), iban: (*iban).clone() });
     }
     e.france_travail_dossier_recouvrement =
-        blocs20.iter().find(|b| b[0] == crate::dsn::SIRET_FRANCE_TRAVAIL && !b[1].is_empty()).map(|b| b[1].clone());
+        blocs20.iter().find(|b| b.organisme == crate::dsn::SIRET_FRANCE_TRAVAIL && !b.affectation.is_empty()).map(|b| b.affectation.clone());
     // QUI LES ORGANISMES CONTACTENT : le contact chez le declare de type 04 (« recouvrant, entre autres, des cotisations de
     // Securite sociale ») s'il y en a plusieurs, sinon le premier : le `declarant_dsn` de la fiche, que le moteur ecrit la
     // (`dsn.rs`, `type_du_contact`). Sa civilite n'est pas dans ce bloc : elle se lit dans celle du contact de l'emetteur
