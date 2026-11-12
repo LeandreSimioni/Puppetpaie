@@ -2638,12 +2638,14 @@ pub fn lire_fichier<T: DeserializeOwned>(chemin: &std::path::Path, fichier: &str
     socle::forme::lire_fichier_en_phrase(chemin, |cle, detail| refus_de_fiche(fichier, cle, detail))
 }
 
-/// Le refus d'une fiche qui ne se lit pas : le fichier, la cle, et quoi faire.
+/// Le refus d'une fiche qui ne se lit pas : le fichier, le chemin de la valeur (la cle de la fiche d'un salarie ou d'un
+/// spectacle, sa case, le rang de la valeur datee : « FULLER.nir_cle[0].valeur »), ce qui ne va pas (la phrase du type
+/// qui la refuse), et quoi faire.
 fn refus_de_fiche(fichier: &str, chemin: &str, detail: &str) -> String {
     let ou = if chemin.is_empty() { String::new() } else { format!(", à « {} »", chemin) };
     format!(
         "{}{} ne se lit pas : {}. Ce fichier a été écrit par une version précédente du logiciel ou à la main : ajouter la \
-compagnie à nouveau (« Ajouter une compagnie », d'un logiciel précédent) ou corriger cette clé dans le fichier.",
+compagnie à nouveau (« Ajouter une compagnie », d'un logiciel précédent) ou corriger cette clé ou sa valeur dans le fichier.",
         fichier, ou, detail
     )
 }
