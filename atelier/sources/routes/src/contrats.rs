@@ -998,7 +998,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         };
         contrats.push(ContratASigner {
             salarie: cle_s.clone(),
-            destinataire: p.salarie.email.dite().map(String::from),
+            destinataire: p.salarie.email.en_texte(),
             spectacle: p.titre()?,
             debut,
             fin,
@@ -1335,7 +1335,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
         remplacable: c.debut > ctx.aujourdhui,
         // Sans boite courriel, l'avenant s'imprime avec les contrats (`contrats-imprimer`) : rien ne part d'ici.
         boite_liee: crate::ouverture::boite_liee(ctx)?,
-        destinataire: p.salarie.email.dite().map(String::from),
+        destinataire: p.salarie.email.en_texte(),
     }))
 }
 
@@ -1416,7 +1416,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
         avenants: deja,
         remplacable: false,
         boite_liee: crate::ouverture::boite_liee(ctx)?,
-        destinataire: p.salarie.email.dite().map(String::from),
+        destinataire: p.salarie.email.en_texte(),
     }))
 }
 

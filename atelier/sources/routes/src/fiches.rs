@@ -1207,7 +1207,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         let Some((ident, brut, texte, de, quand)) = retenu else { continue };
         let (lue, illisible) = fq::fiche_depuis_reponses(&fq::lire_reponses(&texte)).map_err(|m| m.reclasser(Classe::Illisible))?;
         let mut recue: droit::fiche::ChampsSalarie = droit::fiche::lire_saisie(&lue, droit::contexte::SALARIES).map_err(|m| m.reclasser(Classe::Illisible))?;
-        recue.email = Some(de.clone());
+        recue.email = Some(droit::fiche::Courriel::lire(&de).map_err(|m| m.reclasser(Classe::Illisible))?);
         let nom = [recue.prenom_affichage.remplie(), recue.nom_affichage.remplie()].into_iter().flatten().collect::<Vec<_>>().join(" ");
         if nom.trim().is_empty() {
             r.incidents.push(format!("Fiche {} : la reponse de {} ne porte ni nom ni prenom lisible ; rien n'est cree.", code, de));
@@ -1421,8 +1421,9 @@ pub(crate) fn poser_courriel(ctx: &Contexte, cle: &str, email: &str) -> R<()> {
     if !ctx.salaries.contains_key(cle) {
         return Err(refus(format!("Salarié {} inconnu.", socle::fichiers::repr(cle))));
     }
+    let email = droit::fiche::Courriel::lire(email.trim())?;
     let p = preparer::<FicheSalarieDatee>(ctx, Some(cle), |plate| {
-        plate.email = Some(email.trim().to_string());
+        plate.email = Some(email);
         vec![droit::fiche::CaseSalarie::Email.into()]
     })?;
     let (depuis, _) = date_proposee(ctx, NomDeFiche::Salarie, Some(cle))?;

@@ -282,7 +282,7 @@ fn contact_sante_travail(f: &mut Fichier, ent_e: &ChampsEntreprise) -> R<()> {
     }
     let c = ent_e.contact_sante_travail.dite();
     let lu = |k: fn(&droit::fiche::ContactSanteTravail) -> &Option<String>| c.and_then(|c| k(c).portee());
-    let (nom_prenom, tel, email) = (lu(|c| &c.nom_prenom), lu(|c| &c.tel), lu(|c| &c.email));
+    let (nom_prenom, tel, email) = (lu(|c| &c.nom_prenom), lu(|c| &c.tel), c.and_then(|c| c.email.portee()));
     let (Some(nom_prenom), Some(tel), Some(email)) = (nom_prenom, tel, email) else {
         let manque: Vec<&str> = [(nom_prenom, "nom et prénom"), (tel, "téléphone"), (email, "courriel")]
             .into_iter()

@@ -636,6 +636,35 @@ impl Bic {
 
 notion_lue!(Bic);
 
+/// UNE ADRESSE DE COURRIEL : une seule arobase, qui n'est pas en tete, un point dans le domaine avec un caractere avant
+/// et un apres, aucun blanc (`^[^@\s]+@[^@\s]+\.[^@\s]+$`). Une inference : la forme qu'en garde la DSN (S20.G00.07.003,
+/// X [1,100] : `logiciel/donnees/formats-dsn-base.json`) ne dit que sa longueur, et aucun texte depose ne dit la forme
+/// d'une adresse ; celle-ci est la regle que la saisie tenait. Elle se garde telle qu'elle est ecrite, capitales
+/// comprises (RFC 5321, § 2.4 : `ietf/ietf-rfc5321-simple-mail-transfer-protocol-20081001.txt`, l. 869).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct Courriel(String);
+
+impl Courriel {
+    /// L'adresse `texte`, ou la phrase qui la refuse.
+    pub fn lire(texte: &str) -> R<Courriel> {
+        let c: Vec<char> = texte.chars().collect();
+        let une_arobase = c.iter().filter(|x| **x == '@').count() == 1 && !c.iter().any(|x| socle::texte::blanc(*x));
+        let bonne = une_arobase
+            && c.iter().position(|x| *x == '@').filter(|a| *a > 0).is_some_and(|a| {
+                let domaine = &c[a + 1..];
+                (1..domaine.len().saturating_sub(1)).any(|i| domaine[i] == '.')
+            });
+        if bonne {
+            Ok(Courriel(texte.to_string()))
+        } else {
+            Err(socle::refus!("« {} » n'est pas une adresse de courriel : nom@domaine.fr, sans espace", texte))
+        }
+    }
+}
+
+notion_lue!(Courriel);
+
 /// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
 /// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,
 /// `atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`). Hors de 1 a 12, il se refuse a la lecture
@@ -1891,7 +1920,7 @@ cases! {
         NomPrenomAffichage(String) = "nom_prenom_affichage" => nom_prenom_affichage,
         NomPrenom(String) = "nom_prenom" => nom_prenom,
         Tel(String) = "tel" => tel,
-        Email(String) = "email" => email,
+        Email(Courriel) = "email" => email,
     }
 }
 
@@ -1971,7 +2000,7 @@ cases! {
         Nom(String) = "nom" => nom,
         Fonction(String) = "fonction" => fonction,
         Tel(Telephone) = "tel" => tel,
-        Email(String) = "email" => email,
+        Email(Courriel) = "email" => email,
     }
 }
 
@@ -1982,7 +2011,7 @@ cases! {
         NomPrenomAffichage(String) = "nom_prenom_affichage" => nom_prenom_affichage,
         NomPrenom(String) = "nom_prenom" => nom_prenom,
         Tel(Telephone) = "tel" => tel,
-        Email(String) = "email" => email,
+        Email(Courriel) = "email" => email,
         Qualite(String) = "qualite" => qualite,
     }
 }
@@ -2026,7 +2055,7 @@ fiche! {
         CodePostal(String) = "code_postal" => code_postal,
         Commune(String) = "commune" => commune,
         CommuneAffichage(String) = "commune_affichage" => commune_affichage,
-        Email(String) = "email" => email,
+        Email(Courriel) = "email" => email,
         Banque(Banque) = "banque" => banque,
         NumCongesSpectacles(String) = "num_conges_spectacles" => num_conges_spectacles,
         EmploiAffichage(String) = "emploi_affichage" => emploi_affichage,

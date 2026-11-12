@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::base_assujettie::BaseAssujettie;
-use droit::fiche::{Bic, Iban, Idcc, Nic, Siren};
+use droit::fiche::{Bic, Courriel, Iban, Idcc, Nic, Siren};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 
@@ -33,6 +33,8 @@ const IDCC: &str = "un IDCC (4 chiffres)";
 /// Ce que portent les rubriques du compte preleve (S21.G00.20.003, .004) : `droit::fiche::Bic`, `Iban`.
 const BIC: &str = "un BIC (ISO 9362)";
 const IBAN: &str = "un IBAN (ISO 13616) à la clé juste";
+/// Ce que porte le courriel d'un contact (S20.G00.07.003) : `droit::fiche::Courriel`.
+const COURRIEL: &str = "une adresse de courriel";
 
 // ------------------------------------------------------------------ la forme
 
@@ -65,7 +67,7 @@ pub struct Contact {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tel: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub email: Option<String>,
+    pub email: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub qualite: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -208,7 +210,7 @@ pub struct IndividuDeclare {
     pub pays_naissance: Option<String>,
     /// .018.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub email: Option<String>,
+    pub email: Option<Courriel>,
     /// .019.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_salarie: Option<String>,
@@ -1019,9 +1021,15 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
             }
             "S20.G00.05.007" => depot = fautes.jour(k, &v),
             "S20.G00.07.001" => contacts.push(Contact::nomme(v)),
-            "S20.G00.07.002" | "S20.G00.07.003" | "S20.G00.07.004" => {
+            "S20.G00.07.002" | "S20.G00.07.004" => {
                 if let Some(c) = contacts.last_mut() {
-                    *match k { "S20.G00.07.002" => &mut c.tel, "S20.G00.07.003" => &mut c.email, _ => &mut c.qualite } = plein;
+                    *match k { "S20.G00.07.002" => &mut c.tel, _ => &mut c.qualite } = plein;
+                }
+            }
+            "S20.G00.07.003" => {
+                let email = fautes.lue(k, &v, COURRIEL, Courriel::lire);
+                if let Some(c) = contacts.last_mut() {
+                    c.email = email;
                 }
             }
             "S21.G00.06.001" => premier(&mut e.siren, &fautes.lue(k, &v, SIREN, Siren::lire)),
@@ -1073,7 +1081,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 individus[i].date_naissance = fautes.valeur(k, &v, "une date de naissance (JJMMAAAA)", NaissanceDeclaree::lire(&v));
             }
             "S21.G00.30.002" | "S21.G00.30.004" | "S21.G00.30.005" | "S21.G00.30.007" | "S21.G00.30.008" | "S21.G00.30.009"
-            | "S21.G00.30.010" | "S21.G00.30.013" | "S21.G00.30.014" | "S21.G00.30.015" | "S21.G00.30.018" | "S21.G00.30.019" => {
+            | "S21.G00.30.010" | "S21.G00.30.013" | "S21.G00.30.014" | "S21.G00.30.015" | "S21.G00.30.019" => {
                 let Some(i) = individu else { continue };
                 let s = &mut individus[i];
                 let case = match k {
@@ -1087,13 +1095,16 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                     "S21.G00.30.013" => &mut s.code_nationalite_dsn,
                     "S21.G00.30.014" => &mut s.departement_naissance,
                     "S21.G00.30.015" => &mut s.pays_naissance,
-                    "S21.G00.30.018" => &mut s.email,
                     _ => &mut s.code_salarie,
                 };
                 *case = Some(match k {
                     "S21.G00.30.005" => sexe_de_la_fiche(&v),
                     _ => v,
                 });
+            }
+            "S21.G00.30.018" => {
+                let Some(i) = individu else { continue };
+                individus[i].email = fautes.lue(k, &v, COURRIEL, Courriel::lire);
             }
             "S21.G00.40.001" => {
                 let Some(i) = individu else { continue };

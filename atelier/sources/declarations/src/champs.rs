@@ -1903,20 +1903,6 @@ fn faute_de_forme_officielle(v: &str) -> Option<String> {
     None
 }
 
-/// `^[^@\s]+@[^@\s]+\.[^@\s]+$`.
-fn courriel_valide(v: &str) -> bool {
-    let c: Vec<char> = v.chars().collect();
-    if c.iter().filter(|x| **x == '@').count() != 1 || c.iter().any(|x| espace(*x)) {
-        return false;
-    }
-    // Une arobase qui n'est pas la premiere lettre, puis un point avec au moins un caractere avant et un apres, dans le
-    // domaine.
-    c.iter().position(|x| *x == '@').filter(|a| *a > 0).is_some_and(|a| {
-        let domaine = &c[a + 1..];
-        (1..domaine.len().saturating_sub(1)).any(|i| domaine[i] == '.')
-    })
-}
-
 /// CE QU'UNE CASE EXIGE D'UNE VALEUR SAISIE : sa ligne de la table (un champ de la fiche, ou une case d'une structure).
 #[derive(Clone, Copy)]
 struct Regle<'a> {
@@ -1968,9 +1954,6 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
     }
     if c.forme == Forme::Date && date_iso(v).is_none() {
         return Ok(Some("date attendue au format AAAA-MM-JJ".into()));
-    }
-    if c.forme == Forme::Email && !courriel_valide(v) {
-        return Ok(Some("adresse de courriel attendue".into()));
     }
     if c.forme == Forme::Montant && socle::num::decimal_a_virgule(v).is_none() {
         return Ok(Some("nombre attendu".into()));

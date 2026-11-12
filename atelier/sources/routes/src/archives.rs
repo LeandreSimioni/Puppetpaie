@@ -745,7 +745,7 @@ fn adresses_de(ctx: &Contexte, cles: &[String]) -> R<Vec<String>> {
     cles.iter()
         .map(|cle| {
             let s = ctx.salaries.get(cle.as_str()).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))?;
-            s.email.dite().filter(|e| !e.is_empty()).cloned().ok_or_else(|| {
+            s.email.en_texte().ok_or_else(|| {
                 refus(format!("Pas d'adresse e-mail pour {} : compléter sa fiche avant d'envoyer. Rien n'est parti.", ctx.nomme(cle)))
             })
         })

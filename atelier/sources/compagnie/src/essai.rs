@@ -293,7 +293,7 @@ impl Variable {
                 nom_prenom_affichage: None,
                 nom_prenom: Some(self.declarant_dsn.nom_prenom.0.clone()),
                 tel: Some(case("declarant_dsn.tel", Telephone::lire, &self.declarant_dsn.tel.0)?),
-                email: Some(self.declarant_dsn.email.0.clone()),
+                email: Some(case("declarant_dsn.email", droit::fiche::Courriel::lire, &self.declarant_dsn.email.0)?),
                 qualite: Some(self.declarant_dsn.qualite.0.clone()),
             }),
             api_dpae: Some(ApiDpae {
