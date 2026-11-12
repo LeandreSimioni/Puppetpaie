@@ -646,6 +646,7 @@ pub fn indemnite_conges(
     maintien: Decimal,
 ) -> R<crate::conges::IndemniteDesJours> {
     let taux = regles()?.conges_payes.indemnisation.dixieme;
+    // Une periode qui n'a acquis aucun jour ne donne rien au dixieme : le zero est le calcul, pas une absence.
     let dixieme = if jours_acquis_periode > Decimal::ZERO {
         eur2(div(mul(mul(remuneration_periode, taux), jours_pris), jours_acquis_periode))
     } else {
@@ -927,25 +928,24 @@ pub struct IndemniteDuDepart {
 
 /// Le salaire de reference de l'indemnite de licenciement : la moyenne des
 /// douze derniers mois ou le tiers des trois derniers, le plus favorable.
-pub fn salaire_de_reference(douze_derniers: &[Decimal], trois_derniers: &[Decimal]) -> SalaireDeReference {
-    let moyenne = if douze_derniers.is_empty() {
-        zero2()
-    } else {
-        let s = douze_derniers.iter().fold(Decimal::ZERO, |a, b| add(a, *b));
-        eur2(div(s, Decimal::from(douze_derniers.len() as i64)))
-    };
-    let tiers = if trois_derniers.is_empty() {
-        zero2()
-    } else {
-        let s = trois_derniers.iter().fold(Decimal::ZERO, |a, b| add(a, *b));
-        eur2(div(s, Decimal::from(3)))
-    };
-    SalaireDeReference {
+/// Sans aucun brut des mois precedents, il ne se calcule pas : le refus le dit.
+pub fn salaire_de_reference(douze_derniers: &[Decimal], trois_derniers: &[Decimal]) -> R<SalaireDeReference> {
+    if douze_derniers.is_empty() || trois_derniers.is_empty() {
+        return Err(socle::refus!(
+            "Le salaire de référence de l'indemnité de fin de contrat (R1234-4) se calcule sur les bruts des derniers mois, \
+             et aucun n'est dit."
+        ));
+    }
+    let s = douze_derniers.iter().fold(Decimal::ZERO, |a, b| add(a, *b));
+    let moyenne = eur2(div(s, Decimal::from(douze_derniers.len() as i64)));
+    let s = trois_derniers.iter().fold(Decimal::ZERO, |a, b| add(a, *b));
+    let tiers = eur2(div(s, Decimal::from(3)));
+    Ok(SalaireDeReference {
         moyenne_12_mois: moyenne,
         tiers_3_mois: tiers,
         retenu: moyenne.max(tiers),
         regle: if moyenne >= tiers { "moyenne_12_mois" } else { "tiers_3_mois" },
-    }
+    })
 }
 
 /// L'indemnite legale de licenciement.

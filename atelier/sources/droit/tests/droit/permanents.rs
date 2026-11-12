@@ -120,7 +120,7 @@ fn preavis_mois(a: &(Decimal, Motif)) -> Rendu<Option<Decimal>> {
     p::preavis_mois(a.0, motif(&a.1), false).into()
 }
 fn salaire_de_reference(a: &(Vec<Decimal>, Vec<Decimal>)) -> SalaireDeReference {
-    let s = p::salaire_de_reference(&a.0, &a.1);
+    let s = p::salaire_de_reference(&a.0, &a.1).unwrap();
     SalaireDeReference { moyenne_12_mois: s.moyenne_12_mois, tiers_3_mois: s.tiers_3_mois, retenu: s.retenu, regle: s.regle.to_string() }
 }
 fn indemnite_licenciement(a: &(Decimal, Decimal, Motif)) -> Rendu<IndemniteLegale> {

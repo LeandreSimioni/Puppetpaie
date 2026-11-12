@@ -1269,7 +1269,7 @@ fn phrase_conventionnelle(conv: &clauses::Indemnite, m_legal: Decimal) -> R<Stri
 /// Le salaire de reference des indemnites de fin de contrat (R1234-4), sur les bruts des derniers mois.
 fn salaire_de_reference(ctx: &Contexte, e: &Carte, mois: Mois) -> R<permanents::SalaireDeReference> {
     let (douze, trois) = bruts_precedents(ctx, e, mois)?;
-    Ok(permanents::salaire_de_reference(&douze, &trois))
+    permanents::salaire_de_reference(&douze, &trois)
 }
 
 /// Les bruts mensuels des douze et des trois derniers mois (R1234-4) ; faute
