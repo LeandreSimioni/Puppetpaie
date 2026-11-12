@@ -510,17 +510,17 @@ fn mots_du_nom(nom: &str) -> std::collections::BTreeSet<String> {
 /// L'IDCC d'une convention que le bulletin nomme sans son numéro : celle, seule, dont le libellé de la table (le
 /// titre de la convention dans KALI) porte tous les mots distinctifs du nom imprimé. Un nom que plusieurs conventions
 /// portent (« spectacle », « production »), ou qu'aucune ne porte entier, ne donne rien : rien ne se devine (règle 1).
-pub fn idcc_nomme(nom: &str) -> R<Option<String>> {
+pub fn idcc_nomme(nom: &str) -> R<Option<crate::fiche::Idcc>> {
     let lus = mots_du_nom(nom);
     if lus.is_empty() {
         return Ok(None);
     }
     let t = table()?;
     let mut trouves = t.conventions.iter().filter(|(_, c)| lus.is_subset(&mots_du_nom(&c.libelle)));
-    Ok(match (trouves.next(), trouves.next()) {
-        (Some((idcc, _)), None) => Some(idcc.clone()),
-        _ => None,
-    })
+    match (trouves.next(), trouves.next()) {
+        (Some((idcc, _)), None) => crate::fiche::Idcc::lire(idcc).map(Some),
+        _ => Ok(None),
+    }
 }
 
 /// Une categorie de la convention dite en mots (« agent de maîtrise », « non-cadre »), telle que la fiche la nomme.

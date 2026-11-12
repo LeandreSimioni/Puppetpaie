@@ -190,12 +190,12 @@ impl Organisme {
 /// livree (`organismes-base.json`), qui porte les adresses et les organismes que la branche designe.
 struct Organismes {
     compagnie: droit::organismes::Organismes,
-    idcc: Option<String>,
+    idcc: Option<droit::fiche::Idcc>,
 }
 
 impl Organismes {
     fn lire(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise) -> R<Organismes> {
-        Ok(Organismes { compagnie: ctx.organismes()?, idcc: ent.idcc.en_texte() })
+        Ok(Organismes { compagnie: ctx.organismes()?, idcc: ent.idcc.clone() })
     }
 
     /// L'organisme de ce siret : son nom, et l'adresse que la donnee livree lui donne.

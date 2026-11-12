@@ -153,7 +153,7 @@ pub struct Aem {
     pub numero: Option<String>,
     pub siret: Option<droit::fiche::Siret>,
     pub ape: Option<String>,
-    pub idcc: Option<String>,
+    pub idcc: Option<droit::fiche::Idcc>,
     pub employeur: Option<String>,
     pub employeur_code_postal: Option<String>,
     pub employeur_commune: Option<String>,
@@ -366,7 +366,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             numero: None,
             siret: v("EMP_SIRET").and_then(|s| droit::fiche::Siret::lire(&s).ok()),
             ape: v("EMP_APE"),
-            idcc: v("EMP_IDCC"),
+            idcc: v("EMP_IDCC").and_then(|i| droit::fiche::Idcc::lire(&i).ok()),
             employeur: v("ENSEIGNE"),
             employeur_code_postal: v("ADR_EMP_CP"),
             employeur_commune: v("ADR_EMP_LOCALITE"),
@@ -604,7 +604,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     let siret: String = lu("siret", Some(1)).concat().chars().filter(char::is_ascii_digit).collect();
     a.siret = droit::fiche::Siret::lire(&siret).ok();
     a.ape = lu("ape", Some(1)).first().cloned();
-    a.idcc = lu("idcc", Some(1)).first().filter(|x| x.len() == 4 && x.chars().all(|c| c.is_ascii_digit())).cloned();
+    a.idcc = lu("idcc", Some(1)).first().and_then(|x| droit::fiche::Idcc::lire(x).ok());
     a.employeur = texte(lu("raison", Some(1)));
     a.employeur_code_postal = lu("code_postal", Some(1)).first().filter(|x| x.len() == 5 && x.chars().all(|c| c.is_ascii_digit())).cloned();
     a.employeur_commune = texte(lu("commune", Some(1)));

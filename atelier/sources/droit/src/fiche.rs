@@ -558,6 +558,15 @@ identifiant_de_chiffres! {
         "« {texte} » n'est pas un SIRET : il a {max} chiffres, le SIREN puis le NIC, sans espace (INSEE). Corrigez-le";
 }
 
+identifiant_de_chiffres! {
+    /// L'IDCC, L'IDENTIFIANT D'UNE CONVENTION COLLECTIVE : 4 chiffres (DSN, « Code convention collective applicable »,
+    /// S21.G00.40.017, et « Code convention collective principale », S21.G00.11.022, X [4,4] :
+    /// `logiciel/donnees/formats-dsn-base.json`).
+    pub struct Idcc : 4,
+        "« {texte} » n'est pas un IDCC : une convention collective se dit en {max} chiffres, 3090 par exemple (DSN, \
+S21.G00.40.017). Corrigez-le";
+}
+
 impl Siren {
     /// Sa cle de Luhn est-elle juste (`cle_de_luhn_juste`) ?
     pub fn cle_juste(&self) -> bool {
@@ -2040,7 +2049,7 @@ fiche! {
         CodePostal(CodePostal) = "code_postal" => code_postal,
         Commune(CommuneEmployeur) = "commune" => commune,
         CommuneAffichage(String) = "commune_affichage" => commune_affichage,
-        Idcc(String) = "idcc" => idcc,
+        Idcc(Idcc) = "idcc" => idcc,
         AnnexeConvention(AnnexeConvention) = "annexe_convention" => annexe_convention,
         Secteur2121(Secteur2121) = "secteur_2121" => secteur_2121,
         TypeRadio1922(TypeRadio1922) = "type_radio_1922" => type_radio_1922,
@@ -2307,7 +2316,7 @@ impl std::ops::DerefMut for FicheSalarie {
 #[serde(try_from = "Figee", into = "Figee")]
 pub struct SalarieDuContrat {
     pub fiche: FicheSalarie,
-    pub idcc_de_l_employeur: Option<String>,
+    pub idcc_de_l_employeur: Option<Idcc>,
     pub etablissement: Option<String>,
     pub sante_suspendue: Option<String>,
 }
@@ -2319,7 +2328,7 @@ struct Figee {
     cle: IdSalarie,
     champs: ChampsSalarie,
     #[serde(skip_serializing_if = "Option::is_none")]
-    idcc_de_l_employeur: Option<String>,
+    idcc_de_l_employeur: Option<Idcc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     etablissement: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

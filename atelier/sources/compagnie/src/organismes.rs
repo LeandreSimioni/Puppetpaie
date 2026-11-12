@@ -11,7 +11,6 @@
 //! (`droit::fiche::dater`) ; ce qui precede garde ses contrats. La premiere composition vaut de tout temps. Les identifiants
 //! d'adhesion (S21.G00.15.005) attribues ne bougent plus.
 
-use droit::fiche::Lue as _;
 use serde::Deserialize;
 
 use droit::contexte::Contexte;
@@ -73,7 +72,7 @@ fn periode(ctx: &Contexte, mois: Option<Mois>) -> (Jour, Jour) {
 
 /// Ce que l'ecran des contrats lit (`lire`).
 pub struct Lus {
-    pub idcc: Option<String>,
+    pub idcc: Option<droit::fiche::Idcc>,
     pub a_saisir: bool,
     pub mois: Mois,
     pub lignes: Vec<droit::organismes::Ligne>,
@@ -89,7 +88,7 @@ pub fn lire(ctx: &Contexte, mois: Option<Mois>) -> R<Lus> {
     let lignes: Vec<droit::organismes::Ligne> =
         attendus(ctx)?.iter().filter(|s| se_montre(s, permanents) && s.couvre(&periode)).map(|s| ligne(s, &saisi)).collect();
     let a_saisir = lignes.iter().any(|l| l.libelle.is_none() || l.organisme.is_none());
-    Ok(Lus { idcc: ctx.entreprise.idcc.portee().map(|i| i.trim().to_string()), a_saisir, mois: periode.0.mois_civil(), lignes })
+    Ok(Lus { idcc: ctx.entreprise.idcc.clone(), a_saisir, mois: periode.0.mois_civil(), lignes })
 }
 
 /// `organismes-enregistrer` : compose les adhesions du mois (sous la configuration du mois) avec ce qui est saisi, refuse

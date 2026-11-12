@@ -257,7 +257,7 @@ struct EntrepriseLue {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ConventionLue {
-    idcc: String,
+    idcc: droit::fiche::Idcc,
     libelle: String,
 }
 
@@ -554,10 +554,6 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
     let e = d.entreprise;
     if !e.siret.cle_juste() {
         return Err(refus!("entreprise : la clé de Luhn du Siret {} est fausse", e.siret));
-    }
-    let idcc = &e.convention.idcc;
-    if idcc.len() != 4 || !idcc.chars().all(|c| c.is_ascii_digit()) {
-        return Err(refus!("entreprise.convention : l'IDCC {} n'a pas quatre chiffres", idcc));
     }
 
     let mut salaries = Vec::new();

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::base_assujettie::BaseAssujettie;
-use droit::fiche::{Nic, Siren};
+use droit::fiche::{Idcc, Nic, Siren};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 
@@ -28,6 +28,8 @@ pub const SANS_MOIS: &str = "il ne porte pas de mois principal déclaré (S20.G0
 /// S21.G00.11.001, X [5,5]) : `droit::fiche::Siren`, `Nic`.
 const SIREN: &str = "un SIREN (9 chiffres)";
 const NIC: &str = "un NIC (5 chiffres)";
+/// Ce que porte une rubrique d'IDCC (S21.G00.11.022, S21.G00.40.017, X [4,4]) : `droit::fiche::Idcc`.
+const IDCC: &str = "un IDCC (4 chiffres)";
 
 // ------------------------------------------------------------------ la forme
 
@@ -87,7 +89,7 @@ pub struct EntrepriseDeclaree {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commune: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub idcc: Option<String>,
+    pub idcc: Option<Idcc>,
     /// La DSN declare « 97 puis le numero d'adherent » (S21.G00.40.022, `conges_spectacles::code_dsn`) : la fiche ne
     /// garde que le numero d'adherent, et seulement s'il a la forme que dit la fiche d'Audiens. La cle est
     /// `documents::conges_spectacles::CLE_ADHERENT`.
@@ -224,7 +226,7 @@ pub struct ContratDeclare {
     pub quotite: Option<Decimal>,
     pub modalite: Option<droit::natures::ModaliteDuTempsDeTravail>,
     /// .017, la convention du contrat.
-    pub idcc: Option<String>,
+    pub idcc: Option<Idcc>,
     /// .021, le motif de recours.
     pub motif_recours: Option<droit::natures::MotifDeRecours>,
     /// .022, la caisse de conges payes, telle que la DSN l'ecrit.
@@ -678,7 +680,8 @@ impl EntrepriseDeclaree {
     pub fn est_vide(&self) -> bool {
         self.siren.is_none()
             && self.nic.is_none()
-            && [&self.naf, &self.adresse, &self.code_postal, &self.commune, &self.idcc, &self.adherent_conges_spectacles, &self.raison_sociale, &self.france_travail_dossier_recouvrement, &self.medecine_travail]
+            && self.idcc.is_none()
+            && [&self.naf, &self.adresse, &self.code_postal, &self.commune, &self.adherent_conges_spectacles, &self.raison_sociale, &self.france_travail_dossier_recouvrement, &self.medecine_travail]
             .iter()
             .all(|c| c.is_none())
             && self.banque.is_none()
@@ -1026,7 +1029,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
             "S21.G00.11.003" => premier(&mut e.adresse, &plein),
             "S21.G00.11.004" => premier(&mut e.code_postal, &plein),
             "S21.G00.11.005" => premier(&mut e.commune, &plein),
-            "S21.G00.11.022" => premier(&mut e.idcc, &plein),
+            "S21.G00.11.022" => premier(&mut e.idcc, &fautes.lue(k, &v, IDCC, Idcc::lire)),
             "S21.G00.11.025" => spst = v,
             "S21.G00.15.001" => adhesions.push(Adhesion::de(v)),
             "S21.G00.15.002" | "S21.G00.15.005" => {
@@ -1097,8 +1100,9 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 contrat.into_iter().for_each(|c| c.quotite = q);
             }
             "S21.G00.40.017" => {
-                premier(&mut e.idcc, &plein);
-                contrat.into_iter().for_each(|c| c.idcc = plein.clone());
+                let idcc = fautes.lue(k, &v, IDCC, Idcc::lire);
+                premier(&mut e.idcc, &idcc);
+                contrat.into_iter().for_each(|c| c.idcc = idcc.clone());
             }
             "S21.G00.40.022" => {
                 if let Some(n) = v.strip_prefix("97").filter(|n| documents::conges_spectacles::faute_adherent(n).is_none()) {

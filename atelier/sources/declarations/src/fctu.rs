@@ -502,7 +502,7 @@ ou un annule.",
         ("S21.G00.11.003", &etab.adresse.en_texte(), "adresse"),
         ("S21.G00.11.004", &etab.code_postal.en_texte(), "code_postal"),
         ("S21.G00.11.005", &etab.commune.en_texte(), "commune"),
-        ("S21.G00.11.022", &etab.idcc, "idcc"),
+        ("S21.G00.11.022", &etab.idcc.en_texte(), "idcc"),
     ] {
         if rub == "S21.G00.11.002" && !usage_admet(&f, rub, NATURE)? {
             continue;

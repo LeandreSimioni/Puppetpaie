@@ -1833,7 +1833,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     } else {
         f.add_opt("S21.G00.40.016", nat.code("S21.G00.40.016"))?;
     }
-    f.add("S21.G00.40.017", engagement::minima::idcc_du_contrat(ent.idcc.ecrite("idcc")?, p.spectacle.as_ref(), &p.salarie)?);
+    f.add("S21.G00.40.017", engagement::minima::idcc_du_contrat(ent.idcc.exigee("idcc")?, p.spectacle.as_ref(), &p.salarie)?.to_string());
     f.add_opt("S21.G00.40.018", nat.code("S21.G00.40.018"))?;
     f.add_case("S21.G00.40.019", &ent.siret, "siret")?;
     f.add_opt("S21.G00.40.020", nat.code("S21.G00.40.020"))?;
@@ -4668,7 +4668,7 @@ certificat de conformite du depot precedent.",
         ("S21.G00.11.003", &ent_e.adresse.en_texte(), "adresse"),
         ("S21.G00.11.004", &ent_e.code_postal.en_texte(), "code_postal"),
         ("S21.G00.11.005", &ent_e.commune.en_texte(), "commune"),
-        ("S21.G00.11.022", &ent_e.idcc, "idcc"),
+        ("S21.G00.11.022", &ent_e.idcc.en_texte(), "idcc"),
     ] {
         if rubrique == "S21.G00.11.002" && !usage_admet(&f, rubrique, NatureDeLaDeclaration::Mensuelle)? {
             continue;
@@ -5176,7 +5176,7 @@ mod tests {
     // La CASC-SVP de la 3090 (`atelier/reference/sources/casc-svp-fiche-codification-dsn-202606.txt`).
     #[test]
     fn la_dsn_de_la_3090_porte_la_casc_en_troisieme_affiliation() {
-        let c = casc_svp(&ctx_dsn("a", &[]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &orgs_casc(), Mois::nouveau(2026, 9).unwrap()).unwrap().unwrap();
+        let c = casc_svp(&ctx_dsn("a", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &orgs_casc(), Mois::nouveau(2026, 9).unwrap()).unwrap().unwrap();
         assert_eq!(c.reference, "100");
         assert_eq!(c.lignes, ["ccn"]);
         // l'intermittent : apres 103 et 102, donc 204 ; le permanent l'a deja.
@@ -5188,9 +5188,9 @@ mod tests {
     fn pas_de_casc_hors_3090_avant_2025_ni_sur_un_mois_regularise() {
         let o = orgs_casc();
         let m = |an, numero| Mois::nouveau(an, numero).unwrap();
-        assert!(casc_svp(&ctx_dsn("b1", &[]), &ChampsEntreprise { idcc: Some("1285".into()), ..Default::default() }, &o, m(2026, 9)).unwrap().is_none());
-        assert!(casc_svp(&ctx_dsn("b2", &[]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &o, m(2024, 12)).unwrap().is_none());
-        assert!(casc_svp(&ctx_dsn("b3", &[m(2026, 8)]), &ChampsEntreprise { idcc: Some("3090".into()), ..Default::default() }, &o, m(2026, 8)).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b1", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("1285").unwrap()), ..Default::default() }, &o, m(2026, 9)).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b2", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &o, m(2024, 12)).unwrap().is_none());
+        assert!(casc_svp(&ctx_dsn("b3", &[m(2026, 8)]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &o, m(2026, 8)).unwrap().is_none());
     }
 
     // S21.G00.20.002 de France Travail (`atelier/reference/sources/francetravail-100-dsn/net-entreprises-fiche-3344-intermittents-20251113.html`).

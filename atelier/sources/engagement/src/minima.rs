@@ -25,8 +25,8 @@ use socle::echec::{refus, Echec, R};
 use socle::num::{add, div, mul, sub, Decimal};
 /// L'IDCC d'un contrat (`droit::minima::idcc_du_contrat`) : celui de la compagnie, sauf pour l'emission de television du
 /// spectacle `sp` (un contrat paye au mois n'en a pas).
-pub fn idcc_du_contrat(idcc: &str, sp: Option<&droit::fiche::Spectacle>, sal: &droit::fiche::ChampsSalarie) -> R<String> {
-    let Some(sp) = sp.filter(|s| s.emission_tv_1734.dite() == Some(&true)) else { return Ok(idcc.to_string()) };
+pub fn idcc_du_contrat(idcc: &droit::fiche::Idcc, sp: Option<&droit::fiche::Spectacle>, sal: &droit::fiche::ChampsSalarie) -> R<droit::fiche::Idcc> {
+    let Some(sp) = sp.filter(|s| s.emission_tv_1734.dite() == Some(&true)) else { return Ok(idcc.clone()) };
     droit::minima::idcc_du_contrat(idcc, &SpectacleDuContrat { emission_tv_1734: true, cle: &sp.cle }, sal)
 }
 
@@ -876,7 +876,7 @@ fn a_verifier(t: &Table, idcc: &str, phrase: String) -> Avis {
 /// quand la table ne connait pas la convention ou que la fiche ne dit pas de metier connu.
 fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> R<Option<T>>) -> R<Option<T>> {
     let ent = &ctx.entreprise;
-    let Some(idcc_compagnie) = ent.idcc.portee() else { return Ok(None) };
+    let Some(idcc_compagnie) = &ent.idcc else { return Ok(None) };
     let idcc = idcc_du_contrat(idcc_compagnie, paie.spectacle.as_ref(), &paie.salarie)?;
     let tab = table()?;
     let t: &Table = &tab;

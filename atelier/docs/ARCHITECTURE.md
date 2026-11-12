@@ -181,7 +181,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | IBAN, BIC | un compte bancaire | à créer (#419) : `Iban`, `Bic` (les contrôles sont dans `socle/src/iban.rs`) |
 | numéro de contrat | S21.G00.40.009 : il se lit, ne se recalcule pas | `NumeroContrat` (`engagement/src/numeros.rs`) |
 | numéro d'objet spectacle | S21.G00.40.019, natures 02 et 10 | à créer (#419) |
-| IDCC | l'identifiant d'une convention collective : la notion « convention » | à créer (#419) ; `minima::Convention`, `clauses::Convention`, `forme_bareme::Convention` sont des formes de fichiers |
+| IDCC | l'identifiant d'une convention collective : la notion « convention » | `Idcc` (`droit/src/fiche.rs`) ; à unifier (#419) : les clés des tables par convention, en `String` ; `minima::Convention`, `clauses::Convention`, `forme_bareme::Convention` sont des formes de fichiers |
 | code d'organisme | Urssaf, institution de prévoyance, caisse | à créer (#419) |
 | salarié | la clé de sa fiche | `IdSalarie` (`droit/src/contexte.rs`) |
 | spectacle | la clé de sa fiche | `IdSpectacle` (`droit/src/contexte.rs`) |

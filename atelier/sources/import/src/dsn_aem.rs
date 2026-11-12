@@ -104,8 +104,8 @@ pub struct LectureDsn {
 #[derive(Clone, Debug)]
 pub(crate) struct ConventionsDuMois {
     pub(crate) mois: Mois,
-    pub(crate) etablissement: Option<String>,
-    pub(crate) contrats: BTreeSet<String>,
+    pub(crate) etablissement: Option<droit::fiche::Idcc>,
+    pub(crate) contrats: BTreeSet<droit::fiche::Idcc>,
 }
 
 impl LectureDsn {
@@ -137,7 +137,7 @@ impl LectureDsn {
     pub fn conventions_divergentes(&self) -> Vec<String> {
         let mut out = Vec::new();
         for c in &self.conventions {
-            let autres: Vec<&str> = c.contrats.iter().map(String::as_str).filter(|x| Some(*x) != c.etablissement.as_deref()).collect();
+            let autres: Vec<&str> = c.contrats.iter().map(|i| &**i).filter(|x| Some(*x) != c.etablissement.as_deref()).collect();
             if autres.is_empty() {
                 continue;
             }

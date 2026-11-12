@@ -206,12 +206,15 @@ fn urssaf_lu(b: &BulletinLu) -> Option<String> {
 }
 
 /// L'IDCC d'une convention imprimee (« IDCC n° 3090 - ... ») ; rien si le texte ne le dit pas.
-fn idcc_lu(texte: &str) -> Option<String> {
+fn idcc_lu(texte: &str) -> Option<droit::fiche::Idcc> {
     let haut = texte.to_uppercase();
     let i = haut.find("IDCC")?;
     let apres: String = haut[i + 4..].chars().skip_while(|c| !c.is_ascii_digit()).take_while(char::is_ascii_digit).collect();
     let saut = haut[i + 4..].chars().take_while(|c| !c.is_ascii_digit()).count();
-    (apres.len() == 4 && saut <= 6).then_some(apres)
+    if saut > 6 {
+        return None;
+    }
+    droit::fiche::Idcc::lire(&apres).ok()
 }
 
 fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashMap<String, String>) -> R<DossierLu> {
@@ -510,12 +513,11 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // qui imprime la sienne se resout sous la sienne. Aucune : la fiche la demandera (`idcc`), rien ne se suppose : le
     // champ d'une convention tient a des faits que les pieces ne portent pas (financement, label, gouvernance : CCN 3090
     // art. 1er, CCNEAC art. I.1, `atelier/reference/sources/conventions-champ-d-application/`).
-    let idcc_lus: Vec<Option<String>> = lus.iter().map(|l| idcc_du_bulletin(&l.b)).collect::<R<_>>()?;
-    let convention: Option<String> = ctx
+    let idcc_lus: Vec<Option<droit::fiche::Idcc>> = lus.iter().map(|l| idcc_du_bulletin(&l.b)).collect::<R<_>>()?;
+    let convention: Option<droit::fiche::Idcc> = ctx
         .entreprise
         .idcc
-        .portee()
-        .map(str::to_string)
+        .clone()
         .or_else(|| ap.convention.clone())
         .or_else(|| idcc_lus.iter().rev().flatten().next().cloned())
         .or_else(|| certificats.iter().rev().find_map(|c| c.aem.as_ref().and_then(|a| a.idcc.clone())));
@@ -1866,7 +1868,7 @@ fn fiche_entreprise(lus: &[Lu], l: &Lu) -> R<Saisie> {
 
 /// LA CONVENTION COLLECTIVE QU'UN BULLETIN IMPRIME : son IDCC (« IDCC n° 3090 »), sinon la convention que son nom
 /// designe, et elle seule (`droit::clauses::idcc_nomme`, les conventions du catalogue) ; rien s'il ne la dit pas.
-fn idcc_du_bulletin(b: &BulletinLu) -> R<Option<String>> {
+fn idcc_du_bulletin(b: &BulletinLu) -> R<Option<droit::fiche::Idcc>> {
     let Some(c) = b.entreprise.convention.as_deref() else { return Ok(None) };
     match idcc_lu(c) {
         Some(i) => Ok(Some(i)),
@@ -1894,7 +1896,7 @@ struct EntrepriseLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     commune: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    idcc: Option<String>,
+    idcc: Option<droit::fiche::Idcc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     urssaf_compte: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

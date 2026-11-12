@@ -331,7 +331,7 @@ pub(crate) struct Apercu {
     pub(crate) sans_nets: Vec<SansNets>,
     /// LA CONVENTION COLLECTIVE QUE LES DSN DECLARENT pour l'entreprise (S21.G00.11.022, a defaut S21.G00.40.017 :
     /// `declarations::dsn_lue`), la plus recente ; rien si aucune ne la dit.
-    pub(crate) convention: Option<String>,
+    pub(crate) convention: Option<droit::fiche::Idcc>,
 }
 
 /// UN CONTRAT QUE LA DSN DECLARE SANS SES NETS : son versement paie aussi d'autres contrats (`avec`), ou plusieurs

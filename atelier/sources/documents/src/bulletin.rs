@@ -326,10 +326,10 @@ fn emploi_imprime(e: &engagement::Engagement, sal: &ChampsSalarie) -> R<String> 
 }
 
 pub fn convention_du_contrat(ent: &ChampsEntreprise, sp: Option<&droit::fiche::Spectacle>, sal: &ChampsSalarie, jour: &Jour) -> R<(String, String)> {
-    let Some(idcc_compagnie) = ent.idcc.portee() else {
+    let Some(idcc_compagnie) = &ent.idcc else {
         return Err(socle::echec::cle("La fiche entreprise ne dit pas sa convention collective : la choisir dans Configuration › Entreprise.", "idcc"));
     };
-    let idcc = engagement::minima::idcc_du_contrat(idcc_compagnie, sp, sal)?;
+    let idcc = engagement::minima::idcc_du_contrat(idcc_compagnie, sp, sal)?.to_string();
     let libelle = if idcc == "1734" {
         "Artistes-interprètes engagés pour des émissions de télévision".to_string()
     } else {

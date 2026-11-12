@@ -58,7 +58,7 @@ pub(crate) struct ChargeOrganismes {
 #[derive(Debug, Serialize)]
 pub(crate) struct OrganismesDits {
     phrase: String,
-    idcc: Option<String>,
+    idcc: Option<droit::fiche::Idcc>,
     a_saisir: bool,
     mois: Mois,
     contrats: Vec<ContratDit>,
