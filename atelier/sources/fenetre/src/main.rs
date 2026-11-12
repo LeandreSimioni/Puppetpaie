@@ -109,7 +109,7 @@ fn main() -> std::process::ExitCode {
     let pour_fermer: Arc<Mutex<Option<tauri::AppHandle>>> = Arc::new(Mutex::new(None));
     let poignee = pour_fermer.clone();
     *fenetre.fermer.lock().unwrap() =Some(Box::new(move || {
-        if let Some(a) = poignee.lock().ok().and_then(|a| a.clone()) {
+        if let Some(a) = poignee.lock().unwrap().clone() {
             a.exit(0);
         }
     }));
