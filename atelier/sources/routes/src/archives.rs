@@ -214,10 +214,16 @@ pub(crate) fn pieces_de_l_envoi(ctx: &Contexte, mois: Mois) -> R<Vec<PieceDeLEnv
         .map(|nom| {
             // `<Piece>_<cle>_<etiquette>.pdf` : la cle du salarie est le deuxieme morceau.
             let morceaux: Vec<&str> = nom.split('_').collect();
-            let salarie = (morceaux.len() > 2).then(|| droit::contexte::IdSalarie::lire(morceaux[1])).transpose()?;
+            let salarie = (morceaux.len() > 2).then(|| droit::contexte::IdSalarie::lire(morceaux[1]).map_err(|_| piece_etrangere(&format!("envoi/{}", nom)))).transpose()?;
             Ok(PieceDeLEnvoi { nom, salarie })
         })
         .collect()
+}
+
+/// Le refus d'un fichier des sorties d'un mois (`chemin`, depuis `sorties/<mois>/`) dont le nom ne dit pas de salarie
+/// (`<Piece>__<etiquette>.pdf`) : le moteur ne l'a pas ecrit.
+pub(crate) fn piece_etrangere(chemin: &str) -> socle::echec::Echec {
+    socle::refus!("`{}` n'est pas un document du moteur : son nom ne dit pas de quel salarié il est. Le retirer de ce dossier.", chemin)
 }
 
 // -------------------------------------------------------------- dossier-formes
