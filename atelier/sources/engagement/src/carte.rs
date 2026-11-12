@@ -689,7 +689,7 @@ pub fn salarie_nomme(ctx: &droit::contexte::Contexte, nom: &str) -> R<IdSalarie>
     if nom.trim().is_empty() {
         return Err(refus("Le nom du salarié est vide : écrire son nom, ou vider la case. Rien n'est écrit."));
     }
-    ctx.cle_du_salarie(nom)
+    ctx.cle_du_salarie(&droit::contexte::SalarieDesigne::lire(nom)?)
 }
 
 /// Le debut du refus d'une carte a qui il manque des cases (`crate::SAISIE_INCOMPLETE`).

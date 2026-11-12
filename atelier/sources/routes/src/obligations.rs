@@ -39,7 +39,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use droit::contexte::{Contexte, IdSalarie};
+use droit::contexte::{Contexte, IdSalarie, SalarieDesigne};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::imprevus::{ArretSaisi, Imprevu, Prolongation};
@@ -1255,9 +1255,9 @@ fn refus(m: impl Into<String>) -> socle::echec::Echec {
     erreur(Classe::Refuse, m)
 }
 
-/// L'arret du salarie `nom` (sa cle, ou son nom) dont le dernier jour travaille est `dernier` : (sa cle, l'arret).
-fn l_arret_de(ctx: &Contexte, nom: &str, dernier: &Jour) -> R<(droit::contexte::IdSalarie, ArretSaisi)> {
-    let cle = ctx.cle_du_salarie(nom).map_err(|m| m.reclasser(Classe::Manque))?;
+/// L'arret du salarie designe (sa cle, ou son nom) dont le dernier jour travaille est `dernier` : (sa cle, l'arret).
+fn l_arret_de(ctx: &Contexte, salarie: &SalarieDesigne, dernier: &Jour) -> R<(IdSalarie, ArretSaisi)> {
+    let cle = ctx.cle_du_salarie(salarie).map_err(|m| m.reclasser(Classe::Manque))?;
     for imp in crate::metier::imprevus::magasin(engagement::imprevus::tous(&ctx.racine))? {
         if let Imprevu::Arret(a) = imp {
             if a.salarie == cle && a.dernier_jour_travaille == *dernier {
@@ -1303,7 +1303,7 @@ fn reponse(ctx: &Contexte, a: &ArretSaisi, phrase: impl FnOnce(usize) -> String)
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeConnaissance {
-    salarie: String,
+    salarie: SalarieDesigne,
     dernier_jour: Jour,
     de: DeQuoi,
     jour: Option<Jour>,
@@ -1414,7 +1414,7 @@ struct Faite {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeFaite {
-    salarie: String,
+    salarie: SalarieDesigne,
     dernier_jour: Jour,
     le: Option<Jour>,
     depot: Option<TexteDit>,
@@ -1508,7 +1508,7 @@ pub(crate) struct ChargeArretObligations {
     debut: Option<Jour>,
     fin: Option<Jour>,
     reprise: Option<Jour>,
-    salarie: Option<TexteDit>,
+    salarie: Option<SalarieDesigne>,
     contrat: Option<TexteDit>,
     date_accident: Option<Jour>,
     connaissance_arret: Option<Jour>,
@@ -1519,7 +1519,7 @@ pub(crate) struct ChargeArretObligations {
 /// L'arret tel qu'il s'ecrirait (`imprevus::arret_a_ecrire`), sa subrogation tiree du contrat suspendu et du droit
 /// (`imprevus::subrogation_de`), comme a l'enregistrement ; ou ce qui l'empeche encore de s'ecrire (le salarie, son
 /// contrat), en phrase : c'est `arret-enregistrer` qui le refusera.
-fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salarie: &str, dernier: Jour, debut: Jour, fin: Jour) -> R<ArretEcrit> {
+fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salarie: &SalarieDesigne, dernier: Jour, debut: Jour, fin: Jour) -> R<ArretEcrit> {
     let cle = match ctx.cle_du_salarie(salarie) {
         Ok(cle) => cle,
         Err(m) => return Ok(ArretEcrit::PasEncore(m.phrase)),
@@ -1558,7 +1558,7 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
     let (dernier, debut, fin) = (c.dernier_jour, c.debut, c.fin);
     // L'ARRET TEL QU'IL S'ECRIRAIT, quand le salarie, son contrat et les trois jours le permettent : d'ou la subrogation
     // et le premier jour d'absence. Sinon, ce qui est tape seulement ; ce qui l'empeche se dit.
-    let ecrit = match (c.salarie.as_deref(), dernier, debut, fin) {
+    let ecrit = match (c.salarie.as_ref(), dernier, debut, fin) {
         (Some(s), Some(dj), Some(d), Some(f)) => Some(arret_tel_qu_il_s_ecrirait(ctx, &c, s, dj, d, f)?),
         _ => None,
     };

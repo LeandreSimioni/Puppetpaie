@@ -30,7 +30,7 @@ use compagnie::{maintenant, INTERFACE};
 use crate::SansCharge;
 use socle::ecran::Pastille;
 use declarations::signalement;
-use droit::contexte::{Contexte, IdSalarie};
+use droit::contexte::{Contexte, IdSalarie, SalarieDesigne};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::calcul::Paie;
@@ -140,15 +140,15 @@ pub const ROUTES: &[Fiche] = &[
 
 // ------------------------------------------------------------------ les charges
 //
-// `salarie` y est toujours ce que la personne en dit : la cle de la fiche, ou son nom (`Contexte::cle_du_salarie`), resolu
-// a l'entree de la route en `IdSalarie`. Ce qu'elles ecrivent, la fenetre l'ecrit (`compagnie::INTERFACE`).
+// `salarie` y est toujours ce que la personne en dit, un `SalarieDesigne` : la cle de la fiche, ou son nom, resolu a
+// l'entree de la route en `IdSalarie` (`Contexte::cle_du_salarie`). Ce qu'elles ecrivent, la fenetre l'ecrit (`compagnie::INTERFACE`).
 
 /// La charge de `imprevus` : les imprevus d'un mois, ou d'un salarie ; tous, sans l'un ni l'autre.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeImprevus {
     mois: Option<Mois>,
-    salarie: Option<String>,
+    salarie: Option<SalarieDesigne>,
 }
 
 /// La charge de `fins-de-contrat` : le mois.
@@ -162,7 +162,7 @@ struct ChargeMois {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeArretContrats {
-    salarie: String,
+    salarie: SalarieDesigne,
     jour: Jour,
 }
 
@@ -171,7 +171,7 @@ struct ChargeArretContrats {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeArretEnregistrer {
-    salarie: String,
+    salarie: SalarieDesigne,
     dernier_jour: Jour,
     debut: Jour,
     fin: Jour,
@@ -187,7 +187,7 @@ struct ChargeArretEnregistrer {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeArretProlonger {
-    salarie: String,
+    salarie: SalarieDesigne,
     dernier_jour: Jour,
     fin: Jour,
 }
@@ -196,7 +196,7 @@ struct ChargeArretProlonger {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeArretReprise {
-    salarie: String,
+    salarie: SalarieDesigne,
     dernier_jour: Jour,
     reprise: Option<Jour>,
     motif_reprise: Option<String>,
@@ -207,7 +207,7 @@ struct ChargeArretReprise {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeArretIndemnites {
-    salarie: String,
+    salarie: SalarieDesigne,
     dernier_jour: Jour,
     ij_brute: Option<String>,
     ij_nette: Option<String>,
@@ -224,7 +224,7 @@ pub(crate) use declarations::signalement::NatureSignalement;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeArretSignaler {
-    salarie: IdSalarie,
+    salarie: SalarieDesigne,
     dernier_jour: Jour,
     nature: NatureSignalement,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -240,7 +240,7 @@ pub(crate) struct ChargeArretSignaler {
 impl ChargeArretSignaler {
     /// Le signalement de l'arret de `salarie` qui suit `dernier_jour`, de sa `nature` : le suivant, constitue aujourd'hui.
     pub(crate) fn de(salarie: IdSalarie, dernier_jour: Jour, nature: NatureSignalement) -> ChargeArretSignaler {
-        ChargeArretSignaler { salarie, dernier_jour, nature, remplace: None, ordre: None, test: None, le: None }
+        ChargeArretSignaler { salarie: salarie.into(), dernier_jour, nature, remplace: None, ordre: None, test: None, le: None }
     }
 
     /// Le signalement parti, refait pour se lire (`gestes::depart::refaire_le_signalement`) : son numero d'ordre et son
@@ -254,7 +254,7 @@ impl ChargeArretSignaler {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeArretOublier {
-    salarie: String,
+    salarie: SalarieDesigne,
     dernier_jour: Jour,
 }
 
@@ -262,7 +262,7 @@ struct ChargeArretOublier {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeSuspensionEnregistrer {
-    salarie: String,
+    salarie: SalarieDesigne,
     debut: Jour,
     fin: Jour,
     motif: String,
@@ -274,7 +274,7 @@ struct ChargeSuspensionEnregistrer {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeSuspensionModifier {
-    salarie: String,
+    salarie: SalarieDesigne,
     debut: Jour,
     fin: Option<Jour>,
     motif: Option<String>,
@@ -284,7 +284,7 @@ struct ChargeSuspensionModifier {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeSuspensionOublier {
-    salarie: String,
+    salarie: SalarieDesigne,
     debut: Jour,
 }
 
@@ -294,7 +294,7 @@ struct ChargeSuspensionOublier {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeFinContratSignaler {
     mois: Mois,
-    salarie: IdSalarie,
+    salarie: SalarieDesigne,
     #[serde(skip_serializing_if = "Option::is_none")]
     remplace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -308,7 +308,7 @@ pub(crate) struct ChargeFinContratSignaler {
 impl ChargeFinContratSignaler {
     /// Le signalement de la fin du contrat de `salarie` en `mois` : le suivant, constitue aujourd'hui.
     pub(crate) fn de(mois: Mois, salarie: IdSalarie) -> ChargeFinContratSignaler {
-        ChargeFinContratSignaler { mois, salarie, remplace: None, ordre: None, test: None, le: None }
+        ChargeFinContratSignaler { mois, salarie: salarie.into(), remplace: None, ordre: None, test: None, le: None }
     }
 
     /// Le signalement parti, refait pour se lire (`gestes::depart::refaire_le_signalement`).
@@ -322,7 +322,7 @@ impl ChargeFinContratSignaler {
 #[serde(deny_unknown_fields)]
 struct ChargeFinContratDocuments {
     mois: Mois,
-    salarie: String,
+    salarie: SalarieDesigne,
     le: Option<Jour>,
 }
 
@@ -522,9 +522,9 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 /// (`engagement::etats::apres_un_imprevu`) ; une paie partie qui change suit le chemin de toute correction d'un mois parti,
 /// et la phrase dit ce qu'il entraine, avec les mots de « Modifier l'engagement »
 /// (`crate::engagement::ce_que_le_changement_entraine`).
-fn regulariser(ctx: &Contexte, nom: &str, phrase: &mut String) -> R<()> {
+fn regulariser(ctx: &Contexte, salarie: &SalarieDesigne, phrase: &mut String) -> R<()> {
     use engagement::etats::Revalidation;
-    let cle = cle_du_nom(ctx, nom)?;
+    let cle = cle_du_nom(ctx, salarie)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let mut dit = Vec::new();
     for x in engagement::etats::apres_un_imprevu(ctx, &cle, &departs)? {
@@ -555,10 +555,10 @@ fn refus(m: impl Into<String>) -> Echec {
 /// Ce qu'une phrase dit d'un contrat qui n'a pas de numero (`engagement::numeros::numero_dit`).
 const SANS_NUMERO: &str = "sans numéro";
 
-/// La cle de la fiche que `nom` designe, comme partout dans le moteur (`Contexte::cle_du_salarie` : la casse, les accents,
-/// le prenom, le NIR ne comptent pas). Un nom qui ne designe personne se refuse avec sa phrase.
-fn cle_du_nom(ctx: &Contexte, nom: &str) -> R<IdSalarie> {
-    ctx.cle_du_salarie(nom).map_err(|m| m.reclasser(Classe::Manque))
+/// La cle de la fiche que `salarie` designe, comme partout dans le moteur (`Contexte::cle_du_salarie` : la casse, les
+/// accents, le prenom, le NIR ne comptent pas). Un nom qui ne designe personne se refuse avec sa phrase.
+fn cle_du_nom(ctx: &Contexte, salarie: &SalarieDesigne) -> R<IdSalarie> {
+    ctx.cle_du_salarie(salarie).map_err(|m| m.reclasser(Classe::Manque))
 }
 
 /// LE CONTRAT QU'UN IMPREVU SUSPEND : parmi ceux du salarie qui couvrent `jour` (`contrats_au`), celui que la charge
@@ -1380,7 +1380,7 @@ fn motifs_de_suspension() -> R<Vec<MotifSuspension>> {
 /// La route `imprevus` : les imprevus (d'un salarie, qui croisent un mois), resumes -- un arret avec ses `obligations` --,
 /// et les nomenclatures pour en saisir.
 fn imprevus(ctx: &Contexte, c: ChargeImprevus) -> R<ReponseImprevus> {
-    let cle = c.salarie.as_deref().map(|nom| cle_du_nom(ctx, nom)).transpose()?;
+    let cle = c.salarie.as_ref().map(|s| cle_du_nom(ctx, s)).transpose()?;
     let bornes = c.mois.map(|m| (m.premier_jour(), m.dernier_jour()));
     let n = nomenclatures()?;
     let suivi = crate::obligations::Suivi::lire(ctx)?;
@@ -1899,8 +1899,8 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
     let mois = c.mois;
     let (saisie, paies) = validees(ctx, mois)?;
     let cle = cle_du_nom(ctx, &c.salarie)?;
-    let (rang, _) = engagement_qui_finit(&saisie, &cle, &c.salarie, mois)?;
-    let p = paie_de_l_engagement(&paies, rang, &cle, &c.salarie, mois)?;
+    let (rang, _) = engagement_qui_finit(&saisie, &cle, c.salarie.as_str(), mois)?;
+    let p = paie_de_l_engagement(&paies, rang, &cle, c.salarie.as_str(), mois)?;
     let date = constitue_le(ctx, c.le);
     let dossier = ctx.racine.join("sorties").join(mois.to_string());
     let [certificat, recu] = documents::fin_de_contrat::ecrire(ctx, &p, date, &dossier)?;
@@ -1964,7 +1964,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let envoi_test = c.test == Some(true);
 
     let (saisie, paies) = validees(ctx, mois)?;
-    let cle = cle_du_nom(ctx, salarie)?;
+    let cle = cle_du_nom(ctx, &c.salarie)?;
     let (rang, e) = engagement_qui_finit(&saisie, &cle, salarie, mois)?;
     let fin = fin_de_contrat_declaree(ctx, &e, mois)?;
     if remplace.is_none() && !refaire {
@@ -2098,7 +2098,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
     let remplace = remplace_dit(&c.remplace)?;
     let arret = match alors {
         Some(a) => a.clone(),
-        None => l_arret(ctx, &cle_du_nom(ctx, c.salarie.as_str())?, &c.dernier_jour)?.2,
+        None => l_arret(ctx, &cle_du_nom(ctx, &c.salarie)?, &c.dernier_jour)?.2,
     };
     if remplace.is_none() && alors.is_none() {
         if let Some(le) = parti_le(ctx, &arret, nature)? {

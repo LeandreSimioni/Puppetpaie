@@ -968,6 +968,53 @@ impl From<IdSalarie> for String {
     }
 }
 
+/// LE SALARIE TEL QU'ON LE DESIGNE : la cle de sa fiche, ou son nom, son prenom, son NIR (ce que tape la personne, ce
+/// qu'une charge porte). Ce n'est pas une cle : il se resout en une, a un seul endroit (`Contexte::cle_du_salarie`).
+/// Jamais vide ni fait de blancs : il ne designerait personne.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct SalarieDesigne(String);
+
+impl SalarieDesigne {
+    /// Le salarie que `texte` designe ; vide ou fait de blancs, il se refuse.
+    pub fn lire(texte: &str) -> R<SalarieDesigne> {
+        if texte.chars().all(socle::texte::blanc) {
+            return Err(refus("Le salarié n'est pas dit : donner sa clé ou son nom."));
+        }
+        Ok(SalarieDesigne(texte.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Une cle designe sa fiche.
+impl From<IdSalarie> for SalarieDesigne {
+    fn from(c: IdSalarie) -> SalarieDesigne {
+        SalarieDesigne(c.0)
+    }
+}
+
+impl std::fmt::Display for SalarieDesigne {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for SalarieDesigne {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<SalarieDesigne> {
+        SalarieDesigne::lire(&s)
+    }
+}
+
+impl From<SalarieDesigne> for String {
+    fn from(d: SalarieDesigne) -> String {
+        d.0
+    }
+}
+
 /// LA CLE D'UN SPECTACLE : celle de sa fiche dans `config/spectacles.json`, interne au logiciel. Elle se retrouve d'un nom
 /// (titre, alias, numero d'objet) par `Contexte::spectacle`, ou se lit d'un fichier, d'une charge (`lire`, ou `serde` :
 /// la meme chaine) ; un type a part, pour qu'elle ne se confonde pas avec un autre texte. Jamais vide.
@@ -1633,22 +1680,16 @@ PSS_H_METROP).",
         }
     }
 
-    /// Retrouve un salarie par cle, NIR, nom, prenom ou
-    /// faute de frappe. Le nom EXACT retrouve n'importe qui, archive compris ;
-    /// la recherche APPROCHANTE (prefixe, Levenshtein <= 3) ne va que parmi les actifs.
-    /// Rend la fiche (qui porte sa cle), ou le refus.
-    pub fn salarie(&self, nom: &str) -> R<FicheSalarie> {
-        self.fiche_de(&self.cle_du_salarie(nom)?)
-    }
-
     /// La fiche dont la cle est `cle`, sans rien chercher d'approchant. Refus : aucune fiche n'a cette cle.
     pub fn fiche_de(&self, cle: &IdSalarie) -> R<FicheSalarie> {
         self.salaries.get(cle).cloned().ok_or_else(|| socle::refus!("Salarie inconnu : {}.", repr_texte(cle.as_str())))
     }
 
-    /// La cle de la fiche que `salarie` retrouve, sans la recopier ; la cle meme se retrouve d'abord.
-    pub fn cle_du_salarie(&self, nom: &str) -> R<IdSalarie> {
-        IdSalarie::lire(&self.cle_trouvee(nom)?)
+    /// LA CLE DE LA FICHE QUE `designe` RETROUVE, la seule resolution d'un salarie designe : par cle, NIR, nom, prenom
+    /// ou faute de frappe. Le nom EXACT retrouve n'importe qui, archive compris ; la recherche APPROCHANTE (prefixe,
+    /// Levenshtein <= 3) ne va que parmi les actifs. La cle meme se retrouve d'abord.
+    pub fn cle_du_salarie(&self, designe: &SalarieDesigne) -> R<IdSalarie> {
+        IdSalarie::lire(&self.cle_trouvee(designe.as_str())?)
     }
 
     fn cle_trouvee(&self, nom: &str) -> R<String> {

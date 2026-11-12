@@ -530,22 +530,22 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees
     // Le code emploi de la fiche en cours de saisie, rangé à sa lecture (`Saisie`) ; hors de sa forme, sa faute le dit.
     let de_la_fiche = donnees.mot(droit::fiche::CaseSalarie::CodeEmploiFt).and_then(|c| CodeEmploiFt::lire(&c).ok());
     // (metier, statut dit par la carte, jour, salarie)
-    let mut metiers: std::collections::BTreeSet<(CodeEmploiFt, Option<droit::fiche::Statut>, Jour, String)> = std::collections::BTreeSet::new();
+    let mut metiers: std::collections::BTreeSet<(CodeEmploiFt, Option<droit::fiche::Statut>, Jour, IdSalarie)> = std::collections::BTreeSet::new();
     for f in engagement::stock::fichiers(&ctx.racine)? {
         let Some(lu) = engagement::stock::lire_fichier(&ctx.racine, f)? else { continue };
         for e in lu.engagements.iter().filter(|e| e.non_actif.is_none()) {
             let s = &e.saisie;
-            let Some(salarie) = s.carte.salarie.as_ref().map(IdSalarie::as_str) else { continue };
+            let Some(salarie) = s.carte.salarie.as_ref() else { continue };
             let du_salarie = match (nom, cle) {
-                (NomDeFiche::Salarie,Some(c)) if c == salarie => de_la_fiche.clone(),
-                (NomDeFiche::Entreprise, _) if paye_au_mois(s)? => ctx.salarie(salarie)?.code_emploi_ft.dite().cloned(),
+                (NomDeFiche::Salarie,Some(c)) if c == salarie.as_str() => de_la_fiche.clone(),
+                (NomDeFiche::Entreprise, _) if paye_au_mois(s)? => ctx.fiche_de(salarie)?.code_emploi_ft.dite().cloned(),
                 _ => continue,
             };
             // La carte au premier jour de son mois, chaque avenant au jour ou il vaut.
             let termes = std::iter::once((&s.carte, lu.mois.premier_jour())).chain(s.avenants.iter().map(|a| (&a.termes, a.depuis)));
             for (t, jour) in termes {
                 if let Some(code) = t.code_emploi_ft.clone().or_else(|| t.metier.as_ref().map(CodeEmploiFt::from)).or_else(|| du_salarie.clone()) {
-                    metiers.insert((code, t.statut, jour.clone(), salarie.to_string()));
+                    metiers.insert((code, t.statut, jour.clone(), salarie.clone()));
                 }
             }
         }
@@ -558,7 +558,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees
         let ent = &ctx.entreprise;
         let statut = match statut {
             Some(s) => Some(*s),
-            None => ctx.salarie(salarie)?.statut.dite().copied(),
+            None => ctx.fiche_de(salarie)?.statut.dite().copied(),
         };
         if droit::clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), Some(code), statut)? {
             cases.insert(droit::fiche::CasePieceEntreprise::JaugeAnnexe1.into());
@@ -759,7 +759,7 @@ fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {
     activer_fiche(ctx, nom, cle, actif)?;
     // Le nom que la liste montre : le salarie par son nom, le spectacle par son titre ; la cle seule si la fiche n'en a pas.
     let nomme = if nom == NomDeFiche::Salarie {
-        let id = ctx.cle_du_salarie(cle).map_err(|m| m.reclasser(Classe::Manque))?;
+        let id = IdSalarie::lire(cle).map_err(|m| m.reclasser(Classe::Manque))?;
         ctx.fiche_de(&id).map_err(|m| m.reclasser(Classe::Manque))?.nomme()
     } else {
         let fiche = ctx.spectacles.get(cle).ok_or_else(|| refus(format!("Spectacle inconnu : {}.", socle::fichiers::repr(cle))))?;
