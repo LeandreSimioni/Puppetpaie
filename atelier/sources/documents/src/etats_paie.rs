@@ -499,7 +499,11 @@ fn lignes_du_mois(ctx: &Contexte, mois: Mois, coordonnees: bool, departs: &engag
             net_a_payer: p.net_a_payer().map(eur2),
             pas: r.as_ref().map(|v| eur2(v.prelevement())),
             cout_employeur: p.cout_employeur().map(eur2),
-            verse_le: e.versement_dit()?,
+            // Une paie importee : ce que ses pieces disent ; une paie du logiciel a toujours son jour.
+            verse_le: match p.importee() {
+                Some(_) => e.versement_dit()?,
+                None => Some(e.date_du_versement()?),
+            },
             nir,
             date_naissance,
             adresse,

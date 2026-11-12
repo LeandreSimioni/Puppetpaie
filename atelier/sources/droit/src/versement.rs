@@ -6,7 +6,7 @@
 //! `atelier/reference/norme-dsn/texte/bloc-S21.G00.50.txt`, l. 50-55), la « date de paiement » du bulletin (C. trav.,
 //! art. R. 3243-1, 11°, `atelier/reference/sources/code-du-travail/articles-20261030.md`) et le jour ou se lit le taux de
 //! prelevement a la source (BOI-IR-PAS-30-10-20, § 80, `atelier/reference/sources/bofip/BOI-IR-PAS-30-10-20-extrait-taux.md`).
-//! Le seul lecteur : `engagement::Engagement::date_du_versement`.
+//! Le seul lecteur : `engagement::Engagement::versement_dit`.
 //!
 //! Le choix de la compagnie, que seule elle connait (une case vide refuse en se nommant, `Versement::de_la_fiche`) :
 //! - le dernier jour du mois ;

@@ -1580,8 +1580,7 @@ fn sans_taux_recu<'a>(ctx: &Contexte, paies: impl Iterator<Item = &'a Paie>) -> 
     // La paie dit le taux qu'elle a pris (`Paie::pas`, ecrit a la validation) : un autre type que « 01 » (taux transmis
     // par la DGFiP, S21.G00.50.007) est la grille.
     for p in paies.filter(|p| p.pas.as_ref().is_some_and(|v| !v.type_taux.is_some_and(droit::type_taux_pas::TypeDeTauxPas::transmis))) {
-        // Une paie importee dont les pieces ne disent pas le jour du versement n'a pris aucun taux ici : rien a en dire.
-        let Some(paye_le) = p.engagement.versement_dit()? else { continue };
+        let paye_le = p.engagement.date_du_versement()?;
         let pourquoi = droit::pas::avertissements(ctx, Some(&[cle_de(p)]), Some(paye_le), Some(p.engagement.mois))?;
         let demande: String = compagnie::amorcage_demande::en_cours(ctx, &cle_de(p))?
             .map(|d| format!(" ; taux demandé le {}, réponse attendue avant le {}", d.quand.jj_mm_aaaa(), d.avant.jj_mm_aaaa()))
