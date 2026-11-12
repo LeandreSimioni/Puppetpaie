@@ -189,6 +189,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | matricule, licence, PCS-ESE, code emploi France Travail | | à créer (#419) |
 | code NAF, code postal | | `CodeNaf`, `CodePostal` (`droit/src/fiche.rs`) |
 | expéditeur d'un courriel lu | une adresse, rien, ou un texte qui n'en est pas une | `envois::courriel_lecture::Expediteur` |
+| version du logiciel | le numéro d'une publication, des nombres séparés de points | `compagnie::maj::VersionDuLogiciel` |
 
 **Les codes de la norme** : une liste fermée par rubrique (`droit::natures::ListeDeLaNorme`) : `NatureDeContrat`,
 `MotifDeRecours`, `MotifDeRupture`, `ModaliteDuTempsDeTravail`, `BaseAssujettie`, `CotisationDEtablissement`,
