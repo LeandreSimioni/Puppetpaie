@@ -188,6 +188,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | compagnie | l'identifiant d'une compagnie | à créer (#419) (`Compagnie.id` en `String`) |
 | matricule, licence, PCS-ESE, code emploi France Travail | | à créer (#419) |
 | code NAF, code postal | | `CodeNaf`, `CodePostal` (`droit/src/fiche.rs`) |
+| expéditeur d'un courriel lu | une adresse, rien, ou un texte qui n'en est pas une | `envois::courriel_lecture::Expediteur` |
 
 **Les codes de la norme** : une liste fermée par rubrique (`droit::natures::ListeDeLaNorme`) : `NatureDeContrat`,
 `MotifDeRecours`, `MotifDeRupture`, `ModaliteDuTempsDeTravail`, `BaseAssujettie`, `CotisationDEtablissement`,
