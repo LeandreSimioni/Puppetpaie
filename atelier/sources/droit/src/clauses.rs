@@ -812,11 +812,11 @@ pub fn indemnite_licenciement(
     annexe: Option<&str>,
     prof: &Profil,
     anciennete: Decimal,
-    reference: Decimal,
+    reference: &mut dyn FnMut() -> R<Decimal>,
     motif: Option<MotifDeRupture>,
     age: Option<Decimal>,
 ) -> R<Indemnite> {
-    let (a, ref_, age) = (P::depuis(anciennete), P::depuis(reference), age.map(P::depuis));
+    let (a, age) = (P::depuis(anciennete), age.map(P::depuis));
     let pas_releve = |pourquoi: String| Indemnite { releve: false, du: false, bas: None, haut: None, lectures: Vec::new(), hors_primes: false, article: None, pourquoi: Some(pourquoi) };
     let t = table()?;
     let conv = t.convention(idcc);
@@ -843,6 +843,7 @@ pub fn indemnite_licenciement(
 
     // La convention commune d'abord ; ou, pour une convention qui distingue le motif, le bareme du motif.
     if a >= p(&sec.anciennete_minimale_mois) {
+        let ref_ = P::depuis(reference()?);
         let mut mois = match (&sec.par_motif, &sec.taux) {
             (Some(pm), _) => {
                 let choix = match pm.economique.as_ref().filter(|e| e.motifs.as_deref().is_some_and(dans)) {
@@ -917,6 +918,7 @@ pub fn indemnite_licenciement(
             let p = format!("{} demande {} mois d'anciennete", article, c.anciennete_minimale_mois.0);
             return Ok(sortie(Vec::new(), article, hors_primes, Some(p), false));
         }
+        let ref_ = P::depuis(reference()?);
         lectures = Vec::new();
         for (n, bareme) in &c.lectures {
             let mut mois = bareme.mois(annees)?;
@@ -979,9 +981,18 @@ impl Retraite {
     }
 }
 
+/// `mois` de salaire de reference, en euros. Sans aucun mois, rien n'est du et la reference (R1234-4) ne se lit pas :
+/// sans paies precedentes elle refuserait.
+fn fois_la_reference(mois: P, reference: &mut dyn FnMut() -> R<Decimal>) -> R<P> {
+    if mois <= P::ZERO {
+        return Ok(mois.eur2());
+    }
+    Ok(mois.mul(P::depuis(reference()?)).eur2())
+}
+
 /// L'indemnite conventionnelle de mise a la retraite.
-pub fn indemnite_mise_a_la_retraite(idcc: Option<&str>, anciennete: Decimal, reference: Decimal) -> R<Retraite> {
-    let (anciennete, reference) = (P::depuis(anciennete), P::depuis(reference));
+pub fn indemnite_mise_a_la_retraite(idcc: Option<&str>, anciennete: Decimal, reference: &mut dyn FnMut() -> R<Decimal>) -> R<Retraite> {
+    let anciennete = P::depuis(anciennete);
     let t = table()?;
     let conv = t.convention(idcc);
     if let Some(loi) = conv.and_then(|c| c.loi_seule(Section::MiseALaRetraite)) {
@@ -1013,7 +1024,7 @@ pub fn indemnite_mise_a_la_retraite(idcc: Option<&str>, anciennete: Decimal, ref
     };
     Ok(Retraite {
         releve: true,
-        montant: Some(mois.mul(reference).eur2()),
+        montant: Some(fois_la_reference(mois, reference)?),
         mois: None,
         palier: None,
         article: Some(format!("{}, art. {}", nom(idcc), sec.article)),
@@ -1026,8 +1037,8 @@ pub fn indemnite_mise_a_la_retraite(idcc: Option<&str>, anciennete: Decimal, ref
 }
 
 /// L'indemnite conventionnelle de depart volontaire a la retraite : un palier, pas un cumul.
-pub fn indemnite_depart_retraite(idcc: Option<&str>, anciennete: Decimal, reference: Decimal) -> R<Retraite> {
-    let (anciennete, reference) = (P::depuis(anciennete), P::depuis(reference));
+pub fn indemnite_depart_retraite(idcc: Option<&str>, anciennete: Decimal, reference: &mut dyn FnMut() -> R<Decimal>) -> R<Retraite> {
+    let anciennete = P::depuis(anciennete);
     let t = table()?;
     let conv = t.convention(idcc);
     if let Some(loi) = conv.and_then(|c| c.loi_seule(Section::DepartALaRetraite)) {
@@ -1048,7 +1059,7 @@ pub fn indemnite_depart_retraite(idcc: Option<&str>, anciennete: Decimal, refere
     };
     Ok(Retraite {
         releve: true,
-        montant: Some(mois.mul(reference).eur2()),
+        montant: Some(fois_la_reference(mois, reference)?),
         mois: Some(mois),
         palier,
         article: Some(format!("{}, art. {}", nom(idcc), sec.article)),

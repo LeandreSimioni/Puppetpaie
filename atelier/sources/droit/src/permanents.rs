@@ -957,10 +957,11 @@ pub fn salaire_de_reference(douze_derniers: &[Decimal], trois_derniers: &[Decima
     })
 }
 
-/// L'indemnite legale de licenciement.
+/// L'indemnite legale de licenciement. `reference` lit le salaire de reference (R1234-4) : il n'est lu qu'une fois
+/// l'indemnite sue due, car sans paies precedentes il refuse. De meme pour chaque indemnite de fin de CDI.
 pub fn indemnite_licenciement(
     anciennete: Decimal,
-    reference: Decimal,
+    reference: &mut dyn FnMut() -> R<Decimal>,
     motif_rupture: Option<MotifDeRupture>,
 ) -> R<IndemniteLegale> {
     let rg = regles()?;
@@ -974,7 +975,7 @@ pub fn indemnite_licenciement(
             "{} mois d'anciennete, et l'indemnite legale de licenciement en demande {} (L1234-9).",
             mois_complets(anciennete), mini)));
     }
-    let (montant, annees) = bareme_licenciement(anciennete, reference)?;
+    let (montant, annees) = bareme_licenciement(anciennete, reference()?)?;
     Ok(IndemniteLegale { montant, du: true, pourquoi: None, annees: Some(annees) })
 }
 
@@ -1080,7 +1081,7 @@ pub fn code_52_permis(code: Option<&str>, motif_rupture: Option<MotifDeRupture>)
 
 /// L'indemnite de mise a la retraite : le bareme du licenciement, sans ses
 /// exclusions de motif.
-pub fn indemnite_mise_a_la_retraite(anciennete: Decimal, reference: Decimal) -> R<IndemniteLegale> {
+pub fn indemnite_mise_a_la_retraite(anciennete: Decimal, reference: &mut dyn FnMut() -> R<Decimal>) -> R<IndemniteLegale> {
     let mini = anciennete_minimale()?;
     if anciennete < mini {
         return Ok(IndemniteLegale::non_due(format!(
@@ -1088,18 +1089,18 @@ pub fn indemnite_mise_a_la_retraite(anciennete: Decimal, reference: Decimal) -> 
              La convention collective peut en prevoir une.",
             mois_complets(anciennete), mini)));
     }
-    let (montant, annees) = bareme_licenciement(anciennete, reference)?;
+    let (montant, annees) = bareme_licenciement(anciennete, reference()?)?;
     Ok(IndemniteLegale { montant, du: true, pourquoi: None, annees: Some(annees) })
 }
 
 /// Le plancher de l'indemnite de rupture conventionnelle (L1237-13 : celle de L1234-9). Sous l'anciennete minimale de
 /// L1234-9, au prorata des mois complets quand `rupture_conventionnelle.indemnite` le dit (la circulaire DGT 2009-4, au
 /// taux de R1234-2 en vigueur), avec la phrase qui le dit (`pourquoi`) ; sinon pas de plancher.
-pub fn indemnite_rupture_conventionnelle(anciennete: Decimal, reference: Decimal) -> R<PlancherDeLaRupture> {
+pub fn indemnite_rupture_conventionnelle(anciennete: Decimal, reference: &mut dyn FnMut() -> R<Decimal>) -> R<PlancherDeLaRupture> {
     let mini = anciennete_minimale()?;
     if anciennete < mini {
         if regles()?.rupture_conventionnelle.indemnite.prorata_sous_l_anciennete_minimale && !mois_complets(anciennete).is_zero() {
-            let (plancher, annees) = bareme_licenciement(anciennete, reference)?;
+            let (plancher, annees) = bareme_licenciement(anciennete, reference()?)?;
             return Ok(PlancherDeLaRupture { plancher: Some(plancher), annees, pourquoi: Some(format!(
                 "{} mois complets d'ancienneté, moins que les {} de L1234-9 : la circulaire DGT 2009-4 (5.3) dit \
                  l'indemnité spécifique due « au prorata du nombre de mois de présence » ; le plancher est celui de \
@@ -1112,13 +1113,13 @@ pub fn indemnite_rupture_conventionnelle(anciennete: Decimal, reference: Decimal
              donc la loi ne donne pas de plancher. Le montant de la convention se saisit.",
             mois_complets(anciennete), mini)) });
     }
-    let (plancher, annees) = bareme_licenciement(anciennete, reference)?;
+    let (plancher, annees) = bareme_licenciement(anciennete, reference()?)?;
     Ok(PlancherDeLaRupture { plancher: Some(plancher), annees, pourquoi: None })
 }
 
 /// L'indemnite de depart volontaire a la retraite : un PALIER, pas un cumul,
 /// et rien sous le premier.
-pub fn indemnite_depart_retraite(anciennete: Decimal, reference: Decimal) -> R<IndemniteDuDepart> {
+pub fn indemnite_depart_retraite(anciennete: Decimal, reference: &mut dyn FnMut() -> R<Decimal>) -> R<IndemniteDuDepart> {
     let rg = regles()?;
     let annees = div(anciennete, douze());
     let mut tries: Vec<&PalierDeDepart> = rg.depart_a_la_retraite.indemnite.taux.iter().collect();
@@ -1135,7 +1136,7 @@ pub fn indemnite_depart_retraite(anciennete: Decimal, reference: Decimal) -> R<I
     };
     let mois = palier.mois_de_salaire;
     Ok(IndemniteDuDepart {
-        montant: eur2(mul(mois, reference)),
+        montant: eur2(mul(mois, reference()?)),
         du: true,
         mois,
         palier: Some(palier.anciennete_annees.trunc().to_i64().ok_or_else(|| socle::echec::refus(socle::num::illisible(&palier.anciennete_annees.to_string())))?),
