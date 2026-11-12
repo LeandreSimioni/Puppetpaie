@@ -6,7 +6,7 @@
 
 use crate::outils::typee::{cas_de, chemin_donnee, empreinte, jouer, lire_chemin, Rendu};
 use droit::clauses::{self as c, Bande, DitParLEngagement, Indemnite, PreavisDit, Prime, Profil, Retraite, Tranche, P};
-use droit::fiche::ChampsSalarie;
+use droit::fiche::{ChampsSalarie, Statut};
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 use socle::echec::R;
@@ -22,7 +22,7 @@ pub(crate) struct Eng {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub categorie_conventionnelle: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub statut: Option<String>,
+    pub statut: Option<Statut>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metier: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -91,7 +91,7 @@ pub(crate) fn champs(texte: &str) -> R<ChampsSalarie> {
 pub(crate) fn dit(e: Option<&Eng>) -> R<DitParLEngagement> {
     let Some(e) = e else { return Ok(DitParLEngagement::default()) };
     let dite = |v: &Option<String>| v.clone().filter(|s| !s.is_empty());
-    Ok(DitParLEngagement { categorie_conventionnelle: dite(&e.categorie_conventionnelle), statut: dite(&e.statut), metier: dite(&e.metier), cadre: e.cadre, debut: e.debut })
+    Ok(DitParLEngagement { categorie_conventionnelle: dite(&e.categorie_conventionnelle), statut: e.statut, metier: dite(&e.metier), cadre: e.cadre, debut: e.debut })
 }
 
 pub(crate) fn profil_de(p: &Prof) -> Profil {

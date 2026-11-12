@@ -1145,7 +1145,7 @@ fn versement_refuse(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<Option<Str
             let fiche = crate::calcul::fiche_de_l_engagement(ctx, eng)?;
             let metier = fiche.code_emploi_ft.portee().map(emplois::metier).transpose()?.flatten();
             let cirque = metier.as_ref().and_then(|m| m.au_catalogue()).and_then(|f| f.minima.ccn_1285.as_deref()) == Some("cirque");
-            (ent.idcc.portee() == Some("1285") && cirque).then_some(f)
+            (ent.idcc.portee() == Some(droit::clauses::IDCC_CCNEAC) && cirque).then_some(f)
         }
         _ => None,
     };
@@ -1746,7 +1746,7 @@ fn heures_dites(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<()> {
 /// de paie des seuls artistes) ne paie qu'un salarie de ce statut, lu comme la paie le lit
 /// (`calcul::fiche_de_l_engagement`, `calcul::statut_de`). Sinon l'engagement se refuse, en disant comment le payer.
 fn unites_du_statut(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<()> {
-    let mut statut: Option<&str> = None;
+    let mut statut: Option<Statut> = None;
     for (i, l) in eng.lignes.iter().enumerate() {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         let Some(voulu) = r.reservee_au_statut() else { continue };

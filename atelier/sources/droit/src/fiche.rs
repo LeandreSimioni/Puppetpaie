@@ -866,7 +866,7 @@ impl<T: FormeDeCase> FormeDeCase for Vec<T> {
 macro_rules! choix {
     ($(#[$m:meta])* pub enum $nom:ident { $( $(#[$vm:meta])* $var:ident = $txt:literal ),* $(,)? }) => {
         $(#[$m])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
         pub enum $nom { $( $(#[$vm])* #[serde(rename = $txt)] $var ),* }
         impl $nom {
             pub fn as_str(&self) -> &'static str {

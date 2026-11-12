@@ -3149,7 +3149,7 @@ fn taux_at_du_ctp(ctp: &Ctp, bar: &Pile) -> R<Option<TauxDeLaLigne>> {
         ));
     };
     let mut valeur = valeur;
-    if ctp.statut.as_deref() == Some("artiste") {
+    if ctp.statut == Some(droit::fiche::Statut::Artiste) {
         valeur = mul(valeur, Decimal::new(70, 2));
     }
     Ok(Some(TauxDeLaLigne::AtMp(a_deux_chiffres(valeur))))
@@ -3484,7 +3484,7 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             continue;
         }
         let (valeur, par_montant) = valeur_ctp(&somme, ctp)?;
-        if (ctp.statut.as_deref().is_some_and(|s| !s.is_empty()) || ctp.population.as_deref().is_some_and(|s| !s.is_empty())) && valeur.is_zero() {
+        if (ctp.statut.is_some() || ctp.population.as_deref().is_some_and(|s| !s.is_empty())) && valeur.is_zero() {
             continue;
         }
         let v = rond(valeur);

@@ -209,8 +209,8 @@ impl Rubrique {
     /// cachet que des artistes : annexe X, art. 3 (« Lorsque l'activité des artistes est déclarée sous la forme de
     /// cachets ») ; l'annexe VIII, celle des techniciens, ne compte que des heures (art. 3,
     /// `plafond-intermittents/unedic-annexe10-convention-20241115.txt`, `…annexe8…`).
-    pub fn reservee_au_statut(&self) -> Option<&'static str> {
-        matches!(self.unite.as_str(), "service" | "cachet").then_some("artiste")
+    pub fn reservee_au_statut(&self) -> Option<crate::fiche::Statut> {
+        matches!(self.unite.as_str(), "service" | "cachet").then_some(crate::fiche::Statut::Artiste)
     }
 
     /// Une ligne de cette rubrique doit dire ses heures : `heures` est dans

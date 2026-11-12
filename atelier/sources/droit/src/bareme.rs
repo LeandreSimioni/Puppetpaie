@@ -1436,8 +1436,13 @@ impl Fraction {
 }
 
 /// (part patronale, part salariale) de la tranche 1, en fractions, pour la
-/// convention de l'entreprise et cette population.
-pub fn repartition_t1(bar: &Pile, ent: &ChampsEntreprise, population: &str) -> R<(Fraction, Fraction)> {
+/// convention de l'entreprise et cette population (`population` la nomme, `de_la_branche` la lit dans la branche).
+pub fn repartition_t1(
+    bar: &Pile,
+    ent: &ChampsEntreprise,
+    population: &str,
+    de_la_branche: fn(&crate::forme_bareme::RepartitionDeBranche) -> Option<String>,
+) -> R<(Fraction, Fraction)> {
     let rep = bar.retraite_t1_repartition.as_ref();
     // La repartition d'avant 1999 vaut pour la compagnie dont la fiche dit une premiere embauche d'avant 1999.
     let embauche_avant_1999 = ent.premiere_embauche.dite().is_some_and(|j| j.iso().as_str() < "1999-01-01");
@@ -1447,12 +1452,7 @@ pub fn repartition_t1(bar: &Pile, ent: &ChampsEntreprise, population: &str) -> R
         _ => {
             let idcc = ent.idcc.portee();
             let branche = idcc.and_then(|i| rep.and_then(|r| r.par_idcc.get(i)));
-            let t = branche.and_then(|b| match population {
-                "permanent" => b.permanent.clone(),
-                "technicien" => b.technicien.clone(),
-                "artiste" => b.artiste.clone(),
-                _ => None,
-            });
+            let t = branche.and_then(de_la_branche);
             match t.filter(|t| !t.is_empty()) {
                 Some(t) => t,
                 None => {
@@ -1544,7 +1544,7 @@ pub fn bareme_retraite_t1(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuCont
         if !ent.idcc.est_dite() && !ent.premiere_embauche.est_dite() {
             return Ok(bar);
         }
-        let (_, part_sal) = repartition_t1(&bar, ent, "permanent")?;
+        let (_, part_sal) = repartition_t1(&bar, ent, "permanent", |b| b.permanent.clone())?;
         let (p, s) = parts_t1(rep.taux_droit_commun, part_sal);
         return poser_t1(bar, p, s);
     }
@@ -1552,11 +1552,10 @@ pub fn bareme_retraite_t1(bar: Pile, ent: &ChampsEntreprise, sal: &SalarieDuCont
         Some(c) if c.applicable => c.clone(),
         _ => return Ok(bar),
     };
-    let statut = sal.statut.exigee("statut")?.as_str().trim().to_lowercase();
-    let taux = couche.retraite_t1.as_ref().and_then(|t| match statut.as_str() {
-        "artiste" => t.artiste.map(|c| c.0),
-        "technicien" => t.technicien.map(|c| c.0),
-        _ => None,
+    let statut = *sal.statut.exigee("statut")?;
+    let taux = couche.retraite_t1.as_ref().and_then(|t| match statut {
+        Statut::Artiste => t.artiste.map(|c| c.0),
+        Statut::Technicien => t.technicien.map(|c| c.0),
     });
     let Some(taux) = taux else { return Ok(bar) };
     if let Some(avant) = couche.adhesion_avant {
@@ -1592,7 +1591,11 @@ demander a Audiens, puis a ecrire dans la couche de \
             ),
         ));
     }
-    let (_, part_sal) = repartition_t1(&bar, ent, &statut)?;
+    let de_la_branche: fn(&crate::forme_bareme::RepartitionDeBranche) -> Option<String> = match statut {
+        Statut::Artiste => |b| b.artiste.clone(),
+        Statut::Technicien => |b| b.technicien.clone(),
+    };
+    let (_, part_sal) = repartition_t1(&bar, ent, statut.as_str(), de_la_branche)?;
     let (p, s) = parts_t1(taux, part_sal);
     poser_t1(bar, p, s)
 }

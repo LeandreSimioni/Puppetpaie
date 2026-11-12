@@ -1777,7 +1777,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         faits_avances: if nat.mensuelle() { engagement::heures_en_plus::faits_appeles(ctx, e.modalite_temps_travail()? == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel)? } else { Vec::new() },
         // LES RUBRIQUES QUE SA CARTE PROPOSE : sa nature, et le statut et le metier de la fiche telle que la paie la lit
         // (le metier de la carte par-dessus celui du salarie).
-        propose: engagement::proposees::proposees(ctx, Some(nat.mensuelle()), s.statut.dite().map(|x| x.as_str()), s.code_emploi_ft.remplie(), &data.mois.premier_jour())?,
+        propose: engagement::proposees::proposees(ctx, Some(nat.mensuelle()), s.statut.dite().copied(), s.code_emploi_ft.remplie(), &data.mois.premier_jour())?,
         // LES CASES QU'UNE LIGNE DE FRAIS APPELLE : le lieu d'une nuitée, le restaurant d'un repas, le justificatif d'un
         // frais au-delà de sa limite (`engagement::frais_au_dela`).
         cases: e

@@ -530,7 +530,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees
     let dit = |x: Option<&str>| x.map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
     let de_la_fiche = dit(donnees.mot(droit::fiche::CaseSalarie::CodeEmploiFt).as_deref());
     // (metier, statut dit par la carte, jour, salarie)
-    let mut metiers: std::collections::BTreeSet<(String, Option<String>, Jour, String)> = std::collections::BTreeSet::new();
+    let mut metiers: std::collections::BTreeSet<(String, Option<droit::fiche::Statut>, Jour, String)> = std::collections::BTreeSet::new();
     for f in engagement::stock::fichiers(&ctx.racine)? {
         let Some(lu) = engagement::stock::lire_fichier(&ctx.racine, f)? else { continue };
         for e in lu.engagements.iter().filter(|e| e.non_actif.is_none()) {
@@ -545,7 +545,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees
             let termes = std::iter::once((&s.carte, lu.mois.premier_jour())).chain(s.avenants.iter().map(|a| (&a.termes, a.depuis)));
             for (t, jour) in termes {
                 if let Some(code) = dit(t.code_emploi_ft.as_deref()).or_else(|| dit(t.metier.as_deref())).or_else(|| du_salarie.clone()) {
-                    metiers.insert((code, t.statut.map(|s| s.as_str().to_string()), jour.clone(), salarie.to_string()));
+                    metiers.insert((code, t.statut, jour.clone(), salarie.to_string()));
                 }
             }
         }
@@ -557,10 +557,10 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees
         }
         let ent = &ctx.entreprise;
         let statut = match statut {
-            Some(s) => Some(s.clone()),
-            None => ctx.salarie(salarie)?.statut.dite().map(|s| droit::fiche::Choix::code(s).to_string()),
+            Some(s) => Some(*s),
+            None => ctx.salarie(salarie)?.statut.dite().copied(),
         };
-        if droit::clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), Some(code), statut.as_deref())? {
+        if droit::clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), Some(code), statut)? {
             cases.insert(droit::fiche::CasePieceEntreprise::JaugeAnnexe1.into());
         }
     }

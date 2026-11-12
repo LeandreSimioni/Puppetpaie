@@ -201,7 +201,7 @@ struct SalarieDeLaDsn<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     date_anciennete: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    statut: Option<&'static str>,
+    statut: Option<droit::fiche::Statut>,
     #[serde(skip_serializing_if = "Option::is_none")]
     emploi_affichage: Option<String>,
     actif: bool,
@@ -217,9 +217,9 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
         None => None,
     };
     let statut = match (&m, emploi.and_then(|e| e.pcs_ese.as_deref())) {
-        (Some(m), _) => Some(m.statut().as_str()),
-        (None, Some(pcs)) if pcs.starts_with("354") => Some("artiste"),
-        (None, Some(_)) => Some("technicien"),
+        (Some(m), _) => Some(m.statut()),
+        (None, Some(pcs)) if pcs.starts_with("354") => Some(droit::fiche::Statut::Artiste),
+        (None, Some(_)) => Some(droit::fiche::Statut::Technicien),
         (None, None) => None,
     };
     // L'EMPLOI EN CLAIR d'un metier : son libelle, au feminin pour une salariee (le sexe que porte son NIR), comme quand
