@@ -47,6 +47,8 @@ const NUMERO: &str = "un numéro de contrat (5 à 20 caractères)";
 const ORGANISME: &str = "un identifiant d'organisme (2 à 14 caractères)";
 /// Ce que porte le code emploi d'un contrat (S21.G00.40.005, X [2,6]) : `droit::fiche::CodeEmploiFt`.
 const CODE_EMPLOI: &str = "un code emploi (2 à 6 caractères)";
+/// S21.G00.40.004 : « X [4,4] » (cahier technique DSN 2026.1 p. 183, `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt`).
+const PCS_ESE: &str = "un code PCS-ESE (4 caractères)";
 
 // ------------------------------------------------------------------ la forme
 
@@ -147,7 +149,7 @@ pub struct EmploiDeclare {
     pub statut_categoriel_rc: Option<String>,
     /// S21.G00.40.004.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pcs_ese: Option<String>,
+    pub pcs_ese: Option<droit::fiche::CodePcsEse>,
     /// S21.G00.40.005.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_emploi_ft: Option<droit::fiche::CodeEmploiFt>,
@@ -1133,14 +1135,17 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 contrats.push(ContratDeclare::de(individus[i].nir.clone(), i, debut));
                 fin_de = Some(contrats.len() - 1);
             }
-            "S21.G00.40.002" | "S21.G00.40.003" | "S21.G00.40.004" | "S21.G00.40.006" => {
+            "S21.G00.40.002" | "S21.G00.40.003" | "S21.G00.40.006" => {
                 let Some(c) = contrat else { continue };
                 *match k {
                     "S21.G00.40.002" => &mut c.emploi.statut_conventionnel,
                     "S21.G00.40.003" => &mut c.emploi.statut_categoriel_rc,
-                    "S21.G00.40.004" => &mut c.emploi.pcs_ese,
                     _ => &mut c.emploi.emploi,
                 } = plein;
+            }
+            "S21.G00.40.004" => {
+                let pcs = fautes.lue(k, &v, PCS_ESE, droit::fiche::CodePcsEse::lire);
+                contrat.into_iter().for_each(|c| c.emploi.pcs_ese = pcs.clone());
             }
             "S21.G00.40.005" => {
                 let code = fautes.lue(k, &v, CODE_EMPLOI, droit::fiche::CodeEmploiFt::lire);

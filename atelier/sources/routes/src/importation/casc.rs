@@ -138,7 +138,7 @@ pub struct ContratReg {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fin: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pcs_ese: Option<String>,
+    pub pcs_ese: Option<droit::fiche::CodePcsEse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emploi: Option<String>,
 }
@@ -368,7 +368,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
                 commune: champ(S::Commune),
                 email: champ(S::Email),
             };
-            let contrat = ContratReg { numero: p.numero.clone(), debut: p.debut, fin: p.fin, pcs_ese: champ(S::PcsEse), emploi: champ(S::Emploi) };
+            let contrat = ContratReg { numero: p.numero.clone(), debut: p.debut, fin: p.fin, pcs_ese: p.salarie.champs.pcs_ese.dite().cloned(), emploi: champ(S::Emploi) };
             emplois.push(EmploiReg {
                 annee: an,
                 mois: *m,
@@ -655,7 +655,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
     for (n, x) in r.emplois.iter().enumerate() {
         let ligne = 3 + n as u32;
         let (i, c) = (&x.individu, &x.contrat);
-        let artiste = c.pcs_ese.as_deref().is_some_and(|p| p.starts_with("354"));
+        let artiste = c.pcs_ese.as_ref().is_some_and(|p| p.starts_with("354"));
         let nir = i.nir.clone();
         let cle = (x.annee, nir.clone());
         let total = match cumul.iter_mut().find(|(k, _)| *k == cle) {
