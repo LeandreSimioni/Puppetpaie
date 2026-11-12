@@ -152,14 +152,10 @@ fn guetter(o: &Options) -> R<i32> {
             }
         }
         let bouge = date(&sous_agent)?;
-        match SystemTime::now().duration_since(bouge) {
-            Ok(d) if d > IMMOBILE => {
-                dire!("IMMOBILE depuis 20 minutes : sous-agent a {}", dit(s));
-                return Ok(0);
-            }
-            Ok(_) => {}
-            // Le transcript date d'apres l'horloge : il vient de bouger.
-            Err(apres) => drop(apres),
+        // Un transcript date d'apres l'horloge vient de bouger : il n'est pas immobile.
+        if SystemTime::now() > bouge + IMMOBILE {
+            dire!("IMMOBILE depuis 20 minutes : sous-agent a {}", dit(s));
+            return Ok(0);
         }
         std::thread::sleep(PAS);
     }
