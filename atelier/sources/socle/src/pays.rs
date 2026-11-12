@@ -54,14 +54,13 @@ impl CodePays {
         CodePays("FR".to_string())
     }
 
-    /// Ce qui refuse `texte` a la saisie, qui le garde sans blancs de bord et en capitales (`declarations::champs`) ; rien
-    /// pour un texte vide.
+    /// Ce qui refuse `texte` a la saisie, que la porte a deja range sans blancs de bord et en capitales
+    /// (`droit::fiche::Declaree::rangee`) ; rien pour un texte vide.
     pub fn faute(texte: &str) -> Option<String> {
-        let t = texte.trim().to_uppercase();
-        if t.is_empty() {
+        if texte.is_empty() {
             return None;
         }
-        CodePays::lire(&t).err().map(|e| e.phrase)
+        CodePays::lire(texte).err().map(|e| e.phrase)
     }
 }
 

@@ -99,10 +99,17 @@ pub trait Choix {
     fn code(&self) -> &'static str;
 }
 
-/// LA VALEUR D'UN CHANGEMENT DE CASE (`fiche!`) : `null` vide la case ; sinon elle se lit dans le type de la case. `""`
-/// n'est pas le vide et se refuse (`socle::forme::Remplie`).
-pub fn nulle_ou_dite<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<T>, D::Error> {
-    match socle::forme::Remplie::<T>::deserialize(d)? {
+/// LA VALEUR D'UN CHANGEMENT DE CASE (`fiche!`) : `null` vide la case ; sinon elle se lit dans le type de la case, chaque
+/// texte saisi range d'abord dans la forme du type de sa case (`Declaree::rangee`). `""` n'est pas le vide et se refuse
+/// (`socle::forme::Remplie`).
+pub fn nulle_ou_dite<'de, D: Deserializer<'de>, T: DeserializeOwned + FormeDeCase>(d: D) -> Result<Option<T>, D::Error> {
+    let case = declaree::<T>("");
+    let lue = if case.range() {
+        socle::forme::rangee_puis_lue::<D, T>(d, &|chemin, texte| rangee_au_chemin(&case, chemin, texte))?
+    } else {
+        socle::forme::Remplie::<T>::deserialize(d)?
+    };
+    match lue {
         socle::forme::Remplie::Nulle => Ok(None),
         socle::forme::Remplie::Vide => Err(serde::de::Error::custom("un texte vide ne dit rien : le vide s'écrit null")),
         socle::forme::Remplie::Dite(v) => Ok(Some(v)),
@@ -432,9 +439,10 @@ texte_borne! {
 }
 
 /// CE QU'UNE NOTION LUE PORTE AVEC SON TEXTE : elle se lit de son seul lecteur (`lire`, a la lecture du fichier comme a
-/// la porte) et se refuse a la saisie par sa faute (`FormeDeCase::FAUTE`) ; elle s'ecrit telle qu'elle a ete lue.
+/// la porte) et se refuse a la saisie par sa faute (`FormeDeCase::FAUTE`) ; sa saisie se range d'abord dans sa forme
+/// (`$ranger`, `FormeDeCase::RANGER`) ; elle s'ecrit telle qu'elle a ete lue.
 macro_rules! notion_lue {
-    ($nom:ident, faute a part) => {
+    ($nom:ident rangee par $ranger:path, faute a part) => {
         impl AsRef<str> for $nom {
             fn as_ref(&self) -> &str {
                 &self.0
@@ -462,10 +470,18 @@ macro_rules! notion_lue {
 
         impl FormeDeCase for $nom {
             const FAUTE: Option<fn(&str) -> Option<String>> = Some($nom::faute);
+            const RANGER: Option<fn(&str) -> String> = Some($nom::rangee);
+        }
+
+        impl $nom {
+            /// Le texte saisi `texte` dans sa forme, avant d'etre lu (`FormeDeCase::RANGER`).
+            pub fn rangee(texte: &str) -> String {
+                $ranger(texte)
+            }
         }
     };
-    ($nom:ident) => {
-        notion_lue!($nom, faute a part);
+    ($nom:ident rangee par $ranger:path) => {
+        notion_lue!($nom rangee par $ranger, faute a part);
 
         impl $nom {
             /// Ce qui refuse `texte` a la saisie, en une phrase qui dit quoi faire ; rien pour un texte vide (la case vide
@@ -478,6 +494,23 @@ macro_rules! notion_lue {
             }
         }
     };
+}
+
+/// UNE SAISIE SANS SES BLANCS DE BORD (`socle::texte::blanc`) : la forme rangee d'un texte que son type lit tel quel.
+pub fn sans_blancs_de_bord(texte: &str) -> String {
+    texte.trim_matches(socle::texte::blanc).to_string()
+}
+
+/// UNE SAISIE SANS SES BLANCS DE BORD, EN CAPITALES : la forme rangee d'un code que son texte ecrit en capitales (un code
+/// pays ISO 3166, un code INSEE de commune : 2A, 2B).
+pub fn en_capitales(texte: &str) -> String {
+    sans_blancs_de_bord(texte).to_uppercase()
+}
+
+/// UNE SAISIE DE CHIFFRES SANS AUCUN BLANC : la forme rangee d'un identifiant fait de chiffres (`identifiant_de_chiffres!`),
+/// que ses blancs, autour ou entre ses groupes (« 123 456 789 00012 »), ne changent pas.
+pub fn sans_blancs(texte: &str) -> String {
+    texte.chars().filter(|c| !socle::texte::blanc(*c)).collect()
 }
 
 /// Le texte fait d'exactement `n` chiffres ASCII.
@@ -507,7 +540,7 @@ macro_rules! identifiant_de_chiffres {
             }
         }
 
-        notion_lue!($nom);
+        notion_lue!($nom rangee par sans_blancs);
     };
 }
 
@@ -601,7 +634,8 @@ impl Siret {
 
 /// UN IBAN (ISO 13616) : sa forme et sa cle sont celles de `socle::iban::faute_iban` (S21.G00.20.004 de la DSN, et le
 /// communique IBAN de la Banque centrale de Turquie : `atelier/reference/sources/iban/`), qui le lit compacte (sans
-/// blancs, en majuscules : `socle::iban::iban_compact`). Il se garde tel qu'il est ecrit.
+/// blancs, en majuscules : `socle::iban::iban_compact`, l'etape preliminaire de la validation, annexe 3). Il se garde
+/// tel qu'il est ecrit ; sa saisie s'ecrit compacte (`FormeDeCase::RANGER`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
 pub struct Iban(String);
@@ -616,10 +650,10 @@ impl Iban {
     }
 }
 
-notion_lue!(Iban);
+notion_lue!(Iban rangee par socle::iban::iban_compact);
 
 /// UN BIC (ISO 9362) : sa forme est celle de `socle::iban::faute_bic` (S21.G00.20.003 de la DSN), qui le lit compacte.
-/// Il se garde tel qu'il est ecrit.
+/// Il se garde tel qu'il est ecrit ; sa saisie s'ecrit compacte (`FormeDeCase::RANGER`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
 pub struct Bic(String);
@@ -634,7 +668,7 @@ impl Bic {
     }
 }
 
-notion_lue!(Bic);
+notion_lue!(Bic rangee par socle::iban::iban_compact);
 
 /// UNE ADRESSE DE COURRIEL : une seule arobase, qui n'est pas en tete, un point dans le domaine avec un caractere avant
 /// et un apres, aucun blanc (`^[^@\s]+@[^@\s]+\.[^@\s]+$`). Une inference : la forme qu'en garde la DSN (S20.G00.07.003,
@@ -663,7 +697,7 @@ impl Courriel {
     }
 }
 
-notion_lue!(Courriel);
+notion_lue!(Courriel rangee par sans_blancs_de_bord);
 
 /// LA CLE D'UN NIR, a cote de lui (`Nir`) : « le complément à 97 du reste de la division par 97 » du NIR, deux chiffres,
 /// de 01 a 97 (INSEE, schema NIR, 4.1 : `atelier/reference/sources/insee-nir-siret/`). Qu'elle soit celle de son NIR se
@@ -691,7 +725,7 @@ impl CleNir {
     }
 }
 
-notion_lue!(CleNir);
+notion_lue!(CleNir rangee par sans_blancs_de_bord);
 
 /// LE NUMERO D'OBJET D'UN SPECTACLE : « le numéro unique constitué de 12 caractères alphanumériques qui est attribué par le
 /// CNCS pour chaque spectacle ou chaque production » (S21.G00.40.050, X [12,12] :
@@ -718,7 +752,7 @@ impl NumeroObjetSpectacle {
     }
 }
 
-notion_lue!(NumeroObjetSpectacle);
+notion_lue!(NumeroObjetSpectacle rangee par sans_blancs_de_bord);
 
 /// LE CODE INSEE D'UNE COMMUNE, cinq caracteres (« Nomenclature INSEE des communes de France », S21.G00.81.005, X [5,5] :
 /// `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.81.txt`, l. 458-461 ; `logiciel/donnees/formats-dsn-base.json`) :
@@ -744,7 +778,7 @@ impl CodeInsee {
     }
 }
 
-notion_lue!(CodeInsee);
+notion_lue!(CodeInsee rangee par en_capitales);
 
 /// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
 /// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,
@@ -1132,6 +1166,32 @@ pub struct Declaree<K = NomDeCase> {
     pub faute: Option<fn(&str) -> Option<String>>,
     /// La borne de son texte et ce qu'elle compte (`texte_borne!`), que l'aide de sa ligne de `champs-base.json` dit.
     pub longueur: Option<(usize, &'static str)>,
+    /// La forme que son type donne a un texte saisi (`FormeDeCase::RANGER`), que `rangee` applique.
+    pub ranger: Option<fn(&str) -> String>,
+}
+
+impl<K> Declaree<K> {
+    /// LE TEXTE SAISI `texte` RANGE DANS LA FORME DU TYPE DE LA CASE (`FormeDeCase::RANGER`, le seul endroit qui dit
+    /// comment une saisie se range), avant tout controle et toute ecriture : ce qui s'ecrit est ce que son lecteur relit.
+    /// Les deux portes d'une saisie l'appliquent, celle d'une saisie de fiche (`declarations::champs::lecture`) et celle
+    /// d'un changement de case (`nulle_ou_dite`) ; rien pour un type qui lit son texte tel quel.
+    pub fn rangee(&self, texte: &str) -> Option<String> {
+        self.ranger.map(|r| r(texte))
+    }
+
+    /// Une case de son type, ou d'une structure qu'il porte, range-t-elle sa saisie ?
+    fn range(&self) -> bool {
+        self.ranger.is_some() || self.cases.iter().any(Declaree::range)
+    }
+}
+
+/// LA SAISIE D'UN CHANGEMENT DE CASE DE TYPE `T`, RANGEE : le texte au chemin `chemin` (les cles qui y menent sous la
+/// case) prend la forme du type de sa case (`Declaree::rangee`).
+fn rangee_au_chemin(case: &Declaree, chemin: &[String], texte: &str) -> Option<String> {
+    match chemin.split_first() {
+        None => case.rangee(texte),
+        Some((cle, reste)) => case.cases.iter().find(|d| d.cle.nom() == cle).and_then(|d| rangee_au_chemin(d, reste, texte)),
+    }
 }
 
 /// La forme d'un type de case.
@@ -1142,6 +1202,9 @@ pub trait FormeDeCase {
     const FAUTE: Option<fn(&str) -> Option<String>> = None;
     /// La borne d'un texte declare (`texte_borne!`) et ce qu'elle compte ; aucune d'ordinaire.
     const LONGUEUR: Option<(usize, &'static str)> = None;
+    /// La forme que le type donne a un texte saisi avant de le lire (`Declaree::rangee`) : sans ses blancs de bord, en
+    /// capitales ; aucune d'ordinaire (le texte se lit tel quel).
+    const RANGER: Option<fn(&str) -> String> = None;
     /// Les cases d'une structure ; aucune hors d'une structure.
     fn cases() -> Vec<Declaree> {
         Vec::new()
@@ -1149,17 +1212,17 @@ pub trait FormeDeCase {
 }
 
 fn declaree<T: FormeDeCase>(cle: &'static str) -> Declaree {
-    Declaree { cle: nom_ecrit(cle), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR }
+    Declaree { cle: nom_ecrit(cle), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR, ranger: T::RANGER }
 }
 
 /// La case d'une fiche, hors de ses pieces.
 fn declaree_de_fiche<T: FormeDeCase>(cle: &'static str) -> Declaree<CaseDeFiche> {
-    Declaree { cle: CaseDeFiche::Case(nom_ecrit(cle)), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR }
+    Declaree { cle: CaseDeFiche::Case(nom_ecrit(cle)), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR, ranger: T::RANGER }
 }
 
 /// La case d'une piece d'une fiche.
 fn declaree_de_piece<T: FormeDeCase>(cle: CaseDePiece) -> Declaree<CaseDeFiche> {
-    Declaree { cle: CaseDeFiche::Piece(cle), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR }
+    Declaree { cle: CaseDeFiche::Piece(cle), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR, ranger: T::RANGER }
 }
 
 impl FormeDeCase for String {}
@@ -1171,9 +1234,11 @@ impl FormeDeCase for Montant {}
 impl FormeDeCase for socle::paris::Moment {}
 impl FormeDeCase for socle::pays::CodePays {
     const FAUTE: Option<fn(&str) -> Option<String>> = Some(socle::pays::CodePays::faute);
+    const RANGER: Option<fn(&str) -> String> = Some(en_capitales);
 }
 impl<T: FormeDeCase> FormeDeCase for Vec<T> {
     const VALEURS: &'static [&'static str] = T::VALEURS;
+    const RANGER: Option<fn(&str) -> String> = T::RANGER;
     fn cases() -> Vec<Declaree> {
         T::cases()
     }

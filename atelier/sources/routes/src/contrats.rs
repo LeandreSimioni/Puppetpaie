@@ -522,8 +522,7 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 
 /// `poser-courriel` : le courriel du salarie, pose dans sa fiche (`fiches::poser_courriel`).
 fn poser_courriel(ctx: &Contexte, c: ChargeCourriel) -> R<CourrielPose> {
-    let email = c.email.trim().to_string();
-    crate::fiches::poser_courriel(ctx, &c.salarie, &email)?;
+    let email = crate::fiches::poser_courriel(ctx, &c.salarie, &c.email)?.to_string();
     Ok(CourrielPose { phrase: format!("Courriel de {} : {}.", c.salarie, email), salarie: c.salarie, email })
 }
 

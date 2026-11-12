@@ -931,14 +931,31 @@ impl Saisie {
 /// (l'histoire de la fiche, qui se lit et ne se saisit pas).
 #[derive(Debug, Clone)]
 enum Attendu {
-    Simple(Forme),
+    /// Une valeur de la forme de sa ligne ; un texte saisi se range dans la forme du type de la case
+    /// (`Declaree::rangee`), quand elle en declare un.
+    Simple(Forme, Option<fn(&str) -> String>),
     Bloc(Lecture),
     Lignes(Lecture),
     /// Une structure que la table ne decrit pas case par case : des mots, ou les cases que sa forme declare.
     Libre(&'static [Declaree]),
     /// Une case d'une telle structure : un texte, un nombre, oui ou non, des mots, ou les cases que sa forme declare.
-    Quelconque(&'static [Declaree]),
+    Quelconque(&'static Declaree),
     Histoire,
+}
+
+impl Attendu {
+    /// Le texte saisi `t`, range dans la forme du type de sa case (`Declaree::rangee`) ; tel quel sans type qui le range.
+    fn rangee(&self, t: &str) -> String {
+        let ranger = match self {
+            Attendu::Simple(_, r) => *r,
+            Attendu::Quelconque(d) => d.ranger,
+            Attendu::Bloc(_) | Attendu::Lignes(_) | Attendu::Libre(_) | Attendu::Histoire => None,
+        };
+        match ranger {
+            Some(r) => r(t),
+            None => t.to_string(),
+        }
+    }
 }
 
 /// Le niveau d'une lecture : les champs d'une fiche, les cases d'une structure (et celles que sa forme declare a ce
@@ -990,7 +1007,7 @@ impl Lecture {
                     (Forme::Structure, Some(cases), Some(_)) => Attendu::Lignes(self.sous(Niveau::Structure(cases, sous_cases(c)), Vec::new())),
                     (Forme::Structure, Some(cases), None) => Attendu::Bloc(self.sous(Niveau::Structure(cases, sous_cases(c)), Vec::new())),
                     (Forme::Structure, None, _) => Attendu::Libre(sous_cases(c)),
-                    (f, _, _) => Attendu::Simple(f),
+                    (f, _, _) => Attendu::Simple(f, c.declaree.as_ref().and_then(|d| d.ranger)),
                 };
                 Ok((c.cle, a))
             }
@@ -1001,7 +1018,7 @@ impl Lecture {
                 match cases.iter().find(|s| s.cle == chemin) {
                     Some(s) => Ok((d.cle.into(), match s.forme {
                         Forme::Structure | Forme::Histoire => Attendu::Libre(&d.cases),
-                        f => Attendu::Simple(f),
+                        f => Attendu::Simple(f, d.ranger),
                     })),
                     None => {
                         let devant: Vec<NomDeCase> = chemin.noms().collect();
@@ -1014,7 +1031,7 @@ impl Lecture {
                 }
             }
             Niveau::Libre(declarees) => match declarees.iter().find(|d| d.cle.nom() == cle) {
-                Some(d) => Ok((d.cle.into(), Attendu::Quelconque(&d.cases))),
+                Some(d) => Ok((d.cle.into(), Attendu::Quelconque(d))),
                 None => Err(socle::refus!("la case « {} » n'existe pas", cle)),
             },
         }
@@ -1054,7 +1071,7 @@ impl<'de> Visitor<'de> for Lecture {
 impl Attendu {
     fn nombre<E: serde::de::Error>(self, n: NombreLu, lu: Unexpected) -> Result<Option<Valeur>, E> {
         match self {
-            Attendu::Simple(f) if f.admet_un_nombre() => Ok(Some(Valeur::Nombre(n))),
+            Attendu::Simple(f, _) if f.admet_un_nombre() => Ok(Some(Valeur::Nombre(n))),
             Attendu::Quelconque(_) => Ok(Some(Valeur::Nombre(n))),
             _ => Err(E::invalid_type(lu, &self)),
         }
@@ -1075,9 +1092,9 @@ impl<'de> Visitor<'de> for Attendu {
     type Value = Option<Valeur>;
     fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.write_str(match self {
-            Attendu::Simple(Forme::Booleen) => "oui ou non (true ou false)",
-            Attendu::Simple(forme) if forme.admet_un_nombre() => "un texte ou un nombre",
-            Attendu::Simple(_) => "un texte",
+            Attendu::Simple(Forme::Booleen, _) => "oui ou non (true ou false)",
+            Attendu::Simple(forme, _) if forme.admet_un_nombre() => "un texte ou un nombre",
+            Attendu::Simple(..) => "un texte",
             Attendu::Bloc(_) => "les cases d'une structure (un objet)",
             Attendu::Lignes(_) => "une liste de lignes",
             Attendu::Libre(_) => "une liste de mots, ou un objet",
@@ -1096,14 +1113,14 @@ impl<'de> Visitor<'de> for Attendu {
     }
     fn visit_bool<E: serde::de::Error>(self, b: bool) -> Result<Option<Valeur>, E> {
         match self {
-            Attendu::Simple(Forme::Booleen) | Attendu::Quelconque(_) => Ok(Some(Valeur::OuiNon(b))),
+            Attendu::Simple(Forme::Booleen, _) | Attendu::Quelconque(_) => Ok(Some(Valeur::OuiNon(b))),
             _ => Err(E::invalid_type(Unexpected::Bool(b), &self)),
         }
     }
     fn visit_str<E: serde::de::Error>(self, t: &str) -> Result<Option<Valeur>, E> {
         match self {
-            Attendu::Simple(f) if f != Forme::Booleen => Ok(Some(Valeur::Texte(t.to_string()))),
-            Attendu::Quelconque(_) => Ok(Some(Valeur::Texte(t.to_string()))),
+            Attendu::Simple(f, _) if f != Forme::Booleen =>Ok(Some(Valeur::Texte(self.rangee(t)))),
+            Attendu::Quelconque(_) => Ok(Some(Valeur::Texte(self.rangee(t)))),
             _ => Err(E::invalid_type(Unexpected::Str(t), &self)),
         }
     }
@@ -1142,7 +1159,8 @@ impl<'de> Visitor<'de> for Attendu {
         };
         match self {
             Attendu::Bloc(l) => l.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
-            Attendu::Libre(d) | Attendu::Quelconque(d) => Lecture { niveau: Niveau::Libre(d), devant: Vec::new() }.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
+            Attendu::Libre(d) => Lecture { niveau: Niveau::Libre(d), devant: Vec::new() }.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
+            Attendu::Quelconque(d) => Lecture { niveau: Niveau::Libre(&d.cases), devant: Vec::new() }.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
             _ => Err(A::Error::invalid_type(Unexpected::Map, &self)),
         }
     }
