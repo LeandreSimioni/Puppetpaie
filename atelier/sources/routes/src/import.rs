@@ -341,9 +341,9 @@ pub(crate) struct Apercu {
 pub(crate) struct SansNets {
     pub(crate) mois: socle::mois::Mois,
     pub(crate) nir: Option<String>,
-    pub(crate) contrat: String,
+    pub(crate) contrat: engagement::numeros::NumeroContrat,
     pub(crate) qui: String,
-    pub(crate) avec: Vec<String>,
+    pub(crate) avec: Vec<engagement::numeros::NumeroContrat>,
 }
 
 impl SansNets {
@@ -405,7 +405,7 @@ pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::Pai
 fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<String>) -> engagement::importe::PaieVersee {
     use engagement::importe::{Declaration, PaieVersee};
     let (c, d) = (p.contrat.as_ref(), &p.paie);
-    let mut x = PaieVersee::vide(d.numero.clone(), Declaration::Dsn);
+    let mut x = PaieVersee::vide(d.numero.to_string(), Declaration::Dsn);
     x.nir = d.nir.clone();
     x.numero_objet = objet;
     (x.debut, x.fin, x.verse_le, x.quotite) = (c.and_then(|c| c.debut), c.and_then(|c| c.fin), d.verse_le, c.and_then(|c| c.quotite));
@@ -645,7 +645,7 @@ pub(crate) fn apercu_lu(
         if !a_une_fiche(nir) {
             continue;
         }
-        if !deja_paies.contains(&(mois.to_string(), cle_de(nir), contrat.clone())) {
+        if !deja_paies.contains(&(mois.to_string(), cle_de(nir), contrat.to_string())) {
             paies_nouvelles += 1;
         }
     }

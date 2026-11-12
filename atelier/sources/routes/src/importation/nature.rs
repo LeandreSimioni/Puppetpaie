@@ -434,7 +434,7 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
         let mut complet = true;
         for champ in demande(nat, en_cours) {
             let pose = match champ {
-                Demande::Numero => Some(numero.clone()).filter(|n| !n.is_empty()).map(|v| charge.numero = Some(v)),
+                Demande::Numero => Some(charge.numero = Some(numero.to_string())),
                 Demande::Salaire => p.paie.mesures.salaire_habituel.map(|m| charge.salaire = Some(MontantSaisi::Texte(m.to_string()))),
                 Demande::Debut => c.and_then(|c| c.debut).map(|j| charge.debut = Some(j)),
                 Demande::Fin => c.and_then(|c| c.fin).map(|j| charge.fin = Some(j)),

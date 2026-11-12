@@ -215,7 +215,7 @@ pub(crate) fn refus_non_declarable(
 ) -> R<Option<String>> {
     let brut = |o: &engagement::stock::Objet| o.brut.clone();
     let (b_avant, b_apres) = (brut(avant), brut(apres));
-    let (Some(cle), Some(numero)) = (b_avant.saisie.carte.salarie.clone(), b_avant.saisie.carte.numero.as_ref().map(ToString::to_string)) else {
+    let (Some(cle), Some(numero)) = (b_avant.saisie.carte.salarie.clone(), b_avant.saisie.carte.numero.clone()) else {
         return Ok(None);
     };
     let meme_salarie = b_apres.saisie.carte.salarie.as_ref() == Some(&cle);

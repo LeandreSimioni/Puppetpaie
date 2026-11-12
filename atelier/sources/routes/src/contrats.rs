@@ -924,7 +924,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         let cle_s = p.salarie.id.to_string();
         let k: envois::etats::Paire = (cle_s.clone(), p.engagement.numero.as_deref().map(str::to_string));
         let etat = crate::etapes::etat_signature(
-            crate::etapes::contrat_parti_le(&departs, &cle_s, p.engagement.numero.as_deref()),
+            crate::etapes::contrat_parti_le(&departs, &p.salarie.id, p.engagement.numero.as_ref()),
             g.par.get(&k).copied(),
             g.recus.get(&k),
             g.renvoyes.contains(&k),
@@ -1278,7 +1278,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     // Le modele avec lequel le contrat est parti : l'avenant cite ses articles.
     let modele = crate::modeles_contrat::du_contrat_parti(ctx, parti.modele.as_deref(), p)?.lu.decoupe("le modèle du contrat").map_err(|m| m.reclasser(Classe::Illisible))?;
     let paie_ecrite = engagement::relire::ecrire(ctx, p)?;
-    let numero_porte = p.engagement.numero.as_deref();
+    let numero_porte = p.engagement.numero.as_ref();
     let vals = documents::avenant::valeurs_de_la_paie(ctx, &ent, &paie_ecrite, numero_porte)?;
     // L'ancien texte s'ecrit du modele avec les valeurs de la version partie, au mois compare (ou, pour un contrat sans
     // terme dont cette version n'avait pas encore ecrit ce mois, a son dernier mois d'avant : ses termes s'y reconduisent).

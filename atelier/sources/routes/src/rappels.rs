@@ -346,7 +346,7 @@ pub(crate) struct Echeance {
     engagements: i64,
     validees: i64,
     spectacles: Vec<SpectacleARevoir>,
-    salarie: Option<String>,
+    salarie: Option<droit::contexte::IdSalarie>,
     /// Le jour que sa cle nomme (`<obligation>:<salarie>:<jour>`) : celui du fichier du signalement qu'elle appelle.
     jour_de_la_cle: Option<Jour>,
     a_saisir: Vec<String>,
@@ -558,7 +558,7 @@ pub(crate) struct EcheanceDite {
     pub(crate) engagements: i64,
     pub(crate) validees: i64,
     pub(crate) spectacles: Vec<SpectacleARevoir>,
-    pub(crate) salarie: Option<String>,
+    pub(crate) salarie: Option<droit::contexte::IdSalarie>,
     pub(crate) a_saisir: Vec<String>,
     /// Une DSN : son echeance de depot, telle que `declarations::echeance_dsn` l'ecrit.
     pub(crate) echeance_depot: Option<declarations::echeance_dsn::EcheanceDite>,
@@ -1257,7 +1257,7 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
             Objet::Fin(Box::new(f.clone())),
         );
         r.mois = Some(f.mois);
-        r.salarie = Some(salarie.clone());
+        r.salarie = Some(f.salarie.clone());
         r.jour_de_la_cle = Some(f.fin);
         r.etape = if a_saisir.is_empty() { A_PRODUIRE } else { A_SAISIR }.into();
         if !a_saisir.is_empty() {

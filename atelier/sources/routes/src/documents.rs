@@ -272,7 +272,7 @@ struct Attestation {
     nom_archive: String,
     qui: String,
     donnees: Vec<u8>,
-    cle: Option<String>,
+    cle: Option<droit::contexte::IdSalarie>,
 }
 
 /// Une attestation d'un retour, par sa periode (`None` : le retour ne la dit pas) et le nom qu'elle porte.
@@ -288,8 +288,8 @@ fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<
         None => noms_du_dossier(&dossier)?.into_iter().filter(|n| n.contains("_nature46_")).collect(),
     };
     fichiers.sort();
-    let index: Vec<(String, String)> =
-        ctx.salaries.iter().map(|(cle, v)| (cle.to_string(), [v.nom.portee(), v.prenom.portee()].into_iter().flatten().collect::<Vec<_>>().join(" "))).collect();
+    let index: Vec<(droit::contexte::IdSalarie, String)> =
+        ctx.salaries.iter().map(|(cle, v)| (cle.clone(),[v.nom.portee(), v.prenom.portee()].into_iter().flatten().collect::<Vec<_>>().join(" "))).collect();
     let mut vues: HashMap<CleAttestation, Vec<Attestation>> = HashMap::new();
     for nom in fichiers {
         let chemin = dossier.join(&nom);
@@ -321,7 +321,7 @@ fn aer_manquantes(ctx: &Contexte, mois: Mois) -> R<Vec<String>> {
         if !att.cle.as_deref().is_some_and(|cle| dossier.join(nom_fichier("AER", cle, &etiquette)).exists()) {
             // Rattachee, la cle de sa fiche ; sinon, le nom que l'attestation porte.
             let nom = match &att.cle {
-                Some(cle) => cle.clone(),
+                Some(cle) => cle.to_string(),
                 None => att.qui.clone(),
             };
             if !out.contains(&nom) {
@@ -344,7 +344,7 @@ fn paies_de_la_periode(ctx: &Contexte, periode: Mois) -> R<Vec<engagement::calcu
 /// Toutes les periodes que l'AER de `cle` pour `periode` doit porter (`documents::aer::periodes_attendues`). `None` : la
 /// saisie de la periode n'est pas dans le logiciel (un mois d'avant lui) -- rien a quoi comparer. Les paies d'un mois qui
 /// ne se lisent pas refusent la comparaison.
-fn periodes_attendues(ctx: &Contexte, par_mois: &mut HashMap<Mois, Vec<engagement::calcul::Paie>>, periode: Mois, cle: &str) -> R<Option<Vec<documents::aer::PaieAer>>> {
+fn periodes_attendues(ctx: &Contexte, par_mois: &mut HashMap<Mois, Vec<engagement::calcul::Paie>>, periode: Mois, cle: &droit::contexte::IdSalarie) -> R<Option<Vec<documents::aer::PaieAer>>> {
     if !engagement::stock::a_une_saisie(&ctx.racine, periode)? {
         return Ok(None);
     }
@@ -383,9 +383,9 @@ fn cachet_pose(gabarits: &Path) -> Option<String> {
 /// deposees a part `(qui, chemin)`, les refusees `(cle, periode, ecarts)`.
 #[derive(Default)]
 pub struct RangementAer {
-    pub ecrits: Vec<(Mois, String, std::path::PathBuf)>,
+    pub ecrits: Vec<(Mois, droit::contexte::IdSalarie, std::path::PathBuf)>,
     pub a_ranger: Vec<(String, std::path::PathBuf)>,
-    pub refusees: Vec<(String, Mois, Vec<String>)>,
+    pub refusees: Vec<(droit::contexte::IdSalarie, Mois, Vec<String>)>,
 }
 
 /// `ranger_aer(ctx, mois=mois)` : signe et range les AER deja archivees la ou l'envoi ira les chercher -- en phrases, pour la releve

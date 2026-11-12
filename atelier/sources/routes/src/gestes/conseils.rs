@@ -846,7 +846,7 @@ fn phrase_fenetre(b: &Banque, f: &cumul::Position, anniversaire: bool) -> String
 
 /// La position du salarie sur la fenetre de ses droits : depuis sa date anniversaire si sa fiche la porte, sinon les
 /// 12 mois jusqu'a `a_la_date`.
-fn position(ctx: &Contexte, cle: &str, engs: &[Declare], a_la_date: Jour) -> R<(cumul::Position, bool)> {
+fn position(ctx: &Contexte, cle: &droit::contexte::IdSalarie, engs: &[Declare], a_la_date: Jour) -> R<(cumul::Position, bool)> {
     let anniv = cumul::anniversaire_configure(ctx, cle)?;
     let p = cumul::position_droits(ctx, cle, engs, anniv, Some(a_la_date))?;
     Ok((p, anniv.is_some()))
@@ -912,7 +912,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
         let assure = if (rep.is_some() || hrs.is_some()) && !sature {
             if !assurees.contains_key(&cle) {
                 let fin = e.fin_periode();
-                let (pos, anniv) = position(ctx, &cle, declares.tous()?, fin)?;
+                let (pos, anniv) = position(ctx, &p.salarie.id, declares.tous()?, fin)?;
                 let h = pos.heures_ouverture()?;
                 let r = (h >= c.seuil_heures).then(|| (h, phrase_fenetre(&b, &pos, anniv)));
                 assurees.insert(cle.clone(), r);
@@ -1048,10 +1048,10 @@ fn du_salarie(ctx: &Contexte, cle: &str) -> R<Vec<ConseilVu>> {
     if !actifs(&ctx.entreprise) {
         return Ok(Vec::new());
     }
-    Ok(ctx.salaries.get(cle).map(|fiche| conseils_de(ctx, cle, fiche)).transpose()?.into_iter().flatten().collect())
+    Ok(ctx.salaries.get(cle).map(|fiche| conseils_de(ctx, &fiche.id, fiche)).transpose()?.into_iter().flatten().collect())
 }
 
-fn conseils_de(ctx: &Contexte, cle: &str, fiche: &droit::fiche::FicheSalarie) -> R<Vec<ConseilVu>> {
+fn conseils_de(ctx: &Contexte, cle: &droit::contexte::IdSalarie, fiche: &droit::fiche::FicheSalarie) -> R<Vec<ConseilVu>> {
     let b = banque()?;
     let jour = ctx.aujourdhui;
     let d = Donnees::de_l_annee(jour.an);
@@ -1146,7 +1146,7 @@ fn resume(ctx: &Contexte) -> R<Vec<ConseilVu>> {
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let engs = engagement::cumul::lire_engagements(ctx, None, &departs)?;
-    let cles: BTreeSet<&str> = engs.iter().map(|e| e.salarie.as_str()).collect();
+    let cles: BTreeSet<&droit::contexte::IdSalarie> = engs.iter().map(|e| &e.salarie).collect();
     // Les salaries par leur prenom (sans fiche, par leur cle) ; deux du meme prenom, par leur prenom et leur nom (sinon
     // on ne saurait lequel).
     let mut fiches = Vec::new();

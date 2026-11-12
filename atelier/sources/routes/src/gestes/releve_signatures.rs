@@ -141,7 +141,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             r.incidents.push(format!("{} : la demande de signature ne dit pas son mois, elle ne se relève pas.", a_nom));
             continue;
         };
-        let a_salarie = a.salarie.to_string();
+        let a_salarie = a.salarie.clone();
         let contrats = a.contrats.clone();
         let retenue = match chercher_reponse(client, a, &expediteur, &mut r.incidents) {
             Ok(x) => x,

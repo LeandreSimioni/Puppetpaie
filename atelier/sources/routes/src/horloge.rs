@@ -952,7 +952,7 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
             dus.push(Pas {
                 quand: a_l_heure(butoir, 9, 30)?,
                 quoi: format!("signalement {} de {} (dernier jour travaillé le {}) déposé", dit, a.salarie, dernier.jj_mm_aaaa()),
-                geste: Geste::Arret { mois: le_mois, salarie: a.salarie.clone(), dernier, cle, nature },
+                geste: Geste::Arret { mois: le_mois, salarie: a.salarie.to_string(), dernier, cle, nature },
             });
         }
     }

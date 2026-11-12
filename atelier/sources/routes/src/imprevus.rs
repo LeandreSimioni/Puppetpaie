@@ -781,7 +781,7 @@ pub(crate) enum Resume {
 /// mensuelles), et l'etat de son signalement.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ArretResume {
-    salarie: String,
+    salarie: IdSalarie,
     contrat: Option<engagement::numeros::NumeroContrat>,
     contrat_debut: Jour,
     motif: String,
@@ -894,7 +894,7 @@ impl ResumeDArret {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ResumeDeSuspension {
     genre: &'static str,
-    salarie: String,
+    salarie: IdSalarie,
     contrat: Option<engagement::numeros::NumeroContrat>,
     contrat_debut: Jour,
     motif: String,
@@ -971,8 +971,8 @@ struct Choisi {
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 enum Designe {
-    Arret { salarie: String, dernier_jour: Jour },
-    Absence { salarie: String, debut: Jour },
+    Arret { salarie: IdSalarie, dernier_jour: Jour },
+    Absence { salarie: IdSalarie, debut: Jour },
 }
 
 // Les libelles des gestes, en constantes : un texte fautif ne compile pas (`Affiche::new`).
@@ -1655,7 +1655,7 @@ fn suspension_enregistrer(ctx: &Contexte, c: &ChargeSuspensionEnregistrer) -> R<
     let contrat = contrat_suspendu(ctx, &cle, &debut, c.contrat.as_ref().map(NumeroContrat::as_str))?;
     let s = SuspensionSaisie {
         genre: GenreSuspension::Suspension,
-        salarie: cle.to_string(),
+        salarie: cle.clone(),
         contrat_debut: contrat.debut.clone(),
         contrat_numero: contrat.numero.clone(),
         motif: c.motif.clone(),

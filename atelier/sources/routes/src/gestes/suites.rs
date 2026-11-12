@@ -53,7 +53,7 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
 /// qui repond a une DSN mensuelle (le depot du journal au meme flux, de nature 01) dit le mois qu'elle declare
 /// (`en_retour_de`, `droit::pas::date_d_effet`) : son taux vaut pour les mois qui suivent.
 fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<()> {
-    let nirs: Vec<(String, String)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.portee().map(|nir| (cle.to_string(), nir.to_string()))).collect();
+    let nirs: Vec<(droit::contexte::IdSalarie, String)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.portee().map(|nir| (cle.clone(), nir.to_string()))).collect();
     let journal = envois::journal::lu(&ctx.racine).map_err(|m| m.reclasser(Classe::Illisible))?;
     let mois_declare = |retour: &envois::retours::Annonce| -> Option<socle::mois::Mois> {
         let flux = retour.flux.as_deref().filter(|f| !f.is_empty())?;
@@ -70,7 +70,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
             // La mise a disposition est celle du compte rendu ; sans elle, le taux ne se date pas.
             let mis_a_disposition = retour.publication.ok_or_else(|| socle::echec::erreur(Classe::Illisible, format!("Un compte rendu de taux de PAS ne dit pas sa date de mise à disposition ({}).", socle::fichiers::nom_du(chemin))))?;
             tous.push(compagnie::taux_pas::TauxRecu {
-                salarie: x.salarie.clone(),
+                salarie: x.salarie.to_string(),
                 taux: x.releve.taux,
                 type_taux: x.releve.type_taux,
                 identifiant: x.releve.identifiant.clone(),

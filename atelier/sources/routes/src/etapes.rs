@@ -777,7 +777,7 @@ pub(crate) fn classer_saisie(e: Echec) -> Echec {
 
 /// Quand le contrat (ou son dernier avenant) de l'engagement `numero` du salarie `cle` est parti (`departs`) ; rien s'il
 /// n'est pas parti.
-pub(crate) fn contrat_parti_le(departs: &engagement::departs::Departs, cle: &str, numero: Option<&str>) -> Option<InstantOuJour> {
+pub(crate) fn contrat_parti_le(departs: &engagement::departs::Departs, cle: &droit::contexte::IdSalarie, numero: Option<&engagement::numeros::NumeroContrat>) -> Option<InstantOuJour> {
     let n = numero?;
     departs.de(cle, n).iter().rev().find(|d| d.envoi == engagement::departs::Envoi::Contrat).map(|d| d.le)
 }
@@ -1616,12 +1616,12 @@ impl<'a> Moteur<'a> {
             }
             // LA DPAE DE CET ENGAGEMENT : partie (`departs`), et ce qui en est revenu (la ligne qui la porte, par le numero du
             // contrat). Refusee au bilan, elle n'est pas partie ; la ligne dit quand elle a ete refusee.
-            let numero = p.engagement.numero.as_deref();
+            let numero = p.engagement.numero.as_ref();
             // Le contrat tel que le journal le designe (`envois::etats::Paire`).
-            let k: etats::Paire = (cle.clone(), numero.map(str::to_string));
+            let k: etats::Paire = (cle.clone(), numero.map(ToString::to_string));
             let mut dpae_v = g.dpae.get(&k);
             let mut partie_le = match numero {
-                Some(n) => departs.de(&cle, n).iter().filter(|d| d.envoi == engagement::departs::Envoi::Dpae).map(|d| d.le.clone()).max(),
+                Some(n) => departs.de(&p.salarie.id, n).iter().filter(|d| d.envoi == engagement::departs::Envoi::Dpae).map(|d| d.le.clone()).max(),
                 None => None,
             };
             // UNE DATE D'EMBAUCHE CHANGEE depuis la version sur laquelle la DPAE est partie (`ARefaire::Dpae`) : la DPAE de
@@ -1653,7 +1653,7 @@ impl<'a> Moteur<'a> {
             };
             let avenant = refaire.iter().any(|a| matches!(a, ARefaire::Avenant { .. }));
             let mut signature = etat_signature(
-                contrat_parti_le(&departs, &cle, p.engagement.numero.as_deref()),
+                contrat_parti_le(&departs, &p.salarie.id, p.engagement.numero.as_ref()),
                 g.par.get(&k).copied(),
                 g.recus.get(&k),
                 g.renvoyes.contains(&k),
@@ -1670,8 +1670,8 @@ impl<'a> Moteur<'a> {
                 signature.cdi_en_cours = Some(CdiEnCours { signe_en });
             }
             // LES DOCUMENTS DE CET ENGAGEMENT, pour ce mois : son dernier envoi (`departs`), et son bulletin a refaire.
-            let documents_le = p.engagement.numero.as_deref().and_then(|n| {
-                departs.de(&cle, n).iter().filter(|d| d.envoi == engagement::departs::Envoi::Documents && d.mois == Some(le_mois) && d.par.is_none()).map(|d| d.le).max()
+            let documents_le = p.engagement.numero.as_ref().and_then(|n| {
+                departs.de(&p.salarie.id, n).iter().filter(|d| d.envoi == engagement::departs::Envoi::Documents && d.mois == Some(le_mois) && d.par.is_none()).map(|d| d.le).max()
             });
             let bulletin = refaire.iter().any(|a| matches!(a, ARefaire::Bulletin { mois: m, .. } if *m == mois));
             let documents = etat_documents(documents_le, bulletin);
@@ -2456,8 +2456,8 @@ impl<'a> Moteur<'a> {
             for e in &etats_m {
                 let Some(v) = e.valide() else { continue };
                 let brut = &*v.objet().brut;
-                let (Some(cle), Some(numero)) = (&brut.saisie.carte.salarie, brut.saisie.carte.numero.as_deref()) else { continue };
-                let Some(p) = s.paies.iter().find(|p| p.salarie.id == *cle && p.engagement.numero.as_deref() == Some(numero)) else {
+                let (Some(cle), Some(numero)) = (&brut.saisie.carte.salarie, &brut.saisie.carte.numero) else { continue };
+                let Some(p) = s.paies.iter().find(|p| p.salarie.id == *cle && p.engagement.numero.as_ref() == Some(numero)) else {
                     continue;
                 };
                 // Seule la DPAE partie se compare (`debut_declare`) : les paies parties ne se relisent pas ici, sauf
@@ -2474,7 +2474,7 @@ impl<'a> Moteur<'a> {
                 // depose n'en demande une nouvelle quand la duree (R. 1221-1, 4°) s'allonge. Une date d'embauche avancee,
                 // elle, en appelle une (`dpae_d_une_date_changee`, plus bas).
                 // La DPAE de cet engagement est partie (`departs`) ; sa date d'embauche n'a pas change depuis (`ARefaire::Dpae`).
-                let partie = departs.de(&cle, numero).iter().any(|d| d.envoi == engagement::departs::Envoi::Dpae);
+                let partie = departs.de(cle, numero).iter().any(|d| d.envoi == engagement::departs::Envoi::Dpae);
                 let ancienne = debut_declare(&refaire);
                 if partie && ancienne.is_none() {
                     continue;
@@ -2785,20 +2785,20 @@ pub(crate) fn documents_partis(ctx: &Contexte, mois: Mois, etats: &[engagement::
             continue;
         }
         let brut = &*e.objet().brut;
-        let (Some(cle), Some(numero)) = (brut.saisie.carte.salarie.as_ref().map(ToString::to_string), brut.saisie.carte.numero.as_ref().map(ToString::to_string)) else { continue };
+        let (Some(cle), Some(numero)) = (&brut.saisie.carte.salarie, &brut.saisie.carte.numero) else { continue };
         let dernier = departs
-            .de(&cle, &numero)
+            .de(cle, numero)
             .iter()
             .filter(|d| d.envoi == engagement::departs::Envoi::Documents && d.mois.is_some_and(|m| m == mois) && d.par.is_none())
             .map(|d| d.le)
             .max();
         let Some(quand) = dernier else { continue };
-        if a_envoyer.contains(&cle) {
+        if a_envoyer.contains(cle.as_str()) {
             continue;
         }
-        let plus_recent = out.get(&cle).is_some_and(|v| v.quand >= quand);
+        let plus_recent = out.get(cle.as_str()).is_some_and(|v| v.quand >= quand);
         if !plus_recent {
-            out.insert(cle.clone(), DocumentsPartis { resume: resumes.get(&cle).cloned().flatten(), quand });
+            out.insert(cle.to_string(), DocumentsPartis { resume: resumes.get(cle.as_str()).cloned().flatten(), quand });
         }
     }
     Ok(out)
