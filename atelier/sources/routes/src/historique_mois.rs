@@ -212,7 +212,7 @@ impl Dite for Historique {
 struct Document {
     nom: String,
     sorte: &'static str,
-    salarie: Option<String>,
+    salarie: Option<droit::contexte::IdSalarie>,
     chemin: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     fichier: Option<String>,
@@ -430,7 +430,7 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.
     for b in import::mois::bulletins_repris(&ctx.racine, mois)? {
         let nom = format!("Bulletin de {} (ancien logiciel)", qui_de_la_cle(ctx, &b.salarie));
-        out.push(Document { nom, sorte: "Bulletins de paie", salarie: Some(b.salarie.to_string()), chemin: b.chemin, fichier: None });
+        out.push(Document { nom, sorte: "Bulletins de paie", salarie: Some(b.salarie.clone()), chemin: b.chemin, fichier: None });
     }
     for d in out.iter_mut() {
         d.nom = nom_lisible(ctx, &d.nom);

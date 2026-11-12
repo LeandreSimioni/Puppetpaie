@@ -679,7 +679,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, c: ChargeSignature, qui: &str) -
 }
 
 /// Le nom du salarie que sa fiche dit, sinon sa cle.
-fn nom_ou_cle(fiche: &droit::fiche::ChampsSalarie, cle: &str) -> String {
+fn nom_ou_cle(fiche: &droit::fiche::ChampsSalarie, cle: &IdSalarie) -> String {
     match fiche.nomme() {
         Some(n) => n,
         None => cle.to_string(),
@@ -921,7 +921,6 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         if !ailleurs && !engagement::contrat_a_signer(&ctx.racine, &p.engagement)? {
             continue;
         }
-        let cle_s = p.salarie.id.to_string();
         let k: envois::etats::Paire = (p.salarie.id.clone(), p.engagement.numero.clone());
         let etat = crate::etapes::etat_signature(
             crate::etapes::contrat_parti_le(&departs, &p.salarie.id, p.engagement.numero.as_ref()),
@@ -929,13 +928,13 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
             g.recus.get(&k),
             g.renvoyes.contains(&k),
             g.avenants.get(&k),
-            p.engagement.numero.as_deref().is_some_and(|n| avenants.contains(&(cle_s.clone(), n.to_string()))),
+            p.engagement.numero.as_ref().is_some_and(|n| avenants.contains(&(p.salarie.id.clone(), n.clone()))),
             ailleurs,
         );
         if ailleurs && !etat.caduc && !etat.avenant_attendu {
             continue;
         }
-        let nom = nom_ou_cle(&p.salarie, &cle_s);
+        let nom = nom_ou_cle(&p.salarie, &p.salarie.id);
         let (debut, fin) = (p.engagement.debut, p.engagement.fin);
         // CE QUE LA BOITE EN FAIT : un contrat a envoyer (jamais parti, ou caduc) se coche, et part en avenant s'il est
         // deja parti, signe ou non (`en_avenant`) ; un contrat ou un avenant parti et pas revenu attend : il se note reçu signe

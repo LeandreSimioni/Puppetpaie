@@ -790,7 +790,7 @@ pub(crate) fn a_refaire_de(ctx: &Contexte, e: &engagement::etats::Etat, departs:
 
 /// Les contrats de `mois` dont l'avenant est a faire signer : `(cle du salarie, numero)` des engagements dont les clauses
 /// ont change depuis la version sur laquelle le contrat est parti (`a_refaire_parmi`, les contrats seuls).
-pub(crate) fn avenants_a_faire(ctx: &Contexte, mois: Mois) -> R<HashSet<(String, String)>> {
+pub(crate) fn avenants_a_faire(ctx: &Contexte, mois: Mois) -> R<HashSet<(droit::contexte::IdSalarie, engagement::numeros::NumeroContrat)>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let etats = engagement::etats::du_mois(ctx, mois, &departs)?;
     let avenant = |s: engagement::departs::Envoi| s == engagement::departs::Envoi::Contrat;
@@ -802,7 +802,7 @@ pub(crate) fn avenants_a_faire(ctx: &Contexte, mois: Mois) -> R<HashSet<(String,
         }
         let b = &*e.objet().brut;
         if let (Some(cle), Some(numero)) = (&b.saisie.carte.salarie, &b.saisie.carte.numero) {
-            out.insert((cle.to_string(), numero.to_string()));
+            out.insert((cle.clone(), numero.clone()));
         }
     }
     Ok(out)

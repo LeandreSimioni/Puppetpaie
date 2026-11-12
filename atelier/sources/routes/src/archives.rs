@@ -198,7 +198,7 @@ fn pdf_de(d: &Path) -> R<Vec<String>> {
 /// Une piece du mois dans `sorties/<mois>/envoi/` : son nom, et la cle du salarie qu'elle nomme, si elle en nomme un.
 pub(crate) struct PieceDeLEnvoi {
     pub(crate) nom: String,
-    pub(crate) salarie: Option<String>,
+    pub(crate) salarie: Option<droit::contexte::IdSalarie>,
 }
 
 /// Les pieces du mois a ouvrir ou a remettre a la main : les PDF de `sorties/<mois>/envoi/`, chacune seule (jamais le PDF
@@ -208,16 +208,16 @@ pub(crate) fn pieces_de_l_envoi(ctx: &Contexte, mois: Mois) -> R<Vec<PieceDeLEnv
     if !envoi.exists() {
         return Ok(Vec::new());
     }
-    Ok(pdf_de(&envoi)?
+    pdf_de(&envoi)?
         .into_iter()
         .filter(|nom| !nom.starts_with(crate::gestes::signature::PREFIXE_IMPRESSION))
         .map(|nom| {
             // `<Piece>_<cle>_<etiquette>.pdf` : la cle du salarie est le deuxieme morceau.
             let morceaux: Vec<&str> = nom.split('_').collect();
-            let salarie = (morceaux.len() > 2).then(|| morceaux[1].to_string());
-            PieceDeLEnvoi { nom, salarie }
+            let salarie = (morceaux.len() > 2).then(|| droit::contexte::IdSalarie::lire(morceaux[1])).transpose()?;
+            Ok(PieceDeLEnvoi { nom, salarie })
         })
-        .collect())
+        .collect()
 }
 
 // -------------------------------------------------------------- dossier-formes
