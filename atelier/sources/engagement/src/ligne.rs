@@ -775,7 +775,7 @@ impl FormeSaisie {
 /// (`LigneDonnee::ranger`), avec le catalogue.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LigneDonnee {
-    pub rubrique: Option<String>,
+    pub rubrique: Option<CodeDeRubrique>,
     pub quantite: Option<Case>,
     pub taux: Option<Case>,
     pub heures: Option<Case>,
@@ -817,7 +817,7 @@ impl<'de> Deserialize<'de> for LigneDonnee {
                 let mut l = LigneDonnee::default();
                 while let Some(cle) = m.next_key::<Cle>()? {
                     match cle {
-                        Cle::Rubrique => une(&mut l.rubrique, m.next_value::<String>()?, cle)?,
+                        Cle::Rubrique => une(&mut l.rubrique, m.next_value::<CodeDeRubrique>()?, cle)?,
                         Cle::Quantite => une(&mut l.quantite, m.next_value::<Nombre>()?.0, cle)?,
                         Cle::Taux => une(&mut l.taux, m.next_value::<Nombre>()?.0, cle)?,
                         Cle::Heures => une(&mut l.heures, m.next_value::<Nombre>()?.0, cle)?,

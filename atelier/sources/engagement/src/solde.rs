@@ -1202,7 +1202,7 @@ fn article_de(conv: &clauses::Indemnite) -> R<&str> {
 }
 
 /// Le nom qu'un administrateur voit dans la liste des rubriques.
-fn libelle_rubrique(ctx: &Contexte, code: &str) -> R<String> {
+fn libelle_rubrique(ctx: &Contexte, code: &droit::catalogue::CodeDeRubrique) -> R<String> {
     Ok(rubrique(&ctx.racine, code, &ctx.lue_au)?.libelle)
 }
 

@@ -912,7 +912,7 @@ fn libelle_du_motif(motif: &Option<droit::arrets::CodeDuBloc60>) -> &str {
 }
 
 /// Le libelle d'une rubrique, que le catalogue connait.
-fn libelle_rubrique(racine: &Path, code: &str, jour: &Jour) -> R<String> {
+fn libelle_rubrique(racine: &Path, code: &droit::catalogue::CodeDeRubrique, jour: &Jour) -> R<String> {
     Ok(droit::catalogue::rubrique(racine, code, jour)?.libelle)
 }
 
@@ -945,7 +945,7 @@ pub struct CachetPaye {
     pub numero: Option<crate::numeros::NumeroContrat>,
     pub spectacle: Option<droit::contexte::IdSpectacle>,
     pub ligne: usize,
-    pub rubrique: String,
+    pub rubrique: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
     pub dates: Vec<Jour>,
     pub quantite: Option<Decimal>,
@@ -963,7 +963,7 @@ fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &s
             if dedans.is_empty() {
                 continue;
             }
-            let rubrique = l.rubrique().to_string();
+            let rubrique = l.rubrique().clone();
             out.push(CachetPaye {
                 mois: data.mois,
                 engagement: i,

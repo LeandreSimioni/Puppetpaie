@@ -280,7 +280,7 @@ fn comparer_une(
     let mut saisies = Vec::new();
     for l in &p.lignes {
         let libelle = &l.libelle;
-        let Some(r) = l.rubrique.as_deref().filter(|r| !r.is_empty()) else {
+        let Some(r) = &l.rubrique else {
             if !l.soumis {
                 continue;
             }

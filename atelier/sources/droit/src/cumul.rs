@@ -28,7 +28,7 @@ pub struct Constantes {
 
 impl Constantes {
     pub fn lire(racine: &Path, jour: &Jour) -> R<Constantes> {
-        let cachet = rubrique(racine, "cachet", jour)?;
+        let cachet = rubrique(racine, &crate::catalogue::CACHET, jour)?;
         let a = annexes()?;
         Ok(Constantes {
             heures_par_cachet: rust_decimal::prelude::ToPrimitive::to_i64(&cachet.heures_forfait.ok_or_else(|| socle::fichiers::absent("cachet.heures_forfait"))?.trunc())
@@ -43,7 +43,7 @@ impl Constantes {
 /// `plafond_enseignement` : 70 h, ou 120 h a partir de 50 ans a la date
 /// donnee ; sans date de naissance, le plafond bas.
 pub fn plafond_enseignement(racine: &Path, date_naissance: Option<Jour>, a_la_date: Jour) -> R<i64> {
-    let r = rubrique(racine, "enseignement", &a_la_date)?;
+    let r = rubrique(racine, &const { crate::catalogue::CodeDeRubrique::du_moteur("enseignement") }, &a_la_date)?;
     let Some(p) = r.plafond_annuel_heures else {
         return Err(socle::echec::livree("rubriques-base.json", "rubriques.enseignement.plafond_annuel_heures"));
     };

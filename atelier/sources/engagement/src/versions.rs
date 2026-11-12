@@ -50,7 +50,7 @@ fn borne_courte(j: Option<Jour>) -> String {
 }
 
 /// Le libelle d'une rubrique au catalogue, et son unite.
-fn libelle(ctx: &Contexte, code: &str) -> R<(String, String)> {
+fn libelle(ctx: &Contexte, code: &droit::catalogue::CodeDeRubrique) -> R<(String, String)> {
     let r = droit::catalogue::rubrique(&ctx.racine, code, &ctx.lue_au)?;
     Ok((r.libelle, r.unite))
 }
@@ -257,10 +257,10 @@ fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> R<Vec<String>> {
         out.push(format!("Fin : {} → {}", borne_courte(fa), borne_courte(fb)));
     }
     let (la, lb) = (a.lignes(), b.lignes());
-    let code = |l: &LignePaie| l.rubrique().to_string();
+    let code = |l: &LignePaie| l.rubrique().clone();
     // Les lignes se rapprochent par leur rubrique, dans l'ordre : la deuxieme ligne de cachets de l'une va avec la
     // deuxieme de l'autre.
-    let mut vues: Vec<String> = Vec::new();
+    let mut vues: Vec<droit::catalogue::CodeDeRubrique> = Vec::new();
     for l in la.iter().chain(lb.iter()) {
         if !vues.contains(&code(l)) {
             vues.push(code(l));

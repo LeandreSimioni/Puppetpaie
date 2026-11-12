@@ -1140,10 +1140,10 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     // Sa rubrique, seule la compagnie la dit : une prime qui ne la dit pas est une saisie a finir, qui nomme la case.
     for pr in e.primes.iter().flatten() {
         let montant = Chiffre::Nombre(pr.montant.clone()).court()?;
-        let Some(rubrique) = pr.rubrique.as_deref() else {
+        let Some(rubrique) = pr.rubrique.clone() else {
             return Err(crate::a_finir(format!("{}{}« Rubrique » de la prime de {}.", qui(ctx, e), crate::carte::A_REMPLIR, socle::texte::euros(montant))));
         };
-        lignes.push(LignePaie::composee(droit::catalogue::CodeDeRubrique::lire(rubrique)?, Decimal::ONE, montant));
+        lignes.push(LignePaie::composee(rubrique, Decimal::ONE, montant));
     }
 
     // --- les heures supplementaires d'un temps plein, complementaires d'un temps partiel

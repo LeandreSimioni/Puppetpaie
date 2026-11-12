@@ -416,7 +416,7 @@ impl CongePris {
 pub struct Prime {
     pub montant: NombreLu,
     /// Sa rubrique au catalogue, que la carte choisit ; `null` tant qu'elle ne la dit pas (le calcul la demande).
-    pub rubrique: Option<String>,
+    pub rubrique: Option<droit::catalogue::CodeDeRubrique>,
     pub libelle: Option<String>,
 }
 

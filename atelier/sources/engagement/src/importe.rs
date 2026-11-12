@@ -171,17 +171,16 @@ pub struct LigneImprimee {
     pub taux: Option<Decimal>,
     pub montant: Option<Decimal>,
     pub soumis: bool,
-    pub rubrique: Option<String>,
+    pub rubrique: Option<droit::catalogue::CodeDeRubrique>,
     pub heures: Option<Decimal>,
 }
 
 impl LigneImprimee {
     /// La ligne de paie qu'elle dit a l'engagement importe, quand l'import l'a rattachee a une rubrique : sa quantite, son
     /// taux et ses heures (son libelle et son montant restent ceux du bulletin, `remuneration_lue`).
-    pub fn en_ligne_de_paie(&self) -> R<Option<crate::LignePaie>> {
-        let Some(r) = self.rubrique.as_deref() else { return Ok(None) };
-        let rubrique = droit::catalogue::CodeDeRubrique::lire(r)?;
-        Ok(Some(crate::LignePaie::Importee(crate::ligne::Importee { rubrique, quantite: self.quantite, taux: self.taux, heures: self.heures })))
+    pub fn en_ligne_de_paie(&self) -> Option<crate::LignePaie> {
+        let rubrique = self.rubrique.clone()?;
+        Some(crate::LignePaie::Importee(crate::ligne::Importee { rubrique, quantite: self.quantite, taux: self.taux, heures: self.heures }))
     }
 }
 
@@ -682,7 +681,7 @@ impl Importe {
             nom: crate::qui_de(&sal)?,
             spectacle: spectacle.clone(),
             dates_travail,
-            lignes: lignes_lues.iter().map(LigneImprimee::en_ligne_de_paie).collect::<R<Vec<_>>>()?.into_iter().flatten().collect(),
+            lignes: lignes_lues.iter().filter_map(LigneImprimee::en_ligne_de_paie).collect(),
             debut,
             fin,
             numero: match self.carte().numero.clone() {
@@ -1031,7 +1030,7 @@ pub fn completer(racine: &Path, mut completer: impl FnMut(&mut Carte, &Pieces) -
 fn remuneration_lue(e: &crate::Engagement, lignes: &[LigneImprimee], ctx: &Contexte) -> R<Vec<LigneDeRemuneration>> {
     let mut out = Vec::new();
     for l in lignes {
-        let rattachee = l.en_ligne_de_paie()?.filter(|_| l.quantite.is_some() && l.taux.is_some());
+        let rattachee = l.en_ligne_de_paie().filter(|_| l.quantite.is_some() && l.taux.is_some());
         if let Some(ligne) = rattachee {
             let mut seule = e.clone();
             seule.lignes = vec![ligne];

@@ -52,6 +52,7 @@ use socle::echec::R;
 use socle::num::Decimal;
 use fabrique_pdf::mesure::mesure;
 use crate::releve::Mesure;
+use droit::catalogue::CodeDeRubrique;
 
 /// `n` points.
 const fn pt(n: i64) -> Mesure {
@@ -566,7 +567,7 @@ pub struct LigneTable {
     /// Canonique (`jetons`), pour comparer.
     canon: String,
     /// Le code du catalogue ; `None` : connu, sans rubrique sure.
-    pub rubrique: Option<String>,
+    pub rubrique: Option<CodeDeRubrique>,
     /// Les heures d'une unite, quand le libelle les dit (« 4h ») et que la rubrique les fait saisir.
     pub heures: Option<Decimal>,
     /// La rubrique est hors de l'assiette (`soumis: false` du catalogue livre : un defraiement, un acompte) ; `false`
@@ -666,14 +667,14 @@ struct Signature {
 #[derive(serde::Deserialize)]
 #[serde(untagged)]
 enum LigneEcrite {
-    Rubrique(String),
+    Rubrique(CodeDeRubrique),
     Detail(LigneDetaillee),
 }
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct LigneDetaillee {
-    rubrique: String,
+    rubrique: CodeDeRubrique,
     heures: Option<socle::forme::Nombre>,
 }
 
@@ -696,8 +697,8 @@ pub fn textes_de_la_table() -> R<Vec<String>> {
     }
     for (_, l) in &t.lignes {
         match l {
-            Some(LigneEcrite::Rubrique(r)) => out.push(r.clone()),
-            Some(LigneEcrite::Detail(d)) => out.push(d.rubrique.clone()),
+            Some(LigneEcrite::Rubrique(r)) => out.push(r.to_string()),
+            Some(LigneEcrite::Detail(d)) => out.push(d.rubrique.to_string()),
             None => {}
         }
     }
@@ -829,7 +830,7 @@ impl Table {
 
 fn lignes_de(l: &[(String, Option<LigneEcrite>)]) -> R<Vec<LigneTable>> {
     let livrees = droit::catalogue::livrees()?;
-    let hors_assiette = |code: &str| livrees.iter().any(|r| r.code == code && !r.soumis);
+    let hors_assiette = |code: &CodeDeRubrique| livrees.iter().any(|r| r.code == *code && !r.soumis);
     let mut lignes: Vec<LigneTable> = Vec::new();
     for (libelle, valeur) in l {
         let o = format!("lignes.{}", libelle);
@@ -841,14 +842,11 @@ fn lignes_de(l: &[(String, Option<LigneEcrite>)]) -> R<Vec<LigneTable>> {
                 h => (Some(d.rubrique.clone()), h.map(|n| n.0)),
             },
         };
-        if rubrique.as_deref() == Some("") {
-            return Err(socle::echec::livree("table de lecture des bulletins", &format!("{}.rubrique", o)));
-        }
         let c = canon(libelle);
         if lignes.iter().any(|x| x.canon == c) {
             return Err(socle::refus!("{} : libellé en double", o));
         }
-        let non_soumise = rubrique.as_deref().is_some_and(hors_assiette);
+        let non_soumise = rubrique.as_ref().is_some_and(hors_assiette);
         lignes.push(LigneTable { libelle: libelle.clone(), canon: c, rubrique, heures, non_soumise });
     }
     Ok(lignes)
@@ -896,7 +894,7 @@ pub struct LignePaie {
     pub soumis: bool,
     /// La rubrique du catalogue que la table donne a ce libelle ; `None` : libelle connu sans rubrique sure, ou absent
     /// de la table (alors signale).
-    pub rubrique: Option<String>,
+    pub rubrique: Option<CodeDeRubrique>,
     /// Les heures d'une unite que le libelle dit (« 4h »), d'apres la table : pour une rubrique dont les heures se
     /// saisissent (un service de repetition).
     pub heures: Option<Decimal>,
@@ -2480,7 +2478,7 @@ fn accorder(imprime: Decimal, lui: Option<Decimal>, freres: &[(Option<Decimal>, 
 /// que le catalogue ne connait pas.
 pub fn compteurs(b: &BulletinLu, freres: &[&BulletinLu], racine: &Path) -> R<Compteurs> {
     let zero = Decimal::ZERO;
-    let forfait = droit::catalogue::rubrique(racine, "cachet", &b.fin)?.heures_forfait;
+    let forfait = droit::catalogue::rubrique(racine, &droit::catalogue::CACHET, &b.fin)?.heures_forfait;
     // Le total d'heures que des lignes comptent, cachets convertis ; `None` : inconnu.
     let total = |l: &Lignes| -> Option<Decimal> {
         if l.sans_duree {

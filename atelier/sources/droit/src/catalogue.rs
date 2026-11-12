@@ -166,6 +166,9 @@ impl PartialEq<String> for CodeDeRubrique {
     }
 }
 
+/// La rubrique du cachet : celle que les annexes VIII et X convertissent en heures (`cumul::Constantes`).
+pub const CACHET: CodeDeRubrique = CodeDeRubrique::du_moteur("cachet");
+
 /// Une forme de paie : ce que le bulletin appelle une ligne.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rubrique {
@@ -435,7 +438,7 @@ impl RubriqueDuMois {
 
 /// UNE RUBRIQUE QU'UNE CARTE SAISIT, telle qu'elle vaut a `jour` : celle de la piece d'un salarie au mois ne se saisit
 /// pas, le calcul qui tient sa cle la compose (`RubriqueDuMois`).
-pub fn rubrique_a_saisir(racine: &Path, code: &str, jour: &Jour) -> R<Rubrique> {
+pub fn rubrique_a_saisir(racine: &Path, code: &CodeDeRubrique, jour: &Jour) -> R<Rubrique> {
     let r = rubrique(racine, code, jour)?;
     if r.piece.is_some() {
         return Err(socle::refus!(
@@ -614,9 +617,9 @@ pub fn catalogue(racine: &Path, jour: &Jour) -> R<Arc<Vec<Rubrique>>> {
 
 /// Une rubrique par son code, telle qu'elle vaut a `jour`. Refuse un code inconnu : mieux vaut s'arreter que payer une
 /// ligne dont on ignore le regime.
-pub fn rubrique(racine: &Path, code: &str, jour: &Jour) -> R<Rubrique> {
+pub fn rubrique(racine: &Path, code: &CodeDeRubrique, jour: &Jour) -> R<Rubrique> {
     let cat = catalogue(racine, jour)?;
-    if let Some(r) = cat.iter().find(|r| r.code == code) {
+    if let Some(r) = cat.iter().find(|r| r.code == *code) {
         return Ok(r.clone());
     }
     let mut connues: Vec<&str> = cat.iter().map(|r| r.code.as_str()).collect();
