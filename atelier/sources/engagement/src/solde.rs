@@ -656,7 +656,7 @@ fn delai_de_prevenance(
 /// LES JOURS OUVRABLES DU MOIS ENTIER `mois` (`droit::conges::jours_ouvrables`), sur lesquels le maintien (L3141-24, II)
 /// repartit le salaire du mois. Un mois en compte toujours (six jours par semaine, hors les feries chomes) : aucun est un
 /// defaut du calendrier, qui remonte.
-fn ouvrables_du_mois(mois: Mois, chomes: Option<&str>) -> R<Decimal> {
+pub(crate) fn ouvrables_du_mois(mois: Mois, chomes: Option<&str>) -> R<Decimal> {
     match jours_ouvrables(&mois.premier_jour(), &mois.dernier_jour(), chomes)? {
         0 => Err(socle::refus!("Défaut du logiciel : le mois {} n'a aucun jour ouvrable.", mois)),
         n => Ok(Decimal::from(n)),

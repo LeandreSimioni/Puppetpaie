@@ -1296,12 +1296,8 @@ pub fn provision_conges_de(paie: &Paie, mois: Mois, brut_du_mois: socle::num::De
 /// `salaire` du mois reparti sur ses jours ouvrables.
 pub fn provision_du_compteur(cpt: CompteurConges, mois: Mois, salaire: Decimal) -> R<Provision> {
     use socle::num::eur;
-    let fin = mois.dernier_jour();
     let solde = cpt.solde();
-    let ouvrables = match jours_ouvrables(&mois.premier_jour(), &fin, None)? {
-        0 => Decimal::ONE,
-        n => Decimal::from(n),
-    };
+    let ouvrables = crate::solde::ouvrables_du_mois(mois, None)?;
     let indemnite = if solde > Decimal::ZERO {
         Some(cpt.indemnite_des_jours(solde, eur(mul(div(salaire, ouvrables), solde)))?)
     } else {
