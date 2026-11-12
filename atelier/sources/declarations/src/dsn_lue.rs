@@ -143,10 +143,10 @@ pub struct EntrepriseDeclaree {
 pub struct EmploiDeclare {
     /// S21.G00.40.002.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub statut_conventionnel: Option<String>,
+    pub statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
     /// S21.G00.40.003.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub statut_categoriel_rc: Option<String>,
+    pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
     /// S21.G00.40.004.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pcs_ese: Option<droit::fiche::CodePcsEse>,
@@ -1135,13 +1135,19 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 contrats.push(ContratDeclare::de(individus[i].nir.clone(), i, debut));
                 fin_de = Some(contrats.len() - 1);
             }
-            "S21.G00.40.002" | "S21.G00.40.003" | "S21.G00.40.006" => {
+            // 40.002 et 40.003 : un code que la fiche connait se lit ; un autre code de la norme (01, 02, 08 a 10 ; 98, 99)
+            // laisse la case vide, comme une DSN qui ne le dirait pas (decide par Leandre : la fiche ne les porte pas).
+            "S21.G00.40.002" => {
                 let Some(c) = contrat else { continue };
-                *match k {
-                    "S21.G00.40.002" => &mut c.emploi.statut_conventionnel,
-                    "S21.G00.40.003" => &mut c.emploi.statut_categoriel_rc,
-                    _ => &mut c.emploi.emploi,
-                } = plein;
+                c.emploi.statut_conventionnel = droit::fiche::StatutConventionnel::du_code(&v);
+            }
+            "S21.G00.40.003" => {
+                let Some(c) = contrat else { continue };
+                c.emploi.statut_categoriel_rc = droit::fiche::StatutCategorielRc::du_code(&v);
+            }
+            "S21.G00.40.006" => {
+                let Some(c) = contrat else { continue };
+                c.emploi.emploi = plein;
             }
             "S21.G00.40.004" => {
                 let pcs = fautes.lue(k, &v, PCS_ESE, droit::fiche::CodePcsEse::lire);
