@@ -18,7 +18,7 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use droit::bordereau::{AssietteDuBordereau, MontantDuBordereau};
 use droit::bareme::{self, bareme_applique, EntrepriseLue};
 use droit::fiche::{ChampsEntreprise, DeclarantDsn, Lue};
-use droit::forme_bareme::{CotisationDsn, CotisationSupplementaire, Pile, Rubrique};
+use droit::forme_bareme::{CotisationDsn, CotisationSupplementaire, IdDeCotisation, Pile, Rubrique};
 use documents::bordereau::{self, Destinataire, LigneBordereau, TauxDeLaLigne};
 use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::reduction::au_dela_du_seuil;
@@ -625,7 +625,7 @@ fn section_de(nat: &Nature) -> &str {
 pub struct ContributionDuMois {
     pub reference: String,
     pub libelle: String,
-    pub lignes: Vec<String>,
+    pub lignes: Vec<IdDeCotisation>,
     pub natures: std::collections::BTreeMap<String, String>,
 }
 
@@ -708,10 +708,10 @@ fn base_de_la_paie(p: &Paie, a: Assiette) -> Option<Decimal> {
     p.bases.get(&a).copied()
 }
 
-fn somme_lignes(p: &Paie, ids: &[String], patronale_seule: bool) -> Decimal {
+fn somme_lignes(p: &Paie, ids: &[IdDeCotisation], patronale_seule: bool) -> Decimal {
     p.lignes
         .iter()
-        .filter(|l| ids.contains(&l.id))
+        .filter(|l| ids.iter().any(|id| l.est(id.as_str())))
         .fold(zero2(), |s, l| add(s, if patronale_seule { l.montant_pat } else { add(l.montant_pat, l.montant_sal) }))
 }
 
@@ -985,10 +985,10 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
 
 /// Le composant de la base 31 des `lignes` : le type que la source du taux de la premiere qui en porte un lui donne
 /// (`composant_79` de la pile, `bareme::bareme_sante`), et la base de cette ligne au bulletin.
-fn composant_79(p: &Paie, pile: &Pile, lignes: &[String]) -> Option<(String, Decimal)> {
+fn composant_79(p: &Paie, pile: &Pile, lignes: &[IdDeCotisation]) -> Option<(String, Decimal)> {
     lignes.iter().find_map(|id| {
         let type_79 = pile.rubrique(id)?.composant_79.clone()?;
-        let base = p.lignes.iter().find(|l| l.est(id))?.base;
+        let base = p.lignes.iter().find(|l| l.est(id.as_str()))?.base;
         Some((type_79, base))
     })
 }
@@ -1003,7 +1003,7 @@ pub const AGIRC_ARRCO_UNIFIE: &str = "131";
 pub const AGIRC_ARRCO_PATRONALE_T1: &str = "142";
 pub const AGIRC_ARRCO_PATRONALE_T2: &str = "146";
 /// Les lignes du bulletin dont un 131 fait la somme : la retraite des deux tranches (CEG comprise) et la CET.
-const LIGNES_AGIRC_ARRCO: [&str; 3] = ["retraite_t1", "retraite_t2", "cet"];
+const LIGNES_AGIRC_ARRCO: [IdDeCotisation; 3] = [droit::forme_bareme::RETRAITE_T1, droit::forme_bareme::RETRAITE_T2, droit::forme_bareme::CET];
 
 /// La part patronale d'une ligne du bulletin, et ce qui y est de la CET. Un cadre intermittent paie la CET FONDUE dans ses
 /// lignes de tranche 1 et de tranche 2 (`cet_si_depasse`, `calcul::calculer` 7.7 : le dernier composant patronal prend la
@@ -1054,20 +1054,21 @@ ses taux : la part de la CET (146 en 2026, 148 en 2027) ne s'en sépare pas sans
 /// sous l'assiette deplafonnee » (03, 22 ou 23 ; fiche net-entreprises 2556, l. 83-87) : le code s'ecrit selon la version
 /// du fichier (`Cotisation::cet`, `Norme::cotisation_cet_patronale`), la base reste celle du 131 (type 23).
 fn parts_patronales_agirc_arrco(p: &Paie, pile: &Pile, c: &CotisationDsn, l131: &Cotisation) -> R<Vec<Cotisation>> {
-    let rubrique = |id: &str| pile.rubrique(id);
+    let rubrique = |id: &IdDeCotisation| pile.rubrique(id);
     // Le 131 nomme ses lignes, ou porte un taux sur l'assiette de la ligne de retraite qu'il declare (`bareme::poser_t1`).
-    let ids: Vec<String> = if let Some(lignes) = c.lignes.as_ref().filter(|l| !l.is_empty()) {
+    let ids: Vec<IdDeCotisation> = if let Some(lignes) = c.lignes.as_ref().filter(|l| !l.is_empty()) {
         lignes.clone()
     } else {
-        LIGNES_AGIRC_ARRCO.iter().filter(|id| rubrique(id).is_some_and(|r| r.base == c.base)).map(|s| s.to_string()).collect()
+        LIGNES_AGIRC_ARRCO.iter().filter(|id| rubrique(id).is_some_and(|r| r.base == c.base)).cloned().collect()
     };
-    if ids.is_empty() || ids.iter().any(|id| !LIGNES_AGIRC_ARRCO.contains(&id.as_str())) {
+    let dites = |l: &[IdDeCotisation]| l.iter().map(IdDeCotisation::as_str).collect::<Vec<_>>().join(", ");
+    if ids.is_empty() || ids.iter().any(|id| !LIGNES_AGIRC_ARRCO.contains(id)) {
         return Err(refus!(
             "Le bareme declare un 131 (Agirc-Arrco) fait {} : sa part patronale (142, 146), que l'Urssaf attend sous le \
 meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les lignes de retraite du bulletin \
 ({}). Rien n'est ecrit.",
-            if ids.is_empty() { "d'aucune ligne du bulletin".to_string() } else { format!("des lignes {}", ids.join(", ")) },
-            LIGNES_AGIRC_ARRCO.join(", ")
+            if ids.is_empty() { "d'aucune ligne du bulletin".to_string() } else { format!("des lignes {}", dites(&ids)) },
+            dites(&LIGNES_AGIRC_ARRCO)
         ));
     }
     let org = org_de(pile, "075")
@@ -1090,7 +1091,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
     let (mut cet_montant, mut cet_base, mut cet_taux) = (zero2(), zero2(), None::<Decimal>);
     for id in &ids {
         // La CET d'un non cadre n'existe pas ; une tranche 2 nulle n'est pas au bulletin (`calcul::calculer`).
-        let (Some(r), Some(l)) = (rubrique(id), p.lignes.iter().find(|l| l.est(id))) else { continue };
+        let (Some(r), Some(l)) = (rubrique(id), p.lignes.iter().find(|l| l.est(id.as_str()))) else { continue };
         let (montant, cet) = sans_la_cet(p, l, r)?;
         let taux = match &cet {
             Some(_) => r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0,
@@ -1098,17 +1099,17 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
         };
         if let Some((m, t)) = cet {
             if cet_taux.is_some_and(|x| x != t) {
-                return Err(refus!("La CET des lignes {} n'a pas un seul taux patronal : sa part patronale (146 en 2026, 148 en 2027) ne s'ecrit pas.", ids.join(", ")));
+                return Err(refus!("La CET des lignes {} n'a pas un seul taux patronal : sa part patronale (146 en 2026, 148 en 2027) ne s'ecrit pas.", dites(&ids)));
             }
             cet_taux = Some(t);
             cet_montant = add(cet_montant, m);
             cet_base = add(cet_base, l.base);
         }
         if !montant.is_zero() {
-            let code = if id == "retraite_t1" { AGIRC_ARRCO_PATRONALE_T1 } else { AGIRC_ARRCO_PATRONALE_T2 };
+            let code = if *id == droit::forme_bareme::RETRAITE_T1 { AGIRC_ARRCO_PATRONALE_T1 } else { AGIRC_ARRCO_PATRONALE_T2 };
             // La ligne « cet » d'un permanent est toute de la CET ; celle d'un cadre intermittent est fondue dans ses
             // tranches et se separe plus bas (`sans_la_cet`).
-            out.push(Cotisation { cet: id == "cet", ..part(code, l.base, taux, montant) });
+            out.push(Cotisation { cet: *id == droit::forme_bareme::CET, ..part(code, l.base, taux, montant) });
         }
     }
     if let (Some(t), false) = (cet_taux, cet_montant.is_zero()) {
@@ -5179,7 +5180,7 @@ mod tests {
     fn la_dsn_de_la_3090_porte_la_casc_en_troisieme_affiliation() {
         let c = casc_svp(&ctx_dsn("a", &[]), &ChampsEntreprise { idcc: Some(droit::fiche::Idcc::lire("3090").unwrap()), ..Default::default() }, &orgs_casc(), Mois::nouveau(2026, 9).unwrap()).unwrap().unwrap();
         assert_eq!(c.reference, "100");
-        assert_eq!(c.lignes, ["ccn"]);
+        assert_eq!(c.lignes, [droit::forme_bareme::CCN]);
         // l'intermittent : apres 103 et 102, donc 204 ; le permanent l'a deja.
         assert_eq!(c.natures, std::collections::BTreeMap::from([("intermittent".to_string(), "204".to_string())]));
     }

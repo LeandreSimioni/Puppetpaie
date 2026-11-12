@@ -760,7 +760,7 @@ impl Importe {
         let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.debut, engagement.fin.as_ref())?;
         let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.debut, engagement.fin.as_ref()))?;
         for (id, base) in cotisations.iter().filter_map(|l| l.id.as_deref().zip(l.base)).filter(|(_, b)| !b.is_zero()) {
-            if let Some(cle) = bar.rubrique(id).and_then(|r| r.base) {
+            if let Some(cle) = bar.rubrique(&droit::forme_bareme::IdDeCotisation::lire(id)?).and_then(|r| r.base) {
                 bases.entry(cle).or_insert(base);
             }
         }

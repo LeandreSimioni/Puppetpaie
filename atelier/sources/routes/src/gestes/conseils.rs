@@ -326,7 +326,7 @@ enum Livree {
     /// `bareme:deduction_forfaitaire/taux/<taux>`
     TauxDeduction(String),
     /// `bareme:rubriques_bulletin/id=<rubrique>/taux_pat`
-    TauxPatronal(String),
+    TauxPatronal(droit::forme_bareme::IdDeCotisation),
     /// `minima:conventions/<idcc>/annexes/<annexe>/repetition/cachet`
     CachetDeRepetition { idcc: String, annexe: String },
 }
@@ -418,7 +418,7 @@ fn lire_livree(chemin: &str, bareme: bool) -> R<Livree> {
         (true, ["deduction_forfaitaire", "plafond_annuel"]) => Livree::PlafondDeduction,
         (true, ["deduction_forfaitaire", "taux", taux]) => Livree::TauxDeduction(taux.to_string()),
         (true, ["rubriques_bulletin", id, "taux_pat"]) => match id.strip_prefix("id=") {
-            Some(id) => Livree::TauxPatronal(id.to_string()),
+            Some(id) => Livree::TauxPatronal(droit::forme_bareme::IdDeCotisation::lire(id)?),
             None => return Err(inconnue()),
         },
         (false, ["conventions", idcc, "annexes", annexe, "repetition", "cachet"]) => Livree::CachetDeRepetition { idcc: idcc.to_string(), annexe: annexe.to_string() },

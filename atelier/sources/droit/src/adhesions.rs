@@ -81,7 +81,7 @@ forme_notee! {
         pub contrat: String,
         pub organisme: String,
         pub identifiant: String,
-        pub lignes_bulletin: Vec<String>,
+        pub lignes_bulletin: Vec<crate::forme_bareme::IdDeCotisation>,
     }
 }
 

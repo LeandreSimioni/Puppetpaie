@@ -189,7 +189,7 @@ pub struct FormeDeLaDeduction {
     pub profession: String,
     #[serde(with = "nombre")]
     pub taux: Decimal,
-    pub rubriques: Vec<String>,
+    pub rubriques: Vec<droit::forme_bareme::IdDeCotisation>,
     #[serde(with = "nombre")]
     pub montant: Decimal,
     #[serde(with = "nombre")]

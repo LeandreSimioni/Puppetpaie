@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles};
-use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, TauxAtmp, VersementMobiliteEcrit};
+use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, TauxAtmp, VersementMobiliteEcrit};
 use socle::echec::Lieu;
 use socle::num::Decimal;
 
@@ -434,9 +434,9 @@ fn code_de(c: &CotisationDsn) -> Option<String> {
 }
 
 /// Ce qu'une couche ecrit des rubriques `liste`, par leur `id`.
-fn modifier_rubriques(liste: &mut [Rubrique], mods: &BTreeMap<String, RubriqueModifiee>, ou: &str) -> R<()> {
+fn modifier_rubriques(liste: &mut [Rubrique], mods: &BTreeMap<IdDeCotisation, RubriqueModifiee>, ou: &str) -> R<()> {
     for (id, m) in mods {
-        let r = liste.iter_mut().find(|r| r.id == *id).ok_or_else(|| inconnue(ou, id))?;
+        let r = liste.iter_mut().find(|r| r.id == *id).ok_or_else(|| inconnue(ou, id.as_str()))?;
         crate::bareme::modifier(r, m);
     }
     Ok(())
@@ -458,7 +458,7 @@ fn modifier_cotisations(liste: &mut [CotisationDsn], mods: &BTreeMap<String, Cot
 }
 
 /// Ce qu'une couche ecrit des modifications de rubriques d'une section s'ajoute a ce qu'elles portaient.
-fn par_dessus_rubriques(section: &mut BTreeMap<String, RubriqueModifiee>, mods: &BTreeMap<String, RubriqueModifiee>) {
+fn par_dessus_rubriques(section: &mut BTreeMap<IdDeCotisation, RubriqueModifiee>, mods: &BTreeMap<IdDeCotisation, RubriqueModifiee>) {
     for (id, m) in mods {
         crate::bareme::par_dessus(section.entry(id.clone()).or_default(), m);
     }

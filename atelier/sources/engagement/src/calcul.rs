@@ -22,7 +22,7 @@ use socle::echec::{refus, refus_avec, Lieu, Echec, R};
 use socle::num::{add, court, div, eur, mul, pct, sub, Decimal};
 pub use droit::reduction::ReductionGenerale;
 use droit::bareme::somme_pct;
-use droit::forme_bareme::{Pile, Rubrique};
+use droit::forme_bareme::{IdDeCotisation, Pile, Rubrique, MUTUELLE, PREVOYANCE};
 use droit::reduction::{au_dela_du_seuil, reduction_generale, reduction_generale_sous_dfs};
 use droit::plafond::{plafond_permanent, pour_paie, EngagementPlafond};
 
@@ -273,7 +273,7 @@ pub struct DeductionForfaitaire {
     /// Le taux de l'annee (bareme), en pourcent.
     pub taux: Decimal,
     /// Les lignes du bulletin dont l'assiette est abattue.
-    pub rubriques: Vec<String>,
+    pub rubriques: Vec<IdDeCotisation>,
     /// La deduction retenue sur ce contrat : le brut moins l'assiette abattue, apres le plafond annuel et l'assiette
     /// minimum. C'est ce que la DSN declare en bloc 54 de type 10.
     pub montant: Decimal,
@@ -590,7 +590,7 @@ pub struct OptionDfs {
     pub profession: String,
     pub categorie: String,
     pub taux: Decimal,
-    pub rubriques: Vec<String>,
+    pub rubriques: Vec<IdDeCotisation>,
     pub plafond_annuel: Decimal,
     /// Les rubriques de frais (`defraiement_forfait`, `repas`, `nuitee`, `defraiement_reel`) que l'annexe 2 de l'arrete (I, 2° et 5°) laisse
     /// hors de l'assiette pour cette profession ; tout autre remboursement de frais se reintegrerait (art. 9, I, al. 4).
@@ -725,7 +725,7 @@ prevoyance conventionnelle, ses tranches de retraite et son assiette minimum ne 
             qui, nat.libelle
         )));
     }
-    if let Some(r) = rubriques_bulletin.iter().find(|r| r.id.starts_with("apec")) {
+    if let Some(r) = rubriques_bulletin.iter().find(|r| r.id.as_str().starts_with("apec")) {
         return Err(refus_detaille(format!("{} : la déduction forfaitaire spécifique ne se porte pas sur la paie d'un cadre : aucun texte ne dit l'assiette de l'Apec sous déduction.", qui), None, format!(
             "{} : une deduction forfaitaire specifique sur la paie d'un cadre (ligne << {} >>). L'assiette de l'Apec sous \
 deduction n'est dans aucun texte depose (atelier/reference/sources/dfs/LISEZ-MOI.md, << Ce qui manque >>) : le logiciel \
@@ -1361,7 +1361,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     let brut = rubriques.iter().fold(Decimal::new(0, 2), |a, b| a + *b);
 
     // 7.3 : la prevoyance dans l'assiette CSG.
-    let (prev, taux_prev) = match bar.rubrique("prevoyance") {
+    let (prev, taux_prev) = match bar.rubrique(&PREVOYANCE) {
         Some(p @ Rubrique { taux_pat: Some(t), .. }) => (p, t.0),
         _ => {
             return Err(refus_detaille("Le barème de l'année n'a pas de prévoyance avec un taux patronal : le signaler au développeur.", None, format!(
@@ -1396,7 +1396,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     let mut tranches_prev = Decimal::new(0, 2);
     for r in rubriques_bulletin {
         let (id, Some(taux)) = (&r.id, part_patronale(r)) else { continue };
-        if id == "prevoyance" || !id.starts_with("prevoyance") {
+        if *id == PREVOYANCE || !id.as_str().starts_with("prevoyance") {
             continue;
         }
         let base = base_de(r)?;
@@ -1421,7 +1421,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     }
     // La part patronale de la mutuelle : un forfait sur le plafond MENSUEL de la periode, sans la correction du temps
     // partiel (`plafond_de_la_sante`).
-    let mutuelle = bar.rubrique("mutuelle").and_then(part_patronale);
+    let mutuelle = bar.rubrique(&MUTUELLE).and_then(part_patronale);
     let pss_sante = if nat.mensuelle() { Some(plafond_de_la_sante(ctx, eng)?) } else { None };
     if let (Some(m), Some(pss)) = (mutuelle, pss_sante) {
         tranches_prev += pct(pss, m);
@@ -1615,7 +1615,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         let (mut taux_pat, mut taux_sal) = (r.taux_pat.map(|t| t.0), r.taux_sal.map(|t| t.0));
         let non_vide = |c: &Option<Vec<socle::forme::Court>>| c.as_ref().map(|c| c.iter().map(|t| t.0).collect::<Vec<Decimal>>()).filter(|c| !c.is_empty());
         let (mut comp_pat, mut comp_sal) = (non_vide(&r.composants_pat), non_vide(&r.composants_sal));
-        let manque = || socle::echec::cle("Le barème ne donne pas le taux de cette ligne : le complément ne s'ajoute à rien.", &id);
+        let manque = || socle::echec::cle("Le barème ne donne pas le taux de cette ligne : le complément ne s'ajoute à rien.", id.as_str());
         // Le complement au-dela d'un seuil : le taux reduit, plus le complement.
         if let Some(compl) = &r.complement {
             // Sans seuil, le complement s'ajoute toujours.
@@ -1665,7 +1665,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             }
         }
         lignes.push(LigneCotisation {
-            id,
+            id: id.into(),
             famille: r.famille.clone().ok_or_else(|| socle::fichiers::absent("famille"))?,
             libelle: r.libelle.clone().ok_or_else(|| socle::fichiers::absent("libelle"))?,
             base,

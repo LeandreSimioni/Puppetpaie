@@ -313,7 +313,7 @@ forme! {
     /// La majoration du chomage d'un CDD d'usage court (`majoration_chomage`) : la ligne du bulletin qui la porte, son
     /// taux, sa cotisation au nominatif.
     pub struct MajorationChomage {
-        pub rubrique: String,
+        pub rubrique: IdDeCotisation,
         #[serde(deserialize_with = "socle::forme::court")]
         pub taux: Decimal,
         pub code81: String,
@@ -430,10 +430,73 @@ forme! {
     }
 }
 
+/// LA COTISATION D'UNE LIGNE DU BULLETIN : la cle d'une rubrique de `rubriques_bulletin` du bareme (`maladie`,
+/// `retraite_t1`), et ce qui la nomme ailleurs dans le bareme (`rubriques_abattues` de la deduction forfaitaire
+/// specifique). Ce n'est pas une cotisation de la DSN (`cotisations_dsn`, dont la cle est le code S21.G00.81.001), ni
+/// une rubrique du catalogue de paie (`catalogue::CodeDeRubrique`). INFERENCE (aucun texte n'en fixe la forme : c'est
+/// une cle du logiciel) : une cle n'est jamais vide ; rien de plus ne vaut pour toutes celles des baremes livres. Une
+/// cle que le moteur nomme lui-meme est une constante (`du_moteur`) ; une cle d'un bareme se lit (`lire`).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct IdDeCotisation(std::borrow::Cow<'static, str>);
+
+impl IdDeCotisation {
+    /// La cle ecrite `texte` ; vide, elle se refuse.
+    pub fn lire(texte: &str) -> socle::echec::R<IdDeCotisation> {
+        if texte.is_empty() {
+            return Err(socle::refus!("cle de cotisation vide"));
+        }
+        Ok(IdDeCotisation(std::borrow::Cow::Owned(texte.to_string())))
+    }
+
+    /// LA CLE D'UNE COTISATION QUE LE MOTEUR NOMME, ecrite en Rust : une constante, dont le compilateur refuse une cle
+    /// vide.
+    pub const fn du_moteur(cle: &'static str) -> IdDeCotisation {
+        assert!(!cle.is_empty(), "cle de cotisation vide");
+        IdDeCotisation(std::borrow::Cow::Borrowed(cle))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for IdDeCotisation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for IdDeCotisation {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> socle::echec::R<IdDeCotisation> {
+        IdDeCotisation::lire(&s)
+    }
+}
+
+impl From<IdDeCotisation> for String {
+    fn from(c: IdDeCotisation) -> String {
+        c.0.into_owned()
+    }
+}
+
+/// Les cotisations que le moteur nomme lui-meme (`bareme`) : la mutuelle, la prevoyance, la contribution
+/// conventionnelle, la retraite complementaire (ses deux tranches et la CET), le versement mobilite, le regime local
+/// d'Alsace-Moselle.
+pub const MUTUELLE: IdDeCotisation = IdDeCotisation::du_moteur("mutuelle");
+pub const PREVOYANCE: IdDeCotisation = IdDeCotisation::du_moteur("prevoyance");
+pub const RETRAITE_T2: IdDeCotisation = IdDeCotisation::du_moteur("retraite_t2");
+pub const CET: IdDeCotisation = IdDeCotisation::du_moteur("cet");
+pub const PREVOYANCE_T2: IdDeCotisation = IdDeCotisation::du_moteur("prevoyance_t2");
+pub const VERSEMENT_MOBILITE: IdDeCotisation = IdDeCotisation::du_moteur("versement_mobilite");
+pub const REGIME_LOCAL: IdDeCotisation = IdDeCotisation::du_moteur("regime_local");
+pub const CCN: IdDeCotisation = IdDeCotisation::du_moteur("ccn");
+pub const RETRAITE_T1: IdDeCotisation = IdDeCotisation::du_moteur("retraite_t1");
+
 forme! {
     /// Une ligne de cotisation du bulletin.
     pub struct Rubrique {
-        pub id: String,
+        pub id: IdDeCotisation,
         pub famille: Option<String>,
         pub libelle: Option<String>,
         /// Son assiette dans les bases du calcul.
@@ -460,7 +523,7 @@ forme! {
         /// La ligne de la taxe d'apprentissage, que la pile retire d'une compagnie qui n'y est pas assujettie.
         pub taxe_apprentissage: Option<bool>,
         /// Une rubrique ajoutee : celle apres laquelle elle se range (`bareme::empiler`).
-        pub apres: Option<String>,
+        pub apres: Option<IdDeCotisation>,
         /// Les niveaux de la complementaire sante d'un permanent de la 3090 (`bareme::bareme_sante`).
         pub releve_svp_sante: Option<ReleveSante>,
         pub a_confirmer: Option<String>,
@@ -469,9 +532,9 @@ forme! {
 
 impl Rubrique {
     /// Une rubrique que le moteur compose : son identifiant, et rien d'autre de dit.
-    pub(crate) fn nommee(id: &str) -> Rubrique {
+    pub(crate) fn nommee(id: IdDeCotisation) -> Rubrique {
         Rubrique {
-            id: id.into(),
+            id,
             famille: None,
             libelle: None,
             base: None,
@@ -586,7 +649,7 @@ forme! {
         /// La commune du versement mobilite (`bareme::bareme_vm`).
         pub code_insee: Option<crate::fiche::CodeInsee>,
         /// Les lignes du bulletin dont la cotisation est la somme.
-        pub lignes: Option<Vec<String>>,
+        pub lignes: Option<Vec<IdDeCotisation>>,
         /// Une cotisation ajoutee : celle apres laquelle elle se range.
         pub apres: Option<String>,
     }
@@ -629,7 +692,7 @@ forme! {
         pub composants: Option<Vec<Court>>,
         pub base: Option<Assiette>,
         pub base78: Option<Assiette>,
-        pub lignes: Option<Vec<String>>,
+        pub lignes: Option<Vec<IdDeCotisation>>,
     }
 }
 
@@ -655,7 +718,7 @@ forme! {
 forme! {
     /// La somme des parts patronales de lignes du bulletin (`CotisationSupplementaire`).
     pub struct LignesPatronales {
-        pub lignes_patronales: Vec<String>,
+        pub lignes_patronales: Vec<IdDeCotisation>,
     }
 }
 
@@ -719,7 +782,7 @@ forme! {
         pub plafond_journalier: Option<Nombre>,
         pub t2_multiple: Option<Nombre>,
         pub apec_multiple: Option<Nombre>,
-        pub rubriques: Option<BTreeMap<String, RubriqueModifiee>>,
+        pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub rubriques_ajoutees: Option<Vec<Rubrique>>,
         pub cotisation_prevoyance_retraite_supp: Option<CotisationSupplementaire>,
         pub cotisations_ajoutees: Option<Vec<CotisationDsn>>,
@@ -733,8 +796,8 @@ forme! {
     #[derive(Default)]
     pub struct CoucheNature {
         pub verifie: Option<bool>,
-        pub rubriques: Option<BTreeMap<String, RubriqueModifiee>>,
-        pub rubriques_retirees: Option<Vec<String>>,
+        pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
+        pub rubriques_retirees: Option<Vec<IdDeCotisation>>,
         pub rubriques_ajoutees: Option<Vec<Rubrique>>,
         pub majoration_conges_115: Option<Nombre>,
         pub majoration_conges_110: Option<Nombre>,
@@ -749,7 +812,7 @@ forme! {
 forme! {
     /// La contribution CPF-CDD d'un CDD de droit commun (C. trav. L. 6331-6) : un composant de plus a une rubrique.
     pub struct CpfCdd {
-        pub rubrique: String,
+        pub rubrique: IdDeCotisation,
         #[serde(deserialize_with = "socle::forme::court")]
         pub taux: Decimal,
         pub cotisation_dsn: CotisationDsn,
@@ -768,7 +831,7 @@ forme! {
     pub struct CoucheCaisse {
         pub verifie: Option<bool>,
         pub du_corps: Option<DuCorps>,
-        pub rubriques_retirees: Option<Vec<String>>,
+        pub rubriques_retirees: Option<Vec<IdDeCotisation>>,
         pub cotisations_dsn_retirees: Option<Vec<String>>,
         pub majoration_conges_115: Option<Nombre>,
         pub majoration_conges_110: Option<Nombre>,
@@ -777,7 +840,7 @@ forme! {
 
 forme! {
     pub struct DuCorps {
-        pub rubriques_bulletin: Vec<String>,
+        pub rubriques_bulletin: Vec<IdDeCotisation>,
         pub cotisations_dsn: Vec<String>,
     }
 }
@@ -790,7 +853,7 @@ forme! {
         pub taux: BTreeMap<String, socle::forme::Nombre>,
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub plafond_annuel: Decimal,
-        pub rubriques_abattues: Vec<String>,
+        pub rubriques_abattues: Vec<IdDeCotisation>,
     }
 }
 
@@ -870,7 +933,7 @@ pub enum Effet {
     /// Le taux patronal d'une rubrique du bulletin (de sa modification, pour une nature).
     TauxPatronal {
         section: Section,
-        rubrique: String,
+        rubrique: IdDeCotisation,
         #[serde(deserialize_with = "socle::forme::court")]
         taux: Decimal,
         source: Fondement,
@@ -880,7 +943,7 @@ pub enum Effet {
         /// La section `par_nature` qui ajoute la rubrique.
         #[serde(rename = "nature")]
         section: String,
-        rubrique: String,
+        rubrique: IdDeCotisation,
         rang: usize,
         #[serde(deserialize_with = "socle::forme::court")]
         taux: Decimal,
@@ -951,7 +1014,7 @@ impl Effet {
     /// Ce que la pile porte a sa place, `None` si elle ne le porte pas.
     pub fn lu(&self, pile: &Pile) -> Option<Lu> {
         let cotisation = |l: &[CotisationDsn], code: &str| l.iter().find(|c| c.code81.as_deref() == Some(code)).and_then(|c| c.taux).map(|t| Lu::Taux(t.0));
-        let rubrique = |l: &[Rubrique], id: &str| l.iter().find(|r| r.id == id).and_then(|r| r.taux_pat).map(|t| Lu::Taux(t.0));
+        let rubrique = |l: &[Rubrique], id: &IdDeCotisation| l.iter().find(|r| r.id == *id).and_then(|r| r.taux_pat).map(|t| Lu::Taux(t.0));
         match self {
             Effet::TauxDsn { section: Section::Corps, code81, .. } => cotisation(&pile.cotisations_dsn, code81),
             Effet::TauxDsn { section: Section::Statut(s), code81, .. } => cotisation(pile.par_statut.get(s)?.cotisations_dsn.as_deref()?, code81),
@@ -1093,7 +1156,7 @@ forme! {
         pub contributions_dsn: Option<Vec<ContributionDsn>>,
         pub secteurs: Option<Secteurs>,
         /// Ce qu'elle change aux rubriques du corps, par leur `id`.
-        pub rubriques: Option<BTreeMap<String, RubriqueModifiee>>,
+        pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub par_nature: Option<BTreeMap<String, NatureModifiee>>,
         pub par_categorie: Option<BTreeMap<String, CategorieModifiee>>,
     }
@@ -1103,8 +1166,8 @@ forme! {
     /// Ce qu'une couche (la convention, la compagnie) change a la section d'une nature : ses rubriques modifiees et
     /// ajoutees, par leur `id`, ses cotisations de la DSN, par leur code (`code81` ou `code81:affectation`).
     pub struct NatureModifiee {
-        pub rubriques: Option<BTreeMap<String, RubriqueModifiee>>,
-        pub rubriques_ajoutees: Option<BTreeMap<String, RubriqueModifiee>>,
+        pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
+        pub rubriques_ajoutees: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub cotisations_dsn: Option<BTreeMap<String, CotisationModifiee>>,
     }
 }
@@ -1113,7 +1176,7 @@ forme! {
     /// Ce que la convention change a la section d'une categorie : ses rubriques modifiees, et la section entiere d'un
     /// de ses statuts.
     pub struct CategorieModifiee {
-        pub rubriques: Option<BTreeMap<String, RubriqueModifiee>>,
+        pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub par_statut: Option<BTreeMap<String, CoucheCategorie>>,
     }
 }
@@ -1121,7 +1184,7 @@ forme! {
 forme! {
     /// Ce que la compagnie change a la section d'un statut : ses rubriques et ses cotisations, la reduction generale.
     pub struct StatutModifie {
-        pub rubriques: Option<BTreeMap<String, RubriqueModifiee>>,
+        pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub cotisations_dsn: Option<BTreeMap<String, CotisationModifiee>>,
         pub reduction_generale: Option<ReductionGenerale>,
     }
@@ -1137,7 +1200,7 @@ forme! {
         pub socle: i32,
         pub quoi: Option<String>,
         pub versement_mobilite: Option<VersementMobiliteEcrit>,
-        pub rubriques: Option<BTreeMap<String, RubriqueModifiee>>,
+        pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub cotisations_dsn: Option<BTreeMap<String, CotisationModifiee>>,
         pub par_statut: Option<BTreeMap<String, StatutModifie>>,
         pub par_nature: Option<BTreeMap<String, NatureModifiee>>,
@@ -1154,7 +1217,7 @@ forme! {
     /// (`bareme::bareme_convention`) : une part qu'elle dit remplace celle de la rubrique, une part qu'elle ne dit pas
     /// (absente ou nulle) ne change pas ; `efface` retire une part.
     pub struct Contribution {
-        pub id: String,
+        pub id: IdDeCotisation,
         pub famille: Option<String>,
         pub libelle: Option<String>,
         pub base: Option<BaseParPopulation>,
@@ -1163,7 +1226,7 @@ forme! {
         pub efface: Option<Vec<Part>>,
         pub masquer_base_et_taux: Option<bool>,
         pub par_representation: Option<BTreeMap<String, TauxParPopulation>>,
-        pub apres: Option<String>,
+        pub apres: Option<IdDeCotisation>,
     }
 }
 
@@ -1202,7 +1265,7 @@ forme! {
 #[serde(deny_unknown_fields)]
 pub struct ContributionDsn {
     pub contribution: String,
-    pub lignes: Vec<String>,
+    pub lignes: Vec<IdDeCotisation>,
     pub en_dsn_depuis: socle::mois::Mois,
     pub source: Option<Fondement>,
     pub note: Option<String>,
@@ -1297,7 +1360,7 @@ pub(crate) fn lire_la_surcouche(fichier: &std::path::Path) -> socle::echec::R<Su
 
 impl Pile {
     /// La rubrique `id`, si la pile la porte.
-    pub fn rubrique(&self, id: &str) -> Option<&Rubrique> {
-        self.rubriques_bulletin.iter().find(|r| r.id == id)
+    pub fn rubrique(&self, id: &IdDeCotisation) -> Option<&Rubrique> {
+        self.rubriques_bulletin.iter().find(|r| r.id == *id)
     }
 }
