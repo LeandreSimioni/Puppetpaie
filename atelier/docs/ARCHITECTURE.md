@@ -187,7 +187,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | spectacle | la clé de sa fiche | `IdSpectacle` (`droit/src/contexte.rs`) |
 | compagnie | l'identifiant d'une compagnie | à créer (#419) (`Compagnie.id` en `String`) |
 | PCS-ESE | la profession et catégorie socioprofessionnelle d'un emploi (S21.G00.40.004), « X [4,4] » de la table de l'Insee | `CodePcsEse` (`droit/src/fiche.rs`), que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, le métier du catalogue, ce qu'un bulletin importé imprime ; à unifier (#419) : la lecture d'une DSN (`declarations::dsn_lue::EmploiDeclare`), en `String` |
-| matricule, licence, code emploi France Travail | | à créer (#419) |
+| code emploi déclaré | le complément PCS-ESE d'un emploi (S21.G00.40.005), « X [2,6] » : pour le spectacle, un code de la nomenclature des emplois du spectacle, « 999SPT » pour un emploi permanent, « 50 », « 51 » (CCH-18) ; il ne nomme pas toujours un métier | `CodeEmploiFt` (`droit/src/fiche.rs`), que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, ce qu'un bulletin importé imprime, ce que la lecture d'une DSN garde du bloc 40 ; le métier qu'il nomme : `emplois::metier` ; un code d'un métier se déclare tel quel (`From<&CodeEmploi>`) |
+| matricule, licence | | à créer (#419) |
 | code NAF, code postal | | `CodeNaf`, `CodePostal` (`droit/src/fiche.rs`) |
 | pays | un code ISO 3166 à deux lettres | `CodePays` (`socle/src/pays.rs`) |
 | commune | son code INSEE (versement mobilité, S21.G00.81.005) | `CodeInsee` (`droit/src/fiche.rs`) |
@@ -223,7 +224,7 @@ de prévoyance, les codes du bloc 60, du préavis, de l'indemnité.
 | assiette | ce sur quoi une cotisation se calcule | `droit::assiette::Assiette` |
 | barème | les taux d'un jour, en trois étages | `droit::forme_bareme::Pile` |
 | emploi | ce que fait le salarié | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres |
-| code d'un métier | un code de la nomenclature des emplois du spectacle de France Travail (`nomenclature-emplois-ft.json`), qui désigne un métier : du catalogue (`emplois-base.json`, dont chaque clé en est un), sinon de la nomenclature | `CodeEmploi` (`droit/src/emplois.rs`), que portent le métier qu'une carte choisit (`metier`), la clé du catalogue, un métier et celui d'un déroulant, les `codes` d'une grille des minima, les métiers retenus par la compagnie ; son métier : `CodeEmploi::metier`. Le code emploi qu'une fiche déclare (S21.G00.40.005) est une autre notion, qui peut n'en nommer aucun (« 999SPT ») |
+| code d'un métier | un code de la nomenclature des emplois du spectacle de France Travail (`nomenclature-emplois-ft.json`), qui désigne un métier : du catalogue (`emplois-base.json`, dont chaque clé en est un), sinon de la nomenclature | `CodeEmploi` (`droit/src/emplois.rs`), que portent le métier qu'une carte choisit (`metier`), la clé du catalogue, un métier et celui d'un déroulant, les `codes` d'une grille des minima, les métiers retenus par la compagnie ; son métier : `CodeEmploi::metier`. Le code emploi qu'une fiche déclare (S21.G00.40.005) est une autre notion, `CodeEmploiFt`, qui peut n'en nommer aucun (« 999SPT ») |
 | statut | artiste ou technicien | `droit::fiche::Statut` |
 | établissement | un lieu d'emploi | son `Nic`, à créer (#419) |
 | effectif | l'effectif que l'Urssaf calcule | `droit::contexte::Effectif` |

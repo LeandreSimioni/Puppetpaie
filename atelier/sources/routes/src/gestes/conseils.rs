@@ -703,7 +703,7 @@ fn du_jour(ctx: &Contexte, decalage: Option<i64>) -> R<Option<ConseilVu>> {
 /// L'annexe du salarie de cette paie, lue du metier de sa fiche : X pour un artiste, VIII pour un technicien ; rien
 /// sinon (rien ne se devine).
 fn annexe_de(sal: &droit::fiche::ChampsSalarie) -> R<Option<Annexe>> {
-    let Some(code) = sal.code_emploi_ft.portee() else { return Ok(None) };
+    let Some(code) = sal.code_emploi_ft.dite() else { return Ok(None) };
     let Some(m) = emplois::metier(code)? else { return Ok(None) };
     Ok(Some(match m.statut() {
         droit::fiche::Statut::Artiste => Annexe::X,

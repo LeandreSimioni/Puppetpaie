@@ -39,7 +39,7 @@ fn resolution(c: &CasResolu) -> Resolution {
             emploi: r.emploi,
             emploi_affichage: r.emploi_affichage,
             pcs_ese: r.pcs_ese.map(|p| p.to_string()),
-            code_emploi_ft: r.code_emploi_ft,
+            code_emploi_ft: r.code_emploi_ft.map(|c| c.to_string()),
             statut: r.statut.to_string(),
             statut_conventionnel: r.statut_conventionnel.map(|s| s.to_string()),
             statut_categoriel_rc: r.statut_categoriel_rc.to_string(),

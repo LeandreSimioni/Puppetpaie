@@ -494,8 +494,8 @@ pub fn idcc_du_contrat(idcc: &crate::fiche::Idcc, sp: &SpectacleDuContrat, sal: 
     if !matches!(&*idcc, "2642" | "3241") || !sp.emission_tv_1734 || sal.statut.dite().is_some_and(|s| *s != crate::fiche::Statut::Artiste) {
         return Ok(idcc);
     }
-    let code = sal.code_emploi_ft.dite().filter(|c| !c.is_empty()).cloned();
-    let metier = match &code {
+    let code = sal.code_emploi_ft.dite();
+    let metier = match code {
         Some(c) => crate::emplois::metier(c)?,
         None => None,
     };
@@ -506,8 +506,8 @@ pub fn idcc_du_contrat(idcc: &crate::fiche::Idcc, sp: &SpectacleDuContrat, sal: 
              complément (convention de l'entreprise). Choisir un métier du catalogue.",
             sp.cle,
             match code {
-                Some(c) => c,
-                None => "(aucun)".into(),
+                Some(c) => c.as_ref(),
+                None => "(aucun)",
             },
             match sal.nom.remplie() {
                 Some(nom) => nom,

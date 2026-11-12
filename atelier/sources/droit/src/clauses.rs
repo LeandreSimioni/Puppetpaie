@@ -7,7 +7,7 @@
 //! loi (l'appelant : `engagement::solde`).
 
 use crate::emplois;
-use crate::fiche::{ChampsSalarie, Lue, Statut};
+use crate::fiche::{ChampsSalarie, CodeEmploiFt, Lue, Statut};
 use crate::natures::{AuMois, MotifDeRupture};
 use crate::permanents::PartDuContrat;
 use crate::source::forme_notee as forme;
@@ -567,7 +567,7 @@ impl DitParLEngagement {
     fn metier_lu(&self, fiche: &ChampsSalarie) -> R<Option<emplois::Metier>> {
         match &self.metier {
             Some(code) => code.metier().map(Some),
-            None => Ok(fiche.code_emploi_ft.remplie().map(|c| emplois::metier(c)).transpose()?.flatten()),
+            None => Ok(fiche.code_emploi_ft.dite().map(emplois::metier).transpose()?.flatten()),
         }
     }
 }
@@ -587,7 +587,7 @@ pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, au_mois: Option<&AuMois
     let t = table()?;
     let sec = t.convention(idcc).and_then(|c| c.categories.as_ref());
     // Le code que les phrases citent : celui de l'engagement, sinon celui de la fiche, metier ou non.
-    let code = e.metier.as_ref().map(|c| c.to_string()).or_else(|| fiche.code_emploi_ft.remplie().map(str::to_string));
+    let code = e.metier.as_ref().map(CodeEmploiFt::from).or_else(|| fiche.code_emploi_ft.dite().cloned());
     let m = e.metier_lu(fiche)?;
     let c3090 = m.as_ref().and_then(|m| m.classification_3090());
     let grille = c3090.map(|c| c.grille.clone());
@@ -640,9 +640,9 @@ pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, au_mois: Option<&AuMois
         }
         return Ok(profil(Some(c), format!("le niveau 3090 du métier {} ({})", code, niveau)));
     }
-    let code_dit = match code {
-        Some(c) => c,
-        None => "aucun code métier".to_string(),
+    let code_dit = match &code {
+        Some(c) => c.as_ref(),
+        None => "aucun code métier",
     };
     Ok(profil(None, format!("ni la fiche, ni le métier ({}) ne disent la catégorie", code_dit)))
 }
@@ -1120,14 +1120,14 @@ fn grille_technique(m: &emplois::Metier) -> Option<&emplois::Classification3090>
 /// dit ce `metier` et ce `statut` : les conditions de `prime_anciennete`, quelle que soit la nature du contrat (l'art.
 /// 3.1 de l'annexe I nomme le CDI et le CDD du personnel technique, l'art. 3.11 « chaque technicien »). Ce que la carte
 /// ne dit pas encore (son metier, son statut) ne l'ecarte pas.
-pub fn prime_anciennete_possible(idcc: Option<&str>, annexe: Option<&str>, metier: Option<&str>, statut: Option<Statut>) -> R<bool> {
+pub fn prime_anciennete_possible(idcc: Option<&str>, annexe: Option<&str>, metier: Option<&CodeEmploiFt>, statut: Option<Statut>) -> R<bool> {
     let t = table()?;
     if prime_de_l_annexe(&t, idcc, annexe).is_none() || statut == Some(Statut::Artiste) {
         return Ok(false);
     }
     Ok(match metier.map(emplois::metier).transpose()?.flatten() {
         Some(m) => grille_technique(&m).is_some(),
-        None => metier.is_none_or(|c| c.trim().is_empty()),
+        None => metier.is_none(),
     })
 }
 

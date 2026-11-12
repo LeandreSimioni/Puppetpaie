@@ -45,6 +45,8 @@ const NUMERO: &str = "un numéro de contrat (5 à 20 caractères)";
 /// Ce que porte l'identifiant d'un organisme (S21.G00.15.002, S21.G00.20.001, X [2,14]) :
 /// `droit::organismes::IdentifiantDOrganisme`.
 const ORGANISME: &str = "un identifiant d'organisme (2 à 14 caractères)";
+/// Ce que porte le code emploi d'un contrat (S21.G00.40.005, X [2,6]) : `droit::fiche::CodeEmploiFt`.
+const CODE_EMPLOI: &str = "un code emploi (2 à 6 caractères)";
 
 // ------------------------------------------------------------------ la forme
 
@@ -148,7 +150,7 @@ pub struct EmploiDeclare {
     pub pcs_ese: Option<String>,
     /// S21.G00.40.005.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code_emploi_ft: Option<String>,
+    pub code_emploi_ft: Option<droit::fiche::CodeEmploiFt>,
     /// S21.G00.40.006.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emploi: Option<String>,
@@ -160,15 +162,15 @@ impl EmploiDeclare {
     /// DSN de PuppetPaie reimportee le donnerait comme `code_emploi_ft` d'un permanent.
     pub fn du_salarie(&self) -> R<EmploiDeclare> {
         let natures = droit::natures::natures()?;
-        let garder = |rubrique: &str, v: &Option<String>| {
-            v.clone().filter(|v| !natures.iter().any(|nat| nat.code(rubrique).as_deref() == Some(v.as_str())))
-        };
+        fn garder<T: AsRef<str> + Clone>(natures: &[std::sync::Arc<droit::natures::Nature>], rubrique: &str, v: &Option<T>) -> Option<T> {
+            v.clone().filter(|v| !natures.iter().any(|nat| nat.code(rubrique).as_deref() == Some(v.as_ref())))
+        }
         Ok(EmploiDeclare {
-            statut_conventionnel: garder("S21.G00.40.002", &self.statut_conventionnel),
-            statut_categoriel_rc: garder("S21.G00.40.003", &self.statut_categoriel_rc),
-            pcs_ese: garder("S21.G00.40.004", &self.pcs_ese),
-            code_emploi_ft: garder("S21.G00.40.005", &self.code_emploi_ft),
-            emploi: garder("S21.G00.40.006", &self.emploi),
+            statut_conventionnel: garder(&natures, "S21.G00.40.002", &self.statut_conventionnel),
+            statut_categoriel_rc: garder(&natures, "S21.G00.40.003", &self.statut_categoriel_rc),
+            pcs_ese: garder(&natures, "S21.G00.40.004", &self.pcs_ese),
+            code_emploi_ft: garder(&natures, "S21.G00.40.005", &self.code_emploi_ft),
+            emploi: garder(&natures, "S21.G00.40.006", &self.emploi),
         })
     }
 }
@@ -1131,15 +1133,18 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 contrats.push(ContratDeclare::de(individus[i].nir.clone(), i, debut));
                 fin_de = Some(contrats.len() - 1);
             }
-            "S21.G00.40.002" | "S21.G00.40.003" | "S21.G00.40.004" | "S21.G00.40.005" | "S21.G00.40.006" => {
+            "S21.G00.40.002" | "S21.G00.40.003" | "S21.G00.40.004" | "S21.G00.40.006" => {
                 let Some(c) = contrat else { continue };
                 *match k {
                     "S21.G00.40.002" => &mut c.emploi.statut_conventionnel,
                     "S21.G00.40.003" => &mut c.emploi.statut_categoriel_rc,
                     "S21.G00.40.004" => &mut c.emploi.pcs_ese,
-                    "S21.G00.40.005" => &mut c.emploi.code_emploi_ft,
                     _ => &mut c.emploi.emploi,
                 } = plein;
+            }
+            "S21.G00.40.005" => {
+                let code = fautes.lue(k, &v, CODE_EMPLOI, droit::fiche::CodeEmploiFt::lire);
+                contrat.into_iter().for_each(|c| c.emploi.code_emploi_ft = code.clone());
             }
             "S21.G00.40.007" => contrat.into_iter().for_each(|c| c.nature_dsn = plein.clone()),
             "S21.G00.40.009" => {

@@ -2283,8 +2283,9 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
             }
         }
         // Le code emploi, le statut et le PCS de la fiche, confrontes au catalogue des metiers. Avertissements, pas
-        // erreurs. Le catalogue lit un texte vide comme une case que la fiche ne dit pas : les textes dits, bout a bout.
-        if let Some(code_emploi) = d.mot(S::CodeEmploiFt) {
+        // erreurs. Le catalogue lit un texte vide comme une case que la fiche ne dit pas : les textes dits, bout a bout. Un
+        // code emploi hors de sa forme a sa faute (`fautes_des_types`) : seul un code lu se confronte au catalogue.
+        if let Some(code_emploi) = d.mot(S::CodeEmploiFt).and_then(|c| droit::fiche::CodeEmploiFt::lire(&c).ok()) {
             let (statut, pcs) = (d.mot(S::Statut), d.mot(S::PcsEse));
             for msg in droit::emplois::controler_fiche(&code_emploi, &statut.as_slice().concat(), &pcs.as_slice().concat())? {
                 out.push(constat(S::CodeEmploiFt, Gravite::Avertissement, msg));

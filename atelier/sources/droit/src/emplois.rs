@@ -16,7 +16,7 @@ use socle::echec::R;
 use socle::date::Jour;
 
 use crate::contexte::{Contexte, IdSalarie};
-use crate::fiche::{CaseDeFiche, CaseSalarie, CodePcsEse, FicheSalarie, Lue, Statut, StatutCategorielRc, StatutConventionnel};
+use crate::fiche::{CaseDeFiche, CaseSalarie, CodeEmploiFt, CodePcsEse, FicheSalarie, Lue, Statut, StatutCategorielRc, StatutConventionnel};
 
 /// `emplois-base.json` : le catalogue des metiers, dans l'ordre ou le deroulant les montre, et les noms courts des
 /// conventions. Sa `note` dit le perimetre, les sources et les regles de chaque champ.
@@ -353,14 +353,13 @@ impl Metier {
     }
 }
 
-/// Le metier que nomme le texte `code` d'une fiche (son code emploi, S21.G00.40.005 : blancs et casse ignores), s'il est
-/// un code de la nomenclature (`CodeEmploi::metier`). `None` sinon : un emploi permanent (« 999SPT »), un code vide.
-pub fn metier(code: &str) -> R<Option<Metier>> {
-    let code = CodeEmploi::rangee(code);
-    if !nomenclature()?.emplois.contains_key(&code) {
+/// Le metier que nomme le code emploi declare `code` (S21.G00.40.005), tel qu'il est ecrit, s'il est un code de la
+/// nomenclature (`CodeEmploi::metier`). `None` sinon : un emploi permanent (« 999SPT »), un code d'une autre table.
+pub fn metier(code: &CodeEmploiFt) -> R<Option<Metier>> {
+    if !nomenclature()?.emplois.contains_key(code.as_ref()) {
         return Ok(None);
     }
-    CodeEmploi::lire(&code)?.metier().map(Some)
+    CodeEmploi::lire(code)?.metier().map(Some)
 }
 
 /// LES SEPT CHAMPS DECLARES POUR UN METIER, tels que la fiche du salarie les ecrit : l'emploi declare et son libelle,
@@ -371,7 +370,7 @@ pub struct ChampsDuMetier {
     pub emploi: String,
     pub emploi_affichage: String,
     pub pcs_ese: Option<CodePcsEse>,
-    pub code_emploi_ft: Option<String>,
+    pub code_emploi_ft: Option<CodeEmploiFt>,
     pub statut: Statut,
     pub statut_conventionnel: Option<StatutConventionnel>,
     pub statut_categoriel_rc: StatutCategorielRc,
@@ -390,7 +389,7 @@ pub fn resoudre(code: &CodeEmploi, cadre: Option<bool>, feminin: bool, idcc: Opt
         emploi: m.emploi().to_string(),
         emploi_affichage: libelle,
         pcs_ese: m.pcs_ese().cloned(),
-        code_emploi_ft: Some(m.code.to_string()),
+        code_emploi_ft: Some(CodeEmploiFt::from(&m.code)),
         statut: m.statut(),
         statut_conventionnel: if est_cadre { Some(StatutConventionnel::Cadre04) } else { m.statut_non_cadre() },
         statut_categoriel_rc: if est_cadre { StatutCategorielRc::Cadre } else { StatutCategorielRc::NonCadre },
@@ -493,7 +492,7 @@ pub struct EmploiEngagement {
     /// Le libelle lisible que l'engagement a resolu.
     pub emploi_affichage: Option<String>,
     pub pcs_ese: Option<CodePcsEse>,
-    pub code_emploi_ft: Option<String>,
+    pub code_emploi_ft: Option<CodeEmploiFt>,
     pub statut: Option<Statut>,
     pub statut_conventionnel: Option<StatutConventionnel>,
     pub statut_categoriel_rc: Option<StatutCategorielRc>,
@@ -504,11 +503,10 @@ pub struct EmploiEngagement {
 pub fn emploi_de(sal: &FicheSalarie, eng: &EmploiEngagement) -> R<FicheSalarie> {
     let mut out = sal.clone();
     let dit = |v: &Option<String>| v.as_ref().filter(|s| !s.is_empty()).cloned();
-    let pris = [&eng.emploi, &eng.code_emploi_ft];
     let pcs_ese = eng.pcs_ese.as_ref().filter(|s| !s.is_empty()).cloned();
     let affichage = dit(&eng.emploi_affichage);
     let statuts_dits = eng.statut.is_some() || eng.statut_conventionnel.is_some() || eng.statut_categoriel_rc.is_some();
-    if pris.iter().all(|v| dit(v).is_none()) && pcs_ese.is_none() && !statuts_dits && affichage.is_none() {
+    if dit(&eng.emploi).is_none() && eng.code_emploi_ft.is_none() && pcs_ese.is_none() && !statuts_dits && affichage.is_none() {
         return Ok(out);
     }
     if let Some(v) = dit(&eng.emploi) {
@@ -517,8 +515,8 @@ pub fn emploi_de(sal: &FicheSalarie, eng: &EmploiEngagement) -> R<FicheSalarie> 
     if let Some(v) = pcs_ese {
         out.pcs_ese = Some(v);
     }
-    if let Some(v) = dit(&eng.code_emploi_ft) {
-        out.code_emploi_ft = Some(v);
+    if let Some(v) = &eng.code_emploi_ft {
+        out.code_emploi_ft = Some(v.clone());
     }
     if let Some(v) = eng.statut {
         out.statut = Some(v);
@@ -534,9 +532,9 @@ pub fn emploi_de(sal: &FicheSalarie, eng: &EmploiEngagement) -> R<FicheSalarie> 
     // libelle du catalogue.
     if let Some(a) = affichage {
         out.emploi_affichage = Some(a);
-    } else if let Some(code) = dit(&eng.code_emploi_ft) {
-        if sal.code_emploi_ft.dite() != Some(&code) {
-            let m = metier(&code)?.ok_or_else(|| socle::refus!("Le métier {} de l'engagement n'est ni au catalogue ni dans la nomenclature France Travail.", repr(&code)))?;
+    } else if let Some(code) = &eng.code_emploi_ft {
+        if sal.code_emploi_ft.dite() != Some(code) {
+            let m = metier(code)?.ok_or_else(|| socle::refus!("Le métier {} de l'engagement n'est ni au catalogue ni dans la nomenclature France Travail.", repr(code)))?;
             out.emploi_affichage = Some(m.libelle());
         }
     }
@@ -625,14 +623,10 @@ pub fn familles() -> R<Vec<String>> {
 
 /// Ce qu'une fiche salarie declare (son code emploi, son statut, sa PCS-ESE ; vide : elle ne le dit pas), confronte au
 /// catalogue. Des phrases d'avertissement, jamais d'erreur : la fiche peut avoir raison contre le catalogue.
-pub fn controler_fiche(code_emploi_ft: &str, statut: &str, pcs_ese: &str) -> R<Vec<String>> {
+pub fn controler_fiche(code: &CodeEmploiFt, statut: &str, pcs_ese: &str) -> R<Vec<String>> {
     let mut avis = Vec::new();
-    let code = code_emploi_ft.trim().to_uppercase();
-    if code.is_empty() {
-        return Ok(avis);
-    }
-    let Some(m) = metier(&code)? else {
-        avis.push(format!("Code emploi France Travail {} inconnu de la nomenclature (S21.G00.40.005).", repr(&code)));
+    let Some(m) = metier(code)? else {
+        avis.push(format!("Code emploi France Travail {} inconnu de la nomenclature (S21.G00.40.005).", repr(code)));
         return Ok(avis);
     };
     let libelle = m.libelle();

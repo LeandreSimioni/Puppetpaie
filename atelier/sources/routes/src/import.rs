@@ -212,7 +212,7 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
     let emploi = decl.emploi.as_ref();
     // Le statut de bareme se deduit du code emploi France Travail, a defaut de la PCS (354x : artistes ; une autre PCS :
     // technicien) ; sans l'un ni l'autre, rien ne le dit.
-    let m = match emploi.and_then(|e| e.code_emploi_ft.as_deref()) {
+    let m = match emploi.and_then(|e| e.code_emploi_ft.as_ref()) {
         Some(code) => droit::emplois::metier(code)?,
         None => None,
     };

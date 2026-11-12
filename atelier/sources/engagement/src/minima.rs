@@ -883,7 +883,7 @@ fn avec_cx<T>(ctx: &Contexte, paie: &Paie, f: impl FnOnce(&Cx) -> R<Option<T>>) 
     if t.convention(&idcc).is_none() {
         return Ok(None);
     }
-    let Some(code) = paie.salarie.code_emploi_ft.portee() else { return Ok(None) };
+    let Some(code) = paie.salarie.code_emploi_ft.dite() else { return Ok(None) };
     let Some(m) = emplois::metier(code)? else { return Ok(None) };
     let nb_cachets = paie
         .remuneration
@@ -1127,7 +1127,7 @@ pub(crate) fn sous_le_smic(ctx: &Contexte, paie: &Paie) -> R<Vec<Avis>> {
 /// l'entreprise) ne retire rien : une case que le calcul peut demander se montre. La fiche du salarie montre ces
 /// cases-la, et seulement celles-la (`droit::fiche::Piece::Metier`, `routes::fiches::montres`) ; le calcul ne les lit
 /// qu'avec la cle de la grille trouvee (`droit::minima::ParLaGrille`).
-pub fn cases_du_metier(ctx: &Contexte, code: &str, jour: &Jour) -> R<BTreeSet<CasePieceSalarie>> {
+pub fn cases_du_metier(ctx: &Contexte, code: &droit::fiche::CodeEmploiFt, jour: &Jour) -> R<BTreeSet<CasePieceSalarie>> {
     let mut lues = BTreeSet::new();
     let ent = ctx.entreprise_au(jour);
     let Some(idcc) = ent.idcc.portee() else { return Ok(lues) };

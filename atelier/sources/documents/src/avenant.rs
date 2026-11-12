@@ -450,7 +450,7 @@ pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Form
         emploi: texte(&eng.emploi),
         emploi_affichage: texte(&eng.emploi_affichage),
         pcs_ese: eng.pcs_ese.clone().filter(|s| !s.is_empty()),
-        code_emploi_ft: texte(&eng.code_emploi_ft),
+        code_emploi_ft: eng.code_emploi_ft.clone(),
         statut: eng.statut,
         statut_conventionnel: eng.statut_conventionnel,
         statut_categoriel_rc: eng.statut_categoriel_rc,

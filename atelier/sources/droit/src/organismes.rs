@@ -96,7 +96,7 @@ pub enum TauxAt {
 /// UNE RUBRIQUE DE NATURE `X [min,max]` du cahier technique DSN : de `min` a `max` caracteres (comptes en caracteres,
 /// non en octets), sans blanc au debut ni a la fin ; l'espace et les lettres accentuees de la table 3.5 sont des
 /// caracteres permis (`dsn-cahier-technique-2026.1-formats.txt` l. 6630-6633, 7432-7440). Rien de plus (regle 7).
-const fn de_nature_x(texte: &str, min: usize, max: usize) -> bool {
+pub(crate) const fn de_nature_x(texte: &str, min: usize, max: usize) -> bool {
     let o = texte.as_bytes();
     if o.is_empty() || o[0] == b' ' || o[o.len() - 1] == b' ' {
         return false;

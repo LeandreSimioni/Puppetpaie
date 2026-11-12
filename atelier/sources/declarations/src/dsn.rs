@@ -1655,14 +1655,14 @@ p. 322). Corriger la date sur la fiche : le jour ou la personne est entree dans 
 pub fn statuts_du_contrat(p: &Paie, idcc: Option<&str>) -> R<(String, String)> {
     let s = &p.salarie;
     let lu = |v: Option<&str>| v.map(str::trim).filter(|v| !v.is_empty()).map(str::to_string);
-    let code = s.code_emploi_ft.portee();
+    let code = s.code_emploi_ft.dite();
     let m = match code {
         Some(c) => droit::emplois::metier(c)?.filter(|m| m.au_catalogue().is_some()),
         None => None,
     };
     // Ce qui manque quand le catalogue ne dit rien du metier.
     let metier_dit = || match code {
-        Some(c) => format!("son metier ({}) n'est pas au catalogue des metiers, qui les dirait", c.trim().to_uppercase()),
+        Some(c) => format!("son metier ({}) n'est pas au catalogue des metiers, qui les dirait", c),
         None => "la fiche n'a pas de metier (code emploi)".to_string(),
     };
     let rc = match (lu(s.statut_categoriel_rc.code()), &m) {

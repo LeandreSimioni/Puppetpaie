@@ -357,6 +357,46 @@ texte_borne! {
 (S21.G00.40.004). Corrigez-le";
 }
 
+/// LE CODE EMPLOI DECLARE d'un emploi (S21.G00.40.005, « Code complément PCS-ESE ») : « X [2,6] », d'une des tables
+/// « CCP - Code Complément PCS-ESE, NEHMED [...], NEHNMED [...], ART - Code détaillé des professions du spectacle
+/// (complément PCS-ESE), NET, NNE et FESAIEG [...], CMET » (cahier technique DSN 2026.1, p. 183-185,
+/// `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt` l. 217-354). Pour le spectacle, CCH-18 (l. 325-329) : « une
+/// valeur présente dans la table de nomenclature des emplois du spectacle ou "999SPT" pour les emplois permanents du
+/// spectacle ou "50" pour les mannequins ou "51" pour les artistes de corrida ». Ce n'est donc pas toujours le code d'un
+/// metier (`emplois::CodeEmploi`) : il peut n'en nommer aucun. Les autres tables ne sont pas deposees : la forme est
+/// celle du cahier, de 2 a 6 caracteres (`X`), et rien de plus (regle 7). La fiche du salarie, la carte, l'engagement et
+/// sa paie ecrite le portent. Saisi, il se range sans ses blancs de bord et en capitales.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct CodeEmploiFt(String);
+
+impl CodeEmploiFt {
+    /// Le code `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<CodeEmploiFt> {
+        if crate::organismes::de_nature_x(texte, 2, 6) {
+            Ok(CodeEmploiFt(texte.to_string()))
+        } else {
+            Err(socle::refus!(
+                "Code emploi {} : le code emploi déclaré (complément PCS-ESE, S21.G00.40.005) s'écrit de 2 à 6 caractères, sans blanc au début ni à la fin. Corrigez-le",
+                socle::fichiers::repr(texte)
+            ))
+        }
+    }
+
+    /// Le code d'un emploi permanent du spectacle, « 999SPT » (CCH-18, ci-dessus) : il ne nomme aucun metier.
+    pub fn est_permanent(&self) -> bool {
+        self.0 == "999SPT"
+    }
+}
+
+/// Le code d'un metier est un code de la nomenclature des emplois du spectacle, la table ART de 40.005 (CCH-18,
+/// ci-dessus) : il se declare tel quel. Ses codes ont six caracteres (`nomenclature-emplois-ft.json`).
+impl From<&crate::emplois::CodeEmploi> for CodeEmploiFt {
+    fn from(c: &crate::emplois::CodeEmploi) -> CodeEmploiFt {
+        CodeEmploiFt(c.as_str().to_string())
+    }
+}
+
 /// LE CODE DU SERVICE DE SANTE AU TRAVAIL, celui de la DPAE : « MT » et trois chiffres, 5 caracteres. La norme DPAE
 /// (C_MT_DCL, positions 938-947 : `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 485-497) : « Il est
 /// attendu ici un code du type MT+ 3 positions numériques. Ex: MT542 [...] Si vous disposez d'un centre de médecine
@@ -791,6 +831,8 @@ impl CodeInsee {
 }
 
 notion_lue!(CodeInsee rangee par socle::texte::en_capitales);
+
+notion_lue!(CodeEmploiFt rangee par socle::texte::en_capitales);
 
 /// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
 /// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,
@@ -2222,7 +2264,7 @@ fiche! {
         EmploiAffichage(String) = "emploi_affichage" => emploi_affichage,
         Emploi(String) = "emploi" => emploi,
         PcsEse(CodePcsEse) = "pcs_ese" => pcs_ese,
-        CodeEmploiFt(String) = "code_emploi_ft" => code_emploi_ft,
+        CodeEmploiFt(CodeEmploiFt) = "code_emploi_ft" => code_emploi_ft,
         Statut(Statut) = "statut" => statut,
         StatutConventionnel(StatutConventionnel) = "statut_conventionnel" => statut_conventionnel,
         StatutCategorielRc(StatutCategorielRc) = "statut_categoriel_rc" => statut_categoriel_rc,

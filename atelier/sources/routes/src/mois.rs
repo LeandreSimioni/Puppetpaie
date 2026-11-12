@@ -946,7 +946,7 @@ fn contrats_passes_route(ctx: &Contexte, c: ChargeContratsPasses) -> R<ContratsP
 fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
     let feminin = c.feminin || c.salarie.is_some_and(|s| declarations::ntt::sexe_de(s.nir.as_deref(), s.sexe.as_deref()) == Some("2"));
     let champs = emplois::resoudre(&c.metier, c.cadre, feminin, ctx.entreprise.idcc.portee())?;
-    let phrase = match champs.code_emploi_ft.as_deref() {
+    let phrase = match &champs.code_emploi_ft {
         Some(code) => format!("Métier : {} ({}).", champs.emploi_affichage, code),
         None => format!("Métier : {}.", champs.emploi_affichage),
     };
@@ -1579,7 +1579,7 @@ pub(crate) struct LigneVue {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct EmploiVu {
     libelle: Option<String>,
-    code_emploi_ft: Option<String>,
+    code_emploi_ft: Option<droit::fiche::CodeEmploiFt>,
     statut: Option<droit::fiche::Statut>,
     cadre: bool,
 }
@@ -1763,7 +1763,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         faits_avances: if nat.mensuelle() { engagement::heures_en_plus::faits_appeles(ctx, e.modalite_temps_travail()? == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel)? } else { Vec::new() },
         // LES RUBRIQUES QUE SA CARTE PROPOSE : sa nature, et le statut et le metier de la fiche telle que la paie la lit
         // (le metier de la carte par-dessus celui du salarie).
-        propose: engagement::proposees::proposees(ctx, Some(nat.mensuelle()), s.statut.dite().copied(), s.code_emploi_ft.remplie(), &data.mois.premier_jour())?,
+        propose: engagement::proposees::proposees(ctx, Some(nat.mensuelle()), s.statut.dite().copied(), s.code_emploi_ft.dite(), &data.mois.premier_jour())?,
         // LES CASES QU'UNE LIGNE DE FRAIS APPELLE : le lieu d'une nuitée, le restaurant d'un repas, le justificatif d'un
         // frais au-delà de sa limite (`engagement::frais_au_dela`).
         cases: e

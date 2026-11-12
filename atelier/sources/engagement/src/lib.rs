@@ -99,7 +99,7 @@ pub struct Engagement {
     /// feminin si la fiche le dit) ; `None` si l'engagement ne choisit pas de metier.
     pub emploi_affichage: Option<String>,
     pub pcs_ese: Option<droit::fiche::CodePcsEse>,
-    pub code_emploi_ft: Option<String>,
+    pub code_emploi_ft: Option<droit::fiche::CodeEmploiFt>,
     pub statut: Option<Statut>,
     pub statut_conventionnel: Option<StatutConventionnel>,
     pub statut_categoriel_rc: Option<StatutCategorielRc>,
@@ -182,7 +182,7 @@ pub struct Assemble {
     pub emploi: Option<String>,
     pub emploi_affichage: Option<String>,
     pub pcs_ese: Option<droit::fiche::CodePcsEse>,
-    pub code_emploi_ft: Option<String>,
+    pub code_emploi_ft: Option<droit::fiche::CodeEmploiFt>,
     pub statut: Option<Statut>,
     pub statut_conventionnel: Option<StatutConventionnel>,
     pub statut_categoriel_rc: Option<StatutCategorielRc>,
@@ -1073,7 +1073,7 @@ pub(crate) fn engagements(
             lieu: carte.lieu.clone(),
             emploi: ecrit(&carte.emploi).or_else(|| d.map(|d| d.emploi.clone())),
             pcs_ese: carte.pcs_ese.clone().filter(|s| !s.is_empty()).or_else(|| d.and_then(|d| d.pcs_ese.clone())),
-            code_emploi_ft: ecrit(&carte.code_emploi_ft).or_else(|| d.and_then(|d| d.code_emploi_ft.clone())),
+            code_emploi_ft: carte.code_emploi_ft.clone().or_else(|| d.and_then(|d| d.code_emploi_ft.clone())),
             statut: carte.statut.or_else(|| d.map(|d| d.statut)),
             statut_conventionnel: carte.statut_conventionnel.or_else(|| d.and_then(|d| d.statut_conventionnel)),
             statut_categoriel_rc: carte.statut_categoriel_rc.or_else(|| d.map(|d| d.statut_categoriel_rc)),
@@ -1143,7 +1143,7 @@ fn versement_refuse(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<Option<Str
         Some(f) if !eng.nat()?.duree_indeterminee && droit::versement::au_plus_tard_cirque_1285(&f)? < verse => {
             let ent = ctx.entreprise_au(&fin_mois);
             let fiche = crate::calcul::fiche_de_l_engagement(ctx, eng)?;
-            let metier = fiche.code_emploi_ft.portee().map(emplois::metier).transpose()?.flatten();
+            let metier = fiche.code_emploi_ft.dite().map(emplois::metier).transpose()?.flatten();
             let cirque = metier.as_ref().and_then(|m| m.au_catalogue()).and_then(|f| f.minima.ccn_1285.as_deref()) == Some("cirque");
             (ent.idcc.portee() == Some(droit::clauses::IDCC_CCNEAC) && cirque).then_some(f)
         }

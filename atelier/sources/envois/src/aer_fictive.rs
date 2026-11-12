@@ -45,8 +45,6 @@ use socle::num::Decimal;
 const CODE: &str = "FICTIVE";
 /// La nature de contrat de la DSN d'un CDD de droit prive (S21.G00.40.007 ; `contrats-base.json`).
 const NATURE_CDD: &str = "02";
-/// Le code emploi d'un emploi permanent du spectacle (S21.G00.40.005, CCH-18).
-const EMPLOI_PERMANENT: &str = "999SPT";
 /// Les colonnes du cadre 4 : 01 a 05 (`aer::lire_quantites`).
 const COLONNES: usize = 5;
 
@@ -68,7 +66,7 @@ fn exigee<'a>(v: &'a Option<String>, quoi: &str, rubrique: &str) -> R<&'a str> {
 /// net-entreprises-base-connaissances/net-entreprises-de-la-dsn-a-l-attestation-employeur-v3-2-20230328.txt`, l. 500-510).
 fn cinema_spectacle(c: &ContratDeclare) -> bool {
     c.nature_dsn.as_deref() == Some(NATURE_CDD)
-        && c.emploi.code_emploi_ft.as_deref().is_some_and(|e| !e.is_empty() && !e.eq_ignore_ascii_case(EMPLOI_PERMANENT))
+        && c.emploi.code_emploi_ft.as_ref().is_some_and(|e| !e.est_permanent())
 }
 
 // ------------------------------------------------------------------ les periodes

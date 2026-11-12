@@ -26,7 +26,7 @@ pub struct Proposees {
 
 /// Les rubriques que la nature (`mensuelle` : payee au mois ; `None` : pas encore dite), le statut et le metier (`None` :
 /// pas encore dits) d'un engagement prennent, au catalogue de la compagnie a `jour`.
-pub fn proposees(ctx: &Contexte, mensuelle: Option<bool>, statut: Option<droit::fiche::Statut>, metier: Option<&str>, jour: &Jour) -> R<Proposees> {
+pub fn proposees(ctx: &Contexte, mensuelle: Option<bool>, statut: Option<droit::fiche::Statut>, metier: Option<&droit::fiche::CodeEmploiFt>, jour: &Jour) -> R<Proposees> {
     let cat = catalogue(&ctx.racine, jour)?;
     let ent = &ctx.entreprise;
     let prime = clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), metier, statut)?;
@@ -56,12 +56,12 @@ pub fn de_la_carte(ctx: &Contexte, carte: &Carte, jour: &Jour) -> R<Proposees> {
         None => None,
     };
     let fiche = carte.salarie.as_ref().and_then(|c| ctx.salaries.get(c.as_str()));
-    let metier = carte.metier.as_ref().map(|m| m.to_string()).or_else(|| fiche.and_then(|f| f.code_emploi_ft.remplie()).map(str::to_string));
+    let metier = carte.metier.as_ref().map(droit::fiche::CodeEmploiFt::from).or_else(|| fiche.and_then(|f| f.code_emploi_ft.dite()).cloned());
     let du_metier = match &carte.metier {
         Some(code) => Some(code.metier()?.statut()),
         None => None,
     };
     let de_la_fiche = fiche.and_then(|f| f.statut.dite()).copied();
     let statut = carte.statut.or(du_metier).or(de_la_fiche);
-    proposees(ctx, mensuelle, statut, metier.as_deref(), jour)
+    proposees(ctx, mensuelle, statut, metier.as_ref(), jour)
 }
