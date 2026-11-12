@@ -414,12 +414,13 @@ pub struct Annexes {
     _note: String,
 }
 
-/// LA SEULE LECTURE DE `rubriques-base.json` : sa forme.
+/// LA SEULE LECTURE DE `rubriques-base.json` : sa forme. Le refus dit le fichier et le chemin de la valeur fautive (la
+/// rubrique, sa case : « rubriques.CACHET.unite »).
 fn base() -> R<Base> {
-    let b: Base = socle::forme::lire_fichier(
-        &dossier_du_code().join("rubriques-base.json"),
-        "Les rubriques livrées avec le logiciel ne se lisent pas : le signaler au développeur.",
-    )?;
+    let b: Base = socle::forme::lire_fichier_en_phrase(&dossier_du_code().join("rubriques-base.json"), |chemin, detail| {
+        let ou = if chemin.is_empty() { String::new() } else { format!(", à « {} »", chemin) };
+        format!("Les rubriques livrées avec le logiciel (rubriques-base.json){} ne se lisent pas : {}. Le signaler au développeur.", ou, detail)
+    })?;
     // La piece d'un salarie au mois est celle que le calcul compose (`RubriqueDuMois`) : ni plus, ni moins.
     let rangees: Vec<&str> = b.au_mois.iter().map(|(c, _)| c.as_str()).collect();
     let codes: Vec<CodeDeRubrique> = RubriqueDuMois::TOUTES.iter().map(|r| r.code()).collect();
