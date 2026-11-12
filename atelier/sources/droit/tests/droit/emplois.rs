@@ -38,7 +38,7 @@ fn resolution(c: &CasResolu) -> Resolution {
         Ok(r) => Resolution::Champs {
             emploi: r.emploi,
             emploi_affichage: r.emploi_affichage,
-            pcs_ese: r.pcs_ese,
+            pcs_ese: r.pcs_ese.map(|p| p.to_string()),
             code_emploi_ft: r.code_emploi_ft,
             statut: r.statut.to_string(),
             statut_conventionnel: r.statut_conventionnel.map(|s| s.to_string()),

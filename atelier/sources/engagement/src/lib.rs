@@ -98,7 +98,7 @@ pub struct Engagement {
     /// Le libelle lisible du metier de CET engagement (`emplois::resoudre`, au
     /// feminin si la fiche le dit) ; `None` si l'engagement ne choisit pas de metier.
     pub emploi_affichage: Option<String>,
-    pub pcs_ese: Option<String>,
+    pub pcs_ese: Option<droit::fiche::CodePcsEse>,
     pub code_emploi_ft: Option<String>,
     pub statut: Option<Statut>,
     pub statut_conventionnel: Option<StatutConventionnel>,
@@ -181,7 +181,7 @@ pub struct Assemble {
     pub lieu: Option<String>,
     pub emploi: Option<String>,
     pub emploi_affichage: Option<String>,
-    pub pcs_ese: Option<String>,
+    pub pcs_ese: Option<droit::fiche::CodePcsEse>,
     pub code_emploi_ft: Option<String>,
     pub statut: Option<Statut>,
     pub statut_conventionnel: Option<StatutConventionnel>,
@@ -1072,7 +1072,7 @@ pub(crate) fn engagements(
             date_paiement: carte.date_paiement,
             lieu: carte.lieu.clone(),
             emploi: ecrit(&carte.emploi).or_else(|| d.map(|d| d.emploi.clone())),
-            pcs_ese: ecrit(&carte.pcs_ese).or_else(|| d.and_then(|d| d.pcs_ese.clone())),
+            pcs_ese: carte.pcs_ese.clone().filter(|s| !s.is_empty()).or_else(|| d.and_then(|d| d.pcs_ese.clone())),
             code_emploi_ft: ecrit(&carte.code_emploi_ft).or_else(|| d.and_then(|d| d.code_emploi_ft.clone())),
             statut: carte.statut.or_else(|| d.map(|d| d.statut)),
             statut_conventionnel: carte.statut_conventionnel.or_else(|| d.and_then(|d| d.statut_conventionnel)),

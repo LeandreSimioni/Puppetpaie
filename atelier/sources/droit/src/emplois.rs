@@ -16,7 +16,7 @@ use socle::echec::R;
 use socle::date::Jour;
 
 use crate::contexte::{Contexte, IdSalarie};
-use crate::fiche::{CaseDeFiche, CaseSalarie, FicheSalarie, Lue, Statut, StatutCategorielRc, StatutConventionnel};
+use crate::fiche::{CaseDeFiche, CaseSalarie, CodePcsEse, FicheSalarie, Lue, Statut, StatutCategorielRc, StatutConventionnel};
 
 /// `emplois-base.json` : le catalogue des metiers, dans l'ordre ou le deroulant les montre, et les noms courts des
 /// conventions. Sa `note` dit le perimetre, les sources et les regles de chaque champ.
@@ -91,7 +91,7 @@ impl<'de> Deserialize<'de> for CodeEmploi {
 pub struct FicheDuCatalogue {
     pub libelle: String,
     pub feminin: String,
-    pub pcs_ese: String,
+    pub pcs_ese: CodePcsEse,
     pub statut: Statut,
     pub famille: String,
     pub cadre_par_defaut: bool,
@@ -300,8 +300,8 @@ impl Metier {
     }
 
     /// La PCS-ESE du catalogue (hors catalogue : aucune).
-    pub fn pcs_ese(&self) -> Option<&str> {
-        self.au_catalogue().map(|f| f.pcs_ese.as_str())
+    pub fn pcs_ese(&self) -> Option<&CodePcsEse> {
+        self.au_catalogue().map(|f| &f.pcs_ese)
     }
 
     /// La classification 3090 du catalogue, ou `None`.
@@ -370,7 +370,7 @@ pub fn metier(code: &str) -> R<Option<Metier>> {
 pub struct ChampsDuMetier {
     pub emploi: String,
     pub emploi_affichage: String,
-    pub pcs_ese: Option<String>,
+    pub pcs_ese: Option<CodePcsEse>,
     pub code_emploi_ft: Option<String>,
     pub statut: Statut,
     pub statut_conventionnel: Option<StatutConventionnel>,
@@ -389,7 +389,7 @@ pub fn resoudre(code: &CodeEmploi, cadre: Option<bool>, feminin: bool, idcc: Opt
     Ok(ChampsDuMetier {
         emploi: m.emploi().to_string(),
         emploi_affichage: libelle,
-        pcs_ese: m.pcs_ese().map(str::to_string),
+        pcs_ese: m.pcs_ese().cloned(),
         code_emploi_ft: Some(m.code.to_string()),
         statut: m.statut(),
         statut_conventionnel: if est_cadre { Some(StatutConventionnel::Cadre04) } else { m.statut_non_cadre() },
@@ -492,7 +492,7 @@ pub struct EmploiEngagement {
     pub emploi: Option<String>,
     /// Le libelle lisible que l'engagement a resolu.
     pub emploi_affichage: Option<String>,
-    pub pcs_ese: Option<String>,
+    pub pcs_ese: Option<CodePcsEse>,
     pub code_emploi_ft: Option<String>,
     pub statut: Option<Statut>,
     pub statut_conventionnel: Option<StatutConventionnel>,
@@ -504,16 +504,17 @@ pub struct EmploiEngagement {
 pub fn emploi_de(sal: &FicheSalarie, eng: &EmploiEngagement) -> R<FicheSalarie> {
     let mut out = sal.clone();
     let dit = |v: &Option<String>| v.as_ref().filter(|s| !s.is_empty()).cloned();
-    let pris = [&eng.emploi, &eng.pcs_ese, &eng.code_emploi_ft];
+    let pris = [&eng.emploi, &eng.code_emploi_ft];
+    let pcs_ese = eng.pcs_ese.as_ref().filter(|s| !s.is_empty()).cloned();
     let affichage = dit(&eng.emploi_affichage);
     let statuts_dits = eng.statut.is_some() || eng.statut_conventionnel.is_some() || eng.statut_categoriel_rc.is_some();
-    if pris.iter().all(|v| dit(v).is_none()) && !statuts_dits && affichage.is_none() {
+    if pris.iter().all(|v| dit(v).is_none()) && pcs_ese.is_none() && !statuts_dits && affichage.is_none() {
         return Ok(out);
     }
     if let Some(v) = dit(&eng.emploi) {
         out.emploi = Some(v);
     }
-    if let Some(v) = dit(&eng.pcs_ese) {
+    if let Some(v) = pcs_ese {
         out.pcs_ese = Some(v);
     }
     if let Some(v) = dit(&eng.code_emploi_ft) {
@@ -555,7 +556,7 @@ pub struct MetierDuDeroulant {
     pub famille: String,
     pub statut: &'static str,
     pub annexe: u8,
-    pub pcs_ese: String,
+    pub pcs_ese: CodePcsEse,
     pub cadre_par_defaut: bool,
     pub niveau_3090: Option<String>,
     pub conventions: Vec<String>,

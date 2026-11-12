@@ -226,7 +226,7 @@ pub struct FormeDEngagement {
     pub lieux: BTreeMap<Jour, String>,
     pub emploi: Option<String>,
     pub emploi_affichage: Option<String>,
-    pub pcs_ese: Option<String>,
+    pub pcs_ese: Option<droit::fiche::CodePcsEse>,
     pub code_emploi_ft: Option<String>,
     pub statut: Option<droit::fiche::Statut>,
     pub statut_conventionnel: Option<droit::fiche::StatutConventionnel>,

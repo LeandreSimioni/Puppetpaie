@@ -213,7 +213,7 @@ pub struct CotisationImprimee {
 pub struct EmploiImprime {
     pub emploi: Option<String>,
     pub emploi_affichage: Option<String>,
-    pub pcs_ese: Option<String>,
+    pub pcs_ese: Option<droit::fiche::CodePcsEse>,
     pub code_emploi_ft: Option<String>,
     pub statut: Option<droit::fiche::Statut>,
     pub statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
@@ -702,7 +702,7 @@ impl Importe {
             lieux: BTreeMap::new(),
             emploi: imprime(|i| &i.emploi),
             emploi_affichage: imprime(|i| &i.emploi_affichage),
-            pcs_ese: imprime(|i| &i.pcs_ese),
+            pcs_ese: p.emploi_imprime.as_ref().and_then(|i| i.pcs_ese.clone()),
             code_emploi_ft: imprime(|i| &i.code_emploi_ft),
             statut: p.emploi_imprime.as_ref().and_then(|i| i.statut),
             statut_conventionnel: p.emploi_imprime.as_ref().and_then(|i| i.statut_conventionnel),

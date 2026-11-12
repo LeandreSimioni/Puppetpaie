@@ -186,7 +186,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | salarié | la clé de sa fiche | `IdSalarie` (`droit/src/contexte.rs`) |
 | spectacle | la clé de sa fiche | `IdSpectacle` (`droit/src/contexte.rs`) |
 | compagnie | l'identifiant d'une compagnie | à créer (#419) (`Compagnie.id` en `String`) |
-| matricule, licence, PCS-ESE, code emploi France Travail | | à créer (#419) |
+| PCS-ESE | la profession et catégorie socioprofessionnelle d'un emploi (S21.G00.40.004), « X [4,4] » de la table de l'Insee | `CodePcsEse` (`droit/src/fiche.rs`), que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, le métier du catalogue, ce qu'un bulletin importé imprime ; à unifier (#419) : la lecture d'une DSN (`declarations::dsn_lue::EmploiDeclare`), en `String` |
+| matricule, licence, code emploi France Travail | | à créer (#419) |
 | code NAF, code postal | | `CodeNaf`, `CodePostal` (`droit/src/fiche.rs`) |
 | pays | un code ISO 3166 à deux lettres | `CodePays` (`socle/src/pays.rs`) |
 | commune | son code INSEE (versement mobilité, S21.G00.81.005) | `CodeInsee` (`droit/src/fiche.rs`) |

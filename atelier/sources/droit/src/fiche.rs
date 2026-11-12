@@ -346,6 +346,17 @@ texte_borne! {
 la DSN écrivent (norme DPAE v5.3, zone « Code NAF » ; DSN, S21.G00.06.003). Corrigez-le";
 }
 
+texte_borne! {
+    /// LE CODE PCS-ESE d'un emploi (S21.G00.40.004) : « Table PCSESE - Code profession et catégorie socioprofessionnelle
+    /// PCS-ESE », « X [4,4] » (cahier technique DSN 2026.1, p. 183, `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt`
+    /// l. 200-215). La table est celle de l'Insee (`atelier/reference/sources/insee-pcs-ese-2017-liste.xls`), non livree :
+    /// la forme est celle du cahier, quatre caracteres, et rien de plus (regle 7). La fiche du salarie, la carte,
+    /// l'engagement et le catalogue des metiers le portent.
+    pub struct CodePcsEse : Exactement 4 "caractères" par caracteres,
+        "« {texte} » a {n} caractères : un code PCS-ESE en a {max} (465b), ce que la DSN écrit \
+(S21.G00.40.004). Corrigez-le";
+}
+
 /// LE CODE DU SERVICE DE SANTE AU TRAVAIL, celui de la DPAE : « MT » et trois chiffres, 5 caracteres. La norme DPAE
 /// (C_MT_DCL, positions 938-947 : `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 485-497) : « Il est
 /// attendu ici un code du type MT+ 3 positions numériques. Ex: MT542 [...] Si vous disposez d'un centre de médecine
@@ -2210,7 +2221,7 @@ fiche! {
         NumCongesSpectacles(String) = "num_conges_spectacles" => num_conges_spectacles,
         EmploiAffichage(String) = "emploi_affichage" => emploi_affichage,
         Emploi(String) = "emploi" => emploi,
-        PcsEse(String) = "pcs_ese" => pcs_ese,
+        PcsEse(CodePcsEse) = "pcs_ese" => pcs_ese,
         CodeEmploiFt(String) = "code_emploi_ft" => code_emploi_ft,
         Statut(Statut) = "statut" => statut,
         StatutConventionnel(StatutConventionnel) = "statut_conventionnel" => statut_conventionnel,

@@ -138,7 +138,7 @@ carte! {
         #[champ(Terme, Emploi)]
         pub emploi: Option<String>,
         #[champ(Terme, PcsEse)]
-        pub pcs_ese: Option<String>,
+        pub pcs_ese: Option<droit::fiche::CodePcsEse>,
         #[champ(Terme, CodeEmploiFt)]
         pub code_emploi_ft: Option<String>,
         #[champ(Terme, Statut)]
@@ -276,6 +276,12 @@ macro_rules! choix_simple {
     ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.as_str().to_string())) } } )* };
 }
 choix_simple!(droit::fiche::Statut, droit::fiche::StatutConventionnel, droit::fiche::StatutCategorielRc, crate::numeros::NumeroContrat, droit::emplois::CodeEmploi);
+
+impl Simple for droit::fiche::CodePcsEse {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Texte(self.to_string()))
+    }
+}
 
 macro_rules! code_simple {
     ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.code().to_string())) } } )* };

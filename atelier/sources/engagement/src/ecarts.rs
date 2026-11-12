@@ -332,7 +332,7 @@ fn comparer_une(
         debut: p.debut,
         fin: p.fin,
         emploi: imprime(|i| &i.emploi),
-        pcs_ese: imprime(|i| &i.pcs_ese),
+        pcs_ese: imprimes.and_then(|i| i.pcs_ese.clone()).filter(|x| !x.is_empty()),
         code_emploi_ft: imprime(|i| &i.code_emploi_ft),
         statut: p.emploi_imprime.as_ref().and_then(|i| i.statut),
         statut_conventionnel: p.emploi_imprime.as_ref().and_then(|i| i.statut_conventionnel),
