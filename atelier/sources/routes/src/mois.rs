@@ -751,7 +751,6 @@ fn titre_de(spec: Option<&droit::fiche::ChampsSpectacle>, numero: Option<&str>) 
     }
 }
 
-
 /// Le nombre de cachets d'un engagement : la somme des quantites de ses lignes dont la rubrique est un cachet (une case
 /// vide n'en compte aucun).
 fn cachets_de(ctx: &Contexte, e: &SaisieCarte) -> R<i64> {

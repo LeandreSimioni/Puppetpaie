@@ -741,7 +741,7 @@ d'office (article L911-7 du code de la sécurité sociale), et son niveau se lit
     // Au moins la moitie a la charge de l'employeur (L911-7) : le releve du bareme dit la part.
     let part_pat = div(releve.part_employeur.0, Decimal::ONE_HUNDRED);
     let bar = poser_mutuelle(bar, None, total, part_pat, None);
-    Ok(composant_79(bar, &MUTUELLE,releve.composant_79.as_ref().map(|c| c.genre.as_str())))
+    Ok(composant_79(bar, &MUTUELLE, releve.composant_79.as_ref().map(|c| c.genre.as_str())))
 }
 
 /// Le type de composant de base assujettie (S21.G00.79.001) que la base 31 de la ligne `id` declare, quand la source de

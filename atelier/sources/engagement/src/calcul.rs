@@ -1185,7 +1185,7 @@ fn sante_de_la_suspension(ctx: &Contexte, eng: &Engagement, au_mois: &AuMois, mu
     }
     let cle = fiche.id.to_string();
     let (debut, fin) = (eng.debut_periode(), eng.fin_periode());
-    let suspensions = crate::imprevus::suspendu_sans_remuneration(&ctx.racine, &fiche.id,eng.numero.as_deref(), &eng.debut, &debut, &fin)?;
+    let suspensions = crate::imprevus::suspendu_sans_remuneration(&ctx.racine, &fiche.id, eng.numero.as_deref(), &eng.debut, &debut, &fin)?;
     let Some(premiere) = suspensions.first() else { return Ok(fiche) };
     let motifs: Vec<String> = suspensions.iter().map(|s| s.motif().to_string()).collect();
     let ent = ctx.entreprise_au(&fin);
