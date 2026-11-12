@@ -197,7 +197,9 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 **Les codes de la norme** : une liste fermée par rubrique (`droit::natures::ListeDeLaNorme`) : `NatureDeContrat`,
 `MotifDeRecours`, `MotifDeRupture`, `ModaliteDuTempsDeTravail`, `BaseAssujettie`, `CotisationDEtablissement`,
 `NatureDeLaDeclaration`, `TypeDeLaDeclaration`, `CodeCotisation81`… ; les choix d'une fiche (`StatutConventionnel`, `Civilite`, `Sexe`…)
-aussi. À créer (#419), une liste par rubrique : le CTP Urssaf, le code d'option
+aussi. Le CTP Urssaf (S21.G00.23.001) se lit dans la table datée de l'Urssaf, pas dans la norme : `CodeCtp`
+(`droit/src/organismes.rs`), que portent une ligne de la table des CTP, une ligne du bordereau, les CTP de la réduction
+générale et du régime local. À créer (#419), une liste par rubrique : le code d'option
 de prévoyance, les codes du bloc 60, du préavis, de l'indemnité.
 
 **Le métier**

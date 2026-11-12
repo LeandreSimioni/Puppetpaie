@@ -498,8 +498,8 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
             lignes.push(l);
             for b in bordereau.lignes {
                 let mut l = Ligne::nouvelle();
-                let code = b.code.clone();
-                l.m("mois", m).t("ctp", code.clone()).ot("libelle", ctp.iter().find(|(c, _)| *c == code).map(|(_, v)| v.clone()));
+                let code = b.code.as_str();
+                l.m("mois", m).t("ctp", code).ot("libelle", ctp.iter().find(|(c, _)| c == code).map(|(_, v)| v.clone()));
                 l.t("qualifiant", match b.qualifiant.as_str() {
                     "920" => "920 — assiette plafonnée".to_string(),
                     "921" => "921 — assiette déplafonnée".to_string(),

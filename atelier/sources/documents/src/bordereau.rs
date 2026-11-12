@@ -34,6 +34,7 @@
 //! Preuves : `tests/calcul/bordereau.rs`, dont le rejeu des 75 bordereaux
 //! (`tests/donnees/bordereaux-reels.json`).
 
+use droit::organismes::CodeCtp;
 use socle::date::Jour;
 use socle::fichiers::{dossier_du_code, signature};
 use socle::echec::{refus, R};
@@ -51,7 +52,7 @@ const NOM_TABLE: &str = "urssaf-codes-types-personnel.csv";
 /// (formats A, C, D, E, K, Z) ou `montant` (format F), jamais les deux.
 #[derive(Clone, Debug)]
 pub struct LigneBordereau {
-    pub code: String,
+    pub code: CodeCtp,
     pub qualifiant: String,
     /// Le taux que la ligne porte (S21.G00.23.003), a deux decimales ; vide si elle n'en porte pas.
     pub taux_at: Option<TauxDeLaLigne>,
@@ -86,7 +87,7 @@ struct Ligne {
     libelle: String,
 }
 
-type Table = HashMap<String, Vec<Ligne>>;
+type Table = HashMap<CodeCtp, Vec<Ligne>>;
 
 /// Une date de la table : AAAA-JJ-MM, sauf quand le jour depasse 12 (alors
 /// AAAA-MM-JJ) ; vide, rien.
@@ -193,10 +194,11 @@ fn lire(chemin: &Path) -> R<Table> {
     for r in recs {
         // Chaque enregistrement a les colonnes de l'en-tete ; une case vide est un texte vide.
         let v = |c: usize| r.get(c).map(String::as_str).ok_or_else(|| fautive(&entete[c]));
-        let code = v(c_code)?.trim().trim_matches('\'').to_string();
+        let code = v(c_code)?.trim().trim_matches('\'');
         if code.is_empty() {
             continue;
         }
+        let code = CodeCtp::lire(code)?;
         let Some(effet) = date_table(v(c_effet)?)? else { continue };
         let ligne = Ligne {
             effet,
@@ -235,7 +237,7 @@ fn table() -> R<Arc<Table>> {
 /// La ligne de la table en vigueur ce jour-la pour ce CTP : la date d'effet la
 /// plus recente l'emporte, a egalite la ligne encore ouverte ; fermee a ce jour,
 /// aucune.
-fn ligne_de_table<'a>(t: &'a Table, code: &str, jour: &Jour) -> Option<&'a Ligne> {
+fn ligne_de_table<'a>(t: &'a Table, code: &CodeCtp, jour: &Jour) -> Option<&'a Ligne> {
     let mut meilleure: Option<&Ligne> = None;
     for l in t.get(code)?.iter().filter(|l| l.effet <= *jour) {
         if meilleure.is_none_or(|m| (l.effet, l.fin.is_none()) > (m.effet, m.fin.is_none())) {

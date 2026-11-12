@@ -55,6 +55,7 @@ use std::collections::BTreeMap;
 
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
+use droit::organismes::CodeCtp;
 use droit::apprentissage::{champ_du_motif, motif_de_la_fiche, taxe_apprentissage_non_due, MILLESIME_ASSOCIATIONS_REDEVABLES, MNATA_ASSOCIATIONS};
 
 use documents::taxe_sur_les_salaires::{assiette_taxe_sur_les_salaires, fractions_majorees, taxe_sur_les_salaires_de_la_fiche};
@@ -75,9 +76,9 @@ pub struct Bloc44 {
 /// La taxe d'apprentissage au bordereau (table des CTP de l'Urssaf) : la part principale hors Alsace-Moselle (992,
 /// 0,59 %) et celle des etablissements du Bas-Rhin, du Haut-Rhin et de la Moselle (993, 0,44 % ; code du travail
 /// L. 6241-1-1, II).
-const CTP_TAXE_APPRENTISSAGE: [&str; 2] = ["992", "993"];
+pub(crate) const CTP_TAXE_APPRENTISSAGE: [CodeCtp; 2] = [CodeCtp::du_moteur("992"), CodeCtp::du_moteur("993")];
 /// La formation professionnelle au bordereau : intermittents (983), moins de onze salaries (959), onze et plus (971).
-const CTP_FORMATION: [&str; 3] = ["983", "959", "971"];
+const CTP_FORMATION: [CodeCtp; 3] = [CodeCtp::du_moteur("983"), CodeCtp::du_moteur("959"), CodeCtp::du_moteur("971")];
 
 // ------------------------------------------------------------ les mois de l'annee
 
@@ -214,15 +215,15 @@ pub fn ctp_sans_la_taxe_non_due(ctps: Vec<droit::organismes::Ctp>, non_due: bool
     if !non_due {
         return ctps;
     }
-    ctps.into_iter().filter(|c| !CTP_TAXE_APPRENTISSAGE.contains(&c.code.trim())).collect()
+    ctps.into_iter().filter(|c| !CTP_TAXE_APPRENTISSAGE.contains(&c.code)).collect()
 }
 
 /// Le bloc de la taxe d'apprentissage : 001 si le bordereau la paie (CTP 992 ou 993), 002 et son motif MNATA (44.004)
 /// sinon, le motif lu dans la fiche entreprise. `ctp` : les codes du bordereau, deja sans la taxe quand le motif vaut
 /// (`ctp_sans_la_taxe_non_due`). Un motif hors de la table, le motif 007 a partir du millesime 2026, une fiche qui dit
 /// un motif quand le bordereau paie la taxe (garde-fou : `blocs` lui donne un bordereau qui ne la paie plus) : refus.
-fn taxe_d_apprentissage(ent: &droit::fiche::ChampsEntreprise, ctp: &[String], an: i32) -> R<Bloc44> {
-    let paye = ctp.iter().any(|c| CTP_TAXE_APPRENTISSAGE.contains(&c.as_str()));
+fn taxe_d_apprentissage(ent: &droit::fiche::ChampsEntreprise, ctp: &[CodeCtp], an: i32) -> R<Bloc44> {
+    let paye = ctp.iter().any(|c| CTP_TAXE_APPRENTISSAGE.contains(c));
     let champ = champ_du_motif();
     let motif = motif_de_la_fiche(ent).map_err(|e| e.reformuler(|e| format!("DSN de decembre {} : {}", an, e)))?;
     let Some((code, libelle)) = motif else {
@@ -271,11 +272,8 @@ pub fn blocs(
     }
     let an = mois.annee();
     // Le bordereau que la DSN ecrit : sans la taxe d'apprentissage quand la fiche dit un motif qui vaut (R12).
-    let ctp: Vec<String> =
-        ctp_sans_la_taxe_non_due(orgs.ctp_urssaf().to_vec(), taxe_apprentissage_non_due(ent, an)?)
-            .iter()
-            .map(|c| c.code.trim().to_string())
-            .collect();
+    let ctp: Vec<CodeCtp> =
+        ctp_sans_la_taxe_non_due(orgs.ctp_urssaf().to_vec(), taxe_apprentissage_non_due(ent, an)?).into_iter().map(|c| c.code).collect();
     let mut out = Vec::new();
 
     // La taxe d'apprentissage : ce que le bordereau paie ; sinon 002 et le motif que la fiche dit.
@@ -312,7 +310,7 @@ pas son assiette. Rien n'est ecrit.",
     });
 
     // La formation professionnelle : ce que le bordereau paie.
-    out.push(Bloc44 { code: if ctp.iter().any(|c| CTP_FORMATION.contains(&c.as_str())) { "007" } else { "008" }, montant: None, motif: None });
+    out.push(Bloc44 { code: if ctp.iter().any(|c| CTP_FORMATION.contains(c)) { "007" } else { "008" }, montant: None, motif: None });
 
     // La taxe sur les salaires : ce que la fiche dit, les assiettes de l'annee.
     let mut majorees = Vec::new();

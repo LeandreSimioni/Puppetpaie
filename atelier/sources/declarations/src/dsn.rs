@@ -32,7 +32,7 @@ use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::{num::{add, div, mul, pct, sub, zero2, Decimal}, refus};
-use droit::organismes::{Ctp, Organismes, Versement};
+use droit::organismes::{CodeCtp, Ctp, Organismes, Versement};
 use droit::pas::{self, Triplet, ZONE_DEFAUT};
 
 pub const LOGICIEL: &str = "PUPPETPAIE";
@@ -3191,7 +3191,7 @@ fn taux_23(t: TauxDeLaLigne) -> String {
     }
 }
 
-fn ligne(code: String, qualifiant: String, taux_at: Option<TauxDeLaLigne>, assiette: Option<Decimal>, montant: Option<Decimal>, commune: Option<String>) -> LigneBordereau {
+fn ligne(code: CodeCtp, qualifiant: String, taux_at: Option<TauxDeLaLigne>, assiette: Option<Decimal>, montant: Option<Decimal>, commune: Option<String>) -> LigneBordereau {
     LigneBordereau { code, qualifiant, taux_at, assiette, montant, commune }
 }
 
@@ -3431,7 +3431,7 @@ fn valeur_ctp(somme: &HashMap<CleCtp, Decimal>, ctp: &Ctp) -> R<(Decimal, bool)>
                 "La table des CTP livrée avec le logiciel : le CTP {} sous le qualifiant {} (assiette plafonnée, cahier \
 technique 2026.1, p. 168) lit une assiette qui n'a pas de forme plafonnée. Aucune saisie de la compagnie ne le corrige : le \
 signaler au développeur. Rien n'est écrit.",
-                ctp.code.trim(),
+                ctp.code,
                 QUALIFIANT_PLAFONNEE
             ),
             Lieu { fichier: Some("organismes-base.json".into()), cle: Some(a.nom().to_string()), ..Default::default() },
@@ -3530,11 +3530,11 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
                 autres = add(autres, a);
             }
         }
-        for (code, assiette) in [("900", autres), ("921", artistes)] {
+        for (code, assiette) in [(CodeCtp::du_moteur("900"), autres), (CodeCtp::du_moteur("921"), artistes)] {
             if assiette.is_zero() {
                 continue;
             }
-            lignes.push(ligne(code.into(), "920".into(), Some(TauxDeLaLigne::Mobilite(a_deux_chiffres(vm.taux))), Some(rond(assiette)), None, Some(vm.code_insee.to_string())));
+            lignes.push(ligne(code, "920".into(), Some(TauxDeLaLigne::Mobilite(a_deux_chiffres(vm.taux))), Some(rond(assiette)), None, Some(vm.code_insee.to_string())));
         }
     }
     let mut local = zero2();
@@ -3549,12 +3549,11 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             .regime_local_alsace_moselle
             .as_ref()
             .map(|r| r.ctp.clone())
-            .filter(|c| !c.is_empty())
             .ok_or_else(|| socle::echec::livree("baremes", "regime_local_alsace_moselle.ctp"))?;
         lignes.push(ligne(code, "920".into(), None, Some(rond(local)), None, None));
     }
     if let Some(s) = solde_ta {
-        lignes.push(ligne("995".into(), "920".into(), None, Some(s.assiette), None, None));
+        lignes.push(ligne(CodeCtp::du_moteur("995"), "920".into(), None, Some(s.assiette), None, None));
     }
     if let Some(d) = doeth {
         for (ctp, montant) in d.bordereau() {
@@ -3564,7 +3563,7 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
     // La contribution supplementaire a l'apprentissage de mars : le CTP 998, son montant en 23.004 (taux de 100 %),
     // comme le CTP 730 de l'OETH (guide Urssaf du 12/03/2026, l. 2453-2458 ; `csa`).
     if let Some((ctp, montant)) = csa.and_then(crate::csa::Csa::bordereau) {
-        lignes.push(ligne(ctp.into(), "920".into(), None, Some(montant), None, None));
+        lignes.push(ligne(ctp, "920".into(), None, Some(montant), None, None));
     }
     Ok(lignes)
 }
@@ -3597,8 +3596,8 @@ fn lignes_regularisees(
                     "Correction de {} (contrat {}) : la ligne {} ({}) du bordereau Urssaf de ce mois, assiette « {} », ne se recompose pas depuis ce que {} a declare pour le contrat : {}. Le bordereau d'une regularisation porte la difference « corrige moins declare », comme le nominatif ; elle ne se devine pas. Rien n'est ecrit.",
                     r.mois,
                     numero,
-                    ctp.code.clone(),
-                    ctp.qualifiant.clone(),
+                    ctp.code,
+                    ctp.qualifiant,
                     cle,
                     r.declare.fichier,
                     e
@@ -3651,13 +3650,13 @@ fn lignes_regularisees(
 /// Le CTP qui regularise le CTP de reduction `code` (668 -> 669, 671 -> 801) : `reduction_generale.dsn.ctp_regularisation`
 /// de la pile de bareme d'un des contrats corriges, celle dont `reduction_generale.dsn.ctp` est ce code (le bareme livre :
 /// `par_nature.permanent` et `par_statut.technicien`). Aucun : `None`.
-fn ctp_de_regularisation(code: &str, siens: &[&Regularisation], bar: &BaremeDuMois) -> R<Option<String>> {
+fn ctp_de_regularisation(code: &CodeCtp, siens: &[&Regularisation], bar: &BaremeDuMois) -> R<Option<CodeCtp>> {
     for r in siens {
         for p in [&r.apres, &r.avant] {
             let pile = bareme_de(p, bar)?;
             let Some(dsn) = reduction_dsn(&pile) else { continue };
-            if dsn.ctp.as_deref() == Some(code) {
-                if let Some(x) = dsn.ctp_regularisation.clone().filter(|x| !x.is_empty()) {
+            if dsn.ctp.as_ref() == Some(code) {
+                if let Some(x) = dsn.ctp_regularisation.clone() {
                     return Ok(Some(x));
                 }
             }
@@ -4003,7 +4002,7 @@ pub fn paies_declarees_du_mois(ctx: &Contexte, mois: Mois, nic: Option<&str>, de
 /// LES ASSIETTES DES CTP `codes` que le bordereau Urssaf de `mois` porte pour l'etablissement `nic` sur les paies
 /// `paies`, une par code, tirees par la fonction qui ecrit le bordereau de la DSN (`lignes_bordereau`) : la taxe
 /// d'apprentissage (992, 993) que lisent le solde d'avril et la contribution supplementaire de mars (`csa`).
-pub fn assiettes_des_ctp(ctx: &Contexte, paies: &[Paie], mois: Mois, nic: &str, codes: &[&str]) -> R<Vec<Decimal>> {
+pub fn assiettes_des_ctp(ctx: &Contexte, paies: &[Paie], mois: Mois, nic: &str, codes: &[CodeCtp]) -> R<Vec<Decimal>> {
     if paies.is_empty() {
         return Ok(vec![zero2(); codes.len()]);
     }
@@ -4017,7 +4016,7 @@ pub fn assiettes_des_ctp(ctx: &Contexte, paies: &[Paie], mois: Mois, nic: &str, 
 }
 
 /// Les assiettes des CTP `codes` que les DSN de l'annee `annee` declarent pour l'etablissement `nic`, une par code.
-pub fn assiettes_de_l_annee(ctx: &Contexte, annee: i32, nic: &str, codes: &[&str], departs: &engagement::departs::Departs) -> R<Vec<Decimal>> {
+pub fn assiettes_de_l_annee(ctx: &Contexte, annee: i32, nic: &str, codes: &[CodeCtp], departs: &engagement::departs::Departs) -> R<Vec<Decimal>> {
     let mut total = vec![zero2(); codes.len()];
     for m in 1..=12 {
         let mois = Mois::nouveau(annee, m)?;
@@ -4029,12 +4028,16 @@ pub fn assiettes_de_l_annee(ctx: &Contexte, annee: i32, nic: &str, codes: &[&str
     Ok(total)
 }
 
+/// La part principale de la taxe d'apprentissage hors Alsace-Moselle au bordereau (CTP 992 de la table de l'Urssaf),
+/// l'assiette de son solde.
+const CTP_TAXE_PRINCIPALE: CodeCtp = CodeCtp::du_moteur("992");
+
 fn solde_taxe_apprentissage(ctx: &Contexte, mois: Mois, orgs: &Organismes, bar: &Pile, nic: &str, departs: &engagement::departs::Departs) -> R<Option<SoldeTa>> {
     if mois.numero() != 4 {
         return Ok(None);
     }
     let Some(taux) = bar.solde_taxe_apprentissage.as_ref().map(|s| s.taux) else { return Ok(None) };
-    if !orgs.ctp_urssaf().iter().any(|c| c.code.trim() == "992") {
+    if !orgs.ctp_urssaf().iter().any(|c| c.code == CTP_TAXE_PRINCIPALE) {
         return Ok(None);
     }
     let annee = mois.annee() - 1;
@@ -4042,7 +4045,7 @@ fn solde_taxe_apprentissage(ctx: &Contexte, mois: Mois, orgs: &Organismes, bar: 
     if droit::apprentissage::taxe_apprentissage_non_due(&ctx.entreprise, annee)? {
         return Ok(None);
     }
-    let assiette = assiettes_de_l_annee(ctx, annee, nic, &["992"], departs)?[0];
+    let assiette = assiettes_de_l_annee(ctx, annee, nic, &[CTP_TAXE_PRINCIPALE], departs)?[0];
     if assiette.is_zero() {
         return Ok(None);
     }

@@ -93,11 +93,64 @@ pub enum TauxAt {
     Bareme,
 }
 
+/// LE CODE TYPE DE PERSONNEL D'UNE LIGNE DU BORDEREAU URSSAF (S21.G00.23.001) : « X [3,3] Table des Codes Type de
+/// Personnel » (cahier technique DSN 2026.1 p. 168, `atelier/reference/norme-dsn/texte/bloc-S21.G00.23.txt` l. 23-27).
+/// La table est celle de l'Urssaf (`donnees/urssaf-codes-types-personnel.csv`), datee : qu'un code y soit au jour du
+/// bordereau, `documents::bordereau` le juge. INFERENCE sur la forme : chaque code de cette table s'ecrit de trois
+/// chiffres ; un code d'une autre forme se refuse a la lecture.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct CodeCtp(std::borrow::Cow<'static, str>);
+
+impl CodeCtp {
+    /// Le code ecrit `texte`.
+    pub fn lire(texte: &str) -> R<CodeCtp> {
+        if !CodeCtp::a_sa_forme(texte) {
+            return Err(socle::refus!("CTP {} : un code type de personnel s'écrit de trois chiffres.", socle::fichiers::repr(texte)));
+        }
+        Ok(CodeCtp(std::borrow::Cow::Owned(texte.to_string())))
+    }
+
+    const fn a_sa_forme(texte: &str) -> bool {
+        let o = texte.as_bytes();
+        o.len() == 3 && o[0].is_ascii_digit() && o[1].is_ascii_digit() && o[2].is_ascii_digit()
+    }
+
+    /// LE CODE QUE LE MOTEUR NOMME, ecrit en Rust : une constante, dont le compilateur refuse une forme fausse.
+    pub const fn du_moteur(code: &'static str) -> CodeCtp {
+        assert!(CodeCtp::a_sa_forme(code), "code type de personnel mal forme");
+        CodeCtp(std::borrow::Cow::Borrowed(code))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CodeCtp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for CodeCtp {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<CodeCtp> {
+        CodeCtp::lire(&s)
+    }
+}
+
+impl From<CodeCtp> for String {
+    fn from(c: CodeCtp) -> String {
+        c.0.into_owned()
+    }
+}
+
 forme_notee! {
     /// UNE LIGNE DU BORDEREAU URSSAF : le CTP (23.001), son qualifiant d'assiette (23.002), ce qu'il lit (une assiette,
     /// ou un montant), son taux AT/MP, la population qui l'ecrit (`statut`, `nature`) et les seuils d'effectif.
     pub struct Ctp {
-        pub code: String,
+        pub code: CodeCtp,
         pub qualifiant: String,
         pub assiette: Option<crate::bordereau::AssietteDuBordereau>,
         pub montant: Option<crate::bordereau::MontantDuBordereau>,

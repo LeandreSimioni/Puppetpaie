@@ -766,8 +766,8 @@ forme! {
         pub code81_urssaf: Option<CodeCotisation81>,
         pub code81_chomage: Option<CodeCotisation81>,
         pub code81_retraite: Option<CodeCotisation81>,
-        pub ctp: Option<String>,
-        pub ctp_regularisation: Option<String>,
+        pub ctp: Option<crate::organismes::CodeCtp>,
+        pub ctp_regularisation: Option<crate::organismes::CodeCtp>,
         pub qualifiant: Option<String>,
         pub cle_total_chomage: Option<String>,
         pub cle_total_urssaf: Option<String>,
@@ -1104,7 +1104,7 @@ forme! {
         #[serde(deserialize_with = "socle::forme::court")]
         pub taux_sal: Decimal,
         pub code81: CodeCotisation81,
-        pub ctp: String,
+        pub ctp: crate::organismes::CodeCtp,
     }
 }
 

@@ -51,7 +51,7 @@ use socle::num::{add, div, mul, Decimal};
 const MOIS_DE_DECLARATION: u32 = 3;
 pub const CODE_CONTRIBUTION: CotisationDEtablissement = CotisationDEtablissement::Csa;
 pub const CODE_EXONERATION: CotisationDEtablissement = CotisationDEtablissement::ExonerationCsa;
-pub const CTP: &str = "998";
+pub const CTP: droit::organismes::CodeCtp = droit::organismes::CodeCtp::du_moteur("998");
 const SEUIL: i64 = 250;
 const SEUIL_DEUX_MILLE: i64 = 2000;
 const CODE_ALTERNANTS: &str = "A05";
@@ -81,7 +81,7 @@ impl Csa {
     }
 
     /// Ce qu'elle ajoute au bordereau Urssaf : le CTP 998 « en montant » (taux de 100 %), rien pour l'exoneration.
-    pub fn bordereau(&self) -> Option<(&'static str, Decimal)> {
+    pub fn bordereau(&self) -> Option<(droit::organismes::CodeCtp, Decimal)> {
         (self.code == CODE_CONTRIBUTION && !self.montant.is_zero()).then_some((CTP, self.montant))
     }
 
@@ -284,7 +284,7 @@ de {}. Rien n'est ecrit.",
     // montant « pour l'ensemble de ses établissements »).
     let (mut assiette, mut alsace) = (Decimal::ZERO, Decimal::ZERO);
     for nic in ctx.entreprise.nics()? {
-        let a = crate::dsn::assiettes_de_l_annee(ctx, n, &nic, &["992", "993"], departs)?;
+        let a = crate::dsn::assiettes_de_l_annee(ctx, n, &nic, &crate::assujettissement::CTP_TAXE_APPRENTISSAGE, departs)?;
         assiette = add(assiette, a[0]);
         alsace = add(alsace, a[1]);
     }
