@@ -55,7 +55,7 @@ que par la structure :
 
 - **Le verrou des dépendances** : `serde_json` n'est au `Cargo.toml` que du `socle`, la porte (`moteur` et `atelier`
   l'ont pour leurs essais ; `fabrique-pdf`, hors de l'espace, l'a aussi : à ranger, #419) ; une autre crate qui
-  voudrait lire du JSON brut ne compile pas.
+  voudrait lire du JSON brut ne compile pas (`une_crate_ne_prend_qu_a_celles_du_dessous` le lit dans les `Cargo.toml`).
 - **L'ordre des crates** : chaque crate ne prend qu'à celles du dessous (« Les parties ») ; le calcul n'est que dans
   `engagement`.
 - **Les pièces d'une fiche** : une case qu'un seul genre de calcul lit est rangée, dans le type, dans sa pièce
@@ -86,37 +86,36 @@ que par la structure :
   engagements n'ouvre.
 - **Les niveaux du compilateur** (`[workspace.lints.rust]` de `atelier/sources/Cargo.toml`, repris par chaque crate ;
   les mêmes dans `fabrique-pdf/` et `fenetre/`) : aucun avertissement, et le code mort, les imports et variables
-  inutiles, le déprécié interdits (`forbid`). Aucun attribut ne les lève (`aucun_attribut_ne_leve_un_lint`) : une clé
-  connue qu'on ne lit pas est une `socle::forme::NonLue`, qui n'en garde rien ; un code mort se supprime ; un code
-  propre à une cible se range sous son `cfg`.
-- **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions, ce que tient
-  `un_verrou_n_a_ni_liste_ni_filtre` (aucun verrou ne nomme un source pour l'écarter ; un endroit unique se compte, ou
-  se nomme par son type) :
-  `une_couche_fermee_ne_lit_que_des_formes` (le JSON au bord seulement, ni clé libre, ni repli, ni erreur avalée),
-  `un_defaut_n_invente_aucune_valeur` (`Default` sur un type dont chaque champ a un vide qui ne dit rien : une
-  `Option`, une liste, un autre de ces types ; aucune `enum` ; un autre type se construit en disant chaque champ),
-  `chaque_forme_lue_refuse_une_cle_inconnue` (`deny_unknown_fields`, ou la forme se déclare elle-même réponse d'un
-  tiers : « Le corps et ses portes »),
-  `une_crate_ne_prend_qu_a_celles_du_dessous`, `l_atelier_reste_hors_du_logiciel`, `l_engagement_ne_lit_pas_le_journal`,
-  `un_seul_endroit_ecrit_un_fichier_d_engagements`, `une_seule_fonction_lit_une_paie_et_une_seule_l_ecrit`,
-  `la_page_n_ecrit_aucune_phrase`, `la_page_et_la_ligne_de_commande_ont_le_meme_catalogue`,
-  `un_refus_n_est_jamais_un_texte` (un refus est un `socle::echec::Echec`, ce qu'il porte a part dans son `a_part`,
-  jamais un `Result<_, String>`), `une_nature_de_contrat_est_une_enum` (le type garde : une règle d'une nature la
-  prend en `NatureDeContrat` ; la clé d'une nature écrite une seule fois, dans `droit::natures::NatureDeContrat::cle`),
-  `une_liste_de_la_norme_est_celle_des_versions_livrees` (chaque `ListeDeLaNorme` est l'union des listes de valeurs que
-  `formats-dsn-*-base.json` relèvent pour sa rubrique, chaque code dans les seules versions que ses bornes disent),
-  `aucun_flottant_dans_le_code` (aucun `.rs` du dépôt n'écrit `f32`, `f64` ni un nombre à virgule : un montant est un
-  `Decimal`, une mesure d'un PDF une `fabrique_pdf::mesure::Mesure`, le reste des entiers),
-  `un_texte_ne_devient_un_jour_qu_a_sa_porte` (aucune fonction publique de `socle` ne rend un jour, un mois ou un
-  instant d'un texte, aucun ne s'en construit par un trait ; hors de `socle`, aucune lecture ne vise un type du temps
-  nu ni ne lit un texte JSON qui n'est qu'une chaine : un essai ecrit son jour par `Jour::nouveau`). Les tests de structure sont
-  les bienvenus ; un test qui fige un détail ne s'écrit pas. Cette liste se réduira au verrou simple (#419).
-- **Le verrou simple, la cible** : un verrou qui lit le texte du code se contourne en réécrivant le repli sans changer ce
-  qu'il fait ; le garde-fou est le type et le compilateur. Restent donc : le compilateur sans appel (les niveaux
-  ci-dessus) ; la visibilité (les lectures privées au `socle`) ; trois tests courts, sans liste (aucun flottant ; toute
-  forme lue refuse une clé inconnue ; aucune « valeur par défaut si absent » : `unwrap_or`, `unwrap_or_default`,
-  `unwrap_or_else`, `map_or`…) ; `une_crate_ne_prend_qu_a_celles_du_dessous`, lu dans les `Cargo.toml` ; et « seul le
-  `socle` dépend de `serde_json` », tenu par les `Cargo.toml`. Le reste des verrous par expression régulière part.
+  inutiles, le déprécié interdits (`forbid`). Aucun attribut ne lève un niveau `forbid` : le compilateur le refuse ;
+  une clé connue qu'on ne lit pas est une `socle::forme::NonLue`, qui n'en garde rien ; un code mort se supprime ; un
+  code propre à une cible se range sous son `cfg`.
+- **Le verrou simple** : un verrou qui lit le texte du code se contourne en réécrivant le repli sans changer ce qu'il
+  fait ; le garde-fou est le type et le compilateur. Restent donc : le compilateur sans appel (les niveaux ci-dessus) ;
+  la visibilité (les lectures privées au `socle`) ; les `Cargo.toml` ; trois tests courts, sans liste, qui lisent les
+  sources des crates ; et la relecture du diff de chaque lot à l'arrivée, qui tient tout le reste.
+- **Les tests de structure** (`moteur/tests/fichiers/structure.rs`), sans liste d'exceptions ; les tests de structure
+  sont les bienvenus, un test qui fige un détail ne s'écrit pas :
+  - `aucun_flottant_dans_le_code` : aucune source d'une crate n'écrit `f32` ni `f64` ;
+  - `chaque_forme_lue_refuse_une_cle_inconnue` : chaque `derive(Deserialize)` porte `deny_unknown_fields`, sauf une
+    réponse d'un tiers, qui se déclare telle par son type (« Le corps et ses portes ») ;
+  - `aucune_valeur_par_defaut_si_absent` : ni `unwrap_or`, `unwrap_or_default`, `unwrap_or_else`, `map_or`,
+    `map_or_else` dans les sources des crates ;
+  - `une_crate_ne_prend_qu_a_celles_du_dessous` : l'ordre des crates, et seul le `socle` prend `serde_json`, lus dans
+    les `Cargo.toml` ;
+  - `l_atelier_reste_hors_du_logiciel` : aucun manifeste du logiciel ne prend l'atelier ;
+  - `chaque_route_dit_brievement_ce_qu_elle_fait` : chaque route du catalogue a sa fiche, une seule ;
+  - `l_exemple_de_chaque_fiche_est_accepte` : l'exemple de chaque fiche, joué par `moteur route`, est accepté et rend sa
+    phrase ;
+  - `ce_que_l_ecran_affiche_est_fait_pour_l_ecran` : les boutons, libellés, aides et choix du catalogue et de
+    `champs-base.json` sont brefs et en mots ;
+  - `champs_base_et_les_fiches_ont_les_memes_cases` : `champs-base.json` et la forme des fiches disent les mêmes choix
+    et longueurs ;
+  - `la_carte_valide_a_une_variante_par_nature` : une variante par nature de `contrats-base.json` ;
+  - `une_liste_de_la_norme_est_celle_des_versions_livrees` : chaque `ListeDeLaNorme` est l'union des listes relevées
+    des versions livrées ;
+  - `aucun_fichier_livre_ne_porte_une_cle_en_souligne` : aucune clé en `_` dans les données livrées ;
+  - `chaque_script_de_la_page_se_charge` : chaque script de la page passe `node --check`, sans nom déclaré deux fois ;
+  - `la_page_ne_coupe_aucun_texte` : le CSS de la page ne cache aucun texte.
 - **Un texte ne devient un jour, un mois ou un instant qu'à sa porte**, et c'est la visibilité qui le garde : les
   lectures d'un texte (`Mois::lire`, `Jour::du_texte`, les `lire` de `socle::paris`) sont privées à `socle`. Hors de
   `socle`, il entre par la forme qui le porte (`Deserialize` d'une charge, d'un fichier, d'une pièce), ou par une porte
