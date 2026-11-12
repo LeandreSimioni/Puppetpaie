@@ -323,7 +323,7 @@ pub fn preparer_avec(
     m: socle::mois::Mois,
     dossier: &Path,
     renvois: &std::collections::HashMap<droit::contexte::IdSalarie, Renvoi>,
-    a_part: &std::collections::HashMap<String, Vec<&'static str>>,
+    a_part: &std::collections::HashMap<droit::contexte::IdSalarie, Vec<&'static str>>,
 ) -> R<Vec<Message<droit::contexte::IdSalarie>>> {
     let (an, etiq, nom_mois) = (m.annee(), m.etiquette(), m.nom(socle::mois::Graphie::Accentuee));
     let mut vus: Vec<droit::contexte::IdSalarie> = Vec::new();
@@ -367,7 +367,7 @@ pub fn preparer_avec(
             }
             v
         };
-        let a_part_du = |piece: &str| a_part.get(cle.as_str()).is_some_and(|a| a.contains(&piece));
+        let a_part_du = |piece: &str| a_part.get(&cle).is_some_and(|a| a.contains(&piece));
         if a_part_du("aer") && !presents.iter().any(|p| p.champ == "aer") {
             notes.push(NOTE_SANS_AER);
         }

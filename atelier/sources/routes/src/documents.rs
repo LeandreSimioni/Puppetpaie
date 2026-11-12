@@ -471,10 +471,10 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
 /// Ce qui est du a chaque salarie du mois et ne se fabrique pas ici : l'AER Cinema Spectacle (`aer::due`), que France
 /// Travail publie apres la DSN (retour 46), et l'attestation employeur de droit commun (`aer::attestation_fctu`), qu'elle
 /// edite apres le signalement de fin de contrat. Par salarie : ce que son courriel dit absent.
-fn dues_a_part(paies: &[engagement::calcul::Paie]) -> R<HashMap<String, Vec<&'static str>>> {
-    let mut out: HashMap<String, Vec<&'static str>> = HashMap::new();
+fn dues_a_part(paies: &[engagement::calcul::Paie]) -> R<HashMap<IdSalarie, Vec<&'static str>>> {
+    let mut out: HashMap<IdSalarie, Vec<&'static str>> = HashMap::new();
     for p in paies {
-        let siennes = out.entry(p.salarie.id.to_string()).or_default();
+        let siennes = out.entry(p.salarie.id.clone()).or_default();
         if documents::aer::due(p)? && !siennes.contains(&"aer") {
             siennes.push("aer");
         }
