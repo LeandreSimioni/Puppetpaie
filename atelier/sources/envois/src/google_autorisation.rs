@@ -287,7 +287,17 @@ pub fn autoriser(
     let rejoindre = |fil: std::thread::JoinHandle<Result<(), Echec>>| -> Result<(), Echec> {
         match fil.join() {
             Ok(r) => r,
-            Err(_) => Err(refus("L'attente de la reponse de Google s'est arretee net. Aucune autorisation enregistree. Recommencer.")),
+            Err(panique) => {
+                let pourquoi = match (panique.downcast_ref::<&str>(), panique.downcast_ref::<String>()) {
+                    (Some(s), _) => s.to_string(),
+                    (None, Some(s)) => s.clone(),
+                    (None, None) => "sans message".to_string(),
+                };
+                Err(refus(format!(
+                    "L'attente de la reponse de Google s'est arretee net ({}). Aucune autorisation enregistree. Recommencer.",
+                    pourquoi
+                )))
+            }
         }
     };
     dire_url(&url);

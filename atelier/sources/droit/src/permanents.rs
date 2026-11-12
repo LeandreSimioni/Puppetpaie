@@ -930,10 +930,18 @@ pub struct IndemniteDuDepart {
 /// douze derniers mois ou le tiers des trois derniers, le plus favorable.
 /// Sans aucun brut des mois precedents, il ne se calcule pas : le refus le dit.
 pub fn salaire_de_reference(douze_derniers: &[Decimal], trois_derniers: &[Decimal]) -> R<SalaireDeReference> {
-    if douze_derniers.is_empty() || trois_derniers.is_empty() {
+    let manque = match (douze_derniers.is_empty(), trois_derniers.is_empty()) {
+        (true, true) => Some("des douze et des trois derniers mois"),
+        (true, false) => Some("des douze derniers mois"),
+        (false, true) => Some("des trois derniers mois"),
+        (false, false) => None,
+    };
+    if let Some(manque) = manque {
         return Err(socle::refus!(
-            "Le salaire de référence de l'indemnité de fin de contrat (R1234-4) se calcule sur les bruts des derniers mois, \
-             et aucun n'est dit."
+            "Le salaire de référence de l'indemnité de fin de contrat (R1234-4) se calcule sur les bruts des douze et des \
+             trois derniers mois : il manque ceux {}. Produire ou importer les paies de ces mois-là, puis refaire la fin \
+             du contrat.",
+            manque
         ));
     }
     let s = douze_derniers.iter().fold(Decimal::ZERO, |a, b| add(a, *b));
