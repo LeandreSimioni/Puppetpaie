@@ -185,7 +185,7 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
         let h = r.heures(q, l.heures());
         let dsn_autres_bruts = code_54(&r, l.genre())?;
         out.push(LigneBrut {
-            code: r.code,
+            code: r.code.into(),
             libelle: r.libelle,
             unite: r.unite,
             quantite: q,

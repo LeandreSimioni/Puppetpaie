@@ -844,7 +844,7 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
             let motif = droit::arrets::motif_d_arret(&code)?;
             // Le bulletin nomme l'absence d'apres le motif de l'arret (S21.G00.60.001) : sa rubrique est celle du motif
             // (`arrets-base.json`, `rubrique`).
-            let Some(rubrique) = motif.as_ref().and_then(|m| m.rubrique.clone()).filter(|r| !r.is_empty()) else {
+            let Some(rubrique) = motif.as_ref().and_then(|m| m.rubrique.clone()).map(String::from) else {
                 return Err(socle::echec::cle(format!(
                     "{} : l'arret du {} au {} a pour motif {} ({}), que le logiciel ne paie pas : aucune ligne de bulletin ne \
 nomme cette absence. Rien n'est calcule.",

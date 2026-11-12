@@ -213,7 +213,7 @@ de prévoyance, les codes du bloc 60, du préavis, de l'indemnité.
 | spectacle | une production | `IdSpectacle` et `droit::fiche::Spectacle` |
 | fiche | entreprise, salarié ou spectacle, datée | `droit::fiche::NomDeFiche`, `Datee<T>` ; `routes::catalogue::Fiche`, la fiche d'une route, est une autre notion, à renommer |
 | case | un champ d'une fiche | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` (`droit/src/fiche.rs`) ; `engagement::ligne::Case` (un `Option<Decimal>`) est mal nommé |
-| rubrique | une ligne du catalogue de paie | `droit::catalogue::Rubrique` (sa définition) ; son code : à créer (#419), `CodeDeRubrique` |
+| rubrique | une ligne du catalogue de paie | `droit::catalogue::Rubrique` (sa définition) ; son code, `CodeDeRubrique` (`droit/src/catalogue.rs`) ; à unifier (#419) : le `rubrique` d'une ligne de paie (`engagement::ligne`), `LigneBrut.code` et les rubriques du barème, en `String` |
 | assiette | ce sur quoi une cotisation se calcule | `droit::assiette::Assiette` |
 | barème | les taux d'un jour, en trois étages | `droit::forme_bareme::Pile` |
 | emploi | ce que fait le salarié | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres ; le code d'emploi, à créer |

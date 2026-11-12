@@ -21,8 +21,8 @@ use crate::saisie::Carte;
 /// neuve.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Proposees {
-    pub rubriques: Vec<String>,
-    pub par_defaut: Option<String>,
+    pub rubriques: Vec<droit::catalogue::CodeDeRubrique>,
+    pub par_defaut: Option<droit::catalogue::CodeDeRubrique>,
 }
 
 /// Les rubriques que la nature (`mensuelle` : payee au mois ; `None` : pas encore dite), le statut et le metier (`None` :

@@ -942,7 +942,7 @@ fn indemnite_de_rupture(
             ), "en_droit_a_la_retraite"));
         };
         if droit {
-            rubrique = "indemnite_rupture_conventionnelle_imposable".into();
+            rubrique = droit::catalogue::CodeDeRubrique::lire("indemnite_rupture_conventionnelle_imposable")?;
             supplement_rub = "indemnite_rupture_conventionnelle_supplement_imposable".into();
         }
     }

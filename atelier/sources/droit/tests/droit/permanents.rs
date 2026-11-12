@@ -136,7 +136,7 @@ fn indemnite_depart_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteDuDepart>
     p::indemnite_depart_retraite(a.0, &mut || Ok(a.1)).map(|i| IndemniteDuDepart { montant: i.montant, du: i.du, mois: i.mois, palier: i.palier, pourquoi: i.pourquoi }).into()
 }
 fn rupture(a: &(Motif,)) -> Rendu<Option<Fin>> {
-    p::rupture(motif(&a.0)).map(|o| o.map(|(fin, rubrique)| Fin { cle: fin.cle().to_string(), rubrique })).into()
+    p::rupture(motif(&a.0)).map(|o| o.map(|(fin, rubrique)| Fin { cle: fin.cle().to_string(), rubrique: rubrique.into() })).into()
 }
 fn code_52_permis(a: &(Motif, Motif)) -> Rendu<Option<String>> {
     p::code_52_permis(a.0.as_deref(), motif(&a.1)).into()
@@ -182,14 +182,14 @@ fn chaque_indemnite_a_le_code_et_le_regime_de_sa_rubrique() {
     let rg = p::regles().unwrap();
     let r = |code: &str| droit::catalogue::rubrique(std::path::Path::new("/nulle-part"), code, &Jour::nouveau(2026, 10, 1).unwrap()).unwrap();
     let codes = [
-        (rg.conges_payes.indemnite_compensatrice.rubrique.clone(), &rg.conges_payes.indemnite_compensatrice.dsn_bloc52),
-        (rg.indemnite_precarite.rubrique.clone(), &rg.indemnite_precarite.dsn_bloc52),
-        (rg.preavis.delai_de_prevenance.rubrique.clone(), &rg.preavis.delai_de_prevenance.dsn_bloc52),
-        (rg.indemnite_licenciement.rubrique.clone(), &rg.indemnite_licenciement.dsn_bloc52),
-        (rg.rupture_conventionnelle.rubrique.clone(), &rg.rupture_conventionnelle.dsn_bloc52),
-        (rg.mise_a_la_retraite.rubrique.clone(), &rg.mise_a_la_retraite.dsn_bloc52),
+        (rg.conges_payes.indemnite_compensatrice.rubrique.to_string(), &rg.conges_payes.indemnite_compensatrice.dsn_bloc52),
+        (rg.indemnite_precarite.rubrique.to_string(), &rg.indemnite_precarite.dsn_bloc52),
+        (rg.preavis.delai_de_prevenance.rubrique.to_string(), &rg.preavis.delai_de_prevenance.dsn_bloc52),
+        (rg.indemnite_licenciement.rubrique.to_string(), &rg.indemnite_licenciement.dsn_bloc52),
+        (rg.rupture_conventionnelle.rubrique.to_string(), &rg.rupture_conventionnelle.dsn_bloc52),
+        (rg.mise_a_la_retraite.rubrique.to_string(), &rg.mise_a_la_retraite.dsn_bloc52),
         (format!("{}_conventionnelle", rg.mise_a_la_retraite.rubrique), &rg.mise_a_la_retraite.dsn_bloc52_conventionnelle),
-        (rg.depart_a_la_retraite.rubrique.clone(), &rg.depart_a_la_retraite.dsn_bloc52),
+        (rg.depart_a_la_retraite.rubrique.to_string(), &rg.depart_a_la_retraite.dsn_bloc52),
         (format!("{}_conventionnelle", rg.depart_a_la_retraite.rubrique), &rg.depart_a_la_retraite.dsn_bloc52_conventionnelle),
     ];
     for (rubrique, code) in codes {

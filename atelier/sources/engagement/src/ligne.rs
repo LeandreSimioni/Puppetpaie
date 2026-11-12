@@ -905,7 +905,7 @@ impl LigneDonnee {
                 return Err(socle::refus!("la ligne « {} » : « {} » est vide ; écrivez null.", r.libelle, cle.nom()));
             }
         }
-        let rubrique = r.code.clone();
+        let rubrique = r.code.to_string();
         // Chaque cle obligatoire est dite (la verification vient d'etre faite) ; une facultative absente est vide.
         let dit = |x: Option<Case>| x.flatten();
         let jours = |x: Option<Vec<DateDeLigne>>| x.into_iter().flatten().collect::<Vec<_>>();

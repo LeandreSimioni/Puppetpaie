@@ -1240,7 +1240,7 @@ impl serde::Serialize for NombreLu {
 pub(crate) struct RubriqueDeLaPage {
     lieux: Vec<Choix>,
     lieu_aide: Option<&'static str>,
-    code: String,
+    code: droit::catalogue::CodeDeRubrique,
     libelle: String,
     unite: String,
     nature: droit::catalogue::NatureDeRubrique,

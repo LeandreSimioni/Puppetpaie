@@ -123,7 +123,7 @@ forme! {
 forme! {
     pub struct IndemniteCompensatriceDeConges {
         /// La rubrique de la ligne que le solde ecrit (`rubriques-base.json`).
-        pub rubrique: String,
+        pub rubrique: crate::catalogue::CodeDeRubrique,
         pub dsn_bloc52: CodeDsn,
     }
 }
@@ -133,7 +133,7 @@ forme! {
     pub struct Precarite {
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub taux: Decimal,
-        pub rubrique: String,
+        pub rubrique: crate::catalogue::CodeDeRubrique,
         pub dsn_bloc52: CodeDsn,
         /// Les natures de contrat (`contrats-base.json`) qui n'y ont pas droit, et pourquoi.
         pub natures_exclues: BTreeMap<crate::natures::NatureDeContrat, String>,
@@ -174,7 +174,7 @@ forme! {
     /// `preavis.delai_de_prevenance` : L1221-25.
     pub struct RegleDuDelaiDePrevenance {
         pub motif_rupture: MotifDeRupture,
-        pub rubrique: String,
+        pub rubrique: crate::catalogue::CodeDeRubrique,
         pub dsn_bloc52: CodeDsn,
         pub tranches: Vec<TrancheDeDelai>,
         #[serde(deserialize_with = "socle::forme::decimal")]
@@ -196,8 +196,8 @@ pub struct TrancheDeDelai {
 
 forme! {
     pub struct IndemniteCompensatriceDePreavis {
-        pub rubrique: String,
-        pub rubrique_par_motif: ParMotif,
+        pub rubrique: crate::catalogue::CodeDeRubrique,
+        pub rubrique_par_motif: BTreeMap<MotifDeRupture, crate::catalogue::CodeDeRubrique>,
         pub motifs_sans_indemnite: ParMotif,
         pub motifs_par_un_autre_article: ParMotif,
         pub motifs_a_trancher: ParMotif,
@@ -211,7 +211,7 @@ forme! {
         pub taux: Vec<TauxDeLicenciement>,
         pub salaire_de_reference: Fondee,
         pub motifs_sans_indemnite: ParMotif,
-        pub rubrique: String,
+        pub rubrique: crate::catalogue::CodeDeRubrique,
         pub dsn_bloc52: CodeDsn,
     }
 }
@@ -252,7 +252,7 @@ forme! {
 forme! {
     /// Ce qu'une indemnite supporte, que sa rubrique (`rubriques-base.json`) porte a l'identique.
     pub struct RegimeDUneIndemnite {
-        pub rubrique: String,
+        pub rubrique: crate::catalogue::CodeDeRubrique,
         pub imposable: bool,
         pub soumis: bool,
     }
@@ -280,7 +280,7 @@ forme! {
     pub struct RuptureConventionnelle {
         pub motif_rupture: MotifDeRupture,
         pub dsn_bloc52: CodeDsn,
-        pub rubrique: String,
+        pub rubrique: crate::catalogue::CodeDeRubrique,
         pub indemnite: PlancherDeRupture,
         pub preavis: Fondee,
         pub calendrier: Fondee,
@@ -300,7 +300,7 @@ forme! {
         pub motif_rupture: MotifDeRupture,
         pub dsn_bloc52: CodeDsn,
         pub dsn_bloc52_conventionnelle: CodeDsn,
-        pub rubrique: String,
+        pub rubrique: crate::catalogue::CodeDeRubrique,
         pub indemnite: Fondee,
         pub preavis: Fondee,
         pub age: Fondee,
@@ -312,7 +312,7 @@ forme! {
         pub motif_rupture: MotifDeRupture,
         pub dsn_bloc52: CodeDsn,
         pub dsn_bloc52_conventionnelle: CodeDsn,
-        pub rubrique: String,
+        pub rubrique: crate::catalogue::CodeDeRubrique,
         pub indemnite: IndemniteDeDepart,
         pub preavis: Fondee,
     }
@@ -821,7 +821,7 @@ pub fn indemnite_de_preavis(motif_rupture: Option<MotifDeRupture>) -> R<Indemnit
 /// (`indemnite_preavis`, DSN 52 « 023 »), sauf le motif qui a la sienne (`rubrique_par_motif` : le 092, L1226-14,
 /// `indemnite_preavis_inaptitude`, DSN 52 « 032 », cahier technique 2026.1 p. 253, `norme-dsn/texte/bloc-S21.G00.52.txt`).
 /// Le code du bloc 52 est celui de la rubrique : il suit le motif comme l'indemnite.
-pub fn rubrique_de_l_indemnite_de_preavis(motif_rupture: Option<MotifDeRupture>) -> R<String> {
+pub fn rubrique_de_l_indemnite_de_preavis(motif_rupture: Option<MotifDeRupture>) -> R<crate::catalogue::CodeDeRubrique> {
     let rg = regles()?;
     let ic = &rg.preavis.indemnite_compensatrice;
     let m = motif_requis(motif_rupture, "L'indemnité de préavis")?;
@@ -1036,7 +1036,7 @@ impl FinDeCdi {
 
 /// La fin d'un CDI que ce motif designe (043 rupture conventionnelle, 038 mise a la retraite, 039 depart a la
 /// retraite), et la rubrique de son indemnite.
-pub fn rupture(motif_rupture: Option<MotifDeRupture>) -> R<Option<(FinDeCdi, String)>> {
+pub fn rupture(motif_rupture: Option<MotifDeRupture>) -> R<Option<(FinDeCdi, crate::catalogue::CodeDeRubrique)>> {
     let rg = regles()?;
     let Some(m) = motif_rupture else { return Ok(None) };
     let fin = [

@@ -35,7 +35,7 @@ pub struct CodeDuBloc60 {
     pub code: String,
     pub libelle: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub rubrique: Option<String>,
+    pub rubrique: Option<crate::catalogue::CodeDeRubrique>,
     pub saisissable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_accident: Option<bool>,

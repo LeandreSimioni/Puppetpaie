@@ -85,10 +85,83 @@ pub struct PlafondAnnuelHeures {
     pub cinquante_ans_et_plus: i64,
 }
 
+/// LE CODE D'UNE RUBRIQUE : sa cle dans `rubriques` ou `au_mois` de `donnees/rubriques-base.json`, ou dans
+/// `config/rubriques-compagnie.json` pour une rubrique propre a la compagnie ; une ligne de paie le porte pour dire de
+/// quelle rubrique elle est. Il se lit d'un fichier ou d'une charge (`lire`, ou `serde` : la meme chaine). INFERENCE
+/// (aucun texte n'en fixe la forme : c'est une cle du logiciel, et la compagnie nomme les siennes) : un code n'est
+/// jamais vide ; rien de plus ne vaut pour tous les codes qui existent.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct CodeDeRubrique(String);
+
+impl CodeDeRubrique {
+    /// Le code ecrit `texte` ; vide, il se refuse.
+    pub fn lire(texte: &str) -> R<CodeDeRubrique> {
+        if texte.is_empty() {
+            return Err(socle::refus!("code de rubrique vide"));
+        }
+        Ok(CodeDeRubrique(texte.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for CodeDeRubrique {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::borrow::Borrow<str> for CodeDeRubrique {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CodeDeRubrique {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for CodeDeRubrique {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<CodeDeRubrique> {
+        CodeDeRubrique::lire(&s)
+    }
+}
+
+impl From<CodeDeRubrique> for String {
+    fn from(c: CodeDeRubrique) -> String {
+        c.0
+    }
+}
+
+impl PartialEq<str> for CodeDeRubrique {
+    fn eq(&self, autre: &str) -> bool {
+        self.0 == autre
+    }
+}
+
+impl PartialEq<&str> for CodeDeRubrique {
+    fn eq(&self, autre: &&str) -> bool {
+        self.0 == *autre
+    }
+}
+
+impl PartialEq<String> for CodeDeRubrique {
+    fn eq(&self, autre: &String) -> bool {
+        &self.0 == autre
+    }
+}
+
 /// Une forme de paie : ce que le bulletin appelle une ligne.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rubrique {
-    pub code: String,
+    pub code: CodeDeRubrique,
     pub libelle: String,
     pub unite: String,
     pub nature: NatureDeRubrique,
@@ -272,16 +345,16 @@ struct Base {
     _note: String,
     annexes: Annexes,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    rubriques: Vec<(String, ChampsRubrique)>,
+    rubriques: Vec<(CodeDeRubrique, ChampsRubrique)>,
     /// LA PIECE D'UN SALARIE AU MOIS (`fiche::Piece::Permanent`) : les rubriques que seul le calcul d'un contrat paye au
     /// mois paie, rangees a part. Leur place dit leur piece ; aucune case ne la dit.
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    au_mois: Vec<(String, ChampsRubrique)>,
+    au_mois: Vec<(CodeDeRubrique, ChampsRubrique)>,
 }
 
 impl Base {
     /// Chaque rubrique livree avec sa piece : la sienne pour celles qui sont rangees dans `au_mois`.
-    fn rangees(self) -> Vec<(String, ChampsRubrique, Option<Piece>)> {
+    fn rangees(self) -> Vec<(CodeDeRubrique, ChampsRubrique, Option<Piece>)> {
         let communes = self.rubriques.into_iter().map(|(c, v)| (c, v, None));
         communes.chain(self.au_mois.into_iter().map(|(c, v)| (c, v, Some(Piece::Permanent)))).collect()
     }
@@ -367,7 +440,7 @@ pub fn rubrique_a_saisir(racine: &Path, code: &str, jour: &Jour) -> R<Rubrique> 
 /// LES RUBRIQUES LIVREES, construites, sans celles d'aucune compagnie : ce que le logiciel sait d'une rubrique avant
 /// toute configuration (la table de lecture des bulletins s'y rapporte).
 pub fn livrees() -> R<Vec<Rubrique>> {
-    base()?.rangees().into_iter().map(|(c, v, piece)| construire(&c, v, "base", piece)).collect()
+    base()?.rangees().into_iter().map(|(c, v, piece)| construire(c, v, "base", piece)).collect()
 }
 
 /// Le seuil et la fenetre des annexes VIII et X.
@@ -380,7 +453,7 @@ pub fn annexes() -> R<Annexes> {
 #[serde(deny_unknown_fields)]
 struct RubriquesDeLaCompagnie {
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    rubriques: Vec<(String, RubriqueDatee)>,
+    rubriques: Vec<(CodeDeRubrique, RubriqueDatee)>,
 }
 
 /// Le fichier des rubriques de la compagnie, s'il existe ; absent, il n'en dit aucune.
@@ -394,13 +467,13 @@ fn de_la_compagnie(racine: &Path) -> R<RubriquesDeLaCompagnie> {
 
 /// LA RUBRIQUE DU CALCUL, construite de ses cases (`ChampsRubrique`), sa seule construction : une case que la rubrique
 /// doit dire, ou qui ne dit pas ce que sa forme attend, se refuse en la nommant.
-fn construire(code: &str, f: ChampsRubrique, origine: &str, piece: Option<Piece>) -> R<Rubrique> {
-    let faute = |cle: &str, quoi: &str| mal_decrite(code, format!("Rubrique {} : `{}` {}.", repr(code), cle, quoi));
+fn construire(code: CodeDeRubrique, f: ChampsRubrique, origine: &str, piece: Option<Piece>) -> R<Rubrique> {
+    let faute = |cle: &str, quoi: &str| mal_decrite(&code, format!("Rubrique {} : `{}` {}.", repr(&code), cle, quoi));
     fn dite<T>(c: Option<T>, cle: &str, faute: &dyn Fn(&str, &str) -> socle::echec::Echec) -> R<T> {
         c.ok_or_else(|| faute(cle, "manque"))
     }
     let r = Rubrique {
-        code: code.to_string(),
+        code: code.clone(),
         libelle: dite(f.libelle, "libelle", &faute)?,
         unite: dite(f.unite, "unite", &faute)?,
         nature: dite(f.nature, "nature", &faute)?,
@@ -457,7 +530,7 @@ fn rubriques_datees(racine: &Path) -> R<bool> {
 fn construire_catalogue(racine: &Path, jour: &Jour) -> R<Vec<Rubrique>> {
     // code -> (cases, piece, propre a la compagnie) ; une rubrique de la compagnie n'est dans aucune piece, et celle
     // qu'elle ajuste garde la sienne.
-    let mut brut: Vec<(String, ChampsRubrique, Option<Piece>, bool)> = base()?.rangees().into_iter().map(|(c, v, p)| (c, v, p, false)).collect();
+    let mut brut: Vec<(CodeDeRubrique, ChampsRubrique, Option<Piece>, bool)> = base()?.rangees().into_iter().map(|(c, v, p)| (c, v, p, false)).collect();
     if socle::fichiers::est_dossier(racine) {
         for (c, datee) in de_la_compagnie(racine)?.rubriques {
             let v = datee.au(jour);
@@ -472,7 +545,7 @@ fn construire_catalogue(racine: &Path, jour: &Jour) -> R<Vec<Rubrique>> {
     }
     let mut out = Vec::new();
     for (code, d, piece, propre) in brut {
-        out.push(construire(&code, d, if propre { "compagnie" } else { "base" }, piece)?);
+        out.push(construire(code, d, if propre { "compagnie" } else { "base" }, piece)?);
     }
     out.sort_by_key(|r| r.libelle.to_lowercase());
     Ok(out)
