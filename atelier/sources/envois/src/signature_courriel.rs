@@ -189,7 +189,7 @@ fn html_signe(html: &str, s: &CorpsDeSignature) -> String {
 }
 
 /// Le message signe. Sans signature HTML posee (le nom affiche seul), il reste tel quel.
-pub fn signer(message: &Message, s: &Signature) -> Message {
+pub fn signer<Pour: Clone>(message: &Message<Pour>, s: &Signature) -> Message<Pour> {
     let mut m = message.clone();
     let Some(s) = &s.corps else {
         return m;

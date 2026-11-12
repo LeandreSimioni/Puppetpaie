@@ -836,7 +836,7 @@ fn nom_du_salarie(s: &droit::fiche::SalarieDuContrat) -> String {
 
 /// Les messages, le compte verifie -- rien n'est parti.
 pub(crate) struct EnvoiPrepare {
-    pub(crate) messages: Vec<envoi::Message>,
+    pub(crate) messages: Vec<envoi::Message<IdSalarie>>,
     pub(crate) expediteur: String,
     pub(crate) avertissements: Vec<String>,
     /// A qui les documents partent, et pourquoi (`choisir`) : le journal en garde l'empreinte et le resume.
@@ -1031,7 +1031,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
     let paies_servies: Vec<engagement::calcul::Paie> = paies.iter().filter(|p| cles.contains(&p.salarie.id)).cloned().collect();
     let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, mois, &dossier, &choix.renvois, &dues_a_part(&paies_servies)?).map_err(refus_de_preparation)?;
     // Les cles sont deja gardees (`Choix::garder`, plus haut) : leurs messages partent tous.
-    let messages: Vec<envoi::Message> = messages.into_iter().filter(|m| cles.iter().any(|c| c.as_str() == m.cle)).collect();
+    let messages: Vec<envoi::Message<IdSalarie>> = messages.into_iter().filter(|m| cles.contains(&m.pour)).collect();
     let mut avertissements: Vec<String> = documents.avertissements.clone();
     if !sans.is_empty() {
         avertissements.push(sans_courriel_dit(&noms_sans));
@@ -1055,24 +1055,21 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     };
     let a_qui = format!("{} salarie(s) : {}", messages.len(), messages.iter().map(|m| m.nom.as_str()).collect::<Vec<_>>().join(", "));
     // LA VERSION SUR LAQUELLE ILS PARTENT, engagement par engagement des salaries servis.
-    let servis: Vec<&str> = messages.iter().map(|m| m.cle.as_str()).collect();
-    let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| servis.contains(&cle.as_str()))?;
+    let servis: Vec<&IdSalarie> = messages.iter().map(|m| &m.pour).collect();
+    let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| servis.contains(&cle))?;
     // CE QUI SERT APRES L'ACTE SE CALCULE AVANT LUI : une fois les courriels partis, rien ne peut plus echouer avant que
     // les numeros et la ligne du journal ne s'ecrivent. Ce que chaque salarie servi recoit : ses pieces, le resume de sa
     // paie (ce qui dira, si elle change, ce qui a change), et si c'est un renvoi ; son nom a l'ecran.
     let recus: Vec<journal::Servi> = messages
         .iter()
-        .map(|m| {
-            let cle = droit::contexte::IdSalarie::lire(&m.cle)?;
-            Ok(journal::Servi {
-                nom: Some(m.nom.clone()),
-                pieces: m.pieces.iter().map(|p| nom_du(p)).collect(),
-                resume: choix.resumes.get(&cle).cloned(),
-                renvoi: choix.renvois.contains_key(&cle),
-                cle,
-            })
+        .map(|m| journal::Servi {
+            nom: Some(m.nom.clone()),
+            pieces: m.pieces.iter().map(|p| nom_du(p)).collect(),
+            resume: choix.resumes.get(&m.pour).cloned(),
+            renvoi: choix.renvois.contains_key(&m.pour),
+            cle: m.pour.clone(),
         })
-        .collect::<R<_>>()?;
+        .collect();
     let noms: Vec<String> = messages.iter().zip(&recus).map(|(m, r)| nom_a_l_ecran(ctx, &r.cle, &m.nom)).collect();
     // LA DUREE DE CHAQUE ETAPE (le journal dit ou va le temps d'un envoi).
     let t_preuve = std::time::Instant::now();

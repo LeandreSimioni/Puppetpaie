@@ -195,6 +195,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | pays | un code ISO 3166 à deux lettres | `CodePays` (`socle/src/pays.rs`) |
 | commune | son code INSEE (versement mobilité, S21.G00.81.005) | `CodeInsee` (`droit/src/fiche.rs`) |
 | courriel | une adresse de courriel | `Courriel` (`droit/src/fiche.rs`) |
+| courriel envoyé | un courriel qu'un geste envoie, et celui à qui il s'adresse, que l'envoyeur retrouve après l'envoi | `envois::envoi::Message<Pour>`, `Pour` du type de ce qu'il est : `IdSalarie` (les documents du mois, le dossier, les contrats à signer et le contrat contresigné), le nom court de l'organisme (la régularisation CASC-SVP : celui du `.eml` gardé), `()` quand personne n'est à retrouver (la fiche demandée, la réponse d'une personne fictive) ; l'envoi ne le lit pas |
 | expéditeur d'un courriel lu | une adresse, rien, ou un texte qui n'en est pas une | `envois::courriel_lecture::Expediteur` |
 | version du logiciel | le numéro d'une publication, des nombres séparés de points | `compagnie::maj::VersionDuLogiciel` |
 

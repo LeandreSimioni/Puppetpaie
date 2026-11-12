@@ -1024,7 +1024,8 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: Option<&str>
     html.push(("questionnaire", html_echapper(&q)));
     html.push(("mailto", html_echapper(&lien)));
     let message = Message {
-        cle: format!("fiche-{}", code),
+        // Celui a qui sa fiche est demandee n'en a pas encore : la demande se retrouve par son code, au journal.
+        pour: (),
         nom: match &prenom {
             Some(p) => p.clone(),
             None => adresse.clone(),

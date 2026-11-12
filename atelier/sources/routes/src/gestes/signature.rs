@@ -118,9 +118,9 @@ fn periode_de(p: &Paie) -> String {
 
 /// CE QUI A ATTEINT LE SALARIE EST PARTI : d'un envoi coupe en route, les versions des seuls salaries servis (les
 /// `servis` premiers messages, qui partent dans l'ordre), pour la ligne d'echec du journal.
-fn versions_des_servis(versions: &[Version], messages: &[Message], servis: usize) -> Vec<Version> {
-    let cles: Vec<&str> = messages[..servis.min(messages.len())].iter().map(|m| m.cle.as_str()).collect();
-    versions.iter().filter(|v| cles.contains(&v.salarie.as_str())).cloned().collect()
+fn versions_des_servis(versions: &[Version], messages: &[Message<IdSalarie>], servis: usize) -> Vec<Version> {
+    let cles: Vec<&IdSalarie> = messages[..servis.min(messages.len())].iter().map(|m| &m.pour).collect();
+    versions.iter().filter(|v| cles.contains(&&v.salarie)).cloned().collect()
 }
 
 /// `a, b et c`.
@@ -214,7 +214,7 @@ struct Demande<'a> {
     raison: &'a str,
 }
 
-fn message_de_signature(d: &Demande, pieces: Vec<PathBuf>) -> R<Message> {
+fn message_de_signature(d: &Demande, pieces: Vec<PathBuf>) -> R<Message<IdSalarie>> {
     let prenom = prenom_de(d.sal)?;
     let reponse = envoi::formater(CORPS_REPONSE, &[("nom", nom_complet_de(d.sal)?), ("quoi", d.quoi.to_string()), ("code", d.code.to_string())]);
     let lien = mailto(d.expediteur, &format!("Re: {}", d.sujet), &reponse);
@@ -237,7 +237,7 @@ fn message_de_signature(d: &Demande, pieces: Vec<PathBuf>) -> R<Message> {
     html.push(("contrats", html_echapper(d.liste).replace('\n', "<br>")));
     html.push(("mailto", html_echapper(&lien)));
     Ok(Message {
-        cle: d.cle.to_string(),
+        pour: d.cle.clone(),
         nom: exige(&d.sal.nom, "nom")?,
         destinataire: d.adresse.to_string(),
         sujet: d.sujet.to_string(),
@@ -534,7 +534,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
 
     let (signataire, raison) = signataire_et_raison(ctx)?;
     let expediteur = client.compte().to_lowercase();
-    let mut messages: Vec<Message> = Vec::new();
+    let mut messages: Vec<Message<IdSalarie>> = Vec::new();
     let mut contrats: Vec<ContratParti> = Vec::new();
     for (cle, ps, _) in &par_salarie {
         let sal = &ps[0].salarie;
@@ -649,7 +649,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     };
     // L'identifiant de chaque message parti, sur chacun de ses contrats : la releve l'ecarte de ses candidats.
     for c in contrats.iter_mut() {
-        c.message = messages.iter().zip(&identifiants).find(|(m, _)| m.cle == c.salarie.as_str()).map(|(_, i)| i.clone());
+        c.message = messages.iter().zip(&identifiants).find(|(m, _)| m.pour == c.salarie).map(|(_, i)| i.clone());
     }
     let n_rappels = contrats.iter().filter(|c| c.relance == Some(true)).count();
     let detail = DetailSignature { contrats: contrats.clone(), main_propre: false, expediteur: Some(expediteur.clone()), relance: Some(n_rappels == contrats.len()), acte: None, partis: None, echec_a: None };

@@ -769,7 +769,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
     if d.fichiers.len() != d.salaries.len() {
         return Err(refus("Le dossier n'a pas été écrit : rien à envoyer."));
     }
-    let mut messages: Vec<Message> = Vec::new();
+    let mut messages: Vec<Message<droit::contexte::IdSalarie>> = Vec::new();
     let adresses = adresses_de(ctx, &d.salaries)?;
     for ((cle, f), email) in d.salaries.iter().zip(&d.fichiers).zip(adresses) {
         let s = ctx.salaries.get(cle).ok_or_else(|| socle::fichiers::absent(cle.as_str()).reclasser(Classe::Manque))?;
@@ -796,7 +796,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
             ],
         );
         messages.push(Message {
-            cle: cle.to_string(),
+            pour: cle.clone(),
             nom: ctx.nomme(cle),
             destinataire: email.to_lowercase(),
             sujet: format!("Ton dossier de salarié — {}", d.periode),
@@ -901,9 +901,10 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     ecrire(ctx, &mut r)?;
     let classeur = std::path::Path::new(&r.dossier).join("CASC-SVP_liste-nominative.xlsx");
 
-    let messages = vec![
+    // Chaque courriel porte le nom court de son organisme : celui du `.eml` garde.
+    let messages: Vec<Message<&str>> = vec![
         Message {
-            cle: "audiens".into(),
+            pour: "audiens",
             nom: "Audiens".into(),
             destinataire: r.courriel_audiens.a.clone(),
             sujet: r.courriel_audiens.objet.clone(),
@@ -912,7 +913,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
             html: Some(courriel_en_html(&r.courriel_audiens.corps)),
         },
         Message {
-            cle: "casc".into(),
+            pour: "casc",
             nom: "CASC-SVP".into(),
             destinataire: r.courriel_casc.a.clone(),
             sujet: r.courriel_casc.objet.clone(),
@@ -956,7 +957,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     let horodate = format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]);
     let mut emls: Vec<String> = Vec::new();
     for (m, brut) in messages.iter().zip(&copies) {
-        let p = garde.join(format!("{}_CASC-SVP_{}.eml", horodate, m.cle));
+        let p = garde.join(format!("{}_CASC-SVP_{}.eml", horodate, m.pour));
         std::fs::write(&p, brut).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         emls.push(nom_du(&p));
     }

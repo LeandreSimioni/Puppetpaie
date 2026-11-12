@@ -276,7 +276,7 @@ pub fn renvoyer_contresigne(racine: &Path, client: &mut dyn Courriel, c: &Contre
     let prenom = a.prenom.clone().ok_or_else(|| socle::fichiers::absent("prenom"))?;
     let nom = a.nom.clone().ok_or_else(|| socle::fichiers::absent("nom"))?;
     let message = Message {
-        cle: a.salarie.to_string(),
+        pour: a.salarie.clone(),
         nom: nom.clone(),
         destinataire: c.de.to_string(),
         sujet,
