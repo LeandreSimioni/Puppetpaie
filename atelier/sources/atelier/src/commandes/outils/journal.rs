@@ -31,7 +31,7 @@ fn faire(cadre: &Cadre, ecrire: bool) -> Result<i32, Echec> {
         let a = &v.attestee;
         dire!(
             "  {}  {:<4}  {:<8}  {}{}",
-            super::dit(a.quand.map(|q| q.iso()).as_deref()),
+            super::dit(a.quand.map(socle::paris::ecrit::seconde::texte).as_deref()),
             v.mode.nom(),
             super::dit(a.mois.map(|m| m.to_string()).as_deref()),
             a.flux,

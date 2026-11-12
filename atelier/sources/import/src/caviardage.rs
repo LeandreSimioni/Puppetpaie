@@ -234,10 +234,9 @@ impl Travail {
                     let i = (d as u32).saturating_sub(CHIFFRES) as usize;
                     it.next();
                     out.push('<');
-                    out.push_str(match ETIQUETTES.get(i) {
-                        Some(e) => e,
-                        None => "?",
-                    });
+                    // Le chiffre est celui que `marque` a ecrit, d'une etiquette de la liste (les caracteres d'entree
+                    // de la zone des marques sont deja remplaces) : il en est toujours un rang.
+                    out.push_str(ETIQUETTES[i]);
                     out.push('>');
                 }
                 OUVRE_GARDE => {

@@ -236,7 +236,7 @@ pub fn derniere_declaree(ctx: &Contexte, salarie: &droit::fiche::SalarieDuContra
 fn qui(salarie: &ChampsSalarie) -> String {
     let nom = match salarie.nomme() {
         Some(n) => n,
-        None => "?".to_string(),
+        None => "Un salarié sans nom".to_string(),
     };
     match salarie.code_salarie.portee() {
         Some(matricule) => format!("{} (matricule {})", nom, strip(matricule)),
@@ -245,9 +245,10 @@ fn qui(salarie: &ChampsSalarie) -> String {
 }
 
 fn decrire(d: &Declaree) -> String {
+    // Ce que la declaration ne porte pas se dit tel.
     let dite = |c: &Option<String>| match c {
         Some(v) => v.clone(),
-        None => "?".to_string(),
+        None => "(non declare)".to_string(),
     };
     format!(
         "{} {}, ne(e) le {}, {}",
@@ -375,7 +376,7 @@ mod tests {
         for (champ, depuis, v) in apres {
             let changement = format!(r#"{{"case": {}, "valeur": {}}}"#, socle::ecriture::json_en_ligne(champ), socle::ecriture::json_en_ligne(v));
             let ch = socle::forme::lire_texte(&changement, "le changement").unwrap();
-            f.changer(ch, Some(depuis), None);
+            f.changer(ch, Some(depuis), false, None);
         }
         f
     }

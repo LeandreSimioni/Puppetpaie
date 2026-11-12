@@ -957,8 +957,7 @@ fn date_de(t: socle::paris::Moment) -> String {
     const JOURS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     const MOIS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     let decalage = socle::paris::decalage(t);
-    let local = t.local_naif();
-    let (j, secondes) = (local.jour(), local.seconde_du_jour());
+    let (j, secondes) = (t.jour_de_paris(), t.seconde_du_jour_de_paris());
     // Le 01/01/1970 etait un jeudi.
     let semaine = (j.ordinal() - 719_163 + 3).rem_euclid(7) as usize;
     format!(

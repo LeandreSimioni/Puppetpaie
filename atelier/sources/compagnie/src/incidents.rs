@@ -34,7 +34,7 @@ use socle::ecriture::ecrire_json;
 use socle::echec::R;
 use socle::echec::Classe;
 use socle::fichiers::dossier_du_code;
-use socle::paris::InstantEcrit;
+use socle::paris::Moment;
 use regex::Regex;
 use socle::verrou::Verrou;
 
@@ -92,7 +92,8 @@ pub const SANS_OBJET: EtatEnvoi = EtatEnvoi::SansObjet;
 #[serde(deny_unknown_fields)]
 pub struct Envoi {
     pub etat: EtatEnvoi,
-    pub quand: Option<InstantEcrit>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    pub quand: Option<Moment>,
 }
 
 /// UNE LIGNE DU JOURNAL DES INCIDENTS, telle qu'elle s'ecrit.
@@ -100,7 +101,8 @@ pub struct Envoi {
 #[serde(deny_unknown_fields)]
 pub struct Ligne {
     pub quoi: Nature,
-    pub quand: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub quand: Moment,
     pub version: String,
     pub empreinte: String,
     pub ou: String,
@@ -112,7 +114,8 @@ pub struct Ligne {
     pub caviarde: Vec<String>,
     /// Combien de fois il a ete vu, et la derniere.
     pub fois: u64,
-    pub derniere: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub derniere: Moment,
     pub fil: Vec<String>,
     pub ecritures: Vec<Ecriture>,
     pub machine_detail: Machine,
@@ -314,7 +317,7 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
     };
     trouve.sort_unstable();
     trouve.dedup();
-    let quand = InstantEcrit::maintenant();
+    let quand = socle::temps::secondes().a_la_seconde();
     let empreinte = empreinte(n.nature, n.ou, n.quoi);
     let p = chemin(racine);
     let mut toutes = lignes(&p)?;
@@ -324,7 +327,7 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
     let debut = toutes.len().saturating_sub(50);
     let mut doublon = None;
     for (i, l) in toutes.iter().enumerate().skip(debut).rev() {
-        if l.empreinte == empreinte && l.resume == resume && l.envoi.etat == EN_ATTENTE && (0..DOUBLON_SECONDES).contains(&quand.naif().depuis(l.derniere.naif())) {
+        if l.empreinte == empreinte && l.resume == resume && l.envoi.etat == EN_ATTENTE && quand.depuis(l.derniere).is_some_and(|d| d.as_secs() < DOUBLON_SECONDES as u64) {
             doublon = Some(i);
             break;
         }
@@ -498,21 +501,17 @@ struct DetailDeLaPage {
 /// `depuis_navigateur` : note ce qui a casse dans l'interface. La page n'envoie
 /// que ce qu'elle a vu ; la nature, l'endroit qui regroupe et le caviardage se
 /// decident ICI. La nature est TOUJOURS `logiciel`. Un endroit que la page ne sait pas (sans fichier, sans ligne)
-/// s'ecrit « interface:? ».
+/// s'ecrit « interface » ; un fichier sans ligne, son seul nom.
 pub fn depuis_navigateur(racine: &Path, rapport: &RapportNavigateur) -> R<Option<Ligne>> {
     let genre = tete(&rapport.genre, 80);
     let fichier = match rapport.fichier.as_deref().map(fichier_court) {
         Some(f) if !f.is_empty() => f,
         _ => "interface".to_string(),
     };
-    let ou = format!(
-        "{}:{}",
-        fichier,
-        match rapport.ligne {
-            Some(l) => l.to_string(),
-            None => "?".to_string(),
-        }
-    );
+    let ou = match rapport.ligne {
+        Some(l) => format!("{}:{}", fichier, l),
+        None => fichier,
+    };
     let detail = DetailDeLaPage { face: "interface", canal: tete(&rapport.canal, 20), colonne: rapport.colonne, ou_dans_la_page: tete(&rapport.ou_dans_la_page, 120) };
     let resume = format!("{}: {}", genre, rapport.message);
     let trace = rapport.pile.as_deref().filter(|p| !p.is_empty()).map(|p| tete(p, JS_PILE_MAX));
@@ -539,8 +538,10 @@ pub struct Paquet {
     pub genre: String,
     pub resume: String,
     pub combien: u64,
-    pub premiere: InstantEcrit,
-    pub derniere: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub premiere: Moment,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub derniere: Moment,
     pub versions: Vec<String>,
     pub caviarde: Vec<String>,
 }
@@ -622,7 +623,8 @@ fn pour_texte(racine: &Path, s: &str) -> String {
 #[serde(deny_unknown_fields)]
 pub struct PourLEditeur {
     pub quoi: Nature,
-    pub quand: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub quand: Moment,
     pub version: String,
     pub empreinte: String,
     pub ou: String,
@@ -633,7 +635,8 @@ pub struct PourLEditeur {
     pub caviarde: Vec<String>,
     pub machine: String,
     pub fois: u64,
-    pub derniere: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub derniere: Moment,
     pub fil: Vec<String>,
     pub ecritures: Vec<Ecriture>,
     pub machine_detail: Machine,
@@ -790,7 +793,8 @@ pub fn edition() -> String {
 pub struct AnneeRetenue {
     pub paies: u64,
     pub poste: String,
-    pub parti_le: socle::paris::InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub parti_le: Moment,
 }
 
 /// `config/diagnostic.json`, TEL QU'IL S'ECRIT : l'interrupteur de l'envoi (`envoi` : absent ou vrai, les incidents
@@ -960,13 +964,13 @@ pub fn canal(racine: &Path) -> R<Canal> {
 }
 
 /// Passe a `depose` les lignes nommees par (empreinte, quand).
-fn marquer(racine: &Path, cles: &[(String, InstantEcrit)]) -> R<usize> {
+fn marquer(racine: &Path, cles: &[(String, Moment)]) -> R<usize> {
     if cles.is_empty() {
         return Ok(0);
     }
     let p = chemin(racine);
     let mut toutes = lignes(&p)?;
-    let quand = InstantEcrit::maintenant();
+    let quand = socle::temps::secondes().a_la_seconde();
     let mut n = 0;
     for l in toutes.iter_mut() {
         if l.envoi.etat == EN_ATTENTE && cles.iter().any(|(e, w)| *e == l.empreinte && *w == l.quand) {
@@ -1029,7 +1033,7 @@ fn passage(racine: &Path, bilan: &mut BilanIncidents) -> R<()> {
                 break;
             }
         };
-        let cles: Vec<(String, InstantEcrit)> = r.recus.into_iter().chain(r.ecartes).collect();
+        let cles: Vec<(String, Moment)> = r.recus.into_iter().chain(r.ecartes).collect();
         bilan.envoyes += marquer(racine, &cles)?;
     }
     bilan.reste = lire(racine, None, true)?.len();
@@ -1054,7 +1058,7 @@ pub fn envoyer(racine: &Path) -> BilanIncidents {
         }
     }
     // Un autre passage est en cours : celui-ci n'a rien a faire.
-    let marque = socle::verrou::marque("incidents", std::process::id(), &socle::paris::maintenant());
+    let marque = socle::verrou::marque("incidents", std::process::id(), &socle::paris::ecrit::seconde::texte(socle::temps::secondes()));
     let _verrou = match Verrou::prendre(&p.with_file_name(".envoi.verrou"), &marque, socle::verrou::DELAI_VERROU) {
         Ok(Ok(v)) => v,
         Ok(Err(socle::verrou::Verrouille { .. })) => {

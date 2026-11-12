@@ -68,12 +68,12 @@ fn motifs_de_la_norme() -> R<std::sync::Arc<Base>> {
     crate::norme::livree("amorcage-base.json")
 }
 
-/// Le libelle du motif, « ? » s'il est inconnu.
+/// Le libelle du motif ; un motif que la norme ne connait pas refuse en le nommant.
 pub fn libelle_motif(motif: &str) -> R<String> {
-    Ok(match motifs_de_la_norme()?.motifs.codes.iter().find(|c| c.code == motif) {
-        Some(c) => c.libelle.clone(),
-        None => "?".to_string(),
-    })
+    match motifs_de_la_norme()?.motifs.codes.iter().find(|c| c.code == motif) {
+        Some(c) => Ok(c.libelle.clone()),
+        None => Err(socle::echec::cle(format!("Le motif « {} » n'est pas un motif d'amorçage de la norme.", motif), "motif")),
+    }
 }
 
 /// Les parametres de `generer`, avec leurs defauts.

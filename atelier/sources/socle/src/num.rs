@@ -63,7 +63,7 @@ pub fn pct(base: Decimal, taux: Decimal) -> Decimal {
 
 /// Une somme de montants, à deux décimales au moins.
 pub fn somme<I: IntoIterator<Item = Decimal>>(it: I) -> Decimal {
-    it.into_iter().fold(Decimal::new(0, 2), add)
+    it.into_iter().fold(zero2(), add)
 }
 
 /// `eur` avec ses deux décimales toujours écrites.
@@ -73,8 +73,9 @@ pub fn eur2(x: Decimal) -> Decimal {
     e
 }
 
+/// ZERO AU CENTIME, ses deux decimales ecrites (« 0.00 ») : le seul.
 pub fn zero2() -> Decimal {
-    eur2(Decimal::ZERO)
+    Decimal::new(0, 2)
 }
 
 /// Un `P` (28 chiffres significatifs, exposant libre) en `Decimal`. Au-dela

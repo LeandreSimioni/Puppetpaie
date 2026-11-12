@@ -34,7 +34,7 @@ pub struct Depart {
     /// Le numero de l'avenant quand ce qui est parti est un avenant au contrat, pas le contrat.
     pub avenant: Option<String>,
     pub version: u64,
-    pub le: socle::paris::HeureDuJournal,
+    pub le: socle::paris::InstantOuJour,
 }
 
 /// Ce qui est parti, engagement par engagement : `(cle du salarie, numero du contrat)`.

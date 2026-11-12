@@ -232,12 +232,13 @@ fn reconnaitre(data: &[u8]) -> Option<Format> {
 
 impl Image {
     /// L'image (PNG, JPEG ou SVG, reconnue à son contenu ; `svg` : l'extension dit SVG) posée à `largeur` points.
-    pub fn lire(donnees: &[u8], largeur: Mesure, svg: bool) -> Result<Image, String> {
+    /// Une image qui ne se lit pas est une piece illisible (`Refus::illisible`) ; une reduction qui echoue, un defaut.
+    pub fn lire(donnees: &[u8], largeur: Mesure, svg: bool) -> Result<Image, Refus> {
         match reconnaitre(donnees) {
             Some(Format::Svg) => Image::svg(donnees, largeur),
             Some(f) => Image::pixels(donnees, f, largeur),
             None if svg => Image::svg(donnees, largeur),
-            None => Err("format d'image non reconnu (ni PNG, ni JPEG, ni SVG)".into()),
+            None => Err(Refus::illisible("format d'image non reconnu (ni PNG, ni JPEG, ni SVG)")),
         }
     }
 
@@ -249,15 +250,15 @@ impl Image {
         self.hauteur
     }
 
-    fn pixels(donnees: &[u8], format: Format, largeur: Mesure) -> Result<Image, String> {
+    fn pixels(donnees: &[u8], format: Format, largeur: Mesure) -> Result<Image, Refus> {
         let (format_image, nom) = match format {
             Format::Png => (image::ImageFormat::Png, "PNG"),
             _ => (image::ImageFormat::Jpeg, "JPEG"),
         };
         // On décode toujours : un fichier tronqué ou corrompu est un refus, pas un blanc.
-        let decodee = image::load_from_memory_with_format(donnees, format_image).map_err(|e| format!("{} illisible : {}", nom, e))?;
+        let decodee = image::load_from_memory_with_format(donnees, format_image).map_err(|e| Refus::illisible(format!("{} illisible : {}", nom, e)))?;
         let (Some(large), true) = (NonZeroI64::new(decodee.width() as i64), decodee.height() > 0) else {
-            return Err(format!("{} vide", nom));
+            return Err(Refus::illisible(format!("{} vide", nom)));
         };
         // Les proportions posées sont celles de l'original : la réduction arrondit les pixels.
         let hauteur = largeur.fois(decodee.height() as i64, large);
@@ -274,7 +275,7 @@ impl Image {
                 let mut jpeg = Vec::new();
                 image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, QUALITE_JPEG)
                     .encode(&pixels, l, h, couleur)
-                    .map_err(|e| format!("JPEG : réduction impossible : {}", e))?;
+                    .map_err(|e| Refus::defaut(format!("JPEG : réduction impossible : {}", e)))?;
                 Contenu::Pixels { largeur: l, hauteur: h, espace, filtre: Some("DCTDecode"), donnees: jpeg, alpha: None }
             }
             // JPEG en niveaux de gris ou en couleurs, déjà à la bonne résolution : recopié tel quel.
@@ -306,16 +307,16 @@ impl Image {
         Ok(Image { contenu: Rc::new(contenu), forme: None, largeur, hauteur })
     }
 
-    fn svg(donnees: &[u8], largeur: Mesure) -> Result<Image, String> {
+    fn svg(donnees: &[u8], largeur: Mesure) -> Result<Image, Refus> {
         use usvg::TreeParsing as _;
-        let texte = std::str::from_utf8(donnees).map_err(|_| "SVG illisible : pas de l'UTF-8".to_string())?;
+        let texte = std::str::from_utf8(donnees).map_err(|_| Refus::illisible("SVG illisible : pas de l'UTF-8"))?;
         if texte.contains("<text") {
-            return Err("SVG avec du texte : le texte n'est pas pris en charge (à convertir en tracés)".into());
+            return Err(Refus::illisible("SVG avec du texte : le texte n'est pas pris en charge (à convertir en tracés)"));
         }
-        let arbre = usvg::Tree::from_str(texte, &usvg::Options::default()).map_err(|e| format!("SVG illisible : {}", e))?;
+        let arbre = usvg::Tree::from_str(texte, &usvg::Options::default()).map_err(|e| Refus::illisible(format!("SVG illisible : {}", e)))?;
         let (l, h) = match (Mesure::par_son_texte(arbre.size.width()), Mesure::par_son_texte(arbre.size.height())) {
             (Some(l), Some(h)) if l > Mesure::ZERO && h > Mesure::ZERO => (l, h),
-            _ => return Err("SVG sans dimensions".into()),
+            _ => return Err(Refus::illisible("SVG sans dimensions")),
         };
         // svg2pdf écrit l'objet formulaire (le dessin dans le carré unité) dans un PDF minimal, que lopdf relit.
         let mut pdf = pdf_writer::Pdf::new();
@@ -326,22 +327,22 @@ impl Image {
         let mut morceau = pdf_writer::Chunk::new();
         svg2pdf::convert_tree_into(&arbre, svg2pdf::Options::default(), &mut morceau, depart);
         pdf.extend(&morceau);
-        let lu = Document::load_mem(&pdf.finish()).map_err(|e| format!("SVG illisible : {}", e))?;
+        let lu = Document::load_mem(&pdf.finish()).map_err(|e| Refus::illisible(format!("SVG illisible : {}", e)))?;
         let forme = match lu.get_object((depart.get() as u32, 0)) {
             Ok(Object::Stream(s)) => s.clone(),
-            Ok(_) => return Err("SVG illisible : la conversion ne donne pas un objet formulaire".to_string()),
-            Err(e) => return Err(format!("SVG illisible : la conversion n'a rien donné ({})", e)),
+            Ok(_) => return Err(Refus::illisible("SVG illisible : la conversion ne donne pas un objet formulaire")),
+            Err(e) => return Err(Refus::illisible(format!("SVG illisible : la conversion n'a rien donné ({})", e))),
         };
         // Un objet formulaire qui en cite d'autres (dégradés, motifs, états de transparence, images intégrées)
         // demande plus que des tracés et des aplats unis.
         let mut cites = Vec::new();
         crate::ecriture::references(&Object::Stream(forme.clone()), &mut cites);
         if !cites.is_empty() {
-            return Err(SVG_NON_PRIS_EN_CHARGE.into());
+            return Err(Refus::illisible(SVG_NON_PRIS_EN_CHARGE));
         }
         let contenu = Contenu::Svg { source: donnees.to_vec() };
         let Some(large) = NonZeroI64::new(l.en_millioniemes()) else {
-            return Err("SVG sans dimensions".into());
+            return Err(Refus::illisible("SVG sans dimensions"));
         };
         let hauteur = largeur.fois(h.en_millioniemes(), large);
         Ok(Image { contenu: Rc::new(contenu), forme: Some(Rc::new(forme)), largeur, hauteur })

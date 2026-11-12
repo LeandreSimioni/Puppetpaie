@@ -287,7 +287,8 @@ struct CarteEcrite {
     /// Le brouillon tel qu'il est ecrit, chacune de ses cases (`null` : pas encore remplie).
     brouillon: Brouillon,
     a_completer: Option<String>,
-    enregistre_a: socle::paris::InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    enregistre_a: socle::paris::Moment,
     enregistre_dit: String,
 }
 
@@ -972,7 +973,7 @@ fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
 pub(crate) fn refuser_si_clos(ctx: &Contexte, mois: Mois) -> R<()> {
     let annee = mois.annee_civile();
     if let Some(clos) = crate::rappels::exercice_clos(ctx, annee)? {
-        let le = clos.le.jour().iso();
+        let le = clos.le.jour_de_paris().iso();
         return Err(refus(format!(
             "L'exercice {} est cloture depuis le {} : {} ne se modifie plus. Rouvrir l'exercice (Historique > L'exercice) \
              avant de toucher a ce mois.",
@@ -1046,8 +1047,8 @@ fn enregistrer_saisie(ctx: &Contexte, c: ChargeCase) -> R<CarteEcrite> {
     let vue = engagement::stock::vue_du_mois(&ctx.racine, mois)?.ok_or_else(|| refus(format!("{} : la carte écrite ne s'y lit pas.", mois.libelle(Graphie::Accentuee))))?;
     let a_completer = manque_de(ctx, &vue, k).map(|m| m.phrase);
     // « Enregistré à HH:MM » : l'heure du moteur (`temps.rs`), pas celle du navigateur (au banc, le temps est simule).
-    let a = socle::paris::InstantEcrit::maintenant();
-    let s = a.naif().seconde_du_jour();
+    let a = socle::temps::secondes().a_la_seconde();
+    let s = a.seconde_du_jour_de_paris();
     Ok(CarteEcrite {
         phrase: match &a_completer {
             Some(m) => format!("Carte enregistrée ; à compléter avant de valider : {}", m),
@@ -1776,7 +1777,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
         faits_avances: if nat.mensuelle() { engagement::heures_en_plus::faits_appeles(ctx, e.modalite_temps_travail()? == droit::natures::ModaliteDuTempsDeTravail::TempsPartiel)? } else { Vec::new() },
         // LES RUBRIQUES QUE SA CARTE PROPOSE : sa nature, et le statut et le metier de la fiche telle que la paie la lit
         // (le metier de la carte par-dessus celui du salarie).
-        propose: engagement::proposees::proposees(ctx, Some(nat.mensuelle()), s.statut.dite().map(|x| x.as_str()), s.code_emploi_ft.remplie(), &data.mois.premier_jour())?,
+        propose: engagement::proposees::proposees(ctx, Some(nat.mensuelle()), s.statut.dite().copied(), s.code_emploi_ft.remplie(), &data.mois.premier_jour())?,
         // LES CASES QU'UNE LIGNE DE FRAIS APPELLE : le lieu d'une nuitée, le restaurant d'un repas, le justificatif d'un
         // frais au-delà de sa limite (`engagement::frais_au_dela`).
         cases: e
@@ -1861,7 +1862,7 @@ pub(crate) fn archives_employees(paies: &[Paie]) -> R<Vec<String>> {
         }
         // Un permanent n'a pas de spectacle -- le numero d'objet lui est interdit
         // (CCH-11) -- donc rien a verifier de ce cote.
-        if let Some(sp) = p.spectacle.as_ref().filter(|s| s.actif.dite() == Some(&false)) {
+        if let Some(sp) = p.spectacle.as_ref().filter(|s| s.archivee()) {
             let titre = sp.titre.ecrite("titre").map_err(|m| m.reclasser(Classe::Manque))?;
             let lequel = match sp.numero_objet.portee() {
                 Some(objet) => format!("« {} » (objet {})", titre, objet),

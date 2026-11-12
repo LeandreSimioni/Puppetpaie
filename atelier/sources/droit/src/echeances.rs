@@ -12,14 +12,15 @@
 //! (`conges::jours_ouvrables`, L. 3141-3) ; « dans les deux jours ouvrables suivant l'embauche » se compte a partir du
 //! lendemain de l'embauche.
 
-use serde::ser::SerializeStruct;
+use serde::Serialize;
 
 use socle::date::Jour;
 use socle::echec::R;
 
 /// Une echeance : le jour, ce qui le precede (« avant le », « au plus tard le »), l'heure s'il y en a une (« à midi »),
-/// et le texte depose qui la donne.
-#[derive(Debug, Clone, PartialEq)]
+/// et le texte depose qui la donne. Elle se rend dans sa forme (`EcheanceRendue`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(into = "EcheanceRendue")]
 pub struct Echeance {
     pub jour: Jour,
     pub mots: &'static str,
@@ -50,14 +51,17 @@ impl Echeance {
 }
 
 /// Une echeance telle qu'une case la rend : son jour, son texte, son texte court, sa source.
-impl serde::Serialize for Echeance {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let mut e = s.serialize_struct("Echeance", 4)?;
-        e.serialize_field("jour", &self.jour.iso())?;
-        e.serialize_field("texte", &self.texte())?;
-        e.serialize_field("court", &self.court())?;
-        e.serialize_field("source", &self.source)?;
-        e.end()
+#[derive(Serialize)]
+struct EcheanceRendue {
+    jour: Jour,
+    texte: String,
+    court: String,
+    source: String,
+}
+
+impl From<Echeance> for EcheanceRendue {
+    fn from(e: Echeance) -> EcheanceRendue {
+        EcheanceRendue { jour: e.jour, texte: e.texte(), court: e.court(), source: e.source }
     }
 }
 

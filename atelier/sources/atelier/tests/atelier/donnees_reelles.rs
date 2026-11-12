@@ -14,13 +14,15 @@ use std::path::{Path, PathBuf};
 
 use regex::Regex;
 
-use atelier::verifier_avant_commit::{ce_qui_part, depose_tel_quel, nirs_non_inventes};
+use atelier::verifier_avant_commit::{ce_qui_part, depose_tel_quel, nirs_non_inventes, programme_compile};
 
 /// En deux morceaux, pour que ce fichier ne porte pas lui-même ce qu'il refuse.
 const NOM_REEL: &str = concat!("ueu", "eue");
 
 /// Le code et ce que reçoit une compagnie, relatifs à la racine du dépôt : là où un cas propre à la compagnie du poste
-/// n'a pas sa place.
+/// n'a pas sa place. Le reste du dépôt peut nommer l'éditeur : les textes déposés (`atelier/reference/`), la
+/// documentation (`atelier/docs/`, les `LISEZ-MOI`, `AGENTS.md`), les maquettes, les licences. Aucune structure ne
+/// sépare l'un de l'autre (les lanceurs, `.claude/`, `.github/`, les outils n'ont pas de `Cargo.toml`) : la liste le dit.
 const DU_CODE: [&str; 10] = [
     "logiciel/",
     "fictives/",
@@ -63,14 +65,23 @@ fn rien_de_la_compagnie_reelle_n_est_ecrit_dans_ce_qui_part() {
     let deposes = atelier::empreintes::lues(&depot()).unwrap_or_else(|m| panic!("les empreintes des textes déposés se lisent : {}", m.phrase));
     let signature = signature();
     for rel in part() {
-        let Ok(o) = std::fs::read(depot().join(&rel)) else { continue };
+        // Ce que Git emporterait et qui ne se lit pas n'a pas été fouillé : le verrou échoue en le nommant.
+        let o = match std::fs::read(depot().join(&rel)) {
+            Ok(o) => o,
+            Err(e) => panic!("{} part avec Git et ne se lit pas : {}", rel, e),
+        };
+        if DU_CODE.iter().any(|d| rel.starts_with(d)) && rel.to_lowercase().contains(NOM_REEL) {
+            noms.push(rel.clone());
+        }
+        // Un programme compilé se fabrique depuis les sources fouillées ici : ses constantes ont la forme d'un NIR, et il
+        // porte l'identifiant de l'application que ses sources disent. Son contenu ne se fouille pas.
+        if programme_compile(&o) {
+            continue;
+        }
         if !depose_tel_quel(&deposes, &rel, &o) {
             nirs.extend(nirs_non_inventes(&o).into_iter().map(|(i, _)| format!("{}:{}", rel, ligne(&o, i))));
         }
         if DU_CODE.iter().any(|d| rel.starts_with(d)) {
-            if rel.to_lowercase().contains(NOM_REEL) {
-                noms.push(rel.clone());
-            }
             // La signature de l'editeur, blanchie a sa place (meme longueur : les lignes restent).
             let mut bas = String::from_utf8_lossy(&o).to_lowercase();
             for s in &signature {

@@ -512,7 +512,7 @@ fn montant_vire(m: &NombreDit) -> R<socle::num::Decimal> {
 
 /// Note qu'une annee de CASC-SVP est regularisee (apres le virement).
 fn casc_regularise(ctx: &Contexte, c: ChargeCascRegularise) -> R<CascNotee> {
-    let aujourd_hui = socle::paris::InstantEcrit::maintenant().jour();
+    let aujourd_hui = socle::temps::secondes().a_la_seconde().jour_de_paris();
     let notee = marquer_regularise(ctx, c.annee.annee()?, c.vire_le, montant_vire(&c.montant)?, INTERFACE, aujourd_hui)?;
     let montant = socle::texte::euros(notee.montant);
     Ok(CascNotee { phrase: format!("CASC-SVP {} notée régularisée : {} virés le {}.", notee.annee, montant, notee.vire_le.jj_mm_aaaa()), notee })
@@ -946,7 +946,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     // Ce que l'envoi garde : les deux messages tels qu'ils sont partis.
     let garde = std::path::Path::new(&r.dossier).join("envoyes");
     std::fs::create_dir_all(&garde).map_err(|e| socle::echec::du_disque(&garde, &e).reclasser(Classe::Disque))?;
-    let iso = socle::paris::maintenant();
+    let iso = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
     let horodate = format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]);
     let mut emls: Vec<String> = Vec::new();
     for (m, brut) in messages.iter().zip(&copies) {
@@ -957,7 +957,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     detail.eml = emls.clone();
     noter(ctx, journal::Ligne::RegularisationCasc(par_courriel(None, qui, true, &partis.join(", "), &format!("{} courriel(s) envoye(s)", partis.len()), detail, None)))?;
     // Les annees regularisees : leurs mois sortent des dossiers suivants. S'ecrit APRES le virement, jamais avant.
-    let auj = socle::paris::InstantEcrit::maintenant().jour();
+    let auj = socle::temps::secondes().a_la_seconde().jour_de_paris();
     let mut annees: Vec<RegularisationNotee> = Vec::new();
     for a in &r.annees {
         annees.push(marquer_regularise(ctx, a.annee, date_de(a.annee)?, a.cotisation, qui, auj)?);

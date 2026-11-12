@@ -4,9 +4,10 @@
 //! forme que sa ligne de `champs-base.json` lui donne) est la lentille par laquelle on la derive (la forme declaree se
 //! fabrique de la forme lisible : `deriver`), on la verifie (`champs::verifier_fiche`) et on la compare (ce qui change,
 //! ce qui se date) ; ce que la derivation pose revient dans la fiche case par case (`reporter`). Puis chaque case qui
-//! change s'ecrit datee dans la fiche telle qu'ecrite (`ecrire_datee`, la seule qui date une valeur de fiche).
+//! change s'ecrit datee dans la fiche telle qu'ecrite (`ecrire_datee` choisit ce qui se date ; `droit::fiche::dater`,
+//! par `FicheDatee::changer`, est le seul qui ecrit une valeur datee).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -46,6 +47,11 @@ pub(crate) trait SorteDeFiche: FicheDatee {
     fn differentes(a: &Self::Plate, b: &Self::Plate) -> Vec<CaseDeFiche>;
     /// Les cases de la fiche, sans ses notes (ce que l'ecran montre).
     fn sans_notes(p: Self::Plate) -> Self::Plate;
+    /// La fiche telle que le moteur la retient, pour ce qu'il lit d'une case qu'elle ne dit pas : « actif » d'un salarie
+    /// ou d'un spectacle (`archivee`). L'ecran la montre ainsi, et l'ecriture part de ce qu'il a montre.
+    fn retenue(p: Self::Plate) -> Self::Plate {
+        p
+    }
 
     /// Ce que le moteur pose dans la fiche changee `apres`, d'apres celle que l'ecran a montree (`avant`), avant tout
     /// controle (la forme d'un code risque, la notification d'un taux AT/MP que la saisie change).
@@ -186,7 +192,8 @@ impl SorteDeFiche for FicheEntrepriseDatee {
 
 /// UNE LIGNE DU TAUX AT/MP DU SIEGE S'ECRIT A SA DATE (`depuis`, celle de la notification), dans la case datee
 /// (`droit::fiche::dater`) : avant elle, la case garde ce qu'elle disait (vide, si elle ne disait rien) ; une ligne au
-/// meme jour est remplacee. La meme ligne n'ecrit rien. Le seul endroit qui ecrit la case, quelle que soit la source
+/// meme jour est remplacee (`FicheDatee::changer`, `premiere_datee`). La meme ligne n'ecrit rien. Le seul endroit qui
+/// ecrit la case, quelle que soit la source
 /// (`routes::atmp`). Rend vrai si elle a change.
 pub(crate) fn ecrire_ligne_atmp(brute: &mut FicheEntrepriseDatee, t: droit::fiche::TauxAtmp, note: Option<&str>) -> R<bool> {
     let depuis = t.depuis.ok_or_else(|| refus("Accidents du travail (AT/MP) : la ligne dit à partir de quand elle vaut. Rien n'a été enregistré."))?;
@@ -196,10 +203,7 @@ pub(crate) fn ecrire_ligne_atmp(brute: &mut FicheEntrepriseDatee, t: droit::fich
     if deja.as_ref() == Some(&t) || (t.provenance == Some(droit::fiche::ProvenanceAtmp::Saisie) && deja.as_ref().is_some_and(|d| droit::bareme::meme_taux_atmp(d, &t))) {
         return Ok(false);
     }
-    if brute.taux_atmp.as_ref().is_none_or(|l| l.is_empty()) {
-        droit::fiche::dater(&mut brute.taux_atmp, None, None, None);
-    }
-    droit::fiche::dater(&mut brute.taux_atmp, Some(t), Some(&depuis), note);
+    droit::fiche::FicheDatee::changer(brute, droit::fiche::ChangementEntreprise::TauxAtmp(Some(t)), Some(&depuis), true, note);
     Ok(true)
 }
 
@@ -239,13 +243,16 @@ impl SorteDeFiche for FicheSalarieDatee {
         f.fiches.contains_key(cle)
     }
     fn montree(ctx: &Contexte, cle: Option<&str>) -> Option<ChampsSalarie> {
-        ctx.salaries.get(cle?).map(|f| f.champs.clone())
+        ctx.salaries.get(cle?).map(|f| Self::retenue(f.champs.clone()))
     }
     fn differentes(a: &ChampsSalarie, b: &ChampsSalarie) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
     }
     fn sans_notes(p: ChampsSalarie) -> ChampsSalarie {
         p.sans_notes()
+    }
+    fn retenue(p: ChampsSalarie) -> ChampsSalarie {
+        ChampsSalarie { actif: Some(!p.archivee()), ..p }
     }
     fn refuser(ctx: &Contexte, cle: Option<&str>, avant: &ChampsSalarie, apres: &ChampsSalarie) -> R<()> {
         // LE MATRICULE D'UN SALARIE SANS NIR NE SE CHANGE PAS : il finit son numero technique temporaire.
@@ -317,13 +324,16 @@ impl SorteDeFiche for FicheSpectacleDatee {
         f.fiches.contains_key(cle)
     }
     fn montree(ctx: &Contexte, cle: Option<&str>) -> Option<ChampsSpectacle> {
-        ctx.spectacles.get(cle?).cloned()
+        ctx.spectacles.get(cle?).cloned().map(Self::retenue)
     }
     fn differentes(a: &ChampsSpectacle, b: &ChampsSpectacle) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
     }
     fn sans_notes(p: ChampsSpectacle) -> ChampsSpectacle {
         p.sans_notes()
+    }
+    fn retenue(p: ChampsSpectacle) -> ChampsSpectacle {
+        ChampsSpectacle { actif: Some(!p.archivee()), ..p }
     }
     fn refuser(ctx: &Contexte, cle: Option<&str>, _avant: &ChampsSpectacle, apres: &ChampsSpectacle) -> R<()> {
         // UN NUMERO D'OBJET, UN SPECTACLE : France Travail l'attribue « pour chaque spectacle ou chaque production » et il
@@ -769,12 +779,6 @@ fn changements_a_dater(nom: NomDeFiche, avant: &Saisie, apres: &Saisie, cles: &[
     if avant.cases().is_empty() {
         return Ok(Vec::new());
     }
-    // Une case que la fiche ne dit pas se montre a ce que le moteur lit alors : une case a cocher a son defaut
-    // (`booleen_defaut`), les jours travailles du lundi au vendredi (`droit::conges::JoursTravailles`). La laisser ainsi ne
-    // change rien.
-    let mut defauts: HashMap<CaseDeFiche, Valeur> =
-        champs::fiche(nom)?.into_iter().filter(|c| c.forme == champs::Forme::Booleen).map(|c| (c.cle, Valeur::OuiNon(c.booleen_defaut))).collect();
-    defauts.insert(droit::fiche::CasePieceSalarie::JoursTravailles.into(),Valeur::Mots(droit::conges::JOURS_DE_LA_SEMAINE[..5].iter().map(|j| j.to_string()).collect()));
     let sans_date = faits_sans_date();
     let lisibles = champs::formes_lisibles(nom)?;
     Ok(cles
@@ -782,7 +786,7 @@ fn changements_a_dater(nom: NomDeFiche, avant: &Saisie, apres: &Saisie, cles: &[
         .copied()
         .filter(|k| {
             let dite = avant.valeur(*k).filter(|a| !vide(Some(a)));
-            let a = dite.or(defauts.get(k));
+            let a = dite;
             let b = apres.valeur(*k);
             !sans_date.contains(&(nom, *k))
                 && !(a.is_some() && b.is_some() && meme_case(a, b, &lisibles))
@@ -795,8 +799,8 @@ fn changements_a_dater(nom: NomDeFiche, avant: &Saisie, apres: &Saisie, cles: &[
         .collect())
 }
 
-/// ECRIRE UNE FICHE DATEE, la seule fonction qui date une valeur d'une fiche : chaque case qui change de `avant` (la
-/// fiche a `lue_au`, celle que l'ecran a montree) a `apres` s'ecrit dans la fiche datee `brute` (`FicheDatee::changer`,
+/// ECRIRE UNE FICHE DATEE, la seule fonction qui choisit ce qui se date dans une fiche : chaque case qui change de
+/// `avant` (la fiche a `lue_au`, celle que l'ecran a montree) a `apres` s'ecrit dans la fiche datee `brute` (`FicheDatee::changer`,
 /// `droit::fiche::dater`). Ce qui change une valeur existante vaut a partir de `depuis`, et sans lui se refuse : ce qui
 /// precede garde l'ancienne valeur (`changements_a_dater`). Une case vide qu'on remplit prend sa valeur de tout temps,
 /// `depuis` ou non ; une valeur `premiere_datee` (le taux de PAS recu) vaut a partir de `depuis` meme dans une case vide :
@@ -821,7 +825,7 @@ pub(crate) fn ecrire_datee<F: SorteDeFiche>(
             libelles_a_dater(F::NOM, &a_dater)?.join(", ")
         )));
     }
-    let mut ecritures: Vec<(F::Changement, Option<Jour>, Option<&str>)> = Vec::new();
+    let mut ecritures: Vec<(F::Changement, Option<Jour>, bool)> = Vec::new();
     let mut ecrites = Vec::new();
     let lisibles = champs::formes_lisibles(F::NOM)?;
     for k in cles {
@@ -833,16 +837,13 @@ pub(crate) fn ecrire_datee<F: SorteDeFiche>(
         let jours = brute.depuis(k);
         let datee = depuis.is_some() && a_dater.contains(&k);
         let jour = if datee { depuis } else { jours.iter().copied().filter(|j| j.is_none_or(|j| j <= *lue_au)).last().flatten() };
-        let case = |p: &F::Plate| F::changement(p, k).ok_or_else(|| plain(format!("La case {} n'est pas de la fiche {}.", k, F::NOM)));
-        if datee && jours.is_empty() {
-            // Avant `depuis`, la fiche ne disait rien : la case, vide.
-            ecritures.push((case(&F::Plate::default())?, None, None));
-        }
-        ecritures.push((case(apres)?, jour, note));
+        let ch = F::changement(apres, k).ok_or_else(|| plain(format!("La case {} n'est pas de la fiche {}.", k, F::NOM)))?;
+        // Datee, la valeur ne vaut qu'a partir de `depuis`, meme dans une case vide : avant lui, la fiche ne disait rien.
+        ecritures.push((ch, jour, datee));
         ecrites.push(k);
     }
-    for (ch, jour, note) in ecritures {
-        droit::fiche::FicheDatee::changer(brute, ch, jour.as_ref(), note);
+    for (ch, jour, datee) in ecritures {
+        droit::fiche::FicheDatee::changer(brute, ch, jour.as_ref(), datee, note);
     }
     brute.noter(apres);
     Ok(ecrites)
@@ -1214,7 +1215,7 @@ pub(crate) enum ChargeEnregistrer {
 #[serde(untagged)]
 pub(crate) enum FicheEnregistree {
     Avertie { avertissement: Avertissement, phrase: String, phrases: Vec<String> },
-    Ecrite { cle: Option<String>, ecrits: Vec<CaseDeFiche>, enregistre_a: Option<socle::paris::InstantEcrit>, enregistre_dit: Option<String>, phrase: String },
+    Ecrite { cle: Option<String>, ecrits: Vec<CaseDeFiche>, #[serde(with = "socle::paris::ecrit::seconde::option")] enregistre_a: Option<socle::paris::Moment>, enregistre_dit: Option<String>, phrase: String },
 }
 
 impl crate::enveloppe::Dite for FicheEnregistree {
@@ -1272,9 +1273,9 @@ fn enregistrer<F: SorteDeFiche>(ctx: &Contexte, e: Enregistrement<F::Changement>
         (true, false, false) => "Enregistré.",
     };
     // « enregistré à HH:MM » : l'heure du moteur (`temps.rs`), pas celle du navigateur (au banc, le temps est simule).
-    let enregistre_a = e.ecrit.then(socle::paris::InstantEcrit::maintenant);
+    let enregistre_a = e.ecrit.then(|| socle::temps::secondes().a_la_seconde());
     let enregistre_dit = enregistre_a.map(|a| {
-        let s = a.naif().seconde_du_jour();
+        let s = a.seconde_du_jour_de_paris();
         format!("enregistré à {:02}:{:02}", s / 3_600, s / 60 % 60)
     });
     let inscrit = if e.ecrit { F::apres_ecriture(ctx, &e.champs)? } else { Vec::new() };

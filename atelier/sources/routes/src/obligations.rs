@@ -46,7 +46,7 @@ use engagement::imprevus::{ArretSaisi, Imprevu, Prolongation};
 use socle::date::Jour;
 use socle::ecran::Pastille;
 use socle::forme::TexteDit;
-use socle::paris::{HeureDeSaisie, HeureDuJournal};
+use socle::paris::{InstantOuJour, Moment};
 use crate::enveloppe::{en_json, route_inconnue, Charge, Dite, Porte, Rendu};
 use socle::echec::R;
 pub use declarations::obligations::{CleDObligation, Ou, TexteDepose};
@@ -402,7 +402,8 @@ impl CeQueDitLaCompagnie<'_> {
 pub(crate) struct ConnaissanceSaisie {
     jour: Jour,
     heure: Option<String>,
-    saisi_le: HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    saisi_le: Moment,
 }
 
 /// Ce que la compagnie a connu : l'arret, ou l'accident.
@@ -507,7 +508,7 @@ pub enum FaitDit {
 /// Un depot du journal qui fait une obligation : quand, son fichier, son ordre ou son flux, et le jour.
 #[derive(Debug, Clone, Serialize)]
 pub struct DepotFait {
-    quand: HeureDuJournal,
+    quand: InstantOuJour,
     #[serde(skip_serializing_if = "Option::is_none")]
     fichier: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -787,17 +788,17 @@ pub(crate) struct EnvoiDeLArret {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mois: Option<socle::mois::Mois>,
     fichier: Option<String>,
-    pub quand: HeureDuJournal,
+    pub quand: InstantOuJour,
 }
 
 /// L'ordre d'une heure du journal et d'une heure de saisie, toutes deux l'heure de Paris (`socle::paris`) : un instant
 /// du journal se compare a la seconde ; un jour seul (un bilan repris qui ne dit pas son heure) ne vient apres la saisie
 /// que s'il est d'un jour suivant.
-fn ordre(quand: HeureDuJournal, saisi: HeureDeSaisie) -> std::cmp::Ordering {
+fn ordre(quand: InstantOuJour, saisi: Moment) -> std::cmp::Ordering {
     match quand {
-        HeureDuJournal::Instant(i) => i.naif().cmp(&saisi.naif()),
-        HeureDuJournal::Jour(j) if j > saisi.jour() => std::cmp::Ordering::Greater,
-        HeureDuJournal::Jour(_) => std::cmp::Ordering::Less,
+        InstantOuJour::Instant(i) => i.cmp(&saisi),
+        InstantOuJour::Jour(j) if j > saisi.jour_de_paris() => std::cmp::Ordering::Greater,
+        InstantOuJour::Jour(_) => std::cmp::Ordering::Less,
     }
 }
 
@@ -935,11 +936,11 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
     // Une DSN mensuelle a reporte l'imprevu : celle d'un mois qu'il traverse, partie apres sa saisie (a la minute ; une DSN
     // datee d'un jour seul, avant toute saisie de ce jour) ; ou, un arret, la DSN suivante qui reporte l'arret saisi apres
     // le depart de celles de ses mois (`Arret::a_reporter`).
-    let reporte = |mois: socle::mois::Mois, quand: HeureDuJournal| -> R<bool> {
+    let reporte = |mois: socle::mois::Mois, quand: InstantOuJour| -> R<bool> {
         if traverses.contains(&mois) {
             return Ok(match quand {
-                HeureDuJournal::Instant(i) => socle::paris::MinuteEcrite::du_naif(i.naif()).naif() >= saisi.naif(),
-                HeureDuJournal::Jour(j) => j > saisi.jour(),
+                InstantOuJour::Instant(i) => i.a_la_minute() >= saisi,
+                InstantOuJour::Jour(j) => j > saisi.jour_de_paris(),
             });
         }
         // Sans arret, rien ne se reporte.
@@ -1429,7 +1430,8 @@ pub struct ObligationFaite {
     heure: Option<String>,
     depot: String,
     reference: Option<String>,
-    saisi_le: HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    saisi_le: Moment,
 }
 
 fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsDeLArret> {
@@ -1629,18 +1631,18 @@ mod essais {
     #[test]
     fn un_rectificatif_depose_avant_la_prolongation_ne_la_fait_pas() {
         let jour = |j| Jour::nouveau(2026, 11, j).unwrap();
-        let a = |j, heure| socle::paris::Naif::du_jour(jour(j), heure, 0, 0).unwrap();
+        let a = |j, heure| Moment::a_paris(jour(j), heure, 0, 0).unwrap();
         let signalement = |type_declaration: TypeDeLaDeclaration, j, heure| EnvoiDeLArret {
             nature_declaration: NatureDeLaDeclaration::SignalementArret,
             type_declaration: Some(type_declaration),
             ordre: None,
             mois: None,
             fichier: None,
-            quand: HeureDuJournal::from(socle::paris::InstantEcrit::du_naif(a(j, heure))),
+            quand: InstantOuJour::from(a(j, heure)),
         };
         let prolongation = Prolongation {
             le: jour(3),
-            saisi_le: HeureDeSaisie::de_la_minute(socle::paris::MinuteEcrite::du_naif(a(3, 15))),
+            saisi_le: Moment::a_paris(jour(3), 15, 0, 0).unwrap(),
             qui: "t".into(),
             fin_avant: jour(6),
             fin: jour(13),

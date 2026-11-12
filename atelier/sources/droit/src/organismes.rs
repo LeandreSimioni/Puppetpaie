@@ -102,7 +102,7 @@ forme_notee! {
         pub assiette: Option<crate::bordereau::AssietteDuBordereau>,
         pub montant: Option<crate::bordereau::MontantDuBordereau>,
         pub taux_at: Option<TauxAt>,
-        pub statut: Option<String>,
+        pub statut: Option<crate::fiche::Statut>,
         /// La population : `intermittent` ou `permanent` (`ParNature`).
         #[serde(rename = "nature")]
         pub population: Option<String>,

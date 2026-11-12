@@ -6,7 +6,7 @@
 
 use crate::outils::typee::{cas_de, chemin_donnee, empreinte, jouer, lire_chemin, Rendu};
 use droit::clauses::{self as c, Bande, DitParLEngagement, Indemnite, PreavisDit, Prime, Profil, Retraite, Tranche, P};
-use droit::fiche::ChampsSalarie;
+use droit::fiche::{ChampsSalarie, Statut};
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 use socle::echec::R;
@@ -22,7 +22,7 @@ pub(crate) struct Eng {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub categorie_conventionnelle: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub statut: Option<String>,
+    pub statut: Option<Statut>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metier: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -91,7 +91,7 @@ pub(crate) fn champs(texte: &str) -> R<ChampsSalarie> {
 pub(crate) fn dit(e: Option<&Eng>) -> R<DitParLEngagement> {
     let Some(e) = e else { return Ok(DitParLEngagement::default()) };
     let dite = |v: &Option<String>| v.clone().filter(|s| !s.is_empty());
-    Ok(DitParLEngagement { categorie_conventionnelle: dite(&e.categorie_conventionnelle), statut: dite(&e.statut), metier: dite(&e.metier), cadre: e.cadre, debut: e.debut })
+    Ok(DitParLEngagement { categorie_conventionnelle: dite(&e.categorie_conventionnelle), statut: e.statut, metier: dite(&e.metier), cadre: e.cadre, debut: e.debut })
 }
 
 pub(crate) fn profil_de(p: &Prof) -> Profil {
@@ -167,7 +167,7 @@ pub(crate) fn bloc_annexe(g: &Grilles, idcc: &str, annexe: &str) -> Vec<R<Option
 }
 
 pub(crate) fn indemnite(idcc: &str, annexe: &str, pr: &Prof, anc: &str, r: &str, motif: Option<&str>, age: Option<&str>) -> R<Indemnite> {
-    c::indemnite_licenciement(dit_ou_vide(idcc), dit_ou_vide(annexe), &profil_de(pr), dec(anc), dec(r), motif_lu(motif), age.map(dec))
+    c::indemnite_licenciement(dit_ou_vide(idcc), dit_ou_vide(annexe), &profil_de(pr), dec(anc), &mut || Ok(dec(r)), motif_lu(motif), age.map(dec))
 }
 
 pub(crate) fn bloc_indemnite(g: &Grilles, idcc: &str, annexe: &str, pr: &Prof) -> Vec<R<Indemnite>> {
@@ -185,11 +185,11 @@ pub(crate) fn bloc_indemnite(g: &Grilles, idcc: &str, annexe: &str, pr: &Prof) -
 }
 
 pub(crate) fn mise(idcc: &str, a: &str, r: &str) -> R<Retraite> {
-    c::indemnite_mise_a_la_retraite(dit_ou_vide(idcc), dec(a), dec(r))
+    c::indemnite_mise_a_la_retraite(dit_ou_vide(idcc), dec(a), &mut || Ok(dec(r)))
 }
 
 pub(crate) fn depart(idcc: &str, a: &str, r: &str) -> R<Retraite> {
-    c::indemnite_depart_retraite(dit_ou_vide(idcc), dec(a), dec(r))
+    c::indemnite_depart_retraite(dit_ou_vide(idcc), dec(a), &mut || Ok(dec(r)))
 }
 
 pub(crate) fn bloc_retraite(g: &Grilles, f: impl Fn(&str, &str) -> R<Retraite>) -> Vec<R<Retraite>> {

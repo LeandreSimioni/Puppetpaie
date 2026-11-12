@@ -66,7 +66,7 @@ fn faire(cadre: &Cadre) -> Result<i32, Echec> {
             (false, true) => "pose",
             (false, false) => "-",
         };
-        let depuis: String = s.pose_le.iter().map(|d| format!("depuis le {}", d)).collect();
+        let depuis: String = s.pose_le.iter().map(|d| format!("depuis le {}", socle::paris::ecrit::saisie::texte(*d))).collect();
         dire!("  {:<18} {:<14} {}", s.service, marque, depuis);
         dire!("     {}", s.sert_a);
         if let Some(compte) = &s.compte {
@@ -96,7 +96,7 @@ fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     }
     if let Some(fin) = coffre.fin_ouverture_gardee()? {
         if coffre.ouverture_gardee()?.is_some() {
-            dire!("Seance deja ouverte, jusqu'au {}.", fin.iso().replace('T', " a "));
+            dire!("Seance deja ouverte, jusqu'au {}.", socle::paris::ecrit::minute::texte(fin).replace('T', " a "));
             return Ok(0);
         }
     }
@@ -108,7 +108,7 @@ fn seance(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
                 .ok_or_else(|| Echec { classe: Some(socle::echec::Classe::Coffre), phrase: "La seance acceptee n'a pas ete gardee : rien ne la dit.".into(), a_part: None })?;
             dire!(
                 "Seance ouverte jusqu'au {} : le coffre s'ouvre sans redemander le mot de passe du logiciel. Un depot REEL le redemande toujours.",
-                fin.iso().replace('T', " a ")
+                socle::paris::ecrit::minute::texte(fin).replace('T', " a ")
             );
             Ok(0)
         }

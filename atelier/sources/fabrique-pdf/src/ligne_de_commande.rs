@@ -18,21 +18,21 @@
 use std::io::Read;
 use std::process::ExitCode;
 
-use crate::{fabriquer, Description, FORMAT};
+use crate::{fabriquer, Description, Refus, FORMAT};
 
 fn echec(message: &str, code: u8) -> ExitCode {
     eprintln!("{}", message.replace('\n', " "));
     ExitCode::from(code)
 }
 
-/// L'entrée standard en UTF-8, sans marque d'ordre des octets.
-fn lire_entree() -> Result<String, String> {
+/// L'entrée standard en UTF-8, sans marque d'ordre des octets. Une entrée qui ne se lit pas est une piece illisible.
+fn lire_entree() -> Result<String, Refus> {
     let mut entree = Vec::new();
     std::io::stdin()
         .read_to_end(&mut entree)
-        .map_err(|e| format!("lecture de l'entrée standard impossible : {}", e))?;
+        .map_err(|e| Refus::illisible(format!("lecture de l'entrée standard impossible : {}", e)))?;
     let texte = String::from_utf8(entree)
-        .map_err(|_| "description illisible : l'entrée n'est pas de l'UTF-8".to_string())?;
+        .map_err(|_| Refus::illisible("description illisible : l'entrée n'est pas de l'UTF-8"))?;
     match texte.strip_prefix('\u{feff}') {
         Some(sans_marque) => Ok(sans_marque.to_string()),
         None => Ok(texte),
@@ -99,7 +99,7 @@ pub fn executer(args: &[String]) -> ExitCode {
         [a, sortie] if a == "--assembler" => {
             let texte = match lire_entree() {
                 Ok(t) => t,
-                Err(m) => return echec(&m, 1),
+                Err(r) => return echec(&r.phrase, 1),
             };
             let assemblage = match crate::assemblage::Assemblage::lire(&texte) {
                 Ok(a) => a,
@@ -191,9 +191,9 @@ pub fn executer(args: &[String]) -> ExitCode {
         }
         // Remplit des champs texte et pose des images ; la description JSON arrive sur l'entrée.
         [a, entree, sortie] if a == "--remplir" => {
-            let remplissage = match lire_entree().and_then(|t| crate::forme::Remplissage::lire(&t).map_err(|r| r.phrase)) {
+            let remplissage = match lire_entree().and_then(|t| crate::forme::Remplissage::lire(&t)) {
                 Ok(r) => r,
-                Err(m) => return echec(&format!("{} : {}", entree, m), 1),
+                Err(r) => return echec(&format!("{} : {}", entree, r.phrase), 1),
             };
             let octets = match lire_fichier(entree) {
                 Ok(o) => o,
@@ -209,9 +209,9 @@ pub fn executer(args: &[String]) -> ExitCode {
             }
         }
         [sortie] if !sortie.starts_with("--") => {
-            let description = match lire_entree().and_then(|t| Description::lire(&t).map_err(|r| r.phrase)) {
+            let description = match lire_entree().and_then(|t| Description::lire(&t)) {
                 Ok(d) => d,
-                Err(m) => return echec(&m, 1),
+                Err(r) => return echec(&r.phrase, 1),
             };
             let octets = match fabriquer(&description) {
                 Ok(o) => o,

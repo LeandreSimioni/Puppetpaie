@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use socle::mois::Mois;
 use socle::date::Jour;
-use socle::paris::{HeureDuJournal, InstantEcrit};
+use socle::paris::{InstantOuJour, Moment};
 use crate::journal::{chemin, Rangement};
 use crate::ligne::{Acte, AvenantParti, ContratAttendu, Ligne, Mode, PersonneCertifiee, RetourContrat, RetourOrganisme, Verdict};
 use crate::retours::{self, Annonce};
@@ -59,7 +59,7 @@ pub(crate) fn erreur_io(e: &std::io::Error, p: &Path) -> Echec {
 
 /// Les embauches qu'une DPAE reelle declare, par (salarie, numero du contrat) : partie, et pas refusee (`refuse_par_un_retour`),
 /// et quand ; une DPAE refusee se redeclare. Une embauche sans numero ne se relie a rien.
-pub fn embauches_par_depot(lignes: &[Ligne]) -> HashMap<Paire, HeureDuJournal> {
+pub fn embauches_par_depot(lignes: &[Ligne]) -> HashMap<Paire, InstantOuJour> {
     let mut d = HashMap::new();
     for l in lignes {
         let Some(e) = l.dpae().filter(|e| e.mode == Mode::Reel && e.accepte && !refuse_par_un_retour(l)) else { continue };
@@ -90,7 +90,7 @@ pub fn de_l_etablissement<'a>(lignes: impl IntoIterator<Item = &'a Ligne>, nic: 
 /// verdict qu'une ligne reprise garde), refusee, ses anomalies, l'attestation employeur recue.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EtatDsnDuMois {
-    pub quand: HeureDuJournal,
+    pub quand: InstantOuJour,
     pub fichier: Option<String>,
     pub flux: String,
     pub passee: bool,
@@ -147,7 +147,7 @@ fn verdict_dpae(retours: &[RetourOrganisme]) -> (bool, bool) {
 /// passee, refusee, les anomalies, les retours, et ce que le certificat de l'Urssaf en dit (le dossier, deja existante).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EtatEmbauche {
-    pub quand: HeureDuJournal,
+    pub quand: InstantOuJour,
     pub fichier: Option<String>,
     pub fin: Option<socle::date::Jour>,
     pub passee: bool,
@@ -259,8 +259,8 @@ pub fn renvoyes_depuis_la_signature(lignes: &[Ligne]) -> HashSet<Paire> {
 }
 
 /// Les contrats dont le dernier mot est « recu » : (salarie, numero) -> quand.
-pub fn contrats_recus(lignes: &[Ligne]) -> HashMap<Paire, InstantEcrit> {
-    let mut etat: HashMap<Paire, Option<InstantEcrit>> = HashMap::new();
+pub fn contrats_recus(lignes: &[Ligne]) -> HashMap<Paire, Moment> {
+    let mut etat: HashMap<Paire, Option<Moment>> = HashMap::new();
     for d in lignes.iter().flat_map(revenus) {
         // La note d'un avenant (signe, ou defait) ne dit rien du contrat lui-meme.
         if d.avenant.is_some() {
@@ -278,7 +278,7 @@ pub fn contrats_recus(lignes: &[Ligne]) -> HashMap<Paire, InstantEcrit> {
 pub struct Attendue {
     pub code: String,
     pub mois: Option<Mois>,
-    pub quand: HeureDuJournal,
+    pub quand: InstantOuJour,
     pub salarie: droit::contexte::IdSalarie,
     /// L'adresse ou le contrat est parti (aucune : remis en main propre).
     pub adresse: Option<String>,
@@ -485,7 +485,7 @@ fn pluriel(n: usize) -> &'static str {
 /// LA PHRASE D'UN ENVOI DU JOURNAL : quand il est parti, et ce qui en est revenu. Un contrat est revenu signe quand le
 /// journal le note recu (`contrats_recus`) ; un avenant, quand sa propre note le dit (`avenants_par_contrat`) -- les
 /// memes lectures que l'etat de l'engagement.
-pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, InstantEcrit>, avenants: &HashMap<Paire, Vec<AvenantParti>>) -> String {
+pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &HashMap<Paire, Vec<AvenantParti>>) -> String {
     let Some(ligne) = ligne else { return "pas encore envoyé".into() };
     let mut quand = ligne.quand().dit();
     if ligne.mode() == Mode::Test {
@@ -975,7 +975,7 @@ fn correspond(j: &[Jeton], nom: &[char]) -> bool {
 }
 
 /// LA CLE DU CONTENU TELECHARGE D'UN RETOUR (`retours::Annonce`) : son flux, sa nature, sa publication.
-pub type CleDuContenu = (Option<String>, String, Option<socle::paris::InstantCompact>);
+pub type CleDuContenu = (Option<String>, String, Option<socle::paris::Moment>);
 
 /// La cle du contenu telecharge du retour `r`.
 pub fn cle_du_contenu(r: &Annonce) -> CleDuContenu {
@@ -1263,8 +1263,8 @@ pub struct Parti {
     pub mois: Mois,
     pub numero: Option<engagement::numeros::NumeroContrat>,
     pub fichier: String,
-    pub quand: HeureDuJournal,
-    pub signe: Option<InstantEcrit>,
+    pub quand: InstantOuJour,
+    pub signe: Option<Moment>,
     /// L'empreinte du modele avec lequel il est parti (`ContratParti::modele`).
     pub modele: Option<String>,
 }
@@ -1273,7 +1273,7 @@ impl Parti {
     /// Le jour qui date le contrat dans un avenant : celui de sa signature, sinon de son envoi.
     pub fn date(&self) -> Jour {
         match &self.signe {
-            Some(s) => s.jour(),
+            Some(s) => s.jour_de_paris(),
             None => self.quand.jour(),
         }
     }
@@ -1406,7 +1406,7 @@ mod tests {
         let autre = ligne("dpae", "reel", "2026-06-01T10:00:00", "e1", "f.dsn", true, "WSCCCC", "{\"repetition\": null, \"reconstruit\": false, \"embauches\": [], \"certificat\": false}", "[]");
         let r = journal("rattachement", &[l, autre]);
         let annonce = |flux: &str, nature: &str, seconde: i64| Annonce {
-            publication: Some(socle::paris::InstantCompact::du_naif(socle::paris::Naif::du_jour(Jour::nouveau(2026, 6, 1).unwrap(), 11, 0, seconde).unwrap())),
+            publication: Some(socle::paris::Moment::a_paris(Jour::nouveau(2026, 6, 1).unwrap(), 11, 0, seconde).unwrap()),
             production: None,
             ops: None,
             delegataire: None,

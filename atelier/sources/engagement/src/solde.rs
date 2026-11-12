@@ -96,7 +96,7 @@ fn de_p(x: clauses::P) -> R<Decimal> {
 /// dit rien ; la carte n'a pas de case pour la categorie dans la convention, que seule la fiche dit.
 pub(crate) fn dit_par_l_engagement(e: &Carte) -> R<clauses::DitParLEngagement> {
     let metier = e.metier.as_deref().filter(|v| !v.is_empty()).map(str::to_string);
-    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.statut.map(|s| s.as_str().to_string()), metier, cadre: e.cadre, debut: e.debut })
+    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.statut, metier, cadre: e.cadre, debut: e.debut })
 }
 
 /// L'age au dernier jour du contrat (ou aujourd'hui), en annees revolues.
@@ -314,8 +314,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
             // Le maintien (L3141-24, II, `atelier/reference/sources/code-du-travail/xml/L3141-24.xml`) : ce que le salarie
             // aurait percu s'il avait travaille ces jours, le salaire du mois entier reparti sur les jours ouvrables du
             // mois entier, comme les conges pris (`conges::lignes_du_mois`), quel que soit le jour ou le contrat finit.
-            let ouvrables = Decimal::from(jours_ouvrables(&premier, &mois.dernier_jour(), chomes)?);
-            let ouvrables = if ouvrables.is_zero() { Decimal::ONE } else { ouvrables };
+            let ouvrables = ouvrables_du_mois(mois, chomes)?;
             let maintien = eur2(mul(div(salaire, ouvrables), solde));
             // Les jours pris ce mois-ci ont deja consomme le report d'abord :
             // le reste du report est ce qui se paie au dixieme d'avant.
@@ -654,6 +653,16 @@ fn delai_de_prevenance(
     Ok(())
 }
 
+/// LES JOURS OUVRABLES DU MOIS ENTIER `mois` (`droit::conges::jours_ouvrables`), sur lesquels le maintien (L3141-24, II)
+/// repartit le salaire du mois. Un mois en compte toujours (six jours par semaine, hors les feries chomes) : aucun est un
+/// defaut du calendrier, qui remonte.
+pub(crate) fn ouvrables_du_mois(mois: Mois, chomes: Option<&str>) -> R<Decimal> {
+    match jours_ouvrables(&mois.premier_jour(), &mois.dernier_jour(), chomes)? {
+        0 => Err(socle::refus!("Défaut du logiciel : le mois {} n'a aucun jour ouvrable.", mois)),
+        n => Ok(Decimal::from(n)),
+    }
+}
+
 /// LES CONGES D'UN TEMPS PAYE SANS ETRE EFFECTUE : le delai de prevenance (L1221-25) et le preavis (L1234-5) sont payes
 /// « indemnité compensatrice de congés payés comprise ». Les `jours` que ce temps aurait acquis (L3141-3), payes au plus
 /// favorable du dixieme de ce qu'il paie (`montant`, sa remuneration) et du maintien (le salaire du mois `mois` sur ses
@@ -670,9 +679,8 @@ fn conges_non_effectues(
     if jours.is_zero() {
         return Ok("ce temps n'acquiert aucun jour de congé.".to_string());
     }
-    let ouvrables = Decimal::from(jours_ouvrables(&mois.premier_jour(), &mois.dernier_jour(), ctx.entreprise.feries_chomes())?);
-    let ouvrables = if ouvrables.is_zero() { Decimal::ONE } else { ouvrables };
-    let ind = permanents::indemnite_conges(jours, montant, jours, eur2(mul(div(salaire, ouvrables), jours)))?;
+    let ouvrables = ouvrables_du_mois(mois, ctx.entreprise.feries_chomes())?;
+    let ind =permanents::indemnite_conges(jours, montant, jours, eur2(mul(div(salaire, ouvrables), jours)))?;
     let rubrique = permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique.clone();
     let (rang, total_jours, total) = match stc.conges_payes {
         Some((rang, j, m)) => (rang, add(j, jours), add(m, ind.retenu)),
@@ -751,8 +759,8 @@ fn indemnite_de_rupture(
             nat.libelle
         ));
     }
-    let reference = salaire_de_reference(ctx, e, mois)?;
-    let retenu = reference.retenu;
+    let mut lue = None;
+    let mut retenu = || -> R<Decimal> { Ok(salaire_de_reference(&mut lue, ctx, e, mois)?.retenu) };
     let mut rubrique = rubrique_sec.clone();
     // Le montant de ces indemnites ne se saisit pas : la carte n'a de case que pour celle du licenciement
     // (`indemnite_licenciement`).
@@ -769,14 +777,14 @@ fn indemnite_de_rupture(
     let (legale, article, quoi, c): (permanents::IndemniteLegale, &str, &str, Conventionnelle);
 
     if fin_cdi == permanents::FinDeCdi::DepartALaRetraite {
-        let depart = permanents::indemnite_depart_retraite(anciennete, retenu)?;
+        let depart = permanents::indemnite_depart_retraite(anciennete, &mut retenu)?;
         palier = depart.palier.filter(|p| *p != 0).map(|p| (p, depart.mois));
         legale = permanents::IndemniteLegale { montant: depart.montant, du: depart.du, pourquoi: depart.pourquoi, annees: None };
         article = "L1237-9 et D1237-1";
         quoi = "depart a la retraite";
-        c = Conventionnelle::de_la_retraite(clauses::indemnite_depart_retraite(idcc, anciennete, retenu)?);
+        c = Conventionnelle::de_la_retraite(clauses::indemnite_depart_retraite(idcc, anciennete, &mut retenu)?);
     } else if fin_cdi == permanents::FinDeCdi::MiseALaRetraite {
-        legale = permanents::indemnite_mise_a_la_retraite(anciennete, retenu)?;
+        legale = permanents::indemnite_mise_a_la_retraite(anciennete, &mut retenu)?;
         article = "L1237-7";
         quoi = "mise a la retraite";
         stc.avertissements.push(avertir(format!(
@@ -787,7 +795,7 @@ fn indemnite_de_rupture(
              (L1237-8), et ce qui est declare ici serait faux.",
             qui
         )));
-        let mise = clauses::indemnite_mise_a_la_retraite(idcc, anciennete, retenu)?;
+        let mise = clauses::indemnite_mise_a_la_retraite(idcc, anciennete, &mut retenu)?;
         let vise = prof.categorie.as_deref() == Some("cadre_de_direction") && ctx.entreprise.annexe_convention.code() == Some("1") && anciennete > Decimal::from(120);
         if let Some(cdd) = mise.cadre_de_direction.as_ref().filter(|_| vise) {
             if saisi.is_none() {
@@ -806,7 +814,7 @@ fn indemnite_de_rupture(
         }
         c = Conventionnelle::de_la_retraite(mise);
     } else {
-        let rc = permanents::indemnite_rupture_conventionnelle(anciennete, retenu)?;
+        let rc = permanents::indemnite_rupture_conventionnelle(anciennete, &mut retenu)?;
         if let (Some(_), Some(pourquoi)) = (rc.plancher, rc.pourquoi.as_deref().filter(|p| !p.is_empty())) {
             stc.avertissements.push(info(format!("{} : {}", qui, pourquoi)));
         }
@@ -816,7 +824,7 @@ fn indemnite_de_rupture(
         supplement_rub = "indemnite_rupture_conventionnelle_supplement".into();
         // 3090, art. 7.6 : le plancher est l'indemnite CONVENTIONNELLE de
         // licenciement, et non celle du code du travail.
-        let lic = indemnite_conventionnelle(ctx, e, anciennete, retenu, motif)?;
+        let lic = indemnite_conventionnelle(ctx, e, anciennete, &mut retenu, motif)?;
         let rc_sec = clauses::releve(idcc)?.and_then(|r| r.rupture_conventionnelle);
         let mut cc = Conventionnelle { releve: lic.releve, article: lic.article.clone(), bas: None, haut: None, pourquoi: lic.pourquoi.clone(), prevenance_mois: None };
         if let (true, Some(rc_sec)) = (lic.du, rc_sec) {
@@ -948,6 +956,7 @@ fn indemnite_de_rupture(
         )));
         return Ok(());
     }
+    let reference = salaire_de_reference(&mut lue, ctx, e, mois)?;
     verifier_les_plafonds(ctx, mois, montant, quoi, &qui)?;
     let part_legale = plus_petit(montant, m_legal);
     let supplement = sub(montant, part_legale);
@@ -1087,9 +1096,9 @@ fn indemnite_de_licenciement(
     if saisi.is_none() && !(nat.duree_indeterminee && motif.is_some()) {
         return Ok(());
     }
-    let reference = salaire_de_reference(ctx, e, mois)?;
-    let legale = permanents::indemnite_licenciement(anciennete, reference.retenu, motif)?;
-    let conv = indemnite_conventionnelle(ctx, e, anciennete, reference.retenu, motif)?;
+    let mut lue = None;
+    let legale = permanents::indemnite_licenciement(anciennete, &mut || Ok(salaire_de_reference(&mut lue, ctx, e, mois)?.retenu), motif)?;
+    let conv = indemnite_conventionnelle(ctx, e, anciennete, &mut || Ok(salaire_de_reference(&mut lue, ctx, e, mois)?.retenu), motif)?;
     let m_legal = if legale.du { legale.montant } else { zero2() };
     let conv_du = conv.du;
     let (conv_bas, conv_haut) = (conv.bas.map(de_p).transpose()?, conv.haut.map(de_p).transpose()?);
@@ -1148,6 +1157,7 @@ fn indemnite_de_licenciement(
         }
         return Ok(());
     }
+    let reference = salaire_de_reference(&mut lue, ctx, e, mois)?;
     verifier_les_plafonds(ctx, mois, montant, "licenciement", &qui)?;
     let part_legale = plus_petit(montant, m_legal);
     if part_legale > Decimal::ZERO {
@@ -1201,7 +1211,7 @@ fn indemnite_conventionnelle(
     ctx: &Contexte,
     e: &Carte,
     anciennete: Decimal,
-    reference: Decimal,
+    reference: &mut dyn FnMut() -> R<Decimal>,
     motif: Option<MotifDeRupture>,
 ) -> R<clauses::Indemnite> {
     clauses::indemnite_licenciement(
@@ -1266,14 +1276,21 @@ fn phrase_conventionnelle(conv: &clauses::Indemnite, m_legal: Decimal) -> R<Stri
     })
 }
 
-/// Le salaire de reference des indemnites de fin de contrat (R1234-4), sur les bruts des derniers mois.
-fn salaire_de_reference(ctx: &Contexte, e: &Carte, mois: Mois) -> R<permanents::SalaireDeReference> {
+/// Le salaire de reference des indemnites de fin de contrat (R1234-4), sur les bruts des derniers mois. Il se lit une
+/// fois, et seulement quand une indemnite le demande (`lue` le garde) : sans paies precedentes il refuse, et une
+/// indemnite qui n'est pas due ne doit pas refuser pour lui.
+fn salaire_de_reference(lue: &mut Option<permanents::SalaireDeReference>, ctx: &Contexte, e: &Carte, mois: Mois) -> R<permanents::SalaireDeReference> {
+    if let Some(r) = lue {
+        return Ok(r.clone());
+    }
     let (douze, trois) = bruts_precedents(ctx, e, mois)?;
-    Ok(permanents::salaire_de_reference(&douze, &trois))
+    let r = permanents::salaire_de_reference(&douze, &trois)?;
+    *lue = Some(r.clone());
+    Ok(r)
 }
 
-/// Les bruts mensuels des douze et des trois derniers mois (R1234-4) ; faute
-/// de mois produits, le salaire mensuel du contrat.
+/// Les bruts mensuels des douze et des trois derniers mois (R1234-4), ceux des mois produits ou importes : aucun mois,
+/// aucun brut, et `permanents::salaire_de_reference` refuse en disant quoi produire.
 fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Decimal>, Vec<Decimal>)> {
     let salarie = salarie_de(e)?.to_string();
     let mut bruts = Vec::new();
@@ -1283,10 +1300,6 @@ fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Decimal>, V
             continue;
         }
         bruts.push(remuneration_du_mois(ctx, m, &salarie)?);
-    }
-    if bruts.is_empty() {
-        let salaire = crate::conges::salaire_mensuel(ctx, e)?;
-        bruts = vec![salaire; 12];
     }
     let trois = bruts.iter().take(3).copied().collect();
     Ok((bruts, trois))

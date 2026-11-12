@@ -5,34 +5,18 @@
 //! - chaque fichier du moteur dont le code ouvre une connexion passe par `garde_reseau` : il l'appelle, ou il l'est (une
 //!   connexion vers la machine elle-meme se demande a `garde_reseau::vers_cette_machine`) ;
 //! - chaque essai qui lance un programme dans un environnement vide (`env_clear`) y repose la variable.
-//! Ni l'un ni l'autre n'ecarte un fichier : ils lisent le code, commentaires et textes blanchis.
+//! Ni l'un ni l'autre n'ecarte un fichier : ils lisent le code, commentaires et textes blanchis, de chaque crate de
+//! l'espace (`structure::dossiers_des_crates` : chaque dossier qui a son `Cargo.toml`).
 //!
 //! La preuve par le comportement est dans `incidents_filet` (`sans_serveur_pose_rien_ne_sort_vers_le_serveur_de_l_editeur`)
 //! et dans le moteur (`garde_reseau::tests`).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-fn fichiers_rs(dossier: &Path, o: &mut Vec<PathBuf>) {
-    for e in std::fs::read_dir(dossier).unwrap().flatten() {
-        let p = e.path();
-        if p.is_dir() {
-            fichiers_rs(&p, o);
-        } else if p.extension().is_some_and(|x| x == "rs") {
-            o.push(p);
-        }
-    }
-}
-
-/// L'espace `atelier/sources/` : ses crates, du socle aux envois, au moteur et a l'atelier.
-fn espace() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..")
-}
+use crate::structure::{espace, essais_des_crates, sources_des_crates};
 
 /// Ce qui ouvre une connexion (ou un navigateur) vers une adresse.
 const SORTIES: [&str; 8] = ["ureq::Agent", "ureq::get(", "ureq::post(", "TcpStream::connect", "SmtpTransport::", "UdpSocket", "xdg-open", "rundll32"];
-
-/// Les crates de l'espace, dont les envois, ou vivent les transports, et l'atelier, qui telecharge les textes.
-const CRATES: [&str; 11] = ["socle", "droit", "engagement", "documents", "declarations", "envois", "compagnie", "import", "routes", "moteur", "atelier"];
 
 /// Le code d'un source, commentaires et textes blanchis, sauf les textes qui nomment un programme a lancer (`xdg-open`,
 /// `rundll32`) : ce qui ouvre une connexion s'y lit.
@@ -48,12 +32,8 @@ fn chaque_sortie_du_moteur_passe_par_le_garde_fou() {
     // Le module du garde-fou, tel que le compilateur le nomme (`socle::garde_reseau`).
     let garde = std::any::type_name_of_val(&socle::garde_reseau::en_essai).rsplit_once("::").unwrap().0.to_string();
     let racine = espace();
-    let mut fichiers = Vec::new();
-    for c in CRATES {
-        fichiers_rs(&racine.join(c).join("src"), &mut fichiers);
-    }
     let mut fautifs = Vec::new();
-    for f in fichiers {
+    for f in sources_des_crates() {
         let rel = f.strip_prefix(&racine).unwrap().to_string_lossy().replace('\\', "/");
         let module = crate::structure::module_de(&rel);
         let code = code(&f);
@@ -68,14 +48,8 @@ fn chaque_sortie_du_moteur_passe_par_le_garde_fou() {
 #[test]
 fn chaque_environnement_vide_d_un_essai_repose_le_garde_fou() {
     let racine = espace();
-    let mut fichiers = Vec::new();
-    for c in CRATES {
-        if racine.join(c).join("tests").is_dir() {
-            fichiers_rs(&racine.join(c).join("tests"), &mut fichiers);
-        }
-    }
     let mut fautifs = Vec::new();
-    for f in fichiers {
+    for f in essais_des_crates() {
         let texte: String = crate::structure::code_sans_textes(&std::fs::read_to_string(&f).unwrap()).into_iter().collect();
         let lignes: Vec<&str> = texte.lines().collect();
         for (i, l) in lignes.iter().enumerate() {

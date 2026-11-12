@@ -316,7 +316,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
     }
     let maintenant = socle::temps::secondes();
     let index = Index {
-        quand: socle::paris::HeureDeSaisie::de(maintenant),
+        quand: maintenant.a_la_minute(),
         racine_drive: racine_drive.to_string(),
         dossiers: index_dossiers,
         fichiers,
@@ -374,7 +374,7 @@ pub fn a_faire(coffre: &Coffre) -> Vec<String> {
                     .iter()
                     .filter(|f| f.pose)
                     .map(|f| match &f.pose_le {
-                        Some(le) => format!("{} (pose le {})", f.service, le),
+                        Some(le) => format!("{} (pose le {})", f.service, socle::paris::ecrit::saisie::texte(*le)),
                         None => f.service.to_string(),
                     })
                     .collect();

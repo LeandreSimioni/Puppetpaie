@@ -24,7 +24,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use crate::SansCharge;
 use socle::ecran::Pastille;
 use socle::echec::{Classe, R};
-use socle::paris::InstantEcrit;
+use socle::paris::Moment;
 
 const TEXTE: Champ = Champ { nom: "texte", libelle: Affiche::new("Message"), forme: Forme::Texte, sens: "le message, en mots", avance: false };
 const OU: Champ = Champ { nom: "ecran", libelle: Affiche::new("Où l'on était"), forme: Forme::Texte, sens: "où l'on était (l'écran, ou ce que le LLM a tenté : la route, la charge sans donnée personnelle, la réponse)", avance: false };
@@ -343,9 +343,12 @@ struct Groupe {
     combien: u64,
     partis: u64,
     en_attente: u64,
-    premiere: Option<InstantEcrit>,
-    derniere: Option<InstantEcrit>,
-    parti_le: Option<InstantEcrit>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    premiere: Option<Moment>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    derniere: Option<Moment>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    parti_le: Option<Moment>,
     contenu: Contenu,
     dernier_dit: String,
     quoi_dit: &'static str,
@@ -361,7 +364,8 @@ struct Diagnostic {
     total: usize,
     partis: u64,
     en_attente: u64,
-    dernier_envoi: Option<InstantEcrit>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    dernier_envoi: Option<Moment>,
     paies_annuelles: Vec<AnneePartie>,
     groupes: Vec<Groupe>,
     pastille: Pastille,
@@ -525,7 +529,7 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
     let lignes = incidents::lire(racine, None, false)?;
     let mut groupes: Vec<(String, Groupe)> = Vec::new();
     for l in &lignes {
-        let cle = if l.quoi.se_regroupe() { l.empreinte.clone() } else { format!("{}|{}", l.empreinte, l.quand) };
+        let cle = if l.quoi.se_regroupe() { l.empreinte.clone() } else { format!("{}|{}", l.empreinte, socle::paris::ecrit::seconde::texte(l.quand)) };
         let i = match groupes.iter().position(|(k, _)| *k == cle) {
             Some(i) => i,
             None => {
@@ -575,7 +579,7 @@ fn diagnostic_etat(racine: &Path) -> R<Diagnostic> {
             None => Pastille::de(socle::ecran::EtatDEcran::Information, "pas encore parti"),
         };
     }
-    let partis: Vec<InstantEcrit> = liste.iter().filter_map(|g| g.parti_le).collect();
+    let partis: Vec<Moment> =liste.iter().filter_map(|g| g.parti_le).collect();
     let (partis_total, en_attente_total) = (liste.iter().map(|g| g.partis).sum::<u64>(), liste.iter().map(|g| g.en_attente).sum::<u64>());
     // LE NOMBRE DE PAIES DE L'ANNEE se voit dans la meme liste : une entree par annee partie, avec exactement ce qui a
     // quitte le poste. Ce n'est pas un incident : il ne compte ni dans `total`, ni dans `partis`.
@@ -706,7 +710,7 @@ struct EcranDuDiagnostic {
     rien: &'static str,
 }
 
-fn ecran_du_diagnostic(envoi: bool, serveur: &str, total: usize, partis: u64, dernier_envoi: Option<InstantEcrit>, annee: Option<&AnneePartie>) -> EcranDuDiagnostic {
+fn ecran_du_diagnostic(envoi: bool, serveur: &str, total: usize, partis: u64, dernier_envoi: Option<Moment>, annee: Option<&AnneePartie>) -> EcranDuDiagnostic {
     let mut compte = match (envoi, dernier_envoi) {
         (false, _) => Some("désactivé : les incidents restent sur cet ordinateur, rien ne part".to_string()),
         (true, Some(d)) => Some(format!("{} incident(s) parti(s), le dernier le {}", partis, d.dit())),

@@ -62,7 +62,7 @@
       "note": "Les 146 contrats de l'historique CoolPaie et les 50 DSN de `export/DSN` (2021-2026) portent exactement ces valeurs, et la DSN d'août 2026 a été comparée caractère par caractère à celle que CoolPaie a déposée.",
       "paie": "activite",
       "duree_indeterminee": false,
-      "bareme": {"section": null, "note": "Le CORPS du barème décrit l'intermittent du spectacle : Congés Spectacles à 15,5 %, chômage majoré de 0,50 point, formation professionnelle des intermittents à 2 %, FNAL et taxe d'apprentissage sur le brut majoré de 11,5 % et de 10 % (la majoration pour congés). Cette nature n'a donc aucune section à appliquer par-dessus."},
+      "bareme": {"section": null, "organismes": "intermittent", "note": "Le CORPS du barème décrit l'intermittent du spectacle : Congés Spectacles à 15,5 %, chômage majoré de 0,50 point, formation professionnelle des intermittents à 2 %, FNAL et taxe d'apprentissage sur le brut majoré de 11,5 % et de 10 % (la majoration pour congés). Cette nature n'a donc aucune section à appliquer par-dessus. Ses organismes et ses contributions sont ceux des intermittents (`organismes-base.json`, `par_nature.intermittent`)."},
       "unite_quotite": {
         "valeur": "12",
         "plafond": 31,
@@ -265,7 +265,7 @@
       "note": "AUCUN réel en face. L'option CDI de CoolPaie est payante : il n'existe pas de bulletin de référence à recaler au centime. Ces valeurs sont lues dans le cahier technique 2026.1 et relues dans la 2027.1.1 ; un DÉPÔT DE TEST les confronte avant le premier contrat réel, et c'est le seul contrôle qu'on ait.",
       "paie": "mensuelle",
       "duree_indeterminee": true,
-      "bareme": {"section": "permanent", "note": "Le barème de la compagnie doit porter une section `par_nature.permanent` : un permanent ne cotise ni aux Congés Spectacles, ni au chômage majoré des intermittents, ni à leur formation professionnelle à 2 % ; sa retraite complémentaire est celle du droit commun, et ses assiettes de FNAL et de taxe d'apprentissage sont le brut nu, sans la majoration pour congés. Il a en revanche une mutuelle santé obligatoire (ANI du 11/01/2013, art. L911-7), qu'un intermittent n'a pas. Sans cette section vérifiée, le moteur refuse de le payer."},
+      "bareme": {"section": "permanent", "organismes": "permanent", "note": "Le barème de la compagnie doit porter une section `par_nature.permanent` : un permanent ne cotise ni aux Congés Spectacles, ni au chômage majoré des intermittents, ni à leur formation professionnelle à 2 % ; sa retraite complémentaire est celle du droit commun, et ses assiettes de FNAL et de taxe d'apprentissage sont le brut nu, sans la majoration pour congés. Il a en revanche une mutuelle santé obligatoire (ANI du 11/01/2013, art. L911-7), qu'un intermittent n'a pas. Sans cette section vérifiée, le moteur refuse de le payer."},
       "unite_quotite": {
         "valeur": "10",
         "plafond": 250,
@@ -446,7 +446,7 @@
       "note": "AUCUN réel en face — voir `cdi._preuve`. Même origine, mêmes garde-fous.",
       "paie": "mensuelle",
       "duree_indeterminee": false,
-      "bareme": {"section": "permanent", "note": "La même section que le CDI : la nature du contrat ne change pas les cotisations, seule la fin du contrat diffère (précarité, motifs de rupture)."},
+      "bareme": {"section": "permanent", "organismes": "permanent", "note": "La même section que le CDI : la nature du contrat ne change pas les cotisations, seule la fin du contrat diffère (précarité, motifs de rupture)."},
       "unite_quotite": {
         "valeur": "10",
         "plafond": 250,

@@ -456,8 +456,9 @@ pub fn nommes_d_un_mois(dossier: &Path, extension: Option<&str>, noter: bool) ->
         .collect())
 }
 
-/// Le dossier des referentiels livres (`donnees/`) : `PUPPETPAIE_CODE` si posee, sinon
-/// `<crate>/../donnees`.
+/// Le dossier des referentiels livres (`donnees/`) : `PUPPETPAIE_CODE`, que tout programme pose au demarrage
+/// (`compagnie::installation::fixer_le_code`, qui refuse en la nommant s'il ne trouve aucun dossier). Non posee, c'est un
+/// test de `cargo` qui lit le code dans son processus, sans programme : celui du depot qui le compile.
 pub fn dossier_du_code() -> PathBuf {
     match std::env::var_os("PUPPETPAIE_CODE") {
         Some(p) if !p.is_empty() => PathBuf::from(p),

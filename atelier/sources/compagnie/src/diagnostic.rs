@@ -55,14 +55,6 @@ const PROFONDEUR_MAX: usize = 14;
 /// Une liste mise en forme garde ses premiers elements ; le reste se compte.
 const LISTE_MAX: usize = 60;
 
-/// Le verrou d'une memoire du fil. Un fil tombe en le tenant (une panique) le laisse empoisonne : ce qu'il garde reste
-/// une liste de lignes entieres, qui se lit.
-fn verrou<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    match m.lock() {
-        Ok(g) => g,
-        Err(empoisonne) => empoisonne.into_inner(),
-    }
-}
 
 fn demarrage() -> &'static Instant {
     static D: OnceLock<Instant> = OnceLock::new();
@@ -399,13 +391,13 @@ fn personnes(racine: Option<&Path>) -> Arc<Personnes> {
     let Some(racine) = racine else { return Arc::new(Personnes { une: Vec::new(), toutes: None, inconnues: None }) };
     let sig = (signature(&racine.join(droit::contexte::SALARIES)), signature(&racine.join(droit::contexte::ENTREPRISE)));
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Some((s, p)) = verrou(cache).get(racine) {
+    if let Some((s, p)) = socle::memoire::tenu(cache).get(racine) {
         if *s == sig {
             return p.clone();
         }
     }
     let p = Arc::new(construire(racine));
-    verrou(cache).insert(racine.to_path_buf(), (sig, p.clone()));
+    socle::memoire::tenu(cache).insert(racine.to_path_buf(), (sig, p.clone()));
     p
 }
 
@@ -701,7 +693,7 @@ fn le_fil() -> &'static Mutex<VecDeque<Entree>> {
 /// Ajoute une action au fil, a son heure (`t`, en ms) : une repetition recente se compte dans sa ligne.
 fn ajouter(t: u64, texte: String, cle: String) {
     let texte = if nb_car(&texte) > LIGNE_MAX { format!("{}…", texte.chars().take(LIGNE_MAX).collect::<String>()) } else { texte };
-    let mut f = verrou(le_fil());
+    let mut f = socle::memoire::tenu(le_fil());
     let limite = maintenant_ms().saturating_sub(FENETRE_MS);
     while f.front().is_some_and(|e| e.dernier < limite) || f.len() >= FIL_MAX {
         f.pop_front();
@@ -727,7 +719,7 @@ fn relatif(maintenant: u64, t: u64) -> String {
 
 /// Le fil des trois dernieres minutes, une ligne par action, la plus ancienne d'abord ; vide hors de la fenetre.
 pub fn fil(maintenant: u64) -> Vec<String> {
-    let f = verrou(le_fil());
+    let f = socle::memoire::tenu(le_fil());
     let limite = maintenant.saturating_sub(FENETRE_MS);
     let gardees: Vec<&Entree> = f.iter().filter(|e| e.dernier >= limite && e.premier <= maintenant + 5_000).collect();
     let debut = gardees.len().saturating_sub(FIL_RENDU);
@@ -773,7 +765,7 @@ pub fn noter_route<C: Serialize + ?Sized>(racine: &Path, source: &str, nom: &str
     // DE QUOI REJOUER : la ligne du fil coupe la charge ; une ecriture de la page (ou un refus) la garde entiere, mise en
     // forme -- la saisie qui a mene au refus se rejoue sur une fictive (`ecritures`).
     if source == "page" && (ecriture || refusee) {
-        let mut e = verrou(les_ecritures());
+        let mut e = socle::memoire::tenu(les_ecritures());
         while e.len() >= ECRITURES_MAX || e.front().is_some_and(|x| x.t + FENETRE_MS < t) {
             e.pop_front();
         }
@@ -807,7 +799,7 @@ fn les_ecritures() -> &'static Mutex<VecDeque<EcritureGardee>> {
 
 /// Les `n` dernieres ecritures (et refus) de la page dans les trois minutes, la plus ancienne d'abord.
 pub fn ecritures(maintenant: u64, n: usize) -> Vec<Ecriture> {
-    let e = verrou(les_ecritures());
+    let e = socle::memoire::tenu(les_ecritures());
     let gardees: Vec<&EcritureGardee> = e.iter().filter(|x| x.t + FENETRE_MS >= maintenant).collect();
     gardees[gardees.len().saturating_sub(n)..]
         .iter()
@@ -912,7 +904,7 @@ pub fn noter_gestes(racine: &Path, texte: &str) {
             agent: forme(&p.agent, 300),
             ..p
         };
-        *verrou(page_vue()) = Some(p);
+        *socle::memoire::tenu(page_vue()) = Some(p);
         ajouter(maintenant_ms(), "page chargée".to_string(), format!("page|{}", maintenant_ms()));
     }
     if let Some(n) = lot.perdus.filter(|n| *n > 0) {
@@ -965,7 +957,7 @@ pub fn noter_gestes(racine: &Path, texte: &str) {
 /// Ce que la page a dit d'elle-meme a son chargement (ecran, echelle, langue, fuseau, moteur de rendu) ; rien tant
 /// qu'elle ne l'a pas dit.
 pub fn page() -> Option<PageDite> {
-    verrou(page_vue()).clone()
+    socle::memoire::tenu(page_vue()).clone()
 }
 
 // ===================================================================================================== les echecs
@@ -1224,7 +1216,7 @@ pub fn machine(racine: &Path) -> Machine {
 #[derive(Debug, serde::Serialize)]
 pub struct DepotDit {
     quoi: String,
-    quand: socle::paris::HeureDuJournal,
+    quand: socle::paris::InstantOuJour,
     mode: String,
     accepte: bool,
     retours: Vec<String>,

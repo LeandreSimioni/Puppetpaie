@@ -167,7 +167,8 @@ pub struct ChargeSupprimer {
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct SauvegardeAProposer {
     liee: bool,
-    derniere: Option<socle::paris::HeureDeSaisie>,
+    #[serde(with = "socle::paris::ecrit::saisie::option")]
+    derniere: Option<socle::paris::Moment>,
     phrase: String,
 }
 
@@ -340,7 +341,7 @@ fn garder(inst: &Path, racine: &Path) -> R<Compagnie> {
     }
     let mention = FichierDemo {
         creee_le,
-        gardee_le: socle::paris::InstantEcrit::maintenant(),
+        gardee_le: socle::temps::secondes().a_la_seconde(),
         mois: engagement::stock::mois_saisis(racine)?,
         quoi: QUOI_DEMO.to_string(),
     };
@@ -418,8 +419,10 @@ pub struct Reponse {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 struct FichierDemo {
-    creee_le: socle::paris::InstantEcrit,
-    gardee_le: socle::paris::InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    creee_le: socle::paris::Moment,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    gardee_le: socle::paris::Moment,
     mois: Vec<Mois>,
     quoi: String,
 }
@@ -439,8 +442,10 @@ fn lire_la_demo(racine: &Path) -> R<Option<FichierDemo>> {
 /// saisis en demo, et la phrase.
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct MentionDemo {
-    creee_le: socle::paris::InstantEcrit,
-    gardee_le: socle::paris::InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    creee_le: socle::paris::Moment,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    gardee_le: socle::paris::Moment,
     mois: Vec<Mois>,
     phrase: String,
 }
@@ -451,8 +456,8 @@ pub(crate) fn mention(racine: &Path) -> R<Option<MentionDemo>> {
     Ok(Some(MentionDemo {
         phrase: format!(
             "Compagnie créée en démo le {}, gardée le {}. Les paies faites en démo n'ont été ni déclarées ni envoyées par PuppetPaie : aucune DPAE, aucun contrat envoyé à la signature, aucune DSN déposée, aucun document envoyé.",
-            d.creee_le.jour().jj_mm_aaaa(),
-            d.gardee_le.jour().jj_mm_aaaa()
+            d.creee_le.jour_de_paris().jj_mm_aaaa(),
+            d.gardee_le.jour_de_paris().jj_mm_aaaa()
         ),
         creee_le: d.creee_le,
         gardee_le: d.gardee_le,

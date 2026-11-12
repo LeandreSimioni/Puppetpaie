@@ -198,15 +198,13 @@ pub fn route_de_l_installation(nom: Route, charge: &Charge) -> Reponse {
     #[cfg(feature = "atelier")]
     if nom == Route::CompagnieAjouter {
         if let Some(e) = routes::scenario::enregistreur_actif() {
-            // Ce que le scenario retient d'une compagnie ajoutee : son nom, sa venue quand elle vient d'un logiciel
-            // precedent, et son dossier.
+            // Ce que le scenario retient d'une compagnie ajoutee : son nom, sa venue, et son dossier.
             use routes::scenario::{Genre, Geste};
             let rendu = e.geste(|| {
                 let a: routes::accueil::ChargeAjouter = charge.lire()?;
                 let r = routes::dans_la_fenetre(&o, nom, charge);
                 let ajoutee: routes::accueil::Ajoutee = r.lire().map_err(|x| socle::echec::refus(x.phrase))?;
-                let venue = (a.venue != compagnie::installation::Venue::Neuve).then_some(a.venue);
-                let geste = Geste { nom: Some(a.nom), venue, compagnie: Some(e.compagnie(std::path::Path::new(&ajoutee.chemin))?), ..Geste::du_banc(Genre::Ajouter) };
+                let geste = Geste { nom: Some(a.nom), venue: Some(a.venue), compagnie: Some(e.compagnie(std::path::Path::new(&ajoutee.chemin))?), ..Geste::du_banc(Genre::Ajouter) };
                 Ok((r, geste))
             });
             return match rendu {

@@ -123,8 +123,9 @@ pub(crate) struct DemandeDeDossier {
 }
 
 /// Une table JSON dont les cles gardent l'ordre ou elles sont venues (les salaries, puis leurs categories).
-#[derive(Debug, Clone)]
-pub(crate) struct Ordonnee<V>(pub(crate) Vec<(String, V)>);
+#[derive(Debug, Clone, Serialize)]
+#[serde(transparent, bound(serialize = "V: Serialize"))]
+pub(crate) struct Ordonnee<V>(#[serde(serialize_with = "socle::ecriture::en_ordre")] pub(crate) Vec<(String, V)>);
 
 impl<V> Default for Ordonnee<V> {
     fn default() -> Self {
@@ -146,12 +147,6 @@ impl<V> Ordonnee<V> {
             }
         };
         &mut self.0[i].1
-    }
-}
-
-impl<V: Serialize> Serialize for Ordonnee<V> {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.collect_map(self.0.iter().map(|(k, v)| (k, v)))
     }
 }
 
@@ -588,7 +583,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
         statut_categoriel_rc: eng.statut_categoriel_rc.clone(),
         ..Default::default()
     };
-    let entier = Engagement::nouveau(&ctx.racine, &entier, &ctx.nomme(&eng.salarie)).map_err(|m| m.reclasser(Classe::Illisible))?;
+    let entier = Engagement::nouveau(&ctx.racine, &entier, &ctx.nomme(&eng.salarie), eng.versement).map_err(|m| m.reclasser(Classe::Illisible))?;
     let cs = PaieCs { engagement: ContratCs::de(&entier)?, brut, salarie: p.salarie.champs.clone() };
     Ok((cs, manquants))
 }
@@ -1013,11 +1008,10 @@ pub(crate) struct Entree {
 
 /// La date et l'heure locales (Paris) au format DOS, a partir de secondes unix.
 fn horodatage_dos(t: socle::paris::Moment) -> (u16, u16) {
-    let local = t.local_naif();
-    let reste = local.seconde_du_jour();
+    let reste = t.seconde_du_jour_de_paris();
     let (h, m, s) = (reste / 3600, (reste % 3600) / 60, reste % 60);
     // Le format DOS commence le 01/01/1980 : un instant d'avant s'y ecrit.
-    let jour = local.jour();
+    let jour = t.jour_de_paris();
     if jour.an < 1980 {
         return ((1 << 5) | 1, 0);
     }

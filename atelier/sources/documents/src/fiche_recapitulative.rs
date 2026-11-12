@@ -34,9 +34,9 @@ fn copie(e: &Echec) -> Echec {
 pub struct CoutsDeLAnnee {
     pub annee: socle::mois::Annee,
     pub jusqu_a: Mois,
-    #[serde(serialize_with = "en_objet")]
+    #[serde(serialize_with = "socle::ecriture::en_ordre")]
     pub spectacles: Vec<(String, Cout)>,
-    #[serde(serialize_with = "en_objet")]
+    #[serde(serialize_with = "socle::ecriture::en_ordre")]
     pub salaries: Vec<(String, Cout)>,
 }
 
@@ -50,11 +50,6 @@ pub struct Cout {
     pub cout: Decimal,
     pub prevu: Decimal,
     pub incomplet: bool,
-}
-
-/// Des paires (cle, cout) ecrites en objet, dans leur ordre.
-fn en_objet<S: serde::Serializer>(v: &[(String, Cout)], s: S) -> Result<S::Ok, S::Error> {
-    s.collect_map(v.iter().map(|(k, c)| (k, c)))
 }
 
 /// Les deux etats de la periode, lus une fois chacun pour tous les salaries du dossier.

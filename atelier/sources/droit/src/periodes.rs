@@ -104,8 +104,8 @@ pub enum RegleDuMoisIncomplet {
 /// multipliant 1/21 du montant du salaire mensuel inscrit au contrat [...] par le nombre de jours ouvres figurant au
 /// contrat ». `contrat_incomplet` : le contrat commence apres le premier jour du mois ou finit avant le dernier (un
 /// avenant qui coupe un mois entier n'en fait pas un premier ni un dernier mois).
-pub fn regle_du_mois_incomplet(idcc: Option<&str>, statut: &str, contrat_incomplet: bool) -> RegleDuMoisIncomplet {
-    if idcc == Some("1285") && statut == "artiste" && contrat_incomplet {
+pub fn regle_du_mois_incomplet(idcc: Option<&str>, statut: crate::fiche::Statut, contrat_incomplet: bool) -> RegleDuMoisIncomplet {
+    if idcc == Some(crate::clauses::IDCC_CCNEAC) && statut == crate::fiche::Statut::Artiste && contrat_incomplet {
         RegleDuMoisIncomplet::Ccneac1285Artiste
     } else {
         RegleDuMoisIncomplet::HoraireReel
@@ -118,13 +118,6 @@ pub fn regle_du_mois_incomplet(idcc: Option<&str>, statut: &str, contrat_incompl
 pub struct Horaire {
     pub jours: JoursTravailles,
     pub feries_non_payes: Vec<(Jour, String)>,
-}
-
-impl Horaire {
-    /// Du lundi au vendredi, chaque ferie paye : l'horaire d'une fiche qui ne dit rien, d'un salarie ancien.
-    pub fn du_lundi_au_vendredi() -> Self {
-        Horaire { jours: JoursTravailles::du_lundi_au_vendredi(), feries_non_payes: Vec::new() }
-    }
 }
 
 /// La part du mois qu'une periode payee porte de son salaire mensuel (`part_du_mois`).
@@ -184,9 +177,6 @@ art. X.3 : le premier ou le dernier mois incomplet d'un artiste)",
                 self.jours_travailles.en_mots()
             ),
         };
-        if !self.jours_travailles.dits {
-            dit.push_str(". La fiche ne dit pas ses jours travaillés : le logiciel compte du lundi au vendredi");
-        }
         if self.regle == RegleDuMoisIncomplet::Ccneac1285Artiste && self.fraction > Decimal::ONE {
             dit.push_str(
                 ". C'est plus que le salaire mensuel : l'article X.3 ne borne pas le mois incomplet, le logiciel non plus",

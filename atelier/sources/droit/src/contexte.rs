@@ -190,8 +190,8 @@ struct FichierEffectifs {
 struct EffectifEcrit {
     #[serde(deserialize_with = "socle::forme::court")]
     valeur: Decimal,
-    #[serde(rename = "calcule_le")]
-    _calcule_le: Option<socle::paris::InstantEcrit>,
+    #[serde(rename = "calcule_le", default, with = "socle::paris::ecrit::seconde::option")]
+    _calcule_le: Option<socle::paris::Moment>,
     #[serde(rename = "source")]
     _source: Option<String>,
     #[serde(rename = "dit_le")]
@@ -596,7 +596,7 @@ pub fn controler_etablissements(fiche: &ChampsEntreprise, pile: &Pile) -> R<()> 
         let nom = match (e.libelle.remplie(), e.nic.portee()) {
             (Some(l), _) => l.to_string(),
             (None, Some(n)) => n.to_string(),
-            (None, None) => "?".to_string(),
+            (None, None) => "Un établissement sans libellé ni NIC".to_string(),
         };
         let nic = match e.nic.portee() {
             Some(n) if n.len() == 5 && n.chars().all(|c| c.is_ascii_digit()) => n,
@@ -862,7 +862,7 @@ taux ne le ferait pas cotiser.",
         return Ok(());
     }
     Err(socle::refus!(
-        "Bareme {}, entreprise de {} salaries : le moteur REFUSE de payer \
+        "Bareme {}, {} : le moteur REFUSE de payer \
 -- {}.\n\
 \x20 Le socle livre avec le logiciel est ecrit pour le plus petit \
 palier -- moins de onze salaries --, et ce qui change au-dessus n'est \
@@ -875,8 +875,8 @@ qu'une decision a ete prise, pas laquelle -- comme pour le taux \
 AT/MP, que lui seul ne peut pas connaitre.",
         an,
         match eff.valeur(an) {
-            Some(n) => effectif_ecrit(n),
-            None => "?".to_string(),
+            Some(n) => format!("entreprise de {} salaries", effectif_ecrit(n)),
+            None => "entreprise dont l'effectif n'est pas dit".to_string(),
         },
         noms.join(", "),
         griefs.join("\n")

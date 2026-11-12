@@ -21,7 +21,6 @@ use std::path::{Path, PathBuf};
 use fabrique_pdf::forme as pdf;
 use fabrique_pdf::mesure::mesure;
 use crate::classeur::{Feuille, Style, Vertical, CORPS_DU_CLASSEUR};
-use serde::ser::SerializeMap;
 use serde::{Serialize, Serializer};
 
 use droit::contexte::Contexte;
@@ -94,19 +93,11 @@ impl Serialize for Val {
 
 /// Une ligne : un dictionnaire ordonne (l'ordre d'insertion compte pour le JSON). Une cle presente a `None` s'ecrit
 /// `null` ; une cle absente ne s'ecrit pas.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(transparent)]
 pub struct Ligne {
+    #[serde(serialize_with = "socle::ecriture::en_ordre")]
     pub champs: Vec<(String, Option<Val>)>,
-}
-
-impl Serialize for Ligne {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let mut m = s.serialize_map(Some(self.champs.len()))?;
-        for (k, v) in &self.champs {
-            m.serialize_entry(k, v)?;
-        }
-        m.end()
-    }
 }
 
 impl Ligne {

@@ -225,12 +225,14 @@ impl Registre {
             let permanent = i.permanent();
             let manque: Vec<&str> =
                 [(cle.is_empty(), "salarié"), (debut.is_none(), "début"), (fin.is_none() && !permanent, "fin")].iter().filter(|m| m.0).map(|m| m.1).collect();
-            let date = |x: &Option<Jour>| match x {
-                Some(d) => d.jj_mm_aaaa(),
-                None => "?".to_string(),
-            };
             let de: String = Some(&cle).filter(|c| !c.is_empty()).map(|c| format!("de {}", c)).into_iter().collect();
-            let quel = format!("le contrat de l'historique {} du {} au {}", de, date(&debut), date(&fin));
+            let bornes = match (debut, fin) {
+                (Some(d), Some(f)) => format!("du {} au {}", d.jj_mm_aaaa(), f.jj_mm_aaaa()),
+                (Some(d), None) => format!("du {}, sans fin dite", d.jj_mm_aaaa()),
+                (None, Some(f)) => format!("sans début dit, jusqu'au {}", f.jj_mm_aaaa()),
+                (None, None) => "sans début ni fin dits".to_string(),
+            };
+            let quel = format!("le contrat de l'historique {} {}", de, bornes);
             if !manque.is_empty() {
                 muets.push(format!("{} n'a pas de {} : il ne se compare à aucune pièce, une pièce du même contrat l'ajouterait une seconde fois", quel, manque.join(", ni de ")));
                 continue;

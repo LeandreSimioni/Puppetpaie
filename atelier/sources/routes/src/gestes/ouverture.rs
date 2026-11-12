@@ -33,7 +33,7 @@ use envois::drive::Drive;
 use envois::etats;
 use socle::echec::R;
 use socle::num::Decimal;
-use socle::paris::{InstantEcrit, MinuteDite};
+use socle::paris::{ecrit, Moment};
 use envois::releve_retours::{Client, Releve};
 use envois::releve_signatures::ReleveDite;
 use crate::gestes::releve_signatures::{self, ReleveSignatures};
@@ -192,8 +192,8 @@ pub struct Clients<'a> {
 
 /// `Ouverture` : le compte rendu d'un passage.
 pub struct Ouverture {
-    /// L'heure de Paris du passage.
-    pub quand: MinuteDite,
+    /// L'heure du passage, a la minute.
+    pub quand: Moment,
     pub sauvegarde: Option<Sauvegarde>,
     /// Les retours DSN (dans une compagnie fictive : un releve vide qui ne porte que `rattaches`).
     pub releve: Option<Releve>,
@@ -224,7 +224,7 @@ impl Ouverture {
     /// Le compte rendu d'un passage qui commence maintenant, rien encore de fait.
     fn commence() -> Ouverture {
         Ouverture {
-            quand: MinuteDite::maintenant(),
+            quand: socle::temps::secondes().a_la_minute(),
             sauvegarde: None,
             releve: None,
             releve_dpae: None,
@@ -267,8 +267,8 @@ impl Ouverture {
     pub fn dite(self) -> OuvertureDite {
         let retours_resume = self.releve.as_ref().map(Ouverture::resume_retours);
         let phrase = match &retours_resume {
-            Some(r) => format!("Ouverture du {} : {}", self.quand, r),
-            None => format!("Ouverture du {}.", self.quand),
+            Some(r) => format!("Ouverture du {} : {}", ecrit::francaise::texte(self.quand), r),
+            None => format!("Ouverture du {}.", ecrit::francaise::texte(self.quand)),
         };
         let phrases: Vec<String> = self.horloge.iter().chain(&self.manquants).chain(&self.incidents).cloned().collect();
         let sauvegarde = self.sauvegarde.as_ref().map(|s| SauvegardeDite {
@@ -334,7 +334,8 @@ impl Ouverture {
 #[derive(Debug, Serialize)]
 pub struct OuvertureDite {
     pub phrase: String,
-    pub quand: MinuteDite,
+    #[serde(with = "socle::paris::ecrit::francaise")]
+    pub quand: Moment,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]
     pub secondes: Decimal,
     pub sauvegarde: Option<SauvegardeDite>,
@@ -454,11 +455,12 @@ fn chemin_etape(racine: &Path) -> std::path::PathBuf {
 #[serde(deny_unknown_fields)]
 struct Etape {
     etape: String,
-    depuis: MinuteDite,
+    #[serde(with = "socle::paris::ecrit::francaise")]
+    depuis: Moment,
 }
 
 fn dire_l_etape(ctx: &Contexte, etape: &str) -> R<()> {
-    socle::ecriture::ecrire_json(&chemin_etape(&ctx.racine), &Etape { etape: etape.to_string(), depuis: MinuteDite::maintenant() }, 1)
+    socle::ecriture::ecrire_json(&chemin_etape(&ctx.racine), &Etape { etape: etape.to_string(), depuis: socle::temps::secondes().a_la_minute() }, 1)
 }
 
 fn finir_les_etapes(ctx: &Contexte) -> R<()> {
@@ -487,7 +489,8 @@ fn chemin_trace(ctx: &Contexte) -> std::path::PathBuf {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Trace {
-    pub quand: MinuteDite,
+    #[serde(with = "socle::paris::ecrit::francaise")]
+    pub quand: Moment,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule", deserialize_with = "socle::forme::decimal")]
     pub secondes: Decimal,
     /// La ligne de la sauvegarde, quand elle a eu lieu.
@@ -515,7 +518,8 @@ pub struct Trace {
 #[serde(deny_unknown_fields)]
 pub struct SignatureNotee {
     pub nom: String,
-    pub quand: InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub quand: Moment,
     pub renvoye: bool,
     pub phrase: String,
 }
@@ -643,7 +647,7 @@ fn est_copie(racine: &Path) -> bool {
 
 /// `pas_avant` : l'age, en secondes, de la derniere ouverture, d'apres le `quand` de sa trace.
 fn age_de_la_derniere(precedente: &Trace) -> i64 {
-    socle::paris::maintenant_naif().depuis(precedente.quand.naif())
+    socle::temps::secondes().entieres() - precedente.quand.entieres()
 }
 
 /// Le coffre dit-il que `service` est pose (ou dans l'environnement) ? `Err` : le coffre refuse de s'ouvrir.
@@ -939,8 +943,8 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         }
         Some(true) => {
             dire_l_etape(ctx, "net-entreprises : retours des DSN…")?;
-            let fin = socle::paris::maintenant_naif();
-            match fin.plus(-opt.jours * 86_400).and_then(|debut| crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", client_dsn, None)) {
+            let fin = socle::temps::secondes();
+            match fin.plus(-opt.jours * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", client_dsn, None)) {
                 Ok(rel) => {
                     r.incidents.extend(rel.incidents.iter().cloned());
                     r.manquants.extend(rel.a_faire.iter().cloned());
@@ -972,10 +976,10 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         }
         Some(true) => {
             dire_l_etape(ctx, "Urssaf : retours des DPAE…")?;
-            let fin = socle::paris::maintenant_naif();
+            let fin = socle::temps::secondes();
             // Un client donne passe par la meme releve que le vrai (canal `dpae`) ; sans client, `relever_retours_dpae`
             // cherche le mot de passe de consultation et construit le sien.
-            let rel = fin.plus(-opt.jours * 86_400).and_then(|debut| match client_dpae {
+            let rel = fin.plus(-opt.jours * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| match client_dpae {
                 Some(c) => crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", Some(c), Some(envois::etats::DPAE)),
                 None => crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, None),
             });

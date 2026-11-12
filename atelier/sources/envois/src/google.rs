@@ -101,45 +101,40 @@ pub fn encoder(champs: &[(&str, String)]) -> String {
 }
 
 /// Le message lisible d'une reponse d'erreur de Google. Un corps qui n'est pas une erreur de Google (la page d'un relais,
-/// un corps vide) se cite tel quel.
-pub fn traduire(code: u16, corps: &str) -> String {
-    let (code_g, detail) = match socle::forme::lire_reponse_tiers::<ReponseDErreur>(corps, "Google a rendu une erreur.") {
-        Ok(e) => e.code_et_detail(),
-        Err(pas_de_google) => {
-            drop(pas_de_google);
-            (None, None)
-        }
-    };
-    if code_g.as_deref() == Some("invalid_grant") || corps.contains("invalid_grant") {
-        return "Autorisation Google perdue ou expiree.\n\
+/// un corps vide) : le tiers a mal repondu, la panne remonte en citant le statut et le corps.
+fn traduire(code: u16, corps: &str) -> R<String> {
+    let (code_g, detail) = socle::forme::lire_reponse_tiers::<ReponseDErreur>(corps, &format!("HTTP {} : {}", code, corps))?.code_et_detail();
+    if code_g.as_deref() == Some("invalid_grant") {
+        return Ok("Autorisation Google perdue ou expiree.\n\
                 \x20 Cause la plus frequente : l'ecran de consentement est reste\n\
                 \x20 en mode « Test », ou Google revoque le jeton au bout de 7\n\
                 \x20 jours. Le passer « En production » dans la console, puis\n\
                 \x20 relier le Drive (Configuration > Mots de passe)."
-            .into();
+            .into());
     }
     if code == 403 && corps.to_lowercase().contains("insufficient") {
-        return "Permission refusee : l'autorisation en cours ne couvre pas\n\
+        return Ok("Permission refusee : l'autorisation en cours ne couvre pas\n\
                 \x20 cette action. Relier le Drive (Configuration > Mots de\n\
                 \x20 passe) pour\n\
                 \x20 redemander les permissions."
-            .into();
+            .into());
     }
-    match detail {
+    Ok(match detail {
         Some(d) => format!("HTTP {} : {}", code, d),
         None => format!("HTTP {} : {}", code, corps),
-    }
+    })
 }
 
 /// Une panne du transport : `Ok(phrase)` pour un statut de Google (traduit) ou un reseau injoignable,
-/// `Err` pour une panne brute (delai depasse, connexion fermee, corps illisible...), son refus.
+/// `Err` pour une panne brute (delai depasse, connexion fermee, corps illisible ou qui n'est pas une erreur de Google...),
+/// son refus.
 pub fn phrase_de_panne(p: Panne) -> R<String> {
     match p {
         Panne::Statut { code, corps } => {
             let corps = corps.map_err(|p| brute(*p))?;
             // Le transport demande `gzip` : une reponse d'erreur peut arriver compressee.
             let corps = if corps.starts_with(&[0x1f, 0x8b]) { crate::transport::gunzip(&corps).map_err(brute)? } else { corps };
-            Ok(traduire(code, &String::from_utf8_lossy(&corps)))
+            traduire(code, &String::from_utf8_lossy(&corps))
         }
         Panne::Reseau(raison) => Ok(format!("Reseau injoignable : {}", raison)),
         autre => Err(brute(autre)),

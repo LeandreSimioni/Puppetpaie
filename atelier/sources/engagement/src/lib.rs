@@ -84,8 +84,9 @@ pub struct Engagement {
     /// `None` : celui que la compagnie a choisi (`versement`).
     pub date_paiement: Option<Jour>,
     /// Le jour du versement que la compagnie a choisi dans sa configuration (`droit::versement`), lu au dernier jour du
-    /// mois de la paie (`engagements`) ; `Engagement::nouveau` seul : le dernier jour du mois.
-    pub versement: droit::versement::Versement,
+    /// mois de la paie (`engagements`) quand la saisie ne dit pas le sien (`date_paiement`) ; `None` : la saisie le dit,
+    /// ou l'engagement vient des pieces d'un import, qui disent le leur.
+    pub versement: Option<droit::versement::Versement>,
     /// Le taux de la premiere ligne de cachet ; sans cachet, celui que l'engagement ou son mois ecrit ; sinon `None`
     /// (regle 1 : aucun taux par defaut, aucun texte n'en fixe).
     pub taux_cachet: Option<Decimal>,
@@ -253,7 +254,7 @@ impl Engagement {
 
     /// L'engagement que `v` décrit (`Assemble`). `racine` est celle des donnees de la compagnie, pour le catalogue des
     /// rubriques. `qui` : le salarie tel qu'un refus le nomme (`salarie_nomme`).
-    pub fn nouveau(racine: &Path, v: &Assemble, qui: &str) -> R<Engagement> {
+    pub fn nouveau(racine: &Path, v: &Assemble, qui: &str, versement: Option<droit::versement::Versement>) -> R<Engagement> {
         let (mut jours_joues, mut lieux) = jours_et_lieux(&v.dates_travail);
         jours_joues.sort();
         let presents: BTreeSet<Jour> = jours_joues.iter().copied().collect();
@@ -513,7 +514,7 @@ impl Engagement {
             jours,
             jours_contrat,
             date_paiement: v.date_paiement.clone(),
-            versement: droit::versement::Versement::FinDuMois,
+            versement,
             taux_cachet,
             cachets,
             heures,
@@ -669,12 +670,26 @@ impl Engagement {
     /// Le jour du versement de ce que l'engagement paie (S21.G00.50.001, la « date de paiement » du bulletin) : celui que
     /// la saisie dit pour lui, sinon celui que la compagnie a choisi (`droit::versement`). C'est le jour ou se fait la
     /// retenue a la source (CGI, art. 1671, 1, `atelier/reference/sources/code-general-des-impots/articles-20261021.md`),
-    /// donc celui ou se lit le taux de PAS du salarie.
-    pub fn date_du_versement(&self) -> R<Jour> {
-        match self.date_paiement {
-            Some(d) => Ok(d),
-            None => self.versement.jour(self.mois,self.fin_periode()),
+    /// donc celui ou se lit le taux de PAS du salarie. Ce que le logiciel paie a toujours l'un ou l'autre (la case de la
+    /// fiche entreprise, exigee : `droit::versement::Versement::de_la_fiche`) ; une paie importee n'a que ce que ses
+    /// pieces disent : `None`, elles ne le disent pas.
+    pub fn versement_dit(&self) -> R<Option<Jour>> {
+        match (self.date_paiement, &self.versement) {
+            (Some(d), _) => Ok(Some(d)),
+            (None, Some(v)) => v.jour(self.mois, self.fin_periode()).map(Some),
+            (None, None) => Ok(None),
         }
+    }
+
+    /// Le jour du versement d'une paie que le logiciel fait, declare ou imprime (`versement_dit`) : une paie importee
+    /// dont les pieces ne disent pas le jour n'en a pas, et ne se refait pas ici.
+    pub fn date_du_versement(&self) -> R<Jour> {
+        self.versement_dit()?.ok_or_else(|| {
+            socle::echec::cle(
+                format!("{} : la paie importée de {} ne dit pas le jour de son versement ; elle ne se refait pas ici.", self.nom, self.mois),
+                "date_paiement",
+            )
+        })
     }
 
     /// Les mois AAAA-MM que couvre le contrat, du premier au dernier : un contrat sans fin court jusqu'au mois de paie.
@@ -1086,8 +1101,13 @@ pub(crate) fn engagements(
             notification_rupture: None,
             transaction: None,
         };
-        let mut eng = Engagement::nouveau(&ctx.racine, &assemble, &qui)?;
-        eng.versement = droit::versement::Versement::de_la_fiche(&ctx.entreprise_au(&eng.fin_mois()), &*eng.nat()?);
+        // Le jour que la carte dit ; sinon celui que la compagnie a choisi, pour ce qu'elle va verser. Une paie importee
+        // n'a que celui de ses pieces : sans lui, elle n'en a pas (`Engagement::versement_dit`).
+        let versement = match (carte.date_paiement, carte.importe) {
+            (Some(_), _) | (None, Some(_)) => None,
+            (None, None) => Some(droit::versement::Versement::de_la_fiche(&ctx.entreprise_au(&mois_dit.dernier_jour()), &nat)?),
+        };
+        let eng = Engagement::nouveau(&ctx.racine, &assemble, &qui, versement)?;
         // Ce que l'ancien logiciel a verse est un fait : seul ce que la compagnie va verser se juge.
         if carte.importe.is_none() {
             if let Some(phrase) = versement_refuse(ctx, &eng, &qui)? {
@@ -1125,7 +1145,7 @@ fn versement_refuse(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<Option<Str
             let fiche = crate::calcul::fiche_de_l_engagement(ctx, eng)?;
             let metier = fiche.code_emploi_ft.portee().map(emplois::metier).transpose()?.flatten();
             let cirque = metier.as_ref().and_then(|m| m.au_catalogue()).and_then(|f| f.minima.ccn_1285.as_deref()) == Some("cirque");
-            (ent.idcc.portee() == Some("1285") && cirque).then_some(f)
+            (ent.idcc.portee() == Some(droit::clauses::IDCC_CCNEAC) && cirque).then_some(f)
         }
         _ => None,
     };
@@ -1726,7 +1746,7 @@ fn heures_dites(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<()> {
 /// de paie des seuls artistes) ne paie qu'un salarie de ce statut, lu comme la paie le lit
 /// (`calcul::fiche_de_l_engagement`, `calcul::statut_de`). Sinon l'engagement se refuse, en disant comment le payer.
 fn unites_du_statut(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<()> {
-    let mut statut: Option<&str> = None;
+    let mut statut: Option<Statut> = None;
     for (i, l) in eng.lignes.iter().enumerate() {
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         let Some(voulu) = r.reservee_au_statut() else { continue };
@@ -1791,11 +1811,6 @@ pub(crate) fn qui_de(fiche: &droit::fiche::ChampsSalarie) -> R<String> {
     fiche.nomme().ok_or_else(|| socle::fichiers::absent("nom"))
 }
 
-/// « (n° FA1.26.13) » quand le contrat porte son numero ; rien sinon.
-pub(crate) fn numero_dit(numero: Option<&numeros::NumeroContrat>) -> String {
-    numero.iter().map(|n| format!(" (n° {})", n)).collect()
-}
-
 /// LE CONTRAT DE CET ENGAGEMENT SE FAIT-IL SIGNER PAR LE LOGICIEL ? Oui quand sa nature a un contrat ecrit (`contrat_ecrit`
 /// de `contrats-base.json` : le CDD « est etabli par ecrit », L1242-12 ; tout salarie recoit l'ecrit de L1221-5-1) et
 /// qu'il n'a pas ete signe ailleurs (`signe_ailleurs`).
@@ -1839,7 +1854,7 @@ fn suivre_permanent(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
                  et son reçu pour solde de tout compte (Fin de contrat).",
                 qui,
                 libelle,
-                numero_dit(eng.numero.as_ref()),
+                numeros::numero_dit(eng.numero.as_ref(), " (n° ", ")", ""),
                 fin.jj_mm_aaaa()
             ),
         });
@@ -1872,7 +1887,7 @@ pub fn suivre_contrat(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
                 qui,
                 bornes,
                 mois_du_contrat[0].libelle(Graphie::Accentuee),
-                numero_dit(eng.numero.as_ref())
+                numeros::numero_dit(eng.numero.as_ref(), " (n° ", ")", "")
             ),
         });
     }

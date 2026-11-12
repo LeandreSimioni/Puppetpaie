@@ -66,7 +66,7 @@ pub fn archiver_reponse(racine: &Path, quoi: &str, marque: &str, reponse: &str) 
     std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
     let etiquette: String = marque.replace('-', "").chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')).collect();
     let etiquette = if etiquette.is_empty() { "sans-date".to_string() } else { etiquette };
-    let iso = socle::paris::maintenant();
+    let iso = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
     let horo = format!("{}{}{}-{}{}{}", &iso[0..4], &iso[5..7], &iso[8..10], &iso[11..13], &iso[14..16], &iso[17..19]);
     let mut rang = 1;
     loop {

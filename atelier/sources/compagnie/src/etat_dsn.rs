@@ -42,7 +42,7 @@ pub struct EtatDsn {
     pub courte: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phrase: Option<String>,
-    pub quand: Option<socle::paris::HeureDuJournal>,
+    pub quand: Option<socle::paris::InstantOuJour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anomalies: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]

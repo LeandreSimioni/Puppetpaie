@@ -29,7 +29,7 @@ use sha2::{Digest, Sha256};
 
 use socle::mois::Mois;
 use socle::echec::{refus, Echec, R};
-use socle::paris::{HeureDuJournal, InstantEcrit};
+use socle::paris::{InstantOuJour, Moment};
 
 pub use crate::ligne::*;
 
@@ -70,8 +70,8 @@ struct Enregistrement {
     retour: Option<Retour>,
     #[serde(rename = "nature", skip_serializing_if = "Option::is_none")]
     nature_retour: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    publication: Option<socle::paris::InstantCompact>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::compacte::option")]
+    publication: Option<socle::paris::Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
     complete: Option<Verdict>,
 }
@@ -352,12 +352,12 @@ pub fn ne_garder_que(racine: &Path, garder: impl Fn(&Ligne) -> bool) -> R<()> {
 
 thread_local! {
     /// L'heure et l'origine que portent les lignes notees pendant `dater_pendant`.
-    static DATE: std::cell::RefCell<Option<(InstantEcrit, String)>> = const { std::cell::RefCell::new(None) };
+    static DATE: std::cell::RefCell<Option<(Moment, String)>> = const { std::cell::RefCell::new(None) };
 }
 
 /// `f`, chaque ligne qu'il note portant `quand` et `origine` : un pas que l'horloge d'une compagnie fictive joue a sa
 /// date (`routes::horloge`).
-pub fn dater_pendant<T>(quand: InstantEcrit, origine: &str, f: impl FnOnce() -> T) -> T {
+pub fn dater_pendant<T>(quand: Moment, origine: &str, f: impl FnOnce() -> T) -> T {
     let avant = DATE.with(|d| d.replace(Some((quand, origine.to_string()))));
     let r = f();
     DATE.with(|d| *d.borrow_mut() = avant);
@@ -378,7 +378,7 @@ pub fn lire(racine: &Path, quoi: Option<Acte>, mois: Option<Mois>, reel_seulemen
 
 impl<D, R> Envoi<D, R> {
     /// Son heure, que `noter` a posee (`Datation`).
-    pub fn quand(&self) -> HeureDuJournal {
+    pub fn quand(&self) -> InstantOuJour {
         self.quand
     }
 
@@ -386,7 +386,7 @@ impl<D, R> Envoi<D, R> {
     /// du fichier.
     pub fn nouveau(mode: Mode, qui: &str, accepte: bool, destinataire: &str, reponse: &str, detail: D) -> Envoi<D, R> {
         Envoi {
-            quand: InstantEcrit::maintenant().into(),
+            quand: socle::temps::secondes().a_la_seconde().into(),
             origine: String::new(),
             mois: None,
             fichier: None,
@@ -412,7 +412,7 @@ pub enum Datation {
     /// L'heure de l'acte, l'instant present.
     Maintenant,
     /// L'heure que la piece `origine` dit.
-    Lue { quand: HeureDuJournal, origine: String },
+    Lue { quand: InstantOuJour, origine: String },
 }
 
 /// AJOUTE LA LIGNE `ligne` A LA FIN DU FICHIER ET LA REND, telle qu'elle se relira. Son heure et son origine sont
@@ -422,7 +422,7 @@ pub fn noter(racine: &Path, mut ligne: Ligne, fichier: Option<&Path>, date: Data
     let (q, o) = match DATE.with(|d| d.borrow().clone()) {
         Some((q, o)) => (q.into(), o),
         None => match date {
-            Datation::Maintenant => (InstantEcrit::maintenant().into(), String::new()),
+            Datation::Maintenant => (socle::temps::secondes().a_la_seconde().into(), String::new()),
             Datation::Lue { quand, origine } => (quand, origine),
         },
     };
@@ -452,7 +452,7 @@ pub fn noter(racine: &Path, mut ligne: Ligne, fichier: Option<&Path>, date: Data
 }
 
 /// L'heure et l'origine de la ligne, a poser.
-fn commun_mut(l: &mut Ligne) -> (&mut HeureDuJournal, &mut String) {
+fn commun_mut(l: &mut Ligne) -> (&mut InstantOuJour, &mut String) {
     match l {
         Ligne::Dsn(e) => (&mut e.quand, &mut e.origine),
         Ligne::Dpae(e) => (&mut e.quand, &mut e.origine),
@@ -522,7 +522,7 @@ pub enum Rangement {
     /// Un compte rendu de plus.
     Retour(RetourOrganisme),
     /// Le verdict du compte rendu de cette nature et de cette publication.
-    Complement { nature_retour: String, publication: Option<socle::paris::InstantCompact>, verdict: Verdict },
+    Complement { nature_retour: String, publication: Option<socle::paris::Moment>, verdict: Verdict },
 }
 
 /// RANGE CE QUI REVIENT des envois : chaque `(i, rangement)` sur la `i`-ieme ligne du journal lu (`lu`), dans l'ordre.
@@ -680,7 +680,7 @@ mod tests {
         fn envoi<D>(salarie: &str, retours: Vec<RetourOrganisme>, detail: D) -> Envoi<D, RetourOrganisme> {
             let mut e = Envoi::nouveau(Mode::Reel, "t", true, "", "", detail);
             e.mois = Some(Mois::nouveau(2026, 6).unwrap());
-            e.quand = socle::paris::InstantEcrit::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(2026, 7, 5).unwrap(), 10, 0, 0).unwrap()).into();
+            e.quand = socle::paris::Moment::a_paris(socle::date::Jour::nouveau(2026, 7, 5).unwrap(), 10, 0, 0).unwrap().into();
             e.retours = retours;
             e.versions = Some(vec![Version { salarie: droit::contexte::IdSalarie::lire(salarie).unwrap(), numero: engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap(), version: 1, mois: None }]);
             e

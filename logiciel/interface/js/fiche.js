@@ -239,8 +239,8 @@ function champDeFiche(c, fiche, nom) {
         ${a ? `<div class="anomalie ${a.gravite}">${echapper(a.message)}</div>` : ""}
       </div>`;
     }
-    // LES JOURS TRAVAILLÉS : une case par jour de la semaine, cochée si la fiche le dit. Ce que le moteur compte quand
-    // elle ne dit rien, l'aide du champ le dit ; les cases ne partent que si on les touche (`data-absent`, `lireFormulaire`).
+    // LES JOURS TRAVAILLÉS : une case par jour de la semaine, cochée si la fiche le dit ; une fiche qui ne dit rien, le
+    // calcul la refuse en nommant la case. Les cases ne partent que si on les touche (`data-absent`, `lireFormulaire`).
     if (c.cle === "jours_travailles" && nom === "salarie") {
       const coches = Array.isArray(v) ? v : [];
       return `<div class="champ pleine">
@@ -254,10 +254,9 @@ function champDeFiche(c, fiche, nom) {
       </div>`;
     }
     // UNE CASE A COCHER SE LIT COMME UNE PHRASE : la case, puis ce qu'elle dit. Une
-    // case que la fiche ne dit pas montre ce que le moteur lit (`booleen_defaut`) et
-    // ne part que si on la touche.
+    // case que la fiche ne dit pas se montre décochée et ne part que si on la touche.
     if (c.forme === "booleen") {
-      const coche = v == null ? c.booleen_defaut !== false : v !== false;
+      const coche = v === true;
       return `<div class="champ pleine case">
         <label class="coche"><input type="checkbox" data-cle="${c.cle}"
             data-forme="booleen"${coche ? " checked" : ""}${v == null ? " data-absent=\"1\"" : ""}>

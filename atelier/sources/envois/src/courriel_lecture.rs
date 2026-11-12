@@ -14,28 +14,47 @@ use mailparse::{MailHeaderMap, ParsedMail};
 
 use crate::simulation_courriels::{feuilles, nom_de_fichier, texte_de};
 
-/// L'adresse seule, en minuscules ; `None` quand le message ne dit pas d'ou il vient.
-pub fn adresse_de(m: &ParsedMail) -> Option<String> {
-    let h = m.headers.get_first_header("From")?;
+/// D'ou vient un message recu, selon son `From`.
+pub enum Expediteur {
+    /// L'adresse seule, en minuscules.
+    Adresse(String),
+    /// Le message n'a pas de `From`, ou un `From` sans aucune adresse.
+    Muet,
+    /// Un `From` qui n'est pas une adresse : son texte, tel quel, et ce que la lecture en dit.
+    PasUneAdresse { texte: String, raison: String },
+}
+
+impl Expediteur {
+    /// Pour un incident : ce que le message dit de son origine quand ce n'est pas une adresse.
+    pub fn pourquoi_aucune_adresse(&self) -> String {
+        match self {
+            Expediteur::Adresse(a) => a.clone(),
+            Expediteur::Muet => "aucun expediteur".to_string(),
+            Expediteur::PasUneAdresse { texte, raison } => format!("expediteur « {} » qui n'est pas une adresse ({})", texte, raison),
+        }
+    }
+}
+
+/// L'adresse dont vient le message, ou pourquoi il n'en dit aucune.
+pub fn adresse_de(m: &ParsedMail) -> Expediteur {
+    let Some(h) = m.headers.get_first_header("From") else {
+        return Expediteur::Muet;
+    };
     let liste = match mailparse::addrparse_header(h) {
         Ok(liste) => liste,
-        // Un `From` qui n'est pas une adresse : le message ne dit pas d'ou il vient.
-        Err(pas_une_adresse) => {
-            drop(pas_une_adresse);
-            return None;
-        }
+        Err(raison) => return Expediteur::PasUneAdresse { texte: h.get_value(), raison: raison.to_string() },
     };
     for a in liste.iter() {
         match a {
-            mailparse::MailAddr::Single(i) => return Some(socle::texte::strip(&i.addr).to_lowercase()),
+            mailparse::MailAddr::Single(i) => return Expediteur::Adresse(socle::texte::strip(&i.addr).to_lowercase()),
             mailparse::MailAddr::Group(g) => {
                 if let Some(i) = g.addrs.first() {
-                    return Some(socle::texte::strip(&i.addr).to_lowercase());
+                    return Expediteur::Adresse(socle::texte::strip(&i.addr).to_lowercase());
                 }
             }
         }
     }
-    None
+    Expediteur::Muet
 }
 
 /// Un message se lit toujours : quand le bloc d'en-tetes se rompt (une ligne qui n'est ni `Nom: valeur`,
@@ -112,9 +131,9 @@ pub fn identifiant_des_entetes(entetes: &[mailparse::MailHeader]) -> Option<Stri
 /// l'implementation ce qu'elle fait d'une forme qu'elle ne decrit pas, pourvu qu'elle ne perde pas le message (§ 4,
 /// l. 1711-1718 : « It is up to the implementation to deal with messages robustly »). Un champ hors
 /// limites (31 fevrier, 24 h, 60 s, decalage de 24 h) est illisible.
-pub fn date_de(m: &ParsedMail, maintenant: socle::paris::InstantEcrit) -> socle::paris::InstantEcrit {
+pub fn date_de(m: &ParsedMail, maintenant: socle::paris::Moment) -> socle::paris::Moment {
     match m.headers.get_first_value("Date").as_deref().and_then(date_lue) {
-        Some(local) => socle::paris::InstantEcrit::du_naif(local),
+        Some(instant) => instant,
         None => maintenant,
     }
 }
@@ -244,7 +263,7 @@ fn parsedate_tz(donnees: &str) -> Option<(i64, i64, i64, i64, i64, i64, Option<i
 }
 
 /// L'en-tete `Date` lu, converti en heure locale naive, ou `None` quand il est illisible (ou hors du calendrier).
-fn date_lue(brut: &str) -> Option<socle::paris::Naif> {
+fn date_lue(brut: &str) -> Option<socle::paris::Moment> {
     let (an, mois, jour, h, mi, s, decalage) = parsedate_tz(brut)?;
     let (an, mois, jour) = match (i32::try_from(an), u32::try_from(mois), u32::try_from(jour)) {
         (Ok(a), Ok(m), Ok(j)) => (a, m, j),
@@ -255,16 +274,20 @@ fn date_lue(brut: &str) -> Option<socle::paris::Naif> {
     if !(0..24).contains(&h) || !(0..60).contains(&mi) || !(0..60).contains(&s) {
         return None;
     }
-    let naif = socle::paris::Naif::du_jour(j, h, mi, s)?;
     match decalage {
-        None => Some(naif),
+        // L'heure de Paris telle qu'ecrite : une heure qui n'existe pas a Paris (l'heure sautee du passage a l'ete) est
+        // illisible.
+        None => {
+            let instant = socle::paris::Moment::a_paris(j, h, mi, s)?;
+            (instant.jour_de_paris() == j && instant.seconde_du_jour_de_paris() == h * 3_600 + mi * 60 + s).then_some(instant)
+        }
         Some(d) => {
             // `timezone(timedelta(seconds=d))` : strictement entre -24 h et 24 h.
             if d.abs() >= 86_400 {
                 return None;
             }
             let t = (j.ordinal() - 719_163) * 86_400 + h * 3_600 + mi * 60 + s - d;
-            Some(socle::paris::Moment::de_secondes(t)?.local_naif())
+            socle::paris::Moment::de_secondes(t)
         }
     }
 }

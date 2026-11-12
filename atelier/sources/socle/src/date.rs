@@ -67,9 +67,9 @@ impl Jour {
         FORMATS.iter().find_map(|format| lire_format(format, &c))
     }
 
-    /// `AAAA-MM-JJ`.
+    /// `AAAA-MM-JJ` (`iso`).
     pub fn iso(&self) -> String {
-        format!("{:04}-{:02}-{:02}", self.an, self.mois, self.jour)
+        iso(self.an, self.mois, self.jour)
     }
 
     /// `JJ/MM/AAAA`.
@@ -170,7 +170,13 @@ pub fn annee_impossible(an: impl std::fmt::Display) -> String {
 use crate::mois::mois_impossible;
 
 pub fn jour_impossible(an: impl Into<i64>, mois: impl Into<i64>, jour: impl Into<i64>) -> String {
-    format!("date impossible : {:04}-{:02}-{:02}", an.into(), mois.into(), jour.into())
+    format!("date impossible : {}", iso(an, mois, jour))
+}
+
+/// `AAAA-MM-JJ` de trois nombres tels qu'ils sont, la seule ecriture ISO d'une date : celle d'un `Jour`, d'une date
+/// impossible, d'une date de naissance declaree dont le jour ou le mois sont inconnus (`00`, `99`).
+pub fn iso(an: impl Into<i64>, mois: impl Into<i64>, jour: impl Into<i64>) -> String {
+    format!("{:04}-{:02}-{:02}", an.into(), mois.into(), jour.into())
 }
 
 /// Ce qui rend une date impossible : l'annee d'abord, sinon le mois, sinon le jour.

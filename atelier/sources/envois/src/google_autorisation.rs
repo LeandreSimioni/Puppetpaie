@@ -131,24 +131,47 @@ struct Retour {
     erreur: Option<String>,
 }
 
-/// Sert une connexion : `Some(retour)` quand c'est la reponse de Google (le `state` est le bon), `None` sinon (on continue d'attendre).
-/// Un `state` faux : 403. Une autre methode que GET : 501, comme `BaseHTTPRequestHandler`.
-fn servir(flux: &mut TcpStream, etat: &str) -> Option<Retour> {
-    // Une connexion dont l'attente ne se regle pas n'est pas la reponse de Google : on continue d'attendre.
-    if let Err(coupee) = flux.set_read_timeout(Some(Duration::from_secs(5))) {
-        drop(coupee);
-        return None;
+/// Ce que dit une connexion a l'adresse locale.
+enum Connexion {
+    /// La reponse de Google : le `state` est le bon.
+    DeGoogle(Retour),
+    /// Une autre demande (un `state` faux, une autre methode), deja repondue : on continue d'attendre.
+    Autre,
+    /// Le navigateur a ouvert la connexion d'avance et n'y a rien dit, ou l'a refermee : on continue d'attendre.
+    Muette,
+}
+
+/// Le navigateur a refermé, ou n'a rien dit dans le délai : ce n'est pas une panne, la connexion se tait.
+fn muette(e: &std::io::Error) -> bool {
+    matches!(
+        e.kind(),
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut | std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted | std::io::ErrorKind::BrokenPipe
+    )
+}
+
+fn panne_locale(e: std::io::Error) -> Echec {
+    refus(format!("L'adresse locale de l'autorisation est en panne : {}. Aucune autorisation enregistree. Recommencer.", e))
+}
+
+/// Ecrit `octets` au navigateur ; un navigateur parti (connexion refermee) n'attend plus rien : rien a lui dire.
+fn ecrire_au_navigateur(flux: &mut TcpStream, octets: &[u8]) -> Result<(), Echec> {
+    match flux.write_all(octets) {
+        Ok(()) => Ok(()),
+        Err(e) if muette(&e) => Ok(()),
+        Err(e) => Err(panne_locale(e)),
     }
+}
+
+/// Sert une connexion. Un `state` faux : 403. Une autre methode que GET : 501, comme `BaseHTTPRequestHandler`.
+fn servir(flux: &mut TcpStream, etat: &str) -> Result<Connexion, Echec> {
+    flux.set_read_timeout(Some(Duration::from_secs(5))).map_err(panne_locale)?;
     let mut tampon = [0u8; 8192];
     let mut lu = 0;
     while lu < tampon.len() {
         match flux.read(&mut tampon[lu..]) {
             Ok(0) => break,
-            // Une connexion coupee en route n'est pas la reponse de Google : on continue d'attendre.
-            Err(coupee) => {
-                drop(coupee);
-                return None;
-            }
+            Err(e) if muette(&e) => return Ok(Connexion::Muette),
+            Err(e) => return Err(panne_locale(e)),
             Ok(n) => {
                 lu += n;
                 if tampon[..lu].windows(2).any(|w| w == b"\r\n") {
@@ -158,29 +181,24 @@ fn servir(flux: &mut TcpStream, etat: &str) -> Option<Retour> {
         }
     }
     let texte = String::from_utf8_lossy(&tampon[..lu]).into_owned();
-    // Ce n'est pas la reponse de Google : un navigateur parti avant la reponse n'attend plus rien.
-    let repondre_vide = |flux: &mut TcpStream, statut: &str| {
-        if let Err(parti) = flux.write_all(format!("HTTP/1.1 {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", statut).as_bytes()) {
-            drop(parti);
-        }
+    let repondre_vide = |flux: &mut TcpStream, statut: &str| -> Result<Connexion, Echec> {
+        ecrire_au_navigateur(flux, format!("HTTP/1.1 {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", statut).as_bytes())?;
+        Ok(Connexion::Autre)
     };
     // La ligne de la demande : `GET <cible> HTTP/1.1`. Toute autre methode, ou une ligne qui n'en est pas une : 501.
     let Some(cible) = texte.lines().next().and_then(|l| l.strip_prefix("GET ")).and_then(|r| r.split(' ').next()) else {
-        repondre_vide(flux, "501 Not Implemented");
-        return None;
+        return repondre_vide(flux, "501 Not Implemented");
     };
     // Sans requete, pas de `state` : 403.
     let Some((_, requete)) = cible.split_once('?') else {
-        repondre_vide(flux, "403 Forbidden");
-        return None;
+        return repondre_vide(flux, "403 Forbidden");
     };
     let requete = match requete.split_once('#') {
         Some((avant, _)) => avant,
         None => requete,
     };
     if !premiere_valeur(requete, "state").is_some_and(|s| egaux(&s, etat)) {
-        repondre_vide(flux, "403 Forbidden");
-        return None;
+        return repondre_vide(flux, "403 Forbidden");
     }
     let retour = Retour { code: premiere_valeur(requete, "code"), erreur: premiere_valeur(requete, "error") };
     let page = match &retour.erreur {
@@ -188,12 +206,10 @@ fn servir(flux: &mut TcpStream, etat: &str) -> Option<Retour> {
         Some(e) => page_retour("Autorisation refusee", "#d05353", &echapper(e)),
     };
     let corps = page.into_bytes();
-    // La page n'est qu'un mot a la personne : un navigateur parti avant de la lire n'ote rien a ce que Google a renvoye.
     let entete = format!("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", corps.len());
-    if let Err(parti) = flux.write_all(entete.as_bytes()).and_then(|()| flux.write_all(&corps)) {
-        drop(parti);
-    }
-    Some(retour)
+    ecrire_au_navigateur(flux, entete.as_bytes())?;
+    ecrire_au_navigateur(flux, &corps)?;
+    Ok(Connexion::DeGoogle(retour))
 }
 
 /// La reponse de Google lue en sa forme `T`, ou la phrase de la panne.
@@ -242,44 +258,63 @@ pub fn autoriser(
         ])
     );
 
-    let (tx, rx) = mpsc::channel::<Retour>();
+    let (tx, rx) = mpsc::channel::<Result<Retour, Echec>>();
     let fini = Arc::new(AtomicBool::new(false));
     let fil_fini = Arc::clone(&fini);
     let fil_etat = etat.clone();
-    std::thread::spawn(move || {
-        for flux in ecouteur.incoming() {
-            if fil_fini.load(Ordering::SeqCst) {
-                break;
+    // Le fil rend ce qu'il a lu, ou sa panne ; `rx` vit jusqu'a ce qu'on l'ait rejoint, donc l'envoi trouve preneur.
+    let fil = std::thread::spawn(move || -> Result<(), Echec> {
+        let attente = || -> Result<Option<Retour>, Echec> {
+            for flux in ecouteur.incoming() {
+                if fil_fini.load(Ordering::SeqCst) {
+                    return Ok(None);
+                }
+                let mut flux = flux.map_err(panne_locale)?;
+                match servir(&mut flux, &fil_etat)? {
+                    Connexion::DeGoogle(r) => return Ok(Some(r)),
+                    Connexion::Autre | Connexion::Muette => {}
+                }
             }
-            // Une connexion qui echoue n'est pas la reponse de Google : on continue d'attendre.
-            let mut flux = match flux {
-                Ok(f) => f,
-                Err(manquee) => {
-                    drop(manquee);
-                    continue;
-                }
-            };
-            if let Some(r) = servir(&mut flux, &fil_etat) {
-                // L'attente est passee : plus personne n'attend la reponse.
-                if let Err(parti) = tx.send(r) {
-                    drop(parti);
-                }
-                break;
+            Ok(None)
+        };
+        let envoi = match attente() {
+            Ok(None) => return Ok(()),
+            Ok(Some(r)) => tx.send(Ok(r)),
+            Err(e) => tx.send(Err(e)),
+        };
+        envoi.map_err(|e| refus(format!("La reponse de Google n'a pas pu etre transmise : {}. Recommencer.", e)))
+    });
+    let rejoindre = |fil: std::thread::JoinHandle<Result<(), Echec>>| -> Result<(), Echec> {
+        match fil.join() {
+            Ok(r) => r,
+            Err(panique) => {
+                let pourquoi = match (panique.downcast_ref::<&str>(), panique.downcast_ref::<String>()) {
+                    (Some(s), _) => s.to_string(),
+                    (None, Some(s)) => s.clone(),
+                    (None, None) => "sans message".to_string(),
+                };
+                Err(refus(format!(
+                    "L'attente de la reponse de Google s'est arretee net ({}). Aucune autorisation enregistree. Recommencer.",
+                    pourquoi
+                )))
             }
         }
-    });
+    };
     dire_url(&url);
 
     let recu = match rx.recv_timeout(Duration::from_secs(delai)) {
-        Ok(r) => r,
+        Ok(r) => {
+            rejoindre(fil)?;
+            r?
+        }
         // Le delai passe (ou le fil s'est arrete sans reponse) : la personne n'a pas accepte.
-        Err(mpsc::RecvTimeoutError::Timeout | mpsc::RecvTimeoutError::Disconnected) => {
-            // Reveille le fil, qui attend une connexion, pour qu'il rende le port.
-            fini.store(true, Ordering::SeqCst);
-            // Un reveil qui echoue laisse le fil a sa connexion suivante : le port se rend alors.
-            if let Err(rate) = socle::garde_reseau::vers_cette_machine(adresse.port(), None) {
-                drop(rate);
+        Err(attente) => {
+            if let mpsc::RecvTimeoutError::Timeout = attente {
+                // Reveille le fil, qui attend une connexion, pour qu'il rende le port.
+                fini.store(true, Ordering::SeqCst);
+                socle::garde_reseau::vers_cette_machine(adresse.port(), None).map_err(panne_locale)?;
             }
+            rejoindre(fil)?;
             return Err(refus(format!(
                 "Aucune reponse de Google en {} minutes : aucune autorisation enregistree. Recommencer, et accepter dans la fenetre du navigateur.",
                 std::cmp::max(1, delai / 60)

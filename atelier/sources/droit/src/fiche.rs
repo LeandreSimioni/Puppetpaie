@@ -853,7 +853,7 @@ impl FormeDeCase for i64 {}
 impl FormeDeCase for Jour {}
 impl FormeDeCase for Mois {}
 impl FormeDeCase for Montant {}
-impl FormeDeCase for socle::paris::InstantCompact {}
+impl FormeDeCase for socle::paris::Moment {}
 impl<T: FormeDeCase> FormeDeCase for Vec<T> {
     const VALEURS: &'static [&'static str] = T::VALEURS;
     fn cases() -> Vec<Declaree> {
@@ -866,7 +866,7 @@ impl<T: FormeDeCase> FormeDeCase for Vec<T> {
 macro_rules! choix {
     ($(#[$m:meta])* pub enum $nom:ident { $( $(#[$vm:meta])* $var:ident = $txt:literal ),* $(,)? }) => {
         $(#[$m])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
         pub enum $nom { $( $(#[$vm])* #[serde(rename = $txt)] $var ),* }
         impl $nom {
             pub fn as_str(&self) -> &'static str {
@@ -1276,10 +1276,10 @@ macro_rules! fiche {
                 $datee::depuis(self, cle)
             }
 
-            fn changer(&mut self, ch: $ch, depuis: Option<&Jour>, note: Option<&str>) {
+            fn changer(&mut self, ch: $ch, depuis: Option<&Jour>, premiere_datee: bool, note: Option<&str>) {
                 match ch {
-                    $( $ch::$var(x) => dater(&mut self.$champ, x, depuis, note), )*
-                    $( $( $ch::$pvar(x) => dater(&mut self.$pchamp, x, depuis, note), )* )*
+                    $( $ch::$var(x) => dater(&mut self.$champ, x, depuis, premiere_datee, note), )*
+                    $( $( $ch::$pvar(x) => dater(&mut self.$pchamp, x, depuis, premiere_datee, note), )* )*
                 }
             }
 
@@ -1314,10 +1314,10 @@ macro_rules! fiche {
             fn neuve(plate: &$plate) -> $datee {
                 let mut f = $datee::default();
                 $( if plate.$champ.is_some() {
-                    dater(&mut f.$champ, plate.$champ.clone(), None, None);
+                    dater(&mut f.$champ, plate.$champ.clone(), None, false, None);
                 } )*
                 $( $( if plate.$piece.cases.$pchamp.is_some() {
-                    dater(&mut f.$pchamp, plate.$piece.cases.$pchamp.clone(), None, None);
+                    dater(&mut f.$pchamp, plate.$piece.cases.$pchamp.clone(), None, false, None);
                 } )* )*
                 f.noter(plate);
                 f
@@ -1348,8 +1348,8 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
     /// que la fiche ne dit pas, ou que la forme ne declare pas.
     fn depuis(&self, cle: CaseDeFiche) -> Vec<Option<Jour>>;
 
-    /// LA CASE QUE `ch` CHANGE S'ECRIT DATEE (`dater`) : sa valeur, ou vide.
-    fn changer(&mut self, ch: Self::Changement, depuis: Option<&Jour>, note: Option<&str>);
+    /// LA CASE QUE `ch` CHANGE S'ECRIT DATEE (`dater`, `premiere_datee` compris) : sa valeur, ou vide.
+    fn changer(&mut self, ch: Self::Changement, depuis: Option<&Jour>, premiere_datee: bool, note: Option<&str>);
 
     /// La case que `ch` change, posee dans la fiche a un jour `plate` : sa valeur, ou vide.
     fn appliquer(plate: &mut Self::Plate, ch: Self::Changement);
@@ -1475,10 +1475,15 @@ pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour, meme: impl Fn(&T, &T)
 ///
 /// ECRIRE UNE VALEUR DATEE, la seule fonction qui le fait : `valeur` vaut a partir de `depuis` (`None` : de tout temps) ;
 /// ce qui precede reste ce qu'il etait. La premiere valeur d'une liste vaut de tout temps, quel que soit `depuis` : avant
-/// elle, la fiche ne disait rien d'autre. Une valeur deja ecrite au meme jour est remplacee (une correction du meme jour
-/// d'effet). `note` dit pourquoi.
-pub fn dater<T>(liste: &mut Option<Vec<Datee<T>>>, valeur: Option<T>, depuis: Option<&Jour>, note: Option<&str>) {
+/// elle, la fiche ne disait rien d'autre. Sauf `premiere_datee` : une valeur qui, par nature, ne vaut qu'a partir d'un
+/// jour (le taux de PAS recu, BOI-IR-PAS-30-10-50 § 20 ; une ligne du taux AT/MP, a la date de sa notification) ; dans une
+/// liste vide, elle vaut a partir de `depuis`, et avant lui la case est vide. Une valeur deja ecrite au meme jour est
+/// remplacee (une correction du meme jour d'effet). `note` dit pourquoi.
+pub fn dater<T>(liste: &mut Option<Vec<Datee<T>>>, valeur: Option<T>, depuis: Option<&Jour>, premiere_datee: bool, note: Option<&str>) {
     let liste = liste.get_or_insert_with(Vec::new);
+    if liste.is_empty() && premiere_datee && depuis.is_some() {
+        liste.push(Datee { depuis: None, valeur: None, note: None });
+    }
     let depuis = if liste.is_empty() { None } else { depuis.copied() };
     liste.retain(|e| e.depuis != depuis);
     liste.push(Datee { depuis, valeur, note: note.map(str::trim).filter(|n| !n.is_empty()).map(str::to_string) });
@@ -1669,7 +1674,8 @@ cases! {
         taux: crate::pas::TauxDePas,
         r#type: crate::type_taux_pas::TypeDeTauxPas,
         identifiant: String,
-        mis_a_disposition: socle::paris::InstantCompact,
+        #[serde(default, with = "socle::paris::ecrit::compacte::option")]
+        mis_a_disposition: socle::paris::Moment,
         en_retour_de: Mois,
     }
 }
@@ -2209,9 +2215,11 @@ pub fn est_une_note(cle: &str) -> bool {
 
 /// UN FICHIER DE FICHES (`config/salaries.json`, `config/spectacles.json`) : sa `note`, et ses fiches par cle (`K`), dans
 /// l'ordre du fichier. Une cle repetee se refuse (`socle::forme::fiches_et_note`).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct FichierDeFiches<K: std::hash::Hash + Eq, F> {
+    #[serde(rename = "note", skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    #[serde(flatten)]
     pub fiches: IndexMap<K, F>,
 }
 
@@ -2225,20 +2233,6 @@ impl<'de, K: std::hash::Hash + Eq + Deserialize<'de>, F: Deserialize<'de>> Deser
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let (source, fiches) = socle::forme::fiches_et_note(d, NOTE_DU_FICHIER)?;
         Ok(FichierDeFiches { source, fiches: fiches.into_iter().collect() })
-    }
-}
-
-impl<K: std::hash::Hash + Eq + Serialize, F: Serialize> Serialize for FichierDeFiches<K, F> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        let mut m = s.serialize_map(Some(self.fiches.len() + usize::from(self.source.is_some())))?;
-        if let Some(n) = &self.source {
-            m.serialize_entry(NOTE_DU_FICHIER, n)?;
-        }
-        for (k, f) in &self.fiches {
-            m.serialize_entry(k, f)?;
-        }
-        m.end()
     }
 }
 

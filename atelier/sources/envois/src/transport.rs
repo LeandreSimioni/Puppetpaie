@@ -152,9 +152,9 @@ pub fn echapper(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
-/// `AAAAMMJJhhmmss` d'une heure locale, la forme des plages de consultation.
-fn horodatage(n: socle::paris::Naif) -> String {
-    n.iso().chars().filter(char::is_ascii_digit).collect()
+/// `AAAAMMJJhhmmss` d'un instant a l'heure de Paris, la forme des plages de consultation.
+fn horodatage(m: socle::paris::Moment) -> String {
+    socle::paris::ecrit::compacte::texte(m)
 }
 
 // ------------------------------------------------------------------- gzip
@@ -399,10 +399,11 @@ fn lire_corps(corps: ureq::Body, delai: u64, attendu: Option<u64>, https: bool) 
                 Ok(n) => (Ok(tampon[..n].to_vec()), false),
                 Err(e) => (Err(e), true),
             };
-            // Le lecteur est parti (delai depasse) : plus personne n'attend la suite.
-            if let Err(parti) = tx.send(morceau) {
-                drop(parti);
-                return;
+            match tx.send(morceau) {
+                Ok(()) => {}
+                // `SendError` ne dit qu'une chose : le lecteur est parti, apres avoir rendu la panne du delai depasse ;
+                // ce morceau ne sert plus a personne.
+                Err(mpsc::SendError(_)) => return,
             }
             if dernier {
                 return;
@@ -560,14 +561,13 @@ pub fn envoyer(r: &Requete) -> Result<(Vec<u8>, Entetes), Panne> {
         let (parts, corps) = rep.into_parts();
         let code = parts.status.as_u16();
         let suite = matches!(code, 301 | 302 | 303 | 307 | 308) && (!post || code <= 303) && sauts < MAX_REDIRECTIONS;
-        // Une adresse de redirection hors de l'ASCII ne se suit pas.
-        let loc = parts.headers.get(http::header::LOCATION).and_then(|v| match v.to_str() {
-            Ok(l) => Some(l.to_string()),
-            Err(hors_ascii) => {
-                drop(hors_ascii);
-                None
-            }
-        });
+        // Une redirection dont l'adresse n'est pas de l'ASCII : le tiers a mal repondu.
+        let loc = match (suite, parts.headers.get(http::header::LOCATION)) {
+            (true, Some(v)) => Some(
+                v.to_str().map_err(|e| Panne::brute(Classe::Illisible, format!("HTTP {} : adresse de redirection illisible ({})", code, e)))?.to_string(),
+            ),
+            _ => None,
+        };
         match (suite, loc) {
             (true, Some(l)) => {
                 url = joindre(&url, &l);
@@ -605,14 +605,11 @@ fn meme_hote(a: &str, b: &str) -> bool {
 
 // ------------------------------------------------- l'API des organismes
 
-/// Le debut lisible du corps d'une reponse d'erreur ; un corps qui ne s'est pas lu ne dit rien de plus que le statut.
-fn debut_du_corps(corps: Result<Vec<u8>, Box<Panne>>, n: usize) -> Option<String> {
+/// Le debut lisible du corps d'une reponse d'erreur, ou la panne de sa lecture.
+fn debut_du_corps(corps: Result<Vec<u8>, Box<Panne>>, n: usize) -> String {
     match corps {
-        Ok(c) => Some(debut(&utf8_remplace(&c), n)),
-        Err(illisible) => {
-            drop(illisible);
-            None
-        }
+        Ok(c) => debut(&utf8_remplace(&c), n),
+        Err(illisible) => format!("Le corps de la reponse ne s'est pas lu : {}", echec_brut(*illisible).echec.phrase),
     }
 }
 
@@ -620,7 +617,7 @@ fn debut_du_corps(corps: Result<Vec<u8>, Box<Panne>>, n: usize) -> Option<String
 fn en_erreur_api(url: &str, p: Panne) -> EchecApi {
     match p {
         Panne::Statut { code, corps } => {
-            EchecApi::nouveau(Classe::Organisme, phrase_du_statut(code, &format!("sur {}", sans_secret(url)), debut_du_corps(corps, 400)), Some(code as i64))
+            EchecApi::nouveau(Classe::Organisme, phrase_du_statut(code, &format!("sur {}", sans_secret(url)), Some(debut_du_corps(corps, 400))), Some(code as i64))
         }
         Panne::Reseau(r) => EchecApi::nouveau(Classe::Organisme, format!("Reseau injoignable pour {} : {}", sans_secret(url), r), Some(0)),
         brute => echec_brut(brute),
@@ -633,8 +630,8 @@ pub fn appeler(url: &str, jeton: Option<&str>) -> Result<(Vec<u8>, Entetes), Ech
     envoyer(&r).map_err(|p| en_erreur_api(url, p))
 }
 
-/// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des heures locales).
-pub fn consulter(base: &str, jeton: Option<&str>, debut: socle::paris::Naif, fin: Option<socle::paris::Naif>) -> Result<Vec<u8>, EchecApi> {
+/// La consultation d'une plage : l'adresse de base, puis `debut[/fin]` en `AAAAMMJJhhmmss` (des heures de Paris).
+pub fn consulter(base: &str, jeton: Option<&str>, debut: socle::paris::Moment, fin: Option<socle::paris::Moment>) -> Result<Vec<u8>, EchecApi> {
     let mut url = base.to_string();
     url.push_str(&horodatage(debut));
     if let Some(fin) = fin {
@@ -776,7 +773,7 @@ pub fn depot(url: &str, jeton: &str, corps_gzip: &[u8], forme: &str, delai: u64)
             },
             ("dsn", Panne::Reseau(r)) => EchecApi::nouveau(Classe::DepotRefuse, format!("Pas de reponse du point de depot : {}", r), None),
             (_, Panne::Statut { code, corps }) => {
-                EchecApi::nouveau(Classe::Organisme, phrase_du_statut(code, &format!("au depot sur {}", sans_secret(url)), debut_du_corps(corps, 400)), None)
+                EchecApi::nouveau(Classe::Organisme, phrase_du_statut(code, &format!("au depot sur {}", sans_secret(url)), Some(debut_du_corps(corps, 400))), None)
             }
             (_, Panne::Reseau(r)) => EchecApi::nouveau(Classe::Organisme, format!("Reseau injoignable pour {} : {}", sans_secret(url), r), None),
             (_, brute) => echec_brut(brute),

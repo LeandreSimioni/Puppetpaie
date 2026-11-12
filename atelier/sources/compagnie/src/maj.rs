@@ -73,7 +73,7 @@ use sha2::{Digest, Sha256};
 use socle::date::Jour;
 use socle::echec::{refus, refus_avec, APart, Echec, Lieu, R};
 use socle::num::Decimal;
-use socle::paris::MinuteEcrite;
+use socle::paris::Moment;
 
 
 /// La cle publique d'un poste d'editeur (Ed25519, 32 octets en base64), que les installations posees acceptent encore
@@ -185,15 +185,25 @@ pub fn dossier_installe() -> R<PathBuf> {
     code.parent().map(Path::to_path_buf).ok_or_else(|| refus_avec("Le dossier du logiciel ne se trouve pas.", a_part_chemin(&code)))
 }
 
-/// Les nombres d'une version (`AAAA.MM.JJ`, `AAAA.MM.JJ.N`), de gauche a droite. Une version qui n'en est pas une se
-/// refuse.
-fn cle_de_version(v: &str) -> R<Vec<u64>> {
-    v.trim().split('.').map(|x| x.parse::<u64>().map_err(|_| refus_avec("Une version ne se lit pas : elle s'écrit en nombres séparés de points.", Lieu { detail: Some(v.to_string()), ..Default::default() }))).collect()
+/// UNE VERSION DU LOGICIEL, ses nombres de gauche a droite (`AAAA.MM.JJ`, `AAAA.MM.JJ.N`) : l'ordre des versions. Elle
+/// s'ecrit en texte (`VERSION`, `derniere.json`, les archives, ce que signe l'editeur), et ne se lit que par `lire`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct VersionDuLogiciel(Vec<u64>);
+
+impl VersionDuLogiciel {
+    /// La version ecrite `v` ; une version qui n'en est pas une se refuse.
+    pub fn lire(v: &str) -> R<VersionDuLogiciel> {
+        v.trim()
+            .split('.')
+            .map(|x| x.parse::<u64>().map_err(|_| refus_avec("Une version ne se lit pas : elle s'écrit en nombres séparés de points.", Lieu { detail: Some(v.to_string()), ..Default::default() })))
+            .collect::<R<Vec<u64>>>()
+            .map(VersionDuLogiciel)
+    }
 }
 
 /// `candidate` est-elle plus recente que `reference` ?
 pub fn plus_recente(candidate: &str, reference: &str) -> R<bool> {
-    Ok(cle_de_version(candidate)? > cle_de_version(reference)?)
+    Ok(VersionDuLogiciel::lire(candidate)? > VersionDuLogiciel::lire(reference)?)
 }
 
 /// LA VERSION TELLE QU'UN HUMAIN LA LIT : `JJ.MM.AAAA`, l'annee en tete embrouille.
@@ -280,7 +290,8 @@ pub fn depot(pose: Option<String>) -> String {
 #[serde(deny_unknown_fields)]
 pub struct Prete {
     pub version: String,
-    pub quand: MinuteEcrite,
+    #[serde(with = "socle::paris::ecrit::minute")]
+    pub quand: Moment,
     pub archives: Vec<String>,
     pub notes: String,
     pub calcul: String,
@@ -792,7 +803,7 @@ fn telecharger(inst: &Path, depot: &str, d: &Publiee, cles: &[&str], suivi: &Rec
     }
     let prete = Prete {
         version: version.to_string(),
-        quand: MinuteEcrite::maintenant(),
+        quand: socle::temps::secondes().a_la_minute(),
         archives: prises.iter().map(|(k, _)| k.to_string()).collect(),
         notes: d.notes.clone(),
         calcul: d.calcul.clone(),
@@ -880,9 +891,9 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
                 let quart = attendus.filter(|a| *a > 0).map(|a| recus * 4 / a);
                 if quart.is_some() && quart != dit.get() {
                     dit.set(quart);
-                    let mo = |o: u64| crate::sauvegarde::mo(o).replace('.', ",");
+                    let mo = |o: u64| crate::sauvegarde::en_mo(o, ',');
                     if let Some(a) = attendus {
-                        eprintln!("{} : {} Mo reçus sur {} Mo", qui, mo(recus), mo(a));
+                        eprintln!("{} : {} reçus sur {}", qui, mo(recus), mo(a));
                     }
                 }
             };
@@ -1450,7 +1461,7 @@ impl Recherche {
         let p = self.tenu();
         let lue = p.version.as_deref().map(version_lue);
         let nommee = |t: &str| lue.as_ref().map(|v| format!("PuppetPaie {} {}", v, t));
-        let mo = |o: u64| crate::sauvegarde::mo(o).replace('.', ",");
+        let mo = |o: u64| crate::sauvegarde::en_mo(o, ',');
         let essai = p.nouvel_essai.map(|t| {
             let s = t.saturating_duration_since(std::time::Instant::now()).as_secs();
             match s {
@@ -1475,8 +1486,8 @@ impl Recherche {
             Etape::Telechargement => (
                 "Mise à jour en cours",
                 match p.attendus.filter(|a| *a > 0) {
-                    Some(a) => nommee(&format!(": {} Mo sur {} Mo", mo(p.recus), mo(a))),
-                    None => nommee(&format!(": {} Mo reçus", mo(p.recus))),
+                    Some(a) => nommee(&format!(": {} sur {}", mo(p.recus), mo(a))),
+                    None => nommee(&format!(": {} reçus", mo(p.recus))),
                 },
                 true,
                 // La part recue, au millionieme : la page la montre au millieme.
@@ -1534,12 +1545,9 @@ impl Recherche {
         }
     }
 
-    /// Le point de la recherche, tenu. Un fil tombe en le tenant ne le rend pas faux : le point est repris tel quel.
+    /// Le point de la recherche, tenu (`socle::memoire::tenu` : empoisonne, il panique).
     fn tenu(&self) -> std::sync::MutexGuard<'_, Point> {
-        match self.0.lock() {
-            Ok(p) => p,
-            Err(empoisonne) => empoisonne.into_inner(),
-        }
+        socle::memoire::tenu(&self.0)
     }
 }
 
@@ -1596,7 +1604,8 @@ fn dire_l_installation(inst: &Path, suivi: &Recherche) {
 #[serde(deny_unknown_fields)]
 struct Appliquee {
     version: String,
-    quand: MinuteEcrite,
+    #[serde(with = "socle::paris::ecrit::minute")]
+    quand: Moment,
     notes: String,
     calcul: String,
     vue: bool,
@@ -1659,7 +1668,8 @@ pub fn appliquer(inst: &Path) -> R<Basculee> {
 pub struct Basculee {
     pub version: String,
     pub avant: String,
-    pub quand: MinuteEcrite,
+    #[serde(with = "socle::paris::ecrit::minute")]
+    pub quand: Moment,
 }
 
 /// `appliquer`, le dossier de la version prete et le logiciel donnes : `<installation>/maj/`, ou, pour le relais lance avec
@@ -1729,7 +1739,7 @@ fn appliquer_depuis(maj: &Path, code: &Path) -> R<Basculee> {
         }
         return Err(e.reformuler(|m| format!("la bascule a echoue, l'ancienne version reste en place : {}", m)));
     }
-    let quand = MinuteEcrite::maintenant();
+    let quand = socle::temps::secondes().a_la_minute();
     std::fs::create_dir_all(dossier_maj(&inst)).map_err(|e| refus(e.to_string()))?;
     ecrire_appliquee(&dossier_maj(&inst).join(APPLIQUEE), &Appliquee { version: version.clone(), quand, notes: d.notes, calcul: d.calcul, vue: false })?;
     socle::fichiers::effacer_apres_coup(&maj.join(PRETE));
@@ -1866,7 +1876,7 @@ pub fn noter(inst: &Path, t: &str) {
     let chemin = d.join("journal.log");
     let ecrit = std::fs::create_dir_all(&d)
         .and_then(|()| std::fs::OpenOptions::new().create(true).append(true).open(&chemin))
-        .and_then(|mut f| writeln!(f, "{} {}", MinuteEcrite::maintenant(), t));
+        .and_then(|mut f| writeln!(f, "{} {}", socle::paris::ecrit::minute::texte(socle::temps::secondes()), t));
     // Le journal de la mise a jour n'a personne a qui dire qu'il ne s'ecrit pas : son echec se note
     // (`echec::noter_echec`, que les incidents lisent).
     if let Err(e) = ecrit {
@@ -2026,7 +2036,7 @@ mod tests {
 
     /// La version 2026.11.01 prete dans `<racine>/maj/`, telle que `telecharger` l'ecrit.
     fn poser_la_prete(racine: &Path) {
-        let p = Prete { version: "2026.11.01".into(), quand: MinuteEcrite::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(2026, 11, 1).unwrap(), 9, 0, 0).unwrap()), archives: vec![SYSTEME.into()], notes: String::new(), calcul: String::new(), exigee: String::new() };
+        let p = Prete { version: "2026.11.01".into(), quand: Moment::a_paris(socle::date::Jour::nouveau(2026, 11, 1).unwrap(), 9, 0, 0).unwrap(), archives: vec![SYSTEME.into()], notes: String::new(), calcul: String::new(), exigee: String::new() };
         ecrire_prete(&racine.join("maj"), &p).unwrap();
     }
 

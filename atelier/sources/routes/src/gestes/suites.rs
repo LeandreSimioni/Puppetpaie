@@ -97,7 +97,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
         _ => "et la fiche Entreprise ne dit pas son SIREN et son NIC".to_string(),
     };
     for (retour, chemin) in notifications {
-        let le_jour = retour.publication.map(|p| p.naif().jour());
+        let le_jour = retour.publication.map(|p| p.jour_de_paris());
         let publiee = envois::releve_retours::jour_de_publication_dit(retour);
         let archive = socle::fichiers::nom_du(chemin);
         let source = match &publiee {

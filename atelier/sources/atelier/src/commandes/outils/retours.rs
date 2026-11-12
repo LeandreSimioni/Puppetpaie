@@ -12,7 +12,7 @@ use moteur::commandes::actes::{refuser_si_pas_redirige, Organisme};
 use moteur::commandes::analyse::{Args, Opt, Spec};
 use moteur::commandes::Cadre;
 use socle::echec::Echec;
-use socle::paris::Naif;
+use socle::paris::Moment;
 
 pub static SPEC: Spec = Spec {
     commande: "retours",
@@ -32,18 +32,18 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
 }
 
 /// La plage : `--depuis` et `--jusqu-a` (inclus), par defaut les 30 derniers jours.
-fn plage(args: &Args) -> Result<(Naif, Naif), Echec> {
+fn plage(args: &Args) -> Result<(Moment, Moment), Echec> {
     let a = |t: &socle::ligne::Argument, h: i64, m: i64, s: i64| {
         let j = t.jour().map_err(|e| e.reclasser(socle::echec::Classe::Illisible))?;
-        Naif::du_jour(j, h, m, s).ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Illisible, socle::date::HORS_CALENDRIER))
+        Moment::a_paris(j, h, m, s).ok_or_else(|| socle::echec::erreur(socle::echec::Classe::Illisible, socle::date::HORS_CALENDRIER))
     };
     let fin = match args.tape("jusqu-a") {
         Some(j) => a(j, 23, 59, 59)?,
-        None => socle::paris::maintenant_naif(),
+        None => socle::temps::secondes(),
     };
     let debut = match args.tape("depuis") {
         Some(j) => a(j, 0, 0, 0)?,
-        None => fin.plus(-30 * 86_400)?,
+        None => fin.plus(-30 * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?,
     };
     Ok((debut, fin))
 }
@@ -57,8 +57,8 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let environnement = super::avec_defaut(args, "environnement")?;
     let ou = if dpae { "DPAE".to_string() } else { format!("DSN ({})", environnement) };
     match flux {
-        Some(f) => dire!("Retours {}, du {} au {}, flux {}.", ou, debut.jour().jj_mm_aaaa(), fin.jour().jj_mm_aaaa(), f),
-        None => dire!("Retours {}, du {} au {}.", ou, debut.jour().jj_mm_aaaa(), fin.jour().jj_mm_aaaa()),
+        Some(f) => dire!("Retours {}, du {} au {}, flux {}.", ou, debut.jour_de_paris().jj_mm_aaaa(), fin.jour_de_paris().jj_mm_aaaa(), f),
+        None => dire!("Retours {}, du {} au {}.", ou, debut.jour_de_paris().jj_mm_aaaa(), fin.jour_de_paris().jj_mm_aaaa()),
     }
     let tout = args.drapeau("tout");
     // La releve de la DPAE prend le flux s'il est dit ; sans lui, elle releve par plage.

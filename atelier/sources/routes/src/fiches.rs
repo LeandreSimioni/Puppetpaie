@@ -28,7 +28,7 @@ use envois::simulation_courriels::BoiteQuiRepond;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::ecriture::ecrire_json;
-use socle::paris::{HeureDuJournal, InstantEcrit};
+use socle::paris::{InstantOuJour, Moment};
 use socle::html::{html_echapper, mailto};
 use socle::texte::{capitaliser, strip};
 
@@ -321,7 +321,7 @@ fn sauvegarde_maintenant(ctx: &Contexte) -> R<SauvegardeFaite> {
     let phrase = match (erreurs.is_empty(), &s) {
         (false, _) => format!("Sauvegarde : {}", erreurs.join(" ")),
         (true, None) => "Aucune sauvegarde faite.".to_string(),
-        (true, Some(d)) => format!("Dernière sauvegarde : {}, {} fichiers.", d.quand, d.fichiers),
+        (true, Some(d)) => format!("Dernière sauvegarde : {}, {} fichiers.", socle::paris::ecrit::saisie::texte(d.quand), d.fichiers),
     };
     Ok(SauvegardeFaite { phrase, sauvegarde: s, erreur: (!erreurs.is_empty()).then(|| erreurs.join(" ")) })
 }
@@ -530,7 +530,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees
     let dit = |x: Option<&str>| x.map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
     let de_la_fiche = dit(donnees.mot(droit::fiche::CaseSalarie::CodeEmploiFt).as_deref());
     // (metier, statut dit par la carte, jour, salarie)
-    let mut metiers: std::collections::BTreeSet<(String, Option<String>, Jour, String)> = std::collections::BTreeSet::new();
+    let mut metiers: std::collections::BTreeSet<(String, Option<droit::fiche::Statut>, Jour, String)> = std::collections::BTreeSet::new();
     for f in engagement::stock::fichiers(&ctx.racine)? {
         let Some(lu) = engagement::stock::lire_fichier(&ctx.racine, f)? else { continue };
         for e in lu.engagements.iter().filter(|e| e.non_actif.is_none()) {
@@ -545,7 +545,7 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees
             let termes = std::iter::once((&s.carte, lu.mois.premier_jour())).chain(s.avenants.iter().map(|a| (&a.termes, a.depuis)));
             for (t, jour) in termes {
                 if let Some(code) = dit(t.code_emploi_ft.as_deref()).or_else(|| dit(t.metier.as_deref())).or_else(|| du_salarie.clone()) {
-                    metiers.insert((code, t.statut.map(|s| s.as_str().to_string()), jour.clone(), salarie.to_string()));
+                    metiers.insert((code, t.statut, jour.clone(), salarie.to_string()));
                 }
             }
         }
@@ -557,10 +557,10 @@ fn cases_des_metiers(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, donnees
         }
         let ent = &ctx.entreprise;
         let statut = match statut {
-            Some(s) => Some(s.clone()),
-            None => ctx.salarie(salarie)?.statut.dite().map(|s| droit::fiche::Choix::code(s).to_string()),
+            Some(s) => Some(*s),
+            None => ctx.salarie(salarie)?.statut.dite().copied(),
         };
-        if droit::clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), Some(code), statut.as_deref())? {
+        if droit::clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), Some(code), statut)? {
             cases.insert(droit::fiche::CasePieceEntreprise::JaugeAnnexe1.into());
         }
     }
@@ -738,7 +738,7 @@ pub(crate) fn etat_relu(ctx: &Contexte) -> R<crate::ouverture::EtatDeLaPage> {
 
 /// Aujourd'hui, a Paris (`date.today()`).
 pub(crate) fn aujourd_hui() -> Jour {
-    InstantEcrit::maintenant().jour()
+    socle::temps::secondes().a_la_seconde().jour_de_paris()
 }
 
 // --------------------------------------------------------------- activer-fiche
@@ -796,7 +796,7 @@ fn oublier_demande(ctx: &Contexte, c: ChargeOublier) -> R<DemandeOubliee> {
             salarie: None,
             illisible: None,
             erreurs: None,
-            quand: InstantEcrit::maintenant(),
+            quand: socle::temps::secondes().a_la_seconde(),
             qui: "interface".into(),
             de: None,
             message: None,
@@ -1055,7 +1055,7 @@ pub(crate) struct Attendue {
     pub adresse: String,
     pub prenom: Option<String>,
     /// L'heure de la demande, celle de la ligne du journal.
-    pub quand: HeureDuJournal,
+    pub quand: InstantOuJour,
     /// Les identifiants de NOS envois (le `Message-ID` gardé avec la demande) : jamais pris pour une reponse.
     pub envoyes: Vec<String>,
 }
@@ -1160,7 +1160,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
                 break;
             }
         };
-        let mut retenu: Option<(String, Vec<u8>, String, String, InstantEcrit)> = None;
+        let mut retenu: Option<(String, Vec<u8>, String, String, Moment)> = None;
         for ident in identifiants {
             if a.envoyes.contains(&ident) {
                 continue;
@@ -1186,9 +1186,12 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             if !texte.to_uppercase().contains(code.as_str()) || texte.contains("Remplir ma fiche") {
                 continue;
             }
-            let Some(de) = lecture::adresse_de(&m) else {
-                r.incidents.push(format!("Fiche {} : une reponse ne dit pas d'ou elle vient ; elle n'est pas retenue.", code));
-                continue;
+            let de = match lecture::adresse_de(&m) {
+                lecture::Expediteur::Adresse(de) => de,
+                sans_adresse => {
+                    r.incidents.push(format!("Fiche {} : une reponse ne dit pas d'ou elle vient ({}) ; elle n'est pas retenue.", code, sans_adresse.pourquoi_aucune_adresse()));
+                    continue;
+                }
             };
             if de == expediteur && de != a.adresse {
                 continue;
@@ -1197,7 +1200,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
                 r.incidents.push(format!("Fiche {} : une reponse vient de {} et non de {} ; elle n'est pas retenue.", code, de, a.adresse));
                 continue;
             }
-            let quand = lecture::date_de(&m, InstantEcrit::maintenant());
+            let quand = lecture::date_de(&m, socle::temps::secondes().a_la_seconde());
             retenu = Some((ident, brut.clone(), texte, de, quand));
             break;
         }
@@ -1214,7 +1217,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
         let eml = dossier.join(format!("Fiche_{}.eml", code));
         std::fs::write(&eml, &brut).map_err(|e| socle::echec::du_disque(&eml, &e).reclasser(Classe::Disque))?;
-        let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", quand.jour().jj_mm_aaaa());
+        let mut note = format!("Fiche remplie par la personne, par courriel, le {}. Reste à choisir l'emploi.", quand.jour_de_paris().jj_mm_aaaa());
         if !illisible.is_empty() {
             note.push_str(&format!(" Non lu, à compléter : {}.", illisible.join(" ; ")));
         }
@@ -1321,17 +1324,17 @@ fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, S
 /// s'ecrit comme tout courriel joue (`BoiteQuiRepond`, partagee avec `BoiteDesSignatures`).
 pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i64) -> R<BoiteQuiRepond> {
     let mut boite = BoiteQuiRepond::nouvelle(ctx)?;
-    let maintenant_naif = socle::paris::maintenant_naif();
+    let maintenant = socle::temps::secondes();
     // Les courriels joues, par leur `Message-ID` : la demande retrouve ainsi son bouton.
     let envoyes = envois::simulation_courriels::courriels_par_identifiant(&ctx.racine)?;
     for a in attendues {
         // Une demande datee d'un jour seul est partie a minuit de ce jour.
         let partie = match a.quand {
-            HeureDuJournal::Instant(i) => Some(i.naif()),
-            HeureDuJournal::Jour(j) => socle::paris::Naif::du_jour(j, 0, 0, 0),
+            InstantOuJour::Instant(i) => Some(i),
+            InstantOuJour::Jour(j) => Moment::a_paris(j, 0, 0, 0),
         };
         let Some(partie) = partie else { continue };
-        if maintenant_naif.depuis(partie) < delai {
+        if !maintenant.depuis(partie).is_some_and(|d| d.as_secs() as i64 >= delai) {
             continue;
         }
         let bouton = envois::simulation_courriels::bouton_de_la_demande(&envoyes, &a.envoyes)?;
@@ -1364,15 +1367,10 @@ struct CoutsDits {
     phrases: Vec<String>,
     annee: socle::mois::Annee,
     jusqu_a: String,
-    #[serde(serialize_with = "en_objet")]
+    #[serde(serialize_with = "socle::ecriture::en_ordre")]
     spectacles: Vec<(String, CoutDit)>,
-    #[serde(serialize_with = "en_objet")]
+    #[serde(serialize_with = "socle::ecriture::en_ordre")]
     salaries: Vec<(String, CoutDit)>,
-}
-
-/// Des paires (cle, cout) ecrites en objet, dans leur ordre.
-fn en_objet<S: serde::Serializer>(v: &[(String, CoutDit)], s: S) -> Result<S::Ok, S::Error> {
-    s.collect_map(v.iter().map(|(k, c)| (k, c)))
 }
 
 dites!(EffectifDit, CoutsDits, DemandeOubliee);

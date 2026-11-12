@@ -78,18 +78,13 @@ impl Forme {
 }
 
 /// Ce que l'ecran dit de chaque valeur d'une liste de choix (`libelles`, `""` : la ligne vide), dans l'ordre de la table.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Libelles(pub Vec<(String, String)>);
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct Libelles(#[serde(serialize_with = "socle::ecriture::en_ordre")] pub Vec<(String, String)>);
 
 impl<'de> Deserialize<'de> for Libelles {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         socle::forme::en_ordre(d).map(Libelles)
-    }
-}
-
-impl Serialize for Libelles {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.collect_map(self.0.iter().map(|(k, v)| (k, v)))
     }
 }
 
@@ -102,9 +97,10 @@ impl Libelles {
 
 /// UNE CONDITION DE `champs-base.json` (`si`, `si_entreprise`, `exige_si`) : chaque cle de la fiche vaut l'une des valeurs
 /// listees, `"*"` admettant toute valeur non vide (et pas `false`) ; une liste de conditions est remplie quand l'une l'est.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
 pub enum Condition {
-    Toutes(Vec<(NomDeCase, Vec<String>)>),
+    Toutes(#[serde(serialize_with = "socle::ecriture::en_ordre")] Vec<(NomDeCase, Vec<String>)>),
     UneDe(Vec<Condition>),
 }
 
@@ -225,15 +221,6 @@ impl<'de> Deserialize<'de> for Condition {
     }
 }
 
-impl Serialize for Condition {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Condition::Toutes(l) => s.collect_map(l.iter().map(|(k, v)| (k, v))),
-            Condition::UneDe(l) => s.collect_seq(l),
-        }
-    }
-}
-
 /// La valeur d'une case comme la page la compare (`String(v ?? "").trim()`) : vide, un mot, ou une structure.
 enum VueDeLaPage {
     Vide,
@@ -319,7 +306,6 @@ pub struct Champ {
     pub avance: Option<Avance>,
     /// Quand la compagnie DOIT le remplir (`exige_si`, meme forme que `si`) : `Champ::exige`.
     pub exige_si: Option<Condition>,
-    pub booleen_defaut: bool,
     pub ecran: bool,
     /// Les actes qui ne se font pas sans lui (`exige_par` : `dsn`, `dpae`, `contrat`, `bulletin`, `certificat`, `paie`) :
     /// LA SEULE LISTE de ce qu'un acte exige d'une fiche, que « Pour demarrer » (`demarrage::manques`) et l'acte
@@ -500,7 +486,6 @@ impl Champ {
             si_entreprise: self.si_entreprise.as_ref(),
             avance: self.avance.as_ref(),
             exige_si: self.exige_si.as_ref(),
-            booleen_defaut: self.booleen_defaut,
             ecran: self.ecran,
             exige_par: self.exige_par.as_deref(),
             bloque: self.exige_par.as_deref().and_then(actes_en_clair),
@@ -582,7 +567,6 @@ pub struct Description<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avance: Option<&'a Avance>,
     pub exige_si: Option<&'a Condition>,
-    pub booleen_defaut: bool,
     pub ecran: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exige_par: Option<&'a [String]>,
@@ -1658,14 +1642,9 @@ pub fn a_combler(nom: NomDeFiche, donnees: &Saisie) -> R<Vec<Comble>> {
 }
 
 /// `apercu_derive` : ce qui SERAIT declare, sans rien modifier : chaque forme declaree que sa forme lisible donne.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Apercu(pub Vec<(CaseDeFiche, String)>);
-
-impl Serialize for Apercu {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.collect_map(self.0.iter().map(|(k, v)| (k, v)))
-    }
-}
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct Apercu(#[serde(serialize_with = "socle::ecriture::en_ordre")] pub Vec<(CaseDeFiche, String)>);
 
 pub fn apercu_derive(nom: NomDeFiche, donnees: &Saisie) -> R<Apercu> {
     let mut out = Vec::new();

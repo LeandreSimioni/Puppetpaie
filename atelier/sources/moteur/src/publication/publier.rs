@@ -373,7 +373,7 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     let windows = archives.windows.clone();
     let manifeste = Publiee {
         version,
-        publiee_le: socle::paris::maintenant_naif().jour(),
+        publiee_le: socle::temps::secondes().jour_de_paris(),
         notes: notes.to_string(),
         calcul: calcul.to_string(),
         exigee: exigee.to_string(),

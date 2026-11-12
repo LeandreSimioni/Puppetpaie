@@ -76,8 +76,8 @@ soient droits.
   zéro ; on n'invente rien pour lui. Une case qui n'a pas de sens pour ce qu'on saisit n'existe pas. Un repli, c'est une
   absence qui devient une valeur (0, CDDU, « 12 mois ») : c'est cela qui est interdit.
 - **Un geste, une route, qui obéit** : ni état, ni bouton, ni refus de plus pour une règle (le droit vit dans le calcul) ;
-  un refus dit quoi corriger et n'écrit rien ; la route rend ce que la page lit, **phrases comprises** (gardé par
-  `la_page_n_ecrit_aucune_phrase`).
+  un refus dit quoi corriger et n'écrit rien ; la route rend ce que la page lit, **phrases comprises** (la relecture du
+  diff à l'arrivée le tient).
 - **Reconstruire, c'est renommer et rebrancher** : vérifier une fois à la main sur une fictive, puis supprimer l'ancien
   et ses tests dans le même geste ; un lot finit avec moins de lignes et de tests (sauf une forme qu'on déclare). Rien
   sans l'aval de Léandre ; une pause demandée est une pause.
@@ -91,9 +91,9 @@ chose est faite quand la route la fait. La page ne parle au moteur que par `/api
 pont de la fenêtre ne fait que ses listes `NOMS_ACCUEIL` et `NOMS_LOGICIEL` (`moteur/src/interface/mod.rs`).
 
 **Chaque route porte sa fiche dans son code**, brève, d'où `moteur routes` tire le catalogue. **Rien du métier ne
-s'écrit à côté** : un manque, où qu'on le voie, est un manque de la route. Rien ne se débranche : gardé par
-`moteur/tests/fichiers/structure.rs`, sans liste d'exceptions, et prouvé en jouant (tout cliquer ; une compagnie créée depuis
-zéro).
+s'écrit à côté** : un manque, où qu'on le voie, est un manque de la route. Rien ne se débranche : chaque route du
+catalogue joue l'exemple de sa fiche par `moteur route` (`moteur/tests/fichiers/structure.rs`), la relecture du diff à
+l'arrivée tient la page, et c'est prouvé en jouant (tout cliquer ; une compagnie créée depuis zéro).
 
 **Le moteur rend, la page lit la réponse** et n'a que ses règles d'affichage. **Où chaque route
 se voit, c'est sa fiche qui le dit** (`Fiche::ecran`, obligatoire, `routes/src/catalogue.rs`) : `Dessine(place)` (un écran

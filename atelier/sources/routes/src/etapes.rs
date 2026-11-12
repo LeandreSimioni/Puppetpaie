@@ -30,7 +30,7 @@ use droit::contexte::Contexte;
 use droit::echeances::Echeance;
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
-use socle::paris::{HeureDuJournal, InstantEcrit};
+use socle::paris::{InstantOuJour, Moment};
 use engagement;
 use engagement::etats::ARefaire;
 use engagement::numeros::NumeroContrat;
@@ -777,7 +777,7 @@ pub(crate) fn classer_saisie(e: Echec) -> Echec {
 
 /// Quand le contrat (ou son dernier avenant) de l'engagement `numero` du salarie `cle` est parti (`departs`) ; rien s'il
 /// n'est pas parti.
-pub(crate) fn contrat_parti_le(departs: &engagement::departs::Departs, cle: &str, numero: Option<&str>) -> Option<HeureDuJournal> {
+pub(crate) fn contrat_parti_le(departs: &engagement::departs::Departs, cle: &str, numero: Option<&str>) -> Option<InstantOuJour> {
     let n = numero?;
     departs.de(cle, n).iter().rev().find(|d| d.envoi == engagement::departs::Envoi::Contrat).map(|d| d.le)
 }
@@ -971,7 +971,7 @@ pub(crate) struct SaisieMois {
 pub(crate) struct Globales {
     pub(crate) dpae: HashMap<etats::Paire, etats::EtatEmbauche>,
     /// L'instant ou chaque contrat est revenu signe.
-    pub(crate) recus: HashMap<etats::Paire, InstantEcrit>,
+    pub(crate) recus: HashMap<etats::Paire, Moment>,
     pub(crate) renvoyes: HashSet<etats::Paire>,
     pub(crate) avenants: HashMap<etats::Paire, Vec<envois::journal::AvenantParti>>,
     /// Comment chaque contrat est parti la derniere fois : `imprime` ou `courriel`.
@@ -1074,7 +1074,7 @@ struct DateChangee {
 struct EtatDpae {
     date_changee: Option<DateChangee>,
     a_declarer: bool,
-    fait: Option<HeureDuJournal>,
+    fait: Option<InstantOuJour>,
     passee: bool,
     refusee: bool,
     anomalies: Option<Vec<String>>,
@@ -1092,9 +1092,9 @@ pub(crate) struct CdiEnCours {
 /// `par`, `recu`, `avenant` : ce que le journal des envois en dit (`envois::etats`), lu tel qu'il est.
 #[derive(Debug, Clone)]
 pub(crate) struct Signature {
-    pub(crate) fait: Option<HeureDuJournal>,
+    pub(crate) fait: Option<InstantOuJour>,
     pub(crate) par: Option<&'static str>,
-    pub(crate) recu: Option<InstantEcrit>,
+    pub(crate) recu: Option<Moment>,
     pub(crate) caduc: bool,
     pub(crate) pourquoi: &'static str,
     pub(crate) avenant: Option<envois::journal::AvenantParti>,
@@ -1112,7 +1112,7 @@ impl Signature {
 /// LA PASTILLE DOCUMENTS d'un engagement pour un mois (`etat_documents`).
 #[derive(Debug, Clone)]
 struct EtatDocuments {
-    fait: Option<HeureDuJournal>,
+    fait: Option<InstantOuJour>,
     caduc: bool,
     pourquoi: &'static str,
 }
@@ -1158,7 +1158,7 @@ pub(crate) struct Vue {
     fin: Option<Jour>,
     etablissement: Option<String>,
     echeances: Option<Echeances>,
-    valide: Option<InstantEcrit>,
+    valide: Option<Moment>,
     recalcul: Option<String>,
     contrat: ContratDit,
     pieces: Vec<&'static str>,
@@ -1205,7 +1205,8 @@ struct LigneDePage<'a> {
     numero: Option<&'a str>,
     debut: Option<Jour>,
     fin: Option<Jour>,
-    valide: Option<InstantEcrit>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    valide: Option<Moment>,
     recalcul: Option<&'a str>,
     contrat: &'a ContratDit,
     versions: Option<&'a engagement::versions::Frise>,
@@ -1233,7 +1234,7 @@ struct DpaeDePage<'a> {
 impl<'a> LigneDePage<'a> {
     fn de(l: &'a Ligne) -> LigneDePage<'a> {
         let v = &l.vue;
-        let valide = v.valide.map(InstantEcrit::dit);
+        let valide = v.valide.map(Moment::dit);
         let embauche = v.debut.map(|d| format!("embauche le {}", d.jj_mm_aaaa()));
         LigneDePage {
             periode_dit: v.debut.map(|d| periode_dite(d, v.fin)),
@@ -1663,7 +1664,7 @@ impl<'a> Moteur<'a> {
             // UN CDI EN COURS N'A PAS D'ETAT DE CONTRAT MENSUEL.
             if nat.mensuelle() && nat.duree_indeterminee && !premier_mois {
                 let signe_en = match g.recus.get(&k) {
-                    Some(r) => r.jour().mois_civil(),
+                    Some(r) => r.jour_de_paris().mois_civil(),
                     None => depuis,
                 };
                 signature.cdi_en_cours = Some(CdiEnCours { signe_en });
@@ -2169,7 +2170,7 @@ impl<'a> Moteur<'a> {
                 PointContrat::EnAttente => {
                     // CE QUI EST REVENU SUR CE QUI VIENT DE PARTIR, et sur cela seul : les contrats de la case partis le
                     // jour du dernier envoi encore attendu.
-                    let jour = |p: &Vue| p.etats.signature.fait.map(HeureDuJournal::jour);
+                    let jour = |p: &Vue| p.etats.signature.fait.map(InstantOuJour::jour);
                     let dernier = siens.iter().map(|p| jour(p)).max().flatten();
                     let partis: Vec<&Vue> = de(&m)
                         .into_iter()
@@ -2563,13 +2564,13 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
     let (etat, phrase, geste) = match pt.dpae {
         PointDpae::Refuse => {
             let motif = motif_dpae(d);
-            (EtatCase::Refuse, format!("DPAE refusée {} : {}", le_jour_de(d.fait.map(HeureDuJournal::jour))?, motif), route(historique(mois)))
+            (EtatCase::Refuse, format!("DPAE refusée {} : {}", le_jour_de(d.fait.map(InstantOuJour::jour))?, motif), route(historique(mois)))
         }
         PointDpae::AFaire => (EtatCase::AFaire, "DPAE à déposer".to_string(), route(declarer_embauches(mois))),
         PointDpae::RienADeclarer => (EtatCase::Fait, format!("Contrat commencé le {}, avant PuppetPaie : rien à déclarer ici", debut_dit), None),
         PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider if !embauche => (EtatCase::Fait, format!("DPAE faite en {}, à l'embauche", depuis), None),
-        PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider if d.passee => (EtatCase::Fait, format!("DPAE déposée {}, passée", le_jour_de(d.fait.map(HeureDuJournal::jour))?), None),
-        PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider => (EtatCase::Fait, format!("DPAE déposée {}, retour pas encore arrivé", le_jour_de(d.fait.map(HeureDuJournal::jour))?), None),
+        PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider if d.passee => (EtatCase::Fait, format!("DPAE déposée {}, passée", le_jour_de(d.fait.map(InstantOuJour::jour))?), None),
+        PointDpae::Fait | PointDpae::ACompleter | PointDpae::AValider => (EtatCase::Fait, format!("DPAE déposée {}, retour pas encore arrivé", le_jour_de(d.fait.map(InstantOuJour::jour))?), None),
     };
     let pieces = Pieces { vide: Some("Aucune DPAE déposée pour cette embauche.".into()), encart: None, gestes: Vec::new() };
     let dpae = Carre { pieces: Some(pieces), ..carre(QuelleEtape::Dpae, "DPAE", etat, phrase, geste, None) };
@@ -2585,7 +2586,7 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
     let (etat, phrase, geste) = match pt.contrat {
         PointContrat::AEnvoyer => (EtatCase::AFaire, "Contrat à envoyer".to_string(), route(faire_signer(mois))),
         PointContrat::ARefaire if !s.parti() => (EtatCase::AFaire, majuscule_initiale(s.pourquoi), route(faire_signer(mois))),
-        PointContrat::ARefaire => (EtatCase::AFaire, format!("Contrat parti {} : {}", le_jour_de(s.fait.map(HeureDuJournal::jour))?, s.pourquoi), route(faire_signer(mois))),
+        PointContrat::ARefaire => (EtatCase::AFaire, format!("Contrat parti {} : {}", le_jour_de(s.fait.map(InstantOuJour::jour))?, s.pourquoi), route(faire_signer(mois))),
         // Un avenant parti, imprime ou par courriel, se note signe d'un clic, comme le contrat ; la relance est dans la
         // boite des contrats en attente. `par` est celui du dernier depart, l'avenant attendu.
         PointContrat::EnAttente if s.avenant_attendu => (
@@ -2596,20 +2597,20 @@ fn carres(p: &Vue, mois: Mois) -> R<Vec<Carre>> {
             },
             noter_recu(p, mois, "Noter l'avenant signé", s.avenant.as_ref().and_then(|a| a.numero), true).and_then(&route),
         ),
-        PointContrat::EnAttente => (EtatCase::EnAttente, format!("Contrat {} {}", par_dit, le_jour_de(s.fait.map(HeureDuJournal::jour))?), noter_recu(p, mois, "Noter le contrat signé", None, true).and_then(&route)),
+        PointContrat::EnAttente => (EtatCase::EnAttente, format!("Contrat {} {}", par_dit, le_jour_de(s.fait.map(InstantOuJour::jour))?), noter_recu(p, mois, "Noter le contrat signé", None, true).and_then(&route)),
         PointContrat::RienASigner if ailleurs && !p.contrat.anterieur() => (EtatCase::Fait, "Contrat signé hors de PuppetPaie : rien à signer ici".to_string(), geste_du_dossier(dossier)),
         PointContrat::RienASigner => (EtatCase::Fait, format!("Contrat commencé le {}, avant PuppetPaie : rien à signer ici", debut_dit), geste_du_dossier(dossier)),
         PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider if cdi.is_some() => (EtatCase::Fait, format!("CDI en cours depuis {}, sans terme : rien à envoyer", depuis), None),
         PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider if !embauche => (EtatCase::Fait, format!("Contrat signé en {}", depuis), None),
         PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider if !p.contrat.ecrit() => (EtatCase::Fait, "Pas de contrat à faire signer ici".to_string(), None),
-        PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider => (EtatCase::Fait, format!("Contrat signé {}", le_jour_de(s.recu.map(InstantEcrit::jour))?), None),
+        PointContrat::Fait | PointContrat::ACompleter | PointContrat::AValider => (EtatCase::Fait, format!("Contrat signé {}", le_jour_de(s.recu.map(Moment::jour_de_paris))?), None),
     };
     let contrat = Carre { pieces: Some(pieces_du_contrat(p, mois, s, dossier)), ..carre(QuelleEtape::Signature, nom_contrat, etat, phrase, geste, None) };
 
     let (etat, phrase, geste) = match pt.documents {
         PointDocuments::ARenvoyer => (EtatCase::AFaire, format!("Documents à renvoyer : {}", o.pourquoi), route(envoyer_documents(mois, "Renvoyer les documents corrigés…".into()))),
         PointDocuments::AEnvoyer => (EtatCase::AFaire, "Documents à envoyer".to_string(), route(envoyer_documents(mois, "Envoyer les documents…".into()))),
-        PointDocuments::Fait | PointDocuments::ACompleter | PointDocuments::AValider => (EtatCase::Fait, format!("Documents partis {}", le_jour_de(o.fait.map(HeureDuJournal::jour))?), None),
+        PointDocuments::Fait | PointDocuments::ACompleter | PointDocuments::AValider => (EtatCase::Fait, format!("Documents partis {}", le_jour_de(o.fait.map(InstantOuJour::jour))?), None),
     };
     let documents = carre(QuelleEtape::Documents, "Documents", etat, phrase, geste, None);
     // CE QUI RESTE, EN UN MOT, sur le carre meme (la phrase entiere est l'infobulle) ; un point fait n'a rien qui reste.
@@ -2732,7 +2733,7 @@ fn choix_dpae(p: &Vue) -> R<Choix> {
     if d.a_declarer && !d.refusee {
         return choix(true, true, EtatCase::AFaire, "à déclarer".into());
     }
-    let le = le_jour_de(d.fait.map(HeureDuJournal::jour))?;
+    let le = le_jour_de(d.fait.map(InstantOuJour::jour))?;
     if d.refusee {
         let motif = motif_dpae(d);
         return choix(true, true, EtatCase::Refuse, format!("refusée {} — {} — à redéclarer", le, motif));
@@ -2762,7 +2763,7 @@ fn motif_dpae(d: &EtatDpae) -> String {
 /// (`envois::etats::resumes_des_documents`, lu tel qu'il est).
 #[derive(Debug, Clone)]
 pub(crate) struct DocumentsPartis {
-    pub(crate) quand: HeureDuJournal,
+    pub(crate) quand: InstantOuJour,
     pub(crate) resume: Option<envois::envoi::ResumeDePaie>,
 }
 
@@ -2808,7 +2809,7 @@ pub(crate) const DOCUMENTS_CADUCS: &str = "la paie a changé depuis l'envoi";
 /// LA PASTILLE DOCUMENTS d'un engagement pour un mois. `parti_le` : le dernier envoi de ses documents ; `caduc` : ils
 /// sont partis, et sa paie a change depuis la version sur laquelle ils sont partis (`engagement::etats::a_refaire`) --
 /// ils ne sont plus les bons, ils sont a renvoyer.
-fn etat_documents(parti_le: Option<HeureDuJournal>, caduc: bool) -> EtatDocuments {
+fn etat_documents(parti_le: Option<InstantOuJour>, caduc: bool) -> EtatDocuments {
     let d = EtatDocuments { fait: parti_le, caduc: false, pourquoi: "" };
     let caduc = d.parti() && caduc;
     EtatDocuments { caduc, pourquoi: if caduc { DOCUMENTS_CADUCS } else { "" }, ..d }
@@ -2846,7 +2847,7 @@ pub(crate) const CONTRAT_AILLEURS_A_MODIFIER: &str = "un terme du contrat signé
 /// version sur laquelle il est parti (`a_refaire_signer`, `engagement::etats::a_refaire`), ou il porte un autre numero
 /// que celui que la DSN declare. Un contrat renvoye attend une NOUVELLE signature : celle de l'ancien ne compte plus.
 pub(crate) fn etat_signature(
-    fait: Option<HeureDuJournal>, par: Option<&'static str>, recu: Option<&InstantEcrit>, renvoye: bool, avenants: Option<&Vec<envois::journal::AvenantParti>>,
+    fait: Option<InstantOuJour>, par: Option<&'static str>, recu: Option<&Moment>, renvoye: bool, avenants: Option<&Vec<envois::journal::AvenantParti>>,
     a_refaire_signer: bool, ailleurs: bool,
 ) -> Signature {
     let recu = if renvoye { None } else { recu.cloned() };
@@ -2903,7 +2904,7 @@ fn non_actifs(ctx: &Contexte, mois: Mois) -> R<Vec<NonActif>> {
             dit,
             debut,
             fin,
-            non_actif: n.le().to_string(),
+            non_actif: socle::paris::ecrit::seconde::texte(n.le()),
             non_actif_dit: format!("non actif depuis le {}", n.le().dit()),
             a_faire: crate::engagement::a_faire_en_phrases(&n.a_refaire(&departs)),
         });

@@ -792,9 +792,9 @@ impl NaissanceDeclaree {
         format!("{:02}{:02}{:04}", self.jour, self.mois, self.an)
     }
 
-    /// `AAAA-MM-JJ`, le jour et le mois tels que declares.
+    /// `AAAA-MM-JJ`, le jour et le mois tels que declares (`socle::date::iso`).
     pub fn iso(&self) -> String {
-        format!("{:04}-{:02}-{:02}", self.an, self.mois, self.jour)
+        socle::date::iso(self.an, self.mois, self.jour)
     }
 }
 

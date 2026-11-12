@@ -261,10 +261,11 @@ pub fn en_ordre(source: &dyn Source, urls: &[String], fils: usize, mut rendre: i
                     break;
                 }
                 let r = telecharger(source, &urls[i]);
-                // Le receveur parti, c'est l'arret : on ne rend plus rien.
-                if let Err(arrete) = tx.send((i, r)) {
-                    drop(arrete);
-                    break;
+                match tx.send((i, r)) {
+                    Ok(()) => {}
+                    // `SendError` ne dit qu'une chose : le receveur est parti, apres avoir demande l'arret (`rendre` a
+                    // dit de ne pas continuer) ; ce telechargement n'est plus attendu.
+                    Err(std::sync::mpsc::SendError(_)) => break,
                 }
             });
         }

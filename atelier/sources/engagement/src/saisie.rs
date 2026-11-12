@@ -444,7 +444,8 @@ pub struct Avant {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Validee {
-    pub le: Option<socle::paris::InstantEcrit>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    pub le: Option<socle::paris::Moment>,
 }
 
 /// Ce que la saisie d'un mois pose pour tous ses engagements (le cachet par defaut), tel que la paie ecrite le garde

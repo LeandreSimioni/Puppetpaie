@@ -5,7 +5,7 @@
 
 use declarations::formats::{self, Regex};
 use declarations::usages;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 const ORACLE: &str = "donnees/usages-formats-ntt.json";
 use droit::nature_declaration::NatureDeLaDeclaration;
@@ -21,8 +21,9 @@ struct Oracle {
 }
 
 /// Les usages, rubrique par rubrique, dans l'ordre du fichier : une lettre par nature, `.` si le tableau ne la connait pas.
-#[derive(PartialEq, Debug)]
-struct Usages(Vec<(String, String)>);
+#[derive(PartialEq, Debug, Serialize)]
+#[serde(transparent)]
+struct Usages(#[serde(serialize_with = "socle::ecriture::en_ordre")] Vec<(String, String)>);
 
 impl<'de> Deserialize<'de> for Usages {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
@@ -30,16 +31,6 @@ impl<'de> Deserialize<'de> for Usages {
     }
 }
 
-impl Serialize for Usages {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        let mut m = s.serialize_map(Some(self.0.len()))?;
-        for (r, codes) in &self.0 {
-            m.serialize_entry(r, codes)?;
-        }
-        m.end()
-    }
-}
 
 fn chemin() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(ORACLE)

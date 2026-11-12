@@ -836,7 +836,7 @@ fn charger_image(chemin: &str, largeur: Mesure, ou: &str, quoi: &str) -> Result<
         Err(e) => return illisible(format!("{} : {} illisible ({}) : {}", ou, quoi, e, chemin)),
     };
     let svg = Path::new(chemin).extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"));
-    Image::lire(&donnees, largeur, svg).map_err(|e| Refus::illisible(format!("{} : {} {} : {}", ou, quoi, chemin, e)))
+    Image::lire(&donnees, largeur, svg).map_err(|e| e.reformuler(|p| format!("{} : {} {} : {}", ou, quoi, chemin, p)))
 }
 
 /// Refuse un texte dont un caractère manque à la police elle-même (un idéogramme, un emoji) : tout ce que

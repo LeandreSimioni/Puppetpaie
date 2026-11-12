@@ -46,7 +46,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use compagnie::coffre::Coffre;
-use socle::paris::MinuteEcrite;
+use socle::paris::Moment;
 use compagnie::installation::{self as compagnies, Compagnie};
 use crate::catalogue::Route;
 use crate::depots::{ChargeDeposer, Designation, Quoi};
@@ -73,14 +73,14 @@ const QUOI_DU_REGISTRE: &str = "Les compagnies que gere l'administrateur de ce l
 #[derive(Clone, Debug)]
 pub struct Poste {
     pub dossier_cle: PathBuf,
-    /// L'heure de Paris a la minute : le coffre note quand un mot de passe est pose.
-    pub maintenant: MinuteEcrite,
+    /// L'instant a la minute : le coffre note quand un mot de passe est pose.
+    pub maintenant: Moment,
 }
 
 impl Poste {
-    /// Ce poste-ci : la cle la ou `Coffre::du_poste` la trouve, l'heure de Paris.
+    /// Ce poste-ci : la cle la ou `Coffre::du_poste` la trouve, l'heure de l'horloge du moteur.
     pub fn de_ce_poste() -> Poste {
-        Poste { dossier_cle: Coffre::dossier_cle_du_poste(), maintenant: MinuteEcrite::maintenant() }
+        Poste { dossier_cle: Coffre::dossier_cle_du_poste(), maintenant: socle::temps::secondes().a_la_minute() }
     }
 
     pub fn coffre(&self, racine: &Path) -> Coffre {
@@ -103,7 +103,8 @@ struct Registre {
 #[serde(deny_unknown_fields)]
 struct EntreeRegistre {
     dossier: String,
-    depuis: MinuteEcrite,
+    #[serde(with = "socle::paris::ecrit::minute")]
+    depuis: Moment,
 }
 
 /// L'installation d'une compagnie : `<installation>/compagnies/<nom>` ou `<installation>/prive` (ou `fictives/<nom>`).

@@ -1045,8 +1045,8 @@ impl Anciennete {
 /// LE STATUT DU SALARIE, artiste ou technicien, que sa fiche dit : il choisit la section du bareme (l'abattement de
 /// l'arrete du 24/01/1975 ne vise que les artistes), le plafond, la regle d'un mois incomplet. Une fiche qui ne le dit
 /// pas se refuse : rien ne le devine.
-pub(crate) fn statut_de(sal: &ChampsSalarie) -> R<&'static str> {
-    sal.statut.dite().map(|s| s.as_str()).ok_or_else(|| {
+pub(crate) fn statut_de(sal: &ChampsSalarie) -> R<Statut> {
+    sal.statut.dite().copied().ok_or_else(|| {
         socle::echec::cle("La fiche du salarié ne dit pas son statut, artiste ou technicien : le dire sur sa fiche.", "statut")
     })
 }
@@ -1824,16 +1824,9 @@ pub(crate) fn plafond_de_l_engagement(ctx: &Contexte, e: &Engagement, sal: &Cham
         };
         return plafond_permanent(e.debut_periode(), e.fin_periode(), tp, &pss_du_contexte(ctx));
     }
-    let artiste = match statut_de(sal)? {
-        "artiste" => true,
-        "technicien" => false,
-        autre => {
-            return Err(socle::refus!(
-                "Statut << {} >> : le plafond de securite sociale d'un intermittent depend de son statut (artiste : \
-                 arrete du 24/01/1975, art. 3 ; technicien : R. 242-2 CSS), et ce statut n'est ni l'un ni l'autre.",
-                autre))
-        }
-    };
+    // Le plafond d'un intermittent depend de son statut (artiste : arrete du 24/01/1975, art. 3 ; technicien : R. 242-2
+    // CSS).
+    let artiste = statut_de(sal)? == Statut::Artiste;
     let ep = EngagementPlafond {
         mensuelle: nat.mensuelle(),
         artiste,
@@ -1942,7 +1935,7 @@ pub(crate) fn plafond_temps_partiel(ent: &ChampsEntreprise, e: &Engagement, sal:
     // « Entier » : l'etablissement renonce a la proratisation pour tous ses salaries a temps partiel (fiche 3369 ; BOSS,
     // assiette generale, § 760).
     let renonce = ent.permanent.ouvrir(&au_mois).plafond_temps_partiel.dite() == Some(&droit::fiche::PlafondTempsPartiel::Entier);
-    if statut_de(sal)? == "artiste" {
+    if statut_de(sal)? == Statut::Artiste {
         return Ok(PlafondTempsPartiel::Exclu);
     }
     Ok(if renonce { PlafondTempsPartiel::Entier } else { PlafondTempsPartiel::Proratise })
@@ -2006,8 +1999,9 @@ impl Paie {
     /// (`relire::ecrire`), les lignes de l'engagement telles quelles et le plafond d'un temps partiel.
     pub(crate) fn forme<A>(&self, ctx: &Contexte, avis: &dyn Fn(&Avis) -> A, ecrite: bool) -> R<FormeDePaie<A>> {
         let mut engagement = self.engagement.canon()?;
-        // Le jour du versement que la paie declare et imprime (`Engagement::date_du_versement`) : le contrat le dit.
-        engagement.date_paiement = Some(self.engagement.date_du_versement()?);
+        // Le jour du versement que la paie declare et imprime (`Engagement::versement_dit`) : le contrat le dit ; une paie
+        // importee dont les pieces ne le disent pas l'ecrit vide.
+        engagement.date_paiement = self.engagement.versement_dit()?;
         if ecrite {
             // Telles qu'elles s'ecrivent : sans ce que le moteur pose pour l'ecran (`ligne::Marques`), qui ne s'ecrit pas.
             engagement.lignes = self.engagement.lignes.iter().map(crate::LignePaie::sans_marques).collect();

@@ -196,7 +196,7 @@ struct MessageVu {
 /// Le dernier depart des documents, quand tous sont deja partis.
 #[derive(Debug, Serialize)]
 struct DejaPartis {
-    quand: socle::paris::HeureDuJournal,
+    quand: socle::paris::InstantOuJour,
     quand_dit: String,
 }
 

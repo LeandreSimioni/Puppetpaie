@@ -108,8 +108,8 @@ fn main() -> std::process::ExitCode {
     let adresse = fenetre.adresse("127.0.0.1", port);
     let pour_fermer: Arc<Mutex<Option<tauri::AppHandle>>> = Arc::new(Mutex::new(None));
     let poignee = pour_fermer.clone();
-    *fenetre.fermer.lock().unwrap_or_else(|e| e.into_inner()) = Some(Box::new(move || {
-        if let Some(a) = poignee.lock().ok().and_then(|a| a.clone()) {
+    *fenetre.fermer.lock().unwrap() =Some(Box::new(move || {
+        if let Some(a) = poignee.lock().unwrap().clone() {
             a.exit(0);
         }
     }));
@@ -117,7 +117,7 @@ fn main() -> std::process::ExitCode {
     let resultat = tauri::Builder::default()
         .setup(move |app| {
             let _ = APPLICATION.set(app.handle().clone());
-            *pour_fermer.lock().unwrap_or_else(|e| e.into_inner()) = Some(app.handle().clone());
+            *pour_fermer.lock().unwrap() =Some(app.handle().clone());
             let url = adresse.parse().map_err(|e| format!("adresse illisible : {}", e))?;
             // UNE FENETRE SANS BARRE NOIRE, OUVERTE UNE FOIS. Pas de bordure systeme : le haut de la
             // fenetre est le bandeau de la page, et `cadre.js` en fait la barre de titre (tirer, double-clic, les trois

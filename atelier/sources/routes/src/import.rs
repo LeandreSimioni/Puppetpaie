@@ -201,7 +201,7 @@ struct SalarieDeLaDsn<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     date_anciennete: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    statut: Option<&'static str>,
+    statut: Option<droit::fiche::Statut>,
     #[serde(skip_serializing_if = "Option::is_none")]
     emploi_affichage: Option<String>,
     actif: bool,
@@ -217,9 +217,9 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
         None => None,
     };
     let statut = match (&m, emploi.and_then(|e| e.pcs_ese.as_deref())) {
-        (Some(m), _) => Some(m.statut().as_str()),
-        (None, Some(pcs)) if pcs.starts_with("354") => Some("artiste"),
-        (None, Some(_)) => Some("technicien"),
+        (Some(m), _) => Some(m.statut()),
+        (None, Some(pcs)) if pcs.starts_with("354") => Some(droit::fiche::Statut::Artiste),
+        (None, Some(_)) => Some(droit::fiche::Statut::Technicien),
         (None, None) => None,
     };
     // L'EMPLOI EN CLAIR d'un metier : son libelle, au feminin pour une salariee (le sexe que porte son NIR), comme quand
@@ -481,7 +481,7 @@ pub(crate) fn apercu_lu(
             let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Entreprise, &e)?;
             let libelle = match e.mot(CaseEntreprise::RaisonSociale) {
                 Some(r) => r,
-                None => "?".to_string(),
+                None => "L'entreprise, sans raison sociale".to_string(),
             };
             entreprise = Some(FicheImportee::new(NomDeFiche::Entreprise, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e));
             a_creer_liste.push(ACreer { nom: NomDeFiche::Entreprise, rang: None, donnees: e });
@@ -489,7 +489,7 @@ pub(crate) fn apercu_lu(
         } else {
             let libelle = match ctx.entreprise.raison_sociale.portee() {
                 Some(r) => r.to_string(),
-                None => "?".to_string(),
+                None => "L'entreprise, sans raison sociale".to_string(),
             };
             let fiche = proposee::de(NomDeFiche::Entreprise, &ctx.entreprise)?;
             // L'entreprise ne se lit que dans les DSN : sans DSN, rien a quoi comparer la fiche.
@@ -590,7 +590,7 @@ pub(crate) fn apercu_lu(
         if let Some(cle) = connus.get(&o.numero.to_uppercase()) {
             let titre = match ctx.spectacles[cle].titre.portee() {
                 Some(t) => t.to_string(),
-                None => "?".to_string(),
+                None => "Spectacle sans titre".to_string(),
             };
             spectacles.push(FicheImportee::new(NomDeFiche::Spectacle, Some(cle), &format!("{} ({})", titre, o.numero), EtatFiche::Existante, Vec::new(), Vec::new(), &vide));
             continue;
@@ -864,30 +864,13 @@ struct RepriseVue {
 #[derive(Debug, Serialize)]
 struct MessageEditeur {
     canal: &'static str,
-    quand: QuandDuMessage,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    quand: socle::paris::Moment,
     resume: String,
     parti: bool,
     repondu: bool,
     pastille: socle::ecran::Pastille,
     titre_dit: String,
-}
-
-/// Quand un message a l'editeur a ete note : un incident a la seconde (`compagnie::incidents::Ligne`), un message de la
-/// boite a la minute (`compagnie::problemes::Signalement`), chacun dans sa forme.
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(untagged)]
-enum QuandDuMessage {
-    Incident(socle::paris::InstantEcrit),
-    Signalement(socle::paris::MinuteEcrite),
-}
-
-impl QuandDuMessage {
-    fn dit(self) -> String {
-        match self {
-            QuandDuMessage::Incident(i) => i.dit(),
-            QuandDuMessage::Signalement(m) => m.dit(),
-        }
-    }
 }
 
 /// Une source reprise : combien, de quand a quand, quel jour.
@@ -1005,21 +988,21 @@ fn attend_l_editeur(racine: &Path) -> R<Vec<MessageEditeur>> {
         }
         let parti = l.envoi.etat == compagnie::incidents::DEPOSE;
         let dit = if l.resume.is_empty() { l.genre } else { l.resume };
-        out.push(message("incident", QuandDuMessage::Incident(l.quand), Some(dit), parti, false));
+        out.push(message("incident", l.quand,Some(dit), parti, false));
     }
     for s in compagnie::problemes::signalements(racine)? {
         if !parle_d_import(&s.garde.texte) {
             continue;
         }
         let (parti, repondu) = (s.etat == compagnie::problemes::EtatDuMessage::Arrive, s.garde.reponse.is_some());
-        out.push(message("signalement", QuandDuMessage::Signalement(s.garde.quand), Some(s.garde.texte), parti, repondu));
+        out.push(message("signalement", s.garde.quand,Some(s.garde.texte), parti, repondu));
     }
     Ok(out)
 }
 
 /// Un message a l'editeur, son titre et sa pastille : la reponse recue, faite ; le reste attend l'editeur, rien que la
 /// compagnie ait a faire.
-fn message(canal: &'static str, quand: QuandDuMessage, resume: Option<String>, parti: bool, repondu: bool) -> MessageEditeur {
+fn message(canal: &'static str, quand: socle::paris::Moment,resume: Option<String>, parti: bool, repondu: bool) -> MessageEditeur {
     let quoi = if canal == "signalement" { "Message à l'éditeur" } else { "Incident" };
     let titre_dit = format!("{} du {}", quoi, quand.dit());
     let pastille = match (repondu, parti) {

@@ -92,7 +92,7 @@ function dessinerConfig() {
   // Les archives en dernier, jamais melangees aux courantes. Elles restent
   // trouvables : une fiche qu'on ne voit plus passe pour perdue, et on la
   // ressaisit -- avec un deuxieme code salarie, ce qui serait pire.
-  const courantes = fiches.filter((f) => f.donnees.actif !== false);
+  const courantes = fiches.filter((f) => f.donnees.actif === true);
   // Les spectacles par titre.
   if (FICHE_ACTIVE === "spectacle") {
     courantes.sort((a, b) => comparerCases(a.donnees.titre, b.donnees.titre, "fr", { sensitivity: "base" }));

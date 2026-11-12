@@ -117,7 +117,7 @@ mois. Ne pas modifier a la main."
     );
     // Rien de saisi en vigueur s'ecrit aussi : la composition du mois devient la saisie de la periode.
     if en_vigueur.is_empty() || en_vigueur != adhesions {
-        droit::fiche::dater(&mut date.adhesions_prevoyance, Some(adhesions), Some(&periode.0), None);
+        droit::fiche::dater(&mut date.adhesions_prevoyance, Some(adhesions), Some(&periode.0), false, None);
     }
     let p = chemin(ctx);
     if let Some(parent) = p.parent() {

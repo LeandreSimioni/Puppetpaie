@@ -38,9 +38,9 @@ pub mod taux_pas;
 /// (`moteur route`, qui sert les memes).
 pub const INTERFACE: &str = "interface";
 
-/// `socle::paris::maintenant` a la minute, `AAAA-MM-JJ HH:MM` : l'heure d'une saisie.
-pub fn maintenant() -> socle::paris::HeureDeSaisie {
-    socle::paris::HeureDeSaisie::maintenant()
+/// L'instant de `socle::temps`, a la minute : l'heure d'une saisie.
+pub fn maintenant() -> socle::paris::Moment {
+    socle::temps::secondes().a_la_minute()
 }
 
 /// Une racine d'essai (dans le dossier temporaire, jamais `prive/` ni `fictives/`) : les trois fiches vides de quoi ouvrir un

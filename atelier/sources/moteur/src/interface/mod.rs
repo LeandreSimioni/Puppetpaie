@@ -147,7 +147,8 @@ enum Atelier {
         ok: bool,
         simule: bool,
         jour: socle::date::Jour,
-        heure: socle::paris::InstantEcrit,
+        #[serde(with = "socle::paris::ecrit::seconde")]
+        heure: socle::paris::Moment,
         secondes: socle::paris::Moment,
         scenario: Option<String>,
         compagnie: Option<String>,
@@ -631,7 +632,7 @@ impl Fenetre {
         let exigee = compagnie::coffre::Coffre::du_poste(&racine).ouverture_exigee()?;
         // UNE COMPAGNIE DE L'ADMINISTRATEUR, quand son mot de passe a deja ete tape dans cette fenetre : elle s'ouvre sans
         // le redemander (il ouvre encore son coffre : c'est verifie, pas suppose).
-        if exigee && self.administrateur_ouvre(&racine) {
+        if exigee && self.administrateur_ouvre(&racine)? {
             self.ecrire("Ouverte par le mot de passe de l'administrateur, deja tape dans cette fenetre.\n");
             self.ouvrir(racine);
             return Ok(());
@@ -654,33 +655,38 @@ impl Fenetre {
         }
         // Le journal de la fenetre est celui de la derniere compagnie ouverte, meme revenu a l'accueil : il ne doit plus
         // recreer son dossier.
-        let mut journal = tenu(&self.journal);
-        if journal.as_ref().is_some_and(|j| j.starts_with(racine) || j.starts_with(&cle)) {
-            *journal = None;
+        {
+            let mut journal = tenu(&self.journal);
+            if journal.as_ref().is_some_and(|j| j.starts_with(racine) || j.starts_with(&cle)) {
+                *journal = None;
+            }
         }
-        drop(journal);
         let file = tenu(&self.files).remove(&cle);
         if let Some(f) = file {
             f.quitter();
         }
     }
 
-    /// Le mot de passe de l'administrateur, tape dans cette fenetre, ouvre-t-il `racine`, compagnie rattachee ?
-    fn administrateur_ouvre(&self, racine: &Path) -> bool {
-        let inst = installation::base();
-        // Un registre ou un coffre qui ne se lit pas n'ouvre rien : le mot de passe se demande, et son refus le dit.
-        if !matches!(routes::gestes::administrateur::est_rattachee(&inst, racine), Ok(true)) {
-            return false;
+    /// Le mot de passe de l'administrateur, tape dans cette fenetre, ouvre-t-il `racine`, compagnie rattachee ? Un
+    /// registre ou un coffre qui ne se lit pas refuse l'ouverture : l'erreur remonte.
+    fn administrateur_ouvre(&self, racine: &Path) -> R<bool> {
+        if !routes::gestes::administrateur::est_rattachee(&installation::base(), racine)? {
+            return Ok(false);
         }
         let garde = tenu(&self.administrateur).clone();
-        garde.is_some_and(|m| matches!(routes::gestes::administrateur::mot_de_passe_ouvre(&routes::gestes::administrateur::Poste::de_ce_poste(), racine, &m), Ok(true)))
+        match garde {
+            Some(m) => routes::gestes::administrateur::mot_de_passe_ouvre(&routes::gestes::administrateur::Poste::de_ce_poste(), racine, &m),
+            None => Ok(false),
+        }
     }
 
-    /// Retient le mot de passe de l'administrateur pour la fenetre, s'il ouvre une compagnie rattachee.
-    fn retenir_administrateur(&self, racine: &Path, motdepasse: &str) {
-        if matches!(routes::gestes::administrateur::est_rattachee(&installation::base(), racine), Ok(true)) {
+    /// Retient le mot de passe de l'administrateur pour la fenetre, s'il ouvre une compagnie rattachee. Un registre qui
+    /// ne se lit pas refuse : l'erreur remonte.
+    fn retenir_administrateur(&self, racine: &Path, motdepasse: &str) -> R<()> {
+        if routes::gestes::administrateur::est_rattachee(&installation::base(), racine)? {
             *tenu(&self.administrateur) = Some(motdepasse.to_string());
         }
+        Ok(())
     }
 
     fn ouvrir(&self, racine: PathBuf) {
@@ -732,7 +738,7 @@ impl Fenetre {
                 ok: true,
                 simule: socle::temps::simule(),
                 jour: socle::temps::jour_de_paris(),
-                heure: socle::paris::InstantEcrit::maintenant(),
+                heure: socle::temps::secondes().a_la_seconde(),
                 secondes: socle::temps::secondes(),
                 scenario: enr.map(|e| e.dossier().display().to_string()),
                 compagnie: ouverte.as_ref().map(|r| r.display().to_string()),
@@ -747,7 +753,7 @@ impl Fenetre {
                 let ChargeJour { jour } = socle::forme::lire_texte(texte, "Il faut {\"jour\": \"AAAA-MM-JJ\"}.")?;
                 let instant = socle::paris::Moment::a_paris(jour, 9, 0, 0).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER))?;
                 if instant <= socle::temps::secondes() {
-                    return Err(socle::refus!("Le {} n'est pas apres l'instant simule ({}) : le calendrier n'avance que vers demain.", jour.iso(), socle::paris::iso_secondes(socle::temps::secondes())));
+                    return Err(socle::refus!("Le {} n'est pas apres l'instant simule ({}) : le calendrier n'avance que vers demain.", jour.iso(), socle::paris::ecrit::seconde::texte(socle::temps::secondes())));
                 }
                 socle::temps::couler_depuis(instant);
                 if let Some(e) = enr {
@@ -840,7 +846,7 @@ impl Fenetre {
                 if !compagnie::coffre::Coffre::du_poste(&racine).verifier_ouverture(motdepasse)? {
                     return Err(socle::echec::refus("Mot de passe refusé."));
                 }
-                self.retenir_administrateur(&racine, motdepasse);
+                self.retenir_administrateur(&racine, motdepasse)?;
                 self.ouvrir(racine);
                 Ok(fait(true))
             }
@@ -1162,7 +1168,7 @@ fn ajouter_au_journal(chemin: &Path, texte: &str) -> std::io::Result<()> {
 /// La ligne du journal de l'interface pour une route servie : `HH:MM:SS route NOM N ms`, et ` refus CLASSE` quand elle a
 /// refuse. Ni la charge ni la reponse : seulement de quoi mesurer.
 pub fn ligne_de_route(nom: Route, duree: Duration, rendu: &RouteReponse) -> String {
-    let heure = socle::paris::maintenant_naif().iso();
+    let heure = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
     // L'heure seule (`HH:MM:SS`), apres la date de l'horodatage.
     let a_l_heure = match heure.get(11..) {
         Some(h) => h,
@@ -1320,7 +1326,7 @@ fn poser_le_banc(args: &[socle::ligne::Argument]) -> R<Vec<socle::ligne::Argumen
             let neuf_heures = socle::paris::Moment::a_paris(j, 9, 0, 0).ok_or_else(hors_calendrier)?;
             if let Some(t) = dernier.filter(|t| neuf_heures <= *t) {
                 return Err(socle::echec::refus_avec(
-                    format!("Le scénario va déjà jusqu'au {} : ce jour le ferait reculer.", socle::paris::iso_secondes(t)),
+                    format!("Le scénario va déjà jusqu'au {} : ce jour le ferait reculer.", socle::paris::ecrit::seconde::texte(t)),
                     socle::echec::Lieu { detail: Some(j.iso()), ..Default::default() },
                 ));
             }

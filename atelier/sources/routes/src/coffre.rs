@@ -274,7 +274,8 @@ pub(crate) struct ServiceDit {
     pub(crate) libelle: &'static str,
     pub(crate) sert_a: &'static str,
     pub(crate) pose: bool,
-    pose_le: Option<socle::paris::HeureDeSaisie>,
+    #[serde(with = "socle::paris::ecrit::saisie::option")]
+    pose_le: Option<socle::paris::Moment>,
     pub(crate) environnement: bool,
     compte: Option<String>,
     avec_compte: bool,
@@ -1094,7 +1095,7 @@ pub(crate) fn coffre_etat_de_la_fiche(racine: &Path, entreprise: &droit::fiche::
             Pastille::de(socle::ecran::EtatDEcran::AFaire, "fourni par l'environnement")
         } else if s.pose {
             match s.pose_le {
-                Some(le) => Pastille::de(socle::ecran::EtatDEcran::Fait, &format!("posé le {}", le.jour().jj_mm_aaaa())),
+                Some(le) => Pastille::de(socle::ecran::EtatDEcran::Fait, &format!("posé le {}", le.jour_de_paris().jj_mm_aaaa())),
                 None => Pastille::de(socle::ecran::EtatDEcran::Fait, "posé"),
             }
         } else {

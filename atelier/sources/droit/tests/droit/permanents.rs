@@ -120,20 +120,20 @@ fn preavis_mois(a: &(Decimal, Motif)) -> Rendu<Option<Decimal>> {
     p::preavis_mois(a.0, motif(&a.1), false).into()
 }
 fn salaire_de_reference(a: &(Vec<Decimal>, Vec<Decimal>)) -> SalaireDeReference {
-    let s = p::salaire_de_reference(&a.0, &a.1);
+    let s = p::salaire_de_reference(&a.0, &a.1).unwrap();
     SalaireDeReference { moyenne_12_mois: s.moyenne_12_mois, tiers_3_mois: s.tiers_3_mois, retenu: s.retenu, regle: s.regle.to_string() }
 }
 fn indemnite_licenciement(a: &(Decimal, Decimal, Motif)) -> Rendu<IndemniteLegale> {
-    p::indemnite_licenciement(a.0, a.1, motif(&a.2)).map(legale).into()
+    p::indemnite_licenciement(a.0, &mut || Ok(a.1), motif(&a.2)).map(legale).into()
 }
 fn indemnite_mise_a_la_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteLegale> {
-    p::indemnite_mise_a_la_retraite(a.0, a.1).map(legale).into()
+    p::indemnite_mise_a_la_retraite(a.0, &mut || Ok(a.1)).map(legale).into()
 }
 fn indemnite_rupture_conventionnelle(a: &(Decimal, Decimal)) -> Rendu<PlancherDeLaRupture> {
-    p::indemnite_rupture_conventionnelle(a.0, a.1).map(|i| PlancherDeLaRupture { plancher: i.plancher, annees: i.annees, pourquoi: i.pourquoi }).into()
+    p::indemnite_rupture_conventionnelle(a.0, &mut || Ok(a.1)).map(|i| PlancherDeLaRupture { plancher: i.plancher, annees: i.annees, pourquoi: i.pourquoi }).into()
 }
 fn indemnite_depart_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteDuDepart> {
-    p::indemnite_depart_retraite(a.0, a.1).map(|i| IndemniteDuDepart { montant: i.montant, du: i.du, mois: i.mois, palier: i.palier, pourquoi: i.pourquoi }).into()
+    p::indemnite_depart_retraite(a.0, &mut || Ok(a.1)).map(|i| IndemniteDuDepart { montant: i.montant, du: i.du, mois: i.mois, palier: i.palier, pourquoi: i.pourquoi }).into()
 }
 fn rupture(a: &(Motif,)) -> Rendu<Option<Fin>> {
     p::rupture(motif(&a.0)).map(|o| o.map(|(fin, rubrique)| Fin { cle: fin.cle().to_string(), rubrique })).into()

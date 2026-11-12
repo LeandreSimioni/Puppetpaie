@@ -970,7 +970,7 @@ pub struct BulletinLu {
     pub regle_le: Option<Jour>,
     pub mode_reglement: Option<String>,
     /// Les cumuls, dans l'ordre de la page : `cachets`, `jours`, `heures`, `brut`, `plafond`, `cout_employeur`...
-    #[serde(serialize_with = "en_objet")]
+    #[serde(serialize_with = "socle::ecriture::en_ordre")]
     pub cumuls: Vec<(String, Cumul)>,
     pub avertissements: Vec<String>,
 }
@@ -1052,11 +1052,6 @@ fn intervalles<S: serde::Serializer>(l: &[(Jour, Jour)], s: S) -> Result<S::Ok, 
         fin: &'a Jour,
     }
     s.collect_seq(l.iter().map(|(debut, fin)| Intervalle { debut, fin }))
-}
-
-/// Des paires (cle, valeur), ecrites en objet dans leur ordre.
-fn en_objet<S: serde::Serializer, T: serde::Serialize>(l: &[(String, T)], s: S) -> Result<S::Ok, S::Error> {
-    s.collect_map(l.iter().map(|(k, v)| (k, v)))
 }
 
 // --------------------------------------------------------------------------------------------- la lecture
@@ -2352,7 +2347,7 @@ pub struct Compteurs {
 fn nombre_ecrit(x: Option<Decimal>) -> String {
     match x {
         Some(v) => v.normalize().to_string(),
-        None => "?".to_string(),
+        None => "(non compté)".to_string(),
     }
 }
 

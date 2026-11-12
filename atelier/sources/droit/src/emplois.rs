@@ -402,13 +402,13 @@ pub fn emploi_du_mois(ctx: &Contexte, cle: &str, debut: &Jour, fin: &Jour) -> R<
         };
         let qui = [a_la_fin.prenom.portee(), a_la_fin.nom.portee()].into_iter().flatten().filter(|s| !s.trim().is_empty()).collect::<Vec<_>>().join(" ");
         return Err(socle::echec::a_la_cle(&format!(
-            "{} : la fiche change une case le {} ({} -> {}), dans une periode de paie qui n'est pas coupee a ce jour-la : une \
+            "{} : la fiche change une case {}({} -> {}), dans une periode de paie qui n'est pas coupee a ce jour-la : une \
 periode se calcule sur une seule pile de bareme. Dater le changement au premier jour d'un mois sur la fiche : le {} (il \
 vaut pour tout ce mois-ci) ou le {} (il vaut a partir du mois suivant).",
             if qui.is_empty() { "Ce salarie".to_string() } else { qui },
             match le {
-                Some(j) => j.jj_mm_aaaa(),
-                None => "?".to_string(),
+                Some(j) => format!("le {} ", j.jj_mm_aaaa()),
+                None => "en cours de periode ".to_string(),
             },
             texte(&avant),
             texte(&apres),

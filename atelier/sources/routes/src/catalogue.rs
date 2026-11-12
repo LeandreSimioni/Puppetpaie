@@ -499,7 +499,8 @@ pub struct FicheEcrite {
     refus: Vec<RefusEcrit>,
     acte: &'static str,
     avance: bool,
-    phrase: usize,
+    /// La longueur permise de la phrase que la route rend (`Fiche::phrase`).
+    longueur_de_phrase: usize,
     ecran: Option<&'static str>,
     affichage: &'static str,
     bouton: Option<&'static str>,
@@ -563,7 +564,7 @@ impl Fiche {
                 Acte::Engage => "engage",
             },
             avance: self.ecran.avance(),
-            phrase: self.phrase,
+            longueur_de_phrase: self.phrase,
             ecran: self.ecran.place().map(Place::nom),
             affichage: self.ecran.mot(),
             bouton: match self.ecran {
@@ -626,7 +627,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     geste: "Dire les routes : leur fiche, le chemin simple d'abord.",
     charge: &[Champ { nom: "avance", libelle: Affiche::new("Toutes les routes"), forme: Forme::OuiNon, sens: "vrai : toutes les routes, les avancées comprises", avance: true }],
     exemple: r#"{"avance": true}"#,
-    rend: "routes : la fiche de chaque route (nom, geste, charge, exemple, rend, refus, acte, avance, phrase)",
+    rend: "routes : la fiche de chaque route (nom, geste, charge, exemple, rend, refus, acte, avance, longueur_de_phrase)",
     refus: &[FORME],
     acte: Acte::Lit,
     phrase: 0,

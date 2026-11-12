@@ -59,7 +59,7 @@ fn les_engagements_fabriques_et_leurs_refus() {
             charge[k] = v.clone();
         }
         c["attendu"] = socle::forme::lire::<engagement::Assemble>(&charge, "L'engagement à fabriquer ne se lit pas.")
-            .and_then(|a| Engagement::nouveau(&racine, &a, &qui))
+            .and_then(|a| Engagement::nouveau(&racine, &a, &qui, Some(droit::versement::Versement::FinDuMois)))
             .map_or_else(|m| json!({"refus": m.phrase}), |e| releve(&e));
         refus += c["attendu"].get("refus").is_some() as usize;
     }

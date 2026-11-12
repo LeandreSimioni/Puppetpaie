@@ -11,7 +11,7 @@ use socle::echec::{refus_avec, Lieu, R};
 use socle::fichiers::repr;
 use socle::forme::Nombre;
 use socle::texte::{euros, virgule};
-use socle::num::{add, eur2, mul, sub, Decimal};
+use socle::num::{add, eur2, mul, sub, zero2, Decimal};
 use std::collections::BTreeMap;
 
 const SEUIL: i64 = 20;
@@ -33,10 +33,6 @@ const TYPES_EXTERNES: [&str; 6] = ["01", "02", "03", "04", "05", "06"];
 
 fn taux() -> Decimal {
     Decimal::from(6)
-}
-
-fn zero2() -> Decimal {
-    socle::num::zero2()
 }
 
 /// Ce que la DSN d'avril porte pour un millesime.

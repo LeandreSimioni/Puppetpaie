@@ -91,7 +91,7 @@ pub struct Version {
 #[serde(deny_unknown_fields)]
 pub struct Envoi<D, R> {
     /// L'heure de l'envoi (a la seconde), ou celle qu'une reprise lit dans sa piece (`journal::noter`).
-    pub(crate) quand: socle::paris::HeureDuJournal,
+    pub(crate) quand: socle::paris::InstantOuJour,
     /// D'ou vient une heure qui n'est pas celle de l'acte (une reprise, l'horloge d'une fictive) ; vide sinon.
     pub(crate) origine: String,
     pub mois: Option<Mois>,
@@ -156,7 +156,7 @@ impl Ligne {
         }
     }
 
-    pub fn quand(&self) -> socle::paris::HeureDuJournal {
+    pub fn quand(&self) -> socle::paris::InstantOuJour {
         commun!(self, e => e.quand)
     }
 
@@ -480,7 +480,8 @@ pub struct RetourOrganisme {
     pub libelle: String,
     pub statut: Option<String>,
     /// L'heure ou la plate-forme l'a mis a disposition (`retours::Annonce`).
-    pub publication: Option<socle::paris::InstantCompact>,
+    #[serde(with = "socle::paris::ecrit::compacte::option")]
+    pub publication: Option<socle::paris::Moment>,
 }
 
 impl RetourOrganisme {
@@ -680,7 +681,8 @@ pub struct RetourContrat {
     pub code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adresse: Option<String>,
-    pub quand: socle::paris::InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub quand: socle::paris::Moment,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -708,14 +710,15 @@ impl RetourContrat {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AvenantParti {
     pub numero: Option<i64>,
-    pub quand: socle::paris::HeureDuJournal,
+    pub quand: socle::paris::InstantOuJour,
     pub mois: Mois,
     pub fichier: String,
     pub code: Option<String>,
     pub contrat: Option<NumeroContrat>,
     pub effet: Option<socle::date::Jour>,
     pub modifications: Vec<ArticleModifie>,
-    pub signe: Option<socle::paris::InstantEcrit>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    pub signe: Option<socle::paris::Moment>,
     pub par_courriel: bool,
 }
 
@@ -819,7 +822,8 @@ pub struct RetourFiche {
     pub illisible: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub erreurs: Option<usize>,
-    pub quand: socle::paris::InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub quand: socle::paris::Moment,
     pub qui: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub de: Option<String>,

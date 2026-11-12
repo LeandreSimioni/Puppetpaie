@@ -96,7 +96,8 @@ pub struct ArretSaisi {
     pub ij_nette_majoree: Option<Chiffre>,
     pub prolongations: Vec<Prolongation>,
     pub reprises: Vec<RepriseNotee>,
-    pub saisi_le: socle::paris::HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    pub saisi_le: socle::paris::Moment,
     pub qui: String,
     pub note: Option<String>,
 }
@@ -107,7 +108,8 @@ pub struct ArretSaisi {
 #[serde(deny_unknown_fields)]
 pub struct Prolongation {
     pub le: Jour,
-    pub saisi_le: socle::paris::HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    pub saisi_le: socle::paris::Moment,
     pub qui: String,
     pub fin_avant: Jour,
     pub fin: Jour,
@@ -120,7 +122,8 @@ pub struct Prolongation {
 #[serde(deny_unknown_fields)]
 pub struct RepriseNotee {
     pub le: Jour,
-    pub saisi_le: socle::paris::HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    pub saisi_le: socle::paris::Moment,
     pub qui: String,
     pub reprise_avant: Option<Jour>,
     pub reprise_motif_avant: Option<String>,
@@ -140,7 +143,8 @@ pub struct SuspensionSaisie {
     pub motif: String,
     pub debut: Jour,
     pub fin: Jour,
-    pub saisi_le: socle::paris::HeureDeSaisie,
+    #[serde(with = "socle::paris::ecrit::saisie")]
+    pub saisi_le: socle::paris::Moment,
     pub qui: String,
     pub note: Option<String>,
 }
@@ -706,8 +710,7 @@ pub fn arrets_du_contrat(ctx: &Contexte, paie: &crate::calcul::Paie, debut: &Jou
 /// Ce que le mois d'un contrat paye au mois donne pour mesurer une absence (`conges::lignes_du_mois`) : les bornes du
 /// contrat dans le mois, le salaire que la ligne « mois » paie et les jours travailles payes qu'elle porte
 /// (`droit::periodes::part_du_mois`), l'horaire du salarie qui les compte et les heures d'un jour
-/// (`droit::conges::heures_par_jour`), et ce que vaut un jour ouvrable (l'assiette du maintien de salaire que la loi
-/// donne, dit sans etre applique).
+/// (`droit::conges::heures_par_jour`).
 pub struct MoisDuContrat<'a> {
     pub debut: Jour,
     pub fin: Jour,
@@ -716,7 +719,6 @@ pub struct MoisDuContrat<'a> {
     pub heures_par_jour: Decimal,
     pub jours_payes: i64,
     pub horaire: &'a droit::periodes::Horaire,
-    pub taux_jour_ouvrable: Decimal,
 }
 
 /// UN TAUX SANS ARRONDI : le quotient tel quel, en texte (`num::dec` le relit sans perte), pour que la quantite fois le

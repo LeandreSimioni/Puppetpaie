@@ -22,9 +22,7 @@ fn novembre() -> socle::mois::Mois {
 
 /// L'instant dont les secondes depuis 1970 sont celles de l'heure naive du `jour` a `heure` pile.
 fn instant_naif(jour: socle::date::Jour, heure: i64) -> socle::paris::Moment {
-    let epoque = socle::paris::Naif::du_jour(socle::date::Jour::nouveau(1970, 1, 1).unwrap(), 0, 0, 0).unwrap();
-    let naif = socle::paris::Naif::du_jour(jour, heure, 0, 0).unwrap();
-    socle::paris::Moment::de_secondes(naif.depuis(epoque)).unwrap()
+    socle::paris::Moment::de_secondes((jour.ordinal() - 719_163) * 86_400 + heure * 3_600).unwrap()
 }
 
 /// LES TRETEAUX DU BANC : le petit scenario de la preuve, joue au banc. Une compagnie ajoutee par le « + »
@@ -186,7 +184,7 @@ fn un_engagement_non_actif_fait_annuler_ce_qui_a_ete_declare_pour_lui() {
     let mut e = envois::journal::Envoi::nouveau(envois::journal::Mode::Reel, "test", true, "", "", envois::journal::DetailDsn::nouveau(false));
     e.mois = Some(socle::mois::Mois::nouveau(2026, 12).unwrap());
     e.versions = Some(serde_json::from_value(json!([{"salarie": "FULLER", "numero": "FU1.26.01", "version": na.version(), "mois": "2026-11"}])).unwrap());
-    let date = envois::journal::Datation::Lue { quand: socle::paris::InstantEcrit::du_naif(socle::paris::Naif::du_jour(jour(2027, 1, 5), 10, 0, 0).unwrap()).into(), origine: "le test".into() };
+    let date = envois::journal::Datation::Lue { quand: socle::paris::Moment::a_paris(jour(2027, 1, 5), 10, 0, 0).unwrap().into(), origine: "le test".into() };
     envois::journal::noter(&racine, envois::journal::Ligne::Dsn(e), Some(std::path::Path::new("DSN_Decembre2026.dsn")), date).unwrap();
     let a_refaire = na.a_refaire(&envois::journal::lu(&racine).map(|j| j.departs).unwrap());
     assert!(!a_refaire.iter().any(|a| matches!(a, ARefaire::Dsn { .. })), "{:?}", a_refaire);

@@ -269,16 +269,9 @@ struct DonneesDeLaFiche<P> {
 }
 
 /// Une case seule, ecrite comme une fiche qui ne porterait qu'elle.
-struct UneCase<'a, T>(CaseDeFiche, &'a Option<T>);
-
-impl<T: serde::Serialize> serde::Serialize for UneCase<'_, T> {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        let mut m = s.serialize_map(Some(1))?;
-        m.serialize_entry(&self.0, self.1)?;
-        m.end()
-    }
-}
+#[derive(serde::Serialize)]
+#[serde(transparent, bound(serialize = "T: serde::Serialize"))]
+struct UneCase<'a, T>(#[serde(serialize_with = "socle::ecriture::en_ordre")] [(CaseDeFiche, &'a Option<T>); 1]);
 
 /// LES TEMPS DE CHAQUE CASE DATEE de la fiche `brute` a `jour` (`droit::fiche::temps_au`), chaque valeur dans la forme
 /// que sa ligne de `champs-base.json` lui donne ; une case qui n'a qu'une valeur n'en a pas. La page les met en page.
@@ -292,7 +285,7 @@ fn temps_de<F: SorteDeFiche>(brute: Option<&F>, jour: &socle::date::Jour) -> R<V
             let lue = liste
                 .iter()
                 .map(|e| {
-                    let valeur = champs::Saisie::de_la_fiche(self.nom, &UneCase(cle, &e.valeur))?.valeur(cle).cloned();
+                    let valeur = champs::Saisie::de_la_fiche(self.nom, &UneCase([(cle, &e.valeur)]))?.valeur(cle).cloned();
                     Ok(droit::fiche::Datee { depuis: e.depuis, valeur, note: e.note.clone() })
                 })
                 .collect();
@@ -328,7 +321,7 @@ fn temps_des_etablissements(ctx: &Contexte, jour: &socle::date::Jour) -> R<Optio
     let principal = ctx.entreprise.nic_principal().map(str::to_string);
     let mut par_nic: Vec<(String, Cases)> = Vec::new();
     for version in droit::fiche::valeurs_datees(liste) {
-        let lue = champs::Saisie::de_la_fiche(NomDeFiche::Entreprise, &UneCase(CaseEntreprise::Etablissements.into(), &version.valeur))?;
+        let lue = champs::Saisie::de_la_fiche(NomDeFiche::Entreprise, &UneCase([(CaseEntreprise::Etablissements.into(), &version.valeur)]))?;
         let Some(Valeur::Lignes(lignes)) = lue.case(CaseEntreprise::Etablissements) else { continue };
         for l in lignes {
             let Some(nic) = l.mot(CaseEtablissement::Nic).filter(|n| Some(n) != principal.as_ref()) else { continue };
@@ -381,6 +374,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
     p: &engagement::permanents::Permanents,
 ) -> R<VueFiche<F::Plate>> {
     let nom = F::NOM;
+    let plate = F::retenue(plate);
     let lue = vue::<F>(&plate)?;
     let anomalies = champs::verifier_fiche(nom, &lue)?;
     let comble = lue.comblee(nom)?;
@@ -628,8 +622,8 @@ pub(crate) struct ImageIdentite {
     pub(crate) octets: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) format: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) quand: Option<socle::paris::InstantEcrit>,
+    #[serde(skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
+    pub(crate) quand: Option<socle::paris::Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
     fichier: Option<String>,
     pub(crate) documents: &'static [&'static str],
@@ -694,7 +688,7 @@ pub(crate) fn identite(ctx: &Contexte, gabarits: &Path) -> R<Identite> {
                 e.octets = Some(st.len());
                 e.format = f.extension().map(|x| x.to_string_lossy().into_owned());
                 // Datee hors du calendrier, l'image posee se dit sans sa date.
-                e.quand = socle::paris::mtime(&st).map(socle::paris::InstantEcrit::de);
+                e.quand = socle::paris::mtime(&st).map(socle::paris::Moment::a_la_seconde);
                 e.fichier = Some(f.display().to_string());
             }
         }
@@ -750,7 +744,7 @@ struct FicheAttendue {
     code: String,
     adresse: String,
     prenom: Option<String>,
-    quand: socle::paris::HeureDuJournal,
+    quand: socle::paris::InstantOuJour,
     demande_dit: String,
 }
 
@@ -923,7 +917,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let compteurs_dit = compteurs.iter().filter(|(k, _)| k.len() == 4 && k.chars().all(|c| c.is_ascii_digit())).max_by(|a, b| a.0.cmp(b.0)).map(|(an, c)| {
         let n = |x: Option<i64>| match x {
             Some(n) => n.to_string(),
-            None => "?".to_string(),
+            None => "aucun".to_string(),
         };
         format!("compteurs {} — bulletin {} · CS {}", an, n(c.bulletin), n(c.certificat_cs))
     });
@@ -1026,7 +1020,7 @@ pub(crate) struct MoisDuBilan {
     saisi_dit: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pastille: Option<socle::ecran::Pastille>,
-    depose_le: Option<socle::paris::HeureDuJournal>,
+    depose_le: Option<socle::paris::InstantOuJour>,
     depose_dit: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     documents_dit: Option<String>,
@@ -1710,19 +1704,9 @@ pub(crate) fn aide(cle: &str) -> R<&'static str> {
 }
 
 /// Les aides des cases (`AIDES`), rendues comme un dictionnaire dans leur ordre.
-#[derive(Debug, Clone, Copy)]
-struct Aides(&'static [(&'static str, &'static str)]);
-
-impl serde::Serialize for Aides {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        let mut m = s.serialize_map(Some(self.0.len()))?;
-        for (k, a) in self.0 {
-            m.serialize_entry(k, a)?;
-        }
-        m.end()
-    }
-}
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(transparent)]
+struct Aides(#[serde(serialize_with = "socle::ecriture::en_ordre")] &'static [(&'static str, &'static str)]);
 
 
 /// LA VERSION DU LOGICIEL (`maj-etat`) : l'installee, le depot d'ou l'on recoit, la version

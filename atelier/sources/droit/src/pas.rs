@@ -115,7 +115,7 @@ pub const VALIDITE_MOIS: u32 = 2;
 
 /// Le jour de la mise a disposition d'un taux recu (`mis_a_disposition`, AAAAMMJJHHMMSS) : d'ou court sa validite.
 pub fn mise_a_disposition(e: &TauxPas) -> Option<Jour> {
-    e.mis_a_disposition.map(|i| i.naif().jour())
+    e.mis_a_disposition.map(|i| i.jour_de_paris())
 }
 
 /// Dernier jour ou ce taux est celui du salarie ; `None` si on ne sait pas.
@@ -255,12 +255,12 @@ pub fn grille<'a>(bareme: &'a Pile, le: Option<Jour>, zone: &str) -> RPas<&'a Gr
     meilleure.ok_or_else(|| {
         let connues: BTreeSet<&str> = grilles.iter().map(|g| g.zone.as_str()).collect();
         ErreurPas::SansGrille(socle::refus!(
-            "Aucune grille de taux par defaut pour la zone {} au {}. Zones \
+            "Aucune grille de taux par defaut pour la zone {}{}. Zones \
              connues du bareme : {}.",
             repr(zone),
             match le {
-                Some(j) => j.iso(),
-                None => "?".to_string(),
+                Some(j) => format!(" au {}", j.iso()),
+                None => String::new(),
             },
             connues.into_iter().collect::<Vec<_>>().join(", ")
         ))
@@ -465,7 +465,8 @@ pub struct Situation {
     pub identifiant: Option<String>,
     pub valable_jusqu_a: Option<Jour>,
     pub a_demander: bool,
-    pub dernier_recu: Option<socle::paris::InstantCompact>,
+    #[serde(with = "socle::paris::ecrit::compacte::option")]
+    pub dernier_recu: Option<socle::paris::Moment>,
 }
 
 /// Ou en est le taux d'un salarie au jour `le`, pour la paie du mois `mois` (`en_vigueur`). Ne refuse que si sa fiche est
@@ -531,17 +532,16 @@ pub fn avertissements(ctx: &Contexte, cles: Option<&[String]>, le: Option<Jour>,
         let mut ligne = format!("{} : ", ctx.nomme(&s.salarie));
         ligne += &match s.situation {
             SituationDuTaux::Valide => continue,
-            SituationDuTaux::Perime => format!(
-                "le dernier taux transmis par la DGFiP ({} %) valait jusqu'au {}",
-                match s.taux {
-                    Some(t) => t.to_string().replace('.', ","),
-                    None => "?".to_string(),
-                },
+            SituationDuTaux::Perime => {
+                let taux = match s.taux {
+                    Some(t) => format!(" ({} %)", t.to_string().replace('.', ",")),
+                    None => String::new(),
+                };
                 match s.valable_jusqu_a {
-                    Some(j) => j.jj_mm_aaaa(),
-                    None => "?".to_string(),
+                    Some(j) => format!("le dernier taux transmis par la DGFiP{} valait jusqu'au {}", taux, j.jj_mm_aaaa()),
+                    None => format!("le dernier taux transmis par la DGFiP{} n'est plus valable", taux),
                 }
-            ),
+            }
             SituationDuTaux::SansNir => "sans NIR dans sa fiche, la DGFiP ne peut transmettre aucun taux".into(),
             SituationDuTaux::Bareme | SituationDuTaux::Inconnu => "aucun taux transmis par la DGFiP".into(),
         };

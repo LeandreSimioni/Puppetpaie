@@ -1,15 +1,15 @@
-{"geste":"debut","heure":"2026-01-02T09:00","jour":"2026-01-02","format":1}
+{"geste":"debut","heure":"2026-01-02T09:00:00","jour":"2026-01-02","format":1}
 {"geste":"ajouter","nom":"Compagnie de l'Hôtel de Bourgogne","venue":"logiciel_precedent"}
 {"geste":"simuler"}
 {"route":"importer","charge":{},"pieces":{"dossier":{"chemin":"papiers-2025","dans_la_compagnie":"import"}}}
-{"route":"enregistrer-fiche","charge":{"nom":"entreprise","confirme":true,"changements":[{"case":"sante_permanents","valeur":{"part_patronale":50}},{"case":"urssaf_compte","valeur":"117000000015"},{"case":"medecine_travail","valeur":"MT075"},{"case":"premiere_embauche","valeur":"2022-03-01"},{"case":"signataire","valeur":{"prenom_affichage":"Hortense","nom_affichage":"Champmeslé","fonction":"Administratrice","tel":"0140000012","email":"contact@hotel-bourgogne.exemple.invalid"}},{"case":"taxe_sur_les_salaires","valeur":{"tva":"assujettie","part_tva":72,"sous_franchise":false,"association_1679a":true}}]}}
+{"route":"enregistrer-fiche","charge":{"nom":"entreprise","confirme":true,"changements":[{"case":"date_de_versement_intermittents","valeur":"fin du mois"},{"case":"date_de_versement_permanents","valeur":"fin du mois"},{"case":"sante_permanents","valeur":{"part_patronale":50}},{"case":"urssaf_compte","valeur":"117000000015"},{"case":"medecine_travail","valeur":"MT075"},{"case":"premiere_embauche","valeur":"2022-03-01"},{"case":"signataire","valeur":{"prenom_affichage":"Hortense","nom_affichage":"Champmeslé","fonction":"Administratrice","tel":"0140000012","email":"contact@hotel-bourgogne.exemple.invalid"}},{"case":"taxe_sur_les_salaires","valeur":{"tva":"assujettie","part_tva":72,"sous_franchise":false,"association_1679a":true}}]}}
 {"route":"effectif","charge":{"annee":2025,"valeur":3.65}}
 {"route":"enregistrer-fiche","charge":{"nom":"salarie","cle":"CHAMPMESLE","confirme":true,"changements":[{"case":"conges_reprise","valeur":{"date":"2026-01-01","report":30,"acquis_report":30,"remuneration_report":47321.04,"acquis":17.5,"pris":0,"remuneration_periode":27603.94}}]}}
 {"route":"enregistrer-fiche","charge":{"nom":"salarie","cle":"MARIVAUX","confirme":true,"changements":[{"case":"conges_reprise","valeur":{"date":"2026-01-01","report":30,"acquis_report":30,"remuneration_report":29848.68,"acquis":17.5,"pris":0,"remuneration_periode":17411.73}}]}}
 {"route":"enregistrer-fiche","charge":{"nom":"salarie","cle":"CLAIRON","confirme":true,"changements":[{"case":"conges_reprise","valeur":{"date":"2026-01-01","report":30,"acquis_report":30,"remuneration_report":23295.36,"acquis":17.5,"pris":0,"remuneration_periode":13588.96}}]}}
-{"route":"enregistrer-fiche","charge":{"nom":"salarie","cle":"CHAMPMESLE","confirme":true,"depuis":"2025-01-01","changements":[{"case":"echelon_ccneac","valeur":4}]}}
-{"route":"enregistrer-fiche","charge":{"nom":"salarie","cle":"MARIVAUX","confirme":true,"depuis":"2025-01-01","changements":[{"case":"echelon_ccneac","valeur":3}]}}
-{"route":"enregistrer-fiche","charge":{"nom":"salarie","cle":"CLAIRON","confirme":true,"depuis":"2025-01-01","changements":[{"case":"echelon_ccneac","valeur":2}]}}
+{"route":"enregistrer-fiche","charge":{"nom":"salarie","cle":"CHAMPMESLE","confirme":true,"depuis":"2025-01-01","changements":[{"case":"jours_travailles","valeur":["lundi","mardi","mercredi","jeudi","vendredi"]},{"case":"echelon_ccneac","valeur":4}]}}
+{"route":"enregistrer-fiche","charge":{"nom":"salarie","cle":"MARIVAUX","confirme":true,"depuis":"2025-01-01","changements":[{"case":"jours_travailles","valeur":["lundi","mardi","mercredi","jeudi","vendredi"]},{"case":"echelon_ccneac","valeur":3}]}}
+{"route":"enregistrer-fiche","charge":{"nom":"salarie","cle":"CLAIRON","confirme":true,"depuis":"2025-01-01","changements":[{"case":"jours_travailles","valeur":["lundi","mardi","mercredi","jeudi","vendredi"]},{"case":"echelon_ccneac","valeur":2}]}}
 {"route":"enregistrer-fiche","charge":{"nom":"salarie","cle":"LEKAIN","confirme":true,"depuis":"2025-01-01","changements":[{"case":"echelon_ccneac","valeur":1}]}}
 {"route":"enregistrer-fiche","charge":{"nom":"salarie","cle":"TALMA","confirme":true,"depuis":"2025-01-01","changements":[{"case":"echelon_ccneac","valeur":1}]}}
 {"route":"enregistrer-fiche","charge":{"nom":"spectacle","cle":"objet-256Z00921041","confirme":true,"changements":[{"case":"titre","valeur":"Les Fausses Confidences"}]}}
@@ -34,7 +34,7 @@
 {"route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"ecrite":{"salarie":"CLAIRON","debut":"2024-01-08","rang":0}},"changements":[{"case":"quotite_contrat","valeur":121.33}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"ecrite":{"salarie":"CLAIRON","debut":"2024-01-08","rang":0}},"changements":[{"case":"debut","valeur":"2024-01-08"}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-01","engagement":{"salarie":"CLAIRON","debut":"2024-01-08","rang":0}}}
-{"heure":"2026-01-07T10:00","route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
+{"heure":"2026-01-07T10:00:00","route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"ecrite":{"salarie":"MOLIERE","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"objet-256Z00921042"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"ecrite":{"salarie":"MOLIERE","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"repetition","quantite":10,"taux":64,"heures":4,"lieu":"Salle de répétition de la compagnie, 75001 Paris","dates":["2026-01-12","2026-01-13","2026-01-14","2026-01-15","2026-01-16"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-01","engagement":{"salarie":"MOLIERE","debut":"2026-01-12","rang":0}}}
@@ -49,7 +49,7 @@
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-01"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-01","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-01","contrats":[{"salarie":"MOLIERE","debut":"2026-01-12"},{"salarie":"DORVAL","debut":"2026-01-12"},{"salarie":"LEMAITRE","debut":"2026-01-12"}]}}
-{"heure":"2026-01-19T10:00","route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
+{"heure":"2026-01-19T10:00:00","route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"ecrite":{"salarie":"MOLIERE","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"objet-256Z00921042"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-01","carte":{"ecrite":{"salarie":"MOLIERE","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":3,"taux":175,"lieu":"Théâtre du Marais-Neuf, 75004 Paris","dates":["2026-01-23","2026-01-24","2026-01-25"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-01","engagement":{"salarie":"MOLIERE","debut":"2026-01-23","rang":0}}}
@@ -84,7 +84,7 @@
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-01"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-01","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-01","contrats":[{"salarie":"MOLIERE","debut":"2026-01-23"},{"salarie":"DORVAL","debut":"2026-01-23"},{"salarie":"LEMAITRE","debut":"2026-01-23"},{"salarie":"LEKAIN","debut":"2026-01-23"},{"salarie":"TALMA","debut":"2026-01-23"},{"salarie":"MOLIERE","debut":"2026-01-30"},{"salarie":"LEMAITRE","debut":"2026-01-30"},{"salarie":"LEKAIN","debut":"2026-01-30"}]}}
-{"heure":"2026-02-03T10:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-01"}}
+{"heure":"2026-02-03T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-01"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-01","reel":true}}
 {"route":"envoyer-documents","charge":{"mois":"2026-01"}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-02","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
@@ -122,7 +122,7 @@
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-02"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-02","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-02","contrats":[{"salarie":"MOLIERE","debut":"2026-02-06"},{"salarie":"DORVAL","debut":"2026-02-06"},{"salarie":"LEMAITRE","debut":"2026-02-06"},{"salarie":"LEKAIN","debut":"2026-02-06"},{"salarie":"TALMA","debut":"2026-02-06"},{"salarie":"MOLIERE","debut":"2026-02-20"},{"salarie":"LEMAITRE","debut":"2026-02-20"},{"salarie":"LEKAIN","debut":"2026-02-20"}]}}
-{"heure":"2026-03-03T10:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-02"}}
+{"heure":"2026-03-03T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-02"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-02","reel":true}}
 {"route":"envoyer-documents","charge":{"mois":"2026-02"}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-03","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
@@ -168,14 +168,14 @@
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-03"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-03","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-03","contrats":[{"salarie":"MOLIERE","debut":"2026-03-13"},{"salarie":"DORVAL","debut":"2026-03-13"},{"salarie":"LEMAITRE","debut":"2026-03-13"},{"salarie":"LEKAIN","debut":"2026-03-13"},{"salarie":"TALMA","debut":"2026-03-13"},{"salarie":"MOLIERE","debut":"2026-03-20"},{"salarie":"DORVAL","debut":"2026-03-20"},{"salarie":"LEMAITRE","debut":"2026-03-20"},{"salarie":"LEKAIN","debut":"2026-03-20"},{"salarie":"TALMA","debut":"2026-03-20"}]}}
-{"heure":"2026-03-09T10:00","route":"arret-enregistrer","charge":{"salarie":"MARIVAUX","dernier_jour":"2026-03-06","debut":"2026-03-09","fin":"2026-03-22","motif":"01"}}
+{"heure":"2026-03-09T10:00:00","route":"arret-enregistrer","charge":{"salarie":"MARIVAUX","dernier_jour":"2026-03-06","debut":"2026-03-09","fin":"2026-03-22","motif":"01"}}
 {"route":"arret-connaissance","charge":{"salarie":"MARIVAUX","dernier_jour":"2026-03-06","de":"arret","jour":"2026-03-09"}}
 {"route":"arret-signaler","charge":{"salarie":"MARIVAUX","dernier_jour":"2026-03-06","nature":"04"}}
 {"route":"deposer","charge":{"quoi":"dsn","fichier":"sorties/2026-03/SignalementArret_MARIVAUX_20260306.dsn"}}
 {"route":"deposer","charge":{"quoi":"dsn","fichier":"sorties/2026-03/SignalementArret_MARIVAUX_20260306.dsn","reel":true}}
-{"heure":"2026-03-20T10:00","route":"arret-prolonger","charge":{"salarie":"MARIVAUX","dernier_jour":"2026-03-06","fin":"2026-04-03"}}
-{"heure":"2026-03-30T10:00","route":"arret-indemnites","charge":{"salarie":"MARIVAUX","dernier_jour":"2026-03-06","ij_brute":"40.89","ij_nette":"38.15"}}
-{"heure":"2026-04-02T10:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-03"}}
+{"heure":"2026-03-20T10:00:00","route":"arret-prolonger","charge":{"salarie":"MARIVAUX","dernier_jour":"2026-03-06","fin":"2026-04-03"}}
+{"heure":"2026-03-30T10:00:00","route":"arret-indemnites","charge":{"salarie":"MARIVAUX","dernier_jour":"2026-03-06","ij_brute":"40.89","ij_nette":"38.15"}}
+{"heure":"2026-04-02T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-03"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-03","reel":true}}
 {"route":"envoyer-documents","charge":{"mois":"2026-03"}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-04","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
@@ -201,7 +201,7 @@
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-04"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-04","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-04","contrats":[{"salarie":"MOLIERE","debut":"2026-04-10"},{"salarie":"DORVAL","debut":"2026-04-10"},{"salarie":"LEMAITRE","debut":"2026-04-10"},{"salarie":"LEKAIN","debut":"2026-04-10"},{"salarie":"TALMA","debut":"2026-04-10"}]}}
-{"heure":"2026-04-14T10:00","route":"enregistrer-saisie","charge":{"mois":"2026-04","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
+{"heure":"2026-04-14T10:00:00","route":"enregistrer-saisie","charge":{"mois":"2026-04","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-04","carte":{"ecrite":{"salarie":"MOLIERE","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"les-plaideurs"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-04","carte":{"ecrite":{"salarie":"MOLIERE","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"repetition","quantite":10,"taux":64,"heures":4,"lieu":"Salle de répétition de la compagnie, 75001 Paris","dates":["2026-04-20","2026-04-21","2026-04-22","2026-04-23","2026-04-24"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-04","engagement":{"salarie":"MOLIERE","debut":"2026-04-20","rang":0}}}
@@ -221,7 +221,7 @@
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-04"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-04","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-04","contrats":[{"salarie":"MOLIERE","debut":"2026-04-20"},{"salarie":"DORVAL","debut":"2026-04-20"},{"salarie":"LEMAITRE","debut":"2026-04-20"},{"salarie":"COPEAU","debut":"2026-04-20"}]}}
-{"heure":"2026-05-04T10:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-04"}}
+{"heure":"2026-05-04T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-04"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-04","reel":true}}
 {"route":"envoyer-documents","charge":{"mois":"2026-04"}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-05","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
@@ -259,18 +259,18 @@
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-05"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-05","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-05","contrats":[{"salarie":"MOLIERE","debut":"2026-05-13"},{"salarie":"DORVAL","debut":"2026-05-13"},{"salarie":"LEMAITRE","debut":"2026-05-13"},{"salarie":"LEKAIN","debut":"2026-05-13"},{"salarie":"TALMA","debut":"2026-05-13"},{"salarie":"MOLIERE","debut":"2026-05-22"},{"salarie":"DORVAL","debut":"2026-05-22"},{"salarie":"LEKAIN","debut":"2026-05-22"}]}}
-{"heure":"2026-05-18T10:00","route":"modifier-engagement","charge":{"mois":"2026-05","engagement":{"salarie":"MARIVAUX","debut":"2022-09-05","rang":0},"changements":[{"case":"salarie","valeur":"MARIVAUX"},{"case":"debut","valeur":"2022-09-05"},{"case":"salaire_mensuel","valeur":2487.39},{"case":"quotite_contrat","valeur":151.67},{"case":"heures_supplementaires","valeur":8}],"confirme":false,"jour":null}}
-{"heure":"2026-05-26T10:00","route":"enregistrer-fiche","charge":{"nom":"salarie","confirme":true,"changements":[{"case":"prenom_affichage","valeur":"Apolline"},{"case":"nom_affichage","valeur":"Vilar"},{"case":"nir","valeur":"2790934999010"},{"case":"nir_cle","valeur":"01"},{"case":"date_naissance","valeur":"1979-09-14"},{"case":"lieu_naissance_affichage","valeur":"Sète"},{"case":"departement_naissance","valeur":"34"},{"case":"pays_naissance","valeur":"FR"},{"case":"code_nationalite_dsn","valeur":"01"},{"case":"adresse_affichage","valeur":"8 rue de Turenne"},{"case":"code_postal","valeur":"75004"},{"case":"commune_affichage","valeur":"Paris"},{"case":"email","valeur":"apolline.vilar@exemple.invalid"},{"case":"emploi_affichage","valeur":"Directrice de production"},{"case":"statut","valeur":"technicien"},{"case":"statut_categoriel_rc","valeur":"01"},{"case":"pcs_ese","valeur":"353b"},{"case":"code_emploi_ft","valeur":"DIR120"},{"case":"statut_conventionnel","valeur":"04"},{"case":"echelon_ccneac","valeur":1},{"case":"actif","valeur":true}]}}
+{"heure":"2026-05-18T10:00:00","route":"modifier-engagement","charge":{"mois":"2026-05","engagement":{"salarie":"MARIVAUX","debut":"2022-09-05","rang":0},"changements":[{"case":"salarie","valeur":"MARIVAUX"},{"case":"debut","valeur":"2022-09-05"},{"case":"salaire_mensuel","valeur":2487.39},{"case":"quotite_contrat","valeur":151.67},{"case":"heures_supplementaires","valeur":8}],"confirme":false,"jour":null}}
+{"heure":"2026-05-26T10:00:00","route":"enregistrer-fiche","charge":{"nom":"salarie","confirme":true,"changements":[{"case":"prenom_affichage","valeur":"Apolline"},{"case":"nom_affichage","valeur":"Vilar"},{"case":"nir","valeur":"2790934999010"},{"case":"nir_cle","valeur":"01"},{"case":"date_naissance","valeur":"1979-09-14"},{"case":"lieu_naissance_affichage","valeur":"Sète"},{"case":"departement_naissance","valeur":"34"},{"case":"pays_naissance","valeur":"FR"},{"case":"code_nationalite_dsn","valeur":"01"},{"case":"adresse_affichage","valeur":"8 rue de Turenne"},{"case":"code_postal","valeur":"75004"},{"case":"commune_affichage","valeur":"Paris"},{"case":"email","valeur":"apolline.vilar@exemple.invalid"},{"case":"emploi_affichage","valeur":"Directrice de production"},{"case":"statut","valeur":"technicien"},{"case":"statut_categoriel_rc","valeur":"01"},{"case":"pcs_ese","valeur":"353b"},{"case":"code_emploi_ft","valeur":"DIR120"},{"case":"statut_conventionnel","valeur":"04"},{"case":"echelon_ccneac","valeur":1},{"case":"jours_travailles","valeur":["lundi","mardi","mercredi","jeudi"]},{"case":"actif","valeur":true}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-06","carte":{"neuve":"cdd"},"changements":[{"case":"salarie","valeur":"VILAR"},{"case":"debut","valeur":"2026-06-01"},{"case":"fin","valeur":"2026-10-31"},{"case":"motif_recours","valeur":"02"},{"case":"salaire_mensuel","valeur":6500},{"case":"quotite_contrat","valeur":121.33},{"case":"repartition_horaire","valeur":"Du lundi au jeudi, de 9 h à 17 h, avec une heure de pause."}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-06","engagement":{"salarie":"VILAR","debut":"2026-06-01","rang":0}}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-06"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-06","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-06","contrats":[{"salarie":"VILAR","debut":"2026-06-01"}]}}
-{"heure":"2026-06-01T10:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-05"}}
+{"heure":"2026-06-01T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-05"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-05","reel":true}}
 {"route":"envoyer-documents","charge":{"mois":"2026-05"}}
-{"heure":"2026-06-02T10:00","route":"modifier-engagement","charge":{"mois":"2026-06","engagement":{"salarie":"CLAIRON","debut":"2024-01-08","rang":0},"changements":[{"case":"salarie","valeur":"CLAIRON"},{"case":"debut","valeur":"2024-01-08"},{"case":"salaire_mensuel","valeur":1941.28},{"case":"quotite_contrat","valeur":121.33},{"case":"fin","valeur":"2026-07-02"},{"case":"motif_rupture","valeur":"059"},{"case":"notification_rupture","valeur":"2026-06-02"},{"case":"preavis","valeur":{"type":"01","debut":"2026-06-03","fin":"2026-07-02"}}],"confirme":false,"jour":null}}
-{"heure":"2026-06-02T11:00","route":"enregistrer-saisie","charge":{"mois":"2026-06","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
+{"heure":"2026-06-02T10:00:00","route":"modifier-engagement","charge":{"mois":"2026-06","engagement":{"salarie":"CLAIRON","debut":"2024-01-08","rang":0},"changements":[{"case":"salarie","valeur":"CLAIRON"},{"case":"debut","valeur":"2024-01-08"},{"case":"salaire_mensuel","valeur":1941.28},{"case":"quotite_contrat","valeur":121.33},{"case":"fin","valeur":"2026-07-02"},{"case":"motif_rupture","valeur":"059"},{"case":"notification_rupture","valeur":"2026-06-02"},{"case":"preavis","valeur":{"type":"01","debut":"2026-06-03","fin":"2026-07-02"}}],"confirme":false,"jour":null}}
+{"heure":"2026-06-02T11:00:00","route":"enregistrer-saisie","charge":{"mois":"2026-06","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-06","carte":{"ecrite":{"salarie":"MOLIERE","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"objet-256Z00921042"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-06","carte":{"ecrite":{"salarie":"MOLIERE","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":6,"taux":175,"lieu":"Parc de Bagatelle, 75016 Paris","dates":["2026-06-05","2026-06-06","2026-06-07","2026-06-12","2026-06-13","2026-06-14"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-06","engagement":{"salarie":"MOLIERE","debut":"2026-06-05","rang":0}}}
@@ -293,7 +293,7 @@
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-06"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-06","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-06","contrats":[{"salarie":"MOLIERE","debut":"2026-06-05"},{"salarie":"DORVAL","debut":"2026-06-05"},{"salarie":"LEMAITRE","debut":"2026-06-05"},{"salarie":"LEKAIN","debut":"2026-06-05"},{"salarie":"TALMA","debut":"2026-06-05"}]}}
-{"heure":"2026-07-01T10:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-06"}}
+{"heure":"2026-07-01T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-06"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-06","reel":true}}
 {"route":"envoyer-documents","charge":{"mois":"2026-06"}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-07","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
@@ -332,17 +332,17 @@
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-07","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-07","contrats":[{"salarie":"MOLIERE","debut":"2026-07-03"},{"salarie":"DORVAL","debut":"2026-07-03"},{"salarie":"LEMAITRE","debut":"2026-07-03"},{"salarie":"LEKAIN","debut":"2026-07-03"},{"salarie":"TALMA","debut":"2026-07-03"},{"salarie":"DORVAL","debut":"2026-07-10"},{"salarie":"LEMAITRE","debut":"2026-07-10"},{"salarie":"LEKAIN","debut":"2026-07-10"}]}}
 {"route":"modifier-engagement","charge":{"mois":"2026-07","engagement":{"salarie":"CHAMPMESLE","debut":"2022-03-01","rang":0},"changements":[{"case":"salarie","valeur":"CHAMPMESLE"},{"case":"debut","valeur":"2022-03-01"},{"case":"salaire_mensuel","valeur":3943.42},{"case":"quotite_contrat","valeur":151.67},{"case":"conges_pris","valeur":[{"debut":"2026-07-20","fin":"2026-07-31"}]}],"confirme":false,"jour":null}}
-{"heure":"2026-07-03T10:00","route":"fin-contrat-signaler","charge":{"mois":"2026-07","salarie":"CLAIRON"}}
+{"heure":"2026-07-03T10:00:00","route":"fin-contrat-signaler","charge":{"mois":"2026-07","salarie":"CLAIRON"}}
 {"route":"deposer","charge":{"quoi":"dsn","fichier":"sorties/2026-07/SignalementFinContrat_CLAIRON_20260702.dsn"}}
 {"route":"deposer","charge":{"quoi":"dsn","fichier":"sorties/2026-07/SignalementFinContrat_CLAIRON_20260702.dsn","reel":true}}
 {"route":"fin-contrat-documents","charge":{"mois":"2026-07","salarie":"CLAIRON"}}
-{"heure":"2026-07-31T10:00","route":"modifier-engagement","charge":{"mois":"2026-07","engagement":{"salarie":"VILAR","debut":"2026-06-01","rang":0},"changements":[{"case":"salarie","valeur":"VILAR"},{"case":"debut","valeur":"2026-06-01"},{"case":"salaire_mensuel","valeur":6500},{"case":"quotite_contrat","valeur":121.33},{"case":"heures_complementaires","valeur":6}],"confirme":true,"jour":null}}
-{"heure":"2026-08-03T10:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-07"}}
+{"heure":"2026-07-31T10:00:00","route":"modifier-engagement","charge":{"mois":"2026-07","engagement":{"salarie":"VILAR","debut":"2026-06-01","rang":0},"changements":[{"case":"salarie","valeur":"VILAR"},{"case":"debut","valeur":"2026-06-01"},{"case":"salaire_mensuel","valeur":6500},{"case":"quotite_contrat","valeur":121.33},{"case":"heures_complementaires","valeur":6}],"confirme":true,"jour":null}}
+{"heure":"2026-08-03T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-07"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-07","reel":true}}
 {"route":"envoyer-documents","charge":{"mois":"2026-07"}}
 {"route":"modifier-engagement","charge":{"mois":"2026-08","engagement":{"salarie":"CHAMPMESLE","debut":"2022-03-01","rang":0},"changements":[{"case":"salarie","valeur":"CHAMPMESLE"},{"case":"debut","valeur":"2022-03-01"},{"case":"salaire_mensuel","valeur":3943.42},{"case":"quotite_contrat","valeur":151.67},{"case":"conges_pris","valeur":[{"debut":"2026-08-01","fin":"2026-08-07"}]}],"confirme":false,"jour":null}}
 {"route":"modifier-engagement","charge":{"mois":"2026-08","engagement":{"salarie":"MARIVAUX","debut":"2022-09-05","rang":0},"changements":[{"case":"salarie","valeur":"MARIVAUX"},{"case":"debut","valeur":"2022-09-05"},{"case":"salaire_mensuel","valeur":2487.39},{"case":"quotite_contrat","valeur":151.67},{"case":"conges_pris","valeur":[{"debut":"2026-08-10","fin":"2026-08-28"}]}],"confirme":false,"jour":null}}
-{"heure":"2026-09-01T10:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-08"}}
+{"heure":"2026-09-01T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-08"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-08","reel":true}}
 {"route":"envoyer-documents","charge":{"mois":"2026-08"}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-09","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
@@ -380,11 +380,11 @@
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-09"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-09","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-09","contrats":[{"salarie":"MOLIERE","debut":"2026-09-07"},{"salarie":"DORVAL","debut":"2026-09-07"},{"salarie":"LEMAITRE","debut":"2026-09-07"},{"salarie":"MOLIERE","debut":"2026-09-18"},{"salarie":"DORVAL","debut":"2026-09-18"},{"salarie":"LEMAITRE","debut":"2026-09-18"},{"salarie":"LEKAIN","debut":"2026-09-18"},{"salarie":"TALMA","debut":"2026-09-18"}]}}
-{"heure":"2026-09-07T10:00","route":"modifier-engagement","charge":{"mois":"2026-09","engagement":{"salarie":"CHAMPMESLE","debut":"2022-03-01","rang":0},"changements":[{"case":"salarie","valeur":"CHAMPMESLE"},{"case":"debut","valeur":"2022-03-01"},{"case":"salaire_mensuel","valeur":4100},{"case":"quotite_contrat","valeur":151.67}],"confirme":true,"jour":null}}
+{"heure":"2026-09-07T10:00:00","route":"modifier-engagement","charge":{"mois":"2026-09","engagement":{"salarie":"CHAMPMESLE","debut":"2022-03-01","rang":0},"changements":[{"case":"salarie","valeur":"CHAMPMESLE"},{"case":"debut","valeur":"2022-03-01"},{"case":"salaire_mensuel","valeur":4100},{"case":"quotite_contrat","valeur":151.67}],"confirme":true,"jour":null}}
 {"route":"demander-signature","charge":{"mois":"2026-09","avenants":[{"salarie":"CHAMPMESLE","debut":"2022-03-01","numero":"CH1.22.01","mois":"2026-09","effet":"2026-09-01"}]}}
 {"route":"modifier-engagement","charge":{"mois":"2026-09","engagement":{"salarie":"VILAR","debut":"2026-06-01","rang":0},"changements":[{"case":"salarie","valeur":"VILAR"},{"case":"debut","valeur":"2026-06-01"},{"case":"salaire_mensuel","valeur":7000},{"case":"quotite_contrat","valeur":121.33}],"confirme":true,"jour":16}}
 {"route":"demander-signature","charge":{"mois":"2026-09","avenants":[{"salarie":"VILAR","debut":"2026-06-01","numero":"VI10.26.01","mois":"2026-09","effet":"2026-09-16"}]}}
-{"heure":"2026-09-29T10:00","route":"enregistrer-saisie","charge":{"mois":"2026-10","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
+{"heure":"2026-09-29T10:00:00","route":"enregistrer-saisie","charge":{"mois":"2026-10","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-10","carte":{"ecrite":{"salarie":"MOLIERE","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"les-plaideurs"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-10","carte":{"ecrite":{"salarie":"MOLIERE","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":3,"taux":175,"lieu":"Théâtre d'Orléans-Nord, 45000 Orléans","dates":["2026-10-09","2026-10-10","2026-10-11"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-10","engagement":{"salarie":"MOLIERE","debut":"2026-10-09","rang":0}}}
@@ -407,16 +407,16 @@
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-10"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-10","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-10","contrats":[{"salarie":"MOLIERE","debut":"2026-10-09"},{"salarie":"DORVAL","debut":"2026-10-09"},{"salarie":"LEMAITRE","debut":"2026-10-09"},{"salarie":"LEKAIN","debut":"2026-10-09"},{"salarie":"TALMA","debut":"2026-10-09"}]}}
-{"heure":"2026-10-01T10:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-09"}}
+{"heure":"2026-10-01T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-09"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-09","reel":true}}
 {"route":"envoyer-documents","charge":{"mois":"2026-09"}}
-{"route":"modifier-engagement","charge":{"mois":"2026-10","engagement":{"salarie":"MOLIERE","debut":"2026-10-09","rang":0},"changements":[{"case":"salarie","valeur":"MOLIERE"},{"case":"spectacle","valeur":"les-plaideurs"},{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":4,"taux":175,"lieu":"Théâtre d'Orléans-Nord, 45000 Orléans","dates":["2026-10-09","2026-10-10","2026-10-11","2026-10-17"],"planning":[]}]}],"confirme":true,"jour":null},"heure":"2026-10-02T10:00"}
+{"route":"modifier-engagement","charge":{"mois":"2026-10","engagement":{"salarie":"MOLIERE","debut":"2026-10-09","rang":0},"changements":[{"case":"salarie","valeur":"MOLIERE"},{"case":"spectacle","valeur":"les-plaideurs"},{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":4,"taux":175,"lieu":"Théâtre d'Orléans-Nord, 45000 Orléans","dates":["2026-10-09","2026-10-10","2026-10-11","2026-10-17"],"planning":[]}]}],"confirme":true,"jour":null},"heure":"2026-10-02T10:00:00"}
 {"route":"modifier-engagement","charge":{"mois":"2026-10","engagement":{"salarie":"DORVAL","debut":"2026-10-09","rang":0},"changements":[{"case":"salarie","valeur":"DORVAL"},{"case":"spectacle","valeur":"les-plaideurs"},{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":4,"taux":165,"lieu":"Théâtre d'Orléans-Nord, 45000 Orléans","dates":["2026-10-09","2026-10-10","2026-10-11","2026-10-17"],"planning":[]}]}],"confirme":true,"jour":null}}
 {"route":"modifier-engagement","charge":{"mois":"2026-10","engagement":{"salarie":"LEMAITRE","debut":"2026-10-09","rang":0},"changements":[{"case":"salarie","valeur":"LEMAITRE"},{"case":"spectacle","valeur":"les-plaideurs"},{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":4,"taux":170,"lieu":"Théâtre d'Orléans-Nord, 45000 Orléans","dates":["2026-10-09","2026-10-10","2026-10-11","2026-10-17"],"planning":[]}]}],"confirme":true,"jour":null}}
 {"route":"modifier-engagement","charge":{"mois":"2026-10","engagement":{"salarie":"LEKAIN","debut":"2026-10-09","rang":0},"changements":[{"case":"salarie","valeur":"LEKAIN"},{"case":"spectacle","valeur":"les-plaideurs"},{"case":"lignes","valeur":[{"rubrique":"heure","quantite":28,"taux":17.5,"lieu":"Théâtre d'Orléans-Nord, 45000 Orléans","dates":["2026-10-09","2026-10-10","2026-10-11","2026-10-17"],"planning":[]}]}],"confirme":true,"jour":null}}
 {"route":"modifier-engagement","charge":{"mois":"2026-10","engagement":{"salarie":"TALMA","debut":"2026-10-09","rang":0},"changements":[{"case":"salarie","valeur":"TALMA"},{"case":"spectacle","valeur":"les-plaideurs"},{"case":"lignes","valeur":[{"rubrique":"heure","quantite":32,"taux":17.5,"lieu":"Théâtre d'Orléans-Nord, 45000 Orléans","dates":["2026-10-09","2026-10-10","2026-10-11","2026-10-17"],"planning":[]}]}],"confirme":true,"jour":null}}
 {"route":"demander-signature","charge":{"mois":"2026-10","avenants":[{"salarie":"MOLIERE","debut":"2026-10-09","numero":"MO4.26.16","mois":"2026-10","effet":"2026-10-02"},{"salarie":"DORVAL","debut":"2026-10-09","numero":"DO5.26.15","mois":"2026-10","effet":"2026-10-02"},{"salarie":"LEMAITRE","debut":"2026-10-09","numero":"LE6.26.16","mois":"2026-10","effet":"2026-10-02"},{"salarie":"LEKAIN","debut":"2026-10-09","numero":"LK7.26.14","mois":"2026-10","effet":"2026-10-02"},{"salarie":"TALMA","debut":"2026-10-09","numero":"TA8.26.10","mois":"2026-10","effet":"2026-10-02"}]}}
-{"heure":"2026-10-20T10:00","route":"enregistrer-saisie","charge":{"mois":"2026-10","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
+{"heure":"2026-10-20T10:00:00","route":"enregistrer-saisie","charge":{"mois":"2026-10","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-10","carte":{"ecrite":{"salarie":"MOLIERE","debut":null,"rang":0}},"changements":[{"case":"spectacle","valeur":"objet-256Z00921042"}]}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-10","carte":{"ecrite":{"salarie":"MOLIERE","debut":null,"rang":0}},"changements":[{"case":"lignes","valeur":[{"rubrique":"cachet","quantite":2,"taux":175,"lieu":"Théâtre du Marais-Neuf, 75004 Paris","dates":["2026-10-23","2026-10-24"],"planning":[]}]}]}}
 {"route":"valider-engagement","charge":{"mois":"2026-10","engagement":{"salarie":"MOLIERE","debut":"2026-10-23","rang":0}}}
@@ -431,11 +431,11 @@
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-10"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-10","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-10","contrats":[{"salarie":"MOLIERE","debut":"2026-10-23"},{"salarie":"LEMAITRE","debut":"2026-10-23"},{"salarie":"LEKAIN","debut":"2026-10-23"}]}}
-{"heure":"2026-11-02T09:30","route":"fin-contrat-signaler","charge":{"mois":"2026-10","salarie":"VILAR"}}
+{"heure":"2026-11-02T09:30:00","route":"fin-contrat-signaler","charge":{"mois":"2026-10","salarie":"VILAR"}}
 {"route":"deposer","charge":{"quoi":"dsn","fichier":"sorties/2026-10/SignalementFinContrat_VILAR_20261031.dsn"}}
 {"route":"deposer","charge":{"quoi":"dsn","fichier":"sorties/2026-10/SignalementFinContrat_VILAR_20261031.dsn","reel":true}}
 {"route":"fin-contrat-documents","charge":{"mois":"2026-10","salarie":"VILAR"}}
-{"heure":"2026-11-02T10:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-10"}}
+{"heure":"2026-11-02T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-10"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-10","reel":true}}
 {"route":"envoyer-documents","charge":{"mois":"2026-10"}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-11","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
@@ -461,7 +461,7 @@
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-11"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-11","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-11","contrats":[{"salarie":"MOLIERE","debut":"2026-11-06"},{"salarie":"DORVAL","debut":"2026-11-06"},{"salarie":"LEMAITRE","debut":"2026-11-06"},{"salarie":"LEKAIN","debut":"2026-11-06"},{"salarie":"TALMA","debut":"2026-11-06"}]}}
-{"heure":"2026-12-01T10:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-11"}}
+{"heure":"2026-12-01T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-11"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-11","reel":true}}
 {"route":"envoyer-documents","charge":{"mois":"2026-11"}}
 {"route":"enregistrer-saisie","charge":{"mois":"2026-12","carte":{"neuve":"cddu_spectacle"},"changements":[{"case":"salarie","valeur":"MOLIERE"}]}}
@@ -499,9 +499,9 @@
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-12"}}
 {"route":"deposer","charge":{"quoi":"dpae","mois":"2026-12","reel":true}}
 {"route":"demander-signature","charge":{"mois":"2026-12","contrats":[{"salarie":"MOLIERE","debut":"2026-12-04"},{"salarie":"DORVAL","debut":"2026-12-04"},{"salarie":"LEMAITRE","debut":"2026-12-04"},{"salarie":"LEKAIN","debut":"2026-12-04"},{"salarie":"TALMA","debut":"2026-12-04"},{"salarie":"MOLIERE","debut":"2026-12-18"},{"salarie":"DORVAL","debut":"2026-12-18"},{"salarie":"LEKAIN","debut":"2026-12-18"}]}}
-{"heure":"2027-01-05T10:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-12"}}
+{"heure":"2027-01-05T10:00:00","route":"deposer","charge":{"quoi":"dsn","mois":"2026-12"}}
 {"route":"deposer","charge":{"quoi":"dsn","mois":"2026-12","reel":true}}
 {"route":"envoyer-documents","charge":{"mois":"2026-12"}}
-{"heure":"2027-01-12T10:00","route":"revue-spectacles","charge":{"annee":2027,"continuent":["objet-256Z00921041","objet-256Z00921042","les-plaideurs"]}}
-{"heure":"2027-01-29T10:00","route":"cloture","charge":{"annee":"2026"}}
+{"heure":"2027-01-12T10:00:00","route":"revue-spectacles","charge":{"annee":2027,"continuent":["objet-256Z00921041","objet-256Z00921042","les-plaideurs"]}}
+{"heure":"2027-01-29T10:00:00","route":"cloture","charge":{"annee":"2026"}}
 {"geste":"jour","jour":"2027-01-30"}

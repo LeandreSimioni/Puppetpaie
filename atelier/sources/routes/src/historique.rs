@@ -325,7 +325,8 @@ struct ExerciceDit {
 #[derive(Debug, serde::Serialize)]
 struct ExportDeLAnnee {
     fichier: String,
-    ecrit: Option<socle::paris::MinuteEcrite>,
+    #[serde(with = "socle::paris::ecrit::minute::option")]
+    ecrit: Option<socle::paris::Moment>,
 }
 
 /// La route `exercices` : chaque annee connue du dossier -- ses mois, sa cloture, son export -- et le dossier des archives.

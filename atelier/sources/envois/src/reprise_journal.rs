@@ -22,7 +22,7 @@ use droit::contexte::Contexte;
 use socle::echec::R;
 use socle::echec::Classe;
 use socle::mois::Mois;
-use socle::paris::{HeureDuJournal, InstantEcrit};
+use socle::paris::{InstantOuJour, Moment};
 use socle::piece::format::Jjmmaaaa;
 use socle::piece::Zone;
 use crate::etats::AvecIncidents;
@@ -154,7 +154,7 @@ pub fn reprise(ctx: &Contexte, ecrire: bool, qui: &str) -> AvecIncidents<Reprise
 
 /// L'heure qu'une ligne reprise d'un bilan porte : la date et l'heure de reception que le bilan dit (`Bilan::recu_le`),
 /// ramenees a la seconde de Paris (`Reception::au_journal`) ; `None` : la ligne ne saurait pas dire QUAND.
-fn heure_du_bilan(b: &Bilan) -> Option<HeureDuJournal> {
+fn heure_du_bilan(b: &Bilan) -> Option<InstantOuJour> {
     b.recu_le.as_ref().and_then(Reception::au_journal)
 }
 
@@ -282,7 +282,8 @@ pub struct EmbaucheAttestee {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DpaeAttestee {
     pub flux: String,
-    pub quand: Option<InstantEcrit>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    pub quand: Option<Moment>,
     pub mois: Option<Mois>,
     pub piece: String,
     pub embauches: Vec<EmbaucheAttestee>,
@@ -318,8 +319,8 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
                 let minute = socle::num::entier_de_chiffres(&h[10..12]).filter(|x| (0..60).contains(x));
                 quand = Zone::lue(&h[..8], Jjmmaaaa).valeur()
                     .zip(heure.zip(minute))
-                    .and_then(|(j, (hh, mm))| socle::paris::Naif::du_jour(j, hh, mm, 0))
-                    .map(InstantEcrit::du_naif);
+                    // L'heure de Paris telle qu'ecrite : une heure qui n'existe pas a Paris ne se lit pas.
+                    .and_then(|(j, (hh, mm))| Moment::a_paris(j, hh, mm, 0).filter(|m| m.jour_de_paris() == j && m.seconde_du_jour_de_paris() == hh * 3_600 + mm * 60));
             }
         }
         let Some(flux) = flux_du_nom(&nom) else { continue };
@@ -419,7 +420,7 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
             // Un certificat qui ne dit pas l'heure du depot laisse la ligne a celle de sa reprise.
             let quand = match a.quand {
                 Some(q) => q,
-                None => InstantEcrit::maintenant(),
+                None => socle::temps::secondes().a_la_seconde(),
             }
             .into();
             journal::noter(&ctx.racine, Ligne::Dpae(e), None, journal::Datation::Lue { quand, origine: format!("retours/dpae/{}", a.piece) })?;

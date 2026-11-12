@@ -209,8 +209,8 @@ impl Rubrique {
     /// cachet que des artistes : annexe X, art. 3 (« Lorsque l'activité des artistes est déclarée sous la forme de
     /// cachets ») ; l'annexe VIII, celle des techniciens, ne compte que des heures (art. 3,
     /// `plafond-intermittents/unedic-annexe10-convention-20241115.txt`, `…annexe8…`).
-    pub fn reservee_au_statut(&self) -> Option<&'static str> {
-        matches!(self.unite.as_str(), "service" | "cachet").then_some("artiste")
+    pub fn reservee_au_statut(&self) -> Option<crate::fiche::Statut> {
+        matches!(self.unite.as_str(), "service" | "cachet").then_some(crate::fiche::Statut::Artiste)
     }
 
     /// Une ligne de cette rubrique doit dire ses heures : `heures` est dans
@@ -324,8 +324,7 @@ fn base() -> R<Base> {
 
 /// LES RUBRIQUES DE LA PIECE D'UN SALARIE AU MOIS (`au_mois` de `rubriques-base.json`) : seul le calcul d'un contrat
 /// paye au mois les compose, avec sa cle (`engagement::LignePaie::du_mois`, qui exige `natures::AuMois`) ; une carte ne
-/// les saisit pas (`rubrique_a_saisir`). Leur code ne s'ecrit en Rust qu'ici (`structure.rs`,
-/// `une_rubrique_d_un_salarie_au_mois_ne_se_compose_que_par_sa_cle`).
+/// les saisit pas (`rubrique_a_saisir`). Leur code ne s'ecrit en Rust qu'ici.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RubriqueDuMois {
     /// L'indemnite des conges payes pris (L3141-24 ; la caisse des Conges Spectacles paie ceux d'un intermittent,

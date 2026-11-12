@@ -37,8 +37,9 @@ const METADONNEES_CHIFFREES: bool = true;
 /// passed through without any processing ».
 const FILTRE_PAR_DEFAUT: &[u8] = b"Identity";
 
-/// D'ou viennent les tirages d'un verrou (`verrouiller_avec`) ; `None` : le systeme.
-type Tirage = fn(&mut [u8]) -> Result<(), String>;
+/// D'ou viennent les tirages d'un verrou (`verrouiller_avec`) ; `None` : le systeme. Un tirage impossible est un
+/// defaut (`Refus::defaut`).
+type Tirage = fn(&mut [u8]) -> Result<(), Refus>;
 
 thread_local! {
     static TIRAGE: std::cell::Cell<Option<Tirage>> = const { std::cell::Cell::new(None) };
@@ -47,7 +48,7 @@ thread_local! {
 fn hasard(n: usize) -> Result<Vec<u8>, Refus> {
     let mut v = vec![0u8; n];
     match TIRAGE.with(|t| t.get()) {
-        Some(tirer) => tirer(&mut v).map_err(|e| Refus::defaut(format!("tirage au hasard impossible ({})", e)))?,
+        Some(tirer) => tirer(&mut v).map_err(|e| e.reformuler(|p| format!("tirage au hasard impossible ({})", p)))?,
         None => getrandom::getrandom(&mut v).map_err(|e| Refus::defaut(format!("tirage au hasard impossible ({})", e)))?,
     }
     Ok(v)

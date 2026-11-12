@@ -226,7 +226,7 @@ pub fn ouvrir_seance(racine: &Path) -> Verdict {
         let Some(canal) = canal_installe() else { return Err(refus(SANS_HUMAIN)) };
         let m = obtenir(racine, canal.as_ref(), |essai, refuse| question_de_la_seance(HEURES_SEANCE, essai, refuse))?;
         let coffre = Coffre::du_poste(racine);
-        let fin = socle::paris::MinuteEcrite::du_naif(coffre.maintenant.naif().plus(HEURES_SEANCE * 3600)?);
+        let fin = coffre.maintenant.plus(HEURES_SEANCE * 3600).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?;
         coffre.garder_ouverture(&m, fin)?;
         retenir_mot_de_passe_tape(&m);
         Ok(())
@@ -766,7 +766,7 @@ mod tests {
         }
 
         fn coffre_a(&self) -> Coffre {
-            Coffre { racine: self.racine.clone(), dossier_cle: self.poste_a.clone(), maintenant: socle::paris::MinuteEcrite::du_naif(socle::paris::Naif::du_jour(socle::date::Jour::nouveau(2026, 10, 8).unwrap(), 10, 0, 0).unwrap()), variables: Default::default() }
+            Coffre { racine: self.racine.clone(), dossier_cle: self.poste_a.clone(), maintenant: socle::paris::Moment::a_paris(socle::date::Jour::nouveau(2026, 10, 8).unwrap(), 10, 0, 0).unwrap(), variables: Default::default() }
         }
     }
 
@@ -780,7 +780,7 @@ mod tests {
 
     /// Un coffre ferme par un poste A, mot de passe du logiciel pose, trois secrets ; le processus est sur un poste B.
     fn monde() -> Monde {
-        let tour = TOUR.lock().unwrap_or_else(|e| e.into_inner());
+        let tour = TOUR.lock().unwrap();
         let racine = crate::racine_d_essai(false);
         let poste_a = racine.join("poste-a");
         let poste_b = racine.join("poste-b");

@@ -53,7 +53,8 @@ pub struct Empreinte {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Recalcul {
-    pub le: socle::paris::InstantEcrit,
+    #[serde(with = "socle::paris::ecrit::seconde")]
+    pub le: socle::paris::Moment,
     pub raison: String,
 }
 

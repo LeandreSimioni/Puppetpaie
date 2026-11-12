@@ -1,6 +1,7 @@
 //! LE SALAIRE D'UN MOIS INCOMPLET (`droit::periodes::part_du_mois`).
 
 use droit::conges::{feries_non_payes, JoursTravailles};
+use droit::fiche::Statut;
 use droit::periodes::{part_du_mois, regle_du_mois_incomplet, Horaire, RegleDuMoisIncomplet};
 use socle::date::Jour;
 use socle::num::{div, Decimal};
@@ -15,6 +16,15 @@ fn jours_ecrits(texte: &str) -> socle::echec::R<JoursTravailles> {
         .and_then(|c| JoursTravailles::de_la_case(&c, "le salarie"))
 }
 
+/// Un horaire du lundi au vendredi, chaque ferie paye, tel qu'une fiche l'ecrit.
+fn du_lundi_au_vendredi() -> JoursTravailles {
+    jours_ecrits(r#"["lundi", "mardi", "mercredi", "jeudi", "vendredi"]"#).unwrap()
+}
+
+fn horaire_du_lundi_au_vendredi() -> Horaire {
+    Horaire { jours: du_lundi_au_vendredi(), feries_non_payes: Vec::new() }
+}
+
 /// Cass. soc., 20/01/1999, n° 96-45.042 (`atelier/reference/sources/mois-incomplet/
 /// legifrance-cass-soc-19990120-96-45042-20261030.md`) : une sortie au 25 fevrier ne se paie pas « le 25/30e » ; le salaire
 /// du mois est « la remuneration horaire » (le salaire mensuel sur les heures du mois dans l'entreprise) « par le nombre
@@ -22,7 +32,7 @@ fn jours_ecrits(texte: &str) -> socle::echec::R<JoursTravailles> {
 /// exemple 4 : janvier 2024, 23 jours, le 1er janvier compris).
 #[test]
 fn un_mois_incomplet_se_paie_a_l_horaire_reel() {
-    let (h, lv) = (RegleDuMoisIncomplet::HoraireReel, Horaire::du_lundi_au_vendredi());
+    let (h, lv) = (RegleDuMoisIncomplet::HoraireReel, horaire_du_lundi_au_vendredi());
     // L'entree au lundi 12/01/2026 : 15 jours ouvres sur les 22 de janvier (le jeudi 1er, ferie, en est un).
     let entree = part_du_mois(&j(2026, 1, 12), &j(2026, 1, 31), &j(2026, 1, 31), h, &lv).unwrap();
     assert_eq!((entree.jours, entree.jours_du_mois), (15, 22));
@@ -34,9 +44,9 @@ fn un_mois_incomplet_se_paie_a_l_horaire_reel() {
     // Janvier 2024 entier : 23 jours ouvres, et tout le salaire.
     let entier = part_du_mois(&j(2024, 1, 1), &j(2024, 1, 31), &j(2024, 1, 31), h, &lv).unwrap();
     assert_eq!((entier.jours_du_mois, entier.fraction), (23, Decimal::ONE));
-    assert_eq!(regle_du_mois_incomplet(Some("3090"), "artiste", true), h);
-    assert_eq!(regle_du_mois_incomplet(Some("1285"), "technicien", true), h);
-    assert_eq!(regle_du_mois_incomplet(Some("1285"), "artiste", false), h);
+    assert_eq!(regle_du_mois_incomplet(Some("3090"), Statut::Artiste, true), h);
+    assert_eq!(regle_du_mois_incomplet(Some("1285"), Statut::Technicien, true), h);
+    assert_eq!(regle_du_mois_incomplet(Some("1285"), Statut::Artiste, false), h);
 }
 
 /// Le meme arret : « l'horaire de travail dans l'entreprise » est celui du salarie, ses jours travailles (sa fiche). Un
@@ -53,6 +63,7 @@ fn les_heures_du_mois_se_comptent_sur_les_jours_travailles_de_la_fiche() {
     assert_eq!((p.jours, p.jours_du_mois), (13, 23));
     assert_eq!(p.sur_le_bulletin(droit::conges::heures_par_jour(Decimal::new(15167, 2), &jours)).as_deref(), Some("91 h sur les 161 h du mois"));
     assert!(jours_ecrits("[]").is_err());
+    assert!(jours_ecrits("null").is_err());
 }
 
 /// L3133-3 (`atelier/reference/sources/code-du-travail/articles-20261029.md`, l. 113) : le chomage d'un ferie n'entraine
@@ -63,7 +74,7 @@ fn les_heures_du_mois_se_comptent_sur_les_jours_travailles_de_la_fiche() {
 #[test]
 fn un_ferie_chome_ne_se_paie_qu_apres_trois_mois_d_anciennete() {
     let tous = "tous";
-    let lv = JoursTravailles::du_lundi_au_vendredi();
+    let lv = du_lundi_au_vendredi();
     let avril = feries_non_payes(&j(2026, 4, 1), &j(2026, 4, 30), Some(tous), &lv, &j(2026, 1, 12)).unwrap();
     assert_eq!(avril.iter().map(|(d, _)| d.iso()).collect::<Vec<_>>(), ["2026-04-06"]);
     let horaire = Horaire { jours: lv, feries_non_payes: avril };
@@ -82,9 +93,9 @@ fn un_ferie_chome_ne_se_paie_qu_apres_trois_mois_d_anciennete() {
 /// a sa regle l'emporte sur l'horaire reel.
 #[test]
 fn le_premier_mois_d_un_artiste_de_la_1285_se_paie_au_vingt_et_unieme() {
-    let r = regle_du_mois_incomplet(Some("1285"), "artiste", true);
+    let r = regle_du_mois_incomplet(Some("1285"), Statut::Artiste, true);
     assert_eq!(r, RegleDuMoisIncomplet::Ccneac1285Artiste);
-    let p = part_du_mois(&j(2026, 1, 12), &j(2026, 1, 31), &j(2026, 1, 31), r, &Horaire::du_lundi_au_vendredi()).unwrap();
+    let p = part_du_mois(&j(2026, 1, 12), &j(2026, 1, 31), &j(2026, 1, 31), r, &horaire_du_lundi_au_vendredi()).unwrap();
     assert_eq!((p.jours, p.jours_du_mois), (15, 21));
     assert_eq!(p.fraction, div(Decimal::from(15), Decimal::from(21)));
 }

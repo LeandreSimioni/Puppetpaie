@@ -23,7 +23,7 @@ use crate::editeur::Retour;
 use crate::incidents::{self, Canal, EtatEnvoi, PourLEditeur, DEPOSE, EN_ATTENTE};
 use socle::ecriture::ecrire_json;
 use socle::echec::{erreur, Classe, R};
-use socle::paris::{InstantEcrit, MinuteEcrite};
+use socle::paris::Moment;
 use socle::verrou::Verrou;
 
 const TEXTE_MAX: usize = 5000;
@@ -260,8 +260,10 @@ pub fn apercu(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Captu
 #[serde(deny_unknown_fields)]
 pub struct EnvoiDuMessage {
     pub etat: EtatEnvoi,
-    pub quand: Option<InstantEcrit>,
-    pub essai: Option<InstantEcrit>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    pub quand: Option<Moment>,
+    #[serde(with = "socle::paris::ecrit::seconde::option")]
+    pub essai: Option<Moment>,
     pub erreur: Option<String>,
 }
 
@@ -271,19 +273,22 @@ pub struct EnvoiDuMessage {
 #[serde(deny_unknown_fields)]
 pub struct Signalement {
     pub id: String,
-    pub quand: MinuteEcrite,
+    #[serde(with = "socle::paris::ecrit::minute")]
+    pub quand: Moment,
     pub texte: String,
     pub captures: usize,
     pub incidents: usize,
     pub empreinte: String,
-    /// L'heure ou il s'est enregistre, en secondes (les doublons).
-    pub enregistre: socle::paris::Naif,
+    /// L'heure ou il s'est enregistre, en secondes de l'heure de Paris (les doublons).
+    #[serde(with = "socle::paris::ecrit::secondes_locales")]
+    pub enregistre: Moment,
     pub envoi: EnvoiDuMessage,
     pub numero: Option<String>,
     pub ticket: Option<String>,
     pub ticket_numero: Option<i64>,
     pub reponse: Option<String>,
-    pub repondu_le: Option<socle::paris::MinuteUtc>,
+    #[serde(with = "socle::paris::ecrit::minute_utc::option")]
+    pub repondu_le: Option<socle::paris::Moment>,
     pub lu: Option<bool>,
 }
 
@@ -372,7 +377,7 @@ fn verrouiller(racine: &Path) -> R<Option<Verrou>> {
     if let Some(d) = p.parent() {
         std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(&d, &e).reclasser(Classe::Disque))?;
     }
-    let marque = socle::verrou::marque("signalements", std::process::id(), &socle::paris::maintenant());
+    let marque = socle::verrou::marque("signalements", std::process::id(), &socle::paris::ecrit::seconde::texte(socle::temps::secondes()));
     let fin = std::time::Instant::now() + std::time::Duration::from_secs(10);
     loop {
         match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|e| e.reclasser(Classe::Disque))? {
@@ -399,7 +404,7 @@ fn modifier<T>(racine: &Path, f: impl FnOnce(&mut Vec<Signalement>) -> R<(T, boo
 fn nouvel_id() -> R<String> {
     let mut alea = [0u8; 6];
     socle::temps::aleas(&mut alea).map_err(|e| e.reclasser(Classe::Disque))?;
-    let heure: String = socle::paris::maintenant().chars().filter(char::is_ascii_alphanumeric).collect();
+    let heure: String = socle::paris::ecrit::seconde::texte(socle::temps::secondes()).chars().filter(char::is_ascii_alphanumeric).collect();
     Ok(format!("{}-{}", heure, alea.iter().map(|o| format!("{:02x}", o)).collect::<String>()))
 }
 
@@ -425,12 +430,12 @@ pub struct Enregistre {
 pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[CaptureDeLaPage]) -> R<Enregistre> {
     let (corps, _trouve, _tailles) = corps_signalement(racine, texte, ecran, captures)?;
     let empreinte = empreinte_du_message(&corps);
-    let maintenant = socle::paris::maintenant_naif();
+    let maintenant = socle::temps::secondes().a_la_seconde();
     let id = nouvel_id()?;
     let fichier = chemin_corps(racine, &id);
     let ligne = Signalement {
         id: id.clone(),
-        quand: MinuteEcrite::maintenant(),
+        quand: socle::temps::secondes().a_la_minute(),
         texte: corps.texte.clone(),
         captures: corps.captures.len(),
         incidents: corps.incidents.len(),
@@ -445,7 +450,7 @@ pub fn envoyer(racine: &Path, texte: &str, ecran: Option<&str>, captures: &[Capt
         lu: None,
     };
     let ecrit = modifier(racine, |lignes| {
-        if let Some(deja) = lignes.iter().rev().find(|l| l.empreinte == empreinte && (en_attente(l) || maintenant.depuis(l.enregistre) < DOUBLON_SECONDES)) {
+        if let Some(deja) = lignes.iter().rev().find(|l| l.empreinte == empreinte && (en_attente(l) || !maintenant.depuis(l.enregistre).is_some_and(|d| d.as_secs() >= DOUBLON_SECONDES as u64))) {
             return Ok((Some(deja.id.clone()), false));
         }
         if let Some(d) = fichier.parent() {
@@ -519,14 +524,14 @@ fn passage(racine: &Path) -> R<BilanMessages> {
     if let Some(d) = p.parent() {
         std::fs::create_dir_all(d).map_err(|e| socle::echec::du_disque(&d, &e).reclasser(Classe::Disque))?;
     }
-    let marque = socle::verrou::marque("signalements-envoi", std::process::id(), &socle::paris::maintenant());
+    let marque = socle::verrou::marque("signalements-envoi", std::process::id(), &socle::paris::ecrit::seconde::texte(socle::temps::secondes()));
     let _envoi = match Verrou::prendre(&p, &marque, socle::verrou::DELAI_VERROU).map_err(|e| e.reclasser(Classe::Disque))? {
         Ok(v) => v,
         Err(socle::verrou::Verrouille { .. }) => return Ok(bilan(0, en_ordre(racine)?.iter().filter(|l| en_attente(l)).count(), None, true)),
     };
     effacer_les_partis(racine)?;
     // Ce qui attend part maintenant : la boite le dit « en cours d'envoi ».
-    let essai = InstantEcrit::maintenant();
+    let essai = socle::temps::secondes().a_la_seconde();
     let attendent = modifier(racine, |lignes| {
         let mut n = 0;
         for l in lignes.iter_mut().filter(|l| en_attente(l)) {
@@ -606,7 +611,7 @@ fn passage(racine: &Path) -> R<BilanMessages> {
 
 /// La ligne `id` est arrivee chez l'editeur : `depose`, avec ce que le serveur a rendu.
 fn marquer_arrive(racine: &Path, id: &str, r: &Retour) -> R<()> {
-    let quand = InstantEcrit::maintenant();
+    let quand = socle::temps::secondes().a_la_seconde();
     let fait = modifier(racine, |lignes| {
         let mut change = false;
         for l in lignes.iter_mut().filter(|l| l.id == id) {
@@ -684,7 +689,7 @@ pub fn relever_reponses(racine: &Path) -> R<usize> {
         for l in lignes.iter_mut().filter(|l| l.reponse.is_none()) {
             let Some(x) = recues.iter().rev().find(|x| l.numero.as_deref() == Some(x.numero.as_str())) else { continue };
             l.reponse = Some(tete(&x.reponse, 2000));
-            l.repondu_le = x.repondu_le.minute();
+            l.repondu_le = x.repondu_le;
             l.lu = Some(false);
             n += 1;
         }

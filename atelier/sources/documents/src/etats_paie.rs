@@ -16,8 +16,7 @@ use std::rc::Rc;
 
 use crate::classeur::{Feuille, Style, Vertical, CORPS_DU_CLASSEUR};
 use crate::tableaux_export::Rangee;
-use serde::ser::SerializeMap;
-use serde::{Serialize, Serializer};
+use serde::Serialize;
 
 use engagement::calcul::Paie;
 use droit::contexte::Contexte;
@@ -323,8 +322,8 @@ pub struct LigneLivre {
     pub net_a_payer: Option<Decimal>,
     pub pas: Option<Decimal>,
     pub cout_employeur: Option<Decimal>,
-    /// Le jour du versement (`Engagement::date_du_versement`).
-    pub verse_le: Jour,
+    /// Le jour du versement (`Engagement::versement_dit`) ; vide pour une paie importee dont les pieces ne le disent pas.
+    pub verse_le: Option<Jour>,
     pub nir: Option<String>,
     pub date_naissance: Option<Jour>,
     pub adresse: Option<String>,
@@ -345,8 +344,9 @@ impl LigneLivre {
     }
 }
 
-/// `Totaux`.
-#[derive(Clone, Debug)]
+/// `Totaux`, rendus dans leur forme (`TotauxRendus`).
+#[derive(Clone, Debug, Serialize)]
+#[serde(into = "TotauxRendus")]
 pub struct Totaux {
     pub bulletins: i64,
     pub sommes: Vec<(&'static str, Decimal)>,
@@ -369,28 +369,26 @@ impl Totaux {
     }
 }
 
-/// Les totaux tels que la route les rend : les bulletins (et leur nombre dit), la somme de chaque colonne, et ce que
-/// combien de lignes ne declarent pas.
-impl Serialize for Totaux {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        struct Inconnus<'a>(&'a [(&'static str, i64)]);
-        impl Serialize for Inconnus<'_> {
-            fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                let mut m = s.serialize_map(Some(self.0.len()))?;
-                for (c, n) in self.0 {
-                    m.serialize_entry(c, n)?;
-                }
-                m.end()
-            }
+/// Les totaux tels que la route les rend : les bulletins (et leur nombre dit), la somme de chaque colonne (a plat, sous
+/// son nom), et ce que combien de lignes ne declarent pas.
+#[derive(Serialize)]
+struct TotauxRendus {
+    bulletins: i64,
+    bulletins_dit: String,
+    #[serde(flatten, serialize_with = "socle::ecriture::en_ordre")]
+    sommes: Vec<(&'static str, String)>,
+    #[serde(serialize_with = "socle::ecriture::en_ordre")]
+    inconnus: Vec<(&'static str, i64)>,
+}
+
+impl From<Totaux> for TotauxRendus {
+    fn from(t: Totaux) -> TotauxRendus {
+        TotauxRendus {
+            bulletins: t.bulletins,
+            bulletins_dit: format!("{} {}", t.bulletins, if t.bulletins == 1 { "bulletin" } else { "bulletins" }),
+            sommes: t.sommes.iter().map(|(c, v)| (*c, v.to_string())).collect(),
+            inconnus: t.inconnus,
         }
-        let mut m = s.serialize_map(Some(self.sommes.len() + 3))?;
-        m.serialize_entry("bulletins", &self.bulletins)?;
-        m.serialize_entry("bulletins_dit", &format!("{} {}", self.bulletins, if self.bulletins == 1 { "bulletin" } else { "bulletins" }))?;
-        for (c, v) in &self.sommes {
-            m.serialize_entry(c, &v.to_string())?;
-        }
-        m.serialize_entry("inconnus", &Inconnus(&self.inconnus))?;
-        m.end()
     }
 }
 
@@ -415,23 +413,13 @@ fn totaliser_lignes(lignes: &[&LigneLivre]) -> Totaux {
     t
 }
 
-#[derive(Debug)]
+/// Un groupe tel que la route le rend : son libelle, celui de son sous-total (`total_dit`), ses lignes, ses totaux.
+#[derive(Debug, Serialize)]
 pub struct Groupe {
     pub libelle: String,
+    pub total_dit: String,
     pub lignes: Vec<LigneLivre>,
     pub totaux: Totaux,
-}
-
-/// Un groupe tel que la route le rend : son libelle, celui de son sous-total, ses lignes, ses totaux.
-impl Serialize for Groupe {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let mut m = s.serialize_map(Some(4))?;
-        m.serialize_entry("libelle", &self.libelle)?;
-        m.serialize_entry("total_dit", &format!("Total {}", self.libelle))?;
-        m.serialize_entry("lignes", &self.lignes)?;
-        m.serialize_entry("totaux", &self.totaux)?;
-        m.end()
-    }
 }
 
 /// `LivreDePaie`, tel que la route le rend : son fichier ne s'ecrit que par son nom.
@@ -499,7 +487,11 @@ fn lignes_du_mois(ctx: &Contexte, mois: Mois, coordonnees: bool, departs: &engag
             net_a_payer: p.net_a_payer().map(eur2),
             pas: r.as_ref().map(|v| eur2(v.prelevement())),
             cout_employeur: p.cout_employeur().map(eur2),
-            verse_le: e.date_du_versement()?,
+            // Une paie importee : ce que ses pieces disent ; une paie du logiciel a toujours son jour.
+            verse_le: match p.importee() {
+                Some(_) => e.versement_dit()?,
+                None => Some(e.date_du_versement()?),
+            },
             nir,
             date_naissance,
             adresse,
@@ -548,7 +540,7 @@ fn grouper(lignes: &[LigneLivre], regroupement: &str) -> R<Vec<Groupe>> {
             Some(m) => libelle_mois(m),
             None => k,
         };
-        out.push(Groupe { libelle, lignes: v, totaux });
+        out.push(Groupe { total_dit: format!("Total {}", libelle), libelle, lignes: v, totaux });
     }
     Ok(out)
 }
@@ -1116,7 +1108,7 @@ pub fn etat_des_virements(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             Some(p) => socle::num::sub(n, p),
             None => n,
         });
-        x.od("net_a_payer", verse).t("verse_le", l.verse_le.jj_mm_aaaa());
+        x.od("net_a_payer", verse).ot("verse_le", l.verse_le.map(|j| j.jj_mm_aaaa()));
         lignes.push(x);
     }
     let mut t = Tableau::nouveau("etat-des-virements", "État des virements de salaires", p.libelle.clone());

@@ -55,7 +55,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use socle::date::Jour;
 use socle::echec::{au_chemin, du_disque, refus, R};
-use socle::paris::{InstantEcrit, MinuteEcrite, Moment};
+use socle::paris::{ecrit, InstantOuJour, Moment};
 use socle::refus;
 
 use compagnie::installation::Venue;
@@ -80,9 +80,10 @@ pub struct Geste {
     /// L'instant, en secondes UTC (le banc).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quand: Option<Moment>,
-    /// L'instant a Paris, ecrit a la main ou par le banc pour qui le relit.
+    /// L'instant a Paris, ecrit a la main ou par le banc pour qui le relit : un jour (`AAAA-MM-JJ`, a 9 h) ou une seconde
+    /// (`AAAA-MM-JJTHH:MM:SS`).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub heure: Option<HeureDuGeste>,
+    pub heure: Option<InstantOuJour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub geste: Option<Genre>,
     /// La route, par son nom : un nom qu'aucune route ne porte se rejoue comme le moteur le refuse.
@@ -91,7 +92,7 @@ pub struct Geste {
     /// Le nom de la compagnie que le « + » ajoute (`ajouter`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nom: Option<String>,
-    /// D'ou vient la compagnie ajoutee : absente, une compagnie neuve.
+    /// D'ou vient la compagnie ajoutee (`ajouter`, qui l'exige).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub venue: Option<Venue>,
     /// La compagnie, relative a l'installation ; absente, la derniere ajoutee.
@@ -181,10 +182,48 @@ pub struct Piece {
     pub fichiers: Option<BTreeMap<String, String>>,
 }
 
+/// Ce que rend `horloge-rattraper`, pour le rejeu : les pas joues, une phrase chacun.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PasDeLHorloge {
+    phrases: Vec<String>,
+}
+
+/// Ce que rend `ouverture`, pour le rejeu : ce que l'horloge de la fictive a joue, une phrase par pas.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HorlogeDeLOuverture {
+    horloge: Vec<String>,
+}
+
 /// Les cles d'une charge qui nomment un dossier ou un fichier que la route LIT (une boite aux lettres d'import, un export
 /// d'un autre logiciel) : ce qu'il contient entre dans le scenario.
 #[cfg(feature = "atelier")]
 const CLES_DE_DEPOT: [&str; 4] = ["dossier", "export", "fichier", "chemin"];
+
+/// CE QUE LA CHARGE NOMME A LIRE HORS DU MOTEUR, aux cles `CLES_DE_DEPOT`, lu en sa forme : un chemin chacune, ou rien.
+#[cfg(feature = "atelier")]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Depots {
+    dossier: Option<String>,
+    export: Option<String>,
+    fichier: Option<String>,
+    chemin: Option<String>,
+}
+
+#[cfg(feature = "atelier")]
+impl Depots {
+    /// Chaque cle, dans l'ordre de `CLES_DE_DEPOT`, et le chemin qu'elle nomme.
+    fn chacun(&self) -> [(&'static str, Option<&str>); 4] {
+        [
+            (CLES_DE_DEPOT[0], self.dossier.as_deref()),
+            (CLES_DE_DEPOT[1], self.export.as_deref()),
+            (CLES_DE_DEPOT[2], self.fichier.as_deref()),
+            (CLES_DE_DEPOT[3], self.chemin.as_deref()),
+        ]
+    }
+}
 
 /// Les routes dont la cle `dossier` vide (ou absente) veut dire `import/` de la compagnie (`crate::import::dossier_import`).
 #[cfg(feature = "atelier")]
@@ -206,7 +245,7 @@ pub fn rendre_simulee(racine: &Path) -> R<()> {
         copie_de: format!("{} {} sur le banc d'essai", compagnie::installation::MARQUE_FICTIVE, nom),
         fictive: None,
         ajoutee: None,
-        quand: Some(socle::paris::InstantEcrit::maintenant()),
+        quand: Some(socle::temps::secondes().a_la_seconde()),
         quoi: "Une compagnie ajoutee par le « + », devenue fictive aux envois SIMULES sur le banc d'essai de l'atelier (scenario.rs, geste `simuler`) : ses DPAE, DSN et courriels sont joues, rien ne part.".to_string(),
     };
     socle::ecriture::ecrire_json(&racine.join(compagnie::installation::MARQUEUR), &marqueur, 2)
@@ -227,45 +266,14 @@ pub fn relatif(inst: &Path, racine: &Path) -> R<String> {
 
 /// L'heure lisible d'un instant, a Paris.
 fn heure(t: Moment) -> String {
-    InstantEcrit::de(t).iso()
+    ecrit::seconde::texte(t)
 }
 
-/// L'INSTANT D'UN GESTE A PARIS, tel que le scenario l'ecrit : un jour (`AAAA-MM-JJ`, a 9 h), une minute
-/// (`AAAA-MM-JJTHH:MM`) ou une seconde (`AAAA-MM-JJTHH:MM:SS`, ce que le banc ecrit). Il se lit et s'ecrit dans l'une de
-/// ces trois formes, octet pour octet.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(untagged, expecting = "une date (AAAA-MM-JJ) ou une heure de Paris (AAAA-MM-JJTHH:MM[:SS]) est attendue")]
-pub enum HeureDuGeste {
-    Seconde(InstantEcrit),
-    Minute(MinuteEcrite),
-    Jour(Jour),
-}
-
-impl HeureDuGeste {
-    /// Sa forme ecrite.
-    pub fn iso(self) -> String {
-        match self {
-            HeureDuGeste::Jour(j) => j.iso(),
-            HeureDuGeste::Minute(m) => m.iso(),
-            HeureDuGeste::Seconde(s) => s.iso(),
-        }
-    }
-
-    /// L'instant qu'il dit ; un jour seul, a 9 h.
-    fn instant(self) -> Option<Moment> {
-        let n = match self {
-            HeureDuGeste::Jour(j) => return Moment::a_paris(j, 9, 0, 0),
-            HeureDuGeste::Minute(m) => m.naif(),
-            HeureDuGeste::Seconde(s) => s.naif(),
-        };
-        let s = n.seconde_du_jour();
-        Moment::a_paris(n.jour(), s / 3_600, s % 3_600 / 60, s % 60)
-    }
-}
-
-impl Serialize for HeureDuGeste {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.serialize_str(&self.iso())
+/// L'instant que dit l'heure d'un geste ; un jour seul, a 9 h.
+fn instant_de_l_heure(h: InstantOuJour) -> Option<Moment> {
+    match h {
+        InstantOuJour::Instant(m) => Some(m),
+        InstantOuJour::Jour(j) => Moment::a_paris(j, 9, 0, 0),
     }
 }
 
@@ -346,10 +354,10 @@ fn instant_ecrit(g: &Geste) -> R<Option<Moment>> {
     }
     let h = match (g.heure, g.geste) {
         (Some(h), _) => h,
-        (None, Some(Genre::Jour)) => HeureDuGeste::Jour(g.jour.ok_or_else(|| refus("Un geste qui change de jour ne dit pas lequel."))?),
+        (None, Some(Genre::Jour)) => InstantOuJour::Jour(g.jour.ok_or_else(|| refus("Un geste qui change de jour ne dit pas lequel."))?),
         _ => return Ok(None),
     };
-    Ok(Some(h.instant().ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?))
+    Ok(Some(instant_de_l_heure(h).ok_or_else(|| refus(socle::date::HORS_CALENDRIER))?))
 }
 
 /// L'instant d'une seconde apres `t`.
@@ -488,7 +496,7 @@ fn racine_nommee(racines: &BTreeMap<String, PathBuf>, derniere: &Option<PathBuf>
 
 /// Le jour a Paris d'un instant.
 fn jour_de(t: Moment) -> Jour {
-    InstantEcrit::de(t).jour()
+    t.a_la_seconde().jour_de_paris()
 }
 
 fn rejouer_les_gestes(
@@ -558,11 +566,7 @@ fn rejouer_les_gestes(
         match g.geste {
             Some(Genre::Ajouter) => {
                 let nom = g.nom.as_deref().ok_or_else(|| refus!("Geste {} : une compagnie s'ajoute avec son nom.", n))?;
-                // Un geste `ajouter` sans `venue` est le « + » d'une compagnie neuve, le seul chemin d'avant le choix.
-                let venue = match g.venue {
-                    Some(v) => v,
-                    None => Venue::Neuve,
-                };
+                let venue = g.venue.ok_or_else(|| refus!("Geste {} : une compagnie s'ajoute avec sa venue (« neuve » ou « logiciel_precedent »).", n))?;
                 let c = crate::accueil::ajouter_venant(inst, nom, venue).map_err(|m| m.reformuler(|p| format!("geste {} : « + » refuse : {}", n, p)))?;
                 let rel = relatif(inst, &c.racine).map_err(|m| m.reformuler(|p| format!("geste {} : {}", n, p)))?;
                 let nomme = match compagnie {
@@ -643,13 +647,13 @@ fn rejouer_les_gestes(
                 r.routes_rejouees += 1;
                 let ok = rep.est_rendue();
                 // Ce que l'horloge de la fictive a joue (la route `horloge-rattraper`, ou la veille par `ouverture`), date du geste.
-                // Ces deux routes seules font jouer l'horloge ; une autre n'en dit rien.
-                let jouees = match route {
-                    Some(Route::HorlogeRattraper) => Some("phrases"),
-                    Some(Route::Ouverture) => Some("horloge"),
-                    Some(_) | None => None,
+                // Ces deux routes seules font jouer l'horloge ; une autre n'en dit rien, un refus non plus.
+                let jouees: Vec<String> = match (route, ok) {
+                    (Some(Route::HorlogeRattraper), true) => rep.lire_cles::<PasDeLHorloge>(&["phrases"]).map_err(|e| refus(e.phrase))?.phrases,
+                    (Some(Route::Ouverture), true) => rep.lire_cles::<HorlogeDeLOuverture>(&["horloge"]).map_err(|e| refus(e.phrase))?.horloge,
+                    (Some(_) | None, _) => Vec::new(),
                 };
-                r.horloge.extend(jouees.iter().flat_map(|cle| rep.textes(cle)).map(|p| format!("{} {}", heure(t), p)));
+                r.horloge.extend(jouees.into_iter().map(|p| format!("{} {}", heure(t), p)));
                 let attendu = g.a_reussi();
                 if ok != attendu {
                     let refus: String = rep.refus().map(|e| format!(" : {}", e.phrase)).into_iter().collect();
@@ -846,7 +850,7 @@ fn poser_livree(racine: &Path, dest: &Path, fin: Option<Moment>) -> R<()> {
         copie_de: format!("{} {}", compagnie::installation::MARQUE_FICTIVE, nom),
         fictive: None,
         ajoutee: None,
-        quand: fin.map(socle::paris::InstantEcrit::de),
+        quand: fin.map(Moment::a_la_seconde),
         quoi: "Compagnie FICTIVE de reference, livree avec le logiciel : le rejeu de son scenario (atelier/fictives/). Ses envois sont joues, rien n'en part.".to_string(),
     };
     socle::ecriture::ecrire_json(&dest.join(compagnie::installation::MARQUEUR), &marqueur, 2)
@@ -1063,7 +1067,7 @@ mod enregistreur {
         /// Ecrit la ligne du geste `g`, au rang suivant et a son instant.
         fn ecrire(&self, n: &mut u64, g: Geste, quand: Moment) -> R<()> {
             *n += 1;
-            let ligne = Geste { n: Some(*n), quand: Some(quand), heure: Some(HeureDuGeste::Seconde(InstantEcrit::de(quand))), ..g };
+            let ligne = Geste { n: Some(*n), quand: Some(quand), heure: Some(InstantOuJour::Instant(quand.a_la_seconde())), ..g };
             let f = self.dossier.join(GESTES);
             let mut fichier = std::fs::OpenOptions::new().create(true).append(true).open(&f).map_err(|e| du_disque(&f, &e))?;
             writeln!(fichier, "{}", socle::ecriture::json_en_ligne(&ligne)).map_err(|e| du_disque(&f, &e))
@@ -1159,9 +1163,9 @@ mod enregistreur {
         /// boite aux lettres `import/` de la compagnie. Chaque fichier entre dans `pieces/`.
         fn recopier_les_pieces(&self, racine: &Path, route: Route, charge: &Charge) -> R<BTreeMap<String, Piece>> {
             let mut out = BTreeMap::new();
-            for cle in CLES_DE_DEPOT {
-                let valeur = charge.texte(cle).map(str::trim);
-                let chemin = match valeur {
+            let depots: Depots = charge.lire_cles(&CLES_DE_DEPOT)?;
+            for (cle, valeur) in depots.chacun() {
+                let chemin = match valeur.map(str::trim) {
                     Some(s) if !s.is_empty() => {
                         let p = PathBuf::from(crate::depots::normaliser(s));
                         if p.is_absolute() {
