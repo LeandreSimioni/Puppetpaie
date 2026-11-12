@@ -268,17 +268,18 @@ pub fn souci(racine: &Path) -> Result<Option<String>, ErreurGoogle> {
     }
 }
 
-/// Des octets en mega-octets (2^20), au dixieme : « 3.5 ».
-pub fn mo(octets: u64) -> String {
+/// UNE TAILLE EN MEGA-OCTETS (2^20) TELLE QU'UNE PHRASE LA DIT, au dixieme, la seule ecriture d'une taille en Mo :
+/// « 3.5 Mo », la decimale ecrite `decimale` (« 3,5 Mo »).
+pub fn en_mo(octets: u64, decimale: char) -> String {
     match socle::num::quotient(u128::from(octets), 1_048_576, 1) {
-        Some(t) => t,
+        Some(t) => format!("{} Mo", t.replace('.', decimale.encode_utf8(&mut [0; 4]))),
         None => unreachable!("un mega-octet n'est pas nul"),
     }
 }
 
 pub(crate) fn lisible(octets: u64) -> String {
     if octets >= 1024 * 1024 {
-        format!("{} Mo", mo(octets))
+        en_mo(octets, '.')
     } else if octets >= 1024 {
         format!("{} Ko", octets / 1024)
     } else {

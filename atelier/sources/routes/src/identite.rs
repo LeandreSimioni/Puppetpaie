@@ -193,7 +193,7 @@ fn poser_identite(ctx: &Contexte, charge: ChargePoser) -> R<(Identite, String)> 
         return Err(refus("Le fichier est vide."));
     }
     if octets.len() > OCTETS_MAX {
-        return Err(refus(format!("Le fichier fait {} Mo ; la limite est de 2 Mo.", mo(octets.len()))));
+        return Err(refus(format!("Le fichier fait {} ; la limite est de 2 Mo.", compagnie::sauvegarde::en_mo(octets.len() as u64, '.'))));
     }
     format_de(&octets).ok_or_else(|| {
         refus("Ce fichier n'est ni un PNG, ni un JPEG, ni un SVG (ses premiers octets ne sont ceux d'aucun des trois). Rien n'a ete ecrit.")
@@ -251,13 +251,8 @@ fn ko(octets: usize) -> String {
     if k < 1000 {
         format!("{} Ko", k)
     } else {
-        format!("{} Mo", mo(octets)).replace('.', ",")
+        compagnie::sauvegarde::en_mo(octets as u64, ',')
     }
-}
-
-/// Des octets en mega-octets, au dixieme (`compagnie::sauvegarde::mo`).
-fn mo(octets: usize) -> String {
-    compagnie::sauvegarde::mo(octets as u64)
 }
 
 /// Ce que l'image posée pèsera dans chaque document, et pourquoi on l'a allégée.

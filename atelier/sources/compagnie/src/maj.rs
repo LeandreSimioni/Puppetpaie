@@ -881,9 +881,9 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
                 let quart = attendus.filter(|a| *a > 0).map(|a| recus * 4 / a);
                 if quart.is_some() && quart != dit.get() {
                     dit.set(quart);
-                    let mo = |o: u64| crate::sauvegarde::mo(o).replace('.', ",");
+                    let mo = |o: u64| crate::sauvegarde::en_mo(o, ',');
                     if let Some(a) = attendus {
-                        eprintln!("{} : {} Mo reçus sur {} Mo", qui, mo(recus), mo(a));
+                        eprintln!("{} : {} reçus sur {}", qui, mo(recus), mo(a));
                     }
                 }
             };
@@ -1451,7 +1451,7 @@ impl Recherche {
         let p = self.tenu();
         let lue = p.version.as_deref().map(version_lue);
         let nommee = |t: &str| lue.as_ref().map(|v| format!("PuppetPaie {} {}", v, t));
-        let mo = |o: u64| crate::sauvegarde::mo(o).replace('.', ",");
+        let mo = |o: u64| crate::sauvegarde::en_mo(o, ',');
         let essai = p.nouvel_essai.map(|t| {
             let s = t.saturating_duration_since(std::time::Instant::now()).as_secs();
             match s {
@@ -1476,8 +1476,8 @@ impl Recherche {
             Etape::Telechargement => (
                 "Mise à jour en cours",
                 match p.attendus.filter(|a| *a > 0) {
-                    Some(a) => nommee(&format!(": {} Mo sur {} Mo", mo(p.recus), mo(a))),
-                    None => nommee(&format!(": {} Mo reçus", mo(p.recus))),
+                    Some(a) => nommee(&format!(": {} sur {}", mo(p.recus), mo(a))),
+                    None => nommee(&format!(": {} reçus", mo(p.recus))),
                 },
                 true,
                 // La part recue, au millionieme : la page la montre au millieme.
