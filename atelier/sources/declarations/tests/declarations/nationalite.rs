@@ -45,7 +45,7 @@ fn le_questionnaire_lit_le_pays_dans_la_liste_et_en_deduit_la_codification() {
         assert_eq!((d.pays_nationalite.as_deref(), d.code_nationalite_dsn.as_deref()), (Some(pays), Some(code)), "{}", reponse);
     }
     // Des noms que l'ancienne table courte ne connaissait pas.
-    let pays_lu = |t: &str| pays_lu(t).unwrap();
+    let pays_lu = |t: &str| pays_lu(t).unwrap().map(|(code, ue)| (code.to_string(), ue));
     assert_eq!(pays_lu("Sénégal").map(|p| p.0), Some("SN".into()));
     assert_eq!(pays_lu("Géorgie").map(|p| p.0), Some("GE".into()));
     assert_eq!(pays_lu("Islande"), Some(("IS".into(), Some("03"))));

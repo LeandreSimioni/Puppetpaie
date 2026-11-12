@@ -31,11 +31,70 @@ use serde::{Deserialize, Serialize};
 use crate::fichiers::{forme_en_cache, FormeGardee};
 use crate::echec::R;
 
+/// LE CODE D'UN PAYS : deux lettres capitales, le code ISO 3166-1 alpha-2 (« Le Code pays de naissance est à déterminer
+/// dans la table "Codes Pays" ISO 3166-1-A2 », « X [2,2] » : `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`,
+/// l. 297-303 ; CODEISO2 du COG). Qu'il soit dans une liste (celle du COG, la table « Pays » de la DSN) se lit dans la
+/// liste (`du_code`, `de_la_table_dsn`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct CodePays(String);
+
+impl CodePays {
+    /// Le code `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<CodePays> {
+        if texte.len() == 2 && texte.bytes().all(|b| b.is_ascii_uppercase()) {
+            Ok(CodePays(texte.to_string()))
+        } else {
+            Err(crate::refus!("« {} » n'est pas un code de pays : deux lettres capitales, le code ISO 3166 (FR, DE, XK…)", texte))
+        }
+    }
+
+    /// La France, FR (CODEISO2 du COG).
+    pub fn france() -> CodePays {
+        CodePays("FR".to_string())
+    }
+
+    /// Ce qui refuse `texte` a la saisie, qui le garde sans blancs de bord et en capitales (`declarations::champs`) ; rien
+    /// pour un texte vide.
+    pub fn faute(texte: &str) -> Option<String> {
+        let t = texte.trim().to_uppercase();
+        if t.is_empty() {
+            return None;
+        }
+        CodePays::lire(&t).err().map(|e| e.phrase)
+    }
+}
+
+impl std::ops::Deref for CodePays {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for CodePays {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CodePays {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for CodePays {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        CodePays::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
 /// Une ligne de la liste : le code ISO, le nom et le nom officiel du COG, le pays de rattachement d'un territoire.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pays {
-    pub code: String,
+    pub code: CodePays,
     pub nom: String,
     pub nom_officiel: String,
     /// Le code du COG et son actualite (1 actuel, 4 territoire) : la provenance de la ligne.
@@ -43,7 +102,7 @@ pub struct Pays {
     _cog: String,
     #[serde(rename = "actualite")]
     _actualite: String,
-    pub rattachement: Option<String>,
+    pub rattachement: Option<CodePays>,
 }
 
 /// `pays-base.json` : la liste, et les lignes du COG qu'elle ecarte (sans code ISO, ou qui reprennent celui d'un Etat).
@@ -82,12 +141,12 @@ pub fn liste() -> R<Arc<Vec<Pays>>> {
 /// Le pays d'un code ISO (casse et blancs ignores), ou `None` s'il n'est pas dans la liste.
 pub fn du_code(code: &str) -> R<Option<Pays>> {
     let c = code.trim().to_uppercase();
-    Ok(liste()?.iter().find(|p| p.code == c).cloned())
+    Ok(liste()?.iter().find(|p| *p.code == *c).cloned())
 }
 
 /// La codification UE (`S21.G00.30.013`) d'un pays de la liste : celle de son code, ou de son pays de rattachement.
 pub fn codification(p: &Pays) -> &'static str {
-    if crate::codification_ue::TERRITOIRES_HORS_UNION.contains(&p.code.as_str()) {
+    if crate::codification_ue::TERRITOIRES_HORS_UNION.contains(&&*p.code) {
         return crate::codification_ue::code_du_pays(&p.code);
     }
     match &p.rattachement {
@@ -134,7 +193,7 @@ pub fn inconnu_naissance(quoi: &str, code: &str) -> String {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PaysDsn {
-    pub code: String,
+    pub code: CodePays,
     pub libelle: String,
     /// Le code est aussi dans la table PAY (la meme sans la France, Monaco, les DROM et les COM).
     pub ne_a_l_etranger: bool,
@@ -160,7 +219,7 @@ pub fn table_dsn() -> R<Arc<Vec<PaysDsn>>> {
 /// Le pays de naissance d'un code (casse et blancs ignores) : sa ligne de la table « Pays » de la DSN, ou `None`.
 pub fn de_la_table_dsn(code: &str) -> R<Option<PaysDsn>> {
     let c = code.trim().to_uppercase();
-    Ok(table_dsn()?.iter().find(|p| p.code == c).cloned())
+    Ok(table_dsn()?.iter().find(|p| *p.code == *c).cloned())
 }
 
 /// Le nom d'un pays de naissance a l'ecran : celui du COG quand il en a un (accentue, en casse ordinaire), le libelle de
@@ -175,7 +234,7 @@ fn nom_de_naissance(p: &PaysDsn, cog: &[Pays]) -> String {
 /// Un pays de naissance tel que la page le recoit : son code et son nom.
 #[derive(Debug, Clone, Serialize)]
 pub struct PaysServi {
-    pub code: String,
+    pub code: CodePays,
     pub nom: String,
 }
 
@@ -190,7 +249,7 @@ pub fn servir_naissance() -> R<Vec<PaysServi>> {
 
 /// Le code d'un pays de naissance nomme `texte` (le nom du COG, le nom officiel, ou le libelle de la table « Pays » de la
 /// DSN), accents et casse ignores ; `None` sinon.
-pub fn naissance_du_nom(texte: &str) -> R<Option<String>> {
+pub fn naissance_du_nom(texte: &str) -> R<Option<CodePays>> {
     if let Some(p) = du_nom(texte)? {
         return Ok(Some(p.code));
     }
@@ -219,7 +278,7 @@ pub fn du_nom(texte: &str) -> R<Option<Pays>> {
 /// ce que la case de nationalite dit quand elle s'en deduit.
 #[derive(Debug, Clone, Serialize)]
 pub struct PaysDeNationalite {
-    pub code: String,
+    pub code: CodePays,
     pub nom: String,
     pub codification_ue: &'static str,
     pub deduit_dit: String,
@@ -242,7 +301,7 @@ pub fn de_naissance(code: &str, qui: &str) -> R<String> {
         return Ok(code.to_string());
     }
     match de_la_table_dsn(code)? {
-        Some(p) => Ok(p.code),
+        Some(p) => Ok(p.code.to_string()),
         None => Err(crate::echec::refus(inconnu_naissance(&format!("Le pays de naissance de {}", if qui.is_empty() { "ce salarié" } else { qui }), code))),
     }
 }

@@ -1143,6 +1143,9 @@ impl FormeDeCase for Jour {}
 impl FormeDeCase for Mois {}
 impl FormeDeCase for Montant {}
 impl FormeDeCase for socle::paris::Moment {}
+impl FormeDeCase for socle::pays::CodePays {
+    const FAUTE: Option<fn(&str) -> Option<String>> = Some(socle::pays::CodePays::faute);
+}
 impl<T: FormeDeCase> FormeDeCase for Vec<T> {
     const VALEURS: &'static [&'static str] = T::VALEURS;
     fn cases() -> Vec<Declaree> {
@@ -2101,9 +2104,9 @@ fiche! {
         LieuNaissance(LieuNaissance) = "lieu_naissance" => lieu_naissance,
         LieuNaissanceAffichage(String) = "lieu_naissance_affichage" => lieu_naissance_affichage,
         DepartementNaissance(DepartementNaissance) = "departement_naissance" => departement_naissance,
-        PaysNaissance(String) = "pays_naissance" => pays_naissance,
+        PaysNaissance(socle::pays::CodePays) = "pays_naissance" => pays_naissance,
         CodeNationaliteDsn(CodeNationalite) = "code_nationalite_dsn" => code_nationalite_dsn,
-        PaysNationalite(String) = "pays_nationalite" => pays_nationalite,
+        PaysNationalite(socle::pays::CodePays) = "pays_nationalite" => pays_nationalite,
         PaysNationaliteHorsListe(String) = "pays_nationalite_hors_liste" => pays_nationalite_hors_liste,
         Adresse(String) = "adresse" => adresse,
         AdresseAffichage(String) = "adresse_affichage" => adresse_affichage,

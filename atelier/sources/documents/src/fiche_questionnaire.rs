@@ -312,7 +312,7 @@ pub fn date_lue(texte: &str) -> Option<Jour> {
 
 /// (code ISO, codification UE) d'un pays de la liste nomme en francais, ou de son code a deux lettres ;
 /// `None` pour ce que la liste ne connait pas.
-pub fn pays_lu(texte: &str) -> R<Option<(String, Option<&'static str>)>> {
+pub fn pays_lu(texte: &str) -> R<Option<(socle::pays::CodePays, Option<&'static str>)>> {
     let t = sans_accents(texte).replace('\u{2019}', "'");
     let lu = |p: socle::pays::Pays| (p.code.clone(), Some(socle::pays::codification(&p)));
     if t.chars().count() == 2 && t.chars().all(|c| c.is_ascii_lowercase()) {
@@ -354,11 +354,11 @@ pub struct FicheLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sexe: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pays_naissance: Option<String>,
+    pub pays_naissance: Option<socle::pays::CodePays>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_nationalite_dsn: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pays_nationalite: Option<String>,
+    pub pays_nationalite: Option<socle::pays::CodePays>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pays_nationalite_hors_liste: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -455,7 +455,7 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
         let t = sans_accents(r);
         let pays = match NATIONALITES.iter().find(|(n, _)| *n == t) {
             Some((_, c)) => Some(c.to_string()),
-            None => pays_lu(&t)?.and_then(|(c, ue)| ue.map(|_| c)),
+            None => pays_lu(&t)?.and_then(|(c, ue)| ue.map(|_| c.to_string())),
         };
         match pays {
             Some(pays) => {
@@ -507,7 +507,7 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
 /// Le departement de naissance que le NIR ECRIT (les 6e et 7e signes ; 99 pour une naissance a l'etranger), et le pays
 /// de naissance qu'il en deduit (la France, hors 99). Deux cas se taisent : la Corse d'avant 1976 (« 20 ») et un NIR
 /// incomplet.
-fn naissance_depuis_nir(nir: &str) -> Option<(String, Option<String>)> {
+fn naissance_depuis_nir(nir: &str) -> Option<(String, Option<socle::pays::CodePays>)> {
     let c: Vec<char> = strip(nir).chars().collect();
     if c.len() != 13 || !c.iter().all(|x| chiffre(*x)) || !matches!(c[0], '1' | '2') {
         return None;
@@ -516,6 +516,6 @@ fn naissance_depuis_nir(nir: &str) -> Option<(String, Option<String>)> {
     if dep == "20" {
         return None;
     }
-    let pays = (dep != "99").then(|| "FR".to_string());
+    let pays = (dep != "99").then(socle::pays::CodePays::france);
     Some((dep, pays))
 }
