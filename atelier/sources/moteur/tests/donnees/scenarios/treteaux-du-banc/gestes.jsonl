@@ -1,5 +1,5 @@
 {"n":1,"quand":1793606400.000003,"heure":"2026-11-02T09:00:00","geste":"debut","jour":"2026-11-02","logiciel":"14.10.2026","format":1}
-{"n":2,"quand":1793606401.2339187,"heure":"2026-11-02T09:00:01","geste":"ajouter","nom":"Les Tréteaux du Banc","compagnie":"fictives/ajoutee-les-treteaux-du-banc"}
+{"n":2,"quand":1793606401.2339187,"heure":"2026-11-02T09:00:01","geste":"ajouter","nom":"Les Tréteaux du Banc","venue":"neuve","compagnie":"fictives/ajoutee-les-treteaux-du-banc"}
 {"n":3,"quand":1793606401.2411218,"heure":"2026-11-02T09:00:01","route":"ouverture","compagnie":"fictives/ajoutee-les-treteaux-du-banc","charge":{"jours":30,"veille":false,"incidents_editeur":true,"sauvegarder":false},"ecrit":true,"ok":true}
 {"n":4,"quand":1793606401.2532744,"heure":"2026-11-02T09:00:01","route":"ouverture-derniere","compagnie":"fictives/ajoutee-les-treteaux-du-banc","charge":{},"ecrit":false,"ok":true}
 {"n":5,"quand":1793606401.2534218,"heure":"2026-11-02T09:00:01","route":"ouverture","compagnie":"fictives/ajoutee-les-treteaux-du-banc","charge":{"jours":30,"veille":false,"incidents_editeur":false,"sauvegarder":true,"sauvegarde_seule":true},"ecrit":false,"ok":true}

@@ -92,7 +92,7 @@ pub struct Geste {
     /// Le nom de la compagnie que le « + » ajoute (`ajouter`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nom: Option<String>,
-    /// D'ou vient la compagnie ajoutee : absente, une compagnie neuve.
+    /// D'ou vient la compagnie ajoutee (`ajouter`, qui l'exige).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub venue: Option<Venue>,
     /// La compagnie, relative a l'installation ; absente, la derniere ajoutee.
@@ -528,11 +528,7 @@ fn rejouer_les_gestes(
         match g.geste {
             Some(Genre::Ajouter) => {
                 let nom = g.nom.as_deref().ok_or_else(|| refus!("Geste {} : une compagnie s'ajoute avec son nom.", n))?;
-                // Un geste `ajouter` sans `venue` est le « + » d'une compagnie neuve, le seul chemin d'avant le choix.
-                let venue = match g.venue {
-                    Some(v) => v,
-                    None => Venue::Neuve,
-                };
+                let venue = g.venue.ok_or_else(|| refus!("Geste {} : une compagnie s'ajoute avec sa venue (« neuve » ou « logiciel_precedent »).", n))?;
                 let c = crate::accueil::ajouter_venant(inst, nom, venue).map_err(|m| m.reformuler(|p| format!("geste {} : « + » refuse : {}", n, p)))?;
                 let rel = relatif(inst, &c.racine).map_err(|m| m.reformuler(|p| format!("geste {} : {}", n, p)))?;
                 let nomme = match compagnie {
