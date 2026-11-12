@@ -88,7 +88,7 @@ pub struct LectureDsn {
     pub etablissements: BTreeSet<droit::fiche::Nic>,
     pub nics_siege: BTreeSet<droit::fiche::Nic>,
     /// Par (mois, NIR s'il est declare, numero du contrat).
-    pub paies: BTreeMap<(Mois, Option<String>, String), PaieDeclaree>,
+    pub paies: BTreeMap<(Mois, Option<String>, engagement::numeros::NumeroContrat), PaieDeclaree>,
     /// Le code risque et le taux AT/MP que les contrats declarent (S21.G00.40.040, .043), par annee : ceux de la derniere DSN
     /// de l'annee (son mois, le code, le taux ; aucun taux pour 999ZZ), quand tous ses contrats disent le meme.
     pub atmp: BTreeMap<i32, (Mois, String, Option<Decimal>)>,
@@ -248,7 +248,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             }
         }
         for paie in info.paies() {
-            let contrat = info.contrats_de(paie.nir.as_deref()).filter(|x| x.numero.as_deref() == Some(paie.numero.as_str())).last().cloned();
+            let contrat = info.contrats_de(paie.nir.as_deref()).filter(|x| x.numero.as_ref() == Some(&paie.numero)).last().cloned();
             let cle = (mois, paie.nir.clone(), paie.numero.clone());
             out.paies.insert(cle, PaieDeclaree { paie, contrat, depot: info.depot, fichier: info.fichier.clone() });
         }
