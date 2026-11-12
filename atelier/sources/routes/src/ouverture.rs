@@ -1299,7 +1299,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
     // LE LIEU D'UNE LIGNE DE NUITEE OU DE REPAS (`engagement::LignePaie::territoire`), sous « Avancé » : la metropole d'abord (rien
     // a choisir), l'outre-mer et Monaco, puis chaque lieu de la table des missions a l'etranger (`droit::missions::lieux`).
     let choix = |code: &str, libelle: &str| Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None };
-    let lieux: Vec<Choix> = if [engagement::NUITEE, engagement::REPAS].contains(&r.code.as_str()) {
+    let lieux: Vec<Choix> = if [engagement::NUITEE, engagement::REPAS].contains(&r.code) {
         std::iter::once(choix("", "Métropole"))
             .chain(engagement::TERRITOIRES.iter().map(|(c, l)| choix(c, l)))
             .chain(droit::missions::lieux()?.into_iter().map(|(c, l)| choix(&c, &l)))

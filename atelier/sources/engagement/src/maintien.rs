@@ -46,10 +46,13 @@ use socle::date::Jour;
 use socle::echec::{refus, R};
 use socle::mois::{Graphie, Mois};
 use socle::num::{div, eur2, mul, Decimal};
+use droit::catalogue::CodeDeRubrique;
 
 /// La rubrique des indemnites journalieres brutes que la compagnie subrogee deduit ; les nettes qu'elle reverse sont de la
 /// piece d'un salarie au mois (`droit::catalogue::RubriqueDuMois::IjssNettes`).
-pub const IJ_BRUTES: &str = "ijss_brutes";
+pub const IJ_BRUTES: CodeDeRubrique = CodeDeRubrique::du_moteur("ijss_brutes");
+/// La rubrique du maintien de salaire pendant l'arret.
+const MAINTIEN_SALAIRE: CodeDeRubrique = CodeDeRubrique::du_moteur("maintien_salaire");
 /// Ce que dit le refus d'un mois dont les indemnites journalieres manquent : une saisie a finir (`saisie_incomplete`).
 pub const IJ_A_DIRE: &str = ", à dire sur l'arrêt (« Indemnités journalières »)";
 
@@ -673,7 +676,7 @@ fn net_de_csg_crds(brute: Decimal, csg: Decimal, crds: Decimal) -> Decimal {
 /// subroge, la deduction des indemnites brutes et le reversement des nettes. Quand la convention garantit du net (ou
 /// plafonne au net), la ligne du maintien porte ce qu'il faut pour le reconstituer (`au_net`, sous la cle `maintien`).
 /// Le reversement des nettes est une rubrique d'un salarie au mois : seul son calcul, qui tient sa cle (`au`), la pose.
-pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> R<Vec<LignePaie>> {
+pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<LignePaie> {
     let mut out = Vec::new();
     let plancher = eur2(dmois.ij_subrogees_brutes);
     // Le plus favorable de la loi et de la convention (L1226-1 fixe un minimum que la convention peut depasser) ; une
@@ -699,18 +702,18 @@ pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> R<Vec<
                 plancher,
             })
         });
-        out.push(LignePaie::Maintien(Maintien { rubrique: droit::catalogue::CodeDeRubrique::lire("maintien_salaire")?, quantite: q, taux: div(montant, q).normalize(), reconstitution }));
+        out.push(LignePaie::Maintien(Maintien { rubrique: MAINTIEN_SALAIRE, quantite: q, taux: div(montant, q).normalize(), reconstitution }));
     }
     if dmois.ij_subrogees_jours > 0 {
         let j = Decimal::from(dmois.ij_subrogees_jours);
         let ij = |rubrique: droit::catalogue::CodeDeRubrique, montant: Decimal, assiette_pas: Option<Decimal>| {
             LignePaie::IndemniteJournaliere(IndemniteJournaliere { rubrique, jours: j, taux: div(montant, j).normalize(), assiette_pas })
         };
-        out.push(ij(droit::catalogue::CodeDeRubrique::lire(IJ_BRUTES)?, plancher, None));
+        out.push(ij(IJ_BRUTES, plancher, None));
         let nettes = eur2(dmois.ij_subrogees_nettes);
         out.push(LignePaie::ij_nettes(au, j, div(nettes, j).normalize(), eur2(dmois.assiette_pas)));
     }
-    Ok(out)
+    out
 }
 
 /// LA LIGNE DU MAINTIEN GARANTI EN NET : ce qu'il faut pour le reconstituer (`au_net`) -- le mois, la garantie, le
@@ -917,7 +920,7 @@ mod tests {
                 avis: Vec::new(),
             };
             let au = droit::natures::NatureDeContrat::Cdi.proprietes().unwrap().au_mois().unwrap();
-            let l = lignes(&m, Mois::nouveau(2026, 3).unwrap(), &au).unwrap();
+            let l = lignes(&m, Mois::nouveau(2026, 3).unwrap(), &au);
             l[0].taux().unwrap()
         };
         assert_eq!(montant(500, 300, 0), Decimal::from(500));

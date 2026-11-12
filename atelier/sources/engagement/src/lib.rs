@@ -49,7 +49,7 @@ use std::sync::Arc;
 
 use socle::forme::NombreLu;
 
-use droit::catalogue::rubrique;
+use droit::catalogue::{rubrique, CodeDeRubrique};
 use droit::contexte::{Contexte, IdSalarie, IdSpectacle};
 use droit::fiche::{Statut, StatutCategorielRc, StatutConventionnel};
 use droit::natures::{ModaliteDuTempsDeTravail, MotifDeRecours, MotifDeRupture, Nature, NatureDeContrat};
@@ -1238,10 +1238,10 @@ pub(crate) fn saisie_au_tarif(ctx: &Contexte, data: &mut saisie::VueDuMois) -> R
 
 
 /// Les rubriques des frais de deplacement rembourses au forfait, et celles de leur part au-dela de la limite.
-pub const NUITEE: &str = "nuitee";
-pub const NUITEE_AU_DELA: &str = "nuitee_au_dela";
-pub const REPAS: &str = "repas";
-pub const REPAS_AU_DELA: &str = "repas_au_dela";
+pub const NUITEE: CodeDeRubrique = CodeDeRubrique::du_moteur("nuitee");
+pub const NUITEE_AU_DELA: CodeDeRubrique = CodeDeRubrique::du_moteur("nuitee_au_dela");
+pub const REPAS: CodeDeRubrique = CodeDeRubrique::du_moteur("repas");
+pub const REPAS_AU_DELA: CodeDeRubrique = CodeDeRubrique::du_moteur("repas_au_dela");
 use ligne::CaseDeFrais::{Justificatif as JUSTIFICATIF, Loge as LOGE, Paris as PARIS, Restaurant as RESTAURANT};
 pub use ligne::CaseDeFrais;
 
@@ -1259,8 +1259,8 @@ pub const TERRITOIRES: [(&str, &str); 4] = [
 
 /// Les deux limites d'une rubrique de frais au barème, et la case de la ligne qui choisit la plus haute.
 struct Limites {
-    rubrique: &'static str,
-    au_dela: &'static str,
+    rubrique: CodeDeRubrique,
+    au_dela: CodeDeRubrique,
     cle: &'static str,
     case: CaseDeFrais,
     /// Les limites de la metropole au bareme (la haute, la basse).
@@ -1270,7 +1270,7 @@ struct Limites {
     nom_hors_metropole: &'static str,
 }
 
-const FRAIS_LIMITES: [Limites; 2] = [
+static FRAIS_LIMITES: [Limites; 2] = [
     Limites {
         rubrique: NUITEE, au_dela: NUITEE_AU_DELA, cle: "logement_grand_deplacement", case: PARIS,
         metropole: |b| b.logement_grand_deplacement.as_ref().map(|f| (f.paris, f.autres)),
@@ -1286,8 +1286,8 @@ const FRAIS_LIMITES: [Limites; 2] = [
 /// Une limite d'exoneration (`FRAIS_LIMITES`) est-elle attachee a cette rubrique ? Seuls ses repas et ses nuitees disent
 /// un lieu et des cases, et se saisissent sur la carte d'un contrat paye au mois, aux memes limites que ceux de tout
 /// salarie (le reste de sa paie se compose de ses faits).
-pub fn a_une_limite(code: &str) -> bool {
-    FRAIS_LIMITES.iter().any(|x| x.rubrique == code)
+pub fn a_une_limite(code: &CodeDeRubrique) -> bool {
+    FRAIS_LIMITES.iter().any(|x| x.rubrique == *code)
 }
 
 /// La reduction de l'indemnite de mission a l'etranger quand le salarie est loge gratuitement (arrete du 3 juillet
@@ -1295,10 +1295,10 @@ pub fn a_une_limite(code: &str) -> bool {
 const REDUCTION_LOGE: Decimal = Decimal::from_parts(65, 0, 0, false, 2);
 
 /// L'aide d'une case, avec les limites de l'annee (`haute`, `basse`).
-fn aide_de_case(case: CaseDeFrais, rubrique: &str, limites: Option<(Decimal, Decimal)>) -> Option<String> {
+fn aide_de_case(case: CaseDeFrais, rubrique: &CodeDeRubrique, limites: Option<(Decimal, Decimal)>) -> Option<String> {
     let eur = socle::texte::euros;
     match (case, limites) {
-        (PARIS, Some((h, b))) if rubrique == NUITEE => Some(format!("Paris ou petite couronne : la nuitée est exonérée jusqu'à {} au lieu de {}.", eur(h), eur(b))),
+        (PARIS, Some((h, b))) if *rubrique == NUITEE => Some(format!("Paris ou petite couronne : la nuitée est exonérée jusqu'à {} au lieu de {}.", eur(h), eur(b))),
         (RESTAURANT, Some((h, b))) => Some(format!(
             "Le salarié ne pouvait pas rentrer et a dû manger au restaurant : le repas est exonéré jusqu'à {} au lieu de {}.",
             eur(h),
@@ -1347,7 +1347,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
     let a_l_etranger = |l: &ligne::Frais| l.territoire.as_deref().is_some_and(|t| !TERRITOIRES.iter().any(|(k, _)| *k == t));
     // Les nuits payees en nuitee : le salarie y est en grand deplacement.
     let mut nuits: Vec<Jour> = Vec::new();
-    for l in lignes.iter().filter(|l| l.rubrique() == NUITEE) {
+    for l in lignes.iter().filter(|l| *l.rubrique() == NUITEE) {
         nuits.extend(l.jours());
     }
     let (mut out, mut au_dela, mut avis) = (Vec::new(), Vec::new(), Vec::new());
@@ -1377,7 +1377,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
         };
         let bar = ctx.bareme(&jour)?;
         let ent = ctx.entreprise_au(&jour);
-        let de_l_annexe = calcul::deduction_forfaitaire(&bar, &sal, &ent)?.is_some_and(|o| o.frais_hors_assiette.iter().any(|f| f == lim.rubrique));
+        let de_l_annexe = calcul::deduction_forfaitaire(&bar, &sal, &ent)?.is_some_and(|o| o.frais_hors_assiette.iter().any(|f| *f == lim.rubrique));
         let ou = territoire(&l);
         // Les deux limites de la metropole, quand le bareme les porte : les cases et leurs aides les disent.
         let metropole = (lim.metropole)(&bar);
@@ -1437,11 +1437,11 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
                 cases.push(k);
             }
         }
-        marquer_les_cases(&mut l, &cases, lim.rubrique, metropole);
+        marquer_les_cases(&mut l, &cases, &lim.rubrique, metropole);
         if let Some((taux, limite)) = part {
             let quantite = l.quantite.ok_or_else(|| socle::fichiers::absent("quantite"))?;
             au_dela.push(LignePaie::Composee(ligne::Composee {
-                rubrique: droit::catalogue::CodeDeRubrique::lire(lim.au_dela)?,
+                rubrique: lim.au_dela.clone(),
                 quantite,
                 taux: (taux - limite).normalize(),
                 heures: None,
@@ -1482,7 +1482,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
 }
 
 /// Pose sur la ligne `l` les cases qui ont lieu d'etre et leurs aides (`ligne::Marques`).
-fn marquer_les_cases(l: &mut ligne::Frais, cases: &[CaseDeFrais], rubrique: &str, metropole: Option<(Decimal, Decimal)>) {
+fn marquer_les_cases(l: &mut ligne::Frais, cases: &[CaseDeFrais], rubrique: &CodeDeRubrique, metropole: Option<(Decimal, Decimal)>) {
     if cases.is_empty() {
         return;
     }
@@ -1528,7 +1528,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[usize], nuits: &[J
             jours.push((x.jour(), x.clone()));
         }
         let unites = quantite / Decimal::from(jours.len() as u64);
-        es.push(Etrangere { rang: i, jours, par_jour: taux * unites, unites, taux, nuitee: l.rubrique() == NUITEE });
+        es.push(Etrangere { rang: i, jours, par_jour: taux * unites, unites, taux, nuitee: *l.rubrique() == NUITEE });
     }
     // Les cases d'une ligne a l'etranger : le justificatif quand elle depasse, l'hotel paye d'un repas un jour sans nuitee.
     let mut tous_les_jours: Vec<Jour> = es.iter().flat_map(|e| e.jours.iter().map(|(j, _)| *j)).collect();
@@ -1579,7 +1579,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[usize], nuits: &[J
         if depasse_un_jour || cochee(&lignes[e.rang], JUSTIFICATIF) {
             cases.push(JUSTIFICATIF);
         }
-        marquer_les_cases(frais(&mut lignes[e.rang])?, &cases, rubrique, None);
+        marquer_les_cases(frais(&mut lignes[e.rang])?, &cases, &rubrique, None);
         // Les jours groupes par ecart : une part soumise par groupe ; la ligne garde ce qui reste exonere, sur toute sa
         // quantite.
         let mut groupes: Vec<(Decimal, Vec<DateDeLigne>)> = Vec::new();
@@ -1600,7 +1600,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[usize], nuits: &[J
             let quantite = e.unites * Decimal::from(dates.len() as u64);
             let premier = dates.first().map(DateDeLigne::jour);
             parts.push(LignePaie::Composee(ligne::Composee {
-                rubrique: droit::catalogue::CodeDeRubrique::lire(au_dela)?,
+                rubrique: au_dela.clone(),
                 quantite: quantite.normalize(),
                 taux: (ecart / e.unites).normalize(),
                 heures: None,

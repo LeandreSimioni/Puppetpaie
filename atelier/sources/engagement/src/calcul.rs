@@ -1968,7 +1968,7 @@ devine pas.",
     let complementaires = e
         .lignes
         .iter()
-        .filter(|l| l.rubrique() == crate::heures_en_plus::HEURE_COMPLEMENTAIRE)
+        .filter(|l| *l.rubrique() == crate::heures_en_plus::HEURE_COMPLEMENTAIRE)
         .map(|l| l.quantite().ok_or_else(|| refus("nombre attendu, lu null")))
         .sum::<R<Decimal>>()?;
     Ok((e.quotite()? + complementaires, reference))

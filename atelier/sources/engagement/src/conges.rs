@@ -34,6 +34,11 @@ use socle::echec::R;
 use socle::num::{add, court, div, eur2, mul, zero2, Decimal};
 use droit::conges::{jours_ouvrables, IndemniteDesJours};
 use droit::permanents::{arrondir_jours, duree_du_conge, jours_acquis, periode_de_reference, plafonner, Acquisition};
+use droit::catalogue::CodeDeRubrique;
+
+/// La rubrique du salaire d'un mois (ou de sa part), et celle de la retenue des conges payes pris.
+pub(crate) const MOIS_PAYE: CodeDeRubrique = CodeDeRubrique::du_moteur("mois");
+const ABSENCE_CONGES_PAYES: CodeDeRubrique = CodeDeRubrique::du_moteur("absence_conges_payes");
 
 // ------------------------------------------------------------ les aides
 
@@ -1049,7 +1054,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     // `heures` est par unite (`Rubrique::heures`) : un mois vaut la quotite,
     // et la fraction, en `quantite`, en fait la part ; `precision` la dit sur le bulletin.
     let mois_paye = LignePaie::Composee(crate::ligne::Composee {
-        rubrique: droit::catalogue::CodeDeRubrique::lire("mois")?,
+        rubrique: MOIS_PAYE,
         quantite: court(fraction),
         taux: court(salaire),
         heures: Some(court(eur2(quotite))),
@@ -1083,7 +1088,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         let cpt = compteur_conges(ctx, au, &salarie, &fin, mois)?;
         let maintien = eur2(mul(taux_jour_ouvrable, pris));
         let ind = indemnite_des_jours(&cpt, pris, maintien)?;
-        lignes.push(LignePaie::composee(droit::catalogue::CodeDeRubrique::lire("absence_conges_payes")?, court(pris), court(taux_jour_ouvrable)));
+        lignes.push(LignePaie::composee(ABSENCE_CONGES_PAYES, court(pris), court(taux_jour_ouvrable)));
         lignes.push(LignePaie::du_mois(au, droit::catalogue::RubriqueDuMois::IndemniteCongesPayes, court(pris), court(taux_au_montant(ind.retenu, pris))));
         avert.push(info(format!(
             "{} : {} jour(s) ouvrable(s) de conges. Indemnite retenue : {} \
@@ -1189,7 +1194,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         let reference = Decimal::from_str("151.67").unwrap();
         let base = eur2(div(mul(base_conv, quotite), reference));
         let montant = eur2(div(mul(base, pourcentage), Decimal::ONE_HUNDRED));
-        lignes.push(LignePaie::composee(droit::catalogue::CodeDeRubrique::lire(clauses::RUBRIQUE_PRIME_ANCIENNETE)?,Decimal::ONE, court(montant)));
+        lignes.push(LignePaie::composee(clauses::RUBRIQUE_PRIME_ANCIENNETE, Decimal::ONE, court(montant)));
         let proratise = if quotite != reference { format!(" proratisé à {} h", virgule(quotite)) } else { String::new() };
         avert.push(info(format!(
             "{} : prime d'ancienneté {} % ({} an(s) de présence) du salaire \

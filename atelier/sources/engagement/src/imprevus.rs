@@ -47,6 +47,9 @@ pub const ILLISIBLE: &str = "Un imprévu ne se lit pas : le signaler au dévelop
 /// La phrase du refus d'un fichier du magasin qui n'a pas sa forme.
 const ABIME: &str = "Un mois du magasin des imprévus ne se relit pas : il est abîmé.";
 
+/// La rubrique de la retenue d'une absence non remuneree.
+const ABSENCE_NON_REMUNEREE: droit::catalogue::CodeDeRubrique = droit::catalogue::CodeDeRubrique::du_moteur("absence_non_remuneree");
+
 /// Le genre d'un arret, tel qu'il s'ecrit (`ARRET`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GenreArret {
@@ -880,8 +883,7 @@ nomme cette absence. Rien n'est calcule.",
                     motif.texte()
                 )));
             } else {
-                let rubrique = droit::catalogue::CodeDeRubrique::lire("absence_non_remuneree")?;
-                lignes.extend(retenue()?.map(|(quantite, taux)| crate::LignePaie::composee(rubrique, quantite, taux)));
+                lignes.extend(retenue()?.map(|(quantite, taux)| crate::LignePaie::composee(ABSENCE_NON_REMUNEREE, quantite, taux)));
                 absents += jours;
                 avert.push(info(format!(
                     "{} : absence ({}) du {} au {} : {} ; la DSN de chaque mois qu'elle traverse la déclare.",
@@ -894,7 +896,7 @@ nomme cette absence. Rien n'est calcule.",
             }
         }
     }
-    lignes.extend(crate::maintien::lignes(&maintien, mois, au)?);
+    lignes.extend(crate::maintien::lignes(&maintien, mois, au));
     avert.extend(maintien.avis);
     Ok((lignes, avert, absents))
 }

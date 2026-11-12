@@ -1084,7 +1084,7 @@ pub struct Prime {
 
 /// La rubrique de la prime d'anciennete (`rubriques-base.json`) : la ligne que le calcul compose pour un contrat paye au
 /// mois, et que la carte ne propose qu'a ceux que la prime peut viser (`prime_anciennete_possible`).
-pub const RUBRIQUE_PRIME_ANCIENNETE: &str = "prime_anciennete";
+pub const RUBRIQUE_PRIME_ANCIENNETE: crate::catalogue::CodeDeRubrique = crate::catalogue::CodeDeRubrique::du_moteur("prime_anciennete");
 
 /// L'IDCC DE LA CCNEAC (convention collective des entreprises artistiques et culturelles, KALITEXT000005662413 :
 /// `atelier/reference/sources/kali-1285-x3-remuneration-artistes-20260929.md`, « IDCC : 1285 (CCNEAC) »). Ses regles

@@ -89,10 +89,11 @@ pub struct PlafondAnnuelHeures {
 /// `config/rubriques-compagnie.json` pour une rubrique propre a la compagnie ; une ligne de paie le porte pour dire de
 /// quelle rubrique elle est. Il se lit d'un fichier ou d'une charge (`lire`, ou `serde` : la meme chaine). INFERENCE
 /// (aucun texte n'en fixe la forme : c'est une cle du logiciel, et la compagnie nomme les siennes) : un code n'est
-/// jamais vide ; rien de plus ne vaut pour tous les codes qui existent.
+/// jamais vide ; rien de plus ne vaut pour tous les codes qui existent. Un code que le moteur compose lui-meme est une
+/// constante (`du_moteur`), construite sans echec ; un code lu d'une donnee se lit (`lire`).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, serde::Serialize)]
 #[serde(try_from = "String", into = "String")]
-pub struct CodeDeRubrique(String);
+pub struct CodeDeRubrique(std::borrow::Cow<'static, str>);
 
 impl CodeDeRubrique {
     /// Le code ecrit `texte` ; vide, il se refuse.
@@ -100,7 +101,14 @@ impl CodeDeRubrique {
         if texte.is_empty() {
             return Err(socle::refus!("code de rubrique vide"));
         }
-        Ok(CodeDeRubrique(texte.to_string()))
+        Ok(CodeDeRubrique(std::borrow::Cow::Owned(texte.to_string())))
+    }
+
+    /// LE CODE D'UNE RUBRIQUE QUE LE MOTEUR COMPOSE, ecrit en Rust : une constante (`const X: CodeDeRubrique =
+    /// CodeDeRubrique::du_moteur("…")`), dont le compilateur refuse un code vide.
+    pub const fn du_moteur(code: &'static str) -> CodeDeRubrique {
+        assert!(!code.is_empty(), "code de rubrique vide");
+        CodeDeRubrique(std::borrow::Cow::Borrowed(code))
     }
 
     pub fn as_str(&self) -> &str {
@@ -136,7 +144,7 @@ impl TryFrom<String> for CodeDeRubrique {
 
 impl From<CodeDeRubrique> for String {
     fn from(c: CodeDeRubrique) -> String {
-        c.0
+        c.0.into_owned()
     }
 }
 
@@ -418,13 +426,10 @@ impl RubriqueDuMois {
 
     /// Son code au catalogue : ne le prennent que les lignes qui la composent, avec la cle (`engagement::LignePaie`).
     pub fn code(self) -> CodeDeRubrique {
-        CodeDeRubrique(
-            match self {
-                RubriqueDuMois::IndemniteCongesPayes => "indemnite_conges_payes",
-                RubriqueDuMois::IjssNettes => "ijss_nettes",
-            }
-            .to_string(),
-        )
+        match self {
+            RubriqueDuMois::IndemniteCongesPayes => const { CodeDeRubrique::du_moteur("indemnite_conges_payes") },
+            RubriqueDuMois::IjssNettes => const { CodeDeRubrique::du_moteur("ijss_nettes") },
+        }
     }
 }
 

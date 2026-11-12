@@ -942,7 +942,7 @@ fn indemnite_de_rupture(
             ), "en_droit_a_la_retraite"));
         };
         if droit {
-            rubrique = droit::catalogue::CodeDeRubrique::lire("indemnite_rupture_conventionnelle_imposable")?;
+            rubrique = const { droit::catalogue::CodeDeRubrique::du_moteur("indemnite_rupture_conventionnelle_imposable") };
             supplement_rub = "indemnite_rupture_conventionnelle_supplement_imposable".into();
         }
     }
@@ -1165,7 +1165,7 @@ fn indemnite_de_licenciement(
     }
     let supplement = sub(montant, part_legale);
     if supplement > Decimal::ZERO {
-        stc.lignes.push(ligne_unique(&droit::catalogue::CodeDeRubrique::lire("indemnite_licenciement_conventionnelle")?, supplement));
+        stc.lignes.push(ligne_unique(&const { droit::catalogue::CodeDeRubrique::du_moteur("indemnite_licenciement_conventionnelle") }, supplement));
     }
     stc.avertissements.push(info(format!(
         "{} : indemnité de licenciement {} ({} mois d'ancienneté, salaire \

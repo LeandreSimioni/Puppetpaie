@@ -14,6 +14,7 @@ use crate::calcul::{LigneBrut, LigneCotisation};
 use crate::conges::{avertir, info, qui};
 use crate::saisie::Carte;
 use crate::Avis;
+use droit::catalogue::CodeDeRubrique;
 use droit::contexte::Contexte;
 use socle::texte::{euros, virgule};
 use socle::echec::{refus, R};
@@ -26,8 +27,8 @@ pub const HEURES_SUPPLEMENTAIRES_A_50: &str = "heures_supplementaires_a_50";
 pub const HEURES_COMPLEMENTAIRES: &str = "heures_complementaires";
 
 /// Les rubriques que le moteur compose (`rubriques-base.json`).
-pub const HEURE_SUPPLEMENTAIRE: &str = "heure_supplementaire";
-pub const HEURE_COMPLEMENTAIRE: &str = "heure_complementaire";
+pub const HEURE_SUPPLEMENTAIRE: CodeDeRubrique = CodeDeRubrique::du_moteur("heure_supplementaire");
+pub const HEURE_COMPLEMENTAIRE: CodeDeRubrique = CodeDeRubrique::du_moteur("heure_complementaire");
 
 /// Les lignes du bulletin qui portent la reduction salariale et la deduction patronale.
 pub const REDUCTION: &str = "reduction_heures_en_plus";
@@ -94,7 +95,6 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: Decimal, qu
         (HEURE_SUPPLEMENTAIRE, droit::heures_en_plus::supplementaires(idcc, sup, a_50, deja)?)
     };
     let horaire = salaire / quotite;
-    let rubrique = droit::catalogue::CodeDeRubrique::lire(rubrique)?;
     let mut out = Vec::new();
     for p in &reparties.paliers {
         let taux = (horaire * (Decimal::ONE_HUNDRED + p.majoration) / Decimal::ONE_HUNDRED).round_dp(4);
