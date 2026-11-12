@@ -132,7 +132,7 @@ pub fn nir_de(salarie: &ChampsSalarie) -> Option<String> {
 /// S21.G00.30.001, quand il y en a un -- et rien du tout sinon.
 pub fn poser_nir(f: &mut Fichier, salarie: &ChampsSalarie) -> R<()> {
     if let Some(nir) = nir_de(salarie) {
-        f.add(&RUBRIQUE_NIR.to_string(), nir);
+        f.add(RUBRIQUE_NIR, nir);
     }
     Ok(())
 }
@@ -146,11 +146,11 @@ pub fn poser_nir(f: &mut Fichier, salarie: &ChampsSalarie) -> R<()> {
 /// declaree pour lui (`changements_individu::Declarations::derniere`, ou `derniere_declaree`).
 pub fn poser_ntt(f: &mut Fichier, ent: &droit::fiche::ChampsEntreprise, salarie: &FicheSalarie, declaree:Option<&crate::changements_individu::Declaree>) -> R<()> {
     if nir_de(salarie).is_none() {
-        f.add(&RUBRIQUE.to_string(), numero(ent.siren.ecrite("siren")?, salarie)?);
+        f.add(RUBRIQUE, numero(ent.siren.ecrite("siren")?, salarie)?);
         return Ok(());
     }
     if let Some(n) = declaree.filter(|d| d.nir.is_none()).and_then(|d| d.ntt.as_ref()) {
-        f.add(&RUBRIQUE.to_string(), n);
+        f.add(RUBRIQUE, n);
     }
     Ok(())
 }

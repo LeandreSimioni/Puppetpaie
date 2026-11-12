@@ -103,7 +103,7 @@ impl Fichier {
     /// `S10.G00.00.006`, le numero de version de la norme utilisee.
     pub fn ecrire_la_version(&mut self) -> R<()> {
         let v = self.norme()?.version;
-        self.add(&droit::natures::VersionDeLaNorme::RUBRIQUE.to_string(), v);
+        self.add(<droit::natures::VersionDeLaNorme as droit::natures::ListeDeLaNorme>::RUBRIQUE, v);
         Ok(())
     }
 
@@ -112,16 +112,16 @@ impl Fichier {
     /// valeurs indiquees dans cette liste », cahier 2027.1.1 p. 86, `texte-2027/chapitre-4-controles.txt` l. 164).
     pub fn ecrire_code<T: droit::natures::ListeDeLaNorme>(&mut self, v: T) -> R<()> {
         let code = code_admis(self.norme()?, v)?;
-        self.add(&T::RUBRIQUE.to_string(), code);
+        self.add(T::RUBRIQUE, code);
         Ok(())
     }
 
-    pub fn add(&mut self, rubrique: &str, valeur: impl Display) {
+    pub fn add(&mut self, rubrique: RubriqueDeLaNorme, valeur: impl Display) {
         self.lignes.push(format!("{},'{}'", rubrique, valeur));
     }
 
     /// Une valeur absente ne s'ecrit pas « None » : c'est un refus.
-    pub fn add_opt(&mut self, rubrique: &str, valeur: Option<impl Display>) -> R<()> {
+    pub fn add_opt(&mut self, rubrique: RubriqueDeLaNorme, valeur: Option<impl Display>) -> R<()> {
         match valeur {
             Some(v) => {
                 self.add(rubrique, v);
@@ -133,7 +133,7 @@ impl Fichier {
 
     /// Pose `rubrique` d'une valeur JSON écrite en texte ; refus sur `null`.
     /// Une rubrique dite par un texte, exigee : sans lui, le refus la nomme.
-    pub fn add_ecrit(&mut self, rubrique: &str, valeur: Option<String>) -> R<()> {
+    pub fn add_ecrit(&mut self, rubrique: RubriqueDeLaNorme, valeur: Option<String>) -> R<()> {
         self.add(rubrique, valeur.ok_or_else(|| absente(rubrique))?);
         Ok(())
     }
@@ -141,14 +141,14 @@ impl Fichier {
     /// LE COMPLEMENT D'ADRESSE (S10.G00.01.009, S21.G00.06.007, S21.G00.11.006 : « Complement de la localisation de la
     /// construction », facultatif, X [1,50], `atelier/reference/norme-dsn/texte/bloc-S21.G00.06.txt` l. 98-110) : la
     /// seconde ligne de l'adresse, ecrite entiere quand la fiche la dit, absente sinon.
-    pub fn add_complement(&mut self, rubrique: &str, case: &Option<droit::fiche::LigneAdresse>) {
+    pub fn add_complement(&mut self, rubrique: RubriqueDeLaNorme, case: &Option<droit::fiche::LigneAdresse>) {
         if let Some(t) = case.remplie() {
             self.add(rubrique, t);
         }
     }
 
     /// La case `cle` d'une fiche, que la rubrique exige : vide, elle refuse en se nommant.
-    pub fn add_case<T: AsRef<str>>(&mut self, rubrique: &str, case: &Option<T>, cle: &str) -> R<()> {
+    pub fn add_case<T: AsRef<str>>(&mut self, rubrique: RubriqueDeLaNorme, case: &Option<T>, cle: &str) -> R<()> {
         match case {
             None => Err(socle::fichiers::absent(cle)),
             Some(t) => {
@@ -183,7 +183,7 @@ impl Fichier {
 }
 
 #[track_caller]
-fn absente(rubrique: &str) -> socle::echec::Echec {
+fn absente(rubrique: RubriqueDeLaNorme) -> socle::echec::Echec {
     refus!(
         "{} : valeur absente. Une rubrique DSN sans valeur ne s'ecrit pas -- et surtout pas avec le mot None.",
         rubrique
@@ -211,13 +211,13 @@ pub fn contact_emetteur(f: &mut Fichier, ent: &ChampsEntreprise) -> R<()> {
             ), "declarant_dsn.civilite"))
         }
     };
-    f.add("S10.G00.02.001", civilite);
+    f.add(droit::rubrique!("S10.G00.02.001"), civilite);
     if decl.nom_prenom.remplie().is_none() {
         return Err(socle::echec::cle("Le nom de la personne que les organismes contactent manque : le saisir dans Configuration › Entreprise, « Qui les organismes contactent ». Il s'écrit en S10.G00.02.002 et S20.G00.07.001. Rien n'est écrit.", "declarant_dsn.nom_prenom"));
     }
-    f.add_case("S10.G00.02.002", &decl.nom_prenom, "nom_prenom")?;
-    f.add_case("S10.G00.02.004", &decl.email, "email")?;
-    f.add_case("S10.G00.02.005", &decl.tel, "tel")?;
+    f.add_case(droit::rubrique!("S10.G00.02.002"), &decl.nom_prenom, "nom_prenom")?;
+    f.add_case(droit::rubrique!("S10.G00.02.004"), &decl.email, "email")?;
+    f.add_case(droit::rubrique!("S10.G00.02.005"), &decl.tel, "tel")?;
     Ok(())
 }
 
@@ -225,10 +225,10 @@ pub fn contact_emetteur(f: &mut Fichier, ent: &ChampsEntreprise) -> R<()> {
 /// a la mensuelle et aux signalements : nom, telephone, courriel, type.
 pub fn contact_chez_le_declare(f: &mut Fichier, ent: &ChampsEntreprise) -> R<()> {
     let decl = ent.declarant_dsn.exigee("declarant_dsn")?;
-    f.add_case("S20.G00.07.001", &decl.nom_prenom, "nom_prenom")?;
-    f.add_case("S20.G00.07.002", &decl.tel, "tel")?;
-    f.add_case("S20.G00.07.003", &decl.email, "email")?;
-    f.add("S20.G00.07.004", type_du_contact(decl));
+    f.add_case(droit::rubrique!("S20.G00.07.001"), &decl.nom_prenom, "nom_prenom")?;
+    f.add_case(droit::rubrique!("S20.G00.07.002"), &decl.tel, "tel")?;
+    f.add_case(droit::rubrique!("S20.G00.07.003"), &decl.email, "email")?;
+    f.add(droit::rubrique!("S20.G00.07.004"), type_du_contact(decl));
     Ok(())
 }
 
@@ -299,10 +299,10 @@ fn contact_sante_travail(f: &mut Fichier, ent_e: &ChampsEntreprise) -> R<()> {
             manque.join(", ")
         ));
     };
-    f.add("S20.G00.07.001", nom_prenom);
-    f.add("S20.G00.07.002", tel);
-    f.add("S20.G00.07.003", email);
-    f.add("S20.G00.07.004", "17");
+    f.add(droit::rubrique!("S20.G00.07.001"), nom_prenom);
+    f.add(droit::rubrique!("S20.G00.07.002"), tel);
+    f.add(droit::rubrique!("S20.G00.07.003"), email);
+    f.add(droit::rubrique!("S20.G00.07.004"), "17");
     Ok(())
 }
 
@@ -390,20 +390,20 @@ pub fn emplois_multiples(p: &Paie, autres: &[&Paie]) -> &'static str {
 /// elle s'ecrit quand la nature l'admet (`courriel`) et que la fiche la dit.
 pub fn bloc_individu(f: &mut Fichier, s: &droit::fiche::ChampsSalarie, courriel: bool) -> R<()> {
     crate::ntt::poser_nir(f, s)?;
-    f.add_case("S21.G00.30.002", &s.nom, "nom")?;
-    f.add_case("S21.G00.30.004", &s.prenom, "prenom")?;
-    f.add("S21.G00.30.006", s.date_naissance.exigee("date_naissance")?.jjmmaaaa());
-    f.add_case("S21.G00.30.007", &s.lieu_naissance, "lieu_naissance")?;
-    f.add_case("S21.G00.30.008", &s.adresse, "adresse")?;
-    f.add_case("S21.G00.30.009", &s.code_postal, "code_postal")?;
-    f.add_case("S21.G00.30.010", &s.commune, "commune")?;
-    f.add("S21.G00.30.013", socle::codification_ue::codification_ue(&s.nationalite())?);
-    f.add_case("S21.G00.30.014", &s.departement_naissance, "departement_naissance")?;
-    f.add_case("S21.G00.30.015", &s.pays_de_naissance()?, "pays_naissance")?;
+    f.add_case(droit::rubrique!("S21.G00.30.002"), &s.nom, "nom")?;
+    f.add_case(droit::rubrique!("S21.G00.30.004"), &s.prenom, "prenom")?;
+    f.add(droit::rubrique!("S21.G00.30.006"), s.date_naissance.exigee("date_naissance")?.jjmmaaaa());
+    f.add_case(droit::rubrique!("S21.G00.30.007"), &s.lieu_naissance, "lieu_naissance")?;
+    f.add_case(droit::rubrique!("S21.G00.30.008"), &s.adresse, "adresse")?;
+    f.add_case(droit::rubrique!("S21.G00.30.009"), &s.code_postal, "code_postal")?;
+    f.add_case(droit::rubrique!("S21.G00.30.010"), &s.commune, "commune")?;
+    f.add(droit::rubrique!("S21.G00.30.013"), socle::codification_ue::codification_ue(&s.nationalite())?);
+    f.add_case(droit::rubrique!("S21.G00.30.014"), &s.departement_naissance, "departement_naissance")?;
+    f.add_case(droit::rubrique!("S21.G00.30.015"), &s.pays_de_naissance()?, "pays_naissance")?;
     if let Some(email) = s.email.portee().filter(|_| courriel) {
-        f.add("S21.G00.30.018", email);
+        f.add(droit::rubrique!("S21.G00.30.018"), email);
     }
-    f.add_case("S21.G00.30.019", &s.code_salarie, "code_salarie")
+    f.add_case(droit::rubrique!("S21.G00.30.019"), &s.code_salarie, "code_salarie")
 }
 
 
@@ -494,33 +494,33 @@ fn arrets_du_contrat<'a>(arrets: &[&'a Arret], p: &Paie) -> R<Vec<&'a Arret>> {
 /// fichier, jamais une autre.
 pub fn bloc_60(f: &mut Fichier, a: &Arret, nature: NatureDeLaDeclaration, banque: Option<&droit::fiche::Banque>) -> R<()> {
     let v = &a.saisi;
-    f.add("S21.G00.60.001", &v.motif);
+    f.add(droit::rubrique!("S21.G00.60.001"), &v.motif);
     // La veille du debut prescrit, ou ce jour s'il a ete travaille (S21.G00.60.002, `imprevus::dernier_jour_declare`).
-    f.add("S21.G00.60.002", engagement::imprevus::dernier_jour_declare(v)?.jjmmaaaa());
-    f.add("S21.G00.60.003", v.fin_previsionnelle.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.60.002"), engagement::imprevus::dernier_jour_declare(v)?.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.60.003"), v.fin_previsionnelle.jjmmaaaa());
     let subrogation = if usage_admet(f, droit::rubrique!("S21.G00.60.004"), nature)? { v.subrogation } else { None };
     if let Some(subrogation) = subrogation {
-        f.add("S21.G00.60.004", subrogation);
+        f.add(droit::rubrique!("S21.G00.60.004"), subrogation);
         if crate::signalement::avec_subrogation(a)? {
             let Some((iban, bic)) = banque.and_then(|b| b.iban.remplie().zip(b.bic.remplie())) else {
                 return Err(refus("Subrogation demandee : l'IBAN et le BIC de la compagnie (S21.G00.60.007 et .008) sont \
 obligatoires -- CCH-11. Ils se lisent dans la fiche entreprise, ils ne se saisissent pas dans l'arret."));
             };
-            f.add("S21.G00.60.005", v.subrogation_debut.ok_or_else(|| socle::fichiers::absent("subrogation_debut"))?.jjmmaaaa());
-            f.add("S21.G00.60.006", v.subrogation_fin.ok_or_else(|| socle::fichiers::absent("subrogation_fin"))?.jjmmaaaa());
-            f.add("S21.G00.60.007", iban);
-            f.add("S21.G00.60.008", bic);
+            f.add(droit::rubrique!("S21.G00.60.005"), v.subrogation_debut.ok_or_else(|| socle::fichiers::absent("subrogation_debut"))?.jjmmaaaa());
+            f.add(droit::rubrique!("S21.G00.60.006"), v.subrogation_fin.ok_or_else(|| socle::fichiers::absent("subrogation_fin"))?.jjmmaaaa());
+            f.add(droit::rubrique!("S21.G00.60.007"), iban);
+            f.add(droit::rubrique!("S21.G00.60.008"), bic);
         }
     }
     if let Some(reprise) = v.reprise {
-        f.add("S21.G00.60.010", reprise.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.60.010"), reprise.jjmmaaaa());
         if let Some(motif) = v.reprise_motif {
-            f.add("S21.G00.60.011", motif);
+            f.add(droit::rubrique!("S21.G00.60.011"), motif);
         }
     }
     if usage_admet(f, droit::rubrique!("S21.G00.60.012"), nature)? {
         if let Some(accident) = v.date_accident {
-            f.add("S21.G00.60.012", accident.jjmmaaaa());
+            f.add(droit::rubrique!("S21.G00.60.012"), accident.jjmmaaaa());
         }
     }
     Ok(())
@@ -1532,7 +1532,7 @@ fn licence_du_contrat(f: &mut Fichier, nature_dsn: NatureDeLaDeclaration, ent: &
 
 fn si_admise(f: &mut Fichier, nature_dsn: NatureDeLaDeclaration, rubrique: RubriqueDeLaNorme, valeur: Option<String>) -> R<()> {
     if usage_admet(f, rubrique, nature_dsn)? {
-        f.add_opt(&rubrique.to_string(), valeur)?;
+        f.add_opt(rubrique, valeur)?;
     }
     Ok(())
 }
@@ -1763,27 +1763,27 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     };
     // Les statuts se lisent, ou refusent (`statuts_du_contrat`), avant qu'une ligne du contrat soit ecrite.
     let (statut_conventionnel, statut_categoriel_rc) = statuts_du_contrat(p, ent.idcc.portee())?;
-    f.add("S21.G00.40.001", e.debut.jjmmaaaa());
-    f.add("S21.G00.40.002", statut_conventionnel);
-    f.add("S21.G00.40.003", statut_categoriel_rc);
-    f.add_case("S21.G00.40.004", &s.pcs_ese, "pcs_ese")?;
+    f.add(droit::rubrique!("S21.G00.40.001"), e.debut.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.40.002"), statut_conventionnel);
+    f.add(droit::rubrique!("S21.G00.40.003"), statut_categoriel_rc);
+    f.add_case(droit::rubrique!("S21.G00.40.004"), &s.pcs_ese, "pcs_ese")?;
     // Le complement PCS-ESE : « 999SPT pour les emplois permanents du spectacle » (CCH-18, p. 185) quand la nature le
     // fixe (`contrats-base.json` : cdi, cdd) ; le contrat d'un intermittent (`droit::caisse_conges::intermittent` : un
     // CDDU, le CDD d'un artiste ou d'un technicien de la liste de l'annexe 8) declare le code de son metier dans la
     // nomenclature des emplois du spectacle, que France Travail Spectacle lit.
     let intermittent = droit::caisse_conges::intermittent(&nat, &p.salarie)?;
     match nat.code(droit::rubrique!("S21.G00.40.005")).filter(|c| !c.is_empty() && !intermittent) {
-        Some(c) => f.add("S21.G00.40.005", c),
-        None => f.add_case("S21.G00.40.005", &s.code_emploi_ft, "code_emploi_ft")?,
+        Some(c) => f.add(droit::rubrique!("S21.G00.40.005"), c),
+        None => f.add_case(droit::rubrique!("S21.G00.40.005"), &s.code_emploi_ft, "code_emploi_ft")?,
     }
-    f.add_case("S21.G00.40.006", &s.emploi, "emploi")?;
-    f.add_opt("S21.G00.40.007", nat.code(droit::rubrique!("S21.G00.40.007")))?;
-    f.add_opt("S21.G00.40.008", nat.code(droit::rubrique!("S21.G00.40.008")))?;
-    f.add_opt("S21.G00.40.009", e.numero.clone())?;
+    f.add_case(droit::rubrique!("S21.G00.40.006"), &s.emploi, "emploi")?;
+    f.add_opt(droit::rubrique!("S21.G00.40.007"), nat.code(droit::rubrique!("S21.G00.40.007")))?;
+    f.add_opt(droit::rubrique!("S21.G00.40.008"), nat.code(droit::rubrique!("S21.G00.40.008")))?;
+    f.add_opt(droit::rubrique!("S21.G00.40.009"), e.numero.clone())?;
     if !nat.duree_indeterminee || e.fin.is_some() {
-        f.add_opt("S21.G00.40.010", e.fin.map(|j| j.jjmmaaaa()))?;
+        f.add_opt(droit::rubrique!("S21.G00.40.010"), e.fin.map(|j| j.jjmmaaaa()))?;
     }
-    f.add("S21.G00.40.011", nat.unite_quotite());
+    f.add(droit::rubrique!("S21.G00.40.011"), nat.unite_quotite());
     let quotite = e.quotite()?;
     // Le plafond de la nature (`contrats-base.json`, `unite_quotite.plafond`) vaut pour 40.012 comme pour 40.013 :
     // CCH-12 du bloc 40 (journee, 31.00), CCH-13 (heure, 250.00) ; cahier technique 2026.1, p. 189.
@@ -1824,22 +1824,22 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         Some(r) => {
             depasse(droit::rubrique!("S21.G00.40.012"), "quotite de reference", qt(r))?;
             quotite_de_reference_sans_heures_supplementaires(f, p, &nat, r)?;
-            f.add("S21.G00.40.012", qt(r))
+            f.add(droit::rubrique!("S21.G00.40.012"), qt(r))
         }
         None => return Err(refus("S21.G00.40.012 : la quotite de reference manque.")),
     }
-    f.add("S21.G00.40.013", qt(quotite));
+    f.add(droit::rubrique!("S21.G00.40.013"), qt(quotite));
     // La modalite que la nature fixe, sinon celle de l'engagement (`Engagement::modalite_temps_travail`).
     f.ecrire_code(e.modalite_temps_travail()?)?;
     if bareme::alsace_moselle(&bar.entreprise.fiche, &p.salarie) {
-        f.add("S21.G00.40.016", "01");
+        f.add(droit::rubrique!("S21.G00.40.016"), "01");
     } else {
-        f.add_opt("S21.G00.40.016", nat.code(droit::rubrique!("S21.G00.40.016")))?;
+        f.add_opt(droit::rubrique!("S21.G00.40.016"), nat.code(droit::rubrique!("S21.G00.40.016")))?;
     }
-    f.add("S21.G00.40.017", engagement::minima::idcc_du_contrat(ent.idcc.exigee("idcc")?, p.spectacle.as_ref(), &p.salarie)?.to_string());
-    f.add_opt("S21.G00.40.018", nat.code(droit::rubrique!("S21.G00.40.018")))?;
-    f.add_case("S21.G00.40.019", &ent.siret, "siret")?;
-    f.add_opt("S21.G00.40.020", nat.code(droit::rubrique!("S21.G00.40.020")))?;
+    f.add(droit::rubrique!("S21.G00.40.017"), engagement::minima::idcc_du_contrat(ent.idcc.exigee("idcc")?, p.spectacle.as_ref(), &p.salarie)?.to_string());
+    f.add_opt(droit::rubrique!("S21.G00.40.018"), nat.code(droit::rubrique!("S21.G00.40.018")))?;
+    f.add_case(droit::rubrique!("S21.G00.40.019"), &ent.siret, "siret")?;
+    f.add_opt(droit::rubrique!("S21.G00.40.020"), nat.code(droit::rubrique!("S21.G00.40.020")))?;
     if nat.ecrit(droit::natures::MotifDeRecours::RUBRIQUE) {
         let m = match nat.motif_recours_fixe() {
             Some(m) => m,
@@ -1851,7 +1851,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     // des Conges Spectacles (`caisse_conges::affilie`), et aucun autre -- ni un CDI, ni un contrat de douze mois ou plus.
     let caisse_conges = nat.ecrit(droit::rubrique!("S21.G00.40.022")) && p.declaree_a_la_caisse_des_conges()?;
     if caisse_conges {
-        f.add("S21.G00.40.022", documents::conges_spectacles::code_dsn(ent)?);
+        f.add(droit::rubrique!("S21.G00.40.022"), documents::conges_spectacles::code_dsn(ent)?);
     }
     // La deduction forfaitaire specifique que la fiche exerce (`calcul::deduction_forfaitaire`) : « Taux de deduction
     // forfaitaire specifique pour frais professionnels - S21.G00.40.023 », « Abattement pour frais professionnels applique
@@ -1861,12 +1861,12 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.023"), Some(fmt_f(d.taux, 2)))?;
     }
     for r in [droit::rubrique!("S21.G00.40.024"), droit::rubrique!("S21.G00.40.026")] {
-        f.add_opt(&r.to_string(), nat.code(r))?;
+        f.add_opt(r, nat.code(r))?;
     }
     // LES EMPLOIS MULTIPLES ne sont plus une constante de la nature : 02 quand le salarie tient plusieurs emplois
     // dans la periode de paie (p. 199, `emplois_multiples`).
-    f.add("S21.G00.40.036", emplois);
-    f.add_opt("S21.G00.40.037", nat.code(droit::rubrique!("S21.G00.40.037")))?;
+    f.add(droit::rubrique!("S21.G00.40.036"), emplois);
+    f.add_opt(droit::rubrique!("S21.G00.40.037"), nat.code(droit::rubrique!("S21.G00.40.037")))?;
     si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.039"), nat.code(droit::rubrique!("S21.G00.40.039")))?;
     if let Some((code, valeur)) = atmp_ecrit {
         si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.040"), Some(code))?;
@@ -1882,7 +1882,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     let objet = p.spectacle.as_ref().and_then(|s| s.numero_objet.dite()).map(|o| o.trim()).filter(|o| !o.is_empty());
     if let Some(objet) = objet.filter(|_| nat.ecrit(droit::rubrique!("S21.G00.40.050"))) {
         if usage_admet(f, droit::rubrique!("S21.G00.40.050"), nature_dsn)? {
-            f.add("S21.G00.40.050", objet);
+            f.add(droit::rubrique!("S21.G00.40.050"), objet);
         }
     }
     si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.051"), nat.code(droit::rubrique!("S21.G00.40.051")))?;
@@ -1901,21 +1901,21 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         crate::fctu::bloc_62_63(f, fin, e)?;
     } else if e.dernier_mois() && fin_de_contrat {
         let fin = e.fin.ok_or_else(|| refus("S21.G00.62.001 : le contrat n'a pas de fin."))?;
-        f.add("S21.G00.62.001", fin.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.62.001"), fin.jjmmaaaa());
         let motif = motif_rupture(p, &nat)?;
         f.ecrire_code(motif)?;
         // Le meme jour que le FCTU du contrat (`fctu::dernier_jour_paye`, cahier technique DSN p. 275 et § 2.5.2 p. 68).
-        f.add("S21.G00.62.006", crate::fctu::dernier_jour_paye(e)?.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.62.006"), crate::fctu::dernier_jour_paye(e)?.jjmmaaaa());
         // 62.017 d'un CDDU suit le motif : 01 (circuit derogatoire) pour le 031, 02 sinon (CCH-12, `Nature::codes_fin`).
         for (rub, val) in nat.codes_fin(Some(motif)) {
-            f.add(&rub.to_string(), val);
+            f.add(rub, val);
         }
     }
     for s in &e.suspensions {
         suspension_sans_maintien(f, p, s)?;
-        f.add("S21.G00.65.001", s.motif.clone());
-        f.add("S21.G00.65.002", s.debut.jjmmaaaa());
-        f.add("S21.G00.65.003", s.fin.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.65.001"), s.motif.clone());
+        f.add(droit::rubrique!("S21.G00.65.002"), s.debut.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.65.003"), s.fin.jjmmaaaa());
     }
     let places = places_par_contrat(bar);
     let refs = affiliations(orgs, &nat, &bar.contributions_du_mois, (e.debut_periode(), e.fin_periode()))?;
@@ -1928,7 +1928,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
             si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.011"), Some(enfants.to_string()))?;
         }
         si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.012"), Some((202 + places * (rang - 1) + a.place as i64).to_string()))?;
-        f.add("S21.G00.70.013", a.reference);
+        f.add(droit::rubrique!("S21.G00.70.013"), a.reference);
         if let Some(d) = a.debut {
             si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.014"), Some(d.jjmmaaaa()))?;
         }
@@ -2017,7 +2017,7 @@ fn proratisation_du_plafond(f: &mut Fichier, p: &Paie, nature_dsn: NatureDeLaDec
         P::NonConcerne => None,
     };
     if let Some(v) = valeur {
-        f.add(&r.to_string(), v);
+        f.add(r, v);
     }
     Ok(())
 }
@@ -2025,10 +2025,10 @@ fn proratisation_du_plafond(f: &mut Fichier, p: &Paie, nature_dsn: NatureDeLaDec
 /// Le bloc S21.G00.86 : l'anciennete dans l'entreprise, en jours.
 pub fn bloc_anciennete(f: &mut Fichier, p: &Paie, jours: i64) -> R<()> {
     let nat = p.engagement.nat()?;
-    f.add_opt("S21.G00.86.001", nat.code(droit::rubrique!("S21.G00.86.001")))?;
-    f.add_opt("S21.G00.86.002", nat.code(droit::rubrique!("S21.G00.86.002")))?;
-    f.add("S21.G00.86.003", jours);
-    f.add_opt("S21.G00.86.005", p.engagement.numero.clone())
+    f.add_opt(droit::rubrique!("S21.G00.86.001"), nat.code(droit::rubrique!("S21.G00.86.001")))?;
+    f.add_opt(droit::rubrique!("S21.G00.86.002"), nat.code(droit::rubrique!("S21.G00.86.002")))?;
+    f.add(droit::rubrique!("S21.G00.86.003"), jours);
+    f.add_opt(droit::rubrique!("S21.G00.86.005"), p.engagement.numero.clone())
 }
 
 /// (taux, type, identifiant, montant soumis) d'UN versement. L'abattement contrats courts n'a pas de rubrique : il se
@@ -2057,11 +2057,11 @@ pub fn remunerations(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe:
             TypeDeRemuneration::SalaireRetabli => p.salaire_retabli,
             TypeDeRemuneration::SalaireDeBase => p.salaire_de_base,
         };
-        f.add("S21.G00.51.001", debut.jjmmaaaa());
-        f.add("S21.G00.51.002", fin.jjmmaaaa());
-        f.add_opt("S21.G00.51.010", e.numero.clone())?;
-        f.add("S21.G00.51.011", t.code());
-        f.add("S21.G00.51.013", ms(montant, signe));
+        f.add(droit::rubrique!("S21.G00.51.001"), debut.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.51.002"), fin.jjmmaaaa());
+        f.add_opt(droit::rubrique!("S21.G00.51.010"), e.numero.clone())?;
+        f.add(droit::rubrique!("S21.G00.51.011"), t.code());
+        f.add(droit::rubrique!("S21.G00.51.013"), ms(montant, signe));
         if t == TypeDeRemuneration::AssietteChomage {
             activites(f, p, signe)?;
         }
@@ -2079,21 +2079,21 @@ pub fn remunerations(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe:
         (p.bases.get(&Assiette::RemunerationPercueHorsEna), p.bases.get(&Assiette::RemunerationHabituelleHorsEna))
     {
         for (code, montant) in [("028", *percue), ("029", *habituelle)] {
-            f.add("S21.G00.51.001", debut.jjmmaaaa());
-            f.add("S21.G00.51.002", fin.jjmmaaaa());
-            f.add_opt("S21.G00.51.010", e.numero.clone())?;
-            f.add("S21.G00.51.011", code);
-            f.add("S21.G00.51.013", ms(montant, signe));
+            f.add(droit::rubrique!("S21.G00.51.001"), debut.jjmmaaaa());
+            f.add(droit::rubrique!("S21.G00.51.002"), fin.jjmmaaaa());
+            f.add_opt(droit::rubrique!("S21.G00.51.010"), e.numero.clone())?;
+            f.add(droit::rubrique!("S21.G00.51.011"), code);
+            f.add(droit::rubrique!("S21.G00.51.013"), ms(montant, signe));
         }
     }
     let lire = |a: Assiette| p.bases.get(&a).copied().filter(|m| !m.is_zero());
     if let (Some(montant), Some(heures)) = (lire(Assiette::HeuresEnPlus), lire(Assiette::HeuresEnPlusHeures)) {
-        f.add("S21.G00.51.001", debut.jjmmaaaa());
-        f.add("S21.G00.51.002", fin.jjmmaaaa());
-        f.add_opt("S21.G00.51.010", e.numero.clone())?;
-        f.add("S21.G00.51.011", "017");
-        f.add("S21.G00.51.012", ms(heures, signe));
-        f.add("S21.G00.51.013", ms(montant, signe));
+        f.add(droit::rubrique!("S21.G00.51.001"), debut.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.51.002"), fin.jjmmaaaa());
+        f.add_opt(droit::rubrique!("S21.G00.51.010"), e.numero.clone())?;
+        f.add(droit::rubrique!("S21.G00.51.011"), "017");
+        f.add(droit::rubrique!("S21.G00.51.012"), ms(heures, signe));
+        f.add(droit::rubrique!("S21.G00.51.013"), ms(montant, signe));
     }
     Ok(())
 }
@@ -2130,9 +2130,9 @@ pub fn mesures_d_activite(p: &Paie) -> R<Vec<(TypeDActivite, Decimal, UniteDeMes
 
 fn activites(f: &mut Fichier, p: &Paie, signe: i64) -> R<()> {
     for (t, valeur, code) in mesures_d_activite(p)? {
-        f.add("S21.G00.53.001", t);
-        f.add("S21.G00.53.002", ms(valeur, signe));
-        f.add("S21.G00.53.003", code);
+        f.add(droit::rubrique!("S21.G00.53.001"), t);
+        f.add(droit::rubrique!("S21.G00.53.002"), ms(valeur, signe));
+        f.add(droit::rubrique!("S21.G00.53.003"), code);
     }
     Ok(())
 }
@@ -2154,11 +2154,11 @@ pub fn primes_et_indemnites(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour,
                 ));
             }
         }
-        f.add("S21.G00.52.001", code);
-        f.add("S21.G00.52.002", ms(l.montant, signe));
-        f.add("S21.G00.52.003", debut.jjmmaaaa());
-        f.add("S21.G00.52.004", fin.jjmmaaaa());
-        f.add_opt("S21.G00.52.006", p.engagement.numero.clone())?;
+        f.add(droit::rubrique!("S21.G00.52.001"), code);
+        f.add(droit::rubrique!("S21.G00.52.002"), ms(l.montant, signe));
+        f.add(droit::rubrique!("S21.G00.52.003"), debut.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.52.004"), fin.jjmmaaaa());
+        f.add_opt(droit::rubrique!("S21.G00.52.006"), p.engagement.numero.clone())?;
     }
     Ok(())
 }
@@ -2172,10 +2172,10 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour,
             continue;
         }
         f.ecrire_code(code)?;
-        f.add("S21.G00.54.002", ms(l.montant, signe));
-        f.add("S21.G00.54.003", debut.jjmmaaaa());
-        f.add("S21.G00.54.004", fin.jjmmaaaa());
-        f.add_opt("S21.G00.54.005", e.numero.clone())?;
+        f.add(droit::rubrique!("S21.G00.54.002"), ms(l.montant, signe));
+        f.add(droit::rubrique!("S21.G00.54.003"), debut.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.54.004"), fin.jjmmaaaa());
+        f.add_opt(droit::rubrique!("S21.G00.54.005"), e.numero.clone())?;
     }
     // « 10 - Deduction forfaitaire specifique » (bloc 54, p. 257, `bloc-S21.G00.54.txt` ligne 56) : le bloc 54 « vehicule
     // [...] frais professionnels (y compris le montant de la Deduction Forfaitaire Specifique si applicable) » (chapitre
@@ -2185,10 +2185,10 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour,
         let deduction = sub(p.brut, brut_du_51(p));
         if !deduction.is_zero() {
             f.ecrire_code(AutreElementDeRevenuBrut::DeductionForfaitaireSpecifique)?;
-            f.add("S21.G00.54.002", ms(deduction, signe));
-            f.add("S21.G00.54.003", debut.jjmmaaaa());
-            f.add("S21.G00.54.004", fin.jjmmaaaa());
-            f.add_opt("S21.G00.54.005", e.numero.clone())?;
+            f.add(droit::rubrique!("S21.G00.54.002"), ms(deduction, signe));
+            f.add(droit::rubrique!("S21.G00.54.003"), debut.jjmmaaaa());
+            f.add(droit::rubrique!("S21.G00.54.004"), fin.jjmmaaaa());
+            f.add_opt(droit::rubrique!("S21.G00.54.005"), e.numero.clone())?;
         }
     }
     let bp = bareme_de(p, bar)?;
@@ -2216,10 +2216,10 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour,
             continue;
         }
         f.ecrire_code(type_54)?;
-        f.add("S21.G00.54.002", ms(montant, signe));
-        f.add("S21.G00.54.003", debut.jjmmaaaa());
-        f.add("S21.G00.54.004", fin.jjmmaaaa());
-        f.add_opt("S21.G00.54.005", e.numero.clone())?;
+        f.add(droit::rubrique!("S21.G00.54.002"), ms(montant, signe));
+        f.add(droit::rubrique!("S21.G00.54.003"), debut.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.54.004"), fin.jjmmaaaa());
+        f.add_opt(droit::rubrique!("S21.G00.54.005"), e.numero.clone())?;
     }
     Ok(())
 }
@@ -2249,8 +2249,8 @@ fn dates_du_58_du_mois(f: &Fichier, debut: &Jour, fin: &Jour) -> R<Option<(Jour,
 
 fn dater_le_58(f: &mut Fichier, dates: Option<(Jour, Jour)>) {
     if let Some((d, fi)) = dates {
-        f.add("S21.G00.58.001", d.jjmmaaaa());
-        f.add("S21.G00.58.002", fi.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.58.001"), d.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.58.002"), fi.jjmmaaaa());
     }
 }
 
@@ -2282,23 +2282,23 @@ pub fn net_social(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe: i6
     // net-entreprises 2066 ; `Assiette::HeuresEnPlusExonere`).
     if let Some(exonere) = p.bases.get(&Assiette::HeuresEnPlusExonere).filter(|m| !m.is_zero()) {
         dater_le_58(f, dates);
-        f.add("S21.G00.58.003", "01");
-        f.add("S21.G00.58.004", ms(*exonere, signe));
+        f.add(droit::rubrique!("S21.G00.58.003"), "01");
+        f.add(droit::rubrique!("S21.G00.58.004"), ms(*exonere, signe));
     }
     dater_le_58(f, dates);
-    f.add("S21.G00.58.003", "03");
-    f.add("S21.G00.58.004", ms(p.net_social, signe));
+    f.add(droit::rubrique!("S21.G00.58.003"), "03");
+    f.add(droit::rubrique!("S21.G00.58.004"), ms(p.net_social, signe));
     // Les indemnites journalieres que la compagnie subrogee reverse, comptees dans le montant net social : « 10 - IJSS
     // subrogees prises en compte dans le calcul du MNS » (S21.G00.58.003, `norme-dsn/texte/bloc-S21.G00.60.txt`, p. 265).
     if let Some(ij) = p.bases.get(&Assiette::IjSubrogeesNettes).filter(|m| !m.is_zero()) {
         dater_le_58(f, dates);
-        f.add("S21.G00.58.003", "10");
-        f.add("S21.G00.58.004", ms(*ij, signe));
+        f.add(droit::rubrique!("S21.G00.58.003"), "10");
+        f.add(droit::rubrique!("S21.G00.58.004"), ms(*ij, signe));
     }
     if let Some(part) = part_exoneree_des_indemnites_de_rupture(f, p)? {
         dater_le_58(f, dates);
-        f.add("S21.G00.58.003", "13");
-        f.add("S21.G00.58.004", ms(part, signe));
+        f.add(droit::rubrique!("S21.G00.58.003"), "13");
+        f.add(droit::rubrique!("S21.G00.58.004"), ms(part, signe));
     }
     Ok(())
 }
@@ -2324,9 +2324,9 @@ pub fn bases_et_cotisations(
         if courant.as_ref() != Some(&cle) {
             courant = Some(cle);
             f.ecrire_code(c.bloc78)?;
-            f.add("S21.G00.78.002", debut.jjmmaaaa());
-            f.add("S21.G00.78.003", fin.jjmmaaaa());
-            f.add("S21.G00.78.004", ms(c.base78, signe));
+            f.add(droit::rubrique!("S21.G00.78.002"), debut.jjmmaaaa());
+            f.add(droit::rubrique!("S21.G00.78.003"), fin.jjmmaaaa());
+            f.add(droit::rubrique!("S21.G00.78.004"), ms(c.base78, signe));
             if let Some(a) = c.affectation.as_deref().filter(|a| !a.is_empty()) {
                 si_admise(f, nature_dsn, droit::rubrique!("S21.G00.78.005"), Some(a.to_string()))?;
             }
@@ -2335,13 +2335,13 @@ pub fn bases_et_cotisations(
             }
             if !composants {
             } else if c.bloc78 == BaseAssujettie::BruteDeplafonnee {
-                f.add("S21.G00.79.001", "01");
+                f.add(droit::rubrique!("S21.G00.79.001"), "01");
                 // Le SMIC de reference de la reduction generale, sinon le plafond de la periode.
                 let v = match p.reduction_generale.as_ref() {
                     Some(rg) => rg.smic_reference,
                     None => p.plafond,
                 };
-                f.add("S21.G00.79.004", ms(v, signe));
+                f.add(droit::rubrique!("S21.G00.79.004"), ms(v, signe));
             } else if c.bloc78 == BaseAssujettie::PrevoyanceSanteRetraite {
                 // Le composant que la source du taux donne (`composant79` : la sante des permanents 3090, base forfaitaire
                 // 18 sur le plafond du mois, fiche Audiens 139), sinon la tranche A sur le brut.
@@ -2349,8 +2349,8 @@ pub fn bases_et_cotisations(
                     Some(composant) => composant,
                     None => (TRANCHE_A, p.brut),
                 };
-                f.add("S21.G00.79.001", type_79);
-                f.add("S21.G00.79.004", ms(montant, signe));
+                f.add(droit::rubrique!("S21.G00.79.001"), type_79);
+                f.add(droit::rubrique!("S21.G00.79.004"), ms(montant, signe));
             }
         }
         let montant = match c.montant {
@@ -2363,17 +2363,17 @@ pub fn bases_et_cotisations(
         let code81 = if c.cet { f.norme()?.cotisation_cet_patronale()? } else { code_declare(&c)? };
         f.ecrire_code(code81)?;
         if let Some(o) = &org {
-            f.add("S21.G00.81.002", o);
+            f.add(droit::rubrique!("S21.G00.81.002"), o);
         }
         if org.is_some() || c.cle_total.is_some() {
-            f.add("S21.G00.81.003", ms(c.base81.ok_or_else(|| socle::fichiers::absent("base81"))?, signe));
+            f.add(droit::rubrique!("S21.G00.81.003"), ms(c.base81.ok_or_else(|| socle::fichiers::absent("base81"))?, signe));
         }
-        f.add("S21.G00.81.004", ms(montant, signe));
+        f.add(droit::rubrique!("S21.G00.81.004"), ms(montant, signe));
         if let Some(insee) = c.code_insee.as_deref() {
-            f.add("S21.G00.81.005", insee);
+            f.add(droit::rubrique!("S21.G00.81.005"), insee);
         }
         if let (Some(_), Some(t)) = (&org, c.taux) {
-            f.add("S21.G00.81.007", fmt_f(t, 3));
+            f.add(droit::rubrique!("S21.G00.81.007"), fmt_f(t, 3));
         }
     }
     Ok(())
@@ -2404,11 +2404,11 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
     let fin = e.fin_periode();
     // « Date à laquelle le débiteur effectue le versement » (`bloc-S21.G00.50.txt`, l. 50-55 ; CCH-13, l. 61-62 : au plus
     // tard le dernier jour du mois suivant) : le jour ou se fait la retenue, celui du taux de PAS de la paie.
-    f.add("S21.G00.50.001", e.date_du_versement()?.jjmmaaaa());
-    f.add("S21.G00.50.002", mt(p.net_imposable));
+    f.add(droit::rubrique!("S21.G00.50.001"), e.date_du_versement()?.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.50.002"), mt(p.net_imposable));
     // Le versement du mois a le rang de son contrat : un contrat paye ce mois, un versement (`generer`).
-    f.add("S21.G00.50.003", numero_de_versement(rang)?);
-    f.add("S21.G00.50.004", mt(p.net_verse()));
+    f.add(droit::rubrique!("S21.G00.50.003"), numero_de_versement(rang)?);
+    f.add(droit::rubrique!("S21.G00.50.004"), mt(p.net_verse()));
     // Le prelevement d'une paie validee est celui qu'elle a ecrit (`Paie::pas`) : la DSN ne le recalcule pas. Un mois
     // sans paie n'en a pas : son versement nul porte le taux qui vaut pour le salarie.
     let (taux, type_taux, identifiant, soumis) = match &p.pas {
@@ -2422,14 +2422,14 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
             ), "pas"))
         }
     };
-    f.add("S21.G00.50.006", taux.ecrit());
-    let type_taux = type_taux.ok_or_else(|| absente("S21.G00.50.007"))?;
+    f.add(droit::rubrique!("S21.G00.50.006"), taux.ecrit());
+    let type_taux = type_taux.ok_or_else(|| absente(droit::rubrique!("S21.G00.50.007")))?;
     f.ecrire_code(type_taux)?;
     if type_taux.transmis() {
-        f.add_ecrit("S21.G00.50.008", identifiant.clone())?;
+        f.add_ecrit(droit::rubrique!("S21.G00.50.008"), identifiant.clone())?;
     }
-    f.add("S21.G00.50.009", mt(pct(soumis, taux.dec()?)));
-    f.add("S21.G00.50.013", mt(soumis));
+    f.add(droit::rubrique!("S21.G00.50.009"), mt(pct(soumis, taux.dec()?)));
+    f.add(droit::rubrique!("S21.G00.50.013"), mt(soumis));
 
     // Un mois decoupe : les remunerations de chaque periode elementaire, datees de ses bornes (« La periode a
     // declarer dans le bloc Remuneration est cette periode elementaire de paie, lorsque le logiciel de paie produit
@@ -2441,8 +2441,8 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
     if e.sans_paie() {
         let dates = dates_du_58_du_mois(f, &debut, &fin)?;
         dater_le_58(f, dates);
-        f.add("S21.G00.58.003", "03");
-        f.add("S21.G00.58.004", "0.00");
+        f.add(droit::rubrique!("S21.G00.58.003"), "03");
+        f.add(droit::rubrique!("S21.G00.58.004"), "0.00");
         let mut vues: Vec<Option<String>> = Vec::new();
         let places = places_par_contrat(bar);
         for c in cotisations(p, bar)? {
@@ -2451,23 +2451,23 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
             }
             vues.push(c.affectation.clone());
             f.ecrire_code(c.bloc78)?;
-            f.add("S21.G00.78.002", debut.jjmmaaaa());
-            f.add("S21.G00.78.003", fin.jjmmaaaa());
-            f.add("S21.G00.78.004", "0.00");
+            f.add(droit::rubrique!("S21.G00.78.002"), debut.jjmmaaaa());
+            f.add(droit::rubrique!("S21.G00.78.003"), fin.jjmmaaaa());
+            f.add(droit::rubrique!("S21.G00.78.004"), "0.00");
             if let Some(a) = c.affectation.as_deref().filter(|a| !a.is_empty()) {
                 let n: i64 = a.trim().parse().map_err(|_| refus!("affectation illisible : {}", a))?;
-                f.add("S21.G00.78.005", n + places * (rang - 1));
+                f.add(droit::rubrique!("S21.G00.78.005"), n + places * (rang - 1));
             }
             if !f.contrat_unique {
-                f.add_opt("S21.G00.78.006", e.numero.clone())?;
+                f.add_opt(droit::rubrique!("S21.G00.78.006"), e.numero.clone())?;
             }
-            f.add("S21.G00.79.001", match c.composant79 {
+            f.add(droit::rubrique!("S21.G00.79.001"), match c.composant79 {
                 Some((t, _)) => t,
                 None => TRANCHE_A,
             });
-            f.add("S21.G00.79.004", "0.00");
+            f.add(droit::rubrique!("S21.G00.79.004"), "0.00");
             f.ecrire_code(code_declare(&c)?)?;
-            f.add("S21.G00.81.004", "0.00");
+            f.add(droit::rubrique!("S21.G00.81.004"), "0.00");
         }
         return Ok(());
     }
@@ -2543,7 +2543,7 @@ fn affiliations_ecrites(f: &Fichier, numero: &str) -> Vec<(String, String)> {
 /// ce fichier par sa reference (70.013), son numero n'y est pas forcement le meme (le rang du contrat change).
 fn annuler_le_declare(f: &mut Fichier, r: &Regularisation, blocs: &[&str]) -> R<()> {
     let d = &r.declare;
-    let numero = r.apres.engagement.numero.clone().ok_or_else(|| absente("S21.G00.40.009"))?;
+    let numero = r.apres.engagement.numero.clone().ok_or_else(|| absente(droit::rubrique!("S21.G00.40.009")))?;
     let ecrites = affiliations_ecrites(f, &numero);
     let lignes: Vec<(String, String)> = d.blocs(blocs).cloned().collect();
     for (k, v) in lignes {
@@ -2563,12 +2563,12 @@ rattacher. Rien n'est ecrit.",
                     r.mois, numero, d.fichier, reference
                 )
             })?;
-            f.add(&k, id);
+            f.add(RubriqueDeLaNorme::lire(&k)?, id);
         } else if RubriqueDeLaNorme::lue(&k).and_then(crate::versement_declare::est_un_montant) == Some(true) {
             let m: Decimal = v.parse().map_err(|_| crate::versement_declare::illisible(&k, &v, &d.fichier))?;
-            f.add(&k, ms(m, -1));
+            f.add(RubriqueDeLaNorme::lire(&k)?, ms(m, -1));
         } else {
-            f.add(&k, v);
+            f.add(RubriqueDeLaNorme::lire(&k)?, v);
         }
     }
     Ok(())
@@ -2629,10 +2629,10 @@ dans une correction. Rien n'est écrit.",
     let (d_o, f_o) = dates_du_58(f, debut, fin, fin)?;
     let origine = |f: &mut Fichier, montant: Decimal| -> R<()> {
         annuler_les_58(f, r, (d_o, f_o))?;
-        f.add("S21.G00.58.001", d_o.jjmmaaaa());
-        f.add("S21.G00.58.002", f_o.jjmmaaaa());
-        f.add("S21.G00.58.003", "03");
-        f.add("S21.G00.58.004", ms(montant, 1));
+        f.add(droit::rubrique!("S21.G00.58.001"), d_o.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.58.002"), f_o.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.58.003"), "03");
+        f.add(droit::rubrique!("S21.G00.58.004"), ms(montant, 1));
         Ok(())
     };
     // UN CONTRAT AJOUTE (rien de declare, rien de verse : `produire_regularisations::ajout`) : pas de 58 d'origine a
@@ -2648,10 +2648,10 @@ dans une correction. Rien n'est écrit.",
     }
     let debut_mois = Jour::nouveau(fin_mois.an, fin_mois.mois, 1).ok_or_else(|| refus("mois de versement illisible"))?;
     let (d_v, f_v) = dates_du_58(f, &debut_mois, &fin_mois, &fin_mois)?;
-    f.add("S21.G00.58.001", d_v.jjmmaaaa());
-    f.add("S21.G00.58.002", f_v.jjmmaaaa());
-    f.add("S21.G00.58.003", "03");
-    f.add("S21.G00.58.004", ms(sub(apres.net_social, paye), 1));
+    f.add(droit::rubrique!("S21.G00.58.001"), d_v.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.58.002"), f_v.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.58.003"), "03");
+    f.add(droit::rubrique!("S21.G00.58.004"), ms(sub(apres.net_social, paye), 1));
     Ok(())
 }
 
@@ -2667,20 +2667,20 @@ fn annuler_les_58(f: &mut Fichier, r: &Regularisation, origine: (Jour, Jour)) ->
         match k.as_str() {
             "S21.G00.58.001" => {
                 date = true;
-                f.add(&k, v);
+                f.add(RubriqueDeLaNorme::lire(&k)?, v);
             }
             "S21.G00.58.003" => {
                 if !date {
                     dater_le_58(f, Some(origine));
                 }
                 date = false;
-                f.add(&k, v);
+                f.add(RubriqueDeLaNorme::lire(&k)?, v);
             }
             _ if RubriqueDeLaNorme::lue(&k).and_then(crate::versement_declare::est_un_montant) == Some(true) => {
                 let m: Decimal = v.parse().map_err(|_| crate::versement_declare::illisible(&k, &v, &r.declare.fichier))?;
-                f.add(&k, ms(m, -1));
+                f.add(RubriqueDeLaNorme::lire(&k)?, ms(m, -1));
             }
-            _ => f.add(&k, v),
+            _ => f.add(RubriqueDeLaNorme::lire(&k)?, v),
         }
     }
     Ok(())
@@ -2704,21 +2704,21 @@ fn bloc_regularisation(
     // la DSN ne le calcule pas.
     let d_ni = pas_c.difference;
     let d_net = sub(apres.net_verse(), r.declare.net_verse);
-    f.add("S21.G00.50.001", fin_mois.jjmmaaaa());
-    f.add("S21.G00.50.002", mt(d_ni));
-    f.add("S21.G00.50.003", numero_de_versement(numero)?);
-    f.add("S21.G00.50.004", mt(d_net));
+    f.add(droit::rubrique!("S21.G00.50.001"), fin_mois.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.50.002"), mt(d_ni));
+    f.add(droit::rubrique!("S21.G00.50.003"), numero_de_versement(numero)?);
+    f.add(droit::rubrique!("S21.G00.50.004"), mt(d_net));
     let v = &pas_c.versement;
     let (taux, type_taux, identifiant, soumis) = (&v.taux, &v.type_taux, &v.identifiant, v.montant_soumis);
-    f.add("S21.G00.50.006", taux.ecrit());
-    let type_taux = type_taux.ok_or_else(|| absente("S21.G00.50.007"))?;
+    f.add(droit::rubrique!("S21.G00.50.006"), taux.ecrit());
+    let type_taux = type_taux.ok_or_else(|| absente(droit::rubrique!("S21.G00.50.007")))?;
     f.ecrire_code(type_taux)?;
     if type_taux.transmis() {
-        f.add_ecrit("S21.G00.50.008", identifiant.clone())?;
+        f.add_ecrit(droit::rubrique!("S21.G00.50.008"), identifiant.clone())?;
     }
     let indu = d_ni < Decimal::ZERO;
-    f.add("S21.G00.50.009", if indu { "0.00".into() } else { mt(pct(soumis, taux.dec()?)) });
-    f.add("S21.G00.50.013", if indu { "0.00".into() } else { mt(soumis) });
+    f.add(droit::rubrique!("S21.G00.50.009"), if indu { "0.00".into() } else { mt(pct(soumis, taux.dec()?)) });
+    f.add(droit::rubrique!("S21.G00.50.013"), if indu { "0.00".into() } else { mt(soumis) });
 
     annuler_le_declare(f, r, &["51", "53"])?;
     // Une paie d'apres `sans_paie` ecrit ses blocs 51 et 53 a 0.00 : la norme prevoit un montant 51.013 egal a « 0.00 »
@@ -2748,12 +2748,12 @@ doit le citer, et on ne le devine pas. Rien n'est ecrit.",
                 ))
             }
         };
-        f.add("S21.G00.56.001", format!("{:02}{:04}", r.mois.numero(), r.mois.annee()));
-        f.add("S21.G00.56.002", "03");
-        f.add("S21.G00.56.003", mt(d_ni));
-        f.add("S21.G00.56.006", taux_o);
-        f.add("S21.G00.56.007", mt(pct(d_ni, socle::num::dec_texte(taux_o)?)));
-        f.add("S21.G00.56.010", mt(d_ni));
+        f.add(droit::rubrique!("S21.G00.56.001"), format!("{:02}{:04}", r.mois.numero(), r.mois.annee()));
+        f.add(droit::rubrique!("S21.G00.56.002"), "03");
+        f.add(droit::rubrique!("S21.G00.56.003"), mt(d_ni));
+        f.add(droit::rubrique!("S21.G00.56.006"), taux_o);
+        f.add(droit::rubrique!("S21.G00.56.007"), mt(pct(d_ni, socle::num::dec_texte(taux_o)?)));
+        f.add(droit::rubrique!("S21.G00.56.010"), mt(d_ni));
     }
     blocs_58_de_la_correction(f, r, &debut, &fin, fin_mois)?;
     if !avant.engagement.sans_paie() {
@@ -3196,18 +3196,18 @@ fn ligne(code: CodeCtp, qualifiant: QualifiantDAssiette, taux_at: Option<TauxDeL
 
 fn ecrire_lignes_23(f: &mut Fichier, lignes: &[LigneBordereau]) -> R<()> {
     for l in lignes {
-        f.add("S21.G00.23.001", &l.code);
-        f.add("S21.G00.23.002", &l.qualifiant);
+        f.add(droit::rubrique!("S21.G00.23.001"), &l.code);
+        f.add(droit::rubrique!("S21.G00.23.002"), &l.qualifiant);
         if let Some(t) = l.taux_at {
-            f.add("S21.G00.23.003", taux_23(t));
+            f.add(droit::rubrique!("S21.G00.23.003"), taux_23(t));
         }
         // Un montant (23.005), ou une assiette (23.004) : une ligne qui n'a ni l'un ni l'autre ne s'ecrit pas a zero.
         match l.montant {
-            Some(m) => f.add("S21.G00.23.005", mt(m)),
-            None => f.add_opt("S21.G00.23.004", l.assiette.map(mt))?,
+            Some(m) => f.add(droit::rubrique!("S21.G00.23.005"), mt(m)),
+            None => f.add_opt(droit::rubrique!("S21.G00.23.004"), l.assiette.map(mt))?,
         }
         if let Some(c) = l.commune.as_deref().filter(|c| !c.is_empty()) {
-            f.add("S21.G00.23.006", c);
+            f.add(droit::rubrique!("S21.G00.23.006"), c);
         }
     }
     Ok(())
@@ -3857,23 +3857,23 @@ fn versement_complementaire(
     // « sauf si cette somme fait ressortir un montant negatif. Auquel cas un montant nul doit etre renseigne » (p. 157).
     let montant = bordereau::a_verser(somme).montant;
     let mut f = Fichier::nouveau();
-    f.add("S21.G00.20.001", v.siret.clone());
+    f.add(droit::rubrique!("S21.G00.20.001"), v.siret.clone());
     if let Some(r) = reference_versement(v, ent) {
-        f.add("S21.G00.20.002", r);
+        f.add(droit::rubrique!("S21.G00.20.002"), r);
     }
-    f.add_case("S21.G00.20.003", &banque.bic, "bic")?;
-    f.add_case("S21.G00.20.004", &banque.iban, "iban")?;
-    f.add("S21.G00.20.005", mt(montant));
-    f.add("S21.G00.20.006", debut.jjmmaaaa());
-    f.add("S21.G00.20.007", fin.jjmmaaaa());
-    f.add("S21.G00.20.010", "05");
+    f.add_case(droit::rubrique!("S21.G00.20.003"), &banque.bic, "bic")?;
+    f.add_case(droit::rubrique!("S21.G00.20.004"), &banque.iban, "iban")?;
+    f.add(droit::rubrique!("S21.G00.20.005"), mt(montant));
+    f.add(droit::rubrique!("S21.G00.20.006"), debut.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.20.007"), fin.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.20.010"), "05");
     if let Some(j) = echeance {
-        f.add("S21.G00.20.011", j.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.20.011"), j.jjmmaaaa());
     }
     for c in composants {
-        f.add("S21.G00.55.001", mt(c.montant));
-        f.add("S21.G00.55.003", &c.code);
-        f.add("S21.G00.55.004", &c.periode);
+        f.add(droit::rubrique!("S21.G00.55.001"), mt(c.montant));
+        f.add(droit::rubrique!("S21.G00.55.003"), &c.code);
+        f.add(droit::rubrique!("S21.G00.55.004"), &c.periode);
     }
     Ok(f.lignes)
 }
@@ -3973,14 +3973,14 @@ pas pu etre relue (le fichier du dernier depot accepte) : on ne devine pas. Rien
         return Ok(Vec::new());
     }
     let mut f = Fichier::nouveau();
-    f.add("S21.G00.20.001", DGFIP);
-    f.add("S21.G00.20.002", DGFIP_PAS);
-    f.add_case("S21.G00.20.003", &banque.bic, "bic")?;
-    f.add_case("S21.G00.20.004", &banque.iban, "iban")?;
-    f.add("S21.G00.20.005", mt(montant));
-    f.add("S21.G00.20.006", debut.jjmmaaaa());
-    f.add("S21.G00.20.007", fin.jjmmaaaa());
-    f.add("S21.G00.20.010", "05");
+    f.add(droit::rubrique!("S21.G00.20.001"), DGFIP);
+    f.add(droit::rubrique!("S21.G00.20.002"), DGFIP_PAS);
+    f.add_case(droit::rubrique!("S21.G00.20.003"), &banque.bic, "bic")?;
+    f.add_case(droit::rubrique!("S21.G00.20.004"), &banque.iban, "iban")?;
+    f.add(droit::rubrique!("S21.G00.20.005"), mt(montant));
+    f.add(droit::rubrique!("S21.G00.20.006"), debut.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.20.007"), fin.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.20.010"), "05");
     Ok(f.lignes)
 }
 
@@ -4646,82 +4646,82 @@ certificat de conformite du depot precedent.",
     }
     let mut f = Fichier::en_norme(norme);
 
-    f.add("S10.G00.00.001", LOGICIEL);
-    f.add("S10.G00.00.002", LOGICIEL);
-    f.add("S10.G00.00.003", VERSION);
-    f.add("S10.G00.00.005", if o.envoi_test { "01" } else { "02" });
+    f.add(droit::rubrique!("S10.G00.00.001"), LOGICIEL);
+    f.add(droit::rubrique!("S10.G00.00.002"), LOGICIEL);
+    f.add(droit::rubrique!("S10.G00.00.003"), VERSION);
+    f.add(droit::rubrique!("S10.G00.00.005"), if o.envoi_test { "01" } else { "02" });
     f.ecrire_la_version()?;
-    f.add("S10.G00.00.007", "01");
-    f.add("S10.G00.00.008", if sans_individu { "02" } else { "01" });
-    f.add_case("S10.G00.01.001", &ent.siren, "siren")?;
-    f.add_case("S10.G00.01.002", &ent.nic, "nic")?;
-    f.add_case("S10.G00.01.003", &ent.raison_sociale, "raison_sociale")?;
-    f.add_case("S10.G00.01.004", &ent.adresse, "adresse")?;
-    f.add_case("S10.G00.01.005", &ent.code_postal, "code_postal")?;
-    f.add_case("S10.G00.01.006", &ent.commune, "commune")?;
-    f.add_complement("S10.G00.01.009", &ent.complement_adresse);
+    f.add(droit::rubrique!("S10.G00.00.007"), "01");
+    f.add(droit::rubrique!("S10.G00.00.008"), if sans_individu { "02" } else { "01" });
+    f.add_case(droit::rubrique!("S10.G00.01.001"), &ent.siren, "siren")?;
+    f.add_case(droit::rubrique!("S10.G00.01.002"), &ent.nic, "nic")?;
+    f.add_case(droit::rubrique!("S10.G00.01.003"), &ent.raison_sociale, "raison_sociale")?;
+    f.add_case(droit::rubrique!("S10.G00.01.004"), &ent.adresse, "adresse")?;
+    f.add_case(droit::rubrique!("S10.G00.01.005"), &ent.code_postal, "code_postal")?;
+    f.add_case(droit::rubrique!("S10.G00.01.006"), &ent.commune, "commune")?;
+    f.add_complement(droit::rubrique!("S10.G00.01.009"), &ent.complement_adresse);
     contact_emetteur(&mut f, &ent)?;
 
     f.ecrire_code(NatureDeLaDeclaration::Mensuelle)?;
     f.ecrire_code(type_declaration)?;
-    f.add("S20.G00.05.003", &o.fraction);
-    f.add("S20.G00.05.004", o.ordre);
-    f.add("S20.G00.05.005", debut_mois.jjmmaaaa());
-    f.add("S20.G00.05.007", constitution.jjmmaaaa());
-    f.add("S20.G00.05.008", "01");
-    f.add("S20.G00.05.010", "01");
+    f.add(droit::rubrique!("S20.G00.05.003"), &o.fraction);
+    f.add(droit::rubrique!("S20.G00.05.004"), o.ordre);
+    f.add(droit::rubrique!("S20.G00.05.005"), debut_mois.jjmmaaaa());
+    f.add(droit::rubrique!("S20.G00.05.007"), constitution.jjmmaaaa());
+    f.add(droit::rubrique!("S20.G00.05.008"), "01");
+    f.add(droit::rubrique!("S20.G00.05.010"), "01");
     crate::dsn::contact_chez_le_declare(&mut f, &ent)?;
     contact_sante_travail(&mut f, &ent_e)?;
     if sans_individu {
         for code in orgs.absence_de_rattachement() {
-            f.add("S20.G00.08.001", code.as_str());
+            f.add(droit::rubrique!("S20.G00.08.001"), code.as_str());
         }
     }
 
-    f.add_case("S21.G00.06.001", &ent.siren, "siren")?;
-    f.add_case("S21.G00.06.002", &ent.nic, "nic")?;
+    f.add_case(droit::rubrique!("S21.G00.06.001"), &ent.siren, "siren")?;
+    f.add_case(droit::rubrique!("S21.G00.06.002"), &ent.nic, "nic")?;
     // Le code APEN (06.003) et le code APET (11.002) : obligatoires en P26V01, retires de la norme P27V01 (cahier
     // 2027.1.1, p. 142 et 145 ; usages p. 371 ). Le tableau des usages de la version du fichier en decide.
     if usage_admet(&f, droit::rubrique!("S21.G00.06.003"), NatureDeLaDeclaration::Mensuelle)? {
-        f.add_case("S21.G00.06.003", &ent.naf, "naf")?;
+        f.add_case(droit::rubrique!("S21.G00.06.003"), &ent.naf, "naf")?;
     }
-    f.add_case("S21.G00.06.004", &ent.adresse, "adresse")?;
-    f.add_case("S21.G00.06.005", &ent.code_postal, "code_postal")?;
-    f.add_case("S21.G00.06.006", &ent.commune, "commune")?;
-    f.add_complement("S21.G00.06.007", &ent.complement_adresse);
+    f.add_case(droit::rubrique!("S21.G00.06.004"), &ent.adresse, "adresse")?;
+    f.add_case(droit::rubrique!("S21.G00.06.005"), &ent.code_postal, "code_postal")?;
+    f.add_case(droit::rubrique!("S21.G00.06.006"), &ent.commune, "commune")?;
+    f.add_complement(droit::rubrique!("S21.G00.06.007"), &ent.complement_adresse);
     let doeth = if principal { crate::oeth::declaration(ctx, mois)? } else { None };
     // La contribution supplementaire a l'apprentissage, sur l'etablissement principal seul (fiches 2588 et 2963 :
     // « sur un seul établissement »).
     let csa = if principal { crate::csa::declaration(ctx, mois, departs)? } else { None };
     if let Some(d) = &doeth {
         if let Some(a) = d.accord.as_deref().filter(|a| !a.is_empty()) {
-            f.add("S21.G00.13.001", a);
-            f.add("S21.G00.13.004", d.millesime);
+            f.add(droit::rubrique!("S21.G00.13.001"), a);
+            f.add(droit::rubrique!("S21.G00.13.004"), d.millesime);
         }
         for (type_boeth, nombre) in &d.externes {
-            f.add("S21.G00.13.002", type_boeth);
-            f.add("S21.G00.13.003", mt(*nombre));
-            f.add("S21.G00.13.004", d.millesime);
+            f.add(droit::rubrique!("S21.G00.13.002"), type_boeth);
+            f.add(droit::rubrique!("S21.G00.13.003"), mt(*nombre));
+            f.add(droit::rubrique!("S21.G00.13.004"), d.millesime);
         }
     }
     for (rubrique, case, cle) in [
-        ("S21.G00.11.001", &ent_e.nic.en_texte(), "nic"),
-        ("S21.G00.11.002", &ent_e.naf.en_texte(), "naf"),
-        ("S21.G00.11.003", &ent_e.adresse.en_texte(), "adresse"),
-        ("S21.G00.11.004", &ent_e.code_postal.en_texte(), "code_postal"),
-        ("S21.G00.11.005", &ent_e.commune.en_texte(), "commune"),
-        ("S21.G00.11.022", &ent_e.idcc.en_texte(), "idcc"),
+        (droit::rubrique!("S21.G00.11.001"), &ent_e.nic.en_texte(), "nic"),
+        (droit::rubrique!("S21.G00.11.002"), &ent_e.naf.en_texte(), "naf"),
+        (droit::rubrique!("S21.G00.11.003"), &ent_e.adresse.en_texte(), "adresse"),
+        (droit::rubrique!("S21.G00.11.004"), &ent_e.code_postal.en_texte(), "code_postal"),
+        (droit::rubrique!("S21.G00.11.005"), &ent_e.commune.en_texte(), "commune"),
+        (droit::rubrique!("S21.G00.11.022"), &ent_e.idcc.en_texte(), "idcc"),
     ] {
-        if rubrique == "S21.G00.11.002" && !usage_admet(&f, droit::rubrique!("S21.G00.11.002"), NatureDeLaDeclaration::Mensuelle)? {
+        if rubrique == droit::rubrique!("S21.G00.11.002") && !usage_admet(&f, droit::rubrique!("S21.G00.11.002"), NatureDeLaDeclaration::Mensuelle)? {
             continue;
         }
         f.add_case(rubrique, case, cle)?;
-        if rubrique == "S21.G00.11.005" {
-            f.add_complement("S21.G00.11.006", &ent_e.complement_adresse);
+        if rubrique == droit::rubrique!("S21.G00.11.005") {
+            f.add_complement(droit::rubrique!("S21.G00.11.006"), &ent_e.complement_adresse);
         }
     }
     if let Some(spst) = spst_ecrit(&f, &ent_e)? {
-        f.add("S21.G00.11.025", spst);
+        f.add(droit::rubrique!("S21.G00.11.025"), spst);
     }
     let (premier_du_mois, dernier_du_mois) = bornes_du_mois(mois);
     let mut couvertes: HashSet<String> = HashSet::new();
@@ -4741,39 +4741,39 @@ certificat de conformite du depot precedent.",
         if !couvertes.contains(&reference) && !orgs.adhesion_en_vigueur(&reference, &premier_du_mois, &dernier_du_mois) {
             continue;
         }
-        f.add("S21.G00.15.001", &a.libelle);
-        f.add("S21.G00.15.002", &a.delegataire);
-        f.add("S21.G00.15.004", if sans_individu || !couvertes.contains(&reference) { "02" } else { "01" });
-        f.add("S21.G00.15.005", &a.reference);
+        f.add(droit::rubrique!("S21.G00.15.001"), &a.libelle);
+        f.add(droit::rubrique!("S21.G00.15.002"), &a.delegataire);
+        f.add(droit::rubrique!("S21.G00.15.004"), if sans_individu || !couvertes.contains(&reference) { "02" } else { "01" });
+        f.add(droit::rubrique!("S21.G00.15.005"), &a.reference);
     }
 
     let solde_ta = solde_taxe_apprentissage(ctx, mois, &orgs, &bar, &nic, departs)?;
     if let Some(s) = &solde_ta {
-        f.add("S21.G00.82.001", mt(s.montant));
+        f.add(droit::rubrique!("S21.G00.82.001"), mt(s.montant));
         f.ecrire_code(droit::cotisation_etablissement::CotisationDEtablissement::SoldeTaxeDApprentissage)?;
-        f.add("S21.G00.82.003", format!("0101{}", s.annee));
-        f.add("S21.G00.82.004", format!("3112{}", s.annee));
-        f.add("S21.G00.82.005", &s.org);
+        f.add(droit::rubrique!("S21.G00.82.003"), format!("0101{}", s.annee));
+        f.add(droit::rubrique!("S21.G00.82.004"), format!("3112{}", s.annee));
+        f.add(droit::rubrique!("S21.G00.82.005"), &s.org);
     }
     let versements = orgs.versements();
     if let Some(d) = &doeth {
         let org_urssaf = orgs.urssaf()?.siret.clone();
         for (code, montant) in d.blocs_82() {
-            f.add("S21.G00.82.001", mt(montant));
+            f.add(droit::rubrique!("S21.G00.82.001"), mt(montant));
             f.ecrire_code(code)?;
-            f.add("S21.G00.82.003", format!("0101{}", d.millesime));
-            f.add("S21.G00.82.004", format!("3112{}", d.millesime));
-            f.add("S21.G00.82.005", &org_urssaf);
+            f.add(droit::rubrique!("S21.G00.82.003"), format!("0101{}", d.millesime));
+            f.add(droit::rubrique!("S21.G00.82.004"), format!("3112{}", d.millesime));
+            f.add(droit::rubrique!("S21.G00.82.005"), &org_urssaf);
         }
     }
     if let Some(c) = &csa {
         let org_urssaf = orgs.urssaf()?.siret.clone();
         let (code, montant) = c.bloc_82();
-        f.add("S21.G00.82.001", mt(montant));
+        f.add(droit::rubrique!("S21.G00.82.001"), mt(montant));
         f.ecrire_code(code)?;
-        f.add("S21.G00.82.003", format!("0101{}", c.millesime));
-        f.add("S21.G00.82.004", format!("3112{}", c.millesime));
-        f.add("S21.G00.82.005", &org_urssaf);
+        f.add(droit::rubrique!("S21.G00.82.003"), format!("0101{}", c.millesime));
+        f.add(droit::rubrique!("S21.G00.82.004"), format!("3112{}", c.millesime));
+        f.add(droit::rubrique!("S21.G00.82.005"), &org_urssaf);
     }
 
     let mut totaux = Vec::new();
@@ -4877,18 +4877,18 @@ certificat de conformite du depot precedent.",
             reste,
             deduit,
         }));
-        f.add("S21.G00.20.001", &siret);
+        f.add(droit::rubrique!("S21.G00.20.001"), &siret);
         if let Some(r) = reference_versement(v, &ent) {
-            f.add("S21.G00.20.002", r);
+            f.add(droit::rubrique!("S21.G00.20.002"), r);
         }
-        f.add_case("S21.G00.20.003", &banque.bic, "bic")?;
-        f.add_case("S21.G00.20.004", &banque.iban, "iban")?;
-        f.add("S21.G00.20.005", mt(montant));
-        f.add("S21.G00.20.006", debut_mois.jjmmaaaa());
-        f.add("S21.G00.20.007", fin_m.jjmmaaaa());
-        f.add("S21.G00.20.010", "05");
+        f.add_case(droit::rubrique!("S21.G00.20.003"), &banque.bic, "bic")?;
+        f.add_case(droit::rubrique!("S21.G00.20.004"), &banque.iban, "iban")?;
+        f.add(droit::rubrique!("S21.G00.20.005"), mt(montant));
+        f.add(droit::rubrique!("S21.G00.20.006"), debut_mois.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.20.007"), fin_m.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.20.010"), "05");
         if let Some(j) = echeances.get(&siret) {
-            f.add("S21.G00.20.011", j.jjmmaaaa());
+            f.add(droit::rubrique!("S21.G00.20.011"), j.jjmmaaaa());
         }
     }
     let siret_urssaf = urssaf.siret.clone();
@@ -4908,30 +4908,30 @@ certificat de conformite du depot precedent.",
             reste: zero2(),
             deduit: zero2(),
         }));
-        f.add("S21.G00.20.001", &siret_urssaf);
-        f.add_case("S21.G00.20.003", &banque.bic, "bic")?;
-        f.add_case("S21.G00.20.004", &banque.iban, "iban")?;
-        f.add("S21.G00.20.005", mt(*mt_o));
-        f.add("S21.G00.20.006", d_o.jjmmaaaa());
-        f.add("S21.G00.20.007", d_o.mois_civil().dernier_jour().jjmmaaaa());
-        f.add("S21.G00.20.010", "05");
+        f.add(droit::rubrique!("S21.G00.20.001"), &siret_urssaf);
+        f.add_case(droit::rubrique!("S21.G00.20.003"), &banque.bic, "bic")?;
+        f.add_case(droit::rubrique!("S21.G00.20.004"), &banque.iban, "iban")?;
+        f.add(droit::rubrique!("S21.G00.20.005"), mt(*mt_o));
+        f.add(droit::rubrique!("S21.G00.20.006"), d_o.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.20.007"), d_o.mois_civil().dernier_jour().jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.20.010"), "05");
         if let Some(j) = echeances.get(&siret_urssaf) {
-            f.add("S21.G00.20.011", j.jjmmaaaa());
+            f.add(droit::rubrique!("S21.G00.20.011"), j.jjmmaaaa());
         }
     }
 
-    f.add("S21.G00.22.001", &siret_urssaf);
-    f.add("S21.G00.22.003", debut_mois.jjmmaaaa());
-    f.add("S21.G00.22.004", fin_m.jjmmaaaa());
-    f.add("S21.G00.22.005", mt(mt_urssaf));
+    f.add(droit::rubrique!("S21.G00.22.001"), &siret_urssaf);
+    f.add(droit::rubrique!("S21.G00.22.003"), debut_mois.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.22.004"), fin_m.jjmmaaaa());
+    f.add(droit::rubrique!("S21.G00.22.005"), mt(mt_urssaf));
     ecrire_lignes_23(&mut f, &lignes_23)?;
     let mut bordereaux = vec![BordereauEcrit { debut: debut_mois, fin: fin_m, total: mt_urssaf, lignes: lignes_23.clone() }];
     for ((mois_o, lignes), (_, montant)) in lignes_o.iter().zip(&montants_o) {
         let d_o = mois_o.premier_jour();
-        f.add("S21.G00.22.001", &siret_urssaf);
-        f.add("S21.G00.22.003", d_o.jjmmaaaa());
-        f.add("S21.G00.22.004", d_o.mois_civil().dernier_jour().jjmmaaaa());
-        f.add("S21.G00.22.005", mt(*montant));
+        f.add(droit::rubrique!("S21.G00.22.001"), &siret_urssaf);
+        f.add(droit::rubrique!("S21.G00.22.003"), d_o.jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.22.004"), d_o.mois_civil().dernier_jour().jjmmaaaa());
+        f.add(droit::rubrique!("S21.G00.22.005"), mt(*montant));
         ecrire_lignes_23(&mut f, lignes)?;
         bordereaux.push(BordereauEcrit { debut: d_o, fin: d_o.mois_civil().dernier_jour(), total: *montant, lignes: lignes.clone() });
     }
@@ -4939,13 +4939,13 @@ certificat de conformite du depot precedent.",
     // individus (arborescence de la norme, p. 118, `chapitre-8-arborescences.txt` : 20, 55, 22, 23, 44, 30) ;
     // `assujettissement.rs` dit d'ou vient chaque code.
     for b in crate::assujettissement::blocs(ctx, ent0, &ent_e, &orgs, &bar, &nic, mois, paies, departs)? {
-        f.add("S21.G00.44.001", b.code);
+        f.add(droit::rubrique!("S21.G00.44.001"), b.code);
         if let Some(m) = b.montant {
-            f.add("S21.G00.44.002", mt(m));
+            f.add(droit::rubrique!("S21.G00.44.002"), mt(m));
         }
-        f.add("S21.G00.44.003", mois.annee());
+        f.add(droit::rubrique!("S21.G00.44.003"), mois.annee());
         if let Some(m) = &b.motif {
-            f.add("S21.G00.44.004", m);
+            f.add(droit::rubrique!("S21.G00.44.004"), m);
         }
     }
 
@@ -5132,8 +5132,8 @@ contrats, le vérifier sur le certificat d'adhésion. Rien n'est écrit.",
     f.lignes.splice(place_dgfip..place_dgfip, dgfip);
 
     let n = f.lignes.len() + 2;
-    f.add("S90.G00.90.001", n);
-    f.add("S90.G00.90.002", "1");
+    f.add(droit::rubrique!("S90.G00.90.001"), n);
+    f.add(droit::rubrique!("S90.G00.90.002"), "1");
     let texte = f.texte();
     verifier_affiliations(&texte)?;
     crate::ntt::verifier_fichier(&texte)?;

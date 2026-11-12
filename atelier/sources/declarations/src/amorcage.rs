@@ -239,35 +239,35 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
     crate::naf::verifier_pour(&norme, ent)?;
     let mut f = Fichier::en_norme(norme);
     // ------------------------------------------------------------ S10 envoi
-    f.add("S10.G00.00.001", LOGICIEL);
-    f.add("S10.G00.00.002", LOGICIEL);
-    f.add("S10.G00.00.003", VERSION);
-    f.add("S10.G00.00.005", if o.envoi_test { "01" } else { "02" });
+    f.add(droit::rubrique!("S10.G00.00.001"), LOGICIEL);
+    f.add(droit::rubrique!("S10.G00.00.002"), LOGICIEL);
+    f.add(droit::rubrique!("S10.G00.00.003"), VERSION);
+    f.add(droit::rubrique!("S10.G00.00.005"), if o.envoi_test { "01" } else { "02" });
     f.ecrire_la_version()?;
-    f.add("S10.G00.00.007", "01");
+    f.add(droit::rubrique!("S10.G00.00.007"), "01");
     // << 02 - envoi neant >> n'a pas de sens ici.
-    f.add("S10.G00.00.008", "01");
-    f.add_case("S10.G00.01.001", &ent.siren, "siren")?;
-    f.add_case("S10.G00.01.002", &ent.nic, "nic")?;
-    f.add_case("S10.G00.01.003", &ent.raison_sociale, "raison_sociale")?;
-    f.add_case("S10.G00.01.004", &ent.adresse, "adresse")?;
-    f.add_case("S10.G00.01.005", &ent.code_postal, "code_postal")?;
-    f.add_case("S10.G00.01.006", &ent.commune, "commune")?;
-    f.add_complement("S10.G00.01.009", &ent.complement_adresse);
+    f.add(droit::rubrique!("S10.G00.00.008"), "01");
+    f.add_case(droit::rubrique!("S10.G00.01.001"), &ent.siren, "siren")?;
+    f.add_case(droit::rubrique!("S10.G00.01.002"), &ent.nic, "nic")?;
+    f.add_case(droit::rubrique!("S10.G00.01.003"), &ent.raison_sociale, "raison_sociale")?;
+    f.add_case(droit::rubrique!("S10.G00.01.004"), &ent.adresse, "adresse")?;
+    f.add_case(droit::rubrique!("S10.G00.01.005"), &ent.code_postal, "code_postal")?;
+    f.add_case(droit::rubrique!("S10.G00.01.006"), &ent.commune, "commune")?;
+    f.add_complement(droit::rubrique!("S10.G00.01.009"), &ent.complement_adresse);
     crate::dsn::contact_emetteur(&mut f, ent)?;
 
     // ---------------------------------------------------------- S20 declaration
     f.ecrire_code(NATURE)?;
     f.ecrire_code(o.type_declaration)?;
-    f.add("S20.G00.05.003", "11");
-    f.add("S20.G00.05.004", o.ordre);
+    f.add(droit::rubrique!("S20.G00.05.003"), "11");
+    f.add(droit::rubrique!("S20.G00.05.004"), o.ordre);
     if let Some(r) = remplace {
-        f.add("S20.G00.05.006", r);
+        f.add(droit::rubrique!("S20.G00.05.006"), r);
     }
-    f.add("S20.G00.05.007", constitution.jjmmaaaa());
+    f.add(droit::rubrique!("S20.G00.05.007"), constitution.jjmmaaaa());
     // La rubrique qui fait tout le message : sans elle, le point de depot ne
     // sait pas a qui transmettre le signalement (fiche 2984).
-    f.add("S20.G00.05.011", o.motif);
+    f.add(droit::rubrique!("S20.G00.05.011"), o.motif);
     // L'etablissement est celui du salarie, comme dans ses mensuelles (`droit::bareme::entreprise_du_salarie`) : le NIC est
     // une donnee identifiante (cahier technique DSN 2026.1, § 2.5.1, p. 67).
     let etab = droit::bareme::entreprise_du_salarie(ent, &paie.salarie)?;
@@ -279,27 +279,27 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
             Some(s) => s.clone(),
             None => droit::fiche::Siret::de(etab.siren.exigee("siren")?, etab.nic.exigee("nic")?),
         };
-        f.add("S20.G00.05.012", siret.to_string());
+        f.add(droit::rubrique!("S20.G00.05.012"), siret.to_string());
     }
     crate::dsn::contact_chez_le_declare(&mut f, ent)?;
 
     // ------------------------------------------------------------ S21 entreprise
-    f.add_case("S21.G00.06.001", &ent.siren, "siren")?;
-    f.add_case("S21.G00.06.002", &ent.nic, "nic")?;
+    f.add_case(droit::rubrique!("S21.G00.06.001"), &ent.siren, "siren")?;
+    f.add_case(droit::rubrique!("S21.G00.06.002"), &ent.nic, "nic")?;
     for (rub, case, cle) in [
-        ("S21.G00.11.001", &etab.nic.en_texte(), "nic"),
-        ("S21.G00.11.002", &etab.naf.en_texte(), "naf"),
-        ("S21.G00.11.003", &etab.adresse.en_texte(), "adresse"),
-        ("S21.G00.11.004", &etab.code_postal.en_texte(), "code_postal"),
-        ("S21.G00.11.005", &etab.commune.en_texte(), "commune"),
+        (droit::rubrique!("S21.G00.11.001"), &etab.nic.en_texte(), "nic"),
+        (droit::rubrique!("S21.G00.11.002"), &etab.naf.en_texte(), "naf"),
+        (droit::rubrique!("S21.G00.11.003"), &etab.adresse.en_texte(), "adresse"),
+        (droit::rubrique!("S21.G00.11.004"), &etab.code_postal.en_texte(), "code_postal"),
+        (droit::rubrique!("S21.G00.11.005"), &etab.commune.en_texte(), "commune"),
     ] {
         // Le code APET : obligatoire en amorcage en P26V01, retire de la norme P27V01 (cahier 2027.1.1, p. 145).
-        if rub == "S21.G00.11.002" && !usage_admet(&f, droit::rubrique!("S21.G00.11.002"), NATURE)? {
+        if rub == droit::rubrique!("S21.G00.11.002") && !usage_admet(&f, droit::rubrique!("S21.G00.11.002"), NATURE)? {
             continue;
         }
         f.add_case(rub, case, cle)?;
-        if rub == "S21.G00.11.005" {
-            f.add_complement("S21.G00.11.006", &etab.complement_adresse);
+        if rub == droit::rubrique!("S21.G00.11.005") {
+            f.add_complement(droit::rubrique!("S21.G00.11.006"), &etab.complement_adresse);
         }
     }
 
@@ -318,9 +318,9 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
         if !rattachees.contains(&a.reference) {
             continue;
         }
-        f.add("S21.G00.15.001", &a.libelle);
-        f.add("S21.G00.15.002", &a.delegataire);
-        f.add("S21.G00.15.005", &a.reference);
+        f.add(droit::rubrique!("S21.G00.15.001"), &a.libelle);
+        f.add(droit::rubrique!("S21.G00.15.002"), &a.delegataire);
+        f.add(droit::rubrique!("S21.G00.15.005"), &a.reference);
     }
 
     // ------------------------------------------------------------ S21 individu
@@ -340,8 +340,8 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
     }
 
     let n = f.lignes.len() + 2;
-    f.add("S90.G00.90.001", n);
-    f.add("S90.G00.90.002", "1");
+    f.add(droit::rubrique!("S90.G00.90.001"), n);
+    f.add(droit::rubrique!("S90.G00.90.002"), "1");
     let texte = f.texte();
     crate::usages::verifier_fichier(&texte)?;
     crate::formats::verifier_fichier(&texte)?;
