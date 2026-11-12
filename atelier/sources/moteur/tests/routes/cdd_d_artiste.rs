@@ -25,8 +25,10 @@ fn de_la_validation_a_l_attestation() {
     let d = crate::outils::dossier_de_test("cdd_d_artiste", "fuller");
     // Les Faisceaux le 20/02/2026 : le CDI de SVOBODA valide, janvier paye.
     let (_, c) = rejouer("faisceaux-sans-civilite", &d);
-    // Le minimum de la 3252 change avec l'anciennete : la fiche dit d'ou elle se compte (son premier jour ici).
-    let anciennete = json!({"nom": "salarie", "cle": "FULLER", "confirme": true, "changements": [{"case": "poste_depuis", "valeur": "2026-03-02"}]});
+    // Le minimum de la 3252 change avec l'anciennete : la fiche dit d'ou elle se compte (son premier jour ici). Paye au
+    // mois, ses jours travailles se disent.
+    let anciennete = json!({"nom": "salarie", "cle": "FULLER", "confirme": true, "changements": [{"case": "poste_depuis", "valeur": "2026-03-02"},
+        {"case": "jours_travailles", "valeur": ["lundi", "mardi", "mercredi", "jeudi", "vendredi"]}]});
     reussi(&route(&c, "enregistrer-fiche", anciennete, "2026-02-25"));
 
     let saisie = |motif: &str| {
