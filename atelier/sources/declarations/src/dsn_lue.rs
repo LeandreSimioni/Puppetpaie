@@ -14,6 +14,7 @@ use droit::base_assujettie::BaseAssujettie;
 use droit::fiche::{Bic, Courriel, Iban, Idcc, Nic, NumeroObjetSpectacle, Siren};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
+use engagement::numeros::NumeroContrat;
 
 use socle::date::Jour;
 use socle::echec::{erreur, refus, Classe, Echec, R};
@@ -37,6 +38,9 @@ const IBAN: &str = "un IBAN (ISO 13616) à la clé juste";
 const COURRIEL: &str = "une adresse de courriel";
 /// Ce que porte le numero d'objet d'un contrat (S21.G00.40.050, X [12,12]) : `droit::fiche::NumeroObjetSpectacle`.
 const OBJET: &str = "un numéro d'objet (12 lettres ou chiffres)";
+/// Ce que porte le numero d'un contrat (S21.G00.40.009, X [5,20]), et ce que le citent les remunerations (51.010) et les
+/// bases (78.006) : `engagement::numeros::NumeroContrat`.
+const NUMERO: &str = "un numéro de contrat (5 à 20 caractères)";
 
 // ------------------------------------------------------------------ la forme
 
@@ -234,7 +238,7 @@ pub struct ContratDeclare {
     /// .007, la nature du contrat.
     pub nature_dsn: Option<String>,
     /// .009.
-    pub numero: Option<String>,
+    pub numero: Option<NumeroContrat>,
     /// .010.
     pub fin: Option<Jour>,
     /// .012, la quotite de reference de la categorie ; .013, celle du contrat ; .014, la modalite du temps de travail.
@@ -276,7 +280,7 @@ pub struct Activite {
 #[derive(Clone, Debug, Default)]
 pub struct Remuneration {
     pub debut: Option<Jour>,
-    pub contrat: Option<String>,
+    pub contrat: Option<NumeroContrat>,
     pub genre: Option<String>,
     pub montant: Option<Decimal>,
     pub activites: Vec<Activite>,
@@ -323,7 +327,7 @@ pub struct VersementLu {
 pub struct BaseLue {
     pub code: BaseAssujettie,
     pub montant: Decimal,
-    pub contrat: Option<String>,
+    pub contrat: Option<NumeroContrat>,
 }
 
 impl Contact {
@@ -409,9 +413,9 @@ impl VersementLu {
         }
     }
     /// Les contrats que ses remunerations paient (S21.G00.51.010), dans l'ordre ou ils paraissent.
-    pub fn contrats(&self) -> Vec<&str> {
-        let mut v: Vec<&str> = Vec::new();
-        for n in self.remunerations.iter().filter_map(|r| r.contrat.as_deref()) {
+    pub fn contrats(&self) -> Vec<&NumeroContrat> {
+        let mut v: Vec<&NumeroContrat> = Vec::new();
+        for n in self.remunerations.iter().filter_map(|r| r.contrat.as_ref()) {
             if !v.contains(&n) {
                 v.push(n);
             }
@@ -442,7 +446,7 @@ pub struct Nets {
 pub struct PaieDuContrat {
     pub nir: Option<String>,
     /// Le contrat (S21.G00.51.010).
-    pub numero: String,
+    pub numero: NumeroContrat,
     /// Le jour du dernier versement qui le paie (S21.G00.50.001).
     pub verse_le: Option<Jour>,
     pub mesures: Mesures,
@@ -450,7 +454,7 @@ pub struct PaieDuContrat {
     pub bases: BTreeMap<BaseAssujettie, Decimal>,
     pub nets: Option<Nets>,
     /// Les autres contrats que ses versements paient (vide : ils ne paient que lui).
-    pub avec: Vec<String>,
+    pub avec: Vec<NumeroContrat>,
 }
 
 /// Une adhesion prevoyance (S21.G00.15 : la reference .001, l'organisme .002, la reference de l'adhesion .005).
@@ -600,11 +604,11 @@ impl DsnLue {
     /// declare : ses remunerations (S21.G00.51.010 le nomme) dans tous ses versements, le brut de type 001, le salaire
     /// habituel de type 010, et le travail remunere (S21.G00.53 de type 01 : en heures, unites 10 et 35 ; en jours, 12 ;
     /// en cachets, 37).
-    pub fn mesures(&self, nir: Option<&str>, numero: &str, rappel: bool) -> Mesures {
+    pub fn mesures(&self, nir: Option<&str>, numero: &NumeroContrat, rappel: bool) -> Mesures {
         // Les sommes du contrat, a zero avant sa premiere remuneration.
         let mut m = Mesures { brut: None, salaire_habituel: None, jours: Decimal::ZERO, cachets: Decimal::ZERO, heures: Decimal::ZERO, remunere: false };
         for r in self.versements_de(nir).flat_map(|v| v.remunerations.iter()) {
-            if r.contrat.as_deref() != Some(numero) || self.mois.is_some_and(|m| r.rappel(m)) != rappel {
+            if r.contrat.as_ref() != Some(numero) || self.mois.is_some_and(|m| r.rappel(m)) != rappel {
                 continue;
             }
             if let Some(montant) = r.montant {
@@ -631,7 +635,7 @@ impl DsnLue {
     /// LES PAIES DU MOIS QUE LA DSN DECLARE, une par contrat qu'un versement paie (S21.G00.51.010), dans l'ordre ou
     /// elles paraissent, chacune avec ce que la DSN lui attribue (`PaieDuContrat`).
     pub fn paies(&self) -> Vec<PaieDuContrat> {
-        let mut contrats: Vec<(Option<&str>, &str)> = Vec::new();
+        let mut contrats: Vec<(Option<&str>, &NumeroContrat)> = Vec::new();
         for v in &self.versements {
             for c in v.contrats() {
                 if !contrats.iter().any(|(nir, numero)| *nir == v.nir.as_deref() && *numero == c) {
@@ -643,22 +647,22 @@ impl DsnLue {
     }
 
     /// Ce que la DSN attribue au contrat `numero` de l'individu `nir` (`paies`).
-    fn paie_du_contrat(&self, nir: Option<&str>, numero: &str) -> PaieDuContrat {
+    fn paie_du_contrat(&self, nir: Option<&str>, numero: &NumeroContrat) -> PaieDuContrat {
         let payeurs: Vec<&VersementLu> = self.versements_de(nir).filter(|v| v.contrats().contains(&numero)).collect();
         let seul = match payeurs.as_slice() {
             [v] if v.contrats().len() == 1 => Some(*v),
             _ => None,
         };
-        let mut avec: Vec<String> = Vec::new();
+        let mut avec: Vec<NumeroContrat> = Vec::new();
         for c in payeurs.iter().flat_map(|v| v.contrats()) {
-            if c != numero && !avec.iter().any(|x| x == c) {
-                avec.push(c.to_string());
+            if c != numero && !avec.contains(c) {
+                avec.push(c.clone());
             }
         }
         let mut bases: BTreeMap<BaseAssujettie, Decimal> = BTreeMap::new();
         for v in self.versements_de(nir) {
             let sans_numero = seul.is_some_and(|s| std::ptr::eq(s, v));
-            let a_lui = |b: &&BaseLue| match b.contrat.as_deref() {
+            let a_lui = |b: &&BaseLue| match b.contrat.as_ref() {
                 Some(c) => c == numero,
                 None => sans_numero,
             };
@@ -668,7 +672,7 @@ impl DsnLue {
         }
         PaieDuContrat {
             nir: nir.map(str::to_string),
-            numero: numero.to_string(),
+            numero: numero.clone(),
             verse_le: payeurs.last().and_then(|v| v.verse_le),
             mesures: self.mesures(nir, numero, false),
             bases,
@@ -1125,7 +1129,10 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 } = plein;
             }
             "S21.G00.40.007" => contrat.into_iter().for_each(|c| c.nature_dsn = plein.clone()),
-            "S21.G00.40.009" => contrat.into_iter().for_each(|c| c.numero = plein.clone()),
+            "S21.G00.40.009" => {
+                let numero = fautes.lue(k, &v, NUMERO, NumeroContrat::lire);
+                contrat.into_iter().for_each(|c| c.numero = numero.clone());
+            }
             "S21.G00.40.010" => {
                 let fin = fautes.jour(k, &v);
                 contrat.into_iter().for_each(|c| c.fin = fin);
@@ -1205,7 +1212,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
             "S21.G00.51.010" | "S21.G00.51.011" | "S21.G00.51.013" => {
                 let Some(r) = versement.and_then(|x| x.remunerations.last_mut()) else { continue };
                 match k {
-                    "S21.G00.51.010" => r.contrat = plein,
+                    "S21.G00.51.010" => r.contrat = fautes.lue(k, &v, NUMERO, NumeroContrat::lire),
                     "S21.G00.51.011" => r.genre = plein,
                     _ => r.montant = fautes.montant(k, &v),
                 }
@@ -1236,7 +1243,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 let Some(b) = versement.filter(|_| base).and_then(|x| x.bases.last_mut()) else { continue };
                 match k {
                     "S21.G00.78.004" => b.montant += m.iter().sum::<Decimal>(),
-                    _ => b.contrat = plein,
+                    _ => b.contrat = fautes.lue(k, &v, NUMERO, NumeroContrat::lire),
                 }
             }
             _ => {}
@@ -1330,7 +1337,8 @@ mod tests {
                  S21.G00.51.001,'01072026'\nS21.G00.51.010,'FA1.26.13'\nS21.G00.51.011,'001'\nS21.G00.51.013,'30.00'\n\
                  S21.G00.53.001,'01'\nS21.G00.53.002,'1'\nS21.G00.53.003,'37'\n";
         let d = lire(f.as_bytes(), "essai.dsn").unwrap();
-        let (mois, rappel) = (d.mesures(Some("1850"), "FA1.26.13", false), d.mesures(Some("1850"), "FA1.26.13", true));
+        let numero = NumeroContrat::lire("FA1.26.13").unwrap();
+        let (mois, rappel) = (d.mesures(Some("1850"), &numero, false), d.mesures(Some("1850"), &numero, true));
         assert_eq!((socle::num::q2(mois.brut.unwrap()), mois.cachets.normalize().to_string(), mois.remunere), ("200.00".to_string(), "2".to_string(), true));
         assert_eq!((socle::num::q2(rappel.brut.unwrap()), rappel.cachets.normalize().to_string()), ("30.00".to_string(), "1".to_string()));
         assert_eq!(d.contrats[0].fin_declaree.map(|j| j.iso()).as_deref(), Some("2026-08-31"));
@@ -1351,7 +1359,7 @@ mod tests {
                  S21.G00.78.001,'02'\nS21.G00.78.004,'350.00'\nS21.G00.78.006,'MO4.25.17'\n\
                  S21.G00.78.001,'31'\nS21.G00.78.004,'875.00'\n";
         let p = lire(f.as_bytes(), "essai.dsn").unwrap().paies();
-        let dit = |i: usize| (p[i].numero.as_str(), p[i].mesures.brut.map(socle::num::q2), p[i].bases.get(&BaseAssujettie::BrutePlafonnee).copied().map(socle::num::q2), p[i].bases.len(), p[i].nets.is_some(), p[i].avec.clone());
+        let dit = |i: usize| (p[i].numero.as_str(), p[i].mesures.brut.map(socle::num::q2), p[i].bases.get(&BaseAssujettie::BrutePlafonnee).copied().map(socle::num::q2), p[i].bases.len(), p[i].nets.is_some(), p[i].avec.iter().map(ToString::to_string).collect::<Vec<String>>());
         assert_eq!(dit(0), ("MO4.25.16", Some("525.00".into()), Some("525.00".into()), 1, false, vec!["MO4.25.17".to_string()]));
         assert_eq!(dit(1), ("MO4.25.17", Some("350.00".into()), Some("350.00".into()), 1, false, vec!["MO4.25.16".to_string()]));
     }

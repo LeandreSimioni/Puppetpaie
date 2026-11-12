@@ -22,6 +22,7 @@ use droit::forme_bareme::{CotisationDsn, CotisationSupplementaire, Pile, Rubriqu
 use documents::bordereau::{self, Destinataire, LigneBordereau, TauxDeLaLigne};
 use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::reduction::au_dela_du_seuil;
+use droit::contexte::IdSalarie;
 use engagement::calcul::Paie;
 use engagement::etats::PrelevementDeLaCorrection;
 use droit::contexte::{aujourdhui, Contexte};
@@ -334,8 +335,8 @@ fn rond(x: Decimal) -> Decimal {
     bordereau::euro(x)
 }
 
-fn cle_salarie(p: &Paie) -> String {
-    p.salarie.id.to_string()
+fn cle_salarie(p: &Paie) -> IdSalarie {
+    p.salarie.id.clone()
 }
 
 // ------------------------------------------------- les emplois multiples (S21.G00.40.036)
@@ -444,12 +445,12 @@ impl Arret {
             return Ok(false);
         }
         // Un contrat sans numero n'a rien declare.
-        Ok(self.saisi.contrat_numero.as_deref().is_some_and(|numero| self.saisi_apres_la_derniere_dsn(numero, mois, departs)))
+        Ok(self.saisi.contrat_numero.as_ref().is_some_and(|numero| self.saisi_apres_la_derniere_dsn(numero, mois, departs)))
     }
 
     /// L'arret a-t-il ete saisi apres le depart de la derniere DSN mensuelle d'un mois anterieur a `mois` qui declarait le
     /// contrat `numero`, et avant celui de la DSN de `mois` ?
-    fn saisi_apres_la_derniere_dsn(&self, numero: &str, mois: Mois, departs: &engagement::departs::Departs) -> bool {
+    fn saisi_apres_la_derniere_dsn(&self, numero: &engagement::numeros::NumeroContrat, mois: Mois, departs: &engagement::departs::Departs) -> bool {
         // Une date du journal (« 2026-10-15T10:00:00 ») et une date de saisie (« 2026-11-03 11:39 ») a la minute.
         let minute = |t: &str| t.replacen('T', " ", 1).chars().take(16).collect::<String>();
         let saisi = socle::paris::ecrit::saisie::texte(self.saisi.saisi_le);
@@ -4236,8 +4237,8 @@ pub fn bar_du(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, nic: &s
     Ok(bar)
 }
 
-fn ordre_salaries(paies: &[Paie]) -> Vec<String> {
-    let mut vus: Vec<String> = Vec::new();
+fn ordre_salaries(paies: &[Paie]) -> Vec<IdSalarie> {
+    let mut vus: Vec<IdSalarie> = Vec::new();
     for p in paies {
         let c = cle_salarie(p);
         if !vus.contains(&c) {
@@ -4595,7 +4596,7 @@ certificat de conformite du depot precedent.",
         ));
     }
 
-    let mut pas_par_salarie: HashMap<String, Option<Triplet>> = HashMap::new();
+    let mut pas_par_salarie: HashMap<IdSalarie, Option<Triplet>> = HashMap::new();
     for cle in paies.iter().filter(|p| p.engagement.sans_paie()).map(cle_salarie) {
         if !pas_par_salarie.contains_key(&cle) {
             let t = pas::taux_dgfip(ctx, &cle, None, Some(mois))?;
@@ -5307,7 +5308,7 @@ mod tests {
         Arret {
             saisi: engagement::imprevus::ArretSaisi {
                 genre: engagement::imprevus::GenreArret::Arret,
-                salarie: "Audinot".into(),
+                salarie: IdSalarie::lire("Audinot").unwrap(),
                 contrat_debut: j(2025, 9, 1),
                 contrat_numero: Some(engagement::numeros::NumeroContrat::lire("AU.25.01").unwrap()),
                 motif: "01".into(),
