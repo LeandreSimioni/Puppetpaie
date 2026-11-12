@@ -1535,12 +1535,9 @@ impl Recherche {
         }
     }
 
-    /// Le point de la recherche, tenu. Un fil tombe en le tenant ne le rend pas faux : le point est repris tel quel.
+    /// Le point de la recherche, tenu (`socle::memoire::tenu` : empoisonne, il panique).
     fn tenu(&self) -> std::sync::MutexGuard<'_, Point> {
-        match self.0.lock() {
-            Ok(p) => p,
-            Err(empoisonne) => empoisonne.into_inner(),
-        }
+        socle::memoire::tenu(&self.0)
     }
 }
 
