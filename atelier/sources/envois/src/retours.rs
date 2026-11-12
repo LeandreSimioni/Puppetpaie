@@ -2055,13 +2055,13 @@ pub fn aer_spectacle(o: &[u8]) -> R<Vec<AttestationAer>> {
 
 /// `rattacher` : pour chaque nom d'attestation, la cle du salarie, ou rien. `index` : `(cle, "NOM PRENOM")` des fiches,
 /// dans l'ordre du fichier.
-pub fn rattacher(quis: &[&str], index: &[(String, String)]) -> Vec<Option<String>> {
-    let mut idx: Vec<(String, &str)> = index.iter().map(|(cle, nom)| (socle::texte::cle_recherche(nom), cle.as_str())).collect();
+pub fn rattacher(quis: &[&str], index: &[(droit::contexte::IdSalarie, String)]) -> Vec<Option<droit::contexte::IdSalarie>> {
+    let mut idx: Vec<(String, &droit::contexte::IdSalarie)> = index.iter().map(|(cle, nom)| (socle::texte::cle_recherche(nom), cle)).collect();
     idx.sort_by_key(|(n, _)| std::cmp::Reverse(n.chars().count()));
     quis.iter()
         .map(|q| {
             let cible = socle::texte::cle_recherche(q);
-            idx.iter().find(|(nom, _)| !nom.is_empty() && (cible.contains(nom.as_str()) || nom.contains(cible.as_str()))).map(|(_, cle)| (*cle).to_string())
+            idx.iter().find(|(nom, _)| !nom.is_empty() && (cible.contains(nom.as_str()) || nom.contains(cible.as_str()))).map(|(_, cle)| (*cle).clone())
         })
         .collect()
 }

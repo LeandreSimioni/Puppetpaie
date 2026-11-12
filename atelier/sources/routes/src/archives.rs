@@ -1052,7 +1052,7 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
         None => ctx.aujourdhui.mois_civil(),
     };
     let engs = engagement::cumul::lire_engagements(ctx, None, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?;
-    let cles: BTreeSet<&str> = engs.iter().map(|e| e.salarie.as_str()).collect();
+    let cles: BTreeSet<&droit::contexte::IdSalarie> = engs.iter().map(|e| &e.salarie).collect();
     let mut salaries = Vec::new();
     for cle in cles {
         let anniv = anniversaire_configure(ctx, cle)?;
