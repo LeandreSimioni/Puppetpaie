@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
 
+use crate::code_cotisation::CleDeCotisationDsn;
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles};
 use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, TauxAtmp, VersementMobiliteEcrit};
 use socle::echec::Lieu;
@@ -423,16 +424,6 @@ fn inconnue(ou: &str, quoi: &str) -> Echec {
     socle::echec::cle(format!("{} change « {} », que le barème de l'année n'a pas : la corriger.", ou, quoi), quoi)
 }
 
-/// Le code d'une cotisation de la DSN dans une couche : `code81`, ou `code81:affectation`.
-/// `None` : la cotisation n'a pas de code, une couche ne la nomme pas.
-fn code_de(c: &CotisationDsn) -> Option<String> {
-    let code = c.code81.clone()?;
-    Some(match c.affectation.as_deref().filter(|a| !a.is_empty()) {
-        Some(a) => format!("{}:{}", code, a),
-        None => code,
-    })
-}
-
 /// Ce qu'une couche ecrit des rubriques `liste`, par leur `id`.
 fn modifier_rubriques(liste: &mut [Rubrique], mods: &BTreeMap<IdDeCotisation, RubriqueModifiee>, ou: &str) -> R<()> {
     for (id, m) in mods {
@@ -442,16 +433,16 @@ fn modifier_rubriques(liste: &mut [Rubrique], mods: &BTreeMap<IdDeCotisation, Ru
     Ok(())
 }
 
-/// Ce qu'une couche ecrit des cotisations `liste`, par leur code (`code_de`).
-fn modifier_cotisations(liste: &mut [CotisationDsn], mods: &BTreeMap<String, CotisationModifiee>, ou: &str) -> R<()> {
-    for (code, m) in mods {
+/// Ce qu'une couche ecrit des cotisations `liste`, par leur cle (`CotisationDsn::cle`).
+fn modifier_cotisations(liste: &mut [CotisationDsn], mods: &BTreeMap<CleDeCotisationDsn, CotisationModifiee>, ou: &str) -> R<()> {
+    for (cle, m) in mods {
         let mut vue = false;
-        for c in liste.iter_mut().filter(|c| code_de(c).as_ref() == Some(code)) {
+        for c in liste.iter_mut().filter(|c| c.cle().as_ref() == Some(cle)) {
             crate::bareme::modifier_cotisation(c, m);
             vue = true;
         }
         if !vue {
-            return Err(inconnue(ou, code));
+            return Err(inconnue(ou, &cle.to_string()));
         }
     }
     Ok(())

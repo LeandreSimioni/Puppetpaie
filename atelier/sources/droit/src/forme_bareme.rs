@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 
 use crate::assiette::Assiette;
 use crate::base_assujettie::BaseAssujettie;
+use crate::code_cotisation::{CleDeCotisationDsn, CodeCotisation81};
 use crate::fiche::Lue;
 use crate::source::Fondement;
 use serde::Deserialize;
@@ -316,7 +317,7 @@ forme! {
         pub rubrique: IdDeCotisation,
         #[serde(deserialize_with = "socle::forme::court")]
         pub taux: Decimal,
-        pub code81: String,
+        pub code81: CodeCotisation81,
     }
 }
 
@@ -633,7 +634,7 @@ forme! {
     /// Une cotisation individuelle de la DSN (bloc 81), et la base qu'elle declare au bloc 78.
     pub struct CotisationDsn {
         pub bloc78: BaseAssujettie,
-        pub code81: Option<String>,
+        pub code81: Option<CodeCotisation81>,
         pub org: Option<String>,
         pub base: Option<Assiette>,
         pub taux: Option<TauxDate>,
@@ -651,14 +652,23 @@ forme! {
         /// Les lignes du bulletin dont la cotisation est la somme.
         pub lignes: Option<Vec<IdDeCotisation>>,
         /// Une cotisation ajoutee : celle apres laquelle elle se range.
-        pub apres: Option<String>,
+        pub apres: Option<CodeCotisation81>,
+    }
+}
+
+impl CotisationDsn {
+    /// LA CLE PAR LAQUELLE UNE COUCHE LA NOMME : son code, et son affectation si elle en a une. `None` : la cotisation
+    /// n'a pas de code, une couche ne la nomme pas.
+    pub fn cle(&self) -> Option<CleDeCotisationDsn> {
+        let code = self.code81?;
+        Some(CleDeCotisationDsn { code, affectation: self.affectation.clone().filter(|a| !a.is_empty()) })
     }
 }
 
 impl CotisationDsn {
     /// UNE COTISATION QUE LA PILE AJOUTE d'elle-meme (le versement mobilite, le regime local d'Alsace-Moselle) : sa base
     /// 78 est le brut, son taux porte sur `base`.
-    pub(crate) fn sur_le_brut(bloc78: BaseAssujettie, code81: String, org: String, base: Assiette, taux: Decimal) -> CotisationDsn {
+    pub(crate) fn sur_le_brut(bloc78: BaseAssujettie, code81: CodeCotisation81, org: String, base: Assiette, taux: Decimal) -> CotisationDsn {
         CotisationDsn {
             bloc78,
             code81: Some(code81),
@@ -682,8 +692,8 @@ impl CotisationDsn {
 }
 
 forme! {
-    /// Une modification d'une cotisation du corps par une couche (`cotisations_dsn` d'une categorie, par code81 ou
-    /// `code81:affectation`) : chaque case qu'elle dit remplace celle de la cotisation, une case qu'elle ne dit pas
+    /// Une modification d'une cotisation du corps par une couche (`cotisations_dsn` d'une categorie, par sa cle,
+    /// `CleDeCotisationDsn`) : chaque case qu'elle dit remplace celle de la cotisation, une case qu'elle ne dit pas
     /// (absente ou nulle) ne change pas ; `efface` retire le taux.
     #[derive(Default)]
     pub struct CotisationModifiee {
@@ -753,9 +763,9 @@ forme! {
     /// Ce que la DSN declare de la reduction : les codes 81 de ses parts, le CTP du bordereau.
     #[derive(Default)]
     pub struct ReductionDsn {
-        pub code81_urssaf: Option<String>,
-        pub code81_chomage: Option<String>,
-        pub code81_retraite: Option<String>,
+        pub code81_urssaf: Option<CodeCotisation81>,
+        pub code81_chomage: Option<CodeCotisation81>,
+        pub code81_retraite: Option<CodeCotisation81>,
         pub ctp: Option<String>,
         pub ctp_regularisation: Option<String>,
         pub qualifiant: Option<String>,
@@ -786,7 +796,7 @@ forme! {
         pub rubriques_ajoutees: Option<Vec<Rubrique>>,
         pub cotisation_prevoyance_retraite_supp: Option<CotisationSupplementaire>,
         pub cotisations_ajoutees: Option<Vec<CotisationDsn>>,
-        pub cotisations_dsn: Option<BTreeMap<String, CotisationModifiee>>,
+        pub cotisations_dsn: Option<BTreeMap<CleDeCotisationDsn, CotisationModifiee>>,
         pub par_statut: Option<BTreeMap<String, CoucheCategorie>>,
     }
 }
@@ -832,7 +842,7 @@ forme! {
         pub verifie: Option<bool>,
         pub du_corps: Option<DuCorps>,
         pub rubriques_retirees: Option<Vec<IdDeCotisation>>,
-        pub cotisations_dsn_retirees: Option<Vec<String>>,
+        pub cotisations_dsn_retirees: Option<Vec<CodeCotisation81>>,
         pub majoration_conges_115: Option<Nombre>,
         pub majoration_conges_110: Option<Nombre>,
     }
@@ -841,7 +851,7 @@ forme! {
 forme! {
     pub struct DuCorps {
         pub rubriques_bulletin: Vec<IdDeCotisation>,
-        pub cotisations_dsn: Vec<String>,
+        pub cotisations_dsn: Vec<CodeCotisation81>,
     }
 }
 
@@ -925,7 +935,7 @@ pub enum Effet {
     /// Le taux d'une cotisation de la DSN (bloc 81), par son code.
     TauxDsn {
         section: Section,
-        code81: String,
+        code81: CodeCotisation81,
         #[serde(deserialize_with = "socle::forme::court")]
         taux: Decimal,
         source: Fondement,
@@ -1013,12 +1023,12 @@ impl Effet {
 
     /// Ce que la pile porte a sa place, `None` si elle ne le porte pas.
     pub fn lu(&self, pile: &Pile) -> Option<Lu> {
-        let cotisation = |l: &[CotisationDsn], code: &str| l.iter().find(|c| c.code81.as_deref() == Some(code)).and_then(|c| c.taux).map(|t| Lu::Taux(t.0));
+        let cotisation = |l: &[CotisationDsn], code: CodeCotisation81| l.iter().find(|c| c.code81 == Some(code)).and_then(|c| c.taux).map(|t| Lu::Taux(t.0));
         let rubrique = |l: &[Rubrique], id: &IdDeCotisation| l.iter().find(|r| r.id == *id).and_then(|r| r.taux_pat).map(|t| Lu::Taux(t.0));
         match self {
-            Effet::TauxDsn { section: Section::Corps, code81, .. } => cotisation(&pile.cotisations_dsn, code81),
-            Effet::TauxDsn { section: Section::Statut(s), code81, .. } => cotisation(pile.par_statut.get(s)?.cotisations_dsn.as_deref()?, code81),
-            Effet::TauxDsn { section: Section::Nature(n), code81, .. } => cotisation(pile.par_nature.get(n)?.cotisations_dsn.as_deref()?, code81),
+            Effet::TauxDsn { section: Section::Corps, code81, .. } => cotisation(&pile.cotisations_dsn, *code81),
+            Effet::TauxDsn { section: Section::Statut(s), code81, .. } => cotisation(pile.par_statut.get(s)?.cotisations_dsn.as_deref()?, *code81),
+            Effet::TauxDsn { section: Section::Nature(n), code81, .. } => cotisation(pile.par_nature.get(n)?.cotisations_dsn.as_deref()?, *code81),
             Effet::TauxPatronal { section: Section::Corps, rubrique: id, .. } => rubrique(&pile.rubriques_bulletin, id),
             Effet::TauxPatronal { section: Section::Statut(s), rubrique: id, .. } => rubrique(pile.par_statut.get(s)?.rubriques_bulletin.as_deref()?, id),
             Effet::TauxPatronal { section: Section::Nature(n), rubrique: id, .. } => pile.par_nature.get(n)?.rubriques.as_ref()?.get(id)?.taux_pat.map(|t| Lu::Taux(t.0)),
@@ -1093,7 +1103,7 @@ forme! {
     pub struct RegimeLocal {
         #[serde(deserialize_with = "socle::forme::court")]
         pub taux_sal: Decimal,
-        pub code81: String,
+        pub code81: CodeCotisation81,
         pub ctp: String,
     }
 }
@@ -1168,7 +1178,7 @@ forme! {
     pub struct NatureModifiee {
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub rubriques_ajoutees: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
-        pub cotisations_dsn: Option<BTreeMap<String, CotisationModifiee>>,
+        pub cotisations_dsn: Option<BTreeMap<CleDeCotisationDsn, CotisationModifiee>>,
     }
 }
 
@@ -1185,7 +1195,7 @@ forme! {
     /// Ce que la compagnie change a la section d'un statut : ses rubriques et ses cotisations, la reduction generale.
     pub struct StatutModifie {
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
-        pub cotisations_dsn: Option<BTreeMap<String, CotisationModifiee>>,
+        pub cotisations_dsn: Option<BTreeMap<CleDeCotisationDsn, CotisationModifiee>>,
         pub reduction_generale: Option<ReductionGenerale>,
     }
 }
@@ -1201,7 +1211,7 @@ forme! {
         pub quoi: Option<String>,
         pub versement_mobilite: Option<VersementMobiliteEcrit>,
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
-        pub cotisations_dsn: Option<BTreeMap<String, CotisationModifiee>>,
+        pub cotisations_dsn: Option<BTreeMap<CleDeCotisationDsn, CotisationModifiee>>,
         pub par_statut: Option<BTreeMap<String, StatutModifie>>,
         pub par_nature: Option<BTreeMap<String, NatureModifiee>>,
     }

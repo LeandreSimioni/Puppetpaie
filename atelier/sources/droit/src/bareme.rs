@@ -13,6 +13,7 @@ use crate::forme_bareme::{
 };
 use crate::assiette::Assiette;
 use crate::base_assujettie::BaseAssujettie;
+use crate::code_cotisation::CodeCotisation81;
 use crate::natures::{AuMois, Nature};
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, SalarieDuContrat, Siret, Statut, StatutCategorielRc};
 use socle::date::Jour;
@@ -63,11 +64,6 @@ fn insere<T>(v: &mut Vec<T>, i: Option<usize>, x: T) {
 /// Un texte dit : ni absent, ni vide.
 fn dit(t: &Option<String>) -> Option<&str> {
     t.as_deref().filter(|s| !s.is_empty())
-}
-
-/// Le code 81 d'une cotisation, quand elle le dit.
-fn code81(c: &CotisationDsn) -> Option<&str> {
-    c.code81.as_deref()
 }
 
 /// La nature, quand elle est un permanent (`nat and nat.mensuelle`).
@@ -396,7 +392,7 @@ section par_nature['{}'].cpf_cdd qui dise son taux et sa cotisation. Rien n'est 
 /// permanent) n'a rien a retirer.
 pub fn bareme_majoration_chomage(mut bar: Pile, due: bool) -> R<Pile> {
     let Some(sec) = bar.majoration_chomage_cddu.clone() else { return Ok(bar) };
-    let porte = bar.cotisations_dsn.iter().any(|c| code81(c) == Some(sec.code81.as_str()));
+    let porte = bar.cotisations_dsn.iter().any(|c| c.code81 == Some(sec.code81));
     if due || !porte {
         return Ok(bar);
     }
@@ -406,7 +402,7 @@ pub fn bareme_majoration_chomage(mut bar: Pile, due: bool) -> R<Pile> {
     })?;
     let avant = r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0;
     r.taux_pat = Some(TauxDate(court(sub(avant, taux))));
-    bar.cotisations_dsn.retain(|c| code81(c) != Some(sec.code81.as_str()));
+    bar.cotisations_dsn.retain(|c| c.code81 != Some(sec.code81));
     Ok(bar)
 }
 
@@ -437,7 +433,7 @@ pub fn bareme_taxe_apprentissage(mut bar: Pile, ent: &ChampsEntreprise, fin: Opt
             ),
         ));
     }
-    bar.cotisations_dsn.retain(|c| code81(c) != Some("130"));
+    bar.cotisations_dsn.retain(|c| c.code81 != Some(CodeCotisation81::TaxeDApprentissage));
     Ok(bar)
 }
 
@@ -954,7 +950,7 @@ par_caisse_conges['{}'] marquee \"verifie\": true. Le payer comme sa nature le d
     );
     // Ce que la section reprend du corps (rien sans `du_corps`), lu dans le statut tel qu'avant la nature : sans lui, rien
     // ne s'y reprend.
-    let (r_corps, c_corps): (&[IdDeCotisation], &[String]) = match &sec.du_corps {
+    let (r_corps, c_corps): (&[IdDeCotisation], &[CodeCotisation81]) = match &sec.du_corps {
         Some(c) => (&c.rubriques_bulletin, &c.cotisations_dsn),
         None => (&[], &[]),
     };
@@ -977,12 +973,12 @@ par_caisse_conges['{}'] marquee \"verifie\": true. Le payer comme sa nature le d
         let apres = d_avant[..i].iter().rev().find_map(|r| rang(&out.rubriques_bulletin, &r.id));
         insere(&mut out.rubriques_bulletin, apres, d_avant[i].clone());
     }
-    out.cotisations_dsn.retain(|c| !sec.cotisations_dsn_retirees.iter().flatten().any(|r| Some(r.as_str()) == code81(c)));
+    out.cotisations_dsn.retain(|c| !sec.cotisations_dsn_retirees.iter().flatten().any(|r| Some(*r) == c.code81));
     for code in c_corps {
-        if out.cotisations_dsn.iter().any(|c| code81(c) == Some(code.as_str())) {
+        if out.cotisations_dsn.iter().any(|c| c.code81 == Some(*code)) {
             continue;
         }
-        let reprises: Vec<&CotisationDsn> = c_avant.iter().filter(|c| code81(c) == Some(code.as_str())).collect();
+        let reprises: Vec<&CotisationDsn> = c_avant.iter().filter(|c| c.code81 == Some(*code)).collect();
         if reprises.is_empty() {
             return Err(refus(
                 "Le barème de l'année est incomplet : le signaler au développeur.",
@@ -1320,7 +1316,7 @@ organisatrice ou sur le bordereau Urssaf :\n    \
 fn org_urssaf(bar: &Pile) -> R<String> {
     bar.cotisations_dsn
         .iter()
-        .find(|c| code81(c) == Some("075") && dit(&c.org).is_some())
+        .find(|c| c.code81 == Some(CodeCotisation81::AssuranceMaladie) && dit(&c.org).is_some())
         .and_then(|c| c.org.clone())
         .ok_or_else(|| socle::fichiers::absent("cotisations_dsn[075].org"))
 }
@@ -1348,7 +1344,7 @@ pub fn bareme_vm(mut bar: Pile, sal: &SalarieDuContrat) -> R<Pile> {
     });
     bar.cotisations_dsn.push(CotisationDsn {
         code_insee: Some(vm.code_insee),
-        ..CotisationDsn::sur_le_brut(BaseAssujettie::BruteDeplafonnee, "081".into(), org, Assiette::BrutX115, taux)
+        ..CotisationDsn::sur_le_brut(BaseAssujettie::BruteDeplafonnee, CodeCotisation81::VersementMobilite, org, Assiette::BrutX115, taux)
     });
     Ok(bar)
 }
@@ -1377,8 +1373,7 @@ ne porte pas le taux du regime local (`regime_local_alsace_moselle`).",
         taux_sal: Some(Court(rl.taux_sal)),
         ..Rubrique::nommee(REGIME_LOCAL)
     });
-    let code81 = if rl.code81.is_empty() { "115".into() } else { rl.code81.clone() };
-    bar.cotisations_dsn.push(CotisationDsn::sur_le_brut(BaseAssujettie::BruteDeplafonnee, code81, org, Assiette::Brut, rl.taux_sal));
+    bar.cotisations_dsn.push(CotisationDsn::sur_le_brut(BaseAssujettie::BruteDeplafonnee, rl.code81, org, Assiette::Brut, rl.taux_sal));
     Ok(bar)
 }
 
@@ -1520,7 +1515,7 @@ fn poser_t1(mut bar: Pile, retraite_pat: Decimal, retraite_sal: Decimal) -> R<Pi
         base = r.base.clone();
     }
     for c in &mut bar.cotisations_dsn {
-        if code81(c) == Some("131") && c.base == base && c.taux.is_some() && c.lignes.as_deref().is_none_or(<[IdDeCotisation]>::is_empty) {
+        if c.code81 == Some(CodeCotisation81::AgircArrco) && c.base == base && c.taux.is_some() && c.lignes.as_deref().is_none_or(<[IdDeCotisation]>::is_empty) {
             c.taux = Some(crate::forme_bareme::TauxDate(court(pat + sal)));
             if c.composants.as_deref().is_some_and(|l| !l.is_empty()) {
                 c.composants = Some([retraite_pat, ceg_pat, retraite_sal, ceg_sal].into_iter().map(|t| Court(court(t))).collect());
@@ -1608,8 +1603,8 @@ fn ajouter_cotisations(cots: &mut Vec<CotisationDsn>, ajouts: &[CotisationDsn], 
     for a in ajouts {
         let mut x = a.clone();
         // Le code de la cotisation ajoutee, tel que le refus le cite.
-        let cite = match a.code81.as_deref() {
-            Some(c) => c,
+        let cite = match a.code81 {
+            Some(c) => c.code(),
             None => "(sans code 81)",
         };
         let apres = x.apres.take().ok_or_else(|| {
@@ -1619,7 +1614,7 @@ fn ajouter_cotisations(cots: &mut Vec<CotisationDsn>, ajouts: &[CotisationDsn], 
                 cite,
             )
         })?;
-        let i = cots.iter().rposition(|c| code81(c) == Some(apres.as_str()) && c.base78 == a.base78).ok_or_else(|| {
+        let i = cots.iter().rposition(|c| c.code81 == Some(apres) && c.base78 == a.base78).ok_or_else(|| {
             socle::echec::a_la_cle(
                 "Le barème de l'année est incomplet : une cotisation ajoutée ne se place pas au hasard. Le signaler au développeur.",
                 &format!("par_categorie.{}.cotisations_ajoutees", nom),
@@ -1694,11 +1689,7 @@ intermittent : ses tranches sont mensuelles"
         bar.cotisation_prevoyance_retraite_supp = sec.cotisation_prevoyance_retraite_supp.clone();
     }
     for c in &mut bar.cotisations_dsn {
-        let Some(code) = c.code81.clone() else { continue };
-        let cle = match dit(&c.affectation) {
-            Some(a) => format!("{}:{}", code, a),
-            None => code,
-        };
+        let Some(cle) = c.cle() else { continue };
         if let Some(m) = sec.cotisations_dsn.as_ref().and_then(|mods| mods.get(&cle)) {
             modifier_cotisation(c, m);
         }

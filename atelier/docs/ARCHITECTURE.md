@@ -196,8 +196,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 
 **Les codes de la norme** : une liste fermée par rubrique (`droit::natures::ListeDeLaNorme`) : `NatureDeContrat`,
 `MotifDeRecours`, `MotifDeRupture`, `ModaliteDuTempsDeTravail`, `BaseAssujettie`, `CotisationDEtablissement`,
-`NatureDeLaDeclaration`, `TypeDeLaDeclaration`… ; les choix d'une fiche (`StatutConventionnel`, `Civilite`, `Sexe`…)
-aussi. À créer (#419), une liste par rubrique : le type de cotisation (S21.G00.81.001), le CTP Urssaf, le code d'option
+`NatureDeLaDeclaration`, `TypeDeLaDeclaration`, `CodeCotisation81`… ; les choix d'une fiche (`StatutConventionnel`, `Civilite`, `Sexe`…)
+aussi. À créer (#419), une liste par rubrique : le CTP Urssaf, le code d'option
 de prévoyance, les codes du bloc 60, du préavis, de l'indemnité.
 
 **Le métier**
@@ -214,7 +214,8 @@ de prévoyance, les codes du bloc 60, du préavis, de l'indemnité.
 | fiche | entreprise, salarié ou spectacle, datée | `droit::fiche::NomDeFiche`, `Datee<T>` ; `routes::catalogue::Fiche`, la fiche d'une route, est une autre notion, à renommer |
 | case | un champ d'une fiche | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` (`droit/src/fiche.rs`) ; `engagement::ligne::Case` (un `Option<Decimal>`) est mal nommé |
 | rubrique | une ligne du catalogue de paie | `droit::catalogue::Rubrique` (sa définition) ; son code, `CodeDeRubrique` (`droit/src/catalogue.rs`), que portent une ligne de paie (`engagement::ligne`), une ligne du brut (`LigneBrut.code`), les frais d'une profession au barème (`frais_hors_assiette`), une prime saisie, une ligne imprimée d'un bulletin importé ; un code que le moteur compose est une constante (`CodeDeRubrique::du_moteur`) |
-| cotisation du bulletin | une ligne de cotisation du barème (`rubriques_bulletin`), par sa clé : `maladie`, `retraite_t1` | `IdDeCotisation` (`droit/src/forme_bareme.rs`), que nomment les modifications d'une couche, `rubriques_retirees`, `apres`, `du_corps`, les `lignes` d'une cotisation DSN ou d'une contribution, `rubriques_abattues` de la DFS et les rubriques d'une DFS calculée ; une clé que le moteur nomme est une constante (`MUTUELLE`, `RETRAITE_T1`…) ; à unifier (#419) : `LigneCotisation.id` et ce qui la relit, en `String`. Ce n'est ni une rubrique du catalogue, ni une cotisation de la DSN : celle-ci se désigne par son code S21.G00.81.001 (la clé de `cotisations_dsn`, `cotisations_dsn_retirees`), à créer (#419) |
+| cotisation du bulletin | une ligne de cotisation du barème (`rubriques_bulletin`), par sa clé : `maladie`, `retraite_t1` | `IdDeCotisation` (`droit/src/forme_bareme.rs`), que nomment les modifications d'une couche, `rubriques_retirees`, `apres`, `du_corps`, les `lignes` d'une cotisation DSN ou d'une contribution, `rubriques_abattues` de la DFS et les rubriques d'une DFS calculée ; une clé que le moteur nomme est une constante (`MUTUELLE`, `RETRAITE_T1`…) ; à unifier (#419) : `LigneCotisation.id` et ce qui la relit, en `String`. Ce n'est ni une rubrique du catalogue, ni une cotisation de la DSN |
+| cotisation de la DSN | une ligne du bloc 81, par son code S21.G00.81.001 | `CodeCotisation81` (`droit/src/code_cotisation.rs`), que portent `cotisations_dsn` (`code81`, `apres`), `cotisations_dsn_retirees`, `du_corps`, les codes de la réduction générale, la CET patronale d'une version de la norme ; une couche la nomme par son code et, quand plusieurs le partagent, son affectation (`059:203`) : `CleDeCotisationDsn` (même fichier) |
 | assiette | ce sur quoi une cotisation se calcule | `droit::assiette::Assiette` |
 | barème | les taux d'un jour, en trois étages | `droit::forme_bareme::Pile` |
 | emploi | ce que fait le salarié | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres ; le code d'emploi, à créer |
