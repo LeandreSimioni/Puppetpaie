@@ -698,9 +698,15 @@ impl Organismes {
         &self.base.versements
     }
 
-    /// L'Urssaf, l'organisme du bordereau.
-    pub fn urssaf(&self) -> Option<&Versement> {
-        self.base.versements.iter().find(|v| v.est_urssaf())
+    /// L'Urssaf, l'organisme du bordereau, de la DOETH et de la CSA (S21.G00.82.005) : la table livrée des versements la
+    /// dit, sinon rien ne se déclare.
+    pub fn urssaf(&self) -> R<&Versement> {
+        self.base.versements.iter().find(|v| v.est_urssaf()).ok_or_else(|| {
+            socle::echec::cle(
+                "La table livrée des versements (organismes-base.json) n'a pas l'Urssaf (un versement de libellé URSSAF) : la DSN ne déclare sans elle ni son bordereau (S21.G00.22), ni la DOETH, ni la CSA (S21.G00.82.005). Rien n'est écrit : le signaler au développeur.",
+                "versements",
+            )
+        })
     }
 
     /// La table des CTP du bordereau.

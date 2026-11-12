@@ -4712,11 +4712,7 @@ certificat de conformite du depot precedent.",
     }
     let versements = orgs.versements();
     if let Some(d) = &doeth {
-        let org_urssaf = versements
-            .iter()
-            .find(|v| v.est_urssaf())
-            .map(|v| v.siret.clone())
-            .ok_or_else(|| refus("StopIteration"))?;
+        let org_urssaf = orgs.urssaf()?.siret.clone();
         for (code, montant) in d.blocs_82() {
             f.add("S21.G00.82.001", mt(montant));
             f.ecrire_code(code)?;
@@ -4726,11 +4722,7 @@ certificat de conformite du depot precedent.",
         }
     }
     if let Some(c) = &csa {
-        let org_urssaf = versements
-            .iter()
-            .find(|v| v.est_urssaf())
-            .map(|v| v.siret.clone())
-            .ok_or_else(|| refus("StopIteration"))?;
+        let org_urssaf = orgs.urssaf()?.siret.clone();
         let (code, montant) = c.bloc_82();
         f.add("S21.G00.82.001", mt(montant));
         f.ecrire_code(code)?;
@@ -4778,7 +4770,7 @@ certificat de conformite du depot precedent.",
     ]
     .into_iter()
     .collect();
-    let urssaf = orgs.urssaf().ok_or_else(|| refus("StopIteration"))?;
+    let urssaf = orgs.urssaf()?;
     let lignes_23 = lignes_bordereau(&refs, &orgs, ent0, &bar, solde_ta.as_ref(), doeth.as_ref(), csa.as_ref(), mois, &Seuils::du_mois(ctx, mois)?)?;
     let mut lignes_o = Vec::new();
     let mut montants_o = Vec::new();
