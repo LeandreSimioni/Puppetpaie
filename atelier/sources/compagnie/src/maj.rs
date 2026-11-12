@@ -185,15 +185,25 @@ pub fn dossier_installe() -> R<PathBuf> {
     code.parent().map(Path::to_path_buf).ok_or_else(|| refus_avec("Le dossier du logiciel ne se trouve pas.", a_part_chemin(&code)))
 }
 
-/// Les nombres d'une version (`AAAA.MM.JJ`, `AAAA.MM.JJ.N`), de gauche a droite. Une version qui n'en est pas une se
-/// refuse.
-fn cle_de_version(v: &str) -> R<Vec<u64>> {
-    v.trim().split('.').map(|x| x.parse::<u64>().map_err(|_| refus_avec("Une version ne se lit pas : elle s'écrit en nombres séparés de points.", Lieu { detail: Some(v.to_string()), ..Default::default() }))).collect()
+/// UNE VERSION DU LOGICIEL, ses nombres de gauche a droite (`AAAA.MM.JJ`, `AAAA.MM.JJ.N`) : l'ordre des versions. Elle
+/// s'ecrit en texte (`VERSION`, `derniere.json`, les archives, ce que signe l'editeur), et ne se lit que par `lire`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct VersionDuLogiciel(Vec<u64>);
+
+impl VersionDuLogiciel {
+    /// La version ecrite `v` ; une version qui n'en est pas une se refuse.
+    pub fn lire(v: &str) -> R<VersionDuLogiciel> {
+        v.trim()
+            .split('.')
+            .map(|x| x.parse::<u64>().map_err(|_| refus_avec("Une version ne se lit pas : elle s'écrit en nombres séparés de points.", Lieu { detail: Some(v.to_string()), ..Default::default() })))
+            .collect::<R<Vec<u64>>>()
+            .map(VersionDuLogiciel)
+    }
 }
 
 /// `candidate` est-elle plus recente que `reference` ?
 pub fn plus_recente(candidate: &str, reference: &str) -> R<bool> {
-    Ok(cle_de_version(candidate)? > cle_de_version(reference)?)
+    Ok(VersionDuLogiciel::lire(candidate)? > VersionDuLogiciel::lire(reference)?)
 }
 
 /// LA VERSION TELLE QU'UN HUMAIN LA LIT : `JJ.MM.AAAA`, l'annee en tete embrouille.

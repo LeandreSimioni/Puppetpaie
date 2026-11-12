@@ -26,25 +26,16 @@ impl Preuve {
 
 // -------------------------------------------------------------------- la preuve
 
-/// Une version lue en entiers separes par des points, pour la comparer ; illisible, elle se refuse. Le binaire de
-/// l'atelier ne la lit pas : il refuse tout acte reel avant (`refus_atelier`).
-#[cfg(not(feature = "atelier"))]
-fn cle_de_version(v: &str) -> R<Vec<i64>> {
-    v.trim().split('.').map(|x| x.trim().parse::<i64>()).collect::<Result<Vec<i64>, _>>().map_err(|e| {
-        let a_part = socle::echec::Lieu { detail: Some(format!("« {} » : {}", v, e)), ..socle::echec::Lieu::default() };
-        socle::echec::Echec { a_part: Some(a_part.into()), ..erreur(Classe::Illisible, "Un numéro de version ne se lit pas : le signaler au développeur.") }
-    })
-}
-
 /// La raison pour laquelle une version telechargee et pas encore appliquee est
-/// indispensable avant de declarer ; `None` : aucune ne l'est.
+/// indispensable avant de declarer ; `None` : aucune ne l'est. Une version illisible se refuse (`VersionDuLogiciel`) ;
+/// le binaire de l'atelier ne la lit pas : il refuse tout acte reel avant (`refus_atelier`).
 /// La version prete est celle de l'INSTALLATION du contexte (`<installation>/logiciel/donnees` = `ctx.code`).
 #[cfg(not(feature = "atelier"))]
 fn exigee_en_attente(ctx: &Contexte) -> R<Option<String>> {
     let code = ctx.code.parent().map(std::path::Path::to_path_buf).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : le dossier des données livrées n'est dans aucun dossier."))?;
     let Some(p) = crate::maj::prete(&code.join(".."))? else { return Ok(None) };
     let (exigee, version) = (p.exigee, p.version);
-    if exigee.is_empty() || cle_de_version(&version)? <= cle_de_version(&crate::maj::courante(&code).map_err(|e| e.reclasser(Classe::Illisible))?)? {
+    if exigee.is_empty() || !crate::maj::plus_recente(&version, &crate::maj::courante(&code).map_err(|e| e.reclasser(Classe::Illisible))?).map_err(|e| e.reclasser(Classe::Illisible))? {
         return Ok(None);
     }
     Ok(Some(format!(
