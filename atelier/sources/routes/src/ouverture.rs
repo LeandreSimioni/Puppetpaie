@@ -1581,7 +1581,7 @@ pub(crate) struct EtatDeLaPage {
     natures: Vec<NatureDeLaPage>,
     types_preavis: Vec<droit::preavis::TypePreavis>,
     aides: Aides,
-    transaction: Vec<droit::preavis::Code>,
+    transaction: Vec<droit::preavis::Code<droit::preavis::TransactionEnCours>>,
     niveaux_sante: Vec<NiveauDeSante>,
     sante_hors_fiche: Option<String>,
     sante_aide: &'static str,

@@ -1871,7 +1871,7 @@ mod tests_rupture {
                 debut: Jour::nouveau(2026, 5, 4),
                 fin: Jour::nouveau(2026, 5, 6),
                 motif_rupture: Some(droit::natures::MotifDeRupture::CommunAccord),
-                preavis: Some(crate::saisie::Preavis { genre: "90".into(), debut: None, fin: None }),
+                preavis: Some(crate::saisie::Preavis { genre: droit::preavis::TypeDePreavis::SansClause, debut: None, fin: None }),
                 ..carte(ligne(3, taux))
             })
         };

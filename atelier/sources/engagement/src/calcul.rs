@@ -52,7 +52,7 @@ pub struct LigneBrut {
     pub salaire_de_base: bool,
     pub retabli: bool,
     pub conges_pris: bool,
-    pub dsn_bloc52: Option<String>,
+    pub dsn_bloc52: Option<droit::type_de_prime::TypeDePrime>,
     pub arret_de_travail: bool,
     pub dsn_autres_bruts: Option<droit::autre_revenu_brut::AutreElementDeRevenuBrut>,
     /// Ce que la ligne dit d'elle-meme sur le bulletin quand sa quantite ne suffit pas : la part payee d'un mois incomplet
@@ -1192,7 +1192,7 @@ fn sante_de_la_suspension(ctx: &Contexte, eng: &Engagement, au_mois: &AuMois, mu
     let (debut, fin) = (eng.debut_periode(), eng.fin_periode());
     let suspensions = crate::imprevus::suspendu_sans_remuneration(&ctx.racine, &fiche.id, eng.numero.as_deref(), &eng.debut, &debut, &fin)?;
     let Some(premiere) = suspensions.first() else { return Ok(fiche) };
-    let motifs: Vec<String> = suspensions.iter().map(|s| s.motif().to_string()).collect();
+    let motifs: Vec<&str> = suspensions.iter().filter_map(|s| s.suspension()).map(|s| s.motif.code()).collect();
     let ent = ctx.entreprise_au(&fin);
     let idcc = ent.idcc.portee();
     let pourquoi = if idcc == Some("3090") {

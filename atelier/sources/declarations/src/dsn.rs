@@ -412,11 +412,6 @@ pub struct Arret {
     pub saisi: engagement::imprevus::ArretSaisi,
 }
 
-/// Une case facultative de l'arret, dite : ni absente ni nulle, ni un texte vide.
-pub(crate) fn dite(case: &Option<String>) -> Option<&str> {
-    case.as_deref().filter(|t| !t.is_empty())
-}
-
 impl Arret {
     /// L'arret en sa forme, pour les regles du magasin.
     pub fn forme(&self) -> &engagement::imprevus::ArretSaisi {
@@ -500,7 +495,7 @@ pub fn bloc_60(f: &mut Fichier, a: &Arret, nature: NatureDeLaDeclaration, banque
     // La veille du debut prescrit, ou ce jour s'il a ete travaille (S21.G00.60.002, `imprevus::dernier_jour_declare`).
     f.add("S21.G00.60.002", engagement::imprevus::dernier_jour_declare(v)?.jjmmaaaa());
     f.add("S21.G00.60.003", v.fin_previsionnelle.jjmmaaaa());
-    let subrogation = if usage_admet(f, "S21.G00.60.004", nature)? { dite(&v.subrogation) } else { None };
+    let subrogation = if usage_admet(f, "S21.G00.60.004", nature)? { v.subrogation } else { None };
     if let Some(subrogation) = subrogation {
         f.add("S21.G00.60.004", subrogation);
         if crate::signalement::avec_subrogation(a)? {
@@ -516,7 +511,7 @@ obligatoires -- CCH-11. Ils se lisent dans la fiche entreprise, ils ne se saisis
     }
     if let Some(reprise) = v.reprise {
         f.add("S21.G00.60.010", reprise.jjmmaaaa());
-        if let Some(motif) = dite(&v.reprise_motif) {
+        if let Some(motif) = v.reprise_motif {
             f.add("S21.G00.60.011", motif);
         }
     }
@@ -1947,8 +1942,8 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
 /// (liste p. 297) ni un autre ne recoit un conge paye : il est dans la remuneration du mois.
 fn suspension_sans_maintien(f: &Fichier, p: &Paie, s: &engagement::imprevus::Suspension) -> R<()> {
     let Some(texte) = f.norme()?.regle("bloc_65_sans_maintien_de_remuneration")? else { return Ok(()) };
-    let motif = s.motif.clone();
-    let Some(m) = droit::permanents::motif_de_suspension(&motif)?.filter(|m| m.remunere) else { return Ok(()) };
+    let motif = s.motif;
+    let Some(m) = droit::permanents::motif_de_suspension(motif)?.filter(|m| m.remunere) else { return Ok(()) };
     Err(refus!(
         "{} : suspension au motif {} ({}), du {} au {}, saisie comme imprevu. Ce motif est un conge remunere \
 ({}). En norme {}, le bloc S21.G00.65 ne declare qu'une << absence a temps plein du \
@@ -2142,7 +2137,7 @@ fn activites(f: &mut Fichier, p: &Paie, signe: i64) -> R<()> {
 /// Le bloc 52 : les primes et indemnites qui ont leur code.
 pub fn primes_et_indemnites(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe: i64) -> R<()> {
     for l in &p.remuneration {
-        let code = match l.dsn_bloc52.as_deref().filter(|c| !c.is_empty()) {
+        let code = match l.dsn_bloc52 {
             Some(c) => c,
             None => continue,
         };
@@ -2269,7 +2264,7 @@ fn part_exoneree_des_indemnites_de_rupture(f: &Fichier, p: &Paie) -> R<Option<De
     let part = p
         .remuneration
         .iter()
-        .filter(|l| !l.soumis && l.dsn_bloc52.as_deref().is_some_and(|c| !c.is_empty()))
+        .filter(|l| !l.soumis && l.dsn_bloc52.is_some())
         .fold(Decimal::ZERO, |a, l| a + l.montant);
     Ok(if part.is_zero() { None } else { Some(part) })
 }
@@ -5327,15 +5322,15 @@ mod tests {
                 salarie: IdSalarie::lire("Audinot").unwrap(),
                 contrat_debut: j(2025, 9, 1),
                 contrat_numero: Some(engagement::numeros::NumeroContrat::lire("AU.25.01").unwrap()),
-                motif: "01".into(),
+                motif: droit::arrets::MotifDArret::Maladie,
                 dernier_jour_travaille: j(2026, 6, 20),
                 debut: j(2026, 6, 21),
                 fin_previsionnelle,
-                subrogation: Some("02".into()),
+                subrogation: Some(droit::arrets::SubrogationDeLArret::Non),
                 subrogation_debut: None,
                 subrogation_fin: None,
                 reprise,
-                reprise_motif: reprise.map(|_| "01".to_string()),
+                reprise_motif: reprise.map(|_| droit::arrets::MotifDeReprise::Normale),
                 date_accident: None,
                 jours_deja_indemnises: None,
                 ij_brute: None,

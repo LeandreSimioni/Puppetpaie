@@ -2470,7 +2470,7 @@ fiche! {
         Suspension(bool) = "suspension" => suspension,
         ArretDeTravail(bool) = "arret_de_travail" => arret_de_travail,
         CongesPris(bool) = "conges_pris" => conges_pris,
-        DsnBloc52(String) = "dsn_bloc52" => dsn_bloc52,
+        DsnBloc52(crate::type_de_prime::TypeDePrime) = "dsn_bloc52" => dsn_bloc52,
         Dit(String) = "dit" => dit,
     }
     pieces CasePieceRubrique {}

@@ -232,7 +232,7 @@ pub struct Rubrique {
     pub suspension: bool,
     pub arret_de_travail: bool,
     pub conges_pris: bool,
-    pub dsn_bloc52: Option<String>,
+    pub dsn_bloc52: Option<crate::type_de_prime::TypeDePrime>,
     /// SA PIECE : `Piece::Permanent` pour une rubrique livree rangee dans `au_mois` de `rubriques-base.json`, que seul le
     /// calcul d'un contrat paye au mois paie, quand ses autres cases ne le disent pas : l'indemnite de conges d'un
     /// permanent (la caisse des Conges Spectacles paie ceux d'un intermittent, C. trav. D. 7121-38), les indemnites
@@ -302,7 +302,7 @@ impl Rubrique {
             || self.suspension
             || self.arret_de_travail
             || self.conges_pris
-            || self.dsn_bloc52.as_deref().is_some_and(|s| !s.is_empty())
+            || self.dsn_bloc52.is_some()
             || self.piece == Some(Piece::Permanent)
         {
             return Some("mensuelle");

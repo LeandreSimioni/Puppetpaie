@@ -552,6 +552,14 @@ fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
     confronter::<droit::type_taux_pas::TypeDeTauxPas>(&mut fautes);
     confronter::<droit::autre_revenu_brut::AutreElementDeRevenuBrut>(&mut fautes);
     confronter::<droit::code_cotisation::CodeCotisation81>(&mut fautes);
+    confronter::<droit::preavis::TypeDePreavis>(&mut fautes);
+    confronter::<droit::type_de_prime::TypeDePrime>(&mut fautes);
+    confronter::<droit::preavis::TransactionEnCours>(&mut fautes);
+    confronter::<droit::preavis::RattachementDuVersement>(&mut fautes);
+    confronter::<droit::arrets::MotifDArret>(&mut fautes);
+    confronter::<droit::arrets::MotifDeReprise>(&mut fautes);
+    confronter::<droit::arrets::SubrogationDeLArret>(&mut fautes);
+    confronter::<droit::permanents::MotifDeSuspension>(&mut fautes);
     assert!(fautes.is_empty(), "une liste de la norme declaree en `enum` est l'union des listes livrees :\n{}", fautes.join("\n"));
 }
 

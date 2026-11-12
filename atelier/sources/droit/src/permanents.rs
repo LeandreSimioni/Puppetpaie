@@ -64,7 +64,7 @@ forme! {
 forme! {
     /// Le code d'indemnite du bloc S21.G00.52 qu'une section declare.
     pub struct CodeDsn {
-        pub code: String,
+        pub code: crate::type_de_prime::TypeDePrime,
     }
 }
 
@@ -228,7 +228,7 @@ forme! {
 
 forme! {
     pub struct IndemnitesDeRupture {
-        pub codes: BTreeMap<String, CodeDIndemnite>,
+        pub codes: BTreeMap<crate::type_de_prime::TypeDePrime, CodeDIndemnite>,
     }
 }
 
@@ -514,7 +514,98 @@ forme! {
 
 forme! {
     pub struct Suspensions {
-        pub motifs: Vec<MotifDeSuspension>,
+        pub motifs: Vec<ProprietesDeSuspension>,
+    }
+}
+
+crate::natures::codes_fermes! {
+    /// LE MOTIF DE SUSPENSION D'UN CONTRAT (S21.G00.65.001), la liste entiere de la norme (cahier technique DSN 2026.1,
+    /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.65.txt` ; relevee dans `formats-dsn-*-base.json`). 609, 648 et 681
+    /// ne sont pas dans la liste 2027 (`formats-dsn-p27v01-base.json`). Ce que chacun emporte (remunere, conges,
+    /// anciennete), `permanents-base.json` le dit (`suspensions.motifs`, `ProprietesDeSuspension`).
+    MotifDeSuspension, "Motif de suspension", "S21.G00.65.001" {
+        InvaliditeCategorie1 = "112",
+        InvaliditeCategorie2 = "114",
+        InvaliditeCategorie3 = "116",
+        CongesPayes = "200",
+        CongeDeFormationProfessionnelle = "301",
+        CongeDiversNonRemunere = "501",
+        ChomageIntemperies = "507",
+        Mobilite = "601",
+        ChomageSansRupture = "602",
+        DetentionProvisoire = "603",
+        CongeStatutaire = "605",
+        DetachementIeg = "606",
+        CongeDePresenceParentale = "607",
+        CasaCats = "608",
+        Cif = "609" jusqu_a "P26V01",
+        TransitionProfessionnelle = "610",
+        BilanDeCompetences = "611",
+        CandidatParlementaireOuElu = "612",
+        FormationDeCadresJeunesse = "615",
+        FormationMoinsDe25Ans = "617",
+        FormationEconomiqueSocialeSyndicale = "618",
+        CongeDeMobilite = "620",
+        InstancesDEmploiOuDeFormation = "621",
+        CongeDeReclassement = "625",
+        CongeDeRepresentation = "626",
+        SolidariteFamiliale = "627",
+        SolidariteInternationale = "628",
+        EnseignementOuRecherche = "630",
+        MutualisteDeFormation = "631",
+        ParentalDEducation = "632",
+        AcquisitionDeLaNationalite = "633",
+        CatastropheNaturelle = "634",
+        CreationOuRepriseDEntreprise = "635",
+        EnfantMalade = "636",
+        EvenementFamilial = "637",
+        ValidationDesAcquis = "638",
+        Sabbatique = "639",
+        FneTempsPartiel = "642",
+        ConversionPriseEnChargeParLEtat = "643",
+        ConversionSansPriseEnCharge = "644",
+        PreretraiteProgressive = "645",
+        PreretraiteDEntreprise = "646",
+        ReductionDuTempsDEmploi = "647",
+        Asfne = "648" jusqu_a "P26V01",
+        ProcheAidant = "650",
+        MandatParlementaire = "651",
+        InaptitudeTemporaireGrossesse = "652",
+        MaintienNavigantAeronautique = "653",
+        InactiviteNavigantAeronautique = "654",
+        FpDetachementAvecPension = "655",
+        FpCessationAmiante = "656",
+        FpAbsenceConcertee = "657",
+        FpCongeSpecial = "658",
+        FpInstructionMilitaire = "659",
+        FpInstructionMilitaireObligatoire = "660",
+        FpOrganisationsDeJeunesse = "661",
+        FpSiegerAupresDUneInstance = "662",
+        FpMandatsLocaux = "663",
+        FpReserveDeSecuriteCivile = "664",
+        FpReserveSanitaire = "665",
+        FpRecherches = "666",
+        FpSapeursPompiersActivitesPrivees = "667",
+        FpSapeursPompiersCotise = "668",
+        FpSapeursPompiersDifficultes = "669",
+        FpReserveCivileDeLaPolice = "670",
+        FpExclusionTemporaire = "671",
+        FpSuspension = "672",
+        FpAbsencesIrregulieres = "673",
+        FpDetachementSansPension = "674",
+        FpDisponibilite = "675",
+        FpDisponibilitePourMaladie = "676",
+        DisponibilitePourEleverUnEnfant = "677",
+        FpHorsCadres = "678",
+        SansSoldeCotise = "680",
+        DetachementHorsIeg = "681" jusqu_a "P26V01",
+        NouveauMotifA = "683",
+        NouveauMotifB = "684",
+        NouveauMotifC = "685",
+        Expatriation = "686",
+        NouveauMotifD = "687",
+        NouveauMotifE = "688",
+        Annulation = "998",
     }
 }
 
@@ -526,9 +617,9 @@ pub enum AncienneteDeSuspension {
 }
 
 forme! {
-    /// Un motif du bloc S21.G00.65 (S21.G00.65.001).
-    pub struct MotifDeSuspension {
-        pub code: String,
+    /// Ce qu'un motif du bloc S21.G00.65 (S21.G00.65.001) emporte.
+    pub struct ProprietesDeSuspension {
+        pub code: MotifDeSuspension,
         pub libelle: String,
         pub remunere: bool,
         pub acquiert_conges: bool,
@@ -538,7 +629,7 @@ forme! {
     }
 }
 
-impl MotifDeSuspension {
+impl ProprietesDeSuspension {
     /// Le texte qui fonde ce que le motif dit (`source`) : « article : « citation » », vide sans source.
     pub fn texte(&self) -> String {
         self.source
@@ -565,7 +656,7 @@ pub fn regles() -> R<Arc<Regles>> {
 }
 
 /// Le motif de suspension `code` (`suspensions.motifs`), s'il existe.
-pub fn motif_de_suspension(code: &str) -> R<Option<MotifDeSuspension>> {
+pub fn motif_de_suspension(code: MotifDeSuspension) -> R<Option<ProprietesDeSuspension>> {
     Ok(regles()?.suspensions.motifs.iter().find(|m| m.code == code).cloned())
 }
 
@@ -1054,13 +1145,12 @@ pub fn rupture(motif_rupture: Option<MotifDeRupture>) -> R<Option<(FinDeCdi, cra
 /// CCH-24), sinon pourquoi non.
 /// Les listes des controles sont celles de la norme, plus larges que les motifs qu'une nature permet : `motif_rupture` est
 /// un code de la norme.
-pub fn code_52_permis(code: Option<&str>, motif_rupture: Option<MotifDeRupture>) -> R<Option<String>> {
-    let code = match code {
-        Some(c) if !c.is_empty() => c,
-        _ => return Ok(None),
+pub fn code_52_permis(code: Option<crate::type_de_prime::TypeDePrime>, motif_rupture: Option<MotifDeRupture>) -> R<Option<String>> {
+    let Some(code) = code else {
+        return Ok(None);
     };
     let rg = regles()?;
-    let Some(dit) = rg.indemnites_de_rupture.codes.get(code) else {
+    let Some(dit) = rg.indemnites_de_rupture.codes.get(&code) else {
         return Ok(None);
     };
     let Some(motif) = motif_rupture else {

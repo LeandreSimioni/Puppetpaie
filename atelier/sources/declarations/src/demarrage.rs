@@ -187,7 +187,8 @@ fn spectacles_declares(ctx: &Contexte) -> R<Vec<droit::contexte::IdSpectacle>> {
 fn une_suspension_non_remuneree(ctx: &Contexte) -> R<Option<droit::natures::AuMois>> {
     use engagement::imprevus::Suspend;
     for imp in engagement::imprevus::tous(&ctx.racine)? {
-        if engagement::imprevus::est_une_suspension(&imp) && engagement::imprevus::motif_de_suspension(imp.motif())?.is_some_and(|m| !m.remunere) {
+        let Some(code) = imp.suspension().map(|s| s.motif) else { continue };
+        if engagement::imprevus::motif_de_suspension(code)?.is_some_and(|m| !m.remunere) {
             if let Some(cle) = engagement::permanents::cle_du_salarie(ctx, imp.salarie())? {
                 return Ok(Some(cle));
             }

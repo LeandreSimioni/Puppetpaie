@@ -123,7 +123,7 @@ pub struct Engagement {
     /// Il ne se recopie pas d'un mois a l'autre (`routes::mois::DEFINIT_LE_MENSUEL`) : le mois suivant declare deja
     /// la nouvelle valeur.
     pub date_modification: Option<Jour>,
-    pub transaction: Option<String>,
+    pub transaction: Option<droit::preavis::TransactionEnCours>,
     pub suspensions: Vec<imprevus::Suspension>,
     /// Les termes du contrat AVANT l'avenant que `date_modification` date en cours de mois (`salaire_mensuel`,
     /// `quotite_contrat`), quand la saisie les dit : la paie du mois se decoupe alors au jour de l'avenant
@@ -196,7 +196,7 @@ pub struct Assemble {
     pub preavis: Option<saisie::Preavis>,
     pub dernier_jour_paye: Option<Jour>,
     pub date_modification: Option<Jour>,
-    pub transaction: Option<String>,
+    pub transaction: Option<droit::preavis::TransactionEnCours>,
     pub avant: Option<saisie::Avant>,
     pub periode_essai_jours: Option<Chiffre>,
     pub personne_remplacee: Option<String>,

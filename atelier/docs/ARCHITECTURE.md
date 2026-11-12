@@ -204,8 +204,15 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 `NatureDeLaDeclaration`, `TypeDeLaDeclaration`, `CodeCotisation81`… ; les choix d'une fiche (`StatutConventionnel`, `Civilite`, `Sexe`…)
 aussi. Le CTP Urssaf (S21.G00.23.001) se lit dans la table datée de l'Urssaf, pas dans la norme : `CodeCtp`
 (`droit/src/organismes.rs`), que portent une ligne de la table des CTP, une ligne du bordereau, les CTP de la réduction
-générale et du régime local. À créer (#419), une liste par rubrique : le code d'option
-de prévoyance, les codes du bloc 60, du préavis, de l'indemnité.
+générale et du régime local. La fin du contrat : le type de préavis (S21.G00.63.001), `TypeDePreavis`, la transaction
+en cours (62.008), `TransactionEnCours`, le mois de rattachement d'un FCTU (50.020), `RattachementDuVersement`
+(`droit/src/preavis.rs`, `fctu-base.json` en dit les propriétés) ; le type d'une prime ou d'une indemnité
+(52.001), `TypeDePrime` (`droit/src/type_de_prime.rs`), que portent la rubrique (`dsn_bloc52`), ses lignes de paie et
+`permanents-base.json`. L'arrêt (bloc 60) : son motif (60.001), `MotifDArret`, le motif de la reprise (60.011),
+`MotifDeReprise`, la subrogation (60.004), `SubrogationDeLArret` (`droit/src/arrets.rs`, `arrets-base.json` en dit
+les propriétés ; la case « subrogation » d'un permanent, `fiche::Subrogation`, est une autre notion). Le motif d'une
+suspension (65.001), `MotifDeSuspension` (`droit/src/permanents.rs`, ses propriétés : `ProprietesDeSuspension`). À
+créer (#419), une liste par rubrique : le code d'option de prévoyance.
 
 **Le métier**
 

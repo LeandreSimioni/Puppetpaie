@@ -18,6 +18,8 @@ use engagement::Engagement;
 use socle::echec::{Classe, R};
 use socle::fichiers::repr;
 use droit::type_declaration::TypeDeLaDeclaration;
+use droit::preavis::{TransactionEnCours, TypeDePreavis};
+use droit::type_de_prime::TypeDePrime;
 
 pub const NATURE: droit::nature_declaration::NatureDeLaDeclaration = droit::nature_declaration::NatureDeLaDeclaration::SignalementFinDeContrat;
 /// CCH-14 (cahier technique p. 293) : la base assujettie de prevoyance n'a
@@ -63,7 +65,7 @@ fn nomenclatures() -> R<droit::preavis::BaseFctu> {
 
 /// `FinDeContrat.libelle_preavis` : le libelle du type de preavis ; un type que la nomenclature ne connait pas refuse en
 /// le nommant.
-pub fn libelle_preavis(type_preavis: &str) -> R<String> {
+pub fn libelle_preavis(type_preavis: TypeDePreavis) -> R<String> {
     match nomenclatures()?.types_preavis.du_code(type_preavis) {
         Some(c) => Ok(c.libelle.clone()),
         None => Err(socle::echec::cle(format!("Le type de préavis « {} » n'est pas dans la nomenclature de la DSN.", type_preavis), "type_preavis")),
@@ -71,8 +73,8 @@ pub fn libelle_preavis(type_preavis: &str) -> R<String> {
 }
 
 /// Le code par defaut d'une nomenclature.
-fn defaut(n: &droit::preavis::Nomenclature, quoi: &str) -> R<String> {
-    n.defaut().map(str::to_string).ok_or_else(|| socle::echec::livree("fctu-base.json", quoi))
+fn defaut<T: Copy>(n: &droit::preavis::Nomenclature<T>, quoi: &str) -> R<T> {
+    n.defaut().ok_or_else(|| socle::echec::livree("fctu-base.json", quoi))
 }
 
 /// La fin d'un contrat, telle qu'elle se declare. Le dernier jour travaille et paye
@@ -82,13 +84,13 @@ pub struct FinDeContrat {
     pub fin: Jour,
     pub motif: droit::natures::MotifDeRupture,
     pub mois_rattachement: socle::mois::Mois,
-    pub type_preavis: String,
+    pub type_preavis: TypeDePreavis,
     pub preavis_debut: Option<Jour>,
     pub preavis_fin: Option<Jour>,
     pub notification: Option<Jour>,
     pub signature_convention: Option<Jour>,
     pub engagement_licenciement: Option<Jour>,
-    pub transaction: Option<String>,
+    pub transaction: Option<TransactionEnCours>,
 }
 
 
@@ -97,12 +99,12 @@ pub struct FinDeContrat {
 /// Le type de preavis (S21.G00.63.001) est-il un preavis NON effectue ? Le drapeau `non_effectue` de
 /// `fctu-base.json` : 02, 03, 10, 50, 51, 61, que nomme la CCH-12 de S21.G00.62.006 (cahier technique DSN 2026.1,
 /// p. 275). Un type inconnu refuse.
-pub fn preavis_non_effectue(type_preavis: &str) -> R<bool> {
+pub fn preavis_non_effectue(type_preavis: TypeDePreavis) -> R<bool> {
     match nomenclatures()?.types_preavis.du_code(type_preavis) {
         Some(c) => Ok(c.non_effectue == Some(true)),
         None => Err(socle::refus!(
             "Type de préavis {} inconnu de la norme (S21.G00.63.001) : le choisir dans la liste.",
-            repr(type_preavis)
+            repr(type_preavis.code())
         )),
     }
 }
@@ -121,20 +123,20 @@ pub fn notification_exigee(motif: droit::natures::MotifDeRupture) -> R<bool> {
 // ------------------------------------------------ le type de preavis et ce que la paie verse
 
 /// Les lignes d'une paie declarees en indemnite compensatrice de preavis (S21.G00.52.001), en (code, libelle).
-pub fn indemnites_de_preavis_versees(paie: &engagement::calcul::Paie) -> R<Vec<(String, String)>> {
+pub fn indemnites_de_preavis_versees(paie: &engagement::calcul::Paie) -> R<Vec<(TypeDePrime, String)>> {
     let codes = droit::preavis::codes_52_de_l_indemnite_de_preavis()?;
     Ok(paie
         .remuneration
         .iter()
         .filter(|l| !l.montant.is_zero())
-        .filter_map(|l| l.dsn_bloc52.as_ref().filter(|c| codes.contains(c)).map(|c| (c.clone(), l.libelle.clone())))
+        .filter_map(|l| l.dsn_bloc52.filter(|c| codes.contains(c)).map(|c| (c, l.libelle.clone())))
         .collect())
 }
 
 /// Les controles de S21.G00.62.006 (cahier technique DSN 2026.1, p. 275-276) : CCH-15, le jour tombe dans le contrat
 /// (`debut` = 40.001, `fin` = 62.001) ; CCH-12, sur un preavis non effectue, il precede le debut du preavis (63.002).
 fn controler_62_006(
-    jour_paye: &Jour, debut: &Jour, fin: &Jour, type_preavis: Option<&str>, debut_preavis: Option<&Jour>,
+    jour_paye: &Jour, debut: &Jour, fin: &Jour, type_preavis: Option<TypeDePreavis>, debut_preavis: Option<&Jour>,
 ) -> R<()> {
     if jour_paye > fin {
         return Err(socle::refus!(
@@ -177,12 +179,12 @@ pub fn dernier_jour_paye(e: &Engagement) -> R<Jour> {
     let numero = e.numero_declare()?;
     let fin = e.fin.ok_or_else(|| socle::refus!("S21.G00.62.006 : le contrat {} n'a pas de fin.", numero))?;
     let preavis = e.preavis.as_ref();
-    let type_preavis = preavis.map(|p| p.genre.clone()).filter(|t| !t.is_empty());
+    let type_preavis = preavis.map(|p| p.genre);
     let debut_preavis = preavis.and_then(|p| p.debut);
     let jour_paye = match e.dernier_jour_paye {
         Some(j) => j,
         None => {
-            if let Some(t) = type_preavis.as_deref() {
+            if let Some(t) = type_preavis {
                 if preavis_non_effectue(t)? {
                     return Err(socle::refus!(
                         "Contrat {} : preavis « {} », et la saisie ne dit pas le dernier jour travaille et paye au salaire \
@@ -197,7 +199,7 @@ precede le debut du preavis (CCH-12, cahier technique DSN p. 275). Il se saisit 
             fin
         }
     };
-    controler_62_006(&jour_paye, &e.debut, &fin, type_preavis.as_deref(), debut_preavis.as_ref())
+    controler_62_006(&jour_paye, &e.debut, &fin, type_preavis, debut_preavis.as_ref())
         .map_err(|m| m.reformuler(|m| format!("Contrat {} : {}", numero, m)))?;
     Ok(jour_paye)
 }
@@ -215,12 +217,12 @@ pub fn verifier(fin: &FinDeContrat, e: &Engagement, type_declaration: TypeDeLaDe
         )));
     }
     let types = nomenclatures()?.types_preavis;
-    let preavis = match types.du_code(&fin.type_preavis) {
+    let preavis = match types.du_code(fin.type_preavis) {
         Some(p) => p,
         None => {
             return Err(Echec::impossible(format!(
                 "Type de preavis {} inconnu de la norme (S21.G00.63.001). Les types sont dans fctu-base.json.",
-                repr(&fin.type_preavis)
+                repr(fin.type_preavis.code())
             )))
         }
     };
@@ -278,8 +280,8 @@ S21.G00.63.002.",
         if !permis.contains(&fin.type_preavis) {
             let mut noms = Vec::new();
             for c in permis {
-                let lib = types.du_code(c).map(|x| x.libelle.clone());
-                noms.push(format!("« {} - {} »", c, lib.ok_or_else(|| socle::fichiers::absent(c))?));
+                let lib = types.du_code(*c).map(|x| x.libelle.clone());
+                noms.push(format!("« {} - {} »", c, lib.ok_or_else(|| socle::fichiers::absent(c.code()))?));
             }
             return Err(Echec::impossible(format!(
                 "Preavis « {} » avec le motif de rupture {} : {} n'y permet que {}. {}",
@@ -323,7 +325,7 @@ signalement sans elle. Rien n'est ecrit.",
     // S21.G00.62.006 se lit sur le contrat, comme dans la mensuelle ; ses controles valent aussi contre la fin et le
     // preavis que ce signalement declare (62.001, 63.001, 63.002).
     let jour_paye = dernier_jour_paye(e).map_err(Echec::Impossible)?;
-    controler_62_006(&jour_paye, &e.debut, &fin.fin, Some(&fin.type_preavis), debut_p.as_ref())
+    controler_62_006(&jour_paye, &e.debut, &fin.fin, Some(fin.type_preavis), debut_p.as_ref())
         .map_err(Echec::Impossible)?;
 
     // CCH-11 de S21.G00.62.002 : le motif doit etre autorise pour la nature du contrat (091/092 pas pour un CDD).
@@ -425,7 +427,7 @@ ou un annule.",
     }
     verifier(fin, &paie.engagement, type_declaration)?;
     // Le type de preavis (63.001) et l'indemnite que la paie du solde verse (52.001) disent la meme chose.
-    if let Some(pourquoi) = droit::preavis::desaccord_du_preavis(&fin.type_preavis, &indemnites_de_preavis_versees(paie)?)? {
+    if let Some(pourquoi) = droit::preavis::desaccord_du_preavis(fin.type_preavis,&indemnites_de_preavis_versees(paie)?)? {
         return Err(Echec::impossible(format!(
             "Contrat {} : {}",
             paie.engagement.numero_declare()?,
