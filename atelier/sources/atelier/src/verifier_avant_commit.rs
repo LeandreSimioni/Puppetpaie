@@ -113,8 +113,8 @@ impl Motif {
 
 /// Les numéros à la forme d'un NIR qui ne sont pas inventés, hors d'une adresse web : `(début, numéro)`. La forme : sexe,
 /// année, mois (01-12, ou 20-99 pour les cas spéciaux), département (deux chiffres, 2A, 2B), six chiffres, puis la clé si
-/// elle suit ; ni précédé d'une lettre ou d'un chiffre, ni les décimales d'un nombre (« 0.249977111117893 », qu'une
-/// bibliothèque porte dans les binaires livrés), ni suivi d'un troisième chiffre (un horodatage « 20260906080000 » en a
+/// elle suit ; ni précédé d'une lettre ou d'un chiffre, ni les décimales d'un nombre (les quinze chiffres après « 0. »
+/// qu'une bibliothèque porte dans les binaires livrés), ni suivi d'un troisième chiffre (un horodatage « 20260906080000 » en a
 /// quatorze). Inventé : listé dans `FICTIVES`, ou la marque `INVENTE` dans ses treize chiffres.
 pub fn nirs_non_inventes(o: &[u8]) -> Vec<(usize, String)> {
     let chiffre = |i: usize| o.get(i).is_some_and(u8::is_ascii_digit);
