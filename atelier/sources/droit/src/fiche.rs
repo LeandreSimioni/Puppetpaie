@@ -670,29 +670,33 @@ impl Bic {
 
 notion_lue!(Bic rangee par socle::iban::iban_compact);
 
-/// UNE ADRESSE DE COURRIEL : une seule arobase, qui n'est pas en tete, un point dans le domaine avec un caractere avant
-/// et un apres, aucun blanc (`^[^@\s]+@[^@\s]+\.[^@\s]+$`). Une inference : la forme qu'en garde la DSN (S20.G00.07.003,
-/// X [1,100] : `logiciel/donnees/formats-dsn-base.json`) ne dit que sa longueur, et aucun texte depose ne dit la forme
-/// d'une adresse ; celle-ci est la regle que la saisie tenait. Elle se garde telle qu'elle est ecrite, capitales
-/// comprises (RFC 5321, § 2.4 : `ietf/ietf-rfc5321-simple-mail-transfer-protocol-20081001.txt`, l. 869).
+/// UNE ADRESSE DE COURRIEL : de 6 a 100 caracteres, ce que dit la norme DSN, et rien d'autre (« Adresse mél »,
+/// S21.G00.30.018, X [6,100] : `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.30.txt`, l. 294-300 ; « Adresse mél
+/// du contact », S20.G00.07.003, X [6,100] : `bloc-S20.G00.05.txt`, l. 312-319). Aucun texte depose ne dit la forme d'une
+/// adresse. Elle se garde telle qu'elle est ecrite, capitales comprises (RFC 5321, § 2.4 :
+/// `ietf/ietf-rfc5321-simple-mail-transfer-protocol-20081001.txt`, l. 869).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
 pub struct Courriel(String);
 
 impl Courriel {
+    /// Sa longueur, en caracteres, au moins et au plus (X [6,100]).
+    pub const LONGUEUR: (usize, usize) = (6, 100);
+
     /// L'adresse `texte`, ou la phrase qui la refuse.
     pub fn lire(texte: &str) -> R<Courriel> {
-        let c: Vec<char> = texte.chars().collect();
-        let une_arobase = c.iter().filter(|x| **x == '@').count() == 1 && !c.iter().any(|x| socle::texte::blanc(*x));
-        let bonne = une_arobase
-            && c.iter().position(|x| *x == '@').filter(|a| *a > 0).is_some_and(|a| {
-                let domaine = &c[a + 1..];
-                (1..domaine.len().saturating_sub(1)).any(|i| domaine[i] == '.')
-            });
-        if bonne {
+        let n = texte.chars().count();
+        let (min, max) = Self::LONGUEUR;
+        if (min..=max).contains(&n) {
             Ok(Courriel(texte.to_string()))
         } else {
-            Err(socle::refus!("« {} » n'est pas une adresse de courriel : nom@domaine.fr, sans espace", texte))
+            Err(socle::refus!(
+                "« {} » a {} caractères : une adresse de courriel en a de {} à {}, ce que la DSN écrit (S21.G00.30.018, S20.G00.07.003). Corrigez-la",
+                texte,
+                n,
+                min,
+                max
+            ))
         }
     }
 }
@@ -754,25 +758,27 @@ impl NumeroObjetSpectacle {
 
 notion_lue!(NumeroObjetSpectacle rangee par sans_blancs_de_bord);
 
-/// LE CODE INSEE D'UNE COMMUNE, cinq caracteres (« Nomenclature INSEE des communes de France », S21.G00.81.005, X [5,5] :
-/// `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.81.txt`, l. 458-461 ; `logiciel/donnees/formats-dsn-base.json`) :
-/// le departement, deux chiffres ou 2A, 2B en Corse, puis trois chiffres. Une inference : la norme ne dit que la
-/// longueur, et le departement de Corse en 2A et 2B est celui du NIR (INSEE, schema NIR : `insee-nir-siret/`).
+/// LE CODE INSEE D'UNE COMMUNE : cinq caracteres, ce que dit la norme DSN, et rien d'autre (« Code INSEE commune »,
+/// « Nomenclature INSEE des communes de France », S21.G00.81.005, X [5,5] :
+/// `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.81.txt`, l. 458-496).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 #[serde(transparent)]
 pub struct CodeInsee(String);
 
 impl CodeInsee {
+    pub const LONGUEUR: usize = 5;
+
     /// Le code `texte`, ou la phrase qui le refuse.
     pub fn lire(texte: &str) -> R<CodeInsee> {
-        let b = texte.as_bytes();
-        let departement = b.len() == 5 && (b[..2].iter().all(u8::is_ascii_digit) || matches!(&b[..2], b"2A" | b"2B"));
-        if departement && b[2..].iter().all(u8::is_ascii_digit) {
+        let n = texte.chars().count();
+        if n == Self::LONGUEUR {
             Ok(CodeInsee(texte.to_string()))
         } else {
             Err(socle::refus!(
-                "« {} » n'est pas un code INSEE de commune : cinq caractères, le département (2A, 2B en Corse) puis trois chiffres, 37261 par exemple (DSN, S21.G00.81.005)",
-                texte
+                "« {} » a {} caractères : un code INSEE de commune en a {}, 37261 par exemple, ce que la DSN écrit (S21.G00.81.005). Corrigez-le",
+                texte,
+                n,
+                Self::LONGUEUR
             ))
         }
     }
