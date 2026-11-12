@@ -4629,7 +4629,7 @@ certificat de conformite du depot precedent.",
     contact_sante_travail(&mut f, &ent_e)?;
     if sans_individu {
         for code in orgs.absence_de_rattachement() {
-            f.add("S20.G00.08.001", code);
+            f.add("S20.G00.08.001", code.as_str());
         }
     }
 

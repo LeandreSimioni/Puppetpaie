@@ -73,9 +73,9 @@ impl Versement {
 }
 
 forme_notee! {
-    /// Le bloc S20.G00.08 d'un mois sans individu : les organismes qui n'ont plus d'individu rattache.
+    /// Le bloc S20.G00.08 d'un mois sans individu : le code caisse des organismes qui n'ont plus d'individu rattache.
     pub struct SansIndividu {
-        pub absence_de_rattachement: Vec<String>,
+        pub absence_de_rattachement: Vec<CodeCaisse>,
     }
 }
 
@@ -220,6 +220,45 @@ impl TryFrom<String> for IdentifiantDOrganisme {
 impl From<IdentifiantDOrganisme> for String {
     fn from(c: IdentifiantDOrganisme) -> String {
         c.0.into_owned()
+    }
+}
+
+/// LE CODE CAISSE D'UN ORGANISME QUI N'A PLUS D'INDIVIDU RATTACHE (S20.G00.08.001, « Code caisse ») : « Numéro de la
+/// caisse destinataire de la DSN sans salarié affilié » (Agirc-Arrco 88, France Travail 93, Congés Spectacles 97…),
+/// « Table ODRT », « X [2,6] » (cahier technique DSN 2026.1 p. 140, `atelier/reference/norme-dsn/texte/bloc-S20.G00.08.txt`).
+/// Ce n'est pas l'identifiant de l'organisme (`IdentifiantDOrganisme`). La table ODRT n'est pas deposee : la forme est
+/// celle du cahier, de 2 a 6 caracteres (`X`), et rien de plus (regle 7).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct CodeCaisse(String);
+
+impl CodeCaisse {
+    /// Le code ecrit `texte`.
+    pub fn lire(texte: &str) -> R<CodeCaisse> {
+        if !de_nature_x(texte, 2, 6) {
+            return Err(socle::refus!(
+                "Code caisse {} : le code d'une caisse sans individu rattaché (S20.G00.08.001) s'écrit de 2 à 6 caractères, sans blanc au début ni à la fin.",
+                socle::fichiers::repr(texte)
+            ));
+        }
+        Ok(CodeCaisse(texte.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for CodeCaisse {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<CodeCaisse> {
+        CodeCaisse::lire(&s)
+    }
+}
+
+impl From<CodeCaisse> for String {
+    fn from(c: CodeCaisse) -> String {
+        c.0
     }
 }
 
@@ -670,7 +709,7 @@ impl Organismes {
     }
 
     /// Les organismes du bloc S20.G00.08 d'un mois sans individu.
-    pub fn absence_de_rattachement(&self) -> &[String] {
+    pub fn absence_de_rattachement(&self) -> &[CodeCaisse] {
         &self.base.sans_individu.absence_de_rattachement
     }
 
