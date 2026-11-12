@@ -481,25 +481,26 @@ fn empiler(mut bar: Pile, sec: Couche) -> Pile {
     if let Some(m) = sec.majoration_conges_110 {
         bar.majoration_conges_110 = m;
     }
-    // La reduction generale se complete, elle ne se remplace pas.
     if let Some(s) = sec.reduction_generale {
-        let rg = bar.reduction_generale.get_or_insert_with(ReductionGenerale::default);
-        macro_rules! si {
-            ($($c:ident),*) => { $( if s.$c.is_some() { rg.$c = s.$c.clone(); } )* };
-        }
-        si!(verifie, formule, tmin, tdelta, puissance, t, plafond_smic, smic_horaire_reference, imputation, majoration_caisse_conges, source, note);
-        if s.statuts.is_some() {
-            rg.statuts = s.statuts.clone();
-        }
-        if let Some(d) = &s.dsn {
-            let r = rg.dsn.get_or_insert_with(Default::default);
-            macro_rules! si_dsn {
-                ($($c:ident),*) => { $( if d.$c.is_some() { r.$c = d.$c.clone(); } )* };
-            }
-            si_dsn!(code81_urssaf, code81_chomage, code81_retraite, ctp, ctp_regularisation, qualifiant, cle_total_chomage, cle_total_urssaf, source, note);
-        }
+        reduction_par_dessus(bar.reduction_generale.get_or_insert_with(ReductionGenerale::default), s);
     }
     bar
+}
+
+/// Ce qu'une couche ecrit de la reduction generale complete ce qu'elle portait, champ par champ, sa section `dsn`
+/// comprise : elle ne la remplace pas.
+pub(crate) fn reduction_par_dessus(rg: &mut ReductionGenerale, s: &ReductionGenerale) {
+    macro_rules! si {
+        ($($c:ident),*) => { $( if s.$c.is_some() { rg.$c = s.$c.clone(); } )* };
+    }
+    si!(verifie, formule, tmin, tdelta, puissance, t, plafond_smic, smic_horaire_reference, imputation, majoration_caisse_conges, statuts, source, note);
+    if let Some(d) = &s.dsn {
+        let r = rg.dsn.get_or_insert_with(Default::default);
+        macro_rules! si_dsn {
+            ($($c:ident),*) => { $( if d.$c.is_some() { r.$c = d.$c.clone(); } )* };
+        }
+        si_dsn!(code81_urssaf, code81_chomage, code81_retraite, ctp, ctp_regularisation, qualifiant, cle_total_chomage, cle_total_urssaf, source, note);
+    }
 }
 
 // ------------------------------------------------------------ les cadres
