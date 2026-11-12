@@ -28,7 +28,58 @@ pub struct BaseEmplois {
     /// IDCC -> le nom court de la convention.
     pub conventions: BTreeMap<String, String>,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    pub emplois: Vec<(String, FicheDuCatalogue)>,
+    pub emplois: Vec<(CodeEmploi, FicheDuCatalogue)>,
+}
+
+/// LE CODE D'UN METIER DU SPECTACLE : un code de la nomenclature des emplois du spectacle de France Travail
+/// (`nomenclature-emplois-ft.json`, ses 1 236 codes relevés de
+/// `atelier/reference/sources/francetravail-nomenclature-emplois-spectacle-20161212.pdf`, « ACC010 ACCESSOIRISTE,
+/// ART120 ARTISTE DRAMATIQUE... » : `logiciel/donnees/sources.json`, `francetravail-nomenclature-emplois-2016`). Chaque
+/// metier du catalogue (`emplois-base.json`) a le sien, et un metier hors catalogue se choisit dans la nomenclature
+/// (sa `note`) : le metier qu'une carte choisit, la cle du catalogue, celui d'un deroulant. La liste est la nomenclature
+/// livree : un code qu'elle n'a pas se refuse. Saisi, il se range sans ses blancs de bord et en capitales.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
+pub struct CodeEmploi(String);
+
+impl CodeEmploi {
+    /// Le code `texte`, s'il est de la nomenclature.
+    pub fn lire(texte: &str) -> R<CodeEmploi> {
+        if nomenclature()?.emplois.contains_key(texte) {
+            return Ok(CodeEmploi(texte.to_string()));
+        }
+        Err(socle::refus!("Métier {} inconnu : ni dans le catalogue des emplois, ni dans la nomenclature de France Travail.", repr(texte)))
+    }
+
+    /// Le texte saisi `texte` dans sa forme, avant d'etre lu : sans ses blancs de bord, en capitales.
+    pub fn rangee(texte: &str) -> String {
+        texte.trim().to_uppercase()
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// SON METIER : celui du catalogue, sinon celui de la nomenclature, qui a tous les codes.
+    pub fn metier(&self) -> R<Metier> {
+        if let Some((_, f)) = base()?.emplois.iter().find(|(c, _)| c == self) {
+            return Ok(Metier { code: self.clone(), fiche: FicheDuMetier::Catalogue(f.clone()) });
+        }
+        let n = nomenclature()?.emplois.get(&self.0).cloned().ok_or_else(|| socle::echec::livree("nomenclature-emplois-ft.json", &self.0))?;
+        Ok(Metier { code: self.clone(), fiche: FicheDuMetier::Nomenclature(n) })
+    }
+}
+
+impl std::fmt::Display for CodeEmploi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for CodeEmploi {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        CodeEmploi::lire(&socle::forme::range_si_saisi(String::deserialize(d)?, CodeEmploi::rangee)).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
 }
 
 /// Un metier du catalogue : ce que les declarations demandent (le libelle et sa forme declaree S21.G00.40.006, la
@@ -177,7 +228,7 @@ fn capitaliser(s: &str) -> String {
 /// et une annexe ; ni PCS, ni niveau, ni minima).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Metier {
-    pub code: String,
+    pub code: CodeEmploi,
     #[serde(flatten)]
     pub fiche: FicheDuMetier,
 }
@@ -302,17 +353,14 @@ impl Metier {
     }
 }
 
-/// Un metier par son code (blancs et casse ignores), catalogue d'abord, nomenclature ensuite. `None` si le code n'existe
-/// nulle part.
+/// Le metier que nomme le texte `code` d'une fiche (son code emploi, S21.G00.40.005 : blancs et casse ignores), s'il est
+/// un code de la nomenclature (`CodeEmploi::metier`). `None` sinon : un emploi permanent (« 999SPT »), un code vide.
 pub fn metier(code: &str) -> R<Option<Metier>> {
-    let code = code.trim().to_uppercase();
-    if code.is_empty() {
+    let code = CodeEmploi::rangee(code);
+    if !nomenclature()?.emplois.contains_key(&code) {
         return Ok(None);
     }
-    if let Some((_, f)) = base()?.emplois.iter().find(|(c, _)| *c == code) {
-        return Ok(Some(Metier { code, fiche: FicheDuMetier::Catalogue(f.clone()) }));
-    }
-    Ok(nomenclature()?.emplois.get(&code).cloned().map(|n| Metier { code, fiche: FicheDuMetier::Nomenclature(n) }))
+    CodeEmploi::lire(&code)?.metier().map(Some)
 }
 
 /// LES SEPT CHAMPS DECLARES POUR UN METIER, tels que la fiche du salarie les ecrit : l'emploi declare et son libelle,
@@ -330,25 +378,19 @@ pub struct ChampsDuMetier {
 }
 
 /// Les sept champs declares pour ce metier (`emploi_affichage` compris).
-/// `cadre` a `None` prend le defaut du catalogue dans la convention `idcc` (`Metier::cadre_par_defaut`). Refuse un code
-/// inconnu.
-pub fn resoudre(code: &str, cadre: Option<bool>, feminin: bool, idcc: Option<&str>) -> R<ChampsDuMetier> {
-    let m = metier(code)?.ok_or_else(|| {
-        socle::refus!(
-            "Métier {} inconnu : ni dans le catalogue des emplois, ni dans la \
-             nomenclature de France Travail.",
-            repr(code))
-    })?;
+/// `cadre` a `None` prend le defaut du catalogue dans la convention `idcc` (`Metier::cadre_par_defaut`).
+pub fn resoudre(code: &CodeEmploi, cadre: Option<bool>, feminin: bool, idcc: Option<&str>) -> R<ChampsDuMetier> {
+    let m = code.metier()?;
     let est_cadre = match cadre.or_else(|| m.cadre_par_defaut(idcc)) {
         Some(c) => c,
-        None => return Err(socle::refus!("Le métier {} est hors catalogue : la fiche doit dire s'il est cadre.", repr(code))),
+        None => return Err(socle::refus!("Le métier {} est hors catalogue : la fiche doit dire s'il est cadre.", repr(code.as_str()))),
     };
     let libelle = if feminin { m.feminin() } else { m.libelle() };
     Ok(ChampsDuMetier {
         emploi: m.emploi().to_string(),
         emploi_affichage: libelle,
         pcs_ese: m.pcs_ese().map(str::to_string),
-        code_emploi_ft: Some(m.code.clone()),
+        code_emploi_ft: Some(m.code.to_string()),
         statut: m.statut(),
         statut_conventionnel: if est_cadre { Some(StatutConventionnel::Cadre04) } else { m.statut_non_cadre() },
         statut_categoriel_rc: if est_cadre { StatutCategorielRc::Cadre } else { StatutCategorielRc::NonCadre },
@@ -507,7 +549,7 @@ pub fn emploi_de(sal: &FicheSalarie, eng: &EmploiEngagement) -> R<FicheSalarie> 
 /// deroulant le montre.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MetierDuDeroulant {
-    pub code: String,
+    pub code: CodeEmploi,
     pub libelle: String,
     pub feminin: String,
     pub famille: String,
@@ -528,7 +570,7 @@ pub fn catalogue(idcc: Option<&str>) -> R<Vec<MetierDuDeroulant>> {
         .map(|(code, f)| {
             let m = Metier { code: code.clone(), fiche: FicheDuMetier::Catalogue(f.clone()) };
             Ok(MetierDuDeroulant {
-                cadre_par_defaut: m.cadre_par_defaut(idcc).ok_or_else(|| socle::refus!("Metier {} : le catalogue ne dit pas s'il est cadre.", repr(code)))?,
+                cadre_par_defaut: m.cadre_par_defaut(idcc).ok_or_else(|| socle::refus!("Metier {} : le catalogue ne dit pas s'il est cadre.", repr(code.as_str())))?,
                 code: code.clone(),
                 libelle: f.libelle.clone(),
                 feminin: f.feminin.clone(),
@@ -546,12 +588,12 @@ pub fn catalogue(idcc: Option<&str>) -> R<Vec<MetierDuDeroulant>> {
 /// Le metier du catalogue qu'un intitule imprime nomme (un bulletin d'un logiciel precedent : « MUSICIEN »), compare
 /// par `norme` (sans casse ni accents) a son libelle, a son feminin et a sa forme declaree. `(code, feminin)` quand un
 /// seul metier porte cet intitule ; `None` quand aucun, ou plusieurs (« SCRIPTE ») : on ne choisit pas entre eux.
-pub fn par_intitule(intitule: &str, norme: impl Fn(&str) -> String) -> R<Option<(String, bool)>> {
+pub fn par_intitule(intitule: &str, norme: impl Fn(&str) -> String) -> R<Option<(CodeEmploi, bool)>> {
     let cherche = norme(intitule);
     if cherche.is_empty() {
         return Ok(None);
     }
-    let mut trouves: Vec<(String, bool)> = Vec::new();
+    let mut trouves: Vec<(CodeEmploi, bool)> = Vec::new();
     for (code, f) in &base()?.emplois {
         let (libelle, feminin, emploi) = (norme(&f.libelle), norme(&f.feminin), norme(&f.emploi));
         if [&libelle, &feminin, &emploi].contains(&&cherche) {

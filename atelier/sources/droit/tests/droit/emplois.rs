@@ -2,7 +2,7 @@
 //! `emplois-resolus.json`, que `PUPPETPAIE_REECRIRE_ORACLES=1` reecrit.
 
 use crate::outils::typee::{cas_de, verifier, Ligne};
-use droit::emplois::resoudre;
+use droit::emplois::{resoudre, CodeEmploi};
 use serde::{Deserialize, Serialize};
 
 /// Un code, la case cadre de la fiche (vide, oui ou non), le feminin.
@@ -33,7 +33,8 @@ enum Resolution {
 }
 
 fn resolution(c: &CasResolu) -> Resolution {
-    match resoudre(&c.code, c.cadre, c.feminin, None) {
+    // Le code tel qu'une saisie le range, puis lu (`CodeEmploi`).
+    match CodeEmploi::lire(&CodeEmploi::rangee(&c.code)).and_then(|code| resoudre(&code, c.cadre, c.feminin, None)) {
         Ok(r) => Resolution::Champs {
             emploi: r.emploi,
             emploi_affichage: r.emploi_affichage,
@@ -56,7 +57,7 @@ fn resoudre_un_metier() {
     verifier("emplois-resolus.json", cas.into_iter().map(|c| Ligne { attendu: resolution(&c), cas: c }).collect());
     // Le dramaturge est cadre dans la 1285 (groupe B de la filiere artistique, art. XI.2.1) ; la grille 3090 ne le
     // nomme pas, le defaut du catalogue vaut.
-    let cadre = |idcc| resoudre("DRA010", None, false, Some(idcc)).unwrap();
+    let cadre = |idcc| resoudre(&CodeEmploi::lire("DRA010").unwrap(), None, false, Some(idcc)).unwrap();
     assert_eq!((cadre("1285").statut_conventionnel.map(|s| s.as_str()), cadre("1285").statut_categoriel_rc.as_str()), (Some("04"), "01"));
     assert_eq!((cadre("3090").statut_conventionnel.map(|s| s.as_str()), cadre("3090").statut_categoriel_rc.as_str()), (Some("05"), "04"));
 }

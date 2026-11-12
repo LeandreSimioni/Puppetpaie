@@ -40,7 +40,6 @@ use droit::emplois;
 use engagement::{self, LignePaie};
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
-use socle::fichiers::repr;
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 
@@ -219,7 +218,7 @@ struct ChargeContratsPasses {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeEmploi {
-    metier: String,
+    metier: emplois::CodeEmploi,
     cadre: Option<bool>,
     feminin: bool,
     salarie: Option<SexeDeLaFiche>,
@@ -946,12 +945,6 @@ fn contrats_passes_route(ctx: &Contexte, c: ChargeContratsPasses) -> R<ContratsP
 /// case `sexe` : `ntt::sexe_de`). `feminin` donne seul suffit aussi.
 fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
     let feminin = c.feminin || c.salarie.is_some_and(|s| declarations::ntt::sexe_de(s.nir.as_deref(), s.sexe.as_deref()) == Some("2"));
-    if emplois::metier(&c.metier)?.is_none() {
-        return Err(erreur(
-            Classe::Illisible,
-            format!("Métier {} inconnu : ni dans le catalogue des métiers, ni dans la nomenclature France Travail.", repr(&c.metier)),
-        ));
-    }
     let champs = emplois::resoudre(&c.metier, c.cadre, feminin, ctx.entreprise.idcc.portee())?;
     let phrase = match champs.code_emploi_ft.as_deref() {
         Some(code) => format!("Métier : {} ({}).", champs.emploi_affichage, code),

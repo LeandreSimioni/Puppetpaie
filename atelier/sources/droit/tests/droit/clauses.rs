@@ -91,7 +91,8 @@ pub(crate) fn champs(texte: &str) -> R<ChampsSalarie> {
 pub(crate) fn dit(e: Option<&Eng>) -> R<DitParLEngagement> {
     let Some(e) = e else { return Ok(DitParLEngagement::default()) };
     let dite = |v: &Option<String>| v.clone().filter(|s| !s.is_empty());
-    Ok(DitParLEngagement { categorie_conventionnelle: dite(&e.categorie_conventionnelle), statut: e.statut, metier: dite(&e.metier), cadre: e.cadre, debut: e.debut })
+    let metier = dite(&e.metier).map(|c| droit::emplois::CodeEmploi::lire(&c)).transpose()?;
+    Ok(DitParLEngagement { categorie_conventionnelle: dite(&e.categorie_conventionnelle), statut: e.statut, metier, cadre: e.cadre, debut: e.debut })
 }
 
 pub(crate) fn profil_de(p: &Prof) -> Profil {

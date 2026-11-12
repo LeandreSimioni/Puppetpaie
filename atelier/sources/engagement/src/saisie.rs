@@ -120,7 +120,7 @@ carte! {
         #[champ(Terme, Etablissement)]
         pub etablissement: Option<String>,
         #[champ(Terme, Metier)]
-        pub metier: Option<String>,
+        pub metier: Option<droit::emplois::CodeEmploi>,
         #[champ(Terme, Cadre)]
         pub cadre: Option<bool>,
         #[champ(Terme, Lieu)]
@@ -275,7 +275,7 @@ impl Simple for droit::natures::NatureDeContrat {
 macro_rules! choix_simple {
     ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.as_str().to_string())) } } )* };
 }
-choix_simple!(droit::fiche::Statut, droit::fiche::StatutConventionnel, droit::fiche::StatutCategorielRc, crate::numeros::NumeroContrat);
+choix_simple!(droit::fiche::Statut, droit::fiche::StatutConventionnel, droit::fiche::StatutCategorielRc, crate::numeros::NumeroContrat, droit::emplois::CodeEmploi);
 
 macro_rules! code_simple {
     ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.code().to_string())) } } )* };

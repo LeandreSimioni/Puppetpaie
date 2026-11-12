@@ -1013,7 +1013,7 @@ pub(crate) fn engagements(
         lignes_dites(ctx, carte.lignes(), &qui)?;
         // Le metier de ce contrat : six champs declares, que l'engagement
         // ecrit par-dessus, et son libelle lisible (`emploi_affichage`).
-        let declare = match carte.metier.as_deref().filter(|m| !m.is_empty()) {
+        let declare = match &carte.metier {
             Some(code) => {
                 let salarie = fiche_du_salarie(ctx, carte.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?)?;
                 let feminin = sexe(&salarie).as_deref() == Some("2");
@@ -1998,7 +1998,7 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
     let tous = &data.engagements;
     for (p, e) in paies.iter_mut().zip(tous) {
         let m = match &e.metier {
-            Some(metier) => emplois::metier(metier)?.map(|m| (metier, m)),
+            Some(metier) => Some((metier, metier.metier()?)),
             None => None,
         };
         if let Some((metier, m)) = m.filter(|(_, m)| e.cadre == Some(false) && m.cadre_par_defaut(ctx.entreprise.idcc.portee()) == Some(true)) {
@@ -2008,7 +2008,7 @@ pub(crate) fn charger_donnees(ctx: &Contexte, data: &saisie::VueDuMois) -> R<Sai
             // Le metier se nomme par son libelle, ou par son code quand il n'en a pas.
             let libelle = match Some(m.libelle()).filter(|l| !l.is_empty()) {
                 Some(l) => l,
-                None => metier.clone(),
+                None => metier.to_string(),
             };
             let msg = format!(
                 "{} {}, {} : case cadre decochee, alors que ce metier est \

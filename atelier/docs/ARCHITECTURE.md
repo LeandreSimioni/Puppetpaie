@@ -221,7 +221,8 @@ de prévoyance, les codes du bloc 60, du préavis, de l'indemnité.
 | cotisation de la DSN | une ligne du bloc 81, par son code S21.G00.81.001 | `CodeCotisation81` (`droit/src/code_cotisation.rs`), que portent `cotisations_dsn` (`code81`, `apres`), `cotisations_dsn_retirees`, `du_corps`, les codes de la réduction générale, la CET patronale d'une version de la norme ; une couche la nomme par son code et, quand plusieurs le partagent, son affectation (`059:203`) : `CleDeCotisationDsn` (même fichier) |
 | assiette | ce sur quoi une cotisation se calcule | `droit::assiette::Assiette` |
 | barème | les taux d'un jour, en trois étages | `droit::forme_bareme::Pile` |
-| emploi | ce que fait le salarié | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres ; le code d'emploi, à créer |
+| emploi | ce que fait le salarié | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres |
+| code d'un métier | un code de la nomenclature des emplois du spectacle de France Travail (`nomenclature-emplois-ft.json`), qui désigne un métier : du catalogue (`emplois-base.json`, dont chaque clé en est un), sinon de la nomenclature | `CodeEmploi` (`droit/src/emplois.rs`), que portent le métier qu'une carte choisit (`metier`), la clé du catalogue, un métier et celui d'un déroulant, les `codes` d'une grille des minima, les métiers retenus par la compagnie ; son métier : `CodeEmploi::metier`. Le code emploi qu'une fiche déclare (S21.G00.40.005) est une autre notion, qui peut n'en nommer aucun (« 999SPT ») |
 | statut | artiste ou technicien | `droit::fiche::Statut` |
 | établissement | un lieu d'emploi | son `Nic`, à créer (#419) |
 | effectif | l'effectif que l'Urssaf calcule | `droit::contexte::Effectif` |

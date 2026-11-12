@@ -231,7 +231,7 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
         Some(m) => Some(m),
         None => match emploi.and_then(|e| e.emploi.as_deref()) {
             Some(intitule) => match droit::emplois::par_intitule(intitule, crate::importation::bulletins::compare)? {
-                Some((c, _)) => droit::emplois::metier(&c)?,
+                Some((c, _)) => Some(c.metier()?),
                 None => None,
             },
             None => None,

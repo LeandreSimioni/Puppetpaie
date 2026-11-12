@@ -1121,10 +1121,8 @@ fn poser_sur(o: &mut Objet, mois: Mois, saisie: &Carte, le: Option<Jour>) -> R<(
 pub fn en_forme(saisie: &Carte) -> R<Carte> {
     // Ce que le moteur deduit, ou tient seul.
     let mut saisie = saisie.sans(&[Groupe::Deduit, Groupe::Vue]);
-    let catalogue = match saisie.metier.as_deref().filter(|m| !m.is_empty()) {
-        Some(m) => droit::emplois::metier(m)?
-            .filter(|f| !f.cadre_selon_la_convention())
-            .and_then(|f| f.cadre_par_defaut(None)),
+    let catalogue = match &saisie.metier {
+        Some(m) => Some(m.metier()?).filter(|f| !f.cadre_selon_la_convention()).and_then(|f| f.cadre_par_defaut(None)),
         None => None,
     };
     if catalogue.is_some() && saisie.cadre == catalogue {

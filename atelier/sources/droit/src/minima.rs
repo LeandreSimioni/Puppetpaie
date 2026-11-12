@@ -284,7 +284,7 @@ forme_notee! {
         pub unite: String,
         pub heures: Option<Nombre>,
         pub categories: Option<Vec<String>>,
-        pub codes: Option<Vec<String>>,
+        pub codes: Option<Vec<crate::emplois::CodeEmploi>>,
         pub si_spectacle: Option<SiSpectacle>,
         pub si_entreprise: Option<SiEntreprise>,
         pub si_salarie: Option<SiSalarie>,
@@ -308,7 +308,7 @@ forme_notee! {
         pub nom: String,
         pub groupe: Option<String>,
         pub categories: Option<Vec<String>>,
-        pub codes: Option<Vec<String>>,
+        pub codes: Option<Vec<crate::emplois::CodeEmploi>>,
         pub si_spectacle: Option<SiSpectacle>,
         pub si_entreprise: Option<SiEntreprise>,
         pub si_salarie: Option<SiSalarie>,
@@ -431,7 +431,7 @@ impl SiSalarie {
 /// LES CONDITIONS D'UNE GRILLE OU D'UNE MAJORATION, telles que l'engagement les confronte a une ligne de paie.
 pub struct Conditions<'a> {
     pub categories: Option<&'a [String]>,
-    pub codes: Option<&'a [String]>,
+    pub codes: Option<&'a [crate::emplois::CodeEmploi]>,
     pub si_spectacle: Option<&'a SiSpectacle>,
     pub si_entreprise: Option<&'a SiEntreprise>,
     pub si_salarie: Option<&'a SiSalarie>,

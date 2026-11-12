@@ -557,9 +557,19 @@ pub struct DitParLEngagement {
     pub categorie_conventionnelle: Option<String>,
     pub statut: Option<Statut>,
     /// Le code emploi (`metier`).
-    pub metier: Option<String>,
+    pub metier: Option<emplois::CodeEmploi>,
     pub cadre: Option<bool>,
     pub debut: Option<Jour>,
+}
+
+impl DitParLEngagement {
+    /// Le metier que l'engagement choisit, sinon celui que nomme le code emploi de la fiche (`emplois::metier`).
+    fn metier_lu(&self, fiche: &ChampsSalarie) -> R<Option<emplois::Metier>> {
+        match &self.metier {
+            Some(code) => code.metier().map(Some),
+            None => Ok(fiche.code_emploi_ft.remplie().map(|c| emplois::metier(c)).transpose()?.flatten()),
+        }
+    }
 }
 
 /// La categorie conventionnelle d'un salarie pour CET engagement : `categorie` vaut `None` quand rien ne permet de la
@@ -576,8 +586,9 @@ pub struct Profil {
 pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, au_mois: Option<&AuMois>, e: &DitParLEngagement) -> R<Profil> {
     let t = table()?;
     let sec = t.convention(idcc).and_then(|c| c.categories.as_ref());
-    let code = e.metier.clone().or_else(|| fiche.code_emploi_ft.remplie().map(str::to_string));
-    let m = code.as_deref().map(emplois::metier).transpose()?.flatten();
+    // Le code que les phrases citent : celui de l'engagement, sinon celui de la fiche, metier ou non.
+    let code = e.metier.as_ref().map(|c| c.to_string()).or_else(|| fiche.code_emploi_ft.remplie().map(str::to_string));
+    let m = e.metier_lu(fiche)?;
     let c3090 = m.as_ref().and_then(|m| m.classification_3090());
     let grille = c3090.map(|c| c.grille.clone());
     let profil = |categorie: Option<&str>, source: String| Profil { categorie: categorie.map(str::to_string), grille: grille.clone(), source };
@@ -1133,14 +1144,14 @@ pub fn prime_anciennete<'j>(
 ) -> R<Option<Prime>> {
     let t = table()?;
     let Some(sec) = prime_de_l_annexe(&t, idcc, annexe) else { return Ok(None) };
-    let code = e.metier.clone().or_else(|| fiche.code_emploi_ft.remplie().map(str::to_string));
-    let m = code.as_deref().map(emplois::metier).transpose()?.flatten();
+    let m = e.metier_lu(fiche)?;
     // Artiste : l'engagement le dit, sinon la fiche.
     let artiste = match e.statut {
         Some(s) => s == Statut::Artiste,
         None => fiche.statut.dite() == Some(&Statut::Artiste),
     };
-    let (Some(m), Some(code)) = (m.as_ref(), code.as_deref()) else { return Ok(None) };
+    let Some(m) = m.as_ref() else { return Ok(None) };
+    let code = &m.code;
     let Some(c3090) = grille_technique(m) else { return Ok(None) };
     if artiste {
         return Ok(None);

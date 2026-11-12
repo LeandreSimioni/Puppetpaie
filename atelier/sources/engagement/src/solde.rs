@@ -95,8 +95,7 @@ fn de_p(x: clauses::P) -> R<Decimal> {
 /// code emploi (`metier`), la case cadre, son debut. Une case vide ne
 /// dit rien ; la carte n'a pas de case pour la categorie dans la convention, que seule la fiche dit.
 pub(crate) fn dit_par_l_engagement(e: &Carte) -> R<clauses::DitParLEngagement> {
-    let metier = e.metier.as_deref().filter(|v| !v.is_empty()).map(str::to_string);
-    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.statut, metier, cadre: e.cadre, debut: e.debut })
+    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.statut, metier: e.metier.clone(), cadre: e.cadre, debut: e.debut })
 }
 
 /// L'age au dernier jour du contrat (ou aujourd'hui), en annees revolues.
