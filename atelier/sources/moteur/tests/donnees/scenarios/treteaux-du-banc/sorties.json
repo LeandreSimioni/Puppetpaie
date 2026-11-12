@@ -416,9 +416,9 @@
           "valeur": false
         }
       ],
-      "casc_svp_exemptee": [
+      "date_de_versement_intermittents": [
         {
-          "valeur": false
+          "valeur": "fin du mois"
         }
       ],
       "premiere_embauche": [
@@ -481,6 +481,11 @@
         }
       ],
       "conseils": [
+        {
+          "valeur": false
+        }
+      ],
+      "casc_svp_exemptee": [
         {
           "valeur": false
         }
@@ -2179,9 +2184,9 @@
                 "existe racine:config/baremes/2026.json": "non",
                 "existe racine:config/effectifs.json": "non",
                 "existe racine:config/rubriques-compagnie.json": "non",
-                "fiches [\"2026-11\",\"FULLER\",\"le-banc-des-menteurs\"]": "3be157dcc605a2a12b9fab412cfe95c6eb781a8616388a7a5c467a84474799ee",
+                "fiches [\"2026-11\",\"FULLER\",\"le-banc-des-menteurs\"]": "0b89aaf5f3d4c9fa9bc31bda562f84daf588a8fd8a0996da3d26bda7f709760c",
                 "fichier code:baremes/2026.json": "423c8ebda3cb02f03e1732b96900ad5285e2cd92725ebad1205aa16ec08b3258",
-                "fichier code:contrats-base.json": "f4cfc9b105780540a7ac3a275f8cf3759153f24d813bca1e31c50f3a819c147d",
+                "fichier code:contrats-base.json": "363de181eda5c20bc7a43470a7e5f20c14dbefdfc032114e9b233a5b975c7c18",
                 "fichier code:emplois-base.json": "d7be9edbc37bfa3c75b050f13018ae5b956f9eeab57cae0d1a7cf19d48d0b168",
                 "fichier code:minima-conventionnels.json": "94800d9b32651182afab4e1f11490ebd8f7c7f47465057f2dc987e6defb198ff",
                 "fichier code:rubriques-base.json": "96accac4e01aa9e0eda23c2829ae46f5a3b181b0726112fb965b598d23207862",
