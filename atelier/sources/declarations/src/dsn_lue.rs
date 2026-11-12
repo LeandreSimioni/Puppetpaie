@@ -1283,7 +1283,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
         e.banque = Some(Banque { bic: (*bic).clone(), iban: (*iban).clone() });
     }
     e.france_travail_dossier_recouvrement =
-        blocs20.iter().find(|b| b.organisme == Some(crate::dsn::SIRET_FRANCE_TRAVAIL) &&!b.affectation.is_empty()).map(|b| b.affectation.clone());
+        blocs20.iter().find(|b| b.organisme == Some(crate::dsn::SIRET_FRANCE_TRAVAIL) && !b.affectation.is_empty()).map(|b| b.affectation.clone());
     // QUI LES ORGANISMES CONTACTENT : le contact chez le declare de type 04 (« recouvrant, entre autres, des cotisations de
     // Securite sociale ») s'il y en a plusieurs, sinon le premier : le `declarant_dsn` de la fiche, que le moteur ecrit la
     // (`dsn.rs`, `type_du_contact`). Sa civilite n'est pas dans ce bloc : elle se lit dans celle du contact de l'emetteur

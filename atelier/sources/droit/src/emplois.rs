@@ -53,7 +53,7 @@ impl CodeEmploi {
 
     /// Le texte saisi `texte` dans sa forme, avant d'etre lu : sans ses blancs de bord, en capitales.
     pub fn rangee(texte: &str) -> String {
-        texte.trim().to_uppercase()
+        socle::texte::en_capitales(texte)
     }
 
     pub fn as_str(&self) -> &str {

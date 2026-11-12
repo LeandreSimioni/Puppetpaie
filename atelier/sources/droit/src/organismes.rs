@@ -93,6 +93,25 @@ pub enum TauxAt {
     Bareme,
 }
 
+/// UNE RUBRIQUE DE NATURE `X [min,max]` du cahier technique DSN : de `min` a `max` caracteres (comptes en caracteres,
+/// non en octets), sans blanc au debut ni a la fin ; l'espace et les lettres accentuees de la table 3.5 sont des
+/// caracteres permis (`dsn-cahier-technique-2026.1-formats.txt` l. 6630-6633, 7432-7440). Rien de plus (regle 7).
+const fn de_nature_x(texte: &str, min: usize, max: usize) -> bool {
+    let o = texte.as_bytes();
+    if o.is_empty() || o[0] == b' ' || o[o.len() - 1] == b' ' {
+        return false;
+    }
+    let mut caracteres = 0;
+    let mut i = 0;
+    while i < o.len() {
+        if o[i] & 0xC0 != 0x80 {
+            caracteres += 1;
+        }
+        i += 1;
+    }
+    caracteres >= min && caracteres <= max
+}
+
 /// LE CODE TYPE DE PERSONNEL D'UNE LIGNE DU BORDEREAU URSSAF (S21.G00.23.001) : « X [3,3] Table des Codes Type de
 /// Personnel » (cahier technique DSN 2026.1 p. 168, `atelier/reference/norme-dsn/texte/bloc-S21.G00.23.txt` l. 23-27).
 /// La table est celle de l'Urssaf (`donnees/urssaf-codes-types-personnel.csv`), datee : qu'un code y soit au jour du
@@ -112,8 +131,7 @@ impl CodeCtp {
     }
 
     const fn a_sa_forme(texte: &str) -> bool {
-        let o = texte.as_bytes();
-        o.len() == 3 && o[0].is_ascii_graphic() && o[1].is_ascii_graphic() && o[2].is_ascii_graphic()
+        de_nature_x(texte, 3, 3)
     }
 
     /// LE CODE QUE LE MOTEUR NOMME, ecrit en Rust : une constante, dont le compilateur refuse une forme fausse.
@@ -164,7 +182,7 @@ impl IdentifiantDOrganisme {
     pub fn lire(texte: &str) -> R<IdentifiantDOrganisme> {
         if !IdentifiantDOrganisme::a_sa_forme(texte) {
             return Err(socle::refus!(
-                "Organisme {} : l'identifiant d'un organisme de protection sociale s'écrit de 2 à 14 caractères, sans espace.",
+                "Organisme {} : l'identifiant d'un organisme de protection sociale s'écrit de 2 à 14 caractères, sans blanc au début ni à la fin.",
                 socle::fichiers::repr(texte)
             ));
         }
@@ -172,18 +190,7 @@ impl IdentifiantDOrganisme {
     }
 
     const fn a_sa_forme(texte: &str) -> bool {
-        let o = texte.as_bytes();
-        if o.len() < 2 || o.len() > 14 {
-            return false;
-        }
-        let mut i = 0;
-        while i < o.len() {
-            if !o[i].is_ascii_graphic() {
-                return false;
-            }
-            i += 1;
-        }
-        true
+        de_nature_x(texte, 2, 14)
     }
 
     /// L'IDENTIFIANT QUE LE MOTEUR NOMME, ecrit en Rust : une constante, dont le compilateur refuse une forme fausse.
