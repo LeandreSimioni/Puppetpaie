@@ -179,7 +179,7 @@ impl LigneImprimee {
     /// La ligne de paie qu'elle dit a l'engagement importe, quand l'import l'a rattachee a une rubrique : sa quantite, son
     /// taux et ses heures (son libelle et son montant restent ceux du bulletin, `remuneration_lue`).
     pub fn en_ligne_de_paie(&self) -> R<Option<crate::LignePaie>> {
-        let Some(r) = self.rubrique.as_deref().filter(|r| !r.trim().is_empty()) else { return Ok(None) };
+        let Some(r) = self.rubrique.as_deref() else { return Ok(None) };
         let rubrique = droit::catalogue::CodeDeRubrique::lire(r)?;
         Ok(Some(crate::LignePaie::Importee(crate::ligne::Importee { rubrique, quantite: self.quantite, taux: self.taux, heures: self.heures })))
     }
