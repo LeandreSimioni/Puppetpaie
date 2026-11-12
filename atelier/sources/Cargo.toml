@@ -58,8 +58,8 @@ resolver = "2"
 # (`[lints] workspace = true`) ; `fenetre/` et `fabrique-pdf/` portent les memes niveaux dans leur manifeste.
 # Les groupes `warnings` et `unused` sont a `deny` : le code que `serde` derive porte ses propres
 # `allow(unused_attributes, unused_extern_crates, non_upper_case_globals, non_camel_case_types)`, qu'un `forbid` de
-# groupe ferait signaler a chaque derive ; tout `allow` ecrit dans nos sources est refuse par
-# `aucun_attribut_ne_leve_un_lint` (`moteur/tests/fichiers/structure.rs`).
+# groupe ferait signaler a chaque derive. Un niveau `forbid` ne se leve pas : le compilateur refuse l'`allow` qui le
+# tenterait.
 [workspace.lints.rust]
 warnings = { level = "deny", priority = -1 }
 unused = { level = "deny", priority = -1 }

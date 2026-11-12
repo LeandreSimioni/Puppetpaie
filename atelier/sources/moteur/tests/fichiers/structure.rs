@@ -561,7 +561,12 @@ fn chaque_forme_lue_refuse_une_cle_inconnue() {
         let lignes: Vec<&str> = t.lines().collect();
         for i in (0..lignes.len()).filter(|i| lignes[*i].contains("derive(") && lignes[*i].contains("Deserialize")) {
             let fin = i + lignes[i..].iter().position(|x| x.contains("struct ") || x.contains("enum ")).unwrap();
-            let apres = lignes[fin].split_once("struct ").or(lignes[fin].split_once("enum ")).unwrap().1;
+            // Une forme a cles : une structure a champs nommes. Une enum ou une enveloppe (`Nom(String)`) n'a pas de cle.
+            let Some((_, apres)) = lignes[fin].split_once("struct ") else { continue };
+            // Lue par une autre forme (`try_from`, `from`) : c'est elle qui se lit, et elle passe ici a son tour.
+            if !lignes[fin].trim_end().ends_with('{') || lignes[i..fin].iter().any(|x| x.contains("from = ")) {
+                continue;
+            }
             let nom: String = apres.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
             let tiers = t.contains(&format!("ReponseDUnTiers for {} ", nom));
             if !lignes[i..=fin].join(" ").contains("deny_unknown_fields") && !tiers {

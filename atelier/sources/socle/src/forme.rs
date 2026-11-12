@@ -6,7 +6,7 @@
 //! va pas a part (`echec::Lieu`).
 //!
 //! C'est un des deux modules du BORD (avec `ecriture`, qui ecrit) : les seuls endroits ou le JSON se manipule sans forme
-//! (`moteur/tests/fichiers/structure.rs`, `une_couche_fermee_ne_lit_que_des_formes`) ; tout autre module passe par eux.
+//! (seul `socle` depend de `serde_json`, `une_crate_ne_prend_qu_a_celles_du_dessous`) ; tout autre module passe par eux.
 
 use std::any::{Any, TypeId};
 use std::cell::RefCell;

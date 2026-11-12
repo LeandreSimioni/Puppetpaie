@@ -1058,11 +1058,11 @@ mod tests {
     #[test]
     fn le_code_urssaf_doit_etre_bien_forme_et_exister() {
         let e = embauche(N::Cdi, None);
-        let a = enr(&e, None, Some("11")).unwrap_err().a_part.as_ref().and_then(socle::echec::APart::lieu).cloned().unwrap_or_default();
+        let a = enr(&e, None, Some("11")).unwrap_err().a_part.as_ref().and_then(socle::echec::APart::lieu).cloned().expect("le refus nomme sa case");
         assert!(a.cle.as_deref() == Some("code_urssaf") && a.detail.as_deref().is_some_and(|d| d.contains("'11'")), "{:?}", a);
         let m = enr(&e, None, Some("abc")).unwrap_err().phrase;
         assert!(m.contains("3 chiffres"), "{}", m);
-        let a = enr(&e, None, Some("999")).unwrap_err().a_part.as_ref().and_then(socle::echec::APart::lieu).cloned().unwrap_or_default();
+        let a = enr(&e, None, Some("999")).unwrap_err().a_part.as_ref().and_then(socle::echec::APart::lieu).cloned().expect("le refus nomme sa case");
         assert!(a.cle.as_deref() == Some("code_urssaf") && a.detail.as_deref().is_some_and(|d| d.contains("'999'")), "{:?}", a);
         enr(&e, None, Some(" 117 ")).unwrap();
         // Sans code, celui du gabarit reste.
