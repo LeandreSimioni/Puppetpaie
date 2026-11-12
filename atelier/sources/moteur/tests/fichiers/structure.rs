@@ -20,7 +20,7 @@ use compagnie::demande::VARIABLE_ESSAIS;
 /// La longueur d'un geste, en caracteres : une phrase breve.
 const GESTE_MAX: usize = 80;
 
-fn espace() -> PathBuf {
+pub(crate) fn espace() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf()
 }
 
@@ -554,10 +554,20 @@ fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
     assert!(fautes.is_empty(), "une liste de la norme declaree en `enum` est l'union des listes livrees :\n{}", fautes.join("\n"));
 }
 
-/// Les sources de chaque crate de l'espace (chaque dossier qui a son `Cargo.toml`) : les `.rs` de son `src/`.
-fn sources_des_crates() -> Vec<PathBuf> {
-    let crates = std::fs::read_dir(espace()).unwrap().flatten().map(|e| e.path()).filter(|d| d.join("Cargo.toml").is_file());
-    crates.flat_map(|d| sources(&d.join("src"))).collect()
+/// Chaque crate de l'espace : chaque dossier de `atelier/sources/` qui a son `Cargo.toml` (`fenetre/` et
+/// `fabrique-pdf/` compris, hors de `members`).
+pub(crate) fn dossiers_des_crates() -> Vec<PathBuf> {
+    std::fs::read_dir(espace()).unwrap().map(|e| e.unwrap().path()).filter(|d| d.join("Cargo.toml").is_file()).collect()
+}
+
+/// Les sources de chaque crate de l'espace (`dossiers_des_crates`) : les `.rs` de son `src/`.
+pub(crate) fn sources_des_crates() -> Vec<PathBuf> {
+    dossiers_des_crates().into_iter().flat_map(|d| sources(&d.join("src"))).collect()
+}
+
+/// Les essais de chaque crate de l'espace (`dossiers_des_crates`) qui en a : les `.rs` de son `tests/`.
+pub(crate) fn essais_des_crates() -> Vec<PathBuf> {
+    dossiers_des_crates().into_iter().filter(|d| d.join("tests").is_dir()).flat_map(|d| sources(&d.join("tests"))).collect()
 }
 
 /// Chaque ligne des sources des crates ou `motif` se trouve : `crate/src/…:ligne : ce qu'il a trouve`.
