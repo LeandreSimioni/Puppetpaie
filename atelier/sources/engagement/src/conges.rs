@@ -1062,8 +1062,6 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     // L'entreprise dit quels jours feries elle chome.
     let chomes = ctx.entreprise.feries_chomes();
     let ouvrables = Decimal::from(jours_ouvrables(&debut, &fin, chomes)?);
-    let ouvrables_du_mois = if ouvrables != Decimal::ZERO { ouvrables } else { Decimal::ONE };
-    let taux_jour_ouvrable = eur2(div(mul(salaire, fraction), ouvrables_du_mois));
 
     // --- les conges pris : une retenue, et une indemnite qui la couvre
     let mut pris = Decimal::ZERO;
@@ -1071,6 +1069,17 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         pris += Decimal::from(jours_ouvrables_de(c, chomes)?);
     }
     if pris != Decimal::ZERO {
+        // Le salaire d'un jour ouvrable de la periode : une periode sans jour ouvrable n'a pas de conge a retenir.
+        if ouvrables.is_zero() {
+            return Err(socle::refus!(
+                "{} : {} jour(s) ouvrable(s) de congés pris, et sa période du {} au {} n'a aucun jour ouvrable : un congé pris se date dans la période du contrat.",
+                qui(ctx, e),
+                pris,
+                debut.jj_mm_aaaa(),
+                fin.jj_mm_aaaa()
+            ));
+        }
+        let taux_jour_ouvrable = eur2(div(mul(salaire, fraction), ouvrables));
         let cpt = compteur_conges(ctx, au, &salarie, &fin, mois)?;
         let maintien = eur2(mul(taux_jour_ouvrable, pris));
         let ind = indemnite_des_jours(&cpt, pris, maintien)?;
@@ -1107,7 +1116,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
         ctx,
         e,
         mois,
-        &crate::imprevus::MoisDuContrat { debut, fin, fin_mois, salaire_du_mois, heures_par_jour, jours_payes: part.jours, horaire: &horaire, taux_jour_ouvrable },
+        &crate::imprevus::MoisDuContrat { debut, fin, fin_mois, salaire_du_mois, heures_par_jour, jours_payes: part.jours, horaire: &horaire },
         au,
     )?;
     lignes.extend(l);

@@ -34,7 +34,9 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, LockResult, Mutex, PoisonError};
+use std::sync::{Arc, Condvar, Mutex};
+
+use socle::memoire::{repris, tenu};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -368,15 +370,6 @@ fn jour() -> R<Jour> {
 /// developpeur lit.
 fn noter(quoi: &str, e: &Echec) {
     compagnie::diagnostic::noter_moteur(&format!("État gardé : {} ({}).", quoi, e.en_lignes()));
-}
-
-/// Un verrou pris, meme si un fil est tombe en le tenant : ce qu'il garde reste coherent (chaque ecriture s'y fait d'un
-/// coup).
-fn tenu<T>(r: LockResult<T>) -> T {
-    match r {
-        Ok(g) => g,
-        Err(p) => PoisonError::into_inner(p),
-    }
 }
 
 // ------------------------------------------------------------------------------------------------- ce qui se garde
@@ -848,7 +841,7 @@ impl Fil {
     }
 
     fn verrou(&self) -> std::sync::MutexGuard<'_, EtatDuFil> {
-        tenu(self.etat.lock())
+        tenu(&self.etat)
     }
 
     /// Du travail est arrive (une cle inscrite) : le fil se reveille. Pris sous le verrou du fil : le fil qui regardait
@@ -942,7 +935,7 @@ impl Fil {
                 if let Some(x) = Self::choisir(&mut g) {
                     break x;
                 }
-                let (h, attente) = tenu(self.reveil.wait_timeout(g, Duration::from_secs(60)));
+                let (h, attente) = repris(self.reveil.wait_timeout(g, Duration::from_secs(60)));
                 g = h;
                 // LE JOUR A CHANGE : tout se reverifie (hors du verrou du fil : `tout_verifier` le reprend pour reveiller).
                 if attente.timed_out() && !g.files.is_empty() {
@@ -991,7 +984,7 @@ impl FileDesEtats {
     }
 
     fn verrou(&self) -> std::sync::MutexGuard<'_, EtatDeLaFile> {
-        tenu(self.etat.lock())
+        tenu(&self.etat)
     }
 
     /// La compagnie de cette file.
@@ -1167,7 +1160,7 @@ impl FileDesEtats {
             if e.arretee {
                 return Err(erreur(Classe::Refuse, "La compagnie a été fermée."));
             }
-            e = tenu(self.signal.wait(e));
+            e = repris(self.signal.wait(e));
         }
     }
 
@@ -1229,7 +1222,7 @@ impl FileDesEtats {
             if reste.is_zero() {
                 return Ok(None);
             }
-            e = tenu(self.signal.wait_timeout(e, reste)).0;
+            e = repris(self.signal.wait_timeout(e, reste)).0;
         }
     }
 
@@ -1305,7 +1298,7 @@ impl FileDesEtats {
         }
         let mut e = self.verrou();
         while e.en_cours.is_some() {
-            e = tenu(self.signal.wait(e));
+            e = repris(self.signal.wait(e));
         }
     }
 

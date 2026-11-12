@@ -6,11 +6,17 @@
 //! donc a son tour : une route le rend en refus (`routes::lib`, `catch_unwind`), le defaut se voit et se corrige a sa
 //! cause.
 
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{LockResult, Mutex, MutexGuard};
 
-/// Le `Mutex` tenu ; empoisonne, la panique du fil qui l'a empoisonne se dit a nouveau, ici.
+/// Le `Mutex` tenu ; empoisonne, la panique du fil qui l'a empoisonne se dit a nouveau, ici (`repris`).
 pub fn tenu<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    match m.lock() {
+    repris(m.lock())
+}
+
+/// Le `Mutex` repris, par sa prise ou au reveil d'une attente (`Condvar::wait`, `wait_timeout`) ; empoisonne, la
+/// panique du fil qui l'a empoisonne se dit a nouveau, ici : la seule reprise d'un verrou.
+pub fn repris<T>(r: LockResult<T>) -> T {
+    match r {
         Ok(g) => g,
         Err(_) => panic!("Défaut du logiciel : une donnée tenue en mémoire est restée à moitié écrite par une panique précédente."),
     }
