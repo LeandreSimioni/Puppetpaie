@@ -346,6 +346,66 @@ codes_fermes! {
     }
 }
 
+codes_fermes! {
+    /// L'UNITE DE MESURE DE LA QUOTITE DE TRAVAIL (S21.G00.40.011), la liste entiere de la norme (cahier technique DSN
+    /// 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt` ; relevee dans `formats-dsn-*-base.json`).
+    /// Celle de chaque nature, et le plafond de sa quotite, `contrats-base.json` le dit (`unite_quotite`).
+    UniteDeQuotite, "Unité de mesure de la quotité", "S21.G00.40.011" {
+        Heure = "10",
+        Journee = "12",
+        ForfaitJour = "20",
+        ForfaitHeure = "21",
+        ALaPige = "31",
+        ALaVacation = "32",
+        ALaTache = "33",
+        AuSmic = "34",
+        ALaPart = "35",
+        NonConcerne = "99",
+    }
+}
+
+codes_fermes! {
+    /// LA MODALITE DE DECLARATION DE LA FIN DE CONTRAT, le circuit derogatoire applique ou non (S21.G00.62.017), la liste
+    /// entiere de la norme (cahier technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt` ;
+    /// relevee dans `formats-dsn-*-base.json`). Celle de chaque nature, `contrats-base.json` la dit
+    /// (`fin_de_contrat.circuit_derogatoire`).
+    ModaliteDeDeclarationDeFin, "Modalité de déclaration de la fin de contrat", "S21.G00.62.017" {
+        CircuitDerogatoire = "01",
+        SansCircuitDerogatoire = "02",
+    }
+}
+
+codes_fermes! {
+    /// LE TYPE D'UNE ACTIVITE (S21.G00.53.001), la liste entiere de la norme (cahier technique DSN 2026.1,
+    /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.53.txt` ; relevee dans `formats-dsn-*-base.json`).
+    TypeDActivite, "Type d'activité", "S21.G00.53.001" {
+        TravailRemunere = "01",
+        AbsenceNonRemuneree = "02",
+    }
+}
+
+codes_fermes! {
+    /// L'UNITE DE MESURE D'UNE ACTIVITE (S21.G00.53.003), la liste entiere de la norme (cahier technique DSN 2026.1,
+    /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.53.txt` ; relevee dans `formats-dsn-*-base.json`). Celles de
+    /// chaque nature, `contrats-base.json` le dit (`activites`).
+    UniteDeMesure, "Unité de mesure d'une activité", "S21.G00.53.003" {
+        Heure = "10",
+        Journee = "12",
+        ForfaitJour = "20",
+        ForfaitHeure = "21",
+        ALaPige = "31",
+        ALaVacation = "32",
+        ALaTache = "33",
+        HeuresIntermittents = "35",
+        CachetsGroupes = "36",
+        CachetsIsoles = "37",
+        JourCrpnpac = "38",
+        Cachet = "39",
+        JoursCalendairesDuPlafond = "40",
+        HeureDimancheEsat = "41",
+    }
+}
+
 /// UNE NATURE DE CONTRAT, et la seule facon d'en nommer une : personne n'en ajoute hors du logiciel, une nature neuve
 /// arrive par une mise a jour. Elle s'ecrit par sa cle (`cle`), celle de `natures` dans `contrats-base.json`, qui dit ses
 /// proprietes (`proprietes`) ; une cle qui n'en est pas une se refuse a la lecture.
@@ -443,7 +503,7 @@ pub struct Proprietes {
     pub paie: Paie,
     pub duree_indeterminee: bool,
     bareme: Bareme,
-    unite_quotite: UniteDeQuotite,
+    unite_quotite: QuotiteDeLaNature,
     #[serde(rename = "quotite_reference_defaut")]
     quotite_reference: Option<QuotiteDeReference>,
     /// rubrique -> valeur fixe.
@@ -477,8 +537,8 @@ struct Bareme {
 /// S21.G00.40.011, et le plafond de 40.012 et 40.013 (CCH-12 du bloc 40, 31.00 en journee ; CCH-13, 250.00 en heure).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct UniteDeQuotite {
-    valeur: String,
+struct QuotiteDeLaNature {
+    valeur: UniteDeQuotite,
     #[serde(deserialize_with = "socle::forme::court")]
     plafond: Decimal,
     #[serde(rename = "quoi")]
@@ -678,8 +738,8 @@ struct SignalementFctu {
 struct CircuitDerogatoire {
     rubrique: RubriqueDeLaNorme,
     motifs: Vec<MotifDeRupture>,
-    applique: String,
-    non_applique: String,
+    applique: ModaliteDeDeclarationDeFin,
+    non_applique: ModaliteDeDeclarationDeFin,
     #[serde(rename = "quoi")]
     _quoi: String,
     #[serde(rename = "source")]
@@ -727,6 +787,13 @@ impl TypeDeRemuneration {
             TypeDeRemuneration::SalaireDeBase => "010",
         }
     }
+
+    /// Celui de ce code, s'il est un des quatre.
+    pub fn du_code(code: &str) -> Option<TypeDeRemuneration> {
+        [TypeDeRemuneration::Brute, TypeDeRemuneration::AssietteChomage, TypeDeRemuneration::SalaireRetabli, TypeDeRemuneration::SalaireDeBase]
+            .into_iter()
+            .find(|t| t.code() == code)
+    }
 }
 
 /// Les blocs S21.G00.53 sous la remuneration de type 002.
@@ -752,11 +819,11 @@ pub enum Mesure {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct UniteDActivite {
-    pub code: String,
+    pub code: UniteDeMesure,
     pub quoi: String,
     pub mesure: Mesure,
     #[serde(rename = "type")]
-    pub type_activite: String,
+    pub type_activite: TypeDActivite,
     /// Elle ne s'ecrit pas quand elle vaut zero.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub si_non_nul: Option<bool>,
@@ -769,9 +836,9 @@ pub struct UniteDActivite {
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct UniteDAbsence {
-    pub code: String,
+    pub code: UniteDeMesure,
     #[serde(rename = "type")]
-    pub type_activite: String,
+    pub type_activite: TypeDActivite,
     pub quoi: String,
 }
 
@@ -809,8 +876,8 @@ impl Proprietes {
     }
 
     /// S21.G00.40.011.
-    pub fn unite_quotite(&self) -> &str {
-        &self.unite_quotite.valeur
+    pub fn unite_quotite(&self) -> UniteDeQuotite {
+        self.unite_quotite.valeur
     }
 
     /// Le plafond de 40.012 et 40.013 : CCH-12 du bloc 40, 31.00 en journee ; CCH-13, 250.00 en heure.
@@ -969,11 +1036,11 @@ impl Proprietes {
     /// declaration de la fin d'un contrat d'usage (S21.G00.62.017) suit le motif : « 01 » au circuit derogatoire,
     /// « 02 » hors de lui (CCH-11 et CCH-12, cahier technique DSN 2026.1 p. 277, `atelier/reference/norme-dsn/texte/
     /// bloc-S21.G00.62.txt`).
-    pub fn codes_fin(&self, motif: Option<MotifDeRupture>) -> BTreeMap<RubriqueDeLaNorme, String> {
+    pub fn codes_fin(&self, motif: Option<MotifDeRupture>) -> BTreeMap<RubriqueDeLaNorme, ModaliteDeDeclarationDeFin> {
         let mut out = BTreeMap::new();
         if let Some(c) = &self.fin_de_contrat.circuit_derogatoire {
-            let valeur = if self.circuit_derogatoire_pour(motif) { &c.applique } else { &c.non_applique };
-            out.insert(c.rubrique, valeur.clone());
+            let valeur = if self.circuit_derogatoire_pour(motif) { c.applique } else { c.non_applique };
+            out.insert(c.rubrique, valeur);
         }
         out
     }

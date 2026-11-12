@@ -12,7 +12,7 @@ use std::path::Path;
 use rust_decimal::RoundingStrategy;
 
 use droit::assiette::Assiette;
-use droit::base_assujettie::BaseAssujettie;
+use droit::base_assujettie::{BaseAssujettie, TypeDeComposant};
 use droit::code_cotisation::{CleDeTotalisation, CodeCotisation81};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
@@ -27,12 +27,12 @@ use droit::contexte::IdSalarie;
 use engagement::calcul::Paie;
 use engagement::etats::PrelevementDeLaCorrection;
 use droit::contexte::{aujourdhui, Contexte};
-use droit::natures::{contrat_court, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, RubriqueDeLaNorme, TypeDeRemuneration};
+use droit::natures::{contrat_court, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, UniteDeQuotite};
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::{num::{add, div, mul, pct, sub, zero2, Decimal}, refus};
-use droit::organismes::{CodeCtp, Ctp, IdentifiantDOrganisme, Organismes, Versement};
+use droit::organismes::{CodeCtp, Ctp, IdentifiantDOrganisme, Organismes, QualifiantDAssiette, Versement};
 use droit::pas::{self, Triplet, ZONE_DEFAUT};
 
 pub const LOGICIEL: &str = "PUPPETPAIE";
@@ -599,7 +599,7 @@ pub struct Cotisation {
     pub montant: Option<Decimal>,
     /// Le composant d'une base 31 (S21.G00.79.001, et son montant 79.004) quand la source du taux de la ligne le dit
     /// (`composant_79`, `bareme::bareme_sante`) ; `None` : la tranche A, sur le brut.
-    pub composant79: Option<(String, Decimal)>,
+    pub composant79: Option<(TypeDeComposant, Decimal)>,
     /// La part patronale de la CET (`parts_patronales_agirc_arrco`) : son code se lit dans la version de la norme du
     /// fichier (`Norme::cotisation_cet_patronale`), pas dans `code81`.
     pub cet: bool,
@@ -609,7 +609,7 @@ pub struct Cotisation {
 /// (S21.G00.79.001). La prevoyance et la sante des intermittents : « La base de calcul de ces cotisations est le salaire
 /// brut dans la limite de la tranche A journalière » (Parametres Audiens 2026, § 3,
 /// `atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt` l. 197).
-const TRANCHE_A: &str = "11";
+const TRANCHE_A: TypeDeComposant = TypeDeComposant::TrancheAPrevoyance;
 
 /// LA SECTION DES ORGANISMES (`organismes-base.json`, `par_nature`) ET DES CONTRIBUTIONS D'UNE NATURE DE CONTRAT : celle
 /// que `contrats-base.json` dit pour elle (`Nature::section_des_organismes`).
@@ -987,9 +987,9 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
 
 /// Le composant de la base 31 des `lignes` : le type que la source du taux de la premiere qui en porte un lui donne
 /// (`composant_79` de la pile, `bareme::bareme_sante`), et la base de cette ligne au bulletin.
-fn composant_79(p: &Paie, pile: &Pile, lignes: &[IdDeCotisation]) -> Option<(String, Decimal)> {
+fn composant_79(p: &Paie, pile: &Pile, lignes: &[IdDeCotisation]) -> Option<(TypeDeComposant, Decimal)> {
     lignes.iter().find_map(|id| {
-        let type_79 = pile.rubrique(id)?.composant_79.clone()?;
+        let type_79 = pile.rubrique(id)?.composant_79?;
         let base = p.lignes.iter().find(|l| l.est(id))?.base;
         Some((type_79, base))
     })
@@ -1794,8 +1794,8 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
             return Ok(());
         }
         let cch = match nat.unite_quotite() {
-            "12" | "20" => " CCH-12",
-            "10" | "21" => " CCH-13",
+            UniteDeQuotite::Journee | UniteDeQuotite::ForfaitJour => " CCH-12",
+            UniteDeQuotite::Heure | UniteDeQuotite::ForfaitHeure => " CCH-13",
             autre => {
                 return Err(refus!(
                     "La norme DSN ne plafonne la quotité qu'en unités 10, 12, 20 et 21 (CCH-12 et CCH-13 du bloc 40) ; la nature {} la compte en unité « {} » : le signaler au développeur.",
@@ -2099,7 +2099,7 @@ pub fn remunerations(f: &mut Fichier, p: &Paie, debut: &Jour, fin: &Jour, signe:
 }
 
 /// Les mesures d'activite (bloc 53) d'une paie, dans l'ordre ou elles s'ecrivent : (53.001, quantite, 53.003).
-pub fn mesures_d_activite(p: &Paie) -> R<Vec<(String, Decimal, String)>> {
+pub fn mesures_d_activite(p: &Paie) -> R<Vec<(TypeDActivite, Decimal, UniteDeMesure)>> {
     let e = &p.engagement;
     let nat = e.nat()?;
     let mut out = Vec::new();
@@ -2118,11 +2118,11 @@ pub fn mesures_d_activite(p: &Paie) -> R<Vec<(String, Decimal, String)>> {
         if u.si_caisse_conges == Some(true) && !p.declaree_a_la_caisse_des_conges()? {
             continue;
         }
-        out.push((u.type_activite.clone(), valeur, u.code.clone()));
+        out.push((u.type_activite, valeur, u.code));
     }
     if let Some(a) = nat.unite_absence() {
         if !p.heures_absence.is_zero() {
-            out.push((a.type_activite.clone(), p.heures_absence, a.code.clone()));
+            out.push((a.type_activite, p.heures_absence, a.code));
         }
     }
     Ok(out)
@@ -2345,9 +2345,9 @@ pub fn bases_et_cotisations(
             } else if c.bloc78 == BaseAssujettie::PrevoyanceSanteRetraite {
                 // Le composant que la source du taux donne (`composant79` : la sante des permanents 3090, base forfaitaire
                 // 18 sur le plafond du mois, fiche Audiens 139), sinon la tranche A sur le brut.
-                let (type_79, montant) = match c.composant79.clone() {
+                let (type_79, montant) = match c.composant79 {
                     Some(composant) => composant,
-                    None => (TRANCHE_A.to_string(), p.brut),
+                    None => (TRANCHE_A, p.brut),
                 };
                 f.add("S21.G00.79.001", type_79);
                 f.add("S21.G00.79.004", ms(montant, signe));
@@ -2461,8 +2461,8 @@ fn bloc_versement(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, rang: i64, taux
             if !f.contrat_unique {
                 f.add_opt("S21.G00.78.006", e.numero.clone())?;
             }
-            f.add("S21.G00.79.001", match c.composant79.as_ref() {
-                Some((t, _)) => t.as_str(),
+            f.add("S21.G00.79.001", match c.composant79 {
+                Some((t, _)) => t,
                 None => TRANCHE_A,
             });
             f.add("S21.G00.79.004", "0.00");
@@ -3190,7 +3190,7 @@ fn taux_23(t: TauxDeLaLigne) -> String {
     }
 }
 
-fn ligne(code: CodeCtp, qualifiant: String, taux_at: Option<TauxDeLaLigne>, assiette: Option<Decimal>, montant: Option<Decimal>, commune: Option<String>) -> LigneBordereau {
+fn ligne(code: CodeCtp, qualifiant: QualifiantDAssiette, taux_at: Option<TauxDeLaLigne>, assiette: Option<Decimal>, montant: Option<Decimal>, commune: Option<String>) -> LigneBordereau {
     LigneBordereau { code, qualifiant, taux_at, assiette, montant, commune }
 }
 
@@ -3391,7 +3391,7 @@ fn base_07(p: &Paie, bar: &BaremeDuMois) -> R<Decimal> {
 }
 
 /// Le qualifiant d'assiette plafonnee de la table des CTP (S21.G00.23.002, p. 168).
-const QUALIFIANT_PLAFONNEE: &str = "921";
+const QUALIFIANT_PLAFONNEE: QualifiantDAssiette = QualifiantDAssiette::AssiettePlafonnee;
 
 /// UNE CLE DE LA TABLE DES CTP (`assiettes_ctp`) : une assiette du bordereau, sa forme plafonnee sous le qualifiant 921,
 /// ou un montant. Elle s'ecrit comme la ligne de `ctp_urssaf` la nomme, precedee de « 921: » pour la forme plafonnee.
@@ -3418,7 +3418,7 @@ fn cle_ctp(ctp: &Ctp) -> R<(CleCtp, bool)> {
         return Ok((CleCtp::Montant(m), true));
     }
     let k = ctp.assiette.ok_or_else(|| socle::echec::livree("organismes-base.json", &format!("ctp_urssaf.{}.assiette", ctp.code)))?;
-    Ok((if ctp.qualifiant.trim() == QUALIFIANT_PLAFONNEE { CleCtp::Plafonnee(k) } else { CleCtp::Assiette(k) }, false))
+    Ok((if ctp.qualifiant == QUALIFIANT_PLAFONNEE { CleCtp::Plafonnee(k) } else { CleCtp::Assiette(k) }, false))
 }
 
 fn valeur_ctp(somme: &HashMap<CleCtp, Decimal>, ctp: &Ctp) -> R<(Decimal, bool)> {
@@ -3509,7 +3509,7 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
         let v = rond(valeur);
         lignes.push(ligne(
             ctp.code.clone(),
-            ctp.qualifiant.clone(),
+            ctp.qualifiant,
             taux_at_du_ctp(ctp, bar)?,
             if par_montant { None } else { Some(v) },
             if par_montant { Some(v) } else { None },
@@ -3533,7 +3533,7 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             if assiette.is_zero() {
                 continue;
             }
-            lignes.push(ligne(code, "920".into(), Some(TauxDeLaLigne::Mobilite(a_deux_chiffres(vm.taux))), Some(rond(assiette)), None, Some(vm.code_insee.to_string())));
+            lignes.push(ligne(code, QualifiantDAssiette::AutreAssiette, Some(TauxDeLaLigne::Mobilite(a_deux_chiffres(vm.taux))), Some(rond(assiette)), None, Some(vm.code_insee.to_string())));
         }
     }
     let mut local = zero2();
@@ -3549,20 +3549,20 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             .as_ref()
             .map(|r| r.ctp.clone())
             .ok_or_else(|| socle::echec::livree("baremes", "regime_local_alsace_moselle.ctp"))?;
-        lignes.push(ligne(code, "920".into(), None, Some(rond(local)), None, None));
+        lignes.push(ligne(code, QualifiantDAssiette::AutreAssiette, None, Some(rond(local)), None, None));
     }
     if let Some(s) = solde_ta {
-        lignes.push(ligne(CodeCtp::du_moteur("995"), "920".into(), None, Some(s.assiette), None, None));
+        lignes.push(ligne(CodeCtp::du_moteur("995"), QualifiantDAssiette::AutreAssiette, None, Some(s.assiette), None, None));
     }
     if let Some(d) = doeth {
         for (ctp, montant) in d.bordereau() {
-            lignes.push(ligne(ctp, "920".into(), None, Some(montant), None, None));
+            lignes.push(ligne(ctp, QualifiantDAssiette::AutreAssiette, None, Some(montant), None, None));
         }
     }
     // La contribution supplementaire a l'apprentissage de mars : le CTP 998, son montant en 23.004 (taux de 100 %),
     // comme le CTP 730 de l'OETH (guide Urssaf du 12/03/2026, l. 2453-2458 ; `csa`).
     if let Some((ctp, montant)) = csa.and_then(crate::csa::Csa::bordereau) {
-        lignes.push(ligne(ctp, "920".into(), None, Some(montant), None, None));
+        lignes.push(ligne(ctp, QualifiantDAssiette::AutreAssiette, None, Some(montant), None, None));
     }
     Ok(lignes)
 }
@@ -3618,7 +3618,7 @@ fn lignes_regularisees(
             // les signes necessaires » (atelier/reference/sources/editeur-dsn/guide-urssaf-regularisation.txt, lignes
             // 1341-1362). La table des CTP valorise 669 et 801 (format E) a 100 % : le montant du bordereau est celui
             // qu'aurait deduit le montant negatif.
-            let qualifiant = ctp.qualifiant.clone();
+            let qualifiant = ctp.qualifiant;
             let regularisation = ctp_de_regularisation(&code, &siens, bar_o)?.ok_or_else(|| {
                 socle::echec::cle(
                     format!(
@@ -3636,7 +3636,7 @@ fn lignes_regularisees(
         }
         lignes.push(ligne(
             code,
-            ctp.qualifiant.clone(),
+            ctp.qualifiant,
             taux_at,
             if par_montant { None } else { Some(v) },
             if par_montant { Some(v) } else { None },

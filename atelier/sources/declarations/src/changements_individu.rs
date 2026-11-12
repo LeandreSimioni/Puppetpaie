@@ -97,7 +97,7 @@ pub struct Declaree {
     pub prenoms: Option<String>,
     pub naissance: Option<Jour>,
     /// Le numero technique temporaire (30.020), s'il y en avait un.
-    pub ntt: Option<String>,
+    pub ntt: Option<crate::ntt::Ntt>,
     pub matricule: Option<String>,
 }
 
@@ -113,7 +113,7 @@ impl Declaree {
     }
 
     /// L'identite seule (sans le mois ni le fichier) : deux etablissements d'un meme mois doivent dire la meme.
-    fn identite(&self) -> (&Option<String>, &Option<String>, &Option<String>, Option<Jour>, &Option<String>) {
+    fn identite(&self) -> (&Option<String>, &Option<String>, &Option<String>, Option<Jour>, &Option<crate::ntt::Ntt>) {
         (&self.nir, &self.nom, &self.prenoms, self.naissance, &self.ntt)
     }
 }
@@ -257,7 +257,7 @@ fn decrire(d: &Declaree) -> String {
         dite(&d.naissance.as_ref().map(Jour::jjmmaaaa)),
         match &d.nir {
             Some(nir) => format!("NIR {}", nir),
-            None => format!("NTT {}", dite(&d.ntt)),
+            None => format!("NTT {}", dite(&d.ntt.as_ref().map(|n| n.to_string()))),
         }
     )
 }

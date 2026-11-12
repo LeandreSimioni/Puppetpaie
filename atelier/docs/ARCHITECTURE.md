@@ -176,7 +176,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | notion | ce que c'est | son type |
 |---|---|---|
 | NIR | le numéro de sécurité sociale | `droit::fiche::Nir` ; sa clé, `CleNir` (`droit/src/fiche.rs`) ; à unifier (#419) : des champs `nir` en `String` |
-| NTT | le numéro technique temporaire, sans NIR | à créer (#419) |
+| NTT | le numéro technique temporaire d'un individu sans NIR (S21.G00.30.020) | `Ntt` (`declarations/src/ntt.rs`) : il se fabrique pour un salarié (`ntt::numero`, contrôlé avec le SIREN) ou se lit dans une DSN (`Ntt::lu`, sa forme seule) ; que portent l'identité qu'une DSN partie a déclarée (`changements_individu::Declaree`) et l'individu d'une DSN lue |
 | SIREN, NIC, SIRET | l'entreprise, l'établissement, les deux | `Siren`, `Nic`, `Siret` (`droit/src/fiche.rs`) |
 | IBAN, BIC | un compte bancaire | `Iban`, `Bic` (`droit/src/fiche.rs` ; leurs contrôles, `socle/src/iban.rs`) |
 | numéro de contrat | S21.G00.40.009 : il se lit, ne se recalcule pas | `NumeroContrat` (`engagement/src/numeros.rs`) |
@@ -213,8 +213,21 @@ en cours (62.008), `TransactionEnCours`, le mois de rattachement d'un FCTU (50.0
 `permanents-base.json`. L'arrêt (bloc 60) : son motif (60.001), `MotifDArret`, le motif de la reprise (60.011),
 `MotifDeReprise`, la subrogation (60.004), `SubrogationDeLArret` (`droit/src/arrets.rs`, `arrets-base.json` en dit
 les propriétés ; la case « subrogation » d'un permanent, `fiche::Subrogation`, est une autre notion). Le motif d'une
-suspension (65.001), `MotifDeSuspension` (`droit/src/permanents.rs`, ses propriétés : `ProprietesDeSuspension`). À
-créer (#419), une liste par rubrique : le code d'option de prévoyance.
+suspension (65.001), `MotifDeSuspension` (`droit/src/permanents.rs`, ses propriétés : `ProprietesDeSuspension`). Le
+contrat et son activité (`droit/src/natures.rs`, `contrats-base.json` dit celles de chaque nature) : l'unité de la
+quotité (40.011), `UniteDeQuotite` ; la modalité de déclaration de la fin (62.017, le circuit dérogatoire),
+`ModaliteDeDeclarationDeFin` ; le type d'une activité (53.001), `TypeDActivite`, et son unité de mesure (53.003),
+`UniteDeMesure`, que portent aussi les activités d'une DSN lue. Le type d'un composant de base assujettie (79.001),
+`TypeDeComposant` (`droit/src/base_assujettie.rs`), que porte la santé du barème (`composant_79`). Le qualifiant
+d'assiette d'une ligne du bordereau (23.002), `QualifiantDAssiette` (`droit/src/organismes.rs`), que portent un CTP de
+`organismes-base.json`, la réduction du barème et la ligne du bordereau. Le type d'un bénéficiaire externe de l'OETH
+(13.002), `TypeDeBoethExterne` (`droit/src/cotisation_etablissement.rs`). L'envoi d'essai ou réel (S10.G00.00.005),
+`EssaiOuReel`, et la nature de l'événement déclencheur d'un amorçage (S20.G00.05.011), `NatureDEvenementDeclencheur`
+(`droit/src/nature_declaration.rs`). Le code d'une taxe du bloc 44 (44.001), `CodeTaxe` (`droit/src/apprentissage.rs`) ;
+son motif de non-assujettissement (44.004, table MNATA) est le choix de la fiche `MotifNonAssujettissement`. Le type
+de rémunération (51.011), `TypeDeRemuneration` (`droit/src/natures.rs`), n'a que les quatre codes que nos natures
+écrivent : une DSN lue d'un autre code laisse la case vide. À créer (#419), une liste par rubrique : le code d'option
+de prévoyance.
 
 **Le métier**
 

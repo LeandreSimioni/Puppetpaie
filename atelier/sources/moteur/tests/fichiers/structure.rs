@@ -561,6 +561,16 @@ fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
     confronter::<droit::arrets::MotifDeReprise>(&mut fautes);
     confronter::<droit::arrets::SubrogationDeLArret>(&mut fautes);
     confronter::<droit::permanents::MotifDeSuspension>(&mut fautes);
+    confronter::<droit::natures::UniteDeQuotite>(&mut fautes);
+    confronter::<droit::natures::ModaliteDeDeclarationDeFin>(&mut fautes);
+    confronter::<droit::natures::TypeDActivite>(&mut fautes);
+    confronter::<droit::natures::UniteDeMesure>(&mut fautes);
+    confronter::<droit::base_assujettie::TypeDeComposant>(&mut fautes);
+    confronter::<droit::organismes::QualifiantDAssiette>(&mut fautes);
+    confronter::<droit::cotisation_etablissement::TypeDeBoethExterne>(&mut fautes);
+    confronter::<droit::nature_declaration::EssaiOuReel>(&mut fautes);
+    confronter::<droit::nature_declaration::NatureDEvenementDeclencheur>(&mut fautes);
+    confronter::<droit::apprentissage::CodeTaxe>(&mut fautes);
     assert!(fautes.is_empty(), "une liste de la norme declaree en `enum` est l'union des listes livrees :\n{}", fautes.join("\n"));
 }
 

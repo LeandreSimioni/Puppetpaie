@@ -534,7 +534,7 @@ forme! {
         pub cet_si_depasse: Option<Cet>,
         pub masquer_base_et_taux: Option<bool>,
         /// Le type de composant de la base 31 de la DSN (S21.G00.79.001) que la sante pose (`bareme::bareme_sante`).
-        pub composant_79: Option<String>,
+        pub composant_79: Option<crate::base_assujettie::TypeDeComposant>,
         /// Le facteur du taux AT/MP de la compagnie (`bareme::bareme_atmp`) : 0,7 pour un artiste (abattement de 30 %).
         pub facteur_atmp: Option<Court>,
         /// Ce qui remplit le taux, quand ce n'est pas le bareme (le taux AT/MP, la prevoyance d'une convention).
@@ -623,7 +623,7 @@ forme! {
 forme! {
     pub struct Composant79 {
         #[serde(rename = "type")]
-        pub genre: String,
+        pub genre: crate::base_assujettie::TypeDeComposant,
     }
 }
 
@@ -790,7 +790,7 @@ forme! {
         pub code81_retraite: Option<CodeCotisation81>,
         pub ctp: Option<crate::organismes::CodeCtp>,
         pub ctp_regularisation: Option<crate::organismes::CodeCtp>,
-        pub qualifiant: Option<String>,
+        pub qualifiant: Option<crate::organismes::QualifiantDAssiette>,
         pub cle_total_chomage: Option<CleDeTotalisation>,
         pub cle_total_urssaf: Option<CleDeTotalisation>,
     }

@@ -44,3 +44,28 @@ impl NatureDeLaDeclaration {
         )
     }
 }
+
+codes_fermes! {
+    /// L'ENVOI D'UN FICHIER, D'ESSAI OU REEL (S10.G00.00.005, « Code envoi du fichier d'essai ou réel »), la liste entiere
+    /// de la norme (cahier technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S10.G00.00.txt` ; relevee dans
+    /// `formats-dsn-*-base.json`).
+    EssaiOuReel, "Code envoi du fichier d'essai ou réel", "S10.G00.00.005" {
+        Essai = "01",
+        Reel = "02",
+    }
+}
+
+codes_fermes! {
+    /// LA NATURE DE L'EVENEMENT DECLENCHEUR D'UN SIGNALEMENT D'AMORCAGE DES DONNEES VARIABLES (S20.G00.05.011), la liste
+    /// entiere de la norme (cahier technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S20.G00.05.txt` ;
+    /// relevee dans `formats-dsn-*-base.json`). Ceux que le logiciel envoie : `declarations::amorcage`.
+    NatureDEvenementDeclencheur, "Nature de l'événement déclencheur", "S20.G00.05.011" {
+        Embauche = "01",
+        Mutation = "02",
+        FinDeDispenseDAffiliation = "03",
+        ChangementDeParametresDuContratCollectif = "04",
+        NouveauContratCollectif = "05",
+        AppelDeTauxNonSalarie = "06",
+        ChangementDeDeclarant = "07",
+    }
+}

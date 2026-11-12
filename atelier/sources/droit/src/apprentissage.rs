@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 use socle::fichiers::{forme_en_cache, FormeGardee};
 use socle::echec::R;
 
-use crate::fiche::{ChampsEntreprise, Lue};
+use crate::fiche::{ChampsEntreprise, Lue, MotifNonAssujettissement};
 use crate::source::forme_notee;
 
 forme_notee! {
@@ -17,18 +17,40 @@ forme_notee! {
     }
 }
 
+crate::natures::codes_fermes! {
+    /// LE CODE D'UNE TAXE OU D'UNE CONTRIBUTION DU BLOC 44, assujettissement ou non (S21.G00.44.001), la liste entiere
+    /// de la norme (cahier technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.44.txt` ; relevee dans
+    /// `formats-dsn-*-base.json`). Ceux que la DSN de decembre declare : `declarations::assujettissement`.
+    CodeTaxe, "Code de taxe ou de contribution", "S21.G00.44.001" {
+        TaxeApprentissage = "001",
+        NonTaxeApprentissage = "002",
+        ContributionSupplementaireApprentissage = "003",
+        NonContributionSupplementaireApprentissage = "004",
+        Peec = "005",
+        NonPeec = "006",
+        FormationProfessionnelle = "007",
+        NonFormationProfessionnelle = "008",
+        TaxeSurLesSalaires = "009",
+        NonTaxeSurLesSalaires = "010",
+        CpfCdd = "013",
+        NonCpfCdd = "014",
+        TaxeSurLesSalairesAuPremierTaux = "015",
+        TaxeSurLesSalairesAuDeuxiemeTaux = "016",
+    }
+}
+
 /// Un motif de non-assujettissement : son code et son libelle.
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MotifMnata {
-    pub code: String,
+    pub code: MotifNonAssujettissement,
     pub libelle: String,
 }
 
 /// Le champ de la fiche entreprise qui dit pourquoi la compagnie ne doit pas la taxe d'apprentissage (un code MNATA).
 pub const CHAMP_MOTIF_TAXE_APPRENTISSAGE: crate::fiche::CaseEntreprise = crate::fiche::CaseEntreprise::TaxeApprentissageMotifNonAssujettissement;
 /// Le motif MNATA 007, « Associations sans but lucratif ».
-pub const MNATA_ASSOCIATIONS: &str = "007";
+pub const MNATA_ASSOCIATIONS: MotifNonAssujettissement = MotifNonAssujettissement::M007;
 /// Le premier millesime ou une association a activites non lucratives est redevable de la taxe d'apprentissage : C. trav.
 /// L. 6241-1, I, redaction en vigueur depuis le 21/02/2026 (loi n° 2026-103 de finances pour 2026, art. 135, XIII) :
 /// « En sont également redevables les associations [...] à activités non lucratives » (deposee :
@@ -46,10 +68,10 @@ pub const MILLESIME_ASSOCIATIONS_REDEVABLES: i32 = 2026;
 pub const PREMIERE_PERIODE_ASSOCIATIONS_REDEVABLES: (i32, u32) = (2026, 3);
 
 /// La table MNATA livree : (code, libelle).
-pub fn motifs_mnata() -> R<Vec<(String, String)>> {
+pub fn motifs_mnata() -> R<Vec<(MotifNonAssujettissement, String)>> {
     static CACHE: OnceLock<FormeGardee<TableMnata>> = OnceLock::new();
     let t = forme_en_cache(&CACHE, "mnata-base.json", "La table MNATA livrée ne se lit pas : le signaler au développeur.", Ok)?;
-    Ok(t.motifs.iter().map(|m| (m.code.trim().to_string(), m.libelle.trim().to_string())).collect())
+    Ok(t.motifs.iter().map(|m| (m.code, m.libelle.trim().to_string())).collect())
 }
 
 /// Ou la fiche entreprise dit le motif de non-assujettissement a la taxe d'apprentissage.
@@ -59,8 +81,8 @@ pub fn champ_du_motif() -> String {
 
 /// Le motif MNATA que dit la fiche entreprise, avec son libelle, lu dans la table livree : `None` quand la fiche n'en dit
 /// pas ; refus quand il n'est pas dans la table (la DSN n'admet que ses valeurs, CRE-11 de 44.004).
-pub fn motif_de_la_fiche(ent: &ChampsEntreprise) -> R<Option<(String, String)>> {
-    let Some(motif) = ent.taxe_apprentissage_motif_non_assujettissement.code() else {
+pub fn motif_de_la_fiche(ent: &ChampsEntreprise) -> R<Option<(MotifNonAssujettissement, String)>> {
+    let Some(&motif) = ent.taxe_apprentissage_motif_non_assujettissement.dite() else {
         return Ok(None);
     };
     let motifs = motifs_mnata()?;

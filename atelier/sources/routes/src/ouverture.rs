@@ -1416,7 +1416,7 @@ struct NatureDeLaPage {
     /// signale pas : le CDDU a son terme).
     temps_plein_dit: Option<String>,
     motif_rupture_vide_dit: String,
-    unite_quotite: String,
+    unite_quotite: natures::UniteDeQuotite,
 }
 
 /// Les natures de contrat, telles que l'ecran les DECRIT : toutes, pour que toute carte se dessine (celle d'un permanent
@@ -1460,7 +1460,7 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
                 Some(d) if !n.signalement_fctu(None) => format!("— {}, à son terme —", d),
                 _ => "— à choisir —".to_string(),
             },
-            unite_quotite: n.unite_quotite().to_string(),
+            unite_quotite: n.unite_quotite(),
         });
     }
     Ok(sortie)

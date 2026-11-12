@@ -19,6 +19,7 @@ use declarations::dsn_lue::{ContratDeclare, DsnLue, Mesures, VersementLu};
 use documents::ecrire_documents::paies_aux_numeros_declares;
 use droit::contexte::Contexte;
 use droit::fiche::Lue as _;
+use droit::natures::{TypeDActivite, UniteDeMesure};
 use engagement::calcul::Paie;
 use envois::etats;
 use socle::date::Jour;
@@ -120,13 +121,13 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
     // Les mesures du travail remunere (type 01) que la DSN ecrit pour cette paie (`dsn::mesures_d_activite`).
     let (mut jours, mut cachets, mut heures) = (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO);
     for (t, valeur, code) in declarations::dsn::mesures_d_activite(p)? {
-        if t != "01" {
+        if t != TypeDActivite::TravailRemunere {
             continue;
         }
-        match code.as_str() {
-            "10" | "35" => heures += valeur,
-            "12" => jours += valeur,
-            "37" => cachets += valeur,
+        match code {
+            UniteDeMesure::Heure | UniteDeMesure::HeuresIntermittents => heures += valeur,
+            UniteDeMesure::Journee => jours += valeur,
+            UniteDeMesure::CachetsIsoles => cachets += valeur,
             _ => {}
         }
     }
@@ -411,7 +412,7 @@ pub(crate) struct ApercuDsn {
     pub(crate) nom: String,
     pub(crate) description: String,
     pub(crate) mois: Mois,
-    pub(crate) nature_envoi: Option<String>,
+    pub(crate) nature_envoi: Option<droit::nature_declaration::EssaiOuReel>,
     pub(crate) reel: bool,
     pub(crate) signalement: bool,
     #[serde(rename = "nature")]
@@ -498,7 +499,7 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
         fichier: chemin.clone(),
         nom,
         mois,
-        nature_envoi: a.nature_envoi.clone(),
+        nature_envoi: a.nature_envoi,
         reel: a.reel(),
         signalement,
         nature_declaration: a.nature()?.to_string(),

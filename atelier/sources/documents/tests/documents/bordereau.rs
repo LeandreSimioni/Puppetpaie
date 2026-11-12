@@ -4,7 +4,7 @@
 
 use crate::outils::{dec, lire_donnee};
 use documents::bordereau::{montant, LigneBordereau, TauxDeLaLigne};
-use droit::organismes::CodeCtp;
+use droit::organismes::{CodeCtp, QualifiantDAssiette};
 use serde::Deserialize;
 use socle::date::Jour;
 
@@ -29,7 +29,7 @@ struct Reel {
 fn l(code: &str, qualifiant: &str, assiette: &str, taux_at: &str) -> LigneBordereau {
     LigneBordereau {
         code: CodeCtp::lire(code).unwrap(),
-        qualifiant: qualifiant.into(),
+        qualifiant: QualifiantDAssiette::du_code(qualifiant).unwrap(),
         taux_at: Some(taux_at).filter(|s| !s.is_empty()).map(|t| TauxDeLaLigne::AtMp(dec(t))),
         assiette: Some(dec(assiette)),
         montant: None,
@@ -68,7 +68,7 @@ fn ligne(c: &[String; 5]) -> LigneBordereau {
     let champ = |i: usize| c[i].as_str();
     LigneBordereau {
         code: CodeCtp::lire(champ(0)).unwrap(),
-        qualifiant: champ(1).into(),
+        qualifiant: QualifiantDAssiette::du_code(champ(1)).unwrap(),
         // Le calcul lit le taux, quelle que soit la ligne qui le porte.
         taux_at: Some(champ(2)).filter(|s| !s.is_empty()).map(|t| TauxDeLaLigne::AtMp(dec(t))),
         assiette: Some(champ(3)).filter(|s| !s.is_empty()).map(dec),

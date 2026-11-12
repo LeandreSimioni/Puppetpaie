@@ -33,7 +33,7 @@ fn flux(indicateur: &str, n: usize) -> Vec<u8> {
 fn le_test_ne_part_jamais_en_02() {
     for nature in ["02", "01", "03", "99"] {
         let s = basculer_dsn(&dsn(nature)).unwrap();
-        assert_eq!(lire(&s).nature_envoi.as_deref(), Some("01"), "{}", nature);
+        assert_eq!(lire(&s).nature_envoi, Some(droit::nature_declaration::EssaiOuReel::Essai), "{}", nature);
     }
 }
 

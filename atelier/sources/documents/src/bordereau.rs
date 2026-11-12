@@ -34,7 +34,7 @@
 //! Preuves : `tests/calcul/bordereau.rs`, dont le rejeu des 75 bordereaux
 //! (`tests/donnees/bordereaux-reels.json`).
 
-use droit::organismes::CodeCtp;
+use droit::organismes::{CodeCtp, QualifiantDAssiette};
 use socle::date::Jour;
 use socle::fichiers::{dossier_du_code, signature};
 use socle::echec::{refus, R};
@@ -53,7 +53,7 @@ const NOM_TABLE: &str = "urssaf-codes-types-personnel.csv";
 #[derive(Clone, Debug)]
 pub struct LigneBordereau {
     pub code: CodeCtp,
-    pub qualifiant: String,
+    pub qualifiant: QualifiantDAssiette,
     /// Le taux que la ligne porte (S21.G00.23.003), a deux decimales ; vide si elle n'en porte pas.
     pub taux_at: Option<TauxDeLaLigne>,
     pub assiette: Option<Decimal>,
@@ -291,7 +291,7 @@ urssaf-codes-types-personnel). Rien n'est ecrit.",
             part_at(a).ok_or_else(|| socle::fichiers::absent("taux_at"))
         }
         "A" | "C" | "D" | "E" | "K" => {
-            let plafonne = l.qualifiant == "921";
+            let plafonne = l.qualifiant == QualifiantDAssiette::AssiettePlafonnee;
             let Some(tx) = (if plafonne { t.plafonne } else { t.deplafonne }) else {
                 return Err(socle::refus!(
                     "CTP {} ({}), qualifiant {} : la table de l'Urssaf ne donne pas de taux {}. \

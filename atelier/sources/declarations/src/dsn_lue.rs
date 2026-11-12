@@ -12,8 +12,8 @@ use serde::Serialize;
 
 use droit::base_assujettie::BaseAssujettie;
 use droit::fiche::{Bic, Courriel, Iban, Idcc, Nic, NumeroObjetSpectacle, Siren};
-use droit::nature_declaration::NatureDeLaDeclaration;
-use droit::natures::{ListeDeLaNorme, RubriqueDeLaNorme, VersionDeLaNorme};
+use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
+use droit::natures::{ListeDeLaNorme, RubriqueDeLaNorme, TypeDActivite, TypeDeRemuneration, UniteDeMesure, VersionDeLaNorme};
 use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
@@ -231,7 +231,7 @@ pub struct IndividuDeclare {
     pub code_salarie: Option<String>,
     /// .020, le numero technique temporaire d'un individu declare sans NIR (`ntt`) : la fiche n'en a pas.
     #[serde(skip)]
-    pub ntt: Option<String>,
+    pub ntt: Option<crate::ntt::Ntt>,
 }
 
 /// Un contrat (bloc S21.G00.40) de l'individu qui le precede, son arret (bloc S21.G00.60) et sa fin (bloc S21.G00.62)
@@ -277,9 +277,9 @@ pub struct ContratDeclare {
 /// Une activite (bloc S21.G00.53) de la remuneration qui la precede : son type (.001), sa mesure (.002), son unite (.003).
 #[derive(Clone, Debug, Default)]
 pub struct Activite {
-    pub genre: Option<String>,
+    pub genre: Option<TypeDActivite>,
     pub mesure: Option<Decimal>,
-    pub unite: Option<String>,
+    pub unite: Option<UniteDeMesure>,
 }
 
 /// UNE REMUNERATION (bloc S21.G00.51), « contrepartie de l'activite de l'individu dans le cadre du contrat »
@@ -290,7 +290,7 @@ pub struct Activite {
 pub struct Remuneration {
     pub debut: Option<Jour>,
     pub contrat: Option<NumeroContrat>,
-    pub genre: Option<String>,
+    pub genre: Option<TypeDeRemuneration>,
     pub montant: Option<Decimal>,
     pub activites: Vec<Activite>,
 }
@@ -492,7 +492,7 @@ pub struct Mesures {
 pub struct DsnLue {
     /// Le logiciel qui l'a ecrite (S10.G00.00.001), la nature de l'envoi (.005 : `01` test, `02` reel).
     pub logiciel: Option<String>,
-    pub nature_envoi: Option<String>,
+    pub nature_envoi: Option<EssaiOuReel>,
     /// Le Siren de l'emetteur (S10.G00.01.001) : celui du cabinet quand un tiers depose (`EntrepriseDeclaree`).
     pub emetteur: Option<Siren>,
     /// La nature de la declaration (S20.G00.05.001 : `01` mensuelle, un signalement sinon).
@@ -527,14 +527,14 @@ pub struct DsnLue {
 }
 
 /// La nature d'un envoi reel (S10.G00.00.005 ; `01` : un test).
-pub const NATURE_REEL: &str = "02";
+pub const NATURE_REEL: EssaiOuReel = EssaiOuReel::Reel;
 /// La nature d'une DSN mensuelle (S20.G00.05.001).
 pub const MENSUELLE: NatureDeLaDeclaration = NatureDeLaDeclaration::Mensuelle;
 
 impl DsnLue {
     /// Un envoi reel (S10.G00.00.005), pas un test.
     pub fn reel(&self) -> bool {
-        self.nature_envoi.as_deref() == Some(NATURE_REEL)
+        self.nature_envoi == Some(NATURE_REEL)
     }
 
     /// La nature de la declaration (S20.G00.05.001), obligatoire dans toute declaration (tableau des usages) : une DSN
@@ -622,18 +622,18 @@ impl DsnLue {
             }
             if let Some(montant) = r.montant {
                 m.remunere = true;
-                match r.genre.as_deref() {
-                    Some("001") => m.brut = Some(m.brut.iter().sum::<Decimal>() + montant),
-                    Some("010") => m.salaire_habituel = Some(montant),
+                match r.genre {
+                    Some(TypeDeRemuneration::Brute) => m.brut = Some(m.brut.iter().sum::<Decimal>() + montant),
+                    Some(TypeDeRemuneration::SalaireDeBase) => m.salaire_habituel = Some(montant),
                     _ => {}
                 }
             }
             // Une activite sans mesure (53.002) ne compte rien.
-            for (a, mesure) in r.activites.iter().filter(|a| a.genre.as_deref() == Some("01")).filter_map(|a| a.mesure.map(|m| (a, m))) {
-                match a.unite.as_deref() {
-                    Some("10" | "35") => m.heures += mesure,
-                    Some("12") => m.jours += mesure,
-                    Some("37") => m.cachets += mesure,
+            for (a, mesure) in r.activites.iter().filter(|a| a.genre == Some(TypeDActivite::TravailRemunere)).filter_map(|a| a.mesure.map(|m| (a, m))) {
+                match a.unite {
+                    Some(UniteDeMesure::Heure | UniteDeMesure::HeuresIntermittents) => m.heures += mesure,
+                    Some(UniteDeMesure::Journee) => m.jours += mesure,
+                    Some(UniteDeMesure::CachetsIsoles) => m.cachets += mesure,
                     _ => {}
                 }
             }
@@ -948,7 +948,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
     let (mut mois, mut depot): (Option<Mois>, Option<Jour>) = (None, None);
     let mut type_declaration: Option<TypeDeLaDeclaration> = None;
     let (mut fraction, mut ordre, mut remplace): (Option<String>, Option<String>, Option<String>) = (None, None, None);
-    let (mut logiciel, mut nature_envoi): (Option<String>, Option<String>) = (None, None);
+    let (mut logiciel, mut nature_envoi): (Option<String>, Option<EssaiOuReel>) = (None, None);
     let mut nature: Option<NatureDeLaDeclaration> = None;
     let mut versements_organismes: Vec<Decimal> = Vec::new();
     let mut e = EntrepriseDeclaree::default();
@@ -999,7 +999,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
         let contrat = contrats.last_mut();
         match k {
             "S10.G00.00.001" => premier(&mut logiciel, &plein),
-            "S10.G00.00.005" => premier(&mut nature_envoi, &plein),
+            "S10.G00.00.005" => premier(&mut nature_envoi, &EssaiOuReel::du_code(&v)),
             "S20.G00.05.001" => {
                 let n = fautes.code(rub, &v);
                 nature = nature.or(n);
@@ -1009,7 +1009,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
             "S21.G00.20.005" => versements_organismes.extend(fautes.montant(rub, &v)),
             "S21.G00.30.020" => {
                 if let Some(i) = individu {
-                    individus[i].ntt = plein;
+                    individus[i].ntt = crate::ntt::Ntt::lu(&v)?;
                 }
             }
             "S21.G00.40.012" => {
@@ -1248,20 +1248,20 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 let Some(r) = versement.and_then(|x| x.remunerations.last_mut()) else { continue };
                 match k {
                     "S21.G00.51.010" => r.contrat = fautes.lue(rub, &v, NUMERO, NumeroContrat::lire),
-                    "S21.G00.51.011" => r.genre = plein,
+                    "S21.G00.51.011" => r.genre = TypeDeRemuneration::du_code(&v),
                     _ => r.montant = fautes.montant(rub, &v),
                 }
             }
             "S21.G00.53.001" => {
                 let Some(r) = versement.and_then(|x| x.remunerations.last_mut()) else { continue };
-                r.activites.push(Activite { genre: plein, ..Activite::default() });
+                r.activites.push(Activite { genre: TypeDActivite::du_code(&v), ..Activite::default() });
             }
             "S21.G00.53.002" | "S21.G00.53.003" => {
                 let mesure = if k == "S21.G00.53.002" { fautes.nombre(rub, &v) } else { None };
                 let Some(a) = versement.and_then(|x| x.remunerations.last_mut()).and_then(|r| r.activites.last_mut()) else { continue };
                 match k {
                     "S21.G00.53.002" => a.mesure = mesure,
-                    _ => a.unite = plein,
+                    _ => a.unite = UniteDeMesure::du_code(&v),
                 }
             }
             "S21.G00.70.013" => rattachements.push(v),

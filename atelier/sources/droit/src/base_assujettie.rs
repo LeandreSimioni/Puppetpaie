@@ -93,3 +93,40 @@ impl BaseAssujettie {
         )
     }
 }
+
+codes_fermes! {
+    /// LE TYPE D'UN COMPOSANT DE BASE ASSUJETTIE (S21.G00.79.001), la liste entiere de la norme (cahier technique DSN
+    /// 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.79.txt` ; relevee dans `formats-dsn-*-base.json`). Celui
+    /// que la sante pose sous la base 31, le bareme le dit (`forme_bareme::Rubrique::composant_79`).
+    TypeDeComposant, "Type de composant de base assujettie", "S21.G00.79.001" {
+        SmicDeLaReductionGenerale = "01",
+        SmicDuCice = "02",
+        RetraiteComplementairePatronale = "03",
+        PrevoyanceComplementairePatronale = "04",
+        RetraiteSupplementairePatronale = "05",
+        PlafondPolyEmployeurs = "06",
+        PlafondApplique = "07",
+        SalaireBrutPrevoyance = "10",
+        TrancheAPrevoyance = "11",
+        Tranche2Prevoyance = "12",
+        TrancheBPrevoyance = "13",
+        TrancheCPrevoyance = "14",
+        TrancheDPrevoyance = "15",
+        TrancheD1Prevoyance = "16",
+        BaseSpecifiquePrevoyance = "17",
+        BaseForfaitairePrevoyance = "18",
+        BaseFictivePrevoyance = "19",
+        MontantForfaitairePrevoyance = "20",
+        MontantLibrePrevoyance = "21",
+        IndemnitesJournalieresCrpcen = "22",
+        SansComposantEnPaie = "23",
+        Tranche2UnifieePrevoyance = "24",
+        NouveauComposantA = "25",
+        NouveauComposantB = "26",
+        NouveauComposantC = "27",
+        NouveauComposantD = "28",
+        NouveauComposantE = "29",
+        RetenueSurSalaire = "90",
+        TaxeSurLesSalairesAuTauxNormal = "91",
+    }
+}

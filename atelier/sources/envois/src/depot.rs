@@ -108,7 +108,7 @@ pub fn renumeroter(octets: &[u8], ordre: &str) -> R<Vec<u8>> {
 /// Le mode demande doit correspondre au fichier, et un reel
 /// exige une preuve.
 pub fn verifier(a: &DsnLue, reel: bool, presence_prouvee: bool) -> R<()> {
-    let nature_envoi = a.nature_envoi.as_deref();
+    let nature_envoi = a.nature_envoi;
     if reel && nature_envoi != Some(NATURE_REEL) {
         let porte = match nature_envoi {
             Some(n) => format!("porte {}='{}'", RUB_NATURE, n),

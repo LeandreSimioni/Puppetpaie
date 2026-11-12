@@ -1303,7 +1303,11 @@ fn refaire_le_signalement(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne
     let refaire = || -> R<()> {
         match nature {
             declarations::amorcage::NATURE => {
-                let motif = nom.strip_prefix("Amorcage").and_then(|r| r.get(..2)).ok_or_else(|| manque("le motif de son amorcage"))?.to_string();
+                let motif = nom
+                    .strip_prefix("Amorcage")
+                    .and_then(|r| r.get(..2))
+                    .and_then(droit::nature_declaration::NatureDEvenementDeclencheur::du_code)
+                    .ok_or_else(|| manque("le motif de son amorcage"))?;
                 let paies = paies_emportees(&ctx_j, mois, l)?;
                 let paie = paies.first().ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} n'emporte aucun engagement", nom)))?;
                 let options = declarations::amorcage::Options {

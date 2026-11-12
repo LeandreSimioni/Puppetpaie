@@ -15,6 +15,30 @@ use droit::natures::RubriqueDeLaNorme;
 pub const RUBRIQUE: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.30.020");
 pub const RUBRIQUE_NIR: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.30.001");
 
+/// UN NUMERO TECHNIQUE TEMPORAIRE (S21.G00.30.020) : l'identifiant d'un individu declare sans NIR, « X [11,40] », le
+/// code sexe (CSL-11), sans espace (CSL-12), le SIREN de l'entreprise en 2e a 10e position (CCH-13)
+/// (`atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt` l. 338-354). Il se fabrique pour un salarie (`numero`, qui
+/// le controle entier) ou se lit dans une DSN (`Ntt::lu`, sa forme seule : le SIREN de l'entreprise n'y est pas en main).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ntt(String);
+
+impl Ntt {
+    /// Le NTT qu'une DSN lue ecrit, s'il en a la forme ; sinon aucun.
+    pub fn lu(valeur: &str) -> R<Option<Ntt>> {
+        Ok(faute(valeur, "")?.is_none().then(|| Ntt(valeur.to_string())))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Ntt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// Le code sexe d'un NIR (son premier chiffre), sinon de la case `sexe` ; `None` si ni l'un ni l'autre ne le dit.
 pub fn sexe_de(nir: Option<&str>, sexe: Option<&str>) -> Option<&'static str> {
     let un_ou_deux = |t: &str| match t {
@@ -29,7 +53,7 @@ pub fn sexe_de(nir: Option<&str>, sexe: Option<&str>) -> Option<&'static str> {
 }
 
 /// Le NTT de ce salarie dans l'entreprise de SIREN `siren`.
-pub fn numero(siren: &str, salarie: &FicheSalarie) -> R<String> {
+pub fn numero(siren: &str, salarie: &FicheSalarie) -> R<Ntt> {
     let Some(s) = sexe_de(salarie.nir.portee(), salarie.sexe.code()) else {
         let qui = match salarie.nom.remplie() {
             Some(nom) => nom.to_string(),
@@ -65,7 +89,7 @@ pub fn numero(siren: &str, salarie: &FicheSalarie) -> R<String> {
             pourquoi
         ));
     }
-    Ok(v)
+    Ok(Ntt(v))
 }
 
 /// Ce que la norme reproche a ce NTT -- None s'il passe.
@@ -125,7 +149,7 @@ pub fn poser_ntt(f: &mut Fichier, ent: &droit::fiche::ChampsEntreprise, salarie:
         f.add(&RUBRIQUE.to_string(), numero(ent.siren.ecrite("siren")?, salarie)?);
         return Ok(());
     }
-    if let Some(n) = declaree.filter(|d| d.nir.is_none()).and_then(|d| d.ntt.as_deref()).map(strip) {
+    if let Some(n) = declaree.filter(|d| d.nir.is_none()).and_then(|d| d.ntt.as_ref()) {
         f.add(&RUBRIQUE.to_string(), n);
     }
     Ok(())
@@ -151,7 +175,7 @@ fn refuser_les_doublons(individus: &[crate::dsn_lue::IndividuDeclare]) -> R<()> 
                 nom
             ));
         }
-        for (cle, vus, quoi) in [(nir, &mut vus_nir, "NIR"), (i.ntt.as_deref(), &mut vus_ntt, "NTT")] {
+        for (cle, vus, quoi) in [(nir, &mut vus_nir, "NIR"), (i.ntt.as_ref().map(Ntt::as_str), &mut vus_ntt, "NTT")] {
             let Some(cle) = cle else { continue };
             if let Some((_, autre)) = vus.iter().find(|(c, _)| *c == cle) {
                 return Err(socle::refus!(

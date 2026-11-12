@@ -262,12 +262,22 @@ impl From<CodeCaisse> for String {
     }
 }
 
+crate::natures::codes_fermes! {
+    /// LE QUALIFIANT D'ASSIETTE D'UNE LIGNE DU BORDEREAU (S21.G00.23.002), la liste entiere de la norme (cahier
+    /// technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.23.txt` l. 33-36 ; relevee dans
+    /// `formats-dsn-*-base.json`). Celui de chaque CTP, `organismes-base.json` le dit (`Ctp::qualifiant`).
+    QualifiantDAssiette, "Qualifiant d'assiette", "S21.G00.23.002" {
+        AutreAssiette = "920",
+        AssiettePlafonnee = "921",
+    }
+}
+
 forme_notee! {
     /// UNE LIGNE DU BORDEREAU URSSAF : le CTP (23.001), son qualifiant d'assiette (23.002), ce qu'il lit (une assiette,
     /// ou un montant), son taux AT/MP, la population qui l'ecrit (`statut`, `nature`) et les seuils d'effectif.
     pub struct Ctp {
         pub code: CodeCtp,
-        pub qualifiant: String,
+        pub qualifiant: QualifiantDAssiette,
         pub assiette: Option<crate::bordereau::AssietteDuBordereau>,
         pub montant: Option<crate::bordereau::MontantDuBordereau>,
         pub taux_at: Option<TauxAt>,

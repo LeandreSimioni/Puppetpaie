@@ -17,11 +17,12 @@ use crate::dsn::{
 use crate::fctu::Echec;
 use socle::fichiers::repr;
 use socle::echec::R;
+use droit::nature_declaration::NatureDEvenementDeclencheur;
 use droit::type_declaration::TypeDeLaDeclaration;
 
 pub const NATURE: droit::nature_declaration::NatureDeLaDeclaration = droit::nature_declaration::NatureDeLaDeclaration::SignalementAmorcage;
-pub const EMBAUCHE: &str = "01";
-pub const CHANGEMENT_DE_LOGICIEL: &str = "07";
+pub const EMBAUCHE: NatureDEvenementDeclencheur = NatureDEvenementDeclencheur::Embauche;
+pub const CHANGEMENT_DE_LOGICIEL: NatureDEvenementDeclencheur = NatureDEvenementDeclencheur::ChangementDeDeclarant;
 
 /// Les types qu'un amorcage admet. Pas de « 03 - annule et remplace integral » : « CCH-15 : Le type de declaration "03 -
 /// declaration annule et remplace integral" est interdit pour une nature de declaration (S20.G00.05.001) "08 -
@@ -55,7 +56,7 @@ struct Motifs {
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Motif {
-    code: String,
+    code: NatureDEvenementDeclencheur,
     libelle: String,
     saisissable: bool,
     #[serde(deserialize_with = "socle::forme::non_lue")]
@@ -69,7 +70,7 @@ fn motifs_de_la_norme() -> R<std::sync::Arc<Base>> {
 }
 
 /// Le libelle du motif ; un motif que la norme ne connait pas refuse en le nommant.
-pub fn libelle_motif(motif: &str) -> R<String> {
+pub fn libelle_motif(motif: NatureDEvenementDeclencheur) -> R<String> {
     match motifs_de_la_norme()?.motifs.codes.iter().find(|c| c.code == motif) {
         Some(c) => Ok(c.libelle.clone()),
         None => Err(socle::echec::cle(format!("Le motif « {} » n'est pas un motif d'amorçage de la norme.", motif), "motif")),
@@ -78,7 +79,7 @@ pub fn libelle_motif(motif: &str) -> R<String> {
 
 /// Les parametres de `generer`, avec leurs defauts.
 pub struct Options {
-    pub motif: String,
+    pub motif: NatureDEvenementDeclencheur,
     pub type_declaration: TypeDeLaDeclaration,
     pub ordre: i64,
     pub remplace: Option<String>,
@@ -87,7 +88,7 @@ pub struct Options {
 }
 
 /// `verifier` : refuse ce que la norme -- ou le bon sens de la demande -- refuse.
-pub fn verifier(paie: &Paie, motif: &str, type_declaration: TypeDeLaDeclaration, remplace: Option<&str>) -> Result<(), Echec> {
+pub fn verifier(paie: &Paie, motif: NatureDEvenementDeclencheur, type_declaration: TypeDeLaDeclaration, remplace: Option<&str>) -> Result<(), Echec> {
     let impossible = |m: String| Err(Echec::impossible(m));
     let base = motifs_de_la_norme()?;
     let tous = &base.motifs.codes;
@@ -97,7 +98,7 @@ pub fn verifier(paie: &Paie, motif: &str, type_declaration: TypeDeLaDeclaration,
             return impossible(format!(
                 "Nature d'evenement declencheur {} inconnue de la norme (S20.G00.05.011). Les sept valeurs sont \
 dans amorcage-base.json.",
-                repr(motif)
+                repr(motif.code())
             ))
         }
     };
@@ -219,7 +220,7 @@ fn pile_sans_taux(annee: i32) -> droit::forme_bareme::Pile {
 
 /// Le fichier d'un signalement d'amorcage, pret a deposer.
 pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::departs::Departs) -> Result<String, Echec> {
-    verifier(paie, &o.motif, o.type_declaration, o.remplace.as_deref())?;
+    verifier(paie, o.motif, o.type_declaration, o.remplace.as_deref())?;
     let ctx = &ctx.au(&paie.engagement.debut)?;
     let e = &paie.engagement;
     let s = &paie.salarie;
@@ -266,7 +267,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
     f.add("S20.G00.05.007", constitution.jjmmaaaa());
     // La rubrique qui fait tout le message : sans elle, le point de depot ne
     // sait pas a qui transmettre le signalement (fiche 2984).
-    f.add("S20.G00.05.011", &o.motif);
+    f.add("S20.G00.05.011", o.motif);
     // L'etablissement est celui du salarie, comme dans ses mensuelles (`droit::bareme::entreprise_du_salarie`) : le NIC est
     // une donnee identifiante (cahier technique DSN 2026.1, § 2.5.1, p. 67).
     let etab = droit::bareme::entreprise_du_salarie(ent, &paie.salarie)?;

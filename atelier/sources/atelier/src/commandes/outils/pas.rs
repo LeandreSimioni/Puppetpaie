@@ -123,8 +123,13 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     }
     let salaries: Vec<droit::contexte::IdSalarie> =
         args.texte("salaries").into_iter().flat_map(|t| t.split(',')).map(str::trim).filter(|s| !s.is_empty()).map(droit::contexte::IdSalarie::lire).collect::<Result<_, Echec>>()?;
+    let motif = super::avec_defaut(args, "motif")?;
+    let Some(motif) = droit::nature_declaration::NatureDEvenementDeclencheur::du_code(motif) else {
+        dire!("--motif attend une nature d'evenement declencheur (S20.G00.05.011, de 01 a 07), recu {}", socle::fichiers::repr(motif));
+        return Ok(1);
+    };
     let demande = Demande {
-        motif: super::avec_defaut(args, "motif")?,
+        motif,
         mois,
         salaries: if salaries.is_empty() { None } else { Some(&salaries) },
         envoi_test: args.drapeau("test"),
@@ -135,7 +140,7 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let lot = produire(ctx, &paies, &demande, &mut ecrits)?;
     let nom = super::nom;
     dire!("Signalements d'amorcage des donnees variables (nature 08)");
-    dire!("Motif {} - {}\n{}", lot.motif, declarations::amorcage::libelle_motif(&lot.motif)?, "-".repeat(62));
+    dire!("Motif {} - {}\n{}", lot.motif, declarations::amorcage::libelle_motif(lot.motif)?, "-".repeat(62));
     for (ligne, f) in lot.lignes.iter().zip(&lot.fichiers) {
         dire!("  {:<12} {:<24} {}", ligne.salarie, ligne.libelle, nom(f));
     }
