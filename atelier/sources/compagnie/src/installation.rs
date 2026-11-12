@@ -40,9 +40,11 @@ pub fn dessus(p: &Path) -> PathBuf {
 
 /// Le dossier `donnees/` (le code livre : baremes, echeancier...) : `PUPPETPAIE_CODE` si elle est posee, sinon celui que
 /// l'on trouve a cote du programme (`logiciel/puppetpaie.exe` -> `logiciel/donnees` ; `atelier/sources/moteur/bin/<systeme>/moteur`
-/// -> `logiciel/donnees` en remontant), a defaut celui du depot qui a compile le programme.
+/// -> `logiciel/donnees` en remontant), a defaut celui du depot qui a compile le programme : c'est le cas d'un programme
+/// que `cargo` construit dans sa cible, hors du depot (les tests qui lancent `moteur`, `cargo run`).
 /// Le chemin est rendu absolu et sans `..` : le moteur remonte de `moteur/` a `logiciel/` puis au depot par `parent()`.
-/// Un programme qui ne sait pas ou il est, ou un dossier du code qui ne se resout pas, refuse : le systeme dit pourquoi.
+/// Un programme qui ne sait pas ou il est, un dossier du code qui ne se resout pas, ou aucun dossier `donnees/` trouve,
+/// refuse : le refus nomme `PUPPETPAIE_CODE`.
 pub fn fixer_le_code() -> R<()> {
     let valide = |p: &Path| p.join("echeancier-base.json").is_file();
     let mut candidats: Vec<PathBuf> = Vec::new();
@@ -58,7 +60,13 @@ pub fn fixer_le_code() -> R<()> {
             candidats.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../logiciel/donnees"));
         }
     }
-    let Some(c) = candidats.into_iter().find(|c| valide(c)) else { return Ok(()) };
+    let Some(c) = candidats.into_iter().find(|c| valide(c)) else {
+        return Err(socle::echec::refus_avec(
+            "Le dossier des données du logiciel (donnees/, celui qui porte echeancier-base.json) ne se trouve ni à côté du \
+             programme ni dans le dépôt qui l'a compilé : poser PUPPETPAIE_CODE sur ce dossier.",
+            socle::echec::Lieu { cle: Some("PUPPETPAIE_CODE".to_string()), ..socle::echec::Lieu::default() },
+        ));
+    };
     let abs = c.canonicalize().map_err(|e| socle::echec::du_disque(&c, &e))?;
     // Sous Windows, `canonicalize` rend un chemin `\\?\C:\...` que le reste du moteur ne compare pas.
     let abs = match abs.to_string_lossy().strip_prefix(r"\\?\") {
