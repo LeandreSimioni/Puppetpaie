@@ -1276,10 +1276,10 @@ macro_rules! fiche {
                 $datee::depuis(self, cle)
             }
 
-            fn changer(&mut self, ch: $ch, depuis: Option<&Jour>, note: Option<&str>) {
+            fn changer(&mut self, ch: $ch, depuis: Option<&Jour>, premiere_datee: bool, note: Option<&str>) {
                 match ch {
-                    $( $ch::$var(x) => dater(&mut self.$champ, x, depuis, note), )*
-                    $( $( $ch::$pvar(x) => dater(&mut self.$pchamp, x, depuis, note), )* )*
+                    $( $ch::$var(x) => dater(&mut self.$champ, x, depuis, premiere_datee, note), )*
+                    $( $( $ch::$pvar(x) => dater(&mut self.$pchamp, x, depuis, premiere_datee, note), )* )*
                 }
             }
 
@@ -1314,10 +1314,10 @@ macro_rules! fiche {
             fn neuve(plate: &$plate) -> $datee {
                 let mut f = $datee::default();
                 $( if plate.$champ.is_some() {
-                    dater(&mut f.$champ, plate.$champ.clone(), None, None);
+                    dater(&mut f.$champ, plate.$champ.clone(), None, false, None);
                 } )*
                 $( $( if plate.$piece.cases.$pchamp.is_some() {
-                    dater(&mut f.$pchamp, plate.$piece.cases.$pchamp.clone(), None, None);
+                    dater(&mut f.$pchamp, plate.$piece.cases.$pchamp.clone(), None, false, None);
                 } )* )*
                 f.noter(plate);
                 f
@@ -1348,8 +1348,8 @@ pub trait FicheDatee: Clone + Default + PartialEq + Serialize + DeserializeOwned
     /// que la fiche ne dit pas, ou que la forme ne declare pas.
     fn depuis(&self, cle: CaseDeFiche) -> Vec<Option<Jour>>;
 
-    /// LA CASE QUE `ch` CHANGE S'ECRIT DATEE (`dater`) : sa valeur, ou vide.
-    fn changer(&mut self, ch: Self::Changement, depuis: Option<&Jour>, note: Option<&str>);
+    /// LA CASE QUE `ch` CHANGE S'ECRIT DATEE (`dater`, `premiere_datee` compris) : sa valeur, ou vide.
+    fn changer(&mut self, ch: Self::Changement, depuis: Option<&Jour>, premiere_datee: bool, note: Option<&str>);
 
     /// La case que `ch` change, posee dans la fiche a un jour `plate` : sa valeur, ou vide.
     fn appliquer(plate: &mut Self::Plate, ch: Self::Changement);
@@ -1475,10 +1475,15 @@ pub fn temps_au<T: Clone>(liste: &[Datee<T>], jour: &Jour, meme: impl Fn(&T, &T)
 ///
 /// ECRIRE UNE VALEUR DATEE, la seule fonction qui le fait : `valeur` vaut a partir de `depuis` (`None` : de tout temps) ;
 /// ce qui precede reste ce qu'il etait. La premiere valeur d'une liste vaut de tout temps, quel que soit `depuis` : avant
-/// elle, la fiche ne disait rien d'autre. Une valeur deja ecrite au meme jour est remplacee (une correction du meme jour
-/// d'effet). `note` dit pourquoi.
-pub fn dater<T>(liste: &mut Option<Vec<Datee<T>>>, valeur: Option<T>, depuis: Option<&Jour>, note: Option<&str>) {
+/// elle, la fiche ne disait rien d'autre. Sauf `premiere_datee` : une valeur qui, par nature, ne vaut qu'a partir d'un
+/// jour (le taux de PAS recu, BOI-IR-PAS-30-10-50 § 20 ; une ligne du taux AT/MP, a la date de sa notification) ; dans une
+/// liste vide, elle vaut a partir de `depuis`, et avant lui la case est vide. Une valeur deja ecrite au meme jour est
+/// remplacee (une correction du meme jour d'effet). `note` dit pourquoi.
+pub fn dater<T>(liste: &mut Option<Vec<Datee<T>>>, valeur: Option<T>, depuis: Option<&Jour>, premiere_datee: bool, note: Option<&str>) {
     let liste = liste.get_or_insert_with(Vec::new);
+    if liste.is_empty() && premiere_datee && depuis.is_some() {
+        liste.push(Datee { depuis: None, valeur: None, note: None });
+    }
     let depuis = if liste.is_empty() { None } else { depuis.copied() };
     liste.retain(|e| e.depuis != depuis);
     liste.push(Datee { depuis, valeur, note: note.map(str::trim).filter(|n| !n.is_empty()).map(str::to_string) });

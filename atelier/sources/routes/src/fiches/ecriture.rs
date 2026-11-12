@@ -4,7 +4,8 @@
 //! forme que sa ligne de `champs-base.json` lui donne) est la lentille par laquelle on la derive (la forme declaree se
 //! fabrique de la forme lisible : `deriver`), on la verifie (`champs::verifier_fiche`) et on la compare (ce qui change,
 //! ce qui se date) ; ce que la derivation pose revient dans la fiche case par case (`reporter`). Puis chaque case qui
-//! change s'ecrit datee dans la fiche telle qu'ecrite (`ecrire_datee`, la seule qui date une valeur de fiche).
+//! change s'ecrit datee dans la fiche telle qu'ecrite (`ecrire_datee` choisit ce qui se date ; `droit::fiche::dater`,
+//! par `FicheDatee::changer`, est le seul qui ecrit une valeur datee).
 
 use std::collections::BTreeMap;
 
@@ -191,7 +192,8 @@ impl SorteDeFiche for FicheEntrepriseDatee {
 
 /// UNE LIGNE DU TAUX AT/MP DU SIEGE S'ECRIT A SA DATE (`depuis`, celle de la notification), dans la case datee
 /// (`droit::fiche::dater`) : avant elle, la case garde ce qu'elle disait (vide, si elle ne disait rien) ; une ligne au
-/// meme jour est remplacee. La meme ligne n'ecrit rien. Le seul endroit qui ecrit la case, quelle que soit la source
+/// meme jour est remplacee (`FicheDatee::changer`, `premiere_datee`). La meme ligne n'ecrit rien. Le seul endroit qui
+/// ecrit la case, quelle que soit la source
 /// (`routes::atmp`). Rend vrai si elle a change.
 pub(crate) fn ecrire_ligne_atmp(brute: &mut FicheEntrepriseDatee, t: droit::fiche::TauxAtmp, note: Option<&str>) -> R<bool> {
     let depuis = t.depuis.ok_or_else(|| refus("Accidents du travail (AT/MP) : la ligne dit à partir de quand elle vaut. Rien n'a été enregistré."))?;
@@ -201,10 +203,7 @@ pub(crate) fn ecrire_ligne_atmp(brute: &mut FicheEntrepriseDatee, t: droit::fich
     if deja.as_ref() == Some(&t) || (t.provenance == Some(droit::fiche::ProvenanceAtmp::Saisie) && deja.as_ref().is_some_and(|d| droit::bareme::meme_taux_atmp(d, &t))) {
         return Ok(false);
     }
-    if brute.taux_atmp.as_ref().is_none_or(|l| l.is_empty()) {
-        droit::fiche::dater(&mut brute.taux_atmp, None, None, None);
-    }
-    droit::fiche::dater(&mut brute.taux_atmp, Some(t), Some(&depuis), note);
+    droit::fiche::FicheDatee::changer(brute, droit::fiche::ChangementEntreprise::TauxAtmp(Some(t)), Some(&depuis), true, note);
     Ok(true)
 }
 
@@ -800,8 +799,8 @@ fn changements_a_dater(nom: NomDeFiche, avant: &Saisie, apres: &Saisie, cles: &[
         .collect())
 }
 
-/// ECRIRE UNE FICHE DATEE, la seule fonction qui date une valeur d'une fiche : chaque case qui change de `avant` (la
-/// fiche a `lue_au`, celle que l'ecran a montree) a `apres` s'ecrit dans la fiche datee `brute` (`FicheDatee::changer`,
+/// ECRIRE UNE FICHE DATEE, la seule fonction qui choisit ce qui se date dans une fiche : chaque case qui change de
+/// `avant` (la fiche a `lue_au`, celle que l'ecran a montree) a `apres` s'ecrit dans la fiche datee `brute` (`FicheDatee::changer`,
 /// `droit::fiche::dater`). Ce qui change une valeur existante vaut a partir de `depuis`, et sans lui se refuse : ce qui
 /// precede garde l'ancienne valeur (`changements_a_dater`). Une case vide qu'on remplit prend sa valeur de tout temps,
 /// `depuis` ou non ; une valeur `premiere_datee` (le taux de PAS recu) vaut a partir de `depuis` meme dans une case vide :
@@ -826,7 +825,7 @@ pub(crate) fn ecrire_datee<F: SorteDeFiche>(
             libelles_a_dater(F::NOM, &a_dater)?.join(", ")
         )));
     }
-    let mut ecritures: Vec<(F::Changement, Option<Jour>, Option<&str>)> = Vec::new();
+    let mut ecritures: Vec<(F::Changement, Option<Jour>, bool)> = Vec::new();
     let mut ecrites = Vec::new();
     let lisibles = champs::formes_lisibles(F::NOM)?;
     for k in cles {
@@ -838,16 +837,13 @@ pub(crate) fn ecrire_datee<F: SorteDeFiche>(
         let jours = brute.depuis(k);
         let datee = depuis.is_some() && a_dater.contains(&k);
         let jour = if datee { depuis } else { jours.iter().copied().filter(|j| j.is_none_or(|j| j <= *lue_au)).last().flatten() };
-        let case = |p: &F::Plate| F::changement(p, k).ok_or_else(|| plain(format!("La case {} n'est pas de la fiche {}.", k, F::NOM)));
-        if datee && jours.is_empty() {
-            // Avant `depuis`, la fiche ne disait rien : la case, vide.
-            ecritures.push((case(&F::Plate::default())?, None, None));
-        }
-        ecritures.push((case(apres)?, jour, note));
+        let ch = F::changement(apres, k).ok_or_else(|| plain(format!("La case {} n'est pas de la fiche {}.", k, F::NOM)))?;
+        // Datee, la valeur ne vaut qu'a partir de `depuis`, meme dans une case vide : avant lui, la fiche ne disait rien.
+        ecritures.push((ch, jour, datee));
         ecrites.push(k);
     }
-    for (ch, jour, note) in ecritures {
-        droit::fiche::FicheDatee::changer(brute, ch, jour.as_ref(), note);
+    for (ch, jour, datee) in ecritures {
+        droit::fiche::FicheDatee::changer(brute, ch, jour.as_ref(), datee, note);
     }
     brute.noter(apres);
     Ok(ecrites)

@@ -23,12 +23,12 @@ fn une_valeur_changee_a_une_date_ne_touche_pas_ce_qui_precede() {
     let e = |texte: &str| lu::<ChampsEntreprise>(texte);
     let mut ent = FicheEntrepriseDatee::neuve(&e(plate));
     let ce = |texte: &str| lu::<ChangementEntreprise>(texte);
-    ent.changer(ce(r#"{"case": "idcc", "valeur": "1285"}"#), Some(&j(2026, 11, 1)), Some("passage en CCNEAC"));
-    ent.changer(ce(r#"{"case": "annexe_convention", "valeur": null}"#), Some(&j(2026, 11, 1)), None);
-    ent.changer(ce(r#"{"case": "adresse", "valeur": "8 PLACE DU MARCHE"}"#), Some(&j(2026, 11, 1)), None);
+    ent.changer(ce(r#"{"case": "idcc", "valeur": "1285"}"#), Some(&j(2026, 11, 1)), false, Some("passage en CCNEAC"));
+    ent.changer(ce(r#"{"case": "annexe_convention", "valeur": null}"#), Some(&j(2026, 11, 1)), false, None);
+    ent.changer(ce(r#"{"case": "adresse", "valeur": "8 PLACE DU MARCHE"}"#), Some(&j(2026, 11, 1)), false, None);
     let s = |texte: &str| lu::<ChampsSalarie>(texte);
     let mut sal = FicheSalarieDatee::neuve(&s(r#"{"nom": "BRIOCHE", "prenom": "FANCHON"}"#));
-    sal.changer(lu::<ChangementSalarie>(r#"{"case": "emploi", "valeur": "COMEDIENNE"}"#), Some(&j(2026, 10, 15)), None);
+    sal.changer(lu::<ChangementSalarie>(r#"{"case": "emploi", "valeur": "COMEDIENNE"}"#), Some(&j(2026, 10, 15)), false, None);
     let ecrire = |rel: &str, texte: String| std::fs::write(racine.join("config").join(rel), texte).unwrap();
     ecrire("entreprise.json", socle::ecriture::json_indente(&ent, 2));
     ecrire("salaries.json", socle::ecriture::json_indente(&BTreeMap::from([("BRIOCHE", &sal)]), 2));

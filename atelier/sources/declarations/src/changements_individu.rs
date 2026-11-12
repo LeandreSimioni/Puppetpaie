@@ -376,7 +376,7 @@ mod tests {
         for (champ, depuis, v) in apres {
             let changement = format!(r#"{{"case": {}, "valeur": {}}}"#, socle::ecriture::json_en_ligne(champ), socle::ecriture::json_en_ligne(v));
             let ch = socle::forme::lire_texte(&changement, "le changement").unwrap();
-            f.changer(ch, Some(depuis), None);
+            f.changer(ch, Some(depuis), false, None);
         }
         f
     }
