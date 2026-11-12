@@ -182,7 +182,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | numéro de contrat | S21.G00.40.009 : il se lit, ne se recalcule pas | `NumeroContrat` (`engagement/src/numeros.rs`) |
 | numéro d'objet spectacle | S21.G00.40.050, natures 02 et 10 | `NumeroObjetSpectacle` (`droit/src/fiche.rs`) |
 | IDCC | l'identifiant d'une convention collective : la notion « convention » | `Idcc` (`droit/src/fiche.rs`) ; à unifier (#419) : les clés des tables par convention, en `String` ; `minima::Convention`, `clauses::Convention`, `forme_bareme::Convention` sont des formes de fichiers |
-| code d'organisme | Urssaf, institution de prévoyance, caisse | à créer (#419) |
+| identifiant d'organisme | l'organisme de protection sociale que la DSN paie (S21.G00.20.001), d'une cotisation (81.002), d'une adhésion de prévoyance (15.002) : le SIRET de l'Urssaf, de France Travail, de la caisse Congés Spectacles, le code d'une institution (`P0983`), `DGFIP` | `IdentifiantDOrganisme` (`droit/src/organismes.rs`), que portent un versement de `organismes-base.json`, un contrat qu'un texte exige, une adhésion, la `org` d'une cotisation DSN du barème, les lignes 81 et les ordres de paiement de la DSN, ce que la lecture d'une DSN garde des blocs 15 et 20 ; `AUDIENS`, `SIRET_FRANCE_TRAVAIL`, `DGFIP` sont des constantes. Le code caisse d'un mois sans individu (S20.G00.08.001) est une autre notion |
 | salarié | la clé de sa fiche | `IdSalarie` (`droit/src/contexte.rs`) |
 | spectacle | la clé de sa fiche | `IdSpectacle` (`droit/src/contexte.rs`) |
 | compagnie | l'identifiant d'une compagnie | à créer (#419) (`Compagnie.id` en `String`) |

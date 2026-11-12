@@ -12,6 +12,7 @@ use crate::assiette::Assiette;
 use crate::base_assujettie::BaseAssujettie;
 use crate::code_cotisation::{CleDeCotisationDsn, CodeCotisation81};
 use crate::fiche::Lue;
+use crate::organismes::IdentifiantDOrganisme;
 use crate::source::Fondement;
 use serde::Deserialize;
 use socle::forme::{Court, Nombre};
@@ -635,7 +636,7 @@ forme! {
     pub struct CotisationDsn {
         pub bloc78: BaseAssujettie,
         pub code81: Option<CodeCotisation81>,
-        pub org: Option<String>,
+        pub org: Option<IdentifiantDOrganisme>,
         pub base: Option<Assiette>,
         pub taux: Option<TauxDate>,
         pub base78: Assiette,
@@ -668,7 +669,7 @@ impl CotisationDsn {
 impl CotisationDsn {
     /// UNE COTISATION QUE LA PILE AJOUTE d'elle-meme (le versement mobilite, le regime local d'Alsace-Moselle) : sa base
     /// 78 est le brut, son taux porte sur `base`.
-    pub(crate) fn sur_le_brut(bloc78: BaseAssujettie, code81: CodeCotisation81, org: String, base: Assiette, taux: Decimal) -> CotisationDsn {
+    pub(crate) fn sur_le_brut(bloc78: BaseAssujettie, code81: CodeCotisation81, org: IdentifiantDOrganisme, base: Assiette, taux: Decimal) -> CotisationDsn {
         CotisationDsn {
             bloc78,
             code81: Some(code81),

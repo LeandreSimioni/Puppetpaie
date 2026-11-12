@@ -13,6 +13,7 @@ use serde::Serialize;
 use droit::base_assujettie::BaseAssujettie;
 use droit::fiche::{Bic, Courriel, Iban, Idcc, Nic, NumeroObjetSpectacle, Siren};
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
 
@@ -41,6 +42,9 @@ const OBJET: &str = "un numéro d'objet (12 lettres ou chiffres)";
 /// Ce que porte le numero d'un contrat (S21.G00.40.009, X [5,20]), et ce que le citent les remunerations (51.010) et les
 /// bases (78.006) : `engagement::numeros::NumeroContrat`.
 const NUMERO: &str = "un numéro de contrat (5 à 20 caractères)";
+/// Ce que porte l'identifiant d'un organisme (S21.G00.15.002, S21.G00.20.001, X [2,14]) :
+/// `droit::organismes::IdentifiantDOrganisme`.
+const ORGANISME: &str = "un identifiant d'organisme (2 à 14 caractères)";
 
 // ------------------------------------------------------------------ la forme
 
@@ -56,7 +60,7 @@ pub struct Banque {
 /// Un versement a un organisme (bloc S21.G00.20) tel que la lecture le garde : l'identifiant de l'organisme (.001),
 /// l'entite d'affectation (.002), le BIC et l'IBAN du compte preleve (.003, .004).
 struct Bloc20 {
-    organisme: String,
+    organisme: Option<IdentifiantDOrganisme>,
     affectation: String,
     bic: Option<Bic>,
     iban: Option<Iban>,
@@ -461,7 +465,7 @@ pub struct PaieDuContrat {
 #[derive(Clone, Debug)]
 pub struct Adhesion {
     pub libelle: String,
-    pub organisme: Option<String>,
+    pub organisme: Option<IdentifiantDOrganisme>,
     pub reference: Option<String>,
 }
 
@@ -1058,12 +1062,21 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
             "S21.G00.11.022" => premier(&mut e.idcc, &fautes.lue(k, &v, IDCC, Idcc::lire)),
             "S21.G00.11.025" => spst = v,
             "S21.G00.15.001" => adhesions.push(Adhesion::de(v)),
-            "S21.G00.15.002" | "S21.G00.15.005" => {
+            "S21.G00.15.002" => {
+                let organisme = fautes.lue(k, &v, ORGANISME, IdentifiantDOrganisme::lire);
                 if let Some(a) = adhesions.last_mut() {
-                    *if k == "S21.G00.15.002" { &mut a.organisme } else { &mut a.reference } = plein;
+                    a.organisme = organisme;
                 }
             }
-            "S21.G00.20.001" => blocs20.push(Bloc20 { organisme: v, affectation: String::new(), bic: None, iban: None }),
+            "S21.G00.15.005" => {
+                if let Some(a) = adhesions.last_mut() {
+                    a.reference = plein;
+                }
+            }
+            "S21.G00.20.001" => {
+                let organisme = fautes.lue(k, &v, ORGANISME, IdentifiantDOrganisme::lire);
+                blocs20.push(Bloc20 { organisme, affectation: String::new(), bic: None, iban: None })
+            }
             "S21.G00.20.002" => {
                 if let Some(b) = blocs20.last_mut() {
                     b.affectation = v;
@@ -1270,7 +1283,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
         e.banque = Some(Banque { bic: (*bic).clone(), iban: (*iban).clone() });
     }
     e.france_travail_dossier_recouvrement =
-        blocs20.iter().find(|b| b.organisme == crate::dsn::SIRET_FRANCE_TRAVAIL && !b.affectation.is_empty()).map(|b| b.affectation.clone());
+        blocs20.iter().find(|b| b.organisme == Some(crate::dsn::SIRET_FRANCE_TRAVAIL) &&!b.affectation.is_empty()).map(|b| b.affectation.clone());
     // QUI LES ORGANISMES CONTACTENT : le contact chez le declare de type 04 (« recouvrant, entre autres, des cotisations de
     // Securite sociale ») s'il y en a plusieurs, sinon le premier : le `declarant_dsn` de la fiche, que le moteur ecrit la
     // (`dsn.rs`, `type_du_contact`). Sa civilite n'est pas dans ce bloc : elle se lit dans celle du contact de l'emetteur

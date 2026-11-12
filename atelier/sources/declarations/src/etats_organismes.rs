@@ -339,8 +339,8 @@ fn nom_de_la_dsn(m: Mois, partie: bool) -> String {
 }
 
 /// SIRET -> libelle, lu dans les organismes de la compagnie (`Contexte::organismes`).
-fn libelles_organismes(ctx: &Contexte) -> R<Vec<(String, String)>> {
-    let mut out: Vec<(String, String)> = Vec::new();
+fn libelles_organismes(ctx: &Contexte) -> R<Vec<(droit::organismes::IdentifiantDOrganisme, String)>> {
+    let mut out: Vec<(droit::organismes::IdentifiantDOrganisme, String)> = Vec::new();
     for v in ctx.organismes()?.versements() {
         match out.iter_mut().find(|(c, _)| *c == v.siret) {
             Some(x) => x.1 = v.libelle.clone(),
@@ -361,10 +361,10 @@ pub fn versements_organismes(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois
         for o in &f.ordres {
             let organisme = match noms.iter().find(|(k, _)| *k == o.organisme).map(|(_, v)| v.clone()).filter(|v| !v.is_empty()) {
                 Some(n) => n,
-                None => o.organisme.clone(),
+                None => o.organisme.to_string(),
             };
             let mut l = Ligne::nouvelle();
-            l.m("mois", m).t("organisme", organisme).t("identifiant", o.organisme.clone()).ot("reference", o.reference.clone());
+            l.m("mois", m).t("organisme", organisme).t("identifiant", o.organisme.to_string()).ot("reference", o.reference.clone());
             l.t("du", o.debut.jj_mm_aaaa()).t("au", o.fin.jj_mm_aaaa()).od("montant", Some(o.montant));
             l.t("mode", "prélèvement SEPA");
             l.ot("date", o.date_paiement.map(|j| j.jj_mm_aaaa())).t("fichier", nom_de_la_dsn(m, partie));

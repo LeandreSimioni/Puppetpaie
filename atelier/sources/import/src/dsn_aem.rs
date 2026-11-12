@@ -536,6 +536,6 @@ mod tests_parametrage {
         assert_eq!((c.nom_prenom.as_str(), c.tel.as_deref(), c.civilite.as_deref()), ("FONTAINE CLAIRE", Some("0478000000"), Some("02")));
         assert_eq!(lu.atmp.get(&2025), Some(&(socle::mois::Mois::nouveau(2025, 12).unwrap(), "923AD".to_string(), socle::num::decimal_lu("1.65"))));
         assert_eq!(lu.adhesions[0].libelle, "PREV SPECT VIVANT PRIV");
-        assert_eq!(lu.adhesions[0].organisme.as_deref(), Some("P0983"));
+        assert_eq!(lu.adhesions[0].organisme, Some(droit::organismes::AUDIENS));
     }
 }

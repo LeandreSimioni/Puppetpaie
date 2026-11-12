@@ -79,7 +79,7 @@ forme_notee! {
     /// l'adhesion (15.005), et les lignes du bulletin qui font sa cotisation.
     pub struct CascDsn {
         pub contrat: String,
-        pub organisme: String,
+        pub organisme: crate::organismes::IdentifiantDOrganisme,
         pub identifiant: String,
         pub lignes_bulletin: Vec<crate::forme_bareme::IdDeCotisation>,
     }

@@ -199,7 +199,7 @@ impl Organismes {
     }
 
     /// L'organisme de ce siret : son nom, et l'adresse que la donnee livree lui donne.
-    fn par_siret(&self, siret: &str) -> Option<Organisme> {
+    fn par_siret(&self, siret: &droit::organismes::IdentifiantDOrganisme) -> Option<Organisme> {
         let v = self.compagnie.base.versement(siret)?;
         Some(Organisme { nom: v.nom.clone(), adresse: v.adresse.clone() })
     }
@@ -214,9 +214,9 @@ impl Organismes {
     /// L'organisme de l'adhesion `cle` (la prevoyance, la sante) : celui que la compagnie a enregistre, sinon celui que
     /// la branche designe (`organisme_fixe` des contrats de `organismes-base.json`). `None` : elle n'a pas ce contrat.
     fn adhesion(&self, cle: &str) -> Option<Organisme> {
-        let enregistre = self.compagnie.adhesions_prevoyance.iter().find(|a| a.cle == cle).map(|a| a.delegataire.as_str());
+        let enregistre = self.compagnie.adhesions_prevoyance.iter().find(|a| a.cle == cle).map(|a| &a.delegataire);
         let designe = || {
-            self.compagnie.base.contrats_de(self.idcc.as_deref()).filter(|c| c.cle == cle && c.organisme_fixe).find_map(|c| c.organisme.as_deref())
+            self.compagnie.base.contrats_de(self.idcc.as_deref()).filter(|c| c.cle == cle && c.organisme_fixe).find_map(|c| c.organisme.as_ref())
         };
         self.par_siret(enregistre.or_else(designe)?)
     }

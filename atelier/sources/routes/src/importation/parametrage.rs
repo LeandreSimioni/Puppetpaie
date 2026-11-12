@@ -123,7 +123,7 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
             }
         }
     }
-    let organisme = |a: &Adhesion| a.organisme.as_deref().map(str::trim).map(str::to_string);
+    let organisme = |a: &Adhesion| a.organisme.as_ref().map(|o| o.to_string());
     let mut saisies = std::collections::BTreeMap::new();
     for (l, a, _) in &paires {
         // La saisie est celle de l'ecran (`organismes-enregistrer`) : une case vide ne s'y ecrit pas `""`.

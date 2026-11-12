@@ -168,7 +168,7 @@ pub fn decrire(ordres: &[crate::dsn::Ordre], mois: Mois, jour_echeance: u32) -> 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct OrdreEnClair {
     pub organisme: String,
-    pub identifiant: String,
+    pub identifiant: droit::organismes::IdentifiantDOrganisme,
     pub objet: String,
     pub montant: rust_decimal::Decimal,
     pub periode: PeriodeEnClair,
@@ -200,6 +200,6 @@ pub struct CreditEnClair {
 
 /// Le jour du mois suivant ou l'organisme `identifiant` (S21.G00.20.001) preleve, quand la base livree le dit
 /// (`jour_de_paiement` de `donnees/organismes-base.json`, la norme, la meme pour toute compagnie), ou `None`.
-pub fn jour_de_paiement(identifiant: &str) -> R<Option<u32>> {
+pub fn jour_de_paiement(identifiant: &droit::organismes::IdentifiantDOrganisme) -> R<Option<u32>> {
     Ok(droit::organismes::base()?.versement(identifiant).and_then(|v| v.jour_de_paiement))
 }

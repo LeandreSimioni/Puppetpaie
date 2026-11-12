@@ -1313,11 +1313,10 @@ organisatrice ou sur le bordereau Urssaf :\n    \
 }
 
 /// L'organisme du premier 075 de la DSN : l'Urssaf, que le bareme dit.
-fn org_urssaf(bar: &Pile) -> R<String> {
+fn org_urssaf(bar: &Pile) -> R<crate::organismes::IdentifiantDOrganisme> {
     bar.cotisations_dsn
         .iter()
-        .find(|c| c.code81 == Some(CodeCotisation81::AssuranceMaladie) && dit(&c.org).is_some())
-        .and_then(|c| c.org.clone())
+        .find_map(|c| c.org.clone().filter(|_| c.code81 == Some(CodeCotisation81::AssuranceMaladie)))
         .ok_or_else(|| socle::fichiers::absent("cotisations_dsn[075].org"))
 }
 
