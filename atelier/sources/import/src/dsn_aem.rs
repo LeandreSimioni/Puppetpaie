@@ -55,7 +55,7 @@ pub fn fiche_entreprise(e: &EntrepriseDeclaree) -> socle::echec::R<Saisie> {
 
 /// Un numero d'objet spectacle, vu dans une DSN ou dans une AEM.
 pub struct ObjetDeclare {
-    pub numero: String,
+    pub numero: droit::fiche::NumeroObjetSpectacle,
     pub premier_mois: Mois,
     pub dernier_mois: Mois,
     pub contrats: i64,
@@ -203,7 +203,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
     out.fichiers = lues.len();
     (out.premier_mois, out.dernier_mois) = (lues.first().map(|p| p.0), lues.last().map(|d| d.0));
     let mut index_salaries: HashMap<Option<String>, usize> = HashMap::new();
-    let mut index_objets: HashMap<String, usize> = HashMap::new();
+    let mut index_objets: HashMap<droit::fiche::NumeroObjetSpectacle, usize> = HashMap::new();
     for &(mois, ref info) in &lues {
         out.etablissements.extend(info.etablissements.iter().cloned());
         out.nics_siege.extend(info.nic_siege.clone());

@@ -102,8 +102,8 @@ fn jours_option(x: Option<Decimal>) -> R<String> {
 // ------------------------------------------------------------ les briques
 
 /// La case texte `cle` du spectacle de la paie ; refus si elle manque.
-fn du_spectacle(sp: Option<&droit::fiche::Spectacle>, case: fn(&droit::fiche::Spectacle) -> &Option<String>, cle: &str) -> R<String> {
-    sp.map(case).and_then(Option::as_deref).map(str::to_string).ok_or_else(|| socle::fichiers::absent(cle))
+fn du_spectacle<T: AsRef<str>>(sp: Option<&droit::fiche::Spectacle>, case: fn(&droit::fiche::Spectacle) -> &Option<T>, cle: &str) -> R<String> {
+    sp.map(case).and_then(Option::as_ref).map(|t| t.as_ref().to_string()).ok_or_else(|| socle::fichiers::absent(cle))
 }
 
 

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::base_assujettie::BaseAssujettie;
-use droit::fiche::{Bic, Courriel, Iban, Idcc, Nic, Siren};
+use droit::fiche::{Bic, Courriel, Iban, Idcc, Nic, NumeroObjetSpectacle, Siren};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 
@@ -35,6 +35,8 @@ const BIC: &str = "un BIC (ISO 9362)";
 const IBAN: &str = "un IBAN (ISO 13616) à la clé juste";
 /// Ce que porte le courriel d'un contact (S20.G00.07.003) : `droit::fiche::Courriel`.
 const COURRIEL: &str = "une adresse de courriel";
+/// Ce que porte le numero d'objet d'un contrat (S21.G00.40.050, X [12,12]) : `droit::fiche::NumeroObjetSpectacle`.
+const OBJET: &str = "un numéro d'objet (12 lettres ou chiffres)";
 
 // ------------------------------------------------------------------ la forme
 
@@ -251,7 +253,7 @@ pub struct ContratDeclare {
     /// .049, la licence.
     pub licence: Option<String>,
     /// .050, le numero d'objet spectacle.
-    pub objet: Option<String>,
+    pub objet: Option<NumeroObjetSpectacle>,
     /// S21.G00.60.002 : le dernier jour travaille avant l'arret que la DSN declare.
     pub dernier_jour_travaille: Option<Jour>,
     /// S21.G00.62.001 et .002 : la fin que la DSN declare, et son motif.
@@ -1152,7 +1154,10 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 premier(&mut e.licence, &plein);
                 contrat.into_iter().for_each(|c| c.licence = plein.clone());
             }
-            "S21.G00.40.050" => contrat.into_iter().for_each(|c| c.objet = plein.clone()),
+            "S21.G00.40.050" => {
+                let objet = fautes.lue(k, &v, OBJET, NumeroObjetSpectacle::lire);
+                contrat.into_iter().for_each(|c| c.objet = objet.clone());
+            }
             "S21.G00.62.001" => {
                 let fin = fautes.jour(k, &v);
                 if let Some(c) = fin_de.and_then(|i| contrats.get_mut(i)) {

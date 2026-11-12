@@ -56,7 +56,7 @@ struct ContratLu {
     fin: Option<Jour>,
     emploi: Option<String>,
     nature_dsn: Option<String>,
-    objet: Option<String>,
+    objet: Option<droit::fiche::NumeroObjetSpectacle>,
     fin_declaree: Option<Jour>,
     motif_fin: Option<droit::natures::MotifDeRupture>,
     mois: Mesures,
@@ -353,7 +353,7 @@ struct ContratDuFichier {
     /// La nature du contrat telle que la DSN la code (S21.G00.40.007).
     #[serde(rename = "nature")]
     nature_dsn: Option<String>,
-    objet: Option<String>,
+    objet: Option<droit::fiche::NumeroObjetSpectacle>,
     brut: Option<String>,
     jours: String,
     cachets: String,

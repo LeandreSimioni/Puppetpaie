@@ -693,6 +693,33 @@ impl CleNir {
 
 notion_lue!(CleNir);
 
+/// LE NUMERO D'OBJET D'UN SPECTACLE : « le numéro unique constitué de 12 caractères alphanumériques qui est attribué par le
+/// CNCS pour chaque spectacle ou chaque production » (S21.G00.40.050, X [12,12] :
+/// `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.40.txt`, l. 1430-1441). Qu'il ne se declare qu'en natures 02 et
+/// 10 (CCH-11, regle 6 d'AGENTS) tient au contrat, pas au numero : la DSN le dit.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct NumeroObjetSpectacle(String);
+
+impl NumeroObjetSpectacle {
+    pub const LONGUEUR: usize = 12;
+
+    /// Le numero `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<NumeroObjetSpectacle> {
+        if texte.len() == Self::LONGUEUR && texte.bytes().all(|b| b.is_ascii_alphanumeric()) {
+            Ok(NumeroObjetSpectacle(texte.to_string()))
+        } else {
+            Err(socle::refus!(
+                "« {} » n'est pas un numéro d'objet : il a {} lettres ou chiffres, sans espace, tel que le CNCS l'attribue (DSN, S21.G00.40.050)",
+                texte,
+                Self::LONGUEUR
+            ))
+        }
+    }
+}
+
+notion_lue!(NumeroObjetSpectacle);
+
 /// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
 /// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,
 /// `atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`). Hors de 1 a 12, il se refuse a la lecture
@@ -2235,7 +2262,7 @@ fiche! {
     /// vient et le titre que les bulletins de l'ancien logiciel proposent (`declarations::demarrage`).
     pub struct ChampsSpectacle, datee FicheSpectacleDatee, changement ChangementSpectacle, cles CaseSpectacle {
         Titre(String) = "titre" => titre,
-        NumeroObjet(String) = "numero_objet" => numero_objet,
+        NumeroObjet(NumeroObjetSpectacle) = "numero_objet" => numero_objet,
         CodeAnalytique(String) = "code_analytique" => code_analytique,
         GenreAudiovisuel(GenreAudiovisuel) = "genre_audiovisuel" => genre_audiovisuel,
         EmissionTv1734(bool) = "emission_tv_1734" => emission_tv_1734,

@@ -1544,7 +1544,7 @@ struct SalarieDeLaListe {
 struct SpectacleDeLaListe {
     cle: String,
     titre: String,
-    numero_objet: Option<String>,
+    numero_objet: Option<droit::fiche::NumeroObjetSpectacle>,
 }
 
 /// Un organisme de recouvrement que la DPAE fait choisir.

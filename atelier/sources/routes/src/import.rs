@@ -556,7 +556,7 @@ pub(crate) fn apercu_lu(
     let mut objets: Vec<Objet> = lecture
         .objets
         .iter()
-        .map(|o| Objet { numero: o.numero.clone(), premier: o.premier_mois.to_string(), dernier: o.dernier_mois.to_string(), contrats: o.contrats, aem: o.source == "AEM" })
+        .map(|o| Objet { numero: o.numero.to_string(), premier: o.premier_mois.to_string(), dernier: o.dernier_mois.to_string(), contrats: o.contrats, aem: o.source == "AEM" })
         .collect();
     for c in &contrats {
         if c.numero_objet.is_empty() {
@@ -665,7 +665,7 @@ pub(crate) fn apercu_lu(
         }
         let mois = *mois;
         let c = v.contrat.as_ref();
-        let objet = c.and_then(|c| c.objet.clone()).or_else(|| {
+        let objet = c.and_then(|c| c.objet.as_ref()).map(|o| o.to_string()).or_else(|| {
             let (debut, fin) = (c.and_then(|c| c.debut)?, c.and_then(|c| c.fin)?);
             objets_aem.get(&(nir.clone()?, debut.iso(), fin.iso())).cloned()
         });

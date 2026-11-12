@@ -130,7 +130,7 @@ fn periodes(ctx: &Contexte, lignes: &[crate::journal::Ligne], d: &DsnLue, le_moi
 fn periode(c: &ContratDeclare, numero: &str, x: &Mesures, debut: Jour, fin: Jour, m: socle::mois::Mois, paiement: Option<Jour>, premiere: bool) -> Periode {
     let (d, f) = (m.premier_jour(), m.dernier_jour());
     Periode {
-        contrat: premiere.then(|| (numero.to_string(), debut.jj_mm_aaaa(), fin.jj_mm_aaaa(), c.objet.clone())),
+        contrat: premiere.then(|| (numero.to_string(), debut.jj_mm_aaaa(), fin.jj_mm_aaaa(), c.objet.as_ref().map(|o| o.to_string()))),
         debut: if debut > d { debut } else { d },
         fin: if fin < f { fin } else { f },
         heures: x.heures,

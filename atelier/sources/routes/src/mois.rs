@@ -1528,7 +1528,7 @@ pub(crate) struct SalarieVu {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SpectacleVu {
     titre: String,
-    numero_objet: Option<String>,
+    numero_objet: Option<droit::fiche::NumeroObjetSpectacle>,
 }
 
 /// La nature du contrat : sa cle, son libelle, et s'il se paie au mois.

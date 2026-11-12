@@ -28,7 +28,7 @@ struct ContratMois {
     libelle_nature: String,
     emploi: Option<String>,
     spectacle: Option<String>,
-    objet: Option<String>,
+    objet: Option<droit::fiche::NumeroObjetSpectacle>,
     debut: Jour,
     /// La fin du contrat, sinon son dernier jour travaille.
     fin: Option<Jour>,
@@ -73,7 +73,7 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     for c in &contrats {
         let mut l = Ligne::nouvelle();
         l.m("mois", c.mois).t("cle", c.cle.clone()).t("salarie", c.salarie.clone()).ot("contrat", c.contrat.clone()).t("nature", c.libelle_nature.clone());
-        l.ot("emploi", c.emploi.clone()).ot("spectacle", c.spectacle.clone()).ot("objet", c.objet.clone()).t("debut", c.debut.jj_mm_aaaa()).ot("fin", c.fin.map(|j| j.jj_mm_aaaa()));
+        l.ot("emploi", c.emploi.clone()).ot("spectacle", c.spectacle.clone()).ot("objet", c.objet.as_ref().map(|o| o.to_string())).t("debut", c.debut.jj_mm_aaaa()).ot("fin", c.fin.map(|j| j.jj_mm_aaaa()));
         l.od("brut", c.brut);
         lignes.push(l);
     }
