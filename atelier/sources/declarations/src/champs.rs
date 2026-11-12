@@ -1775,7 +1775,7 @@ pub fn departement_du_nir(nir: &str) -> Option<String> {
 
 /// `cle_nir` : 97 - (NIR mod 97), sur deux chiffres (`reference/sources/insee-nir-siret/`, INSEE, schema NIR, 4.1). En Corse,
 /// 2A et 2B au 6e-7e rang valent 19 et 18 (equivalent, par inference, au zero moins 1 000 000 ou 2 000 000 du texte).
-pub fn cle_nir(nir: &str) -> Option<String> {
+pub fn cle_nir(nir: &str) -> Option<droit::fiche::CleNir> {
     let mut n = strip(nir).to_uppercase();
     if n.chars().count() != 13 {
         return None;
@@ -1791,7 +1791,7 @@ pub fn cle_nir(nir: &str) -> Option<String> {
     for c in n.chars() {
         x = x * 10 + valeur_decimale(c)? as u64;
     }
-    Some(format!("{:02}", 97 - x % 97))
+    Some(droit::fiche::CleNir::du_nombre(x))
 }
 
 /// La valeur d'un chiffre decimal Unicode (categorie Nd).
@@ -2171,7 +2171,7 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
             }
         }
         if let (Some(attendue), Some(cle)) = (nir.as_deref().and_then(cle_nir), &cle) {
-            if attendue != *cle {
+            if *attendue != **cle {
                 out.push(constat(
                     S::NirCle,
                     Gravite::Erreur,
@@ -2442,11 +2442,11 @@ mod tests {
     #[test]
     fn la_cle_du_nir_et_celle_de_la_corse() {
         // insee-nir-siret : le complement a 97, 2A et 2B retranches de 1 000 000 et 2 000 000.
-        assert_eq!(cle_nir("1850578999048"), Some("19".into()));
+        assert_eq!(cle_nir("1850578999048").as_deref(), Some("19"));
         assert!(cle_nir("185057899904").is_none());
         // 2A vaut 19 et 2B vaut 18 : un NIR corse a sa cle.
-        assert_eq!(cle_nir("185052A999048"), Some("60".into()));
-        assert_eq!(cle_nir("185052B999048"), Some("87".into()));
+        assert_eq!(cle_nir("185052A999048").as_deref(), Some("60"));
+        assert_eq!(cle_nir("185052B999048").as_deref(), Some("87"));
         assert!(explication_nir("185052A999048").unwrap().is_none());
         assert!(cle_nir("18505ZZ999048").is_none());
     }

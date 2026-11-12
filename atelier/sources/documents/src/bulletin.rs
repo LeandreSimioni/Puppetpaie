@@ -1073,7 +1073,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
 
     // Le cadre d'identite : un tableau d'une ligne, deux cellules a filet.
     let nir_affiche = match sal.nir.remplie() {
-        Some(n) => format!("{}{}", n, exige(&sal.nir_cle, "nir_cle")?),
+        Some(n) => format!("{}{}", n, sal.nir_cle.exigee("nir_cle")?),
         None => "en cours d'immatriculation".to_string(),
     };
     let mut salarie = vec![

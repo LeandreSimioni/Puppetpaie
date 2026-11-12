@@ -160,7 +160,7 @@ pub struct Aem {
     /// Le numero d'adherent a la caisse des Congés Spectacles, ecrit comme la fiche le garde.
     pub adherent: Option<String>,
     pub nir: Option<String>,
-    pub cle_nir: Option<String>,
+    pub cle_nir: Option<droit::fiche::CleNir>,
     pub nom: Option<String>,
     pub prenom: Option<String>,
     pub nom_usage: Option<String>,
@@ -371,7 +371,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             employeur_code_postal: v("ADR_EMP_CP"),
             employeur_commune: v("ADR_EMP_LOCALITE"),
             adherent: None,
-            cle_nir: nir.as_ref().and_then(|n| n.get(13..15)).map(str::to_string),
+            cle_nir: nir.as_ref().and_then(|n| n.get(13..15)).and_then(|c| droit::fiche::CleNir::lire(c).ok()),
             nir: nir.as_ref().and_then(|n| n.get(..13)).map(str::to_string),
             nom: v("SALARIE_NOM_FAMILLE"),
             prenom: v("SALARIE_PRENOMS"),
@@ -618,12 +618,16 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     a.nom_usage = texte(lu("usage", Some(2)));
     let mut fautes: Vec<&str> = Vec::new();
     if let Some((nir, cle, _)) = nir_en_tete(&lu("nir", Some(2))) {
+        // La cle imprimee, quand c'est celle du NIR (`declarations::champs::cle_nir`).
         match &cle {
-            Some(k) if declarations::champs::cle_nir(&nir).as_deref() != Some(k.as_str()) => fautes.push("la clé du NIR imprimé ne correspond pas à son numéro"),
-            _ => {
-                a.nir = Some(nir);
-                a.cle_nir = cle;
-            }
+            Some(k) => match declarations::champs::cle_nir(&nir).filter(|c| **c == **k) {
+                Some(c) => {
+                    a.nir = Some(nir);
+                    a.cle_nir = Some(c);
+                }
+                None => fautes.push("la clé du NIR imprimé ne correspond pas à son numéro"),
+            },
+            None => a.nir = Some(nir),
         }
     }
     a.naissance = date_en_tete(&lu("naissance", Some(2))).map(|d| d.0);

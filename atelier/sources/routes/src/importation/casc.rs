@@ -668,7 +668,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
                 x.brut
             }
         };
-        let cle_nir = cellule(&nir.as_deref().and_then(declarations::champs::cle_nir));
+        let cle_nir = cellule(&nir.as_deref().and_then(declarations::champs::cle_nir).en_texte());
         // Une case vide du fichier quand la date n'est pas dite.
         let jj = |j: &Option<Jour>| -> String { j.iter().map(Jour::jj_mm_aaaa).collect() };
         let textes: Vec<(u16, String)> = vec![

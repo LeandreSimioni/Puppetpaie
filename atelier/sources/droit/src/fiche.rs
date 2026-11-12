@@ -665,6 +665,34 @@ impl Courriel {
 
 notion_lue!(Courriel);
 
+/// LA CLE D'UN NIR, a cote de lui (`Nir`) : « le complément à 97 du reste de la division par 97 » du NIR, deux chiffres,
+/// de 01 a 97 (INSEE, schema NIR, 4.1 : `atelier/reference/sources/insee-nir-siret/`). Qu'elle soit celle de son NIR se
+/// dit a la saisie (`declarations::champs::cle_nir`), sans refuser la fiche.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct CleNir(String);
+
+impl CleNir {
+    /// La cle `texte`, ou la phrase qui la refuse.
+    pub fn lire(texte: &str) -> R<CleNir> {
+        let valeur = if de_chiffres(texte, 2) { texte.parse::<u8>().ok() } else { None };
+        match valeur {
+            Some(1..=97) => Ok(CleNir(texte.to_string())),
+            _ => Err(socle::refus!(
+                "« {} » n'est pas la clé d'un numéro de sécurité sociale : deux chiffres, de 01 à 97, ceux qui suivent les 13 autres (INSEE)",
+                texte
+            )),
+        }
+    }
+
+    /// La cle du nombre `nombre` qu'ecrit un NIR : le complement a 97 de son reste par 97, de 01 a 97 (INSEE, 4.1).
+    pub fn du_nombre(nombre: u64) -> CleNir {
+        CleNir(format!("{:02}", 97 - nombre % 97))
+    }
+}
+
+notion_lue!(CleNir);
+
 /// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
 /// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,
 /// `atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`). Hors de 1 a 12, il se refuse a la lecture
@@ -2040,7 +2068,7 @@ fiche! {
         Prenom(PrenomDeclare) = "prenom" => prenom,
         Pseudonyme(String) = "pseudonyme" => pseudonyme,
         Nir(Nir) = "nir" => nir,
-        NirCle(String) = "nir_cle" => nir_cle,
+        NirCle(CleNir) = "nir_cle" => nir_cle,
         Sexe(Sexe) = "sexe" => sexe,
         DateNaissance(Jour) = "date_naissance" => date_naissance,
         LieuNaissance(LieuNaissance) = "lieu_naissance" => lieu_naissance,

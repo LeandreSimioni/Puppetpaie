@@ -103,7 +103,7 @@ struct Lu {
     /// Les 13 caracteres du NIR (sans la cle), comme dans les DSN, les AEM et les fiches.
     nir: String,
     /// La cle du NIR, quand le bulletin l'imprime.
-    cle_nir: Option<String>,
+    cle_nir: Option<droit::fiche::CleNir>,
     /// Le mois de la fin de periode.
     mois: Mois,
     /// Le mois a des engagements saisis (`mois_saisis`).
@@ -159,17 +159,17 @@ pub(crate) fn compare(t: &str) -> String {
 }
 
 /// Le NIR imprime : 13 caracteres, ou 15 avec la cle (alors verifiee).
-fn nir_lu(b: &BulletinLu) -> R<Option<(String, Option<String>)>> {
+fn nir_lu(b: &BulletinLu) -> R<Option<(String, Option<droit::fiche::CleNir>)>> {
     let Some(brut) = &b.salarie.nir else { return Ok(None) };
     let n: String = brut.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_uppercase();
     match n.chars().count() {
         13 => Ok(Some((n, None))),
         15 => {
             let (nir, cle): (String, String) = (n.chars().take(13).collect(), n.chars().skip(13).collect());
-            if declarations::champs::cle_nir(&nir).as_deref() != Some(cle.as_str()) {
-                return Err(socle::echec::refus("la clé du NIR imprimé ne correspond pas à son numéro"));
+            match declarations::champs::cle_nir(&nir).filter(|c| **c == *cle) {
+                Some(c) => Ok(Some((nir, Some(c)))),
+                None => Err(socle::echec::refus("la clé du NIR imprimé ne correspond pas à son numéro")),
             }
-            Ok(Some((nir, Some(cle))))
         }
         _ => Err(socle::echec::refus("le NIR imprimé n'a ni 13 ni 15 caractères")),
     }
@@ -1712,7 +1712,7 @@ fn fiche_salarie(nir: &str, ls: &[&Lu], idcc: Option<&str>) -> R<Saisie> {
 struct SalarieLu {
     nir: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    nir_cle: Option<String>,
+    nir_cle: Option<droit::fiche::CleNir>,
     #[serde(skip_serializing_if = "Option::is_none")]
     nom: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

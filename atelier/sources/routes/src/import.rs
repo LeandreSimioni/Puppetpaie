@@ -195,7 +195,7 @@ struct SalarieDeLaDsn<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     nir: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    nir_cle: Option<String>,
+    nir_cle: Option<droit::fiche::CleNir>,
     #[serde(skip_serializing_if = "Option::is_none")]
     initiales_contrat: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
