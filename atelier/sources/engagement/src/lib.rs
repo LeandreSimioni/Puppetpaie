@@ -1072,7 +1072,7 @@ pub(crate) fn engagements(
             date_paiement: carte.date_paiement,
             lieu: carte.lieu.clone(),
             emploi: ecrit(&carte.emploi).or_else(|| d.map(|d| d.emploi.clone())),
-            pcs_ese: carte.pcs_ese.clone().filter(|s| !s.is_empty()).or_else(|| d.and_then(|d| d.pcs_ese.clone())),
+            pcs_ese: carte.pcs_ese.clone().or_else(|| d.and_then(|d| d.pcs_ese.clone())),
             code_emploi_ft: carte.code_emploi_ft.clone().or_else(|| d.and_then(|d| d.code_emploi_ft.clone())),
             statut: carte.statut.or_else(|| d.map(|d| d.statut)),
             statut_conventionnel: carte.statut_conventionnel.or_else(|| d.and_then(|d| d.statut_conventionnel)),

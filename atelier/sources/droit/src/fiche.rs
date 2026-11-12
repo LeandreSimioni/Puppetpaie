@@ -249,8 +249,11 @@ fn chiffres(t: &str) -> usize {
 macro_rules! texte_borne {
     (@commun $nom:ident, $unite:literal) => {
         impl $nom {
-            /// Le texte `texte`, ou ce qui le refuse.
+            /// Le texte `texte`, ou ce qui le refuse ; vide, il n'est pas une valeur (la case vide s'ecrit nulle).
             pub fn lire(texte: &str) -> R<$nom> {
+                if texte.is_empty() {
+                    return Err(socle::echec::refus("Texte vide : une case vide s'écrit nulle (absente), jamais en texte vide."));
+                }
                 match Self::faute(texte) {
                     Some(f) => Err(socle::echec::refus(f)),
                     None => Ok($nom(texte.to_string())),

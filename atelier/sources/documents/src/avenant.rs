@@ -449,7 +449,7 @@ pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Form
     let emploi = EmploiEngagement {
         emploi: texte(&eng.emploi),
         emploi_affichage: texte(&eng.emploi_affichage),
-        pcs_ese: eng.pcs_ese.clone().filter(|s| !s.is_empty()),
+        pcs_ese: eng.pcs_ese.clone(),
         code_emploi_ft: eng.code_emploi_ft.clone(),
         statut: eng.statut,
         statut_conventionnel: eng.statut_conventionnel,

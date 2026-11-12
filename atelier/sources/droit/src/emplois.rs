@@ -503,7 +503,7 @@ pub struct EmploiEngagement {
 pub fn emploi_de(sal: &FicheSalarie, eng: &EmploiEngagement) -> R<FicheSalarie> {
     let mut out = sal.clone();
     let dit = |v: &Option<String>| v.as_ref().filter(|s| !s.is_empty()).cloned();
-    let pcs_ese = eng.pcs_ese.as_ref().filter(|s| !s.is_empty()).cloned();
+    let pcs_ese = eng.pcs_ese.clone();
     let affichage = dit(&eng.emploi_affichage);
     let statuts_dits = eng.statut.is_some() || eng.statut_conventionnel.is_some() || eng.statut_categoriel_rc.is_some();
     if dit(&eng.emploi).is_none() && eng.code_emploi_ft.is_none() && pcs_ese.is_none() && !statuts_dits && affichage.is_none() {
@@ -636,7 +636,7 @@ pub fn controler_fiche(code: &CodeEmploiFt, statut: &str, pcs_ese: &str) -> R<Ve
             code, libelle, m.annexe(), m.statut(), repr(statut)
         ));
     }
-    if let Some(attendu) = m.pcs_ese().filter(|p| !p.is_empty() && !pcs_ese.is_empty()) {
+    if let Some(attendu) = m.pcs_ese().filter(|_| !pcs_ese.is_empty()) {
         if pcs_ese.to_lowercase() != attendu.to_lowercase() {
             avis.push(format!("PCS-ESE {} pour {} ; le catalogue attend {} (fiche Insee de la rubrique).", pcs_ese, libelle, attendu));
         }
