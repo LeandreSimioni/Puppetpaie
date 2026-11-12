@@ -2340,6 +2340,8 @@
           "code81_urssaf": "018",
           "code81_chomage": "018",
           "code81_retraite": "106",
+          "cle_total_urssaf": "018:urssaf",
+          "cle_total_chomage": "018:chomage",
           "ctp": "671",
           "ctp_regularisation": "801",
           "qualifiant": "921"
