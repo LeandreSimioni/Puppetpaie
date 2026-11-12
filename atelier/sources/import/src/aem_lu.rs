@@ -361,10 +361,14 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
         }
     };
     let cle_nir = match nir.as_ref().and_then(|n| n.get(13..)).filter(|k| !k.is_empty()).map(droit::fiche::CleNir::lire).transpose() {
-        Ok(Some(k)) => match nir.as_ref().and_then(|n| n.get(..13)).and_then(declarations::champs::cle_nir).filter(|c| *c == k) {
-            Some(c) => Some(c),
-            None => {
+        Ok(Some(k)) => match nir.as_ref().and_then(|n| n.get(..13)).and_then(declarations::champs::cle_nir) {
+            Some(c) if c == k => Some(c),
+            Some(_) => {
                 fautes.push("la clé du NIR imprimé ne correspond pas à son numéro".to_string());
+                None
+            }
+            None => {
+                fautes.push("le NIR imprimé n'a pas la forme d'un numéro de sécurité sociale".to_string());
                 None
             }
         },
@@ -785,7 +789,11 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     }
     a.faute = match inconnu.into_inner() {
         Some(i) => Some(i),
-        None => fautes_d_identite.first().cloned().or_else(|| fautes.first().map(|f| f.to_string())),
+        // Toutes les fautes de la page, comme l'AER (`lire_aer`) : aucune n'en cache une autre.
+        None => {
+            let toutes: Vec<String> = fautes_d_identite.into_iter().chain(fautes.iter().map(|f| f.to_string())).collect();
+            (!toutes.is_empty()).then(|| toutes.join(" ; "))
+        }
     };
     Some(a)
 }
