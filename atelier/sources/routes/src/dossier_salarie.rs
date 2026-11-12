@@ -588,7 +588,7 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
         statut_categoriel_rc: eng.statut_categoriel_rc.clone(),
         ..Default::default()
     };
-    let entier = Engagement::nouveau(&ctx.racine, &entier, &ctx.nomme(&eng.salarie)).map_err(|m| m.reclasser(Classe::Illisible))?;
+    let entier = Engagement::nouveau(&ctx.racine, &entier, &ctx.nomme(&eng.salarie), eng.versement).map_err(|m| m.reclasser(Classe::Illisible))?;
     let cs = PaieCs { engagement: ContratCs::de(&entier)?, brut, salarie: p.salarie.champs.clone() };
     Ok((cs, manquants))
 }

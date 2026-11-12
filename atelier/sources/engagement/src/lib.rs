@@ -84,8 +84,9 @@ pub struct Engagement {
     /// `None` : celui que la compagnie a choisi (`versement`).
     pub date_paiement: Option<Jour>,
     /// Le jour du versement que la compagnie a choisi dans sa configuration (`droit::versement`), lu au dernier jour du
-    /// mois de la paie (`engagements`) ; `Engagement::nouveau` seul : le dernier jour du mois.
-    pub versement: droit::versement::Versement,
+    /// mois de la paie (`engagements`) quand la saisie ne dit pas le sien (`date_paiement`) ; `None` : la saisie le dit,
+    /// ou l'engagement vient des pieces d'un import, qui disent le leur.
+    pub versement: Option<droit::versement::Versement>,
     /// Le taux de la premiere ligne de cachet ; sans cachet, celui que l'engagement ou son mois ecrit ; sinon `None`
     /// (regle 1 : aucun taux par defaut, aucun texte n'en fixe).
     pub taux_cachet: Option<Decimal>,
@@ -253,7 +254,7 @@ impl Engagement {
 
     /// L'engagement que `v` décrit (`Assemble`). `racine` est celle des donnees de la compagnie, pour le catalogue des
     /// rubriques. `qui` : le salarie tel qu'un refus le nomme (`salarie_nomme`).
-    pub fn nouveau(racine: &Path, v: &Assemble, qui: &str) -> R<Engagement> {
+    pub fn nouveau(racine: &Path, v: &Assemble, qui: &str, versement: Option<droit::versement::Versement>) -> R<Engagement> {
         let (mut jours_joues, mut lieux) = jours_et_lieux(&v.dates_travail);
         jours_joues.sort();
         let presents: BTreeSet<Jour> = jours_joues.iter().copied().collect();
@@ -513,7 +514,7 @@ impl Engagement {
             jours,
             jours_contrat,
             date_paiement: v.date_paiement.clone(),
-            versement: droit::versement::Versement::FinDuMois,
+            versement,
             taux_cachet,
             cachets,
             heures,
@@ -671,9 +672,10 @@ impl Engagement {
     /// retenue a la source (CGI, art. 1671, 1, `atelier/reference/sources/code-general-des-impots/articles-20261021.md`),
     /// donc celui ou se lit le taux de PAS du salarie.
     pub fn date_du_versement(&self) -> R<Jour> {
-        match self.date_paiement {
-            Some(d) => Ok(d),
-            None => self.versement.jour(self.mois,self.fin_periode()),
+        match (self.date_paiement, &self.versement) {
+            (Some(d), _) => Ok(d),
+            (None, Some(v)) => v.jour(self.mois, self.fin_periode()),
+            (None, None) => Err(socle::echec::cle(format!("{} : rien ne dit le jour du versement de la paie de {}.", self.nom, self.mois), "date_paiement")),
         }
     }
 
@@ -1086,8 +1088,11 @@ pub(crate) fn engagements(
             notification_rupture: None,
             transaction: None,
         };
-        let mut eng = Engagement::nouveau(&ctx.racine, &assemble, &qui)?;
-        eng.versement = droit::versement::Versement::de_la_fiche(&ctx.entreprise_au(&eng.fin_mois()), &*eng.nat()?);
+        let versement = match carte.date_paiement {
+            Some(_) => None,
+            None => Some(droit::versement::Versement::de_la_fiche(&ctx.entreprise_au(&mois_dit.dernier_jour()), &nat)?),
+        };
+        let eng = Engagement::nouveau(&ctx.racine, &assemble, &qui, versement)?;
         // Ce que l'ancien logiciel a verse est un fait : seul ce que la compagnie va verser se juge.
         if carte.importe.is_none() {
             if let Some(phrase) = versement_refuse(ctx, &eng, &qui)? {

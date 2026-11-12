@@ -8,8 +8,8 @@
 //! prelevement a la source (BOI-IR-PAS-30-10-20, § 80, `atelier/reference/sources/bofip/BOI-IR-PAS-30-10-20-extrait-taux.md`).
 //! Le seul lecteur : `engagement::Engagement::date_du_versement`.
 //!
-//! Le choix de la compagnie :
-//! - le dernier jour du mois (vide : le cas ordinaire) ;
+//! Le choix de la compagnie, que seule elle connait (une case vide refuse en se nommant, `Versement::de_la_fiche`) :
+//! - le dernier jour du mois ;
 //! - le dernier jour du contrat : chaque paie a la fin de sa periode, le dernier jour du contrat dans le mois, ou la fin
 //!   du mois pour un contrat qui continue ; un permanent, paye au mois, l'est donc a la fin du mois ;
 //! - un jour fixe, dans le mois ou le mois suivant (« le 5 du mois suivant ») : la paie apres la periode d'emploi, la
@@ -41,7 +41,7 @@ use socle::echec::R;
 use crate::natures::Nature;
 
 /// Les formes qu'elle lit, dans la phrase d'un refus.
-const FORMES: &str = "vide (le dernier jour du mois), « fin du contrat », « le 25 » ou « le 5 du mois suivant »";
+const FORMES: &str = "« fin du mois », « fin du contrat », « le 25 » ou « le 5 du mois suivant »";
 
 /// Le jour du versement que la compagnie a choisi.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,16 +81,19 @@ impl Versement {
         }
     }
 
-    /// La case de la fiche entreprise `ent` qui dit le jour d'un contrat de nature `nat` ; absente : le dernier jour du
-    /// mois.
-    pub fn de_la_fiche(ent: &crate::fiche::ChampsEntreprise, nat: &Nature) -> Versement {
-        let dit = match nat.au_mois() {
-            Some(au_mois) => &ent.permanent.ouvrir(&au_mois).date_de_versement_permanents,
-            None => &ent.date_de_versement_intermittents,
+    /// La case de la fiche entreprise `ent` qui dit le jour d'un contrat de nature `nat`. Aucun texte ne fixe ce jour :
+    /// seule la compagnie le connait, et le calcul refuse en nommant la case quand elle est vide.
+    pub fn de_la_fiche(ent: &crate::fiche::ChampsEntreprise, nat: &Nature) -> R<Versement> {
+        let (dit, cle, qui) = match nat.au_mois() {
+            Some(au_mois) => (&ent.permanent.ouvrir(&au_mois).date_de_versement_permanents, "date_de_versement_permanents", "permanents"),
+            None => (&ent.date_de_versement_intermittents, "date_de_versement_intermittents", "intermittents"),
         };
         match dit {
-            Some(v) => *v,
-            None => Versement::FinDuMois,
+            Some(v) => Ok(*v),
+            None => Err(socle::echec::cle(
+                format!("La fiche entreprise ne dit pas le jour du versement des salaires des {} : écrire {}.", qui, FORMES),
+                cle,
+            )),
         }
     }
 

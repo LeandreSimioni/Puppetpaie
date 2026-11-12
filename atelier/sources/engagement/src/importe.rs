@@ -638,7 +638,7 @@ impl Importe {
             jours: 0,
             jours_contrat: 0,
             date_paiement: p.verse_le,
-            versement: droit::versement::Versement::FinDuMois,
+            versement: None,
             taux_cachet: None,
             cachets: 0,
             heures: None,
