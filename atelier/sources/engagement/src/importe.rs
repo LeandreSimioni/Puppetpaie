@@ -632,7 +632,7 @@ impl Importe {
             lignes: lignes_lues.iter().filter_map(LigneImprimee::en_ligne_de_paie).collect(),
             debut,
             fin,
-            numero: match NumeroContrat::du_texte(self.carte().numero.as_deref())? {
+            numero: match self.carte().numero.clone() {
                 Some(n) => Some(n),
                 None => p.bulletin.as_ref().and_then(|b| b.contrat.as_deref()).filter(|n| !n.trim().is_empty()).map(NumeroContrat::lire).transpose()?,
             },
