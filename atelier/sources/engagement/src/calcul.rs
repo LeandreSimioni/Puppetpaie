@@ -2006,8 +2006,9 @@ impl Paie {
     /// (`relire::ecrire`), les lignes de l'engagement telles quelles et le plafond d'un temps partiel.
     pub(crate) fn forme<A>(&self, ctx: &Contexte, avis: &dyn Fn(&Avis) -> A, ecrite: bool) -> R<FormeDePaie<A>> {
         let mut engagement = self.engagement.canon()?;
-        // Le jour du versement que la paie declare et imprime (`Engagement::date_du_versement`) : le contrat le dit.
-        engagement.date_paiement = Some(self.engagement.date_du_versement()?);
+        // Le jour du versement que la paie declare et imprime (`Engagement::versement_dit`) : le contrat le dit ; une paie
+        // importee dont les pieces ne le disent pas l'ecrit vide.
+        engagement.date_paiement = self.engagement.versement_dit()?;
         if ecrite {
             // Telles qu'elles s'ecrivent : sans ce que le moteur pose pour l'ecran (`ligne::Marques`), qui ne s'ecrit pas.
             engagement.lignes = self.engagement.lignes.iter().map(crate::LignePaie::sans_marques).collect();

@@ -670,13 +670,26 @@ impl Engagement {
     /// Le jour du versement de ce que l'engagement paie (S21.G00.50.001, la « date de paiement » du bulletin) : celui que
     /// la saisie dit pour lui, sinon celui que la compagnie a choisi (`droit::versement`). C'est le jour ou se fait la
     /// retenue a la source (CGI, art. 1671, 1, `atelier/reference/sources/code-general-des-impots/articles-20261021.md`),
-    /// donc celui ou se lit le taux de PAS du salarie.
-    pub fn date_du_versement(&self) -> R<Jour> {
+    /// donc celui ou se lit le taux de PAS du salarie. Ce que le logiciel paie a toujours l'un ou l'autre (la case de la
+    /// fiche entreprise, exigee : `droit::versement::Versement::de_la_fiche`) ; une paie importee n'a que ce que ses
+    /// pieces disent : `None`, elles ne le disent pas.
+    pub fn versement_dit(&self) -> R<Option<Jour>> {
         match (self.date_paiement, &self.versement) {
-            (Some(d), _) => Ok(d),
-            (None, Some(v)) => v.jour(self.mois, self.fin_periode()),
-            (None, None) => Err(socle::echec::cle(format!("{} : rien ne dit le jour du versement de la paie de {}.", self.nom, self.mois), "date_paiement")),
+            (Some(d), _) => Ok(Some(d)),
+            (None, Some(v)) => v.jour(self.mois, self.fin_periode()).map(Some),
+            (None, None) => Ok(None),
         }
+    }
+
+    /// Le jour du versement d'une paie que le logiciel fait, declare ou imprime (`versement_dit`) : une paie importee
+    /// dont les pieces ne disent pas le jour n'en a pas, et ne se refait pas ici.
+    pub fn date_du_versement(&self) -> R<Jour> {
+        self.versement_dit()?.ok_or_else(|| {
+            socle::echec::cle(
+                format!("{} : la paie importée de {} ne dit pas le jour de son versement ; elle ne se refait pas ici.", self.nom, self.mois),
+                "date_paiement",
+            )
+        })
     }
 
     /// Les mois AAAA-MM que couvre le contrat, du premier au dernier : un contrat sans fin court jusqu'au mois de paie.
@@ -1088,9 +1101,11 @@ pub(crate) fn engagements(
             notification_rupture: None,
             transaction: None,
         };
-        let versement = match carte.date_paiement {
-            Some(_) => None,
-            None => Some(droit::versement::Versement::de_la_fiche(&ctx.entreprise_au(&mois_dit.dernier_jour()), &nat)?),
+        // Le jour que la carte dit ; sinon celui que la compagnie a choisi, pour ce qu'elle va verser. Une paie importee
+        // n'a que celui de ses pieces : sans lui, elle n'en a pas (`Engagement::versement_dit`).
+        let versement = match (carte.date_paiement, carte.importe) {
+            (Some(_), _) | (None, Some(_)) => None,
+            (None, None) => Some(droit::versement::Versement::de_la_fiche(&ctx.entreprise_au(&mois_dit.dernier_jour()), &nat)?),
         };
         let eng = Engagement::nouveau(&ctx.racine, &assemble, &qui, versement)?;
         // Ce que l'ancien logiciel a verse est un fait : seul ce que la compagnie va verser se juge.

@@ -323,8 +323,8 @@ pub struct LigneLivre {
     pub net_a_payer: Option<Decimal>,
     pub pas: Option<Decimal>,
     pub cout_employeur: Option<Decimal>,
-    /// Le jour du versement (`Engagement::date_du_versement`).
-    pub verse_le: Jour,
+    /// Le jour du versement (`Engagement::versement_dit`) ; vide pour une paie importee dont les pieces ne le disent pas.
+    pub verse_le: Option<Jour>,
     pub nir: Option<String>,
     pub date_naissance: Option<Jour>,
     pub adresse: Option<String>,
@@ -499,7 +499,7 @@ fn lignes_du_mois(ctx: &Contexte, mois: Mois, coordonnees: bool, departs: &engag
             net_a_payer: p.net_a_payer().map(eur2),
             pas: r.as_ref().map(|v| eur2(v.prelevement())),
             cout_employeur: p.cout_employeur().map(eur2),
-            verse_le: e.date_du_versement()?,
+            verse_le: e.versement_dit()?,
             nir,
             date_naissance,
             adresse,
@@ -1116,7 +1116,7 @@ pub fn etat_des_virements(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             Some(p) => socle::num::sub(n, p),
             None => n,
         });
-        x.od("net_a_payer", verse).t("verse_le", l.verse_le.jj_mm_aaaa());
+        x.od("net_a_payer", verse).ot("verse_le", l.verse_le.map(|j| j.jj_mm_aaaa()));
         lignes.push(x);
     }
     let mut t = Tableau::nouveau("etat-des-virements", "État des virements de salaires", p.libelle.clone());
