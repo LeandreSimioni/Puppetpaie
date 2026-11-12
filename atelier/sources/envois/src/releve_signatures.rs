@@ -189,9 +189,17 @@ pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &st
         if texte.contains("bouton « Je signe »") {
             continue; // notre demande elle-meme (envoyee avant que son identifiant soit note)
         }
-        let Some(de) = lecture::adresse_de(&m) else {
-            incidents.push(format!("{} : une reponse portant {} ne dit pas d'ou elle vient ; elle n'est pas retenue.", a_nom, code));
-            continue;
+        let de = match lecture::adresse_de(&m) {
+            lecture::Expediteur::Adresse(de) => de,
+            sans_adresse => {
+                incidents.push(format!(
+                    "{} : une reponse portant {} ne dit pas d'ou elle vient ({}) ; elle n'est pas retenue.",
+                    a_nom,
+                    code,
+                    sans_adresse.pourquoi_aucune_adresse()
+                ));
+                continue;
+            }
         };
         if de == expediteur && de != a_adresse {
             continue; // un autre de nos envois (le contresigne)

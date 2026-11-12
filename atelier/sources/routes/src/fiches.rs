@@ -1186,9 +1186,12 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
             if !texte.to_uppercase().contains(code.as_str()) || texte.contains("Remplir ma fiche") {
                 continue;
             }
-            let Some(de) = lecture::adresse_de(&m) else {
-                r.incidents.push(format!("Fiche {} : une reponse ne dit pas d'ou elle vient ; elle n'est pas retenue.", code));
-                continue;
+            let de = match lecture::adresse_de(&m) {
+                lecture::Expediteur::Adresse(de) => de,
+                sans_adresse => {
+                    r.incidents.push(format!("Fiche {} : une reponse ne dit pas d'ou elle vient ({}) ; elle n'est pas retenue.", code, sans_adresse.pourquoi_aucune_adresse()));
+                    continue;
+                }
             };
             if de == expediteur && de != a.adresse {
                 continue;

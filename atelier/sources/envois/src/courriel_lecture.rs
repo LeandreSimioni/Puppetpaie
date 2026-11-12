@@ -14,28 +14,47 @@ use mailparse::{MailHeaderMap, ParsedMail};
 
 use crate::simulation_courriels::{feuilles, nom_de_fichier, texte_de};
 
-/// L'adresse seule, en minuscules ; `None` quand le message ne dit pas d'ou il vient.
-pub fn adresse_de(m: &ParsedMail) -> Option<String> {
-    let h = m.headers.get_first_header("From")?;
+/// D'ou vient un message recu, selon son `From`.
+pub enum Expediteur {
+    /// L'adresse seule, en minuscules.
+    Adresse(String),
+    /// Le message n'a pas de `From`, ou un `From` sans aucune adresse.
+    Muet,
+    /// Un `From` qui n'est pas une adresse : son texte, tel quel, et ce que la lecture en dit.
+    PasUneAdresse { texte: String, raison: String },
+}
+
+impl Expediteur {
+    /// Pour un incident : ce que le message dit de son origine quand ce n'est pas une adresse.
+    pub fn pourquoi_aucune_adresse(&self) -> String {
+        match self {
+            Expediteur::Adresse(a) => a.clone(),
+            Expediteur::Muet => "aucun expediteur".to_string(),
+            Expediteur::PasUneAdresse { texte, raison } => format!("expediteur « {} » qui n'est pas une adresse ({})", texte, raison),
+        }
+    }
+}
+
+/// L'adresse dont vient le message, ou pourquoi il n'en dit aucune.
+pub fn adresse_de(m: &ParsedMail) -> Expediteur {
+    let Some(h) = m.headers.get_first_header("From") else {
+        return Expediteur::Muet;
+    };
     let liste = match mailparse::addrparse_header(h) {
         Ok(liste) => liste,
-        // Un `From` qui n'est pas une adresse : le message ne dit pas d'ou il vient.
-        Err(pas_une_adresse) => {
-            drop(pas_une_adresse);
-            return None;
-        }
+        Err(raison) => return Expediteur::PasUneAdresse { texte: h.get_value(), raison: raison.to_string() },
     };
     for a in liste.iter() {
         match a {
-            mailparse::MailAddr::Single(i) => return Some(socle::texte::strip(&i.addr).to_lowercase()),
+            mailparse::MailAddr::Single(i) => return Expediteur::Adresse(socle::texte::strip(&i.addr).to_lowercase()),
             mailparse::MailAddr::Group(g) => {
                 if let Some(i) = g.addrs.first() {
-                    return Some(socle::texte::strip(&i.addr).to_lowercase());
+                    return Expediteur::Adresse(socle::texte::strip(&i.addr).to_lowercase());
                 }
             }
         }
     }
-    None
+    Expediteur::Muet
 }
 
 /// Un message se lit toujours : quand le bloc d'en-tetes se rompt (une ligne qui n'est ni `Nom: valeur`,

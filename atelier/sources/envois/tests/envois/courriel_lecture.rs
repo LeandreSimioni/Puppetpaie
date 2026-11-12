@@ -108,7 +108,10 @@ fn la_lecture_des_reponses_et_le_questionnaire_rendent_l_oracle() {
                 nom: cas.nom.clone(),
                 eml: cas.eml.clone(),
                 texte: propre,
-                adresse: adresse_de(&m),
+                adresse: match adresse_de(&m) {
+                    envois::courriel_lecture::Expediteur::Adresse(a) => Some(a),
+                    envois::courriel_lecture::Expediteur::Muet | envois::courriel_lecture::Expediteur::PasUneAdresse { .. } => None,
+                },
                 message_id: identifiant_de(&m),
                 date: {
                     // L'heure de la releve, que l'oracle ecrit `MAINTENANT`.
