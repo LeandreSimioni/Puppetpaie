@@ -676,9 +676,10 @@ pub fn indemnite_des_jours(
     let sur_report = jours.min(report_restant);
     let reste = sub(jours, sur_report);
     let mut dixieme = zero2();
-    let dixieme_de = |jours: Decimal, a: Acquisition| -> R<Decimal> {
-        Ok(indemnite_conges(jours, a.remuneration, if a.jours != Decimal::ZERO { a.jours } else { jours }, Decimal::ZERO)?.dixieme)
-    };
+    // Le dixieme d'une periode est proportionnel a la duree du conge qu'elle a fait due (L3141-24, I,
+    // `code-du-travail/articles-20261110.md`) : des jours pris sur une periode qui n'en a acquis aucun (pris par
+    // anticipation) n'y ont rien au dixieme ; le maintien (L3141-24, II) les paie.
+    let dixieme_de = |jours: Decimal, a: Acquisition| -> R<Decimal> { Ok(indemnite_conges(jours, a.remuneration, a.jours, Decimal::ZERO)?.dixieme) };
     if sur_report != Decimal::ZERO {
         dixieme += dixieme_de(sur_report, report)?;
     }

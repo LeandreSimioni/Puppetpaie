@@ -314,8 +314,7 @@ pub(crate) fn solde_de_tout_compte(ctx: &Contexte, au: &AuMois, e: &Carte, mois:
             // Le maintien (L3141-24, II, `atelier/reference/sources/code-du-travail/xml/L3141-24.xml`) : ce que le salarie
             // aurait percu s'il avait travaille ces jours, le salaire du mois entier reparti sur les jours ouvrables du
             // mois entier, comme les conges pris (`conges::lignes_du_mois`), quel que soit le jour ou le contrat finit.
-            let ouvrables = Decimal::from(jours_ouvrables(&premier, &mois.dernier_jour(), chomes)?);
-            let ouvrables = if ouvrables.is_zero() { Decimal::ONE } else { ouvrables };
+            let ouvrables = ouvrables_du_mois(mois, chomes)?;
             let maintien = eur2(mul(div(salaire, ouvrables), solde));
             // Les jours pris ce mois-ci ont deja consomme le report d'abord :
             // le reste du report est ce qui se paie au dixieme d'avant.
@@ -654,6 +653,16 @@ fn delai_de_prevenance(
     Ok(())
 }
 
+/// LES JOURS OUVRABLES DU MOIS ENTIER `mois` (`droit::conges::jours_ouvrables`), sur lesquels le maintien (L3141-24, II)
+/// repartit le salaire du mois. Un mois en compte toujours (six jours par semaine, hors les feries chomes) : aucun est un
+/// defaut du calendrier, qui remonte.
+fn ouvrables_du_mois(mois: Mois, chomes: Option<&str>) -> R<Decimal> {
+    match jours_ouvrables(&mois.premier_jour(), &mois.dernier_jour(), chomes)? {
+        0 => Err(socle::refus!("Défaut du logiciel : le mois {} n'a aucun jour ouvrable.", mois)),
+        n => Ok(Decimal::from(n)),
+    }
+}
+
 /// LES CONGES D'UN TEMPS PAYE SANS ETRE EFFECTUE : le delai de prevenance (L1221-25) et le preavis (L1234-5) sont payes
 /// « indemnité compensatrice de congés payés comprise ». Les `jours` que ce temps aurait acquis (L3141-3), payes au plus
 /// favorable du dixieme de ce qu'il paie (`montant`, sa remuneration) et du maintien (le salaire du mois `mois` sur ses
@@ -670,9 +679,8 @@ fn conges_non_effectues(
     if jours.is_zero() {
         return Ok("ce temps n'acquiert aucun jour de congé.".to_string());
     }
-    let ouvrables = Decimal::from(jours_ouvrables(&mois.premier_jour(), &mois.dernier_jour(), ctx.entreprise.feries_chomes())?);
-    let ouvrables = if ouvrables.is_zero() { Decimal::ONE } else { ouvrables };
-    let ind = permanents::indemnite_conges(jours, montant, jours, eur2(mul(div(salaire, ouvrables), jours)))?;
+    let ouvrables = ouvrables_du_mois(mois, ctx.entreprise.feries_chomes())?;
+    let ind =permanents::indemnite_conges(jours, montant, jours, eur2(mul(div(salaire, ouvrables), jours)))?;
     let rubrique = permanents::regles()?.conges_payes.indemnite_compensatrice.rubrique.clone();
     let (rang, total_jours, total) = match stc.conges_payes {
         Some((rang, j, m)) => (rang, add(j, jours), add(m, ind.retenu)),
@@ -1272,8 +1280,8 @@ fn salaire_de_reference(ctx: &Contexte, e: &Carte, mois: Mois) -> R<permanents::
     permanents::salaire_de_reference(&douze, &trois)
 }
 
-/// Les bruts mensuels des douze et des trois derniers mois (R1234-4) ; faute
-/// de mois produits, le salaire mensuel du contrat.
+/// Les bruts mensuels des douze et des trois derniers mois (R1234-4), ceux des mois produits ou importes : aucun mois,
+/// aucun brut, et `permanents::salaire_de_reference` refuse en disant quoi produire.
 fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Decimal>, Vec<Decimal>)> {
     let salarie = salarie_de(e)?.to_string();
     let mut bruts = Vec::new();
@@ -1283,10 +1291,6 @@ fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Decimal>, V
             continue;
         }
         bruts.push(remuneration_du_mois(ctx, m, &salarie)?);
-    }
-    if bruts.is_empty() {
-        let salaire = crate::conges::salaire_mensuel(ctx, e)?;
-        bruts = vec![salaire; 12];
     }
     let trois = bruts.iter().take(3).copied().collect();
     Ok((bruts, trois))

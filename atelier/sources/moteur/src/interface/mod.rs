@@ -632,7 +632,7 @@ impl Fenetre {
         let exigee = compagnie::coffre::Coffre::du_poste(&racine).ouverture_exigee()?;
         // UNE COMPAGNIE DE L'ADMINISTRATEUR, quand son mot de passe a deja ete tape dans cette fenetre : elle s'ouvre sans
         // le redemander (il ouvre encore son coffre : c'est verifie, pas suppose).
-        if exigee && self.administrateur_ouvre(&racine) {
+        if exigee && self.administrateur_ouvre(&racine)? {
             self.ecrire("Ouverte par le mot de passe de l'administrateur, deja tape dans cette fenetre.\n");
             self.ouvrir(racine);
             return Ok(());
@@ -667,22 +667,26 @@ impl Fenetre {
         }
     }
 
-    /// Le mot de passe de l'administrateur, tape dans cette fenetre, ouvre-t-il `racine`, compagnie rattachee ?
-    fn administrateur_ouvre(&self, racine: &Path) -> bool {
-        let inst = installation::base();
-        // Un registre ou un coffre qui ne se lit pas n'ouvre rien : le mot de passe se demande, et son refus le dit.
-        if !matches!(routes::gestes::administrateur::est_rattachee(&inst, racine), Ok(true)) {
-            return false;
+    /// Le mot de passe de l'administrateur, tape dans cette fenetre, ouvre-t-il `racine`, compagnie rattachee ? Un
+    /// registre ou un coffre qui ne se lit pas refuse l'ouverture : l'erreur remonte.
+    fn administrateur_ouvre(&self, racine: &Path) -> R<bool> {
+        if !routes::gestes::administrateur::est_rattachee(&installation::base(), racine)? {
+            return Ok(false);
         }
         let garde = tenu(&self.administrateur).clone();
-        garde.is_some_and(|m| matches!(routes::gestes::administrateur::mot_de_passe_ouvre(&routes::gestes::administrateur::Poste::de_ce_poste(), racine, &m), Ok(true)))
+        match garde {
+            Some(m) => routes::gestes::administrateur::mot_de_passe_ouvre(&routes::gestes::administrateur::Poste::de_ce_poste(), racine, &m),
+            None => Ok(false),
+        }
     }
 
-    /// Retient le mot de passe de l'administrateur pour la fenetre, s'il ouvre une compagnie rattachee.
-    fn retenir_administrateur(&self, racine: &Path, motdepasse: &str) {
-        if matches!(routes::gestes::administrateur::est_rattachee(&installation::base(), racine), Ok(true)) {
+    /// Retient le mot de passe de l'administrateur pour la fenetre, s'il ouvre une compagnie rattachee. Un registre qui
+    /// ne se lit pas refuse : l'erreur remonte.
+    fn retenir_administrateur(&self, racine: &Path, motdepasse: &str) -> R<()> {
+        if routes::gestes::administrateur::est_rattachee(&installation::base(), racine)? {
             *tenu(&self.administrateur) = Some(motdepasse.to_string());
         }
+        Ok(())
     }
 
     fn ouvrir(&self, racine: PathBuf) {
@@ -842,7 +846,7 @@ impl Fenetre {
                 if !compagnie::coffre::Coffre::du_poste(&racine).verifier_ouverture(motdepasse)? {
                     return Err(socle::echec::refus("Mot de passe refusé."));
                 }
-                self.retenir_administrateur(&racine, motdepasse);
+                self.retenir_administrateur(&racine, motdepasse)?;
                 self.ouvrir(racine);
                 Ok(fait(true))
             }
