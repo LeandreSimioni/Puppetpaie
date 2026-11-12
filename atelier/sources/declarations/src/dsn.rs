@@ -741,18 +741,10 @@ impl std::ops::Deref for BaremeDuMois {
     }
 }
 
-/// Ce que la DSN declare de la reduction generale de la pile (ses codes), `None` : ceux de la norme (`REDUCTION_*`).
+/// Ce que la section `dsn` de la reduction generale de la pile dit de ses CTP, `None` : elle n'en a pas.
 fn reduction_dsn(pile: &Pile) -> Option<&droit::forme_bareme::ReductionDsn> {
     pile.reduction_generale.as_ref().and_then(|r| r.dsn.as_ref())
 }
-
-/// Les codes de la reduction generale que la norme donne quand le bareme n'en dit pas d'autres (`ReductionDsn`) : sous
-/// l'Urssaf et France Travail, « 018 - Réduction générale des cotisations patronales de sécurité sociale », sous
-/// l'Agirc-Arrco « 106 - Réduction générale dégressive unique » (liste de S21.G00.81.001, cahier technique 2026.1,
-/// `atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt`) ; leurs cles de total (`totaux_bordereau`).
-const REDUCTION_URSSAF: (CodeCotisation81, &str) = (CodeCotisation81::ReductionGenerale, "018:urssaf");
-const REDUCTION_CHOMAGE: (CodeCotisation81, &str) = (CodeCotisation81::ReductionGenerale, "018:chomage");
-const REDUCTION_RETRAITE: CodeCotisation81 = CodeCotisation81::ReductionGeneraleRetraiteComplementaire;
 
 /// L'organisme de la premiere cotisation `code` de la pile.
 fn org_de(pile: &Pile, code: CodeCotisation81) -> Option<IdentifiantDOrganisme> {
@@ -889,29 +881,16 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     }
     if let Some(rg) = &p.reduction_generale {
         if !rg.montant.is_zero() {
-            let dsn = reduction_dsn(&bar);
-            // Le code (ou la cle) que le bareme dit, sinon celui de la norme (`REDUCTION_*`).
-            let par = |lu: fn(&droit::forme_bareme::ReductionDsn) -> &Option<String>, norme: &str| -> String {
-                match dsn.and_then(|d| lu(d).clone()) {
-                    Some(c) => c,
-                    None => norme.to_string(),
-                }
-            };
-            let code = |lu: fn(&droit::forme_bareme::ReductionDsn) -> &Option<CodeCotisation81>, norme: CodeCotisation81| -> CodeCotisation81 {
-                match dsn.and_then(|d| *lu(d)) {
-                    Some(c) => c,
-                    None => norme,
-                }
-            };
+            let dsn = bar.dsn_de_la_reduction()?;
             let urssaf = org_de(&bar, CodeCotisation81::AssuranceMaladie);
             let ft = org_de(&bar, CodeCotisation81::AssuranceChomage);
             // Sous la base 03 : abattue sous deduction forfaitaire specifique (`cle_abattue`), comme la reduction
             // elle-meme se calcule sur le brut abattu (`droit::reduction::reduction_generale_sous_dfs`).
             let brut_03 = bases[&cle_abattue(p, BaseAssujettie::BruteDeplafonnee, Assiette::Brut)?];
             for (code, org, part, cle) in [
-                (code(|d| &d.code81_urssaf, REDUCTION_URSSAF.0), urssaf, rg.urssaf, par(|d| &d.cle_total_urssaf, REDUCTION_URSSAF.1)),
-                (code(|d| &d.code81_chomage, REDUCTION_CHOMAGE.0), ft, rg.chomage, par(|d| &d.cle_total_chomage, REDUCTION_CHOMAGE.1)),
-                (code(|d| &d.code81_retraite, REDUCTION_RETRAITE), None, rg.agirc_arrco, REDUCTION_RETRAITE.to_string()),
+                (dsn.code81_urssaf, urssaf, rg.urssaf, dsn.cle_total_urssaf.clone()),
+                (dsn.code81_chomage, ft, rg.chomage, dsn.cle_total_chomage.clone()),
+                (dsn.code81_retraite, None, rg.agirc_arrco, dsn.code81_retraite.to_string()),
             ] {
                 if !part.is_zero() {
                     out.push(Cotisation {
@@ -2826,27 +2805,18 @@ fn lecture(p: &Paie, bar: &BaremeDuMois) -> R<Lecture> {
             l.roles.push((code, None, Role81::Cotisation { cle: code.to_string(), base: None }));
         }
     }
-    let dsn = reduction_dsn(&pile);
-    let par = |lu: fn(&droit::forme_bareme::ReductionDsn) -> &Option<String>, norme: &str| -> String {
-        match dsn.and_then(|d| lu(d).clone()) {
-            Some(c) => c,
-            None => norme.to_string(),
-        }
-    };
-    let code = |lu: fn(&droit::forme_bareme::ReductionDsn) -> &Option<CodeCotisation81>, norme: CodeCotisation81| -> CodeCotisation81 {
-        match dsn.and_then(|d| *lu(d)) {
-            Some(c) => c,
-            None => norme,
-        }
-    };
     let org = |code: CodeCotisation81| -> Option<IdentifiantDOrganisme> { org_de(&pile, code) };
     l.blocs.push((BaseAssujettie::BruteDeplafonnee, Assiette::Brut));
-    for (code, org, part, cle) in [
-        (code(|d| &d.code81_urssaf, REDUCTION_URSSAF.0), org(CodeCotisation81::AssuranceMaladie), "urssaf", par(|d| &d.cle_total_urssaf, REDUCTION_URSSAF.1)),
-        (code(|d| &d.code81_chomage, REDUCTION_CHOMAGE.0), org(CodeCotisation81::AssuranceChomage), "chomage", par(|d| &d.cle_total_chomage, REDUCTION_CHOMAGE.1)),
-        (code(|d| &d.code81_retraite, REDUCTION_RETRAITE), None, "retraite", REDUCTION_RETRAITE.to_string()),
-    ] {
-        l.roles.push((code, org, Role81::Reduction { part, cle }));
+    // Les trois parts de la reduction generale, pour une paie qui en a une (`cotisations` ne les ecrit qu'alors).
+    if p.reduction_generale.as_ref().is_some_and(|r| !r.montant.is_zero()) {
+        let dsn = pile.dsn_de_la_reduction()?;
+        for (code, org, part, cle) in [
+            (dsn.code81_urssaf, org(CodeCotisation81::AssuranceMaladie), "urssaf", dsn.cle_total_urssaf.clone()),
+            (dsn.code81_chomage, org(CodeCotisation81::AssuranceChomage), "chomage", dsn.cle_total_chomage.clone()),
+            (dsn.code81_retraite, None, "retraite", dsn.code81_retraite.to_string()),
+        ] {
+            l.roles.push((code, org, Role81::Reduction { part, cle }));
+        }
     }
     // Les heures en plus : la reduction salariale et la deduction patronale, a l'Urssaf (`cotisations`).
     for code in [CODE81_REDUCTION_HEURES, CODE81_DEDUCTION_HEURES] {

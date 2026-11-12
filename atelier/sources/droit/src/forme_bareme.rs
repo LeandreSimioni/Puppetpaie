@@ -1380,9 +1380,46 @@ pub(crate) fn lire_la_surcouche(fichier: &std::path::Path) -> socle::echec::R<Su
     socle::forme::lire_fichier(fichier, "Le barème propre à la compagnie (config/baremes) porte une clé ou une valeur que le moteur ne sait pas lire : la corriger, ou le signaler au développeur.")
 }
 
+/// CE QUE LA DSN DECLARE DE LA REDUCTION GENERALE D'UNE PILE, ses couches empilees (`bareme::empiler`) : une couche peut
+/// ne dire qu'une partie de `ReductionDsn` (la section d'une nature complete celle du statut), la pile empilee dit tout.
+/// Les codes 81.001 de ses trois parts et la cle de totalisation des parts Urssaf et chomage (`Versement.codes81`) ; la
+/// part retraite se totalise sous son code.
+#[derive(Debug, Clone)]
+pub struct DsnDeLaReduction {
+    pub code81_urssaf: CodeCotisation81,
+    pub code81_chomage: CodeCotisation81,
+    pub code81_retraite: CodeCotisation81,
+    pub cle_total_urssaf: String,
+    pub cle_total_chomage: String,
+}
+
 impl Pile {
     /// La rubrique `id`, si la pile la porte.
     pub fn rubrique(&self, id: &IdDeCotisation) -> Option<&Rubrique> {
         self.rubriques_bulletin.iter().find(|r| r.id == *id)
+    }
+
+    /// CE QUE LA DSN DECLARE DE LA REDUCTION GENERALE de cette pile empilee : chaque code dit par le bareme, sinon un refus
+    /// qui nomme le code et la reduction. La norme ne donne pas de code a une reduction que le bareme tait.
+    pub fn dsn_de_la_reduction(&self) -> socle::echec::R<DsnDeLaReduction> {
+        let d = self.reduction_generale.as_ref().and_then(|r| r.dsn.as_ref());
+        let manque = |champ: &str| {
+            socle::echec::cle(
+                format!(
+                    "Le barème {} ne dit pas, pour la réduction générale des cotisations, son {} (la section dsn de sa réduction) : la DSN ne la déclare pas sans lui. Le signaler au développeur.",
+                    self.annee, champ
+                ),
+                &format!("reduction_generale.dsn.{}", champ),
+            )
+        };
+        let code = |c: Option<CodeCotisation81>, champ: &str| c.ok_or_else(|| manque(champ));
+        let cle = |c: Option<&String>, champ: &str| c.cloned().ok_or_else(|| manque(champ));
+        Ok(DsnDeLaReduction {
+            code81_urssaf: code(d.and_then(|d| d.code81_urssaf), "code81_urssaf")?,
+            code81_chomage: code(d.and_then(|d| d.code81_chomage), "code81_chomage")?,
+            code81_retraite: code(d.and_then(|d| d.code81_retraite), "code81_retraite")?,
+            cle_total_urssaf: cle(d.and_then(|d| d.cle_total_urssaf.as_ref()), "cle_total_urssaf")?,
+            cle_total_chomage: cle(d.and_then(|d| d.cle_total_chomage.as_ref()), "cle_total_chomage")?,
+        })
     }
 }
