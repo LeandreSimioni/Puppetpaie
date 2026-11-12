@@ -40,7 +40,7 @@ use serde::{Deserialize, Serialize};
 use crate::numeros::NumeroContrat;
 use crate::saisie::Carte;
 use crate::stock::{self, Objet};
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
 use socle::echec::R;
 use socle::mois::Mois;
@@ -233,11 +233,12 @@ pub struct BulletinSource {
 }
 
 /// UN CONTRAT ATTESTE, AVEC LES BORNES DE SON ENGAGEMENT : la ligne que l'import manipule, de la lecture de la piece a
-/// l'engagement ecrit (`Neuf`). `salarie` est la cle de la fiche (`<a creer>` tant qu'elle n'existe pas) ; `numero`, le
-/// numero de contrat de l'engagement qui le porte. Elle se rend a la page telle qu'elle s'ecrit (`Serialize`).
+/// l'engagement ecrit (`Neuf`). `salarie` est la cle de la fiche (`None` tant qu'elle n'existe pas, ecrit `<a creer>`) ;
+/// `numero`, le numero de contrat de l'engagement qui le porte. Elle se rend a la page telle qu'elle s'ecrit (`Serialize`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ContratLu {
-    pub salarie: String,
+    #[serde(serialize_with = "ecrit_salarie")]
+    pub salarie: Option<IdSalarie>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debut: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -253,14 +254,23 @@ pub struct ContratLu {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PaieLue {
     pub mois: Mois,
-    pub salarie: String,
+    #[serde(serialize_with = "ecrit_salarie")]
+    pub salarie: Option<IdSalarie>,
     #[serde(flatten)]
     pub paie: PaieVersee,
 }
 
+/// La cle du salarie d'une ligne lue telle que la page la lit : `<a creer>` tant que sa fiche n'existe pas (`None`).
+pub fn ecrit_salarie<S: serde::Serializer>(salarie: &Option<IdSalarie>, s: S) -> Result<S::Ok, S::Error> {
+    match salarie {
+        Some(c) => s.serialize_str(c),
+        None => s.serialize_str("<a creer>"),
+    }
+}
+
 impl PaieLue {
     /// Ce qui la reconnait d'un import a l'autre : (mois, salarie, contrat).
-    pub fn cle(&self) -> (Mois, String, String) {
+    pub fn cle(&self) -> (Mois, Option<IdSalarie>, String) {
         (self.mois, self.salarie.clone(), self.paie.contrat.clone())
     }
 
@@ -476,7 +486,7 @@ impl Importe {
         // Importe le jour ou il l'a ete la premiere fois ; sinon, le jour de l'import de ses pieces (`Pieces::le`).
         contrat.importe_le.get_or_insert(self.le());
         let numero = self.carte().numero.clone();
-        Ok(Some(ContratLu { salarie: self.cle_ecrite()?.into(), debut: self.carte().debut, fin: self.carte().fin, numero, contrat }))
+        Ok(Some(ContratLu { salarie: Some(self.cle_ecrite()?), debut: self.carte().debut, fin: self.carte().fin, numero, contrat }))
     }
 
     /// Les paies versees, une par mois, avec le salarie de l'engagement.
@@ -487,7 +497,7 @@ impl Importe {
     fn paie_lue(&self, mois: Mois, p: &PaieVersee) -> R<PaieLue> {
         let mut paie = p.clone();
         paie.importe_le.get_or_insert(self.le());
-        Ok(PaieLue { mois, salarie: self.cle_ecrite()?.into(), paie })
+        Ok(PaieLue { mois, salarie: Some(self.cle_ecrite()?), paie })
     }
 
     /// La cle de la fiche de son salarie, ecrite ; un engagement importe qui ne la dit pas se refuse.

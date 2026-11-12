@@ -68,7 +68,8 @@ use socle::num::Decimal;
 use socle::texte::euros;
 use import::attestes::{Atteste, Registre, Reste};
 use engagement::importe::{Attestation, ContratAtteste, ContratLu, Declaration, PaieLue, PaieVersee};
-use crate::import::{self as ri, ACreer, Apercu, SpectacleDesPieces, A_CREER};
+use crate::import::{self as ri, ACreer, Apercu, SpectacleDesPieces};
+use droit::contexte::IdSalarie;
 use import::reponse::{
     BlocBulletins, BlocPieces, DitPar, Ecart, EcartPaie, EtatContrat, EtatFiche, EtatPaie, FicheImportee, FichierVu, Importation, InfosPage, NonRepris, NonReprisVu,
     Origine, PageVu, ParSort, Sort, Source, TriVu,
@@ -459,32 +460,30 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     let a_venir: HashSet<String> = lus.iter().map(|l| l.nir.clone()).chain(certificats.iter().filter_map(|c| c.c.nir.clone())).collect();
     let mut ap = ri::apercu_lu(ctx, &dossier.display().to_string(), dsn_dir.as_deref(), aem_dir.as_deref(), ctx.aujourdhui, &a_venir)?;
 
-    let mut par_nir: HashMap<String, String> = HashMap::new();
+    let mut par_nir: HashMap<String, IdSalarie> = HashMap::new();
     for (cle, s) in &ctx.salaries {
         if let Some(n) = s.nir.dite().filter(|n| !n.is_empty()) {
-            par_nir.insert(n.to_string(), cle.to_string());
+            par_nir.insert(n.to_string(), cle.clone());
         }
     }
-    let cle_de = |nir: &str| match par_nir.get(nir) {
-        Some(c) => c.clone(),
-        None => A_CREER.to_string(),
-    };
+    // La cle de la fiche du NIR ; `None` : sa fiche est a creer.
+    let cle_de = |nir: &str| par_nir.get(nir).cloned();
     // LES CONTRATS ATTESTES : l'historique, puis ce que chaque piece de cet import retient (`import::attestes`).
-    let nir_de_cle: HashMap<String, String> = par_nir.iter().map(|(n, c)| (c.clone(), n.clone())).collect();
+    let nir_de_cle: HashMap<IdSalarie, String> = par_nir.iter().map(|(n, c)| (c.clone(), n.clone())).collect();
     let mut registre = Registre::de_l_historique(ctx, &nir_de_cle)?;
     let historique_paies = ri::paies_historique(ctx)?;
-    let hist_par_cle: HashMap<(Mois, String, String), PaieLue> = historique_paies.iter().map(|x| (x.cle(), x.clone())).collect();
+    let hist_par_cle: HashMap<(Mois, Option<IdSalarie>, String), PaieLue> = historique_paies.iter().map(|x| (x.cle(), x.clone())).collect();
 
     // Ce qui est saisi ici : (salarie, mois) que paie un engagement saisi. Un bulletin qui en est, sans paie declaree
     // du meme salarie et du meme mois a completer (DSN de cet apercu, paie importee), est « deja saisi ».
-    let mut saisis_ici: HashSet<(String, Mois)> = HashSet::new();
+    let mut saisis_ici: HashSet<(Option<IdSalarie>, Mois)> = HashSet::new();
     if lus.iter().any(|l| l.mois_saisi) {
         let objets = engagement::stock::objets(&ctx.racine).map_err(|m| m.reclasser(Classe::Refuse))?;
         for o in objets.iter().filter(|o| !o.importe_seul()) {
             let Some(cle) = &o.brut.saisie.carte.salarie else { continue };
             for l in lus.iter().filter(|l| l.mois_saisi) {
                 if o.couvre(l.mois).map_err(|m| m.reclasser(Classe::Refuse))? {
-                    saisis_ici.insert((cle.to_string(), l.mois));
+                    saisis_ici.insert((Some(cle.clone()), l.mois));
                 }
             }
         }
@@ -557,7 +556,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     continue;
                 }
                 if registre.pareils(&c.nir, c.debut, c.fin, "AEM").is_empty() {
-                    registre.ajouter(&c.nir, import::dsn_aem::ligne_du_contrat(c, &cle_de(&c.nir)), "AEM", "declarations");
+                    registre.ajouter(&c.nir, import::dsn_aem::ligne_du_contrat(c, cle_de(&c.nir)), "AEM", "declarations");
                     nouveaux += 1;
                 }
             }
@@ -865,7 +864,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     #[derive(Clone, PartialEq)]
     enum Cible {
         Dsn(usize),
-        Historique((Mois, String, String)),
+        Historique((Mois, Option<IdSalarie>, String)),
     }
     let mut index: HashMap<(String, Jour, Jour), Vec<(Mois, String, Cible)>> = HashMap::new();
     // LA PAIE D'UN CONTRAT QUI COURT AU-DELA DU MOIS (un permanent) : la DSN la date des bornes du contrat
@@ -896,7 +895,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // Une paie que l'historique tient d'un bulletin seul s'efface devant la DSN qui la declare (la DSN est lue apres le
     // bulletin : l'ordre inverse) : le bulletin complete la ligne DSN, et l'ecriture retire la ligne « bulletin »
     // (`import::ecrite::rapprocher`).
-    let mut de_bulletin: HashSet<(Mois, String, String)> = HashSet::new();
+    let mut de_bulletin: HashSet<(Mois, Option<IdSalarie>, String)> = HashSet::new();
     for x in &historique_paies {
         let (mois, Some(nir), contrat, debut, fin) = reperes(x) else { continue };
         if !vus.insert((mois.clone(), nir.clone(), contrat.clone())) {
@@ -1158,7 +1157,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         };
         if !est_aem && !pareils.is_empty() && !pareils.iter().any(Atteste::de_certificat) {
             let statut = statut_de(ctx, &par_nir, &ap.a_creer, nir, c, convention.as_deref())?;
-            match contrat_du_certificat(c, statut.as_deref(), &cle_de(nir), &copie) {
+            match contrat_du_certificat(c, statut.as_deref(), cle_de(nir), &copie) {
                 Ok((ligne, _)) => match registre.reste_du_certificat(nir, &ligne, &pareils) {
                     Reste::Rien => {}
                     Reste::Seul(l) => reste = Some(l),
@@ -1245,7 +1244,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         }
         let est_reste = reste.is_some();
         let lu = match (&cl.aem, reste) {
-            (Some(a), _) => contrat_de_l_aem(a, &cle_de(nir), &copie),
+            (Some(a), _) => contrat_de_l_aem(a, cle_de(nir), &copie),
             (None, Some(l)) => {
                 let quoi = match (l.contrat.cachets, l.contrat.jours) {
                     (Some(n), _) if n > 0 => format!("{} cachet(s)", n),
@@ -1257,7 +1256,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             }
             (None, None) => {
                 let statut = statut_de(ctx, &par_nir, &ap.a_creer, nir, c, convention.as_deref())?;
-                contrat_du_certificat(c, statut.as_deref(), &cle_de(nir), &copie)
+                contrat_du_certificat(c, statut.as_deref(), cle_de(nir), &copie)
             }
         };
         match lu {
@@ -1460,11 +1459,11 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
 }
 
 /// Ce que la page dit d'elle-meme dans le compte rendu.
-fn infos_de(l: &Lu, salarie: Option<&str>) -> InfosPage {
+fn infos_de(l: &Lu, salarie: Option<&Option<IdSalarie>>) -> InfosPage {
     InfosPage {
         logiciel: l.b.logiciel.clone(),
         numero: l.b.numero.clone(),
-        salarie: salarie.map(String::from),
+        salarie: salarie.cloned(),
         debut: Some(l.b.debut),
         fin: Some(l.b.fin),
         mois: Some(l.mois),
@@ -1997,7 +1996,7 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, chemin: &str, page: usize, 
 /// Le contrat qu'un bulletin atteste, tel qu'un engagement importe le porte (`importe.contrat`), et sa cle `_cle_engagement`.
 /// Les heures se comptent en heures entieres comme celles d'une saisie (`cumul::engagement_de_paie` : arrondi au
 /// pair) ; des cachets ou des jours qui ne sont pas entiers, ou un compteur inconnu, ne font pas de contrat.
-fn engagement(l: &Lu, c: &Compteurs, salarie: &str, chemin: &str) -> R<(Compte, ContratLu)> {
+fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, chemin: &str) -> R<(Compte, ContratLu)> {
     use socle::echec::refus;
     // LES JOURS TRAVAILLES sont ceux qu'atteste l'attestation employeur mensuelle de l'intermittent (annexes 8 et 10) ;
     // un permanent paye au mois n'en a pas, et son bulletin n'imprime ni dates travaillees ni cumul de jours : son
@@ -2042,7 +2041,7 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &str, chemin: &str) -> R<(Compte, 
     // Le numero du contrat, quand le bulletin l'imprime : il se lit, il ne se tire pas (regle 4).
     a.numero_contrat = plein(&l.b.contrat);
     (a.fichier, a.page) = (Some(chemin.to_string()), Some(l.page as u64));
-    Ok((compte, ContratLu { salarie: salarie.to_string(), debut: Some(debut), fin: Some(fin), numero: None, contrat: a }))
+    Ok((compte, ContratLu { salarie: salarie.clone(), debut: Some(debut), fin: Some(fin), numero: None, contrat: a }))
 }
 
 /// Le bulletin porte-t-il une marque d'engagement du spectacle : un numero d'objet, ou une cotisation Congés
@@ -2157,8 +2156,8 @@ fn entreprise_du_certificat(p: &Attestee) -> R<Saisie> {
 
 /// Artiste ou technicien : la fiche qui existe, sinon celle que l'import cree (DSN, bulletin), sinon le metier du
 /// catalogue que nomme l'emploi du certificat, sous la convention de l'import (`idcc`). `None` : rien ne le dit.
-fn statut_de(ctx: &Contexte, par_nir: &HashMap<String, String>, a_creer: &[ACreer], nir: &str, c: &import::certificat_lu::Certificat, idcc: Option<&str>) -> R<Option<String>> {
-    if let Some(s) = par_nir.get(nir).and_then(|k| ctx.salaries.get(k.as_str())).and_then(|f| f.statut.dite()) {
+fn statut_de(ctx: &Contexte, par_nir: &HashMap<String, IdSalarie>, a_creer: &[ACreer], nir: &str, c: &import::certificat_lu::Certificat, idcc: Option<&str>) -> R<Option<String>> {
+    if let Some(s) = par_nir.get(nir).and_then(|k| ctx.salaries.get(k)).and_then(|f| f.statut.dite()) {
         return Ok(Some(s.as_str().to_string()));
     }
     if let Some(s) = a_creer.iter().filter(|a| a.nom == NomDeFiche::Salarie && a.nir().as_deref() == Some(nir)).find_map(|a| a.donnees.mot(CaseSalarie::Statut)) {
@@ -2171,7 +2170,7 @@ fn statut_de(ctx: &Contexte, par_nir: &HashMap<String, String>, a_creer: &[ACree
 /// Le contrat qu'une AEM en PDF atteste, tel qu'un engagement importe le porte (la forme du contrat d'une AEM deposee,
 /// `import::ecrite`), et ce qu'il compte en mots : la periode du mois (`aem_lu::Aem::periode`), ses heures, ses
 /// cachets isoles et groupes, ses jours, son brut et son numero d'objet, tels qu'imprimes.
-fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: &str, copie: &str) -> R<(ContratLu, String)> {
+fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: &str) -> R<(ContratLu, String)> {
     let (Some((debut, fin)), Some(brut)) = (a.periode(), a.brut) else {
         return Err(socle::echec::refus("l'AEM ne dit pas tout ce qu'un contrat demande"));
     };
@@ -2189,7 +2188,7 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: &str, copie: &str) -> R<(C
     (c.heures, c.cachets, c.jours, c.brut) = (heures, cachets, jours, Some(brut));
     c.numero_attestation = plein(&a.numero);
     (c.fichier, c.page) = (Some(copie.to_string()), Some(a.page as u64));
-    let ligne = ContratLu { salarie: salarie.to_string(), debut: Some(debut), fin: Some(fin), numero: None, contrat: c };
+    let ligne = ContratLu { salarie, debut: Some(debut), fin: Some(fin), numero: None, contrat: c };
     Ok((ligne, if quoi.is_empty() { "aucune heure, aucun cachet, aucun jour".into() } else { quoi.join(", ") }))
 }
 
@@ -2200,7 +2199,7 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: &str, copie: &str) -> R<(C
 /// annexes-8-10.txt`, l. 5802) ; le certificat n'a qu'une case pour les deux. Inference : pour un artiste, elle compte
 /// des cachets ; pour un technicien, des jours. Sans statut, rien ne le dit : pas de contrat. Les heures, que le
 /// certificat ne porte pas, ne s'inventent pas (0) ; le brut est celui du certificat, « arrondi à l'euro le plus proche ».
-fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<&str>, salarie: &str, copie: &str) -> R<(ContratLu, String)> {
+fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<&str>, salarie: Option<IdSalarie>, copie: &str) -> R<(ContratLu, String)> {
     let (Some(debut), Some(fin), Some(nombre), Some(brut)) = (c.debut, c.fin, c.nombre, c.brut) else {
         return Err(socle::echec::refus("le certificat ne dit pas tout ce qu'un contrat demande"));
     };
@@ -2229,7 +2228,7 @@ fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<&
     a.base_conge = c.base_conge;
     a.atteste_le = c.signe_le;
     (a.fichier, a.page) = (Some(copie.to_string()), Some(c.page as u64));
-    Ok((ContratLu { salarie: salarie.to_string(), debut: Some(debut), fin: Some(fin), numero: None, contrat: a }, quoi))
+    Ok((ContratLu { salarie, debut: Some(debut), fin: Some(fin), numero: None, contrat: a }, quoi))
 }
 
 /// Les compteurs de chaque bulletin lu (`bulletin_lu::compteurs`), confrontes a ses cumuls avec ses freres : les autres

@@ -26,7 +26,7 @@ use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 
 use engagement::calcul::Paie;
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use droit::echeances::Echeance;
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
@@ -64,7 +64,7 @@ pub const ROUTES: &[Fiche] = &[Fiche {
     ecran: ECRAN,
 }];
 
-pub(crate) type Paire = (String, String);
+pub(crate) type Paire = (IdSalarie, NumeroContrat);
 
 // ------------------------------------------------------------------ les charges
 
@@ -171,7 +171,7 @@ pub(crate) enum ChargeDuGeste {
 /// jour travaille, qui designent l'arret.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ChargeObligationDArret {
-    pub(crate) salarie: String,
+    pub(crate) salarie: IdSalarie,
     pub(crate) dernier_jour: socle::date::Jour,
 }
 
@@ -1148,7 +1148,7 @@ impl Etats {
 /// titre que sa fiche dit.
 #[derive(Debug, Clone)]
 pub(crate) struct Vue {
-    salarie: Option<String>,
+    salarie: Option<IdSalarie>,
     nom: Option<String>,
     spectacle: Option<String>,
     /// Le libelle de sa nature de contrat, quand elle est dite.
@@ -1344,7 +1344,7 @@ struct Choix {
 #[derive(Debug, Clone, Serialize)]
 pub struct DpaeDue {
     pub mois: Mois,
-    pub salarie: String,
+    pub salarie: IdSalarie,
     pub numero: NumeroContrat,
     pub nom: String,
     pub spectacle: Option<String>,
@@ -1534,7 +1534,7 @@ impl<'a> Moteur<'a> {
             self.a_refaire_du_mois(mois, e, &departs)?;
         }
         // LES DPAE A DEPOSER DU MOIS : la seule liste (`embauches_a_declarer`), que lisent aussi les rappels et le depot.
-        let a_declarer: HashSet<Paire> = self.embauches_a_declarer(Some(le_mois))?.into_iter().map(|d| (d.salarie, d.numero.to_string())).collect();
+        let a_declarer: HashSet<Paire> = self.embauches_a_declarer(Some(le_mois))?.into_iter().map(|d| (d.salarie, d.numero)).collect();
 
         // Chaque ligne porte `engagement` : l'identite par laquelle sa carte le designe. Un engagement auquel il manque un
         // fait a sa ligne a lui (`ligne_a_completer`) ; les autres retrouvent leur paie parmi ceux qui ne manquent de rien.
@@ -1547,7 +1547,7 @@ impl<'a> Moteur<'a> {
             }
             let Some(k) = s.identites.iter().position(|x| x == id) else { continue };
             let p = &s.paies[k];
-            let cle = p.salarie.id.to_string();
+            let cle = p.salarie.id.clone();
             // CE QUI EST A REFAIRE : le present compare a la version sur laquelle chaque envoi est parti.
             let refaire = self.a_refaire_du_mois(mois, e, &departs)?;
             let sal = &p.salarie;
@@ -1618,7 +1618,7 @@ impl<'a> Moteur<'a> {
             // contrat). Refusee au bilan, elle n'est pas partie ; la ligne dit quand elle a ete refusee.
             let numero = p.engagement.numero.as_ref();
             // Le contrat tel que le journal le designe (`envois::etats::Paire`).
-            let k: etats::Paire = (cle.clone(), numero.map(ToString::to_string));
+            let k: etats::Paire = (cle.clone(), numero.cloned());
             let mut dpae_v = g.dpae.get(&k);
             let mut partie_le = match numero {
                 Some(n) => departs.de(&p.salarie.id, n).iter().filter(|d| d.envoi == engagement::departs::Envoi::Dpae).map(|d| d.le.clone()).max(),
@@ -1643,7 +1643,7 @@ impl<'a> Moteur<'a> {
             };
             let dpae = EtatDpae {
                 date_changee,
-                a_declarer: numero.is_some_and(|n| a_declarer.contains(&(cle.clone(), n.to_string()))),
+                a_declarer: numero.is_some_and(|n| a_declarer.contains(&(cle.clone(), n.clone()))),
                 fait,
                 passee: dpae_v.is_some_and(|d| d.passee),
                 refusee,
@@ -1677,7 +1677,7 @@ impl<'a> Moteur<'a> {
             let documents = etat_documents(documents_le, bulletin);
             let vue = Vue {
                 salarie: Some(cle.clone()),
-                nom: Some(super::nom_a_l_ecran(sal, &cle.to_string())),
+                nom: Some(super::nom_a_l_ecran(sal, &cle)),
                 spectacle,
                 libelle_nature: Some(nat.libelle.clone()),
                 numero: p.engagement.numero.clone(),
@@ -1710,9 +1710,9 @@ impl<'a> Moteur<'a> {
         let Some(e) = o.vue(lu)? else {
             return Err(erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un engagement du mois ne se lit pas dans ce mois."));
         };
-        let cle = e.salarie.as_ref().map(ToString::to_string);
+        let cle = e.salarie.clone();
         // Un salarie qu'aucune fiche ne porte se nomme par sa cle.
-        let nom = cle.as_deref().map(|c| match self.ctx.salaries.get(c) {
+        let nom = cle.as_ref().map(|c| match self.ctx.salaries.get(c) {
             Some(f) => super::nom_a_l_ecran(f, c),
             None => c.to_string(),
         });
@@ -2500,9 +2500,9 @@ impl<'a> Moteur<'a> {
                 let Some(numero) = p.engagement.numero.clone() else { continue };
                 attente.push(DpaeDue {
                     mois: le_mois,
-                    salarie: cle.to_string(),
+                    salarie: cle.clone(),
                     numero,
-                    nom: super::nom_a_l_ecran(&p.salarie, &cle.to_string()),
+                    nom: super::nom_a_l_ecran(&p.salarie, cle),
                     spectacle: titre,
                     debut: p.engagement.debut,
                     fin: p.engagement.fin,
@@ -2769,16 +2769,16 @@ pub(crate) struct DocumentsPartis {
 
 /// LES DOCUMENTS PARTIS DE `mois`, par salarie : le dernier envoi de ceux dont tous les engagements valides du mois sont
 /// partis.
-pub(crate) fn documents_partis(ctx: &Contexte, mois: Mois, etats: &[engagement::etats::Etat], lignes: &[envois::journal::Ligne]) -> R<HashMap<String, DocumentsPartis>> {
+pub(crate) fn documents_partis(ctx: &Contexte, mois: Mois, etats: &[engagement::etats::Etat], lignes: &[envois::journal::Ligne]) -> R<HashMap<IdSalarie, DocumentsPartis>> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let resumes = etats::resumes_des_documents(lignes, mois);
-    let mut out: HashMap<String, DocumentsPartis> = HashMap::new();
+    let mut out: HashMap<IdSalarie, DocumentsPartis> = HashMap::new();
     // Les documents d'un salarie partent ensemble, pour tous ses engagements valides du mois : un engagement valide dont
     // ils ne sont pas partis (valide apres leur envoi) les rend a envoyer, avec son bulletin.
-    let a_envoyer: HashSet<String> = etats
+    let a_envoyer: HashSet<&IdSalarie> = etats
         .iter()
         .filter(|e| matches!(e, engagement::etats::Etat::Valide(_)))
-        .filter_map(|e| e.objet().brut.saisie.carte.salarie.as_ref().map(ToString::to_string))
+        .filter_map(|e| e.objet().brut.saisie.carte.salarie.as_ref())
         .collect();
     for e in etats {
         if !matches!(e, engagement::etats::Etat::Partis(_)) {
@@ -2793,12 +2793,12 @@ pub(crate) fn documents_partis(ctx: &Contexte, mois: Mois, etats: &[engagement::
             .map(|d| d.le)
             .max();
         let Some(quand) = dernier else { continue };
-        if a_envoyer.contains(cle.as_str()) {
+        if a_envoyer.contains(cle) {
             continue;
         }
-        let plus_recent = out.get(cle.as_str()).is_some_and(|v| v.quand >= quand);
+        let plus_recent = out.get(cle).is_some_and(|v| v.quand >= quand);
         if !plus_recent {
-            out.insert(cle.to_string(), DocumentsPartis { resume: resumes.get(cle.as_str()).cloned().flatten(), quand });
+            out.insert(cle.clone(), DocumentsPartis { resume: resumes.get(cle.as_str()).cloned().flatten(), quand });
         }
     }
     Ok(out)

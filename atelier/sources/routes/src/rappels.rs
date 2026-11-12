@@ -369,10 +369,10 @@ pub(crate) enum Objet {
 
 impl Objet {
     /// Le salarie qu'il nomme (la cle de sa fiche).
-    fn salarie(&self) -> String {
+    fn salarie(&self) -> droit::contexte::IdSalarie {
         match self {
-            Objet::Fin(f) => f.salarie.to_string(),
-            Objet::Arret(a) => a.salarie().to_string(),
+            Objet::Fin(f) => f.salarie.clone(),
+            Objet::Arret(a) => a.salarie().clone(),
         }
     }
 }
@@ -437,7 +437,7 @@ impl Echeance {
         use crate::imprevus::{ChargeArretSignaler, ChargeFinContratSignaler, NatureSignalement};
         // L'arret sur lequel porte l'obligation : son salarie et son dernier jour travaille.
         let arret = || match &self.objet {
-            Some(Objet::Arret(a)) => Some((a.salarie().to_string(), a.dernier_jour_travaille())),
+            Some(Objet::Arret(a)) => Some((a.salarie().clone(), a.dernier_jour_travaille())),
             _ => None,
         };
         let salarie = || self.objet.as_ref().map(Objet::salarie);

@@ -70,7 +70,7 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
             // La mise a disposition est celle du compte rendu ; sans elle, le taux ne se date pas.
             let mis_a_disposition = retour.publication.ok_or_else(|| socle::echec::erreur(Classe::Illisible, format!("Un compte rendu de taux de PAS ne dit pas sa date de mise à disposition ({}).", socle::fichiers::nom_du(chemin))))?;
             tous.push(compagnie::taux_pas::TauxRecu {
-                salarie: x.salarie.to_string(),
+                salarie: x.salarie.clone(),
                 taux: x.releve.taux,
                 type_taux: x.releve.type_taux,
                 identifiant: x.releve.identifiant.clone(),

@@ -222,7 +222,7 @@ pub(crate) struct ChargeNature {
     pub(crate) nature: droit::natures::NatureDeContrat,
     pub(crate) debut: Option<Jour>,
     pub(crate) fin: Option<Jour>,
-    pub(crate) numero: Option<String>,
+    pub(crate) numero: Option<engagement::numeros::NumeroContrat>,
     pub(crate) salaire: Option<MontantSaisi>,
     pub(crate) quotite: Option<MontantSaisi>,
 }
@@ -245,12 +245,11 @@ impl MontantSaisi {
 }
 
 impl ChargeNature {
-    /// Une case de texte demandee (le numero, le salaire, la quotite), telle qu'elle est dite, sans ses blancs ; rien
-    /// pour une case vide. Un jour n'est pas un texte : il se lit dans sa case (`debut`, `fin`).
+    /// Une case de texte demandee (le salaire, la quotite), telle qu'elle est dite, sans ses blancs ; rien pour une case
+    /// vide. Un jour ni un numero de contrat ne sont un texte : ils se lisent dans leur case (`debut`, `fin`, `numero`).
     fn lu(&self, champ: Demande) -> Option<String> {
         let v = match champ {
-            Demande::Debut | Demande::Fin => None,
-            Demande::Numero => self.numero.clone(),
+            Demande::Debut | Demande::Fin | Demande::Numero => None,
             Demande::Salaire => self.salaire.as_ref().map(MontantSaisi::texte),
             Demande::Quotite => self.quotite.as_ref().map(MontantSaisi::texte),
         };
@@ -341,11 +340,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
                     None => return Err(refus(format!("« {} » n'est pas {} : rien n'a été écrit.", v, quoi))),
                 };
             }
-            Demande::Numero => {
-                let v = charge.lu(champ).ok_or_else(manque)?;
-                let n = engagement::numeros::NumeroContrat::lire(&v).map_err(|m| m.reformuler(|p| format!("{} Rien n'a été écrit.", p)).reclasser(Classe::Refuse))?;
-                contrat.numero = Some(n);
-            }
+            Demande::Numero => contrat.numero = Some(charge.numero.clone().ok_or_else(manque)?),
         }
     }
     // La nature va sur l'engagement de chaque contrat a dire ; ce qui definit le contrat qui court encore, sur le sien.
@@ -434,7 +429,7 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
         let mut complet = true;
         for champ in demande(nat, en_cours) {
             let pose = match champ {
-                Demande::Numero => Some(charge.numero = Some(numero.to_string())),
+                Demande::Numero => Some(charge.numero = Some(numero.clone())),
                 Demande::Salaire => p.paie.mesures.salaire_habituel.map(|m| charge.salaire = Some(MontantSaisi::Texte(m.to_string()))),
                 Demande::Debut => c.and_then(|c| c.debut).map(|j| charge.debut = Some(j)),
                 Demande::Fin => c.and_then(|c| c.fin).map(|j| charge.fin = Some(j)),

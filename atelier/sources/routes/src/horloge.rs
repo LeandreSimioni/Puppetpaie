@@ -367,11 +367,11 @@ enum Geste {
     /// Les contrats de l'embauche du `debut` reviennent signes.
     Signes { mois: Mois, debut: Jour },
     /// L'avenant du contrat (`salarie`, `debut`) part a la signature, puis revient signe.
-    Avenant { mois: Mois, salarie: String, debut: Jour, nom: String },
+    Avenant { mois: Mois, salarie: droit::contexte::IdSalarie, debut: Jour, nom: String },
     /// Le signalement d'arret (04) ou de reprise (05) de l'arret de `salarie` au `dernier` jour travaille.
-    Arret { mois: Mois, salarie: String, dernier: Jour, cle: crate::obligations::CleDObligation, nature: crate::imprevus::NatureSignalement },
+    Arret { mois: Mois, salarie: droit::contexte::IdSalarie, dernier: Jour, cle: crate::obligations::CleDObligation, nature: crate::imprevus::NatureSignalement },
     /// Le signalement de fin du contrat de `salarie` qui finit le `fin`.
-    Fin { mois: Mois, salarie: String, fin: Jour },
+    Fin { mois: Mois, salarie: droit::contexte::IdSalarie, fin: Jour },
     /// La DSN du mois, fabriquee a son echeance.
     Dsn { mois: Mois, echeance: Jour },
     /// Les documents du mois aux salaries.
@@ -661,7 +661,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
             if attente.is_empty() {
                 return Ok(Joue::Rien);
             }
-            let engagements: Vec<crate::depots::EmbaucheDesignee> = attente.iter().map(|e| crate::depots::EmbaucheDesignee { salarie: e.salarie.clone(), numero: e.numero.to_string() }).collect();
+            let engagements: Vec<crate::depots::EmbaucheDesignee> = attente.iter().map(|e| crate::depots::EmbaucheDesignee { salarie: e.salarie.clone(), numero: e.numero.clone() }).collect();
             // Une DPAE que rien n'ecrit n'a rien a deposer.
             let crate::depots::Dpae::Ecrite(r) = crate::depots::dpae(ctx, *mois, Some(&engagements))? else {
                 return Ok(Joue::Rien);
@@ -747,7 +747,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
         Geste::Fin { mois, salarie, fin } => pas(d, quoi, quand, |ctx| {
             let mut encore = false;
             for x in crate::imprevus::fins_a_signaler(ctx, *mois, ctx.aujourdhui)? {
-                encore |= x.salarie.as_str() == salarie && x.fin == *fin && due(&x.obligation, ctx.aujourdhui).is_some();
+                encore |= x.salarie == *salarie && x.fin == *fin && due(&x.obligation, ctx.aujourdhui).is_some();
             }
             if !encore {
                 return Ok(Joue::Rien);
@@ -952,7 +952,7 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
             dus.push(Pas {
                 quand: a_l_heure(butoir, 9, 30)?,
                 quoi: format!("signalement {} de {} (dernier jour travaillé le {}) déposé", dit, a.salarie, dernier.jj_mm_aaaa()),
-                geste: Geste::Arret { mois: le_mois, salarie: a.salarie.to_string(), dernier, cle, nature },
+                geste: Geste::Arret { mois: le_mois, salarie: a.salarie.clone(), dernier, cle, nature },
             });
         }
     }
@@ -964,7 +964,7 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
         dus.push(Pas {
             quand: a_l_heure(butoir, 9, 30)?,
             quoi: format!("signalement de fin du contrat de {} (fin le {}) déposé", f.salarie, f.fin.jj_mm_aaaa()),
-            geste: Geste::Fin { mois: le_mois, salarie: f.salarie.to_string(), fin: f.fin },
+            geste: Geste::Fin { mois: le_mois, salarie: f.salarie.clone(), fin: f.fin },
         });
     }
     Ok(dus)

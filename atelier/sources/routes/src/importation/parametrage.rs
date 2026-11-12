@@ -205,7 +205,7 @@ fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
         }
         let qui = match ctx.salaries.get(cle.as_str()).and_then(|s| s.nomme()).filter(|q| !q.is_empty()) {
             Some(q) => q,
-            None => cle,
+            None => cle.to_string(),
         };
         let taux: String = r.taux.iter().map(|t| format!(" {} %", t.to_string().replace('.', ","))).collect();
         // Le mois du versement qui l'applique (`mis_a_disposition`, le jour du versement) : celui que la DSN declare.

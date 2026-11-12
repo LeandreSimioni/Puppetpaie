@@ -310,8 +310,9 @@ pub struct ContratAtteste {
     pub fichier: String,
 }
 
-/// Le contrat atteste, tel qu'un engagement importe le porte (`salarie` : la cle de sa fiche).
-pub fn ligne_du_contrat(c: &ContratAtteste, salarie: &str) -> engagement::importe::ContratLu {
+/// Le contrat atteste, tel qu'un engagement importe le porte (`salarie` : la cle de sa fiche, `None` tant qu'elle
+/// n'existe pas).
+pub fn ligne_du_contrat(c: &ContratAtteste, salarie: Option<droit::contexte::IdSalarie>) -> engagement::importe::ContratLu {
     use engagement::importe::{Attestation, ContratAtteste as Atteste, ContratLu};
     let plein = |s: &str| Some(s.to_string()).filter(|s| !s.trim().is_empty());
     // L'AEM est l'attestation des annexes 8 et 10, celle d'un contrat d'usage du spectacle (Unédic, circulaire 2016-25,
@@ -323,7 +324,7 @@ pub fn ligne_du_contrat(c: &ContratAtteste, salarie: &str) -> engagement::import
     a.numero_attestation = plein(&c.numero_attestation);
     a.atteste_le = c.date_attestation;
     a.fichier = plein(&c.fichier);
-    ContratLu { salarie: salarie.to_string(), debut: Some(c.debut), fin: Some(c.fin), numero: None, contrat: a }
+    ContratLu { salarie, debut: Some(c.debut), fin: Some(c.fin), numero: None, contrat: a }
 }
 
 /// Tous les contrats attestes d'un dossier AEM_EDI, dedoublonnes, et les

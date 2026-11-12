@@ -14,8 +14,9 @@ use crate::gestes::depot_acte;
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
 use declarations::dpae::{Chemins, Embauche, Parametres};
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use engagement::calcul::Paie;
+use engagement::numeros::NumeroContrat;
 use envois::etats;
 use envois::releve_retours;
 use socle::date::Jour;
@@ -132,8 +133,8 @@ impl Quoi {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct EmbaucheDesignee {
-    pub(crate) salarie: String,
-    pub(crate) numero: String,
+    pub(crate) salarie: IdSalarie,
+    pub(crate) numero: NumeroContrat,
 }
 
 /// LA DESIGNATION D'UNE DECLARATION, la charge de `depot-apercu` et de `bilan-repetition` : la DSN ou la DPAE d'un mois
@@ -493,21 +494,21 @@ pub(crate) fn dpae(ctx: &Contexte, le_mois: Mois, selection: Option<&[EmbaucheDe
     let etiq = le_mois.etiquette();
     let sortie = ctx.racine.join("sorties").join(&mois);
     // Une embauche par son salarie et son numero de contrat ; une paie sans numero n'en a pas a declarer.
-    let cle_de = |p: &Paie| -> Option<(String, String)> { p.engagement.numero.as_ref().map(|n| (p.salarie.id.to_string(), n.to_string())) };
+    let cle_de = |p: &Paie| -> Option<(IdSalarie, NumeroContrat)> { p.engagement.numero.as_ref().map(|n| (p.salarie.id.clone(), n.clone())) };
 
     // LES DPAE A FAIRE DU MOIS (`Moteur::embauches_a_declarer`, la seule liste) : une embauche deja partie en DPAE
     // reelle, ou un contrat en cours depuis un mois precedent (sa DPAE part avec son premier mois), n'y est pas.
-    let a_faire: BTreeSet<(String, String)> = crate::etapes::Moteur::nouveau(ctx)
+    let a_faire: BTreeSet<(IdSalarie, NumeroContrat)> = crate::etapes::Moteur::nouveau(ctx)
         .embauches_a_declarer(Some(le_mois))?
         .into_iter()
-        .map(|e| (e.salarie, e.numero.to_string()))
+        .map(|e| (e.salarie, e.numero))
         .collect();
     let mut retenues: Vec<&Paie> = paies.iter().filter(|p| cle_de(p).is_some_and(|k| a_faire.contains(&k))).collect();
     let mut marque = String::new();
     if let Some(sel) = selection {
-        let voulues: BTreeSet<(String, String)> = sel.iter().map(|e| (e.salarie.clone(), e.numero.clone())).collect();
-        let joint = |s: BTreeSet<&(String, String)>| s.into_iter().map(|(a, b)| format!("{} (contrat {})", a, b)).collect::<Vec<_>>().join(", ");
-        let hors: BTreeSet<&(String, String)> = voulues.difference(&a_faire).collect();
+        let voulues: BTreeSet<(IdSalarie, NumeroContrat)> = sel.iter().map(|e| (e.salarie.clone(), e.numero.clone())).collect();
+        let joint = |s: BTreeSet<&(IdSalarie, NumeroContrat)>| s.into_iter().map(|(a, b)| format!("{} (contrat {})", a, b)).collect::<Vec<_>>().join(", ");
+        let hors: BTreeSet<&(IdSalarie, NumeroContrat)> = voulues.difference(&a_faire).collect();
         if !hors.is_empty() {
             let tous = hors.len() == voulues.len();
             let phrase = format!(
@@ -767,15 +768,14 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
     // Une fiche qui ne dit pas encore son NIC n'a que son siege, et aucune DSN n'en est partie.
     let principal = ctx.entreprise.nic_principal();
     let nic = d.etablissement.as_deref().filter(|n| !n.is_empty()).or(principal);
-    let voulues: Option<BTreeSet<(String, String)>> = d.engagements.as_ref().filter(|e| !e.is_empty()).map(|e| e.iter().map(|x| (x.salarie.clone(), x.numero.clone())).collect());
-    let voulues: Option<BTreeSet<(String, Option<String>)>> = voulues.map(|v| v.into_iter().map(|(s, n)| (s, Some(n))).collect());
+    let voulues: Option<BTreeSet<etats::Paire>> = d.engagements.as_ref().filter(|e| !e.is_empty()).map(|e| e.iter().map(|x| (x.salarie.clone(), Some(x.numero.clone()))).collect());
     let ligne = envois::journal::filtrer(&lignes, Some(d.quoi.acte()), Some(mois), false).rev().find(|l| match l {
         // Une ligne de DSN qui ne nomme pas son etablissement est celle de l'etablissement principal.
         Ligne::Dsn(_) => {
             let de = l.etablissement().or(principal);
             l.fichier().is_some_and(|f| f.starts_with("DSN_")) && de == nic
         }
-        Ligne::Dpae(e) => voulues.as_ref().is_none_or(|v| e.detail.embauches.iter().map(|x| (x.salarie.to_string(), x.numero.as_deref().map(str::to_string))).collect::<BTreeSet<_>>() == *v),
+        Ligne::Dpae(e) => voulues.as_ref().is_none_or(|v| e.detail.embauches.iter().map(|x| (x.salarie.clone(), x.numero.clone())).collect::<BTreeSet<_>>() == *v),
         // `filtrer` n'a rendu que des lignes de l'acte demande, une DSN ou une DPAE.
         Ligne::Documents(_) | Ligne::ContratSignature(_) | Ligne::ContratContresigne(_) | Ligne::RegularisationCasc(_) | Ligne::DossierSalarie(_) | Ligne::FicheDemande(_) => false,
     });
@@ -852,7 +852,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
         let embauches: Vec<Option<&etats::EtatEmbauche>> = du_flux(Quoi::Dpae.acte())
             .and_then(Ligne::dpae)
             .into_iter()
-            .flat_map(|e| e.detail.embauches.iter().map(|x| etat.get(&(x.salarie.to_string(), x.numero.as_deref().map(str::to_string)))))
+            .flat_map(|e| e.detail.embauches.iter().map(|x| etat.get(&(x.salarie.clone(), x.numero.clone()))))
             .collect();
         passe = !embauches.is_empty() && embauches.iter().all(|x| x.is_some_and(|x| x.passee));
         refuse = embauches.iter().any(|x| x.is_some_and(|x| x.refusee));
@@ -990,7 +990,7 @@ fn jour_jjmmaaaa(v: &str) -> Option<Jour> {
 
 /// L'identite d'une fiche, telle qu'une DPAE l'ecrit (`apercu_depot_dpae`).
 struct IdentiteDeFiche {
-    cle: String,
+    cle: IdSalarie,
     nir: Option<String>,
     nom: Option<String>,
     prenom: Option<String>,
@@ -1002,10 +1002,10 @@ struct IdentiteDeFiche {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct EmbaucheDuFichier {
     /// La fiche que l'embauche designe ; `None` : aucune fiche ne porte son identite.
-    pub(crate) salarie: Option<String>,
+    pub(crate) salarie: Option<IdSalarie>,
     pub(crate) nom: String,
     pub(crate) debut: Jour,
-    pub(crate) numero: Option<String>,
+    pub(crate) numero: Option<NumeroContrat>,
     pub(crate) fin: Option<Jour>,
     pub(crate) type_contrat: Option<String>,
     pub(crate) deja_declaree: bool,
@@ -1044,7 +1044,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
         .salaries
         .iter()
         .map(|(k, f)| IdentiteDeFiche {
-            cle: k.to_string(),
+            cle: k.clone(),
             nir: f.champs.nir.remplie().map(String::from),
             nom: f.champs.nom.portee().map(|t| t.trim().to_uppercase()),
             prenom: f.champs.prenom.portee().map(|t| t.trim().to_uppercase()),
@@ -1054,9 +1054,9 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
     // LE NUMERO DU CONTRAT DE CHAQUE EMBAUCHE : celui de l'engagement valide du salarie qui commence ce jour-la. C'est lui
     // qui relie la DPAE, partie ou refusee, a son engagement.
     let departs = m.departs()?;
-    let mut numeros: HashMap<(String, Option<Jour>), String> = HashMap::new();
+    let mut numeros: HashMap<(IdSalarie, Option<Jour>), NumeroContrat> = HashMap::new();
     // La nature de chaque embauche, par son nom court (« CDDU ») : le fichier ne dit que CDD, CDI ou CTT (Format 120).
-    let mut natures: HashMap<(String, Option<Jour>), String> = HashMap::new();
+    let mut natures: HashMap<(IdSalarie, Option<Jour>), String> = HashMap::new();
     let mut mois_vus: Vec<socle::mois::Mois> = Vec::new();
     let mut lignes = Vec::new();
     let mut jours: Vec<Jour> = Vec::new();
@@ -1068,10 +1068,10 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
                 let Some(v) = etat.valide() else { continue };
                 let brut = &*v.objet().brut;
                 let Some(cle) = &brut.saisie.carte.salarie else { continue };
-                let id = (cle.to_string(), engagement::debut_brut(brut));
+                let id = (cle.clone(), engagement::debut_brut(brut));
                 natures.insert(id.clone(), brut.saisie.carte.nature_lue()?.libelle.clone());
-                if let Some(n) = brut.saisie.carte.numero.as_deref() {
-                    numeros.insert(id, n.to_string());
+                if let Some(n) = &brut.saisie.carte.numero {
+                    numeros.insert(id, n.clone());
                 }
             }
             mois_vus.push(m_e);
@@ -1094,7 +1094,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
             .ok_or_else(|| erreur(Classe::Illisible, "Une embauche du fichier DPAE ne porte pas sa date d'embauche (JJMMAAAA)."))?;
         jours.push(debut);
         let id = trouve.map(|f| (f.cle.clone(), Some(debut)));
-        let nom = match trouve.and_then(|f| ctx.salaries.get(f.cle.as_str())).and_then(|f| f.champs.nomme()) {
+        let nom = match trouve.and_then(|f| ctx.salaries.get(&f.cle)).and_then(|f| f.champs.nomme()) {
             Some(n) => n,
             None => "salarié inconnu de la configuration".to_string(),
         };

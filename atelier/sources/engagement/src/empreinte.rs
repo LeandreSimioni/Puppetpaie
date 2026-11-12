@@ -115,13 +115,13 @@ fn entree_tient(ctx: &Contexte, k: &str, v: &str) -> R<bool> {
         "aujourdhui" => return Ok(v == droit::contexte::aujourdhui_sans_note()?.iso()),
         _ => {}
     }
-    if let Some(lue) = LectureDatee::lue(k) {
+    if let Some(lue) = LectureDatee::<droit::contexte::IdSalarie>::lue(k) {
         return Ok(match lue? {
             // L'indemnite de mission d'un jour a l'etranger : la valeur prise, pas la table (`droit::missions`).
             LectureDatee::Mission { lieu, jour } => v == droit::missions::du_jour(&lieu, &jour)?.empreinte(),
-            LectureDatee::Pas { salarie, le, mois } => v == droit::pas::empreinte(ctx, &droit::contexte::IdSalarie::lire(&salarie)?, le, mois)?,
+            LectureDatee::Pas { salarie, le, mois } => v == droit::pas::empreinte(ctx, &salarie, le, mois)?,
             LectureDatee::Mensuels { mois, salarie } => v == crate::conges::empreinte_des_mensuels_d_avant(ctx, mois, &salarie)?,
-            LectureDatee::Paies { mois, salarie } => v == crate::etats::empreinte_des_paies_validees(ctx, mois, Some(&salarie))?,
+            LectureDatee::Paies { mois, salarie } => v == crate::etats::empreinte_des_paies_validees(ctx, mois, Some(salarie.as_str()))?,
             LectureDatee::Saisie { mois, salarie } => stock::empreinte_de_la_saisie_du_mois(racine, mois, salarie.as_deref())?.is_some_and(|e| v == e),
         });
     }

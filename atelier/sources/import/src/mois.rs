@@ -33,7 +33,7 @@ fn importes_du_mois(racine: &Path, mois: Mois) -> R<Vec<Importe>> {
 /// salarie qu'il paie.
 pub struct BulletinRepris {
     pub chemin: String,
-    pub salarie: String,
+    pub salarie: droit::contexte::IdSalarie,
 }
 
 /// LES BULLETINS REPRIS DE `mois` : la copie que l'import garde de chaque fichier lu (`historique/bulletins/`, le nom que
@@ -52,7 +52,9 @@ pub fn bulletins_repris(racine: &Path, mois: Mois) -> R<Vec<BulletinRepris>> {
         if !racine.join(&chemin).is_file() || out.iter().any(|x| x.chemin == chemin) {
             continue;
         }
-        out.push(BulletinRepris { chemin, salarie: p.salarie });
+        // Une paie lue d'un engagement importe porte toujours la cle de sa fiche (`importe::Objet::paies_lues`).
+        let salarie = p.salarie.ok_or_else(|| socle::fichiers::absent("salarie"))?;
+        out.push(BulletinRepris { chemin, salarie });
     }
     Ok(out)
 }
@@ -213,11 +215,11 @@ pub(crate) struct EtatsDeCarte {
 
 /// L'etat de la DPAE d'une embauche tenue avant : le journal (reel accepte, par le numero du contrat), puis les certificats
 /// de `retours/dpae/` (par le salarie et le jour d'embauche qu'ils attestent).
-fn dpae_de(journal: &std::collections::HashMap<etats::Paire, socle::paris::InstantOuJour>, certifiees: &[envois::reprise_journal::DpaeAttestee], salarie: Option<&str>, numero: Option<&str>, debut: Option<Jour>) -> EtatDeCarte {
-    if let Some(q) = salarie.and_then(|s| journal.get(&(s.to_string(), numero.map(str::to_string)))) {
+fn dpae_de(journal: &std::collections::HashMap<etats::Paire, socle::paris::InstantOuJour>, certifiees: &[envois::reprise_journal::DpaeAttestee], salarie: Option<&droit::contexte::IdSalarie>, numero: Option<&engagement::numeros::NumeroContrat>, debut: Option<Jour>) -> EtatDeCarte {
+    if let Some(q) = salarie.and_then(|s| journal.get(&(s.clone(), numero.cloned()))) {
         return EtatDeCarte { couleur: "vert", courte: "DPAE faite", phrase: format!("DPAE déposée le {}", q.dit()) };
     }
-    let certifiee = certifiees.iter().find(|c| c.embauches.iter().any(|e| Some(e.salarie.as_str()) == salarie && Some(e.debut) == debut));
+    let certifiee = certifiees.iter().find(|c| c.embauches.iter().any(|e| Some(&e.salarie) == salarie && Some(e.debut) == debut));
     if let Some(c) = certifiee {
         let quand: String = c.quand.iter().map(|q| format!(" ({})", q.dit())).collect();
         return EtatDeCarte { couleur: "vert", courte: "DPAE faite", phrase: format!("DPAE certifiée par l'Urssaf{}", quand) };
@@ -286,7 +288,7 @@ pub struct CarteImportee {
     origine_dit: Option<String>,
     spectacle_dit: Option<String>,
     net_titre: Option<&'static str>,
-    salarie: Option<String>,
+    salarie: Option<droit::contexte::IdSalarie>,
     nom: Option<String>,
     spectacle: SpectacleDeCarte,
     contrat: Option<String>,
@@ -312,7 +314,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieLue>, contrat: Option<&Co
     let p = paie.map(|x| &x.paie);
     let c = contrat.map(|x| &x.contrat);
     let plein = |t: String| Some(t.trim().to_string()).filter(|t| !t.is_empty());
-    let salarie = paie.and_then(|x| plein(x.salarie.clone())).or_else(|| contrat.and_then(|x| plein(x.salarie.clone())));
+    let salarie = paie.and_then(|x| x.salarie.clone()).or_else(|| contrat.and_then(|x| x.salarie.clone()));
     let debut = p.and_then(|p| p.debut).or_else(|| contrat.and_then(|x| x.debut));
     let fin = p.and_then(|p| p.fin).or_else(|| contrat.and_then(|x| x.fin));
     let numero = p.and_then(|p| p.numero_objet.clone()).or_else(|| c.and_then(|c| c.numero_objet.clone())).and_then(plein);
@@ -472,7 +474,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieLue>, contrat: Option<&Co
         origine_dit,
         spectacle_dit,
         net_titre,
-        nom: nom.or_else(|| salarie.clone()),
+        nom: nom.or_else(|| salarie.as_ref().map(ToString::to_string)),
         salarie,
         spectacle: SpectacleDeCarte { cle: spectacle.as_ref().map(|s| s.0.clone()), numero_objet: numero, titre },
         contrat: p.map(|p| p.contrat.clone()),
@@ -584,8 +586,7 @@ pub fn cartes(ctx: &Contexte, mois: Mois) -> R<Vec<CarteImportee>> {
         let contrat = i.contrat_lu()?;
         let paie = i.paies_lues()?.into_iter().find(|p| p.mois == mois);
         let brut = i.objet().carte();
-        let salarie = brut.salarie.as_ref().map(ToString::to_string);
-        let dpae = dpae_de(&embauches, &certifiees, salarie.as_deref(), brut.numero.as_deref(), brut.debut);
+        let dpae = dpae_de(&embauches, &certifiees, brut.salarie.as_ref(), brut.numero.as_ref(), brut.debut);
         cartes.push(carte(ctx, mois, paie.as_ref(), contrat.as_ref(), dpae)?);
     }
     cartes.sort_by(|a, b| (&a.debut, &a.nom).cmp(&(&b.debut, &b.nom)));

@@ -27,7 +27,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 
 use engagement::calcul::Paie;
 use documents::conges_spectacles::{self, ContratCs, MoisPaye, PaieCs};
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
 use engagement::{self, Engagement};
 use documents::fiche_recapitulative::Recapitulatifs;
@@ -339,7 +339,7 @@ impl Periode {
 /// Une page du dossier, d'ou qu'elle vienne.
 struct Page {
     categorie: &'static str,
-    cle: String,
+    cle: IdSalarie,
     /// L'ordre de lecture dans sa categorie : son mois, puis son jour ; une page sans jour (le bulletin du mois, un
     /// contrat, une attestation) se lit avant les jours de son mois. Un recapitulatif n'a pas de mois : ses pages gardent
     /// l'ordre ou elles viennent.
@@ -451,8 +451,8 @@ fn nom_salarie(cle: &str) -> String {
 
 // ------------------------------------------------------------------ les mois PuppetPaie
 
-pub(crate) fn cle_de(p: &Paie) -> String {
-    p.salarie.id.to_string()
+pub(crate) fn cle_de(p: &Paie) -> IdSalarie {
+    p.salarie.id.clone()
 }
 
 /// Ce qui peut partir de `mois` (`engagement::etats::validees_du_mois`) : la saisie des engagements valides et leurs paies
@@ -589,14 +589,14 @@ fn paie_du_contrat_entier(ctx: &Contexte, p: &Paie) -> R<(PaieCs, Vec<Mois>)> {
 }
 
 /// Un certificat du : `(salarie, debut du contrat, paie du certificat)`.
-pub(crate) type Du = (String, socle::date::Jour, Option<PaieCs>);
+pub(crate) type Du = (IdSalarie, socle::date::Jour, Option<PaieCs>);
 
 /// `certificats_dus` : un certificat par contrat qui FINIT, pour le contrat entier quand il deborde
 /// du mois. Rend les certificats (dans l'ordre ou ils sont dus) et les avertissements.
 pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec<String>)> {
     let mut dus: Vec<Du> = Vec::new();
     let mut avertissements = Vec::new();
-    let poser = |dus: &mut Vec<Du>, cle: String, debut: socle::date::Jour, v: Option<PaieCs>| match dus.iter_mut().find(|d| d.0 == cle && d.1 == debut) {
+    let poser = |dus: &mut Vec<Du>, cle: IdSalarie, debut: socle::date::Jour, v: Option<PaieCs>| match dus.iter_mut().find(|d| d.0 == cle && d.1 == debut) {
         Some(d) => d.2 = v,
         None => dus.push((cle, debut, v)),
     };
@@ -637,7 +637,7 @@ pub(crate) fn certificats_dus(ctx: &Contexte, paies: &[Paie]) -> R<(Vec<Du>, Vec
 fn mois_puppetpaie(
     ctx: &Contexte,
     le_mois: Mois,
-    cles: &HashSet<String>,
+    cles: &HashSet<IdSalarie>,
     categories: &HashSet<&str>,
     tmp: &Path,
     d: &mut Dossier,
@@ -686,7 +686,7 @@ fn mois_puppetpaie(
             paies_contrats = figees;
         }
     }
-    let mut cles_des_siennes: Vec<String> = siennes.iter().map(|i| cle_de(&paies[*i])).collect();
+    let mut cles_des_siennes: Vec<IdSalarie> = siennes.iter().map(|i| cle_de(&paies[*i])).collect();
     cles_des_siennes.sort();
     cles_des_siennes.dedup();
 
@@ -715,7 +715,7 @@ fn mois_puppetpaie(
     // 2. Les contrats : ceux du mois ecrit portent les numeros de leur engagement valide.
     if categories.contains(CONTRATS) {
         let (source, indices): (&Vec<Paie>, &Vec<usize>) = if ecrit { (&paies, &siennes) } else { (&paies_contrats, &siennes_contrats) };
-        let mut cles_contrats: Vec<String> = indices.iter().map(|i| cle_de(&source[*i])).collect();
+        let mut cles_contrats: Vec<IdSalarie> = indices.iter().map(|i| cle_de(&source[*i])).collect();
         cles_contrats.sort();
         cles_contrats.dedup();
         for cle in &cles_contrats {
@@ -762,7 +762,7 @@ fn mois_puppetpaie(
         let trouve = |cle: &str, debut: socle::date::Jour| pour_cs.iter().find(|(c, de, _)| c == cle && *de == debut).and_then(|(_, _, v)| v.as_ref());
         // Chaque certificat parti, et tous les N CE de l'archive du mois.
         let mut tous: Vec<i64> = Vec::new();
-        let mut paires: Vec<(String, Vec<(&PaieCs, i64)>)> = Vec::new();
+        let mut paires: Vec<(IdSalarie, Vec<(&PaieCs, i64)>)> = Vec::new();
         for (i, p) in paies.iter().enumerate() {
             let cle = cle_de(p);
             let (Some(pc), Some(n)) = (trouve(&cle, p.engagement.debut), ecrits.get(i).and_then(|e| e.premier_ce)) else { continue };
@@ -921,13 +921,15 @@ fn signatures(ctx: &Contexte, cle: &str, p: &Periode) -> R<Vec<PathBuf>> {
 /// Les pages des bulletins de paie que l'import a repris (les paies versees des engagements importes, colonne `bulletin` : le fichier de
 /// sa copie dans `historique/bulletins/` et la page) : rattachees par la cle du salarie, datees du debut de la paie,
 /// dans la periode par le mois de la paie. Une copie qui manque se dit ; rien d'autre ne se devine.
-fn pages_importees(ctx: &Contexte, cles: &HashSet<String>, p: &Periode, d: &mut Dossier) -> R<Vec<Page>> {
+fn pages_importees(ctx: &Contexte, cles: &HashSet<IdSalarie>, p: &Periode, d: &mut Dossier) -> R<Vec<Page>> {
     let lignes = engagement::importe::paies_lues(&ctx.racine)?;
     let dossier = ctx.racine.join("historique").join("bulletins");
     let (mut pages, mut manquent): (Vec<Page>, Vec<String>) = (Vec::new(), Vec::new());
     for x in lignes {
         let Some(b) = &x.paie.bulletin else { continue };
-        let (cle, mois, fichier) = (x.salarie.clone(), x.mois, b.fichier.clone());
+        // Une paie lue d'un engagement importe porte toujours la cle de sa fiche (`importe::Objet::paies_lues`).
+        let cle = x.salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie"))?;
+        let (mois, fichier) = (x.mois, b.fichier.clone());
         let page = b.page;
         if page < 1 {
             continue;
@@ -1241,7 +1243,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
 
     let racine_tmp = Temporaire::nouveau_dans(&std::env::temp_dir(), "puppetpaie-dossier")?;
     let tmp = racine_tmp.0.as_path();
-    let ensemble_cles: HashSet<String> = cles.iter().cloned().collect();
+    let ensemble_cles: HashSet<IdSalarie> = cles.iter().map(|c| IdSalarie::lire(c)).collect::<R<_>>()?;
     let ensemble_cats: HashSet<&str> = cats.iter().copied().collect();
     let mut pages: Vec<Page> = Vec::new();
     let mut contrats_vus: HashSet<String> = HashSet::new();
@@ -1262,7 +1264,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
         for cle in &cles {
             if let Some(r) = recaps.pdf(cle, tmp)? {
                 for i in 0..pages_pdf(&r)? {
-                    pages.push(Page { categorie: RECAPITULATIF, cle: cle.clone(), tri: None, source: r.clone(), numero: i });
+                    pages.push(Page { categorie: RECAPITULATIF, cle: IdSalarie::lire(cle)?, tri: None, source: r.clone(), numero: i });
                 }
             }
         }
@@ -1275,7 +1277,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
         let i = match par.iter().position(|(c, _)| *c == pg.cle) {
             Some(i) => i,
             None => {
-                par.push((pg.cle.clone(), Vec::new()));
+                par.push((pg.cle.to_string(), Vec::new()));
                 par.len() - 1
             }
         };

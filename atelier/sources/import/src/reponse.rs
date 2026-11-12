@@ -438,6 +438,14 @@ impl EcartPaie {
     }
 }
 
+/// Le salarie d'une page, ecrit comme une ligne lue l'ecrit ; une page qui n'en dit pas ne l'ecrit pas (`skip`).
+fn ecrit_salarie_de_la_page<S: serde::Serializer>(salarie: &Option<Option<droit::contexte::IdSalarie>>, s: S) -> Result<S::Ok, S::Error> {
+    match salarie {
+        Some(cle) => engagement::importe::ecrit_salarie(cle, s),
+        None => s.serialize_none(),
+    }
+}
+
 /// Ce qu'une page dit d'elle-meme dans le compte rendu.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct InfosPage {
@@ -449,8 +457,10 @@ pub struct InfosPage {
     pub aem: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub certificat: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub salarie: Option<String>,
+    /// Le salarie que la page paie, quand elle se rattache a un NIR : la cle de sa fiche, `None` tant qu'elle est a
+    /// creer (`engagement::importe::ecrit_salarie`).
+    #[serde(skip_serializing_if = "Option::is_none", serialize_with = "ecrit_salarie_de_la_page")]
+    pub salarie: Option<Option<droit::contexte::IdSalarie>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debut: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]

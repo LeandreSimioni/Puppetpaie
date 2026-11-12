@@ -26,7 +26,8 @@ use documents::conges_spectacles::{self, PaieCs};
 use declarations::produire_regularisations::{self as regularisations, Reg};
 use crate::etapes::Moteur;
 use compagnie::pieces_ecrites::{cle_de_piece, journal_des_ecritures, noter_piece_ecrite, refuser_si_partie, EmpreinteNotee};
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
+use engagement::numeros::NumeroContrat;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::calcul::Paie;
 use engagement::Avis;
@@ -663,7 +664,7 @@ pub(crate) struct DocumentsFabriques {
     reserves: Reserves,
     /// `(cle du salarie, numero du contrat, numero de bulletin, premier et dernier N CE)` : ce qui s'ecrit dans les paies au
     /// depart.
-    a_poser: Vec<(String, String, Option<String>, Option<(i64, i64)>)>,
+    a_poser: Vec<(IdSalarie, NumeroContrat, Option<String>, Option<(i64, i64)>)>,
     pub(crate) avertissements: Vec<String>,
 }
 
@@ -785,24 +786,24 @@ fn exiges_des_bulletins<'a>(ent: &droit::fiche::ChampsEntreprise, paies: impl It
     }
 }
 
-pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[String], qui: &str) -> R<DocumentsFabriques> {
+pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie], qui: &str) -> R<DocumentsFabriques> {
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let validees = engagement::etats::validees_du_mois(ctx, mois, &departs)?;
     let ent = ctx.pour_un_modele(&ctx.entreprise_du_mois(mois));
     if let Some((_, paies)) = &validees {
-        exiges_des_bulletins(&ent, paies.iter().filter(|p| cles.contains(&cle_de(p)) && !p.engagement.sans_paie()))?;
+        exiges_des_bulletins(&ent, paies.iter().filter(|p| cles.contains(&p.salarie.id) && !p.engagement.sans_paie()))?;
     }
     let verrou = documents::ecrire_documents::prendre_le_verrou(ctx, qui)?;
     let mut faits = DocumentsFabriques { _verrou: verrou, reserves: Reserves::default(), a_poser: Vec::new(), avertissements: Vec::new() };
     let Some((_data, paies)) = validees else { return Ok(faits) };
-    faits.avertissements.extend(sans_taux_recu(ctx, paies.iter().filter(|p| cles.contains(&cle_de(p))))?);
+    faits.avertissements.extend(sans_taux_recu(ctx, paies.iter().filter(|p| cles.contains(&p.salarie.id)))?);
     let ecrits = engagement::etats::numeros_des_documents(ctx, mois, &departs)?;
     let an = i64::from(mois.annee());
     let etiq = mois.etiquette();
     let sortie = ctx.racine.join("sorties").join(mois.to_string());
     let dossier = sortie.join("envoi");
     std::fs::create_dir_all(&dossier).map_err(|e| os(&dossier, e))?;
-    let part = |p: &Paie| cles.contains(&cle_de(p));
+    let part = |p: &Paie| cles.contains(&p.salarie.id);
     let mut a_poser: HashMap<usize, (Option<String>, Option<(i64, i64)>)> = HashMap::new();
 
     // LES BULLETINS : un numero par paie qui a des cachets, ecrit dans la paie a son depart.
@@ -909,7 +910,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[String], q
         .into_iter()
         .map(|(i, (b, ce))| {
             let numero = paies[i].engagement.numero.clone().ok_or_else(|| erreur(Classe::Illisible, format!("{} : une paie qui part sans numéro de contrat.", cle_de(&paies[i]))))?;
-            Ok((cle_de(&paies[i]), numero.to_string(), b, ce))
+            Ok((cle_de(&paies[i]), numero, b, ce))
         })
         .collect::<R<_>>()?;
     Ok(faits)
@@ -929,7 +930,7 @@ struct Impression<'a> {
 /// `CertificatCS_<cle>_<Mois>.pdf` par salarie de `cles`, dans `sorties/<mois>/envoi/`, et l'archive du mois
 /// (`Bulletins_<Mois>.pdf`, `CertificatsCS_<Mois>.pdf` et son recapitulatif), qui porte tous les documents numerotes.
 /// `absents` : seuls les fichiers qui manquent s'ecrivent (une piece partie refaite pour se lire).
-fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDocument, imp: &Impression, cles: &[String], absents: bool) -> R<()> {
+fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDocument, imp: &Impression, cles: &[IdSalarie], absents: bool) -> R<()> {
     let (etiq, mois) = (le_mois.etiquette(), &le_mois.to_string());
     let sortie = ctx.racine.join("sorties").join(mois);
     let dossier = sortie.join("envoi");
@@ -940,9 +941,9 @@ fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDo
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
 
     // UN JEU DE DOCUMENTS PAR SALARIE QUI LES RECOIT, et l'archive du mois : tous ses documents numerotes.
-    let mut destinataires: Vec<String> = Vec::new();
-    for p in paies.iter().filter(|p| cles.contains(&cle_de(p))) {
-        if !destinataires.contains(&cle_de(p)) {
+    let mut destinataires: Vec<IdSalarie> = Vec::new();
+    for p in paies.iter().filter(|p| cles.contains(&p.salarie.id)) {
+        if !destinataires.contains(&p.salarie.id) {
             destinataires.push(cle_de(p));
         }
     }
@@ -1305,7 +1306,7 @@ fn refaire_le_signalement(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne
     }
     let (jour, instant, _) = ecrite_a(ctx, mois, &nom, l)?;
     let ctx_j = contexte_du_jour(ctx, jour)?;
-    let premier = || l.versions().and_then(|v| v.first()).map(|v| v.salarie.to_string()).ok_or_else(|| manque("le salarie qu'il signale"));
+    let premier = || l.versions().and_then(|v| v.first()).map(|v| v.salarie.clone()).ok_or_else(|| manque("le salarie qu'il signale"));
     let refaire = || -> R<()> {
         match nature {
             declarations::amorcage::NATURE => {
@@ -1514,11 +1515,11 @@ fn paie_ecrite_au_bulletin(o: &engagement::stock::Objet, mois: Mois, numero: &st
 /// avec l'ecart au bulletin parti avant lui quand la DSN du mois ne se refaisait plus ; au jour et a l'heure de l'envoi.
 /// Seuls les fichiers qui manquent s'ecrivent, et aucun si `ecrire` est faux. Rend, pour chaque paie de l'envoi, le
 /// salarie et le numero de son bulletin.
-fn refaire_les_documents(ctx: &Contexte, mois: Mois, lignes: &[envois::journal::Ligne], rang: usize, ecrire: bool) -> R<Vec<(String, Option<String>)>> {
+fn refaire_les_documents(ctx: &Contexte, mois: Mois, lignes: &[envois::journal::Ligne], rang: usize, ecrire: bool) -> R<Vec<(IdSalarie, Option<String>)>> {
     let l = &lignes[rang];
     let (jour, instant) = instant_de(l.quand())?;
-    let cles: Vec<String> = l.documents().ok_or_else(|| erreur(Classe::Illisible, "journal : la ligne n'est pas un envoi de documents".to_string()))?.detail.salaries.iter().map(|s| s.cle.to_string()).collect();
-    let refaire = || -> R<Vec<(String, Option<String>)>> {
+    let cles: Vec<IdSalarie> = l.documents().ok_or_else(|| erreur(Classe::Illisible, "journal : la ligne n'est pas un envoi de documents".to_string()))?.detail.salaries.iter().map(|s| s.cle.clone()).collect();
+    let refaire = || -> R<Vec<(IdSalarie, Option<String>)>> {
         let ctx = contexte_du_jour(ctx, jour)?.du_mois(mois).map_err(|e| e.reclasser(Classe::Illisible))?;
         let jusqu_a = envois::journal::departs_des_lignes(&lignes[..=rang]);
         let avant = envois::journal::departs_des_lignes(&lignes[..rang]);

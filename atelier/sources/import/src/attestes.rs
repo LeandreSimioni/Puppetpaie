@@ -216,7 +216,7 @@ impl Registre {
     /// previsionnelle : un CDI n'en a pas », `contrats-base.json`, S21.G00.40.010) n'est donc pas muet. Un autre contrat
     /// sans salarie, sans debut ou sans fin, ou dont la fiche n'a pas de NIR, ne se compare a rien : il n'atteste rien,
     /// et le registre le dit (`muets`).
-    pub fn de_l_historique(ctx: &Contexte, par_cle: &HashMap<String, String>) -> R<Registre> {
+    pub fn de_l_historique(ctx: &Contexte, par_cle: &HashMap<droit::contexte::IdSalarie, String>) -> R<Registre> {
         let mut tous = Vec::new();
         let mut muets = Vec::new();
         for i in engagement::importe::tous(&ctx.racine)? {
@@ -224,8 +224,8 @@ impl Registre {
             let (cle, debut, fin) = (c.salarie.clone(), c.debut, c.fin);
             let permanent = i.permanent();
             let manque: Vec<&str> =
-                [(cle.is_empty(), "salarié"), (debut.is_none(), "début"), (fin.is_none() && !permanent, "fin")].iter().filter(|m| m.0).map(|m| m.1).collect();
-            let de: String = Some(&cle).filter(|c| !c.is_empty()).map(|c| format!("de {}", c)).into_iter().collect();
+                [(cle.is_none(), "salarié"), (debut.is_none(), "début"), (fin.is_none() && !permanent, "fin")].iter().filter(|m| m.0).map(|m| m.1).collect();
+            let de: String = cle.as_ref().map(|c| format!("de {}", c)).into_iter().collect();
             let bornes = match (debut, fin) {
                 (Some(d), Some(f)) => format!("du {} au {}", d.jj_mm_aaaa(), f.jj_mm_aaaa()),
                 (Some(d), None) => format!("du {}, sans fin dite", d.jj_mm_aaaa()),
@@ -233,10 +233,10 @@ impl Registre {
                 (None, None) => "sans début ni fin dits".to_string(),
             };
             let quel = format!("le contrat de l'historique {} {}", de, bornes);
-            if !manque.is_empty() {
+            let Some(cle) = cle.filter(|_| manque.is_empty()) else {
                 muets.push(format!("{} n'a pas de {} : il ne se compare à aucune pièce, une pièce du même contrat l'ajouterait une seconde fois", quel, manque.join(", ni de ")));
                 continue;
-            }
+            };
             let Some(nir) = par_cle.get(&cle) else {
                 muets.push(format!("{} : la fiche de ce salarié n'a pas de NIR, il ne se compare à aucune pièce, une pièce du même contrat l'ajouterait une seconde fois", quel));
                 continue;

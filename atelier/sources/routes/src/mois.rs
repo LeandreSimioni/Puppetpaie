@@ -345,7 +345,7 @@ struct ContratsEnCours {
 #[derive(Debug, Serialize)]
 struct Passe {
     dit: String,
-    salarie: String,
+    salarie: IdSalarie,
     nom: String,
     debut: Jour,
     fin: Jour,
@@ -790,7 +790,7 @@ fn dit_du_contrat(debut: Jour, fin: Jour, cachets: Option<i64>, heures: Option<i
 /// par mois : chaque paie, aux jours qu'elle paie et avec ce que son bulletin compte. Ce que l'attestation ne dit pas
 /// reste vide.
 struct Atteste {
-    salarie: String,
+    salarie: IdSalarie,
     debut: Jour,
     fin: Jour,
     numero_objet: Option<String>,
@@ -804,8 +804,10 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
     let mut out = Vec::new();
     for i in engagement::importe::tous(&ctx.racine)? {
         let Some(c) = i.contrat_lu()? else { continue };
+        // Un contrat lu d'un engagement importe porte toujours la cle de sa fiche (`importe::Objet::contrat_lu`).
+        let salarie = c.salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie"))?;
         let atteste = |debut: Jour, fin: Jour, (cachets, heures, jours): (Option<i64>, Option<i64>, Option<i64>)| Atteste {
-            salarie: c.salarie.clone(),
+            salarie: salarie.clone(),
             debut,
             fin,
             numero_objet: c.contrat.numero_objet.clone().filter(|n| !n.is_empty()),
@@ -847,7 +849,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
     let mut couverts: HashSet<Mois> = HashSet::new();
     // Un contrat sur plusieurs mois est dans chacun de ses fichiers de mois, avec les memes bornes : on le garde une
     // fois, de preference tel que le fichier du mois regarde l'ecrit (c'est lui qui a les jours joues).
-    let mut vus: HashMap<(String, Jour, Jour), usize> = HashMap::new();
+    let mut vus: HashMap<(IdSalarie, Jour, Jour), usize> = HashMap::new();
     let mut out: Vec<Passe> = Vec::new();
     let mut connus = engagement::stock::mois_saisis(&ctx.racine)?;
     connus.reverse();
@@ -874,7 +876,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             };
             let cachets = cachets_de(ctx, &e)?;
             let dates = jours_joues(&e);
-            let ident = (cle.to_string(), debut, fin);
+            let ident = (cle.clone(), debut, fin);
             let deja = vus.get(&ident).copied();
             if deja.is_some() && mc != mois {
                 continue;
@@ -886,7 +888,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             let contrat = Passe {
                 dit: dit_du_contrat(debut, fin, Some(cachets), None),
                 nom: nom_de(ctx, &cle),
-                salarie: cle.to_string(),
+                salarie: cle.clone(),
                 debut,
                 fin,
                 cachets: Some(cachets),

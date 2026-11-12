@@ -21,7 +21,7 @@ use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use droit::fiche::NomDeFiche;
 use engagement::importe::{Attestation, ContratLu, Declaration, PaieLue, PaieVersee};
 use socle::date::Jour;
@@ -192,17 +192,15 @@ fn completer_par(ligne: &mut PaieVersee, b: &PaieVersee) {
 /// Une paie qu'un bulletin seul declare (`declare_par: "bulletin"`) s'efface devant la paie declaree des memes
 /// salarie, debut et fin, qu'elle complete (une seule ; plusieurs : celle du meme mois, sinon rien ne se rapproche).
 /// Rend le nombre de paies de bulletin laissees a cote de plusieurs paies declarees.
-fn rapprocher(par_cle: &mut BTreeMap<(socle::mois::Mois, String, String), PaieLue>) -> usize {
-    let de_bulletin: Vec<(socle::mois::Mois, String, String)> = par_cle.iter().filter(|(_, x)| declaree_par_bulletin(x)).map(|(k, _)| k.clone()).collect();
+fn rapprocher(par_cle: &mut BTreeMap<(socle::mois::Mois, Option<IdSalarie>, String), PaieLue>) -> usize {
+    let de_bulletin: Vec<(socle::mois::Mois, Option<IdSalarie>, String)> = par_cle.iter().filter(|(_, x)| declaree_par_bulletin(x)).map(|(k, _)| k.clone()).collect();
     let mut ambigues = 0usize;
     for kb in de_bulletin {
         let b = par_cle[&kb].clone();
+        // Une paie dont la fiche est encore a creer ne se rapproche de rien.
+        let (Some(debut), Some(fin), Some(_)) = (b.paie.debut, b.paie.fin, &b.salarie) else { continue };
         let salarie = b.salarie.clone();
-        let (Some(debut), Some(fin)) = (b.paie.debut, b.paie.fin) else { continue };
-        if salarie.is_empty() || salarie == crate::import::A_CREER {
-            continue;
-        }
-        let mut cibles: Vec<(socle::mois::Mois, String, String)> = par_cle
+        let mut cibles: Vec<(socle::mois::Mois, Option<IdSalarie>, String)> = par_cle
             .iter()
             .filter(|(_, x)| !declaree_par_bulletin(x) && x.salarie == salarie && x.paie.debut == Some(debut) && x.paie.fin == Some(fin))
             .map(|(k, _)| k.clone())
@@ -251,7 +249,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     // Un salarie, et les dates de son engagement (une fin absente : il court encore). Les dates se comparent comme leur
     // ecriture ISO ; une date absente vient avant toute date.
     struct Groupe {
-        salarie: String,
+        salarie: Option<IdSalarie>,
         debut: Option<Jour>,
         fin: Option<Jour>,
         contrat: Option<ContratLu>,
@@ -339,7 +337,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     // sinon au dernier (inference : le numero du contrat en cours ce mois-la).
     let mois_de = |g: &Groupe| -> Vec<Mois> { g.paies.iter().map(|p| p.mois).collect() };
     let mois_du_debut = |g: &Groupe| g.debut.map(|d| d.mois_civil());
-    let du_permanent: HashSet<(String, Mois)> = groupes
+    let du_permanent: HashSet<(Option<IdSalarie>, Mois)> = groupes
         .iter()
         .filter(|g| g.contrat.as_ref().is_some_and(permanent))
         .flat_map(|g| mois_de(g).into_iter().chain(mois_du_debut(g)).map(|m| (g.salarie.clone(), m)).collect::<Vec<_>>())
@@ -355,7 +353,7 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
     let imprime = |g: &Groupe| g.contrat.as_ref().and_then(|c| c.contrat.numero_contrat.clone()).filter(|n| !n.is_empty());
     let numero_de = |g: &Groupe| declare(g).or_else(|| imprime(g));
     // (salarie, numero, ses groupes)
-    let mut paquets: Vec<(String, Option<String>, Vec<Groupe>)> = Vec::new();
+    let mut paquets: Vec<(Option<IdSalarie>, Option<String>, Vec<Groupe>)> = Vec::new();
     let (numerotes, muets): (Vec<Groupe>, Vec<Groupe>) = a_fondre.into_iter().partition(|g| numero_de(g).is_some());
     for g in numerotes {
         let n = numero_de(&g);
@@ -403,7 +401,9 @@ fn engagements_importes(contrats: Vec<ContratLu>, paies: Vec<PaieLue>, aujourdhu
             let paies = g.paies.iter().map(|p| (p.mois.clone(), p.paie.clone())).collect();
             let pieces = Pieces { le, contrat: g.contrat.map(|c| c.contrat), paies };
             let carte = engagement::saisie::Carte {
-                salarie: Some(droit::contexte::IdSalarie::lire(&g.salarie)?),
+                // Les lignes que l'ecriture garde portent la fiche de leur NIR (`ecrire` : `par_nir`) ; une ligne sans elle
+                // ne fait pas d'engagement.
+                salarie: Some(g.salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie"))?),
                 debut: g.debut,
                 fin: g.fin,
                 numero,
@@ -491,10 +491,10 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
 
     // Les engagements importes, avec les fiches telles qu'elles sont MAINTENANT.
     let frais = Contexte::nouveau(&ctx.racine, None)?;
-    let mut par_nir: HashMap<String, String> = HashMap::new();
+    let mut par_nir: HashMap<String, IdSalarie> = HashMap::new();
     for (cle, s) in &frais.salaries {
         if let Some(n) = s.nir.dite().filter(|n| !n.is_empty()) {
-            par_nir.insert(n.to_string(), cle.to_string());
+            par_nir.insert(n.to_string(), cle.clone());
         }
     }
     // CE QUE L'IMPORT A DEJA ECRIT, relu de ses engagements importes : les contrats attestes, les paies versees.
@@ -518,7 +518,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
     for (nir, ligne, bloc) in &imp.contrats_attestes {
         let Some(cle) = par_nir.get(nir) else { continue };
         let mut e = ligne.clone();
-        e.salarie = cle.clone();
+        e.salarie = Some(cle.clone());
         e.contrat.importe_le = Some(le);
         engagements.push(e);
         *comptes.entry(bloc).or_default() += 1;
@@ -530,7 +530,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
     // LES PAIES : on remplace ligne a ligne par la cle (mois, salarie, contrat). Une ligne de DSN qui arrive sur une ligne
     // completee par un bulletin garde ce que le bulletin a ecrit ; une paie de bulletin seul s'efface devant la paie
     // declaree qu'elle complete (`rapprocher`).
-    let mut par_cle: BTreeMap<(socle::mois::Mois, String, String), PaieLue> = BTreeMap::new();
+    let mut par_cle: BTreeMap<(socle::mois::Mois, Option<IdSalarie>, String), PaieLue> = BTreeMap::new();
     for x in crate::import::paies_historique(ctx)? {
         par_cle.insert(x.cle(), x);
     }
@@ -538,7 +538,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
     for x in &imp.paies {
         let Some(cle) = x.paie.nir.as_ref().and_then(|n| par_nir.get(n)) else { continue };
         let mut x = x.clone();
-        x.salarie = cle.clone();
+        x.salarie = Some(cle.clone());
         x.paie.importe_le = Some(le);
         let k = x.cle();
         if let Some(a) = par_cle.get(&k).filter(|a| porte_un_bulletin(a) && !porte_un_bulletin(&x)) {

@@ -53,8 +53,9 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
     for i in engagement::importe::du_mois(&ctx.racine, mois)? {
         let Some(p) = i.paies_lues()?.into_iter().find(|p| p.mois == mois) else { continue };
         let Some(brut) = p.paie.brut else { continue };
-        let cle = p.salarie.clone();
-        let salarie = ctx.salaries.get(cle.as_str()).cloned().ok_or_else(|| refus(format!("{} : la fiche du salarie « {} » d'un engagement importe n'existe pas.", mois, cle)))?;
+        // Une paie lue d'un engagement importe porte toujours la cle de sa fiche (`importe::Objet::paies_lues`).
+        let cle = p.salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie"))?;
+        let salarie = ctx.salaries.get(&cle).cloned().ok_or_else(|| refus(format!("{} : la fiche du salarie « {} » d'un engagement importe n'existe pas.", mois, cle)))?;
         let (debut, fin) = (p.paie.debut, p.paie.fin);
         let mut activite = BTreeMap::new();
         if let Some(c) = i.contrat_lu()? {

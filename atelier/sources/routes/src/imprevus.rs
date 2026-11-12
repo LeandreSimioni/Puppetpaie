@@ -224,7 +224,7 @@ pub(crate) use declarations::signalement::NatureSignalement;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeArretSignaler {
-    salarie: String,
+    salarie: IdSalarie,
     dernier_jour: Jour,
     nature: NatureSignalement,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -239,13 +239,13 @@ pub(crate) struct ChargeArretSignaler {
 
 impl ChargeArretSignaler {
     /// Le signalement de l'arret de `salarie` qui suit `dernier_jour`, de sa `nature` : le suivant, constitue aujourd'hui.
-    pub(crate) fn de(salarie: String, dernier_jour: Jour, nature: NatureSignalement) -> ChargeArretSignaler {
+    pub(crate) fn de(salarie: IdSalarie, dernier_jour: Jour, nature: NatureSignalement) -> ChargeArretSignaler {
         ChargeArretSignaler { salarie, dernier_jour, nature, remplace: None, ordre: None, test: None, le: None }
     }
 
     /// Le signalement parti, refait pour se lire (`gestes::depart::refaire_le_signalement`) : son numero d'ordre et son
     /// jour de constitution, tels que le journal les dit.
-    pub(crate) fn refait(salarie: String, dernier_jour: Jour, nature: NatureSignalement, ordre: i64, le: Jour) -> ChargeArretSignaler {
+    pub(crate) fn refait(salarie: IdSalarie, dernier_jour: Jour, nature: NatureSignalement, ordre: i64, le: Jour) -> ChargeArretSignaler {
         ChargeArretSignaler { ordre: Some(ordre), le: Some(le), ..ChargeArretSignaler::de(salarie, dernier_jour, nature) }
     }
 }
@@ -294,7 +294,7 @@ struct ChargeSuspensionOublier {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeFinContratSignaler {
     mois: Mois,
-    salarie: String,
+    salarie: IdSalarie,
     #[serde(skip_serializing_if = "Option::is_none")]
     remplace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -307,12 +307,12 @@ pub(crate) struct ChargeFinContratSignaler {
 
 impl ChargeFinContratSignaler {
     /// Le signalement de la fin du contrat de `salarie` en `mois` : le suivant, constitue aujourd'hui.
-    pub(crate) fn de(mois: Mois, salarie: String) -> ChargeFinContratSignaler {
+    pub(crate) fn de(mois: Mois, salarie: IdSalarie) -> ChargeFinContratSignaler {
         ChargeFinContratSignaler { mois, salarie, remplace: None, ordre: None, test: None, le: None }
     }
 
     /// Le signalement parti, refait pour se lire (`gestes::depart::refaire_le_signalement`).
-    pub(crate) fn refait(mois: Mois, salarie: String, ordre: i64, le: Jour) -> ChargeFinContratSignaler {
+    pub(crate) fn refait(mois: Mois, salarie: IdSalarie, ordre: i64, le: Jour) -> ChargeFinContratSignaler {
         ChargeFinContratSignaler { ordre: Some(ordre), le: Some(le), ..ChargeFinContratSignaler::de(mois, salarie) }
     }
 }
@@ -865,7 +865,7 @@ pub(crate) struct ResumeDArret {
 
 impl ResumeDArret {
     /// Le salarie de l'arret (la cle de sa fiche).
-    pub(crate) fn salarie(&self) -> &str {
+    pub(crate) fn salarie(&self) -> &IdSalarie {
         &self.base.salarie
     }
 

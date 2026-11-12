@@ -863,7 +863,7 @@ pub(crate) fn vue_et_empreinte(racine: &Path, mois: Mois) -> R<Option<std::sync:
 /// La cle sous laquelle un calcul note la saisie d'un mois qu'il a lue (`socle::fichiers::suivre`) : `saisie <mois>`, ou
 /// `saisie <mois> <salarie>` pour la saisie dont depend la paie de ce salarie dans son mois (`etats::calculer_les_rangs`).
 pub fn cle_de_saisie(mois: Mois, salarie: Option<&str>) -> String {
-    socle::fichiers::LectureDatee::Saisie { mois, salarie: salarie.map(String::from) }.cle()
+    socle::fichiers::LectureDatee::Saisie { mois, salarie }.cle()
 }
 
 /// L'empreinte de la saisie d'un mois : ce qu'elle dit, sans ce que le moteur tient seul (la validation) ni le numero du
