@@ -163,7 +163,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 sans_bulletin.insert(m);
             }
             for c in &cotisations {
-                let Some(id) = c.id.as_deref() else {
+                let Some(cle) = c.id.as_ref() else {
                     if paie.importee().is_some() {
                         let (mois, total) = non_rattachees.entry(c.libelle.clone()).or_default();
                         mois.insert(m);
@@ -174,12 +174,13 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     }
                     continue;
                 };
+                let id = cle.as_str();
                 let Some(org) = org_de(id) else {
                     manque.insert(format!("{} ({})", id, c.libelle));
                     continue;
                 };
                 let (ts, tp) = (c.taux_sal, c.taux_pat);
-                if id == "reduction_generale" {
+                if *cle == droit::forme_bareme::REDUCTION_GENERALE {
                     if let Some(rg) = paie.validee().and_then(|v| v.reduction_generale.as_ref()) {
                         let mut reparti = zero;
                         for (part, id_org, quoi) in [(rg.urssaf, "maladie", "part Urssaf"), (rg.chomage, "chomage", "part chômage"), (rg.agirc_arrco, "retraite_t1", "part retraite")] {

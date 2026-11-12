@@ -347,7 +347,7 @@ fn comparer_une(
     let mut saisie = crate::charger_donnees(&ctx, &data).map_err(|m| a_refaire(c, m))?;
     if let Some((taux, montant, base)) = atmp_imprime {
         // Calcule au taux notifie de 1 %, la ligne AT/MP porte le facteur du contrat, et son assiette.
-        let ligne = saisie.paies.first().and_then(|p| p.lignes.iter().find(|l| l.est("atmp")));
+        let ligne = saisie.paies.first().and_then(|p| p.lignes.iter().find(|l| l.est(&droit::forme_bareme::ATMP)));
         let facteur = ligne.and_then(|l| l.taux_pat).filter(|f| *f > Decimal::ZERO);
         let applique = taux.or_else(|| {
             let b = base.or(ligne.map(|l| l.base)).filter(|b| !b.is_zero())?;

@@ -600,7 +600,7 @@ pub struct LigneDeRemuneration {
 /// qualifiee) ; ce que le bulletin n'imprime pas est vide.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LigneDeCotisation {
-    pub id: Option<String>,
+    pub id: Option<droit::forme_bareme::IdDeCotisation>,
     pub famille: Option<String>,
     pub libelle: String,
     pub base: Option<Decimal>,
@@ -739,17 +739,19 @@ impl Importe {
             .cotisations
             .iter()
             .flatten()
-            .map(|l| LigneDeCotisation {
-                id: l.cotisation.clone().filter(|c| !c.is_empty()),
-                famille: l.famille.clone().filter(|f| !f.is_empty()),
-                libelle: l.libelle.clone(),
-                base: l.base,
-                taux_pat: taux(l.taux_employeur),
-                montant_pat: l.montant_employeur,
-                taux_sal: taux(l.taux_salarie),
-                montant_sal: l.montant_salarie,
+            .map(|l| {
+                Ok(LigneDeCotisation {
+                    id: l.cotisation.as_deref().filter(|c| !c.is_empty()).map(droit::forme_bareme::IdDeCotisation::lire).transpose()?,
+                    famille: l.famille.clone().filter(|f| !f.is_empty()),
+                    libelle: l.libelle.clone(),
+                    base: l.base,
+                    taux_pat: taux(l.taux_employeur),
+                    montant_pat: l.montant_employeur,
+                    taux_sal: taux(l.taux_salarie),
+                    montant_sal: l.montant_salarie,
+                })
             })
-            .collect();
+            .collect::<R<_>>()?;
 
         // Les bases, ou le bareme de la paie les range ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
         let mut bases: BTreeMap<Assiette, Decimal> = BTreeMap::new();
@@ -759,8 +761,8 @@ impl Importe {
         let fin_periode = engagement.fin_periode();
         let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.debut, engagement.fin.as_ref())?;
         let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.debut, engagement.fin.as_ref()))?;
-        for (id, base) in cotisations.iter().filter_map(|l| l.id.as_deref().zip(l.base)).filter(|(_, b)| !b.is_zero()) {
-            if let Some(cle) = bar.rubrique(&droit::forme_bareme::IdDeCotisation::lire(id)?).and_then(|r| r.base) {
+        for (id, base) in cotisations.iter().filter_map(|l| l.id.as_ref().zip(l.base)).filter(|(_, b)| !b.is_zero()) {
+            if let Some(cle) = bar.rubrique(id).and_then(|r| r.base) {
                 bases.entry(cle).or_insert(base);
             }
         }

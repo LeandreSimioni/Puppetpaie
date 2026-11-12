@@ -712,7 +712,7 @@ fn base_de_la_paie(p: &Paie, a: Assiette) -> Option<Decimal> {
 fn somme_lignes(p: &Paie, ids: &[IdDeCotisation], patronale_seule: bool) -> Decimal {
     p.lignes
         .iter()
-        .filter(|l| ids.iter().any(|id| l.est(id.as_str())))
+        .filter(|l| ids.iter().any(|id| l.est(id)))
         .fold(zero2(), |s, l| add(s, if patronale_seule { l.montant_pat } else { add(l.montant_pat, l.montant_sal) }))
 }
 
@@ -942,7 +942,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         let urssaf = org_de(&bar, CodeCotisation81::AssuranceMaladie);
         let brut_03 = bases[&cle_abattue(p, BaseAssujettie::BruteDeplafonnee, Assiette::Brut)?];
         for (code, id) in [(CODE81_REDUCTION_HEURES, engagement::heures_en_plus::REDUCTION), (CODE81_DEDUCTION_HEURES, engagement::heures_en_plus::DEDUCTION)] {
-            let montant = p.lignes.iter().filter(|l| l.est(id)).fold(zero2(), |a, l| add(a, add(l.montant_pat, l.montant_sal)));
+            let montant = p.lignes.iter().filter(|l| l.est(&id)).fold(zero2(), |a, l| add(a, add(l.montant_pat, l.montant_sal)));
             if montant.is_zero() {
                 continue;
             }
@@ -994,7 +994,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
 fn composant_79(p: &Paie, pile: &Pile, lignes: &[IdDeCotisation]) -> Option<(String, Decimal)> {
     lignes.iter().find_map(|id| {
         let type_79 = pile.rubrique(id)?.composant_79.clone()?;
-        let base = p.lignes.iter().find(|l| l.est(id.as_str()))?.base;
+        let base = p.lignes.iter().find(|l| l.est(id))?.base;
         Some((type_79, base))
     })
 }
@@ -1097,7 +1097,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
     let (mut cet_montant, mut cet_base, mut cet_taux) = (zero2(), zero2(), None::<Decimal>);
     for id in &ids {
         // La CET d'un non cadre n'existe pas ; une tranche 2 nulle n'est pas au bulletin (`calcul::calculer`).
-        let (Some(r), Some(l)) = (rubrique(id), p.lignes.iter().find(|l| l.est(id.as_str()))) else { continue };
+        let (Some(r), Some(l)) = (rubrique(id), p.lignes.iter().find(|l| l.est(id))) else { continue };
         let (montant, cet) = sans_la_cet(p, l, r)?;
         let taux = match &cet {
             Some(_) => r.taux_pat.ok_or_else(|| socle::fichiers::absent("taux_pat"))?.0,
@@ -1228,14 +1228,14 @@ fn affiliations_du_permanent(p: &Paie, ent: &ChampsEntreprise) -> R<Option<Affil
     // bloc 70 ni base 31 de sante pour ce mois (`atelier/reference/sources/suspension-non-remuneree/RAPPORT-20261015.md`,
     // point 2 et « Ce qui reste ouvert », 3).
     let suspendue = p.salarie.sante_suspendue.as_deref().filter(|s| !s.is_empty());
-    if let Some(motif) = suspendue.filter(|_| p.lignes.iter().any(|l| l.est("mutuelle"))) {
+    if let Some(motif) = suspendue.filter(|_| p.lignes.iter().any(|l| l.est(&droit::forme_bareme::MUTUELLE))) {
         return Err(refus!(
             "{} : sa sante est suspendue ce mois-ci ({}) et le bulletin cotise a la mutuelle. Rien n'est declare.",
             qui_contrat(p),
             motif
         ));
     }
-    if let Some(motif) = dispense.filter(|_| p.lignes.iter().any(|l| l.est("mutuelle"))) {
+    if let Some(motif) = dispense.filter(|_| p.lignes.iter().any(|l| l.est(&droit::forme_bareme::MUTUELLE))) {
         return Err(socle::echec::cle(
             format!(
                 "{} : la fiche porte une dispense de complementaire sante (« {} ») et le bulletin cotise a \
@@ -3365,7 +3365,7 @@ fn assiettes_ctp(paies: &[&Paie], bar: &BaremeDuMois) -> R<HashMap<CleCtp, Decim
         (MontantDuBordereau::ReductionHeuresEnPlus, engagement::heures_en_plus::REDUCTION),
         (MontantDuBordereau::DeductionHeuresSupplementaires, engagement::heures_en_plus::DEDUCTION),
     ] {
-        let m = paies.iter().flat_map(|p| p.lignes.iter()).filter(|l| l.est(id)).fold(zero2(), |a, l| sub(a, add(l.montant_pat, l.montant_sal)));
+        let m = paies.iter().flat_map(|p| p.lignes.iter()).filter(|l| l.est(&id)).fold(zero2(), |a, l| sub(a, add(l.montant_pat, l.montant_sal)));
         out.insert(CleCtp::Montant(cle), m);
     }
     Ok(out)

@@ -150,7 +150,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         compte_de.insert(qui.clone(), compte);
         let reduction_generale = p.validee().and_then(|v| v.reduction_generale.as_ref());
         for l in p.cotisations() {
-            let Some(id) = l.id.as_deref() else {
+            let Some(id) = l.id.as_ref().map(|i| i.as_str()) else {
                 return Err(refus(format!("La ligne de bulletin « {} » ne dit pas sa cotisation : elle n'a pas de compte dans le plan comptable.", l.libelle)));
             };
             let Some(regle) = plan.lignes.get(id) else {

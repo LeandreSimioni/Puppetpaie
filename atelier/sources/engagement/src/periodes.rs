@@ -115,7 +115,7 @@ fn cumuler(m: &mut BTreeMap<Assiette, Decimal>, a: Assiette, x: Decimal) {
 /// Remplace la reduction generale de la periode `p` par `rg` : sa ligne, le total patronal et le cout employeur.
 fn poser_reduction(p: &mut Paie, rg: Option<ReductionGenerale>) {
     let p = p.ecrire();
-    if let Some(i) = p.lignes.iter().position(|l| l.est("reduction_generale")) {
+    if let Some(i) = p.lignes.iter().position(|l| l.est(&droit::forme_bareme::REDUCTION_GENERALE)) {
         let l = p.lignes.remove(i);
         p.total_pat -= l.montant_pat;
     }
@@ -243,7 +243,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
             }
         }
     }
-    if let Some(i) = lignes.iter().position(|l| l.est("reduction_generale")) {
+    if let Some(i) = lignes.iter().position(|l| l.est(&droit::forme_bareme::REDUCTION_GENERALE)) {
         let l = lignes.remove(i);
         lignes.push(l);
     }

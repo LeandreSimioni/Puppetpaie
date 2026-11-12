@@ -213,7 +213,7 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
 #[derive(Debug, Clone, PartialEq)]
 pub struct LigneCotisation {
     /// La cotisation de la ligne.
-    pub id: String,
+    pub id: droit::forme_bareme::IdDeCotisation,
     /// Sa famille.
     pub famille: String,
     pub libelle: String,
@@ -227,8 +227,8 @@ pub struct LigneCotisation {
 
 impl LigneCotisation {
     /// Est-elle la ligne de la cotisation `id` ?
-    pub fn est(&self, id: &str) -> bool {
-        self.id == id
+    pub fn est(&self, id: &droit::forme_bareme::IdDeCotisation) -> bool {
+        self.id == *id
     }
 
     /// Sa forme ecrite : un taux en decimal par sa forme la plus courte.
@@ -313,8 +313,8 @@ impl DeductionForfaitaire {
 /// p. 60-61 (« AJOUTER ») et p. 244 (50.004). Un seul endroit : `calculer` en tire 50.002, `Paie::net_verse` 50.004.
 fn reintegrations(lignes: &[LigneCotisation]) -> Decimal {
     let zero = Decimal::new(0, 2);
-    let csg_nd = lignes.iter().filter(|l| l.est("csg_crds_nd")).take(1).fold(zero, |a, l| a + l.montant_sal);
-    csg_nd + lignes.iter().filter(|l| l.est("mutuelle")).fold(zero, |a, l| a + l.montant_pat)
+    let csg_nd = lignes.iter().filter(|l| l.est(&droit::forme_bareme::CSG_CRDS_ND)).take(1).fold(zero, |a, l| a + l.montant_sal);
+    csg_nd + lignes.iter().filter(|l| l.est(&droit::forme_bareme::MUTUELLE)).fold(zero, |a, l| a + l.montant_pat)
 }
 
 /// Une paie d'un engagement : ce que son calcul a produit, ou sa forme ecrite relue (`relire`). Elle se lit partout, ce
@@ -477,7 +477,7 @@ impl Paie {
         self.periodes.iter().skip(1).any(|p| p.engagement.debut_periode() == *j)
     }
 
-    pub fn ligne(&self, id: &str) -> Option<&LigneCotisation> {
+    pub fn ligne(&self, id: &IdDeCotisation) -> Option<&LigneCotisation> {
         self.lignes.iter().find(|l| l.est(id))
     }
 
@@ -554,7 +554,7 @@ fn bref(l: &LigneBrut) -> String {
 /// La ligne du bulletin qui porte la reduction generale `rg` d'un brut `brut`.
 pub(crate) fn ligne_de_reduction(rg: &ReductionGenerale, brut: Decimal) -> LigneCotisation {
     LigneCotisation {
-        id: "reduction_generale".into(),
+        id: droit::forme_bareme::REDUCTION_GENERALE,
         famille: FAMILLE_ALLEGEMENTS.into(),
         libelle: "Réduction générale dégressive unique".into(),
         base: brut,
@@ -1678,7 +1678,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         tot_sal += m_sal;
     }
     lignes.retain(|l| {
-        !(l.base.is_zero() && l.montant_pat.is_zero() && l.montant_sal.is_zero() && (l.est("retraite_t2") || l.est("apec_t2")))
+        !(l.base.is_zero() && l.montant_pat.is_zero() && l.montant_sal.is_zero() && (l.est(&droit::forme_bareme::RETRAITE_T2) || l.est(&droit::forme_bareme::APEC_T2)))
     });
 
     // 7.9 : la reduction generale, apres les cotisations.
@@ -1765,7 +1765,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             hors_assiette_revenu += l.montant;
         }
     }
-    lignes.iter().find(|l| l.est("csg_crds_nd")).ok_or_else(|| refus("StopIteration"))?;
+    lignes.iter().find(|l| l.est(&droit::forme_bareme::CSG_CRDS_ND)).ok_or_else(|| refus("StopIteration"))?;
     let (base_51, retabli, chomage_51) = if nat.remunerations_au_brut() {
         (brut, brut, brut)
     } else {

@@ -494,6 +494,17 @@ pub const VERSEMENT_MOBILITE: IdDeCotisation = IdDeCotisation::du_moteur("versem
 pub const REGIME_LOCAL: IdDeCotisation = IdDeCotisation::du_moteur("regime_local");
 pub const CCN: IdDeCotisation = IdDeCotisation::du_moteur("ccn");
 pub const RETRAITE_T1: IdDeCotisation = IdDeCotisation::du_moteur("retraite_t1");
+/// Les lignes du bareme que le calcul lit par leur cle : la CSG deductible et la CSG-CRDS non deductible (le net fiscal,
+/// les heures en plus), les assurances vieillesse (la reduction des heures en plus), l'APEC (tranche 2), l'AT/MP.
+pub const CSG_DED: IdDeCotisation = IdDeCotisation::du_moteur("csg_ded");
+pub const CSG_CRDS_ND: IdDeCotisation = IdDeCotisation::du_moteur("csg_crds_nd");
+pub const VIEIL_PLAF: IdDeCotisation = IdDeCotisation::du_moteur("vieil_plaf");
+pub const VIEIL_DEPLAF: IdDeCotisation = IdDeCotisation::du_moteur("vieil_deplaf");
+pub const APEC_T2: IdDeCotisation = IdDeCotisation::du_moteur("apec_t2");
+pub const ATMP: IdDeCotisation = IdDeCotisation::du_moteur("atmp");
+/// La ligne que le calcul compose lui-meme, hors du bareme, pour la reduction generale (celles des heures en plus :
+/// `engagement::heures_en_plus`).
+pub const REDUCTION_GENERALE: IdDeCotisation = IdDeCotisation::du_moteur("reduction_generale");
 
 forme! {
     /// Une ligne de cotisation du bulletin.

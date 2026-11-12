@@ -136,7 +136,7 @@ pub struct Cle<I> {
 #[serde(deny_unknown_fields)]
 pub struct FormeDeCotisation {
     /// La cotisation de la ligne.
-    pub id: String,
+    pub id: droit::forme_bareme::IdDeCotisation,
     /// Sa famille.
     pub famille: String,
     pub libelle: String,
