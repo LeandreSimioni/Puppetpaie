@@ -54,7 +54,7 @@ pub(crate) fn lire_importes(ctx: &Contexte) -> R<Vec<Declare>> {
         let a = &c.contrat;
         let compte = |x: Option<i64>, cle: &str| x.ok_or_else(|| socle::fichiers::absent(cle));
         out.push(Declare {
-            salarie: c.salarie.clone(),
+            salarie: i.cle_ecrite()?,
             debut,
             fin,
             heures: compte(a.heures, "heures")?,
@@ -76,7 +76,7 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
     // Un engagement sans heures n'en declare aucune.
     let heures = e.heures.into_iter().map(heures_entieres).sum::<R<i64>>()?;
     Ok(Some(Declare {
-        salarie: p.salarie.id.to_string(),
+        salarie: p.salarie.id.clone(),
         debut: e.debut_periode(),
         fin: e.fin_periode(),
         heures,
@@ -96,7 +96,7 @@ fn engagement_de_paie(ctx: &Contexte, p: &Paie) -> R<Option<Declare>> {
 pub struct Passe<'a> {
     ctx: &'a Contexte,
     jusqu_au: Option<Mois>,
-    salaries: Option<std::collections::BTreeSet<String>>,
+    salaries: Option<std::collections::BTreeSet<droit::contexte::IdSalarie>>,
     departs: &'a crate::departs::Departs,
     importes: std::cell::RefCell<Option<Vec<Declare>>>,
     lus: std::cell::RefCell<std::collections::BTreeMap<Mois, Vec<Declare>>>,
@@ -106,7 +106,7 @@ impl<'a> Passe<'a> {
     pub fn lire(
         ctx: &'a Contexte,
         jusqu_au: Option<Mois>,
-        salaries: Option<std::collections::BTreeSet<String>>,
+        salaries: Option<std::collections::BTreeSet<droit::contexte::IdSalarie>>,
         departs: &'a crate::departs::Departs,
     ) -> Passe<'a> {
         Passe { ctx, jusqu_au, salaries, departs, importes: Default::default(), lus: Default::default() }
@@ -143,7 +143,7 @@ impl<'a> Passe<'a> {
                 groupes.push((stem, es.clone()));
                 continue;
             }
-            let sien = |v: &crate::etats::Valide| self.salaries.as_ref().is_none_or(|s| v.objet().carte().salarie.as_ref().is_some_and(|c| s.contains(c.as_str())));
+            let sien = |v: &crate::etats::Valide| self.salaries.as_ref().is_none_or(|s| v.objet().carte().salarie.as_ref().is_some_and(|c| s.contains(c)));
             let mut es = Vec::new();
             if let Some((_, paies)) = crate::etats::validees_du_mois_parmi(ctx, stem, self.departs, &sien)? {
                 for p in &paies {

@@ -76,7 +76,7 @@ pub enum GenreSuspension {
 #[serde(deny_unknown_fields)]
 pub struct ArretSaisi {
     pub genre: GenreArret,
-    pub salarie: String,
+    pub salarie: droit::contexte::IdSalarie,
     pub contrat_debut: Jour,
     pub contrat_numero: Option<crate::numeros::NumeroContrat>,
     pub motif: String,
@@ -137,7 +137,7 @@ pub struct RepriseNotee {
 #[serde(deny_unknown_fields)]
 pub struct SuspensionSaisie {
     pub genre: GenreSuspension,
-    pub salarie: String,
+    pub salarie: droit::contexte::IdSalarie,
     pub contrat_debut: Jour,
     pub contrat_numero: Option<crate::numeros::NumeroContrat>,
     pub motif: String,
@@ -941,7 +941,7 @@ pub struct CachetPaye {
     pub mois: Mois,
     pub engagement: usize,
     pub numero: Option<crate::numeros::NumeroContrat>,
-    pub spectacle: Option<String>,
+    pub spectacle: Option<droit::contexte::IdSpectacle>,
     pub ligne: usize,
     pub rubrique: String,
     pub libelle: String,
@@ -966,7 +966,7 @@ fn cachets_de_la_saisie(ctx: &Contexte, data: &crate::saisie::VueDuMois, cle: &s
                 mois: data.mois,
                 engagement: i,
                 numero: e.numero.clone(),
-                spectacle: e.spectacle.as_ref().map(ToString::to_string),
+                spectacle: e.spectacle.clone(),
                 ligne: j,
                 libelle: libelle_rubrique(&ctx.racine, &rubrique, &ctx.lue_au)?,
                 rubrique,
@@ -988,10 +988,10 @@ pub fn avertir_les_jours_payes(ctx: &Contexte, data: &crate::saisie::VueDuMois) 
     let engagements = &data.engagements;
     let mut out: Vec<Vec<Avis>> = vec![Vec::new(); engagements.len()];
     // Les imprevus des seuls salaries de la saisie (`du_salarie`).
-    let mut salaries: Vec<String> = Vec::new();
+    let mut salaries: Vec<droit::contexte::IdSalarie> = Vec::new();
     for cle in engagements.iter().filter_map(|e| e.salarie.clone()) {
-        if !salaries.iter().any(|s| *s == cle) {
-            salaries.push(cle.into());
+        if !salaries.contains(&cle) {
+            salaries.push(cle);
         }
     }
     let mut siens = Vec::new();

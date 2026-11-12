@@ -475,8 +475,8 @@ impl Importe {
         }
         // Importe le jour ou il l'a ete la premiere fois ; sinon, le jour de l'import de ses pieces (`Pieces::le`).
         contrat.importe_le.get_or_insert(self.le());
-        let numero = self.carte().numero.clone().filter(|n| !n.is_empty());
-        Ok(Some(ContratLu { salarie: self.cle_ecrite()?, debut: self.carte().debut, fin: self.carte().fin, numero, contrat }))
+        let numero = self.carte().numero.clone();
+        Ok(Some(ContratLu { salarie: self.cle_ecrite()?.into(), debut: self.carte().debut, fin: self.carte().fin, numero, contrat }))
     }
 
     /// Les paies versees, une par mois, avec le salarie de l'engagement.
@@ -487,13 +487,13 @@ impl Importe {
     fn paie_lue(&self, mois: Mois, p: &PaieVersee) -> R<PaieLue> {
         let mut paie = p.clone();
         paie.importe_le.get_or_insert(self.le());
-        Ok(PaieLue { mois, salarie: self.cle_ecrite()?, paie })
+        Ok(PaieLue { mois, salarie: self.cle_ecrite()?.into(), paie })
     }
 
     /// La cle de la fiche de son salarie, ecrite ; un engagement importe qui ne la dit pas se refuse.
-    fn cle_ecrite(&self) -> R<String> {
+    pub(crate) fn cle_ecrite(&self) -> R<droit::contexte::IdSalarie> {
         let o = &self.objet;
-        o.carte().salarie.as_ref().map(ToString::to_string).ok_or_else(|| socle::refus!("l'engagement importé {} (rang {}) ne dit pas son salarié", o.fichier, o.rang))
+        o.carte().salarie.clone().ok_or_else(|| socle::refus!("l'engagement importé {} (rang {}) ne dit pas son salarié", o.fichier, o.rang))
     }
 }
 

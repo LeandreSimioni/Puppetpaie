@@ -105,10 +105,10 @@ pub struct FormeDePaie<A> {
     pub salaire_de_base: Decimal,
     #[serde(with = "nombre")]
     pub salaire_retabli: Decimal,
-    pub salarie: Cle,
+    pub salarie: Cle<droit::contexte::IdSalarie>,
     #[serde(with = "nombre")]
     pub smic: Decimal,
-    pub spectacle: Option<Cle>,
+    pub spectacle: Option<Cle<droit::contexte::IdSpectacle>>,
     #[serde(with = "nombre")]
     pub total_pat: Decimal,
     #[serde(with = "nombre")]
@@ -127,8 +127,8 @@ pub struct FormeDePaie<A> {
 /// Une fiche nommee par sa cle (le salarie, le spectacle d'une paie).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Cle {
-    pub cle: String,
+pub struct Cle<I> {
+    pub cle: I,
 }
 
 /// Une ligne de cotisation (`calcul::LigneCotisation`) sous sa forme ecrite.

@@ -743,7 +743,7 @@ pub fn objets_du_mois(racine: &Path, mois: Mois) -> R<Vec<Objet>> {
 #[serde(deny_unknown_fields)]
 pub struct Identite {
     /// `None` : une carte neuve, qui ne nomme pas encore son salarie.
-    pub salarie: Option<String>,
+    pub salarie: Option<droit::contexte::IdSalarie>,
     /// `None` : une carte qui ne dit pas encore son debut ni aucun jour.
     pub debut: Option<Jour>,
     pub rang: usize,
@@ -751,7 +751,7 @@ pub struct Identite {
 
 /// L'IDENTITE DE CHAQUE ENGAGEMENT D'UNE LISTE (le plan), dans son ordre.
 pub fn identites(objets: &[Objet]) -> Vec<Identite> {
-    let paires: Vec<(Option<String>, Option<Jour>)> =objets.iter().map(|o| (o.carte().salarie.as_ref().map(ToString::to_string), crate::debut_brut(&o.brut))).collect();
+    let paires: Vec<(Option<droit::contexte::IdSalarie>, Option<Jour>)> = objets.iter().map(|o| (o.carte().salarie.clone(), crate::debut_brut(&o.brut))).collect();
     paires
         .iter()
         .enumerate()

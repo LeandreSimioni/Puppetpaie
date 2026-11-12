@@ -90,7 +90,7 @@ pub const CONFIGURATION: &str = "configuration de la compagnie modifiée";
 /// Ce qui est parti de l'engagement `o` (`departs`), d'apres la cle de son salarie et son numero.
 
 pub(crate) fn ses_departs<'a>(o: &Objet, departs: &'a Departs) -> &'a [Depart] {
-    match (&o.carte().salarie, o.carte().numero.as_deref()) {
+    match (&o.carte().salarie, &o.carte().numero) {
         (Some(c), Some(n)) => departs.de(c, n),
         _ => &[],
     }
@@ -851,9 +851,9 @@ pub(crate) fn prelevement(ctx: &Contexte, p: &Paie) -> R<Option<droit::pas::Vers
     if e.sans_paie() {
         return Ok(None);
     }
-    let cle = p.salarie.id.to_string();
+    let cle = &p.salarie.id;
     let fin = e.fin_periode();
-    let taux = droit::pas::taux_dgfip(ctx, &cle, Some(e.date_du_versement()?), Some(e.mois))?;
+    let taux = droit::pas::taux_dgfip(ctx, cle, Some(e.date_du_versement()?), Some(e.mois))?;
     let bareme = ctx.bareme(&Jour { an: fin.an, mois: fin.mois, jour: 1 })?;
     let court = droit::natures::contrat_court(&*e.nat()?, e.debut, e.fin, fin)?;
     // « Dans le cas d'une avance faite par un employeur en cas de subrogation des indemnites journalieres : le montant de
@@ -884,8 +884,7 @@ pub fn prelevement_de_la_correction(
     let (debut, fin) = (versement.premier_jour(), versement.dernier_jour());
     let difference = socle::num::sub(apres.net_imposable, net_imposable_declare);
     let e = &apres.engagement;
-    let cle = apres.salarie.id.to_string();
-    let taux = droit::pas::taux_dgfip(ctx, &cle, Some(fin), Some(versement))?;
+    let taux = droit::pas::taux_dgfip(ctx, &apres.salarie.id, Some(fin), Some(versement))?;
     let bareme = ctx.bareme(&debut)?;
     let court = droit::natures::contrat_court(&*e.nat()?, e.debut, e.fin, fin)?;
     let versement = droit::pas::du_versement(taux.as_ref(), &bareme, difference, Some(fin), court, droit::pas::ZONE_DEFAUT)?;

@@ -25,7 +25,7 @@ use crate::stock::{self, Objet};
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NumeroPour {
-    pub salarie: String,
+    pub salarie: IdSalarie,
     pub debut: Jour,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub le: socle::paris::Moment,
@@ -187,11 +187,11 @@ fn derniers_pris_sauf(ctx: &Contexte, annee: i32, sauf: Option<(socle::mois::Moi
         if sauf == Some((o.fichier, o.rang)) {
             continue;
         }
-        let (Some(cle), Some(n)) = (o.carte().salarie.clone(), NumeroContrat::du_texte(o.carte().numero.as_deref())?) else { continue };
+        let (Some(cle), Some(n)) = (o.carte().salarie.clone(), o.carte().numero.clone()) else { continue };
         noter(cle, &n);
     }
     for (cle, n) in departs.engagements() {
-        noter(IdSalarie::lire(cle)?, &NumeroContrat::lire(n)?);
+        noter(cle.clone(), n);
     }
     Ok(pris)
 }
@@ -218,7 +218,7 @@ pub fn dernier_bulletin_importe(racine: &std::path::Path, annee: i64) -> R<i64> 
 
 /// Un envoi a-t-il porte le numero `n` de l'engagement `o` (du salarie `cle`) ? Ce qui est parti sous lui (`departs`),
 /// ou une version de lui gardee parce qu'un envoi l'avait emportee.
-fn porte_par_un_envoi(o: &Objet, cle: &str, n: &str, departs: &Departs) -> bool {
+fn porte_par_un_envoi(o: &Objet, cle: &IdSalarie, n: &NumeroContrat, departs: &Departs) -> bool {
     if !o.brut.versions.is_empty() {
         return true;
     }
@@ -230,12 +230,12 @@ fn porte_par_un_envoi(o: &Objet, cle: &str, n: &str, departs: &Departs) -> bool 
 /// copie d'engagement emporte le numero de l'original : il reste a l'original.
 /// Le contrat importe que `o` continue porte le sien : c'est le meme contrat, pas une copie -- le contrat d'usage qui
 /// continue ici (`importe::continue_par`).
-fn porte_par_un_autre(ctx: &Contexte, o: &Objet, n: &str) -> R<bool> {
+fn porte_par_un_autre(ctx: &Contexte, o: &Objet, n: &NumeroContrat) -> R<bool> {
     let continue_ = crate::importe::continue_par(&ctx.racine, o.carte())?.map(|i| (i.objet().fichier, i.objet().rang));
     Ok(stock::objets(&ctx.racine)?.into_iter().any(|x| {
         (x.fichier, x.rang) < (o.fichier, o.rang)
             && continue_ != Some((x.fichier, x.rang))
-            && x.carte().numero.as_deref() == Some(n)
+            && x.carte().numero.as_ref() == Some(n)
     }))
 }
 
@@ -246,10 +246,10 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::M
     let cle = o.carte().salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie"))?;
     let fiche = crate::fiche_du_salarie(ctx, &cle)?;
     let debut = crate::debut_brut(&o.brut).ok_or_else(|| socle::fichiers::absent("debut"))?;
-    let porte = NumeroContrat::du_texte(o.carte().numero.as_deref())?;
+    let porte = o.carte().numero.clone();
     // UN NUMERO PARTI NE CHANGE PLUS : celui de la validation que la modification remplace, des qu'un envoi l'a porte ;
     // celui qu'une DSN de l'ancien logiciel a declare pour un contrat repris (`importe::numero_declare`).
-    let parti = NumeroContrat::du_texte(o.brut.precedente.as_ref().and_then(|p| p.saisie.as_ref()).and_then(|s| s.carte.numero.as_deref()))?;
+    let parti = o.brut.precedente.as_ref().and_then(|p| p.saisie.as_ref()).and_then(|s| s.carte.numero.clone());
     let parti = match parti.filter(|p| porte_par_un_envoi(o, &cle, p, departs)) {
         Some(p) => Some(p),
         None => crate::importe::numero_declare(o)?,
@@ -267,7 +267,7 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::M
     if let Some(n) = porte {
         let garde = match &o.brut.numero_pour {
             Some(p) => {
-                let meme = p.salarie == cle.as_str() && p.debut == debut;
+                let meme = p.salarie == cle && p.debut == debut;
                 meme || porte_par_un_envoi(o, &cle, &n, departs)
             }
             // Un numero venu avec la saisie (un contrat repris d'un autre logiciel, sous la forme qu'il avait) : le sien,
@@ -285,7 +285,7 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::M
     let numero = former(&fiche, annee, dernier + 1)?;
     let e = o.brut_mut();
     e.saisie.carte.numero = Some(numero);
-    e.numero_pour = Some(NumeroPour { salarie: cle.to_string(), debut, le });
+    e.numero_pour = Some(NumeroPour { salarie: cle.clone(), debut, le });
     Ok(())
 }
 

@@ -23,7 +23,7 @@ use crate::calcul::Paie;
 use crate::saisie::{Carte, CongePris};
 use droit::catalogue::rubrique;
 use droit::clauses;
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use droit::natures::AuMois;
 use socle::date::Jour;
 use socle::mois::Mois;
@@ -161,7 +161,7 @@ pub(crate) fn jours_ouvrables_de(c: &CongePris, chomes: Option<&str>) -> R<i64> 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CompteurConges {
-    pub salarie: String,
+    pub salarie: IdSalarie,
     pub periode_debut: Jour,
     pub periode_fin: Jour,
     /// Jours ouvrables, compte exact.
@@ -376,14 +376,14 @@ pub(crate) fn compte_sans_la_reprise(ctx: &Contexte, au: &AuMois, cle_salarie: &
 
 /// Le compteur de conges d'un salarie avant `mois` (les mois strictement anterieurs), a la date `a_la_date` de ce mois,
 /// tire des paies validees : ce qui n'est pas valide n'est pas paye, et aucun mois ne se calcule.
-pub(crate) fn compteur_conges(ctx: &Contexte, au: &AuMois, cle_salarie: &str, a_la_date: &Jour, mois: Mois) -> R<CompteurConges> {
+pub(crate) fn compteur_conges(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, a_la_date: &Jour, mois: Mois) -> R<CompteurConges> {
     Ok(avant_le_mois(ctx, au, cle_salarie, a_la_date, mois)?.compteur)
 }
 
 /// L'ETAT AVANT `mois` (`Avant`) : celui que la paie du salarie du mois d'avant a ecrit, plus ce mois d'avant
 /// (`suivant`, qui ne lit que lui) ; sans lui (le premier mois paye, un mois sans paie, une reprise changee depuis),
 /// tire de chaque mois de la periode (`compteur`).
-pub(crate) fn avant_le_mois(ctx: &Contexte, au: &AuMois, cle_salarie: &str, a_la_date: &Jour, mois: Mois) -> R<Avant> {
+pub(crate) fn avant_le_mois(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, a_la_date: &Jour, mois: Mois) -> R<Avant> {
     let _derivation = Derivation::ouvrir();
     if let Some(a) = suivant(ctx, au, cle_salarie, a_la_date, mois)? {
         return Ok(a);
@@ -537,7 +537,7 @@ fn periode(
 fn compteur(
     ctx: &Contexte,
     au: &AuMois,
-    cle_salarie: &str,
+    cle_salarie: &IdSalarie,
     a_la_date: &Jour,
     lus: Lus,
 ) -> R<Avant> {
@@ -554,7 +554,7 @@ fn compteur(
     avertissements.extend(avert);
     Ok(Avant {
         compteur: CompteurConges {
-            salarie: cle_salarie.to_string(),
+            salarie: cle_salarie.clone(),
             periode_debut: debut,
             periode_fin: fin,
             acquis,
@@ -580,7 +580,7 @@ fn compteur(
 /// finit fait son report (le pas que `report` ferait pour elle) et la nouvelle s'ouvre. `None` : rien a reprendre (le
 /// mois d'avant n'a pas d'etat ecrit pour ce salarie, ou la reprise de sa fiche a change depuis), ou une periode de
 /// reference qui ne commence pas un premier du mois.
-fn suivant(ctx: &Contexte, au: &AuMois, cle_salarie: &str, a_la_date: &Jour, mois: Mois) -> R<Option<Avant>> {
+fn suivant(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie, a_la_date: &Jour, mois: Mois) -> R<Option<Avant>> {
     let (debut, fin) = periode_de_reference(a_la_date)?;
     if debut.jour != 1 {
         return Ok(None);
@@ -614,7 +614,7 @@ fn suivant(ctx: &Contexte, au: &AuMois, cle_salarie: &str, a_la_date: &Jour, moi
         avertissements.extend(tenue.avis);
         Ok(Avant {
             compteur: CompteurConges {
-                salarie: cle_salarie.to_string(),
+                salarie: cle_salarie.clone(),
                 periode_debut: debut,
                 periode_fin: fin,
                 acquis: plafonner(tenue.acquis)?,
@@ -888,8 +888,8 @@ fn paies_du_mois(ctx: &Contexte, mois: Mois, cle: &str) -> R<Vec<PaieLue>> {
 }
 
 /// La cle de fiche d'un salarie tel qu'une saisie ou un appelant le nomme.
-fn cle_de_fiche(ctx: &Contexte, cle: &str) -> R<String> {
-    Ok(ctx.salarie(cle)?.id.to_string())
+fn cle_de_fiche(ctx: &Contexte, cle: &str) -> R<IdSalarie> {
+    Ok(ctx.salarie(cle)?.id)
 }
 
 /// Le brut d'un salarie sur un mois anterieur -- l'assiette du dixieme -- tel que ses paies validees le portent.
@@ -950,7 +950,7 @@ pub(crate) fn indemnite_des_jours(cpt: &CompteurConges, jours: Decimal, maintien
 /// mois acquiert et prend.
 pub(crate) fn compteur_au_bulletin(ctx: &Contexte, au: &AuMois, paie: &Paie, mois: Mois) -> R<(CompteurConges, Avant)> {
     let eng = &paie.engagement;
-    let cle = eng.salarie.as_str();
+    let cle = &eng.salarie;
     let fin_du_mois = mois.dernier_jour();
     let avant = avant_le_mois(ctx, au, cle, &fin_du_mois, mois)?;
     let mut cpt = avant.compteur.clone();
@@ -1027,7 +1027,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     };
     // Le salaire d'un mois incomplet : l'horaire reel du mois, ou la regle de la convention qui en a une
     // (`droit::periodes::part_du_mois`).
-    let salarie = salarie_de(e)?.to_string();
+    let salarie = salarie_de(e)?.clone();
     let regle = regle_du_mois_incomplet(ctx, &salarie, &debut, &fin, &debut_mois, &fin_mois)?;
     let horaire = horaire_du_mois(ctx, au, &salarie, &debut_saisi, &debut_mois, &fin_mois)?;
     let part = droit::periodes::part_du_mois(&debut, &fin, &fin_mois, regle, &horaire)?;
@@ -1317,7 +1317,7 @@ pub fn provision_du_compteur(cpt: CompteurConges, mois: Mois, salaire: Decimal) 
 
 /// LE COMPTEUR DE CONGES QUE LA FICHE DU SALARIE REPREND d'un ancien logiciel (`conges_reprise`), a sa date : celui du
 /// premier jour paye ici, donc du dernier jour que l'ancien logiciel a paye. `None` : la fiche ne dit pas de reprise.
-pub fn compteur_a_la_reprise(ctx: &Contexte, au: &AuMois, cle_salarie: &str) -> R<Option<CompteurConges>> {
+pub fn compteur_a_la_reprise(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie) -> R<Option<CompteurConges>> {
     let Some(r) = reprise_conges(ctx, au, cle_salarie)? else { return Ok(None) };
     compteur_conges(ctx, au, cle_salarie, &r.date, r.date.mois_civil()).map(Some)
 }
