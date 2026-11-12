@@ -15,6 +15,7 @@ use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet};
 
 use droit::contexte::Contexte;
+use droit::forme_bareme::{IdDeCotisation, CHOMAGE, MALADIE, RETRAITE_T1};
 use socle::echec::{erreur, refus_avec, Lieu, Classe};
 use socle::mois::{Graphie, Mois};
 use documents::etats_paie::{finir, lignes_livre, Demande, Lecture, Periode};
@@ -44,7 +45,7 @@ fn plus_grand(a: Decimal, b: Decimal) -> Decimal {
 
 /// Identifiant de ligne -> nom de l'organisme, lu dans le plan comptable (le meme endroit que
 /// l'export compta : l'etat des cotisations et le credit des comptes 43 ne peuvent pas diverger).
-fn organismes(ctx: &Contexte) -> R<Vec<(String, String)>> {
+fn organismes(ctx: &Contexte) -> R<Vec<(IdDeCotisation, String)>> {
     let (plan, _) = plan(ctx)?;
     // Un tiers que le plan ne nomme pas se dit par son compte.
     Ok(plan
@@ -113,7 +114,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert: Vec<String> = Vec::new();
     let orgs = organismes(ctx)?;
-    let org_de = |id: &str| orgs.iter().find(|(k, _)| k == id).map(|(_, v)| v.clone());
+    let org_de = |id: &IdDeCotisation| orgs.iter().find(|(k, _)| k == id).map(|(_, v)| v.clone());
     let mut lecture = Lecture::nouvelle(ctx, &d.departs);
     let mut cumul: Vec<Cumul> = Vec::new();
     let mut manque: BTreeSet<String> = BTreeSet::new();
@@ -175,7 +176,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     continue;
                 };
                 let id = cle.as_str();
-                let Some(org) = org_de(id) else {
+                let Some(org) = org_de(cle) else {
                     manque.insert(format!("{} ({})", id, c.libelle));
                     continue;
                 };
@@ -183,9 +184,9 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 if *cle == droit::forme_bareme::REDUCTION_GENERALE {
                     if let Some(rg) = paie.validee().and_then(|v| v.reduction_generale.as_ref()) {
                         let mut reparti = zero;
-                        for (part, id_org, quoi) in [(rg.urssaf, "maladie", "part Urssaf"), (rg.chomage, "chomage", "part chômage"), (rg.agirc_arrco, "retraite_t1", "part retraite")] {
+                        for (part, id_org, quoi) in [(rg.urssaf, MALADIE, "part Urssaf"), (rg.chomage, CHOMAGE, "part chômage"), (rg.agirc_arrco, RETRAITE_T1, "part retraite")] {
                             if !part.is_zero() {
-                                let o = org_de(id_org).ok_or_else(|| socle::fichiers::absent(id_org).reclasser(Classe::Manque))?;
+                                let o = org_de(&id_org).ok_or_else(|| socle::fichiers::absent(id_org.as_str()).reclasser(Classe::Manque))?;
                                 ajouter(m, &o, id, &format!("{} — {}", c.libelle, quoi), None, None, None, None, Some(-part));
                                 reparti = add(reparti, part);
                             }

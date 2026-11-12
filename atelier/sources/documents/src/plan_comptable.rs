@@ -15,6 +15,7 @@ use std::sync::OnceLock;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use droit::contexte::Contexte;
+use droit::forme_bareme::IdDeCotisation;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::fichiers::repr;
 
@@ -121,27 +122,31 @@ pub fn logiciels_connus() -> Vec<&'static str> {
 pub const PLAN_COMPTABLE: &str = "config/plan-comptable.json";
 
 /// UN OBJET DONT L'ORDRE COMPTE, lu dans l'ordre du fichier (`socle::forme::en_ordre`) : les lignes, les tiers et les
-/// retenues du plan, ou la premiere ligne qui porte un compte lui donne son libelle.
+/// retenues du plan, ou la premiere ligne qui porte un compte lui donne son libelle. `K` : sa cle, un texte (un compte,
+/// une rubrique) ou la cotisation d'une ligne du bulletin (`IdDeCotisation`), lue a la porte.
 #[derive(Debug, Clone)]
-pub struct Ordonne<T>(pub Vec<(String, T)>);
+pub struct Ordonne<T, K = String>(pub Vec<(K, T)>);
 
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for Ordonne<T> {
+impl<'de, T: Deserialize<'de>, K: Deserialize<'de> + PartialEq + std::fmt::Display> Deserialize<'de> for Ordonne<T, K> {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         socle::forme::en_ordre(d).map(Ordonne)
     }
 }
 
-impl<T> Ordonne<T> {
-    pub fn get(&self, cle: &str) -> Option<&T> {
-        self.0.iter().find(|(k, _)| k == cle).map(|(_, v)| v)
+impl<T, K: PartialEq> Ordonne<T, K> {
+    pub fn get<Q: PartialEq + ?Sized>(&self, cle: &Q) -> Option<&T>
+    where
+        K: std::borrow::Borrow<Q>,
+    {
+        self.0.iter().find(|(k, _)| k.borrow() == cle).map(|(_, v)| v)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &T)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &T)> {
         self.0.iter().map(|(k, v)| (k, v))
     }
 
     /// Les entrees de `autre` remplacent les siennes a leur place ; les nouvelles s'ajoutent a la fin.
-    fn recouvrir(&mut self, autre: Ordonne<T>) {
+    fn recouvrir(&mut self, autre: Ordonne<T, K>) {
         for (k, v) in autre.0 {
             match self.0.iter_mut().find(|(x, _)| *x == k) {
                 Some(place) => place.1 = v,
@@ -214,7 +219,8 @@ pub struct Plan {
     pub pas: Compte,
     pub retenues: Ordonne<Retenue>,
     pub tiers: Ordonne<String>,
-    pub lignes: Ordonne<RegleLigne>,
+    /// La cotisation d'une ligne du bulletin -> ses comptes.
+    pub lignes: Ordonne<RegleLigne, IdDeCotisation>,
     pub provision_conges: ProvisionConges,
     pub sections: Option<BTreeMap<String, String>>,
     pub poste_analytique: Option<String>,
@@ -236,7 +242,7 @@ struct PlanPropre {
     pas: Option<Compte>,
     retenues: Option<Ordonne<Retenue>>,
     tiers: Option<Ordonne<String>>,
-    lignes: Option<Ordonne<RegleLigne>>,
+    lignes: Option<Ordonne<RegleLigne, IdDeCotisation>>,
     provision_conges: Option<ProvisionConges>,
     sections: Option<BTreeMap<String, String>>,
     poste_analytique: Option<String>,

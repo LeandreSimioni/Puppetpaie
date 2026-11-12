@@ -504,6 +504,10 @@ pub const VIEIL_DEPLAF: IdDeCotisation = IdDeCotisation::du_moteur("vieil_deplaf
 pub const APEC_T1: IdDeCotisation = IdDeCotisation::du_moteur("apec_t1");
 pub const APEC_T2: IdDeCotisation = IdDeCotisation::du_moteur("apec_t2");
 pub const ATMP: IdDeCotisation = IdDeCotisation::du_moteur("atmp");
+/// Les lignes dont l'organisme et le compte de tiers recoivent les parts Urssaf et chomage de la reduction generale
+/// (l'etat des cotisations par organisme, les ecritures comptables ; la part retraite : `RETRAITE_T1`).
+pub const MALADIE: IdDeCotisation = IdDeCotisation::du_moteur("maladie");
+pub const CHOMAGE: IdDeCotisation = IdDeCotisation::du_moteur("chomage");
 /// La ligne que le calcul compose lui-meme, hors du bareme, pour la reduction generale (celles des heures en plus :
 /// `engagement::heures_en_plus`).
 pub const REDUCTION_GENERALE: IdDeCotisation = IdDeCotisation::du_moteur("reduction_generale");
