@@ -3698,14 +3698,34 @@ pub struct Composant {
     pub organisme: IdentifiantDOrganisme,
     /// La reference du contrat chez l'organisme (S21.G00.15.001), le code d'affectation (S21.G00.55.003).
     pub code: String,
-    /// AAAAPNN (S21.G00.55.004).
-    pub periode: String,
+    /// S21.G00.55.004.
+    pub periode: PeriodeDAffectation,
     pub montant: Decimal,
+}
+
+/// LA PERIODE D'AFFECTATION D'UN COMPOSANT DE VERSEMENT (S21.G00.55.004), « AAAAPNN » : l'annee, puis le trimestre (T01
+/// a T04), le semestre (S01, S02) ou l'annee (A00) (`formats-dsn-*-base.json`, CSL 00, qui admet aussi le mois et
+/// l'exercice, que le moteur n'ecrit pas) : celle qui contient les periodes cotisees (`periode_d_affectation`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PeriodeDAffectation {
+    Trimestre(i32, u32),
+    Semestre(i32, u32),
+    Annee(i32),
+}
+
+impl Display for PeriodeDAffectation {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            PeriodeDAffectation::Trimestre(a, t) => write!(f, "{}T{:02}", a, t),
+            PeriodeDAffectation::Semestre(a, s) => write!(f, "{}S{:02}", a, s),
+            PeriodeDAffectation::Annee(a) => write!(f, "{}A00", a),
+        }
+    }
 }
 
 /// La plus petite periode civile (trimestre, semestre, annee) qui contient les deux dates JJMMAAAA d'une base 78. Le
 /// trimestre etait deja la periode ecrite pour un mois courant ; la norme l'admet (p. 260, ligne 89).
-fn periode_d_affectation(debut: Jour, fin: Jour) -> R<String> {
+fn periode_d_affectation(debut: Jour, fin: Jour) -> R<PeriodeDAffectation> {
     let ((a1, m1), (a2, m2)) = ((debut.an, debut.mois), (fin.an, fin.mois));
     if a1 != a2 {
         return Err(refus!(
@@ -3719,11 +3739,11 @@ ne les contient toutes deux. Rien n'est ecrit.",
     let (t1, t2) = ((m1 - 1) / 3 + 1, (m2 - 1) / 3 + 1);
     let (s1, s2) = ((m1 - 1) / 6 + 1, (m2 - 1) / 6 + 1);
     Ok(if t1 == t2 {
-        format!("{}T{:02}", a1, t1)
+        PeriodeDAffectation::Trimestre(a1, t1)
     } else if s1 == s2 {
-        format!("{}S{:02}", a1, s1)
+        PeriodeDAffectation::Semestre(a1, s1)
     } else {
-        format!("{}A00", a1)
+        PeriodeDAffectation::Annee(a1)
     })
 }
 
@@ -5295,9 +5315,9 @@ mod tests {
     fn la_periode_d_affectation_contient_les_periodes_cotisees() {
         let c = composants_de_versement(&fichier_55("01042026", "30042026", "202", true)).unwrap();
         assert_eq!(c.len(), 1, "deux bases du meme contrat et de la meme periode : un composant");
-        assert_eq!((c[0].code.as_str(), c[0].organisme.as_str(), c[0].periode.as_str(), c[0].montant), ("CONTRAT A", "P0983", "2026T02", "10.00".parse::<Decimal>().unwrap()));
-        assert_eq!(composants_de_versement(&fichier_55("15032026", "10042026", "202", true)).unwrap()[0].periode, "2026S01");
-        assert_eq!(composants_de_versement(&fichier_55("15062026", "10072026", "202", true)).unwrap()[0].periode, "2026A00");
+        assert_eq!((c[0].code.as_str(), c[0].organisme.as_str(), c[0].periode.to_string().as_str(), c[0].montant), ("CONTRAT A", "P0983", "2026T02", "10.00".parse::<Decimal>().unwrap()));
+        assert_eq!(composants_de_versement(&fichier_55("15032026", "10042026", "202", true)).unwrap()[0].periode.to_string(), "2026S01");
+        assert_eq!(composants_de_versement(&fichier_55("15062026", "10072026", "202", true)).unwrap()[0].periode.to_string(), "2026A00");
         let e = composants_de_versement(&fichier_55("15122025", "10012026", "202", true)).unwrap_err().phrase;
         assert!(e.contains("deux annees civiles"), "{}", e);
     }

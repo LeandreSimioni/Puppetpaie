@@ -226,7 +226,9 @@ d'assiette d'une ligne du bordereau (23.002), `QualifiantDAssiette` (`droit/src/
 (`droit/src/nature_declaration.rs`). Le code d'une taxe du bloc 44 (44.001), `CodeTaxe` (`droit/src/apprentissage.rs`) ;
 son motif de non-assujettissement (44.004, table MNATA) est le choix de la fiche `MotifNonAssujettissement`. Le type
 de rémunération (51.011), `TypeDeRemuneration` (`droit/src/natures.rs`), n'a que les quatre codes que nos natures
-écrivent : une DSN lue d'un autre code laisse la case vide. À créer (#419), une liste par rubrique : le code d'option
+écrivent : une DSN lue d'un autre code laisse la case vide. La période d'affectation d'un composant de versement
+(55.004, « AAAAPNN »), `PeriodeDAffectation` (`declarations/src/dsn.rs`) : le trimestre, le semestre ou l'année que le
+moteur écrit. À créer (#419), une liste par rubrique : le code d'option
 de prévoyance.
 
 **Le métier**
