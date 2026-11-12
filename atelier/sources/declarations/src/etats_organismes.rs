@@ -419,8 +419,9 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
                 // Le libelle, dans la table des CTP que lit le bordereau (`documents::bordereau`, sa seule lecture).
                 l.m("mois", m).t("ctp", b.code.as_str()).ot("libelle", documents::bordereau::libelle_du_ctp(&b.code)?);
                 l.t("qualifiant", match b.qualifiant {
-                    QualifiantDAssiette::AutreAssiette => "920 — assiette plafonnée",
-                    QualifiantDAssiette::AssiettePlafonnee => "921 — assiette déplafonnée",
+                    // Les libelles de la norme (S21.G00.23.002, `bloc-S21.G00.23.txt` l. 35-36).
+                    QualifiantDAssiette::AutreAssiette => "920 — autre assiette",
+                    QualifiantDAssiette::AssiettePlafonnee => "921 — assiette plafonnée",
                 });
                 let taux_at = b.taux_at.map(documents::bordereau::TauxDeLaLigne::taux);
                 l.od("taux_at", taux_at).od("assiette", if b.montant.is_some() { None } else { b.assiette }).od("montant", b.montant);

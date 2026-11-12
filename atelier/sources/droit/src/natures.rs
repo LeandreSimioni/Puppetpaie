@@ -219,8 +219,17 @@ macro_rules! codes_fermes {
             fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
                 let code = <String as serde::Deserialize>::deserialize(d)?;
                 $nom::du_code(&code).ok_or_else(|| {
-                    let connus: Vec<&str> = $nom::TOUS.iter().map(|m| m.code()).collect();
-                    serde::de::Error::custom(format!("{} inconnu : {}. Connus : {}.", $quoi, socle::fichiers::repr(&code), connus.join(", ")))
+                    // Une case vide se dit telle ; une liste de 80 codes ne se lit pas : le code faux et sa rubrique suffisent.
+                    if code.is_empty() {
+                        serde::de::Error::custom(format!("{} non dit : le choisir dans la liste.", $quoi))
+                    } else {
+                        serde::de::Error::custom(format!(
+                            "{} inconnu : {} (hors de la liste de la norme, {}).",
+                            $quoi,
+                            socle::fichiers::repr(&code),
+                            <$nom as $crate::natures::ListeDeLaNorme>::RUBRIQUE
+                        ))
+                    }
                 })
             }
         }

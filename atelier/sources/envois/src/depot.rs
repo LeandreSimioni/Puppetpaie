@@ -11,7 +11,7 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use socle::echec::{Classe, Echec, R};
 use socle::texte::ascii_nfkd;
 
-pub const NATURE_TEST: &str = "01";
+pub const NATURE_TEST: droit::nature_declaration::EssaiOuReel = droit::nature_declaration::EssaiOuReel::Essai;
 pub use declarations::dsn_lue::{MENSUELLE, NATURE_REEL};
 pub const RUB_NATURE: &str = "S10.G00.00.005";
 

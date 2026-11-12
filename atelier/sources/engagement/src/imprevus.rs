@@ -262,10 +262,6 @@ pub fn est_un_arret(imp: &Imprevu) -> bool {
     matches!(imp, Imprevu::Arret(_))
 }
 
-pub fn est_une_suspension(imp: &Imprevu) -> bool {
-    matches!(imp, Imprevu::Suspension(_))
-}
-
 /// CE QU'UN IMPREVU DOIT TENIR AU-DELA DE SA FORME : les indemnites journalieres d'un arret, par jour, sont positives.
 pub fn verifier(imp: &Imprevu) -> R<()> {
     let Imprevu::Arret(a) = imp else { return Ok(()) };
