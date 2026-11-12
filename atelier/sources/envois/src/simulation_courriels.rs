@@ -317,19 +317,19 @@ fn pages(f: &ParsedMail) -> R<Option<usize>> {
     Ok(Some(pdf.get_pages().len()))
 }
 
-/// Les adresses d'un champ, un nom a point, virgule ou arobase entre guillemets ; l'en-tete tel quel s'il ne se lit pas
-/// en adresses. Un courriel joue dit toujours qui l'envoie et a qui.
+/// Les adresses d'un champ, un nom a point, virgule ou arobase entre guillemets ; un groupe, l'en-tete tel quel.
+/// Un courriel joue dit toujours qui l'envoie et a qui.
 fn adresses(m: &ParsedMail, champ: &str) -> R<String> {
     let (Some(brut), Some(h)) = (m.headers.get_first_value(champ), m.headers.get_first_header(champ)) else {
         return Err(socle::echec::cle("Un courriel joué ne dit pas qui l'envoie ou à qui.", champ));
     };
-    let liste = match mailparse::addrparse_header(h) {
-        Ok(l) => l,
-        Err(pas_des_adresses) => {
-            drop(pas_des_adresses);
-            return Ok(brut);
-        }
-    };
+    // Le courriel joue, le logiciel l'a ecrit : un champ qui ne se lit pas en adresses est un defaut du logiciel.
+    let liste = mailparse::addrparse_header(h).map_err(|e| {
+        socle::echec::refus_avec(
+            "Un courriel joué a un expéditeur ou un destinataire qui n'est pas une adresse.",
+            socle::echec::Lieu { detail: Some(format!("{} : « {} » ({})", champ, brut, e)), ..socle::echec::Lieu::default() },
+        )
+    })?;
     let mut vus = vec![];
     for a in liste.iter() {
         match a {
