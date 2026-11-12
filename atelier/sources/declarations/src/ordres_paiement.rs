@@ -88,7 +88,8 @@ fn jour_du_mois_suivant(mois: Mois, jour: u32) -> R<Jour> {
 
 /// L'organisme est-il une caisse de retraite complementaire Agirc-Arrco (`codes81` porte le 131 ou le 105) ?
 fn est_agirc_arrco(v: Option<&Versement>) -> bool {
-    v.is_some_and(|v| v.codes81.iter().any(|x| x == "131" || x == "105"))
+    use droit::code_cotisation::{CleDeTotalisation, CodeCotisation81::{AgircArrco, AgircArrcoYComprisApec}};
+    v.is_some_and(|v| v.codes81.iter().any(|x| *x == CleDeTotalisation::from(AgircArrco) || *x == CleDeTotalisation::from(AgircArrcoYComprisApec)))
 }
 
 /// Les ordres d'une DSN fabriquee (`dsn::fabriquer`), mois principal declare `mois`, en clair : `organisme`

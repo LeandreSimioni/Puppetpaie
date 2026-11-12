@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use crate::assiette::Assiette;
 use crate::base_assujettie::BaseAssujettie;
-use crate::code_cotisation::{CleDeCotisationDsn, CodeCotisation81};
+use crate::code_cotisation::{CleDeCotisationDsn, CleDeTotalisation, CodeCotisation81};
 use crate::fiche::Lue;
 use crate::organismes::IdentifiantDOrganisme;
 use crate::source::Fondement;
@@ -663,7 +663,8 @@ forme! {
         pub adhesion: Option<String>,
         /// La cotisation n'est due qu'au-dela de ce multiple du SMIC.
         pub seuil_smic: Option<Nombre>,
-        pub cle_total: Option<String>,
+        /// Le versement dont le montant la compte ; sans elle, son code (`CleDeTotalisation`).
+        pub cle_total: Option<CleDeTotalisation>,
         /// La commune du versement mobilite (`bareme::bareme_vm`).
         pub code_insee: Option<crate::fiche::CodeInsee>,
         /// Les lignes du bulletin dont la cotisation est la somme.
@@ -786,8 +787,8 @@ forme! {
         pub ctp: Option<crate::organismes::CodeCtp>,
         pub ctp_regularisation: Option<crate::organismes::CodeCtp>,
         pub qualifiant: Option<String>,
-        pub cle_total_chomage: Option<String>,
-        pub cle_total_urssaf: Option<String>,
+        pub cle_total_chomage: Option<CleDeTotalisation>,
+        pub cle_total_urssaf: Option<CleDeTotalisation>,
     }
 }
 
@@ -1394,8 +1395,8 @@ pub struct DsnDeLaReduction {
     pub code81_urssaf: CodeCotisation81,
     pub code81_chomage: CodeCotisation81,
     pub code81_retraite: CodeCotisation81,
-    pub cle_total_urssaf: String,
-    pub cle_total_chomage: String,
+    pub cle_total_urssaf: CleDeTotalisation,
+    pub cle_total_chomage: CleDeTotalisation,
 }
 
 impl Pile {
@@ -1438,13 +1439,13 @@ impl Pile {
             )
         };
         let code = |c: Option<CodeCotisation81>, champ: &str| c.ok_or_else(|| manque(champ));
-        let cle = |c: Option<&String>, champ: &str| c.cloned().ok_or_else(|| manque(champ));
+        let cle = |c: Option<CleDeTotalisation>, champ: &str| c.ok_or_else(|| manque(champ));
         Ok(DsnDeLaReduction {
             code81_urssaf: code(d.and_then(|d| d.code81_urssaf), "code81_urssaf")?,
             code81_chomage: code(d.and_then(|d| d.code81_chomage), "code81_chomage")?,
             code81_retraite: code(d.and_then(|d| d.code81_retraite), "code81_retraite")?,
-            cle_total_urssaf: cle(d.and_then(|d| d.cle_total_urssaf.as_ref()), "cle_total_urssaf")?,
-            cle_total_chomage: cle(d.and_then(|d| d.cle_total_chomage.as_ref()), "cle_total_chomage")?,
+            cle_total_urssaf: cle(d.and_then(|d| d.cle_total_urssaf), "cle_total_urssaf")?,
+            cle_total_chomage: cle(d.and_then(|d| d.cle_total_chomage), "cle_total_chomage")?,
         })
     }
 }

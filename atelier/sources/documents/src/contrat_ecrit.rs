@@ -207,7 +207,7 @@ impl Organismes {
     /// La caisse de retraite complementaire : l'organisme a qui la compagnie verse la cotisation du regime unifie
     /// Agirc-Arrco (code 131 du bloc S21.G00.81, `organismes-base.json`).
     fn retraite(&self) -> Option<Organisme> {
-        let v = self.compagnie.versements().iter().find(|v| v.codes81.iter().any(|c| c == "131"))?;
+        let v = self.compagnie.versements().iter().find(|v| v.codes81.iter().any(|c| *c == droit::code_cotisation::CodeCotisation81::AgircArrco.into()))?;
         self.par_siret(&v.siret)
     }
 

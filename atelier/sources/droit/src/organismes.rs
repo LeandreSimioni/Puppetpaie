@@ -60,7 +60,7 @@ forme_notee! {
         pub nom: String,
         pub objet: String,
         pub jour_de_paiement: Option<u32>,
-        pub codes81: Vec<String>,
+        pub codes81: Vec<crate::code_cotisation::CleDeTotalisation>,
         pub adresse: Option<String>,
     }
 }

@@ -223,3 +223,81 @@ impl TryFrom<String> for CleDeCotisationDsn {
         CleDeCotisationDsn::lire(&s)
     }
 }
+
+/// LA CLE DE TOTALISATION D'UNE COTISATION DE LA DSN : le versement (bloc S21.G00.20) dont le montant la compte. Le
+/// montant d'un versement est le « montant des cotisations réglées » (S21.G00.20.005,
+/// `atelier/reference/norme-dsn/texte/bloc-S21.G00.20.txt` l. 164-166) ; il est la somme des cles de ce versement
+/// (`organismes::Versement::codes81`, `organismes-base.json`). Une cle est le code de la cotisation (81.001) et, quand
+/// ce code va a deux versements selon le contrat, celui qui le recouvre, ecrits `code` ou `code:recouvreur` (`018:urssaf`,
+/// `018:chomage`, `040:urssaf`). Une cotisation que le bareme ne cle pas se totalise sous son code (`From`). Une cle
+/// vide, un code hors de la liste, un recouvreur inconnu se refusent a la lecture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize)]
+#[serde(try_from = "String")]
+pub struct CleDeTotalisation {
+    pub code: CodeCotisation81,
+    pub recouvreur: Option<Recouvreur>,
+}
+
+/// QUI RECOUVRE UNE COTISATION DONT LE CODE VA A DEUX VERSEMENTS : l'Urssaf (le chomage, l'AGS et la reduction generale
+/// d'un permanent), ou l'assurance chomage, France Travail (la part chomage de la reduction generale d'un intermittent).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Recouvreur {
+    Urssaf,
+    Chomage,
+}
+
+impl Recouvreur {
+    /// Son nom dans une cle (`code:recouvreur`).
+    pub fn nom(self) -> &'static str {
+        match self {
+            Recouvreur::Urssaf => "urssaf",
+            Recouvreur::Chomage => "chomage",
+        }
+    }
+}
+
+impl CleDeTotalisation {
+    /// La cle ecrite `texte`.
+    pub fn lire(texte: &str) -> socle::echec::R<CleDeTotalisation> {
+        let (code, recouvreur) = match texte.split_once(':') {
+            Some((c, "urssaf")) => (c, Some(Recouvreur::Urssaf)),
+            Some((c, "chomage")) => (c, Some(Recouvreur::Chomage)),
+            Some((_, r)) => {
+                return Err(socle::refus!(
+                    "cle de totalisation {} : recouvreur {} inconnu (connus : urssaf, chomage)",
+                    socle::fichiers::repr(texte),
+                    socle::fichiers::repr(r)
+                ))
+            }
+            None => (texte, None),
+        };
+        let code = CodeCotisation81::du_code(code).ok_or_else(|| {
+            let connus: Vec<&str> = CodeCotisation81::TOUS.iter().map(|c| c.code()).collect();
+            socle::refus!("Code de cotisation inconnu : {}. Connus : {}.", socle::fichiers::repr(code), connus.join(", "))
+        })?;
+        Ok(CleDeTotalisation { code, recouvreur })
+    }
+}
+
+impl From<CodeCotisation81> for CleDeTotalisation {
+    /// La cle d'une cotisation que le bareme ne cle pas : son code.
+    fn from(code: CodeCotisation81) -> CleDeTotalisation {
+        CleDeTotalisation { code, recouvreur: None }
+    }
+}
+
+impl std::fmt::Display for CleDeTotalisation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.recouvreur {
+            Some(r) => write!(f, "{}:{}", self.code, r.nom()),
+            None => write!(f, "{}", self.code),
+        }
+    }
+}
+
+impl TryFrom<String> for CleDeTotalisation {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> socle::echec::R<CleDeTotalisation> {
+        CleDeTotalisation::lire(&s)
+    }
+}

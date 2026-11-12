@@ -13,7 +13,7 @@ use rust_decimal::RoundingStrategy;
 
 use droit::assiette::Assiette;
 use droit::base_assujettie::BaseAssujettie;
-use droit::code_cotisation::CodeCotisation81;
+use droit::code_cotisation::{CleDeTotalisation, CodeCotisation81};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use droit::bordereau::{AssietteDuBordereau, MontantDuBordereau};
@@ -593,7 +593,7 @@ pub struct Cotisation {
     pub code81: Option<CodeCotisation81>,
     pub org: Option<IdentifiantDOrganisme>,
     pub affectation: Option<String>,
-    pub cle_total: Option<String>,
+    pub cle_total: Option<CleDeTotalisation>,
     pub code_insee: Option<droit::fiche::CodeInsee>,
     pub base81: Option<Decimal>,
     /// Le taux de la ligne (81.007), tel que le bareme ou le bulletin l'ecrit.
@@ -821,7 +821,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
             code81: c.code81,
             org: c.org.clone(),
             affectation: c.affectation.clone(),
-            cle_total: c.cle_total.clone().filter(|x| !x.is_empty()),
+            cle_total: c.cle_total,
             code_insee: c.code_insee.clone(),
             base81: None,
             taux: None,
@@ -888,9 +888,10 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
             // elle-meme se calcule sur le brut abattu (`droit::reduction::reduction_generale_sous_dfs`).
             let brut_03 = bases[&cle_abattue(p, BaseAssujettie::BruteDeplafonnee, Assiette::Brut)?];
             for (code, org, part, cle) in [
-                (dsn.code81_urssaf, urssaf, rg.urssaf, dsn.cle_total_urssaf.clone()),
-                (dsn.code81_chomage, ft, rg.chomage, dsn.cle_total_chomage.clone()),
-                (dsn.code81_retraite, None, rg.agirc_arrco, dsn.code81_retraite.to_string()),
+                (dsn.code81_urssaf, urssaf, rg.urssaf, dsn.cle_total_urssaf),
+                (dsn.code81_chomage, ft, rg.chomage, dsn.cle_total_chomage),
+                // La part retraite n'a pas de cle au bareme : elle se totalise sous son code.
+                (dsn.code81_retraite, None, rg.agirc_arrco, dsn.code81_retraite.into()),
             ] {
                 if !part.is_zero() {
                     out.push(Cotisation {
@@ -931,7 +932,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
                 code81: Some(code),
                 org: urssaf.clone(),
                 affectation: None,
-                cle_total: Some(code.to_string()),
+                cle_total: Some(code.into()),
                 code_insee: None,
                 base81: Some(remuneration),
                 taux: None,
@@ -2339,7 +2340,7 @@ pub fn bases_et_cotisations(
         if let Some(o) = &org {
             f.add("S21.G00.81.002", o);
         }
-        if org.is_some() || c.cle_total.as_deref().is_some_and(|k| !k.is_empty()) {
+        if org.is_some() || c.cle_total.is_some() {
             f.add("S21.G00.81.003", ms(c.base81.ok_or_else(|| socle::fichiers::absent("base81"))?, signe));
         }
         f.add("S21.G00.81.004", ms(montant, signe));
@@ -2752,15 +2753,15 @@ doit le citer, et on ne le devine pas. Rien n'est ecrit.",
 #[derive(Clone, Debug, PartialEq)]
 enum Role81 {
     /// Une cotisation : sa cle de totalisation, et la base que porte son 81.003 quand elle l'ecrit.
-    Cotisation { cle: String, base: Option<Assiette> },
+    Cotisation { cle: CleDeTotalisation, base: Option<Assiette> },
     /// Une part de la reduction generale (« urssaf », « chomage », « retraite ») et sa cle de totalisation.
-    Reduction { part: &'static str, cle: String },
+    Reduction { part: &'static str, cle: CleDeTotalisation },
 }
 
 impl Role81 {
-    fn cle(&self) -> &str {
+    fn cle(&self) -> CleDeTotalisation {
         match self {
-            Role81::Cotisation { cle, .. } | Role81::Reduction { cle, .. } => cle,
+            Role81::Cotisation { cle, .. } | Role81::Reduction { cle, .. } => *cle,
         }
     }
 }
@@ -2782,7 +2783,7 @@ fn lecture(p: &Paie, bar: &BaremeDuMois) -> R<Lecture> {
         l.blocs.push((c.bloc78, c.base78));
         let Some(code) = c.code81 else { continue };
         let org = c.org.clone();
-        let cle_total = c.cle_total.clone().filter(|x| !x.is_empty());
+        let cle_total = c.cle_total;
         // 81.003 s'ecrit avec un organisme ou une cle de totalisation (`bases_et_cotisations`) ; il porte la base du
         // taux, pas celle d'une cotisation faite de lignes du bulletin.
         let base = if (org.is_some() || cle_total.is_some()) && c.lignes.as_ref().is_none_or(Vec::is_empty) && c.taux.is_some() {
@@ -2793,7 +2794,7 @@ fn lecture(p: &Paie, bar: &BaremeDuMois) -> R<Lecture> {
         // La cle de totalisation, sinon le code (`totaux_bordereau`).
         let cle = match cle_total {
             Some(cle) => cle,
-            None => code.to_string(),
+            None => code.into(),
         };
         l.roles.push((code, org, Role81::Cotisation { cle, base }));
     }
@@ -2802,7 +2803,7 @@ fn lecture(p: &Paie, bar: &BaremeDuMois) -> R<Lecture> {
         if contrib.natures.contains_key(&nature) {
             l.blocs.push((BaseAssujettie::PrevoyanceSanteRetraite, Assiette::Zero));
             let code = CodeCotisation81::PrevoyanceAssuranceMutuelle;
-            l.roles.push((code, None, Role81::Cotisation { cle: code.to_string(), base: None }));
+            l.roles.push((code, None, Role81::Cotisation { cle: code.into(), base: None }));
         }
     }
     let org = |code: CodeCotisation81| -> Option<IdentifiantDOrganisme> { org_de(&pile, code) };
@@ -2811,16 +2812,16 @@ fn lecture(p: &Paie, bar: &BaremeDuMois) -> R<Lecture> {
     if p.reduction_generale.as_ref().is_some_and(|r| !r.montant.is_zero()) {
         let dsn = pile.dsn_de_la_reduction()?;
         for (code, org, part, cle) in [
-            (dsn.code81_urssaf, org(CodeCotisation81::AssuranceMaladie), "urssaf", dsn.cle_total_urssaf.clone()),
-            (dsn.code81_chomage, org(CodeCotisation81::AssuranceChomage), "chomage", dsn.cle_total_chomage.clone()),
-            (dsn.code81_retraite, None, "retraite", dsn.code81_retraite.to_string()),
+            (dsn.code81_urssaf, org(CodeCotisation81::AssuranceMaladie), "urssaf", dsn.cle_total_urssaf),
+            (dsn.code81_chomage, org(CodeCotisation81::AssuranceChomage), "chomage", dsn.cle_total_chomage),
+            (dsn.code81_retraite, None, "retraite", dsn.code81_retraite.into()),
         ] {
             l.roles.push((code, org, Role81::Reduction { part, cle }));
         }
     }
     // Les heures en plus : la reduction salariale et la deduction patronale, a l'Urssaf (`cotisations`).
     for code in [CODE81_REDUCTION_HEURES, CODE81_DEDUCTION_HEURES] {
-        l.roles.push((code, org(CodeCotisation81::AssuranceMaladie), Role81::Cotisation { cle: code.to_string(), base: None }));
+        l.roles.push((code, org(CodeCotisation81::AssuranceMaladie), Role81::Cotisation { cle: code.into(), base: None }));
     }
     Ok(l)
 }
@@ -3047,8 +3048,7 @@ fn assiette_declaree(cle: CleCtp, r: &Regularisation, bar: &BaremeDuMois) -> R<R
 /// garde que « pour regularisation des periodes anterieures a 2025 » (cahier technique 2026.1, p. 302 et 305 ;
 /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt`, lignes 79-81).
 fn sert_a_un_versement(orgs: &Organismes, code: CodeCotisation81) -> bool {
-    let code = code.code();
-    orgs.versements().iter().filter(|v| !v.est_urssaf()).any(|v| v.codes81.iter().any(|c| c == code || c.split(':').next() == Some(code)))
+    orgs.versements().iter().filter(|v| !v.est_urssaf()).any(|v| v.codes81.iter().any(|c| c.code == code))
 }
 
 /// `cumuler_totaux` de ce qui a ete DECLARE pour le contrat d'une regularisation : ses lignes 81 deposees, chacune a sa
@@ -3056,7 +3056,7 @@ fn sert_a_un_versement(orgs: &Organismes, code: CodeCotisation81) -> bool {
 /// cumulent plus ici : ils se lisent dans le nominatif ecrit (`composants_de_versement`), ou `annuler_le_declare` a deja
 /// rattache chaque base 31 deposee a son adhesion (70.013).
 fn cumuler_le_declare(
-    totaux: &mut Vec<(String, Decimal)>, r: &Regularisation, bar: &BaremeDuMois, orgs: &Organismes, signe: i64,
+    totaux: &mut Vec<(CleDeTotalisation, Decimal)>, r: &Regularisation, bar: &BaremeDuMois, orgs: &Organismes, signe: i64,
 ) -> R<()> {
     let d = &r.declare;
     let numero = r.apres.engagement.numero_declare()?;
@@ -3071,11 +3071,11 @@ fn cumuler_le_declare(
     let s = Decimal::from(signe);
     for x in &l81 {
         let montant = x.montant.ok_or_else(|| refus(format!("la cotisation {} de {} n'a pas de S21.G00.81.004", x.code, d.fichier)))?;
-        let mut cles: Vec<&str> = l.roles_de(x.code, &x.org).iter().map(|r| r.cle()).collect();
+        let mut cles: Vec<CleDeTotalisation> = l.roles_de(x.code, &x.org).iter().map(|r| r.cle()).collect();
         cles.sort();
         cles.dedup();
         let cle = match cles.as_slice() {
-            [une] => une.to_string(),
+            [une] => *une,
             _ if !sert_a_un_versement(orgs, x.code) => continue,
             _ => {
                 return Err(refus(format!(
@@ -3084,11 +3084,11 @@ fn cumuler_le_declare(
                     x.code,
                     x.org.iter().map(|o| format!(" chez {}", o)).collect::<String>(),
                     r.mois,
-                    if cles.is_empty() { "ne connait pas pour ce contrat".to_string() } else { format!("rattache a plusieurs totaux ({})", cles.join(", ")) }
+                    if cles.is_empty() { "ne connait pas pour ce contrat".to_string() } else { format!("rattache a plusieurs totaux ({})", cles.iter().map(CleDeTotalisation::to_string).collect::<Vec<_>>().join(", ")) }
                 )))
             }
         };
-        ajouter(totaux, &cle, mul(s, montant));
+        ajouter(totaux, cle, mul(s, montant));
         if x.code == CodeCotisation81::PrevoyanceAssuranceMutuelle && x.affiliation.is_none() {
             return Err(refus(format!(
                 "une cotisation 059 de {} n'est rattachee a aucune affiliation (S21.G00.78.005) : son composant de versement (S21.G00.55) ne se lit pas",
@@ -3101,7 +3101,7 @@ fn cumuler_le_declare(
 
 // --------------------------------------------- totaux, bordereau, versements
 
-fn cumuler_totaux(totaux: &mut Vec<(String, Decimal)>, paies: &[&Paie], bar: &BaremeDuMois, signe: i64) -> R<()> {
+fn cumuler_totaux(totaux: &mut Vec<(CleDeTotalisation, Decimal)>, paies: &[&Paie], bar: &BaremeDuMois, signe: i64) -> R<()> {
     let s = Decimal::from(signe);
     for p in paies {
         for c in cotisations(p, bar)? {
@@ -3109,25 +3109,25 @@ fn cumuler_totaux(totaux: &mut Vec<(String, Decimal)>, paies: &[&Paie], bar: &Ba
                 Some(m) => m,
                 None => continue,
             };
-            let cle = match &c.cle_total {
-                Some(cle) => cle.clone(),
-                None => code_declare(&c)?.to_string(),
+            let cle = match c.cle_total {
+                Some(cle) => cle,
+                None => code_declare(&c)?.into(),
             };
-            ajouter(totaux, &cle, mul(s, m));
+            ajouter(totaux, cle, mul(s, m));
         }
     }
     Ok(())
 }
 
-fn ajouter(v: &mut Vec<(String, Decimal)>, cle: &str, m: Decimal) {
-    match v.iter_mut().find(|(k, _)| k == cle) {
+fn ajouter(v: &mut Vec<(CleDeTotalisation, Decimal)>, cle: CleDeTotalisation, m: Decimal) {
+    match v.iter_mut().find(|(k, _)| *k == cle) {
         Some((_, x)) => *x = add(*x, m),
-        None => v.push((cle.to_string(), add(zero2(), m))),
+        None => v.push((cle, add(zero2(), m))),
     }
 }
 
-fn lire(v: &[(String, Decimal)], cle: &str) -> Option<Decimal> {
-    v.iter().find(|(k, _)| k == cle).map(|(_, x)| *x)
+fn lire(v: &[(CleDeTotalisation, Decimal)], cle: CleDeTotalisation) -> Option<Decimal> {
+    v.iter().find(|(k, _)| *k == cle).map(|(_, x)| *x)
 }
 
 fn taux_at_du_ctp(ctp: &Ctp, bar: &Pile) -> R<Option<TauxDeLaLigne>> {
@@ -3648,9 +3648,9 @@ pub fn reference_versement(v: &Versement, ent: &ChampsEntreprise) -> Option<Stri
 }
 
 /// Le montant d'un versement : la somme de ses cles de totalisation (`codes81`).
-fn montant_versement(v: &Versement, totaux: &[(String, Decimal)]) -> Decimal {
+fn montant_versement(v: &Versement, totaux: &[(CleDeTotalisation, Decimal)]) -> Decimal {
     // Une cle qu'aucune cotisation du mois ne porte n'ajoute rien.
-    v.codes81.iter().filter_map(|c| lire(totaux, c)).fold(zero2(), add)
+    v.codes81.iter().filter_map(|c| lire(totaux, *c)).fold(zero2(), add)
 }
 
 // ------------------------------------ le versement a un organisme complementaire
@@ -4736,7 +4736,7 @@ certificat de conformite du depot precedent.",
     let refs: Vec<&Paie> = paies.iter().flat_map(|p| p.elementaires()).collect();
     cumuler_totaux(&mut totaux, &refs, &bar, 1)?;
     let mut origines: Vec<Mois> = Vec::new();
-    let mut par_origine: HashMap<Mois, Vec<(String, Decimal)>> = HashMap::new();
+    let mut par_origine: HashMap<Mois, Vec<(CleDeTotalisation, Decimal)>> = HashMap::new();
     for r in regs {
         let bar_o = bar_de(r.mois)?;
         if !origines.contains(&r.mois) {
@@ -4749,7 +4749,7 @@ certificat de conformite du depot precedent.",
     let mut totaux_avec_regs = totaux.clone();
     for m in &origines {
         for (k, v) in &par_origine[m] {
-            ajouter(&mut totaux_avec_regs, k, *v);
+            ajouter(&mut totaux_avec_regs, *k, *v);
         }
     }
 
@@ -5027,7 +5027,7 @@ certificat de conformite du depot precedent.",
     // Les versements aux organismes complementaires, leurs composants lus dans le nominatif ecrit.
     let composants = composants_de_versement(&f.lignes)?;
     let somme_composants = composants.iter().fold(zero2(), |s, c| add(s, c.montant));
-    let somme_059 = match lire(&totaux_avec_regs, "059") {
+    let somme_059 = match lire(&totaux_avec_regs, CodeCotisation81::PrevoyanceAssuranceMutuelle.into()) {
         Some(s) => s,
         None => zero2(),
     };
