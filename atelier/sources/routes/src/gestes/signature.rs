@@ -37,7 +37,7 @@ use envois::journal::{ArticleModifie, ContratParti, DetailSignature, Ligne, Vers
 use socle::date::Jour;
 use socle::mois::Mois;
 use droit::contexte::IdSalarie;
-use engagement::numeros::NumeroContrat;
+use engagement::numeros::{numero_dit, NumeroContrat};
 
 /// Un refus ordinaire, avec sa phrase.
 fn refus(message: impl Into<String>) -> Echec {
@@ -174,16 +174,8 @@ fn nom_complet_de(sal: &ChampsSalarie) -> R<String> {
     Ok(format!("{} {}", prenom_de(sal)?, nom))
 }
 
-/// Ce qu'une phrase dit d'un contrat qui n'a pas de numero.
+/// Ce qu'une phrase dit d'un contrat qui n'a pas de numero (`engagement::numeros::numero_dit`).
 const SANS_NUMERO: &str = "(sans numéro)";
-
-/// Le numero d'un contrat tel qu'une phrase le dit : le sien, ou qu'il n'en a pas.
-fn numero_dit(n: Option<&str>) -> String {
-    match n.filter(|n| !n.is_empty()) {
-        Some(n) => n.to_string(),
-        None => SANS_NUMERO.to_string(),
-    }
-}
 
 /// Ce que le nom d'un fichier porte pour un contrat qui n'a pas de numero.
 const SANS_NUMERO_FICHIER: &str = "sans-numero";
@@ -297,7 +289,7 @@ fn contrats_choisis(ctx: &Contexte, choisis: &Choisis, mois: Mois, paies: &[Paie
             if cibles.is_some() {
                 return Err(refus(format!(
                     "Le contrat n° {} de {} est déjà revenu signé : il n'a plus rien à signer. Rien n'est parti.",
-                    numero_dit(p.engagement.numero.as_deref()),
+                    numero_dit(p.engagement.numero.as_ref(), "", "", SANS_NUMERO),
                     nom_ou_cle(&p.salarie, &cle)
                 )));
             }
@@ -478,7 +470,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
         let versions = envois::journal::versions_des_contrats(ctx, &lignes_avenants, &departs)?;
         let reponse = format!(
             "{} imprime(s) pour une remise en main propre",
-            lignes_avenants.iter().map(|c| format!("avenant n° {} au contrat {}", numero_dit(c.avenant.map(|a| a.to_string()).as_deref()), numero_dit(c.numero.as_deref()))).collect::<Vec<_>>().join("; ")
+            lignes_avenants.iter().map(|c| format!("avenant n° {} au contrat {}", numero_dit(c.avenant, "", "", SANS_NUMERO), numero_dit(c.numero.as_ref(), "", "", SANS_NUMERO))).collect::<Vec<_>>().join("; ")
         );
         noter(ctx, Ligne::ContratSignature(par_courriel(le_mois, qui, true, "", &reponse, detail, Some(versions))))?;
     }
@@ -539,7 +531,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
                         debut.jj_mm_aaaa()
                     )));
                 }
-                let numero = numero_dit(parti.numero.as_ref().map(|n| n.to_string()).as_deref());
+                let numero = numero_dit(parti.numero.as_ref(), "", "", SANS_NUMERO);
                 // Le contrat qui remplace se reconnait a son numero : sans numero, rien ne le designe.
                 if let Some(propre) = p.engagement.numero.as_deref() {
                     remplacements.push(((k.clone(), debut, propre.to_string()), (numero, parti.date())));
@@ -573,7 +565,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
         }
         let sujet_de = |spectacle: &str| envoi::formater(SUJET_SIGNATURE, &[("spectacle", spectacle.to_string()), ("mois", nom_mois.to_string()), ("annee", an.to_string())]);
         let du_au = |p: &Paie, titre: &str| -> R<String> { Ok(format!("{}, {}", titre, periode_de(p))) };
-        let numero_de = |p: &Paie| numero_dit(p.engagement.numero.as_deref());
+        let numero_de = |p: &Paie| numero_dit(p.engagement.numero.as_ref(), "", "", SANS_NUMERO);
         let (mut sujet, mut liste, le_signer, quoi, exemplaire);
         if ps.len() == 1 {
             let p = &ps[0];
@@ -786,7 +778,7 @@ fn deja_parti_dit(etats: &[crate::contrats::ContratASigner], salarie: &str, nume
     let c = etats.iter().rev().find(|c| c.salarie == salarie && c.numero.as_deref() == numero)?;
     let quand = c.demande_le?.jour().jj_mm_aaaa();
     let comment = if c.par == Some("imprime") { "imprimé" } else { "envoyé" };
-    Some(format!("Contrat n° {} de {} : déjà parti, {} le {}.", numero_dit(numero), c.nom, comment, quand))
+    Some(format!("Contrat n° {} de {} : déjà parti, {} le {}.", numero_dit(numero, "", "", SANS_NUMERO), c.nom, comment, quand))
 }
 
 /// LES CONTRATS QUI PARTENT PAR COURRIEL : ceux dont la fiche du salarie a un courriel ; les autres s'impriment (leurs
@@ -807,7 +799,7 @@ fn verifier_rappel(c: Option<&crate::contrats::ContratASigner>, numero: Option<&
     match c {
         Some(c) if c.caduc => Err(refus(format!(
             "Le contrat n° {} de {} a changé depuis son envoi : il se modifie par un avenant, il ne se redemande pas. Rien n'est parti.",
-            numero_dit(numero),
+            numero_dit(numero, "", "", SANS_NUMERO),
             c.nom
         ))),
         _ => Ok(()),
@@ -905,7 +897,7 @@ impl UnAvenant {
 
     /// Le numero du contrat qu'il modifie, ou « (sans numéro) ».
     fn contrat(&self) -> String {
-        numero_dit(self.contrat.as_deref())
+        numero_dit(self.contrat.as_ref(), "", "", SANS_NUMERO)
     }
 
     /// Des termes dits en clair (un contrat signe hors du logiciel), pas des articles cites.
@@ -1183,7 +1175,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(String, Vec<UnAve
         }
         let reponse = format!(
             "{} envoye(s) a la signature",
-            aa.iter().map(|a| format!("avenant n° {} au contrat {}{}", a.numero, numero_dit(a.contrat.as_deref()), if a.rappel() { " (relance)" } else { "" })).collect::<Vec<_>>().join("; ")
+            aa.iter().map(|a| format!("avenant n° {} au contrat {}{}", a.numero, numero_dit(a.contrat.as_ref(), "", "", SANS_NUMERO), if a.rappel() { " (relance)" } else { "" })).collect::<Vec<_>>().join("; ")
         );
         let detail = DetailSignature {
             contrats: lignes_contrats.clone(),

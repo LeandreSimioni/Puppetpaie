@@ -1025,7 +1025,7 @@ fn refuser_un_second_contrat_au_mois(ctx: &Contexte, e: &Carte, soi: Option<&Obj
         return Ok(());
     };
     let nature = o.carte().nature_lue()?;
-    let numero = crate::numero_dit(o.carte().numero.as_ref());
+    let numero = crate::numeros::numero_dit(o.carte().numero.as_ref(), " (n° ", ")", "");
     let debut_dit = debut.jj_mm_aaaa();
     Err(socle::refus!(
         "{} : son {} commencé le {}{} a déjà son engagement ; une carte neuve ne le refait pas, il se modifie depuis sa \

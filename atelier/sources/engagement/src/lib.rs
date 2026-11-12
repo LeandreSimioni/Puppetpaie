@@ -1811,11 +1811,6 @@ pub(crate) fn qui_de(fiche: &droit::fiche::ChampsSalarie) -> R<String> {
     fiche.nomme().ok_or_else(|| socle::fichiers::absent("nom"))
 }
 
-/// « (n° FA1.26.13) » quand le contrat porte son numero ; rien sinon.
-pub(crate) fn numero_dit(numero: Option<&numeros::NumeroContrat>) -> String {
-    numero.iter().map(|n| format!(" (n° {})", n)).collect()
-}
-
 /// LE CONTRAT DE CET ENGAGEMENT SE FAIT-IL SIGNER PAR LE LOGICIEL ? Oui quand sa nature a un contrat ecrit (`contrat_ecrit`
 /// de `contrats-base.json` : le CDD « est etabli par ecrit », L1242-12 ; tout salarie recoit l'ecrit de L1221-5-1) et
 /// qu'il n'a pas ete signe ailleurs (`signe_ailleurs`).
@@ -1859,7 +1854,7 @@ fn suivre_permanent(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
                  et son reçu pour solde de tout compte (Fin de contrat).",
                 qui,
                 libelle,
-                numero_dit(eng.numero.as_ref()),
+                numeros::numero_dit(eng.numero.as_ref(), " (n° ", ")", ""),
                 fin.jj_mm_aaaa()
             ),
         });
@@ -1892,7 +1887,7 @@ pub fn suivre_contrat(ctx: &Contexte, eng: &mut Engagement) -> R<Vec<Avis>> {
                 qui,
                 bornes,
                 mois_du_contrat[0].libelle(Graphie::Accentuee),
-                numero_dit(eng.numero.as_ref())
+                numeros::numero_dit(eng.numero.as_ref(), " (n° ", ")", "")
             ),
         });
     }

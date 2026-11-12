@@ -118,6 +118,15 @@ impl From<NumeroContrat> for String {
     }
 }
 
+/// UN NUMERO (d'un contrat, d'un avenant) TEL QU'UNE PHRASE LE DIT, la seule fonction qui l'y ecrit : `avant`, le
+/// numero puis `apres` quand il y en a un ; `sans` quand il n'y en a pas.
+pub fn numero_dit(numero: Option<impl std::fmt::Display>, avant: &str, apres: &str, sans: &str) -> String {
+    match numero {
+        Some(n) => format!("{}{}{}", avant, n, apres),
+        None => sans.to_string(),
+    }
+}
+
 impl PartialEq<str> for NumeroContrat {
     fn eq(&self, autre: &str) -> bool {
         self.0 == autre

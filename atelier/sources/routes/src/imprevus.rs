@@ -36,7 +36,7 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::calcul::Paie;
 use droit::arrets::{Bloc60, CodeDuBloc60};
 use engagement::imprevus::{self, ArretSaisi, GenreSuspension, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, ARRET, SUSPENSION};
-use engagement::numeros::NumeroContrat;
+use engagement::numeros::{numero_dit, NumeroContrat};
 use engagement::saisie::{Carte, Preavis, VueDuMois};
 use engagement::Chiffre;
 use socle::date::Jour;
@@ -552,13 +552,8 @@ fn refus(m: impl Into<String>) -> Echec {
 }
 
 
-/// Un numero de contrat tel qu'une phrase le dit.
-fn numero_dit<T: std::fmt::Display>(n: &Option<T>) -> String {
-    match n {
-        Some(n) => n.to_string(),
-        None => "sans numéro".to_string(),
-    }
-}
+/// Ce qu'une phrase dit d'un contrat qui n'a pas de numero (`engagement::numeros::numero_dit`).
+const SANS_NUMERO: &str = "sans numéro";
 
 /// La cle de la fiche que `nom` designe, comme partout dans le moteur (`Contexte::cle_du_salarie` : la casse, les accents,
 /// le prenom, le NIR ne comptent pas). Un nom qui ne designe personne se refuse avec sa phrase.
@@ -576,7 +571,7 @@ pub(crate) fn contrat_suspendu(ctx: &Contexte, cle: &str, jour: &Jour, voulu: Op
         return match candidats.iter().find(|c| c.numero.as_deref() == Some(voulu)) {
             Some(c) => Ok(c.clone()),
             None => {
-                let liste: Vec<String> = candidats.iter().map(|c| numero_dit(&c.numero)).collect();
+                let liste: Vec<String> = candidats.iter().map(|c| numero_dit(c.numero.as_ref(), "", "", SANS_NUMERO)).collect();
                 Err(refus(format!(
                     "Contrat {} introuvable parmi ceux de {} qui couvrent le {} : {}",
                     voulu,
@@ -600,8 +595,8 @@ contrat.",
             let liste: Vec<String> = candidats
                 .iter()
                 .map(|c| match &c.fin {
-                    Some(f) => format!("{} du {} au {}", numero_dit(&c.numero), c.debut.iso(), f.iso()),
-                    None => format!("{} depuis le {}", numero_dit(&c.numero), c.debut.iso()),
+                    Some(f) => format!("{} du {} au {}", numero_dit(c.numero.as_ref(), "", "", SANS_NUMERO), c.debut.iso(), f.iso()),
+                    None => format!("{} depuis le {}", numero_dit(c.numero.as_ref(), "", "", SANS_NUMERO), c.debut.iso()),
                 })
                 .collect();
             Err(refus(format!(
@@ -1254,7 +1249,7 @@ impl Resume {
             Resume::Arret(a) => (&a.base.salarie, &a.base.contrat, &a.base.motif_libelle, &a.premier_jour, &a.dernier_jour, a.base.etat.dit(), a.obligations.as_slice()),
             Resume::Suspension(s) => (&s.salarie, &s.contrat, &s.motif_libelle, &s.premier_jour, &s.dernier_jour, "", &[][..]),
         };
-        let mut l = vec![format!("{} ({}) : {}, du {} au {} — {}", salarie, numero_dit(contrat), libelle, premier.jj_mm_aaaa(), dernier.jj_mm_aaaa(), etat)];
+        let mut l = vec![format!("{} ({}) : {}, du {} au {} — {}", salarie, numero_dit(contrat.as_ref(), "", "", SANS_NUMERO), libelle, premier.jj_mm_aaaa(), dernier.jj_mm_aaaa(), etat)];
         l.extend(crate::obligations::en_phrases(obligations).into_iter().map(|o| format!("  {}", o)));
         l
     }
@@ -1646,7 +1641,7 @@ fn verifier_suspension(s: &SuspensionSaisie, contrat_fin: Option<Jour>) -> R<()>
         return Err(refus(format!(
             "Suspension jusqu'au {}, mais le contrat {} finit le {} : une suspension ne survit pas a son contrat.",
             fin.jj_mm_aaaa(),
-            numero_dit(&s.contrat_numero),
+            numero_dit(s.contrat_numero.as_ref(), "", "", SANS_NUMERO),
             contrat_fin.jj_mm_aaaa()
         )));
     }
@@ -1931,7 +1926,7 @@ fn fin_de_contrat_declaree(ctx: &Contexte, e: &Carte, mois: Mois) -> R<declarati
         let liste: Vec<String> = manque.iter().map(phrase_du_manque).collect();
         return Err(refus(format!(
             "Contrat {} : le signalement de fin de contrat ne s'écrit pas encore ; il manque, dans la carte de l'engagement, sous « Contrat » :\n  {}",
-            numero_dit(&e.numero),
+            numero_dit(e.numero.as_ref(), "", "", SANS_NUMERO),
             liste.join("\n  ")
         )));
     }
@@ -2509,7 +2504,7 @@ fn fins_de_contrat(ctx: &Contexte, c: ChargeMois) -> R<ReponseFins> {
         let fin = f.fin.jj_mm_aaaa();
         let ailleurs = if f.mois != c.mois { format!(" ({})", f.mois.libelle(Graphie::Accentuee)) } else { String::new() };
         f.qui_dit = Some(format!("{}, {}, fin le {}{}", ctx.nomme(f.salarie.as_str()), f.libelle_nature, fin, ailleurs));
-        f.contrat_dit = Some(format!("contrat {}, fin le {}", numero_dit(&f.numero), fin));
+        f.contrat_dit = Some(format!("contrat {}, fin le {}", numero_dit(f.numero.as_ref(), "", "", SANS_NUMERO), fin));
     }
     Ok(ReponseFins { phrase: format!("Fins de contrat du mois : {}.", fins.len()), mois: c.mois, fins })
 }
@@ -2550,7 +2545,7 @@ fn arret_contrats(ctx: &Contexte, c: ChargeArretContrats) -> R<ReponseContrats> 
             Some(f) => format!("du {} au {}", k.debut.jj_mm_aaaa(), f.jj_mm_aaaa()),
             None => format!("depuis le {}", k.debut.jj_mm_aaaa()),
         };
-        k.dit = Some(format!("{}, {}", numero_dit(&k.numero), periode));
+        k.dit = Some(format!("{}, {}", numero_dit(k.numero.as_ref(), "", "", SANS_NUMERO), periode));
     }
     Ok(ReponseContrats { phrase, contrats })
 }

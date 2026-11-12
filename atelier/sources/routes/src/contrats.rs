@@ -689,10 +689,7 @@ fn nom_ou_cle(fiche: &droit::fiche::ChampsSalarie, cle: &str) -> String {
 
 /// « contrat n° 12 », ou « contrat sans numéro ».
 fn contrat_dit(numero: Option<&str>) -> String {
-    match numero {
-        Some(n) => format!("contrat n° {}", n),
-        None => "contrat sans numéro".to_string(),
-    }
+    engagement::numeros::numero_dit(numero, "contrat n° ", "", "contrat sans numéro")
 }
 
 /// La premiere lettre en capitale.
@@ -702,10 +699,7 @@ fn majuscule(t: &str) -> String {
 
 /// « avenant n° 2 », ou « avenant sans numéro ».
 fn avenant_dit(numero: Option<i64>) -> String {
-    match numero {
-        Some(n) => format!("avenant n° {}", n),
-        None => "avenant sans numéro".to_string(),
-    }
+    engagement::numeros::numero_dit(numero, "avenant n° ", "", "avenant sans numéro")
 }
 
 /// `demander-signature` : faire signer, en un geste, les contrats choisis et les avenants coches. Tous les refus
