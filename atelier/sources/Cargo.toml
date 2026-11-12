@@ -91,8 +91,9 @@ serde = { version = "1", features = ["derive"] }
 serde_path_to_error = "0.1"
 # Ce qu'un refus porte a part dans la forme de la couche qui refuse, gardee typee jusqu'a la porte (`socle::echec::APart`).
 erased-serde = "0.4"
-# L'ordre des fiches d'un fichier (`droit::fiche::Salaries`) : celui du fichier, comme `serde_json` le garde.
-indexmap = "2"
+# L'ordre des fiches d'un fichier (`droit::fiche::Salaries`) : celui du fichier, comme `serde_json` le garde ; il
+# s'ecrit dans cet ordre (`serde`).
+indexmap = { version = "2", features = ["serde"] }
 # `arbitrary_precision` : un nombre lu garde son texte, exact ; il ne passe jamais par un flottant (`socle::forme`).
 serde_json = { version = "1", features = ["preserve_order", "arbitrary_precision"] }
 sha2 = { version = "0.10", default-features = false }

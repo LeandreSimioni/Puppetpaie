@@ -123,8 +123,9 @@ pub(crate) struct DemandeDeDossier {
 }
 
 /// Une table JSON dont les cles gardent l'ordre ou elles sont venues (les salaries, puis leurs categories).
-#[derive(Debug, Clone)]
-pub(crate) struct Ordonnee<V>(pub(crate) Vec<(String, V)>);
+#[derive(Debug, Clone, Serialize)]
+#[serde(transparent, bound(serialize = "V: Serialize"))]
+pub(crate) struct Ordonnee<V>(#[serde(serialize_with = "socle::ecriture::en_ordre")] pub(crate) Vec<(String, V)>);
 
 impl<V> Default for Ordonnee<V> {
     fn default() -> Self {
@@ -146,12 +147,6 @@ impl<V> Ordonnee<V> {
             }
         };
         &mut self.0[i].1
-    }
-}
-
-impl<V: Serialize> Serialize for Ordonnee<V> {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        s.collect_map(self.0.iter().map(|(k, v)| (k, v)))
     }
 }
 

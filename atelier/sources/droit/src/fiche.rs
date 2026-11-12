@@ -2215,9 +2215,11 @@ pub fn est_une_note(cle: &str) -> bool {
 
 /// UN FICHIER DE FICHES (`config/salaries.json`, `config/spectacles.json`) : sa `note`, et ses fiches par cle (`K`), dans
 /// l'ordre du fichier. Une cle repetee se refuse (`socle::forme::fiches_et_note`).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct FichierDeFiches<K: std::hash::Hash + Eq, F> {
+    #[serde(rename = "note", skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    #[serde(flatten)]
     pub fiches: IndexMap<K, F>,
 }
 
@@ -2231,20 +2233,6 @@ impl<'de, K: std::hash::Hash + Eq + Deserialize<'de>, F: Deserialize<'de>> Deser
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let (source, fiches) = socle::forme::fiches_et_note(d, NOTE_DU_FICHIER)?;
         Ok(FichierDeFiches { source, fiches: fiches.into_iter().collect() })
-    }
-}
-
-impl<K: std::hash::Hash + Eq + Serialize, F: Serialize> Serialize for FichierDeFiches<K, F> {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        let mut m = s.serialize_map(Some(self.fiches.len() + usize::from(self.source.is_some())))?;
-        if let Some(n) = &self.source {
-            m.serialize_entry(NOTE_DU_FICHIER, n)?;
-        }
-        for (k, f) in &self.fiches {
-            m.serialize_entry(k, f)?;
-        }
-        m.end()
     }
 }
 

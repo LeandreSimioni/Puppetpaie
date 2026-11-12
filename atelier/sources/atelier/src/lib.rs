@@ -26,8 +26,9 @@ pub mod verifier_avant_commit;
 /// UN OBJET DONT L'ORDRE COMPTE (un referentiel ecrit dans l'ordre de son texte depose, un resume dans l'ordre ou il
 /// s'est lu) : ses paires `(cle, valeur)`, lues (`socle::forme::en_ordre`, une cle repetee refuse) et ecrites
 /// (`socle::ecriture::en_ordre`) dans leur ordre. Une cle posee de nouveau garde sa place et prend la valeur neuve.
-#[derive(Debug, Clone, PartialEq)]
-pub struct EnOrdre<V>(pub Vec<(String, V)>);
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(transparent, bound(serialize = "V: serde::Serialize"))]
+pub struct EnOrdre<V>(#[serde(serialize_with = "socle::ecriture::en_ordre")] pub Vec<(String, V)>);
 
 impl<V> EnOrdre<V> {
     pub(crate) fn new() -> EnOrdre<V> {
@@ -65,12 +66,6 @@ impl<V> EnOrdre<V> {
 
     pub(crate) fn is_empty(&self) -> bool {
         self.0.is_empty()
-    }
-}
-
-impl<V: serde::Serialize> serde::Serialize for EnOrdre<V> {
-    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        socle::ecriture::en_ordre(&self.0, s)
     }
 }
 

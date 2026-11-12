@@ -1367,15 +1367,10 @@ struct CoutsDits {
     phrases: Vec<String>,
     annee: socle::mois::Annee,
     jusqu_a: String,
-    #[serde(serialize_with = "en_objet")]
+    #[serde(serialize_with = "socle::ecriture::en_ordre")]
     spectacles: Vec<(String, CoutDit)>,
-    #[serde(serialize_with = "en_objet")]
+    #[serde(serialize_with = "socle::ecriture::en_ordre")]
     salaries: Vec<(String, CoutDit)>,
-}
-
-/// Des paires (cle, cout) ecrites en objet, dans leur ordre.
-fn en_objet<S: serde::Serializer>(v: &[(String, CoutDit)], s: S) -> Result<S::Ok, S::Error> {
-    s.collect_map(v.iter().map(|(k, c)| (k, c)))
 }
 
 dites!(EffectifDit, CoutsDits, DemandeOubliee);

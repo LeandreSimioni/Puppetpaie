@@ -11,7 +11,7 @@
 
 use documents::fiche_questionnaire as fq;
 use envois::courriel_lecture::{adresse_de, date_de, identifiant_de, texte_propre};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use socle::base64::lire as base64_lire;
 
 /// L'oracle : le questionnaire et ses textes, les messages lus, les dates et les pays.
@@ -47,8 +47,9 @@ struct MessageLu {
 }
 
 /// Les reponses lues, dans l'ordre du questionnaire.
-#[derive(PartialEq, Debug)]
-struct Reponses(Vec<(String, String)>);
+#[derive(PartialEq, Debug, Serialize)]
+#[serde(transparent)]
+struct Reponses(#[serde(serialize_with = "socle::ecriture::en_ordre")] Vec<(String, String)>);
 
 impl<'de> Deserialize<'de> for Reponses {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
@@ -56,16 +57,6 @@ impl<'de> Deserialize<'de> for Reponses {
     }
 }
 
-impl Serialize for Reponses {
-    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        let mut m = s.serialize_map(Some(self.0.len()))?;
-        for (k, v) in &self.0 {
-            m.serialize_entry(k, v)?;
-        }
-        m.end()
-    }
-}
 
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
 #[serde(deny_unknown_fields)]
