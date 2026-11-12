@@ -1290,7 +1290,7 @@ fn provision_d_une_annee_importee(
     d: &Demande,
     p: &Periode,
     m: Mois,
-    a_provisionner: &mut Vec<(String, Option<engagement::numeros::NumeroContrat>, String, engagement::conges::Provision)>,
+    a_provisionner: &mut Vec<(droit::contexte::IdSalarie, Option<engagement::numeros::NumeroContrat>, String, engagement::conges::Provision)>,
     avert: &mut Vec<String>,
 ) -> R<usize> {
     let fin = m.dernier_jour();
@@ -1300,7 +1300,7 @@ fn provision_d_une_annee_importee(
     let premier_importe = importes.first().copied().ok_or_else(|| erreur(Classe::Refuse, format!("{} : aucun mois repris d'un ancien logiciel.", m)))?;
     let mut lecture = crate::etats_paie::Lecture::nouvelle(ctx, &d.departs);
     let mut sans_compteur = 0;
-    let cle_de = |p: &engagement::importe::PaieImportee| p.salarie.id.to_string();
+    let cle_de = |p: &engagement::importe::PaieImportee| p.salarie.id.clone();
     // Les salaries dont un contrat repris court au-dela du dernier jour repris : sans fin, ou une fin apres lui.
     let continuent: BTreeSet<String> = engagement::importe::contrats_lus(&ctx.racine)
         .map_err(|x| x.reclasser(Classe::Refuse))?
@@ -1325,7 +1325,7 @@ fn provision_d_une_annee_importee(
     for pa in paies.iter().filter_map(engagement::etats::PaieDuMois::importee) {
         let nat = pa.engagement.nat().map_err(|x| x.reclasser(Classe::Refuse))?;
         let cle = cle_de(pa);
-        let Some(au) = nat.au_mois().filter(|_| continuent.contains(&cle)) else {
+        let Some(au) = nat.au_mois().filter(|_| continuent.contains(cle.as_str())) else {
             continue;
         };
         if a_provisionner.iter().any(|(c, ..)| *c == cle) {
@@ -1384,9 +1384,9 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert: Vec<String> = Vec::new();
     let zero = zero2();
-    let cle_de = |p: &engagement::calcul::Paie| p.salarie.id.to_string();
+    let cle_de = |p: &engagement::calcul::Paie| p.salarie.id.clone();
     // CE QUI SE PROVISIONNE, salarie par salarie : (cle, contrat, nature, compteur et indemnite a la fin du mois `m`).
-    let mut a_provisionner: Vec<(String, Option<engagement::numeros::NumeroContrat>, String, engagement::conges::Provision)> = Vec::new();
+    let mut a_provisionner: Vec<(droit::contexte::IdSalarie,Option<engagement::numeros::NumeroContrat>, String, engagement::conges::Provision)> = Vec::new();
     let saisis = p.saisis();
     let mut sans_compteur = 0;
     let m = match saisis.last().copied() {

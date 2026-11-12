@@ -105,12 +105,12 @@ pub(crate) fn et(morceaux: &[String]) -> String {
 /// calculee ou ecrite), et le numero que la paie porte vraiment.
 pub(crate) struct Eng<'a> {
     f: &'a FormeDEngagement,
-    numero: Option<String>,
+    numero: Option<engagement::numeros::NumeroContrat>,
 }
 
 impl<'a> Eng<'a> {
     pub(crate) fn de(f: &'a FormeDEngagement) -> Eng<'a> {
-        Eng { f, numero: f.numero.as_deref().map(str::to_string) }
+        Eng { f, numero: f.numero.clone() }
     }
 
     /// `Engagement.dates_du_contrat` : les jours du mois, puis le planning.
@@ -437,12 +437,12 @@ pub fn ent_du_mois(ctx: &Contexte, mois: Mois) -> droit::contexte::EntrepriseDuD
 /// de la forme. Le contrat d'un spectacle lit ses dates, ses cachets et son spectacle ; celui d'un permanent son salaire
 /// au mois et sa duree du travail (`contrat_ecrit::marqueurs_au_mois`) ; tous deux les mentions que la loi exige de tout
 /// contrat ecrit (`contrat_ecrit::poser_les_mentions`).
-pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &FormeDePaie<A>, numero: Option<&str>) -> R<Valeurs> {
+pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &FormeDePaie<A>, numero: Option<&engagement::numeros::NumeroContrat>) -> R<Valeurs> {
     let eng = &paie.engagement;
     let nat = eng.nature.proprietes()?;
     let mut e = Eng::de(eng);
     if let Some(n) = numero {
-        e.numero = Some(n.to_string());
+        e.numero = Some(n.clone());
     }
     let texte = |c: &Option<String>| c.clone().filter(|s| !s.is_empty());
     let fiche = ctx.salarie(eng.salarie.as_str())?;

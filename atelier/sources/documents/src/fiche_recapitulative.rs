@@ -100,7 +100,7 @@ impl<'a> Recapitulatifs<'a> {
         let zero = socle::num::zero2();
         let mut cotes: [Vec<(String, Cumul)>; 2] = [Vec::new(), Vec::new()];
         for l in etats_paie::lignes_livre(self.ctx, &p, &mut Vec::new(), &self.demande.departs)? {
-            for (i, cle) in [&l.spectacle, &l.cle_salarie].into_iter().enumerate() {
+            for (i, cle) in [l.spectacle.as_str(), l.cle_salarie.as_str()].into_iter().enumerate() {
                 if cle.is_empty() {
                     continue;
                 }
@@ -108,7 +108,7 @@ impl<'a> Recapitulatifs<'a> {
                     Some(n) => n,
                     None => {
                         cotes[i].push((
-                            cle.clone(),
+                            cle.to_string(),
                             Cumul { bulletins: 0, brut: zero, charges: zero, cout: zero, prevu: zero, incomplet: false },
                         ));
                         cotes[i].len() - 1

@@ -1356,7 +1356,7 @@ pub fn jeux_et_description(
         return Err(socle::refus!("{} numeros de bulletin pour {} paies.", numeros.len(), paies.len()));
     }
     let pas_par_paie = crate::prelevement::des_paies(ctx, paies, departs)?;
-    let mut colonnes_par_salarie: HashMap<String, Vec<Colonne>> = HashMap::new();
+    let mut colonnes_par_salarie: HashMap<droit::contexte::IdSalarie, Vec<Colonne>> = HashMap::new();
     // Tout ce que la compagnie a declare jusqu'a ce mois, ce mois-ci compris : les paies
     // qu'on imprime remplacent le fichier de leur mois.
     let courantes = match paies_du_mois {
@@ -1369,7 +1369,7 @@ pub fn jeux_et_description(
         engagements.retain(|e| e.debut <= fin);
     }
     for pa in paies {
-        let cle = pa.salarie.id.to_string();
+        let cle = pa.salarie.id.clone();
         // Le compteur de conges est par contrat, ecrit dans la paie a la validation (`Paie::conges`) ; le cumul des
         // 507 h par salarie.
         if !pa.engagement.nat()?.mensuelle() && !colonnes_par_salarie.contains_key(&cle) {
@@ -1381,13 +1381,13 @@ pub fn jeux_et_description(
         if p.engagement.sans_paie() {
             continue;
         }
-        let cle = p.salarie.id.to_string();
+        let cle = &p.salarie.id;
         // Une paie qui n'est pas un mois sans paie porte son prelevement (`prelevement::des_paies`).
         let pas = pas_par_paie[i].as_ref().ok_or_else(|| socle::refus!("{} : la paie de {} n'a pas de prélèvement à la source.", cle, p.engagement.mois))?;
         jeux.push(Jeu {
             paie: p,
             numero: numeros[i].as_deref(),
-            colonnes: colonnes_par_salarie.get(&cle).map(Vec::as_slice),
+            colonnes: colonnes_par_salarie.get(cle).map(Vec::as_slice),
             plafond: p.plafond_urssaf(ctx)?,
             conges: p.conges.as_ref(),
             pas,
@@ -1407,7 +1407,7 @@ pub fn passe_des_bulletins<'a>(ctx: &'a Contexte, paies: &[Paie], mois: Mois, de
     let mut au_cachet = std::collections::BTreeSet::new();
     for pa in paies {
         if !pa.engagement.nat()?.mensuelle() {
-            au_cachet.insert(pa.salarie.id.to_string());
+            au_cachet.insert(pa.salarie.id.clone());
         }
     }
     Ok(Passe::lire(ctx, Some(mois), Some(au_cachet), departs))

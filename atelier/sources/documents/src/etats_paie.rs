@@ -283,10 +283,6 @@ impl<'a> Lecture<'a> {
     }
 }
 
-/// La cle de la fiche du salarie : ce qui distingue deux salaries de meme nom et de meme prenom.
-pub fn cle_de(fiche: &droit::fiche::FicheSalarie) -> R<String> {
-    Ok(fiche.id.to_string())
-}
 
 /// Le titre du spectacle d'une paie, quand elle en a un.
 pub fn titre_spectacle(p: &PaieDuMois) -> Option<String> {
@@ -307,9 +303,9 @@ const CUMULABLES: [&str; 7] = ["brut", "cotisations_salariales", "cotisations_pa
 pub struct LigneLivre {
     pub mois: Mois,
     pub salarie: String,
-    pub cle_salarie: String,
+    pub cle_salarie: droit::contexte::IdSalarie,
     /// Le numero du contrat, quand il est ecrit (un mois produit l'a fige).
-    pub contrat: Option<String>,
+    pub contrat: Option<engagement::numeros::NumeroContrat>,
     /// Le libelle de sa nature de contrat.
     #[serde(rename = "nature")]
     pub libelle_nature: String,
@@ -475,8 +471,8 @@ fn lignes_du_mois(ctx: &Contexte, mois: Mois, coordonnees: bool, departs: &engag
         lignes.push(LigneLivre {
             mois,
             salarie: qui(s)?,
-            cle_salarie: cle_de(s)?,
-            contrat: e.numero.as_deref().map(str::to_string),
+            cle_salarie: s.id.clone(),
+            contrat: e.numero.clone(),
             libelle_nature: nat_libelle(p)?,
             // `fiche_recapitulative` lit encore le titre en texte : vide sans spectacle.
             spectacle: titre_spectacle(p).into_iter().collect(),
@@ -519,7 +515,7 @@ fn grouper(lignes: &[LigneLivre], regroupement: &str) -> R<Vec<Groupe>> {
             }
         }
     };
-    let dedans = |l: &LigneLivre| -> (String, String, Option<String>) {
+    let dedans = |l: &LigneLivre| -> (String, String, Option<engagement::numeros::NumeroContrat>) {
         match regroupement {
             "salarie" => (l.mois.to_string(), l.spectacle.clone(), l.contrat.clone()),
             "mois" => (l.salarie.clone(), l.spectacle.clone(), l.contrat.clone()),
@@ -656,7 +652,7 @@ fn cellules(l: &LigneLivre, coordonnees: bool) -> Vec<CelL> {
     if coordonnees {
         c.extend([o(&l.nir), o(&l.date_naissance.map(|j| j.iso())), o(&l.adresse)]);
     }
-    c.extend([o(&l.contrat), t(&l.libelle_nature), t(&l.spectacle)]);
+    c.extend([o(&l.contrat.as_ref().map(ToString::to_string)), t(&l.libelle_nature), t(&l.spectacle)]);
     c.extend(CUMULABLES.iter().map(|ch| CelL::M(l.montant(ch))));
     c
 }
@@ -962,14 +958,14 @@ pub fn recapitulatif_annuel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::nouvelle(ctx, None, d.annee, d.toutes, true)?;
     let mut avert = Vec::new();
     let lignes = lignes_livre(ctx, &p, &mut avert, &d.departs)?;
-    let mut ordre: Vec<(String, String)> = Vec::new();
-    let mut par: HashMap<(String, String), (Ligne, i64)> = HashMap::new();
+    let mut ordre: Vec<(String, droit::contexte::IdSalarie)> = Vec::new();
+    let mut par: HashMap<(String, droit::contexte::IdSalarie), (Ligne, i64)> = HashMap::new();
     for l in &lignes {
         let cle = (annee_de(l.mois), l.cle_salarie.clone());
         if !par.contains_key(&cle) {
             ordre.push(cle.clone());
             let mut n = Ligne::nouvelle();
-            n.t("annee", cle.0.clone()).t("salarie", l.salarie.clone()).t("cle_salarie", cle.1.clone()).n("bulletins", 0);
+            n.t("annee", cle.0.clone()).t("salarie", l.salarie.clone()).t("cle_salarie", cle.1.to_string()).n("bulletins", 0);
             par.insert(cle.clone(), (n, 0));
         }
         let (ligne, n) = par.get_mut(&cle).expect("insere");
@@ -1028,7 +1024,7 @@ pub fn masse_salariale(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
     let mut ordre: Vec<Mois> = Vec::new();
-    let mut par: HashMap<Mois, (Ligne, BTreeSet<String>, i64)> = HashMap::new();
+    let mut par: HashMap<Mois, (Ligne, BTreeSet<droit::contexte::IdSalarie>, i64)> = HashMap::new();
     for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
         if !par.contains_key(&l.mois) {
             ordre.push(l.mois);
@@ -1344,7 +1340,7 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 None => e.dates_travail.last().map(|j| j.iso()),
             };
             let mut l = Ligne::nouvelle();
-            l.m("mois", m).t("salarie", qui(paie.salarie())?).t("cle_salarie", cle_de(paie.salarie())?);
+            l.m("mois", m).t("salarie", qui(paie.salarie())?).t("cle_salarie", paie.salarie().id.to_string());
             l.ot("contrat", e.numero.clone()).ot("spectacle", titre_spectacle(paie)).ot("emploi", emploi).t("debut", jj(&debut)).ot("fin", fin.as_deref().map(jj));
             l.od("cachets", cachets).od("heures", heures).n("jours", e.dates_travail.len() as i64).od("brut", paie.brut().map(eur2));
             lignes.push(l);
@@ -1383,15 +1379,15 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 pub fn cout_par_spectacle(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
-    let mut ordre: Vec<(String, String)> = Vec::new();
-    let mut par: HashMap<(String, String), (Ligne, i64)> = HashMap::new();
+    let mut ordre: Vec<(String, droit::contexte::IdSalarie)> = Vec::new();
+    let mut par: HashMap<(String, droit::contexte::IdSalarie), (Ligne, i64)> = HashMap::new();
     for l in lignes_livre(ctx, &p, &mut avert, &d.departs)? {
         let sp = if l.spectacle.is_empty() { "(sans spectacle)".to_string() } else { l.spectacle.clone() };
         let cle = (sp.clone(), l.cle_salarie.clone());
         if !par.contains_key(&cle) {
             ordre.push(cle.clone());
             let mut n = Ligne::nouvelle();
-            n.t("spectacle", sp).t("salarie", l.salarie.clone()).t("cle_salarie", l.cle_salarie.clone()).n("bulletins", 0);
+            n.t("spectacle", sp).t("salarie", l.salarie.clone()).t("cle_salarie", l.cle_salarie.to_string()).n("bulletins", 0);
             par.insert(cle.clone(), (n, 0));
         }
         let (ligne, n) = par.get_mut(&cle).expect("insere");
