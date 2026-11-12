@@ -592,7 +592,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
     // CE QUI PARTIRA, nomme sans etre fabrique : les documents s'ecrivent, numerotes, a l'envoi (`envoyer_documents`).
     let messages = if pret { preparer(ctx, &paies, mois, &dossier)? } else { Vec::new() };
     let tous_a_jour = messages.iter().all(|x| choix.a_jour.contains(&x.cle));
-    let messages = choix.garder(messages, |x| x.cle.as_str());
+    let messages = choix.garder(messages, |x| &x.cle);
     let (mut expediteur, mut avertissements) = (String::new(), Vec::<String>::new());
     if prets.boite_liee {
         // La boite qui enverrait, quand des documents sont dus.
@@ -618,7 +618,7 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
     // pas change. Un renvoi de documents corriges ou un premier envoi n'envoie rien une seconde fois.
     let deja = messages
         .iter()
-        .filter_map(|x| partis.get(x.cle.as_str()))
+        .filter_map(|x| partis.get(&x.cle))
         .map(|p| p.quand)
         .max()
         .filter(|_| tous_a_jour)
@@ -871,7 +871,7 @@ pub(crate) struct Choix {
 
 impl Choix {
     /// Ce qui part, parmi les messages de tout le mois : ceux qui ne sont pas a jour ; s'ils le sont tous, tous.
-    pub(crate) fn garder<T>(&self, messages: Vec<T>, cle: impl Fn(&T) -> &str) -> Vec<T> {
+    pub(crate) fn garder<T>(&self, messages: Vec<T>, cle: impl Fn(&T) -> &IdSalarie) -> Vec<T> {
         if messages.iter().all(|m| self.a_jour.contains(cle(m))) {
             return messages;
         }
@@ -1003,7 +1003,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
             cles.push(p.salarie.id.clone());
         }
     }
-    let cles: Vec<IdSalarie> = choix.garder(cles, |c| c.as_str()).into_iter().filter(|c| seulement.is_none_or(|s| s.iter().any(|x| *c == *x))).collect();
+    let cles: Vec<IdSalarie> = choix.garder(cles, |c| c).into_iter().filter(|c| seulement.is_none_or(|s| s.iter().any(|x| *c == *x))).collect();
     if cles.is_empty() {
         return Err(refus("Aucun salarié coché. Rien n'est parti."));
     }
@@ -1030,7 +1030,8 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
     let documents = crate::gestes::depart::fabriquer_documents(ctx, mois, &cles, "interface")?;
     let paies_servies: Vec<engagement::calcul::Paie> = paies.iter().filter(|p| cles.contains(&p.salarie.id)).cloned().collect();
     let messages = envoi::preparer_avec(&paies_servies, &ctx.entreprise, mois, &dossier, &choix.renvois, &dues_a_part(&paies_servies)?).map_err(refus_de_preparation)?;
-    let messages: Vec<envoi::Message> = choix.garder(messages, |m| m.cle.as_str()).into_iter().filter(|m| cles.iter().any(|c| c.as_str() == m.cle)).collect();
+    // Les cles sont deja gardees (`Choix::garder`, plus haut) : leurs messages partent tous.
+    let messages: Vec<envoi::Message> = messages.into_iter().filter(|m| cles.iter().any(|c| c.as_str() == m.cle)).collect();
     let mut avertissements: Vec<String> = documents.avertissements.clone();
     if !sans.is_empty() {
         avertissements.push(sans_courriel_dit(&noms_sans));

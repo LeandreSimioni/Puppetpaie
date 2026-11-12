@@ -232,18 +232,19 @@ impl SorteDeFiche for FicheSalarieDatee {
     const FICHIER: &'static str = droit::contexte::SALARIES;
     type Fichier = droit::fiche::Salaries;
 
+    // Un texte qui n'est pas une cle (vide, fait de blancs : `IdSalarie::lire`) ne nomme aucune fiche existante.
     fn existante<'a>(f: &'a mut droit::fiche::Salaries, cle: Option<&str>) -> Option<&'a mut Self> {
-        f.fiches.get_mut(cle?)
+        f.fiches.get_mut(&IdSalarie::lire(cle?).ok()?)
     }
     fn ou_neuve<'a>(f: &'a mut droit::fiche::Salaries, cle: Option<&str>) -> R<&'a mut Self> {
         let cle = cle.ok_or_else(|| refus("Une fiche de salarié se nomme par sa clé."))?;
         Ok(f.fiches.entry(IdSalarie::lire(cle)?).or_default())
     }
     fn contient(f: &droit::fiche::Salaries, cle: &str) -> bool {
-        f.fiches.contains_key(cle)
+        IdSalarie::lire(cle).is_ok_and(|c| f.fiches.contains_key(&c))
     }
     fn montree(ctx: &Contexte, cle: Option<&str>) -> Option<ChampsSalarie> {
-        ctx.salaries.get(cle?).map(|f| Self::retenue(f.champs.clone()))
+        ctx.salaries.get(&IdSalarie::lire(cle?).ok()?).map(|f| Self::retenue(f.champs.clone()))
     }
     fn differentes(a: &ChampsSalarie, b: &ChampsSalarie) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)

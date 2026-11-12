@@ -79,10 +79,11 @@ impl Dite for DossierRendu {
 /// `dossier-salarie` : le dossier construit (`construire`), et ce qu'il a ecrit.
 fn dossier_salarie(ctx: &Contexte, demande: &DemandeDeDossier) -> R<DossierRendu> {
     let d = construire(ctx, demande)?;
+    let qui = d.salaries.iter().map(IdSalarie::as_str).collect::<Vec<_>>().join(", ");
     let p = if d.fichiers.is_empty() {
-        format!("Dossier de {} ({}) : rien n'est écrit.", d.salaries.join(", "), d.periode)
+        format!("Dossier de {} ({}) : rien n'est écrit.", qui, d.periode)
     } else {
-        format!("Dossier de {} ({}) : {}.", d.salaries.join(", "), d.periode, socle::ecran::compte(d.fichiers.len(), "fichier écrit", "fichiers écrits"))
+        format!("Dossier de {} ({}) : {}.", qui, d.periode, socle::ecran::compte(d.fichiers.len(), "fichier écrit", "fichiers écrits"))
     };
     Ok(DossierRendu::de(d, p, None))
 }
@@ -1292,7 +1293,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
         return Err(erreur(Classe::AucunDocument, format!(
             "Aucun document sur la période ({}) pour {}.",
             p.libelle(),
-            if demandes.is_some() { cles.join(", ") } else { "aucun salarié".to_string() }
+            if demandes.is_some() { cles.iter().map(IdSalarie::as_str).collect::<Vec<_>>().join(", ") } else { "aucun salarié".to_string() }
         )));
     }
 

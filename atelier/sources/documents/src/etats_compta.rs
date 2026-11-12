@@ -1330,7 +1330,7 @@ fn provision_d_une_annee_importee(
         if a_provisionner.iter().any(|(c, ..)| *c == cle) {
             continue;
         }
-        let date = ctx.salaries.get(cle.as_str()).and_then(|f| f.permanent.ouvrir(&au).conges_reprise.dite()).and_then(|r| r.date.dite()).map(|j| j.iso());
+        let date = ctx.salaries.get(&cle).and_then(|f| f.permanent.ouvrir(&au).conges_reprise.dite()).and_then(|r| r.date.dite()).map(|j| j.iso());
         let Some(mut cpt) = engagement::conges::compteur_a_la_reprise(ctx, &au, &cle).map_err(|x| x.reclasser(Classe::Refuse))?.filter(|_| date == Some(lendemain.iso())) else {
             avert.push(format!(
                 "{} : sa fiche ne dit pas ses congés payés au {} (« Congés payés à la reprise », recopiés de son dernier bulletin repris) : son compteur ne se lit pas, il n'est pas dans la provision.",

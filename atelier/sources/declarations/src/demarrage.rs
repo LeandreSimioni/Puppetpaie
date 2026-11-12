@@ -475,7 +475,7 @@ fn conges_a_reprendre(ctx: &Contexte) -> R<Vec<(droit::contexte::IdSalarie, Stri
         if debut >= premier || conges_repris(ctx, &au, &salarie) {
             continue;
         }
-        let nom = match ctx.salaries.get(salarie.as_str()).map(|f| documents::tableaux_export::qui_souple(f)).filter(|n| !n.is_empty()) {
+        let nom = match ctx.salaries.get(&salarie).map(|f| documents::tableaux_export::qui_souple(f)).filter(|n| !n.is_empty()) {
             Some(n) => n,
             None => salarie.to_string(),
         };

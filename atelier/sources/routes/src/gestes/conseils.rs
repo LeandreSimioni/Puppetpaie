@@ -1044,7 +1044,7 @@ fn gains_sur_la_fenetre(ctx: &Contexte, cle: &droit::contexte::IdSalarie, f: &Fe
 
 /// `conseils-salarie` : ce que la compagnie a fait pour ce salarie, sur la fenetre de ses droits. Un salarie qu'aucune
 /// fiche ne porte n'en a pas.
-fn du_salarie(ctx: &Contexte, cle: &str) -> R<Vec<ConseilVu>> {
+fn du_salarie(ctx: &Contexte, cle: &droit::contexte::IdSalarie) -> R<Vec<ConseilVu>> {
     if !actifs(&ctx.entreprise) {
         return Ok(Vec::new());
     }
@@ -1226,7 +1226,7 @@ struct ChargeConseilDuJour {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeConseilsSalarie {
-    salarie: String,
+    salarie: droit::contexte::IdSalarie,
 }
 
 /// Ce que rend `conseil-du-jour` : le conseil, ou rien quand l'option est decochee ; sa phrase est son texte.

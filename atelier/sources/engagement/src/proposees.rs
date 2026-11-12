@@ -55,7 +55,7 @@ pub fn de_la_carte(ctx: &Contexte, carte: &Carte, jour: &Jour) -> R<Proposees> {
         Some(n) => Some(n.proprietes()?.mensuelle()),
         None => None,
     };
-    let fiche = carte.salarie.as_ref().and_then(|c| ctx.salaries.get(c.as_str()));
+    let fiche = carte.salarie.as_ref().and_then(|c| ctx.salaries.get(c));
     let metier = carte.metier.as_ref().map(droit::fiche::CodeEmploiFt::from).or_else(|| fiche.and_then(|f| f.code_emploi_ft.dite()).cloned());
     let du_metier = match &carte.metier {
         Some(code) => Some(code.metier()?.statut()),

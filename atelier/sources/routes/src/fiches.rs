@@ -1221,15 +1221,12 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         if !illisible.is_empty() {
             note.push_str(&format!(" Non lu, à compléter : {}.", illisible.join(" ; ")));
         }
-        let existante: Option<String> = ctx
-            .salaries
-            .iter()
-            .find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == de))
-            .map(|(k, _)| k.to_string());
+        let trouvee = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == de));
+        let existante: Option<String> = trouvee.map(|(k, _)| k.to_string());
         // Une fiche qui existe deja : on ne complete que ses cases VIDES (ce qu'elle porte a peut-etre deja ete declare) ;
         // une fiche neuve prend toutes celles de la reponse, active. La note dit d'ou viennent les valeurs.
-        let deja = match &existante {
-            Some(k) => Some(vue::<FicheSalarieDatee>(&ctx.salaries[k.as_str()].champs)?),
+        let deja = match trouvee {
+            Some((_, s)) => Some(vue::<FicheSalarieDatee>(&s.champs)?),
             None => None,
         };
         let dites = droit::fiche::ChampsSalarie::default().cases_differentes(&recue);
@@ -1417,10 +1414,11 @@ fn couts(ctx: &Contexte, c: ChargeCouts) -> R<CoutsDits> {
 /// `poser-courriel` : le courriel `email` du salarie `cle`, saisi la ou il manque (la boite des contrats a
 /// faire signer). La fiche entiere s'ecrit comme depuis l'ecran (`ecrire_fiche`), seul le courriel y change : il se
 /// verifie avec elle, et une fiche qui refuse le dit.
-pub(crate) fn poser_courriel(ctx: &Contexte, cle: &str, email: &str) -> R<droit::fiche::Courriel> {
+pub(crate) fn poser_courriel(ctx: &Contexte, cle: &IdSalarie, email: &str) -> R<droit::fiche::Courriel> {
     if !ctx.salaries.contains_key(cle) {
-        return Err(refus(format!("Salarié {} inconnu.", socle::fichiers::repr(cle))));
+        return Err(refus(format!("Salarié {} inconnu.", socle::fichiers::repr(cle.as_str()))));
     }
+    let cle = cle.as_str();
     let email = droit::fiche::Courriel::lire(&droit::fiche::Courriel::rangee(email))?;
     let p = preparer::<FicheSalarieDatee>(ctx, Some(cle), |plate| {
         plate.email = Some(email.clone());

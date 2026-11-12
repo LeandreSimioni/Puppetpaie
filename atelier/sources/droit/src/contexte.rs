@@ -936,27 +936,15 @@ fn aujourdhui_brut() -> R<Jour> {
 pub struct IdSalarie(String);
 
 impl IdSalarie {
-    /// La cle ecrite `texte` ; vide, elle se refuse.
+    /// La cle ecrite `texte` ; vide ou faite de blancs (`socle::texte::blanc`), elle se refuse.
     pub fn lire(texte: &str) -> R<IdSalarie> {
-        if texte.is_empty() {
+        if texte.chars().all(socle::texte::blanc) {
             return Err(refus("cle de salarie vide"));
         }
         Ok(IdSalarie(texte.to_string()))
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl AsRef<str> for IdSalarie {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::borrow::Borrow<str> for IdSalarie {
-    fn borrow(&self) -> &str {
         &self.0
     }
 }
@@ -1664,8 +1652,8 @@ PSS_H_METROP).",
     }
 
     fn cle_trouvee(&self, nom: &str) -> R<String> {
-        if self.salaries.contains_key(nom) {
-            return Ok(nom.to_string());
+        if let Some(cle) = self.salaries.keys().find(|c| c.as_str() == nom) {
+            return Ok(cle.to_string());
         }
         let q = cle_recherche(nom);
         for cle in self.salaries.keys() {

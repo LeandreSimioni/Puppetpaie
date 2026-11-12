@@ -315,7 +315,7 @@ struct ChargePieces {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeCourriel {
-    salarie: String,
+    salarie: IdSalarie,
     email: String,
 }
 
@@ -499,7 +499,7 @@ struct PiecesParties {
 #[derive(Debug, Serialize)]
 struct CourrielPose {
     phrase: String,
-    salarie: String,
+    salarie: IdSalarie,
     email: String,
 }
 
@@ -710,7 +710,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
     if des_contrats {
         let choisis = c.choisis();
         let a_qui = match &choisis.salaries {
-            Some(l) if !l.is_empty() => format!("{} salarie(s) : {}", l.len(), l.join(", ")),
+            Some(l) if !l.is_empty() => format!("{} salarie(s) : {}", l.len(), l.iter().map(IdSalarie::as_str).collect::<Vec<_>>().join(", ")),
             _ => "les salaries du mois qui ont un contrat a signer".to_string(),
         };
         if !c.remplace() {

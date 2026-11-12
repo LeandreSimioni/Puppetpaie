@@ -203,7 +203,7 @@ fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
         if !changes.iter().any(|c| c.starts_with(&format!("{} :", cle))) {
             continue;
         }
-        let qui = match ctx.salaries.get(cle.as_str()).and_then(|s| s.nomme()).filter(|q| !q.is_empty()) {
+        let qui = match ctx.salaries.get(&cle).and_then(|s| s.nomme()).filter(|q| !q.is_empty()) {
             Some(q) => q,
             None => cle.to_string(),
         };

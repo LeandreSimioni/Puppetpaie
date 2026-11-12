@@ -308,7 +308,7 @@ impl Attendue {
     }
 }
 
-pub fn signatures_attendues<'f>(fiche_de: impl Fn(&str) -> Option<&'f droit::fiche::ChampsSalarie>, lignes: &[Ligne], mois: Option<Mois>) -> Vec<Attendue> {
+pub fn signatures_attendues<'f>(fiche_de: impl Fn(&droit::contexte::IdSalarie) -> Option<&'f droit::fiche::ChampsSalarie>, lignes: &[Ligne], mois: Option<Mois>) -> Vec<Attendue> {
     // Par CONTRAT (salarie, numero) : une reponse ne releve que le contrat qu'elle signe (Retours Windows, B, suite).
     let recus = contrats_recus(lignes);
     let renvoyes = renvoyes_depuis_la_signature(lignes);
@@ -340,7 +340,7 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&str) -> Option<&'f droit::fic
             let k = paire(&c.salarie, c.numero.as_ref());
             let apres_signature = matches!(c.acte.as_deref(), Some("avenant") | Some("remplace")) || renvoyes.contains(&k);
             let n = *par_code.entry(code.to_string()).or_insert_with(|| {
-                let fiche = fiche_de(c.salarie.as_str());
+                let fiche = fiche_de(&c.salarie);
                 let prenom = fiche.and_then(|f| f.prenom_affichage.en_texte().or_else(|| f.prenom.en_texte()));
                 demandes.push(Attendue {
                     code: code.to_string(),
@@ -1364,7 +1364,7 @@ mod tests {
 
     #[test]
     fn une_reponse_deja_relevee_ne_se_renote_pas_apres_la_mention_retiree() {
-        let ctx = |_: &str| None;
+        let ctx = |_: &droit::contexte::IdSalarie| None;
         let lu = recu("ALPHA", true, ", \"origine\": \"courriel\", \"code\": \"C1\"");
         let retiree = recu("ALPHA", false, "");
         let mut l = vec![signature("2026-06-05T10:00:00", &contrat("ALPHA", "C1"), &format!("[{}, {}]", lu, retiree))];
