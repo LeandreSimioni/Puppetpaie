@@ -610,7 +610,9 @@ pub struct Cotisation {
 }
 
 /// Le composant d'une base 31 quand la source du taux n'en dit pas (`Cotisation::composant79`) : « 11 - Tranche A »
-/// (S21.G00.79.001), sur le brut.
+/// (S21.G00.79.001). La prevoyance et la sante des intermittents : « La base de calcul de ces cotisations est le salaire
+/// brut dans la limite de la tranche A journalière » (Parametres Audiens 2026, § 3,
+/// `atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt` l. 197).
 const TRANCHE_A: &str = "11";
 
 /// LA SECTION DES ORGANISMES (`organismes-base.json`, `par_nature`) ET DES CONTRIBUTIONS D'UNE NATURE DE CONTRAT : celle
