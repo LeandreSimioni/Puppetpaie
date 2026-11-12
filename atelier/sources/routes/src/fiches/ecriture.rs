@@ -46,6 +46,11 @@ pub(crate) trait SorteDeFiche: FicheDatee {
     fn differentes(a: &Self::Plate, b: &Self::Plate) -> Vec<CaseDeFiche>;
     /// Les cases de la fiche, sans ses notes (ce que l'ecran montre).
     fn sans_notes(p: Self::Plate) -> Self::Plate;
+    /// La fiche telle que le moteur la retient, pour ce qu'il lit d'une case qu'elle ne dit pas : « actif » d'un salarie
+    /// ou d'un spectacle (`archivee`). L'ecran la montre ainsi, et l'ecriture part de ce qu'il a montre.
+    fn retenue(p: Self::Plate) -> Self::Plate {
+        p
+    }
 
     /// Ce que le moteur pose dans la fiche changee `apres`, d'apres celle que l'ecran a montree (`avant`), avant tout
     /// controle (la forme d'un code risque, la notification d'un taux AT/MP que la saisie change).
@@ -239,13 +244,16 @@ impl SorteDeFiche for FicheSalarieDatee {
         f.fiches.contains_key(cle)
     }
     fn montree(ctx: &Contexte, cle: Option<&str>) -> Option<ChampsSalarie> {
-        ctx.salaries.get(cle?).map(|f| f.champs.clone())
+        ctx.salaries.get(cle?).map(|f| Self::retenue(f.champs.clone()))
     }
     fn differentes(a: &ChampsSalarie, b: &ChampsSalarie) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
     }
     fn sans_notes(p: ChampsSalarie) -> ChampsSalarie {
         p.sans_notes()
+    }
+    fn retenue(p: ChampsSalarie) -> ChampsSalarie {
+        ChampsSalarie { actif: Some(!p.archivee()), ..p }
     }
     fn refuser(ctx: &Contexte, cle: Option<&str>, avant: &ChampsSalarie, apres: &ChampsSalarie) -> R<()> {
         // LE MATRICULE D'UN SALARIE SANS NIR NE SE CHANGE PAS : il finit son numero technique temporaire.
@@ -317,13 +325,16 @@ impl SorteDeFiche for FicheSpectacleDatee {
         f.fiches.contains_key(cle)
     }
     fn montree(ctx: &Contexte, cle: Option<&str>) -> Option<ChampsSpectacle> {
-        ctx.spectacles.get(cle?).cloned()
+        ctx.spectacles.get(cle?).cloned().map(Self::retenue)
     }
     fn differentes(a: &ChampsSpectacle, b: &ChampsSpectacle) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
     }
     fn sans_notes(p: ChampsSpectacle) -> ChampsSpectacle {
         p.sans_notes()
+    }
+    fn retenue(p: ChampsSpectacle) -> ChampsSpectacle {
+        ChampsSpectacle { actif: Some(!p.archivee()), ..p }
     }
     fn refuser(ctx: &Contexte, cle: Option<&str>, _avant: &ChampsSpectacle, apres: &ChampsSpectacle) -> R<()> {
         // UN NUMERO D'OBJET, UN SPECTACLE : France Travail l'attribue « pour chaque spectacle ou chaque production » et il

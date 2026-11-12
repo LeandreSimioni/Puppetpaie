@@ -381,6 +381,7 @@ fn fiche_verifiee<F: SorteDeFiche>(
     p: &engagement::permanents::Permanents,
 ) -> R<VueFiche<F::Plate>> {
     let nom = F::NOM;
+    let plate = F::retenue(plate);
     let lue = vue::<F>(&plate)?;
     let anomalies = champs::verifier_fiche(nom, &lue)?;
     let comble = lue.comblee(nom)?;

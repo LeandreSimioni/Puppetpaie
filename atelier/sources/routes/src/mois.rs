@@ -1862,7 +1862,7 @@ pub(crate) fn archives_employees(paies: &[Paie]) -> R<Vec<String>> {
         }
         // Un permanent n'a pas de spectacle -- le numero d'objet lui est interdit
         // (CCH-11) -- donc rien a verifier de ce cote.
-        if let Some(sp) = p.spectacle.as_ref().filter(|s| s.actif.dite() == Some(&false)) {
+        if let Some(sp) = p.spectacle.as_ref().filter(|s| s.archivee()) {
             let titre = sp.titre.ecrite("titre").map_err(|m| m.reclasser(Classe::Manque))?;
             let lequel = match sp.numero_objet.portee() {
                 Some(objet) => format!("« {} » (objet {})", titre, objet),
