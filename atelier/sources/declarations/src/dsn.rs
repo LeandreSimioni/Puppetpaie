@@ -4663,7 +4663,7 @@ certificat de conformite du depot precedent.",
         }
     }
     for (rubrique, case, cle) in [
-        ("S21.G00.11.001", &ent_e.nic, "nic"),
+        ("S21.G00.11.001", &ent_e.nic.en_texte(), "nic"),
         ("S21.G00.11.002", &ent_e.naf.en_texte(), "naf"),
         ("S21.G00.11.003", &ent_e.adresse.en_texte(), "adresse"),
         ("S21.G00.11.004", &ent_e.code_postal.en_texte(), "code_postal"),

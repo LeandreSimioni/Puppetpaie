@@ -4,7 +4,6 @@
 //! (`declarations::dsn_lue::DsnLue`) ; les AEM par positions fixes (1000 caracteres, latin-1). La fiche qu'une DSN
 //! remplit n'est ecrite qu'a la fin (`EntrepriseDeclaree`, `SalarieDeclare::fiche`).
 
-use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
@@ -86,8 +85,8 @@ pub struct LectureDsn {
     pub dernier_mois: Option<Mois>,
     pub illisibles: Vec<String>,
     /// Les etablissements declares (S21.G00.11.001), et le NIC du siege (S21.G00.06.002), d'une DSN a l'autre.
-    pub etablissements: BTreeSet<String>,
-    pub nics_siege: BTreeSet<String>,
+    pub etablissements: BTreeSet<droit::fiche::Nic>,
+    pub nics_siege: BTreeSet<droit::fiche::Nic>,
     /// Par (mois, NIR s'il est declare, numero du contrat).
     pub paies: BTreeMap<(Mois, Option<String>, String), PaieDeclaree>,
     /// Le code risque et le taux AT/MP que les contrats declarent (S21.G00.40.040, .043), par annee : ceux de la derniere DSN
@@ -427,7 +426,7 @@ pub(crate) const AEM_SIRET: (usize, usize) = (50, 64);
 #[derive(Clone)]
 pub struct Employeur {
     /// Les Siren qu'elle porte (un, d'ordinaire ; une AEM en porte un par enregistrement).
-    pub sirens: std::collections::BTreeSet<String>,
+    pub sirens: std::collections::BTreeSet<droit::fiche::Siren>,
     /// Les enregistrements (AEM) ou l'identifiant de l'employeur ne se lit pas.
     pub(crate) illisibles: usize,
 }
@@ -436,7 +435,7 @@ pub struct Employeur {
 /// du cabinet quand un tiers depose (`EntrepriseDeclaree`). Une DSN fautive refuse (`declarations::dsn_lue::lire`).
 pub fn employeur_dsn(chemin: &Path) -> Result<Employeur, Echec> {
     let siren = declarations::dsn_lue::lire_une_dsn(chemin)?.and_then(|d| d.entreprise.siren);
-    Ok(Employeur { sirens: siren.into_iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(), illisibles: 0 })
+    Ok(Employeur { sirens: siren.into_iter().collect(), illisibles: 0 })
 }
 
 /// Une AEM : le Siret de chaque enregistrement (`AEM_SIRET`), ramene a son Siren. Un fichier que le tri a lu et qui ne
@@ -450,11 +449,11 @@ pub fn employeur_aem(chemin: &Path) -> Result<Employeur, Echec> {
         if l.len() < 700 {
             continue;
         }
-        let s = tranche(&l, AEM_SIRET.0, AEM_SIRET.1);
-        if s.len() == 14 && s.chars().all(|c| c.is_ascii_digit()) && declarations::champs::luhn(&s) {
-            e.sirens.insert(s[..9].to_string());
-        } else {
-            e.illisibles += 1;
+        match droit::fiche::Siret::lire(&tranche(&l, AEM_SIRET.0, AEM_SIRET.1)) {
+            Ok(siret) if siret.cle_juste() => {
+                e.sirens.insert(siret.siren());
+            }
+            Ok(_) | Err(_) => e.illisibles += 1,
         }
     }
     Ok(e)
@@ -465,13 +464,13 @@ pub fn employeur_aem(chemin: &Path) -> Result<Employeur, Echec> {
 /// des autres pieces (bulletins, AEM) si elles n'en portent qu'un. `None` : rien ne dit laquelle est la compagnie.
 pub fn siren_de_reference(
     fiche: &droit::fiche::ChampsEntreprise,
-    dsn: &std::collections::BTreeSet<String>,
-    autres: &std::collections::BTreeSet<String>,
-) -> Option<String> {
-    if let Some(s) = fiche.siren.portee() {
-        return Some(s.trim().to_string());
+    dsn: &std::collections::BTreeSet<droit::fiche::Siren>,
+    autres: &std::collections::BTreeSet<droit::fiche::Siren>,
+) -> Option<droit::fiche::Siren> {
+    if let Some(s) = &fiche.siren {
+        return Some(s.clone());
     }
-    let seul = |e: &std::collections::BTreeSet<String>| (e.len() == 1).then(|| e.iter().next().cloned()).flatten();
+    let seul = |e: &std::collections::BTreeSet<droit::fiche::Siren>| (e.len() == 1).then(|| e.iter().next().cloned()).flatten();
     if !dsn.is_empty() {
         return seul(dsn);
     }
@@ -495,7 +494,7 @@ pub enum Verdict {
 }
 
 /// Le sort d'une DSN (`aem` faux) ou d'une AEM devant la reference.
-pub fn verdict_entreprise(aem: bool, e: &Employeur, reference: Option<&str>) -> Verdict {
+pub fn verdict_entreprise(aem: bool, e: &Employeur, reference: Option<&droit::fiche::Siren>) -> Verdict {
     let lisible = if e.illisibles > 0 { Verdict::Avertie(AEM_SANS_SIRET) } else { Verdict::Reprise };
     if e.sirens.is_empty() {
         // Une AEM sans enregistrement lisible ne rend rien a `lire_aem` : rien a controler.

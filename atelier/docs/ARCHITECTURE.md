@@ -177,7 +177,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 |---|---|---|
 | NIR | le numéro de sécurité sociale | `droit::fiche::Nir` ; à unifier (#419) : des champs `nir` en `String` |
 | NTT | le numéro technique temporaire, sans NIR | à créer (#419) |
-| SIREN, NIC, SIRET | l'entreprise, l'établissement, les deux | à créer (#419) : `Siren`, `Nic`, `Siret` |
+| SIREN, NIC, SIRET | l'entreprise, l'établissement, les deux | `Siren`, `Nic`, `Siret` (`droit/src/fiche.rs`) |
 | IBAN, BIC | un compte bancaire | à créer (#419) : `Iban`, `Bic` (les contrôles sont dans `socle/src/iban.rs`) |
 | numéro de contrat | S21.G00.40.009 : il se lit, ne se recalcule pas | `NumeroContrat` (`engagement/src/numeros.rs`) |
 | numéro d'objet spectacle | S21.G00.40.019, natures 02 et 10 | à créer (#419) |

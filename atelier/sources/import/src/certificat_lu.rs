@@ -78,8 +78,7 @@ const SUIVANTES: [(&str, &str); 2] = [("fin", "fin"), ("brut", "salaire brut")];
 #[derive(Clone, Debug, PartialEq)]
 pub struct Certificat {
     pub page: usize,
-    /// Quatorze chiffres.
-    pub siret: Option<String>,
+    pub siret: Option<droit::fiche::Siret>,
     /// Le numero d'adherent de l'employeur, ecrit comme la fiche le garde (`documents::conges_spectacles::forme_adherent`).
     pub compte: Option<String>,
     /// La raison sociale, imprimee sur le rang du NIR.
@@ -339,7 +338,8 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
             match cle {
                 "siret" => {
                     let s: String = v.concat().chars().filter(char::is_ascii_digit).collect();
-                    c.siret = (s.len() == 14).then_some(s);
+                    // Des chiffres qui ne font pas un SIRET : le certificat ne le dit pas.
+                    c.siret = droit::fiche::Siret::lire(&s).ok();
                 }
                 "compte" => c.compte = texte(&v).map(|t| documents::conges_spectacles::forme_adherent(&t)),
                 "ce" => c.numero = texte(&v),

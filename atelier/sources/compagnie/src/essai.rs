@@ -217,14 +217,14 @@ impl Variable {
                 socle::echec::Lieu { cle: Some(vides.join(", ")), ..Default::default() },
             ));
         }
-        let (siren, nic, siret_dpae) = (&self.siren.0, &self.nic.0, &self.api_dpae.siret.0);
-        if !chiffres(siren, 9) || !declarations::champs::luhn(siren) {
+        let siret = self.siret()?;
+        if !siret.siren().cle_juste() {
             return Err(mal_formee("siren", "9 chiffres attendus, clé de Luhn juste"));
         }
-        if !chiffres(nic, 5) || !declarations::champs::luhn(&format!("{}{}", siren, nic)) {
+        if !siret.cle_juste() {
             return Err(mal_formee("nic", "5 chiffres attendus, et le SIRET (siren + nic) à clé de Luhn juste"));
         }
-        if !siret_dpae.is_empty() && (!chiffres(siret_dpae, 14) || !declarations::champs::luhn(siret_dpae)) {
+        if self.siret_dpae()?.is_some_and(|s| !s.cle_juste()) {
             return Err(mal_formee("api_dpae.siret", "14 chiffres attendus, clé de Luhn juste (ou vide : le SIRET de la compagnie)"));
         }
         if !chiffres(&self.code_postal.0, 5) {
@@ -250,19 +250,33 @@ impl Variable {
         Ok(())
     }
 
+    /// Le SIRET de la compagnie, son SIREN puis son NIC (`droit::fiche::Siret`), ou le refus de leur forme.
+    fn siret(&self) -> R<droit::fiche::Siret> {
+        let siren = droit::fiche::Siren::lire(&self.siren.0).map_err(|_| mal_formee("siren", "9 chiffres attendus, clé de Luhn juste"))?;
+        let nic = droit::fiche::Nic::lire(&self.nic.0).map_err(|_| mal_formee("nic", "5 chiffres attendus, et le SIRET (siren + nic) à clé de Luhn juste"))?;
+        Ok(droit::fiche::Siret::de(&siren, &nic))
+    }
+
+    /// Le SIRET du compte DPAE, s'il est dit (vide : celui de la compagnie), ou le refus de sa forme.
+    fn siret_dpae(&self) -> R<Option<droit::fiche::Siret>> {
+        dit(&self.api_dpae.siret)
+            .map(|s| droit::fiche::Siret::lire(&s).map_err(|_| mal_formee("api_dpae.siret", "14 chiffres attendus, clé de Luhn juste (ou vide : le SIRET de la compagnie)")))
+            .transpose()
+    }
+
     /// Les cases de la fiche que la variable pose, et ce qui en derive (le SIRET, le declarant net-entreprises, le compte
     /// DPAE), chacune en son type.
     fn champs(&self) -> R<droit::fiche::ChampsEntreprise> {
         use droit::fiche::{ApiDpae, ChampsEntreprise, Civilite, CodeMedecine, CodeNaf, CodePostal, CommuneEmployeur, Declarant, DeclarantDsn, LigneAdresse, RaisonSociale, Telephone};
-        let siret = format!("{}{}", self.siren.0, self.nic.0);
+        let siret = self.siret()?;
         let civilite = match self.declarant_dsn.civilite.0.as_str() {
             "01" => Civilite::Monsieur,
             "02" => Civilite::Madame,
             _ => return Err(mal_formee("declarant_dsn.civilite", "01 (Monsieur) ou 02 (Madame), cahier technique DSN, S10.G00.02.001")),
         };
         Ok(ChampsEntreprise {
-            siren: Some(self.siren.0.clone()),
-            nic: Some(self.nic.0.clone()),
+            siren: Some(siret.siren()),
+            nic: Some(siret.nic()),
             siret: Some(siret.clone()),
             nom_affichage: Some("Compagnie d'essai".to_string()),
             raison_sociale: Some(case("raison_sociale", RaisonSociale::lire, &self.raison_sociale.0)?),
@@ -285,7 +299,7 @@ impl Variable {
             api_dpae: Some(ApiDpae {
                 nom: Some(self.api_dpae.nom.0.clone()),
                 prenom: Some(self.api_dpae.prenom.0.clone()),
-                siret: dit(&self.api_dpae.siret),
+                siret: self.siret_dpae()?,
                 service: dit(&self.api_dpae.service),
             }),
             note: Some(format!("COMPAGNIE D'ESSAI (moteur essai monter) : l'identite vient de {} ; le reste, de la compagnie fictive copiee. Ne se commite jamais.", VARIABLE)),
@@ -310,9 +324,10 @@ impl Identite {
         let mut brute = fiche.clone();
         // Ce que la fiche de la fictive dit de SON identite, et qui ne survit pas sous celle de la variable : ce que la variable
         // remplace, et ce qui en derive (l'affichage, le complement d'adresse).
-        for liste in [&mut brute.siret, &mut brute.nom_affichage, &mut brute.adresse_affichage, &mut brute.commune_affichage] {
+        for liste in [&mut brute.nom_affichage, &mut brute.adresse_affichage, &mut brute.commune_affichage] {
             *liste = None;
         }
+        brute.siret = None;
         brute.complement_adresse = None;
         brute.etablissements = None;
         brute.note = None;

@@ -151,7 +151,7 @@ pub struct Aem {
     /// Le mois de l'attestation.
     pub mois: Option<Mois>,
     pub numero: Option<String>,
-    pub siret: Option<String>,
+    pub siret: Option<droit::fiche::Siret>,
     pub ape: Option<String>,
     pub idcc: Option<String>,
     pub employeur: Option<String>,
@@ -364,7 +364,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             page,
             mois: Some(debut.mois_civil()),
             numero: None,
-            siret: v("EMP_SIRET"),
+            siret: v("EMP_SIRET").and_then(|s| droit::fiche::Siret::lire(&s).ok()),
             ape: v("EMP_APE"),
             idcc: v("EMP_IDCC"),
             employeur: v("ENSEIGNE"),
@@ -602,7 +602,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     a.mois = socle::piece::Zone::lue(&chiffres, socle::piece::format::Mmaaaa).valeur();
     a.numero = lu("attestation", Some(0)).first().cloned();
     let siret: String = lu("siret", Some(1)).concat().chars().filter(char::is_ascii_digit).collect();
-    a.siret = (siret.len() == 14).then_some(siret);
+    a.siret = droit::fiche::Siret::lire(&siret).ok();
     a.ape = lu("ape", Some(1)).first().cloned();
     a.idcc = lu("idcc", Some(1)).first().filter(|x| x.len() == 4 && x.chars().all(|c| c.is_ascii_digit())).cloned();
     a.employeur = texte(lu("raison", Some(1)));

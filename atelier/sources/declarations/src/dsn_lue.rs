@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use droit::base_assujettie::BaseAssujettie;
+use droit::fiche::{Nic, Siren};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 
@@ -22,6 +23,11 @@ use socle::texte::{blanc, lignes_du_texte, texte_latin1};
 
 /// Ce qu'on dit d'un fichier qui ne dit pas le mois qu'il declare (`DsnLue::mois_declare`).
 pub const SANS_MOIS: &str = "il ne porte pas de mois principal déclaré (S20.G00.05.005)";
+
+/// Ce que porte une rubrique de SIREN (S10.G00.01.001, S21.G00.06.001, X [9,9]) et de NIC (S21.G00.06.002,
+/// S21.G00.11.001, X [5,5]) : `droit::fiche::Siren`, `Nic`.
+const SIREN: &str = "un SIREN (9 chiffres)";
+const NIC: &str = "un NIC (5 chiffres)";
 
 // ------------------------------------------------------------------ la forme
 
@@ -69,11 +75,11 @@ pub struct Contact {
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct EntrepriseDeclaree {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub siren: Option<String>,
+    pub siren: Option<Siren>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub naf: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nic: Option<String>,
+    pub nic: Option<Nic>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub adresse: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -457,7 +463,7 @@ pub struct DsnLue {
     pub logiciel: Option<String>,
     pub nature_envoi: Option<String>,
     /// Le Siren de l'emetteur (S10.G00.01.001) : celui du cabinet quand un tiers depose (`EntrepriseDeclaree`).
-    pub emetteur: Option<String>,
+    pub emetteur: Option<Siren>,
     /// La nature de la declaration (S20.G00.05.001 : `01` mensuelle, un signalement sinon).
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     /// Le mois principal declare (S20.G00.05.005) ; un signalement n'en declare pas.
@@ -480,8 +486,8 @@ pub struct DsnLue {
     pub contrats: Vec<ContratDeclare>,
     pub versements: Vec<VersementLu>,
     /// Les etablissements declares (S21.G00.11.001) et le NIC du siege (S21.G00.06.002).
-    pub etablissements: Vec<String>,
-    pub nic_siege: Option<String>,
+    pub etablissements: Vec<Nic>,
+    pub nic_siege: Option<Nic>,
     pub adhesions: Vec<Adhesion>,
     /// Les references d'adhesion auxquelles un contrat se rattache (S21.G00.70.013).
     pub rattachements: Vec<String>,
@@ -517,7 +523,7 @@ impl DsnLue {
 
     /// L'etablissement declare (le premier S21.G00.11.001).
     pub fn etablissement(&self) -> Option<&str> {
-        self.etablissements.first().map(String::as_str)
+        self.etablissements.first().map(|n| &**n)
     }
 
     /// Le jour de l'evenement d'un signalement : l'arret par son dernier jour travaille (S21.G00.60.002), la fin de
@@ -670,7 +676,9 @@ impl DsnLue {
 impl EntrepriseDeclaree {
     /// La DSN ne dit rien de ce que la fiche Entreprise porte (la licence, que la fiche date a part, n'y compte pas).
     pub fn est_vide(&self) -> bool {
-        [&self.siren, &self.naf, &self.nic, &self.adresse, &self.code_postal, &self.commune, &self.idcc, &self.adherent_conges_spectacles, &self.raison_sociale, &self.france_travail_dossier_recouvrement, &self.medecine_travail]
+        self.siren.is_none()
+            && self.nic.is_none()
+            && [&self.naf, &self.adresse, &self.code_postal, &self.commune, &self.idcc, &self.adherent_conges_spectacles, &self.raison_sociale, &self.france_travail_dossier_recouvrement, &self.medecine_travail]
             .iter()
             .all(|c| c.is_none())
             && self.banque.is_none()
@@ -839,6 +847,15 @@ impl Fautes {
     fn jour(&mut self, k: &str, v: &str) -> Option<Jour> {
         self.valeur(k, v, "une date (JJMMAAAA)", jour_dsn(v))
     }
+    /// Une valeur que son type lit (`droit::fiche::Siren`, `Nic`...) : un texte qu'il refuse est une faute, que `quoi`
+    /// nomme.
+    fn lue<T>(&mut self, k: &str, v: &str, quoi: &'static str, lire: fn(&str) -> R<T>) -> Option<T> {
+        let lu = match lire(v) {
+            Ok(t) => Some(t),
+            Err(_) => None,
+        };
+        self.valeur(k, v, quoi, lu)
+    }
     /// Un code d'une liste de la norme (`droit::natures::ListeDeLaNorme`) : un code qu'elle n'a pas est une faute.
     fn code<T: droit::natures::ListeDeLaNorme>(&mut self, k: &str, v: &str) -> Option<T> {
         self.valeur(k, v, "un code de sa liste dans la norme", T::du_code_de_la_norme(v))
@@ -856,7 +873,7 @@ impl Fautes {
 }
 
 /// Le premier qui le dit.
-fn premier(a: &mut Option<String>, v: &Option<String>) {
+fn premier<T: Clone>(a: &mut Option<T>, v: &Option<T>) {
     if a.is_none() {
         *a = v.clone();
     }
@@ -910,7 +927,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
     // `EntrepriseDeclaree`).
     let (mut emetteur_siren, mut emetteur_nom, mut civilite_emetteur, mut nom_emetteur) = (None, None, None, None);
     let (mut nic_siege, mut adresse_siege, mut code_postal_siege, mut commune_siege, mut apet) = (None, None, None, None, None);
-    let mut etablissements: Vec<String> = Vec::new();
+    let mut etablissements: Vec<Nic> = Vec::new();
     // Les versements aux organismes (bloc 20) : identifiant, entite d'affectation, BIC, IBAN.
     let mut blocs20: Vec<[String; 4]> = Vec::new();
     let mut contacts: Vec<Contact> = Vec::new();
@@ -974,7 +991,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 let jour = fautes.jour(k, &v);
                 contrat.into_iter().for_each(|c| c.dernier_jour_travaille = jour);
             }
-            "S10.G00.01.001" => premier(&mut emetteur_siren, &plein),
+            "S10.G00.01.001" => premier(&mut emetteur_siren, &fautes.lue(k, &v, SIREN, Siren::lire)),
             "S10.G00.01.003" => premier(&mut emetteur_nom, &plein),
             "S10.G00.02.001" => civilite_emetteur = plein,
             "S10.G00.02.002" => nom_emetteur = plein,
@@ -992,16 +1009,17 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                     *match k { "S20.G00.07.002" => &mut c.tel, "S20.G00.07.003" => &mut c.email, _ => &mut c.qualite } = plein;
                 }
             }
-            "S21.G00.06.001" => premier(&mut e.siren, &plein),
-            "S21.G00.06.002" => premier(&mut nic_siege, &plein),
+            "S21.G00.06.001" => premier(&mut e.siren, &fautes.lue(k, &v, SIREN, Siren::lire)),
+            "S21.G00.06.002" => premier(&mut nic_siege, &fautes.lue(k, &v, NIC, Nic::lire)),
             "S21.G00.06.003" => premier(&mut e.naf, &plein),
             "S21.G00.06.004" => premier(&mut adresse_siege, &plein),
             "S21.G00.06.005" => premier(&mut code_postal_siege, &plein),
             "S21.G00.06.006" => premier(&mut commune_siege, &plein),
             "S21.G00.11.001" => {
-                premier(&mut e.nic, &plein);
-                if !etablissements.contains(&v) {
-                    etablissements.push(v);
+                let nic = fautes.lue(k, &v, NIC, Nic::lire);
+                premier(&mut e.nic, &nic);
+                if let Some(nic) = nic.filter(|n| !etablissements.contains(n)) {
+                    etablissements.push(nic);
                 }
             }
             "S21.G00.11.002" => premier(&mut apet, &plein),

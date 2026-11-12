@@ -14,7 +14,7 @@ use crate::forme_bareme::{
 use crate::assiette::Assiette;
 use crate::base_assujettie::BaseAssujettie;
 use crate::natures::{AuMois, Nature};
-use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, SalarieDuContrat, Statut, StatutCategorielRc};
+use crate::fiche::{ChampsEntreprise, Lue, ChampsSalarie, Etablissement, SalarieDuContrat, Siret, Statut, StatutCategorielRc};
 use socle::date::Jour;
 use socle::echec::{Lieu, Echec, R};
 use socle::forme::Court;
@@ -1201,9 +1201,9 @@ pub fn fiche_de_l_etablissement(fiche: &ChampsEntreprise, nic: &str) -> R<Champs
     }
     let e = fiche.etablissement(nic).ok_or_else(|| socle::refus!("Etablissement inconnu : {}.", nic))?;
     let mut vue = fiche.clone();
-    let nic_e = e.nic.ecrite("nic")?;
-    vue.nic = Some(nic_e.to_string());
-    vue.siret = Some(format!("{}{}", fiche.siren.ecrite("siren")?, nic_e));
+    let nic_e = e.nic.exigee("nic")?;
+    vue.siret = Some(Siret::de(fiche.siren.exigee("siren")?, nic_e));
+    vue.nic = Some(nic_e.clone());
     // L'adresse de l'etablissement vient avec son complement, vide ou non : celui du siege n'est pas le sien.
     if e.adresse.remplie().is_some() {
         vue.adresse = e.adresse.clone();

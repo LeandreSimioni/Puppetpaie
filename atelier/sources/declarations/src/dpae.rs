@@ -222,13 +222,9 @@ fn gabarit_lu(gabarits: Option<&Path>, chemins: &Chemins) -> R<Vec<char>> {
     Ok(gab)
 }
 
-/// Le SIRET de la fiche, 14 chiffres, ou le refus de la DPAE.
+/// Le SIRET de la fiche (`droit::fiche::Siret`, 14 chiffres), que la DPAE exige.
 fn siret_de(ent: &ChampsEntreprise) -> R<String> {
-    let siret = strip(ent.siret.ecrite("siret")?).to_string();
-    if siret.chars().count() != 14 || !tout_chiffres(&siret) {
-        return Err(socle::refus!("DPAE : le SIRET de la fiche entreprise ({}) ne fait pas 14 chiffres.", repr(&siret)));
-    }
-    Ok(siret)
+    Ok(ent.siret.exigee("siret")?.to_string())
 }
 
 /// Le code du centre de medecine du travail (C_MT_DCL, obligatoire hors travail temporaire) : `medecine_travail` de la
@@ -257,15 +253,12 @@ fn raison_sociale(texte: &str) -> R<(String, String)> {
 }
 
 /// Le telephone (N_TEL_EMP, l. 380-385, facultatif) : les chiffres de celui du declarant DSN, sinon de celui du
-/// signataire ; sans l'un ni l'autre, la zone est a blanc ; plus de 11, ce que la fiche refuse (`droit::fiche::Telephone`).
+/// signataire ; sans l'un ni l'autre, la zone est a blanc ; jamais plus de 11 (`droit::fiche::Telephone`).
 fn telephone(ent: &ChampsEntreprise) -> R<String> {
     let tel = ent.declarant_dsn.dite().and_then(|d| d.tel.remplie()).or_else(|| ent.signataire.dite().and_then(|s| s.tel.remplie()));
     let Some(tel) = tel else {
         return Ok(" ".repeat(largeur("tel")));
     };
-    if let Some(f) = droit::fiche::Telephone::faute(tel) {
-        return Err(refus(f));
-    }
     Ok(ljust(&chiffres(tel), largeur("tel")))
 }
 
@@ -1108,11 +1101,6 @@ mod tests {
         assert_eq!(ch("tel"), "0102030405 ");
         assert_eq!(ch("naf"), "9001Z");
         assert_eq!(ch("medecine_travail"), "     MT542");
-        // Un SIRET qui ne fait pas 14 chiffres : refus.
-        let mut mauvais = entreprise();
-        mauvais.fiche.siret = Some("1234".into());
-        let m = enr(&e, Some(&mauvais), Some("117")).unwrap_err().phrase;
-        assert!(m.contains("SIRET") && m.contains("'1234'"), "{}", m);
     }
 
     /// Chaque zone a son jeu (« Caractères autorisés », `norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 256, 269-270, 300,

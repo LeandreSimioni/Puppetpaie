@@ -431,6 +431,162 @@ texte_borne! {
 écrivent (norme DPAE v5.3, zone « Numéro de sécurité sociale » ; DSN, S21.G00.30.001). Les deux derniers chiffres vont dans la case « Clé »";
 }
 
+/// CE QU'UNE NOTION LUE PORTE AVEC SON TEXTE : elle se lit de son seul lecteur (`lire`, a la lecture du fichier comme a
+/// la porte) et se refuse a la saisie par sa faute (`FormeDeCase::FAUTE`) ; elle s'ecrit telle qu'elle a ete lue.
+macro_rules! notion_lue {
+    ($nom:ident) => {
+        impl AsRef<str> for $nom {
+            fn as_ref(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl std::ops::Deref for $nom {
+            type Target = str;
+            fn deref(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl std::fmt::Display for $nom {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(&self.0)
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $nom {
+            fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                $nom::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+            }
+        }
+
+        impl FormeDeCase for $nom {
+            const FAUTE: Option<fn(&str) -> Option<String>> = Some($nom::faute);
+        }
+
+        impl $nom {
+            /// Ce qui refuse `texte` a la saisie, en une phrase qui dit quoi faire ; rien pour un texte vide (la case vide
+            /// s'ecrit nulle).
+            pub fn faute(texte: &str) -> Option<String> {
+                if texte.is_empty() {
+                    return None;
+                }
+                $nom::lire(texte).err().map(|e| e.phrase)
+            }
+        }
+    };
+}
+
+/// Le texte fait d'exactement `n` chiffres ASCII.
+fn de_chiffres(texte: &str, n: usize) -> bool {
+    texte.len() == n && texte.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// UN IDENTIFIANT FAIT D'UN NOMBRE FIXE DE CHIFFRES : il en a exactement `LONGUEUR`, sinon il se refuse a la lecture en
+/// une phrase qui dit quoi faire (`{texte}`, `{max}` sa longueur).
+macro_rules! identifiant_de_chiffres {
+    ($(#[$m:meta])* pub struct $nom:ident : $n:literal, $phrase:literal;) => {
+        $(#[$m])*
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+        #[serde(transparent)]
+        pub struct $nom(String);
+
+        impl $nom {
+            pub const LONGUEUR: usize = $n;
+
+            /// L'identifiant `texte`, ou la phrase qui le refuse.
+            pub fn lire(texte: &str) -> R<$nom> {
+                if de_chiffres(texte, Self::LONGUEUR) {
+                    Ok($nom(texte.to_string()))
+                } else {
+                    Err(socle::echec::refus(format!($phrase, texte = texte, max = Self::LONGUEUR)))
+                }
+            }
+        }
+
+        notion_lue!($nom);
+    };
+}
+
+/// LA CLE DE LUHN D'UN SIREN OU D'UN SIRET : « on parcourt les chiffres [...], on multiplie par 2 les chiffres de rang
+/// impair et on fait ensuite la somme de tous les chiffres obtenus [...] Le contrôle de parité est correct si le
+/// résultat obtenu est un multiple de 10 » (INSEE, schema SIRET, 8.1 : `atelier/reference/sources/insee-nir-siret/`).
+/// Le texte dit que ce controle « peut être utilisé pour réduire les risques d'erreurs de frappe » : il n'entre pas dans
+/// le lecteur, et une cle fausse se dit a la saisie sans refuser la fiche (`declarations::champs`).
+fn cle_de_luhn_juste(chiffres: &str) -> bool {
+    let total: u32 = chiffres
+        .bytes()
+        .rev()
+        .enumerate()
+        .map(|(i, b)| {
+            let n = u32::from(b - b'0');
+            if i % 2 == 1 {
+                let d = n * 2;
+                if d > 9 {
+                    d - 9
+                } else {
+                    d
+                }
+            } else {
+                n
+            }
+        })
+        .sum();
+    total % 10 == 0
+}
+
+identifiant_de_chiffres! {
+    /// LE SIREN d'une entreprise : 9 chiffres (INSEE, schema SIRET, « SIRENType », et la DSN, S21.G00.06.001, X [9,9] :
+    /// `atelier/reference/sources/insee-nir-siret/`, `logiciel/donnees/formats-dsn-base.json`).
+    pub struct Siren : 9,
+        "« {texte} » n'est pas un SIREN : il a {max} chiffres, sans espace (INSEE ; DSN, S21.G00.06.001). Corrigez-le";
+}
+
+identifiant_de_chiffres! {
+    /// LE NIC d'un etablissement : « 5 chiffres ajoutés au numéro SIREN de l'entreprise pour identifier un
+    /// établissement » (INSEE, schema SIRET, 4.1 ; DSN, S21.G00.11.001, X [5,5]).
+    pub struct Nic : 5,
+        "« {texte} » n'est pas un NIC : il a {max} chiffres, ceux qui suivent le SIREN dans le SIRET (INSEE ; DSN, \
+S21.G00.11.001). Corrigez-le";
+}
+
+identifiant_de_chiffres! {
+    /// LE SIRET d'un etablissement : « un identifiant numérique de 14 chiffres composé du SIREN (9 chiffres) et d'un
+    /// numéro interne de classement de 5 chiffres (NIC) » (INSEE, schema SIRET, 5.1 :
+    /// `atelier/reference/sources/insee-nir-siret/`).
+    pub struct Siret : 14,
+        "« {texte} » n'est pas un SIRET : il a {max} chiffres, le SIREN puis le NIC, sans espace (INSEE). Corrigez-le";
+}
+
+impl Siren {
+    /// Sa cle de Luhn est-elle juste (`cle_de_luhn_juste`) ?
+    pub fn cle_juste(&self) -> bool {
+        cle_de_luhn_juste(&self.0)
+    }
+}
+
+impl Siret {
+    /// Le SIRET de l'etablissement `nic` de l'entreprise `siren` : l'un puis l'autre (INSEE, 5.1).
+    pub fn de(siren: &Siren, nic: &Nic) -> Siret {
+        Siret(format!("{}{}", siren.0, nic.0))
+    }
+
+    /// Son SIREN, ses 9 premiers chiffres.
+    pub fn siren(&self) -> Siren {
+        Siren(self.0[..Siren::LONGUEUR].to_string())
+    }
+
+    /// Son NIC, ses 5 derniers chiffres.
+    pub fn nic(&self) -> Nic {
+        Nic(self.0[Siren::LONGUEUR..].to_string())
+    }
+
+    /// Sa cle de Luhn est-elle juste (`cle_de_luhn_juste`) ?
+    pub fn cle_juste(&self) -> bool {
+        cle_de_luhn_juste(&self.0)
+    }
+}
+
 /// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
 /// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,
 /// `atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`). Hors de 1 a 12, il se refuse a la lecture
@@ -1743,8 +1899,8 @@ cases! {
     /// fabrique de la lisible), son ouverture, son taux AT/MP et son versement mobilite.
     pub struct Etablissement, cles CaseEtablissement {
         Libelle(String) = "libelle" => libelle,
-        Siret(String) = "siret" => siret,
-        Nic(String) = "nic" => nic,
+        Siret(Siret) = "siret" => siret,
+        Nic(Nic) = "nic" => nic,
         AdresseAffichage(String) = "adresse_affichage" => adresse_affichage,
         Adresse(LigneAdresse) = "adresse" => adresse,
         ComplementAdresseAffichage(String) = "complement_adresse_affichage" => complement_adresse_affichage,
@@ -1784,13 +1940,13 @@ cases! {
 
 cases! {
     /// Le declarant inscrit au service DSN de net-entreprises, tel qu'inscrit (`envois::transport::declarant`).
-    pub struct Declarant { siret: String, nom: String, prenom: String }
+    pub struct Declarant { siret: Siret, nom: String, prenom: String }
 }
 
 cases! {
     /// Le compte DPAE d'urssaf.fr (`envois::releve_retours`) : son titulaire, son SIRET (celui de l'entreprise sinon), son
     /// service.
-    pub struct ApiDpae { nom: String, prenom: String, siret: String, service: String }
+    pub struct ApiDpae { nom: String, prenom: String, siret: Siret, service: String }
 }
 
 // ------------------------------------------------------------------ les fiches
@@ -1872,9 +2028,9 @@ fiche! {
     pub struct ChampsEntreprise, datee FicheEntrepriseDatee, changement ChangementEntreprise, cles CaseEntreprise {
         NomAffichage(String) = "nom_affichage" => nom_affichage,
         RaisonSociale(RaisonSociale) = "raison_sociale" => raison_sociale,
-        Siren(String) = "siren" => siren,
-        Nic(String) = "nic" => nic,
-        Siret(String) = "siret" => siret,
+        Siren(Siren) = "siren" => siren,
+        Nic(Nic) = "nic" => nic,
+        Siret(Siret) = "siret" => siret,
         Naf(CodeNaf) = "naf" => naf,
         CodeUrssaf(String) = "code_urssaf" => code_urssaf,
         Adresse(LigneAdresse) = "adresse" => adresse,
@@ -2274,6 +2430,13 @@ pub fn lire_saisie<T: DeserializeOwned>(v: &(impl Serialize + ?Sized), fichier: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn le_siret_se_controle_par_luhn() {
+        // insee-nir-siret : la somme des chiffres (rang impair doubles) est un multiple de 10.
+        assert!(Siret::lire("73282932000074").unwrap().cle_juste());
+        assert!(!Siret::lire("73282932000075").unwrap().cle_juste());
+    }
 
     /// Une fiche se relit et se reecrit telle quelle : les cases nulles et vides comprises.
     #[test]

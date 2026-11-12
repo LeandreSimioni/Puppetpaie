@@ -424,7 +424,7 @@ pub(crate) struct ApercuDsn {
     pub(crate) fraction: Option<String>,
     pub(crate) remplace: Option<String>,
     pub(crate) constitution: Option<String>,
-    pub(crate) siren: Option<String>,
+    pub(crate) siren: Option<droit::fiche::Siren>,
     pub(crate) salaries: usize,
     pub(crate) lignes: usize,
     pub(crate) pas_versements: usize,

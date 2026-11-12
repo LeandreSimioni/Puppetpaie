@@ -1810,19 +1810,6 @@ fn valeur_decimale(c: char) -> Option<u32> {
     ZEROS.iter().find(|z| (**z..**z + 10).contains(&p)).map(|z| p - z).or_else(|| (0x1FBF0..0x1FBFA).contains(&p).then(|| p - 0x1FBF0))
 }
 
-/// `luhn` : la cle du SIRET (`reference/sources/insee-nir-siret/`, INSEE, schema SIRET, 8.1) : somme des chiffres, multiple de 10.
-pub fn luhn(numero: &str) -> bool {
-    if !tous_chiffres(numero) {
-        return false;
-    }
-    // Un numero qui n'est pas fait de chiffres n'a pas de cle.
-    let chiffres: Option<Vec<u32>> = numero.chars().rev().map(|c| c.to_digit(10)).collect();
-    chiffres.is_some_and(|chiffres| {
-        let total: u32 = chiffres.iter().enumerate().map(|(i, &n)| if i % 2 == 1 { if n * 2 > 9 { n * 2 - 9 } else { n * 2 } } else { n }).sum();
-        total % 10 == 0
-    })
-}
-
 /// LE COMPTE BANCAIRE D'UNE FICHE (`banque`, de l'entreprise ou d'un salarie) : la faute de son IBAN, puis de son BIC.
 fn faute_banque(b: &Saisie) -> Option<String> {
     use droit::fiche::CaseBanque;
@@ -2325,8 +2312,9 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
                 out.push(constat(E::Siret, Gravite::Erreur, format!("SIRET != SIREN + NIC ({})", somme)));
             }
         }
+        // La cle de Luhn (`droit::fiche::Siret::cle_juste`) se dit sans refuser la fiche : le texte ne l'impose pas.
         if let Some(siret) = &siret {
-            if siret.chars().count() == 14 && !luhn(siret) {
+            if droit::fiche::Siret::lire(siret).is_ok_and(|s| !s.cle_juste()) {
                 out.push(constat(E::Siret, Gravite::Erreur, "ce numéro ne peut pas être un SIRET : un chiffre est probablement mal tapé"));
             }
         }
@@ -2491,12 +2479,5 @@ mod tests {
         assert_eq!(cle_nir("185052B999048"), Some("87".into()));
         assert!(explication_nir("185052A999048").unwrap().is_none());
         assert!(cle_nir("18505ZZ999048").is_none());
-    }
-
-    #[test]
-    fn le_siret_se_controle_par_luhn() {
-        // insee-nir-siret : la somme des chiffres (rang impair doubles) est un multiple de 10.
-        assert!(luhn("73282932000074"));
-        assert!(!luhn("73282932000075"));
     }
 }

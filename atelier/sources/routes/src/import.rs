@@ -456,13 +456,13 @@ pub(crate) fn apercu_lu(
     if lecture.etablissements.len() > 1 {
         avertissements.push(format!(
             "les DSN déclarent plusieurs établissements (S21.G00.11.001 : {}) : la fiche Entreprise n'en porte qu'un, celui de son NIC ; le moteur ne déclare que celui-là",
-            lecture.etablissements.iter().cloned().collect::<Vec<_>>().join(", ")
+            lecture.etablissements.iter().map(|n| &**n).collect::<Vec<_>>().join(", ")
         ));
     }
     if lecture.nics_siege.iter().any(|n| !lecture.etablissements.contains(n)) && !lecture.etablissements.is_empty() {
         avertissements.push(format!(
             "le siège de l'entreprise (S21.G00.06.002 : {}) n'est pas l'établissement déclaré (S21.G00.11.001) : la fiche Entreprise porte l'établissement, et le moteur déclare son NIC aux deux places",
-            lecture.nics_siege.iter().cloned().collect::<Vec<_>>().join(", ")
+            lecture.nics_siege.iter().map(|n| &**n).collect::<Vec<_>>().join(", ")
         ));
     }
     // LES CONVENTIONS QUI DIVERGENT, d'un contrat a l'autre ou d'une DSN a l'autre (`dsn_aem::LectureDsn::conventions`).

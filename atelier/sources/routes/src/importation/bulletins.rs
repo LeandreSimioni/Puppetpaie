@@ -175,10 +175,10 @@ fn nir_lu(b: &BulletinLu) -> R<Option<(String, Option<String>)>> {
     }
 }
 
-/// Les chiffres d'un Siret imprime.
-fn siret_lu(b: &BulletinLu) -> Option<String> {
+/// Le Siret imprime, ses chiffres ; des chiffres qui ne font pas un Siret, le bulletin ne le dit pas.
+fn siret_lu(b: &BulletinLu) -> Option<droit::fiche::Siret> {
     let s: String = b.entreprise.siret.as_deref()?.chars().filter(char::is_ascii_digit).collect();
-    (s.len() == 14).then_some(s)
+    droit::fiche::Siret::lire(&s).ok()
 }
 
 /// Une adresse imprimee : les rangs avant le code postal, puis « 99999 Commune ». Sans rang de code postal, rien
@@ -366,17 +366,17 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // si elles n'en portent qu'un, sinon les bulletins et les AEM s'ils n'en portent qu'un. Une DSN, une AEM ou un
     // bulletin d'une autre entreprise n'est pas repris ; d'une DSN ou d'une AEM ecartee, RIEN n'est lu.
     let siren_fiche = ctx.entreprise.siren.portee().map(|s| s.trim().to_string());
-    let sirens_dsn: std::collections::BTreeSet<String> =
+    let sirens_dsn: std::collections::BTreeSet<droit::fiche::Siren> =
         pieces.iter().filter(|(_, aem, _)| !aem).flat_map(|(_, _, e)| e.sirens.iter().cloned()).collect();
-    let mut sirens_autres: std::collections::BTreeSet<String> =
+    let mut sirens_autres: std::collections::BTreeSet<droit::fiche::Siren> =
         pieces.iter().filter(|(_, aem, _)| *aem).flat_map(|(_, _, e)| e.sirens.iter().cloned()).collect();
-    sirens_autres.extend(lus.iter().filter_map(|l| siret_lu(&l.b)).map(|s| s[..9].to_string()));
-    sirens_autres.extend(certificats.iter().filter_map(|c| c.c.siret.as_ref()).map(|s| s[..9].to_string()));
+    sirens_autres.extend(lus.iter().filter_map(|l| siret_lu(&l.b)).map(|s| s.siren()));
+    sirens_autres.extend(certificats.iter().filter_map(|c| c.c.siret.as_ref()).map(droit::fiche::Siret::siren));
     let siren = import::dsn_aem::siren_de_reference(&ctx.entreprise, &sirens_dsn, &sirens_autres);
     let mut gardes_cert: Vec<Attestee> = Vec::new();
     for c in certificats {
         let raison = match (&c.c.siret, &siren) {
-            (Some(s), Some(r)) if &s[..9] != r => Some(format!("{} d'une autre entreprise : son Siret n'est pas celui de la compagnie, non repris", c.nom())),
+            (Some(s), Some(r)) if s.siren() != *r => Some(format!("{} d'une autre entreprise : son Siret n'est pas celui de la compagnie, non repris", c.nom())),
             (Some(_), None) => Some(import::dsn_aem::PLUSIEURS_ENTREPRISES.to_string()),
             _ => None,
         };
@@ -390,7 +390,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     let mut gardes: Vec<Lu> = Vec::new();
     for l in lus {
         let ecart = match (siret_lu(&l.b), &siren) {
-            (Some(s), Some(r)) if &s[..9] != r => {
+            (Some(s), Some(r)) if s.siren() != *r => {
                 Some("bulletin d'une autre entreprise : son Siret n'est pas celui de la compagnie, non repris".to_string())
             }
             (Some(_), None) => Some(import::dsn_aem::PLUSIEURS_ENTREPRISES.to_string()),
@@ -418,7 +418,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     let mut avertis: BTreeMap<usize, String> = BTreeMap::new();
     for (i, aem, e) in &pieces {
         let f = &tri.fichiers[*i];
-        match import::dsn_aem::verdict_entreprise(*aem, e, siren.as_deref()) {
+        match import::dsn_aem::verdict_entreprise(*aem, e, siren.as_ref()) {
             import::dsn_aem::Verdict::Ecartee(raison) => {
                 ecartes.insert(*i, raison.to_string());
                 continue;
@@ -1619,7 +1619,7 @@ fn ecarts_entreprise(fiche: &Saisie, lue: &Saisie, l: &Lu, chemin: &str) -> Vec<
     };
     let de = |k: E| lue.mot(k);
     for (cle, a, lu) in [
-        (E::Siret, siret_fiche, siret_lu(&l.b)),
+        (E::Siret, siret_fiche, siret_lu(&l.b).map(|s| s.to_string())),
         (E::Naf, t(E::Naf), l.b.entreprise.naf.clone()),
         (E::RaisonSociale, t(E::RaisonSociale), de(E::RaisonSociale)),
         (E::Adresse, t(E::Adresse), de(E::Adresse)),
@@ -1849,8 +1849,8 @@ fn fiche_entreprise(lus: &[Lu], l: &Lu) -> R<Saisie> {
     let adresse = adresse_lue(&e.adresse);
     let f = EntrepriseLue {
         raison_sociale: e.nom.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string),
-        siren: siret.as_ref().map(|s| s[..9].to_string()),
-        nic: siret.as_ref().map(|s| s[9..].to_string()),
+        siren: siret.as_ref().map(droit::fiche::Siret::siren),
+        nic: siret.as_ref().map(droit::fiche::Siret::nic),
         siret: siret.clone(),
         naf: e.naf.clone().filter(|x| !x.is_empty()),
         adresse: adresse.as_ref().map(|a| a.0.clone()).filter(|r| !r.is_empty()),
@@ -1880,11 +1880,11 @@ struct EntrepriseLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     raison_sociale: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    siren: Option<String>,
+    siren: Option<droit::fiche::Siren>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    nic: Option<String>,
+    nic: Option<droit::fiche::Nic>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    siret: Option<String>,
+    siret: Option<droit::fiche::Siret>,
     #[serde(skip_serializing_if = "Option::is_none")]
     naf: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2144,8 +2144,8 @@ fn entreprise_du_certificat(p: &Attestee) -> R<Saisie> {
         code_postal: aem.and_then(|a| a.employeur_code_postal.clone()),
         commune: aem.and_then(|a| a.employeur_commune.clone()),
         raison_sociale: c.employeur.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string),
-        siren: c.siret.as_ref().map(|s| s[..9].to_string()),
-        nic: c.siret.as_ref().map(|s| s[9..].to_string()),
+        siren: c.siret.as_ref().map(droit::fiche::Siret::siren),
+        nic: c.siret.as_ref().map(droit::fiche::Siret::nic),
         siret: c.siret.clone(),
         adherent: c.compte.clone(),
         ..EntrepriseLue::default()
