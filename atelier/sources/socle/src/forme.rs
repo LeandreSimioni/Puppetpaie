@@ -38,10 +38,15 @@ thread_local! {
 /// fiche. Un fichier se lit par `lire`, tel qu'il est ecrit.
 #[track_caller]
 pub fn lire_saisie<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
-    let avant = EN_SAISIE.replace(true);
-    let lu = lire(v, phrase);
-    EN_SAISIE.set(avant);
-    lu
+    /// Remet l'etat d'avant en sortant, panique comprise : une lecture de fichier qui suit n'est jamais rangee.
+    struct Remise(bool);
+    impl Drop for Remise {
+        fn drop(&mut self) {
+            EN_SAISIE.set(self.0);
+        }
+    }
+    let _remise = Remise(EN_SAISIE.replace(true));
+    lire(v, phrase)
 }
 
 /// LE TEXTE `texte` D'UNE NOTION QUI RANGE SA SAISIE, a sa lecture : range par `ranger` (son `FormeDeCase::RANGER`) dans
