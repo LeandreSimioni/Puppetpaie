@@ -587,7 +587,7 @@ pub struct PaieImportee {
 pub struct LigneDeRemuneration {
     pub code: Option<droit::catalogue::CodeDeRubrique>,
     pub libelle: String,
-    pub unite: Option<String>,
+    pub unite: Option<droit::catalogue::Unite>,
     pub quantite: Option<Decimal>,
     pub taux: Option<Decimal>,
     pub montant: Option<Decimal>,
@@ -725,7 +725,7 @@ impl Importe {
             ecrit: crate::ContratEcrit::default(),
         };
         let remuneration = remuneration_lue(&engagement, &lignes_lues, &ctx)?;
-        let cachets = remuneration.iter().filter(|r| r.unite.as_deref() == Some("cachet")).filter_map(|r| r.quantite).sum::<Decimal>().trunc().to_string();
+        let cachets = remuneration.iter().filter(|r| r.unite == Some(droit::catalogue::Unite::Cachet)).filter_map(|r| r.quantite).sum::<Decimal>().trunc().to_string();
         engagement.cachets = cachets.parse().map_err(|_| socle::echec::refus(socle::num::illisible(&cachets)))?;
         let heures: Decimal = remuneration.iter().filter_map(|r| r.heures_annexes).sum();
         engagement.heures = (!heures.is_zero()).then(|| socle::num::court(heures));

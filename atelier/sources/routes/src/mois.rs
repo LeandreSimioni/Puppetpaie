@@ -478,7 +478,7 @@ fn taux_du_mois(ctx: &Contexte, data: &VueDuMois) -> R<Option<Decimal>> {
 
 /// Le taux d'une ligne de cachet ; rien pour une autre ligne, ou un cachet sans taux.
 fn taux_d_une_ligne(ctx: &Contexte, l: &LignePaie) -> R<Option<Decimal>> {
-    if droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite != "cachet" {
+    if droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite != droit::catalogue::Unite::Cachet {
         return Ok(None);
     }
     Ok(l.taux().filter(|t| !t.is_zero()))
@@ -756,7 +756,7 @@ fn titre_de(spec: Option<&droit::fiche::ChampsSpectacle>, numero: Option<&str>) 
 fn cachets_de(ctx: &Contexte, e: &SaisieCarte) -> R<i64> {
     let mut cachets = 0;
     for l in e.lignes() {
-        if catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite != "cachet" {
+        if catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite != catalogue::Unite::Cachet {
             continue;
         }
         if let Some(q) = l.quantite() {
@@ -1665,7 +1665,7 @@ pub(crate) fn vue_paie(ctx: &Contexte, p: &Paie, brut: &SaisieCarte, data: &VueD
     // valeur ecrite, telle quelle, et rien quand rien n'est ecrit (regle 1 : plus de 130 EUR).
     let mut premier_cachet = None;
     for l in &e.lignes {
-        if droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite == "cachet" {
+        if droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?.unite == droit::catalogue::Unite::Cachet {
             premier_cachet = Some(l);
             break;
         }

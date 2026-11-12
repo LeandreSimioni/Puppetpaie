@@ -1328,7 +1328,7 @@ pub fn heures_et_cachets(ctx: &Contexte, d: &Demande) -> R<Tableau> {
             let (cachets, heures) = match dites.is_empty() && paie.importee().is_some() {
                 true => (None, None),
                 false => (
-                    Some(dites.iter().filter(|r| r.unite.as_deref() == Some("cachet")).filter_map(|r| r.quantite).fold(Decimal::ZERO, |a, q| a + q)),
+                    Some(dites.iter().filter(|r| r.unite == Some(droit::catalogue::Unite::Cachet)).filter_map(|r| r.quantite).fold(Decimal::ZERO, |a, q| a + q)),
                     Some(dites.iter().filter_map(|r| r.heures_annexes).fold(Decimal::ZERO, |a, h| a + h)),
                 ),
             };

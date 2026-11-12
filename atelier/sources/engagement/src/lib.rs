@@ -341,7 +341,7 @@ impl Engagement {
         for l in &lignes {
             let r = rubrique(racine, l.rubrique(), &jour_lu)?;
             let q = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
-            if r.unite == "cachet" {
+            if r.unite == droit::catalogue::Unite::Cachet {
                 cachets_somme += q;
                 premier_cachet.get_or_insert(l);
             } else {
@@ -861,7 +861,7 @@ pub(crate) fn lignes_du_planning(racine: &Path, source: &[LignePaie], mois: Mois
             continue;
         }
         let unite = rubrique(racine, l.rubrique(), &mois.dernier_jour())?.unite;
-        let par_date = matches!(unite.as_str(), "cachet" | "jour" | "service");
+        let par_date = matches!(unite, droit::catalogue::Unite::Cachet | droit::catalogue::Unite::Jour | droit::catalogue::Unite::Service);
         let quantite = Some(Decimal::from(if par_date { dedans.len() as i64 } else { 0 }));
         lignes.push(match l.avec_les_jours(dedans, apres) {
             LignePaie::Unites(x) => LignePaie::Unites(ligne::Unites { quantite, ..x }),
@@ -1756,7 +1756,7 @@ fn unites_du_statut(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<()> {
         }
         if statut != Some(voulu) {
             // Les heures d'un service se lisent sur lui ; celles d'un cachet sont celles du travail fait.
-            let combien = if r.unite == "service" { " (4 pour un service de 4 heures)" } else { "" };
+            let combien = if r.unite == droit::catalogue::Unite::Service { " (4 pour un service de 4 heures)" } else { "" };
             return Err(socle::refus!(
                 "{} : la ligne {} (« {} ») paie au {}, et seul un artiste se paie au {}. Payez-la à l'heure : une ligne « Heure \
                  de travail », ses heures pour quantité{}.",

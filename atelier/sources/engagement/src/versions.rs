@@ -12,6 +12,7 @@ use crate::departs::{Depart, Departs, Envoi};
 use crate::etats::{ses_departs, ARefaire, Valide};
 use crate::saisie::{Carte, Champ, Groupe, Valeur};
 use crate::stock::{Saisie, Version};
+use droit::catalogue::Unite;
 use droit::contexte::Contexte;
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
@@ -50,7 +51,7 @@ fn borne_courte(j: Option<Jour>) -> String {
 }
 
 /// Le libelle d'une rubrique au catalogue, et son unite.
-fn libelle(ctx: &Contexte, code: &droit::catalogue::CodeDeRubrique) -> R<(String, String)> {
+fn libelle(ctx: &Contexte, code: &droit::catalogue::CodeDeRubrique) -> R<(String, Unite)> {
     let r = droit::catalogue::rubrique(&ctx.racine, code, &ctx.lue_au)?;
     Ok((r.libelle, r.unite))
 }
@@ -66,14 +67,14 @@ fn au_pluriel(libelle: &str) -> String {
 }
 
 /// Ce que dit le taux d'une rubrique : « Salaire du cachet », « Salaire de l'heure » ; le libelle pour un forfait.
-fn nom_du_taux(libelle: &str, unite: &str) -> String {
+fn nom_du_taux(libelle: &str, unite: Unite) -> String {
     match unite {
-        "cachet" => "Salaire du cachet".into(),
-        "heure" => "Salaire de l'heure".into(),
-        "jour" => "Salaire de la journée".into(),
-        "semaine" => "Salaire de la semaine".into(),
-        "service" => "Salaire du service".into(),
-        _ => format!("{}, montant", libelle),
+        Unite::Cachet => "Salaire du cachet".into(),
+        Unite::Heure => "Salaire de l'heure".into(),
+        Unite::Jour => "Salaire de la journée".into(),
+        Unite::Semaine => "Salaire de la semaine".into(),
+        Unite::Service => "Salaire du service".into(),
+        Unite::Mois | Unite::Forfait | Unite::Pourcentage => format!("{}, montant", libelle),
     }
 }
 
@@ -280,7 +281,7 @@ fn changements_du_mois(ctx: &Contexte, a: &Carte, b: &Carte) -> R<Vec<String>> {
                     }
                     let (tx, ty) = (nombre_en_mots(x.taux(), true), nombre_en_mots(y.taux(), true));
                     if tx != ty {
-                        out.push(format!("{} : {} → {}", nom_du_taux(&lib, &unite), tx, ty));
+                        out.push(format!("{} : {} → {}", nom_du_taux(&lib, unite), tx, ty));
                     }
                     if let Some(j) = jours_changes(x, y) {
                         out.push(j);

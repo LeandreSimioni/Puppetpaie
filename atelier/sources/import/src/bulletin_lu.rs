@@ -2373,9 +2373,9 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
             continue;
         };
         let r = droit::catalogue::rubrique(racine, code, &b.fin)?;
-        let cachet = r.unite == "cachet";
+        let cachet = r.unite == droit::catalogue::Unite::Cachet;
         let forfait = r.heures_forfait;
-        let par_unite = forfait.or(l.heures).or_else(|| (r.unite == "heure").then_some(Decimal::ONE));
+        let par_unite = forfait.or(l.heures).or_else(|| (r.unite == droit::catalogue::Unite::Heure).then_some(Decimal::ONE));
         if !cachet && par_unite.is_none() {
             // un defraiement, un acompte : ni cachet ni heure ; une rubrique dont les heures se saisissent : non dites
             sans_duree |= r.saisie.iter().any(|s| s == "heures");

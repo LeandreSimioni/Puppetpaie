@@ -2383,7 +2383,7 @@ fiche! {
     /// `catalogue::construire` en fait la `Rubrique` du calcul.
     pub struct ChampsRubrique, datee RubriqueDatee, changement ChangementRubrique, cles CaseRubrique {
         Libelle(String) = "libelle" => libelle,
-        Unite(String) = "unite" => unite,
+        Unite(crate::catalogue::Unite) = "unite" => unite,
         Nature(crate::catalogue::NatureDeRubrique) = "nature" => nature,
         Saisie(Vec<String>) = "saisie" => saisie,
         Soumis(bool) = "soumis" => soumis,

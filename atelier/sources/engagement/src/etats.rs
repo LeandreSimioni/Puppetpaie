@@ -641,7 +641,7 @@ impl PaieDuMois {
                 .map(|r| RemunerationDuMois {
                     code: Some(r.code.clone()),
                     libelle: r.libelle.clone(),
-                    unite: Some(r.unite.clone()),
+                    unite: Some(r.unite),
                     quantite: Some(r.quantite),
                     taux: Some(r.taux),
                     montant: Some(r.montant),

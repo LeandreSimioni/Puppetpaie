@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use droit::bareme::{bareme_applique, SANTE_SUSPENSION, SANTE_SUSPENSION_MAINTENUE, SANTE_SUSPENSION_SUSPENDUE};
 use droit::natures::{AuMois, Nature};
 use droit::fiche::{AccordDfs, ChampsEntreprise, Lue, ChampsSalarie, FicheSalarie, OptionDfs as DfsEmployeur, SalarieDuContrat, Statut};
-use droit::catalogue::{code_54, rubrique, HorsAssiette};
+use droit::catalogue::{code_54, rubrique, HorsAssiette, Unite};
 use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
 use socle::texte::euros;
@@ -41,7 +41,7 @@ fn taux_compose(x: Decimal) -> Decimal {
 pub struct LigneBrut {
     pub code: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
-    pub unite: String,
+    pub unite: Unite,
     pub quantite: Decimal,
     pub taux: Decimal,
     pub montant: Decimal,
@@ -70,12 +70,12 @@ impl LigneBrut {
     pub fn designation(&self) -> String {
         let q = self.quantite.round_dp(2).normalize();
         let nb = q.to_string().replace('.', ",");
-        if matches!(self.unite.as_str(), "forfait" | "pourcentage") {
+        if matches!(self.unite, Unite::Forfait | Unite::Pourcentage) {
             return self.libelle.clone();
         }
         // UN SALAIRE MENSUEL se paie au mois : sa quantite est la fraction du mois payee (`rubriques-base.json`, `mois`).
         // Un mois entier se dit seul ; une fraction se dit en part du mois, pas en decimales.
-        if self.unite == "mois" {
+        if self.unite == Unite::Mois {
             if self.quantite == Decimal::ONE {
                 return self.libelle.clone();
             }
@@ -89,17 +89,17 @@ impl LigneBrut {
             Some((t, r)) => (t, Some(r)),
             None => (self.libelle.as_str(), None),
         };
-        let compte = match self.unite.as_str() {
-            "heure" => ["heure"].as_slice(),
-            "jour" => ["jour", "journée"].as_slice(),
-            "cachet" => ["cachet"].as_slice(),
-            "service" => ["service"].as_slice(),
-            "semaine" => ["semaine"].as_slice(),
-            _ => [].as_slice(),
+        let compte = match self.unite {
+            Unite::Heure => ["heure"].as_slice(),
+            Unite::Jour => ["jour", "journée"].as_slice(),
+            Unite::Cachet => ["cachet"].as_slice(),
+            Unite::Service => ["service"].as_slice(),
+            Unite::Semaine => ["semaine"].as_slice(),
+            Unite::Mois | Unite::Forfait | Unite::Pourcentage => [].as_slice(),
         };
         // Des heures qui se nomment au pluriel (« Heures supplémentaires ») : leur nombre, et ce qui les distingue
         // (leur majoration), entre parentheses.
-        if self.unite == "heure" && tete.to_lowercase() == "heures" {
+        if self.unite == Unite::Heure && tete.to_lowercase() == "heures" {
             return match &self.precision {
                 Some(p) => format!("{} ({} h, {})", self.libelle, nb, p),
                 None => format!("{} ({} h)", self.libelle, nb),
@@ -108,7 +108,7 @@ impl LigneBrut {
         // Au singulier jusqu'a deux exclus (« 1,5 journée »).
         let pluriel = q >= Decimal::TWO;
         if !compte.contains(&tete.to_lowercase().as_str()) {
-            if self.unite == "heure" {
+            if self.unite == Unite::Heure {
                 let mut l = self.libelle.chars();
                 let minuscule: String = l.next().into_iter().flat_map(|c| c.to_lowercase()).chain(l).collect();
                 return format!("{} h {}", nb, socle::texte::de(&minuscule));
@@ -128,7 +128,7 @@ impl LigneBrut {
         FormeDeRemuneration {
             code: self.code.clone(),
             libelle: self.libelle.clone(),
-            unite: self.unite.clone(),
+            unite: self.unite,
             quantite: self.quantite,
             taux: self.taux,
             montant: self.montant,
@@ -152,7 +152,7 @@ impl LigneBrut {
         LigneBrut {
             code: f.code.clone(),
             libelle: f.libelle.clone(),
-            unite: f.unite.clone(),
+            unite: f.unite,
             quantite: f.quantite,
             taux: f.taux,
             montant: f.montant,
@@ -538,10 +538,10 @@ fn bref(l: &LigneBrut) -> String {
         None => (l.libelle.as_str(), ""),
     };
     let reste = if reste.is_empty() { String::new() } else { format!(" {}", reste) };
-    let dit = if l.unite == "forfait" && q.fract().is_zero() && q >= Decimal::TWO {
+    let dit = if l.unite == Unite::Forfait && q.fract().is_zero() && q >= Decimal::TWO {
         let tete = if tete.ends_with('s') || tete.ends_with('x') { tete.to_string() } else { format!("{}s", tete) };
         format!("{} {}{}", q, tete, reste)
-    } else if l.unite == "heure" && tete.to_lowercase() == "heure" {
+    } else if l.unite == Unite::Heure && tete.to_lowercase() == "heure" {
         format!("{} h{}", q.to_string().replace('.', ","), reste)
     } else {
         l.designation()
@@ -2044,7 +2044,7 @@ mod tests {
 
     fn ligne(code: &str, montant: &str, heures: &str, base: bool, retabli: bool, soumis: bool) -> LigneBrut {
         LigneBrut {
-            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: "mois".into(), quantite: Decimal::ONE, taux: dec_de(montant),
+            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: Unite::Mois, quantite: Decimal::ONE, taux: dec_de(montant),
             montant: dec_de(montant), heures_annexes: dec_de(heures), soumis, imposable: soumis, conges_spectacles: false,
             salaire_de_base: base, retabli, conges_pris: false, dsn_bloc52: None, arret_de_travail: retabli, dsn_autres_bruts: None,
             precision: None,

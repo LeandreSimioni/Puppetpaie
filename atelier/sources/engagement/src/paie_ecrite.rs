@@ -159,7 +159,7 @@ pub struct FormeDeCotisation {
 pub struct FormeDeRemuneration {
     pub code: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
-    pub unite: String,
+    pub unite: droit::catalogue::Unite,
     #[serde(with = "nombre")]
     pub quantite: Decimal,
     #[serde(with = "nombre")]

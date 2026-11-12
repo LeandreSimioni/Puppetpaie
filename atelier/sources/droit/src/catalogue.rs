@@ -18,9 +18,45 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 use socle::date::{repr_texte, Jour};
 
-/// Les unites que le moteur sait compter.
-pub const UNITES: [&str; 8] =
-    ["cachet", "heure", "jour", "semaine", "mois", "service", "forfait", "pourcentage"];
+/// L'UNITE D'UNE RUBRIQUE : ce que sa quantite compte, la liste fermee que le moteur sait compter (`unite` de chaque
+/// rubrique de `rubriques-base.json` ; sa note : « Ici le nombre se saisit »). Une unite hors de la liste se refuse a
+/// la lecture de la rubrique.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Unite {
+    Cachet,
+    Heure,
+    Jour,
+    Semaine,
+    Mois,
+    Service,
+    Forfait,
+    Pourcentage,
+}
+
+impl Unite {
+    /// Son nom ecrit.
+    pub fn cle(self) -> &'static str {
+        match self {
+            Unite::Cachet => "cachet",
+            Unite::Heure => "heure",
+            Unite::Jour => "jour",
+            Unite::Semaine => "semaine",
+            Unite::Mois => "mois",
+            Unite::Service => "service",
+            Unite::Forfait => "forfait",
+            Unite::Pourcentage => "pourcentage",
+        }
+    }
+}
+
+impl std::fmt::Display for Unite {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(self.cle())
+    }
+}
+
+impl crate::fiche::FormeDeCase for Unite {}
 
 /// Les natures juridiques. Elles ne commandent pas l'assujettissement (`soumis`, `imposable` le disent, rubrique par
 /// rubrique) ; d'une ligne HORS assiette, elles disent ce qu'elle est pour le montant net social
@@ -174,7 +210,7 @@ pub const CACHET: CodeDeRubrique = CodeDeRubrique::du_moteur("cachet");
 pub struct Rubrique {
     pub code: CodeDeRubrique,
     pub libelle: String,
-    pub unite: String,
+    pub unite: Unite,
     pub nature: NatureDeRubrique,
     pub saisie: Vec<String>,
     pub soumis: bool,
@@ -215,11 +251,6 @@ impl Rubrique {
     /// Les refus d'une rubrique mal formee.
     fn verifier(&self) -> R<()> {
         let code = &self.code;
-        if !UNITES.contains(&self.unite.as_str()) {
-            return Err(socle::refus!(
-                "Rubrique {} : unite {} inconnue. Connues : {}.",
-                repr(code), repr(&self.unite), joindre(&UNITES)));
-        }
         if !COMPTE_POUR.contains(&self.compte_pour.as_str()) {
             return Err(mal_decrite(code, format!(
                 "Rubrique {} : compte_pour {} inconnu. Connus : {}.",
@@ -236,7 +267,7 @@ impl Rubrique {
                  Spectacles sont une cotisation : leur assiette ne peut pas \
                  depasser ce qui entre dans l'assiette des cotisations.", repr(code))));
         }
-        if self.heures_forfait.is_some() && self.unite == "heure" {
+        if self.heures_forfait.is_some() && self.unite == Unite::Heure {
             return Err(mal_decrite(code, format!(
                 "Rubrique {} : `heures_forfait` sur une rubrique dont l'unite \
                  est l'heure. Les heures y sont un fait, pas un forfait : \
@@ -276,7 +307,7 @@ impl Rubrique {
         {
             return Some("mensuelle");
         }
-        if self.unite == "cachet" {
+        if self.unite == Unite::Cachet {
             return Some("activite");
         }
         None
@@ -294,7 +325,7 @@ impl Rubrique {
     /// cachets ») ; l'annexe VIII, celle des techniciens, ne compte que des heures (art. 3,
     /// `plafond-intermittents/unedic-annexe10-convention-20241115.txt`, `…annexe8…`).
     pub fn reservee_au_statut(&self) -> Option<crate::fiche::Statut> {
-        matches!(self.unite.as_str(), "service" | "cachet").then_some(crate::fiche::Statut::Artiste)
+        matches!(self.unite, Unite::Service | Unite::Cachet).then_some(crate::fiche::Statut::Artiste)
     }
 
     /// Une ligne de cette rubrique doit dire ses heures : `heures` est dans
@@ -330,7 +361,7 @@ impl Rubrique {
         if let Some(h) = heures_saisies {
             return centieme(h);
         }
-        if self.unite == "heure" {
+        if self.unite == Unite::Heure {
             return socle::num::court(quantite);
         }
         socle::num::court(Decimal::ZERO)
