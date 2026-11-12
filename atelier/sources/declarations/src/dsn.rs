@@ -746,9 +746,26 @@ fn reduction_dsn(pile: &Pile) -> Option<&droit::forme_bareme::ReductionDsn> {
     pile.reduction_generale.as_ref().and_then(|r| r.dsn.as_ref())
 }
 
-/// L'organisme de la premiere cotisation `code` de la pile.
-fn org_de(pile: &Pile, code: CodeCotisation81) -> Option<IdentifiantDOrganisme> {
-    pile.cotisations_dsn.iter().find(|c| c.code81 == Some(code)).and_then(|c| c.org.clone())
+/// Ce que les lignes 81 que le moteur compose a l'Urssaf ou a France Travail declarent, tel qu'un refus les nomme.
+const PART_URSSAF: &str = "la part Urssaf de la reduction generale";
+const PART_CHOMAGE: &str = "la part chomage de la reduction generale";
+const HEURES_EN_PLUS: &str = "la reduction et la deduction des heures en plus (114, 021), a l'Urssaf";
+
+/// L'ORGANISME DE LA PREMIERE COTISATION `code` DE LA PILE, chez qui `pour` (une ligne 81 que le moteur compose) se
+/// declare. S21.G00.81.002, « Urssaf : SIRET de l'Urssaf », « France Travail : SIRET de France Travail (uniquement pour
+/// les employeurs [...] d'artistes du spectacle [...]) » (`atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt`
+/// l. 367-389) : une ligne recouvree par l'un ou l'autre le nomme. Sans lui, refus : la ligne s'ecrirait sans organisme.
+fn org_de(pile: &Pile, code: CodeCotisation81, pour: &str) -> R<IdentifiantDOrganisme> {
+    pile.cotisations_dsn.iter().find(|c| c.code81 == Some(code)).and_then(|c| c.org.clone()).ok_or_else(|| {
+        socle::echec::a_la_cle(
+            "Le barème de l'année ne nomme pas l'organisme d'une cotisation que la DSN déclare : le signaler au développeur.",
+            "cotisations_dsn.org",
+            format!(
+                "bareme {} : aucune cotisation {} (cotisations_dsn) ne nomme son organisme (S21.G00.81.002), chez qui se declare {}. Rien n'est ecrit.",
+                pile.annee, code, pour
+            ),
+        )
+    })
 }
 
 /// La pile de bareme de cette paie, sur le bareme du mois choisi.
@@ -882,15 +899,16 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     if let Some(rg) = &p.reduction_generale {
         if !rg.montant.is_zero() {
             let dsn = bar.dsn_de_la_reduction()?;
-            let urssaf = org_de(&bar, CodeCotisation81::AssuranceMaladie);
-            let ft = org_de(&bar, CodeCotisation81::AssuranceChomage);
+            let urssaf = Some(org_de(&bar, CodeCotisation81::AssuranceMaladie, PART_URSSAF)?);
+            let ft = Some(org_de(&bar, CodeCotisation81::AssuranceChomage, PART_CHOMAGE)?);
             // Sous la base 03 : abattue sous deduction forfaitaire specifique (`cle_abattue`), comme la reduction
             // elle-meme se calcule sur le brut abattu (`droit::reduction::reduction_generale_sous_dfs`).
             let brut_03 = bases[&cle_abattue(p, BaseAssujettie::BruteDeplafonnee, Assiette::Brut)?];
             for (code, org, part, cle) in [
                 (dsn.code81_urssaf, urssaf, rg.urssaf, dsn.cle_total_urssaf),
                 (dsn.code81_chomage, ft, rg.chomage, dsn.cle_total_chomage),
-                // La part retraite n'a pas de cle au bareme : elle se totalise sous son code.
+                // La part retraite n'a pas de cle au bareme : elle se totalise sous son code. Sans organisme :
+                // S21.G00.81.002, « AGIRC-ARRCO : non concerné » (`bloc-S21.G00.81.txt` l. 372).
                 (dsn.code81_retraite, None, rg.agirc_arrco, dsn.code81_retraite.into()),
             ] {
                 if !part.is_zero() {
@@ -919,7 +937,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
     // 04/06/2026, `editeur-dsn/guide-urssaf-regularisation.txt`, l. 1353 : « Au niveau individuel, le montant de reduction
     // doit etre signe »). 81.003 : la remuneration des heures.
     if let Some(remuneration) = p.bases.get(&Assiette::HeuresEnPlus).copied().filter(|m| !m.is_zero()) {
-        let urssaf = org_de(&bar, CodeCotisation81::AssuranceMaladie);
+        let urssaf = Some(org_de(&bar, CodeCotisation81::AssuranceMaladie, HEURES_EN_PLUS)?);
         let brut_03 = bases[&cle_abattue(p, BaseAssujettie::BruteDeplafonnee, Assiette::Brut)?];
         for (code, id) in [(CODE81_REDUCTION_HEURES, engagement::heures_en_plus::REDUCTION), (CODE81_DEDUCTION_HEURES, engagement::heures_en_plus::DEDUCTION)] {
             let montant = p.lignes.iter().filter(|l| l.est(&id)).fold(zero2(), |a, l| add(a, add(l.montant_pat, l.montant_sal)));
@@ -1057,8 +1075,7 @@ meme versement (cahier technique 2026.1, SIG-18 p. 303), ne se lit que sur les l
             dites(&LIGNES_AGIRC_ARRCO)
         ));
     }
-    let org = org_de(pile, CodeCotisation81::AssuranceMaladie)
-        .ok_or_else(|| refus("La part patronale Agirc-Arrco (142, 146) se declare a l'Urssaf (81.002), et le bareme ne nomme l'Urssaf sur aucune cotisation 075. Rien n'est ecrit."))?;
+    let org = org_de(pile, CodeCotisation81::AssuranceMaladie, "la part patronale Agirc-Arrco (142, 146), a l'Urssaf")?;
     let part = |code: CodeCotisation81, base: Decimal, taux: Decimal, montant: Decimal| Cotisation {
         bloc78: l131.bloc78,
         base78: l131.base78,
@@ -2806,14 +2823,14 @@ fn lecture(p: &Paie, bar: &BaremeDuMois) -> R<Lecture> {
             l.roles.push((code, None, Role81::Cotisation { cle: code.into(), base: None }));
         }
     }
-    let org = |code: CodeCotisation81| -> Option<IdentifiantDOrganisme> { org_de(&pile, code) };
+    let org = |code: CodeCotisation81, pour: &str| -> R<Option<IdentifiantDOrganisme>> { Ok(Some(org_de(&pile, code, pour)?)) };
     l.blocs.push((BaseAssujettie::BruteDeplafonnee, Assiette::Brut));
     // Les trois parts de la reduction generale, pour une paie qui en a une (`cotisations` ne les ecrit qu'alors).
     if p.reduction_generale.as_ref().is_some_and(|r| !r.montant.is_zero()) {
         let dsn = pile.dsn_de_la_reduction()?;
         for (code, org, part, cle) in [
-            (dsn.code81_urssaf, org(CodeCotisation81::AssuranceMaladie), "urssaf", dsn.cle_total_urssaf),
-            (dsn.code81_chomage, org(CodeCotisation81::AssuranceChomage), "chomage", dsn.cle_total_chomage),
+            (dsn.code81_urssaf, org(CodeCotisation81::AssuranceMaladie, PART_URSSAF)?, "urssaf", dsn.cle_total_urssaf),
+            (dsn.code81_chomage, org(CodeCotisation81::AssuranceChomage, PART_CHOMAGE)?, "chomage", dsn.cle_total_chomage),
             (dsn.code81_retraite, None, "retraite", dsn.code81_retraite.into()),
         ] {
             l.roles.push((code, org, Role81::Reduction { part, cle }));
@@ -2821,7 +2838,7 @@ fn lecture(p: &Paie, bar: &BaremeDuMois) -> R<Lecture> {
     }
     // Les heures en plus : la reduction salariale et la deduction patronale, a l'Urssaf (`cotisations`).
     for code in [CODE81_REDUCTION_HEURES, CODE81_DEDUCTION_HEURES] {
-        l.roles.push((code, org(CodeCotisation81::AssuranceMaladie), Role81::Cotisation { cle: code.into(), base: None }));
+        l.roles.push((code, org(CodeCotisation81::AssuranceMaladie, HEURES_EN_PLUS)?, Role81::Cotisation { cle: code.into(), base: None }));
     }
     Ok(l)
 }
