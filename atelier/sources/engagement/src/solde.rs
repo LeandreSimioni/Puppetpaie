@@ -233,7 +233,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
 /// salarie dans les mois lus se note (`stock::cle_de_saisie`) : qu'un CDI s'y valide ou s'en retire, la paie du dernier
 /// mois du CDD se recalcule.
 fn cdi_a_l_issue(ctx: &Contexte, e: &Carte, fin: &socle::date::Jour) -> R<Option<socle::date::Jour>> {
-    let salarie = salarie_de(e)?.to_string();
+    let salarie = salarie_de(e)?;
     let debut = debut_de(e)?;
     // Le premier jour de semaine apres le terme (0 = lundi ... 6 = dimanche).
     let mut reprise = fin.plus_jours(1)?;
@@ -247,9 +247,9 @@ fn cdi_a_l_issue(ctx: &Contexte, e: &Carte, fin: &socle::date::Jour) -> R<Option
     let mut trouve = None;
     for m in mois {
         let Some(s) = crate::stock::vue_et_empreinte(&ctx.racine, m)? else { continue };
-        socle::fichiers::noter_valeur(&crate::stock::cle_de_saisie(m, Some(&salarie)), crate::stock::empreinte_de_saisie(&s.0, Some(&salarie)));
+        socle::fichiers::noter_valeur(&crate::stock::cle_de_saisie(m, Some(salarie)), crate::stock::empreinte_de_saisie(&s.0, Some(salarie)));
         for x in &s.0.engagements {
-            let sien = x.valide.is_some() && x.salarie.as_deref() == Some(salarie.as_str());
+            let sien = x.valide.is_some() && x.salarie.as_ref() == Some(salarie);
             if !sien || !x.nature_lue()?.duree_indeterminee {
                 continue;
             }

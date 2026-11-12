@@ -807,7 +807,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     if pieces.is_empty() {
         return Err(refus(format!("Aucun document écrit pour {} : rien à imprimer.", mois.libelle(Graphie::Accentuee))));
     }
-    let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| cles.iter().any(|c| c == cle))?;
+    let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| cles.contains(cle))?;
     let impression = crate::gestes::signature::reunir_pour_imprimer(&dossier, "documents", &etiq, &pieces)?;
     let avertissements = documents.avertissements.clone();
     documents.engager(ctx, mois)?;
@@ -1060,7 +1060,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     let a_qui = format!("{} salarie(s) : {}", messages.len(), messages.iter().map(|m| m.nom.as_str()).collect::<Vec<_>>().join(", "));
     // LA VERSION SUR LAQUELLE ILS PARTENT, engagement par engagement des salaries servis.
     let servis: Vec<&str> = messages.iter().map(|m| m.cle.as_str()).collect();
-    let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| servis.contains(&cle))?;
+    let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| servis.contains(&cle.as_str()))?;
     // LA DUREE DE CHAQUE ETAPE (le journal dit ou va le temps d'un envoi).
     let t_preuve = std::time::Instant::now();
     verifier_preuve(ctx, Some(preuve), MoisOuJour::Mois(mois), "envoi des documents du mois aux salaries", &a_qui)?;
@@ -1121,13 +1121,13 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
 }
 
 /// La fiche du salarie `cle`, telle que ses paies du mois la portent, a-t-elle un courriel ?
-fn a_un_courriel(paies: &[engagement::calcul::Paie], cle: &str) -> bool {
-    paies.iter().any(|p| p.salarie.id == cle && p.salarie.email.is_some())
+fn a_un_courriel(paies: &[engagement::calcul::Paie], cle: &IdSalarie) -> bool {
+    paies.iter().any(|p| p.salarie.id == *cle && p.salarie.email.is_some())
 }
 
 /// « NOM Prenom » du salarie `cle`, lu dans ses paies du mois (`cle` est celle d'une de ces paies).
-fn nom_de_la_paie(paies: &[engagement::calcul::Paie], cle: &str) -> String {
-    paies.iter().find(|p| p.salarie.id == cle).map(|p| nom_du_salarie(&p.salarie)).into_iter().collect()
+fn nom_de_la_paie(paies: &[engagement::calcul::Paie], cle: &IdSalarie) -> String {
+    paies.iter().find(|p| p.salarie.id == *cle).map(|p| nom_du_salarie(&p.salarie)).into_iter().collect()
 }
 
 /// Ce que l'envoi dit de ceux qui n'ont pas de courriel : leurs documents ne sont pas partis, ils s'impriment.

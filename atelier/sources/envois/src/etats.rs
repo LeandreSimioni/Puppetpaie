@@ -42,9 +42,9 @@ fn paire(salarie: &IdSalarie, numero: Option<&NumeroContrat>) -> Paire {
 }
 
 /// L'indice, dans `paies`, de la paie du contrat n° `numero` de ce salarie.
-pub fn paie_du_contrat(paies: &[engagement::calcul::Paie], salarie: &str, numero: &str) -> R<Option<usize>> {
+pub fn paie_du_contrat(paies: &[engagement::calcul::Paie], salarie: &IdSalarie, numero: &str) -> R<Option<usize>> {
     for (i, x) in paies.iter().enumerate() {
-        if x.salarie.id == salarie && x.engagement.numero.as_deref() == Some(numero) && x.engagement.nat()?.modele_contrat().is_some() {
+        if x.salarie.id == *salarie && x.engagement.numero.as_deref() == Some(numero) && x.engagement.nat()?.modele_contrat().is_some() {
             return Ok(Some(i));
         }
     }
@@ -1282,17 +1282,17 @@ impl Parti {
 }
 
 /// Le contrat n° `numero` de ce salarie (`None` : son contrat sans numero), tel qu'il est parti a la signature.
-pub fn contrat_parti(lignes: &[Ligne], salarie: &str, numero: Option<&str>) -> Option<Parti> {
+pub fn contrat_parti(lignes: &[Ligne], salarie: &IdSalarie, numero: Option<&str>) -> Option<Parti> {
     let mut parti: Option<Parti> = None;
     for l in lignes.iter().filter(|l| l.accepte()) {
         if let Some(e) = l.signature() {
-            for c in e.detail.contrats.iter().filter(|c| c.salarie.as_str() == salarie && c.numero.as_deref() == numero && !c.est_avenant()) {
+            for c in e.detail.contrats.iter().filter(|c| c.salarie == *salarie && c.numero.as_deref() == numero && !c.est_avenant()) {
                 parti = Some(Parti { mois: c.mois, numero: c.numero.clone(), fichier: c.fichier.clone(), quand: e.quand.clone(), signe: None, modele: c.modele.clone() });
             }
         }
         for d in revenus(l) {
             if let Some(p) = parti.as_mut() {
-                if d.recu && d.salarie.as_str() == salarie && d.numero.as_deref() == numero && p.signe.is_none() {
+                if d.recu && d.salarie == *salarie && d.numero.as_deref() == numero && p.signe.is_none() {
                     p.signe = Some(d.quand);
                 }
             }

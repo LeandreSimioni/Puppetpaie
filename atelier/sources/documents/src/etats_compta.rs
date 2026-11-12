@@ -1257,12 +1257,12 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 
 /// Le taux REEL des cotisations patronales d'un salarie -- ses cotisations patronales sur son
 /// brut, sur les douze mois qui finissent a `jusqu_a`. Rend (taux en %, nombre de bulletins lus).
-fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &str, jusqu_a: Mois) -> R<(Option<Decimal>, i64)> {
+fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &droit::contexte::IdSalarie, jusqu_a: Mois) -> R<(Option<Decimal>, i64)> {
     let depart = jusqu_a.plus(-12).map_err(|x| x.reclasser(Classe::Illisible))?;
     let (mut brut, mut pat, mut n) = (zero2(), zero2(), 0i64);
     for l in lignes {
         let (Some(b), Some(c)) = (l.brut, l.cotisations_patronales) else { continue };
-        if l.cle_salarie != cle || !(depart < l.mois && l.mois <= jusqu_a) {
+        if l.cle_salarie != *cle || !(depart < l.mois && l.mois <= jusqu_a) {
             continue;
         }
         brut = add(brut, b);
@@ -1311,10 +1311,10 @@ fn provision_d_une_annee_importee(
     let paies = lecture.paies(m)?;
     // Les bruts repris d'un salarie du mois de `du` a celui de `au`, et si les bulletins repris couvrent ces mois ; un
     // brut que les pieces taisent, la somme ne se fait pas (`None`).
-    let mut bruts = |cle: &str, du: &socle::date::Jour, au: &socle::date::Jour| -> R<Option<(Decimal, bool)>> {
+    let mut bruts = |cle: &droit::contexte::IdSalarie, du:&socle::date::Jour, au: &socle::date::Jour| -> R<Option<(Decimal, bool)>> {
         let mut total = zero2();
         for &mois in importes.iter().filter(|x| **x >= du.mois_civil() && **x <= au.mois_civil()) {
-            for q in lecture.paies(mois)?.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == cle) {
+            for q in lecture.paies(mois)?.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == *cle) {
                 let Some(brut) = q.brut else { return Ok(None) };
                 total = add(total, brut);
             }

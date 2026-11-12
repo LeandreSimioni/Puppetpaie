@@ -27,7 +27,7 @@ fn les_releves_se_rattachent_par_le_nir() {
     let nirs = [(cle("ALPHA"), "2990101999999".to_string()), (cle("BETA"), "1990101999999".to_string())];
     let r = releves_vers_salaries(&releves, &nirs);
     assert_eq!(r.rattaches.len(), 1);
-    assert_eq!(r.rattaches[0].salarie, "ALPHA");
+    assert_eq!(r.rattaches[0].salarie, droit::contexte::IdSalarie::lire("ALPHA").unwrap());
     // Un NIR qu'on ne connait pas n'est jamais rattache au hasard.
     assert_eq!(r.orphelins, vec![releve("1234567890123", "1")]);
 }

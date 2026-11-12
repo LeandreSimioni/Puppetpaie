@@ -423,7 +423,7 @@ pub fn deposer_dsn_dans(
         };
         // Un etablissement qui ne se lit pas refuse le depot : la premiere faute, rendue apres la lecture.
         let faute: std::cell::RefCell<Option<Echec>> = std::cell::RefCell::new(None);
-        let garder = |_: &str, _: &str, e: &engagement::stock::Ecrit| match crate::etapes::nic_de_l_engagement_ecrit(ctx, e) {
+        let garder = |_: &IdSalarie, _: &str, e: &engagement::stock::Ecrit| match crate::etapes::nic_de_l_engagement_ecrit(ctx, e) {
             Ok(n) => n.as_deref() == Some(nic.as_str()),
             Err(x) => {
                 faute.borrow_mut().get_or_insert(x);
@@ -546,7 +546,7 @@ pub(crate) fn deposer_dpae_avec(
         })
         .collect::<R<_>>()?;
     // La version de chaque engagement dont l'embauche part : une date d'embauche qui change ensuite le dit.
-    let declare = |cle: &str, n: &str| embauches.iter().any(|x| x.salarie.as_str() == cle && x.numero.as_deref() == Some(n));
+    let declare = |cle: &IdSalarie, n: &str| embauches.iter().any(|x| x.salarie == *cle && x.numero.as_deref() == Some(n));
     let versions = envois::journal::versions_du_mois(ctx, le_mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, n, _| declare(cle, n))?;
     let d = envois::depot_acte::Depot { chemin: &chemin, octets: &octets, mois: le_mois, evenement: None, reel, qui, preuve: &forme, repetition: repetition.as_ref(), motdepasse: None, versions: &versions };
     let c = match donne.as_deref_mut() {

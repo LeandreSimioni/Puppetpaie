@@ -4185,7 +4185,7 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: Mois, etats: &[engagement::et
     let Some(numero) = p.engagement.numero.clone() else { return Ok(None) };
     let cle = cle_salarie(p);
     let sienne = |e: &engagement::etats::Etat| {
-        e.objet().carte().salarie.as_deref() == Some(cle.as_str()) && e.objet().carte().numero.as_deref() == Some(numero.as_str())
+        e.objet().carte().salarie.as_ref() == Some(&cle) && e.objet().carte().numero.as_deref() == Some(numero.as_str())
     };
     let Some(v) = etats.iter().filter(|e| sienne(e)).find_map(engagement::etats::Etat::valide) else { return Ok(None) };
     let premier_mois = p.engagement.debut.mois_civil();

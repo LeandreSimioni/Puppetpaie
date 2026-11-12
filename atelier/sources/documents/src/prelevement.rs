@@ -19,13 +19,12 @@ use socle::echec::R;
 fn deja_declare(ctx: &Contexte, pa: &Paie, lus: &mut Lus, departs: &engagement::departs::Departs) -> R<Option<Versement>> {
     let e = &pa.engagement;
     let Some(numero) = e.numero.clone() else { return Ok(None) };
-    let cle = pa.salarie.id.to_string();
     let fin = e.fin_periode();
     let mois = fin.mois_civil();
     if !lus.objets.contains_key(&mois) {
         lus.objets.insert(mois, engagement::stock::objets_du_mois(&ctx.racine, mois)?);
     }
-    let objet = lus.objets[&mois].iter().find(|o| o.carte().salarie.as_deref() == Some(cle.as_str()) && o.carte().numero.as_deref() == Some(numero.as_str()));
+    let objet = lus.objets[&mois].iter().find(|o| o.carte().salarie.as_ref() == Some(&pa.salarie.id) && o.carte().numero.as_deref() == Some(numero.as_str()));
     let Some(o) = objet else { return Ok(None) };
     Ok(engagement::etats::paie_declaree(ctx, o, departs, mois)?.and_then(|p| p.pas.clone()))
 }

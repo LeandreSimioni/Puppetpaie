@@ -947,7 +947,7 @@ fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDo
             destinataires.push(cle_de(p));
         }
     }
-    let siennes = |cle: &str| -> Vec<usize> { (0..paies.len()).filter(|i| cle_de(&paies[*i]) == cle && numerotee(*i)).collect() };
+    let siennes = |cle: &IdSalarie| -> Vec<usize> { (0..paies.len()).filter(|i| cle_de(&paies[*i]) == *cle && numerotee(*i)).collect() };
     let piece_de = |cle: &str| dossier.join(envois::envoi::nom_fichier("Bulletin", cle, &etiq));
     let archivees: Vec<usize> = (0..paies.len()).filter(|i| numerotee(*i)).collect();
     let archive = sortie.join(format!("Bulletins_{}.pdf", etiq));
@@ -1054,6 +1054,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, nom: &str) -> R<PathBu
             n.split_once('-').filter(|(a, b)| a.chars().all(|c| c.is_ascii_digit()) && b.len() == 4).map(|(a, b)| (cle.to_string(), format!("{}/{}", a, b)))
         });
         if let Some((cle, numero)) = garde {
+            let cle = IdSalarie::lire(&cle)?;
             let piece = sortie.join("envoi").join(envois::envoi::nom_fichier("Bulletin", &cle, &etiq));
             for rang in envois.iter().rev() {
                 if !refaire_les_documents(ctx, mois, &lignes, *rang, false)?.iter().any(|(c, n)| *c == cle && n.as_deref() == Some(numero.as_str())) {

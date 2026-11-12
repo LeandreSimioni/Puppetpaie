@@ -31,7 +31,7 @@ macro_rules! dites {
     )*};
 }
 dites!(CourrielPose, ApercuSignature, ApercuAvenant, PiecesParties, SignaturesDemandees, Imprimes, NoteRecue);
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use engagement::numeros::NumeroContrat;
 use envois::etats;
 use envois::journal::{self, AvenantParti, ArticleModifie, ContratParti};
@@ -552,14 +552,14 @@ pub(crate) struct ParCourriel {
 /// d'une compagnie fictive, la releve. `courriel` : la reponse « Je signe » que la releve a trouvee ; la note est alors
 /// datee de la SIGNATURE, pas du releve, et porte ce qui la prouve.
 pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: Option<&ParCourriel>) -> R<NoteRecue> {
-    let (salarie, debut) = (c.salarie.as_str(), c.debut.iso());
+    let (salarie, debut) = (&c.salarie, c.debut.iso());
     // Les paies telles que la DSN les a declarees, sans rien ecrire.
     let paies = documents::ecrire_documents::paies_aux_numeros_declares(ctx, c.mois, None, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?.1;
     // LE CONTRAT, pas le salarie : son numero, celui que l'ecran affiche (ou que la releve a lu) ; sans numero, l'engagement
     // de ce salarie qui commence ce jour-la.
     let numero = c.numero.as_deref();
     let trouvee = paies.iter().position(|p| {
-        p.salarie.id == salarie
+        p.salarie.id == *salarie
             && match numero {
                 Some(n) => p.engagement.numero.as_deref() == Some(n),
                 None => p.engagement.debut == c.debut,
@@ -615,7 +615,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
         l.signature().is_some_and(|e| {
             e.accepte
                 && e.detail.contrats.iter().any(|x| {
-                    x.salarie.as_str() == salarie
+                    x.salarie == *salarie
                         && x.numero == numero_note
                         && match av {
                             Some(a) => x.est_avenant() && x.avenant == Some(a),
@@ -1224,7 +1224,7 @@ impl AvenantLu {
 /// L'AVENANT D'UN CONTRAT PARTI D'ICI : ce qu'il modifierait, article par article. `None` : aucun contrat de ce numero
 /// n'est parti.
 fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<AvenantLu>> {
-    let salarie = c.salarie.as_str();
+    let salarie = &c.salarie;
     let Some(numero_voulu) = c.numero() else { return Ok(None) };
     let mut m = Moteur::nouveau(ctx);
     let lignes = m.lignes()?;
@@ -1339,11 +1339,11 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
 }
 
 /// La version validee de l'engagement de `salarie` qui porte le numero `numero`, parmi ceux de `mois`.
-fn version_validee(ctx: &Contexte, mois: Mois, salarie: &str, numero: Option<&str>, departs: &engagement::departs::Departs) -> R<Option<engagement::etats::Valide>> {
+fn version_validee(ctx: &Contexte, mois: Mois, salarie: &IdSalarie, numero: Option<&str>, departs: &engagement::departs::Departs) -> R<Option<engagement::etats::Valide>> {
     Ok(engagement::etats::du_mois(ctx, mois, departs)?.into_iter().find_map(|e| {
         let v = e.valide()?.clone();
         let b = &*v.objet().brut;
-        (b.saisie.carte.salarie.as_deref() == Some(salarie) && b.saisie.carte.numero.as_deref() == numero).then_some(v)
+        (b.saisie.carte.salarie.as_ref() == Some(salarie) && b.saisie.carte.numero.as_deref() == numero).then_some(v)
     }))
 }
 
@@ -1353,7 +1353,7 @@ fn version_validee(ctx: &Contexte, mois: Mois, salarie: &str, numero: Option<&st
 /// se dit en clair, sans article (`documents::avenant::changements_en_clair`). `None` : ce n'est pas un contrat signe
 /// ailleurs (le contrat du mois de la charge, ou du mois present, qui porte ce numero).
 fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<AvenantLu>> {
-    let salarie = c.salarie.as_str();
+    let salarie = &c.salarie;
     let Some(numero) = c.numero() else { return Ok(None) };
     // Le mois de l'ecran ; la ligne de commande qui ne le dit pas lit le mois present.
     let mois = match c.mois {

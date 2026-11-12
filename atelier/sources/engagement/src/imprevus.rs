@@ -735,11 +735,10 @@ fn taux_exact(montant: Decimal, quantite: Decimal) -> Decimal {
 /// § 2.5.1, p. 67). Le contrat se lit dans la saisie du mois ou il commence ; introuvable, la fiche telle quelle.
 pub fn fiche_du_salarie<I: Suspend>(ctx: &Contexte, imp: &I) -> R<SalarieDuContrat> {
     let fiche = SalarieDuContrat::de(ctx.salarie(imp.salarie())?);
-    let cle = fiche.id.to_string();
     let debut = imp.contrat_debut();
     let Some(data) = crate::stock::vue_du_mois(&ctx.racine, debut.mois_civil())? else { return Ok(fiche) };
     for e in &data.engagements {
-        if e.debut != Some(debut) ||e.salarie.as_deref() != Some(cle.as_str()) {
+        if e.debut != Some(debut) || e.salarie.as_ref() != Some(&fiche.id) {
             continue;
         }
         if !numeros_compatibles(imp.contrat_numero(), e.numero.as_deref()) {

@@ -344,9 +344,9 @@ pub(crate) fn controler_avenants(ctx: &Contexte, avenants: &[(IdSalarie, Vec<UnA
 /// Le contrat tel qu'il part, pour le journal : qui, quand, sous quel numero, dans quel fichier, et ce qu'il dit, clause
 /// par clause, et le modele qu'il suit (`modele`, son empreinte, `modeles_figes`). La version de l'engagement sur
 /// laquelle il part, la ligne du journal la porte (`journal::versions_des_contrats`).
-fn entree_du_contrat(ctx: &Contexte, p: &Paie, cle: &str, pdf: &std::path::Path, titre: &str, mois: Mois, ent: &droit::contexte::EntrepriseDuDocument, modele: String) -> R<ContratParti> {
+fn entree_du_contrat(ctx: &Contexte, p: &Paie, cle: &IdSalarie, pdf: &std::path::Path, titre: &str, mois: Mois, ent: &droit::contexte::EntrepriseDuDocument, modele: String) -> R<ContratParti> {
     Ok(ContratParti {
-        salarie: IdSalarie::lire(cle)?,
+        salarie: cle.clone(),
         debut: p.engagement.debut,
         fin: p.engagement.fin,
         numero: p.engagement.numero.clone(),
@@ -946,7 +946,7 @@ impl ContratNomme {
 /// du journal et la paie du contrat.
 fn avenant_ecrit(
     ctx: &Contexte,
-    salarie: &str,
+    salarie: &IdSalarie,
     a: &UnAvenant,
     saisies: &mut HashMap<Mois, (engagement::saisie::VueDuMois, Vec<Paie>)>,
     departs: &engagement::departs::Departs,
@@ -997,7 +997,7 @@ fn avenant_ecrit(
         }
     };
     let c = ContratParti {
-        salarie: IdSalarie::lire(salarie)?,
+        salarie: salarie.clone(),
         debut: a.debut,
         fin: p.engagement.fin,
         numero: a.contrat.clone(),

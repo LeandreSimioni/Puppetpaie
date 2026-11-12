@@ -978,13 +978,12 @@ fn calculer_les_rangs(ctx: &Contexte, mois: Mois, rangs: &[usize]) -> R<Vec<Paie
         .zip(salaries)
         .map(|((paie, fiches, pas, conges, fin, config, (cle_fiches, entree_fiches)), salarie)| {
             let regles = empreinte::regles(ctx, &fin)?;
-            let cle = salarie.to_string();
             let mut siennes = entrees.clone();
             // Les paies, les mensuels et le taux de PAS d'un autre salarie ne sont pas de son calcul. La cle d'une lecture
             // notee par ce calcul se relit, ou le calcul refuse.
             for k in entrees.keys() {
                 let lue = LectureDatee::<IdSalarie>::lue(k).transpose()?;
-                if matches!(&lue, Some(LectureDatee::Paies { salarie, .. } | LectureDatee::Mensuels { salarie, .. } | LectureDatee::Pas { salarie, .. }) if *salarie != cle) {
+                if matches!(&lue, Some(LectureDatee::Paies { salarie: autre, .. } | LectureDatee::Mensuels { salarie: autre, .. } | LectureDatee::Pas { salarie: autre, .. }) if *autre != salarie) {
                     siennes.remove(k);
                 }
             }
@@ -1571,7 +1570,7 @@ fn rafraichir(ctx: &Contexte, mois: Mois, departs: &Departs, passage: bool) -> R
     let mut calculees: Vec<((usize, Objet, Option<PaieEcrite>, bool), PaieEcrite)> = Vec::new();
     for s in &salaries {
         let siens: Vec<(usize, Objet, Option<PaieEcrite>, bool)> =
-            a_refaire.iter().filter(|(_, o, _, _)| o.carte().salarie.as_deref() == Some(s.as_str())).cloned().collect();
+            a_refaire.iter().filter(|(_, o, _, _)| o.carte().salarie.as_ref() == Some(s)).cloned().collect();
         let rangs: Vec<usize> = siens.iter().map(|(i, _, _, _)| *i).collect();
         match calculer_les_rangs(ctx, mois, &rangs) {
             Ok(nouvelles) => calculees.extend(siens.into_iter().zip(nouvelles)),

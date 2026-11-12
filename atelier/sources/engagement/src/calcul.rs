@@ -778,7 +778,7 @@ fn dfs_deja_deduite(ctx: &Contexte, eng: &Engagement, sal: &FicheSalarie, preced
     let cle = sal.id.to_string();
     let mut deja = crate::conges::dfs_des_mois_anterieurs(ctx, eng.fin_periode().mois_civil(), &cle)?;
     for p in precedentes {
-        let sienne = p.salarie.id == cle || p.engagement.salarie == eng.salarie;
+        let sienne = p.salarie.id == sal.id || p.engagement.salarie == eng.salarie;
         if sienne {
             if let Some(d) = &p.deduction_forfaitaire {
                 deja += d.montant;

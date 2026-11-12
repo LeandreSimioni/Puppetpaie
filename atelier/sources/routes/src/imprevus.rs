@@ -658,12 +658,12 @@ fn le_fichier(ctx: &Contexte, jour: &Jour) -> R<Vec<Imprevu>> {
 
 /// L'arret de ce salarie a ce dernier jour travaille : son indice, le fichier de son mois (tous imprevus compris), et
 /// l'arret.
-fn trouver_arret(ctx: &Contexte, cle: &str, dernier: &Jour) -> R<Option<(usize, Vec<Imprevu>, ArretSaisi)>> {
+fn trouver_arret(ctx: &Contexte, cle: &IdSalarie, dernier: &Jour) -> R<Option<(usize, Vec<Imprevu>, ArretSaisi)>> {
     let liste = le_fichier(ctx, dernier)?;
     let mut trouve = None;
     for (i, x) in liste.iter().enumerate() {
         if let Imprevu::Arret(a) = x {
-            if a.salarie == cle && a.dernier_jour_travaille == *dernier {
+            if a.salarie == *cle && a.dernier_jour_travaille == *dernier {
                 trouve = Some((i, a.clone()));
                 break;
             }
@@ -673,12 +673,12 @@ fn trouver_arret(ctx: &Contexte, cle: &str, dernier: &Jour) -> R<Option<(usize, 
 }
 
 /// La suspension de ce salarie qui commence ce jour : son indice, le fichier de son mois, et la suspension.
-fn trouver_suspension(ctx: &Contexte, cle: &str, debut: &Jour) -> R<Option<(usize, Vec<Imprevu>, SuspensionSaisie)>> {
+fn trouver_suspension(ctx: &Contexte, cle: &IdSalarie, debut: &Jour) -> R<Option<(usize, Vec<Imprevu>, SuspensionSaisie)>> {
     let liste = le_fichier(ctx, debut)?;
     let mut trouve = None;
     for (i, x) in liste.iter().enumerate() {
         if let Imprevu::Suspension(s) = x {
-            if s.salarie == cle && s.debut == *debut {
+            if s.salarie == *cle && s.debut == *debut {
                 trouve = Some((i, s.clone()));
                 break;
             }
@@ -688,14 +688,14 @@ fn trouver_suspension(ctx: &Contexte, cle: &str, debut: &Jour) -> R<Option<(usiz
 }
 
 /// L'arret de ce salarie a ce dernier jour travaille, ou le refus qui dit ou les lire.
-fn l_arret(ctx: &Contexte, cle: &str, dernier: &Jour) -> R<(usize, Vec<Imprevu>, ArretSaisi)> {
+fn l_arret(ctx: &Contexte, cle: &IdSalarie, dernier: &Jour) -> R<(usize, Vec<Imprevu>, ArretSaisi)> {
     trouver_arret(ctx, cle, dernier)?.ok_or_else(|| {
         refus(format!("Aucun arret de {} dont le dernier jour travaille soit le {} : choisir un arret de la liste.", cle, dernier.jj_mm_aaaa()))
     })
 }
 
 /// La suspension de ce salarie qui commence ce jour, ou le refus.
-fn la_suspension(ctx: &Contexte, cle: &str, debut: &Jour) -> R<(usize, Vec<Imprevu>, SuspensionSaisie)> {
+fn la_suspension(ctx: &Contexte, cle: &IdSalarie, debut: &Jour) -> R<(usize, Vec<Imprevu>, SuspensionSaisie)> {
     trouver_suspension(ctx, cle, debut)?.ok_or_else(|| refus(format!("Aucune suspension de {} qui commence le {}.", cle, debut.jj_mm_aaaa())))
 }
 
@@ -1731,9 +1731,9 @@ fn verifier(arret: &ArretSaisi) -> R<()> {
 
 /// Le dernier jour travaille saisi de l'arret de ce salarie dont un signalement a declare `declare` (S21.G00.60.002,
 /// `imprevus::dernier_jour_declare`) : ce qui designe l'arret aux routes ; `declare` lui-meme si aucun arret ne le porte.
-pub(crate) fn dernier_jour_saisi(ctx: &Contexte, salarie: &str, declare: Jour) -> R<Jour> {
+pub(crate) fn dernier_jour_saisi(ctx: &Contexte, salarie: &IdSalarie, declare: Jour) -> R<Jour> {
     for a in tous_les_arrets(ctx)? {
-        if a.salarie == salarie && magasin(imprevus::dernier_jour_declare(&a))? == declare {
+        if a.salarie == *salarie && magasin(imprevus::dernier_jour_declare(&a))? == declare {
             return Ok(a.dernier_jour_travaille);
         }
     }

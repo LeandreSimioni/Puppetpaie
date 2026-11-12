@@ -25,7 +25,7 @@ pub struct Demande<'a> {
     /// Le mois de paie ou lire le contrat a declarer.
     pub mois: Mois,
     /// `--salarie` : seulement ceux-la (`None` : tous ceux qui ont un taux a demander).
-    pub salaries: Option<&'a [String]>,
+    pub salaries: Option<&'a [droit::contexte::IdSalarie]>,
     pub envoi_test: bool,
     pub forcer: bool,
     pub constitution: Jour,
@@ -208,7 +208,7 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
     use declarations::amorcage as am;
     let mut lignes = a_combler(ctx, paies, d.motif, d.forcer)?;
     if let Some(voulus) = d.salaries {
-        let mut inconnus: Vec<&String> = voulus.iter().filter(|v| !lignes.iter().any(|l| &l.salarie == *v)).collect();
+        let mut inconnus: Vec<&droit::contexte::IdSalarie> = voulus.iter().filter(|v| !lignes.iter().any(|l| &l.salarie == *v)).collect();
         if !inconnus.is_empty() {
             inconnus.sort();
             inconnus.dedup();

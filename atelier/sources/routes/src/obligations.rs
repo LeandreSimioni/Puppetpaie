@@ -1256,8 +1256,8 @@ fn refus(m: impl Into<String>) -> socle::echec::Echec {
 }
 
 /// L'arret du salarie `nom` (sa cle, ou son nom) dont le dernier jour travaille est `dernier` : (sa cle, l'arret).
-fn l_arret_de(ctx: &Contexte, nom: &str, dernier: &Jour) -> R<(String, ArretSaisi)> {
-    let cle = ctx.cle_du_salarie(nom).map_err(|m| m.reclasser(Classe::Manque))?.to_string();
+fn l_arret_de(ctx: &Contexte, nom: &str, dernier: &Jour) -> R<(droit::contexte::IdSalarie, ArretSaisi)> {
+    let cle = ctx.cle_du_salarie(nom).map_err(|m| m.reclasser(Classe::Manque))?;
     for imp in crate::metier::imprevus::magasin(engagement::imprevus::tous(&ctx.racine))? {
         if let Imprevu::Arret(a) = imp {
             if a.salarie == cle && a.dernier_jour_travaille == *dernier {

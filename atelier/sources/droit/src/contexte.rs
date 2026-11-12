@@ -996,37 +996,6 @@ impl From<IdSalarie> for String {
     }
 }
 
-
-impl PartialEq<str> for IdSalarie {
-    fn eq(&self, autre: &str) -> bool {
-        self.0 == autre
-    }
-}
-
-impl PartialEq<&str> for IdSalarie {
-    fn eq(&self, autre: &&str) -> bool {
-        self.0 == *autre
-    }
-}
-
-impl PartialEq<String> for IdSalarie {
-    fn eq(&self, autre: &String) -> bool {
-        self.0 == *autre
-    }
-}
-
-impl PartialEq<IdSalarie> for &str {
-    fn eq(&self, autre: &IdSalarie) -> bool {
-        *self == autre.0
-    }
-}
-
-impl PartialEq<IdSalarie> for String {
-    fn eq(&self, autre: &IdSalarie) -> bool {
-        *self == autre.0
-    }
-}
-
 /// LA CLE D'UN SPECTACLE : celle de sa fiche dans `config/spectacles.json`, interne au logiciel. Elle se retrouve d'un nom
 /// (titre, alias, numero d'objet) par `Contexte::spectacle`, ou se lit d'un fichier, d'une charge (`lire`, ou `serde` :
 /// la meme chaine) ; un type a part, pour qu'elle ne se confonde pas avec un autre texte. Jamais vide.
