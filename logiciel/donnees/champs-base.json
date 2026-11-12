@@ -1711,7 +1711,7 @@
    "avance": "toujours_remplie",
    "libelle": "Code PCS-ESE",
    "forme": "texte",
-   "aide": "Le code INSEE de la profession (354C pour un artiste dramatique). Rempli par la liste des métiers ; il est vérifié au dépôt contre le référentiel officiel.",
+   "aide": "Le code INSEE de la profession, 4 caractères (354C pour un artiste dramatique). Rempli par la liste des métiers ; il est vérifié au dépôt contre le référentiel officiel.",
    "exige_par": ["dsn"],
    "longueur": 4,
    "exemple": "",
