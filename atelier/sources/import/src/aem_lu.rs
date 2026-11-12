@@ -374,6 +374,13 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             None
         }
     };
+    let idcc = match v("EMP_IDCC").map(|i| droit::fiche::Idcc::lire(&i)).transpose() {
+        Ok(i) => i,
+        Err(e) => {
+            fautes.push(e.phrase);
+            None
+        }
+    };
     let faute = (!fautes.is_empty()).then(|| fautes.join(" ; "));
     let mut out = Vec::new();
     let mut numero_objet = None;
@@ -391,7 +398,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             numero: None,
             siret: siret.clone(),
             ape: v("EMP_APE"),
-            idcc: v("EMP_IDCC").and_then(|i| droit::fiche::Idcc::lire(&i).ok()),
+            idcc: idcc.clone(),
             employeur: v("ENSEIGNE"),
             employeur_code_postal: v("ADR_EMP_CP"),
             employeur_commune: v("ADR_EMP_LOCALITE"),
@@ -627,9 +634,23 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     a.mois = socle::piece::Zone::lue(&chiffres, socle::piece::format::Mmaaaa).valeur();
     a.numero = lu("attestation", Some(0)).first().cloned();
     let siret: String = lu("siret", Some(1)).concat().chars().filter(char::is_ascii_digit).collect();
-    a.siret = droit::fiche::Siret::lire(&siret).ok();
+    // Un SIRET ou un IDCC imprimés qui n'ont pas leur forme se disent (`a.faute`), comme la clé du NIR plus bas.
+    let mut fautes_d_identite: Vec<String> = Vec::new();
+    a.siret = match (!siret.is_empty()).then(|| droit::fiche::Siret::lire(&siret)).transpose() {
+        Ok(s) => s,
+        Err(e) => {
+            fautes_d_identite.push(e.phrase);
+            None
+        }
+    };
     a.ape = lu("ape", Some(1)).first().cloned();
-    a.idcc = lu("idcc", Some(1)).first().and_then(|x| droit::fiche::Idcc::lire(x).ok());
+    a.idcc = match lu("idcc", Some(1)).first().map(|x| droit::fiche::Idcc::lire(x)).transpose() {
+        Ok(i) => i,
+        Err(e) => {
+            fautes_d_identite.push(e.phrase);
+            None
+        }
+    };
     a.employeur = texte(lu("raison", Some(1)));
     a.employeur_code_postal = lu("code_postal", Some(1)).first().filter(|x| x.len() == 5 && x.chars().all(|c| c.is_ascii_digit())).cloned();
     a.employeur_commune = texte(lu("commune", Some(1)));
@@ -764,7 +785,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     }
     a.faute = match inconnu.into_inner() {
         Some(i) => Some(i),
-        None => fautes.first().map(|f| f.to_string()),
+        None => fautes_d_identite.first().cloned().or_else(|| fautes.first().map(|f| f.to_string())),
     };
     Some(a)
 }
