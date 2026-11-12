@@ -136,7 +136,7 @@ pub trait ListeDeLaNorme: Copy + std::fmt::Display + 'static {
 }
 
 /// UNE LISTE FERMEE DE CODES DE LA NORME, declaree une fois : chaque variante et son code, le seul endroit ou il s'ecrit.
-/// Elle se lit et s'ecrit par son code ; un code qu'elle n'a pas se refuse a la lecture, en disant ceux qu'elle a.
+/// Elle se lit et s'ecrit par son code ; un code qu'elle n'a pas se refuse a la lecture, en nommant ce code et sa rubrique.
 /// Dans l'ordre de leurs codes : un objet indexe par elle s'ecrit comme quand son code etait un texte.
 macro_rules! codes_fermes {
     ($(#[$a:meta])* $nom:ident, $quoi:literal, $rubrique:literal {
