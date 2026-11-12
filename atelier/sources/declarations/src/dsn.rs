@@ -19,7 +19,7 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use droit::bordereau::{AssietteDuBordereau, MontantDuBordereau};
 use droit::bareme::{self, bareme_applique, EntrepriseLue};
 use droit::fiche::{ChampsEntreprise, DeclarantDsn, Lue};
-use droit::forme_bareme::{CotisationDsn, CotisationSupplementaire, IdDeCotisation, Pile, Rubrique};
+use droit::forme_bareme::{CotisationDsn, CotisationSupplementaire, IdDeCotisation, Pile, Rubrique, PREVOYANCE};
 use documents::bordereau::{self, Destinataire, LigneBordereau, TauxDeLaLigne};
 use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::reduction::au_dela_du_seuil;
@@ -2201,7 +2201,17 @@ pub fn autre_revenu(f: &mut Fichier, p: &Paie, bar: &BaremeDuMois, debut: &Jour,
         let Some(supp) = supp else { continue };
         let montant = match supp {
             CotisationSupplementaire::DesLignes(l) => somme_lignes(p, &l.lignes_patronales, true),
-            CotisationSupplementaire::SurUneBase(t) => pct(base(&bases(p, &bp)?, t.base)?, t.taux_sur_la_base.0),
+            // Le taux couvre la prevoyance du statut ; une garantie qu'une couche range avec elle (la tranche B d'un
+            // cadre technicien de la CCNEAC, XII.2.2.2) est aussi « incluse dans la base CSG » : sa part patronale s'ajoute.
+            CotisationSupplementaire::SurUneBase(t) => {
+                let sur_la_base = pct(base(&bases(p, &bp)?, t.base)?, t.taux_sur_la_base.0);
+                if type_54 == AutreElementDeRevenuBrut::CotisationPrevoyanceRetraiteSupplementaire {
+                    let ajoutees: Vec<IdDeCotisation> = bp.garanties_de_prevoyance().into_iter().filter(|g| *g != PREVOYANCE).collect();
+                    add(sur_la_base, somme_lignes(p, &ajoutees, true))
+                } else {
+                    sur_la_base
+                }
+            }
         };
         let montant = rond(montant);
         if montant.is_zero() {
