@@ -254,10 +254,9 @@ function champDeFiche(c, fiche, nom) {
       </div>`;
     }
     // UNE CASE A COCHER SE LIT COMME UNE PHRASE : la case, puis ce qu'elle dit. Une
-    // case que la fiche ne dit pas montre ce que le moteur lit (`booleen_defaut`) et
-    // ne part que si on la touche.
+    // case que la fiche ne dit pas se montre décochée et ne part que si on la touche.
     if (c.forme === "booleen") {
-      const coche = v == null ? c.booleen_defaut !== false : v !== false;
+      const coche = v === true;
       return `<div class="champ pleine case">
         <label class="coche"><input type="checkbox" data-cle="${c.cle}"
             data-forme="booleen"${coche ? " checked" : ""}${v == null ? " data-absent=\"1\"" : ""}>

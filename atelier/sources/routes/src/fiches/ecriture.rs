@@ -6,7 +6,7 @@
 //! ce qui se date) ; ce que la derivation pose revient dans la fiche case par case (`reporter`). Puis chaque case qui
 //! change s'ecrit datee dans la fiche telle qu'ecrite (`ecrire_datee`, la seule qui date une valeur de fiche).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -769,10 +769,6 @@ fn changements_a_dater(nom: NomDeFiche, avant: &Saisie, apres: &Saisie, cles: &[
     if avant.cases().is_empty() {
         return Ok(Vec::new());
     }
-    // Une case que la fiche ne dit pas se montre a ce que le moteur lit alors : une case a cocher a son defaut
-    // (`booleen_defaut`). La laisser ainsi ne change rien.
-    let defauts: HashMap<CaseDeFiche, Valeur> =
-        champs::fiche(nom)?.into_iter().filter(|c| c.forme == champs::Forme::Booleen).map(|c| (c.cle, Valeur::OuiNon(c.booleen_defaut))).collect();
     let sans_date = faits_sans_date();
     let lisibles = champs::formes_lisibles(nom)?;
     Ok(cles
@@ -780,7 +776,7 @@ fn changements_a_dater(nom: NomDeFiche, avant: &Saisie, apres: &Saisie, cles: &[
         .copied()
         .filter(|k| {
             let dite = avant.valeur(*k).filter(|a| !vide(Some(a)));
-            let a = dite.or(defauts.get(k));
+            let a = dite;
             let b = apres.valeur(*k);
             !sans_date.contains(&(nom, *k))
                 && !(a.is_some() && b.is_some() && meme_case(a, b, &lisibles))

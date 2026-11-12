@@ -319,7 +319,6 @@ pub struct Champ {
     pub avance: Option<Avance>,
     /// Quand la compagnie DOIT le remplir (`exige_si`, meme forme que `si`) : `Champ::exige`.
     pub exige_si: Option<Condition>,
-    pub booleen_defaut: bool,
     pub ecran: bool,
     /// Les actes qui ne se font pas sans lui (`exige_par` : `dsn`, `dpae`, `contrat`, `bulletin`, `certificat`, `paie`) :
     /// LA SEULE LISTE de ce qu'un acte exige d'une fiche, que « Pour demarrer » (`demarrage::manques`) et l'acte
@@ -500,7 +499,6 @@ impl Champ {
             si_entreprise: self.si_entreprise.as_ref(),
             avance: self.avance.as_ref(),
             exige_si: self.exige_si.as_ref(),
-            booleen_defaut: self.booleen_defaut,
             ecran: self.ecran,
             exige_par: self.exige_par.as_deref(),
             bloque: self.exige_par.as_deref().and_then(actes_en_clair),
@@ -582,7 +580,6 @@ pub struct Description<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avance: Option<&'a Avance>,
     pub exige_si: Option<&'a Condition>,
-    pub booleen_defaut: bool,
     pub ecran: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exige_par: Option<&'a [String]>,
