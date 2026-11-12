@@ -102,13 +102,13 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
         ajouter(&mut brut_par_spectacle, titre.clone(), brut);
         let mut retenu = zero;
         for l in p.remuneration().into_iter().filter(|l| !l.soumis) {
-            let Some(code) = l.code.as_deref() else {
+            let Some(code) = &l.code else {
                 return Err(refus(format!("La ligne de bulletin « {} » ({}) ne dit pas sa rubrique : rien ne dit si c'est une retenue, elle n'a pas de compte dans le plan comptable.", l.libelle, qui)));
             };
             if catalogue::rubrique(&ctx.racine, code, &ctx.lue_au).and_then(|r| r.hors_assiette()).map_err(|m| m.reclasser(Classe::Refuse))? != HorsAssiette::Mouvement {
                 continue;
             }
-            let Some(regle) = plan.retenues.get(code) else {
+            let Some(regle) = plan.retenues.get(code.as_str()) else {
                 return Err(manque_au_plan(
                     format!(
                         "La retenue « {} » ({}) n'a pas de compte dans le plan comptable. L'y ajouter parmi les retenues : un compte 425 pour un acompte ou une avance, 427 pour une saisie ou une opposition.",
@@ -143,15 +143,14 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
             net -= prelevement;
         }
         ajouter(&mut net_par_salarie, qui.clone(), net);
-        let cle_salarie = p.salarie().id.to_string();
-        let compte = compte_du_salarie(plan, p.salarie(), &cle_salarie).map_err(|r| match r {
+        let compte = compte_du_salarie(plan, p.salarie(), &p.salarie().id).map_err(|r| match r {
             Refus::Operation(m) => refus(m),
             Refus::Autre(e) => e,
         })?;
         compte_de.insert(qui.clone(), compte);
         let reduction_generale = p.validee().and_then(|v| v.reduction_generale.as_ref());
         for l in p.cotisations() {
-            let Some(id) = l.id.as_deref() else {
+            let Some(id) = l.id.as_ref().map(|i| i.as_str()) else {
                 return Err(refus(format!("La ligne de bulletin « {} » ne dit pas sa cotisation : elle n'a pas de compte dans le plan comptable.", l.libelle)));
             };
             let Some(regle) = plan.lignes.get(id) else {

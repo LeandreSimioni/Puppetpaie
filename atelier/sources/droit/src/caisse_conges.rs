@@ -20,7 +20,7 @@
 //! tranche.
 
 use crate::natures::Nature;
-use crate::fiche::{Lue, SalarieDuContrat};
+use crate::fiche::{CodeEmploiFt, Lue, SalarieDuContrat};
 use socle::date::Jour;
 use crate::emplois;
 use socle::echec::R;
@@ -76,12 +76,12 @@ pub fn intermittent(nat: &Nature, sal: &SalarieDuContrat) -> R<bool> {
         return Ok(true);
     }
     // Un emploi permanent (999SPT), ou sans code, n'a pas de metier du catalogue.
-    let code = sal.code_emploi_ft.portee().map(str::trim).filter(|c| !c.is_empty() && !c.eq_ignore_ascii_case("999SPT"));
+    let code = sal.code_emploi_ft.dite().filter(|c| !c.est_permanent());
     let metier = match code {
         Some(code) => emplois::metier(code)?.map(|m| (code, m)),
         None => None,
     };
-    let range = |(code, m): (&str, emplois::Metier)| -> R<bool> {
+    let range = |(code, m): (&CodeEmploiFt, emplois::Metier)| -> R<bool> {
         match m.annexe() {
             10 => Ok(true),
             8 => {
@@ -103,7 +103,7 @@ pub fn hors_de_l_annexe8(nat: &Nature, sal: &SalarieDuContrat) -> R<Option<(Stri
     if nat.duree_indeterminee || !nat.mensuelle() {
         return Ok(None);
     }
-    let Some(code) = sal.code_emploi_ft.portee() else {
+    let Some(code) = sal.code_emploi_ft.dite() else {
         return Ok(None);
     };
     let Some(m) = emplois::metier(code)?.filter(|m| m.annexe() == 8) else {

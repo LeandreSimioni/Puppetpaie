@@ -20,15 +20,15 @@ use crate::tableaux_export::{col_m, col_t, jj, qui, refus, section_du_mois, sect
 /// Un contrat par mois de paie, vu des etats du personnel.
 struct ContratMois {
     mois: Mois,
-    cle: String,
+    cle: droit::contexte::IdSalarie,
     fiche: droit::fiche::ChampsSalarie,
     salarie: String,
     /// Le numero du contrat, quand il est ecrit (un mois produit l'a fige).
-    contrat: Option<String>,
+    contrat: Option<engagement::numeros::NumeroContrat>,
     libelle_nature: String,
     emploi: Option<String>,
     spectacle: Option<String>,
-    objet: Option<String>,
+    objet: Option<droit::fiche::NumeroObjetSpectacle>,
     debut: Jour,
     /// La fin du contrat, sinon son dernier jour travaille.
     fin: Option<Jour>,
@@ -46,10 +46,10 @@ fn contrats_de(p: &Periode, lecture: &mut Lecture) -> R<Vec<ContratMois>> {
             let emploi = e.emploi.clone().filter(|x| !x.is_empty()).or_else(|| s.emploi.en_texte());
             out.push(ContratMois {
                 mois: m,
-                cle: s.id.to_string(),
+                cle: s.id.clone(),
                 fiche: s.champs.clone(),
                 salarie: qui(s)?,
-                contrat: e.numero.as_deref().map(str::to_string),
+                contrat: e.numero.clone(),
                 libelle_nature: e.nat().map_err(|x| x.reclasser(Classe::Refuse))?.libelle.clone(),
                 emploi,
                 spectacle: titre_spectacle(paie),
@@ -72,8 +72,8 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut lignes = Vec::new();
     for c in &contrats {
         let mut l = Ligne::nouvelle();
-        l.m("mois", c.mois).t("cle", c.cle.clone()).t("salarie", c.salarie.clone()).ot("contrat", c.contrat.clone()).t("nature", c.libelle_nature.clone());
-        l.ot("emploi", c.emploi.clone()).ot("spectacle", c.spectacle.clone()).ot("objet", c.objet.clone()).t("debut", c.debut.jj_mm_aaaa()).ot("fin", c.fin.map(|j| j.jj_mm_aaaa()));
+        l.m("mois", c.mois).t("cle", c.cle.to_string()).t("salarie", c.salarie.clone()).ot("contrat", c.contrat.clone()).t("nature", c.libelle_nature.clone());
+        l.ot("emploi", c.emploi.clone()).ot("spectacle", c.spectacle.clone()).ot("objet", c.objet.as_ref().map(|o| o.to_string())).t("debut", c.debut.jj_mm_aaaa()).ot("fin", c.fin.map(|j| j.jj_mm_aaaa()));
         l.od("brut", c.brut);
         lignes.push(l);
     }
@@ -128,10 +128,10 @@ fn sexe(nir: Option<&str>) -> Option<&'static str> {
 pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
-    let mut vus: BTreeSet<(String, Option<String>, Jour, Option<Jour>)> = BTreeSet::new();
+    let mut vus: BTreeSet<(droit::contexte::IdSalarie, Option<engagement::numeros::NumeroContrat>, Jour, Option<Jour>)> = BTreeSet::new();
     let mut a_preciser: BTreeSet<String> = BTreeSet::new();
     // (entree, nom, contrat) : l'ordre des embauches.
-    let mut rangees: Vec<((Jour, Option<String>, Option<String>), Ligne)> = Vec::new();
+    let mut rangees: Vec<((Jour, Option<String>, Option<engagement::numeros::NumeroContrat>), Ligne)> = Vec::new();
     let mut lecture = Lecture::nouvelle(ctx, &d.departs);
     for c in contrats_de(&p, &mut lecture)? {
         // Un contrat qui deborde du mois apparait une fois par mois de paie : c'est UNE embauche.

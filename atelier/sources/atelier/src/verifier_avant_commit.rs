@@ -232,9 +232,9 @@ fn valeurs_reelles(racine: &Path) -> R<Vec<(String, String)>> {
             }
         }
         for banque in ent.banque.iter().flatten().filter_map(|d| d.valeur.as_ref()) {
-            for (cle, v) in [("iban", &banque.iban), ("bic", &banque.bic)] {
-                if let Some(v) = v.as_ref().filter(|v| !v.is_empty()) {
-                    poser(v.clone(), format!("banque.{}", cle));
+            for (cle, v) in [("iban", banque.iban.as_ref().map(|i| i.to_string())), ("bic", banque.bic.as_ref().map(|b| b.to_string()))] {
+                if let Some(v) = v {
+                    poser(v, format!("banque.{}", cle));
                 }
             }
         }

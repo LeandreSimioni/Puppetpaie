@@ -51,7 +51,7 @@ const CORPS_CONTRESIGNE: &str = "Bonjour {prenom},\n\nNous avons bien reçu ta s
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SignatureRecue {
     pub mois: Mois,
-    pub salarie: String,
+    pub salarie: droit::contexte::IdSalarie,
     pub nom: String,
     pub code: String,
     pub adresse: String,

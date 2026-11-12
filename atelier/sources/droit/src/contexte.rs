@@ -10,8 +10,9 @@ use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
 
+use crate::code_cotisation::CleDeCotisationDsn;
 use crate::fiche::{ChampsEntreprise, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles};
-use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, TauxAtmp, VersementMobiliteEcrit};
+use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, TauxAtmp, VersementMobiliteEcrit};
 use socle::echec::Lieu;
 use socle::num::Decimal;
 
@@ -423,42 +424,32 @@ fn inconnue(ou: &str, quoi: &str) -> Echec {
     socle::echec::cle(format!("{} change « {} », que le barème de l'année n'a pas : la corriger.", ou, quoi), quoi)
 }
 
-/// Le code d'une cotisation de la DSN dans une couche : `code81`, ou `code81:affectation`.
-/// `None` : la cotisation n'a pas de code, une couche ne la nomme pas.
-fn code_de(c: &CotisationDsn) -> Option<String> {
-    let code = c.code81.clone()?;
-    Some(match c.affectation.as_deref().filter(|a| !a.is_empty()) {
-        Some(a) => format!("{}:{}", code, a),
-        None => code,
-    })
-}
-
 /// Ce qu'une couche ecrit des rubriques `liste`, par leur `id`.
-fn modifier_rubriques(liste: &mut [Rubrique], mods: &BTreeMap<String, RubriqueModifiee>, ou: &str) -> R<()> {
+fn modifier_rubriques(liste: &mut [Rubrique], mods: &BTreeMap<IdDeCotisation, RubriqueModifiee>, ou: &str) -> R<()> {
     for (id, m) in mods {
-        let r = liste.iter_mut().find(|r| r.id == *id).ok_or_else(|| inconnue(ou, id))?;
+        let r = liste.iter_mut().find(|r| r.id == *id).ok_or_else(|| inconnue(ou, id.as_str()))?;
         crate::bareme::modifier(r, m);
     }
     Ok(())
 }
 
-/// Ce qu'une couche ecrit des cotisations `liste`, par leur code (`code_de`).
-fn modifier_cotisations(liste: &mut [CotisationDsn], mods: &BTreeMap<String, CotisationModifiee>, ou: &str) -> R<()> {
-    for (code, m) in mods {
+/// Ce qu'une couche ecrit des cotisations `liste`, par leur cle (`CotisationDsn::cle`).
+fn modifier_cotisations(liste: &mut [CotisationDsn], mods: &BTreeMap<CleDeCotisationDsn, CotisationModifiee>, ou: &str) -> R<()> {
+    for (cle, m) in mods {
         let mut vue = false;
-        for c in liste.iter_mut().filter(|c| code_de(c).as_ref() == Some(code)) {
+        for c in liste.iter_mut().filter(|c| c.cle().as_ref() == Some(cle)) {
             crate::bareme::modifier_cotisation(c, m);
             vue = true;
         }
         if !vue {
-            return Err(inconnue(ou, code));
+            return Err(inconnue(ou, &cle.to_string()));
         }
     }
     Ok(())
 }
 
 /// Ce qu'une couche ecrit des modifications de rubriques d'une section s'ajoute a ce qu'elles portaient.
-fn par_dessus_rubriques(section: &mut BTreeMap<String, RubriqueModifiee>, mods: &BTreeMap<String, RubriqueModifiee>) {
+fn par_dessus_rubriques(section: &mut BTreeMap<IdDeCotisation, RubriqueModifiee>, mods: &BTreeMap<IdDeCotisation, RubriqueModifiee>) {
     for (id, m) in mods {
         crate::bareme::par_dessus(section.entry(id.clone()).or_default(), m);
     }
@@ -945,34 +936,15 @@ fn aujourdhui_brut() -> R<Jour> {
 pub struct IdSalarie(String);
 
 impl IdSalarie {
-    /// La cle ecrite `texte` ; vide, elle se refuse.
+    /// La cle ecrite `texte` ; vide ou faite de blancs (`socle::texte::blanc`), elle se refuse.
     pub fn lire(texte: &str) -> R<IdSalarie> {
-        if texte.is_empty() {
+        if texte.chars().all(socle::texte::blanc) {
             return Err(refus("cle de salarie vide"));
         }
         Ok(IdSalarie(texte.to_string()))
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::ops::Deref for IdSalarie {
-    type Target = str;
-    fn deref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl AsRef<str> for IdSalarie {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::borrow::Borrow<str> for IdSalarie {
-    fn borrow(&self) -> &str {
         &self.0
     }
 }
@@ -996,34 +968,50 @@ impl From<IdSalarie> for String {
     }
 }
 
+/// LE SALARIE TEL QU'ON LE DESIGNE : la cle de sa fiche, ou son nom, son prenom, son NIR (ce que tape la personne, ce
+/// qu'une charge porte). Ce n'est pas une cle : il se resout en une, a un seul endroit (`Contexte::cle_du_salarie`).
+/// Jamais vide ni fait de blancs : il ne designerait personne.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct SalarieDesigne(String);
 
-impl PartialEq<str> for IdSalarie {
-    fn eq(&self, autre: &str) -> bool {
-        self.0 == autre
+impl SalarieDesigne {
+    /// Le salarie que `texte` designe ; vide ou fait de blancs, il se refuse.
+    pub fn lire(texte: &str) -> R<SalarieDesigne> {
+        if texte.chars().all(socle::texte::blanc) {
+            return Err(refus("Le salarié n'est pas dit : donner sa clé ou son nom."));
+        }
+        Ok(SalarieDesigne(texte.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
-impl PartialEq<&str> for IdSalarie {
-    fn eq(&self, autre: &&str) -> bool {
-        self.0 == *autre
+/// Une cle designe sa fiche.
+impl From<IdSalarie> for SalarieDesigne {
+    fn from(c: IdSalarie) -> SalarieDesigne {
+        SalarieDesigne(c.0)
     }
 }
 
-impl PartialEq<String> for IdSalarie {
-    fn eq(&self, autre: &String) -> bool {
-        self.0 == *autre
+impl std::fmt::Display for SalarieDesigne {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
     }
 }
 
-impl PartialEq<IdSalarie> for &str {
-    fn eq(&self, autre: &IdSalarie) -> bool {
-        *self == autre.0
+impl TryFrom<String> for SalarieDesigne {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<SalarieDesigne> {
+        SalarieDesigne::lire(&s)
     }
 }
 
-impl PartialEq<IdSalarie> for String {
-    fn eq(&self, autre: &IdSalarie) -> bool {
-        *self == autre.0
+impl From<SalarieDesigne> for String {
+    fn from(d: SalarieDesigne) -> String {
+        d.0
     }
 }
 
@@ -1293,8 +1281,8 @@ impl Contexte {
     }
 
     /// La fiche salarie `cle` a `jour`. Refus : la fiche ne dit rien ce jour-la.
-    pub fn salarie_au(&self, cle: &str, jour: &Jour) -> R<FicheSalarie> {
-        let (id, brute) = self.fiches.salaries.fiches.get_key_value(cle).ok_or_else(|| socle::refus!("Salarie inconnu : {}.", repr_texte(cle)))?;
+    pub fn salarie_au(&self, cle: &IdSalarie, jour: &Jour) -> R<FicheSalarie> {
+        let (id, brute) = self.fiches.salaries.fiches.get_key_value(cle).ok_or_else(|| socle::refus!("Salarie inconnu : {}.", repr_texte(cle.as_str())))?;
         let champs = brute.au(jour);
         if champs.est_vide() {
             return Err(socle::refus!(
@@ -1308,8 +1296,8 @@ impl Contexte {
     }
 
     /// Les cles des salaries qu'on peut encore embaucher (les archives restent dans `salaries`).
-    pub fn salaries_actifs(&self) -> Vec<&str> {
-        self.salaries.iter().filter(|(_, v)| !v.archivee()).map(|(k, _)| k.as_str()).collect()
+    pub fn salaries_actifs(&self) -> Vec<&IdSalarie> {
+        self.salaries.iter().filter(|(_, v)| !v.archivee()).map(|(k, _)| k).collect()
     }
 
     /// LA CASE DES PERMANENTS, SUR UNE PERIODE : la fiche Entreprise dit-elle, a un jour au moins de `debut..=fin`, que la
@@ -1544,7 +1532,7 @@ depuis le plus recent.",
     /// `spectacle` : le `depuis` de la valeur en vigueur de chaque liste datee de leurs fiches et de celle de l'entreprise,
     /// du plus ancien au plus recent, sans doublon. Une paie qui s'est calculee avant qu'une de ces valeurs s'applique le
     /// dit a sa date (« règle du JJ/MM/AAAA »).
-    pub fn configuration_datee(&self, jour: &Jour, salarie: &str, spectacle: Option<&str>) -> R<Vec<Jour>> {
+    pub fn configuration_datee(&self, jour: &Jour, salarie: &IdSalarie, spectacle: Option<&str>) -> R<Vec<Jour>> {
         let mut out = self.fiches.entreprise.dates_en_vigueur(jour);
         out.extend(self.fiches.salaries.fiches.get(salarie).into_iter().flat_map(|f| f.dates_en_vigueur(jour)));
         out.extend(spectacle.and_then(|s| self.fiches.spectacles.fiches.get(s)).into_iter().flat_map(|f| f.dates_en_vigueur(jour)));
@@ -1664,7 +1652,7 @@ PSS_H_METROP).",
     }
 
     /// La fiche salarie `cle` telle qu'ecrite, datee, `None` si la cle est inconnue.
-    pub fn salarie_brut(&self, cle: &str) -> Option<&FicheSalarieDatee> {
+    pub fn salarie_brut(&self, cle: &IdSalarie) -> Option<&FicheSalarieDatee> {
         self.fiches.salaries.fiches.get(cle)
     }
 
@@ -1685,34 +1673,32 @@ PSS_H_METROP).",
 
     /// Le salarie de cette cle tel que l'ecran le nomme (`socle::texte::salarie_nomme` : « NOM Prénom ») ; la cle sans
     /// fiche.
-    pub fn nomme(&self, cle: &str) -> String {
+    pub fn nomme(&self, cle: &IdSalarie) -> String {
         match self.salaries.get(cle).and_then(|f| f.nomme()) {
             Some(nom) => nom,
             None => cle.to_string(),
         }
     }
 
-    /// Retrouve un salarie par cle, NIR, nom, prenom ou
-    /// faute de frappe. Le nom EXACT retrouve n'importe qui, archive compris ;
-    /// la recherche APPROCHANTE (prefixe, Levenshtein <= 3) ne va que parmi les actifs.
-    /// Rend la fiche (qui porte sa cle), ou le refus.
-    pub fn salarie(&self, nom: &str) -> R<FicheSalarie> {
-        let cle = self.cle_du_salarie(nom)?;
-        Ok(self.salaries[cle.as_str()].clone())
+    /// La fiche dont la cle est `cle`, sans rien chercher d'approchant. Refus : aucune fiche n'a cette cle.
+    pub fn fiche_de(&self, cle: &IdSalarie) -> R<FicheSalarie> {
+        self.salaries.get(cle).cloned().ok_or_else(|| socle::refus!("Salarie inconnu : {}.", repr_texte(cle.as_str())))
     }
 
-    /// La cle de la fiche que `salarie` retrouve, sans la recopier ; la cle meme se retrouve d'abord.
-    pub fn cle_du_salarie(&self, nom: &str) -> R<IdSalarie> {
-        IdSalarie::lire(&self.cle_trouvee(nom)?)
+    /// LA CLE DE LA FICHE QUE `designe` RETROUVE, la seule resolution d'un salarie designe : par cle, NIR, nom, prenom
+    /// ou faute de frappe. Le nom EXACT retrouve n'importe qui, archive compris ; la recherche APPROCHANTE (prefixe,
+    /// Levenshtein <= 3) ne va que parmi les actifs. La cle meme se retrouve d'abord.
+    pub fn cle_du_salarie(&self, designe: &SalarieDesigne) -> R<IdSalarie> {
+        IdSalarie::lire(&self.cle_trouvee(designe.as_str())?)
     }
 
     fn cle_trouvee(&self, nom: &str) -> R<String> {
-        if self.salaries.contains_key(nom) {
-            return Ok(nom.to_string());
+        if let Some(cle) = self.salaries.keys().find(|c| c.as_str() == nom) {
+            return Ok(cle.to_string());
         }
         let q = cle_recherche(nom);
         for cle in self.salaries.keys() {
-            if cle_recherche(cle) == q {
+            if cle_recherche(cle.as_str()) == q {
                 return Ok(cle.to_string());
             }
         }
@@ -1746,11 +1732,11 @@ PSS_H_METROP).",
         }
         // Tolerance : prefixe (Celi -> CELIMENE) puis distance d'edition, sur les seuls actifs.
         let actifs = self.salaries_actifs();
-        let noms_de = |cle: &str| -> R<[String; 2]> {
+        let noms_de = |cle: &IdSalarie| -> R<[String; 2]> {
             let s = &self.salaries[cle];
             Ok([cle_recherche(&exige(&s.prenom, "prenom")?), cle_recherche(&exige(&s.nom, "nom")?)])
         };
-        let mut prefixes: Vec<&str> = Vec::new();
+        let mut prefixes: Vec<&IdSalarie> = Vec::new();
         for cle in &actifs {
             if q.chars().count() >= 3 && noms_de(cle)?.iter().any(|c| c.starts_with(&q)) {
                 prefixes.push(cle);
@@ -1761,7 +1747,7 @@ PSS_H_METROP).",
                 "Salarie ambigu : {} commence {} fiches ({}). Ecrire le nom en entier.",
                 repr_texte(nom),
                 prefixes.len(),
-                prefixes.join(", ")
+                prefixes.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", ")
             ));
         }
         if let Some(cle) = prefixes.first() {
@@ -1777,7 +1763,7 @@ PSS_H_METROP).",
                 }
             }
         }
-        if let Some(cle) = meilleur.filter(|c| !c.is_empty() && score <= 3) {
+        if let Some(cle) = meilleur.filter(|_| score <= 3) {
             return Ok(cle.to_string());
         }
         // Rien parmi les actifs : si une archive ressemble, le dire plutot que « inconnu ».
@@ -1799,11 +1785,11 @@ une paie passee ; pour l'embaucher a nouveau, remettre \
                     repr_texte(nom),
                     n,
                     p,
-                    repr_texte(cle)
+                    repr_texte(cle.as_str())
                 )), ..Lieu::default() }));
             }
         }
-        Err(socle::refus!("Salarie inconnu : {}. Connus : {}.", repr_texte(nom), actifs.join(", ")))
+        Err(socle::refus!("Salarie inconnu : {}. Connus : {}.", repr_texte(nom), actifs.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", ")))
     }
 
     /// Par cle, titre, alias ou numero d'objet, puis par inclusion dans un sens ou l'autre. Rend la fiche et sa cle, ou le

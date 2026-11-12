@@ -10,7 +10,6 @@
 use droit::catalogue::{catalogue, Rubrique};
 use droit::clauses;
 use droit::contexte::Contexte;
-use droit::emplois;
 use droit::fiche::Lue as _;
 use socle::date::Jour;
 use socle::echec::R;
@@ -21,13 +20,13 @@ use crate::saisie::Carte;
 /// neuve.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Proposees {
-    pub rubriques: Vec<String>,
-    pub par_defaut: Option<String>,
+    pub rubriques: Vec<droit::catalogue::CodeDeRubrique>,
+    pub par_defaut: Option<droit::catalogue::CodeDeRubrique>,
 }
 
 /// Les rubriques que la nature (`mensuelle` : payee au mois ; `None` : pas encore dite), le statut et le metier (`None` :
 /// pas encore dits) d'un engagement prennent, au catalogue de la compagnie a `jour`.
-pub fn proposees(ctx: &Contexte, mensuelle: Option<bool>, statut: Option<droit::fiche::Statut>, metier: Option<&str>, jour: &Jour) -> R<Proposees> {
+pub fn proposees(ctx: &Contexte, mensuelle: Option<bool>, statut: Option<droit::fiche::Statut>, metier: Option<&droit::fiche::CodeEmploiFt>, jour: &Jour) -> R<Proposees> {
     let cat = catalogue(&ctx.racine, jour)?;
     let ent = &ctx.entreprise;
     let prime = clauses::prime_anciennete_possible(ent.idcc.portee(), ent.annexe_convention.code(), metier, statut)?;
@@ -52,18 +51,17 @@ pub fn proposees(ctx: &Contexte, mensuelle: Option<bool>, statut: Option<droit::
 /// la dit ; son metier, sinon celui de la fiche de son salarie ; son statut ecrit, sinon celui de son metier, sinon
 /// celui de la fiche de son salarie.
 pub fn de_la_carte(ctx: &Contexte, carte: &Carte, jour: &Jour) -> R<Proposees> {
-    let dit = |x: &Option<String>| x.as_deref().map(str::trim).filter(|x| !x.is_empty()).map(str::to_string);
     let mensuelle = match carte.nature {
         Some(n) => Some(n.proprietes()?.mensuelle()),
         None => None,
     };
-    let fiche = carte.salarie.as_ref().and_then(|c| ctx.salaries.get(c.as_str()));
-    let metier = dit(&carte.metier).or_else(|| fiche.and_then(|f| f.code_emploi_ft.remplie()).map(str::to_string));
-    let du_metier = match dit(&carte.metier) {
-        Some(code) => emplois::metier(&code)?.map(|m| m.statut()),
+    let fiche = carte.salarie.as_ref().and_then(|c| ctx.salaries.get(c));
+    let metier = carte.metier.as_ref().map(droit::fiche::CodeEmploiFt::from).or_else(|| fiche.and_then(|f| f.code_emploi_ft.dite()).cloned());
+    let du_metier = match &carte.metier {
+        Some(code) => Some(code.metier()?.statut()),
         None => None,
     };
     let de_la_fiche = fiche.and_then(|f| f.statut.dite()).copied();
     let statut = carte.statut.or(du_metier).or(de_la_fiche);
-    proposees(ctx, mensuelle, statut, metier.as_deref(), jour)
+    proposees(ctx, mensuelle, statut, metier.as_ref(), jour)
 }

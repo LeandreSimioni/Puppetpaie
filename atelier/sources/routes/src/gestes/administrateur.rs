@@ -685,7 +685,7 @@ fn fichier_du_signalement(ctx: &Contexte, cle: &str, jour: Option<socle::date::J
         }
         "signalement_reprise" => format!("SignalementReprise_{}_{}.dsn", salarie, compact),
         "fin-contrat" => {
-            let cle = ctx.cle_du_salarie(salarie)?;
+            let cle = droit::contexte::IdSalarie::lire(salarie)?;
             format!("SignalementFinContrat_{}_{}.dsn", cle, compact)
         }
         _ => return Ok(None),

@@ -307,7 +307,7 @@ pub fn lire_quantites(champs: &[ChampLu]) -> socle::echec::R<Vec<Ligne>> {
 /// paie : `PaieAer::du_mois`), les quantites du mois.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PaieAer {
-    pub numero: String,
+    pub numero: engagement::numeros::NumeroContrat,
     pub debut: Jour,
     pub fin: Jour,
     pub cachets: Decimal,
@@ -325,11 +325,11 @@ impl PaieAer {
     pub fn du_mois(p: &engagement::calcul::Paie) -> socle::echec::R<PaieAer> {
         let e = &p.engagement;
         let (d, f) = (e.debut_mois(), e.fin_mois());
-        let numero = e.numero.as_deref().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
+        let numero = e.numero.clone().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
         let fin = e.fin.ok_or_else(|| socle::refus!("contrat {} sans fin", numero))?;
         let heures = if e.nat()?.mensuelle() { Some(p.heures_travaillees) } else { e.heures };
         Ok(PaieAer {
-            numero: numero.to_string(),
+            numero,
             debut: if e.debut > d { e.debut } else { d },
             fin: if fin < f { fin } else { f },
             cachets: Decimal::from(e.cachets),
@@ -527,18 +527,18 @@ pub fn remplir(donnees: &[u8], valeurs: BTreeMap<String, String>, images: Vec<Im
 
 /// Toutes les periodes que l'AER de `cle` pour `periode` doit porter (`ecarts`) : chaque contrat dont l'AER est due ce
 /// mois-ci (`due`), mois par mois depuis son debut, chacun lu dans la paie de son mois (`paies_du_mois`).
-pub fn periodes_attendues(periode: Mois, cle: &str, paies_du_mois: &mut dyn FnMut(Mois) -> Vec<engagement::calcul::Paie>) -> socle::echec::R<Vec<PaieAer>> {
-    let de_lui = |p: &engagement::calcul::Paie| p.salarie.id == cle;
+pub fn periodes_attendues(periode: Mois, cle: &droit::contexte::IdSalarie, paies_du_mois: &mut dyn FnMut(Mois) -> Vec<engagement::calcul::Paie>) -> socle::echec::R<Vec<PaieAer>> {
+    let de_lui = |p: &engagement::calcul::Paie| p.salarie.id == *cle;
     let mut out = Vec::new();
     for p in paies_du_mois(periode).iter().filter(|p| de_lui(p)) {
         let e = &p.engagement;
         if !due(p)? {
             continue;
         }
-        let numero = e.numero.as_deref().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?.to_string();
+        let numero = e.numero.clone().ok_or_else(|| socle::refus!("La paie de {} n'a pas de numéro de contrat : l'attestation ne se rapproche que d'un contrat validé.", e.mois))?;
         let mut m = e.debut.mois_civil();
         while m < periode {
-            for q in paies_du_mois(m).iter().filter(|q| de_lui(q) && q.engagement.numero.as_deref() == Some(numero.as_str()) && !q.engagement.sans_paie()) {
+            for q in paies_du_mois(m).iter().filter(|q| de_lui(q) && q.engagement.numero.as_ref() == Some(&numero) && !q.engagement.sans_paie()) {
                 out.push(PaieAer::du_mois(q)?);
             }
             m = m.suivant();

@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::catalogue::{annexes, rubrique};
 use crate::fiche::Lue;
-use crate::contexte::{aujourdhui, Contexte};
+use crate::contexte::{aujourdhui, Contexte, IdSalarie};
 use socle::date::Jour;
 use socle::echec::R;
 use socle::num::{add, Decimal};
@@ -28,7 +28,7 @@ pub struct Constantes {
 
 impl Constantes {
     pub fn lire(racine: &Path, jour: &Jour) -> R<Constantes> {
-        let cachet = rubrique(racine, "cachet", jour)?;
+        let cachet = rubrique(racine, &crate::catalogue::CACHET, jour)?;
         let a = annexes()?;
         Ok(Constantes {
             heures_par_cachet: rust_decimal::prelude::ToPrimitive::to_i64(&cachet.heures_forfait.ok_or_else(|| socle::fichiers::absent("cachet.heures_forfait"))?.trunc())
@@ -43,7 +43,7 @@ impl Constantes {
 /// `plafond_enseignement` : 70 h, ou 120 h a partir de 50 ans a la date
 /// donnee ; sans date de naissance, le plafond bas.
 pub fn plafond_enseignement(racine: &Path, date_naissance: Option<Jour>, a_la_date: Jour) -> R<i64> {
-    let r = rubrique(racine, "enseignement", &a_la_date)?;
+    let r = rubrique(racine, &const { crate::catalogue::CodeDeRubrique::du_moteur("enseignement") }, &a_la_date)?;
     let Some(p) = r.plafond_annuel_heures else {
         return Err(socle::echec::livree("rubriques-base.json", "rubriques.enseignement.plafond_annuel_heures"));
     };
@@ -57,7 +57,7 @@ pub fn plafond_enseignement(racine: &Path, date_naissance: Option<Jour>, a_la_da
 /// Une ligne declaree : un contrat de l'historique ou un mois de nos paies.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Declare {
-    pub salarie: String,
+    pub salarie: IdSalarie,
     pub debut: Jour,
     pub fin: Jour,
     pub heures: i64,
@@ -89,7 +89,7 @@ impl Declare {
 pub struct Position {
     pub constantes: Constantes,
     pub racine: std::path::PathBuf,
-    pub salarie: String,
+    pub salarie: IdSalarie,
     pub debut: Jour,
     pub fin: Jour,
     pub libelle_fenetre: String,
@@ -234,7 +234,7 @@ pub fn position(
     ctx: &Contexte,
     c: &Constantes,
     engagements: &[Declare],
-    salarie: &str,
+    salarie: &IdSalarie,
     fenetre: &Fenetre,
     date_naissance: Option<Jour>,
 ) -> Position {
@@ -242,23 +242,23 @@ pub fn position(
     Position {
         constantes: *c,
         racine: ctx.racine.clone(),
-        salarie: salarie.to_string(),
+        salarie: salarie.clone(),
         debut: *debut,
         fin: *fin,
         libelle_fenetre: libelle.clone(),
-        engagements: engagements.iter().filter(|e| e.salarie == salarie && *debut <= e.fin && e.fin <= *fin).cloned().collect(),
+        engagements: engagements.iter().filter(|e| e.salarie == *salarie && *debut <= e.fin && e.fin <= *fin).cloned().collect(),
         date_naissance,
     }
 }
 
 /// Date de naissance du salarie, ou `None`.
-pub fn naissance(ctx: &Contexte, salarie: &str) -> R<Option<Jour>> {
+pub fn naissance(ctx: &Contexte, salarie: &IdSalarie) -> R<Option<Jour>> {
     Ok(ctx.salaries.get(salarie).and_then(|f| f.date_naissance.dite().copied()))
 }
 
 /// Fin du dernier contrat declare : le depart de la fenetre par defaut.
-pub fn derniere_fin(engagements: &[Declare], salarie: &str) -> Option<Jour> {
-    engagements.iter().filter(|e| e.salarie == salarie).map(|e| e.fin).max()
+pub fn derniere_fin(engagements: &[Declare], salarie: &IdSalarie) -> Option<Jour> {
+    engagements.iter().filter(|e| e.salarie == *salarie).map(|e| e.fin).max()
 }
 
 /// Position au regard des annexes 8 et 10. `anniversaire` (notifie par France
@@ -266,7 +266,7 @@ pub fn derniere_fin(engagements: &[Declare], salarie: &str) -> Option<Jour> {
 /// la fin du dernier contrat declare.
 pub fn position_droits(
     ctx: &Contexte,
-    salarie: &str,
+    salarie: &IdSalarie,
     engagements: &[Declare],
     anniversaire: Option<Jour>,
     a_la_date: Option<Jour>,
@@ -308,7 +308,7 @@ pub struct Colonne {
 /// la fenetre des droits quand `anniversaire_droits` est dans la fiche.
 pub fn tableau_cumul(
     ctx: &Contexte,
-    salarie: &str,
+    salarie: &IdSalarie,
     mois: socle::mois::Mois,
     engagements: &[Declare],
 ) -> R<Vec<Colonne>> {
@@ -347,6 +347,6 @@ pub fn tableau_cumul(
 
 /// Date anniversaire des droits, si elle est dans `config/salaries.json`
 /// (`anniversaire_droits`) ; absente tant que France Travail ne l'a pas notifiee.
-pub fn anniversaire_configure(ctx: &Contexte, salarie: &str) -> R<Option<Jour>> {
+pub fn anniversaire_configure(ctx: &Contexte, salarie: &IdSalarie) -> R<Option<Jour>> {
     Ok(ctx.salaries.get(salarie).and_then(|f| f.anniversaire_droits.dite().copied()))
 }

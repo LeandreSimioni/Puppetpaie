@@ -121,7 +121,8 @@ fn demander(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
         dire!("Aucun engagement valide ne touche {} : rien n'est ecrit.", mois);
         return Ok(1);
     }
-    let salaries: Vec<String> = args.texte("salaries").into_iter().flat_map(|t| t.split(',')).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
+    let salaries: Vec<droit::contexte::IdSalarie> =
+        args.texte("salaries").into_iter().flat_map(|t| t.split(',')).map(str::trim).filter(|s| !s.is_empty()).map(droit::contexte::IdSalarie::lire).collect::<Result<_, Echec>>()?;
     let demande = Demande {
         motif: super::avec_defaut(args, "motif")?,
         mois,

@@ -102,8 +102,8 @@ fn jours_option(x: Option<Decimal>) -> R<String> {
 // ------------------------------------------------------------ les briques
 
 /// La case texte `cle` du spectacle de la paie ; refus si elle manque.
-fn du_spectacle(sp: Option<&droit::fiche::Spectacle>, case: fn(&droit::fiche::Spectacle) -> &Option<String>, cle: &str) -> R<String> {
-    sp.map(case).and_then(Option::as_deref).map(str::to_string).ok_or_else(|| socle::fichiers::absent(cle))
+fn du_spectacle<T: AsRef<str>>(sp: Option<&droit::fiche::Spectacle>, case: fn(&droit::fiche::Spectacle) -> &Option<T>, cle: &str) -> R<String> {
+    sp.map(case).and_then(Option::as_ref).map(|t| t.as_ref().to_string()).ok_or_else(|| socle::fichiers::absent(cle))
 }
 
 
@@ -326,10 +326,10 @@ fn emploi_imprime(e: &engagement::Engagement, sal: &ChampsSalarie) -> R<String> 
 }
 
 pub fn convention_du_contrat(ent: &ChampsEntreprise, sp: Option<&droit::fiche::Spectacle>, sal: &ChampsSalarie, jour: &Jour) -> R<(String, String)> {
-    let Some(idcc_compagnie) = ent.idcc.portee() else {
+    let Some(idcc_compagnie) = &ent.idcc else {
         return Err(socle::echec::cle("La fiche entreprise ne dit pas sa convention collective : la choisir dans Configuration › Entreprise.", "idcc"));
     };
-    let idcc = engagement::minima::idcc_du_contrat(idcc_compagnie, sp, sal)?;
+    let idcc = engagement::minima::idcc_du_contrat(idcc_compagnie, sp, sal)?.to_string();
     let libelle = if idcc == "1734" {
         "Artistes-interprètes engagés pour des émissions de télévision".to_string()
     } else {
@@ -1073,7 +1073,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
 
     // Le cadre d'identite : un tableau d'une ligne, deux cellules a filet.
     let nir_affiche = match sal.nir.remplie() {
-        Some(n) => format!("{}{}", n, exige(&sal.nir_cle, "nir_cle")?),
+        Some(n) => format!("{}{}", n, sal.nir_cle.exigee("nir_cle")?),
         None => "en cours d'immatriculation".to_string(),
     };
     let mut salarie = vec![
@@ -1356,7 +1356,7 @@ pub fn jeux_et_description(
         return Err(socle::refus!("{} numeros de bulletin pour {} paies.", numeros.len(), paies.len()));
     }
     let pas_par_paie = crate::prelevement::des_paies(ctx, paies, departs)?;
-    let mut colonnes_par_salarie: HashMap<String, Vec<Colonne>> = HashMap::new();
+    let mut colonnes_par_salarie: HashMap<droit::contexte::IdSalarie, Vec<Colonne>> = HashMap::new();
     // Tout ce que la compagnie a declare jusqu'a ce mois, ce mois-ci compris : les paies
     // qu'on imprime remplacent le fichier de leur mois.
     let courantes = match paies_du_mois {
@@ -1369,7 +1369,7 @@ pub fn jeux_et_description(
         engagements.retain(|e| e.debut <= fin);
     }
     for pa in paies {
-        let cle = pa.salarie.id.to_string();
+        let cle = pa.salarie.id.clone();
         // Le compteur de conges est par contrat, ecrit dans la paie a la validation (`Paie::conges`) ; le cumul des
         // 507 h par salarie.
         if !pa.engagement.nat()?.mensuelle() && !colonnes_par_salarie.contains_key(&cle) {
@@ -1381,13 +1381,13 @@ pub fn jeux_et_description(
         if p.engagement.sans_paie() {
             continue;
         }
-        let cle = p.salarie.id.to_string();
+        let cle = &p.salarie.id;
         // Une paie qui n'est pas un mois sans paie porte son prelevement (`prelevement::des_paies`).
         let pas = pas_par_paie[i].as_ref().ok_or_else(|| socle::refus!("{} : la paie de {} n'a pas de prélèvement à la source.", cle, p.engagement.mois))?;
         jeux.push(Jeu {
             paie: p,
             numero: numeros[i].as_deref(),
-            colonnes: colonnes_par_salarie.get(&cle).map(Vec::as_slice),
+            colonnes: colonnes_par_salarie.get(cle).map(Vec::as_slice),
             plafond: p.plafond_urssaf(ctx)?,
             conges: p.conges.as_ref(),
             pas,
@@ -1407,7 +1407,7 @@ pub fn passe_des_bulletins<'a>(ctx: &'a Contexte, paies: &[Paie], mois: Mois, de
     let mut au_cachet = std::collections::BTreeSet::new();
     for pa in paies {
         if !pa.engagement.nat()?.mensuelle() {
-            au_cachet.insert(pa.salarie.id.to_string());
+            au_cachet.insert(pa.salarie.id.clone());
         }
     }
     Ok(Passe::lire(ctx, Some(mois), Some(au_cachet), departs))

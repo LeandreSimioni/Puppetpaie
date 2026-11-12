@@ -120,7 +120,7 @@ carte! {
         #[champ(Terme, Etablissement)]
         pub etablissement: Option<String>,
         #[champ(Terme, Metier)]
-        pub metier: Option<String>,
+        pub metier: Option<droit::emplois::CodeEmploi>,
         #[champ(Terme, Cadre)]
         pub cadre: Option<bool>,
         #[champ(Terme, Lieu)]
@@ -138,9 +138,9 @@ carte! {
         #[champ(Terme, Emploi)]
         pub emploi: Option<String>,
         #[champ(Terme, PcsEse)]
-        pub pcs_ese: Option<String>,
+        pub pcs_ese: Option<droit::fiche::CodePcsEse>,
         #[champ(Terme, CodeEmploiFt)]
-        pub code_emploi_ft: Option<String>,
+        pub code_emploi_ft: Option<droit::fiche::CodeEmploiFt>,
         #[champ(Terme, Statut)]
         pub statut: Option<droit::fiche::Statut>,
         #[champ(Terme, StatutConventionnel)]
@@ -275,7 +275,19 @@ impl Simple for droit::natures::NatureDeContrat {
 macro_rules! choix_simple {
     ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.as_str().to_string())) } } )* };
 }
-choix_simple!(droit::fiche::Statut, droit::fiche::StatutConventionnel, droit::fiche::StatutCategorielRc, crate::numeros::NumeroContrat);
+choix_simple!(droit::fiche::Statut, droit::fiche::StatutConventionnel, droit::fiche::StatutCategorielRc, crate::numeros::NumeroContrat, droit::emplois::CodeEmploi);
+
+impl Simple for droit::fiche::CodePcsEse {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Texte(self.to_string()))
+    }
+}
+
+impl Simple for droit::fiche::CodeEmploiFt {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Texte(self.to_string()))
+    }
+}
 
 macro_rules! code_simple {
     ($($t:ty),*) => { $( impl Simple for $t { fn simple(&self) -> Option<Valeur> { Some(Valeur::Texte(self.code().to_string())) } } )* };
@@ -416,7 +428,7 @@ impl CongePris {
 pub struct Prime {
     pub montant: NombreLu,
     /// Sa rubrique au catalogue, que la carte choisit ; `null` tant qu'elle ne la dit pas (le calcul la demande).
-    pub rubrique: Option<String>,
+    pub rubrique: Option<droit::catalogue::CodeDeRubrique>,
     pub libelle: Option<String>,
 }
 

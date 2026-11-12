@@ -62,7 +62,7 @@ fn aucun_manque_ne_pointe_vers_un_champ_masque_pour_aucune_convention() {
             let nom = format!("grille-{}-{}-{}", if idcc.is_empty() { "sans" } else { idcc }, permanents, spectacle);
             let racine = neuve(&nom);
             let mut fichier = droit::fiche::lire_fichier::<droit::fiche::FicheEntrepriseDatee>(&racine.join("config/entreprise.json"), "config/entreprise.json").unwrap();
-            let valeur = Some(idcc.clone()).filter(|i| !i.is_empty());
+            let valeur = Some(idcc).filter(|i| !i.is_empty()).map(|i| droit::fiche::Idcc::lire(i).unwrap());
             fichier.idcc = Some(vec![droit::fiche::Datee { depuis: None, valeur, note: None }]);
             fichier.emploie_des_permanents = Some(vec![droit::fiche::Datee { depuis: None, valeur: Some(permanents), note: None }]);
             ecrire(&racine, "config/entreprise.json", &socle::ecriture::en_valeur(&fichier));

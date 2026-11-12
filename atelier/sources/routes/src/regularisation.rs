@@ -215,7 +215,7 @@ pub(crate) fn refus_non_declarable(
 ) -> R<Option<String>> {
     let brut = |o: &engagement::stock::Objet| o.brut.clone();
     let (b_avant, b_apres) = (brut(avant), brut(apres));
-    let (Some(cle), Some(numero)) = (b_avant.saisie.carte.salarie.clone(), b_avant.saisie.carte.numero.as_ref().map(ToString::to_string)) else {
+    let (Some(cle), Some(numero)) = (b_avant.saisie.carte.salarie.clone(), b_avant.saisie.carte.numero.clone()) else {
         return Ok(None);
     };
     let meme_salarie = b_apres.saisie.carte.salarie.as_ref() == Some(&cle);
@@ -303,7 +303,7 @@ fn avant_apres(mois: Mois, avant: Option<&Paie>, apres: &Paie) -> R<Correction> 
     Ok(Correction {
         infos_dit: format!("{} — {}", contrat, montants),
         portee_dit: "prochaine DSN".to_string(),
-        salarie: apres.salarie.id.to_string(),
+        salarie: apres.salarie.id.clone(),
         debut: apres.engagement.debut,
         nom: nom_de(apres),
         spectacle: apres.titre()?,
@@ -326,7 +326,7 @@ fn avant_apres(mois: Mois, avant: Option<&Paie>, apres: &Paie) -> R<Correction> 
 pub(crate) struct Correction {
     infos_dit: String,
     portee_dit: String,
-    pub(crate) salarie: String,
+    pub(crate) salarie: droit::contexte::IdSalarie,
     debut: socle::date::Jour,
     nom: String,
     spectacle: String,

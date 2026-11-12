@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use socle::echec::R;
 use socle::echec::Classe;
 use socle::mois::Mois;
@@ -248,14 +248,14 @@ pub fn reprendre_les_depots(ctx: &Contexte, qui: &str) -> AvecIncidents<usize> {
 // ------------------------------------------------------------- la reprise du canal DPAE
 
 /// Le NIR (sans espaces autour) -> la cle de la fiche. Si deux fiches portent le meme NIR, la derniere gagne.
-fn salarie_par_nir(ctx: &Contexte) -> Vec<(String, String)> {
-    let mut v: Vec<(String, String)> = Vec::new();
+fn salarie_par_nir(ctx: &Contexte) -> Vec<(String, IdSalarie)> {
+    let mut v: Vec<(String, IdSalarie)> = Vec::new();
     for (cle, s) in &ctx.salaries {
         let Some(nir) = s.nir.dite().filter(|n| !n.is_empty()) else { continue };
         let nir = nir.trim().to_string();
         match v.iter_mut().find(|(n, _)| *n == nir) {
-            Some(e) => e.1 = cle.to_string(),
-            None => v.push((nir, cle.to_string())),
+            Some(e) => e.1 = cle.clone(),
+            None => v.push((nir, cle.clone())),
         }
     }
     v
@@ -273,7 +273,7 @@ fn flux_du_nom(nom: &str) -> Option<&str> {
 /// Une embauche qu'un certificat de DPAE atteste : la cle du salarie, et son premier jour.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct EmbaucheAttestee {
-    pub salarie: String,
+    pub salarie: IdSalarie,
     pub debut: socle::date::Jour,
 }
 
@@ -411,8 +411,8 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
             let embauches = a
                 .embauches
                 .iter()
-                .map(|x| Ok(crate::journal::EmbaucheDeclaree { salarie: droit::contexte::IdSalarie::lire(&x.salarie)?, numero: None, debut: x.debut, fin: None }))
-                .collect::<R<Vec<_>>>()?;
+                .map(|x| crate::journal::EmbaucheDeclaree { salarie: x.salarie.clone(), numero: None, debut: x.debut, fin: None })
+                .collect::<Vec<_>>();
             let detail = crate::journal::DetailDpae { embauches, ..crate::journal::DetailDpae::nouveau(true, true) };
             let mut e = Envoi::nouveau(vue.mode, qui, vue.accepte, "urssaf-dpae", SANS_CERTIFICAT, detail);
             e.mois = a.mois;

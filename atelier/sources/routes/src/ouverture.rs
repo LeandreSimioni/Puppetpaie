@@ -20,7 +20,7 @@ use declarations::champs::{self, Valeur};
 use droit::fiche::{CaseDeFiche, CaseEntreprise, CaseEtablissement, CaseSalarie, CaseSpectacle, NomDeCase, NomDeFiche};
 use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::catalogue::{self, Rubrique};
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use droit::emplois::{self};
 use droit::natures::{self, MotifDeRupture, Nature};
 use droit::permanents;
@@ -858,7 +858,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let salaries = ctx
         .salaries
         .iter()
-        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSalarieDatee>(ctx, Some(k.as_str()), v.champs.clone(), temps_de(ctx.salarie_brut(k.as_str()), &jour)?, &ent, &p))
+        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSalarieDatee>(ctx, Some(k.as_str()), v.champs.clone(), temps_de(ctx.salarie_brut(k), &jour)?, &ent, &p))
         .collect::<R<Vec<_>>>()?;
     let spectacles = ctx
         .spectacles
@@ -1240,9 +1240,9 @@ impl serde::Serialize for NombreLu {
 pub(crate) struct RubriqueDeLaPage {
     lieux: Vec<Choix>,
     lieu_aide: Option<&'static str>,
-    code: String,
+    code: droit::catalogue::CodeDeRubrique,
     libelle: String,
-    unite: String,
+    unite: droit::catalogue::Unite,
     nature: droit::catalogue::NatureDeRubrique,
     saisie: Vec<String>,
     sens: String,
@@ -1299,7 +1299,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
     // LE LIEU D'UNE LIGNE DE NUITEE OU DE REPAS (`engagement::LignePaie::territoire`), sous « Avancé » : la metropole d'abord (rien
     // a choisir), l'outre-mer et Monaco, puis chaque lieu de la table des missions a l'etranger (`droit::missions::lieux`).
     let choix = |code: &str, libelle: &str| Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None };
-    let lieux: Vec<Choix> = if [engagement::NUITEE, engagement::REPAS].contains(&r.code.as_str()) {
+    let lieux: Vec<Choix> = if [engagement::NUITEE, engagement::REPAS].contains(&r.code) {
         std::iter::once(choix("", "Métropole"))
             .chain(engagement::TERRITOIRES.iter().map(|(c, l)| choix(c, l)))
             .chain(droit::missions::lieux()?.into_iter().map(|(c, l)| choix(&c, &l)))
@@ -1313,7 +1313,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         lieux,
         code: r.code.clone(),
         libelle: r.libelle.clone(),
-        unite: r.unite.clone(),
+        unite: r.unite,
         nature: r.nature,
         saisie: r.saisie.clone(),
         sens: r.sens.clone(),
@@ -1490,7 +1490,7 @@ fn niveaux_sante(ctx: &Contexte, compose: bool) -> R<Vec<NiveauDeSante>> {
     let pile = ctx.bareme(&ctx.aujourdhui)?;
     // La complementaire sante est celle des permanents : la couche de leur nature.
     const PERMANENT: &str = "permanent";
-    let releve = pile.par_nature.get(PERMANENT).and_then(|p| p.rubriques_ajoutees.as_ref()?.iter().find(|r| r.id == "mutuelle")).and_then(|r| r.releve_svp_sante.as_ref());
+    let releve = pile.par_nature.get(PERMANENT).and_then(|p| p.rubriques_ajoutees.as_ref()?.iter().find(|r| r.id == droit::forme_bareme::MUTUELLE)).and_then(|r| r.releve_svp_sante.as_ref());
     // Une couche sans releve de la complementaire n'en dit aucun niveau.
     Ok(releve
         .into_iter()
@@ -1535,7 +1535,7 @@ fn conventions(ctx: &Contexte) -> R<Vec<ConventionServie>> {
 /// (`engagement::proposees`).
 #[derive(Debug, Clone, serde::Serialize)]
 struct SalarieDeLaListe {
-    cle: String,
+    cle: IdSalarie,
     libelle: String,
 }
 
@@ -1544,7 +1544,7 @@ struct SalarieDeLaListe {
 struct SpectacleDeLaListe {
     cle: String,
     titre: String,
-    numero_objet: Option<String>,
+    numero_objet: Option<droit::fiche::NumeroObjetSpectacle>,
 }
 
 /// Un organisme de recouvrement que la DPAE fait choisir.
@@ -1603,11 +1603,11 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
 
     // Les listes ou l'on CHOISIT : les fiches courantes seulement. Une archive
     // reste dans `configuration`, ou on peut la relire et la reactiver.
-    let mut cles: Vec<&str> = ctx.salaries_actifs();
+    let mut cles: Vec<&IdSalarie> = ctx.salaries_actifs();
     cles.sort();
     let salaries = cles
         .into_iter()
-        .map(|k| SalarieDeLaListe { cle: k.to_string(), libelle: ctx.nomme(k) })
+        .map(|k| SalarieDeLaListe { cle: k.clone(), libelle: ctx.nomme(k) })
         .collect();
     let spectacles = ctx
         .spectacles_actifs()

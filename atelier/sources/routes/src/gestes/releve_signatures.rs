@@ -141,7 +141,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             r.incidents.push(format!("{} : la demande de signature ne dit pas son mois, elle ne se relève pas.", a_nom));
             continue;
         };
-        let a_salarie = a.salarie.to_string();
+        let a_salarie = a.salarie.clone();
         let contrats = a.contrats.clone();
         let retenue = match chercher_reponse(client, a, &expediteur, &mut r.incidents) {
             Ok(x) => x,
@@ -222,7 +222,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
             // Le contrat que cette reponse signe, par son numero : le jumeau du meme jour garde sa propre attente.
             let note = match a.mois {
                 Some(mois) => {
-                    let charge = crate::contrats::ChargeRecu { mois, salarie: c.salarie.to_string(), debut: c.debut, numero: c.numero.clone(), avenant: None, recu: true };
+                    let charge = crate::contrats::ChargeRecu { mois, salarie: c.salarie.clone(), debut: c.debut, numero: c.numero.clone(), avenant: None, recu: true };
                     crate::contrats::contrat_recu(ctx, &charge, qui, Some(&courriel)).map(|_| ())
                 }
                 None => Err(erreur(Classe::Refuse, "la demande de signature ne dit pas son mois")),

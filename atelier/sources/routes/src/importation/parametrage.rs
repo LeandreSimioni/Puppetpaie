@@ -123,7 +123,7 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
             }
         }
     }
-    let organisme = |a: &Adhesion| a.organisme.as_deref().map(str::trim).map(str::to_string);
+    let organisme = |a: &Adhesion| a.organisme.as_ref().map(|o| o.to_string());
     let mut saisies = std::collections::BTreeMap::new();
     for (l, a, _) in &paires {
         // La saisie est celle de l'ecran (`organismes-enregistrer`) : une case vide ne s'y ecrit pas `""`.
@@ -203,9 +203,9 @@ fn poser_taux_pas(ctx: &Contexte, faits: &mut Vec<String>) {
         if !changes.iter().any(|c| c.starts_with(&format!("{} :", cle))) {
             continue;
         }
-        let qui = match ctx.salaries.get(cle.as_str()).and_then(|s| s.nomme()).filter(|q| !q.is_empty()) {
+        let qui = match ctx.salaries.get(&cle).and_then(|s| s.nomme()).filter(|q| !q.is_empty()) {
             Some(q) => q,
-            None => cle,
+            None => cle.to_string(),
         };
         let taux: String = r.taux.iter().map(|t| format!(" {} %", t.to_string().replace('.', ","))).collect();
         // Le mois du versement qui l'applique (`mis_a_disposition`, le jour du versement) : celui que la DSN declare.

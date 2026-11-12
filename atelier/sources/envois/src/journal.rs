@@ -595,18 +595,18 @@ fn noter_ligne(d: &mut engagement::departs::Departs, l: &Ligne) {
 /// LES VERSIONS QU'UN ENVOI EMPORTE : pour chaque engagement valide que `mois` montre et que `garder` retient (la cle du
 /// salarie, le numero du contrat, l'engagement), sa version. Ce que la ligne du journal de l'envoi porte : elles se lisent
 /// AVANT l'envoi, qui ne part pas d'un engagement a revalider (`Valide::a_revalider`).
-pub fn versions_du_mois(ctx: &droit::contexte::Contexte, mois: Mois, departs: &engagement::departs::Departs, garder: impl Fn(&str, &str, &engagement::stock::Ecrit) -> bool) -> R<Vec<Version>> {
+pub fn versions_du_mois(ctx: &droit::contexte::Contexte, mois: Mois, departs: &engagement::departs::Departs, garder: impl Fn(&droit::contexte::IdSalarie, &str, &engagement::stock::Ecrit) -> bool) -> R<Vec<Version>> {
     let mut out = Vec::new();
     for e in engagement::etats::du_mois(ctx, mois, departs)? {
         let Some(v) = e.valide() else { continue };
         let brut = &*v.objet().brut;
-        let (Some(cle), Some(numero)) = (&brut.saisie.carte.salarie, brut.saisie.carte.numero.as_deref()) else { continue };
+        let (Some(cle), Some(numero)) = (&brut.saisie.carte.salarie, &brut.saisie.carte.numero) else { continue };
         if garder(cle, numero, brut) {
             if let Some(phrase) = v.a_revalider(ctx) {
                 return Err(refus(phrase));
             }
             let version = v.version().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "version"))?;
-            out.push(Version { salarie: cle.clone(), numero: engagement::numeros::NumeroContrat::lire(numero)?, version, mois: None });
+            out.push(Version { salarie: cle.clone(), numero: numero.clone(), version, mois: None });
         }
     }
     Ok(out)
@@ -619,7 +619,7 @@ pub fn versions_des_contrats(ctx: &droit::contexte::Contexte, contrats: &[Contra
     mois.dedup();
     let mut out: Vec<Version> = Vec::new();
     for m in mois {
-        let siens = |cle: &str, n: &str, _: &engagement::stock::Ecrit| contrats.iter().any(|c| c.mois == m && c.salarie.as_str() == cle && c.numero.as_deref() == Some(n));
+        let siens = |cle: &droit::contexte::IdSalarie, n: &str, _: &engagement::stock::Ecrit| contrats.iter().any(|c| c.mois == m && c.salarie == *cle && c.numero.as_deref() == Some(n));
         for x in versions_du_mois(ctx, m, departs, siens)? {
             if !out.contains(&x) {
                 out.push(x);
@@ -693,9 +693,10 @@ mod tests {
             Ligne::Dsn(envoi("DELTA", vec![retour("11", "OK")], DetailDsn::nouveau(false))),
         ];
         let d = departs_des_lignes(&lignes);
+        let numero = engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap();
         for refusee in ["ALPHA", "BETA", "GAMMA"] {
-            assert!(d.de(refusee, "DE1.26.01").is_empty(), "{refusee}");
+            assert!(d.de(&droit::contexte::IdSalarie::lire(refusee).unwrap(), &numero).is_empty(), "{refusee}");
         }
-        assert_eq!(d.de("DELTA", "DE1.26.01").len(), 1);
+        assert_eq!(d.de(&droit::contexte::IdSalarie::lire("DELTA").unwrap(), &numero).len(), 1);
     }
 }

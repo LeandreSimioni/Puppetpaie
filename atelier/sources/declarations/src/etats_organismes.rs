@@ -163,7 +163,7 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                 sans_bulletin.insert(m);
             }
             for c in &cotisations {
-                let Some(id) = c.id.as_deref() else {
+                let Some(cle) = c.id.as_ref() else {
                     if paie.importee().is_some() {
                         let (mois, total) = non_rattachees.entry(c.libelle.clone()).or_default();
                         mois.insert(m);
@@ -174,12 +174,13 @@ pub fn cotisations_par_organisme(ctx: &Contexte, d: &Demande) -> R<Tableau> {
                     }
                     continue;
                 };
+                let id = cle.as_str();
                 let Some(org) = org_de(id) else {
                     manque.insert(format!("{} ({})", id, c.libelle));
                     continue;
                 };
                 let (ts, tp) = (c.taux_sal, c.taux_pat);
-                if id == "reduction_generale" {
+                if *cle == droit::forme_bareme::REDUCTION_GENERALE {
                     if let Some(rg) = paie.validee().and_then(|v| v.reduction_generale.as_ref()) {
                         let mut reparti = zero;
                         for (part, id_org, quoi) in [(rg.urssaf, "maladie", "part Urssaf"), (rg.chomage, "chomage", "part chômage"), (rg.agirc_arrco, "retraite_t1", "part retraite")] {
@@ -339,8 +340,8 @@ fn nom_de_la_dsn(m: Mois, partie: bool) -> String {
 }
 
 /// SIRET -> libelle, lu dans les organismes de la compagnie (`Contexte::organismes`).
-fn libelles_organismes(ctx: &Contexte) -> R<Vec<(String, String)>> {
-    let mut out: Vec<(String, String)> = Vec::new();
+fn libelles_organismes(ctx: &Contexte) -> R<Vec<(droit::organismes::IdentifiantDOrganisme, String)>> {
+    let mut out: Vec<(droit::organismes::IdentifiantDOrganisme, String)> = Vec::new();
     for v in ctx.organismes()?.versements() {
         match out.iter_mut().find(|(c, _)| *c == v.siret) {
             Some(x) => x.1 = v.libelle.clone(),
@@ -361,10 +362,10 @@ pub fn versements_organismes(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois
         for o in &f.ordres {
             let organisme = match noms.iter().find(|(k, _)| *k == o.organisme).map(|(_, v)| v.clone()).filter(|v| !v.is_empty()) {
                 Some(n) => n,
-                None => o.organisme.clone(),
+                None => o.organisme.to_string(),
             };
             let mut l = Ligne::nouvelle();
-            l.m("mois", m).t("organisme", organisme).t("identifiant", o.organisme.clone()).ot("reference", o.reference.clone());
+            l.m("mois", m).t("organisme", organisme).t("identifiant", o.organisme.to_string()).ot("reference", o.reference.clone());
             l.t("du", o.debut.jj_mm_aaaa()).t("au", o.fin.jj_mm_aaaa()).od("montant", Some(o.montant));
             l.t("mode", "prélèvement SEPA");
             l.ot("date", o.date_paiement.map(|j| j.jj_mm_aaaa())).t("fichier", nom_de_la_dsn(m, partie));
@@ -399,96 +400,11 @@ pub fn versements_organismes(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois
 
 // ===================================== 8. le bordereau Urssaf (blocs 22 et 23)
 
-/// Un lecteur CSV : guillemets doubles, fins de ligne CR LF.
-fn lire_csv(texte: &str, delim: char) -> Vec<Vec<String>> {
-    let (mut rangs, mut rang, mut champ): (Vec<Vec<String>>, Vec<String>, String) = (Vec::new(), Vec::new(), String::new());
-    let (mut guillemets, mut commence) = (false, true);
-    let mut it = texte.chars().peekable();
-    while let Some(c) = it.next() {
-        if guillemets {
-            if c == '"' {
-                if it.peek() == Some(&'"') {
-                    champ.push('"');
-                    it.next();
-                } else {
-                    guillemets = false;
-                }
-            } else {
-                champ.push(c);
-            }
-            continue;
-        }
-        match c {
-            '"' if commence => {
-                guillemets = true;
-                commence = false;
-            }
-            c if c == delim => {
-                rang.push(std::mem::take(&mut champ));
-                commence = true;
-            }
-            '\r' | '\n' => {
-                if c == '\r' && it.peek() == Some(&'\n') {
-                    it.next();
-                }
-                if !(rang.is_empty() && champ.is_empty() && commence) {
-                    rang.push(std::mem::take(&mut champ));
-                    rangs.push(std::mem::take(&mut rang));
-                }
-                commence = true;
-            }
-            c => {
-                champ.push(c);
-                commence = false;
-            }
-        }
-    }
-    if !(rang.is_empty() && champ.is_empty()) {
-        rang.push(champ);
-        rangs.push(rang);
-    }
-    rangs
-}
-
-/// Code CTP -> libelle, lu dans la table de l'Urssaf livree avec le logiciel
-/// (`donnees/urssaf-codes-types-personnel.csv`, celle de `bordereau.rs`). Les textes de reference vivent dans le depot
-/// (`atelier/reference/`), et la table livree en est la copie conforme (`sources.json`).
-fn libelles_ctp(ctx: &Contexte) -> R<Vec<(String, String)>> {
-    let p = ctx.code.join("urssaf-codes-types-personnel.csv");
-    let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
-    let texte = String::from_utf8_lossy(&octets).into_owned();
-    let rangs = lire_csv(texte.trim_start_matches('\u{feff}'), ';');
-    let illisible = |quoi: &str| refus_avec(format!("La table des codes de l'Urssaf livrée ne dit pas {} : le signaler au développeur.", quoi), Lieu { chemin: Some(p.to_string_lossy().into_owned()), ..Default::default() }).reclasser(Classe::Illisible);
-    let Some((entete, corps)) = rangs.split_first() else { return Err(illisible("son en-tête")) };
-    let col = |nom: &str| entete.iter().position(|e| e == nom).ok_or_else(|| illisible(&format!("sa colonne « {} »", nom)));
-    let (i_code, i_lib, i_fin) = (col("Code")?, col("Libellé")?, col("Date de fin")?);
-    let mut out: Vec<(String, String)> = Vec::new();
-    for r in corps {
-        // Une ligne sans code n'en decrit aucun ; une cellule de fin absente (une ligne courte) : pas de fin.
-        let Some(code) = r.get(i_code).map(|c| c.trim_matches('\'').to_string()).filter(|c| !c.is_empty()) else { continue };
-        let lib = r.get(i_lib).cloned().ok_or_else(|| illisible(&format!("le libellé du code {}", code)))?;
-        let sans_fin = r.get(i_fin).is_none_or(|f| f.is_empty());
-        match out.iter_mut().find(|(c, _)| *c == code) {
-            Some(x) => {
-                if sans_fin {
-                    x.1 = lib;
-                }
-            }
-            None => out.push((code, lib)),
-        }
-    }
-    Ok(out)
-}
-
 /// Le bordereau Urssaf de chaque mois, CTP par CTP, tel que la DSN le porte, partie ou a deposer (`dsn_des_mois`), avec ceux des mois que ses corrections regularisent. Les taux ne sont
 /// pas appliques ici : c'est l'Urssaf qui calcule depuis les assiettes, et un export ne calcule pas.
 pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert = Vec::new();
-    let ctp = libelles_ctp(ctx)?;
-    if ctp.is_empty() {
-        avert.push("La table des codes de l'Urssaf manque au logiciel : les codes sont donnés sans libellé.".to_string());
-    }
     let mut lignes = Vec::new();
     for (m, _nic, f, partie) in dsn_des_mois(ctx, &p, &mut avert, dsn_du_mois)? {
         for bordereau in f.bordereaux {
@@ -498,8 +414,8 @@ pub fn bordereau_urssaf(ctx: &Contexte, d: &Demande, dsn_du_mois: DsnDuMois) -> 
             lignes.push(l);
             for b in bordereau.lignes {
                 let mut l = Ligne::nouvelle();
-                let code = b.code.clone();
-                l.m("mois", m).t("ctp", code.clone()).ot("libelle", ctp.iter().find(|(c, _)| *c == code).map(|(_, v)| v.clone()));
+                // Le libelle, dans la table des CTP que lit le bordereau (`documents::bordereau`, sa seule lecture).
+                l.m("mois", m).t("ctp", b.code.as_str()).ot("libelle", documents::bordereau::libelle_du_ctp(&b.code)?);
                 l.t("qualifiant", match b.qualifiant.as_str() {
                     "920" => "920 — assiette plafonnée".to_string(),
                     "921" => "921 — assiette déplafonnée".to_string(),

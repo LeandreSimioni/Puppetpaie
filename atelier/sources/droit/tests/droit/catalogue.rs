@@ -16,7 +16,7 @@ fn jour(an: i32, mois: u32, j: u32) -> Jour {
 fn les_catalogues_et_les_refus() {
     // Une rubrique de la compagnie changee a une date : la nouvelle valeur a partir d'elle, l'ancienne avant.
     let a = chemin_donnee("racines").join("a");
-    let libelle = |j: Jour| rubrique(&a, "cachet", &j).unwrap().libelle;
+    let libelle = |j: Jour| rubrique(&a, &droit::catalogue::CACHET, &j).unwrap().libelle;
     assert_eq!((libelle(jour(2026, 12, 31)), libelle(jour(2027, 1, 1))), ("Cachet maison".to_string(), "Cachet maison 2027".to_string()));
     // Un catalogue de compagnie mal decrit se refuse, sans rien remplir a la place.
     let mut refus = 0;
@@ -34,7 +34,7 @@ fn les_catalogues_et_les_refus() {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CasHeures {
-    rubrique: String,
+    rubrique: droit::catalogue::CodeDeRubrique,
     quantite: Decimal,
     heures_saisies: Option<Decimal>,
 }

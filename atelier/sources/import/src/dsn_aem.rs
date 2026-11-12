@@ -4,7 +4,6 @@
 //! (`declarations::dsn_lue::DsnLue`) ; les AEM par positions fixes (1000 caracteres, latin-1). La fiche qu'une DSN
 //! remplit n'est ecrite qu'a la fin (`EntrepriseDeclaree`, `SalarieDeclare::fiche`).
 
-use droit::fiche::Lue as _;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
@@ -56,7 +55,7 @@ pub fn fiche_entreprise(e: &EntrepriseDeclaree) -> socle::echec::R<Saisie> {
 
 /// Un numero d'objet spectacle, vu dans une DSN ou dans une AEM.
 pub struct ObjetDeclare {
-    pub numero: String,
+    pub numero: droit::fiche::NumeroObjetSpectacle,
     pub premier_mois: Mois,
     pub dernier_mois: Mois,
     pub contrats: i64,
@@ -86,10 +85,10 @@ pub struct LectureDsn {
     pub dernier_mois: Option<Mois>,
     pub illisibles: Vec<String>,
     /// Les etablissements declares (S21.G00.11.001), et le NIC du siege (S21.G00.06.002), d'une DSN a l'autre.
-    pub etablissements: BTreeSet<String>,
-    pub nics_siege: BTreeSet<String>,
+    pub etablissements: BTreeSet<droit::fiche::Nic>,
+    pub nics_siege: BTreeSet<droit::fiche::Nic>,
     /// Par (mois, NIR s'il est declare, numero du contrat).
-    pub paies: BTreeMap<(Mois, Option<String>, String), PaieDeclaree>,
+    pub paies: BTreeMap<(Mois, Option<String>, engagement::numeros::NumeroContrat), PaieDeclaree>,
     /// Le code risque et le taux AT/MP que les contrats declarent (S21.G00.40.040, .043), par annee : ceux de la derniere DSN
     /// de l'annee (son mois, le code, le taux ; aucun taux pour 999ZZ), quand tous ses contrats disent le meme.
     pub atmp: BTreeMap<i32, (Mois, String, Option<Decimal>)>,
@@ -105,8 +104,8 @@ pub struct LectureDsn {
 #[derive(Clone, Debug)]
 pub(crate) struct ConventionsDuMois {
     pub(crate) mois: Mois,
-    pub(crate) etablissement: Option<String>,
-    pub(crate) contrats: BTreeSet<String>,
+    pub(crate) etablissement: Option<droit::fiche::Idcc>,
+    pub(crate) contrats: BTreeSet<droit::fiche::Idcc>,
 }
 
 impl LectureDsn {
@@ -138,7 +137,7 @@ impl LectureDsn {
     pub fn conventions_divergentes(&self) -> Vec<String> {
         let mut out = Vec::new();
         for c in &self.conventions {
-            let autres: Vec<&str> = c.contrats.iter().map(String::as_str).filter(|x| Some(*x) != c.etablissement.as_deref()).collect();
+            let autres: Vec<&str> = c.contrats.iter().map(|i| &**i).filter(|x| Some(*x) != c.etablissement.as_deref()).collect();
             if autres.is_empty() {
                 continue;
             }
@@ -204,7 +203,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
     out.fichiers = lues.len();
     (out.premier_mois, out.dernier_mois) = (lues.first().map(|p| p.0), lues.last().map(|d| d.0));
     let mut index_salaries: HashMap<Option<String>, usize> = HashMap::new();
-    let mut index_objets: HashMap<String, usize> = HashMap::new();
+    let mut index_objets: HashMap<droit::fiche::NumeroObjetSpectacle, usize> = HashMap::new();
     for &(mois, ref info) in &lues {
         out.etablissements.extend(info.etablissements.iter().cloned());
         out.nics_siege.extend(info.nic_siege.clone());
@@ -249,7 +248,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             }
         }
         for paie in info.paies() {
-            let contrat = info.contrats_de(paie.nir.as_deref()).filter(|x| x.numero.as_deref() == Some(paie.numero.as_str())).last().cloned();
+            let contrat = info.contrats_de(paie.nir.as_deref()).filter(|x| x.numero.as_ref() == Some(&paie.numero)).last().cloned();
             let cle = (mois, paie.nir.clone(), paie.numero.clone());
             out.paies.insert(cle, PaieDeclaree { paie, contrat, depot: info.depot, fichier: info.fichier.clone() });
         }
@@ -311,8 +310,9 @@ pub struct ContratAtteste {
     pub fichier: String,
 }
 
-/// Le contrat atteste, tel qu'un engagement importe le porte (`salarie` : la cle de sa fiche).
-pub fn ligne_du_contrat(c: &ContratAtteste, salarie: &str) -> engagement::importe::ContratLu {
+/// Le contrat atteste, tel qu'un engagement importe le porte (`salarie` : la cle de sa fiche, `None` tant qu'elle
+/// n'existe pas).
+pub fn ligne_du_contrat(c: &ContratAtteste, salarie: Option<droit::contexte::IdSalarie>) -> engagement::importe::ContratLu {
     use engagement::importe::{Attestation, ContratAtteste as Atteste, ContratLu};
     let plein = |s: &str| Some(s.to_string()).filter(|s| !s.trim().is_empty());
     // L'AEM est l'attestation des annexes 8 et 10, celle d'un contrat d'usage du spectacle (Unédic, circulaire 2016-25,
@@ -324,7 +324,7 @@ pub fn ligne_du_contrat(c: &ContratAtteste, salarie: &str) -> engagement::import
     a.numero_attestation = plein(&c.numero_attestation);
     a.atteste_le = c.date_attestation;
     a.fichier = plein(&c.fichier);
-    ContratLu { salarie: salarie.to_string(), debut: Some(c.debut), fin: Some(c.fin), numero: None, contrat: a }
+    ContratLu { salarie, debut: Some(c.debut), fin: Some(c.fin), numero: None, contrat: a }
 }
 
 /// Tous les contrats attestes d'un dossier AEM_EDI, dedoublonnes, et les
@@ -427,7 +427,7 @@ pub(crate) const AEM_SIRET: (usize, usize) = (50, 64);
 #[derive(Clone)]
 pub struct Employeur {
     /// Les Siren qu'elle porte (un, d'ordinaire ; une AEM en porte un par enregistrement).
-    pub sirens: std::collections::BTreeSet<String>,
+    pub sirens: std::collections::BTreeSet<droit::fiche::Siren>,
     /// Les enregistrements (AEM) ou l'identifiant de l'employeur ne se lit pas.
     pub(crate) illisibles: usize,
 }
@@ -436,7 +436,7 @@ pub struct Employeur {
 /// du cabinet quand un tiers depose (`EntrepriseDeclaree`). Une DSN fautive refuse (`declarations::dsn_lue::lire`).
 pub fn employeur_dsn(chemin: &Path) -> Result<Employeur, Echec> {
     let siren = declarations::dsn_lue::lire_une_dsn(chemin)?.and_then(|d| d.entreprise.siren);
-    Ok(Employeur { sirens: siren.into_iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(), illisibles: 0 })
+    Ok(Employeur { sirens: siren.into_iter().collect(), illisibles: 0 })
 }
 
 /// Une AEM : le Siret de chaque enregistrement (`AEM_SIRET`), ramene a son Siren. Un fichier que le tri a lu et qui ne
@@ -450,11 +450,11 @@ pub fn employeur_aem(chemin: &Path) -> Result<Employeur, Echec> {
         if l.len() < 700 {
             continue;
         }
-        let s = tranche(&l, AEM_SIRET.0, AEM_SIRET.1);
-        if s.len() == 14 && s.chars().all(|c| c.is_ascii_digit()) && declarations::champs::luhn(&s) {
-            e.sirens.insert(s[..9].to_string());
-        } else {
-            e.illisibles += 1;
+        match droit::fiche::Siret::lire(&tranche(&l, AEM_SIRET.0, AEM_SIRET.1)) {
+            Ok(siret) if siret.cle_juste() => {
+                e.sirens.insert(siret.siren());
+            }
+            Ok(_) | Err(_) => e.illisibles += 1,
         }
     }
     Ok(e)
@@ -465,13 +465,13 @@ pub fn employeur_aem(chemin: &Path) -> Result<Employeur, Echec> {
 /// des autres pieces (bulletins, AEM) si elles n'en portent qu'un. `None` : rien ne dit laquelle est la compagnie.
 pub fn siren_de_reference(
     fiche: &droit::fiche::ChampsEntreprise,
-    dsn: &std::collections::BTreeSet<String>,
-    autres: &std::collections::BTreeSet<String>,
-) -> Option<String> {
-    if let Some(s) = fiche.siren.portee() {
-        return Some(s.trim().to_string());
+    dsn: &std::collections::BTreeSet<droit::fiche::Siren>,
+    autres: &std::collections::BTreeSet<droit::fiche::Siren>,
+) -> Option<droit::fiche::Siren> {
+    if let Some(s) = &fiche.siren {
+        return Some(s.clone());
     }
-    let seul = |e: &std::collections::BTreeSet<String>| (e.len() == 1).then(|| e.iter().next().cloned()).flatten();
+    let seul = |e: &std::collections::BTreeSet<droit::fiche::Siren>| (e.len() == 1).then(|| e.iter().next().cloned()).flatten();
     if !dsn.is_empty() {
         return seul(dsn);
     }
@@ -495,7 +495,7 @@ pub enum Verdict {
 }
 
 /// Le sort d'une DSN (`aem` faux) ou d'une AEM devant la reference.
-pub fn verdict_entreprise(aem: bool, e: &Employeur, reference: Option<&str>) -> Verdict {
+pub fn verdict_entreprise(aem: bool, e: &Employeur, reference: Option<&droit::fiche::Siren>) -> Verdict {
     let lisible = if e.illisibles > 0 { Verdict::Avertie(AEM_SANS_SIRET) } else { Verdict::Reprise };
     if e.sirens.is_empty() {
         // Une AEM sans enregistrement lisible ne rend rien a `lire_aem` : rien a controler.
@@ -536,6 +536,6 @@ mod tests_parametrage {
         assert_eq!((c.nom_prenom.as_str(), c.tel.as_deref(), c.civilite.as_deref()), ("FONTAINE CLAIRE", Some("0478000000"), Some("02")));
         assert_eq!(lu.atmp.get(&2025), Some(&(socle::mois::Mois::nouveau(2025, 12).unwrap(), "923AD".to_string(), socle::num::decimal_lu("1.65"))));
         assert_eq!(lu.adhesions[0].libelle, "PREV SPECT VIVANT PRIV");
-        assert_eq!(lu.adhesions[0].organisme.as_deref(), Some("P0983"));
+        assert_eq!(lu.adhesions[0].organisme, Some(droit::organismes::AUDIENS));
     }
 }

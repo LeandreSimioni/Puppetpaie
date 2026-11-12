@@ -3,7 +3,9 @@
 //! se lisent dans leur forme (`journal::Ligne`) ; un contrat se designe par sa `Paire` (la cle du salarie, le numero du
 //! contrat s'il en a un).
 
+use droit::contexte::IdSalarie;
 use droit::fiche::Lue as _;
+use engagement::numeros::NumeroContrat;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -33,16 +35,16 @@ pub const NATURES_DPAE: [(&str, &str); 4] = [
 ];
 
 /// UN CONTRAT, tel que le journal le designe : la cle du salarie et le numero du contrat (`None` sans numero).
-pub type Paire = (String, Option<String>);
+pub type Paire = (IdSalarie, Option<NumeroContrat>);
 
-fn paire(salarie: &str, numero: Option<&str>) -> Paire {
-    (salarie.to_string(), numero.map(str::to_string))
+fn paire(salarie: &IdSalarie, numero: Option<&NumeroContrat>) -> Paire {
+    (salarie.clone(), numero.cloned())
 }
 
 /// L'indice, dans `paies`, de la paie du contrat n° `numero` de ce salarie.
-pub fn paie_du_contrat(paies: &[engagement::calcul::Paie], salarie: &str, numero: &str) -> R<Option<usize>> {
+pub fn paie_du_contrat(paies: &[engagement::calcul::Paie], salarie: &IdSalarie, numero: &str) -> R<Option<usize>> {
     for (i, x) in paies.iter().enumerate() {
-        if x.salarie.id == salarie && x.engagement.numero.as_deref() == Some(numero) && x.engagement.nat()?.modele_contrat().is_some() {
+        if x.salarie.id == *salarie && x.engagement.numero.as_deref() == Some(numero) && x.engagement.nat()?.modele_contrat().is_some() {
             return Ok(Some(i));
         }
     }
@@ -169,7 +171,7 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
         for x in &e.detail.embauches {
             let Some(n) = &x.numero else { continue };
             // La derniere ligne du certificat pour ce nom et ce premier jour.
-            let cert = certifiees.iter().rev().find(|c| c.embauche == x.debut.iso() && meme_nom(&x.salarie, &c.nom));
+            let cert = certifiees.iter().rev().find(|c| c.embauche == x.debut.iso() && meme_nom(x.salarie.as_str(), &c.nom));
             etat.insert(
                 paire(&x.salarie, Some(n)),
                 EtatEmbauche {
@@ -198,7 +200,7 @@ pub fn contrats_partis_par(lignes: &[Ligne]) -> HashMap<Paire, &'static str> {
     for e in lignes.iter().filter_map(Ligne::signature).filter(|e| e.accepte) {
         let par = if e.detail.main_propre { "imprime" } else { "courriel" };
         for c in &e.detail.contrats {
-            d.insert(paire(&c.salarie, c.numero.as_deref()), par);
+            d.insert(paire(&c.salarie, c.numero.as_ref()), par);
         }
     }
     d
@@ -212,7 +214,7 @@ pub fn contrats_demandes_par_courriel(lignes: &[Ligne]) -> HashSet<Paire> {
         .iter()
         .filter_map(Ligne::signature)
         .filter(|e| e.accepte && !e.detail.main_propre)
-        .flat_map(|e| e.detail.contrats.iter().filter(|c| !c.est_avenant()).map(|c| paire(&c.salarie, c.numero.as_deref())))
+        .flat_map(|e| e.detail.contrats.iter().filter(|c| !c.est_avenant()).map(|c| paire(&c.salarie, c.numero.as_ref())))
         .collect()
 }
 
@@ -234,7 +236,7 @@ pub fn renvoyes_depuis_la_signature(lignes: &[Ligne]) -> HashSet<Paire> {
     for l in lignes.iter().filter(|l| l.accepte()) {
         if let Some(e) = l.signature() {
             for c in &e.detail.contrats {
-                let k = paire(&c.salarie, c.numero.as_deref());
+                let k = paire(&c.salarie, c.numero.as_ref());
                 // La version de l'engagement sur laquelle ce contrat part (`journal::versions_des_contrats`).
                 let v = e.versions.iter().flatten().find(|x| x.salarie == c.salarie && c.numero.as_ref() == Some(&x.numero)).map(|x| x.version);
                 if c.est_avenant() {
@@ -250,7 +252,7 @@ pub fn renvoyes_depuis_la_signature(lignes: &[Ligne]) -> HashSet<Paire> {
             }
         }
         for d in revenus(l).iter().filter(|d| d.recu) {
-            let k = paire(&d.salarie, d.numero.as_deref());
+            let k = paire(&d.salarie, d.numero.as_ref());
             signe.insert(k.clone(), envoye.get(&k).copied().flatten());
             renvoye.remove(&k);
         }
@@ -266,7 +268,7 @@ pub fn contrats_recus(lignes: &[Ligne]) -> HashMap<Paire, Moment> {
         if d.avenant.is_some() {
             continue;
         }
-        etat.insert(paire(&d.salarie, d.numero.as_deref()), d.recu.then_some(d.quand));
+        etat.insert(paire(&d.salarie, d.numero.as_ref()), d.recu.then_some(d.quand));
     }
     etat.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))).collect()
 }
@@ -306,21 +308,21 @@ impl Attendue {
     }
 }
 
-pub fn signatures_attendues<'f>(fiche_de: impl Fn(&str) -> Option<&'f droit::fiche::ChampsSalarie>, lignes: &[Ligne], mois: Option<Mois>) -> Vec<Attendue> {
+pub fn signatures_attendues<'f>(fiche_de: impl Fn(&droit::contexte::IdSalarie) -> Option<&'f droit::fiche::ChampsSalarie>, lignes: &[Ligne], mois: Option<Mois>) -> Vec<Attendue> {
     // Par CONTRAT (salarie, numero) : une reponse ne releve que le contrat qu'elle signe (Retours Windows, B, suite).
     let recus = contrats_recus(lignes);
     let renvoyes = renvoyes_depuis_la_signature(lignes);
     let mut derniere_recue: HashMap<Paire, usize> = HashMap::new();
     for (i, l) in lignes.iter().enumerate() {
         for d in revenus(l).iter().filter(|d| d.recu) {
-            derniere_recue.insert(paire(&d.salarie, d.numero.as_deref()), i);
+            derniere_recue.insert(paire(&d.salarie, d.numero.as_ref()), i);
         }
     }
     // Les reponses deja relevees, par envoi (son code) et par contrat ou avenant : une reponse ne se note qu'une fois.
     // La mention « signe » retiree a la main l'emporte sur la reponse deja lue ; seul un nouvel envoi (un autre code)
     // attend une nouvelle reponse.
-    let releve = |code: &str, salarie: &str, numero: Option<&str>, avenant: Option<i64>| (code.to_string(), salarie.to_string(), numero.map(str::to_string), avenant);
-    let deja_releves: HashSet<(String, String, Option<String>, Option<i64>)> = lignes
+    let releve = |code: &str, salarie: &IdSalarie, numero: Option<&str>, avenant: Option<i64>| (code.to_string(), salarie.clone(), numero.map(str::to_string), avenant);
+    let deja_releves: HashSet<(String, IdSalarie, Option<String>, Option<i64>)> = lignes
         .iter()
         .flat_map(revenus)
         .filter(|d| d.recu && d.par_courriel())
@@ -335,10 +337,10 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&str) -> Option<&'f droit::fic
         }
         for c in &e.detail.contrats {
             let Some(code) = c.code.as_deref().filter(|c| !c.is_empty()) else { continue };
-            let k = paire(&c.salarie, c.numero.as_deref());
+            let k = paire(&c.salarie, c.numero.as_ref());
             let apres_signature = matches!(c.acte.as_deref(), Some("avenant") | Some("remplace")) || renvoyes.contains(&k);
             let n = *par_code.entry(code.to_string()).or_insert_with(|| {
-                let fiche = fiche_de(c.salarie.as_str());
+                let fiche = fiche_de(&c.salarie);
                 let prenom = fiche.and_then(|f| f.prenom_affichage.en_texte().or_else(|| f.prenom.en_texte()));
                 demandes.push(Attendue {
                     code: code.to_string(),
@@ -381,7 +383,7 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&str) -> Option<&'f droit::fic
         .into_iter()
         .filter(|d| {
             d.contrats.iter().any(|c| {
-                let k = paire(&c.salarie, c.numero.as_deref());
+                let k = paire(&c.salarie, c.numero.as_ref());
                 let revenu = deja_releves.contains(&releve(&d.code, &c.salarie, c.numero.as_deref(), c.avenant))
                     || if d.apres_signature { derniere_recue.get(&k).is_some_and(|&rang| rang >= d.rang) } else { recus.contains_key(&k) };
                 !revenu
@@ -397,7 +399,7 @@ pub fn avenants_par_contrat(lignes: &[Ligne]) -> HashMap<Paire, Vec<AvenantParti
     for l in lignes.iter().filter(|l| l.accepte()) {
         if let Some(e) = l.signature() {
             for c in e.detail.contrats.iter().filter(|c| c.est_avenant()) {
-                let liste = out.entry(paire(&c.salarie, c.numero.as_deref())).or_default();
+                let liste = out.entry(paire(&c.salarie, c.numero.as_ref())).or_default();
                 // Un courriel a demande de signer CETTE piece (le meme fichier) : un avenant refait sous le meme numero
                 // est une autre piece, qu'aucun courriel n'a encore demandee.
                 let par_courriel = !e.detail.main_propre || liste.iter().any(|a| a.numero == c.avenant && a.fichier == c.fichier && a.par_courriel);
@@ -419,7 +421,7 @@ pub fn avenants_par_contrat(lignes: &[Ligne]) -> HashMap<Paire, Vec<AvenantParti
         for d in revenus(l) {
             // Le retour d'UN avenant ne vaut que pour lui, et se defait (`recu: false`).
             let Some(un) = d.avenant else { continue };
-            if let Some(liste) = out.get_mut(&paire(&d.salarie, d.numero.as_deref())) {
+            if let Some(liste) = out.get_mut(&paire(&d.salarie, d.numero.as_ref())) {
                 for a in liste.iter_mut().filter(|a| a.numero == Some(un)) {
                     if !d.recu {
                         a.signe = None;
@@ -505,7 +507,7 @@ pub fn resume(ligne: Option<&Ligne>, recus: &HashMap<Paire, Moment>, avenants: &
                 .contrats
                 .iter()
                 .filter(|c| {
-                    let k = paire(&c.salarie, c.numero.as_deref());
+                    let k = paire(&c.salarie, c.numero.as_ref());
                     if c.est_avenant() {
                         avenants.get(&k).is_some_and(|l| l.iter().any(|a| a.numero == c.avenant && a.signe.is_some()))
                     } else {
@@ -1280,17 +1282,17 @@ impl Parti {
 }
 
 /// Le contrat n° `numero` de ce salarie (`None` : son contrat sans numero), tel qu'il est parti a la signature.
-pub fn contrat_parti(lignes: &[Ligne], salarie: &str, numero: Option<&str>) -> Option<Parti> {
+pub fn contrat_parti(lignes: &[Ligne], salarie: &IdSalarie, numero: Option<&str>) -> Option<Parti> {
     let mut parti: Option<Parti> = None;
     for l in lignes.iter().filter(|l| l.accepte()) {
         if let Some(e) = l.signature() {
-            for c in e.detail.contrats.iter().filter(|c| c.salarie.as_str() == salarie && c.numero.as_deref() == numero && !c.est_avenant()) {
+            for c in e.detail.contrats.iter().filter(|c| c.salarie == *salarie && c.numero.as_deref() == numero && !c.est_avenant()) {
                 parti = Some(Parti { mois: c.mois, numero: c.numero.clone(), fichier: c.fichier.clone(), quand: e.quand.clone(), signe: None, modele: c.modele.clone() });
             }
         }
         for d in revenus(l) {
             if let Some(p) = parti.as_mut() {
-                if d.recu && d.salarie.as_str() == salarie && d.numero.as_deref() == numero && p.signe.is_none() {
+                if d.recu && d.salarie == *salarie && d.numero.as_deref() == numero && p.signe.is_none() {
                     p.signe = Some(d.quand);
                 }
             }
@@ -1362,7 +1364,7 @@ mod tests {
 
     #[test]
     fn une_reponse_deja_relevee_ne_se_renote_pas_apres_la_mention_retiree() {
-        let ctx = |_: &str| None;
+        let ctx = |_: &droit::contexte::IdSalarie| None;
         let lu = recu("ALPHA", true, ", \"origine\": \"courriel\", \"code\": \"C1\"");
         let retiree = recu("ALPHA", false, "");
         let mut l = vec![signature("2026-06-05T10:00:00", &contrat("ALPHA", "C1"), &format!("[{}, {}]", lu, retiree))];

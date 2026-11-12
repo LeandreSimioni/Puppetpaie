@@ -28,6 +28,37 @@ pub fn lire<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
     lire_texte(&v.to_string(), phrase)
 }
 
+thread_local! {
+    /// Vrai le temps de lire une saisie (`lire_saisie`).
+    static EN_SAISIE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// UNE SAISIE LUE (la charge d'une route) : la donnee `v` lue en `T` comme `lire`, le texte de chaque notion qui range sa
+/// saisie (`droit::fiche::FormeDeCase::RANGER`) d'abord range dans sa forme (`range_si_saisi`), comme la saisie d'une
+/// fiche. Un fichier se lit par `lire`, tel qu'il est ecrit.
+#[track_caller]
+pub fn lire_saisie<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
+    /// Remet l'etat d'avant en sortant, panique comprise : une lecture de fichier qui suit n'est jamais rangee.
+    struct Remise(bool);
+    impl Drop for Remise {
+        fn drop(&mut self) {
+            EN_SAISIE.set(self.0);
+        }
+    }
+    let _remise = Remise(EN_SAISIE.replace(true));
+    lire(v, phrase)
+}
+
+/// LE TEXTE `texte` D'UNE NOTION QUI RANGE SA SAISIE, a sa lecture : range par `ranger` (son `FormeDeCase::RANGER`) dans
+/// une saisie (`lire_saisie`), tel quel ailleurs.
+pub fn range_si_saisi(texte: String, ranger: fn(&str) -> String) -> String {
+    if EN_SAISIE.get() {
+        ranger(&texte)
+    } else {
+        texte
+    }
+}
+
 /// Le texte JSON `texte` lu en `T` (`lire`, sans passer par une `Value`).
 #[track_caller]
 pub fn lire_texte<T: DeserializeOwned>(texte: &str, phrase: &str) -> R<T> {
@@ -95,6 +126,17 @@ impl Objet {
             m.remove(*c);
         }
         lire(&Value::Object(m), phrase)
+    }
+
+    /// L'objet, une saisie (la charge d'une route), sans ses cles `sans`, lu en `T` comme `lire`, chaque texte range
+    /// dans la forme de sa notion (`lire_saisie`).
+    #[track_caller]
+    pub fn lire_saisie<T: DeserializeOwned>(&self, sans: &[&str], phrase: &str) -> R<T> {
+        let mut m = self.0.clone();
+        for c in sans {
+            m.remove(*c);
+        }
+        lire_saisie(&Value::Object(m), phrase)
     }
 
     /// LES SEULES CLES `cles` DE L'OBJET (celles qu'il porte), LUES EN LEUR FORME `T` : ce que l'enveloppe lit a cote de
@@ -488,7 +530,7 @@ impl<'de> serde::Deserialize<'de> for Nombre {
 
 /// UNE VALEUR QUI PEUT NE RIEN DIRE : nulle (`null`), vide (`""`), ou dite, lue en `T` sans passer par une valeur
 /// intermediaire (le chemin d'un refus va jusqu'a la cle fautive de `T`). C'est la lecture d'un changement de case de
-/// fiche (`droit::fiche::nulle_ou_dite`), qui refuse `""`.
+/// fiche (`droit::fiche::nulle_ou_dite`), qui refuse `""`, quand son type ne range pas sa saisie (`rangee_puis_lue`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Remplie<T> {
     Nulle,
@@ -537,6 +579,49 @@ impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for Remplie<T> {
             }
         }
         d.deserialize_any(Lue(std::marker::PhantomData))
+    }
+}
+
+/// UNE VALEUR SAISIE RANGEE PUIS LUE (`Remplie`) : chaque texte qu'elle porte prend la forme que `rangee` lui donne
+/// selon son chemin (les cles des objets qui y menent, `[]` pour la valeur elle-meme) avant d'etre lu en `T`. C'est la
+/// lecture d'un changement de case de fiche dont le type range sa saisie (`droit::fiche::nulle_ou_dite`) : elle passe
+/// par une valeur intermediaire, et le refus d'un texte range dit sa phrase sans le chemin sous la case.
+pub fn rangee_puis_lue<'de, D, T>(d: D, rangee: &dyn Fn(&[String], &str) -> Option<String>) -> Result<Remplie<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    use serde::Deserialize;
+    let mut v = match Remplie::<Value>::deserialize(d)? {
+        Remplie::Nulle => return Ok(Remplie::Nulle),
+        Remplie::Vide => return Ok(Remplie::Vide),
+        Remplie::Dite(v) => v,
+    };
+    ranger_les_textes(&mut v, &mut Vec::new(), rangee);
+    T::deserialize(v).map(Remplie::Dite).map_err(serde::de::Error::custom)
+}
+
+/// Chaque texte de `v`, a son chemin `chemin`, range par `rangee`.
+fn ranger_les_textes(v: &mut Value, chemin: &mut Vec<String>, rangee: &dyn Fn(&[String], &str) -> Option<String>) {
+    match v {
+        Value::String(t) => {
+            if let Some(r) = rangee(chemin, t) {
+                *t = r;
+            }
+        }
+        Value::Array(a) => {
+            for x in a {
+                ranger_les_textes(x, chemin, rangee);
+            }
+        }
+        Value::Object(o) => {
+            for (k, x) in o.iter_mut() {
+                chemin.push(k.clone());
+                ranger_les_textes(x, chemin, rangee);
+                chemin.pop();
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
 }
 

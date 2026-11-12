@@ -52,7 +52,7 @@ pub(crate) fn nomenclatures() -> R<Bloc60> {
 
 /// CE QUI FAIT UN ARRET A ECRIRE : qui, quel contrat, le motif et les jours, et ce que la saisie en dit d'autre.
 pub(crate) struct ArretDit<'a> {
-    pub cle: &'a str,
+    pub cle: &'a IdSalarie,
     pub contrat: &'a ContratAuJour,
     pub motif: &'a str,
     pub dernier_jour: Jour,
@@ -68,7 +68,7 @@ pub(crate) struct ArretDit<'a> {
 pub(crate) fn arret_a_ecrire(x: ArretDit) -> ArretSaisi {
     ArretSaisi {
         genre: GenreArret::Arret,
-        salarie: x.cle.to_string(),
+        salarie: x.cle.clone(),
         contrat_debut: x.contrat.debut,
         contrat_numero: x.contrat.numero.clone(),
         motif: x.motif.to_string(),

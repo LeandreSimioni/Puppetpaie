@@ -6,6 +6,12 @@ pub fn blanc(c: char) -> bool {
     matches!(c, '\u{9}'..='\u{d}' | '\u{1c}'..='\u{20}' | '\u{85}' | '\u{a0}' | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}' | '\u{205f}' | '\u{3000}')
 }
 
+/// UNE SAISIE SANS SES BLANCS DE BORD, EN CAPITALES : la forme rangee d'un code que son texte ecrit en capitales (un code
+/// pays ISO 3166, `pays::CodePays::rangee` ; un code INSEE de commune : 2A, 2B).
+pub fn en_capitales(texte: &str) -> String {
+    texte.trim_matches(blanc).to_uppercase()
+}
+
 /// Un chiffre decimal d'Unicode (`str.isdigit()` : la table `nfkd_ascii::CHIFFRES`).
 pub fn est_chiffre(c: char) -> bool {
     dans_les_plages(crate::nfkd_ascii::CHIFFRES, c)

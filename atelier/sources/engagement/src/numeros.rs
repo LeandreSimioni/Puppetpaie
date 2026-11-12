@@ -25,7 +25,7 @@ use crate::stock::{self, Objet};
 #[derive(Debug, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct NumeroPour {
-    pub salarie: String,
+    pub salarie: IdSalarie,
     pub debut: Jour,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub le: socle::paris::Moment,
@@ -36,10 +36,21 @@ pub struct NumeroPour {
 /// d'union, l'espace, le point, l'arobase, le slash, l'underscore et les lettres accentuees de la liste (`ACCENTUES`),
 /// sans espace au debut ni a la fin (§ 4.4.11, `chapitre-4-controles.txt` l. 760-780). Il ne se donne qu'ici
 /// (`former`, regle 4) ; ailleurs il se lit tel qu'il est deja ecrit (`lire`, ou `serde` : la meme chaine), d'un
-/// engagement, d'une charge, d'une DSN deposee. Ni `From<&str>` ni `Default` : un texte quelconque n'en est pas un.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
-#[serde(try_from = "String", into = "String")]
+/// engagement, d'une charge, d'une DSN deposee ; sa saisie (une charge) se range d'abord sans ses blancs de bord
+/// (`rangee`). Ni `From<&str>` ni `Default` : un texte quelconque n'en est pas un.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[serde(into = "String")]
 pub struct NumeroContrat(String);
+
+impl<'de> serde::Deserialize<'de> for NumeroContrat {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        NumeroContrat::lire(&socle::forme::range_si_saisi(String::deserialize(d)?, NumeroContrat::rangee)).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
+impl droit::fiche::FormeDeCase for NumeroContrat {
+    const RANGER: Option<fn(&str) -> String> = Some(NumeroContrat::rangee);
+}
 
 /// Les caracteres accentues qu'un numero de contrat admet (§ 4.4.11).
 const ACCENTUES: [char; 8] = ['à', 'é', 'è', 'ê', 'ë', 'ï', 'ô', 'ç'];
@@ -57,6 +68,11 @@ impl NumeroContrat {
             ));
         }
         Ok(NumeroContrat(texte.to_string()))
+    }
+
+    /// Le numero saisi `texte` dans sa forme, avant d'etre lu : sans ses blancs de bord (`FormeDeCase::RANGER`).
+    pub fn rangee(texte: &str) -> String {
+        droit::fiche::sans_blancs_de_bord(texte)
     }
 
     /// Le numero d'un texte dit : absent, aucun ; une autre forme que celle de la norme (le texte vide compris) se refuse.
@@ -102,13 +118,6 @@ impl AsRef<str> for NumeroContrat {
 impl std::fmt::Display for NumeroContrat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
-    }
-}
-
-impl TryFrom<String> for NumeroContrat {
-    type Error = socle::echec::Echec;
-    fn try_from(s: String) -> R<NumeroContrat> {
-        NumeroContrat::lire(&s)
     }
 }
 
@@ -187,11 +196,11 @@ fn derniers_pris_sauf(ctx: &Contexte, annee: i32, sauf: Option<(socle::mois::Moi
         if sauf == Some((o.fichier, o.rang)) {
             continue;
         }
-        let (Some(cle), Some(n)) = (o.carte().salarie.clone(), NumeroContrat::du_texte(o.carte().numero.as_deref())?) else { continue };
+        let (Some(cle), Some(n)) = (o.carte().salarie.clone(), o.carte().numero.clone()) else { continue };
         noter(cle, &n);
     }
     for (cle, n) in departs.engagements() {
-        noter(IdSalarie::lire(cle)?, &NumeroContrat::lire(n)?);
+        noter(cle.clone(), n);
     }
     Ok(pris)
 }
@@ -218,7 +227,7 @@ pub fn dernier_bulletin_importe(racine: &std::path::Path, annee: i64) -> R<i64> 
 
 /// Un envoi a-t-il porte le numero `n` de l'engagement `o` (du salarie `cle`) ? Ce qui est parti sous lui (`departs`),
 /// ou une version de lui gardee parce qu'un envoi l'avait emportee.
-fn porte_par_un_envoi(o: &Objet, cle: &str, n: &str, departs: &Departs) -> bool {
+fn porte_par_un_envoi(o: &Objet, cle: &IdSalarie, n: &NumeroContrat, departs: &Departs) -> bool {
     if !o.brut.versions.is_empty() {
         return true;
     }
@@ -230,12 +239,12 @@ fn porte_par_un_envoi(o: &Objet, cle: &str, n: &str, departs: &Departs) -> bool 
 /// copie d'engagement emporte le numero de l'original : il reste a l'original.
 /// Le contrat importe que `o` continue porte le sien : c'est le meme contrat, pas une copie -- le contrat d'usage qui
 /// continue ici (`importe::continue_par`).
-fn porte_par_un_autre(ctx: &Contexte, o: &Objet, n: &str) -> R<bool> {
+fn porte_par_un_autre(ctx: &Contexte, o: &Objet, n: &NumeroContrat) -> R<bool> {
     let continue_ = crate::importe::continue_par(&ctx.racine, o.carte())?.map(|i| (i.objet().fichier, i.objet().rang));
     Ok(stock::objets(&ctx.racine)?.into_iter().any(|x| {
         (x.fichier, x.rang) < (o.fichier, o.rang)
             && continue_ != Some((x.fichier, x.rang))
-            && x.carte().numero.as_deref() == Some(n)
+            && x.carte().numero.as_ref() == Some(n)
     }))
 }
 
@@ -246,10 +255,10 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::M
     let cle = o.carte().salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie"))?;
     let fiche = crate::fiche_du_salarie(ctx, &cle)?;
     let debut = crate::debut_brut(&o.brut).ok_or_else(|| socle::fichiers::absent("debut"))?;
-    let porte = NumeroContrat::du_texte(o.carte().numero.as_deref())?;
+    let porte = o.carte().numero.clone();
     // UN NUMERO PARTI NE CHANGE PLUS : celui de la validation que la modification remplace, des qu'un envoi l'a porte ;
     // celui qu'une DSN de l'ancien logiciel a declare pour un contrat repris (`importe::numero_declare`).
-    let parti = NumeroContrat::du_texte(o.brut.precedente.as_ref().and_then(|p| p.saisie.as_ref()).and_then(|s| s.carte.numero.as_deref()))?;
+    let parti = o.brut.precedente.as_ref().and_then(|p| p.saisie.as_ref()).and_then(|s| s.carte.numero.clone());
     let parti = match parti.filter(|p| porte_par_un_envoi(o, &cle, p, departs)) {
         Some(p) => Some(p),
         None => crate::importe::numero_declare(o)?,
@@ -259,7 +268,7 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::M
             return Err(socle::refus!(
                 "{} : ce contrat est parti sous le n° {} ; un numéro parti ne change plus (il identifie le contrat en DSN, \
                  S21.G00.40.009). Rien n'est écrit.",
-                crate::salarie_nomme(ctx, o.carte().salarie.as_deref()),
+                crate::salarie_nomme(ctx, o.carte().salarie.as_ref()),
                 parti
             ));
         }
@@ -267,7 +276,7 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::M
     if let Some(n) = porte {
         let garde = match &o.brut.numero_pour {
             Some(p) => {
-                let meme = p.salarie == cle.as_str() && p.debut == debut;
+                let meme = p.salarie == cle && p.debut == debut;
                 meme || porte_par_un_envoi(o, &cle, &n, departs)
             }
             // Un numero venu avec la saisie (un contrat repris d'un autre logiciel, sous la forme qu'il avait) : le sien,
@@ -285,7 +294,7 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::M
     let numero = former(&fiche, annee, dernier + 1)?;
     let e = o.brut_mut();
     e.saisie.carte.numero = Some(numero);
-    e.numero_pour = Some(NumeroPour { salarie: cle.to_string(), debut, le });
+    e.numero_pour = Some(NumeroPour { salarie: cle.clone(), debut, le });
     Ok(())
 }
 

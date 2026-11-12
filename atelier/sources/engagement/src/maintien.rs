@@ -46,10 +46,13 @@ use socle::date::Jour;
 use socle::echec::{refus, R};
 use socle::mois::{Graphie, Mois};
 use socle::num::{div, eur2, mul, Decimal};
+use droit::catalogue::CodeDeRubrique;
 
 /// La rubrique des indemnites journalieres brutes que la compagnie subrogee deduit ; les nettes qu'elle reverse sont de la
 /// piece d'un salarie au mois (`droit::catalogue::RubriqueDuMois::IjssNettes`).
-pub const IJ_BRUTES: &str = "ijss_brutes";
+pub const IJ_BRUTES: CodeDeRubrique = CodeDeRubrique::du_moteur("ijss_brutes");
+/// La rubrique du maintien de salaire pendant l'arret.
+const MAINTIEN_SALAIRE: CodeDeRubrique = CodeDeRubrique::du_moteur("maintien_salaire");
 /// Ce que dit le refus d'un mois dont les indemnites journalieres manquent : une saisie a finir (`saisie_incomplete`).
 pub const IJ_A_DIRE: &str = ", à dire sur l'arrêt (« Indemnités journalières »)";
 
@@ -112,9 +115,9 @@ pub fn origine(imp: &ArretSaisi) -> R<Option<Origine>> {
 pub fn droits(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> R<Option<Droits>> {
     let Some(origine) = origine(imp)? else { return Ok(None) };
     let premier = crate::imprevus::premier_jour_d_arret(imp)?;
-    let fiche = ctx.salarie(&imp.salarie)?;
+    let fiche = ctx.fiche_de(&imp.salarie)?;
     let depuis = crate::calcul::Anciennete::de(&ctx.racine, &fiche, &imp.salarie, imp.contrat_debut)?.jour()?;
-    let (depuis, sur_l_anciennete) = crate::imprevus::anciennete_depuis(&ctx.racine, fiche.id.as_str(), &depuis, &premier)?;
+    let (depuis, sur_l_anciennete) = crate::imprevus::anciennete_depuis(&ctx.racine, &fiche.id, &depuis, &premier)?;
     let anciennete_mois = droit::permanents::anciennete_mois(&depuis, &premier);
     let loi = dm::legal(nat, anciennete_mois, origine)?;
     let convention = if nat.mensuelle() { dm::conventionnel(ctx.entreprise.idcc.portee(), anciennete_mois, origine)? } else { None };
@@ -699,12 +702,12 @@ pub fn lignes(dmois: &DuMois, mois: Mois, au: &droit::natures::AuMois) -> Vec<Li
                 plancher,
             })
         });
-        out.push(LignePaie::Maintien(Maintien { rubrique: "maintien_salaire".to_string(), quantite: q, taux: div(montant, q).normalize(), reconstitution }));
+        out.push(LignePaie::Maintien(Maintien { rubrique: MAINTIEN_SALAIRE, quantite: q, taux: div(montant, q).normalize(), reconstitution }));
     }
     if dmois.ij_subrogees_jours > 0 {
         let j = Decimal::from(dmois.ij_subrogees_jours);
-        let ij = |rubrique: &str, montant: Decimal, assiette_pas: Option<Decimal>| {
-            LignePaie::IndemniteJournaliere(IndemniteJournaliere { rubrique: rubrique.to_string(), jours: j, taux: div(montant, j).normalize(), assiette_pas })
+        let ij = |rubrique: droit::catalogue::CodeDeRubrique, montant: Decimal, assiette_pas: Option<Decimal>| {
+            LignePaie::IndemniteJournaliere(IndemniteJournaliere { rubrique, jours: j, taux: div(montant, j).normalize(), assiette_pas })
         };
         out.push(ij(IJ_BRUTES, plancher, None));
         let nettes = eur2(dmois.ij_subrogees_nettes);

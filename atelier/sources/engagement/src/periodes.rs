@@ -91,7 +91,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         e.quotite_contrat = Some(court(quotite));
         let (q, h) = (court(part.fraction), court(eur2(quotite)));
         e.lignes = vec![LignePaie::Composee(crate::ligne::Composee {
-            rubrique: "mois".to_string(),
+            rubrique: crate::conges::MOIS_PAYE,
             quantite: q,
             taux: court(salaire),
             heures: Some(h),
@@ -100,7 +100,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         })];
         // Les heures que la DSN mesure (S21.G00.53, « heures » d'un contrat paye au mois) : celles de la ligne de la
         // periode, comme `Engagement::nouveau` les tire des lignes du mois.
-        let heures = droit::catalogue::rubrique(&ctx.racine, "mois", &ctx.lue_au)?.heures(q, Some(h));
+        let heures = droit::catalogue::rubrique(&ctx.racine, &crate::conges::MOIS_PAYE, &ctx.lue_au)?.heures(q, Some(h));
         e.heures = if !heures.is_zero() { Some(heures) } else { None };
         out.push(e);
     }
@@ -115,7 +115,7 @@ fn cumuler(m: &mut BTreeMap<Assiette, Decimal>, a: Assiette, x: Decimal) {
 /// Remplace la reduction generale de la periode `p` par `rg` : sa ligne, le total patronal et le cout employeur.
 fn poser_reduction(p: &mut Paie, rg: Option<ReductionGenerale>) {
     let p = p.ecrire();
-    if let Some(i) = p.lignes.iter().position(|l| l.est("reduction_generale")) {
+    if let Some(i) = p.lignes.iter().position(|l| l.est(&droit::forme_bareme::REDUCTION_GENERALE)) {
         let l = p.lignes.remove(i);
         p.total_pat -= l.montant_pat;
     }
@@ -243,7 +243,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
             }
         }
     }
-    if let Some(i) = lignes.iter().position(|l| l.est("reduction_generale")) {
+    if let Some(i) = lignes.iter().position(|l| l.est(&droit::forme_bareme::REDUCTION_GENERALE)) {
         let l = lignes.remove(i);
         lignes.push(l);
     }

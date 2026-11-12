@@ -12,7 +12,7 @@ use socle::date::Jour;
 /// DSN mensuelle, le mois qu'elle declare (`en_retour_de`).
 #[derive(Debug, Clone)]
 pub struct TauxRecu {
-    pub salarie: String,
+    pub salarie: droit::contexte::IdSalarie,
     pub taux: Option<droit::pas::TauxDePas>,
     pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
     pub identifiant: String,
@@ -52,14 +52,14 @@ fn instant_du_jour(j: Jour) -> socle::echec::R<socle::paris::Moment> {
 /// (`mis_a_disposition`), la mise a disposition la plus tardive que les textes permettent ; le compte rendu de la DSN suivante
 /// le remplace. Chaque DSN se lit par `declarations::dsn_lue::lire_une_dsn` ; une DSN fautive refuse.
 pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle::echec::R<Vec<TauxRecu>> {
-    let par_nir: std::collections::HashMap<String, String> = ctx
+    let par_nir: std::collections::HashMap<String, &droit::contexte::IdSalarie> = ctx
         .salaries
         .iter()
-        .filter_map(|(cle, s)| s.nir.dite().filter(|n| !n.is_empty()).map(|n| (n.to_string(), cle.to_string())))
+        .filter_map(|(cle, s)| s.nir.dite().filter(|n| !n.is_empty()).map(|n| (n.to_string(), cle)))
         .collect();
     let fichiers = declarations::dsn_lue::fichiers(dossier)?;
     // salarie -> mois -> releve (dans l'ordre d'insertion des salaries, mois tries).
-    let mut trouve: Vec<(String, std::collections::BTreeMap<socle::mois::Mois, TauxRecu>)> = Vec::new();
+    let mut trouve: Vec<(droit::contexte::IdSalarie, std::collections::BTreeMap<socle::mois::Mois, TauxRecu>)> = Vec::new();
     for f in fichiers {
         let Some(d) = declarations::dsn_lue::lire_une_dsn(&f)? else { continue };
         let Some(mois) = d.mois else { continue };
@@ -76,18 +76,18 @@ pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle
                 None => None,
             };
             let rel = TauxRecu {
-                salarie: cle.clone(),
+                salarie: (*cle).clone(),
                 taux,
                 type_taux: v.type_pas,
                 identifiant: id.to_string(),
                 mis_a_disposition: instant_du_jour(j)?,
                 en_retour_de: None,
             };
-            match trouve.iter_mut().find(|(k, _)| k == cle) {
+            match trouve.iter_mut().find(|(k, _)| k == *cle) {
                 Some((_, mm)) => {
                     mm.insert(mois, rel);
                 }
-                None => trouve.push((cle.clone(), [(mois, rel)].into_iter().collect())),
+                None => trouve.push(((*cle).clone(), [(mois, rel)].into_iter().collect())),
             }
         }
     }

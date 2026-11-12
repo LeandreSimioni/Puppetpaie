@@ -46,8 +46,8 @@ impl FichierDuStock for FichierDesPaies {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Entree {
-    salarie: String,
-    numero: String,
+    salarie: droit::contexte::IdSalarie,
+    numero: crate::numeros::NumeroContrat,
     presente: Option<PaieEcrite>,
     versions: BTreeMap<String, PaieEcrite>,
 }
@@ -58,9 +58,9 @@ pub fn tel_quel(racine: &std::path::Path, mois: Mois) -> R<Option<stock::TelQuel
 }
 
 /// Le salarie et le numero du contrat de l'engagement `o` ; `None` sans numero ni salarie (un engagement que rien n'a valide).
-fn cle(o: &Objet) -> Option<(String, String)> {
-    let numero = o.carte().numero.as_ref()?.to_string();
-    Some((o.carte().salarie.as_ref()?.to_string(), numero))
+fn cle(o: &Objet) -> Option<(droit::contexte::IdSalarie, crate::numeros::NumeroContrat)> {
+    let numero = o.carte().numero.clone()?;
+    Some((o.carte().salarie.clone()?, numero))
 }
 
 /// LA LECTURE D'UN FICHIER DE PAIES : celui de `mois`, en sa forme, tel que le geste l'a lu ou que le brouillon le tient

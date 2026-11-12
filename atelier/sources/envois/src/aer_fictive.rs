@@ -45,8 +45,6 @@ use socle::num::Decimal;
 const CODE: &str = "FICTIVE";
 /// La nature de contrat de la DSN d'un CDD de droit prive (S21.G00.40.007 ; `contrats-base.json`).
 const NATURE_CDD: &str = "02";
-/// Le code emploi d'un emploi permanent du spectacle (S21.G00.40.005, CCH-18).
-const EMPLOI_PERMANENT: &str = "999SPT";
 /// Les colonnes du cadre 4 : 01 a 05 (`aer::lire_quantites`).
 const COLONNES: usize = 5;
 
@@ -68,7 +66,7 @@ fn exigee<'a>(v: &'a Option<String>, quoi: &str, rubrique: &str) -> R<&'a str> {
 /// net-entreprises-base-connaissances/net-entreprises-de-la-dsn-a-l-attestation-employeur-v3-2-20230328.txt`, l. 500-510).
 fn cinema_spectacle(c: &ContratDeclare) -> bool {
     c.nature_dsn.as_deref() == Some(NATURE_CDD)
-        && c.emploi.code_emploi_ft.as_deref().is_some_and(|e| !e.is_empty() && !e.eq_ignore_ascii_case(EMPLOI_PERMANENT))
+        && c.emploi.code_emploi_ft.as_ref().is_some_and(|e| !e.est_permanent())
 }
 
 // ------------------------------------------------------------------ les periodes
@@ -105,7 +103,7 @@ fn paiement_de(d: &DsnLue, nir: Option<&str>) -> Option<Jour> {
 
 /// Les periodes d'un contrat de la DSN `d` qui finit ce mois-ci : une par mois du contrat dont la DSN reelle le porte.
 fn periodes(ctx: &Contexte, lignes: &[crate::journal::Ligne], d: &DsnLue, le_mois: socle::mois::Mois, c: &ContratDeclare) -> R<Vec<Periode>> {
-    let numero = exigee(&c.numero, "le numéro d'un contrat", "S21.G00.40.009")?;
+    let numero = c.numero.as_ref().ok_or_else(|| socle::echec::cle("La DSN ne dit pas le numéro d'un contrat.", "S21.G00.40.009"))?;
     let (Some(debut), Some(fin)) = (c.debut, c.fin) else {
         return Err(socle::refus!("contrat {} : dates illisibles dans la DSN", numero));
     };
@@ -127,10 +125,10 @@ fn periodes(ctx: &Contexte, lignes: &[crate::journal::Ligne], d: &DsnLue, le_moi
     Ok(out)
 }
 
-fn periode(c: &ContratDeclare, numero: &str, x: &Mesures, debut: Jour, fin: Jour, m: socle::mois::Mois, paiement: Option<Jour>, premiere: bool) -> Periode {
+fn periode(c: &ContratDeclare, numero: &engagement::numeros::NumeroContrat, x: &Mesures, debut: Jour, fin: Jour, m: socle::mois::Mois, paiement: Option<Jour>, premiere: bool) -> Periode {
     let (d, f) = (m.premier_jour(), m.dernier_jour());
     Periode {
-        contrat: premiere.then(|| (numero.to_string(), debut.jj_mm_aaaa(), fin.jj_mm_aaaa(), c.objet.clone())),
+        contrat: premiere.then(|| (numero.to_string(), debut.jj_mm_aaaa(), fin.jj_mm_aaaa(), c.objet.as_ref().map(|o| o.to_string()))),
         debut: if debut > d { debut } else { d },
         fin: if fin < f { fin } else { f },
         heures: x.heures,

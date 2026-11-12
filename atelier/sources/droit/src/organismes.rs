@@ -33,7 +33,7 @@ use crate::fiche::{Datee, Lue, Piece};
 use crate::source::{forme_notee, Fondement};
 
 /// Audiens, delegataire des contrats de branche du spectacle (S21.G00.15.002).
-const AUDIENS: &str = "P0983";
+pub const AUDIENS: IdentifiantDOrganisme = IdentifiantDOrganisme::du_moteur("P0983");
 /// Le premier identifiant d'adhesion libre : ceux d'en dessous sont ceux que les textes donnent (`reference` des
 /// contrats de `organismes-base.json`, `identifiant` de la CASC-SVP).
 const PREMIER_LIBRE: u32 = 104;
@@ -55,7 +55,7 @@ forme_notee! {
     /// couvre son versement, le jour du mois suivant ou il preleve quand un texte le dit, ses cles de totalisation (les
     /// codes 81 qu'il recoit), et son adresse quand le contrat ecrit la nomme.
     pub struct Versement {
-        pub siret: String,
+        pub siret: IdentifiantDOrganisme,
         pub libelle: String,
         pub nom: String,
         pub objet: String,
@@ -73,9 +73,9 @@ impl Versement {
 }
 
 forme_notee! {
-    /// Le bloc S20.G00.08 d'un mois sans individu : les organismes qui n'ont plus d'individu rattache.
+    /// Le bloc S20.G00.08 d'un mois sans individu : le code caisse des organismes qui n'ont plus d'individu rattache.
     pub struct SansIndividu {
-        pub absence_de_rattachement: Vec<String>,
+        pub absence_de_rattachement: Vec<CodeCaisse>,
     }
 }
 
@@ -93,11 +93,180 @@ pub enum TauxAt {
     Bareme,
 }
 
+/// UNE RUBRIQUE DE NATURE `X [min,max]` du cahier technique DSN : de `min` a `max` caracteres (comptes en caracteres,
+/// non en octets), sans blanc au debut ni a la fin ; l'espace et les lettres accentuees de la table 3.5 sont des
+/// caracteres permis (`dsn-cahier-technique-2026.1-formats.txt` l. 6630-6633, 7432-7440). Rien de plus (regle 7).
+pub(crate) const fn de_nature_x(texte: &str, min: usize, max: usize) -> bool {
+    let o = texte.as_bytes();
+    if o.is_empty() || o[0] == b' ' || o[o.len() - 1] == b' ' {
+        return false;
+    }
+    let mut caracteres = 0;
+    let mut i = 0;
+    while i < o.len() {
+        if o[i] & 0xC0 != 0x80 {
+            caracteres += 1;
+        }
+        i += 1;
+    }
+    caracteres >= min && caracteres <= max
+}
+
+/// LE CODE TYPE DE PERSONNEL D'UNE LIGNE DU BORDEREAU URSSAF (S21.G00.23.001) : « X [3,3] Table des Codes Type de
+/// Personnel » (cahier technique DSN 2026.1 p. 168, `atelier/reference/norme-dsn/texte/bloc-S21.G00.23.txt` l. 23-27).
+/// La table est celle de l'Urssaf (`donnees/urssaf-codes-types-personnel.csv`), datee : qu'un code y soit au jour du
+/// bordereau, `documents::bordereau` le juge. La forme est celle du cahier, trois caracteres (`X`), et rien de plus :
+/// que la table n'ait que des chiffres ne fonde pas un controle (regle 7).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct CodeCtp(std::borrow::Cow<'static, str>);
+
+impl CodeCtp {
+    /// Le code ecrit `texte`.
+    pub fn lire(texte: &str) -> R<CodeCtp> {
+        if !CodeCtp::a_sa_forme(texte) {
+            return Err(socle::refus!("CTP {} : un code type de personnel s'écrit de trois caractères.", socle::fichiers::repr(texte)));
+        }
+        Ok(CodeCtp(std::borrow::Cow::Owned(texte.to_string())))
+    }
+
+    const fn a_sa_forme(texte: &str) -> bool {
+        de_nature_x(texte, 3, 3)
+    }
+
+    /// LE CODE QUE LE MOTEUR NOMME, ecrit en Rust : une constante, dont le compilateur refuse une forme fausse.
+    pub const fn du_moteur(code: &'static str) -> CodeCtp {
+        assert!(CodeCtp::a_sa_forme(code), "code type de personnel mal forme");
+        CodeCtp(std::borrow::Cow::Borrowed(code))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CodeCtp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for CodeCtp {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<CodeCtp> {
+        CodeCtp::lire(&s)
+    }
+}
+
+impl From<CodeCtp> for String {
+    fn from(c: CodeCtp) -> String {
+        c.0.into_owned()
+    }
+}
+
+/// L'IDENTIFIANT D'UN ORGANISME DE PROTECTION SOCIALE : celui que la DSN paie (S21.G00.20.001), celui d'une cotisation
+/// individuelle (S21.G00.81.002), le code de l'organisme d'une adhesion de prevoyance (S21.G00.15.002). Le cahier
+/// technique DSN 2026.1 nomme les deux premiers « Identifiant Organisme de Protection Sociale », « X [2,14] » (p. 154-155,
+/// `atelier/reference/norme-dsn/texte/bloc-S21.G00.20.txt` l. 25-80 ; p. 306-307, `bloc-S21.G00.81.txt` l. 359-404) :
+/// le SIRET de l'Urssaf, de France Travail, de la caisse Congés Spectacles, ou pour un organisme complementaire « code de
+/// l'institution de prévoyance, de la mutuelle, de la société d'assurance » (tables PREV, MUT, ASSU, OCI), c'est-a-dire
+/// le code de 15.002 (« X [5,9] », p. 151, `bloc-S21.G00.15.txt` l. 45-55), que CCH-13 de 20.001 compare a lui. Une
+/// seule notion ; la longueur propre a 15.002 se juge la ou l'adhesion se compose (`composer`). Les tables IVO, ICI,
+/// PREV ne sont pas deposees : la forme est celle du cahier, de 2 a 14 caracteres (`X`), et rien de plus (regle 7).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct IdentifiantDOrganisme(std::borrow::Cow<'static, str>);
+
+impl IdentifiantDOrganisme {
+    /// L'identifiant ecrit `texte`.
+    pub fn lire(texte: &str) -> R<IdentifiantDOrganisme> {
+        if !IdentifiantDOrganisme::a_sa_forme(texte) {
+            return Err(socle::refus!(
+                "Organisme {} : l'identifiant d'un organisme de protection sociale s'écrit de 2 à 14 caractères, sans blanc au début ni à la fin.",
+                socle::fichiers::repr(texte)
+            ));
+        }
+        Ok(IdentifiantDOrganisme(std::borrow::Cow::Owned(texte.to_string())))
+    }
+
+    const fn a_sa_forme(texte: &str) -> bool {
+        de_nature_x(texte, 2, 14)
+    }
+
+    /// L'IDENTIFIANT QUE LE MOTEUR NOMME, ecrit en Rust : une constante, dont le compilateur refuse une forme fausse.
+    pub const fn du_moteur(code: &'static str) -> IdentifiantDOrganisme {
+        assert!(IdentifiantDOrganisme::a_sa_forme(code), "identifiant d'organisme mal forme");
+        IdentifiantDOrganisme(std::borrow::Cow::Borrowed(code))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for IdentifiantDOrganisme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for IdentifiantDOrganisme {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<IdentifiantDOrganisme> {
+        IdentifiantDOrganisme::lire(&s)
+    }
+}
+
+impl From<IdentifiantDOrganisme> for String {
+    fn from(c: IdentifiantDOrganisme) -> String {
+        c.0.into_owned()
+    }
+}
+
+/// LE CODE CAISSE D'UN ORGANISME QUI N'A PLUS D'INDIVIDU RATTACHE (S20.G00.08.001, « Code caisse ») : « Numéro de la
+/// caisse destinataire de la DSN sans salarié affilié » (Agirc-Arrco 88, France Travail 93, Congés Spectacles 97…),
+/// « Table ODRT », « X [2,6] » (cahier technique DSN 2026.1 p. 140, `atelier/reference/norme-dsn/texte/bloc-S20.G00.08.txt`).
+/// Ce n'est pas l'identifiant de l'organisme (`IdentifiantDOrganisme`). La table ODRT n'est pas deposee : la forme est
+/// celle du cahier, de 2 a 6 caracteres (`X`), et rien de plus (regle 7).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct CodeCaisse(String);
+
+impl CodeCaisse {
+    /// Le code ecrit `texte`.
+    pub fn lire(texte: &str) -> R<CodeCaisse> {
+        if !de_nature_x(texte, 2, 6) {
+            return Err(socle::refus!(
+                "Code caisse {} : le code d'une caisse sans individu rattaché (S20.G00.08.001) s'écrit de 2 à 6 caractères, sans blanc au début ni à la fin.",
+                socle::fichiers::repr(texte)
+            ));
+        }
+        Ok(CodeCaisse(texte.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for CodeCaisse {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<CodeCaisse> {
+        CodeCaisse::lire(&s)
+    }
+}
+
+impl From<CodeCaisse> for String {
+    fn from(c: CodeCaisse) -> String {
+        c.0
+    }
+}
+
 forme_notee! {
     /// UNE LIGNE DU BORDEREAU URSSAF : le CTP (23.001), son qualifiant d'assiette (23.002), ce qu'il lit (une assiette,
     /// ou un montant), son taux AT/MP, la population qui l'ecrit (`statut`, `nature`) et les seuils d'effectif.
     pub struct Ctp {
-        pub code: String,
+        pub code: CodeCtp,
         pub qualifiant: String,
         pub assiette: Option<crate::bordereau::AssietteDuBordereau>,
         pub montant: Option<crate::bordereau::MontantDuBordereau>,
@@ -136,7 +305,7 @@ pub struct Contrat {
     pub jusqu_a: Option<Jour>,
     pub beneficiaires: String,
     pub quoi: String,
-    pub organisme: Option<String>,
+    pub organisme: Option<IdentifiantDOrganisme>,
     pub organisme_fixe: bool,
     pub options: Option<Options>,
     pub note: Option<String>,
@@ -184,8 +353,8 @@ impl Base {
     }
 
     /// Le versement de l'organisme `siret` (S21.G00.20.001).
-    pub fn versement(&self, siret: &str) -> Option<&Versement> {
-        self.versements.iter().find(|v| v.siret == siret)
+    pub fn versement(&self, siret: &IdentifiantDOrganisme) -> Option<&Versement> {
+        self.versements.iter().find(|v| v.siret == *siret)
     }
 }
 
@@ -209,7 +378,7 @@ pub struct FichierOrganismes {
 pub struct Adhesion {
     pub cle: String,
     pub libelle: String,
-    pub delegataire: String,
+    pub delegataire: IdentifiantDOrganisme,
     pub r#type: String,
     pub reference: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -316,7 +485,7 @@ pub struct Attendu {
     pub jusqu_a: Option<Jour>,
     pub beneficiaires: String,
     pub quoi: String,
-    pub organisme: Option<String>,
+    pub organisme: Option<IdentifiantDOrganisme>,
     pub organisme_fixe: bool,
     pub contribution: Option<String>,
     pub note: Option<String>,
@@ -404,7 +573,7 @@ pub fn attendus(ctx: &Contexte) -> R<Vec<Attendu>> {
             r#type: "01".into(),
             beneficiaires: "selon le contrat".into(),
             quoi: format!("Contribution {} (en DSN depuis {})", nom, c.en_dsn_depuis),
-            organisme: Some(AUDIENS.into()),
+            organisme: Some(AUDIENS),
             organisme_fixe: true,
             role: None,
             libelle: None,
@@ -441,7 +610,7 @@ pub struct Ligne {
     pub libelle: Option<String>,
     pub libelle_fixe: bool,
     /// `None` : ni le texte ni la compagnie ne le disent encore.
-    pub organisme: Option<String>,
+    pub organisme: Option<IdentifiantDOrganisme>,
     pub organisme_fixe: bool,
     /// Sa piece (`Attendu::piece`).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -462,9 +631,9 @@ pub fn ligne(spec: &Attendu, saisi: &[Adhesion]) -> Ligne {
         None => place.and_then(|a| saisie(&a.libelle)).or_else(|| net(&spec.libelle_defaut)),
     };
     let organisme = if spec.organisme_fixe {
-        net(&spec.organisme)
+        spec.organisme.clone()
     } else {
-        place.and_then(|a| saisie(&a.delegataire)).or_else(|| net(&spec.organisme))
+        place.map(|a| a.delegataire.clone()).or_else(|| spec.organisme.clone())
     };
     Ligne {
         cle: spec.cle.trim().to_string(),
@@ -540,7 +709,7 @@ impl Organismes {
     }
 
     /// Les organismes du bloc S20.G00.08 d'un mois sans individu.
-    pub fn absence_de_rattachement(&self) -> &[String] {
+    pub fn absence_de_rattachement(&self) -> &[CodeCaisse] {
         &self.base.sans_individu.absence_de_rattachement
     }
 
@@ -572,7 +741,7 @@ pub fn composer(
     exiger: Option<(&(Jour, Jour), bool)>,
 ) -> R<Organismes> {
     // Chaque contrat retenu, avec sa reference quand le texte ou la saisie la disent.
-    let mut retenus: Vec<(Attendu, Option<String>, String, String)> = Vec::new();
+    let mut retenus: Vec<(Attendu, Option<String>, String, IdentifiantDOrganisme)> = Vec::new();
     for spec in attendus(ctx)? {
         let l = ligne(&spec, saisi);
         let maintenant = saisies.get(spec.cle.trim());
@@ -582,7 +751,7 @@ pub fn composer(
         };
         let organisme = match maintenant {
             Some(s) if !l.organisme_fixe => Saisie::dite(&s.organisme),
-            _ => l.organisme.clone(),
+            _ => l.organisme.clone().map(String::from),
         };
         let quoi = spec.quoi.trim().to_string();
         let Some(libelle) = libelle else {
@@ -603,7 +772,7 @@ pub fn composer(
             return Err(socle::refus!("{} : « {} » dépasse 30 caractères, ce que la DSN n'admet pas.", quoi, libelle));
         }
         let organisme = match organisme {
-            Some(o) if (5..=9).contains(&o.chars().count()) && !o.contains(char::is_whitespace) => o,
+            Some(o) if (5..=9).contains(&o.chars().count()) && !o.contains(char::is_whitespace) => IdentifiantDOrganisme::lire(&o)?,
             autre => {
                 let dit = match autre {
                     Some(o) => format!("« {} »", o),

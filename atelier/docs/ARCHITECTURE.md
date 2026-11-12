@@ -175,26 +175,35 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 
 | notion | ce que c'est | son type |
 |---|---|---|
-| NIR | le numéro de sécurité sociale | `droit::fiche::Nir` ; à unifier (#419) : des champs `nir` en `String` |
+| NIR | le numéro de sécurité sociale | `droit::fiche::Nir` ; sa clé, `CleNir` (`droit/src/fiche.rs`) ; à unifier (#419) : des champs `nir` en `String` |
 | NTT | le numéro technique temporaire, sans NIR | à créer (#419) |
-| SIREN, NIC, SIRET | l'entreprise, l'établissement, les deux | à créer (#419) : `Siren`, `Nic`, `Siret` |
-| IBAN, BIC | un compte bancaire | à créer (#419) : `Iban`, `Bic` (les contrôles sont dans `socle/src/iban.rs`) |
+| SIREN, NIC, SIRET | l'entreprise, l'établissement, les deux | `Siren`, `Nic`, `Siret` (`droit/src/fiche.rs`) |
+| IBAN, BIC | un compte bancaire | `Iban`, `Bic` (`droit/src/fiche.rs` ; leurs contrôles, `socle/src/iban.rs`) |
 | numéro de contrat | S21.G00.40.009 : il se lit, ne se recalcule pas | `NumeroContrat` (`engagement/src/numeros.rs`) |
-| numéro d'objet spectacle | S21.G00.40.019, natures 02 et 10 | à créer (#419) |
-| IDCC | l'identifiant d'une convention collective : la notion « convention » | à créer (#419) ; `minima::Convention`, `clauses::Convention`, `forme_bareme::Convention` sont des formes de fichiers |
-| code d'organisme | Urssaf, institution de prévoyance, caisse | à créer (#419) |
+| numéro d'objet spectacle | S21.G00.40.050, natures 02 et 10 | `NumeroObjetSpectacle` (`droit/src/fiche.rs`) |
+| IDCC | l'identifiant d'une convention collective : la notion « convention » | `Idcc` (`droit/src/fiche.rs`) ; à unifier (#419) : les clés des tables par convention, en `String` ; `minima::Convention`, `clauses::Convention`, `forme_bareme::Convention` sont des formes de fichiers |
+| identifiant d'organisme | l'organisme de protection sociale que la DSN paie (S21.G00.20.001), d'une cotisation (81.002), d'une adhésion de prévoyance (15.002) : le SIRET de l'Urssaf, de France Travail, de la caisse Congés Spectacles, le code d'une institution (`P0983`), `DGFIP` | `IdentifiantDOrganisme` (`droit/src/organismes.rs`), que portent un versement de `organismes-base.json`, un contrat qu'un texte exige, une adhésion, la `org` d'une cotisation DSN du barème, les lignes 81 et les ordres de paiement de la DSN, ce que la lecture d'une DSN garde des blocs 15 et 20, l'organisme et le délégataire qu'un retour de la plate-forme ou un compte rendu d'organisme complémentaire nomme (`envois::retours`) ; `AUDIENS`, `SIRET_FRANCE_TRAVAIL`, `DGFIP` sont des constantes. Le code caisse d'un mois sans individu (S20.G00.08.001) est une autre notion |
+| code caisse | l'organisme qui n'a plus d'individu rattaché, dans une DSN sans individu (S20.G00.08.001), « X [2,6] » de la table ODRT : Agirc-Arrco 88, France Travail 93, Congés Spectacles 97 | `CodeCaisse` (`droit/src/organismes.rs`), que porte `sans_individu` de `organismes-base.json` |
 | salarié | la clé de sa fiche | `IdSalarie` (`droit/src/contexte.rs`) |
+| salarié désigné | le salarié tel qu'une personne ou une charge le désigne : la clé de sa fiche, son nom, son prénom, son NIR | `SalarieDesigne` (`droit/src/contexte.rs`), que portent les charges des imprévus et des obligations d'un arrêt ; il se résout en `IdSalarie` à un seul endroit, `Contexte::cle_du_salarie` |
 | spectacle | la clé de sa fiche | `IdSpectacle` (`droit/src/contexte.rs`) |
 | compagnie | l'identifiant d'une compagnie | à créer (#419) (`Compagnie.id` en `String`) |
-| matricule, licence, PCS-ESE, code emploi France Travail | | à créer (#419) |
+| PCS-ESE | la profession et catégorie socioprofessionnelle d'un emploi (S21.G00.40.004), « X [4,4] » de la table de l'Insee | `CodePcsEse` (`droit/src/fiche.rs`), que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, le métier du catalogue, ce qu'un bulletin importé imprime, ce que la lecture d'une DSN garde du bloc 40 (`declarations::dsn_lue::EmploiDeclare`), le contrat de la liste nominative d'une régularisation CASC-SVP |
+| code emploi déclaré | le complément PCS-ESE d'un emploi (S21.G00.40.005), « X [2,6] » : pour le spectacle, un code de la nomenclature des emplois du spectacle, « 999SPT » pour un emploi permanent, « 50 », « 51 » (CCH-18) ; il ne nomme pas toujours un métier | `CodeEmploiFt` (`droit/src/fiche.rs`), que portent la fiche du salarié, la carte, l'engagement et sa paie écrite, ce qu'un bulletin importé imprime, ce que la lecture d'une DSN garde du bloc 40 ; le métier qu'il nomme : `emplois::metier` ; un code d'un métier se déclare tel quel (`From<&CodeEmploi>`) |
+| matricule, licence | | à créer (#419) |
 | code NAF, code postal | | `CodeNaf`, `CodePostal` (`droit/src/fiche.rs`) |
+| pays | un code ISO 3166 à deux lettres | `CodePays` (`socle/src/pays.rs`) |
+| commune | son code INSEE (versement mobilité, S21.G00.81.005) | `CodeInsee` (`droit/src/fiche.rs`) |
+| courriel | une adresse de courriel | `Courriel` (`droit/src/fiche.rs`) |
 | expéditeur d'un courriel lu | une adresse, rien, ou un texte qui n'en est pas une | `envois::courriel_lecture::Expediteur` |
 | version du logiciel | le numéro d'une publication, des nombres séparés de points | `compagnie::maj::VersionDuLogiciel` |
 
 **Les codes de la norme** : une liste fermée par rubrique (`droit::natures::ListeDeLaNorme`) : `NatureDeContrat`,
 `MotifDeRecours`, `MotifDeRupture`, `ModaliteDuTempsDeTravail`, `BaseAssujettie`, `CotisationDEtablissement`,
-`NatureDeLaDeclaration`, `TypeDeLaDeclaration`… ; les choix d'une fiche (`StatutConventionnel`, `Civilite`, `Sexe`…)
-aussi. À créer (#419), une liste par rubrique : le type de cotisation (S21.G00.81.001), le CTP Urssaf, le code d'option
+`NatureDeLaDeclaration`, `TypeDeLaDeclaration`, `CodeCotisation81`… ; les choix d'une fiche (`StatutConventionnel`, `Civilite`, `Sexe`…)
+aussi. Le CTP Urssaf (S21.G00.23.001) se lit dans la table datée de l'Urssaf, pas dans la norme : `CodeCtp`
+(`droit/src/organismes.rs`), que portent une ligne de la table des CTP, une ligne du bordereau, les CTP de la réduction
+générale et du régime local. À créer (#419), une liste par rubrique : le code d'option
 de prévoyance, les codes du bloc 60, du préavis, de l'indemnité.
 
 **Le métier**
@@ -210,10 +219,14 @@ de prévoyance, les codes du bloc 60, du préavis, de l'indemnité.
 | spectacle | une production | `IdSpectacle` et `droit::fiche::Spectacle` |
 | fiche | entreprise, salarié ou spectacle, datée | `droit::fiche::NomDeFiche`, `Datee<T>` ; `routes::catalogue::Fiche`, la fiche d'une route, est une autre notion, à renommer |
 | case | un champ d'une fiche | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` (`droit/src/fiche.rs`) ; `engagement::ligne::Case` (un `Option<Decimal>`) est mal nommé |
-| rubrique | une ligne du catalogue de paie | `droit::catalogue::Rubrique` (sa définition) ; son code : à créer (#419), `CodeDeRubrique` |
+| rubrique | une ligne du catalogue de paie | `droit::catalogue::Rubrique` (sa définition) ; son code, `CodeDeRubrique` (`droit/src/catalogue.rs`), que portent une ligne de paie (`engagement::ligne`), une ligne du brut (`LigneBrut.code`), les frais d'une profession au barème (`frais_hors_assiette`), une prime saisie, une ligne imprimée d'un bulletin importé ; un code que le moteur compose est une constante (`CodeDeRubrique::du_moteur`) |
+| unité d'une rubrique | ce que la quantité d'une ligne compte : cachet, heure, jour, semaine, mois, service, forfait, pourcentage (`rubriques-base.json`) | `Unite` (`droit/src/catalogue.rs`), que portent la rubrique, sa case `unite`, une ligne du brut (`LigneBrut`, sa forme écrite), une ligne de rémunération d'un mois |
+| cotisation du bulletin | une ligne de cotisation du barème (`rubriques_bulletin`), par sa clé : `maladie`, `retraite_t1` | `IdDeCotisation` (`droit/src/forme_bareme.rs`), que nomment les modifications d'une couche, `rubriques_retirees`, `apres`, `du_corps`, les `lignes` d'une cotisation DSN ou d'une contribution, `rubriques_abattues` de la DFS et les rubriques d'une DFS calculée ; une clé que le moteur nomme est une constante (`MUTUELLE`, `RETRAITE_T1`…) ; à unifier (#419) : `LigneCotisation.id` et ce qui la relit, en `String`. Ce n'est ni une rubrique du catalogue, ni une cotisation de la DSN |
+| cotisation de la DSN | une ligne du bloc 81, par son code S21.G00.81.001 | `CodeCotisation81` (`droit/src/code_cotisation.rs`), que portent `cotisations_dsn` (`code81`, `apres`), `cotisations_dsn_retirees`, `du_corps`, les codes de la réduction générale, la CET patronale d'une version de la norme ; une couche la nomme par son code et, quand plusieurs le partagent, son affectation (`059:203`) : `CleDeCotisationDsn` (même fichier) |
 | assiette | ce sur quoi une cotisation se calcule | `droit::assiette::Assiette` |
 | barème | les taux d'un jour, en trois étages | `droit::forme_bareme::Pile` |
-| emploi | ce que fait le salarié | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres ; le code d'emploi, à créer |
+| emploi | ce que fait le salarié | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres |
+| code d'un métier | un code de la nomenclature des emplois du spectacle de France Travail (`nomenclature-emplois-ft.json`), qui désigne un métier : du catalogue (`emplois-base.json`, dont chaque clé en est un), sinon de la nomenclature | `CodeEmploi` (`droit/src/emplois.rs`), que portent le métier qu'une carte choisit (`metier`), la clé du catalogue, un métier et celui d'un déroulant, les `codes` d'une grille des minima, les métiers retenus par la compagnie ; son métier : `CodeEmploi::metier`. Le code emploi qu'une fiche déclare (S21.G00.40.005) est une autre notion, `CodeEmploiFt`, qui peut n'en nommer aucun (« 999SPT ») |
 | statut | artiste ou technicien | `droit::fiche::Statut` |
 | établissement | un lieu d'emploi | son `Nic`, à créer (#419) |
 | effectif | l'effectif que l'Urssaf calcule | `droit::contexte::Effectif` |

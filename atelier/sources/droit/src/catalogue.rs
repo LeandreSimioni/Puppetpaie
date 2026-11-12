@@ -18,9 +18,45 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 use socle::date::{repr_texte, Jour};
 
-/// Les unites que le moteur sait compter.
-pub const UNITES: [&str; 8] =
-    ["cachet", "heure", "jour", "semaine", "mois", "service", "forfait", "pourcentage"];
+/// L'UNITE D'UNE RUBRIQUE : ce que sa quantite compte, la liste fermee que le moteur sait compter (`unite` de chaque
+/// rubrique de `rubriques-base.json` ; sa note : « Ici le nombre se saisit »). Une unite hors de la liste se refuse a
+/// la lecture de la rubrique.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Unite {
+    Cachet,
+    Heure,
+    Jour,
+    Semaine,
+    Mois,
+    Service,
+    Forfait,
+    Pourcentage,
+}
+
+impl Unite {
+    /// Son nom ecrit.
+    pub fn cle(self) -> &'static str {
+        match self {
+            Unite::Cachet => "cachet",
+            Unite::Heure => "heure",
+            Unite::Jour => "jour",
+            Unite::Semaine => "semaine",
+            Unite::Mois => "mois",
+            Unite::Service => "service",
+            Unite::Forfait => "forfait",
+            Unite::Pourcentage => "pourcentage",
+        }
+    }
+}
+
+impl std::fmt::Display for Unite {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str(self.cle())
+    }
+}
+
+impl crate::fiche::FormeDeCase for Unite {}
 
 /// Les natures juridiques. Elles ne commandent pas l'assujettissement (`soumis`, `imposable` le disent, rubrique par
 /// rubrique) ; d'une ligne HORS assiette, elles disent ce qu'elle est pour le montant net social
@@ -85,12 +121,96 @@ pub struct PlafondAnnuelHeures {
     pub cinquante_ans_et_plus: i64,
 }
 
+/// LE CODE D'UNE RUBRIQUE : sa cle dans `rubriques` ou `au_mois` de `donnees/rubriques-base.json`, ou dans
+/// `config/rubriques-compagnie.json` pour une rubrique propre a la compagnie ; une ligne de paie le porte pour dire de
+/// quelle rubrique elle est. Il se lit d'un fichier ou d'une charge (`lire`, ou `serde` : la meme chaine). INFERENCE
+/// (aucun texte n'en fixe la forme : c'est une cle du logiciel, et la compagnie nomme les siennes) : un code n'est
+/// jamais vide ; rien de plus ne vaut pour tous les codes qui existent. Un code que le moteur compose lui-meme est une
+/// constante (`du_moteur`), construite sans echec ; un code lu d'une donnee se lit (`lire`).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct CodeDeRubrique(std::borrow::Cow<'static, str>);
+
+impl CodeDeRubrique {
+    /// Le code ecrit `texte` ; vide, il se refuse.
+    pub fn lire(texte: &str) -> R<CodeDeRubrique> {
+        if texte.is_empty() {
+            return Err(socle::refus!("code de rubrique vide"));
+        }
+        Ok(CodeDeRubrique(std::borrow::Cow::Owned(texte.to_string())))
+    }
+
+    /// LE CODE D'UNE RUBRIQUE QUE LE MOTEUR COMPOSE, ecrit en Rust : une constante (`const X: CodeDeRubrique =
+    /// CodeDeRubrique::du_moteur("…")`), dont le compilateur refuse un code vide.
+    pub const fn du_moteur(code: &'static str) -> CodeDeRubrique {
+        assert!(!code.is_empty(), "code de rubrique vide");
+        CodeDeRubrique(std::borrow::Cow::Borrowed(code))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for CodeDeRubrique {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::borrow::Borrow<str> for CodeDeRubrique {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CodeDeRubrique {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for CodeDeRubrique {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<CodeDeRubrique> {
+        CodeDeRubrique::lire(&s)
+    }
+}
+
+impl From<CodeDeRubrique> for String {
+    fn from(c: CodeDeRubrique) -> String {
+        c.0.into_owned()
+    }
+}
+
+impl PartialEq<str> for CodeDeRubrique {
+    fn eq(&self, autre: &str) -> bool {
+        self.0 == autre
+    }
+}
+
+impl PartialEq<&str> for CodeDeRubrique {
+    fn eq(&self, autre: &&str) -> bool {
+        self.0 == *autre
+    }
+}
+
+impl PartialEq<String> for CodeDeRubrique {
+    fn eq(&self, autre: &String) -> bool {
+        &self.0 == autre
+    }
+}
+
+/// La rubrique du cachet : celle que les annexes VIII et X convertissent en heures (`cumul::Constantes`).
+pub const CACHET: CodeDeRubrique = CodeDeRubrique::du_moteur("cachet");
+
 /// Une forme de paie : ce que le bulletin appelle une ligne.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Rubrique {
-    pub code: String,
+    pub code: CodeDeRubrique,
     pub libelle: String,
-    pub unite: String,
+    pub unite: Unite,
     pub nature: NatureDeRubrique,
     pub saisie: Vec<String>,
     pub soumis: bool,
@@ -131,11 +251,6 @@ impl Rubrique {
     /// Les refus d'une rubrique mal formee.
     fn verifier(&self) -> R<()> {
         let code = &self.code;
-        if !UNITES.contains(&self.unite.as_str()) {
-            return Err(socle::refus!(
-                "Rubrique {} : unite {} inconnue. Connues : {}.",
-                repr(code), repr(&self.unite), joindre(&UNITES)));
-        }
         if !COMPTE_POUR.contains(&self.compte_pour.as_str()) {
             return Err(mal_decrite(code, format!(
                 "Rubrique {} : compte_pour {} inconnu. Connus : {}.",
@@ -152,7 +267,7 @@ impl Rubrique {
                  Spectacles sont une cotisation : leur assiette ne peut pas \
                  depasser ce qui entre dans l'assiette des cotisations.", repr(code))));
         }
-        if self.heures_forfait.is_some() && self.unite == "heure" {
+        if self.heures_forfait.is_some() && self.unite == Unite::Heure {
             return Err(mal_decrite(code, format!(
                 "Rubrique {} : `heures_forfait` sur une rubrique dont l'unite \
                  est l'heure. Les heures y sont un fait, pas un forfait : \
@@ -192,7 +307,7 @@ impl Rubrique {
         {
             return Some("mensuelle");
         }
-        if self.unite == "cachet" {
+        if self.unite == Unite::Cachet {
             return Some("activite");
         }
         None
@@ -210,7 +325,7 @@ impl Rubrique {
     /// cachets ») ; l'annexe VIII, celle des techniciens, ne compte que des heures (art. 3,
     /// `plafond-intermittents/unedic-annexe10-convention-20241115.txt`, `…annexe8…`).
     pub fn reservee_au_statut(&self) -> Option<crate::fiche::Statut> {
-        matches!(self.unite.as_str(), "service" | "cachet").then_some(crate::fiche::Statut::Artiste)
+        matches!(self.unite, Unite::Service | Unite::Cachet).then_some(crate::fiche::Statut::Artiste)
     }
 
     /// Une ligne de cette rubrique doit dire ses heures : `heures` est dans
@@ -246,7 +361,7 @@ impl Rubrique {
         if let Some(h) = heures_saisies {
             return centieme(h);
         }
-        if self.unite == "heure" {
+        if self.unite == Unite::Heure {
             return socle::num::court(quantite);
         }
         socle::num::court(Decimal::ZERO)
@@ -272,16 +387,16 @@ struct Base {
     _note: String,
     annexes: Annexes,
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    rubriques: Vec<(String, ChampsRubrique)>,
+    rubriques: Vec<(CodeDeRubrique, ChampsRubrique)>,
     /// LA PIECE D'UN SALARIE AU MOIS (`fiche::Piece::Permanent`) : les rubriques que seul le calcul d'un contrat paye au
     /// mois paie, rangees a part. Leur place dit leur piece ; aucune case ne la dit.
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    au_mois: Vec<(String, ChampsRubrique)>,
+    au_mois: Vec<(CodeDeRubrique, ChampsRubrique)>,
 }
 
 impl Base {
     /// Chaque rubrique livree avec sa piece : la sienne pour celles qui sont rangees dans `au_mois`.
-    fn rangees(self) -> Vec<(String, ChampsRubrique, Option<Piece>)> {
+    fn rangees(self) -> Vec<(CodeDeRubrique, ChampsRubrique, Option<Piece>)> {
         let communes = self.rubriques.into_iter().map(|(c, v)| (c, v, None));
         communes.chain(self.au_mois.into_iter().map(|(c, v)| (c, v, Some(Piece::Permanent)))).collect()
     }
@@ -299,15 +414,17 @@ pub struct Annexes {
     _note: String,
 }
 
-/// LA SEULE LECTURE DE `rubriques-base.json` : sa forme.
+/// LA SEULE LECTURE DE `rubriques-base.json` : sa forme. Le refus dit le fichier et le chemin de la valeur fautive (la
+/// rubrique, sa case : « rubriques.CACHET.unite »).
 fn base() -> R<Base> {
-    let b: Base = socle::forme::lire_fichier(
-        &dossier_du_code().join("rubriques-base.json"),
-        "Les rubriques livrées avec le logiciel ne se lisent pas : le signaler au développeur.",
-    )?;
+    let b: Base = socle::forme::lire_fichier_en_phrase(&dossier_du_code().join("rubriques-base.json"), |chemin, detail| {
+        let ou = if chemin.is_empty() { String::new() } else { format!(", à « {} »", chemin) };
+        format!("Les rubriques livrées avec le logiciel (rubriques-base.json){} ne se lisent pas : {}. Le signaler au développeur.", ou, detail)
+    })?;
     // La piece d'un salarie au mois est celle que le calcul compose (`RubriqueDuMois`) : ni plus, ni moins.
     let rangees: Vec<&str> = b.au_mois.iter().map(|(c, _)| c.as_str()).collect();
-    let du_calcul: Vec<&str> = RubriqueDuMois::TOUTES.iter().map(|r| r.code()).collect();
+    let codes: Vec<CodeDeRubrique> = RubriqueDuMois::TOUTES.iter().map(|r| r.code()).collect();
+    let du_calcul: Vec<&str> = codes.iter().map(CodeDeRubrique::as_str).collect();
     if rangees.len() != du_calcul.len() || !rangees.iter().all(|c| du_calcul.contains(c)) {
         return Err(socle::echec::refus_avec(
             "Les rubriques d'un salarié au mois ne sont pas celles que son calcul compose : le signaler au développeur.".to_string(),
@@ -338,22 +455,22 @@ impl RubriqueDuMois {
     pub const TOUTES: [RubriqueDuMois; 2] = [RubriqueDuMois::IndemniteCongesPayes, RubriqueDuMois::IjssNettes];
 
     /// Le code `code` d'une ligne ecrite est-il le sien ? (Lire une ligne ne la compose pas.)
-    pub fn nomme(self, code: &str) -> bool {
-        self.code() == code
+    pub fn nomme(self, code: &CodeDeRubrique) -> bool {
+        self.code() == *code
     }
 
     /// Son code au catalogue : ne le prennent que les lignes qui la composent, avec la cle (`engagement::LignePaie`).
-    pub fn code(self) -> &'static str {
+    pub fn code(self) -> CodeDeRubrique {
         match self {
-            RubriqueDuMois::IndemniteCongesPayes => "indemnite_conges_payes",
-            RubriqueDuMois::IjssNettes => "ijss_nettes",
+            RubriqueDuMois::IndemniteCongesPayes => const { CodeDeRubrique::du_moteur("indemnite_conges_payes") },
+            RubriqueDuMois::IjssNettes => const { CodeDeRubrique::du_moteur("ijss_nettes") },
         }
     }
 }
 
 /// UNE RUBRIQUE QU'UNE CARTE SAISIT, telle qu'elle vaut a `jour` : celle de la piece d'un salarie au mois ne se saisit
 /// pas, le calcul qui tient sa cle la compose (`RubriqueDuMois`).
-pub fn rubrique_a_saisir(racine: &Path, code: &str, jour: &Jour) -> R<Rubrique> {
+pub fn rubrique_a_saisir(racine: &Path, code: &CodeDeRubrique, jour: &Jour) -> R<Rubrique> {
     let r = rubrique(racine, code, jour)?;
     if r.piece.is_some() {
         return Err(socle::refus!(
@@ -367,7 +484,7 @@ pub fn rubrique_a_saisir(racine: &Path, code: &str, jour: &Jour) -> R<Rubrique> 
 /// LES RUBRIQUES LIVREES, construites, sans celles d'aucune compagnie : ce que le logiciel sait d'une rubrique avant
 /// toute configuration (la table de lecture des bulletins s'y rapporte).
 pub fn livrees() -> R<Vec<Rubrique>> {
-    base()?.rangees().into_iter().map(|(c, v, piece)| construire(&c, v, "base", piece)).collect()
+    base()?.rangees().into_iter().map(|(c, v, piece)| construire(c, v, "base", piece)).collect()
 }
 
 /// Le seuil et la fenetre des annexes VIII et X.
@@ -380,7 +497,7 @@ pub fn annexes() -> R<Annexes> {
 #[serde(deny_unknown_fields)]
 struct RubriquesDeLaCompagnie {
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    rubriques: Vec<(String, RubriqueDatee)>,
+    rubriques: Vec<(CodeDeRubrique, RubriqueDatee)>,
 }
 
 /// Le fichier des rubriques de la compagnie, s'il existe ; absent, il n'en dit aucune.
@@ -394,13 +511,13 @@ fn de_la_compagnie(racine: &Path) -> R<RubriquesDeLaCompagnie> {
 
 /// LA RUBRIQUE DU CALCUL, construite de ses cases (`ChampsRubrique`), sa seule construction : une case que la rubrique
 /// doit dire, ou qui ne dit pas ce que sa forme attend, se refuse en la nommant.
-fn construire(code: &str, f: ChampsRubrique, origine: &str, piece: Option<Piece>) -> R<Rubrique> {
-    let faute = |cle: &str, quoi: &str| mal_decrite(code, format!("Rubrique {} : `{}` {}.", repr(code), cle, quoi));
+fn construire(code: CodeDeRubrique, f: ChampsRubrique, origine: &str, piece: Option<Piece>) -> R<Rubrique> {
+    let faute = |cle: &str, quoi: &str| mal_decrite(&code, format!("Rubrique {} : `{}` {}.", repr(&code), cle, quoi));
     fn dite<T>(c: Option<T>, cle: &str, faute: &dyn Fn(&str, &str) -> socle::echec::Echec) -> R<T> {
         c.ok_or_else(|| faute(cle, "manque"))
     }
     let r = Rubrique {
-        code: code.to_string(),
+        code: code.clone(),
         libelle: dite(f.libelle, "libelle", &faute)?,
         unite: dite(f.unite, "unite", &faute)?,
         nature: dite(f.nature, "nature", &faute)?,
@@ -457,7 +574,7 @@ fn rubriques_datees(racine: &Path) -> R<bool> {
 fn construire_catalogue(racine: &Path, jour: &Jour) -> R<Vec<Rubrique>> {
     // code -> (cases, piece, propre a la compagnie) ; une rubrique de la compagnie n'est dans aucune piece, et celle
     // qu'elle ajuste garde la sienne.
-    let mut brut: Vec<(String, ChampsRubrique, Option<Piece>, bool)> = base()?.rangees().into_iter().map(|(c, v, p)| (c, v, p, false)).collect();
+    let mut brut: Vec<(CodeDeRubrique, ChampsRubrique, Option<Piece>, bool)> = base()?.rangees().into_iter().map(|(c, v, p)| (c, v, p, false)).collect();
     if socle::fichiers::est_dossier(racine) {
         for (c, datee) in de_la_compagnie(racine)?.rubriques {
             let v = datee.au(jour);
@@ -472,7 +589,7 @@ fn construire_catalogue(racine: &Path, jour: &Jour) -> R<Vec<Rubrique>> {
     }
     let mut out = Vec::new();
     for (code, d, piece, propre) in brut {
-        out.push(construire(&code, d, if propre { "compagnie" } else { "base" }, piece)?);
+        out.push(construire(code, d, if propre { "compagnie" } else { "base" }, piece)?);
     }
     out.sort_by_key(|r| r.libelle.to_lowercase());
     Ok(out)
@@ -532,9 +649,9 @@ pub fn catalogue(racine: &Path, jour: &Jour) -> R<Arc<Vec<Rubrique>>> {
 
 /// Une rubrique par son code, telle qu'elle vaut a `jour`. Refuse un code inconnu : mieux vaut s'arreter que payer une
 /// ligne dont on ignore le regime.
-pub fn rubrique(racine: &Path, code: &str, jour: &Jour) -> R<Rubrique> {
+pub fn rubrique(racine: &Path, code: &CodeDeRubrique, jour: &Jour) -> R<Rubrique> {
     let cat = catalogue(racine, jour)?;
-    if let Some(r) = cat.iter().find(|r| r.code == code) {
+    if let Some(r) = cat.iter().find(|r| r.code == *code) {
         return Ok(r.clone());
     }
     let mut connues: Vec<&str> = cat.iter().map(|r| r.code.as_str()).collect();

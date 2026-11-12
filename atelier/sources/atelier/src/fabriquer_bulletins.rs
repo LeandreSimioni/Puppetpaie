@@ -247,7 +247,7 @@ struct EntrepriseLue {
     adresse: String,
     code_postal: String,
     commune: String,
-    siret: String,
+    siret: droit::fiche::Siret,
     naf: String,
     urssaf: String,
     licence: String,
@@ -257,7 +257,7 @@ struct EntrepriseLue {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ConventionLue {
-    idcc: String,
+    idcc: droit::fiche::Idcc,
     libelle: String,
 }
 
@@ -552,12 +552,8 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
     let g = Table::livree()?;
 
     let e = d.entreprise;
-    if e.siret.len() != 14 || !declarations::champs::luhn(&e.siret) {
-        return Err(refus!("entreprise : le Siret {} n'a pas quatorze chiffres ou sa clé de Luhn est fausse", e.siret));
-    }
-    let idcc = &e.convention.idcc;
-    if idcc.len() != 4 || !idcc.chars().all(|c| c.is_ascii_digit()) {
-        return Err(refus!("entreprise.convention : l'IDCC {} n'a pas quatre chiffres", idcc));
+    if !e.siret.cle_juste() {
+        return Err(refus!("entreprise : la clé de Luhn du Siret {} est fausse", e.siret));
     }
 
     let mut salaries = Vec::new();
@@ -603,9 +599,9 @@ fn lire_description(d: DescriptionLue, gabarit: Option<Gabarit>, racine_catalogu
         }
         let (q, taux) = (l.quantite.0, l.taux.0);
         let (mut cachets, mut heures) = (Decimal::ZERO, Decimal::ZERO);
-        if r.unite == "cachet" {
+        if r.unite == droit::catalogue::Unite::Cachet {
             cachets = q;
-        } else if let Some(u) = r.heures_forfait.or(connu.heures).or_else(|| (r.unite == "heure").then_some(Decimal::ONE)) {
+        } else if let Some(u) = r.heures_forfait.or(connu.heures).or_else(|| (r.unite == droit::catalogue::Unite::Heure).then_some(Decimal::ONE)) {
             heures = q * u;
         }
         Ok(Ligne { libelle: connu.libelle.clone(), quantite: q, taux, montant: eur2(q * taux), cachets, heures })
@@ -712,7 +708,7 @@ fn identite(d: &Description, s: &Salarie) -> R<Identite<String>> {
     };
     Ok(Identite {
         entreprise: [e.raison_sociale.clone(), e.adresse.clone(), format!("{} {}", e.code_postal, e.commune)],
-        siret: e.siret.clone(),
+        siret: e.siret.to_string(),
         naf: e.naf.clone(),
         urssaf: e.urssaf.clone(),
         convention,

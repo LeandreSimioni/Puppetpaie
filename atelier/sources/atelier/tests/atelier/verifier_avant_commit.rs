@@ -22,13 +22,13 @@ const COURRIEL: &str = "camille.fictive@exemple.invalid";
 const NOM: &str = "FICTIVENOM";
 const PRENOM: &str = "Camille";
 
-/// Un SIRET et un IBAN à la forme juste, composés à la volée.
+/// Un SIRET et un IBAN à la forme juste (l'IBAN à la clé juste : `droit::fiche::Iban`), composés à la volée.
 fn siret() -> String {
     format!("{}{}", "4242", "4242424242")
 }
 
 fn iban() -> String {
-    format!("FR{}{}", "76", "11112222333344445555666")
+    format!("FR{}{}", "86", "11112222333344445555666")
 }
 
 struct Sortie {
@@ -48,7 +48,7 @@ fn monter(test: &str, avec_prive: bool) -> PathBuf {
         let cfg = depot.join("prive/config");
         std::fs::create_dir_all(&cfg).unwrap();
         // Les fiches telles que le logiciel les ecrit : datees, lues par leur forme (le NIR sans sa cle).
-        let entreprise = datee(&json!({"siret": siret(), "siren": "42", "banque": {"iban": iban(), "bic": ""}}));
+        let entreprise = datee(&json!({"siret": siret(), "siren": "135792468", "banque": {"iban": iban()}}));
         let salaries = json!({
             "note": "inventés",
             "FICTIVENOM": datee(&json!({"nom": NOM, "prenom": PRENOM, "nir": &NIR_INVENTE[..13], "email": COURRIEL, "adresse": "1 rue"})),

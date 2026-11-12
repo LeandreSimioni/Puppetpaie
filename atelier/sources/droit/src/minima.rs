@@ -284,7 +284,7 @@ forme_notee! {
         pub unite: String,
         pub heures: Option<Nombre>,
         pub categories: Option<Vec<String>>,
-        pub codes: Option<Vec<String>>,
+        pub codes: Option<Vec<crate::emplois::CodeEmploi>>,
         pub si_spectacle: Option<SiSpectacle>,
         pub si_entreprise: Option<SiEntreprise>,
         pub si_salarie: Option<SiSalarie>,
@@ -308,7 +308,7 @@ forme_notee! {
         pub nom: String,
         pub groupe: Option<String>,
         pub categories: Option<Vec<String>>,
-        pub codes: Option<Vec<String>>,
+        pub codes: Option<Vec<crate::emplois::CodeEmploi>>,
         pub si_spectacle: Option<SiSpectacle>,
         pub si_entreprise: Option<SiEntreprise>,
         pub si_salarie: Option<SiSalarie>,
@@ -431,7 +431,7 @@ impl SiSalarie {
 /// LES CONDITIONS D'UNE GRILLE OU D'UNE MAJORATION, telles que l'engagement les confronte a une ligne de paie.
 pub struct Conditions<'a> {
     pub categories: Option<&'a [String]>,
-    pub codes: Option<&'a [String]>,
+    pub codes: Option<&'a [crate::emplois::CodeEmploi]>,
     pub si_spectacle: Option<&'a SiSpectacle>,
     pub si_entreprise: Option<&'a SiEntreprise>,
     pub si_salarie: Option<&'a SiSalarie>,
@@ -489,13 +489,13 @@ pub struct SpectacleDuContrat<'a> {
 /// (`minima-conventionnels.json`, la note de la 1734). Le contrat le déclare (S21.G00.40.017), le bulletin l'imprime, le
 /// minimum lit sa grille. Artiste-interprète se lit au métier du catalogue (familles « Artistes », « Cirque et rue ») :
 /// un métier hors catalogue ne dit pas s'il l'est, l'IDCC se refuse (règle 1).
-pub fn idcc_du_contrat(idcc: &str, sp: &SpectacleDuContrat, sal: &crate::fiche::ChampsSalarie) -> R<String> {
-    let idcc = idcc.to_string();
-    if (idcc != "2642" && idcc != "3241") || !sp.emission_tv_1734 || sal.statut.dite().is_some_and(|s| *s != crate::fiche::Statut::Artiste) {
+pub fn idcc_du_contrat(idcc: &crate::fiche::Idcc, sp: &SpectacleDuContrat, sal: &crate::fiche::ChampsSalarie) -> R<crate::fiche::Idcc> {
+    let idcc = idcc.clone();
+    if !matches!(&*idcc, "2642" | "3241") || !sp.emission_tv_1734 || sal.statut.dite().is_some_and(|s| *s != crate::fiche::Statut::Artiste) {
         return Ok(idcc);
     }
-    let code = sal.code_emploi_ft.dite().filter(|c| !c.is_empty()).cloned();
-    let metier = match &code {
+    let code = sal.code_emploi_ft.dite();
+    let metier = match code {
         Some(c) => crate::emplois::metier(c)?,
         None => None,
     };
@@ -506,15 +506,15 @@ pub fn idcc_du_contrat(idcc: &str, sp: &SpectacleDuContrat, sal: &crate::fiche::
              complément (convention de l'entreprise). Choisir un métier du catalogue.",
             sp.cle,
             match code {
-                Some(c) => c,
-                None => "(aucun)".into(),
+                Some(c) => c.as_ref(),
+                None => "(aucun)",
             },
             match sal.nom.remplie() {
                 Some(nom) => nom,
                 None => "ce salarié",
             }
         )),
-        Some("Artistes" | "Cirque et rue") => Ok("1734".into()),
+        Some("Artistes" | "Cirque et rue") => crate::fiche::Idcc::lire("1734"),
         Some(_) => Ok(idcc),
     }
 }

@@ -17,6 +17,7 @@
 //!   le moteur ne la connait pas.
 
 use droit::fiche::Lue as _;
+use droit::forme_bareme::{IdDeCotisation, MUTUELLE, PREVOYANCE};
 use socle::date::Jour;
 use socle::echec::R;
 
@@ -51,16 +52,16 @@ pub fn de(racine: &std::path::Path, p: &Paie, numero: &str, fin: &Jour) -> R<Opt
     let objets = crate::stock::objets(racine)?;
     let siens: Vec<&Objet> = objets.iter().filter(|o| !o.est_non_actif() && o.carte().salarie.as_ref() == Some(&p.salarie.id)).collect();
     // Les garanties : ce que la paie qui finit cotise, et chaque paie de l'engagement avant elle.
-    let mut ids: Vec<String> = p.lignes.iter().map(|l| l.id.clone()).collect();
+    let mut ids: Vec<IdDeCotisation> = p.lignes.iter().map(|l| l.id.clone()).collect();
     for o in siens.iter().filter(|o| o.carte().numero.as_deref() == Some(numero)) {
         for paie in crate::paies::presentes(o)?.into_values() {
             ids.extend(paie.paie.lignes.into_iter().map(|l| l.id));
         }
     }
-    let prevoyance = ids.iter().any(|i| i == "prevoyance" || i.starts_with("prevoyance_"));
+    let prevoyance = ids.iter().any(|i| *i == PREVOYANCE || i.as_str().starts_with("prevoyance_"));
     // La dispense de sante est une case d'un salarie au mois : seul un contrat paye au mois la lit.
     let dispense = p.engagement.nat()?.au_mois().is_some_and(|au| p.salarie.permanent.ouvrir(&au).sante_dispense.remplie().is_some());
-    let sante = ids.iter().any(|i| i == "mutuelle") && !dispense;
+    let sante = ids.iter().any(|i| *i == MUTUELLE) && !dispense;
     if !prevoyance && !sante {
         return Ok(None);
     }

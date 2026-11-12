@@ -1257,12 +1257,12 @@ pub fn balance(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 
 /// Le taux REEL des cotisations patronales d'un salarie -- ses cotisations patronales sur son
 /// brut, sur les douze mois qui finissent a `jusqu_a`. Rend (taux en %, nombre de bulletins lus).
-fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &str, jusqu_a: Mois) -> R<(Option<Decimal>, i64)> {
+fn taux_patronal(lignes: &[crate::etats_paie::LigneLivre], cle: &droit::contexte::IdSalarie, jusqu_a: Mois) -> R<(Option<Decimal>, i64)> {
     let depart = jusqu_a.plus(-12).map_err(|x| x.reclasser(Classe::Illisible))?;
     let (mut brut, mut pat, mut n) = (zero2(), zero2(), 0i64);
     for l in lignes {
         let (Some(b), Some(c)) = (l.brut, l.cotisations_patronales) else { continue };
-        if l.cle_salarie != cle || !(depart < l.mois && l.mois <= jusqu_a) {
+        if l.cle_salarie != *cle || !(depart < l.mois && l.mois <= jusqu_a) {
             continue;
         }
         brut = add(brut, b);
@@ -1290,7 +1290,7 @@ fn provision_d_une_annee_importee(
     d: &Demande,
     p: &Periode,
     m: Mois,
-    a_provisionner: &mut Vec<(String, Option<engagement::numeros::NumeroContrat>, String, engagement::conges::Provision)>,
+    a_provisionner: &mut Vec<(droit::contexte::IdSalarie, Option<engagement::numeros::NumeroContrat>, String, engagement::conges::Provision)>,
     avert: &mut Vec<String>,
 ) -> R<usize> {
     let fin = m.dernier_jour();
@@ -1300,22 +1300,21 @@ fn provision_d_une_annee_importee(
     let premier_importe = importes.first().copied().ok_or_else(|| erreur(Classe::Refuse, format!("{} : aucun mois repris d'un ancien logiciel.", m)))?;
     let mut lecture = crate::etats_paie::Lecture::nouvelle(ctx, &d.departs);
     let mut sans_compteur = 0;
-    let cle_de = |p: &engagement::importe::PaieImportee| p.salarie.id.to_string();
+    let cle_de = |p: &engagement::importe::PaieImportee| p.salarie.id.clone();
     // Les salaries dont un contrat repris court au-dela du dernier jour repris : sans fin, ou une fin apres lui.
-    let continuent: BTreeSet<String> = engagement::importe::contrats_lus(&ctx.racine)
+    let continuent: BTreeSet<droit::contexte::IdSalarie> = engagement::importe::contrats_lus(&ctx.racine)
         .map_err(|x| x.reclasser(Classe::Refuse))?
         .into_iter()
         .filter(|c| c.fin.is_none_or(|f| f > fin))
         .map(|c| c.salarie)
-        .filter(|s| !s.is_empty())
         .collect();
     let paies = lecture.paies(m)?;
     // Les bruts repris d'un salarie du mois de `du` a celui de `au`, et si les bulletins repris couvrent ces mois ; un
     // brut que les pieces taisent, la somme ne se fait pas (`None`).
-    let mut bruts = |cle: &str, du: &socle::date::Jour, au: &socle::date::Jour| -> R<Option<(Decimal, bool)>> {
+    let mut bruts = |cle: &droit::contexte::IdSalarie, du: &socle::date::Jour, au: &socle::date::Jour| -> R<Option<(Decimal, bool)>> {
         let mut total = zero2();
         for &mois in importes.iter().filter(|x| **x >= du.mois_civil() && **x <= au.mois_civil()) {
-            for q in lecture.paies(mois)?.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == cle) {
+            for q in lecture.paies(mois)?.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == *cle) {
                 let Some(brut) = q.brut else { return Ok(None) };
                 total = add(total, brut);
             }
@@ -1331,7 +1330,7 @@ fn provision_d_une_annee_importee(
         if a_provisionner.iter().any(|(c, ..)| *c == cle) {
             continue;
         }
-        let date = ctx.salaries.get(cle.as_str()).and_then(|f| f.permanent.ouvrir(&au).conges_reprise.dite()).and_then(|r| r.date.dite()).map(|j| j.iso());
+        let date = ctx.salaries.get(&cle).and_then(|f| f.permanent.ouvrir(&au).conges_reprise.dite()).and_then(|r| r.date.dite()).map(|j| j.iso());
         let Some(mut cpt) = engagement::conges::compteur_a_la_reprise(ctx, &au, &cle).map_err(|x| x.reclasser(Classe::Refuse))?.filter(|_| date == Some(lendemain.iso())) else {
             avert.push(format!(
                 "{} : sa fiche ne dit pas ses congés payés au {} (« Congés payés à la reprise », recopiés de son dernier bulletin repris) : son compteur ne se lit pas, il n'est pas dans la provision.",
@@ -1384,9 +1383,9 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let p = Periode::de(ctx, d, true)?;
     let mut avert: Vec<String> = Vec::new();
     let zero = zero2();
-    let cle_de = |p: &engagement::calcul::Paie| p.salarie.id.to_string();
+    let cle_de = |p: &engagement::calcul::Paie| p.salarie.id.clone();
     // CE QUI SE PROVISIONNE, salarie par salarie : (cle, contrat, nature, compteur et indemnite a la fin du mois `m`).
-    let mut a_provisionner: Vec<(String, Option<engagement::numeros::NumeroContrat>, String, engagement::conges::Provision)> = Vec::new();
+    let mut a_provisionner: Vec<(droit::contexte::IdSalarie,Option<engagement::numeros::NumeroContrat>, String, engagement::conges::Provision)> = Vec::new();
     let saisis = p.saisis();
     let mut sans_compteur = 0;
     let m = match saisis.last().copied() {
@@ -1447,7 +1446,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         if let Some(c) = charges {
             charges_dites = add(charges_dites, c);
         }
-        let fiche = ctx.salaries.get(cle.as_str()).ok_or_else(|| socle::fichiers::absent(&cle).reclasser(Classe::Manque))?;
+        let fiche = ctx.salaries.get(&cle).ok_or_else(|| socle::fichiers::absent(cle.as_str()).reclasser(Classe::Manque))?;
         let nom = fiche.nom.exigee("nom").map_err(|m| m.reclasser(Classe::Manque))?;
         let mut l = Ligne::nouvelle();
         l.t("salarie", match fiche.prenom.portee() {

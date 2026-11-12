@@ -78,8 +78,7 @@ const SUIVANTES: [(&str, &str); 2] = [("fin", "fin"), ("brut", "salaire brut")];
 #[derive(Clone, Debug, PartialEq)]
 pub struct Certificat {
     pub page: usize,
-    /// Quatorze chiffres.
-    pub siret: Option<String>,
+    pub siret: Option<droit::fiche::Siret>,
     /// Le numero d'adherent de l'employeur, ecrit comme la fiche le garde (`documents::conges_spectacles::forme_adherent`).
     pub compte: Option<String>,
     /// La raison sociale, imprimee sur le rang du NIR.
@@ -88,7 +87,7 @@ pub struct Certificat {
     pub numero: Option<String>,
     /// Les treize caracteres du NIR, et sa cle s'il l'imprime.
     pub nir: Option<String>,
-    pub cle_nir: Option<String>,
+    pub cle_nir: Option<droit::fiche::CleNir>,
     pub nom: Option<String>,
     pub prenom: Option<String>,
     pub nom_usage: Option<String>,
@@ -339,18 +338,24 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
             match cle {
                 "siret" => {
                     let s: String = v.concat().chars().filter(char::is_ascii_digit).collect();
-                    c.siret = (s.len() == 14).then_some(s);
+                    // Des chiffres qui ne font pas un SIRET : le certificat ne le dit pas.
+                    c.siret = droit::fiche::Siret::lire(&s).ok();
                 }
                 "compte" => c.compte = texte(&v).map(|t| documents::conges_spectacles::forme_adherent(&t)),
                 "ce" => c.numero = texte(&v),
                 "nir" => match nir_en_tete(&v) {
                     Some((nir, cle, pris)) => {
-                        if let Some(k) = &cle {
-                            if declarations::champs::cle_nir(&nir).as_deref() != Some(k.as_str()) {
-                                fautes.push("la clé du NIR imprimé ne correspond pas à son numéro".into());
-                                continue;
-                            }
-                        }
+                        // La cle imprimee, quand c'est celle du NIR (`declarations::champs::cle_nir`).
+                        let cle = match &cle {
+                            Some(k) => match declarations::champs::cle_nir(&nir).filter(|a| **a == **k) {
+                                Some(a) => Some(a),
+                                None => {
+                                    fautes.push("la clé du NIR imprimé ne correspond pas à son numéro".into());
+                                    continue;
+                                }
+                            },
+                            None => None,
+                        };
                         c.nir = Some(nir);
                         c.cle_nir = cle;
                         c.employeur = texte(&v[pris..]);

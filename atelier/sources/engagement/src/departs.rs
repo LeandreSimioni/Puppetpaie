@@ -6,7 +6,10 @@
 
 use std::collections::BTreeMap;
 
+use droit::contexte::IdSalarie;
 use socle::mois::Mois;
+
+use crate::numeros::NumeroContrat;
 
 /// Ce qui part d'un engagement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,26 +43,26 @@ pub struct Depart {
 /// Ce qui est parti, engagement par engagement : `(cle du salarie, numero du contrat)`.
 #[derive(Debug, Clone, Default)]
 pub struct Departs {
-    par_engagement: std::sync::Arc<BTreeMap<(String, String), Vec<Depart>>>,
+    par_engagement: std::sync::Arc<BTreeMap<(IdSalarie, NumeroContrat), Vec<Depart>>>,
 }
 
 impl Departs {
     /// Note un depart de l'engagement du salarie `cle` au numero `numero`.
-    pub fn noter(&mut self, cle: &str, numero: &str, d: Depart) {
-        std::sync::Arc::make_mut(&mut self.par_engagement).entry((cle.to_string(), numero.to_string())).or_default().push(d);
+    pub fn noter(&mut self, cle: &IdSalarie, numero: &NumeroContrat, d: Depart) {
+        std::sync::Arc::make_mut(&mut self.par_engagement).entry((cle.clone(), numero.clone())).or_default().push(d);
     }
 
     /// Les departs de cet engagement, dans l'ordre ou ils sont partis.
-    pub fn de(&self, cle: &str, numero: &str) -> &[Depart] {
-        match self.par_engagement.get(&(cle.to_string(), numero.to_string())) {
+    pub fn de(&self, cle: &IdSalarie, numero: &NumeroContrat) -> &[Depart] {
+        match self.par_engagement.get(&(cle.clone(), numero.clone())) {
             Some(d) => d,
             None => &[],
         }
     }
 
     /// Les engagements dont quelque chose est parti : `(cle du salarie, numero)`.
-    pub fn engagements(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.par_engagement.keys().map(|(c, n)| (c.as_str(), n.as_str()))
+    pub fn engagements(&self) -> impl Iterator<Item = (&IdSalarie, &NumeroContrat)> {
+        self.par_engagement.keys().map(|(c, n)| (c, n))
     }
 }
 

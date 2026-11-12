@@ -62,7 +62,7 @@ struct Version {
     /// Les regles d'ecriture que la version ajoute a la precedente : le nom de la regle, le texte qui la porte.
     regles: BTreeMap<String, String>,
     /// Le code de cotisation (S21.G00.81.001) de la CET patronale.
-    cotisation_cet_patronale: Option<String>,
+    cotisation_cet_patronale: Option<droit::code_cotisation::CodeCotisation81>,
     note: String,
 }
 
@@ -219,9 +219,9 @@ impl Norme {
 
     /// Le code de cotisation (S21.G00.81.001) sous lequel la CET patronale se declare dans cette version ; `Err` avec
     /// la raison si la donnee ne le dit pas.
-    pub fn cotisation_cet_patronale(&self) -> R<String> {
-        self.entree(|e| match &e.cotisation_cet_patronale {
-            Some(code) => Ok(code.clone()),
+    pub fn cotisation_cet_patronale(&self) -> R<droit::code_cotisation::CodeCotisation81> {
+        self.entree(|e| match e.cotisation_cet_patronale {
+            Some(code) => Ok(code),
             None => Err(refus_avec(
                 format!(
                     "Contribution d'equilibre technique (CET) patronale dans un fichier en norme {} : le code de cotisation \

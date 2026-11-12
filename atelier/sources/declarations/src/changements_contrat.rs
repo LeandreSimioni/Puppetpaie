@@ -213,7 +213,7 @@ fn date_du_changement(ctx: &Contexte, p: &Paie, md: &Modalite, decl: &Declare, m
     // Sans fiche datee, aucun changement date.
     for origine in md.origines {
         let (depuis, ou, c): (Vec<Option<Jour>>, &str, CaseDeFiche) = match *origine {
-            S(c) => (ctx.salarie_brut(p.salarie.id.as_str()).into_iter().flat_map(|b| b.depuis(c.into())).collect(), "la fiche du salarie", c.into()),
+            S(c) => (ctx.salarie_brut(&p.salarie.id).into_iter().flat_map(|b| b.depuis(c.into())).collect(), "la fiche du salarie", c.into()),
             E(c) => (ctx.entreprise_brute().depuis(c.into()), "la fiche entreprise", c.into()),
             PE(c) => (ctx.entreprise_brute().depuis(c.into()), "la fiche entreprise", c.into()),
             // L'etablissement est de la carte : un avenant le change, que la saisie date (`date_modification`).

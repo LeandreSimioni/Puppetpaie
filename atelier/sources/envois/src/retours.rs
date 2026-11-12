@@ -18,6 +18,7 @@ use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_L
 
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::natures::ListeDeLaNorme;
+use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use socle::echec::{erreur as echec, Classe, Echec, R};
 use socle::date::Jour;
@@ -1144,10 +1145,13 @@ pub struct Annonce {
     pub publication: Option<Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub production: Option<String>,
+    /// L'organisme du bilan (S21.G00.70.002 ou 15.002 de la declaration, « F [5,10] », guide v6.8 : `OPSINCONNU` pour un
+    /// organisme non reference).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ops: Option<String>,
+    pub ops: Option<IdentifiantDOrganisme>,
+    /// Le delegataire de gestion (S21.G00.70.003 ou 15.003, « F [5,9] »).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub delegataire: Option<String>,
+    pub delegataire: Option<IdentifiantDOrganisme>,
     #[serde(rename = "nature")]
     pub nature_retour: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1226,13 +1230,27 @@ struct RetourJson {
     #[serde(default, with = "socle::paris::ecrit::compacte::option")]
     publication: Option<Moment>,
     production: Option<String>,
-    ops: Option<String>,
-    delegataire: Option<String>,
+    #[serde(default, deserialize_with = "organisme_ou_non_renseigne")]
+    ops: Option<IdentifiantDOrganisme>,
+    #[serde(default, deserialize_with = "organisme_ou_non_renseigne")]
+    delegataire: Option<IdentifiantDOrganisme>,
     #[serde(rename = "nature")]
     nature_retour: String,
     statut: Option<String>,
     id: Option<String>,
     url: Option<String>,
+}
+
+/// L'OPS ou le delegataire d'un retour JSON : « Non renseigné s'il s'agit d'un retour par le SI DSN ou par un organisme
+/// de base » (`atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`,
+/// l. 1699-1705) ; non renseigne, c'est absent ou vide, comme dans la
+/// reponse XML (un enfant vide n'y est pas lu).
+fn organisme_ou_non_renseigne<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<IdentifiantDOrganisme>, D::Error> {
+    match Option::<String>::deserialize(d)? {
+        None => Ok(None),
+        Some(t) if t.is_empty() => Ok(None),
+        Some(t) => IdentifiantDOrganisme::lire(&t).map(Some).map_err(|e| serde::de::Error::custom(e.phrase)),
+    }
 }
 
 /// La reponse JSON (2.0) de la liste des depots : `{"depots": {"declarant": {"siret", "nom", "prenom", "depot": [...]}}}`.
@@ -1267,6 +1285,12 @@ const LISTE_ILLISIBLE: &str = "La liste que la plate-forme rend ne se lit pas.";
 #[track_caller]
 fn illisible(cle: &str) -> Echec {
     socle::echec::cle(LISTE_ILLISIBLE, cle).reclasser(Classe::Illisible)
+}
+
+/// L'identifiant d'organisme que la liste porte a `cle` ; hors de sa forme, la liste ne se lit pas (la phrase du type,
+/// la cle a part).
+fn organisme_liste(texte: &str, cle: &str) -> R<IdentifiantDOrganisme> {
+    IdentifiantDOrganisme::lire(texte).map_err(|e| socle::echec::cle(e.phrase, cle).reclasser(Classe::Illisible))
 }
 
 /// Le texte des enfants de `e`, par leur nom local (un enfant vide n'est pas dit).
@@ -1318,12 +1342,13 @@ pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
             let mut nature = None;
             for (nom, t) in enfants_textes(&arbre, r) {
                 let publication = Zone::lue(t, format::InstantCompact).valeur();
+                let texte = t;
                 let t = Some(t.to_string());
                 match nom {
                     "publication" => a.publication = Some(publication.ok_or_else(|| illisible("flux.retour.publication"))?),
                     "production" => a.production = t,
-                    "ops" => a.ops = t,
-                    "delegataire" => a.delegataire = t,
+                    "ops" => a.ops = Some(organisme_liste(texte, "flux.retour.ops")?),
+                    "delegataire" => a.delegataire = Some(organisme_liste(texte, "flux.retour.delegataire")?),
                     "nature" => nature = t,
                     "statut" => a.statut = t,
                     "id" => a.id = t,
@@ -1428,7 +1453,7 @@ pub struct TauxPasLus {
 pub struct TauxPasRattache {
     #[serde(flatten)]
     pub releve: ReleveTauxPas,
-    pub salarie: String,
+    pub salarie: droit::contexte::IdSalarie,
 }
 
 /// Ce que `releves_vers_salaries` rend : les taux rattaches a une fiche, et ceux dont aucune fiche ne porte le NIR.
@@ -1616,15 +1641,15 @@ pub fn taux_pas_d_octets(o: &[u8]) -> R<TauxPasLus> {
 
 /// Chaque releve a une fiche par le NIR ; `nirs` est la liste `(cle, nir)` des fiches qui en ont un, dans l'ordre du
 /// fichier.
-pub fn releves_vers_salaries(releves: &[ReleveTauxPas], nirs: &[(String, String)]) -> TauxPasRepartis {
-    let mut par_nir: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+pub fn releves_vers_salaries(releves: &[ReleveTauxPas], nirs: &[(droit::contexte::IdSalarie, String)]) -> TauxPasRepartis {
+    let mut par_nir: std::collections::HashMap<&str, &droit::contexte::IdSalarie> = std::collections::HashMap::new();
     for (c, n) in nirs {
         par_nir.insert(n, c);
     }
     let (mut rattaches, mut orphelins) = (Vec::new(), Vec::new());
     for r in releves {
         match par_nir.get(treize(&r.nir).as_str()) {
-            Some(cle) => rattaches.push(TauxPasRattache { releve: r.clone(), salarie: (*cle).to_string() }),
+            Some(cle) => rattaches.push(TauxPasRattache { releve: r.clone(), salarie: (*cle).clone() }),
             None => orphelins.push(r.clone()),
         }
     }
@@ -2055,13 +2080,13 @@ pub fn aer_spectacle(o: &[u8]) -> R<Vec<AttestationAer>> {
 
 /// `rattacher` : pour chaque nom d'attestation, la cle du salarie, ou rien. `index` : `(cle, "NOM PRENOM")` des fiches,
 /// dans l'ordre du fichier.
-pub fn rattacher(quis: &[&str], index: &[(String, String)]) -> Vec<Option<String>> {
-    let mut idx: Vec<(String, &str)> = index.iter().map(|(cle, nom)| (socle::texte::cle_recherche(nom), cle.as_str())).collect();
+pub fn rattacher(quis: &[&str], index: &[(droit::contexte::IdSalarie, String)]) -> Vec<Option<droit::contexte::IdSalarie>> {
+    let mut idx: Vec<(String, &droit::contexte::IdSalarie)> = index.iter().map(|(cle, nom)| (socle::texte::cle_recherche(nom), cle)).collect();
     idx.sort_by_key(|(n, _)| std::cmp::Reverse(n.chars().count()));
     quis.iter()
         .map(|q| {
             let cible = socle::texte::cle_recherche(q);
-            idx.iter().find(|(nom, _)| !nom.is_empty() && (cible.contains(nom.as_str()) || nom.contains(cible.as_str()))).map(|(_, cle)| (*cle).to_string())
+            idx.iter().find(|(nom, _)| !nom.is_empty() && (cible.contains(nom.as_str()) || nom.contains(cible.as_str()))).map(|(_, cle)| (*cle).clone())
         })
         .collect()
 }
@@ -2764,6 +2789,10 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
         return Ok(None);
     }
     let at = |n: &Noeud, k: &str| n.attribut(k).map(nettoye).filter(|t| !t.is_empty()).map(str::to_string);
+    // Un code d'organisme ou de delegataire du CRM ; hors de sa forme, le CRM ne se lit pas.
+    let organisme_crm_oc = |n: &Noeud, k: &str| -> R<Option<IdentifiantDOrganisme>> {
+        at(n, k).map(|t| IdentifiantDOrganisme::lire(&t).map_err(|e| socle::echec::cle(format!("Le compte rendu d'un organisme complémentaire ne se lit pas : {}", e.phrase), k).reclasser(Classe::Illisible))).transpose()
+    };
     let mut declarations = Vec::new();
     for d in a.enfants(racine).filter(|x| local(&x.tag) == "Declaration") {
         let mandats = a
@@ -2803,10 +2832,10 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
             type_declaration: type_du_retour(at(d, "TypeDecla").as_deref())?,
             ordre: at(d, "NoOrdreDecla"),
             mois: at(d, "DateMoisDec").map(|m| mois_du_jour(&m)).transpose()?,
-            code_oc: at(d, "CodeOC"),
-            code_delegataire: at(d, "CodeDELEG"),
+            code_oc: organisme_crm_oc(d, "CodeOC")?,
+            code_delegataire: organisme_crm_oc(d, "CodeDELEG")?,
             producteur: at(d, "NomProducteurCRM"),
-            code_producteur: at(d, "CodeProducteurCRM"),
+            code_producteur: organisme_crm_oc(d, "CodeProducteurCRM")?,
             contact: at(d, "NomContact"),
             courriel: at(d, "MailContact"),
             telephone: at(d, "TelContact"),
@@ -2843,10 +2872,13 @@ pub struct DeclarationOc {
     pub type_declaration: Option<TypeDeLaDeclaration>,
     pub ordre: Option<String>,
     pub mois: Option<socle::mois::Mois>,
-    pub code_oc: Option<String>,
-    pub code_delegataire: Option<String>,
+    /// S21.G00.15.002, l'organisme (schema du CRM OC, `CodeOC`).
+    pub code_oc: Option<IdentifiantDOrganisme>,
+    /// S21.G00.15.003, le delegataire de gestion (`CodeDELEG`).
+    pub code_delegataire: Option<IdentifiantDOrganisme>,
     pub producteur: Option<String>,
-    pub code_producteur: Option<String>,
+    /// L'organisme ou le delegataire qui produit le compte rendu (`CodeProducteurCRM`).
+    pub code_producteur: Option<IdentifiantDOrganisme>,
     pub contact: Option<String>,
     pub courriel: Option<String>,
     pub telephone: Option<String>,

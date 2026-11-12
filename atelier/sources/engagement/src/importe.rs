@@ -40,7 +40,7 @@ use serde::{Deserialize, Serialize};
 use crate::numeros::NumeroContrat;
 use crate::saisie::Carte;
 use crate::stock::{self, Objet};
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
 use socle::echec::R;
 use socle::mois::Mois;
@@ -171,7 +171,7 @@ pub struct LigneImprimee {
     pub taux: Option<Decimal>,
     pub montant: Option<Decimal>,
     pub soumis: bool,
-    pub rubrique: Option<String>,
+    pub rubrique: Option<droit::catalogue::CodeDeRubrique>,
     pub heures: Option<Decimal>,
 }
 
@@ -179,7 +179,7 @@ impl LigneImprimee {
     /// La ligne de paie qu'elle dit a l'engagement importe, quand l'import l'a rattachee a une rubrique : sa quantite, son
     /// taux et ses heures (son libelle et son montant restent ceux du bulletin, `remuneration_lue`).
     pub fn en_ligne_de_paie(&self) -> Option<crate::LignePaie> {
-        let rubrique = self.rubrique.clone().filter(|r| !r.trim().is_empty())?;
+        let rubrique = self.rubrique.clone()?;
         Some(crate::LignePaie::Importee(crate::ligne::Importee { rubrique, quantite: self.quantite, taux: self.taux, heures: self.heures }))
     }
 }
@@ -213,8 +213,8 @@ pub struct CotisationImprimee {
 pub struct EmploiImprime {
     pub emploi: Option<String>,
     pub emploi_affichage: Option<String>,
-    pub pcs_ese: Option<String>,
-    pub code_emploi_ft: Option<String>,
+    pub pcs_ese: Option<droit::fiche::CodePcsEse>,
+    pub code_emploi_ft: Option<droit::fiche::CodeEmploiFt>,
     pub statut: Option<droit::fiche::Statut>,
     pub statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
     pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
@@ -233,11 +233,15 @@ pub struct BulletinSource {
 }
 
 /// UN CONTRAT ATTESTE, AVEC LES BORNES DE SON ENGAGEMENT : la ligne que l'import manipule, de la lecture de la piece a
-/// l'engagement ecrit (`Neuf`). `salarie` est la cle de la fiche (`<a creer>` tant qu'elle n'existe pas) ; `numero`, le
-/// numero de contrat de l'engagement qui le porte. Elle se rend a la page telle qu'elle s'ecrit (`Serialize`).
+/// l'engagement ecrit (`Neuf`). `salarie` est la cle de la fiche : une ligne de l'apercu peut ne pas en avoir (`None`
+/// tant qu'elle n'existe pas, ecrit `<a creer>`) ; une ligne relue d'un engagement importe en a toujours une
+/// (`ContratRelu`). `numero`, le numero de contrat de l'engagement qui le porte. Elle se rend a la page telle qu'elle
+/// s'ecrit (`Serialize`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ContratLu {
-    pub salarie: String,
+#[serde(bound(serialize = "S: CleDeLaLigne"))]
+pub struct ContratLu<S = Option<IdSalarie>> {
+    #[serde(serialize_with = "ecrit_salarie")]
+    pub salarie: S,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debut: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -249,23 +253,71 @@ pub struct ContratLu {
 }
 
 /// UNE PAIE VERSEE, AVEC SON MOIS ET LE SALARIE DE SON ENGAGEMENT : la ligne de paie que l'import manipule, de la
-/// lecture de la DSN ou du bulletin a l'engagement ecrit.
+/// lecture de la DSN ou du bulletin a l'engagement ecrit. Sa cle de salarie, comme celle de `ContratLu` : facultative
+/// dans l'apercu, toujours la (`PaieRelue`) dans une ligne relue d'un engagement importe.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct PaieLue {
+#[serde(bound(serialize = "S: CleDeLaLigne"))]
+pub struct PaieLue<S = Option<IdSalarie>> {
     pub mois: Mois,
-    pub salarie: String,
+    #[serde(serialize_with = "ecrit_salarie")]
+    pub salarie: S,
     #[serde(flatten)]
     pub paie: PaieVersee,
 }
 
-impl PaieLue {
+/// Le contrat atteste relu d'un engagement importe : son salarie a sa fiche.
+pub type ContratRelu = ContratLu<IdSalarie>;
+
+/// Une paie versee relue d'un engagement importe : son salarie a sa fiche.
+pub type PaieRelue = PaieLue<IdSalarie>;
+
+/// LA CLE DU SALARIE D'UNE LIGNE LUE, telle que la page la lit : celle de sa fiche, ou `<a creer>` tant que sa fiche
+/// n'existe pas (`None`, dans l'apercu).
+pub trait CleDeLaLigne {
+    fn ecrite(&self) -> &str;
+}
+
+impl CleDeLaLigne for IdSalarie {
+    fn ecrite(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl CleDeLaLigne for Option<IdSalarie> {
+    fn ecrite(&self) -> &str {
+        match self {
+            Some(c) => c.as_str(),
+            None => "<a creer>",
+        }
+    }
+}
+
+pub fn ecrit_salarie<C:CleDeLaLigne, S: serde::Serializer>(salarie: &C, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(salarie.ecrite())
+}
+
+impl ContratRelu {
+    /// La meme ligne, parmi celles de l'apercu.
+    pub fn a_l_apercu(self) -> ContratLu {
+        ContratLu { salarie: Some(self.salarie), debut: self.debut, fin: self.fin, numero: self.numero, contrat: self.contrat }
+    }
+}
+
+impl PaieRelue {
+    /// La meme ligne, parmi celles de l'apercu.
+    pub fn a_l_apercu(self) -> PaieLue {
+        PaieLue { mois: self.mois, salarie: Some(self.salarie), paie: self.paie }
+    }
+}
+
+impl<S: Clone> PaieLue<S> {
     /// Ce qui la reconnait d'un import a l'autre : (mois, salarie, contrat).
-    pub fn cle(&self) -> (Mois, String, String) {
+    pub fn cle(&self) -> (Mois, S, String) {
         (self.mois, self.salarie.clone(), self.paie.contrat.clone())
     }
 
     /// La meme, sans ce qui dit quand elle a ete importee : deux lectures des memes pieces se comparent ainsi.
-    pub fn sans_date_d_import(&self) -> PaieLue {
+    pub fn sans_date_d_import(&self) -> PaieLue<S> {
         let mut p = self.clone();
         p.paie.importe_le = None;
         p
@@ -467,7 +519,7 @@ impl Importe {
     }
 
     /// Le contrat atteste, avec les bornes de l'engagement. La nature dite est celle du contrat : il n'attend plus rien.
-    pub fn contrat_lu(&self) -> R<Option<ContratLu>> {
+    pub fn contrat_lu(&self) -> R<Option<ContratRelu>> {
         let Some(contrat) = self.contrat() else { return Ok(None) };
         let mut contrat = contrat.clone();
         if let Some(n) = self.nature_dite() {
@@ -475,25 +527,25 @@ impl Importe {
         }
         // Importe le jour ou il l'a ete la premiere fois ; sinon, le jour de l'import de ses pieces (`Pieces::le`).
         contrat.importe_le.get_or_insert(self.le());
-        let numero = self.carte().numero.clone().filter(|n| !n.is_empty());
+        let numero = self.carte().numero.clone();
         Ok(Some(ContratLu { salarie: self.cle_ecrite()?, debut: self.carte().debut, fin: self.carte().fin, numero, contrat }))
     }
 
     /// Les paies versees, une par mois, avec le salarie de l'engagement.
-    pub fn paies_lues(&self) -> R<Vec<PaieLue>> {
+    pub fn paies_lues(&self) -> R<Vec<PaieRelue>> {
         self.paies().iter().map(|(m, p)| self.paie_lue(*m, p)).collect()
     }
 
-    fn paie_lue(&self, mois: Mois, p: &PaieVersee) -> R<PaieLue> {
+    fn paie_lue(&self, mois: Mois, p: &PaieVersee) -> R<PaieRelue> {
         let mut paie = p.clone();
         paie.importe_le.get_or_insert(self.le());
         Ok(PaieLue { mois, salarie: self.cle_ecrite()?, paie })
     }
 
     /// La cle de la fiche de son salarie, ecrite ; un engagement importe qui ne la dit pas se refuse.
-    fn cle_ecrite(&self) -> R<String> {
+    pub(crate) fn cle_ecrite(&self) -> R<droit::contexte::IdSalarie> {
         let o = &self.objet;
-        o.carte().salarie.as_ref().map(ToString::to_string).ok_or_else(|| socle::refus!("l'engagement importé {} (rang {}) ne dit pas son salarié", o.fichier, o.rang))
+        o.carte().salarie.clone().ok_or_else(|| socle::refus!("l'engagement importé {} (rang {}) ne dit pas son salarié", o.fichier, o.rang))
     }
 }
 
@@ -533,9 +585,9 @@ pub struct PaieImportee {
 /// n'a que son libelle et son montant.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LigneDeRemuneration {
-    pub code: Option<String>,
+    pub code: Option<droit::catalogue::CodeDeRubrique>,
     pub libelle: String,
-    pub unite: Option<String>,
+    pub unite: Option<droit::catalogue::Unite>,
     pub quantite: Option<Decimal>,
     pub taux: Option<Decimal>,
     pub montant: Option<Decimal>,
@@ -548,7 +600,7 @@ pub struct LigneDeRemuneration {
 /// qualifiee) ; ce que le bulletin n'imprime pas est vide.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LigneDeCotisation {
-    pub id: Option<String>,
+    pub id: Option<droit::forme_bareme::IdDeCotisation>,
     pub famille: Option<String>,
     pub libelle: String,
     pub base: Option<Decimal>,
@@ -632,7 +684,7 @@ impl Importe {
             lignes: lignes_lues.iter().filter_map(LigneImprimee::en_ligne_de_paie).collect(),
             debut,
             fin,
-            numero: match NumeroContrat::du_texte(self.carte().numero.as_deref())? {
+            numero: match self.carte().numero.clone() {
                 Some(n) => Some(n),
                 None => p.bulletin.as_ref().and_then(|b| b.contrat.as_deref()).filter(|n| !n.trim().is_empty()).map(NumeroContrat::lire).transpose()?,
             },
@@ -650,8 +702,8 @@ impl Importe {
             lieux: BTreeMap::new(),
             emploi: imprime(|i| &i.emploi),
             emploi_affichage: imprime(|i| &i.emploi_affichage),
-            pcs_ese: imprime(|i| &i.pcs_ese),
-            code_emploi_ft: imprime(|i| &i.code_emploi_ft),
+            pcs_ese: p.emploi_imprime.as_ref().and_then(|i| i.pcs_ese.clone()),
+            code_emploi_ft: p.emploi_imprime.as_ref().and_then(|i| i.code_emploi_ft.clone()),
             statut: p.emploi_imprime.as_ref().and_then(|i| i.statut),
             statut_conventionnel: p.emploi_imprime.as_ref().and_then(|i| i.statut_conventionnel),
             statut_categoriel_rc: p.emploi_imprime.as_ref().and_then(|i| i.statut_categoriel_rc),
@@ -673,7 +725,7 @@ impl Importe {
             ecrit: crate::ContratEcrit::default(),
         };
         let remuneration = remuneration_lue(&engagement, &lignes_lues, &ctx)?;
-        let cachets = remuneration.iter().filter(|r| r.unite.as_deref() == Some("cachet")).filter_map(|r| r.quantite).sum::<Decimal>().trunc().to_string();
+        let cachets = remuneration.iter().filter(|r| r.unite == Some(droit::catalogue::Unite::Cachet)).filter_map(|r| r.quantite).sum::<Decimal>().trunc().to_string();
         engagement.cachets = cachets.parse().map_err(|_| socle::echec::refus(socle::num::illisible(&cachets)))?;
         let heures: Decimal = remuneration.iter().filter_map(|r| r.heures_annexes).sum();
         engagement.heures = (!heures.is_zero()).then(|| socle::num::court(heures));
@@ -687,17 +739,19 @@ impl Importe {
             .cotisations
             .iter()
             .flatten()
-            .map(|l| LigneDeCotisation {
-                id: l.cotisation.clone().filter(|c| !c.is_empty()),
-                famille: l.famille.clone().filter(|f| !f.is_empty()),
-                libelle: l.libelle.clone(),
-                base: l.base,
-                taux_pat: taux(l.taux_employeur),
-                montant_pat: l.montant_employeur,
-                taux_sal: taux(l.taux_salarie),
-                montant_sal: l.montant_salarie,
+            .map(|l| {
+                Ok(LigneDeCotisation {
+                    id: l.cotisation.as_deref().filter(|c| !c.is_empty()).map(droit::forme_bareme::IdDeCotisation::lire).transpose()?,
+                    famille: l.famille.clone().filter(|f| !f.is_empty()),
+                    libelle: l.libelle.clone(),
+                    base: l.base,
+                    taux_pat: taux(l.taux_employeur),
+                    montant_pat: l.montant_employeur,
+                    taux_sal: taux(l.taux_salarie),
+                    montant_sal: l.montant_salarie,
+                })
             })
-            .collect();
+            .collect::<R<_>>()?;
 
         // Les bases, ou le bareme de la paie les range ; ses taux se lisent sur les pieces (`calcul::bareme_pour_ranger`).
         let mut bases: BTreeMap<Assiette, Decimal> = BTreeMap::new();
@@ -707,7 +761,7 @@ impl Importe {
         let fin_periode = engagement.fin_periode();
         let caisse = droit::caisse_conges::affilie(&nat, &sal, &engagement.debut, engagement.fin.as_ref())?;
         let bar = crate::calcul::bareme_pour_ranger(&ctx, &sal, &nat, &fin_periode, caisse, droit::majoration_chomage::due(&nat, engagement.motif_recours, &engagement.debut, engagement.fin.as_ref()))?;
-        for (id, base) in cotisations.iter().filter_map(|l| l.id.as_deref().zip(l.base)).filter(|(_, b)| !b.is_zero()) {
+        for (id, base) in cotisations.iter().filter_map(|l| l.id.as_ref().zip(l.base)).filter(|(_, b)| !b.is_zero()) {
             if let Some(cle) = bar.rubrique(id).and_then(|r| r.base) {
                 bases.entry(cle).or_insert(base);
             }
@@ -768,12 +822,12 @@ pub fn du_mois(racine: &Path, mois: Mois) -> R<Vec<Importe>> {
 }
 
 /// Les contrats attestes de tous les engagements importes (`Importe::contrat_lu`).
-pub fn contrats_lus(racine: &Path) -> R<Vec<ContratLu>> {
+pub fn contrats_lus(racine: &Path) -> R<Vec<ContratRelu>> {
     Ok(tous(racine)?.iter().map(Importe::contrat_lu).collect::<R<Vec<_>>>()?.into_iter().flatten().collect())
 }
 
 /// Les paies versees de tous les engagements importes, une par mois (`Importe::paies_lues`).
-pub fn paies_lues(racine: &Path) -> R<Vec<PaieLue>> {
+pub fn paies_lues(racine: &Path) -> R<Vec<PaieRelue>> {
     Ok(tous(racine)?.iter().map(Importe::paies_lues).collect::<R<Vec<_>>>()?.into_iter().flatten().collect())
 }
 
@@ -781,14 +835,14 @@ pub fn paies_lues(racine: &Path) -> R<Vec<PaieLue>> {
 /// (`declare_par: "DSN"` : son `depose_le`, son `fichier`), qu'une saisie touche aussi le mois ou non. Cette DSN n'est
 /// pas faite ici et ne se refait pas ici (regle 4) : ce que la saisie ajoute a ce mois se declare dans une DSN suivante,
 /// comme un contrat ajoute apres la DSN de son mois.
-pub fn dsn_deposee(racine: &Path, mois: Mois) -> R<Option<PaieLue>> {
+pub fn dsn_deposee(racine: &Path, mois: Mois) -> R<Option<PaieRelue>> {
     let trouve = tous(racine)?.iter().find_map(|i| i.paies().get(&mois).filter(|p| p.declare_par == Declaration::Dsn).map(|p| i.paie_lue(mois, p)));
     trouve.transpose()
 }
 
 /// L'engagement importe du salarie `cle` (la cle de sa fiche) qui commence le `debut` et touche `mois`, s'il y en a un.
-pub fn celui_de(racine: &Path, mois: Mois, cle: &str, debut: Jour) -> R<Option<Importe>> {
-    Ok(du_mois(racine, mois)?.into_iter().find(|i| i.carte().salarie.as_deref() == Some(cle) && i.carte().debut == Some(debut)))
+pub fn celui_de(racine: &Path, mois: Mois, cle: &IdSalarie, debut: Jour) -> R<Option<Importe>> {
+    Ok(du_mois(racine, mois)?.into_iter().find(|i| i.carte().salarie.as_ref() == Some(cle) && i.carte().debut == Some(debut)))
 }
 
 /// Les contrats d'usage importes qui continuent en `mois` (`Importe::continue_apres`) : verses avant lui par l'ancien
@@ -812,10 +866,10 @@ pub fn continue_par(racine: &Path, e: &Carte) -> R<Option<Importe>> {
 /// LE CONTRAT `numero` DE `salarie` COMMENCE LE `debut` VIENT-IL DE L'ANCIEN LOGICIEL ? Un engagement importe porte ces
 /// salarie, debut et numero : c'est lui, ou le contrat d'usage qu'il continue ici (`continue_par`). L'ecran le dit sur
 /// la carte. Faux sans numero.
-pub fn vient_d_un_ancien_logiciel(racine: &Path, salarie: &str, debut: Jour, numero: Option<&str>) -> R<bool> {
+pub fn vient_d_un_ancien_logiciel(racine: &Path, salarie: &IdSalarie, debut: Jour, numero: Option<&str>) -> R<bool> {
     let vient = |numero: &str| -> R<bool> {
         Ok(tous(racine)?.iter().any(|i| {
-            i.carte().salarie.as_deref() == Some(salarie) && i.carte().debut == Some(debut) && i.carte().numero.as_deref() == Some(numero)
+            i.carte().salarie.as_ref() == Some(salarie) && i.carte().debut == Some(debut) && i.carte().numero.as_deref() == Some(numero)
         }))
     };
     Ok(numero.filter(|n| !n.is_empty()).map(vient).transpose()?.is_some_and(|oui| oui))
@@ -833,8 +887,8 @@ pub fn numero_declare(o: &Objet) -> R<Option<NumeroContrat>> {
 
 /// Une DSN de l'ancien logiciel a-t-elle declare le numero du contrat de `salarie` commence le `debut`
 /// (`numero_declare`, lu sur l'engagement repris qui le porte) ?
-pub fn numero_declare_du_contrat(racine: &Path, salarie: &str, debut: Jour) -> R<bool> {
-    for i in tous(racine)?.iter().filter(|i| i.carte().salarie.as_deref() == Some(salarie) && i.carte().debut == Some(debut)) {
+pub fn numero_declare_du_contrat(racine: &Path, salarie: &IdSalarie, debut: Jour) -> R<bool> {
+    for i in tous(racine)?.iter().filter(|i| i.carte().salarie.as_ref() == Some(salarie) && i.carte().debut == Some(debut)) {
         if numero_declare(&i.objet)?.is_some() {
             return Ok(true);
         }

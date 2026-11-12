@@ -126,7 +126,7 @@ fn la_lecture_des_reponses_et_le_questionnaire_rendent_l_oracle() {
         questions: fq::QUESTIONS.iter().map(|(a, b, c)| (a.to_string(), b.to_string(), droit::fiche::NomDeCase::from(*c).to_string())).collect(),
         messages,
         dates: attendu.dates.iter().map(|d| DateLue { texte: d.texte.clone(), attendu: fq::date_lue(&d.texte) }).collect(),
-        pays: attendu.pays.iter().map(|p| PaysLu { texte: p.texte.clone(), attendu: fq::pays_lu(&p.texte).unwrap().map(|(c, u)| (c, u.map(str::to_string))) }).collect(),
+        pays: attendu.pays.iter().map(|p| PaysLu { texte: p.texte.clone(), attendu: fq::pays_lu(&p.texte).unwrap().map(|(c, u)| (c.to_string(), u.map(str::to_string))) }).collect(),
     };
     if reecrire() {
         socle::ecriture::ecrire_json(&chemin(), &obtenu, 0).unwrap();

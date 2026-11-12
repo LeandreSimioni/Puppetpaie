@@ -326,7 +326,7 @@ enum Livree {
     /// `bareme:deduction_forfaitaire/taux/<taux>`
     TauxDeduction(String),
     /// `bareme:rubriques_bulletin/id=<rubrique>/taux_pat`
-    TauxPatronal(String),
+    TauxPatronal(droit::forme_bareme::IdDeCotisation),
     /// `minima:conventions/<idcc>/annexes/<annexe>/repetition/cachet`
     CachetDeRepetition { idcc: String, annexe: String },
 }
@@ -418,7 +418,7 @@ fn lire_livree(chemin: &str, bareme: bool) -> R<Livree> {
         (true, ["deduction_forfaitaire", "plafond_annuel"]) => Livree::PlafondDeduction,
         (true, ["deduction_forfaitaire", "taux", taux]) => Livree::TauxDeduction(taux.to_string()),
         (true, ["rubriques_bulletin", id, "taux_pat"]) => match id.strip_prefix("id=") {
-            Some(id) => Livree::TauxPatronal(id.to_string()),
+            Some(id) => Livree::TauxPatronal(droit::forme_bareme::IdDeCotisation::lire(id)?),
             None => return Err(inconnue()),
         },
         (false, ["conventions", idcc, "annexes", annexe, "repetition", "cachet"]) => Livree::CachetDeRepetition { idcc: idcc.to_string(), annexe: annexe.to_string() },
@@ -619,7 +619,7 @@ fn conseil(b: &Banque, d: &Donnees, quand: Quand, vals: &Valeurs, annexes: &[&st
 
 /// Le prenom du salarie, tel que sa fiche l'affiche (`prenom_affichage`, sinon `prenom`, en capitales initiales s'il
 /// est tout en majuscules) ; sans prenom, son nom, sinon sa cle.
-fn prenom(sal: &droit::fiche::ChampsSalarie, cle: &str) -> String {
+fn prenom(sal: &droit::fiche::ChampsSalarie, cle: &droit::contexte::IdSalarie) -> String {
     fn lu<T: AsRef<str>>(c: &Option<T>) -> Option<String> {
         c.portee().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
     }
@@ -703,7 +703,7 @@ fn du_jour(ctx: &Contexte, decalage: Option<i64>) -> R<Option<ConseilVu>> {
 /// L'annexe du salarie de cette paie, lue du metier de sa fiche : X pour un artiste, VIII pour un technicien ; rien
 /// sinon (rien ne se devine).
 fn annexe_de(sal: &droit::fiche::ChampsSalarie) -> R<Option<Annexe>> {
-    let Some(code) = sal.code_emploi_ft.portee() else { return Ok(None) };
+    let Some(code) = sal.code_emploi_ft.dite() else { return Ok(None) };
     let Some(m) = emplois::metier(code)? else { return Ok(None) };
     Ok(Some(match m.statut() {
         droit::fiche::Statut::Artiste => Annexe::X,
@@ -846,7 +846,7 @@ fn phrase_fenetre(b: &Banque, f: &cumul::Position, anniversaire: bool) -> String
 
 /// La position du salarie sur la fenetre de ses droits : depuis sa date anniversaire si sa fiche la porte, sinon les
 /// 12 mois jusqu'a `a_la_date`.
-fn position(ctx: &Contexte, cle: &str, engs: &[Declare], a_la_date: Jour) -> R<(cumul::Position, bool)> {
+fn position(ctx: &Contexte, cle: &droit::contexte::IdSalarie, engs: &[Declare], a_la_date: Jour) -> R<(cumul::Position, bool)> {
     let anniv = cumul::anniversaire_configure(ctx, cle)?;
     let p = cumul::position_droits(ctx, cle, engs, anniv, Some(a_la_date))?;
     Ok((p, anniv.is_some()))
@@ -892,7 +892,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
         let cle = p.salarie.id.to_string();
         // Chaque paie comptee ici l'a ete au mois de son salarie, juste avant.
         let Some(&(heures_mois, cachets_mois)) = du_mois.get(&cle) else { continue };
-        let qui = prenom(&p.salarie, p.salarie.id.as_str());
+        let qui = prenom(&p.salarie, &p.salarie.id);
         let mois = e.mois.libelle(socle::mois::Graphie::Accentuee);
         let base = |extra: Vec<(&str, Valeur)>| -> Valeurs {
             let mut v = Valeurs::new();
@@ -912,7 +912,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
         let assure = if (rep.is_some() || hrs.is_some()) && !sature {
             if !assurees.contains_key(&cle) {
                 let fin = e.fin_periode();
-                let (pos, anniv) = position(ctx, &cle, declares.tous()?, fin)?;
+                let (pos, anniv) = position(ctx, &p.salarie.id, declares.tous()?, fin)?;
                 let h = pos.heures_ouverture()?;
                 let r = (h >= c.seuil_heures).then(|| (h, phrase_fenetre(&b, &pos, anniv)));
                 assurees.insert(cle.clone(), r);
@@ -1009,7 +1009,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
 /// Ce que les conseils de saisie auraient change aux paies de ce salarie sur la fenetre : (heures, jours d'allocation,
 /// avant arrondi). Chaque mois de la fenetre se lit dans les paies ecrites de ses engagements valides
 /// (`engagement::etats::validees_du_mois`) : rien ne se recalcule ; un mois sans engagement valide n'en a pas.
-fn gains_sur_la_fenetre(ctx: &Contexte, cle: &str, f: &Fenetre, a30: &Art30, annexe: Annexe, departs: &engagement::departs::Departs) -> R<(Decimal, Decimal)> {
+fn gains_sur_la_fenetre(ctx: &Contexte, cle: &droit::contexte::IdSalarie, f: &Fenetre, a30: &Art30, annexe: Annexe, departs: &engagement::departs::Departs) -> R<(Decimal, Decimal)> {
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let (debut, fin, _) = f;
     let mut gain = Decimal::ZERO;
@@ -1018,7 +1018,7 @@ fn gains_sur_la_fenetre(ctx: &Contexte, cle: &str, f: &Fenetre, a30: &Art30, ann
         let Some((_, paies)) = engagement::etats::validees_du_mois(ctx, mois, departs)? else { continue };
         for p in &paies {
             let e = &p.engagement;
-            if p.salarie.id.to_string() != cle || e.sans_paie() || e.nat()?.mensuelle() {
+            if p.salarie.id != *cle || e.sans_paie() || e.nat()?.mensuelle() {
                 continue;
             }
             let fp = e.fin_periode();
@@ -1044,14 +1044,14 @@ fn gains_sur_la_fenetre(ctx: &Contexte, cle: &str, f: &Fenetre, a30: &Art30, ann
 
 /// `conseils-salarie` : ce que la compagnie a fait pour ce salarie, sur la fenetre de ses droits. Un salarie qu'aucune
 /// fiche ne porte n'en a pas.
-fn du_salarie(ctx: &Contexte, cle: &str) -> R<Vec<ConseilVu>> {
+fn du_salarie(ctx: &Contexte, cle: &droit::contexte::IdSalarie) -> R<Vec<ConseilVu>> {
     if !actifs(&ctx.entreprise) {
         return Ok(Vec::new());
     }
-    Ok(ctx.salaries.get(cle).map(|fiche| conseils_de(ctx, cle, fiche)).transpose()?.into_iter().flatten().collect())
+    Ok(ctx.salaries.get(cle).map(|fiche| conseils_de(ctx, &fiche.id, fiche)).transpose()?.into_iter().flatten().collect())
 }
 
-fn conseils_de(ctx: &Contexte, cle: &str, fiche: &droit::fiche::FicheSalarie) -> R<Vec<ConseilVu>> {
+fn conseils_de(ctx: &Contexte, cle: &droit::contexte::IdSalarie, fiche: &droit::fiche::FicheSalarie) -> R<Vec<ConseilVu>> {
     let b = banque()?;
     let jour = ctx.aujourdhui;
     let d = Donnees::de_l_annee(jour.an);
@@ -1146,7 +1146,7 @@ fn resume(ctx: &Contexte) -> R<Vec<ConseilVu>> {
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let engs = engagement::cumul::lire_engagements(ctx, None, &departs)?;
-    let cles: BTreeSet<&str> = engs.iter().map(|e| e.salarie.as_str()).collect();
+    let cles: BTreeSet<&droit::contexte::IdSalarie> = engs.iter().map(|e| &e.salarie).collect();
     // Les salaries par leur prenom (sans fiche, par leur cle) ; deux du meme prenom, par leur prenom et leur nom (sinon
     // on ne saurait lequel).
     let mut fiches = Vec::new();
@@ -1226,7 +1226,7 @@ struct ChargeConseilDuJour {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeConseilsSalarie {
-    salarie: String,
+    salarie: droit::contexte::IdSalarie,
 }
 
 /// Ce que rend `conseil-du-jour` : le conseil, ou rien quand l'option est decochee ; sa phrase est son texte.

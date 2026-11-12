@@ -31,13 +31,13 @@ struct Solde {
 }
 
 /// La ligne de `rubrique`, `quantite` x `taux`, telle que le solde l'ecrit.
-fn ligne(rubrique: &str, quantite: Decimal, taux: Decimal) -> LignePaie {
-    LignePaie::composee(rubrique, court(quantite), court(taux))
+fn ligne(rubrique: &droit::catalogue::CodeDeRubrique, quantite: Decimal, taux: Decimal) -> LignePaie {
+    LignePaie::composee(rubrique.clone(), court(quantite), court(taux))
 }
 
 /// La ligne d'une indemnite de `rubrique` qui verse `montant` en une fois.
-fn ligne_unique(rubrique: &str, montant: Decimal) -> LignePaie {
-    LignePaie::composee(rubrique, Decimal::ONE, court(montant))
+fn ligne_unique(rubrique: &droit::catalogue::CodeDeRubrique, montant: Decimal) -> LignePaie {
+    LignePaie::composee(rubrique.clone(), Decimal::ONE, court(montant))
 }
 
 /// Le plus grand de `a` et `b` : `a` a egalite.
@@ -95,8 +95,7 @@ fn de_p(x: clauses::P) -> R<Decimal> {
 /// code emploi (`metier`), la case cadre, son debut. Une case vide ne
 /// dit rien ; la carte n'a pas de case pour la categorie dans la convention, que seule la fiche dit.
 pub(crate) fn dit_par_l_engagement(e: &Carte) -> R<clauses::DitParLEngagement> {
-    let metier = e.metier.as_deref().filter(|v| !v.is_empty()).map(str::to_string);
-    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.statut, metier, cadre: e.cadre, debut: e.debut })
+    Ok(clauses::DitParLEngagement { categorie_conventionnelle: None, statut: e.statut, metier: e.metier.clone(), cadre: e.cadre, debut: e.debut })
 }
 
 /// L'age au dernier jour du contrat (ou aujourd'hui), en annees revolues.
@@ -233,7 +232,7 @@ pub(crate) fn duree_du_preavis(ctx: &Contexte, e: &Carte, anciennete: Decimal, m
 /// salarie dans les mois lus se note (`stock::cle_de_saisie`) : qu'un CDI s'y valide ou s'en retire, la paie du dernier
 /// mois du CDD se recalcule.
 fn cdi_a_l_issue(ctx: &Contexte, e: &Carte, fin: &socle::date::Jour) -> R<Option<socle::date::Jour>> {
-    let salarie = salarie_de(e)?.to_string();
+    let salarie = salarie_de(e)?;
     let debut = debut_de(e)?;
     // Le premier jour de semaine apres le terme (0 = lundi ... 6 = dimanche).
     let mut reprise = fin.plus_jours(1)?;
@@ -247,9 +246,9 @@ fn cdi_a_l_issue(ctx: &Contexte, e: &Carte, fin: &socle::date::Jour) -> R<Option
     let mut trouve = None;
     for m in mois {
         let Some(s) = crate::stock::vue_et_empreinte(&ctx.racine, m)? else { continue };
-        socle::fichiers::noter_valeur(&crate::stock::cle_de_saisie(m, Some(&salarie)), crate::stock::empreinte_de_saisie(&s.0, Some(&salarie)));
+        socle::fichiers::noter_valeur(&crate::stock::cle_de_saisie(m, Some(salarie)), crate::stock::empreinte_de_saisie(&s.0, Some(salarie)));
         for x in &s.0.engagements {
-            let sien = x.valide.is_some() && x.salarie.as_deref() == Some(salarie.as_str());
+            let sien = x.valide.is_some() && x.salarie.as_ref() == Some(salarie);
             if !sien || !x.nature_lue()?.duree_indeterminee {
                 continue;
             }
@@ -942,7 +941,7 @@ fn indemnite_de_rupture(
             ), "en_droit_a_la_retraite"));
         };
         if droit {
-            rubrique = "indemnite_rupture_conventionnelle_imposable".into();
+            rubrique = const { droit::catalogue::CodeDeRubrique::du_moteur("indemnite_rupture_conventionnelle_imposable") };
             supplement_rub = "indemnite_rupture_conventionnelle_supplement_imposable".into();
         }
     }
@@ -964,7 +963,7 @@ fn indemnite_de_rupture(
         stc.lignes.push(ligne_unique(&rubrique, part_legale));
     }
     if supplement > Decimal::ZERO {
-        stc.lignes.push(ligne_unique(&supplement_rub, supplement));
+        stc.lignes.push(ligne_unique(&droit::catalogue::CodeDeRubrique::lire(&supplement_rub)?, supplement));
     }
     // L137-12 : une contribution patronale sur la part exoneree, due et non calculee.
     let regles = permanents::regles()?;
@@ -1165,7 +1164,7 @@ fn indemnite_de_licenciement(
     }
     let supplement = sub(montant, part_legale);
     if supplement > Decimal::ZERO {
-        stc.lignes.push(ligne_unique("indemnite_licenciement_conventionnelle", supplement));
+        stc.lignes.push(ligne_unique(&const { droit::catalogue::CodeDeRubrique::du_moteur("indemnite_licenciement_conventionnelle") }, supplement));
     }
     stc.avertissements.push(info(format!(
         "{} : indemnité de licenciement {} ({} mois d'ancienneté, salaire \
@@ -1202,7 +1201,7 @@ fn article_de(conv: &clauses::Indemnite) -> R<&str> {
 }
 
 /// Le nom qu'un administrateur voit dans la liste des rubriques.
-fn libelle_rubrique(ctx: &Contexte, code: &str) -> R<String> {
+fn libelle_rubrique(ctx: &Contexte, code: &droit::catalogue::CodeDeRubrique) -> R<String> {
     Ok(rubrique(&ctx.racine, code, &ctx.lue_au)?.libelle)
 }
 
@@ -1292,14 +1291,14 @@ fn salaire_de_reference(lue: &mut Option<permanents::SalaireDeReference>, ctx: &
 /// Les bruts mensuels des douze et des trois derniers mois (R1234-4), ceux des mois produits ou importes : aucun mois,
 /// aucun brut, et `permanents::salaire_de_reference` refuse en disant quoi produire.
 fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Decimal>, Vec<Decimal>)> {
-    let salarie = salarie_de(e)?.to_string();
+    let salarie = salarie_de(e)?;
     let mut bruts = Vec::new();
     for i in 1..=12 {
         let m = mois.plus(-i)?;
         if !crate::stock::a_une_saisie(&ctx.racine, m)? {
             continue;
         }
-        bruts.push(remuneration_du_mois(ctx, m, &salarie)?);
+        bruts.push(remuneration_du_mois(ctx, m, salarie)?);
     }
     let trois = bruts.iter().take(3).copied().collect();
     Ok((bruts, trois))
@@ -1324,12 +1323,12 @@ fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Decimal> {
 /// La remuneration totale brute versee pendant le contrat (L1243-8) : les mois
 /// produits, plus le mois courant, dont le brut arrive tout calcule.
 fn remuneration_du_contrat(ctx: &Contexte, e: &Carte, mois: Mois, ce_mois: Decimal) -> R<Decimal> {
-    let salarie = salarie_de(e)?.to_string();
+    let salarie = salarie_de(e)?;
     let mut total = ce_mois;
     let debut = debut_de(e)?;
     for m in debut.mois_civil().jusqu_a(mois) {
         if m != mois && crate::stock::a_une_saisie(&ctx.racine, m)? {
-            total = add(total, remuneration_du_mois(ctx, m, &salarie)?);
+            total = add(total, remuneration_du_mois(ctx, m, salarie)?);
         }
     }
     Ok(total)

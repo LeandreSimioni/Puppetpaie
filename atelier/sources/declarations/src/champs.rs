@@ -931,14 +931,31 @@ impl Saisie {
 /// (l'histoire de la fiche, qui se lit et ne se saisit pas).
 #[derive(Debug, Clone)]
 enum Attendu {
-    Simple(Forme),
+    /// Une valeur de la forme de sa ligne ; un texte saisi se range dans la forme du type de la case
+    /// (`Declaree::rangee`), quand elle en declare un.
+    Simple(Forme, Option<fn(&str) -> String>),
     Bloc(Lecture),
     Lignes(Lecture),
     /// Une structure que la table ne decrit pas case par case : des mots, ou les cases que sa forme declare.
     Libre(&'static [Declaree]),
     /// Une case d'une telle structure : un texte, un nombre, oui ou non, des mots, ou les cases que sa forme declare.
-    Quelconque(&'static [Declaree]),
+    Quelconque(&'static Declaree),
     Histoire,
+}
+
+impl Attendu {
+    /// Le texte saisi `t`, range dans la forme du type de sa case (`Declaree::rangee`) ; tel quel sans type qui le range.
+    fn rangee(&self, t: &str) -> String {
+        let ranger = match self {
+            Attendu::Simple(_, r) => *r,
+            Attendu::Quelconque(d) => d.ranger,
+            Attendu::Bloc(_) | Attendu::Lignes(_) | Attendu::Libre(_) | Attendu::Histoire => None,
+        };
+        match ranger {
+            Some(r) => r(t),
+            None => t.to_string(),
+        }
+    }
 }
 
 /// Le niveau d'une lecture : les champs d'une fiche, les cases d'une structure (et celles que sa forme declare a ce
@@ -990,7 +1007,7 @@ impl Lecture {
                     (Forme::Structure, Some(cases), Some(_)) => Attendu::Lignes(self.sous(Niveau::Structure(cases, sous_cases(c)), Vec::new())),
                     (Forme::Structure, Some(cases), None) => Attendu::Bloc(self.sous(Niveau::Structure(cases, sous_cases(c)), Vec::new())),
                     (Forme::Structure, None, _) => Attendu::Libre(sous_cases(c)),
-                    (f, _, _) => Attendu::Simple(f),
+                    (f, _, _) => Attendu::Simple(f, c.declaree.as_ref().and_then(|d| d.ranger)),
                 };
                 Ok((c.cle, a))
             }
@@ -1001,7 +1018,7 @@ impl Lecture {
                 match cases.iter().find(|s| s.cle == chemin) {
                     Some(s) => Ok((d.cle.into(), match s.forme {
                         Forme::Structure | Forme::Histoire => Attendu::Libre(&d.cases),
-                        f => Attendu::Simple(f),
+                        f => Attendu::Simple(f, d.ranger),
                     })),
                     None => {
                         let devant: Vec<NomDeCase> = chemin.noms().collect();
@@ -1014,7 +1031,7 @@ impl Lecture {
                 }
             }
             Niveau::Libre(declarees) => match declarees.iter().find(|d| d.cle.nom() == cle) {
-                Some(d) => Ok((d.cle.into(), Attendu::Quelconque(&d.cases))),
+                Some(d) => Ok((d.cle.into(), Attendu::Quelconque(d))),
                 None => Err(socle::refus!("la case « {} » n'existe pas", cle)),
             },
         }
@@ -1054,7 +1071,7 @@ impl<'de> Visitor<'de> for Lecture {
 impl Attendu {
     fn nombre<E: serde::de::Error>(self, n: NombreLu, lu: Unexpected) -> Result<Option<Valeur>, E> {
         match self {
-            Attendu::Simple(f) if f.admet_un_nombre() => Ok(Some(Valeur::Nombre(n))),
+            Attendu::Simple(f, _) if f.admet_un_nombre() => Ok(Some(Valeur::Nombre(n))),
             Attendu::Quelconque(_) => Ok(Some(Valeur::Nombre(n))),
             _ => Err(E::invalid_type(lu, &self)),
         }
@@ -1075,9 +1092,9 @@ impl<'de> Visitor<'de> for Attendu {
     type Value = Option<Valeur>;
     fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         f.write_str(match self {
-            Attendu::Simple(Forme::Booleen) => "oui ou non (true ou false)",
-            Attendu::Simple(forme) if forme.admet_un_nombre() => "un texte ou un nombre",
-            Attendu::Simple(_) => "un texte",
+            Attendu::Simple(Forme::Booleen, _) => "oui ou non (true ou false)",
+            Attendu::Simple(forme, _) if forme.admet_un_nombre() => "un texte ou un nombre",
+            Attendu::Simple(..) => "un texte",
             Attendu::Bloc(_) => "les cases d'une structure (un objet)",
             Attendu::Lignes(_) => "une liste de lignes",
             Attendu::Libre(_) => "une liste de mots, ou un objet",
@@ -1096,14 +1113,14 @@ impl<'de> Visitor<'de> for Attendu {
     }
     fn visit_bool<E: serde::de::Error>(self, b: bool) -> Result<Option<Valeur>, E> {
         match self {
-            Attendu::Simple(Forme::Booleen) | Attendu::Quelconque(_) => Ok(Some(Valeur::OuiNon(b))),
+            Attendu::Simple(Forme::Booleen, _) | Attendu::Quelconque(_) => Ok(Some(Valeur::OuiNon(b))),
             _ => Err(E::invalid_type(Unexpected::Bool(b), &self)),
         }
     }
     fn visit_str<E: serde::de::Error>(self, t: &str) -> Result<Option<Valeur>, E> {
         match self {
-            Attendu::Simple(f) if f != Forme::Booleen => Ok(Some(Valeur::Texte(t.to_string()))),
-            Attendu::Quelconque(_) => Ok(Some(Valeur::Texte(t.to_string()))),
+            Attendu::Simple(f, _) if f != Forme::Booleen =>Ok(Some(Valeur::Texte(self.rangee(t)))),
+            Attendu::Quelconque(_) => Ok(Some(Valeur::Texte(self.rangee(t)))),
             _ => Err(E::invalid_type(Unexpected::Str(t), &self)),
         }
     }
@@ -1142,7 +1159,8 @@ impl<'de> Visitor<'de> for Attendu {
         };
         match self {
             Attendu::Bloc(l) => l.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
-            Attendu::Libre(d) | Attendu::Quelconque(d) => Lecture { niveau: Niveau::Libre(d), devant: Vec::new() }.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
+            Attendu::Libre(d) => Lecture { niveau: Niveau::Libre(d), devant: Vec::new() }.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
+            Attendu::Quelconque(d) => Lecture { niveau: Niveau::Libre(&d.cases), devant: Vec::new() }.visit_map(m).map(|s| Some(Valeur::Bloc(s))),
             _ => Err(A::Error::invalid_type(Unexpected::Map, &self)),
         }
     }
@@ -1775,7 +1793,7 @@ pub fn departement_du_nir(nir: &str) -> Option<String> {
 
 /// `cle_nir` : 97 - (NIR mod 97), sur deux chiffres (`reference/sources/insee-nir-siret/`, INSEE, schema NIR, 4.1). En Corse,
 /// 2A et 2B au 6e-7e rang valent 19 et 18 (equivalent, par inference, au zero moins 1 000 000 ou 2 000 000 du texte).
-pub fn cle_nir(nir: &str) -> Option<String> {
+pub fn cle_nir(nir: &str) -> Option<droit::fiche::CleNir> {
     let mut n = strip(nir).to_uppercase();
     if n.chars().count() != 13 {
         return None;
@@ -1791,7 +1809,7 @@ pub fn cle_nir(nir: &str) -> Option<String> {
     for c in n.chars() {
         x = x * 10 + valeur_decimale(c)? as u64;
     }
-    Some(format!("{:02}", 97 - x % 97))
+    Some(droit::fiche::CleNir::du_nombre(x))
 }
 
 /// La valeur d'un chiffre decimal Unicode (categorie Nd).
@@ -1808,26 +1826,6 @@ fn valeur_decimale(c: char) -> Option<u32> {
     ];
     let p = c as u32;
     ZEROS.iter().find(|z| (**z..**z + 10).contains(&p)).map(|z| p - z).or_else(|| (0x1FBF0..0x1FBFA).contains(&p).then(|| p - 0x1FBF0))
-}
-
-/// `luhn` : la cle du SIRET (`reference/sources/insee-nir-siret/`, INSEE, schema SIRET, 8.1) : somme des chiffres, multiple de 10.
-pub fn luhn(numero: &str) -> bool {
-    if !tous_chiffres(numero) {
-        return false;
-    }
-    // Un numero qui n'est pas fait de chiffres n'a pas de cle.
-    let chiffres: Option<Vec<u32>> = numero.chars().rev().map(|c| c.to_digit(10)).collect();
-    chiffres.is_some_and(|chiffres| {
-        let total: u32 = chiffres.iter().enumerate().map(|(i, &n)| if i % 2 == 1 { if n * 2 > 9 { n * 2 - 9 } else { n * 2 } } else { n }).sum();
-        total % 10 == 0
-    })
-}
-
-/// LE COMPTE BANCAIRE D'UNE FICHE (`banque`, de l'entreprise ou d'un salarie) : la faute de son IBAN, puis de son BIC.
-fn faute_banque(b: &Saisie) -> Option<String> {
-    use droit::fiche::CaseBanque;
-    let texte = |k: CaseBanque| b.texte(k).map(str::trim).filter(|s| !s.is_empty());
-    texte(CaseBanque::Iban).and_then(socle::iban::faute_iban).or_else(|| texte(CaseBanque::Bic).and_then(socle::iban::faute_bic))
 }
 
 /// LES JOURS TRAVAILLES D'UN PERMANENT : ceux que le calcul lira (`droit::conges::JoursTravailles`) ; la faute, dite sans
@@ -1923,20 +1921,6 @@ fn faute_de_forme_officielle(v: &str) -> Option<String> {
     None
 }
 
-/// `^[^@\s]+@[^@\s]+\.[^@\s]+$`.
-fn courriel_valide(v: &str) -> bool {
-    let c: Vec<char> = v.chars().collect();
-    if c.iter().filter(|x| **x == '@').count() != 1 || c.iter().any(|x| espace(*x)) {
-        return false;
-    }
-    // Une arobase qui n'est pas la premiere lettre, puis un point avec au moins un caractere avant et un apres, dans le
-    // domaine.
-    c.iter().position(|x| *x == '@').filter(|a| *a > 0).is_some_and(|a| {
-        let domaine = &c[a + 1..];
-        (1..domaine.len().saturating_sub(1)).any(|i| domaine[i] == '.')
-    })
-}
-
 /// CE QU'UNE CASE EXIGE D'UNE VALEUR SAISIE : sa ligne de la table (un champ de la fiche, ou une case d'une structure).
 #[derive(Clone, Copy)]
 struct Regle<'a> {
@@ -1956,12 +1940,6 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
         return Ok(None);
     }
     let est = |k: CaseDeFiche| c.cle == k;
-    if est(CaseSalarie::Banque.into()) {
-        return Ok(match valeur {
-            Valeur::Bloc(b) => faute_banque(b),
-            _ => None,
-        });
-    }
     if est(CasePieceSalarie::JoursTravailles.into()) {
         return Ok(faute_des_jours(valeur));
     }
@@ -1994,9 +1972,6 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
     }
     if c.forme == Forme::Date && date_iso(v).is_none() {
         return Ok(Some("date attendue au format AAAA-MM-JJ".into()));
-    }
-    if c.forme == Forme::Email && !courriel_valide(v) {
-        return Ok(Some("adresse de courriel attendue".into()));
     }
     if c.forme == Forme::Montant && socle::num::decimal_a_virgule(v).is_none() {
         return Ok(Some("nombre attendu".into()));
@@ -2214,7 +2189,7 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
             }
         }
         if let (Some(attendue), Some(cle)) = (nir.as_deref().and_then(cle_nir), &cle) {
-            if attendue != *cle {
+            if *attendue != **cle {
                 out.push(constat(
                     S::NirCle,
                     Gravite::Erreur,
@@ -2308,8 +2283,9 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
             }
         }
         // Le code emploi, le statut et le PCS de la fiche, confrontes au catalogue des metiers. Avertissements, pas
-        // erreurs. Le catalogue lit un texte vide comme une case que la fiche ne dit pas : les textes dits, bout a bout.
-        if let Some(code_emploi) = d.mot(S::CodeEmploiFt) {
+        // erreurs. Le catalogue lit un texte vide comme une case que la fiche ne dit pas : les textes dits, bout a bout. Un
+        // code emploi hors de sa forme a sa faute (`fautes_des_types`) : seul un code lu se confronte au catalogue.
+        if let Some(code_emploi) = d.mot(S::CodeEmploiFt).and_then(|c| droit::fiche::CodeEmploiFt::lire(&c).ok()) {
             let (statut, pcs) = (d.mot(S::Statut), d.mot(S::PcsEse));
             for msg in droit::emplois::controler_fiche(&code_emploi, &statut.as_slice().concat(), &pcs.as_slice().concat())? {
                 out.push(constat(S::CodeEmploiFt, Gravite::Avertissement, msg));
@@ -2325,8 +2301,9 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
                 out.push(constat(E::Siret, Gravite::Erreur, format!("SIRET != SIREN + NIC ({})", somme)));
             }
         }
+        // La cle de Luhn (`droit::fiche::Siret::cle_juste`) se dit sans refuser la fiche : le texte ne l'impose pas.
         if let Some(siret) = &siret {
-            if siret.chars().count() == 14 && !luhn(siret) {
+            if droit::fiche::Siret::lire(siret).is_ok_and(|s| !s.cle_juste()) {
                 out.push(constat(E::Siret, Gravite::Erreur, "ce numéro ne peut pas être un SIRET : un chiffre est probablement mal tapé"));
             }
         }
@@ -2484,19 +2461,12 @@ mod tests {
     #[test]
     fn la_cle_du_nir_et_celle_de_la_corse() {
         // insee-nir-siret : le complement a 97, 2A et 2B retranches de 1 000 000 et 2 000 000.
-        assert_eq!(cle_nir("1850578999048"), Some("19".into()));
+        assert_eq!(cle_nir("1850578999048").as_deref(), Some("19"));
         assert!(cle_nir("185057899904").is_none());
         // 2A vaut 19 et 2B vaut 18 : un NIR corse a sa cle.
-        assert_eq!(cle_nir("185052A999048"), Some("60".into()));
-        assert_eq!(cle_nir("185052B999048"), Some("87".into()));
+        assert_eq!(cle_nir("185052A999048").as_deref(), Some("60"));
+        assert_eq!(cle_nir("185052B999048").as_deref(), Some("87"));
         assert!(explication_nir("185052A999048").unwrap().is_none());
         assert!(cle_nir("18505ZZ999048").is_none());
-    }
-
-    #[test]
-    fn le_siret_se_controle_par_luhn() {
-        // insee-nir-siret : la somme des chiffres (rang impair doubles) est un multiple de 10.
-        assert!(luhn("73282932000074"));
-        assert!(!luhn("73282932000075"));
     }
 }

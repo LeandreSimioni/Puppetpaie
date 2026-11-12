@@ -99,10 +99,17 @@ pub trait Choix {
     fn code(&self) -> &'static str;
 }
 
-/// LA VALEUR D'UN CHANGEMENT DE CASE (`fiche!`) : `null` vide la case ; sinon elle se lit dans le type de la case. `""`
-/// n'est pas le vide et se refuse (`socle::forme::Remplie`).
-pub fn nulle_ou_dite<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<T>, D::Error> {
-    match socle::forme::Remplie::<T>::deserialize(d)? {
+/// LA VALEUR D'UN CHANGEMENT DE CASE (`fiche!`) : `null` vide la case ; sinon elle se lit dans le type de la case, chaque
+/// texte saisi range d'abord dans la forme du type de sa case (`Declaree::rangee`). `""` n'est pas le vide et se refuse
+/// (`socle::forme::Remplie`).
+pub fn nulle_ou_dite<'de, D: Deserializer<'de>, T: DeserializeOwned + FormeDeCase>(d: D) -> Result<Option<T>, D::Error> {
+    let case = declaree::<T>("");
+    let lue = if case.range() {
+        socle::forme::rangee_puis_lue::<D, T>(d, &|chemin, texte| rangee_au_chemin(&case, chemin, texte))?
+    } else {
+        socle::forme::Remplie::<T>::deserialize(d)?
+    };
+    match lue {
         socle::forme::Remplie::Nulle => Ok(None),
         socle::forme::Remplie::Vide => Err(serde::de::Error::custom("un texte vide ne dit rien : le vide s'écrit null")),
         socle::forme::Remplie::Dite(v) => Ok(Some(v)),
@@ -242,8 +249,11 @@ fn chiffres(t: &str) -> usize {
 macro_rules! texte_borne {
     (@commun $nom:ident, $unite:literal) => {
         impl $nom {
-            /// Le texte `texte`, ou ce qui le refuse.
+            /// Le texte `texte`, ou ce qui le refuse ; vide, il n'est pas une valeur (la case vide s'ecrit nulle).
             pub fn lire(texte: &str) -> R<$nom> {
+                if texte.is_empty() {
+                    return Err(socle::echec::refus("Texte vide : une case vide s'écrit nulle (absente), jamais en texte vide."));
+                }
                 match Self::faute(texte) {
                     Some(f) => Err(socle::echec::refus(f)),
                     None => Ok($nom(texte.to_string())),
@@ -339,6 +349,57 @@ texte_borne! {
 la DSN écrivent (norme DPAE v5.3, zone « Code NAF » ; DSN, S21.G00.06.003). Corrigez-le";
 }
 
+texte_borne! {
+    /// LE CODE PCS-ESE d'un emploi (S21.G00.40.004) : « Table PCSESE - Code profession et catégorie socioprofessionnelle
+    /// PCS-ESE », « X [4,4] » (cahier technique DSN 2026.1, p. 183, `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt`
+    /// l. 200-215). La table est celle de l'Insee (`atelier/reference/sources/insee-pcs-ese-2017-liste.xls`), non livree :
+    /// la forme est celle du cahier, quatre caracteres, et rien de plus (regle 7). La fiche du salarie, la carte,
+    /// l'engagement et le catalogue des metiers le portent.
+    pub struct CodePcsEse : Exactement 4 "caractères" par caracteres,
+        "« {texte} » a {n} caractères : un code PCS-ESE en a {max} (465b), ce que la DSN écrit \
+(S21.G00.40.004). Corrigez-le";
+}
+
+/// LE CODE EMPLOI DECLARE d'un emploi (S21.G00.40.005, « Code complément PCS-ESE ») : « X [2,6] », d'une des tables
+/// « CCP - Code Complément PCS-ESE, NEHMED [...], NEHNMED [...], ART - Code détaillé des professions du spectacle
+/// (complément PCS-ESE), NET, NNE et FESAIEG [...], CMET » (cahier technique DSN 2026.1, p. 183-185,
+/// `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt` l. 217-354). Pour le spectacle, CCH-18 (l. 325-329) : « une
+/// valeur présente dans la table de nomenclature des emplois du spectacle ou "999SPT" pour les emplois permanents du
+/// spectacle ou "50" pour les mannequins ou "51" pour les artistes de corrida ». Ce n'est donc pas toujours le code d'un
+/// metier (`emplois::CodeEmploi`) : il peut n'en nommer aucun. Les autres tables ne sont pas deposees : la forme est
+/// celle du cahier, de 2 a 6 caracteres (`X`), et rien de plus (regle 7). La fiche du salarie, la carte, l'engagement et
+/// sa paie ecrite le portent. Saisi, il se range sans ses blancs de bord et en capitales.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct CodeEmploiFt(String);
+
+impl CodeEmploiFt {
+    /// Le code `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<CodeEmploiFt> {
+        if crate::organismes::de_nature_x(texte, 2, 6) {
+            Ok(CodeEmploiFt(texte.to_string()))
+        } else {
+            Err(socle::refus!(
+                "Code emploi {} : le code emploi déclaré (complément PCS-ESE, S21.G00.40.005) s'écrit de 2 à 6 caractères, sans blanc au début ni à la fin. Corrigez-le",
+                socle::fichiers::repr(texte)
+            ))
+        }
+    }
+
+    /// Le code d'un emploi permanent du spectacle, « 999SPT » (CCH-18, ci-dessus) : il ne nomme aucun metier.
+    pub fn est_permanent(&self) -> bool {
+        self.0 == "999SPT"
+    }
+}
+
+/// Le code d'un metier est un code de la nomenclature des emplois du spectacle, la table ART de 40.005 (CCH-18,
+/// ci-dessus) : il se declare tel quel. Ses codes ont six caracteres (`nomenclature-emplois-ft.json`).
+impl From<&crate::emplois::CodeEmploi> for CodeEmploiFt {
+    fn from(c: &crate::emplois::CodeEmploi) -> CodeEmploiFt {
+        CodeEmploiFt(c.as_str().to_string())
+    }
+}
+
 /// LE CODE DU SERVICE DE SANTE AU TRAVAIL, celui de la DPAE : « MT » et trois chiffres, 5 caracteres. La norme DPAE
 /// (C_MT_DCL, positions 938-947 : `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 485-497) : « Il est
 /// attendu ici un code du type MT+ 3 positions numériques. Ex: MT542 [...] Si vous disposez d'un centre de médecine
@@ -430,6 +491,351 @@ texte_borne! {
         "« {texte} » a {n} caractères : un numéro de sécurité sociale en a {max}, sans sa clé, ce que la DPAE et la DSN \
 écrivent (norme DPAE v5.3, zone « Numéro de sécurité sociale » ; DSN, S21.G00.30.001). Les deux derniers chiffres vont dans la case « Clé »";
 }
+
+/// CE QU'UNE NOTION LUE PORTE AVEC SON TEXTE : elle se lit de son seul lecteur (`lire`, a la lecture du fichier comme a
+/// la porte) et se refuse a la saisie par sa faute (`FormeDeCase::FAUTE`) ; sa saisie se range d'abord dans sa forme
+/// (`$ranger`, `FormeDeCase::RANGER`), qu'elle soit la case d'une fiche ou la valeur d'une charge
+/// (`socle::forme::range_si_saisi`) ; elle s'ecrit telle qu'elle a ete lue.
+macro_rules! notion_lue {
+    ($nom:ident rangee par $ranger:path, faute a part) => {
+        impl AsRef<str> for $nom {
+            fn as_ref(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl std::ops::Deref for $nom {
+            type Target = str;
+            fn deref(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl std::fmt::Display for $nom {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(&self.0)
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $nom {
+            fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+                $nom::lire(&socle::forme::range_si_saisi(String::deserialize(d)?, $nom::rangee)).map_err(|e| serde::de::Error::custom(e.phrase))
+            }
+        }
+
+        impl FormeDeCase for $nom {
+            const FAUTE: Option<fn(&str) -> Option<String>> = Some($nom::faute);
+            const RANGER: Option<fn(&str) -> String> = Some($nom::rangee);
+        }
+
+        impl $nom {
+            /// Le texte saisi `texte` dans sa forme, avant d'etre lu (`FormeDeCase::RANGER`).
+            pub fn rangee(texte: &str) -> String {
+                $ranger(texte)
+            }
+        }
+    };
+    ($nom:ident rangee par $ranger:path) => {
+        notion_lue!($nom rangee par $ranger, faute a part);
+
+        impl $nom {
+            /// Ce qui refuse `texte` a la saisie, en une phrase qui dit quoi faire ; rien pour un texte vide (la case vide
+            /// s'ecrit nulle).
+            pub fn faute(texte: &str) -> Option<String> {
+                if texte.is_empty() {
+                    return None;
+                }
+                $nom::lire(texte).err().map(|e| e.phrase)
+            }
+        }
+    };
+}
+
+/// UNE SAISIE SANS SES BLANCS DE BORD (`socle::texte::blanc`) : la forme rangee d'un texte que son type lit tel quel.
+pub fn sans_blancs_de_bord(texte: &str) -> String {
+    texte.trim_matches(socle::texte::blanc).to_string()
+}
+
+/// UNE SAISIE DE CHIFFRES SANS AUCUN BLANC : la forme rangee d'un identifiant fait de chiffres (`identifiant_de_chiffres!`),
+/// que ses blancs, autour ou entre ses groupes (« 123 456 789 00012 »), ne changent pas.
+pub fn sans_blancs(texte: &str) -> String {
+    texte.chars().filter(|c| !socle::texte::blanc(*c)).collect()
+}
+
+/// Le texte fait d'exactement `n` chiffres ASCII.
+fn de_chiffres(texte: &str, n: usize) -> bool {
+    texte.len() == n && texte.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// UN IDENTIFIANT FAIT D'UN NOMBRE FIXE DE CHIFFRES : il en a exactement `LONGUEUR`, sinon il se refuse a la lecture en
+/// une phrase qui dit quoi faire (`{texte}`, `{max}` sa longueur).
+macro_rules! identifiant_de_chiffres {
+    ($(#[$m:meta])* pub struct $nom:ident : $n:literal, $phrase:literal;) => {
+        $(#[$m])*
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+        #[serde(transparent)]
+        pub struct $nom(String);
+
+        impl $nom {
+            pub const LONGUEUR: usize = $n;
+
+            /// L'identifiant `texte`, ou la phrase qui le refuse.
+            pub fn lire(texte: &str) -> R<$nom> {
+                if de_chiffres(texte, Self::LONGUEUR) {
+                    Ok($nom(texte.to_string()))
+                } else {
+                    Err(socle::echec::refus(format!($phrase, texte = texte, max = Self::LONGUEUR)))
+                }
+            }
+        }
+
+        notion_lue!($nom rangee par sans_blancs);
+    };
+}
+
+/// LA CLE DE LUHN D'UN SIREN OU D'UN SIRET : « on parcourt les chiffres [...], on multiplie par 2 les chiffres de rang
+/// impair et on fait ensuite la somme de tous les chiffres obtenus [...] Le contrôle de parité est correct si le
+/// résultat obtenu est un multiple de 10 » (INSEE, schema SIRET, 8.1 : `atelier/reference/sources/insee-nir-siret/`).
+/// Le texte dit que ce controle « peut être utilisé pour réduire les risques d'erreurs de frappe » : il n'entre pas dans
+/// le lecteur, et une cle fausse se dit a la saisie sans refuser la fiche (`declarations::champs`).
+fn cle_de_luhn_juste(chiffres: &str) -> bool {
+    let total: u32 = chiffres
+        .bytes()
+        .rev()
+        .enumerate()
+        .map(|(i, b)| {
+            let n = u32::from(b - b'0');
+            if i % 2 == 1 {
+                let d = n * 2;
+                if d > 9 {
+                    d - 9
+                } else {
+                    d
+                }
+            } else {
+                n
+            }
+        })
+        .sum();
+    total % 10 == 0
+}
+
+identifiant_de_chiffres! {
+    /// LE SIREN d'une entreprise : 9 chiffres (INSEE, schema SIRET, « SIRENType », et la DSN, S21.G00.06.001, X [9,9] :
+    /// `atelier/reference/sources/insee-nir-siret/`, `logiciel/donnees/formats-dsn-base.json`).
+    pub struct Siren : 9,
+        "« {texte} » n'est pas un SIREN : il a {max} chiffres, sans espace (INSEE ; DSN, S21.G00.06.001). Corrigez-le";
+}
+
+identifiant_de_chiffres! {
+    /// LE NIC d'un etablissement : « 5 chiffres ajoutés au numéro SIREN de l'entreprise pour identifier un
+    /// établissement » (INSEE, schema SIRET, 4.1 ; DSN, S21.G00.11.001, X [5,5]).
+    pub struct Nic : 5,
+        "« {texte} » n'est pas un NIC : il a {max} chiffres, ceux qui suivent le SIREN dans le SIRET (INSEE ; DSN, \
+S21.G00.11.001). Corrigez-le";
+}
+
+identifiant_de_chiffres! {
+    /// LE SIRET d'un etablissement : « un identifiant numérique de 14 chiffres composé du SIREN (9 chiffres) et d'un
+    /// numéro interne de classement de 5 chiffres (NIC) » (INSEE, schema SIRET, 5.1 :
+    /// `atelier/reference/sources/insee-nir-siret/`).
+    pub struct Siret : 14,
+        "« {texte} » n'est pas un SIRET : il a {max} chiffres, le SIREN puis le NIC, sans espace (INSEE). Corrigez-le";
+}
+
+identifiant_de_chiffres! {
+    /// L'IDCC, L'IDENTIFIANT D'UNE CONVENTION COLLECTIVE : 4 chiffres (DSN, « Code convention collective applicable »,
+    /// S21.G00.40.017, et « Code convention collective principale », S21.G00.11.022, X [4,4] :
+    /// `logiciel/donnees/formats-dsn-base.json`).
+    pub struct Idcc : 4,
+        "« {texte} » n'est pas un IDCC : une convention collective se dit en {max} chiffres, 3090 par exemple (DSN, \
+S21.G00.40.017). Corrigez-le";
+}
+
+impl Siren {
+    /// Sa cle de Luhn est-elle juste (`cle_de_luhn_juste`) ?
+    pub fn cle_juste(&self) -> bool {
+        cle_de_luhn_juste(&self.0)
+    }
+}
+
+impl Siret {
+    /// Le SIRET de l'etablissement `nic` de l'entreprise `siren` : l'un puis l'autre (INSEE, 5.1).
+    pub fn de(siren: &Siren, nic: &Nic) -> Siret {
+        Siret(format!("{}{}", siren.0, nic.0))
+    }
+
+    /// Son SIREN, ses 9 premiers chiffres.
+    pub fn siren(&self) -> Siren {
+        Siren(self.0[..Siren::LONGUEUR].to_string())
+    }
+
+    /// Son NIC, ses 5 derniers chiffres.
+    pub fn nic(&self) -> Nic {
+        Nic(self.0[Siren::LONGUEUR..].to_string())
+    }
+
+    /// Sa cle de Luhn est-elle juste (`cle_de_luhn_juste`) ?
+    pub fn cle_juste(&self) -> bool {
+        cle_de_luhn_juste(&self.0)
+    }
+}
+
+/// UN IBAN (ISO 13616) : sa forme et sa cle sont celles de `socle::iban::faute_iban` (S21.G00.20.004 de la DSN, et le
+/// communique IBAN de la Banque centrale de Turquie : `atelier/reference/sources/iban/`), qui le lit compacte (sans
+/// blancs, en majuscules : `socle::iban::iban_compact`, l'etape preliminaire de la validation, annexe 3). Il se garde
+/// tel qu'il est ecrit ; sa saisie s'ecrit compacte (`FormeDeCase::RANGER`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct Iban(String);
+
+impl Iban {
+    /// L'IBAN `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<Iban> {
+        match socle::iban::faute_iban(texte) {
+            Some(f) => Err(socle::refus!("« {} » n'est pas un IBAN : {}", texte, f)),
+            None => Ok(Iban(texte.to_string())),
+        }
+    }
+}
+
+notion_lue!(Iban rangee par socle::iban::iban_compact);
+
+/// UN BIC (ISO 9362) : sa forme est celle de `socle::iban::faute_bic` (S21.G00.20.003 de la DSN), qui le lit compacte.
+/// Il se garde tel qu'il est ecrit ; sa saisie s'ecrit compacte (`FormeDeCase::RANGER`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct Bic(String);
+
+impl Bic {
+    /// Le BIC `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<Bic> {
+        match socle::iban::faute_bic(texte) {
+            Some(f) => Err(socle::refus!("« {} » n'est pas un BIC : {}", texte, f)),
+            None => Ok(Bic(texte.to_string())),
+        }
+    }
+}
+
+notion_lue!(Bic rangee par socle::iban::iban_compact);
+
+/// UNE ADRESSE DE COURRIEL : de 6 a 100 caracteres, ce que dit la norme DSN, et rien d'autre (« Adresse mél »,
+/// S21.G00.30.018, X [6,100] : `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.30.txt`, l. 294-300 ; « Adresse mél
+/// du contact », S20.G00.07.003, X [6,100] : `bloc-S20.G00.05.txt`, l. 312-319). Aucun texte depose ne dit la forme d'une
+/// adresse. Elle se garde telle qu'elle est ecrite, capitales comprises (RFC 5321, § 2.4 :
+/// `ietf/ietf-rfc5321-simple-mail-transfer-protocol-20081001.txt`, l. 869).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct Courriel(String);
+
+impl Courriel {
+    /// Sa longueur, en caracteres, au moins et au plus (X [6,100]).
+    pub const LONGUEUR: (usize, usize) = (6, 100);
+
+    /// L'adresse `texte`, ou la phrase qui la refuse.
+    pub fn lire(texte: &str) -> R<Courriel> {
+        let n = texte.chars().count();
+        let (min, max) = Self::LONGUEUR;
+        if (min..=max).contains(&n) {
+            Ok(Courriel(texte.to_string()))
+        } else {
+            Err(socle::refus!(
+                "« {} » a {} caractères : une adresse de courriel en a de {} à {}, ce que la DSN écrit (S21.G00.30.018, S20.G00.07.003). Corrigez-la",
+                texte,
+                n,
+                min,
+                max
+            ))
+        }
+    }
+}
+
+notion_lue!(Courriel rangee par sans_blancs_de_bord);
+
+/// LA CLE D'UN NIR, a cote de lui (`Nir`) : « le complément à 97 du reste de la division par 97 » du NIR, deux chiffres,
+/// de 01 a 97 (INSEE, schema NIR, 4.1 : `atelier/reference/sources/insee-nir-siret/`). Qu'elle soit celle de son NIR se
+/// dit a la saisie (`declarations::champs::cle_nir`), sans refuser la fiche.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct CleNir(String);
+
+impl CleNir {
+    /// La cle `texte`, ou la phrase qui la refuse.
+    pub fn lire(texte: &str) -> R<CleNir> {
+        let valeur = if de_chiffres(texte, 2) { texte.parse::<u8>().ok() } else { None };
+        match valeur {
+            Some(1..=97) => Ok(CleNir(texte.to_string())),
+            _ => Err(socle::refus!(
+                "« {} » n'est pas la clé d'un numéro de sécurité sociale : deux chiffres, de 01 à 97, ceux qui suivent les 13 autres (INSEE)",
+                texte
+            )),
+        }
+    }
+
+    /// La cle du nombre `nombre` qu'ecrit un NIR : le complement a 97 de son reste par 97, de 01 a 97 (INSEE, 4.1).
+    pub fn du_nombre(nombre: u64) -> CleNir {
+        CleNir(format!("{:02}", 97 - nombre % 97))
+    }
+}
+
+notion_lue!(CleNir rangee par sans_blancs_de_bord);
+
+/// LE NUMERO D'OBJET D'UN SPECTACLE : « le numéro unique constitué de 12 caractères alphanumériques qui est attribué par le
+/// CNCS pour chaque spectacle ou chaque production » (S21.G00.40.050, X [12,12] :
+/// `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.40.txt`, l. 1430-1441). Qu'il ne se declare qu'en natures 02 et
+/// 10 (CCH-11, regle 6 d'AGENTS) tient au contrat, pas au numero : la DSN le dit.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct NumeroObjetSpectacle(String);
+
+impl NumeroObjetSpectacle {
+    pub const LONGUEUR: usize = 12;
+
+    /// Le numero `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<NumeroObjetSpectacle> {
+        if texte.len() == Self::LONGUEUR && texte.bytes().all(|b| b.is_ascii_alphanumeric()) {
+            Ok(NumeroObjetSpectacle(texte.to_string()))
+        } else {
+            Err(socle::refus!(
+                "« {} » n'est pas un numéro d'objet : il a {} lettres ou chiffres, sans espace, tel que le CNCS l'attribue (DSN, S21.G00.40.050)",
+                texte,
+                Self::LONGUEUR
+            ))
+        }
+    }
+}
+
+notion_lue!(NumeroObjetSpectacle rangee par sans_blancs_de_bord);
+
+/// LE CODE INSEE D'UNE COMMUNE : cinq caracteres, ce que dit la norme DSN, et rien d'autre (« Code INSEE commune »,
+/// « Nomenclature INSEE des communes de France », S21.G00.81.005, X [5,5] :
+/// `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.81.txt`, l. 458-496).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct CodeInsee(String);
+
+impl CodeInsee {
+    pub const LONGUEUR: usize = 5;
+
+    /// Le code `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<CodeInsee> {
+        let n = texte.chars().count();
+        if n == Self::LONGUEUR {
+            Ok(CodeInsee(texte.to_string()))
+        } else {
+            Err(socle::refus!(
+                "« {} » a {} caractères : un code INSEE de commune en a {}, 37261 par exemple, ce que la DSN écrit (S21.G00.81.005). Corrigez-le",
+                texte,
+                n,
+                Self::LONGUEUR
+            ))
+        }
+    }
+}
+
+notion_lue!(CodeInsee rangee par socle::texte::en_capitales);
+
+notion_lue!(CodeEmploiFt rangee par socle::texte::en_capitales);
 
 /// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
 /// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,
@@ -817,6 +1223,32 @@ pub struct Declaree<K = NomDeCase> {
     pub faute: Option<fn(&str) -> Option<String>>,
     /// La borne de son texte et ce qu'elle compte (`texte_borne!`), que l'aide de sa ligne de `champs-base.json` dit.
     pub longueur: Option<(usize, &'static str)>,
+    /// La forme que son type donne a un texte saisi (`FormeDeCase::RANGER`), que `rangee` applique.
+    pub ranger: Option<fn(&str) -> String>,
+}
+
+impl<K> Declaree<K> {
+    /// LE TEXTE SAISI `texte` RANGE DANS LA FORME DU TYPE DE LA CASE (`FormeDeCase::RANGER`, le seul endroit qui dit
+    /// comment une saisie se range), avant tout controle et toute ecriture : ce qui s'ecrit est ce que son lecteur relit.
+    /// Les deux portes d'une saisie l'appliquent, celle d'une saisie de fiche (`declarations::champs::lecture`) et celle
+    /// d'un changement de case (`nulle_ou_dite`) ; rien pour un type qui lit son texte tel quel.
+    pub fn rangee(&self, texte: &str) -> Option<String> {
+        self.ranger.map(|r| r(texte))
+    }
+
+    /// Une case de son type, ou d'une structure qu'il porte, range-t-elle sa saisie ?
+    fn range(&self) -> bool {
+        self.ranger.is_some() || self.cases.iter().any(Declaree::range)
+    }
+}
+
+/// LA SAISIE D'UN CHANGEMENT DE CASE DE TYPE `T`, RANGEE : le texte au chemin `chemin` (les cles qui y menent sous la
+/// case) prend la forme du type de sa case (`Declaree::rangee`).
+fn rangee_au_chemin(case: &Declaree, chemin: &[String], texte: &str) -> Option<String> {
+    match chemin.split_first() {
+        None => case.rangee(texte),
+        Some((cle, reste)) => case.cases.iter().find(|d| d.cle.nom() == cle).and_then(|d| rangee_au_chemin(d, reste, texte)),
+    }
 }
 
 /// La forme d'un type de case.
@@ -827,6 +1259,9 @@ pub trait FormeDeCase {
     const FAUTE: Option<fn(&str) -> Option<String>> = None;
     /// La borne d'un texte declare (`texte_borne!`) et ce qu'elle compte ; aucune d'ordinaire.
     const LONGUEUR: Option<(usize, &'static str)> = None;
+    /// La forme que le type donne a un texte saisi avant de le lire (`Declaree::rangee`) : sans ses blancs de bord, en
+    /// capitales ; aucune d'ordinaire (le texte se lit tel quel).
+    const RANGER: Option<fn(&str) -> String> = None;
     /// Les cases d'une structure ; aucune hors d'une structure.
     fn cases() -> Vec<Declaree> {
         Vec::new()
@@ -834,17 +1269,17 @@ pub trait FormeDeCase {
 }
 
 fn declaree<T: FormeDeCase>(cle: &'static str) -> Declaree {
-    Declaree { cle: nom_ecrit(cle), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR }
+    Declaree { cle: nom_ecrit(cle), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR, ranger: T::RANGER }
 }
 
 /// La case d'une fiche, hors de ses pieces.
 fn declaree_de_fiche<T: FormeDeCase>(cle: &'static str) -> Declaree<CaseDeFiche> {
-    Declaree { cle: CaseDeFiche::Case(nom_ecrit(cle)), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR }
+    Declaree { cle: CaseDeFiche::Case(nom_ecrit(cle)), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR, ranger: T::RANGER }
 }
 
 /// La case d'une piece d'une fiche.
 fn declaree_de_piece<T: FormeDeCase>(cle: CaseDePiece) -> Declaree<CaseDeFiche> {
-    Declaree { cle: CaseDeFiche::Piece(cle), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR }
+    Declaree { cle: CaseDeFiche::Piece(cle), valeurs: T::VALEURS, cases: T::cases(), faute: T::FAUTE, longueur: T::LONGUEUR, ranger: T::RANGER }
 }
 
 impl FormeDeCase for String {}
@@ -854,8 +1289,13 @@ impl FormeDeCase for Jour {}
 impl FormeDeCase for Mois {}
 impl FormeDeCase for Montant {}
 impl FormeDeCase for socle::paris::Moment {}
+impl FormeDeCase for socle::pays::CodePays {
+    const FAUTE: Option<fn(&str) -> Option<String>> = Some(socle::pays::CodePays::faute);
+    const RANGER: Option<fn(&str) -> String> = Some(socle::pays::CodePays::rangee);
+}
 impl<T: FormeDeCase> FormeDeCase for Vec<T> {
     const VALEURS: &'static [&'static str] = T::VALEURS;
+    const RANGER: Option<fn(&str) -> String> = T::RANGER;
     fn cases() -> Vec<Declaree> {
         T::cases()
     }
@@ -1646,7 +2086,7 @@ choix! {
 
 cases! {
     /// Le compte bancaire (IBAN, BIC).
-    pub struct Banque, cles CaseBanque { Iban(String) = "iban" => iban, Bic(String) = "bic" => bic }
+    pub struct Banque, cles CaseBanque { Iban(Iban) = "iban" => iban, Bic(Bic) = "bic" => bic }
 }
 
 cases! {
@@ -1686,7 +2126,7 @@ cases! {
         NomPrenomAffichage(String) = "nom_prenom_affichage" => nom_prenom_affichage,
         NomPrenom(String) = "nom_prenom" => nom_prenom,
         Tel(String) = "tel" => tel,
-        Email(String) = "email" => email,
+        Email(Courriel) = "email" => email,
     }
 }
 
@@ -1735,7 +2175,7 @@ cases! {
 }
 
 cases! {
-    pub struct VersementMobilite, cles CaseVersementMobilite { Taux(Montant) = "taux" => taux, CodeInsee(String) = "code_insee" => code_insee }
+    pub struct VersementMobilite, cles CaseVersementMobilite { Taux(Montant) = "taux" => taux, CodeInsee(CodeInsee) = "code_insee" => code_insee }
 }
 
 cases! {
@@ -1743,8 +2183,8 @@ cases! {
     /// fabrique de la lisible), son ouverture, son taux AT/MP et son versement mobilite.
     pub struct Etablissement, cles CaseEtablissement {
         Libelle(String) = "libelle" => libelle,
-        Siret(String) = "siret" => siret,
-        Nic(String) = "nic" => nic,
+        Siret(Siret) = "siret" => siret,
+        Nic(Nic) = "nic" => nic,
         AdresseAffichage(String) = "adresse_affichage" => adresse_affichage,
         Adresse(LigneAdresse) = "adresse" => adresse,
         ComplementAdresseAffichage(String) = "complement_adresse_affichage" => complement_adresse_affichage,
@@ -1766,7 +2206,7 @@ cases! {
         Nom(String) = "nom" => nom,
         Fonction(String) = "fonction" => fonction,
         Tel(Telephone) = "tel" => tel,
-        Email(String) = "email" => email,
+        Email(Courriel) = "email" => email,
     }
 }
 
@@ -1777,20 +2217,20 @@ cases! {
         NomPrenomAffichage(String) = "nom_prenom_affichage" => nom_prenom_affichage,
         NomPrenom(String) = "nom_prenom" => nom_prenom,
         Tel(Telephone) = "tel" => tel,
-        Email(String) = "email" => email,
+        Email(Courriel) = "email" => email,
         Qualite(String) = "qualite" => qualite,
     }
 }
 
 cases! {
     /// Le declarant inscrit au service DSN de net-entreprises, tel qu'inscrit (`envois::transport::declarant`).
-    pub struct Declarant { siret: String, nom: String, prenom: String }
+    pub struct Declarant { siret: Siret, nom: String, prenom: String }
 }
 
 cases! {
     /// Le compte DPAE d'urssaf.fr (`envois::releve_retours`) : son titulaire, son SIRET (celui de l'entreprise sinon), son
     /// service.
-    pub struct ApiDpae { nom: String, prenom: String, siret: String, service: String }
+    pub struct ApiDpae { nom: String, prenom: String, siret: Siret, service: String }
 }
 
 // ------------------------------------------------------------------ les fiches
@@ -1806,28 +2246,28 @@ fiche! {
         Prenom(PrenomDeclare) = "prenom" => prenom,
         Pseudonyme(String) = "pseudonyme" => pseudonyme,
         Nir(Nir) = "nir" => nir,
-        NirCle(String) = "nir_cle" => nir_cle,
+        NirCle(CleNir) = "nir_cle" => nir_cle,
         Sexe(Sexe) = "sexe" => sexe,
         DateNaissance(Jour) = "date_naissance" => date_naissance,
         LieuNaissance(LieuNaissance) = "lieu_naissance" => lieu_naissance,
         LieuNaissanceAffichage(String) = "lieu_naissance_affichage" => lieu_naissance_affichage,
         DepartementNaissance(DepartementNaissance) = "departement_naissance" => departement_naissance,
-        PaysNaissance(String) = "pays_naissance" => pays_naissance,
+        PaysNaissance(socle::pays::CodePays) = "pays_naissance" => pays_naissance,
         CodeNationaliteDsn(CodeNationalite) = "code_nationalite_dsn" => code_nationalite_dsn,
-        PaysNationalite(String) = "pays_nationalite" => pays_nationalite,
+        PaysNationalite(socle::pays::CodePays) = "pays_nationalite" => pays_nationalite,
         PaysNationaliteHorsListe(String) = "pays_nationalite_hors_liste" => pays_nationalite_hors_liste,
         Adresse(String) = "adresse" => adresse,
         AdresseAffichage(String) = "adresse_affichage" => adresse_affichage,
         CodePostal(String) = "code_postal" => code_postal,
         Commune(String) = "commune" => commune,
         CommuneAffichage(String) = "commune_affichage" => commune_affichage,
-        Email(String) = "email" => email,
+        Email(Courriel) = "email" => email,
         Banque(Banque) = "banque" => banque,
         NumCongesSpectacles(String) = "num_conges_spectacles" => num_conges_spectacles,
         EmploiAffichage(String) = "emploi_affichage" => emploi_affichage,
         Emploi(String) = "emploi" => emploi,
-        PcsEse(String) = "pcs_ese" => pcs_ese,
-        CodeEmploiFt(String) = "code_emploi_ft" => code_emploi_ft,
+        PcsEse(CodePcsEse) = "pcs_ese" => pcs_ese,
+        CodeEmploiFt(CodeEmploiFt) = "code_emploi_ft" => code_emploi_ft,
         Statut(Statut) = "statut" => statut,
         StatutConventionnel(StatutConventionnel) = "statut_conventionnel" => statut_conventionnel,
         StatutCategorielRc(StatutCategorielRc) = "statut_categoriel_rc" => statut_categoriel_rc,
@@ -1872,9 +2312,9 @@ fiche! {
     pub struct ChampsEntreprise, datee FicheEntrepriseDatee, changement ChangementEntreprise, cles CaseEntreprise {
         NomAffichage(String) = "nom_affichage" => nom_affichage,
         RaisonSociale(RaisonSociale) = "raison_sociale" => raison_sociale,
-        Siren(String) = "siren" => siren,
-        Nic(String) = "nic" => nic,
-        Siret(String) = "siret" => siret,
+        Siren(Siren) = "siren" => siren,
+        Nic(Nic) = "nic" => nic,
+        Siret(Siret) = "siret" => siret,
         Naf(CodeNaf) = "naf" => naf,
         CodeUrssaf(String) = "code_urssaf" => code_urssaf,
         Adresse(LigneAdresse) = "adresse" => adresse,
@@ -1884,7 +2324,7 @@ fiche! {
         CodePostal(CodePostal) = "code_postal" => code_postal,
         Commune(CommuneEmployeur) = "commune" => commune,
         CommuneAffichage(String) = "commune_affichage" => commune_affichage,
-        Idcc(String) = "idcc" => idcc,
+        Idcc(Idcc) = "idcc" => idcc,
         AnnexeConvention(AnnexeConvention) = "annexe_convention" => annexe_convention,
         Secteur2121(Secteur2121) = "secteur_2121" => secteur_2121,
         TypeRadio1922(TypeRadio1922) = "type_radio_1922" => type_radio_1922,
@@ -1973,7 +2413,7 @@ fiche! {
     /// vient et le titre que les bulletins de l'ancien logiciel proposent (`declarations::demarrage`).
     pub struct ChampsSpectacle, datee FicheSpectacleDatee, changement ChangementSpectacle, cles CaseSpectacle {
         Titre(String) = "titre" => titre,
-        NumeroObjet(String) = "numero_objet" => numero_objet,
+        NumeroObjet(NumeroObjetSpectacle) = "numero_objet" => numero_objet,
         CodeAnalytique(String) = "code_analytique" => code_analytique,
         GenreAudiovisuel(GenreAudiovisuel) = "genre_audiovisuel" => genre_audiovisuel,
         EmissionTv1734(bool) = "emission_tv_1734" => emission_tv_1734,
@@ -1999,7 +2439,7 @@ fiche! {
     /// `catalogue::construire` en fait la `Rubrique` du calcul.
     pub struct ChampsRubrique, datee RubriqueDatee, changement ChangementRubrique, cles CaseRubrique {
         Libelle(String) = "libelle" => libelle,
-        Unite(String) = "unite" => unite,
+        Unite(crate::catalogue::Unite) = "unite" => unite,
         Nature(crate::catalogue::NatureDeRubrique) = "nature" => nature,
         Saisie(Vec<String>) = "saisie" => saisie,
         Soumis(bool) = "soumis" => soumis,
@@ -2151,7 +2591,7 @@ impl std::ops::DerefMut for FicheSalarie {
 #[serde(try_from = "Figee", into = "Figee")]
 pub struct SalarieDuContrat {
     pub fiche: FicheSalarie,
-    pub idcc_de_l_employeur: Option<String>,
+    pub idcc_de_l_employeur: Option<Idcc>,
     pub etablissement: Option<String>,
     pub sante_suspendue: Option<String>,
 }
@@ -2163,7 +2603,7 @@ struct Figee {
     cle: IdSalarie,
     champs: ChampsSalarie,
     #[serde(skip_serializing_if = "Option::is_none")]
-    idcc_de_l_employeur: Option<String>,
+    idcc_de_l_employeur: Option<Idcc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     etablissement: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2249,12 +2689,14 @@ pub fn lire_fichier<T: DeserializeOwned>(chemin: &std::path::Path, fichier: &str
     socle::forme::lire_fichier_en_phrase(chemin, |cle, detail| refus_de_fiche(fichier, cle, detail))
 }
 
-/// Le refus d'une fiche qui ne se lit pas : le fichier, la cle, et quoi faire.
+/// Le refus d'une fiche qui ne se lit pas : le fichier, le chemin de la valeur (la cle de la fiche d'un salarie ou d'un
+/// spectacle, sa case, le rang de la valeur datee : « FULLER.nir_cle[0].valeur »), ce qui ne va pas (la phrase du type
+/// qui la refuse), et quoi faire.
 fn refus_de_fiche(fichier: &str, chemin: &str, detail: &str) -> String {
     let ou = if chemin.is_empty() { String::new() } else { format!(", à « {} »", chemin) };
     format!(
         "{}{} ne se lit pas : {}. Ce fichier a été écrit par une version précédente du logiciel ou à la main : ajouter la \
-compagnie à nouveau (« Ajouter une compagnie », d'un logiciel précédent) ou corriger cette clé dans le fichier.",
+compagnie à nouveau (« Ajouter une compagnie », d'un logiciel précédent) ou corriger cette clé ou sa valeur dans le fichier.",
         fichier, ou, detail
     )
 }
@@ -2274,6 +2716,13 @@ pub fn lire_saisie<T: DeserializeOwned>(v: &(impl Serialize + ?Sized), fichier: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn le_siret_se_controle_par_luhn() {
+        // insee-nir-siret : la somme des chiffres (rang impair doubles) est un multiple de 10.
+        assert!(Siret::lire("73282932000074").unwrap().cle_juste());
+        assert!(!Siret::lire("73282932000075").unwrap().cle_juste());
+    }
 
     /// Une fiche se relit et se reecrit telle quelle : les cases nulles et vides comprises.
     #[test]

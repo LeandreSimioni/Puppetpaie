@@ -58,7 +58,7 @@ pub(crate) struct ChargeOrganismes {
 #[derive(Debug, Serialize)]
 pub(crate) struct OrganismesDits {
     phrase: String,
-    idcc: Option<String>,
+    idcc: Option<droit::fiche::Idcc>,
     a_saisir: bool,
     mois: Mois,
     contrats: Vec<ContratDit>,
@@ -80,7 +80,7 @@ pub(crate) struct ContratDit {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct ContratSaisi {
     libelle: String,
-    organisme: String,
+    organisme: droit::organismes::IdentifiantDOrganisme,
 }
 
 /// LES TEMPS DE CHAQUE CONTRAT SAISI a la date du jour (`crate::temps::d_une_case`), par sa cle : la case datee
@@ -98,7 +98,7 @@ fn temps_des_contrats(ctx: &droit::contexte::Contexte) -> R<Vec<TempsDeLaCase<Co
             }
         }
         for (cle, datees) in par_cle.iter_mut() {
-            let valeur = version.valeur.iter().flatten().find(|a| a.cle.trim() == cle).map(|a| ContratSaisi { libelle: a.libelle.trim().to_string(), organisme: a.delegataire.trim().to_string() });
+            let valeur = version.valeur.iter().flatten().find(|a| a.cle.trim() == cle).map(|a| ContratSaisi { libelle: a.libelle.trim().to_string(), organisme: a.delegataire.clone() });
             if datees.last().is_some_and(|d| d.valeur == valeur) {
                 continue;
             }

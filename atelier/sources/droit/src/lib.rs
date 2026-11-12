@@ -14,6 +14,7 @@ pub mod bordereau;
 pub mod caisse_conges;
 pub mod catalogue;
 pub mod clauses;
+pub mod code_cotisation;
 pub mod conges;
 pub mod cotisation_etablissement;
 pub mod cumul;

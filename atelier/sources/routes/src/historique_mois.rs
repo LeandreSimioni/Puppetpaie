@@ -23,8 +23,9 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use envois::etats;
 use envois::journal::Ligne;
@@ -172,7 +173,7 @@ fn relatif(racine: &Path, p: &Path) -> String {
 }
 
 /// Le nom d'un salarie que porte `cle` : celui de sa fiche, s'il la dit ; sinon la cle elle-meme.
-fn qui_de_la_cle(ctx: &Contexte, cle: &str) -> String {
+fn qui_de_la_cle(ctx: &Contexte, cle: &IdSalarie) -> String {
     match ctx.salaries.get(cle).map(|s| documents::tableaux_export::qui_souple(s)).filter(|q| !q.is_empty()) {
         Some(q) => q,
         None => cle.to_string(),
@@ -182,7 +183,7 @@ fn qui_de_la_cle(ctx: &Contexte, cle: &str) -> String {
 /// Le salarie d'une ligne de contrat : le nom que la ligne porte (`detail.nom`, « NOM Prenom », ecrit par
 /// `crate::contrats::contrat_recu` et `releve_signatures`), sinon celui de sa fiche (`detail.salarie` est sa cle),
 /// sinon la cle elle-meme.
-fn qui_du_contrat(ctx: &Contexte, nom: &str, cle: &str) -> String {
+fn qui_du_contrat(ctx: &Contexte, nom: &str, cle: &IdSalarie) -> String {
     match dit(nom) {
         Some(n) => n.to_string(),
         None => qui_de_la_cle(ctx, cle),
@@ -212,7 +213,7 @@ impl Dite for Historique {
 struct Document {
     nom: String,
     sorte: &'static str,
-    salarie: Option<String>,
+    salarie: Option<droit::contexte::IdSalarie>,
     chemin: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     fichier: Option<String>,
@@ -368,8 +369,8 @@ fn nom_lisible(ctx: &Contexte, nom: &str) -> String {
     if let Some(j) = reste.strip_suffix("_recapitulatif.txt").and_then(jour) {
         return format!("Note des demandes du {}", j);
     }
-    if let Some((cle, j)) = reste.strip_suffix(".dsn").and_then(|s| s.rsplit_once('_')).and_then(|(c, t)| jour(t).map(|j| (c, j))) {
-        return format!("Taux de {}, demandé le {}", qui_de_la_cle(ctx, cle), j);
+    if let Some((cle, j)) = reste.strip_suffix(".dsn").and_then(|s| s.rsplit_once('_')).and_then(|(c, t)| Some((IdSalarie::lire(c).ok()?, jour(t)?))) {
+        return format!("Taux de {}, demandé le {}", qui_de_la_cle(ctx, &cle), j);
     }
     nom.to_string()
 }
@@ -430,7 +431,7 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.
     for b in import::mois::bulletins_repris(&ctx.racine, mois)? {
         let nom = format!("Bulletin de {} (ancien logiciel)", qui_de_la_cle(ctx, &b.salarie));
-        out.push(Document { nom, sorte: "Bulletins de paie", salarie: Some(b.salarie), chemin: b.chemin, fichier: None });
+        out.push(Document { nom, sorte: "Bulletins de paie", salarie: Some(b.salarie.clone()), chemin: b.chemin, fichier: None });
     }
     for d in out.iter_mut() {
         d.nom = nom_lisible(ctx, &d.nom);
@@ -938,7 +939,7 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
         if let Some(p) = lu(&d.producteur) {
             l.organisme = Some(p.to_string());
         }
-        let organisme = joint([lu(&d.producteur), lu(&d.code_producteur)], ", code ");
+        let organisme = joint([lu(&d.producteur), d.code_producteur.as_ref().map(IdentifiantDOrganisme::as_str)], ", code ");
         let retour = match (d.retour_global.and_then(dit), lu(&d.code_retour)) {
             (Some(g), _) => g.to_string(),
             (None, Some(c)) => format!("code retour {}", c),

@@ -198,7 +198,7 @@ fn pdf_de(d: &Path) -> R<Vec<String>> {
 /// Une piece du mois dans `sorties/<mois>/envoi/` : son nom, et la cle du salarie qu'elle nomme, si elle en nomme un.
 pub(crate) struct PieceDeLEnvoi {
     pub(crate) nom: String,
-    pub(crate) salarie: Option<String>,
+    pub(crate) salarie: Option<droit::contexte::IdSalarie>,
 }
 
 /// Les pieces du mois a ouvrir ou a remettre a la main : les PDF de `sorties/<mois>/envoi/`, chacune seule (jamais le PDF
@@ -208,16 +208,22 @@ pub(crate) fn pieces_de_l_envoi(ctx: &Contexte, mois: Mois) -> R<Vec<PieceDeLEnv
     if !envoi.exists() {
         return Ok(Vec::new());
     }
-    Ok(pdf_de(&envoi)?
+    pdf_de(&envoi)?
         .into_iter()
         .filter(|nom| !nom.starts_with(crate::gestes::signature::PREFIXE_IMPRESSION))
         .map(|nom| {
             // `<Piece>_<cle>_<etiquette>.pdf` : la cle du salarie est le deuxieme morceau.
             let morceaux: Vec<&str> = nom.split('_').collect();
-            let salarie = (morceaux.len() > 2).then(|| morceaux[1].to_string());
-            PieceDeLEnvoi { nom, salarie }
+            let salarie = (morceaux.len() > 2).then(|| droit::contexte::IdSalarie::lire(morceaux[1]).map_err(|_| piece_etrangere(&format!("envoi/{}", nom)))).transpose()?;
+            Ok(PieceDeLEnvoi { nom, salarie })
         })
-        .collect())
+        .collect()
+}
+
+/// Le refus d'un fichier des sorties d'un mois (`chemin`, depuis `sorties/<mois>/`) dont le nom ne dit pas de salarie
+/// (`<Piece>__<etiquette>.pdf`) : le moteur ne l'a pas ecrit.
+pub(crate) fn piece_etrangere(chemin: &str) -> socle::echec::Echec {
+    socle::refus!("`{}` n'est pas un document du moteur : son nom ne dit pas de quel salarié il est. Le retirer de ce dossier.", chemin)
 }
 
 // -------------------------------------------------------------- dossier-formes
@@ -708,7 +714,7 @@ const REEDITION_CONTRATS: &str = "Les contrats ont été réédités par notre l
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeDossierEnvoyer {
-    salaries: Option<Vec<String>>,
+    salaries: Option<Vec<droit::contexte::IdSalarie>>,
     mois: Option<Mois>,
     annee: Option<AnneeDite>,
     toutes_les_annees: Option<bool>,
@@ -736,16 +742,16 @@ fn dossier_envoyer(ctx: &Contexte, c: ChargeDossierEnvoyer, motdepasse: Option<&
     let forme = verifier_preuve(ctx, Some(&Preuve::du_mot_de_passe(motdepasse.map(String::from))), MoisOuJour::Mois(aujourdhui.mois_civil()), "envoi du dossier aux salaries", &a_qui)?;
     let d = construire(ctx, &demande(false))?;
     let envoi = envoyer_dossier(ctx, &d, &Preuve { donnee: Some(forme), ..Preuve::default() }, INTERFACE, ouvrir)?;
-    let phrase = format!("Dossier de {} ({}) : {}.", d.salaries.join(", "), d.periode, socle::ecran::compte(d.fichiers.len(), "fichier joint", "fichiers joints"));
+    let phrase = format!("Dossier de {} ({}) : {}.", d.salaries.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", "), d.periode, socle::ecran::compte(d.fichiers.len(), "fichier joint", "fichiers joints"));
     Ok(DossierRendu::de(d, phrase, Some(envoi)))
 }
 
 /// Chacun de `cles` a une adresse dans sa fiche ; sinon le refus qui le nomme. Rien n'est parti.
-fn adresses_de(ctx: &Contexte, cles: &[String]) -> R<Vec<String>> {
+fn adresses_de(ctx: &Contexte, cles: &[droit::contexte::IdSalarie]) -> R<Vec<String>> {
     cles.iter()
         .map(|cle| {
-            let s = ctx.salaries.get(cle.as_str()).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))?;
-            s.email.dite().filter(|e| !e.is_empty()).cloned().ok_or_else(|| {
+            let s = ctx.salaries.get(cle).ok_or_else(|| socle::fichiers::absent(cle.as_str()).reclasser(Classe::Manque))?;
+            s.email.en_texte().ok_or_else(|| {
                 refus(format!("Pas d'adresse e-mail pour {} : compléter sa fiche avant d'envoyer. Rien n'est parti.", ctx.nomme(cle)))
             })
         })
@@ -766,11 +772,11 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
     let mut messages: Vec<Message> = Vec::new();
     let adresses = adresses_de(ctx, &d.salaries)?;
     for ((cle, f), email) in d.salaries.iter().zip(&d.fichiers).zip(adresses) {
-        let s = ctx.salaries.get(cle.as_str()).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))?;
+        let s = ctx.salaries.get(cle).ok_or_else(|| socle::fichiers::absent(cle.as_str()).reclasser(Classe::Manque))?;
         let prenom = s.prenom_affichage.portee().or(s.prenom.portee()).ok_or_else(|| socle::fichiers::absent("prenom").reclasser(Classe::Manque))?.to_string();
         let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire").reclasser(Classe::Manque))?;
         let signe = signataire.prenom_affichage.remplie().or(signataire.prenom.portee()).ok_or_else(|| socle::fichiers::absent("prenom").reclasser(Classe::Manque))?;
-        let ses_pages = d.pages.get(cle);
+        let ses_pages = d.pages.get(cle.as_str());
         let liste = d
             .categories
             .iter()
@@ -790,7 +796,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
             ],
         );
         messages.push(Message {
-            cle: cle.clone(),
+            cle: cle.to_string(),
             nom: ctx.nomme(cle),
             destinataire: email.to_lowercase(),
             sujet: format!("Ton dossier de salarié — {}", d.periode),
@@ -807,7 +813,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
     let detail = journal::DetailDossier {
         periode: d.periode.clone(),
         categories: d.categories.iter().map(|c| c.to_string()).collect(),
-        salaries: messages.iter().map(|m| Ok(journal::DossierServi { cle: droit::contexte::IdSalarie::lire(&m.cle)?, piece: m.pieces.first().map(|p| nom_du(p)) })).collect::<R<_>>()?,
+        salaries: d.salaries.iter().zip(&messages).map(|(cle, m)| journal::DossierServi { cle: cle.clone(), piece: m.pieces.first().map(|p| nom_du(p)) }).collect(),
         expediteur: expediteur.clone(),
         partis: None,
         echec_a: None,
@@ -1052,7 +1058,7 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
         None => ctx.aujourdhui.mois_civil(),
     };
     let engs = engagement::cumul::lire_engagements(ctx, None, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?;
-    let cles: BTreeSet<&str> = engs.iter().map(|e| e.salarie.as_str()).collect();
+    let cles: BTreeSet<&droit::contexte::IdSalarie> = engs.iter().map(|e| &e.salarie).collect();
     let mut salaries = Vec::new();
     for cle in cles {
         let anniv = anniversaire_configure(ctx, cle)?;

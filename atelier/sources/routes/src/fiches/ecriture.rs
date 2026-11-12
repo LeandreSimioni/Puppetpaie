@@ -232,18 +232,19 @@ impl SorteDeFiche for FicheSalarieDatee {
     const FICHIER: &'static str = droit::contexte::SALARIES;
     type Fichier = droit::fiche::Salaries;
 
+    // Un texte qui n'est pas une cle (vide, fait de blancs : `IdSalarie::lire`) ne nomme aucune fiche existante.
     fn existante<'a>(f: &'a mut droit::fiche::Salaries, cle: Option<&str>) -> Option<&'a mut Self> {
-        f.fiches.get_mut(cle?)
+        f.fiches.get_mut(&IdSalarie::lire(cle?).ok()?)
     }
     fn ou_neuve<'a>(f: &'a mut droit::fiche::Salaries, cle: Option<&str>) -> R<&'a mut Self> {
         let cle = cle.ok_or_else(|| refus("Une fiche de salarié se nomme par sa clé."))?;
         Ok(f.fiches.entry(IdSalarie::lire(cle)?).or_default())
     }
     fn contient(f: &droit::fiche::Salaries, cle: &str) -> bool {
-        f.fiches.contains_key(cle)
+        IdSalarie::lire(cle).is_ok_and(|c| f.fiches.contains_key(&c))
     }
     fn montree(ctx: &Contexte, cle: Option<&str>) -> Option<ChampsSalarie> {
-        ctx.salaries.get(cle?).map(|f| Self::retenue(f.champs.clone()))
+        ctx.salaries.get(&IdSalarie::lire(cle?).ok()?).map(|f| Self::retenue(f.champs.clone()))
     }
     fn differentes(a: &ChampsSalarie, b: &ChampsSalarie) -> Vec<CaseDeFiche> {
         a.cases_differentes(b)
@@ -520,7 +521,7 @@ fn fautif(c: &champs::Champ, actuel: &Valeur) -> R<bool> {
 /// est vide ou ne respecte pas sa norme se remplit. Le departement de naissance et les initiales du contrat d'un salarie
 /// ne s'ecrivent que dans une case vide : ils se remplissent quelles que soient les cases `source`.
 pub(crate) fn deriver(nom: NomDeFiche, d: &mut Saisie, forcer: bool, source: &dyn Fn(CaseDeFiche) -> bool) -> R<()> {
-    use droit::fiche::{CaseBanque, CaseEntreprise as E, CaseSalarie as S};
+    use droit::fiche::{CaseEntreprise as E, CaseSalarie as S};
     for c in champs::fiche(nom)? {
         let Some(src) = c.derive_de.filter(|s| source(*s)) else { continue };
         let Some(Valeur::Texte(lisible)) = d.valeur(src) else { continue };
@@ -549,21 +550,6 @@ pub(crate) fn deriver(nom: NomDeFiche, d: &mut Saisie, forcer: bool, source: &dy
         deriver_siren_nic(d, source);
         if source(E::Etablissements.into()) {
             deriver_etablissements(d)?;
-        }
-    }
-    // LE COMPTE BANCAIRE S'ECRIT COMPACT : l'IBAN et le BIC sans blancs, en majuscules -- « FR76 3000 6000 … » est le
-    // meme compte que « FR763000 6000… » (`socle::iban::iban_compact`, communique IBAN de la Banque centrale de Turquie,
-    // annexe 3 : `reference/sources/iban/`).
-    if source(S::Banque.into()) {
-        if let Some(Valeur::Bloc(b)) = d.case_mut(S::Banque) {
-            for k in [CaseBanque::Iban, CaseBanque::Bic] {
-                if let Some(brut) = b.texte(k) {
-                    let forme = socle::iban::iban_compact(brut);
-                    if forme != brut {
-                        b.poser(k, Valeur::Texte(forme));
-                    }
-                }
-            }
         }
     }
     if nom == NomDeFiche::Salarie {
@@ -640,11 +626,9 @@ fn deriver_etablissements(d: &mut Saisie) -> R<()> {
     let fiche = champs::fiche(NomDeFiche::Entreprise)?;
     let mut sortie = Vec::new();
     for mut o in lignes {
-        if let Some(siret) = o.texte(Et::Siret).map(|s| s.chars().filter(|c| !c.is_whitespace()).collect::<String>()) {
-            if siret.chars().count() == 14 && siret.chars().all(|c| c.is_ascii_digit()) {
-                o.poser(Et::Nic, Valeur::Texte(siret[9..].to_string()));
-            }
-            o.poser(Et::Siret, Valeur::Texte(siret));
+        // Un SIRET qui n'a pas sa forme ne deduit rien : sa case le dit (`champs::fautes_des_types`).
+        if let Some(siret) = o.texte(Et::Siret).filter(|s| droit::fiche::Siret::faute(s).is_none()).map(str::to_string) {
+            o.poser(Et::Nic, Valeur::Texte(siret[droit::fiche::Siren::LONGUEUR..].to_string()));
         }
         // Les formes declarees se fabriquent comme celles du siege (`champs::normaliser` de sa ligne).
         for (declare, du_siege, lisible) in [(Et::Adresse, E::Adresse, Et::AdresseAffichage), (Et::Commune, E::Commune, Et::CommuneAffichage)] {
@@ -668,9 +652,8 @@ fn deriver_etablissements(d: &mut Saisie) -> R<()> {
                 Some(n) => vm.poser(CaseVersementMobilite::Taux, Valeur::Nombre(n)),
                 None => vm.retirer(CaseVersementMobilite::Taux),
             }
-            match texte(vm, CaseVersementMobilite::CodeInsee).map(str::to_uppercase) {
-                Some(insee) => vm.poser(CaseVersementMobilite::CodeInsee, Valeur::Texte(insee)),
-                None => vm.retirer(CaseVersementMobilite::CodeInsee),
+            if texte(vm, CaseVersementMobilite::CodeInsee).is_none() {
+                vm.retirer(CaseVersementMobilite::CodeInsee);
             }
         }
         if sans_valeur(o.case(Et::VersementMobilite)) {

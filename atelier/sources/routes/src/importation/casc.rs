@@ -53,8 +53,8 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
     for i in engagement::importe::du_mois(&ctx.racine, mois)? {
         let Some(p) = i.paies_lues()?.into_iter().find(|p| p.mois == mois) else { continue };
         let Some(brut) = p.paie.brut else { continue };
-        let cle = p.salarie.clone();
-        let salarie = ctx.salaries.get(cle.as_str()).cloned().ok_or_else(|| refus(format!("{} : la fiche du salarie « {} » d'un engagement importe n'existe pas.", mois, cle)))?;
+        let cle = &p.salarie;
+        let salarie = ctx.salaries.get(cle).cloned().ok_or_else(|| refus(format!("{} : la fiche du salarie « {} » d'un engagement importe n'existe pas.", mois, cle)))?;
         let (debut, fin) = (p.paie.debut, p.paie.fin);
         let mut activite = BTreeMap::new();
         if let Some(c) = i.contrat_lu()? {
@@ -138,7 +138,7 @@ pub struct ContratReg {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fin: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pcs_ese: Option<String>,
+    pub pcs_ese: Option<droit::fiche::CodePcsEse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emploi: Option<String>,
 }
@@ -368,7 +368,7 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
                 commune: champ(S::Commune),
                 email: champ(S::Email),
             };
-            let contrat = ContratReg { numero: p.numero.clone(), debut: p.debut, fin: p.fin, pcs_ese: champ(S::PcsEse), emploi: champ(S::Emploi) };
+            let contrat = ContratReg { numero: p.numero.clone(), debut: p.debut, fin: p.fin, pcs_ese: p.salarie.champs.pcs_ese.dite().cloned(), emploi: champ(S::Emploi) };
             emplois.push(EmploiReg {
                 annee: an,
                 mois: *m,
@@ -655,7 +655,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
     for (n, x) in r.emplois.iter().enumerate() {
         let ligne = 3 + n as u32;
         let (i, c) = (&x.individu, &x.contrat);
-        let artiste = c.pcs_ese.as_deref().is_some_and(|p| p.starts_with("354"));
+        let artiste = c.pcs_ese.as_ref().is_some_and(|p| p.starts_with("354"));
         let nir = i.nir.clone();
         let cle = (x.annee, nir.clone());
         let total = match cumul.iter_mut().find(|(k, _)| *k == cle) {
@@ -668,7 +668,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
                 x.brut
             }
         };
-        let cle_nir = cellule(&nir.as_deref().and_then(declarations::champs::cle_nir));
+        let cle_nir = cellule(&nir.as_deref().and_then(declarations::champs::cle_nir).en_texte());
         // Une case vide du fichier quand la date n'est pas dite.
         let jj = |j: &Option<Jour>| -> String { j.iter().map(Jour::jj_mm_aaaa).collect() };
         let textes: Vec<(u16, String)> = vec![

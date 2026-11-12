@@ -51,12 +51,12 @@ fn norm(d: Decimal) -> String {
 /// Un contrat du fichier (`DsnLue`), et ce qu'il declare pour le mois et en rappel d'un mois deja declare. Son numero
 /// (S21.G00.40.009) et son debut (S21.G00.40.001) sont obligatoires : un contrat qui ne les porte pas ne se lit pas.
 struct ContratLu {
-    numero: String,
+    numero: engagement::numeros::NumeroContrat,
     debut: Jour,
     fin: Option<Jour>,
     emploi: Option<String>,
     nature_dsn: Option<String>,
-    objet: Option<String>,
+    objet: Option<droit::fiche::NumeroObjetSpectacle>,
     fin_declaree: Option<Jour>,
     motif_fin: Option<droit::natures::MotifDeRupture>,
     mois: Mesures,
@@ -155,8 +155,8 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) 
         }
     };
     // `par_numero` : numero -> paie, dans l'ordre ou les numeros sont apparus (`ordre`).
-    let mut ordre: Vec<String> = Vec::new();
-    let mut par_numero: HashMap<String, usize> = HashMap::new();
+    let mut ordre: Vec<engagement::numeros::NumeroContrat> = Vec::new();
+    let mut par_numero: HashMap<engagement::numeros::NumeroContrat, usize> = HashMap::new();
     for (i, p) in liste.iter().enumerate() {
         if let Some(nic) = nic {
             match droit::bareme::etablissement_de(&ctx.entreprise, &p.salarie) {
@@ -168,14 +168,14 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) 
                 }
             }
         }
-        let n = p.engagement.numero.as_ref().ok_or_else(|| socle::refus!("La paie du contrat du {} n'a pas de numéro de contrat.", p.engagement.debut.jj_mm_aaaa()))?.to_string();
+        let n = p.engagement.numero.as_ref().ok_or_else(|| socle::refus!("La paie du contrat du {} n'a pas de numéro de contrat.", p.engagement.debut.jj_mm_aaaa()))?.clone();
         if !par_numero.contains_key(&n) {
             ordre.push(n.clone());
         }
         par_numero.insert(n, i);
     }
     let compare = sans_comparaison.is_none() && !liste.is_empty();
-    let mut vus: HashSet<String> = HashSet::new();
+    let mut vus: HashSet<engagement::numeros::NumeroContrat> = HashSet::new();
     let mut salaries = Vec::new();
     let (mut n_contrats, mut n_ecarts, mut n_corrections) = (0usize, 0usize, 0usize);
     for sal in &d.individus {
@@ -253,7 +253,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) 
             None => format!("Contrat {}, du {}", n, p.engagement.debut.jj_mm_aaaa()),
         };
         absents.push(AbsentDuFichier {
-            salarie: p.salarie.id.to_string(),
+            salarie: p.salarie.id.clone(),
             dit,
             nom,
             numero: n.clone(),
@@ -346,14 +346,14 @@ struct ContratDuFichier {
     activite_dit: String,
     dates_dit: String,
     fin_dit: String,
-    numero: String,
+    numero: engagement::numeros::NumeroContrat,
     debut: Jour,
     fin: Option<Jour>,
     emploi: Option<String>,
     /// La nature du contrat telle que la DSN la code (S21.G00.40.007).
     #[serde(rename = "nature")]
     nature_dsn: Option<String>,
-    objet: Option<String>,
+    objet: Option<droit::fiche::NumeroObjetSpectacle>,
     brut: Option<String>,
     jours: String,
     cachets: String,
@@ -370,9 +370,9 @@ struct ContratDuFichier {
 /// Un contrat de la paie du mois que le fichier ne porte pas.
 #[derive(Debug, Serialize)]
 struct AbsentDuFichier {
-    salarie: String,
+    salarie: droit::contexte::IdSalarie,
     nom: Option<String>,
-    numero: String,
+    numero: engagement::numeros::NumeroContrat,
     debut: Jour,
     fin: Option<Jour>,
     dit: String,
@@ -424,7 +424,7 @@ pub(crate) struct ApercuDsn {
     pub(crate) fraction: Option<String>,
     pub(crate) remplace: Option<String>,
     pub(crate) constitution: Option<String>,
-    pub(crate) siren: Option<String>,
+    pub(crate) siren: Option<droit::fiche::Siren>,
     pub(crate) salaries: usize,
     pub(crate) lignes: usize,
     pub(crate) pas_versements: usize,

@@ -196,8 +196,8 @@ fn annulations(ctx: &Contexte, departs: &engagement::departs::Departs, mois: Moi
 /// La version de l'engagement d'un mois corrige qu'une DSN porte (`versions_portees`).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct VersionPortee {
-    pub salarie: String,
-    pub numero: String,
+    pub salarie: droit::contexte::IdSalarie,
+    pub numero: engagement::numeros::NumeroContrat,
     pub version: u64,
     /// Le mois corrige.
     pub mois: Mois,
@@ -217,7 +217,7 @@ pub fn versions_portees(ctx: &Contexte, regs: &[Reg], nic: &str) -> R<Vec<Versio
         let numero = r.apres.engagement.numero.clone().ok_or_else(|| {
             erreur(Classe::MoisNonRegularisable, format!("{} : la correction de {} n'a pas de numero de contrat (S21.G00.40.009).", r.mois, documents::tableaux_export::qui_souple(&r.apres.salarie)))
         })?;
-        let v = VersionPortee { salarie: r.apres.salarie.id.to_string(), numero: numero.to_string(), version: r.version, mois: r.mois };
+        let v = VersionPortee { salarie: r.apres.salarie.id.clone(), numero, version: r.version, mois: r.mois };
         if !out.contains(&v) {
             out.push(v);
         }

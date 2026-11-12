@@ -5,6 +5,7 @@
 
 use droit::contexte::Contexte;
 use droit::cotisation_etablissement::CotisationDEtablissement;
+use droit::organismes::CodeCtp;
 use serde::Deserialize;
 use socle::date::Jour;
 use socle::echec::{refus_avec, Lieu, R};
@@ -18,8 +19,8 @@ const SEUIL: i64 = 20;
 /// Le fichier des chiffres OETH de la compagnie, un par millesime.
 const OETH: &str = "config/oeth.json";
 const MOIS_DE_DECLARATION: u32 = 4;
-const CTP_CONTRIBUTION: &str = "730";
-const CTP_ACCORD: &str = "740";
+const CTP_CONTRIBUTION: CodeCtp = CodeCtp::du_moteur("730");
+const CTP_ACCORD: CodeCtp = CodeCtp::du_moteur("740");
 
 /// Les categories de D5212-23 et leur code en S21.G00.82.002.
 const DEPENSES: [(&str, CotisationDEtablissement); 3] = [
@@ -109,14 +110,14 @@ impl Declaration {
     }
 
     /// [(ctp, montant)] a ajouter au bordereau Urssaf.
-    pub fn bordereau(&self) -> Vec<(String, Decimal)> {
+    pub fn bordereau(&self) -> Vec<(CodeCtp, Decimal)> {
         if self.accord.is_some() {
-            return self.non_realisees().map(|m| (CTP_ACCORD.to_string(), m)).into_iter().collect();
+            return self.non_realisees().map(|m| (CTP_ACCORD, m)).into_iter().collect();
         }
         if self.due().is_zero() {
             vec![]
         } else {
-            vec![(CTP_CONTRIBUTION.to_string(), self.due())]
+            vec![(CTP_CONTRIBUTION, self.due())]
         }
     }
 }

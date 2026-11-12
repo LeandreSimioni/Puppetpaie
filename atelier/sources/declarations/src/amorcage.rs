@@ -274,11 +274,11 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
     // p. 138) : le sien.
     let changement = o.motif == CHANGEMENT_DE_LOGICIEL;
     if changement {
-        let siret = match etab.siret.remplie() {
-            Some(s) => s.to_string(),
-            None => format!("{}{}", etab.siren.ecrite("siren")?, etab.nic.ecrite("nic")?),
+        let siret = match &etab.siret {
+            Some(s) => s.clone(),
+            None => droit::fiche::Siret::de(etab.siren.exigee("siren")?, etab.nic.exigee("nic")?),
         };
-        f.add("S20.G00.05.012", siret);
+        f.add("S20.G00.05.012", siret.to_string());
     }
     crate::dsn::contact_chez_le_declare(&mut f, ent)?;
 
@@ -286,7 +286,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
     f.add_case("S21.G00.06.001", &ent.siren, "siren")?;
     f.add_case("S21.G00.06.002", &ent.nic, "nic")?;
     for (rub, case, cle) in [
-        ("S21.G00.11.001", &etab.nic, "nic"),
+        ("S21.G00.11.001", &etab.nic.en_texte(), "nic"),
         ("S21.G00.11.002", &etab.naf.en_texte(), "naf"),
         ("S21.G00.11.003", &etab.adresse.en_texte(), "adresse"),
         ("S21.G00.11.004", &etab.code_postal.en_texte(), "code_postal"),

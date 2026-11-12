@@ -105,10 +105,10 @@ pub struct FormeDePaie<A> {
     pub salaire_de_base: Decimal,
     #[serde(with = "nombre")]
     pub salaire_retabli: Decimal,
-    pub salarie: Cle,
+    pub salarie: Cle<droit::contexte::IdSalarie>,
     #[serde(with = "nombre")]
     pub smic: Decimal,
-    pub spectacle: Option<Cle>,
+    pub spectacle: Option<Cle<droit::contexte::IdSpectacle>>,
     #[serde(with = "nombre")]
     pub total_pat: Decimal,
     #[serde(with = "nombre")]
@@ -127,8 +127,8 @@ pub struct FormeDePaie<A> {
 /// Une fiche nommee par sa cle (le salarie, le spectacle d'une paie).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Cle {
-    pub cle: String,
+pub struct Cle<I> {
+    pub cle: I,
 }
 
 /// Une ligne de cotisation (`calcul::LigneCotisation`) sous sa forme ecrite.
@@ -136,7 +136,7 @@ pub struct Cle {
 #[serde(deny_unknown_fields)]
 pub struct FormeDeCotisation {
     /// La cotisation de la ligne.
-    pub id: String,
+    pub id: droit::forme_bareme::IdDeCotisation,
     /// Sa famille.
     pub famille: String,
     pub libelle: String,
@@ -157,9 +157,9 @@ pub struct FormeDeCotisation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FormeDeRemuneration {
-    pub code: String,
+    pub code: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
-    pub unite: String,
+    pub unite: droit::catalogue::Unite,
     #[serde(with = "nombre")]
     pub quantite: Decimal,
     #[serde(with = "nombre")]
@@ -189,7 +189,7 @@ pub struct FormeDeLaDeduction {
     pub profession: String,
     #[serde(with = "nombre")]
     pub taux: Decimal,
-    pub rubriques: Vec<String>,
+    pub rubriques: Vec<droit::forme_bareme::IdDeCotisation>,
     #[serde(with = "nombre")]
     pub montant: Decimal,
     #[serde(with = "nombre")]
@@ -226,8 +226,8 @@ pub struct FormeDEngagement {
     pub lieux: BTreeMap<Jour, String>,
     pub emploi: Option<String>,
     pub emploi_affichage: Option<String>,
-    pub pcs_ese: Option<String>,
-    pub code_emploi_ft: Option<String>,
+    pub pcs_ese: Option<droit::fiche::CodePcsEse>,
+    pub code_emploi_ft: Option<droit::fiche::CodeEmploiFt>,
     pub statut: Option<droit::fiche::Statut>,
     pub statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
     pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,

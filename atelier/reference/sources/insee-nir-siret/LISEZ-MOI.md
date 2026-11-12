@@ -25,8 +25,10 @@ Deux pages du schéma XML des identifiants de l'INSEE, relevées le 28/10/2026 p
 
 ## Où le moteur s'en sert
 
-`atelier/sources/declarations/src/champs.rs` : `cle_nir` (la clé attendue d'un NIR, refus d'un NIR dont la clé diffère) et
-`luhn` (le SIRET d'un établissement). Tests : `la_cle_du_nir_et_celle_de_la_corse`, `le_siret_se_controle_par_luhn`.
+`atelier/sources/declarations/src/champs.rs` : `cle_nir` (la clé attendue d'un NIR, refus d'un NIR dont la clé diffère).
+`atelier/sources/droit/src/fiche.rs` : `Siren`, `Nic`, `Siret` (9, 5 et 14 chiffres, SIRET = SIREN + NIC) et leur clé
+de Luhn (`cle_juste`, dite à la saisie sans refuser la fiche). Tests : `la_cle_du_nir_et_celle_de_la_corse` (champs.rs),
+`le_siret_se_controle_par_luhn` (fiche.rs).
 
 ## Empreintes
 

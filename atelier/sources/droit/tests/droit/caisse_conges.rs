@@ -48,6 +48,6 @@ fn qui_est_declare_a_la_caisse() {
 fn fiche(champs: &str, idcc: Option<&str>) -> SalarieDuContrat {
     let champs = lu(champs);
     let mut s = SalarieDuContrat::de(FicheSalarie { id: IdSalarie::lire("X").unwrap(), champs });
-    s.idcc_de_l_employeur = idcc.map(String::from);
+    s.idcc_de_l_employeur = idcc.map(|i| droit::fiche::Idcc::lire(i).unwrap());
     s
 }

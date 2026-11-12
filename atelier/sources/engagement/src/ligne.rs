@@ -13,6 +13,7 @@
 
 use std::collections::BTreeMap;
 
+use droit::catalogue::CodeDeRubrique;
 use serde::{Deserialize, Serialize};
 use socle::forme::NombreLu;
 
@@ -179,7 +180,7 @@ type Case = Option<Decimal>;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Unites {
-    pub rubrique: String,
+    pub rubrique: CodeDeRubrique,
     #[serde(deserialize_with = "socle::forme::decimal_opt")]
     pub quantite: Case,
     #[serde(deserialize_with = "socle::forme::decimal_opt")]
@@ -195,7 +196,7 @@ pub struct Unites {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct UnitesEtHeures {
-    pub rubrique: String,
+    pub rubrique: CodeDeRubrique,
     #[serde(deserialize_with = "socle::forme::decimal_opt")]
     pub quantite: Case,
     #[serde(deserialize_with = "socle::forme::decimal_opt")]
@@ -212,7 +213,7 @@ pub struct UnitesEtHeures {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Frais {
-    pub rubrique: String,
+    pub rubrique: CodeDeRubrique,
     #[serde(deserialize_with = "socle::forme::decimal_opt")]
     pub quantite: Case,
     #[serde(deserialize_with = "socle::forme::decimal_opt")]
@@ -239,7 +240,7 @@ impl Frais {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Pourcentage {
-    pub rubrique: String,
+    pub rubrique: CodeDeRubrique,
     #[serde(deserialize_with = "socle::forme::decimal_opt")]
     pub base: Case,
     #[serde(deserialize_with = "socle::forme::decimal_opt")]
@@ -251,7 +252,7 @@ pub struct Pourcentage {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Montant {
-    pub rubrique: String,
+    pub rubrique: CodeDeRubrique,
     #[serde(deserialize_with = "socle::forme::decimal_opt")]
     pub montant: Case,
 }
@@ -261,7 +262,7 @@ pub struct Montant {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AvantageEnNature {
-    pub rubrique: String,
+    pub rubrique: CodeDeRubrique,
     #[serde(deserialize_with = "socle::forme::decimal_opt")]
     pub montant: Case,
     pub genre: Option<String>,
@@ -272,7 +273,7 @@ pub struct AvantageEnNature {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Composee {
-    pub rubrique: String,
+    pub rubrique: CodeDeRubrique,
     #[serde(deserialize_with = "socle::forme::decimal")]
     pub quantite: Decimal,
     #[serde(deserialize_with = "socle::forme::decimal")]
@@ -288,7 +289,7 @@ pub struct Composee {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RetenueArret {
-    pub rubrique: String,
+    pub rubrique: CodeDeRubrique,
     #[serde(deserialize_with = "socle::forme::decimal")]
     pub quantite: Decimal,
     #[serde(deserialize_with = "socle::forme::decimal")]
@@ -301,7 +302,7 @@ pub struct RetenueArret {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct IndemniteJournaliere {
-    pub rubrique: String,
+    pub rubrique: CodeDeRubrique,
     #[serde(deserialize_with = "socle::forme::decimal")]
     pub jours: Decimal,
     #[serde(deserialize_with = "socle::forme::decimal")]
@@ -316,7 +317,7 @@ pub struct IndemniteJournaliere {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Maintien {
-    pub rubrique: String,
+    pub rubrique: CodeDeRubrique,
     #[serde(deserialize_with = "socle::forme::decimal")]
     pub quantite: Decimal,
     #[serde(deserialize_with = "socle::forme::decimal")]
@@ -331,7 +332,7 @@ pub struct Maintien {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Importee {
-    pub rubrique: String,
+    pub rubrique: CodeDeRubrique,
     #[serde(deserialize_with = "socle::forme::decimal_opt")]
     pub quantite: Option<Decimal>,
     #[serde(deserialize_with = "socle::forme::decimal_opt")]
@@ -385,16 +386,16 @@ impl LignePaie {
     /// LE REVERSEMENT DES INDEMNITES JOURNALIERES NETTES d'une compagnie subrogee (`maintien::lignes`) : une rubrique de la
     /// piece d'un salarie au mois (`RubriqueDuMois::IjssNettes`), que seul le calcul qui tient sa cle compose.
     pub fn ij_nettes(_cle: &droit::natures::AuMois, jours: Decimal, taux: Decimal, assiette_pas: Decimal) -> LignePaie {
-        let rubrique = droit::catalogue::RubriqueDuMois::IjssNettes.code().to_string();
+        let rubrique = droit::catalogue::RubriqueDuMois::IjssNettes.code();
         LignePaie::IndemniteJournaliere(IndemniteJournaliere { rubrique, jours, taux, assiette_pas: Some(assiette_pas) })
     }
 
-    pub fn composee(rubrique: &str, quantite: Decimal, taux: Decimal) -> LignePaie {
-        LignePaie::Composee(Composee { rubrique: rubrique.to_string(), quantite, taux, heures: None, precision: None, dates: Vec::new() })
+    pub fn composee(rubrique: CodeDeRubrique, quantite: Decimal, taux: Decimal) -> LignePaie {
+        LignePaie::Composee(Composee { rubrique, quantite, taux, heures: None, precision: None, dates: Vec::new() })
     }
 
     /// Le code de sa rubrique au catalogue (`droit::catalogue::rubrique`).
-    pub fn rubrique(&self) -> &str {
+    pub fn rubrique(&self) -> &CodeDeRubrique {
         match self {
             LignePaie::Unites(l) => &l.rubrique,
             LignePaie::UnitesEtHeures(l) => &l.rubrique,
@@ -774,7 +775,7 @@ impl FormeSaisie {
 /// (`LigneDonnee::ranger`), avec le catalogue.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LigneDonnee {
-    pub rubrique: Option<String>,
+    pub rubrique: Option<CodeDeRubrique>,
     pub quantite: Option<Case>,
     pub taux: Option<Case>,
     pub heures: Option<Case>,
@@ -816,7 +817,7 @@ impl<'de> Deserialize<'de> for LigneDonnee {
                 let mut l = LigneDonnee::default();
                 while let Some(cle) = m.next_key::<Cle>()? {
                     match cle {
-                        Cle::Rubrique => une(&mut l.rubrique, m.next_value::<String>()?, cle)?,
+                        Cle::Rubrique => une(&mut l.rubrique, m.next_value::<CodeDeRubrique>()?, cle)?,
                         Cle::Quantite => une(&mut l.quantite, m.next_value::<Nombre>()?.0, cle)?,
                         Cle::Taux => une(&mut l.taux, m.next_value::<Nombre>()?.0, cle)?,
                         Cle::Heures => une(&mut l.heures, m.next_value::<Nombre>()?.0, cle)?,

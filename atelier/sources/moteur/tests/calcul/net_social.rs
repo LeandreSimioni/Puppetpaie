@@ -9,7 +9,7 @@ fn chaque_rubrique_livree_hors_assiette_dit_ce_qu_elle_est_pour_le_net_social() 
     let cat = catalogue(&crate::outils::dossier_de_test("net_social", "catalogue"), &socle::date::Jour::nouveau(2026, 10, 28).unwrap()).unwrap();
     let mut vus: Vec<(String, HorsAssiette)> = Vec::new();
     for r in cat.iter().filter(|r| !r.soumis && r.origine == "base") {
-        vus.push((r.code.clone(), r.hors_assiette().unwrap_or_else(|e| panic!("{} : {}", r.code, e.phrase))));
+        vus.push((r.code.to_string(), r.hors_assiette().unwrap_or_else(|e| panic!("{} : {}", r.code, e.phrase))));
     }
     vus.sort_by(|a, b| a.0.cmp(&b.0));
     let attendu: Vec<(String, HorsAssiette)> = [

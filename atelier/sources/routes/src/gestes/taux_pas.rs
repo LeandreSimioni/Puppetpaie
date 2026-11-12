@@ -9,7 +9,7 @@ use compagnie::taux_pas::TauxRecu;
 /// (`droit::pas::date_d_effet`). Un taux deja recu (meme identifiant, meme taux, meme instant) ne s'ecrit pas deux fois.
 pub fn enregistrer(ctx: &Contexte, releves: &[TauxRecu], source: &str) -> Result<Vec<String>, Echec> {
     let mut changements = Vec::new();
-    let mut ecrits: Vec<(String, droit::fiche::TauxPas)> = Vec::new();
+    let mut ecrits: Vec<(droit::contexte::IdSalarie, droit::fiche::TauxPas)> = Vec::new();
     for r in releves {
         let cle = r.salarie.clone();
         let lu = r.dans_la_fiche();

@@ -212,7 +212,7 @@ fn comparer_une(
         return Err(refus("la convention collective de l'entreprise n'est pas renseignée : le calcul n'aurait pas sa couche"));
     }
     let salarie = brut.salarie.as_ref().ok_or_else(|| refus("l'engagement importé ne nomme pas son salarié"))?;
-    let fiche = ctx.salarie(&salarie).map_err(|m| a_refaire(c, m))?;
+    let fiche = ctx.fiche_de(salarie).map_err(|m| a_refaire(c, m))?;
     // LE STATUT ET L'EMPLOI DE CETTE PAIE sont ceux que son bulletin imprime (`emploi_imprime`) ; ce qu'il ne dit pas
     // se lit dans la fiche. Un salarie artiste sur un contrat, non cadre au regime general sur un autre, se calcule
     // chaque fois sous le sien.
@@ -280,7 +280,7 @@ fn comparer_une(
     let mut saisies = Vec::new();
     for l in &p.lignes {
         let libelle = &l.libelle;
-        let Some(r) = l.rubrique.as_deref().filter(|r| !r.is_empty()) else {
+        let Some(r) = &l.rubrique else {
             if !l.soumis {
                 continue;
             }
@@ -290,15 +290,16 @@ fn comparer_une(
         let taux = l.taux.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas son taux", libelle))?;
         // La ligne dans la forme que le catalogue demande de sa rubrique (`ligne::FormeSaisie`), comme la porte la range.
         use crate::ligne::{self, FormeSaisie, LignePaie};
-        let forme = FormeSaisie::de(&droit::catalogue::rubrique(&ctx.racine, r, &fin)?)?;
+        let lue = droit::catalogue::rubrique(&ctx.racine, r, &fin)?;
+        let forme = FormeSaisie::de(&lue)?;
         // Une ligne au montant paie sa quantite fois son taux, comme le bulletin l'imprime.
         let montant = Some(quantite * taux);
         // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.
         let Some(forme) = forme else {
-            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: r.to_string(), quantite, taux, heures: l.heures, precision: None, dates: jours.clone() }));
+            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, quantite, taux, heures: l.heures, precision: None, dates: jours.clone() }));
             continue;
         };
-        let (rubrique, quantite, taux, dates) = (r.to_string(), Some(quantite), Some(taux), jours.clone());
+        let (rubrique, quantite, taux, dates) = (lue.code, Some(quantite), Some(taux), jours.clone());
         saisies.push(match forme {
             FormeSaisie::Unites => LignePaie::Unites(ligne::Unites { rubrique, quantite, taux, lieu: None, dates, planning: Vec::new() }),
             FormeSaisie::UnitesEtHeures => LignePaie::UnitesEtHeures(ligne::UnitesEtHeures { rubrique, quantite, taux, heures: l.heures, lieu: None, dates, planning: Vec::new() }),
@@ -331,8 +332,8 @@ fn comparer_une(
         debut: p.debut,
         fin: p.fin,
         emploi: imprime(|i| &i.emploi),
-        pcs_ese: imprime(|i| &i.pcs_ese),
-        code_emploi_ft: imprime(|i| &i.code_emploi_ft),
+        pcs_ese: imprimes.and_then(|i| i.pcs_ese.clone()),
+        code_emploi_ft: imprimes.and_then(|i| i.code_emploi_ft.clone()),
         statut: p.emploi_imprime.as_ref().and_then(|i| i.statut),
         statut_conventionnel: p.emploi_imprime.as_ref().and_then(|i| i.statut_conventionnel),
         statut_categoriel_rc: p.emploi_imprime.as_ref().and_then(|i| i.statut_categoriel_rc),
@@ -346,7 +347,7 @@ fn comparer_une(
     let mut saisie = crate::charger_donnees(&ctx, &data).map_err(|m| a_refaire(c, m))?;
     if let Some((taux, montant, base)) = atmp_imprime {
         // Calcule au taux notifie de 1 %, la ligne AT/MP porte le facteur du contrat, et son assiette.
-        let ligne = saisie.paies.first().and_then(|p| p.lignes.iter().find(|l| l.est("atmp")));
+        let ligne = saisie.paies.first().and_then(|p| p.lignes.iter().find(|l| l.est(&droit::forme_bareme::ATMP)));
         let facteur = ligne.and_then(|l| l.taux_pat).filter(|f| *f > Decimal::ZERO);
         let applique = taux.or_else(|| {
             let b = base.or(ligne.map(|l| l.base)).filter(|b| !b.is_zero())?;

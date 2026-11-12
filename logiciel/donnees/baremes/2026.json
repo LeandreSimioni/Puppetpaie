@@ -1669,7 +1669,7 @@
       "taux": 0.42,
       "base78": "zero",
       "affectation": "202",
-      "organisme": "TSINTERMITTENTS",
+      "adhesion": "TSINTERMITTENTS",
       "source": {
         "sources": [
           {
@@ -1695,7 +1695,7 @@
       "taux": 1.23,
       "base78": "zero",
       "affectation": "203",
-      "organisme": "INTERBRANCHE",
+      "adhesion": "INTERBRANCHE",
       "composants": [
         1.11,
         0.12
@@ -2308,6 +2308,8 @@
           "code81_urssaf": "018",
           "code81_chomage": "018",
           "code81_retraite": "106",
+          "cle_total_urssaf": "018:urssaf",
+          "cle_total_chomage": "018:chomage",
           "ctp": "671",
           "ctp_regularisation": "801",
           "qualifiant": "921"
@@ -2617,7 +2619,7 @@
           "taux": 0.42,
           "base78": "zero",
           "affectation": "202",
-          "organisme": "TSINTERMITTENTS",
+          "adhesion": "TSINTERMITTENTS",
           "source": {
             "sources": [
               {
@@ -2643,7 +2645,7 @@
           "taux": 1.23,
           "base78": "zero",
           "affectation": "203",
-          "organisme": "INTERBRANCHE",
+          "adhesion": "INTERBRANCHE",
           "composants": [
             1.11,
             0.12
@@ -3973,7 +3975,7 @@
           "base": "brut",
           "base78": "zero",
           "affectation": "202",
-          "organisme": "PREVOYANCE",
+          "adhesion": "PREVOYANCE",
           "lignes": [
             "prevoyance",
             "prevoyance_t2"
@@ -4021,7 +4023,7 @@
           "base": "brut",
           "base78": "zero",
           "affectation": "203",
-          "organisme": "SANTE",
+          "adhesion": "SANTE",
           "lignes": [
             "mutuelle"
           ],

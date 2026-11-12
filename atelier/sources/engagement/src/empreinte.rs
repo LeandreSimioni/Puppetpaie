@@ -16,7 +16,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
 use socle::fichiers::{self, dossier_du_code, LectureDatee};
 use socle::echec::R;
@@ -31,12 +31,12 @@ pub const MOTEUR: &str = concat!(env!("CARGO_PKG_VERSION"), "+", env!("ENGAGEMEN
 /// L'entree des fiches dont depend la paie de `salarie` pour `mois`, sur `spectacle` : l'entreprise, la fiche du salarie
 /// et celle du spectacle, telles qu'elles valent au dernier jour du mois (`Contexte::du_mois`). La fiche d'un autre
 /// salarie, une valeur datee apres le mois n'en sont pas : elles ne font pas recalculer cette paie.
-pub(crate) fn fiches(ctx: &Contexte, mois: Mois, salarie: &str, spectacle: Option<&str>) -> R<(String, String)> {
+pub(crate) fn fiches(ctx: &Contexte, mois: Mois, salarie: &IdSalarie, spectacle: Option<&str>) -> R<(String, String)> {
     let cle = socle::ecriture::json_en_ligne(&(mois, salarie, spectacle));
     Ok((format!("fiches {}", cle), empreinte_fiches(&ctx.du_mois(mois)?, salarie, spectacle)))
 }
 
-fn empreinte_fiches(ctx: &Contexte, salarie: &str, spectacle: Option<&str>) -> String {
+fn empreinte_fiches(ctx: &Contexte, salarie: &IdSalarie, spectacle: Option<&str>) -> String {
     // L'entreprise, la fiche au jour sans ses taux recus, et le spectacle, chacun dans l'ordre de sa forme
     // (`droit::fiche`) ; ce qui manque s'ecrit `null`.
     let sal = ctx.salaries.get(salarie).map(|f| droit::fiche::ChampsSalarie { taux_pas: None, ..f.champs.clone() });
@@ -46,7 +46,7 @@ fn empreinte_fiches(ctx: &Contexte, salarie: &str, spectacle: Option<&str>) -> S
 
 /// L'entree `fiches [mois, salarie, spectacle]` tient-elle encore ?
 fn fiches_tiennent(ctx: &Contexte, cle: &str, v: &str) -> R<bool> {
-    let (mois, salarie, spectacle) = socle::forme::lire_texte::<(Mois, String, Option<String>)>(cle, socle::echec::PAIE_ILLISIBLE)?;
+    let (mois, salarie, spectacle) = socle::forme::lire_texte::<(Mois, IdSalarie, Option<String>)>(cle, socle::echec::PAIE_ILLISIBLE)?;
     Ok(fiches(ctx, mois, &salarie, spectacle.as_deref())?.1 == v)
 }
 
@@ -115,18 +115,18 @@ fn entree_tient(ctx: &Contexte, k: &str, v: &str) -> R<bool> {
         "aujourdhui" => return Ok(v == droit::contexte::aujourdhui_sans_note()?.iso()),
         _ => {}
     }
-    if let Some(lue) = LectureDatee::lue(k) {
+    if let Some(lue) = LectureDatee::<IdSalarie>::lue(k) {
         return Ok(match lue? {
             // L'indemnite de mission d'un jour a l'etranger : la valeur prise, pas la table (`droit::missions`).
             LectureDatee::Mission { lieu, jour } => v == droit::missions::du_jour(&lieu, &jour)?.empreinte(),
             LectureDatee::Pas { salarie, le, mois } => v == droit::pas::empreinte(ctx, &salarie, le, mois)?,
             LectureDatee::Mensuels { mois, salarie } => v == crate::conges::empreinte_des_mensuels_d_avant(ctx, mois, &salarie)?,
             LectureDatee::Paies { mois, salarie } => v == crate::etats::empreinte_des_paies_validees(ctx, mois, Some(&salarie))?,
-            LectureDatee::Saisie { mois, salarie } => stock::empreinte_de_la_saisie_du_mois(racine, mois, salarie.as_deref())?.is_some_and(|e| v == e),
+            LectureDatee::Saisie { mois, salarie } => stock::empreinte_de_la_saisie_du_mois(racine, mois, salarie.as_ref())?.is_some_and(|e| v == e),
         });
     }
     if let Some(salarie) = crate::imprevus::salarie_de_l_entree(k) {
-        return Ok(v == crate::imprevus::empreinte_du_salarie(racine, salarie)?);
+        return Ok(v == crate::imprevus::empreinte_du_salarie(racine, &IdSalarie::lire(salarie)?)?);
     }
     let Some((genre, p)) = fichiers::chemin_de(k, racine, &code) else {
         return Err(socle::refus!("L'empreinte d'une paie note la lecture « {} », que le registre des lectures n'écrit pas : le signaler au développeur.", k));
@@ -148,7 +148,7 @@ pub fn regles(ctx: &Contexte, jour: &Jour) -> R<Vec<Jour>> {
 /// Les valeurs datees de la compagnie qui s'appliquent au jour `jour` a l'engagement de `salarie` sur `spectacle`
 /// (`Contexte::configuration_datee`), en AAAA-MM-JJ. Elles ne font pas recalculer (les fiches sont deja dans les
 /// entrees) : elles disent a quelle date s'applique une valeur nouvelle.
-pub fn configuration(ctx: &Contexte, jour: &Jour, salarie: &str, spectacle: Option<&str>) -> R<Vec<Jour>> {
+pub fn configuration(ctx: &Contexte, jour: &Jour, salarie: &IdSalarie, spectacle: Option<&str>) -> R<Vec<Jour>> {
     ctx.configuration_datee(jour, salarie, spectacle)
 }
 

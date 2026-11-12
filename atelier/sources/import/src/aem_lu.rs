@@ -151,16 +151,16 @@ pub struct Aem {
     /// Le mois de l'attestation.
     pub mois: Option<Mois>,
     pub numero: Option<String>,
-    pub siret: Option<String>,
+    pub siret: Option<droit::fiche::Siret>,
     pub ape: Option<String>,
-    pub idcc: Option<String>,
+    pub idcc: Option<droit::fiche::Idcc>,
     pub employeur: Option<String>,
     pub employeur_code_postal: Option<String>,
     pub employeur_commune: Option<String>,
     /// Le numero d'adherent a la caisse des Congés Spectacles, ecrit comme la fiche le garde.
     pub adherent: Option<String>,
     pub nir: Option<String>,
-    pub cle_nir: Option<String>,
+    pub cle_nir: Option<droit::fiche::CleNir>,
     pub nom: Option<String>,
     pub prenom: Option<String>,
     pub nom_usage: Option<String>,
@@ -350,6 +350,42 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
         },
         _ => None,
     };
+    // UN SIRET OU UNE CLE DU NIR QUI N'ONT PAS LEUR FORME se disent, et la page se refuse (`Aem::manque`) ; la cle
+    // imprimee se garde quand c'est celle du NIR (`declarations::champs::cle_nir`), comme sur une AEM (`lire_page`).
+    let mut fautes: Vec<String> = Vec::new();
+    let siret = match v("EMP_SIRET").map(|s| droit::fiche::Siret::lire(&s)).transpose() {
+        Ok(s) => s,
+        Err(e) => {
+            fautes.push(e.phrase);
+            None
+        }
+    };
+    let cle_nir = match nir.as_ref().and_then(|n| n.get(13..)).filter(|k| !k.is_empty()).map(droit::fiche::CleNir::lire).transpose() {
+        Ok(Some(k)) => match nir.as_ref().and_then(|n| n.get(..13)).and_then(declarations::champs::cle_nir) {
+            Some(c) if c == k => Some(c),
+            Some(_) => {
+                fautes.push("la clé du NIR imprimé ne correspond pas à son numéro".to_string());
+                None
+            }
+            None => {
+                fautes.push("le NIR imprimé n'a pas la forme d'un numéro de sécurité sociale".to_string());
+                None
+            }
+        },
+        Ok(None) => None,
+        Err(e) => {
+            fautes.push(e.phrase);
+            None
+        }
+    };
+    let idcc = match v("EMP_IDCC").map(|i| droit::fiche::Idcc::lire(&i)).transpose() {
+        Ok(i) => i,
+        Err(e) => {
+            fautes.push(e.phrase);
+            None
+        }
+    };
+    let faute = (!fautes.is_empty()).then(|| fautes.join(" ; "));
     let mut out = Vec::new();
     let mut numero_objet = None;
     for rang in 1..=5 {
@@ -364,14 +400,14 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             page,
             mois: Some(debut.mois_civil()),
             numero: None,
-            siret: v("EMP_SIRET"),
+            siret: siret.clone(),
             ape: v("EMP_APE"),
-            idcc: v("EMP_IDCC"),
+            idcc: idcc.clone(),
             employeur: v("ENSEIGNE"),
             employeur_code_postal: v("ADR_EMP_CP"),
             employeur_commune: v("ADR_EMP_LOCALITE"),
             adherent: None,
-            cle_nir: nir.as_ref().and_then(|n| n.get(13..15)).map(str::to_string),
+            cle_nir: cle_nir.clone(),
             nir: nir.as_ref().and_then(|n| n.get(..13)).map(str::to_string),
             nom: v("SALARIE_NOM_FAMILLE"),
             prenom: v("SALARIE_PRENOMS"),
@@ -394,7 +430,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             brut: v(&nom("SAL_MONTANT_")).and_then(|t| socle::num::decimal_a_virgule(&t)),
             corrige: None,
             aer: true,
-            faute: None,
+            faute: faute.clone(),
         };
         let lecture = match a.manque() {
             Some(raison) => Lecture::Refusee { sort: crate::reponse::Sort::Incomplet, raison: raison.replacen("AEM", "AER", 1), partiel: Some(a) },
@@ -602,9 +638,23 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     a.mois = socle::piece::Zone::lue(&chiffres, socle::piece::format::Mmaaaa).valeur();
     a.numero = lu("attestation", Some(0)).first().cloned();
     let siret: String = lu("siret", Some(1)).concat().chars().filter(char::is_ascii_digit).collect();
-    a.siret = (siret.len() == 14).then_some(siret);
+    // Un SIRET ou un IDCC imprimés qui n'ont pas leur forme se disent (`a.faute`), comme la clé du NIR plus bas.
+    let mut fautes_d_identite: Vec<String> = Vec::new();
+    a.siret = match (!siret.is_empty()).then(|| droit::fiche::Siret::lire(&siret)).transpose() {
+        Ok(s) => s,
+        Err(e) => {
+            fautes_d_identite.push(e.phrase);
+            None
+        }
+    };
     a.ape = lu("ape", Some(1)).first().cloned();
-    a.idcc = lu("idcc", Some(1)).first().filter(|x| x.len() == 4 && x.chars().all(|c| c.is_ascii_digit())).cloned();
+    a.idcc = match lu("idcc", Some(1)).first().map(|x| droit::fiche::Idcc::lire(x)).transpose() {
+        Ok(i) => i,
+        Err(e) => {
+            fautes_d_identite.push(e.phrase);
+            None
+        }
+    };
     a.employeur = texte(lu("raison", Some(1)));
     a.employeur_code_postal = lu("code_postal", Some(1)).first().filter(|x| x.len() == 5 && x.chars().all(|c| c.is_ascii_digit())).cloned();
     a.employeur_commune = texte(lu("commune", Some(1)));
@@ -618,12 +668,16 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     a.nom_usage = texte(lu("usage", Some(2)));
     let mut fautes: Vec<&str> = Vec::new();
     if let Some((nir, cle, _)) = nir_en_tete(&lu("nir", Some(2))) {
+        // La cle imprimee, quand c'est celle du NIR (`declarations::champs::cle_nir`).
         match &cle {
-            Some(k) if declarations::champs::cle_nir(&nir).as_deref() != Some(k.as_str()) => fautes.push("la clé du NIR imprimé ne correspond pas à son numéro"),
-            _ => {
-                a.nir = Some(nir);
-                a.cle_nir = cle;
-            }
+            Some(k) => match declarations::champs::cle_nir(&nir).filter(|c| **c == **k) {
+                Some(c) => {
+                    a.nir = Some(nir);
+                    a.cle_nir = Some(c);
+                }
+                None => fautes.push("la clé du NIR imprimé ne correspond pas à son numéro"),
+            },
+            None => a.nir = Some(nir),
         }
     }
     a.naissance = date_en_tete(&lu("naissance", Some(2))).map(|d| d.0);
@@ -735,7 +789,11 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     }
     a.faute = match inconnu.into_inner() {
         Some(i) => Some(i),
-        None => fautes.first().map(|f| f.to_string()),
+        // Toutes les fautes de la page, comme l'AER (`lire_aer`) : aucune n'en cache une autre.
+        None => {
+            let toutes: Vec<String> = fautes_d_identite.into_iter().chain(fautes.iter().map(|f| f.to_string())).collect();
+            (!toutes.is_empty()).then(|| toutes.join(" ; "))
+        }
     };
     Some(a)
 }

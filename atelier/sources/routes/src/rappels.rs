@@ -346,7 +346,7 @@ pub(crate) struct Echeance {
     engagements: i64,
     validees: i64,
     spectacles: Vec<SpectacleARevoir>,
-    salarie: Option<String>,
+    salarie: Option<droit::contexte::IdSalarie>,
     /// Le jour que sa cle nomme (`<obligation>:<salarie>:<jour>`) : celui du fichier du signalement qu'elle appelle.
     jour_de_la_cle: Option<Jour>,
     a_saisir: Vec<String>,
@@ -369,10 +369,10 @@ pub(crate) enum Objet {
 
 impl Objet {
     /// Le salarie qu'il nomme (la cle de sa fiche).
-    fn salarie(&self) -> String {
+    fn salarie(&self) -> droit::contexte::IdSalarie {
         match self {
-            Objet::Fin(f) => f.salarie.to_string(),
-            Objet::Arret(a) => a.salarie().to_string(),
+            Objet::Fin(f) => f.salarie.clone(),
+            Objet::Arret(a) => a.salarie().clone(),
         }
     }
 }
@@ -437,7 +437,7 @@ impl Echeance {
         use crate::imprevus::{ChargeArretSignaler, ChargeFinContratSignaler, NatureSignalement};
         // L'arret sur lequel porte l'obligation : son salarie et son dernier jour travaille.
         let arret = || match &self.objet {
-            Some(Objet::Arret(a)) => Some((a.salarie().to_string(), a.dernier_jour_travaille())),
+            Some(Objet::Arret(a)) => Some((a.salarie().clone(), a.dernier_jour_travaille())),
             _ => None,
         };
         let salarie = || self.objet.as_ref().map(Objet::salarie);
@@ -558,7 +558,7 @@ pub(crate) struct EcheanceDite {
     pub(crate) engagements: i64,
     pub(crate) validees: i64,
     pub(crate) spectacles: Vec<SpectacleARevoir>,
-    pub(crate) salarie: Option<String>,
+    pub(crate) salarie: Option<droit::contexte::IdSalarie>,
     pub(crate) a_saisir: Vec<String>,
     /// Une DSN : son echeance de depot, telle que `declarations::echeance_dsn` l'ecrit.
     pub(crate) echeance_depot: Option<declarations::echeance_dsn::EcheanceDite>,
@@ -1257,7 +1257,7 @@ fn rappels_obligations(st: &Etat) -> R<Vec<Echeance>> {
             Objet::Fin(Box::new(f.clone())),
         );
         r.mois = Some(f.mois);
-        r.salarie = Some(salarie.clone());
+        r.salarie = Some(f.salarie.clone());
         r.jour_de_la_cle = Some(f.fin);
         r.etape = if a_saisir.is_empty() { A_PRODUIRE } else { A_SAISIR }.into();
         if !a_saisir.is_empty() {

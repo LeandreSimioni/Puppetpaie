@@ -7,7 +7,7 @@
 //! loi (l'appelant : `engagement::solde`).
 
 use crate::emplois;
-use crate::fiche::{ChampsSalarie, Lue, Statut};
+use crate::fiche::{ChampsSalarie, CodeEmploiFt, Lue, Statut};
 use crate::natures::{AuMois, MotifDeRupture};
 use crate::permanents::PartDuContrat;
 use crate::source::forme_notee as forme;
@@ -510,17 +510,17 @@ fn mots_du_nom(nom: &str) -> std::collections::BTreeSet<String> {
 /// L'IDCC d'une convention que le bulletin nomme sans son numéro : celle, seule, dont le libellé de la table (le
 /// titre de la convention dans KALI) porte tous les mots distinctifs du nom imprimé. Un nom que plusieurs conventions
 /// portent (« spectacle », « production »), ou qu'aucune ne porte entier, ne donne rien : rien ne se devine (règle 1).
-pub fn idcc_nomme(nom: &str) -> R<Option<String>> {
+pub fn idcc_nomme(nom: &str) -> R<Option<crate::fiche::Idcc>> {
     let lus = mots_du_nom(nom);
     if lus.is_empty() {
         return Ok(None);
     }
     let t = table()?;
     let mut trouves = t.conventions.iter().filter(|(_, c)| lus.is_subset(&mots_du_nom(&c.libelle)));
-    Ok(match (trouves.next(), trouves.next()) {
-        (Some((idcc, _)), None) => Some(idcc.clone()),
-        _ => None,
-    })
+    match (trouves.next(), trouves.next()) {
+        (Some((idcc, _)), None) => crate::fiche::Idcc::lire(idcc).map(Some),
+        _ => Ok(None),
+    }
 }
 
 /// Une categorie de la convention dite en mots (« agent de maîtrise », « non-cadre »), telle que la fiche la nomme.
@@ -557,9 +557,19 @@ pub struct DitParLEngagement {
     pub categorie_conventionnelle: Option<String>,
     pub statut: Option<Statut>,
     /// Le code emploi (`metier`).
-    pub metier: Option<String>,
+    pub metier: Option<emplois::CodeEmploi>,
     pub cadre: Option<bool>,
     pub debut: Option<Jour>,
+}
+
+impl DitParLEngagement {
+    /// Le metier que l'engagement choisit, sinon celui que nomme le code emploi de la fiche (`emplois::metier`).
+    fn metier_lu(&self, fiche: &ChampsSalarie) -> R<Option<emplois::Metier>> {
+        match &self.metier {
+            Some(code) => code.metier().map(Some),
+            None => Ok(fiche.code_emploi_ft.dite().map(emplois::metier).transpose()?.flatten()),
+        }
+    }
 }
 
 /// La categorie conventionnelle d'un salarie pour CET engagement : `categorie` vaut `None` quand rien ne permet de la
@@ -576,8 +586,9 @@ pub struct Profil {
 pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, au_mois: Option<&AuMois>, e: &DitParLEngagement) -> R<Profil> {
     let t = table()?;
     let sec = t.convention(idcc).and_then(|c| c.categories.as_ref());
-    let code = e.metier.clone().or_else(|| fiche.code_emploi_ft.remplie().map(str::to_string));
-    let m = code.as_deref().map(emplois::metier).transpose()?.flatten();
+    // Le code que les phrases citent : celui de l'engagement, sinon celui de la fiche, metier ou non.
+    let code = e.metier.as_ref().map(CodeEmploiFt::from).or_else(|| fiche.code_emploi_ft.dite().cloned());
+    let m = e.metier_lu(fiche)?;
     let c3090 = m.as_ref().and_then(|m| m.classification_3090());
     let grille = c3090.map(|c| c.grille.clone());
     let profil = |categorie: Option<&str>, source: String| Profil { categorie: categorie.map(str::to_string), grille: grille.clone(), source };
@@ -629,9 +640,9 @@ pub fn profil(idcc: Option<&str>, fiche: &ChampsSalarie, au_mois: Option<&AuMois
         }
         return Ok(profil(Some(c), format!("le niveau 3090 du métier {} ({})", code, niveau)));
     }
-    let code_dit = match code {
-        Some(c) => c,
-        None => "aucun code métier".to_string(),
+    let code_dit = match &code {
+        Some(c) => c.as_ref(),
+        None => "aucun code métier",
     };
     Ok(profil(None, format!("ni la fiche, ni le métier ({}) ne disent la catégorie", code_dit)))
 }
@@ -1084,7 +1095,7 @@ pub struct Prime {
 
 /// La rubrique de la prime d'anciennete (`rubriques-base.json`) : la ligne que le calcul compose pour un contrat paye au
 /// mois, et que la carte ne propose qu'a ceux que la prime peut viser (`prime_anciennete_possible`).
-pub const RUBRIQUE_PRIME_ANCIENNETE: &str = "prime_anciennete";
+pub const RUBRIQUE_PRIME_ANCIENNETE: crate::catalogue::CodeDeRubrique = crate::catalogue::CodeDeRubrique::du_moteur("prime_anciennete");
 
 /// L'IDCC DE LA CCNEAC (convention collective des entreprises artistiques et culturelles, KALITEXT000005662413 :
 /// `atelier/reference/sources/kali-1285-x3-remuneration-artistes-20260929.md`, « IDCC : 1285 (CCNEAC) »). Ses regles
@@ -1109,14 +1120,14 @@ fn grille_technique(m: &emplois::Metier) -> Option<&emplois::Classification3090>
 /// dit ce `metier` et ce `statut` : les conditions de `prime_anciennete`, quelle que soit la nature du contrat (l'art.
 /// 3.1 de l'annexe I nomme le CDI et le CDD du personnel technique, l'art. 3.11 « chaque technicien »). Ce que la carte
 /// ne dit pas encore (son metier, son statut) ne l'ecarte pas.
-pub fn prime_anciennete_possible(idcc: Option<&str>, annexe: Option<&str>, metier: Option<&str>, statut: Option<Statut>) -> R<bool> {
+pub fn prime_anciennete_possible(idcc: Option<&str>, annexe: Option<&str>, metier: Option<&CodeEmploiFt>, statut: Option<Statut>) -> R<bool> {
     let t = table()?;
     if prime_de_l_annexe(&t, idcc, annexe).is_none() || statut == Some(Statut::Artiste) {
         return Ok(false);
     }
     Ok(match metier.map(emplois::metier).transpose()?.flatten() {
         Some(m) => grille_technique(&m).is_some(),
-        None => metier.is_none_or(|c| c.trim().is_empty()),
+        None => metier.is_none(),
     })
 }
 
@@ -1133,14 +1144,14 @@ pub fn prime_anciennete<'j>(
 ) -> R<Option<Prime>> {
     let t = table()?;
     let Some(sec) = prime_de_l_annexe(&t, idcc, annexe) else { return Ok(None) };
-    let code = e.metier.clone().or_else(|| fiche.code_emploi_ft.remplie().map(str::to_string));
-    let m = code.as_deref().map(emplois::metier).transpose()?.flatten();
+    let m = e.metier_lu(fiche)?;
     // Artiste : l'engagement le dit, sinon la fiche.
     let artiste = match e.statut {
         Some(s) => s == Statut::Artiste,
         None => fiche.statut.dite() == Some(&Statut::Artiste),
     };
-    let (Some(m), Some(code)) = (m.as_ref(), code.as_deref()) else { return Ok(None) };
+    let Some(m) = m.as_ref() else { return Ok(None) };
+    let code = &m.code;
     let Some(c3090) = grille_technique(m) else { return Ok(None) };
     if artiste {
         return Ok(None);

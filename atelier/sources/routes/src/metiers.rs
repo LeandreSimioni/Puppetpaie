@@ -76,9 +76,9 @@ impl Dite for EmploisRendus {
 pub(crate) struct MetiersAjoutes {
     quoi: String,
     /// Pris a une autre convention collective.
-    pub(crate) codes: Vec<String>,
+    pub(crate) codes: Vec<emplois::CodeEmploi>,
     /// Decoches dans la sienne.
-    pub(crate) retires: Vec<String>,
+    pub(crate) retires: Vec<emplois::CodeEmploi>,
 }
 
 const QUOI_METIERS: &str = "Les metiers que cette compagnie a coches ou decoches dans Configuration > Metiers : `codes`, pris a une autre convention collective ; `retires`, decoches dans la sienne. Preference d'affichage : aucun calcul ne change. Le catalogue est livre avec le logiciel (donnees/emplois-base.json).";
@@ -218,7 +218,7 @@ fn metiers_catalogue(ctx: &Contexte) -> R<MetiersDuCatalogue> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MetierARetenir {
-    code: String,
+    code: emplois::CodeEmploi,
     retenu: bool,
 }
 

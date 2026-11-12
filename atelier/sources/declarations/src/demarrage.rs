@@ -50,9 +50,9 @@ pub struct Manque {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cases: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub salarie: Option<String>,
+    pub salarie: Option<droit::contexte::IdSalarie>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub spectacle: Option<String>,
+    pub spectacle: Option<droit::contexte::IdSpectacle>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub qui: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -198,7 +198,7 @@ fn une_suspension_non_remuneree(ctx: &Contexte) -> R<Option<droit::natures::AuMo
 
 /// La ligne d'une case vide qu'un acte exige ou qu'un geste sert (`champs::manquants`), ou elle vit ; celle d'un salarie
 /// dit qui (`salarie` : sa cle et son nom).
-fn ligne(m: crate::champs::Manquant, ou: String, onglet: &str, salarie: Option<(&str, &str)>) -> Manque {
+fn ligne(m: crate::champs::Manquant, ou: String, onglet: &str, salarie: Option<(&droit::contexte::IdSalarie, &str)>) -> Manque {
     let racine = m.ecran.champ;
     let (bloque, utile, sinon) = match m.sert {
         crate::champs::Sert::Exigee(actes) => (crate::champs::actes_en_clair(&actes), None, None),
@@ -219,7 +219,7 @@ fn ligne(m: crate::champs::Manquant, ou: String, onglet: &str, salarie: Option<(
         case: Some(m.ecran.to_string()),
         trouver: m.aide,
         cases: m.cases,
-        salarie: salarie.map(|(s, _)| s.to_string()),
+        salarie: salarie.map(|(s, _)| s.clone()),
         spectacle: None,
         qui: salarie.map(|(_, n)| n.to_string()),
         propose: None,
@@ -244,7 +244,6 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
         out.push(ligne(m, ENTREPRISE.0.to_string(), ENTREPRISE.1, None));
     }
     for (cle, s) in ctx.salaries.iter().filter(|(_, s)| !s.archivee()) {
-        let cle = cle.as_str();
         let nom = match s.nomme() {
             Some(n) => n,
             None => cle.to_string(),
@@ -264,7 +263,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
         for m in crate::champs::manquants(NomDeFiche::Spectacle, &crate::champs::Saisie::de_la_fiche(NomDeFiche::Spectacle, sp)?)? {
             let mut l = ligne(m, format!("Configuration › Spectacles, la fiche de {}", titre), "spectacle", None);
             l.cle = format!("{}.{}", l.cle, cle);
-            l.spectacle = Some(cle.to_string());
+            l.spectacle = Some(cle.clone());
             l.qui = Some(titre.clone());
             out.push(l);
         }
@@ -298,7 +297,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
             Some("titre"),
             trouver,
         );
-        l.spectacle = Some(cle.to_string());
+        l.spectacle = Some(cle.clone());
         l.qui = Some(format!("Numéro d'objet {}", objet));
         l.propose = propose;
         out.push(l);
@@ -424,7 +423,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
 /// LA LIGNE QUI DEMANDE LES CONGES ACQUIS AVANT PUPPETPAIE d'un salarie au mois (`salarie`, `nom` tel que l'ecran le dit),
 /// paye ici depuis `depuis` : la case `conges_reprise` de sa fiche, ou elle mene. « Pour démarrer » la dit, et la carte
 /// d'un contrat commence avant le logiciel la montre avant sa validation (`routes::mois`).
-pub fn conges_a_dire(salarie: &str, nom: &str, depuis: Jour) -> Manque {
+pub fn conges_a_dire(salarie: &droit::contexte::IdSalarie, nom: &str, depuis: Jour) -> Manque {
     let le = depuis.jj_mm_aaaa();
     let mut l = Manque::utile(
         format!("conges_reprise.{}", salarie),
@@ -436,12 +435,12 @@ pub fn conges_a_dire(salarie: &str, nom: &str, depuis: Jour) -> Manque {
         format!("Son contrat a commencé avant que PuppetPaie le paie : recopiez de son dernier bulletin de votre ancien logiciel les jours acquis et pris, avec le {} pour date de reprise.", le),
     );
     l.qui = Some(nom.to_string());
-    l.salarie = Some(salarie.to_string());
+    l.salarie = Some(salarie.clone());
     l
 }
 
 /// La reprise des conges de ce salarie est-elle deja dite sur sa fiche (`conges_reprise.date`) ?
-pub fn conges_repris(ctx: &Contexte, au_mois: &droit::natures::AuMois, salarie: &str) -> bool {
+pub fn conges_repris(ctx: &Contexte, au_mois: &droit::natures::AuMois, salarie: &droit::contexte::IdSalarie) -> bool {
     ctx.salaries.get(salarie).and_then(|f| f.permanent.ouvrir(au_mois).conges_reprise.dite()).is_some_and(|c| c.date.est_dite())
 }
 
@@ -450,10 +449,10 @@ pub fn conges_repris(ctx: &Contexte, au_mois: &droit::natures::AuMois, salarie: 
 /// celui du fichier de l'engagement ; un contrat repris d'un ancien logiciel qui continue ici y est des le premier mois
 /// neuf (`engagement::importe`), valide ou non. Un intermittent n'en est pas (ses conges sont ceux des Conges
 /// Spectacles) ; un contrat ne d'ici n'a rien d'avant.
-fn conges_a_reprendre(ctx: &Contexte) -> R<Vec<(String, String, Jour)>> {
+fn conges_a_reprendre(ctx: &Contexte) -> R<Vec<(droit::contexte::IdSalarie, String, Jour)>> {
     // (cle des cases d'un salarie au mois, salarie, debut du contrat, premier jour paye ici)
-    let mut contrats: Vec<(droit::natures::AuMois, String, Jour, Jour)> = Vec::new();
-    let mut vus: Vec<String> = Vec::new();
+    let mut contrats: Vec<(droit::natures::AuMois, droit::contexte::IdSalarie, Jour, Jour)> = Vec::new();
+    let mut vus: Vec<droit::contexte::IdSalarie> = Vec::new();
     // Les engagements valides et actifs, chacun dans le mois de son fichier (`engagement::stock::objets`) : un brouillon
     // n'engage rien, un contrat repris qui continue ici si.
     for o in engagement::stock::objets(&ctx.racine)? {
@@ -461,7 +460,7 @@ fn conges_a_reprendre(ctx: &Contexte) -> R<Vec<(String, String, Jour)>> {
             continue;
         }
         let e = o.carte();
-        let Some(salarie) = e.salarie.as_ref().map(ToString::to_string) else { continue };
+        let Some(salarie) = e.salarie.clone() else { continue };
         let (Some(debut), Some(nature)) = (e.debut, e.nature) else { continue };
         let Some(au) = nature.proprietes()?.au_mois().filter(|_| !vus.contains(&salarie)) else {
             continue;
@@ -476,9 +475,9 @@ fn conges_a_reprendre(ctx: &Contexte) -> R<Vec<(String, String, Jour)>> {
         if debut >= premier || conges_repris(ctx, &au, &salarie) {
             continue;
         }
-        let nom = match ctx.salaries.get(salarie.as_str()).map(|f| documents::tableaux_export::qui_souple(f)).filter(|n| !n.is_empty()) {
+        let nom = match ctx.salaries.get(&salarie).map(|f| documents::tableaux_export::qui_souple(f)).filter(|n| !n.is_empty()) {
             Some(n) => n,
-            None => salarie.clone(),
+            None => salarie.to_string(),
         };
         out.push((salarie, nom, premier));
     }

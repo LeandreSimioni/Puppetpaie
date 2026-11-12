@@ -185,7 +185,7 @@ fn ecarts(nom: NomDeFiche, fiche: &Saisie, declare: &Saisie, mois: socle::mois::
 }
 
 /// La fiche d'un salarie telle qu'elle est, case par case.
-fn vue_salarie(ctx: &Contexte, cle: &str) -> R<Saisie> {
+fn vue_salarie(ctx: &Contexte, cle: &droit::contexte::IdSalarie) -> R<Saisie> {
     proposee::de(NomDeFiche::Salarie, &ctx.salaries[cle].champs)
 }
 
@@ -195,7 +195,7 @@ struct SalarieDeLaDsn<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     nir: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    nir_cle: Option<String>,
+    nir_cle: Option<droit::fiche::CleNir>,
     #[serde(skip_serializing_if = "Option::is_none")]
     initiales_contrat: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -212,7 +212,7 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
     let emploi = decl.emploi.as_ref();
     // Le statut de bareme se deduit du code emploi France Travail, a defaut de la PCS (354x : artistes ; une autre PCS :
     // technicien) ; sans l'un ni l'autre, rien ne le dit.
-    let m = match emploi.and_then(|e| e.code_emploi_ft.as_deref()) {
+    let m = match emploi.and_then(|e| e.code_emploi_ft.as_ref()) {
         Some(code) => droit::emplois::metier(code)?,
         None => None,
     };
@@ -231,7 +231,7 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
         Some(m) => Some(m),
         None => match emploi.and_then(|e| e.emploi.as_deref()) {
             Some(intitule) => match droit::emplois::par_intitule(intitule, crate::importation::bulletins::compare)? {
-                Some((c, _)) => droit::emplois::metier(&c)?,
+                Some((c, _)) => Some(c.metier()?),
                 None => None,
             },
             None => None,
@@ -316,11 +316,11 @@ pub(crate) struct Apercu {
     /// Les fiches existantes que l'import completerait (`import::completer`).
     pub(crate) a_completer: Vec<crate::importation::completer::ACompleter>,
     pub(crate) contrats: Vec<dsn_aem::ContratAtteste>,
-    /// Les versements declares par les DSN, rattaches a une fiche (ou `<a creer>`).
+    /// Les versements declares par les DSN, rattaches a une fiche (`None` : a creer).
     pub(crate) paies: Vec<engagement::importe::PaieLue>,
     /// LES CONTRATS QUE L'IMPORT RETIENT, de toutes les pieces (AEM deposees, AEM en PDF, bulletins, certificats) : le
-    /// registre de l'import les a dits nouveaux (`import::attestes`). Chacun avec le NIR qui le rattache (`salarie` vaut
-    /// `<a creer>` tant que la fiche n'existe pas) et le bloc du compte rendu qui le compte.
+    /// registre de l'import les a dits nouveaux (`import::attestes`). Chacun avec le NIR qui le rattache (`salarie` est
+    /// `None` tant que la fiche n'existe pas) et le bloc du compte rendu qui le compte.
     pub(crate) contrats_attestes: Vec<import::attestes::Retenu>,
     /// CE QUE L'IMPORT CHANGE AUX CONTRATS DE L'HISTORIQUE : le contrat qu'un certificat atteste, reduit aux mois qu'il atteste
     /// seul ou retire, celui d'une AEM que le bulletin remplace (`import::attestes`).
@@ -331,7 +331,7 @@ pub(crate) struct Apercu {
     pub(crate) sans_nets: Vec<SansNets>,
     /// LA CONVENTION COLLECTIVE QUE LES DSN DECLARENT pour l'entreprise (S21.G00.11.022, a defaut S21.G00.40.017 :
     /// `declarations::dsn_lue`), la plus recente ; rien si aucune ne la dit.
-    pub(crate) convention: Option<String>,
+    pub(crate) convention: Option<droit::fiche::Idcc>,
 }
 
 /// UN CONTRAT QUE LA DSN DECLARE SANS SES NETS : son versement paie aussi d'autres contrats (`avec`), ou plusieurs
@@ -341,9 +341,9 @@ pub(crate) struct Apercu {
 pub(crate) struct SansNets {
     pub(crate) mois: socle::mois::Mois,
     pub(crate) nir: Option<String>,
-    pub(crate) contrat: String,
+    pub(crate) contrat: engagement::numeros::NumeroContrat,
     pub(crate) qui: String,
-    pub(crate) avec: Vec<String>,
+    pub(crate) avec: Vec<engagement::numeros::NumeroContrat>,
 }
 
 impl SansNets {
@@ -389,11 +389,8 @@ pub(crate) fn garder_le_nom(ctx: &Contexte, e: &mut Saisie) -> R<()> {
     Ok(())
 }
 
-/// La cle d'une fiche a creer, tant qu'elle n'existe pas.
-pub(crate) const A_CREER: &str = "<a creer>";
-
 /// Les paies versees des engagements importes, une par mois.
-pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::PaieLue>> {
+pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::PaieRelue>> {
     engagement::importe::paies_lues(&ctx.racine)
 }
 
@@ -405,7 +402,7 @@ pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::Pai
 fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<String>) -> engagement::importe::PaieVersee {
     use engagement::importe::{Declaration, PaieVersee};
     let (c, d) = (p.contrat.as_ref(), &p.paie);
-    let mut x = PaieVersee::vide(d.numero.clone(), Declaration::Dsn);
+    let mut x = PaieVersee::vide(d.numero.to_string(), Declaration::Dsn);
     x.nir = d.nir.clone();
     x.numero_objet = objet;
     (x.debut, x.fin, x.verse_le, x.quotite) = (c.and_then(|c| c.debut), c.and_then(|c| c.fin), d.verse_le, c.and_then(|c| c.quotite));
@@ -456,13 +453,13 @@ pub(crate) fn apercu_lu(
     if lecture.etablissements.len() > 1 {
         avertissements.push(format!(
             "les DSN déclarent plusieurs établissements (S21.G00.11.001 : {}) : la fiche Entreprise n'en porte qu'un, celui de son NIC ; le moteur ne déclare que celui-là",
-            lecture.etablissements.iter().cloned().collect::<Vec<_>>().join(", ")
+            lecture.etablissements.iter().map(|n| &**n).collect::<Vec<_>>().join(", ")
         ));
     }
     if lecture.nics_siege.iter().any(|n| !lecture.etablissements.contains(n)) && !lecture.etablissements.is_empty() {
         avertissements.push(format!(
             "le siège de l'entreprise (S21.G00.06.002 : {}) n'est pas l'établissement déclaré (S21.G00.11.001) : la fiche Entreprise porte l'établissement, et le moteur déclare son NIC aux deux places",
-            lecture.nics_siege.iter().cloned().collect::<Vec<_>>().join(", ")
+            lecture.nics_siege.iter().map(|n| &**n).collect::<Vec<_>>().join(", ")
         ));
     }
     // LES CONVENTIONS QUI DIVERGENT, d'un contrat a l'autre ou d'une DSN a l'autre (`dsn_aem::LectureDsn::conventions`).
@@ -506,10 +503,10 @@ pub(crate) fn apercu_lu(
     }
 
     // 2. Les salaries, par NIR.
-    let mut par_nir: HashMap<String, String> = HashMap::new();
+    let mut par_nir: HashMap<String, droit::contexte::IdSalarie> = HashMap::new();
     for (cle, s) in &ctx.salaries {
         if let Some(n) = s.nir.dite().filter(|n| !n.is_empty()) {
-            par_nir.insert(n.to_string(), cle.to_string());
+            par_nir.insert(n.to_string(), cle.clone());
         }
     }
     let mut ordre: Vec<&SalarieDeclare> = lecture.salaries.iter().collect();
@@ -522,10 +519,10 @@ pub(crate) fn apercu_lu(
         if let Some(cle) = decl.nir.as_ref().and_then(|n| par_nir.get(n)) {
             let fiche = vue_salarie(ctx, cle)?;
             let ec = ecarts(NomDeFiche::Salarie, &fiche, &decl.fiche()?, decl.mois)?;
-            let mut entree = FicheImportee::new(NomDeFiche::Salarie, Some(cle), &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
+            let mut entree = FicheImportee::new(NomDeFiche::Salarie, Some(cle.as_str()), &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
             let champs = crate::importation::completer::champs_a_completer(NomDeFiche::Salarie, &fiche, &fiche_salarie(decl)?)?;
             entree.noter(&champs, &Origine::dsn(Some(decl.mois)));
-            crate::importation::completer::ajouter(&mut a_completer, NomDeFiche::Salarie, Some(cle), &champs);
+            crate::importation::completer::ajouter(&mut a_completer, NomDeFiche::Salarie, Some(cle.as_str()), &champs);
             salaries.push(entree);
             continue;
         }
@@ -556,7 +553,7 @@ pub(crate) fn apercu_lu(
     let mut objets: Vec<Objet> = lecture
         .objets
         .iter()
-        .map(|o| Objet { numero: o.numero.clone(), premier: o.premier_mois.to_string(), dernier: o.dernier_mois.to_string(), contrats: o.contrats, aem: o.source == "AEM" })
+        .map(|o| Objet { numero: o.numero.to_string(), premier: o.premier_mois.to_string(), dernier: o.dernier_mois.to_string(), contrats: o.contrats, aem: o.source == "AEM" })
         .collect();
     for c in &contrats {
         if c.numero_objet.is_empty() {
@@ -634,18 +631,16 @@ pub(crate) fn apercu_lu(
     }
 
     // 5. Les paies declarees par les DSN : ce que chaque versement a porte.
-    let deja_paies: HashSet<(String, String, String)> = paies_historique(ctx)?.iter().map(|p| { let (m, s, c) = p.cle(); (m.to_string(), s, c) }).collect();
-    let cle_de = |nir: &Option<String>| match nir.as_ref().and_then(|n| par_nir.get(n)) {
-        Some(c) => c.clone(),
-        None => A_CREER.to_string(),
-    };
+    let deja_paies: HashSet<(socle::mois::Mois, droit::contexte::IdSalarie, String)> = paies_historique(ctx)?.iter().map(engagement::importe::PaieRelue::cle).collect();
+    // La cle de la fiche du NIR ; `None` : sa fiche est a creer.
+    let cle_de = |nir: &Option<String>| nir.as_ref().and_then(|n| par_nir.get(n)).cloned();
     let a_une_fiche = |nir: &Option<String>| nir.as_ref().is_some_and(|n| par_nir.contains_key(n)) || cles_a_venir.contains(nir);
     let mut paies_nouvelles = 0usize;
     for (mois, nir, contrat) in lecture.paies.keys() {
         if !a_une_fiche(nir) {
             continue;
         }
-        if !deja_paies.contains(&(mois.to_string(), cle_de(nir), contrat.clone())) {
+        if !cle_de(nir).is_some_and(|c| deja_paies.contains(&(*mois, c, contrat.to_string()))) {
             paies_nouvelles += 1;
         }
     }
@@ -665,7 +660,7 @@ pub(crate) fn apercu_lu(
         }
         let mois = *mois;
         let c = v.contrat.as_ref();
-        let objet = c.and_then(|c| c.objet.clone()).or_else(|| {
+        let objet = c.and_then(|c| c.objet.as_ref()).map(|o| o.to_string()).or_else(|| {
             let (debut, fin) = (c.and_then(|c| c.debut)?, c.and_then(|c| c.fin)?);
             objets_aem.get(&(nir.clone()?, debut.iso(), fin.iso())).cloned()
         });
@@ -746,7 +741,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let importe_le = contrats.iter().filter_map(|c| c.contrat.importe_le).chain(paies.iter().filter_map(|p| p.paie.importe_le)).max();
     let debut = contrats.iter().filter_map(|c| c.debut).min();
     let fin = contrats.iter().filter_map(|c| c.fin).max();
-    let salaries: HashSet<&str> = contrats.iter().map(|c| c.salarie.as_str()).filter(|s| !s.is_empty()).collect();
+    let salaries: HashSet<&droit::contexte::IdSalarie> = contrats.iter().map(|c| &c.salarie).collect();
     let objets: HashSet<&str> = contrats.iter().filter_map(|c| c.contrat.numero_objet.as_deref()).collect();
     let editeur = attend_l_editeur(racine)?;
     let attend_editeur = editeur.iter().filter(|x| !x.repondu).count();
@@ -890,7 +885,7 @@ impl Reprise {
 
 /// `reprises` de `importation-etat` : DSN, AEM, certificats Congés Spectacles, bulletins, dans cet ordre, celles qui ont
 /// repris quelque chose.
-fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], paies: &[engagement::importe::PaieLue]) -> R<Vec<RepriseVue>> {
+fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratRelu], paies: &[engagement::importe::PaieRelue]) -> R<Vec<RepriseVue>> {
     use engagement::importe::{Attestation, Declaration};
     let (mut aem, mut contrats_bulletins, mut certificats) = (Reprise::aucune(), Reprise::aucune(), Reprise::aucune());
     for c in contrats {

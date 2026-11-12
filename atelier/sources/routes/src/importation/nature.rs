@@ -27,7 +27,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use engagement::importe::Importe;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, R};
@@ -91,7 +91,7 @@ fn jours_payes(i: &Importe) -> R<Option<(Jour, Jour)>> {
 }
 
 /// Le nom d'un salarié à l'écran, tel que sa fiche le porte aujourd'hui ; sa clé quand aucune fiche ne le nomme.
-fn nom_du_salarie(racine: &Path, cle: &str) -> R<String> {
+fn nom_du_salarie(racine: &Path, cle: &IdSalarie) -> R<String> {
     let lues = droit::fiche::lire_fichier::<droit::fiche::Salaries>(&racine.join(droit::contexte::SALARIES), droit::contexte::SALARIES)?;
     Ok(match lues.fiches.get(cle).and_then(|f| f.au(&socle::temps::jour_de_paris()).nomme()) {
         Some(n) => n,
@@ -107,12 +107,12 @@ struct ContratsADire {
 }
 
 /// Les contrats a dire de chaque salarie.
-fn a_dire_par_salarie(importes: &[Importe]) -> R<BTreeMap<String, ContratsADire>> {
+fn a_dire_par_salarie(importes: &[Importe]) -> R<BTreeMap<IdSalarie, ContratsADire>> {
     let dernier = dernier_mois(importes);
-    let mut par: BTreeMap<String, ContratsADire> = BTreeMap::new();
+    let mut par: BTreeMap<IdSalarie, ContratsADire> = BTreeMap::new();
     for i in importes.iter().filter(|i| i.a_dire()) {
         // Un engagement importe porte toujours son salarie.
-        let Some(salarie) = i.objet().carte().salarie.as_ref().map(ToString::to_string) else { continue };
+        let Some(salarie) = i.objet().carte().salarie.clone() else { continue };
         let payes = jours_payes(i)?;
         let x = par.entry(salarie).or_insert(ContratsADire { nombre: 0, payes: None, en_cours: false });
         x.nombre += 1;
@@ -184,7 +184,7 @@ pub(crate) fn a_dire(racine: &Path) -> R<Vec<ADire>> {
 /// Les contrats d'un salarie dont la nature reste a dire, et ce que la page en dit.
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct ADire {
-    pub(crate) salarie: String,
+    pub(crate) salarie: IdSalarie,
     pub(crate) nom: String,
     pub(crate) contrats: usize,
     /// Le premier et le dernier jour que ses paies reprises paient ; rien sans paie reprise.
@@ -218,11 +218,11 @@ fn refus(m: impl Into<String>) -> socle::echec::Echec {
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeNature {
-    pub(crate) salarie: String,
+    pub(crate) salarie: IdSalarie,
     pub(crate) nature: droit::natures::NatureDeContrat,
     pub(crate) debut: Option<Jour>,
     pub(crate) fin: Option<Jour>,
-    pub(crate) numero: Option<String>,
+    pub(crate) numero: Option<engagement::numeros::NumeroContrat>,
     pub(crate) salaire: Option<MontantSaisi>,
     pub(crate) quotite: Option<MontantSaisi>,
 }
@@ -245,12 +245,11 @@ impl MontantSaisi {
 }
 
 impl ChargeNature {
-    /// Une case de texte demandee (le numero, le salaire, la quotite), telle qu'elle est dite, sans ses blancs ; rien
-    /// pour une case vide. Un jour n'est pas un texte : il se lit dans sa case (`debut`, `fin`).
+    /// Une case de texte demandee (le salaire, la quotite), telle qu'elle est dite, sans ses blancs ; rien pour une case
+    /// vide. Un jour ni un numero de contrat ne sont un texte : ils se lisent dans leur case (`debut`, `fin`, `numero`).
     fn lu(&self, champ: Demande) -> Option<String> {
         let v = match champ {
-            Demande::Debut | Demande::Fin => None,
-            Demande::Numero => self.numero.clone(),
+            Demande::Debut | Demande::Fin | Demande::Numero => None,
             Demande::Salaire => self.salaire.as_ref().map(MontantSaisi::texte),
             Demande::Quotite => self.quotite.as_ref().map(MontantSaisi::texte),
         };
@@ -274,8 +273,7 @@ pub(crate) struct NatureDite {
 /// `importation-nature` : la nature dite pour les contrats a dire d'un salarie, et, s'il court encore, le debut, la fin
 /// et le numero du contrat tels que la DSN de l'ancien logiciel les a declares.
 pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
-    let plein = |s: &str| Some(s.trim().to_string()).filter(|s| !s.is_empty());
-    let salarie = plein(&charge.salarie).ok_or_else(|| refus("Le salarié manque : rien n'a été écrit."))?;
+    let salarie = &charge.salarie;
     let nature = charge.nature;
     let permises = natures_permanentes()?;
     let Some(nat) = permises.iter().find(|n| n.cle == nature) else {
@@ -283,8 +281,8 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
         return Err(refus(format!("« {} » n'est pas la nature d'un contrat de permanent ({}) : rien n'a été écrit.", nature, noms.join(", "))));
     };
     let importes = importes(&ctx.racine)?;
-    let qui = nom_du_salarie(&ctx.racine, &salarie)?;
-    let Some(c) = a_dire_par_salarie(&importes)?.remove(&salarie) else {
+    let qui = nom_du_salarie(&ctx.racine, salarie)?;
+    let Some(c) = a_dire_par_salarie(&importes)?.remove(salarie) else {
         return Err(refus(format!("Aucun contrat repris de {} n'attend sa nature : rien n'a été écrit.", qui)));
     };
     let en_cours = c.en_cours;
@@ -341,17 +339,13 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
                     None => return Err(refus(format!("« {} » n'est pas {} : rien n'a été écrit.", v, quoi))),
                 };
             }
-            Demande::Numero => {
-                let v = charge.lu(champ).ok_or_else(manque)?;
-                let n = engagement::numeros::NumeroContrat::lire(&v).map_err(|m| m.reformuler(|p| format!("{} Rien n'a été écrit.", p)).reclasser(Classe::Refuse))?;
-                contrat.numero = Some(n);
-            }
+            Demande::Numero => contrat.numero = Some(charge.numero.clone().ok_or_else(manque)?),
         }
     }
     // La nature va sur l'engagement de chaque contrat a dire ; ce qui definit le contrat qui court encore, sur le sien.
     let ecrits = engagement::importe::completer(&ctx.racine, |e, pieces| {
         let a_dire = pieces.contrat.as_ref().is_some_and(|c| c.nature.is_none());
-        if e.salarie.as_deref() != Some(salarie.as_str()) || !a_dire || e.nature.is_some() {
+        if e.salarie.as_ref() != Some(salarie) || !a_dire || e.nature.is_some() {
             return false;
         }
         e.nature = Some(nature);
@@ -366,7 +360,7 @@ pub(crate) fn dire(ctx: &Contexte, charge: &ChargeNature) -> R<NatureDite> {
     })?;
     // Son anciennete dans l'entreprise part du debut de son contrat, s'il a commence avant le premier bulletin repris.
     if let Some(debut) = debut_dit {
-        crate::fiches::reprendre_anciennete(ctx, &salarie, du, debut)?;
+        crate::fiches::reprendre_anciennete(ctx, salarie, du, debut)?;
     }
     // LA COMPAGNIE EMPLOIE UN PERMANENT : c'est ce qu'on vient de dire (une nature payee au mois). La case « La
     // compagnie emploie aussi des salaries au mois » de la fiche Entreprise (`Contexte::emploie_des_permanents_pendant`)
@@ -423,7 +417,7 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
     for x in a_dire(racine)? {
         let salarie = x.salarie.clone();
         let ctx = Contexte::nouveau(racine, Some(*quand))?;
-        let Some(nir) = ctx.salaries.get(salarie.as_str()).and_then(|f| f.nir.en_texte()) else { continue };
+        let Some(nir) = ctx.salaries.get(&salarie).and_then(|f| f.nir.en_texte()) else { continue };
         // Sa derniere paie declaree : le contrat tel que la derniere DSN le dit.
         let Some(((_, _, numero), p)) = lecture.paies.iter().filter(|((_, n, _), _)| n.as_deref() == Some(nir.as_str())).last() else { continue };
         let c = p.contrat.as_ref();
@@ -434,7 +428,7 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
         let mut complet = true;
         for champ in demande(nat, en_cours) {
             let pose = match champ {
-                Demande::Numero => Some(numero.clone()).filter(|n| !n.is_empty()).map(|v| charge.numero = Some(v)),
+                Demande::Numero => Some(charge.numero = Some(numero.clone())),
                 Demande::Salaire => p.paie.mesures.salaire_habituel.map(|m| charge.salaire = Some(MontantSaisi::Texte(m.to_string()))),
                 Demande::Debut => c.and_then(|c| c.debut).map(|j| charge.debut = Some(j)),
                 Demande::Fin => c.and_then(|c| c.fin).map(|j| charge.fin = Some(j)),

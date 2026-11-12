@@ -194,22 +194,23 @@ pub fn noter_valeur(cle: &str, valeur: String) {
 }
 
 /// UNE LECTURE NOTEE QUI PORTE UN JOUR OU UN MOIS : sa cle s'ecrit ici (`cle`) et se relit ici (`lue`), la seule porte
-/// par laquelle la cle d'une empreinte ecrite redevient un jour ou un mois.
+/// par laquelle la cle d'une empreinte ecrite redevient un jour ou un mois. `S` est la cle du salarie, dont le type
+/// vit au-dessus du socle (`droit::contexte::IdSalarie`) : la lecture la lit par lui (`TryFrom<String>`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LectureDatee {
+pub enum LectureDatee<S> {
     /// `pas <salarie> <jour> [<mois>]` : le taux de PAS du salarie a ce jour, pour la paie de ce mois.
-    Pas { salarie: String, le: crate::date::Jour, mois: Option<crate::mois::Mois> },
+    Pas { salarie: S, le: crate::date::Jour, mois: Option<crate::mois::Mois> },
     /// `mission <lieu> <jour>` : l'indemnite de mission d'un jour a l'etranger.
     Mission { lieu: String, jour: crate::date::Jour },
     /// `mensuels <mois> <salarie>` : les mensuels d'avant d'un salarie.
-    Mensuels { mois: crate::mois::Mois, salarie: String },
+    Mensuels { mois: crate::mois::Mois, salarie: S },
     /// `paies <mois> <salarie>` : les paies validees d'un salarie au mois.
-    Paies { mois: crate::mois::Mois, salarie: String },
+    Paies { mois: crate::mois::Mois, salarie: S },
     /// `saisie <mois> [<salarie>]` : la saisie du mois, ou celle d'un salarie.
-    Saisie { mois: crate::mois::Mois, salarie: Option<String> },
+    Saisie { mois: crate::mois::Mois, salarie: Option<S> },
 }
 
-impl LectureDatee {
+impl<S: std::fmt::Display> LectureDatee<S> {
     /// La cle sous laquelle elle se note.
     pub fn cle(&self) -> String {
         match self {
@@ -222,32 +223,35 @@ impl LectureDatee {
             LectureDatee::Saisie { mois, salarie: None } => format!("saisie {}", mois),
         }
     }
+}
 
-    /// La lecture que nomme la cle `cle` d'une empreinte ecrite ; `None` : ce n'en est pas une ; un jour ou un mois qui
-    /// ne se lit pas refuse.
-    pub fn lue(cle: &str) -> Option<crate::echec::R<LectureDatee>> {
+impl<S: TryFrom<String, Error = crate::echec::Echec>> LectureDatee<S> {
+    /// La lecture que nomme la cle `cle` d'une empreinte ecrite ; `None` : ce n'en est pas une ; un jour, un mois ou une
+    /// cle de salarie qui ne se lit pas refuse.
+    pub fn lue(cle: &str) -> Option<crate::echec::R<LectureDatee<S>>> {
         use crate::date::Jour;
         use crate::mois::Mois;
+        let sal = |s: &str| S::try_from(s.to_string());
         if let Some(r) = cle.strip_prefix("pas ") {
             let mut parts = r.split(' ');
             let (salarie, jour, mois) = (parts.next()?, parts.next()?, parts.next());
-            return Some((|| Ok(LectureDatee::Pas { salarie: salarie.to_string(), le: Jour::lire(jour)?, mois: mois.map(Mois::lire).transpose()? }))());
+            return Some((|| Ok(LectureDatee::Pas { salarie: sal(salarie)?, le: Jour::lire(jour)?, mois: mois.map(Mois::lire).transpose()? }))());
         }
         if let Some((lieu, jour)) = cle.strip_prefix("mission ").and_then(|r| r.split_once(' ')) {
             return Some(Jour::lire(jour).map(|jour| LectureDatee::Mission { lieu: lieu.to_string(), jour }));
         }
         if let Some((mois, salarie)) = cle.strip_prefix("mensuels ").and_then(|r| r.split_once(' ')) {
-            return Some(Mois::lire(mois).map(|mois| LectureDatee::Mensuels { mois, salarie: salarie.to_string() }));
+            return Some((|| Ok(LectureDatee::Mensuels { mois: Mois::lire(mois)?, salarie: sal(salarie)? }))());
         }
         if let Some((mois, salarie)) = cle.strip_prefix("paies ").and_then(|r| r.split_once(' ')) {
-            return Some(Mois::lire(mois).map(|mois| LectureDatee::Paies { mois, salarie: salarie.to_string() }));
+            return Some((|| Ok(LectureDatee::Paies { mois: Mois::lire(mois)?, salarie: sal(salarie)? }))());
         }
         let reste = cle.strip_prefix("saisie ")?;
         let (mois, salarie) = match reste.split_once(' ') {
-            Some((m, s)) => (m, Some(s.to_string())),
+            Some((m, s)) => (m, Some(s)),
             None => (reste, None),
         };
-        Some(Mois::lire(mois).map(|mois| LectureDatee::Saisie { mois, salarie }))
+        Some((|| Ok(LectureDatee::Saisie { mois: Mois::lire(mois)?, salarie: salarie.map(sal).transpose()? }))())
     }
 }
 
