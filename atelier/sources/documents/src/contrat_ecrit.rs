@@ -232,7 +232,7 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     // LA CATEGORIE D'EMPLOI : le classement conventionnel (S21.G00.40.002), sinon le statut cadre ou non cadre de la
     // retraite complementaire (S21.G00.40.003), sinon le statut du spectacle (artiste, technicien).
     let artiste = sal.statut.dite() == Some(&droit::fiche::Statut::Artiste);
-    let categorie = match sal.statut_conventionnel.code().map(|c| natures::categorie_d_emploi(c, artiste)).transpose()?.flatten() {
+    let categorie = match sal.statut_conventionnel.dite().map(|c| natures::categorie_d_emploi(*c, artiste)).transpose()?.flatten() {
         Some(c) => c,
         None => match sal.statut_categoriel_rc.code() {
             Some("01" | "02") => "cadre".to_string(),
@@ -276,7 +276,8 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     m.insert(Marqueur::MentionsConges, conges);
     // LES REGIMES OBLIGATOIRES ET LA PROTECTION SOCIALE COMPLEMENTAIRE (R1221-34, 14°) : le regime de base que la nature
     // declare (S21.G00.40.018, 200 : le regime general), la retraite complementaire, et les contrats collectifs.
-    let regime = match nat.code("S21.G00.40.018").as_deref() {
+    const REGIME_DE_BASE: natures::RubriqueDeLaNorme = natures::RubriqueDeLaNorme::du_moteur("S21.G00.40.018");
+    let regime = match nat.code(REGIME_DE_BASE).as_deref() {
         Some("200") => "Le salarié est affilié au régime général de la sécurité sociale".to_string(),
         Some(autre) => return Err(socle::refus!("Le contrat de {} : le régime de base {} de la nature {} n'a pas de libellé pour le contrat écrit.", nom, autre, nat.libelle)),
         None => return Err(socle::refus!("Le contrat de {} : la nature {} ne dit pas son régime de base (S21.G00.40.018).", nom, nat.libelle)),

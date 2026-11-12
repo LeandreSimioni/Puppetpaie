@@ -71,7 +71,7 @@ pub fn basculer_dsn(octets: &[u8]) -> R<Vec<u8>> {
 }
 
 /// `poser` : `<rubrique>,'[^']*'` devient `<rubrique>,'<valeur>'`, la premiere fois.
-fn poser(octets: &[u8], rubrique: &str, valeur: &str) -> R<Vec<u8>> {
+fn poser(octets: &[u8], rubrique: droit::natures::RubriqueDeLaNorme, valeur: &str) -> R<Vec<u8>> {
     let prefixe = format!("{},'", rubrique);
     let fin = |reste: &[u8]| reste.iter().position(|&b| b == b'\'').map(|p| p + 1);
     match premier(octets, prefixe.as_bytes(), fin) {
@@ -97,10 +97,10 @@ pub fn renumeroter(octets: &[u8], ordre: &str) -> R<Vec<u8>> {
             _ => None,
         };
         if let Some(t) = type_ar {
-            contenu = poser(&contenu, "S20.G00.05.002", t.code())?;
+            contenu = poser(&contenu, droit::rubrique!("S20.G00.05.002"), t.code())?;
         }
     }
-    poser(&contenu, "S20.G00.05.004", ordre)
+    poser(&contenu, droit::rubrique!("S20.G00.05.004"), ordre)
 }
 
 // ----------------------------------------------------------------- verifier

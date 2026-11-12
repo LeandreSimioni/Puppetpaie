@@ -1446,7 +1446,7 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
             carte,
             mensuelle: n.mensuelle(),
             duree_indeterminee: n.duree_indeterminee,
-            spectacle: n.interdit("S21.G00.40.050").is_none_or(|s| s.is_empty()),
+            spectacle: n.interdit(droit::rubrique!("S21.G00.40.050")).is_none_or(|s| s.is_empty()),
             signalement_fctu: n.signalement_fctu(None),
             signalement_par_motif: signales,
             motifs_rupture: motifs.to_vec(),

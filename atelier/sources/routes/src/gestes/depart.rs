@@ -761,7 +761,7 @@ fn exiges_des_bulletins<'a>(ent: &droit::fiche::ChampsEntreprise, paies: impl It
     let mut spectacles: Vec<&str> = Vec::new();
     for p in paies {
         let Some(sp) = p.spectacle.as_ref() else { continue };
-        if !p.engagement.nat().map_err(|e| e.reclasser(Classe::Illisible))?.ecrit("S21.G00.40.050") || spectacles.contains(&sp.cle.as_str()) {
+        if !p.engagement.nat().map_err(|e| e.reclasser(Classe::Illisible))?.ecrit(droit::rubrique!("S21.G00.40.050")) || spectacles.contains(&sp.cle.as_str()) {
             continue;
         }
         spectacles.push(&sp.cle);

@@ -13,6 +13,7 @@ use serde::Serialize;
 use droit::base_assujettie::BaseAssujettie;
 use droit::fiche::{Bic, Courriel, Iban, Idcc, Nic, NumeroObjetSpectacle, Siren};
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::natures::{ListeDeLaNorme, RubriqueDeLaNorme, VersionDeLaNorme};
 use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
@@ -164,15 +165,15 @@ impl EmploiDeclare {
     /// DSN de PuppetPaie reimportee le donnerait comme `code_emploi_ft` d'un permanent.
     pub fn du_salarie(&self) -> R<EmploiDeclare> {
         let natures = droit::natures::natures()?;
-        fn garder<T: AsRef<str> + Clone>(natures: &[std::sync::Arc<droit::natures::Nature>], rubrique: &str, v: &Option<T>) -> Option<T> {
+        fn garder<T: AsRef<str> + Clone>(natures: &[std::sync::Arc<droit::natures::Nature>], rubrique: RubriqueDeLaNorme, v: &Option<T>) -> Option<T> {
             v.clone().filter(|v| !natures.iter().any(|nat| nat.code(rubrique).as_deref() == Some(v.as_ref())))
         }
         Ok(EmploiDeclare {
-            statut_conventionnel: garder(&natures, "S21.G00.40.002", &self.statut_conventionnel),
-            statut_categoriel_rc: garder(&natures, "S21.G00.40.003", &self.statut_categoriel_rc),
-            pcs_ese: garder(&natures, "S21.G00.40.004", &self.pcs_ese),
-            code_emploi_ft: garder(&natures, "S21.G00.40.005", &self.code_emploi_ft),
-            emploi: garder(&natures, "S21.G00.40.006", &self.emploi),
+            statut_conventionnel: garder(&natures, droit::rubrique!("S21.G00.40.002"), &self.statut_conventionnel),
+            statut_categoriel_rc: garder(&natures, droit::rubrique!("S21.G00.40.003"), &self.statut_categoriel_rc),
+            pcs_ese: garder(&natures, droit::rubrique!("S21.G00.40.004"), &self.pcs_ese),
+            code_emploi_ft: garder(&natures, droit::rubrique!("S21.G00.40.005"), &self.code_emploi_ft),
+            emploi: garder(&natures, droit::rubrique!("S21.G00.40.006"), &self.emploi),
         })
     }
 }
@@ -522,7 +523,7 @@ pub struct DsnLue {
     /// Les references d'adhesion auxquelles un contrat se rattache (S21.G00.70.013).
     pub rattachements: Vec<String>,
     /// Chaque rubrique lue et la valeur qu'elle declare (`declare`).
-    rubriques: BTreeSet<(String, String)>,
+    rubriques: BTreeSet<(RubriqueDeLaNorme, String)>,
 }
 
 /// La nature d'un envoi reel (S10.G00.00.005 ; `01` : un test).
@@ -698,8 +699,8 @@ impl DsnLue {
 
     /// LA DSN DECLARE-T-ELLE `valeur` EN `rubrique` ? La rubrique est celle que la table des champs donne a une case
     /// (`champs-base.json`, `rubrique`) ; la valeur, telle que la DSN l'ecrit.
-    pub fn declare(&self, rubrique: &str, valeur: &str) -> bool {
-        self.rubriques.contains(&(rubrique.to_string(), valeur.to_string()))
+    pub fn declare(&self, rubrique: RubriqueDeLaNorme, valeur: &str) -> bool {
+        self.rubriques.contains(&(rubrique, valeur.to_string()))
     }
 }
 
@@ -851,8 +852,8 @@ pub(crate) fn jour_dsn(v: &str) -> Option<Jour> {
 /// Ce qu'une DSN porte et qui ne se lit pas : une valeur qui n'est pas ce que sa rubrique dit, ou une ligne qui n'est
 /// pas une rubrique de la norme.
 enum Faute {
-    Valeur { rubrique: String, valeur: String, quoi: &'static str },
-    Rubrique { ligne: String, version: Option<String> },
+    Valeur { rubrique: RubriqueDeLaNorme, valeur: String, quoi: &'static str },
+    Rubrique { ligne: String, version: Option<VersionDeLaNorme> },
 }
 
 /// La premiere faute de la lecture.
@@ -863,24 +864,24 @@ impl Fautes {
     fn noter(&mut self, f: Faute) {
         self.0.get_or_insert(f);
     }
-    fn valeur<T>(&mut self, k: &str, v: &str, quoi: &'static str, lu: Option<T>) -> Option<T> {
+    fn valeur<T>(&mut self, k: RubriqueDeLaNorme, v: &str, quoi: &'static str, lu: Option<T>) -> Option<T> {
         if lu.is_none() && !v.is_empty() {
-            self.noter(Faute::Valeur { rubrique: k.to_string(), valeur: v.to_string(), quoi });
+            self.noter(Faute::Valeur { rubrique: k, valeur: v.to_string(), quoi });
         }
         lu
     }
-    fn montant(&mut self, k: &str, v: &str) -> Option<Decimal> {
+    fn montant(&mut self, k: RubriqueDeLaNorme, v: &str) -> Option<Decimal> {
         self.valeur(k, v, "un montant", socle::num::decimal_lu(v))
     }
-    fn nombre(&mut self, k: &str, v: &str) -> Option<Decimal> {
+    fn nombre(&mut self, k: RubriqueDeLaNorme, v: &str) -> Option<Decimal> {
         self.valeur(k, v, "un nombre", socle::num::decimal_lu(v))
     }
-    fn jour(&mut self, k: &str, v: &str) -> Option<Jour> {
+    fn jour(&mut self, k: RubriqueDeLaNorme, v: &str) -> Option<Jour> {
         self.valeur(k, v, "une date (JJMMAAAA)", jour_dsn(v))
     }
     /// Une valeur que son type lit (`droit::fiche::Siren`, `Nic`...) : un texte qu'il refuse est une faute, que `quoi`
     /// nomme.
-    fn lue<T>(&mut self, k: &str, v: &str, quoi: &'static str, lire: fn(&str) -> R<T>) -> Option<T> {
+    fn lue<T>(&mut self, k: RubriqueDeLaNorme, v: &str, quoi: &'static str, lire: fn(&str) -> R<T>) -> Option<T> {
         let lu = match lire(v) {
             Ok(t) => Some(t),
             Err(_) => None,
@@ -888,7 +889,7 @@ impl Fautes {
         self.valeur(k, v, quoi, lu)
     }
     /// Un code d'une liste de la norme (`droit::natures::ListeDeLaNorme`) : un code qu'elle n'a pas est une faute.
-    fn code<T: droit::natures::ListeDeLaNorme>(&mut self, k: &str, v: &str) -> Option<T> {
+    fn code<T: ListeDeLaNorme>(&mut self, k: RubriqueDeLaNorme, v: &str) -> Option<T> {
         self.valeur(k, v, "un code de sa liste dans la norme", T::du_code_de_la_norme(v))
     }
     /// Un refus dit quoi corriger et n'ecrit rien.
@@ -929,14 +930,18 @@ pub fn lire_une_dsn(chemin: &Path) -> R<Option<DsnLue>> {
 /// rubrique dit (un montant, une date), ou une ligne qui n'est pas une
 /// rubrique, refuse : rien ne se devine (regle 1). La rubrique se controle au tableau des usages de la version que le
 /// fichier declare (S10.G00.00.006, `usages-dsn-base.json`) ; une version que le logiciel ne livre pas (une DSN d'avant
-/// 2026) ne se controle que par la forme de ses rubriques (`usages::est_rubrique`).
+/// 2026) ne se controle que par la forme de ses rubriques (`RubriqueDeLaNorme::lue`).
 pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
     let contenu = texte_latin1(octets);
     // L'indicateur d'ordre des octets d'UTF-8, lu en latin-1, n'est pas une rubrique.
     let lignes = lignes_du_texte(contenu.trim_start_matches("\u{ef}\u{bb}\u{bf}"));
     let valeur = |v: &str| v.trim_matches(blanc).trim_matches('\'').to_string();
-    let norme = match lignes.iter().find_map(|l| l.split_once(',').filter(|(k, _)| *k == crate::norme::RUBRIQUE).map(|(_, v)| valeur(v))) {
-        Some(v) => crate::norme::Norme::livree(&v)?,
+    let norme = match lignes.iter().find_map(|l| l.split_once(',').filter(|(k, _)| RubriqueDeLaNorme::lue(k) == Some(VersionDeLaNorme::RUBRIQUE)).map(|(_, v)| valeur(v))) {
+        // Une version que le logiciel ne livre pas (une DSN d'avant 2026) ne se controle que par la forme.
+        Some(v) => match VersionDeLaNorme::du_code(&v) {
+            Some(version) => crate::norme::Norme::livree(version)?,
+            None => None,
+        },
         None => None,
     };
     let mut fautes = Fautes::default();
@@ -964,24 +969,25 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
     let mut contacts: Vec<Contact> = Vec::new();
     let mut adhesions: Vec<Adhesion> = Vec::new();
     let mut rattachements: Vec<String> = Vec::new();
-    let mut rubriques: BTreeSet<(String, String)> = BTreeSet::new();
+    let mut rubriques: BTreeSet<(RubriqueDeLaNorme, String)> = BTreeSet::new();
     let mut spst = String::new();
     for ligne in &lignes {
         if ligne.trim_matches(blanc).is_empty() {
             continue;
         }
-        let Some((k, v)) = ligne.split_once(',').filter(|(k, _)| crate::usages::est_rubrique(k)) else {
+        // `k` la rubrique telle que la ligne l'ecrit, `rub` la meme, lue.
+        let Some((k, v, rub)) = ligne.split_once(',').and_then(|(k, v)| Some((k, v, RubriqueDeLaNorme::lue(k)?))) else {
             fautes.noter(Faute::Rubrique { ligne: ligne.to_string(), version: None });
             continue;
         };
         if let Some(n) = &norme {
-            if !crate::usages::rubrique_connue(n, k)? {
-                fautes.noter(Faute::Rubrique { ligne: k.to_string(), version: Some(n.version.clone()) });
+            if !crate::usages::rubrique_connue(n, rub)? {
+                fautes.noter(Faute::Rubrique { ligne: k.to_string(), version: Some(n.version) });
                 continue;
             }
         }
         let v = valeur(v);
-        rubriques.insert((k.to_string(), v.clone()));
+        rubriques.insert((rub, v.clone()));
         let plein = Some(v.clone()).filter(|x| !x.is_empty());
         // UN INDIVIDU SANS NIR (S21.G00.30.001 absent, « En l'absence de NIR ou de NIA », `bloc-S21.G00.30.txt`
         // l. 338-354) commence a son nom (.002).
@@ -995,45 +1001,45 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
             "S10.G00.00.001" => premier(&mut logiciel, &plein),
             "S10.G00.00.005" => premier(&mut nature_envoi, &plein),
             "S20.G00.05.001" => {
-                let n = fautes.code(k, &v);
+                let n = fautes.code(rub, &v);
                 nature = nature.or(n);
             }
             "S20.G00.05.003" => premier(&mut fraction, &plein),
             "S20.G00.05.006" => premier(&mut remplace, &plein),
-            "S21.G00.20.005" => versements_organismes.extend(fautes.montant(k, &v)),
+            "S21.G00.20.005" => versements_organismes.extend(fautes.montant(rub, &v)),
             "S21.G00.30.020" => {
                 if let Some(i) = individu {
                     individus[i].ntt = plein;
                 }
             }
             "S21.G00.40.012" => {
-                let q = fautes.nombre(k, &v);
+                let q = fautes.nombre(rub, &v);
                 contrat.into_iter().for_each(|c| c.quotite_reference = q);
             }
             "S21.G00.40.014" => {
-                let m = fautes.code(k, &v);
+                let m = fautes.code(rub, &v);
                 contrat.into_iter().for_each(|c| c.modalite = m);
             }
             "S21.G00.40.021" => {
-                let m = fautes.code(k, &v);
+                let m = fautes.code(rub, &v);
                 contrat.into_iter().for_each(|c| c.motif_recours = m);
             }
             "S21.G00.60.002" => {
-                let jour = fautes.jour(k, &v);
+                let jour = fautes.jour(rub, &v);
                 contrat.into_iter().for_each(|c| c.dernier_jour_travaille = jour);
             }
-            "S10.G00.01.001" => premier(&mut emetteur_siren, &fautes.lue(k, &v, SIREN, Siren::lire)),
+            "S10.G00.01.001" => premier(&mut emetteur_siren, &fautes.lue(rub, &v, SIREN, Siren::lire)),
             "S10.G00.01.003" => premier(&mut emetteur_nom, &plein),
             "S10.G00.02.001" => civilite_emetteur = plein,
             "S10.G00.02.002" => nom_emetteur = plein,
-            "S20.G00.05.002" => type_declaration = fautes.code(k, &v),
+            "S20.G00.05.002" => type_declaration = fautes.code(rub, &v),
             "S20.G00.05.004" => ordre = plein,
             "S20.G00.05.005" => {
                 // 01MMAAAA : le premier jour du mois.
                 let premier_jour = jour_dsn(&v).filter(|j| j.jour == 1);
-                mois = fautes.valeur(k, &v, "un mois (01MMAAAA)", premier_jour.map(|j| Mois::du_jour(&j)));
+                mois = fautes.valeur(rub, &v, "un mois (01MMAAAA)", premier_jour.map(|j| Mois::du_jour(&j)));
             }
-            "S20.G00.05.007" => depot = fautes.jour(k, &v),
+            "S20.G00.05.007" => depot = fautes.jour(rub, &v),
             "S20.G00.07.001" => contacts.push(Contact::nomme(v)),
             "S20.G00.07.002" | "S20.G00.07.004" => {
                 if let Some(c) = contacts.last_mut() {
@@ -1041,19 +1047,19 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 }
             }
             "S20.G00.07.003" => {
-                let email = fautes.lue(k, &v, COURRIEL, Courriel::lire);
+                let email = fautes.lue(rub, &v, COURRIEL, Courriel::lire);
                 if let Some(c) = contacts.last_mut() {
                     c.email = email;
                 }
             }
-            "S21.G00.06.001" => premier(&mut e.siren, &fautes.lue(k, &v, SIREN, Siren::lire)),
-            "S21.G00.06.002" => premier(&mut nic_siege, &fautes.lue(k, &v, NIC, Nic::lire)),
+            "S21.G00.06.001" => premier(&mut e.siren, &fautes.lue(rub, &v, SIREN, Siren::lire)),
+            "S21.G00.06.002" => premier(&mut nic_siege, &fautes.lue(rub, &v, NIC, Nic::lire)),
             "S21.G00.06.003" => premier(&mut e.naf, &plein),
             "S21.G00.06.004" => premier(&mut adresse_siege, &plein),
             "S21.G00.06.005" => premier(&mut code_postal_siege, &plein),
             "S21.G00.06.006" => premier(&mut commune_siege, &plein),
             "S21.G00.11.001" => {
-                let nic = fautes.lue(k, &v, NIC, Nic::lire);
+                let nic = fautes.lue(rub, &v, NIC, Nic::lire);
                 premier(&mut e.nic, &nic);
                 if let Some(nic) = nic.filter(|n| !etablissements.contains(n)) {
                     etablissements.push(nic);
@@ -1063,11 +1069,11 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
             "S21.G00.11.003" => premier(&mut e.adresse, &plein),
             "S21.G00.11.004" => premier(&mut e.code_postal, &plein),
             "S21.G00.11.005" => premier(&mut e.commune, &plein),
-            "S21.G00.11.022" => premier(&mut e.idcc, &fautes.lue(k, &v, IDCC, Idcc::lire)),
+            "S21.G00.11.022" => premier(&mut e.idcc, &fautes.lue(rub, &v, IDCC, Idcc::lire)),
             "S21.G00.11.025" => spst = v,
             "S21.G00.15.001" => adhesions.push(Adhesion::de(v)),
             "S21.G00.15.002" => {
-                let organisme = fautes.lue(k, &v, ORGANISME, IdentifiantDOrganisme::lire);
+                let organisme = fautes.lue(rub, &v, ORGANISME, IdentifiantDOrganisme::lire);
                 if let Some(a) = adhesions.last_mut() {
                     a.organisme = organisme;
                 }
@@ -1078,7 +1084,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 }
             }
             "S21.G00.20.001" => {
-                let organisme = fautes.lue(k, &v, ORGANISME, IdentifiantDOrganisme::lire);
+                let organisme = fautes.lue(rub, &v, ORGANISME, IdentifiantDOrganisme::lire);
                 blocs20.push(Bloc20 { organisme, affectation: String::new(), bic: None, iban: None })
             }
             "S21.G00.20.002" => {
@@ -1087,13 +1093,13 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 }
             }
             "S21.G00.20.003" => {
-                let bic = fautes.lue(k, &v, BIC, Bic::lire);
+                let bic = fautes.lue(rub, &v, BIC, Bic::lire);
                 if let Some(b) = blocs20.last_mut() {
                     b.bic = bic;
                 }
             }
             "S21.G00.20.004" => {
-                let iban = fautes.lue(k, &v, IBAN, Iban::lire);
+                let iban = fautes.lue(rub, &v, IBAN, Iban::lire);
                 if let Some(b) = blocs20.last_mut() {
                     b.iban = iban;
                 }
@@ -1101,7 +1107,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
             "S21.G00.30.001" => individus.push(IndividuDeclare::de(plein)),
             "S21.G00.30.006" => {
                 let Some(i) = individu else { continue };
-                individus[i].date_naissance = fautes.valeur(k, &v, "une date de naissance (JJMMAAAA)", NaissanceDeclaree::lire(&v));
+                individus[i].date_naissance = fautes.valeur(rub, &v, "une date de naissance (JJMMAAAA)", NaissanceDeclaree::lire(&v));
             }
             "S21.G00.30.002" | "S21.G00.30.004" | "S21.G00.30.005" | "S21.G00.30.007" | "S21.G00.30.008" | "S21.G00.30.009"
             | "S21.G00.30.010" | "S21.G00.30.013" | "S21.G00.30.014" | "S21.G00.30.015" | "S21.G00.30.019" => {
@@ -1127,11 +1133,11 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
             }
             "S21.G00.30.018" => {
                 let Some(i) = individu else { continue };
-                individus[i].email = fautes.lue(k, &v, COURRIEL, Courriel::lire);
+                individus[i].email = fautes.lue(rub, &v, COURRIEL, Courriel::lire);
             }
             "S21.G00.40.001" => {
                 let Some(i) = individu else { continue };
-                let debut = fautes.jour(k, &v);
+                let debut = fautes.jour(rub, &v);
                 contrats.push(ContratDeclare::de(individus[i].nir.clone(), i, debut));
                 fin_de = Some(contrats.len() - 1);
             }
@@ -1150,28 +1156,28 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 c.emploi.emploi = plein;
             }
             "S21.G00.40.004" => {
-                let pcs = fautes.lue(k, &v, PCS_ESE, droit::fiche::CodePcsEse::lire);
+                let pcs = fautes.lue(rub, &v, PCS_ESE, droit::fiche::CodePcsEse::lire);
                 contrat.into_iter().for_each(|c| c.emploi.pcs_ese = pcs.clone());
             }
             "S21.G00.40.005" => {
-                let code = fautes.lue(k, &v, CODE_EMPLOI, droit::fiche::CodeEmploiFt::lire);
+                let code = fautes.lue(rub, &v, CODE_EMPLOI, droit::fiche::CodeEmploiFt::lire);
                 contrat.into_iter().for_each(|c| c.emploi.code_emploi_ft = code.clone());
             }
             "S21.G00.40.007" => contrat.into_iter().for_each(|c| c.nature_dsn = plein.clone()),
             "S21.G00.40.009" => {
-                let numero = fautes.lue(k, &v, NUMERO, NumeroContrat::lire);
+                let numero = fautes.lue(rub, &v, NUMERO, NumeroContrat::lire);
                 contrat.into_iter().for_each(|c| c.numero = numero.clone());
             }
             "S21.G00.40.010" => {
-                let fin = fautes.jour(k, &v);
+                let fin = fautes.jour(rub, &v);
                 contrat.into_iter().for_each(|c| c.fin = fin);
             }
             "S21.G00.40.013" => {
-                let q = fautes.nombre(k, &v);
+                let q = fautes.nombre(rub, &v);
                 contrat.into_iter().for_each(|c| c.quotite = q);
             }
             "S21.G00.40.017" => {
-                let idcc = fautes.lue(k, &v, IDCC, Idcc::lire);
+                let idcc = fautes.lue(rub, &v, IDCC, Idcc::lire);
                 premier(&mut e.idcc, &idcc);
                 contrat.into_iter().for_each(|c| c.idcc = idcc.clone());
             }
@@ -1183,7 +1189,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
             }
             "S21.G00.40.040" => contrat.into_iter().for_each(|c| c.code_risque = plein.clone()),
             "S21.G00.40.043" => {
-                let t = fautes.nombre(k, &v);
+                let t = fautes.nombre(rub, &v);
                 contrat.into_iter().for_each(|c| c.taux_at = t);
             }
             "S21.G00.40.049" => {
@@ -1191,59 +1197,59 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 contrat.into_iter().for_each(|c| c.licence = plein.clone());
             }
             "S21.G00.40.050" => {
-                let objet = fautes.lue(k, &v, OBJET, NumeroObjetSpectacle::lire);
+                let objet = fautes.lue(rub, &v, OBJET, NumeroObjetSpectacle::lire);
                 contrat.into_iter().for_each(|c| c.objet = objet.clone());
             }
             "S21.G00.62.001" => {
-                let fin = fautes.jour(k, &v);
+                let fin = fautes.jour(rub, &v);
                 if let Some(c) = fin_de.and_then(|i| contrats.get_mut(i)) {
                     c.fin_declaree = fin;
                 }
             }
             "S21.G00.62.002" => {
-                let m = fautes.code(k, &v);
+                let m = fautes.code(rub, &v);
                 if let Some(c) = fin_de.and_then(|i| contrats.get_mut(i)) {
                     c.motif_fin = m;
                 }
             }
             "S21.G00.50.001" => {
                 let Some(i) = individu else { continue };
-                let verse_le = fautes.jour(k, &v);
+                let verse_le = fautes.jour(rub, &v);
                 versements.push(VersementLu::de(individus[i].nir.clone(), verse_le));
                 base = false;
             }
             "S21.G00.50.002" => {
-                let m = fautes.montant(k, &v);
+                let m = fautes.montant(rub, &v);
                 versement.into_iter().for_each(|x| x.net_imposable = m);
             }
             "S21.G00.50.004" => {
-                let m = fautes.montant(k, &v);
+                let m = fautes.montant(rub, &v);
                 versement.into_iter().for_each(|x| x.net_verse = m);
             }
             "S21.G00.50.006" => {
-                let t = fautes.nombre(k, &v);
+                let t = fautes.nombre(rub, &v);
                 versement.into_iter().for_each(|x| x.taux_pas = t);
             }
             "S21.G00.50.007" => {
-                let t = fautes.code(k, &v);
+                let t = fautes.code(rub, &v);
                 versement.into_iter().for_each(|x| x.type_pas = t);
             }
             "S21.G00.50.008" => versement.into_iter().for_each(|x| x.identifiant_pas = plein.clone()),
             "S21.G00.50.009" => {
-                let m = fautes.montant(k, &v);
+                let m = fautes.montant(rub, &v);
                 versement.into_iter().for_each(|x| x.pas = m);
             }
             "S21.G00.51.001" => {
                 let Some(x) = versement else { continue };
-                let debut = fautes.jour(k, &v);
+                let debut = fautes.jour(rub, &v);
                 x.remunerations.push(Remuneration { debut, ..Remuneration::default() });
             }
             "S21.G00.51.010" | "S21.G00.51.011" | "S21.G00.51.013" => {
                 let Some(r) = versement.and_then(|x| x.remunerations.last_mut()) else { continue };
                 match k {
-                    "S21.G00.51.010" => r.contrat = fautes.lue(k, &v, NUMERO, NumeroContrat::lire),
+                    "S21.G00.51.010" => r.contrat = fautes.lue(rub, &v, NUMERO, NumeroContrat::lire),
                     "S21.G00.51.011" => r.genre = plein,
-                    _ => r.montant = fautes.montant(k, &v),
+                    _ => r.montant = fautes.montant(rub, &v),
                 }
             }
             "S21.G00.53.001" => {
@@ -1251,7 +1257,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 r.activites.push(Activite { genre: plein, ..Activite::default() });
             }
             "S21.G00.53.002" | "S21.G00.53.003" => {
-                let mesure = if k == "S21.G00.53.002" { fautes.nombre(k, &v) } else { None };
+                let mesure = if k == "S21.G00.53.002" { fautes.nombre(rub, &v) } else { None };
                 let Some(a) = versement.and_then(|x| x.remunerations.last_mut()).and_then(|r| r.activites.last_mut()) else { continue };
                 match k {
                     "S21.G00.53.002" => a.mesure = mesure,
@@ -1260,7 +1266,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
             }
             "S21.G00.70.013" => rattachements.push(v),
             "S21.G00.78.001" => {
-                let code = fautes.code(k, &v);
+                let code = fautes.code(rub, &v);
                 let Some(x) = versement else { continue };
                 base = code.is_some();
                 if let Some(code) = code {
@@ -1268,11 +1274,11 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
                 }
             }
             "S21.G00.78.004" | "S21.G00.78.006" => {
-                let m = if k == "S21.G00.78.004" { fautes.montant(k, &v) } else { None };
+                let m = if k == "S21.G00.78.004" { fautes.montant(rub, &v) } else { None };
                 let Some(b) = versement.filter(|_| base).and_then(|x| x.bases.last_mut()) else { continue };
                 match k {
                     "S21.G00.78.004" => b.montant += m.iter().sum::<Decimal>(),
-                    _ => b.contrat = fautes.lue(k, &v, NUMERO, NumeroContrat::lire),
+                    _ => b.contrat = fautes.lue(rub, &v, NUMERO, NumeroContrat::lire),
                 }
             }
             _ => {}

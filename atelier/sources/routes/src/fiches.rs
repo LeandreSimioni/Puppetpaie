@@ -691,7 +691,7 @@ pub(crate) struct DejaDeclare {
     pub(crate) au: Option<socle::mois::Mois>,
 }
 
-fn usages_declares(ctx: &Contexte, rubrique: Option<&str>, valeur: Option<&str>) -> R<DejaDeclare> {
+fn usages_declares(ctx: &Contexte, rubrique: Option<droit::natures::RubriqueDeLaNorme>, valeur: Option<&str>) -> R<DejaDeclare> {
     let (mut n, mut mois) = (0usize, Vec::<socle::mois::Mois>::new());
     if let (Some(rubrique), Some(valeur)) = (rubrique, valeur) {
         for dossier in [pieces_importees(ctx), ctx.racine.join("sorties")] {

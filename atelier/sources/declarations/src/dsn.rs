@@ -27,7 +27,7 @@ use droit::contexte::IdSalarie;
 use engagement::calcul::Paie;
 use engagement::etats::PrelevementDeLaCorrection;
 use droit::contexte::{aujourdhui, Contexte};
-use droit::natures::{contrat_court, Mesure, MotifDeRupture, Nature, TypeDeRemuneration};
+use droit::natures::{contrat_court, ListeDeLaNorme, Mesure, MotifDeRupture, Nature, RubriqueDeLaNorme, TypeDeRemuneration};
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::echec::{refus, refus_avec, Lieu, R};
@@ -102,8 +102,8 @@ impl Fichier {
 
     /// `S10.G00.00.006`, le numero de version de la norme utilisee.
     pub fn ecrire_la_version(&mut self) -> R<()> {
-        let v = self.norme()?.version.clone();
-        self.add(crate::norme::RUBRIQUE, v);
+        let v = self.norme()?.version;
+        self.add(&droit::natures::VersionDeLaNorme::RUBRIQUE.to_string(), v);
         Ok(())
     }
 
@@ -112,7 +112,7 @@ impl Fichier {
     /// valeurs indiquees dans cette liste », cahier 2027.1.1 p. 86, `texte-2027/chapitre-4-controles.txt` l. 164).
     pub fn ecrire_code<T: droit::natures::ListeDeLaNorme>(&mut self, v: T) -> R<()> {
         let code = code_admis(self.norme()?, v)?;
-        self.add(T::RUBRIQUE, code);
+        self.add(&T::RUBRIQUE.to_string(), code);
         Ok(())
     }
 
@@ -265,7 +265,10 @@ fn type_du_contact(decl: &DeclarantDsn) -> &str {
 /// deposee, et que le code de la DPAE soit cet identifiant serait une inference (la rubrique est conditionnelle).
 fn spst_ecrit(f: &Fichier, ent_e: &ChampsEntreprise) -> R<Option<String>> {
     let interne = ent_e.medecine_travail.dite().is_some_and(droit::fiche::CodeMedecine::interne);
-    if !interne || f.norme()?.version.as_str() < "P27V01" || !usage_admet(f, "S21.G00.11.025", NatureDeLaDeclaration::Mensuelle)? {
+    if !interne
+        || crate::norme::Norme::rang(f.norme()?.version)? < crate::norme::Norme::rang(droit::natures::VersionDeLaNorme::P27V01)?
+        || !usage_admet(f, droit::rubrique!("S21.G00.11.025"), NatureDeLaDeclaration::Mensuelle)?
+    {
         return Ok(None);
     }
     Ok(Some("MT01".to_string()))
@@ -500,7 +503,7 @@ pub fn bloc_60(f: &mut Fichier, a: &Arret, nature: NatureDeLaDeclaration, banque
     // La veille du debut prescrit, ou ce jour s'il a ete travaille (S21.G00.60.002, `imprevus::dernier_jour_declare`).
     f.add("S21.G00.60.002", engagement::imprevus::dernier_jour_declare(v)?.jjmmaaaa());
     f.add("S21.G00.60.003", v.fin_previsionnelle.jjmmaaaa());
-    let subrogation = if usage_admet(f, "S21.G00.60.004", nature)? { dite(&v.subrogation) } else { None };
+    let subrogation = if usage_admet(f, droit::rubrique!("S21.G00.60.004"), nature)? { dite(&v.subrogation) } else { None };
     if let Some(subrogation) = subrogation {
         f.add("S21.G00.60.004", subrogation);
         if crate::signalement::avec_subrogation(a)? {
@@ -520,7 +523,7 @@ obligatoires -- CCH-11. Ils se lisent dans la fiche entreprise, ils ne se saisis
             f.add("S21.G00.60.011", motif);
         }
     }
-    if usage_admet(f, "S21.G00.60.012", nature)? {
+    if usage_admet(f, droit::rubrique!("S21.G00.60.012"), nature)? {
         if let Some(accident) = v.date_accident {
             f.add("S21.G00.60.012", accident.jjmmaaaa());
         }
@@ -1507,7 +1510,7 @@ contrat). Rien n'est ecrit.",
 // ------------------------------------------------------------ les blocs
 
 /// La rubrique est-elle admise pour cette nature dans le tableau des usages de la version du fichier ?
-pub fn usage_admet(f: &Fichier, rubrique: &str, nature_dsn: NatureDeLaDeclaration) -> R<bool> {
+pub fn usage_admet(f: &Fichier, rubrique: RubriqueDeLaNorme, nature_dsn: NatureDeLaDeclaration) -> R<bool> {
     f.norme()?.admet(rubrique, nature_dsn)
 }
 
@@ -1524,17 +1527,17 @@ pub fn usage_admet(f: &Fichier, rubrique: &str, nature_dsn: NatureDeLaDeclaratio
 fn licence_du_contrat(f: &mut Fichier, nature_dsn: NatureDeLaDeclaration, ent: &ChampsEntreprise, spectacle: bool) -> R<()> {
     let licence = ent.licence_spectacle.ecrite("licence_spectacle")?.to_string();
     if !licence.trim().is_empty() {
-        return si_admise(f, nature_dsn, "S21.G00.40.049", Some(licence));
+        return si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.049"), Some(licence));
     }
-    if crate::demarrage::licence_exigee(ent, spectacle)? && usage_admet(f, "S21.G00.40.049", nature_dsn)? {
+    if crate::demarrage::licence_exigee(ent, spectacle)? && usage_admet(f, droit::rubrique!("S21.G00.40.049"), nature_dsn)? {
         return Err(refus("La licence d'entrepreneur de spectacles manque : la saisir dans Configuration › Entreprise, « Licence d'entrepreneur de spectacles » (le numéro attribué par la DRAC, ou la référence du récépissé de déclaration). L'entrepreneur de spectacles vivants la déclare dans chaque contrat (S21.G00.40.049). Rien n'est écrit."));
     }
     Ok(())
 }
 
-fn si_admise(f: &mut Fichier, nature_dsn: NatureDeLaDeclaration, rubrique: &str, valeur: Option<String>) -> R<()> {
+fn si_admise(f: &mut Fichier, nature_dsn: NatureDeLaDeclaration, rubrique: RubriqueDeLaNorme, valeur: Option<String>) -> R<()> {
     if usage_admet(f, rubrique, nature_dsn)? {
-        f.add_opt(rubrique, valeur)?;
+        f.add_opt(&rubrique.to_string(), valeur)?;
     }
     Ok(())
 }
@@ -1744,7 +1747,7 @@ pub fn bloc_contrat_fctu(
     let s = &p.salarie;
     let nat = e.nat()?;
     let atmp = bar.taux_atmp.as_ref();
-    let ecrit_atmp = usage_admet(f, "S21.G00.40.043", nature_dsn)?;
+    let ecrit_atmp = usage_admet(f, droit::rubrique!("S21.G00.40.043"), nature_dsn)?;
     // SIG-11 : sous le code risque 999ZZ (pas encore de notification), le taux (40.043) est interdit ; sous tout autre
     // code, il est obligatoire (`norme-dsn/texte/bloc-S21.G00.40.txt`, l. 1309-1313).
     let code_risque = atmp.and_then(|a| a.code_risque.clone()).filter(|c| !c.is_empty());
@@ -1774,13 +1777,13 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     // CDDU, le CDD d'un artiste ou d'un technicien de la liste de l'annexe 8) declare le code de son metier dans la
     // nomenclature des emplois du spectacle, que France Travail Spectacle lit.
     let intermittent = droit::caisse_conges::intermittent(&nat, &p.salarie)?;
-    match nat.code("S21.G00.40.005").filter(|c| !c.is_empty() && !intermittent) {
+    match nat.code(droit::rubrique!("S21.G00.40.005")).filter(|c| !c.is_empty() && !intermittent) {
         Some(c) => f.add("S21.G00.40.005", c),
         None => f.add_case("S21.G00.40.005", &s.code_emploi_ft, "code_emploi_ft")?,
     }
     f.add_case("S21.G00.40.006", &s.emploi, "emploi")?;
-    f.add_opt("S21.G00.40.007", nat.code("S21.G00.40.007"))?;
-    f.add_opt("S21.G00.40.008", nat.code("S21.G00.40.008"))?;
+    f.add_opt("S21.G00.40.007", nat.code(droit::rubrique!("S21.G00.40.007")))?;
+    f.add_opt("S21.G00.40.008", nat.code(droit::rubrique!("S21.G00.40.008")))?;
     f.add_opt("S21.G00.40.009", e.numero.clone())?;
     if !nat.duree_indeterminee || e.fin.is_some() {
         f.add_opt("S21.G00.40.010", e.fin.map(|j| j.jjmmaaaa()))?;
@@ -1789,7 +1792,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     let quotite = e.quotite()?;
     // Le plafond de la nature (`contrats-base.json`, `unite_quotite.plafond`) vaut pour 40.012 comme pour 40.013 :
     // CCH-12 du bloc 40 (journee, 31.00), CCH-13 (heure, 250.00) ; cahier technique 2026.1, p. 189.
-    let depasse = |rubrique: &str, quoi: &str, valeur: String| -> R<()> {
+    let depasse = |rubrique: RubriqueDeLaNorme, quoi: &str, valeur: String| -> R<()> {
         let plafond = nat.plafond_quotite();
         let q = socle::num::dec_texte(&valeur)?;
         if q <= plafond {
@@ -1821,10 +1824,10 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
             cch
         ))
     };
-    depasse("S21.G00.40.013", "quotite", qt(quotite))?;
+    depasse(droit::rubrique!("S21.G00.40.013"), "quotite", qt(quotite))?;
     match e.quotite_reference()? {
         Some(r) => {
-            depasse("S21.G00.40.012", "quotite de reference", qt(r))?;
+            depasse(droit::rubrique!("S21.G00.40.012"), "quotite de reference", qt(r))?;
             quotite_de_reference_sans_heures_supplementaires(f, p, &nat, r)?;
             f.add("S21.G00.40.012", qt(r))
         }
@@ -1836,13 +1839,13 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     if bareme::alsace_moselle(&bar.entreprise.fiche, &p.salarie) {
         f.add("S21.G00.40.016", "01");
     } else {
-        f.add_opt("S21.G00.40.016", nat.code("S21.G00.40.016"))?;
+        f.add_opt("S21.G00.40.016", nat.code(droit::rubrique!("S21.G00.40.016")))?;
     }
     f.add("S21.G00.40.017", engagement::minima::idcc_du_contrat(ent.idcc.exigee("idcc")?, p.spectacle.as_ref(), &p.salarie)?.to_string());
-    f.add_opt("S21.G00.40.018", nat.code("S21.G00.40.018"))?;
+    f.add_opt("S21.G00.40.018", nat.code(droit::rubrique!("S21.G00.40.018")))?;
     f.add_case("S21.G00.40.019", &ent.siret, "siret")?;
-    f.add_opt("S21.G00.40.020", nat.code("S21.G00.40.020"))?;
-    if nat.ecrit("S21.G00.40.021") {
+    f.add_opt("S21.G00.40.020", nat.code(droit::rubrique!("S21.G00.40.020")))?;
+    if nat.ecrit(droit::natures::MotifDeRecours::RUBRIQUE) {
         let m = match nat.motif_recours_fixe() {
             Some(m) => m,
             None => motif_recours(p, &nat)?,
@@ -1851,7 +1854,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     }
     // « dans le cas ou les indemnites ne sont pas versees par l'employeur » (p. 195) : un contrat declare a la caisse
     // des Conges Spectacles (`caisse_conges::affilie`), et aucun autre -- ni un CDI, ni un contrat de douze mois ou plus.
-    let caisse_conges = nat.ecrit("S21.G00.40.022") && p.declaree_a_la_caisse_des_conges()?;
+    let caisse_conges = nat.ecrit(droit::rubrique!("S21.G00.40.022")) && p.declaree_a_la_caisse_des_conges()?;
     if caisse_conges {
         f.add("S21.G00.40.022", documents::conges_spectacles::code_dsn(ent)?);
     }
@@ -1860,36 +1863,36 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     // a la part de remuneration afferente a l'activite ouvrant droit a la deduction » (cahier technique 2026.1, p. 195,
     // `atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt` lignes 936-943 ; N [4,6], deux decimales).
     if let Some(d) = &p.deduction_forfaitaire {
-        si_admise(f, nature_dsn, "S21.G00.40.023", Some(fmt_f(d.taux, 2)))?;
+        si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.023"), Some(fmt_f(d.taux, 2)))?;
     }
-    for &r in &["S21.G00.40.024", "S21.G00.40.026"] {
-        f.add_opt(r, nat.code(r))?;
+    for r in [droit::rubrique!("S21.G00.40.024"), droit::rubrique!("S21.G00.40.026")] {
+        f.add_opt(&r.to_string(), nat.code(r))?;
     }
     // LES EMPLOIS MULTIPLES ne sont plus une constante de la nature : 02 quand le salarie tient plusieurs emplois
     // dans la periode de paie (p. 199, `emplois_multiples`).
     f.add("S21.G00.40.036", emplois);
-    f.add_opt("S21.G00.40.037", nat.code("S21.G00.40.037"))?;
-    si_admise(f, nature_dsn, "S21.G00.40.039", nat.code("S21.G00.40.039"))?;
+    f.add_opt("S21.G00.40.037", nat.code(droit::rubrique!("S21.G00.40.037")))?;
+    si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.039"), nat.code(droit::rubrique!("S21.G00.40.039")))?;
     if let Some((code, valeur)) = atmp_ecrit {
-        si_admise(f, nature_dsn, "S21.G00.40.040", Some(code))?;
+        si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.040"), Some(code))?;
         if let Some(v) = valeur {
-            si_admise(f, nature_dsn, "S21.G00.40.043", Some(fmt_f(v, 2)))?;
+            si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.043"), Some(fmt_f(v, 2)))?;
         }
     }
-    licence_du_contrat(f, nature_dsn, ent, nat.ecrit("S21.G00.40.050"))?;
+    licence_du_contrat(f, nature_dsn, ent, nat.ecrit(droit::rubrique!("S21.G00.40.050")))?;
     // Le numero d'objet du spectacle : rubrique conditionnelle (usage « C », `norme-dsn/texte/tableaux-des-usages.txt`
     // l. 270), seulement AUTORISEE pour les natures 02 et 10 (CCH-11, `texte/bloc-S21.G00.40.txt` l. 1379-1388) ; une
     // rubrique conditionnelle qu'on n'a pas s'omet, elle ne s'ecrit pas a blanc (`texte/chapitre-3-structuration.txt`
     // l. 257-259). Utile, jamais exige : « Pour demarrer » le propose (`sinon` de `champs-base.json`).
     let objet = p.spectacle.as_ref().and_then(|s| s.numero_objet.dite()).map(|o| o.trim()).filter(|o| !o.is_empty());
-    if let Some(objet) = objet.filter(|_| nat.ecrit("S21.G00.40.050")) {
-        if usage_admet(f, "S21.G00.40.050", nature_dsn)? {
+    if let Some(objet) = objet.filter(|_| nat.ecrit(droit::rubrique!("S21.G00.40.050"))) {
+        if usage_admet(f, droit::rubrique!("S21.G00.40.050"), nature_dsn)? {
             f.add("S21.G00.40.050", objet);
         }
     }
-    si_admise(f, nature_dsn, "S21.G00.40.051", nat.code("S21.G00.40.051"))?;
+    si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.051"), nat.code(droit::rubrique!("S21.G00.40.051")))?;
     if let Some(b) = s.statut_boeth.dite() {
-        si_admise(f, nature_dsn, "S21.G00.40.072", Some(b.as_str().to_string()))?;
+        si_admise(f, nature_dsn, droit::rubrique!("S21.G00.40.072"), Some(b.as_str().to_string()))?;
     }
     proratisation_du_plafond(f, p, nature_dsn)?;
     // S21.G00.40.086 (« Adhesion a une caisse de conges payes a titre obligatoire ») ne s'ecrit pas : « A ne pas
@@ -1910,7 +1913,7 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
         f.add("S21.G00.62.006", crate::fctu::dernier_jour_paye(e)?.jjmmaaaa());
         // 62.017 d'un CDDU suit le motif : 01 (circuit derogatoire) pour le 031, 02 sinon (CCH-12, `Nature::codes_fin`).
         for (rub, val) in nat.codes_fin(Some(motif)) {
-            f.add(&rub, val);
+            f.add(&rub.to_string(), val);
         }
     }
     for s in &e.suspensions {
@@ -1923,19 +1926,19 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
     let refs = affiliations(orgs, &nat, &bar.contributions_du_mois, (e.debut_periode(), e.fin_periode()))?;
     for a in rattachements(p, orgs, &bar.entreprise.fiche, refs)? {
         if let Some(o) = a.option {
-            si_admise(f, nature_dsn, "S21.G00.70.004", Some(o))?;
+            si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.004"), Some(o))?;
         }
         if let Some((conjoint, enfants)) = a.ayants_droit {
-            si_admise(f, nature_dsn, "S21.G00.70.008", Some(conjoint.to_string()))?;
-            si_admise(f, nature_dsn, "S21.G00.70.011", Some(enfants.to_string()))?;
+            si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.008"), Some(conjoint.to_string()))?;
+            si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.011"), Some(enfants.to_string()))?;
         }
-        si_admise(f, nature_dsn, "S21.G00.70.012", Some((202 + places * (rang - 1) + a.place as i64).to_string()))?;
+        si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.012"), Some((202 + places * (rang - 1) + a.place as i64).to_string()))?;
         f.add("S21.G00.70.013", a.reference);
         if let Some(d) = a.debut {
-            si_admise(f, nature_dsn, "S21.G00.70.014", Some(d.jjmmaaaa()))?;
+            si_admise(f, nature_dsn, droit::rubrique!("S21.G00.70.014"), Some(d.jjmmaaaa()))?;
         }
     }
-    si_admise(f, nature_dsn, "S21.G00.71.002", nat.code("S21.G00.71.002"))?;
+    si_admise(f, nature_dsn, droit::rubrique!("S21.G00.71.002"), nat.code(droit::rubrique!("S21.G00.71.002")))?;
     Ok(())
 }
 
@@ -2009,7 +2012,7 @@ declare {} h ; ses quatre heures sont des heures supplementaires, payees comme t
 /// Le forfait jour reduit (40.011 = 20) n'existe pas dans le moteur (aucune nature ne l'a) : un cas a porter.
 fn proratisation_du_plafond(f: &mut Fichier, p: &Paie, nature_dsn: NatureDeLaDeclaration) -> R<()> {
     use engagement::calcul::PlafondTempsPartiel as P;
-    let r = "S21.G00.40.084";
+    let r = droit::rubrique!("S21.G00.40.084");
     if !usage_admet(f, r, nature_dsn)? {
         return Ok(());
     }
@@ -2019,7 +2022,7 @@ fn proratisation_du_plafond(f: &mut Fichier, p: &Paie, nature_dsn: NatureDeLaDec
         P::NonConcerne => None,
     };
     if let Some(v) = valeur {
-        f.add(r, v);
+        f.add(&r.to_string(), v);
     }
     Ok(())
 }
@@ -2027,8 +2030,8 @@ fn proratisation_du_plafond(f: &mut Fichier, p: &Paie, nature_dsn: NatureDeLaDec
 /// Le bloc S21.G00.86 : l'anciennete dans l'entreprise, en jours.
 pub fn bloc_anciennete(f: &mut Fichier, p: &Paie, jours: i64) -> R<()> {
     let nat = p.engagement.nat()?;
-    f.add_opt("S21.G00.86.001", nat.code("S21.G00.86.001"))?;
-    f.add_opt("S21.G00.86.002", nat.code("S21.G00.86.002"))?;
+    f.add_opt("S21.G00.86.001", nat.code(droit::rubrique!("S21.G00.86.001")))?;
+    f.add_opt("S21.G00.86.002", nat.code(droit::rubrique!("S21.G00.86.002")))?;
     f.add("S21.G00.86.003", jours);
     f.add_opt("S21.G00.86.005", p.engagement.numero.clone())
 }
@@ -2313,7 +2316,7 @@ pub fn bases_et_cotisations(
     let e = &p.engagement;
     let mut courant: Option<(BaseAssujettie, Option<String>, Decimal)> = None;
     let places = places_par_contrat(bar);
-    let composants = usage_admet(f, "S21.G00.79.001", nature_dsn)?;
+    let composants = usage_admet(f, droit::rubrique!("S21.G00.79.001"), nature_dsn)?;
     for mut c in cotisations(p, bar)? {
         if bases_exclues.contains(&c.bloc78) {
             continue;
@@ -2330,10 +2333,10 @@ pub fn bases_et_cotisations(
             f.add("S21.G00.78.003", fin.jjmmaaaa());
             f.add("S21.G00.78.004", ms(c.base78, signe));
             if let Some(a) = c.affectation.as_deref().filter(|a| !a.is_empty()) {
-                si_admise(f, nature_dsn, "S21.G00.78.005", Some(a.to_string()))?;
+                si_admise(f, nature_dsn, droit::rubrique!("S21.G00.78.005"), Some(a.to_string()))?;
             }
             if !f.contrat_unique {
-                si_admise(f, nature_dsn, "S21.G00.78.006", e.numero.clone().map(String::from))?;
+                si_admise(f, nature_dsn, droit::rubrique!("S21.G00.78.006"), e.numero.clone().map(String::from))?;
             }
             if !composants {
             } else if c.bloc78 == BaseAssujettie::BruteDeplafonnee {
@@ -2566,7 +2569,7 @@ rattacher. Rien n'est ecrit.",
                 )
             })?;
             f.add(&k, id);
-        } else if crate::versement_declare::est_un_montant(&k) == Some(true) {
+        } else if RubriqueDeLaNorme::lue(&k).and_then(crate::versement_declare::est_un_montant) == Some(true) {
             let m: Decimal = v.parse().map_err(|_| crate::versement_declare::illisible(&k, &v, &d.fichier))?;
             f.add(&k, ms(m, -1));
         } else {
@@ -2678,7 +2681,7 @@ fn annuler_les_58(f: &mut Fichier, r: &Regularisation, origine: (Jour, Jour)) ->
                 date = false;
                 f.add(&k, v);
             }
-            _ if crate::versement_declare::est_un_montant(&k) == Some(true) => {
+            _ if RubriqueDeLaNorme::lue(&k).and_then(crate::versement_declare::est_un_montant) == Some(true) => {
                 let m: Decimal = v.parse().map_err(|_| crate::versement_declare::illisible(&k, &v, &r.declare.fichier))?;
                 f.add(&k, ms(m, -1));
             }
@@ -4664,7 +4667,7 @@ certificat de conformite du depot precedent.",
     f.add_case("S21.G00.06.002", &ent.nic, "nic")?;
     // Le code APEN (06.003) et le code APET (11.002) : obligatoires en P26V01, retires de la norme P27V01 (cahier
     // 2027.1.1, p. 142 et 145 ; usages p. 371 ). Le tableau des usages de la version du fichier en decide.
-    if usage_admet(&f, "S21.G00.06.003", NatureDeLaDeclaration::Mensuelle)? {
+    if usage_admet(&f, droit::rubrique!("S21.G00.06.003"), NatureDeLaDeclaration::Mensuelle)? {
         f.add_case("S21.G00.06.003", &ent.naf, "naf")?;
     }
     f.add_case("S21.G00.06.004", &ent.adresse, "adresse")?;
@@ -4694,7 +4697,7 @@ certificat de conformite du depot precedent.",
         ("S21.G00.11.005", &ent_e.commune.en_texte(), "commune"),
         ("S21.G00.11.022", &ent_e.idcc.en_texte(), "idcc"),
     ] {
-        if rubrique == "S21.G00.11.002" && !usage_admet(&f, rubrique, NatureDeLaDeclaration::Mensuelle)? {
+        if rubrique == "S21.G00.11.002" && !usage_admet(&f, droit::rubrique!("S21.G00.11.002"), NatureDeLaDeclaration::Mensuelle)? {
             continue;
         }
         f.add_case(rubrique, case, cle)?;
@@ -5225,7 +5228,7 @@ mod tests {
     // Le tableau des usages (`atelier/reference/norme-dsn/dsn-cahier-technique-2026.1-usages.txt`).
     #[test]
     fn statut_boeth_admis_en_mensuelle() {
-        assert!(usage_admet(&Fichier::en_norme(crate::norme::Norme::connue("P26V01").unwrap()), "S21.G00.40.072", NatureDeLaDeclaration::Mensuelle).unwrap());
+        assert!(usage_admet(&Fichier::en_norme(crate::norme::Norme::connue(droit::natures::VersionDeLaNorme::P26V01).unwrap()), droit::rubrique!("S21.G00.40.072"), NatureDeLaDeclaration::Mensuelle).unwrap());
     }
 
     // `atelier/reference/norme-dsn/texte/bloc-S21.G00.50.txt`, `bloc-S21.G00.56.txt` (la somme est une inference, `pas_retenu`).

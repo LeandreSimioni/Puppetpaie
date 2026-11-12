@@ -21,6 +21,7 @@ use serde::de::{DeserializeSeed, Deserializer, Error as _, IgnoredAny, MapAccess
 use serde::{Deserialize, Serialize, Serializer};
 
 use droit::fiche::{CaseDeFiche, CaseDePiece, CaseEntreprise, CasePieceEntreprise, CasePieceSalarie, CaseSalarie, CaseSpectacle, Declaree, NomDeCase, NomDeFiche, Piece};
+use droit::natures::RubriqueDeLaNorme;
 use socle::date::Jour;
 use socle::echec::Echec;
 use socle::fichiers::dossier_du_code;
@@ -290,7 +291,7 @@ pub struct Champ {
     pub choix: Vec<String>,
     pub declare: bool,
     pub derive_de: Option<CaseDeFiche>,
-    pub rubrique: Option<String>,
+    pub rubrique: Option<RubriqueDeLaNorme>,
     /// LA PIECE DE LA CASE, tiree de sa forme (`droit::fiche::CaseDeFiche::piece`), jamais de la table ; `None` : tout
     /// calcul la lit. Posee a la lecture de la table (`table`).
     #[serde(skip)]
@@ -456,7 +457,7 @@ impl Champ {
             cle: self.cle,
             libelle: &self.libelle,
             forme: self.forme,
-            rubrique: self.rubrique.as_deref().filter(|r| !r.is_empty()),
+            rubrique: self.rubrique,
             choix: Some(self.choix.as_slice()).filter(|c| !c.is_empty()),
             longueur: self.longueur.filter(|l| *l != 0),
         }
@@ -479,7 +480,7 @@ impl Champ {
             },
             calcule: self.calcule(),
             derive_de: self.derive_de,
-            rubrique: self.rubrique.as_deref(),
+            rubrique: self.rubrique,
             piece: self.piece,
             si: self.si.as_ref(),
             si_etablissements: self.si_etablissements,
@@ -556,7 +557,7 @@ pub struct Description<'a> {
     /// La rubrique part a l'ecran : un compte rendu d'organisme parle de « S21.G00.30.010 en anomalie », pas de
     /// « commune ».
     pub derive_de: Option<CaseDeFiche>,
-    pub rubrique: Option<&'a str>,
+    pub rubrique: Option<RubriqueDeLaNorme>,
     /// La piece de la case (`Champ::piece`) : elle reste dans la description, l'ecran replie le bloc dont aucune case
     /// n'est montree (`montres`).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1560,7 +1561,7 @@ fn ponctuation_propre(texte: &str, identite: bool) -> String {
 /// n'admet pas -- par une espace d'abord, par rien ensuite -- et rend la forme
 /// naive si rien ne passe.
 fn sans_caracteres_refuses(c: &Champ, v: String) -> R<String> {
-    let Some(rubrique) = c.rubrique.as_deref().filter(|r| !r.is_empty()) else { return Ok(v) };
+    let Some(rubrique) = c.rubrique else { return Ok(v) };
     if v.is_empty() {
         return Ok(v);
     }
@@ -1679,8 +1680,6 @@ pub fn apercu_derive(nom: NomDeFiche, donnees: &Saisie) -> R<Apercu> {
 
 // ------------------------------------------------------------- verification
 
-const RUBRIQUE_NIR: &str = "S21.G00.30.001";
-
 /// `MORCEAUX_NIR` : ce que vaut chaque morceau d'un NIR (cahier technique
 /// NEODeS 2026.1, definition de S21.G00.30.001) : SAAMMDDCCCNNN.
 const MORCEAUX_NIR: [(usize, usize, &str, &str, &str); 6] = [
@@ -1756,7 +1755,7 @@ fn explication_nir(nir: &str) -> R<Option<String>> {
             "plus de cinq « 9 » a la suite en fin de numero : la norme ne l'admet pas (CCH-16). C'est la marque d'un numero complete au juge -- il vaut mieux une fiche qui refuse qu'une declaration qui identifie la mauvaise personne".into(),
         ));
     }
-    if crate::formats::mauvaise(RUBRIQUE_NIR, v)?.is_none() {
+    if crate::formats::mauvaise(crate::ntt::RUBRIQUE_NIR, v)?.is_none() {
         return Ok(None);
     }
     for (deb, fin, nom, attendu, _) in MORCEAUX_NIR {
@@ -1867,7 +1866,7 @@ pub fn faute_de_norme(c: &Champ, valeur: &str) -> R<Option<String>> {
     faute_de_rubrique(r.forme, r.rubrique, valeur)
 }
 
-fn faute_de_rubrique(forme: Forme, rubrique: Option<&str>, valeur: &str) -> R<Option<String>> {
+fn faute_de_rubrique(forme: Forme, rubrique: Option<RubriqueDeLaNorme>, valeur: &str) -> R<Option<String>> {
     let Some(rubrique) = rubrique else { return Ok(None) };
     if valeur.is_empty() {
         return Ok(None);
@@ -1927,7 +1926,7 @@ struct Regle<'a> {
     cle: CaseDeFiche,
     libelle: &'a str,
     forme: Forme,
-    rubrique: Option<&'a str>,
+    rubrique: Option<RubriqueDeLaNorme>,
     choix: Option<&'a [String]>,
     longueur: Option<i64>,
 }
@@ -1962,7 +1961,7 @@ fn verifier_champ(c: Regle<'_>, valeur: Option<&Valeur>) -> R<Option<String>> {
         }
     }
     // LE NIR A SON EXPLICATION A LUI, et elle passe devant tout le reste.
-    if c.rubrique == Some(RUBRIQUE_NIR) {
+    if c.rubrique == Some(crate::ntt::RUBRIQUE_NIR) {
         if let Some(explique) = explication_nir(v)? {
             return Ok(Some(explique));
         }

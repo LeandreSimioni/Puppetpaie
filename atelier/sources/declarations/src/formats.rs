@@ -11,6 +11,7 @@
 use droit::fiche::{CaseEntreprise, CaseSalarie, CaseSpectacle, NomDeCase, NomDeFiche};
 use socle::fichiers::repr;
 use crate::norme::Norme;
+use droit::natures::RubriqueDeLaNorme;
 use socle::echec::{refus, refus_avec, Lieu, R};
 use crate::usages::{espace, lignes, strip};
 use serde::Deserialize;
@@ -44,44 +45,47 @@ impl Saisie {
 }
 
 // Les rubriques de la table des formats qui se saisissent dans une fiche : (rubrique, case).
-const SAISIES: [(&str, Saisie); 33] = {
+const SAISIES: [(RubriqueDeLaNorme, Saisie); 33] = {
     use CaseEntreprise as E;
     use CaseSalarie as S;
     use Saisie::{Entreprise as En, Salarie as Sa};
+    const fn r(texte: &'static str) -> RubriqueDeLaNorme {
+        RubriqueDeLaNorme::du_moteur(texte)
+    }
     [
-        ("S10.G00.01.003", En(E::RaisonSociale)),
-        ("S21.G00.06.001", En(E::Siren)),
-        ("S21.G00.06.002", En(E::Nic)),
-        ("S21.G00.06.003", En(E::Naf)),
-        ("S21.G00.06.004", En(E::Adresse)),
-        ("S21.G00.06.005", En(E::CodePostal)),
-        ("S21.G00.06.006", En(E::Commune)),
-        ("S21.G00.06.007", En(E::ComplementAdresse)),
-        ("S21.G00.11.022", En(E::Idcc)),
-        ("S21.G00.20.002", En(E::FranceTravailDossierRecouvrement)),
-        ("S21.G00.30.001", Sa(S::Nir)),
-        ("S21.G00.30.002", Sa(S::Nom)),
-        ("S21.G00.30.004", Sa(S::Prenom)),
-        ("S21.G00.30.006", Sa(S::DateNaissance)),
-        ("S21.G00.30.007", Sa(S::LieuNaissance)),
-        ("S21.G00.30.008", Sa(S::Adresse)),
-        ("S21.G00.30.009", Sa(S::CodePostal)),
-        ("S21.G00.30.010", Sa(S::Commune)),
-        ("S21.G00.30.013", Sa(S::CodeNationaliteDsn)),
-        ("S21.G00.30.014", Sa(S::DepartementNaissance)),
-        ("S21.G00.30.015", Sa(S::PaysNaissance)),
-        ("S21.G00.30.018", Sa(S::Email)),
-        ("S21.G00.30.019", Sa(S::CodeSalarie)),
-        ("S21.G00.40.002", Sa(S::StatutConventionnel)),
-        ("S21.G00.40.003", Sa(S::StatutCategorielRc)),
-        ("S21.G00.40.004", Sa(S::PcsEse)),
-        ("S21.G00.40.005", Sa(S::CodeEmploiFt)),
-        ("S21.G00.40.006", Sa(S::Emploi)),
-        ("S21.G00.40.017", En(E::Idcc)),
-        ("S21.G00.40.019", En(E::Siret)),
-        ("S21.G00.40.022", En(E::CongesspectaclesAdherent)),
-        ("S21.G00.40.050", Saisie::Spectacle(CaseSpectacle::NumeroObjet)),
-        ("S21.G00.40.072", Sa(S::StatutBoeth)),
+        (r("S10.G00.01.003"), En(E::RaisonSociale)),
+        (r("S21.G00.06.001"), En(E::Siren)),
+        (r("S21.G00.06.002"), En(E::Nic)),
+        (r("S21.G00.06.003"), En(E::Naf)),
+        (r("S21.G00.06.004"), En(E::Adresse)),
+        (r("S21.G00.06.005"), En(E::CodePostal)),
+        (r("S21.G00.06.006"), En(E::Commune)),
+        (r("S21.G00.06.007"), En(E::ComplementAdresse)),
+        (r("S21.G00.11.022"), En(E::Idcc)),
+        (r("S21.G00.20.002"), En(E::FranceTravailDossierRecouvrement)),
+        (r("S21.G00.30.001"), Sa(S::Nir)),
+        (r("S21.G00.30.002"), Sa(S::Nom)),
+        (r("S21.G00.30.004"), Sa(S::Prenom)),
+        (r("S21.G00.30.006"), Sa(S::DateNaissance)),
+        (r("S21.G00.30.007"), Sa(S::LieuNaissance)),
+        (r("S21.G00.30.008"), Sa(S::Adresse)),
+        (r("S21.G00.30.009"), Sa(S::CodePostal)),
+        (r("S21.G00.30.010"), Sa(S::Commune)),
+        (r("S21.G00.30.013"), Sa(S::CodeNationaliteDsn)),
+        (r("S21.G00.30.014"), Sa(S::DepartementNaissance)),
+        (r("S21.G00.30.015"), Sa(S::PaysNaissance)),
+        (r("S21.G00.30.018"), Sa(S::Email)),
+        (r("S21.G00.30.019"), Sa(S::CodeSalarie)),
+        (r("S21.G00.40.002"), Sa(S::StatutConventionnel)),
+        (r("S21.G00.40.003"), Sa(S::StatutCategorielRc)),
+        (r("S21.G00.40.004"), Sa(S::PcsEse)),
+        (r("S21.G00.40.005"), Sa(S::CodeEmploiFt)),
+        (r("S21.G00.40.006"), Sa(S::Emploi)),
+        (r("S21.G00.40.017"), En(E::Idcc)),
+        (r("S21.G00.40.019"), En(E::Siret)),
+        (r("S21.G00.40.022"), En(E::CongesspectaclesAdherent)),
+        (r("S21.G00.40.050"), Saisie::Spectacle(CaseSpectacle::NumeroObjet)),
+        (r("S21.G00.40.072"), Sa(S::StatutBoeth)),
     ]
 };
 
@@ -363,7 +367,7 @@ pub struct Table {
     #[serde(deserialize_with = "socle::forme::non_lue")]
     expressions_ecartees: socle::forme::NonLue,
     /// Le format de chaque rubrique.
-    pub formats: BTreeMap<String, Format>,
+    pub formats: BTreeMap<RubriqueDeLaNorme, Format>,
 }
 
 /// Le format d'une rubrique : sa longueur `[min, max]`, ses expressions de controle (CSL) quand elle en a, et sa liste
@@ -377,12 +381,12 @@ pub struct Format {
 }
 
 /// Le format de la rubrique dans la table de cette version, `None` si la table ne la connait pas.
-pub fn format_en(norme: &Norme, rubrique: &str) -> R<Option<Format>> {
-    Ok(table_de(norme)?.formats.get(rubrique).cloned())
+pub fn format_en(norme: &Norme, rubrique: RubriqueDeLaNorme) -> R<Option<Format>> {
+    Ok(table_de(norme)?.formats.get(&rubrique).cloned())
 }
 
 /// Pour une saisie : le format de la premiere version livree qui en donne un, `None` si aucune.
-pub fn format_de(rubrique: &str) -> R<Option<Format>> {
+pub fn format_de(rubrique: RubriqueDeLaNorme) -> R<Option<Format>> {
     for n in crate::norme::versions()? {
         if let Some(f) = format_en(&n, rubrique)? {
             return Ok(Some(f));
@@ -391,10 +395,10 @@ pub fn format_de(rubrique: &str) -> R<Option<Format>> {
     Ok(None)
 }
 
-fn expressions(norme: &Norme, rubrique: &str) -> R<Arc<Vec<Regex>>> {
-    static CACHE: OnceLock<Mutex<HashMap<(String, String), Arc<Vec<Regex>>>>> = OnceLock::new();
+fn expressions(norme: &Norme, rubrique: RubriqueDeLaNorme) -> R<Arc<Vec<Regex>>> {
+    static CACHE: OnceLock<Mutex<HashMap<(String, RubriqueDeLaNorme), Arc<Vec<Regex>>>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let cle = (norme.table_formats()?, rubrique.to_string());
+    let cle = (norme.table_formats()?, rubrique);
     if let Some(e) = cache.lock().unwrap().get(&cle) {
         return Ok(e.clone());
     }
@@ -411,7 +415,7 @@ fn expressions(norme: &Norme, rubrique: &str) -> R<Arc<Vec<Regex>>> {
 
 /// Pour une saisie : pourquoi la valeur ne va pas dans l'une des versions livrees (la premiere qui la refuse) ; `None`
 /// si aucune n'a rien a lui redire (`mauvaise_en`).
-pub fn mauvaise(rubrique: &str, valeur: &str) -> R<Option<String>> {
+pub fn mauvaise(rubrique: RubriqueDeLaNorme, valeur: &str) -> R<Option<String>> {
     for n in crate::norme::versions()? {
         if let Some(m) = mauvaise_en(&n, rubrique, valeur)? {
             return Ok(Some(m));
@@ -422,7 +426,7 @@ pub fn mauvaise(rubrique: &str, valeur: &str) -> R<Option<String>> {
 
 /// Pour une saisie : les caracteres dont le retrait fait passer la valeur, dans la premiere version livree qui la
 /// refuse.
-pub fn caracteres_refuses(rubrique: &str, valeur: &str) -> R<Vec<char>> {
+pub fn caracteres_refuses(rubrique: RubriqueDeLaNorme, valeur: &str) -> R<Vec<char>> {
     for n in crate::norme::versions()? {
         if mauvaise_en(&n, rubrique, valeur)?.is_some() {
             return caracteres_refuses_en(&n, rubrique, valeur);
@@ -433,7 +437,7 @@ pub fn caracteres_refuses(rubrique: &str, valeur: &str) -> R<Vec<char>> {
 
 /// Pourquoi cette valeur ne va pas dans cette version ; `None` si elle va, ou si la version n'a pas de format pour la
 /// rubrique (elle ne la connait pas : elle n'a rien a en redire).
-pub fn mauvaise_en(norme: &Norme, rubrique: &str, valeur: &str) -> R<Option<String>> {
+pub fn mauvaise_en(norme: &Norme, rubrique: RubriqueDeLaNorme, valeur: &str) -> R<Option<String>> {
     let Some(fmt) = format_en(norme, rubrique)? else { return Ok(None) };
     let [mini, maxi] = fmt.longueur;
     let n = valeur.chars().count();
@@ -449,7 +453,7 @@ pub fn mauvaise_en(norme: &Norme, rubrique: &str, valeur: &str) -> R<Option<Stri
 }
 
 /// Les caracteres dont le retrait suffit a faire passer la valeur, dans cette version.
-pub fn caracteres_refuses_en(norme: &Norme, rubrique: &str, valeur: &str) -> R<Vec<char>> {
+pub fn caracteres_refuses_en(norme: &Norme, rubrique: RubriqueDeLaNorme, valeur: &str) -> R<Vec<char>> {
     let exprs = expressions(norme, rubrique)?;
     if exprs.is_empty() || exprs.iter().any(|e| e.fullmatch(valeur)) {
         return Ok(vec![]);
@@ -468,13 +472,13 @@ pub fn caracteres_refuses_en(norme: &Norme, rubrique: &str, valeur: &str) -> R<V
 }
 
 /// `^(S\d\d\.G00\.\d\d\.\d\d\d),'(.*)'$` : (rubrique, valeur).
-fn ligne_valeur(ligne: &str) -> Option<(&str, &str)> {
+fn ligne_valeur(ligne: &str) -> Option<(RubriqueDeLaNorme, &str)> {
     let c: Vec<(usize, char)> = ligne.char_indices().take(17).collect();
     if c.len() < 17 || !ligne.ends_with('\'') {
         return None;
     }
-    let rubrique = &ligne[..c[14].0];
-    if !crate::usages::est_rubrique(rubrique) || c[14].1 != ',' || c[15].1 != '\'' {
+    let rubrique = RubriqueDeLaNorme::lue(&ligne[..c[14].0])?;
+    if c[14].1 != ',' || c[15].1 != '\'' {
         return None;
     }
     let milieu = &ligne[c[16].0..ligne.len() - 1];
@@ -485,19 +489,19 @@ fn ligne_valeur(ligne: &str) -> Option<(&str, &str)> {
 }
 
 /// [(rubrique, valeur, pourquoi)] pour tout le fichier, dans la table de cette version.
-pub fn mauvaises(texte: &str, norme: &Norme) -> R<Vec<(String, String, String)>> {
+pub fn mauvaises(texte: &str, norme: &Norme) -> R<Vec<(RubriqueDeLaNorme, String, String)>> {
     let mut out = Vec::new();
     for ligne in lignes(texte) {
         if let Some((r, v)) = ligne_valeur(strip(ligne)) {
             if let Some(pourquoi) = mauvaise_en(norme, r, v)? {
-                out.push((r.to_string(), v.to_string(), pourquoi));
+                out.push((r, v.to_string(), pourquoi));
             }
         }
     }
     Ok(out)
 }
 
-fn dire(norme: &Norme, r: &str, v: &str, pourquoi: &str, libelle: Option<&str>, ou: Option<&(&str, Saisie)>) -> R<String> {
+fn dire(norme: &Norme, r: RubriqueDeLaNorme, v: &str, pourquoi: &str, libelle: Option<&str>, ou: Option<&(RubriqueDeLaNorme, Saisie)>) -> R<String> {
     let libelle: String = libelle.iter().map(|l| format!(" ({})", l)).collect();
     let ou = match ou {
         None => return Ok(format!("    {} = '{}' : {}{}", r, v, pourquoi, libelle)),
@@ -530,9 +534,9 @@ pub fn verifier_fichier(texte: &str) -> R<()> {
         return crate::norme::verifier_les_valeurs(texte, &norme);
     }
     let usages = crate::usages::table_de(&norme)?;
-    let mut saisies: Vec<&(&str, Saisie)> = Vec::new();
+    let mut saisies: Vec<&(RubriqueDeLaNorme, Saisie)> = Vec::new();
     for (r, _, _) in &mauv {
-        if let Some(s) = SAISIES.iter().find(|s| s.0 == r) {
+        if let Some(s) = SAISIES.iter().find(|s| s.0 == *r) {
             if !saisies.iter().any(|x| x.0 == s.0) {
                 saisies.push(s);
             }
@@ -543,13 +547,13 @@ pub fn verifier_fichier(texte: &str) -> R<()> {
     } else {
         format!(
             "\n  TROU DANS LA TABLE DE SAISIE : {} se saisi(ssen)t dans une fiche et auraient du etre refuse(s) au clavier, pas ici. Voir `champs.RUBRIQUES`.",
-            saisies.iter().map(|s| s.0).collect::<Vec<_>>().join(", ")
+            saisies.iter().map(|s| s.0.to_string()).collect::<Vec<_>>().join(", ")
         )
     };
     let mut dites = Vec::new();
     for (r, v, p) in mauv.iter().take(20) {
         let lib = usages.usages.get(r).map(|e| e.libelle.as_str());
-        dites.push(dire(&norme, r, v, p, lib, saisies.iter().find(|s| s.0 == r).copied())?);
+        dites.push(dire(&norme, *r, v, p, lib, saisies.iter().find(|s| s.0 == *r).copied())?);
     }
     Err(refus_avec(
         format!("Valeur(s) qui ne suivent pas le format de la norme :\n{}\n  Formats du cahier technique NEODeS.{}", dites.join("\n"), trou),
@@ -574,13 +578,17 @@ mod tests {
     /// (`atelier/reference/norme-dsn/dsn-tableaux-categories-controles-datatypes-usages-2027.1.2-20251224.xlsx`).
     #[test]
     fn les_formats_2027_sont_ceux_du_cahier_2027() {
-        let (p26, p27) = (Norme::connue("P26V01").unwrap(), Norme::connue("P27V01").unwrap());
-        assert!(mauvaise_en(&p26, "S21.G00.40.070", "13").unwrap().unwrap().starts_with("ne suit pas"));
-        assert_eq!(mauvaise_en(&p27, "S21.G00.40.070", "13").unwrap(), None);
-        assert_eq!(mauvaise_en(&p27, "S21.G00.41.045", "45").unwrap(), None);
-        assert_eq!(mauvaise_en(&p26, "S21.G00.30.006", "01011899").unwrap(), None);
-        assert!(mauvaise_en(&p27, "S21.G00.30.006", "01011899").unwrap().unwrap().starts_with("ne suit pas"));
-        assert!(mauvaise("S21.G00.30.006", "01011899").unwrap().is_some());
-        assert_eq!(mauvaise("S21.G00.30.006", "01011990").unwrap(), None);
+        use droit::natures::VersionDeLaNorme;
+        const R40_070: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.40.070");
+        const R41_045: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.41.045");
+        const R30_006: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.30.006");
+        let (p26, p27) = (Norme::connue(VersionDeLaNorme::P26V01).unwrap(), Norme::connue(VersionDeLaNorme::P27V01).unwrap());
+        assert!(mauvaise_en(&p26, R40_070, "13").unwrap().unwrap().starts_with("ne suit pas"));
+        assert_eq!(mauvaise_en(&p27, R40_070, "13").unwrap(), None);
+        assert_eq!(mauvaise_en(&p27, R41_045, "45").unwrap(), None);
+        assert_eq!(mauvaise_en(&p26, R30_006, "01011899").unwrap(), None);
+        assert!(mauvaise_en(&p27, R30_006, "01011899").unwrap().unwrap().starts_with("ne suit pas"));
+        assert!(mauvaise(R30_006, "01011899").unwrap().is_some());
+        assert_eq!(mauvaise(R30_006, "01011990").unwrap(), None);
     }
 }

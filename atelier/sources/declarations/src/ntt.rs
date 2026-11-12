@@ -10,9 +10,10 @@ use crate::formats;
 use socle::echec::R;
 use crate::usages::strip;
 use droit::fiche::{ChampsSalarie, FicheSalarie};
+use droit::natures::RubriqueDeLaNorme;
 
-pub const RUBRIQUE:&str = "S21.G00.30.020";
-pub const RUBRIQUE_NIR: &str = "S21.G00.30.001";
+pub const RUBRIQUE: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.30.020");
+pub const RUBRIQUE_NIR: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.30.001");
 
 /// Le code sexe d'un NIR (son premier chiffre), sinon de la case `sexe` ; `None` si ni l'un ni l'autre ne le dit.
 pub fn sexe_de(nir: Option<&str>, sexe: Option<&str>) -> Option<&'static str> {
@@ -107,7 +108,7 @@ pub fn nir_de(salarie: &ChampsSalarie) -> Option<String> {
 /// S21.G00.30.001, quand il y en a un -- et rien du tout sinon.
 pub fn poser_nir(f: &mut Fichier, salarie: &ChampsSalarie) -> R<()> {
     if let Some(nir) = nir_de(salarie) {
-        f.add(RUBRIQUE_NIR, nir);
+        f.add(&RUBRIQUE_NIR.to_string(), nir);
     }
     Ok(())
 }
@@ -121,11 +122,11 @@ pub fn poser_nir(f: &mut Fichier, salarie: &ChampsSalarie) -> R<()> {
 /// declaree pour lui (`changements_individu::Declarations::derniere`, ou `derniere_declaree`).
 pub fn poser_ntt(f: &mut Fichier, ent: &droit::fiche::ChampsEntreprise, salarie: &FicheSalarie, declaree:Option<&crate::changements_individu::Declaree>) -> R<()> {
     if nir_de(salarie).is_none() {
-        f.add(RUBRIQUE, numero(ent.siren.ecrite("siren")?, salarie)?);
+        f.add(&RUBRIQUE.to_string(), numero(ent.siren.ecrite("siren")?, salarie)?);
         return Ok(());
     }
     if let Some(n) = declaree.filter(|d| d.nir.is_none()).and_then(|d| d.ntt.as_deref()).map(strip) {
-        f.add(RUBRIQUE, n);
+        f.add(&RUBRIQUE.to_string(), n);
     }
     Ok(())
 }

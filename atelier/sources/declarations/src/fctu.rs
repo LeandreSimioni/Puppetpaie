@@ -486,7 +486,7 @@ ou un annule.",
     f.add_case("S21.G00.06.001", &ent0.siren, "siren")?;
     f.add_case("S21.G00.06.002", &ent0.nic, "nic")?;
     // Code APEN et code APET : retires de la norme P27V01 (cahier 2027.1.1, p. 142 et 145) ; la version en decide.
-    if usage_admet(&f, "S21.G00.06.003", NATURE)? {
+    if usage_admet(&f, droit::rubrique!("S21.G00.06.003"), NATURE)? {
         f.add_case("S21.G00.06.003", &ent0.naf, "naf")?;
     }
     f.add_case("S21.G00.06.004", &ent0.adresse, "adresse")?;
@@ -504,7 +504,7 @@ ou un annule.",
         ("S21.G00.11.005", &etab.commune.en_texte(), "commune"),
         ("S21.G00.11.022", &etab.idcc.en_texte(), "idcc"),
     ] {
-        if rub == "S21.G00.11.002" && !usage_admet(&f, rub, NATURE)? {
+        if rub == "S21.G00.11.002" && !usage_admet(&f, droit::rubrique!("S21.G00.11.002"), NATURE)? {
             continue;
         }
         f.add_case(rub, case, cle)?;

@@ -95,7 +95,7 @@ codes_fermes! {
         ComplementAllocationsFamiliales = "102",
         ActionsGratuites = "103",
         Penibilite = "104",
-        AgircArrcoYComprisApec = "105" jusqu_a "P26V01",
+        AgircArrcoYComprisApec = "105" jusqu_a P26V01,
         ReductionGeneraleRetraiteComplementaire = "106",
         ForfaitMarin = "107",
         DemiRoleMarin = "108",
@@ -120,8 +120,8 @@ codes_fermes! {
         CavecClasseC = "144",
         CavecClasseD = "145",
         AgircArrcoPatronaleT2 = "146",
-        PartageDeLaValorisation = "147" depuis "P27V01",
-        CetPatronale = "148" depuis "P27V01",
+        PartageDeLaValorisation = "147" depuis P27V01,
+        CetPatronale = "148" depuis P27V01,
         FpNormalesSalariale = "300",
         FpNormalesPatronale = "301",
         FpSurcotisationHuitTrimestres = "302",
@@ -176,8 +176,8 @@ codes_fermes! {
         ContratDeValorisationDeLExperience = "919",
         NouvelleCotisationB = "920",
         NouvelleCotisationC = "921",
-        NouvelleCotisationE = "922" depuis "P27V01",
-        NouvelleCotisationA = "923" depuis "P27V01",
+        NouvelleCotisationE = "922" depuis P27V01,
+        NouvelleCotisationA = "923" depuis P27V01,
     }
 }
 

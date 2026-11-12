@@ -173,7 +173,7 @@ fn spectacles_declares(ctx: &Contexte) -> R<Vec<droit::contexte::IdSpectacle>> {
         let nature = o.carte().nature;
         let Some(sp) = o.carte().spectacle.as_deref().filter(|s| !s.trim().is_empty()) else { continue };
         let cle = ctx.spectacle(sp)?.cle;
-        let declare = nature.map(droit::natures::NatureDeContrat::proprietes).transpose()?.is_some_and(|n| n.ecrit("S21.G00.40.050"));
+        let declare = nature.map(droit::natures::NatureDeContrat::proprietes).transpose()?.is_some_and(|n| n.ecrit(droit::rubrique!("S21.G00.40.050")));
         if declare && !out.contains(&cle) {
             out.push(cle);
         }

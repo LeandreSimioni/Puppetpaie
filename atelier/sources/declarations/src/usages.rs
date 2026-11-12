@@ -6,6 +6,7 @@
 
 use crate::norme::Norme;
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::natures::RubriqueDeLaNorme;
 use socle::echec::{refus_avec, Lieu, R};
 use serde::de::{Error as _, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -52,7 +53,7 @@ pub struct Table {
     #[serde(deserialize_with = "socle::forme::non_lue")]
     valeurs: socle::forme::NonLue,
     /// Chaque rubrique du tableau.
-    pub usages: BTreeMap<String, Entree>,
+    pub usages: BTreeMap<RubriqueDeLaNorme, Entree>,
 }
 
 /// UNE RUBRIQUE DU TABLEAU : son libelle, et son usage pour chaque nature de declaration (S20.G00.05.001), toutes
@@ -139,31 +140,19 @@ pub fn table_de(norme: &Norme) -> R<Arc<Table>> {
     crate::norme::livree(&norme.table_usages()?)
 }
 
-/// `S\d\d\.G00\.\d\d\.\d\d\d`, en entier.
-pub fn est_rubrique(r: &str) -> bool {
-    let c: Vec<char> = r.chars().collect();
-    c.len() == 14
-        && c[0] == 'S'
-        && c[3] == '.'
-        && c[4..7] == ['G', '0', '0']
-        && c[7] == '.'
-        && c[10] == '.'
-        && [1, 2, 8, 9, 11, 12, 13].iter().all(|&i| c[i].is_ascii_digit())
-}
-
 /// La rubrique est-elle au tableau des usages de cette version, quelle que soit la nature ?
-pub fn rubrique_connue(norme: &Norme, rubrique: &str) -> R<bool> {
-    Ok(table_de(norme)?.usages.contains_key(rubrique))
+pub fn rubrique_connue(norme: &Norme, rubrique: RubriqueDeLaNorme) -> R<bool> {
+    Ok(table_de(norme)?.usages.contains_key(&rubrique))
 }
 
 /// L'usage de la rubrique pour cette nature dans le tableau de cette version ; `None` si le tableau n'a pas la
 /// rubrique.
-pub fn usage(norme: &Norme, rubrique: &str, nature: NatureDeLaDeclaration) -> R<Option<Usage>> {
-    Ok(table_de(norme)?.usages.get(rubrique).map(|e| e.pour(nature)))
+pub fn usage(norme: &Norme, rubrique: RubriqueDeLaNorme, nature: NatureDeLaDeclaration) -> R<Option<Usage>> {
+    Ok(table_de(norme)?.usages.get(&rubrique).map(|e| e.pour(nature)))
 }
 
 /// Les rubriques ecrites que cette nature n'admet pas : (rubrique, usage, `None` si le tableau ne la connait pas).
-pub fn interdites(texte: &str, nature: NatureDeLaDeclaration, norme: &Norme) -> R<Vec<(String, Option<Usage>)>> {
+pub fn interdites(texte: &str, nature: NatureDeLaDeclaration, norme: &Norme) -> R<Vec<(RubriqueDeLaNorme, Option<Usage>)>> {
     let mut vues = HashSet::new();
     let mut out = Vec::new();
     for ligne in lignes(texte) {
@@ -171,12 +160,13 @@ pub fn interdites(texte: &str, nature: NatureDeLaDeclaration, norme: &Norme) -> 
             Some((r, _)) => r,
             None => ligne,
         });
-        if !est_rubrique(r) || !vues.insert(r.to_string()) {
+        let Some(r) = RubriqueDeLaNorme::lue(r) else { continue };
+        if !vues.insert(r) {
             continue;
         }
         let u = usage(norme, r, nature)?;
         if !matches!(u, Some(Usage::O | Usage::C)) {
-            out.push((r.to_string(), u));
+            out.push((r, u));
         }
     }
     Ok(out)
@@ -255,11 +245,12 @@ mod tests {
     /// `atelier/reference/norme-dsn/dsn-tableau-des-usages-2027.1.2-20251224.xlsx`, `dsn-journal-maintenance-2027.1.2-20260615.txt`.
     #[test]
     fn les_usages_2027_sont_ceux_du_cahier_2027() {
-        let (p26, p27) = (Norme::connue("P26V01").unwrap(), Norme::connue("P27V01").unwrap());
+        use droit::natures::VersionDeLaNorme;
+        let (p26, p27) = (Norme::connue(VersionDeLaNorme::P26V01).unwrap(), Norme::connue(VersionDeLaNorme::P27V01).unwrap());
         let (u26, u27) = (table_de(&p26).unwrap(), table_de(&p27).unwrap());
         let (a, b) = (&u26.usages, &u27.usages);
-        let retirees: Vec<&String> = a.keys().filter(|k| !b.contains_key(*k)).collect();
-        let ajoutees: Vec<&String> = b.keys().filter(|k| !a.contains_key(*k)).collect();
+        let retirees: Vec<String> = a.keys().filter(|k| !b.contains_key(*k)).map(|k| k.to_string()).collect();
+        let ajoutees: Vec<&RubriqueDeLaNorme> = b.keys().filter(|k| !a.contains_key(*k)).collect();
         assert_eq!(retirees, ["S21.G00.06.003", "S21.G00.11.002"]);
         assert_eq!(ajoutees.len(), 20, "{:?}", ajoutees);
     }

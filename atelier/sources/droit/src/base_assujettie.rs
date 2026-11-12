@@ -62,8 +62,8 @@ codes_fermes! {
         EmploiPenitentiaire2 = "60",
         NouvelleBaseD = "61",
         NouvelleBaseE = "62",
-        NouvelleBaseB = "63" depuis "P27V01",
-        NouvelleBaseC = "64" depuis "P27V01",
+        NouvelleBaseB = "63" depuis P27V01,
+        NouvelleBaseC = "64" depuis P27V01,
     }
 }
 

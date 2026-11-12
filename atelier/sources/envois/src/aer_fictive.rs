@@ -56,8 +56,8 @@ const BLANC: &str = "#FFFFFF";
 // ------------------------------------------------------------------ ce que la DSN dit
 
 /// Une rubrique que la DSN doit porter (`quoi` la dit en mots, `rubrique` va a part).
-fn exigee<'a>(v: &'a Option<String>, quoi: &str, rubrique: &str) -> R<&'a str> {
-    v.as_deref().ok_or_else(|| socle::echec::cle(format!("La DSN ne dit pas {}.", quoi), rubrique))
+fn exigee<'a>(v: &'a Option<String>, quoi: &str, rubrique: droit::natures::RubriqueDeLaNorme) -> R<&'a str> {
+    v.as_deref().ok_or_else(|| socle::echec::cle(format!("La DSN ne dit pas {}.", quoi), &rubrique.to_string()))
 }
 
 /// Le contrat releve-t-il de l'attestation Cinema Spectacle ? Ce que France Travail lit de la DSN : un CDD (40.007 = 02)
@@ -255,7 +255,7 @@ fn attestation(ent: &droit::fiche::ChampsEntreprise, d: &DsnLue, ind: &IndividuD
         return Err(socle::refus!("une attestation porte de 1 a {} periodes ({} donnees)", COLONNES, periodes.len()));
     }
     let premier_contrat = d.contrats_de(ind.nir.as_deref()).find(|c| cinema_spectacle(c));
-    let (nom, prenoms) = (exigee(&ind.nom, "le nom d'un salarié", "S21.G00.30.002")?, exigee(&ind.prenom, "le prénom d'un salarié", "S21.G00.30.004")?);
+    let (nom, prenoms) = (exigee(&ind.nom, "le nom d'un salarié", droit::rubrique!("S21.G00.30.002"))?, exigee(&ind.prenom, "le prénom d'un salarié", droit::rubrique!("S21.G00.30.004"))?);
     let mut f = Champs::default();
     let (mut p1, mut p2, mut p3): (Vec<Bloc>, Vec<Bloc>, Vec<Bloc>) = (Vec::new(), Vec::new(), Vec::new());
 
@@ -546,7 +546,7 @@ pub fn archive(ctx: &Contexte, dsn: &[u8], mois: socle::mois::Mois, edite_le: Jo
     let le_mois = d.mois.ok_or_else(|| refus("la DSN ne dit pas le mois qu'elle déclare (S20.G00.05.005)"))?;
     // Le type et l'ordre de la declaration (S20.G00.05.002 et .004) : 03 et 05 annulent et remplacent.
     let remplace = match d.type_declaration {
-        Some(t) if t.remplace() => Some(exigee(&d.ordre, "l'ordre de la déclaration qu'elle remplace", "S20.G00.05.004")?),
+        Some(t) if t.remplace() => Some(exigee(&d.ordre, "l'ordre de la déclaration qu'elle remplace", droit::rubrique!("S20.G00.05.004"))?),
         _ => None,
     };
     let lignes = crate::journal::lu(&ctx.racine).map(|j| j.lignes)?;
@@ -564,7 +564,7 @@ pub fn archive(ctx: &Contexte, dsn: &[u8], mois: socle::mois::Mois, edite_le: Jo
             toutes.extend(periodes(ctx, &lignes, &d, le_mois, c)?);
         }
         let emploi = finis.iter().find_map(|c| c.emploi.emploi.as_deref().filter(|e| !e.is_empty()));
-        let (nom, prenoms) = (exigee(&ind.nom, "le nom d'un salarié", "S21.G00.30.002")?, exigee(&ind.prenom, "le prénom d'un salarié", "S21.G00.30.004")?);
+        let (nom, prenoms) = (exigee(&ind.nom, "le nom d'un salarié", droit::rubrique!("S21.G00.30.002"))?, exigee(&ind.prenom, "le prénom d'un salarié", droit::rubrique!("S21.G00.30.004"))?);
         let refs: Vec<&Periode> = toutes.iter().collect();
         for (rang, lot) in refs.chunks(COLONNES).enumerate() {
             let pdf = attestation(ent, &d, ind, lot, emploi, motif, idcc, edite_le, remplace)?;

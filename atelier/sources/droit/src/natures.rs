@@ -21,8 +21,96 @@ pub enum Paie {
     Mensuelle,
 }
 
-/// La rubrique du motif de recours (S21.G00.40.021), dont une nature peut dire les valeurs (`champs`).
-const MOTIF_DE_RECOURS: &str = "S21.G00.40.021";
+/// UNE RUBRIQUE DE LA NORME DSN, par son identifiant : « la logique de hierarchisation en structure, groupe, bloc,
+/// rubrique » (`S21.G00.11.001` « comme identifiant de rubrique », cahier technique DSN 2026.1, chapitre 3, regles de
+/// nommage, `atelier/reference/norme-dsn/texte/chapitre-3-structuration.txt` l. 135-149). Sa forme est celle que les
+/// tables d'usages et de formats ecrivent : `S`, deux chiffres, `.G00.`, deux chiffres, un point, trois chiffres. Elle
+/// s'ecrit et se trie comme ce texte : un objet indexe par elle s'ecrit comme quand elle en etait un.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RubriqueDeLaNorme {
+    structure: u8,
+    bloc: u8,
+    rubrique: u16,
+}
+
+/// Le chiffre a la place `i` d'un texte dont la forme est controlee.
+const fn chiffre(o: &[u8], i: usize) -> u16 {
+    (o[i] - b'0') as u16
+}
+
+impl RubriqueDeLaNorme {
+    /// La rubrique que `o` ecrit, s'il a sa forme : le seul controle de la forme d'une rubrique.
+    const fn de_la_forme(o: &[u8]) -> Option<RubriqueDeLaNorme> {
+        if o.len() != 14 || o[0] != b'S' || o[3] != b'.' || o[4] != b'G' || o[5] != b'0' || o[6] != b'0' || o[7] != b'.' || o[10] != b'.' {
+            return None;
+        }
+        let places = [1, 2, 8, 9, 11, 12, 13];
+        let mut i = 0;
+        while i < places.len() {
+            if !o[places[i]].is_ascii_digit() {
+                return None;
+            }
+            i += 1;
+        }
+        Some(RubriqueDeLaNorme {
+            structure: (chiffre(o, 1) * 10 + chiffre(o, 2)) as u8,
+            bloc: (chiffre(o, 8) * 10 + chiffre(o, 9)) as u8,
+            rubrique: chiffre(o, 11) * 100 + chiffre(o, 12) * 10 + chiffre(o, 13),
+        })
+    }
+
+    /// La rubrique que ce texte ecrit, s'il en ecrit une (une ligne d'une DSN lue : `rubrique,'valeur'`).
+    pub fn lue(texte: &str) -> Option<RubriqueDeLaNorme> {
+        RubriqueDeLaNorme::de_la_forme(texte.as_bytes())
+    }
+
+    /// La rubrique ecrite `texte` ; refus si elle n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<RubriqueDeLaNorme> {
+        match RubriqueDeLaNorme::lue(texte) {
+            Some(r) => Ok(r),
+            None => Err(socle::refus!(
+                "Rubrique {} : une rubrique de la norme DSN s'écrit comme S21.G00.40.021 (structure, groupe, bloc, rubrique).",
+                repr(texte)
+            )),
+        }
+    }
+
+    /// LA RUBRIQUE QUE LE MOTEUR NOMME, ecrite en Rust : une constante, dont le compilateur refuse une forme fausse.
+    pub const fn du_moteur(texte: &'static str) -> RubriqueDeLaNorme {
+        match RubriqueDeLaNorme::de_la_forme(texte.as_bytes()) {
+            Some(r) => r,
+            None => panic!("rubrique de la norme mal formee"),
+        }
+    }
+}
+
+/// LA RUBRIQUE QUE LE MOTEUR NOMME A L'ENDROIT OU IL S'EN SERT (`rubrique!("S21.G00.40.049")`) : evaluee a la
+/// compilation (`RubriqueDeLaNorme::du_moteur`), une forme fausse ne compile pas.
+#[macro_export]
+macro_rules! rubrique {
+    ($texte:literal) => {
+        const { $crate::natures::RubriqueDeLaNorme::du_moteur($texte) }
+    };
+}
+
+impl std::fmt::Display for RubriqueDeLaNorme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "S{:02}.G00.{:02}.{:03}", self.structure, self.bloc, self.rubrique)
+    }
+}
+
+impl Serialize for RubriqueDeLaNorme {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for RubriqueDeLaNorme {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let texte = String::deserialize(d)?;
+        RubriqueDeLaNorme::lire(&texte).map_err(serde::de::Error::custom)
+    }
+}
 
 /// UNE LISTE DE VALEURS DE LA NORME DSN, close : la rubrique qu'elle remplit, chaque code, et la version de la norme ou
 /// il entre dans la liste (`depuis`) ou en sort (`jusqu_a`) quand il n'est pas dans toutes. L'ensemble de ses codes est
@@ -32,7 +120,7 @@ const MOTIF_DE_RECOURS: &str = "S21.G00.40.021";
 /// (`declarations::dsn::Fichier::ecrire_code`).
 pub trait ListeDeLaNorme: Copy + std::fmt::Display + 'static {
     /// La rubrique que la liste remplit.
-    const RUBRIQUE: &'static str;
+    const RUBRIQUE: RubriqueDeLaNorme;
     /// Toutes ses valeurs, dans l'ordre de leurs codes.
     fn toutes() -> &'static [Self];
     /// Son code.
@@ -42,9 +130,9 @@ pub trait ListeDeLaNorme: Copy + std::fmt::Display + 'static {
     /// Ce que la liste est, pour une phrase (« Motif de recours »).
     fn quoi() -> &'static str;
     /// La premiere version de la norme dont la liste a ce code (`None` : des la plus ancienne livree).
-    fn depuis(self) -> Option<&'static str>;
+    fn depuis(self) -> Option<VersionDeLaNorme>;
     /// La derniere version de la norme dont la liste a ce code (`None` : jusqu'a la plus recente livree).
-    fn jusqu_a(self) -> Option<&'static str>;
+    fn jusqu_a(self) -> Option<VersionDeLaNorme>;
 }
 
 /// UNE LISTE FERMEE DE CODES DE LA NORME, declaree une fois : chaque variante et son code, le seul endroit ou il s'ecrit.
@@ -52,7 +140,7 @@ pub trait ListeDeLaNorme: Copy + std::fmt::Display + 'static {
 /// Dans l'ordre de leurs codes : un objet indexe par elle s'ecrit comme quand son code etait un texte.
 macro_rules! codes_fermes {
     ($(#[$a:meta])* $nom:ident, $quoi:literal, $rubrique:literal {
-        $( $(#[$va:meta])* $v:ident = $code:literal $(depuis $depuis:literal)? $(jusqu_a $jusqu:literal)?, )*
+        $( $(#[$va:meta])* $v:ident = $code:literal $(depuis $depuis:ident)? $(jusqu_a $jusqu:ident)?, )*
     }) => {
         $(#[$a])*
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -75,7 +163,7 @@ macro_rules! codes_fermes {
         }
 
         impl $crate::natures::ListeDeLaNorme for $nom {
-            const RUBRIQUE: &'static str = $rubrique;
+            const RUBRIQUE: $crate::natures::RubriqueDeLaNorme = $crate::natures::RubriqueDeLaNorme::du_moteur($rubrique);
 
             fn toutes() -> &'static [$nom] {
                 $nom::TOUS
@@ -93,13 +181,13 @@ macro_rules! codes_fermes {
                 $quoi
             }
 
-            fn depuis(self) -> Option<&'static str> {
+            fn depuis(self) -> Option<$crate::natures::VersionDeLaNorme> {
                 // La borne que la declaration ecrit, ou aucune.
-                match self { $( $nom::$v => <[&'static str]>::first(&[$( $depuis )?]).copied(), )* }
+                match self { $( $nom::$v => <[$crate::natures::VersionDeLaNorme]>::first(&[$( $crate::natures::VersionDeLaNorme::$depuis )?]).copied(), )* }
             }
 
-            fn jusqu_a(self) -> Option<&'static str> {
-                match self { $( $nom::$v => <[&'static str]>::first(&[$( $jusqu )?]).copied(), )* }
+            fn jusqu_a(self) -> Option<$crate::natures::VersionDeLaNorme> {
+                match self { $( $nom::$v => <[$crate::natures::VersionDeLaNorme]>::first(&[$( $crate::natures::VersionDeLaNorme::$jusqu )?]).copied(), )* }
             }
         }
 
@@ -139,6 +227,18 @@ macro_rules! codes_fermes {
     };
 }
 pub(crate) use codes_fermes;
+
+codes_fermes! {
+    /// UNE VERSION DE LA NORME DSN (S10.G00.00.006, « Numéro de version de la norme utilisée »,
+    /// `atelier/reference/norme-dsn/texte/bloc-S10.G00.00.txt`) : chaque cahier n'en a qu'une valeur, que sa table des
+    /// formats releve (`formats-dsn-base.json`, « P26V01 » ; `formats-dsn-p27v01-base.json`, « P27V01 »). Une version
+    /// neuve se livre avec une mise a jour du logiciel ; ce que chacune declenche, `norme-dsn-base.json` le dit
+    /// (`declarations::norme`).
+    VersionDeLaNorme, "Version de la norme", "S10.G00.00.006" {
+        P26V01 = "P26V01" jusqu_a P26V01,
+        P27V01 = "P27V01" depuis P27V01,
+    }
+}
 
 codes_fermes! {
     /// UN MOTIF DE RECOURS (S21.G00.40.021), la liste entiere de la norme (cahier technique DSN 2026.1 p. 194-195,
@@ -195,7 +295,7 @@ codes_fermes! {
         DecesDuSalarie = "066",
         RevocationAbandonDePoste = "070",
         RevocationSanctionPenale = "071",
-        RevocationSanctionDisciplinaire = "072" depuis "P27V01",
+        RevocationSanctionDisciplinaire = "072" depuis P27V01,
         FinDApprentissage = "081",
         ResiliationJudiciaire = "082",
         ForceMajeure = "083",
@@ -349,12 +449,12 @@ pub struct Proprietes {
     /// rubrique -> valeur fixe.
     codes: CodesFixes,
     /// rubrique -> d'ou la valeur vient.
-    champs: BTreeMap<String, Champ>,
+    champs: BTreeMap<RubriqueDeLaNorme, Champ>,
     /// rubrique -> pourquoi cette nature ne l'ecrit pas.
     #[serde(rename = "absents")]
-    _absents: BTreeMap<String, String>,
+    _absents: BTreeMap<RubriqueDeLaNorme, String>,
     /// rubrique -> le controle qui la refuse pour cette nature.
-    interdits: BTreeMap<String, String>,
+    interdits: BTreeMap<RubriqueDeLaNorme, String>,
     /// Le contrat ecrit : son modele, celui de son avenant, ses mentions obligatoires.
     contrat_ecrit: Option<ContratEcrit>,
     dpae: Dpae,
@@ -407,17 +507,17 @@ struct CodeFixe {
 /// (`ListeDeLaNorme` : la modalite du temps de travail, le motif de recours) se lisent dans leur `enum` ; les autres
 /// restent le texte que la DSN ecrit.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(try_from = "BTreeMap<String, CodeFixe>")]
+#[serde(try_from = "BTreeMap<RubriqueDeLaNorme, CodeFixe>")]
 struct CodesFixes {
     modalite: Option<ModaliteDuTempsDeTravail>,
     motif_recours: Option<MotifDeRecours>,
-    autres: BTreeMap<String, CodeFixe>,
+    autres: BTreeMap<RubriqueDeLaNorme, CodeFixe>,
 }
 
 /// La valeur fixe de la liste `T`, otee de `codes` : un code que la liste n'a pas se refuse, par l'erreur que la lecture
 /// de serde attend (`CodesFixes::try_from`).
-fn code_fixe<T: ListeDeLaNorme>(codes: &mut BTreeMap<String, CodeFixe>) -> Result<Option<T>, <CodesFixes as TryFrom<BTreeMap<String, CodeFixe>>>::Error> {
-    match codes.remove(T::RUBRIQUE) {
+fn code_fixe<T: ListeDeLaNorme>(codes: &mut BTreeMap<RubriqueDeLaNorme, CodeFixe>) -> Result<Option<T>, <CodesFixes as TryFrom<BTreeMap<RubriqueDeLaNorme, CodeFixe>>>::Error> {
+    match codes.remove(&T::RUBRIQUE) {
         None => Ok(None),
         Some(c) => T::du_code_de_la_norme(&c.valeur).map(Some).ok_or_else(|| {
             let connus: Vec<&str> = T::toutes().iter().map(|m| m.code_de_la_norme()).collect();
@@ -426,9 +526,9 @@ fn code_fixe<T: ListeDeLaNorme>(codes: &mut BTreeMap<String, CodeFixe>) -> Resul
     }
 }
 
-impl TryFrom<BTreeMap<String, CodeFixe>> for CodesFixes {
+impl TryFrom<BTreeMap<RubriqueDeLaNorme, CodeFixe>> for CodesFixes {
     type Error = socle::echec::Echec;
-    fn try_from(mut codes: BTreeMap<String, CodeFixe>) -> Result<CodesFixes, Self::Error> {
+    fn try_from(mut codes: BTreeMap<RubriqueDeLaNorme, CodeFixe>) -> Result<CodesFixes, Self::Error> {
         let modalite = code_fixe(&mut codes)?;
         let motif_recours = code_fixe(&mut codes)?;
         Ok(CodesFixes { modalite, motif_recours, autres: codes })
@@ -576,7 +676,7 @@ struct SignalementFctu {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CircuitDerogatoire {
-    rubrique: String,
+    rubrique: RubriqueDeLaNorme,
     motifs: Vec<MotifDeRupture>,
     applique: String,
     non_applique: String,
@@ -765,8 +865,8 @@ impl Proprietes {
     /// La valeur fixe d'une rubrique pour cette nature, ou `None` (absente comme interdite : `interdit` les distingue).
     /// La modalite du temps de travail et le motif de recours fixes se lisent dans leur `enum` (`modalite_fixee`,
     /// `motif_recours_fixe`).
-    pub fn code(&self, rubrique: &str) -> Option<String> {
-        self.codes.autres.get(rubrique).map(|c| c.valeur.clone())
+    pub fn code(&self, rubrique: RubriqueDeLaNorme) -> Option<String> {
+        self.codes.autres.get(&rubrique).map(|c| c.valeur.clone())
     }
 
     /// La modalite du temps de travail (S21.G00.40.014) que la nature fixe (le CDDU : 99), ou `None` : elle se dit sur
@@ -781,15 +881,15 @@ impl Proprietes {
     }
 
     /// Le controle qui refuse cette rubrique pour cette nature, ou `None`.
-    pub fn interdit(&self, rubrique: &str) -> Option<String> {
-        self.interdits.get(rubrique).cloned()
+    pub fn interdit(&self, rubrique: RubriqueDeLaNorme) -> Option<String> {
+        self.interdits.get(&rubrique).cloned()
     }
 
     /// Cette nature ecrit-elle cette rubrique ? (valeur fixe ou champ)
-    pub fn ecrit(&self, rubrique: &str) -> bool {
+    pub fn ecrit(&self, rubrique: RubriqueDeLaNorme) -> bool {
         let liste = (rubrique == ModaliteDuTempsDeTravail::RUBRIQUE && self.codes.modalite.is_some())
             || (rubrique == MotifDeRecours::RUBRIQUE && self.codes.motif_recours.is_some());
-        liste || self.codes.autres.contains_key(rubrique) || self.champs.contains_key(rubrique)
+        liste || self.codes.autres.contains_key(&rubrique) || self.champs.contains_key(&rubrique)
     }
 
     /// Le motif de rupture quand le contrat va a son terme (`None` pour un CDI).
@@ -823,7 +923,7 @@ impl Proprietes {
 
     /// Les motifs de recours (S21.G00.40.021) que cette nature accepte.
     pub fn motifs_recours(&self) -> Option<&[RecoursOffert]> {
-        self.champs.get(MOTIF_DE_RECOURS).and_then(|c| c.valeurs.as_deref())
+        self.champs.get(&MotifDeRecours::RUBRIQUE).and_then(|c| c.valeurs.as_deref())
     }
 
     /// Le refus d'un motif de recours saisi (`S21.G00.40.021`) que cette nature n'accepte pas, ou `None` : la nature en
@@ -845,7 +945,7 @@ impl Proprietes {
     }
 
     pub fn motif_recours_exige(&self) -> bool {
-        self.champs.get(MOTIF_DE_RECOURS).is_some_and(|c| c.obligatoire == Some(true))
+        self.champs.get(&MotifDeRecours::RUBRIQUE).is_some_and(|c| c.obligatoire == Some(true))
     }
 
     /// La fin de ce contrat, pour ce motif de rupture (S21.G00.62.002 ; `None` : le defaut de la nature), part-elle par
@@ -869,11 +969,11 @@ impl Proprietes {
     /// declaration de la fin d'un contrat d'usage (S21.G00.62.017) suit le motif : « 01 » au circuit derogatoire,
     /// « 02 » hors de lui (CCH-11 et CCH-12, cahier technique DSN 2026.1 p. 277, `atelier/reference/norme-dsn/texte/
     /// bloc-S21.G00.62.txt`).
-    pub fn codes_fin(&self, motif: Option<MotifDeRupture>) -> BTreeMap<String, String> {
+    pub fn codes_fin(&self, motif: Option<MotifDeRupture>) -> BTreeMap<RubriqueDeLaNorme, String> {
         let mut out = BTreeMap::new();
         if let Some(c) = &self.fin_de_contrat.circuit_derogatoire {
             let valeur = if self.circuit_derogatoire_pour(motif) { &c.applique } else { &c.non_applique };
-            out.insert(c.rubrique.clone(), valeur.clone());
+            out.insert(c.rubrique, valeur.clone());
         }
         out
     }
@@ -956,7 +1056,7 @@ struct CategoriesDEmploi {
     #[serde(rename = "source")]
     _source: String,
     /// Le libelle de la norme, par classement conventionnel (S21.G00.40.002).
-    par_classement: BTreeMap<String, String>,
+    par_classement: BTreeMap<crate::fiche::StatutConventionnel, String>,
     artiste_non_cadre: ArtisteNonCadre,
 }
 
@@ -1005,12 +1105,13 @@ fn lu() -> R<Arc<Contrats>> {
 /// La categorie d'emploi d'un classement conventionnel (S21.G00.40.002), telle que le contrat ecrit l'imprime
 /// (`categories_d_emploi` de `contrats-base.json`, libelles de la norme ; R1221-34, 3°). L'`artiste` qui n'est pas cadre
 /// (03, 04) : « non-cadre », la categorie de sa convention (3090, art. 6.3 ; 1285, art. XI.2.1), pas le libelle du 05.
-pub fn categorie_d_emploi(classement: &str, artiste: bool) -> R<Option<String>> {
+pub fn categorie_d_emploi(classement: crate::fiche::StatutConventionnel, artiste: bool) -> R<Option<String>> {
+    use crate::fiche::StatutConventionnel;
     let c = &lu()?.categories;
-    if artiste && !matches!(classement, "03" | "04") {
+    if artiste && !matches!(classement, StatutConventionnel::Cadre03 | StatutConventionnel::Cadre04) {
         return Ok(Some(c.artiste_non_cadre.libelle.clone()));
     }
-    Ok(c.par_classement.get(classement).cloned())
+    Ok(c.par_classement.get(&classement).cloned())
 }
 
 /// Toutes les natures, dans l'ordre du fichier.
@@ -1026,9 +1127,10 @@ mod tests {
     /// permanents du spectacle » ; un CDDU garde le code de la nomenclature.
     #[test]
     fn la_nature_fixe_999spt_pour_les_permanents_seulement() {
+        const CODE_EMPLOI: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.40.005");
         for n in [NatureDeContrat::Cdi, NatureDeContrat::Cdd] {
-            assert_eq!(n.proprietes().unwrap().code("S21.G00.40.005").as_deref(), Some("999SPT"), "{}", n);
+            assert_eq!(n.proprietes().unwrap().code(CODE_EMPLOI).as_deref(), Some("999SPT"), "{}", n);
         }
-        assert_eq!(NatureDeContrat::CdduSpectacle.proprietes().unwrap().code("S21.G00.40.005"), None);
+        assert_eq!(NatureDeContrat::CdduSpectacle.proprietes().unwrap().code(CODE_EMPLOI), None);
     }
 }

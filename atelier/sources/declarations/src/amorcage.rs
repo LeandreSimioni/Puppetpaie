@@ -293,7 +293,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
         ("S21.G00.11.005", &etab.commune.en_texte(), "commune"),
     ] {
         // Le code APET : obligatoire en amorcage en P26V01, retire de la norme P27V01 (cahier 2027.1.1, p. 145).
-        if rub == "S21.G00.11.002" && !usage_admet(&f, rub, NATURE)? {
+        if rub == "S21.G00.11.002" && !usage_admet(&f, droit::rubrique!("S21.G00.11.002"), NATURE)? {
             continue;
         }
         f.add_case(rub, case, cle)?;

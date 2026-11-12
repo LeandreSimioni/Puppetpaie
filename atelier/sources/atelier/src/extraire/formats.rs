@@ -51,6 +51,7 @@ use serde::Serialize;
 
 use super::usages::{en_classeur, version_du_cahier};
 use super::{blancs_ramenes, date_du_releve, en_transcription, nfc, nom_de, sha256, EnOrdre, Releve, Transcription};
+use droit::natures::RubriqueDeLaNorme;
 use socle::date::Jour;
 use socle::lecture_xlsx::{self, Cellule};
 use socle::echec::R;
@@ -95,7 +96,7 @@ struct Format {
 
 /// Une liste de valeurs, code -> libelle (blancs ramenes a un, forme composee) ; un code deja pose garde son premier
 /// libelle, et le double se dit au bilan (`notes`).
-fn liste_de(paires: Vec<(String, String)>, rubrique: &str, notes: &mut Vec<String>) -> Option<EnOrdre<String>> {
+fn liste_de(paires: Vec<(String, String)>, rubrique: RubriqueDeLaNorme, notes: &mut Vec<String>) -> Option<EnOrdre<String>> {
     let mut liste = EnOrdre::new();
     for (code, libelle) in paires {
         if liste.valeur(&code).is_some() {
@@ -109,7 +110,7 @@ fn liste_de(paires: Vec<(String, String)>, rubrique: &str, notes: &mut Vec<Strin
 
 /// LA LISTE DE VALEURS D'UN TYPE DU CLASSEUR (colonne « Values » de la feuille « Data Types ») : `code=libelle`,
 /// separes par `;`. Un morceau sans `=` ne se lit pas : refus, plutot qu'un libelle devine.
-fn valeurs_du_classeur(texte: &str, rubrique: &str) -> R<Vec<(String, String)>> {
+fn valeurs_du_classeur(texte: &str, rubrique: RubriqueDeLaNorme) -> R<Vec<(String, String)>> {
     let mut paires = Vec::new();
     for morceau in texte.split(';') {
         if strip(morceau).is_empty() {
@@ -199,14 +200,14 @@ fn valeurs_du_cahier(zone: &str) -> Vec<(String, String)> {
 /// Une expression ecartee : la rubrique, et l'expression que le moteur ne compile pas.
 #[derive(Serialize)]
 struct Ecartee {
-    rubrique: String,
+    rubrique: RubriqueDeLaNorme,
     coupee: String,
 }
 
 /// Une rubrique dont le type de donnees n'est pas dans la feuille des types : la case telle qu'elle est (vide : `null`).
 #[derive(Serialize)]
 struct SansType {
-    rubrique: String,
+    rubrique: RubriqueDeLaNorme,
     #[serde(rename = "type")]
     type_: Option<Cellule>,
 }
@@ -307,6 +308,7 @@ fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>, notes: &mut Vec<String>
     // Chaque identifiant apparait deux fois : dans la liste des rubriques du bloc (sans format) et dans sa definition
     // (avec). On garde celle qui porte un format, et la derniere si plusieurs en portent.
     for (rid, corps) in morceaux {
+        let rid = RubriqueDeLaNorme::lire(rid)?;
         // ET ELLE S'ARRETE A LA PREMIERE ESPACE. Aucune CSL du cahier n'en contient ; en revanche la mise en page colle
         // parfois le libelle suivant derriere (S10.G00.01.002 recuperait « Table OES - Organismes Emetteurs... », ce qui
         // faisait refuser un NIC pourtant accepte cinquante fois).
@@ -343,7 +345,7 @@ fn relever_pdf(texte: &str, ecartees: &mut Vec<Ecartee>, notes: &mut Vec<String>
             if compile(c) {
                 bonnes.push(c.clone());
             } else {
-                ecartees.push(Ecartee { rubrique: rid.to_string(), coupee: c.clone() });
+                ecartees.push(Ecartee { rubrique: rid, coupee: c.clone() });
             }
         }
         out.poser(rid.to_string(), Format { longueur, csl: Some(bonnes).filter(|b| !b.is_empty()), valeurs });
@@ -439,7 +441,7 @@ fn relever_xlsx(
             Some(c) => Ok(strip(&c.en_texte()).to_string()),
             None => Err(refus!("la feuille « Fields » a une ligne sans « {} »", nom)),
         };
-        let rid = format!("{}.{}", texte(bloc, "Block Id")?, texte(id, "Id")?);
+        let rid = RubriqueDeLaNorme::lire(&format!("{}.{}", texte(bloc, "Block Id")?, texte(id, "Id")?))?;
         let genre = match type_id {
             Some(t) => types.get(&cle(t)?),
             None => None,
@@ -463,20 +465,20 @@ fn relever_xlsx(
         let csl = match expression {
             Some(e) if compile(&e) => Some(vec![e]),
             Some(e) => {
-                ecartees.push(Ecartee { rubrique: rid.clone(), coupee: e });
+                ecartees.push(Ecartee { rubrique: rid, coupee: e });
                 None
             }
             None => None,
         };
         let valeurs = match champ_exige(&entete_types, genre, "Values", "Data Types")? {
-            Some(Cellule::Texte(s)) => liste_de(valeurs_du_classeur(s, &rid)?, &rid, notes),
+            Some(Cellule::Texte(s)) => liste_de(valeurs_du_classeur(s, rid)?, rid, notes),
             Some(c) if c.vrai() => {
                 return Err(refus!("{} : la liste de valeurs du type n'est pas un texte ({})", rid, c.en_texte()))
             }
             _ => None,
         };
         if longueur.is_some() || csl.is_some() {
-            out.poser(rid, Format { longueur, csl, valeurs });
+            out.poser(rid.to_string(), Format { longueur, csl, valeurs });
         } else if valeurs.is_some() {
             notes.push(format!("{} : une liste de valeurs, sans longueur ni expression (non reprise)", rid));
         }

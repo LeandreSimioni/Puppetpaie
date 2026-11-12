@@ -7,8 +7,6 @@
     "quoi": "La catégorie d'emploi que le contrat écrit imprime (R. 1221-34, 3°, du code du travail : « la catégorie socioprofessionnelle ou la catégorie d'emploi »), lue sur le classement conventionnel du salarié (S21.G00.40.002), qui « correspond aux grandes catégories socio-professionnelles auxquelles chaque salarié appartient ».",
     "source":"atelier/reference/norme-dsn/texte/bloc-S21.G00.40.txt, l. 133-147 (les libellés de la norme) ; atelier/reference/sources/code-du-travail/xml/R1221-34.xml.",
     "par_classement": {
-      "01": "agriculteur salarié de son exploitation",
-      "02": "artisan ou commerçant salarié de son entreprise",
       "03": "cadre dirigeant",
       "04": "cadre",
       "05": "profession intermédiaire (technicien, contremaître, agent de maîtrise)",

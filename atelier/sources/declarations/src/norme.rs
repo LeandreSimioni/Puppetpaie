@@ -13,12 +13,12 @@ use socle::date::Jour;
 use socle::echec::{refus_avec, Lieu, R};
 use socle::mois::Mois;
 use crate::usages::{lignes, rubrique_valeur};
+use droit::natures::{ListeDeLaNorme, RubriqueDeLaNorme, VersionDeLaNorme};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 const BASE: &str = "norme-dsn-base.json";
-pub const RUBRIQUE: &str = "S10.G00.00.006";
 
 /// UNE DONNEE LIVREE (`logiciel/donnees/<nom>`) EN SA FORME `T`, lue une fois par contenu (`socle::forme::partagee`) et
 /// notee au registre d'un calcul suivi : absente ou fausse, rien que la compagnie puisse corriger.
@@ -39,7 +39,7 @@ struct Base {
     note: socle::forme::NonLue,
     /// Les versions, dans l'ordre de la donnee.
     #[serde(deserialize_with = "socle::forme::en_ordre")]
-    versions: Vec<(String, Version)>,
+    versions: Vec<(VersionDeLaNorme, Version)>,
 }
 
 /// Une version de la norme dans la base.
@@ -109,11 +109,11 @@ impl<T: Borne> Plage<T> {
 }
 
 /// `rubriques_a_ne_pas_renseigner` : sa note, et le texte qui retire chaque rubrique.
-struct ANePasRenseigner(BTreeMap<String, String>);
+struct ANePasRenseigner(BTreeMap<RubriqueDeLaNorme, String>);
 
 impl<'de> Deserialize<'de> for ANePasRenseigner {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let (_note, rubriques): (Option<String>, Vec<(String, String)>) = socle::forme::fiches_et_note(d, "note")?;
+        let (_note, rubriques): (Option<String>, Vec<(RubriqueDeLaNorme, String)>) = socle::forme::fiches_et_note(d, "note")?;
         Ok(ANePasRenseigner(rubriques.into_iter().collect()))
     }
 }
@@ -121,7 +121,7 @@ impl<'de> Deserialize<'de> for ANePasRenseigner {
 /// Une version de la norme que le moteur sait ecrire (`P26V01`, `P27V01`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Norme {
-    pub version: String,
+    pub version: VersionDeLaNorme,
 }
 
 fn base() -> R<Arc<Base>> {
@@ -130,28 +130,33 @@ fn base() -> R<Arc<Base>> {
 
 /// Les versions livrees, dans l'ordre de la donnee.
 pub fn versions() -> R<Vec<Norme>> {
-    Ok(base()?.versions.iter().map(|(k, _)| Norme { version: k.clone() }).collect())
+    Ok(base()?.versions.iter().map(|(k, _)| Norme { version: *k }).collect())
 }
 
 fn liste_des_versions() -> R<String> {
-    Ok(versions()?.iter().map(|n| n.version.clone()).collect::<Vec<_>>().join(", "))
+    Ok(versions()?.iter().map(|n| n.version.to_string()).collect::<Vec<_>>().join(", "))
+}
+
+/// Le refus d'une version que le logiciel ne livre pas, ecrite `version`.
+fn inconnue(version: &str) -> R<socle::echec::Echec> {
+    Ok(refus_avec(
+        format!("Version de la norme DSN « {} » inconnue du logiciel (versions livrées : {}). Rien n'est écrit.", version, liste_des_versions()?),
+        Lieu { fichier: Some(BASE.to_string()), ..Lieu::default() },
+    ))
 }
 
 impl Norme {
     /// La version nommee, si la donnee la connait.
-    pub fn connue(version: &str) -> R<Norme> {
-        if let Some(n) = Norme::livree(version)? {
-            return Ok(n);
+    pub fn connue(version: VersionDeLaNorme) -> R<Norme> {
+        match Norme::livree(version)? {
+            Some(n) => Ok(n),
+            None => Err(inconnue(version.code())?),
         }
-        Err(refus_avec(
-            format!("Version de la norme DSN « {} » inconnue du logiciel (versions livrées : {}). Rien n'est écrit.", version, liste_des_versions()?),
-            Lieu { fichier: Some(BASE.to_string()), ..Lieu::default() },
-        ))
     }
 
-    /// La version nommee si le logiciel la livre, `None` sinon (une DSN d'avant 2026).
-    pub fn livree(version: &str) -> R<Option<Norme>> {
-        Ok(base()?.versions.iter().any(|(k, _)| k == version).then(|| Norme { version: version.to_string() }))
+    /// La version nommee si le logiciel la livre, `None` sinon.
+    pub fn livree(version: VersionDeLaNorme) -> R<Option<Norme>> {
+        Ok(base()?.versions.iter().any(|(k, _)| *k == version).then_some(Norme { version }))
     }
 
     /// Ce que l'entree de cette version dans la base partagee rend (`lire`) : rien n'est recopie.
@@ -165,14 +170,14 @@ impl Norme {
 
     /// Le rang de la version `version` dans la donnee : refus si elle n'y est pas (une borne d'une liste de la norme qui
     /// nomme une version que le logiciel ne livre pas).
-    fn rang(version: &str) -> R<usize> {
-        base()?.versions.iter().position(|(k, _)| k == version).ok_or_else(|| socle::echec::livree(BASE, &format!("versions.{}", version)))
+    pub fn rang(version: VersionDeLaNorme) -> R<usize> {
+        base()?.versions.iter().position(|(k, _)| *k == version).ok_or_else(|| socle::echec::livree(BASE, &format!("versions.{}", version)))
     }
 
     /// La liste de la norme que `v` remplit a-t-elle son code dans CETTE version ? Le code dit ses bornes
     /// (`droit::natures::ListeDeLaNorme::depuis`, `jusqu_a`), comparees dans l'ordre des versions de la donnee.
-    pub fn a_dans_sa_liste<T: droit::natures::ListeDeLaNorme>(&self, v: T) -> R<bool> {
-        let ici = Norme::rang(&self.version)?;
+    pub fn a_dans_sa_liste<T: ListeDeLaNorme>(&self, v: T) -> R<bool> {
+        let ici = Norme::rang(self.version)?;
         // Une borne que le code ne dit pas ne le borne pas.
         if let Some(d) = v.depuis() {
             if Norme::rang(d)? > ici {
@@ -200,14 +205,14 @@ impl Norme {
     /// La rubrique est-elle admise (O ou C) pour cette nature dans le tableau des usages de CETTE version ? C'est la
     /// question que les generateurs posent avant d'ecrire une rubrique qu'une version a retiree (06.003, 11.002 en
     /// P27V01) ou ajoutee.
-    pub fn admet(&self, rubrique: &str, nature: droit::nature_declaration::NatureDeLaDeclaration) -> R<bool> {
+    pub fn admet(&self, rubrique: RubriqueDeLaNorme, nature: droit::nature_declaration::NatureDeLaDeclaration) -> R<bool> {
         Ok(matches!(crate::usages::usage(self, rubrique, nature)?, Some(crate::usages::Usage::O | crate::usages::Usage::C)))
     }
 
     /// Pourquoi cette rubrique ne se renseigne pas dans cette version alors que son tableau des usages l'admet (le texte
     /// de la donnee, `rubriques_a_ne_pas_renseigner`), ou `None`.
-    pub fn rubrique_a_ne_pas_renseigner(&self, rubrique: &str) -> R<Option<String>> {
-        self.entree(|e| e.rubriques_a_ne_pas_renseigner.as_ref().and_then(|r| r.0.get(rubrique)).cloned())
+    pub fn rubrique_a_ne_pas_renseigner(&self, rubrique: RubriqueDeLaNorme) -> R<Option<String>> {
+        self.entree(|e| e.rubriques_a_ne_pas_renseigner.as_ref().and_then(|r| r.0.get(&rubrique)).cloned())
     }
 
     /// Le texte du cahier qui porte la regle d'ecriture `nom` (`regles` de la donnee) si cette version l'applique, `None`
@@ -239,16 +244,16 @@ type QuellePlage<T> = fn(&Version) -> &Plage<T>;
 
 fn choisir<T: Borne>(quelle: QuellePlage<T>, valeur: &T) -> R<Option<Norme>> {
     let b = base()?;
-    let siennes: Vec<&String> = b.versions.iter().filter(|(_, e)| quelle(e).couvre(valeur)).map(|(k, _)| k).collect();
+    let siennes: Vec<VersionDeLaNorme> = b.versions.iter().filter(|(_, e)| quelle(e).couvre(valeur)).map(|(k, _)| *k).collect();
     match siennes.as_slice() {
         [] => Ok(None),
-        [k] => Ok(Some(Norme { version: (*k).clone() })),
+        [k] => Ok(Some(Norme { version: *k })),
         _ => Err(socle::refus!(
             "{} : {} versions couvrent {} ({}) -- la donnee se contredit, rien n'est ecrit.",
             BASE,
             siennes.len(),
             valeur.ecrite(),
-            siennes.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+            siennes.iter().map(|s| s.code()).collect::<Vec<_>>().join(", ")
         )),
     }
 }
@@ -293,16 +298,20 @@ La norme d'une annee se livre avec une mise a jour du logiciel. Rien n'est ecrit
 pub fn du_fichier(texte: &str) -> R<Norme> {
     for ligne in lignes(texte) {
         let (r, v) = rubrique_valeur(ligne);
-        if r == RUBRIQUE {
-            return Norme::connue(v).map_err(|e| {
-                e.reformuler(|e| format!("{} = '{}' : le fichier ne se controle pas, ses tables d'usages et de formats sont celles d'une version. {}", RUBRIQUE, v, e))
+        if RubriqueDeLaNorme::lue(r) == Some(VersionDeLaNorme::RUBRIQUE) {
+            let lue = match VersionDeLaNorme::du_code(v) {
+                Some(version) => Norme::connue(version),
+                None => Err(inconnue(v)?),
+            };
+            return lue.map_err(|e| {
+                e.reformuler(|e| format!("{} = '{}' : le fichier ne se controle pas, ses tables d'usages et de formats sont celles d'une version. {}", VersionDeLaNorme::RUBRIQUE, v, e))
             });
         }
     }
     Err(socle::refus!(
         "Le fichier ne porte pas {} (numero de version de la norme) : ses tables d'usages et de formats ne se choisissent \
 pas. Rien n'est ecrit.",
-        RUBRIQUE
+        VersionDeLaNorme::RUBRIQUE
     ))
 }
 
@@ -311,15 +320,15 @@ pas. Rien n'est ecrit.",
 /// `None` si elle y est, ou si la rubrique n'a pas de liste dans cette version. « Une rubrique assortie d'une liste de
 /// valeurs ne peut contenir qu'une des valeurs indiquees dans cette liste » (cahier 2027.1.1, p. 86,
 /// `atelier/reference/norme-dsn/texte-2027/chapitre-4-controles.txt`, l. 164).
-fn hors_de_sa_liste(tables: &[(String, Arc<crate::formats::Table>)], r: &str, v: &str) -> Option<String> {
+fn hors_de_sa_liste(tables: &[(VersionDeLaNorme, Arc<crate::formats::Table>)], r: RubriqueDeLaNorme, v: &str) -> Option<String> {
     let [(version, ici), autres @ ..] = tables else { return None };
-    let liste = ici.formats.get(r)?.valeurs.as_ref()?;
+    let liste = ici.formats.get(&r)?.valeurs.as_ref()?;
     if liste.contains_key(v) {
         return None;
     }
     let ailleurs: Vec<String> = autres
         .iter()
-        .filter_map(|(autre, t)| t.formats.get(r)?.valeurs.as_ref()?.get(v).map(|l| format!("{} : « {} - {} »", autre, v, l)))
+        .filter_map(|(autre, t)| t.formats.get(&r)?.valeurs.as_ref()?.get(v).map(|l| format!("{} : « {} - {} »", autre, v, l)))
         .collect();
     let ailleurs = if ailleurs.is_empty() { String::new() } else { format!(" (la liste de {})", ailleurs.join(" ; ")) };
     Some(format!("la liste de la rubrique relevée pour {} ne l'a pas{}", version, ailleurs))
@@ -329,14 +338,16 @@ fn hors_de_sa_liste(tables: &[(String, Arc<crate::formats::Table>)], r: &str, v:
 /// rubriques que son tableau des usages admet mais que sa description dit « a ne pas renseigner »
 /// (`rubriques_a_ne_pas_renseigner`) : refus, avec le texte de la donnee.
 pub fn verifier_les_valeurs(texte: &str, norme: &Norme) -> R<()> {
-    let mut tables = vec![(norme.version.clone(), crate::formats::table_de(norme)?)];
+    let mut tables = vec![(norme.version, crate::formats::table_de(norme)?)];
     for autre in versions()?.into_iter().filter(|n| n != norme) {
-        tables.push((autre.version.clone(), crate::formats::table_de(&autre)?));
+        tables.push((autre.version, crate::formats::table_de(&autre)?));
     }
     let mut refus = Vec::new();
     let mut a_ne_pas = Vec::new();
     for ligne in lignes(texte) {
         let (r, v) = rubrique_valeur(ligne);
+        // Une ligne qui n'ecrit pas une rubrique n'est dans aucune table.
+        let Some(r) = RubriqueDeLaNorme::lue(r) else { continue };
         if let Some(pourquoi) = hors_de_sa_liste(&tables, r, v) {
             let dit = format!("    {} = '{}' : {}", r, v, pourquoi);
             if !refus.contains(&dit) {
