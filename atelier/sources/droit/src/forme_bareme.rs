@@ -655,7 +655,10 @@ forme! {
         pub plafond: Option<bool>,
         pub composants: Option<Vec<Court>>,
         pub affectation: Option<String>,
-        pub organisme: Option<String>,
+        /// L'adhesion sous laquelle se declare la base 31 de la cotisation, nommee pour qui lit le bareme : la reference
+        /// du contrat chez l'organisme (S21.G00.15.001 : `INTERBRANCHE`, `TSINTERMITTENTS`) ou son role (`PREVOYANCE`,
+        /// `SANTE`). Ce n'est pas un organisme ; c'est `affectation` (la place de l'adhesion) que la DSN ecrit.
+        pub adhesion: Option<String>,
         /// La cotisation n'est due qu'au-dela de ce multiple du SMIC.
         pub seuil_smic: Option<Nombre>,
         pub cle_total: Option<String>,
@@ -691,7 +694,7 @@ impl CotisationDsn {
             plafond: None,
             composants: None,
             affectation: None,
-            organisme: None,
+            adhesion: None,
             seuil_smic: None,
             cle_total: None,
             code_insee: None,
