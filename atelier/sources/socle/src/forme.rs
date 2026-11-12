@@ -58,8 +58,8 @@ pub fn relire<T: DeserializeOwned>(t: &(impl serde::Serialize + ?Sized), phrase:
 /// UN OBJET JSON QUI PASSE UNE PORTE AVANT D'ETRE LU EN SA FORME : la charge d'une route, que sa route lit
 /// (`routes::enveloppe::Charge`), ce qu'une route rend, que la porte controle et que le moteur relit
 /// (`routes::enveloppe::Rendu`). Il ne se lit qu'en une forme (`lire`) ; ce que l'enveloppe en voit sans forme (le mot de
-/// passe qu'elle porte, les phrases qu'une reponse rend) se dit par ses textes, a une cle que l'enveloppe nomme. Son
-/// JSON ne se touche qu'ici et dans `ecriture` (`ecriture::en_objet`).
+/// passe qu'elle porte, le mois d'une charge) se lit aussi en une forme, sur les seules cles que l'enveloppe nomme
+/// (`lire_cles`). Son JSON ne se touche qu'ici et dans `ecriture` (`ecriture::en_objet`).
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
 #[serde(transparent)]
 pub struct Objet(pub(crate) serde_json::Map<String, Value>);
@@ -69,15 +69,6 @@ impl<'de> serde::Deserialize<'de> for Objet {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Objet, D::Error> {
         serde_json::Map::deserialize(d).map(Objet)
     }
-}
-
-/// LA FORME D'UN TEXTE QU'UN OBJET PORTE A UNE CLE (`Objet::textes_sous`) : un texte, une liste de textes, une table
-/// dont les valeurs sont des textes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FormeDesTextes {
-    Texte,
-    Liste,
-    Table,
 }
 
 impl Objet {
@@ -106,52 +97,13 @@ impl Objet {
         lire(&Value::Object(m), phrase)
     }
 
-    /// L'objet reduit a sa cle `cle`, si elle porte un texte non vide (une cle que l'enveloppe lit en sa forme, seule).
-    pub fn reduit_au_texte(&self, cle: &str) -> Option<Objet> {
-        let v = self.0.get(cle).filter(|v| v.as_str().is_some_and(|t| !t.is_empty()))?;
-        Some(Objet(serde_json::Map::from_iter([(cle.to_string(), v.clone())])))
-    }
-
-    /// Le texte que l'objet porte a `cle`, s'il en porte un.
-    pub fn texte(&self, cle: &str) -> Option<&str> {
-        self.0.get(cle).and_then(Value::as_str)
-    }
-
-    /// Les textes de la liste que l'objet porte a `cle` ; aucun s'il n'y porte pas de liste.
-    pub fn textes(&self, cle: &str) -> Vec<&str> {
-        self.0.get(cle).and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect()
-    }
-
-    /// LES TEXTES QUE L'OBJET PORTE AUX CLES `cles`, A TOUTE PROFONDEUR : a chaque cle nommee qui porte un texte de la
-    /// forme dite, ce texte (ou ceux de sa liste, ou les valeurs de sa table) ; toute autre valeur se parcourt.
-    pub fn textes_sous(&self, cles: &[(&str, FormeDesTextes)]) -> Vec<&str> {
-        fn de_la_valeur<'a>(v: &'a Value, cles: &[(&str, FormeDesTextes)], out: &mut Vec<&'a str>) {
-            match v {
-                Value::Object(o) => de_l_objet(o, cles, out),
-                Value::Array(a) => a.iter().for_each(|x| de_la_valeur(x, cles, out)),
-                // Une valeur seule n'est le texte de rien.
-                Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
-            }
-        }
-        fn de_l_objet<'a>(o: &'a serde_json::Map<String, Value>, cles: &[(&str, FormeDesTextes)], out: &mut Vec<&'a str>) {
-            for (k, x) in o {
-                let forme = cles.iter().find(|(c, _)| c == k).map(|(_, f)| *f);
-                match (forme, x) {
-                    (Some(FormeDesTextes::Texte), Value::String(t)) => out.push(t.as_str()),
-                    (Some(FormeDesTextes::Liste), Value::Array(l)) => out.extend(l.iter().filter_map(Value::as_str)),
-                    (Some(FormeDesTextes::Table), Value::Object(t)) => out.extend(t.values().filter_map(Value::as_str)),
-                    (Some(_) | None, x) => de_la_valeur(x, cles, out),
-                }
-            }
-        }
-        let mut out = Vec::new();
-        de_l_objet(&self.0, cles, &mut out);
-        out
-    }
-
-    /// Ses cles, dans leur ordre.
-    pub fn cles(&self) -> Vec<&str> {
-        self.0.keys().map(String::as_str).collect()
+    /// LES SEULES CLES `cles` DE L'OBJET (celles qu'il porte), LUES EN LEUR FORME `T` : ce que l'enveloppe lit a cote de
+    /// la forme de la route (le mot de passe, le mois d'une charge ; ce qu'un rendu porte pour le banc). Strict comme
+    /// `lire` : une valeur d'une autre forme la refuse.
+    #[track_caller]
+    pub fn lire_cles<T: DeserializeOwned>(&self, cles: &[&str], phrase: &str) -> R<T> {
+        let m: serde_json::Map<String, Value> = self.0.iter().filter(|(k, _)| cles.contains(&k.as_str())).map(|(k, v)| (k.clone(), v.clone())).collect();
+        lire(&Value::Object(m), phrase)
     }
 
     /// L'objet sans sa cle `cle`.

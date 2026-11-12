@@ -316,14 +316,14 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
         };
         assert_eq!(r["ok"], json!(true), "{} refuse l'exemple de sa fiche : {}", f.nom(), r);
         assert!(r["resultat"]["phrase"].as_str().is_some_and(|p| !p.trim().is_empty()), "{} : sa phrase manque (moteur route --texte ne rend que des phrases, celles que l'écran lit) : {}", f.nom(), r);
-        let resultat: socle::forme::Objet = socle::forme::lire(&r["resultat"], "le résultat d'une route").unwrap();
-        for p in routes::phrases_rendues(&resultat) {
+        let phrases: routes::PhrasesRendues = socle::forme::lire(&r["resultat"], "les phrases que rend une route").unwrap();
+        for p in phrases.toutes() {
             if let Some(d) = routes::affiche::defaut(p, usize::MAX, false) {
                 phrases_fautives.push(format!("{} : « {} » : {}", f.nom(), p, d.corriger()));
             }
         }
         if f.phrase > 0 {
-            let n = routes::plus_longue_phrase(&resultat);
+            let n = phrases.plus_longue();
             assert!(n <= f.phrase, "{} : une phrase qu'elle rend (la sienne, ou celle d'une de ses lignes) passe sa place ({}) : {} caractères : {}", f.nom(), f.phrase, n, r);
         }
     }

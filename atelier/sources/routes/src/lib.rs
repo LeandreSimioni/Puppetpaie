@@ -24,7 +24,7 @@
 //!    de passe du logiciel n'y est pas : `charge.mot_de_passe()` ; une route inconnue du module :
 //!    `Err(enveloppe::route_inconnue(autre.nom()))` ;
 //! 3. ce que la route rend est une structure `serde` qui porte sa phrase et la dit (`impl Dite`) ; la porte en controle les
-//!    phrases (`Rendu::phrases`, `Rendu::plus_longue_phrase`) ;
+//!    phrases (`Rendu::phrases`, `PhrasesRendues`) ;
 //! 4. un refus est un `Echec` dont la classe est un mot du logiciel (`erreur(Classe::Manque, …)`), ce qui n'est pas pour
 //!    l'ecran a part (`socle::echec::APart`, que la reponse rend dans `refus.a_part`) ; la fiche dit quoi corriger pour
 //!    chaque classe qu'elle refuse ;
@@ -53,7 +53,7 @@ use crate::service::contexte;
 use catalogue::Route;
 use enveloppe::{Charge, Demande, Options, Porte, Refus, Rendu, Reponse};
 
-pub use enveloppe::{phrases_rendues, plus_longue_phrase};
+pub use enveloppe::PhrasesRendues;
 
 pub mod enveloppe;
 pub mod ouverture;
@@ -293,8 +293,8 @@ fn servir(o: &Options, route: Route, charge: &Charge) -> R<Rendu> {
         autre => autre,
     }
 }
-/// Ce qu'un incident silencieux de la porte dit au developpeur d'une phrase : la route, et selon le cas le defaut, les
-/// cles d'une reponse sans phrase, la place et la longueur. Jamais la phrase, qui peut nommer un salarie.
+/// Ce qu'un incident silencieux de la porte dit au developpeur d'une phrase : la route, et selon le cas le defaut, la
+/// place et la longueur. Jamais la phrase, qui peut nommer un salarie.
 #[derive(serde::Serialize)]
 struct PhraseNotee<'a> {
     route: &'a str,
@@ -303,8 +303,6 @@ struct PhraseNotee<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     refus: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cles: Option<Vec<&'a str>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     place: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     longueur: Option<usize>,
@@ -312,7 +310,7 @@ struct PhraseNotee<'a> {
 
 impl<'a> PhraseNotee<'a> {
     fn de(route: &'a str) -> PhraseNotee<'a> {
-        PhraseNotee { route, defaut: None, refus: None, cles: None, place: None, longueur: None }
+        PhraseNotee { route, defaut: None, refus: None, place: None, longueur: None }
     }
 
     /// L'incident silencieux `quoi`, resume par `resume`.
@@ -342,27 +340,19 @@ fn refus_a_sa_place(racine: &Path, route: &str, phrase: &str) {
     PhraseNotee { defaut: Some(format!("{:?}", d)), refus: Some(true), ..PhraseNotee::de(route) }.noter(racine, "PhrasePasFaitePourLEcran", &resume);
 }
 
-/// UNE PHRASE PLUS LONGUE QUE SA PLACE (la `phrase` de la fiche ; `Rendu::plus_longue_phrase`) se lit entiere, et note un
+/// UNE PHRASE PLUS LONGUE QUE SA PLACE (la `phrase` de la fiche ; `PhrasesRendues::plus_longue`) se lit entiere, et note un
 /// incident silencieux au developpeur : la route, la place, la longueur ; jamais la phrase, qui peut nommer un salarie. On
 /// la corrige a la cause, en l'ecrivant plus breve.
 fn phrase_a_sa_place(racine: &Path, route: Route, rendu: &Rendu) {
-    // UNE REPONSE SANS PHRASE d'une route du catalogue (un avertissement, une variante que l'exemple de sa fiche ne joue
-    // pas) : ni l'ecran ni `moteur route --texte` n'ont rien a lire. Le meme incident silencieux, pour la reponse qui l'a
-    // oubliee. Une route branchee ne rend pas sans phrase (`enveloppe::Dite`). (L'horloge du banc, hors catalogue, rend
-    // ses phrases en liste.)
-    if route.au_catalogue() && !rendu.a_sa_phrase() {
-        let resume = format!("La route {} a rendu une réponse sans phrase.", route);
-        PhraseNotee { cles: Some(rendu.cles()), ..PhraseNotee::de(route.nom()) }.noter(racine, "PhraseManquante", &resume);
-        return;
-    }
-    // UNE PHRASE QUI N'EST PAS FAITE POUR L'ECRAN (un nom de fichier, un terme de code : `affiche::defaut`) : le meme
+    // Une reponse sans phrase ne passe pas la porte : `Rendu::de` la refuse.
+    // UNE PHRASE QUI N'EST PAS FAITE POUR L'ECRAN (un nom de fichier, un terme de code : `affiche::defaut`) : un
     // incident silencieux, sans la phrase.
-    if let Some(d) = rendu.phrases().into_iter().find_map(|p| affiche::defaut(p, usize::MAX, false)) {
+    if let Some(d) = rendu.phrases().toutes().find_map(|p| affiche::defaut(p, usize::MAX, false)) {
         let resume = format!("Une phrase de la route {} n'est pas faite pour l'écran : {}.", route, d.corriger());
         PhraseNotee { defaut: Some(format!("{:?}", d)), ..PhraseNotee::de(route.nom()) }.noter(racine, "PhrasePasFaitePourLEcran", &resume);
     }
     let Some(place) = catalogue::catalogue().iter().find(|f| f.route == route).map(|f| f.phrase).filter(|p| *p > 0) else { return };
-    let longueur = rendu.plus_longue_phrase();
+    let longueur = rendu.phrases().plus_longue();
     if longueur <= place {
         return;
     }

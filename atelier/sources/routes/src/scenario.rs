@@ -182,10 +182,48 @@ pub struct Piece {
     pub fichiers: Option<BTreeMap<String, String>>,
 }
 
+/// Ce que rend `horloge-rattraper`, pour le rejeu : les pas joues, une phrase chacun.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PasDeLHorloge {
+    phrases: Vec<String>,
+}
+
+/// Ce que rend `ouverture`, pour le rejeu : ce que l'horloge de la fictive a joue, une phrase par pas.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HorlogeDeLOuverture {
+    horloge: Vec<String>,
+}
+
 /// Les cles d'une charge qui nomment un dossier ou un fichier que la route LIT (une boite aux lettres d'import, un export
 /// d'un autre logiciel) : ce qu'il contient entre dans le scenario.
 #[cfg(feature = "atelier")]
 const CLES_DE_DEPOT: [&str; 4] = ["dossier", "export", "fichier", "chemin"];
+
+/// CE QUE LA CHARGE NOMME A LIRE HORS DU MOTEUR, aux cles `CLES_DE_DEPOT`, lu en sa forme : un chemin chacune, ou rien.
+#[cfg(feature = "atelier")]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Depots {
+    dossier: Option<String>,
+    export: Option<String>,
+    fichier: Option<String>,
+    chemin: Option<String>,
+}
+
+#[cfg(feature = "atelier")]
+impl Depots {
+    /// Chaque cle, dans l'ordre de `CLES_DE_DEPOT`, et le chemin qu'elle nomme.
+    fn chacun(&self) -> [(&'static str, Option<&str>); 4] {
+        [
+            (CLES_DE_DEPOT[0], self.dossier.as_deref()),
+            (CLES_DE_DEPOT[1], self.export.as_deref()),
+            (CLES_DE_DEPOT[2], self.fichier.as_deref()),
+            (CLES_DE_DEPOT[3], self.chemin.as_deref()),
+        ]
+    }
+}
 
 /// Les routes dont la cle `dossier` vide (ou absente) veut dire `import/` de la compagnie (`crate::import::dossier_import`).
 #[cfg(feature = "atelier")]
@@ -609,13 +647,13 @@ fn rejouer_les_gestes(
                 r.routes_rejouees += 1;
                 let ok = rep.est_rendue();
                 // Ce que l'horloge de la fictive a joue (la route `horloge-rattraper`, ou la veille par `ouverture`), date du geste.
-                // Ces deux routes seules font jouer l'horloge ; une autre n'en dit rien.
-                let jouees = match route {
-                    Some(Route::HorlogeRattraper) => Some("phrases"),
-                    Some(Route::Ouverture) => Some("horloge"),
-                    Some(_) | None => None,
+                // Ces deux routes seules font jouer l'horloge ; une autre n'en dit rien, un refus non plus.
+                let jouees: Vec<String> = match (route, ok) {
+                    (Some(Route::HorlogeRattraper), true) => rep.lire_cles::<PasDeLHorloge>(&["phrases"]).map_err(|e| refus(e.phrase))?.phrases,
+                    (Some(Route::Ouverture), true) => rep.lire_cles::<HorlogeDeLOuverture>(&["horloge"]).map_err(|e| refus(e.phrase))?.horloge,
+                    (Some(_) | None, _) => Vec::new(),
                 };
-                r.horloge.extend(jouees.iter().flat_map(|cle| rep.textes(cle)).map(|p| format!("{} {}", heure(t), p)));
+                r.horloge.extend(jouees.into_iter().map(|p| format!("{} {}", heure(t), p)));
                 let attendu = g.a_reussi();
                 if ok != attendu {
                     let refus: String = rep.refus().map(|e| format!(" : {}", e.phrase)).into_iter().collect();
@@ -1125,9 +1163,9 @@ mod enregistreur {
         /// boite aux lettres `import/` de la compagnie. Chaque fichier entre dans `pieces/`.
         fn recopier_les_pieces(&self, racine: &Path, route: Route, charge: &Charge) -> R<BTreeMap<String, Piece>> {
             let mut out = BTreeMap::new();
-            for cle in CLES_DE_DEPOT {
-                let valeur = charge.texte(cle).map(str::trim);
-                let chemin = match valeur {
+            let depots: Depots = charge.lire_cles(&CLES_DE_DEPOT)?;
+            for (cle, valeur) in depots.chacun() {
+                let chemin = match valeur.map(str::trim) {
                     Some(s) if !s.is_empty() => {
                         let p = PathBuf::from(crate::depots::normaliser(s));
                         if p.is_absolute() {
