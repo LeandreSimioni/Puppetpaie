@@ -13,7 +13,7 @@ use droit::fiche::Lue as _;
 
 use droit::contexte::{aujourdhui, Contexte};
 use socle::date::Jour;
-use crate::dsn::{self, dite, Arret, Fichier, LOGICIEL, VERSION};
+use crate::dsn::{self, Arret, Fichier, LOGICIEL, VERSION};
 use socle::fichiers::repr;
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
@@ -69,27 +69,25 @@ fn impossible<T>(m: String) -> R<T> {
     Err(Echec::impossible(m))
 }
 
-/// L'arret est-il subroge ? Son code de subrogation est le « oui » de la norme (`droit::arrets::Bloc60`).
+/// L'arret est-il subroge ? Son code de subrogation est le « oui » de la norme (S21.G00.60.004).
 pub fn avec_subrogation(a: &Arret) -> socle::echec::R<bool> {
-    let bloc = droit::arrets::bloc_60()?;
-    let oui = bloc.subrogation_oui()?;
-    Ok(dite(&a.saisi.subrogation).is_some_and(|s| s == oui))
+    Ok(a.saisi.subrogation == Some(droit::arrets::SubrogationDeLArret::Oui))
 }
 
 /// Ce que la norme refuse (`Echec::Impossible`) ; rend les avertissements.
 pub fn verifier(a: &Arret, nature: NatureSignalement, constitution: Option<&Jour>) -> R<Vec<String>> {
     let v = &a.saisi;
     let bloc = droit::arrets::bloc_60()?;
-    let motif = match bloc.motifs_arret.code(&v.motif) {
+    let motif = match bloc.motifs_arret.code(v.motif) {
         Some(m) => m.clone(),
         None => {
             return impossible(format!(
                 "Motif d'arret {} inconnu de la norme (S21.G00.60.001). Les motifs sont dans arrets-base.json.",
-                repr(&v.motif)
+                repr(v.motif.code())
             ))
         }
     };
-    let m_s = v.motif.clone();
+    let m_s = v.motif;
     let libelle = motif.libelle.clone();
 
     if motif.annulation == Some(true) {
@@ -119,7 +117,7 @@ moteur n'ecrit pas.",
     let debut = v.debut;
     let fin_prev = v.fin_previsionnelle;
     let debut_contrat = v.contrat_debut;
-    let (accident, subrogation, reprise, reprise_motif) = (v.date_accident, dite(&v.subrogation), v.reprise, dite(&v.reprise_motif));
+    let (accident, subrogation, reprise, reprise_motif) = (v.date_accident, v.subrogation, v.reprise, v.reprise_motif);
 
     // Le dernier jour travaille est la veille du debut prescrit, ou ce jour meme quand il a ete travaille
     // (S21.G00.60.002) : un arret ne commence pas avant un jour travaille.
@@ -195,7 +193,7 @@ et a maintenir le salaire."
                 .collect();
             return impossible(format!(
                 "Subrogation {} : la norme ne connait que {}.",
-                repr(subrogation),
+                repr(subrogation.code()),
                 liste.join(", ")
             ));
         }
@@ -272,7 +270,7 @@ reprise.",
             None => {
                 return impossible(format!(
                     "Motif de reprise {} inconnu de la norme (S21.G00.60.011).",
-                    repr(reprise_motif)
+                    repr(reprise_motif.code())
                 ))
             }
         };
@@ -316,7 +314,7 @@ un fait déjà survenu ne se date pas dans le futur.",
     // UN MOTIF QUE LA DSN NE COUVRE PAS (le deuil d'enfant, 19) : la norme l'admet dans un signalement (S21.G00.60.001,
     // aucune regle CCH ne l'en exclut), donc rien ne se refuse (regle 7) ; mais l'Assurance Maladie ne le traite pas, et
     // l'attestation de salaire se fait sur net-entreprises. La phrase est dans `obligations-base.json` (`sauf_motifs`).
-    if let Some(a) = avertissement_hors_dsn(nature, &m_s)? {
+    if let Some(a) = avertissement_hors_dsn(nature, m_s.code())? {
         avertissements.push(a);
     }
     Ok(avertissements)

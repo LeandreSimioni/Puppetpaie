@@ -40,6 +40,7 @@ pub mod preavis;
 pub mod reduction;
 pub mod forme_bareme;
 pub mod source;
+pub mod type_de_prime;
 pub mod type_declaration;
 pub mod type_taux_pas;
 pub mod autre_revenu_brut;

@@ -33,7 +33,7 @@ pub enum Origine {
 impl Origine {
     /// L'origine d'un motif d'arret (`arrets-base.json`), ou `None` pour un motif qui n'appelle pas de maintien (ou
     /// que la norme ne connait pas).
-    pub fn du_motif(code: &str) -> R<Option<Origine>> {
+    pub fn du_motif(code: crate::arrets::MotifDArret) -> R<Option<Origine>> {
         Ok(crate::arrets::motif_d_arret(code)?.and_then(|m| m.origine))
     }
 

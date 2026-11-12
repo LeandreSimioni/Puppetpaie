@@ -138,8 +138,8 @@ fn indemnite_depart_retraite(a: &(Decimal, Decimal)) -> Rendu<IndemniteDuDepart>
 fn rupture(a: &(Motif,)) -> Rendu<Option<Fin>> {
     p::rupture(motif(&a.0)).map(|o| o.map(|(fin, rubrique)| Fin { cle: fin.cle().to_string(), rubrique: rubrique.into() })).into()
 }
-fn code_52_permis(a: &(Motif, Motif)) -> Rendu<Option<String>> {
-    p::code_52_permis(a.0.as_deref(), motif(&a.1)).into()
+fn code_52_permis(a: &(Option<droit::type_de_prime::TypeDePrime>, Motif)) -> Rendu<Option<String>> {
+    p::code_52_permis(a.0, motif(&a.1)).into()
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn chaque_indemnite_a_le_code_et_le_regime_de_sa_rubrique() {
         (format!("{}_conventionnelle", rg.depart_a_la_retraite.rubrique), &rg.depart_a_la_retraite.dsn_bloc52_conventionnelle),
     ];
     for (rubrique, code) in codes {
-        assert_eq!(r(&rubrique).dsn_bloc52.as_deref(), Some(code.code.as_str()), "{}", rubrique);
+        assert_eq!(r(&rubrique).dsn_bloc52, Some(code.code), "{}", rubrique);
     }
     for (cle, regime) in &rg.regime_des_indemnites_de_rupture.par_indemnite {
         let lue = r(&regime.rubrique);

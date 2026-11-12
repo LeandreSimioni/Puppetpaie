@@ -34,7 +34,8 @@ use droit::contexte::{Contexte, IdSalarie, SalarieDesigne};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::calcul::Paie;
-use droit::arrets::{Bloc60, CodeDuBloc60};
+use droit::arrets::{Bloc60, CodeDuBloc60, MotifDArret, MotifDeReprise, SubrogationDeLArret};
+use droit::permanents::MotifDeSuspension;
 use engagement::imprevus::{self, ArretSaisi, GenreSuspension, Imprevu, Prolongation, RepriseNotee, Suspend, SuspensionSaisie, ARRET, SUSPENSION};
 use engagement::numeros::{numero_dit, NumeroContrat};
 use engagement::saisie::{Carte, Preavis, VueDuMois};
@@ -175,7 +176,7 @@ struct ChargeArretEnregistrer {
     dernier_jour: Jour,
     debut: Jour,
     fin: Jour,
-    motif: String,
+    motif: MotifDArret,
     date_accident: Option<Jour>,
     connu: Option<crate::obligations::ConnaissanceDite>,
     contrat: Option<NumeroContrat>,
@@ -199,7 +200,7 @@ struct ChargeArretReprise {
     salarie: SalarieDesigne,
     dernier_jour: Jour,
     reprise: Option<Jour>,
-    motif_reprise: Option<String>,
+    motif_reprise: Option<MotifDeReprise>,
 }
 
 /// La charge de `arret-indemnites` : chaque montant, un decimal en texte (« 40.89 », tel que le releve l'ecrit et que
@@ -265,7 +266,7 @@ struct ChargeSuspensionEnregistrer {
     salarie: SalarieDesigne,
     debut: Jour,
     fin: Jour,
-    motif: String,
+    motif: MotifDeSuspension,
     contrat: Option<NumeroContrat>,
     note: Option<String>,
 }
@@ -277,7 +278,7 @@ struct ChargeSuspensionModifier {
     salarie: SalarieDesigne,
     debut: Jour,
     fin: Option<Jour>,
-    motif: Option<String>,
+    motif: Option<MotifDeSuspension>,
 }
 
 /// La charge de `suspension-oublier`.
@@ -359,8 +360,8 @@ fn ordre_du_signalement(ctx: &Contexte, ordre: Option<i64>) -> R<(i64, Vec<Strin
 struct ReponseImprevus {
     phrase: String,
     imprevus: Vec<Resume>,
-    motifs_arret: Vec<CodeDuBloc60>,
-    motifs_reprise: Vec<CodeDuBloc60>,
+    motifs_arret: Vec<CodeDuBloc60<MotifDArret>>,
+    motifs_reprise: Vec<CodeDuBloc60<MotifDeReprise>>,
     motifs_suspension: Vec<MotifSuspension>,
     phrases: Vec<String>,
 }
@@ -372,9 +373,9 @@ struct ReponseArrets {
     phrases: Vec<String>,
     arrets: Vec<Resume>,
     a_signaler: Vec<Resume>,
-    motifs: Vec<CodeDuBloc60>,
-    motifs_reprise: Vec<CodeDuBloc60>,
-    subrogation: Vec<CodeDuBloc60>,
+    motifs: Vec<CodeDuBloc60<MotifDArret>>,
+    motifs_reprise: Vec<CodeDuBloc60<MotifDeReprise>>,
+    subrogation: Vec<CodeDuBloc60<SubrogationDeLArret>>,
 }
 
 /// `fins-de-contrat`.
@@ -784,17 +785,17 @@ pub(crate) struct ArretResume {
     salarie: IdSalarie,
     contrat: Option<engagement::numeros::NumeroContrat>,
     contrat_debut: Jour,
-    motif: String,
+    motif: MotifDArret,
     pub motif_libelle: String,
     dernier_jour_travaille: Jour,
     debut: Jour,
     fin_previsionnelle: Jour,
-    subrogation: Option<String>,
+    subrogation: Option<SubrogationDeLArret>,
     subrogation_debut: Option<Jour>,
     subrogation_fin: Option<Jour>,
     date_accident: Option<Jour>,
     reprise: Option<Jour>,
-    reprise_motif: Option<String>,
+    reprise_motif: Option<MotifDeReprise>,
     note: Option<String>,
     #[serde(with = "socle::paris::ecrit::saisie")]
     saisi_le: socle::paris::Moment,
@@ -897,7 +898,7 @@ pub(crate) struct ResumeDeSuspension {
     salarie: IdSalarie,
     contrat: Option<engagement::numeros::NumeroContrat>,
     contrat_debut: Jour,
-    motif: String,
+    motif: MotifDeSuspension,
     motif_libelle: String,
     remunere: bool,
     debut: Jour,
@@ -939,7 +940,7 @@ struct ValeursDeDepart {
     #[serde(skip_serializing_if = "Option::is_none")]
     reprise: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    motif_reprise: Option<String>,
+    motif_reprise: Option<MotifDeReprise>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ij_brute: Option<Chiffre>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -962,7 +963,7 @@ struct ChoixDesCases {
 /// Un choix : le code que la charge porte, le libelle que la liste montre.
 #[derive(Debug, Clone, Serialize)]
 struct Choisi {
-    code: String,
+    code: MotifDeReprise,
     libelle: String,
 }
 
@@ -1004,7 +1005,7 @@ fn geste_de_reprise(d: &Designe, a: &ArretSaisi, n: &Bloc60, libelle: Affiche) -
     let motifs = n.motifs_reprise.saisissables().into_iter().map(|m| Choisi { code: m.code, libelle: m.libelle }).collect();
     GesteDImprevu {
         cases: vec![REPRISE.nom, MOTIF_REPRISE.nom],
-        valeurs: ValeursDeDepart { reprise: a.reprise.clone(), motif_reprise: a.reprise_motif.clone(), ..ValeursDeDepart::default() },
+        valeurs: ValeursDeDepart { reprise: a.reprise.clone(), motif_reprise: a.reprise_motif, ..ValeursDeDepart::default() },
         choix: ChoixDesCases { motif_reprise: Some(motifs) },
         ..d.geste(Route::ArretReprise, libelle)
     }
@@ -1274,7 +1275,7 @@ fn cachets_de(ctx: &Contexte, imp: &Imprevu) -> R<Vec<Cachet>> {
 /// Un arret tel que la page le lit (`ResumeDArret`).
 fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cachet>, premier: Jour, dernier: Jour) -> R<ResumeDArret> {
     let base = resume_arret(ctx, n, a)?;
-    let motif = magasin(droit::arrets::motif_d_arret(&a.motif))?;
+    let motif = magasin(droit::arrets::motif_d_arret(a.motif))?;
     let origine = motif.and_then(|m| m.origine);
     let ouvert = ouvre_le_maintien(ctx, a)?;
     let majoree = ouvert && origine.is_some_and(|o| o.professionnelle() || o == droit::maintien::Origine::Trajet) && dernier.moins(&premier) >= 28;
@@ -1317,7 +1318,7 @@ fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cache
 /// s'enregistre pas (`verifier_suspension`), il se refuse s'il est dans le magasin.
 fn resume_de_suspension(ctx: &Contexte, s: &SuspensionSaisie, cachets: Vec<Cachet>, premier: Jour, dernier: Jour) -> R<ResumeDeSuspension> {
     let reportee = reporte_par(&ses_envois(ctx, &Imprevu::Suspension(s.clone()))?);
-    let motif = magasin(imprevus::motif_de_suspension(&s.motif))?.ok_or_else(|| {
+    let motif = magasin(imprevus::motif_de_suspension(s.motif))?.ok_or_else(|| {
         erreur(Classe::Illisible, format!("La suspension de {} du {} a un motif que la norme ne connaît pas ({}) : la corriger.", s.salarie, s.debut.iso(), s.motif))
     })?;
     let dit = Dit::de(ADire {
@@ -1334,7 +1335,7 @@ fn resume_de_suspension(ctx: &Contexte, s: &SuspensionSaisie, cachets: Vec<Cache
         salarie: s.salarie.clone(),
         contrat: s.contrat_numero.clone(),
         contrat_debut: s.contrat_debut,
-        motif: s.motif.clone(),
+        motif: s.motif,
         motif_libelle: motif.libelle.clone(),
         remunere: motif.remunere,
         debut: s.debut,
@@ -1354,7 +1355,7 @@ fn resume_de_suspension(ctx: &Contexte, s: &SuspensionSaisie, cachets: Vec<Cache
 /// Un motif d'absence qui se declare, tel que la page le propose.
 #[derive(Debug, Serialize)]
 struct MotifSuspension {
-    code: String,
+    code: MotifDeSuspension,
     libelle: String,
     libelle_dit: String,
     remunere: bool,
@@ -1370,7 +1371,7 @@ fn motifs_de_suspension() -> R<Vec<MotifSuspension>> {
         .filter(|m| m.ne_se_declare_pas.is_none())
         .map(|m| {
             let libelle_dit = format!("{}{}", m.libelle, if m.remunere { " (payé)" } else { "" });
-            MotifSuspension { code: m.code.clone(), libelle: m.libelle.clone(), libelle_dit, remunere: m.remunere }
+            MotifSuspension { code: m.code, libelle: m.libelle.clone(), libelle_dit, remunere: m.remunere }
         })
         .collect())
 }
@@ -1496,12 +1497,12 @@ fn subrogation_tiree(ctx: &Contexte, a: &ArretSaisi) -> R<Option<(Jour, Jour)>> 
 pub(crate) fn poser_la_subrogation(ctx: &Contexte, a: &mut ArretSaisi) -> R<()> {
     match subrogation_tiree(ctx, a)? {
         Some((d, f)) => {
-            a.subrogation = Some("01".to_string());
+            a.subrogation = Some(SubrogationDeLArret::Oui);
             a.subrogation_debut = Some(d);
             a.subrogation_fin = Some(f);
         }
         None => {
-            a.subrogation = Some("02".to_string());
+            a.subrogation = Some(SubrogationDeLArret::Non);
             a.subrogation_debut = None;
             a.subrogation_fin = None;
         }
@@ -1628,7 +1629,7 @@ fn signalement_subroge(a: &ArretSaisi) -> R<bool> {
 /// Ce qu'une suspension doit tenir avant de s'ecrire : son motif se declare (`imprevus::verifier_motif_de_suspension` :
 /// connu, pas le 200), elle finit apres avoir commence, et ne deborde pas de son contrat.
 fn verifier_suspension(s: &SuspensionSaisie, contrat_fin: Option<Jour>) -> R<()> {
-    imprevus::verifier_motif_de_suspension(&s.motif, s.salarie.as_str()).map_err(|e| e.reclasser(Classe::Refuse))?;
+    imprevus::verifier_motif_de_suspension(s.motif, s.salarie.as_str()).map_err(|e| e.reclasser(Classe::Refuse))?;
     let (debut, fin) = (s.debut, s.fin);
     if fin < debut {
         return Err(refus(format!(
@@ -1658,7 +1659,7 @@ fn suspension_enregistrer(ctx: &Contexte, c: &ChargeSuspensionEnregistrer) -> R<
         salarie: cle.clone(),
         contrat_debut: contrat.debut.clone(),
         contrat_numero: contrat.numero.clone(),
-        motif: c.motif.clone(),
+        motif: c.motif,
         debut,
         fin: c.fin,
         saisi_le: maintenant(),
@@ -1690,8 +1691,8 @@ fn suspension_modifier(ctx: &Contexte, c: &ChargeSuspensionModifier) -> R<Repons
     if let Some(f) = c.fin {
         s.fin = f;
     }
-    if let Some(m) = &c.motif {
-        s.motif = m.clone();
+    if let Some(m) = c.motif {
+        s.motif = m;
     }
     let fin_du_contrat = contrat_de(ctx, &s)?.and_then(|c| c.fin);
     verifier_suspension(&s, fin_du_contrat)?;
@@ -1760,7 +1761,7 @@ fn arret_enregistrer(ctx: &Contexte, c: &ChargeArretEnregistrer) -> R<ReponseArr
     let mut arret = arret_a_ecrire(ArretDit {
         cle: &cle,
         contrat: &choisi,
-        motif: &c.motif,
+        motif: c.motif,
         dernier_jour: dernier,
         debut: c.debut,
         fin: c.fin,
@@ -1935,13 +1936,13 @@ fn fin_de_contrat_declaree(ctx: &Contexte, e: &Carte, mois: Mois) -> R<declarati
         fin: exige(e.fin, "fin")?,
         motif: e.motif_rupture.ok_or_else(|| socle::fichiers::absent("motif_rupture").reclasser(Classe::Manque))?,
         mois_rattachement: mois,
-        type_preavis: preavis.genre.clone(),
+        type_preavis: preavis.genre,
         preavis_debut: preavis.debut,
         preavis_fin: preavis.fin,
         notification: e.notification_rupture,
         signature_convention: e.signature_convention,
         engagement_licenciement: e.engagement_licenciement,
-        transaction: e.transaction.clone(),
+        transaction: e.transaction,
     })
 }
 
@@ -2004,7 +2005,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let texte = declarations::fctu::generer(ctx, &paie, &fin, &options, &arrets, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?).map_err(echec_fctu)?;
     declarations::dsn::ecrire(&texte, &cible)?;
     compagnie::pieces_ecrites::noter_piece_ecrite(&ctx.racine, &compagnie::pieces_ecrites::cle_de_piece(&cible), None, None)?;
-    let preavis = declarations::fctu::libelle_preavis(&fin.type_preavis)?;
+    let preavis = declarations::fctu::libelle_preavis(fin.type_preavis)?;
     Ok(ReponseSignalementFin {
         fichier: cible.to_string_lossy().into_owned(),
         phrase: phrase_du_signalement(&format!("Signalement de fin de contrat écrit (préavis : {}). Rien n'est parti.", preavis), &avertissements),
@@ -2160,7 +2161,7 @@ pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: O
 /// Le libelle du motif d'arret dans les codes de la norme. Un motif inconnu ne s'enregistre pas (`verifier`) : dans le
 /// magasin, il se refuse.
 fn libelle_motif(n: &Bloc60, a: &ArretSaisi) -> R<String> {
-    match n.motifs_arret.code(&a.motif) {
+    match n.motifs_arret.code(a.motif) {
         Some(c) => Ok(c.libelle.clone()),
         None => Err(erreur(
             Classe::Illisible,
@@ -2179,22 +2180,22 @@ pub(crate) fn resume_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi) -> R<Arre
     let signale = !signalements.is_empty();
     // UN SIGNALEMENT EST-IL DU ? Pas pour un motif que la DSN ne couvre pas (le deuil d'enfant : `obligations-base.json`,
     // `signalement_arret.sauf_motifs`) ; son obligation est alors l'attestation de salaire hors DSN.
-    let signalement_du = crate::obligations::signalement_du(&a.motif)?;
+    let signalement_du = crate::obligations::signalement_du(a.motif.code())?;
     Ok(ArretResume {
         salarie: a.salarie.clone(),
         contrat: a.contrat_numero.clone(),
         contrat_debut: a.contrat_debut,
-        motif: a.motif.clone(),
+        motif: a.motif,
         motif_libelle,
         dernier_jour_travaille: a.dernier_jour_travaille,
         debut: a.debut,
         fin_previsionnelle: a.fin_previsionnelle,
-        subrogation: a.subrogation.clone(),
+        subrogation: a.subrogation,
         subrogation_debut: a.subrogation_debut,
         subrogation_fin: a.subrogation_fin,
         date_accident: a.date_accident,
         reprise: a.reprise,
-        reprise_motif: a.reprise_motif.clone(),
+        reprise_motif: a.reprise_motif,
         note: a.note.clone(),
         saisi_le: a.saisi_le,
         signale,
@@ -2283,7 +2284,7 @@ fn manque(champ: &'static str, case: &'static str, dire: impl Into<String>, pour
 }
 
 /// Le type de preavis « 90 - pas de clause de preavis applicable » (`fctu-base.json`, S21.G00.63.001).
-const SANS_PREAVIS: &str = "90";
+const SANS_PREAVIS: droit::preavis::TypeDePreavis = droit::preavis::TypeDePreavis::SansClause;
 
 /// UN CONTRAT A DUREE DETERMINEE QUI VA A SON TERME n'a rien a dire de sa fin : son motif est celui de sa nature
 /// (`contrats-base.json`, `motif_par_defaut` : 031, « la fin normale d'un CDD arrive a son terme »), et il n'a pas de
@@ -2298,7 +2299,7 @@ fn fin_au_terme(e: &Carte) -> R<Carte> {
     if let Some(m) = nature_de(&e)?.motif_rupture_par_defaut() {
         e.motif_rupture = Some(m);
         if e.preavis.is_none() {
-            e.preavis = Some(Preavis { genre: SANS_PREAVIS.to_string(), debut: None, fin: None });
+            e.preavis = Some(Preavis { genre: SANS_PREAVIS, debut: None, fin: None });
         }
     }
     Ok(e)
@@ -2374,7 +2375,7 @@ technique DSN p. 275). Le signalement ne s'écrit pas sans elle.",
             "Le bloc S21.G00.63 est obligatoire dans un signalement de fin de contrat (cardinalité 1,*) : même sans préavis, il \
 se déclare, avec le type « 90 - pas de clause de préavis applicable ».",
         )),
-        Some(p) if declarations::fctu::preavis_non_effectue(&p.genre)? && e.dernier_jour_paye.is_none() => manques.push(manque(
+        Some(p) if declarations::fctu::preavis_non_effectue(p.genre)? && e.dernier_jour_paye.is_none() => manques.push(manque(
             "dernier_jour_paye",
             "Dernier jour payé",
             "le dernier jour travaillé et payé au salaire habituel, avant le préavis qui n'est pas effectué.",

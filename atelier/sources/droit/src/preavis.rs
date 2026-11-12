@@ -9,6 +9,47 @@ use serde::{Deserialize, Serialize};
 use socle::fichiers::{forme_en_cache, repr, FormeGardee};
 use socle::echec::R;
 
+use crate::natures::codes_fermes;
+use crate::type_de_prime::TypeDePrime;
+
+codes_fermes! {
+    /// LE TYPE DE PREAVIS (S21.G00.63.001, « Type réalisation et paiement du préavis »), la liste entiere de la norme
+    /// (cahier technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.63.txt` ; relevee dans
+    /// `formats-dsn-*-base.json`). Ce que chacun dit (ses dates, s'il se saisit, l'indemnite compensatrice),
+    /// `fctu-base.json` le dit (`types_preavis.codes`).
+    TypeDePreavis, "Type de préavis", "S21.G00.63.001" {
+        EffectueEtPaye = "01",
+        NonEffectueEtPaye = "02",
+        NonEffectueEtNonPaye = "03",
+        NonEffectueCsp = "10",
+        NonEffectueCongeDeReclassement = "50",
+        NonEffectueCongeDeMobilite = "51",
+        DelaiDePrevenance = "60",
+        NonEffectuePap = "61",
+        SansClause = "90",
+    }
+}
+
+codes_fermes! {
+    /// LA TRANSACTION EN COURS (S21.G00.62.008), la liste entiere de la norme (cahier technique DSN 2026.1,
+    /// `atelier/reference/norme-dsn/texte/bloc-S21.G00.62.txt` ; relevee dans `formats-dsn-*-base.json`). Celle par
+    /// defaut, `fctu-base.json` la dit (`transaction`).
+    TransactionEnCours, "Transaction en cours", "S21.G00.62.008" {
+        Oui = "01",
+        Non = "02",
+    }
+}
+
+codes_fermes! {
+    /// LE MOIS DE LA DSN MENSUELLE DE RATTACHEMENT DES ELEMENTS DECLARES DANS LE FCTU (S21.G00.50.020), la liste entiere
+    /// de la norme (cahier technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.50.txt` ; relevee dans
+    /// `formats-dsn-*-base.json`). Celui par defaut, `fctu-base.json` le dit (`rattachement_versement`).
+    RattachementDuVersement, "Mois de rattachement des éléments du FCTU", "S21.G00.50.020" {
+        DsnMensuelle = "01",
+        DeclarationPrecedente = "02",
+    }
+}
+
 /// `fctu-base.json` : les codes de la norme propres au signalement de fin de contrat de travail unique.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -18,8 +59,8 @@ pub struct BaseFctu {
     /// Les cardinalites du modele, bloc par bloc (cahier technique p. 122), et ce qu'elles disent.
     pub arborescence: Arborescence,
     pub types_preavis: TypesPreavis,
-    pub transaction: Nomenclature,
-    pub rattachement_versement: Nomenclature,
+    pub transaction: Nomenclature<TransactionEnCours>,
+    pub rattachement_versement: Nomenclature<RattachementDuVersement>,
     pub notification_rupture: NotificationRupture,
 }
 
@@ -38,7 +79,7 @@ pub struct Arborescence {
 pub struct TypesPreavis {
     pub quoi: String,
     pub codes: Vec<TypePreavis>,
-    pub codes_52_de_l_indemnite_de_preavis: Vec<String>,
+    pub codes_52_de_l_indemnite_de_preavis: Vec<TypeDePrime>,
     pub note: String,
     /// Par motif de rupture, les types permis.
     pub types_permis_par_motif: TypesPermis,
@@ -49,7 +90,7 @@ pub struct TypesPreavis {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct TypePreavis {
-    pub code: String,
+    pub code: TypeDePreavis,
     pub libelle: String,
     pub dates: bool,
     pub saisissable: bool,
@@ -80,24 +121,24 @@ pub struct TypesPermis {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Permis {
-    pub types: Vec<String>,
+    pub types: Vec<TypeDePreavis>,
     pub controle: String,
 }
 
-/// Une nomenclature a codes (`transaction`, `rattachement_versement`).
+/// Une nomenclature a codes (`transaction`, `rattachement_versement`), des codes de sa liste de la norme.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Nomenclature {
+pub struct Nomenclature<T> {
     pub quoi: String,
     pub note: Option<String>,
-    pub codes: Vec<Code>,
+    pub codes: Vec<Code<T>>,
 }
 
 /// Un code d'une nomenclature, et s'il est celui par defaut. La page le recoit tel quel.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct Code {
-    pub code: String,
+pub struct Code<T> {
+    pub code: T,
     pub libelle: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub defaut: Option<bool>,
@@ -121,7 +162,7 @@ pub fn base() -> R<BaseFctu> {
 
 impl TypesPreavis {
     /// Le type de ce code, ou `None`.
-    pub fn du_code(&self, code: &str) -> Option<&TypePreavis> {
+    pub fn du_code(&self, code: TypeDePreavis) -> Option<&TypePreavis> {
         self.codes.iter().find(|c| c.code == code)
     }
 
@@ -131,16 +172,16 @@ impl TypesPreavis {
     }
 }
 
-impl Nomenclature {
+impl<T: Copy> Nomenclature<T> {
     /// Le code par defaut.
-    pub fn defaut(&self) -> Option<&str> {
-        self.codes.iter().find(|c| c.defaut == Some(true)).map(|c| c.code.as_str())
+    pub fn defaut(&self) -> Option<T> {
+        self.codes.iter().find(|c| c.defaut == Some(true)).map(|c| c.code)
     }
 }
 
 /// Les codes S21.G00.52.001 d'une indemnite compensatrice de preavis (`types_preavis.codes_52_de_l_indemnite_de_preavis` :
 /// 023, 032 ; cahier technique 2026.1, p. 253).
-pub fn codes_52_de_l_indemnite_de_preavis() -> R<Vec<String>> {
+pub fn codes_52_de_l_indemnite_de_preavis() -> R<Vec<TypeDePrime>> {
     Ok(base()?.types_preavis.codes_52_de_l_indemnite_de_preavis)
 }
 
@@ -149,16 +190,16 @@ pub fn codes_52_de_l_indemnite_de_preavis() -> R<Vec<String>> {
 /// libelle). `None` s'ils s'accordent, sinon pourquoi non. Le drapeau `indemnite_de_preavis` du type (`fctu-base.json`) :
 /// `versee` (02) veut une ligne, `aucune` (01, 03, 10, 60, 61, 90) n'en veut pas, un type sans
 /// drapeau (50, 51) n'est pas confronte. Un type inconnu refuse.
-pub fn desaccord_du_preavis(type_preavis: &str, versees: &[(String, String)]) -> R<Option<String>> {
+pub fn desaccord_du_preavis(type_preavis: TypeDePreavis, versees: &[(TypeDePrime, String)]) -> R<Option<String>> {
     let types = base()?.types_preavis;
     let t = types.du_code(type_preavis).ok_or_else(|| {
         socle::echec::refus_avec(
-            format!("Type de preavis {} inconnu de la norme (S21.G00.63.001).", repr(type_preavis)),
+            format!("Type de preavis {} inconnu de la norme (S21.G00.63.001).", repr(type_preavis.code())),
             socle::echec::Lieu { fichier: Some("fctu-base.json".to_string()), cle: Some("types_preavis".to_string()), ..Default::default() },
         )
     })?;
     let nom = format!("« {} - {} »", type_preavis, t.libelle);
-    let codes = types.codes_52_de_l_indemnite_de_preavis.join(" ou ");
+    let codes = types.codes_52_de_l_indemnite_de_preavis.iter().map(|c| c.code()).collect::<Vec<_>>().join(" ou ");
     Ok(match t.indemnite_de_preavis {
         Some(IndemniteDuType::Versee) if versees.is_empty() => Some(format!(
             "le preavis se declare {} (S21.G00.63.001), et la paie de ce contrat ne verse aucune indemnite compensatrice \

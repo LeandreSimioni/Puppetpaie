@@ -863,18 +863,18 @@ fn signalement_dsn(
     aujourdhui: Jour,
     cle: CleDObligation,
     o: &DeBase,
-    subrogation: Option<&str>,
+    subrogation: Option<droit::arrets::SubrogationDeLArret>,
     depart: Depart,
     evenement: Jour,
     fait: Option<Fait>,
 ) -> R<Obligation> {
     let mut m = Obligation::squelette(cle, o);
-    let Some(subrogation) = subrogation.filter(|s| !s.is_empty()) else {
+    let Some(subrogation) = subrogation else {
         return Ok(m.indeterminee(
             "La subrogation de cet arrêt n'est pas dite : c'est elle qui fixe le délai (cinq jours ouvrés sans subrogation, avec la DSN du mois avec ; CSS R. 133-14, II).",
         ));
     };
-    if subrogation == droit::arrets::bloc_60().map_err(|m| m.reclasser(Classe::Illisible))?.subrogation_oui().map_err(|m| m.reclasser(Classe::Manque))? {
+    if subrogation == droit::arrets::SubrogationDeLArret::Oui {
         let d = o.delai_de(&o.delai_avec_subrogation, "delai_avec_subrogation")?;
         // SUBROGE, la date butoir est l'echeance de la DSN mensuelle du mois de l'evenement (R. 133-14, II, premier
         // alinea), telle que `echeance_dsn` la donne : reportee au jour ouvre suivant un samedi, un dimanche ou un ferie
@@ -989,7 +989,7 @@ struct ArretLu<'a> {
     debut: Option<Jour>,
     fin: Option<Jour>,
     reprise: Option<Jour>,
-    subrogation: Option<&'a str>,
+    subrogation: Option<droit::arrets::SubrogationDeLArret>,
     date_accident: Option<Jour>,
     prolongations: &'a [Prolongation],
 }
@@ -999,12 +999,12 @@ impl<'a> ArretLu<'a> {
     fn de(a: &'a ArretSaisi) -> R<ArretLu<'a>> {
         let premier = engagement::imprevus::premier_jour(&Imprevu::Arret(a.clone())).map_err(|m| m.reclasser(Classe::Illisible))?;
         Ok(ArretLu {
-            motif: Some(&a.motif),
+            motif: Some(a.motif.code()),
             dernier: Some(a.dernier_jour_travaille),
             debut: Some(premier),
             fin: Some(a.fin_previsionnelle),
             reprise: a.reprise,
-            subrogation: a.subrogation.as_deref(),
+            subrogation: a.subrogation,
             date_accident: a.date_accident,
             prolongations: &a.prolongations,
         })
@@ -1331,7 +1331,7 @@ fn arret_connaissance(ctx: &Contexte, c: ChargeConnaissance) -> R<ObligationsDeL
 /// Ce que la compagnie dit avoir connu de l'arret `a` (`de`), d'apres le jour et l'heure dits : la connaissance a
 /// ecrire dans la fiche de suivi, controlee sans rien ecrire (`None` : un jour vide efface).
 pub(crate) fn connaissance_saisie(ctx: &Contexte, a: &ArretSaisi, de: DeQuoi, dite: &ConnaissanceDite) -> R<Option<ConnaissanceSaisie>> {
-    if de == DeQuoi::Accident && !motif_appelle_la_declaration(&a.motif)? {
+    if de == DeQuoi::Accident && !motif_appelle_la_declaration(a.motif.code())? {
         return Err(refus(format!(
             "L'arret de {} (motif {}) n'est pas un accident du travail ou de trajet : il n'y a pas de declaration d'accident, ni de connaissance de l'accident a dire. Rien n'est ecrit.",
             a.salarie, a.motif
@@ -1436,7 +1436,7 @@ pub struct ObligationFaite {
 
 fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsDeLArret> {
     let (cle, a) = l_arret_de(ctx, &charge.salarie, &charge.dernier_jour)?;
-    if !motif_appelle(f.obligation, &a.motif)? {
+    if !motif_appelle(f.obligation, a.motif.code())? {
         return Err(refus(format!("L'arret de {} (motif {}) {}. Rien n'est ecrit.", cle, a.motif, f.hors_motif)));
     }
     let dernier = a.dernier_jour_travaille;
@@ -1503,7 +1503,7 @@ fn dire_faite(ctx: &Contexte, charge: &ChargeFaite, f: &Faite) -> R<ObligationsD
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeArretObligations {
-    motif: Option<TexteDit>,
+    motif: Option<droit::arrets::MotifDArret>,
     dernier_jour: Option<Jour>,
     debut: Option<Jour>,
     fin: Option<Jour>,
@@ -1528,7 +1528,7 @@ fn arret_tel_qu_il_s_ecrirait(ctx: &Contexte, c: &ChargeArretObligations, salari
         Ok(contrat) => contrat,
         Err(e) => return Ok(ArretEcrit::PasEncore(e.phrase)),
     };
-    let Some(motif) = c.motif.as_deref() else { return Ok(ArretEcrit::PasEncore("le motif n'est pas encore dit.".to_string())) };
+    let Some(motif) = c.motif else { return Ok(ArretEcrit::PasEncore("le motif n'est pas encore dit.".to_string())) };
     let mut arret = crate::metier::imprevus::arret_a_ecrire(crate::metier::imprevus::ArretDit {
         cle: &cle,
         contrat: &contrat,
@@ -1569,7 +1569,7 @@ fn arret_obligations(ctx: &Contexte, c: ChargeArretObligations) -> R<Obligations
     };
     let a = match &saisi {
         Some(s) => ArretLu { reprise: c.reprise, date_accident: c.date_accident, ..ArretLu::de(s)? },
-        None => ArretLu { motif: c.motif.as_deref(), dernier, debut: None, fin, reprise: c.reprise, subrogation: None, date_accident: c.date_accident, prolongations: &[] },
+        None => ArretLu { motif: c.motif.map(droit::arrets::MotifDArret::code), dernier, debut: None, fin, reprise: c.reprise, subrogation: None, date_accident: c.date_accident, prolongations: &[] },
     };
     // Ce que la compagnie dit avoir connu, tape et lisible ; une heure de l'accident dite sans jour est celle du jour de
     // l'accident, comme a l'enregistrement (`connaissance_saisie`).
