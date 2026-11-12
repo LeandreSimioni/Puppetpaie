@@ -70,8 +70,11 @@ fn rien_de_la_compagnie_reelle_n_est_ecrit_dans_ce_qui_part() {
             Ok(o) => o,
             Err(e) => panic!("{} part avec Git et ne se lit pas : {}", rel, e),
         };
+        if DU_CODE.iter().any(|d| rel.starts_with(d)) && rel.to_lowercase().contains(NOM_REEL) {
+            noms.push(rel.clone());
+        }
         // Un programme compilé se fabrique depuis les sources fouillées ici : ses constantes ont la forme d'un NIR, et il
-        // porte l'identifiant de l'application que ses sources disent.
+        // porte l'identifiant de l'application que ses sources disent. Son contenu ne se fouille pas.
         if programme_compile(&o) {
             continue;
         }
@@ -79,9 +82,6 @@ fn rien_de_la_compagnie_reelle_n_est_ecrit_dans_ce_qui_part() {
             nirs.extend(nirs_non_inventes(&o).into_iter().map(|(i, _)| format!("{}:{}", rel, ligne(&o, i))));
         }
         if DU_CODE.iter().any(|d| rel.starts_with(d)) {
-            if rel.to_lowercase().contains(NOM_REEL) {
-                noms.push(rel.clone());
-            }
             // La signature de l'editeur, blanchie a sa place (meme longueur : les lignes restent).
             let mut bas = String::from_utf8_lossy(&o).to_lowercase();
             for s in &signature {

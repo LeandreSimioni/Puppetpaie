@@ -146,10 +146,15 @@ pub fn nirs_non_inventes(o: &[u8]) -> Vec<(usize, String)> {
     trouves
 }
 
-/// Un programme compilé, à sa signature de format : ELF (Linux), PE (`MZ`, Windows), Mach-O (Mac, 32 ou 64 bits, ou
-/// universel).
+/// Un programme compilé, à son en-tête de format : ELF (Linux) ; PE (Windows : `MZ`, puis `PE\0\0` à l'adresse que
+/// l'en-tête DOS donne en 0x3C) ; Mach-O (Mac : 32 ou 64 bits, ou universel).
 pub fn programme_compile(o: &[u8]) -> bool {
-    [&b"\x7fELF"[..], b"MZ", b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe"].iter().any(|m| o.starts_with(m))
+    let pe = o.starts_with(b"MZ")
+        && o.get(0x3C..0x40).is_some_and(|a| {
+            let debut = u32::from_le_bytes([a[0], a[1], a[2], a[3]]) as usize;
+            o.get(debut..debut + 4) == Some(b"PE\0\0")
+        });
+    pe || [&b"\x7fELF"[..], b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe"].iter().any(|m| o.starts_with(m))
 }
 
 /// Un numéro de document dans une adresse web (l'Unédic en a de treize chiffres, EUR-Lex en met dans ses requêtes)
