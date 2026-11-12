@@ -25,6 +25,7 @@ use serde::Serialize;
 
 use droit::contexte::{Contexte, IdSalarie};
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use envois::etats;
 use envois::journal::Ligne;
@@ -938,7 +939,7 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
         if let Some(p) = lu(&d.producteur) {
             l.organisme = Some(p.to_string());
         }
-        let organisme = joint([lu(&d.producteur), lu(&d.code_producteur)], ", code ");
+        let organisme = joint([lu(&d.producteur), d.code_producteur.as_ref().map(IdentifiantDOrganisme::as_str)], ", code ");
         let retour = match (d.retour_global.and_then(dit), lu(&d.code_retour)) {
             (Some(g), _) => g.to_string(),
             (None, Some(c)) => format!("code retour {}", c),
