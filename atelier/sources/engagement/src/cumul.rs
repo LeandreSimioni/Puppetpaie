@@ -54,7 +54,7 @@ pub(crate) fn lire_importes(ctx: &Contexte) -> R<Vec<Declare>> {
         let a = &c.contrat;
         let compte = |x: Option<i64>, cle: &str| x.ok_or_else(|| socle::fichiers::absent(cle));
         out.push(Declare {
-            salarie: i.cle_ecrite()?,
+            salarie: c.salarie.clone(),
             debut,
             fin,
             heures: compte(a.heures, "heures")?,

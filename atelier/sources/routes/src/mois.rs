@@ -804,8 +804,7 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
     let mut out = Vec::new();
     for i in engagement::importe::tous(&ctx.racine)? {
         let Some(c) = i.contrat_lu()? else { continue };
-        // Un contrat lu d'un engagement importe porte toujours la cle de sa fiche (`importe::Objet::contrat_lu`).
-        let salarie = c.salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie"))?;
+        let salarie = c.salarie.clone();
         let atteste = |debut: Jour, fin: Jour, (cachets, heures, jours): (Option<i64>, Option<i64>, Option<i64>)| Atteste {
             salarie: salarie.clone(),
             debut,

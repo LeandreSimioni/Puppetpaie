@@ -233,12 +233,15 @@ pub struct BulletinSource {
 }
 
 /// UN CONTRAT ATTESTE, AVEC LES BORNES DE SON ENGAGEMENT : la ligne que l'import manipule, de la lecture de la piece a
-/// l'engagement ecrit (`Neuf`). `salarie` est la cle de la fiche (`None` tant qu'elle n'existe pas, ecrit `<a creer>`) ;
-/// `numero`, le numero de contrat de l'engagement qui le porte. Elle se rend a la page telle qu'elle s'ecrit (`Serialize`).
+/// l'engagement ecrit (`Neuf`). `salarie` est la cle de la fiche : une ligne de l'apercu peut ne pas en avoir (`None`
+/// tant qu'elle n'existe pas, ecrit `<a creer>`) ; une ligne relue d'un engagement importe en a toujours une
+/// (`ContratRelu`). `numero`, le numero de contrat de l'engagement qui le porte. Elle se rend a la page telle qu'elle
+/// s'ecrit (`Serialize`).
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct ContratLu {
+#[serde(bound(serialize = "S: CleDeLaLigne"))]
+pub struct ContratLu<S = Option<IdSalarie>> {
     #[serde(serialize_with = "ecrit_salarie")]
-    pub salarie: Option<IdSalarie>,
+    pub salarie: S,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debut: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -250,32 +253,71 @@ pub struct ContratLu {
 }
 
 /// UNE PAIE VERSEE, AVEC SON MOIS ET LE SALARIE DE SON ENGAGEMENT : la ligne de paie que l'import manipule, de la
-/// lecture de la DSN ou du bulletin a l'engagement ecrit.
+/// lecture de la DSN ou du bulletin a l'engagement ecrit. Sa cle de salarie, comme celle de `ContratLu` : facultative
+/// dans l'apercu, toujours la (`PaieRelue`) dans une ligne relue d'un engagement importe.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct PaieLue {
+#[serde(bound(serialize = "S: CleDeLaLigne"))]
+pub struct PaieLue<S = Option<IdSalarie>> {
     pub mois: Mois,
     #[serde(serialize_with = "ecrit_salarie")]
-    pub salarie: Option<IdSalarie>,
+    pub salarie: S,
     #[serde(flatten)]
     pub paie: PaieVersee,
 }
 
-/// La cle du salarie d'une ligne lue telle que la page la lit : `<a creer>` tant que sa fiche n'existe pas (`None`).
-pub fn ecrit_salarie<S: serde::Serializer>(salarie: &Option<IdSalarie>, s: S) -> Result<S::Ok, S::Error> {
-    match salarie {
-        Some(c) => s.serialize_str(c),
-        None => s.serialize_str("<a creer>"),
+/// Le contrat atteste relu d'un engagement importe : son salarie a sa fiche.
+pub type ContratRelu = ContratLu<IdSalarie>;
+
+/// Une paie versee relue d'un engagement importe : son salarie a sa fiche.
+pub type PaieRelue = PaieLue<IdSalarie>;
+
+/// LA CLE DU SALARIE D'UNE LIGNE LUE, telle que la page la lit : celle de sa fiche, ou `<a creer>` tant que sa fiche
+/// n'existe pas (`None`, dans l'apercu).
+pub trait CleDeLaLigne {
+    fn ecrite(&self) -> &str;
+}
+
+impl CleDeLaLigne for IdSalarie {
+    fn ecrite(&self) -> &str {
+        self
     }
 }
 
-impl PaieLue {
+impl CleDeLaLigne for Option<IdSalarie> {
+    fn ecrite(&self) -> &str {
+        match self {
+            Some(c) => c,
+            None => "<a creer>",
+        }
+    }
+}
+
+pub fn ecrit_salarie<C:CleDeLaLigne, S: serde::Serializer>(salarie: &C, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(salarie.ecrite())
+}
+
+impl ContratRelu {
+    /// La meme ligne, parmi celles de l'apercu.
+    pub fn a_l_apercu(self) -> ContratLu {
+        ContratLu { salarie: Some(self.salarie), debut: self.debut, fin: self.fin, numero: self.numero, contrat: self.contrat }
+    }
+}
+
+impl PaieRelue {
+    /// La meme ligne, parmi celles de l'apercu.
+    pub fn a_l_apercu(self) -> PaieLue {
+        PaieLue { mois: self.mois, salarie: Some(self.salarie), paie: self.paie }
+    }
+}
+
+impl<S: Clone> PaieLue<S> {
     /// Ce qui la reconnait d'un import a l'autre : (mois, salarie, contrat).
-    pub fn cle(&self) -> (Mois, Option<IdSalarie>, String) {
+    pub fn cle(&self) -> (Mois, S, String) {
         (self.mois, self.salarie.clone(), self.paie.contrat.clone())
     }
 
     /// La meme, sans ce qui dit quand elle a ete importee : deux lectures des memes pieces se comparent ainsi.
-    pub fn sans_date_d_import(&self) -> PaieLue {
+    pub fn sans_date_d_import(&self) -> PaieLue<S> {
         let mut p = self.clone();
         p.paie.importe_le = None;
         p
@@ -477,7 +519,7 @@ impl Importe {
     }
 
     /// Le contrat atteste, avec les bornes de l'engagement. La nature dite est celle du contrat : il n'attend plus rien.
-    pub fn contrat_lu(&self) -> R<Option<ContratLu>> {
+    pub fn contrat_lu(&self) -> R<Option<ContratRelu>> {
         let Some(contrat) = self.contrat() else { return Ok(None) };
         let mut contrat = contrat.clone();
         if let Some(n) = self.nature_dite() {
@@ -486,18 +528,18 @@ impl Importe {
         // Importe le jour ou il l'a ete la premiere fois ; sinon, le jour de l'import de ses pieces (`Pieces::le`).
         contrat.importe_le.get_or_insert(self.le());
         let numero = self.carte().numero.clone();
-        Ok(Some(ContratLu { salarie: Some(self.cle_ecrite()?), debut: self.carte().debut, fin: self.carte().fin, numero, contrat }))
+        Ok(Some(ContratLu { salarie: self.cle_ecrite()?, debut: self.carte().debut, fin: self.carte().fin, numero, contrat }))
     }
 
     /// Les paies versees, une par mois, avec le salarie de l'engagement.
-    pub fn paies_lues(&self) -> R<Vec<PaieLue>> {
+    pub fn paies_lues(&self) -> R<Vec<PaieRelue>> {
         self.paies().iter().map(|(m, p)| self.paie_lue(*m, p)).collect()
     }
 
-    fn paie_lue(&self, mois: Mois, p: &PaieVersee) -> R<PaieLue> {
+    fn paie_lue(&self, mois: Mois, p: &PaieVersee) -> R<PaieRelue> {
         let mut paie = p.clone();
         paie.importe_le.get_or_insert(self.le());
-        Ok(PaieLue { mois, salarie: Some(self.cle_ecrite()?), paie })
+        Ok(PaieLue { mois, salarie: self.cle_ecrite()?, paie })
     }
 
     /// La cle de la fiche de son salarie, ecrite ; un engagement importe qui ne la dit pas se refuse.
@@ -778,12 +820,12 @@ pub fn du_mois(racine: &Path, mois: Mois) -> R<Vec<Importe>> {
 }
 
 /// Les contrats attestes de tous les engagements importes (`Importe::contrat_lu`).
-pub fn contrats_lus(racine: &Path) -> R<Vec<ContratLu>> {
+pub fn contrats_lus(racine: &Path) -> R<Vec<ContratRelu>> {
     Ok(tous(racine)?.iter().map(Importe::contrat_lu).collect::<R<Vec<_>>>()?.into_iter().flatten().collect())
 }
 
 /// Les paies versees de tous les engagements importes, une par mois (`Importe::paies_lues`).
-pub fn paies_lues(racine: &Path) -> R<Vec<PaieLue>> {
+pub fn paies_lues(racine: &Path) -> R<Vec<PaieRelue>> {
     Ok(tous(racine)?.iter().map(Importe::paies_lues).collect::<R<Vec<_>>>()?.into_iter().flatten().collect())
 }
 
@@ -791,7 +833,7 @@ pub fn paies_lues(racine: &Path) -> R<Vec<PaieLue>> {
 /// (`declare_par: "DSN"` : son `depose_le`, son `fichier`), qu'une saisie touche aussi le mois ou non. Cette DSN n'est
 /// pas faite ici et ne se refait pas ici (regle 4) : ce que la saisie ajoute a ce mois se declare dans une DSN suivante,
 /// comme un contrat ajoute apres la DSN de son mois.
-pub fn dsn_deposee(racine: &Path, mois: Mois) -> R<Option<PaieLue>> {
+pub fn dsn_deposee(racine: &Path, mois: Mois) -> R<Option<PaieRelue>> {
     let trouve = tous(racine)?.iter().find_map(|i| i.paies().get(&mois).filter(|p| p.declare_par == Declaration::Dsn).map(|p| i.paie_lue(mois, p)));
     trouve.transpose()
 }

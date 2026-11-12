@@ -927,8 +927,7 @@ fn pages_importees(ctx: &Contexte, cles: &HashSet<IdSalarie>, p: &Periode, d: &m
     let (mut pages, mut manquent): (Vec<Page>, Vec<String>) = (Vec::new(), Vec::new());
     for x in lignes {
         let Some(b) = &x.paie.bulletin else { continue };
-        // Une paie lue d'un engagement importe porte toujours la cle de sa fiche (`importe::Objet::paies_lues`).
-        let cle = x.salarie.clone().ok_or_else(|| socle::fichiers::absent("salarie"))?;
+        let cle = x.salarie.clone();
         let (mois, fichier) = (x.mois, b.fichier.clone());
         let page = b.page;
         if page < 1 {

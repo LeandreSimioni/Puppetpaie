@@ -471,7 +471,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     // LES CONTRATS ATTESTES : l'historique, puis ce que chaque piece de cet import retient (`import::attestes`).
     let nir_de_cle: HashMap<IdSalarie, String> = par_nir.iter().map(|(n, c)| (c.clone(), n.clone())).collect();
     let mut registre = Registre::de_l_historique(ctx, &nir_de_cle)?;
-    let historique_paies = ri::paies_historique(ctx)?;
+    let historique_paies: Vec<PaieLue> = ri::paies_historique(ctx)?.into_iter().map(engagement::importe::PaieRelue::a_l_apercu).collect();
     let hist_par_cle: HashMap<(Mois, Option<IdSalarie>, String), PaieLue> = historique_paies.iter().map(|x| (x.cle(), x.clone())).collect();
 
     // Ce qui est saisi ici : (salarie, mois) que paie un engagement saisi. Un bulletin qui en est, sans paie declaree

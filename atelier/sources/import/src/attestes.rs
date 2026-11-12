@@ -200,7 +200,7 @@ pub struct Registre {
     tous: Vec<Atteste>,
     pub retenus: Vec<Retenu>,
     pub changes: Vec<Change>,
-    /// Les contrats de l'historique qui n'attestent rien, faute d'un salarie, d'un NIR ou de dates : le compte rendu
+    /// Les contrats de l'historique qui n'attestent rien, faute d'un NIR ou de dates : le compte rendu
     /// le dit.
     pub muets: Vec<String>,
 }
@@ -214,7 +214,7 @@ impl Registre {
     /// engagement : `import::ecrite`) s'atteste mois par mois, comme ses bulletins l'ont atteste : chaque mois verse, aux
     /// dates du mois dans le contrat, compte ce que sa paie porte ; un contrat sans terme (un CDI : « Date de fin
     /// previsionnelle : un CDI n'en a pas », `contrats-base.json`, S21.G00.40.010) n'est donc pas muet. Un autre contrat
-    /// sans salarie, sans debut ou sans fin, ou dont la fiche n'a pas de NIR, ne se compare a rien : il n'atteste rien,
+    /// sans debut ou sans fin, ou dont la fiche n'a pas de NIR, ne se compare a rien : il n'atteste rien,
     /// et le registre le dit (`muets`).
     pub fn de_l_historique(ctx: &Contexte, par_cle: &HashMap<droit::contexte::IdSalarie, String>) -> R<Registre> {
         let mut tous = Vec::new();
@@ -223,20 +223,19 @@ impl Registre {
             let Some(c) = i.contrat_lu()? else { continue };
             let (cle, debut, fin) = (c.salarie.clone(), c.debut, c.fin);
             let permanent = i.permanent();
-            let manque: Vec<&str> =
-                [(cle.is_none(), "salarié"), (debut.is_none(), "début"), (fin.is_none() && !permanent, "fin")].iter().filter(|m| m.0).map(|m| m.1).collect();
-            let de: String = cle.as_ref().map(|c| format!("de {}", c)).into_iter().collect();
+            let manque: Vec<&str> = [(debut.is_none(), "début"), (fin.is_none() && !permanent, "fin")].iter().filter(|m| m.0).map(|m| m.1).collect();
             let bornes = match (debut, fin) {
                 (Some(d), Some(f)) => format!("du {} au {}", d.jj_mm_aaaa(), f.jj_mm_aaaa()),
                 (Some(d), None) => format!("du {}, sans fin dite", d.jj_mm_aaaa()),
                 (None, Some(f)) => format!("sans début dit, jusqu'au {}", f.jj_mm_aaaa()),
                 (None, None) => "sans début ni fin dits".to_string(),
             };
-            let quel = format!("le contrat de l'historique {} {}", de, bornes);
-            let Some(cle) = cle.filter(|_| manque.is_empty()) else {
+            let quel = format!("le contrat de l'historique de {} {}", cle, bornes);
+            if !manque.is_empty() {
                 muets.push(format!("{} n'a pas de {} : il ne se compare à aucune pièce, une pièce du même contrat l'ajouterait une seconde fois", quel, manque.join(", ni de ")));
                 continue;
-            };
+            }
+            let c = c.a_l_apercu();
             let Some(nir) = par_cle.get(&cle) else {
                 muets.push(format!("{} : la fiche de ce salarié n'a pas de NIR, il ne se compare à aucune pièce, une pièce du même contrat l'ajouterait une seconde fois", quel));
                 continue;

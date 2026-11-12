@@ -16,7 +16,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use droit::contexte::Contexte;
-use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratLu, DatesTravaillees, Declaration, Importe, LigneImprimee, PaieLue, PaieVersee};
+use engagement::importe::{Attestation, BulletinSource, ContratAtteste, ContratRelu, DatesTravaillees, Declaration, Importe, LigneImprimee, PaieRelue, PaieVersee};
 use envois::etats;
 use socle::date::Jour;
 use socle::echec::{Classe, R};
@@ -52,9 +52,7 @@ pub fn bulletins_repris(racine: &Path, mois: Mois) -> R<Vec<BulletinRepris>> {
         if !racine.join(&chemin).is_file() || out.iter().any(|x| x.chemin == chemin) {
             continue;
         }
-        // Une paie lue d'un engagement importe porte toujours la cle de sa fiche (`importe::Objet::paies_lues`).
-        let salarie = p.salarie.ok_or_else(|| socle::fichiers::absent("salarie"))?;
-        out.push(BulletinRepris { chemin, salarie });
+        out.push(BulletinRepris { chemin, salarie: p.salarie });
     }
     Ok(out)
 }
@@ -310,11 +308,11 @@ pub struct CarteImportee {
 }
 
 /// Une carte : une paie importee (et le contrat atteste qui va avec), ou un contrat atteste seul.
-fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieLue>, contrat: Option<&ContratLu>, dpae: EtatDeCarte) -> R<CarteImportee> {
+fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&ContratRelu>, dpae: EtatDeCarte) -> R<CarteImportee> {
     let p = paie.map(|x| &x.paie);
     let c = contrat.map(|x| &x.contrat);
     let plein = |t: String| Some(t.trim().to_string()).filter(|t| !t.is_empty());
-    let salarie = paie.and_then(|x| x.salarie.clone()).or_else(|| contrat.and_then(|x| x.salarie.clone()));
+    let salarie = paie.map(|x| x.salarie.clone()).or_else(|| contrat.map(|x| x.salarie.clone()));
     let debut = p.and_then(|p| p.debut).or_else(|| contrat.and_then(|x| x.debut));
     let fin = p.and_then(|p| p.fin).or_else(|| contrat.and_then(|x| x.fin));
     let numero = p.and_then(|p| p.numero_objet.clone()).or_else(|| c.and_then(|c| c.numero_objet.clone())).and_then(plein);

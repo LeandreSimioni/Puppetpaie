@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use droit::contexte::{Contexte, IdSalarie};
 use droit::fiche::NomDeFiche;
-use engagement::importe::{Attestation, ContratLu, Declaration, PaieLue, PaieVersee};
+use engagement::importe::{Attestation, ContratLu, ContratRelu, Declaration, PaieLue, PaieVersee};
 use socle::date::Jour;
 use socle::mois::Mois;
 use socle::num::Decimal;
@@ -499,7 +499,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
     }
     // CE QUE L'IMPORT A DEJA ECRIT, relu de ses engagements importes : les contrats attestes, les paies versees.
     let importes_avant = engagement::importe::tous(&ctx.racine)?;
-    let mut engagements: Vec<ContratLu> = engagement::importe::contrats_lus(&ctx.racine)?;
+    let mut engagements: Vec<ContratLu> = engagement::importe::contrats_lus(&ctx.racine)?.into_iter().map(ContratRelu::a_l_apercu).collect();
     let le = aujourdhui;
     // LES CONTRATS QUE L'IMPORT RETIENT (`import::attestes` en a decide), rattaches par NIR a la fiche qui existe
     // maintenant, comptes par bloc du compte rendu.
@@ -532,6 +532,7 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
     // declaree qu'elle complete (`rapprocher`).
     let mut par_cle: BTreeMap<(socle::mois::Mois, Option<IdSalarie>, String), PaieLue> = BTreeMap::new();
     for x in crate::import::paies_historique(ctx)? {
+        let x = x.a_l_apercu();
         par_cle.insert(x.cle(), x);
     }
     let avant = par_cle.clone();

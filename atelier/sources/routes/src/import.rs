@@ -390,7 +390,7 @@ pub(crate) fn garder_le_nom(ctx: &Contexte, e: &mut Saisie) -> R<()> {
 }
 
 /// Les paies versees des engagements importes, une par mois.
-pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::PaieLue>> {
+pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::PaieRelue>> {
     engagement::importe::paies_lues(&ctx.racine)
 }
 
@@ -631,7 +631,7 @@ pub(crate) fn apercu_lu(
     }
 
     // 5. Les paies declarees par les DSN : ce que chaque versement a porte.
-    let deja_paies: HashSet<(socle::mois::Mois, Option<droit::contexte::IdSalarie>, String)> = paies_historique(ctx)?.iter().map(engagement::importe::PaieLue::cle).collect();
+    let deja_paies: HashSet<(socle::mois::Mois, droit::contexte::IdSalarie, String)> = paies_historique(ctx)?.iter().map(engagement::importe::PaieRelue::cle).collect();
     // La cle de la fiche du NIR ; `None` : sa fiche est a creer.
     let cle_de = |nir: &Option<String>| nir.as_ref().and_then(|n| par_nir.get(n)).cloned();
     let a_une_fiche = |nir: &Option<String>| nir.as_ref().is_some_and(|n| par_nir.contains_key(n)) || cles_a_venir.contains(nir);
@@ -640,7 +640,7 @@ pub(crate) fn apercu_lu(
         if !a_une_fiche(nir) {
             continue;
         }
-        if !deja_paies.contains(&(*mois, cle_de(nir), contrat.to_string())) {
+        if !cle_de(nir).is_some_and(|c| deja_paies.contains(&(*mois, c, contrat.to_string()))) {
             paies_nouvelles += 1;
         }
     }
@@ -741,7 +741,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let importe_le = contrats.iter().filter_map(|c| c.contrat.importe_le).chain(paies.iter().filter_map(|p| p.paie.importe_le)).max();
     let debut = contrats.iter().filter_map(|c| c.debut).min();
     let fin = contrats.iter().filter_map(|c| c.fin).max();
-    let salaries: HashSet<&droit::contexte::IdSalarie> = contrats.iter().filter_map(|c| c.salarie.as_ref()).collect();
+    let salaries: HashSet<&droit::contexte::IdSalarie> = contrats.iter().map(|c| &c.salarie).collect();
     let objets: HashSet<&str> = contrats.iter().filter_map(|c| c.contrat.numero_objet.as_deref()).collect();
     let editeur = attend_l_editeur(racine)?;
     let attend_editeur = editeur.iter().filter(|x| !x.repondu).count();
@@ -885,7 +885,7 @@ impl Reprise {
 
 /// `reprises` de `importation-etat` : DSN, AEM, certificats Congés Spectacles, bulletins, dans cet ordre, celles qui ont
 /// repris quelque chose.
-fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratLu], paies: &[engagement::importe::PaieLue]) -> R<Vec<RepriseVue>> {
+fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratRelu], paies: &[engagement::importe::PaieRelue]) -> R<Vec<RepriseVue>> {
     use engagement::importe::{Attestation, Declaration};
     let (mut aem, mut contrats_bulletins, mut certificats) = (Reprise::aucune(), Reprise::aucune(), Reprise::aucune());
     for c in contrats {

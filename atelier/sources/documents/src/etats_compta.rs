@@ -1302,12 +1302,11 @@ fn provision_d_une_annee_importee(
     let mut sans_compteur = 0;
     let cle_de = |p: &engagement::importe::PaieImportee| p.salarie.id.clone();
     // Les salaries dont un contrat repris court au-dela du dernier jour repris : sans fin, ou une fin apres lui.
-    // Un contrat lu d'un engagement importe porte toujours la cle de sa fiche (`importe::Objet::contrat_lu`).
     let continuent: BTreeSet<droit::contexte::IdSalarie> = engagement::importe::contrats_lus(&ctx.racine)
         .map_err(|x| x.reclasser(Classe::Refuse))?
         .into_iter()
         .filter(|c| c.fin.is_none_or(|f| f > fin))
-        .filter_map(|c| c.salarie)
+        .map(|c| c.salarie)
         .collect();
     let paies = lecture.paies(m)?;
     // Les bruts repris d'un salarie du mois de `du` a celui de `au`, et si les bulletins repris couvrent ces mois ; un
