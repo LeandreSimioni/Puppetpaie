@@ -1765,7 +1765,18 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             hors_assiette_revenu += l.montant;
         }
     }
-    lignes.iter().find(|l| l.est(&droit::forme_bareme::CSG_CRDS_ND)).ok_or_else(|| refus("StopIteration"))?;
+    // La remuneration nette fiscale reintegre la CSG et la CRDS non deductibles (`reintegrations`) : sans leur ligne, la
+    // pile du contrat ne la calcule pas (une couche qui l'a retiree, un bareme qui ne l'a pas).
+    if !lignes.iter().any(|l| l.est(&droit::forme_bareme::CSG_CRDS_ND)) {
+        return Err(socle::echec::cle(
+            format!(
+                "{} : le barème {} de son contrat n'a pas la ligne de la CSG et de la CRDS non déductibles, que la rémunération nette fiscale (S21.G00.50.002) réintègre. Rien n'est calculé : le signaler au développeur.",
+                eng.qui(),
+                bar.annee
+            ),
+            "rubriques_bulletin.csg_crds_nd",
+        ));
+    }
     let (base_51, retabli, chomage_51) = if nat.remunerations_au_brut() {
         (brut, brut, brut)
     } else {
