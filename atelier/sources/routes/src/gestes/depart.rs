@@ -674,11 +674,11 @@ impl DocumentsFabriques {
     /// UN ENVOI COUPE EN ROUTE : seuls les salaries `servis` ont recu leurs documents, eux seuls ont leurs numeros. Les
     /// compteurs passent au-dessus du plus grand numero servi ; ceux des autres se rendent, ils les reprendront a leur
     /// depart.
-    pub(crate) fn engager_servis(self, ctx: &Contexte, mois: Mois, servis: &[&str]) -> R<()> {
+    pub(crate) fn engager_servis(self, ctx: &Contexte, mois: Mois, servis: &[&IdSalarie]) -> R<()> {
         let mut bornes = Reserves::default();
         let (mut bulletin_max, mut ce_max): (Option<(i64, i64)>, Option<i64>) = (None, None);
         let an = i64::from(mois.annee());
-        for (cle, numero, bulletin, ce) in self.a_poser.iter().filter(|a| servis.contains(&a.0.as_str())) {
+        for (cle, numero, bulletin, ce) in self.a_poser.iter().filter(|a| servis.contains(&&a.0)) {
             // Le numero d'un bulletin, `N/AAAA` : son rang dans l'annee.
             if let Some(b) = bulletin.as_deref() {
                 let rang = b.split('/').next().map(str::trim).map(str::parse::<i64>);
