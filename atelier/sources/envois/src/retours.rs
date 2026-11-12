@@ -1230,13 +1230,27 @@ struct RetourJson {
     #[serde(default, with = "socle::paris::ecrit::compacte::option")]
     publication: Option<Moment>,
     production: Option<String>,
+    #[serde(default, deserialize_with = "organisme_ou_non_renseigne")]
     ops: Option<IdentifiantDOrganisme>,
+    #[serde(default, deserialize_with = "organisme_ou_non_renseigne")]
     delegataire: Option<IdentifiantDOrganisme>,
     #[serde(rename = "nature")]
     nature_retour: String,
     statut: Option<String>,
     id: Option<String>,
     url: Option<String>,
+}
+
+/// L'OPS ou le delegataire d'un retour JSON : « Non renseigné s'il s'agit d'un retour par le SI DSN ou par un organisme
+/// de base » (`atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`,
+/// l. 1699-1705) ; non renseigne, c'est absent ou vide, comme dans la
+/// reponse XML (un enfant vide n'y est pas lu).
+fn organisme_ou_non_renseigne<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<IdentifiantDOrganisme>, D::Error> {
+    match Option::<String>::deserialize(d)? {
+        None => Ok(None),
+        Some(t) if t.is_empty() => Ok(None),
+        Some(t) => IdentifiantDOrganisme::lire(&t).map(Some).map_err(|e| serde::de::Error::custom(e.phrase)),
+    }
 }
 
 /// La reponse JSON (2.0) de la liste des depots : `{"depots": {"declarant": {"siret", "nom", "prenom", "depot": [...]}}}`.
