@@ -33,10 +33,10 @@ pub struct Demande<'a> {
 
 /// Un salarie dont le taux manque, et le contrat qui le declarerait.
 pub struct Ligne {
-    pub salarie: String,
+    pub salarie: droit::contexte::IdSalarie,
     pub libelle: String,
     /// Le numero du contrat qui porte la demande, s'il en a un.
-    pub contrat: Option<String>,
+    pub contrat: Option<engagement::numeros::NumeroContrat>,
     /// Pourquoi ce salarie ne part pas ; vide : il part.
     pub pourquoi_pas: String,
     indice: usize,
@@ -121,8 +121,8 @@ pub fn en_cours(ctx: &Contexte, cle: &str) -> R<Option<EnCours>> {
 /// porte un (1,1). `forcer` : demander encore, une demande deja partie (le signalement rejete par la plate-forme).
 pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R<Vec<Ligne>> {
     use declarations::amorcage as am;
-    let cle_de = |p: &Paie| p.salarie.id.to_string();
-    let mut cles: Vec<String> = Vec::new();
+    let cle_de = |p: &Paie| p.salarie.id.clone();
+    let mut cles: Vec<droit::contexte::IdSalarie> = Vec::new();
     for p in paies {
         let c = cle_de(p);
         if !cles.contains(&c) {
@@ -151,7 +151,7 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: &str, forcer: bool) -> R
         let mut l = Ligne {
             salarie: cle.clone(),
             libelle: s.libelle.to_string(),
-            contrat: p.engagement.numero.as_deref().map(String::from),
+            contrat: p.engagement.numero.clone(),
             pourquoi_pas: String::new(),
             indice: i,
         };
@@ -220,7 +220,7 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
                 ),
             ));
         }
-        lignes.retain(|l| voulus.contains(&l.salarie));
+        lignes.retain(|l| voulus.iter().any(|v| l.salarie == *v));
     }
     let (retenus, ecartes): (Vec<Ligne>, Vec<Ligne>) = lignes.into_iter().partition(|l| l.pourquoi_pas.is_empty());
     // Aucun taux a demander : rien ne s'ecrit, et il n'y a rien a dire.
