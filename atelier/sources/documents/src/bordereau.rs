@@ -248,6 +248,14 @@ fn ligne_de_table<'a>(t: &'a Table, code: &CodeCtp, jour: &Jour) -> Option<&'a L
     meilleure.filter(|l| l.fin.is_none_or(|f| *jour < f))
 }
 
+/// LE LIBELLE D'UN CTP dans la table (l'export du bordereau le montre a cote du code) : celui de sa derniere ligne encore
+/// ouverte, sinon celui de sa premiere ligne ; `None` : la table n'a pas ce code.
+pub fn libelle_du_ctp(code: &CodeCtp) -> R<Option<String>> {
+    let t = table()?;
+    let Some(lignes) = t.get(code) else { return Ok(None) };
+    Ok(lignes.iter().rev().find(|l| l.fin.is_none()).or(lignes.first()).map(|l| l.libelle.clone()))
+}
+
 /// L'arrondi a l'euro des montants et des assiettes declares aux organismes de securite sociale (CSS L. 133-10,
 /// `atelier/reference/sources/code-de-la-securite-sociale/articles-20261013.md` : « arrondi a l'euro le plus proche. La
 /// fraction d'euro egale a 0,50 est comptee pour 1 ») : la moitie vers le haut. Le seul endroit qui arrondit a l'euro, pour
