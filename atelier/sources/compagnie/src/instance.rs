@@ -309,8 +309,8 @@ pub fn ouverte(inst: &Path, plage: Plage) -> R<bool> {
     let depart = creneau_vise(inst, plage)?;
     for i in 0..plage.creneaux {
         let k = (depart + i) % plage.creneaux;
-        if let Some(l) = ecouter(plage.verrou(k))? {
-            drop(l);
+        // Le creneau se prend : personne ne le tient ; la prise d'essai se relache en sortant.
+        if ecouter(plage.verrou(k))?.is_some() {
             return Ok(false);
         }
         if matches!(demander(plage.verrou(k), &ici, false)?, Occupant::Installation(d) if d == ici) {
