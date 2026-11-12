@@ -481,7 +481,7 @@ pub(crate) fn apercu_lu(
             let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Entreprise, &e)?;
             let libelle = match e.mot(CaseEntreprise::RaisonSociale) {
                 Some(r) => r,
-                None => "?".to_string(),
+                None => "L'entreprise, sans raison sociale".to_string(),
             };
             entreprise = Some(FicheImportee::new(NomDeFiche::Entreprise, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e));
             a_creer_liste.push(ACreer { nom: NomDeFiche::Entreprise, rang: None, donnees: e });
@@ -489,7 +489,7 @@ pub(crate) fn apercu_lu(
         } else {
             let libelle = match ctx.entreprise.raison_sociale.portee() {
                 Some(r) => r.to_string(),
-                None => "?".to_string(),
+                None => "L'entreprise, sans raison sociale".to_string(),
             };
             let fiche = proposee::de(NomDeFiche::Entreprise, &ctx.entreprise)?;
             // L'entreprise ne se lit que dans les DSN : sans DSN, rien a quoi comparer la fiche.
@@ -590,7 +590,7 @@ pub(crate) fn apercu_lu(
         if let Some(cle) = connus.get(&o.numero.to_uppercase()) {
             let titre = match ctx.spectacles[cle].titre.portee() {
                 Some(t) => t.to_string(),
-                None => "?".to_string(),
+                None => "Spectacle sans titre".to_string(),
             };
             spectacles.push(FicheImportee::new(NomDeFiche::Spectacle, Some(cle), &format!("{} ({})", titre, o.numero), EtatFiche::Existante, Vec::new(), Vec::new(), &vide));
             continue;

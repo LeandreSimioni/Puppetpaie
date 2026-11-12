@@ -1803,13 +1803,12 @@ declare en S21.G00.40.043 ; il ne se devine pas.",
             }
         };
         Err(refus!(
-            "Contrat {} du {} au {} : {} de {}, et la norme DSN la plafonne a {} en unite << {} >> \
+            "Contrat {} {} : {} de {}, et la norme DSN la plafonne a {} en unite << {} >> \
 ({}, bloc 40{}). A trancher avant de le declarer.",
             e.numero_declare()?,
-            e.debut.jjmmaaaa(),
             match e.fin {
-                Some(j) => j.jjmmaaaa(),
-                None => "?".to_string(),
+                Some(j) => format!("du {} au {}", e.debut.jjmmaaaa(), j.jjmmaaaa()),
+                None => format!("commence le {}, sans terme", e.debut.jjmmaaaa()),
             },
             quoi,
             valeur,

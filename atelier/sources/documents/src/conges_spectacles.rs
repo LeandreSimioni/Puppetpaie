@@ -637,10 +637,7 @@ pub fn description_numerotee(paires: &[(&PaieCs, i64)], ent: &EntrepriseDuDocume
 /// `recapitulatif` : le meme contenu en texte, ce qui va etre imprime et sous quels numeros (la trace des N CE
 /// consommes).
 pub fn recapitulatif(paires: &[(&PaieCs, i64)], ent: &ChampsEntreprise) -> R<String> {
-    let adherent = match ent.congesspectacles_adherent.remplie() {
-        Some(v) => v.to_string(),
-        _ => "?".to_string(),
-    };
+    let adherent = ent.congesspectacles_adherent.remplie().ok_or_else(|| socle::fichiers::absent("congesspectacles_adherent"))?.to_string();
     let mut lignes = vec!["Certificats d'emploi Conges Spectacles".to_string(), format!("Compte (adherent Audiens) : {}", adherent), "-".repeat(76)];
     for (p, premier) in paires {
         for c in certificats(p, *premier)? {

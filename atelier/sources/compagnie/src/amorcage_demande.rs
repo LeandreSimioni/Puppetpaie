@@ -248,12 +248,11 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
         "DEMANDES :".into(),
     ];
     for l in &retenus {
-        let sans_numero = "?";
         let contrat = match l.contrat.as_deref() {
-            Some(c) => c,
-            None => sans_numero,
+            Some(c) => format!("contrat {}", c),
+            None => "sans numéro de contrat".to_string(),
         };
-        out.push(format!("  {} {} contrat {} ({})", gauche(&l.salarie, 14), gauche(&l.libelle, 22), contrat, mois));
+        out.push(format!("  {} {} {} ({})", gauche(&l.salarie, 14), gauche(&l.libelle, 22), contrat, mois));
     }
     if !ecartes.is_empty() {
         out.push(String::new());

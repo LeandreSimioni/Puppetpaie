@@ -61,12 +61,13 @@ fn nomenclatures() -> R<droit::preavis::BaseFctu> {
     droit::preavis::base()
 }
 
-/// `FinDeContrat.libelle_preavis` : le libelle du type de preavis, « ? » s'il est inconnu.
+/// `FinDeContrat.libelle_preavis` : le libelle du type de preavis ; un type que la nomenclature ne connait pas refuse en
+/// le nommant.
 pub fn libelle_preavis(type_preavis: &str) -> R<String> {
-    Ok(match nomenclatures()?.types_preavis.du_code(type_preavis) {
-        Some(c) => c.libelle.clone(),
-        None => "?".to_string(),
-    })
+    match nomenclatures()?.types_preavis.du_code(type_preavis) {
+        Some(c) => Ok(c.libelle.clone()),
+        None => Err(socle::echec::cle(format!("Le type de préavis « {} » n'est pas dans la nomenclature de la DSN.", type_preavis), "type_preavis")),
+    }
 }
 
 /// Le code par defaut d'une nomenclature.

@@ -501,21 +501,17 @@ struct DetailDeLaPage {
 /// `depuis_navigateur` : note ce qui a casse dans l'interface. La page n'envoie
 /// que ce qu'elle a vu ; la nature, l'endroit qui regroupe et le caviardage se
 /// decident ICI. La nature est TOUJOURS `logiciel`. Un endroit que la page ne sait pas (sans fichier, sans ligne)
-/// s'ecrit « interface:? ».
+/// s'ecrit « interface » ; un fichier sans ligne, son seul nom.
 pub fn depuis_navigateur(racine: &Path, rapport: &RapportNavigateur) -> R<Option<Ligne>> {
     let genre = tete(&rapport.genre, 80);
     let fichier = match rapport.fichier.as_deref().map(fichier_court) {
         Some(f) if !f.is_empty() => f,
         _ => "interface".to_string(),
     };
-    let ou = format!(
-        "{}:{}",
-        fichier,
-        match rapport.ligne {
-            Some(l) => l.to_string(),
-            None => "?".to_string(),
-        }
-    );
+    let ou = match rapport.ligne {
+        Some(l) => format!("{}:{}", fichier, l),
+        None => fichier,
+    };
     let detail = DetailDeLaPage { face: "interface", canal: tete(&rapport.canal, 20), colonne: rapport.colonne, ou_dans_la_page: tete(&rapport.ou_dans_la_page, 120) };
     let resume = format!("{}: {}", genre, rapport.message);
     let trace = rapport.pile.as_deref().filter(|p| !p.is_empty()).map(|p| tete(p, JS_PILE_MAX));

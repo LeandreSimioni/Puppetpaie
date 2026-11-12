@@ -339,10 +339,10 @@ impl PaieAer {
 }
 
 fn periode(debut: Option<Jour>, fin: Option<Jour>) -> String {
-    // Une date que l'attestation n'imprime pas lisiblement se dit par « ? ».
+    // Une date que l'attestation n'imprime pas lisiblement se dit telle.
     let j = |x: Option<Jour>| match x {
         Some(j) => j.iso(),
-        None => "?".to_string(),
+        None => "(date illisible)".to_string(),
     };
     format!("{} au {}", j(debut), j(fin))
 }

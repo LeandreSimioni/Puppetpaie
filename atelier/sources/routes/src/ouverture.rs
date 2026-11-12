@@ -923,7 +923,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let compteurs_dit = compteurs.iter().filter(|(k, _)| k.len() == 4 && k.chars().all(|c| c.is_ascii_digit())).max_by(|a, b| a.0.cmp(b.0)).map(|(an, c)| {
         let n = |x: Option<i64>| match x {
             Some(n) => n.to_string(),
-            None => "?".to_string(),
+            None => "aucun".to_string(),
         };
         format!("compteurs {} — bulletin {} · CS {}", an, n(c.bulletin), n(c.certificat_cs))
     });

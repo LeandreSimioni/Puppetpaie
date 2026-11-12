@@ -783,7 +783,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             let origine = Origine::bulletin(porteur.map(chemin_de), porteur.map(|p| p.page));
             let titre_de_la_fiche = match fiche.mot(CaseSpectacle::Titre) {
                 Some(t) => t,
-                None => "?".to_string(),
+                None => "Spectacle sans titre".to_string(),
             };
             let entree = fiche_existante(&mut reponse.spectacles, NomDeFiche::Spectacle, cle, || format!("{} ({})", titre_de_la_fiche, numero));
             entree.ajouter_ecarts(ec);
@@ -1125,10 +1125,10 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
     let declarees_dates: Vec<(String, Option<Jour>, Option<Jour>)> =
         ap.paies.iter().chain(historique_paies.iter()).filter_map(|x| Some((x.paie.nir.clone()?, x.paie.debut, x.paie.fin))).collect();
     let chevauche = import::attestes::chevauche;
-    // Un compte ou une date d'une paie, dans une phrase : « ? » quand elle ne le dit pas.
+    // Un compte ou une date d'une paie, dans une phrase : dite telle quand la piece ne la dit pas.
     let dit = |x: Option<String>| match x {
         Some(t) => t,
-        None => "?".to_string(),
+        None => "(non dit)".to_string(),
     };
     let (mut certificats_confirmes, mut aem_confirmees) = (0usize, 0usize);
     let ordre: Vec<&Attestee> = certificats.iter().filter(|c| c.aem.is_some()).chain(certificats.iter().filter(|c| c.aem.is_none())).collect();
@@ -1501,7 +1501,7 @@ fn creer_l_entreprise(ctx: &Contexte, a_creer: &mut Vec<ACreer>, reponse: &mut I
     let anomalies = crate::importation::fiches::verifier_comme_a_l_ecriture(NomDeFiche::Entreprise, &e)?;
     let libelle = match e.mot(droit::fiche::CaseEntreprise::RaisonSociale) {
         Some(r) => r,
-        None => "?".to_string(),
+        None => "L'entreprise, sans raison sociale".to_string(),
     };
     let mut entree = FicheImportee::new(NomDeFiche::Entreprise, None, &libelle, EtatFiche::ACreer, Vec::new(), anomalies, &e);
     entree.lu_dans = origine;
@@ -1532,7 +1532,7 @@ fn entreprise_existante<'a>(reponse: &'a mut Importation, ctx: &Contexte) -> &'a
     reponse.entreprise.get_or_insert_with(|| {
         let libelle = match ctx.entreprise.raison_sociale.portee() {
             Some(r) => r,
-            None => "?",
+            None => "L'entreprise, sans raison sociale",
         };
         FicheImportee::new(NomDeFiche::Entreprise, None, libelle, EtatFiche::Existante, Vec::new(), Vec::new(), &Saisie::default())
     })

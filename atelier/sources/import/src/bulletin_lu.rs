@@ -2352,7 +2352,7 @@ pub struct Compteurs {
 fn nombre_ecrit(x: Option<Decimal>) -> String {
     match x {
         Some(v) => v.normalize().to_string(),
-        None => "?".to_string(),
+        None => "(non compté)".to_string(),
     }
 }
 

@@ -255,12 +255,12 @@ pub fn grille<'a>(bareme: &'a Pile, le: Option<Jour>, zone: &str) -> RPas<&'a Gr
     meilleure.ok_or_else(|| {
         let connues: BTreeSet<&str> = grilles.iter().map(|g| g.zone.as_str()).collect();
         ErreurPas::SansGrille(socle::refus!(
-            "Aucune grille de taux par defaut pour la zone {} au {}. Zones \
+            "Aucune grille de taux par defaut pour la zone {}{}. Zones \
              connues du bareme : {}.",
             repr(zone),
             match le {
-                Some(j) => j.iso(),
-                None => "?".to_string(),
+                Some(j) => format!(" au {}", j.iso()),
+                None => String::new(),
             },
             connues.into_iter().collect::<Vec<_>>().join(", ")
         ))
@@ -532,17 +532,16 @@ pub fn avertissements(ctx: &Contexte, cles: Option<&[String]>, le: Option<Jour>,
         let mut ligne = format!("{} : ", ctx.nomme(&s.salarie));
         ligne += &match s.situation {
             SituationDuTaux::Valide => continue,
-            SituationDuTaux::Perime => format!(
-                "le dernier taux transmis par la DGFiP ({} %) valait jusqu'au {}",
-                match s.taux {
-                    Some(t) => t.to_string().replace('.', ","),
-                    None => "?".to_string(),
-                },
+            SituationDuTaux::Perime => {
+                let taux = match s.taux {
+                    Some(t) => format!(" ({} %)", t.to_string().replace('.', ",")),
+                    None => String::new(),
+                };
                 match s.valable_jusqu_a {
-                    Some(j) => j.jj_mm_aaaa(),
-                    None => "?".to_string(),
+                    Some(j) => format!("le dernier taux transmis par la DGFiP{} valait jusqu'au {}", taux, j.jj_mm_aaaa()),
+                    None => format!("le dernier taux transmis par la DGFiP{} n'est plus valable", taux),
                 }
-            ),
+            }
             SituationDuTaux::SansNir => "sans NIR dans sa fiche, la DGFiP ne peut transmettre aucun taux".into(),
             SituationDuTaux::Bareme | SituationDuTaux::Inconnu => "aucun taux transmis par la DGFiP".into(),
         };
