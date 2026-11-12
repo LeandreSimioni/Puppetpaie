@@ -1428,7 +1428,7 @@ pub struct TauxPasLus {
 pub struct TauxPasRattache {
     #[serde(flatten)]
     pub releve: ReleveTauxPas,
-    pub salarie: String,
+    pub salarie: droit::contexte::IdSalarie,
 }
 
 /// Ce que `releves_vers_salaries` rend : les taux rattaches a une fiche, et ceux dont aucune fiche ne porte le NIR.
@@ -1616,15 +1616,15 @@ pub fn taux_pas_d_octets(o: &[u8]) -> R<TauxPasLus> {
 
 /// Chaque releve a une fiche par le NIR ; `nirs` est la liste `(cle, nir)` des fiches qui en ont un, dans l'ordre du
 /// fichier.
-pub fn releves_vers_salaries(releves: &[ReleveTauxPas], nirs: &[(String, String)]) -> TauxPasRepartis {
-    let mut par_nir: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+pub fn releves_vers_salaries(releves: &[ReleveTauxPas], nirs: &[(droit::contexte::IdSalarie, String)]) -> TauxPasRepartis {
+    let mut par_nir: std::collections::HashMap<&str, &droit::contexte::IdSalarie> = std::collections::HashMap::new();
     for (c, n) in nirs {
         par_nir.insert(n, c);
     }
     let (mut rattaches, mut orphelins) = (Vec::new(), Vec::new());
     for r in releves {
         match par_nir.get(treize(&r.nir).as_str()) {
-            Some(cle) => rattaches.push(TauxPasRattache { releve: r.clone(), salarie: (*cle).to_string() }),
+            Some(cle) => rattaches.push(TauxPasRattache { releve: r.clone(), salarie: (*cle).clone() }),
             None => orphelins.push(r.clone()),
         }
     }

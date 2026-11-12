@@ -600,13 +600,13 @@ pub fn versions_du_mois(ctx: &droit::contexte::Contexte, mois: Mois, departs: &e
     for e in engagement::etats::du_mois(ctx, mois, departs)? {
         let Some(v) = e.valide() else { continue };
         let brut = &*v.objet().brut;
-        let (Some(cle), Some(numero)) = (&brut.saisie.carte.salarie, brut.saisie.carte.numero.as_deref()) else { continue };
+        let (Some(cle), Some(numero)) = (&brut.saisie.carte.salarie, &brut.saisie.carte.numero) else { continue };
         if garder(cle, numero, brut) {
             if let Some(phrase) = v.a_revalider(ctx) {
                 return Err(refus(phrase));
             }
             let version = v.version().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "version"))?;
-            out.push(Version { salarie: cle.clone(), numero: engagement::numeros::NumeroContrat::lire(numero)?, version, mois: None });
+            out.push(Version { salarie: cle.clone(), numero: numero.clone(), version, mois: None });
         }
     }
     Ok(out)
@@ -693,9 +693,10 @@ mod tests {
             Ligne::Dsn(envoi("DELTA", vec![retour("11", "OK")], DetailDsn::nouveau(false))),
         ];
         let d = departs_des_lignes(&lignes);
+        let numero = engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap();
         for refusee in ["ALPHA", "BETA", "GAMMA"] {
-            assert!(d.de(refusee, "DE1.26.01").is_empty(), "{refusee}");
+            assert!(d.de(&droit::contexte::IdSalarie::lire(refusee).unwrap(), &numero).is_empty(), "{refusee}");
         }
-        assert_eq!(d.de("DELTA", "DE1.26.01").len(), 1);
+        assert_eq!(d.de(&droit::contexte::IdSalarie::lire("DELTA").unwrap(), &numero).len(), 1);
     }
 }

@@ -23,7 +23,8 @@ fn le_format_reel_du_crm_94() {
 #[test]
 fn les_releves_se_rattachent_par_le_nir() {
     let releves = [releve("2990101999999", "1"), releve("1234567890123", "1")];
-    let nirs = [("ALPHA".to_string(), "2990101999999".to_string()), ("BETA".to_string(), "1990101999999".to_string())];
+    let cle = |c: &str| droit::contexte::IdSalarie::lire(c).unwrap();
+    let nirs = [(cle("ALPHA"), "2990101999999".to_string()), (cle("BETA"), "1990101999999".to_string())];
     let r = releves_vers_salaries(&releves, &nirs);
     assert_eq!(r.rattaches.len(), 1);
     assert_eq!(r.rattaches[0].salarie, "ALPHA");
