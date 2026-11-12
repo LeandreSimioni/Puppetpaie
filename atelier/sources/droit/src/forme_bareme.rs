@@ -495,11 +495,13 @@ pub const REGIME_LOCAL: IdDeCotisation = IdDeCotisation::du_moteur("regime_local
 pub const CCN: IdDeCotisation = IdDeCotisation::du_moteur("ccn");
 pub const RETRAITE_T1: IdDeCotisation = IdDeCotisation::du_moteur("retraite_t1");
 /// Les lignes du bareme que le calcul lit par leur cle : la CSG deductible et la CSG-CRDS non deductible (le net fiscal,
-/// les heures en plus), les assurances vieillesse (la reduction des heures en plus), l'APEC (tranche 2), l'AT/MP.
+/// les heures en plus), les assurances vieillesse (la reduction des heures en plus), l'APEC (ses deux tranches, que le
+/// bulletin et les ecarts groupent), l'AT/MP.
 pub const CSG_DED: IdDeCotisation = IdDeCotisation::du_moteur("csg_ded");
 pub const CSG_CRDS_ND: IdDeCotisation = IdDeCotisation::du_moteur("csg_crds_nd");
 pub const VIEIL_PLAF: IdDeCotisation = IdDeCotisation::du_moteur("vieil_plaf");
 pub const VIEIL_DEPLAF: IdDeCotisation = IdDeCotisation::du_moteur("vieil_deplaf");
+pub const APEC_T1: IdDeCotisation = IdDeCotisation::du_moteur("apec_t1");
 pub const APEC_T2: IdDeCotisation = IdDeCotisation::du_moteur("apec_t2");
 pub const ATMP: IdDeCotisation = IdDeCotisation::du_moteur("atmp");
 /// La ligne que le calcul compose lui-meme, hors du bareme, pour la reduction generale (celles des heures en plus :
@@ -1400,6 +1402,26 @@ impl Pile {
     /// La rubrique `id`, si la pile la porte.
     pub fn rubrique(&self, id: &IdDeCotisation) -> Option<&Rubrique> {
         self.rubriques_bulletin.iter().find(|r| r.id == *id)
+    }
+
+    /// LES GARANTIES DE PREVOYANCE de cette pile empilee : la ligne de la prevoyance (`PREVOYANCE`), et les lignes que la
+    /// pile somme avec elle dans une meme cotisation individuelle Prevoyance-Assurance-Mutuelle (S21.G00.81.001 = 059,
+    /// « pour la periode et l'affiliation concernees », `atelier/reference/norme-dsn/texte/bloc-S21.G00.81.txt` l. 228) :
+    /// une cotisation 059 est celle d'une affiliation, et la sante a la sienne (la mutuelle sous l'adhesion `SANTE`).
+    /// INFERENCE, ecrite comme telle : ce qui distingue la prevoyance de la sante sous le code 059 est l'affiliation que
+    /// la pile partage avec la ligne de la prevoyance, pas le nom de l'adhesion. Une cotisation 059 sur une base (sans
+    /// `lignes`) n'en range aucune.
+    pub fn garanties_de_prevoyance(&self) -> Vec<IdDeCotisation> {
+        let mut ids = vec![PREVOYANCE];
+        for c in self.cotisations_dsn.iter().filter(|c| c.code81 == Some(CodeCotisation81::PrevoyanceAssuranceMutuelle)) {
+            let Some(lignes) = c.lignes.as_ref().filter(|l| l.contains(&PREVOYANCE)) else { continue };
+            for l in lignes {
+                if !ids.contains(l) {
+                    ids.push(l.clone());
+                }
+            }
+        }
+        ids
     }
 
     /// CE QUE LA DSN DECLARE DE LA REDUCTION GENERALE de cette pile empilee : chaque code dit par le bareme, sinon un refus

@@ -13,6 +13,7 @@ use socle::texte::euros;
 use socle::echec::{refus, R};
 use socle::num::{div, sub, Decimal};
 use droit::pas::Versement;
+use droit::forme_bareme::{IdDeCotisation, APEC_T1, APEC_T2};
 use rust_decimal::RoundingStrategy;
 use fabrique_pdf::forme::{self as f, Bloc, Cellule, Description, Document, Ligne, Mesure, Morceau};
 use fabrique_pdf::mesure::mesure;
@@ -660,15 +661,22 @@ const FACULTATIVES: &str = "COTISATIONS ET CONTRIBUTIONS SOCIALES FACULTATIVES";
 /// charges dues par l'employeur » ». La caisse est propre au secteur, legale (C. trav. L. 3141-32 et D. 7121-40,
 /// atelier/reference/sources/code-du-travail/articles-20261013.md : l'employeur du spectacle « s'affilie ») et a la seule
 /// charge de l'employeur (le bareme n'a pas de taux salarial).
-fn rang(l: &engagement::calcul::LigneCotisation) -> Rang {
+///
+/// Une garantie de prevoyance de la paie (`garanties`, `engagement::calcul::garanties_de_prevoyance`) est facultative.
+fn rang(l: &engagement::calcul::LigneCotisation, garanties: &[IdDeCotisation]) -> Rang {
     let seule_employeur = l.taux_sal.is_none() && l.montant_sal.is_zero();
+    if garanties.contains(&l.id) {
+        return Rang::Facultative(PREVOYANCE);
+    }
+    if l.id == APEC_T1 || l.id == APEC_T2 {
+        return Rang::Ligne(5, APEC);
+    }
     match l.id.as_str() {
         "maladie" | "regime_local" | "mutuelle" => Rang::Sante,
         "atmp" => Rang::Ligne(1, ATMP),
         "vieil_plaf" | "vieil_deplaf" | "retraite_t1" | "retraite_t2" | "cet" => Rang::Retraite,
         "famille" => Rang::Ligne(3, FAMILLE),
         "chomage" => Rang::Ligne(4, CHOMAGE),
-        "apec_t1" | "apec_t2" => Rang::Ligne(5, APEC),
         "autres_1" | "autres_2" | "autres_3" | "autres_4" | "versement_mobilite" | "conges_spec" if seule_employeur => {
             Rang::Autres
         }
@@ -676,7 +684,6 @@ fn rang(l: &engagement::calcul::LigneCotisation) -> Rang {
         "csg_ded" => Rang::Ligne(9, CSG_DEDUCTIBLE),
         "csg_crds_nd" => Rang::Ligne(10, CSG_NON_DEDUCTIBLE),
         "reduction_generale" | "reduction_heures_en_plus" | "deduction_heures_supplementaires" => Rang::Allegement,
-        id if id == "prevoyance" || id.starts_with("prevoyance_") => Rang::Facultative(PREVOYANCE),
         _ => Rang::Hors(l.famille.clone()),
     }
 }
@@ -701,10 +708,10 @@ fn obligatoire(r: &Rang) -> bool {
 
 /// Les lignes de cotisation d'une paie, groupees par rang dans l'ordre du modele (un tri stable : les familles que le
 /// moteur ne range pas gardent leur ordre entre elles, et les lignes d'un rang celui du moteur).
-fn rangees(p: &Paie) -> Vec<(Rang, Vec<&engagement::calcul::LigneCotisation>)> {
+fn rangees<'p>(p: &'p Paie, garanties: &[IdDeCotisation]) -> Vec<(Rang, Vec<&'p engagement::calcul::LigneCotisation>)> {
     let mut rangees: Vec<(Rang, Vec<&engagement::calcul::LigneCotisation>)> = Vec::new();
     for l in &p.lignes {
-        let r = rang(l);
+        let r = rang(l, garanties);
         match rangees.iter_mut().find(|(x, _)| *x == r) {
             Some((_, v)) => v.push(l),
             None => rangees.push((r, vec![l])),
@@ -820,8 +827,8 @@ fn somme_des_rangs(
 /// - « COTISATIONS ET CONTRIBUTIONS SOCIALES FACULTATIVES » : la prevoyance.
 /// Aucun montant ne change : chaque ligne de la paie s'imprime une fois, et les trois sommes refont les totaux de la
 /// paie (sinon refus).
-fn tableau_modele(p: &Paie) -> R<Vec<Ligne>> {
-    let rangees = rangees(p);
+fn tableau_modele(p: &Paie, garanties: &[IdDeCotisation]) -> R<Vec<Ligne>> {
+    let rangees = rangees(p, garanties);
     let (oblig_sal, oblig_pat) = somme_des_rangs(&rangees, &obligatoire);
     let (fac_sal, fac_pat) = somme_des_rangs(&rangees, &|r| matches!(r, Rang::Facultative(_)));
     let (all_sal, all_pat) = somme_des_rangs(&rangees, &|r| *r == Rang::Allegement);
@@ -856,7 +863,7 @@ fn tableau_modele(p: &Paie) -> R<Vec<Ligne>> {
 /// cotisation -- chaque ligne du bareme sous la ligne (ou le groupe) du bulletin qui la porte, avec sa base, le taux et
 /// le montant de la part salariale et de la part employeur --, puis les trois totaux du bulletin, aux memes montants.
 /// Elle ne dit rien que la paie ne dise : chaque ligne de la paie s'y imprime une fois.
-fn blocs_annexe(p: &Paie, numero: Option<&str>) -> R<Vec<Bloc>> {
+fn blocs_annexe(p: &Paie, numero: Option<&str>, garanties: &[IdDeCotisation]) -> R<Vec<Bloc>> {
     let sal = &p.salarie;
     // Un bulletin sans numero (un apercu) ne le dit pas.
     let bulletin = if let Some(n) = numero { format!("au bulletin n° {}", n) } else { "au bulletin".to_string() };
@@ -891,7 +898,7 @@ fn blocs_annexe(p: &Paie, numero: Option<&str>) -> R<Vec<Bloc>> {
         ],
         th,
     )];
-    let rangees = rangees(p);
+    let rangees = rangees(p, garanties);
     let detail = |r: &Rang, lignes: &[&engagement::calcul::LigneCotisation], corps: &mut Vec<Ligne>| -> R<()> {
         // Les exonerations n'ont pas de titre : la ligne du bulletin qui les porte est leur total, qui les suit.
         if *r != Rang::Allegement {
@@ -956,6 +963,9 @@ pub struct Jeu<'a> {
     /// DIVERSES », entre le montant net social et le net a payer avant impot (arrete du 25/02/2016, art. 1, I ; BOSS,
     /// montant net social, Q 39). Vide : toutes les lignes sont au-dessus du brut.
     pub remboursements: Vec<usize>,
+    /// Les garanties de prevoyance de la paie (`engagement::calcul::garanties_de_prevoyance`) : leurs lignes sont
+    /// facultatives.
+    pub prevoyance: Vec<IdDeCotisation>,
 }
 
 /// Les blocs d'UN bulletin.
@@ -1196,7 +1206,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
         }
         corps.push(ligne(vec![s("MONTANT BRUT"), s(fmt_eur(p.brut))], vec![gras(), Opt::Fond(FOND_BRUT)]));
     }
-    corps.extend(tableau_modele(p)?);
+    corps.extend(tableau_modele(p, &j.prevoyance)?);
     // Le bas du tableau : « MONTANT NET SOCIAL », puis « REMBOURSEMENTS ET DÉDUCTIONS DIVERSES », puis
     // « MONTANT NET À PAYER AVANT IMPÔT SUR LE REVENU », puis « IMPÔT SUR LE REVENU » (« Montant net imposable »,
     // « IMPÔT SUR LE REVENU PRÉLEVÉ À LA SOURCE ») et « MONTANT NET À PAYER (en Euros) », enfin « TOTAL VERSÉ PAR
@@ -1280,7 +1290,7 @@ pub fn description(jeux: &[Jeu], ent: &droit::contexte::EntrepriseDuDocument) ->
         let modele = modele_du_bulletin(ent, &j.paie.salarie)?;
         documents.push(Document::Blocs(blocs_un(j, ent)?));
         if modele == Modele::Complet {
-            documents.push(Document::Blocs(blocs_annexe(j.paie, j.numero)?));
+            documents.push(Document::Blocs(blocs_annexe(j.paie, j.numero, &j.prevoyance)?));
         }
     }
     let marge = Mesure::entier(42);
@@ -1393,6 +1403,7 @@ pub fn jeux_et_description(
             pas,
             rectificatif: rectificatifs.get(&i),
             remboursements: remboursements(ctx, p)?,
+            prevoyance: engagement::calcul::garanties_de_prevoyance(ctx, p)?,
         });
     }
     if jeux.is_empty() {

@@ -22,7 +22,7 @@ use socle::echec::{refus, refus_avec, Lieu, Echec, R};
 use socle::num::{add, court, div, eur, mul, pct, sub, Decimal};
 pub use droit::reduction::ReductionGenerale;
 use droit::bareme::somme_pct;
-use droit::forme_bareme::{IdDeCotisation, Pile, Rubrique, MUTUELLE, PREVOYANCE};
+use droit::forme_bareme::{CotisationSupplementaire, IdDeCotisation, Pile, Rubrique, MUTUELLE, PREVOYANCE};
 use droit::reduction::{au_dela_du_seuil, reduction_generale, reduction_generale_sous_dfs};
 use droit::plafond::{plafond_permanent, pour_paie, EngagementPlafond};
 
@@ -712,7 +712,7 @@ section verifiee.",
 ///   [...] >>. Aucun texte depose ne dit si une autre indemnite hors assiette (une indemnite de rupture exoneree par sa
 ///   propre regle) s'y reintegre : refus (regle 1). Un acompte, un mouvement de tresorerie, n'est rien de tout cela.
 fn dfs_applicable(
-    eng: &Engagement, nat: &Nature, o: &OptionDfs, lb: &[LigneBrut], rubriques_bulletin: &[Rubrique], racine: &std::path::Path,
+    eng: &Engagement, nat: &Nature, o: &OptionDfs, lb: &[LigneBrut], sal: &ChampsSalarie, racine: &std::path::Path,
     jour: &Jour,
 ) -> R<()> {
     let qui = eng.qui();
@@ -725,13 +725,13 @@ prevoyance conventionnelle, ses tranches de retraite et son assiette minimum ne 
             qui, nat.libelle
         )));
     }
-    if let Some(r) = rubriques_bulletin.iter().find(|r| r.id.as_str().starts_with("apec")) {
+    // Un cadre (S21.G00.40.003 = 01) : la notion qui fait ajouter au bareme les lignes de l'Apec (`bareme_cadre`).
+    if droit::bareme::est_cadre(sal) {
         return Err(refus_detaille(format!("{} : la déduction forfaitaire spécifique ne se porte pas sur la paie d'un cadre : aucun texte ne dit l'assiette de l'Apec sous déduction.", qui), None, format!(
-            "{} : une deduction forfaitaire specifique sur la paie d'un cadre (ligne << {} >>). L'assiette de l'Apec sous \
-deduction n'est dans aucun texte depose (atelier/reference/sources/dfs/LISEZ-MOI.md, << Ce qui manque >>) : le logiciel \
-ne la devine pas. Rien n'est calcule.",
-            qui,
-            r.libelle.iter().cloned().collect::<String>()
+            "{} : une deduction forfaitaire specifique sur la paie d'un cadre (statut categoriel 01, qui lui fait cotiser a \
+l'Apec). L'assiette de l'Apec sous deduction n'est dans aucun texte depose (atelier/reference/sources/dfs/LISEZ-MOI.md, \
+<< Ce qui manque >>) : le logiciel ne la devine pas. Rien n'est calcule.",
+            qui
         )));
     }
     for l in lb.iter().filter(|l| !l.soumis && !l.montant.is_zero()) {
@@ -1116,6 +1116,11 @@ pub(crate) fn pile_de_la_paie(ctx: &Contexte, p: &Paie) -> R<Arc<Pile>> {
     bareme_du_salarie(ctx, &p.salarie, &nat, &eng.fin_periode(), caisse, cpf_cdd, majoration)
 }
 
+/// Les garanties de prevoyance de la paie `p` : celles de sa pile de bareme (`Pile::garanties_de_prevoyance`).
+pub fn garanties_de_prevoyance(ctx: &Contexte, p: &Paie) -> R<Vec<IdDeCotisation>> {
+    Ok(pile_de_la_paie(ctx, p)?.garanties_de_prevoyance())
+}
+
 /// LA DISPENSE DE SANTE A DES BORNES. Les accords de branche deposes en
 /// donnent : la dispense de l'assure individuel « ne peut jouer que jusqu'a l'echeance du contrat individuel », celle
 /// d'une couverture collective se justifie chaque annee, et le salarie « cessant de justifier » de son cas adhere
@@ -1391,13 +1396,18 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             plafond_prev = Some(p);
         }
     }
-    // Les autres lignes de prevoyance, sur une tranche 2 : leur part patronale entre aussi dans l'assiette.
+    // Les autres lignes de prevoyance, sur une tranche 2 : leur part patronale entre aussi dans l'assiette. Ce sont
+    // celles que le bareme declare en S21.G00.54 de type 93 (« Cotisation prevoyance et retraite supplementaire »,
+    // « Montants inclus dans la base CSG », `bloc-S21.G00.54.txt`, cahier technique 2026.1 S21.G00.54.001) :
+    // `cotisation_prevoyance_retraite_supp.lignes_patronales`. Une section qui la declare en taux sur une base n'en
+    // nomme aucune.
+    let lignes_93: &[IdDeCotisation] = match &bar.cotisation_prevoyance_retraite_supp {
+        Some(CotisationSupplementaire::DesLignes(l)) => &l.lignes_patronales,
+        Some(CotisationSupplementaire::SurUneBase(_)) | None => &[],
+    };
     let mut tranches_prev = Decimal::new(0, 2);
-    for r in rubriques_bulletin {
+    for r in rubriques_bulletin.iter().filter(|r| r.id != PREVOYANCE && lignes_93.contains(&r.id)) {
         let (id, Some(taux)) = (&r.id, part_patronale(r)) else { continue };
-        if *id == PREVOYANCE || !id.as_str().starts_with("prevoyance") {
-            continue;
-        }
         let base = base_de(r)?;
         let t1 = if base == Assiette::T2PrevoyanceJournaliere && plafond_journalier.is_some() {
             Some(t1_du_contrat(plafond_journalier.unwrap())?)
@@ -1480,7 +1490,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // et sans descendre sous l'assiette minimum ; les assiettes majorees partent du brut abattu (Acoss 2013-019, R6).
     let mut dfs: Option<DeductionForfaitaire> = None;
     if let Some(o) = deduction_forfaitaire(&bar, &sal, &ctx.entreprise)? {
-        dfs_applicable(eng, &nat, &o, &lb, rubriques_bulletin, &ctx.racine, &ctx.lue_au)?;
+        dfs_applicable(eng, &nat, &o, &lb, &sal, &ctx.racine, &ctx.lue_au)?;
         let deja = dfs_deja_deduite(ctx, eng, &sal, precedentes)?;
         let montants: Vec<Decimal> = soumises.iter().map(|l| l.montant).collect();
         let a = abattement_dfs(&o, &montants, brut, deja, plafond);

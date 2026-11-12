@@ -17,7 +17,8 @@
 //!   le moteur ne la connait pas.
 
 use droit::fiche::Lue as _;
-use droit::forme_bareme::{IdDeCotisation, MUTUELLE, PREVOYANCE};
+use droit::contexte::Contexte;
+use droit::forme_bareme::{IdDeCotisation, MUTUELLE};
 use socle::date::Jour;
 use socle::echec::R;
 
@@ -43,7 +44,8 @@ pub struct Portabilite {
 
 /// LA PORTABILITE DU CONTRAT QUE LA PAIE `p` TERMINE (son engagement, de numero `numero`, finit le `fin`) ; `None` : rien
 /// n'est maintenu (une faute lourde, ou aucune garantie collective).
-pub fn de(racine: &std::path::Path, p: &Paie, numero: &str, fin: &Jour) -> R<Option<Portabilite>> {
+pub fn de(ctx: &Contexte, p: &Paie, numero: &str, fin: &Jour) -> R<Option<Portabilite>> {
+    let racine = &ctx.racine;
     // Les motifs de fin pour faute lourde (S21.G00.62.002).
     use droit::natures::MotifDeRupture::{LicenciementFauteLourde, RuptureAnticipeeFauteLourde};
     if matches!(p.engagement.motif_rupture, Some(LicenciementFauteLourde | RuptureAnticipeeFauteLourde)) {
@@ -58,7 +60,9 @@ pub fn de(racine: &std::path::Path, p: &Paie, numero: &str, fin: &Jour) -> R<Opt
             ids.extend(paie.paie.lignes.into_iter().map(|l| l.id));
         }
     }
-    let prevoyance = ids.iter().any(|i| *i == PREVOYANCE || i.as_str().starts_with("prevoyance_"));
+    // Une garantie de prevoyance : une ligne que la pile de la paie range avec la prevoyance (`garanties_de_prevoyance`).
+    let garanties = crate::calcul::garanties_de_prevoyance(ctx, p)?;
+    let prevoyance = ids.iter().any(|i| garanties.contains(i));
     // La dispense de sante est une case d'un salarie au mois : seul un contrat paye au mois la lit.
     let dispense = p.engagement.nat()?.au_mois().is_some_and(|au| p.salarie.permanent.ouvrir(&au).sante_dispense.remplie().is_some());
     let sante = ids.iter().any(|i| *i == MUTUELLE) && !dispense;

@@ -75,7 +75,7 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
     let mut valeurs_cert = marqueurs_communs(&date, p, numero, fin, &ent)?;
     let mut valeurs = valeurs_cert.clone();
     let nom = format!("{} {}", p.salarie.prenom.ecrite("prenom").map_err(|m| m.reclasser(Classe::Manque))?, p.salarie.nom.ecrite("nom").map_err(|m| m.reclasser(Classe::Manque))?);
-    let maintien = engagement::portabilite::de(&ctx.racine, p, numero, &fin)?;
+    let maintien = engagement::portabilite::de(ctx, p, numero, &fin)?;
     // LE MODELE DU CERTIFICAT : celui de la compagnie (ses `gabarits/`, une copie qu'elle a pu modifier) ou celui livre.
     // Quand un maintien est du, un modele qui ne cite pas sa mention la tairait sans le dire : il se refuse.
     let chemin_cert = socle::fichiers::modele_de("certificat-travail.modele", Some(&ent.gabarits), &poste);
