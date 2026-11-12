@@ -36,10 +36,21 @@ pub struct NumeroPour {
 /// d'union, l'espace, le point, l'arobase, le slash, l'underscore et les lettres accentuees de la liste (`ACCENTUES`),
 /// sans espace au debut ni a la fin (§ 4.4.11, `chapitre-4-controles.txt` l. 760-780). Il ne se donne qu'ici
 /// (`former`, regle 4) ; ailleurs il se lit tel qu'il est deja ecrit (`lire`, ou `serde` : la meme chaine), d'un
-/// engagement, d'une charge, d'une DSN deposee. Ni `From<&str>` ni `Default` : un texte quelconque n'en est pas un.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Deserialize, serde::Serialize)]
-#[serde(try_from = "String", into = "String")]
+/// engagement, d'une charge, d'une DSN deposee ; sa saisie (une charge) se range d'abord sans ses blancs de bord
+/// (`rangee`). Ni `From<&str>` ni `Default` : un texte quelconque n'en est pas un.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
+#[serde(into = "String")]
 pub struct NumeroContrat(String);
+
+impl<'de> serde::Deserialize<'de> for NumeroContrat {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        NumeroContrat::lire(&socle::forme::range_si_saisi(String::deserialize(d)?, NumeroContrat::rangee)).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
+impl droit::fiche::FormeDeCase for NumeroContrat {
+    const RANGER: Option<fn(&str) -> String> = Some(NumeroContrat::rangee);
+}
 
 /// Les caracteres accentues qu'un numero de contrat admet (§ 4.4.11).
 const ACCENTUES: [char; 8] = ['à', 'é', 'è', 'ê', 'ë', 'ï', 'ô', 'ç'];
@@ -57,6 +68,11 @@ impl NumeroContrat {
             ));
         }
         Ok(NumeroContrat(texte.to_string()))
+    }
+
+    /// Le numero saisi `texte` dans sa forme, avant d'etre lu : sans ses blancs de bord (`FormeDeCase::RANGER`).
+    pub fn rangee(texte: &str) -> String {
+        droit::fiche::sans_blancs_de_bord(texte)
     }
 
     /// Le numero d'un texte dit : absent, aucun ; une autre forme que celle de la norme (le texte vide compris) se refuse.

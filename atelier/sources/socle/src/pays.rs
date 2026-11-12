@@ -54,8 +54,14 @@ impl CodePays {
         CodePays("FR".to_string())
     }
 
-    /// Ce qui refuse `texte` a la saisie, que la porte a deja range sans blancs de bord et en capitales
-    /// (`droit::fiche::Declaree::rangee`) ; rien pour un texte vide.
+    /// LE TEXTE SAISI `texte` DANS SA FORME, avant d'etre lu : sans ses blancs de bord, en capitales
+    /// (`droit::fiche::FormeDeCase::RANGER`, `forme::range_si_saisi`).
+    pub fn rangee(texte: &str) -> String {
+        texte.trim_matches(crate::texte::blanc).to_uppercase()
+    }
+
+    /// Ce qui refuse `texte` a la saisie, que la porte a deja range sans blancs de bord et en capitales (`rangee`) ;
+    /// rien pour un texte vide.
     pub fn faute(texte: &str) -> Option<String> {
         if texte.is_empty() {
             return None;
@@ -85,7 +91,7 @@ impl std::fmt::Display for CodePays {
 
 impl<'de> Deserialize<'de> for CodePays {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        CodePays::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+        CodePays::lire(&crate::forme::range_si_saisi(String::deserialize(d)?, CodePays::rangee)).map_err(|e| serde::de::Error::custom(e.phrase))
     }
 }
 

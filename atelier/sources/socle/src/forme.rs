@@ -28,6 +28,32 @@ pub fn lire<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
     lire_texte(&v.to_string(), phrase)
 }
 
+thread_local! {
+    /// Vrai le temps de lire une saisie (`lire_saisie`).
+    static EN_SAISIE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// UNE SAISIE LUE (la charge d'une route) : la donnee `v` lue en `T` comme `lire`, le texte de chaque notion qui range sa
+/// saisie (`droit::fiche::FormeDeCase::RANGER`) d'abord range dans sa forme (`range_si_saisi`), comme la saisie d'une
+/// fiche. Un fichier se lit par `lire`, tel qu'il est ecrit.
+#[track_caller]
+pub fn lire_saisie<T: DeserializeOwned>(v: &Value, phrase: &str) -> R<T> {
+    let avant = EN_SAISIE.replace(true);
+    let lu = lire(v, phrase);
+    EN_SAISIE.set(avant);
+    lu
+}
+
+/// LE TEXTE `texte` D'UNE NOTION QUI RANGE SA SAISIE, a sa lecture : range par `ranger` (son `FormeDeCase::RANGER`) dans
+/// une saisie (`lire_saisie`), tel quel ailleurs.
+pub fn range_si_saisi(texte: String, ranger: fn(&str) -> String) -> String {
+    if EN_SAISIE.get() {
+        ranger(&texte)
+    } else {
+        texte
+    }
+}
+
 /// Le texte JSON `texte` lu en `T` (`lire`, sans passer par une `Value`).
 #[track_caller]
 pub fn lire_texte<T: DeserializeOwned>(texte: &str, phrase: &str) -> R<T> {
@@ -95,6 +121,17 @@ impl Objet {
             m.remove(*c);
         }
         lire(&Value::Object(m), phrase)
+    }
+
+    /// L'objet, une saisie (la charge d'une route), sans ses cles `sans`, lu en `T` comme `lire`, chaque texte range
+    /// dans la forme de sa notion (`lire_saisie`).
+    #[track_caller]
+    pub fn lire_saisie<T: DeserializeOwned>(&self, sans: &[&str], phrase: &str) -> R<T> {
+        let mut m = self.0.clone();
+        for c in sans {
+            m.remove(*c);
+        }
+        lire_saisie(&Value::Object(m), phrase)
     }
 
     /// LES SEULES CLES `cles` DE L'OBJET (celles qu'il porte), LUES EN LEUR FORME `T` : ce que l'enveloppe lit a cote de

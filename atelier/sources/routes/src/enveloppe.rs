@@ -142,9 +142,10 @@ impl Charge {
 
     /// LA CHARGE LUE EN SA FORME `T` (`serde`, `deny_unknown_fields`), sans le mot de passe de l'enveloppe : une cle que
     /// la forme ne connait pas, une cle qui manque, une valeur d'une autre forme la refusent (`MalFormee`), la cle
-    /// fautive a part ; rien ne s'ecrit.
+    /// fautive a part ; rien ne s'ecrit. Une charge est une saisie : le texte de chaque notion se range d'abord dans sa
+    /// forme, comme la saisie d'une fiche (`socle::forme::lire_saisie`).
     pub fn lire<T: DeserializeOwned>(&self) -> R<T> {
-        self.objet.lire(&[MOT_DE_PASSE], "La demande est mal formée.").map_err(|m| m.reclasser(Classe::MalFormee))
+        self.objet.lire_saisie(&[MOT_DE_PASSE], "La demande est mal formée.").map_err(|m| m.reclasser(Classe::MalFormee))
     }
 
     /// Le mot de passe du logiciel tape pour cette route, s'il est donne (un texte non vide).

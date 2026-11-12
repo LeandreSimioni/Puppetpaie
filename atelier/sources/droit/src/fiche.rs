@@ -440,7 +440,8 @@ texte_borne! {
 
 /// CE QU'UNE NOTION LUE PORTE AVEC SON TEXTE : elle se lit de son seul lecteur (`lire`, a la lecture du fichier comme a
 /// la porte) et se refuse a la saisie par sa faute (`FormeDeCase::FAUTE`) ; sa saisie se range d'abord dans sa forme
-/// (`$ranger`, `FormeDeCase::RANGER`) ; elle s'ecrit telle qu'elle a ete lue.
+/// (`$ranger`, `FormeDeCase::RANGER`), qu'elle soit la case d'une fiche ou la valeur d'une charge
+/// (`socle::forme::range_si_saisi`) ; elle s'ecrit telle qu'elle a ete lue.
 macro_rules! notion_lue {
     ($nom:ident rangee par $ranger:path, faute a part) => {
         impl AsRef<str> for $nom {
@@ -464,7 +465,7 @@ macro_rules! notion_lue {
 
         impl<'de> Deserialize<'de> for $nom {
             fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                $nom::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+                $nom::lire(&socle::forme::range_si_saisi(String::deserialize(d)?, $nom::rangee)).map_err(|e| serde::de::Error::custom(e.phrase))
             }
         }
 
@@ -502,7 +503,7 @@ pub fn sans_blancs_de_bord(texte: &str) -> String {
 }
 
 /// UNE SAISIE SANS SES BLANCS DE BORD, EN CAPITALES : la forme rangee d'un code que son texte ecrit en capitales (un code
-/// pays ISO 3166, un code INSEE de commune : 2A, 2B).
+/// INSEE de commune : 2A, 2B ; le code pays ISO 3166 a la sienne, `socle::pays::CodePays::rangee`).
 pub fn en_capitales(texte: &str) -> String {
     sans_blancs_de_bord(texte).to_uppercase()
 }
@@ -1240,7 +1241,7 @@ impl FormeDeCase for Montant {}
 impl FormeDeCase for socle::paris::Moment {}
 impl FormeDeCase for socle::pays::CodePays {
     const FAUTE: Option<fn(&str) -> Option<String>> = Some(socle::pays::CodePays::faute);
-    const RANGER: Option<fn(&str) -> String> = Some(en_capitales);
+    const RANGER: Option<fn(&str) -> String> = Some(socle::pays::CodePays::rangee);
 }
 impl<T: FormeDeCase> FormeDeCase for Vec<T> {
     const VALEURS: &'static [&'static str] = T::VALEURS;
