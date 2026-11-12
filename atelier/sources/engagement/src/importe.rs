@@ -400,15 +400,19 @@ impl Importe {
         self.nature_dite()
     }
 
-    /// LA NATURE SOUS LAQUELLE CE QUI A ETE VERSE SE RANGE (`paie`) : la sienne (`nature`) ; tant qu'elle reste a dire,
-    /// celle d'un contrat d'usage, sous laquelle l'import range la paie que l'ancien logiciel a versee : ses montants sont
-    /// ceux des pieces, rien ne s'y calcule. Un contrat a dire ne se compare pas (`ecarts::comparer`) et attend sa nature
-    /// (`import::nature`).
-    pub fn nature_rangee(&self) -> NatureDeContrat {
-        match self.nature() {
-            Some(n) => n,
-            None => NatureDeContrat::CdduSpectacle,
-        }
+    /// LA NATURE SOUS LAQUELLE CE QUI A ETE VERSE SE RANGE (`paie`) : la sienne (`nature`). Une nature ne se devine pas
+    /// (regle 6) : tant qu'elle reste a dire, le refus la nomme, et elle se dit par `importation-nature`.
+    pub fn nature_rangee(&self) -> R<NatureDeContrat> {
+        self.nature().ok_or_else(|| {
+            socle::echec::cle(
+                format!(
+                    "{} (rang {}) : la nature de ce contrat repris reste à dire (Configuration, « Reprendre l'historique ») ; \
+                     ce qu'il a versé ne se range pas sans elle.",
+                    self.objet.fichier, self.objet.rang
+                ),
+                "nature",
+            )
+        })
     }
 
     /// La nature dite (l'engagement) ou attestee (la piece) ; `None` : ni l'un ni l'autre ne la porte.
@@ -469,7 +473,7 @@ impl Importe {
         if let Some(n) = self.nature_dite() {
             contrat.nature = Some(n);
         }
-        // Importe le jour ou il l'a ete la premiere fois ; sinon, aujourd'hui, par cet import.
+        // Importe le jour ou il l'a ete la premiere fois ; sinon, le jour de l'import de ses pieces (`Pieces::le`).
         contrat.importe_le.get_or_insert(self.le());
         let numero = self.carte().numero.clone().filter(|n| !n.is_empty());
         Ok(Some(ContratLu { salarie: self.cle_ecrite()?, debut: self.carte().debut, fin: self.carte().fin, numero, contrat }))
@@ -581,7 +585,7 @@ impl Importe {
         let p = self.paies().get(&mois).ok_or_else(|| socle::refus!("{} (rang {}) : aucune paie importee en {}", self.objet.fichier, self.objet.rang, mois))?;
         let contrat = self.contrat();
 
-        let nature = self.nature_rangee();
+        let nature = self.nature_rangee()?;
         let nat = nature.proprietes()?;
         let ctx = ctx.du_mois(mois)?;
         let cle = self.carte().salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?;

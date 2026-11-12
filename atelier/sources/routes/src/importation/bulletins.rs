@@ -2030,7 +2030,7 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &str, chemin: &str) -> R<(Compte, 
     // natures 02 et 10, CCH-11 : regle 6). Avec l'une d'elles, le bulletin atteste un CDDU.
     // Sans aucune, c'est le contrat d'un permanent -- CDI ou CDD de droit commun, que le bulletin ne dit pas et qu'on ne
     // devine pas : sa nature reste a dire, se demande apres l'import (`import::nature`), et le contrat ne se compare ni ne
-    // se reprend en attendant (`Importe::nature_rangee` dit sous quelle nature ce qui a ete verse se range).
+    // se reprend en attendant (`Importe::nature_rangee` refuse de ranger ce qui a ete verse tant qu'elle reste a dire).
     let nature = marque_d_intermittent(&l.b).then_some(NatureDeContrat::CdduSpectacle);
     let mut a = ContratAtteste::vide(Attestation::Bulletin, nature);
     a.numero_objet = plein(&l.b.numero_objet);
