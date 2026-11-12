@@ -62,8 +62,9 @@ pub const FICTIVES: [(&str, &str); 10] = [
     ("FR7630001007941234567890185", "IBAN fabriqué (clé 85 juste)"),
     // Les deux suivants se disent inventés dans leur fichier : la vie de démonstration
     // `atelier/outils/demos/les-faisceaux/gestes.jsonl`, que reprend le scenario du banc `tests/donnees/scenarios/treteaux-du-banc/` (« Aucune valeur ne désigne une entreprise ou une personne réelle »), et
-    // `tests/fichiers/caviardage.rs` (« les IBAN sont faits de zéros »).
-    ("FR7630001007943252044000039", "IBAN de la démonstration Les Faisceaux"),
+    // `tests/fichiers/caviardage.rs` (« les IBAN sont faits de zéros »). Celui des Faisceaux : clé juste (76, et clé RIB
+    // 23), banque « 12345 », comme les fictives.
+    ("FR7612345007943252044000023", "IBAN de la démonstration Les Faisceaux"),
     ("FR7630001000000000000000185", "IBAN fait de zéros, test du caviardage"),
     // La fictive de référence du Fil de Fer (`atelier/fictives/fictive-fil-de-fer/LISEZ-MOI.md` : « tout ce qui suit est
     // inventé ») : le compte de la compagnie, clé juste, banque « 12345 ».
@@ -105,10 +106,11 @@ impl Motif {
     }
 
     /// Une valeur qui n'est pas inventée, dans `ligne` (`minuscules` : la même, en minuscules) d'un fichier qui est un
-    /// `binaire` ou non.
-    fn trouve(&self, ligne: &str, minuscules: &str, binaire: bool) -> bool {
+    /// `programme` compilé ou non : un programme se fabrique depuis les sources, que ce garde fouille ; la forme d'un NIR
+    /// ne s'y cherche pas (ses constantes en ont), les vraies valeurs si.
+    fn trouve(&self, ligne: &str, minuscules: &str, programme: bool) -> bool {
         match self {
-            Motif::Nir => !nirs_non_inventes(ligne.as_bytes(), binaire).is_empty(),
+            Motif::Nir => !programme && !nirs_non_inventes(ligne.as_bytes()).is_empty(),
             Motif::Forme { re, .. } => porte_fr(ligne) && re.find_iter(ligne).any(|t| !fictive(t.as_str())),
             Motif::Valeur { minuscules: v, .. } => minuscules.contains(v.as_str()),
         }
@@ -118,16 +120,13 @@ impl Motif {
 /// Les numéros à la forme d'un NIR qui ne sont pas inventés, hors d'une adresse web : `(début, numéro)`. La forme : sexe,
 /// année, mois (01-12, ou 20-99 pour les cas spéciaux), département (deux chiffres, 2A, 2B), six chiffres, puis la clé si
 /// elle suit ; ni précédé d'une lettre ou d'un chiffre, ni suivi d'un troisième chiffre (un horodatage « 20260906080000 »
-/// en a quatorze). Dans un `binaire` seulement (un fichier qui n'est pas de l'UTF-8, `binaire`), ni les décimales d'une
-/// constante écrite « 0. » (les quinze chiffres qu'une bibliothèque porte dans les binaires livrés) ; dans un texte, un
-/// numéro après « 0. » se signale comme un autre. Inventé : listé dans `FICTIVES`, ou la marque `INVENTE` dans ses treize
+/// en a quatorze). Inventé : listé dans `FICTIVES`, ou la marque `INVENTE` dans ses treize
 /// chiffres.
-pub fn nirs_non_inventes(o: &[u8], binaire: bool) -> Vec<(usize, String)> {
+pub fn nirs_non_inventes(o: &[u8]) -> Vec<(usize, String)> {
     let chiffre = |i: usize| o.get(i).is_some_and(u8::is_ascii_digit);
     let mut trouves = Vec::new();
     for i in 0..o.len().saturating_sub(12) {
-        let decimales = binaire && i > 1 && o[i - 1] == b'.' && o[i - 2] == b'0' && !(i > 2 && o[i - 3].is_ascii_digit());
-        if !matches!(o[i], b'1' | b'2') || (i > 0 && o[i - 1].is_ascii_alphanumeric()) || decimales {
+        if !matches!(o[i], b'1' | b'2') || (i > 0 && o[i - 1].is_ascii_alphanumeric()) {
             continue;
         }
         let mois = matches!((o[i + 3], o[i + 4]), (b'0', b'1'..=b'9') | (b'1', b'0'..=b'2') | (b'2'..=b'9', b'0'..=b'9'));
@@ -147,9 +146,10 @@ pub fn nirs_non_inventes(o: &[u8], binaire: bool) -> Vec<(usize, String)> {
     trouves
 }
 
-/// Un fichier qui n'est pas de l'UTF-8 : un binaire.
-pub fn binaire(o: &[u8]) -> bool {
-    std::str::from_utf8(o).is_err()
+/// Un programme compilé, à sa signature de format : ELF (Linux), PE (`MZ`, Windows), Mach-O (Mac, 32 ou 64 bits, ou
+/// universel).
+pub fn programme_compile(o: &[u8]) -> bool {
+    [&b"\x7fELF"[..], b"MZ", b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe"].iter().any(|m| o.starts_with(m))
 }
 
 /// Un numéro de document dans une adresse web (l'Unédic en a de treize chiffres, EUR-Lex en met dans ses requêtes)
@@ -374,7 +374,7 @@ fn chercher(fichier: &str, o: &[u8], motifs: &[Motif], deposes: &BTreeMap<String
     // Un binaire se fouille en octets : ce qui n'est pas de l'UTF-8 devient un remplaçant, qui sépare les chiffres
     // d'avant et d'après au lieu de les recoller.
     let texte = String::from_utf8_lossy(o);
-    let binaire = binaire(o);
+    let programme = programme_compile(o);
     // Les séparateurs de lignes n'ont pas de casse : les deux textes ont les mêmes lignes. Sans valeur lue (un clone
     // frais, le nuage), les minuscules ne servent à rien.
     let valeurs = siens.iter().any(|m| matches!(m, Motif::Valeur { .. }));
@@ -382,7 +382,7 @@ fn chercher(fichier: &str, o: &[u8], motifs: &[Motif], deposes: &BTreeMap<String
     let lignes_min = if valeurs { socle::texte::lignes_du_texte(&minuscules) } else { Vec::new() };
     let lignes_min = lignes_min.into_iter().chain(std::iter::repeat(""));
     for (n, (ligne, min)) in socle::texte::lignes_du_texte(&texte).into_iter().zip(lignes_min).enumerate() {
-        if let Some(m) = siens.iter().find(|m| m.trouve(ligne, min, binaire)) {
+        if let Some(m) = siens.iter().find(|m| m.trouve(ligne, min, programme)) {
             trouvailles.push(Trouvaille { fichier: fichier.to_string(), ligne: n + 1, quoi: m.quoi().to_string() });
         }
     }

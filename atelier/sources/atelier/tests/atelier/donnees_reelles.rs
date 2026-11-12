@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use regex::Regex;
 
-use atelier::verifier_avant_commit::{binaire, ce_qui_part, depose_tel_quel, nirs_non_inventes};
+use atelier::verifier_avant_commit::{ce_qui_part, depose_tel_quel, nirs_non_inventes, programme_compile};
 
 /// En deux morceaux, pour que ce fichier ne porte pas lui-même ce qu'il refuse.
 const NOM_REEL: &str = concat!("ueu", "eue");
@@ -70,8 +70,13 @@ fn rien_de_la_compagnie_reelle_n_est_ecrit_dans_ce_qui_part() {
             Ok(o) => o,
             Err(e) => panic!("{} part avec Git et ne se lit pas : {}", rel, e),
         };
+        // Un programme compilé se fabrique depuis les sources fouillées ici : ses constantes ont la forme d'un NIR, et il
+        // porte l'identifiant de l'application que ses sources disent.
+        if programme_compile(&o) {
+            continue;
+        }
         if !depose_tel_quel(&deposes, &rel, &o) {
-            nirs.extend(nirs_non_inventes(&o, binaire(&o)).into_iter().map(|(i, _)| format!("{}:{}", rel, ligne(&o, i))));
+            nirs.extend(nirs_non_inventes(&o).into_iter().map(|(i, _)| format!("{}:{}", rel, ligne(&o, i))));
         }
         if DU_CODE.iter().any(|d| rel.starts_with(d)) {
             if rel.to_lowercase().contains(NOM_REEL) {
