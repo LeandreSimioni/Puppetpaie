@@ -239,8 +239,8 @@ function champDeFiche(c, fiche, nom) {
         ${a ? `<div class="anomalie ${a.gravite}">${echapper(a.message)}</div>` : ""}
       </div>`;
     }
-    // LES JOURS TRAVAILLÉS : une case par jour de la semaine, cochée si la fiche le dit. Ce que le moteur compte quand
-    // elle ne dit rien, l'aide du champ le dit ; les cases ne partent que si on les touche (`data-absent`, `lireFormulaire`).
+    // LES JOURS TRAVAILLÉS : une case par jour de la semaine, cochée si la fiche le dit ; une fiche qui ne dit rien, le
+    // calcul la refuse en nommant la case. Les cases ne partent que si on les touche (`data-absent`, `lireFormulaire`).
     if (c.cle === "jours_travailles" && nom === "salarie") {
       const coches = Array.isArray(v) ? v : [];
       return `<div class="champ pleine">

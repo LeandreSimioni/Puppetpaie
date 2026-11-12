@@ -120,13 +120,6 @@ pub struct Horaire {
     pub feries_non_payes: Vec<(Jour, String)>,
 }
 
-impl Horaire {
-    /// Du lundi au vendredi, chaque ferie paye : l'horaire d'une fiche qui ne dit rien, d'un salarie ancien.
-    pub fn du_lundi_au_vendredi() -> Self {
-        Horaire { jours: JoursTravailles::du_lundi_au_vendredi(), feries_non_payes: Vec::new() }
-    }
-}
-
 /// La part du mois qu'une periode payee porte de son salaire mensuel (`part_du_mois`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartDuMois {
@@ -184,9 +177,6 @@ art. X.3 : le premier ou le dernier mois incomplet d'un artiste)",
                 self.jours_travailles.en_mots()
             ),
         };
-        if !self.jours_travailles.dits {
-            dit.push_str(". La fiche ne dit pas ses jours travaillés : le logiciel compte du lundi au vendredi");
-        }
         if self.regle == RegleDuMoisIncomplet::Ccneac1285Artiste && self.fraction > Decimal::ONE {
             dit.push_str(
                 ". C'est plus que le salaire mensuel : l'article X.3 ne borne pas le mois incomplet, le logiciel non plus",

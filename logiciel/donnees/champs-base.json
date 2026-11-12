@@ -2147,11 +2147,11 @@
    "ecran": true
   },
   {
-   "note": "LES JOURS TRAVAILLES D'UN PERMANENT : les jours de la semaine que son horaire programme. Les heures du mois\ns'y comptent (`droit::conges::JoursTravailles`) : le salaire d'un mois incomplet par l'horaire reel (Cass. soc.,\n20/01/1999, n° 96-45.042, atelier/reference/sources/mois-incomplet/), la retenue d'une absence, les feries chomes\nqu'il ne voit pas payes. Une liste de jours (\"lundi\" ... \"dimanche\") ; absente, du lundi au vendredi, ce que la case\nmontre cochee. Datee comme toute la fiche.",
+   "note": "LES JOURS TRAVAILLES D'UN PERMANENT : les jours de la semaine que son horaire programme. Les heures du mois\ns'y comptent (`droit::conges::JoursTravailles`) : le salaire d'un mois incomplet par l'horaire reel (Cass. soc.,\n20/01/1999, n° 96-45.042, atelier/reference/sources/mois-incomplet/), la retenue d'une absence, les feries chomes\nqu'il ne voit pas payes. Une liste de jours (\"lundi\" ... \"dimanche\") ; aucun texte ne la fixe : absente, le calcul d'un\nmois au salaire mensuel refuse en nommant la case. Datee comme toute la fiche.",
    "cle": "jours_travailles",
    "libelle": "Jours travaillés",
    "forme": "structure",
-   "aide": "Les jours de la semaine où il travaille, d'après son contrat. Ses heures du mois s'y comptent : le salaire d'un mois commencé ou fini en cours de route, ce qu'une absence retire. Sans réponse, le logiciel compte du lundi au vendredi.",
+   "aide": "Les jours de la semaine où il travaille, d'après son contrat. Ses heures du mois s'y comptent : le salaire d'un mois commencé ou fini en cours de route, ce qu'une absence retire.",
    "longueur": null,
    "exemple": "",
    "choix": [],

@@ -19,8 +19,8 @@ pub fn jours_ouvrables(debut: &Jour, fin: &Jour, chomes: Option<&str>) -> R<i64>
 pub const JOURS_DE_LA_SEMAINE: [&str; 7] = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
 
 /// LES JOURS TRAVAILLES D'UN PERMANENT : les jours de la semaine que son horaire programme, lus sur sa fiche
-/// (`jours_travailles`, datee comme toute la fiche), du lundi au vendredi tant qu'elle n'en dit pas d'autres -- la valeur
-/// que l'aide du champ annonce (`champs-base.json`). C'est l'horaire de l'entreprise pour ce salarie : les
+/// (`jours_travailles`, datee comme toute la fiche). Aucun texte ne les fixe : seule la compagnie les connait, et une
+/// fiche qui ne les dit pas refuse en nommant la case. C'est l'horaire de l'entreprise pour ce salarie : les
 /// heures du mois s'y comptent (`jours_entre`, `periodes::part_du_mois`), et les heures d'un jour sont la duree
 /// hebdomadaire sur leur nombre (`heures_par_jour`). Fiche DSN 2640 (`atelier/reference/sources/suspension-non-remuneree/
 /// net-entreprises-fiche2640-volumes-activite-s21g00-53-20260929.txt`, « Le decompte et calcul des absences au reel ») :
@@ -29,16 +29,9 @@ pub const JOURS_DE_LA_SEMAINE: [&str; 7] = ["lundi", "mardi", "mercredi", "jeudi
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct JoursTravailles {
     jours: [bool; 7],
-    /// La fiche les dit (sinon : du lundi au vendredi, ce que l'aide du champ annonce).
-    pub dits: bool,
 }
 
 impl JoursTravailles {
-    /// Du lundi au vendredi, quand la fiche ne dit rien.
-    pub fn du_lundi_au_vendredi() -> Self {
-        JoursTravailles { jours: [true, true, true, true, true, false, false], dits: false }
-    }
-
     /// Les jours que dit la fiche `fiche` (sa valeur au jour lu), d'un salarie au mois.
     pub fn de_la_fiche(fiche: &crate::fiche::FicheSalarie, au_mois: &crate::natures::AuMois) -> R<Self> {
         Self::de_la_case(&fiche.permanent.ouvrir(au_mois).jours_travailles, fiche.id.as_str())
@@ -49,10 +42,19 @@ impl JoursTravailles {
         format!("Fiche de {} : « Jours travaillés » est une liste de jours de la semaine (lundi, mardi...).", qui)
     }
 
-    /// Les jours que dit la case `jours_travailles` d'une fiche (`qui` : la cle du salarie) ; une case que la fiche ne
-    /// dit pas : du lundi au vendredi. Refus : une liste vide.
+    /// Les jours que dit la case `jours_travailles` d'une fiche (`qui` : la cle du salarie). Refus : une case que la fiche
+    /// ne dit pas, une liste vide.
     pub fn de_la_case(case: &Option<Vec<crate::fiche::JourDeLaSemaine>>, qui: &str) -> R<Self> {
-        let Some(liste) = case.dite() else { return Ok(Self::du_lundi_au_vendredi()) };
+        let Some(liste) = case.dite() else {
+            return Err(socle::echec::cle(
+                format!(
+                    "Fiche de {} : « Jours travaillés » n'est pas dit. Les heures du mois se comptent sur les jours que \
+l'horaire programme (Cass. soc., 20/01/1999) : cocher ceux de son contrat.",
+                    qui
+                ),
+                "jours_travailles",
+            ));
+        };
         let mut jours = [false; 7];
         for j in liste {
             jours[*j as usize] = true;
@@ -64,7 +66,7 @@ l'horaire programme (Cass. soc., 20/01/1999) : cocher ceux de son contrat.",
                 qui
             ));
         }
-        Ok(JoursTravailles { jours, dits: true })
+        Ok(JoursTravailles { jours })
     }
 
     /// Le jour `j` est-il travaille ?

@@ -770,11 +770,9 @@ fn changements_a_dater(nom: NomDeFiche, avant: &Saisie, apres: &Saisie, cles: &[
         return Ok(Vec::new());
     }
     // Une case que la fiche ne dit pas se montre a ce que le moteur lit alors : une case a cocher a son defaut
-    // (`booleen_defaut`), les jours travailles du lundi au vendredi (`droit::conges::JoursTravailles`). La laisser ainsi ne
-    // change rien.
-    let mut defauts: HashMap<CaseDeFiche, Valeur> =
+    // (`booleen_defaut`). La laisser ainsi ne change rien.
+    let defauts: HashMap<CaseDeFiche, Valeur> =
         champs::fiche(nom)?.into_iter().filter(|c| c.forme == champs::Forme::Booleen).map(|c| (c.cle, Valeur::OuiNon(c.booleen_defaut))).collect();
-    defauts.insert(droit::fiche::CasePieceSalarie::JoursTravailles.into(),Valeur::Mots(droit::conges::JOURS_DE_LA_SEMAINE[..5].iter().map(|j| j.to_string()).collect()));
     let sans_date = faits_sans_date();
     let lisibles = champs::formes_lisibles(nom)?;
     Ok(cles
