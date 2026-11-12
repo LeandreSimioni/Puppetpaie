@@ -729,7 +729,7 @@ pub struct Hasards<'a> {
 /// Le message complet, pieces jointes comprises, tel que `EmailMessage.as_bytes()` l'ecrit, l'expediteur precede du
 /// nom que la compagnie affiche (« Compagnie du Fil <adresse> ») ; sans nom, l'adresse
 /// seule.
-pub fn en_mime_nomme<Pour>(message: &Message<Pour>,expediteur: &str, nom: Option<&str>) -> R<Vec<u8>> {
+pub fn en_mime_nomme<Pour>(message: &Message<Pour>, expediteur: &str, nom: Option<&str>) -> R<Vec<u8>> {
     let mut frontiere = frontiere_au_hasard;
     let domaine = match expediteur.rsplit_once('@') {
         Some((_, d)) => d,
@@ -743,11 +743,11 @@ pub fn en_mime_nomme<Pour>(message: &Message<Pour>,expediteur: &str, nom: Option
     en_mime_complet(message, expediteur, nom, hasards)
 }
 
-pub fn en_mime_avec<Pour>(message: &Message<Pour>,expediteur: &str, hasards: Hasards) -> R<Vec<u8>> {
+pub fn en_mime_avec<Pour>(message: &Message<Pour>, expediteur: &str, hasards: Hasards) -> R<Vec<u8>> {
     en_mime_complet(message, expediteur, None, hasards)
 }
 
-fn en_mime_complet<Pour>(message: &Message<Pour>,expediteur: &str, nom: Option<&str>, hasards: Hasards) -> R<Vec<u8>> {
+fn en_mime_complet<Pour>(message: &Message<Pour>, expediteur: &str, nom: Option<&str>, hasards: Hasards) -> R<Vec<u8>> {
     let Hasards { date, message_id, frontiere } = hasards;
     let adresse = |a: &str| -> R<()> {
         if adresse_simple(a) {
