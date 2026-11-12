@@ -297,7 +297,7 @@ forme! {
     #[derive(Default)]
     pub struct VersementMobiliteTaux {
         pub taux: Option<Nombre>,
-        pub code_insee: Option<String>,
+        pub code_insee: Option<crate::fiche::CodeInsee>,
         pub autorite: Option<String>,
     }
 }
@@ -584,7 +584,7 @@ forme! {
         pub seuil_smic: Option<Nombre>,
         pub cle_total: Option<String>,
         /// La commune du versement mobilite (`bareme::bareme_vm`).
-        pub code_insee: Option<String>,
+        pub code_insee: Option<crate::fiche::CodeInsee>,
         /// Les lignes du bulletin dont la cotisation est la somme.
         pub lignes: Option<Vec<String>>,
         /// Une cotisation ajoutee : celle apres laquelle elle se range.

@@ -720,6 +720,32 @@ impl NumeroObjetSpectacle {
 
 notion_lue!(NumeroObjetSpectacle);
 
+/// LE CODE INSEE D'UNE COMMUNE, cinq caracteres (« Nomenclature INSEE des communes de France », S21.G00.81.005, X [5,5] :
+/// `atelier/reference/norme-dsn/texte-2027/bloc-S21.G00.81.txt`, l. 458-461 ; `logiciel/donnees/formats-dsn-base.json`) :
+/// le departement, deux chiffres ou 2A, 2B en Corse, puis trois chiffres. Une inference : la norme ne dit que la
+/// longueur, et le departement de Corse en 2A et 2B est celui du NIR (INSEE, schema NIR : `insee-nir-siret/`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct CodeInsee(String);
+
+impl CodeInsee {
+    /// Le code `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<CodeInsee> {
+        let b = texte.as_bytes();
+        let departement = b.len() == 5 && (b[..2].iter().all(u8::is_ascii_digit) || matches!(&b[..2], b"2A" | b"2B"));
+        if departement && b[2..].iter().all(u8::is_ascii_digit) {
+            Ok(CodeInsee(texte.to_string()))
+        } else {
+            Err(socle::refus!(
+                "« {} » n'est pas un code INSEE de commune : cinq caractères, le département (2A, 2B en Corse) puis trois chiffres, 37261 par exemple (DSN, S21.G00.81.005)",
+                texte
+            ))
+        }
+    }
+}
+
+notion_lue!(CodeInsee);
+
 /// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
 /// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,
 /// `atelier/reference/sources/kali-1285-titres-ii-iii-x-xi-xii-20260923.md`). Hors de 1 a 12, il se refuse a la lecture
@@ -2027,7 +2053,7 @@ cases! {
 }
 
 cases! {
-    pub struct VersementMobilite, cles CaseVersementMobilite { Taux(Montant) = "taux" => taux, CodeInsee(String) = "code_insee" => code_insee }
+    pub struct VersementMobilite, cles CaseVersementMobilite { Taux(Montant) = "taux" => taux, CodeInsee(CodeInsee) = "code_insee" => code_insee }
 }
 
 cases! {

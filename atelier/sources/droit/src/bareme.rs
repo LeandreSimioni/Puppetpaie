@@ -1288,20 +1288,19 @@ pub fn surcharger(mut bar: Pile, fiche: &ChampsEntreprise, nic: &str) -> R<Pile>
 #[derive(Debug, Clone, PartialEq)]
 pub struct VersementMobilite {
     pub taux: Decimal,
-    pub code_insee: String,
+    pub code_insee: crate::fiche::CodeInsee,
     /// L'autorite organisatrice qui l'a institue, quand la surcouche la nomme.
     pub autorite: Option<String>,
 }
 
 /// Le versement mobilite ecrit dans le bareme, ou `None` (rien d'ecrit, ou
-/// « aucun »). Un taux sans code INSEE de cinq caracteres : refus.
+/// « aucun »). Un taux sans code INSEE (`fiche::CodeInsee`) : refus.
 pub fn versement_mobilite(bar: &Pile) -> R<Option<VersementMobilite>> {
     let Some(VersementMobiliteEcrit::Ecrit(crate::forme_bareme::VersementMobiliteTaux { taux, code_insee, autorite, .. })) = &bar.versement_mobilite else {
         return Ok(None);
     };
-    let insee = code_insee.as_deref().map(str::trim).filter(|c| c.chars().count() == 5);
-    match (taux, insee) {
-        (Some(taux), Some(insee)) => Ok(Some(VersementMobilite { taux: taux.0, code_insee: insee.to_string(), autorite: autorite.clone() })),
+    match (taux, code_insee) {
+        (Some(taux), Some(insee)) => Ok(Some(VersementMobilite { taux: taux.0, code_insee: insee.clone(), autorite: autorite.clone() })),
         _ => Err(refus(
             "Le versement mobilité est écrit sans son taux ou sans le code de la commune de l'établissement : les lire sur le bordereau Urssaf.",
             format!(

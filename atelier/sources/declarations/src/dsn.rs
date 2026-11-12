@@ -592,7 +592,7 @@ pub struct Cotisation {
     pub org: Option<String>,
     pub affectation: Option<String>,
     pub cle_total: Option<String>,
-    pub code_insee: Option<String>,
+    pub code_insee: Option<droit::fiche::CodeInsee>,
     pub base81: Option<Decimal>,
     /// Le taux de la ligne (81.007), tel que le bareme ou le bulletin l'ecrit.
     pub taux: Option<Decimal>,
@@ -828,7 +828,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
             org: c.org.clone(),
             affectation: c.affectation.clone(),
             cle_total: c.cle_total.clone().filter(|x| !x.is_empty()),
-            code_insee: c.code_insee.clone().filter(|x| !x.is_empty()),
+            code_insee: c.code_insee.clone(),
             base81: None,
             taux: None,
             montant: None,
@@ -2356,7 +2356,7 @@ pub fn bases_et_cotisations(
             f.add("S21.G00.81.003", ms(c.base81.ok_or_else(|| socle::fichiers::absent("base81"))?, signe));
         }
         f.add("S21.G00.81.004", ms(montant, signe));
-        if let Some(insee) = c.code_insee.as_deref().filter(|i| !i.is_empty()) {
+        if let Some(insee) = c.code_insee.as_deref() {
             f.add("S21.G00.81.005", insee);
         }
         if let (Some(_), Some(t)) = (&org, c.taux) {
@@ -3514,7 +3514,7 @@ contrairement à celle d'un intermittent. Aucune saisie de la compagnie ne le co
             if assiette.is_zero() {
                 continue;
             }
-            lignes.push(ligne(code.into(), "920".into(), Some(TauxDeLaLigne::Mobilite(a_deux_chiffres(vm.taux))), Some(rond(assiette)), None, Some(vm.code_insee.clone())));
+            lignes.push(ligne(code.into(), "920".into(), Some(TauxDeLaLigne::Mobilite(a_deux_chiffres(vm.taux))), Some(rond(assiette)), None, Some(vm.code_insee.to_string())));
         }
     }
     let mut local = zero2();
