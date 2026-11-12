@@ -1311,7 +1311,7 @@ fn provision_d_une_annee_importee(
     let paies = lecture.paies(m)?;
     // Les bruts repris d'un salarie du mois de `du` a celui de `au`, et si les bulletins repris couvrent ces mois ; un
     // brut que les pieces taisent, la somme ne se fait pas (`None`).
-    let mut bruts = |cle: &droit::contexte::IdSalarie, du:&socle::date::Jour, au: &socle::date::Jour| -> R<Option<(Decimal, bool)>> {
+    let mut bruts = |cle: &droit::contexte::IdSalarie, du: &socle::date::Jour, au: &socle::date::Jour| -> R<Option<(Decimal, bool)>> {
         let mut total = zero2();
         for &mois in importes.iter().filter(|x| **x >= du.mois_civil() && **x <= au.mois_civil()) {
             for q in lecture.paies(mois)?.iter().filter_map(engagement::etats::PaieDuMois::importee).filter(|q| cle_de(q) == *cle) {
