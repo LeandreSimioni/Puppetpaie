@@ -96,8 +96,8 @@ pub enum TauxAt {
 /// LE CODE TYPE DE PERSONNEL D'UNE LIGNE DU BORDEREAU URSSAF (S21.G00.23.001) : « X [3,3] Table des Codes Type de
 /// Personnel » (cahier technique DSN 2026.1 p. 168, `atelier/reference/norme-dsn/texte/bloc-S21.G00.23.txt` l. 23-27).
 /// La table est celle de l'Urssaf (`donnees/urssaf-codes-types-personnel.csv`), datee : qu'un code y soit au jour du
-/// bordereau, `documents::bordereau` le juge. INFERENCE sur la forme : chaque code de cette table s'ecrit de trois
-/// chiffres ; un code d'une autre forme se refuse a la lecture.
+/// bordereau, `documents::bordereau` le juge. La forme est celle du cahier, trois caracteres (`X`), et rien de plus :
+/// que la table n'ait que des chiffres ne fonde pas un controle (regle 7).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct CodeCtp(std::borrow::Cow<'static, str>);
@@ -106,14 +106,14 @@ impl CodeCtp {
     /// Le code ecrit `texte`.
     pub fn lire(texte: &str) -> R<CodeCtp> {
         if !CodeCtp::a_sa_forme(texte) {
-            return Err(socle::refus!("CTP {} : un code type de personnel s'écrit de trois chiffres.", socle::fichiers::repr(texte)));
+            return Err(socle::refus!("CTP {} : un code type de personnel s'écrit de trois caractères.", socle::fichiers::repr(texte)));
         }
         Ok(CodeCtp(std::borrow::Cow::Owned(texte.to_string())))
     }
 
     const fn a_sa_forme(texte: &str) -> bool {
         let o = texte.as_bytes();
-        o.len() == 3 && o[0].is_ascii_digit() && o[1].is_ascii_digit() && o[2].is_ascii_digit()
+        o.len() == 3 && o[0].is_ascii_graphic() && o[1].is_ascii_graphic() && o[2].is_ascii_graphic()
     }
 
     /// LE CODE QUE LE MOTEUR NOMME, ecrit en Rust : une constante, dont le compilateur refuse une forme fausse.
