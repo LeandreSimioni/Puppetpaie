@@ -363,11 +363,13 @@ pub struct Proprietes {
     activites: Activites,
 }
 
-/// La section `par_nature` du bareme a appliquer par-dessus le statut (`None` : le corps du bareme).
+/// La section `par_nature` du bareme a appliquer par-dessus le statut (`None` : le corps du bareme), et la section des
+/// organismes et des contributions de la nature (`organismes-base.json`, `par_nature` ; la cle `nature` d'une ligne).
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Bareme {
     section: Option<String>,
+    organismes: String,
     #[serde(rename = "note")]
     _note: String,
 }
@@ -698,6 +700,12 @@ impl Proprietes {
     /// La section `par_nature` du bareme a appliquer par-dessus le statut, ou `None` : le corps du bareme.
     pub fn bareme(&self) -> Option<&str> {
         self.bareme.section.as_deref()
+    }
+
+    /// La section des organismes et des contributions de la nature (`organismes-base.json`, `par_nature`), que
+    /// `contrats-base.json` dit pour chacune.
+    pub fn section_des_organismes(&self) -> &str {
+        &self.bareme.organismes
     }
 
     /// S21.G00.40.011.

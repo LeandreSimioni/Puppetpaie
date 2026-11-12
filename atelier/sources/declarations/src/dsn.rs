@@ -614,16 +614,10 @@ pub struct Cotisation {
 const TRANCHE_A: &str = "11";
 
 /// LA SECTION DES ORGANISMES (`organismes-base.json`, `par_nature`) ET DES CONTRIBUTIONS D'UNE NATURE DE CONTRAT : celle
-/// de son bareme (`Nature::bareme`) ; une nature sans section se paie sur le corps du bareme, celui des intermittents.
+/// que `contrats-base.json` dit pour elle (`Nature::section_des_organismes`).
 fn section_de(nat: &Nature) -> &str {
-    match nat.bareme() {
-        Some(s) => s,
-        None => SECTION_DU_CORPS,
-    }
+    nat.section_des_organismes()
 }
-
-/// La section des organismes du corps du bareme (`section_de`).
-const SECTION_DU_CORPS: &str = "intermittent";
 
 /// UNE CONTRIBUTION DECLAREE SOUS UNE ADHESION AUDIENS ce mois-la (la CASC-SVP, une contribution de branche :
 /// `contributions_dsn`) : sa reference d'adhesion, son libelle, les lignes du bulletin qu'elle somme, et l'affectation
