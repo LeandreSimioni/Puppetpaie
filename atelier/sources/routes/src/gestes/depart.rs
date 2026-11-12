@@ -1455,7 +1455,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
             let effet = premier.effet.ok_or_else(|| erreur(Classe::Illisible, format!("journal : {} sans sa date d'effet", nom)))?;
             return documents::contrat::ecrire_avenant(&ctx_j, p0, &ent, vers, &modifs, numero_av, date_contrat, effet, jour, &modele, premier.ailleurs);
         }
-        let mut remplacements: Vec<((String, socle::date::Jour, String), (String, socle::date::Jour))> = Vec::new();
+        let mut remplacements: Vec<((IdSalarie, socle::date::Jour, String), (String, socle::date::Jour))> = Vec::new();
         if nom.strip_suffix("remplace.pdf").is_some_and(|b| b.ends_with('_')) {
             for c in &contrats {
                 let parti = envois::etats::contrat_parti(&lignes[..rang], &c.salarie, c.numero.as_deref())
@@ -1465,7 +1465,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
                     None => SANS_NUMERO.to_string(),
                 };
                 let le_sien = c.numero.as_deref().ok_or_else(|| erreur(Classe::Illisible, format!("journal : un contrat de {} est parti sans numero", nom)))?;
-                remplacements.push(((c.salarie.to_string(), c.debut, le_sien.to_string()), (numero, parti.date())));
+                remplacements.push(((c.salarie.clone(), c.debut, le_sien.to_string()), (numero, parti.date())));
             }
         }
         // Chaque contrat avec le modele qu'il suivait a son depart.

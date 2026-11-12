@@ -783,7 +783,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
         Geste::Documents { mois } => {
             // Ceux qui n'ont pas de courriel : leurs documents s'impriment et se remettent en main propre (l'impression
             // est leur depart) ; ils n'empechent pas les autres de partir.
-            let mut sans: Vec<(String, String)> = Vec::new();
+            let mut sans: Vec<(droit::contexte::IdSalarie, String)> = Vec::new();
             let mut fait = pas(d, quoi, quand, |ctx| {
                 // LES DOCUMENTS D'UN MOIS DONT LA DSN N'EST PAS ACCEPTEE ne partent pas : ils suivent sa DSN, jamais avant.
                 if !compagnie::etat_dsn::du_mois(ctx, *mois, None)?.partie() {
@@ -807,7 +807,7 @@ fn jouer(d: &HorlogeFictive, p: &Pas) -> Vec<String> {
             });
             if !sans.is_empty() {
                 let noms = sans.iter().map(|(_, n)| n.as_str()).collect::<Vec<_>>().join(", ");
-                let salaries: Vec<String> = sans.iter().map(|(c, _)| c.clone()).collect();
+                let salaries: Vec<droit::contexte::IdSalarie> = sans.iter().map(|(c, _)| c.clone()).collect();
                 let quoi = format!("documents de {} imprimés pour {} (pas de courriel dans sa fiche), remis en main propre", mois_fr(*mois), noms);
                 fait.extend(pas(d, &quoi, quand, |ctx| {
                     let charge = crate::documents::ChargeDocumentsImprimer { mois: *mois, salaries: Some(salaries.clone()) };

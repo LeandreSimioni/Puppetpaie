@@ -72,7 +72,7 @@ struct MarqueurAPart {
 }
 
 /// Les contrats qui en annulent un autre : `{(salarie, premier jour, numero du contrat): (numero remplace, date)}`.
-pub type Remplacements = [((String, Jour, String), (String, Jour))];
+pub type Remplacements = [((droit::contexte::IdSalarie, Jour, String), (String, Jour))];
 
 /// `contrat.description` puis `fabrique.figer` : la description de ces contrats, un document par
 /// paie, son modele (`modeles`, un par paie, dans leur ordre) en texte. `remplacements` : ces contrats-la annulent et
@@ -91,8 +91,8 @@ pub fn description(ctx: &Contexte, paies: &[Paie], modeles: &[ModeleDuContrat], 
             return Err(refus("description illisible : une valeur du modele de contrat n'est pas un texte"));
         }
         let mut un = document_modele(lu, &v);
-        let (salarie, debut) = (p.salarie.id.to_string(), p.engagement.debut);
-        let remplace = p.engagement.numero.as_deref().and_then(|n| remplacements.iter().find(|((s, d, k), _)| *s == salarie && *d == debut && k == n));
+        let (salarie, debut) = (&p.salarie.id, p.engagement.debut);
+        let remplace = p.engagement.numero.as_deref().and_then(|n| remplacements.iter().find(|((s, d, k), _)| s == salarie && *d == debut && k == n));
         if let Some((_, (numero, date))) = remplace {
             un.remplace = Some(forme::Remplace { numero: numero.clone(), date: date.jj_mm_aaaa() });
         }

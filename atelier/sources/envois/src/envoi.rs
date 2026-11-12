@@ -321,16 +321,15 @@ pub fn preparer_avec(
     ent: &droit::fiche::ChampsEntreprise,
     m: socle::mois::Mois,
     dossier: &Path,
-    renvois: &std::collections::HashMap<String, Renvoi>,
+    renvois: &std::collections::HashMap<droit::contexte::IdSalarie, Renvoi>,
     a_part: &std::collections::HashMap<String, Vec<&'static str>>,
 ) -> R<Vec<Message>> {
     let (an, etiq, nom_mois) = (m.annee(), m.etiquette(), m.nom(socle::mois::Graphie::Accentuee));
-    let mut vus: Vec<String> = Vec::new();
+    let mut vus: Vec<droit::contexte::IdSalarie> = Vec::new();
     let mut messages = Vec::new();
-    let cle_de = |s: &droit::fiche::SalarieDuContrat| -> R<String> { Ok(s.id.to_string()) };
     for p in paies {
         let s = &p.salarie;
-        let cle = cle_de(s)?;
+        let cle = s.id.clone();
         if vus.contains(&cle) {
             continue;
         }
@@ -361,13 +360,13 @@ pub fn preparer_avec(
         let siennes: Vec<&Paie> = {
             let mut v = Vec::new();
             for p in paies {
-                if cle_de(&p.salarie)? == cle {
+                if p.salarie.id == cle {
                     v.push(p);
                 }
             }
             v
         };
-        let a_part_du = |piece: &str| a_part.get(&cle).is_some_and(|a| a.contains(&piece));
+        let a_part_du = |piece: &str| a_part.get(cle.as_str()).is_some_and(|a| a.contains(&piece));
         if a_part_du("aer") && !presents.iter().any(|p| p.champ == "aer") {
             notes.push(NOTE_SANS_AER);
         }
@@ -406,7 +405,7 @@ pub fn preparer_avec(
             None => (format!("{} {} — {}", capitaliser(nom_mois), an, enumerer(&courts)), formater(CORPS, &champs)),
         };
         messages.push(Message {
-            cle: cle.clone(),
+            cle: cle.to_string(),
             nom: format!("{} {}", texte(&s.prenom_affichage, "prenom_affichage")?, texte(&s.nom, "nom")?),
             destinataire: email.to_lowercase(),
             sujet,

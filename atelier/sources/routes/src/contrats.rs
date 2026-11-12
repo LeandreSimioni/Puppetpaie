@@ -208,7 +208,7 @@ pub(crate) struct ChargeSignature {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) avenants: Option<Vec<AvenantVoulu>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) salaries: Option<Vec<String>>,
+    pub(crate) salaries: Option<Vec<droit::contexte::IdSalarie>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) remplace: Option<bool>,
 }

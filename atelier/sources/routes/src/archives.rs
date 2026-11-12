@@ -708,7 +708,7 @@ const REEDITION_CONTRATS: &str = "Les contrats ont été réédités par notre l
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeDossierEnvoyer {
-    salaries: Option<Vec<String>>,
+    salaries: Option<Vec<droit::contexte::IdSalarie>>,
     mois: Option<Mois>,
     annee: Option<AnneeDite>,
     toutes_les_annees: Option<bool>,
@@ -741,10 +741,10 @@ fn dossier_envoyer(ctx: &Contexte, c: ChargeDossierEnvoyer, motdepasse: Option<&
 }
 
 /// Chacun de `cles` a une adresse dans sa fiche ; sinon le refus qui le nomme. Rien n'est parti.
-fn adresses_de(ctx: &Contexte, cles: &[String]) -> R<Vec<String>> {
+fn adresses_de(ctx: &Contexte, cles: &[droit::contexte::IdSalarie]) -> R<Vec<String>> {
     cles.iter()
         .map(|cle| {
-            let s = ctx.salaries.get(cle.as_str()).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))?;
+            let s = ctx.salaries.get(cle).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))?;
             s.email.en_texte().ok_or_else(|| {
                 refus(format!("Pas d'adresse e-mail pour {} : compléter sa fiche avant d'envoyer. Rien n'est parti.", ctx.nomme(cle)))
             })
@@ -766,7 +766,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
     let mut messages: Vec<Message> = Vec::new();
     let adresses = adresses_de(ctx, &d.salaries)?;
     for ((cle, f), email) in d.salaries.iter().zip(&d.fichiers).zip(adresses) {
-        let s = ctx.salaries.get(cle.as_str()).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))?;
+        let s = ctx.salaries.get(cle).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))?;
         let prenom = s.prenom_affichage.portee().or(s.prenom.portee()).ok_or_else(|| socle::fichiers::absent("prenom").reclasser(Classe::Manque))?.to_string();
         let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire").reclasser(Classe::Manque))?;
         let signe = signataire.prenom_affichage.remplie().or(signataire.prenom.portee()).ok_or_else(|| socle::fichiers::absent("prenom").reclasser(Classe::Manque))?;
@@ -790,7 +790,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
             ],
         );
         messages.push(Message {
-            cle: cle.clone(),
+            cle: cle.to_string(),
             nom: ctx.nomme(cle),
             destinataire: email.to_lowercase(),
             sujet: format!("Ton dossier de salarié — {}", d.periode),
@@ -807,7 +807,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
     let detail = journal::DetailDossier {
         periode: d.periode.clone(),
         categories: d.categories.iter().map(|c| c.to_string()).collect(),
-        salaries: messages.iter().map(|m| Ok(journal::DossierServi { cle: droit::contexte::IdSalarie::lire(&m.cle)?, piece: m.pieces.first().map(|p| nom_du(p)) })).collect::<R<_>>()?,
+        salaries: d.salaries.iter().zip(&messages).map(|(cle, m)| journal::DossierServi { cle: cle.clone(), piece: m.pieces.first().map(|p| nom_du(p)) }).collect(),
         expediteur: expediteur.clone(),
         partis: None,
         echec_a: None,
