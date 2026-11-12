@@ -35,14 +35,6 @@ use socle::echec::{refus, R};
 /// Ce qui ne part jamais : les données de la compagnie du poste.
 const PRIVE: &str = "prive/";
 
-/// Les fichiers écrits en texte. Les formats de déclaration en sont (`.dsn`, les gabarits `.txt`, les retours `.xml`) :
-/// ceux des compagnies fictives portent des NIR, inventés, qu'il faut voir passer, comme les gestes d'un scénario
-/// (`.jsonl`) et les pages web gardées telles que servies (`.mht`, `.xhtml`).
-const EXTENSIONS: [&str; 26] = [
-    "py", "md", "html", "css", "js", "json", "txt", "cmd", "pyw", "modele", "yml", "yaml", "toml", "rs", "dsn", "xml", "csv",
-    "sh", "command", "log", "jsonl", "mht", "xhtml", "xsd", "svg", "nsi",
-];
-
 /// La marque d'un NIR inventé : une commune ou un rang que personne n'a, dans les treize premiers chiffres.
 const INVENTE: [&str; 3] = ["999", "123456", "000"];
 
@@ -121,13 +113,15 @@ impl Motif {
 
 /// Les numéros à la forme d'un NIR qui ne sont pas inventés, hors d'une adresse web : `(début, numéro)`. La forme : sexe,
 /// année, mois (01-12, ou 20-99 pour les cas spéciaux), département (deux chiffres, 2A, 2B), six chiffres, puis la clé si
-/// elle suit ; ni précédé d'une lettre ou d'un chiffre, ni suivi d'un troisième chiffre (un horodatage
-/// « 20260906080000 » en a quatorze). Inventé : listé dans `FICTIVES`, ou la marque `INVENTE` dans ses treize chiffres.
+/// elle suit ; ni précédé d'une lettre ou d'un chiffre, ni les décimales d'un nombre (« 0.249977111117893 », qu'une
+/// bibliothèque porte dans les binaires livrés), ni suivi d'un troisième chiffre (un horodatage « 20260906080000 » en a
+/// quatorze). Inventé : listé dans `FICTIVES`, ou la marque `INVENTE` dans ses treize chiffres.
 pub fn nirs_non_inventes(o: &[u8]) -> Vec<(usize, String)> {
     let chiffre = |i: usize| o.get(i).is_some_and(u8::is_ascii_digit);
     let mut trouves = Vec::new();
     for i in 0..o.len().saturating_sub(12) {
-        if !matches!(o[i], b'1' | b'2') || (i > 0 && o[i - 1].is_ascii_alphanumeric()) {
+        let decimales = i > 1 && o[i - 1] == b'.' && o[i - 2].is_ascii_digit();
+        if !matches!(o[i], b'1' | b'2') || (i > 0 && o[i - 1].is_ascii_alphanumeric()) || decimales {
             continue;
         }
         let mois = matches!((o[i + 3], o[i + 4]), (b'0', b'1'..=b'9') | (b'1', b'0'..=b'2') | (b'2'..=b'9', b'0'..=b'9'));
@@ -283,12 +277,9 @@ pub fn racine_du_depot(depuis: &Path) -> R<PathBuf> {
     Ok(PathBuf::from(t.trim_end_matches(['\n', '\r'])))
 }
 
-fn extension_texte(rel: &str) -> bool {
-    Path::new(rel).extension().and_then(|x| x.to_str()).is_some_and(|x| EXTENSIONS.contains(&x.to_lowercase().as_str()))
-}
-
 /// Ce qui part, relatif à la racine : ce que Git commiterait (`indexes`), ou ce qu'il emporterait du dépôt entier (suivis
-/// et non suivis, les `.gitignore` appliqués par Git lui-même) -- hors de `prive/` dans les deux cas, en texte seulement.
+/// et non suivis, les `.gitignore` appliqués par Git lui-même) -- hors de `prive/` dans les deux cas, quelle que soit
+/// l'extension : un binaire se fouille en octets.
 pub fn ce_qui_part(racine: &Path, indexes: bool) -> R<Vec<String>> {
     let args: &[&str] = if indexes {
         &["diff", "--cached", "--name-only", "-z", "--diff-filter=ACM"]
@@ -299,7 +290,7 @@ pub fn ce_qui_part(racine: &Path, indexes: bool) -> R<Vec<String>> {
         .split(|&b| b == 0)
         .filter(|n| !n.is_empty())
         .map(|n| String::from_utf8_lossy(n).into_owned())
-        .filter(|n| !n.starts_with(PRIVE) && extension_texte(n))
+        .filter(|n| !n.starts_with(PRIVE))
         .collect();
     noms.sort();
     noms.dedup();
@@ -354,27 +345,6 @@ fn contenus_indexes(racine: &Path, noms: &[String]) -> R<Vec<Option<Vec<u8>>>> {
     Ok(contenus)
 }
 
-/// Les octets lus en UTF-8, ce qui n'en est pas sauté.
-fn utf8_sans_erreurs(mut o: &[u8]) -> String {
-    let mut s = String::with_capacity(o.len());
-    loop {
-        match std::str::from_utf8(o) {
-            Ok(t) => {
-                s.push_str(t);
-                return s;
-            }
-            Err(e) => {
-                let (bon, reste) = o.split_at(e.valid_up_to());
-                s.push_str(std::str::from_utf8(bon).unwrap());
-                match e.error_len() {
-                    Some(n) => o = &reste[n..],
-                    None => return s,
-                }
-            }
-        }
-    }
-}
-
 /// Une valeur listée dans `FICTIVES`. Un IBAN se compare sans ses espaces (il s'écrit par groupes de quatre).
 fn fictive(trouve: &str) -> bool {
     let sans_espaces = trouve.replace(' ', "");
@@ -390,7 +360,9 @@ fn fictive(trouve: &str) -> bool {
 fn chercher(fichier: &str, o: &[u8], motifs: &[Motif], deposes: &BTreeMap<String, String>, trouvailles: &mut Vec<Trouvaille>) {
     let exemple = depose_tel_quel(deposes, fichier, o);
     let siens: Vec<&Motif> = motifs.iter().filter(|m| !(exemple && GENERIQUES.contains(&m.quoi()))).collect();
-    let texte = utf8_sans_erreurs(o);
+    // Un binaire se fouille en octets : ce qui n'est pas de l'UTF-8 devient un remplaçant, qui sépare les chiffres
+    // d'avant et d'après au lieu de les recoller.
+    let texte = String::from_utf8_lossy(o);
     // Les séparateurs de lignes n'ont pas de casse : les deux textes ont les mêmes lignes. Sans valeur lue (un clone
     // frais, le nuage), les minuscules ne servent à rien.
     let valeurs = siens.iter().any(|m| matches!(m, Motif::Valeur { .. }));
