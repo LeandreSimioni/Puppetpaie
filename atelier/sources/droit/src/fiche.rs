@@ -502,12 +502,6 @@ pub fn sans_blancs_de_bord(texte: &str) -> String {
     texte.trim_matches(socle::texte::blanc).to_string()
 }
 
-/// UNE SAISIE SANS SES BLANCS DE BORD, EN CAPITALES : la forme rangee d'un code que son texte ecrit en capitales (un code
-/// INSEE de commune : 2A, 2B ; le code pays ISO 3166 a la sienne, `socle::pays::CodePays::rangee`).
-pub fn en_capitales(texte: &str) -> String {
-    sans_blancs_de_bord(texte).to_uppercase()
-}
-
 /// UNE SAISIE DE CHIFFRES SANS AUCUN BLANC : la forme rangee d'un identifiant fait de chiffres (`identifiant_de_chiffres!`),
 /// que ses blancs, autour ou entre ses groupes (« 123 456 789 00012 »), ne changent pas.
 pub fn sans_blancs(texte: &str) -> String {
@@ -785,7 +779,7 @@ impl CodeInsee {
     }
 }
 
-notion_lue!(CodeInsee rangee par en_capitales);
+notion_lue!(CodeInsee rangee par socle::texte::en_capitales);
 
 /// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
 /// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,

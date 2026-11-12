@@ -57,7 +57,7 @@ impl CodePays {
     /// LE TEXTE SAISI `texte` DANS SA FORME, avant d'etre lu : sans ses blancs de bord, en capitales
     /// (`droit::fiche::FormeDeCase::RANGER`, `forme::range_si_saisi`).
     pub fn rangee(texte: &str) -> String {
-        texte.trim_matches(crate::texte::blanc).to_uppercase()
+        crate::texte::en_capitales(texte)
     }
 
     /// Ce qui refuse `texte` a la saisie, que la porte a deja range sans blancs de bord et en capitales (`rangee`) ;

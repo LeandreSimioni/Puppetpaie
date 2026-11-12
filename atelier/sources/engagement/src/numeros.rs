@@ -121,13 +121,6 @@ impl std::fmt::Display for NumeroContrat {
     }
 }
 
-impl TryFrom<String> for NumeroContrat {
-    type Error = socle::echec::Echec;
-    fn try_from(s: String) -> R<NumeroContrat> {
-        NumeroContrat::lire(&s)
-    }
-}
-
 impl From<NumeroContrat> for String {
     fn from(n: NumeroContrat) -> String {
         n.0
