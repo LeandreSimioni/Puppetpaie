@@ -31,13 +31,13 @@ struct Solde {
 }
 
 /// La ligne de `rubrique`, `quantite` x `taux`, telle que le solde l'ecrit.
-fn ligne(rubrique: &str, quantite: Decimal, taux: Decimal) -> LignePaie {
-    LignePaie::composee(rubrique, court(quantite), court(taux))
+fn ligne(rubrique: &droit::catalogue::CodeDeRubrique, quantite: Decimal, taux: Decimal) -> LignePaie {
+    LignePaie::composee(rubrique.clone(), court(quantite), court(taux))
 }
 
 /// La ligne d'une indemnite de `rubrique` qui verse `montant` en une fois.
-fn ligne_unique(rubrique: &str, montant: Decimal) -> LignePaie {
-    LignePaie::composee(rubrique, Decimal::ONE, court(montant))
+fn ligne_unique(rubrique: &droit::catalogue::CodeDeRubrique, montant: Decimal) -> LignePaie {
+    LignePaie::composee(rubrique.clone(), Decimal::ONE, court(montant))
 }
 
 /// Le plus grand de `a` et `b` : `a` a egalite.
@@ -964,7 +964,7 @@ fn indemnite_de_rupture(
         stc.lignes.push(ligne_unique(&rubrique, part_legale));
     }
     if supplement > Decimal::ZERO {
-        stc.lignes.push(ligne_unique(&supplement_rub, supplement));
+        stc.lignes.push(ligne_unique(&droit::catalogue::CodeDeRubrique::lire(&supplement_rub)?, supplement));
     }
     // L137-12 : une contribution patronale sur la part exoneree, due et non calculee.
     let regles = permanents::regles()?;
@@ -1165,7 +1165,7 @@ fn indemnite_de_licenciement(
     }
     let supplement = sub(montant, part_legale);
     if supplement > Decimal::ZERO {
-        stc.lignes.push(ligne_unique("indemnite_licenciement_conventionnelle", supplement));
+        stc.lignes.push(ligne_unique(&droit::catalogue::CodeDeRubrique::lire("indemnite_licenciement_conventionnelle")?, supplement));
     }
     stc.avertissements.push(info(format!(
         "{} : indemnité de licenciement {} ({} mois d'ancienneté, salaire \

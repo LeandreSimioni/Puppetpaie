@@ -39,7 +39,7 @@ fn taux_compose(x: Decimal) -> Decimal {
 /// Une ligne de remuneration : une rubrique, une quantite, un taux.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LigneBrut {
-    pub code: String,
+    pub code: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
     pub unite: String,
     pub quantite: Decimal,
@@ -594,7 +594,7 @@ pub struct OptionDfs {
     pub plafond_annuel: Decimal,
     /// Les rubriques de frais (`defraiement_forfait`, `repas`, `nuitee`, `defraiement_reel`) que l'annexe 2 de l'arrete (I, 2° et 5°) laisse
     /// hors de l'assiette pour cette profession ; tout autre remboursement de frais se reintegrerait (art. 9, I, al. 4).
-    pub frais_hors_assiette: Vec<String>,
+    pub frais_hors_assiette: Vec<droit::catalogue::CodeDeRubrique>,
     /// La tolerance du BOSS, Frais professionnels, § 2320 (bareme, `frais_cumulables`) : pour les huit secteurs, dont le
     /// spectacle vivant et le spectacle enregistre, << l'ensemble des remboursements de frais professionnels definis par
     /// l'arrete du 4 septembre 2025 peut faire l'objet d'un cumul avec la deduction forfaitaire specifique >>
@@ -1348,7 +1348,7 @@ pub(crate) fn calculer_periode(ctx: &Contexte, eng: &Engagement, precedentes: &[
     let soumises: Vec<&LigneBrut> = lb.iter().filter(|l| l.soumis).collect();
     if caisse {
         // La caisse paie ses conges (D. 7121-41) : l'employeur ne les paie pas en plus.
-        let conges = |c: &str| matches!(c, "absence_conges_payes" | "indemnite_compensatrice_conges") || droit::catalogue::RubriqueDuMois::IndemniteCongesPayes.nomme(c);
+        let conges = |c: &droit::catalogue::CodeDeRubrique| matches!(c.as_str(), "absence_conges_payes" | "indemnite_compensatrice_conges") || droit::catalogue::RubriqueDuMois::IndemniteCongesPayes.nomme(c);
         if let Some(l) = lb.iter().find(|l| conges(&l.code)) {
             return Err(refus_detaille("Cette ligne paie des congés à un salarié déclaré à la caisse des Congés Spectacles : c'est la caisse qui les lui verse ; retirer la ligne.", None, format!(
                 "{} : la ligne << {} >> paie des conges a un salarie que l'employeur declare a la caisse des \
@@ -2046,7 +2046,7 @@ mod tests {
 
     fn ligne(code: &str, montant: &str, heures: &str, base: bool, retabli: bool, soumis: bool) -> LigneBrut {
         LigneBrut {
-            code: code.into(), libelle: code.into(), unite: "mois".into(), quantite: Decimal::ONE, taux: dec_de(montant),
+            code: droit::catalogue::CodeDeRubrique::lire(code).unwrap(), libelle: code.into(), unite: "mois".into(), quantite: Decimal::ONE, taux: dec_de(montant),
             montant: dec_de(montant), heures_annexes: dec_de(heures), soumis, imposable: soumis, conges_spectacles: false,
             salaire_de_base: base, retabli, conges_pris: false, dsn_bloc52: None, arret_de_travail: retabli, dsn_autres_bruts: None,
             precision: None,
@@ -2072,7 +2072,7 @@ mod tests {
         let a = smic_d_une_absence(&[mois.clone(), absence.clone(), prime], smic).unwrap();
         assert_eq!((a.percue, a.habituelle), (dec_de("1000"), dec_de("2000")));
         assert_eq!(eur(mul(dec_de("11.65"), a.heures.unwrap())), dec_de("883.46"));
-        let subrogee = ligne(droit::catalogue::RubriqueDuMois::IjssNettes.code(), "300", "0", false, false, false);
+        let subrogee = ligne(&droit::catalogue::RubriqueDuMois::IjssNettes.code(),"300", "0", false, false, false);
         assert_eq!(smic_d_une_absence(&[mois.clone(), absence.clone(), subrogee], smic).unwrap().percue, dec_de("1000"));
         let maintien = ligne("maintien_salaire", "1000", "0", false, true, true);
         let entier = smic_d_une_absence(&[mois.clone(), absence, maintien], smic).unwrap();

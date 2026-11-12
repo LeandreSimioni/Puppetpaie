@@ -1583,7 +1583,7 @@ pub(crate) struct CaseDeFrais {
 /// Une ligne de la remuneration, telle que la paie la calcule.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct LigneVue {
-    rubrique: String,
+    rubrique: droit::catalogue::CodeDeRubrique,
     designation: String,
     quantite: Decimal,
     taux: Decimal,

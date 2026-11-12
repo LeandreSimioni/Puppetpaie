@@ -380,7 +380,8 @@ fn base() -> R<Base> {
     )?;
     // La piece d'un salarie au mois est celle que le calcul compose (`RubriqueDuMois`) : ni plus, ni moins.
     let rangees: Vec<&str> = b.au_mois.iter().map(|(c, _)| c.as_str()).collect();
-    let du_calcul: Vec<&str> = RubriqueDuMois::TOUTES.iter().map(|r| r.code()).collect();
+    let codes: Vec<CodeDeRubrique> = RubriqueDuMois::TOUTES.iter().map(|r| r.code()).collect();
+    let du_calcul: Vec<&str> = codes.iter().map(CodeDeRubrique::as_str).collect();
     if rangees.len() != du_calcul.len() || !rangees.iter().all(|c| du_calcul.contains(c)) {
         return Err(socle::echec::refus_avec(
             "Les rubriques d'un salarié au mois ne sont pas celles que son calcul compose : le signaler au développeur.".to_string(),
@@ -411,16 +412,19 @@ impl RubriqueDuMois {
     pub const TOUTES: [RubriqueDuMois; 2] = [RubriqueDuMois::IndemniteCongesPayes, RubriqueDuMois::IjssNettes];
 
     /// Le code `code` d'une ligne ecrite est-il le sien ? (Lire une ligne ne la compose pas.)
-    pub fn nomme(self, code: &str) -> bool {
-        self.code() == code
+    pub fn nomme(self, code: &CodeDeRubrique) -> bool {
+        self.code() == *code
     }
 
     /// Son code au catalogue : ne le prennent que les lignes qui la composent, avec la cle (`engagement::LignePaie`).
-    pub fn code(self) -> &'static str {
-        match self {
-            RubriqueDuMois::IndemniteCongesPayes => "indemnite_conges_payes",
-            RubriqueDuMois::IjssNettes => "ijss_nettes",
-        }
+    pub fn code(self) -> CodeDeRubrique {
+        CodeDeRubrique(
+            match self {
+                RubriqueDuMois::IndemniteCongesPayes => "indemnite_conges_payes",
+                RubriqueDuMois::IjssNettes => "ijss_nettes",
+            }
+            .to_string(),
+        )
     }
 }
 

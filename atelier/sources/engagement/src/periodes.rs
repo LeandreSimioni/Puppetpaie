@@ -91,7 +91,7 @@ mensuel. Refus : la reporter sur le mois suivant, ou dater le changement au prem
         e.quotite_contrat = Some(court(quotite));
         let (q, h) = (court(part.fraction), court(eur2(quotite)));
         e.lignes = vec![LignePaie::Composee(crate::ligne::Composee {
-            rubrique: "mois".to_string(),
+            rubrique: droit::catalogue::CodeDeRubrique::lire("mois")?,
             quantite: q,
             taux: court(salaire),
             heures: Some(h),

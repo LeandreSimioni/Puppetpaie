@@ -1441,7 +1441,7 @@ pub(crate) fn frais_au_dela(ctx: &Contexte, salarie: Option<&IdSalarie>, lignes:
         if let Some((taux, limite)) = part {
             let quantite = l.quantite.ok_or_else(|| socle::fichiers::absent("quantite"))?;
             au_dela.push(LignePaie::Composee(ligne::Composee {
-                rubrique: lim.au_dela.into(),
+                rubrique: droit::catalogue::CodeDeRubrique::lire(lim.au_dela)?,
                 quantite,
                 taux: (taux - limite).normalize(),
                 heures: None,
@@ -1600,7 +1600,7 @@ fn frais_a_l_etranger(lignes: &mut [LignePaie], etrangeres: &[usize], nuits: &[J
             let quantite = e.unites * Decimal::from(dates.len() as u64);
             let premier = dates.first().map(DateDeLigne::jour);
             parts.push(LignePaie::Composee(ligne::Composee {
-                rubrique: au_dela.into(),
+                rubrique: droit::catalogue::CodeDeRubrique::lire(au_dela)?,
                 quantite: quantite.normalize(),
                 taux: (ecart / e.unites).normalize(),
                 heures: None,

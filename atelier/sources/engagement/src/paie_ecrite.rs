@@ -157,7 +157,7 @@ pub struct FormeDeCotisation {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FormeDeRemuneration {
-    pub code: String,
+    pub code: droit::catalogue::CodeDeRubrique,
     pub libelle: String,
     pub unite: String,
     #[serde(with = "nombre")]

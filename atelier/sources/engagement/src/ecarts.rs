@@ -290,15 +290,16 @@ fn comparer_une(
         let taux = l.taux.ok_or_else(|| socle::refus!("la ligne « {} » n'imprime pas son taux", libelle))?;
         // La ligne dans la forme que le catalogue demande de sa rubrique (`ligne::FormeSaisie`), comme la porte la range.
         use crate::ligne::{self, FormeSaisie, LignePaie};
-        let forme = FormeSaisie::de(&droit::catalogue::rubrique(&ctx.racine, r, &fin)?)?;
+        let lue = droit::catalogue::rubrique(&ctx.racine, r, &fin)?;
+        let forme = FormeSaisie::de(&lue)?;
         // Une ligne au montant paie sa quantite fois son taux, comme le bulletin l'imprime.
         let montant = Some(quantite * taux);
         // Une ligne d'une rubrique que le moteur pose (des heures en plus) : telle que le moteur la compose.
         let Some(forme) = forme else {
-            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: r.to_string(), quantite, taux, heures: l.heures, precision: None, dates: jours.clone() }));
+            saisies.push(LignePaie::Composee(ligne::Composee { rubrique: lue.code, quantite, taux, heures: l.heures, precision: None, dates: jours.clone() }));
             continue;
         };
-        let (rubrique, quantite, taux, dates) = (r.to_string(), Some(quantite), Some(taux), jours.clone());
+        let (rubrique, quantite, taux, dates) = (lue.code, Some(quantite), Some(taux), jours.clone());
         saisies.push(match forme {
             FormeSaisie::Unites => LignePaie::Unites(ligne::Unites { rubrique, quantite, taux, lieu: None, dates, planning: Vec::new() }),
             FormeSaisie::UnitesEtHeures => LignePaie::UnitesEtHeures(ligne::UnitesEtHeures { rubrique, quantite, taux, heures: l.heures, lieu: None, dates, planning: Vec::new() }),

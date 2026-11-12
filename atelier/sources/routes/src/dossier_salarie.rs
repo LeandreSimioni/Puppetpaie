@@ -500,7 +500,7 @@ fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mo
     }
     let jours = dates.len() as i64;
     let cachet = engagement::LignePaie::Unites(engagement::ligne::Unites {
-        rubrique: "cachet".to_string(),
+        rubrique: droit::catalogue::CodeDeRubrique::lire("cachet")?,
         quantite,
         taux,
         lieu: None,

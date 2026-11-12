@@ -94,11 +94,12 @@ pub(crate) fn lignes(ctx: &Contexte, e: &Carte, mois: Mois, salaire: Decimal, qu
         (HEURE_SUPPLEMENTAIRE, droit::heures_en_plus::supplementaires(idcc, sup, a_50, deja)?)
     };
     let horaire = salaire / quotite;
+    let rubrique = droit::catalogue::CodeDeRubrique::lire(rubrique)?;
     let mut out = Vec::new();
     for p in &reparties.paliers {
         let taux = (horaire * (Decimal::ONE_HUNDRED + p.majoration) / Decimal::ONE_HUNDRED).round_dp(4);
         out.push(crate::LignePaie::Composee(crate::ligne::Composee {
-            rubrique: rubrique.to_string(),
+            rubrique: rubrique.clone(),
             quantite: court(p.heures),
             taux: court(taux),
             heures: None,

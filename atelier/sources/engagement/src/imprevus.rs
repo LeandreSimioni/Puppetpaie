@@ -844,7 +844,7 @@ pub fn lignes_du_mois(ctx: &Contexte, e: &crate::saisie::Carte, mois: Mois, m: &
             let motif = droit::arrets::motif_d_arret(&code)?;
             // Le bulletin nomme l'absence d'apres le motif de l'arret (S21.G00.60.001) : sa rubrique est celle du motif
             // (`arrets-base.json`, `rubrique`).
-            let Some(rubrique) = motif.as_ref().and_then(|m| m.rubrique.clone()).map(String::from) else {
+            let Some(rubrique) = motif.as_ref().and_then(|m| m.rubrique.clone()) else {
                 return Err(socle::echec::cle(format!(
                     "{} : l'arret du {} au {} a pour motif {} ({}), que le logiciel ne paie pas : aucune ligne de bulletin ne \
 nomme cette absence. Rien n'est calcule.",
@@ -881,7 +881,8 @@ nomme cette absence. Rien n'est calcule.",
                     motif.texte()
                 )));
             } else {
-                lignes.extend(retenue()?.map(|(quantite, taux)| crate::LignePaie::composee("absence_non_remuneree", quantite, taux)));
+                let rubrique = droit::catalogue::CodeDeRubrique::lire("absence_non_remuneree")?;
+                lignes.extend(retenue()?.map(|(quantite, taux)| crate::LignePaie::composee(rubrique, quantite, taux)));
                 absents += jours;
                 avert.push(info(format!(
                     "{} : absence ({}) du {} au {} : {} ; la DSN de chaque mois qu'elle traverse la déclare.",
@@ -894,7 +895,7 @@ nomme cette absence. Rien n'est calcule.",
             }
         }
     }
-    lignes.extend(crate::maintien::lignes(&maintien, mois, au));
+    lignes.extend(crate::maintien::lignes(&maintien, mois, au)?);
     avert.extend(maintien.avis);
     Ok((lignes, avert, absents))
 }

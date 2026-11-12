@@ -798,7 +798,7 @@ forme! {
     pub struct Profession {
         pub libelle: String,
         pub categorie: String,
-        pub frais_hors_assiette: Vec<String>,
+        pub frais_hors_assiette: Vec<crate::catalogue::CodeDeRubrique>,
         pub taux: Option<Nombre>,
     }
 }
