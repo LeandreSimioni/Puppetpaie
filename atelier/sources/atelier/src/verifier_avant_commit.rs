@@ -3,6 +3,9 @@
 //! valeurs de la compagnie du poste qu'il y lit (SIRET, SIREN, comptes Urssaf, Congés Spectacles et France Travail, IBAN,
 //! BIC, et pour chaque salarié son NIR, son numéro Congés Spectacles, son courriel, son adresse, son nom et son prénom).
 //!
+//! Il lit chaque fichier tel qu'il est écrit, octet par octet : un fichier compressé (un PDF à flux compressés, un xlsx,
+//! un docx, un zip, un png) n'est pas décompressé, et ce qu'il porte dedans ne se voit pas.
+//!
 //! Le verrou de la suite (`tests/fichiers/donnees_reelles.rs`) passe, à chaque passage de tests, la même liste
 //! (`ce_qui_part`) au même détecteur de NIR (`nirs_non_inventes`), avec les mêmes textes déposés excusés (leur empreinte,
 //! `crate::empreintes`), et y cherche le nom
@@ -101,10 +104,11 @@ impl Motif {
         }
     }
 
-    /// Une valeur qui n'est pas inventée, dans `ligne` (`minuscules` : la même, en minuscules).
-    fn trouve(&self, ligne: &str, minuscules: &str) -> bool {
+    /// Une valeur qui n'est pas inventée, dans `ligne` (`minuscules` : la même, en minuscules) d'un fichier qui est un
+    /// `binaire` ou non.
+    fn trouve(&self, ligne: &str, minuscules: &str, binaire: bool) -> bool {
         match self {
-            Motif::Nir => !nirs_non_inventes(ligne.as_bytes()).is_empty(),
+            Motif::Nir => !nirs_non_inventes(ligne.as_bytes(), binaire).is_empty(),
             Motif::Forme { re, .. } => porte_fr(ligne) && re.find_iter(ligne).any(|t| !fictive(t.as_str())),
             Motif::Valeur { minuscules: v, .. } => minuscules.contains(v.as_str()),
         }
@@ -113,14 +117,16 @@ impl Motif {
 
 /// Les numéros à la forme d'un NIR qui ne sont pas inventés, hors d'une adresse web : `(début, numéro)`. La forme : sexe,
 /// année, mois (01-12, ou 20-99 pour les cas spéciaux), département (deux chiffres, 2A, 2B), six chiffres, puis la clé si
-/// elle suit ; ni précédé d'une lettre ou d'un chiffre, ni les décimales d'un nombre (les quinze chiffres après « 0. »
-/// qu'une bibliothèque porte dans les binaires livrés), ni suivi d'un troisième chiffre (un horodatage « 20260906080000 » en a
-/// quatorze). Inventé : listé dans `FICTIVES`, ou la marque `INVENTE` dans ses treize chiffres.
-pub fn nirs_non_inventes(o: &[u8]) -> Vec<(usize, String)> {
+/// elle suit ; ni précédé d'une lettre ou d'un chiffre, ni suivi d'un troisième chiffre (un horodatage « 20260906080000 »
+/// en a quatorze). Dans un `binaire` seulement (un fichier qui n'est pas de l'UTF-8, `binaire`), ni les décimales d'une
+/// constante écrite « 0. » (les quinze chiffres qu'une bibliothèque porte dans les binaires livrés) ; dans un texte, un
+/// numéro après « 0. » se signale comme un autre. Inventé : listé dans `FICTIVES`, ou la marque `INVENTE` dans ses treize
+/// chiffres.
+pub fn nirs_non_inventes(o: &[u8], binaire: bool) -> Vec<(usize, String)> {
     let chiffre = |i: usize| o.get(i).is_some_and(u8::is_ascii_digit);
     let mut trouves = Vec::new();
     for i in 0..o.len().saturating_sub(12) {
-        let decimales = i > 1 && o[i - 1] == b'.' && o[i - 2].is_ascii_digit();
+        let decimales = binaire && i > 1 && o[i - 1] == b'.' && o[i - 2] == b'0' && !(i > 2 && o[i - 3].is_ascii_digit());
         if !matches!(o[i], b'1' | b'2') || (i > 0 && o[i - 1].is_ascii_alphanumeric()) || decimales {
             continue;
         }
@@ -139,6 +145,11 @@ pub fn nirs_non_inventes(o: &[u8]) -> Vec<(usize, String)> {
         }
     }
     trouves
+}
+
+/// Un fichier qui n'est pas de l'UTF-8 : un binaire.
+pub fn binaire(o: &[u8]) -> bool {
+    std::str::from_utf8(o).is_err()
 }
 
 /// Un numéro de document dans une adresse web (l'Unédic en a de treize chiffres, EUR-Lex en met dans ses requêtes)
@@ -363,6 +374,7 @@ fn chercher(fichier: &str, o: &[u8], motifs: &[Motif], deposes: &BTreeMap<String
     // Un binaire se fouille en octets : ce qui n'est pas de l'UTF-8 devient un remplaçant, qui sépare les chiffres
     // d'avant et d'après au lieu de les recoller.
     let texte = String::from_utf8_lossy(o);
+    let binaire = binaire(o);
     // Les séparateurs de lignes n'ont pas de casse : les deux textes ont les mêmes lignes. Sans valeur lue (un clone
     // frais, le nuage), les minuscules ne servent à rien.
     let valeurs = siens.iter().any(|m| matches!(m, Motif::Valeur { .. }));
@@ -370,7 +382,7 @@ fn chercher(fichier: &str, o: &[u8], motifs: &[Motif], deposes: &BTreeMap<String
     let lignes_min = if valeurs { socle::texte::lignes_du_texte(&minuscules) } else { Vec::new() };
     let lignes_min = lignes_min.into_iter().chain(std::iter::repeat(""));
     for (n, (ligne, min)) in socle::texte::lignes_du_texte(&texte).into_iter().zip(lignes_min).enumerate() {
-        if let Some(m) = siens.iter().find(|m| m.trouve(ligne, min)) {
+        if let Some(m) = siens.iter().find(|m| m.trouve(ligne, min, binaire)) {
             trouvailles.push(Trouvaille { fichier: fichier.to_string(), ligne: n + 1, quoi: m.quoi().to_string() });
         }
     }
