@@ -39,7 +39,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::imprevus::{ArretSaisi, Imprevu, Prolongation};
@@ -343,7 +343,7 @@ struct FichierDuSuivi {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct FicheDeSuivi {
-    salarie: String,
+    salarie: IdSalarie,
     dernier_jour_travaille: Jour,
     #[serde(skip_serializing_if = "Option::is_none")]
     connaissance_arret: Option<ConnaissanceSaisie>,
@@ -431,20 +431,20 @@ impl Suivi {
     }
 
     /// La fiche de l'arret, si la compagnie en a dit quelque chose.
-    fn de(&self, salarie: &str, dernier_jour: Jour) -> CeQueDitLaCompagnie<'_> {
-        match self.fiches.iter().find(|f| f.salarie == salarie && f.dernier_jour_travaille == dernier_jour) {
+    fn de(&self, salarie: &IdSalarie, dernier_jour: Jour) -> CeQueDitLaCompagnie<'_> {
+        match self.fiches.iter().find(|f| f.salarie == *salarie && f.dernier_jour_travaille == dernier_jour) {
             Some(f) => f.dit(),
             None => CeQueDitLaCompagnie::rien(),
         }
     }
 
     /// Change la fiche de l'arret (`changer`), puis ecrit le fichier ; une fiche qui ne dit plus rien s'en va.
-    fn ecrire(&mut self, ctx: &Contexte, salarie: &str, dernier_jour: Jour, changer: impl FnOnce(&mut FicheDeSuivi)) -> R<()> {
-        let i = match self.fiches.iter().position(|f| f.salarie == salarie && f.dernier_jour_travaille == dernier_jour) {
+    fn ecrire(&mut self, ctx: &Contexte, salarie: &IdSalarie, dernier_jour: Jour, changer: impl FnOnce(&mut FicheDeSuivi)) -> R<()> {
+        let i = match self.fiches.iter().position(|f| f.salarie == *salarie && f.dernier_jour_travaille == dernier_jour) {
             Some(i) => i,
             None => {
                 self.fiches.push(FicheDeSuivi {
-                    salarie: salarie.to_string(),
+                    salarie: salarie.clone(),
                     dernier_jour_travaille: dernier_jour,
                     connaissance_arret: None,
                     connaissance_accident: None,
@@ -956,7 +956,7 @@ pub(crate) fn ce_qui_est_parti(ctx: &Contexte, lu: &Imprevu) -> R<Vec<EnvoiDeLAr
             Some(o) => Some(o.parse::<i64>().map_err(|x| erreur(Classe::Illisible, format!("L'ordre {} d'une DSN du journal des envois ne se lit pas ({}).", repr(o), x)))?),
             None => None,
         };
-        let du_salarie = e.versions.iter().flatten().any(|x| x.salarie.as_str() == salarie);
+        let du_salarie = e.versions.iter().flatten().any(|x| x.salarie == *salarie);
         let dans = |m: &dyn std::fmt::Display| e.fichier.as_ref().map(|nom| format!("sorties/{}/{}", m, nom));
         use NatureDeLaDeclaration as N;
         match (nature, dj, mois) {
@@ -1155,7 +1155,7 @@ fn obligations_de(ctx: &Contexte, a: &ArretLu, envois: &[EnvoiDeLArret], fiche: 
 
 /// Le signalement de fin de contrat (07) d'un contrat qui finit le `fin`. `cle` : la cle de la fiche du salarie (le nom
 /// du fichier que `fin-contrat-signaler` ecrit) ; `journal` : les lignes du journal des depots.
-pub fn de_la_fin(ctx: &Contexte, cle: Option<&str>, fin: Jour, journal: &[envois::journal::Ligne], aujourdhui: Jour) -> R<Obligation> {
+pub fn de_la_fin(ctx: &Contexte, cle: Option<&IdSalarie>, fin: Jour, journal: &[envois::journal::Ligne], aujourdhui: Jour) -> R<Obligation> {
     let n = base()?.obligations;
     let o = &n.signalement_fin_contrat;
     let mut cal = Calendrier::nouveau(ctx.entreprise.feries_chomes());
@@ -1172,14 +1172,14 @@ pub fn de_la_fin(ctx: &Contexte, cle: Option<&str>, fin: Jour, journal: &[envois
 }
 
 /// Le jour ou le signalement de fin de ce contrat est parti (`fctu_depose`), s'il l'est.
-pub(crate) fn fin_signalee_le(journal: &[envois::journal::Ligne], cle: &str, fin: &Jour) -> R<Option<Jour>> {
+pub(crate) fn fin_signalee_le(journal: &[envois::journal::Ligne], cle: &IdSalarie, fin: &Jour) -> R<Option<Jour>> {
     Ok(fctu_depose(journal, cle, fin)?.map(|f| f.le))
 }
 
 /// Le premier depot REEL, non refuse au bilan, du signalement de fin de ce contrat : une ligne `dsn` du journal, au jour de la fin
 /// (`DsnLue::evenement`), dont le fichier est celui que `fin-contrat-signaler` ecrit pour ce salarie.
-fn fctu_depose(journal: &[envois::journal::Ligne], cle: &str, fin: &Jour) -> R<Option<Fait>> {
-    let nom = format!("SignalementFinContrat_{}_{}.dsn", cle.to_uppercase(), fin.aaaammjj()).to_uppercase();
+fn fctu_depose(journal: &[envois::journal::Ligne], cle: &IdSalarie, fin: &Jour) -> R<Option<Fait>> {
+    let nom = format!("SignalementFinContrat_{}_{}.dsn", cle.as_str().to_uppercase(), fin.aaaammjj()).to_uppercase();
     let premier = envois::journal::filtrer(journal, Some(envois::journal::Acte::Dsn), None, true)
         .filter(|l| l.accepte())
         // Un signalement refuse au bilan n'est pas recu (cahier technique DSN, `norme-dsn/texte/chapitre-4-controles.txt` §4.2) : il reste du.
@@ -1621,8 +1621,9 @@ mod essais {
             );
             vec![socle::forme::lire_texte(&texte, "une ligne du journal").unwrap()]
         };
-        assert!(fctu_depose(&ligne("KO"), "fanchon", &fin).unwrap().is_none());
-        assert!(fctu_depose(&ligne("OK"), "fanchon", &fin).unwrap().is_some());
+        let fanchon = IdSalarie::lire("fanchon").unwrap();
+        assert!(fctu_depose(&ligne("KO"), &fanchon, &fin).unwrap().is_none());
+        assert!(fctu_depose(&ligne("OK"), &fanchon, &fin).unwrap().is_some());
     }
 
     /// Bug reel : un annule-et-remplace depose a 9 h comptait comme fait pour une prolongation saisie a 15 h le meme

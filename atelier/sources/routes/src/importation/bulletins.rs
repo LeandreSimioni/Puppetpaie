@@ -602,16 +602,16 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let siens: Vec<&Lu> = rangs.iter().map(|&k| &lus[k]).collect();
         let proposees = fiche_salarie(nir, &siens, convention_des(rangs).as_deref())?;
         if let Some(cle) = par_nir.get(nir) {
-            let fiche = &ctx.salaries[cle.as_str()];
+            let fiche = &ctx.salaries[cle];
             let vue = proposee::de(NomDeFiche::Salarie, &fiche.champs)?;
             let ec = ecarts_salarie(&vue, &siens, &chemin_de);
             // Ce qui y est vide, de ce que les bulletins impriment (la fiche qu'ils creeraient) ; ce que la DSN complete
             // deja garde la valeur de la DSN (`completer::ajouter`).
             let champs = completer::champs_a_completer(NomDeFiche::Salarie, &vue, &proposees)?;
-            let entree = fiche_existante(&mut reponse.salaries, NomDeFiche::Salarie, cle, || libelle_salarie(fiche));
+            let entree = fiche_existante(&mut reponse.salaries, NomDeFiche::Salarie, cle.as_str(), || libelle_salarie(fiche));
             entree.ajouter_ecarts(ec);
             noter_par_champ(entree, &champs, &siens, &chemin_de)?;
-            completer::ajouter(&mut ap.a_completer, NomDeFiche::Salarie, Some(cle), &champs);
+            completer::ajouter(&mut ap.a_completer, NomDeFiche::Salarie, Some(cle.as_str()), &champs);
             continue;
         }
         if nirs_dsn.contains(nir) {
@@ -647,11 +647,11 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         let convention_cert = siens.iter().rev().find_map(|c| c.aem.as_ref().and_then(|a| a.idcc.clone())).or_else(|| convention.clone());
         let proposees = fiche_de_certificats(nir, &siens, convention_cert.as_deref())?;
         if let Some(cle) = par_nir.get(nir) {
-            let fiche = &ctx.salaries[cle.as_str()];
+            let fiche = &ctx.salaries[cle];
             let champs = completer::champs_a_completer(NomDeFiche::Salarie, &proposee::de(NomDeFiche::Salarie, &fiche.champs)?, &proposees)?;
-            let entree = fiche_existante(&mut reponse.salaries, NomDeFiche::Salarie, cle, || libelle_salarie(fiche));
+            let entree = fiche_existante(&mut reponse.salaries, NomDeFiche::Salarie, cle.as_str(), || libelle_salarie(fiche));
             entree.noter(&champs, &origine_cert(dernier));
-            completer::ajouter(&mut ap.a_completer, NomDeFiche::Salarie, Some(cle), &champs);
+            completer::ajouter(&mut ap.a_completer, NomDeFiche::Salarie, Some(cle.as_str()), &champs);
             continue;
         }
         if ap.a_creer.iter().any(|a| a.nom == NomDeFiche::Salarie && a.nir().as_deref() == Some(nir.as_str())) {

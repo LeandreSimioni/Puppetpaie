@@ -411,8 +411,8 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
             let embauches = a
                 .embauches
                 .iter()
-                .map(|x| Ok(crate::journal::EmbaucheDeclaree { salarie: droit::contexte::IdSalarie::lire(&x.salarie)?, numero: None, debut: x.debut, fin: None }))
-                .collect::<R<Vec<_>>>()?;
+                .map(|x| crate::journal::EmbaucheDeclaree { salarie: x.salarie.clone(), numero: None, debut: x.debut, fin: None })
+                .collect::<Vec<_>>();
             let detail = crate::journal::DetailDpae { embauches, ..crate::journal::DetailDpae::nouveau(true, true) };
             let mut e = Envoi::nouveau(vue.mode, qui, vue.accepte, "urssaf-dpae", SANS_CERTIFICAT, detail);
             e.mois = a.mois;

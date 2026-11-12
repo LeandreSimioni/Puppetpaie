@@ -20,7 +20,7 @@ use declarations::champs::{self, Valeur};
 use droit::fiche::{CaseDeFiche, CaseEntreprise, CaseEtablissement, CaseSalarie, CaseSpectacle, NomDeCase, NomDeFiche};
 use droit::autre_revenu_brut::AutreElementDeRevenuBrut;
 use droit::catalogue::{self, Rubrique};
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use droit::emplois::{self};
 use droit::natures::{self, MotifDeRupture, Nature};
 use droit::permanents;
@@ -858,7 +858,7 @@ fn configuration(ctx: &Contexte) -> R<ConfigurationDeLaPage> {
     let salaries = ctx
         .salaries
         .iter()
-        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSalarieDatee>(ctx, Some(k.as_str()), v.champs.clone(), temps_de(ctx.salarie_brut(k.as_str()), &jour)?, &ent, &p))
+        .map(|(k, v)| fiche_verifiee::<droit::fiche::FicheSalarieDatee>(ctx, Some(k.as_str()), v.champs.clone(), temps_de(ctx.salarie_brut(k), &jour)?, &ent, &p))
         .collect::<R<Vec<_>>>()?;
     let spectacles = ctx
         .spectacles
@@ -1535,7 +1535,7 @@ fn conventions(ctx: &Contexte) -> R<Vec<ConventionServie>> {
 /// (`engagement::proposees`).
 #[derive(Debug, Clone, serde::Serialize)]
 struct SalarieDeLaListe {
-    cle: String,
+    cle: IdSalarie,
     libelle: String,
 }
 
@@ -1603,11 +1603,11 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
 
     // Les listes ou l'on CHOISIT : les fiches courantes seulement. Une archive
     // reste dans `configuration`, ou on peut la relire et la reactiver.
-    let mut cles: Vec<&str> = ctx.salaries_actifs();
+    let mut cles: Vec<&IdSalarie> = ctx.salaries_actifs();
     cles.sort();
     let salaries = cles
         .into_iter()
-        .map(|k| SalarieDeLaListe { cle: k.to_string(), libelle: ctx.nomme(k) })
+        .map(|k| SalarieDeLaListe { cle: k.clone(), libelle: ctx.nomme(k) })
         .collect();
     let spectacles = ctx
         .spectacles_actifs()

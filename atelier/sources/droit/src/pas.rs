@@ -138,7 +138,7 @@ pub fn est_perime(e: &TauxPas, le: Jour) -> bool {
 // ------------------------------------------------------------------ lecture
 
 /// Vrai seulement si la fiche est la ET qu'elle n'a pas de NIR.
-pub fn sans_nir(ctx: &Contexte, cle: &str) -> bool {
+pub fn sans_nir(ctx: &Contexte, cle: &IdSalarie) -> bool {
     ctx.salaries.get(cle).is_some_and(|f| f.nir.portee().is_none_or(|n| n.trim().is_empty()))
 }
 
@@ -156,7 +156,7 @@ pub fn le_jour(ctx: &Contexte, le: Option<Jour>) -> Jour {
 /// LES TAUX RECUS POUR LE SALARIE `cle`, du premier mis a disposition au dernier (a instant egal, dans l'ordre ou ils
 /// se sont ecrits), ceux de sa fiche s'il en a une. Une valeur de la fiche qui n'est pas un taux (la case vide d'avant le
 /// premier) n'en est pas un.
-pub fn recus(ctx: &Contexte, cle: &str) -> R<Vec<TauxPas>> {
+pub fn recus(ctx: &Contexte, cle: &IdSalarie) -> R<Vec<TauxPas>> {
     let mut ecrits: Vec<_> = ctx.salarie_brut(cle).into_iter().flat_map(|fiche| fiche.taux_pas.iter().flatten()).collect();
     ecrits.sort_by_key(|e| e.depuis);
     let mut r: Vec<TauxPas> = ecrits.into_iter().filter_map(|e| e.valeur.dite()).cloned().collect();
@@ -510,7 +510,7 @@ pub fn situation(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option
     })
 }
 
-fn archive(ctx: &Contexte, cle: &str) -> bool {
+fn archive(ctx: &Contexte, cle: &IdSalarie) -> bool {
     ctx.salaries.get(cle).is_some_and(|f| f.archivee())
 }
 

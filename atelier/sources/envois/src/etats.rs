@@ -171,7 +171,7 @@ pub fn etat_des_embauches(lignes: &[Ligne]) -> HashMap<Paire, EtatEmbauche> {
         for x in &e.detail.embauches {
             let Some(n) = &x.numero else { continue };
             // La derniere ligne du certificat pour ce nom et ce premier jour.
-            let cert = certifiees.iter().rev().find(|c| c.embauche == x.debut.iso() && meme_nom(&x.salarie, &c.nom));
+            let cert = certifiees.iter().rev().find(|c| c.embauche == x.debut.iso() && meme_nom(x.salarie.as_str(), &c.nom));
             etat.insert(
                 paire(&x.salarie, Some(n)),
                 EtatEmbauche {
@@ -321,8 +321,8 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&str) -> Option<&'f droit::fic
     // Les reponses deja relevees, par envoi (son code) et par contrat ou avenant : une reponse ne se note qu'une fois.
     // La mention « signe » retiree a la main l'emporte sur la reponse deja lue ; seul un nouvel envoi (un autre code)
     // attend une nouvelle reponse.
-    let releve = |code: &str, salarie: &str, numero: Option<&str>, avenant: Option<i64>| (code.to_string(), salarie.to_string(), numero.map(str::to_string), avenant);
-    let deja_releves: HashSet<(String, String, Option<String>, Option<i64>)> = lignes
+    let releve = |code: &str, salarie: &IdSalarie, numero: Option<&str>, avenant: Option<i64>| (code.to_string(), salarie.clone(), numero.map(str::to_string), avenant);
+    let deja_releves: HashSet<(String, IdSalarie, Option<String>, Option<i64>)> = lignes
         .iter()
         .flat_map(revenus)
         .filter(|d| d.recu && d.par_courriel())

@@ -161,8 +161,8 @@ impl<'a> Recapitulatifs<'a> {
     /// Les deux etats reduits au salarie `cle` (les lignes qui portent sa cle : deux salaries de meme nom et de meme
     /// prenom ont chacun la leur), en un PDF dans `tmp`. `None` quand aucun des deux n'a rien a dire de
     /// lui. Les avertissements des etats nomment d'autres salaries : la fiche ne les porte pas.
-    pub fn pdf(&mut self, cle: &str, tmp: &Path) -> R<Option<PathBuf>> {
-        let fiche = self.ctx.salaries.get(cle).ok_or_else(|| socle::fichiers::absent(cle).reclasser(Classe::Manque))?;
+    pub fn pdf(&mut self, cle: &droit::contexte::IdSalarie, tmp: &Path) -> R<Option<PathBuf>> {
+        let fiche = self.ctx.salaries.get(cle).ok_or_else(|| socle::fichiers::absent(cle.as_str()).reclasser(Classe::Manque))?;
         let lui = qui(fiche)?;
         let mut morceaux: Vec<Vec<u8>> = Vec::new();
         for i in 0..2 {
@@ -174,7 +174,7 @@ impl<'a> Recapitulatifs<'a> {
             let sections: Vec<Section> = t
                 .sections
                 .iter()
-                .map(|s| Section::nouvelle(s.libelle.clone(), s.lignes.iter().filter(|l| l.texte("cle_salarie") == cle).cloned().collect()))
+                .map(|s| Section::nouvelle(s.libelle.clone(), s.lignes.iter().filter(|l| l.texte("cle_salarie") == cle.as_str()).cloned().collect()))
                 .filter(|s| !s.lignes.is_empty())
                 .collect();
             if sections.is_empty() {

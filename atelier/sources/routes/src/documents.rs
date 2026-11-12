@@ -262,11 +262,6 @@ fn nom_dans_l_archive(chemin: &str) -> &str {
     }
 }
 
-/// `AER_<cle>_<etiquette>.pdf`.
-fn nom_fichier(prefixe: &str, cle: &str, etiq: &str) -> String {
-    format!("{}_{}_{}.pdf", prefixe, cle, etiq)
-}
-
 /// Une attestation d'un retour de nature 46, rattachee ou non a une fiche.
 struct Attestation {
     nom_archive: String,
@@ -318,7 +313,7 @@ fn aer_manquantes(ctx: &Contexte, mois: Mois) -> R<Vec<String>> {
     let mut out: Vec<String> = Vec::new();
     for groupe in attestations_archivees(ctx, Some(mois), None)?.values() {
         let Some(att) = groupe.first() else { continue };
-        if !att.cle.as_deref().is_some_and(|cle| dossier.join(nom_fichier("AER", cle, &etiquette)).exists()) {
+        if !att.cle.as_ref().is_some_and(|cle| dossier.join(envoi::nom_fichier("AER", cle, &etiquette)).exists()) {
             // Rattachee, la cle de sa fiche ; sinon, le nom que l'attestation porte.
             let nom = match &att.cle {
                 Some(cle) => cle.to_string(),
@@ -466,7 +461,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
         let donnees = if signees.len() == 1 { signees.remove(0) } else { documents::fabrique::fusion_octets(&signees, &std::env::temp_dir())? };
         let cible = ctx.racine.join("sorties").join(periode.to_string()).join("envoi");
         std::fs::create_dir_all(&cible).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
-        let chemin = cible.join(nom_fichier("AER", &cle, &periode.etiquette()));
+        let chemin = cible.join(envoi::nom_fichier("AER", &cle, &periode.etiquette()));
         std::fs::write(&chemin, donnees).map_err(|e| erreur(Classe::Disque, e.to_string()))?;
         fait.ecrits.push((periode, cle, chemin));
     }
@@ -553,12 +548,12 @@ fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: Mois, doss
         let de_lui = |p: &&engagement::calcul::Paie| p.salarie.id == cle;
         let mut pieces = Vec::new();
         if paies.iter().filter(de_lui).any(|p| !p.engagement.sans_paie()) {
-            pieces.push(dossier.join(nom_fichier("Bulletin", &cle, &etiq)));
+            pieces.push(dossier.join(envoi::nom_fichier("Bulletin", &cle, &etiq)));
         }
         if certificats.iter().any(|(c, _, pc)| *c == cle && pc.is_some()) {
-            pieces.push(dossier.join(nom_fichier("CertificatCS", &cle, &etiq)));
+            pieces.push(dossier.join(envoi::nom_fichier("CertificatCS", &cle, &etiq)));
         }
-        let aer = dossier.join(nom_fichier("AER", &cle, &etiq));
+        let aer = dossier.join(envoi::nom_fichier("AER", &cle, &etiq));
         if aer.exists() {
             pieces.push(aer);
         }
@@ -827,7 +822,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
 
 /// Le nom du salarie `cle` tel que l'ecran le montre (`routes::nom_a_l_ecran`), lu de sa fiche ; quand la fiche n'est
 /// plus la, celui que sa paie porte (`de_la_paie`).
-fn nom_a_l_ecran(ctx: &Contexte, cle: &str, de_la_paie: &str) -> String {
+fn nom_a_l_ecran(ctx: &Contexte, cle: &IdSalarie, de_la_paie: &str) -> String {
     match ctx.salaries.get(cle) {
         Some(s) => super::nom_a_l_ecran(s, cle),
         None => de_la_paie.to_string(),
@@ -836,7 +831,7 @@ fn nom_a_l_ecran(ctx: &Contexte, cle: &str, de_la_paie: &str) -> String {
 
 /// Le nom d'un salarie tel que sa paie le porte (`ChampsSalarie::nomme`) ; une fiche sans nom se designe par sa cle.
 fn nom_du_salarie(s: &droit::fiche::SalarieDuContrat) -> String {
-    super::nom_a_l_ecran(s, &s.id.to_string())
+    super::nom_a_l_ecran(s, &s.id)
 }
 
 /// Les messages, le compte verifie -- rien n'est parti.
@@ -952,7 +947,7 @@ pub(crate) fn choisir(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::P
 }
 
 /// La phrase du courriel de renvoi qui dit ou la correction d'un salarie (par sa cle) sera declaree.
-type DeclarationDUneCorrection = Box<dyn Fn(&str) -> String>;
+type DeclarationDUneCorrection = Box<dyn Fn(&IdSalarie) -> String>;
 
 /// LA CORRECTION D'UN MOIS DONT L'ANNULE-ET-REMPLACE EST PASSE : le courriel de renvoi ajoute une phrase, la correction
 /// sera declaree avec la paie d'un mois suivant. La DSN du mois ne se refait pas (`se_corrige_ailleurs` : sa DSN est
@@ -966,7 +961,7 @@ fn declaration_de_la_correction(ctx: &Contexte, mois: Mois) -> R<Option<Declarat
     }
     let porteur = compagnie::etat_dsn::dsn_qui_porte(ctx, mois)?;
     let (a_porter, portees) = crate::regularisation::corrections_du_mois(ctx, mois)?;
-    let mut porteurs: HashMap<String, Mois> = HashMap::new();
+    let mut porteurs: HashMap<IdSalarie, Mois> = HashMap::new();
     for c in portees {
         if let Some(par) = c.portee_par {
             porteurs.insert(c.salarie, par);
@@ -976,7 +971,7 @@ fn declaration_de_la_correction(ctx: &Contexte, mois: Mois) -> R<Option<Declarat
         porteurs.remove(&c.salarie);
     }
     let de = crate::regularisation::de_mois_en_clair(mois);
-    Ok(Some(Box::new(move |cle: &str| {
+    Ok(Some(Box::new(move |cle: &IdSalarie| {
         format!(
             "Ta paie {} était déjà déclarée : la correction sera déclarée avec la paie {}.\n\n",
             de,
@@ -1112,7 +1107,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     documents.engager(ctx, mois)?;
     let reponse = format!("{} message(s) envoye(s)", partis.len());
     noter(ctx, journal::Ligne::Documents(par_courriel(le_mois, qui, true, &partis.join(", "), &reponse, detail(&messages)?, Some(versions))))?;
-    let noms: Vec<String> = messages.iter().map(|m| nom_a_l_ecran(ctx, &m.cle, &m.nom)).collect();
+    let noms: Vec<String> = messages.iter().map(|m| Ok(nom_a_l_ecran(ctx, &IdSalarie::lire(&m.cle)?, &m.nom))).collect::<R<_>>()?;
     Ok(DocumentsEnvoyes {
         phrase: format!("Documents {} envoyés à {} : {}.", socle::texte::de(&mois.libelle(Graphie::Accentuee)), socle::ecran::compte(partis.len(), "salarié", "salariés"), noms.join(", ")),
         partis,

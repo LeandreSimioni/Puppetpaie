@@ -643,18 +643,18 @@ pub(crate) fn engagements_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<(IdSalari
 /// encore aucun cachet, R12, n'en propose aucun : la ligne reste a completer).
 fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
     let mut out: Vec<EnCours> = Vec::new();
-    let mut vus: HashSet<(String, Jour, String)> = HashSet::new();
+    let mut vus: HashSet<(IdSalarie, Jour, String)> = HashSet::new();
     for i in engagement::importe::qui_continuent(&ctx.racine, mois)? {
         let b = i.objet().carte();
         let plein = |o: Option<&String>| o.map(|o| o.trim().to_string()).filter(|o| !o.is_empty());
         // Un contrat qui continue ici porte le salarie, les bornes et le numero que la DSN deposee lui a donnes.
-        let (Some(salarie), Some(debut), Some(fin), Some(numero)) = (b.salarie.as_ref().map(ToString::to_string), b.debut, b.fin, b.numero.as_ref().map(ToString::to_string)) else {
+        let (Some(salarie), Some(debut), Some(fin), Some(numero)) = (b.salarie.clone(), b.debut, b.fin, b.numero.as_ref().map(ToString::to_string)) else {
             return Err(erreur(Classe::Illisible, "Un contrat repris d'un autre logiciel ne dit pas son salarié, ses bornes ou son numéro : le reprendre à l'import."));
         };
         if !vus.insert((salarie.clone(), debut, numero.clone())) {
             continue;
         }
-        let fiche = ctx.salarie(&salarie).map_err(|m| m.reclasser(Classe::Manque))?;
+        let fiche = ctx.fiche_de(&salarie).map_err(|m| m.reclasser(Classe::Manque))?;
         let derniere = i.paies().values().last();
         let numero_objet = match plein(i.contrat().and_then(|c| c.numero_objet.as_ref())) {
             Some(n) => Some(n),
@@ -751,13 +751,6 @@ fn titre_de(spec: Option<&droit::fiche::ChampsSpectacle>, numero: Option<&str>) 
     }
 }
 
-/// « NOM Prénom » d'une clé de salarié (la clé elle-même si aucune fiche ne la nomme).
-fn nom_de(ctx: &Contexte, cle: &str) -> String {
-    match ctx.salaries.get(cle).and_then(|s| s.nomme()) {
-        Some(n) => n,
-        None => cle.to_string(),
-    }
-}
 
 /// Le nombre de cachets d'un engagement : la somme des quantites de ses lignes dont la rubrique est un cachet (une case
 /// vide n'en compte aucun).
@@ -842,7 +835,7 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
 /// `salarie` : ses seuls contrats (absent : ceux de tous).
 fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<Vec<Passe>> {
     let (premier, dernier) = (mois.premier_jour(), mois.dernier_jour());
-    let voulu = |cle: &str| salarie.is_none_or(|s| s.as_str() == cle);
+    let voulu = |cle: &IdSalarie| salarie.is_none_or(|s| s == cle);
     let spectacles = Spectacles::nouveau(ctx);
 
     let mut couverts: HashSet<Mois> = HashSet::new();
@@ -886,7 +879,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             };
             let contrat = Passe {
                 dit: dit_du_contrat(debut, fin, Some(cachets), None),
-                nom: nom_de(ctx, &cle),
+                nom: ctx.nomme(&cle),
                 salarie: cle.clone(),
                 debut,
                 fin,
@@ -919,7 +912,7 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
         let spec = a.numero_objet.as_deref().and_then(|n| spectacles.par_objet.get(n).copied());
         out.push(Passe {
             dit: dit_du_contrat(a.debut, a.fin, a.cachets, a.heures),
-            nom: nom_de(ctx, &a.salarie),
+            nom: ctx.nomme(&a.salarie),
             titre: titre_de(spec, a.numero_objet.as_deref()),
             salarie: a.salarie,
             debut: a.debut,
@@ -1445,7 +1438,7 @@ const NUMERO_DIT: &str = "numero";
 
 /// La case du numero, sauf pour un contrat dont une DSN de l'ancien logiciel a declare le numero : il est lu
 /// (`engagement::importe::numero_declare_du_contrat`), il ne se dit pas.
-fn numero_a_dire(ctx: &Contexte, salarie: &str, debut: Jour) -> R<Vec<&'static str>> {
+fn numero_a_dire(ctx: &Contexte, salarie: &IdSalarie, debut: Jour) -> R<Vec<&'static str>> {
     Ok(if engagement::importe::numero_declare_du_contrat(&ctx.racine, salarie, debut)? { Vec::new() } else { vec![NUMERO_DIT] })
 }
 
@@ -2227,7 +2220,7 @@ fn apercu_de(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
         let cle = v.salarie.cle.to_string();
         match salaries.iter_mut().find(|(c, _, _)| *c == cle) {
             Some((_, _, vs)) => vs.push(v),
-            None => salaries.push((cle, super::nom_a_l_ecran(&p.salarie, &p.salarie.id.to_string()), vec![v])),
+            None => salaries.push((cle, super::nom_a_l_ecran(&p.salarie, &p.salarie.id), vec![v])),
         }
     }
     let par_salarie = salaries

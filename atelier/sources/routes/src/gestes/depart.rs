@@ -256,20 +256,20 @@ fn refabriquer_sur(ctx: &Contexte, lu: Option<&Lu>, chemin: &Path, mois: Mois, n
 }
 
 /// L'engagement de `mois` du salarie `cle` au contrat `numero`, actif ou non.
-fn engagement_de(ctx: &Contexte, mois: Mois, cle: &str, numero: &str) -> R<engagement::stock::Objet> {
+fn engagement_de(ctx: &Contexte, mois: Mois, cle: &IdSalarie, numero: &str) -> R<engagement::stock::Objet> {
     engagement::stock::objets_du_mois(&ctx.racine, mois)?
         .into_iter()
         .chain(engagement::stock::non_actifs_du_mois(&ctx.racine, mois)?)
         .find(|o| {
             let b = &*o.brut;
-            b.saisie.carte.salarie.as_deref() == Some(cle) && b.saisie.carte.numero.as_deref() == Some(numero)
+            b.saisie.carte.salarie.as_ref() == Some(cle) && b.saisie.carte.numero.as_deref() == Some(numero)
         })
         .ok_or_else(|| erreur(Classe::Illisible, format!("{} : aucun engagement de {} ne porte le contrat {} qu'une DSN partie a declare.", cle, mois.libelle(socle::mois::Graphie::Accentuee), numero)))
 }
 
 /// La paie de `mois` que la version `version` de l'engagement `o` (salarie `cle`, contrat `numero`) a ecrite
 /// (`engagement::etats::paie_de_la_version_n`).
-fn paie_de_la_version(ctx: &Contexte, o: &engagement::stock::Objet, cle: &str, numero: &str, mois: Mois, version: u64) -> R<Paie> {
+fn paie_de_la_version(ctx: &Contexte, o: &engagement::stock::Objet, cle: &IdSalarie, numero: &str, mois: Mois, version: u64) -> R<Paie> {
     engagement::etats::paie_de_la_version_n(ctx, o, version, mois)?
         .ok_or_else(|| erreur(Classe::Illisible, format!("{} : la version {} du contrat {} n'a pas de paie de {}.", cle, version, numero, mois.libelle(Graphie::Accentuee))))
 }
@@ -314,7 +314,7 @@ fn dsn_partie(ctx: &Contexte, m: &mut Moteur, lignes: &[envois::journal::Ligne],
     let mut paies: Vec<Paie> = Vec::new();
     let mut regs: Vec<declarations::dsn::Regularisation> = Vec::new();
     for v in l.versions().into_iter().flatten() {
-        let (cle, numero, version) = (v.salarie.to_string(), v.numero.to_string(), v.version);
+        let (cle, numero, version) = (v.salarie.clone(), v.numero.to_string(), v.version);
         let Some(c) = v.mois.filter(|&c| c != le_mois) else {
             let o = engagement_de(ctx, le_mois, &cle, &numero)?;
             paies.push(paie_de_la_version(&ctx_m, &o, &cle, &numero, le_mois, version)?);
@@ -624,16 +624,8 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
             // La ligne du journal de son depot les emporte en sa forme (`envois::journal::Version`).
             let portees: Vec<envois::journal::Version> = portees
                 .iter()
-                .map(|p| -> R<envois::journal::Version> {
-                    Ok(envois::journal::Version {
-                        salarie: droit::contexte::IdSalarie::lire(&p.salarie)?,
-                        numero: engagement::numeros::NumeroContrat::lire(&p.numero)?,
-                        version: p.version,
-                        mois: Some(p.mois),
-                    })
-                })
-                .collect::<R<_>>()
-                .map_err(|e| e.reclasser(Classe::Illisible))?;
+                .map(|p| envois::journal::Version { salarie: p.salarie.clone(), numero: p.numero.clone(), version: p.version, mois: Some(p.mois) })
+                .collect();
             let forme = Forme { type_dsn, ordre, etablissement: n, constitution: ctx.aujourdhui, remplacee_versait_pas };
             a_ecrire.push((f_dsn.clone(), fabriquer_du_present(ctx, &lu, mois, &forme)?.texte, portees));
         }
@@ -878,7 +870,7 @@ pub(crate) fn fabriquer_documents(ctx: &Contexte, mois: Mois, cles: &[IdSalarie]
                 prochain_ce = Some(n + combien);
                 faits.reserves.enregistrer(an, Suite::CertificatCs, n + combien - 1);
                 a_poser.entry(i).or_default().1 = Some((n, n + combien - 1));
-                if ctx.salarie(cle).map_err(|e| e.reclasser(Classe::Illisible))?.nir.is_none() {
+                if ctx.fiche_de(cle).map_err(|e| e.reclasser(Classe::Illisible))?.nir.is_none() {
                     faits.avertissements.push(format!(
                         "{} : certificat Conges Spectacles emis SANS numero de securite sociale -- Audiens ne pourra pas le rattacher.",
                         documents::tableaux_export::qui_souple(&paies[i].salarie)
@@ -948,7 +940,7 @@ fn imprimer(ctx: &Contexte, le_mois: Mois, ent: &droit::contexte::EntrepriseDuDo
         }
     }
     let siennes = |cle: &IdSalarie| -> Vec<usize> { (0..paies.len()).filter(|i| cle_de(&paies[*i]) == *cle && numerotee(*i)).collect() };
-    let piece_de = |cle: &str| dossier.join(envois::envoi::nom_fichier("Bulletin", cle, &etiq));
+    let piece_de = |cle: &IdSalarie| dossier.join(envois::envoi::nom_fichier("Bulletin", cle, &etiq));
     let archivees: Vec<usize> = (0..paies.len()).filter(|i| numerotee(*i)).collect();
     let archive = sortie.join(format!("Bulletins_{}.pdf", etiq));
     let archive_a_ecrire = !archivees.is_empty() && a_ecrire(&archive);
@@ -1253,7 +1245,7 @@ fn paies_emportees(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne) -> R<
     let ctx_m = ctx.du_mois(mois).map_err(|e| e.reclasser(Classe::Illisible))?;
     let mut out = Vec::new();
     for v in l.versions().into_iter().flatten() {
-        let (cle, numero, version) = (v.salarie.to_string(), v.numero.to_string(), v.version);
+        let (cle, numero, version) = (v.salarie.clone(), v.numero.to_string(), v.version);
         let o = engagement_de(ctx, mois, &cle, &numero)?;
         out.push(paie_de_la_version(&ctx_m, &o, &cle, &numero, mois, version)?);
     }
@@ -1425,7 +1417,7 @@ pub(crate) fn refaire_le_contrat(ctx: &Contexte, lignes: &[envois::journal::Lign
     let mut paies: Vec<Paie> = Vec::new();
     for c in &contrats {
         let numero = c.numero.as_deref().ok_or_else(|| erreur(Classe::Illisible, format!("journal : un contrat de {} est parti sans numero", nom)))?.to_string();
-        let (cle, mois_c) = (c.salarie.to_string(), c.mois);
+        let (cle, mois_c) = (c.salarie.clone(), c.mois);
         let version = l
             .versions()
             .into_iter()

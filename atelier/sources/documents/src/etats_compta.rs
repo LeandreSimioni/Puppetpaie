@@ -1446,7 +1446,7 @@ pub fn provision_conges(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         if let Some(c) = charges {
             charges_dites = add(charges_dites, c);
         }
-        let fiche = ctx.salaries.get(cle.as_str()).ok_or_else(|| socle::fichiers::absent(&cle).reclasser(Classe::Manque))?;
+        let fiche = ctx.salaries.get(&cle).ok_or_else(|| socle::fichiers::absent(cle.as_str()).reclasser(Classe::Manque))?;
         let nom = fiche.nom.exigee("nom").map_err(|m| m.reclasser(Classe::Manque))?;
         let mut l = Ligne::nouvelle();
         l.t("salarie", match fiche.prenom.portee() {

@@ -200,7 +200,7 @@ pub fn recap_france_travail(paies: &[&Paie], m: socle::mois::Mois, employeur: &s
 
 
 
-pub fn nom_fichier(prefixe: &str, cle: &str, etiq: &str) -> String {
+pub fn nom_fichier(prefixe: &str, cle: &droit::contexte::IdSalarie, etiq: &str) -> String {
     format!("{}_{}_{}.pdf", prefixe, cle, etiq)
 }
 

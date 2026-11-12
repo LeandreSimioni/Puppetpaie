@@ -372,7 +372,7 @@ pub enum Refus {
 }
 
 /// Le sous-compte 421 d'un salarie, ou `None` si le plan n'en tient pas (`net.par_salarie` absent).
-pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle: &str) -> Result<Option<String>, Refus> {
+pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle: &droit::contexte::IdSalarie) -> Result<Option<String>, Refus> {
     let Some(modele) = &plan.net.par_salarie else { return Ok(None) };
     if modele.is_empty() {
         return Err(Refus::Operation(
@@ -385,7 +385,7 @@ pub fn compte_du_salarie(plan: &Plan, salarie: &droit::fiche::ChampsSalarie, cle
         })?,
         None => None,
     };
-    formater(modele, code, cle, 0).map(Some).map_err(|(classe, message)| {
+    formater(modele, code, cle.as_str(), 0).map(Some).map_err(|(classe, message)| {
         // `compte_du_salarie` ne rattrape qu'une valeur illisible ou qui manque ; le reste traverse.
         match classe {
             Classe::Illisible | Classe::Manque => {}

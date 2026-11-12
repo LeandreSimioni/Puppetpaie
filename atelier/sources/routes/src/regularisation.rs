@@ -303,7 +303,7 @@ fn avant_apres(mois: Mois, avant: Option<&Paie>, apres: &Paie) -> R<Correction> 
     Ok(Correction {
         infos_dit: format!("{} — {}", contrat, montants),
         portee_dit: "prochaine DSN".to_string(),
-        salarie: apres.salarie.id.to_string(),
+        salarie: apres.salarie.id.clone(),
         debut: apres.engagement.debut,
         nom: nom_de(apres),
         spectacle: apres.titre()?,
@@ -326,7 +326,7 @@ fn avant_apres(mois: Mois, avant: Option<&Paie>, apres: &Paie) -> R<Correction> 
 pub(crate) struct Correction {
     infos_dit: String,
     portee_dit: String,
-    pub(crate) salarie: String,
+    pub(crate) salarie: droit::contexte::IdSalarie,
     debut: socle::date::Jour,
     nom: String,
     spectacle: String,

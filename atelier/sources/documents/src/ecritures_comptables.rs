@@ -143,8 +143,7 @@ pub fn ecritures_du_mois(ctx: &Contexte, mois: Mois, plan: &Plan, departs: &enga
             net -= prelevement;
         }
         ajouter(&mut net_par_salarie, qui.clone(), net);
-        let cle_salarie = p.salarie().id.to_string();
-        let compte = compte_du_salarie(plan, p.salarie(), &cle_salarie).map_err(|r| match r {
+        let compte = compte_du_salarie(plan, p.salarie(), &p.salarie().id).map_err(|r| match r {
             Refus::Operation(m) => refus(m),
             Refus::Autre(e) => e,
         })?;

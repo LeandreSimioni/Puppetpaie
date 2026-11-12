@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use socle::forme::NombreLu;
 
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use crate::saisie::{Avant, Carte, Champ, Groupe, VueDuMois};
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
@@ -809,7 +809,7 @@ pub fn vue_du_mois(racine: &Path, mois: Mois) -> R<Option<VueDuMois>> {
 
 /// L'empreinte de la saisie de `mois` (`empreinte_de_saisie`) : celle que `vue_du_mois` note, ou, pour `salarie`, celle
 /// que la paie de ses engagements du mois note ; `None` sans saisie.
-pub fn empreinte_de_la_saisie_du_mois(racine: &Path, mois: Mois, salarie: Option<&str>) -> R<Option<String>> {
+pub fn empreinte_de_la_saisie_du_mois(racine: &Path, mois: Mois, salarie: Option<&IdSalarie>) -> R<Option<String>> {
     Ok(vue_et_empreinte(racine, mois)?.map(|s| if salarie.is_none() { s.1.clone() } else { empreinte_de_saisie(&s.0, salarie) }))
 }
 
@@ -862,7 +862,7 @@ pub(crate) fn vue_et_empreinte(racine: &Path, mois: Mois) -> R<Option<std::sync:
 
 /// La cle sous laquelle un calcul note la saisie d'un mois qu'il a lue (`socle::fichiers::suivre`) : `saisie <mois>`, ou
 /// `saisie <mois> <salarie>` pour la saisie dont depend la paie de ce salarie dans son mois (`etats::calculer_les_rangs`).
-pub fn cle_de_saisie(mois: Mois, salarie: Option<&str>) -> String {
+pub fn cle_de_saisie(mois: Mois, salarie: Option<&IdSalarie>) -> String {
     socle::fichiers::LectureDatee::Saisie { mois, salarie }.cle()
 }
 
@@ -873,7 +873,7 @@ pub fn cle_de_saisie(mois: Mois, salarie: Option<&str>) -> String {
 /// comptent : une paie ecrite ne lit que ceux-la (`etats::calculer_les_rangs`), et un brouillon tape a cote d'elle ne
 /// la fait pas recalculer. Avec `salarie`, seuls ses engagements comptent : la paie d'un engagement ne lit, des autres
 /// engagements du mois, que ceux du meme salarie (`etats::calculer_les_rangs`).
-pub fn empreinte_de_saisie(vue: &VueDuMois, salarie: Option<&str>) -> String {
+pub fn empreinte_de_saisie(vue: &VueDuMois, salarie: Option<&IdSalarie>) -> String {
     #[derive(Serialize)]
     struct Tete<'a> {
         mois: &'a Mois,
@@ -882,7 +882,7 @@ pub fn empreinte_de_saisie(vue: &VueDuMois, salarie: Option<&str>) -> String {
     let engagements: Vec<Carte> = vue
         .engagements
         .iter()
-        .filter(|e| e.valide.is_some() && salarie.is_none_or(|s| e.salarie.as_deref() == Some(s)))
+        .filter(|e| e.valide.is_some() && salarie.is_none_or(|s| e.salarie.as_ref() == Some(s)))
         .map(|e| Carte { valide: None, numero: None, ..e.clone() })
         .collect();
     let tete = Tete { mois: &vue.mois, taux_cachet: &vue.taux_cachet };
@@ -931,7 +931,7 @@ pub fn ecrire_la_carte(ctx: &Contexte, mois: Mois, id: Option<&Identite>, saisie
     if let Some(cle) = &saisie.salarie {
         if let Some(debut) = saisie.debut_lu() {
             if crate::importe::celui_de(racine, mois, cle, debut)?.is_some() {
-                return Err(refus(crate::importe::refus(cle, debut)));
+                return Err(refus(crate::importe::refus(cle.as_str(), debut)));
             }
         }
     }
@@ -1050,7 +1050,7 @@ pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: usize, saisie: &Carte, 
     let le = match jour {
         None => None,
         Some(n) => {
-            let qui = crate::salarie_nomme(ctx, o.carte().salarie.as_deref());
+            let qui = crate::salarie_nomme(ctx, o.carte().salarie.as_ref());
             // AU PREMIER MOIS DE L'ENGAGEMENT, ses termes valent de son debut : un jour n'a rien a dater.
             if mois == o.fichier {
                 return Err(socle::refus!(
@@ -1086,7 +1086,7 @@ pub fn poser_la_saisie(ctx: &Contexte, mois: Mois, rang: usize, saisie: &Carte, 
                     "{} : à partir du {}, ce contrat deviendrait un contrat payé au mois ({}), et la compagnie ne dit pas \
                      qu'elle emploie des salariés au mois ce jour-là. À faire : cocher « La compagnie emploie aussi des \
                      salariés au mois » dans Configuration › Entreprise, à cette date ; sinon garder sa nature. Rien n'est écrit.",
-                    crate::salarie_nomme(ctx, o.carte().salarie.as_deref()),
+                    crate::salarie_nomme(ctx, o.carte().salarie.as_ref()),
                     depuis.jj_mm_aaaa(),
                     nature.libelle
                 ));

@@ -262,10 +262,10 @@ fn paie_sur_son_ecrite(mut paie: Paie, x: &PaieEcrite) -> Paie {
 /// `numero` : le numero de son bulletin, le premier N CE de son certificat. Ils se relisent ensuite (`numeros_ecrits`) :
 /// un document reparti a l'identique garde ses numeros. Une paie deja numerotee ne change pas de
 /// numero.
-pub fn poser_numeros_des_documents(ctx: &Contexte, mois: Mois, cle: &str, numero: &str, bulletin: Option<&str>, ce: Option<i64>) -> R<()> {
+pub fn poser_numeros_des_documents(ctx: &Contexte, mois: Mois, cle: &IdSalarie, numero: &str, bulletin: Option<&str>, ce: Option<i64>) -> R<()> {
     let o = stock::objets_du_mois(&ctx.racine, mois)?
         .into_iter()
-        .find(|o| o.carte().salarie.as_deref() == Some(cle) && o.carte().numero.as_deref() == Some(numero))
+        .find(|o| o.carte().salarie.as_ref() == Some(cle) && o.carte().numero.as_deref() == Some(numero))
         .ok_or_else(|| socle::refus!("{} : pas d'engagement de {} au contrat {}", mois, cle, numero))?;
     let Some(mut p) = crate::paies::presente(&o, mois)?.filter(|_| o.est_valide()).map(|p| (*p).clone()) else {
         return Err(socle::refus!("{} : l'engagement de {} au contrat {} n'a pas de paie validee", mois, cle, numero));
@@ -325,7 +325,7 @@ impl Etat {
 pub fn signe_ailleurs(ctx: &Contexte, o: &Objet) -> R<bool> {
     let c = o.carte();
     let nat = c.nature_lue()?;
-    let salarie = c.salarie.as_deref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
+    let salarie = c.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?;
     // Un engagement sans debut n'a pas de contrat.
     let signe = crate::debut_brut(&o.brut).map(|debut| crate::signe_ailleurs_de(&ctx.racine, &nat, salarie, debut, c.numero.as_deref(), o.fichier));
     Ok(signe.transpose()?.is_some_and(|oui| oui))
@@ -334,7 +334,7 @@ pub fn signe_ailleurs(ctx: &Contexte, o: &Objet) -> R<bool> {
 /// Qui est l'engagement `o`, pour une phrase de l'ecran : « MARTIN Lou (contrat du 20/11/2026) » (`crate::salarie_nomme`).
 pub fn qui_de(ctx: &Contexte, o: &Objet) -> String {
     let debut: String = crate::debut_brut(&o.brut).map(|j| j.jj_mm_aaaa()).into_iter().collect();
-    format!("{} (contrat du {})", crate::salarie_nomme(ctx, o.carte().salarie.as_deref()), debut)
+    format!("{} (contrat du {})", crate::salarie_nomme(ctx, o.carte().salarie.as_ref()), debut)
 }
 
 /// Ce qu'est l'engagement `o` pour le mois `mois`, tel qu'il est ecrit.
@@ -451,10 +451,10 @@ pub fn valides_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<bool>> {
 
 /// La paie ecrite de `mois` de l'engagement du salarie `cle` (la cle de sa fiche) au contrat `numero`, lue par
 /// `du_mois` ; `None` s'il n'est pas valide ou n'a pas de paie ecrite pour ce mois.
-pub fn paie_ecrite_de(ctx: &Contexte, mois: Mois, cle: &str, numero: &str, departs: &Departs) -> R<Option<PaieEcrite>> {
+pub fn paie_ecrite_de(ctx: &Contexte, mois: Mois, cle: &IdSalarie, numero: &str, departs: &Departs) -> R<Option<PaieEcrite>> {
     for e in du_mois(ctx, mois, departs)? {
         let o = e.objet();
-        if o.carte().salarie.as_deref() == Some(cle) && o.carte().numero.as_deref() == Some(numero) {
+        if o.carte().salarie.as_ref() == Some(cle) && o.carte().numero.as_deref() == Some(numero) {
             if let Some(p) = e.paie_ecrite(mois)? {
                 return Ok(Some((*p).clone()));
             }
@@ -663,7 +663,7 @@ impl PaieDuMois {
 ///
 /// Le calcul qui les lit note leur empreinte (`paies <mois> <salarie>`, `empreinte_des_paies_validees`), et elle seule :
 /// une paie validee de ce salarie qui change fait recalculer ses mois qui l'ont lue ; celle d'un autre salarie, non.
-pub fn paies_validees(ctx: &Contexte, mois: Mois, salarie: &str) -> R<Vec<Paie>> {
+pub fn paies_validees(ctx: &Contexte, mois: Mois, salarie: &IdSalarie) -> R<Vec<Paie>> {
     // Un mois sans saisie n'a aucune paie validee.
     let lire = |saisie: std::sync::Arc<(crate::saisie::VueDuMois, String)>| -> R<Vec<Paie>> {
         let data = &saisie.0;
@@ -676,7 +676,7 @@ pub fn paies_validees(ctx: &Contexte, mois: Mois, salarie: &str) -> R<Vec<Paie>>
 
 /// L'empreinte des paies validees de `mois` telles qu'un calcul les lit (`paies_validees`) : celles du salarie `salarie`
 /// (la cle de sa fiche), ou toutes avec `None` (ce que la DSN du mois declare) ; ce qui ne se lit pas se refuse.
-pub fn empreinte_des_paies_validees(ctx: &Contexte, mois: Mois, salarie: Option<&str>) -> R<String> {
+pub fn empreinte_des_paies_validees(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<String> {
     empreinte_des_paies(&valides_lues(ctx, mois, salarie)?, mois)
 }
 
@@ -774,13 +774,13 @@ pub(crate) fn marque_de_validation() -> String {
 /// cours de validation y porte les paies qu'elle a deja calculees, et seulement elles (un engagement deja valide, ses
 /// paies ecrites a cote). Ce qui est parti n'y change rien (une paie partie se lit comme une paie validee) : le journal
 /// des envois ne se lit pas, et un calcul qui lit ces paies ne depend que d'elles (`paies <mois> <salarie>`).
-fn valides_lues(ctx: &Contexte, mois: Mois, salarie: Option<&str>) -> R<Vec<(usize, Valide)>> {
+fn valides_lues(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R<Vec<(usize, Valide)>> {
     // Hors d'une validation, aucun engagement n'est en cours.
     let en_cours: Vec<_> = EN_VALIDATION.with(|e| e.borrow().clone()).into_iter().flatten().collect();
     let mut out = Vec::new();
     let mut a_calculer: Vec<(usize, Valide)> = Vec::new();
     for (i, o) in stock::objets_du_mois(&ctx.racine, mois)?.into_iter().enumerate() {
-        if salarie.is_some_and(|s| o.carte().salarie.as_deref() != Some(s)) {
+        if salarie.is_some_and(|s| o.carte().salarie.as_ref() != Some(s)) {
             continue;
         }
         let v = match en_cours.iter().find(|(f, r, paies)| o.fichier == *f && o.rang == *r && (paies.contains_key(&mois) || !o.est_valide())) {
@@ -1211,8 +1211,8 @@ fn paies_a_valider(ctx: &Contexte, o: &Objet, mois: Mois, anciennes: &BTreeMap<M
         let garde = match anciennes.get(&m) {
             Some(f) if partis => {
                 let salarie = o.carte().salarie.clone();
-                let saisie = saisie_comptee_valide(ctx, o, m, salarie.as_deref())?;
-                let ecrite = f.empreinte.entrees.get(&stock::cle_de_saisie(m, salarie.as_deref())).cloned();
+                let saisie = saisie_comptee_valide(ctx, o, m, salarie.as_ref())?;
+                let ecrite = f.empreinte.entrees.get(&stock::cle_de_saisie(m, salarie.as_ref())).cloned();
                 (saisie.is_some() && saisie == ecrite && imprevus_tiennent(ctx, f)?).then_some(f)
             }
             _ => None,
@@ -1282,10 +1282,10 @@ pub enum Revalidation {
 /// toute correction d'un mois parti (un bulletin rectificatif verse avec une paie suivante ; la DSN du mois tant que
 /// l'annule-et-remplace est admis, sinon la DSN qui porte la correction). Le mois parti ne se redepose pas. Rend les
 /// engagements dont une paie a change, et ceux qui attendent.
-pub fn apres_un_imprevu(ctx: &Contexte, salarie: &str, departs: &Departs) -> R<Vec<Revalidation>> {
+pub fn apres_un_imprevu(ctx: &Contexte, salarie: &IdSalarie, departs: &Departs) -> R<Vec<Revalidation>> {
     let mut out = Vec::new();
     for o in stock::objets(&ctx.racine)? {
-        if !o.est_valide() || o.est_non_actif() || o.est_importe() || o.carte().salarie.as_deref() != Some(salarie) {
+        if !o.est_valide() || o.est_non_actif() || o.est_importe() || o.carte().salarie.as_ref() != Some(salarie) {
             continue;
         }
         if !ses_departs(&o, departs).iter().any(|d| d.envoi == Envoi::Documents) {
@@ -1311,7 +1311,7 @@ pub fn apres_un_imprevu(ctx: &Contexte, salarie: &str, departs: &Departs) -> R<V
 /// L'empreinte de la saisie de `mois` dont la paie de l'engagement `o` (de `salarie`) depend, `o` compte comme valide,
 /// comme son calcul le compte (`calculer_les_rangs`) : celle qu'une paie ecrite de `o` porte si ce que le mois dit d'elle
 /// n'a pas change.
-fn saisie_comptee_valide(ctx: &Contexte, o: &Objet, mois: Mois, salarie: Option<&str>) -> R<Option<String>> {
+fn saisie_comptee_valide(ctx: &Contexte, o: &Objet, mois: Mois, salarie: Option<&IdSalarie>) -> R<Option<String>> {
     let Some(mut data) = stock::vue_du_mois(&ctx.racine, mois)? else { return Ok(None) };
     let i = rang_dans(ctx, o, mois)?;
     let Some(e) = data.engagements.get_mut(i) else { return Ok(None) };

@@ -11,7 +11,7 @@ use droit::bareme::{bareme_applique, SANTE_SUSPENSION, SANTE_SUSPENSION_MAINTENU
 use droit::natures::{AuMois, Nature};
 use droit::fiche::{AccordDfs, ChampsEntreprise, Lue, ChampsSalarie, FicheSalarie, OptionDfs as DfsEmployeur, SalarieDuContrat, Statut};
 use droit::catalogue::{code_54, rubrique, HorsAssiette};
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use socle::date::Jour;
 use socle::texte::euros;
 use droit::emplois::{emploi_de, EmploiEngagement};
@@ -775,8 +775,7 @@ cette reintegration (assiette du chomage, bloc 54 de type 35) : rien n'est calcu
 /// Arrete du 4 septembre 2025, art. 9, I, al. 1 : << dans la limite de 7 600 euros par annee civile >>. INFERENCE, ecrite comme
 /// telle : l'annee est celle de la periode de paie, et les contrats d'un mois se suivent dans l'ordre de la saisie.
 fn dfs_deja_deduite(ctx: &Contexte, eng: &Engagement, sal: &FicheSalarie, precedentes: &[Paie]) -> R<Decimal> {
-    let cle = sal.id.to_string();
-    let mut deja = crate::conges::dfs_des_mois_anterieurs(ctx, eng.fin_periode().mois_civil(), &cle)?;
+    let mut deja = crate::conges::dfs_des_mois_anterieurs(ctx, eng.fin_periode().mois_civil(), &sal.id)?;
     for p in precedentes {
         let sienne = p.salarie.id == sal.id || p.engagement.salarie == eng.salarie;
         if sienne {
@@ -1020,13 +1019,13 @@ pub enum Anciennete {
 
 impl Anciennete {
     /// L'anciennete de `fiche` (le salarie de cle `cle`) pour un contrat qui commence le `debut`.
-    pub fn de(racine: &std::path::Path, fiche: &ChampsSalarie, cle: &str, debut: Jour) -> R<Anciennete> {
+    pub fn de(racine: &std::path::Path, fiche: &ChampsSalarie, cle: &IdSalarie, debut: Jour) -> R<Anciennete> {
         if let Some(d) = fiche.date_anciennete.dite() {
             return Ok(Anciennete::Dite(*d));
         }
         let anterieur = crate::stock::objets(racine)?
             .iter()
-            .any(|o| o.carte().salarie.as_ref().is_some_and(|s| s.as_str() == cle) && o.carte().debut.is_some_and(|d| d < debut));
+            .any(|o| o.carte().salarie.as_ref() == Some(cle) && o.carte().debut.is_some_and(|d| d < debut));
         Ok(if anterieur { Anciennete::NonDite } else { Anciennete::Embauche(debut) })
     }
 
@@ -1186,7 +1185,7 @@ fn sante_de_la_suspension(ctx: &Contexte, eng: &Engagement, au_mois: &AuMois, mu
     }
     let cle = fiche.id.to_string();
     let (debut, fin) = (eng.debut_periode(), eng.fin_periode());
-    let suspensions = crate::imprevus::suspendu_sans_remuneration(&ctx.racine, &cle, eng.numero.as_deref(), &eng.debut, &debut, &fin)?;
+    let suspensions = crate::imprevus::suspendu_sans_remuneration(&ctx.racine, &fiche.id,eng.numero.as_deref(), &eng.debut, &debut, &fin)?;
     let Some(premiere) = suspensions.first() else { return Ok(fiche) };
     let motifs: Vec<String> = suspensions.iter().map(|s| s.motif().to_string()).collect();
     let ent = ctx.entreprise_au(&fin);
@@ -1718,9 +1717,8 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     // 7.9 bis : les heures en plus d'un salarie paye au mois (`heures_en_plus`) : la reduction de cotisations salariales,
     // la deduction patronale, et le net exonere d'impot, que la remuneration nette fiscale ne prend pas.
     let mois_paye = fin_periode.mois_civil();
-    let cle_sal = sal.id.to_string();
     let heures_en_plus =
-        crate::heures_en_plus::apres_les_cotisations(ctx, &bar, &lb, &lignes, brut, tot_pat, || crate::conges::exonere_des_mois_anterieurs(ctx, mois_paye, &cle_sal))?;
+        crate::heures_en_plus::apres_les_cotisations(ctx, &bar, &lb, &lignes, brut, tot_pat, || crate::conges::exonere_des_mois_anterieurs(ctx, mois_paye, &sal.id))?;
     let mut exonere = zero;
     if let Some(h) = &heures_en_plus {
         lignes.extend(h.lignes.iter().cloned());

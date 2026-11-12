@@ -100,7 +100,7 @@ pub mod veille;
 
 /// LE NOM D'UN SALARIE A L'ECRAN : celui que sa fiche porte (`ChampsSalarie::nomme`) ; une fiche qui ne nomme personne se
 /// designe par sa cle, `cle`.
-pub(crate) fn nom_a_l_ecran(sal: &droit::fiche::ChampsSalarie, cle: &str) -> String {
+pub(crate) fn nom_a_l_ecran(sal: &droit::fiche::ChampsSalarie, cle: &droit::contexte::IdSalarie) -> String {
     match sal.nomme() {
         Some(n) => n,
         None => cle.to_string(),

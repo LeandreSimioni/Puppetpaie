@@ -188,14 +188,6 @@ fn numero_de_fichier(n: Option<&str>) -> String {
     }
 }
 
-/// Le nom d'un salarie tel qu'une phrase le dit : celui de sa fiche, sinon sa cle.
-fn nom_ou_cle(s: &ChampsSalarie, cle: &str) -> String {
-    match s.nomme() {
-        Some(n) => n,
-        None => cle.to_string(),
-    }
-}
-
 /// Ce que le contrat dit, clause par clause (l'avenant qui le modifiera doit citer l'ancien
 /// texte a cote du nouveau). Un contrat qui ne s'ecrit pas se refuse.
 pub(crate) fn clauses_du_contrat(ctx: &Contexte, p: &Paie, ent: &droit::contexte::EntrepriseDuDocument) -> R<std::collections::BTreeMap<String, Option<String>>> {
@@ -207,7 +199,7 @@ pub(crate) fn clauses_du_contrat(ctx: &Contexte, p: &Paie, ent: &droit::contexte
 /// jointe. `liste` : ce que le courriel dit en premiere ligne ; `quoi` : ce que la reponse « Je signe » declare avoir
 /// lu et accepte.
 struct Demande<'a> {
-    cle: &'a str,
+    cle: &'a IdSalarie,
     sal: &'a ChampsSalarie,
     adresse: &'a str,
     sujet: &'a str,
@@ -290,7 +282,7 @@ fn contrats_choisis(ctx: &Contexte, choisis: &Choisis, mois: Mois, paies: &[Paie
                 return Err(refus(format!(
                     "Le contrat n° {} de {} est déjà revenu signé : il n'a plus rien à signer. Rien n'est parti.",
                     numero_dit(p.engagement.numero.as_ref(), "", "", SANS_NUMERO),
-                    nom_ou_cle(&p.salarie, &cle)
+                    crate::nom_a_l_ecran(&p.salarie, &cle)
                 )));
             }
             continue;
@@ -315,19 +307,19 @@ fn contrats_choisis(ctx: &Contexte, choisis: &Choisis, mois: Mois, paies: &[Paie
             )));
         }
     }
-    controler_contrat(ctx, par_salarie.iter().map(|(cle, ps, _)| (cle.as_str(), &ps[0].salarie.champs)))?;
+    controler_contrat(ctx, par_salarie.iter().map(|(cle, ps, _)| (cle, &ps[0].salarie.champs)))?;
     Ok(par_salarie)
 }
 
 /// CE QUE LE CONTRAT EXIGE DES FICHES (`exige_par` de `champs-base.json`, la liste que « Pour demarrer » lit), pour la
 /// compagnie et ces `salaries` (`(cle, fiche)`) : tout ce qui manque, d'un coup, avant d'ecrire le moindre PDF. Un
 /// avenant est un contrat : il passe par le meme controle.
-fn controler_contrat<'a>(ctx: &'a Contexte, salaries: impl Iterator<Item = (&'a str, &'a ChampsSalarie)>) -> R<()> {
+fn controler_contrat<'a>(ctx: &'a Contexte, salaries: impl Iterator<Item = (&'a IdSalarie, &'a ChampsSalarie)>) -> R<()> {
     use declarations::champs::Saisie;
     use droit::fiche::NomDeFiche;
     let mut saisies: Vec<(NomDeFiche, String, Saisie)> = vec![(NomDeFiche::Entreprise, "la fiche entreprise".into(), Saisie::de_la_fiche(NomDeFiche::Entreprise, &ctx.entreprise)?)];
     for (cle, s) in salaries {
-        saisies.push((NomDeFiche::Salarie, format!("la fiche de {}", nom_ou_cle(s, cle)), Saisie::de_la_fiche(NomDeFiche::Salarie, s)?));
+        saisies.push((NomDeFiche::Salarie, format!("la fiche de {}", crate::nom_a_l_ecran(s, cle)), Saisie::de_la_fiche(NomDeFiche::Salarie, s)?));
     }
     let fiches: Vec<(NomDeFiche, String, &Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
     match declarations::champs::refus_des_manques("contrat", &fiches, &[])? {
@@ -338,7 +330,7 @@ fn controler_contrat<'a>(ctx: &'a Contexte, salaries: impl Iterator<Item = (&'a 
 
 /// Le controle du contrat (`controler_contrat`) pour ces avenants : la fiche de chaque salarie qui en recoit un.
 pub(crate) fn controler_avenants(ctx: &Contexte, avenants: &[(IdSalarie, Vec<UnAvenant>)]) -> R<()> {
-    controler_contrat(ctx, avenants.iter().filter_map(|(k, _)| ctx.salaries.get(k.as_str()).map(|s| (k.as_str(), &s.champs))))
+    controler_contrat(ctx, avenants.iter().filter_map(|(k, _)| ctx.salaries.get(k).map(|s| (k, &s.champs))))
 }
 
 /// Le contrat tel qu'il part, pour le journal : qui, quand, sous quel numero, dans quel fichier, et ce qu'il dit, clause
@@ -385,7 +377,7 @@ fn modeles_figes(ctx: &Contexte, ps: &[Paie]) -> R<(Vec<documents::contrat_ecrit
 
 /// Le nom du PDF des contrats d'un salarie : `Contrat_<cle>_<numero>_<mois>.pdf`, `Contrats_..._<n1>+<n2>_...` quand il en
 /// porte plusieurs (une page par contrat).
-fn nom_du_pdf(cle: &str, ps: &[Paie], etiq: &str, suffixe: &str) -> String {
+fn nom_du_pdf(cle: &IdSalarie, ps: &[Paie], etiq: &str, suffixe: &str) -> String {
     let numeros: Vec<String> = ps.iter().map(|p| numero_de_fichier(p.engagement.numero.as_deref())).collect();
     format!("Contrat{}_{}_{}_{}{}.pdf", if ps.len() > 1 { "s" } else { "" }, cle, numeros.join("+"), etiq, suffixe)
 }
@@ -786,7 +778,7 @@ fn deja_parti_dit(etats: &[crate::contrats::ContratASigner], salarie: &IdSalarie
 type ParSalarie = Vec<(IdSalarie, Vec<Paie>, Vec<usize>)>;
 fn avec_et_sans_courriel(choisis: ParSalarie) -> R<(ParSalarie, Vec<String>)> {
     let (avec, sans): (ParSalarie, ParSalarie) = choisis.into_iter().partition(|(_, ps, _)| ps[0].salarie.email.is_some());
-    let noms: Vec<String> = sans.iter().map(|(k, ps, _)| nom_ou_cle(&ps[0].salarie, k)).collect();
+    let noms: Vec<String> = sans.iter().map(|(k, ps, _)| crate::nom_a_l_ecran(&ps[0].salarie, k)).collect();
     if avec.is_empty() && !noms.is_empty() {
         return Err(refus(format!("{} Rien n'est parti.", sans_courriel_dit(&noms))));
     }
@@ -813,12 +805,12 @@ fn verifier_rappel(c: Option<&crate::contrats::ContratASigner>, numero: Option<&
 /// LE DOSSIER DU CONTRAT SIGNE HORS DU LOGICIEL (`engagement::signe_ailleurs`) du salarie `cle` commence le `debut` : la
 /// compagnie y depose, si elle le veut, le PDF de ce contrat ; il est garde avec elle (la sauvegarde l'emporte) et part
 /// joint a chaque avenant envoye a la signature, pour que le salarie l'ait sous les yeux. Le logiciel ne le lit pas.
-pub(crate) fn dossier_du_contrat_signe(racine: &std::path::Path, cle: &str, debut: Jour) -> PathBuf {
-    racine.join("salaries").join(cle).join(format!("contrat-du-{}", debut.iso()))
+pub(crate) fn dossier_du_contrat_signe(racine: &std::path::Path, cle: &IdSalarie, debut: Jour) -> PathBuf {
+    racine.join("salaries").join(cle.as_str()).join(format!("contrat-du-{}", debut.iso()))
 }
 
 /// Les PDF deposes dans ce dossier, par ordre de nom.
-pub(crate) fn contrat_signe_depose(racine: &std::path::Path, cle: &str, debut: Jour) -> R<Vec<PathBuf>> {
+pub(crate) fn contrat_signe_depose(racine: &std::path::Path, cle: &IdSalarie, debut: Jour) -> R<Vec<PathBuf>> {
     Ok(socle::fichiers::entrees(&dossier_du_contrat_signe(racine, cle, debut))?
         .into_iter()
         .flatten()
@@ -836,7 +828,7 @@ pub(crate) struct ContratSigneDit {
 }
 
 /// Ce dossier, dit (`ContratSigneDit`).
-pub(crate) fn contrat_signe_dit(ctx: &Contexte, cle: &str, debut: Jour) -> R<ContratSigneDit> {
+pub(crate) fn contrat_signe_dit(ctx: &Contexte, cle: &IdSalarie, debut: Jour) -> R<ContratSigneDit> {
     let deposes: Vec<String> = contrat_signe_depose(&ctx.racine, cle, debut)?.iter().map(|p| nom_du(p)).collect();
     let qui = ctx.nomme(cle);
     let phrase = if deposes.is_empty() {

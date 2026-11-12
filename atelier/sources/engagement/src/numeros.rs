@@ -268,7 +268,7 @@ pub(crate) fn a_la_validation(ctx: &Contexte, o: &mut Objet, le: socle::paris::M
             return Err(socle::refus!(
                 "{} : ce contrat est parti sous le n° {} ; un numéro parti ne change plus (il identifie le contrat en DSN, \
                  S21.G00.40.009). Rien n'est écrit.",
-                crate::salarie_nomme(ctx, o.carte().salarie.as_deref()),
+                crate::salarie_nomme(ctx, o.carte().salarie.as_ref()),
                 parti
             ));
         }

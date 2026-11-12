@@ -958,13 +958,6 @@ impl IdSalarie {
     }
 }
 
-impl std::ops::Deref for IdSalarie {
-    type Target = str;
-    fn deref(&self) -> &str {
-        &self.0
-    }
-}
-
 impl AsRef<str> for IdSalarie {
     fn as_ref(&self) -> &str {
         &self.0
@@ -1262,8 +1255,8 @@ impl Contexte {
     }
 
     /// La fiche salarie `cle` a `jour`. Refus : la fiche ne dit rien ce jour-la.
-    pub fn salarie_au(&self, cle: &str, jour: &Jour) -> R<FicheSalarie> {
-        let (id, brute) = self.fiches.salaries.fiches.get_key_value(cle).ok_or_else(|| socle::refus!("Salarie inconnu : {}.", repr_texte(cle)))?;
+    pub fn salarie_au(&self, cle: &IdSalarie, jour: &Jour) -> R<FicheSalarie> {
+        let (id, brute) = self.fiches.salaries.fiches.get_key_value(cle).ok_or_else(|| socle::refus!("Salarie inconnu : {}.", repr_texte(cle.as_str())))?;
         let champs = brute.au(jour);
         if champs.est_vide() {
             return Err(socle::refus!(
@@ -1277,8 +1270,8 @@ impl Contexte {
     }
 
     /// Les cles des salaries qu'on peut encore embaucher (les archives restent dans `salaries`).
-    pub fn salaries_actifs(&self) -> Vec<&str> {
-        self.salaries.iter().filter(|(_, v)| !v.archivee()).map(|(k, _)| k.as_str()).collect()
+    pub fn salaries_actifs(&self) -> Vec<&IdSalarie> {
+        self.salaries.iter().filter(|(_, v)| !v.archivee()).map(|(k, _)| k).collect()
     }
 
     /// LA CASE DES PERMANENTS, SUR UNE PERIODE : la fiche Entreprise dit-elle, a un jour au moins de `debut..=fin`, que la
@@ -1513,7 +1506,7 @@ depuis le plus recent.",
     /// `spectacle` : le `depuis` de la valeur en vigueur de chaque liste datee de leurs fiches et de celle de l'entreprise,
     /// du plus ancien au plus recent, sans doublon. Une paie qui s'est calculee avant qu'une de ces valeurs s'applique le
     /// dit a sa date (« règle du JJ/MM/AAAA »).
-    pub fn configuration_datee(&self, jour: &Jour, salarie: &str, spectacle: Option<&str>) -> R<Vec<Jour>> {
+    pub fn configuration_datee(&self, jour: &Jour, salarie: &IdSalarie, spectacle: Option<&str>) -> R<Vec<Jour>> {
         let mut out = self.fiches.entreprise.dates_en_vigueur(jour);
         out.extend(self.fiches.salaries.fiches.get(salarie).into_iter().flat_map(|f| f.dates_en_vigueur(jour)));
         out.extend(spectacle.and_then(|s| self.fiches.spectacles.fiches.get(s)).into_iter().flat_map(|f| f.dates_en_vigueur(jour)));
@@ -1633,7 +1626,7 @@ PSS_H_METROP).",
     }
 
     /// La fiche salarie `cle` telle qu'ecrite, datee, `None` si la cle est inconnue.
-    pub fn salarie_brut(&self, cle: &str) -> Option<&FicheSalarieDatee> {
+    pub fn salarie_brut(&self, cle: &IdSalarie) -> Option<&FicheSalarieDatee> {
         self.fiches.salaries.fiches.get(cle)
     }
 
@@ -1654,7 +1647,7 @@ PSS_H_METROP).",
 
     /// Le salarie de cette cle tel que l'ecran le nomme (`socle::texte::salarie_nomme` : « NOM Prénom ») ; la cle sans
     /// fiche.
-    pub fn nomme(&self, cle: &str) -> String {
+    pub fn nomme(&self, cle: &IdSalarie) -> String {
         match self.salaries.get(cle).and_then(|f| f.nomme()) {
             Some(nom) => nom,
             None => cle.to_string(),
@@ -1666,8 +1659,12 @@ PSS_H_METROP).",
     /// la recherche APPROCHANTE (prefixe, Levenshtein <= 3) ne va que parmi les actifs.
     /// Rend la fiche (qui porte sa cle), ou le refus.
     pub fn salarie(&self, nom: &str) -> R<FicheSalarie> {
-        let cle = self.cle_du_salarie(nom)?;
-        Ok(self.salaries[cle.as_str()].clone())
+        self.fiche_de(&self.cle_du_salarie(nom)?)
+    }
+
+    /// La fiche dont la cle est `cle`, sans rien chercher d'approchant. Refus : aucune fiche n'a cette cle.
+    pub fn fiche_de(&self, cle: &IdSalarie) -> R<FicheSalarie> {
+        self.salaries.get(cle).cloned().ok_or_else(|| socle::refus!("Salarie inconnu : {}.", repr_texte(cle.as_str())))
     }
 
     /// La cle de la fiche que `salarie` retrouve, sans la recopier ; la cle meme se retrouve d'abord.
@@ -1681,7 +1678,7 @@ PSS_H_METROP).",
         }
         let q = cle_recherche(nom);
         for cle in self.salaries.keys() {
-            if cle_recherche(cle) == q {
+            if cle_recherche(cle.as_str()) == q {
                 return Ok(cle.to_string());
             }
         }
@@ -1715,11 +1712,11 @@ PSS_H_METROP).",
         }
         // Tolerance : prefixe (Celi -> CELIMENE) puis distance d'edition, sur les seuls actifs.
         let actifs = self.salaries_actifs();
-        let noms_de = |cle: &str| -> R<[String; 2]> {
+        let noms_de = |cle: &IdSalarie| -> R<[String; 2]> {
             let s = &self.salaries[cle];
             Ok([cle_recherche(&exige(&s.prenom, "prenom")?), cle_recherche(&exige(&s.nom, "nom")?)])
         };
-        let mut prefixes: Vec<&str> = Vec::new();
+        let mut prefixes: Vec<&IdSalarie> = Vec::new();
         for cle in &actifs {
             if q.chars().count() >= 3 && noms_de(cle)?.iter().any(|c| c.starts_with(&q)) {
                 prefixes.push(cle);
@@ -1730,7 +1727,7 @@ PSS_H_METROP).",
                 "Salarie ambigu : {} commence {} fiches ({}). Ecrire le nom en entier.",
                 repr_texte(nom),
                 prefixes.len(),
-                prefixes.join(", ")
+                prefixes.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", ")
             ));
         }
         if let Some(cle) = prefixes.first() {
@@ -1746,7 +1743,7 @@ PSS_H_METROP).",
                 }
             }
         }
-        if let Some(cle) = meilleur.filter(|c| !c.is_empty() && score <= 3) {
+        if let Some(cle) = meilleur.filter(|_| score <= 3) {
             return Ok(cle.to_string());
         }
         // Rien parmi les actifs : si une archive ressemble, le dire plutot que « inconnu ».
@@ -1768,11 +1765,11 @@ une paie passee ; pour l'embaucher a nouveau, remettre \
                     repr_texte(nom),
                     n,
                     p,
-                    repr_texte(cle)
+                    repr_texte(cle.as_str())
                 )), ..Lieu::default() }));
             }
         }
-        Err(socle::refus!("Salarie inconnu : {}. Connus : {}.", repr_texte(nom), actifs.join(", ")))
+        Err(socle::refus!("Salarie inconnu : {}. Connus : {}.", repr_texte(nom), actifs.iter().map(|c| c.as_str()).collect::<Vec<_>>().join(", ")))
     }
 
     /// Par cle, titre, alias ou numero d'objet, puis par inclusion dans un sens ou l'autre. Rend la fiche et sa cle, ou le

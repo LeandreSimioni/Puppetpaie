@@ -13,7 +13,7 @@ use socle::echec::Classe;
 use std::path::PathBuf;
 
 use engagement::calcul::Paie;
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use droit::type_declaration::TypeDeLaDeclaration;
 use socle::date::Jour;
 use socle::echec::{erreur, R};
@@ -92,9 +92,9 @@ fn jours_ouvres_apres(depart: Jour, combien: i64) -> R<Jour> {
 /// « peuvent demander [...] par anticipation ») ; INFERENCE : le texte ne dit pas ce que devient une demande restee sans
 /// reponse, il ne la fait pas attendre au-dela du delai. Il se lit au journal de ce qui est parti ; rien d'autre ne le
 /// garde.
-pub fn en_cours(ctx: &Contexte, cle: &str) -> R<Option<EnCours>> {
+pub fn en_cours(ctx: &Contexte, cle: &IdSalarie) -> R<Option<EnCours>> {
     let lignes = envois::journal::lu(&ctx.racine).map_err(|e| e.reclasser(Classe::Disque))?.lignes;
-    let pour_lui = |l: &envois::journal::Ligne| l.versions().is_some_and(|v| v.iter().any(|x| x.salarie.as_str() == cle));
+    let pour_lui = |l: &envois::journal::Ligne| l.versions().is_some_and(|v| v.iter().any(|x| x.salarie == *cle));
     let derniere = envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), None, true)
         .filter(|l| l.accepte() && l.nature_dsn() == Some(declarations::amorcage::NATURE) && pour_lui(l) && !envois::etats::refuse_par_un_retour(l))
         .last();
@@ -253,13 +253,13 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
             Some(c) => format!("contrat {}", c),
             None => "sans numéro de contrat".to_string(),
         };
-        out.push(format!("  {} {} {} ({})", gauche(&l.salarie, 14), gauche(&l.libelle, 22), contrat, mois));
+        out.push(format!("  {} {} {} ({})", gauche(l.salarie.as_str(), 14), gauche(&l.libelle, 22), contrat, mois));
     }
     if !ecartes.is_empty() {
         out.push(String::new());
         out.push("NON DEMANDES :".into());
         for l in &ecartes {
-            out.push(format!("  {} {}", gauche(&l.salarie, 14), l.pourquoi_pas));
+            out.push(format!("  {} {}", gauche(l.salarie.as_str(), 14), l.pourquoi_pas));
         }
     }
     let recap = dossier.join(format!("Amorcage{}_{}_recapitulatif.txt", d.motif, jour));

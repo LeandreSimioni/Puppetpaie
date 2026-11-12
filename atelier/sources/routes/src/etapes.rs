@@ -334,7 +334,7 @@ fn phrase_de_la_ligne(l: &LigneDePage) -> String {
 /// Un engagement non actif du mois (`non_actifs`).
 #[derive(Debug, Serialize)]
 struct NonActif {
-    salarie: Option<String>,
+    salarie: Option<IdSalarie>,
     nom: Option<String>,
     numero: Option<NumeroContrat>,
     debut: Jour,
@@ -1198,7 +1198,7 @@ impl Ligne {
 #[derive(Debug, Serialize)]
 struct LigneDePage<'a> {
     engagement: &'a engagement::stock::Identite,
-    salarie: Option<&'a str>,
+    salarie: Option<&'a IdSalarie>,
     nom: Option<&'a str>,
     spectacle: Option<&'a str>,
     nature: Option<&'a str>,
@@ -1247,7 +1247,7 @@ impl<'a> LigneDePage<'a> {
             },
             numero_dit: v.numero.as_ref().map(|n| format!("contrat n° {}", n)),
             engagement: &l.engagement,
-            salarie: v.salarie.as_deref(),
+            salarie: v.salarie.as_ref(),
             nom: v.nom.as_deref(),
             spectacle: v.spectacle.as_deref(),
             nature: v.libelle_nature.as_deref(),
@@ -2218,7 +2218,7 @@ impl<'a> Moteur<'a> {
         let ordre = [PointDocuments::ARenvoyer, PointDocuments::AEnvoyer, PointDocuments::ACompleter, PointDocuments::AValider];
         for (point, m, noms, _) in cases_de_la_ligne(&cols, |c| point_de(c, &points, |p| p.documents, &ordre, PointDocuments::Fait)) {
             let siens: Vec<&Vue> = de(&m).into_iter().zip(m.iter()).filter(|(_, i)| points[**i].documents == point).map(|(p, _)| p).collect();
-            let n = siens.iter().map(|p| p.salarie.as_deref()).collect::<BTreeSet<Option<&str>>>().len();
+            let n = siens.iter().map(|p| p.salarie.as_ref()).collect::<BTreeSet<Option<&IdSalarie>>>().len();
             let g = match point {
                 PointDocuments::ARenvoyer => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à renvoyer".into(), None, Some(envoyer_documents(le_mois, format!("Renvoyer les documents corrigés ({})…", n)))),
                 PointDocuments::AEnvoyer => Groupe::de(EtatCase::AFaire, Some(Compte::Nombre(n)), n.to_string(), "à envoyer".into(), None, Some(envoyer_documents(le_mois, "Envoyer les documents…".into()))),
@@ -2884,9 +2884,9 @@ fn non_actifs(ctx: &Contexte, mois: Mois) -> R<Vec<NonActif>> {
     let mut out = Vec::new();
     for n in engagement::etats::non_actifs_du_mois(ctx, mois)? {
         let b = &*n.objet().brut;
-        let cle = b.saisie.carte.salarie.as_ref().map(ToString::to_string);
+        let cle = b.saisie.carte.salarie.clone();
         // Un salarie qu'aucune fiche ne porte se nomme par sa cle.
-        let nom = cle.as_deref().map(|c| match ctx.salaries.get(c) {
+        let nom = cle.as_ref().map(|c| match ctx.salaries.get(c) {
             Some(f) => super::nom_a_l_ecran(f, c).trim().to_string(),
             None => c.to_string(),
         });

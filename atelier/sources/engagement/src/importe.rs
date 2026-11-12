@@ -279,14 +279,14 @@ pub trait CleDeLaLigne {
 
 impl CleDeLaLigne for IdSalarie {
     fn ecrite(&self) -> &str {
-        self
+        self.as_str()
     }
 }
 
 impl CleDeLaLigne for Option<IdSalarie> {
     fn ecrite(&self) -> &str {
         match self {
-            Some(c) => c,
+            Some(c) => c.as_str(),
             None => "<a creer>",
         }
     }
@@ -839,8 +839,8 @@ pub fn dsn_deposee(racine: &Path, mois: Mois) -> R<Option<PaieRelue>> {
 }
 
 /// L'engagement importe du salarie `cle` (la cle de sa fiche) qui commence le `debut` et touche `mois`, s'il y en a un.
-pub fn celui_de(racine: &Path, mois: Mois, cle: &str, debut: Jour) -> R<Option<Importe>> {
-    Ok(du_mois(racine, mois)?.into_iter().find(|i| i.carte().salarie.as_deref() == Some(cle) && i.carte().debut == Some(debut)))
+pub fn celui_de(racine: &Path, mois: Mois, cle: &IdSalarie, debut: Jour) -> R<Option<Importe>> {
+    Ok(du_mois(racine, mois)?.into_iter().find(|i| i.carte().salarie.as_ref() == Some(cle) && i.carte().debut == Some(debut)))
 }
 
 /// Les contrats d'usage importes qui continuent en `mois` (`Importe::continue_apres`) : verses avant lui par l'ancien
@@ -864,10 +864,10 @@ pub fn continue_par(racine: &Path, e: &Carte) -> R<Option<Importe>> {
 /// LE CONTRAT `numero` DE `salarie` COMMENCE LE `debut` VIENT-IL DE L'ANCIEN LOGICIEL ? Un engagement importe porte ces
 /// salarie, debut et numero : c'est lui, ou le contrat d'usage qu'il continue ici (`continue_par`). L'ecran le dit sur
 /// la carte. Faux sans numero.
-pub fn vient_d_un_ancien_logiciel(racine: &Path, salarie: &str, debut: Jour, numero: Option<&str>) -> R<bool> {
+pub fn vient_d_un_ancien_logiciel(racine: &Path, salarie: &IdSalarie, debut: Jour, numero: Option<&str>) -> R<bool> {
     let vient = |numero: &str| -> R<bool> {
         Ok(tous(racine)?.iter().any(|i| {
-            i.carte().salarie.as_deref() == Some(salarie) && i.carte().debut == Some(debut) && i.carte().numero.as_deref() == Some(numero)
+            i.carte().salarie.as_ref() == Some(salarie) && i.carte().debut == Some(debut) && i.carte().numero.as_deref() == Some(numero)
         }))
     };
     Ok(numero.filter(|n| !n.is_empty()).map(vient).transpose()?.is_some_and(|oui| oui))
@@ -885,8 +885,8 @@ pub fn numero_declare(o: &Objet) -> R<Option<NumeroContrat>> {
 
 /// Une DSN de l'ancien logiciel a-t-elle declare le numero du contrat de `salarie` commence le `debut`
 /// (`numero_declare`, lu sur l'engagement repris qui le porte) ?
-pub fn numero_declare_du_contrat(racine: &Path, salarie: &str, debut: Jour) -> R<bool> {
-    for i in tous(racine)?.iter().filter(|i| i.carte().salarie.as_deref() == Some(salarie) && i.carte().debut == Some(debut)) {
+pub fn numero_declare_du_contrat(racine: &Path, salarie: &IdSalarie, debut: Jour) -> R<bool> {
+    for i in tous(racine)?.iter().filter(|i| i.carte().salarie.as_ref() == Some(salarie) && i.carte().debut == Some(debut)) {
         if numero_declare(&i.objet)?.is_some() {
             return Ok(true);
         }

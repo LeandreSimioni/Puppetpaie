@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, IdSalarie};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use envois::etats;
@@ -172,7 +172,7 @@ fn relatif(racine: &Path, p: &Path) -> String {
 }
 
 /// Le nom d'un salarie que porte `cle` : celui de sa fiche, s'il la dit ; sinon la cle elle-meme.
-fn qui_de_la_cle(ctx: &Contexte, cle: &str) -> String {
+fn qui_de_la_cle(ctx: &Contexte, cle: &IdSalarie) -> String {
     match ctx.salaries.get(cle).map(|s| documents::tableaux_export::qui_souple(s)).filter(|q| !q.is_empty()) {
         Some(q) => q,
         None => cle.to_string(),
@@ -182,7 +182,7 @@ fn qui_de_la_cle(ctx: &Contexte, cle: &str) -> String {
 /// Le salarie d'une ligne de contrat : le nom que la ligne porte (`detail.nom`, « NOM Prenom », ecrit par
 /// `crate::contrats::contrat_recu` et `releve_signatures`), sinon celui de sa fiche (`detail.salarie` est sa cle),
 /// sinon la cle elle-meme.
-fn qui_du_contrat(ctx: &Contexte, nom: &str, cle: &str) -> String {
+fn qui_du_contrat(ctx: &Contexte, nom: &str, cle: &IdSalarie) -> String {
     match dit(nom) {
         Some(n) => n.to_string(),
         None => qui_de_la_cle(ctx, cle),
@@ -368,8 +368,8 @@ fn nom_lisible(ctx: &Contexte, nom: &str) -> String {
     if let Some(j) = reste.strip_suffix("_recapitulatif.txt").and_then(jour) {
         return format!("Note des demandes du {}", j);
     }
-    if let Some((cle, j)) = reste.strip_suffix(".dsn").and_then(|s| s.rsplit_once('_')).and_then(|(c, t)| jour(t).map(|j| (c, j))) {
-        return format!("Taux de {}, demandé le {}", qui_de_la_cle(ctx, cle), j);
+    if let Some((cle, j)) = reste.strip_suffix(".dsn").and_then(|s| s.rsplit_once('_')).and_then(|(c, t)| Some((IdSalarie::lire(c).ok()?, jour(t)?))) {
+        return format!("Taux de {}, demandé le {}", qui_de_la_cle(ctx, &cle), j);
     }
     nom.to_string()
 }

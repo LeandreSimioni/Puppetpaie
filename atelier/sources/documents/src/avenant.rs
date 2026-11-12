@@ -445,7 +445,7 @@ pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Form
         e.numero = Some(n.clone());
     }
     let texte = |c: &Option<String>| c.clone().filter(|s| !s.is_empty());
-    let fiche = ctx.salarie(eng.salarie.as_str())?;
+    let fiche = ctx.fiche_de(&eng.salarie)?;
     let emploi = EmploiEngagement {
         emploi: texte(&eng.emploi),
         emploi_affichage: texte(&eng.emploi_affichage),
@@ -455,7 +455,7 @@ pub fn valeurs_de_la_paie<A>(ctx: &Contexte, ent: &ChampsEntreprise, paie: &Form
         statut_conventionnel: eng.statut_conventionnel,
         statut_categoriel_rc: eng.statut_categoriel_rc,
     };
-    let lue = emploi_de(&ctx.salarie_au(fiche.id.as_str(), &eng.debut)?, &emploi)?;
+    let lue = emploi_de(&ctx.salarie_au(&fiche.id, &eng.debut)?, &emploi)?;
     let mut m = match &eng.spectacle {
         Some(s) => {
             let sp = ctx.spectacle(s.as_str())?;

@@ -885,8 +885,8 @@ pub(crate) fn jours_de_lignes(lignes: &[LignePaie]) -> usize {
 
 /// Le salarie qu'un refus nomme en tete, tel que l'ecran le nomme partout (`Contexte::nomme` : « NOM Prénom ») ;
 /// « Cet engagement » quand la carte n'a pas encore de salarie.
-pub(crate) fn salarie_nomme(ctx: &Contexte, salarie: Option<&str>) -> String {
-    match salarie.filter(|s| !s.trim().is_empty()) {
+pub(crate) fn salarie_nomme(ctx: &Contexte, salarie: Option<&IdSalarie>) -> String {
+    match salarie {
         Some(c) => ctx.nomme(c),
         None => "Cet engagement".to_string(),
     }
@@ -967,7 +967,7 @@ pub(crate) fn engagements(
     let defaut_taux = data.taux_cachet.clone().map(Chiffre::Nombre);
     let (mut out, mut dits) = (Vec::new(), Vec::new());
     for carte in &data.engagements {
-        let qui = salarie_nomme(ctx, carte.salarie.as_deref());
+        let qui = salarie_nomme(ctx, carte.salarie.as_ref());
         // Seule une carte valide entre dans le calcul : sa nature dite, ses cases obligatoires remplies, aucune case que
         // sa nature n'a pas (`carte::CarteValide::depuis`). Ce qui depend de la nature se lit de sa variante.
         let valide = carte::CarteValide::depuis(carte, &qui)?;
@@ -1797,7 +1797,7 @@ pub(crate) fn debut_de(dit: Option<Jour>, lignes: &[LignePaie]) -> Option<Jour> 
 /// jamais un salarie par un nom (c'est l'affaire des portes : `Contexte::cle_du_salarie`) ; une cle sans fiche se refuse
 /// en la nommant.
 pub(crate) fn fiche_du_salarie(ctx: &Contexte, cle: &IdSalarie) -> R<droit::fiche::FicheSalarie> {
-    ctx.salaries.get(cle).cloned().ok_or_else(|| socle::refus!("Salarie inconnu : {}.", socle::fichiers::repr(cle)))
+    ctx.fiche_de(cle)
 }
 
 /// LA FICHE DU SPECTACLE de cle `cle`, par sa cle exacte (`fiche_du_salarie`) ; une cle sans fiche se refuse en la nommant.
@@ -1830,7 +1830,7 @@ pub fn signe_ailleurs(racine: &Path, eng: &Engagement) -> R<bool> {
 
 /// `signe_ailleurs`, de ce que l'engagement dit : sa nature, son salarie, son debut, son numero, et le mois d'ou on le
 /// regarde.
-pub fn signe_ailleurs_de(racine: &Path, nat: &Nature, salarie: &str, debut: Jour, numero: Option<&str>, mois: Mois) -> R<bool> {
+pub fn signe_ailleurs_de(racine: &Path, nat: &Nature, salarie: &IdSalarie, debut: Jour, numero: Option<&str>, mois: Mois) -> R<bool> {
     if nat.modele_contrat().is_none() {
         return Ok(false);
     }

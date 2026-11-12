@@ -126,7 +126,7 @@ pub fn refuser_la_dsn_de_l_ancien_logiciel(ctx: &Contexte, mois: Mois) -> R<()> 
 // ------------------------------------------------------------------ les cartes
 
 /// Le nom d'un salarié à l'écran, ou `None` sans fiche.
-fn nom_du_salarie(ctx: &Contexte, cle: &str) -> Option<String> {
+fn nom_du_salarie(ctx: &Contexte, cle: &droit::contexte::IdSalarie) -> Option<String> {
     ctx.salaries.get(cle).and_then(|s| s.nomme())
 }
 
@@ -322,7 +322,7 @@ fn carte(ctx: &Contexte, mois: Mois, paie: Option<&PaieRelue>, contrat: Option<&
         Some((_, Some(t))) => Some(t.clone()),
         _ => titre_bulletin,
     };
-    let nom = salarie.as_deref().and_then(|s| nom_du_salarie(ctx, s));
+    let nom = salarie.as_ref().and_then(|s| nom_du_salarie(ctx, s));
     let dates: Vec<Jour> = p.map(|p| jours_du_mois(&p.dates, mois)).transpose()?.into_iter().flatten().collect();
     // Ce que la piece du mois atteste de lui (la paie d'un mois d'un permanent), sinon le contrat.
     let nombre = |de_la_paie: fn(&PaieVersee) -> Option<i64>, du_contrat: fn(&ContratAtteste) -> Option<i64>| p.and_then(de_la_paie).or_else(|| c.and_then(du_contrat));

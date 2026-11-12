@@ -89,9 +89,9 @@ impl Permanents {
 /// sinon il se refuse). `None` : aucun de ses engagements n'est paye au mois ; rien de sa fiche de salarie au mois ne se
 /// lit, et sa fiche ne le montre pas (`routes::fiches::montres`). Rien n'est attache a la personne : c'est l'engagement
 /// qui ouvre la piece.
-pub fn cle_du_salarie(ctx: &Contexte, salarie: &str) -> R<Option<droit::natures::AuMois>> {
+pub fn cle_du_salarie(ctx: &Contexte, salarie: &IdSalarie) -> R<Option<droit::natures::AuMois>> {
     for o in crate::stock::objets(&ctx.racine)? {
-        if o.est_non_actif() || o.importe_seul() || o.carte().salarie.as_ref().map(IdSalarie::as_str) != Some(salarie) {
+        if o.est_non_actif() || o.importe_seul() || o.carte().salarie.as_ref() != Some(salarie) {
             continue;
         }
         let Some((depuis, nature)) = o.au_mois_depuis()? else { continue };

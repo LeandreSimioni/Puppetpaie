@@ -1583,7 +1583,7 @@ fn qt(x: Decimal) -> String {
 }
 
 /// « Prenom NOM » d'une fiche, a defaut sa cle : qui une phrase de refus designe.
-fn qui_fiche(s: &droit::fiche::ChampsSalarie, cle: &str) -> String {
+fn qui_fiche(s: &droit::fiche::ChampsSalarie, cle: &IdSalarie) -> String {
     match (s.prenom.portee(), s.nom.portee()) {
         (Some(prenom), Some(nom)) => format!("{} {}", prenom, nom),
         (Some(un), None) | (None, Some(un)) => un.to_string(),
@@ -1606,7 +1606,7 @@ fn qui_contrat(p: &Paie) -> String {
 /// paie la lit ainsi, `calcul::fiche_de_l_engagement` ; l'import la pose au premier contrat lu), et que les gens peuvent
 /// changer. Une fiche qui ne la porte pas ne dit pas ce jour : elle refuse. Une date apres la fin du mois donnerait zero
 /// ou moins, que la CCH-12 interdit : elle refuse aussi.
-pub fn anciennete_du_mois(s: &droit::fiche::ChampsSalarie, cle: &str, fin_m: &Jour) -> R<i64> {
+pub fn anciennete_du_mois(s: &droit::fiche::ChampsSalarie, cle: &IdSalarie, fin_m: &Jour) -> R<i64> {
     let Some(depuis) = s.date_anciennete.dite().copied() else {
         return Err(socle::echec::cle(format!(
             "{} : la fiche ne porte pas sa date d'anciennete (« Dans la compagnie depuis »), d'ou se \
@@ -4943,7 +4943,7 @@ certificat de conformite du depot precedent.",
         };
         // LES IDENTIFIANTS DU MOIS DECLARE : NIR, nom, prenoms et date de naissance tels qu'au dernier jour du
         // mois, pour qu'un changement date apres lui n'entre pas dans sa DSN (`changements_individu::identite_du_mois`).
-        let brute = ctx.salarie_brut(fiche.id.as_str());
+        let brute = ctx.salarie_brut(&fiche.id);
         let ident = crate::changements_individu::identite_du_mois(fiche, brute, &fin_m)?;
         bloc_individu(&mut f, &ident, true)?;
         // L'identite DECLAREE, relue dans la derniere paie declaree qui le porte : son NTT, s'il etait declare sans NIR

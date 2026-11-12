@@ -185,7 +185,7 @@ fn ecarts(nom: NomDeFiche, fiche: &Saisie, declare: &Saisie, mois: socle::mois::
 }
 
 /// La fiche d'un salarie telle qu'elle est, case par case.
-fn vue_salarie(ctx: &Contexte, cle: &str) -> R<Saisie> {
+fn vue_salarie(ctx: &Contexte, cle: &droit::contexte::IdSalarie) -> R<Saisie> {
     proposee::de(NomDeFiche::Salarie, &ctx.salaries[cle].champs)
 }
 

@@ -619,7 +619,7 @@ fn conseil(b: &Banque, d: &Donnees, quand: Quand, vals: &Valeurs, annexes: &[&st
 
 /// Le prenom du salarie, tel que sa fiche l'affiche (`prenom_affichage`, sinon `prenom`, en capitales initiales s'il
 /// est tout en majuscules) ; sans prenom, son nom, sinon sa cle.
-fn prenom(sal: &droit::fiche::ChampsSalarie, cle: &str) -> String {
+fn prenom(sal: &droit::fiche::ChampsSalarie, cle: &droit::contexte::IdSalarie) -> String {
     fn lu<T: AsRef<str>>(c: &Option<T>) -> Option<String> {
         c.portee().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
     }
@@ -892,7 +892,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
         let cle = p.salarie.id.to_string();
         // Chaque paie comptee ici l'a ete au mois de son salarie, juste avant.
         let Some(&(heures_mois, cachets_mois)) = du_mois.get(&cle) else { continue };
-        let qui = prenom(&p.salarie, p.salarie.id.as_str());
+        let qui = prenom(&p.salarie, &p.salarie.id);
         let mois = e.mois.libelle(socle::mois::Graphie::Accentuee);
         let base = |extra: Vec<(&str, Valeur)>| -> Valeurs {
             let mut v = Valeurs::new();
@@ -1009,7 +1009,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
 /// Ce que les conseils de saisie auraient change aux paies de ce salarie sur la fenetre : (heures, jours d'allocation,
 /// avant arrondi). Chaque mois de la fenetre se lit dans les paies ecrites de ses engagements valides
 /// (`engagement::etats::validees_du_mois`) : rien ne se recalcule ; un mois sans engagement valide n'en a pas.
-fn gains_sur_la_fenetre(ctx: &Contexte, cle: &str, f: &Fenetre, a30: &Art30, annexe: Annexe, departs: &engagement::departs::Departs) -> R<(Decimal, Decimal)> {
+fn gains_sur_la_fenetre(ctx: &Contexte, cle: &droit::contexte::IdSalarie, f: &Fenetre, a30: &Art30, annexe: Annexe, departs: &engagement::departs::Departs) -> R<(Decimal, Decimal)> {
     let c = Constantes::lire(&ctx.racine, &ctx.lue_au)?;
     let (debut, fin, _) = f;
     let mut gain = Decimal::ZERO;
@@ -1018,7 +1018,7 @@ fn gains_sur_la_fenetre(ctx: &Contexte, cle: &str, f: &Fenetre, a30: &Art30, ann
         let Some((_, paies)) = engagement::etats::validees_du_mois(ctx, mois, departs)? else { continue };
         for p in &paies {
             let e = &p.engagement;
-            if p.salarie.id.to_string() != cle || e.sans_paie() || e.nat()?.mensuelle() {
+            if p.salarie.id != *cle || e.sans_paie() || e.nat()?.mensuelle() {
                 continue;
             }
             let fp = e.fin_periode();

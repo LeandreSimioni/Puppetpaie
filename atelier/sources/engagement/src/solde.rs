@@ -1292,14 +1292,14 @@ fn salaire_de_reference(lue: &mut Option<permanents::SalaireDeReference>, ctx: &
 /// Les bruts mensuels des douze et des trois derniers mois (R1234-4), ceux des mois produits ou importes : aucun mois,
 /// aucun brut, et `permanents::salaire_de_reference` refuse en disant quoi produire.
 fn bruts_precedents(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Decimal>, Vec<Decimal>)> {
-    let salarie = salarie_de(e)?.to_string();
+    let salarie = salarie_de(e)?;
     let mut bruts = Vec::new();
     for i in 1..=12 {
         let m = mois.plus(-i)?;
         if !crate::stock::a_une_saisie(&ctx.racine, m)? {
             continue;
         }
-        bruts.push(remuneration_du_mois(ctx, m, &salarie)?);
+        bruts.push(remuneration_du_mois(ctx, m, salarie)?);
     }
     let trois = bruts.iter().take(3).copied().collect();
     Ok((bruts, trois))
@@ -1324,12 +1324,12 @@ fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Decimal> {
 /// La remuneration totale brute versee pendant le contrat (L1243-8) : les mois
 /// produits, plus le mois courant, dont le brut arrive tout calcule.
 fn remuneration_du_contrat(ctx: &Contexte, e: &Carte, mois: Mois, ce_mois: Decimal) -> R<Decimal> {
-    let salarie = salarie_de(e)?.to_string();
+    let salarie = salarie_de(e)?;
     let mut total = ce_mois;
     let debut = debut_de(e)?;
     for m in debut.mois_civil().jusqu_a(mois) {
         if m != mois && crate::stock::a_une_saisie(&ctx.racine, m)? {
-            total = add(total, remuneration_du_mois(ctx, m, &salarie)?);
+            total = add(total, remuneration_du_mois(ctx, m, salarie)?);
         }
     }
     Ok(total)

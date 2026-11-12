@@ -389,7 +389,7 @@ fn noms_commencant_finissant(dossier: &Path, prefixe: &str, suffixe: &str) -> R<
 
 /// `glob("Contrat*_<cle>_*_signe.pdf")` : les exemplaires contresignes (`envois::releve_signatures::souche_contresignee`)
 /// dont la souche porte `_<cle>_` apres `Contrat`.
-fn contrats_signes_de(dossier: &Path, cle: &str) -> R<Vec<String>> {
+fn contrats_signes_de(dossier: &Path, cle: &IdSalarie) -> R<Vec<String>> {
     let marque = format!("_{}_", cle);
     Ok(noms_commencant_finissant(dossier, "Contrat", "")?
         .into_iter()
@@ -906,7 +906,7 @@ fn sans_accents(t: &str) -> String {
 
 /// `signatures` : les courriels de signature d'un salarie sur la periode, la preuve de ses contrats
 /// signes. Ils vont dans le ZIP, pas dans un PDF.
-fn signatures(ctx: &Contexte, cle: &str, p: &Periode) -> R<Vec<PathBuf>> {
+fn signatures(ctx: &Contexte, cle: &IdSalarie, p: &Periode) -> R<Vec<PathBuf>> {
     let mut out = Vec::new();
     for mois in engagement::stock::mois_saisis(&ctx.racine)? {
         if !p.contient(mois) {
@@ -1138,8 +1138,8 @@ fn contenu_de<'a>(contenus: &'a Contenus, cle: &IdSalarie) -> Option<&'a Vec<(&'
 }
 
 /// Ecrit le dossier d'un salarie (un fichier par categorie, ou un seul PDF) et rend son chemin.
-fn ecrire_un(dossier: &Path, cle: &str, contenus: &[(&'static str, Vec<u8>)], preuves: &[PathBuf], cats: &[&'static str], p: &Periode, un_seul: bool) -> R<PathBuf> {
-    let base = format!("Dossier_{}_{}", nom_salarie(cle), p.nom());
+fn ecrire_un(dossier: &Path, cle: &IdSalarie, contenus: &[(&'static str, Vec<u8>)], preuves: &[PathBuf], cats: &[&'static str], p: &Periode, un_seul: bool) -> R<PathBuf> {
+    let base = format!("Dossier_{}_{}", nom_salarie(cle.as_str()), p.nom());
     if un_seul && !(cats == [CONTRATS_SIGNES] && !preuves.is_empty()) {
         let cat = cats[0];
         let chemin = dossier.join(format!("{}_{}.pdf", base, nom_de(cat)));
@@ -1309,7 +1309,7 @@ pub(crate) fn construire(ctx: &Contexte, demande: &DemandeDeDossier) -> R<Dossie
                     },
                     None => contenus.push((cle.clone(), vec![(*cat, octets)])),
                 }
-                *d.pages.entree(cle, Ordonnee::default).entree(cat, || n) = n;
+                *d.pages.entree(cle.as_str(), Ordonnee::default).entree(cat, || n) = n;
             }
         }
     }

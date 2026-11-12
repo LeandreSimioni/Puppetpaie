@@ -8,7 +8,7 @@ use crate::natures::{MotifDeRecours, Nature, NatureDeContrat};
 
 /// Le contrat d'un salarie dans un message : « le contrat VA5.26.01 de VARENNE », « le contrat de VARENNE » tant qu'il n'a
 /// pas de numero.
-pub fn le_contrat(numero: Option<&str>, salarie: &str) -> String {
+pub fn le_contrat(numero: Option<&str>, salarie: &crate::contexte::IdSalarie) -> String {
     match numero.filter(|n| !n.is_empty()) {
         Some(n) => format!("le contrat {} de {}", n, salarie),
         None => format!("le contrat de {}", salarie),

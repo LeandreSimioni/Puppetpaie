@@ -538,7 +538,7 @@ pub(crate) fn deposer_dpae_avec(
         .iter()
         .map(|l| {
             Ok(EmbaucheDeclaree {
-                salarie: IdSalarie::lire(l.salarie.as_deref().ok_or_else(|| socle::refus!("{} : aucune fiche ne porte l'identité de cette embauche du fichier.", l.nom))?)?,
+                salarie: l.salarie.clone().ok_or_else(|| socle::refus!("{} : aucune fiche ne porte l'identité de cette embauche du fichier.", l.nom))?,
                 numero: l.numero.as_deref().map(NumeroContrat::lire).transpose()?,
                 debut: l.debut,
                 fin: l.fin,
@@ -643,8 +643,7 @@ fn paies_des_embauches(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclaree
     // Un mois sans engagement valide n'a aucune embauche declaree.
     let saisie = engagement::etats::validees_du_mois(ctx, mois, &departs).map_err(o)?;
     let declaree = |p: &engagement::calcul::Paie| {
-        let cle = p.salarie.id.to_string();
-        embauches.iter().any(|e| e.salarie.as_str() == cle && e.numero.as_deref() == p.engagement.numero.as_deref())
+        embauches.iter().any(|e| e.salarie == p.salarie.id && e.numero.as_deref() == p.engagement.numero.as_deref())
     };
     let mut paies = Vec::new();
     let engagements = saisie.map(|(data, _)| engagement::engagements_de_la_saisie(ctx, &data)).transpose().map_err(o)?;

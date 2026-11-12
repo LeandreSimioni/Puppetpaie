@@ -115,9 +115,9 @@ pub fn origine(imp: &ArretSaisi) -> R<Option<Origine>> {
 pub fn droits(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> R<Option<Droits>> {
     let Some(origine) = origine(imp)? else { return Ok(None) };
     let premier = crate::imprevus::premier_jour_d_arret(imp)?;
-    let fiche = ctx.salarie(&imp.salarie)?;
+    let fiche = ctx.fiche_de(&imp.salarie)?;
     let depuis = crate::calcul::Anciennete::de(&ctx.racine, &fiche, &imp.salarie, imp.contrat_debut)?.jour()?;
-    let (depuis, sur_l_anciennete) = crate::imprevus::anciennete_depuis(&ctx.racine, fiche.id.as_str(), &depuis, &premier)?;
+    let (depuis, sur_l_anciennete) = crate::imprevus::anciennete_depuis(&ctx.racine, &fiche.id, &depuis, &premier)?;
     let anciennete_mois = droit::permanents::anciennete_mois(&depuis, &premier);
     let loi = dm::legal(nat, anciennete_mois, origine)?;
     let convention = if nat.mensuelle() { dm::conventionnel(ctx.entreprise.idcc.portee(), anciennete_mois, origine)? } else { None };

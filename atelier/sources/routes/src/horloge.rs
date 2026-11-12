@@ -894,10 +894,10 @@ fn signables(ctx: &Contexte, mois: Mois) -> R<Vec<Signable>> {
 // ------------------------------------------------------------------ les avenants
 
 /// L'instant ou l'engagement de ce contrat a ete valide en dernier (`valide.le`).
-fn revalide_le(ctx: &Contexte, mois: Mois, salarie: &str, debut: Jour) -> R<Option<Moment>> {
+fn revalide_le(ctx: &Contexte, mois: Mois, salarie: &droit::contexte::IdSalarie, debut: Jour) -> R<Option<Moment>> {
     Ok(engagement::stock::objets_du_mois(&ctx.racine, mois)?.into_iter().find_map(|o| {
         let b = &*o.brut;
-        let sien = b.saisie.carte.salarie.as_deref() == Some(salarie) && engagement::debut_brut(b) == Some(debut);
+        let sien = b.saisie.carte.salarie.as_ref() == Some(salarie) && engagement::debut_brut(b) == Some(debut);
         sien.then(|| o.brut.valide.as_ref().map(|v| v.le))?
     }))
 }
