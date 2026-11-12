@@ -655,11 +655,12 @@ impl Fenetre {
         }
         // Le journal de la fenetre est celui de la derniere compagnie ouverte, meme revenu a l'accueil : il ne doit plus
         // recreer son dossier.
-        let mut journal = tenu(&self.journal);
-        if journal.as_ref().is_some_and(|j| j.starts_with(racine) || j.starts_with(&cle)) {
-            *journal = None;
+        {
+            let mut journal = tenu(&self.journal);
+            if journal.as_ref().is_some_and(|j| j.starts_with(racine) || j.starts_with(&cle)) {
+                *journal = None;
+            }
         }
-        drop(journal);
         let file = tenu(&self.files).remove(&cle);
         if let Some(f) = file {
             f.quitter();
