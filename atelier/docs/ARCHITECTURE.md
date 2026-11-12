@@ -102,6 +102,10 @@ que par la structure :
     `map_or_else` dans les sources des crates ;
   - `une_crate_ne_prend_qu_a_celles_du_dessous` : l'ordre des crates, et seul le `socle` prend `serde_json`, lus dans
     les `Cargo.toml` ;
+  - `les_niveaux_des_lints_tiennent` : chaque crate reprend les niveaux de l'espace, et aucune configuration de Cargo
+    ne les abaisse ;
+  - `le_catalogue_est_range` : une lecture n'écrit pas, une route sous « Avancé » n'a pas de champ objet, un module a
+    une place, une route inconnue se refuse ;
   - `l_atelier_reste_hors_du_logiciel` : aucun manifeste du logiciel ne prend l'atelier ;
   - `chaque_route_dit_brievement_ce_qu_elle_fait` : chaque route du catalogue a sa fiche, une seule ;
   - `l_exemple_de_chaque_fiche_est_accepte` : l'exemple de chaque fiche, joué par `moteur route`, est accepté et rend sa

@@ -185,7 +185,7 @@ impl Objet {
 /// refuser toute cle inconnue (`deny_unknown_fields`), et n'en garde rien : son type ne porte aucune valeur
 /// (`PhantomData`, que le compilateur sait vide). Elle se lit par `non_lue`, exigee :
 /// `#[serde(deserialize_with = "socle::forme::non_lue")]` ; une note qui peut manquer ajoute `default`, qui ne fabrique
-/// aucune valeur (`aucun_repli_ne_fabrique_une_valeur`, `moteur/tests/fichiers/structure.rs`).
+/// aucune valeur.
 pub type NonLue = std::marker::PhantomData<Rien>;
 
 /// Ce qu'une cle non lue garde : rien (aucune valeur de ce type n'existe).

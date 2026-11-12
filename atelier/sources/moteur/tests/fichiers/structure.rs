@@ -414,9 +414,10 @@ fn une_crate_ne_prend_qu_a_celles_du_dessous() {
     let ordre = membres();
     for (rang, nom) in ordre.iter().enumerate() {
         let t = std::fs::read_to_string(espace().join(nom).join("Cargo.toml")).unwrap();
-        let deps = t.split("\n[dependencies]").nth(1).unwrap_or("").split("\n[").next().unwrap();
-        for l in deps.lines() {
-            let dep = l.split([' ', '=']).next().unwrap_or("");
+        // Toute section de dependances du code (`[dependencies]`, `[target.'…'.dependencies]`), pas celles des essais.
+        let sections = t.split("\n[").filter(|s| s.split(']').next().is_some_and(|h| h.ends_with("dependencies") && !h.contains("dev-")));
+        for l in sections.flat_map(|s| s.lines().skip(1)) {
+            let dep = l.split([' ', '=', '.']).next().unwrap();
             if let Some(r) = ordre.iter().position(|x| *x == dep) {
                 assert!(r < rang, "{} prend a {}, qui n'est pas en dessous", nom, dep);
             }
@@ -425,7 +426,46 @@ fn une_crate_ne_prend_qu_a_celles_du_dessous() {
     }
 }
 
-/// L'ATELIER N'ENTRE JAMAIS DANS LE LOGICIEL : la crate `atelier` (le binaire `moteur-atelier`) allume la feature
+/// LES NIVEAUX DES LINTS TIENNENT (les `Cargo.toml`) : l'espace interdit le code mort ; chaque crate de l'espace reprend
+/// ses niveaux (`[lints] workspace = true`) ; aucune configuration de Cargo ne les abaisse.
+#[test]
+fn les_niveaux_des_lints_tiennent() {
+    let espace_toml = std::fs::read_to_string(espace().join("Cargo.toml")).unwrap();
+    assert!(espace_toml.contains("dead_code = \"forbid\""), "l'espace interdit le code mort");
+    for nom in membres() {
+        let t = std::fs::read_to_string(espace().join(&nom).join("Cargo.toml")).unwrap();
+        assert!(t.contains("[lints]\nworkspace = true"), "{} : `[lints] workspace = true`", nom);
+    }
+    for config in [espace().join(".cargo"), espace().join("../../.cargo")] {
+        for f in std::fs::read_dir(&config).into_iter().flatten().flatten() {
+            let t = std::fs::read_to_string(f.path()).unwrap();
+            assert!(!(t.contains("-A") || t.contains("--cap-lints") || t.contains("-W")), "{} abaisse un lint", f.path().display());
+        }
+    }
+}
+
+/// LE CATALOGUE EST RANGE (lu dans `catalogue()` et `FICHES`, et joue par `moteur route`) : une route sous « Avancé »
+/// n'a aucun champ objet, que la page ne saisit pas d'une case ; une lecture n'ecrit pas ; les routes qui ecrivent d'un
+/// module ont une seule place ; une route inconnue se refuse en se nommant a part.
+#[test]
+fn le_catalogue_est_range() {
+    use routes::catalogue::{Acte, Ecran, Forme, FICHES};
+    for f in catalogue() {
+        match f.ecran {
+            Ecran::Auto(..) => assert!(f.charge.iter().all(|c| c.forme != Forme::Objet), "{} s'affiche sous « Avancé » : aucun champ de sa charge n'est un objet", f.nom()),
+            Ecran::Lecture | Ecran::LectureAvancee => assert!(f.acte == Acte::Lit, "{} est une lecture et écrit", f.nom()),
+            _ => {}
+        }
+    }
+    for module in FICHES {
+        let places: BTreeSet<&str> = module.iter().filter(|f| f.acte != Acte::Lit).filter_map(|f| f.ecran.place()).map(|p| p.nom()).collect();
+        assert!(places.len() <= 1, "un module, une place : les routes qui écrivent de {:?} vont à {:?}", module.iter().map(|f| f.nom()).collect::<Vec<_>>(), places);
+    }
+    let r = route(&treteaux("inconnue"), "pas-une-route", json!({}), "2026-11-02");
+    assert!(r["ok"] == json!(false) && r["refus"]["classe"] == json!("RouteInconnue") && r["refus"]["a_part"]["route"].is_string(), "{}", r);
+}
+
+/// L'ATELIER N'ENTRE JAMAIS DANS LE LOGICIEL :la crate `atelier` (le binaire `moteur-atelier`) allume la feature
 /// `atelier` de ce qu'elle prend, et Cargo unifie les features de ce qu'il construit ensemble. Elle est donc hors de
 /// `default-members` de l'espace (la suite ne l'allume jamais), au-dessus de tout le logiciel, et aucun manifeste ne la
 /// prend, ni l'espace (toute section, essais compris) ni la fenetre.
