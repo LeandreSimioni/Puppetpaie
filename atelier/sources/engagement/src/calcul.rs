@@ -22,7 +22,7 @@ use socle::echec::{refus, refus_avec, Lieu, Echec, R};
 use socle::num::{add, court, div, eur, mul, pct, sub, Decimal};
 pub use droit::reduction::ReductionGenerale;
 use droit::bareme::somme_pct;
-use droit::forme_bareme::{CotisationSupplementaire, IdDeCotisation, Pile, Rubrique, MUTUELLE, PREVOYANCE};
+use droit::forme_bareme::{IdDeCotisation, Pile, Rubrique, MUTUELLE, PREVOYANCE};
 use droit::reduction::{au_dela_du_seuil, reduction_generale, reduction_generale_sous_dfs};
 use droit::plafond::{plafond_permanent, pour_paie, EngagementPlafond};
 
@@ -1396,17 +1396,13 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
             plafond_prev = Some(p);
         }
     }
-    // Les autres lignes de prevoyance, sur une tranche 2 : leur part patronale entre aussi dans l'assiette. Ce sont
-    // celles que le bareme declare en S21.G00.54 de type 93 (« Cotisation prevoyance et retraite supplementaire »,
-    // « Montants inclus dans la base CSG », `bloc-S21.G00.54.txt`, cahier technique 2026.1 S21.G00.54.001) :
-    // `cotisation_prevoyance_retraite_supp.lignes_patronales`. Une section qui la declare en taux sur une base n'en
-    // nomme aucune.
-    let lignes_93: &[IdDeCotisation] = match &bar.cotisation_prevoyance_retraite_supp {
-        Some(CotisationSupplementaire::DesLignes(l)) => &l.lignes_patronales,
-        Some(CotisationSupplementaire::SurUneBase(_)) | None => &[],
-    };
+    // Les autres garanties de prevoyance, sur une tranche 2 : leur part patronale entre aussi dans l'assiette (les
+    // contributions de l'employeur aux garanties collectives, CSS L136-1-1 : plus bas). Ce sont les lignes que la pile
+    // range avec la prevoyance (`Pile::garanties_de_prevoyance`), toutes couches comprises : la tranche B d'un cadre
+    // technicien de la CCNEAC aussi, qu'aucune section du S21.G00.54 de type 93 ne nomme.
+    let garanties = bar.garanties_de_prevoyance();
     let mut tranches_prev = Decimal::new(0, 2);
-    for r in rubriques_bulletin.iter().filter(|r| r.id != PREVOYANCE && lignes_93.contains(&r.id)) {
+    for r in rubriques_bulletin.iter().filter(|r| r.id != PREVOYANCE && garanties.contains(&r.id)) {
         let (id, Some(taux)) = (&r.id, part_patronale(r)) else { continue };
         let base = base_de(r)?;
         let t1 = if base == Assiette::T2PrevoyanceJournaliere && plafond_journalier.is_some() {
