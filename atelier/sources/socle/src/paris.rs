@@ -420,31 +420,6 @@ pub mod ecrit {
             lu(t).ok_or_else(|| serde::de::Error::custom(format!("{} s n'est pas une heure du calendrier (années 1 à 9999)", t)))
         }
     }
-
-    /// L'heure d'un geste de scenario (`heure`), ecrite a la main ou par le banc : un jour `AAAA-MM-JJ`, une minute
-    /// `AAAA-MM-JJTHH:MM` ou une seconde `AAAA-MM-JJTHH:MM:SS`, heure de Paris ; elle s'ecrit comme l'instant ou le jour
-    /// (le banc n'ecrit que la seconde). Un `Option` : `null`, `None` ; une cle absente, `None` si le champ porte `#[serde(default)]`.
-    pub mod heure_du_geste {
-        pub mod option {
-            use crate::paris::InstantOuJour;
-
-            pub fn serialize<S: serde::Serializer>(h: &Option<InstantOuJour>, s: S) -> Result<S::Ok, S::Error> {
-                match h {
-                    Some(h) => s.serialize_some(&h.iso()),
-                    None => s.serialize_none(),
-                }
-            }
-
-            pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<InstantOuJour>, D::Error> {
-                let Some(t) = <Option<String> as serde::Deserialize>::deserialize(d)? else { return Ok(None) };
-                let lue = match super::super::minute::lu(&t) {
-                    Some(m) => Some(InstantOuJour::Instant(m)),
-                    None => InstantOuJour::lire(&t),
-                };
-                lue.map(Some).ok_or_else(|| serde::de::Error::custom("une date (AAAA-MM-JJ) ou une heure de Paris (AAAA-MM-JJTHH:MM[:SS]) est attendue"))
-            }
-        }
-    }
 }
 
 /// UN INSTANT ECRIT DANS UN FICHIER (un scenario) : ses secondes depuis 1970, un nombre a virgule (`ecrit`), lues

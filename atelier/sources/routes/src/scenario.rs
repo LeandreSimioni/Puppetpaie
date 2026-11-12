@@ -80,9 +80,9 @@ pub struct Geste {
     /// L'instant, en secondes UTC (le banc).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quand: Option<Moment>,
-    /// L'instant a Paris, ecrit a la main ou par le banc pour qui le relit : un jour (`AAAA-MM-JJ`, a 9 h), une minute
-    /// (`AAAA-MM-JJTHH:MM`) ou une seconde (`AAAA-MM-JJTHH:MM:SS`, ce que le banc ecrit).
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::heure_du_geste::option")]
+    /// L'instant a Paris, ecrit a la main ou par le banc pour qui le relit : un jour (`AAAA-MM-JJ`, a 9 h) ou une seconde
+    /// (`AAAA-MM-JJTHH:MM:SS`).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub heure: Option<InstantOuJour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub geste: Option<Genre>,
