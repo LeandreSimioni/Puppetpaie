@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::contexte::Contexte;
+use crate::contexte::{Contexte, IdSalarie};
 use crate::fiche::{Lue, Montant, TauxPas};
 use crate::forme_bareme::{GrillePas, PasParDefaut, Pile};
 use crate::type_taux_pas::TypeDeTauxPas;
@@ -355,7 +355,7 @@ pub fn rubriques_par_defaut(
 /// applicable, c'est la grille. Un taux perime compte pour rien.
 /// UN CALCUL DEPEND DU TAUX DE SON SALARIE A SON JOUR : il le note (`pas <cle> <jour> <mois>`, `empreinte`), et un taux
 /// recu qui le change le fait recalculer.
-pub fn taux_dgfip(ctx: &Contexte, cle: &str, le: Option<Jour>, mois: Option<Mois>) -> R<Option<Triplet>> {
+pub fn taux_dgfip(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option<Mois>) -> R<Option<Triplet>> {
     let t = triplet(ctx, cle, le, mois)?;
     if let Some(j) = le {
         socle::fichiers::noter_valeur(&LectureDatee::Pas { salarie: cle.to_string(), le: j, mois }.cle(), empreinte_du_triplet(&t));
@@ -363,7 +363,7 @@ pub fn taux_dgfip(ctx: &Contexte, cle: &str, le: Option<Jour>, mois: Option<Mois
     Ok(t)
 }
 
-fn triplet(ctx: &Contexte, cle: &str, le: Option<Jour>, mois: Option<Mois>) -> R<Option<Triplet>> {
+fn triplet(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option<Mois>) -> R<Option<Triplet>> {
     let s = situation(ctx, cle, le, mois)?;
     match s.situation {
         SituationDuTaux::Valide => Ok(Some(Triplet { taux: s.taux, type_taux: s.type_taux, identifiant: s.identifiant })),
@@ -380,7 +380,7 @@ fn empreinte_du_triplet(t: &Option<Triplet>) -> String {
 
 /// Ce que `taux_dgfip` a note pour le salarie `cle` au jour `le` (`LectureDatee::Pas`), relu maintenant : l'empreinte
 /// tient tant qu'il est le meme.
-pub fn empreinte(ctx: &Contexte, cle: &str, le: Jour, mois: Option<Mois>) -> R<String> {
+pub fn empreinte(ctx: &Contexte, cle: &IdSalarie, le: Jour, mois: Option<Mois>) -> R<String> {
     Ok(empreinte_du_triplet(&triplet(ctx, cle, Some(le), mois)?))
 }
 
@@ -456,7 +456,7 @@ impl SituationDuTaux {
 /// OU EN EST LE TAUX D'UN SALARIE : sa situation, le taux en vigueur tel qu'il est ecrit, et ce qu'il faudrait demander.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Situation {
-    pub salarie: String,
+    pub salarie: IdSalarie,
     pub situation: SituationDuTaux,
     pub libelle: &'static str,
     pub taux: Option<TauxDePas>,
@@ -471,7 +471,7 @@ pub struct Situation {
 
 /// Ou en est le taux d'un salarie au jour `le`, pour la paie du mois `mois` (`en_vigueur`). Ne refuse que si sa fiche est
 /// illisible.
-pub fn situation(ctx: &Contexte, cle: &str, le: Option<Jour>, mois: Option<Mois>) -> R<Situation> {
+pub fn situation(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option<Mois>) -> R<Situation> {
     let le = le_jour(ctx, le);
     let recus = recus(ctx, cle)?;
     let e = en_vigueur(&recus, le, mois);
@@ -495,7 +495,7 @@ pub fn situation(ctx: &Contexte, cle: &str, le: Option<Jour>, mois: Option<Mois>
     };
     // Sans taux, ses cases ne disent rien.
     Ok(Situation {
-        salarie: cle.to_string(),
+        salarie: cle.clone(),
         situation: quoi,
         libelle: quoi.libelle(),
         taux: e.and_then(|e| e.taux),
@@ -515,10 +515,10 @@ fn archive(ctx: &Contexte, cle: &str) -> bool {
 }
 
 /// Le meme tableau pour plusieurs salaries, dans l'ordre alphabetique. Sans liste : ceux des fiches, moins les archives.
-pub fn diagnostic(ctx: &Contexte, cles: Option<&[String]>, le: Option<Jour>, mois: Option<Mois>) -> R<Vec<Situation>> {
-    let cles: BTreeSet<String> = match cles {
+pub fn diagnostic(ctx: &Contexte, cles: Option<&[IdSalarie]>, le: Option<Jour>, mois: Option<Mois>) -> R<Vec<Situation>> {
+    let cles: BTreeSet<IdSalarie> = match cles {
         Some(c) => c.iter().cloned().collect(),
-        None => ctx.salaries.keys().filter(|c| !archive(ctx, c)).map(|c| c.to_string()).collect(),
+        None => ctx.salaries.keys().filter(|c| !archive(ctx, c)).cloned().collect(),
     };
     cles.iter().map(|c| situation(ctx, c, le, mois)).collect()
 }
@@ -526,7 +526,7 @@ pub fn diagnostic(ctx: &Contexte, cles: Option<&[String]>, le: Option<Jour>, moi
 /// Les phrases a dire au depot de la DSN et a la production des bulletins (`depart::sans_taux_recu`), une par salarie
 /// dont la paie prendrait la grille de l'article 204 H, III (CGI, art. 1671, 2 : « A défaut de taux transmis par
 /// l'administration ») : ce que sa fiche sait des taux recus. Vide si tout va bien.
-pub fn avertissements(ctx: &Contexte, cles: Option<&[String]>, le: Option<Jour>, mois: Option<Mois>) -> R<Vec<String>> {
+pub fn avertissements(ctx: &Contexte, cles: Option<&[IdSalarie]>, le: Option<Jour>, mois: Option<Mois>) -> R<Vec<String>> {
     let mut lignes = Vec::new();
     for s in diagnostic(ctx, cles, le, mois)? {
         let mut ligne = format!("{} : ", ctx.nomme(&s.salarie));
