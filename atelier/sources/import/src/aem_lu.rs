@@ -159,7 +159,8 @@ pub struct Aem {
     pub employeur_commune: Option<String>,
     /// Le numero d'adherent a la caisse des Congés Spectacles, ecrit comme la fiche le garde.
     pub adherent: Option<String>,
-    pub nir: Option<String>,
+    /// Le NIR imprime, sans sa cle ; aucun hors de sa forme (`droit::fiche::Nir::d_une_piece`).
+    pub nir: Option<droit::fiche::Nir>,
     pub cle_nir: Option<droit::fiche::CleNir>,
     pub nom: Option<String>,
     pub prenom: Option<String>,
@@ -408,7 +409,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             employeur_commune: v("ADR_EMP_LOCALITE"),
             adherent: None,
             cle_nir: cle_nir.clone(),
-            nir: nir.as_ref().and_then(|n| n.get(..13)).map(str::to_string),
+            nir: nir.as_ref().and_then(|n| n.get(..13)).and_then(droit::fiche::Nir::d_une_piece),
             nom: v("SALARIE_NOM_FAMILLE"),
             prenom: v("SALARIE_PRENOMS"),
             nom_usage: None,

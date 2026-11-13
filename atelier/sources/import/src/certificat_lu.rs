@@ -25,6 +25,7 @@
 
 use std::path::Path;
 
+use droit::fiche::Nir;
 use socle::date::Jour;
 use socle::num::Decimal;
 use crate::releve::Mesure;
@@ -86,7 +87,7 @@ pub struct Certificat {
     /// Le N° CE.
     pub numero: Option<String>,
     /// Les treize caracteres du NIR, et sa cle s'il l'imprime.
-    pub nir: Option<String>,
+    pub nir: Option<Nir>,
     pub cle_nir: Option<droit::fiche::CleNir>,
     pub nom: Option<String>,
     pub prenom: Option<String>,
@@ -258,7 +259,7 @@ fn montant(mots: &[String]) -> Option<Decimal> {
 
 /// Le NIR imprime en tete du rang : treize caracteres (chiffres, et 2A ou 2B pour un ne en Corse), puis sa cle de deux
 /// chiffres ; la suite du rang est la raison sociale de l'employeur. (NIR, cle, nombre de mots pris.)
-pub(crate) fn nir_en_tete(mots: &[String]) -> Option<(String, Option<String>, usize)> {
+pub(crate) fn nir_en_tete(mots: &[String]) -> Option<(Nir, Option<String>, usize)> {
     let mut tout = String::new();
     let mut pris = 0;
     for m in mots {
@@ -275,8 +276,8 @@ pub(crate) fn nir_en_tete(mots: &[String]) -> Option<(String, Option<String>, us
         }
     }
     match tout.len() {
-        13 => Some((tout, None, pris)),
-        15 => Some((tout[..13].to_string(), Some(tout[13..].to_string()), pris)),
+        13 => Some((Nir::d_une_piece(&tout)?, None, pris)),
+        15 => Some((Nir::d_une_piece(&tout[..13])?, Some(tout[13..].to_string()), pris)),
         _ => None,
     }
 }

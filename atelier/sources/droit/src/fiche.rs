@@ -497,6 +497,16 @@ impl Nir {
     pub fn sexe(&self) -> Option<Sexe> {
         Sexe::du_nir(&self.0)
     }
+
+    /// LE NIR QU'UNE PIECE IMPORTEE PORTE (une DSN lue, une AEM, une AER, un certificat, un bulletin d'autrui) : hors de sa
+    /// forme, la case reste vide, comme un code hors de nos listes ; la piece d'un tiers se lit, elle ne se refuse pas
+    /// pour lui. Les retours de la norme le lisent strictement (`lire`).
+    pub fn d_une_piece(texte: &str) -> Option<Nir> {
+        match Nir::lire(texte) {
+            Ok(n) => Some(n),
+            Err(_) => None,
+        }
+    }
 }
 
 /// LE MATRICULE d'un salarie, son numero dans la compagnie (S21.G00.30.019, « Matricule de l'individu dans

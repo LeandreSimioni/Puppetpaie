@@ -19,6 +19,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use droit::contexte::Contexte;
+use droit::fiche::Nir;
 use engagement::importe::{Attestation, ContratLu};
 use socle::date::Jour;
 use socle::echec::R;
@@ -27,7 +28,7 @@ use socle::num::Decimal;
 /// Un contrat atteste : de qui (NIR), quand, par quoi, et ce qu'il compte.
 #[derive(Clone, Debug)]
 pub struct Atteste {
-    pub(crate) nir: String,
+    pub(crate) nir: Nir,
     pub(crate) debut: Option<Jour>,
     /// Sa fin ; aucune pour un contrat qui court toujours.
     pub(crate) fin: Option<Jour>,
@@ -93,10 +94,10 @@ pub fn en_mots(heures: Option<i64>, cachets: Option<i64>, jours: Option<i64>, br
 }
 
 /// Ce qu'un contrat atteste dit, pour le registre.
-fn lu(nir: &str, ligne: &ContratLu, source: &'static str) -> Atteste {
+fn lu(nir: &Nir, ligne: &ContratLu, source: &'static str) -> Atteste {
     let c = &ligne.contrat;
     Atteste {
-        nir: nir.to_string(),
+        nir: nir.clone(),
         debut: ligne.debut,
         fin: ligne.fin,
         source,
@@ -191,7 +192,7 @@ fn reste_du_certificat(c: &Atteste, par: &[&Atteste]) -> Reste {
 }
 
 /// Ce que l'import retient : (NIR, la ligne du contrat, le bloc du compte rendu qui le compte).
-pub type Retenu = (String, ContratLu, &'static str);
+pub type Retenu = (Nir, ContratLu, &'static str);
 
 /// Ce qu'un contrat de l'historique devient : (sa ligne, sa ligne nouvelle ; `None` : il est retire).
 pub type Change = (ContratLu, Option<ContratLu>);
@@ -216,7 +217,7 @@ impl Registre {
     /// previsionnelle : un CDI n'en a pas », `contrats-base.json`, S21.G00.40.010) n'est donc pas muet. Un autre contrat
     /// sans debut ou sans fin, ou dont la fiche n'a pas de NIR, ne se compare a rien : il n'atteste rien,
     /// et le registre le dit (`muets`).
-    pub fn de_l_historique(ctx: &Contexte, par_cle: &HashMap<droit::contexte::IdSalarie, String>) -> R<Registre> {
+    pub fn de_l_historique(ctx: &Contexte, par_cle: &HashMap<droit::contexte::IdSalarie, Nir>) -> R<Registre> {
         let mut tous = Vec::new();
         let mut muets = Vec::new();
         for i in engagement::importe::tous(&ctx.racine)? {
@@ -266,31 +267,31 @@ impl Registre {
     /// Les contrats deja attestes qui chevauchent celui que la piece `piece` (« certificat », « AEM », « bulletin »)
     /// atteste. Un certificat ne compte que pour un certificat : un bulletin ou une AEM le remplace (`ajouter`). Vide :
     /// le contrat ne l'est pas.
-    pub fn pareils(&self, nir: &str, debut: Jour, fin: Jour, piece: &str) -> Vec<Atteste> {
+    pub fn pareils(&self, nir: &Nir, debut: Jour, fin: Jour, piece: &str) -> Vec<Atteste> {
         self.tous
             .iter()
-            .filter(|a| a.nir == nir && chevauche(a.debut, a.fin, debut, fin) && (piece == "certificat" || !a.de_certificat()))
+            .filter(|a| a.nir == *nir && chevauche(a.debut, a.fin, debut, fin) && (piece == "certificat" || !a.de_certificat()))
             .cloned()
             .collect()
     }
 
     /// Ce qu'un certificat atteste seul, une fois retires les mois que les contrats `pareils` (ni des certificats, ni
     /// vides) attestent : `reste_du_certificat`.
-    pub fn reste_du_certificat(&self, nir: &str, ligne: &ContratLu, pareils: &[Atteste]) -> Reste {
+    pub fn reste_du_certificat(&self, nir: &Nir, ligne: &ContratLu, pareils: &[Atteste]) -> Reste {
         reste_du_certificat(&lu(nir, ligne, "certificat"), &pareils.iter().collect::<Vec<_>>())
     }
 
     /// Retient le contrat `ligne` de la piece `source`, compte au bloc `bloc`. Il remplace, du meme salarie et aux dates
     /// qui chevauchent les siennes, les mois des certificats qu'il atteste, et, pour un bulletin, le contrat d'une AEM
     /// (l'appelant l'a compare : d'autres compteurs). Rend une phrase par contrat remplace.
-    pub fn ajouter(&mut self, nir: &str, ligne: ContratLu, source: &'static str, bloc: &'static str) -> Remplaces {
+    pub fn ajouter(&mut self, nir: &Nir, ligne: ContratLu, source: &'static str, bloc: &'static str) -> Remplaces {
         let a = lu(nir, &ligne, source);
         let mut phrases = Vec::new();
         if let (false, Some(debut), Some(fin)) = (a.de_certificat(), a.debut, a.fin) {
             let remplaces: Vec<usize> = (0..self.tous.len())
                 .filter(|i| {
                     let x = &self.tous[*i];
-                    x.nir == nir && chevauche(x.debut, x.fin, debut, fin) &&(x.de_certificat() || (source == "bulletin" && x.par == Attestation::Aem))
+                    x.nir == *nir && chevauche(x.debut, x.fin, debut, fin) &&(x.de_certificat() || (source == "bulletin" && x.par == Attestation::Aem))
                 })
                 .collect();
             for i in remplaces.into_iter().rev() {
@@ -331,7 +332,7 @@ impl Registre {
             }
         }
         self.tous.push(a);
-        self.retenus.push((nir.to_string(), ligne, bloc));
+        self.retenus.push((nir.clone(), ligne, bloc));
         phrases
     }
 

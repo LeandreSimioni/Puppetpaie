@@ -492,10 +492,10 @@ fn ecrire(ctx: &Contexte, imp: &mut crate::import::Apercu, note: &str) -> R<Ecri
 
     // Les engagements importes, avec les fiches telles qu'elles sont MAINTENANT.
     let frais = Contexte::nouveau(&ctx.racine, None)?;
-    let mut par_nir: HashMap<String, IdSalarie> = HashMap::new();
+    let mut par_nir: HashMap<droit::fiche::Nir, IdSalarie> = HashMap::new();
     for (cle, s) in &frais.salaries {
-        if let Some(n) = s.nir.dite().filter(|n| !n.is_empty()) {
-            par_nir.insert(n.to_string(), cle.clone());
+        if let Some(n) = s.nir.dite() {
+            par_nir.insert(n.clone(), cle.clone());
         }
     }
     // CE QUE L'IMPORT A DEJA ECRIT, relu de ses engagements importes : les contrats attestes, les paies versees.

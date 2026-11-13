@@ -122,7 +122,7 @@ pub enum Declaration {
 pub struct PaieVersee {
     pub contrat: String,
     pub declare_par: Declaration,
-    pub nir: Option<String>,
+    pub nir: Option<droit::fiche::Nir>,
     pub numero_objet: Option<String>,
     pub debut: Option<Jour>,
     pub fin: Option<Jour>,

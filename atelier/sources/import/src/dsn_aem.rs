@@ -12,6 +12,7 @@ use serde::Serialize;
 use declarations::champs::Saisie;
 
 use declarations::dsn_lue::{Adhesion, ContratDeclare, DsnLue, EmploiDeclare, EntrepriseDeclaree, IndividuDeclare, PaieDuContrat};
+use droit::fiche::Nir;
 use socle::date::Jour;
 use socle::echec::Echec;
 use socle::fichiers::NomDeFichier;
@@ -26,7 +27,7 @@ use socle::texte::{blanc, lignes_du_texte, texte_latin1};
 /// Ce qu'une DSN dit d'un salarie.
 pub struct SalarieDeclare {
     /// Aucun pour un individu que la DSN declare sans NIR.
-    pub nir: Option<String>,
+    pub nir: Option<Nir>,
     pub individu: IndividuDeclare,
     /// L'emploi de son dernier contrat de la DSN ; rien quand la DSN ne lui declare aucun contrat.
     pub emploi: Option<EmploiDeclare>,
@@ -90,7 +91,7 @@ pub struct LectureDsn {
     pub etablissements: BTreeSet<droit::fiche::Nic>,
     pub nics_siege: BTreeSet<droit::fiche::Nic>,
     /// Par (mois, NIR s'il est declare, numero du contrat).
-    pub paies: BTreeMap<(Mois, Option<String>, engagement::numeros::NumeroContrat), PaieDeclaree>,
+    pub paies: BTreeMap<(Mois, Option<Nir>, engagement::numeros::NumeroContrat), PaieDeclaree>,
     /// Le code risque et le taux AT/MP que les contrats declarent (S21.G00.40.040, .043), par annee : ceux de la derniere DSN
     /// de l'annee (son mois, le code, le taux ; aucun taux pour 999ZZ), quand tous ses contrats disent le meme.
     pub atmp: BTreeMap<i32, (Mois, String, Option<Decimal>)>,
@@ -196,7 +197,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
     lues.sort_by(|(ma, a), (mb, b)| (ma, a.depot, &a.fichier).cmp(&(mb, b.depot, &b.fichier)));
     out.fichiers = lues.len();
     (out.premier_mois, out.dernier_mois) = (lues.first().map(|p| p.0), lues.last().map(|d| d.0));
-    let mut index_salaries: HashMap<Option<String>, usize> = HashMap::new();
+    let mut index_salaries: HashMap<Option<Nir>, usize> = HashMap::new();
     let mut index_objets: HashMap<droit::fiche::NumeroObjetSpectacle, usize> = HashMap::new();
     for &(mois, ref info) in &lues {
         out.etablissements.extend(info.etablissements.iter().cloned());
@@ -223,9 +224,9 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
         if !info.adhesions.is_empty() {
             out.adhesions = info.adhesions.clone();
         }
-        let mut dernier_contrat: HashMap<Option<&str>, &ContratDeclare> = HashMap::new();
+        let mut dernier_contrat: HashMap<Option<&Nir>, &ContratDeclare> = HashMap::new();
         for c in &info.contrats {
-            dernier_contrat.insert(c.nir.as_deref(), c);
+            dernier_contrat.insert(c.nir.as_ref(), c);
             if let Some(objet) = &c.objet {
                 let i = *index_objets.entry(objet.clone()).or_insert_with(|| {
                     out.objets.push(ObjetDeclare {
@@ -242,13 +243,13 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             }
         }
         for paie in info.paies() {
-            let contrat = info.contrats_de(paie.nir.as_deref()).filter(|x| x.numero.as_ref() == Some(&paie.numero)).last().cloned();
+            let contrat = info.contrats_de(paie.nir.as_ref()).filter(|x| x.numero.as_ref() == Some(&paie.numero)).last().cloned();
             let cle = (mois, paie.nir.clone(), paie.numero.clone());
             out.paies.insert(cle, PaieDeclaree { paie, contrat, depot: info.depot, fichier: info.fichier.clone() });
         }
         for ind in &info.individus {
             let nir = ind.nir.clone();
-            let c = dernier_contrat.get(&nir.as_deref()).copied();
+            let c = dernier_contrat.get(&nir.as_ref()).copied();
             // Les initiales du numero de son dernier contrat (avant le premier point) ; aucune sans numero.
             let initiales: String =
                 c.and_then(|c| c.numero.as_deref()).and_then(|n| n.split('.').next()).into_iter().flat_map(str::chars).filter(|ch| ch.is_alphabetic()).take(2).collect();
@@ -288,7 +289,7 @@ fn champ(ligne: &[char], a: usize, b: usize) -> String {
 
 /// Un enregistrement AEM, un contrat tel qu'il a ete atteste.
 pub struct ContratAtteste {
-    pub nir: String,
+    pub nir: Nir,
     pub debut: socle::date::Jour,
     pub fin: socle::date::Jour,
     pub numero_objet: String,
@@ -346,7 +347,11 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
                 continue;
             }
             let illisible = |illisibles: &mut Vec<String>| illisibles.push(format!("{} : un enregistrement illisible", nom));
-            let nir: String = champ(&l, 375, 390).chars().take(13).collect();
+            let nir_ecrit: String = champ(&l, 375, 390).chars().take(13).collect();
+            let Ok(nir) = Nir::lire(&nir_ecrit) else {
+                illisible(&mut illisibles);
+                continue;
+            };
             let (Some(debut), Some(fin)) =
                 (Zone::lue(&champ(&l, 618, 626), Aaaammjj).valeur(), Zone::lue(&champ(&l, 627, 635), Aaaammjj).valeur())
             else {
@@ -377,7 +382,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
             brut = brut.round_dp(2);
             brut.rescale(2);
             let cle = vec![
-                nir.clone(),
+                nir_ecrit,
                 debut.iso(),
                 fin.iso(),
                 numero_objet.clone(),

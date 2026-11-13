@@ -52,11 +52,7 @@ fn instant_du_jour(j: Jour) -> socle::echec::R<socle::paris::Moment> {
 /// (`mis_a_disposition`), la mise a disposition la plus tardive que les textes permettent ; le compte rendu de la DSN suivante
 /// le remplace. Chaque DSN se lit par `declarations::dsn_lue::lire_une_dsn` ; une DSN fautive refuse.
 pub fn derniers_taux_des_dsn(ctx: &Contexte, dossier: &std::path::Path) -> socle::echec::R<Vec<TauxRecu>> {
-    let par_nir: std::collections::HashMap<String, &droit::contexte::IdSalarie> = ctx
-        .salaries
-        .iter()
-        .filter_map(|(cle, s)| s.nir.dite().filter(|n| !n.is_empty()).map(|n| (n.to_string(), cle)))
-        .collect();
+    let par_nir: std::collections::HashMap<&droit::fiche::Nir, &droit::contexte::IdSalarie> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.dite().map(|n| (n, cle))).collect();
     let fichiers = declarations::dsn_lue::fichiers(dossier)?;
     // salarie -> mois -> releve (dans l'ordre d'insertion des salaries, mois tries).
     let mut trouve: Vec<(droit::contexte::IdSalarie, std::collections::BTreeMap<socle::mois::Mois, TauxRecu>)> = Vec::new();

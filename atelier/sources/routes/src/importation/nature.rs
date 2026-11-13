@@ -417,9 +417,9 @@ pub(crate) fn dire_depuis_les_dsn(racine: &Path, quand: &Jour) -> R<Vec<String>>
     for x in a_dire(racine)? {
         let salarie = x.salarie.clone();
         let ctx = Contexte::nouveau(racine, Some(*quand))?;
-        let Some(nir) = ctx.salaries.get(&salarie).and_then(|f| f.nir.en_texte()) else { continue };
+        let Some(nir) = ctx.salaries.get(&salarie).and_then(|f| f.nir.dite().cloned()) else { continue };
         // Sa derniere paie declaree : le contrat tel que la derniere DSN le dit.
-        let Some(((_, _, numero), p)) = lecture.paies.iter().filter(|((_, n, _), _)| n.as_deref() == Some(nir.as_str())).last() else { continue };
+        let Some(((_, _, numero), p)) = lecture.paies.iter().filter(|((_, n, _), _)| n.as_ref() == Some(&nir)).last() else { continue };
         let c = p.contrat.as_ref();
         let Some(code) = c.and_then(|c| c.nature_dsn.clone()) else { continue };
         let Some(nat) = permises.iter().find(|n| n.code(droit::rubrique!("S21.G00.40.007")).as_deref() == Some(code.as_str())) else { continue };
