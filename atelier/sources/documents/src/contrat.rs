@@ -20,7 +20,8 @@ use engagement::calcul::Paie;
 use droit::contexte::Contexte;
 use socle::echec::{erreur, refus, APart, Classe, Echec, R};
 use crate::contrat_ecrit::ModeleDuContrat;
-use crate::marqueurs::{pour_la_fabrique, Marqueur, ModeleLu, Valeurs};
+use crate::marqueurs::{pour_la_fabrique, ModeleLu, Valeurs};
+use droit::marqueurs::Marqueur;
 
 
 /// Une description de documents modeles : le format, le style, le logo de la compagnie, et ses documents.

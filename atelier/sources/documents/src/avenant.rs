@@ -11,7 +11,8 @@
 
 use droit::fiche::Lue as _;
 
-use crate::marqueurs::{pour_la_fabrique, Marqueur, Valeurs};
+use crate::marqueurs::{pour_la_fabrique, Valeurs};
+use droit::marqueurs::Marqueur;
 use fabrique_pdf::modele::{self, Modele};
 use serde::Serialize;
 

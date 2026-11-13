@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use fabrique_pdf::forme::{Document, Style};
 
 use crate::bulletin::{fmt_eur, identite_de};
-use crate::marqueurs::{Marqueur, ModeleLu, Valeurs};
+use crate::marqueurs::{ModeleLu, Valeurs};
+use droit::marqueurs::Marqueur;
 use droit::contexte::Contexte;
 use engagement::calcul::Paie;
 use socle::date::Jour;

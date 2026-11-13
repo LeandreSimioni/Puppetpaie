@@ -608,7 +608,7 @@ pub struct ContratParti {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modifications: Option<Vec<ArticleModifie>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub clauses: Option<BTreeMap<documents::marqueurs::Marqueur, Option<String>>>,
+    pub clauses: Option<BTreeMap<droit::marqueurs::Marqueur, Option<String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<CodeDeDemande>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -1115,7 +1115,7 @@ pub struct Phrases {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Mention {
-    pub marqueur: String,
+    pub marqueur: crate::marqueurs::Marqueur,
     pub texte: String,
     pub si_dite: Option<bool>,
 }

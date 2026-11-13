@@ -81,6 +81,7 @@ pub mod fiche;
 pub mod heures_en_plus;
 pub mod maintien;
 pub mod majoration_chomage;
+pub mod marqueurs;
 pub mod minima;
 pub mod missions;
 pub mod nationalite;

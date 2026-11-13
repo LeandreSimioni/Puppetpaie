@@ -6,7 +6,8 @@
 use std::path::Path;
 
 use documents::contrat_ecrit::manques;
-use documents::marqueurs::{Marqueur, ModeleLu, Valeurs};
+use documents::marqueurs::{ModeleLu, Valeurs};
+use droit::marqueurs::Marqueur;
 
 const MODELES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../logiciel/donnees/modeles");
 

@@ -16,7 +16,8 @@
 use droit::fiche::Lue as _;
 use serde::Serialize;
 
-use crate::marqueurs::{Marqueur, ModeleLu, Valeurs};
+use crate::marqueurs::{ModeleLu, Valeurs};
+use droit::marqueurs::Marqueur;
 
 use crate::avenant::{de_devant, et, fait_le_brut, ligne_citee, remuneration_hors_brut};
 use crate::bulletin::fmt_eur;
@@ -318,24 +319,10 @@ pub const EN_FRANCAIS: &str = "Le contrat de travail écrit est rédigé en fran
 /// Les valeurs qui peuvent etre vides : un modele ne les cite que dans un alinea qui commence par `[si ce.marqueur]`.
 const PEUVENT_ETRE_VIDES: [Marqueur; 5] = [Marqueur::SpectacleNumeroObjet, Marqueur::RemunerationPeriode, Marqueur::RemunerationHorsBrut, Marqueur::ContratPersonneRemplacee, Marqueur::ContratClausesParticulieres];
 
-/// Ce que le refus d'une mention inconnue porte a part : la table livree et le marqueur.
-#[derive(Serialize)]
-struct MentionAPart {
-    fichier: &'static str,
-    marqueur: String,
-}
-
 /// Les mentions que la loi exige d'un contrat de cette nature (`Nature::mentions_obligatoires`), chacune par son
 /// marqueur, le texte qui l'exige, et si elle n'est due que dite.
 pub fn mentions(nat: &Nature) -> R<Vec<(Marqueur, String, bool)>> {
-    nat.mentions_obligatoires()
-        .into_iter()
-        .flatten()
-        .map(|x| {
-            let m = Marqueur::lire(&x.marqueur).ok_or_else(|| socle::echec::refus_avec(format!("La table livrée des natures exige du {} une mention que le logiciel ne connaît pas : le signaler au développeur.", nat.nom_du_contrat()), socle::echec::APart::forme(MentionAPart { fichier: "contrats-base.json", marqueur: x.marqueur.clone() })))?;
-            Ok((m, x.texte.clone(), x.si_dite == Some(true)))
-        })
-        .collect()
+    Ok(nat.mentions_obligatoires().into_iter().flatten().map(|x| (x.marqueur, x.texte.clone(), x.si_dite == Some(true))).collect())
 }
 
 /// LE VERIFICATEUR D'UN MODELE DE CONTRAT, paragraphe par paragraphe : sa grammaire ; dans chaque article (et le

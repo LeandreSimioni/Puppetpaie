@@ -51,7 +51,7 @@ fn requis_manque(cle: &str) -> Echec {
     socle::fichiers::absent(cle).reclasser(Classe::Manque)
 }
 
-use documents::marqueurs::Marqueur;
+use droit::marqueurs::Marqueur;
 
 /// Les clauses qu'un avenant peut modifier : ce que L1242-12 et les conventions mettent au contrat et qui bouge
 /// d'une paie a l'autre -- l'emploi, les dates, le lieu, la remuneration.
