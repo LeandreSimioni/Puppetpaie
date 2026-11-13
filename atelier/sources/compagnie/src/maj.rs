@@ -18,7 +18,7 @@
 //! `WebView2Loader.dll` a la racine (Windows, le seul suivi par Git), `linux/puppetpaie` et `linux/moteur`,
 //! `mac/puppetpaie` et `mac/moteur` (poses par le flux « Publier », universels Intel et Apple pour le Mac) : Linux et Mac
 //! ont tous deux un `puppetpaie`, chacun son dossier (`dossier_programmes`). Une version a une archive par systeme (les
-//! fichiers communs et ceux de ce systeme, `systeme_du_fichier`) et une qui porte tout (`TOUT_SYSTEME` : un dossier
+//! fichiers communs et ceux de ce systeme, `systeme_du_fichier`) et une qui porte tout (`CleDArchive::DeTous` : un dossier
 //! portable pour plusieurs machines, et le repli), chacune signee ; `derniere.json` les nomme sous `archives`. Une
 //! installation prend celle de chacun de ses systemes (`systemes_poses` : le sien, et ceux d'un dossier portable), ou la
 //! tout-systeme si elle les porte tous (`telecharger`). Seules les archives fabriquees sont nommees, la tout-systeme dit
@@ -101,22 +101,104 @@ const NE_PAS_TOUCHER: [&str; 3] = [".git", ".avant", ".apres"];
 /// `bridage.rs`) ; le geste, `.edition.json`, vit a cote de `logiciel/` : la bascule n'y touche pas.
 pub const PROPRES_A_L_INSTALLATION: [&str; 1] = ["EDITION.json"];
 
-/// LES TROIS SYSTEMES, chacun son archive. Le nom est celui du dossier des programmes de ce systeme
-/// dans `logiciel/` (sauf Windows, dont les programmes sont a la racine : `dossier_programmes_de`) et la cle de son
-/// archive dans `derniere.json`.
-pub const SYSTEMES: [&str; 3] = ["windows", "linux", "mac"];
-/// L'archive qui porte les trois systemes a la fois : un dossier portable qui passe d'une machine a l'autre, et le repli
-/// d'une installation dont le systeme n'a pas d'archive a lui dans `derniere.json`.
-pub const TOUT_SYSTEME: &str = "tout-systeme";
-/// Le systeme de ce programme, tel qu'il a ete compile. Ce qui n'est ni Windows ni macOS est lu comme Linux : le flux ne
-/// compile pour aucun autre, et un programme Linux qui ne se lance pas ailleurs est refuse par `controler`.
-pub const SYSTEME: &str = if cfg!(windows) {
-    "windows"
-} else if cfg!(target_os = "macos") {
-    "mac"
-} else {
-    "linux"
-};
+/// UN SYSTEME, dont une archive porte les programmes : les trois, chacun son archive. Son texte (`windows`, `linux`,
+/// `mac`) est le nom du dossier des programmes de ce systeme dans `logiciel/` (sauf Windows, dont les programmes sont a la
+/// racine : `dossier_programmes_de`) et la cle de son archive dans `derniere.json`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Systeme {
+    Windows,
+    Linux,
+    Mac,
+}
+
+impl Systeme {
+    /// Les trois, dans l'ordre des archives.
+    pub const TOUS: [Systeme; 3] = [Systeme::Windows, Systeme::Linux, Systeme::Mac];
+
+    /// Le systeme de ce programme, tel qu'il a ete compile. Ce qui n'est ni Windows ni macOS est lu comme Linux : le flux
+    /// ne compile pour aucun autre, et un programme Linux qui ne se lance pas ailleurs est refuse par `controler`.
+    pub const DE_CE_PROGRAMME: Systeme = if cfg!(windows) {
+        Systeme::Windows
+    } else if cfg!(target_os = "macos") {
+        Systeme::Mac
+    } else {
+        Systeme::Linux
+    };
+
+    /// Son texte : le dossier de ses programmes, la cle de son archive.
+    pub fn texte(self) -> &'static str {
+        match self {
+            Systeme::Windows => "windows",
+            Systeme::Linux => "linux",
+            Systeme::Mac => "mac",
+        }
+    }
+
+    /// Son nom tel qu'on le lit.
+    pub fn lu(self) -> &'static str {
+        match self {
+            Systeme::Windows => "Windows",
+            Systeme::Linux => "Linux",
+            Systeme::Mac => "macOS",
+        }
+    }
+}
+
+impl std::fmt::Display for Systeme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.texte())
+    }
+}
+
+/// LA CLE D'UNE ARCHIVE publiee dans `derniere.json` : celle d'un systeme, ou celle qui porte les trois a la fois
+/// (`tout-systeme` : un dossier portable qui passe d'une machine a l'autre, et le repli d'une installation dont le
+/// systeme n'a pas d'archive a lui). Elle s'ecrit par son texte (`prete.json`, les noms des archives).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum CleDArchive {
+    Du(Systeme),
+    DeTous,
+}
+
+impl CleDArchive {
+    /// Son texte : celui du systeme, ou `tout-systeme`.
+    pub fn texte(self) -> &'static str {
+        match self {
+            CleDArchive::Du(s) => s.texte(),
+            CleDArchive::DeTous => "tout-systeme",
+        }
+    }
+
+    /// La cle ecrite `t` ; une autre se refuse.
+    pub fn lire(t: &str) -> R<CleDArchive> {
+        match Systeme::TOUS.into_iter().find(|s| s.texte() == t) {
+            Some(s) => Ok(CleDArchive::Du(s)),
+            None if t == CleDArchive::DeTous.texte() => Ok(CleDArchive::DeTous),
+            None => Err(refus_avec("Une clé d'archive ne se lit pas : un système (windows, linux, mac) ou tout-systeme.", Lieu { detail: Some(t.to_string()), ..Default::default() })),
+        }
+    }
+}
+
+impl std::fmt::Display for CleDArchive {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.texte())
+    }
+}
+
+impl TryFrom<String> for CleDArchive {
+    type Error = Echec;
+    fn try_from(s: String) -> R<CleDArchive> {
+        CleDArchive::lire(&s)
+    }
+}
+
+impl From<CleDArchive> for String {
+    fn from(c: CleDArchive) -> String {
+        c.texte().to_string()
+    }
+}
+
 /// Ce qui, a la racine de `logiciel/`, n'est que de Windows : la fenetre (suivie par Git), le chargeur de WebView2 qu'elle
 /// charge au demarrage, et le moteur s'il y est pose.
 const PROPRES_A_WINDOWS: [&str; 3] = ["puppetpaie.exe", "WebView2Loader.dll", "moteur.exe"];
@@ -128,7 +210,7 @@ pub fn code() -> PathBuf {
 
 /// Le dossier des programmes de CE systeme dans `logiciel/` (`dossier_programmes_de`).
 pub fn dossier_programmes(code: &Path) -> PathBuf {
-    dossier_programmes_de(code, SYSTEME)
+    dossier_programmes_de(code, Systeme::DE_CE_PROGRAMME)
 }
 
 /// Le dossier des programmes d'un systeme : `logiciel/` lui-meme pour Windows, ou l'exe est pose a cote de `donnees/` et
@@ -136,42 +218,41 @@ pub fn dossier_programmes(code: &Path) -> PathBuf {
 /// le lancent la) ; `logiciel/linux/` et `logiciel/mac/` pour les deux autres, qui ont chacun un `puppetpaie` (l'archive
 /// de tous les systemes les porte ensemble). Un programme pose dans un
 /// sous-dossier trouve ses `donnees/` en remontant (`installation::fixer_le_code`).
-pub fn dossier_programmes_de(code: &Path, systeme: &str) -> PathBuf {
-    if systeme == "windows" {
-        code.to_path_buf()
-    } else {
-        code.join(systeme)
+pub fn dossier_programmes_de(code: &Path, systeme: Systeme) -> PathBuf {
+    match systeme {
+        Systeme::Windows => code.to_path_buf(),
+        Systeme::Linux | Systeme::Mac => code.join(systeme.texte()),
     }
 }
 
 /// Le programme `nom` de CE systeme dans `logiciel/`.
 pub fn programme(code: &Path, nom: &str) -> PathBuf {
-    programme_de(code, SYSTEME, nom)
+    programme_de(code, Systeme::DE_CE_PROGRAMME, nom)
 }
 
 /// Le programme `nom` d'un systeme dans `logiciel/` : `puppetpaie.exe`, `linux/puppetpaie`, `mac/puppetpaie`.
-pub fn programme_de(code: &Path, systeme: &str, nom: &str) -> PathBuf {
-    dossier_programmes_de(code, systeme).join(if systeme == "windows" { format!("{}.exe", nom) } else { nom.to_string() })
+pub fn programme_de(code: &Path, systeme: Systeme, nom: &str) -> PathBuf {
+    dossier_programmes_de(code, systeme).join(if systeme == Systeme::Windows { format!("{}.exe", nom) } else { nom.to_string() })
 }
 
 /// Le systeme d'un fichier de `logiciel/` (chemin relatif, `/` comme separateur), ou `None` s'il est commun a tous
 /// (`VERSION`, `donnees/`, `interface/`) : ce qui decide de ce que porte l'archive d'un systeme.
-pub fn systeme_du_fichier(rel: &str) -> Option<&'static str> {
+pub fn systeme_du_fichier(rel: &str) -> Option<Systeme> {
     match rel.split_once('/') {
-        Some((tete, _)) => SYSTEMES.into_iter().find(|s| *s != "windows" && *s == tete),
-        None => PROPRES_A_WINDOWS.contains(&rel).then_some("windows"),
+        Some((tete, _)) => Systeme::TOUS.into_iter().find(|s| *s != Systeme::Windows && s.texte() == tete),
+        None => PROPRES_A_WINDOWS.contains(&rel).then_some(Systeme::Windows),
     }
 }
 
-/// Le nom de l'archive d'une version pour un systeme (ou `TOUT_SYSTEME`) : `puppetpaie-<version>-<systeme>.zip`.
-pub fn nom_d_archive(version: &VersionDuLogiciel, systeme: &str) -> R<NomDeFichier> {
-    NomDeFichier::lire(&format!("puppetpaie-{}-{}.zip", version, systeme))
+/// Le nom de l'archive d'une version pour un systeme (ou celle de tous) : `puppetpaie-<version>-<cle>.zip`.
+pub fn nom_d_archive(version: &VersionDuLogiciel, cle: CleDArchive) -> R<NomDeFichier> {
+    NomDeFichier::lire(&format!("puppetpaie-{}-{}.zip", version, cle))
 }
 
 /// Le nom de l'archive D'INSTALLATION d'une version (`archiver_installation`) : `puppetpaie-<version>-<systeme>-installation.zip`.
 /// Il n'y en a que pour Linux, Mac et tous les systemes : Windows a son installeur.
-pub fn nom_d_installation(version: &VersionDuLogiciel, systeme: &str) -> R<NomDeFichier> {
-    NomDeFichier::lire(&format!("puppetpaie-{}-{}-installation.zip", version, systeme))
+pub fn nom_d_installation(version: &VersionDuLogiciel, cle: CleDArchive) -> R<NomDeFichier> {
+    NomDeFichier::lire(&format!("puppetpaie-{}-{}-installation.zip", version, cle))
 }
 
 /// LA SEULE LECTURE DE `VERSION` : la version d'un logiciel. Un logiciel qui ne la dit pas, ou qui dit autre chose
@@ -377,7 +458,7 @@ pub struct Prete {
     pub version: VersionDuLogiciel,
     #[serde(with = "socle::paris::ecrit::minute")]
     pub quand: Moment,
-    pub archives: Vec<String>,
+    pub archives: Vec<CleDArchive>,
     pub notes: String,
     pub calcul: String,
     pub exigee: String,
@@ -501,7 +582,7 @@ pub struct Publiee {
     pub signature: Option<String>,
 }
 
-/// Les archives de mise a jour publiees, une par systeme fabrique (`SYSTEMES`) et celle de tous (`TOUT_SYSTEME`).
+/// Les archives de mise a jour publiees, une par systeme fabrique (`Systeme`) et celle de tous (`CleDArchive::DeTous`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Archives {
@@ -524,7 +605,7 @@ pub struct ArchivePubliee {
     pub sha256: Empreinte,
     pub signature: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub systemes: Option<Vec<String>>,
+    pub systemes: Option<Vec<Systeme>>,
 }
 
 /// Les fictives, signees comme une archive, et l'empreinte de leur contenu.
@@ -552,29 +633,28 @@ impl FictivesPubliees {
 }
 
 impl Archives {
-    /// L'archive publiee sous la cle `cle` (un systeme, ou `TOUT_SYSTEME`).
-    pub fn de(&self, cle: &str) -> Option<&ArchivePubliee> {
+    /// L'archive publiee sous la cle `cle` (un systeme, ou celle de tous).
+    pub fn de(&self, cle: CleDArchive) -> Option<&ArchivePubliee> {
         match cle {
-            "windows" => self.windows.as_ref(),
-            "linux" => self.linux.as_ref(),
-            "mac" => self.mac.as_ref(),
-            TOUT_SYSTEME => self.tout_systeme.as_ref(),
-            _ => None,
+            CleDArchive::Du(Systeme::Windows) => self.windows.as_ref(),
+            CleDArchive::Du(Systeme::Linux) => self.linux.as_ref(),
+            CleDArchive::Du(Systeme::Mac) => self.mac.as_ref(),
+            CleDArchive::DeTous => self.tout_systeme.as_ref(),
         }
     }
 
     /// Chaque archive publiee, sous sa cle, dans l'ordre des systemes puis celle de tous.
-    pub fn toutes(&self) -> impl Iterator<Item = (&'static str, &ArchivePubliee)> {
-        SYSTEMES.into_iter().chain([TOUT_SYSTEME]).filter_map(|k| self.de(k).map(|a| (k, a)))
+    pub fn toutes(&self) -> impl Iterator<Item = (CleDArchive, &ArchivePubliee)> {
+        Systeme::TOUS.into_iter().map(CleDArchive::Du).chain([CleDArchive::DeTous]).filter_map(|k| self.de(k).map(|a| (k, a)))
     }
 
     /// Pose l'archive de la cle `cle`.
-    pub fn poser(&mut self, cle: &str, a: ArchivePubliee) {
+    pub fn poser(&mut self, cle: CleDArchive, a: ArchivePubliee) {
         match cle {
-            "windows" => self.windows = Some(a),
-            "linux" => self.linux = Some(a),
-            "mac" => self.mac = Some(a),
-            _ => self.tout_systeme = Some(a),
+            CleDArchive::Du(Systeme::Windows) => self.windows = Some(a),
+            CleDArchive::Du(Systeme::Linux) => self.linux = Some(a),
+            CleDArchive::Du(Systeme::Mac) => self.mac = Some(a),
+            CleDArchive::DeTous => self.tout_systeme = Some(a),
         }
     }
 }
@@ -612,11 +692,8 @@ pub fn derniere_lue(octets: &[u8]) -> R<Publiee> {
         }
         // Celle de tous les systemes dit ceux qu'elle porte (au moins un) ; celle d'un systeme n'en dit aucun.
         let dit_ses_systemes = a.systemes.as_ref().is_some_and(|s| !s.is_empty());
-        if (systeme == TOUT_SYSTEME) != dit_ses_systemes {
+        if (systeme == CleDArchive::DeTous) != dit_ses_systemes {
             return Err(publiee_illisible(&format!("archives.{}.systemes", systeme), ""));
-        }
-        if let Some(x) = a.systemes.iter().flatten().find(|x| !SYSTEMES.contains(&x.as_str())) {
-            return Err(publiee_illisible(&format!("archives.{}.systemes", systeme), x));
         }
     }
     if d.fictives.signature.is_empty() {
@@ -811,10 +888,15 @@ struct Alteree {
 /// LES SYSTEMES D'UNE INSTALLATION : celui de ce programme, puis ceux dont la fenetre est posee dans `logiciel/`
 /// (`programme_de`). Une installation ordinaire n'en a qu'un ; un dossier portable en porte plusieurs, et la mise a jour
 /// les tient tous a jour.
-pub fn systemes_poses(code: &Path) -> Vec<&'static str> {
-    let mut v = vec![SYSTEME];
-    v.extend(SYSTEMES.into_iter().filter(|s| *s != SYSTEME && programme_de(code, s, "puppetpaie").is_file()));
+pub fn systemes_poses(code: &Path) -> Vec<Systeme> {
+    let mut v = vec![Systeme::DE_CE_PROGRAMME];
+    v.extend(Systeme::TOUS.into_iter().filter(|s| *s != Systeme::DE_CE_PROGRAMME && programme_de(code, *s, "puppetpaie").is_file()));
     v
+}
+
+/// Les textes de systemes ou de cles, joints : ce que le journal de la mise a jour en dit.
+fn joints<T: std::fmt::Display>(l: &[T]) -> String {
+    l.iter().map(T::to_string).collect::<Vec<_>>().join(", ")
 }
 
 /// Les archives qui portent `systemes`, chacune en un jeu a prendre en entier : l'archive de chaque systeme, et celle de
@@ -822,10 +904,10 @@ pub fn systemes_poses(code: &Path) -> Vec<&'static str> {
 /// l'ordre ou les essayer (pour un systeme seul, la sienne d'abord ; pour plusieurs, celle de tous, une seule archive).
 /// Vide : la version est publiee sans l'un d'eux (« Publier » choisit Windows seul, Windows et Linux, ou les trois),
 /// l'installation ne telecharge rien.
-fn jeux_a_essayer<'a>(d: &'a Publiee, systemes: &[&'static str]) -> Vec<Vec<(&'static str, &'a ArchivePubliee)>> {
+fn jeux_a_essayer<'a>(d: &'a Publiee, systemes: &[Systeme]) -> Vec<Vec<(CleDArchive, &'a ArchivePubliee)>> {
     let porte = |a: &ArchivePubliee| systemes.iter().all(|s| a.systemes.iter().flatten().any(|x| x == s));
-    let siens: Option<Vec<(&'static str, &ArchivePubliee)>> = systemes.iter().map(|s| d.archives.de(s).map(|a| (*s, a))).collect();
-    let tous = d.archives.de(TOUT_SYSTEME).filter(|a| porte(a)).map(|a| vec![(TOUT_SYSTEME, a)]);
+    let siens: Option<Vec<(CleDArchive, &ArchivePubliee)>> = systemes.iter().map(|s| d.archives.de(CleDArchive::Du(*s)).map(|a| (CleDArchive::Du(*s), a))).collect();
+    let tous = d.archives.de(CleDArchive::DeTous).filter(|a| porte(a)).map(|a| vec![(CleDArchive::DeTous, a)]);
     let v: Vec<_> = if systemes.len() > 1 { [tous, siens] } else { [siens, tous] }.into_iter().flatten().collect();
     v
 }
@@ -840,7 +922,7 @@ fn telecharger(inst: &Path, depot: &DepotDesMisesAJour, d: &Publiee, cles: &[&st
     let systemes = systemes_poses(&logiciel_de(inst));
     let jeux = jeux_a_essayer(d, &systemes);
     if jeux.is_empty() {
-        let phrase = format!("La version publiée n'a pas d'archive pour ce système ({}).", systemes.join(", "));
+        let phrase = format!("La version publiée n'a pas d'archive pour ce système ({}).", joints(&systemes));
         return Err((EchecDeMiseAJour::Introuvable, refus_avec(phrase, Lieu { fichier: Some(DERNIERE.to_string()), ..Default::default() })));
     }
     let mut manquees = Vec::new();
@@ -879,7 +961,7 @@ fn telecharger(inst: &Path, depot: &DepotDesMisesAJour, d: &Publiee, cles: &[&st
         return Err(au_controle(socle::refus!("l'archive dit {}, l'annonce de la dernière version dit {}", dite.lue(), version.lue())));
     }
     // Le programme de chaque systeme doit y etre, meme sans compagnie a controler.
-    if let Some(s) = systemes.iter().find(|s| !programme_de(&neuf, s, "puppetpaie").is_file()) {
+    if let Some(s) = systemes.iter().copied().find(|s| !programme_de(&neuf, *s, "puppetpaie").is_file()) {
         return Err(au_controle(socle::fichiers::effacer_apres(
             socle::echec::refus_avec(
                 format!("le programme de {} manque dans l'archive", s),
@@ -898,7 +980,7 @@ fn telecharger(inst: &Path, depot: &DepotDesMisesAJour, d: &Publiee, cles: &[&st
     let prete = Prete {
         version: version.clone(),
         quand: socle::temps::secondes().a_la_minute(),
-        archives: prises.iter().map(|(k, _)| k.to_string()).collect(),
+        archives: prises.iter().map(|(k, _)| *k).collect(),
         notes: d.notes.clone(),
         calcul: d.calcul.clone(),
         exigee: d.exigee.clone(),
@@ -910,16 +992,6 @@ fn telecharger(inst: &Path, depot: &DepotDesMisesAJour, d: &Publiee, cles: &[&st
 /// LA SEULE ECRITURE DE `prete.json` (`Prete`).
 fn ecrire_prete(maj: &Path, p: &Prete) -> R<()> {
     ecrire_json(&maj.join(PRETE), p)
-}
-
-/// Le nom d'un systeme tel qu'on le lit.
-pub fn systeme_lu(s: &str) -> &str {
-    match s {
-        "windows" => "Windows",
-        "linux" => "Linux",
-        "mac" => "macOS",
-        autre => autre,
-    }
 }
 
 /// Le depot qui porte la version `version` : la Release de cette version quand le reglage ne dit rien
@@ -952,9 +1024,9 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
     if a_installer(inst)?.is_some() {
         return Err(socle::refus!("Une mise à jour attend le redémarrage : redémarrez PuppetPaie, puis recommencez. {}", rien));
     }
-    let manquants: Vec<&'static str> = SYSTEMES.into_iter().filter(|s| !programme_de(&code, s, "puppetpaie").is_file()).collect();
-    let mut ajoutes: Vec<&'static str> = Vec::new();
-    let mut absents: Vec<&'static str> = Vec::new();
+    let manquants: Vec<Systeme> = Systeme::TOUS.into_iter().filter(|s| !programme_de(&code, *s, "puppetpaie").is_file()).collect();
+    let mut ajoutes: Vec<Systeme> = Vec::new();
+    let mut absents: Vec<Systeme> = Vec::new();
     if !manquants.is_empty() {
         let hors_ligne = |e: Echec| e.reformuler(|m| format!("Le dépôt ne répond pas ({}). {} Reconnectez-vous, puis recommencez.", m, rien));
         let depot = depot_de_la_version(&depot(reglage(inst)?), &version)?;
@@ -969,20 +1041,20 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
             return Err(socle::refus!("Le dépôt n'a plus la version installée ({}) : mettez PuppetPaie à jour, puis recommencez. {}", version.lue(), rien));
         }
         // Chaque systeme manquant, son archive : la sienne, sinon celle de tous qui le porte (une seule fois pour plusieurs).
-        let mut a_prendre: Vec<(&ArchivePubliee, Vec<&'static str>)> = Vec::new();
-        for s in &manquants {
+        let mut a_prendre: Vec<(&ArchivePubliee, Vec<Systeme>)> = Vec::new();
+        for s in manquants.iter().copied() {
             match jeux_a_essayer(&d, &[s]).into_iter().next().and_then(|j| j.into_iter().next()) {
-                Some((TOUT_SYSTEME, a)) => match a_prendre.iter_mut().find(|(x, _)| std::ptr::eq(*x, a)) {
+                Some((CleDArchive::DeTous, a)) => match a_prendre.iter_mut().find(|(x, _)| std::ptr::eq(*x, a)) {
                     Some((_, l)) => l.push(s),
                     None => a_prendre.push((a, vec![s])),
                 },
-                Some((_, a)) => a_prendre.push((a, vec![s])),
+                Some((CleDArchive::Du(_), a)) => a_prendre.push((a, vec![s])),
                 None => absents.push(s),
             }
         }
         let mut recues = Vec::new();
         for (a, systemes) in a_prendre {
-            let qui = systemes.iter().map(|s| systeme_lu(s)).collect::<Vec<_>>().join(" et ");
+            let qui = systemes.iter().map(|s| s.lu()).collect::<Vec<_>>().join(" et ");
             let dit = std::cell::Cell::new(None);
             let suivre = |recus: u64, attendus: Option<u64>| {
                 let quart = attendus.filter(|a| *a > 0).map(|a| recus * 4 / a);
@@ -1004,13 +1076,13 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
         }
         for (octets, systemes) in &recues {
             deballer_ce_qui(octets, &code, &|rel| systeme_du_fichier(rel).is_some_and(|s| systemes.contains(&s)))?;
-            ajoutes.extend(systemes.iter().copied().filter(|s| programme_de(&code, s, "puppetpaie").is_file()));
+            ajoutes.extend(systemes.iter().copied().filter(|s| programme_de(&code, *s, "puppetpaie").is_file()));
         }
     }
     if portable && !inst.join(crate::coffre::MARQUEUR_PORTABLE).is_file() {
         std::fs::write(inst.join(crate::coffre::MARQUEUR_PORTABLE), crate::coffre::CONTENU_PORTABLE).map_err(|e| socle::echec::du_disque(&inst, &e))?;
     }
-    let noms = |l: &[&'static str]| l.iter().map(|s| systeme_lu(s)).collect::<Vec<_>>().join(", ");
+    let noms = |l: &[Systeme]| l.iter().map(|s| s.lu()).collect::<Vec<_>>().join(", ");
     let mut phrase = if ajoutes.is_empty() && absents.is_empty() {
         "Les trois systèmes sont déjà là.".to_string()
     } else if ajoutes.is_empty() {
@@ -1031,8 +1103,8 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
 /// version, si le dossier est portable, et la phrase.
 #[derive(Debug, Serialize)]
 pub struct PortableComplete {
-    pub ajoutes: Vec<&'static str>,
-    pub absents: Vec<&'static str>,
+    pub ajoutes: Vec<Systeme>,
+    pub absents: Vec<Systeme>,
     pub version: VersionDuLogiciel,
     pub portable: bool,
     pub phrase: String,
@@ -1367,7 +1439,7 @@ fn verifier_en(inst: &Path, telecharger_aussi: bool, cles: &[&str], suivi: &Rech
     let systemes = systemes_poses(&c);
     if jeux_a_essayer(&d, &systemes).is_empty() {
         suivi.poser(Etape::AJour, Some(&courante_ici), |p| p.sans_ce_systeme = Some(v.clone()));
-        return format!("version {} -- la {} est publiee sans l'un de ses systemes ({}) : cette installation garde sa version", cour, lue, systemes.join(", "));
+        return format!("version {} -- la {} est publiee sans l'un de ses systemes ({}) : cette installation garde sa version", cour, lue, joints(&systemes));
     }
     // Un `prete.json` qui ne se lit pas se remplace : le telechargement qui suit le recrit.
     match prete(inst) {
@@ -1386,12 +1458,12 @@ fn verifier_en(inst: &Path, telecharger_aussi: bool, cles: &[&str], suivi: &Rech
     match telecharger(inst, &depot, &d, cles, suivi) {
         Ok(p) => {
             suivi.prete(&p);
-            let prise = p.archives.join(", ");
+            let prise = joints(&p.archives);
             format!(
                 "version {} -- la {} est telechargee, controlee, prete : elle s'appliquera au prochain demarrage{}",
                 cour,
                 lue,
-                if prise == SYSTEME { String::new() } else { format!(" (archive {})", prise) }
+                if p.archives == [CleDArchive::Du(Systeme::DE_CE_PROGRAMME)] { String::new() } else { format!(" (archive {})", prise) }
             )
         }
         Err((mot, e)) => echec(mot, Some(&v), format!("version {} -- la {} existe mais n'a pas pu etre preparee : {}", cour, lue, e.en_lignes())),
@@ -2120,7 +2192,7 @@ mod tests {
 
     /// La version 2026.11.01 prete dans `<racine>/maj/`, telle que `telecharger` l'ecrit.
     fn poser_la_prete(racine: &Path) {
-        let p = Prete { version: VersionDuLogiciel::lire("2026.11.01").unwrap(), quand: Moment::a_paris(socle::date::Jour::nouveau(2026, 11, 1).unwrap(), 9, 0, 0).unwrap(), archives: vec![SYSTEME.into()], notes: String::new(), calcul: String::new(), exigee: String::new() };
+        let p = Prete { version: VersionDuLogiciel::lire("2026.11.01").unwrap(), quand: Moment::a_paris(socle::date::Jour::nouveau(2026, 11, 1).unwrap(), 9, 0, 0).unwrap(), archives: vec![CleDArchive::Du(Systeme::DE_CE_PROGRAMME)], notes: String::new(), calcul: String::new(), exigee: String::new() };
         ecrire_prete(&racine.join("maj"), &p).unwrap();
     }
 
