@@ -693,7 +693,7 @@ pub fn arrets_du_contrat(ctx: &Contexte, paie: &crate::calcul::Paie, debut: &Jou
     let mut out = Vec::new();
     for imp in du_salarie(&ctx.racine, cle)? {
         let Imprevu::Arret(a) = imp else { continue };
-        if du_contrat(&a, cle, paie.engagement.numero.as_ref(),&paie.engagement.debut)? && arret_croise(&a, debut, fin)? {
+        if du_contrat(&a, cle, paie.engagement.numero.as_ref(), &paie.engagement.debut)? && arret_croise(&a, debut, fin)? {
             out.push(a);
         }
     }

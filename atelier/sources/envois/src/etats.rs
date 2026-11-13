@@ -37,7 +37,7 @@ fn paire(salarie: &IdSalarie, numero: Option<&NumeroContrat>) -> Paire {
 /// L'indice, dans `paies`, de la paie du contrat n° `numero` de ce salarie.
 pub fn paie_du_contrat(paies: &[engagement::calcul::Paie], salarie: &IdSalarie, numero: &NumeroContrat) -> R<Option<usize>> {
     for (i, x) in paies.iter().enumerate() {
-        if x.salarie.id == *salarie && x.engagement.numero.as_ref() == Some(numero)&& x.engagement.nat()?.modele_contrat().is_some() {
+        if x.salarie.id == *salarie && x.engagement.numero.as_ref() == Some(numero) && x.engagement.nat()?.modele_contrat().is_some() {
             return Ok(Some(i));
         }
     }
@@ -1268,7 +1268,7 @@ pub fn contrat_parti(lignes: &[Ligne], salarie: &IdSalarie, numero: Option<&Nume
     let mut parti: Option<Parti> = None;
     for l in lignes.iter().filter(|l| l.accepte()) {
         if let Some(e) = l.signature() {
-            for c in e.detail.contrats.iter().filter(|c| c.salarie == *salarie && c.numero.as_ref() == numero &&!c.est_avenant()) {
+            for c in e.detail.contrats.iter().filter(|c| c.salarie == *salarie && c.numero.as_ref() == numero && !c.est_avenant()) {
                 parti = Some(Parti { mois: c.mois, numero: c.numero.clone(), fichier: c.fichier.clone(), quand: e.quand.clone(), signe: None, modele: c.modele.clone() });
             }
         }

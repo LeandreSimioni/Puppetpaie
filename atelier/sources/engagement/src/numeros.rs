@@ -85,11 +85,6 @@ impl NumeroContrat {
         }
     }
 
-    /// Le numero d'un texte dit : absent, aucun ; une autre forme que celle de la norme (le texte vide compris) se refuse.
-    pub fn du_texte(t: Option<&str>) -> R<Option<NumeroContrat>> {
-        t.map(NumeroContrat::lire).transpose()
-    }
-
     pub fn as_str(&self) -> &str {
         &self.0
     }

@@ -666,8 +666,8 @@ fn fichiers_de(dossier: &Path) -> R<Vec<PathBuf>> {
 
 /// Le fichier que l'ecriture d'un signalement pose pour cette obligation (`routes::imprevus` : `arret-signaler`,
 /// `fin-contrat-signaler`), d'apres la cle du rappel (`<obligation>:<salarie>:<jour>`, `fin-contrat:<salarie>:<fin>`).
-fn fichier_du_signalement(ctx: &Contexte, cle: &crate::rappels::CleDEcheance, jour: Option<socle::date::Jour>) -> R<Option<PathBuf>> {
-    let (crate::rappels::CleDEcheance::DuSalarie { quoi: genre, salarie, .. }, Some(jour)) = (cle, jour) else { return Ok(None) };
+fn fichier_du_signalement(ctx: &Contexte, cle: &crate::rappels::CleDEcheance) -> R<Option<PathBuf>> {
+    let crate::rappels::CleDEcheance::DuSalarie { quoi: genre, salarie, jour } = cle else { return Ok(None) };
     let mois = jour.mois_civil();
     let compact = jour.aaaammjj();
     let nom = match genre.as_str() {
@@ -739,7 +739,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
             });
             let detail = if ob.phrase.is_empty() { r.detail.clone() } else { ob.phrase.clone() };
             let (genre, marche, ou) = if ob.cle.nom().starts_with("signalement_") {
-                fichier = fichier_du_signalement(ctx, &r.cle, r.jour_de_la_cle)?;
+                fichier = fichier_du_signalement(ctx, &r.cle)?;
                 let marche = if r.a_saisir.is_empty() {
                     "Écrire le signalement dans la compagnie (Imprévus, ou la colonne du mois), puis le tester."
                 } else {
