@@ -1302,7 +1302,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
     let choix = |code: &str, libelle: &str| Choix { code: code.to_string(), libelle: libelle.to_string(), defaut: None };
     let lieux: Vec<Choix> = if [engagement::NUITEE, engagement::REPAS].contains(&r.code) {
         std::iter::once(choix("", "Métropole"))
-            .chain(engagement::TERRITOIRES.iter().map(|(c, l)| choix(c, l)))
+            .chain(engagement::TerritoireHorsMetropole::TOUS.into_iter().map(|t| choix(t.texte(), t.dit())))
             .chain(droit::missions::lieux()?.into_iter().map(|(c, l)| choix(c.texte(), &l)))
             .collect()
     } else {

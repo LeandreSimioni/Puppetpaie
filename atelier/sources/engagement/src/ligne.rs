@@ -209,7 +209,7 @@ pub struct UnitesEtHeures {
 }
 
 /// UNE LIGNE DE FRAIS AU FORFAIT (nature `frais`, `saisie` : `quantite`, `taux`) : son lieu hors de la metropole
-/// (`crate::TERRITOIRES`, ou un code de `droit::missions` ; `null` : la metropole) et ses cases cochees.
+/// (`LieuDeFrais` ; `null` : la metropole) et ses cases cochees.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Frais {
@@ -218,7 +218,7 @@ pub struct Frais {
     pub quantite: Case,
     #[serde(deserialize_with = "socle::forme::decimal_opt")]
     pub taux: Case,
-    pub territoire: Option<String>,
+    pub territoire: Option<LieuDeFrais>,
     pub cases: Vec<CaseDeFrais>,
     pub lieu: Option<String>,
     pub dates: Vec<DateDeLigne>,
@@ -232,6 +232,78 @@ impl Frais {
     /// La case `case` est-elle cochee ?
     pub fn cochee(&self, case: CaseDeFrais) -> bool {
         self.cases.contains(&case)
+    }
+}
+
+/// LE LIEU D'UNE LIGNE DE NUITEE OU DE REPAS HORS DE LA METROPOLE (le choix « Lieu », sous « Avancé » ; absent : la
+/// metropole) : un territoire hors metropole (`TerritoireHorsMetropole`), ou un lieu a l'etranger, par son code de la
+/// table des missions (`droit::missions::LieuDeMission`). Il s'ecrit par son texte (`dom`, `pacifique`, `taaf`,
+/// `monaco`, ou le code du lieu) et se lit a la porte par lui.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum LieuDeFrais {
+    HorsMetropole(TerritoireHorsMetropole),
+    Etranger(droit::missions::LieuDeMission),
+}
+
+impl std::fmt::Display for LieuDeFrais {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LieuDeFrais::HorsMetropole(t) => f.write_str(t.texte()),
+            LieuDeFrais::Etranger(l) => f.write_str(l.texte()),
+        }
+    }
+}
+
+impl From<LieuDeFrais> for String {
+    fn from(l: LieuDeFrais) -> String {
+        l.to_string()
+    }
+}
+
+impl TryFrom<String> for LieuDeFrais {
+    type Error = Echec;
+    /// Un territoire hors metropole par sa cle, sinon un lieu a l'etranger par son code.
+    fn try_from(texte: String) -> R<LieuDeFrais> {
+        match TerritoireHorsMetropole::TOUS.into_iter().find(|t| t.texte() == texte) {
+            Some(t) => Ok(LieuDeFrais::HorsMetropole(t)),
+            None => Ok(LieuDeFrais::Etranger(droit::missions::LieuDeMission::lire(&texte)?)),
+        }
+    }
+}
+
+/// UN TERRITOIRE HORS DE LA METROPOLE qu'une ligne de frais dit : un territoire de `frais_hors_metropole` du bareme
+/// (`dom`, `pacifique`, `monaco`), ou les Terres australes et antarctiques (`taaf`), ou aucun forfait ne vaut. Le choix
+/// « Lieu » les propose avant les lieux a l'etranger, dans cet ordre (`TOUS`), chacun dit par `dit`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerritoireHorsMetropole {
+    Dom,
+    Pacifique,
+    Taaf,
+    Monaco,
+}
+
+impl TerritoireHorsMetropole {
+    pub const TOUS: [TerritoireHorsMetropole; 4] = [TerritoireHorsMetropole::Dom, TerritoireHorsMetropole::Pacifique, TerritoireHorsMetropole::Taaf, TerritoireHorsMetropole::Monaco];
+
+    /// Sa cle : celle du bareme (`frais_hors_metropole`), ou `taaf`.
+    pub fn texte(self) -> &'static str {
+        match self {
+            TerritoireHorsMetropole::Dom => "dom",
+            TerritoireHorsMetropole::Pacifique => "pacifique",
+            TerritoireHorsMetropole::Taaf => "taaf",
+            TerritoireHorsMetropole::Monaco => "monaco",
+        }
+    }
+
+    /// Ce que le choix « Lieu » en dit.
+    pub fn dit(self) -> &'static str {
+        match self {
+            TerritoireHorsMetropole::Dom => "Outre-mer : Antilles, Guyane, Réunion, Mayotte, Saint-Pierre-et-Miquelon, Saint-Barthélemy, Saint-Martin",
+            TerritoireHorsMetropole::Pacifique => "Outre-mer : Nouvelle-Calédonie, Wallis-et-Futuna, Polynésie française",
+            TerritoireHorsMetropole::Taaf => "Outre-mer : Terres australes et antarctiques françaises",
+            TerritoireHorsMetropole::Monaco => "Monaco",
+        }
     }
 }
 
@@ -572,11 +644,6 @@ impl LignePaie {
         self.frais().is_some_and(|f| f.cases.contains(&case))
     }
 
-    /// Son territoire hors de la metropole, s'il est dit.
-    pub fn territoire_dit(&self) -> Option<&str> {
-        self.frais().and_then(|f| f.territoire.as_deref())
-    }
-
     /// Ce que le moteur a pose sur elle pour l'ecran (une ligne de frais).
     pub fn marques(&self) -> Option<&Marques> {
         self.frais().map(|f| &f.marques)
@@ -783,7 +850,7 @@ pub struct LigneDonnee {
     pub taux_majoration: Option<Case>,
     pub montant: Option<Case>,
     pub genre: Option<Option<String>>,
-    pub territoire: Option<Option<String>>,
+    pub territoire: Option<Option<LieuDeFrais>>,
     pub cases: Option<Vec<CaseDeFrais>>,
     pub lieu: Option<Option<String>>,
     pub dates: Option<Vec<DateDeLigne>>,
@@ -825,7 +892,7 @@ impl<'de> Deserialize<'de> for LigneDonnee {
                         Cle::TauxMajoration => une(&mut l.taux_majoration, m.next_value::<Nombre>()?.0, cle)?,
                         Cle::Montant => une(&mut l.montant, m.next_value::<Nombre>()?.0, cle)?,
                         Cle::Genre => une(&mut l.genre, m.next_value::<Option<String>>()?, cle)?,
-                        Cle::Territoire => une(&mut l.territoire, m.next_value::<Option<String>>()?, cle)?,
+                        Cle::Territoire => une(&mut l.territoire, m.next_value::<Option<LieuDeFrais>>()?, cle)?,
                         Cle::Cases => une(&mut l.cases, m.next_value::<Vec<CaseDeFrais>>()?, cle)?,
                         Cle::Lieu => une(&mut l.lieu, m.next_value::<Option<String>>()?, cle)?,
                         Cle::Dates => une(&mut l.dates, m.next_value::<Vec<DateDeLigne>>()?, cle)?,
@@ -901,7 +968,7 @@ impl LigneDonnee {
             ));
         }
         // Une case vide s'ecrit `null`, jamais un texte vide.
-        for (cle, t) in [(Cle::Lieu, &self.lieu), (Cle::Territoire, &self.territoire), (Cle::Genre, &self.genre)] {
+        for (cle, t) in [(Cle::Lieu, &self.lieu), (Cle::Genre, &self.genre)] {
             if t.as_ref().is_some_and(|t| t.as_ref().is_some_and(|t| t.trim().is_empty())) {
                 return Err(socle::refus!("la ligne « {} » : « {} » est vide ; écrivez null.", r.libelle, cle.nom()));
             }
@@ -937,7 +1004,7 @@ impl LigneDonnee {
                     rubrique,
                     quantite: dit(self.quantite),
                     taux: dit(self.taux),
-                    territoire: texte(self.territoire),
+                    territoire: self.territoire.flatten(),
                     cases,
                     lieu: texte(self.lieu),
                     dates: jours(self.dates),
