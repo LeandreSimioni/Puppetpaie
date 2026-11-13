@@ -1978,7 +1978,7 @@ impl<'a> Moteur<'a> {
         use compagnie::pieces_ecrites::{piece_notee, EmpreinteNotee};
         let note = piece_notee(self.racine(), fichier)?;
         if let Some((n, EmpreinteNotee::Saisie(notee))) = note.as_ref().and_then(|n| Some((n, n.empreinte_saisie.as_ref()?))) {
-            if self.empreinte_saisie(le_mois)?.as_ref().map(EmpreinteCourte::texte) != Some(notee.as_str()) {
+            if self.empreinte_saisie(le_mois)?.as_ref() != Some(notee) {
                 return Ok(Some(format!("l'engagement a changé depuis que ce fichier a été écrit (le {})", n.quand.dit())));
             }
             return Ok(None);

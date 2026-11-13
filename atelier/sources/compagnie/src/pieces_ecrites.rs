@@ -108,8 +108,8 @@ pub struct PieceNotee {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
 pub enum EmpreinteNotee {
-    Saisie(String),
-    Annee(std::collections::BTreeMap<String, String>),
+    Saisie(socle::fichiers::EmpreinteCourte),
+    Annee(std::collections::BTreeMap<socle::mois::Mois, String>),
 }
 
 /// La note de la piece `fichier` au journal des ecritures (`PieceNotee`) ; aucune si le moteur ne l'a pas ecrite.

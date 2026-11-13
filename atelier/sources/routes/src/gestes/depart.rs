@@ -644,7 +644,7 @@ pub(crate) fn fabriquer_dsn(ctx: &Contexte, le_mois: Mois, qui: &str) -> R<DsnFa
         // La paie que chaque DSN declare : l'ecran dira si elle change avant l'envoi.
         let empreinte = m.empreinte_saisie_avec(le_mois, || Ok(Moteur::portees(&lu.regs)))?;
         for (f, _, portees) in a_ecrire {
-            noter_piece_ecrite(&ctx.racine, &cle_de_piece(&f), empreinte.as_ref().map(|e| EmpreinteNotee::Saisie(e.to_string())), Some(portees))?;
+            noter_piece_ecrite(&ctx.racine, &cle_de_piece(&f), empreinte.clone().map(EmpreinteNotee::Saisie), Some(portees))?;
         }
     }
     Ok(DsnFabriquee { fichiers, avertissements })

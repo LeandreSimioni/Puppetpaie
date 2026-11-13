@@ -219,11 +219,11 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
 /// LES SAISIES DE L'ANNEE, PAR LEUR EMPREINTE : `{"AAAA-MM": empreinte}` pour chaque mois saisi de l'annee, l'empreinte
 /// de sa saisie (`engagement::stock::empreinte_de_la_saisie_du_mois` : ce qu'elle dit qui change la paie). Une saisie
 /// illisible se refuse. L'export compta de l'annee la note en s'ecrivant (`noter_piece_ecrite`) : c'est ce qu'il a lu.
-pub(crate) fn empreintes_des_saisies(racine: &Path, annee: Annee) -> R<BTreeMap<String, String>> {
+pub(crate) fn empreintes_des_saisies(racine: &Path, annee: Annee) -> R<BTreeMap<socle::mois::Mois, String>> {
     let mut m = BTreeMap::new();
     for mois in engagement::stock::mois_saisis(racine).map_err(|e| e.reclasser(Classe::Refuse))?.into_iter().filter(|x| x.annee_civile() == annee) {
         if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, mois, None).map_err(|e| e.reclasser(Classe::Refuse))? {
-            m.insert(mois.to_string(), e);
+            m.insert(mois, e);
         }
     }
     Ok(m)
