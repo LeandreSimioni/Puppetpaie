@@ -678,9 +678,9 @@ pub struct ParNature {
 }
 
 impl ParNature {
-    /// Les natures, dans l'ordre : `intermittent`, `permanent`.
-    pub fn natures(&self) -> [(&'static str, &Rattachement); 2] {
-        [("intermittent", &self.intermittent), ("permanent", &self.permanent)]
+    /// Les populations, dans l'ordre : l'intermittent (a l'activite), le permanent (au mois).
+    pub fn natures(&self) -> [(crate::natures::Paie, &Rattachement); 2] {
+        [(crate::natures::Paie::Activite, &self.intermittent), (crate::natures::Paie::Mensuelle, &self.permanent)]
     }
 
     /// Le rattachement de la section `section` (`Nature::section_des_organismes`).

@@ -91,7 +91,7 @@ fn la_reduction_generale() {
         let mut vus = Vec::new();
         for b in rel["grilles"][&cle].as_array().unwrap() {
             points += 1;
-            let r = section(bar).and_then(|rg| reduction_generale(rg.as_ref(), statut.as_deref(), dec(b.as_str().unwrap()), dec(h), caisse));
+            let r = section(bar).and_then(|rg| reduction_generale(rg.as_ref(), statut.as_deref().and_then(droit::fiche::Statut::du_code), dec(b.as_str().unwrap()), dec(h), caisse));
             appliquees += matches!(r, Ok(Some(_))) as usize;
             vus.push(essai(r.map(|o| o.map_or(Value::Null, |x| socle::ecriture::en_valeur(&x)))));
         }

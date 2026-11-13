@@ -611,21 +611,16 @@ pub struct Cotisation {
 /// `atelier/reference/sources/audiens-parametres-2026/Audiens-Parametres-2026.txt` l. 197).
 const TRANCHE_A: TypeDeComposant = TypeDeComposant::TrancheAPrevoyance;
 
-/// LA SECTION DES ORGANISMES (`organismes-base.json`, `par_nature`) ET DES CONTRIBUTIONS D'UNE NATURE DE CONTRAT : celle
-/// que `contrats-base.json` dit pour elle (`Nature::section_des_organismes`).
-fn section_de(nat: &Nature) -> &'static str {
-    nat.section_des_organismes().population()
-}
-
 /// UNE CONTRIBUTION DECLAREE SOUS UNE ADHESION AUDIENS ce mois-la (la CASC-SVP, une contribution de branche :
 /// `contributions_dsn`) : sa reference d'adhesion, son libelle, les lignes du bulletin qu'elle somme, et l'affectation
-/// (`202 + place`) de sa base 31 pour chaque section des organismes qui l'a.
+/// (`202 + place`) de sa base 31 pour chaque section des organismes qui l'a, par population (la section d'une nature de
+/// contrat, `Nature::section_des_organismes`).
 #[derive(Clone, Debug)]
 pub struct ContributionDuMois {
     pub reference: String,
     pub libelle: String,
     pub lignes: Vec<IdDeCotisation>,
-    pub natures: std::collections::BTreeMap<String, String>,
+    pub natures: std::collections::BTreeMap<droit::natures::Paie, String>,
 }
 
 /// Les assiettes que le calcul a ecrites dans la paie, telles quelles : rien ne se recalcule.
@@ -868,9 +863,9 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
         }
     }
     let nat = p.engagement.nat()?;
-    let nature = section_de(&nat);
+    let nature = nat.section_des_organismes();
     for contrib in &contribs {
-        let Some(affectation) = contrib.natures.get(nature) else { continue };
+        let Some(affectation) = contrib.natures.get(&nature) else { continue };
         // Apres la derniere cotisation affectee a une adhesion ; sans elle, a la fin.
         let apres = match out.iter().rposition(|l| l.affectation.as_deref().is_some_and(|a| !a.is_empty())) {
             Some(i) => i + 1,
@@ -1147,8 +1142,8 @@ fn bornes_du_mois(mois: Mois) -> (Jour, Jour) {
 /// Les references d'adhesion auxquelles cette nature rattache, parmi celles qui valent pour la
 /// periode `debut`..=`fin`.
 pub fn affiliations(orgs: &Organismes, nat: &Nature, contribs: &[ContributionDuMois], (debut, fin): (Jour, Jour)) -> R<Vec<String>> {
-    let cle = section_de(nat).to_string();
-    let sec = orgs.par_nature.de(nat.section_des_organismes());
+    let cle = nat.section_des_organismes();
+    let sec = orgs.par_nature.de(cle);
     if sec.references.is_empty() {
         let pourquoi = match sec.a_confirmer {
             Some(p) => p,
@@ -1159,7 +1154,7 @@ d'adhésion de l'assureur.",
             "Contrat {} : la DSN rattache chaque salarié à ses contrats de prévoyance et de santé (S21.G00.70.013), et ceux \
 d'un salarié « {} » ne sont pas connus.\n  {}\n  Déclarer quand même le rattacherait aux contrats d'une autre \
 population, ce que la plate-forme accepte sans rien dire. Rien n'est écrit.",
-            nat.libelle, cle, pourquoi
+            nat.libelle, cle.population(), pourquoi
         ));
     }
     let mut out: Vec<String> = sec.references.iter().filter(|r| orgs.adhesion_en_vigueur(r, &debut, &fin)).cloned().collect();
@@ -1425,11 +1420,11 @@ l'adhesion {} que le logiciel compose pour toute compagnie de la 3090. Rien n'es
             return Err(refus!(
                 "Contrat '{}' : {} adhesions deja, plus de place pour la CASC-SVP (trois identifiants \
 d'affiliation par contrat). Rien n'est ecrit.",
-                n,
+                n.population(),
                 refs.len()
             ));
         }
-        natures.insert(n.to_string(), (202 + refs.len()).to_string());
+        natures.insert(n, (202 + refs.len()).to_string());
     }
     Ok(Some(ContributionDuMois { reference, libelle: adh.libelle.clone(), lignes: base.dsn.lignes_bulletin.clone(), natures }))
 }
@@ -1450,7 +1445,7 @@ fn contributions_dsn(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, 
         return Ok(out);
     }
     let places = places_par_contrat(bar);
-    let mut deja: HashMap<String, i64> = HashMap::new();
+    let mut deja: HashMap<droit::natures::Paie, i64> = HashMap::new();
     for spec in specs {
         let nom = spec.contribution.clone();
         let adh = orgs.adhesions_prevoyance.iter().find(|a| {
@@ -1475,19 +1470,19 @@ du mois n'ont pas l'adhesion de cette contribution, que le logiciel compose depu
                 continue;
             }
             let refs = refs_du_mois(orgs, sec, mois);
-            let place = refs.len() as i64 + *deja.entry(n.to_string()).or_insert(0);
+            let place = refs.len() as i64 + *deja.entry(n).or_insert(0);
             if place >= places {
                 return Err(refus!(
                     "Contrat '{}' : {} adhesions deja, plus de place pour le {} ({} identifiants d'affiliation par \
 contrat). Rien n'est ecrit.",
-                    n,
+                    n.population(),
                     refs.len(),
                     nom,
                     places
                 ));
             }
-            natures.insert(n.to_string(), (202 + place).to_string());
-            *deja.entry(n.to_string()).or_insert(0) += 1;
+            natures.insert(n, (202 + place).to_string());
+            *deja.entry(n).or_insert(0) += 1;
         }
         out.push(ContributionDuMois { reference, libelle: adh.libelle.clone(), lignes: spec.lignes.clone(), natures });
     }
@@ -2815,7 +2810,7 @@ fn lecture(p: &Paie, bar: &BaremeDuMois) -> R<Lecture> {
         };
         l.roles.push((code, org, Role81::Cotisation { cle, base }));
     }
-    let nature = section_de(&*p.engagement.nat()?).to_string();
+    let nature = p.engagement.nat()?.section_des_organismes();
     for contrib in &contribs {
         if contrib.natures.contains_key(&nature) {
             l.blocs.push((BaseAssujettie::PrevoyanceSanteRetraite, Assiette::Zero));
@@ -5206,7 +5201,7 @@ mod tests {
         assert_eq!(c.reference, "100");
         assert_eq!(c.lignes, [droit::forme_bareme::CCN]);
         // l'intermittent : apres 103 et 102, donc 204 ; le permanent l'a deja.
-        assert_eq!(c.natures, std::collections::BTreeMap::from([("intermittent".to_string(), "204".to_string())]));
+        assert_eq!(c.natures, std::collections::BTreeMap::from([(droit::natures::Paie::Activite, "204".to_string())]));
     }
 
     // `atelier/reference/sources/casc-svp-fiche-codification-dsn-202606.txt`.

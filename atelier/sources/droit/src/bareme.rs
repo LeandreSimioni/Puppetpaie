@@ -183,7 +183,7 @@ fn cotisation_par_dessus(base: &mut CotisationModifiee, m: &CotisationModifiee) 
 /// corps), sinon un refus qui nomme tout ce qui bloque.
 pub fn bareme_du_statut(mut bar: Pile, statut: Statut) -> R<Pile> {
     let statuts = bar.statuts.clone();
-    if statuts.iter().any(|s| s == statut.as_str()) {
+    if statuts.contains(&statut) {
         return Ok(bar);
     }
 
@@ -200,7 +200,7 @@ rien ne le signale.\n  \
 Ajouter une section par_statut['{}'] au bareme.",
                 statut,
                 annee(&bar),
-                statuts.join(", "),
+                statuts.iter().map(Statut::as_str).collect::<Vec<_>>().join(", "),
                 statut
             ),
         ));

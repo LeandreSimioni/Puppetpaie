@@ -185,7 +185,7 @@ partagent entre periodes d'apres un texte depose. Rien n'est calcule.",
     let heures_mois = parts.iter().fold(Decimal::ZERO, |a, p| a + p.heures_travaillees);
     let caisse = parts.iter().any(|p| p.bases.get(&Assiette::BrutCs).is_some_and(|b| *b > Decimal::ZERO));
     let pile = pile_de_la_paie(ctx, derniere)?;
-    let du_mois = reduction_generale(pile.reduction_generale.as_ref(), statut_du_mois.map(|s| s.as_str()), brut_mois, heures_mois, caisse)?;
+    let du_mois = reduction_generale(pile.reduction_generale.as_ref(), statut_du_mois, brut_mois, heures_mois, caisse)?;
     for p in parts.iter_mut() {
         let rg = match &du_mois {
             Some(m) if p.brut > Decimal::ZERO && p.heures_travaillees > Decimal::ZERO => {

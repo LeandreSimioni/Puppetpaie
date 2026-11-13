@@ -256,7 +256,7 @@ forme! {
         pub cotisation_sante_patronale: Option<CotisationSupplementaire>,
         pub reduction_generale: Option<ReductionGenerale>,
         pub majoration_chomage_cddu: Option<MajorationChomage>,
-        pub statuts: Vec<String>,
+        pub statuts: Vec<Statut>,
         pub par_statut: BTreeMap<Statut, CoucheStatut>,
         pub deduction_forfaitaire: Option<DeductionForfaitaire>,
         pub par_categorie: BTreeMap<CategorieDuBareme, CoucheCategorie>,

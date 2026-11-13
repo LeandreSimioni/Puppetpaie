@@ -1688,7 +1688,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     });
 
     // 7.9 : la reduction generale, apres les cotisations.
-    let statut = sal.statut.dite().map(|s| s.as_str());
+    let statut = sal.statut.dite().copied();
     let caisse_conges = bases[&Assiette::BrutCs] > Decimal::ZERO;
     // Sous DFS, la reduction se calcule sur le brut abattu, dans la limite de 130 % de celle du brut entier
     // (`reduction_generale_sous_dfs`).
