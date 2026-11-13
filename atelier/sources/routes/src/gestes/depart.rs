@@ -1113,7 +1113,7 @@ pub(crate) fn piece_partie(ctx: &Contexte, le_mois: Mois, fichier: &NomDeFichier
             let Some(mention) = r.mention.clone().filter(|m| !m.is_empty()) else {
                 return Err(refus(format!("{} : la signature notée ne dit pas la mention de l'artiste ; il ne se refait pas.", nom)));
             };
-            let Some(code) = r.code.as_deref() else {
+            let Some(code) = r.code.as_ref() else {
                 return Err(refus(format!("{} : la signature notée ne dit pas la demande à laquelle elle répond ; il ne se refait pas.", nom)));
             };
             let pdf = sortie.join("envoi").join(nom);
@@ -1359,10 +1359,10 @@ fn refaire_le_signalement(ctx: &Contexte, mois: Mois, l: &envois::journal::Ligne
 /// mise a jour incrementale (`fabrique_pdf::marquage::contresigner`). On ne contresigne que ce qui est parti : le PDF se
 /// lit ou il est ; s'il manque ou a change, il se refait (`refaire_le_contrat`) et doit redonner l'empreinte notee, sinon
 /// refus. Le fichier `envoye` n'est jamais reecrit.
-pub(crate) fn contresigner(ctx: &Contexte, lignes: &[envois::journal::Ligne], code: &str, envoye: &Path, signe: &Path, mention: &str) -> R<()> {
+pub(crate) fn contresigner(ctx: &Contexte, lignes: &[envois::journal::Ligne], code: &documents::fiche_questionnaire::CodeDeDemande, envoye: &Path, signe: &Path, mention: &str) -> R<()> {
     let nom = NomDeFichier::du(envoye)?;
     let refus = |m: String| erreur(Classe::Refuse, m);
-    let entree = |l: &envois::journal::Ligne| l.signature().and_then(|s| s.detail.contrats.iter().find(|c| c.fichier == nom && c.code.as_deref() == Some(code)).cloned());
+    let entree = |l: &envois::journal::Ligne| l.signature().and_then(|s| s.detail.contrats.iter().find(|c| c.fichier == nom && c.code.as_ref() == Some(code)).cloned());
     let Some(rang) = lignes.iter().rposition(|l| entree(l).is_some()) else {
         return Err(refus(format!("{} : aucune demande de signature ne porte le code {}.", nom, code)));
     };

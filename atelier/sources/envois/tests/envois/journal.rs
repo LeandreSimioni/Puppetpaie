@@ -1,6 +1,8 @@
 //! Le journal des envois n'a que des ajouts (ce qui est parti se lit, regle 4), et l'empreinte d'un fichier y reste
 //! comparable a celles deja ecrites : c'est elle qui dit qu'un fichier est deja parti.
 
+use documents::fiche_questionnaire::CodeDeDemande;
+use droit::fiche::Courriel;
 use envois::journal::{self, Acte, DetailDsn, Envoi, Ligne, Mode, Revenu, RetourFiche};
 use socle::mois::Mois;
 
@@ -28,7 +30,7 @@ fn dsn(mode: Mode) -> Ligne {
 }
 
 fn fiche(code: &str) -> Ligne {
-    Ligne::FicheDemande(envoi(Mode::Reel, journal::DetailFiche { code: code.into(), adresse: "a@b.invalid".into(), prenom: Some("A".into()), message: None, expediteur: None }))
+    Ligne::FicheDemande(envoi(Mode::Reel, journal::DetailFiche { code: CodeDeDemande::lire(code).unwrap(), adresse: Courriel::lire("a@b.invalid").unwrap(), prenom: Some("A".into()), message: None, expediteur: None }))
 }
 
 #[test]
@@ -46,12 +48,12 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
 
     // DEUX POSTES (regle 9 b) : chacun ajoute au meme journal ce qu'il a fait, et range le meme retour ; leurs journaux mis
     // bout a bout disent tout, sans rien compter deux fois.
-    journal::noter(&d, fiche("F-1"), None, a(3, 12)).unwrap();
+    journal::noter(&d, fiche("FIC-AAAAAA"), None, a(3, 12)).unwrap();
     let e = dossier_de_test("journal", "second-poste");
     std::fs::create_dir_all(e.join("journal")).unwrap();
     std::fs::copy(journal::chemin(&d), journal::chemin(&e)).unwrap();
-    let retour = RetourFiche { code: "F-1".into(), abandon: true, salarie: None, illisible: None, erreurs: None, quand: instant(4, 8), qui: "t".into(), de: None, message: None, reponse: "".into() };
-    for (poste, quoi) in [(&d, fiche("F-2")), (&e, dsn(Mode::Test))] {
+    let retour = RetourFiche { code: CodeDeDemande::lire("FIC-AAAAAA").unwrap(), abandon: true, salarie: None, illisible: None, erreurs: None, quand: instant(4, 8), qui: "t".into(), de: None, message: None, reponse: "".into() };
+    for (poste, quoi) in [(&d, fiche("FIC-BBBBBB")), (&e, dsn(Mode::Test))] {
         journal::noter(poste, quoi, None, a(4, 9)).unwrap();
         journal::rattacher(poste, |l| l.acte() == Acte::FicheDemande, Revenu::Fiche(retour.clone())).unwrap();
     }

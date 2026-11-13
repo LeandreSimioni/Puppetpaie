@@ -742,8 +742,8 @@ pub(crate) fn boite_liee(ctx: &Contexte) -> R<bool> {
 /// Une demande de fiche partie et pas encore revenue : son code, a qui, quand, et ce que la page en dit.
 #[derive(Debug, Clone, serde::Serialize)]
 struct FicheAttendue {
-    code: String,
-    adresse: String,
+    code: documents::fiche_questionnaire::CodeDeDemande,
+    adresse: droit::fiche::Courriel,
     prenom: Option<String>,
     quand: socle::paris::InstantOuJour,
     demande_dit: String,

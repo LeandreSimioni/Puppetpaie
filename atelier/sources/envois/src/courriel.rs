@@ -58,7 +58,7 @@ pub trait Courriel {
     /// L'adresse de la boite.
     fn compte(&self) -> &str;
     /// Envoie un message deja assemble ; rend son `Message-ID`.
-    fn envoyer(&mut self, message_mime: &[u8]) -> R<String>;
+    fn envoyer(&mut self, message_mime: &[u8]) -> R<crate::envoi::IdDeCourriel>;
     /// Les UID des messages de la boite de reception qui contiennent le texte, les plus recents d'abord.
     fn rechercher(&mut self, requete: &str, maximum: usize) -> R<Vec<String>>;
     /// Un message entier (RFC 822), par son UID.
@@ -476,7 +476,7 @@ impl Courriel for Client {
 
     /// Envoie un message deja assemble. Rend son `Message-ID` (ajoute s'il manque : c'est par lui que la releve
     /// reconnait nos propres envois).
-    fn envoyer(&mut self, message_mime: &[u8]) -> R<String> {
+    fn envoyer(&mut self, message_mime: &[u8]) -> R<crate::envoi::IdDeCourriel> {
         use lettre::address::{Address, Envelope};
         use lettre::transport::smtp::authentication::Credentials;
         use lettre::transport::smtp::client::{Tls, TlsParameters};
@@ -485,7 +485,8 @@ impl Courriel for Client {
         let (entetes, _) = mailparse::parse_headers(message_mime).map_err(|e| erreur(format!("message illisible : {}", e)))?;
         let mut brut = message_mime.to_vec();
         let ident = match premier_entete(&entetes, "Message-ID").map(|v| v.trim().to_string()).filter(|v| !v.is_empty()) {
-            Some(i) => i,
+            // Le message, le logiciel l'a assemble : son identifiant a la forme du sien.
+            Some(i) => crate::envoi::IdDeCourriel::lire(&i).map_err(|e| e.reclasser(Classe::Courriel))?,
             None => {
                 let domaine = match self.compte.rsplit_once('@') {
                     Some((_, d)) => d,
@@ -618,7 +619,7 @@ impl Courriel for BoiteSimulee {
 
     /// Ecrit le message dans `courriels-simules/` ; l'identifiant est son `Message-ID`, comme chez le vrai client :
     /// c'est par lui que la compagnie fictive retrouve ce qui est parti.
-    fn envoyer(&mut self, message_mime: &[u8]) -> R<String> {
+    fn envoyer(&mut self, message_mime: &[u8]) -> R<crate::envoi::IdDeCourriel> {
         let dossier = self.racine.join(DOSSIER_COURRIELS);
         std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Courriel))?;
         // Un message sans `Message-ID` en recoit un, comme chez le vrai client.
@@ -626,6 +627,7 @@ impl Courriel for BoiteSimulee {
             Some(i) => i,
             None => format!("<{}@fictive.puppetpaie>", hexa_au_hasard(8)?),
         };
+        let ident = crate::envoi::IdDeCourriel::lire(&ident).map_err(|e| e.reclasser(Classe::Courriel))?;
         let nom = format!("{}_{}.eml", horodatage_de(socle::temps::secondes()), hexa_au_hasard(4)?);
         let chemin = dossier.join(&nom);
         std::fs::write(&chemin, message_mime).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Courriel))?;

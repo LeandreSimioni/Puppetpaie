@@ -23,7 +23,7 @@ use documents::etats_compta::ChoixCompta;
 use documents::plan_comptable::{controler_plan, tables};
 use droit::contexte::Contexte;
 use envois::envoi::{self, Message};
-use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
+use envois::ligne_d_envoi::{en_liste, noter, noter_echec_d_envoi, par_courriel};
 use envois::journal;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
@@ -811,7 +811,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
     let aujourdhui = socle::temps::jour_de_paris();
     let a_qui = format!("{} salarie(s) : {}", messages.len(), messages.iter().map(|m| m.nom.as_str()).collect::<Vec<_>>().join(", "));
     verifier_preuve(ctx, Some(preuve), MoisOuJour::Mois(aujourdhui.mois_civil()), "envoi du dossier aux salaries", &a_qui)?;
-    let expediteur = expediteur_de(client.as_ref());
+    let expediteur = expediteur_de(client.as_ref())?;
     let detail = journal::DetailDossier {
         periode: d.periode.clone(),
         categories: d.categories.iter().map(|c| c.to_string()).collect(),
@@ -832,7 +832,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
             return Err(e.echec);
         }
     };
-    noter(ctx, journal::Ligne::DossierSalarie(par_courriel(None, qui, true, &partis.join(", "), "", detail, None)))?;
+    noter(ctx, journal::Ligne::DossierSalarie(par_courriel(None, qui, true, &en_liste(&partis, ", "), "", detail, None)))?;
     Ok(DossierEnvoye { partis, messages: messages.len(), expediteur })
 }
 
@@ -929,7 +929,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
             html: None,
         },
     ];
-    let compte = client.compte().to_string();
+    let compte = droit::fiche::Courriel::lire(client.compte())?;
     // Chaque annee regularisee est une annee voulue : son virement a sa date.
     let date_de = |a: socle::mois::Annee| {
         dates
@@ -969,7 +969,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
         std::fs::write(&p, brut).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
     }
     detail.eml = emls.clone();
-    noter(ctx, journal::Ligne::RegularisationCasc(par_courriel(None, qui, true, &partis.join(", "), &format!("{} courriel(s) envoye(s)", partis.len()), detail, None)))?;
+    noter(ctx, journal::Ligne::RegularisationCasc(par_courriel(None, qui, true, &en_liste(&partis, ", "), &format!("{} courriel(s) envoye(s)", partis.len()), detail, None)))?;
     // Les annees regularisees : leurs mois sortent des dossiers suivants. S'ecrit APRES le virement, jamais avant.
     let auj = socle::temps::secondes().a_la_seconde().jour_de_paris();
     let mut annees: Vec<RegularisationNotee> = Vec::new();
@@ -979,7 +979,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     let dites: Vec<String> = annees.iter().map(|a| a.annee.to_string()).collect();
     let notee = if dites.len() > 1 { "notées régularisées" } else { "notée régularisée" };
     Ok(CascEnvoyee {
-        phrase: format!("CASC-SVP, {} : {}, envoyé à {} ; {} {}.", r.periode, socle::texte::euros(r.total), partis.join(" et "), dites.join(" et "), notee),
+        phrase: format!("CASC-SVP, {} : {}, envoyé à {} ; {} {}.", r.periode, socle::texte::euros(r.total), en_liste(&partis, " et "), dites.join(" et "), notee),
         partis,
         expediteur: compte,
         periode: r.periode,
@@ -995,8 +995,8 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
 #[derive(Debug, Serialize)]
 struct CascEnvoyee {
     phrase: String,
-    partis: Vec<String>,
-    expediteur: String,
+    partis: Vec<droit::fiche::Courriel>,
+    expediteur: droit::fiche::Courriel,
     periode: String,
     total: String,
     annees: Vec<RegularisationNotee>,

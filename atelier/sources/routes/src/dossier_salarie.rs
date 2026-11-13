@@ -154,9 +154,9 @@ impl<V> Ordonnee<V> {
 /// Ce que l'envoi du dossier a fait : les adresses servies, le nombre de messages, la boite qui envoie.
 #[derive(Debug, Serialize)]
 pub(crate) struct DossierEnvoye {
-    pub(crate) partis: Vec<String>,
+    pub(crate) partis: Vec<droit::fiche::Courriel>,
     pub(crate) messages: usize,
-    pub(crate) expediteur: String,
+    pub(crate) expediteur: droit::fiche::Courriel,
 }
 
 /// Ce que rendent `dossier-salarie` et `dossier-envoyer` : la phrase, le dossier (ses salaries, ses categories, sa

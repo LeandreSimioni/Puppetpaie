@@ -22,9 +22,74 @@ use socle::echec::R;
 
 pub const ALPHABET_CODE: &str = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
-/// Un code a six signes derriere son prefixe (`SIG-` d'une signature, `FIC-` d'une fiche demandee a la personne).
-/// Le systeme qui ne donne pas d'aleas fait refuser : un code devinable ne protege rien.
-pub fn code_au_hasard(prefixe: &str) -> R<String> {
+/// Ce qu'une demande demande, dit par le prefixe de son code : une signature (`SIG-`), une fiche (`FIC-`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SorteDeDemande {
+    Signature,
+    Fiche,
+}
+
+impl SorteDeDemande {
+    /// Le prefixe de son code.
+    pub fn prefixe(self) -> &'static str {
+        match self {
+            SorteDeDemande::Signature => "SIG-",
+            SorteDeDemande::Fiche => "FIC-",
+        }
+    }
+}
+
+/// LE CODE D'UNE DEMANDE : ce qu'une demande de signature ou de fiche porte, et qu'on cherche dans la reponse. Son
+/// prefixe dit la sorte de demande (`SorteDeDemande`), puis six signes de `ALPHABET_CODE` (sans 0/O ni 1/I/L, pour
+/// qu'il se relise sans faute). Seul `code_au_hasard` le fait ; il se lit strictement par son texte (`lire`). Une
+/// reponse recue est le texte d'un tiers : on y cherche `texte()`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct CodeDeDemande(String);
+
+impl CodeDeDemande {
+    /// Le code ecrit `texte` ; refus s'il n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<CodeDeDemande> {
+        let signes = [SorteDeDemande::Signature, SorteDeDemande::Fiche].into_iter().find_map(|s| texte.strip_prefix(s.prefixe()));
+        match signes {
+            Some(s) if s.chars().count() == 6 && s.chars().all(|c| ALPHABET_CODE.contains(c)) => Ok(CodeDeDemande(texte.to_string())),
+            _ => Err(socle::refus!(
+                "Code de demande {} : il s'écrit « SIG- » ou « FIC- » puis six signes parmi {}.",
+                socle::fichiers::repr(texte),
+                ALPHABET_CODE
+            )),
+        }
+    }
+
+    /// Le code tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CodeDeDemande {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for CodeDeDemande {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<CodeDeDemande> {
+        CodeDeDemande::lire(&s)
+    }
+}
+
+impl From<CodeDeDemande> for String {
+    fn from(c: CodeDeDemande) -> String {
+        c.0
+    }
+}
+
+/// Un code a six signes derriere le prefixe de sa sorte (`SIG-` d'une signature, `FIC-` d'une fiche demandee a la
+/// personne). Le systeme qui ne donne pas d'aleas fait refuser : un code devinable ne protege rien.
+pub fn code_au_hasard(sorte: SorteDeDemande) -> R<CodeDeDemande> {
+    let prefixe = sorte.prefixe();
     let alphabet = ALPHABET_CODE.as_bytes();
     let limite = 256 - 256 % alphabet.len();
     let mut code = String::from(prefixe);
@@ -37,12 +102,7 @@ pub fn code_au_hasard(prefixe: &str) -> R<String> {
             code.push(alphabet[*x as usize % alphabet.len()] as char);
         }
     }
-    Ok(code)
-}
-
-/// `code_fiche` : `FIC-` puis six signes tires au hasard dans `ALPHABET_CODE`.
-pub fn code_fiche() -> R<String> {
-    code_au_hasard("FIC-")
+    Ok(CodeDeDemande(code))
 }
 
 /// Les questions que le questionnaire sait lire : (cle de la reponse, libelle, case de la fiche salarie qu'elle remplit).

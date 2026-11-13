@@ -18,13 +18,13 @@ impl Courriel for Boite {
     fn compte(&self) -> &str {
         "boite@exemple.invalid"
     }
-    fn envoyer(&mut self, m: &[u8]) -> R<String> {
+    fn envoyer(&mut self, m: &[u8]) -> R<envoi::IdDeCourriel> {
         let n = self.recus.borrow().len();
         if n == self.refuse {
             return Err(erreur(Classe::Courriel, "le serveur refuse ce message"));
         }
         self.recus.borrow_mut().push(m.to_vec());
-        Ok(format!("<faux-{}@exemple.invalid>", n))
+        envoi::IdDeCourriel::lire(&format!("<faux-{}@exemple.invalid>", n))
     }
     fn rechercher(&mut self, _: &str, _: usize) -> R<Vec<String>> {
         Ok(Vec::new())

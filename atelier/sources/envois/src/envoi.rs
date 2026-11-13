@@ -431,19 +431,20 @@ pub fn envoyer<Pour: Clone>(
     messages: &[Message<Pour>],
     expediteur: &str,
     client: &mut dyn Courriel,
-    identifiants: Option<&mut Vec<String>>,
+    identifiants: Option<&mut Vec<IdDeCourriel>>,
     copies: Option<&mut Vec<Vec<u8>>>,
-) -> R<Vec<String>> {
+) -> R<Vec<droit::fiche::Courriel>> {
     envoyer_suivi(messages, expediteur, client, identifiants, copies).map_err(|e| e.echec)
 }
 
 /// Un envoi qui a echoue en route : son refus (de classe `Courriel`, ou `CourrielAvecAvertissement` quand des messages
-/// etaient deja partis), les adresses ou les messages sont REELLEMENT partis, et l'adresse du message qui n'est pas parti
-/// (retours Windows, C : le journal les note, jamais l'expediteur).
+/// etaient deja partis), les adresses ou les messages sont REELLEMENT partis, et l'adresse du message qui n'est pas parti,
+/// telle que le message l'ecrit (elle peut etre ce qui l'a fait refuser) (retours Windows, C : le journal les note,
+/// jamais l'expediteur).
 #[derive(Debug, Clone)]
 pub struct ErreurEnvoi {
     pub echec: Echec,
-    pub partis: Vec<String>,
+    pub partis: Vec<droit::fiche::Courriel>,
     pub echoue: String,
 }
 
@@ -452,10 +453,10 @@ pub fn envoyer_suivi<Pour: Clone>(
     messages: &[Message<Pour>],
     expediteur: &str,
     client: &mut dyn Courriel,
-    mut identifiants: Option<&mut Vec<String>>,
+    mut identifiants: Option<&mut Vec<IdDeCourriel>>,
     mut copies: Option<&mut Vec<Vec<u8>>>,
-) -> Result<Vec<String>, ErreurEnvoi> {
-    let mut faits: Vec<String> = Vec::new();
+) -> Result<Vec<droit::fiche::Courriel>, ErreurEnvoi> {
+    let mut faits: Vec<droit::fiche::Courriel> = Vec::new();
     // Rien a envoyer : rien ne part.
     let Some(premier) = messages.first() else { return Ok(faits) };
     // LA SIGNATURE DE LA COMPAGNIE : tout courriel passe ici, il la prend ici. Trop lourde, rien ne part.
@@ -474,17 +475,19 @@ pub fn envoyer_suivi<Pour: Clone>(
             None => (message, None),
         };
         let brut = en_mime_nomme(message, expediteur, nom).map_err(|m| ErreurEnvoi { echec: m.reclasser(Classe::Courriel), partis: faits.clone(), echoue: message.destinataire.clone() })?;
+        // L'adresse que le journal notera, lue avant que le message parte.
+        let parti = droit::fiche::Courriel::lire(&message.destinataire).map_err(|m| ErreurEnvoi { echec: m.reclasser(Classe::Courriel), partis: faits.clone(), echoue: message.destinataire.clone() })?;
         let ident = match client.envoyer(&brut) {
             Ok(i) => i,
             Err(e) if faits.is_empty() => return Err(ErreurEnvoi { echec: e, partis: faits, echoue: message.destinataire.clone() }),
             Err(e) => {
                 let echec = e
-                    .reformuler(|p| format!("{} : {}\nATTENTION, {} message(s) etaient deja partis : {}", message.destinataire, p, faits.len(), faits.join(", ")))
+                    .reformuler(|p| format!("{} : {}\nATTENTION, {} message(s) etaient deja partis : {}", message.destinataire, p, faits.len(), crate::ligne_d_envoi::en_liste(&faits, ", ")))
                     .reclasser(Classe::CourrielAvecAvertissement);
                 return Err(ErreurEnvoi { echec, partis: faits, echoue: message.destinataire.clone() });
             }
         };
-        faits.push(message.destinataire.clone());
+        faits.push(parti);
         if let Some(l) = identifiants.as_deref_mut() {
             l.push(ident);
         }
@@ -721,7 +724,7 @@ fn genre_de(nom: &str) -> &'static str {
 pub struct Hasards<'a> {
     /// L'instant que l'en-tete `Date` ecrit (`date_de`).
     pub date: socle::paris::Moment,
-    pub message_id: String,
+    pub message_id: IdDeCourriel,
     /// Une frontiere neuve a chaque appel (`=` x15, 19 chiffres, `==`).
     pub frontiere: &'a mut dyn FnMut() -> R<String>,
 }
@@ -855,7 +858,7 @@ enum Entete {
     /// `Subject` : texte libre.
     Libre(&'static str, String),
     Date(String),
-    MessageId(String),
+    MessageId(IdDeCourriel),
     /// `Content-Transfer-Encoding`, `MIME-Version` : un mot.
     Simple(&'static str, String),
     /// `Content-Type`, `Content-Disposition` : une valeur et ses parametres.
@@ -944,11 +947,60 @@ fn frontiere_au_hasard() -> R<String> {
     Ok(format!("{}{:019}==", "=".repeat(15), jeton))
 }
 
+/// L'IDENTIFIANT D'UN COURRIEL QUE LE LOGICIEL ENVOIE : son `Message-ID`, `"<" id-left "@" id-right ">"` (RFC 5322,
+/// § 3.6.4, l. 1383 : `atelier/reference/sources/ietf/ietf-rfc5322-internet-message-format-20081001.txt`), sans blanc
+/// ni chevron dedans. Ses ecrivains : `nouveau_message_id`, et la boite simulee pour un message qui n'en porte pas. Le
+/// journal le garde avec la demande ; un en-tete RECU (`In-Reply-To`, `References`, l'identifiant d'un message de la
+/// boite) est le texte d'un tiers : il se compare a `texte()`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct IdDeCourriel(String);
+
+impl IdDeCourriel {
+    /// L'identifiant ecrit `texte` ; refus s'il n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<IdDeCourriel> {
+        let dedans = texte.strip_prefix('<').and_then(|t| t.strip_suffix('>'));
+        let forme = dedans.and_then(|d| d.split_once('@')).is_some_and(|(gauche, droite)| {
+            let propre = |t: &str| !t.is_empty() && !t.chars().any(|c| c.is_whitespace() || matches!(c, '<' | '>' | '@'));
+            propre(gauche) && propre(droite)
+        });
+        if forme {
+            Ok(IdDeCourriel(texte.to_string()))
+        } else {
+            Err(socle::refus!("Identifiant de courriel {} : un Message-ID s'écrit « <gauche@droite> » (RFC 5322, § 3.6.4).", socle::fichiers::repr(texte)))
+        }
+    }
+
+    /// L'identifiant tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for IdDeCourriel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for IdDeCourriel {
+    type Error = Echec;
+    fn try_from(s: String) -> R<IdDeCourriel> {
+        IdDeCourriel::lire(&s)
+    }
+}
+
+impl From<IdDeCourriel> for String {
+    fn from(i: IdDeCourriel) -> String {
+        i.0
+    }
+}
+
 /// Un identifiant de message (`Message-ID`) neuf, sur le domaine donné.
-pub fn nouveau_message_id(domaine: &str) -> R<String> {
+pub fn nouveau_message_id(domaine: &str) -> R<IdDeCourriel> {
     let maintenant = socle::temps::secondes();
     let centiemes = i128::from(maintenant.entieres()) * 100 + i128::from(maintenant.nanosecondes() / 10_000_000);
-    Ok(format!("<{}.{}.{}@{}>", centiemes, socle::temps::numero_de_processus(), huit_aleas()?, domaine))
+    IdDeCourriel::lire(&format!("<{}.{}.{}@{}>", centiemes, socle::temps::numero_de_processus(), huit_aleas()?, domaine))
 }
 
 /// La date RFC 5322 d'un instant, heure de Paris (§ 3.3, `date-time` ;
@@ -1180,7 +1232,7 @@ fn plier_entete(e: &Entete) -> R<String> {
     Ok(match e {
         Entete::Adresse(nom, v) => plier_insecable(nom, v),
         Entete::De(nom, adresse) => plier_insecable("From", &de_nomme(nom, adresse)),
-        Entete::MessageId(v) => plier_insecable("Message-ID", v),
+        Entete::MessageId(v) => plier_insecable("Message-ID", v.texte()),
         Entete::Date(v) => plier_insecable("Date", v),
         Entete::Simple(nom, v) => format!("{}: {}\n", nom, v),
         Entete::Libre(nom, v) => plier_libre(nom, v)?,

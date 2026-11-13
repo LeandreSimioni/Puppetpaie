@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 
 use crate::courriel::Courriel;
 use crate::courriel_lecture as lecture;
+use documents::fiche_questionnaire::CodeDeDemande;
 use crate::envoi::{self, Message};
 use crate::etats::Attendue;
 use crate::journal::{self, ContratAttendu, DetailContresigne, Envoi, Ligne, Mode};
@@ -53,8 +54,8 @@ pub struct SignatureRecue {
     pub mois: Mois,
     pub salarie: droit::contexte::IdSalarie,
     pub nom: String,
-    pub code: String,
-    pub adresse: String,
+    pub code: CodeDeDemande,
+    pub adresse: droit::fiche::Courriel,
     /// La date du message.
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub quand: Moment,
@@ -129,18 +130,20 @@ pub struct ReleveDite {
     pub resume: String,
 }
 
-/// Les `Message-ID` de NOS envois pour cette demande.
-pub fn identifiants_de(a: &Attendue) -> Vec<String> {
-    a.envoyes.clone()
+/// Les `Message-ID` de NOS envois pour cette demande, tels qu'ecrits : un identifiant RECU (de la boite, d'un en-tete) est
+/// le texte d'un tiers, qui se compare a eux.
+pub fn identifiants_de(a: &Attendue) -> Vec<&str> {
+    a.envoyes.iter().map(|i| i.texte()).collect()
 }
 
 // ------------------------------------------------------------------ la reponse
 
-/// La reponse retenue a un code : son identifiant dans la boite, le message tel qu'il est arrive, son auteur, sa date.
+/// La reponse retenue a un code : son identifiant dans la boite, le message tel qu'il est arrive, son auteur (l'adresse
+/// a laquelle la demande est partie), sa date.
 pub struct Reponse {
     pub identifiant: String,
     pub brut: Vec<u8>,
-    pub de: String,
+    pub de: droit::fiche::Courriel,
     pub quand: Moment,
 }
 
@@ -160,7 +163,7 @@ pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &st
         }
     };
     for ident in identifiants {
-        if envoyes.contains(&ident) {
+        if envoyes.contains(&ident.as_str()) {
             continue; // notre propre demande
         }
         let brut = match client.message_brut(&ident) {
@@ -179,11 +182,11 @@ pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &st
                 continue;
             }
         };
-        if lecture::identifiant_de(&m).is_some_and(|i| envoyes.contains(&i)) {
+        if lecture::identifiant_de(&m).is_some_and(|i| envoyes.contains(&i.as_str())) {
             continue; // notre propre demande, par son en-tete
         }
         let texte = lecture::texte_propre(&m);
-        if !texte.to_uppercase().contains(code.as_str()) {
+        if !texte.to_uppercase().contains(code.texte()) {
             continue; // le code n'est que dans la citation
         }
         if texte.contains("bouton « Je signe »") {
@@ -201,15 +204,16 @@ pub fn chercher_reponse(client: &mut dyn Courriel, a: &Attendue, expediteur: &st
                 continue;
             }
         };
-        if de == expediteur && de != a_adresse {
+        if de == expediteur && de != *a_adresse {
             continue; // un autre de nos envois (le contresigne)
         }
-        if de != a_adresse {
+        if de != *a_adresse {
             incidents.push(format!("{} : une reponse portant {} vient de {} et non de {} ; elle n'est pas retenue.", a_nom, code, de, a_adresse));
             continue;
         }
         let quand = lecture::date_de(&m, socle::temps::secondes().a_la_seconde());
-        return Ok(Some(Reponse { identifiant: ident, brut: brut.clone(), de, quand }));
+        // Elle vient de l'adresse de la demande, a la lettre pres.
+        return Ok(Some(Reponse { identifiant: ident, brut: brut.clone(), de: a_adresse, quand }));
     }
     Ok(None)
 }

@@ -32,7 +32,8 @@ use socle::echec::Echec;
 use socle::fichiers::{EmpreinteCourte, NomDeFichier};
 use socle::html::{html_echapper, mailto};
 use socle::texte::capitaliser;
-use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
+use envois::ligne_d_envoi::{en_liste, noter, noter_echec_d_envoi, par_courriel};
+use documents::fiche_questionnaire::{code_au_hasard, CodeDeDemande, SorteDeDemande};
 use envois::journal::{ActeDuContrat, ArticleModifie, ContratParti, DetailSignature, Ligne, Version};
 use socle::date::Jour;
 use socle::mois::Mois;
@@ -131,12 +132,6 @@ fn et_fr(morceaux: &[String]) -> String {
     format!("{} et {}", morceaux[..morceaux.len() - 1].join(", "), morceaux[morceaux.len() - 1])
 }
 
-/// `code_signature` : `SIG-` puis six signes tires au hasard, sans 0/O ni 1/I/L, pour qu'il se relise sans
-/// hesiter s'il faut le recopier a la main.
-pub(crate) fn code_signature() -> R<String> {
-    documents::fiche_questionnaire::code_au_hasard("SIG-").map_err(|m| m.reclasser(Classe::Disque))
-}
-
 /// `signataire` et `raison` des courriels : le prenom d'affichage du signataire (sinon son prenom, capitalise), et
 /// le nom d'affichage de la compagnie (sinon sa raison sociale).
 pub(crate) fn signataire_et_raison(ctx: &Contexte) -> R<(String, String)> {
@@ -208,7 +203,7 @@ struct Demande<'a> {
     le_signer: &'a str,
     exemplaire: &'a str,
     avant_travail: &'a str,
-    code: &'a str,
+    code: &'a CodeDeDemande,
     expediteur: &'a str,
     signataire: &'a str,
     raison: &'a str,
@@ -226,7 +221,7 @@ fn message_de_signature(d: &Demande, pieces: Vec<PathBuf>) -> R<Message<IdSalari
             ("raison_sociale", e(d.raison)),
             ("le_signer", e(d.le_signer)),
             ("expediteur", e(d.expediteur)),
-            ("code", e(d.code)),
+            ("code", e(d.code.texte())),
             ("exemplaire", e(d.exemplaire)),
             ("avant_travail", e(d.avant_travail)),
         ]
@@ -477,7 +472,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
 /// la demande dit des contrats qui ne partent pas (leur salarie n'a pas de courriel).
 #[derive(Debug, Default, serde::Serialize)]
 pub(crate) struct ContratsEnvoyes {
-    pub partis: Vec<String>,
+    pub partis: Vec<droit::fiche::Courriel>,
     pub contrats: Vec<ContratParti>,
     pub avertissements: Vec<String>,
 }
@@ -535,13 +530,13 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     }
 
     let (signataire, raison) = signataire_et_raison(ctx)?;
-    let expediteur = client.compte().to_lowercase();
+    let expediteur = droit::fiche::Courriel::lire(&client.compte().to_lowercase())?;
     let mut messages: Vec<Message<IdSalarie>> = Vec::new();
     let mut contrats: Vec<ContratParti> = Vec::new();
     for (cle, ps, _) in &par_salarie {
         let sal = &ps[0].salarie;
-        let adresse = exige(&sal.email, "email")?.trim().to_lowercase();
-        let code = code_signature()?;
+        let adresse = droit::fiche::Courriel::lire(&exige(&sal.email, "email")?.trim().to_lowercase())?;
+        let code = code_au_hasard(SorteDeDemande::Signature).map_err(|m| m.reclasser(Classe::Disque))?;
         // Le contrat qui en remplace un autre porte son propre nom : le PDF parti avant lui reste sur le disque.
         let pdf = dossier.join(nom_du_pdf(cle, ps, &etiq, if remplace { "_remplace" } else { "" })?);
         let (modeles, figes) = modeles_figes(ctx, ps)?;
@@ -640,7 +635,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     }
     // La version de l'engagement sur laquelle chaque contrat part, lue avant l'envoi.
     let versions = envois::journal::versions_des_contrats(ctx, &contrats, &departs)?;
-    let mut identifiants: Vec<String> = Vec::new();
+    let mut identifiants: Vec<envoi::IdDeCourriel> = Vec::new();
     let partis = match envoi::envoyer_suivi(&messages, &expediteur, client, Some(&mut identifiants), None) {
         Ok(p) => p,
         Err(e) => {
@@ -661,7 +656,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
         n if n == contrats.len() => format!("{} contrat(s) relance(s) a la signature", n),
         n => format!("{} contrat(s) envoye(s) a la signature, dont {} relance(s)", contrats.len(), n),
     };
-    noter(ctx, Ligne::ContratSignature(par_courriel(Some(mois), "interface", true, &partis.join(", "), &reponse, detail, Some(versions))))?;
+    noter(ctx, Ligne::ContratSignature(par_courriel(Some(mois), "interface", true, &en_liste(&partis, ", "), &reponse, detail, Some(versions))))?;
     let avertissements: Vec<String> = if noms_sans.is_empty() { Vec::new() } else { vec![sans_courriel_dit(&noms_sans)] };
     Ok(ContratsEnvoyes { partis, contrats, avertissements })
 }
@@ -1024,7 +1019,7 @@ fn avenant_ecrit(
 
 /// Ce que `envoyer_avenants` rend : les adresses servies, et les avenants partis.
 pub(crate) struct Avenants {
-    pub partis: Vec<String>,
+    pub partis: Vec<droit::fiche::Courriel>,
     pub avenants: Vec<ContratParti>,
 }
 
@@ -1037,11 +1032,11 @@ pub(crate) struct Avenants {
 /// la version de chaque engagement y est notee, et c'est elle qui dit ensuite que le contrat est a jour.
 pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(IdSalarie, Vec<UnAvenant>)], client: &mut dyn Courriel) -> R<Avenants> {
     let (signataire, raison) = signataire_et_raison(ctx)?;
-    let expediteur = client.compte().to_lowercase();
+    let expediteur = droit::fiche::Courriel::lire(&client.compte().to_lowercase())?;
     // La saisie de chaque mois, lue une fois : rien ne l'ecrit pendant l'envoi.
     let mut saisies: HashMap<Mois, (engagement::saisie::VueDuMois, Vec<Paie>)> = HashMap::new();
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
-    let (mut partis, mut faits): (Vec<String>, Vec<ContratParti>) = (Vec::new(), Vec::new());
+    let (mut partis, mut faits): (Vec<droit::fiche::Courriel>, Vec<ContratParti>) = (Vec::new(), Vec::new());
     for (salarie, aa) in par_salarie {
         let mois = aa[0].mois;
         let (an, nom_mois) = (mois.annee(), mois.nom(socle::mois::Graphie::Accentuee));
@@ -1053,7 +1048,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(IdSalarie, Vec<Un
             let (pdf, mut c, p) = avenant_ecrit(ctx, salarie, a, &mut saisies, &departs)?;
             nommes.push(ContratNomme::de(&p)?);
             sal = Some(p.salarie.clone());
-            c.adresse = a.destinataire.as_deref().map(|d| d.trim().to_lowercase());
+            c.adresse = a.destinataire.as_deref().map(|d| droit::fiche::Courriel::lire(&d.trim().to_lowercase())).transpose()?;
             c.relance = Some(a.rappel());
             lignes_contrats.push(c);
             pdfs.push(pdf);
@@ -1062,7 +1057,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(IdSalarie, Vec<Un
         let Some(adresse) = lignes_contrats[0].adresse.clone() else {
             return Err(refus(format!("L'avenant de {} n'a pas de destinataire : son courriel manque. Rien n'est parti.", salarie)));
         };
-        let code = code_signature()?;
+        let code = code_au_hasard(SorteDeDemande::Signature).map_err(|m| m.reclasser(Classe::Disque))?;
         let mut spectacles: Vec<String> = Vec::new();
         for n in &nommes {
             if !spectacles.contains(&n.spectacle) {
@@ -1156,7 +1151,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(IdSalarie, Vec<Un
         }
         let versions = envois::journal::versions_des_contrats(ctx, &lignes_contrats, &departs)?;
         let le_mois = Some(mois);
-        let mut identifiants: Vec<String> = Vec::new();
+        let mut identifiants: Vec<envoi::IdDeCourriel> = Vec::new();
         let partis_ici = match envoi::envoyer_suivi(std::slice::from_ref(&message), &expediteur, client, Some(&mut identifiants), None) {
             Ok(p) => p,
             Err(e) => {
@@ -1182,7 +1177,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, par_salarie: &[(IdSalarie, Vec<Un
             partis: None,
             echec_a: None,
         };
-        noter(ctx, Ligne::ContratSignature(par_courriel(le_mois, "interface", true, &partis_ici.join(", "), &reponse, detail, Some(versions))))?;
+        noter(ctx, Ligne::ContratSignature(par_courriel(le_mois, "interface", true, &en_liste(&partis_ici, ", "), &reponse, detail, Some(versions))))?;
         partis.extend(partis_ici);
         faits.extend(lignes_contrats);
     }

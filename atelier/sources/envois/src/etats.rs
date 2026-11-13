@@ -3,6 +3,7 @@
 //! se lisent dans leur forme (`journal::Ligne`) ; un contrat se designe par sa `Paire` (la cle du salarie, le numero du
 //! contrat s'il en a un).
 
+use documents::fiche_questionnaire::CodeDeDemande;
 use droit::contexte::IdSalarie;
 use droit::fiche::{Lue as _, Nic};
 use engagement::numeros::NumeroContrat;
@@ -271,19 +272,19 @@ pub fn contrats_recus(lignes: &[Ligne]) -> HashMap<Paire, Moment> {
 /// identifiants des messages partis (jamais pris pour une reponse).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Attendue {
-    pub code: String,
+    pub code: CodeDeDemande,
     pub mois: Option<Mois>,
     pub quand: InstantOuJour,
     pub salarie: droit::contexte::IdSalarie,
     /// L'adresse ou le contrat est parti (aucune : remis en main propre).
-    pub adresse: Option<String>,
+    pub adresse: Option<droit::fiche::Courriel>,
     pub fichier: NomDeFichier,
     /// L'acte du contrat parti (`avenant`, `remplace`) ; aucun pour le contrat lui-meme.
     pub acte: Option<crate::ligne::ActeDuContrat>,
     pub avenant: Option<i64>,
     pub rang: usize,
     pub apres_signature: bool,
-    pub envoyes: Vec<String>,
+    pub envoyes: Vec<crate::envoi::IdDeCourriel>,
     /// Le prenom que la fiche du salarie dit (`prenom_affichage`, sinon `prenom`).
     pub prenom: Option<String>,
     /// Le nom que la fiche du salarie dit (`ChampsSalarie::nomme`).
@@ -314,14 +315,14 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&droit::contexte::IdSalarie) -
     // Les reponses deja relevees, par envoi (son code) et par contrat ou avenant : une reponse ne se note qu'une fois.
     // La mention « signe » retiree a la main l'emporte sur la reponse deja lue ; seul un nouvel envoi (un autre code)
     // attend une nouvelle reponse.
-    let releve = |code: &str, salarie: &IdSalarie, numero: Option<&str>, avenant: Option<i64>| (code.to_string(), salarie.clone(), numero.map(str::to_string), avenant);
-    let deja_releves: HashSet<(String, IdSalarie, Option<String>, Option<i64>)> = lignes
+    let releve = |code: &CodeDeDemande, salarie: &IdSalarie, numero: Option<&str>, avenant: Option<i64>| (code.clone(), salarie.clone(), numero.map(str::to_string), avenant);
+    let deja_releves: HashSet<(CodeDeDemande, IdSalarie, Option<String>, Option<i64>)> = lignes
         .iter()
         .flat_map(revenus)
         .filter(|d| d.recu && d.par_courriel())
-        .filter_map(|d| d.code.as_deref().filter(|c| !c.is_empty()).map(|c| releve(c, &d.salarie, d.numero.as_deref(), d.avenant)))
+        .filter_map(|d| d.code.as_ref().map(|c| releve(c, &d.salarie, d.numero.as_deref(), d.avenant)))
         .collect();
-    let mut par_code: HashMap<String, usize> = HashMap::new();
+    let mut par_code: HashMap<CodeDeDemande, usize> = HashMap::new();
     let mut demandes: Vec<Attendue> = Vec::new();
     for (i, l) in lignes.iter().enumerate() {
         let Some(e) = l.signature().filter(|e| e.accepte) else { continue };
@@ -329,14 +330,14 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&droit::contexte::IdSalarie) -
             continue;
         }
         for c in &e.detail.contrats {
-            let Some(code) = c.code.as_deref().filter(|c| !c.is_empty()) else { continue };
+            let Some(code) = c.code.as_ref() else { continue };
             let k = paire(&c.salarie, c.numero.as_ref());
             let apres_signature = c.acte.is_some() || renvoyes.contains(&k);
-            let n = *par_code.entry(code.to_string()).or_insert_with(|| {
+            let n = *par_code.entry(code.clone()).or_insert_with(|| {
                 let fiche = fiche_de(&c.salarie);
                 let prenom = fiche.and_then(|f| f.prenom_affichage.en_texte().or_else(|| f.prenom.en_texte()));
                 demandes.push(Attendue {
-                    code: code.to_string(),
+                    code: code.clone(),
                     mois: e.mois,
                     quand: e.quand.clone(),
                     salarie: c.salarie.clone(),
@@ -354,9 +355,9 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&droit::contexte::IdSalarie) -
                 demandes.len() - 1
             });
             let d = &mut demandes[n];
-            if let Some(m) = c.message.as_deref().filter(|m| !m.is_empty()) {
-                if !d.envoyes.iter().any(|x| x == m) {
-                    d.envoyes.push(m.to_string());
+            if let Some(m) = &c.message {
+                if !d.envoyes.contains(m) {
+                    d.envoyes.push(m.clone());
                 }
             }
             d.apres_signature |= apres_signature;
@@ -1322,7 +1323,7 @@ mod tests {
     fn contrat(sal: &str, code: &str) -> String {
         format!(
             "{{\"salarie\": \"{}\", \"debut\": \"2026-06-04\", \"fin\": \"2026-06-30\", \"numero\": \"SA1.26.01\", \"fichier\": \"c.pdf\", \"spectacle\": null, \
-             \"code\": \"{}\", \"empreinte\": \"e100000000000000\", \"message\": \"m1\", \"mois\": \"2026-06\", \"ailleurs\": false}}",
+             \"code\": \"{}\", \"empreinte\": \"e100000000000000\", \"message\": \"<m1@test.invalid>\", \"mois\": \"2026-06\", \"ailleurs\": false}}",
             sal, code
         )
     }
@@ -1342,12 +1343,12 @@ mod tests {
     #[test]
     fn une_reponse_deja_relevee_ne_se_renote_pas_apres_la_mention_retiree() {
         let ctx = |_: &droit::contexte::IdSalarie| None;
-        let lu = recu("ALPHA", true, ", \"origine\": \"courriel\", \"code\": \"C1\"");
+        let lu = recu("ALPHA", true, ", \"origine\": \"courriel\", \"code\": \"SIG-CCCCCA\"");
         let retiree = recu("ALPHA", false, "");
-        let mut l = vec![signature("2026-06-05T10:00:00", &contrat("ALPHA", "C1"), &format!("[{}, {}]", lu, retiree))];
+        let mut l = vec![signature("2026-06-05T10:00:00", &contrat("ALPHA", "SIG-CCCCCA"), &format!("[{}, {}]", lu, retiree))];
         assert!(signatures_attendues(&ctx, &l, None).is_empty());
-        l.push(signature("2026-06-13T10:00:00", &contrat("ALPHA", "C3"), "[]"));
-        assert_eq!(signatures_attendues(&ctx, &l, None)[0].code, "C3");
+        l.push(signature("2026-06-13T10:00:00", &contrat("ALPHA", "SIG-CCCCCC"), "[]"));
+        assert_eq!(signatures_attendues(&ctx, &l, None)[0].code.texte(), "SIG-CCCCCC");
     }
 
     #[test]

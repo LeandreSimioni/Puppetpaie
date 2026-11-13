@@ -22,7 +22,7 @@ use droit::contexte::Contexte;
 use envois::courriel::Courriel;
 use envois::envoi;
 use envois::etats;
-use envois::releve_signatures::{chercher_reponse, identifiants_de, renvoyer_contresigne, Contresigne, Reponse};
+use envois::releve_signatures::{chercher_reponse, renvoyer_contresigne, Contresigne, Reponse};
 pub use envois::releve_signatures::{ReleveSignatures, SignatureRecue};
 use socle::echec::R;
 use socle::echec::erreur;
@@ -45,21 +45,21 @@ pub(crate) fn boite_des_signatures(ctx: &Contexte) -> R<BoiteQuiRepond> {
     for a in &attendues {
         // Une demande remise en main propre n'a pas d'adresse : personne n'y repond par courriel.
         let Some(adresse) = a.adresse.as_deref() else { continue };
-        let code = a.code.clone();
+        let code = a.code.texte();
         let nom = a.qui();
-        let (sujet, corps) = match envois::simulation_courriels::bouton_de_la_demande(&envoyes, &identifiants_de(a))? {
+        let (sujet, corps) = match envois::simulation_courriels::bouton_de_la_demande(&envoyes, &a.envoyes)? {
             Some(b) => b,
             None => (
                 "Re: contrat".to_string(),
                 envoi::formater(
                     crate::gestes::signature::CORPS_REPONSE,
-                    &[("nom", nom), ("quoi", "le contrat d'engagement".to_string()), ("code", code.clone())],
+                    &[("nom", nom), ("quoi", "le contrat d'engagement".to_string()), ("code", code.to_string())],
                 ),
             ),
         };
         let brut = envois::simulation_courriels::reponse_jouee(adresse, Courriel::compte(&boite), &sujet, &corps, &format!("signature-{}", code))
             .map_err(|m| m.reclasser(Classe::Illisible))?;
-        boite.repondre(&code, brut);
+        boite.repondre(code, brut);
     }
     Ok(boite)
 }
@@ -169,7 +169,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         }
         let quand_lisible = quand.dit();
         // La mention porte le nom que la fiche dit : sans lui, rien ne se contresigne.
-        let mention = a.nom.as_deref().map(|n| documents::contrat::mention_signature(n, &quand_lisible, &de, &code));
+        let mention = a.nom.as_deref().map(|n| documents::contrat::mention_signature(n, &quand_lisible, &de, code.texte()));
         let mut signes: Vec<(NomDeFichier, PathBuf)> = Vec::new();
         for (mois_f, nom_f) in &fichiers {
             let envoye = ctx.racine.join("sorties").join(mois_f.to_string()).join("envoi").join(nom_f);

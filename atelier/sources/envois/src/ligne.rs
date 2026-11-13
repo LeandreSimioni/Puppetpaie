@@ -9,13 +9,15 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use droit::contexte::IdSalarie;
-use droit::fiche::Nic;
+use documents::fiche_questionnaire::CodeDeDemande;
+use droit::fiche::{Courriel, Nic};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
 use socle::fichiers::{CheminRelatif, EmpreinteCourte, NomDeFichier};
 use socle::mois::Mois;
 
+use crate::envoi::IdDeCourriel;
 use crate::retours::{IdDeFlux, StatutDuRetour, Verdict};
 
 /// Le mode d'un envoi : reel (il engage), ou test (un depot de test, qui ne conserve rien).
@@ -567,13 +569,13 @@ pub struct DetailDocuments {
     pub salaries: Vec<Servi>,
     pub main_propre: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub expediteur: Option<String>,
+    pub expediteur: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub durees_ms: Option<Durees>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub partis: Option<Vec<String>>,
+    pub partis: Option<Vec<Courriel>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub echec_a: Option<String>,
+    pub echec_a: Option<Courriel>,
 }
 
 /// UN CONTRAT (OU UN AVENANT) PARTI A LA SIGNATURE : son engagement (salarie, bornes, numero), sa piece, ce que le
@@ -604,15 +606,15 @@ pub struct ContratParti {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub clauses: Option<BTreeMap<String, Option<String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
+    pub code: Option<CodeDeDemande>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub adresse: Option<String>,
+    pub adresse: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relance: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub empreinte: Option<EmpreinteCourte>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<String>,
+    pub message: Option<IdDeCourriel>,
     pub ailleurs: bool,
     /// L'empreinte du modele avec lequel ce contrat est parti (son texte et celui de son avenant), fige sous ce nom avec la compagnie
     /// (`routes::modeles_contrat::figer`) ; un avenant ne la porte pas.
@@ -677,15 +679,15 @@ pub struct DetailSignature {
     pub contrats: Vec<ContratParti>,
     pub main_propre: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub expediteur: Option<String>,
+    pub expediteur: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relance: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub acte: Option<ActeDuContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub partis: Option<Vec<String>>,
+    pub partis: Option<Vec<Courriel>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub echec_a: Option<String>,
+    pub echec_a: Option<Courriel>,
 }
 
 /// CE QUI REVIENT D'UN CONTRAT PARTI (`routes::contrats::contrat_recu_avec`) : le contrat (salarie, debut,
@@ -704,11 +706,12 @@ pub struct RetourContrat {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub origine: Option<OrigineDuRetourDeContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
+    pub code: Option<CodeDeDemande>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub adresse: Option<String>,
+    pub adresse: Option<Courriel>,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub quand: socle::paris::Moment,
+    /// L'identifiant de la reponse dans la boite (son UID IMAP) : celui d'un message recu, pas un `Message-ID`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -739,7 +742,7 @@ pub struct AvenantParti {
     pub quand: socle::paris::InstantOuJour,
     pub mois: Mois,
     pub fichier: NomDeFichier,
-    pub code: Option<String>,
+    pub code: Option<CodeDeDemande>,
     pub contrat: Option<NumeroContrat>,
     pub effet: Option<socle::date::Jour>,
     pub modifications: Vec<ArticleModifie>,
@@ -769,7 +772,7 @@ pub struct ContratAttendu {
 pub struct DetailContresigne {
     pub salarie: IdSalarie,
     pub nom: String,
-    pub code: String,
+    pub code: CodeDeDemande,
     pub contrats: Vec<ContratAttendu>,
     pub fichiers: Vec<NomDeFichier>,
 }
@@ -791,12 +794,12 @@ pub struct DetailCasc {
     pub annees: Vec<AnneeCasc>,
     pub mois: Vec<Mois>,
     pub total: rust_decimal::Decimal,
-    pub expediteur: String,
+    pub expediteur: Courriel,
     pub eml: Vec<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub partis: Option<Vec<String>>,
+    pub partis: Option<Vec<Courriel>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub echec_a: Option<String>,
+    pub echec_a: Option<Courriel>,
 }
 
 /// Le dossier qu'un salarie a recu : sa piece.
@@ -814,25 +817,25 @@ pub struct DetailDossier {
     pub periode: String,
     pub categories: Vec<String>,
     pub salaries: Vec<DossierServi>,
-    pub expediteur: String,
+    pub expediteur: Courriel,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub partis: Option<Vec<String>>,
+    pub partis: Option<Vec<Courriel>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub echec_a: Option<String>,
+    pub echec_a: Option<Courriel>,
 }
 
 /// LE DETAIL D'UNE DEMANDE DE FICHE : son code, a qui, et l'identifiant du message parti.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DetailFiche {
-    pub code: String,
-    pub adresse: String,
+    pub code: CodeDeDemande,
+    pub adresse: Courriel,
     /// Le prenom pour lui ecrire, s'il a ete dit.
     pub prenom: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<String>,
+    pub message: Option<IdDeCourriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub expediteur: Option<String>,
+    pub expediteur: Option<Courriel>,
 }
 
 /// CE QUI REVIENT D'UNE DEMANDE DE FICHE : la fiche recue (la cle de la fiche, illisible ou non, ses erreurs, le
@@ -840,7 +843,7 @@ pub struct DetailFiche {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RetourFiche {
-    pub code: String,
+    pub code: CodeDeDemande,
     pub abandon: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub salarie: Option<IdSalarie>,
@@ -851,8 +854,10 @@ pub struct RetourFiche {
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub quand: socle::paris::Moment,
     pub qui: String,
+    /// L'adresse d'ou la reponse est venue (`courriel_lecture::Expediteur::Adresse`, la seule retenue).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub de: Option<String>,
+    pub de: Option<Courriel>,
+    /// L'identifiant de la reponse dans la boite (son UID IMAP) : celui d'un message recu, pas un `Message-ID`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     pub reponse: String,
@@ -861,13 +866,13 @@ pub struct RetourFiche {
 /// UN ENVOI COUPE EN ROUTE (`ligne_d_envoi::noter_echec_d_envoi`) : son detail dit ceux qui ont recu et l'adresse ou il
 /// a echoue.
 pub trait EnRoute {
-    fn coupe(&mut self, partis: Vec<String>, echec_a: String);
+    fn coupe(&mut self, partis: Vec<Courriel>, echec_a: Courriel);
 }
 
 macro_rules! en_route {
     ($($t:ty),*) => {
         $(impl EnRoute for $t {
-            fn coupe(&mut self, partis: Vec<String>, echec_a: String) {
+            fn coupe(&mut self, partis: Vec<Courriel>, echec_a: Courriel) {
                 self.partis = Some(partis);
                 self.echec_a = Some(echec_a);
             }

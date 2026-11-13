@@ -416,7 +416,7 @@ pub(crate) struct Imprimes {
 #[derive(Debug, Serialize)]
 pub(crate) struct SignaturesDemandees {
     phrase: String,
-    partis: Vec<String>,
+    partis: Vec<droit::fiche::Courriel>,
     contrats: Vec<ContratParti>,
     avertissements: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -533,8 +533,8 @@ fn poser_courriel(ctx: &Contexte, c: ChargeCourriel) -> R<CourrielPose> {
 /// sa date, l'identifiant du message, la preuve archivee, l'exemplaire contresigne, la mention posee, ce qu'elle signe
 /// (un contrat ou un avenant, et son numero).
 pub(crate) struct ParCourriel {
-    pub(crate) code: String,
-    pub(crate) adresse: String,
+    pub(crate) code: documents::fiche_questionnaire::CodeDeDemande,
+    pub(crate) adresse: droit::fiche::Courriel,
     pub(crate) quand: Moment,
     pub(crate) message: String,
     pub(crate) preuve: String,

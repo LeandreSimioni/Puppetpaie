@@ -17,6 +17,7 @@ use crate::enveloppe::{en_json, Charge, Dite, Porte, Rendu};
 use compagnie::INTERFACE;
 use declarations::champs::{self, Saisie};
 use documents::fiche_questionnaire as fq;
+use documents::fiche_questionnaire::CodeDeDemande;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::fiche::{CaseEntreprise, CodeEmploiFt, ChangementEntreprise, ChangementSalarie, ChangementSpectacle, FicheEntrepriseDatee, FicheSalarieDatee, FicheSpectacleDatee, CaseDeFiche, NomDeFiche, Piece};
 use envois::courriel::Courriel;
@@ -784,7 +785,7 @@ fn activer_fiche_route(ctx: &Contexte, c: ChargeActiver) -> R<FicheActivee> {
 /// abandonnees.
 fn oublier_demande(ctx: &Contexte, c: ChargeOublier) -> R<DemandeOubliee> {
     let adresse = strip(&c.adresse).to_lowercase();
-    let codes: Vec<String> = fiches_attendues(ctx)?.into_iter().filter(|a| a.adresse == adresse).map(|a| a.code).collect();
+    let codes: Vec<CodeDeDemande> = fiches_attendues(ctx)?.into_iter().filter(|a| *a.adresse == *adresse).map(|a| a.code).collect();
     if codes.is_empty() {
         return Err(refus(format!("Aucune demande de fiche en attente pour {}.", adresse)));
     }
@@ -955,8 +956,8 @@ fn adresse_valide(adresse: &str) -> bool {
 
 /// Ce que `demander_fiche` rend : le code, l'adresse (en minuscules), la ligne du journal.
 pub struct FicheDemandee {
-    pub code: String,
-    pub adresse: String,
+    pub code: CodeDeDemande,
+    pub adresse: droit::fiche::Courriel,
     pub ligne: envois::journal::Ligne,
 }
 
@@ -975,8 +976,8 @@ struct ChargeFicheDemander {
 #[derive(Debug, serde::Serialize)]
 struct DemandeDeFiche {
     phrase: String,
-    code: String,
-    adresse: String,
+    code: CodeDeDemande,
+    adresse: droit::fiche::Courriel,
 }
 
 /// `fiche-demander` : le courriel « Remplir ma fiche » part (`demander_fiche`), sous la preuve que la charge porte.
@@ -991,6 +992,7 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: Option<&str>
     if !adresse_valide(&adresse) {
         return Err(refus(format!("« {} » n'est pas une adresse de courriel.", adresse)));
     }
+    let adresse = droit::fiche::Courriel::lire(&adresse)?;
     let mut ouverte: Option<Box<dyn Courriel>> = None;
     let client: &mut dyn Courriel = match client {
         Some(c) => c,
@@ -1005,10 +1007,10 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: Option<&str>
         Some(p) => p.to_string(),
         None => capitaliser(sg.prenom.portee().ok_or_else(|| socle::fichiers::absent("prenom"))?),
     };
-    let expediteur = client.compte().to_lowercase();
-    let code = fq::code_fiche().map_err(|e| e.reclasser(Classe::Disque))?;
+    let expediteur = droit::fiche::Courriel::lire(&client.compte().to_lowercase())?;
+    let code = fq::code_au_hasard(fq::SorteDeDemande::Fiche).map_err(|e| e.reclasser(Classe::Disque))?;
     let utiles = champs::utiles(NomDeFiche::Salarie)?;
-    let q = fq::questionnaire(&code, &fq::posees(&|c| utiles.contains(&c)), &|_| String::new());
+    let q = fq::questionnaire(code.texte(), &fq::posees(&|c| utiles.contains(&c)), &|_| String::new());
     let sujet = envoi::formater(fq::SUJET, &[("compagnie", compagnie.clone())]);
     let prenom: Option<String> = prenom.map(|p| strip(p).to_string());
     // « Bonjour Claire, » : le prenom, quand il est dit ; « Bonjour, » sinon.
@@ -1028,16 +1030,16 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: Option<&str>
         pour: (),
         nom: match &prenom {
             Some(p) => p.clone(),
-            None => adresse.clone(),
+            None => adresse.to_string(),
         },
-        destinataire: adresse.clone(),
+        destinataire: adresse.to_string(),
         sujet,
         corps: envoi::formater(fq::CORPS, &texte),
         html: Some(envoi::formater(fq::HTML, &html)),
         pieces: Vec::new(),
     };
-    let mut identifiants: Vec<String> = Vec::new();
-    let demande = |message: Option<String>, expediteur: Option<String>| journal::DetailFiche { code: code.clone(), adresse: adresse.clone(), prenom: prenom.clone(), message, expediteur };
+    let mut identifiants: Vec<envoi::IdDeCourriel> = Vec::new();
+    let demande = |message: Option<envoi::IdDeCourriel>, expediteur: Option<droit::fiche::Courriel>| journal::DetailFiche { code: code.clone(), adresse: adresse.clone(), prenom: prenom.clone(), message, expediteur };
     if let Err(e) = envoi::envoyer(&[message], &expediteur, client, Some(&mut identifiants), None) {
         noter(ctx, journal::Ligne::FicheDemande(par_courriel(None, qui, false, &adresse, &e.phrase, demande(None, None), None)))?;
         return Err(e);
@@ -1052,18 +1054,25 @@ pub(crate) fn demander_fiche(ctx: &Contexte, adresse: &str, prenom: Option<&str>
 /// Une demande partie et pas encore revenue.
 #[derive(Debug, Clone)]
 pub(crate) struct Attendue {
-    pub code: String,
-    pub adresse: String,
+    pub code: CodeDeDemande,
+    pub adresse: droit::fiche::Courriel,
     pub prenom: Option<String>,
     /// L'heure de la demande, celle de la ligne du journal.
     pub quand: InstantOuJour,
     /// Les identifiants de NOS envois (le `Message-ID` gardé avec la demande) : jamais pris pour une reponse.
-    pub envoyes: Vec<String>,
+    pub envoyes: Vec<envoi::IdDeCourriel>,
+}
+
+impl Attendue {
+    /// Ce texte, recu de la boite, est-il l'identifiant d'un de NOS envois ?
+    fn est_a_nous(&self, recu: &str) -> bool {
+        self.envoyes.iter().any(|i| i.texte() == recu)
+    }
 }
 
 /// La ligne `l` est-elle la demande de fiche partie sous le code `code` ? Ce qui en revient se range sur elle.
-fn demande_de(l: &journal::Ligne, code: &str) -> bool {
-    l.fiche().is_some_and(|e| e.accepte && e.detail.code == code)
+fn demande_de(l: &journal::Ligne, code: &CodeDeDemande) -> bool {
+    l.fiche().is_some_and(|e| e.accepte && e.detail.code == *code)
 }
 
 /// `fiches_attendues` : les demandes parties et pas encore revenues, les plus anciennes d'abord. Une demande a
@@ -1072,7 +1081,7 @@ pub(crate) fn fiches_attendues(ctx: &Contexte) -> R<Vec<Attendue>> {
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     let mut sortie = Vec::new();
     for e in lignes.iter().filter_map(journal::Ligne::fiche) {
-        if !e.accepte || e.detail.code.is_empty() || !e.retours.is_empty() {
+        if !e.accepte || !e.retours.is_empty() {
             continue;
         }
         sortie.push(Attendue {
@@ -1080,7 +1089,7 @@ pub(crate) fn fiches_attendues(ctx: &Contexte) -> R<Vec<Attendue>> {
             adresse: e.detail.adresse.clone(),
             prenom: e.detail.prenom.clone(),
             quand: e.quand(),
-            envoyes: e.detail.message.clone().filter(|m| !m.is_empty()).into_iter().collect(),
+            envoyes: e.detail.message.clone().into_iter().collect(),
         });
     }
     Ok(sortie)
@@ -1100,7 +1109,7 @@ pub struct ReleveFiches {
 /// Une fiche recue : le code de sa demande, sa cle, le nom de la personne, ce qui ne s'est pas lu, ses erreurs.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct FicheRecue {
-    code: String,
+    code: CodeDeDemande,
     cle: Option<String>,
     nom: String,
     illisible: Vec<String>,
@@ -1161,9 +1170,9 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
                 break;
             }
         };
-        let mut retenu: Option<(String, Vec<u8>, String, String, Moment)> = None;
+        let mut retenu: Option<(String, Vec<u8>, String, droit::fiche::Courriel, Moment)> = None;
         for ident in identifiants {
-            if a.envoyes.contains(&ident) {
+            if a.est_a_nous(&ident) {
                 continue;
             }
             let brut = match client.message_brut(&ident) {
@@ -1180,11 +1189,11 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
                     continue;
                 }
             };
-            if lecture::identifiant_de(&m).is_some_and(|i| a.envoyes.contains(&i)) {
+            if lecture::identifiant_de(&m).is_some_and(|i| a.est_a_nous(&i)) {
                 continue;
             }
             let texte = lecture::texte_propre(&m);
-            if !texte.to_uppercase().contains(code.as_str()) || texte.contains("Remplir ma fiche") {
+            if !texte.to_uppercase().contains(code.texte()) || texte.contains("Remplir ma fiche") {
                 continue;
             }
             let de = match lecture::adresse_de(&m) {
@@ -1194,21 +1203,22 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
                     continue;
                 }
             };
-            if de == expediteur && de != a.adresse {
+            if de == expediteur && de != *a.adresse {
                 continue;
             }
-            if de != a.adresse {
+            if de != *a.adresse {
                 r.incidents.push(format!("Fiche {} : une reponse vient de {} et non de {} ; elle n'est pas retenue.", code, de, a.adresse));
                 continue;
             }
             let quand = lecture::date_de(&m, socle::temps::secondes().a_la_seconde());
-            retenu = Some((ident, brut.clone(), texte, de, quand));
+            // Elle vient de l'adresse de la demande, a la lettre pres.
+            retenu = Some((ident, brut.clone(), texte, a.adresse.clone(), quand));
             break;
         }
         let Some((ident, brut, texte, de, quand)) = retenu else { continue };
         let (lue, illisible) = fq::fiche_depuis_reponses(&fq::lire_reponses(&texte)).map_err(|m| m.reclasser(Classe::Illisible))?;
         let mut recue: droit::fiche::ChampsSalarie = droit::fiche::lire_saisie(&lue, droit::contexte::SALARIES).map_err(|m| m.reclasser(Classe::Illisible))?;
-        recue.email = Some(droit::fiche::Courriel::lire(&de).map_err(|m| m.reclasser(Classe::Illisible))?);
+        recue.email = Some(de.clone());
         let nom = [recue.prenom_affichage.remplie(), recue.nom_affichage.remplie()].into_iter().flatten().collect::<Vec<_>>().join(" ");
         if nom.trim().is_empty() {
             r.incidents.push(format!("Fiche {} : la reponse de {} ne porte ni nom ni prenom lisible ; rien n'est cree.", code, de));
@@ -1222,7 +1232,7 @@ pub(crate) fn relever_fiches(ctx: &Contexte, client: Option<&mut dyn Courriel>, 
         if !illisible.is_empty() {
             note.push_str(&format!(" Non lu, à compléter : {}.", illisible.join(" ; ")));
         }
-        let trouvee = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == de));
+        let trouvee = ctx.salaries.iter().find(|(_, s)| s.email.portee().is_some_and(|e| strip(e).to_lowercase() == *de));
         let existante: Option<String> = trouvee.map(|(k, _)| k.to_string());
         // Une fiche qui existe deja : on ne complete que ses cases VIDES (ce qu'elle porte a peut-etre deja ete declare) ;
         // une fiche neuve prend toutes celles de la reponse, active. La note dit d'ou viennent les valeurs.
@@ -1282,7 +1292,7 @@ const PERSONNES: [(&str, &str, &str); 4] = [("Marie", "Dorval", "2"), ("Pierre",
 /// Le questionnaire que la personne fictive renvoie, rempli ligne a ligne dans les termes memes
 /// des questions, le code en dernier. `bouton` : (objet, corps) du lien du courriel de la demande, quand on l'a.
 fn reponse_de_fiche(demande: &Attendue, compte: &str, bouton: Option<&(String, String)>) -> R<Vec<u8>> {
-    let code = &demande.code;
+    let code = demande.code.texte();
     let somme: u32 = code.chars().map(|c| c as u32).sum();
     let (prenom, nom, sexe) = PERSONNES[somme as usize % PERSONNES.len()];
     let prenom = match &demande.prenom {
@@ -1337,7 +1347,7 @@ pub(crate) fn boite_des_fiches(ctx: &Contexte, attendues: &[Attendue], delai: i6
         }
         let bouton = envois::simulation_courriels::bouton_de_la_demande(&envoyes, &a.envoyes)?;
         let brut = reponse_de_fiche(a, Courriel::compte(&boite), bouton.as_ref()).map_err(|m| m.reclasser(Classe::Illisible))?;
-        boite.repondre(&a.code, brut);
+        boite.repondre(a.code.texte(), brut);
     }
     Ok(boite)
 }

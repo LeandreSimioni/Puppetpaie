@@ -3,6 +3,7 @@
 //! note ce qui est quand meme parti.
 
 use droit::contexte::Contexte;
+use droit::fiche::Courriel;
 use socle::echec::{Classe, R};
 use socle::mois::Mois;
 
@@ -27,18 +28,25 @@ pub fn noter(ctx: &Contexte, ligne: Ligne) -> R<Ligne> {
 /// aucun) ; l'adresse ou l'envoi a echoue est a part, dans le detail (`echec_a`), avec les partis. Jamais l'expediteur
 /// comme destinataire. `detail` : ce que l'envoi garde d'ordinaire ; `sorte`, la ligne de sa sorte. `versions` : celles
 /// des engagements des salaries servis avant l'echec ; ce qui a atteint le salarie est parti (`departs_des_lignes`).
+/// `echoue` : l'adresse telle que le message l'ecrit (`envoi::ErreurEnvoi`) ; le journal la garde en adresse, et une
+/// adresse qui n'en est pas une le refuse.
 pub fn noter_echec_d_envoi<D: EnRoute, Rt>(
     ctx: &Contexte,
     sorte: impl FnOnce(Envoi<D, Rt>) -> Ligne,
     mois: Option<Mois>,
     qui: &str,
-    partis: &[String],
+    partis: &[Courriel],
     echoue: &str,
     message: &str,
     mut detail: D,
     versions: Option<Vec<Version>>,
 ) -> R<Ligne> {
-    detail.coupe(partis.to_vec(), echoue.to_string());
+    detail.coupe(partis.to_vec(), Courriel::lire(echoue)?);
     let reponse = if partis.is_empty() { format!("echec de l'envoi a {} : {}", echoue, message) } else { message.to_string() };
-    noter(ctx, sorte(par_courriel(mois, qui, false, &partis.join(", "), &reponse, detail, versions)))
+    noter(ctx, sorte(par_courriel(mois, qui, false, &en_liste(partis, ", "), &reponse, detail, versions)))
+}
+
+/// Des adresses mises bout a bout, `entre` chacune : le destinataire d'une ligne, une phrase.
+pub fn en_liste(adresses: &[Courriel], entre: &str) -> String {
+    adresses.iter().map(|a| &**a).collect::<Vec<&str>>().join(entre)
 }
