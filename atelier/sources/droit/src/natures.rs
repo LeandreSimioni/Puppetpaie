@@ -184,7 +184,7 @@ macro_rules! codes_fermes {
 
         impl std::fmt::Display for $nom {
             fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str(self.code())
+                f.pad(self.code())
             }
         }
 
@@ -274,7 +274,7 @@ macro_rules! codes_fermes {
 
         impl std::fmt::Display for $nom {
             fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str(self.code())
+                f.pad(self.code())
             }
         }
 
