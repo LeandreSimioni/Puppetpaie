@@ -27,11 +27,6 @@ use socle::nfkc::nfkc;
 use socle::echec::{refus, R};
 
 
-/// Ce qui remplace une valeur qui n'est pas un texte : elle ne se refuse que si le modele s'en
-/// sert. Une phrase qui la porte est un refus.
-const INVALIDE: &str = "\u{0}\u{0}VALEUR-SANS-TEXTE\u{0}\u{0}";
-
-
 // ------------------------------------------------------ le texte qu'on compare
 
 use socle::texte::blanc as est_blanc;
@@ -343,30 +338,24 @@ pub(crate) fn parties(ent: &ChampsEntreprise, fiche: &droit::fiche::ChampsSalari
         },
     );
     let emploi_texte = lisible(&s.emploi_affichage, &s.emploi, "emploi")?;
-    if emploi_texte == INVALIDE {
-        return Err(refus("l'emploi n'est pas un texte"));
-    }
     poser(Marqueur::SalarieEmploi, emploi_texte.to_lowercase());
     poser(Marqueur::SalarieQualiteDe, de_devant(&emploi_texte).to_string());
-    // Un numero que le moteur ne porte pas (contrat pas encore numerote) n'est pas devine ni pris au compteur.
-    poser(
-        Marqueur::ContratNumero,
-        match e.numero.as_deref() {
-            Some(n) if !n.is_empty() => n.to_string(),
-            _ => INVALIDE.to_string(),
-        },
-    );
+    // Un numero que le moteur ne porte pas (contrat pas encore numerote) n'est pas devine ni pris au compteur (regle 4).
+    let Some(numero) = e.numero.as_ref() else {
+        return Err(socle::refus!(
+            "Le contrat de {} du {} n'a pas de numéro (S21.G00.40.009) : il ne s'écrit pas. Valider l'engagement le lui donne.",
+            e.f.salarie,
+            e.f.debut.jj_mm_aaaa()
+        ));
+    };
+    poser(Marqueur::ContratNumero, numero.to_string());
     poser(Marqueur::ContratDebut, e.f.debut.jj_mm_aaaa());
     Ok(m)
 }
 
 /// Le paragraphe tel qu'il se LIT sur le contrat imprime.
 fn texte_brut(texte: &str, vals: &modele::Valeurs) -> R<String> {
-    let t = modele::texte_brut(texte, vals).map_err(crate::fabrique::echec)?;
-    if t.contains(INVALIDE) {
-        return Err(refus("une valeur du modele n'est pas un texte"));
-    }
-    Ok(t)
+    modele::texte_brut(texte, vals).map_err(crate::fabrique::echec)
 }
 
 // ------------------------------------------------- ce que l'avenant modifie

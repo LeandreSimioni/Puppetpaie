@@ -503,7 +503,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
     // autres partent. Les adresses se lisent avant d'ecrire le moindre PDF : un refus ne laisse rien sur le disque.
     let (par_salarie, noms_sans) = avec_et_sans_courriel(d.contrats(ctx, &paies)?)?;
 
-    let mut remplacements: Vec<((IdSalarie, Jour, String), (String, Jour))> = Vec::new();
+    let mut remplacements: Vec<((IdSalarie, Jour, NumeroContrat), (String, Jour))> = Vec::new();
     if remplace {
         let lignes = envois::journal::lire(&ctx.racine, None, None, false)?;
         for (k, ps, _) in &par_salarie {
@@ -522,8 +522,8 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
                 }
                 let numero = numero_dit(parti.numero.as_ref(), "", "", SANS_NUMERO);
                 // Le contrat qui remplace se reconnait a son numero : sans numero, rien ne le designe.
-                if let Some(propre) = p.engagement.numero.as_deref() {
-                    remplacements.push(((k.clone(), debut, propre.to_string()), (numero, parti.date())));
+                if let Some(propre) = p.engagement.numero.as_ref() {
+                    remplacements.push(((k.clone(), debut, propre.clone()), (numero, parti.date())));
                 }
             }
         }
@@ -624,7 +624,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
             if remplace {
                 c.acte = Some(ActeDuContrat::Remplace);
                 // Le contrat remplace est celui parti sous le meme numero (`envois::etats::contrat_parti`).
-                c.remplace = p.engagement.numero.as_ref().filter(|propre| remplacements.iter().any(|(k, _)| *k == (cle.clone(), debut, propre.to_string()))).cloned();
+                c.remplace = p.engagement.numero.as_ref().filter(|propre| remplacements.iter().any(|((s, d, n), _)| s == cle && *d == debut && n == *propre)).cloned();
             }
             contrats.push(c);
         }

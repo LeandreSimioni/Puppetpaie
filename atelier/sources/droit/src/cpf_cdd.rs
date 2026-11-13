@@ -6,20 +6,11 @@ use socle::echec::R;
 
 use crate::natures::{MotifDeRecours, Nature, NatureDeContrat};
 
-/// Le contrat d'un salarie dans un message : « le contrat VA5.26.01 de VARENNE », « le contrat de VARENNE » tant qu'il n'a
-/// pas de numero.
-pub fn le_contrat(numero: Option<&str>, salarie: &crate::contexte::IdSalarie) -> String {
-    match numero.filter(|n| !n.is_empty()) {
-        Some(n) => format!("le contrat {} de {}", n, salarie),
-        None => format!("le contrat de {}", salarie),
-    }
-}
-
 /// Le contrat de nature `nature` ouvre-t-il la contribution CPF-CDD ? Il se juge sur ce que la DSN en ecrit
 /// (`codes_de` : le code de la nature, son dispositif, le motif de recours de la nature, sinon celui de l'engagement).
 /// C'est la ou le calcul lit le motif de recours saisi : un CDD sans motif refuse (le motif dit s'il est saisonnier), un
 /// motif que la nature n'a pas aussi (`Nature::motif_recours_refuse`). `qui` nomme le contrat dans un refus
-/// (`le_contrat`).
+/// (`engagement::numeros::le_contrat`).
 pub fn ouvre_cpf_cdd(nature: NatureDeContrat, motif_recours: Option<MotifDeRecours>, qui: &str) -> R<bool> {
     let nat = nature.proprietes()?;
     if let Some(refus) = nat.motif_recours_fixe().is_none().then(|| motif_recours.and_then(|m| nat.motif_recours_refuse(m, qui))).flatten() {

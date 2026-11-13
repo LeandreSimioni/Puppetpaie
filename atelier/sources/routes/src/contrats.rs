@@ -558,11 +558,11 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
     let paies = documents::ecrire_documents::paies_aux_numeros_declares(ctx, c.mois, None, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?)?.1;
     // LE CONTRAT, pas le salarie : son numero, celui que l'ecran affiche (ou que la releve a lu) ; sans numero, l'engagement
     // de ce salarie qui commence ce jour-la.
-    let numero = c.numero.as_deref();
+    let numero = c.numero.as_ref();
     let trouvee = paies.iter().position(|p| {
         p.salarie.id == *salarie
             && match numero {
-                Some(n) => p.engagement.numero.as_deref() == Some(n),
+                Some(n) => p.engagement.numero.as_ref() == Some(n),
                 None => p.engagement.debut == c.debut,
             }
     });
@@ -646,9 +646,9 @@ fn refuser_les_contrats_partis(ctx: &Contexte, mois: Mois, choisis: &Choisis) ->
     }
     let apercu = signature_apercu(ctx, mois)?;
     for c in apercu.contrats.iter().filter(|c| c.en_avenant) {
-        let (salarie, debut, numero) = (&c.salarie, c.debut.iso(), c.numero.as_deref());
+        let (salarie, debut, numero) = (&c.salarie, c.debut.iso(), c.numero.as_ref());
         let vise = choisis.salaries.as_ref().is_some_and(|l| l.iter().any(|x| *x == *salarie))
-            || choisis.contrats.as_ref().is_some_and(|l| l.iter().any(|(s, d, n)| s == salarie && *d == debut && n.as_deref().is_none_or(|n| Some(n) == numero)));
+            || choisis.contrats.as_ref().is_some_and(|l| l.iter().any(|(s, d, n)| s == salarie && *d == debut && n.as_ref().is_none_or(|n| Some(n) == numero)));
         if vise {
             return Err(refus(format!(
                 "Le contrat de {} est déjà parti et l'engagement a changé depuis : il se modifie par un avenant, que la boîte « Faire signer les contrats » propose. Rien n'est parti.",
@@ -795,10 +795,10 @@ fn par_salarie(avenants: Vec<UnAvenant>) -> Vec<(droit::contexte::IdSalarie, Vec
 fn avenants_a_envoyer(ctx: &Contexte, voulus: &[AvenantVoulu], etats: &[ContratASigner]) -> R<Vec<(droit::contexte::IdSalarie, Vec<UnAvenant>)>> {
     let mut avenants = Vec::new();
     for v in voulus {
-        let numero = v.numero.as_deref();
+        let numero = v.numero.as_ref();
         let attend = etats
             .iter()
-            .find(|c| c.salarie == v.salarie && c.debut == v.debut && numero.is_none_or(|n| c.numero.as_deref() == Some(n)))
+            .find(|c| c.salarie == v.salarie && c.debut == v.debut && numero.is_none_or(|n| c.numero.as_ref() == Some(n)))
             .filter(|c| c.avenant_attendu && c.en_attente);
         avenants.push(match attend {
             Some(c) => avenant_repris(ctx, c)?,
@@ -1110,10 +1110,7 @@ impl AvenantLu {
         let n = self.modifications.len();
         let ailleurs = self.contrat_signe.is_some();
         // « n° 12 », ou « sans numéro ».
-        let contrat = match self.contrat.as_deref() {
-            Some(n) => format!("n° {}", n),
-            None => "sans numéro".to_string(),
-        };
+        let contrat = engagement::numeros::numero_dit(self.contrat.as_ref(), "n° ", "", "sans numéro");
         let situation = format!(
             "{} — {}, {} ; {}",
             self.nom,
@@ -1397,7 +1394,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
         pour: nomme.pour,
         periode: nomme.periode,
         mois,
-        contrat: Some(NumeroContrat::lire(numero).map_err(|m| m.reclasser(Classe::Illisible))?),
+        contrat: Some(numero.clone()),
         date_contrat: debut,
         signe: None,
         contrat_signe: Some(crate::gestes::signature::contrat_signe_dit(ctx, salarie, debut)?),
@@ -1440,14 +1437,14 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
 
     // La ligne d'un contrat (une embauche d'une DPAE, un contrat parti, un contrat revenu) est-elle celle du contrat n°
     // `numero` (de ce salarie, quand il est dit) ?
-    let ce_contrat = |s: &IdSalarie, n: Option<&str>| n == Some(numero.as_str()) && le_salarie.as_ref().is_none_or(|x| x == s);
+    let ce_contrat = |s: &IdSalarie, n: Option<&NumeroContrat>| n == Some(&numero) && le_salarie.as_ref().is_none_or(|x| x == s);
     let mut dpae = Vec::new();
     for e in journal::filtrer(&lignes, Some(journal::Acte::Dpae), None, true).filter_map(journal::Ligne::dpae) {
         let Some(fichier) = e.fichier.as_ref() else { continue };
         if !e.accepte {
             continue;
         }
-        if let Some(x) = e.detail.embauches.iter().find(|x| ce_contrat(&x.salarie, x.numero.as_deref())) {
+        if let Some(x) = e.detail.embauches.iter().find(|x| ce_contrat(&x.salarie, x.numero.as_ref())) {
             qui.get_or_insert_with(|| x.salarie.clone());
             dpae.push(piece(racine, "DPAE déposée".into(), e.quand(), e.mois, fichier));
         }
@@ -1457,7 +1454,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
     for l in lignes.iter().filter(|l| l.accepte()) {
         let Some(e) = l.signature() else { continue };
         let parti = if e.detail.main_propre { "imprimé" } else { "envoyé à la signature" };
-        for x in e.detail.contrats.iter().filter(|x| ce_contrat(&x.salarie, x.numero.as_deref())) {
+        for x in e.detail.contrats.iter().filter(|x| ce_contrat(&x.salarie, x.numero.as_ref())) {
             qui.get_or_insert_with(|| x.salarie.clone());
             let quoi = match x.acte {
                 Some(journal::ActeDuContrat::Avenant) => format!("{} {}", majuscule(&avenant_dit(x.avenant)), parti),
@@ -1467,7 +1464,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
             contrat.push(piece(racine, quoi, e.quand(), Some(x.mois), &x.fichier));
         }
         // CE QUI EN EST REVENU, sur la ligne de chaque envoi.
-        for d in e.retours.iter().filter(|d| ce_contrat(&d.salarie, d.numero.as_deref())) {
+        for d in e.retours.iter().filter(|d| ce_contrat(&d.salarie, d.numero.as_ref())) {
             if let Some(f) = d.fichier_signe.as_ref() {
                 let quoi = match d.avenant {
                     Some(a) if d.acte == Some(journal::ActeDuContrat::Avenant) => format!("Avenant n° {} signé, contresigné", a),

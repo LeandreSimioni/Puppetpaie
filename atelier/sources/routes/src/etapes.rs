@@ -867,13 +867,13 @@ fn emportes_a_refaire(
         }
     }
     // Les corrections de mois passes que la ligne porte ne sont pas des engagements de ce mois.
-    let mut emportes: Vec<(String, String)> = emportes.iter().filter(|v| v.mois.is_none()).map(|v| (v.salarie.to_string(), v.numero.to_string())).collect();
-    let mut presents: Vec<(String, String)> = siens
+    let mut emportes: Vec<(&IdSalarie, &NumeroContrat)> = emportes.iter().filter(|v| v.mois.is_none()).map(|v| (&v.salarie, &v.numero)).collect();
+    let mut presents: Vec<(&IdSalarie, &NumeroContrat)> = siens
         .iter()
         .filter(|e| e.valide().is_some())
         .filter_map(|e| {
             let b = &*e.objet().brut;
-            Some((b.saisie.carte.salarie.as_ref()?.to_string(), b.saisie.carte.numero.as_ref()?.to_string()))
+            Some((b.saisie.carte.salarie.as_ref()?, b.saisie.carte.numero.as_ref()?))
         })
         .collect();
     emportes.sort();
@@ -1405,7 +1405,7 @@ pub struct Moteur<'a> {
     /// (`charger_saisie`), ce qui est a refaire de chaque engagement valide (`a_refaire_du_mois`, par mois, salarie et
     /// numero) et l'etat de chaque engagement (`etat_par_engagement`).
     saisies: HashMap<Mois, Rc<SaisieMois>>,
-    refaire: HashMap<(Mois, String, String), Rc<Vec<ARefaire>>>,
+    refaire: HashMap<(Mois, IdSalarie, NumeroContrat), Rc<Vec<ARefaire>>>,
     lignes: HashMap<Mois, Rc<Vec<Ligne>>>,
 }
 
@@ -1462,10 +1462,10 @@ impl<'a> Moteur<'a> {
     fn a_refaire_du_mois(&mut self, mois: Mois, e: &engagement::etats::Etat, departs: &engagement::departs::Departs) -> R<Rc<Vec<ARefaire>>> {
         let carte = &e.objet().brut.saisie.carte;
         // Rien n'est parti d'un engagement en saisie : rien n'est a refaire.
-        let (Some(_), Some(salarie), Some(numero)) = (e.valide(), carte.salarie.as_ref(), carte.numero.as_deref()) else {
+        let (Some(_), Some(salarie), Some(numero)) = (e.valide(), carte.salarie.as_ref(), carte.numero.as_ref()) else {
             return Ok(Rc::new(Vec::new()));
         };
-        let cle = (mois, salarie.to_string(), numero.to_string());
+        let cle = (mois, salarie.clone(), numero.clone());
         if let Some(r) = self.refaire.get(&cle) {
             return Ok(r.clone());
         }
@@ -2463,7 +2463,7 @@ impl<'a> Moteur<'a> {
                 };
                 // Seule la DPAE partie se compare (`debut_declare`) : les paies parties ne se relisent pas ici, sauf
                 // quand le mois a deja compare tout ce qui est a refaire (`a_refaire_du_mois`).
-                let refaire: Vec<ARefaire> = match self.refaire.get(&(le_mois, cle.to_string(), numero.to_string())) {
+                let refaire: Vec<ARefaire> = match self.refaire.get(&(le_mois, cle.clone(), numero.clone())) {
                     Some(r) => r.iter().filter(|a| matches!(a, ARefaire::Dpae { .. })).cloned().collect(),
                     None => engagement::etats::a_refaire_parmi(self.ctx, v, &departs, &|s| s == engagement::departs::Envoi::Dpae)?,
                 };

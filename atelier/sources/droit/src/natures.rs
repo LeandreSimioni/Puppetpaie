@@ -1341,7 +1341,7 @@ impl Proprietes {
     /// 2026.1, p. 270-273, `norme-dsn/texte/bloc-S21.G00.62.txt`) : un motif hors de la liste serait rejete (091 et 092,
     /// l'inaptitude, ne valent que pour les natures 01, 07, 08, 09, 50, 53, 54, 82, 91 ; un CDD rompu pour inaptitude
     /// est en 033). Le CDDU, de nature 02, a la liste du CDD. Une nature sans liste n'est pas controlee.
-    pub fn motif_rupture_refuse(&self, motif: MotifDeRupture, numero: &str) -> Option<String> {
+    pub fn motif_rupture_refuse(&self, motif: MotifDeRupture, numero: impl std::fmt::Display) -> Option<String> {
         let motifs = self.motifs_rupture();
         if motifs.is_empty() || motifs.iter().any(|m| m.code == motif) {
             return None;

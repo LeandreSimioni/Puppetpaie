@@ -124,7 +124,7 @@ fn mois_de_l_annee(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, nic: &N
 // ------------------------------------------------------------ la contribution CPF-CDD
 
 fn qui(p: &Paie) -> String {
-    droit::cpf_cdd::le_contrat(p.engagement.numero.as_deref(), &p.salarie.id)
+    engagement::numeros::le_contrat(p.engagement.numero.as_ref(), &p.salarie.id)
 }
 
 fn cpf_cdd(annee: &[MoisDeLAnnee]) -> R<bool> {

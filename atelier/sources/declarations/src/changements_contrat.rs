@@ -189,10 +189,7 @@ fn qui(p: &Paie) -> String {
         Some(n) => n,
         None => p.salarie.id.as_str().to_string(),
     };
-    match p.engagement.numero.as_deref() {
-        Some(n) => format!("{}, contrat {}", nom, n),
-        None => format!("{}, contrat sans numero", nom),
-    }
+    engagement::numeros::numero_dit(p.engagement.numero.as_ref(), &format!("{}, contrat ", nom), "", &format!("{}, contrat sans numero", nom))
 }
 
 /// La date de la modification (41.001) du changement de `md`, declaree `avant` dans la DSN de `decl.mois`. Refus
@@ -454,10 +451,7 @@ pub fn poser(f: &mut crate::dsn::Fichier, debut: usize, ctx: &Contexte, p: &Paie
 /// date declaree n'est pas dite, ou que le jour de la correction n'est pas connu : le bloc ne se devine pas (regle 1).
 pub fn ancienne_date_de_debut(lignes: &mut Vec<String>, debut: usize, r: &crate::dsn::Regularisation, nouveau: &Jour, fin_mois: Jour) -> R<()> {
     let e = &r.apres.engagement;
-    let numero = match e.numero.as_deref() {
-        Some(n) => n,
-        None => "sans numero",
-    };
+    let numero = engagement::numeros::numero_dit(e.numero.as_ref(), "", "", "sans numero");
     if r.declare.lignes.is_empty() && r.declare.fichier.is_empty() {
         return Ok(());
     }

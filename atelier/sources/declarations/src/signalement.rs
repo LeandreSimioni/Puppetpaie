@@ -449,7 +449,7 @@ annule-et-remplace (type 03)."
 
     // -------------------------------------------------------- S21 contrat
     f.add(droit::rubrique!("S21.G00.40.001"), arret.contrat_debut.jjmmaaaa());
-    f.add_opt(droit::rubrique!("S21.G00.40.009"), arret.contrat_numero.as_deref())?;
+    f.add_opt(droit::rubrique!("S21.G00.40.009"), arret.contrat_numero.as_ref().map(engagement::numeros::NumeroContrat::as_str))?;
     f.add_case(droit::rubrique!("S21.G00.40.019"), &etab.siret, "siret")?;
 
     if ent.banque.is_none() {

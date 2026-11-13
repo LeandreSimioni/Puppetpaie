@@ -353,7 +353,7 @@ impl SansNets {
         let pourquoi = match self.avec.as_slice() {
             [] => "plusieurs versements de la DSN le paient".to_string(),
             [un] => format!("son versement dans la DSN paie aussi le contrat {}", un),
-            autres => format!("son versement dans la DSN paie aussi les contrats {}", autres.join(", ")),
+            autres => format!("son versement dans la DSN paie aussi les contrats {}", autres.iter().map(engagement::numeros::NumeroContrat::as_str).collect::<Vec<_>>().join(", ")),
         };
         format!(
             "{}, contrat {} ({}) : {}, sans dire ses nets ni son prélèvement à la source, et aucun bulletin ne les donne. L'engagement est repris sans ses nets : importez son bulletin.",

@@ -770,7 +770,7 @@ fn bareme_de(p: &Paie, bar: &BaremeDuMois) -> R<std::sync::Arc<Pile>> {
 fn bareme_du_contrat(e: &engagement::Engagement, salarie: &droit::fiche::SalarieDuContrat, bar: &BaremeDuMois) -> R<std::sync::Arc<Pile>> {
     let nat = e.nat()?;
     let fin = e.fin_periode();
-    let cpf_cdd = droit::cpf_cdd::ouvre_cpf_cdd(e.nature, e.motif_recours, &droit::cpf_cdd::le_contrat(e.numero.as_deref(), &e.salarie))?;
+    let cpf_cdd = droit::cpf_cdd::ouvre_cpf_cdd(e.nature, e.motif_recours, &engagement::numeros::le_contrat(e.numero.as_ref(), &e.salarie))?;
     let caisse = droit::caisse_conges::affilie(&nat, salarie, &e.debut, e.fin.as_ref())?;
     let majoration = droit::majoration_chomage::due(&nat, e.motif_recours, &e.debut, e.fin.as_ref());
     let cle = format!("{}|{}|{:?}|{}|{}|{}|{}", fin.iso(), nat.cle, salarie, nat.mensuelle(), caisse, cpf_cdd, majoration);
@@ -1532,7 +1532,7 @@ fn motif_recours(p: &Paie, nat: &Nature) -> R<droit::natures::MotifDeRecours> {
             "Dites pourquoi ce CDD est conclu (« Motif du CDD », sur la carte de l'engagement) : {} ({}) n'en dit pas le motif.\n\
 C'est le motif qui rend le contrat licite (code du travail, L. 1242-2 : remplacement d'un salarié, accroissement \
 temporaire d'activité, emploi saisonnier…) ; la DSN le déclare, il y est obligatoire (S21.G00.40.021, SIG-11).",
-            droit::cpf_cdd::le_contrat(e.numero.as_deref(), &e.salarie),
+            engagement::numeros::le_contrat(e.numero.as_ref(), &e.salarie),
             nat.libelle
         )),
     }
@@ -2499,7 +2499,7 @@ pub fn versement_ecrit(ctx: &Contexte, p: &Paie, mois: Mois) -> R<VersementEcrit
 
 /// Les affiliations que CE fichier a deja ecrites pour le contrat `numero` de l'individu en cours :
 /// (S21.G00.70.013, S21.G00.70.012).
-fn affiliations_ecrites(f: &Fichier, numero: &engagement::numeros::NumeroContrat) -> Vec<(String, String)> {
+fn affiliations_ecrites(f: &Fichier, numero: &engagement::numeros::NumeroContrat) -> R<Vec<(String, String)>> {
     // L'individu en cours commence a son NIR ; sans lui, le fichier entier.
     let lignes = match f.lignes.iter().rposition(|l| l.starts_with("S21.G00.30.001,")) {
         Some(depart) => &f.lignes[depart..],
@@ -2512,7 +2512,7 @@ fn affiliations_ecrites(f: &Fichier, numero: &engagement::numeros::NumeroContrat
         let v = v.trim_matches('\'');
         match k {
             "S21.G00.40.001" | "S21.G00.50.001" => du_contrat = false,
-            "S21.G00.40.009" => du_contrat = v == numero.as_str(),
+            "S21.G00.40.009" => du_contrat = engagement::numeros::NumeroContrat::lire(v)? == *numero,
             "S21.G00.70.012" if du_contrat => id = Some(v.to_string()),
             "S21.G00.70.013" if du_contrat => {
                 if let Some(i) = id.take() {
@@ -2522,7 +2522,7 @@ fn affiliations_ecrites(f: &Fichier, numero: &engagement::numeros::NumeroContrat
             _ => {}
         }
     }
-    out
+    Ok(out)
 }
 
 /// L'annulation de ce qui a ete DECLARE : les lignes des `blocs` du versement declare, montants
@@ -2531,7 +2531,7 @@ fn affiliations_ecrites(f: &Fichier, numero: &engagement::numeros::NumeroContrat
 fn annuler_le_declare(f: &mut Fichier, r: &Regularisation, blocs: &[&str]) -> R<()> {
     let d = &r.declare;
     let numero = r.apres.engagement.numero.clone().ok_or_else(|| absente(droit::rubrique!("S21.G00.40.009")))?;
-    let ecrites = affiliations_ecrites(f, &numero);
+    let ecrites = affiliations_ecrites(f, &numero)?;
     let lignes: Vec<(String, String)> = d.blocs(blocs).cloned().collect();
     for (k, v) in lignes {
         if k == "S21.G00.78.005" {
@@ -4213,7 +4213,7 @@ fn bloc_40_declare(ctx: &Contexte, p: &Paie, mois: Mois, etats: &[engagement::et
     let Some(numero) = p.engagement.numero.clone() else { return Ok(None) };
     let cle = cle_salarie(p);
     let sienne = |e: &engagement::etats::Etat| {
-        e.objet().carte().salarie.as_ref() == Some(&cle) && e.objet().carte().numero.as_deref() == Some(numero.as_str())
+        e.objet().carte().salarie.as_ref() == Some(&cle) && e.objet().carte().numero.as_ref() == Some(&numero)
     };
     let Some(v) = etats.iter().filter(|e| sienne(e)).find_map(engagement::etats::Etat::valide) else { return Ok(None) };
     let premier_mois = p.engagement.debut.mois_civil();
@@ -4530,10 +4530,7 @@ par periode, n'est pas faite par le logiciel. Rien n'est ecrit.",
                     Some(r) => r,
                     None => s.fin_previsionnelle,
                 };
-                let numero = match s.contrat_numero.as_deref() {
-                    Some(n) => n,
-                    None => "sans numero",
-                };
+                let numero = engagement::numeros::numero_dit(s.contrat_numero.as_ref(), "", "", "sans numero");
                 format!("{} contrat {} ({} -> {})", s.salarie, numero, s.dernier_jour_travaille.iso(), fin.iso())
             })
             .collect();

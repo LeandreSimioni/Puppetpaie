@@ -252,7 +252,7 @@ pub fn lire_dsn(dossier: &Path) -> Result<LectureDsn, Echec> {
             let c = dernier_contrat.get(&nir.as_ref()).copied();
             // Les initiales du numero de son dernier contrat (avant le premier point) ; aucune sans numero.
             let initiales: String =
-                c.and_then(|c| c.numero.as_deref()).and_then(|n| n.split('.').next()).into_iter().flat_map(str::chars).filter(|ch| ch.is_alphabetic()).take(2).collect();
+                c.and_then(|c| c.numero.as_ref()).map(engagement::numeros::NumeroContrat::as_str).and_then(|n| n.split('.').next()).into_iter().flat_map(str::chars).filter(|ch| ch.is_alphabetic()).take(2).collect();
             let avant = index_salaries.get(&nir).and_then(|&i| out.salaries[i].premier_contrat);
             let premier = info.contrats.iter().filter(|x| x.nir == nir).filter_map(|x| x.debut).chain(avant).min();
             let decl = SalarieDeclare {

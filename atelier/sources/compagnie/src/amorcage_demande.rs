@@ -250,10 +250,7 @@ pub fn produire(ctx: &Contexte, paies: &[Paie], d: &Demande, ecrits: &mut Vec<Pa
         "DEMANDES :".into(),
     ];
     for l in &retenus {
-        let contrat = match l.contrat.as_deref() {
-            Some(c) => format!("contrat {}", c),
-            None => "sans numéro de contrat".to_string(),
-        };
+        let contrat = engagement::numeros::numero_dit(l.contrat.as_ref(), "contrat ", "", "sans numéro de contrat");
         out.push(format!("  {} {} {} ({})", gauche(l.salarie.as_str(), 14), gauche(&l.libelle, 22), contrat, mois));
     }
     if !ecartes.is_empty() {
