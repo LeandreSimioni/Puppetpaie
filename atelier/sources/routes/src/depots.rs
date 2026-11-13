@@ -775,7 +775,7 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
     let ligne = envois::journal::filtrer(&lignes, Some(d.quoi.acte()), Some(mois), false).rev().find(|l| match l {
         // Une ligne de DSN qui ne nomme pas son etablissement est celle de l'etablissement principal.
         Ligne::Dsn(_) => {
-            let de = l.etablissement().or(principal);
+            let de = l.etablissement().map(|n| -> &str { n }).or(principal);
             l.fichier().is_some_and(|f| f.texte().starts_with("DSN_")) && de == nic
         }
         Ligne::Dpae(e) => voulues.as_ref().is_none_or(|v| e.detail.embauches.iter().map(|x| (x.salarie.clone(), x.numero.clone())).collect::<BTreeSet<_>>() == *v),
@@ -861,7 +861,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
         refuse = embauches.iter().any(|x| x.is_some_and(|x| x.refusee));
     } else {
         let ligne = du_flux(Quoi::Dsn.acte());
-        let nic = ligne.and_then(Ligne::etablissement);
+        let nic = ligne.and_then(Ligne::etablissement).map(|n| -> &str { n });
         // Sans son mois, rien ne dit ou en est la DSN : elle attend.
         let e = mois.map(|m| compagnie::etat_dsn::du_mois(ctx, m, nic)).transpose()?;
         passe = e.as_ref().is_some_and(|e| e.etat == compagnie::etat_dsn::Etat::Passee);

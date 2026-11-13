@@ -499,7 +499,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &IdDeFlux, publi
 /// etablissement, la derniere deposee ; une DSN dont le bilan est non conforme n'en est pas une, ni une ligne qui ne dit
 /// pas sa nature.
 fn dsn_de_l_annee(racine: &Path, lignes: &[Ligne], an: i32) -> R<BTreeMap<u32, Vec<DsnLue>>> {
-    let mut dernieres: BTreeMap<(Mois, Option<&str>), &Ligne> = BTreeMap::new();
+    let mut dernieres: BTreeMap<(Mois, Option<&droit::fiche::Nic>), &Ligne> = BTreeMap::new();
     for l in lignes {
         if l.acte() != crate::journal::Acte::Dsn || !reelle(l) || !l.accepte() || l.nature_dsn() != Some(NatureDeLaDeclaration::Mensuelle) {
             continue;

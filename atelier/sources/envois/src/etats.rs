@@ -74,7 +74,7 @@ pub fn de_l_etablissement<'a>(lignes: impl IntoIterator<Item = &'a Ligne>, nic: 
     lignes
         .into_iter()
         .filter(|l| match l.etablissement() {
-            Some(e) => Some(e) == voulu,
+            Some(e) => Some(e.as_ref()) == voulu,
             None => principal == voulu,
         })
         .collect()

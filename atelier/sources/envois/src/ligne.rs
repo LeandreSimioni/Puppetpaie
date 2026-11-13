@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use droit::contexte::IdSalarie;
+use droit::fiche::Nic;
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
@@ -278,8 +279,8 @@ impl Ligne {
     }
 
     /// L'etablissement (son NIC) qu'une DSN declare ; `None` : l'etablissement principal.
-    pub fn etablissement(&self) -> Option<&str> {
-        self.dsn().and_then(|e| e.detail.etablissement.as_deref()).filter(|n| !n.is_empty())
+    pub fn etablissement(&self) -> Option<&Nic> {
+        self.dsn().and_then(|e| e.detail.etablissement.as_ref())
     }
 
     /// La nature d'une DSN (`01` mensuelle, `04` `05` `07` `08` un signalement) ; `None` si la ligne ne la dit pas.
@@ -346,7 +347,7 @@ pub struct DetailDsn {
     #[serde(default, with = "droit::natures::en_nombre::option")]
     pub ordre_test: Option<droit::natures::NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub etablissement: Option<String>,
+    pub etablissement: Option<Nic>,
     /// Le jour de l'evenement qu'un signalement declare (le dernier jour travaille d'un arret, la fin d'un contrat...) ; la
     /// ligne porte le mois de ce jour.
     #[serde(skip_serializing_if = "Option::is_none")]

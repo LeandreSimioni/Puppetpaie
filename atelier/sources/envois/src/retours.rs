@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
+use droit::fiche::{Nic, Siren, Siret};
 use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
 use droit::natures::{Fraction, ListeDeLaNorme, NumeroDOrdre};
 use droit::organismes::IdentifiantDOrganisme;
@@ -1198,7 +1199,7 @@ pub struct Bilan {
     pub contrats: Option<usize>,
     pub conformite: Option<String>,
     pub certificat: Option<String>,
-    pub siret_declarant: Option<String>,
+    pub siret_declarant: Option<Siret>,
 }
 
 impl Bilan {
@@ -1345,7 +1346,7 @@ fn bilan_depuis(champs: &[(String, String)], type_rapport: TypeDeRapport) -> R<O
         contrats: forme_du_retour(get("contrats").as_deref(), compte_du_retour)?,
         conformite: get("etat_conformite"),
         certificat: get("certificat_conformite"),
-        siret_declarant: get("siret"),
+        siret_declarant: forme_du_retour(get("siret").as_deref(), Siret::lire)?,
     }))
 }
 
@@ -1417,8 +1418,8 @@ fn declarations_de_l_arbre(arbre: &Arbre) -> R<Vec<DeclarationIdentifiee>> {
             nature_declaration: nature_du_retour(get("nature").as_deref())?,
             type_declaration: type_du_retour(get("type").as_deref())?,
             ordre: forme_du_retour(get("ordre").as_deref(), NumeroDOrdre::lire)?,
-            siren: get("SIREN"),
-            nic: get("nic_affectation"),
+            siren: forme_du_retour(get("SIREN").as_deref(), Siren::lire)?,
+            nic: forme_du_retour(get("nic_affectation").as_deref(), Nic::lire)?,
             etat: forme_du_retour(get("etat").as_deref(), Verdict::lire)?,
             essai_reel,
             codes,
@@ -1436,8 +1437,8 @@ pub struct DeclarationIdentifiee {
     #[serde(rename = "type")]
     pub type_declaration: Option<TypeDeLaDeclaration>,
     pub ordre: Option<NumeroDOrdre>,
-    pub siren: Option<String>,
-    pub nic: Option<String>,
+    pub siren: Option<Siren>,
+    pub nic: Option<Nic>,
     pub etat: Option<Verdict>,
     pub essai_reel: Option<EssaiOuReel>,
     pub codes: Vec<String>,

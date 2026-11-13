@@ -167,7 +167,6 @@ pub fn deposer_dsn(
         let (reponse, _type) = client.deposer_octets(&url, &contenu, "dsn").map_err(Panne::en_echec)?;
         Ok(reponse)
     };
-    let texte = |v: Option<&str>| v.map(str::to_string);
     let preuve = Some(d.preuve.to_string());
     let reponse = match envoi() {
         Ok(r) => r,
@@ -198,7 +197,7 @@ pub fn deposer_dsn(
         pas_bareme: Some(apercu.pas_bareme()),
         repetition: d.repetition.cloned(),
         ordre_test,
-        etablissement: texte(apercu.etablissement()),
+        etablissement: apercu.etablissements.first().cloned(),
         evenement: d.evenement,
         ..DetailDsn::nouveau(false)
     };

@@ -31,6 +31,7 @@ use std::path::Path;
 use crate::retours::IdDeFlux;
 
 use droit::contexte::Contexte;
+use droit::fiche::Siren;
 use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
 use droit::natures::NumeroDOrdre;
 use socle::echec::{erreur, Classe};
@@ -57,10 +58,10 @@ pub struct OrdreConnu {
 
 /// Le SIREN de l'entreprise : `siren`, sinon les neuf premiers chiffres du `siret` ; sans l'un ni l'autre, le refus
 /// nomme `siren`.
-fn siren(ent: &droit::fiche::ChampsEntreprise) -> Result<String, Echec> {
-    match (ent.siren.portee(), ent.siret.portee()) {
-        (Some(s), _) => Ok(s.to_string()),
-        (None, Some(siret)) => Ok(siret.chars().take(9).collect()),
+fn siren(ent: &droit::fiche::ChampsEntreprise) -> Result<Siren, Echec> {
+    match (ent.siren.dite(), ent.siret.dite()) {
+        (Some(s), _) => Ok(s.clone()),
+        (None, Some(siret)) => Ok(siret.siren()),
         (None, None) => Err(socle::fichiers::absent("siren")),
     }
 }
@@ -69,7 +70,7 @@ fn siren(ent: &droit::fiche::ChampsEntreprise) -> Result<String, Echec> {
 /// declarent pour ce SIREN, essais et reels, acceptes ou non ; et le flux qui le porte. Le flux se lit dans le nom de
 /// l'archive (`AAAAMMJJ-hhmmss_nature11_<flux>.<ext>`, `releve_retours::archiver_retour`) ; `sansflux`, ou un nom qui
 /// n'en porte pas un de la forme d'un flux, n'en dit aucun.
-pub fn dernier_ordre_des_bilans(racine: &Path, siren: &str) -> Result<Option<(NumeroDOrdre, Option<IdDeFlux>)>, Echec> {
+pub fn dernier_ordre_des_bilans(racine: &Path, siren: &Siren) -> Result<Option<(NumeroDOrdre, Option<IdDeFlux>)>, Echec> {
     let mut dernier: Option<(NumeroDOrdre, Option<IdDeFlux>)> = None;
     for (nom, p) in bilans_archives(racine)? {
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
@@ -82,7 +83,7 @@ pub fn dernier_ordre_des_bilans(racine: &Path, siren: &str) -> Result<Option<(Nu
         let flux = Some(flux).filter(|f| *f != "sansflux").and_then(IdDeFlux::lu);
         for d in crate::retours::declarations_du_bilan(&octets)? {
             let signalement = d.nature_declaration.is_some_and(NatureDeLaDeclaration::signalement_envoye);
-            if !signalement || d.siren.as_deref() != Some(siren) {
+            if !signalement || d.siren.as_ref() != Some(siren) {
                 continue;
             }
             let Some(o) = d.ordre else { continue };
@@ -248,7 +249,7 @@ impl MensuellesVues {
 ///   20261030 ») : AAAAMM + ordre, exact, quel que soit le jour du bilan.
 ///
 /// `mois` : le mois declare (S20.G00.05.005) dont on cherche une mensuelle acceptee.
-pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, constitution: Mois, mois: Mois) -> Result<MensuellesVues, Echec> {
+pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &Siren, essai: bool, constitution: Mois, mois: Mois) -> Result<MensuellesVues, Echec> {
     let base = if essai { EssaiOuReel::Essai } else { EssaiOuReel::Reel };
     let aaaamm = format!("{:04}{:02}", constitution.annee(), constitution.numero());
     let cite = regex::Regex::new(r"ordre (?:accept\S* )?(\d{7,})").map_err(|e| erreur(Classe::Illisible, e.to_string()))?;
@@ -264,7 +265,7 @@ pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, con
         let du_mois_declare = bilan.mois == Some(mois);
         let mut du_siren = false;
         for d in crate::retours::declarations_du_bilan(&octets)? {
-            if d.nature_declaration != Some(crate::depot::MENSUELLE) || d.siren.as_deref() != Some(siren) {
+            if d.nature_declaration != Some(crate::depot::MENSUELLE) || d.siren.as_ref() != Some(siren) {
                 continue;
             }
             du_siren = true;
@@ -289,6 +290,6 @@ pub fn dernier_ordre_des_mensuelles(racine: &Path, siren: &str, essai: bool, con
 }
 
 /// Le SIREN de l'entreprise du dossier, comme le lit `dernier_ordre_connu`.
-pub fn siren_de(ctx: &Contexte) -> Result<String, Echec> {
+pub fn siren_de(ctx: &Contexte) -> Result<Siren, Echec> {
     siren(&ctx.entreprise)
 }
