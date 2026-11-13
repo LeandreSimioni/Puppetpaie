@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
+use droit::contexte::TypeDeParametreNeores;
 use droit::fiche::{Nic, Nir, Siren, Siret};
 use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
 use droit::natures::{Fraction, ListeDeLaNorme, NumeroDOrdre};
@@ -2926,22 +2927,6 @@ impl SubstituableNeores {
     }
 }
 
-/// La table des types de parametres (`RO.B008.R001`), telle que net-entreprises la sert
-/// (`atelier/reference/sources/neores/gip-mds-neores-table-types-de-parametres-20230703.csv`).
-const TYPES_PARAMETRE_NEORES: [(&str, &str); 6] = [
-    ("A01", "effectif moyen annuel (niveau entreprise)"),
-    ("A02", "effectif moyen BOETH annuel (niveau entreprise)"),
-    ("A03", "effectif moyen ECAP annuel (niveau entreprise)"),
-    ("A04", "effectif moyen d'assujettissement OETH annuel (niveau entreprise)"),
-    ("A05", "effectif moyen CSA CFIP annuel (niveau entreprise)"),
-    ("A07", "effectif moyen CSA annuel (niveau entreprise)"),
-];
-
-/// Le libelle du code `code` dans `table` ; aucun pour un code absent ou que la table ne connait pas.
-fn dans_table(table: &[(&str, &'static str)], code: Option<&str>) -> Option<&'static str> {
-    table.iter().find(|(c, _)| Some(*c) == code).map(|(_, l)| *l)
-}
-
 /// Le texte de la rubrique `nom` (`RO_B004_R001`), enfant direct du bloc `e` ; aucun si le bloc ne la porte pas, ou
 /// vide.
 fn rubrique_de<'a>(a: &'a Arbre, e: &'a Noeud, nom: &str) -> Option<&'a str> {
@@ -3045,8 +3030,7 @@ pub struct ActionNeores {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ParametreNeores {
     #[serde(rename = "type")]
-    pub type_parametre: Option<String>,
-    pub libelle: Option<&'static str>,
+    pub type_parametre: Option<TypeDeParametreNeores>,
     pub valeur: Option<String>,
     pub effet: Option<socle::date::Jour>,
     pub fin: Option<socle::date::Jour>,
@@ -3208,8 +3192,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         .filter(|x| local(&x.tag) == "RO_B008")
         .map(|p| {
             Ok(ParametreNeores {
-                type_parametre: rubrique_texte(&a, p, "RO_B008_R001"),
-                libelle: dans_table(&TYPES_PARAMETRE_NEORES, rubrique_de(&a, p, "RO_B008_R001")),
+                type_parametre: forme_du_retour(rubrique_de(&a, p, "RO_B008_R001"), code_ferme::<TypeDeParametreNeores>)?,
                 valeur: rubrique_texte(&a, p, "RO_B008_R002"),
                 effet: rubrique_jour(&a, p, "RO_B008_R003")?,
                 fin: rubrique_jour(&a, p, "RO_B008_R004")?,

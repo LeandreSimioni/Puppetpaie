@@ -17,8 +17,10 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, TypeDeParametreNeores};
 use socle::echec::R;
+use socle::fichiers::CheminRelatif;
+use socle::mois::Annee;
 use socle::echec::erreur;
 use socle::echec::{Classe, Echec};
 use crate::retours::{Annonce, Depot, IdDeFlux, NatureDuRetour, StatutDuRetour, Verdict};
@@ -751,15 +753,12 @@ fn lire_crm118(contenu: &[u8]) -> R<Option<Vec<Mesure118>>> {
 
 /// Un effectif qu'un compte rendu de nature 118 communique : son code, sa valeur, sa periode, le jour de son calcul.
 struct Mesure118 {
-    code: String,
+    code: TypeDeParametreNeores,
     valeur: Decimal,
     debut: Option<Jour>,
     fin: Option<Jour>,
     calcule_le: Option<socle::paris::Moment>,
 }
-
-/// Le code de l'effectif de securite sociale (art. L. 130-1 CSS), celui des seuils de cotisation.
-const A01: &str = "A01";
 
 /// Ce que `config/effectifs.json` dit de lui-meme.
 const QUOI_EFFECTIFS: &str = "Effectifs par année civile. A01 = effectif de sécurité sociale (art. L. 130-1 CSS), celui des seuils de cotisation. Ceux que l'Urssaf calcule et renvoie en compte rendu de nature 118 s'écrivent au relevé des retours ; ceux que la compagnie dit (dit_le) pour une année sans 118, par la route effectif, jusqu'à ce qu'un 118 de cette année les remplace.";
@@ -773,7 +772,7 @@ struct FichierEffectifs {
 }
 
 /// Les effectifs par annee, puis par code.
-type Annees = std::collections::BTreeMap<String, std::collections::BTreeMap<String, EffectifEcrit>>;
+type Annees = std::collections::BTreeMap<Annee, std::collections::BTreeMap<TypeDeParametreNeores, EffectifEcrit>>;
 
 /// UN EFFECTIF ECRIT : celui qu'un 118 a calcule (`calcule_le`, `source` : le jour du calcul, l'archive du compte rendu),
 /// ou celui que la compagnie a dit (`dit_le`), qu'un 118 de la meme annee remplace.
@@ -785,7 +784,7 @@ struct EffectifEcrit {
     #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
     calcule_le: Option<socle::paris::Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    source: Option<String>,
+    source: Option<CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
     dit_le: Option<Jour>,
 }
@@ -814,16 +813,16 @@ fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: 
 
 /// L'effectif de l'annee `an` est-il celui que la compagnie a dit (`dit_le`), et non celui d'un 118 ?
 pub fn effectif_dit_par_la_compagnie(racine: &Path, an: i32) -> R<bool> {
-    let an = an.to_string();
+    let an = Annee::nouvelle(i64::from(an))?;
     Ok(dits(effectifs_lus(racine)?.as_ref()).iter().any(|(a, _)| *a == an))
 }
 
 /// Les effectifs que la compagnie a dits (`dit_le`), par annee.
-fn dits(existant: Option<&FichierEffectifs>) -> Vec<(String, EffectifEcrit)> {
+fn dits(existant: Option<&FichierEffectifs>) -> Vec<(Annee, EffectifEcrit)> {
     existant
         .into_iter()
         .flat_map(|f| f.annees.iter())
-        .filter_map(|(an, c)| c.get(A01).filter(|a| a.dit_le.is_some()).map(|a| (an.clone(), a.clone())))
+        .filter_map(|(an, c)| c.get(&TypeDeParametreNeores::EffectifMoyen).filter(|a| a.dit_le.is_some()).map(|a| (*an, a.clone())))
         .collect()
 }
 
@@ -853,11 +852,11 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
         let Some(mesures) = lire_crm118(&octets)? else { continue };
         for m in mesures {
             let Some(ref_an) = m.debut.or(m.fin) else { continue };
-            let codes = annees.entry(format!("{:04}", ref_an.an)).or_default();
+            let codes = annees.entry(Annee::du_mois(ref_an.mois_civil())).or_default();
             if codes.get(&m.code).is_some_and(|deja| deja.calcule_le > m.calcule_le) {
                 continue;
             }
-            codes.insert(m.code, EffectifEcrit { valeur: m.valeur, calcule_le: m.calcule_le, source: Some(format!("retours/{}", nom)), dit_le: None });
+            codes.insert(m.code, EffectifEcrit { valeur: m.valeur, calcule_le: m.calcule_le, source: Some(CheminRelatif::sous(racine, &p)?), dit_le: None });
         }
     }
     if annees.is_empty() {
@@ -865,7 +864,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     }
     let existant = effectifs_lus(racine)?;
     for (an, dit) in dits(existant.as_ref()) {
-        annees.entry(an).or_default().entry(A01.to_string()).or_insert(dit);
+        annees.entry(an).or_default().entry(TypeDeParametreNeores::EffectifMoyen).or_insert(dit);
     }
     ecrire_effectifs(racine, existant.as_ref(), annees)
 }
@@ -877,11 +876,11 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
 pub fn poser_effectif(racine: &Path, an: i32, valeur: Decimal, le: Jour) -> R<bool> {
     let existant = effectifs_lus(racine)?;
     let mut annees: Annees = existant.iter().flat_map(|f| f.annees.clone()).collect();
-    let codes = annees.entry(an.to_string()).or_default();
-    if codes.get(A01).is_some_and(|a| a.dit_le.is_none()) {
+    let codes = annees.entry(Annee::nouvelle(i64::from(an))?).or_default();
+    if codes.get(&TypeDeParametreNeores::EffectifMoyen).is_some_and(|a| a.dit_le.is_none()) {
         return Ok(false);
     }
-    codes.insert(A01.to_string(), EffectifEcrit { valeur, calcule_le: None, source: None, dit_le: Some(le) });
+    codes.insert(TypeDeParametreNeores::EffectifMoyen, EffectifEcrit { valeur, calcule_le: None, source: None, dit_le: Some(le) });
     ecrire_effectifs(racine, existant.as_ref(), annees)?;
     Ok(true)
 }

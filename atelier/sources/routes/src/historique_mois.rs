@@ -752,9 +752,9 @@ fn neores_lu(crm: &Neores) -> Lecture {
         }
     }
     for p in &crm.parametres {
-        let quoi = match p.libelle.and_then(dit) {
-            Some(libelle) => format!("{}{}", libelle, morceau(" (", lu(&p.type_parametre), ")")),
-            None => format!("Paramètre{}", morceau(" ", lu(&p.type_parametre), "")),
+        let quoi = match p.type_parametre {
+            Some(t) => format!("{} ({})", t.libelle(), t),
+            None => "Paramètre".to_string(),
         };
         // Sans jour d'effet, la phrase ne dit pas de periode.
         let periode: String = p
@@ -768,7 +768,8 @@ fn neores_lu(crm: &Neores) -> Lecture {
         let calcul = morceau(" (calculé le ", p.calcule_le.map(|j| j.jour_de_paris().jj_mm_aaaa()).as_deref(), ")");
         l.phrases.push(format!("{}{}{}{}{}.", majuscule(&quoi), morceau(" : ", lu(&p.valeur), ""), periode, morceau(", rubrique ", lu(&p.rubrique), ""), calcul));
     }
-    if crm.parametres.iter().any(|x| lu(&x.type_parametre).is_some_and(|t| t.starts_with('A'))) {
+    // Chaque type de parametre de la table est un effectif du compte rendu 118 (`TypeDeParametreNeores`).
+    if crm.parametres.iter().any(|x| x.type_parametre.is_some()) {
         l.phrases.push("Ces effectifs sont repris d'eux-mêmes dans config/effectifs.json à chaque relevé des retours : ce sont eux qui décident des seuils de cotisation.".into());
     }
     for i in &crm.identites {
