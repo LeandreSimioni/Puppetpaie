@@ -666,7 +666,7 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
         let taux_cachet = derniere
             .into_iter()
             .flat_map(|p| p.lignes.iter())
-            .find(|l| l.rubrique.as_deref() == Some("cachet"))
+            .find(|l| l.rubrique.as_ref() == Some(&droit::catalogue::CACHET))
             .and_then(|l| l.taux);
         let taux = match taux_cachet.filter(|t| !t.is_zero()) {
             Some(t) => Some(t),
@@ -2047,7 +2047,7 @@ fn dire_les_tarifs(ctx: &Contexte, mois: Mois, p: &mut VuePaie) -> R<()> {
     for l in &p.remuneration {
         let mut tarif = None;
         for j in &jours {
-            match engagement::tarif_conventionnel(ctx, &l.rubrique, j)? {
+            match engagement::tarif_conventionnel(ctx, l.rubrique.as_str(), j)? {
                 Some(t) if t == l.taux => {
                     tarif = Some(t);
                     break;

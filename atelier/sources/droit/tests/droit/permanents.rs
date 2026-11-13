@@ -196,7 +196,7 @@ fn chaque_indemnite_a_le_code_et_le_regime_de_sa_rubrique() {
         assert_eq!(r(&rubrique).dsn_bloc52, Some(code.code), "{}", rubrique);
     }
     for (cle, regime) in &rg.regime_des_indemnites_de_rupture.par_indemnite {
-        let lue = r(&regime.rubrique);
+        let lue = r(regime.rubrique.as_str());
         assert_eq!((lue.imposable, lue.soumis), (regime.imposable, regime.soumis), "{} ({})", cle, regime.rubrique);
     }
 }

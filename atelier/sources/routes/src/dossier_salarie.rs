@@ -472,7 +472,7 @@ fn verse_par_l_ancien_logiciel(i: &engagement::importe::Importe, mois: socle::mo
             j = j.plus_jours(1).map_err(|e| e.reclasser(Classe::Illisible))?;
         }
     }
-    let Some(cachets) = p.lignes.iter().find(|l| l.rubrique.as_deref() == Some("cachet")) else { return Ok(None) };
+    let Some(cachets) = p.lignes.iter().find(|l| l.rubrique.as_ref() == Some(&droit::catalogue::CACHET)) else { return Ok(None) };
     let (Some(q), Some(t)) = (cachets.quantite, cachets.taux) else { return Ok(None) };
     let (quantite, taux) = (Some(q), Some(t));
     if dates.is_empty() {

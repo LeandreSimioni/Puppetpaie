@@ -246,19 +246,6 @@ impl CodeDeRubrique {
     }
 }
 
-impl std::ops::Deref for CodeDeRubrique {
-    type Target = str;
-    fn deref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::borrow::Borrow<str> for CodeDeRubrique {
-    fn borrow(&self) -> &str {
-        &self.0
-    }
-}
-
 impl std::fmt::Display for CodeDeRubrique {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
@@ -344,19 +331,19 @@ impl Rubrique {
         if self.source.is_empty() {
             return Err(mal_decrite(code, format!(
                 "Rubrique {} : `source` est vide. Une rubrique dit d'ou vient \
-                 sa regle, sinon personne ne pourra la verifier.", repr(code))));
+                 sa regle, sinon personne ne pourra la verifier.", repr(code.as_str()))));
         }
         if self.conges_spectacles && !self.soumis {
             return Err(mal_decrite(code, format!(
                 "Rubrique {} : `conges_spectacles` sans `soumis`. Les Conges \
                  Spectacles sont une cotisation : leur assiette ne peut pas \
-                 depasser ce qui entre dans l'assiette des cotisations.", repr(code))));
+                 depasser ce qui entre dans l'assiette des cotisations.", repr(code.as_str()))));
         }
         if self.heures_forfait.is_some() && self.unite == Unite::Heure {
             return Err(mal_decrite(code, format!(
                 "Rubrique {} : `heures_forfait` sur une rubrique dont l'unite \
                  est l'heure. Les heures y sont un fait, pas un forfait : \
-                 elles compteraient deux fois.", repr(code))));
+                 elles compteraient deux fois.", repr(code.as_str()))));
         }
         Ok(())
     }
@@ -376,7 +363,7 @@ impl Rubrique {
                  (remboursement de frais professionnels : hors du montant net social), `indemnite` (une somme \
                  versee a l'occasion du travail, exoneree ou non : dans le montant net social) ou `retenue` \
                  (acompte, avance, saisie : hors du montant net social).",
-                repr(&self.code), repr(autre.cle())))),
+                repr(self.code.as_str()), repr(autre.cle())))),
         }
     }
 
@@ -457,8 +444,8 @@ impl Rubrique {
 
 /// Le refus d'une rubrique qui ne se construit pas : la phrase, et ce qui ne va pas a part.
 #[track_caller]
-fn mal_decrite(code: &str, detail: String) -> socle::echec::Echec {
-    socle::echec::refus_avec(format!("La rubrique {} est mal décrite : le signaler au développeur.", repr(code)), Lieu { detail: Some(detail), ..Lieu::default() })
+fn mal_decrite(code: &CodeDeRubrique, detail: String) -> socle::echec::Echec {
+    socle::echec::refus_avec(format!("La rubrique {} est mal décrite : le signaler au développeur.", repr(code.as_str())),Lieu { detail: Some(detail), ..Lieu::default() })
 }
 
 /// `rubriques-base.json`, entier : ses notes, les annexes VIII et X, les rubriques livrees (chacune une fiche que la
@@ -560,7 +547,7 @@ pub fn rubrique_a_saisir(racine: &Path, code: &CodeDeRubrique, jour: &Jour) -> R
     if r.piece.is_some() {
         return Err(socle::refus!(
             "La rubrique {} ne se saisit pas : le calcul d'un contrat payé au mois la pose lui-même.",
-            repr(code)
+            repr(code.as_str())
         ));
     }
     Ok(r)
@@ -597,7 +584,7 @@ fn de_la_compagnie(racine: &Path) -> R<RubriquesDeLaCompagnie> {
 /// LA RUBRIQUE DU CALCUL, construite de ses cases (`ChampsRubrique`), sa seule construction : une case que la rubrique
 /// doit dire, ou qui ne dit pas ce que sa forme attend, se refuse en la nommant.
 fn construire(code: CodeDeRubrique, f: ChampsRubrique, origine: OrigineDeRubrique, piece: Option<Piece>) -> R<Rubrique> {
-    let faute = |cle: &str, quoi: &str| mal_decrite(&code, format!("Rubrique {} : `{}` {}.", repr(&code), cle, quoi));
+    let faute = |cle: &str, quoi: &str| mal_decrite(&code, format!("Rubrique {} : `{}` {}.", repr(code.as_str()), cle, quoi));
     fn dite<T>(c: Option<T>, cle: &str, faute: &dyn Fn(&str, &str) -> socle::echec::Echec) -> R<T> {
         c.ok_or_else(|| faute(cle, "manque"))
     }
@@ -742,7 +729,7 @@ pub fn rubrique(racine: &Path, code: &CodeDeRubrique, jour: &Jour) -> R<Rubrique
     let mut connues: Vec<&str> = cat.iter().map(|r| r.code.as_str()).collect();
     connues.sort();
     Err(socle::refus!(
-        "Rubrique inconnue : {}. Connues : {}.", repr(code), connues.join(", ")))
+        "Rubrique inconnue : {}. Connues : {}.", repr(code.as_str()), connues.join(", ")))
 }
 
 /// Le code S21.G00.54.001 de cette ligne de paie, ou `None` : `genre` de la

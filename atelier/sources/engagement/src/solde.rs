@@ -807,7 +807,7 @@ fn indemnite_de_rupture(
                     qui,
                     clauses::nom(idcc),
                     cdd
-                ), &rubrique));
+                ), rubrique.as_str()));
             }
             ouvert = true;
         }
@@ -895,7 +895,7 @@ fn indemnite_de_rupture(
                 euros(cb),
                 euros(ch),
                 euros(m_legal)
-            ), &rubrique));
+            ), rubrique.as_str()));
         }
         montant = bas;
     } else {

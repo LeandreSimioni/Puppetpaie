@@ -1211,7 +1211,7 @@ fn lignes_au_tarif(ctx: &Contexte, lignes: &[LignePaie], mois: Mois) -> R<Option
             Some(j) => j.jour(),
             None => mois.premier_jour(),
         };
-        if let Some(t) = tarif_conventionnel(ctx, l.rubrique(), &jour)? {
+        if let Some(t) = tarif_conventionnel(ctx, l.rubrique().as_str(), &jour)? {
             l.poser_taux(t)?;
             change = true;
         }

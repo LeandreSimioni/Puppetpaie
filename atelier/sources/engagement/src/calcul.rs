@@ -767,7 +767,7 @@ cette reintegration (assiette du chomage, bloc 54 de type 35) : rien n'est calcu
                 if o.frais_hors_assiette.is_empty() {
                     "aucun".to_string()
                 } else {
-                    o.frais_hors_assiette.join(", ")
+                    o.frais_hors_assiette.iter().map(droit::catalogue::CodeDeRubrique::as_str).collect::<Vec<_>>().join(", ")
                 }
             )));
         }
@@ -2091,7 +2091,7 @@ mod tests {
         let a = smic_d_une_absence(&[mois.clone(), absence.clone(), prime], smic).unwrap();
         assert_eq!((a.percue, a.habituelle), (dec_de("1000"), dec_de("2000")));
         assert_eq!(eur(mul(dec_de("11.65"), a.heures.unwrap())), dec_de("883.46"));
-        let subrogee = ligne(&droit::catalogue::RubriqueDuMois::IjssNettes.code(),"300", "0", false, false, false);
+        let subrogee = ligne(droit::catalogue::RubriqueDuMois::IjssNettes.code().as_str(),"300", "0", false, false, false);
         assert_eq!(smic_d_une_absence(&[mois.clone(), absence.clone(), subrogee], smic).unwrap().percue, dec_de("1000"));
         let maintien = ligne("maintien_salaire", "1000", "0", false, true, true);
         let entier = smic_d_une_absence(&[mois.clone(), absence, maintien], smic).unwrap();
