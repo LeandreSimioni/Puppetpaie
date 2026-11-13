@@ -347,7 +347,7 @@ impl Regex {
 
 /// La table des formats de cette version de la norme.
 pub fn table_de(norme: &Norme) -> R<Arc<Table>> {
-    crate::norme::livree(&norme.table_formats()?)
+    crate::norme::livree(norme.table_formats()?.texte())
 }
 
 /// Une table des formats (`formats-dsn-base.json`, `formats-dsn-p27v01-base.json`).
@@ -396,7 +396,7 @@ pub fn format_de(rubrique: RubriqueDeLaNorme) -> R<Option<Format>> {
 }
 
 fn expressions(norme: &Norme, rubrique: RubriqueDeLaNorme) -> R<Arc<Vec<Regex>>> {
-    static CACHE: OnceLock<Mutex<HashMap<(String, RubriqueDeLaNorme), Arc<Vec<Regex>>>>> = OnceLock::new();
+    static CACHE: OnceLock<Mutex<HashMap<(socle::fichiers::NomDeFichier, RubriqueDeLaNorme), Arc<Vec<Regex>>>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let cle = (norme.table_formats()?, rubrique);
     if let Some(e) = cache.lock().unwrap().get(&cle) {
@@ -557,7 +557,7 @@ pub fn verifier_fichier(texte: &str) -> R<()> {
     }
     Err(refus_avec(
         format!("Valeur(s) qui ne suivent pas le format de la norme :\n{}\n  Formats du cahier technique NEODeS.{}", dites.join("\n"), trou),
-        Lieu { fichier: Some(norme.table_formats()?), ..Lieu::default() },
+        Lieu { fichier: Some(norme.table_formats()?.to_string()), ..Lieu::default() },
     ))
 }
 

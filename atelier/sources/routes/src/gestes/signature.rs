@@ -29,7 +29,7 @@ use envois::courriel::Courriel;
 use envois::envoi::{self, Message};
 use socle::echec::{erreur, R};
 use socle::echec::Echec;
-use socle::fichiers::nom_du;
+use socle::fichiers::NomDeFichier;
 use socle::html::{html_echapper, mailto};
 use socle::texte::capitaliser;
 use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
@@ -342,7 +342,7 @@ fn entree_du_contrat(ctx: &Contexte, p: &Paie, cle: &IdSalarie, pdf: &std::path:
         debut: p.engagement.debut,
         fin: p.engagement.fin,
         numero: p.engagement.numero.clone(),
-        fichier: nom_du(pdf),
+        fichier: NomDeFichier::du(pdf)?,
         spectacle: Some(titre.to_string()),
         mois,
         acte: None,
@@ -377,9 +377,9 @@ fn modeles_figes(ctx: &Contexte, ps: &[Paie]) -> R<(Vec<documents::contrat_ecrit
 
 /// Le nom du PDF des contrats d'un salarie : `Contrat_<cle>_<numero>_<mois>.pdf`, `Contrats_..._<n1>+<n2>_...` quand il en
 /// porte plusieurs (une page par contrat).
-fn nom_du_pdf(cle: &IdSalarie, ps: &[Paie], etiq: &str, suffixe: &str) -> String {
+fn nom_du_pdf(cle: &IdSalarie, ps: &[Paie], etiq: &str, suffixe: &str) -> R<NomDeFichier> {
     let numeros: Vec<String> = ps.iter().map(|p| numero_de_fichier(p.engagement.numero.as_deref())).collect();
-    format!("Contrat{}_{}_{}_{}{}.pdf", if ps.len() > 1 { "s" } else { "" }, cle, numeros.join("+"), etiq, suffixe)
+    NomDeFichier::lire(&format!("Contrat{}_{}_{}_{}{}.pdf", if ps.len() > 1 { "s" } else { "" }, cle, numeros.join("+"), etiq, suffixe))
 }
 
 // ------------------------------------------------------------------ contrats-imprimer
@@ -431,7 +431,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
     let ent = documents::avenant::ent_du_mois(ctx, s_mois);
     let (mut fichiers, mut contrats) = (Vec::new(), Vec::new());
     for (cle, ps, _) in &par_salarie {
-        let pdf = dossier.join(nom_du_pdf(cle, ps, &etiq, ""));
+        let pdf = dossier.join(nom_du_pdf(cle, ps, &etiq, "")?);
         let (modeles, figes) = modeles_figes(ctx, ps)?;
         documents::contrat::ecrire_contrat(ctx, ps, &modeles, &ent, &pdf, &[])?;
         fichiers.push(pdf.to_string_lossy().into_owned());
@@ -450,6 +450,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
     }
     let pdfs: Vec<std::path::PathBuf> = fichiers.iter().map(std::path::PathBuf::from).collect();
     let impression = reunir_pour_imprimer(&dossier, "contrats", &etiq, &pdfs)?;
+    let nom_impression = NomDeFichier::du(&impression)?;
     let le_mois = Some(mois);
     if !contrats.is_empty() {
         let detail = DetailSignature { contrats: contrats.clone(), main_propre: true, expediteur: None, relance: None, acte: None, partis: None, echec_a: None };
@@ -466,7 +467,7 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, mois: Mois, choisis: Option<&Cho
         );
         noter(ctx, Ligne::ContratSignature(par_courriel(le_mois, qui, true, "", &reponse, detail, Some(versions))))?;
     }
-    Ok(Impression { fichiers, impression: nom_du(&impression), chemin: impression.to_string_lossy().into_owned(), contrats, avenants: lignes_avenants })
+    Ok(Impression { fichiers, impression: nom_impression.into(), chemin: impression.to_string_lossy().into_owned(), contrats, avenants: lignes_avenants })
 }
 
 // ------------------------------------------------------------------ demander-signature
@@ -541,7 +542,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, d: &DemandeDeSignature, client:
         let adresse = exige(&sal.email, "email")?.trim().to_lowercase();
         let code = code_signature()?;
         // Le contrat qui en remplace un autre porte son propre nom : le PDF parti avant lui reste sur le disque.
-        let pdf = dossier.join(nom_du_pdf(cle, ps, &etiq, if remplace { "_remplace" } else { "" }));
+        let pdf = dossier.join(nom_du_pdf(cle, ps, &etiq, if remplace { "_remplace" } else { "" })?);
         let (modeles, figes) = modeles_figes(ctx, ps)?;
         documents::contrat::ecrire_contrat(ctx, ps, &modeles, &ent, &pdf, &remplacements)?;
         // Le PDF tel qu'il part : son exemplaire contresigne commencera par ces octets-la (`depart::contresigner`).
@@ -829,7 +830,7 @@ pub(crate) struct ContratSigneDit {
 
 /// Ce dossier, dit (`ContratSigneDit`).
 pub(crate) fn contrat_signe_dit(ctx: &Contexte, cle: &IdSalarie, debut: Jour) -> R<ContratSigneDit> {
-    let deposes: Vec<String> = contrat_signe_depose(&ctx.racine, cle, debut)?.iter().map(|p| nom_du(p)).collect();
+    let deposes: Vec<String> = contrat_signe_depose(&ctx.racine, cle, debut)?.iter().map(|p| NomDeFichier::du(p).map(String::from)).collect::<R<_>>()?;
     let qui = ctx.nomme(cle);
     let phrase = if deposes.is_empty() {
         format!("Le contrat de {} a été signé hors de PuppetPaie : son PDF, déposé dans son dossier, part joint à chaque avenant. Le dossier est vide.", qui)
@@ -863,7 +864,7 @@ pub struct UnAvenant {
 /// deja parti, que le journal dit.
 #[derive(Debug, Clone)]
 pub struct Repris {
-    pub fichier: String,
+    pub fichier: NomDeFichier,
     pub deja: DejaParti,
 }
 
@@ -964,10 +965,10 @@ fn avenant_ecrit(
     let pdf = match &a.repris {
         Some(Repris { fichier, .. }) => {
             let f = dossier.join(fichier);
-            if fichier.is_empty() || !f.is_file() {
+            if !f.is_file() {
                 return Err(socle::echec::refus_avec(
                     format!("L'avenant n° {} de {} n'est plus dans les envois de son mois : il ne repart pas tel quel. Rien n'est parti.", a.numero, salarie),
-                    socle::echec::Lieu { chemin: Some(dossier.to_string_lossy().into_owned()), fichier: Some(fichier.clone()), ..Default::default() },
+                    socle::echec::Lieu { chemin: Some(dossier.to_string_lossy().into_owned()), fichier: Some(fichier.to_string()), ..Default::default() },
                 )
                 .reclasser(Classe::Refuse));
             }
@@ -993,7 +994,7 @@ fn avenant_ecrit(
         debut: a.debut,
         fin: p.engagement.fin,
         numero: a.contrat.clone(),
-        fichier: nom_du(&pdf),
+        fichier: NomDeFichier::du(&pdf)?,
         spectacle: Some(p.titre()?),
         mois: a.mois,
         acte: Some("avenant".into()),

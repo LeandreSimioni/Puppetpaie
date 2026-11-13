@@ -27,7 +27,7 @@ use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
 use envois::journal;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
-use socle::fichiers::{nom_du, repr};
+use socle::fichiers::{repr, NomDeFichier};
 use socle::html::courriel_en_html;
 use crate::catalogue::{Ecran, Place};
 
@@ -590,7 +590,7 @@ fn exporter(ctx: &Contexte, c: &ChargeExporter) -> R<EtatExporte> {
     // (le titre, les fichiers ecrits, ses avertissements, ses donnees personnelles, ses totaux partiels, la boite posee)
     let (etat, titre, ecrits, avertissements, personnelles, partiels, boite_liee) = match exporter_objet(ctx, c)? {
         Exporte::Casc(r) => {
-            let (periode, ecrits, avertissements, boite_liee) = (r.periode.clone(), r.fichiers.iter().map(|f| nom_du(std::path::Path::new(f))).collect::<Vec<_>>(), r.avertissements.clone(), r.boite_liee);
+            let (periode, ecrits, avertissements, boite_liee) = (r.periode.clone(), r.fichiers.iter().map(|f| NomDeFichier::du(std::path::Path::new(f)).map(String::from)).collect::<R<Vec<_>>>()?, r.avertissements.clone(), r.boite_liee);
             (EtatRendu::Casc(r), periode, ecrits, avertissements, false, Vec::new(), boite_liee)
         }
         Exporte::Livre(l) => {
@@ -761,7 +761,7 @@ fn adresses_de(ctx: &Contexte, cles: &[droit::contexte::IdSalarie]) -> R<Vec<Str
 /// Envoie a chaque salarie SON dossier, par la boite de la compagnie.
 /// Irreversible : la meme preuve que les pieces du mois, le meme journal. Un dossier `ensemble` ne part a personne.
 fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: &Preuve, qui: &str, ouvrir: Ouvrir) -> R<DossierEnvoye> {
-    if d.fichiers.iter().any(|f| nom_du(f).starts_with("Dossiers_")) {
+    if d.fichiers.iter().map(|f| NomDeFichier::du(f)).collect::<R<Vec<_>>>()?.iter().any(|n| n.texte().starts_with("Dossiers_")) {
         return Err(refus(
             "Un dossier qui réunit tous les salariés ne s'envoie à personne : il porte la paie de chacun. Refaire un fichier par salarié.",
         ));
@@ -813,7 +813,12 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
     let detail = journal::DetailDossier {
         periode: d.periode.clone(),
         categories: d.categories.iter().map(|c| c.to_string()).collect(),
-        salaries: d.salaries.iter().zip(&messages).map(|(cle, m)| journal::DossierServi { cle: cle.clone(), piece: m.pieces.first().map(|p| nom_du(p)) }).collect(),
+        salaries: d
+            .salaries
+            .iter()
+            .zip(&messages)
+            .map(|(cle, m)| Ok(journal::DossierServi { cle: cle.clone(), piece: m.pieces.first().map(|p| NomDeFichier::du(p)).transpose()? }))
+            .collect::<R<Vec<_>>>()?,
         expediteur: expediteur.clone(),
         partis: None,
         echec_a: None,
@@ -841,7 +846,7 @@ fn actes_du_journal(ctx: &Contexte) -> R<Vec<documents::etats_personnel::ActeDuJ
             mois: l.mois(),
             mode: l.mode().nom().to_string(),
             accepte: l.accepte(),
-            fichier: l.fichier().map(str::to_string),
+            fichier: l.fichier().cloned(),
             destinataire: l.destinataire().to_string(),
             reponse: l.reponse().to_string(),
             origine: l.origine().to_string(),
@@ -955,11 +960,11 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     std::fs::create_dir_all(&garde).map_err(|e| socle::echec::du_disque(&garde, &e).reclasser(Classe::Disque))?;
     let iso = socle::paris::ecrit::seconde::texte(socle::temps::secondes());
     let horodate = format!("{}_{}{}{}", &iso[..10], &iso[11..13], &iso[14..16], &iso[17..19]);
-    let mut emls: Vec<String> = Vec::new();
+    let mut emls: Vec<NomDeFichier> = Vec::new();
     for (m, brut) in messages.iter().zip(&copies) {
         let p = garde.join(format!("{}_CASC-SVP_{}.eml", horodate, m.pour));
         std::fs::write(&p, brut).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
-        emls.push(nom_du(&p));
+        emls.push(NomDeFichier::du(&p)?);
     }
     detail.eml = emls.clone();
     noter(ctx, journal::Ligne::RegularisationCasc(par_courriel(None, qui, true, &partis.join(", "), &format!("{} courriel(s) envoye(s)", partis.len()), detail, None)))?;
@@ -993,7 +998,7 @@ struct CascEnvoyee {
     periode: String,
     total: String,
     annees: Vec<RegularisationNotee>,
-    eml: Vec<String>,
+    eml: Vec<NomDeFichier>,
     dossier: String,
 }
 

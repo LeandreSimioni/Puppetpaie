@@ -11,6 +11,7 @@
 
 use socle::date::Jour;
 use socle::echec::{refus_avec, Lieu, R};
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use crate::usages::{lignes, rubrique_valeur};
 use droit::natures::{ListeDeLaNorme, RubriqueDeLaNorme, VersionDeLaNorme};
@@ -54,9 +55,9 @@ struct Version {
     /// Les jours de constitution d'un signalement en cette version.
     signalements: Plage<Jour>,
     /// La table des usages (un fichier de `logiciel/donnees/`).
-    usages: String,
+    usages: NomDeFichier,
     /// La table des formats.
-    formats: String,
+    formats: NomDeFichier,
     /// Les rubriques que le tableau des usages admet et que la description dit « a ne pas renseigner ».
     rubriques_a_ne_pas_renseigner: Option<ANePasRenseigner>,
     /// Les regles d'ecriture que la version ajoute a la precedente : le nom de la regle, le texte qui la porte.
@@ -193,12 +194,12 @@ impl Norme {
     }
 
     /// La table des usages de cette version (un fichier de `logiciel/donnees/`).
-    pub fn table_usages(&self) -> R<String> {
+    pub fn table_usages(&self) -> R<NomDeFichier> {
         self.entree(|e| e.usages.clone())
     }
 
     /// La table des formats de cette version.
-    pub fn table_formats(&self) -> R<String> {
+    pub fn table_formats(&self) -> R<NomDeFichier> {
         self.entree(|e| e.formats.clone())
     }
 
@@ -376,6 +377,6 @@ pub fn verifier_les_valeurs(texte: &str, norme: &Norme) -> R<()> {
             norme.version,
             refus.join("\n")
         ),
-        Lieu { fichier: Some(norme.table_formats()?), cle: Some("valeurs".to_string()), ..Lieu::default() },
+        Lieu { fichier: Some(norme.table_formats()?.to_string()), cle: Some("valeurs".to_string()), ..Lieu::default() },
     ))
 }

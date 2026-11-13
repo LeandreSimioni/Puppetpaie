@@ -59,7 +59,7 @@ pub fn refuser_si_partie(racine: &Path, cible: &Path) -> R<()> {
             Classe::Refuse,
             format!(
                 "{} est parti le {} : ce qui est parti ne se réécrit pas. Rien n'est écrit.",
-                socle::fichiers::nom_du(cible),
+                socle::fichiers::NomDeFichier::du(cible)?,
                 le.jj_mm_aaaa()
             ),
         )),

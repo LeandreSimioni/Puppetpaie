@@ -12,6 +12,7 @@ use droit::contexte::IdSalarie;
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 
 /// Le mode d'un envoi : reel (il engage), ou test (un depot de test, qui ne conserve rien).
@@ -96,7 +97,7 @@ pub struct Envoi<D, R> {
     pub(crate) origine: String,
     pub mois: Option<Mois>,
     /// Le nom du fichier parti, sans son dossier.
-    pub fichier: Option<String>,
+    pub fichier: Option<NomDeFichier>,
     pub empreinte: Option<String>,
     pub mode: Mode,
     pub qui: String,
@@ -168,8 +169,8 @@ impl Ligne {
         commun!(self, e => e.mois)
     }
 
-    pub fn fichier(&self) -> Option<&str> {
-        commun!(self, e => e.fichier.as_deref())
+    pub fn fichier(&self) -> Option<&NomDeFichier> {
+        commun!(self, e => e.fichier.as_ref())
     }
 
     pub fn empreinte(&self) -> Option<&str> {
@@ -351,7 +352,7 @@ pub struct DetailDsn {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verdict_connu: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub pieces: Option<Vec<String>>,
+    pub pieces: Option<Vec<NomDeFichier>>,
 }
 
 impl DetailDsn {
@@ -546,7 +547,7 @@ pub struct Durees {
 pub struct Servi {
     pub cle: IdSalarie,
     pub nom: Option<String>,
-    pub pieces: Vec<String>,
+    pub pieces: Vec<NomDeFichier>,
     pub resume: Option<crate::envoi::ResumeDePaie>,
     pub renvoi: bool,
 }
@@ -578,7 +579,7 @@ pub struct ContratParti {
     pub debut: socle::date::Jour,
     pub fin: Option<socle::date::Jour>,
     pub numero: Option<NumeroContrat>,
-    pub fichier: String,
+    pub fichier: NomDeFichier,
     pub spectacle: Option<String>,
     pub mois: Mois,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -688,7 +689,7 @@ pub struct RetourContrat {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preuve: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fichier_signe: Option<String>,
+    pub fichier_signe: Option<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mention: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -712,7 +713,7 @@ pub struct AvenantParti {
     pub numero: Option<i64>,
     pub quand: socle::paris::InstantOuJour,
     pub mois: Mois,
-    pub fichier: String,
+    pub fichier: NomDeFichier,
     pub code: Option<String>,
     pub contrat: Option<NumeroContrat>,
     pub effet: Option<socle::date::Jour>,
@@ -731,7 +732,7 @@ pub struct ContratAttendu {
     pub fin: Option<socle::date::Jour>,
     pub numero: Option<NumeroContrat>,
     pub spectacle: Option<String>,
-    pub fichier: String,
+    pub fichier: NomDeFichier,
     pub avenant: Option<i64>,
     pub mois: Mois,
 }
@@ -745,7 +746,7 @@ pub struct DetailContresigne {
     pub nom: String,
     pub code: String,
     pub contrats: Vec<ContratAttendu>,
-    pub fichiers: Vec<String>,
+    pub fichiers: Vec<NomDeFichier>,
 }
 
 /// Une annee de la regularisation CASC-SVP : son montant, et le jour du virement.
@@ -766,7 +767,7 @@ pub struct DetailCasc {
     pub mois: Vec<Mois>,
     pub total: rust_decimal::Decimal,
     pub expediteur: String,
-    pub eml: Vec<String>,
+    pub eml: Vec<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub partis: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -778,7 +779,7 @@ pub struct DetailCasc {
 #[serde(deny_unknown_fields)]
 pub struct DossierServi {
     pub cle: IdSalarie,
-    pub piece: Option<String>,
+    pub piece: Option<NomDeFichier>,
 }
 
 /// LE DETAIL DE L'ENVOI DU DOSSIER AUX SALARIES : la periode, ce qu'il porte, qui l'a recu.

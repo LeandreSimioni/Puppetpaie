@@ -530,8 +530,8 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
     if l.nature_dsn().is_some_and(|n| n != droit::nature_declaration::NatureDeLaDeclaration::Mensuelle) {
         return Ok(None);
     }
-    let (Some(mois), Some(fichier)) = (l.mois(), l.fichier().filter(|f| !f.is_empty()).map(String::from)) else { return Ok(None) };
-    let chemin = if Path::new(&fichier).is_absolute() { PathBuf::from(&fichier) } else { ctx.racine.join("sorties").join(mois.to_string()).join(&fichier) };
+    let (Some(mois), Some(fichier)) = (l.mois(), l.fichier()) else { return Ok(None) };
+    let chemin = ctx.racine.join("sorties").join(mois.to_string()).join(fichier);
     // Un fichier depose qui n'est plus la n'appelle pas d'attestation jouee.
     let octets = match std::fs::read(&chemin) {
         Ok(o) => o,

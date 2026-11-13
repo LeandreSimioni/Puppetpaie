@@ -44,10 +44,7 @@ pub fn bulletins_repris(racine: &Path, mois: Mois) -> R<Vec<BulletinRepris>> {
         if p.mois != mois {
             continue;
         }
-        let Some(fichier) = p.paie.bulletin.as_ref().map(|b| b.fichier.trim().to_string()) else { continue };
-        if fichier.is_empty() || fichier.contains(['/', '\\']) || fichier.contains("..") {
-            continue;
-        }
+        let Some(fichier) = p.paie.bulletin.as_ref().map(|b| &b.fichier) else { continue };
         let chemin = format!("historique/bulletins/{}", fichier);
         if !racine.join(&chemin).is_file() || out.iter().any(|x| x.chemin == chemin) {
             continue;

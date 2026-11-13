@@ -539,7 +539,7 @@ struct FichierTableau<'a> {
     sources: &'a [String],
     donnees_personnelles: bool,
     format: &'a str,
-    fichier: Option<&'a str>,
+    fichier: Option<&'a socle::fichiers::NomDeFichier>,
 }
 
 /// Le tableau en JSON indente d'une espace.

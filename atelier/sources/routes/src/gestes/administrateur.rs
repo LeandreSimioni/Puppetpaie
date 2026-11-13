@@ -630,7 +630,7 @@ fn etape_du_fichier(ctx: &Contexte, lignes: &[envois::journal::Ligne], chemin: &
             return Ok(Some(Etape::PaieChangee));
         }
     }
-    let nom = chemin.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| erreur(Classe::DefautDuLogiciel, "Défaut du logiciel : un fichier écrit sans nom."))?;
+    let nom = socle::fichiers::NomDeFichier::du(chemin)?;
     let r = etats::repetition(lignes, envois::journal::Acte::Dsn, &empreinte, &nom);
     Ok(Some(match r.etat {
         etats::EtatDuTest::Ecrite => Etape::ATester,
@@ -785,7 +785,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
         // Le depot reel de ce contenu est deja note : le rappel se taira au prochain releve.
         let Some(etape) = etape_du_fichier(ctx, lignes, &f, mensuelle)? else { return Ok(None) };
         let octets = std::fs::read(&f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::du_disque(&e)))?;
-        let reel_code = declarations::dsn_lue::lire(&octets, "")?.reel();
+        let reel_code = declarations::dsn_lue::lire(&octets, None)?.reel();
         d.pret = Pret { test: etape == Etape::ATester, reel: etape == Etape::Testee && reel_code };
         d.fichier = Some(f.to_string_lossy().into_owned());
         d.etape = Some(etape);

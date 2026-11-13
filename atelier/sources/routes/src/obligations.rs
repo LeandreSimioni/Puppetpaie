@@ -1184,14 +1184,14 @@ fn fctu_depose(journal: &[envois::journal::Ligne], cle: &IdSalarie, fin: &Jour) 
         .filter(|l| l.accepte())
         // Un signalement refuse au bilan n'est pas recu (cahier technique DSN, `norme-dsn/texte/chapitre-4-controles.txt` §4.2) : il reste du.
         .filter(|l| !envois::etats::refuse_par_un_retour(l))
-        .filter(|l| evenement_de(l) == Some(*fin) && l.fichier().is_some_and(|f| f.to_uppercase() == nom))
+        .filter(|l| evenement_de(l) == Some(*fin) && l.fichier().is_some_and(|f| f.texte().to_uppercase() == nom))
         .min_by_key(|l| l.quand());
     let Some(l) = premier else { return Ok(None) };
     let le = l.quand().jour();
     Ok(Some(Fait {
         le,
         comment: "déposé sur net-entreprises ; le bilan dit s'il est accepté".into(),
-        dit: FaitDit::Depose(DepotFait { quand: l.quand(), fichier: l.fichier().map(str::to_string), ordre: None, flux: Some(l.flux().to_string()), comment: "depot", le }),
+        dit: FaitDit::Depose(DepotFait { quand: l.quand(), fichier: l.fichier().map(|f| f.to_string()), ordre: None, flux: Some(l.flux().to_string()), comment: "depot", le }),
     }))
 }
 

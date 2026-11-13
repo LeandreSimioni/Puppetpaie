@@ -59,6 +59,7 @@ use droit::fiche::{CaseDeFiche, CaseSalarie, CaseSpectacle, NomDeCase, NomDeFich
 use engagement::importe::EmploiImprime;
 use socle::date::Jour;
 use socle::echec::R;
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::echec::erreur;
 use crate::importation::completer as completer;
@@ -531,7 +532,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
         if f.sorte == Sorte::Dsn {
             let mut n = 0usize;
             let mut nouveaux = 0usize;
-            for x in ap.paies.iter().filter(|x| x.paie.fichier.as_deref() == Some(nom.as_str())) {
+            for x in ap.paies.iter().filter(|x| x.paie.fichier.as_ref().map(NomDeFichier::texte) == Some(nom.as_str())) {
                 n += 1;
                 if !hist_par_cle.contains_key(&x.cle()) {
                     nouveaux += 1;
@@ -549,7 +550,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
             });
         } else {
             let (mut n, mut nouveaux, mut sans) = (0usize, 0usize, 0usize);
-            for c in ap.contrats.iter().filter(|c| &c.fichier == nom) {
+            for c in ap.contrats.iter().filter(|c| c.fichier.texte() == nom) {
                 n += 1;
                 if !par_nir.contains_key(&c.nir) && !nirs_dsn.contains(&c.nir) && !a_venir.contains(&c.nir) {
                     sans += 1;
@@ -1003,7 +1004,7 @@ fn trier_et_lire(ctx: &Contexte, dossier: &Path, travail: &Path, deposes: &HashM
                     }
                 };
                 let mut paie = PaieVersee::vide(contrat, Declaration::Bulletin);
-                (paie.nir, paie.debut, paie.fin, paie.fichier) = (Some(l.nir.clone()), Some(l.b.debut), Some(l.b.fin), Some(copie.clone()));
+                (paie.nir, paie.debut, paie.fin, paie.fichier) = (Some(l.nir.clone()), Some(l.b.debut), Some(l.b.fin), Some(NomDeFichier::lire(&copie)?));
                 let x = PaieLue { mois: l.mois, salarie: salarie.clone(), paie };
                 let avant = hist_par_cle.get(&x.cle()).cloned();
                 (x, "bulletin", avant)
@@ -1989,7 +1990,7 @@ fn completer(ligne: &mut PaieVersee, b: &BulletinLu, chemin: &str, page: usize, 
     if dit_quelque_chose(&imprime) {
         ligne.emploi_imprime = Some(imprime);
     }
-    ligne.bulletin = Some(BulletinSource { fichier: chemin.to_string(), page: page as u64, logiciel: b.logiciel.clone(), numero: b.numero.clone(), contrat: b.contrat.clone() });
+    ligne.bulletin = Some(BulletinSource { fichier: NomDeFichier::lire(chemin)?, page: page as u64, logiciel: b.logiciel.clone(), numero: b.numero.clone(), contrat: b.contrat.clone() });
     Ok(ecarts)
 }
 
@@ -2040,7 +2041,7 @@ fn engagement(l: &Lu, c: &Compteurs, salarie: &Option<IdSalarie>, chemin: &str) 
     a.numero_bulletin = plein(&l.b.numero);
     // Le numero du contrat, quand le bulletin l'imprime : il se lit, il ne se tire pas (regle 4).
     a.numero_contrat = plein(&l.b.contrat);
-    (a.fichier, a.page) = (Some(chemin.to_string()), Some(l.page as u64));
+    (a.fichier, a.page) = (Some(NomDeFichier::lire(chemin)?), Some(l.page as u64));
     Ok((compte, ContratLu { salarie: salarie.clone(), debut: Some(debut), fin: Some(fin), numero: None, contrat: a }))
 }
 
@@ -2187,7 +2188,7 @@ fn contrat_de_l_aem(a: &import::aem_lu::Aem, salarie: Option<IdSalarie>, copie: 
     c.numero_objet = plein(&a.numero_objet);
     (c.heures, c.cachets, c.jours, c.brut) = (heures, cachets, jours, Some(brut));
     c.numero_attestation = plein(&a.numero);
-    (c.fichier, c.page) = (Some(copie.to_string()), Some(a.page as u64));
+    (c.fichier, c.page) = (Some(NomDeFichier::lire(copie)?), Some(a.page as u64));
     let ligne = ContratLu { salarie, debut: Some(debut), fin: Some(fin), numero: None, contrat: c };
     Ok((ligne, if quoi.is_empty() { "aucune heure, aucun cachet, aucun jour".into() } else { quoi.join(", ") }))
 }
@@ -2227,7 +2228,7 @@ fn contrat_du_certificat(c: &import::certificat_lu::Certificat, statut: Option<&
     a.numero_certificat = c.numero.clone();
     a.base_conge = c.base_conge;
     a.atteste_le = c.signe_le;
-    (a.fichier, a.page) = (Some(copie.to_string()), Some(c.page as u64));
+    (a.fichier, a.page) = (Some(NomDeFichier::lire(copie)?), Some(c.page as u64));
     Ok((ContratLu { salarie, debut: Some(debut), fin: Some(fin), numero: None, contrat: a }, quoi))
 }
 

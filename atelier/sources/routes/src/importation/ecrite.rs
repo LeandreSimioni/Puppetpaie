@@ -50,7 +50,7 @@ fn en_os(e: &std::io::Error, p: &Path) -> Echec {
 /// `historique/bulletins/`, ou qu'est la compagnie. `None` : un mois que l'import n'a pas retenu ; un fichier retenu
 /// introuvable refuse.
 pub(crate) fn dsn_importee(ctx: &Contexte, mois: Mois) -> R<Option<PathBuf>> {
-    let fichiers: Vec<String> = engagement::importe::paies_lues(&ctx.racine)?
+    let fichiers: Vec<socle::fichiers::NomDeFichier> = engagement::importe::paies_lues(&ctx.racine)?
         .into_iter()
         .filter(|x| x.mois == mois && x.paie.declare_par == Declaration::Dsn)
         .filter_map(|x| x.paie.fichier)
@@ -60,7 +60,7 @@ pub(crate) fn dsn_importee(ctx: &Contexte, mois: Mois) -> R<Option<PathBuf>> {
     if chemin.exists() {
         return Ok(Some(chemin));
     }
-    let a_part = socle::echec::Lieu { fichier: Some(nom.clone()), ..Default::default() };
+    let a_part = socle::echec::Lieu { fichier: Some(nom.to_string()), ..Default::default() };
     Err(socle::echec::refus_avec(format!("La DSN de {} a été importée, mais son fichier n'est plus dans l'historique de la compagnie.", mois), a_part))
 }
 

@@ -152,7 +152,7 @@ pub fn deposer_dsn(
         let mut client = Client::dsn(ctx, environnement, d.motdepasse.clone()).map_err(Panne::en_echec)?;
         client.authentifier().map_err(Panne::en_echec)?;
         // La verification est refaite ici : la derniere porte avant le reseau.
-        depot::verifier(&declarations::dsn_lue::lire(d.octets, "")?, d.reel, true)?;
+        depot::verifier(&declarations::dsn_lue::lire(d.octets, None)?, d.reel, true)?;
         let mut contenu = d.octets.to_vec();
         if !d.reel {
             contenu = depot::basculer_dsn(&contenu)?;

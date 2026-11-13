@@ -802,7 +802,7 @@ pub fn fictives_de_reference(depot: &Path) -> R<Vec<(String, PathBuf)>> {
     let Some(entrees) = socle::fichiers::entrees(&dossier)? else {
         return Err(au_chemin("Les fictives de référence manquent : leur dossier n'existe pas.", &dossier));
     };
-    Ok(entrees.into_iter().filter(|p| p.join(GESTES).is_file()).map(|p| (socle::fichiers::nom_du(&p), p)).collect())
+    entrees.into_iter().filter(|p| p.join(GESTES).is_file()).map(|p| Ok((socle::fichiers::NomDeFichier::du(&p)?.into(), p))).collect()
 }
 
 /// Ce qu'une fictive livree ne porte pas de son rejeu : le marqueur (reecrit), les incidents du rejeu, les caches.

@@ -20,6 +20,7 @@ use engagement::numeros::NumeroContrat;
 
 use socle::date::Jour;
 use socle::echec::{erreur, refus, Classe, Echec, R};
+use socle::fichiers::NomDeFichier;
 use socle::mois::{Mois, MoisOuJour};
 use socle::num::Decimal;
 use socle::texte::{blanc, lignes_du_texte, texte_latin1};
@@ -507,7 +508,8 @@ pub struct DsnLue {
     pub remplace: Option<String>,
     /// Le jour de constitution de l'envoi (S20.G00.05.007).
     pub depot: Option<Jour>,
-    pub fichier: String,
+    /// Le nom du fichier lu ; aucun pour une DSN lue de ses seuls octets.
+    pub fichier: Option<NomDeFichier>,
     /// Les lignes du fichier.
     pub lignes: usize,
     /// Le montant de chaque versement a un organisme (S21.G00.20.005), dans l'ordre.
@@ -917,21 +919,15 @@ pub fn lire_une_dsn(chemin: &Path) -> R<Option<DsnLue>> {
     if !est_une_dsn(&octets) {
         return Ok(None);
     }
-    let nom = chemin.file_name().ok_or_else(|| {
-        socle::echec::refus_avec(
-            "Ce chemin n'est pas un fichier : le signaler au développeur.",
-            socle::echec::Lieu { chemin: Some(chemin.to_string_lossy().into_owned()), ..socle::echec::Lieu::default() },
-        )
-    })?;
-    lire(&octets, &nom.to_string_lossy()).map(Some)
+    lire(&octets, Some(&NomDeFichier::du(chemin)?)).map(Some)
 }
 
-/// UNE DSN, LUE (`fichier` : son nom), un signalement sans mois principal compris. Une valeur qui n'est pas ce que sa
+/// UNE DSN, LUE (`fichier` : son nom, aucun pour des octets sans fichier), un signalement sans mois principal compris. Une valeur qui n'est pas ce que sa
 /// rubrique dit (un montant, une date), ou une ligne qui n'est pas une
 /// rubrique, refuse : rien ne se devine (regle 1). La rubrique se controle au tableau des usages de la version que le
 /// fichier declare (S10.G00.00.006, `usages-dsn-base.json`) ; une version que le logiciel ne livre pas (une DSN d'avant
 /// 2026) ne se controle que par la forme de ses rubriques (`RubriqueDeLaNorme::lue`).
-pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
+pub fn lire(octets: &[u8], fichier: Option<&NomDeFichier>) -> R<DsnLue> {
     let contenu = texte_latin1(octets);
     // L'indicateur d'ordre des octets d'UTF-8, lu en latin-1, n'est pas une rubrique.
     let lignes = lignes_du_texte(contenu.trim_start_matches("\u{ef}\u{bb}\u{bf}"));
@@ -1340,7 +1336,7 @@ pub fn lire(octets: &[u8], fichier: &str) -> R<DsnLue> {
         ordre,
         remplace,
         depot,
-        fichier: fichier.to_string(),
+        fichier: fichier.cloned(),
         lignes: lignes.len(),
         versements_organismes,
         entreprise: e,
@@ -1371,14 +1367,14 @@ mod tests {
                  S21.G00.53.001,'01'\nS21.G00.53.002,'2'\nS21.G00.53.003,'37'\n\
                  S21.G00.51.001,'01072026'\nS21.G00.51.010,'FA1.26.13'\nS21.G00.51.011,'001'\nS21.G00.51.013,'30.00'\n\
                  S21.G00.53.001,'01'\nS21.G00.53.002,'1'\nS21.G00.53.003,'37'\n";
-        let d = lire(f.as_bytes(), "essai.dsn").unwrap();
+        let d = lire(f.as_bytes(), None).unwrap();
         let numero = NumeroContrat::lire("FA1.26.13").unwrap();
         let (mois, rappel) = (d.mesures(Some("1850"), &numero, false), d.mesures(Some("1850"), &numero, true));
         assert_eq!((socle::num::q2(mois.brut.unwrap()), mois.cachets.normalize().to_string(), mois.remunere), ("200.00".to_string(), "2".to_string(), true));
         assert_eq!((socle::num::q2(rappel.brut.unwrap()), rappel.cachets.normalize().to_string()), ("30.00".to_string(), "1".to_string()));
         assert_eq!(d.contrats[0].fin_declaree.map(|j| j.iso()).as_deref(), Some("2026-08-31"));
         let faux = "S20.G00.05.005,'01082026'\nS21.G00.30.001,'1'\nS21.G00.50.001,'31082026'\nS21.G00.51.001,'01082026'\nS21.G00.51.010,'FA1.26.13'\nS21.G00.51.013,'12,5'\n";
-        assert!(lire(faux.as_bytes(), "essai.dsn").unwrap_err().phrase.contains("« 12,5 », qui n'est pas un montant"));
+        assert!(lire(faux.as_bytes(), None).unwrap_err().phrase.contains("« 12,5 », qui n'est pas un montant"));
     }
 
     /// UN VERSEMENT DE DEUX CONTRATS attribue a chacun ce que la norme rattache a son numero : ses remunerations
@@ -1393,7 +1389,7 @@ mod tests {
                  S21.G00.78.001,'02'\nS21.G00.78.004,'525.00'\nS21.G00.78.006,'MO4.25.16'\n\
                  S21.G00.78.001,'02'\nS21.G00.78.004,'350.00'\nS21.G00.78.006,'MO4.25.17'\n\
                  S21.G00.78.001,'31'\nS21.G00.78.004,'875.00'\n";
-        let p = lire(f.as_bytes(), "essai.dsn").unwrap().paies();
+        let p = lire(f.as_bytes(), None).unwrap().paies();
         let dit = |i: usize| (p[i].numero.as_str(), p[i].mesures.brut.map(socle::num::q2), p[i].bases.get(&BaseAssujettie::BrutePlafonnee).copied().map(socle::num::q2), p[i].bases.len(), p[i].nets.is_some(), p[i].avec.iter().map(ToString::to_string).collect::<Vec<String>>());
         assert_eq!(dit(0), ("MO4.25.16", Some("525.00".into()), Some("525.00".into()), 1, false, vec!["MO4.25.17".to_string()]));
         assert_eq!(dit(1), ("MO4.25.17", Some("350.00".into()), Some("350.00".into()), 1, false, vec!["MO4.25.16".to_string()]));

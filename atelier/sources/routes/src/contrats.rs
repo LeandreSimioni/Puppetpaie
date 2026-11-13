@@ -39,6 +39,7 @@ use envois::releve_signatures::ReleveDite;
 use socle::date::Jour;
 use socle::paris::{InstantOuJour, Moment};
 use socle::echec::{erreur, Classe, R};
+use socle::fichiers::NomDeFichier;
 use socle::mois::{Mois, MoisOuJour};
 
 
@@ -483,7 +484,7 @@ struct PiecePartie {
     quand: InstantOuJour,
     quand_dit: String,
     mois: Option<Mois>,
-    fichier: String,
+    fichier: NomDeFichier,
     existe: bool,
 }
 
@@ -538,7 +539,7 @@ pub(crate) struct ParCourriel {
     pub(crate) message: String,
     pub(crate) preuve: String,
     /// L'exemplaire contresigne ; aucun quand rien ne s'est contresigne.
-    pub(crate) fichier_signe: Option<String>,
+    pub(crate) fichier_signe: Option<NomDeFichier>,
     /// La mention posee ; aucune quand la fiche ne dit pas le nom du salarie (rien ne s'est contresigne).
     pub(crate) mention: Option<String>,
     /// L'acte de la demande (`avenant`, `remplace`) ; aucun pour le contrat lui-meme (la forme du journal des envois,
@@ -1413,19 +1414,16 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
 // ------------------------------------------------------------------ pieces-parties
 
 /// Le fichier d'une piece partie existe-t-il, dans `sorties/<mois>/` ou son `envoi/` ? Un NOM, jamais un chemin.
-fn piece_existe(racine: &Path, mois: Option<Mois>, fichier: &str) -> bool {
+fn piece_existe(racine: &Path, mois: Option<Mois>, fichier: &NomDeFichier) -> bool {
     // Une piece sans mois n'est rangee dans aucun dossier de mois.
-    if fichier.is_empty() || ["/", "\\", ".."].iter().any(|x| fichier.contains(x)) {
-        return false;
-    }
     mois.is_some_and(|mois| {
         let base = racine.join("sorties").join(mois.to_string());
         [base.join("envoi").join(fichier), base.join(fichier)].iter().any(|c| c.is_file())
     })
 }
 
-fn piece(racine: &Path, quoi: String, quand: InstantOuJour, mois: Option<Mois>, fichier: &str) -> PiecePartie {
-    PiecePartie { quoi, quand, quand_dit: quand.dit(), mois, fichier: fichier.to_string(), existe: piece_existe(racine, mois, fichier) }
+fn piece(racine: &Path, quoi: String, quand: InstantOuJour, mois: Option<Mois>, fichier: &NomDeFichier) -> PiecePartie {
+    PiecePartie { quoi, quand, quand_dit: quand.dit(), mois, fichier: fichier.clone(), existe: piece_existe(racine, mois, fichier) }
 }
 
 /// `pieces-parties` : les FICHIERS partis pour le contrat n° `numero` -- la DPAE deposee, le contrat envoye a la
@@ -1445,7 +1443,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
     let ce_contrat = |s: &IdSalarie, n: Option<&str>| n == Some(numero.as_str()) && le_salarie.as_ref().is_none_or(|x| x == s);
     let mut dpae = Vec::new();
     for e in journal::filtrer(&lignes, Some(journal::Acte::Dpae), None, true).filter_map(journal::Ligne::dpae) {
-        let Some(fichier) = e.fichier.as_deref().filter(|f| !f.is_empty()) else { continue };
+        let Some(fichier) = e.fichier.as_ref() else { continue };
         if !e.accepte {
             continue;
         }
@@ -1459,7 +1457,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
     for l in lignes.iter().filter(|l| l.accepte()) {
         let Some(e) = l.signature() else { continue };
         let parti = if e.detail.main_propre { "imprimé" } else { "envoyé à la signature" };
-        for x in e.detail.contrats.iter().filter(|x| ce_contrat(&x.salarie, x.numero.as_deref()) && !x.fichier.is_empty()) {
+        for x in e.detail.contrats.iter().filter(|x| ce_contrat(&x.salarie, x.numero.as_deref())) {
             qui.get_or_insert_with(|| x.salarie.clone());
             let quoi = match x.acte.as_deref() {
                 Some("avenant") => format!("{} {}", majuscule(&avenant_dit(x.avenant)), parti),
@@ -1470,7 +1468,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
         }
         // CE QUI EN EST REVENU, sur la ligne de chaque envoi.
         for d in e.retours.iter().filter(|d| ce_contrat(&d.salarie, d.numero.as_deref())) {
-            if let Some(f) = d.fichier_signe.as_deref().filter(|f| !f.is_empty()) {
+            if let Some(f) = d.fichier_signe.as_ref() {
                 let quoi = match d.avenant {
                     Some(a) if d.acte.as_deref() == Some("avenant") => format!("Avenant n° {} signé, contresigné", a),
                     _ => "Contrat signé, contresigné".to_string(),
@@ -1478,7 +1476,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
                 contrat.push(piece(racine, quoi, d.quand.into(), l.mois(), f));
             }
             if let Some(p) = d.preuve.as_deref().filter(|p| !p.is_empty()) {
-                contrat.push(piece(racine, "Réponse « Je signe » du salarié (preuve)".into(), d.quand.into(), l.mois(), p));
+                contrat.push(piece(racine, "Réponse « Je signe » du salarié (preuve)".into(), d.quand.into(), l.mois(), &NomDeFichier::lire(p)?));
             }
         }
     }

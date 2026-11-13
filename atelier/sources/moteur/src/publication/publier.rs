@@ -17,6 +17,7 @@ use compagnie::maj::{
 };
 
 use socle::echec::{au_chemin, du_disque, refus, R};
+use socle::fichiers::NomDeFichier;
 
 /// La variable d'environnement ou le flux « Publier » pose la graine (base64) : lue par `publier_depuis_l_environnement`,
 /// jamais affichee.
@@ -172,7 +173,7 @@ fn entrees_des_fictives(code: &Path) -> R<(Vec<Entree>, Vec<(String, Vec<u8>)>, 
     for (nom, h) in par_fictive {
         let e = hex(h);
         en_plus.push((format!("{}/{}/{}", racine, nom, LIVREE), format!("{}\n", socle::ecriture::json_en_ligne(&compagnie::maj::Livree { empreinte: e.clone() })).into_bytes()));
-        posees.insert(nom, e);
+        posees.insert(NomDeFichier::lire(&nom)?, e);
     }
     let l = socle::ecriture::json_indente(&compagnie::maj::Livraison { empreinte: Some(empreinte.clone()), posees }, 2).into_bytes();
     en_plus.push((format!("{}/{}", racine, LIVRAISON), l));
@@ -238,8 +239,8 @@ fn archiver_installation(code: &Path, systeme: &str) -> R<Vec<u8>> {
 }
 
 /// Le nom de l'archive des fictives d'une version : `puppetpaie-<version>-fictives.zip`.
-fn nom_des_fictives(version: &str) -> String {
-    format!("puppetpaie-{}-fictives.zip", version)
+fn nom_des_fictives(version: &str) -> R<NomDeFichier> {
+    NomDeFichier::lire(&format!("puppetpaie-{}-fictives.zip", version))
 }
 
 /// LES MARQUES DE LA LIVRAISON, posees dans les fictives livrees a cote de `code` (`moteur maj --marquer-fictives --logiciel
@@ -308,7 +309,7 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     std::fs::create_dir_all(&d).map_err(|e| refus(e.to_string()))?;
     if d.join(DERNIERE).exists() {
         // Le `derniere.json` de la Release precedente, lu comme chaque installation le lit (`derniere_lue`).
-        let avant = derniere_lue(&lire_depot(&depot, DERNIERE)?)?;
+        let avant = derniere_lue(&lire_depot(&depot, &const { NomDeFichier::du_moteur(DERNIERE) })?)?;
         let av = avant.version.as_str();
         if !plus_recente(&version, av)? {
             return Err(socle::refus!(
@@ -331,15 +332,15 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
         ));
     }
     let mut archives = Archives::default();
-    let mut tailles: Vec<(String, usize)> = Vec::new();
-    let mut faites: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut tailles: Vec<(NomDeFichier, usize)> = Vec::new();
+    let mut faites: Vec<(NomDeFichier, Vec<u8>)> = Vec::new();
     for systeme in presents.iter().copied().chain([TOUT_SYSTEME]) {
         let octets = archiver(c, systeme)?;
         let signature = signer(&octets, privee)?;
         if !signature_valide(&octets, &signature, cle_publique) {
             return Err(autre_graine());
         }
-        let nom = nom_d_archive(&version, systeme);
+        let nom = nom_d_archive(&version, systeme)?;
         let systemes = (systeme == TOUT_SYSTEME).then(|| presents.iter().map(|s| s.to_string()).collect());
         archives.poser(systeme, ArchivePubliee { archive: nom.clone(), sha256: condensat(&octets), signature, systemes });
         tailles.push((nom.clone(), octets.len()));
@@ -351,7 +352,7 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     if !signature_valide(&octets, &signature, cle_publique) {
         return Err(autre_graine());
     }
-    let nom = nom_des_fictives(&version);
+    let nom = nom_des_fictives(&version)?;
     let fictives = FictivesPubliees { archive: nom.clone(), sha256: condensat(&octets), signature, empreinte };
     tailles.push((nom.clone(), octets.len()));
     faites.push((nom, octets));
@@ -360,7 +361,7 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
     // installation ne les telecharge.
     for systeme in presents.iter().copied().filter(|s| *s != "windows").chain([TOUT_SYSTEME]) {
         let octets = archiver_installation(c, systeme)?;
-        let nom = nom_d_installation(&version, systeme);
+        let nom = nom_d_installation(&version, systeme)?;
         tailles.push((nom.clone(), octets.len()));
         faites.push((nom, octets));
     }
@@ -391,7 +392,7 @@ fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &
 /// jour, celle des fictives, puis celles d'installation), et le dossier.
 pub struct Publication {
     pub manifeste: Publiee,
-    pub tailles: Vec<(String, usize)>,
+    pub tailles: Vec<(NomDeFichier, usize)>,
     pub dossier: PathBuf,
 }
 

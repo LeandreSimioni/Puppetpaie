@@ -87,7 +87,7 @@ pub fn ecrire(ctx: &Contexte, p: &Paie, date: Jour, sortie: &Path) -> R<[PathBuf
                 "Le modèle du certificat de travail ({}) ne cite pas {} : le maintien des garanties de {} (code de la \
 sécurité sociale, L911-8, 6°) se tairait. Ajouter {} au modèle, sur sa propre ligne avant les signatures (le modèle livré le \
 fait). Rien n'est écrit.",
-                socle::fichiers::nom_du(&chemin_cert),
+                socle::fichiers::NomDeFichier::du(&chemin_cert)?,
                 Marqueur::CertificatPortabilite,
                 nom,
                 Marqueur::CertificatPortabilite

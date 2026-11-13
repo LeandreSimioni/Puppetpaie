@@ -32,6 +32,7 @@ use envois::journal::Ligne;
 use envois::retours::{self, AnomalieDuRapport, CrmOc, Neores, Rapport};
 use socle::echec::{Classe, Echec, R};
 use socle::ecran::Pastille;
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::paris::Moment;
 
@@ -216,7 +217,7 @@ struct Document {
     salarie: Option<droit::contexte::IdSalarie>,
     chemin: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    fichier: Option<String>,
+    fichier: Option<NomDeFichier>,
 }
 
 /// Un envoi du mois (une ligne du journal), et ce qui en est revenu.
@@ -226,7 +227,7 @@ struct Envoi {
     acte: String,
     mode: &'static str,
     quand: socle::paris::InstantOuJour,
-    fichier: Option<String>,
+    fichier: Option<NomDeFichier>,
     flux: Option<String>,
     destinataire: Option<String>,
     identite: String,
@@ -310,8 +311,8 @@ fn revenu_lu(ctx: &Contexte, ligne: &Ligne, r: &envois::journal::RetourContrat) 
     } else {
         (format!("{} revenu signé", piece), format!("Reçu signé le {}, noté à la main.", quand))
     };
-    let signe = match (ligne.mois(), r.fichier_signe.as_deref()) {
-        (Some(m), Some(f)) => envois::etats::chemin_piece(&ctx.racine, m, f),
+    let signe = match (ligne.mois(), r.fichier_signe.as_ref()) {
+        (Some(m), Some(f)) => envois::etats::chemin_piece(&ctx.racine, m, f.texte()),
         _ => None,
     };
     RetourLu {
@@ -381,8 +382,8 @@ fn nom_lisible(ctx: &Contexte, nom: &str) -> String {
 fn identite(ctx: &Contexte, l: &Ligne) -> String {
     let mut morceaux: Vec<String> = Vec::new();
     if let Some(fichier) = l.fichier() {
-        let lisible = nom_lisible(ctx, fichier);
-        if lisible != fichier {
+        let lisible = nom_lisible(ctx, fichier.texte());
+        if lisible != fichier.texte() {
             morceaux.push(lisible);
         }
     }
@@ -421,12 +422,12 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
     // CE QUE LE JOURNAL DIT PARTI, meme si son fichier manque : `fichier` le nomme pour `piece-partie`, qui le refait
     // (`depart::piece_partie`) et rend son chemin.
     for nom in pieces_du_journal(lignes) {
-        if out.iter().any(|d| d.nom == nom) {
+        if out.iter().any(|d| d.nom == nom.texte()) {
             continue;
         }
-        let dans_l_envoi = ["Bulletin_", "CertificatCS_", "AER_", "Contrat_", "Avenant"].iter().any(|p| nom.starts_with(p));
+        let dans_l_envoi = ["Bulletin_", "CertificatCS_", "AER_", "Contrat_", "Avenant"].iter().any(|p| nom.texte().starts_with(p));
         let chemin = if dans_l_envoi { format!("sorties/{}/envoi/{}", mois, nom) } else { format!("sorties/{}/{}", mois, nom) };
-        out.push(Document { sorte: sorte_de(&nom), salarie: None, chemin, fichier: Some(nom.clone()), nom });
+        out.push(Document { sorte: sorte_de(nom.texte()), salarie: None, chemin, fichier: Some(nom.clone()), nom: nom.into() });
     }
     // LES BULLETINS QUE L'ANCIEN LOGICIEL A FAITS, tels que l'import les garde : ce sont les bulletins du mois.
     for b in import::mois::bulletins_repris(&ctx.racine, mois)? {
@@ -446,11 +447,11 @@ fn documents(ctx: &Contexte, mois: Mois, lignes: &[Ligne]) -> R<Vec<Document>> {
 
 /// Les noms des pieces que les lignes acceptees du journal d'un mois disent parties : le fichier d'un depot, les contrats
 /// d'une demande de signature, les pieces d'un envoi de documents.
-fn pieces_du_journal(lignes: &[Ligne]) -> Vec<String> {
-    let mut noms: Vec<String> = Vec::new();
-    let mut noter = |n: &str| {
-        if !n.is_empty() && !n.contains(['/', '\\']) && !noms.iter().any(|x| x == n) {
-            noms.push(n.to_string());
+fn pieces_du_journal(lignes: &[Ligne]) -> Vec<NomDeFichier> {
+    let mut noms: Vec<NomDeFichier> = Vec::new();
+    let mut noter = |n: &NomDeFichier| {
+        if !noms.contains(n) {
+            noms.push(n.clone());
         }
     };
     for l in lignes.iter().filter(|l| l.accepte()) {
@@ -1173,7 +1174,7 @@ fn historique(ctx: &Contexte, le_mois: Mois) -> R<Historique> {
             acte: acte(ctx, l),
             mode: l.mode().nom(),
             quand: l.quand(),
-            fichier: l.fichier().map(String::from),
+            fichier: l.fichier().cloned(),
             flux: dit(l.flux()).map(String::from),
             destinataire: dit(l.destinataire()).map(String::from),
             identite: identite(ctx, l),

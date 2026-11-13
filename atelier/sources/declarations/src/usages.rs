@@ -137,7 +137,7 @@ pub fn rubrique_valeur(ligne: &str) -> (&str, &str) {
 
 /// Le tableau des usages de cette version de la norme.
 pub fn table_de(norme: &Norme) -> R<Arc<Table>> {
-    crate::norme::livree(&norme.table_usages()?)
+    crate::norme::livree(norme.table_usages()?.texte())
 }
 
 /// La rubrique est-elle au tableau des usages de cette version, quelle que soit la nature ?
@@ -179,7 +179,7 @@ pub fn verifier(texte: &str, nature: NatureDeLaDeclaration, norme: &Norme) -> R<
         return Ok(());
     }
     let (t, table) = (table_de(norme)?, norme.table_usages()?);
-    let libelle = t.natures.get(&nature).ok_or_else(|| socle::echec::livree(&table, &format!("natures.{}", nature)))?;
+    let libelle = t.natures.get(&nature).ok_or_else(|| socle::echec::livree(table.texte(), &format!("natures.{}", nature)))?;
     let lignes: Vec<String> = mauvaises
         .iter()
         .map(|(r, u)| {
@@ -202,7 +202,7 @@ pub fn verifier(texte: &str, nature: NatureDeLaDeclaration, norme: &Norme) -> R<
             libelle,
             lignes.join("\n")
         ),
-        Lieu { fichier: Some(table), ..Lieu::default() },
+        Lieu { fichier: Some(table.to_string()), ..Lieu::default() },
     ))
 }
 

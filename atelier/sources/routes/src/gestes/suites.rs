@@ -66,9 +66,10 @@ fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::pat
         let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
         let lus = envois::retours::taux_pas_d_octets(&octets)?;
         let r = envois::retours::releves_vers_salaries(&lus.releves, &nirs);
+        let nom = socle::fichiers::NomDeFichier::du(chemin)?;
         for x in &r.rattaches {
             // La mise a disposition est celle du compte rendu ; sans elle, le taux ne se date pas.
-            let mis_a_disposition = retour.publication.ok_or_else(|| socle::echec::erreur(Classe::Illisible, format!("Un compte rendu de taux de PAS ne dit pas sa date de mise à disposition ({}).", socle::fichiers::nom_du(chemin))))?;
+            let mis_a_disposition = retour.publication.ok_or_else(|| socle::echec::erreur(Classe::Illisible, format!("Un compte rendu de taux de PAS ne dit pas sa date de mise à disposition ({}).", nom)))?;
             tous.push(compagnie::taux_pas::TauxRecu {
                 salarie: x.salarie.clone(),
                 taux: x.releve.taux,
@@ -99,7 +100,7 @@ fn appliquer_taux_atmp(ctx: &Contexte, notifications: &[(envois::retours::Annonc
     for (retour, chemin) in notifications {
         let le_jour = retour.publication.map(|p| p.jour_de_paris());
         let publiee = envois::releve_retours::jour_de_publication_dit(retour);
-        let archive = socle::fichiers::nom_du(chemin);
+        let archive = socle::fichiers::NomDeFichier::du(chemin)?;
         let source = match &publiee {
             Some(le) => format!("Notification AT/MP de la CARSAT reçue le {} (retour DSN de nature 34, archive retours/{})", le, archive),
             None => format!("Notification AT/MP de la CARSAT (retour DSN de nature 34, archive retours/{})", archive),

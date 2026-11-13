@@ -411,7 +411,7 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<String>) -> engagement
         (x.net_imposable, x.net_verse) = (n.net_imposable, n.net_verse);
         (x.pas, x.taux_pas, x.type_pas, x.identifiant_pas) = (n.pas, n.taux_pas, n.type_pas.clone(), n.identifiant_pas.clone());
     }
-    (x.depose_le, x.fichier) = (p.depot, Some(p.fichier.clone()).filter(|f| !f.is_empty()));
+    (x.depose_le, x.fichier) = (p.depot, p.fichier.clone());
     x
 }
 

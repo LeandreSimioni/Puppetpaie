@@ -84,7 +84,7 @@ fn l_empreinte_reste_comparable_a_celles_du_journal() {
     let f = d.join("DSN.dsn");
     std::fs::write(&f, b"abc").unwrap();
     let l = journal::noter(&d, dsn(Mode::Reel), Some(&f), a(3, 10)).unwrap();
-    assert_eq!((l.fichier(), l.empreinte()), (Some("DSN.dsn"), Some("ba7816bf8f01cfea")));
+    assert_eq!((l.fichier().map(|f| f.texte()), l.empreinte()), (Some("DSN.dsn"), Some("ba7816bf8f01cfea")));
     let l = journal::noter(&d, dsn(Mode::Reel), Some(&d.join("absent.dsn")), a(3, 10)).unwrap();
-    assert_eq!((l.fichier(), l.empreinte()), (Some("absent.dsn"), None));
+    assert_eq!((l.fichier().map(|f| f.texte()), l.empreinte()), (Some("absent.dsn"), None));
 }

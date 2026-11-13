@@ -27,7 +27,7 @@ use envois::envoi;
 use envois::journal;
 use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
 use socle::echec::{erreur, Classe, Echec};
-use socle::fichiers::nom_du;
+use socle::fichiers::NomDeFichier;
 use socle::mois::{Graphie, Mois, MoisOuJour};
 use crate::catalogue::{Ecran, Place};
 
@@ -168,7 +168,7 @@ pub(crate) struct DocumentsEnvoyes {
 #[serde(deny_unknown_fields)]
 struct ChargePiecePartie {
     mois: Mois,
-    fichier: String,
+    fichier: NomDeFichier,
 }
 
 /// Ce que rend `piece-partie` : le chemin de la piece, relatif a la compagnie.
@@ -186,7 +186,7 @@ struct MessageVu {
     nom: String,
     /// Le courriel de la fiche ; vide, ses documents s'impriment.
     destinataire: Option<String>,
-    pieces: Vec<String>,
+    pieces: Vec<NomDeFichier>,
     sortes: Vec<&'static str>,
     renvoi: bool,
     pastille: Option<Pastille>,
@@ -279,7 +279,7 @@ fn attestations_archivees(ctx: &Contexte, mois: Option<Mois>, seulement: Option<
     let dossier = ctx.racine.join(envois::retours::RETOURS);
     // `fichiers` : seulement ces archives (la releve range ce qu'elle vient de telecharger).
     let mut fichiers: Vec<String> = match seulement {
-        Some(liste) => liste.iter().map(|f| nom_du(f)).collect(),
+        Some(liste) => liste.iter().map(|f| NomDeFichier::du(f).map(String::from)).collect::<R<_>>()?,
         None => noms_du_dossier(&dossier)?.into_iter().filter(|n| n.contains("_nature46_")).collect(),
     };
     fichiers.sort();
@@ -627,10 +627,11 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
         .into_iter()
         .map(|x| {
             let renvoi = choix.renvois.get(&x.cle);
-            MessageVu {
-                pieces: x.pieces.iter().map(|p| nom_du(p)).collect(),
+            let pieces = x.pieces.iter().map(|p| NomDeFichier::du(p)).collect::<R<Vec<_>>>()?;
+            Ok(MessageVu {
                 // Ce que l'ecran en dit : la sorte de chaque piece, pas son nom de fichier.
-                sortes: x.pieces.iter().map(|p| crate::historique_mois::sorte_de(&nom_du(p))).collect(),
+                sortes: pieces.iter().map(|p| crate::historique_mois::sorte_de(p.texte())).collect(),
+                pieces,
                 renvoi: renvoi.is_some(),
                 // Un renvoi : des documents corriges, qui remplacent ceux deja partis (a faire partir).
                 pastille: renvoi.map(|r| Pastille::de(socle::ecran::EtatDEcran::AFaire, &format!("documents corrigés — remplacent ceux du {}", r.envoye_le.jj_mm_aaaa()))),
@@ -638,9 +639,9 @@ fn envoi_apercu(ctx: &Contexte, le_mois: Mois) -> R<ApercuEnvoi> {
                 cle: x.cle,
                 nom: x.nom,
                 destinataire: x.destinataire,
-            }
+            })
         })
-        .collect();
+        .collect::<R<_>>()?;
     let mut phrases: Vec<String> = messages
         .iter()
         .map(|x| match &x.destinataire {
@@ -793,7 +794,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
         salaries.push(journal::Servi {
             cle: cle.clone(),
             nom: noms.get(cle).cloned(),
-            pieces: siennes.iter().map(|p| nom_du(p)).collect(),
+            pieces: siennes.iter().map(|p| NomDeFichier::du(p)).collect::<R<_>>()?,
             resume: choix.resumes.get(cle).cloned(),
             renvoi: choix.renvois.contains_key(cle),
         });
@@ -804,6 +805,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     }
     let versions = journal::versions_du_mois(ctx, mois, &envois::journal::lu(&ctx.racine).map(|j| j.departs)?, |cle, _, _| cles.contains(cle))?;
     let impression = crate::gestes::signature::reunir_pour_imprimer(&dossier, "documents", &etiq, &pieces)?;
+    let nom_impression = NomDeFichier::du(&impression)?;
     let avertissements = documents.avertissements.clone();
     documents.engager(ctx, mois)?;
     let detail = journal::DetailDocuments { salaries, main_propre: true, expediteur: None, durees_ms: None, partis: None, echec_a: None };
@@ -812,7 +814,7 @@ pub(crate) fn documents_imprimer(ctx: &Contexte, c: ChargeDocumentsImprimer, qui
     let qui_les_recoit: Vec<String> = cles.iter().filter_map(|cle| noms.get(cle).map(|nom| nom_a_l_ecran(ctx, cle, nom))).collect();
     Ok(DocumentsImprimes {
         phrase: format!("Documents {} imprimés pour {}, à remettre en main propre.", socle::texte::de(&mois.libelle(Graphie::Accentuee)), qui_les_recoit.join(", ")),
-        impression: nom_du(&impression),
+        impression: nom_impression.into(),
         chemin: impression.to_string_lossy().into_owned(),
         salaries: cles,
         phrases: avertissements.clone(),
@@ -1062,14 +1064,16 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     // paie (ce qui dira, si elle change, ce qui a change), et si c'est un renvoi ; son nom a l'ecran.
     let recus: Vec<journal::Servi> = messages
         .iter()
-        .map(|m| journal::Servi {
-            nom: Some(m.nom.clone()),
-            pieces: m.pieces.iter().map(|p| nom_du(p)).collect(),
-            resume: choix.resumes.get(&m.pour).cloned(),
-            renvoi: choix.renvois.contains_key(&m.pour),
-            cle: m.pour.clone(),
+        .map(|m| {
+            Ok(journal::Servi {
+                nom: Some(m.nom.clone()),
+                pieces: m.pieces.iter().map(|p| NomDeFichier::du(p)).collect::<R<_>>()?,
+                resume: choix.resumes.get(&m.pour).cloned(),
+                renvoi: choix.renvois.contains_key(&m.pour),
+                cle: m.pour.clone(),
+            })
         })
-        .collect();
+        .collect::<R<_>>()?;
     let noms: Vec<String> = messages.iter().zip(&recus).map(|(m, r)| nom_a_l_ecran(ctx, &r.cle, &m.nom)).collect();
     // LA DUREE DE CHAQUE ETAPE (le journal dit ou va le temps d'un envoi).
     let t_preuve = std::time::Instant::now();

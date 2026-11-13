@@ -15,6 +15,7 @@
 
 use std::path::PathBuf;
 use socle::echec::Classe;
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 
 use droit::contexte::Contexte;
@@ -155,14 +156,13 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         std::fs::create_dir_all(&dossier).map_err(|e| os(format!("{} : {}", dossier.display(), e)))?;
         let preuve = dossier.join(format!("Signature_{}_{}.eml", a_salarie, code));
         std::fs::write(&preuve, &brut).map_err(|e| os(format!("{} : {}", preuve.display(), e)))?;
-        let nom_preuve = socle::fichiers::nom_du(&preuve);
+        let nom_preuve = NomDeFichier::du(&preuve)?.to_string();
 
         // UN PDF PAR FICHIER DISTINCT : des contrats groupes n'en ont qu'un (un par page) ; des avenants groupes en ont un
         // chacun.
-        let a_fichier = a.fichier.clone();
-        let mut fichiers: Vec<(Mois, String)> = Vec::new();
+        let mut fichiers: Vec<(Mois, NomDeFichier)> = Vec::new();
         for c in &contrats {
-            let paire = (c.mois, if c.fichier.is_empty() { a_fichier.clone() } else { c.fichier.clone() });
+            let paire = (c.mois, c.fichier.clone());
             if !fichiers.contains(&paire) {
                 fichiers.push(paire);
             }
@@ -170,7 +170,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         let quand_lisible = quand.dit();
         // La mention porte le nom que la fiche dit : sans lui, rien ne se contresigne.
         let mention = a.nom.as_deref().map(|n| documents::contrat::mention_signature(n, &quand_lisible, &de, &code));
-        let mut signes: Vec<(String, PathBuf)> = Vec::new();
+        let mut signes: Vec<(NomDeFichier, PathBuf)> = Vec::new();
         for (mois_f, nom_f) in &fichiers {
             let envoye = ctx.racine.join("sorties").join(mois_f.to_string()).join("envoi").join(nom_f);
             // La souche du fichier parti : son nom sans son extension (un nom qui n'en a pas est sa propre souche).
@@ -192,8 +192,8 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
                 Err(e) => r.incidents.push(format!("{} : contrat contresigne impossible ({}).", a_nom, e)),
             }
         }
-        let noms_signes: Vec<String> = signes.iter().map(|(_, p)| socle::fichiers::nom_du(p)).collect();
-        let fichier_signe = noms_signes.join(", ");
+        let noms_signes = signes.iter().map(|(_, p)| NomDeFichier::du(p)).collect::<R<Vec<_>>>()?;
+        let fichier_signe = noms_signes.iter().map(NomDeFichier::texte).collect::<Vec<_>>().join(", ");
 
         // LE JOURNAL D'ABORD : une fois la ligne ecrite, la releve suivante n'attend plus ce code, et le renvoi ne se fera
         // pas deux fois. Un contrat que `contrat_recu` refuse (la paie n'est plus dans la saisie du mois...) devient un
@@ -204,8 +204,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         let est_avenant = acte.as_deref() == Some("avenant");
         let mut notes = 0usize;
         for c in &contrats {
-            let son_fichier = if c.fichier.is_empty() { a_fichier.clone() } else { c.fichier.clone() };
-            let sien = signes.iter().find(|(n, _)| *n == son_fichier).map(|(_, p)| socle::fichiers::nom_du(p));
+            let sien = signes.iter().find(|(n, _)| *n == c.fichier).map(|(_, p)| NomDeFichier::du(p)).transpose()?;
             let courriel = crate::contrats::ParCourriel {
                 code: code.clone(),
                 adresse: de.clone(),

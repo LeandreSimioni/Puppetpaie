@@ -4,7 +4,7 @@
 //! valeurs.
 
 use serde::{Deserialize, Serialize};
-use socle::fichiers::{forme_en_cache, repr, FormeGardee};
+use socle::fichiers::{forme_en_cache, repr, FormeGardee, NomDeFichier};
 use socle::echec::R;
 use socle::num::Decimal;
 use std::collections::BTreeMap;
@@ -653,8 +653,8 @@ struct ContratEcrit {
     _note: String,
     /// Le nom du contrat, tel qu'une phrase le dit (« contrat de travail à durée déterminée »).
     nom: String,
-    modele: String,
-    avenant: String,
+    modele: NomDeFichier,
+    avenant: NomDeFichier,
     phrases: Phrases,
     mentions: Vec<Mention>,
 }
@@ -900,7 +900,7 @@ impl Proprietes {
     }
 
     /// Le modele livre du contrat ecrit de cette nature, ou `None` : elle n'en a pas.
-    pub fn modele_contrat(&self) -> Option<String> {
+    pub fn modele_contrat(&self) -> Option<NomDeFichier> {
         self.contrat_ecrit.as_ref().map(|c| c.modele.clone())
     }
 
@@ -913,7 +913,7 @@ impl Proprietes {
     }
 
     /// Le modele livre de l'avenant de son contrat ecrit.
-    pub fn modele_avenant(&self) -> Option<String> {
+    pub fn modele_avenant(&self) -> Option<NomDeFichier> {
         self.contrat_ecrit.as_ref().map(|c| c.avenant.clone())
     }
 

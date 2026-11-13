@@ -31,6 +31,7 @@ use envois::suites::Suites;
 use envois::journal::{Acte, EmbaucheDeclaree, Ligne, Ouverture, Version};
 use droit::contexte::IdSalarie;
 use engagement::numeros::NumeroContrat;
+use socle::fichiers::NomDeFichier;
 use socle::mois::{Mois, MoisOuJour};
 
 pub use envois::depot_acte::DepotFait;
@@ -83,7 +84,7 @@ fn phrase_repetition(quoi: &str, etat: &etats::Repetition) -> String {
 /// qu'on refuse, c'est le contournement SILENCIEUX.
 fn exiger_repetition(lignes: &[Ligne], quoi: Acte, chemin: &Path, contournement: &str) -> R<Ouverture> {
     let octets = std::fs::read(chemin).map_err(|e| socle::echec::du_disque(&chemin, &e).reclasser(Classe::Disque))?;
-    let nom = socle::fichiers::nom_du(chemin);
+    let nom = NomDeFichier::du(chemin)?;
     let etat = etats::repetition(lignes, quoi, &envois::journal::empreinte(&octets), &nom);
     // UN REEL NE PART QUE SUR LE BILAN LU DE SON TEST : l'accuse d'enregistrement dit
     // « envoi recu », pas « conforme » (regle 5). Pour une DSN, c'est le bilan de nature 11 du test, qui arrive « en
@@ -151,7 +152,7 @@ fn mois_de_constitution(a: &DsnLue) -> R<Mois> {
 
 /// Le rang que la DSN porte (S20.G00.05.004), s'il y en a un ; un rang qui ne se lit pas se refuse.
 fn rang_dans_le_fichier(octets: &[u8]) -> R<Option<i64>> {
-    declarations::dsn_lue::lire(octets, "")?.ordre.map(|o| ordre_lu(&o)).transpose()
+    declarations::dsn_lue::lire(octets, None)?.ordre.map(|o| ordre_lu(&o)).transpose()
 }
 
 /// L'ordre qu'une DSN a deposer porte (S20.G00.05.004) : absent ou illisible, elle se refait.
@@ -190,7 +191,7 @@ fn prochain_ordre_de_test(ctx: &Contexte, le_mois: Mois, nic: Option<&str>, cons
         if let Some(n) = l.dsn().and_then(|e| e.detail.ordre_test).filter(|n| *n > 0) {
             connus.push(n);
         }
-        if let Some(nom) = l.fichier().filter(|f| !f.is_empty()) {
+        if let Some(nom) = l.fichier() {
             let p = ctx.racine.join("sorties").join(mois).join(nom);
             if p.exists() {
                 let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::du_disque(&e)))?;
@@ -298,7 +299,7 @@ pub fn deposer_dsn_dans(
     }
     let chemin = PathBuf::from(crate::depots::resoudre(&ctx.racine, fichier)?);
     let octets = crate::depots::lire_octets(&chemin.to_string_lossy())?;
-    let apercu = declarations::dsn_lue::lire(&octets, "")?;
+    let apercu = declarations::dsn_lue::lire(&octets, None)?;
     // 2. le mode contre le fichier ; `presence_prouvee` : c'est ICI qu'on la prouve, jamais le transport.
     depot::verifier(&apercu, reel, true)?;
     // LE MOIS QUE LE FICHIER DECLARE ; un signalement se date par son evenement, sa ligne par le mois de ce jour.
@@ -350,7 +351,7 @@ pub fn deposer_dsn_dans(
             Classe::Refuse,
             format!(
                 "{} n'a pas été écrite par le logiciel : ce qu'elle corrige des mois passés ne se lit pas. Rien n'est parti. Déposer la DSN du mois (route deposer, avec le mois), qui s'écrit ici.",
-                socle::fichiers::nom_du(&chemin)
+                NomDeFichier::du(&chemin)?
             ),
         ));
     }
@@ -386,7 +387,7 @@ pub fn deposer_dsn_dans(
                 Classe::Refuse,
                 format!(
                     "{} : {}. Rien n'est parti. Reecrire le mois, deposer la nouvelle DSN en test, puis l'envoyer.",
-                    socle::fichiers::nom_du(&chemin),
+                    NomDeFichier::du(&chemin)?,
                     c
                 ),
             ));
@@ -608,7 +609,7 @@ fn deposer_les_amorcages(ctx: &Contexte, mois: Mois, embauches: &[EmbaucheDeclar
     let teste = |f: &Path| -> R<bool> {
         let octets = std::fs::read(f).map_err(|e| socle::echec::du_disque(f, &e))?;
         let lignes = envois::journal::lu(&ctx.racine)?.lignes;
-        let nom = socle::fichiers::nom_du(f);
+        let nom = NomDeFichier::du(f)?;
         Ok(etats::repetition(&lignes, Acte::Dsn, &envois::journal::empreinte(&octets), &nom).conforme.is_some())
     };
     let mut releve = false;

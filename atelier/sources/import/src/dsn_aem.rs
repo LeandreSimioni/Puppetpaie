@@ -14,6 +14,7 @@ use declarations::champs::Saisie;
 use declarations::dsn_lue::{Adhesion, ContratDeclare, DsnLue, EmploiDeclare, EntrepriseDeclaree, IndividuDeclare, PaieDuContrat};
 use socle::date::Jour;
 use socle::echec::Echec;
+use socle::fichiers::NomDeFichier;
 use socle::mois::{Graphie, Mois};
 use socle::num::Decimal;
 use socle::piece::format::Aaaammjj;
@@ -70,7 +71,7 @@ pub struct PaieDeclaree {
     pub paie: PaieDuContrat,
     pub contrat: Option<ContratDeclare>,
     pub depot: Option<Jour>,
-    pub fichier: String,
+    pub fichier: Option<NomDeFichier>,
 }
 
 /// Les listes gardent l'ordre ou les cles sont apparues.
@@ -307,7 +308,7 @@ pub struct ContratAtteste {
     /// Le numero de l'attestation (zone 36..42), et sa date de signature (858..866, AAAA-MM-JJ si c'en est une).
     pub(crate) numero_attestation: String,
     pub(crate) date_attestation: Option<socle::date::Jour>,
-    pub fichier: String,
+    pub fichier: NomDeFichier,
 }
 
 /// Le contrat atteste, tel qu'un engagement importe le porte (`salarie` : la cle de sa fiche, `None` tant qu'elle
@@ -323,7 +324,7 @@ pub fn ligne_du_contrat(c: &ContratAtteste, salarie: Option<droit::contexte::IdS
     a.brut = Some(c.brut);
     a.numero_attestation = plein(&c.numero_attestation);
     a.atteste_le = c.date_attestation;
-    a.fichier = plein(&c.fichier);
+    a.fichier = Some(c.fichier.clone());
     ContratLu { salarie, debut: Some(c.debut), fin: Some(c.fin), numero: None, contrat: a }
 }
 
@@ -404,7 +405,7 @@ pub fn lire_aem(dossier: &Path) -> Result<(Vec<ContratAtteste>, Vec<String>), so
                     brut,
                     numero_attestation: tranche(&l, 36, 42).trim_matches(blanc).to_string(),
                     date_attestation,
-                    fichier: nom.clone(),
+                    fichier: NomDeFichier::lire(&nom)?,
                 }));
             }
         }

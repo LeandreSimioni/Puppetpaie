@@ -37,7 +37,7 @@ use engagement::numeros::NumeroContrat;
 use envois::etats::{self, DOCUMENTS, DPAE, DSN, SIGNATURE};
 use socle::echec::{Classe, R};
 use socle::echec::erreur;
-use socle::fichiers::sha256_hex;
+use socle::fichiers::{sha256_hex, NomDeFichier};
 use socle::echec::Echec;
 use crate::catalogue::{Acte, Fiche};
 use crate::catalogue::Route;
@@ -911,7 +911,7 @@ pub(crate) fn ordre_de_depot(nom: &str, chemin: &Path) -> R<OrdreDeDepot> {
     if !a_l_extension(nom, ".dsn") {
         return Ok((0, None, String::new(), Reverse(None), Reverse(nom.to_string())));
     }
-    let apercu = declarations::dsn_lue::lire(&crate::depots::lire_octets(&chemin.to_string_lossy())?, nom)?;
+    let apercu = declarations::dsn_lue::lire(&crate::depots::lire_octets(&chemin.to_string_lossy())?, Some(&NomDeFichier::du(chemin)?))?;
     let lu = match apercu.ordre.as_deref().map(str::trim) {
         Some(t) => Some(t.parse::<i64>().map_err(|e| socle::echec::a_la_cle("Le numéro d'ordre d'une DSN écrite ne se lit pas.", "S20.G00.05.004", e).reclasser(Classe::Illisible))?),
         None => None,
@@ -2005,7 +2005,7 @@ impl<'a> Moteur<'a> {
         let mut trouve = None;
         for f in fichiers.de(quoi) {
             let de_l_etablissement = match (quoi == DSN, nic) {
-                (true, Some(n)) => declarations::dsn_lue::lire(&crate::depots::lire_octets(&f.chemin)?, "")?.etablissement() == Some(n),
+                (true, Some(n)) => declarations::dsn_lue::lire(&crate::depots::lire_octets(&f.chemin)?, None)?.etablissement() == Some(n),
                 // Une DPAE, ou une DSN sans etablissement demande : le premier fichier, quel qu'il soit.
                 (true, None) | (false, Some(_)) | (false, None) => true,
             };
@@ -2024,7 +2024,7 @@ impl<'a> Moteur<'a> {
         if etats::deja_depose(&lignes, acte, &empreinte).is_some() {
             return Ok(None);
         }
-        let nom = socle::fichiers::nom_du(&chemin);
+        let nom = NomDeFichier::du(&chemin)?;
         let r = etats::repetition(&lignes, acte, &empreinte, &nom);
         let etape = if quoi == DSN && self.paie_changee_depuis_l_ecriture(le_mois, &chemin)?.is_some() {
             "paie_changee"

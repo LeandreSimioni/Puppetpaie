@@ -28,7 +28,8 @@ use socle::fichiers::repr;
 use socle::mois::Mois;
 use socle::num::{entier_lu, q2, Decimal};
 
-use crate::depots::{lire_octets, nom_du_chemin, resoudre};
+use crate::depots::{lire_octets, resoudre};
+use socle::fichiers::NomDeFichier;
 use crate::etapes::Moteur;
 use socle::ecran::Pastille;
 
@@ -465,12 +466,12 @@ fn description(nom: &str, a: &DsnLue) -> String {
 pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
     let chemin = resoudre(&ctx.racine, fichier)?;
     let contenu = lire_octets(&chemin)?;
-    let a = declarations::dsn_lue::lire(&contenu, "")?;
+    let a = declarations::dsn_lue::lire(&contenu, None)?;
     let mut m = Moteur::nouveau(ctx);
     let lignes = m.lignes()?;
     let empreinte = envois::journal::empreinte(&contenu);
     let deja = etats::deja_depose(&lignes, envois::journal::Acte::Dsn, &empreinte);
-    let nom = nom_du_chemin(&chemin);
+    let nom = NomDeFichier::du(std::path::Path::new(&chemin))?;
     let signalement = a.est_signalement();
     let mois = a.mois_declare().ok_or_else(|| erreur(Classe::Refuse, format!("Ce fichier ne dit pas le mois qu'il déclare ({}).", declarations::dsn_lue::SANS_MOIS)))?;
     let remplacement = if signalement { None } else { Some(remplacement_du_fichier(&mut m, &a, mois)?) };
@@ -495,9 +496,9 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
         }
     };
     Ok(ApercuDsn {
-        description: description(&nom, &a),
+        description: description(nom.texte(), &a),
         fichier: chemin.clone(),
-        nom,
+        nom: nom.into(),
         mois,
         nature_envoi: a.nature_envoi,
         reel: a.reel(),

@@ -90,9 +90,8 @@ struct Periode {
 /// pas refuse.
 fn dsn_deposee(ctx: &Contexte, lignes: &[crate::journal::Ligne], m: socle::mois::Mois) -> R<Option<DsnLue>> {
     let Some(l) = crate::etats::etat_dsn_du_mois(lignes, m, None, ctx.entreprise.nic_principal()) else { return Ok(None) };
-    let Some(fichier) = l.fichier.filter(|f| !f.is_empty()) else { return Ok(None) };
-    let p = std::path::Path::new(&fichier);
-    let chemin = if p.is_absolute() { p.to_path_buf() } else { ctx.racine.join("sorties").join(m.to_string()).join(&fichier) };
+    let Some(fichier) = l.fichier else { return Ok(None) };
+    let chemin = ctx.racine.join("sorties").join(m.to_string()).join(&fichier);
     declarations::dsn_lue::lire_une_dsn(&chemin)
 }
 
@@ -542,7 +541,7 @@ fn nom_dans_l_archive(siret: &str, mois: socle::mois::Mois, edite_le: Jour, nom:
 /// DSN declare la fin d'un contrat d'usage (cinq periodes par PDF, les mois anterieurs du contrat lus dans les DSN
 /// reelles deposees). `None` : aucune AER Cinema Spectacle n'est due ce mois-ci, France Travail ne publie rien.
 pub fn archive(ctx: &Contexte, dsn: &[u8], mois: socle::mois::Mois, edite_le: Jour) -> R<Option<Vec<u8>>> {
-    let d = declarations::dsn_lue::lire(dsn, "")?;
+    let d = declarations::dsn_lue::lire(dsn, None)?;
     let le_mois = d.mois.ok_or_else(|| refus("la DSN ne dit pas le mois qu'elle déclare (S20.G00.05.005)"))?;
     // Le type et l'ordre de la declaration (S20.G00.05.002 et .004) : 03 et 05 annulent et remplacent.
     let remplace = match d.type_declaration {

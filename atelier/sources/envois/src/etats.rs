@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use socle::fichiers::NomDeFichier;
 use socle::mois::Mois;
 use socle::date::Jour;
 use socle::paris::{InstantOuJour, Moment};
@@ -93,7 +94,7 @@ pub fn de_l_etablissement<'a>(lignes: impl IntoIterator<Item = &'a Ligne>, nic: 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EtatDsnDuMois {
     pub quand: InstantOuJour,
-    pub fichier: Option<String>,
+    pub fichier: Option<NomDeFichier>,
     pub flux: String,
     pub passee: bool,
     pub refusee: bool,
@@ -150,7 +151,7 @@ fn verdict_dpae(retours: &[RetourOrganisme]) -> (bool, bool) {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct EtatEmbauche {
     pub quand: InstantOuJour,
-    pub fichier: Option<String>,
+    pub fichier: Option<NomDeFichier>,
     pub fin: Option<socle::date::Jour>,
     pub passee: bool,
     pub refusee: bool,
@@ -284,7 +285,7 @@ pub struct Attendue {
     pub salarie: droit::contexte::IdSalarie,
     /// L'adresse ou le contrat est parti (aucune : remis en main propre).
     pub adresse: Option<String>,
-    pub fichier: String,
+    pub fichier: NomDeFichier,
     /// L'acte du contrat parti (`avenant`, `remplace`) ; aucun pour le contrat lui-meme.
     pub acte: Option<String>,
     pub avenant: Option<i64>,
@@ -650,7 +651,7 @@ pub fn pourquoi_rate(ligne: &Ligne) -> String {
 #[serde(deny_unknown_fields)]
 pub struct Repetition {
     pub empreinte: String,
-    pub fichier: String,
+    pub fichier: NomDeFichier,
     pub conforme: Option<Ligne>,
     pub compte_rendu: Option<String>,
     pub ratees: Vec<Ligne>,
@@ -697,7 +698,7 @@ impl Repetition {
     }
 }
 
-pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &str, nom: &str) -> Repetition {
+pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &str, nom: &NomDeFichier) -> Repetition {
     let mut conforme: Option<&Ligne> = None;
     let (mut ratees, mut perimees) = (Vec::new(), Vec::new());
     for l in crate::journal::filtrer(lignes, Some(quoi), None, false).filter(|l| l.mode() == Mode::Test) {
@@ -753,7 +754,7 @@ pub fn repetition(lignes: &[Ligne], quoi: Acte, empreinte: &str, nom: &str) -> R
     };
     Repetition {
         empreinte: empreinte.to_string(),
-        fichier: nom.to_string(),
+        fichier: nom.clone(),
         conforme: conforme.cloned(),
         compte_rendu: compte_rendu.map(String::from),
         ratees,
@@ -1264,7 +1265,7 @@ pub fn rattacher_retours_ecrits(racine: &Path, retours: &[Annonce]) -> AvecIncid
 pub struct Parti {
     pub mois: Mois,
     pub numero: Option<engagement::numeros::NumeroContrat>,
-    pub fichier: String,
+    pub fichier: NomDeFichier,
     pub quand: InstantOuJour,
     pub signe: Option<Moment>,
     /// L'empreinte du modele avec lequel il est parti (`ContratParti::modele`).
@@ -1384,10 +1385,10 @@ mod tests {
             avec("test", "2026-06-01T11:00:00", "eA", "f.dsn", false, "[]"),
             avec("reel", "2026-06-02T09:00:00", "eA", "f.dsn", true, "[]"),
         ];
-        let rep = repetition(&l, Acte::Dsn, "eA", "DSN.dsn");
+        let rep = repetition(&l, Acte::Dsn, "eA", &NomDeFichier::lire("DSN.dsn").unwrap());
         assert_eq!((rep.compte_rendu.as_deref(), rep.conforme.as_ref().unwrap().quand().iso()), (Some("ok"), "2026-06-01T10:00:00".to_string()));
         assert_eq!((rep.ratees.len(), rep.perimees.len(), rep.etat), (1, 1, EtatDuTest::Testee));
-        let vide = repetition(&l, Acte::Dpae, "eA", "x");
+        let vide = repetition(&l, Acte::Dpae, "eA", &NomDeFichier::lire("x").unwrap());
         assert_eq!((vide.conforme.is_none(), vide.compte_rendu, vide.etat), (true, None, EtatDuTest::Ecrite));
         assert_eq!(deja_depose(&l, Acte::Dsn, "eA").unwrap().quand().iso(), "2026-06-02T09:00:00");
         assert!(deja_depose(&l, Acte::Dsn, "eB").is_none());

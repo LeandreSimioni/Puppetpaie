@@ -72,6 +72,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use socle::date::Jour;
 use socle::echec::{refus, refus_avec, APart, Echec, Lieu, R};
+use socle::fichiers::NomDeFichier;
 use socle::num::Decimal;
 use socle::paris::Moment;
 
@@ -163,14 +164,14 @@ pub fn systeme_du_fichier(rel: &str) -> Option<&'static str> {
 }
 
 /// Le nom de l'archive d'une version pour un systeme (ou `TOUT_SYSTEME`) : `puppetpaie-<version>-<systeme>.zip`.
-pub fn nom_d_archive(version: &str, systeme: &str) -> String {
-    format!("puppetpaie-{}-{}.zip", version, systeme)
+pub fn nom_d_archive(version: &str, systeme: &str) -> R<NomDeFichier> {
+    NomDeFichier::lire(&format!("puppetpaie-{}-{}.zip", version, systeme))
 }
 
 /// Le nom de l'archive D'INSTALLATION d'une version (`archiver_installation`) : `puppetpaie-<version>-<systeme>-installation.zip`.
 /// Il n'y en a que pour Linux, Mac et tous les systemes : Windows a son installeur.
-pub fn nom_d_installation(version: &str, systeme: &str) -> String {
-    format!("puppetpaie-{}-{}-installation.zip", version, systeme)
+pub fn nom_d_installation(version: &str, systeme: &str) -> R<NomDeFichier> {
+    NomDeFichier::lire(&format!("puppetpaie-{}-{}-installation.zip", version, systeme))
 }
 
 /// La version d'un logiciel : son fichier `VERSION`. Un logiciel qui ne la dit pas se refuse.
@@ -313,7 +314,7 @@ pub fn prete(inst: &Path) -> R<Option<Prete>> {
     prete_dans(&dossier_maj(inst))
 }
 
-pub fn lire_depot(depot: &str, nom: &str) -> R<Vec<u8>> {
+pub fn lire_depot(depot: &str, nom: &NomDeFichier) -> R<Vec<u8>> {
     lire_depot_suivi(depot, nom, &|_, _| {}).map_err(|(_, e)| e)
 }
 
@@ -332,7 +333,7 @@ type Rate = (&'static str, Echec);
 
 /// `lire_depot`, en disant a `suivre` ce qui est recu (octets recus, octets attendus si le depot le dit) : la barre de
 /// l'indicateur (`Recherche`). Un echec porte son mot : injoignable (`HORS_LIGNE`), ou absent (`INTROUVABLE`).
-fn lire_depot_suivi(depot: &str, nom: &str, suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Rate> {
+fn lire_depot_suivi(depot: &str, nom: &NomDeFichier, suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Rate> {
     const LIMITE: u64 = 512 * 1024 * 1024;
     let lire_tout = |lecteur: &mut dyn Read, attendus: Option<u64>| -> std::io::Result<Vec<u8>> {
         let mut o = Vec::new();
@@ -388,7 +389,7 @@ pub struct Publiee {
     pub archives: Archives,
     pub fictives: FictivesPubliees,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub archive: Option<String>,
+    pub archive: Option<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -414,7 +415,7 @@ pub struct Archives {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArchivePubliee {
-    pub archive: String,
+    pub archive: NomDeFichier,
     pub sha256: String,
     pub signature: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -425,7 +426,7 @@ pub struct ArchivePubliee {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FictivesPubliees {
-    pub archive: String,
+    pub archive: NomDeFichier,
     pub sha256: String,
     pub signature: String,
     pub empreinte: String,
@@ -433,14 +434,14 @@ pub struct FictivesPubliees {
 
 impl ArchivePubliee {
     /// Ce que `archive_verifiee` verifie : le nom, le condensat, la signature.
-    fn signee(&self) -> (&str, &str, &str) {
+    fn signee(&self) -> (&NomDeFichier, &str, &str) {
         (&self.archive, &self.sha256, &self.signature)
     }
 }
 
 impl FictivesPubliees {
     /// Ce que `archive_verifiee` verifie : le nom, le condensat, la signature.
-    fn signee(&self) -> (&str, &str, &str) {
+    fn signee(&self) -> (&NomDeFichier, &str, &str) {
         (&self.archive, &self.sha256, &self.signature)
     }
 }
@@ -480,7 +481,7 @@ pub fn derniere(depot: &str) -> R<Publiee> {
 
 /// `derniere`, l'echec avec son mot : le depot ne repond pas, ou il repond quelque chose qui n'est pas un `derniere.json`.
 fn derniere_dite(depot: &str) -> Result<Publiee, Rate> {
-    let octets = lire_depot_suivi(depot, DERNIERE, &|_, _| {})?;
+    let octets = lire_depot_suivi(depot, &const { NomDeFichier::du_moteur(DERNIERE) }, &|_, _| {})?;
     derniere_lue(&octets).map_err(|e| (ILLISIBLE, e))
 }
 
@@ -504,7 +505,7 @@ pub fn derniere_lue(octets: &[u8]) -> R<Publiee> {
         return Err(publiee_illisible("archives", ""));
     }
     for (systeme, a) in d.archives.toutes() {
-        for (k, v) in [("archive", &a.archive), ("sha256", &a.sha256), ("signature", &a.signature)] {
+        for (k, v) in [("sha256", &a.sha256), ("signature", &a.signature)] {
             if v.is_empty() {
                 return Err(publiee_illisible(&format!("archives.{}.{}", systeme, k), ""));
             }
@@ -519,7 +520,7 @@ pub fn derniere_lue(octets: &[u8]) -> R<Publiee> {
         }
     }
     let f = &d.fictives;
-    for (k, v) in [("archive", &f.archive), ("sha256", &f.sha256), ("signature", &f.signature), ("empreinte", &f.empreinte)] {
+    for (k, v) in [("sha256", &f.sha256), ("signature", &f.signature), ("empreinte", &f.empreinte)] {
         if v.is_empty() {
             return Err(publiee_illisible(&format!("fictives.{}", k), ""));
         }
@@ -694,7 +695,7 @@ fn controler(neuf: &Path, racine: &Path) -> R<()> {
 /// entre dans une installation : la mise a jour, les fictives, les systemes qu'un dossier portable ajoute
 /// (`completer_le_portable`). Un echec de lecture porte `HORS_LIGNE` ou `INTROUVABLE` ; une archive qui n'est pas la
 /// notre, `ALTEREE` ou `SIGNATURE_REFUSEE`.
-fn archive_verifiee(depot: &str, (nom, attendu, signature): (&str, &str, &str), cles: &[&str], suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Rate> {
+fn archive_verifiee(depot: &str, (nom, attendu, signature): (&NomDeFichier, &str, &str), cles: &[&str], suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Rate> {
     let octets = lire_depot_suivi(depot, nom, suivre)?;
     let sha = condensat(&octets);
     if sha != attendu {
@@ -963,7 +964,7 @@ const FICTIVES_PRETES: &str = "fictives-pretes";
 pub struct Livraison {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub empreinte: Option<String>,
-    pub posees: std::collections::BTreeMap<String, String>,
+    pub posees: std::collections::BTreeMap<NomDeFichier, String>,
 }
 
 /// LA MARQUE D'UNE FICTIVE LIVREE (`fictives/<nom>/.livree.json`) : l'empreinte de son contenu a la livraison.
@@ -1091,20 +1092,20 @@ pub fn poser_les_fictives_pretes(inst: &Path) -> Option<String> {
     if let Err(e) = socle::fichiers::effacer(&avant).and_then(|()| std::fs::create_dir_all(&poste).map_err(|e| socle::echec::du_disque(&poste, &e))) {
         return Some(format!("Compagnies fictives non posees : {}", e.phrase));
     }
-    let empreinte_de = |a: &Livraison, nom: &str| a.posees.get(nom).cloned();
+    let empreinte_de = |a: &Livraison, nom: &NomDeFichier| a.posees.get(nom).cloned();
     // Un dossier est a la livraison si sa marque dit l'empreinte retenue ; une marque qui ne se lit pas se dit, et le
     // dossier reste tel quel.
-    let a_la_livraison = |nom: &str| -> R<bool> {
+    let a_la_livraison = |nom: &NomDeFichier| -> R<bool> {
         let d = poste.join(nom);
         Ok(match &ancienne {
             Some(a) => {
                 let marque: Option<Livree> = lire_forme(&d.join(LIVREE), "La marque d'une fictive livrée ne se lit pas.")?;
                 empreinte_de(a, nom).is_some() && marque.map(|m| m.empreinte) == empreinte_de(a, nom)
             }
-            None => marquee_comme_livree(&d, nom)?,
+            None => marquee_comme_livree(&d, nom.texte())?,
         })
     };
-    let ecarter = |nom: &str| -> R<()> {
+    let ecarter = |nom: &NomDeFichier| -> R<()> {
         let d = poste.join(nom);
         if d.exists() {
             std::fs::create_dir_all(&avant).map_err(|e| refus(e.to_string()))?;
@@ -1115,7 +1116,7 @@ pub fn poser_les_fictives_pretes(inst: &Path) -> Option<String> {
     let mut posees = std::collections::BTreeMap::new();
     let mut dit = Vec::new();
     let mut manque = false;
-    let noms_neufs: Vec<String> = nouvelle.posees.keys().cloned().collect();
+    let noms_neufs: Vec<NomDeFichier> = nouvelle.posees.keys().cloned().collect();
     for nom in &noms_neufs {
         let d = poste.join(nom);
         if d.exists() {
@@ -1148,7 +1149,7 @@ pub fn poser_les_fictives_pretes(inst: &Path) -> Option<String> {
         }
     }
     // Celles que l'ancienne livraison avait posees et que la nouvelle ne porte plus : retirees, si elles sont a elle.
-    let anciennes: Vec<String> = ancienne.iter().flat_map(|a| a.posees.keys().cloned()).collect();
+    let anciennes: Vec<NomDeFichier> = ancienne.iter().flat_map(|a| a.posees.keys().cloned()).collect();
     for nom in anciennes.iter().filter(|n| !noms_neufs.contains(n)) {
         if !poste.join(nom).exists() {
             continue;
@@ -1201,7 +1202,7 @@ pub fn poser_les_fictives_pretes(inst: &Path) -> Option<String> {
     Some(format!(
         "Compagnies fictives : livraison {} posee ({}){}.",
         &empreinte[..empreinte.len().min(12)],
-        posees.keys().cloned().collect::<Vec<_>>().join(", "),
+        posees.keys().map(NomDeFichier::texte).collect::<Vec<_>>().join(", "),
         if dit.is_empty() { String::new() } else { format!(" ; {}", dit.join(" ; ")) }
     ))
 }

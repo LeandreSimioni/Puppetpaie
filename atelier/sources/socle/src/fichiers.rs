@@ -698,11 +698,81 @@ pub fn modele_de(nom: &str, gabarits: Option<&Path>, poste: &Path) -> PathBuf {
     dossier_du_code().join("modeles").join(nom)
 }
 
-/// Le nom d'un chemin, ou son texte entier s'il n'en a pas.
-pub fn nom_du(chemin: &std::path::Path) -> String {
-    match chemin.file_name() {
-        Some(n) => n.to_string_lossy().into_owned(),
-        None => chemin.to_string_lossy().into_owned(),
+/// LE NOM D'UN FICHIER, seul, sans son dossier : le fichier parti (`Contrat_ALBARET_AL3.26.01_Mai2026.pdf`), le modele
+/// d'un contrat (`contrat-cddu.modele`), l'archive d'une version (`puppetpaie-2026.11.12-windows.zip`). Il n'est pas
+/// vide, ne porte ni `/`, ni `\`, ni caractere nul, et n'est ni `.` ni `..` : joint a un dossier, il y reste. Il s'ecrit
+/// tel quel et se trie par son texte.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize, serde::Serialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct NomDeFichier(std::borrow::Cow<'static, str>);
+
+impl NomDeFichier {
+    /// Le nom `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<NomDeFichier> {
+        if !NomDeFichier::a_sa_forme(texte) {
+            return Err(crate::refus!("{} n'est pas un nom de fichier : un nom seul, sans dossier.", repr(texte)));
+        }
+        Ok(NomDeFichier(std::borrow::Cow::Owned(texte.to_string())))
+    }
+
+    const fn a_sa_forme(texte: &str) -> bool {
+        let o = texte.as_bytes();
+        if o.is_empty() || matches!(o, b"." | b"..") {
+            return false;
+        }
+        let mut i = 0;
+        while i < o.len() {
+            if matches!(o[i], b'/' | b'\\' | 0) {
+                return false;
+            }
+            i += 1;
+        }
+        true
+    }
+
+    /// LE NOM QUE LE MOTEUR NOMME, ecrit en Rust : une constante, dont le compilateur refuse une forme fausse.
+    pub const fn du_moteur(nom: &'static str) -> NomDeFichier {
+        assert!(NomDeFichier::a_sa_forme(nom), "nom de fichier mal forme");
+        NomDeFichier(std::borrow::Cow::Borrowed(nom))
+    }
+
+    /// LE NOM DU FICHIER `chemin` ; un chemin qui ne finit pas par un nom (`/`, `..`) se refuse. Un nom qui n'est pas en
+    /// UTF-8 garde son caractere illisible (`to_string_lossy`).
+    pub fn du(chemin: &Path) -> R<NomDeFichier> {
+        match chemin.file_name() {
+            Some(n) => NomDeFichier::lire(&n.to_string_lossy()),
+            None => Err(crate::refus!("{} ne nomme pas un fichier.", repr(&chemin.to_string_lossy()))),
+        }
+    }
+
+    /// Le nom tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for NomDeFichier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl AsRef<Path> for NomDeFichier {
+    fn as_ref(&self) -> &Path {
+        Path::new(self.texte())
+    }
+}
+
+impl TryFrom<String> for NomDeFichier {
+    type Error = Echec;
+    fn try_from(s: String) -> R<NomDeFichier> {
+        NomDeFichier::lire(&s)
+    }
+}
+
+impl From<NomDeFichier> for String {
+    fn from(n: NomDeFichier) -> String {
+        n.0.into_owned()
     }
 }
 

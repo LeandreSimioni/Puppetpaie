@@ -8,7 +8,7 @@ use droit::type_declaration::TypeDeLaDeclaration;
 use envois::depot::{basculer_dpae, basculer_dsn, est_reel, renumeroter, verifier};
 
 fn lire(octets: &[u8]) -> DsnLue {
-    declarations::dsn_lue::lire(octets, "essai.dsn").unwrap()
+    declarations::dsn_lue::lire(octets, None).unwrap()
 }
 
 fn dsn(nature_envoi: &str) -> Vec<u8> {

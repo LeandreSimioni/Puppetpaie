@@ -279,17 +279,17 @@ fn deposer_les_dsn(
     let mut fait = false;
     for chemin in chemins {
         let p = Path::new(&chemin);
-        let nom = socle::fichiers::nom_du(p);
+        let nom = socle::fichiers::NomDeFichier::du(p)?;
         let octets = std::fs::read(p).map_err(|e| socle::echec::du_disque(p, &e).reclasser(Classe::du_disque(&e)))?;
         // LA DEMANDE DE TAUX NE PART QU'AVEC LA DPAE (`depot_acte::deposer_dpae`) : un signalement d'amorcage reste d'un
         // essai ne part pas avec la DSN du mois.
-        let lue = declarations::dsn_lue::lire(&octets, &nom)?;
+        let lue = declarations::dsn_lue::lire(&octets, Some(&nom))?;
         if !garder(&lue) || lue.nature_declaration == Some(declarations::amorcage::NATURE) {
             continue;
         }
         let empreinte = envois::journal::empreinte(&octets);
         let mut deja = false;
-        for l in lignes.iter().filter(|l| l.fichier() == Some(nom.as_str())) {
+        for l in lignes.iter().filter(|l| l.fichier() == Some(&nom)) {
             let refuse = etats::refuse_par_un_retour(l);
             deja |= (l.reel() && !refuse) || (refuse && l.empreinte() == Some(empreinte.as_str()));
         }
