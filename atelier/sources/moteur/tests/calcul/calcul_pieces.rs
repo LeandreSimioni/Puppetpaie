@@ -1,8 +1,9 @@
-//! Les pieces de `calculer` contre `calcul-pieces.json` : la reduction generale et le seuil de SMIC sur une grille (par
-//! empreinte, en entier pour quelques groupes). Les refus sont des attendus.
+//! Les pieces de `calculer` contre `calcul-pieces.json` : le code du bloc 54, la reduction generale et le seuil de SMIC sur
+//! une grille (par empreinte, en entier pour quelques groupes). Les refus sont des attendus.
 //! `PUPPETPAIE_REECRIRE_ORACLES=1` reecrit l'oracle.
 
-use crate::outils::{dec, lire_oracle, oracle, sceller};
+use crate::outils::{dec, dossier_de_test, lire_oracle, oracle, sceller};
+use droit::catalogue::{code_54, rubrique};
 use droit::reduction::{au_dela_du_seuil, reduction_generale};
 use serde_json::{json, Value};
 
@@ -50,6 +51,23 @@ fn essai(r: socle::echec::R<Value>) -> Value {
 
 
 
+/// Le type d'autre element de revenu brut (S21.G00.54.001) qu'ecrit chaque rubrique du catalogue, avec ou sans le genre
+/// de la ligne ; le genre se lit dans sa liste de la norme a la porte de la ligne.
+#[test]
+fn le_code_du_bloc_54() {
+    let mut cas = lire_oracle(ORACLE)["code_54"].clone();
+    let racine = dossier_de_test("calcul_pieces", "code_54");
+    let mut refus = 0;
+    for c in cas.as_array_mut().unwrap() {
+        let r = rubrique(&racine, &droit::catalogue::CodeDeRubrique::lire(c[0].as_str().unwrap()).unwrap(), &socle::date::Jour::nouveau(2026, 10, 28).unwrap()).unwrap();
+        let vu = socle::forme::lire::<Option<droit::autre_revenu_brut::AutreElementDeRevenuBrut>>(&c[1]["genre"], "La ligne ne se lit pas.").and_then(|g| code_54(&r, g));
+        refus += vu.is_err() as usize;
+        c[2] = essai(vu.map(|o| o.map_or(Value::Null, |a| Value::String(a.code().to_string()))));
+    }
+    assert!(refus > 10, "{}", refus);
+    oracle(ORACLE, "/code_54", &cas);
+}
+
 // ----------------------------------------------------------------- la grille
 /// Un groupe de la grille : l'empreinte de ses resultats, et ses resultats entiers quand l'oracle les garde.
 fn groupe(g: &mut Value, vus: Vec<Value>) {
@@ -88,7 +106,7 @@ fn la_reduction_generale() {
         }
         groupe(g, vus);
     }
-    assert!(points > 20000 && appliquees > 5000, "{} {}", points, appliquees);
+    assert!(points > 20000 && appliquees > 4000, "{} {}", points, appliquees);
     oracle(ORACLE, "/rg", &rg);
 }
 

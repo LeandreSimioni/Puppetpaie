@@ -655,7 +655,7 @@ pub fn anciennete_depuis(racine: &Path, cle: &IdSalarie, depuis: &Jour, a: &Jour
         if imp.salarie() != cle {
             continue;
         }
-        let Some(motif) = motif_de_suspension(code)? else { continue };
+        let motif = proprietes_du_motif(code, &cle.to_string())?;
         if motif.remunere {
             continue;
         }
