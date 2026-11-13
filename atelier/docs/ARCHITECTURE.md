@@ -166,7 +166,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 
 | notion | ce que c'est | son type |
 |---|---|---|
-| montant | une somme en euros, au centime | à créer (#419) : `Montant` (`socle`) ; aujourd'hui `Decimal`, `engagement::paie_ecrite::Montant`, `droit::fiche::Montant` ; `engagement::ligne::Montant` est une ligne au montant, à renommer |
+| montant | une somme en euros, au centime | à créer (#419) : `Montant` (`socle`) ; aujourd'hui `Decimal`, `engagement::paie_ecrite::Montant`, `droit::fiche::Montant` ; `engagement::ligne::Montant` est une ligne au montant, à renommer ; une réponse qui rend un montant ou une quantité en texte garde le `Decimal` (au centime : `socle::num::q2`) et l'écrit par `socle::ecriture::decimal_en_texte` |
 | taux | un pourcentage appliqué à une base | à créer (#419) : `Taux` ; aujourd'hui `Decimal`, `droit::forme_bareme::Taux` (une forme) ; le taux de PAS est sa notion à lui, `droit::pas::TauxDePas` |
 | quantité | des heures, des cachets, des jours : trois grandeurs indépendantes | à créer (#419) : `Heures`, `Cachets`, `Jours` ; aujourd'hui `Decimal`, `i64`, `engagement::ligne::Chiffre` |
 | nombre lu | un nombre tel qu'un fichier l'écrit | pas une notion : `socle::forme::Court`, `Nombre`, `NombreEcrit`, `NombreLu` sont des écritures, lues à la porte |

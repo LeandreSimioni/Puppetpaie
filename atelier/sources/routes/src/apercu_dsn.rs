@@ -40,13 +40,9 @@ fn saisie_aux_numeros_declares(ctx: &Contexte, mois: Mois) -> R<Vec<Paie>> {
 
 // ------------------------------------------------------------------ recapitulatif_dsn
 
-/// Un nombre en texte, sans ses zeros de fin ; `0` pour zero.
-fn norm(d: Decimal) -> String {
-    if d.is_zero() {
-        "0".to_string()
-    } else {
-        d.normalize().to_string()
-    }
+/// Un nombre sans ses zeros de fin ; zero s'ecrit `0` (`normalize` le rend sans signe ni decimale).
+fn norm(d: Decimal) -> Decimal {
+    d.normalize()
 }
 
 /// Un contrat du fichier (`DsnLue`), et ce qu'il declare pour le mois et en rappel d'un mois deja declare. Son numero
@@ -355,10 +351,14 @@ struct ContratDuFichier {
     #[serde(rename = "nature")]
     nature_dsn: Option<String>,
     objet: Option<droit::fiche::NumeroObjetSpectacle>,
-    brut: Option<String>,
-    jours: String,
-    cachets: String,
-    heures: String,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::option::serialize")]
+    brut: Option<Decimal>,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    jours: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    cachets: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    heures: Decimal,
     fin_declaree: Option<Jour>,
     motif_fin: Option<droit::natures::MotifDeRupture>,
     remunere: bool,

@@ -205,17 +205,17 @@ struct ChargeArretReprise {
     motif_reprise: Option<MotifDeReprise>,
 }
 
-/// La charge de `arret-indemnites` : chaque montant, un decimal en texte (« 40.89 », tel que le releve l'ecrit et que
-/// l'arret le garde), et les jours deja indemnises ; absent, rien ne change.
+/// La charge de `arret-indemnites` : chaque montant, un chiffre saisi (« 40.89 », tel que le releve l'ecrit ; l'arret le
+/// garde au centime, en texte), et les jours deja indemnises ; absent, rien ne change.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeArretIndemnites {
     salarie: SalarieDesigne,
     dernier_jour: Jour,
-    ij_brute: Option<String>,
-    ij_nette: Option<String>,
-    ij_brute_majoree: Option<String>,
-    ij_nette_majoree: Option<String>,
+    ij_brute: Option<Chiffre>,
+    ij_nette: Option<Chiffre>,
+    ij_brute_majoree: Option<Chiffre>,
+    ij_nette_majoree: Option<Chiffre>,
     jours_deja_indemnises: Option<u32>,
 }
 
@@ -1427,9 +1427,9 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
     if [&c.ij_brute, &c.ij_nette, &c.ij_brute_majoree, &c.ij_nette_majoree].iter().all(|v| v.is_none()) && c.jours_deja_indemnises.is_none() {
         return Err(refus("Dire les indemnités journalières (brute et nette, par jour) ou les jours déjà indemnisés : rien n'est changé."));
     }
-    let montant = |k: &str, t: &Option<String>| -> R<Option<Chiffre>> {
+    let montant = |k: &str, t: &Option<Chiffre>| -> R<Option<Chiffre>> {
         let Some(t) = t else { return Ok(None) };
-        let x = Chiffre::Texte(t.trim().to_string()).dec_avec_echelle().map_err(|e| e.reformuler(|p| format!("Indemnité journalière ({}) : {}", k, p)).reclasser(Classe::Refuse))?;
+        let x = t.dec_avec_echelle().map_err(|e| e.reformuler(|p| format!("Indemnité journalière ({}) : {}", k, p)).reclasser(Classe::Refuse))?;
         if x <= Decimal::ZERO {
             return Err(refus("Une indemnité journalière est un montant par jour, positif : rien n'est changé."));
         }

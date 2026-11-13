@@ -83,8 +83,10 @@ pub(crate) struct EcritureRendue {
     date: socle::date::Jour,
     compte: String,
     libelle: String,
-    debit: String,
-    credit: String,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    debit: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    credit: Decimal,
     analytique: Option<String>,
     mois: socle::mois::Mois,
     auxiliaire: Option<String>,
@@ -101,8 +103,10 @@ pub(crate) struct ExportComptaRendu {
     au: u32,
     mois: Vec<Mois>,
     ecritures: Vec<EcritureRendue>,
-    total_debit: String,
-    total_credit: String,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    total_debit: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    total_credit: Decimal,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: Option<PathBuf>,
     fichier: Option<NomDeFichier>,
@@ -139,16 +143,16 @@ impl ExportCompta {
                     date: e.date,
                     compte: e.compte,
                     libelle: e.libelle,
-                    debit: e.debit.to_string(),
-                    credit: e.credit.to_string(),
+                    debit: e.debit,
+                    credit: e.credit,
                     analytique: e.analytique,
                     mois: e.mois,
                     auxiliaire: e.auxiliaire,
                     auxiliaire_libelle: e.auxiliaire_libelle,
                 })
                 .collect(),
-            total_debit: self.total_debit.to_string(),
-            total_credit: self.total_credit.to_string(),
+            total_debit: self.total_debit,
+            total_credit: self.total_credit,
             dossier,
             fichier,
             plan: self.plan,

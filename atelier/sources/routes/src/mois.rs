@@ -41,7 +41,7 @@ use engagement::{self, LignePaie};
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::{Graphie, Mois};
-use socle::num::Decimal;
+use socle::num::{q2, Decimal};
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
@@ -1382,13 +1382,6 @@ pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: Mois) -> 
         }
     }
     Ok(out)
-}
-
-/// Deux décimales, la moitié au pair.
-pub(crate) fn q2(x: Decimal) -> Decimal {
-    let mut r = x.round_dp(2);
-    r.rescale(2);
-    r
 }
 
 /// LA RUPTURE d'un engagement, telle que la page la propose (« Un imprévu… ») : le libelle de la porte et la fin du
