@@ -633,7 +633,7 @@ impl Brouillon {
 /// arrivent telles que l'appelant les donne (`L` : `LigneDonnee`), et se rangent a la porte (`Changement::ranger`) avant
 /// d'etre posees (`LignePaie`).
 macro_rules! changements {
-    ( $( $v:ident ( $t:ty ) = $cle:tt => $champ:ident ),* $(,)? ) => {
+    ( $( $(#[$va:meta])* $v:ident ( $t:ty ) = $cle:tt => $champ:ident ),* $(,)? ) => {
         /// UN CHANGEMENT D'UNE CASE DU BROUILLON : `{"case": "salarie", "valeur": "FULLER"}` ; `{"case": "nature",
         /// "valeur": "cdi"}` change sa nature, qui ne se vide jamais.
         #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -647,7 +647,7 @@ macro_rules! changements {
             Spectacle(Option<P>),
             #[serde(rename = "lignes")]
             Lignes(Option<Vec<L>>),
-            $( #[serde(rename = $cle)] $v(Option<$t>), )*
+            $( $(#[$va])* #[serde(rename = $cle)] $v(Option<$t>), )*
         }
 
         impl<L, N, P> Changement<L, N, P> {
@@ -720,6 +720,8 @@ changements! {
     PersonneRemplacee(String) = "personne_remplacee" => personne_remplacee,
     RepartitionHoraire(String) = "repartition_horaire" => repartition_horaire,
     ClausesParticulieres(String) = "clauses_particulieres" => clauses_particulieres,
+    /// Le modele que la carte choisit : un id mal forme s'y refuse par la phrase d'une charge (`id_de_la_charge`).
+    #[serde(deserialize_with = "crate::carte::id_de_la_charge::option::deserialize")]
     ModeleContrat(IdDeModele) = "modele_contrat" => modele_contrat,
     CongesPris(Vec<CongePris>) = "conges_pris" => conges_pris,
     Primes(Vec<Prime>) = "primes" => primes,
