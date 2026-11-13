@@ -23,15 +23,22 @@ use crate::etapes::Moteur;
 /// Le resume d'une paie, comme la DSN la declare : ses montants au centime, son activite.
 #[derive(Debug, Serialize)]
 pub(crate) struct Resume {
-    brut: String,
-    net_a_payer: String,
-    net_imposable: String,
-    cotisations_salariales: String,
-    cotisations_patronales: String,
-    cout_employeur: String,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    brut: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    net_a_payer: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    net_imposable: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    cotisations_salariales: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    cotisations_patronales: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    cout_employeur: Decimal,
     cachets: i64,
     /// Les heures au centieme ; `None` : un engagement qui ne compte pas d'heures.
-    heures: Option<String>,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::option::serialize")]
+    heures: Option<Decimal>,
     jours: i64,
     remuneration: Vec<String>,
 }
@@ -39,15 +46,22 @@ pub(crate) struct Resume {
 /// Ce que la correction declare : l'ecart de chaque montant et de l'activite, de la paie declaree a la presente.
 #[derive(Debug, Serialize)]
 pub(crate) struct Ecart {
-    brut: String,
-    net_a_payer: String,
-    net_imposable: String,
-    cotisations_salariales: String,
-    cotisations_patronales: String,
-    cout_employeur: String,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    brut: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    net_a_payer: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    net_imposable: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    cotisations_salariales: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    cotisations_patronales: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    cout_employeur: Decimal,
     cachets: i64,
     /// `None` : l'une des deux paies ne compte pas d'heures.
-    heures: Option<String>,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::option::serialize")]
+    heures: Option<Decimal>,
 }
 
 /// Les montants d'une paie au centime, dans l'ordre de `Resume`.
@@ -73,7 +87,7 @@ fn resume(p: &Paie) -> R<Resume> {
         cotisations_patronales,
         cout_employeur,
         cachets: p.engagement.cachets,
-        heures: heures(p)?.map(|h| h.to_string()),
+        heures: heures(p)?,
         jours: p.engagement.jours,
         remuneration: p.remuneration.iter().map(|l| l.designation()).collect(),
     })
@@ -82,9 +96,9 @@ fn resume(p: &Paie) -> R<Resume> {
 /// L'ecart de `avant` a `apres` : la page le montre sans le calculer (regle 2).
 fn ecart(avant: &Paie, apres: &Paie) -> R<Ecart> {
     let (a, b) = (montants(avant), montants(apres));
-    let [brut, net_a_payer, net_imposable, cotisations_salariales, cotisations_patronales, cout_employeur] = std::array::from_fn(|i| (b[i] - a[i]).to_string());
+    let [brut, net_a_payer, net_imposable, cotisations_salariales, cotisations_patronales, cout_employeur] = std::array::from_fn(|i| b[i] - a[i]);
     let heures = match (heures(avant)?, heures(apres)?) {
-        (Some(x), Some(y)) => Some((y - x).normalize().to_string()),
+        (Some(x), Some(y)) => Some((y - x).normalize()),
         _ => None,
     };
     Ok(Ecart {

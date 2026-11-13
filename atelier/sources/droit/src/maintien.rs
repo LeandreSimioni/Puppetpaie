@@ -147,7 +147,7 @@ fn tranches(l: &[clauses::TrancheDeMaintien], ou: &str) -> R<Vec<Tranche>> {
 /// `None` quand elle ne prevoit rien (la loi seule s'applique). La clause de l'accident du travail vaut quand elle couvre
 /// l'origine (`couvre`, les origines que l'article nomme), sauf passe
 /// `comme_maladie_apres_mois` d'anciennete ; celle de la maladie sinon (une maladie, un accident « non professionnel »).
-pub fn conventionnel(idcc: Option<&str>, anciennete_mois: Decimal, origine: Origine) -> R<Option<Droit>> {
+pub fn conventionnel(idcc: Option<&crate::fiche::Idcc>, anciennete_mois: Decimal, origine: Origine) -> R<Option<Droit>> {
     let Some(sec) = clauses::releve(idcc)?.and_then(|c| c.maintien_de_salaire) else { return Ok(None) };
     let accident = sec.accident_du_travail.filter(|at| {
         at.couvre.contains(&origine) &&at.comme_maladie_apres_mois.is_none_or(|apres| anciennete_mois < apres.0)

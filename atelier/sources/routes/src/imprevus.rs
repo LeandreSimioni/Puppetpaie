@@ -32,6 +32,7 @@ use socle::ecran::Pastille;
 use declarations::signalement;
 use droit::contexte::{Contexte, IdSalarie, SalarieDesigne};
 use droit::nature_declaration::NatureDeLaDeclaration;
+use droit::natures::{IdentifiantDeDeclaration, NumeroDOrdre};
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::calcul::Paie;
 use droit::arrets::{Bloc60, CodeDuBloc60, MotifDArret, MotifDeReprise, SubrogationDeLArret};
@@ -76,7 +77,7 @@ const GESTE_AVANCE: Ecran = Ecran::GesteAvance(Place::Paie);
 const FIN_PRESCRITE: Champ = Champ { nom: "fin", libelle: Affiche::new("Nouvelle fin prescrite"), forme: Forme::Date, sens: "la nouvelle fin prescrite", avance: false };
 const REPRISE: Champ = Champ { nom: "reprise", libelle: Affiche::new("Reprise le"), forme: Forme::Date, sens: "le jour de la reprise ; nul l'efface", avance: false };
 const MOTIF_REPRISE: Champ = Champ { nom: "motif_reprise", libelle: Affiche::new("Motif de la reprise"), forme: Forme::Texte, sens: "le motif de la reprise", avance: true };
-const IJ_BRUTE: Champ = Champ { nom: "ij_brute", libelle: Affiche::new("Indemnité brute d'un jour"), forme: Forme::Texte, sens: "l'indemnité d'un jour, avant CSG et CRDS (relevé de la CPAM), en texte (« 40.89 ») ; absente, elle ne change pas", avance: false };
+const IJ_BRUTE: Champ = Champ { nom: "ij_brute", libelle: Affiche::new("Indemnité brute d'un jour"), forme: Forme::Texte, sens: "l'indemnité d'un jour, avant CSG et CRDS (relevé de la CPAM), un montant (40.89, en nombre ou en texte « 40.89 ») ; absente, elle ne change pas", avance: false };
 const IJ_NETTE: Champ = Champ { nom: "ij_nette", libelle: Affiche::new("Indemnité nette d'un jour"), forme: Forme::Texte, sens: "la même, nette de CSG et CRDS", avance: false };
 const IJ_BRUTE_MAJOREE: Champ = Champ { nom: "ij_brute_majoree", libelle: Affiche::new("Indemnité brute majorée"), forme: Forme::Texte, sens: "accident du travail, dès le 29e jour : brute", avance: true };
 const IJ_NETTE_MAJOREE: Champ = Champ { nom: "ij_nette_majoree", libelle: Affiche::new("Indemnité nette majorée"), forme: Forme::Texte, sens: "la même, nette", avance: true };
@@ -204,17 +205,17 @@ struct ChargeArretReprise {
     motif_reprise: Option<MotifDeReprise>,
 }
 
-/// La charge de `arret-indemnites` : chaque montant, un decimal en texte (« 40.89 », tel que le releve l'ecrit et que
-/// l'arret le garde), et les jours deja indemnises ; absent, rien ne change.
+/// La charge de `arret-indemnites` : chaque montant, un chiffre saisi (40.89 en nombre, ou « 40.89 » en texte, tel que le
+/// releve l'ecrit ; l'arret le garde au centime, en texte), et les jours deja indemnises ; absent, rien ne change.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ChargeArretIndemnites {
     salarie: SalarieDesigne,
     dernier_jour: Jour,
-    ij_brute: Option<String>,
-    ij_nette: Option<String>,
-    ij_brute_majoree: Option<String>,
-    ij_nette_majoree: Option<String>,
+    ij_brute: Option<Chiffre>,
+    ij_nette: Option<Chiffre>,
+    ij_brute_majoree: Option<Chiffre>,
+    ij_nette_majoree: Option<Chiffre>,
     jours_deja_indemnises: Option<u32>,
 }
 
@@ -230,9 +231,9 @@ pub(crate) struct ChargeArretSignaler {
     dernier_jour: Jour,
     nature: NatureSignalement,
     #[serde(skip_serializing_if = "Option::is_none")]
-    remplace: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ordre: Option<i64>,
+    remplace: Option<IdentifiantDeDeclaration>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "droit::natures::en_nombre::option")]
+    ordre: Option<NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
     test: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -247,7 +248,7 @@ impl ChargeArretSignaler {
 
     /// Le signalement parti, refait pour se lire (`gestes::depart::refaire_le_signalement`) : son numero d'ordre et son
     /// jour de constitution, tels que le journal les dit.
-    pub(crate) fn refait(salarie: IdSalarie, dernier_jour: Jour, nature: NatureSignalement, ordre: i64, le: Jour) -> ChargeArretSignaler {
+    pub(crate) fn refait(salarie: IdSalarie, dernier_jour: Jour, nature: NatureSignalement, ordre: NumeroDOrdre, le: Jour) -> ChargeArretSignaler {
         ChargeArretSignaler { ordre: Some(ordre), le: Some(le), ..ChargeArretSignaler::de(salarie, dernier_jour, nature) }
     }
 }
@@ -298,9 +299,9 @@ pub(crate) struct ChargeFinContratSignaler {
     mois: Mois,
     salarie: SalarieDesigne,
     #[serde(skip_serializing_if = "Option::is_none")]
-    remplace: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ordre: Option<i64>,
+    remplace: Option<IdentifiantDeDeclaration>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "droit::natures::en_nombre::option")]
+    ordre: Option<NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
     test: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -314,7 +315,7 @@ impl ChargeFinContratSignaler {
     }
 
     /// Le signalement parti, refait pour se lire (`gestes::depart::refaire_le_signalement`).
-    pub(crate) fn refait(mois: Mois, salarie: IdSalarie, ordre: i64, le: Jour) -> ChargeFinContratSignaler {
+    pub(crate) fn refait(mois: Mois, salarie: IdSalarie, ordre: NumeroDOrdre, le: Jour) -> ChargeFinContratSignaler {
         ChargeFinContratSignaler { ordre: Some(ordre), le: Some(le), ..ChargeFinContratSignaler::de(mois, salarie) }
     }
 }
@@ -328,14 +329,6 @@ struct ChargeFinContratDocuments {
     le: Option<Jour>,
 }
 
-/// L'identifiant du signalement qu'un annule-et-remplace remplace, s'il se dit ; dit vide, il ne designe rien et se refuse.
-fn remplace_dit(r: &Option<String>) -> R<Option<String>> {
-    match r.as_deref().map(str::trim) {
-        Some("") => Err(erreur(Classe::Manque, "Le signalement remplacé n'est pas dit : donner son identifiant, ou ne rien remplacer.")),
-        autre => Ok(autre.map(str::to_string)),
-    }
-}
-
 /// Le jour de constitution d'un signalement ou d'un document : celui que la charge dit ; absent, aujourd'hui (la fiche de
 /// la route le dit).
 fn constitue_le(ctx: &Contexte, le: Option<Jour>) -> Jour {
@@ -347,7 +340,7 @@ fn constitue_le(ctx: &Contexte, le: Option<Jour>) -> Jour {
 
 /// Le numero d'ordre d'un signalement : celui que la charge dit ; absent, le suivant de tous ceux deja partis
 /// (`prochain_ordre`), avec ce que la plate-forme en dit.
-fn ordre_du_signalement(ctx: &Contexte, ordre: Option<i64>) -> R<(i64, Vec<String>)> {
+fn ordre_du_signalement(ctx: &Contexte, ordre: Option<NumeroDOrdre>) -> R<(NumeroDOrdre, Vec<String>)> {
     match ordre {
         Some(n) => Ok((n, Vec::new())),
         None => prochain_ordre(ctx),
@@ -417,7 +410,8 @@ pub(crate) struct ReponseSignalement {
     nature: NatureSignalement,
     #[serde(rename = "type")]
     type_declaration: TypeDeLaDeclaration,
-    ordre: i64,
+    #[serde(with = "droit::natures::en_nombre")]
+    ordre: NumeroDOrdre,
     avertissements: Vec<String>,
 }
 
@@ -429,7 +423,8 @@ pub(crate) struct ReponseSignalementFin {
     phrase: String,
     #[serde(rename = "type")]
     type_declaration: TypeDeLaDeclaration,
-    ordre: i64,
+    #[serde(with = "droit::natures::en_nombre")]
+    ordre: NumeroDOrdre,
     preavis: String,
     avertissements: Vec<String>,
 }
@@ -741,7 +736,7 @@ fn parti_le(ctx: &Contexte, a: &ArretSaisi, nature: NatureSignalement) -> R<Opti
 
 /// Le nom d'un signalement : `<base>.dsn` ; un annule-et-remplace, `<base>_AR<ordre>.dsn`, a cote du signalement parti
 /// qu'il remplace, qui reste tel qu'il est parti (regle 4).
-fn nom_du_signalement(base: &str, annule_et_remplace: bool, ordre: i64) -> R<NomDeFichier> {
+fn nom_du_signalement(base: &str, annule_et_remplace: bool, ordre: NumeroDOrdre) -> R<NomDeFichier> {
     NomDeFichier::lire(&if annule_et_remplace { format!("{}_AR{}.dsn", base, ordre) } else { format!("{}.dsn", base) })
 }
 
@@ -1142,7 +1137,7 @@ struct ADire<'a> {
     reprise: Option<Jour>,
     premier: Jour,
     dernier: Jour,
-    contrat: Option<&'a str>,
+    contrat: Option<&'a NumeroContrat>,
     signalements: &'a [crate::obligations::EnvoiDeLArret],
 }
 
@@ -1292,7 +1287,7 @@ fn resume_d_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi, cachets: Vec<Cache
         reprise: a.reprise,
         premier,
         dernier,
-        contrat: a.contrat_numero.as_deref(),
+        contrat: a.contrat_numero.as_ref(),
         signalements: &base.signalements,
     })?;
     Ok(ResumeDArret {
@@ -1329,7 +1324,7 @@ fn resume_de_suspension(ctx: &Contexte, s: &SuspensionSaisie, cachets: Vec<Cache
         reprise: None,
         premier,
         dernier,
-        contrat: s.contrat_numero.as_deref(),
+        contrat: s.contrat_numero.as_ref(),
         signalements: &[],
     })?;
     Ok(ResumeDeSuspension {
@@ -1432,9 +1427,9 @@ fn arret_indemnites(ctx: &Contexte, c: &ChargeArretIndemnites) -> R<ReponseArret
     if [&c.ij_brute, &c.ij_nette, &c.ij_brute_majoree, &c.ij_nette_majoree].iter().all(|v| v.is_none()) && c.jours_deja_indemnises.is_none() {
         return Err(refus("Dire les indemnités journalières (brute et nette, par jour) ou les jours déjà indemnisés : rien n'est changé."));
     }
-    let montant = |k: &str, t: &Option<String>| -> R<Option<Chiffre>> {
+    let montant = |k: &str, t: &Option<Chiffre>| -> R<Option<Chiffre>> {
         let Some(t) = t else { return Ok(None) };
-        let x = Chiffre::Texte(t.trim().to_string()).dec_avec_echelle().map_err(|e| e.reformuler(|p| format!("Indemnité journalière ({}) : {}", k, p)).reclasser(Classe::Refuse))?;
+        let x = t.dec_avec_echelle().map_err(|e| e.reformuler(|p| format!("Indemnité journalière ({}) : {}", k, p)).reclasser(Classe::Refuse))?;
         if x <= Decimal::ZERO {
             return Err(refus("Une indemnité journalière est un montant par jour, positif : rien n'est changé."));
         }
@@ -1963,7 +1958,7 @@ fn echec_fctu(e: declarations::fctu::Echec) -> Echec {
 pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refaire: bool) -> R<ReponseSignalementFin> {
     let mois = c.mois;
     let salarie = c.salarie.as_str();
-    let remplace = remplace_dit(&c.remplace)?;
+    let remplace = c.remplace;
     let envoi_test = c.test == Some(true);
 
     let (saisie, paies) = validees(ctx, mois)?;
@@ -1993,7 +1988,7 @@ pub(crate) fn signaler_la_fin(ctx: &Contexte, c: &ChargeFinContratSignaler, refa
     let options = declarations::fctu::Options {
         type_declaration,
         ordre,
-        remplace: remplace.clone(),
+        remplace,
         envoi_test,
         date_constitution: c.le,
     };
@@ -2082,9 +2077,9 @@ pub(crate) fn etats_d_alors(ctx: &Contexte, salarie: &IdSalarie, dernier_jour: &
 /// DSN, p. 136 : « Pour un signalement, ce numero ne doit pas etre remis a zero afin qu'il soit unique quel que
 /// soit le mois d'emission ». LA PLATE-FORME FAIT FOI : `crate::gestes::releve::dernier_ordre_connu` la consulte ; ce
 /// qu'il faut en dire (elle n'a pas repondu, elle connaissait plus que le journal) part avec les avertissements.
-fn prochain_ordre(ctx: &Contexte) -> R<(i64, Vec<String>)> {
+fn prochain_ordre(ctx: &Contexte) -> R<(NumeroDOrdre, Vec<String>)> {
     let connu = crate::gestes::releve::dernier_ordre_connu(ctx, None)?;
-    Ok((connu.dernier + 1, connu.avertissements))
+    Ok((NumeroDOrdre::suivant(connu.dernier)?, connu.avertissements))
 }
 
 /// LE SIGNALEMENT D'ARRET (04) OU DE REPRISE (05), ecrit dans `sorties/AAAA-MM/`. Rien n'est depose : le depot est un
@@ -2098,7 +2093,7 @@ fn prochain_ordre(ctx: &Contexte) -> R<(i64, Vec<String>)> {
 /// fichier parti reste tel qu'il est parti.
 pub(crate) fn signaler_l_arret(ctx: &Contexte, c: &ChargeArretSignaler, alors: Option<&ArretSaisi>) -> R<ReponseSignalement> {
     let nature = c.nature;
-    let remplace = remplace_dit(&c.remplace)?;
+    let remplace = c.remplace;
     let arret = match alors {
         Some(a) => a.clone(),
         None => l_arret(ctx, &cle_du_nom(ctx, &c.salarie)?, &c.dernier_jour)?.2,
@@ -2182,7 +2177,7 @@ pub(crate) fn resume_arret(ctx: &Contexte, n: &Bloc60, a: &ArretSaisi) -> R<Arre
     let signale = !signalements.is_empty();
     // UN SIGNALEMENT EST-IL DU ? Pas pour un motif que la DSN ne couvre pas (le deuil d'enfant : `obligations-base.json`,
     // `signalement_arret.sauf_motifs`) ; son obligation est alors l'attestation de salaire hors DSN.
-    let signalement_du = crate::obligations::signalement_du(a.motif.code())?;
+    let signalement_du = crate::obligations::signalement_du(a.motif)?;
     Ok(ArretResume {
         salarie: a.salarie.clone(),
         contrat: a.contrat_numero.clone(),
@@ -2586,7 +2581,7 @@ fn contrats_au(ctx: &Contexte, cle: &IdSalarie, jour: Jour) -> R<Vec<ContratAuJo
                 debut,
                 fin,
                 mois: m,
-                spectacle: e.spectacle.as_ref().map(ToString::to_string),
+                spectacle: e.spectacle.clone(),
                 // Paye au mois (`Nature::mensuelle`) : son mois de paie se tire du moteur, et un arret y appelle le maintien
                 // de salaire (L1226-1 : pas pour un intermittent).
                 mensuel,

@@ -13,7 +13,8 @@ use crate::type_taux_pas::TypeDeTauxPas;
 use socle::date::{jours_du_mois, Jour};
 use socle::mois::Mois;
 use socle::num::nombre;
-use socle::fichiers::{repr, LectureDatee};
+use socle::fichiers::{repr, LectureDatee, ValeurLue};
+use crate::contexte::CleLue;
 use socle::echec::{refus, Echec, R};
 use socle::num::{eur, pct, sub, Decimal};
 
@@ -139,7 +140,7 @@ pub fn est_perime(e: &TauxPas, le: Jour) -> bool {
 
 /// Vrai seulement si la fiche est la ET qu'elle n'a pas de NIR.
 pub fn sans_nir(ctx: &Contexte, cle: &IdSalarie) -> bool {
-    ctx.salaries.get(cle).is_some_and(|f| f.nir.portee().is_none_or(|n| n.trim().is_empty()))
+    ctx.salaries.get(cle).is_some_and(|f| f.nir.portee().is_none())
 }
 
 /// Le jour auquel on demande si un taux vaut encore : celui du contexte.
@@ -147,7 +148,7 @@ pub fn le_jour(ctx: &Contexte, le: Option<Jour>) -> Jour {
     match le {
         Some(j) => j,
         None => {
-            socle::fichiers::noter_valeur("date", ctx.date.iso());
+            socle::fichiers::noter_lecture(&CleLue::Date, ValeurLue::Jour(ctx.date));
             ctx.date
         }
     }
@@ -358,7 +359,7 @@ pub fn rubriques_par_defaut(
 pub fn taux_dgfip(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option<Mois>) -> R<Option<Triplet>> {
     let t = triplet(ctx, cle, le, mois)?;
     if let Some(j) = le {
-        socle::fichiers::noter_valeur(&LectureDatee::Pas { salarie: cle, le: j, mois }.cle(), empreinte_du_triplet(&t));
+        socle::fichiers::noter_lecture(&CleLue::Datee(LectureDatee::Pas { salarie: cle.clone(), le: j, mois }), empreinte_du_triplet(&t));
     }
     Ok(t)
 }
@@ -371,16 +372,16 @@ fn triplet(ctx: &Contexte, cle: &IdSalarie, le: Option<Jour>, mois: Option<Mois>
     }
 }
 
-fn empreinte_du_triplet(t: &Option<Triplet>) -> String {
-    match t {
+fn empreinte_du_triplet(t: &Option<Triplet>) -> ValeurLue {
+    ValeurLue::Composee(match t {
         Some(t) => socle::ecriture::json_en_ligne(&(&t.taux, &t.type_taux, &t.identifiant)),
         None => "aucun".into(),
-    }
+    })
 }
 
 /// Ce que `taux_dgfip` a note pour le salarie `cle` au jour `le` (`LectureDatee::Pas`), relu maintenant : l'empreinte
 /// tient tant qu'il est le meme.
-pub fn empreinte(ctx: &Contexte, cle: &IdSalarie, le: Jour, mois: Option<Mois>) -> R<String> {
+pub fn empreinte(ctx: &Contexte, cle: &IdSalarie, le: Jour, mois: Option<Mois>) -> R<ValeurLue> {
     Ok(empreinte_du_triplet(&triplet(ctx, cle, Some(le), mois)?))
 }
 

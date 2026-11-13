@@ -44,7 +44,7 @@ pub struct Portabilite {
 
 /// LA PORTABILITE DU CONTRAT QUE LA PAIE `p` TERMINE (son engagement, de numero `numero`, finit le `fin`) ; `None` : rien
 /// n'est maintenu (une faute lourde, ou aucune garantie collective).
-pub fn de(ctx: &Contexte, p: &Paie, numero: &str, fin: &Jour) -> R<Option<Portabilite>> {
+pub fn de(ctx: &Contexte, p: &Paie, numero: &crate::numeros::NumeroContrat, fin: &Jour) -> R<Option<Portabilite>> {
     let racine = &ctx.racine;
     // Les motifs de fin pour faute lourde (S21.G00.62.002).
     use droit::natures::MotifDeRupture::{LicenciementFauteLourde, RuptureAnticipeeFauteLourde};
@@ -55,7 +55,7 @@ pub fn de(ctx: &Contexte, p: &Paie, numero: &str, fin: &Jour) -> R<Option<Portab
     let siens: Vec<&Objet> = objets.iter().filter(|o| !o.est_non_actif() && o.carte().salarie.as_ref() == Some(&p.salarie.id)).collect();
     // Les garanties : ce que la paie qui finit cotise, et chaque paie de l'engagement avant elle.
     let mut ids: Vec<IdDeCotisation> = p.lignes.iter().map(|l| l.id.clone()).collect();
-    for o in siens.iter().filter(|o| o.carte().numero.as_deref() == Some(numero)) {
+    for o in siens.iter().filter(|o| o.carte().numero.as_ref() == Some(numero)) {
         for paie in crate::paies::presentes(o)?.into_values() {
             ids.extend(paie.paie.lignes.into_iter().map(|l| l.id));
         }

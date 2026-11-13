@@ -1,5 +1,5 @@
 //! Le questionnaire de la fiche salarie remplie par la personne elle-meme, par courriel
-//! Les `QUESTIONS`, `questionnaire`, `code_fiche`, `lire_reponses`, `fiche_depuis_reponses`.
+//! Les `QUESTIONS`, `questionnaire`, `CodeDeDemande` (et `code_au_hasard`), `lire_reponses`, `fiche_depuis_reponses`.
 //!
 //! Les textes (questions, objet, corps, HTML) et les deux tables (pays, nationalites) sont ecrits mot pour mot du questionnaire. Les deux tables ne portent que le code
 //! ISO : la codification UE (quatre valeurs) se deduit dans `codification_ue`. Les pays se
@@ -15,16 +15,81 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use droit::fiche::{CaseDeFiche, CaseSalarie};
+use droit::fiche::{CaseDeFiche, CaseSalarie, Nir};
 use socle::texte::{blanc as espace, strip};
 use socle::date::Jour;
 use socle::echec::R;
 
 pub const ALPHABET_CODE: &str = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
-/// Un code a six signes derriere son prefixe (`SIG-` d'une signature, `FIC-` d'une fiche demandee a la personne).
-/// Le systeme qui ne donne pas d'aleas fait refuser : un code devinable ne protege rien.
-pub fn code_au_hasard(prefixe: &str) -> R<String> {
+/// Ce qu'une demande demande, dit par le prefixe de son code : une signature (`SIG-`), une fiche (`FIC-`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SorteDeDemande {
+    Signature,
+    Fiche,
+}
+
+impl SorteDeDemande {
+    /// Le prefixe de son code.
+    pub fn prefixe(self) -> &'static str {
+        match self {
+            SorteDeDemande::Signature => "SIG-",
+            SorteDeDemande::Fiche => "FIC-",
+        }
+    }
+}
+
+/// LE CODE D'UNE DEMANDE : ce qu'une demande de signature ou de fiche porte, et qu'on cherche dans la reponse. Son
+/// prefixe dit la sorte de demande (`SorteDeDemande`), puis six signes de `ALPHABET_CODE` (sans 0/O ni 1/I/L, pour
+/// qu'il se relise sans faute). Seul `code_au_hasard` le fait ; il se lit strictement par son texte (`lire`). Une
+/// reponse recue est le texte d'un tiers : on y cherche `texte()`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct CodeDeDemande(String);
+
+impl CodeDeDemande {
+    /// Le code ecrit `texte` ; refus s'il n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<CodeDeDemande> {
+        let signes = [SorteDeDemande::Signature, SorteDeDemande::Fiche].into_iter().find_map(|s| texte.strip_prefix(s.prefixe()));
+        match signes {
+            Some(s) if s.chars().count() == 6 && s.chars().all(|c| ALPHABET_CODE.contains(c)) => Ok(CodeDeDemande(texte.to_string())),
+            _ => Err(socle::refus!(
+                "Code de demande {} : il s'écrit « SIG- » ou « FIC- » puis six signes parmi {}.",
+                socle::fichiers::repr(texte),
+                ALPHABET_CODE
+            )),
+        }
+    }
+
+    /// Le code tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CodeDeDemande {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for CodeDeDemande {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<CodeDeDemande> {
+        CodeDeDemande::lire(&s)
+    }
+}
+
+impl From<CodeDeDemande> for String {
+    fn from(c: CodeDeDemande) -> String {
+        c.0
+    }
+}
+
+/// Un code a six signes derriere le prefixe de sa sorte (`SIG-` d'une signature, `FIC-` d'une fiche demandee a la
+/// personne). Le systeme qui ne donne pas d'aleas fait refuser : un code devinable ne protege rien.
+pub fn code_au_hasard(sorte: SorteDeDemande) -> R<CodeDeDemande> {
+    let prefixe = sorte.prefixe();
     let alphabet = ALPHABET_CODE.as_bytes();
     let limite = 256 - 256 % alphabet.len();
     let mut code = String::from(prefixe);
@@ -37,12 +102,7 @@ pub fn code_au_hasard(prefixe: &str) -> R<String> {
             code.push(alphabet[*x as usize % alphabet.len()] as char);
         }
     }
-    Ok(code)
-}
-
-/// `code_fiche` : `FIC-` puis six signes tires au hasard dans `ALPHABET_CODE`.
-pub fn code_fiche() -> R<String> {
-    code_au_hasard("FIC-")
+    Ok(CodeDeDemande(code))
 }
 
 /// Les questions que le questionnaire sait lire : (cle de la reponse, libelle, case de la fiche salarie qu'elle remplit).
@@ -348,9 +408,9 @@ pub struct FicheLue {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_postal: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nir: Option<String>,
+    pub nir: Option<droit::fiche::Nir>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nir_cle: Option<String>,
+    pub nir_cle: Option<droit::fiche::CleNir>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sexe: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -372,9 +432,9 @@ pub struct FicheLue {
 #[serde(deny_unknown_fields)]
 pub struct BanqueLue {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub iban: Option<String>,
+    pub iban: Option<droit::fiche::Iban>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub bic: Option<String>,
+    pub bic: Option<droit::fiche::Bic>,
 }
 
 /// `fiche_depuis_reponses` : (les cases lues de la fiche, ce qui n'a pas pu se lire). Rien n'est suppose. Une liste
@@ -412,15 +472,19 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
         }
     }
     if let Some(r) = reponse("nir") {
-        let n: Vec<char> = r.chars().filter(|c| !espace(*c) && !matches!(c, '.' | '-')).collect();
-        let tout_chiffres = n.iter().all(|c| chiffre(*c));
-        if tout_chiffres && n.len() == 15 {
-            d.nir = Some(n[..13].iter().collect::<String>());
-            d.nir_cle = Some(n[13..].iter().collect::<String>());
-        } else if tout_chiffres && n.len() == 13 {
-            d.nir = Some(n.iter().collect::<String>());
-        } else {
-            illisible.push(format!("numéro de sécurité sociale : « {} »", r));
+        let n: String = r.chars().filter(|c| !espace(*c) && !matches!(c, '.' | '-')).collect();
+        let tout_chiffres = n.chars().all(chiffre);
+        // Treize chiffres sont un NIR ; une cle hors de 01..97 rend la reponse entiere illisible, avec sa raison.
+        match Nir::et_sa_cle(&n).filter(|_| tout_chiffres) {
+            Some((nir, Some(cle))) => match droit::fiche::CleNir::lire(cle) {
+                Ok(cle) => {
+                    d.nir = Some(Nir::lire(nir)?);
+                    d.nir_cle = Some(cle);
+                }
+                Err(e) => illisible.push(format!("numéro de sécurité sociale : « {} » ({})", r, e.phrase)),
+            },
+            Some((nir, None)) => d.nir = Some(Nir::lire(nir)?),
+            None => illisible.push(format!("numéro de sécurité sociale : « {} »", r)),
         }
     }
     if let Some(r) = reponse("sexe").filter(|_| d.nir.is_none()) {
@@ -475,27 +539,26 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
             },
         }
     }
-    // LE COMPTE BANCAIRE : l'IBAN compact (sans blancs, en majuscules) ; un IBAN dont la forme ou la cle est fausse ne
-    // s'ecrit pas, il se dit a completer avec sa raison (`socle::iban::faute_iban`) ; le BIC de meme (`faute_bic`).
+    // LE COMPTE BANCAIRE : l'IBAN compact (sans blancs, en majuscules), lu par son type (`droit::fiche::Iban`) ; un IBAN
+    // dont la forme ou la cle est fausse ne s'ecrit pas, il se dit a completer avec sa raison ; le BIC de meme (`Bic`).
     let mut banque = BanqueLue::default();
-    for (q, cle, faute) in [("iban", "IBAN", socle::iban::faute_iban as fn(&str) -> Option<String>), ("bic", "BIC", socle::iban::faute_bic)] {
-        let Some(brut) = reponse(q).map(strip).filter(|b| !b.is_empty()) else { continue };
-        match faute(brut) {
-            None => {
-                let compact = Some(socle::iban::iban_compact(brut));
-                match q {
-                    "iban" => banque.iban = compact,
-                    _ => banque.bic = compact,
-                }
-            }
-            Some(f) => illisible.push(format!("{} : « {} » ({})", cle, brut, f)),
+    if let Some(brut) = reponse("iban").map(strip).filter(|b| !b.is_empty()) {
+        match droit::fiche::Iban::lire(&droit::fiche::Iban::rangee(brut)) {
+            Ok(iban) => banque.iban = Some(iban),
+            Err(e) => illisible.push(format!("IBAN : « {} » ({})", brut, e.phrase)),
+        }
+    }
+    if let Some(brut) = reponse("bic").map(strip).filter(|b| !b.is_empty()) {
+        match droit::fiche::Bic::lire(&droit::fiche::Bic::rangee(brut)) {
+            Ok(bic) => banque.bic = Some(bic),
+            Err(e) => illisible.push(format!("BIC : « {} » ({})", brut, e.phrase)),
         }
     }
     if banque != BanqueLue::default() {
         d.banque = Some(banque);
     }
     // Ce que le NIR ecrit de la naissance complete ce que les reponses ne disent pas.
-    if let Some((departement, pays)) = d.nir.as_deref().and_then(naissance_depuis_nir) {
+    if let Some((departement, pays)) = d.nir.as_ref().and_then(naissance_depuis_nir) {
         d.departement_naissance = Some(departement);
         if d.pays_naissance.is_none() {
             d.pays_naissance = pays;
@@ -507,9 +570,9 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
 /// Le departement de naissance que le NIR ECRIT (les 6e et 7e signes ; 99 pour une naissance a l'etranger), et le pays
 /// de naissance qu'il en deduit (la France, hors 99). Deux cas se taisent : la Corse d'avant 1976 (« 20 ») et un NIR
 /// incomplet.
-fn naissance_depuis_nir(nir: &str) -> Option<(String, Option<socle::pays::CodePays>)> {
-    let c: Vec<char> = strip(nir).chars().collect();
-    if c.len() != 13 || !c.iter().all(|x| chiffre(*x)) || !matches!(c[0], '1' | '2') {
+fn naissance_depuis_nir(nir: &droit::fiche::Nir) -> Option<(String, Option<socle::pays::CodePays>)> {
+    let c: Vec<char> = nir.chars().collect();
+    if !c.iter().all(|x| chiffre(*x)) || !matches!(c[0], '1' | '2') {
         return None;
     }
     let dep: String = c[5..7].iter().collect();

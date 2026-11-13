@@ -104,15 +104,16 @@ pub struct Ligne {
     pub quoi: Nature,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub quand: Moment,
-    pub version: String,
-    pub empreinte: String,
+    /// La version du logiciel ; vide quand `VERSION` ne se lisait pas (`version`).
+    pub version: Option<crate::maj::VersionDuLogiciel>,
+    pub empreinte: CleDIncident,
     pub ou: String,
     pub genre: String,
     pub resume: String,
     /// La trace de ce que l'incident portait (la charge de la route, l'etat du mois), ecrite par la frontiere.
     pub detail: String,
     pub trace: Option<String>,
-    pub caviarde: Vec<String>,
+    pub caviarde: Vec<EtiquetteDeCaviardage>,
     /// Combien de fois il a ete vu, et la derniere.
     pub fois: u64,
     #[serde(with = "socle::paris::ecrit::seconde")]
@@ -144,16 +145,124 @@ const FICHIER_EDITEUR: &str = "EDITEUR.json";
 
 // ------------------------------------------------------------------- les motifs
 
-fn motifs_a_caviarder() -> &'static [(Regex, &'static str)] {
-    static M: OnceLock<Vec<(Regex, &'static str)>> = OnceLock::new();
+/// CE QUE LE CAVIARDAGE A RETIRE d'un texte : son etiquette (`[NIR]` ici, `<NIR>` dans le texte d'un bulletin que
+/// l'import caviarde, `import::caviardage`), jamais ce que c'etait. Une liste du logiciel : les dix de l'import (le nom,
+/// le prenom, le NIR, la date de naissance, l'adresse, le numero Conges Spectacles, le courriel, le telephone, l'IBAN, le
+/// code salarie) et, pour les incidents, le BIC et le jeton de session. Ecrite par son mot en capitales (le journal des
+/// incidents, ce qui part chez l'editeur) ; un autre mot se refuse a la lecture. Elle se trie comme son mot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum EtiquetteDeCaviardage {
+    Nom,
+    Prenom,
+    Nir,
+    Naissance,
+    Adresse,
+    Cs,
+    Courriel,
+    Tel,
+    Iban,
+    Code,
+    Bic,
+    Jeton,
+}
+
+impl EtiquetteDeCaviardage {
+    /// Toutes, dans l'ordre du resume d'un caviardage (`import::caviardage::Caviarde::resume`).
+    pub const TOUTES: [EtiquetteDeCaviardage; 12] = [
+        EtiquetteDeCaviardage::Nom,
+        EtiquetteDeCaviardage::Prenom,
+        EtiquetteDeCaviardage::Nir,
+        EtiquetteDeCaviardage::Naissance,
+        EtiquetteDeCaviardage::Adresse,
+        EtiquetteDeCaviardage::Cs,
+        EtiquetteDeCaviardage::Courriel,
+        EtiquetteDeCaviardage::Tel,
+        EtiquetteDeCaviardage::Iban,
+        EtiquetteDeCaviardage::Code,
+        EtiquetteDeCaviardage::Bic,
+        EtiquetteDeCaviardage::Jeton,
+    ];
+
+    /// Son mot, tel que le marqueur et le journal l'ecrivent.
+    pub fn texte(self) -> &'static str {
+        match self {
+            EtiquetteDeCaviardage::Nom => "NOM",
+            EtiquetteDeCaviardage::Prenom => "PRENOM",
+            EtiquetteDeCaviardage::Nir => "NIR",
+            EtiquetteDeCaviardage::Naissance => "NAISSANCE",
+            EtiquetteDeCaviardage::Adresse => "ADRESSE",
+            EtiquetteDeCaviardage::Cs => "CS",
+            EtiquetteDeCaviardage::Courriel => "COURRIEL",
+            EtiquetteDeCaviardage::Tel => "TEL",
+            EtiquetteDeCaviardage::Iban => "IBAN",
+            EtiquetteDeCaviardage::Code => "CODE",
+            EtiquetteDeCaviardage::Bic => "BIC",
+            EtiquetteDeCaviardage::Jeton => "JETON",
+        }
+    }
+
+    /// Ce qu'elle dit a la personne, au singulier et au pluriel (« 1 nom », « 3 noms enlevés »).
+    pub fn dit(self) -> (&'static str, &'static str) {
+        match self {
+            EtiquetteDeCaviardage::Nom => ("nom", "noms"),
+            EtiquetteDeCaviardage::Prenom => ("prénom", "prénoms"),
+            EtiquetteDeCaviardage::Nir => ("NIR", "NIR"),
+            EtiquetteDeCaviardage::Naissance => ("date de naissance", "dates de naissance"),
+            EtiquetteDeCaviardage::Adresse => ("adresse", "adresses"),
+            EtiquetteDeCaviardage::Cs => ("numéro Congés Spectacles", "numéros Congés Spectacles"),
+            EtiquetteDeCaviardage::Courriel => ("courriel", "courriels"),
+            EtiquetteDeCaviardage::Tel => ("téléphone", "téléphones"),
+            EtiquetteDeCaviardage::Iban => ("IBAN", "IBAN"),
+            EtiquetteDeCaviardage::Code => ("code salarié", "codes salarié"),
+            EtiquetteDeCaviardage::Bic => ("BIC", "BIC"),
+            EtiquetteDeCaviardage::Jeton => ("jeton de session", "jetons de session"),
+        }
+    }
+}
+
+impl std::fmt::Display for EtiquetteDeCaviardage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.texte())
+    }
+}
+
+impl PartialOrd for EtiquetteDeCaviardage {
+    fn partial_cmp(&self, autre: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(autre))
+    }
+}
+
+impl Ord for EtiquetteDeCaviardage {
+    fn cmp(&self, autre: &Self) -> std::cmp::Ordering {
+        self.texte().cmp(autre.texte())
+    }
+}
+
+impl<'de> Deserialize<'de> for EtiquetteDeCaviardage {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mot = String::deserialize(d)?;
+        match EtiquetteDeCaviardage::TOUTES.into_iter().find(|e| e.texte() == mot) {
+            Some(e) => Ok(e),
+            None => Err(serde::de::Error::custom(format!(
+                "Étiquette de caviardage inconnue : {}. Les étiquettes sont {}.",
+                socle::fichiers::repr(&mot),
+                EtiquetteDeCaviardage::TOUTES.map(EtiquetteDeCaviardage::texte).join(", ")
+            ))),
+        }
+    }
+}
+
+fn motifs_a_caviarder() -> &'static [(Regex, EtiquetteDeCaviardage)] {
+    static M: OnceLock<Vec<(Regex, EtiquetteDeCaviardage)>> = OnceLock::new();
     M.get_or_init(|| {
         vec![
             // Avec ou sans les espaces de la carte Vitale (1 84 12 76 451 089 46).
-            (motif(r"\b[12] ?[0-9]{2} ?(?:0[1-9]|1[0-2]) ?[0-9]{2} ?[0-9]{3} ?[0-9]{3}(?: ?[0-9]{1,2})?\b"), "NIR"),
-            (motif(r"\bFR\d{2} ?(?:\d{4} ?){5}\d{3}\b"), "IBAN"),
-            (motif(r"\b[A-Z]{4}FR[A-Z0-9]{2}[0-9][A-Z0-9]{0,2}\b"), "BIC"),
+            (motif(r"\b[12] ?[0-9]{2} ?(?:0[1-9]|1[0-2]) ?[0-9]{2} ?[0-9]{3} ?[0-9]{3}(?: ?[0-9]{1,2})?\b"), EtiquetteDeCaviardage::Nir),
+            (motif(r"\bFR\d{2} ?(?:\d{4} ?){5}\d{3}\b"), EtiquetteDeCaviardage::Iban),
+            (motif(r"\b[A-Z]{4}FR[A-Z0-9]{2}[0-9][A-Z0-9]{0,2}\b"), EtiquetteDeCaviardage::Bic),
             // Le jeton de session de l'interface : le secret du serveur local.
-            (motif(r#"(?i)(jeton=)[^&\s\"'\\]+"#), "JETON"),
+            (motif(r#"(?i)(jeton=)[^&\s\"'\\]+"#), EtiquetteDeCaviardage::Jeton),
         ]
     })
 }
@@ -210,11 +319,6 @@ pub fn chemin(racine: &Path) -> PathBuf {
     }
 }
 
-/// Le texte sans ses blancs de bord.
-fn sans_blancs_de_bord(s: &str) -> &str {
-    s.trim_matches(|c: char| c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c))
-}
-
 /// `s[:n]` sur des points de code.
 fn tete(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
@@ -224,7 +328,7 @@ fn tete(s: &str, n: usize) -> String {
 
 /// Le texte nettoye, et ce qui a ete trouve. Le
 /// marqueur dit CE QUI a ete retire (`[NIR]`), pas ce que c'etait.
-pub fn caviarder(texte: &str) -> (String, Vec<&'static str>) {
+pub fn caviarder(texte: &str) -> (String, Vec<EtiquetteDeCaviardage>) {
     let mut s = texte.to_string();
     let mut trouve = Vec::new();
     for (motif, quoi) in motifs_a_caviarder() {
@@ -240,29 +344,75 @@ pub fn caviarder(texte: &str) -> (String, Vec<&'static str>) {
 }
 
 /// Un texte caviarde puis coupe a `limite` points de code ; ce que le caviardage a trouve s'ajoute a `trouve`.
-fn nettoyer(s: &str, trouve: &mut Vec<&'static str>, limite: usize) -> String {
+fn nettoyer(s: &str, trouve: &mut Vec<EtiquetteDeCaviardage>, limite: usize) -> String {
     let (propre, vus) = caviarder(s);
     trouve.extend(vus);
     tete(&propre, limite)
 }
 
+/// LA CLE D'UN INCIDENT : ce qui fait que deux incidents sont le meme (la nature, l'endroit, le genre), les douze
+/// premiers hexadecimaux minuscules du SHA-256 de `nature|ou|quoi`. Ce n'est pas une empreinte d'un contenu
+/// (`socle::fichiers::Empreinte`) : la forme que son seul ecrivain fait (`empreinte`), lue strictement ; elle s'ecrit
+/// et se lit par son texte.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct CleDIncident(String);
+
+impl CleDIncident {
+    /// La cle ecrite `texte` ; refus si elle n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<CleDIncident> {
+        let forme = texte.len() == 12 && texte.bytes().all(|o| o.is_ascii_digit() || (b'a'..=b'f').contains(&o));
+        if !forme {
+            return Err(socle::refus!("Clé d'incident {} : elle s'écrit en douze chiffres hexadécimaux minuscules.", socle::fichiers::repr(texte)));
+        }
+        Ok(CleDIncident(texte.to_string()))
+    }
+
+    /// La cle telle qu'ecrite.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for CleDIncident {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for CleDIncident {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<CleDIncident> {
+        CleDIncident::lire(&s)
+    }
+}
+
+impl From<CleDIncident> for String {
+    fn from(c: CleDIncident) -> String {
+        c.0
+    }
+}
+
 /// Ce qui fait que deux incidents sont LE MEME -- la
 /// nature, l'endroit et le genre, pas le message.
-pub fn empreinte(nature: Nature, ou: &str, quoi: &str) -> String {
+pub fn empreinte(nature: Nature, ou: &str, quoi: &str) -> CleDIncident {
     use sha2::{Digest, Sha256};
     let graine = format!("{}|{}|{}", nature.nom(), ou, quoi);
     let h = Sha256::digest(graine.as_bytes());
-    h.iter().map(|o| format!("{:02x}", o)).collect::<String>()[..12].to_string()
+    CleDIncident(h.iter().take(6).map(|o| format!("{:02x}", o)).collect())
 }
 
 // ------------------------------------------------------------------------ ecrire
 
-/// La version du logiciel : `VERSION`, a cote du code ; un fichier qui ne se lit pas le dit.
-pub fn version() -> String {
-    let p = dossier_du_code().join("..").join("VERSION");
-    match std::fs::read_to_string(&p) {
-        Ok(t) => sans_blancs_de_bord(&t).to_string(),
-        Err(e) => format!("(VERSION ne se lit pas : {})", e),
+/// La version du logiciel que porte un incident (`maj::courante`, a cote du code) ; vide quand elle ne se lit pas : un
+/// incident se note toujours, et la raison va au fil du moteur.
+pub fn version() -> Option<crate::maj::VersionDuLogiciel> {
+    match crate::maj::courante(&dossier_du_code().join("..")) {
+        Ok(v) => Some(v),
+        Err(e) => {
+            crate::diagnostic::noter_moteur(&format!("VERSION ne se lit pas : {}", e.phrase));
+            None
+        }
     }
 }
 
@@ -303,7 +453,7 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
     let mut trouve = Vec::new();
     // LA FRONTIERE (`diagnostic`) : un message peut nommer un salarie ; il devient son numero, puis le caviardage. L'alarme
     // (`caviarde`) se leve sur ce qui est ARRIVE : ce que la frontiere a deja remplace se dit quand meme.
-    let texte = |s: &str, limite: usize, trouve: &mut Vec<&'static str>| {
+    let texte = |s: &str, limite: usize, trouve: &mut Vec<EtiquetteDeCaviardage>| {
         nettoyer(s, trouve, limite);
         nettoyer(&crate::diagnostic::texte_en_forme(Some(racine), s, limite), trouve, limite + 40)
     };
@@ -357,7 +507,7 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
         resume,
         detail,
         trace,
-        caviarde: trouve.iter().map(|t| t.to_string()).collect(),
+        caviarde: trouve,
         fois: 1,
         derniere: quand,
         fil,
@@ -374,7 +524,10 @@ pub fn noter<D: Serialize>(racine: &Path, n: &Note<D>) -> R<Option<Ligne>> {
 /// arrete sur une erreur, puis rend son resultat. Un incident qui ne s'ecrit pas se refuse.
 pub fn noter_ceux_des_retours<T>(racine: &Path, r: envois::etats::AvecIncidents<T>) -> R<T> {
     for i in &r.incidents {
-        let canal = if i.canal == envois::etats::DPAE { DPAE } else { DSN };
+        let canal = match i.canal {
+            envois::releve_retours::CanalDesRetours::Dsn => DSN,
+            envois::releve_retours::CanalDesRetours::Dpae => DPAE,
+        };
         noter(racine, &Note { nature: canal, ou: &i.ou, quoi: &i.quoi, resume: &i.resume, detail: &i.detail, trace: None, sans_contexte: false })?;
     }
     r.resultat
@@ -533,7 +686,7 @@ pub fn lire(racine: &Path, nature: Option<Nature>, en_attente_seulement: bool) -
 /// Un paquet d'incidents semblables (`regrouper`).
 #[derive(Debug, Clone, Serialize)]
 pub struct Paquet {
-    pub empreinte: String,
+    pub empreinte: CleDIncident,
     pub quoi: Nature,
     pub ou: String,
     pub genre: String,
@@ -543,15 +696,16 @@ pub struct Paquet {
     pub premiere: Moment,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub derniere: Moment,
-    pub versions: Vec<String>,
-    pub caviarde: Vec<String>,
+    /// Les versions ou il a ete vu (celles qui se lisaient).
+    pub versions: Vec<crate::maj::VersionDuLogiciel>,
+    pub caviarde: Vec<EtiquetteDeCaviardage>,
 }
 
 /// `regrouper` : les incidents regroupes par empreinte, le plus frequent en
 /// tete. Les natures qui ne se regroupent pas rendent une entree par ligne.
 pub fn regrouper(racine: &Path, nature: Option<Nature>) -> R<Vec<Paquet>> {
     // (cle de regroupement, paquet) dans l'ordre d'insertion.
-    let mut paquets: Vec<(Option<String>, Paquet)> = Vec::new();
+    let mut paquets: Vec<(Option<CleDIncident>, Paquet)> = Vec::new();
     for l in lire(racine, nature, false)? {
         let cle = l.quoi.se_regroupe().then(|| l.empreinte.clone());
         let existant = match &cle {
@@ -570,7 +724,7 @@ pub fn regrouper(racine: &Path, nature: Option<Nature>) -> R<Vec<Paquet>> {
                     combien: l.fois,
                     premiere: l.quand,
                     derniere: l.quand,
-                    versions: vec![l.version.clone()],
+                    versions: l.version.iter().cloned().collect(),
                     caviarde: l.caviarde.clone(),
                 },
             )),
@@ -578,12 +732,12 @@ pub fn regrouper(racine: &Path, nature: Option<Nature>) -> R<Vec<Paquet>> {
                 let p = &mut paquets[i].1;
                 p.combien += l.fois;
                 p.derniere = l.quand;
-                if !p.versions.contains(&l.version) {
-                    p.versions.push(l.version.clone());
+                if let Some(v) = l.version.as_ref().filter(|v| !p.versions.contains(v)) {
+                    p.versions.push(v.clone());
                 }
                 for c in &l.caviarde {
                     if !p.caviarde.contains(c) {
-                        p.caviarde.push(c.clone());
+                        p.caviarde.push(*c);
                     }
                 }
             }
@@ -626,14 +780,14 @@ pub struct PourLEditeur {
     pub quoi: Nature,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub quand: Moment,
-    pub version: String,
-    pub empreinte: String,
+    pub version: Option<crate::maj::VersionDuLogiciel>,
+    pub empreinte: CleDIncident,
     pub ou: String,
     pub genre: String,
     pub resume: String,
     pub detail: String,
     pub trace: Option<String>,
-    pub caviarde: Vec<String>,
+    pub caviarde: Vec<EtiquetteDeCaviardage>,
     pub machine: String,
     pub fois: u64,
     #[serde(with = "socle::paris::ecrit::seconde")]
@@ -659,7 +813,7 @@ pub fn pour_l_editeur(racine: &Path, l: &Ligne) -> PourLEditeur {
     PourLEditeur {
         quoi: l.quoi,
         quand: l.quand,
-        version: t(&l.version),
+        version: l.version.clone(),
         empreinte: l.empreinte.clone(),
         ou: t(&l.ou),
         genre: t(&l.genre),
@@ -793,7 +947,7 @@ pub fn edition() -> String {
 #[serde(deny_unknown_fields)]
 pub struct AnneeRetenue {
     pub paies: u64,
-    pub poste: String,
+    pub poste: NumeroDePoste,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub parti_le: Moment,
 }
@@ -807,13 +961,13 @@ pub struct ConfigDiagnostic {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub envoi: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub poste: Option<String>,
+    pub poste: Option<NumeroDePoste>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cle: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub serveur: Option<Url>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub paies_annuelles: Option<BTreeMap<String, AnneeRetenue>>,
+    pub paies_annuelles: Option<BTreeMap<socle::mois::Annee, AnneeRetenue>>,
 }
 
 /// `config/diagnostic.json` de `racine` : rien n'est pose sans le fichier ; un fichier qui ne se lit pas se refuse.
@@ -855,22 +1009,51 @@ pub fn regler_envoi(racine: &Path, actif: bool) -> R<()> {
     ecrire_config(racine, &c)
 }
 
-/// Un numero de poste tel que le serveur les donne : 32 hexadecimaux.
-fn numero_de_poste(s: &str) -> bool {
-    s.len() == 32 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+/// LE NUMERO DE CE POSTE CHEZ L'EDITEUR, tel que le serveur du filet le donne (`POST /poste`) : 32 hexadecimaux
+/// minuscules (`RE_POSTE` de `infra/filet/filet_serveur.py`). Il s'ecrit et se lit par son texte ; une autre forme se
+/// refuse.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct NumeroDePoste(String);
+
+impl NumeroDePoste {
+    /// Le numero ecrit `texte` ; refus s'il n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<NumeroDePoste> {
+        let forme = texte.len() == 32 && texte.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        if !forme {
+            return Err(socle::refus!("Numéro de poste {} : il s'écrit en 32 chiffres hexadécimaux minuscules.", socle::fichiers::repr(texte)));
+        }
+        Ok(NumeroDePoste(texte.to_string()))
+    }
+
+    /// Le numero tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for NumeroDePoste {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for NumeroDePoste {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<NumeroDePoste> {
+        NumeroDePoste::lire(&s)
+    }
+}
+
+impl From<NumeroDePoste> for String {
+    fn from(n: NumeroDePoste) -> String {
+        n.0
+    }
 }
 
 /// Une cle de poste telle que le serveur les donne : 64 hexadecimaux.
 fn cle_de_poste(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
-/// Le numero de ce poste chez l'editeur, tel que le serveur l'a donne (`config/diagnostic.json`, dans la compagnie dont
-/// vient la configuration) ; aucun tant qu'aucune identite n'a ete demandee. Ne demande rien : c'est `client_du_poste`
-/// qui le fait, a l'envoi.
-pub fn poste(racine: &Path) -> R<Option<String>> {
-    let (_, ou) = configuration(racine)?;
-    Ok(lire_config(&ou)?.poste.filter(|n| numero_de_poste(n)))
 }
 
 /// `client_du_poste` : le client des actions de l'editeur chez `serveur`, avec
@@ -883,7 +1066,7 @@ pub fn client_du_poste(ou: &Path, serveur: &Url) -> R<Result<Client, ErreurFilet
     let mut c = lire_config(ou)?;
     let serveur = Url::lire(serveur.texte().trim_end_matches('/'))?;
     let connue = match (&c.poste, &c.cle, &c.serveur) {
-        (Some(n), Some(k), Some(s)) if numero_de_poste(n) && cle_de_poste(k) && s.texte().trim_end_matches('/') == serveur.texte() => Some((n.clone(), k.clone())),
+        (Some(n), Some(k), Some(s)) if cle_de_poste(k) && s.texte().trim_end_matches('/') == serveur.texte() => Some((n.clone(), k.clone())),
         _ => None,
     };
     let (numero, cle) = match connue {
@@ -893,7 +1076,7 @@ pub fn client_du_poste(ou: &Path, serveur: &Url) -> R<Result<Client, ErreurFilet
                 Ok(r) => r,
                 Err(e) => return Ok(Err(e)),
             };
-            if !numero_de_poste(&r.poste) || !cle_de_poste(&r.cle) {
+            if !cle_de_poste(&r.cle) {
                 return Ok(Err(ErreurFilet::filet(format!("le serveur de l'éditeur a répondu : {}/poste n'a pas rendu une identité de poste.", serveur), 0)));
             }
             c.poste = Some(r.poste.clone());
@@ -965,7 +1148,7 @@ pub fn canal(racine: &Path) -> R<Canal> {
 }
 
 /// Passe a `depose` les lignes nommees par (empreinte, quand).
-fn marquer(racine: &Path, cles: &[(String, Moment)]) -> R<usize> {
+fn marquer(racine: &Path, cles: &[(CleDIncident, Moment)]) -> R<usize> {
     if cles.is_empty() {
         return Ok(0);
     }
@@ -1034,7 +1217,7 @@ fn passage(racine: &Path, bilan: &mut BilanIncidents) -> R<()> {
                 break;
             }
         };
-        let cles: Vec<(String, Moment)> = r.recus.into_iter().chain(r.ecartes).collect();
+        let cles: Vec<(CleDIncident, Moment)> = r.recus.into_iter().chain(r.ecartes).collect();
         bilan.envoyes += marquer(racine, &cles)?;
     }
     bilan.reste = lire(racine, None, true)?.len();

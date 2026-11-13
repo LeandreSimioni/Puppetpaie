@@ -83,8 +83,10 @@ pub(crate) struct EcritureRendue {
     date: socle::date::Jour,
     compte: String,
     libelle: String,
-    debit: String,
-    credit: String,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    debit: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    credit: Decimal,
     analytique: Option<String>,
     mois: socle::mois::Mois,
     auxiliaire: Option<String>,
@@ -101,8 +103,10 @@ pub(crate) struct ExportComptaRendu {
     au: u32,
     mois: Vec<Mois>,
     ecritures: Vec<EcritureRendue>,
-    total_debit: String,
-    total_credit: String,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    total_debit: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    total_credit: Decimal,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: Option<PathBuf>,
     fichier: Option<NomDeFichier>,
@@ -139,16 +143,16 @@ impl ExportCompta {
                     date: e.date,
                     compte: e.compte,
                     libelle: e.libelle,
-                    debit: e.debit.to_string(),
-                    credit: e.credit.to_string(),
+                    debit: e.debit,
+                    credit: e.credit,
                     analytique: e.analytique,
                     mois: e.mois,
                     auxiliaire: e.auxiliaire,
                     auxiliaire_libelle: e.auxiliaire_libelle,
                 })
                 .collect(),
-            total_debit: self.total_debit.to_string(),
-            total_credit: self.total_credit.to_string(),
+            total_debit: self.total_debit,
+            total_credit: self.total_credit,
             dossier,
             fichier,
             plan: self.plan,
@@ -219,11 +223,11 @@ pub(crate) fn export_compta(ctx: &Contexte, annee: Annee, du: u32, au: u32, ecri
 /// LES SAISIES DE L'ANNEE, PAR LEUR EMPREINTE : `{"AAAA-MM": empreinte}` pour chaque mois saisi de l'annee, l'empreinte
 /// de sa saisie (`engagement::stock::empreinte_de_la_saisie_du_mois` : ce qu'elle dit qui change la paie). Une saisie
 /// illisible se refuse. L'export compta de l'annee la note en s'ecrivant (`noter_piece_ecrite`) : c'est ce qu'il a lu.
-pub(crate) fn empreintes_des_saisies(racine: &Path, annee: Annee) -> R<BTreeMap<String, String>> {
+pub(crate) fn empreintes_des_saisies(racine: &Path, annee: Annee) -> R<BTreeMap<socle::mois::Mois, String>> {
     let mut m = BTreeMap::new();
     for mois in engagement::stock::mois_saisis(racine).map_err(|e| e.reclasser(Classe::Refuse))?.into_iter().filter(|x| x.annee_civile() == annee) {
         if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, mois, None).map_err(|e| e.reclasser(Classe::Refuse))? {
-            m.insert(mois.to_string(), e);
+            m.insert(mois, e.to_string());
         }
     }
     Ok(m)
@@ -448,8 +452,12 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
     // janvier suivant qui repondent a la DSN de decembre sont pris aussi : ils portent sur l'annee close.
     let (de_l_annee, suivante) = (annee.to_string(), format!("{}01", annee.nombre() + 1));
     // Les retours DSN a la racine des retours, ceux des DPAE sous `dpae/`.
-    let canaux: [(PathBuf, &str); 2] = [(ctx.racine.join(envois::retours::RETOURS), ""), (ctx.racine.join(envois::retours::RETOURS_DPAE), "dpae/")];
-    for (d, prefixe) in canaux {
+    for canal in [envois::releve_retours::CanalDesRetours::Dsn, envois::releve_retours::CanalDesRetours::Dpae] {
+        let d = canal.chemin(&ctx.racine);
+        let prefixe = match canal.dossier() {
+            Some(s) => format!("{}/", s),
+            None => String::new(),
+        };
         if d.is_dir() {
             let mut noms: Vec<(String, PathBuf)> = Vec::new();
             for e in std::fs::read_dir(&d).map_err(|e| en_os(&e, &d))? {

@@ -75,9 +75,14 @@ impl NumeroContrat {
         droit::fiche::sans_blancs_de_bord(texte)
     }
 
-    /// Le numero d'un texte dit : absent, aucun ; une autre forme que celle de la norme (le texte vide compris) se refuse.
-    pub fn du_texte(t: Option<&str>) -> R<Option<NumeroContrat>> {
-        t.map(NumeroContrat::lire).transpose()
+    /// LE NUMERO QU'UNE PIECE D'AUTRUI IMPRIME (un bulletin d'un autre logiciel) : sans ses blancs de bord ; a blanc ou
+    /// hors de sa forme, la case reste vide, comme un code hors de nos listes (la piece d'un tiers se lit, elle ne se
+    /// refuse pas pour lui).
+    pub fn d_une_piece(texte: &str) -> Option<NumeroContrat> {
+        match NumeroContrat::lire(&NumeroContrat::rangee(texte)) {
+            Ok(n) => Some(n),
+            Err(_) => None,
+        }
     }
 
     pub fn as_str(&self) -> &str {
@@ -127,6 +132,69 @@ impl From<NumeroContrat> for String {
     }
 }
 
+/// LE NUMERO D'UN BULLETIN DU LOGICIEL, `N/AAAA` : son rang dans la suite des bulletins de l'annee, puis l'annee. Il se
+/// donne par `numeroter`, et par le depart des documents d'un mois sur la suite qu'il reserve
+/// (`routes::gestes::depart::fabriquer_documents`) ; l'apercu d'un bulletin en montre un (`du_rang`). La paie ecrite le
+/// garde, et il se relit tel qu'il est ecrit (`lire`, ou `serde` : la meme chaine). Celui qu'un bulletin d'autrui imprime
+/// est du texte (`importe::ContratAtteste::numero_bulletin`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize)]
+#[serde(into = "String")]
+pub struct NumeroDeBulletin {
+    texte: String,
+    rang: i64,
+    annee: i64,
+}
+
+impl<'de> serde::Deserialize<'de> for NumeroDeBulletin {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        NumeroDeBulletin::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
+impl NumeroDeBulletin {
+    /// Le numero ecrit `texte` : des chiffres, `/`, l'annee en quatre chiffres ; toute autre forme se refuse.
+    pub fn lire(texte: &str) -> R<NumeroDeBulletin> {
+        let lu = texte.split_once('/').and_then(|(n, an)| {
+            let rang = socle::num::entier_de_chiffres(n)?;
+            let annee = if an.len() == 4 { socle::num::entier_de_chiffres(an) } else { None }?;
+            Some((rang, annee))
+        });
+        match lu {
+            Some((rang, annee)) => Ok(NumeroDeBulletin { texte: texte.to_string(), rang, annee }),
+            None => Err(socle::refus!("« {} » n'est pas un numéro de bulletin : son rang, « / », puis l'année en quatre chiffres (12/2026)", texte)),
+        }
+    }
+
+    /// Le bulletin de rang `rang` de l'annee `annee` : celui que `numeroter` donne, celui que le depart des documents
+    /// d'un mois donne sur la suite qu'il reserve (`routes::gestes::depart::fabriquer_documents`), ou celui que l'apercu
+    /// d'un bulletin montre.
+    pub fn du_rang(rang: i64, annee: i32) -> NumeroDeBulletin {
+        NumeroDeBulletin { texte: format!("{}/{}", rang, annee), rang, annee: i64::from(annee) }
+    }
+
+    /// Son rang dans la suite de son annee.
+    pub fn rang(&self) -> i64 {
+        self.rang
+    }
+
+    /// Son annee.
+    pub fn annee(&self) -> i64 {
+        self.annee
+    }
+}
+
+impl std::fmt::Display for NumeroDeBulletin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.texte)
+    }
+}
+
+impl From<NumeroDeBulletin> for String {
+    fn from(n: NumeroDeBulletin) -> String {
+        n.texte
+    }
+}
+
 /// UN NUMERO (d'un contrat, d'un avenant) TEL QU'UNE PHRASE LE DIT, la seule fonction qui l'y ecrit : `avant`, le
 /// numero puis `apres` quand il y en a un ; `sans` quand il n'y en a pas.
 pub fn numero_dit(numero: Option<impl std::fmt::Display>, avant: &str, apres: &str, sans: &str) -> String {
@@ -170,9 +238,9 @@ impl PartialEq<NumeroContrat> for String {
 /// qui fabrique un numero de contrat (regle 4) ; des initiales ou un code qui le sortiraient de la forme de la norme le
 /// font refuser (`NumeroContrat::lire`).
 pub fn former(fiche: &droit::fiche::ChampsSalarie, annee: i32, seq: i64) -> R<NumeroContrat> {
-    let champ = |c: &Option<String>, k: &str| droit::fiche::Lue::ecrite(c, k).map(str::to_string);
+    use droit::fiche::Lue;
     let an = annee.to_string();
-    NumeroContrat::lire(&format!("{}{}.{}.{:02}", champ(&fiche.initiales_contrat, "initiales_contrat")?, champ(&fiche.code_salarie, "code_salarie")?, &an[2.min(an.len())..], seq))
+    NumeroContrat::lire(&format!("{}{}.{}.{:02}", fiche.initiales_contrat.ecrite("initiales_contrat")?, fiche.code_salarie.ecrite("code_salarie")?, &an[2.min(an.len())..], seq))
 }
 
 /// Le dernier rang pris en `annee`, par salarie (la cle de sa fiche) : le plus grand des numeros de cette annee que
@@ -210,9 +278,11 @@ fn derniers_pris_sauf(ctx: &Contexte, annee: i32, sauf: Option<(socle::mois::Moi
 /// numero d'une autre forme n'est pas un rang de cette suite : il ne se lit pas comme tel.
 pub fn dernier_bulletin_importe(racine: &std::path::Path, annee: i64) -> R<i64> {
     let rang = |t: Option<&str>| -> Option<i64> {
-        let (n, an) = t?.trim().split_once('/')?;
-        let rang = socle::num::entier_de_chiffres(n)?;
-        (an.len() == 4 && socle::num::entier_de_chiffres(an)? == annee).then_some(rang)
+        let n = match NumeroDeBulletin::lire(t?.trim()) {
+            Ok(n) => n,
+            Err(_) => return None,
+        };
+        (n.annee() == annee).then_some(n.rang())
     };
     let mut haut = 0;
     for i in crate::importe::tous(racine)? {
@@ -337,10 +407,10 @@ pub fn numeroter(ctx: &Contexte, paies: &mut [crate::calcul::Paie], annee: i32, 
         if p.engagement.numero.is_none() {
             proposer(ctx, p, &mut pris, departs)?;
         }
-        if p.engagement.sans_paie() || p.numero_bulletin.as_deref().is_some_and(|n| !n.is_empty()) {
+        if p.engagement.sans_paie() || p.numero_bulletin.is_some() {
             continue;
         }
-        p.numero_bulletin = Some(format!("{}/{}", n_bull, annee));
+        p.numero_bulletin = Some(NumeroDeBulletin::du_rang(n_bull, annee));
         n_bull += 1;
     }
     Ok(n_bull)

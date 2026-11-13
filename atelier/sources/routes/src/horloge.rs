@@ -140,8 +140,8 @@ impl Courriel for BoiteMuette {
         &self.compte
     }
 
-    fn envoyer(&mut self, _message_mime: &[u8]) -> R<String> {
-        Ok(format!("<{}@fictive.puppetpaie>", envois::courriel::hexa_au_hasard(8)?))
+    fn envoyer(&mut self, _message_mime: &[u8]) -> R<envois::envoi::IdDeCourriel> {
+        envois::envoi::IdDeCourriel::lire(&format!("<{}@fictive.puppetpaie>", envois::courriel::hexa_au_hasard(8)?))
     }
 
     fn rechercher(&mut self, _requete: &str, _maximum: usize) -> R<Vec<String>> {
@@ -977,7 +977,7 @@ fn signalements_dus(ctx: &Contexte, le_mois: Mois, jour: Jour, cloture: bool) ->
 /// fait dont l'empreinte change se rejoue.
 fn empreinte_du_mois(racine: &Path, mois: Mois) -> R<EmpreinteCourte> {
     // Un mois sans saisie, ou sans imprevus, ou sans fiche de suivi, a une empreinte : celle de ce qu'il n'a pas.
-    let saisie = format!("{:?}", engagement::stock::empreinte_de_la_saisie_du_mois(racine, mois, None)?);
+    let saisie = format!("{:?}", engagement::stock::empreinte_de_la_saisie_du_mois(racine, mois, None)?.map(|e| e.to_string()));
     let mut tout = saisie.into_bytes();
     for f in [engagement::imprevus::dossier(racine).join(format!("{}.json", mois)), engagement::imprevus::dossier(racine).join("obligations.json")] {
         let octets = if socle::fichiers::existe(&f) { Some(std::fs::read(&f).map_err(|e| socle::echec::du_disque(&f, &e).reclasser(Classe::du_disque(&e)))?) } else { None };

@@ -17,17 +17,19 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use droit::contexte::Contexte;
+use droit::contexte::{Contexte, TypeDeParametreNeores};
 use socle::echec::R;
+use socle::fichiers::CheminRelatif;
+use socle::mois::Annee;
 use socle::echec::erreur;
 use socle::echec::{Classe, Echec};
-use crate::retours::{Annonce, Depot};
+use crate::retours::{Annonce, Depot, IdDeFlux, NatureDuRetour, StatutDuRetour, Verdict};
 use socle::date::Jour;
 use socle::num::Decimal;
 use socle::paris::Moment;
 use socle::garde_reseau::Url;
 
-use crate::branchement::{Branchement, ANCIEN_PREFIXE_FLUX_FICTIF, PREFIXE_FLUX_FICTIF};
+use crate::branchement::Branchement;
 use crate::journal::{Acte, Ligne, RetourOrganisme};
 use crate::suites::Suites;
 
@@ -232,9 +234,9 @@ impl Client {
         crate::retours::liste_depots_d_octets(&brut).map_err(de_lecture)
     }
 
-    pub fn lister_retours_du_flux(&mut self, idflux: &str) -> Result<Vec<Annonce>, Panne> {
+    pub fn lister_retours_du_flux(&mut self, idflux: &IdDeFlux) -> Result<Vec<Annonce>, Panne> {
         self.assurer_session()?;
-        let (brut, _) = self.appel(&self.adresses.retours_flux.joindre(idflux))?;
+        let (brut, _) = self.appel(&self.adresses.retours_flux.joindre(idflux.texte()))?;
         crate::retours::liste_retours_d_octets(&brut).map_err(de_lecture)
     }
 
@@ -302,15 +304,47 @@ pub fn jour_de_publication_dit(r: &Annonce) -> Option<String> {
 
 // ------------------------------------------------------------------ l'archive des retours
 
-/// Le canal de la DSN, celui de net-entreprises : son archive est `retours/` meme.
-pub const CANAL_DSN: &str = "";
+/// LE CANAL D'UN RETOUR D'ORGANISME (regle 5 de `atelier/AGENTS.md` : deux canaux de retours, services, mots de passe et
+/// archives distincts) : la DSN sur net-entreprises, la DPAE sur `consultation.dpae-edi.urssaf.fr`. Une liste du
+/// logiciel ; il ne s'ecrit dans aucun fichier (s'il s'ecrivait, ce serait `dsn` ou `dpae`) ; `dossier` dit ou
+/// s'archivent ses pieces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CanalDesRetours {
+    Dsn,
+    Dpae,
+}
 
-/// `retours/` (la DSN) ou `retours/<canal>/`, cree.
-fn dossier_archive(racine: &Path, canal: &str) -> R<PathBuf> {
-    let mut p = racine.join(crate::retours::RETOURS);
-    if !canal.is_empty() {
-        p = p.join(canal);
+impl CanalDesRetours {
+    /// Le canal des retours d'un envoi : la DPAE a le sien, tout le reste passe par celui de la DSN.
+    pub fn de_l_acte(acte: Acte) -> CanalDesRetours {
+        match acte {
+            Acte::Dpae => CanalDesRetours::Dpae,
+            _ => CanalDesRetours::Dsn,
+        }
     }
+
+    /// Le sous-dossier de `retours/` ou s'archivent ses pieces : aucun pour la DSN (`retours/` meme), `dpae` pour la DPAE.
+    pub fn dossier(self) -> Option<&'static str> {
+        match self {
+            CanalDesRetours::Dsn => None,
+            CanalDesRetours::Dpae => Some("dpae"),
+        }
+    }
+
+    /// Le dossier de ses pieces sous la racine d'une compagnie : `retours/` (la DSN) ou `retours/dpae/` (la DPAE).
+    pub fn chemin(self, racine: &Path) -> PathBuf {
+        let p = racine.join(crate::retours::RETOURS);
+        match self.dossier() {
+            Some(d) => p.join(d),
+            None => p,
+        }
+    }
+}
+
+/// `retours/` (la DSN) ou `retours/dpae/` (la DPAE), cree.
+fn dossier_archive(racine: &Path, canal: CanalDesRetours) -> R<PathBuf> {
+    let p = canal.chemin(racine);
     std::fs::create_dir_all(&p).map_err(|e| crate::etats::erreur_io(&e, &p))?;
     Ok(p)
 }
@@ -319,7 +353,7 @@ fn dossier_archive(racine: &Path, canal: &str) -> R<PathBuf> {
 /// `maintenant` (`AAAAMMJJ-hhmmss`) quand le retour n'en porte pas ; `sansflux` quand il ne dit pas son flux.
 /// L'extension suit le type de contenu, sinon le contenu (`<` en tete : du XML). Une piece deja archivee sous ce nom
 /// n'est pas reecrite.
-pub(crate) fn archiver_retour(racine: &Path, canal: &str, retour: &Annonce, contenu: &[u8], ctype: Option<&str>, maintenant: &str) -> R<PathBuf> {
+pub(crate) fn archiver_retour(racine: &Path, canal: CanalDesRetours, retour: &Annonce, contenu: &[u8], ctype: Option<&str>, maintenant: &str) -> R<PathBuf> {
     let dit = |m: &str| ctype.is_some_and(|c| c.contains(m));
     let ext = if dit("pdf") {
         ".pdf"
@@ -336,8 +370,8 @@ pub(crate) fn archiver_retour(racine: &Path, canal: &str, retour: &Annonce, cont
         Some(p) => horodatage_archive(p),
         None => maintenant.to_string(),
     };
-    let flux = match retour.flux.as_deref().filter(|f| !f.is_empty()) {
-        Some(f) => f,
+    let flux = match &retour.flux {
+        Some(f) => f.texte(),
         None => "sansflux",
     };
     let nom = format!("{}_nature{}_{}{}", horo, retour.nature_retour, flux, ext);
@@ -349,12 +383,12 @@ pub(crate) fn archiver_retour(racine: &Path, canal: &str, retour: &Annonce, cont
 }
 
 /// La piece d'un retour, archivee a l'heure de la releve.
-fn archiver(ctx: &Contexte, retour: &Annonce, contenu: &[u8], ctype: Option<&str>, canal: &str) -> R<PathBuf> {
+fn archiver(ctx: &Contexte, retour: &Annonce, contenu: &[u8], ctype: Option<&str>, canal: CanalDesRetours) -> R<PathBuf> {
     archiver_retour(&ctx.racine, canal, retour, contenu, ctype, &horodatage_archive(socle::temps::secondes()))
 }
 
 /// Le journal des retours vus sur le canal.
-fn journal_des_vus(ctx: &Contexte, canal: &str) -> R<PathBuf> {
+fn journal_des_vus(ctx: &Contexte, canal: CanalDesRetours) -> R<PathBuf> {
     Ok(dossier_archive(&ctx.racine, canal)?.join("journal.json"))
 }
 
@@ -367,7 +401,7 @@ fn lire_vus(p: &Path) -> R<Vec<Annonce>> {
 }
 
 /// Ajoute au journal du canal les retours qu'il n'a pas encore vus.
-fn noter_vus(ctx: &Contexte, entrees: &[Annonce], canal: &str) -> R<()> {
+fn noter_vus(ctx: &Contexte, entrees: &[Annonce], canal: CanalDesRetours) -> R<()> {
     let p = journal_des_vus(ctx, canal)?;
     let mut deja = lire_vus(&p)?;
     let connus: Vec<CleDeRetour> = deja.iter().map(crate::etats::cle_du_contenu).collect();
@@ -383,7 +417,7 @@ fn noter_vus(ctx: &Contexte, entrees: &[Annonce], canal: &str) -> R<()> {
 type CleDeRetour = crate::etats::CleDuContenu;
 
 /// Les cles des retours deja vus sur le canal.
-fn deja_vus(ctx: &Contexte, canal: &str) -> R<Vec<CleDeRetour>> {
+fn deja_vus(ctx: &Contexte, canal: CanalDesRetours) -> R<Vec<CleDeRetour>> {
     Ok(lire_vus(&journal_des_vus(ctx, canal)?)?.iter().map(crate::etats::cle_du_contenu).collect())
 }
 
@@ -432,25 +466,21 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
     for i in 0..lignes.len() {
         let l = &lignes[i];
         let quoi = l.acte();
-        let flux = l.flux().to_string();
-        if matches!(quoi, Acte::Dsn | Acte::Dpae)
-            && l.accepte()
-            && (flux.starts_with(PREFIXE_FLUX_FICTIF) || flux.starts_with(ANCIEN_PREFIXE_FLUX_FICTIF))
-            && l.nombre_de_retours() == 0
-        {
-            let base = |nature: &str, verdict: Option<&str>, libelle: &str| RetourOrganisme {
-                nature_retour: nature.into(),
-                verdict: verdict.map(String::from),
+        let Some(flux) = l.flux().filter(|f| f.est_fictif()).cloned() else { continue };
+        if matches!(quoi, Acte::Dsn | Acte::Dpae) && l.accepte() && l.nombre_de_retours() == 0 {
+            let base = |nature: NatureDuRetour, verdict: Option<Verdict>, libelle: &str| RetourOrganisme {
+                nature_retour: nature,
+                verdict,
                 anomalies: Some(Vec::new()),
                 dpae: None,
                 libelle: libelle.into(),
-                statut: Some("fictive".into()),
+                statut: Some(StatutDuRetour::Ok),
                 publication: Some(pub_),
             };
             let mut retours: Vec<RetourOrganisme> = Vec::new();
             if quoi == Acte::Dpae {
-                retours.push(base("11", Some("OK"), "Bilan de conformite (compagnie fictive)"));
-                let mut m = base("41", Some("OK"), "Certificat de conformite des DPAE (compagnie fictive)");
+                retours.push(base(NatureDuRetour::CertificatDeConformite, Some(Verdict::Ok), "Bilan de conformite (compagnie fictive)"));
+                let mut m = base(NatureDuRetour::CertificatDpae, Some(Verdict::Ok), "Certificat de conformite des DPAE (compagnie fictive)");
                 m.dpae = Some(Vec::new());
                 retours.push(m);
             } else {
@@ -463,17 +493,17 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
                     }
                     Ok(autres) => pieces.extend(autres),
                 }
-                retours.push(base("10", Some("OK"), "Accuse de reception (compagnie fictive)"));
-                retours.push(base("11", Some("OK"), "Bilan de conformite (compagnie fictive)"));
+                retours.push(base(NatureDuRetour::AccuseDEnregistrement, Some(Verdict::Ok), "Accuse de reception (compagnie fictive)"));
+                retours.push(base(NatureDuRetour::CertificatDeConformite, Some(Verdict::Ok), "Bilan de conformite (compagnie fictive)"));
                 // L'AER : seulement quand elle est due, et avec sa piece, comme France Travail la publie.
                 if let Some(archive) = aer_jouee(ctx, l)? {
-                    let r46 = base("46", None, "Attestation employeur rematerialisee (compagnie fictive)");
+                    let r46 = base(NatureDuRetour::AerSpectacle, None, "Attestation employeur rematerialisee (compagnie fictive)");
                     let annonce = Annonce {
                         publication: r46.publication.clone(),
                         production: None,
                         ops: None,
                         delegataire: None,
-                        nature_retour: r46.nature_retour.clone(),
+                        nature_retour: r46.nature_retour,
                         statut: r46.statut.clone(),
                         id: None,
                         url: None,
@@ -498,17 +528,17 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
     // LE MEME CHEMIN QU'UNE VRAIE : l'archive dans `retours/`, puis le rangement (par `moteur`), qui signe le cadre 5 et la
     // pose dans `sorties/<mois>/envoi/`, ou l'envoi va la chercher.
     for (retour, archive) in &a_archiver {
-        suites.aer.push(archiver(ctx, retour, archive, Some("application/zip"), "")?);
+        suites.aer.push(archiver(ctx, retour, archive, Some("application/zip"), CanalDesRetours::Dsn)?);
     }
     if !pieces.is_empty() {
         let mut contenus: Vec<(crate::etats::CleDuContenu, Vec<u8>)> = Vec::new();
         let mut decrits: Vec<Annonce> = Vec::new();
         for x in &pieces {
             let retour = &x.retour;
-            let chemin = archiver(ctx, retour, &x.contenu, Some("application/xml"), "")?;
-            if retour.nature_retour == crate::retours::NATURE_TAUX_PAS {
+            let chemin = archiver(ctx, retour, &x.contenu, Some("application/xml"), CanalDesRetours::Dsn)?;
+            if retour.nature_retour == NatureDuRetour::TauxPas {
                 suites.taux_pas.push((retour.clone(), chemin));
-            } else if retour.nature_retour == crate::retours::NATURE_TAUX_ATMP {
+            } else if retour.nature_retour == NatureDuRetour::TauxAtMp {
                 suites.taux_atmp.push((retour.clone(), chemin));
             }
             contenus.push((crate::etats::cle_du_contenu(&retour), x.contenu.clone()));
@@ -543,7 +573,7 @@ fn aer_jouee(ctx: &Contexte, l: &Ligne) -> R<Option<Vec<u8>>> {
 }
 
 /// Telecharge et archive ce que les organismes ont publie, de `debut` a `fin`. `client` : le client du service, avec son mot de passe (le canal DPAE passe le sien, avec
-/// `canal = "dpae"`) ; `None` dans le monde : aucun mot de passe n'est pose, et cela se dit.
+/// `canal` `Dpae`) ; `None` dans le monde : aucun mot de passe n'est pose, et cela se dit.
 pub fn relever_retours(
     ctx: &Contexte,
     branchement: Branchement,
@@ -551,7 +581,7 @@ pub fn relever_retours(
     fin: Moment,
     tout: bool,
     client: Option<Client>,
-    canal: &str,
+    canal: CanalDesRetours,
     suites: &mut Suites,
 ) -> R<Releve> {
     let mut releve = Releve::vide();
@@ -610,22 +640,22 @@ pub fn relever_retours(
     let mut rates: Vec<Annonce> = Vec::new();
     let a_telecharger: Vec<Annonce> = if tout { releve.trouves.clone() } else { releve.nouveaux.clone() };
     for r in a_telecharger {
-        let Some(url) = r.url.clone().filter(|u| !u.is_empty()) else { continue };
-        match client.telecharger(&Url::lire(&url)?) {
+        let Some(url) = r.url.clone() else { continue };
+        match client.telecharger(&url) {
             Ok((contenu, ctype)) => {
                 let chemin = archiver(ctx, &r, &contenu, ctype.as_deref(), canal)?;
                 // LE TAUX AT/MP NOTIFIE SE LIT DE LA NOTIFICATION (regle 1) : il se pose dans la surcouche, par les suites.
-                if canal.is_empty() && r.nature_retour == crate::retours::NATURE_TAUX_ATMP {
+                if canal == CanalDesRetours::Dsn && r.nature_retour == NatureDuRetour::TauxAtMp {
                     suites.taux_atmp.push((r.clone(), chemin.clone()));
                 }
                 // UN SIGNALEMENT REFUSE B1-208-10 : l'ordre etait deja pris ; la conduite a tenir se dit.
-                if canal.is_empty() && r.nature_retour == "11" {
+                if canal == CanalDesRetours::Dsn && r.nature_retour == NatureDuRetour::CertificatDeConformite {
                     for d in crate::retours::declarations_du_bilan(&contenu)? {
-                        releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_deref()));
+                        releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
                     }
                 }
                 // LE TAUX DU PAS SE LIT DU COMPTE RENDU (regle 1) : il va dans la fiche du salarie, par les suites.
-                if canal.is_empty() && r.nature_retour == crate::retours::NATURE_TAUX_PAS {
+                if canal == CanalDesRetours::Dsn && r.nature_retour == NatureDuRetour::TauxPas {
                     suites.taux_pas.push((r.clone(), chemin.clone()));
                 }
                 releve.archives.push(RetourArchive { retour: r, chemin, contenu });
@@ -638,7 +668,7 @@ pub fn relever_retours(
         }
     }
 
-    if canal.is_empty() {
+    if canal == CanalDesRetours::Dsn {
         // L'EFFECTIF S'ECRIT SEUL : `config/effectifs.json` se refait depuis les archives.
         reconstruire_effectifs(&ctx.racine)?;
     }
@@ -654,17 +684,17 @@ pub fn relever_retours(
 
     // UN DEPOT QUE LES RETOURS ATTESTENT EST UN DEPOT : ce qu'un autre logiciel a depose sous le meme compte
     // entre au journal de lui-meme, et le mois qu'il declare n'est plus « en retard ».
-    if canal.is_empty() {
+    if canal == CanalDesRetours::Dsn {
         suites.garder(crate::reprise_journal::reprendre_les_depots(ctx, "releve"))?;
     }
 
     // L'AER SE RANGE DES QU'ELLE ARRIVE : la boite d'envoi la voit (les suites).
-    if canal.is_empty() {
+    if canal == CanalDesRetours::Dsn {
         suites.aer.extend(
             releve
                 .archives
                 .iter()
-                .filter(|a| a.retour.nature_retour == crate::retours::NATURE_AER_SPECTACLE)
+                .filter(|a| a.retour.nature_retour == NatureDuRetour::AerSpectacle)
                 .map(|a| a.chemin.clone()),
         );
     }
@@ -680,7 +710,7 @@ pub fn relever_retours_dpae(
     debut: Moment,
     fin: Moment,
     tout: bool,
-    flux: Option<&str>,
+    flux: Option<&IdDeFlux>,
     client: Option<Client>,
     suites: &mut Suites,
 ) -> R<Releve> {
@@ -699,7 +729,7 @@ pub fn relever_retours_dpae(
         return Ok(r);
     };
     let Some(flux) = flux else {
-        return relever_retours(ctx, branchement, debut, fin, tout, Some(client), crate::etats::DPAE, suites);
+        return relever_retours(ctx, branchement, debut, fin, tout, Some(client), CanalDesRetours::Dpae, suites);
     };
     let mut r = Releve::vide();
     let trouves = client.authentifier().and_then(|_| client.lister_retours_du_flux(flux));
@@ -712,10 +742,10 @@ pub fn relever_retours_dpae(
         Err(p) => return Err(en_echec(p)),
     }
     for x in r.trouves.clone() {
-        let Some(url) = x.url.clone().filter(|u| !u.is_empty()) else { continue };
-        match client.telecharger(&Url::lire(&url)?) {
+        let Some(url) = x.url.clone() else { continue };
+        match client.telecharger(&url) {
             Ok((contenu, ctype)) => {
-                let chemin = archiver(ctx, &x, &contenu, ctype.as_deref(), "dpae")?;
+                let chemin = archiver(ctx, &x, &contenu, ctype.as_deref(), CanalDesRetours::Dpae)?;
                 r.archives.push(RetourArchive { retour: x, chemin, contenu });
             }
             Err(p) if p.est_api() => r.incidents.push(format!("Telechargement nature {} : {}", x.nature_retour, p.echec.phrase)),
@@ -723,7 +753,7 @@ pub fn relever_retours_dpae(
         }
     }
     if !r.trouves.is_empty() {
-        noter_vus(ctx, &r.trouves, "dpae")?;
+        noter_vus(ctx, &r.trouves, CanalDesRetours::Dpae)?;
         // Le chemin par flux accroche aussi ce qu'il trouve au journal.
         let contenus: Vec<_> = r.archives.iter().map(|a| (crate::etats::cle_du_contenu(&a.retour), a.contenu.clone())).collect();
         r.rattaches = suites.garder(crate::etats::rattacher_retours_avec_contenus(&ctx.racine, &r.trouves, &contenus))?;
@@ -755,15 +785,12 @@ fn lire_crm118(contenu: &[u8]) -> R<Option<Vec<Mesure118>>> {
 
 /// Un effectif qu'un compte rendu de nature 118 communique : son code, sa valeur, sa periode, le jour de son calcul.
 struct Mesure118 {
-    code: String,
+    code: TypeDeParametreNeores,
     valeur: Decimal,
     debut: Option<Jour>,
     fin: Option<Jour>,
     calcule_le: Option<socle::paris::Moment>,
 }
-
-/// Le code de l'effectif de securite sociale (art. L. 130-1 CSS), celui des seuils de cotisation.
-const A01: &str = "A01";
 
 /// Ce que `config/effectifs.json` dit de lui-meme.
 const QUOI_EFFECTIFS: &str = "Effectifs par année civile. A01 = effectif de sécurité sociale (art. L. 130-1 CSS), celui des seuils de cotisation. Ceux que l'Urssaf calcule et renvoie en compte rendu de nature 118 s'écrivent au relevé des retours ; ceux que la compagnie dit (dit_le) pour une année sans 118, par la route effectif, jusqu'à ce qu'un 118 de cette année les remplace.";
@@ -777,7 +804,7 @@ struct FichierEffectifs {
 }
 
 /// Les effectifs par annee, puis par code.
-type Annees = std::collections::BTreeMap<String, std::collections::BTreeMap<String, EffectifEcrit>>;
+type Annees = std::collections::BTreeMap<Annee, std::collections::BTreeMap<TypeDeParametreNeores, EffectifEcrit>>;
 
 /// UN EFFECTIF ECRIT : celui qu'un 118 a calcule (`calcule_le`, `source` : le jour du calcul, l'archive du compte rendu),
 /// ou celui que la compagnie a dit (`dit_le`), qu'un 118 de la meme annee remplace.
@@ -789,7 +816,7 @@ struct EffectifEcrit {
     #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::seconde::option")]
     calcule_le: Option<socle::paris::Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    source: Option<String>,
+    source: Option<CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
     dit_le: Option<Jour>,
 }
@@ -818,16 +845,16 @@ fn ecrire_effectifs(racine: &Path, existant: Option<&FichierEffectifs>, annees: 
 
 /// L'effectif de l'annee `an` est-il celui que la compagnie a dit (`dit_le`), et non celui d'un 118 ?
 pub fn effectif_dit_par_la_compagnie(racine: &Path, an: i32) -> R<bool> {
-    let an = an.to_string();
+    let an = Annee::nouvelle(i64::from(an))?;
     Ok(dits(effectifs_lus(racine)?.as_ref()).iter().any(|(a, _)| *a == an))
 }
 
 /// Les effectifs que la compagnie a dits (`dit_le`), par annee.
-fn dits(existant: Option<&FichierEffectifs>) -> Vec<(String, EffectifEcrit)> {
+fn dits(existant: Option<&FichierEffectifs>) -> Vec<(Annee, EffectifEcrit)> {
     existant
         .into_iter()
         .flat_map(|f| f.annees.iter())
-        .filter_map(|(an, c)| c.get(A01).filter(|a| a.dit_le.is_some()).map(|a| (an.clone(), a.clone())))
+        .filter_map(|(an, c)| c.get(&TypeDeParametreNeores::EffectifMoyen).filter(|a| a.dit_le.is_some()).map(|a| (*an, a.clone())))
         .collect()
 }
 
@@ -845,7 +872,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     let mut noms: Vec<String> = Vec::new();
     for e in lecture {
         let nom = e.map_err(|x| socle::echec::du_disque(&dossier, &x).reclasser(Classe::Disque))?.file_name().to_string_lossy().into_owned();
-        if nom.ends_with(".xml") && crate::retours::archive_de_nature(&nom, "118") {
+        if nom.ends_with(".xml") && crate::retours::archive_de_nature(&nom, NatureDuRetour::Effectifs) {
             noms.push(nom);
         }
     }
@@ -857,11 +884,11 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
         let Some(mesures) = lire_crm118(&octets)? else { continue };
         for m in mesures {
             let Some(ref_an) = m.debut.or(m.fin) else { continue };
-            let codes = annees.entry(format!("{:04}", ref_an.an)).or_default();
+            let codes = annees.entry(Annee::du_mois(ref_an.mois_civil())).or_default();
             if codes.get(&m.code).is_some_and(|deja| deja.calcule_le > m.calcule_le) {
                 continue;
             }
-            codes.insert(m.code, EffectifEcrit { valeur: m.valeur, calcule_le: m.calcule_le, source: Some(format!("retours/{}", nom)), dit_le: None });
+            codes.insert(m.code, EffectifEcrit { valeur: m.valeur, calcule_le: m.calcule_le, source: Some(CheminRelatif::sous(racine, &p)?), dit_le: None });
         }
     }
     if annees.is_empty() {
@@ -869,7 +896,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     }
     let existant = effectifs_lus(racine)?;
     for (an, dit) in dits(existant.as_ref()) {
-        annees.entry(an).or_default().entry(A01.to_string()).or_insert(dit);
+        annees.entry(an).or_default().entry(TypeDeParametreNeores::EffectifMoyen).or_insert(dit);
     }
     ecrire_effectifs(racine, existant.as_ref(), annees)
 }
@@ -881,11 +908,11 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
 pub fn poser_effectif(racine: &Path, an: i32, valeur: Decimal, le: Jour) -> R<bool> {
     let existant = effectifs_lus(racine)?;
     let mut annees: Annees = existant.iter().flat_map(|f| f.annees.clone()).collect();
-    let codes = annees.entry(an.to_string()).or_default();
-    if codes.get(A01).is_some_and(|a| a.dit_le.is_none()) {
+    let codes = annees.entry(Annee::nouvelle(i64::from(an))?).or_default();
+    if codes.get(&TypeDeParametreNeores::EffectifMoyen).is_some_and(|a| a.dit_le.is_none()) {
         return Ok(false);
     }
-    codes.insert(A01.to_string(), EffectifEcrit { valeur, calcule_le: None, source: None, dit_le: Some(le) });
+    codes.insert(TypeDeParametreNeores::EffectifMoyen, EffectifEcrit { valeur, calcule_le: None, source: None, dit_le: Some(le) });
     ecrire_effectifs(racine, existant.as_ref(), annees)?;
     Ok(true)
 }

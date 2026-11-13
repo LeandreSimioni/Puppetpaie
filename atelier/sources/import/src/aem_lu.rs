@@ -36,6 +36,7 @@
 
 use std::path::Path;
 
+use droit::fiche::NumeroObjetSpectacle;
 use socle::date::Jour;
 use socle::echec::{refus, R};
 use socle::mois::Mois;
@@ -159,7 +160,8 @@ pub struct Aem {
     pub employeur_commune: Option<String>,
     /// Le numero d'adherent a la caisse des Congés Spectacles, ecrit comme la fiche le garde.
     pub adherent: Option<String>,
-    pub nir: Option<String>,
+    /// Le NIR imprime, sans sa cle ; aucun hors de sa forme (`droit::fiche::Nir::d_une_piece`).
+    pub nir: Option<droit::fiche::Nir>,
     pub cle_nir: Option<droit::fiche::CleNir>,
     pub nom: Option<String>,
     pub prenom: Option<String>,
@@ -169,7 +171,8 @@ pub struct Aem {
     pub code_postal: Option<String>,
     pub commune: Option<String>,
     pub emploi: Option<String>,
-    pub numero_objet: Option<String>,
+    /// Le numero d'objet imprime ; aucun hors de sa forme (`NumeroObjetSpectacle::d_une_piece`).
+    pub numero_objet: Option<NumeroObjetSpectacle>,
     pub cadre: Option<bool>,
     /// « artiste » (annexe 10) ou « technicien » (annexe 8).
     pub statut: Option<&'static str>,
@@ -351,7 +354,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
         _ => None,
     };
     // UN SIRET OU UNE CLE DU NIR QUI N'ONT PAS LEUR FORME se disent, et la page se refuse (`Aem::manque`) ; la cle
-    // imprimee se garde quand c'est celle du NIR (`declarations::champs::cle_nir`), comme sur une AEM (`lire_page`).
+    // imprimee se garde quand c'est celle du NIR (`CleNir::du_nir`), comme sur une AEM (`lire_page`).
     let mut fautes: Vec<String> = Vec::new();
     let siret = match v("EMP_SIRET").map(|s| droit::fiche::Siret::lire(&s)).transpose() {
         Ok(s) => s,
@@ -360,8 +363,11 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             None
         }
     };
-    let cle_nir = match nir.as_ref().and_then(|n| n.get(13..)).filter(|k| !k.is_empty()).map(droit::fiche::CleNir::lire).transpose() {
-        Ok(Some(k)) => match nir.as_ref().and_then(|n| n.get(..13)).and_then(declarations::champs::cle_nir) {
+    // Le NIR imprime, coupe en treize caracteres et sa cle (`Nir::et_sa_cle`) ; d'une autre longueur, aucun.
+    let coupe = nir.as_deref().and_then(droit::fiche::Nir::et_sa_cle);
+    let nir_lu = coupe.and_then(|(n, _)| droit::fiche::Nir::d_une_piece(n));
+    let cle_nir = match coupe.and_then(|(_, k)| k).map(droit::fiche::CleNir::lire).transpose() {
+        Ok(Some(k)) => match nir_lu.as_ref().and_then(droit::fiche::CleNir::du_nir) {
             Some(c) if c == k => Some(c),
             Some(_) => {
                 fautes.push("la clé du NIR imprimé ne correspond pas à son numéro".to_string());
@@ -392,7 +398,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
         let nom = |p: &str| format!("{}{:02}", p, rang);
         // Un contrat se dit dans la colonne de sa premiere periode ; la colonne sans contrat en est la suite.
         if v(&nom("CON_NUMERO_")).is_some() {
-            numero_objet = v(&nom("CON_OBJET_"));
+            numero_objet = v(&nom("CON_OBJET_")).and_then(|o| NumeroObjetSpectacle::d_une_piece(&o));
         }
         let (Some(debut), Some(fin)) = (jour(&nom("SAL_DT_DEB_")), jour(&nom("SAL_DT_FIN_"))) else { continue };
         let page = champ(&nom("SAL_DT_DEB_")).and_then(|c| c.page).ok_or_else(|| socle::refus!("la case {} de l'AER n'est sur aucune page", nom("SAL_DT_DEB_")))?;
@@ -408,7 +414,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             employeur_commune: v("ADR_EMP_LOCALITE"),
             adherent: None,
             cle_nir: cle_nir.clone(),
-            nir: nir.as_ref().and_then(|n| n.get(..13)).map(str::to_string),
+            nir: nir_lu.clone(),
             nom: v("SALARIE_NOM_FAMILLE"),
             prenom: v("SALARIE_PRENOMS"),
             nom_usage: None,
@@ -668,9 +674,9 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     a.nom_usage = texte(lu("usage", Some(2)));
     let mut fautes: Vec<&str> = Vec::new();
     if let Some((nir, cle, _)) = nir_en_tete(&lu("nir", Some(2))) {
-        // La cle imprimee, quand c'est celle du NIR (`declarations::champs::cle_nir`).
+        // La cle imprimee, quand c'est celle du NIR (`CleNir::du_nir`).
         match &cle {
-            Some(k) => match declarations::champs::cle_nir(&nir).filter(|c| **c == **k) {
+            Some(k) => match droit::fiche::CleNir::du_nir(&nir).filter(|c| **c == **k) {
                 Some(c) => {
                     a.nir = Some(nir);
                     a.cle_nir = Some(c);
@@ -686,7 +692,7 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     a.commune = texte(lu("commune", Some(2)));
 
     a.emploi = texte(lu("emploi", Some(3)));
-    a.numero_objet = lu("objet", Some(3)).first().cloned();
+    a.numero_objet = lu("objet", Some(3)).first().and_then(|o| NumeroObjetSpectacle::d_une_piece(o));
     a.embauche = date_en_tete(&lu("embauche", Some(3))).map(|d| d.0);
     a.fin_contrat = date_en_tete(&lu("fin", Some(3))).map(|d| d.0);
 

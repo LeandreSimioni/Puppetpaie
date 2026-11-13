@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use std::sync::{Arc, OnceLock};
 
+use droit::arrets::MotifDArret;
 use socle::fichiers::{forme_en_cache, FormeGardee};
 use socle::echec::{Echec, R};
 
@@ -43,7 +44,7 @@ pub struct DeBase {
     pub qui: String,
     pub ou: Option<Ou>,
     pub destinataire: String,
-    pub motifs: Vec<String>,
+    pub motifs: Vec<MotifDArret>,
     pub sauf_motifs: Option<SaufMotifs>,
     pub delai: Option<Delai>,
     pub delai_sans_subrogation: Option<Delai>,
@@ -71,12 +72,64 @@ pub enum Ou {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Lieu {
-    pub code: String,
+    pub code: LieuHorsDsn,
     pub court: String,
     pub libelle: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     edi: Option<String>,
     texte: String,
+}
+
+/// OU SE FAIT UNE OBLIGATION HORS DSN : les lieux que `obligations-base.json` propose (`ou`), que la compagnie choisit en
+/// la disant faite (`accident-declare`, `attestation-declare`) et que sa fiche de suivi garde. Ecrit par son mot ; un
+/// autre mot se refuse a la lecture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum LieuHorsDsn {
+    Courrier,
+    NetEntreprises,
+    NetEntreprisesEcran,
+    NetEntreprisesEdi,
+}
+
+impl LieuHorsDsn {
+    /// Tous, dans l'ordre de la liste.
+    pub const TOUS: [LieuHorsDsn; 4] = [LieuHorsDsn::Courrier, LieuHorsDsn::NetEntreprises, LieuHorsDsn::NetEntreprisesEcran, LieuHorsDsn::NetEntreprisesEdi];
+
+    /// Son mot, tel que la donnee, la charge et la fiche de suivi l'ecrivent.
+    pub fn texte(self) -> &'static str {
+        match self {
+            LieuHorsDsn::Courrier => "courrier",
+            LieuHorsDsn::NetEntreprises => "net-entreprises",
+            LieuHorsDsn::NetEntreprisesEcran => "net-entreprises-ecran",
+            LieuHorsDsn::NetEntreprisesEdi => "net-entreprises-edi",
+        }
+    }
+}
+
+impl std::fmt::Display for LieuHorsDsn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.texte())
+    }
+}
+
+impl Serialize for LieuHorsDsn {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.texte())
+    }
+}
+
+impl<'de> Deserialize<'de> for LieuHorsDsn {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let mot = String::deserialize(d)?;
+        match LieuHorsDsn::TOUS.into_iter().find(|l| l.texte() == mot) {
+            Some(l) => Ok(l),
+            None => Err(serde::de::Error::custom(format!(
+                "Lieu inconnu : {}. Les lieux sont {}.",
+                socle::fichiers::repr(&mot),
+                LieuHorsDsn::TOUS.map(LieuHorsDsn::texte).join(", ")
+            ))),
+        }
+    }
 }
 
 /// Un texte depose qui fonde une obligation : sa reference, son fichier, ce qu'il dit.
@@ -92,7 +145,7 @@ pub struct TexteDepose {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SaufMotifs {
-    pub codes: Vec<String>,
+    pub codes: Vec<MotifDArret>,
     #[serde(rename = "pourquoi")]
     _pourquoi: String,
     pub avertissement: String,
@@ -205,7 +258,7 @@ impl LesObligations {
 
 impl DeBase {
     /// Les motifs que la DSN ne couvre pas (`sauf_motifs.codes`), aucun sinon.
-    pub fn sauf(&self) -> &[String] {
+    pub fn sauf(&self) -> &[MotifDArret] {
         match &self.sauf_motifs {
             Some(s) => &s.codes,
             None => &[],

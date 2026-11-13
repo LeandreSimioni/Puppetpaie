@@ -39,7 +39,7 @@ fn ecrire<F: SorteDeFiche>(ctx: &Contexte, donnees: &Saisie, note: &str) -> R<(O
     let e = fiches::ecrire_fiche::<F>(ctx, p, Forcer::Tout, None, Some(note))?;
     let mut anomalies = e.anomalies;
     fiches::avec_libelles(F::NOM, &mut anomalies)?;
-    Ok((e.cle, anomalies))
+    Ok((e.cle.as_ref().map(F::cle_dite), anomalies))
 }
 
 /// Les cases que `lue` dit, posees dans `plate` : une fiche vide la prend entiere, ses notes comprises. Rend les cases
@@ -62,18 +62,18 @@ fn poser_les_cases<F: SorteDeFiche>(plate: &mut F::Plate, lue: F::Plate) -> Vec<
 /// qu'elle est sur le disque, si elle y est vide ou « A COMPLETER » -- et seulement alors : une case remplie depuis
 /// l'apercu reste ce qu'elle est. Une case vide n'avait rien declare : la valeur qui la remplit vaut de tout temps
 /// (`fiches::poser`). Rend les cases ecrites.
-pub(crate) fn completer_fiche(ctx: &Contexte, nom: NomDeFiche, cle: Option<&str>, champs: &Saisie) -> R<Saisie> {
-    match nom {
-        NomDeFiche::Entreprise => completer::<FicheEntrepriseDatee>(ctx, cle, champs),
-        NomDeFiche::Salarie => completer::<FicheSalarieDatee>(ctx, cle, champs),
-        NomDeFiche::Spectacle => completer::<FicheSpectacleDatee>(ctx, cle, champs),
+pub(crate) fn completer_fiche(ctx: &Contexte, fiche: &fiches::FicheNommee, champs: &Saisie) -> R<Saisie> {
+    match fiche {
+        fiches::FicheNommee::Entreprise => completer::<FicheEntrepriseDatee>(ctx, None, champs),
+        fiches::FicheNommee::Salarie(cle) => completer::<FicheSalarieDatee>(ctx, Some(cle), champs),
+        fiches::FicheNommee::Spectacle(cle) => completer::<FicheSpectacleDatee>(ctx, Some(cle), champs),
     }
 }
 
-fn completer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&str>, champs: &Saisie) -> R<Saisie> {
+fn completer<F: SorteDeFiche>(ctx: &Contexte, cle: Option<&F::Cle>, champs: &Saisie) -> R<Saisie> {
     let mut contenu = fiches::lire_fichier::<F>(ctx)?;
     let Some(brute) = F::existante(&mut contenu, cle) else {
-        return Err(erreur(Classe::Refuse, format!("La fiche {} {} n'existe plus : rien n'est complete.", F::NOM, cle.into_iter().collect::<String>())));
+        return Err(erreur(Classe::Refuse, format!("La fiche {} {} n'existe plus : rien n'est complete.", F::NOM, cle.map(F::cle_dite).into_iter().collect::<String>())));
     };
     let au = fiches::vue::<F>(&brute.au(&ctx.lue_au))?;
     let mut ecrits = Saisie::default();

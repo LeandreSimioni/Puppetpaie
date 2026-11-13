@@ -23,7 +23,7 @@ use documents::etats_compta::ChoixCompta;
 use documents::plan_comptable::{controler_plan, tables};
 use droit::contexte::Contexte;
 use envois::envoi::{self, Message};
-use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
+use envois::ligne_d_envoi::{en_liste, noter, noter_echec_d_envoi, par_courriel};
 use envois::journal;
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
@@ -245,7 +245,7 @@ fn annees_de(dispo: &[Mois]) -> Vec<String> {
 /// Un salarie que la page propose : sa cle, son nom, s'il est actif, s'il a un courriel.
 #[derive(Debug, Serialize)]
 struct SalariePropose {
-    cle: String,
+    cle: droit::contexte::IdSalarie,
     nom: String,
     actif: bool,
     email: bool,
@@ -254,7 +254,7 @@ struct SalariePropose {
 /// Une categorie a cocher : son nom, et ce qu'elle porte.
 #[derive(Debug, Serialize)]
 struct CategorieProposee {
-    categorie: &'static str,
+    categorie: documents::CategorieDeDocument,
     quoi: &'static str,
 }
 
@@ -279,7 +279,7 @@ fn salaries_de_la_page(ctx: &Contexte) -> Vec<SalariePropose> {
     fiches
         .into_iter()
         .map(|(k, v)| SalariePropose {
-            cle: k.to_string(),
+            cle: k.clone(),
             nom: documents::tableaux_export::qui_souple(v),
             actif: !v.archivee(),
             email: v.email.is_some(),
@@ -295,7 +295,7 @@ fn dossier_formes(ctx: &Contexte) -> R<FormesDuDossier> {
     let mois = mois_disponibles(ctx)?;
     let annees = annees_de(&mois);
     etat_logiciel(ctx)?;
-    let categories: Vec<CategorieProposee> = crate::dossier_salarie::CATEGORIES.iter().map(|c| CategorieProposee { categorie: c, quoi: crate::dossier_salarie::libelle_de(c) }).collect();
+    let categories: Vec<CategorieProposee> = documents::CategorieDeDocument::TOUTES.iter().map(|c| CategorieProposee { categorie: *c, quoi: c.libelle() }).collect();
     Ok(FormesDuDossier {
         phrase: format!("Dossiers possibles : {} ; sortes de pièces : {}.", socle::ecran::compte(salaries.len(), "salarié", "salariés"), categories.len()),
         salaries,
@@ -348,10 +348,10 @@ pub(crate) fn etat_logiciel(ctx: &Contexte) -> R<LogicielDuComptable> {
 /// `engagement::permanents::Permanents::ouverts`), ni la taxe sur les salaires a qui ne la doit aucune des annees a
 /// exporter (`taxe_due`).
 fn etat_concerne(ctx: &Contexte, etat: &str, piece: Option<droit::fiche::Piece>, permanents: bool, taxe_due: bool) -> bool {
-    let idcc = ctx.entreprise.idcc.portee();
+    let idcc = ctx.entreprise.idcc.dite();
     let t = tables();
     if let Some(liste) = t.si_convention.get(etat) {
-        if !liste.iter().any(|c| Some(c.as_str()) == idcc) {
+        if !liste.iter().any(|c| Some(c) == idcc) {
             return false;
         }
     }
@@ -720,7 +720,7 @@ struct ChargeDossierEnvoyer {
     mois: Option<Mois>,
     annee: Option<AnneeDite>,
     toutes_les_annees: Option<bool>,
-    categories: Option<Vec<String>>,
+    categories: Option<Vec<documents::CategorieDeDocument>>,
 }
 
 /// La route `dossier-envoyer` : le dossier se refait ici (`dossier_salarie`, un fichier par salarie, ecrit dans
@@ -782,8 +782,8 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
         let liste = d
             .categories
             .iter()
-            .filter(|c| ses_pages.is_some_and(|p| p.get(c).is_some()))
-            .map(|c| crate::dossier_salarie::libelle_de(c).to_lowercase())
+            .filter(|c| ses_pages.is_some_and(|p| p.get(c.texte()).is_some()))
+            .map(|c| c.libelle().to_lowercase())
             .collect::<Vec<_>>()
             .join(", ");
         let corps = envoi::formater(
@@ -792,7 +792,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
                 ("prenom", prenom.clone()),
                 ("periode", if d.periode == "toute la période" { String::new() } else { format!(" ({})", d.periode) }),
                 ("liste", liste),
-                ("reedition", if ses_pages.is_some_and(|p| p.get(crate::dossier_salarie::CONTRATS).is_some()) { REEDITION_CONTRATS.to_string() } else { String::new() }),
+                ("reedition", if ses_pages.is_some_and(|p| p.get(documents::CategorieDeDocument::Contrats.texte()).is_some()) { REEDITION_CONTRATS.to_string() } else { String::new() }),
                 ("signataire", signe.to_string()),
                 ("raison_sociale", ctx.entreprise.nommee().ok_or_else(|| socle::fichiers::absent("raison_sociale"))?.to_string()),
             ],
@@ -811,10 +811,10 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
     let aujourdhui = socle::temps::jour_de_paris();
     let a_qui = format!("{} salarie(s) : {}", messages.len(), messages.iter().map(|m| m.nom.as_str()).collect::<Vec<_>>().join(", "));
     verifier_preuve(ctx, Some(preuve), MoisOuJour::Mois(aujourdhui.mois_civil()), "envoi du dossier aux salaries", &a_qui)?;
-    let expediteur = expediteur_de(client.as_ref());
+    let expediteur = expediteur_de(client.as_ref())?;
     let detail = journal::DetailDossier {
         periode: d.periode.clone(),
-        categories: d.categories.iter().map(|c| c.to_string()).collect(),
+        categories: d.categories.clone(),
         salaries: d
             .salaries
             .iter()
@@ -832,7 +832,7 @@ fn envoyer_dossier(ctx: &Contexte, d: &crate::dossier_salarie::Dossier, preuve: 
             return Err(e.echec);
         }
     };
-    noter(ctx, journal::Ligne::DossierSalarie(par_courriel(None, qui, true, &partis.join(", "), "", detail, None)))?;
+    noter(ctx, journal::Ligne::DossierSalarie(par_courriel(None, qui, true, &en_liste(&partis, ", "), "", detail, None)))?;
     Ok(DossierEnvoye { partis, messages: messages.len(), expediteur })
 }
 
@@ -929,7 +929,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
             html: None,
         },
     ];
-    let compte = client.compte().to_string();
+    let compte = droit::fiche::Courriel::lire(client.compte())?;
     // Chaque annee regularisee est une annee voulue : son virement a sa date.
     let date_de = |a: socle::mois::Annee| {
         dates
@@ -969,7 +969,7 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
         std::fs::write(&p, brut).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
     }
     detail.eml = emls.clone();
-    noter(ctx, journal::Ligne::RegularisationCasc(par_courriel(None, qui, true, &partis.join(", "), &format!("{} courriel(s) envoye(s)", partis.len()), detail, None)))?;
+    noter(ctx, journal::Ligne::RegularisationCasc(par_courriel(None, qui, true, &en_liste(&partis, ", "), &format!("{} courriel(s) envoye(s)", partis.len()), detail, None)))?;
     // Les annees regularisees : leurs mois sortent des dossiers suivants. S'ecrit APRES le virement, jamais avant.
     let auj = socle::temps::secondes().a_la_seconde().jour_de_paris();
     let mut annees: Vec<RegularisationNotee> = Vec::new();
@@ -979,11 +979,11 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
     let dites: Vec<String> = annees.iter().map(|a| a.annee.to_string()).collect();
     let notee = if dites.len() > 1 { "notées régularisées" } else { "notée régularisée" };
     Ok(CascEnvoyee {
-        phrase: format!("CASC-SVP, {} : {}, envoyé à {} ; {} {}.", r.periode, socle::texte::euros(r.total), partis.join(" et "), dites.join(" et "), notee),
+        phrase: format!("CASC-SVP, {} : {}, envoyé à {} ; {} {}.", r.periode, socle::texte::euros(r.total), en_liste(&partis, " et "), dites.join(" et "), notee),
         partis,
         expediteur: compte,
         periode: r.periode,
-        total: r.total.to_string(),
+        total: r.total,
         annees,
         eml: emls,
         dossier: garde,
@@ -995,10 +995,11 @@ fn casc_envoyer(ctx: &Contexte, c: ChargeCasc, motdepasse: Option<&str>, ouvrir:
 #[derive(Debug, Serialize)]
 struct CascEnvoyee {
     phrase: String,
-    partis: Vec<String>,
-    expediteur: String,
+    partis: Vec<droit::fiche::Courriel>,
+    expediteur: droit::fiche::Courriel,
     periode: String,
-    total: String,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    total: socle::num::Decimal,
     annees: Vec<RegularisationNotee>,
     eml: Vec<NomDeFichier>,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
@@ -1037,7 +1038,7 @@ struct TableauDesDroits {
 /// et le tableau du mois.
 #[derive(Debug, Serialize)]
 struct DroitsDUnSalarie {
-    cle: String,
+    cle: droit::contexte::IdSalarie,
     nom: String,
     fenetre: String,
     lignes: Vec<(String, String)>,
@@ -1133,7 +1134,7 @@ fn droits(ctx: &Contexte, c: ChargeDroits) -> R<Droits> {
             Some(f) => crate::nom_a_l_ecran(f, cle),
             None => cle.to_string(),
         };
-        salaries.push(DroitsDUnSalarie { cle: cle.to_string(), nom, fenetre: p.libelle_fenetre.clone(), lignes, phrase, notes, colonnes: tableau });
+        salaries.push(DroitsDUnSalarie { cle: cle.clone(), nom, fenetre: p.libelle_fenetre.clone(), lignes, phrase, notes, colonnes: tableau });
     }
     let phrase = if salaries.is_empty() {
         "Aucun engagement d'intermittent n'est encore validé ni importé."

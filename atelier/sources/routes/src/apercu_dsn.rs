@@ -19,14 +19,13 @@ use declarations::dsn_lue::{ContratDeclare, DsnLue, Mesures, VersementLu};
 use documents::ecrire_documents::paies_aux_numeros_declares;
 use droit::contexte::Contexte;
 use droit::fiche::Lue as _;
-use droit::natures::{TypeDActivite, UniteDeMesure};
+use droit::natures::{Fraction, IdentifiantDeDeclaration, NumeroDOrdre, TypeDActivite, UniteDeMesure};
 use engagement::calcul::Paie;
 use envois::etats;
 use socle::date::Jour;
 use socle::echec::{erreur, refus, Classe, Echec, R};
-use socle::fichiers::repr;
 use socle::mois::Mois;
-use socle::num::{entier_lu, q2, Decimal};
+use socle::num::{q2, Decimal};
 
 use crate::depots::{lire_octets, resoudre};
 use socle::fichiers::NomDeFichier;
@@ -40,15 +39,6 @@ fn saisie_aux_numeros_declares(ctx: &Contexte, mois: Mois) -> R<Vec<Paie>> {
 }
 
 // ------------------------------------------------------------------ recapitulatif_dsn
-
-/// Un nombre en texte, sans ses zeros de fin ; `0` pour zero.
-fn norm(d: Decimal) -> String {
-    if d.is_zero() {
-        "0".to_string()
-    } else {
-        d.normalize().to_string()
-    }
-}
 
 /// Un contrat du fichier (`DsnLue`), et ce qu'il declare pour le mois et en rappel d'un mois deja declare. Son numero
 /// (S21.G00.40.009) et son debut (S21.G00.40.001) sont obligatoires : un contrat qui ne les porte pas ne se lit pas.
@@ -70,8 +60,8 @@ impl ContratLu {
         let numero = c.numero.clone().ok_or_else(|| refus("Un contrat du fichier ne porte pas son numéro (S21.G00.40.009)."))?;
         let debut = c.debut.ok_or_else(|| socle::refus!("Le contrat {} du fichier ne porte pas sa date de début (S21.G00.40.001).", numero))?;
         Ok(ContratLu {
-            mois: d.mesures(c.nir.as_deref(), &numero, false),
-            rappel: d.mesures(c.nir.as_deref(), &numero, true),
+            mois: d.mesures(c.nir.as_ref(), &numero, false),
+            rappel: d.mesures(c.nir.as_ref(), &numero, true),
             debut,
             fin: c.fin,
             emploi: c.emploi.emploi.clone(),
@@ -134,7 +124,7 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
     }
     for (quoi, paie, fichier) in [("jours", jours, m.jours), ("cachets", cachets, m.cachets), ("heures", heures, m.heures)] {
         if paie != fichier {
-            ecarts.push(format!("{} : la paie dit {}, le fichier {}", quoi, norm(paie), norm(fichier)));
+            ecarts.push(format!("{} : la paie dit {}, le fichier {}", quoi, paie.normalize(), fichier.normalize()));
         }
     }
     let emploi = p.salarie.emploi.en_texte();
@@ -147,7 +137,7 @@ fn ecarts_a_la_paie(p: &Paie, m: &Mesures, c: &ContratLu) -> R<Vec<String>> {
 /// `recapitulatif_dsn` : ce que la DSN declare, contrat par contrat, comparé aux contrats saisis de l'etablissement `nic`
 /// (tous sans etablissement). La paie du mois qui ne se lit pas (ou l'etablissement d'un salarie) ne se compare pas, et
 /// la phrase le dit.
-fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) -> R<RecapDsn> {
+fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&droit::fiche::Nic>) -> R<RecapDsn> {
     let mut sans_comparaison: Option<Echec> = None;
     let liste = match saisie_aux_numeros_declares(ctx, mois) {
         Ok(l) => l,
@@ -162,7 +152,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) 
     for (i, p) in liste.iter().enumerate() {
         if let Some(nic) = nic {
             match droit::bareme::etablissement_de(&ctx.entreprise, &p.salarie) {
-                Ok(e) if e == nic => {}
+                Ok(e) if e == *nic => {}
                 Ok(_) => continue,
                 Err(m) => {
                     sans_comparaison = Some(m);
@@ -181,7 +171,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) 
     let mut salaries = Vec::new();
     let (mut n_contrats, mut n_ecarts, mut n_corrections) = (0usize, 0usize, 0usize);
     for sal in &d.individus {
-        let lus = d.contrats_de(sal.nir.as_deref()).map(|c| ContratLu::de(d, c)).collect::<R<Vec<ContratLu>>>()?;
+        let lus = d.contrats_de(sal.nir.as_ref()).map(|c| ContratLu::de(d, c)).collect::<R<Vec<ContratLu>>>()?;
         let mut contrats = Vec::new();
         // Un contrat se dit par ce qu'il declare pour le mois, comparé a la paie du mois, et par ses rappels d'un mois deja
         // declare (`dsn_lue::Remuneration::rappel`), qui ne se comparent pas a la paie du mois. Un contrat qui n'a que des rappels
@@ -227,9 +217,9 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) 
                 nature_dsn: c.nature_dsn.clone(),
                 objet: c.objet.clone(),
                 brut: m.brut.map(q2),
-                jours: norm(m.jours),
-                cachets: norm(m.cachets),
-                heures: norm(m.heures),
+                jours: m.jours.normalize(),
+                cachets: m.cachets.normalize(),
+                heures: m.heures.normalize(),
                 fin_declaree: c.fin_declaree,
                 motif_fin: c.motif_fin,
                 remunere: m.remunere,
@@ -240,7 +230,7 @@ fn recapitulatif_dsn(ctx: &Contexte, d: &DsnLue, mois: Mois, nic: Option<&str>) 
                 ecarts,
             });
         }
-        let versements = d.versements_de(sal.nir.as_deref()).map(VersementDuFichier::de).collect();
+        let versements = d.versements_de(sal.nir.as_ref()).map(VersementDuFichier::de).collect();
         salaries.push(SalarieDuFichier { nir: sal.nir.clone(), nom: sal.nom.clone(), prenoms: sal.prenom.clone(), contrats, versements });
     }
     let mut absents = Vec::new();
@@ -334,7 +324,7 @@ pub(crate) enum Recapitulatif {
 #[derive(Debug, Serialize)]
 struct SalarieDuFichier {
     #[serde(skip_serializing_if = "Option::is_none")]
-    nir: Option<String>,
+    nir: Option<droit::fiche::Nir>,
     nom: Option<String>,
     prenoms: Option<String>,
     contrats: Vec<ContratDuFichier>,
@@ -356,10 +346,14 @@ struct ContratDuFichier {
     #[serde(rename = "nature")]
     nature_dsn: Option<String>,
     objet: Option<droit::fiche::NumeroObjetSpectacle>,
-    brut: Option<String>,
-    jours: String,
-    cachets: String,
-    heures: String,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::option::serialize")]
+    brut: Option<Decimal>,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    jours: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    cachets: Decimal,
+    #[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]
+    heures: Decimal,
     fin_declaree: Option<Jour>,
     motif_fin: Option<droit::natures::MotifDeRupture>,
     remunere: bool,
@@ -393,11 +387,8 @@ pub(crate) struct RemplacementDuFichier {
 /// annule-et-remplace (type 03 ou 05) d'un ordre plus grand que le dernier depose.
 fn remplacement_du_fichier(m: &mut Moteur, a: &DsnLue, mois: Mois) -> R<RemplacementDuFichier> {
     let r = m.etat_remplacement(mois, a.etablissement())?;
-    let remplace = match (a.type_declaration, a.ordre.as_deref()) {
-        (Some(t), Some(ordre)) if t.remplace() && r.deposee => {
-            let n = entier_lu(ordre).ok_or_else(|| erreur(Classe::Illisible, format!("nombre entier illisible : {}", repr(ordre))))?;
-            r.dernier_ordre.is_none_or(|d| n > i128::from(d))
-        }
+    let remplace = match (a.type_declaration, a.ordre) {
+        (Some(t), Some(ordre)) if t.remplace() && r.deposee => r.dernier_ordre.is_none_or(|d| ordre > d),
         // Une declaration qui ne remplace pas, sans ordre, ou rien de depose : le fichier ne remplace rien.
         (Some(_) | None, Some(_) | None) => false,
     };
@@ -423,9 +414,9 @@ pub(crate) struct ApercuDsn {
     pub(crate) evenement: Option<socle::date::Jour>,
     pub(crate) type_declaration: Option<droit::type_declaration::TypeDeLaDeclaration>,
     pub(crate) libelle_type: Option<&'static str>,
-    pub(crate) ordre: Option<String>,
-    pub(crate) fraction: Option<String>,
-    pub(crate) remplace: Option<String>,
+    pub(crate) ordre: Option<NumeroDOrdre>,
+    pub(crate) fraction: Option<Fraction>,
+    pub(crate) remplace: Option<IdentifiantDeDeclaration>,
     pub(crate) constitution: Option<String>,
     pub(crate) siren: Option<droit::fiche::Siren>,
     pub(crate) salaries: usize,
@@ -450,7 +441,7 @@ fn description(nom: &str, a: &DsnLue) -> String {
     if let Some(t) = a.type_declaration {
         d += &format!(" — {} (type {})", t.libelle(), t);
     }
-    for (quoi, v) in [("ordre", a.ordre.clone()), ("fraction", a.fraction.clone()), ("constituée le", a.depot.map(|j| j.jj_mm_aaaa()))] {
+    for (quoi, v) in [("ordre", a.ordre.map(|o| o.to_string())), ("fraction", a.fraction.map(|f| f.to_string())), ("constituée le", a.depot.map(|j| j.jj_mm_aaaa()))] {
         if let Some(v) = v {
             d += &format!(", {} {}", quoi, v);
         }
@@ -509,9 +500,9 @@ pub(crate) fn apercu_depot_dsn(ctx: &Contexte, fichier: &str) -> R<ApercuDsn> {
         evenement: if signalement { a.evenement() } else { None },
         type_declaration: a.type_declaration,
         libelle_type: a.type_declaration.map(droit::type_declaration::TypeDeLaDeclaration::libelle),
-        ordre: a.ordre.clone(),
-        fraction: a.fraction.clone(),
-        remplace: a.remplace.clone(),
+        ordre: a.ordre,
+        fraction: a.fraction,
+        remplace: a.remplace,
         constitution: a.depot.map(|j| j.jj_mm_aaaa()),
         siren: a.emetteur.clone(),
         salaries: a.individus.len(),

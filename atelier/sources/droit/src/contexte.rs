@@ -11,14 +11,14 @@ use std::path::{Path, PathBuf};
 use indexmap::IndexMap;
 
 use crate::code_cotisation::CleDeCotisationDsn;
-use crate::fiche::{ChampsEntreprise, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles};
+use crate::fiche::{ChampsEntreprise, Idcc, Lue, ChampsSpectacle, Datee, Etablissement, FicheEntrepriseDatee, FicheSalarie, FicheSalarieDatee, FicheSpectacleDatee, Salaries, Spectacle, Spectacles};
 use crate::forme_bareme::{CotisationDsn, CotisationModifiee, CoucheConvention, CoucheNature, IdDeCotisation, NatureModifiee, NonPortee, Pile, ReductionGenerale, Rubrique, RubriqueModifiee, Surcouche, TauxAtmp, VersementMobiliteEcrit};
 use socle::echec::Lieu;
 use socle::num::Decimal;
 
 use socle::date::{repr_texte, Jour};
 use socle::fichiers::dossier_du_code;
-use socle::mois::Mois;
+use socle::mois::{Annee, Mois};
 use socle::echec::{refus, Echec, R};
 use socle::texte::cle_recherche;
 
@@ -122,7 +122,36 @@ pub fn histoire_des_etablissements(liste: Option<&[Datee<Vec<Etablissement>>]>) 
 
 // ------------------------------------------------ l'effectif
 
-const CODE_SECURITE_SOCIALE: &str = "A01";
+crate::natures::codes_fermes! {
+    /// LE TYPE D'UN PARAMETRE NEOReS (`RO.B008.R001`) : l'effectif qu'un compte rendu de nature 118 communique, et la cle
+    /// d'un effectif de `config/effectifs.json`. La table que net-entreprises sert
+    /// (`atelier/reference/sources/neores/gip-mds-neores-table-types-de-parametres-20230703.csv`) : A01 a A05, A07, tous
+    /// du compte rendu 118 « Effectifs ».
+    TypeDeParametreNeores, "Type de paramètre NEOReS (RO.B008.R001)", texte "table des types de paramètres NEOReS (gip-mds-neores-table-types-de-parametres-20230703.csv), l. 2-7" {
+        /// L'effectif de securite sociale (art. L. 130-1 CSS), celui des seuils de cotisation.
+        EffectifMoyen = "A01",
+        EffectifBoeth = "A02",
+        EffectifEcap = "A03",
+        EffectifOeth = "A04",
+        EffectifCsaCfip = "A05",
+        EffectifCsa = "A07",
+    }
+}
+
+impl TypeDeParametreNeores {
+    /// Son libelle, celui de la table.
+    pub fn libelle(self) -> &'static str {
+        match self {
+            TypeDeParametreNeores::EffectifMoyen => "effectif moyen annuel (niveau entreprise)",
+            TypeDeParametreNeores::EffectifBoeth => "effectif moyen BOETH annuel (niveau entreprise)",
+            TypeDeParametreNeores::EffectifEcap => "effectif moyen ECAP annuel (niveau entreprise)",
+            TypeDeParametreNeores::EffectifOeth => "effectif moyen d'assujettissement OETH annuel (niveau entreprise)",
+            TypeDeParametreNeores::EffectifCsaCfip => "effectif moyen CSA CFIP annuel (niveau entreprise)",
+            TypeDeParametreNeores::EffectifCsa => "effectif moyen CSA annuel (niveau entreprise)",
+        }
+    }
+}
+
 const ANNEES_CONSECUTIVES: i32 = 5;
 /// Le plus petit seuil d'effectif dont un taux depend (la formation des permanents) : une annee qui ne le departage pas
 /// ne departage aucun des autres.
@@ -182,7 +211,7 @@ pub fn cinquante_salaries_et_plus(fiche: &ChampsEntreprise) -> bool {
 struct FichierEffectifs {
     #[serde(rename = "quoi")]
     _quoi: Option<String>,
-    annees: Option<BTreeMap<String, BTreeMap<String, EffectifEcrit>>>,
+    annees: Option<BTreeMap<Annee, BTreeMap<TypeDeParametreNeores, EffectifEcrit>>>,
 }
 
 /// L'effectif d'un code pour une annee.
@@ -194,7 +223,7 @@ struct EffectifEcrit {
     #[serde(rename = "calcule_le", default, with = "socle::paris::ecrit::seconde::option")]
     _calcule_le: Option<socle::paris::Moment>,
     #[serde(rename = "source")]
-    _source: Option<String>,
+    _source: Option<socle::fichiers::CheminRelatif>,
     #[serde(rename = "dit_le")]
     _dit_le: Option<Jour>,
 }
@@ -206,11 +235,8 @@ pub fn effectif_de(racine: &Path, fiche: &ChampsEntreprise) -> R<Effectif> {
     if socle::fichiers::existe(&p) {
         let lu: FichierEffectifs = socle::forme::lire_fichier(&p, "Les effectifs de la compagnie ne se lisent pas : relever les retours les récrit.")?;
         for (an, codes) in lu.annees.into_iter().flatten() {
-            if an.is_empty() || !an.chars().all(|c| c.is_ascii_digit()) {
-                continue;
-            }
-            if let Some(a01) = codes.get(CODE_SECURITE_SOCIALE) {
-                annees.insert(an.parse::<i32>().map_err(|e| refus(e.to_string()))?, a01.valeur);
+            if let Some(a01) = codes.get(&TypeDeParametreNeores::EffectifMoyen) {
+                annees.insert(an.nombre(), a01.valeur);
             }
         }
     }
@@ -356,30 +382,12 @@ pub fn socle_livre_lu(an: i32) -> R<Option<Pile>> {
 
 /// LA COUCHE DE LA CONVENTION COLLECTIVE `idcc` (`par_convention` du socle), ce qu'elle fond dans le socle ; `None` : un
 /// socle qui ne couvre aucune convention, ou une convention qui n'a rien a fondre.
-fn convention<'a>(pile: &'a Pile, idcc: &str) -> R<Option<&'a CoucheConvention>> {
+fn convention<'a>(pile: &'a Pile, idcc: &Idcc) -> R<Option<&'a CoucheConvention>> {
     if pile.par_convention.is_empty() {
         return Ok(None);
     }
     let annee = pile.annee;
-    let connues: Vec<&str> = pile.par_convention.keys().map(String::as_str).collect();
-    let idcc = idcc.trim();
-    if idcc.is_empty() {
-        return Err(socle::echec::refus_avec(
-            "La fiche entreprise ne dit pas sa convention collective : la choisir dans Configuration › Entreprise.",
-            Lieu {
-                cle: Some("idcc".into()),
-                detail: Some(format!(
-                    "Bareme {} : la fiche entreprise ne dit pas son `idcc`, et les \
-cotisations conventionnelles en dependent.\n\
-\x20 Conventions couvertes : {}.\n\
-\x20 A ecrire dans config/entreprise.json : \"idcc\": \"3090\".",
-                    annee,
-                    connues.join(", ")
-                )),
-                ..Lieu::default()
-            },
-        ));
-    }
+    let connues: Vec<&str> = pile.par_convention.keys().map(|k| k.as_ref()).collect();
     let Some(couche) = pile.par_convention.get(idcc) else {
         return Err(socle::echec::refus_avec(
             "La convention collective de la compagnie n'est pas couverte par le barème : le signaler au développeur.",
@@ -472,7 +480,7 @@ fn modifier_la_nature(nat: &mut CoucheNature, m: &NatureModifiee, ou: &str) -> R
 
 /// LA COUCHE DE LA CONVENTION FONDUE DANS LE SOCLE : ses tarifs, ses contributions, son champ s'ajoutent ; ce qu'elle
 /// ecrit des rubriques et des sections du socle les change ; la section d'un statut qu'elle donne est la sienne entiere.
-fn fondre_la_convention(pile: &mut Pile, c: &CoucheConvention, idcc: &str) -> R<()> {
+fn fondre_la_convention(pile: &mut Pile, c: &CoucheConvention, idcc: &Idcc) -> R<()> {
     let ou = format!("La couche de la convention {} du barème {}", idcc, pile.annee);
     if let Some(t) = &c.tarifs_conventionnels {
         pile.tarifs_conventionnels = Some(t.clone());
@@ -494,7 +502,7 @@ fn fondre_la_convention(pile: &mut Pile, c: &CoucheConvention, idcc: &str) -> R<
         modifier_rubriques(&mut pile.rubriques_bulletin, mods, &ou)?;
     }
     for (n, m) in c.par_nature.iter().flatten() {
-        modifier_la_nature(pile.par_nature.entry(n.clone()).or_default(), m, &ou)?;
+        modifier_la_nature(pile.par_nature.entry(*n).or_default(), m, &ou)?;
     }
     for (k, m) in c.par_categorie.iter().flatten() {
         let cat = pile.par_categorie.entry(k.clone()).or_default();
@@ -502,7 +510,7 @@ fn fondre_la_convention(pile: &mut Pile, c: &CoucheConvention, idcc: &str) -> R<
             par_dessus_rubriques(cat.rubriques.get_or_insert_with(BTreeMap::new), mods);
         }
         for (s, sec) in m.par_statut.iter().flatten() {
-            cat.par_statut.get_or_insert_with(BTreeMap::new).insert(s.clone(), sec.clone());
+            cat.par_statut.get_or_insert_with(BTreeMap::new).insert(*s, sec.clone());
         }
     }
     Ok(())
@@ -535,7 +543,7 @@ fn fondre_la_surcouche(pile: &mut Pile, s: Surcouche, ou: &str) -> R<()> {
         }
     }
     for (n, m) in s.par_nature.iter().flatten() {
-        modifier_la_nature(pile.par_nature.get_mut(n).ok_or_else(|| inconnue(&ou, &format!("par_nature.{}", n)))?, m, &ou)?;
+        modifier_la_nature(pile.par_nature.get_mut(n).ok_or_else(|| inconnue(&ou, &format!("par_nature.{}", n.population())))?, m, &ou)?;
     }
     Ok(())
 }
@@ -570,7 +578,7 @@ fn versement_mobilite_dit(pile: &Pile) -> bool {
 /// Les etablissements de la fiche se tiennent-ils (SIRET, NIC, une fois chacun) ?
 pub fn controler_etablissements(fiche: &ChampsEntreprise, pile: &Pile) -> R<()> {
     let siren = fiche.siren.portee();
-    let mut vus: Vec<&str> = fiche.nic_principal().into_iter().collect();
+    let mut vus: Vec<&str> = fiche.nic_principal().map(|n| -> &str { n }).into_iter().collect();
     let mut griefs: Vec<String> = Vec::new();
     for e in fiche.secondaires() {
         let nom = match (e.libelle.remplie(), e.nic.portee()) {
@@ -579,13 +587,9 @@ pub fn controler_etablissements(fiche: &ChampsEntreprise, pile: &Pile) -> R<()> 
             (None, None) => "Un établissement sans libellé ni NIC".to_string(),
         };
         let nic = match e.nic.portee() {
-            Some(n) if n.len() == 5 && n.chars().all(|c| c.is_ascii_digit()) => n,
-            autre => {
-                let ecrit = match autre {
-                    Some(n) => repr_texte(n),
-                    None => "vide".to_string(),
-                };
-                griefs.push(format!("{} : NIC {} (cinq chiffres attendus)", nom, ecrit));
+            Some(n) => n,
+            None => {
+                griefs.push(format!("{} : NIC vide (cinq chiffres attendus)", nom));
                 continue;
             }
         };
@@ -642,7 +646,7 @@ fn controler_secteur(pile: &Pile, fiche: &ChampsEntreprise) -> R<()> {
         return Ok(());
     }
     // Les secteurs viennent de la couche d'une convention : celle que la fiche dit.
-    let idcc = fiche.idcc.portee().ok_or_else(|| socle::refus!("Le barème porte les secteurs d'une convention que la fiche Entreprise ne dit pas."))?;
+    let idcc = fiche.idcc.dite().ok_or_else(|| socle::refus!("Le barème porte les secteurs d'une convention que la fiche Entreprise ne dit pas."))?;
     Err(socle::refus!(
         "Convention {} : {}\n  Fiche Entreprise, « {} » : {}. Portés : {}.",
         idcc,
@@ -895,7 +899,7 @@ pub fn jour_reel() -> Jour {
 /// `PUPPETPAIE_AUJOURDHUI` (AAAA-MM-JJ) remplace l'horloge.
 pub fn aujourdhui() -> R<Jour> {
     let jour = aujourdhui_brut()?;
-    socle::fichiers::noter_valeur("aujourdhui", jour.iso());
+    socle::fichiers::noter_lecture(&CleLue::Aujourdhui, socle::fichiers::ValeurLue::Jour(jour));
     Ok(jour)
 }
 
@@ -1062,6 +1066,10 @@ impl From<IdSpectacle> for String {
         c.0
     }
 }
+
+/// La cle d'une lecture qu'une paie note (`socle::fichiers::CleDeLecture`), avec les types d'ici : le salarie, le lieu
+/// d'une mission, le spectacle.
+pub type CleLue = socle::fichiers::CleDeLecture<IdSalarie, crate::missions::LieuDeMission, IdSpectacle>;
 
 impl PartialEq<str> for IdSpectacle {
     fn eq(&self, autre: &str) -> bool {
@@ -1304,8 +1312,8 @@ impl Contexte {
     }
 
     /// Idem pour les spectacles.
-    pub fn spectacles_actifs(&self) -> Vec<&str> {
-        self.spectacles.iter().filter(|(_, v)| !v.archivee()).map(|(k, _)| k.as_str()).collect()
+    pub fn spectacles_actifs(&self) -> Vec<&IdSpectacle> {
+        self.spectacles.iter().filter(|(_, v)| !v.archivee()).map(|(k, _)| k).collect()
     }
 
     /// L'effectif de la compagnie (`config/effectifs.json`).
@@ -1316,7 +1324,7 @@ impl Contexte {
     /// Le 5 a partir de cinquante salaries, le 15 sinon. Un effectif qu'il faudrait et que le moteur ne connait pas se
     /// refuse en nommant les annees qui manquent (`Effectif::atteint`).
     pub fn echeance_dsn(&self) -> R<u32> {
-        socle::fichiers::noter_valeur("aujourdhui", self.aujourdhui.iso());
+        socle::fichiers::noter_lecture(&CleLue::Aujourdhui, socle::fichiers::ValeurLue::Jour(self.aujourdhui));
         Ok(match self.effectif()?.atteint(GRAND_SEUIL, self.aujourdhui.an)? {
             true => 5,
             false => 15,
@@ -1326,7 +1334,7 @@ impl Contexte {
     /// LES CONVENTIONS QUE LE SOCLE SERT (`par_convention`), lues par leur forme : celles du socle livre de l'annee du
     /// jour, a defaut du plus recent livre. Elles ne dependent d'aucune compagnie : la fiche qui n'a pas encore choisi la
     /// sienne les propose.
-    pub fn conventions_servies(&self) -> R<BTreeMap<String, crate::forme_bareme::Convention>> {
+    pub fn conventions_servies(&self) -> R<BTreeMap<Idcc, crate::forme_bareme::Convention>> {
         let dossier = self.code.join("baremes");
         let jour = self.aujourdhui;
         let an = match fichier_du_socle(&dossier, jour.an) {
@@ -1434,7 +1442,7 @@ depuis le plus recent.",
         let (mut pile, r) = crate::forme_bareme::lire_le_socle(&fichier, jour, organisation)?;
         regles.extend(r);
         regles.extend(smic_en_vigueur(&pile.smic_horaire, jour)?.map(|(j, _)| j));
-        if let Some(idcc) = ent.idcc.portee() {
+        if let Some(idcc) = ent.idcc.dite() {
             if let Some(c) = convention(&pile, idcc)?.cloned() {
                 fondre_la_convention(&mut pile, &c, idcc)?;
             }
@@ -1543,7 +1551,7 @@ depuis le plus recent.",
     fn dans_la_couche<T>(&self, jour: &Jour, lire: impl FnOnce(&CoucheConvention) -> T) -> R<Option<T>> {
         let Some(fichier) = fichier_du_socle(&self.code.join("baremes"), jour.an) else { return Ok(None) };
         let ent = self.entreprise_au(jour);
-        let Some(idcc) = ent.idcc.portee() else { return Ok(None) };
+        let Some(idcc) = ent.idcc.dite() else { return Ok(None) };
         let (socle_an, _) = crate::forme_bareme::lire_le_socle(&fichier, jour, ent.organisation_patronale.dite().map(String::as_str))?;
         Ok(convention(&socle_an, idcc)?.map(lire))
     }
@@ -1611,7 +1619,7 @@ PSS_H_METROP).",
     pub fn etablissements_dits(&self) -> Vec<crate::fiche::Etablissement> {
         let derniere = self.fiches.entreprise.etablissements.as_deref().and_then(|l| l.iter().max_by_key(|d| d.depuis)).and_then(|d| d.valeur.dite());
         let principal = self.entreprise.nic_principal();
-        derniere.into_iter().flatten().filter(|e| e.nic.portee() != principal).cloned().collect()
+        derniere.into_iter().flatten().filter(|e| e.nic.dite() != principal).cloned().collect()
     }
 
     /// La fiche entreprise d'un mois : lue au dernier jour du mois, avec chaque autre etablissement ouvert un
@@ -1694,8 +1702,10 @@ PSS_H_METROP).",
         // Le NIR, quand c'est lui qu'on donne : 13 caracteres, ou 15 avec la cle.
         let brut: String = nom.replace(' ', "").to_uppercase();
         if forme_de_nir(&brut) {
+            // Un NIR saisi se range en capitales (`Nir::rangee`) : 2A, 2B.
+            let cherche = crate::fiche::Nir::lire(&brut[..13])?;
             for (cle, s) in &self.salaries {
-                if s.nir.dite().is_some_and(|n| n.as_ref().to_uppercase() == brut[..13]) {
+                if s.nir.dite() == Some(&cherche) {
                     return Ok(cle.to_string());
                 }
             }
@@ -1818,9 +1828,14 @@ une paie passee ; pour l'embaucher a nouveau, remettre \
             noms.extend(sp.alias.dite().into_iter().flatten().cloned());
             Ok(noms)
         };
+        // Un nom qui n'a pas la forme d'un numero d'objet ne designe aucun numero.
+        let objet = match crate::fiche::NumeroObjetSpectacle::lire(net) {
+            Ok(n) => Some(n),
+            Err(_) => None,
+        };
         let mut exacts = Vec::new();
         for (cle, sp) in &ordre {
-            if noms_de(cle, sp)?.iter().any(|n| cle_recherche(n) == q) || sp.numero_objet.portee().is_some_and(|n| n.to_uppercase() == net.to_uppercase()) {
+            if noms_de(cle, sp)?.iter().any(|n| cle_recherche(n) == q) || sp.numero_objet.dite().is_some_and(|n| objet.as_ref().is_some_and(|o| o.meme(n))) {
                 exacts.push(*cle);
             }
         }

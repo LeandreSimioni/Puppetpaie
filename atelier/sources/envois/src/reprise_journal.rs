@@ -14,6 +14,7 @@
 //! (`reprendre_les_depots`), comme l'effectif se refait seul des retours 118. Un test que ce logiciel n'a pas envoye reste dehors (voir `reprise`).
 
 use droit::fiche::Lue as _;
+use droit::fiche::Nir;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -28,7 +29,7 @@ use socle::piece::format::Jjmmaaaa;
 use socle::piece::Zone;
 use crate::etats::AvecIncidents;
 use crate::journal::{self, DetailDsn, Envoi, Ligne, Mode};
-use crate::retours::{Bilan, Reception};
+use crate::retours::{Bilan, IdDeFlux, Reception, Verdict};
 
 /// La reponse d'une ligne reprise sans certificat de conformite : le journal ecrit la reponse en texte
 /// (`journal::Envoi::reponse`), et la plate-forme n'en a pas dit.
@@ -36,17 +37,17 @@ const SANS_CERTIFICAT: &str = "";
 
 /// Le depot que le bilan dit accepte : l'etat de la declaration, sinon celui de l'envoi, est OK.
 fn accepte(b: &Bilan) -> bool {
-    b.verdict().is_some_and(|v| v.eq_ignore_ascii_case("OK"))
+    b.verdict() == Some(Verdict::Ok)
 }
 
 /// Un depot reel (`essai_reel` 02), et non d'essai.
 fn reel(b: &Bilan) -> bool {
-    b.essai_reel.as_deref() == Some(crate::retours::ESSAI_REEL)
+    b.essai_reel == Some(droit::nature_declaration::EssaiOuReel::Reel)
 }
 
 /// Un depot dont une piece de `retours/` temoigne.
 struct Atteste {
-    flux: String,
+    flux: IdDeFlux,
     bilan: Bilan,
     pieces: Vec<NomDeFichier>,
     deja: bool,
@@ -75,7 +76,7 @@ fn fichiers_du_dossier(dossier: &Path, garder: impl Fn(&str) -> bool) -> R<Vec<(
 fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
     let dossier = ctx.racine.join(crate::retours::RETOURS);
     std::fs::create_dir_all(&dossier).map_err(|e| socle::echec::du_disque(&dossier, &e).reclasser(Classe::Disque))?;
-    let mut par_flux: Vec<(String, Vec<(Bilan, NomDeFichier)>)> = vec![];
+    let mut par_flux: Vec<(IdDeFlux, Vec<(Bilan, NomDeFichier)>)> = vec![];
     let mut illisibles: Vec<String> = vec![];
     for (nom, p) in fichiers_du_dossier(&dossier, |n| n.ends_with(".xml"))? {
         let octets = match std::fs::read(&p) {
@@ -98,11 +99,7 @@ fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
             None => par_flux.push((b.flux.clone(), vec![(b, nom.clone())])),
         }
     }
-    let connus: Vec<String> = journal::lire(&ctx.racine, None, None, false)?
-        .iter()
-        .filter(|l| !l.flux().is_empty())
-        .map(|l| l.flux().to_string())
-        .collect();
+    let connus: Vec<IdDeFlux> = journal::lire(&ctx.racine, None, None, false)?.iter().filter_map(Ligne::flux).cloned().collect();
     let mut out: Vec<Atteste> = Vec::new();
     for (flux, couples) in par_flux {
         let bilans: Vec<Bilan> = couples.iter().map(|(b, _)| b.clone()).collect();
@@ -121,7 +118,7 @@ fn depots_attestes(ctx: &Contexte) -> R<(Vec<Atteste>, Vec<String>)> {
 /// deja au journal. Ce que le bilan ne dit pas est vide.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DepotVu {
-    pub flux: String,
+    pub flux: IdDeFlux,
     pub quand: Option<Reception>,
     pub mois: Option<Mois>,
     pub mode: Mode,
@@ -203,16 +200,15 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
     for d in a_ecrire {
         let b = &d.bilan;
         let (Some(quand), Some(piece)) = (heure_du_bilan(b), d.pieces.last()) else { continue };
-        let salaries = b.salaries.as_deref().map(|s| s.trim().parse::<usize>().map_err(|_| socle::echec::cle("Le nombre de salariés d'un bilan ne se lit pas.", "salaries").reclasser(Classe::Illisible))).transpose()?;
         let detail = DetailDsn {
             logiciel: b.logiciel.clone(),
             type_declaration: b.type_declaration,
-            fraction: b.fraction.clone(),
-            ordre: b.ordre.clone(),
-            salaries,
-            contrats: b.contrats.clone(),
-            etat_envoi: b.etat_envoi.clone(),
-            etat_declaration: b.etat_declaration.clone(),
+            fraction: b.fraction,
+            ordre: b.ordre,
+            salaries: b.salaries,
+            contrats: b.contrats.map(|n| n.to_string()),
+            etat_envoi: b.etat_envoi.map(|v| v.code().to_string()),
+            etat_declaration: b.etat_declaration,
             verdict_connu: Some(b.etat_declaration.is_some()),
             pieces: Some(d.pieces.clone()),
             ..DetailDsn::nouveau(true)
@@ -223,7 +219,7 @@ fn reprise_et_incidents(ctx: &Contexte, ecrire: bool, qui: &str, incidents: &mut
         };
         let mut e = Envoi::nouveau(Mode::de(reel(b)), qui, accepte(b), "net-entreprises", reponse, detail);
         e.mois = b.mois;
-        e.flux = d.flux.clone();
+        e.flux = Some(d.flux.clone());
         journal::noter(&ctx.racine, Ligne::Dsn(e), None, journal::Datation::Lue { quand, origine: format!("retours/{}", piece) })?;
     }
     // Les retours deja archives se rangent en face des lignes qui viennent d'apparaitre -- par le flux.
@@ -248,12 +244,11 @@ pub fn reprendre_les_depots(ctx: &Contexte, qui: &str) -> AvecIncidents<usize> {
 
 // ------------------------------------------------------------- la reprise du canal DPAE
 
-/// Le NIR (sans espaces autour) -> la cle de la fiche. Si deux fiches portent le meme NIR, la derniere gagne.
-fn salarie_par_nir(ctx: &Contexte) -> Vec<(String, IdSalarie)> {
-    let mut v: Vec<(String, IdSalarie)> = Vec::new();
+/// Le NIR -> la cle de la fiche. Si deux fiches portent le meme NIR, la derniere gagne.
+fn salarie_par_nir(ctx: &Contexte) -> Vec<(Nir, IdSalarie)> {
+    let mut v: Vec<(Nir, IdSalarie)> = Vec::new();
     for (cle, s) in &ctx.salaries {
-        let Some(nir) = s.nir.dite().filter(|n| !n.is_empty()) else { continue };
-        let nir = nir.trim().to_string();
+        let Some(nir) = s.nir.dite().cloned() else { continue };
         match v.iter_mut().find(|(n, _)| *n == nir) {
             Some(e) => e.1 = cle.clone(),
             None => v.push((nir, cle.clone())),
@@ -262,10 +257,11 @@ fn salarie_par_nir(ctx: &Contexte) -> Vec<(String, IdSalarie)> {
     v
 }
 
-/// `20260904-224552_nature41_WSxxxx.txt` -> `WSxxxx` ; aucun pour un nom qui n'a pas cette forme.
-fn flux_du_nom(nom: &str) -> Option<&str> {
+/// `20260904-224552_nature41_WSxxxx.txt` -> `WSxxxx` ; aucun pour un nom qui n'a pas cette forme, ni pour un flux qui
+/// n'a pas celle d'un flux.
+fn flux_du_nom(nom: &str) -> Option<IdDeFlux> {
     let reste = nom.splitn(3, '_').nth(2)?;
-    Some(match reste.rsplit_once('.') {
+    IdDeFlux::lu(match reste.rsplit_once('.') {
         Some((a, _)) => a,
         None => reste,
     })
@@ -282,7 +278,7 @@ pub struct EmbaucheAttestee {
 /// a ete deposee et le mois de sa premiere embauche (quand le certificat les dit), la piece, et ses embauches.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DpaeAttestee {
-    pub flux: String,
+    pub flux: IdDeFlux,
     #[serde(with = "socle::paris::ecrit::seconde::option")]
     pub quand: Option<Moment>,
     pub mois: Option<Mois>,
@@ -293,14 +289,14 @@ pub struct DpaeAttestee {
 /// Les DPAE dont `retours/dpae/` porte le certificat (nature 41). Une entree par FLUX, avec
 /// les embauches qu'il declare ; les NIR qu'on ne sait rattacher a aucune fiche sont DITS, jamais devines. LECTURE PURE.
 pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)> {
-    let dossier = ctx.racine.join(crate::retours::RETOURS_DPAE);
+    let dossier = crate::releve_retours::CanalDesRetours::Dpae.chemin(&ctx.racine);
     let par_nir = salarie_par_nir(ctx);
     let (mut sortie, mut inconnus): (Vec<DpaeAttestee>, Vec<String>) = (vec![], vec![]);
-    for (nom, p) in fichiers_du_dossier(&dossier, |n| crate::retours::archive_de_nature(n, "41"))? {
+    for (nom, p) in fichiers_du_dossier(&dossier, |n| crate::retours::archive_de_nature(n, crate::retours::NatureDuRetour::CertificatDpae))? {
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         let texte: String = octets.iter().map(|&b| b as char).collect();
         let (mut embauches, mut quand, mut mois) = (Vec::new(), None, None);
-        for ligne in declarations::dpae::relire(&texte) {
+        for ligne in declarations::dpae::relire(&texte)? {
             let (Some(nir), Some(emb)) = (ligne.nir.clone(), ligne.date_embauche.as_deref()) else { continue };
             let Some(debut) = Zone::lue(emb, Jjmmaaaa).valeur() else { continue };
             let iso = debut.iso();
@@ -326,7 +322,7 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
         }
         let Some(flux) = flux_du_nom(nom.texte()) else { continue };
         if !embauches.is_empty() {
-            sortie.push(DpaeAttestee { flux: flux.to_string(), quand, mois, piece: nom.clone(), embauches });
+            sortie.push(DpaeAttestee { flux, quand, mois, piece: nom.clone(), embauches });
         }
     }
     sortie.sort_by(|a, b| a.quand.cmp(&b.quand));
@@ -363,15 +359,11 @@ pub struct RepriseDpae {
 #[cfg(feature = "atelier")]
 pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
     let (attestees, inconnus) = embauches_attestees(ctx)?;
-    let connus: Vec<String> = journal::lire(&ctx.racine, None, None, false)?
-        .iter()
-        .filter(|l| !l.flux().is_empty())
-        .map(|l| l.flux().to_string())
-        .collect();
+    let connus: Vec<IdDeFlux> = journal::lire(&ctx.racine, None, None, false)?.iter().filter_map(Ligne::flux).cloned().collect();
 
     // Le bilan XML du meme flux, quand il est la : il porte l'idflux ENTIER et dit si le depot etait reel ou de test.
-    let dossier = ctx.racine.join(crate::retours::RETOURS_DPAE);
-    let mut bilans: Vec<(String, Vec<Bilan>)> = Vec::new();
+    let dossier = crate::releve_retours::CanalDesRetours::Dpae.chemin(&ctx.racine);
+    let mut bilans: Vec<(IdDeFlux, Vec<Bilan>)> = Vec::new();
     for (_, p) in fichiers_du_dossier(&dossier, |n| n.ends_with(".xml"))? {
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         let Some(b) = crate::retours::bilan_si_xml(&octets)? else { continue };
@@ -384,7 +376,7 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
     let mut rapport = RepriseDpae { trouves: vec![], ajoutes: vec![], deja: vec![], inconnus, ecrit: ecrire };
     for e in attestees {
         // Le nom de fichier tronque le flux ; le bilan XML porte l'entier. On rattache par prefixe, et on garde l'entier quand on le trouve.
-        let entier = match bilans.iter().find(|(f, _)| f.starts_with(&e.flux)) {
+        let entier = match bilans.iter().find(|(f, _)| f.texte().starts_with(e.flux.texte())) {
             Some((f, _)) => f.clone(),
             None => e.flux.clone(),
         };
@@ -417,7 +409,7 @@ pub fn reprise_dpae(ctx: &Contexte, ecrire: bool, qui: &str) -> R<RepriseDpae> {
             let detail = crate::journal::DetailDpae { embauches, ..crate::journal::DetailDpae::nouveau(true, true) };
             let mut e = Envoi::nouveau(vue.mode, qui, vue.accepte, "urssaf-dpae", SANS_CERTIFICAT, detail);
             e.mois = a.mois;
-            e.flux = a.flux.clone();
+            e.flux = Some(a.flux.clone());
             // Un certificat qui ne dit pas l'heure du depot laisse la ligne a celle de sa reprise.
             let quand = match a.quand {
                 Some(q) => q,

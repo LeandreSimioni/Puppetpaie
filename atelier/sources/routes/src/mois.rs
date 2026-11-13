@@ -21,6 +21,8 @@
 //! est la forme de son module (`gestes::conseils::ConseilVu`).
 
 use droit::fiche::Lue as _;
+use droit::fiche::NumeroObjetSpectacle;
+use engagement::numeros::NumeroContrat;
 use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
@@ -41,7 +43,7 @@ use engagement::{self, LignePaie};
 use socle::date::Jour;
 use socle::echec::{erreur, Classe, Echec, R};
 use socle::mois::{Graphie, Mois};
-use socle::num::Decimal;
+use socle::num::{q2, Decimal};
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, FORME, ILLISIBLE, MANQUE, MOIS, OPERATION};
 use crate::catalogue::Route;
@@ -225,7 +227,8 @@ struct ChargeEmploi {
 }
 
 /// Ce qui dit le sexe, sur la fiche que l'ecran remplit : le NIR, sinon la case `sexe` (`ntt::sexe_de`), chacune telle
-/// que la fiche l'ecrit (absente quand elle n'est pas remplie).
+/// que la fiche l'ecrit (absente quand elle n'est pas remplie). Le NIR est celui que la personne tape encore : un texte,
+/// pas un `Nir` (un NIR a moitie tape refuserait la charge pendant la frappe).
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SexeDeLaFiche {
@@ -296,10 +299,10 @@ struct CarteEcrite {
 struct EnCours {
     salarie: IdSalarie,
     nom: String,
-    spectacle: Option<String>,
+    spectacle: Option<droit::contexte::IdSpectacle>,
     debut: Jour,
     fin: Jour,
-    numero: String,
+    numero: NumeroContrat,
     depuis: Option<Mois>,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule_opt")]
     taux_cachet: Option<Decimal>,
@@ -314,10 +317,10 @@ struct Reprise {
     nature: NatureDeContrat,
     salarie: IdSalarie,
     #[serde(skip_serializing_if = "Option::is_none")]
-    spectacle: Option<String>,
+    spectacle: Option<droit::contexte::IdSpectacle>,
     debut: Jour,
     fin: Jour,
-    numero: String,
+    numero: NumeroContrat,
     lignes: [LigneAReprendre; 1],
 }
 
@@ -352,7 +355,8 @@ struct Passe {
     heures: Option<i64>,
     jours: Option<i64>,
     titre: Option<String>,
-    numero_objet: Option<String>,
+    numero_objet: Option<NumeroObjetSpectacle>,
+    spectacle: Option<droit::contexte::IdSpectacle>,
     dates: Vec<Jour>,
     source: &'static str,
 }
@@ -642,12 +646,11 @@ pub(crate) fn engagements_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<(IdSalari
 /// encore aucun cachet, R12, n'en propose aucun : la ligne reste a completer).
 fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
     let mut out: Vec<EnCours> = Vec::new();
-    let mut vus: HashSet<(IdSalarie, Jour, String)> = HashSet::new();
+    let mut vus: HashSet<(IdSalarie, Jour, NumeroContrat)> = HashSet::new();
     for i in engagement::importe::qui_continuent(&ctx.racine, mois)? {
         let b = i.objet().carte();
-        let plein = |o: Option<&String>| o.map(|o| o.trim().to_string()).filter(|o| !o.is_empty());
         // Un contrat qui continue ici porte le salarie, les bornes et le numero que la DSN deposee lui a donnes.
-        let (Some(salarie), Some(debut), Some(fin), Some(numero)) = (b.salarie.clone(), b.debut, b.fin, b.numero.as_ref().map(ToString::to_string)) else {
+        let (Some(salarie), Some(debut), Some(fin), Some(numero)) = (b.salarie.clone(), b.debut, b.fin, b.numero.clone()) else {
             return Err(erreur(Classe::Illisible, "Un contrat repris d'un autre logiciel ne dit pas son salarié, ses bornes ou son numéro : le reprendre à l'import."));
         };
         if !vus.insert((salarie.clone(), debut, numero.clone())) {
@@ -655,11 +658,11 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
         }
         let fiche = ctx.fiche_de(&salarie).map_err(|m| m.reclasser(Classe::Manque))?;
         let derniere = i.paies().values().last();
-        let numero_objet = match plein(i.contrat().and_then(|c| c.numero_objet.as_ref())) {
+        let numero_objet = match i.contrat().and_then(|c| c.numero_objet.as_ref()) {
             Some(n) => Some(n),
-            None => plein(derniere.and_then(|p| p.numero_objet.as_ref())),
+            None => derniere.and_then(|p| p.numero_objet.as_ref()),
         };
-        let spectacle = numero_objet.as_deref().and_then(|no| ctx.spectacles.iter().find(|(_, s)| s.numero_objet.portee().is_some_and(|n| n.eq_ignore_ascii_case(no))).map(|(k, _)| k.to_string()));
+        let spectacle = numero_objet.and_then(|no| ctx.spectacles.iter().find(|(_, s)| s.numero_objet.dite().is_some_and(|n| n.meme(no))).map(|(k, _)| k.clone()));
         let taux_cachet = derniere
             .into_iter()
             .flat_map(|p| p.lignes.iter())
@@ -692,9 +695,9 @@ fn contrats_en_cours(ctx: &Contexte, mois: Mois) -> R<Vec<EnCours>> {
             engagement,
         });
     }
-    let mut deja: HashSet<(IdSalarie, Option<Jour>, Option<String>)> = HashSet::new();
+    let mut deja: HashSet<(IdSalarie, Option<Jour>, Option<NumeroContrat>)> = HashSet::new();
     for (c, e) in engagements_du_mois(ctx, mois)? {
-        deja.insert((c, bornes_brutes(&e).0, e.numero.as_ref().map(ToString::to_string)));
+        deja.insert((c, bornes_brutes(&e).0, e.numero.clone()));
     }
     for c in out.iter_mut() {
         c.deja_repris = deja.contains(&(c.salarie.clone(), Some(c.debut), Some(c.numero.clone())));
@@ -722,23 +725,24 @@ const TITRE_A_COMPLETER: &str = "A COMPLETER";
 /// Les spectacles retrouves par leur cle ou par leur numero d'objet.
 struct Spectacles<'a> {
     ctx: &'a Contexte,
-    par_objet: HashMap<String, &'a droit::fiche::ChampsSpectacle>,
+    par_objet: HashMap<&'a NumeroObjetSpectacle, (&'a droit::contexte::IdSpectacle, &'a droit::fiche::ChampsSpectacle)>,
 }
 
 impl<'a> Spectacles<'a> {
     fn nouveau(ctx: &'a Contexte) -> Spectacles<'a> {
         let mut par_objet = HashMap::new();
-        for v in ctx.spectacles.values() {
-            if let Some(n) = v.numero_objet.remplie() {
-                par_objet.entry(n.to_string()).or_insert(v);
+        for (k, v) in &ctx.spectacles {
+            if let Some(n) = v.numero_objet.dite() {
+                par_objet.entry(n).or_insert((k, v));
             }
         }
         Spectacles { ctx, par_objet }
     }
 
-    /// Le spectacle de cle `x`, sinon de numero d'objet `x`.
-    fn trouver(&self, x: &str) -> Option<&'a droit::fiche::ChampsSpectacle> {
-        self.ctx.spectacles.get(x).or_else(|| self.par_objet.get(x).copied())
+    /// Le spectacle de cle `x`, sinon de numero d'objet `x` (le texte qu'un engagement ecrit de son spectacle) : sa cle et
+    /// sa fiche.
+    fn trouver(&self, x: &str) -> Option<(&'a droit::contexte::IdSpectacle, &'a droit::fiche::ChampsSpectacle)> {
+        self.ctx.spectacles.get_key_value(x).or_else(|| self.par_objet.iter().find_map(|(n, v)| (***n == *x).then_some(*v)))
     }
 }
 
@@ -784,7 +788,7 @@ struct Atteste {
     salarie: IdSalarie,
     debut: Jour,
     fin: Jour,
-    numero_objet: Option<String>,
+    numero_objet: Option<NumeroObjetSpectacle>,
     cachets: Option<i64>,
     heures: Option<i64>,
     jours: Option<i64>,
@@ -800,7 +804,7 @@ fn historique(ctx: &Contexte) -> R<Vec<Atteste>> {
             salarie: salarie.clone(),
             debut,
             fin,
-            numero_objet: c.contrat.numero_objet.clone().filter(|n| !n.is_empty()),
+            numero_objet: c.contrat.numero_objet.clone(),
             cachets,
             heures,
             jours,
@@ -858,11 +862,13 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
             if !voulu(&cle) {
                 continue;
             }
-            let ref_spec = e.spectacle.as_ref().map(ToString::to_string);
-            let spec = ref_spec.as_deref().and_then(|r| spectacles.trouver(r));
-            let numero = match spec.and_then(|s| s.numero_objet.remplie()) {
-                Some(n) => Some(n.to_string()),
-                None => ref_spec.clone(),
+            let trouve = e.spectacle.as_ref().and_then(|r| spectacles.trouver(r));
+            let spec = trouve.map(|(_, s)| s);
+            let numero_objet = spec.and_then(|s| s.numero_objet.dite()).cloned();
+            // Le titre d'une fiche sans titre se dit par son numero d'objet, sinon par le spectacle que l'engagement nomme.
+            let titre = match &numero_objet {
+                Some(n) => titre_de(spec, Some(&n.to_string())),
+                None => titre_de(spec, e.spectacle.as_deref()),
             };
             let cachets = cachets_de(ctx, &e)?;
             let dates = jours_joues(&e);
@@ -884,8 +890,9 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
                 cachets: Some(cachets),
                 heures: None,
                 jours: Some(jours),
-                titre: titre_de(spec, numero.as_deref()),
-                numero_objet: numero,
+                titre,
+                numero_objet,
+                spectacle: e.spectacle.clone(),
                 dates: dates.into_iter().filter(|j| j.mois_civil() == mois).collect(),
                 source: "paie",
             };
@@ -907,11 +914,13 @@ fn contrats_passes(ctx: &Contexte, mois: Mois, salarie: Option<&IdSalarie>) -> R
         if couverts.contains(&a.fin.mois_civil()) || !voulu(&a.salarie) {
             continue;
         }
-        let spec = a.numero_objet.as_deref().and_then(|n| spectacles.par_objet.get(n).copied());
+        let trouve = a.numero_objet.as_ref().and_then(|n| spectacles.par_objet.get(n).copied());
+        let spec = trouve.map(|(_, s)| s);
         out.push(Passe {
             dit: dit_du_contrat(a.debut, a.fin, a.cachets, a.heures),
             nom: ctx.nomme(&a.salarie),
             titre: titre_de(spec, a.numero_objet.as_deref()),
+            spectacle: trouve.map(|(k, _)| k.clone()),
             salarie: a.salarie,
             debut: a.debut,
             fin: a.fin,
@@ -944,8 +953,8 @@ fn contrats_passes_route(ctx: &Contexte, c: ChargeContratsPasses) -> R<ContratsP
 /// salariee : le catalogue porte les deux formes (`feminin`), la fiche dit le sexe (le premier chiffre du NIR, sinon la
 /// case `sexe` : `ntt::sexe_de`). `feminin` donne seul suffit aussi.
 fn emploi(ctx: &Contexte, c: ChargeEmploi) -> R<Emploi> {
-    let feminin = c.feminin || c.salarie.is_some_and(|s| declarations::ntt::sexe_de(s.nir.as_deref(), s.sexe.as_deref()) == Some("2"));
-    let champs = emplois::resoudre(&c.metier, c.cadre, feminin, ctx.entreprise.idcc.portee())?;
+    let feminin = c.feminin || c.salarie.is_some_and(|s| declarations::ntt::sexe_de(s.nir.as_deref().and_then(droit::fiche::Sexe::du_nir), s.sexe.as_deref()) == Some("2"));
+    let champs = emplois::resoudre(&c.metier, c.cadre, feminin, ctx.entreprise.idcc.dite())?;
     let phrase = match &champs.code_emploi_ft {
         Some(code) => format!("Métier : {} ({}).", champs.emploi_affichage, code),
         None => format!("Métier : {}.", champs.emploi_affichage),
@@ -1384,13 +1393,6 @@ pub(crate) fn paies_de_l_ecran(ctx: &Contexte, data: &VueDuMois, mois: Mois) -> 
     Ok(out)
 }
 
-/// Deux décimales, la moitié au pair.
-pub(crate) fn q2(x: Decimal) -> Decimal {
-    let mut r = x.round_dp(2);
-    r.rescale(2);
-    r
-}
-
 /// LA RUPTURE d'un engagement, telle que la page la propose (« Un imprévu… ») : le libelle de la porte et la fin du
 /// contrat (celle qu'il dit, ou son dernier jour travaille quand il est aux cachets).
 #[derive(Debug, Clone, Serialize)]
@@ -1487,7 +1489,7 @@ fn champs_du_contrat_de(ctx: &Contexte, e: &SaisieCarte, cle: &IdSalarie, mois: 
     }
     // Un contrat repris d'un ancien logiciel (sa date de debut dite) ne se refait pas.
     if let Some(d) = debut {
-        if engagement::importe::vient_d_un_ancien_logiciel(&ctx.racine, cle, d, e.numero.as_deref())? {
+        if engagement::importe::vient_d_un_ancien_logiciel(&ctx.racine, cle, d, e.numero.as_ref())? {
             return Ok(Vec::new());
         }
     }
@@ -1592,7 +1594,7 @@ pub(crate) struct VuePaie {
     /// Ce que la carte validee dit de la paie : ce qu'elle paye, en bref, son bulletin.
     paye_dit: String,
     bulletin_dit: Option<String>,
-    numero_bulletin: Option<String>,
+    numero_bulletin: Option<engagement::numeros::NumeroDeBulletin>,
     numero_contrat: Option<engagement::numeros::NumeroContrat>,
     salarie: SalarieVu,
     /// UN PERMANENT N'A PAS DE SPECTACLE, et `None` est la reponse juste.
@@ -1913,7 +1915,7 @@ struct PaieACompleter {
 /// Le salarie tel que la carte le nomme.
 #[derive(Debug, Serialize)]
 struct CleEcrite {
-    cle: Option<String>,
+    cle: Option<IdSalarie>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2063,7 +2065,7 @@ fn dire_les_tarifs(ctx: &Contexte, mois: Mois, p: &mut VuePaie) -> R<()> {
     if dits.is_empty() {
         return Ok(());
     }
-    let idcc = ctx.entreprise.idcc.ecrite("idcc")?;
+    let idcc = ctx.entreprise.idcc.exigee("idcc")?;
     let quoi = dits.join(", ");
     let quoi = match nom_prenom(p.salarie.nom.portee(), p.salarie.prenom.portee()) {
         Some(qui) => format!("{} : {}", qui, quoi),
@@ -2144,7 +2146,7 @@ fn apercu_des_paies(ctx: &Contexte, data: &VueDuMois) -> R<Calcul> {
                 let (debut, fin) = bornes_brutes(e);
                 r.paies.push(PaieVue::ACompleter(PaieACompleter {
                     a_completer: m.phrase.clone(),
-                    salarie: CleEcrite { cle: e.salarie.as_ref().map(ToString::to_string) },
+                    salarie: CleEcrite { cle: e.salarie.clone() },
                     debut,
                     fin,
                     avertissements: [],

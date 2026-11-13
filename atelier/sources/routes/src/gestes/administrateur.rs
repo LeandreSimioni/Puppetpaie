@@ -55,6 +55,7 @@ use crate::enveloppe::Dite;
 use crate::rappels::EcheanceDite;
 use droit::contexte::Contexte;
 use envois::etats;
+use envois::retours::IdDeFlux;
 use socle::echec::erreur;
 use socle::echec::Echec;
 use socle::echec::R;
@@ -586,7 +587,7 @@ impl Pret {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Declaration {
-    pub cle: String,
+    pub(crate) cle: crate::rappels::CleDEcheance,
     pub en_retard: bool,
     pub genre: Genre,
     pub titre: String,
@@ -665,12 +666,11 @@ fn fichiers_de(dossier: &Path) -> R<Vec<PathBuf>> {
 
 /// Le fichier que l'ecriture d'un signalement pose pour cette obligation (`routes::imprevus` : `arret-signaler`,
 /// `fin-contrat-signaler`), d'apres la cle du rappel (`<obligation>:<salarie>:<jour>`, `fin-contrat:<salarie>:<fin>`).
-fn fichier_du_signalement(ctx: &Contexte, cle: &str, jour: Option<socle::date::Jour>) -> R<Option<PathBuf>> {
-    let mut morceaux = cle.splitn(3, ':');
-    let (Some(genre), Some(salarie), Some(jour)) = (morceaux.next(), morceaux.next(), jour) else { return Ok(None) };
+fn fichier_du_signalement(ctx: &Contexte, cle: &crate::rappels::CleDEcheance) -> R<Option<PathBuf>> {
+    let crate::rappels::CleDEcheance::DuSalarie { quoi: genre, salarie, jour } = cle else { return Ok(None) };
     let mois = jour.mois_civil();
     let compact = jour.aaaammjj();
-    let nom = match genre {
+    let nom = match genre.as_str() {
         "signalement_arret" => format!("SignalementArret_{}_{}.dsn", salarie, compact),
         // L'annule-et-remplace s'ecrit a cote du signalement parti, sous `_AR<ordre>` : le dernier ecrit.
         "signalement_arret_rectificatif" => {
@@ -684,10 +684,7 @@ fn fichier_du_signalement(ctx: &Contexte, cle: &str, jour: Option<socle::date::J
             return Ok(fichiers_de(&dossier)?.into_iter().filter_map(|p| rang(&p).map(|r| (r, p))).max_by_key(|(r, _)| *r).map(|(_, p)| p));
         }
         "signalement_reprise" => format!("SignalementReprise_{}_{}.dsn", salarie, compact),
-        "fin-contrat" => {
-            let cle = droit::contexte::IdSalarie::lire(salarie)?;
-            format!("SignalementFinContrat_{}_{}.dsn", cle, compact)
-        }
+        crate::rappels::FIN_CONTRAT => format!("SignalementFinContrat_{}_{}.dsn", salarie, compact),
         _ => return Ok(None),
     };
     fichier_ecrit(&ctx.racine, mois, &nom)
@@ -742,7 +739,7 @@ fn declaration(ctx: &Contexte, lignes: &[envois::journal::Ligne], r: &EcheanceDi
             });
             let detail = if ob.phrase.is_empty() { r.detail.clone() } else { ob.phrase.clone() };
             let (genre, marche, ou) = if ob.cle.nom().starts_with("signalement_") {
-                fichier = fichier_du_signalement(ctx, &r.cle, r.jour_de_la_cle)?;
+                fichier = fichier_du_signalement(ctx, &r.cle)?;
                 let marche = if r.a_saisir.is_empty() {
                     "Écrire le signalement dans la compagnie (Imprévus, ou la colonne du mois), puis le tester."
                 } else {
@@ -834,9 +831,9 @@ fn refaire_compagnie(o: &Options, racine: &Path) -> R<TableauCompagnie> {
 /// tableau, ce qui l'empeche de se faire, combien de declarations, et combien sont pretes.
 #[derive(Debug, Serialize)]
 pub struct CompagnieDuTableau {
-    pub id: Option<String>,
+    pub id: Option<compagnie::installation::IdDeCompagnie>,
     pub nom: String,
-    pub couleur: Option<String>,
+    pub couleur: Option<compagnie::installation::CouleurDeCompagnie>,
     pub le: Option<Jour>,
     pub erreur: Option<String>,
     pub declarations: usize,
@@ -851,8 +848,8 @@ pub struct DeclarationDuTableau {
     #[serde(flatten)]
     pub declaration: Declaration,
     pub compagnie: String,
-    pub id: Option<String>,
-    pub couleur: Option<String>,
+    pub id: Option<compagnie::installation::IdDeCompagnie>,
+    pub couleur: Option<compagnie::installation::CouleurDeCompagnie>,
     pub limite_dit: Option<String>,
 }
 
@@ -1024,7 +1021,7 @@ pub struct Resultat {
     pub classe: Option<Classe>,
     /// Le flux de ce qui est parti (ce que `suivre-depot` prend pour suivre ses retours).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub flux: Option<String>,
+    pub flux: Option<IdDeFlux>,
     /// Une declaration partie en reel, dont les retours se suivent (`administrateur-suivre`) : sa compagnie et ce que
     /// `suivre-depot` prend.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1175,7 +1172,7 @@ pub fn deposer(o: &Options, inst: &Path, reel: bool, motdepasse: Option<String>)
                 };
                 // Le flux de ce qui est parti : la ligne que le depot a ecrite au journal des envois.
                 let journal = envois::journal::lu(racine)?;
-                let flux = journal.lignes.get(avant..).and_then(|nouvelles| nouvelles.last()).map(|l| l.flux().to_string());
+                let flux = journal.lignes.get(avant..).and_then(|nouvelles| nouvelles.last()).and_then(|l| l.flux().cloned());
                 (true, Some(phrase), None, None, flux)
             }
             Err(r) => (false, None, Some(r.phrase), r.classe, None),

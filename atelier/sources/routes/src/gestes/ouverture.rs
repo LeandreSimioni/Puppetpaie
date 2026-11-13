@@ -298,8 +298,8 @@ impl Ouverture {
                             Ok(RetourArchiveDit {
                                 chemin: a.chemin.clone(),
                                 fichier: a.chemin.file_name().map(|n| NomDeFichier::lire(&n.to_string_lossy())).transpose()?,
-                                nature_retour: a.retour.nature_retour.clone(),
-                                libelle: envois::retours::libelle_nature(&a.retour.nature_retour),
+                                nature_retour: a.retour.nature_retour,
+                                libelle: a.retour.nature_retour.libelle_dit(),
                             })
                         })
                         .collect::<R<_>>()?,
@@ -410,7 +410,7 @@ pub struct RetourArchiveDit {
     pub chemin: PathBuf,
     pub fichier: Option<NomDeFichier>,
     #[serde(rename = "nature")]
-    pub nature_retour: String,
+    pub nature_retour: envois::retours::NatureDuRetour,
     pub libelle: String,
 }
 
@@ -551,7 +551,7 @@ fn noter_ouverture(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
     let p = chemin_trace(ctx);
     // LES RETOURS DE LA COMPAGNIE, PAS CEUX DU BAC A SABLE : les retours des depots de test ne se comptent que
     // dans la copie de developpement.
-    let tests: Vec<String> = if est_copie(&ctx.racine) {
+    let tests: Vec<envois::retours::IdDeFlux> = if est_copie(&ctx.racine) {
         Vec::new()
     } else {
         // Un journal illisible n'empeche pas la trace (l'ouverture n'echoue jamais) : il est un incident.
@@ -563,7 +563,7 @@ fn noter_ouverture(ctx: &Contexte, r: &mut Ouverture) -> R<()> {
             }
         }
     };
-    let hors_tests = |liste: &[envois::retours::Annonce]| -> usize { liste.iter().filter(|x| !tests.iter().any(|t| x.flux.as_deref() == Some(t.as_str()))).count() };
+    let hors_tests = |liste: &[envois::retours::Annonce]| -> usize { liste.iter().filter(|x| !tests.iter().any(|t| x.flux.as_ref() == Some(t))).count() };
     let (trouves, nouveaux) = match &r.releve {
         Some(rel) => (hors_tests(&rel.trouves), hors_tests(&rel.nouveaux)),
         None => (0, 0),
@@ -956,7 +956,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
         Some(true) => {
             dire_l_etape(ctx, "net-entreprises : retours des DSN…")?;
             let fin = socle::temps::secondes();
-            match fin.plus(-opt.jours * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", client_dsn, None)) {
+            match fin.plus(-opt.jours * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", client_dsn, envois::releve_retours::CanalDesRetours::Dsn)) {
                 Ok(rel) => {
                     r.incidents.extend(rel.incidents.iter().cloned());
                     r.manquants.extend(rel.a_faire.iter().cloned());
@@ -992,7 +992,7 @@ fn relever_les_retours(ctx: &Contexte, opt: &Options, clients: &mut Clients<'_>,
             // Un client donne passe par la meme releve que le vrai (canal `dpae`) ; sans client, `relever_retours_dpae`
             // cherche le mot de passe de consultation et construit le sien.
             let rel = fin.plus(-opt.jours * 86_400).ok_or_else(|| socle::echec::refus(socle::date::HORS_CALENDRIER)).and_then(|debut| match client_dpae {
-                Some(c) => crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", Some(c), Some(envois::etats::DPAE)),
+                Some(c) => crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", Some(c), envois::releve_retours::CanalDesRetours::Dpae),
                 None => crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, None),
             });
             match rel {

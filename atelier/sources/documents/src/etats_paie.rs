@@ -320,7 +320,7 @@ pub struct LigneLivre {
     pub cout_employeur: Option<Decimal>,
     /// Le jour du versement (`Engagement::versement_dit`) ; vide pour une paie importee dont les pieces ne le disent pas.
     pub verse_le: Option<Jour>,
-    pub nir: Option<String>,
+    pub nir: Option<droit::fiche::Nir>,
     pub date_naissance: Option<Jour>,
     pub adresse: Option<String>,
 }
@@ -444,11 +444,11 @@ fn regroupement_lisible(r: &str) -> &'static str {
 
 /// Le NIR, la date de naissance et l'adresse (la forme lisible quand la fiche la porte, la declaree sinon) d'une fiche,
 /// quand le livre porte les coordonnees ; chacune vide quand la fiche ne la dit pas.
-fn coordonnees_de(s: &droit::fiche::ChampsSalarie, coordonnees: bool) -> (Option<String>, Option<Jour>, Option<String>) {
+fn coordonnees_de(s: &droit::fiche::ChampsSalarie, coordonnees: bool) -> (Option<droit::fiche::Nir>, Option<Jour>, Option<String>) {
     if !coordonnees {
         return (None, None, None);
     }
-    (s.nir.en_texte(), s.date_naissance.dite().copied(), s.adresse_affichage.clone().or_else(|| s.adresse.en_texte()))
+    (s.nir.dite().cloned(), s.date_naissance.dite().copied(), s.adresse_affichage.clone().or_else(|| s.adresse.en_texte()))
 }
 
 /// Les lignes du livre pour un mois (`engagement::etats::paies_du_mois` : les paies ecrites des engagements valides, puis
@@ -650,7 +650,7 @@ fn cellules(l: &LigneLivre, coordonnees: bool) -> Vec<CelL> {
     };
     let mut c = vec![t(&l.mois.to_string()), t(&l.salarie)];
     if coordonnees {
-        c.extend([o(&l.nir), o(&l.date_naissance.map(|j| j.iso())), o(&l.adresse)]);
+        c.extend([o(&l.nir.as_ref().map(ToString::to_string)),o(&l.date_naissance.map(|j| j.iso())), o(&l.adresse)]);
     }
     c.extend([o(&l.contrat.as_ref().map(ToString::to_string)), t(&l.libelle_nature), t(&l.spectacle)]);
     c.extend(CUMULABLES.iter().map(|ch| CelL::M(l.montant(ch))));
@@ -875,9 +875,9 @@ pub fn livre_detaille(ctx: &Contexte, d: &Demande) -> R<Tableau> {
     let mut sections = Vec::new();
     for m in p.mois.clone() {
         let paies = lecture.paies(m)?;
-        let mut ordre: Vec<(String, Option<String>, usize)> = Vec::new();
+        let mut ordre: Vec<(String, Option<engagement::numeros::NumeroContrat>, usize)> = Vec::new();
         for (i, paie) in paies.iter().enumerate() {
-            ordre.push((qui(paie.salarie())?, paie.engagement().numero.as_deref().map(str::to_string), i));
+            ordre.push((qui(paie.salarie())?, paie.engagement().numero.clone(), i));
         }
         ordre.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
         for (nom, numero, i) in ordre {

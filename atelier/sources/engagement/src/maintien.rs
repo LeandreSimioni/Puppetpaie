@@ -120,7 +120,7 @@ pub fn droits(ctx: &Contexte, imp: &ArretSaisi, nat: &Nature) -> R<Option<Droits
     let (depuis, sur_l_anciennete) = crate::imprevus::anciennete_depuis(&ctx.racine, &fiche.id, &depuis, &premier)?;
     let anciennete_mois = droit::permanents::anciennete_mois(&depuis, &premier);
     let loi = dm::legal(nat, anciennete_mois, origine)?;
-    let convention = if nat.mensuelle() { dm::conventionnel(ctx.entreprise.idcc.portee(), anciennete_mois, origine)? } else { None };
+    let convention = if nat.mensuelle() { dm::conventionnel(ctx.entreprise.idcc.dite(), anciennete_mois, origine)? } else { None };
     Ok(Some(Droits { loi, convention, origine, anciennete_mois, sur_l_anciennete }))
 }
 
@@ -542,7 +542,7 @@ pub fn indemnites_a_dire(ctx: &Contexte, carte: &crate::saisie::Carte, mois: Moi
         Some(f) => f.min(fm),
         None => fm,
     };
-    for imp in crate::imprevus::du_contrat_dans_le_mois(ctx, salarie, &debut_contrat, carte.numero.as_deref(), mois)? {
+    for imp in crate::imprevus::du_contrat_dans_le_mois(ctx, salarie, &debut_contrat, carte.numero.as_ref(), mois)? {
         let Imprevu::Arret(imp) = imp else { continue };
         if !droits(ctx, &imp, &nat)?.is_some_and(|dr| dr.du()) {
             continue;

@@ -4,7 +4,8 @@
 //! le logiciel ne connait pas se refuse a la lecture, en le nommant. Les valeurs d'un document (`Valeurs`) se posent par
 //! marqueur ; la fabrique de PDF, qui ne connait que des noms, les recoit par `pour_la_fabrique`.
 //!
-//! L'ordre de la declaration est celui dans lequel la description d'un document ecrit ses valeurs.
+//! L'ordre de la declaration ne compte pas : un marqueur se trie par son nom, et les valeurs d'un document partent vers
+//! la fabrique rangees par nom (`pour_la_fabrique`).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -14,8 +15,9 @@ use socle::echec::{erreur, Classe, R};
 
 macro_rules! marqueurs {
     ($($v:ident = $nom:literal),* $(,)?) => {
-        /// UN MARQUEUR qu'un modele peut citer.
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        /// UN MARQUEUR qu'un modele peut citer. Il s'ecrit, se lit et se trie par son nom (`nom`) : les clauses d'un
+        /// contrat parti, au journal des envois, se rangent dans l'ordre de leurs noms.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         pub enum Marqueur { $($v),* }
 
         impl Marqueur {
@@ -105,6 +107,31 @@ marqueurs! {
     AvenantReference = "avenant.reference",
     AvenantEffet = "avenant.effet",
     AvenantDate = "avenant.date",
+}
+
+impl Ord for Marqueur {
+    fn cmp(&self, autre: &Self) -> std::cmp::Ordering {
+        self.nom().cmp(autre.nom())
+    }
+}
+
+impl PartialOrd for Marqueur {
+    fn partial_cmp(&self, autre: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(autre))
+    }
+}
+
+impl serde::Serialize for Marqueur {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.nom())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Marqueur {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let nom = String::deserialize(d)?;
+        Marqueur::lire(&nom).ok_or_else(|| serde::de::Error::custom(format!("« {} » n'est pas un champ que le logiciel connaît", nom)))
+    }
 }
 
 impl std::fmt::Display for Marqueur {

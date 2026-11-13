@@ -10,6 +10,8 @@
 //! Les commentaires disent pourquoi chaque article est la ; ils citent le moteur sous les noms qu'il avait quand
 //! l'article est entre (`calcul.representation_du_personnel`, ...).
 
+use crate::releve::entrepot_dila::IdDila;
+
 /// Un domaine d'un texte : un titre du document lisible, et les numeros d'article qu'on y cherche.
 pub struct Domaine {
     pub cle: &'static str,
@@ -21,7 +23,7 @@ pub struct Domaine {
 /// le chemin du fichier), et le dossier des sources ou son releve se depose.
 pub struct Texte {
     pub cle: &'static str,
-    pub legitext: &'static str,
+    pub legitext: IdDila,
     pub nom: &'static str,
     pub dossier: &'static str,
     pub titre: &'static str,
@@ -32,7 +34,7 @@ pub static TEXTES: &[Texte] = &[
     // ------------------------------------------------------------------
     Texte {
         cle: "travail",
-        legitext: "LEGITEXT000006072050",
+        legitext: IdDila::du_moteur("LEGITEXT000006072050"),
         nom: "Code du travail",
         dossier: "code-du-travail",
         titre: "Code du travail -- ce que la paie lit",
@@ -215,7 +217,7 @@ pub static TEXTES: &[Texte] = &[
     // contribution patronale de 30 % -- vit ici, et nulle part ailleurs.
     Texte {
         cle: "securite-sociale",
-        legitext: "LEGITEXT000006073189",
+        legitext: IdDila::du_moteur("LEGITEXT000006073189"),
         nom: "Code de la securite sociale",
         dossier: "code-de-la-securite-sociale",
         titre: "Code de la securite sociale -- ce que la paie lit",
@@ -360,7 +362,7 @@ pub static TEXTES: &[Texte] = &[
     // refus renvoie a ces deux articles : ils se relevent ici.
     Texte {
         cle: "collectivites",
-        legitext: "LEGITEXT000006070633",
+        legitext: IdDila::du_moteur("LEGITEXT000006070633"),
         nom: "Code general des collectivites territoriales",
         dossier: "code-general-des-collectivites-territoriales",
         titre: "Code general des collectivites territoriales -- le versement mobilite",
@@ -379,7 +381,7 @@ pub static TEXTES: &[Texte] = &[
     // travail (`droit/src/plafond.rs`).
     Texte {
         cle: "artistes-1975",
-        legitext: "JORFTEXT000000310494",
+        legitext: IdDila::du_moteur("JORFTEXT000000310494"),
         nom: "Arrete du 24 janvier 1975 fixant le taux des cotisations de securite sociale et d'allocations familiales dues au titre de l'emploi des artistes du spectacle",
         dossier: "arrete-1975-artistes-du-spectacle",
         titre: "Arrete du 24 janvier 1975 (artistes du spectacle) -- le plafond",
@@ -395,7 +397,7 @@ pub static TEXTES: &[Texte] = &[
     // `routes/src/obligations.rs`, et `logiciel/donnees/obligations-base.json`.
     Texte {
         cle: "evenements-dsn-2013",
-        legitext: "JORFTEXT000027683422",
+        legitext: IdDila::du_moteur("JORFTEXT000027683422"),
         nom: "Arrete du 2 juillet 2013 fixant le delai de transmission des evenements dans le cadre de la declaration sociale nominative",
         dossier: "arrete-2013-delai-evenements-dsn",
         titre: "Arrete du 2 juillet 2013 (DSN) -- le delai des signalements d'evenement",
@@ -429,7 +431,7 @@ pub static TEXTES: &[Texte] = &[
     // `logement_grand_deplacement`).
     Texte {
         cle: "frais-professionnels-2025",
-        legitext: "JORFTEXT000052198430",
+        legitext: IdDila::du_moteur("JORFTEXT000052198430"),
         nom: "Arrete du 4 septembre 2025 relatif aux frais professionnels deductibles pour le calcul des cotisations de securite sociale",
         dossier: "dfs/arrete-2025-frais-professionnels",
         titre: "Arrete du 4 septembre 2025 (frais professionnels) -- la deduction forfaitaire specifique",
@@ -448,7 +450,7 @@ pub static TEXTES: &[Texte] = &[
     // `droit::missions`.
     Texte {
         cle: "missions-2006",
-        legitext: "JORFTEXT000000242359",
+        legitext: IdDila::du_moteur("JORFTEXT000000242359"),
         nom: "Decret n° 2006-781 du 3 juillet 2006 fixant les conditions et les modalites de reglement des frais occasionnes par les deplacements temporaires des personnels civils de l'Etat",
         dossier: "decret-2006-781-deplacements",
         titre: "Decret n° 2006-781 du 3 juillet 2006 -- l'indemnite de mission et ses taux",
@@ -466,7 +468,7 @@ pub static TEXTES: &[Texte] = &[
     // `droit/src/reduction.rs` (`reduction_generale_sous_dfs`).
     Texte {
         cle: "reduction-generale-dfs-2019",
-        legitext: "JORFTEXT000039626366",
+        legitext: IdDila::du_moteur("JORFTEXT000039626366"),
         nom: "Arrete du 4 decembre 2019 relatif au benefice de la reduction prevue a l'article L. 241-13 du code de la securite sociale pour les employeurs appliquant la deduction forfaitaire specifique",
         dossier: "dfs/arrete-2019-reduction-generale",
         titre: "Arrete du 4 decembre 2019 -- la reduction generale sous deduction forfaitaire specifique",
@@ -482,7 +484,7 @@ pub static TEXTES: &[Texte] = &[
     // hors Etat et collectivites), et comment se compte l'effectif.
     Texte {
         cle: "construction",
-        legitext: "LEGITEXT000006074096",
+        legitext: IdDila::du_moteur("LEGITEXT000006074096"),
         nom: "Code de la construction et de l'habitation",
         dossier: "code-de-la-construction-et-de-l-habitation",
         titre: "Code de la construction et de l'habitation -- la PEEC",
@@ -497,7 +499,7 @@ pub static TEXTES: &[Texte] = &[
     // non lucratives. Ce qu'on y cherche : a partir de quand.
     Texte {
         cle: "loi-de-finances-2026",
-        legitext: "JORFTEXT000053508155",
+        legitext: IdDila::du_moteur("JORFTEXT000053508155"),
         nom: "Loi n° 2026-103 du 19 fevrier 2026 de finances pour 2026",
         dossier: "loi-de-finances-2026",
         titre: "Loi de finances pour 2026 -- la taxe d'apprentissage des associations",
@@ -514,7 +516,7 @@ pub static TEXTES: &[Texte] = &[
     // S21.G00.44).
     Texte {
         cle: "impots",
-        legitext: "LEGITEXT000006069577",
+        legitext: IdDila::du_moteur("LEGITEXT000006069577"),
         nom: "Code general des impots",
         dossier: "code-general-des-impots",
         titre: "Code general des impots -- ce que la paie lit",

@@ -18,6 +18,7 @@ use crate::fctu::Echec;
 use socle::fichiers::repr;
 use socle::echec::R;
 use droit::nature_declaration::NatureDEvenementDeclencheur;
+use droit::natures::{IdentifiantDeDeclaration, NumeroDOrdre};
 use droit::type_declaration::TypeDeLaDeclaration;
 
 pub const NATURE: droit::nature_declaration::NatureDeLaDeclaration = droit::nature_declaration::NatureDeLaDeclaration::SignalementAmorcage;
@@ -81,14 +82,14 @@ pub fn libelle_motif(motif: NatureDEvenementDeclencheur) -> R<String> {
 pub struct Options {
     pub motif: NatureDEvenementDeclencheur,
     pub type_declaration: TypeDeLaDeclaration,
-    pub ordre: i64,
-    pub remplace: Option<String>,
+    pub ordre: NumeroDOrdre,
+    pub remplace: Option<IdentifiantDeDeclaration>,
     pub envoi_test: bool,
     pub date_constitution: Option<Jour>,
 }
 
 /// `verifier` : refuse ce que la norme -- ou le bon sens de la demande -- refuse.
-pub fn verifier(paie: &Paie, motif: NatureDEvenementDeclencheur, type_declaration: TypeDeLaDeclaration, remplace: Option<&str>) -> Result<(), Echec> {
+pub fn verifier(paie: &Paie, motif: NatureDEvenementDeclencheur, type_declaration: TypeDeLaDeclaration, remplace: Option<IdentifiantDeDeclaration>) -> Result<(), Echec> {
     let impossible = |m: String| Err(Echec::impossible(m));
     let base = motifs_de_la_norme()?;
     let tous = &base.motifs.codes;
@@ -132,7 +133,6 @@ annule >> qui vise le dernier envoi valide, puis un nouveau signalement << 01 - 
         ));
     }
     let libelle_type = type_declaration.libelle();
-    let remplace = remplace.filter(|r| !r.is_empty());
     if type_declaration == TypeDeLaDeclaration::Annule && remplace.is_none() {
         return impossible(format!(
             "Un signalement << {} >> doit viser la declaration qu'il reprend (S20.G00.05.006) : l'identifiant du \
@@ -151,7 +151,7 @@ annule-et-remplace ou un annule."
 
     // Le NIR, et pas un numero technique temporaire : sans NIR, la DGFiP n'a
     // personne a qui repondre.
-    if crate::ntt::nir_de(&paie.salarie).is_none() {
+    if paie.salarie.nir.dite().is_none() {
         let qui = paie.salarie.id.to_string();
         return impossible(format!(
             "{} n'a pas de NIR : il se declare sous numero technique temporaire, et la DGFiP n'a alors personne a \
@@ -220,7 +220,7 @@ fn pile_sans_taux(annee: i32) -> droit::forme_bareme::Pile {
 
 /// Le fichier d'un signalement d'amorcage, pret a deposer.
 pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::departs::Departs) -> Result<String, Echec> {
-    verifier(paie, o.motif, o.type_declaration, o.remplace.as_deref())?;
+    verifier(paie, o.motif, o.type_declaration, o.remplace)?;
     let ctx = &ctx.au(&paie.engagement.debut)?;
     let e = &paie.engagement;
     let s = &paie.salarie;
@@ -232,7 +232,7 @@ pub fn generer(ctx: &Contexte, paie: &Paie, o: &Options, departs: &engagement::d
     };
     // Le bareme ne sert a rien ici : le taux AT/MP est interdit en nature 08.
     let bar = crate::dsn::BaremeDuMois::nouveau(pile_sans_taux(e.debut.an), droit::bareme::EntrepriseLue { fiche: ent.clone(), effectif: None, cse: None, cinquante: None, taux_lus: false });
-    let remplace = o.remplace.as_deref().filter(|r| !r.is_empty());
+    let remplace = o.remplace;
 
     // La version de la norme d'un signalement suit le jour ou il est constitue (`norme-dsn-base.json`, une inference).
     let norme = crate::norme::du_signalement(&constitution)?;

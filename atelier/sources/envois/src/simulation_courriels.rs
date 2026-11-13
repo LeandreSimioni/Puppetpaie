@@ -441,8 +441,8 @@ pub fn courriels_par_identifiant(racine: &Path) -> R<HashMap<String, Vec<u8>>> {
 
 /// `_bouton_mailto(demande)` pour la demande dont on connait les identifiants (`a["envoyes"]`) : (objet, corps) du lien
 /// `mailto:` de son courriel joue, s'il y en a un.
-pub fn bouton_de_la_demande(envoyes: &HashMap<String, Vec<u8>>, identifiants: &[String]) -> R<Option<(String, String)>> {
-    let Some(octets) = identifiants.iter().find_map(|i| envoyes.get(i)) else { return Ok(None) };
+pub fn bouton_de_la_demande(envoyes: &HashMap<String, Vec<u8>>, identifiants: &[crate::envoi::IdDeCourriel]) -> R<Option<(String, String)>> {
+    let Some(octets) = identifiants.iter().find_map(|i| envoyes.get(i.texte())) else { return Ok(None) };
     let m = parse_mail(octets).map_err(illisible)?;
     let mut f = Vec::new();
     feuilles(&m, &mut f);
@@ -471,7 +471,7 @@ pub fn reponse_jouee(de: &str, a: &str, sujet: &str, corps: &str, ident: &str) -
     let octets = crate::envoi::en_mime_avec(
         &message,
         &nu,
-        crate::envoi::Hasards { date: t, message_id: format!("<{}@fictive.puppetpaie>", ident), frontiere: &mut frontiere },
+        crate::envoi::Hasards { date: t, message_id: crate::envoi::IdDeCourriel::lire(&format!("<{}@fictive.puppetpaie>", ident))?, frontiere: &mut frontiere },
     )?;
     let entete_nu = format!("From: {}", nu);
     match rendu {
@@ -526,7 +526,7 @@ impl Courriel for BoiteQuiRepond {
         Courriel::racine(&self.boite)
     }
 
-    fn envoyer(&mut self, message_mime: &[u8]) -> R<String> {
+    fn envoyer(&mut self, message_mime: &[u8]) -> R<crate::envoi::IdDeCourriel> {
         self.boite.envoyer(message_mime)
     }
 

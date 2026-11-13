@@ -299,8 +299,8 @@ pub(crate) struct ChargeAvenant {
 
 impl ChargeAvenant {
     /// Le numero du contrat vise, s'il est dit.
-    fn numero(&self) -> Option<&str> {
-        self.numero.as_deref()
+    fn numero(&self) -> Option<&NumeroContrat> {
+        self.numero.as_ref()
     }
 }
 
@@ -317,7 +317,7 @@ struct ChargePieces {
 #[serde(deny_unknown_fields)]
 struct ChargeCourriel {
     salarie: IdSalarie,
-    email: String,
+    email: droit::fiche::Courriel,
 }
 
 // ------------------------------------------------------------------ les reponses
@@ -347,7 +347,7 @@ pub(crate) struct ContratASigner {
     pub(crate) salarie: droit::contexte::IdSalarie,
     pub(crate) nom: String,
     /// Le courriel du salarie, s'il est dit.
-    pub(crate) destinataire: Option<String>,
+    pub(crate) destinataire: Option<droit::fiche::Courriel>,
     spectacle: String,
     pub(crate) debut: Jour,
     fin: Option<Jour>,
@@ -416,7 +416,7 @@ pub(crate) struct Imprimes {
 #[derive(Debug, Serialize)]
 pub(crate) struct SignaturesDemandees {
     phrase: String,
-    partis: Vec<String>,
+    partis: Vec<droit::fiche::Courriel>,
     contrats: Vec<ContratParti>,
     avertissements: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -470,7 +470,7 @@ pub(crate) struct ApercuAvenant {
     avenants: Vec<AvenantDit>,
     remplacable: bool,
     boite_liee: bool,
-    destinataire: Option<String>,
+    destinataire: Option<droit::fiche::Courriel>,
     situation: String,
     encarts: Vec<Encart>,
     titre: String,
@@ -501,7 +501,7 @@ struct PiecesParties {
 struct CourrielPose {
     phrase: String,
     salarie: IdSalarie,
-    email: String,
+    email: droit::fiche::Courriel,
 }
 
 // ------------------------------------------------------------------ l'aiguillage
@@ -523,8 +523,8 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 
 /// `poser-courriel` : le courriel du salarie, pose dans sa fiche (`fiches::poser_courriel`).
 fn poser_courriel(ctx: &Contexte, c: ChargeCourriel) -> R<CourrielPose> {
-    let email = crate::fiches::poser_courriel(ctx, &c.salarie, &c.email)?.to_string();
-    Ok(CourrielPose { phrase: format!("Courriel de {} : {}.", c.salarie, email), salarie: c.salarie, email })
+    crate::fiches::poser_courriel(ctx, &c.salarie, &c.email)?;
+    Ok(CourrielPose { phrase: format!("Courriel de {} : {}.", c.salarie, c.email), salarie: c.salarie, email: c.email })
 }
 
 // ------------------------------------------------------------------ contrat-recu
@@ -533,8 +533,8 @@ fn poser_courriel(ctx: &Contexte, c: ChargeCourriel) -> R<CourrielPose> {
 /// sa date, l'identifiant du message, la preuve archivee, l'exemplaire contresigne, la mention posee, ce qu'elle signe
 /// (un contrat ou un avenant, et son numero).
 pub(crate) struct ParCourriel {
-    pub(crate) code: String,
-    pub(crate) adresse: String,
+    pub(crate) code: documents::fiche_questionnaire::CodeDeDemande,
+    pub(crate) adresse: droit::fiche::Courriel,
     pub(crate) quand: Moment,
     pub(crate) message: String,
     pub(crate) preuve: String,
@@ -544,7 +544,7 @@ pub(crate) struct ParCourriel {
     pub(crate) mention: Option<String>,
     /// L'acte de la demande (`avenant`, `remplace`) ; aucun pour le contrat lui-meme (la forme du journal des envois,
     /// `envois::etats`).
-    pub(crate) acte: Option<String>,
+    pub(crate) acte: Option<envois::journal::ActeDuContrat>,
     pub(crate) avenant: Option<i64>,
 }
 
@@ -600,7 +600,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
         numero: numero_note.clone(),
         nom: nom.clone(),
         avenant: av,
-        origine: courriel.map(|_| "courriel".to_string()),
+        origine: courriel.map(|_| journal::OrigineDuRetourDeContrat::Courriel),
         code: courriel.map(|m| m.code.clone()),
         adresse: courriel.map(|m| m.adresse.clone()),
         quand,
@@ -608,7 +608,7 @@ pub(crate) fn contrat_recu(ctx: &Contexte, c: &ChargeRecu, qui: &str, courriel: 
         preuve: courriel.map(|m| m.preuve.clone()),
         fichier_signe: courriel.and_then(|m| m.fichier_signe.clone()),
         mention: courriel.and_then(|m| m.mention.clone()),
-        acte: courriel.and_then(|m| m.acte.clone()),
+        acte: courriel.and_then(|m| m.acte),
         qui: qui.to_string(),
         reponse,
     };
@@ -673,14 +673,14 @@ pub(crate) fn contrats_imprimer(ctx: &Contexte, c: ChargeSignature, qui: &str) -
     let quoi: Vec<String> = impression
         .contrats
         .iter()
-        .map(|x| contrat_dit(x.numero.as_deref()))
-        .chain(impression.avenants.iter().map(|x| format!("{} au {}", avenant_dit(x.avenant), contrat_dit(x.numero.as_deref()))))
+        .map(|x| contrat_dit(x.numero.as_ref()))
+        .chain(impression.avenants.iter().map(|x| format!("{} au {}", avenant_dit(x.avenant), contrat_dit(x.numero.as_ref()))))
         .collect();
     Ok(Imprimes { phrase: format!("À faire signer en main propre : {} ; imprimés.", quoi.join(", ")), impression })
 }
 
 /// « contrat n° 12 », ou « contrat sans numéro ».
-fn contrat_dit(numero: Option<&str>) -> String {
+fn contrat_dit(numero: Option<&NumeroContrat>) -> String {
     engagement::numeros::numero_dit(numero, "contrat n° ", "", "contrat sans numéro")
 }
 
@@ -751,7 +751,7 @@ pub(crate) fn demander_signature(ctx: &Contexte, c: ChargeSignature, motdepasse:
         .contrats
         .iter()
         .filter(|x| x.relance == Some(true))
-        .map(|x| if x.est_avenant() { format!("{} au {}", avenant_dit(x.avenant), contrat_dit(x.numero.as_deref())) } else { contrat_dit(x.numero.as_deref()) })
+        .map(|x| if x.est_avenant() { format!("{} au {}", avenant_dit(x.avenant), contrat_dit(x.numero.as_ref())) } else { contrat_dit(x.numero.as_ref()) })
         .collect();
     let s = if n_contrats + n_avenants > 1 { "s" } else { "" };
     let fait = if !rappels.is_empty() && rappels.len() == r.contrats.len() {
@@ -873,7 +873,7 @@ pub(crate) fn envoyer_avenants(ctx: &Contexte, voulus: &[AvenantVoulu], etats: &
     }
     // La porte du branchement, avant de rien lire.
     compagnie::bridage::branchement(&ctx.racine)?.ouvrir()?;
-    let (par_salarie, sans): (Vec<_>, Vec<_>) = avenants_a_envoyer(ctx, voulus, etats)?.into_iter().partition(|(_, aa)| aa.iter().all(|a| a.destinataire.as_deref().is_some_and(|d| !d.trim().is_empty())));
+    let (par_salarie, sans): (Vec<_>, Vec<_>) = avenants_a_envoyer(ctx, voulus, etats)?.into_iter().partition(|(_, aa)| aa.iter().all(|a| a.destinataire.is_some()));
     let noms_sans: Vec<String> = sans.iter().map(|(k, _)| ctx.nomme(k)).collect();
     if par_salarie.is_empty() {
         return Err(refus(format!("{} Rien n'est parti.", crate::gestes::signature::avenants_sans_courriel_dit(&noms_sans))));
@@ -989,7 +989,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
         };
         contrats.push(ContratASigner {
             salarie: p.salarie.id.clone(),
-            destinataire: p.salarie.email.en_texte(),
+            destinataire: p.salarie.email.dite().cloned(),
             spectacle: p.titre()?,
             debut,
             fin,
@@ -1030,7 +1030,7 @@ pub(crate) fn signature_apercu(ctx: &Contexte, mois: Mois) -> R<ApercuSignature>
     }
     let phrases: Vec<String> = contrats
         .iter()
-        .map(|c| format!("{} ({}) : {}", c.nom, contrat_dit(c.numero.as_deref()), match &c.destinataire { Some(d) => d.as_str(), None => "pas de courriel : il s'imprime" }))
+        .map(|c| format!("{} ({}) : {}", c.nom, contrat_dit(c.numero.as_ref()), match &c.destinataire { Some(d) => d.as_ref(), None => "pas de courriel : il s'imprime" }))
         .chain(avertissements.iter().cloned())
         .collect();
     Ok(ApercuSignature {
@@ -1101,7 +1101,7 @@ struct AvenantLu {
     avenants: Vec<AvenantParti>,
     remplacable: bool,
     boite_liee: bool,
-    destinataire: Option<String>,
+    destinataire: Option<droit::fiche::Courriel>,
 }
 
 impl AvenantLu {
@@ -1225,10 +1225,10 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs)?;
     let (_data, paies) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, mois_parti, None, &departs)?;
     // La paie de CE contrat : celle qui porte son numero.
-    let Some(numero_parti) = parti.numero.as_ref().map(|n| n.to_string()) else {
+    let Some(numero_parti) = parti.numero.as_ref() else {
         return Err(erreur(Classe::Refuse, format!("Le contrat parti de {} du {} ne porte pas de numéro : il ne se compare pas à l'engagement.", salarie, c.debut.jj_mm_aaaa())));
     };
-    let Some(i) = etats::paie_du_contrat(&paies, salarie, &numero_parti)? else {
+    let Some(i) = etats::paie_du_contrat(&paies, salarie, numero_parti)? else {
         return Err(erreur(
             Classe::Refuse,
             format!("Aucun contrat de {} commençant le {} dans les engagements de {}.", salarie, c.debut.jj_mm_aaaa(), mois_parti),
@@ -1238,7 +1238,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     // est parti. Ce qui change se compare au mois ou le contrat change (`engagement::etats::mois_du_changement`) : un
     // contrat au mois qui change a partir d'un mois d'apres celui ou il est parti se compare ce mois-la, et l'avenant
     // prend effet le premier jour de ce mois (ou a la date de l'avenant que la saisie de ce mois dit).
-    let siens = version_validee(ctx, mois_parti, salarie, paies[i].engagement.numero.as_deref(), &departs)?;
+    let siens = version_validee(ctx, mois_parti, salarie, paies[i].engagement.numero.as_ref(), &departs)?;
     let passee = siens.as_ref().and_then(|v| engagement::etats::version_au_depart(v, &departs, engagement::departs::Envoi::Contrat));
     let mois_effet = match (siens.as_ref(), passee) {
         (Some(v), Some(x)) => engagement::etats::mois_du_changement(v, x)?.filter(|m| *m > mois_parti),
@@ -1247,7 +1247,7 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
     let (paies, i, mois_compare) = match mois_effet {
         Some(me) => {
             let (_d, ps) = documents::ecrire_documents::paies_aux_numeros_declares(ctx, me, None, &departs)?;
-            let j = etats::paie_du_contrat(&ps, salarie, &numero_parti)?
+            let j = etats::paie_du_contrat(&ps, salarie, numero_parti)?
                 .ok_or_else(|| erreur(Classe::Refuse, format!("Aucune paie de {} en {} pour le contrat n° {}.", salarie, me.libelle(socle::mois::Graphie::Accentuee), numero_parti)))?;
             (ps, j, me)
         }
@@ -1326,16 +1326,16 @@ fn avenant_d_un_contrat_parti(ctx: &Contexte, c: &ChargeAvenant) -> R<Option<Ave
         remplacable: c.debut > ctx.aujourdhui,
         // Sans boite courriel, l'avenant s'imprime avec les contrats (`contrats-imprimer`) : rien ne part d'ici.
         boite_liee: crate::ouverture::boite_liee(ctx)?,
-        destinataire: p.salarie.email.en_texte(),
+        destinataire: p.salarie.email.dite().cloned(),
     }))
 }
 
 /// La version validee de l'engagement de `salarie` qui porte le numero `numero`, parmi ceux de `mois`.
-fn version_validee(ctx: &Contexte, mois: Mois, salarie: &IdSalarie, numero: Option<&str>, departs: &engagement::departs::Departs) -> R<Option<engagement::etats::Valide>> {
+fn version_validee(ctx: &Contexte, mois: Mois, salarie: &IdSalarie, numero: Option<&NumeroContrat>, departs: &engagement::departs::Departs) -> R<Option<engagement::etats::Valide>> {
     Ok(engagement::etats::du_mois(ctx, mois, departs)?.into_iter().find_map(|e| {
         let v = e.valide()?.clone();
         let b = &*v.objet().brut;
-        (b.saisie.carte.salarie.as_ref() == Some(salarie) && b.saisie.carte.numero.as_deref() == numero).then_some(v)
+        (b.saisie.carte.salarie.as_ref() == Some(salarie) && b.saisie.carte.numero.as_ref() == numero).then_some(v)
     }))
 }
 
@@ -1407,7 +1407,7 @@ fn avenant_d_un_contrat_signe_ailleurs(ctx: &Contexte, c: &ChargeAvenant) -> R<O
         avenants: deja,
         remplacable: false,
         boite_liee: crate::ouverture::boite_liee(ctx)?,
-        destinataire: p.salarie.email.en_texte(),
+        destinataire: p.salarie.email.dite().cloned(),
     }))
 }
 
@@ -1459,10 +1459,10 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
         let parti = if e.detail.main_propre { "imprimé" } else { "envoyé à la signature" };
         for x in e.detail.contrats.iter().filter(|x| ce_contrat(&x.salarie, x.numero.as_deref())) {
             qui.get_or_insert_with(|| x.salarie.clone());
-            let quoi = match x.acte.as_deref() {
-                Some("avenant") => format!("{} {}", majuscule(&avenant_dit(x.avenant)), parti),
-                Some("remplace") => format!("Contrat qui annule et remplace le {}, {}", contrat_dit(x.remplace.as_deref()), parti),
-                _ => format!("Contrat {}", parti),
+            let quoi = match x.acte {
+                Some(journal::ActeDuContrat::Avenant) => format!("{} {}", majuscule(&avenant_dit(x.avenant)), parti),
+                Some(journal::ActeDuContrat::Remplace) => format!("Contrat qui annule et remplace le {}, {}", contrat_dit(x.remplace.as_ref()), parti),
+                None => format!("Contrat {}", parti),
             };
             contrat.push(piece(racine, quoi, e.quand(), Some(x.mois), &x.fichier));
         }
@@ -1470,7 +1470,7 @@ fn pieces_parties(ctx: &Contexte, c: ChargePieces) -> R<PiecesParties> {
         for d in e.retours.iter().filter(|d| ce_contrat(&d.salarie, d.numero.as_deref())) {
             if let Some(f) = d.fichier_signe.as_ref() {
                 let quoi = match d.avenant {
-                    Some(a) if d.acte.as_deref() == Some("avenant") => format!("Avenant n° {} signé, contresigné", a),
+                    Some(a) if d.acte == Some(journal::ActeDuContrat::Avenant) => format!("Avenant n° {} signé, contresigné", a),
                     _ => "Contrat signé, contresigné".to_string(),
                 };
                 contrat.push(piece(racine, quoi, d.quand.into(), l.mois(), f));

@@ -30,7 +30,7 @@ pub fn en_vigueur(depuis: Option<Jour>, jusqu_a: Option<Jour>, debut: &Jour, fin
 forme_notee! {
     /// `casc-svp-base.json`, entier : la CASC-SVP de la 3090, ce que la DSN en declare et sa regularisation hors DSN.
     pub struct CascSvp {
-        pub idcc: String,
+        pub idcc: crate::fiche::Idcc,
         /// Le premier mois declare en DSN.
         pub depuis: socle::mois::Mois,
         pub taux: TauxCasc,
@@ -100,7 +100,7 @@ pub fn casc_svp_base() -> R<Arc<CascSvp>> {
 /// L'exemption se lit avec les cles de l'effectif `eff` de l'annee `an` (`contexte::Effectif::cinquante`, `cse`).
 pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise, eff: &crate::contexte::Effectif, an: i32) -> R<Option<Adhesion>> {
     let base = casc_svp_base()?;
-    if ent.idcc.portee().map(str::trim) != Some(base.idcc.trim()) || crate::bareme::casc_exemptee(ent, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()) {
+    if ent.idcc.dite() != Some(&base.idcc) || crate::bareme::casc_exemptee(ent, eff.cinquante(an).as_ref(), eff.cse(an).as_ref()) {
         return Ok(None);
     }
     let d = &base.dsn;

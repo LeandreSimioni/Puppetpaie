@@ -11,7 +11,8 @@ use std::collections::BTreeMap;
 use crate::assiette::Assiette;
 use crate::base_assujettie::BaseAssujettie;
 use crate::code_cotisation::{CleDeCotisationDsn, CleDeTotalisation, CodeCotisation81};
-use crate::fiche::Lue;
+use crate::fiche::{Lue, Statut};
+use crate::natures::Paie;
 use crate::organismes::IdentifiantDOrganisme;
 use crate::source::Fondement;
 use serde::Deserialize;
@@ -255,11 +256,12 @@ forme! {
         pub cotisation_sante_patronale: Option<CotisationSupplementaire>,
         pub reduction_generale: Option<ReductionGenerale>,
         pub majoration_chomage_cddu: Option<MajorationChomage>,
-        pub statuts: Vec<String>,
-        pub par_statut: BTreeMap<String, CoucheStatut>,
+        pub statuts: Vec<Statut>,
+        pub par_statut: BTreeMap<Statut, CoucheStatut>,
         pub deduction_forfaitaire: Option<DeductionForfaitaire>,
-        pub par_categorie: BTreeMap<String, CoucheCategorie>,
-        pub par_nature: BTreeMap<String, CoucheNature>,
+        pub par_categorie: BTreeMap<CategorieDuBareme, CoucheCategorie>,
+        #[serde(deserialize_with = "crate::natures::population::cles::deserialize")]
+        pub par_nature: BTreeMap<Paie, CoucheNature>,
         pub par_caisse_conges: Option<CaisseConges>,
         pub risques_atmp: Option<RisquesAtmp>,
         pub seuils_effectif: Option<SeuilsEffectif>,
@@ -268,7 +270,7 @@ forme! {
         pub versement_mobilite: Option<VersementMobiliteEcrit>,
         pub par_organisation_patronale: BTreeMap<String, Organisation>,
         pub retraite_t1_repartition: Option<RetraiteT1Repartition>,
-        pub par_convention: BTreeMap<String, Convention>,
+        pub par_convention: BTreeMap<crate::fiche::Idcc, Convention>,
         // La couche de la convention de la compagnie, fondue dans le socle (`contexte::convention`) : le socle ne l'ecrit pas.
         pub contributions_conventionnelles: Option<Vec<Contribution>>,
         pub tarifs_conventionnels: Option<Tarifs>,
@@ -281,7 +283,7 @@ forme! {
         // Ce que le moteur pose sur la pile : l'etablissement du salarie (`bareme::surcharger`). La compagnie, la pile la
         // recoit typee (`bareme::EntrepriseLue`), elle ne la porte pas.
         #[serde(skip)]
-        pub etablissement: Option<String>,
+        pub etablissement: Option<crate::fiche::Nic>,
     }
 }
 
@@ -481,6 +483,47 @@ impl From<IdDeCotisation> for String {
         c.0.into_owned()
     }
 }
+
+/// LA CATEGORIE D'UNE SECTION DU BAREME (`par_categorie` : `cadre`, `cadre_permanent`), que le calcul d'un cadre lit
+/// (`bareme::bareme_cadre`). INFERENCE (aucun texte n'en fixe la forme : c'est une cle du logiciel) : une cle n'est
+/// jamais vide. Celles que le moteur lit sont des constantes (`CADRE`, `CADRE_PERMANENT`) ; celle d'un bareme se lit.
+/// Elle s'ecrit et se trie comme son texte.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
+#[serde(try_from = "String")]
+pub struct CategorieDuBareme(std::borrow::Cow<'static, str>);
+
+impl CategorieDuBareme {
+    /// La categorie ecrite `texte` ; vide, elle se refuse.
+    pub fn lire(texte: &str) -> socle::echec::R<CategorieDuBareme> {
+        if texte.is_empty() {
+            return Err(socle::refus!("categorie du bareme vide"));
+        }
+        Ok(CategorieDuBareme(std::borrow::Cow::Owned(texte.to_string())))
+    }
+
+    /// LA CATEGORIE QUE LE MOTEUR NOMME, ecrite en Rust : une constante, dont le compilateur refuse une cle vide.
+    pub const fn du_moteur(cle: &'static str) -> CategorieDuBareme {
+        assert!(!cle.is_empty(), "categorie du bareme vide");
+        CategorieDuBareme(std::borrow::Cow::Borrowed(cle))
+    }
+}
+
+impl std::fmt::Display for CategorieDuBareme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for CategorieDuBareme {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> socle::echec::R<CategorieDuBareme> {
+        CategorieDuBareme::lire(&s)
+    }
+}
+
+/// Les sections d'un cadre : intermittent (`cadre`), paye au mois (`cadre_permanent`).
+pub const CADRE: CategorieDuBareme = CategorieDuBareme::du_moteur("cadre");
+pub const CADRE_PERMANENT: CategorieDuBareme = CategorieDuBareme::du_moteur("cadre_permanent");
 
 /// Les cotisations que le moteur nomme lui-meme (`bareme`) : la mutuelle, la prevoyance, la contribution
 /// conventionnelle, la retraite complementaire (ses deux tranches et la CET), le versement mobilite, le regime local
@@ -759,7 +802,7 @@ forme! {
     #[derive(Default)]
     pub struct ReductionGenerale {
         pub verifie: Option<bool>,
-        pub statuts: Option<Vec<String>>,
+        pub statuts: Option<Vec<Statut>>,
         pub formule: Option<String>,
         pub tmin: Option<Nombre>,
         pub tdelta: Option<Nombre>,
@@ -819,7 +862,7 @@ forme! {
         pub cotisation_prevoyance_retraite_supp: Option<CotisationSupplementaire>,
         pub cotisations_ajoutees: Option<Vec<CotisationDsn>>,
         pub cotisations_dsn: Option<BTreeMap<CleDeCotisationDsn, CotisationModifiee>>,
-        pub par_statut: Option<BTreeMap<String, CoucheCategorie>>,
+        pub par_statut: Option<BTreeMap<Statut, CoucheCategorie>>,
     }
 }
 
@@ -973,8 +1016,8 @@ pub enum Effet {
     /// Un composant du taux patronal d'une rubrique qu'une nature ajoute.
     ComposantAjoute {
         /// La section `par_nature` qui ajoute la rubrique.
-        #[serde(rename = "nature")]
-        section: String,
+        #[serde(rename = "nature", deserialize_with = "crate::natures::population::deserialize")]
+        section: Paie,
         rubrique: IdDeCotisation,
         rang: usize,
         #[serde(deserialize_with = "socle::forme::court")]
@@ -983,7 +1026,7 @@ pub enum Effet {
     },
     /// Un parametre de la reduction generale d'un statut.
     ReductionGenerale {
-        statut: String,
+        statut: Statut,
         parametre: ParametreReduction,
         #[serde(deserialize_with = "datee::decimal")]
         valeur: Decimal,
@@ -996,8 +1039,8 @@ pub enum Effet {
 #[serde(rename_all = "snake_case")]
 pub enum Section {
     Corps,
-    Statut(String),
-    Nature(String),
+    Statut(Statut),
+    Nature(#[serde(deserialize_with = "crate::natures::population::deserialize")] Paie),
 }
 
 /// Le parametre de la reduction generale qu'un seuil change.
@@ -1075,13 +1118,15 @@ impl std::fmt::Display for Effet {
         let devant = |s: &Section| match s {
             Section::Corps => String::new(),
             Section::Statut(x) => format!("par_statut.{}.", x),
-            Section::Nature(x) => format!("par_nature.{}.", x),
+            Section::Nature(x) => format!("par_nature.{}.", x.population()),
         };
         match self {
             Effet::TauxDsn { section, code81, .. } => write!(f, "{}cotisations_dsn[{}].taux", devant(section), code81),
-            Effet::TauxPatronal { section: Section::Nature(n), rubrique, .. } => write!(f, "par_nature.{}.rubriques.{}.taux_pat", n, rubrique),
+            Effet::TauxPatronal { section: Section::Nature(n), rubrique, .. } => write!(f, "par_nature.{}.rubriques.{}.taux_pat", n.population(), rubrique),
             Effet::TauxPatronal { section, rubrique, .. } => write!(f, "{}rubriques_bulletin[{}].taux_pat", devant(section), rubrique),
-            Effet::ComposantAjoute { section, rubrique, rang, .. } => write!(f, "par_nature.{}.rubriques_ajoutees[{}].composants[{}]", section, rubrique, rang),
+            Effet::ComposantAjoute { section, rubrique, rang, .. } => {
+                write!(f, "par_nature.{}.rubriques_ajoutees[{}].composants[{}]", section.population(), rubrique, rang)
+            }
             Effet::ReductionGenerale { statut, parametre, .. } => write!(
                 f,
                 "par_statut.{}.reduction_generale.{}",
@@ -1155,7 +1200,7 @@ forme! {
         pub taux_droit_commun: Decimal,
         pub ceg: Cet,
         pub avant_1999: String,
-        pub par_idcc: BTreeMap<String, RepartitionDeBranche>,
+        pub par_idcc: BTreeMap<crate::fiche::Idcc, RepartitionDeBranche>,
     }
 }
 
@@ -1189,8 +1234,9 @@ forme! {
         pub secteurs: Option<Secteurs>,
         /// Ce qu'elle change aux rubriques du corps, par leur `id`.
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
-        pub par_nature: Option<BTreeMap<String, NatureModifiee>>,
-        pub par_categorie: Option<BTreeMap<String, CategorieModifiee>>,
+        #[serde(default, deserialize_with = "crate::natures::population::cles::option::deserialize")]
+        pub par_nature: Option<BTreeMap<Paie, NatureModifiee>>,
+        pub par_categorie: Option<BTreeMap<CategorieDuBareme, CategorieModifiee>>,
     }
 }
 
@@ -1209,7 +1255,7 @@ forme! {
     /// de ses statuts.
     pub struct CategorieModifiee {
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
-        pub par_statut: Option<BTreeMap<String, CoucheCategorie>>,
+        pub par_statut: Option<BTreeMap<Statut, CoucheCategorie>>,
     }
 }
 
@@ -1234,8 +1280,9 @@ forme! {
         pub versement_mobilite: Option<VersementMobiliteEcrit>,
         pub rubriques: Option<BTreeMap<IdDeCotisation, RubriqueModifiee>>,
         pub cotisations_dsn: Option<BTreeMap<CleDeCotisationDsn, CotisationModifiee>>,
-        pub par_statut: Option<BTreeMap<String, StatutModifie>>,
-        pub par_nature: Option<BTreeMap<String, NatureModifiee>>,
+        pub par_statut: Option<BTreeMap<Statut, StatutModifie>>,
+        #[serde(default, deserialize_with = "crate::natures::population::cles::option::deserialize")]
+        pub par_nature: Option<BTreeMap<Paie, NatureModifiee>>,
     }
 }
 

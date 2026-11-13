@@ -26,7 +26,6 @@ use droit::fiche::ChampsEntreprise;
 use socle::date::Jour;
 use socle::fichiers::{modele_de, repr};
 use socle::paris::Moment;
-use crate::ntt;
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::texte::ascii_nfkd;
 use crate::usages::strip;
@@ -372,7 +371,7 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
             let (a, b) = zone_employeur(nom);
             ecrire_zone(&mut buf, nom, a, b, &v)?;
         }
-        if etab.nic.portee() != ent.nic_principal() {
+        if etab.nic.dite() != ent.nic_principal() {
             code_urssaf = Some(urssaf_d_un_etablissement(etab)?);
         }
     }
@@ -403,13 +402,11 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
     }
 
     let s = &e.salarie;
-    // LE SEXE VIENT DU NIR QUAND IL Y EN A UN, de la fiche sinon : c'est la
-    // meme lecture que pour le numero technique temporaire de la DSN
-    // (`ntt.rs`), et il n'y en a qu'une dans le logiciel.
-    let sexe = match ntt::sexe_de(s.nir.portee(), s.sexe.code()) {
-        Some("1") => "M",
-        Some("2") => "F",
-        Some(autre) => return Err(socle::refus!("Le sexe « {} » n'est ni 1 ni 2 : le signaler au développeur.", autre)),
+    // LE SEXE VIENT DU NIR QUAND IL Y EN A UN, de la fiche sinon (`ChampsSalarie::sexe`) : la meme lecture que pour le
+    // numero technique temporaire de la DSN, et il n'y en a qu'une dans le logiciel.
+    let sexe = match s.sexe() {
+        Some(droit::fiche::Sexe::Masculin) => "M",
+        Some(droit::fiche::Sexe::Feminin) => "F",
         None => return Err(refus("La DPAE écrit le sexe du salarié (zone SEXE) : ni son NIR ni sa fiche ne le disent.")),
     };
     poser(&mut buf, "horodatage", &horodatage_dpae(p.horodatage))?;
@@ -492,7 +489,7 @@ pub fn enregistrements(embauches: &[Embauche], p: &Parametres) -> R<Vec<String>>
         saisies.push((droit::fiche::NomDeFiche::Salarie, format!("la fiche de {}", qui), crate::champs::Saisie::de_la_fiche(droit::fiche::NomDeFiche::Salarie, &e.salarie.champs)?));
     }
     let fiches: Vec<(droit::fiche::NomDeFiche, String, &crate::champs::Saisie)> = saisies.iter().map(|(n, q, s)| (*n, q.clone(), s)).collect();
-    if let Some(m) = crate::champs::refus_des_manques("dpae", &fiches, &[])? {
+    if let Some(m) = crate::champs::refus_des_manques(crate::champs::ActeExigeant::Dpae, &fiches, &[])? {
         return Err(refus(m));
     }
     if embauches.is_empty() {
@@ -726,7 +723,8 @@ pub struct EnregistrementRelu {
     pub horodatage: Option<String>,
     pub nom: Option<String>,
     pub prenom: Option<String>,
-    pub nir: Option<String>,
+    /// A blanc, le salarie n'avait pas de NIR (`ecrire`) ; rempli, c'est le NIR que nous avons ecrit.
+    pub nir: Option<droit::fiche::Nir>,
     /// `JJMMAAAA`.
     pub date_naissance: Option<String>,
     /// `JJMMAAAA`.
@@ -736,8 +734,8 @@ pub struct EnregistrementRelu {
     pub date_fin: Option<String>,
 }
 
-/// Chaque enregistrement par ses zones (`CHAMPS`).
-pub fn relire(contenu: &str) -> Vec<EnregistrementRelu> {
+/// Chaque enregistrement par ses zones (`CHAMPS`) ; une zone NIR remplie qui n'est pas un NIR le refuse.
+pub fn relire(contenu: &str) -> R<Vec<EnregistrementRelu>> {
     lire_enregistrements(contenu)
         .iter()
         .map(|r| {
@@ -745,16 +743,20 @@ pub fn relire(contenu: &str) -> Vec<EnregistrementRelu> {
                 let (a, b) = champ(nom);
                 Some(tranche(r, a, b).trim_matches(socle::texte::blanc).to_string()).filter(|v| !v.is_empty())
             };
-            EnregistrementRelu {
+            let nir = match zone("nir") {
+                Some(n) => Some(droit::fiche::Nir::lire(&n).map_err(|e| e.reformuler(|p| format!("DPAE relue, zone NIR : {}", p)))?),
+                None => None,
+            };
+            Ok(EnregistrementRelu {
                 horodatage: zone("horodatage"),
                 nom: zone("nom"),
                 prenom: zone("prenom"),
-                nir: zone("nir"),
+                nir,
                 date_naissance: zone("date_naissance"),
                 date_embauche: zone("date_embauche"),
                 type_contrat: zone("type_contrat"),
                 date_fin: zone("date_fin"),
-            }
+            })
         })
         .collect()
 }
@@ -838,7 +840,33 @@ pub const ZONES_RETOUR: [(&str, usize, usize); 7] = [
     ("mt", 974, 975),       // I_MT : medecine du travail informee
     ("pmf5", 975, 976),     // I_PMF5 : premiere embauche dans l'etablissement (CFE-Urssaf)
 ];
-pub const FORMALITES: [(&str, &str); 4] = [("certif", "CERTIF"), ("imma", "IMMA"), ("mt", "MT"), ("pmf5", "PMF5")];
+/// UNE FORMALITE QUE LE CERTIFICAT D'UNE DPAE DIT FAITE (`O` a sa zone) : I_CERTIF, I_IMMA, I_MT, I_PMF5, « Positionné
+/// par le système » (Format 120, positions 971, 974, 975, 976 :
+/// `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 503-530). Une liste de la norme, qui s'ecrit par son
+/// nom sans `I_` (`CERTIF`, `IMMA`, `MT`, `PMF5`) ; le journal des envois la garde avec la personne certifiee.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum FormaliteDpae {
+    Certif,
+    Imma,
+    Mt,
+    Pmf5,
+}
+
+impl FormaliteDpae {
+    /// Toutes, dans l'ordre de leurs zones.
+    pub const TOUTES: [FormaliteDpae; 4] = [FormaliteDpae::Certif, FormaliteDpae::Imma, FormaliteDpae::Mt, FormaliteDpae::Pmf5];
+
+    /// Sa zone du certificat (`ZONES_RETOUR`).
+    fn zone(self) -> &'static str {
+        match self {
+            FormaliteDpae::Certif => "certif",
+            FormaliteDpae::Imma => "imma",
+            FormaliteDpae::Mt => "mt",
+            FormaliteDpae::Pmf5 => "pmf5",
+        }
+    }
+}
 
 fn zone_retour(nom: &str) -> (usize, usize) {
     let (_, a, b) = ZONES_RETOUR.iter().find(|(n, _, _)| *n == nom).expect("zone de retour de la DPAE");
@@ -850,9 +878,10 @@ fn zone_retour(nom: &str) -> (usize, usize) {
 pub struct LigneDuCertificat {
     pub nom: String,
     pub prenom: String,
-    pub nir: String,
-    /// AAAA-MM-JJ, vide si la zone ne porte pas huit caracteres.
-    pub embauche: String,
+    /// Aucun quand la zone est a blanc (une DPAE sans NIR la laisse ainsi, `ecrire`).
+    pub nir: Option<droit::fiche::Nir>,
+    /// Aucun quand la zone est a blanc.
+    pub embauche: Option<Jour>,
     /// R_DOSSIER, la reference sous laquelle la DPAE est enregistree.
     pub dossier: String,
     /// C_RETOUR_AR (`00` quand la zone est a blanc) et son libelle (Format 120).
@@ -863,13 +892,14 @@ pub struct LigneDuCertificat {
     /// 98.
     pub deja_existante: bool,
     /// Celles a O : CERTIF, IMMA, MT, PMF5.
-    pub formalites: Vec<&'static str>,
+    pub formalites: Vec<FormaliteDpae>,
     /// C_RET_AR_LOT (`00` quand la zone est a blanc).
     pub lot: String,
 }
 
-/// Le certificat de conformite (nature 41), DPAE par DPAE.
-pub fn lire_certificat(contenu: &str) -> Vec<LigneDuCertificat> {
+/// Le certificat de conformite (nature 41), DPAE par DPAE. Un retour de la norme se lit strictement : un NIR ou un
+/// jour d'embauche qui n'en sont pas refusent le certificat ; une zone a blanc reste vide.
+pub fn lire_certificat(contenu: &str) -> R<Vec<LigneDuCertificat>> {
     let mut out = Vec::new();
     for r in lire_enregistrements(contenu) {
         let z = |k: &str| {
@@ -886,16 +916,16 @@ pub fn lire_certificat(contenu: &str) -> Vec<LigneDuCertificat> {
             Some((_, l)) => l.to_string(),
             None => format!("code {} (inconnu du Format 120)", code),
         };
-        let e: Vec<char> = emb.chars().collect();
-        let embauche = if e.len() == 8 {
-            format!(
-                "{}-{}-{}",
-                e[4..].iter().collect::<String>(),
-                e[2..4].iter().collect::<String>(),
-                e[..2].iter().collect::<String>()
-            )
-        } else {
-            String::new()
+        let embauche = match emb.as_str() {
+            "" => None,
+            jjmmaaaa => match socle::piece::Zone::lue(jjmmaaaa, socle::piece::format::Jjmmaaaa).valeur() {
+                Some(j) => Some(j),
+                None => return Err(refus(format!("Certificat de conformité des DPAE : la date d'embauche {} n'est pas un jour (JJMMAAAA).", repr(jjmmaaaa)))),
+            },
+        };
+        let nir = match c("nir").as_str() {
+            "" => None,
+            n => Some(droit::fiche::Nir::lire(n).map_err(|e| e.reformuler(|p| format!("Certificat de conformité des DPAE : {}", p)))?),
         };
         let dossier = z("dossier");
         let lot = z("ret_ar_lot");
@@ -903,18 +933,18 @@ pub fn lire_certificat(contenu: &str) -> Vec<LigneDuCertificat> {
         out.push(LigneDuCertificat {
             nom: c("nom"),
             prenom: c("prenom"),
-            nir: c("nir"),
+            nir,
             embauche,
             dossier,
             deja_existante: code == CODE_DEJA_EXISTANTE,
             code,
             libelle,
             enregistree,
-            formalites: FORMALITES.iter().filter(|(k, _)| z(k) == "O").map(|(_, n)| *n).collect(),
+            formalites: FormaliteDpae::TOUTES.into_iter().filter(|f| z(f.zone()) == "O").collect(),
             lot: if lot.is_empty() { "00".to_string() } else { lot },
         });
     }
-    out
+    Ok(out)
 }
 
 // ------------------------------------------------------------------ tests
@@ -1074,7 +1104,7 @@ mod tests {
         ));
         let nantes = crate::urssaf::base().unwrap().du_departement("44").unwrap();
         let mut e = embauche(N::Cdi, None);
-        e.salarie.etablissement = Some("00024".into());
+        e.salarie.etablissement = Some(droit::fiche::Nic::lire("00024").unwrap());
         let t = enr(&e, Some(&ent), Some("117")).unwrap();
         assert_eq!(zone(&t, "code_urssaf"), nantes);
         let t = enr(&embauche(N::Cdi, None), Some(&ent), Some("117")).unwrap();
@@ -1203,18 +1233,18 @@ mod tests {
                 }
             }
         });
-        let c = lire_certificat(&f);
+        let c = lire_certificat(&f).unwrap();
         assert_eq!(c.len(), 4);
-        assert_eq!(c[0].embauche, "2026-10-01");
+        assert_eq!(c[0].embauche.map(|j| j.iso()).as_deref(), Some("2026-10-01"));
         assert_eq!(c[0].dossier, "D1234");
         assert_eq!(c[0].code, "99");
         assert_eq!(c[0].libelle, "Autre erreur (données facultatives)");
         assert!(c[0].enregistree);
-        assert_eq!(c[0].formalites, ["CERTIF", "MT"]);
+        assert_eq!(c[0].formalites, [FormaliteDpae::Certif, FormaliteDpae::Mt]);
         // 98 : deja existante, et pas enregistree
         assert!(c[1].deja_existante);
         assert!(!c[1].enregistree);
-        assert_eq!(c[1].formalites, ["IMMA"]);
+        assert_eq!(c[1].formalites, [FormaliteDpae::Imma]);
         // un code inconnu du Format 120
         assert_eq!(c[2].libelle, "code 77 (inconnu du Format 120)");
         assert!(!c[2].enregistree);
@@ -1222,7 +1252,7 @@ mod tests {
         assert_eq!(c[3].lot, "11");
         assert!(!c[3].enregistree);
         // sans code de retour, `00`
-        assert_eq!(lire_certificat(&flux(1, |_, _| {}))[0].code, "00");
+        assert_eq!(lire_certificat(&flux(1, |_, _| {})).unwrap()[0].code, "00");
     }
 
     #[test]

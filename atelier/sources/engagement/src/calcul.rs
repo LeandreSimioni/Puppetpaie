@@ -356,7 +356,7 @@ pub struct Contenu {
     /// `calculer` (7.10) ; les lignes hors assiette n'y entrent que si le catalogue les dit imposables.
     pub net_imposable: Decimal,
     pub cout_employeur: Decimal,
-    pub numero_bulletin: Option<String>,
+    pub numero_bulletin: Option<crate::numeros::NumeroDeBulletin>,
     /// Les assiettes du calcul, que la DSN declare telles quelles.
     pub bases: BTreeMap<Assiette, Decimal>,
     /// Les lignes de remuneration (le haut du bulletin), pas les cotisations.
@@ -1190,12 +1190,12 @@ fn sante_de_la_suspension(ctx: &Contexte, eng: &Engagement, au_mois: &AuMois, mu
     }
     let cle = fiche.id.to_string();
     let (debut, fin) = (eng.debut_periode(), eng.fin_periode());
-    let suspensions = crate::imprevus::suspendu_sans_remuneration(&ctx.racine, &fiche.id, eng.numero.as_deref(), &eng.debut, &debut, &fin)?;
+    let suspensions = crate::imprevus::suspendu_sans_remuneration(&ctx.racine, &fiche.id, eng.numero.as_ref(), &eng.debut, &debut, &fin)?;
     let Some(premiere) = suspensions.first() else { return Ok(fiche) };
     let motifs: Vec<&str> = suspensions.iter().filter_map(|s| s.suspension()).map(|s| s.motif.code()).collect();
     let ent = ctx.entreprise_au(&fin);
-    let idcc = ent.idcc.portee();
-    let pourquoi = if idcc == Some("3090") {
+    let idcc = ent.idcc.dite();
+    let pourquoi = if idcc == Some(&droit::fiche::IDCC_3090) {
         format!(
             "contrat suspendu sans indemnisation tout le mois (motif {}) : les garanties de sante sont suspendues (CCN 3090, \
 accord sante du 19/07/2024, art. 4.2 et 15)",
@@ -1224,7 +1224,7 @@ si le contrat suspend les garanties (rien sur la paie), « {} » s'il les mainti
                     motifs.join(", "),
                     premiere.debut().jj_mm_aaaa(),
                     match idcc {
-                        Some(i) => i,
+                        Some(i) => &**i,
                         None => "de la compagnie",
                     },
                     SANTE_SUSPENSION.nom(),
@@ -1269,7 +1269,7 @@ fn essai_dans_son_plafond(ctx: &Contexte, eng: &Engagement, nat: &Nature, sal: &
     };
     let jours = rust_decimal::prelude::ToPrimitive::to_i64(&lu.ceil()).ok_or_else(|| refus(socle::fichiers::entier_hors_limites(&lu.to_string())))?;
     let artiste = sal.statut.dite() == Some(&Statut::Artiste);
-    let plafond = droit::essai::plafond(nat, &eng.debut, eng.fin.as_ref(), sal.statut_conventionnel.dite().map(|s| s.as_str()), artiste, ctx.entreprise.idcc.portee())?;
+    let plafond = droit::essai::plafond(nat, &eng.debut, eng.fin.as_ref(), sal.statut_conventionnel.dite().map(|s| s.as_str()), artiste, ctx.entreprise.idcc.dite())?;
     droit::essai::refuser_au_dela(jours, plafond.as_ref(), &format!("{} ({})", crate::qui_de(sal)?, nat.libelle))
 }
 
@@ -1688,7 +1688,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
     });
 
     // 7.9 : la reduction generale, apres les cotisations.
-    let statut = sal.statut.dite().map(|s| s.as_str());
+    let statut = sal.statut.dite().copied();
     let caisse_conges = bases[&Assiette::BrutCs] > Decimal::ZERO;
     // Sous DFS, la reduction se calcule sur le brut abattu, dans la limite de 130 % de celle du brut entier
     // (`reduction_generale_sous_dfs`).

@@ -31,10 +31,10 @@ pub struct PaieEcrite {
     pub conges: Option<crate::conges::CompteurConges>,
     pub conges_avant: Option<crate::conges::Avant>,
     /// Le numero du bulletin et le premier N CE, ecrits quand ses documents sont partis (`etats::poser_numeros_des_documents`).
-    pub bulletin: Option<String>,
+    pub bulletin: Option<crate::numeros::NumeroDeBulletin>,
     pub ce: Option<i64>,
     /// Le numero du bulletin d'une paie partie que celle-ci rectifie.
-    pub rectifie: Option<String>,
+    pub rectifie: Option<crate::numeros::NumeroDeBulletin>,
     /// Pourquoi la paie s'est recalculee d'elle-meme, et quand.
     pub recalcul: Option<Recalcul>,
 }
@@ -44,7 +44,9 @@ pub struct PaieEcrite {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empreinte {
-    pub entrees: BTreeMap<String, String>,
+    /// Chaque lecture notee et ce qu'elle valait, ecrites par leur texte (`socle::fichiers::lectures`).
+    #[serde(with = "socle::fichiers::lectures")]
+    pub entrees: BTreeMap<droit::contexte::CleLue, socle::fichiers::ValeurLue>,
     pub regles: Vec<Jour>,
     pub configuration: Vec<Jour>,
 }
@@ -98,7 +100,7 @@ pub struct FormeDePaie<A> {
     pub net_imposable: Decimal,
     #[serde(with = "nombre")]
     pub net_social: Decimal,
-    pub numero_bulletin: Option<String>,
+    pub numero_bulletin: Option<crate::numeros::NumeroDeBulletin>,
     pub reduction_generale: Option<droit::reduction::ReductionGenerale>,
     pub remuneration: Vec<FormeDeRemuneration>,
     #[serde(with = "nombre")]
@@ -231,7 +233,7 @@ pub struct FormeDEngagement {
     pub statut: Option<droit::fiche::Statut>,
     pub statut_conventionnel: Option<droit::fiche::StatutConventionnel>,
     pub statut_categoriel_rc: Option<droit::fiche::StatutCategorielRc>,
-    pub etablissement: Option<String>,
+    pub etablissement: Option<droit::fiche::Nic>,
     pub nature: droit::natures::NatureDeContrat,
     #[serde(with = "nombre_opt")]
     pub quotite_contrat: Option<Decimal>,

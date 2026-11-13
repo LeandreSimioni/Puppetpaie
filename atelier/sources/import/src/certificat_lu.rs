@@ -25,6 +25,7 @@
 
 use std::path::Path;
 
+use droit::fiche::Nir;
 use socle::date::Jour;
 use socle::num::Decimal;
 use crate::releve::Mesure;
@@ -86,7 +87,7 @@ pub struct Certificat {
     /// Le N° CE.
     pub numero: Option<String>,
     /// Les treize caracteres du NIR, et sa cle s'il l'imprime.
-    pub nir: Option<String>,
+    pub nir: Option<Nir>,
     pub cle_nir: Option<droit::fiche::CleNir>,
     pub nom: Option<String>,
     pub prenom: Option<String>,
@@ -258,7 +259,7 @@ fn montant(mots: &[String]) -> Option<Decimal> {
 
 /// Le NIR imprime en tete du rang : treize caracteres (chiffres, et 2A ou 2B pour un ne en Corse), puis sa cle de deux
 /// chiffres ; la suite du rang est la raison sociale de l'employeur. (NIR, cle, nombre de mots pris.)
-pub(crate) fn nir_en_tete(mots: &[String]) -> Option<(String, Option<String>, usize)> {
+pub(crate) fn nir_en_tete(mots: &[String]) -> Option<(Nir, Option<String>, usize)> {
     let mut tout = String::new();
     let mut pris = 0;
     for m in mots {
@@ -274,11 +275,8 @@ pub(crate) fn nir_en_tete(mots: &[String]) -> Option<(String, Option<String>, us
             break;
         }
     }
-    match tout.len() {
-        13 => Some((tout, None, pris)),
-        15 => Some((tout[..13].to_string(), Some(tout[13..].to_string()), pris)),
-        _ => None,
-    }
+    let (nir, cle) = Nir::et_sa_cle(&tout)?;
+    Some((Nir::d_une_piece(nir)?, cle.map(str::to_string), pris))
 }
 
 /// Une page : `None` si ce n'est pas un certificat d'emploi Congés Spectacles (son titre, la Caisse, ses rubriques de
@@ -345,9 +343,9 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
                 "ce" => c.numero = texte(&v),
                 "nir" => match nir_en_tete(&v) {
                     Some((nir, cle, pris)) => {
-                        // La cle imprimee, quand c'est celle du NIR (`declarations::champs::cle_nir`).
+                        // La cle imprimee, quand c'est celle du NIR (`CleNir::du_nir`).
                         let cle = match &cle {
-                            Some(k) => match declarations::champs::cle_nir(&nir).filter(|a| **a == **k) {
+                            Some(k) => match droit::fiche::CleNir::du_nir(&nir).filter(|a| **a == **k) {
                                 Some(a) => Some(a),
                                 None => {
                                     fautes.push("la clé du NIR imprimé ne correspond pas à son numéro".into());

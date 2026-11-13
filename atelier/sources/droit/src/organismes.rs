@@ -29,7 +29,7 @@ use socle::fichiers::{forme_en_cache, FormeGardee};
 use socle::echec::R;
 
 use crate::contexte::{Contexte, ORGANISMES};
-use crate::fiche::{Datee, Lue, Piece};
+use crate::fiche::{Datee, Idcc, Lue, Piece};
 use crate::source::{forme_notee, Fondement};
 
 /// Audiens, delegataire des contrats de branche du spectacle (S21.G00.15.002).
@@ -283,8 +283,8 @@ forme_notee! {
         pub taux_at: Option<TauxAt>,
         pub statut: Option<crate::fiche::Statut>,
         /// La population : `intermittent` ou `permanent` (`ParNature`).
-        #[serde(rename = "nature")]
-        pub population: Option<String>,
+        #[serde(rename = "nature", default, deserialize_with = "crate::natures::population::option::deserialize")]
+        pub population: Option<crate::natures::Paie>,
         pub effectif_au_moins: Option<i64>,
         pub effectif_sous: Option<i64>,
     }
@@ -294,7 +294,7 @@ forme_notee! {
     /// Les contrats que les textes exigent : ceux de toute compagnie, puis ceux de chaque convention (par IDCC).
     pub struct Contrats {
         pub tous: Vec<Contrat>,
-        pub conventions: BTreeMap<String, Vec<Contrat>>,
+        pub conventions: BTreeMap<Idcc, Vec<Contrat>>,
     }
 }
 
@@ -352,13 +352,13 @@ impl Base {
     }
 
     /// Les contrats de toute compagnie, puis ceux de la convention `idcc` quand la fiche la dit.
-    pub fn contrats_de(&self, idcc: Option<&str>) -> impl Iterator<Item = &Contrat> {
+    pub fn contrats_de(&self, idcc: Option<&Idcc>) -> impl Iterator<Item = &Contrat> {
         self.contrats.tous.iter().chain(idcc.and_then(|i| self.contrats.conventions.get(i)).into_iter().flatten())
     }
 
     /// Les options que l'organisme demande sous le contrat de reference `libelle` (S21.G00.15.001), pour la convention
     /// `idcc` quand la fiche la dit.
-    pub fn options(&self, idcc: Option<&str>, libelle: &str) -> Option<&Options> {
+    pub fn options(&self, idcc: Option<&Idcc>, libelle: &str) -> Option<&Options> {
         self.contrats_de(idcc).filter(|c| c.libelle.as_deref().map(str::trim) == Some(libelle)).find_map(|c| c.options.as_ref())
     }
 
@@ -548,7 +548,7 @@ impl Attendu {
 
 /// Les contrats que cette compagnie declare a la date du contexte, dans l'ordre ou ils se presentent.
 pub fn attendus(ctx: &Contexte) -> R<Vec<Attendu>> {
-    let idcc = ctx.entreprise.idcc.portee().map(str::trim);
+    let idcc = ctx.entreprise.idcc.dite();
     let base = base()?;
     let mut out: Vec<Attendu> = base.contrats.tous.iter().map(Attendu::from).collect();
     // L'exemption de la CASC-SVP se lit avec l'effectif de l'annee du contexte (le mois que l'on compose), pas du jour.
@@ -678,14 +678,17 @@ pub struct ParNature {
 }
 
 impl ParNature {
-    /// Les natures, dans l'ordre : `intermittent`, `permanent`.
-    pub fn natures(&self) -> [(&'static str, &Rattachement); 2] {
-        [("intermittent", &self.intermittent), ("permanent", &self.permanent)]
+    /// Les populations, dans l'ordre : l'intermittent (a l'activite), le permanent (au mois).
+    pub fn natures(&self) -> [(crate::natures::Paie, &Rattachement); 2] {
+        [(crate::natures::Paie::Activite, &self.intermittent), (crate::natures::Paie::Mensuelle, &self.permanent)]
     }
 
-    /// Le rattachement de la nature `cle` (`Nature::bareme`), s'il est compose.
-    pub fn de(&self, cle: &str) -> Option<&Rattachement> {
-        self.natures().into_iter().find(|(n, _)| *n == cle).map(|(_, r)| r)
+    /// Le rattachement de la section `section` (`Nature::section_des_organismes`).
+    pub fn de(&self, section: crate::natures::Paie) -> &Rattachement {
+        match section {
+            crate::natures::Paie::Activite => &self.intermittent,
+            crate::natures::Paie::Mensuelle => &self.permanent,
+        }
     }
 }
 

@@ -365,9 +365,10 @@ impl FicheImportee {
         }
     }
 
-    /// Le numero d'objet d'un spectacle a creer, en capitales.
-    pub fn numero_objet(&self) -> Option<String> {
-        self.donnees.mot(droit::fiche::CaseSpectacle::NumeroObjet).map(|n| n.to_uppercase())
+    /// Le numero d'objet d'un spectacle a creer. L'import l'y pose d'un `NumeroObjetSpectacle` (une AEM, un bulletin) : un
+    /// texte qui ne se lit pas en numero d'objet est une faute du logiciel, qui se dit.
+    pub fn numero_objet(&self) -> socle::echec::R<Option<droit::fiche::NumeroObjetSpectacle>> {
+        self.donnees.mot(droit::fiche::CaseSpectacle::NumeroObjet).map(|n| droit::fiche::NumeroObjetSpectacle::lire(&n)).transpose()
     }
 
     /// La fiche s'ecrit-elle : a creer, ou existante avec des cases a completer.

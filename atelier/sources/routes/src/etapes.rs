@@ -18,7 +18,7 @@
 //! la fiche d'un spectacle (son titre), le dossier d'un contrat signe ailleurs (`gestes::signature`), le journal des
 //! ecritures (`compagnie::pieces_ecrites`) et un mois importe (`import::mois`).
 
-use droit::fiche::Lue as _;
+use droit::fiche::{Lue as _, Nic};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use engagement::calcul::Paie;
 use droit::contexte::{Contexte, IdSalarie};
 use droit::echeances::Echeance;
+use droit::natures::NumeroDOrdre;
 use socle::date::Jour;
 use socle::mois::{Graphie, Mois};
 use socle::paris::{InstantOuJour, Moment};
@@ -382,9 +383,9 @@ fn declarer_embauches(mois: Mois) -> Action {
 
 /// La DSN du mois a ecrire, ou a reecrire : l'apercu du depot (qui l'ecrit), puis le depot, dont le test part des
 /// qu'elle est ecrite (`tester`).
-pub(crate) fn deposer_dsn(mois: Mois, nic: Option<&str>, libelle: String) -> Action {
+pub(crate) fn deposer_dsn(mois: Mois, nic: Option<&Nic>, libelle: String) -> Action {
     let mut charge = Designation::du_mois(Quoi::Dsn, mois);
-    charge.etablissement = nic.map(String::from);
+    charge.etablissement = nic.cloned();
     Action { tester: true, ..action(Route::DepotApercu, charge, Some(Route::Deposer), libelle) }
 }
 
@@ -729,11 +730,11 @@ fn point_de<P: Copy + PartialEq>(c: &Colonne, points: &[Point], ligne: fn(&Point
 // ------------------------------------------------------------ petits outils
 
 /// Le nom d'un etablissement dans une case : sa commune (celle de la fiche entreprise pour le principal), sinon son NIC.
-fn nom_de_l_etablissement(ent: &droit::fiche::ChampsEntreprise, nic: &str) -> String {
+fn nom_de_l_etablissement(ent: &droit::fiche::ChampsEntreprise, nic: &Nic) -> String {
     let commune = if Some(nic) == ent.nic_principal() {
         ent.commune_affichage.remplie().or(ent.commune.portee()).map(|c| c.trim().to_string())
     } else {
-        ent.secondaires().into_iter().find(|e| e.nic.portee() == Some(nic)).and_then(|e| e.commune_affichage.remplie().or(e.commune.portee()).map(|c| c.trim().to_string()))
+        ent.secondaires().into_iter().find(|e| e.nic.dite() == Some(nic)).and_then(|e| e.commune_affichage.remplie().or(e.commune.portee()).map(|c| c.trim().to_string()))
     };
     match commune {
         Some(c) => c,
@@ -819,16 +820,16 @@ pub(crate) fn debut_declare(refaire: &[ARefaire]) -> Option<Jour> {
 /// L'etablissement (NIC) dont releve l'engagement `e` : celui de la fiche de son salarie, ou celui que l'engagement dit
 /// (`etablissement`) ; aucun pour une carte qui ne nomme pas encore son salarie. Une fiche qui manque, un etablissement
 /// qui ne se rattache pas, se refusent.
-pub(crate) fn nic_de_l_engagement(ctx: &Contexte, e: &engagement::etats::Etat) -> R<Option<String>> {
+pub(crate) fn nic_de_l_engagement(ctx: &Contexte, e: &engagement::etats::Etat) -> R<Option<Nic>> {
     nic_de_l_engagement_ecrit(ctx, &e.objet().brut)
 }
 
 /// `nic_de_l_engagement`, sur l'engagement tel qu'il est ecrit.
-pub(crate) fn nic_de_l_engagement_ecrit(ctx: &Contexte, brut: &engagement::stock::Ecrit) -> R<Option<String>> {
+pub(crate) fn nic_de_l_engagement_ecrit(ctx: &Contexte, brut: &engagement::stock::Ecrit) -> R<Option<Nic>> {
     let Some(cle) = brut.saisie.carte.salarie.as_ref() else { return Ok(None) };
     let mut fiche = droit::fiche::SalarieDuContrat::de(ctx.fiche_de(cle).map_err(|m| m.reclasser(Classe::Manque))?);
-    if let Some(n) = brut.saisie.carte.etablissement.as_deref().filter(|n| !n.trim().is_empty()) {
-        fiche.etablissement = Some(n.to_string());
+    if let Some(n) = &brut.saisie.carte.etablissement {
+        fiche.etablissement = Some(n.clone());
     }
     Ok(Some(droit::bareme::etablissement_de(&ctx.entreprise, &fiche)?))
 }
@@ -851,12 +852,12 @@ fn emportes_a_refaire(
     refaire: &mut dyn FnMut(&engagement::etats::Etat) -> R<Rc<Vec<ARefaire>>>,
 ) -> R<bool> {
     let nic = match derniere.etablissement() {
-        Some(n) => n.to_string(),
-        None => ctx.entreprise.nic.ecrite("nic")?.to_string(),
+        Some(n) => n.clone(),
+        None => ctx.entreprise.nic.exigee("nic")?.clone(),
     };
     let mut siens: Vec<&engagement::etats::Etat> = Vec::new();
     for e in etats {
-        if nic_de_l_engagement(ctx, e)?.as_deref() == Some(nic.as_str()) {
+        if nic_de_l_engagement(ctx, e)?.as_ref() == Some(&nic) {
             siens.push(e);
         }
     }
@@ -888,7 +889,7 @@ pub(crate) struct Portee(Mois, String, Option<NumeroContrat>, u64);
 /// Ce dont l'empreinte d'une saisie qui porte des corrections se calcule (`Moteur::empreinte_saisie_avec`).
 #[derive(Serialize)]
 struct SaisieEtCorrections<'a> {
-    saisie: &'a str,
+    saisie: &'a Empreinte,
     corrections: &'a [Portee],
 }
 
@@ -905,17 +906,15 @@ struct SaisieEtCorrections<'a> {
 ///   le moteur les a produits (`ordre_signalements`, cahier technique DSN 2026.1 p. 136), et chacun part a son tour.
 /// - Les DPAE : la plus recemment produite d'abord, lue dans son nom (`DPAE_<Mois>_<AAAAMMJJ-HHMM>.txt` apres
 ///   `DPAE_<Mois>.txt` : l'ordre inverse des noms).
-/// Une DSN qui ne se lit pas, ou dont le numero d'ordre n'est pas un nombre, se refuse.
+/// Une DSN qui ne se lit pas se refuse ; un numero d'ordre hors de sa forme, la lecture de la DSN le laisse vide.
 pub(crate) fn ordre_de_depot(nom: &str, chemin: &Path) -> R<OrdreDeDepot> {
     use std::cmp::Reverse;
     if !a_l_extension(nom, ".dsn") {
         return Ok((0, None, String::new(), Reverse(None), Reverse(nom.to_string())));
     }
     let apercu = declarations::dsn_lue::lire(&crate::depots::lire_octets(&chemin.to_string_lossy())?, Some(&NomDeFichier::du(chemin)?))?;
-    let lu = match apercu.ordre.as_deref().map(str::trim) {
-        Some(t) => Some(t.parse::<i64>().map_err(|e| socle::echec::a_la_cle("Le numéro d'ordre d'une DSN écrite ne se lit pas.", "S20.G00.05.004", e).reclasser(Classe::Illisible))?),
-        None => None,
-    };
+    // Au plus quinze chiffres (S20.G00.05.004) : le rang tient dans la cle de rangement sans perte.
+    let lu = apercu.ordre.map(|o| o.valeur() as i64);
     if apercu.est_signalement() {
         return Ok((1, lu, nom.to_string(), Reverse(None), Reverse(String::new())));
     }
@@ -1156,7 +1155,7 @@ pub(crate) struct Vue {
     numero: Option<NumeroContrat>,
     debut: Option<Jour>,
     fin: Option<Jour>,
-    etablissement: Option<String>,
+    etablissement: Option<Nic>,
     echeances: Option<Echeances>,
     valide: Option<Moment>,
     recalcul: Option<String>,
@@ -1202,7 +1201,7 @@ struct LigneDePage<'a> {
     nom: Option<&'a str>,
     spectacle: Option<&'a str>,
     nature: Option<&'a str>,
-    numero: Option<&'a str>,
+    numero: Option<&'a engagement::numeros::NumeroContrat>,
     debut: Option<Jour>,
     fin: Option<Jour>,
     #[serde(with = "socle::paris::ecrit::seconde::option")]
@@ -1251,7 +1250,7 @@ impl<'a> LigneDePage<'a> {
             nom: v.nom.as_deref(),
             spectacle: v.spectacle.as_deref(),
             nature: v.libelle_nature.as_deref(),
-            numero: v.numero.as_deref(),
+            numero: v.numero.as_ref(),
             debut: v.debut,
             fin: v.fin,
             valide: v.valide,
@@ -1382,8 +1381,10 @@ impl Deposables {
 pub(crate) struct Remplacement {
     mois: Mois,
     pub(crate) deposee: bool,
-    pub(crate) dernier_ordre: Option<i64>,
-    prochain_ordre: i64,
+    #[serde(with = "droit::natures::en_nombre::option")]
+    pub(crate) dernier_ordre: Option<NumeroDOrdre>,
+    #[serde(with = "droit::natures::en_nombre")]
+    prochain_ordre: NumeroDOrdre,
     pub(crate) limite: Jour,
     admis: bool,
     saisie_modifiee: Option<bool>,
@@ -1440,8 +1441,8 @@ impl<'a> Moteur<'a> {
 
     /// Le NIC de l'etablissement principal, s'il est dit : une compagnie neuve ne l'a pas encore, et n'a que lui (la DSN,
     /// elle, l'exige : « Pour demarrer » le demande).
-    fn nic(&self) -> Option<String> {
-        self.ctx.entreprise.nic_principal().map(str::to_string)
+    fn nic(&self) -> Option<Nic> {
+        self.ctx.entreprise.nic_principal().cloned()
     }
 
     // ------------------------------------------------------ la saisie du mois
@@ -1461,7 +1462,7 @@ impl<'a> Moteur<'a> {
     fn a_refaire_du_mois(&mut self, mois: Mois, e: &engagement::etats::Etat, departs: &engagement::departs::Departs) -> R<Rc<Vec<ARefaire>>> {
         let carte = &e.objet().brut.saisie.carte;
         // Rien n'est parti d'un engagement en saisie : rien n'est a refaire.
-        let (Some(_), Some(salarie), Some(numero)) = (e.valide(), carte.salarie.as_ref(), carte.numero.as_deref().filter(|n| !n.is_empty())) else {
+        let (Some(_), Some(salarie), Some(numero)) = (e.valide(), carte.salarie.as_ref(), carte.numero.as_deref()) else {
             return Ok(Rc::new(Vec::new()));
         };
         let cle = (mois, salarie.to_string(), numero.to_string());
@@ -1576,7 +1577,7 @@ impl<'a> Moteur<'a> {
             } else {
                 let code_emploi = p.engagement.code_emploi_ft.as_ref().or(sal.code_emploi_ft.dite());
                 let ent = &self.ctx.entreprise;
-                let remise = droit::echeances::remise_du_contrat(&p.engagement.debut, ent.idcc.portee(), code_emploi, ent.feries_chomes())?;
+                let remise = droit::echeances::remise_du_contrat(&p.engagement.debut, ent.idcc.dite(), code_emploi, ent.feries_chomes())?;
                 Some(Echeances { dpae: droit::echeances::dpae(&p.engagement.debut), contrat: remise })
             };
             // RECALCULEE D'ELLE-MEME (`engagement::etats::du_mois`) : pourquoi, et quand.
@@ -1586,7 +1587,7 @@ impl<'a> Moteur<'a> {
             };
             let recalcul = recalcul.as_ref().and_then(engagement::etats::phrase_du_recalcul);
             // REPRIS D'UN ANCIEN LOGICIEL : la carte le dit (`engagement::importe::vient_d_un_ancien_logiciel`).
-            let repris = engagement::importe::vient_d_un_ancien_logiciel(&self.ctx.racine, &p.engagement.salarie, p.engagement.debut, p.engagement.numero.as_deref())?;
+            let repris = engagement::importe::vient_d_un_ancien_logiciel(&self.ctx.racine, &p.engagement.salarie, p.engagement.debut, p.engagement.numero.as_ref())?;
             // SIGNE AILLEURS : son contrat ecrit ne se fait pas signer ici, ses avenants si (`engagement::signe_ailleurs`).
             let ailleurs = engagement::signe_ailleurs(&self.ctx.racine, &p.engagement)?;
             // ECRIT : le contrat de cet engagement se fait signer ici (`engagement::contrat_a_signer`).
@@ -1810,7 +1811,7 @@ impl<'a> Moteur<'a> {
         let vue = engagement::etats::empreinte_des_paies_validees(self.ctx, mois, None)?;
         let portees = portees()?;
         if portees.is_empty() {
-            return Ok(Some(Empreinte::lire(&vue)?.courte()));
+            return Ok(Some(vue.courte()));
         }
         let ecrite = socle::ecriture::json_trie(&SaisieEtCorrections { saisie: &vue, corrections: &portees });
         Ok(Some(Empreinte::des_octets(ecrite.as_bytes()).courte()))
@@ -1845,12 +1846,12 @@ impl<'a> Moteur<'a> {
     }
 
     /// Le plus haut ordre porte par ces depots reels du mois (`depots_reels`) ; `None` s'il n'y en a pas.
-    pub(crate) fn dernier_ordre(&self, mois: Mois, faits: &[envois::journal::Ligne]) -> R<Option<i64>> {
-        Ok(faits.iter().map(|l| self.ordre_de_la_ligne(mois, l)).collect::<R<Vec<i64>>>()?.into_iter().max())
+    pub(crate) fn dernier_ordre(&self, mois: Mois, faits: &[envois::journal::Ligne]) -> R<Option<NumeroDOrdre>> {
+        Ok(faits.iter().map(|l| self.ordre_de_la_ligne(mois, l)).collect::<R<Vec<NumeroDOrdre>>>()?.into_iter().max())
     }
 
     /// Le rang d'un depot reel du journal : l'ordre que sa ligne porte (S20.G00.05.004 du fichier parti, noté au depot).
-    pub(crate) fn ordre_de_la_ligne(&self, mois: Mois, l: &envois::journal::Ligne) -> R<i64> {
+    pub(crate) fn ordre_de_la_ligne(&self, mois: Mois, l: &envois::journal::Ligne) -> R<NumeroDOrdre> {
         let refus = || Echec {
             a_part: Some(socle::echec::Lieu { fichier: Some(envois::journal::DEPOTS.to_string()), cle: Some("ordre".to_string()), ..Default::default() }.into()),
             ..erreur(
@@ -1858,17 +1859,16 @@ impl<'a> Moteur<'a> {
                 format!("Un dépôt réel de la DSN de {} ne porte pas son ordre (S20.G00.05.004) dans le journal des envois : le rang d'un annule-et-remplace ne se devine pas ; le signaler au développeur.", mois),
             )
         };
-        let Some(t) = l.dsn().and_then(|e| e.detail.ordre.as_deref()) else { return Err(refus()) };
-        t.trim().parse::<i64>().map_err(|_| refus())
+        l.dsn().and_then(|e| e.detail.ordre).ok_or_else(refus)
     }
 
     /// `depots_reels` : les depots REELS de DSN mensuelle du mois que la
     /// plate-forme a pris et qu'aucun bilan n'a refuses (les lignes du journal des envois, telles qu'elles sont).
-    pub(crate) fn depots_reels(&mut self, mois: Mois, nic: Option<&str>) -> R<Vec<envois::journal::Ligne>> {
+    pub(crate) fn depots_reels(&mut self, mois: Mois, nic: Option<&Nic>) -> R<Vec<envois::journal::Ligne>> {
         let lignes = self.lignes()?;
         let reels = envois::journal::filtrer(&lignes, Some(envois::journal::Acte::Dsn), Some(mois), true);
         let mut out = Vec::new();
-        for l in etats::de_l_etablissement(reels, nic, self.nic().as_deref()) {
+        for l in etats::de_l_etablissement(reels, nic, self.nic().as_ref()) {
             if !l.accepte() || l.signalement() || etats::refuse_par_un_retour(l) {
                 continue;
             }
@@ -1889,7 +1889,7 @@ impl<'a> Moteur<'a> {
     /// Ou en est le mois vis-a-vis de
     /// l'annule-et-remplace.
     /// `nic` : l'etablissement dont on parle (`Null` : le principal).
-    pub(crate) fn etat_remplacement(&mut self, le_mois: Mois, nic: Option<&str>) -> R<Remplacement> {
+    pub(crate) fn etat_remplacement(&mut self, le_mois: Mois, nic: Option<&Nic>) -> R<Remplacement> {
         let faits = self.depots_reels(le_mois, nic)?;
         let lim = self.limite(le_mois)?;
         let mois = le_mois;
@@ -1898,7 +1898,7 @@ impl<'a> Moteur<'a> {
             mois: le_mois,
             deposee: !faits.is_empty(),
             dernier_ordre: None,
-            prochain_ordre: 1,
+            prochain_ordre: NumeroDOrdre::PREMIER,
             limite: lim,
             admis,
             saisie_modifiee: None,
@@ -1911,7 +1911,7 @@ impl<'a> Moteur<'a> {
             return Ok(out);
         };
         out.dernier_ordre = Some(dernier);
-        out.prochain_ordre = dernier + 1;
+        out.prochain_ordre = dernier.plus(1)?;
         // Ce que la DSN a emporte, compare au present des engagements du mois (`dsn_a_refaire`).
         let mut modifiee = false;
         if derniere.versions().is_some() {
@@ -1928,11 +1928,11 @@ impl<'a> Moteur<'a> {
         } else {
             let departs = self.departs()?;
             let plusieurs = !self.ctx.entreprise_du_mois(le_mois).secondaires().is_empty();
-            let voulu = nic.map(str::to_string).or_else(|| self.nic());
+            let voulu = nic.cloned().or_else(|| self.nic());
             let mut n = 0;
             for e in self.etats_du_mois(le_mois)? {
                 let Some(v) = e.valide() else { continue };
-                if plusieurs && nic_de_l_engagement(self.ctx, &e)?.as_deref() != voulu.as_deref() {
+                if plusieurs && nic_de_l_engagement(self.ctx, &e)? != voulu {
                     continue;
                 }
                 if engagement::etats::correction_due(self.ctx, v, &departs, le_mois, None)?.is_some() {
@@ -1967,7 +1967,7 @@ impl<'a> Moteur<'a> {
                 );
             }
         } else if admis {
-            out.phrase = format!("Une modification reste possible : la DSN refaite partira en annule-et-remplace (ordre {}), jusqu'au {} à minuit", dernier + 1, jour);
+            out.phrase = format!("Une modification reste possible : la DSN refaite partira en annule-et-remplace (ordre {}), jusqu'au {} à minuit", out.prochain_ordre, jour);
         }
         Ok(out)
     }
@@ -1978,7 +1978,7 @@ impl<'a> Moteur<'a> {
         use compagnie::pieces_ecrites::{piece_notee, EmpreinteNotee};
         let note = piece_notee(self.racine(), fichier)?;
         if let Some((n, EmpreinteNotee::Saisie(notee))) = note.as_ref().and_then(|n| Some((n, n.empreinte_saisie.as_ref()?))) {
-            if self.empreinte_saisie(le_mois)?.as_ref().map(EmpreinteCourte::texte) != Some(notee.as_str()) {
+            if self.empreinte_saisie(le_mois)?.as_ref() != Some(notee) {
                 return Ok(Some(format!("l'engagement a changé depuis que ce fichier a été écrit (le {})", n.quand.dit())));
             }
             return Ok(None);
@@ -1995,7 +1995,7 @@ impl<'a> Moteur<'a> {
     /// paie changee), le fichier, et ce qu'un test refuse a dit ; `None` sans fichier a deposer, ou s'il est deja parti.
     /// `nic` : pour la DSN d'une compagnie a plusieurs etablissements, celle de cet etablissement (son en-tete,
     /// S21.G00.11.001) ; aucun : le premier fichier, quel qu'il soit.
-    fn chemin_de_depot(&mut self, le_mois: Mois, quoi: &str, nic: Option<&str>) -> R<Option<(&'static str, Deposable, Option<String>)>> {
+    fn chemin_de_depot(&mut self, le_mois: Mois, quoi: &str, nic: Option<&Nic>) -> R<Option<(&'static str, Deposable, Option<String>)>> {
         // « Ecrite » pour une DSN : le meme critere que l'horloge, l'accueil et les rappels (`depart::mois_ecrit`,
         // la DSN mensuelle notee au journal des ecritures), pas un fichier pose dans `sorties/<mois>/`. Un mois passe lu a
         // l'ouverture (`ecrit`) ne demande que ce qui reste, pas le geste qui l'ouvre.
@@ -2039,11 +2039,11 @@ impl<'a> Moteur<'a> {
 
     /// LE GESTE d'une case orange qui depose (DPAE, DSN), une fois sa declaration ecrite : la charge du depot qui la
     /// designe (`depots::designee` : le mois, l'etablissement, les embauches que le fichier ecrit declare) ; sinon `defaut`.
-    fn action_de_depot(&mut self, le_mois: Mois, quoi: &str, nic: Option<&str>, defaut: Option<Action>) -> R<(Option<Action>, Option<String>)> {
+    fn action_de_depot(&mut self, le_mois: Mois, quoi: &str, nic: Option<&Nic>, defaut: Option<Action>) -> R<(Option<Action>, Option<String>)> {
         let Some((etape, fichier, refus)) = self.chemin_de_depot(le_mois, quoi, nic)? else { return Ok((defaut, None)) };
         let mut charge = Designation::du_mois(if quoi == DSN { Quoi::Dsn } else { Quoi::Dpae }, le_mois);
         if quoi == DSN {
-            charge.etablissement = nic.map(String::from);
+            charge.etablissement = nic.cloned();
         }
         if quoi == DPAE {
             let a = crate::depots::apercu_depot_dpae(self.ctx, &fichier.chemin.to_string_lossy())?;
@@ -2117,7 +2117,7 @@ impl<'a> Moteur<'a> {
         // carte qui ne nomme pas encore son salarie, dans une compagnie de plusieurs etablissements, n'en a pas : sa DSN
         // est a completer. Un etablissement qui n'est pas de la compagnie se refuse.
         let classe_de = |p: &Vue| -> R<Option<usize>> {
-            match (p.etablissement.as_deref(), classes.len()) {
+            match (p.etablissement.as_ref(), classes.len()) {
                 (_, 1) => Ok(Some(0)),
                 (None, _) => Ok(None),
                 (Some(nic), _) => match classes.iter().position(|(nics, _)| nics.iter().any(|n| n == nic)) {
@@ -2267,15 +2267,15 @@ impl<'a> Moteur<'a> {
     /// forment une classe, une case ; quand ils ne sont pas tous au meme point, la case d'une classe qui n'est pas faite
     /// nomme ses etablissements (« Lyon refusée · l'éditeur est prévenu »). Rend les classes (leurs NIC, leur case), le
     /// principal dans la premiere.
-    fn groupes_dsn(&mut self, mois: Mois) -> R<Vec<(Vec<String>, Groupe)>> {
+    fn groupes_dsn(&mut self, mois: Mois) -> R<Vec<(Vec<Nic>, Groupe)>> {
         let ent = self.ctx.entreprise_du_mois(mois);
         if ent.secondaires().is_empty() {
             let g = self.groupes_dsn_de(mois, None)?;
             // Une fiche qui ne dit pas encore son NIC n'a que son siege : sa classe ne le nomme pas.
-            return Ok(vec![(ent.nic_principal().map(str::to_string).into_iter().collect(), g)]);
+            return Ok(vec![(ent.nic_principal().cloned().into_iter().collect(), g)]);
         }
         let point = |g: &Groupe| (g.etat, g.phrase.clone(), g.echeance.as_ref().map(|e| e.jour));
-        let mut classes: Vec<(Vec<String>, Groupe)> = Vec::new();
+        let mut classes: Vec<(Vec<Nic>, Groupe)> = Vec::new();
         for nic in ent.nics()? {
             let g = self.groupes_dsn_de(mois, Some(&nic))?;
             match classes.iter_mut().find(|(_, x)| point(x) == point(&g)) {
@@ -2301,7 +2301,7 @@ impl<'a> Moteur<'a> {
     /// § 1.4.2, `atelier/reference/norme-dsn/texte/chapitre-1-la-norme.txt` : le depot initial va jusqu'au jour de
     /// l'echeance a midi, l'annule-et-remplace jusqu'a la veille a minuit). INFERENCE : un depot refuse n'ouvre pas
     /// l'annule-et-remplace, puisqu'il n'y a rien a annuler ; l'echeance de la reprise est celle du depot initial.
-    fn groupes_dsn_de(&mut self, le_mois: Mois, nic: Option<&str>) -> R<Groupe> {
+    fn groupes_dsn_de(&mut self, le_mois: Mois, nic: Option<&Nic>) -> R<Groupe> {
         let echeance = declarations::echeance_dsn::de_la_compagnie(self.ctx, le_mois).map_err(|m| m.reclasser(Classe::Illisible))?;
         let au_depot = echeance_dsn(echeance.jour, "à midi", "Cahier technique DSN 2026.1, § 1.4.2 ; CSS R. 243-6 et R. 133-14 (declarations::echeance_dsn)");
         let e = compagnie::etat_dsn::du_mois(self.ctx, le_mois, nic)?;
@@ -2361,10 +2361,10 @@ impl<'a> Moteur<'a> {
     /// correction est un évènement connu après la date de clôture de la paie. Il donne lieu à la déclaration d'une
     /// correction dans la DSN suivante » ; `produire_regularisations::regularisations_pour`). Sinon, rien n'est a faire.
     /// Ne lit que ce qui est ecrit.
-    fn dsn_a_declarer(&mut self, le_mois: Mois, nic: Option<&str>) -> R<bool> {
+    fn dsn_a_declarer(&mut self, le_mois: Mois, nic: Option<&Nic>) -> R<bool> {
         let plusieurs = !self.ctx.entreprise_du_mois(le_mois).secondaires().is_empty();
-        let voulu = nic.map(str::to_string).or_else(|| self.nic());
-        let de_l_etablissement = |ctx: &Contexte, brut: &engagement::stock::Ecrit| -> R<bool> { Ok(!plusieurs || nic_de_l_engagement_ecrit(ctx, brut)?.as_deref() == voulu.as_deref()) };
+        let voulu = nic.cloned().or_else(|| self.nic());
+        let de_l_etablissement = |ctx: &Contexte, brut: &engagement::stock::Ecrit| -> R<bool> { Ok(!plusieurs || nic_de_l_engagement_ecrit(ctx, brut)? == voulu) };
         for e in self.etats_du_mois(le_mois)? {
             if e.valide().is_some() && de_l_etablissement(self.ctx, &e.objet().brut)? {
                 return Ok(true);
@@ -2976,8 +2976,8 @@ fn empreinte_de_l_embauche(e: &engagement::Engagement, sal: &droit::fiche::Champ
     struct Embauche<'a> {
         debut: Jour,
         fin: Option<Jour>,
-        spectacle: Option<String>,
-        nir: Option<&'a str>,
+        spectacle: Option<&'a droit::contexte::IdSpectacle>,
+        nir: Option<&'a droit::fiche::Nir>,
         nom: Option<&'a str>,
         prenom: Option<&'a str>,
         date_naissance: Option<Jour>,
@@ -2989,8 +2989,8 @@ fn empreinte_de_l_embauche(e: &engagement::Engagement, sal: &droit::fiche::Champ
     let embauche = Embauche {
         debut: e.debut,
         fin: e.fin,
-        spectacle: e.spectacle.as_ref().map(|s| s.to_string()),
-        nir: sal.nir.portee(),
+        spectacle: e.spectacle.as_ref(),
+        nir: sal.nir.dite(),
         nom: sal.nom.portee(),
         prenom: sal.prenom.portee(),
         date_naissance: sal.date_naissance.dite().copied(),

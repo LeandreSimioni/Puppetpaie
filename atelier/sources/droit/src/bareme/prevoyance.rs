@@ -6,7 +6,7 @@
 use super::{alsace_moselle, deux_virgule, nom_du_salarie, rond, ChampsEntreprise, Decimal, Jour, Mutuelle, SalarieDuContrat};
 use socle::echec::R;
 use crate::assiette::Assiette;
-use crate::fiche::{ExtensionT2, Lue};
+use crate::fiche::{ExtensionT2, Idcc, Lue};
 use crate::natures::AuMois;
 use socle::echec::Lieu;
 use socle::fichiers::{forme_en_cache, FormeGardee};
@@ -23,7 +23,7 @@ forme! {
     pub struct Catalogue {
         pub obligation_cadre: ObligationCadre,
         #[serde(deserialize_with = "socle::forme::en_ordre")]
-        pub conventions: Vec<(String, Regime)>,
+        pub conventions: Vec<(Idcc, Regime)>,
     }
 }
 
@@ -182,13 +182,13 @@ pub fn catalogue() -> R<Arc<Catalogue>> {
 
 impl Catalogue {
     /// Le regime de la convention `idcc`, s'il est releve.
-    pub fn regime(&self, idcc: &str) -> Option<&Regime> {
+    pub fn regime(&self, idcc: &Idcc) -> Option<&Regime> {
         self.conventions.iter().find(|(k, _)| k == idcc).map(|(_, r)| r)
     }
 }
 
 /// Le financement du paritarisme de la convention `idcc` (le FCAP-SVP de la 3090), si elle en a un.
-pub fn financement(idcc: &str) -> R<Option<Financement>> {
+pub fn financement(idcc: &Idcc) -> R<Option<Financement>> {
     Ok(catalogue()?.regime(idcc).and_then(|r| r.financement_paritarisme.clone()))
 }
 
@@ -200,14 +200,14 @@ fn derniere<'a>(table: &'a Datees, jour: Option<&Jour>) -> Option<(&'a Jour, Dec
 /// La convention a-t-elle un regime de sante a elle ?
 pub fn a_un_regime_de_sante(ent: &ChampsEntreprise) -> R<bool> {
     let c = catalogue()?;
-    Ok(ent.idcc.portee().and_then(|i| c.regime(i)).is_some_and(|r| r.sante.is_some()))
+    Ok(ent.idcc.dite().and_then(|i| c.regime(i)).is_some_and(|r| r.sante.is_some()))
 }
 
 /// La complementaire sante que la CONVENTION fixe, quand elle en fixe une ; `None` si la convention n'a pas de section
 /// `sante`.
 pub(crate) fn sante_conventionnelle(ent: &ChampsEntreprise, sal: &SalarieDuContrat, au_mois: &AuMois, fin: Option<&Jour>) -> R<Option<Mutuelle>> {
     let c = catalogue()?;
-    let Some(idcc) = ent.idcc.portee() else { return Ok(None) };
+    let Some(idcc) = ent.idcc.dite() else { return Ok(None) };
     let Some(sante) = c.regime(idcc).and_then(|r| r.sante.as_ref()) else { return Ok(None) };
     if super::sans_sante(sal, au_mois) {
         return Ok(Some(Mutuelle::Sans));
@@ -258,7 +258,7 @@ charge de l'employeur (XII.2.1.11), et pas plus de 100.",
 /// `super::minimum_sante`.
 pub fn minimum_sante(ent: &ChampsEntreprise, jour: Option<&Jour>) -> R<Option<(Decimal, String)>> {
     let c = catalogue()?;
-    let Some(m) = ent.idcc.portee().and_then(|i| c.regime(i)).and_then(|r| r.sante_minimum.as_ref()) else { return Ok(None) };
+    let Some(m) = ent.idcc.dite().and_then(|i| c.regime(i)).and_then(|r| r.sante_minimum.as_ref()) else { return Ok(None) };
     let annexe = ent.annexe_convention.code();
     let (table, qui) = match annexe.and_then(|n| m.annexes.as_ref().and_then(|a| a.get(n)).map(|t| (n, t))) {
         Some((n, t)) => (t, format!("annexe {}", n)),
@@ -273,11 +273,10 @@ fn pcf(x: Decimal) -> String {
 
 /// Le regime conventionnel de cette convention collective ; refuse quand la convention n'est pas relevee ou pas
 /// confirmee.
-pub fn regime(idcc: &str) -> R<Regime> {
+pub fn regime(idcc: &Idcc) -> R<Regime> {
     let c = catalogue()?;
-    let idcc = idcc.trim();
-    let Some(reg) = c.regime(idcc).filter(|_| !idcc.is_empty()) else {
-        let connues: Vec<&str> = c.conventions.iter().map(|(k, _)| k.as_str()).collect();
+    let Some(reg) = c.regime(idcc) else {
+        let connues: Vec<&str> = c.conventions.iter().map(|(k, _)| k.as_ref()).collect();
         return Err(socle::echec::refus_avec(
             "La prévoyance des permanents de cette convention collective n'est pas relevée : le signaler au développeur.",
             Lieu {
@@ -293,7 +292,7 @@ conventionnelle-base.json avec sa source.\n  \
 Tant qu'il manque, le moteur refuse de payer un permanent : une \
 prevoyance oubliee ne se voit pas sur un bulletin, elle se \
 decouvre le jour ou le salarie en a besoin.",
-                    if idcc.is_empty() { "(non renseignee dans config/entreprise.json)" } else { idcc },
+                    idcc,
                     if connues.is_empty() { "aucune".to_string() } else { connues.join(", ") }
                 )),
                 ..Lieu::default()
@@ -488,7 +487,7 @@ fn part_t2(b: &Bloc) -> Decimal {
 
 /// Ce qu'un permanent cotise en prevoyance ce mois-la.
 pub fn cotisation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: Option<&Jour>, entreprise: &ChampsEntreprise) -> R<Cotisation> {
-    let idcc = entreprise.idcc.ecrite("idcc")?;
+    let idcc = entreprise.idcc.exigee("idcc")?;
     let reg = a_la_date(regime(idcc)?, fin);
     let ent = entreprise.permanent.ouvrir(au_mois).prevoyance_permanents.dite();
     let contrat = ent.is_some_and(|p| p.regime.est_dite());
@@ -634,7 +633,7 @@ pub fn affiliation(sal: &SalarieDuContrat, au_mois: &AuMois, cadre: bool, fin: &
         Cotisation::SansRegime | Cotisation::PasDue => return Ok(A::NonAffilie),
         Cotisation::Due { .. } => {}
     }
-    let reg = a_la_date(regime(entreprise.idcc.ecrite("idcc")?)?, Some(fin));
+    let reg = a_la_date(regime(entreprise.idcc.exigee("idcc")?)?, Some(fin));
     let seuil = seuil(&reg, cadre);
     if seuil <= 0 {
         return Ok(A::DesLEmbauche);

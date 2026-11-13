@@ -70,7 +70,7 @@ pub(crate) fn regle_du_mois_incomplet(
 ) -> R<droit::periodes::RegleDuMoisIncomplet> {
     let fiche = ctx.fiche_de(salarie)?;
     let statut = crate::calcul::statut_de(&fiche)?;
-    Ok(droit::periodes::regle_du_mois_incomplet(ctx.entreprise.idcc.portee(), statut, debut > debut_mois || fin < fin_mois))
+    Ok(droit::periodes::regle_du_mois_incomplet(ctx.entreprise.idcc.dite(), statut, debut > debut_mois || fin < fin_mois))
 }
 
 /// L'horaire de `salarie` pour le mois [`debut_mois`, `fin_mois`] (`droit::periodes::Horaire`) : ses jours travailles,
@@ -271,7 +271,7 @@ fn lue(ctx: &Contexte, mois: Mois, p: &Paie) -> R<PaieLue> {
     let mensuel = if eng.nat()?.mensuelle() {
         let mut arret = false;
         for imp in crate::imprevus::du_mois_du_salarie(&ctx.racine, mois, None, cle)? {
-            arret |= crate::imprevus::est_un_arret(&imp) && crate::imprevus::du_contrat(&imp, cle, eng.numero.as_deref(), &eng.debut)?;
+            arret |= crate::imprevus::est_un_arret(&imp) && crate::imprevus::du_contrat(&imp, cle, eng.numero.as_ref(), &eng.debut)?;
         }
         Some(MoisPaye {
             debut: eng.debut_periode(),
@@ -392,7 +392,8 @@ pub(crate) fn avant_le_mois(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie
     }
     let cle = cle_de_fiche(ctx, cle_salarie)?;
     let mensuels = mensuels_d_avant(ctx, mois, &cle)?;
-    socle::fichiers::noter_valeur(&socle::fichiers::LectureDatee::Mensuels { mois, salarie: &cle }.cle(), empreinte_des(&mensuels));
+    let lecture = droit::contexte::CleLue::Datee(socle::fichiers::LectureDatee::Mensuels { mois, salarie: cle.clone() });
+    socle::fichiers::noter_lecture(&lecture, socle::fichiers::ValeurLue::Empreinte(empreinte_des(&mensuels)));
     let lus = if mensuels.is_empty() { Lus::Aucun } else { Lus::Avant(mois) };
     compteur(ctx, au, cle_salarie, a_la_date, lus)
 }
@@ -433,12 +434,12 @@ fn mensuels_d_avant(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Vec<String
     Ok(out)
 }
 
-fn empreinte_des(mensuels: &[String]) -> String {
-    socle::fichiers::Empreinte::des_octets(mensuels.join(";").as_bytes()).to_string()
+fn empreinte_des(mensuels: &[String]) -> socle::fichiers::Empreinte {
+    socle::fichiers::Empreinte::des_octets(mensuels.join(";").as_bytes())
 }
 
 /// L'empreinte des contrats payes au mois du salarie `cle` commences avant `mois` (`mensuels_d_avant`).
-pub(crate) fn empreinte_des_mensuels_d_avant(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<String> {
+pub(crate) fn empreinte_des_mensuels_d_avant(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<socle::fichiers::Empreinte> {
     Ok(empreinte_des(&mensuels_d_avant(ctx, mois, cle)?))
 }
 
@@ -488,7 +489,7 @@ impl Tenue {
             let non_acquis = crate::imprevus::jours_de_conges_non_acquis(
                 &ctx.racine,
                 cle,
-                m.numero.as_deref(),
+                m.numero.as_ref(),
                 &m.contrat_debut,
                 &p_debut,
                 &p_fin,
@@ -963,7 +964,7 @@ pub(crate) fn compteur_au_bulletin(ctx: &Contexte, au: &AuMois, paie: &Paie, moi
     if p_fin >= p_debut {
         let cle_fiche = cle_de_fiche(ctx, cle)?;
         let non_acquis =
-            crate::imprevus::jours_de_conges_non_acquis(&ctx.racine, &cle_fiche, eng.numero.as_deref(), &eng.debut, &p_debut, &p_fin)?;
+            crate::imprevus::jours_de_conges_non_acquis(&ctx.racine, &cle_fiche, eng.numero.as_ref(), &eng.debut, &p_debut, &p_fin)?;
         cpt.acquis = plafonner(add(cpt.acquis, sub(jours_acquis(&p_debut, &p_fin)?, non_acquis).max(Decimal::ZERO)))?;
     }
     cpt.pris += conges_pris_de_la_paie(&ctx.racine, paie)?;
@@ -1182,7 +1183,7 @@ pub(crate) fn lignes_du_mois(ctx: &Contexte, e: &Carte, mois: Mois) -> R<(Vec<Li
     }
     let ent = &ctx.entreprise;
     let jauge = |cle: &droit::minima::ParLaGrille| ent.metier.ouvrir(&(*cle, *au)).jauge_annexe_1.dite().map(droit::fiche::Choix::code);
-    let pa = clauses::prime_anciennete(ent.idcc.portee(), ent.annexe_convention.code(), &fiche, &crate::solde::dit_par_l_engagement(e)?, &fin_mois, jauge)?;
+    let pa = clauses::prime_anciennete(ent.idcc.dite(), ent.annexe_convention.code(), &fiche, &crate::solde::dit_par_l_engagement(e)?, &fin_mois, jauge)?;
     if let Some(pa) = pa {
         let Some(base_conv) = pa.base.map(|b| socle::num::dec_texte(&b.to_string())).transpose()? else {
             return Err(socle::refus!("{} : prime d'anciennete ({}) -- {}.", qui(ctx, e), pa.article, pa.pourquoi.into_iter().collect::<String>()));

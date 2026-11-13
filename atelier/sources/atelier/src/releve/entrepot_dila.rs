@@ -43,6 +43,86 @@ pub const ETAT: &str = "etat.json";
 
 use socle::echec::{refus, R};
 
+// ------------------------------------------------------------------ l'identifiant d'un texte
+
+/// Les familles d'identifiants que nous suivons : un texte de LEGI (`LEGITEXT`), un article de LEGI (`LEGIARTI`), un texte,
+/// un article et un conteneur (une convention) de KALI (`KALITEXT`, `KALIARTI`, `KALICONT`), un texte du JORF non codifie
+/// (`JORFTEXT`).
+const FAMILLES_DILA: [&str; 6] = ["LEGITEXT", "LEGIARTI", "KALITEXT", "KALIARTI", "KALICONT", "JORFTEXT"];
+
+/// L'IDENTIFIANT D'UN TEXTE DE LA DILA (LEGI, KALI, JORF) : sa famille (`FAMILLES_DILA`) et douze chiffres
+/// (« KALICONT000028157262 », « LEGITEXT000006072050 »), tel que les bases et `sources.json` l'ecrivent. Il s'ecrit et se
+/// trie comme son texte ; un identifiant que l'atelier ecrit en Rust est une constante (`du_moteur`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct IdDila(std::borrow::Cow<'static, str>);
+
+impl IdDila {
+    /// L'identifiant `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<IdDila> {
+        let (famille, chiffres) = match texte.char_indices().nth(8) {
+            Some((i, _)) => texte.split_at(i),
+            None => (texte, ""),
+        };
+        if FAMILLES_DILA.contains(&famille) && chiffres.len() == 12 && chiffres.bytes().all(|b| b.is_ascii_digit()) {
+            Ok(IdDila(std::borrow::Cow::Owned(texte.to_string())))
+        } else {
+            Err(refus(format!(
+                "« {} » n'est pas un identifiant de la DILA : {} et douze chiffres.",
+                texte,
+                FAMILLES_DILA.join(", ")
+            )))
+        }
+    }
+
+    /// UN IDENTIFIANT QUE L'ATELIER NOMME, ecrit en Rust : le compilateur refuse un texte qui n'en a pas la forme.
+    pub const fn du_moteur(texte: &'static str) -> IdDila {
+        let o = texte.as_bytes();
+        assert!(o.len() == 20, "un identifiant de la DILA a vingt signes");
+        let mut f = 0;
+        let mut connue = false;
+        while f < FAMILLES_DILA.len() {
+            let p = FAMILLES_DILA[f].as_bytes();
+            let mut i = 0;
+            let mut pareil = true;
+            while i < 8 {
+                if p[i] != o[i] {
+                    pareil = false;
+                }
+                i += 1;
+            }
+            if pareil {
+                connue = true;
+            }
+            f += 1;
+        }
+        assert!(connue, "un identifiant de la DILA commence par sa famille");
+        let mut i = 8;
+        while i < 20 {
+            assert!(o[i].is_ascii_digit(), "un identifiant de la DILA finit par douze chiffres");
+            i += 1;
+        }
+        IdDila(std::borrow::Cow::Borrowed(texte))
+    }
+
+    /// Son texte.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for IdDila {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for IdDila {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        IdDila::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
 // ------------------------------------------------------------------ l'entrepot
 
 /// Le separateur des parties d'une cle d'article (`("impots", "1724")`, `("3090", "KALIARTI...")`) dans la cle de la table :

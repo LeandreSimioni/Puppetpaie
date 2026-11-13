@@ -1,6 +1,7 @@
 //! Configuration › Métiers : les metiers que la compagnie coche, ceux de sa convention et ceux qu'elle prend aux autres.
 
 use droit::fiche::Lue as _;
+use droit::fiche::Idcc;
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
@@ -108,20 +109,20 @@ impl MetiersAjoutes {
 
     /// Ce metier est-il dans le deroulant de cette compagnie ? Ceux de sa convention le sont d'office ; elle en ajoute
     /// d'une autre, elle en retire des siens (Configuration > Metiers).
-    fn visible(&self, m: &MetierDuDeroulant, idcc: Option<&str>) -> bool {
+    fn visible(&self, m: &MetierDuDeroulant, idcc: Option<&Idcc>) -> bool {
         !self.retires.contains(&m.code) && (de_la_convention(m, idcc) || self.codes.contains(&m.code))
     }
 }
 
 /// Le metier est-il de la convention `idcc` ? Sans IDCC (une compagnie qui s'installe), ou sans convention dite, rien ne
 /// se cache.
-fn de_la_convention(m: &MetierDuDeroulant, idcc: Option<&str>) -> bool {
+fn de_la_convention(m: &MetierDuDeroulant, idcc: Option<&Idcc>) -> bool {
     m.conventions.is_empty() || idcc.is_none_or(|i| m.conventions.iter().any(|c| c == i))
 }
 
 /// Les conventions d'un metier en mots : « Spectacle vivant privé (3090) » quand `idcc` est dit.
 /// Une convention que le catalogue cite sans la nommer est un defaut de la donnee livree.
-fn conventions_dites(m: &MetierDuDeroulant, noms: &BTreeMap<String, String>, avec_l_idcc: bool) -> R<String> {
+fn conventions_dites(m: &MetierDuDeroulant, noms: &BTreeMap<Idcc, String>, avec_l_idcc: bool) -> R<String> {
     let dites = m
         .conventions
         .iter()
@@ -144,7 +145,7 @@ fn rang_des_familles(familles: &[String]) -> HashMap<String, usize> {
 pub(crate) fn metiers(ctx: &Contexte) -> R<Vec<MetierDuDeroulant>> {
     let ordre = rang_des_familles(&emplois::familles()?);
     let retenus = MetiersAjoutes::lire(&ctx.racine)?;
-    let idcc = ctx.entreprise.idcc.portee();
+    let idcc = ctx.entreprise.idcc.dite();
     let mut liste: Vec<MetierDuDeroulant> = emplois::catalogue(idcc)?.into_iter().filter(|m| retenus.visible(m, idcc)).collect();
     // Chaque famille du catalogue a son rang (`emplois::familles`).
     liste.sort_by_cached_key(|m| (ordre.get(&m.famille).copied(), m.libelle.to_lowercase()));
@@ -163,7 +164,7 @@ pub(crate) struct MetierAutre {
 pub(crate) fn metiers_autres_conventions(ctx: &Contexte) -> R<Vec<MetierAutre>> {
     let noms = emplois::noms_des_conventions()?;
     let retenus = MetiersAjoutes::lire(&ctx.racine)?;
-    let idcc = ctx.entreprise.idcc.portee();
+    let idcc = ctx.entreprise.idcc.dite();
     let mut out: Vec<MetierAutre> =
         emplois::catalogue(idcc)?.into_iter().filter(|m| !retenus.visible(m, idcc)).map(|m| Ok(MetierAutre { de: conventions_dites(&m, &noms, true)?, metier: m })).collect::<R<_>>()?;
     out.sort_by(|a, b| (&a.de, a.metier.libelle.to_lowercase()).cmp(&(&b.de, b.metier.libelle.to_lowercase())));
@@ -195,7 +196,7 @@ fn metiers_catalogue(ctx: &Contexte) -> R<MetiersDuCatalogue> {
     let ordre = rang_des_familles(&familles);
     let noms = emplois::noms_des_conventions()?;
     let retenus = MetiersAjoutes::lire(&ctx.racine)?;
-    let idcc = ctx.entreprise.idcc.portee();
+    let idcc = ctx.entreprise.idcc.dite();
     let mut metiers: Vec<MetierDeLOnglet> = emplois::catalogue(idcc)?
         .into_iter()
         .map(|m| {
@@ -231,7 +232,7 @@ struct EmploisRendus {
 }
 
 fn metier_retenu(ctx: &Contexte, c: MetierARetenir) -> R<EmploisRendus> {
-    let idcc = ctx.entreprise.idcc.portee();
+    let idcc = ctx.entreprise.idcc.dite();
     let catalogue = emplois::catalogue(idcc)?;
     let Some(m) = catalogue.iter().find(|m| m.code == c.code) else {
         return Err(refus(format!("Metier hors catalogue : {}.", c.code)));

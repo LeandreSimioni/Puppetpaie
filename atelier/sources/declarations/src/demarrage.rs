@@ -382,7 +382,7 @@ pub fn manques(ctx: &Contexte) -> R<Vec<Manque>> {
     // refuse tant que la fiche ne repond pas (`calcul::sante_de_la_suspension`). Elle ne se demande que si une suspension
     // non remuneree est saisie : un champ n'apparait que parce qu'un fait l'exige.
     let dite = |cle: &droit::natures::AuMois| ent.permanent.ouvrir(cle).sante_suspension_non_indemnisee.est_dite();
-    if ent.idcc.portee() != Some("3090") && une_suspension_non_remuneree(ctx)?.is_some_and(|cle| !dite(&cle)) {
+    if ent.idcc.dite() != Some(&droit::fiche::IDCC_3090) && une_suspension_non_remuneree(ctx)?.is_some_and(|cle| !dite(&cle)) {
         let cle = droit::bareme::SANTE_SUSPENSION;
         let (libelle, aide) = champ(cle)?;
         out.push(manque_de_la_case(cle, libelle, "le mois d'un permanent suspendu sans indemnisation tout le mois", aide)?);

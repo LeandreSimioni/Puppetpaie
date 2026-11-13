@@ -335,7 +335,7 @@ struct CotisationLue {
 }
 
 fn verifier_nir(nir: &str, ou: &str) -> R<()> {
-    let ok = nir.len() == 15 && nir.is_ascii() && declarations::champs::cle_nir(&nir[..13]).as_deref() == Some(&nir[13..]);
+    let ok = nir.is_ascii() && matches!(droit::fiche::Nir::et_sa_cle(nir), Some((treize, Some(cle))) if declarations::champs::cle_nir(treize).as_deref() == Some(cle));
     if ok {
         Ok(())
     } else {

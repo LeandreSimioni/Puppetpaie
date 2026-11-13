@@ -28,6 +28,107 @@ use socle::echec::{refus, R};
 use crate::ligne::{LigneDonnee, LignePaie};
 use crate::saisie::{Carte, Champ, CongePris, Groupe, Preavis, Prime, Valeur};
 
+/// UN MODELE DE CONTRAT PROPRE A LA COMPAGNIE, qu'une carte choisit (`modele_contrat`) : `m` et un entier, l'id que la
+/// compagnie lui donne a sa creation (`routes::modeles_contrat`, son seul ecrivain, par `de`), garde tel qu'ecrit ; aucun
+/// choisi : le defaut de sa nature. Un autre texte se refuse a la lecture.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct IdDeModele {
+    texte: String,
+    numero: u32,
+}
+
+impl IdDeModele {
+    /// Le numero de l'id `texte`, s'il a la forme d'un id (`m` et un entier).
+    fn numero_de(texte: &str) -> Option<u32> {
+        match texte.strip_prefix('m').map(str::parse::<u32>) {
+            Some(Ok(numero)) => Some(numero),
+            Some(Err(_)) | None => None,
+        }
+    }
+
+    /// L'id `texte` qu'un fichier ecrit (les modeles, une carte), ou ce qui le refuse.
+    pub fn lire(texte: &str) -> R<IdDeModele> {
+        match IdDeModele::numero_de(texte) {
+            Some(numero) => Ok(IdDeModele { texte: texte.to_string(), numero }),
+            None => Err(refus(format!("Le modèle de contrat « {} » a un identifiant mal formé : le corriger dans le fichier des modèles.", texte))),
+        }
+    }
+
+    /// L'id `texte` que nomme la charge d'une route (`id_de_la_charge`), ou ce qui le refuse : la phrase d'un modele
+    /// qu'on ne connait pas, qui dit ou le choisir.
+    pub fn de_la_charge(texte: &str) -> R<IdDeModele> {
+        match IdDeModele::numero_de(texte) {
+            Some(numero) => Ok(IdDeModele { texte: texte.to_string(), numero }),
+            None => Err(IdDeModele::aucun(texte)),
+        }
+    }
+
+    /// Le refus d'un modele `id` qu'on ne connait pas, qui dit ou le choisir : la seule phrase, que la charge et la
+    /// recherche dans les modeles disent.
+    pub fn aucun(id: impl std::fmt::Display) -> socle::echec::Echec {
+        refus(format!("Aucun modèle de contrat {} : en choisir un de la liste (modeles-contrat).", id))
+    }
+
+    /// L'id du modele de numero `numero`.
+    pub fn de(numero: u32) -> IdDeModele {
+        IdDeModele { texte: format!("m{}", numero), numero }
+    }
+
+    /// Son numero.
+    pub fn numero(&self) -> u32 {
+        self.numero
+    }
+
+    /// L'id tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.texte
+    }
+}
+
+impl std::fmt::Display for IdDeModele {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.texte)
+    }
+}
+
+impl TryFrom<String> for IdDeModele {
+    type Error = socle::echec::Echec;
+    fn try_from(s: String) -> R<IdDeModele> {
+        IdDeModele::lire(&s)
+    }
+}
+
+/// LA LECTURE D'UN ID DANS LA CHARGE D'UNE ROUTE (`#[serde(deserialize_with = "engagement::carte::id_de_la_charge::deserialize")]`) :
+/// un id mal forme s'y refuse par la phrase d'une charge (`IdDeModele::de_la_charge`), pas par celle du fichier.
+pub mod id_de_la_charge {
+    use super::IdDeModele;
+    use serde::Deserialize;
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<IdDeModele, D::Error> {
+        IdDeModele::de_la_charge(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+
+    /// Un id facultatif (`#[serde(default, deserialize_with = "…::option::deserialize")]`) : absent ou nul, aucun.
+    pub mod option {
+        use super::IdDeModele;
+        use serde::Deserialize;
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<IdDeModele>, D::Error> {
+            match Option::<String>::deserialize(d)? {
+                Some(t) => IdDeModele::de_la_charge(&t).map(Some).map_err(|e| serde::de::Error::custom(e.phrase)),
+                None => Ok(None),
+            }
+        }
+    }
+}
+
+impl From<IdDeModele> for String {
+    fn from(i: IdDeModele) -> String {
+        i.texte
+    }
+}
+
 /// Ce qu'une case de la carte est pour sa nature.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -124,7 +225,7 @@ nature! {
             debut: Jour = Debut,
             fin: Jour = Fin,
             numero: crate::numeros::NumeroContrat = Numero,
-            etablissement: String = Etablissement,
+            etablissement: droit::fiche::Nic = Etablissement,
             metier: droit::emplois::CodeEmploi = Metier,
             cadre: bool = Cadre,
             lieu: String = Lieu,
@@ -136,7 +237,7 @@ nature! {
             statut_categoriel_rc: droit::fiche::StatutCategorielRc = StatutCategorielRc,
             periode_essai_jours: NombreLu = PeriodeEssaiJours,
             clauses_particulieres: String = ClausesParticulieres,
-            modele_contrat: String = ModeleContrat,
+            modele_contrat: IdDeModele = ModeleContrat,
             primes: Vec<Prime> = Primes,
             date_paiement: Jour = DatePaiement,
             jours: NombreLu = Jours,
@@ -172,7 +273,7 @@ nature! {
         facultatif {
             fin: Jour = Fin,
             numero: crate::numeros::NumeroContrat = Numero,
-            etablissement: String = Etablissement,
+            etablissement: droit::fiche::Nic = Etablissement,
             metier: droit::emplois::CodeEmploi = Metier,
             cadre: bool = Cadre,
             lieu: String = Lieu,
@@ -187,7 +288,7 @@ nature! {
             periode_essai_jours: NombreLu = PeriodeEssaiJours,
             repartition_horaire: String = RepartitionHoraire,
             clauses_particulieres: String = ClausesParticulieres,
-            modele_contrat: String = ModeleContrat,
+            modele_contrat: IdDeModele = ModeleContrat,
             lignes: Vec<LignePaie> = Lignes,
             conges_pris: Vec<CongePris> = CongesPris,
             primes: Vec<Prime> = Primes,
@@ -229,7 +330,7 @@ nature! {
         }
         facultatif {
             numero: crate::numeros::NumeroContrat = Numero,
-            etablissement: String = Etablissement,
+            etablissement: droit::fiche::Nic = Etablissement,
             metier: droit::emplois::CodeEmploi = Metier,
             cadre: bool = Cadre,
             lieu: String = Lieu,
@@ -244,7 +345,7 @@ nature! {
             periode_essai_jours: NombreLu = PeriodeEssaiJours,
             repartition_horaire: String = RepartitionHoraire,
             clauses_particulieres: String = ClausesParticulieres,
-            modele_contrat: String = ModeleContrat,
+            modele_contrat: IdDeModele = ModeleContrat,
             lignes: Vec<LignePaie> = Lignes,
             conges_pris: Vec<CongePris> = CongesPris,
             primes: Vec<Prime> = Primes,
@@ -538,12 +639,12 @@ impl Brouillon {
 /// arrivent telles que l'appelant les donne (`L` : `LigneDonnee`), et se rangent a la porte (`Changement::ranger`) avant
 /// d'etre posees (`LignePaie`).
 macro_rules! changements {
-    ( $( $v:ident ( $t:ty ) = $cle:tt => $champ:ident ),* $(,)? ) => {
+    ( $( $(#[$va:meta])* $v:ident ( $t:ty ) = $cle:tt => $champ:ident ),* $(,)? ) => {
         /// UN CHANGEMENT D'UNE CASE DU BROUILLON : `{"case": "salarie", "valeur": "FULLER"}` ; `{"case": "nature",
         /// "valeur": "cdi"}` change sa nature, qui ne se vide jamais.
         #[derive(Debug, Clone, PartialEq, Deserialize)]
         #[serde(tag = "case", content = "valeur", deny_unknown_fields)]
-        pub enum Changement<L = LignePaie, N = IdSalarie, P = IdSpectacle> {
+        pub enum Changement<L = LignePaie, N = IdSalarie, P = IdSpectacle, M = IdDeModele> {
             #[serde(rename = "nature")]
             Nature(NatureDeContrat),
             #[serde(rename = "salarie")]
@@ -552,10 +653,13 @@ macro_rules! changements {
             Spectacle(Option<P>),
             #[serde(rename = "lignes")]
             Lignes(Option<Vec<L>>),
-            $( #[serde(rename = $cle)] $v(Option<$t>), )*
+            /// Le modele que la carte choisit.
+            #[serde(rename = "modele_contrat")]
+            ModeleContrat(Option<M>),
+            $( $(#[$va])* #[serde(rename = $cle)] $v(Option<$t>), )*
         }
 
-        impl<L, N, P> Changement<L, N, P> {
+        impl<L, N, P, M> Changement<L, N, P, M> {
             /// La case qu'il change.
             pub fn champ(&self) -> Champ {
                 match self {
@@ -563,14 +667,16 @@ macro_rules! changements {
                     Changement::Salarie(_) => Champ::Salarie,
                     Changement::Spectacle(_) => Champ::Spectacle,
                     Changement::Lignes(_) => Champ::Lignes,
+                    Changement::ModeleContrat(_) => Champ::ModeleContrat,
                     $( Changement::$v(_) => Champ::$v, )*
                 }
             }
         }
 
-        impl Changement<LigneDonnee, String, String> {
+        impl Changement<LigneDonnee, String, String, String> {
             /// Ses lignes rangees (`ranger`, `ligne::ranger`), le salarie et le spectacle qu'il nomme retrouves
-            /// (`salarie`, `spectacle`) ; une autre case telle quelle.
+            /// (`salarie`, `spectacle`), l'id du modele qu'il choisit lu (un id mal forme s'y refuse par la phrase d'une
+            /// charge, `IdDeModele::de_la_charge`) ; une autre case telle quelle.
             pub fn ranger(
                 self,
                 ranger: &dyn Fn(Vec<LigneDonnee>) -> R<Vec<LignePaie>>,
@@ -582,6 +688,7 @@ macro_rules! changements {
                     Changement::Salarie(x) => Changement::Salarie(x.map(|nom| salarie(&nom)).transpose()?),
                     Changement::Spectacle(x) => Changement::Spectacle(x.map(|nom| spectacle(&nom)).transpose()?),
                     Changement::Lignes(l) => Changement::Lignes(l.map(ranger).transpose()?),
+                    Changement::ModeleContrat(x) => Changement::ModeleContrat(x.map(|id| IdDeModele::de_la_charge(&id)).transpose()?),
                     $( Changement::$v(x) => Changement::$v(x), )*
                 })
             }
@@ -595,6 +702,7 @@ macro_rules! changements {
                     Changement::Salarie(x) => c.salarie = x,
                     Changement::Spectacle(x) => c.spectacle = x,
                     Changement::Lignes(x) => c.lignes = x,
+                    Changement::ModeleContrat(x) => c.modele_contrat = x,
                     $( Changement::$v(x) => c.$champ = x, )*
                 }
             }
@@ -606,7 +714,7 @@ changements! {
     Debut(Jour) = "debut" => debut,
     Fin(Jour) = "fin" => fin,
     Numero(crate::numeros::NumeroContrat) = "numero" => numero,
-    Etablissement(String) = "etablissement" => etablissement,
+    Etablissement(droit::fiche::Nic) = "etablissement" => etablissement,
     Metier(droit::emplois::CodeEmploi) = "metier" => metier,
     Cadre(bool) = "cadre" => cadre,
     Lieu(String) = "lieu" => lieu,
@@ -625,7 +733,6 @@ changements! {
     PersonneRemplacee(String) = "personne_remplacee" => personne_remplacee,
     RepartitionHoraire(String) = "repartition_horaire" => repartition_horaire,
     ClausesParticulieres(String) = "clauses_particulieres" => clauses_particulieres,
-    ModeleContrat(String) = "modele_contrat" => modele_contrat,
     CongesPris(Vec<CongePris>) = "conges_pris" => conges_pris,
     Primes(Vec<Prime>) = "primes" => primes,
     DatePaiement(Jour) = "date_paiement" => date_paiement,
@@ -654,11 +761,11 @@ changements! {
 /// appliques dans l'ordre, tout ou rien. La page en envoie ce qui a change depuis sa derniere ecriture (une case, le plus
 /// souvent) ; un appelant en ligne de commande, toutes les cases d'une carte d'un coup.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Changements(Vec<Changement<LigneDonnee, String, String>>);
+pub struct Changements(Vec<Changement<LigneDonnee, String, String, String>>);
 
 impl<'de> Deserialize<'de> for Changements {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Changements, D::Error> {
-        let v = Vec::<Changement<LigneDonnee, String, String>>::deserialize(d)?;
+        let v = Vec::<Changement<LigneDonnee, String, String, String>>::deserialize(d)?;
         if v.is_empty() {
             return Err(serde::de::Error::custom("`changements` : au moins un changement, {\"case\": …, \"valeur\": …}"));
         }

@@ -23,7 +23,9 @@ use serde::{Deserialize, Serialize};
 use socle::fichiers::Empreinte;
 use socle::garde_reseau::Url;
 
+use crate::releve::entrepot_dila::IdDila;
 use crate::releve::kali::{self, Evenement, Rapport, Suivi};
+use droit::fiche::Idcc;
 use crate::EnOrdre;
 use socle::date::Jour;
 use socle::echec::{refus, R};
@@ -67,8 +69,8 @@ pub struct Source {
     pub verification_comment: Option<String>,
     pub nourrit: Vec<String>,
     pub page_de_veille: Option<Url>,
-    pub en_vigueur: Option<String>,
-    pub etendu_le: Option<String>,
+    pub en_vigueur: Option<Jour>,
+    pub etendu_le: Option<Jour>,
     pub kali: Option<KaliSuivi>,
     /// Ou la version se lit, la page, l'article, l'adresse open data, l'encodage : des notes pour le lecteur, que la
     /// veille ne lit pas.
@@ -96,9 +98,9 @@ pub enum Verification {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KaliSuivi {
-    pub idcc: String,
-    pub conteneur: String,
-    pub texte: String,
+    pub idcc: Idcc,
+    pub conteneur: IdDila,
+    pub texte: IdDila,
 }
 
 /// Une convention a relever : son titre, son conteneur KALI.
@@ -107,7 +109,7 @@ pub struct KaliSuivi {
 pub struct ARelever {
     #[serde(rename = "titre")]
     _titre: String,
-    pub conteneur: String,
+    pub conteneur: IdDila,
 }
 
 /// Le manifeste livre (`donnees/sources.json`, a cote des autres referentiels).
@@ -138,9 +140,9 @@ pub enum EnLigne {
 #[derive(Debug, Clone, Serialize)]
 pub struct Extra {
     #[serde(skip_serializing_if = "Option::is_none")]
-    en_vigueur: Option<String>,
+    en_vigueur: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    etendu_le: Option<String>,
+    etendu_le: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     verification_comment: Option<String>,
 }
@@ -335,14 +337,14 @@ fn veiller_kali(d: &Path, liste: &[EtatSource], relever: bool, tele: &mut kali::
     let mut depuis: Option<Jour> = None;
     for e in liste {
         let Some(k) = &e.kali else { continue };
-        let i = match suivis.iter().position(|s| s.conteneur == k.conteneur) {
+        let i = match suivis.iter().position(|s| s.conteneur == k.conteneur.texte()) {
             Some(i) => i,
             None => {
-                suivis.push(Suivi { conteneur: k.conteneur.clone(), idcc: k.idcc.clone(), textes: Vec::new() });
+                suivis.push(Suivi { conteneur: k.conteneur.texte().to_string(), idcc: k.idcc.clone(), textes: Vec::new() });
                 suivis.len() - 1
             }
         };
-        suivis[i].textes.push(k.texte.clone());
+        suivis[i].textes.push(k.texte.texte().to_string());
         depuis = Some(match depuis {
             Some(j) => j.min(e.releve),
             None => e.releve,
@@ -365,7 +367,7 @@ fn etat_kali(e: &mut EtatSource, rapport: &R<Rapport>) {
     };
     let Some(k) = e.kali.clone() else { return };
     let depuis = e.releve_le.clone();
-    let evts: Vec<Evenement> = rapport.evenements.valeur(&k.conteneur).into_iter().flatten().filter(|x| x.livraison() > depuis.as_str()).cloned().collect();
+    let evts: Vec<Evenement> = rapport.evenements.valeur(k.conteneur.texte()).into_iter().flatten().filter(|x| x.livraison() > e.releve).cloned().collect();
     let lues = rapport.livraisons_lues.iter().filter(|j| **j > depuis).count();
     let ou = format!("IDCC {}, {} livraison(s) KALI lue(s) depuis le {}", k.idcc, lues, depuis);
     let (mut forts, mut faibles) = (Vec::new(), Vec::new());
@@ -376,15 +378,15 @@ fn etat_kali(e: &mut EtatSource, rapport: &R<Rapport>) {
                 let mut sal: Vec<&String> = titres.iter().copied().filter(|t| parle_salaires(t)).collect();
                 sal.sort();
                 if !sal.is_empty() {
-                    forts.push(format!("{} : texte(s) nouveau(x) attache(s) a la convention -- {}", c.livraison, sal.iter().map(|t| t.as_str()).collect::<Vec<_>>().join(" ; ")));
+                    forts.push(format!("{} : texte(s) nouveau(x) attache(s) a la convention -- {}", c.livraison.iso(), sal.iter().map(|t| t.as_str()).collect::<Vec<_>>().join(" ; ")));
                 }
                 let mut autres: Vec<&String> = titres.iter().copied().filter(|t| !parle_salaires(t)).collect();
                 autres.sort();
                 if !autres.is_empty() {
-                    faibles.push(format!("{} : {} texte(s) nouveau(x) -- {}", c.livraison, autres.len(), autres.iter().map(|t| t.as_str()).collect::<Vec<_>>().join(" ; ")));
+                    faibles.push(format!("{} : {} texte(s) nouveau(x) -- {}", c.livraison.iso(), autres.len(), autres.iter().map(|t| t.as_str()).collect::<Vec<_>>().join(" ; ")));
                 }
                 if c.premiere {
-                    faibles.push(format!("{} : {}", c.livraison, c.titre));
+                    faibles.push(format!("{} : {}", c.livraison.iso(), c.titre));
                 }
             }
             Evenement::Texte(t) => {
@@ -399,8 +401,8 @@ fn etat_kali(e: &mut EtatSource, rapport: &R<Rapport>) {
                     dit.push(x.clone());
                 }
                 let titre = t.texte.titre.as_ref().map(|titre| format!(" -- {}", titre)).into_iter().collect::<String>();
-                let ligne = format!("{} : texte {} modifie{} ({})", t.livraison, t.ident, titre, dit.join(", "));
-                if t.ident == k.texte || t.texte.titre.as_deref().is_some_and(parle_salaires) {
+                let ligne = format!("{} : texte {} modifie{} ({})", t.livraison.iso(), t.ident, titre, dit.join(", "));
+                if t.ident == k.texte.texte() || t.texte.titre.as_deref().is_some_and(parle_salaires) {
                     forts.push(ligne);
                 } else {
                     faibles.push(ligne);
@@ -422,8 +424,8 @@ fn etat_kali(e: &mut EtatSource, rapport: &R<Rapport>) {
         e.en_ligne = Some(EnLigne::Inchangee);
         format!("{} : rien ne touche la convention", ou)
     };
-    match rapport.amorces.valeur(&k.conteneur) {
-        Some(am) => detail.push_str(&format!(" (liste de reference : {} textes, fiche du {})", am.textes, am.livraison)),
+    match rapport.amorces.valeur(k.conteneur.texte()) {
+        Some(am) => detail.push_str(&format!(" (liste de reference : {} textes, fiche du {})", am.textes, am.livraison.iso())),
         None => detail.push_str(" (ATTENTION : aucune fiche de la convention trouvee dans l'index, seul le texte cite par le manifeste est suivi)"),
     }
     if let Some(t) = &rapport.trou {

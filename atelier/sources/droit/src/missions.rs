@@ -36,10 +36,74 @@ use crate::source::forme_notee;
 /// Le dossier des tables, sous les donnees livrees.
 const DOSSIER: &str = "missions";
 
+/// UN LIEU DE LA TABLE DES INDEMNITES DE MISSION A L'ETRANGER : un pays, ou une ville que la table distingue de son pays,
+/// par son code (`code_pays` de `indemnites.csv` et de `change.csv`, les clés de `villes.json`) : deux lettres capitales,
+/// le code ISO d'un pays (« AO »), ou un code propre a une ville (« NY », New York : `villes.json`, « quoi »). Il s'ecrit
+/// et se trie comme son texte (la cle `mission <lieu> <jour>` d'une empreinte de paie).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Deserialize)]
+#[serde(try_from = "String")]
+pub struct LieuDeMission(String);
+
+impl LieuDeMission {
+    /// Le code `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<LieuDeMission> {
+        if texte.len() == 2 && texte.bytes().all(|b| b.is_ascii_uppercase()) {
+            Ok(LieuDeMission(texte.to_string()))
+        } else {
+            Err(socle::refus!("« {} » n'est pas un lieu de la table des indemnités de mission : deux lettres capitales (code_pays).", texte))
+        }
+    }
+
+    /// Son code, tel que la table l'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for LieuDeMission {
+    type Error = socle::echec::Echec;
+    fn try_from(texte: String) -> R<LieuDeMission> {
+        LieuDeMission::lire(&texte)
+    }
+}
+
+impl std::fmt::Display for LieuDeMission {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// LA MONNAIE D'UNE INDEMNITE DE MISSION, par son code (`code_monnaie` de `indemnites.csv`, `monnaie_source` de
+/// `change.csv`) : trois lettres capitales (« EUR », « USD », « XOF »). Il s'ecrit comme son texte.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CodeMonnaie(String);
+
+impl CodeMonnaie {
+    /// Le code `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<CodeMonnaie> {
+        if texte.len() == 3 && texte.bytes().all(|b| b.is_ascii_uppercase()) {
+            Ok(CodeMonnaie(texte.to_string()))
+        } else {
+            Err(socle::refus!("« {} » n'est pas un code de monnaie : trois lettres capitales (code_monnaie).", texte))
+        }
+    }
+
+    /// L'euro : son montant se prend tel quel, sans taux de chancellerie.
+    pub fn est_l_euro(&self) -> bool {
+        self.0 == "EUR"
+    }
+}
+
+impl std::fmt::Display for CodeMonnaie {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 forme_notee! {
     /// `missions/villes.json` : les villes que la table des indemnites distingue de leur pays, par leur code.
     pub struct Villes {
-        pub villes: std::collections::BTreeMap<String, Ville>,
+        pub villes: std::collections::BTreeMap<LieuDeMission, Ville>,
     }
 }
 
@@ -48,7 +112,7 @@ forme_notee! {
 #[serde(deny_unknown_fields)]
 pub struct Ville {
     pub nom: String,
-    pub pays: String,
+    pub pays: socle::pays::CodePays,
 }
 
 /// Une ligne datee d'une table : sa date d'effet, et ce qu'elle dit.
@@ -62,11 +126,11 @@ struct Datee<T> {
 #[derive(Debug, Default)]
 struct Tables {
     /// code -> (nom de la table, lignes datees (monnaie, montant)), du plus ancien au plus recent.
-    indemnites: HashMap<String, (String, Vec<Datee<(String, Decimal)>>)>,
+    indemnites: HashMap<LieuDeMission, (String, Vec<Datee<(CodeMonnaie, Decimal)>>)>,
     /// (monnaie, code) -> taux de chancellerie dates.
-    change: HashMap<(String, String), Vec<Datee<Decimal>>>,
+    change: HashMap<(CodeMonnaie, LieuDeMission), Vec<Datee<Decimal>>>,
     /// code de ville -> (nom, pays).
-    villes: HashMap<String, (String, String)>,
+    villes: HashMap<LieuDeMission, (String, socle::pays::CodePays)>,
 }
 
 /// L'indemnite d'un jour, en euros, et d'ou elle vient.
@@ -74,14 +138,14 @@ struct Tables {
 pub struct Indemnite {
     pub euros: Decimal,
     pub montant: Decimal,
-    pub monnaie: String,
+    pub monnaie: CodeMonnaie,
     pub change: Decimal,
 }
 
 impl Indemnite {
     /// Ce que l'empreinte d'une paie retient de l'indemnite d'un jour.
-    pub fn empreinte(&self) -> String {
-        format!("{} {} {} {}", self.euros, self.montant, self.monnaie, self.change)
+    pub fn empreinte(&self) -> socle::fichiers::ValeurLue {
+        socle::fichiers::ValeurLue::Composee(format!("{} {} {} {}", self.euros, self.montant, self.monnaie, self.change))
     }
 }
 
@@ -121,10 +185,12 @@ fn construire_de(indemnites: &str, change: &str, villes: &str) -> R<Tables> {
         let ou = |quoi: &str| socle::echec::livree("missions/indemnites.csv", &format!("ligne {} : {}", n + 2, quoi));
         let cellule = |i: usize, nom: &str| c.get(i).copied().ok_or_else(|| ou(nom));
         let (code, nom, monnaie) = (cellule(c_code, "code_pays")?, cellule(c_nom, "nom_pays")?, cellule(c_monnaie, "code_monnaie")?);
+        let code = LieuDeMission::lire(code).map_err(|e| ou(&format!("code_pays ({})", e.phrase)))?;
+        let monnaie = CodeMonnaie::lire(monnaie).map_err(|e| ou(&format!("code_monnaie ({})", e.phrase)))?;
         let date = Zone::lue(cellule(c_date, "date")?, JourEcrit).valeur().ok_or_else(|| ou("date"))?;
         let montant = socle::num::decimal_a_virgule(cellule(c_montant, "groupe_1")?).ok_or_else(|| ou("groupe_1"))?;
-        let e = t.indemnites.entry(code.to_string()).or_insert_with(|| (String::new(), Vec::new()));
-        e.1.push(Datee { depuis: date, valeur: (monnaie.to_string(), montant) });
+        let e = t.indemnites.entry(code).or_insert_with(|| (String::new(), Vec::new()));
+        e.1.push(Datee { depuis: date, valeur: (monnaie, montant) });
         e.1.sort_by_key(|d| d.depuis);
         if e.1.last().is_some_and(|d| d.depuis == date) {
             e.0 = nom.to_string();
@@ -140,9 +206,11 @@ fn construire_de(indemnites: &str, change: &str, villes: &str) -> R<Tables> {
         let ou = |quoi: &str| socle::echec::livree("missions/change.csv", &format!("ligne {} : {}", n + 2, quoi));
         let cellule = |i: usize, nom: &str| c.get(i).copied().ok_or_else(|| ou(nom));
         let (m, code) = (cellule(c_monnaie, "monnaie_source")?, cellule(c_code, "code_pays")?);
+        let m = CodeMonnaie::lire(m).map_err(|e| ou(&format!("monnaie_source ({})", e.phrase)))?;
+        let code = LieuDeMission::lire(code).map_err(|e| ou(&format!("code_pays ({})", e.phrase)))?;
         let date = Zone::lue(cellule(c_date, "date")?, JourEcrit).valeur().ok_or_else(|| ou("date"))?;
         let taux = socle::num::decimal_a_virgule(cellule(c_taux, "taux")?).ok_or_else(|| ou("taux"))?;
-        let e = t.change.entry((m.to_string(), code.to_string())).or_default();
+        let e = t.change.entry((m, code)).or_default();
         e.push(Datee { depuis: date, valeur: taux });
         e.sort_by_key(|d| d.depuis);
     }
@@ -177,31 +245,35 @@ fn en_vigueur<T: Clone>(lignes: &[Datee<T>], jour: &Jour) -> Option<T> {
 /// L'indemnite journaliere du lieu `code` (un pays, ou une ville que la table distingue) le jour `jour`, en euros
 /// (arrondie au centime). Refus : un lieu que la table ne connait pas, un jour qu'elle ne couvre pas, une monnaie sans
 /// taux de chancellerie a ce jour (rien ne se devine).
-pub fn du_jour(code: &str, jour: &Jour) -> R<Indemnite> {
+pub fn du_jour(code: &LieuDeMission, jour: &Jour) -> R<Indemnite> {
     let t = tables()?;
-    let (nom, lignes) = t.indemnites.get(code).ok_or_else(|| socle::refus!("« {} » n'est pas un lieu de la table des indemnités de mission à l'étranger.", code))?;
+    let (nom, lignes) = t.indemnites.get(code).ok_or_else(|| pas_un_lieu(code.texte()))?;
     let (monnaie, montant) = en_vigueur(lignes, jour).ok_or_else(|| socle::refus!("La table des indemnités de mission ne dit rien pour {} au {}.", nom, jour.jj_mm_aaaa()))?;
-    let change = if monnaie == "EUR" {
+    let change = if monnaie.est_l_euro() {
         Decimal::ONE
     } else {
         t.change
-            .get(&(monnaie.clone(), code.to_string()))
+            .get(&(monnaie.clone(), code.clone()))
             .and_then(|l| en_vigueur(l, jour))
             .ok_or_else(|| socle::refus!("La table des taux de chancellerie ne dit pas le taux de {} pour {} au {} : la limite ne se calcule pas.", monnaie, nom, jour.jj_mm_aaaa()))?
     };
     Ok(Indemnite { euros: socle::num::eur2(montant * change), montant, monnaie, change })
 }
 
+fn pas_un_lieu(code: &str) -> socle::echec::Echec {
+    socle::refus!("« {} » n'est pas un lieu de la table des indemnités de mission à l'étranger.", code)
+}
+
 /// Les lieux a l'etranger que le choix « Lieu » d'une ligne de frais propose : `(code, nom)`, par nom. Un pays se nomme
 /// comme la liste des pays du logiciel (`socle::pays`) ; une ville, par `villes.json`, suivie de son pays. Un code que ni
 /// l'une ni l'autre ne nomme (un Etat disparu, une ligne d'avant 2006) n'est pas propose.
-pub fn lieux() -> R<Vec<(String, String)>> {
+pub fn lieux() -> R<Vec<(LieuDeMission, String)>> {
     let t = tables()?;
     let mut out = Vec::new();
     for code in t.indemnites.keys() {
         let nom = match t.villes.get(code) {
             Some((ville, pays)) => socle::pays::du_code(pays)?.map(|p| format!("{} ({})", ville, p.nom)),
-            None => socle::pays::du_code(code)?.map(|p| p.nom),
+            None => socle::pays::du_code(code.texte())?.map(|p| p.nom),
         };
         if let Some(n) = nom {
             out.push((code.clone(), n));
@@ -212,7 +284,7 @@ pub fn lieux() -> R<Vec<(String, String)>> {
 }
 
 /// Le nom d'un lieu de la table, tel que `lieux` le propose.
-pub fn nom(code: &str) -> R<Option<String>> {
+pub fn nom(code: &LieuDeMission) -> R<Option<String>> {
     Ok(lieux()?.into_iter().find(|(c, _)| c == code).map(|(_, n)| n))
 }
 

@@ -11,6 +11,7 @@
 //! voir `liste_nominative_xlsx`.
 
 use droit::fiche::Lue as _;
+use droit::fiche::Nir;
 use socle::echec::Classe;
 use std::path::Path;
 
@@ -38,7 +39,7 @@ fn refus(m: impl Into<String>) -> socle::echec::Echec {
 struct Versee {
     salarie: droit::fiche::FicheSalarie,
     brut: Decimal,
-    numero: Option<String>,
+    numero: Option<engagement::numeros::NumeroContrat>,
     debut: Option<Jour>,
     fin: Option<Jour>,
     /// Les cachets, heures et jours que le contrat atteste, quand il tient dans le mois.
@@ -66,7 +67,7 @@ fn versees_du_mois(ctx: &Contexte, mois: Mois) -> R<Vec<Versee>> {
                 }
             }
         }
-        let numero = Some(p.paie.contrat.clone()).filter(|n| !n.is_empty() && p.paie.declare_par != engagement::importe::Declaration::Bulletin);
+        let numero = p.paie.contrat.numero_declare().cloned();
         out.push(Versee { salarie, brut, numero, debut, fin, activite });
     }
     Ok(out)
@@ -100,7 +101,7 @@ pub struct SalarieReg {
     pub annee: Annee,
     pub salarie: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nir: Option<String>,
+    pub nir: Option<Nir>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_naissance: Option<Jour>,
     pub adresse: String,
@@ -111,7 +112,7 @@ pub struct SalarieReg {
 #[derive(Serialize)]
 pub struct IndividuReg {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub nir: Option<String>,
+    pub nir: Option<Nir>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nom: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -125,14 +126,14 @@ pub struct IndividuReg {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commune: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub email: Option<String>,
+    pub email: Option<droit::fiche::Courriel>,
 }
 
 /// Le contrat d'une ligne de la liste nominative, tel que l'engagement importe et la fiche le disent.
 #[derive(Serialize)]
 pub struct ContratReg {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub numero: Option<String>,
+    pub numero: Option<engagement::numeros::NumeroContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub debut: Option<Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -237,8 +238,8 @@ pub(crate) fn exemptee_au_mois(ctx: &Contexte, eff: &droit::contexte::Effectif, 
 pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     let base = droit::adhesions::casc_svp_base().map_err(|m| m.reclasser(Classe::Disque))?;
     let ent = &ctx.entreprise;
-    let idcc = ent.idcc.ecrite("idcc").map_err(|e| e.reclasser(Classe::Refuse))?;
-    if idcc != base.idcc {
+    let idcc = ent.idcc.exigee("idcc").map_err(|e| e.reclasser(Classe::Refuse))?;
+    if *idcc != base.idcc {
         return Err(refus(format!(
             "La CASC-SVP est une cotisation de la convention 3090 ; la fiche entreprise dit {}. Il n'y a rien a regulariser.",
             idcc
@@ -318,12 +319,12 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
     }
 
     let mut par_mois: Vec<MoisReg> = vec![];
-    let mut par_salarie: Vec<((Annee, String), SalarieReg)> = vec![];
+    let mut par_salarie: Vec<((Annee, Nir), SalarieReg)> = vec![];
     let mut emplois: Vec<EmploiReg> = vec![];
     for (m, paies) in &lues {
         let source = format!("engagements importes de {}", m);
         let mut masse = Decimal::ZERO;
-        let mut mois_sal: Vec<(String, String, Decimal)> = vec![];
+        let mut mois_sal: Vec<(Nir, String, Decimal)> = vec![];
         let an = annee_de(m);
         for p in paies {
             // Les colonnes de l'etat nomment les cases de la fiche, lue par sa table.
@@ -332,13 +333,13 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
             let champ = |cle: S| fiche.mot(cle);
             let brut = p.brut;
             // La liste nominative se tient par NIR : une fiche sans NIR ne s'y range pas.
-            let nir = champ(S::Nir).ok_or_else(|| refus(format!("{} : la fiche du salarié « {} » n'a pas de NIR ; la liste nominative de la régularisation le demande.", m, p.salarie.id)))?;
+            let nir = p.salarie.champs.nir.dite().cloned().ok_or_else(|| refus(format!("{} : la fiche du salarié « {} » n'a pas de NIR ; la liste nominative de la régularisation le demande.", m, p.salarie.id)))?;
             masse += brut;
             match mois_sal.iter_mut().find(|(n, _, _)| *n == nir) {
                 Some((_, _, t)) => *t += brut,
                 None => mois_sal.push((nir.clone(), match champ(S::Nom) {
                     Some(n) => n,
-                    None => nir.clone(),
+                    None => nir.to_string(),
                 }, brut)),
             }
             let cle = (an, nir.clone());
@@ -362,14 +363,14 @@ pub fn regularisation(ctx: &Contexte, d: &Demande) -> R<Regularisation> {
             };
             par_salarie[pos].1.masse += brut;
             let individu = IndividuReg {
-                nir: champ(S::Nir),
+                nir: p.salarie.champs.nir.dite().cloned(),
                 nom: champ(S::Nom),
                 prenom: champ(S::Prenom),
                 date_naissance: p.salarie.champs.date_naissance.dite().copied(),
                 adresse: champ(S::Adresse),
                 code_postal: champ(S::CodePostal),
                 commune: champ(S::Commune),
-                email: champ(S::Email),
+                email: p.salarie.champs.email.dite().cloned(),
             };
             let contrat = ContratReg { numero: p.numero.clone(), debut: p.debut, fin: p.fin, pcs_ese: p.salarie.champs.pcs_ese.dite().cloned(), emploi: champ(S::Emploi) };
             emplois.push(EmploiReg {
@@ -519,8 +520,8 @@ fn fichier_suivi(ctx: &Contexte) -> std::path::PathBuf {
 }
 
 /// UNE CELLULE DE LA LISTE : ce que la fiche dit ; une case qu'elle ne dit pas reste une cellule vide.
-fn cellule(o: &Option<String>) -> String {
-    o.iter().cloned().collect()
+fn cellule<T: std::fmt::Display>(o: &Option<T>) -> String {
+    o.iter().map(ToString::to_string).collect()
 }
 
 /// Les annees deja notees regularisees, en une phrase : l'annee, le montant vire (en euros s'il se lit en nombre) et le
@@ -652,7 +653,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
     let simple = Style::CLASSEUR;
     let siret = ctx.entreprise.siret.ecrite("siret").map_err(|e| e.reclasser(Classe::Refuse))?.to_string();
     let aujourdhui = droit::contexte::jour_reel().jj_mm_aaaa();
-    let mut cumul: Vec<((Annee, Option<String>), Decimal)> = Vec::new();
+    let mut cumul: Vec<((Annee, Option<Nir>), Decimal)> = Vec::new();
     let texte_de = cellule;
     let coupe = |t: String, n: usize| -> String { t.chars().take(n).collect() };
     let arrondi = |d: Decimal| d.round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero);
@@ -672,7 +673,7 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
                 x.brut
             }
         };
-        let cle_nir = cellule(&nir.as_deref().and_then(declarations::champs::cle_nir).en_texte());
+        let cle_nir = cellule(&nir.as_ref().and_then(droit::fiche::CleNir::du_nir));
         // Une case vide du fichier quand la date n'est pas dite.
         let jj = |j: &Option<Jour>| -> String { j.iter().map(Jour::jj_mm_aaaa).collect() };
         let textes: Vec<(u16, String)> = vec![
@@ -683,11 +684,11 @@ fn liste_nominative_xlsx(ctx: &Contexte, r: &mut Regularisation, dossier: &Path,
             (6, coupe(texte_de(&i.nom), 30)),
             (8, coupe(texte_de(&i.prenom), 32)),
             (9, jj(&i.date_naissance)),
-            (10, format!("{}{}", texte_de(&nir), cle_nir)),
+            (10, format!("{}{}", cellule(&nir), cle_nir)),
             (13, coupe(texte_de(&i.adresse), 32)),
             (15, coupe(texte_de(&i.code_postal), 5)),
             (16, coupe(texte_de(&i.commune), 26)),
-            (19, texte_de(&i.email)),
+            (19, cellule(&i.email)),
             (21, coupe(texte_de(&c.emploi), 34)),
             (22, jj(&x.debut)),
             (23, jj(&x.fin)),

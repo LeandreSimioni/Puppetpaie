@@ -8,6 +8,7 @@ use std::str::FromStr;
 use rust_decimal::prelude::*;
 use serde::Serialize;
 
+use crate::fiche::Statut;
 use crate::forme_bareme::ReductionGenerale as Parametres;
 use socle::echec::R;
 use socle::num::{add, div, eur, mul, nombre, sub, Decimal};
@@ -58,13 +59,13 @@ fn en_nombre<S: serde::Serializer>(x: &Decimal, s: S) -> Result<S::Ok, S::Error>
 /// La reduction generale degressive unique d'un contrat, ou `None` (art. D. 241-7 CSS ; `rg` : la section
 /// `reduction_generale` de la pile).
 pub fn reduction_generale(
-    rg: Option<&Parametres>, statut: Option<&str>, brut: Decimal, heures: Decimal, caisse_conges: bool,
+    rg: Option<&Parametres>, statut: Option<Statut>, brut: Decimal, heures: Decimal, caisse_conges: bool,
 ) -> R<Option<ReductionGenerale>> {
     let Some(rg) = rg else { return Ok(None) };
-    let Some(statut) = statut.filter(|s| !s.is_empty()) else {
+    let Some(statut) = statut else {
         return Err(socle::echec::refus("La fiche du salarié ne dit pas son statut (artiste ou technicien), dont dépend la réduction générale : le remplir."));
     };
-    if !rg.statuts.iter().flatten().any(|s| s == statut) || brut <= Decimal::ZERO || heures <= Decimal::ZERO {
+    if !rg.statuts.iter().flatten().any(|s| *s == statut) || brut <= Decimal::ZERO || heures <= Decimal::ZERO {
         return Ok(None);
     }
     let smic_ref = eur(mul(requis(rg.smic_horaire_reference.map(|n| n.0), "smic_horaire_reference")?, heures));
@@ -130,7 +131,7 @@ fn repartir_la_reduction(rg: &Parametres, coefficient: Decimal, montant: Decimal
 /// exceder, pour ces remunerations, 130 % du montant la reduction calcule sans application du meme abattement. >> La
 /// reduction se calcule donc sur le brut abattu (`abattu`), dans la limite de 130 % de celle du brut entier.
 pub fn reduction_generale_sous_dfs(
-    rg: Option<&Parametres>, statut: Option<&str>, brut: Decimal, abattu: Decimal, heures: Decimal, caisse_conges: bool,
+    rg: Option<&Parametres>, statut: Option<Statut>, brut: Decimal, abattu: Decimal, heures: Decimal, caisse_conges: bool,
 ) -> R<Option<ReductionGenerale>> {
     let Some(apres) = reduction_generale(rg, statut, abattu, heures, caisse_conges)? else { return Ok(None) };
     // Le brut entier (au moins le brut abattu) ouvre la reduction des qu'elle s'ouvre sur l'abattu (memes parametres,

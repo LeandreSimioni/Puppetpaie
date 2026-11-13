@@ -16,12 +16,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
-use droit::nature_declaration::NatureDeLaDeclaration;
-use droit::natures::ListeDeLaNorme;
+use droit::contexte::TypeDeParametreNeores;
+use droit::fiche::{Nic, Nir, Siren, Siret};
+use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
+use droit::natures::{Fraction, ListeDeLaNorme, NumeroDOrdre};
 use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use socle::echec::{erreur as echec, Classe, Echec, R};
 use socle::date::Jour;
+use socle::garde_reseau::Url;
 use socle::paris::{FuseauXsd, InstantOuJour, Moment};
 use socle::piece::format;
 use socle::piece::Zone;
@@ -29,50 +32,484 @@ use socle::texte::blanc;
 
 // ---------------------------------------------------------------- les tables
 
-/// Natures de retour, guide d'implementation de l'API DSN v6.8, section 1.3.
-pub const NATURES: &[(&str, &str)] = &[
-    ("10", "Accuse d'enregistrement electronique / avis de rejet"),
-    ("11", "Certificat de conformite / bilan d'anomalies"),
-    ("20", "Bilan d'identification des salaries"),
-    ("21", "Controles inter-declarations / signalement AT-RT"),
-    ("22", "Controles arret de plus de 6 mois"),
-    ("23", "Controles temps partiel therapeutique"),
-    ("34", "Compte-rendu metier taux AT/MP (notification de la Carsat)"),
-    ("40", "Accuse de reception France Travail"),
-    ("42", "Compte-rendu metier CDDU-D"),
-    ("43", "AER CDDU-D (archive PDF)"),
-    ("44", "AER ou compte-rendu metier FCTU"),
-    ("45", "Compte-rendu metier « cinema, spectacle, expatries »"),
-    ("46", "AER « cinema, spectacle » (archive PDF)"),
-    ("50", "Accuse de distribution a l'organisme complementaire"),
-    ("51", "Compte-rendu metier de l'organisme complementaire"),
-    ("60", "Accuse de reception URSSAF"),
-    ("61", "Compte-rendu metier URSSAF, donnees agregees"),
-    ("70", "Accuse de reception AGIRC-ARRCO"),
-    ("71", "Compte-rendu metier AGIRC-ARRCO"),
-    ("92", "Accuse de reception DGFiP"),
-    ("93", "Compte-rendu metier DGFiP, donnees agregees"),
-    ("94", "Compte-rendu metier DGFiP, donnees nominatives (taux du PAS)"),
-    ("95", "Compte-rendu metier DGFiP, controles taux sur taux"),
-    ("117", "Compte-rendu metier bonus-malus contribution chomage"),
-    ("118", "Compte-rendu metier effectifs"),
-    ("119", "Compte-rendu metier URSSAF H+4 (immediat)"),
-    ("120", "Compte-rendu metier URSSAF J+5 (opposable)"),
-    ("121", "Compte-rendu metier identite"),
-    ("124", "Compte-rendu metier URSSAF de rappel"),
-];
+droit::codes_fermes! {
+    /// LA NATURE D'UN RETOUR, des deux canaux : la liste « Liste des retours, format, et disponibilité par environnement
+    /// et régime » du guide d'implementation de l'API DSN v6.8, § 1.3, p. 11-13
+    /// (`atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`, l. 573-788 :
+    /// chaque code a sa ligne ; deux lignes « n/a », les fiches de parametrage OC et les BPIJ, n'ont pas de code), et le
+    /// retour 41 du canal DPAE (FAQ de l'API DPAE, p. 5, `atelier/reference/norme-dpae/5493-API-DPAE-FAQ.pdf` : « Les
+    /// retours en mode API (codes retour 10, 11, 20, 41) sont-ils au format DSN ? Réponse : Les formats des retours 10
+    /// et 11 sont identiques à ceux délivrés en DSN. Les retours 20 et 41 sont spécifiques à la DPAE » ; « le retour 41
+    /// qui correspond à l'accusé réception nommé aussi certificat de conformité des DPAE »). Les codes des deux canaux
+    /// ne se recouvrent pas : 10, 11 et 20 sont ceux de la DSN. Son libelle, son organisme et son format : `NatureDuRetour::fiche`.
+    NatureDuRetour, "Nature du retour", texte "guide de l'API DSN v6.8, l. 573-788, et FAQ de l'API DPAE, p. 5" {
+        /// l. 583-585
+        AccuseDEnregistrement = "10",
+        /// l. 595-597
+        CertificatDeConformite = "11",
+        /// l. 598-600
+        BilanDIdentification = "20",
+        /// l. 601-604
+        ControlesInterDeclarations = "21",
+        /// l. 605-607
+        ControlesArretSixMois = "22",
+        /// l. 608-610
+        ControlesTempsPartielTherapeutique = "23",
+        /// l. 614
+        AccuseAtRt = "30",
+        /// l. 615-617
+        CompteRenduAtRt = "31",
+        /// l. 618-621
+        AccuseArretSixMois = "32",
+        /// l. 622-624
+        CompteRenduArretSixMois = "33",
+        /// l. 625
+        TauxAtMp = "34",
+        /// l. 626-628
+        AccuseTptCnam = "35",
+        /// l. 629-631
+        CompteRenduTptCnam = "36",
+        /// l. 632
+        AccuseTptMsa = "37",
+        /// l. 633
+        CompteRenduTptMsa = "38",
+        /// l. 634-636
+        AccuseFranceTravail = "40",
+        /// FAQ de l'API DPAE, p. 5
+        CertificatDpae = "41",
+        /// l. 637
+        CompteRenduCdduD = "42",
+        /// l. 638-640
+        AerCdduD = "43",
+        /// l. 641-645
+        Fctu = "44",
+        /// l. 646-648
+        CompteRenduSpectacle = "45",
+        /// l. 649-651
+        AerSpectacle = "46",
+        /// l. 611-612
+        AccuseDeDistributionOc = "50",
+        /// l. 613
+        CompteRenduOc = "51",
+        /// l. 655
+        AccuseUrssaf = "60",
+        /// l. 656-658
+        CompteRenduUrssafAgregees = "61",
+        /// l. 659-661
+        AccuseAgircArrco = "70",
+        /// l. 662-666
+        CompteRenduAgircArrco = "71",
+        /// l. 667-668
+        AccuseCamieg = "72",
+        /// l. 668-669
+        CompteRenduCamieg = "73",
+        /// l. 670-671
+        AccuseCnieg = "74",
+        /// l. 671-672
+        CompteRenduCnieg = "75",
+        /// l. 673-674
+        AccuseCrpcen = "76",
+        /// l. 674-675
+        CompteRenduCrpcen = "77",
+        /// l. 676-677
+        AccuseCpf = "78",
+        /// l. 677-678
+        CompteRenduCpf = "79",
+        /// l. 705-707
+        CoherenceMsa = "80",
+        /// l. 688-691
+        AccuseIrcantec = "82",
+        /// l. 691-694
+        CompteRenduIrcantec = "83",
+        /// l. 695-697
+        AccuseCprpsncf = "84",
+        /// l. 698-701
+        AccuseCrpnpac = "86",
+        /// l. 701-704
+        CompteRenduCrpnpac = "87",
+        /// l. 708-710
+        MandatAAcquitter = "90",
+        /// l. 711-713
+        AccuseDgfip = "92",
+        /// l. 714-716
+        CompteRenduDgfipAgregees = "93",
+        /// l. 717-719
+        TauxPas = "94",
+        /// l. 720-722
+        TauxSurTaux = "95",
+        /// l. 723-724
+        AccuseRafp = "100",
+        /// l. 724-725
+        CompteRenduRafp = "101",
+        /// l. 726
+        AccuseFspoeie = "102",
+        /// l. 727-728
+        AccuseCnracl = "104",
+        /// l. 728-729
+        CompteRenduCnracl = "105",
+        /// l. 730-731
+        AccuseEnim = "106",
+        /// l. 731-732
+        CompteRenduEnim = "107",
+        /// l. 733-734
+        AccuseCnbf = "110",
+        /// l. 734-735
+        CompteRenduCnbf = "111",
+        /// l. 736
+        CompteRenduSadv = "114",
+        /// l. 737-738
+        AccuseCibtp = "115",
+        /// l. 738-739
+        CompteRenduCibtp = "116",
+        /// l. 740-742
+        BonusMalus = "117",
+        /// l. 743-745
+        Effectifs = "118",
+        /// l. 746-748
+        UrssafImmediat = "119",
+        /// l. 749-751
+        UrssafOpposable = "120",
+        /// l. 752-754
+        Identite = "121",
+        /// l. 755-756
+        AccuseFctuCibtp = "122",
+        /// l. 756-757
+        CompteRenduFctuCibtp = "123",
+        /// l. 758-760
+        UrssafRappel = "124",
+        /// l. 761-763
+        RappelSubstitutionMsa = "125",
+        /// l. 764-766
+        FluxFinancierCavec = "127",
+        /// l. 767-769
+        ResolutionAnomaliesMsa = "130",
+        /// l. 770-772
+        PostSubstitution = "132",
+        /// l. 652-654
+        CompteRenduFctuNeores = "135",
+        /// l. 786-788
+        PostExigibiliteMsa = "136",
+    }
+}
+
+impl NatureDuRetour {
+    /// SA LIGNE de la liste des retours (guide v6.8, l. 573-788), pour les natures qu'une compagnie du spectacle recoit :
+    /// son libelle (celui que le journal des envois ecrit, `RetourOrganisme.libelle`), l'organisme qui le rend (la
+    /// colonne « OPS ») et son format (« Format phase 3 ») : « harmonise », le schema des bilans (`lire_rapport`) ;
+    /// « aucun », un accuse sans document, son statut dit tout ; « pdf », une archive d'AER ; « neores », le format
+    /// NEOReS (`lire_neores`, cahier technique depose dans `atelier/reference/sources/neores/`) ; « oc », le compte
+    /// rendu des organismes complementaires (`lire_crm_oc`, specification et schema V1.1.4 deposes dans
+    /// `gip-mds-api-dsn/`) ; « agirc-arrco », le format temporaire de l'AGIRC-ARRCO, que personne ne publie (le guide le
+    /// cite, [7], sans le joindre), et qui ne se traduit donc pas. Le format de la nature 93 n'est pas rempli dans le
+    /// tableau : « harmonise » est une INFERENCE (la nature 95, de la meme DGFiP, a son exemple sous « Format DSN
+    /// harmonise », § 6.3). Une autre nature de la liste n'a pas de fiche ici : elle se lit, se range et se dit par son
+    /// code.
+    fn fiche(self) -> Option<(&'static str, &'static str, &'static str)> {
+        use NatureDuRetour as N;
+        Some(match self {
+            N::AccuseDEnregistrement => ("Accuse d'enregistrement electronique / avis de rejet", "le point de dépôt (SI DSN)", "harmonise"),
+            N::CertificatDeConformite => ("Certificat de conformite / bilan d'anomalies", "le point de dépôt (SI DSN)", "harmonise"),
+            N::BilanDIdentification => ("Bilan d'identification des salaries", "le SI DSN", "harmonise"),
+            N::ControlesInterDeclarations => ("Controles inter-declarations / signalement AT-RT", "le SI DSN", "harmonise"),
+            N::ControlesArretSixMois => ("Controles arret de plus de 6 mois", "le SI DSN", "harmonise"),
+            N::ControlesTempsPartielTherapeutique => ("Controles temps partiel therapeutique", "le SI DSN", "harmonise"),
+            N::TauxAtMp => ("Compte-rendu metier taux AT/MP (notification de la Carsat)", "la CNAM (taux AT/MP)", "harmonise"),
+            N::AccuseFranceTravail => ("Accuse de reception France Travail", "France Travail", "aucun"),
+            N::CompteRenduCdduD => ("Compte-rendu metier CDDU-D", "France Travail", "harmonise"),
+            N::AerCdduD => ("AER CDDU-D (archive PDF)", "France Travail", "pdf"),
+            N::Fctu => ("AER ou compte-rendu metier FCTU", "France Travail", "harmonise"),
+            N::CompteRenduSpectacle => ("Compte-rendu metier « cinema, spectacle, expatries »", "France Travail", "harmonise"),
+            N::AerSpectacle => ("AER « cinema, spectacle » (archive PDF)", "France Travail", "pdf"),
+            N::AccuseDeDistributionOc => ("Accuse de distribution a l'organisme complementaire", "l'organisme complémentaire", "aucun"),
+            N::CompteRenduOc => ("Compte-rendu metier de l'organisme complementaire", "l'organisme complémentaire", "oc"),
+            N::AccuseUrssaf => ("Accuse de reception URSSAF", "l'Urssaf", "aucun"),
+            N::CompteRenduUrssafAgregees => ("Compte-rendu metier URSSAF, donnees agregees", "l'Urssaf", "harmonise"),
+            N::AccuseAgircArrco => ("Accuse de reception AGIRC-ARRCO", "l'AGIRC-ARRCO", "aucun"),
+            N::CompteRenduAgircArrco => ("Compte-rendu metier AGIRC-ARRCO", "l'AGIRC-ARRCO", "agirc-arrco"),
+            N::AccuseDgfip => ("Accuse de reception DGFiP", "la DGFiP", "aucun"),
+            N::CompteRenduDgfipAgregees => ("Compte-rendu metier DGFiP, donnees agregees", "la DGFiP", "harmonise"),
+            N::TauxPas => ("Compte-rendu metier DGFiP, donnees nominatives (taux du PAS)", "la DGFiP", "harmonise"),
+            N::TauxSurTaux => ("Compte-rendu metier DGFiP, controles taux sur taux", "la DGFiP", "harmonise"),
+            N::BonusMalus => ("Compte-rendu metier bonus-malus contribution chomage", "l'Urssaf ou la MSA", "harmonise"),
+            N::Effectifs => ("Compte-rendu metier effectifs", "l'Urssaf ou la MSA", "neores"),
+            N::UrssafImmediat => ("Compte-rendu metier URSSAF H+4 (immediat)", "l'Urssaf", "neores"),
+            N::UrssafOpposable => ("Compte-rendu metier URSSAF J+5 (opposable)", "l'Urssaf", "neores"),
+            N::Identite => ("Compte-rendu metier identite", "le SI DSN", "neores"),
+            N::UrssafRappel => ("Compte-rendu metier URSSAF de rappel", "l'Urssaf", "neores"),
+            _ => return None,
+        })
+    }
+
+    /// Son libelle, s'il a une fiche.
+    pub fn libelle(self) -> Option<&'static str> {
+        self.fiche().map(|f| f.0)
+    }
+
+    /// Son libelle dit : celui de sa fiche, sinon son code.
+    pub fn libelle_dit(self) -> String {
+        match self.libelle() {
+            Some(l) => l.to_string(),
+            None => format!("nature {} (inconnue de ce moteur)", self),
+        }
+    }
+
+    /// L'organisme qui le rend, s'il a une fiche.
+    pub fn organisme(self) -> Option<&'static str> {
+        self.fiche().map(|f| f.1)
+    }
+
+    /// Son format, s'il a une fiche.
+    pub fn format(self) -> Option<&'static str> {
+        self.fiche().map(|f| f.2)
+    }
+
+    /// Son libelle sur le canal d'un envoi `acte`, celui que le journal des envois ecrit : le canal DPAE a les siens,
+    /// pour les quatre retours que la FAQ de l'API DPAE nomme (10, 11, 20, 41, p. 5).
+    pub fn libelle_du_canal(self, acte: crate::ligne::Acte) -> String {
+        use NatureDuRetour as N;
+        if acte != crate::ligne::Acte::Dpae {
+            return self.libelle_dit();
+        }
+        match self {
+            N::AccuseDEnregistrement => "avis de rejet du depot".into(),
+            N::CertificatDeConformite => "certificat de conformite / bilan d'anomalies".into(),
+            N::BilanDIdentification => "bilan d'identification des salaries".into(),
+            N::CertificatDpae => "certificat de conformite des DPAE".into(),
+            autre => format!("nature {} (inconnue du canal DPAE)", autre),
+        }
+    }
+}
 
 /// Le dossier des retours des organismes, sous la racine d'une compagnie.
 pub const RETOURS: &str = "retours";
-/// Les retours de la DPAE, a part (regle 5).
-pub const RETOURS_DPAE: &str = "retours/dpae";
 
-pub const NATURE_TAUX_PAS: &str = "94";
-pub const NATURE_TAUX_ATMP: &str = "34";
-pub const NATURE_AER_SPECTACLE: &str = "46";
-pub const ESSAI_TEST: &str = "01";
-pub const ESSAI_REEL: &str = "02";
-pub const RAPPORTS_DEPOT: [&str; 3] = ["CCO", "BAN", "AEE"];
+/// L'IDENTIFIANT D'UN FLUX : ce que la plate-forme donne a un depot, et par quoi elle range ses retours (« Identifiant du
+/// flux DSN », `depot.idflux` et `flux.id`, « [0-9A-Za-z.-_]* », [1,50] : guide d'implementation de l'API DSN v6.8,
+/// l. 1448-1453, 1568-1573, 1676-1681,
+/// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`). INFERENCE : la
+/// classe se lit « chiffres, lettres, `.`, `-`, `_` » (lue comme une expression reguliere, `.-_` serait un intervalle).
+/// Le canal DPAE n'a pas de texte depose pour la forme du sien (son guide se dit compatible avec celui de la DSN) ; le
+/// simulateur ecrit `FICTIF-` et douze chiffres hexadecimaux (`branchement::reponse_fictive`). Il s'ecrit et se lit
+/// par son texte ; une autre forme se refuse.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct IdDeFlux(String);
+
+impl IdDeFlux {
+    /// Le flux que ce texte ecrit, s'il en a la forme.
+    pub fn lu(texte: &str) -> Option<IdDeFlux> {
+        let forme = (1..=50).contains(&texte.len()) && texte.bytes().all(|o| o.is_ascii_alphanumeric() || matches!(o, b'.' | b'-' | b'_'));
+        forme.then(|| IdDeFlux(texte.to_string()))
+    }
+
+    /// Le flux ecrit `texte` ; refus s'il n'en a pas la forme.
+    pub fn lire(texte: &str) -> R<IdDeFlux> {
+        IdDeFlux::lu(texte).ok_or_else(|| {
+            socle::refus!(
+                "Identifiant de flux {} : il s'écrit en chiffres, lettres, « . », « - » ou « _ », de 1 à 50 caractères (guide de l'API DSN, depot.idflux).",
+                socle::fichiers::repr(texte)
+            )
+        })
+    }
+
+    /// Le flux tel qu'ecrit.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+
+    /// Le flux d'un depot que le simulateur a joue (`branchement::PREFIXE_FLUX_FICTIF`, et l'ancien `DEMO-`).
+    pub fn est_fictif(&self) -> bool {
+        self.0.starts_with(crate::branchement::PREFIXE_FLUX_FICTIF) || self.0.starts_with(crate::branchement::ANCIEN_PREFIXE_FLUX_FICTIF)
+    }
+}
+
+impl std::fmt::Display for IdDeFlux {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for IdDeFlux {
+    type Error = Echec;
+    fn try_from(s: String) -> R<IdDeFlux> {
+        IdDeFlux::lire(&s)
+    }
+}
+
+impl From<IdDeFlux> for String {
+    fn from(f: IdDeFlux) -> String {
+        f.0
+    }
+}
+
+/// LE VERDICT D'UNE PIECE : ce qu'un bilan dit d'un envoi ou d'une declaration, ou un compte rendu de ce qu'il a
+/// analyse. OK, KO, ANO : `envoi_etat_type` et `etat_type` du schema des bilans (l. 722-770), `ok_ko` pour
+/// `etat_conformite` (l. 716-721, OK et KO ;
+/// `atelier/reference/sources/gip-mds-api-dsn/net-entreprises-dsn-bilans-v02r01-20230703.xsd`) ; RO.B003.R002 d'un
+/// NEOReS, OK et ANO (cahier technique NEOReS 2026.1.2, l. 1826-1829,
+/// `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2026.1.2-20251024.txt`) ; le certificat d'une
+/// DPAE n'en dit que OK ou KO (`etats::verdict_du_certificat`). Il se lit sans casse, a sa seule porte (`Verdict::lu`) :
+/// la documentation du schema l'ecrit « ok: déclaration conforme […], ko: déclaration rejetée » (l. 201). Il s'ecrit en
+/// capitales.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Verdict {
+    Ok,
+    Ko,
+    Ano,
+}
+
+impl Verdict {
+    pub const TOUS: &'static [Verdict] = &[Verdict::Ok, Verdict::Ko, Verdict::Ano];
+
+    /// Son code, en capitales : le seul endroit ou il s'ecrit.
+    pub fn code(self) -> &'static str {
+        match self {
+            Verdict::Ok => "OK",
+            Verdict::Ko => "KO",
+            Verdict::Ano => "ANO",
+        }
+    }
+
+    /// Le verdict que ce texte ecrit, sans casse ; un autre texte n'en est pas un.
+    pub fn lu(texte: &str) -> Option<Verdict> {
+        Verdict::TOUS.iter().copied().find(|v| v.code().eq_ignore_ascii_case(texte))
+    }
+
+    /// Le verdict ecrit `texte` ; refus s'il n'en est pas un.
+    pub fn lire(texte: &str) -> R<Verdict> {
+        Verdict::lu(texte).ok_or_else(|| socle::refus!("Verdict {} : il s'écrit OK, KO ou ANO (schéma des bilans, etat_type).", socle::fichiers::repr(texte)))
+    }
+
+    /// Ce qu'il dit d'une declaration.
+    pub fn en_mots(self) -> &'static str {
+        match self {
+            Verdict::Ok => "conforme",
+            Verdict::Ko => "refusée",
+            Verdict::Ano => "acceptée avec des anomalies",
+        }
+    }
+
+    /// Ce qu'il dit d'un envoi.
+    pub fn de_l_envoi(self) -> &'static str {
+        match self {
+            Verdict::Ok => "accepté",
+            Verdict::Ko => "refusé",
+            Verdict::Ano => "accepté avec des anomalies",
+        }
+    }
+
+    /// Sa pastille : OK fait, KO refuse, ANO a corriger (la compagnie le peut).
+    pub fn a_l_ecran(self) -> socle::ecran::EtatDEcran {
+        match self {
+            Verdict::Ok => socle::ecran::EtatDEcran::Fait,
+            Verdict::Ko => socle::ecran::EtatDEcran::Refuse,
+            Verdict::Ano => socle::ecran::EtatDEcran::AFaire,
+        }
+    }
+}
+
+impl std::fmt::Display for Verdict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.code())
+    }
+}
+
+impl Serialize for Verdict {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.code())
+    }
+}
+
+impl<'de> Deserialize<'de> for Verdict {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let texte = <String as Deserialize>::deserialize(d)?;
+        Verdict::lire(&texte).map_err(|e| serde::de::Error::custom(e.phrase))
+    }
+}
+
+droit::codes_fermes! {
+    /// LE STATUT QU'UNE LISTE DES RETOURS DONNE A UN RETOUR (`flux.retour.statut`) : « OK », « KO », « ANO », « EN COURS »
+    /// (avec une espace : guide de l'API DSN v6.8, l. 87 et 1733-1745,
+    /// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`) ; et
+    /// « ANOBLOQUANTE », que France Travail donne a ses comptes rendus 42, 44 et 45 (« Pôle emploi est contraint de
+    /// transmettre un code statut à « ANOBLOQUANTE » même si […] les balises « envoi_etat » et « etat » de la déclaration
+    /// sont OK » : « De la DSN à l'attestation employeur » v3.2, l. 235-243 et 390-404,
+    /// `atelier/reference/sources/net-entreprises-base-connaissances/net-entreprises-de-la-dsn-a-l-attestation-employeur-v3-2-20230328.txt`).
+    StatutDuRetour, "Statut du retour", texte "guide de l'API DSN v6.8, l. 1733-1745, et « De la DSN à l'attestation employeur » v3.2, l. 235-243" {
+        Ok = "OK",
+        Ko = "KO",
+        Ano = "ANO",
+        EnCours = "EN COURS",
+        AnoBloquante = "ANOBLOQUANTE",
+    }
+}
+
+impl StatutDuRetour {
+    /// Ce que le guide en dit (l. 1739-1745) ; « ANOBLOQUANTE » n'y est pas.
+    pub fn phrase(self) -> Option<&'static str> {
+        match self {
+            StatutDuRetour::Ok => Some("le traitement s'est terminé normalement"),
+            StatutDuRetour::Ko => Some("au moins une anomalie bloquante a empêché la poursuite du traitement"),
+            StatutDuRetour::Ano => Some("des anomalies non bloquantes sont survenues, le traitement est allé à son terme"),
+            StatutDuRetour::EnCours => Some("la déclaration est en cours de distribution vers l'organisme"),
+            StatutDuRetour::AnoBloquante => None,
+        }
+    }
+
+    /// Le statut qui ecrit ce verdict (meme code).
+    pub fn du_verdict(v: Verdict) -> StatutDuRetour {
+        match v {
+            Verdict::Ok => StatutDuRetour::Ok,
+            Verdict::Ko => StatutDuRetour::Ko,
+            Verdict::Ano => StatutDuRetour::Ano,
+        }
+    }
+
+    /// Le verdict qu'il ecrit, quand il en ecrit un (OK, KO, ANO) ; « EN COURS » et « ANOBLOQUANTE » n'en sont pas.
+    pub fn verdict(self) -> Option<Verdict> {
+        match self {
+            StatutDuRetour::Ok => Some(Verdict::Ok),
+            StatutDuRetour::Ko => Some(Verdict::Ko),
+            StatutDuRetour::Ano => Some(Verdict::Ano),
+            StatutDuRetour::EnCours | StatutDuRetour::AnoBloquante => None,
+        }
+    }
+}
+
+droit::codes_fermes! {
+    /// LE TYPE D'UN RAPPORT DE DEPOT (`rapport/@type`), celui que la plate-forme ecrit dans les pieces recues, et que le
+    /// guide de l'API DSN v6.8 donne a ses exemples : « AEE : exemple_retour_10_AEE.xml », « Certificat de conformité :
+    /// exemple_retour_11_CCO.xml », « Bilan d’anomalies : exemple_retour_11_BAN.xml » (l. 4825-4828 ; « CCO / BAN », nature
+    /// 11, l. 5691 ; `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`).
+    /// Un rapport d'un autre type n'est pas le bilan d'un depot (`bilan_d_octets`).
+    TypeDeRapport, "Type de rapport", texte "guide de l'API DSN v6.8, l. 4825-4828" {
+        Aee = "AEE",
+        Cco = "CCO",
+        Ban = "BAN",
+    }
+}
+
+impl TypeDeRapport {
+    /// Son libelle (le « Modele conceptuel » de la specification du schema des bilans VT2.2,
+    /// `gip-mds-specifications-schema-bilans-vt2.2-20201118.txt`).
+    pub fn libelle(self) -> &'static str {
+        match self {
+            TypeDeRapport::Aee => "Accusé d'enregistrement électronique",
+            TypeDeRapport::Cco => "Certificat de conformité",
+            TypeDeRapport::Ban => "Bilan d'anomalies",
+        }
+    }
+}
+
+droit::codes_fermes! {
+    /// LA CATEGORIE D'UNE ANOMALIE D'UN BILAN (`categorie`, `categorie_anomalie_type` du schema des bilans, l. 839-855,
+    /// `atelier/reference/sources/gip-mds-api-dsn/net-entreprises-dsn-bilans-v02r01-20230703.xsd`) : bloquante ou non.
+    CategorieDAnomalie, "Catégorie d'anomalie", texte "schéma des bilans v02r01, categorie_anomalie_type, l. 839-855" {
+        Bloquant = "bloquant",
+        NonBloquant = "non-bloquant",
+    }
+}
+
 
 /// Les rubriques DSN du taux de PAS, et ce qu'elles portent.
 const RUBRIQUES_PAS: [(&str, ChampPas); 3] = [
@@ -94,16 +531,8 @@ enum ChampPas {
 
 /// L'archive `nom` (`AAAAMMJJ-hhmmss_natureN_flux.ext`, `releve_retours::archiver_retour`) est-elle celle d'un retour de nature
 /// `nature` ? Son deuxieme segment le dit.
-pub fn archive_de_nature(nom: &str, nature: &str) -> bool {
-    nom.split('_').nth(1).and_then(|s| s.strip_prefix("nature")) == Some(nature)
-}
-
-/// `retours.libelle_nature`, sur la representation texte du code.
-pub fn libelle_nature(code: &str) -> String {
-    match NATURES.iter().find(|(c, _)| *c == code) {
-        Some((_, l)) => l.to_string(),
-        None => format!("nature {} (inconnue de ce moteur)", code),
-    }
+pub fn archive_de_nature(nom: &str, nature: NatureDuRetour) -> bool {
+    nom.split('_').nth(1).and_then(|s| s.strip_prefix("nature")) == Some(nature.code())
 }
 
 // ------------------------------------------------------ le texte
@@ -126,8 +555,10 @@ fn est_nir(s: &str) -> bool {
     (n == 13 || n == 15) && t.starts_with(['1', '2']) && t.chars().all(|c| c.is_ascii_digit())
 }
 
-fn treize(s: &str) -> String {
-    s.chars().take(13).collect()
+/// Le NIR qu'une valeur de la piece porte (`est_nir`), sans sa cle : ses 13 premiers chiffres (S21.G00.30.001) ; une
+/// valeur qui n'est pas un NIR n'en porte aucun.
+fn nir_porte(s: &str) -> R<Option<Nir>> {
+    est_nir(s).then(|| Nir::lire(&s.chars().take(13).collect::<String>())).transpose()
 }
 
 
@@ -755,28 +1186,28 @@ fn lire_octets(o: &[u8]) -> R<Arbre> {
 /// `idflux` n'est le bilan d'aucun depot.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Bilan {
-    pub flux: String,
+    pub flux: IdDeFlux,
     pub recu_le: Option<Reception>,
-    pub essai_reel: Option<String>,
-    pub etat_envoi: Option<String>,
-    pub etat_declaration: Option<String>,
+    pub essai_reel: Option<EssaiOuReel>,
+    pub etat_envoi: Option<Verdict>,
+    pub etat_declaration: Option<Verdict>,
     pub mois: Option<socle::mois::Mois>,
     pub logiciel: Option<String>,
-    pub type_rapport: String,
+    pub type_rapport: TypeDeRapport,
     pub type_declaration: Option<TypeDeLaDeclaration>,
-    pub fraction: Option<String>,
-    pub ordre: Option<String>,
-    pub salaries: Option<String>,
-    pub contrats: Option<String>,
+    pub fraction: Option<Fraction>,
+    pub ordre: Option<NumeroDOrdre>,
+    pub salaries: Option<usize>,
+    pub contrats: Option<usize>,
     pub conformite: Option<String>,
     pub certificat: Option<String>,
-    pub siret_declarant: Option<String>,
+    pub siret_declarant: Option<Siret>,
 }
 
 impl Bilan {
     /// Ce que le bilan dit de la declaration (son etat), sinon de l'envoi.
-    pub fn verdict(&self) -> Option<&str> {
-        self.etat_declaration.as_deref().or(self.etat_envoi.as_deref())
+    pub fn verdict(&self) -> Option<Verdict> {
+        self.etat_declaration.or(self.etat_envoi)
     }
 
     /// Ce que `autre` dit et que celui-ci ne dit pas.
@@ -897,27 +1328,27 @@ fn mois_du_rapport(brut: &str) -> R<socle::mois::Mois> {
     Zone::lue(nettoye(brut), format::MoisDsn).valeur().map_err(|m| m.reclasser(Classe::Illisible))
 }
 
-fn bilan_depuis(champs: &[(String, String)], type_rapport: &str) -> R<Option<Bilan>> {
+fn bilan_depuis(champs: &[(String, String)], type_rapport: TypeDeRapport) -> R<Option<Bilan>> {
     let get = |k: &str| champs.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
-    let Some(flux) = get("idflux") else { return Ok(None) };
+    let Some(flux) = forme_du_retour(get("idflux").as_deref(), IdDeFlux::lire)? else { return Ok(None) };
     let recu_le = reception_du_rapport(&get)?;
     Ok(Some(Bilan {
         flux,
         recu_le,
-        essai_reel: get("essai_reel"),
-        etat_envoi: get("envoi_etat"),
-        etat_declaration: get("etat").or(get("etat_conformite")),
+        essai_reel: essai_du_retour(get("essai_reel").as_deref())?,
+        etat_envoi: forme_du_retour(get("envoi_etat").as_deref(), Verdict::lire)?,
+        etat_declaration: forme_du_retour(get("etat").or(get("etat_conformite")).as_deref(), Verdict::lire)?,
         mois: get("mois").map(|m| mois_du_rapport(&m)).transpose()?,
         logiciel: get("nom_logiciel"),
-        type_rapport: type_rapport.to_string(),
+        type_rapport,
         type_declaration: type_du_retour(get("type").as_deref())?,
-        fraction: get("fraction"),
-        ordre: get("ordre"),
-        salaries: get("salaries"),
-        contrats: get("contrats"),
+        fraction: forme_du_retour(get("fraction").as_deref(), Fraction::lire)?,
+        ordre: forme_du_retour(get("ordre").as_deref(), NumeroDOrdre::lire)?,
+        salaries: forme_du_retour(get("salaries").as_deref(), compte_du_retour)?,
+        contrats: forme_du_retour(get("contrats").as_deref(), compte_du_retour)?,
         conformite: get("etat_conformite"),
         certificat: get("certificat_conformite"),
-        siret_declarant: get("siret"),
+        siret_declarant: forme_du_retour(get("siret").as_deref(), Siret::lire)?,
     }))
 }
 
@@ -931,7 +1362,7 @@ pub fn bilan_d_octets(o: &[u8]) -> R<Option<Bilan>> {
     if local(&racine.tag) != "rapport" {
         return Ok(None);
     }
-    let Some(type_rapport) = racine.attribut("type").filter(|t| RAPPORTS_DEPOT.contains(t)) else {
+    let Some(type_rapport) = racine.attribut("type").and_then(TypeDeRapport::du_code) else {
         return Ok(None);
     };
     // Un balayage a plat, premiere occurrence gagnante.
@@ -964,7 +1395,7 @@ pub fn bilan_si_xml(o: &[u8]) -> R<Option<Bilan>> {
 pub fn declarations_du_bilan(o: &[u8]) -> R<Vec<DeclarationIdentifiee>> {
     let mut out = Vec::new();
     // Un fichier qui n'est pas un XML, ou un rapport qui n'est pas celui d'un depot, n'identifie aucune declaration.
-    let arbre = octets_arbre(o)?.filter(|a| local(&a.racine().tag) == "rapport" && a.racine().attribut("type").is_some_and(|t| RAPPORTS_DEPOT.contains(&t)));
+    let arbre = octets_arbre(o)?.filter(|a| local(&a.racine().tag) == "rapport" && a.racine().attribut("type").and_then(TypeDeRapport::du_code).is_some());
     if let Some(arbre) = &arbre {
         out.extend(declarations_de_l_arbre(arbre)?);
     }
@@ -972,7 +1403,7 @@ pub fn declarations_du_bilan(o: &[u8]) -> R<Vec<DeclarationIdentifiee>> {
 }
 
 fn declarations_de_l_arbre(arbre: &Arbre) -> R<Vec<DeclarationIdentifiee>> {
-    let essai_reel = arbre.tous().find(|e| local(&e.tag) == "essai_reel").map(|e| e.texte_net().to_string()).filter(|t| !t.is_empty());
+    let essai_reel = essai_du_retour(arbre.tous().find(|e| local(&e.tag) == "essai_reel").map(|e| e.texte_net()).filter(|t| !t.is_empty()))?;
     let mut out = Vec::new();
     for d in arbre.tous().filter(|e| local(&e.tag) == "declaration") {
         let (mut champs, mut codes): (Vec<(&str, &str)>, Vec<String>) = (Vec::new(), Vec::new());
@@ -988,11 +1419,11 @@ fn declarations_de_l_arbre(arbre: &Arbre) -> R<Vec<DeclarationIdentifiee>> {
         out.push(DeclarationIdentifiee {
             nature_declaration: nature_du_retour(get("nature").as_deref())?,
             type_declaration: type_du_retour(get("type").as_deref())?,
-            ordre: get("ordre"),
-            siren: get("SIREN"),
-            nic: get("nic_affectation"),
-            etat: get("etat"),
-            essai_reel: essai_reel.clone(),
+            ordre: forme_du_retour(get("ordre").as_deref(), NumeroDOrdre::lire)?,
+            siren: forme_du_retour(get("SIREN").as_deref(), Siren::lire)?,
+            nic: forme_du_retour(get("nic_affectation").as_deref(), Nic::lire)?,
+            etat: forme_du_retour(get("etat").as_deref(), Verdict::lire)?,
+            essai_reel,
             codes,
         });
     }
@@ -1007,11 +1438,11 @@ pub struct DeclarationIdentifiee {
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
     pub type_declaration: Option<TypeDeLaDeclaration>,
-    pub ordre: Option<String>,
-    pub siren: Option<String>,
-    pub nic: Option<String>,
-    pub etat: Option<String>,
-    pub essai_reel: Option<String>,
+    pub ordre: Option<NumeroDOrdre>,
+    pub siren: Option<Siren>,
+    pub nic: Option<Nic>,
+    pub etat: Option<Verdict>,
+    pub essai_reel: Option<EssaiOuReel>,
     pub codes: Vec<String>,
 }
 
@@ -1021,10 +1452,31 @@ fn nature_du_retour(code: Option<&str>) -> R<Option<NatureDeLaDeclaration>> {
     code_du_retour(code, "nature")
 }
 
+/// L'envoi d'essai ou reel qu'un retour dit (S10.G00.00.005, que reprennent `essai_reel` d'un bilan, RO.B000.R013 d'un
+/// NEOReS et `CodeEnvoi` d'un compte rendu d'organisme complementaire), `None` s'il ne le dit pas : un code hors de la
+/// liste de la norme refuse le retour, qui ne se lit pas.
+fn essai_du_retour(code: Option<&str>) -> R<Option<EssaiOuReel>> {
+    code_du_retour(code, "code d'envoi")
+}
+
 /// Le type d'une declaration qu'un retour de la norme nomme (S20.G00.05.002), `None` s'il ne le dit pas : un code hors
 /// de la liste de la norme refuse le retour, qui ne se lit pas.
 fn type_du_retour(code: Option<&str>) -> R<Option<TypeDeLaDeclaration>> {
     code_du_retour(code, "type")
+}
+
+/// Un compte qu'un retour porte : un `integer` du schema des bilans (`salaries`, `contrats`, l. 170-188,
+/// `atelier/reference/sources/gip-mds-api-dsn/net-entreprises-dsn-bilans-v02r01-20230703.xsd`), un attribut entier du
+/// compte rendu d'un organisme complementaire (`NbErreursSimilaires`, `NbreSal`, `NbreErreur`... :
+/// `ctip-crm-dsn-oc-p3-v1.1.4-schema-20230915.xsd`, l. 190-199, 910-961) ; une autre forme se refuse.
+fn compte_du_retour(texte: &str) -> R<usize> {
+    texte.parse::<usize>().map_err(|_| socle::refus!("Un compte que le retour porte ne se lit pas : {} n'est pas un nombre entier positif.", socle::fichiers::repr(texte)))
+}
+
+/// Ce qu'un retour de la norme porte dans une forme de la norme (`lire` : une fraction, un numero d'ordre), `None` s'il
+/// ne le porte pas : hors de sa forme, le retour ne se lit pas.
+fn forme_du_retour<T>(texte: Option<&str>, lire: fn(&str) -> R<T>) -> R<Option<T>> {
+    texte.map(|t| lire(t).map_err(|e| e.reclasser(Classe::Illisible))).transpose()
 }
 
 fn code_du_retour<T: ListeDeLaNorme>(code: Option<&str>, quoi: &str) -> R<Option<T>> {
@@ -1066,7 +1518,10 @@ pub fn anomalies_lisibles_d_octets(o: &[u8]) -> R<Vec<String>> {
             }
         }
         if !message.is_empty() {
-            let cat = if categorie.is_empty() { String::new() } else { format!(" ({})", categorie) };
+            let cat = match forme_du_retour(Some(categorie).filter(|c| !c.is_empty()), code_ferme::<CategorieDAnomalie>)? {
+                Some(c) => format!(" ({})", c),
+                None => String::new(),
+            };
             let qui = if nom.is_empty() { String::new() } else { format!(" -- {}", nom) };
             out.push(format!("{}{}{}", message, cat, qui));
         }
@@ -1075,10 +1530,10 @@ pub fn anomalies_lisibles_d_octets(o: &[u8]) -> R<Vec<String>> {
 }
 
 /// UNE ANOMALIE D'UN BILAN, en codes (`anomalies_codees_d_octets`) : chaque champ est le texte du premier element de son
-/// nom sous l'anomalie (vide s'il n'en porte pas), tel que le journal des incidents l'ecrit.
+/// nom sous l'anomalie (vide s'il n'en porte pas ; la categorie, absente), tel que le journal des incidents l'ecrit.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct AnomalieCodee {
-    pub categorie: String,
+    pub categorie: Option<CategorieDAnomalie>,
     pub code: String,
     pub message: String,
     pub rubrique: String,
@@ -1093,12 +1548,12 @@ pub fn anomalies_codees_d_octets(o: &[u8]) -> R<Vec<AnomalieCodee>> {
         if !matches!(local(&a.tag), "declaration_anomalie" | "envoi_anomalie") {
             continue;
         }
-        let (mut code, mut categorie, mut message, mut rubrique) = (String::new(), String::new(), String::new(), String::new());
+        let (mut code, mut categorie, mut message, mut rubrique) = (String::new(), None, String::new(), String::new());
         for x in arbre.sous(a) {
             let t = x.texte_net();
             match local(&x.tag) {
                 "code" if code.is_empty() => code = t.to_string(),
-                "categorie" if categorie.is_empty() => categorie = t.to_string(),
+                "categorie" if categorie.is_none() => categorie = forme_du_retour(Some(t).filter(|c| !c.is_empty()), code_ferme::<CategorieDAnomalie>)?,
                 "message" if message.is_empty() => message = t.to_string(),
                 "identifiant" if rubrique.is_empty() => rubrique = t.to_string(),
                 _ => {}
@@ -1114,11 +1569,8 @@ pub fn anomalies_codees_d_octets(o: &[u8]) -> R<Vec<AnomalieCodee>> {
 /// `fusionner_bilans` : un seul bilan par flux, le plus complet. Le bilan de
 /// declaration (CCO, BAN) l'emporte sur l'accuse de transport (AEE).
 pub fn fusionner_bilans(bilans: &[Bilan]) -> Option<Bilan> {
-    // Le bilan de declaration d'abord, puis l'accuse de transport, puis tout autre rapport.
-    let rang = |b: &Bilan| {
-        let t = b.type_rapport.as_str();
-        (!matches!(t, "CCO" | "BAN"), t != "AEE")
-    };
+    // Le bilan de declaration d'abord, puis l'accuse de transport.
+    let rang = |b: &Bilan| b.type_rapport == TypeDeRapport::Aee;
     let mut tries: Vec<&Bilan> = bilans.iter().collect();
     tries.sort_by_key(|b| rang(b));
     let (premier, autres) = tries.split_first()?;
@@ -1153,22 +1605,23 @@ pub struct Annonce {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delegataire: Option<IdentifiantDOrganisme>,
     #[serde(rename = "nature")]
-    pub nature_retour: String,
+    pub nature_retour: NatureDuRetour,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub statut: Option<String>,
+    pub statut: Option<StatutDuRetour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
+    /// Une adresse vide se lit absente, comme `<url/>` dans la liste XML.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    pub url: Option<Url>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub libelle: Option<String>,
-    pub flux: Option<String>,
+    pub flux: Option<IdDeFlux>,
 }
 
 impl Annonce {
     /// Ce qui distingue un retour : son flux, sa nature, sa publication.
-    pub fn cle(&self) -> (Option<&str>, &str, Option<Moment>) {
-        (self.flux.as_deref(), self.nature_retour.as_str(), self.publication)
+    pub fn cle(&self) -> (Option<&IdDeFlux>, NatureDuRetour, Option<Moment>) {
+        (self.flux.as_ref(), self.nature_retour, self.publication)
     }
 }
 
@@ -1176,7 +1629,7 @@ impl Annonce {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Depot {
-    pub idflux: String,
+    pub idflux: IdDeFlux,
     #[serde(with = "socle::paris::ecrit::compacte")]
     pub date: Moment,
     pub statut: String,
@@ -1219,7 +1672,9 @@ struct RetoursJson {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct FluxJson {
-    id: Option<String>,
+    /// Un id vide se lit absent, comme `<id/>` dans la liste XML.
+    #[serde(default, deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    id: Option<IdDeFlux>,
     retour: Option<UnOuPlusieurs<RetourJson>>,
 }
 
@@ -1235,10 +1690,12 @@ struct RetourJson {
     #[serde(default, deserialize_with = "organisme_ou_non_renseigne")]
     delegataire: Option<IdentifiantDOrganisme>,
     #[serde(rename = "nature")]
-    nature_retour: String,
-    statut: Option<String>,
+    nature_retour: NatureDuRetour,
+    statut: Option<StatutDuRetour>,
     id: Option<String>,
-    url: Option<String>,
+    /// Une adresse vide se lit absente, comme `<url/>` dans la liste XML.
+    #[serde(default, deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    url: Option<Url>,
 }
 
 /// L'OPS ou le delegataire d'un retour JSON : « Non renseigné s'il s'agit d'un retour par le SI DSN ou par un organisme
@@ -1293,6 +1750,19 @@ fn organisme_liste(texte: &str, cle: &str) -> R<IdentifiantDOrganisme> {
     IdentifiantDOrganisme::lire(texte).map_err(|e| socle::echec::cle(e.phrase, cle).reclasser(Classe::Illisible))
 }
 
+/// Un code d'une liste fermee des retours (la nature, le statut, la categorie d'une anomalie...), lu par la forme de son
+/// type : hors de sa liste, la phrase du type, celle de la liste JSON.
+fn code_ferme<T: serde::de::DeserializeOwned>(texte: &str) -> R<T> {
+    let lecteur: serde::de::value::StrDeserializer<serde::de::value::Error> = serde::de::IntoDeserializer::into_deserializer(texte);
+    T::deserialize(lecteur).map_err(|e| socle::echec::refus(e.to_string()))
+}
+
+/// Un code d'une liste fermee que la liste XML porte a `cle` ; hors de sa liste, la liste ne se lit pas (la phrase du
+/// type, celle de la liste JSON, la cle a part).
+fn code_liste<T: serde::de::DeserializeOwned>(texte: &str, cle: &str) -> R<T> {
+    code_ferme(texte).map_err(|e| socle::echec::cle(e.phrase, cle).reclasser(Classe::Illisible))
+}
+
 /// Le texte des enfants de `e`, par leur nom local (un enfant vide n'est pas dit).
 fn enfants_textes<'a>(a: &'a Arbre, e: &'a Noeud) -> Vec<(&'a str, &'a str)> {
     a.enfants(e).map(|c| (local(&c.tag), c.texte_net())).filter(|(_, t)| !t.is_empty()).collect()
@@ -1330,34 +1800,33 @@ pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
         if local(&flux.tag) != "flux" {
             continue;
         }
+        // Un identifiant vide n'est pas dit, comme tout enfant vide ; un autre qui n'a pas la forme d'un flux refuse la liste.
         let idf = match flux.attribut("id").filter(|s| !s.is_empty()) {
-            Some(i) => Some(i.to_string()),
-            None => arbre.enfants(flux).find(|c| local(&c.tag) == "id").map(|c| c.texte_net().to_string()),
+            Some(i) => Some(i),
+            None => arbre.enfants(flux).find(|c| local(&c.tag) == "id").map(|c| c.texte_net()).filter(|t| !t.is_empty()),
         };
+        let idf = idf.map(|i| IdDeFlux::lire(i).map_err(|e| socle::echec::cle(e.phrase, "flux.id").reclasser(Classe::Illisible))).transpose()?;
         for r in arbre.enfants(flux) {
             if local(&r.tag) != "retour" {
                 continue;
             }
-            let mut a = Annonce { publication: None, production: None, ops: None, delegataire: None, nature_retour: String::new(), statut: None, id: None, url: None, libelle: None, flux: idf.clone() };
-            let mut nature = None;
+            let (mut publication, mut production, mut ops, mut delegataire, mut nature, mut statut, mut id, mut url) = (None, None, None, None, None, None, None, None);
             for (nom, t) in enfants_textes(&arbre, r) {
-                let publication = Zone::lue(t, format::InstantCompact).valeur();
-                let texte = t;
-                let t = Some(t.to_string());
+                let texte = Some(t.to_string());
                 match nom {
-                    "publication" => a.publication = Some(publication.ok_or_else(|| illisible("flux.retour.publication"))?),
-                    "production" => a.production = t,
-                    "ops" => a.ops = Some(organisme_liste(texte, "flux.retour.ops")?),
-                    "delegataire" => a.delegataire = Some(organisme_liste(texte, "flux.retour.delegataire")?),
-                    "nature" => nature = t,
-                    "statut" => a.statut = t,
-                    "id" => a.id = t,
-                    "url" => a.url = t,
+                    "publication" => publication = Some(Zone::lue(t, format::InstantCompact).valeur().ok_or_else(|| illisible("flux.retour.publication"))?),
+                    "production" => production = texte,
+                    "ops" => ops = Some(organisme_liste(t, "flux.retour.ops")?),
+                    "delegataire" => delegataire = Some(organisme_liste(t, "flux.retour.delegataire")?),
+                    "nature" => nature = Some(code_liste(t, "flux.retour.nature")?),
+                    "statut" => statut = Some(code_liste(t, "flux.retour.statut")?),
+                    "id" => id = texte,
+                    "url" => url = Some(Url::lire(t).map_err(|e| socle::echec::cle(e.phrase, "flux.retour.url").reclasser(Classe::Illisible))?),
                     autre => return Err(illisible(&format!("flux.retour.{}", autre))),
                 }
             }
-            a.nature_retour = nature.ok_or_else(|| illisible("flux.retour.nature"))?;
-            out.push(a);
+            let nature_retour = nature.ok_or_else(|| illisible("flux.retour.nature"))?;
+            out.push(Annonce { publication, production, ops, delegataire, nature_retour, statut, id, url, libelle: None, flux: idf.clone() });
         }
     }
     Ok(out)
@@ -1382,7 +1851,8 @@ pub fn liste_depots_d_octets(o: &[u8]) -> R<Vec<Depot>> {
             return Err(illisible(&format!("depot.{}", autre)));
         }
         let date = Zone::lue(&champ("date")?, format::InstantCompact).valeur().ok_or_else(|| illisible("depot.date"))?;
-        out.push(Depot { idflux: champ("idflux")?, date, statut: champ("statut")? });
+        let idflux = IdDeFlux::lire(&champ("idflux")?).map_err(|e| socle::echec::cle(e.phrase, "depot.idflux").reclasser(Classe::Illisible))?;
+        out.push(Depot { idflux, date, statut: champ("statut")? });
     }
     Ok(out)
 }
@@ -1391,7 +1861,7 @@ pub fn liste_depots_d_octets(o: &[u8]) -> R<Vec<Depot>> {
 
 #[derive(Clone, Default)]
 struct Entree94 {
-    nir: Option<String>,
+    nir: Option<Nir>,
     taux: Option<String>,
     type_: Option<String>,
     identifiant: Option<String>,
@@ -1434,7 +1904,7 @@ fn type_de_taux(t: &str) -> R<droit::type_taux_pas::TypeDeTauxPas> {
 /// (S21.G00.50.006 a .008) ; un taux ou un type que la piece ne dit pas est vide : aucun taux transmis.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ReleveTauxPas {
-    pub nir: String,
+    pub nir: Nir,
     pub taux: Option<droit::pas::TauxDePas>,
     #[serde(rename = "type")]
     pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
@@ -1498,7 +1968,7 @@ fn pas_rapport_crm(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
         }
         let champs = enfants_textes(a, el);
         let lu = |k: &str| champs.iter().rev().find(|(n, _)| *n == k).map(|(_, t)| t.to_string());
-        let Some(nir) = lu("NIR") else { continue };
+        let Some(nir) = forme_du_retour(lu("NIR").as_deref(), Nir::lire)? else { continue };
         // Le schema des bilans (net-entreprises-dsn-bilans-v02r01-20230703.xsd) dit `taux_imposition_PAS` facultatif,
         // sans dire ce que son absence vaut : aucun texte deposé n'en fait un taux, un type ni un identifiant. Le salarie
         // que le compte rendu nomme sans taux n'a aucun taux transmis (ni taux, ni type) ; ce que sa paie en fait, c'est
@@ -1527,11 +1997,11 @@ fn pas_par_code(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
     for p in &elements {
         let valeurs = valeurs_de(p);
         for v in &valeurs {
-            if est_nir(v) {
+            if let Some(nir) = nir_porte(v)? {
                 if cur.complete() {
                     releves.push(std::mem::take(&mut cur));
                 }
-                cur.nir = Some(treize(v));
+                cur.nir = Some(nir);
             }
         }
         let mut trouve = false;
@@ -1571,11 +2041,11 @@ fn pas_par_nom_metier(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
     let (mut releves, mut cur) = (Vec::new(), Entree94::default());
     for p in &elements {
         for v in valeurs_de(p) {
-            if est_nir(v) {
+            if let Some(nir) = nir_porte(v)? {
                 if cur.complete() {
                     releves.push(std::mem::take(&mut cur));
                 }
-                cur.nir = Some(treize(v));
+                cur.nir = Some(nir);
             }
         }
         if let (Some(champ), false) = (metier(&p.nom.to_lowercase()), p.texte.is_empty()) {
@@ -1599,12 +2069,12 @@ fn pas_par_balayage(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
         .collect();
     let (mut releves, mut cur) = (Vec::new(), Entree94::default());
     for v in &valeurs {
-        if est_nir(v) {
+        if let Some(nir) = nir_porte(v)? {
             if cur.complete() {
                 releves.push(cur);
             }
-            cur = Entree94 { nir: Some(treize(v)), ..Default::default() };
-        } else if cur.nir.as_deref().is_some_and(|n| !n.is_empty()) {
+            cur = Entree94 { nir: Some(nir), ..Default::default() };
+        } else if cur.nir.is_some() {
             if cur.taux.is_none() && droit::pas::TauxDePas::lire(v).is_some() {
                 cur.taux = Some(v.clone());
             } else if cur.type_.is_none() && droit::type_taux_pas::TypeDeTauxPas::du_code(v).is_some() {
@@ -1641,14 +2111,14 @@ pub fn taux_pas_d_octets(o: &[u8]) -> R<TauxPasLus> {
 
 /// Chaque releve a une fiche par le NIR ; `nirs` est la liste `(cle, nir)` des fiches qui en ont un, dans l'ordre du
 /// fichier.
-pub fn releves_vers_salaries(releves: &[ReleveTauxPas], nirs: &[(droit::contexte::IdSalarie, String)]) -> TauxPasRepartis {
+pub fn releves_vers_salaries(releves: &[ReleveTauxPas], nirs: &[(droit::contexte::IdSalarie, Nir)]) -> TauxPasRepartis {
     let mut par_nir: std::collections::HashMap<&str, &droit::contexte::IdSalarie> = std::collections::HashMap::new();
     for (c, n) in nirs {
-        par_nir.insert(n, c);
+        par_nir.insert(n.as_ref(), c);
     }
     let (mut rattaches, mut orphelins) = (Vec::new(), Vec::new());
     for r in releves {
-        match par_nir.get(treize(&r.nir).as_str()) {
+        match par_nir.get(r.nir.as_ref()) {
             Some(cle) => rattaches.push(TauxPasRattache { releve: r.clone(), salarie: (*cle).clone() }),
             None => orphelins.push(r.clone()),
         }
@@ -2098,8 +2568,8 @@ pub fn rattacher(quis: &[&str], index: &[(droit::contexte::IdSalarie, String)]) 
 /// `temoin_bureau`, `taux`, `date_effet`, `date_calcul`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TauxAtmpNotifie {
-    pub siren: String,
-    pub nic: String,
+    pub siren: droit::fiche::Siren,
+    pub nic: droit::fiche::Nic,
     pub code_ctn: String,
     pub section: String,
     /// Le code risque tel que la DSN le declare (S21.G00.40.040) : celui de la notification, suivi du « B » quand le taux
@@ -2143,6 +2613,8 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
             if siren.is_empty() || nic.is_empty() {
                 return Err(echec(Classe::Illisible, "Notification du taux AT/MP : la déclaration ne dit pas son établissement (SIREN, nic_affectation)."));
             }
+            let siren_lu = droit::fiche::Siren::lire(&siren).map_err(|_| illisible("SIREN", &siren))?;
+            let nic_lu = droit::fiche::Nic::lire(&nic).map_err(|_| illisible("NIC", &nic))?;
             let code = champ("code_risque").to_uppercase();
             let ok_code = code.len() == 5 && code.chars().all(|c| c.is_ascii_digit() || c.is_ascii_uppercase());
             if !ok_code {
@@ -2160,8 +2632,8 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
             let effet = champ("date_effet");
             let Some(date_effet) = jour_aaaammjj(&effet) else { return Err(illisible("date d'effet", &effet)) };
             out.push(TauxAtmpNotifie {
-                siren: siren.clone(),
-                nic: nic.clone(),
+                siren: siren_lu,
+                nic: nic_lu,
                 code_ctn: champ("code_ctn"),
                 section: champ("section"),
                 code_risque,
@@ -2181,21 +2653,6 @@ pub fn taux_atmp_d_octets(o: &[u8]) -> Result<Vec<TauxAtmpNotifie>, Echec> {
 }
 
 // --------------------------------------------- un rapport au format harmonise, lu pour l'Historique
-
-/// Les types de rapport que la specification du schema des bilans nomme (« Modele conceptuel » : AEE, certificat de
-/// conformite, avis de rejet, bilan d'anomalies, BIS, controle inter-declarations ;
-/// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-specifications-schema-bilans-vt2.2-20201118.txt`). Les codes
-/// courts AEE, CCO, BAN sont ceux que la plate-forme ecrit dans `rapport/@type` (pieces recues ; `RAPPORTS_DEPOT`) ;
-/// ARE, BIS et CID sont les noms des exemples du guide v6.8 (§6.1, `exemple_retour_10_ARE.xml`, `_20_BIS_`, `_21_CID`) :
-/// une inference sur le code, qu'aucune piece recue n'a encore eprouvee.
-const TYPES_RAPPORT: [(&str, &str); 6] = [
-    ("AEE", "Accusé d'enregistrement électronique"),
-    ("ARE", "Avis de rejet"),
-    ("CCO", "Certificat de conformité"),
-    ("BAN", "Bilan d'anomalies"),
-    ("BIS", "Bilan d'identification des salariés"),
-    ("CID", "Contrôle inter-déclarations"),
-];
 
 fn premier_texte<'a>(a: &'a Arbre, e: &'a Noeud, noms: &[&str]) -> &'a str {
     for nom in noms {
@@ -2221,10 +2678,11 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
         return Ok(None);
     }
     let type_rapport = racine.attribut("type").map(str::to_string);
-    let libelle = TYPES_RAPPORT.iter().find(|(c, _)| Some(*c) == type_rapport.as_deref()).map(|(_, l)| l.to_string());
+    // Le libelle d'un rapport de depot (`TypeDeRapport`) ; un autre type se dit tel qu'ecrit.
+    let libelle = type_rapport.as_deref().and_then(TypeDeRapport::du_code).map(|t| t.libelle().to_string());
     let envoi = arbre.tous().find(|e| local(&e.tag) == "envoi");
     let de_l_envoi = |nom: &str| envoi.map(|e| premier_texte(&arbre, e, &[nom]).to_string()).filter(|t| !t.is_empty());
-    let (etat_envoi, essai_reel) = (de_l_envoi("envoi_etat"), de_l_envoi("essai_reel"));
+    let (etat_envoi, essai_reel) = (forme_du_retour(de_l_envoi("envoi_etat").as_deref(), Verdict::lire)?, essai_du_retour(de_l_envoi("essai_reel").as_deref())?);
     let mut declarations = Vec::new();
     for d in arbre.tous().filter(|e| local(&e.tag) == "declaration") {
         let sous_bloc = |nom: &str| match arbre.sous(d).find(|x| local(&x.tag) == nom) {
@@ -2236,9 +2694,9 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
         declarations.push(DeclarationDuRapport {
             nature_declaration: nature_du_retour(Some(premier_texte(&arbre, id, &["nature"])).filter(|t| !t.is_empty()))?,
             type_declaration: type_du_retour(Some(premier_texte(&arbre, id, &["type"])).filter(|t| !t.is_empty()))?,
-            ordre: premier_texte(&arbre, id, &["ordre"]).to_string(),
+            ordre: forme_du_retour(Some(premier_texte(&arbre, id, &["ordre"])).filter(|t| !t.is_empty()), NumeroDOrdre::lire)?,
             mois: if mois.is_empty() { None } else { Some(mois_du_rapport(mois)?) },
-            etat: premier_texte(&arbre, bilan, &["etat", "etat_conformite"]).to_string(),
+            etat: forme_du_retour(Some(premier_texte(&arbre, bilan, &["etat", "etat_conformite"])).filter(|t| !t.is_empty()), Verdict::lire)?,
         });
     }
     let mut anomalies = Vec::new();
@@ -2263,7 +2721,7 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
         }
         anomalies.push(AnomalieDuRapport {
             code: code.to_string(),
-            categorie: premier_texte(&arbre, a, &["categorie"]).to_string(),
+            categorie: Some(premier_texte(&arbre, a, &["categorie"])).filter(|c| !c.is_empty()).map(str::to_string),
             message: message.to_string(),
             rubrique,
             ligne: premier_texte(&arbre, a, &["numero_ligne"]).to_string(),
@@ -2302,30 +2760,32 @@ pub struct Rapport {
     pub type_rapport: Option<String>,
     pub libelle: Option<String>,
     pub message: Option<String>,
-    pub etat_envoi: Option<String>,
-    pub essai_reel: Option<String>,
+    pub etat_envoi: Option<Verdict>,
+    pub essai_reel: Option<EssaiOuReel>,
     pub declarations: Vec<DeclarationDuRapport>,
     pub anomalies: Vec<AnomalieDuRapport>,
     pub informations: Vec<InformationCollective>,
 }
 
-/// Une declaration d'un rapport : nature (quand il la dit), type, ordre, mois (quand il le dit) et etat.
+/// Une declaration d'un rapport : nature, type, ordre, mois et etat, quand il les dit.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct DeclarationDuRapport {
     #[serde(rename = "nature")]
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
     pub type_declaration: Option<TypeDeLaDeclaration>,
-    pub ordre: String,
+    pub ordre: Option<NumeroDOrdre>,
     pub mois: Option<socle::mois::Mois>,
-    pub etat: String,
+    pub etat: Option<Verdict>,
 }
 
 /// Une anomalie d'un rapport, telle que la page l'affiche.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AnomalieDuRapport {
     pub code: String,
-    pub categorie: String,
+    /// Telle qu'ecrite : la specification des comptes rendus harmonises n'en fixe pas la liste (« Contenu a definir
+    /// ulterieurement, a priori un niveau de gravite », VT2.2 l. 248) ; celle du bilan est `CategorieDAnomalie`.
+    pub categorie: Option<String>,
     pub message: String,
     pub rubrique: String,
     pub ligne: String,
@@ -2359,58 +2819,114 @@ pub fn membres_du_zip(o: &[u8]) -> R<Vec<String>> {
 
 // ------------------------------------------------ un compte rendu NEOReS, lu
 
-/// `RO.B001.R001` « Declencheur du retour organisme » : cahier technique NEOReS 2026.1.2, « Rubriques », bloc RO.B001
-/// (`atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2026.1.2-20251024.txt`) ; 05 et 06 viennent du
-/// cahier 2027.1.0 (`gip-mds-neores-cahier-technique-2027.1.0-20260303.txt`, et la note differentielle, § II).
-const DECLENCHEURS_NEORES: [(&str, &str); 6] = [
-    ("01", "retour sur une DSN mensuelle ou un signalement d'événement"),
-    ("02", "retour en fin d'exercice"),
-    ("03", "rappel d'actions non réalisées"),
-    ("04", "paramètre à prendre en compte en paie"),
-    ("05", "récapitulatif des substitutions de données opérées par l'organisme"),
-    ("06", "retour informatif"),
-];
+droit::codes_fermes! {
+    /// `RO.B001.R001` « Declencheur du retour organisme » : 01 a 04 au cahier technique NEOReS 2026.1.2 (l. 1619-1622,
+    /// `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2026.1.2-20251024.txt`) ; 05 et 06 viennent du
+    /// cahier 2027.1.0 (l. 1749-1754, `gip-mds-neores-cahier-technique-2027.1.0-20260303.txt`, et la note
+    /// differentielle, § II).
+    DeclencheurNeores, "Déclencheur du retour organisme (RO.B001.R001)", texte "cahier technique NEOReS 2027.1.0, l. 1749-1754" {
+        DsnOuSignalement = "01",
+        FinDExercice = "02",
+        Rappel = "03",
+        Parametre = "04",
+        Substitutions = "05",
+        Informatif = "06",
+    }
+}
 
-/// `RO.B004.R003` « Type d'action » (cahier 2026.1.2, « Rubriques », bloc RO.B004).
-const TYPES_ACTION_NEORES: [(&str, &str); 5] = [
-    ("01", "correction de données DSN précédemment déclarées"),
-    ("02", "correction de données d'identification d'individus"),
-    ("03", "émission de l'ensemble des données attendues par l'organisme pour un mois principal déclaré"),
-    ("04", "prise en compte d'un paramètre"),
-    ("05", "régularisation d'un paramètre"),
-];
+impl DeclencheurNeores {
+    /// Ce qu'il dit, pour la phrase du compte rendu.
+    pub fn libelle(self) -> &'static str {
+        match self {
+            DeclencheurNeores::DsnOuSignalement => "retour sur une DSN mensuelle ou un signalement d'événement",
+            DeclencheurNeores::FinDExercice => "retour en fin d'exercice",
+            DeclencheurNeores::Rappel => "rappel d'actions non réalisées",
+            DeclencheurNeores::Parametre => "paramètre à prendre en compte en paie",
+            DeclencheurNeores::Substitutions => "récapitulatif des substitutions de données opérées par l'organisme",
+            DeclencheurNeores::Informatif => "retour informatif",
+        }
+    }
+}
 
-/// `RO.B004.R006` et `RO.B007.R009` « Resultat du controle » (cahier 2026.1.2, blocs RO.B004 et RO.B007).
-const RESULTATS_NEORES: [(&str, &str); 7] = [
-    ("01", "valeur incohérente"),
-    ("02", "rubrique absente"),
-    ("03", "rubrique présente à tort"),
-    ("04", "bloc absent"),
-    ("05", "bloc présent à tort"),
-    ("06", "cumul incohérent"),
-    ("07", "ensemble des données attendues pour le mois absentes"),
-];
+droit::codes_fermes! {
+    /// `RO.B002.R004` « Type de retour organisme » : « 01 - Retour organisme normal », « 02 - Retour organisme annule et
+    /// remplace » (cahier technique NEOReS 2026.1.2, l. 1690-1691 ; 2027.1.0, l. 1821-1822).
+    TypeDeRetourNeores, "Type de retour organisme (RO.B002.R004)", texte "cahier technique NEOReS 2026.1.2, l. 1690-1691" {
+        Normal = "01",
+        AnnuleEtRemplace = "02",
+    }
+}
 
-/// `RO.B004.R016` (cahier 2026.1.2) puis `RO.B005.R005` (cahier 2027.1.0) « Caractere substituable de la donnee ».
-const SUBSTITUABLE_NEORES: [(&str, &str); 2] = [
-    ("01", "donnée substituable : sans correction ni opposition de votre part, l'Urssaf ou la MSA la corrigera elle-même"),
-    ("02", "donnée non substituable"),
-];
+droit::codes_fermes! {
+    /// `RO.B004.R003` « Type d'action » (cahier technique NEOReS 2026.1.2, l. 1892-1901 ; 2027.1.0, l. 2026-2030).
+    TypeDActionNeores, "Type d'action (RO.B004.R003)", texte "cahier technique NEOReS 2026.1.2, l. 1892-1901" {
+        CorrectionDeDonnees = "01",
+        CorrectionDIdentification = "02",
+        EmissionDesDonneesAttendues = "03",
+        PriseEnCompteDUnParametre = "04",
+        RegularisationDUnParametre = "05",
+    }
+}
 
-/// La table des types de parametres (`RO.B008.R001`), telle que net-entreprises la sert
-/// (`atelier/reference/sources/neores/gip-mds-neores-table-types-de-parametres-20230703.csv`).
-const TYPES_PARAMETRE_NEORES: [(&str, &str); 6] = [
-    ("A01", "effectif moyen annuel (niveau entreprise)"),
-    ("A02", "effectif moyen BOETH annuel (niveau entreprise)"),
-    ("A03", "effectif moyen ECAP annuel (niveau entreprise)"),
-    ("A04", "effectif moyen d'assujettissement OETH annuel (niveau entreprise)"),
-    ("A05", "effectif moyen CSA CFIP annuel (niveau entreprise)"),
-    ("A07", "effectif moyen CSA annuel (niveau entreprise)"),
-];
+impl TypeDActionNeores {
+    /// Ce qu'il dit, pour la phrase du compte rendu.
+    pub fn libelle(self) -> &'static str {
+        match self {
+            TypeDActionNeores::CorrectionDeDonnees => "correction de données DSN précédemment déclarées",
+            TypeDActionNeores::CorrectionDIdentification => "correction de données d'identification d'individus",
+            TypeDActionNeores::EmissionDesDonneesAttendues => "émission de l'ensemble des données attendues par l'organisme pour un mois principal déclaré",
+            TypeDActionNeores::PriseEnCompteDUnParametre => "prise en compte d'un paramètre",
+            TypeDActionNeores::RegularisationDUnParametre => "régularisation d'un paramètre",
+        }
+    }
+}
 
-/// Le libelle du code `code` dans `table` ; aucun pour un code absent ou que la table ne connait pas.
-fn dans_table(table: &[(&str, &'static str)], code: Option<&str>) -> Option<&'static str> {
-    table.iter().find(|(c, _)| Some(*c) == code).map(|(_, l)| *l)
+droit::codes_fermes! {
+    /// `RO.B004.R006` et `RO.B007.R009` « Resultat du controle » (cahier technique NEOReS 2026.1.2, l. 1962-1968 ; le bloc
+    /// RO.B007 n'en a que 01 a 06, l. 2477-2482).
+    ResultatDuControleNeores, "Résultat du contrôle (RO.B004.R006, RO.B007.R009)", texte "cahier technique NEOReS 2026.1.2, l. 1962-1968" {
+        ValeurIncoherente = "01",
+        RubriqueAbsente = "02",
+        RubriquePresenteATort = "03",
+        BlocAbsent = "04",
+        BlocPresentATort = "05",
+        CumulIncoherent = "06",
+        DonneesDuMoisAbsentes = "07",
+    }
+}
+
+impl ResultatDuControleNeores {
+    /// Ce qu'il dit, pour la phrase du compte rendu.
+    pub fn libelle(self) -> &'static str {
+        match self {
+            ResultatDuControleNeores::ValeurIncoherente => "valeur incohérente",
+            ResultatDuControleNeores::RubriqueAbsente => "rubrique absente",
+            ResultatDuControleNeores::RubriquePresenteATort => "rubrique présente à tort",
+            ResultatDuControleNeores::BlocAbsent => "bloc absent",
+            ResultatDuControleNeores::BlocPresentATort => "bloc présent à tort",
+            ResultatDuControleNeores::CumulIncoherent => "cumul incohérent",
+            ResultatDuControleNeores::DonneesDuMoisAbsentes => "ensemble des données attendues pour le mois absentes",
+        }
+    }
+}
+
+droit::codes_fermes! {
+    /// `RO.B004.R016` (cahier technique NEOReS 2026.1.2, l. 2087-2088) puis `RO.B005.R005` (cahier 2027.1.0, l. 2340-2341)
+    /// « Caractere substituable de la donnee ».
+    SubstituableNeores, "Caractère substituable de la donnée (RO.B004.R016, RO.B005.R005)", texte "cahier technique NEOReS 2026.1.2, l. 2087-2088" {
+        Substituable = "01",
+        NonSubstituable = "02",
+    }
+}
+
+impl SubstituableNeores {
+    /// Ce qu'il dit, pour la phrase du compte rendu.
+    pub fn libelle(self) -> &'static str {
+        match self {
+            SubstituableNeores::Substituable => "donnée substituable : sans correction ni opposition de votre part, l'Urssaf ou la MSA la corrigera elle-même",
+            SubstituableNeores::NonSubstituable => "donnée non substituable",
+        }
+    }
 }
 
 /// Le texte de la rubrique `nom` (`RO_B004_R001`), enfant direct du bloc `e` ; aucun si le bloc ne la porte pas, ou
@@ -2473,7 +2989,7 @@ pub struct DonneeNeores {
     pub cumul: bool,
     pub debut: Option<socle::date::Jour>,
     pub fin: Option<socle::date::Jour>,
-    pub resultat: Option<&'static str>,
+    pub resultat: Option<ResultatDuControleNeores>,
     pub acceptees: Vec<String>,
 }
 
@@ -2484,7 +3000,7 @@ pub struct DetailNeores {
     pub debut: Option<socle::date::Jour>,
     pub fin: Option<socle::date::Jour>,
     pub montant: Option<socle::num::Decimal>,
-    pub substituable: Option<&'static str>,
+    pub substituable: Option<SubstituableNeores>,
     pub rappel: Option<String>,
     pub interlocuteur: Option<String>,
     pub individus: Vec<IndividuNeores>,
@@ -2496,10 +3012,9 @@ pub struct DetailNeores {
 pub struct ActionNeores {
     pub code: Option<String>,
     pub libelle: Option<String>,
-    pub type_code: Option<String>,
     #[serde(rename = "type")]
-    pub type_action: Option<&'static str>,
-    pub resultat: Option<&'static str>,
+    pub type_action: Option<TypeDActionNeores>,
+    pub resultat: Option<ResultatDuControleNeores>,
     pub individus: Option<String>,
     pub contrats: Option<String>,
     pub controle: Option<String>,
@@ -2507,7 +3022,7 @@ pub struct ActionNeores {
     pub action: Option<String>,
     pub aide: Option<String>,
     pub consequences: Option<String>,
-    pub substituable: Option<&'static str>,
+    pub substituable: Option<SubstituableNeores>,
     pub rappel: Option<String>,
     pub exception: Option<String>,
     pub details: Vec<DetailNeores>,
@@ -2517,8 +3032,7 @@ pub struct ActionNeores {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ParametreNeores {
     #[serde(rename = "type")]
-    pub type_parametre: Option<String>,
-    pub libelle: Option<&'static str>,
+    pub type_parametre: Option<TypeDeParametreNeores>,
     pub valeur: Option<String>,
     pub effet: Option<socle::date::Jour>,
     pub fin: Option<socle::date::Jour>,
@@ -2527,11 +3041,14 @@ pub struct ParametreNeores {
     pub calcule_le: Option<socle::paris::Moment>,
 }
 
-/// Une identite (`RO.B009`) : ce qui a ete declare, et la reference.
+/// Une identite (`RO.B009`) : ce qui a ete declare, et la reference. L'individu declare l'est par son NIR (R001) ou, sans
+/// NIR, par son numero technique temporaire (R002) (cahier technique NEOReS 2027.1.0,
+/// `atelier/reference/sources/neores/gip-mds-neores-cahier-technique-2027.1.0-20260303.txt` l. 2752-2798).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct IdentiteNeores {
-    pub nir_declare: Option<String>,
-    pub nir_reference: Option<String>,
+    pub nir_declare: Option<Nir>,
+    pub ntt_declare: Option<declarations::ntt::Ntt>,
+    pub nir_reference: Option<Nir>,
     pub nom_declare: Option<String>,
     pub nom_reference: Option<String>,
     pub prenom_declare: Option<String>,
@@ -2557,10 +3074,10 @@ pub struct InformationNeores {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Neores {
     pub version: Option<String>,
-    pub declencheur: Option<String>,
-    pub declencheur_libelle: Option<&'static str>,
+    pub declencheur: Option<DeclencheurNeores>,
     pub code: Option<String>,
     pub libelle: Option<String>,
+    /// `RO.B002.R004` vaut « 02 », un retour qui annule et remplace (`TypeDeRetourNeores`).
     pub remplace: bool,
     pub organisme: Option<String>,
     pub debut: Option<socle::date::Jour>,
@@ -2568,10 +3085,10 @@ pub struct Neores {
     #[serde(with = "socle::paris::ecrit::seconde::option")]
     pub produit_le: Option<socle::paris::Moment>,
     pub mois: Option<socle::mois::Mois>,
-    pub essai_reel: Option<String>,
-    pub ordre: Option<String>,
+    pub essai_reel: Option<EssaiOuReel>,
+    pub ordre: Option<NumeroDOrdre>,
     pub metier: Option<String>,
-    pub conformite: Option<String>,
+    pub conformite: Option<Verdict>,
     pub actions: Vec<ActionNeores>,
     pub parametres: Vec<ParametreNeores>,
     pub identites: Vec<IdentiteNeores>,
@@ -2611,7 +3128,8 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
     let r = |bloc: Option<&Noeud>, nom: &str| bloc.and_then(|b| rubrique_texte(&a, b, nom));
     let (b000, b001, b002, b003) = (premier("RO_B000"), premier("RO_B001"), premier("RO_B002"), premier("RO_B003"));
     let version = a.tous().find(|x| local(&x.tag) == "RO_R001").map(|x| x.texte_net().to_string()).filter(|t| !t.is_empty());
-    let declencheur = r(b001, "RO_B001_R001");
+    let declencheur = forme_du_retour(r(b001, "RO_B001_R001").as_deref(), code_ferme::<DeclencheurNeores>)?;
+    let type_de_retour = forme_du_retour(r(b002, "RO_B002_R004").as_deref(), code_ferme::<TypeDeRetourNeores>)?;
     let individu = |b: &Noeud, p: &str| -> R<IndividuNeores> {
         Ok(IndividuNeores {
             nom: rubrique_texte(&a, b, &format!("{}_R003", p)),
@@ -2638,7 +3156,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
                         cumul: rubrique_de(&a, b, "RO_B007_R004") == Some("01"),
                         debut: rubrique_jour(&a, b, "RO_B007_R005")?,
                         fin: rubrique_jour(&a, b, "RO_B007_R006")?,
-                        resultat: dans_table(&RESULTATS_NEORES, rubrique_de(&a, b, "RO_B007_R009")),
+                        resultat: forme_du_retour(rubrique_de(&a, b, "RO_B007_R009"), code_ferme::<ResultatDuControleNeores>)?,
                         acceptees: blocs_sous(&a, b, "RO_B010").into_iter().filter_map(|v| rubrique_texte(&a, v, "RO_B010_R001")).collect(),
                     })
                 })
@@ -2649,7 +3167,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
                 fin: rubrique_jour(&a, d, "RO_B005_R003")?,
                 montant: rubrique_montant(&a, d, "RO_B005_R004")?,
                 // CT 2027.1.0 : le caractere substituable et le rappel descendent au detail de l'action (note differentielle, § III).
-                substituable: dans_table(&SUBSTITUABLE_NEORES, rubrique_de(&a, d, "RO_B005_R005")),
+                substituable: forme_du_retour(rubrique_de(&a, d, "RO_B005_R005"), code_ferme::<SubstituableNeores>)?,
                 rappel: rd("RO_B005_R006"),
                 interlocuteur: rd("RO_B005_R007"),
                 individus,
@@ -2659,9 +3177,8 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         actions.push(ActionNeores {
             code: rc("RO_B004_R001"),
             libelle: rc("RO_B004_R002"),
-            type_code: rc("RO_B004_R003"),
-            type_action: dans_table(&TYPES_ACTION_NEORES, rubrique_de(&a, c, "RO_B004_R003")),
-            resultat: dans_table(&RESULTATS_NEORES, rubrique_de(&a, c, "RO_B004_R006")),
+            type_action: forme_du_retour(rubrique_de(&a, c, "RO_B004_R003"), code_ferme::<TypeDActionNeores>)?,
+            resultat: forme_du_retour(rubrique_de(&a, c, "RO_B004_R006"), code_ferme::<ResultatDuControleNeores>)?,
             individus: rc("RO_B004_R009"),
             contrats: rc("RO_B004_R010"),
             controle: rc("RO_B004_R011"),
@@ -2669,7 +3186,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
             action: rc("RO_B004_R013"),
             aide: rc("RO_B004_R014"),
             consequences: rc("RO_B004_R015"),
-            substituable: dans_table(&SUBSTITUABLE_NEORES, rubrique_de(&a, c, "RO_B004_R016")),
+            substituable: forme_du_retour(rubrique_de(&a, c, "RO_B004_R016"), code_ferme::<SubstituableNeores>)?,
             rappel: rc("RO_B004_R017"),
             exception: rc("RO_B004_R018"),
             details,
@@ -2680,8 +3197,7 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         .filter(|x| local(&x.tag) == "RO_B008")
         .map(|p| {
             Ok(ParametreNeores {
-                type_parametre: rubrique_texte(&a, p, "RO_B008_R001"),
-                libelle: dans_table(&TYPES_PARAMETRE_NEORES, rubrique_de(&a, p, "RO_B008_R001")),
+                type_parametre: forme_du_retour(rubrique_de(&a, p, "RO_B008_R001"), code_ferme::<TypeDeParametreNeores>)?,
                 valeur: rubrique_texte(&a, p, "RO_B008_R002"),
                 effet: rubrique_jour(&a, p, "RO_B008_R003")?,
                 fin: rubrique_jour(&a, p, "RO_B008_R004")?,
@@ -2695,9 +3211,10 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         .filter(|x| local(&x.tag) == "RO_B009")
         .map(|b| {
             let x = |n: &str| rubrique_texte(&a, b, n);
-            IdentiteNeores {
-                nir_declare: x("RO_B009_R001").or(x("RO_B009_R002")),
-                nir_reference: x("RO_B009_R003"),
+            Ok(IdentiteNeores {
+                nir_declare: forme_du_retour(rubrique_de(&a, b, "RO_B009_R001"), Nir::lire)?,
+                ntt_declare: forme_du_retour(rubrique_de(&a, b, "RO_B009_R002"), declarations::ntt::Ntt::lire)?,
+                nir_reference: forme_du_retour(rubrique_de(&a, b, "RO_B009_R003"), Nir::lire)?,
                 nom_declare: x("RO_B009_R004"),
                 nom_reference: x("RO_B009_R005"),
                 prenom_declare: x("RO_B009_R006"),
@@ -2705,9 +3222,9 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
                 naissance_declaree: x("RO_B009_R008"),
                 naissance_reference: x("RO_B009_R009"),
                 matricule: x("RO_B009_R010"),
-            }
+            })
         })
-        .collect();
+        .collect::<R<_>>()?;
     let informations = a
         .tous()
         .filter(|x| local(&x.tag) == "RO_B011")
@@ -2726,20 +3243,19 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
         .collect::<R<_>>()?;
     Ok(Some(Neores {
         version,
-        declencheur_libelle: dans_table(&DECLENCHEURS_NEORES, declencheur.as_deref()),
         declencheur,
         code: r(b002, "RO_B002_R002"),
         libelle: r(b002, "RO_B002_R003"),
-        remplace: r(b002, "RO_B002_R004").as_deref() == Some("02"),
+        remplace: type_de_retour == Some(TypeDeRetourNeores::AnnuleEtRemplace),
         organisme: r(b002, "RO_B002_R005"),
         debut: b002.map(|b| rubrique_jour(&a, b, "RO_B002_R008")).transpose()?.flatten(),
         fin: b002.map(|b| rubrique_jour(&a, b, "RO_B002_R009")).transpose()?.flatten(),
         produit_le: b002.map(|b| rubrique_instant(&a, b, "RO_B002_R011")).transpose()?.flatten(),
         mois: r(b000, "RO_B000_R006").map(|m| mois_du_jour(&m)).transpose()?,
-        essai_reel: r(b000, "RO_B000_R013"),
-        ordre: r(b000, "RO_B000_R012"),
+        essai_reel: essai_du_retour(r(b000, "RO_B000_R013").as_deref())?,
+        ordre: forme_du_retour(r(b000, "RO_B000_R012").as_deref(), NumeroDOrdre::lire)?,
         metier: r(b003, "RO_B003_R001"),
-        conformite: r(b003, "RO_B003_R002"),
+        conformite: forme_du_retour(r(b003, "RO_B003_R002").as_deref(), Verdict::lire)?,
         actions,
         parametres,
         identites,
@@ -2749,18 +3265,56 @@ pub fn lire_neores(o: &[u8]) -> R<Option<Neores>> {
 
 // ------------------------------- un compte rendu d'organisme complementaire, lu
 
-/// `Declaration/@CodeRetourDecla`, le code retour global : schema CRM DSN OC P3 V1.1.4
-/// (`atelier/reference/sources/gip-mds-api-dsn/ctip-crm-dsn-oc-p3-v1.1.4-schema-20230915.xsd`, l. 1001-1013) et
-/// specification V1.1.4 du 17/06/2025 (`ctip-crm-dsn-oc-p3-v1.1.4-20250617.txt`, niveau 2, « Code retour global »).
-const RETOURS_GLOBAUX_OC: [(&str, &str); 4] = [
-    ("0", "DSN acceptée"),
-    ("1", "DSN acceptée, avec des corrections à apporter (anomalies non bloquantes)"),
-    ("2", "DSN partiellement prise en compte (des erreurs empêchent la prise en compte de certains salariés ou de certaines données)"),
-    ("3", "DSN non prise en compte par l'organisme (erreurs au niveau de la déclaration)"),
-];
+droit::codes_fermes! {
+    /// `Fichier/@TypCRM`, le type du compte rendu : « 2 (CRT compte-rendu basique) », « 3 (CRC compte-rendu complet) »
+    /// (schema CRM DSN OC P3 V1.1.4, l. 1071-1081,
+    /// `atelier/reference/sources/gip-mds-api-dsn/ctip-crm-dsn-oc-p3-v1.1.4-schema-20230915.xsd`).
+    TypeDeCrmOc, "Type de CRM (TypCRM)", texte "schéma CRM DSN OC P3 V1.1.4, l. 1071-1081" {
+        Traitement = "2",
+        Complet = "3",
+    }
+}
 
-/// `RetourMetier/@CriticiteRetour` (schema V1.1.4, l. 514-523).
-const CRITICITES_OC: [(&str, &str); 2] = [("C", "critique : à corriger impérativement dans la DSN suivante"), ("P", "passable : à corriger dès que possible")];
+droit::codes_fermes! {
+    /// `Declaration/@CodeRetourDecla`, le code retour global : schema CRM DSN OC P3 V1.1.4 (l. 1001-1015) et
+    /// specification V1.1.4 du 17/06/2025 (`ctip-crm-dsn-oc-p3-v1.1.4-20250617.txt`, niveau 2, « Code retour global »).
+    RetourGlobalOc, "Code retour global (CodeRetourDecla)", texte "schéma CRM DSN OC P3 V1.1.4, l. 1001-1015" {
+        Acceptee = "0",
+        AccepteeAvecCorrections = "1",
+        PartiellementPriseEnCompte = "2",
+        NonPriseEnCompte = "3",
+    }
+}
+
+impl RetourGlobalOc {
+    /// Ce qu'il dit, pour la phrase du compte rendu.
+    pub fn libelle(self) -> &'static str {
+        match self {
+            RetourGlobalOc::Acceptee => "DSN acceptée",
+            RetourGlobalOc::AccepteeAvecCorrections => "DSN acceptée, avec des corrections à apporter (anomalies non bloquantes)",
+            RetourGlobalOc::PartiellementPriseEnCompte => "DSN partiellement prise en compte (des erreurs empêchent la prise en compte de certains salariés ou de certaines données)",
+            RetourGlobalOc::NonPriseEnCompte => "DSN non prise en compte par l'organisme (erreurs au niveau de la déclaration)",
+        }
+    }
+}
+
+droit::codes_fermes! {
+    /// `RetourMetier/@CriticiteRetour` : « C = "Critique" », « P = "Passable" » (schema CRM DSN OC P3 V1.1.4, l. 514-525).
+    CriticiteOc, "Criticité du retour (CriticiteRetour)", texte "schéma CRM DSN OC P3 V1.1.4, l. 514-525" {
+        Critique = "C",
+        Passable = "P",
+    }
+}
+
+impl CriticiteOc {
+    /// Ce qu'elle dit, pour la phrase du compte rendu.
+    pub fn libelle(self) -> &'static str {
+        match self {
+            CriticiteOc::Critique => "critique : à corriger impérativement dans la DSN suivante",
+            CriticiteOc::Passable => "passable : à corriger dès que possible",
+        }
+    }
+}
 
 /// Un compte rendu metier d'organisme complementaire (nature 51 : guide de l'API DSN v6.8, tableau des retours,
 /// « CRM-DSN-OC-P3-V1.1.4-17062025 »), lu d'apres son schema et sa specification
@@ -2798,8 +3352,12 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
         let mandats = a
             .enfants(d)
             .filter(|x| matches!(local(&x.tag), "MandatNetE" | "MandatProp"))
-            .map(|m| MandatOc { net_entreprises: local(&m.tag) == "MandatNetE", iban: at(m, "IBAN"), bic: at(m, "BIC"), ics: at(m, "ICS"), url: at(m, "URLMandatProp") })
-            .collect();
+            .map(|m| -> R<MandatOc> {
+                // L'adresse du mandat ; hors de la forme d'une adresse, le CRM ne se lit pas.
+                let url = at(m, "URLMandatProp").map(|t| Url::lire(&t).map_err(|e| socle::echec::cle(format!("Le compte rendu d'un organisme complémentaire ne se lit pas : {}", e.phrase), "URLMandatProp").reclasser(Classe::Illisible))).transpose()?;
+                Ok(MandatOc { net_entreprises: local(&m.tag) == "MandatNetE", iban: at(m, "IBAN"), bic: at(m, "BIC"), ics: at(m, "ICS"), url })
+            })
+            .collect::<R<Vec<MandatOc>>>()?;
         let mut retours = Vec::new();
         for rm in a.enfants(d).filter(|x| local(&x.tag) == "RetourMetier") {
             let contexte: Vec<ContexteOc> = a
@@ -2813,8 +3371,8 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
                 code: at(rm, "CodeRetourMetier"),
                 libelle: at(rm, "LibelCodeRetourMetier"),
                 description: at(rm, "DescriptionRetour"),
-                criticite: dans_table(&CRITICITES_OC, at(rm, "CriticiteRetour").as_deref()),
-                nombre: at(rm, "NbErreursSimilaires"),
+                criticite: forme_du_retour(at(rm, "CriticiteRetour").as_deref(), code_ferme::<CriticiteOc>)?,
+                nombre: forme_du_retour(at(rm, "NbErreursSimilaires").as_deref(), compte_du_retour)?,
                 rubrique: at(rm, "RubriqueBlocRetour"),
                 libelle_rubrique: at(rm, "LibelRubBlocRetour"),
                 valeur: at(rm, "ValeurRubriqueErreur"),
@@ -2826,11 +3384,10 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
                 contexte,
             });
         }
-        let code = at(d, "CodeRetourDecla");
         declarations.push(DeclarationOc {
             nature_declaration: nature_du_retour(at(d, "NatureDecla").as_deref())?,
             type_declaration: type_du_retour(at(d, "TypeDecla").as_deref())?,
-            ordre: at(d, "NoOrdreDecla"),
+            ordre: forme_du_retour(at(d, "NoOrdreDecla").as_deref(), NumeroDOrdre::lire)?,
             mois: at(d, "DateMoisDec").map(|m| mois_du_jour(&m)).transpose()?,
             code_oc: organisme_crm_oc(d, "CodeOC")?,
             code_delegataire: organisme_crm_oc(d, "CodeDELEG")?,
@@ -2839,26 +3396,25 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
             contact: at(d, "NomContact"),
             courriel: at(d, "MailContact"),
             telephone: at(d, "TelContact"),
-            retour_global: dans_table(&RETOURS_GLOBAUX_OC, code.as_deref()),
-            code_retour: code,
+            code_retour: forme_du_retour(at(d, "CodeRetourDecla").as_deref(), code_ferme::<RetourGlobalOc>)?,
             complement: at(d, "ComplementRetourDecla"),
-            erreurs: at(d, "NbreErreur"),
-            critiques: at(d, "NbreCritique"),
-            affiliations: at(d, "NbreAff"),
-            radiations: at(d, "NbreRad"),
-            salaries: at(d, "NbreSal"),
+            erreurs: forme_du_retour(at(d, "NbreErreur").as_deref(), compte_du_retour)?,
+            critiques: forme_du_retour(at(d, "NbreCritique").as_deref(), compte_du_retour)?,
+            affiliations: forme_du_retour(at(d, "NbreAff").as_deref(), compte_du_retour)?,
+            radiations: forme_du_retour(at(d, "NbreRad").as_deref(), compte_du_retour)?,
+            salaries: forme_du_retour(at(d, "NbreSal").as_deref(), compte_du_retour)?,
             mandats,
             retours,
         });
     }
-    Ok(Some(CrmOc { type_crm: at(racine, "TypCRM"), essai_reel: at(racine, "CodeEnvoi"), version: at(racine, "VersionCRM"), declarations }))
+    Ok(Some(CrmOc { type_crm: forme_du_retour(at(racine, "TypCRM").as_deref(), code_ferme::<TypeDeCrmOc>)?, essai_reel: essai_du_retour(at(racine, "CodeEnvoi").as_deref())?, version: at(racine, "VersionCRM"), declarations }))
 }
 
 /// UN COMPTE RENDU D'ORGANISME COMPLEMENTAIRE LU (`lire_crm_oc`) ; un attribut que le fichier ne porte pas est vide.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CrmOc {
-    pub type_crm: Option<String>,
-    pub essai_reel: Option<String>,
+    pub type_crm: Option<TypeDeCrmOc>,
+    pub essai_reel: Option<EssaiOuReel>,
     pub version: Option<String>,
     pub declarations: Vec<DeclarationOc>,
 }
@@ -2870,7 +3426,7 @@ pub struct DeclarationOc {
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(rename = "type")]
     pub type_declaration: Option<TypeDeLaDeclaration>,
-    pub ordre: Option<String>,
+    pub ordre: Option<NumeroDOrdre>,
     pub mois: Option<socle::mois::Mois>,
     /// S21.G00.15.002, l'organisme (schema du CRM OC, `CodeOC`).
     pub code_oc: Option<IdentifiantDOrganisme>,
@@ -2882,14 +3438,13 @@ pub struct DeclarationOc {
     pub contact: Option<String>,
     pub courriel: Option<String>,
     pub telephone: Option<String>,
-    pub code_retour: Option<String>,
-    pub retour_global: Option<&'static str>,
+    pub code_retour: Option<RetourGlobalOc>,
     pub complement: Option<String>,
-    pub erreurs: Option<String>,
-    pub critiques: Option<String>,
-    pub affiliations: Option<String>,
-    pub radiations: Option<String>,
-    pub salaries: Option<String>,
+    pub erreurs: Option<usize>,
+    pub critiques: Option<usize>,
+    pub affiliations: Option<usize>,
+    pub radiations: Option<usize>,
+    pub salaries: Option<usize>,
     pub mandats: Vec<MandatOc>,
     pub retours: Vec<RetourMetierOc>,
 }
@@ -2901,7 +3456,7 @@ pub struct MandatOc {
     pub iban: Option<String>,
     pub bic: Option<String>,
     pub ics: Option<String>,
-    pub url: Option<String>,
+    pub url: Option<Url>,
 }
 
 /// Un `RetourMetier`, et le salarie que son contexte nomme.
@@ -2910,8 +3465,8 @@ pub struct RetourMetierOc {
     pub code: Option<String>,
     pub libelle: Option<String>,
     pub description: Option<String>,
-    pub criticite: Option<&'static str>,
-    pub nombre: Option<String>,
+    pub criticite: Option<CriticiteOc>,
+    pub nombre: Option<usize>,
     pub rubrique: Option<String>,
     pub libelle_rubrique: Option<String>,
     pub valeur: Option<String>,

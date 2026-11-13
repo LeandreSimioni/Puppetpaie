@@ -305,7 +305,7 @@ fn l_exemple_de_chaque_fiche_est_accepte() {
             // Le dossier portable : une installation a part qui porte deja les trois systemes (rien ne se telecharge).
             Route::PortableCompleter => {
                 let (inst, reelle) = installation_a_part(&c, f.nom());
-                for s in compagnie::maj::SYSTEMES {
+                for s in compagnie::maj::Systeme::TOUS {
                     let p = compagnie::maj::programme_de(&inst.join("logiciel"), s, "puppetpaie");
                     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
                     std::fs::write(p, "").unwrap();

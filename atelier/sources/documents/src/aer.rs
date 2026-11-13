@@ -163,8 +163,8 @@ pub struct Cadre5 {
     /// Le jour de la signature, imprime en trois cases (jour, mois, annee).
     pub le: Jour,
     pub correspondant: String,
-    pub telephone: String,
-    pub courriel: String,
+    pub telephone: droit::fiche::Telephone,
+    pub courriel: droit::fiche::Courriel,
 }
 
 /// Une case que le cadre 5 exige : absente, elle se refuse (`Manque`).
@@ -191,8 +191,9 @@ impl Cadre5 {
             // declarant DSN, pas le signataire. France Travail rappelle pour
             // une question de declaration, et c'est l'employeur qui les depose.
             correspondant: req(&dec.nom_prenom, "nom_prenom")?,
-            telephone: req(&dec.tel, "tel")?,
-            courriel: req(&dec.email, "email")?.to_lowercase(),
+            telephone: dec.tel.exigee("tel")?.clone(),
+            // L'AER imprime l'adresse en minuscules.
+            courriel: droit::fiche::Courriel::lire(&dec.email.ecrite("email")?.to_lowercase())?,
         })
     }
 
@@ -206,8 +207,8 @@ impl Cadre5 {
             format!("{:02}", self.le.mois),
             format!("{:04}", self.le.an),
             self.correspondant.clone(),
-            self.telephone.clone(),
-            self.courriel.clone(),
+            self.telephone.to_string(),
+            self.courriel.to_string(),
         ];
         CHAMPS_TEXTE.iter().copied().zip(v).collect()
     }

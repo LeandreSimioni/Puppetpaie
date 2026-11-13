@@ -3637,8 +3637,8 @@
 "nom_affichage": "Martin",
 "nir": "2910369123456",
 "nir_cle": "78",
-"departement_naissance": "69",
-"pays_naissance": "FR"
+"pays_naissance": "FR",
+"departement_naissance": "69"
 },
 "illisible": []
 },
@@ -3658,8 +3658,8 @@
 "nom_affichage": "Martin",
 "nir": "2910369123456",
 "nir_cle": "78",
-"departement_naissance": "69",
-"pays_naissance": "FR"
+"pays_naissance": "FR",
+"departement_naissance": "69"
 },
 "illisible": []
 },
@@ -3883,10 +3883,10 @@
 "code_postal": "69003",
 "nir": "2910369123456",
 "nir_cle": "53",
+"pays_naissance": "FR",
 "code_nationalite_dsn": "01",
 "pays_nationalite": "FR",
-"departement_naissance": "69",
-"pays_naissance": "FR"
+"departement_naissance": "69"
 },
 "illisible": []
 },
@@ -6091,13 +6091,13 @@
 "commune_affichage": "Lyon",
 "date_naissance": "1991-03-14",
 "code_postal": "69003",
-"nir": "٢٩١٠٣٦٩١٢٣٤٥٦",
-"nir_cle": "٧٨",
 "pays_naissance": "FR",
 "code_nationalite_dsn": "01",
 "pays_nationalite": "FR"
 },
-"illisible": []
+"illisible": [
+"numéro de sécurité sociale : « ٢٩١٠٣٦٩١٢٣٤٥٦٧٨ » (« ٧٨ » n'est pas la clé d'un numéro de sécurité sociale : deux chiffres, de 01 à 97, ceux qui suivent les 13 autres (INSEE))"
+]
 },
 {
 "nom": "r-mal-nir-corse",
@@ -6457,10 +6457,10 @@
 "code_postal": "69003",
 "nir": "2910369123456",
 "nir_cle": "53",
+"pays_naissance": "FR",
 "code_nationalite_dsn": "01",
 "pays_nationalite": "FR",
-"departement_naissance": "69",
-"pays_naissance": "FR"
+"departement_naissance": "69"
 },
 "illisible": [
 "pays de naissance : « zz »"
@@ -6496,10 +6496,10 @@
 "code_postal": "69003",
 "nir": "2910369123456",
 "nir_cle": "53",
+"pays_naissance": "FR",
 "code_nationalite_dsn": "01",
 "pays_nationalite": "FR",
-"departement_naissance": "69",
-"pays_naissance": "FR"
+"departement_naissance": "69"
 },
 "illisible": [
 "pays de naissance : « Atlantide »"

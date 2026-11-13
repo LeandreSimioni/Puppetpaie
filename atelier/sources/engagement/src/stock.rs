@@ -28,6 +28,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use socle::forme::NombreLu;
+use socle::fichiers::ValeurLue;
 
 use droit::contexte::{Contexte, IdSalarie};
 use crate::saisie::{Avant, Carte, Champ, Groupe, VueDuMois};
@@ -802,22 +803,22 @@ pub fn effacer(racine: &Path, o: &Objet) -> R<()> {
 /// (`valide` : `{"le"}`).
 pub fn vue_du_mois(racine: &Path, mois: Mois) -> R<Option<VueDuMois>> {
     Ok(vue_et_empreinte(racine, mois)?.map(|s| {
-        socle::fichiers::noter_valeur(&cle_de_saisie(mois, None), s.1.clone());
+        socle::fichiers::noter_lecture(&cle_de_saisie(mois, None), s.1.clone());
         s.0.clone()
     }))
 }
 
 /// L'empreinte de la saisie de `mois` (`empreinte_de_saisie`) : celle que `vue_du_mois` note, ou, pour `salarie`, celle
 /// que la paie de ses engagements du mois note ; `None` sans saisie.
-pub fn empreinte_de_la_saisie_du_mois(racine: &Path, mois: Mois, salarie: Option<&IdSalarie>) -> R<Option<String>> {
+pub fn empreinte_de_la_saisie_du_mois(racine: &Path, mois: Mois, salarie: Option<&IdSalarie>) -> R<Option<ValeurLue>> {
     Ok(vue_et_empreinte(racine, mois)?.map(|s| if salarie.is_none() { s.1.clone() } else { empreinte_de_saisie(&s.0, salarie) }))
 }
 
 /// La vue de `mois` et son empreinte, faites une fois pour les memes fichiers aux memes octets (`memes`) :
 /// chaque paie qui se verifie relit la saisie des mois qu'elle a lus. La vue d'une ligne lit aussi l'unite de sa rubrique
 /// (`droit::catalogue::rubrique`) : les deux catalogues en font partie.
-pub(crate) fn vue_et_empreinte(racine: &Path, mois: Mois) -> R<Option<std::sync::Arc<(VueDuMois, String)>>> {
-    type Saisie = Option<std::sync::Arc<(VueDuMois, String)>>;
+pub(crate) fn vue_et_empreinte(racine: &Path, mois: Mois) -> R<Option<std::sync::Arc<(VueDuMois, ValeurLue)>>> {
+    type Saisie = Option<std::sync::Arc<(VueDuMois, ValeurLue)>>;
     // Le contenu d'un catalogue de rubriques, sans le lire : la meme forme tant que ses octets sont les memes.
     type Catalogue = std::sync::Arc<serde::de::IgnoredAny>;
     type Vues = std::sync::Mutex<std::collections::HashMap<(PathBuf, Mois),(Lus, Vec<Catalogue>, Saisie)>>;
@@ -862,8 +863,8 @@ pub(crate) fn vue_et_empreinte(racine: &Path, mois: Mois) -> R<Option<std::sync:
 
 /// La cle sous laquelle un calcul note la saisie d'un mois qu'il a lue (`socle::fichiers::suivre`) : `saisie <mois>`, ou
 /// `saisie <mois> <salarie>` pour la saisie dont depend la paie de ce salarie dans son mois (`etats::calculer_les_rangs`).
-pub fn cle_de_saisie(mois: Mois, salarie: Option<&IdSalarie>) -> String {
-    socle::fichiers::LectureDatee::Saisie { mois, salarie }.cle()
+pub fn cle_de_saisie(mois: Mois, salarie: Option<&IdSalarie>) -> droit::contexte::CleLue {
+    droit::contexte::CleLue::Datee(socle::fichiers::LectureDatee::Saisie { mois, salarie: salarie.cloned() })
 }
 
 /// L'empreinte de la saisie d'un mois : ce qu'elle dit, sans ce que le moteur tient seul (la validation) ni le numero du
@@ -873,7 +874,7 @@ pub fn cle_de_saisie(mois: Mois, salarie: Option<&IdSalarie>) -> String {
 /// comptent : une paie ecrite ne lit que ceux-la (`etats::calculer_les_rangs`), et un brouillon tape a cote d'elle ne
 /// la fait pas recalculer. Avec `salarie`, seuls ses engagements comptent : la paie d'un engagement ne lit, des autres
 /// engagements du mois, que ceux du meme salarie (`etats::calculer_les_rangs`).
-pub fn empreinte_de_saisie(vue: &VueDuMois, salarie: Option<&IdSalarie>) -> String {
+pub fn empreinte_de_saisie(vue: &VueDuMois, salarie: Option<&IdSalarie>) -> ValeurLue {
     #[derive(Serialize)]
     struct Tete<'a> {
         mois: &'a Mois,
@@ -887,7 +888,7 @@ pub fn empreinte_de_saisie(vue: &VueDuMois, salarie: Option<&IdSalarie>) -> Stri
         .collect();
     let tete = Tete { mois: &vue.mois, taux_cachet: &vue.taux_cachet };
     let h = |x: String| socle::fichiers::Empreinte::des_octets(x.as_bytes());
-    format!("{}:{}", h(socle::ecriture::canonique(&tete)), h(socle::ecriture::canonique(&engagements)))
+    ValeurLue::Saisie { mois: h(socle::ecriture::canonique(&tete)), engagements: h(socle::ecriture::canonique(&engagements)) }
 }
 
 /// Les mois que la saisie a touches : les fichiers, et les mois que chaque engagement a saisis ou couvre jusqu'a sa fin ;

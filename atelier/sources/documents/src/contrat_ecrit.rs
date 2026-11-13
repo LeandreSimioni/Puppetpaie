@@ -216,7 +216,7 @@ impl Organismes {
     fn adhesion(&self, cle: &str) -> Option<Organisme> {
         let enregistre = self.compagnie.adhesions_prevoyance.iter().find(|a| a.cle == cle).map(|a| &a.delegataire);
         let designe = || {
-            self.compagnie.base.contrats_de(self.idcc.as_deref()).filter(|c| c.cle == cle && c.organisme_fixe).find_map(|c| c.organisme.as_ref())
+            self.compagnie.base.contrats_de(self.idcc.as_ref()).filter(|c| c.cle == cle && c.organisme_fixe).find_map(|c| c.organisme.as_ref())
         };
         self.par_siret(enregistre.or_else(designe)?)
     }

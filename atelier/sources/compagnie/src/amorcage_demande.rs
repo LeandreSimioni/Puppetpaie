@@ -181,14 +181,14 @@ pub fn a_combler(ctx: &Contexte, paies: &[Paie], motif: NatureDEvenementDeclench
 pub fn ecrire(ctx: &Contexte, paies: &[Paie], retenues: &[Ligne], motif: NatureDEvenementDeclencheur, mois: Mois, constitution: Jour, envoi_test: bool) -> R<Vec<PathBuf>> {
     use declarations::amorcage as am;
     let dossier = ctx.racine.join("sorties").join(mois.to_string());
-    let premier = envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))? + 1;
+    let premier = droit::natures::NumeroDOrdre::suivant(envois::journal::dernier_ordre_des_signalements(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))?)?;
     let departs = envois::journal::lu(&ctx.racine).map(|j| j.departs).map_err(|e| e.reclasser(Classe::Disque))?;
     let mut fichiers = Vec::new();
     for (rang, l) in retenues.iter().enumerate() {
         let options = am::Options {
             motif,
             type_declaration: TypeDeLaDeclaration::Normale,
-            ordre: premier + rang as i64,
+            ordre: premier.plus(rang as u64)?,
             remplace: None,
             envoi_test,
             date_constitution: Some(constitution),

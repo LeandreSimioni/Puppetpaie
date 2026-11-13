@@ -5,7 +5,7 @@
 //! choisir, refuser, nommer, ecrire, et passer a `envois` ce qui part. Le jour est celui du contexte
 //! (`PUPPETPAIE_AUJOURDHUI`) ; l'horodatage d'un fichier partiel de DPAE est la minute de l'horloge, a l'heure de Paris.
 
-use droit::fiche::Lue as _;
+use droit::fiche::{Lue as _, Nic};
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -147,7 +147,7 @@ pub struct Designation {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) mois: Option<Mois>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) etablissement: Option<String>,
+    pub(crate) etablissement: Option<Nic>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) engagements: Option<Vec<EmbaucheDesignee>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -166,8 +166,8 @@ impl Designation {
     }
 
     /// L'etablissement nomme (son NIC), s'il l'est.
-    fn nic(&self) -> Option<&str> {
-        self.etablissement.as_deref()
+    fn nic(&self) -> Option<&Nic> {
+        self.etablissement.as_ref()
     }
 }
 
@@ -180,7 +180,7 @@ pub(crate) struct ChargeDeposer {
     #[serde(skip_serializing_if = "Option::is_none")]
     mois: Option<Mois>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    etablissement: Option<String>,
+    etablissement: Option<Nic>,
     #[serde(skip_serializing_if = "Option::is_none")]
     engagements: Option<Vec<EmbaucheDesignee>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -217,7 +217,9 @@ impl ChargeDeposer {
 #[serde(deny_unknown_fields)]
 pub(crate) struct ChargeSuivre {
     pub(crate) quoi: Quoi,
-    pub(crate) flux: Option<String>,
+    /// Tel que `deposer` le rend : `""` quand le depot n'a pas de flux.
+    #[serde(default, deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    pub(crate) flux: Option<envois::retours::IdDeFlux>,
     pub(crate) mois: Option<Mois>,
 }
 
@@ -746,7 +748,7 @@ pub fn designee(ctx: &Contexte, d: &Designation) -> R<(String, DitALEcriture)> {
             }
         }
         let dsn = crate::gestes::depart::fabriquer_dsn(ctx, le_mois, "interface")?;
-        let chemin = match d.etablissement.as_deref().filter(|n| !n.is_empty()) {
+        let chemin = match &d.etablissement {
             Some(n) => dsn.fichiers.iter().find(|f| f.file_name().is_some_and(|x| x.to_string_lossy().contains(&format!("_{}", n)))),
             None => dsn.fichiers.first(),
         };
@@ -768,7 +770,7 @@ fn partie(ctx: &Contexte, d: &Designation, mois: Mois) -> R<Option<String>> {
     let lignes = envois::journal::lu(&ctx.racine)?.lignes;
     // Une fiche qui ne dit pas encore son NIC n'a que son siege, et aucune DSN n'en est partie.
     let principal = ctx.entreprise.nic_principal();
-    let nic = d.etablissement.as_deref().filter(|n| !n.is_empty()).or(principal);
+    let nic = d.etablissement.as_ref().or(principal);
     let voulues: Option<BTreeSet<etats::Paire>> = d.engagements.as_ref().filter(|e| !e.is_empty()).map(|e| e.iter().map(|x| (x.salarie.clone(), Some(x.numero.clone()))).collect());
     let ligne = envois::journal::filtrer(&lignes, Some(d.quoi.acte()), Some(mois), false).rev().find(|l| match l {
         // Une ligne de DSN qui ne nomme pas son etablissement est celle de l'etablissement principal.
@@ -806,7 +808,7 @@ fn deposer(ctx: &Contexte, c: ChargeDeposer, motdepasse: Option<&str>) -> R<Depo
         let b = bilan_de_la_repetition(ctx, &Designation::du_fichier(fichier.clone()).avec(quoi))?;
         format!("{} {}", b.titre, b.phrase)
     } else if fait.ligne.nombre_de_retours() > 0 {
-        suivre_depot(ctx, ChargeSuivre { quoi, flux: Some(fait.flux.clone()), mois: Some(fait.mois) })?.phrase
+        suivre_depot(ctx, ChargeSuivre { quoi, flux: fait.flux.clone(), mois: Some(fait.mois) })?.phrase
     } else {
         "Dépôt réel effectué — ses retours sont attendus.".to_string()
     };
@@ -835,9 +837,9 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     let dpae = quoi == Quoi::Dpae;
     let (debut, fin) = releve_retours::derniere_journee()?;
     let releve = if dpae {
-        crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_deref())
+        crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_ref())
     } else {
-        crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None)
+        crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, envois::releve_retours::CanalDesRetours::Dsn)
     };
     let incident = match releve {
         Ok(r) => releve_retours::incidents_en_phrase(&r),
@@ -845,7 +847,7 @@ pub(crate) fn suivre_depot(ctx: &Contexte, c: ChargeSuivre) -> R<Suivi> {
     };
     let lignes = envois::journal::lu(&ctx.racine).map(|j| j.lignes)?;
     // La ligne du journal du depot que le flux nomme ; sans flux, aucune.
-    let du_flux = |q: envois::journal::Acte| flux.as_deref().and_then(|f| lignes.iter().rev().find(|l| l.acte() == q && l.flux() == f));
+    let du_flux = |q: envois::journal::Acte| flux.as_ref().and_then(|f| lignes.iter().rev().find(|l| l.acte() == q && l.flux() == Some(f)));
     let (passe, refuse);
     if dpae {
         let etat = etats::etat_des_embauches(&lignes);
@@ -890,9 +892,9 @@ fn bilan_repetition(ctx: &Contexte, d: Designation) -> R<BilanDuTest> {
         let releve = match d.quoi {
             Quoi::Dpae => {
                 let flux = repetition.flux_conforme();
-                crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_deref())
+                crate::gestes::releve::relever_retours_dpae(ctx, debut, fin, false, flux.as_ref())
             }
-            Quoi::Dsn => crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, None),
+            Quoi::Dsn => crate::gestes::releve::relever_retours(ctx, debut, fin, false, "production", None, envois::releve_retours::CanalDesRetours::Dsn),
         };
         incident = match releve {
             Ok(rel) => releve_retours::incidents_en_phrase(&rel),
@@ -980,7 +982,7 @@ fn jour_jjmmaaaa(v: &str) -> Option<Jour> {
 /// L'identite d'une fiche, telle qu'une DPAE l'ecrit (`apercu_depot_dpae`).
 struct IdentiteDeFiche {
     cle: IdSalarie,
-    nir: Option<String>,
+    nir: Option<droit::fiche::Nir>,
     nom: Option<String>,
     prenom: Option<String>,
     naissance: Option<Jour>,
@@ -1024,7 +1026,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
     let chemin = resoudre(&ctx.racine, fichier)?;
     let contenu = lire_octets(&chemin)?;
     let texte: String = contenu.iter().map(|&b| b as char).collect();
-    let enrs = declarations::dpae::relire(&texte);
+    let enrs = declarations::dpae::relire(&texte)?;
     let m = crate::etapes::Moteur::nouveau(ctx);
     let lignes_journal = m.lignes()?;
     let faites = etats::embauches_par_depot(&lignes_journal);
@@ -1035,7 +1037,7 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
         .iter()
         .map(|(k, f)| IdentiteDeFiche {
             cle: k.clone(),
-            nir: f.champs.nir.remplie().map(String::from),
+            nir: f.champs.nir.dite().cloned(),
             nom: f.champs.nom.portee().map(|t| t.trim().to_uppercase()),
             prenom: f.champs.prenom.portee().map(|t| t.trim().to_uppercase()),
             naissance: f.champs.date_naissance.dite().copied(),
@@ -1070,8 +1072,8 @@ pub(crate) fn apercu_depot_dpae(ctx: &Contexte, fichier: &str) -> R<ApercuDpae> 
     for e in &enrs {
         // Sans NIR, la DPAE declare un numero temporaire (zone a blanc) : l'embauche se reconnait a l'identite qu'elle
         // porte, nom, prenom et date de naissance (`dpae::enregistrement`).
-        let trouve: Option<&IdentiteDeFiche> = match e.nir.as_deref() {
-            Some(nir) => fiches.iter().find(|f| f.nir.as_deref() == Some(nir)),
+        let trouve: Option<&IdentiteDeFiche> = match &e.nir {
+            Some(nir) => fiches.iter().find(|f| f.nir.as_ref() == Some(nir)),
             None => {
                 let (nom, prenom, naissance) = (e.nom.as_deref(), e.prenom.as_deref(), e.date_naissance.as_deref().map(jour_jjmmaaaa));
                 fiches.iter().find(|f| nom.is_some() && f.nom.as_deref() == nom && f.prenom.as_deref() == prenom && f.naissance.map(Some) == naissance)

@@ -5,11 +5,11 @@
 
 use envois::retours::{
     aer_spectacle, anomalies_codees_d_octets, bilan_d_octets, fusionner_bilans, releves_vers_salaries,
-    taux_pas_d_octets, ReleveTauxPas,
+    taux_pas_d_octets, ReleveTauxPas, TypeDeRapport, Verdict,
 };
 
 fn releve(nir: &str, identifiant: &str) -> ReleveTauxPas {
-    ReleveTauxPas { nir: nir.to_string(), taux: droit::pas::TauxDePas::lire("0.00"), type_taux: Some(droit::type_taux_pas::TypeDeTauxPas::TransmisParLaDgfip), identifiant: identifiant.to_string() }
+    ReleveTauxPas { nir: droit::fiche::Nir::lire(nir).unwrap(), taux: droit::pas::TauxDePas::lire("0.00"), type_taux: Some(droit::type_taux_pas::TypeDeTauxPas::TransmisParLaDgfip), identifiant: identifiant.to_string() }
 }
 
 const CRM_REEL: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ns2:rapport xmlns:ns2=\"http://www.gip-mds.fr/\" identifiant=\"450189378\" type=\"CRM nominatif\" profil=\"DSN\" version=\"v02r01\"><envoi><envoi_identification><idflux>WSUrBZ50Y4RWJdDpsRsh.3r</idflux></envoi_identification></envoi><declaration><declaration_bilan><etat>OK</etat><salarie><NIR>1990101999999</NIR><matricule>2</matricule><taux_imposition_PAS>0.00</taux_imposition_PAS></salarie><salarie><NIR>2990101999999</NIR><matricule>1</matricule><taux_imposition_PAS>0.00</taux_imposition_PAS></salarie></declaration_bilan></declaration></ns2:rapport>";
@@ -24,7 +24,8 @@ fn le_format_reel_du_crm_94() {
 fn les_releves_se_rattachent_par_le_nir() {
     let releves = [releve("2990101999999", "1"), releve("1234567890123", "1")];
     let cle = |c: &str| droit::contexte::IdSalarie::lire(c).unwrap();
-    let nirs = [(cle("ALPHA"), "2990101999999".to_string()), (cle("BETA"), "1990101999999".to_string())];
+    let nir = |n: &str| droit::fiche::Nir::lire(n).unwrap();
+    let nirs = [(cle("ALPHA"), nir("2990101999999")), (cle("BETA"), nir("1990101999999"))];
     let r = releves_vers_salaries(&releves, &nirs);
     assert_eq!(r.rattaches.len(), 1);
     assert_eq!(r.rattaches[0].salarie, droit::contexte::IdSalarie::lire("ALPHA").unwrap());
@@ -62,7 +63,7 @@ fn ban() -> String {
     rapport(
         "BAN",
         "<envoi><idflux>WSBBBB</idflux></envoi><declaration><declaration_bilan><etat>KO</etat>\
-         <declaration_anomalie><code>CST-04</code><categorie>Bloquante</categorie>\
+         <declaration_anomalie><code>CST-04</code><categorie>bloquant</categorie>\
          <message> Code URSSAF invalide </message><identifiant>S21.G00.20.001</identifiant><valeur>X</valeur>\
          <nom_famille>FAVART</nom_famille></declaration_anomalie>\
          <declaration_anomalie><code>B1-208-08</code><message>Sans categorie</message></declaration_anomalie>\
@@ -73,13 +74,13 @@ fn ban() -> String {
 #[test]
 fn un_certificat_de_conformite() {
     let b = bilan_d_octets(cco().as_bytes()).unwrap().unwrap();
-    assert_eq!(b.type_rapport, "CCO");
-    assert_eq!(b.essai_reel.as_deref(), Some("01"));
-    assert_eq!(b.etat_declaration.as_deref(), Some("OK"));
+    assert_eq!(b.type_rapport, TypeDeRapport::Cco);
+    assert_eq!(b.essai_reel, Some(droit::nature_declaration::EssaiOuReel::Essai));
+    assert_eq!(b.etat_declaration, Some(Verdict::Ok));
     assert_eq!(b.conformite.as_deref(), Some("OK"));
     assert_eq!(b.certificat.as_deref(), Some("CERTIFIE"));
     assert_eq!(b.mois.map(|m| m.to_string()).as_deref(), Some("2026-08"));
-    assert_eq!((b.salaries.as_deref(), b.contrats.as_deref()), (Some("3"), Some("4")));
+    assert_eq!((b.salaries, b.contrats), (Some(3), Some(4)));
 }
 
 #[test]
@@ -87,11 +88,11 @@ fn le_bilan_de_declaration_l_emporte_sur_l_accuse() {
     let a = bilan_d_octets(aee().as_bytes()).unwrap().unwrap();
     let c = bilan_d_octets(cco().as_bytes()).unwrap().unwrap();
     // Un accuse ne dit ni le mois ni le verdict de la declaration.
-    assert_eq!((a.etat_declaration.as_deref(), a.mois), (None, None));
+    assert_eq!((a.etat_declaration, a.mois), (None, None));
     for ordre in [[a.clone(), c.clone()], [c.clone(), a.clone()]] {
         let f = fusionner_bilans(&ordre).unwrap();
-        assert_eq!(f.type_rapport, "CCO");
-        assert_eq!(f.etat_declaration.as_deref(), Some("OK"));
+        assert_eq!(f.type_rapport, TypeDeRapport::Cco);
+        assert_eq!(f.etat_declaration, Some(Verdict::Ok));
         assert_eq!(f.mois.map(|m| m.to_string()).as_deref(), Some("2026-08"));
     }
 }

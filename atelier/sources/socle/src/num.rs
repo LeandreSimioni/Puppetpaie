@@ -197,11 +197,11 @@ pub fn secondes_au_dixieme(d: std::time::Duration) -> Decimal {
     ns.round_dp_with_strategy(1, RoundingStrategy::MidpointAwayFromZero)
 }
 
-/// Deux décimales, la moitié au pair, en texte.
-pub fn q2(d: Decimal) -> String {
+/// Deux décimales, la moitié au pair : `12.5` devient `12.50` (son texte, `ecriture::decimal_en_texte`).
+pub fn q2(d: Decimal) -> Decimal {
     let mut r = d.round_dp(2);
     r.rescale(2);
-    r.to_string()
+    r
 }
 
 /// UN DECIMAL ECRIT A LA FRANCAISE OU NON, le seul chemin d'un nombre qu'une personne ou une piece ecrit : les blancs

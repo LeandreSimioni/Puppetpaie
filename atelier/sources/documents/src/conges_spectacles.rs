@@ -9,7 +9,7 @@ use droit::fiche::Lue as _;
 use rust_decimal::RoundingStrategy;
 use fabrique_pdf::forme as pdf;
 
-use crate::bulletin::{chemin_texte, identite_de, FORMAT};
+use crate::bulletin::{chemin_net, identite_de, FORMAT};
 use fabrique_pdf::mesure::{mesure, Mesure};
 use droit::contexte::EntrepriseDuDocument;
 use droit::fiche::ChampsEntreprise;
@@ -575,7 +575,7 @@ fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R
         let (x0, y0, x1, y1) = SIGNATURE_CADRE;
         let svg = signature.extension().is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("svg"));
         blocs.push(pdf::Bloc::ImageFixe(pdf::ImageFixe {
-            chemin: chemin_texte(&signature).into(),
+            chemin: chemin_net(&signature),
             x: x0,
             y: y0,
             largeur: x1 - x0,

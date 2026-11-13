@@ -9,7 +9,7 @@ use socle::fichiers::repr;
 use crate::formats;
 use socle::echec::R;
 use crate::usages::strip;
-use droit::fiche::{ChampsSalarie, FicheSalarie};
+use droit::fiche::{ChampsSalarie, FicheSalarie, Sexe};
 use droit::natures::RubriqueDeLaNorme;
 
 pub const RUBRIQUE: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G00.30.020");
@@ -19,13 +19,21 @@ pub const RUBRIQUE_NIR: RubriqueDeLaNorme = RubriqueDeLaNorme::du_moteur("S21.G0
 /// code sexe (CSL-11), sans espace (CSL-12), le SIREN de l'entreprise en 2e a 10e position (CCH-13)
 /// (`atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt` l. 338-354). Il se fabrique pour un salarie (`numero`, qui
 /// le controle entier) ou se lit dans une DSN (`Ntt::lu`, sa forme seule : le SIREN de l'entreprise n'y est pas en main).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct Ntt(String);
 
 impl Ntt {
     /// Le NTT qu'une DSN lue ecrit, s'il en a la forme ; sinon aucun.
     pub fn lu(valeur: &str) -> R<Option<Ntt>> {
         Ok(faute(valeur, "")?.is_none().then(|| Ntt(valeur.to_string())))
+    }
+
+    /// Le NTT qu'un retour de la norme ecrit (RO.B009.R002 de NEOReS) : hors de sa forme, il se refuse.
+    pub fn lire(valeur: &str) -> R<Ntt> {
+        match faute(valeur, "")? {
+            None => Ok(Ntt(valeur.to_string())),
+            Some(f) => Err(socle::refus!("« {} » n'est pas un numéro technique temporaire : {}.", valeur, f)),
+        }
     }
 
     pub fn as_str(&self) -> &str {
@@ -39,22 +47,23 @@ impl std::fmt::Display for Ntt {
     }
 }
 
-/// Le code sexe d'un NIR (son premier chiffre), sinon de la case `sexe` ; `None` si ni l'un ni l'autre ne le dit.
-pub fn sexe_de(nir: Option<&str>, sexe: Option<&str>) -> Option<&'static str> {
+/// Le code sexe d'une fiche EN COURS DE SAISIE : celui que dit son NIR (`du_nir` : `Sexe::du_nir` du texte saisi), sinon
+/// la case `sexe` ; `None` si ni l'un ni l'autre ne le dit. Une fiche enregistree le dit par `ChampsSalarie::sexe`.
+pub fn sexe_de(du_nir: Option<Sexe>, sexe: Option<&str>) -> Option<&'static str> {
     let un_ou_deux = |t: &str| match t {
         "1" => Some("1"),
         "2" => Some("2"),
         _ => None,
     };
-    match nir.map(strip).and_then(|n| n.get(..1)).and_then(un_ou_deux) {
-        Some(s) => Some(s),
+    match du_nir {
+        Some(s) => Some(s.as_str()),
         None => sexe.map(strip).and_then(un_ou_deux),
     }
 }
 
 /// Le NTT de ce salarie dans l'entreprise de SIREN `siren`.
 pub fn numero(siren: &str, salarie: &FicheSalarie) -> R<Ntt> {
-    let Some(s) = sexe_de(salarie.nir.portee(), salarie.sexe.code()) else {
+    let Some(s) = salarie.sexe().map(|s| s.as_str()) else {
         let qui = match salarie.nom.remplie() {
             Some(nom) => nom.to_string(),
             None => salarie.id.to_string(),
@@ -123,15 +132,10 @@ pub fn faute(valeur: &str, siren: &str) -> R<Option<String>> {
     formats::mauvaise(RUBRIQUE, valeur)
 }
 
-/// Le NIR de la fiche, quand elle le dit.
-pub fn nir_de(salarie: &ChampsSalarie) -> Option<String> {
-    salarie.nir.portee().map(|n| strip(n).to_string())
-}
-
-
-/// S21.G00.30.001, quand il y en a un -- et rien du tout sinon.
+/// S21.G00.30.001, quand il y en a un -- et rien du tout sinon. La DSN ecrit le NIR de la fiche tel quel (sa saisie l'a
+/// range, `Nir::rangee`).
 pub fn poser_nir(f: &mut Fichier, salarie: &ChampsSalarie) -> R<()> {
-    if let Some(nir) = nir_de(salarie) {
+    if let Some(nir) = salarie.nir.dite().cloned() {
         f.add(RUBRIQUE_NIR, nir);
     }
     Ok(())
@@ -145,7 +149,7 @@ pub fn poser_nir(f: &mut Fichier, salarie: &ChampsSalarie) -> R<()> {
 /// `norme-dsn/texte/bloc-S21.G00.30.txt`, l. 348-354) ; sinon rien. `declaree` : l'identite que la derniere DSN a
 /// declaree pour lui (`changements_individu::Declarations::derniere`, ou `derniere_declaree`).
 pub fn poser_ntt(f: &mut Fichier, ent: &droit::fiche::ChampsEntreprise, salarie: &FicheSalarie, declaree:Option<&crate::changements_individu::Declaree>) -> R<()> {
-    if nir_de(salarie).is_none() {
+    if salarie.nir.dite().is_none() {
         f.add(RUBRIQUE, numero(ent.siren.ecrite("siren")?, salarie)?);
         return Ok(());
     }

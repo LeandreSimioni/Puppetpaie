@@ -9,11 +9,16 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use droit::contexte::IdSalarie;
+use documents::fiche_questionnaire::CodeDeDemande;
+use droit::fiche::{Courriel, Nic};
 use droit::nature_declaration::NatureDeLaDeclaration;
 use droit::type_declaration::TypeDeLaDeclaration;
 use engagement::numeros::NumeroContrat;
 use socle::fichiers::{CheminRelatif, EmpreinteCourte, NomDeFichier};
 use socle::mois::Mois;
+
+use crate::envoi::IdDeCourriel;
+use crate::retours::{IdDeFlux, StatutDuRetour, Verdict};
 
 /// Le mode d'un envoi : reel (il engage), ou test (un depot de test, qui ne conserve rien).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,7 +108,9 @@ pub struct Envoi<D, R> {
     pub qui: String,
     pub accepte: bool,
     pub destinataire: String,
-    pub flux: String,
+    /// Le flux que la plate-forme a donne au depot ; `""` au fichier quand elle n'en a pas donne.
+    #[serde(with = "socle::forme::vide_si_aucun")]
+    pub flux: Option<IdDeFlux>,
     pub retours: Vec<R>,
     pub reponse: String,
     /// La reponse de l'organisme archivee, relative a la compagnie.
@@ -197,8 +204,8 @@ impl Ligne {
         commun!(self, e => &e.destinataire)
     }
 
-    pub fn flux(&self) -> &str {
-        commun!(self, e => &e.flux)
+    pub fn flux(&self) -> Option<&IdDeFlux> {
+        commun!(self, e => e.flux.as_ref())
     }
 
     pub fn reponse(&self) -> &str {
@@ -274,8 +281,8 @@ impl Ligne {
     }
 
     /// L'etablissement (son NIC) qu'une DSN declare ; `None` : l'etablissement principal.
-    pub fn etablissement(&self) -> Option<&str> {
-        self.dsn().and_then(|e| e.detail.etablissement.as_deref()).filter(|n| !n.is_empty())
+    pub fn etablissement(&self) -> Option<&Nic> {
+        self.dsn().and_then(|e| e.detail.etablissement.as_ref())
     }
 
     /// La nature d'une DSN (`01` mensuelle, `04` `05` `07` `08` un signalement) ; `None` si la ligne ne la dit pas.
@@ -299,7 +306,7 @@ pub struct Ouverture {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub test: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub flux: Option<String>,
+    pub flux: Option<IdDeFlux>,
     pub empreinte: EmpreinteCourte,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compte_rendu: Option<String>,
@@ -323,11 +330,11 @@ pub struct DetailDsn {
     #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
     pub type_declaration: Option<TypeDeLaDeclaration>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fraction: Option<String>,
+    pub fraction: Option<droit::natures::Fraction>,
     #[serde(rename = "nature", skip_serializing_if = "Option::is_none")]
     pub nature_declaration: Option<NatureDeLaDeclaration>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ordre: Option<String>,
+    pub ordre: Option<droit::natures::NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub versements: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -338,9 +345,11 @@ pub struct DetailDsn {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pas_bareme: Option<usize>,
     pub repetition: Option<Ouverture>,
-    pub ordre_test: Option<i64>,
+    /// Ecrit en nombre, `null` quand il n'y en a pas ; une cle absente se lit vide, comme un `Option` ordinaire.
+    #[serde(default, with = "droit::natures::en_nombre::option")]
+    pub ordre_test: Option<droit::natures::NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub etablissement: Option<String>,
+    pub etablissement: Option<Nic>,
     /// Le jour de l'evenement qu'un signalement declare (le dernier jour travaille d'un arret, la fin d'un contrat...) ; la
     /// ligne porte le mois de ce jour.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -348,7 +357,7 @@ pub struct DetailDsn {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub etat_envoi: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub etat_declaration: Option<String>,
+    pub etat_declaration: Option<Verdict>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verdict_connu: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -422,13 +431,15 @@ impl DetailDpae {
 pub struct PersonneCertifiee {
     pub nom: String,
     pub prenom: String,
-    pub embauche: String,
+    /// Le premier jour que le certificat dit ; aucun : sa zone est a blanc (le journal l'ecrit `""`).
+    #[serde(with = "socle::forme::vide_si_aucun")]
+    pub embauche: Option<socle::date::Jour>,
     pub dossier: String,
     pub code: String,
     pub libelle: String,
     pub enregistree: bool,
     pub deja_existante: bool,
-    pub formalites: Vec<String>,
+    pub formalites: Vec<declarations::dpae::FormaliteDpae>,
     /// Ce que la page en montre (`routes::depots`) : pose sur ce qu'une route rend, jamais ecrit ni lu au journal.
     #[serde(skip_deserializing, skip_serializing_if = "Option::is_none")]
     pub pastille: Option<socle::ecran::Pastille>,
@@ -457,8 +468,8 @@ impl PersonneCertifiee {
 /// pour le certificat d'une DPAE, chaque personne.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Verdict {
-    pub verdict: String,
+pub struct VerdictDeLaPiece {
+    pub verdict: Verdict,
     pub anomalies: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dpae: Option<Vec<PersonneCertifiee>>,
@@ -471,27 +482,27 @@ pub struct Verdict {
 pub struct RetourOrganisme {
     /// La nature du retour (un compte rendu, un bilan, un certificat...).
     #[serde(rename = "nature")]
-    pub nature_retour: String,
+    pub nature_retour: crate::retours::NatureDuRetour,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub verdict: Option<String>,
+    pub verdict: Option<Verdict>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub anomalies: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dpae: Option<Vec<PersonneCertifiee>>,
     pub libelle: String,
-    pub statut: Option<String>,
+    pub statut: Option<StatutDuRetour>,
     /// L'heure ou la plate-forme l'a mis a disposition (`retours::Annonce`).
     #[serde(with = "socle::paris::ecrit::compacte::option")]
     pub publication: Option<socle::paris::Moment>,
 }
 
 impl RetourOrganisme {
-    pub fn verdict(&self) -> Option<&str> {
-        self.verdict.as_deref()
+    pub fn verdict(&self) -> Option<Verdict> {
+        self.verdict
     }
 
     pub fn ko(&self) -> bool {
-        self.verdict() == Some("KO")
+        self.verdict == Some(Verdict::Ko)
     }
 
     pub fn anomalies(&self) -> Option<&[String]> {
@@ -508,7 +519,7 @@ impl RetourOrganisme {
     }
 
     /// Ce que sa piece en dit, pose sur lui.
-    pub fn poser(&mut self, v: Verdict) {
+    pub fn poser(&mut self, v: VerdictDeLaPiece) {
         self.verdict = Some(v.verdict);
         self.anomalies = Some(v.anomalies);
         if v.dpae.is_some() {
@@ -519,7 +530,7 @@ impl RetourOrganisme {
     /// Ce qu'un autre poste en savait de plus (un verdict), sans rien retirer.
     pub fn completer(&mut self, autre: &RetourOrganisme) {
         if self.verdict.is_none() {
-            self.verdict = autre.verdict.clone();
+            self.verdict = autre.verdict;
         }
         if self.anomalies.is_none() {
             self.anomalies = autre.anomalies.clone();
@@ -560,13 +571,13 @@ pub struct DetailDocuments {
     pub salaries: Vec<Servi>,
     pub main_propre: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub expediteur: Option<String>,
+    pub expediteur: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub durees_ms: Option<Durees>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub partis: Option<Vec<String>>,
+    pub partis: Option<Vec<Courriel>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub echec_a: Option<String>,
+    pub echec_a: Option<Courriel>,
 }
 
 /// UN CONTRAT (OU UN AVENANT) PARTI A LA SIGNATURE : son engagement (salarie, bornes, numero), sa piece, ce que le
@@ -583,11 +594,11 @@ pub struct ContratParti {
     pub spectacle: Option<String>,
     pub mois: Mois,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub acte: Option<String>,
+    pub acte: Option<ActeDuContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avenant: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub remplace: Option<String>,
+    pub remplace: Option<NumeroContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effet: Option<socle::date::Jour>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -595,17 +606,17 @@ pub struct ContratParti {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub modifications: Option<Vec<ArticleModifie>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub clauses: Option<BTreeMap<String, Option<String>>>,
+    pub clauses: Option<BTreeMap<documents::marqueurs::Marqueur, Option<String>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
+    pub code: Option<CodeDeDemande>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub adresse: Option<String>,
+    pub adresse: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relance: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub empreinte: Option<EmpreinteCourte>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<String>,
+    pub message: Option<IdDeCourriel>,
     pub ailleurs: bool,
     /// L'empreinte du modele avec lequel ce contrat est parti (son texte et celui de son avenant), fige sous ce nom avec la compagnie
     /// (`routes::modeles_contrat::figer`) ; un avenant ne la porte pas.
@@ -616,8 +627,26 @@ pub struct ContratParti {
 impl ContratParti {
     /// Un avenant au contrat, pas le contrat.
     pub fn est_avenant(&self) -> bool {
-        self.acte.as_deref() == Some("avenant")
+        self.acte == Some(ActeDuContrat::Avenant)
     }
+}
+
+/// CE QU'EST UN CONTRAT PARTI QUI N'EST PAS LE CONTRAT LUI-MEME : un avenant (`avenant`), ou le contrat refait qui annule
+/// et remplace celui qui est parti (`remplace`). Une liste du logiciel, qu'il ecrit lui-meme ; aucun acte : le contrat
+/// lui-meme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ActeDuContrat {
+    Avenant,
+    Remplace,
+}
+
+/// D'OU EST VENUE LA REPONSE A UN CONTRAT PARTI : un « Je signe » releve par courriel (`courriel`). Une liste du
+/// logiciel, qu'il ecrit lui-meme ; aucune : la mention posee a la main.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OrigineDuRetourDeContrat {
+    Courriel,
 }
 
 /// CE QU'UN AVENANT CHANGE, un article ou un terme : l'article du modele de contrat et son numero, l'ancien texte et le
@@ -652,15 +681,15 @@ pub struct DetailSignature {
     pub contrats: Vec<ContratParti>,
     pub main_propre: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub expediteur: Option<String>,
+    pub expediteur: Option<Courriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relance: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub acte: Option<String>,
+    pub acte: Option<ActeDuContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub partis: Option<Vec<String>>,
+    pub partis: Option<Vec<Courriel>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub echec_a: Option<String>,
+    pub echec_a: Option<Courriel>,
 }
 
 /// CE QUI REVIENT D'UN CONTRAT PARTI (`routes::contrats::contrat_recu_avec`) : le contrat (salarie, debut,
@@ -677,13 +706,14 @@ pub struct RetourContrat {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avenant: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub origine: Option<String>,
+    pub origine: Option<OrigineDuRetourDeContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
+    pub code: Option<CodeDeDemande>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub adresse: Option<String>,
+    pub adresse: Option<Courriel>,
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub quand: socle::paris::Moment,
+    /// L'identifiant de la reponse dans la boite (son UID IMAP) : celui d'un message recu, pas un `Message-ID`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -693,7 +723,7 @@ pub struct RetourContrat {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mention: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub acte: Option<String>,
+    pub acte: Option<ActeDuContrat>,
     pub qui: String,
     pub reponse: String,
 }
@@ -701,7 +731,7 @@ pub struct RetourContrat {
 impl RetourContrat {
     /// Une reponse « Je signe » relevee par courriel.
     pub fn par_courriel(&self) -> bool {
-        self.origine.as_deref() == Some("courriel")
+        self.origine == Some(OrigineDuRetourDeContrat::Courriel)
     }
 }
 
@@ -714,7 +744,7 @@ pub struct AvenantParti {
     pub quand: socle::paris::InstantOuJour,
     pub mois: Mois,
     pub fichier: NomDeFichier,
-    pub code: Option<String>,
+    pub code: Option<CodeDeDemande>,
     pub contrat: Option<NumeroContrat>,
     pub effet: Option<socle::date::Jour>,
     pub modifications: Vec<ArticleModifie>,
@@ -744,7 +774,7 @@ pub struct ContratAttendu {
 pub struct DetailContresigne {
     pub salarie: IdSalarie,
     pub nom: String,
-    pub code: String,
+    pub code: CodeDeDemande,
     pub contrats: Vec<ContratAttendu>,
     pub fichiers: Vec<NomDeFichier>,
 }
@@ -766,12 +796,12 @@ pub struct DetailCasc {
     pub annees: Vec<AnneeCasc>,
     pub mois: Vec<Mois>,
     pub total: rust_decimal::Decimal,
-    pub expediteur: String,
+    pub expediteur: Courriel,
     pub eml: Vec<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub partis: Option<Vec<String>>,
+    pub partis: Option<Vec<Courriel>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub echec_a: Option<String>,
+    pub echec_a: Option<Courriel>,
 }
 
 /// Le dossier qu'un salarie a recu : sa piece.
@@ -787,27 +817,27 @@ pub struct DossierServi {
 #[serde(deny_unknown_fields)]
 pub struct DetailDossier {
     pub periode: String,
-    pub categories: Vec<String>,
+    pub categories: Vec<documents::CategorieDeDocument>,
     pub salaries: Vec<DossierServi>,
-    pub expediteur: String,
+    pub expediteur: Courriel,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub partis: Option<Vec<String>>,
+    pub partis: Option<Vec<Courriel>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub echec_a: Option<String>,
+    pub echec_a: Option<Courriel>,
 }
 
 /// LE DETAIL D'UNE DEMANDE DE FICHE : son code, a qui, et l'identifiant du message parti.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DetailFiche {
-    pub code: String,
-    pub adresse: String,
+    pub code: CodeDeDemande,
+    pub adresse: Courriel,
     /// Le prenom pour lui ecrire, s'il a ete dit.
     pub prenom: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<String>,
+    pub message: Option<IdDeCourriel>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub expediteur: Option<String>,
+    pub expediteur: Option<Courriel>,
 }
 
 /// CE QUI REVIENT D'UNE DEMANDE DE FICHE : la fiche recue (la cle de la fiche, illisible ou non, ses erreurs, le
@@ -815,7 +845,7 @@ pub struct DetailFiche {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RetourFiche {
-    pub code: String,
+    pub code: CodeDeDemande,
     pub abandon: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub salarie: Option<IdSalarie>,
@@ -826,8 +856,10 @@ pub struct RetourFiche {
     #[serde(with = "socle::paris::ecrit::seconde")]
     pub quand: socle::paris::Moment,
     pub qui: String,
+    /// L'adresse d'ou la reponse est venue (`courriel_lecture::Expediteur::Adresse`, la seule retenue).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub de: Option<String>,
+    pub de: Option<Courriel>,
+    /// L'identifiant de la reponse dans la boite (son UID IMAP) : celui d'un message recu, pas un `Message-ID`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     pub reponse: String,
@@ -836,13 +868,13 @@ pub struct RetourFiche {
 /// UN ENVOI COUPE EN ROUTE (`ligne_d_envoi::noter_echec_d_envoi`) : son detail dit ceux qui ont recu et l'adresse ou il
 /// a echoue.
 pub trait EnRoute {
-    fn coupe(&mut self, partis: Vec<String>, echec_a: String);
+    fn coupe(&mut self, partis: Vec<Courriel>, echec_a: Courriel);
 }
 
 macro_rules! en_route {
     ($($t:ty),*) => {
         $(impl EnRoute for $t {
-            fn coupe(&mut self, partis: Vec<String>, echec_a: String) {
+            fn coupe(&mut self, partis: Vec<Courriel>, echec_a: Courriel) {
                 self.partis = Some(partis);
                 self.echec_a = Some(echec_a);
             }

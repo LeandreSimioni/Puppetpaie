@@ -184,9 +184,9 @@ pub struct Modele {
     /// Le contrat que celui-ci annule et remplace (style « contrat »).
     pub remplace: Option<Remplace>,
     /// L'image de la signature de l'employeur dans sa case (styles « contrat » et « avenant »).
-    pub signature: Option<String>,
+    pub signature: Option<PathBuf>,
     /// L'image de la signature de l'employeur en fin de document (style « attestation »).
-    pub signature_employeur: Option<String>,
+    pub signature_employeur: Option<PathBuf>,
     /// Les articles que l'avenant modifie (style « avenant »).
     pub modifications: Option<Vec<Modification>>,
 }

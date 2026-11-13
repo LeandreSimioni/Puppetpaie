@@ -247,7 +247,13 @@ fn chiffres(t: &str) -> usize {
 /// quoi faire (`{texte}`, `{n}` sa mesure, `{max}` la borne) : rien ne le couperait. Un texte vide n'est pas le sien :
 /// la case vide s'ecrit nulle.
 macro_rules! texte_borne {
-    (@commun $nom:ident, $unite:literal) => {
+    (@ranger) => {
+        None
+    };
+    (@ranger $ranger:path) => {
+        Some($ranger)
+    };
+    (@commun $nom:ident, $unite:literal $(, rangee par $ranger:path)?) => {
         impl $nom {
             /// Le texte `texte`, ou ce qui le refuse ; vide, il n'est pas une valeur (la case vide s'ecrit nulle).
             pub fn lire(texte: &str) -> R<$nom> {
@@ -282,18 +288,25 @@ macro_rules! texte_borne {
 
         impl<'de> Deserialize<'de> for $nom {
             fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-                $nom::lire(&String::deserialize(d)?).map_err(|e| serde::de::Error::custom(e.phrase))
+                let texte = String::deserialize(d)?;
+                // Une saisie se range d'abord dans la forme du type (`FormeDeCase::RANGER`), s'il en a une.
+                let texte = match <$nom as FormeDeCase>::RANGER {
+                    Some(ranger) => socle::forme::range_si_saisi(texte, ranger),
+                    None => texte,
+                };
+                $nom::lire(&texte).map_err(|e| serde::de::Error::custom(e.phrase))
             }
         }
 
         impl FormeDeCase for $nom {
             const FAUTE: Option<fn(&str) -> Option<String>> = Some($nom::faute);
             const LONGUEUR: Option<(usize, &'static str)> = Some(($nom::LONGUEUR, $unite));
+            const RANGER: Option<fn(&str) -> String> = texte_borne!(@ranger $($ranger)?);
         }
     };
-    ($(#[$m:meta])* pub struct $nom:ident : $borne:ident $max:literal $unite:literal par $mesure:ident, $phrase:literal;) => {
+    ($(#[$m:meta])* pub struct $nom:ident : $borne:ident $max:literal $unite:literal par $mesure:ident $(rangee par $ranger:path)?, $phrase:literal;) => {
         $(#[$m])*
-        #[derive(Debug, Clone, PartialEq, Serialize)]
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
         #[serde(transparent)]
         pub struct $nom(String);
 
@@ -307,7 +320,7 @@ macro_rules! texte_borne {
             }
         }
 
-        texte_borne!(@commun $nom, $unite);
+        texte_borne!(@commun $nom, $unite $(, rangee par $ranger)?);
     };
 }
 
@@ -486,10 +499,80 @@ l'étranger), ce que la DPAE et la DSN écrivent (norme DPAE v5.3, zone « Code 
 texte_borne! {
     /// LE NUMERO DE SECURITE SOCIALE d'un salarie, sans sa cle : 13 caracteres. La DPAE en ecrit 13 (N_SECU_SOC, positions
     /// 348-360 : `atelier/reference/norme-dpae/v5.3_FormatDPAE_EMAIL.txt`, l. 309-315) ; la DSN aussi (S21.G00.30.001,
-    /// X [13,13] : `logiciel/donnees/formats-dsn-base.json`).
-    pub struct Nir : Exactement 13 "caractères" par caracteres,
+    /// X [13,13] : `logiciel/donnees/formats-dsn-base.json`). Saisi, il se range sans aucun blanc et en capitales
+    /// (`Nir::rangee`) : un departement corse saisi « 2a » s'ecrit « 2A ».
+    pub struct Nir : Exactement 13 "caractères" par caracteres rangee par Nir::rangee,
         "« {texte} » a {n} caractères : un numéro de sécurité sociale en a {max}, sans sa clé, ce que la DPAE et la DSN \
 écrivent (norme DPAE v5.3, zone « Numéro de sécurité sociale » ; DSN, S21.G00.30.001). Les deux derniers chiffres vont dans la case « Clé »";
+}
+
+impl Nir {
+    /// Le texte saisi `texte` dans sa forme, avant d'etre lu (`FormeDeCase::RANGER`) : sans aucun blanc, en capitales.
+    pub fn rangee(texte: &str) -> String {
+        sans_blancs(texte).to_uppercase()
+    }
+
+    /// Le sexe que dit son premier chiffre (`Sexe::du_nir`).
+    pub fn sexe(&self) -> Option<Sexe> {
+        Sexe::du_nir(&self.0)
+    }
+
+    /// UN NIR IMPRIME AVEC OU SANS SA CLE, deja compacte (`texte`) : treize caracteres, ou quinze dont les deux derniers
+    /// sont la cle (INSEE, schema NIR) ; la seule coupe « 13 + cle ». Une autre longueur : aucun.
+    pub fn et_sa_cle(texte: &str) -> Option<(&str, Option<&str>)> {
+        match texte.chars().count() {
+            13 => Some((texte, None)),
+            15 => {
+                let (i, _) = texte.char_indices().nth(13)?;
+                Some((&texte[..i], Some(&texte[i..])))
+            }
+            _ => None,
+        }
+    }
+
+    /// LE NIR QU'UNE PIECE IMPORTEE PORTE (une DSN lue, une AEM, une AER, un certificat, un bulletin d'autrui) : hors de sa
+    /// forme, la case reste vide, comme un code hors de nos listes ; la piece d'un tiers se lit, elle ne se refuse pas
+    /// pour lui. Les retours de la norme le lisent strictement (`lire`).
+    pub fn d_une_piece(texte: &str) -> Option<Nir> {
+        match Nir::lire(texte) {
+            Ok(n) => Some(n),
+            Err(_) => None,
+        }
+    }
+}
+
+/// LE MATRICULE d'un salarie, son numero dans la compagnie (S21.G00.30.019, « Matricule de l'individu dans
+/// l'entreprise ») : « Le choix de la valeur que prend le matricule revient à l'employeur », « X [1,30] » (cahier
+/// technique DSN 2026.1, `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt` l. 327-331 ;
+/// `logiciel/donnees/formats-dsn-base.json`, S21.G00.30.019). De 1 a 30 caracteres, et rien de plus (regle 7) ; il
+/// s'ecrit tel qu'il a ete saisi. La fiche du salarie le porte, la DSN et le signalement le declarent, la DSN partie le
+/// garde (`declarations::changements_individu::Declaree`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct Matricule(String);
+
+impl Matricule {
+    pub const LONGUEUR: usize = 30;
+
+    /// Le matricule `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<Matricule> {
+        let n = caracteres(texte);
+        if (1..=Self::LONGUEUR).contains(&n) {
+            Ok(Matricule(texte.to_string()))
+        } else {
+            Err(socle::refus!(
+                "Matricule {} : il a {} caractères, la DSN en écrit de 1 à {} (S21.G00.30.019). Corrigez-le",
+                socle::fichiers::repr(texte),
+                n,
+                Self::LONGUEUR
+            ))
+        }
+    }
+}
+
+/// Le matricule saisi se garde tel quel : le choix de sa valeur revient a l'employeur.
+fn tel_quel(texte: &str) -> String {
+    texte.to_string()
 }
 
 /// CE QU'UNE NOTION LUE PORTE AVEC SON TEXTE : elle se lit de son seul lecteur (`lire`, a la lecture du fichier comme a
@@ -643,14 +726,56 @@ identifiant_de_chiffres! {
         "« {texte} » n'est pas un SIRET : il a {max} chiffres, le SIREN puis le NIC, sans espace (INSEE). Corrigez-le";
 }
 
-identifiant_de_chiffres! {
-    /// L'IDCC, L'IDENTIFIANT D'UNE CONVENTION COLLECTIVE : 4 chiffres (DSN, « Code convention collective applicable »,
-    /// S21.G00.40.017, et « Code convention collective principale », S21.G00.11.022, X [4,4] :
-    /// `logiciel/donnees/formats-dsn-base.json`).
-    pub struct Idcc : 4,
-        "« {texte} » n'est pas un IDCC : une convention collective se dit en {max} chiffres, 3090 par exemple (DSN, \
-S21.G00.40.017). Corrigez-le";
+/// L'IDCC, L'IDENTIFIANT D'UNE CONVENTION COLLECTIVE : 4 chiffres (DSN, « Code convention collective applicable »,
+/// S21.G00.40.017, et « Code convention collective principale », S21.G00.11.022, X [4,4] :
+/// `logiciel/donnees/formats-dsn-base.json`). C'est la cle des tables par convention : il s'ecrit et se trie
+/// comme son texte (quatre chiffres : l'ordre du texte est celui des nombres), et une table qu'il indexe s'ecrit dans
+/// l'ordre de ses cles telles qu'ecrites. Une convention que le moteur nomme lui-meme est une constante (`du_moteur`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct Idcc(std::borrow::Cow<'static, str>);
+
+impl Idcc {
+    pub const LONGUEUR: usize = 4;
+
+    /// L'identifiant `texte`, ou la phrase qui le refuse.
+    pub fn lire(texte: &str) -> R<Idcc> {
+        if de_chiffres(texte, Self::LONGUEUR) {
+            Ok(Idcc(std::borrow::Cow::Owned(texte.to_string())))
+        } else {
+            Err(socle::echec::refus(format!(
+                "« {texte} » n'est pas un IDCC : une convention collective se dit en {max} chiffres, 3090 par exemple \
+(DSN, S21.G00.40.017). Corrigez-le",
+                texte = texte,
+                max = Self::LONGUEUR
+            )))
+        }
+    }
+
+    /// UNE CONVENTION QUE LE MOTEUR NOMME, ecrite en Rust : une constante (`const X: Idcc = Idcc::du_moteur("…")`),
+    /// dont le compilateur refuse un texte qui n'est pas fait de quatre chiffres.
+    pub const fn du_moteur(texte: &'static str) -> Idcc {
+        let octets = texte.as_bytes();
+        assert!(octets.len() == Self::LONGUEUR, "un IDCC a quatre chiffres");
+        let mut i = 0;
+        while i < octets.len() {
+            assert!(octets[i].is_ascii_digit(), "un IDCC a quatre chiffres");
+            i += 1;
+        }
+        Idcc(std::borrow::Cow::Borrowed(texte))
+    }
 }
+
+notion_lue!(Idcc rangee par sans_blancs);
+
+/// Les conventions que le moteur nomme lui-meme (une regle propre a l'une d'elles), par leur IDCC ; la CCNEAC :
+/// `clauses::IDCC_CCNEAC`.
+pub const IDCC_1734: Idcc = Idcc::du_moteur("1734");
+pub const IDCC_1790: Idcc = Idcc::du_moteur("1790");
+pub const IDCC_2642: Idcc = Idcc::du_moteur("2642");
+pub const IDCC_3090: Idcc = Idcc::du_moteur("3090");
+pub const IDCC_3097: Idcc = Idcc::du_moteur("3097");
+pub const IDCC_3241: Idcc = Idcc::du_moteur("3241");
 
 impl Siren {
     /// Sa cle de Luhn est-elle juste (`cle_de_luhn_juste`) ?
@@ -773,9 +898,49 @@ impl CleNir {
     }
 
     /// La cle du nombre `nombre` qu'ecrit un NIR : le complement a 97 de son reste par 97, de 01 a 97 (INSEE, 4.1).
-    pub fn du_nombre(nombre: u64) -> CleNir {
+    fn du_nombre(nombre: u64) -> CleNir {
         CleNir(format!("{:02}", 97 - nombre % 97))
     }
+
+    /// LA CLE DU NIR `nir` : 97 - (NIR mod 97), sur deux chiffres (`atelier/reference/sources/insee-nir-siret/`, INSEE,
+    /// schema NIR, 4.1). En Corse, 2A et 2B au 6e-7e rang valent 19 et 18 (equivalent, par inference, au zero moins
+    /// 1 000 000 ou 2 000 000 du texte). Aucune si un de ses caracteres n'est pas un chiffre.
+    pub fn du_nir(nir: &Nir) -> Option<CleNir> {
+        CleNir::des_treize(&nir.0)
+    }
+
+    /// La cle de treize caracteres `n` deja ranges (en capitales), la seule arithmetique de la cle : celle d'un `Nir`
+    /// (`du_nir`), et celle d'un NIR qu'une saisie en cours ecrit (`declarations::champs::cle_nir`).
+    pub fn des_treize(n: &str) -> Option<CleNir> {
+        let rang_corse: String = n.chars().skip(5).take(2).collect();
+        let n = match rang_corse.as_str() {
+            "2A" => n.replacen("2A", "19", 1),
+            "2B" => n.replacen("2B", "18", 1),
+            _ => n.to_string(),
+        };
+        // Les chiffres decimaux de toutes les ecritures comptent comme des chiffres.
+        let mut x: u64 = 0;
+        for c in n.chars() {
+            x = x * 10 + u64::from(valeur_decimale(c)?);
+        }
+        Some(CleNir::du_nombre(x))
+    }
+}
+
+/// La valeur d'un chiffre decimal Unicode (categorie Nd).
+fn valeur_decimale(c: char) -> Option<u32> {
+    if let Some(d) = c.to_digit(10) {
+        return Some(d);
+    }
+    // Le zero de chaque suite de dix chiffres decimaux (Unicode 15).
+    const ZEROS: [u32; 65] = [
+        0x660, 0x6F0, 0x7C0, 0x966, 0x9E6, 0xA66, 0xAE6, 0xB66, 0xBE6, 0xC66, 0xCE6, 0xD66, 0xDE6, 0xE50, 0xED0, 0xF20, 0x1040, 0x1090, 0x17E0,
+        0x1810, 0x1946, 0x19D0, 0x1A80, 0x1A90, 0x1B50, 0x1BB0, 0x1C40, 0x1C50, 0xA620, 0xA8D0, 0xA900, 0xA9D0, 0xA9F0, 0xAA50, 0xABF0, 0xFF10,
+        0x104A0, 0x10D30, 0x11066, 0x110F0, 0x11136, 0x111D0, 0x112F0, 0x11450, 0x114D0, 0x11650, 0x116C0, 0x11730, 0x118E0, 0x11950, 0x11C50,
+        0x11D50, 0x11DA0, 0x16A60, 0x16AC0, 0x16B50, 0x1D7CE, 0x1D7D8, 0x1D7E2, 0x1D7EC, 0x1D7F6, 0x1E140, 0x1E2F0, 0x1E4F0, 0x1E950,
+    ];
+    let p = c as u32;
+    ZEROS.iter().find(|z| (**z..**z + 10).contains(&p)).map(|z| p - z).or_else(|| (0x1FBF0..0x1FBFA).contains(&p).then(|| p - 0x1FBF0))
 }
 
 notion_lue!(CleNir rangee par sans_blancs_de_bord);
@@ -802,6 +967,26 @@ impl NumeroObjetSpectacle {
                 Self::LONGUEUR
             ))
         }
+    }
+
+    /// LE NUMERO D'OBJET QU'UNE PIECE IMPORTEE PORTE (une AEM, une AER, un bulletin d'autrui) : sans ses
+    /// blancs de bord ; a blanc ou hors de sa forme, la case reste vide, comme un code hors de nos listes (la piece d'un
+    /// tiers se lit, elle ne se refuse pas pour lui).
+    pub fn d_une_piece(texte: &str) -> Option<NumeroObjetSpectacle> {
+        match NumeroObjetSpectacle::lire(&NumeroObjetSpectacle::rangee(texte)) {
+            Ok(n) => Some(n),
+            Err(_) => None,
+        }
+    }
+
+    /// Le meme numero que `autre`, sans regarder la casse : une piece et une fiche l'ecrivent en capitales ou non.
+    pub fn meme(&self, autre: &NumeroObjetSpectacle) -> bool {
+        self.0.eq_ignore_ascii_case(&autre.0)
+    }
+
+    /// Le meme numero, en capitales : la cle sous laquelle l'import regroupe ce que les pieces en impriment.
+    pub fn en_capitales(&self) -> NumeroObjetSpectacle {
+        NumeroObjetSpectacle(self.0.to_ascii_uppercase())
     }
 }
 
@@ -836,6 +1021,7 @@ impl CodeInsee {
 notion_lue!(CodeInsee rangee par socle::texte::en_capitales);
 
 notion_lue!(CodeEmploiFt rangee par socle::texte::en_capitales);
+notion_lue!(Matricule rangee par tel_quel);
 
 /// L'ECHELON D'UN EMPLOI AUTRE QU'ARTISTIQUE DE LA CCNEAC : un entier de 1 a 12, « échelon 1 : coefficient 100 [...]
 /// échelon 12 : coefficient 133 », « attribué par l'employeur » (art. X.4.1,
@@ -1954,6 +2140,19 @@ choix! {
     pub enum Sexe { Masculin = "1", Feminin = "2" }
 }
 
+impl Sexe {
+    /// Le sexe que dit le premier chiffre d'un NIR écrit `texte` (« S = sexe de la personne physique doit être égal à 1
+    /// ou 2 » : `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`, l. 81-82), ses blancs de bord ôtés ; aucun pour
+    /// un autre signe. La seule lecture du sexe d'un NIR : `Nir::sexe`, et le NIR qu'une saisie en cours écrit.
+    pub fn du_nir(texte: &str) -> Option<Sexe> {
+        match socle::texte::strip(texte).get(..1) {
+            Some("1") => Some(Sexe::Masculin),
+            Some("2") => Some(Sexe::Feminin),
+            _ => None,
+        }
+    }
+}
+
 choix! {
     /// S21.G00.30.007.
     pub enum CodeNationalite { Francaise = "01", UnionEuropeenne = "02", HorsUnionEuropeenne = "03", Inconnue = "04" }
@@ -2247,7 +2446,7 @@ cases! {
 fiche! {
     /// LA FICHE D'UN SALARIE a un jour.
     pub struct ChampsSalarie, datee FicheSalarieDatee, changement ChangementSalarie, cles CaseSalarie {
-        CodeSalarie(String) = "code_salarie" => code_salarie,
+        CodeSalarie(Matricule) = "code_salarie" => code_salarie,
         InitialesContrat(String) = "initiales_contrat" => initiales_contrat,
         NomAffichage(String) = "nom_affichage" => nom_affichage,
         Nom(NomDeclare) = "nom" => nom,
@@ -2504,6 +2703,15 @@ impl ChampsSalarie {
         socle::texte::salarie_nomme(self.nom.portee(), self.nom_affichage.portee(), self.prenom.portee(), self.prenom_affichage.portee())
     }
 
+    /// LE SEXE DU SALARIE, la seule ecriture de cette regle : celui que dit son NIR (`Nir::sexe`), sinon la case `sexe` ;
+    /// aucun si ni l'un ni l'autre ne le dit.
+    pub fn sexe(&self) -> Option<Sexe> {
+        match self.nir.dite().and_then(Nir::sexe) {
+            Some(s) => Some(s),
+            None => self.sexe,
+        }
+    }
+
     /// Ce que la fiche dit de la nationalite (`socle::codification_ue`, S21.G00.30.013).
     pub fn nationalite(&self) -> socle::codification_ue::Nationalite {
         socle::codification_ue::Nationalite::nouvelle(
@@ -2528,25 +2736,25 @@ impl ChampsSalarie {
 
 impl ChampsEntreprise {
     /// Le NIC du siege, tel que la fiche le dit.
-    pub fn nic_principal(&self) -> Option<&str> {
-        self.nic.portee()
+    pub fn nic_principal(&self) -> Option<&Nic> {
+        self.nic.dite()
     }
 
     /// Les etablissements autres que le siege.
     pub fn secondaires(&self) -> Vec<&Etablissement> {
-        let nic = self.nic.portee();
-        self.etablissements.dite().into_iter().flatten().filter(|e| e.nic.portee() != nic).collect()
+        let nic = self.nic.dite();
+        self.etablissements.dite().into_iter().flatten().filter(|e| e.nic.dite() != nic).collect()
     }
 
     /// L'autre etablissement de ce NIC, `None` : le siege, ou un NIC que la fiche ne porte pas.
-    pub fn etablissement(&self, nic: &str) -> Option<&Etablissement> {
-        self.secondaires().into_iter().find(|e| e.nic.portee() == Some(nic))
+    pub fn etablissement(&self, nic: &Nic) -> Option<&Etablissement> {
+        self.secondaires().into_iter().find(|e| e.nic.dite() == Some(nic))
     }
 
     /// Le NIC du siege, puis celui de chaque autre etablissement : une DSN par etablissement. Chacun s'exige : sans lui,
     /// la DSN de l'etablissement ne s'ecrit pas.
-    pub fn nics(&self) -> R<Vec<String>> {
-        std::iter::once(self.nic.ecrite("nic")).chain(self.secondaires().iter().map(|e| e.nic.ecrite("etablissements.nic"))).map(|n| n.map(str::to_string)).collect()
+    pub fn nics(&self) -> R<Vec<Nic>> {
+        std::iter::once(self.nic.exigee("nic")).chain(self.secondaires().iter().map(|e| e.nic.exigee("etablissements.nic"))).map(|n| n.cloned()).collect()
     }
 
     /// Les feries qu'elle chome, tels que `socle::feries::chomes` les lit ; `None` : la fiche n'en dit rien.
@@ -2601,7 +2809,7 @@ impl std::ops::DerefMut for FicheSalarie {
 pub struct SalarieDuContrat {
     pub fiche: FicheSalarie,
     pub idcc_de_l_employeur: Option<Idcc>,
-    pub etablissement: Option<String>,
+    pub etablissement: Option<Nic>,
     pub sante_suspendue: Option<String>,
 }
 
@@ -2614,7 +2822,7 @@ struct Figee {
     #[serde(skip_serializing_if = "Option::is_none")]
     idcc_de_l_employeur: Option<Idcc>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    etablissement: Option<String>,
+    etablissement: Option<Nic>,
     #[serde(skip_serializing_if = "Option::is_none")]
     sante_suspendue: Option<String>,
 }

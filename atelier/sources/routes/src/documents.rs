@@ -25,7 +25,7 @@ use droit::contexte::{Contexte, IdSalarie};
 use envois::courriel::{BoiteSimulee, Courriel};
 use envois::envoi;
 use envois::journal;
-use envois::ligne_d_envoi::{noter, noter_echec_d_envoi, par_courriel};
+use envois::ligne_d_envoi::{en_liste, noter, noter_echec_d_envoi, par_courriel};
 use socle::echec::{erreur, Classe, Echec};
 use socle::fichiers::{CheminRelatif, NomDeFichier};
 use socle::mois::{Graphie, Mois, MoisOuJour};
@@ -160,7 +160,7 @@ pub(crate) struct DocumentsImprimes {
 #[derive(Debug, Serialize)]
 pub(crate) struct DocumentsEnvoyes {
     phrase: String,
-    partis: Vec<String>,
+    partis: Vec<droit::fiche::Courriel>,
     avertissements: Vec<String>,
 }
 
@@ -186,7 +186,7 @@ struct MessageVu {
     cle: IdSalarie,
     nom: String,
     /// Le courriel de la fiche ; vide, ses documents s'impriment.
-    destinataire: Option<String>,
+    destinataire: Option<droit::fiche::Courriel>,
     pieces: Vec<NomDeFichier>,
     sortes: Vec<&'static str>,
     renvoi: bool,
@@ -522,7 +522,7 @@ fn documents_prets(ctx: &Contexte, mois: Mois, paies: &[engagement::calcul::Paie
 struct Message {
     cle: IdSalarie,
     nom: String,
-    destinataire: Option<String>,
+    destinataire: Option<droit::fiche::Courriel>,
     pieces: Vec<std::path::PathBuf>,
 }
 
@@ -561,7 +561,7 @@ fn preparer(ctx: &Contexte, paies: &[engagement::calcul::Paie], mois: Mois, doss
         messages.push(Message {
             nom: ctx.nomme(&cle),
             // Une fiche sans courriel se montre : ses documents s'impriment ; c'est l'envoi par courriel qui la refuse.
-            destinataire: s.email.portee().map(str::to_lowercase),
+            destinataire: s.email.dite().map(|e| droit::fiche::Courriel::lire(&e.to_lowercase())).transpose()?,
             cle,
             pieces,
         });
@@ -722,9 +722,9 @@ pub(crate) fn client_courriel(ctx: &Contexte) -> R<Box<dyn Courriel>> {
     Ok(Box::new(client))
 }
 
-/// Les identifiants de la saisie : `expediteur`, la boite qui envoie, en minuscules.
-pub(super) fn expediteur_de(client: &dyn Courriel) -> String {
-    client.compte().to_lowercase()
+/// Les identifiants de la saisie : `expediteur`, la boite qui envoie, en minuscules ; une adresse que le journal garde.
+pub(super) fn expediteur_de(client: &dyn Courriel) -> R<droit::fiche::Courriel> {
+    droit::fiche::Courriel::lire(&client.compte().to_lowercase())
 }
 
 // ------------------------------------------------------------------ envoyer-documents
@@ -840,7 +840,7 @@ fn nom_du_salarie(s: &droit::fiche::SalarieDuContrat) -> String {
 /// Les messages, le compte verifie -- rien n'est parti.
 pub(crate) struct EnvoiPrepare {
     pub(crate) messages: Vec<envoi::Message<IdSalarie>>,
-    pub(crate) expediteur: String,
+    pub(crate) expediteur: droit::fiche::Courriel,
     pub(crate) avertissements: Vec<String>,
     /// A qui les documents partent, et pourquoi (`choisir`) : le journal en garde l'empreinte et le resume.
     pub(crate) choix: Choix,
@@ -1022,7 +1022,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
     }
     // La boite, puis LA PREUVE, AVANT TOUTE FABRIQUE : un mot de passe refuse n'ecrit rien.
     let client = ouvrir()?;
-    let expediteur = expediteur_de(client.as_ref());
+    let expediteur = expediteur_de(client.as_ref())?;
     let preuve = match preuve {
         Some(p) => {
             let a_qui = format!("{} salarie(s) : {}", cles.len(), cles.iter().map(|c| nom_de_la_paie(&paies, c)).collect::<Vec<_>>().join(", "));
@@ -1040,7 +1040,7 @@ pub(crate) fn preparer_envoi(ctx: &Contexte, mois: Mois, seulement: Option<&[IdS
         avertissements.push(sans_courriel_dit(&noms_sans));
     }
     let signataire = ctx.entreprise.signataire.dite().ok_or_else(|| socle::fichiers::absent("signataire").reclasser(Classe::Manque))?.email.portee().map(str::to_lowercase);
-    if let Some(signataire) = signataire.filter(|s| *s != expediteur) {
+    if let Some(signataire) = signataire.filter(|s| *s != *expediteur) {
         avertissements.push(format!(
             "Les messages partiront de {} (la boite posee), pas de {} (le courriel du signataire, fiche Entreprise).",
             expediteur, signataire
@@ -1114,7 +1114,7 @@ pub(crate) fn expedier_envoi(ctx: &Contexte, prepare: EnvoiPrepare, mois: Mois, 
     // qu'ils sont partis, et sur quelle version.
     documents.engager(ctx, mois)?;
     let reponse = format!("{} message(s) envoye(s)", partis.len());
-    noter(ctx, journal::Ligne::Documents(par_courriel(le_mois, qui, true, &partis.join(", "), &reponse, detail(&recus), Some(versions))))?;
+    noter(ctx, journal::Ligne::Documents(par_courriel(le_mois, qui, true, &en_liste(&partis, ", "), &reponse, detail(&recus), Some(versions))))?;
     Ok(DocumentsEnvoyes {
         phrase: format!("Documents {} envoyés à {} : {}.", socle::texte::de(&mois.libelle(Graphie::Accentuee)), socle::ecran::compte(partis.len(), "salarié", "salariés"), noms.join(", ")),
         partis,

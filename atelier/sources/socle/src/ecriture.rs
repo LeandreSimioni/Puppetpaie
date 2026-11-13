@@ -138,6 +138,24 @@ pub fn en_ordre<S: serde::Serializer, K: Serialize, T: Serialize>(paires: &[(K, 
     m.end()
 }
 
+/// UN DECIMAL QU'UNE REPONSE REND EN TEXTE (un montant au centime, des heures) : son texte tel quel (`12.50`, `-3`),
+/// `#[serde(serialize_with = "socle::ecriture::decimal_en_texte::serialize")]`. Le decimal arrive deja arrondi ou
+/// normalise : l'ecriture ne change pas son echelle. `option` : `None` s'ecrit `null`.
+pub mod decimal_en_texte {
+    pub fn serialize<S: serde::Serializer>(d: &crate::num::Decimal, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(d)
+    }
+
+    pub mod option {
+        pub fn serialize<S: serde::Serializer>(d: &Option<crate::num::Decimal>, s: S) -> Result<S::Ok, S::Error> {
+            match d {
+                Some(d) => super::serialize(d, s),
+                None => s.serialize_none(),
+            }
+        }
+    }
+}
+
 /// Le JSON de `v` sur une ligne : separateurs `, ` et
 /// `: `, cles triees (par point de code), non-ASCII laisse tel quel.
 pub fn json_trie<T: Serialize + ?Sized>(v: &T) -> String {

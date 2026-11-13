@@ -28,7 +28,7 @@ use crate::catalogue::{Ecran, Place};
 use crate::enveloppe::{self, en_json, Charge, Dite, Porte, Rendu};
 use declarations::champs::{Saisie, Valeur};
 use droit::contexte::Contexte;
-use droit::fiche::{CaseEntreprise, NomDeFiche};
+use droit::fiche::{CaseEntreprise, Nir, NomDeFiche, NumeroObjetSpectacle};
 use socle::date::Jour;
 use socle::echec::{Classe, R};
 use socle::mois::MoisOuJour;
@@ -193,7 +193,7 @@ fn vue_salarie(ctx: &Contexte, cle: &droit::contexte::IdSalarie) -> R<Saisie> {
 #[derive(Serialize)]
 struct SalarieDeLaDsn<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
-    nir: Option<&'a str>,
+    nir: Option<&'a Nir>,
     #[serde(skip_serializing_if = "Option::is_none")]
     nir_cle: Option<droit::fiche::CleNir>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -237,11 +237,11 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
             None => None,
         },
     };
-    let femme = declarations::ntt::sexe_de(decl.nir.as_deref(), None) == Some("2");
+    let femme = decl.nir.as_ref().and_then(Nir::sexe) == Some(droit::fiche::Sexe::Feminin);
     let emploi_affichage = du_catalogue.map(|m| if femme { m.feminin() } else { m.libelle() }).filter(|l| !l.is_empty());
     let de_la_dsn = SalarieDeLaDsn {
-        nir: decl.nir.as_deref(),
-        nir_cle: decl.nir.as_deref().and_then(declarations::champs::cle_nir),
+        nir: decl.nir.as_ref(),
+        nir_cle: decl.nir.as_ref().and_then(droit::fiche::CleNir::du_nir),
         initiales_contrat: Some(decl.initiales.as_str()).filter(|i| !i.is_empty()),
         date_anciennete: decl.premier_contrat,
         statut,
@@ -303,9 +303,10 @@ pub(crate) struct ACreer {
 }
 
 impl ACreer {
-    /// Le NIR de la fiche d'un salarie a creer.
-    pub(crate) fn nir(&self) -> Option<String> {
-        self.donnees.mot(droit::fiche::CaseSalarie::Nir)
+    /// Le NIR de la fiche d'un salarie a creer. L'import l'y pose d'un `Nir` (une DSN, un bulletin, un certificat) : un
+    /// texte qui ne se lit pas en NIR est une faute du logiciel, qui se dit.
+    pub(crate) fn nir(&self) -> R<Option<Nir>> {
+        self.donnees.mot(droit::fiche::CaseSalarie::Nir).map(|n| Nir::lire(&n)).transpose()
     }
 }
 
@@ -340,7 +341,7 @@ pub(crate) struct Apercu {
 #[derive(Clone, Debug)]
 pub(crate) struct SansNets {
     pub(crate) mois: socle::mois::Mois,
-    pub(crate) nir: Option<String>,
+    pub(crate) nir: Option<Nir>,
     pub(crate) contrat: engagement::numeros::NumeroContrat,
     pub(crate) qui: String,
     pub(crate) avec: Vec<engagement::numeros::NumeroContrat>,
@@ -399,10 +400,10 @@ pub(crate) fn paies_historique(ctx: &Contexte) -> R<Vec<engagement::importe::Pai
 /// une date ne se lit pas). Son activite (53) n'y passe pas : les heures, cachets et jours d'une paie sont ceux qu'un
 /// bulletin atteste en unites entieres pour le mois d'un permanent, ceux d'un intermittent sont a son contrat (AEM,
 /// bulletin) ; la DSN les declare en decimal.
-fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<String>) -> engagement::importe::PaieVersee {
-    use engagement::importe::{Declaration, PaieVersee};
+fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<NumeroObjetSpectacle>) -> engagement::importe::PaieVersee {
+    use engagement::importe::{CleDePaieVersee, PaieVersee};
     let (c, d) = (p.contrat.as_ref(), &p.paie);
-    let mut x = PaieVersee::vide(d.numero.to_string(), Declaration::Dsn);
+    let mut x = PaieVersee::vide(CleDePaieVersee::Dsn(d.numero.clone()));
     x.nir = d.nir.clone();
     x.numero_objet = objet;
     (x.debut, x.fin, x.verse_le, x.quotite) = (c.and_then(|c| c.debut), c.and_then(|c| c.fin), d.verse_le, c.and_then(|c| c.quotite));
@@ -420,7 +421,7 @@ fn paie_declaree(p: &dsn_aem::PaieDeclaree, objet: Option<String>) -> engagement
 #[derive(Serialize)]
 pub(crate) struct SpectacleDesPieces {
     pub(crate) titre: &'static str,
-    pub(crate) numero_objet: String,
+    pub(crate) numero_objet: NumeroObjetSpectacle,
     pub(crate) alias: Vec<String>,
     pub(crate) actif: bool,
     pub(crate) note: String,
@@ -441,7 +442,7 @@ pub(crate) fn apercu_lu(
     dsn: Option<&Path>,
     aem: Option<&Path>,
     aujourdhui: socle::date::Jour,
-    a_venir: &HashSet<String>,
+    a_venir: &HashSet<Nir>,
 ) -> R<Apercu> {
     let lecture = match &dsn {
         Some(d) => dsn_aem::lire_dsn(d)?,
@@ -498,22 +499,22 @@ pub(crate) fn apercu_lu(
             let champs = crate::importation::completer::champs_a_completer(NomDeFiche::Entreprise, &fiche, &e)?;
             f.noter(&champs, &Origine::dsn(lecture.dernier_mois));
             entreprise = Some(f);
-            crate::importation::completer::ajouter(&mut a_completer, NomDeFiche::Entreprise, None, &champs);
+            crate::importation::completer::ajouter(&mut a_completer, crate::fiches::FicheNommee::Entreprise, &champs);
         }
     }
 
     // 2. Les salaries, par NIR.
-    let mut par_nir: HashMap<String, droit::contexte::IdSalarie> = HashMap::new();
+    let mut par_nir: HashMap<Nir, droit::contexte::IdSalarie> = HashMap::new();
     for (cle, s) in &ctx.salaries {
-        if let Some(n) = s.nir.dite().filter(|n| !n.is_empty()) {
-            par_nir.insert(n.to_string(), cle.clone());
+        if let Some(n) = s.nir.dite() {
+            par_nir.insert(n.clone(), cle.clone());
         }
     }
     let mut ordre: Vec<&SalarieDeclare> = lecture.salaries.iter().collect();
     ordre.sort_by(|a, b| a.mois.cmp(&b.mois));
     let mut salaries = Vec::new();
     // Les NIR des fiches a creer ; aucun pour un individu que la DSN declare sans NIR.
-    let mut cles_a_venir: HashSet<Option<String>> = HashSet::new();
+    let mut cles_a_venir: HashSet<Option<Nir>> = HashSet::new();
     for decl in ordre {
         let libelle = libelle_de(&decl.individu);
         if let Some(cle) = decl.nir.as_ref().and_then(|n| par_nir.get(n)) {
@@ -522,7 +523,7 @@ pub(crate) fn apercu_lu(
             let mut entree = FicheImportee::new(NomDeFiche::Salarie, Some(cle.as_str()), &libelle, EtatFiche::Existante, ec, Vec::new(), &vide);
             let champs = crate::importation::completer::champs_a_completer(NomDeFiche::Salarie, &fiche, &fiche_salarie(decl)?)?;
             entree.noter(&champs, &Origine::dsn(Some(decl.mois)));
-            crate::importation::completer::ajouter(&mut a_completer, NomDeFiche::Salarie, Some(cle.as_str()), &champs);
+            crate::importation::completer::ajouter(&mut a_completer, crate::fiches::FicheNommee::Salarie(cle.clone()), &champs);
             salaries.push(entree);
             continue;
         }
@@ -544,7 +545,7 @@ pub(crate) fn apercu_lu(
     avertissements.extend(illisibles.iter().map(|f| format!("AEM illisible, ignoree : {}", f)));
     let n_aem = contrats.iter().map(|c| c.fichier.clone()).collect::<HashSet<_>>().len();
     struct Objet {
-        numero: String,
+        numero: NumeroObjetSpectacle,
         premier: String,
         dernier: String,
         contrats: i64,
@@ -553,17 +554,17 @@ pub(crate) fn apercu_lu(
     let mut objets: Vec<Objet> = lecture
         .objets
         .iter()
-        .map(|o| Objet { numero: o.numero.to_string(), premier: o.premier_mois.to_string(), dernier: o.dernier_mois.to_string(), contrats: o.contrats, aem: o.source == "AEM" })
+        .map(|o| Objet { numero: o.numero.clone(), premier: o.premier_mois.to_string(), dernier: o.dernier_mois.to_string(), contrats: o.contrats, aem: o.source == "AEM" })
         .collect();
     for c in &contrats {
-        if c.numero_objet.is_empty() {
+        let Some(numero) = &c.numero_objet else {
             continue;
-        }
+        };
         let m = c.fin.mois_civil().to_string();
-        let i = match objets.iter().position(|o| o.numero == c.numero_objet) {
+        let i = match objets.iter().position(|o| o.numero == *numero) {
             Some(i) => i,
             None => {
-                objets.push(Objet { numero: c.numero_objet.clone(), premier: m.clone(), dernier: m.clone(), contrats: 0, aem: true });
+                objets.push(Objet { numero: numero.clone(), premier: m.clone(), dernier: m.clone(), contrats: 0, aem: true });
                 objets.len() - 1
             }
         };
@@ -631,27 +632,24 @@ pub(crate) fn apercu_lu(
     }
 
     // 5. Les paies declarees par les DSN : ce que chaque versement a porte.
-    let deja_paies: HashSet<(socle::mois::Mois, droit::contexte::IdSalarie, String)> = paies_historique(ctx)?.iter().map(engagement::importe::PaieRelue::cle).collect();
+    let deja_paies: HashSet<(socle::mois::Mois, droit::contexte::IdSalarie, engagement::importe::CleDePaieVersee)> = paies_historique(ctx)?.iter().map(engagement::importe::PaieRelue::cle).collect();
     // La cle de la fiche du NIR ; `None` : sa fiche est a creer.
-    let cle_de = |nir: &Option<String>| nir.as_ref().and_then(|n| par_nir.get(n)).cloned();
-    let a_une_fiche = |nir: &Option<String>| nir.as_ref().is_some_and(|n| par_nir.contains_key(n)) || cles_a_venir.contains(nir);
+    let cle_de = |nir: &Option<Nir>| nir.as_ref().and_then(|n| par_nir.get(n)).cloned();
+    let a_une_fiche = |nir: &Option<Nir>| nir.as_ref().is_some_and(|n| par_nir.contains_key(n)) || cles_a_venir.contains(nir);
     let mut paies_nouvelles = 0usize;
     for (mois, nir, contrat) in lecture.paies.keys() {
         if !a_une_fiche(nir) {
             continue;
         }
-        if !cle_de(nir).is_some_and(|c| deja_paies.contains(&(*mois, c, contrat.to_string()))) {
+        if !cle_de(nir).is_some_and(|c| deja_paies.contains(&(*mois, c, engagement::importe::CleDePaieVersee::Dsn(contrat.clone())))) {
             paies_nouvelles += 1;
         }
     }
     let rien_a_faire = a_creer == 0 && a_completer.is_empty() && paies_nouvelles == 0;
     // DEUX SOURCES POUR UNE LIGNE -- les montants viennent de la DSN, le numero d'objet peut
     // venir de l'AEM (rapprochee sur salarie, debut, fin).
-    let objets_aem: HashMap<(String, String, String), String> = contrats
-        .iter()
-        .filter(|c| !c.numero_objet.is_empty())
-        .map(|c| ((c.nir.clone(), c.debut.iso(), c.fin.iso()), c.numero_objet.clone()))
-        .collect();
+    let objets_aem: HashMap<(Nir, String, String), NumeroObjetSpectacle> =
+        contrats.iter().filter_map(|c| Some(((c.nir.clone(), c.debut.iso(), c.fin.iso()), c.numero_objet.clone()?))).collect();
     let mut paies: Vec<engagement::importe::PaieLue> = Vec::new();
     let mut sans_nets: Vec<SansNets> = Vec::new();
     for ((mois, nir, contrat), v) in &lecture.paies {
@@ -660,7 +658,7 @@ pub(crate) fn apercu_lu(
         }
         let mois = *mois;
         let c = v.contrat.as_ref();
-        let objet = c.and_then(|c| c.objet.as_ref()).map(|o| o.to_string()).or_else(|| {
+        let objet = c.and_then(|c| c.objet.clone()).or_else(|| {
             let (debut, fin) = (c.and_then(|c| c.debut)?, c.and_then(|c| c.fin)?);
             objets_aem.get(&(nir.clone()?, debut.iso(), fin.iso())).cloned()
         });
@@ -668,7 +666,7 @@ pub(crate) fn apercu_lu(
             // Chaque paie lue est celle d'un individu de sa DSN, que `lecture.salaries` porte.
             let qui = match (lecture.salaries.iter().find(|s| s.nir == *nir), nir) {
                 (Some(s), _) => libelle_de(&s.individu),
-                (None, Some(n)) => n.clone(),
+                (None, Some(n)) => n.to_string(),
                 (None, None) => format!("Le salarié du contrat {}", contrat),
             };
             sans_nets.push(SansNets { mois, nir: nir.clone(), contrat: contrat.clone(), qui, avec: v.paie.avec.clone() });
@@ -742,7 +740,7 @@ fn etat_importation(racine: &Path) -> R<EtatImportation> {
     let debut = contrats.iter().filter_map(|c| c.debut).min();
     let fin = contrats.iter().filter_map(|c| c.fin).max();
     let salaries: HashSet<&droit::contexte::IdSalarie> = contrats.iter().map(|c| &c.salarie).collect();
-    let objets: HashSet<&str> = contrats.iter().filter_map(|c| c.contrat.numero_objet.as_deref()).collect();
+    let objets: HashSet<&NumeroObjetSpectacle> = contrats.iter().filter_map(|c| c.contrat.numero_objet.as_ref()).collect();
     let editeur = attend_l_editeur(racine)?;
     let attend_editeur = editeur.iter().filter(|x| !x.repondu).count();
     let reprises = reprises_faites(racine, &contrats, &paies)?;
@@ -887,7 +885,7 @@ impl Reprise {
 /// `reprises` de `importation-etat` : DSN, AEM, certificats Congés Spectacles, bulletins, dans cet ordre, celles qui ont
 /// repris quelque chose.
 fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratRelu], paies: &[engagement::importe::PaieRelue]) -> R<Vec<RepriseVue>> {
-    use engagement::importe::{Attestation, Declaration};
+    use engagement::importe::Attestation;
     let (mut aem, mut contrats_bulletins, mut certificats) = (Reprise::aucune(), Reprise::aucune(), Reprise::aucune());
     for c in contrats {
         let cible = match c.contrat.atteste_par {
@@ -904,11 +902,11 @@ fn reprises_faites(racine: &Path, contrats: &[engagement::importe::ContratRelu],
         let le = x.paie.importe_le;
         let mois = Some(MoisOuJour::Mois(x.mois));
         // Une paie declaree par une DSN et completee par un bulletin compte des deux cotes : elle a les deux sources.
-        if x.paie.declare_par == Declaration::Dsn {
+        if !x.paie.contrat.d_un_bulletin() {
             dsn.voir(mois, mois, le);
             mois_dsn.insert(x.mois);
         }
-        if x.paie.declare_par == Declaration::Bulletin || x.paie.bulletin.is_some() {
+        if x.paie.contrat.d_un_bulletin() || x.paie.bulletin.is_some() {
             bulletins.voir(mois, mois, le);
         }
     }

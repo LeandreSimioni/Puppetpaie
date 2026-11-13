@@ -118,7 +118,7 @@ carte! {
         #[champ(Partage, Numero)]
         pub numero: Option<crate::numeros::NumeroContrat>,
         #[champ(Terme, Etablissement)]
-        pub etablissement: Option<String>,
+        pub etablissement: Option<droit::fiche::Nic>,
         #[champ(Terme, Metier)]
         pub metier: Option<droit::emplois::CodeEmploi>,
         #[champ(Terme, Cadre)]
@@ -156,7 +156,7 @@ carte! {
         #[champ(Terme, ClausesParticulieres)]
         pub clauses_particulieres: Option<String>,
         #[champ(Terme, ModeleContrat)]
-        pub modele_contrat: Option<String>,
+        pub modele_contrat: Option<crate::carte::IdDeModele>,
         #[champ(Fait, Lignes)]
         /// Les lignes de paie de la carte (`ligne::LignePaie`).
         pub lignes: Option<Vec<LignePaie>>,
@@ -286,6 +286,18 @@ impl Simple for droit::fiche::CodePcsEse {
 impl Simple for droit::fiche::CodeEmploiFt {
     fn simple(&self) -> Option<Valeur> {
         Some(Valeur::Texte(self.to_string()))
+    }
+}
+
+impl Simple for droit::fiche::Nic {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Texte(self.to_string()))
+    }
+}
+
+impl Simple for crate::carte::IdDeModele {
+    fn simple(&self) -> Option<Valeur> {
+        Some(Valeur::Texte(self.texte().to_string()))
     }
 }
 

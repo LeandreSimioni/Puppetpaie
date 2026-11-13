@@ -20,7 +20,7 @@
 use std::collections::BTreeMap;
 
 use droit::contexte::Contexte;
-use droit::fiche::{ChampsSalarie, Lue, Datee, FicheSalarie, FicheSalarieDatee};
+use droit::fiche::{ChampsSalarie, Lue, Datee, FicheSalarie, FicheSalarieDatee, Matricule, Nir};
 use socle::date::Jour;
 use socle::mois::Mois;
 use crate::dsn::Fichier;
@@ -53,9 +53,9 @@ pub const IDENTIFIANTS: [Identifiant; 4] = [
         r30: "S21.G00.30.001",
         r31: droit::rubrique!("S21.G00.31.008"),
         libelle: "NIR",
-        ecrite: |s| texte_ecrit(&s.nir),
+        ecrite: |s| s.nir.dite().map(Nir::to_string),
         poser: |s, au| s.nir = au.nir.clone(),
-        datees: |b| datees(&b.nir, texte_ecrit),
+        datees: |b| datees(&b.nir, |c| c.dite().map(Nir::to_string)),
     },
     Identifiant {
         champ: "nom",
@@ -92,20 +92,25 @@ pub struct Declaree {
     /// Le mois principal declare et le nom du fichier qui l'a portee.
     pub mois: Mois,
     pub fichier: String,
-    pub nir: Option<String>,
+    pub nir: Option<Nir>,
     pub nom: Option<String>,
     pub prenoms: Option<String>,
     pub naissance: Option<Jour>,
     /// Le numero technique temporaire (30.020), s'il y en avait un.
     pub ntt: Option<crate::ntt::Ntt>,
-    pub matricule: Option<String>,
+    pub matricule: Option<Matricule>,
+}
+
+/// Le matricule de la fiche tel que le bloc 30 l'ecrit, sans son blanc autour.
+fn matricule_ecrit(c: &Option<Matricule>) -> R<Option<Matricule>> {
+    c.portee().map(|t| Matricule::lire(strip(t))).transpose()
 }
 
 impl Declaree {
     /// La valeur d'un identifiant telle que le bloc 30 l'ecrit (la date de naissance en JJMMAAAA, comme 30.006).
     fn valeur(&self, champ: &str) -> Option<String> {
         match champ {
-            "nir" => self.nir.clone(),
+            "nir" => self.nir.as_ref().map(Nir::to_string),
             "nom" => self.nom.clone(),
             "prenom" => self.prenoms.clone(),
             _ => self.naissance.as_ref().map(Jour::jjmmaaaa),
@@ -113,7 +118,7 @@ impl Declaree {
     }
 
     /// L'identite seule (sans le mois ni le fichier) : deux etablissements d'un meme mois doivent dire la meme.
-    fn identite(&self) -> (&Option<String>, &Option<String>, &Option<String>, Option<Jour>, &Option<crate::ntt::Ntt>) {
+    fn identite(&self) -> (&Option<Nir>, &Option<String>, &Option<String>, Option<Jour>, &Option<crate::ntt::Ntt>) {
         (&self.nir, &self.nom, &self.prenoms, self.naissance, &self.ntt)
     }
 }
@@ -176,7 +181,7 @@ impl<'a> Declarations<'a> {
             let mut tous = Vec::new();
             for p in paies {
                 let s = &p.salarie;
-                let nir = crate::ntt::nir_de(s);
+                let nir = s.nir.dite().cloned();
                 tous.push(Declaree {
                     mois,
                     fichier: "la paie declaree".to_string(),
@@ -188,7 +193,7 @@ impl<'a> Declarations<'a> {
                     nom: texte_ecrit(&s.nom),
                     prenoms: texte_ecrit(&s.prenom),
                     naissance: s.date_naissance.dite().copied(),
-                    matricule: texte_ecrit(&s.code_salarie),
+                    matricule: matricule_ecrit(&s.code_salarie)?,
                 });
             }
             self.lus.insert(i, tous);
@@ -200,9 +205,11 @@ impl<'a> Declarations<'a> {
     /// Il se reconnait a un NIR que sa fiche (`brute`, datee) a porte, sinon a son matricule
     /// (30.019 ; il finit le NTT et ne change pas sans NIR, `routes::fiches::ecrire_fiche`).
     pub fn derniere(&mut self, salarie: &ChampsSalarie, brute: Option<&FicheSalarieDatee>) -> R<Option<Declaree>> {
-        let mut nirs: Vec<String> = crate::ntt::nir_de(salarie).into_iter().collect();
-        nirs.extend(brute.into_iter().flat_map(IDENTIFIANTS[0].datees).filter_map(|(_, v)| v));
-        let matricule = texte_ecrit(&salarie.code_salarie);
+        let mut nirs: Vec<Nir> = salarie.nir.dite().cloned().into_iter().collect();
+        for d in brute.into_iter().flat_map(|b| b.nir.iter().flat_map(|l| droit::fiche::valeurs_datees(l))) {
+            nirs.extend(d.valeur.clone());
+        }
+        let matricule = matricule_ecrit(&salarie.code_salarie)?;
         for i in 0..self.mois.len() {
             let tous = self.lire(i)?;
             let mut siens: Vec<&Declaree> = tous.iter().filter(|d| d.nir.as_ref().is_some_and(|n| nirs.contains(n))).collect();
@@ -352,12 +359,12 @@ mod tests {
         Declaree {
             mois: Mois::nouveau(2026, 7).unwrap(),
             fichier: "la paie declaree".into(),
-            nir: Some("2901075999009".into()),
+            nir: Some(Nir::lire("2901075999009").unwrap()),
             nom: Some("CLAIRON".into()),
             prenoms: Some("LUCILE".into()),
             naissance: Some(Jour::nouveau(1990, 10, 2).unwrap()),
             ntt: None,
-            matricule: Some("6".into()),
+            matricule: Some(Matricule::lire("6").unwrap()),
         }
     }
 

@@ -32,24 +32,24 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
-use compagnie::incidents;
+use compagnie::incidents::{self, EtiquetteDeCaviardage};
 
 // ------------------------------------------------------------------ les etiquettes
 
-pub const NOM: &str = "NOM";
-pub const PRENOM: &str = "PRENOM";
-pub const NIR: &str = "NIR";
-pub const NAISSANCE: &str = "NAISSANCE";
-pub const ADRESSE: &str = "ADRESSE";
-pub const CS: &str = "CS";
-pub const COURRIEL: &str = "COURRIEL";
-pub const TEL: &str = "TEL";
-pub const IBAN: &str = "IBAN";
-/// Le code salarie, le matricule : interne a la compagnie, mais souvent tire du nom (« DUPO01 »).
-pub const CODE: &str = "CODE";
-
-/// L'ordre des etiquettes, celui du resume.
-const ETIQUETTES: [&str; 10] = [NOM, PRENOM, NIR, NAISSANCE, ADRESSE, CS, COURRIEL, TEL, IBAN, CODE];
+/// Les etiquettes de l'import, dans l'ordre du resume ; leur rang est celui des comptes et des marques (`I_NOM`...).
+/// Le code salarie (`Code`), le matricule : interne a la compagnie, mais souvent tire du nom (« DUPO01 »).
+const ETIQUETTES: [EtiquetteDeCaviardage; 10] = [
+    EtiquetteDeCaviardage::Nom,
+    EtiquetteDeCaviardage::Prenom,
+    EtiquetteDeCaviardage::Nir,
+    EtiquetteDeCaviardage::Naissance,
+    EtiquetteDeCaviardage::Adresse,
+    EtiquetteDeCaviardage::Cs,
+    EtiquetteDeCaviardage::Courriel,
+    EtiquetteDeCaviardage::Tel,
+    EtiquetteDeCaviardage::Iban,
+    EtiquetteDeCaviardage::Code,
+];
 const I_NOM: usize = 0;
 const I_PRENOM: usize = 1;
 const I_NIR: usize = 2;
@@ -60,20 +60,6 @@ const I_COURRIEL: usize = 6;
 const I_TEL: usize = 7;
 const I_IBAN: usize = 8;
 const I_CODE: usize = 9;
-
-/// (singulier, pluriel) de chaque etiquette, pour le resume.
-const DITS: [(&str, &str); 10] = [
-    ("nom", "noms"),
-    ("prénom", "prénoms"),
-    ("NIR", "NIR"),
-    ("date de naissance", "dates de naissance"),
-    ("adresse", "adresses"),
-    ("numéro Congés Spectacles", "numéros Congés Spectacles"),
-    ("courriel", "courriels"),
-    ("téléphone", "téléphones"),
-    ("IBAN", "IBAN"),
-    ("code salarié", "codes salarié"),
-];
 
 // ----------------------------------------------------------------- l'entree, la sortie
 
@@ -105,7 +91,7 @@ pub struct Connus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Caviarde {
     pub texte: String,
-    pub enleves: BTreeMap<&'static str, usize>,
+    pub enleves: BTreeMap<EtiquetteDeCaviardage, usize>,
 }
 
 impl Caviarde {
@@ -118,8 +104,8 @@ impl Caviarde {
     pub fn resume(&self) -> String {
         let parts: Vec<String> = ETIQUETTES
             .iter()
-            .zip(DITS.iter())
-            .filter_map(|(e, (un, plusieurs))| {
+            .filter_map(|e| {
+                let (un, plusieurs) = e.dit();
                 self.enleves.get(e).filter(|n| **n > 0).map(|n| format!("{} {}", n, if *n > 1 { plusieurs } else { un }))
             })
             .collect();
@@ -236,7 +222,7 @@ impl Travail {
                     out.push('<');
                     // Le chiffre est celui que `marque` a ecrit, d'une etiquette de la liste (les caracteres d'entree
                     // de la zone des marques sont deja remplaces) : il en est toujours un rang.
-                    out.push_str(ETIQUETTES[i]);
+                    out.push_str(ETIQUETTES[i].texte());
                     out.push('>');
                 }
                 OUVRE_GARDE => {
@@ -603,10 +589,10 @@ fn par_la_forme(t: &mut Travail) {
     // Le caviardage du diagnostic a distance d'abord, tel qu'il est.
     let (s, vus) = incidents::caviarder(&t.s);
     t.s = s;
-    for (crochet, quoi, etiquette) in [("[NIR]", "NIR", I_NIR), ("[IBAN]", "IBAN", I_IBAN), ("[BIC]", "BIC", I_IBAN)] {
+    for (quoi, etiquette) in [(EtiquetteDeCaviardage::Nir, I_NIR), (EtiquetteDeCaviardage::Iban, I_IBAN), (EtiquetteDeCaviardage::Bic, I_IBAN)] {
         let n = vus.iter().filter(|v| **v == quoi).count();
         if n > 0 {
-            t.s = t.s.replace(crochet, &marque(etiquette));
+            t.s = t.s.replace(&format!("[{}]", quoi), &marque(etiquette));
             t.comptes[etiquette] += n;
         }
     }
