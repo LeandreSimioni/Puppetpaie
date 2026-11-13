@@ -154,7 +154,7 @@ fn noter_incident_depot(ctx: &Contexte, d: &envois::suites::DepotRefuse) -> R<()
         &compagnie::incidents::Note {
             nature: if d.quoi == envois::journal::Acte::Dsn { compagnie::incidents::DSN } else { compagnie::incidents::DPAE },
             ou: &format!("depot-{}", d.quoi.nom()),
-            quoi: &d.classe,
+            quoi: socle::echec::classe_notee(d.classe),
             resume: &d.message,
             detail: DetailDuDepotRefuse { reel: d.reel, apres_test_conforme: apres_test, repetition: d.repetition.as_ref() },
             trace: None,

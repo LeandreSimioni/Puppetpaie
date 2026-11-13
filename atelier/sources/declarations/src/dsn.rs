@@ -384,7 +384,7 @@ pub fn emplois_multiples(p: &Paie, autres: &[&Paie]) -> &'static str {
 
 /// LE BLOC 30 D'UN INDIVIDU, de son NIR a son matricule, tel que sa fiche le dit (`s` : la DSN mensuelle y met les
 /// identifiants du mois declare, `changements_individu::identite_du_mois`). La codification UE se lit par
-/// `codification_ue` (quatre valeurs, et un ancien 03 se relit) ; le pays de naissance dans la liste livree (`pays.rs`,
+/// `droit::nationalite::codification_ue` (quatre valeurs, et un ancien 03 se relit) ; le pays de naissance dans la liste livree (`pays.rs`,
 /// un code inconnu refuse). L'adresse mel (30.018) est conditionnelle (usage « C », et « conditionne a l'accord
 /// explicite » de l'individu : `atelier/reference/norme-dsn/texte/tableaux-des-usages.txt`, `texte/bloc-S21.G00.30.txt`) :
 /// elle s'ecrit quand la nature l'admet (`courriel`) et que la fiche la dit.
@@ -397,7 +397,7 @@ pub fn bloc_individu(f: &mut Fichier, s: &droit::fiche::ChampsSalarie, courriel:
     f.add_case(droit::rubrique!("S21.G00.30.008"), &s.adresse, "adresse")?;
     f.add_case(droit::rubrique!("S21.G00.30.009"), &s.code_postal, "code_postal")?;
     f.add_case(droit::rubrique!("S21.G00.30.010"), &s.commune, "commune")?;
-    f.add(droit::rubrique!("S21.G00.30.013"), socle::codification_ue::codification_ue(&s.nationalite())?);
+    f.add(droit::rubrique!("S21.G00.30.013"), droit::nationalite::codification_ue(&s.nationalite())?.as_str());
     f.add_case(droit::rubrique!("S21.G00.30.014"), &s.departement_naissance, "departement_naissance")?;
     f.add_case(droit::rubrique!("S21.G00.30.015"), &s.pays_de_naissance()?, "pays_naissance")?;
     if let Some(email) = s.email.portee().filter(|_| courriel) {

@@ -76,7 +76,7 @@ pub fn installer() {
             // La bibliotheque standard dit toujours l'endroit d'une panique (`PanicHookInfo::location`) ; s'il manquait,
             // la ligne le dirait.
             let ou = if let Some(l) = info.location() { format!("{}:{}", l.file(), l.line()) } else { "(endroit inconnu)".to_string() };
-            socle::echec::noter_echec_a(&ou, Some("panique"), &message);
+            socle::echec::noter_echec_a(&ou, socle::echec::ClasseNotee::Panique, &message);
             avant(info);
         }));
     });

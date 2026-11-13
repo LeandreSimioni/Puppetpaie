@@ -18,11 +18,8 @@
 //! LE PAYS DE NATIONALITE garde la liste du COG : la DSN n'en declare que la codification UE (`30.013`), qui se deduit
 //! du pays ou de son pays de rattachement, et la table « Pays » ne dit ni l'un ni l'autre.
 //!
-//! LA CODIFICATION UE d'un pays se lit dans `codification_ue::code_du_pays`, sur son code, ou sur celui de son pays de
-//! rattachement pour un territoire (Groenland : Danemark ; Aruba, Curacao : Pays-Bas ; Gibraltar :
-//! Royaume-Uni ; Hong Kong : Chine). Ce rattachement vaut nationalite : c'est une INFERENCE (le COG dit le
-//! rattachement, pas la nationalite de ceux qui y naissent). Les Feroe font exception : les traites ne s'y appliquent
-//! pas (`codification_ue::TERRITOIRES_HORS_UNION`), leur codification est celle d'un pays hors de l'Union.
+//! LA CODIFICATION UE d'un pays se lit dans `droit::nationalite`, sur son code, ou sur celui de son pays de
+//! rattachement pour un territoire.
 
 use std::sync::{Arc, OnceLock};
 
@@ -149,17 +146,6 @@ pub fn du_code(code: &str) -> R<Option<Pays>> {
     Ok(liste()?.iter().find(|p| *p.code == *c).cloned())
 }
 
-/// La codification UE (`S21.G00.30.013`) d'un pays de la liste : celle de son code, ou de son pays de rattachement.
-pub fn codification(p: &Pays) -> &'static str {
-    if crate::codification_ue::TERRITOIRES_HORS_UNION.contains(&&*p.code) {
-        return crate::codification_ue::code_du_pays(&p.code);
-    }
-    match &p.rattachement {
-        Some(r) => crate::codification_ue::code_du_pays(r),
-        None => crate::codification_ue::code_du_pays(&p.code),
-    }
-}
-
 /// La phrase d'un code qui n'est pas dans la liste. `quoi` : « Le pays de naissance de X ».
 pub fn inconnu(quoi: &str, code: &str) -> String {
     format!(
@@ -171,7 +157,7 @@ pub fn inconnu(quoi: &str, code: &str) -> String {
 }
 
 /// La phrase d'un pays de nationalite qui n'est pas dans la liste : il s'ecrit a part, et la nationalite DSN se choisit
-/// (`codification_ue::codification_ue`).
+/// (`droit::nationalite::codification_ue`).
 pub fn inconnu_nationalite(quoi: &str, code: &str) -> String {
     format!(
         "{} S'il n'y est pas, l'écrire dans « Pays de nationalité absent de la liste », laisser « Pays de nationalité » \
@@ -277,26 +263,6 @@ pub fn du_nom(texte: &str) -> R<Option<Pays>> {
         return Ok(None);
     }
     Ok(liste()?.iter().find(|p| cle_de_nom(&p.nom) == t || cle_de_nom(&p.nom_officiel) == t).cloned())
-}
-
-/// Un pays de nationalite tel que la page le recoit : son code, son nom, la codification UE que le moteur en deduit, et
-/// ce que la case de nationalite dit quand elle s'en deduit.
-#[derive(Debug, Clone, Serialize)]
-pub struct PaysDeNationalite {
-    pub code: CodePays,
-    pub nom: String,
-    pub codification_ue: &'static str,
-    pub deduit_dit: String,
-}
-
-/// Ce que la page recoit (`etat.pays`) : la liste triee par nom, chaque pays avec la codification UE que le moteur
-/// en deduit. La page l'affiche ; elle ne decide rien.
-pub fn servir() -> R<Vec<PaysDeNationalite>> {
-    let mut l = (*liste()?).clone();
-    l.sort_by_cached_key(|p| cle_de_nom(&p.nom));
-    Ok(l.iter()
-        .map(|p| PaysDeNationalite { code: p.code.clone(), nom: p.nom.clone(), codification_ue: codification(p), deduit_dit: format!("déduite de la nationalité ({})", p.nom) })
-        .collect())
 }
 
 /// `S21.G00.30.015` du pays de naissance `code` d'une fiche (`qui` : celui qu'elle nomme) : le code, s'il est dans la

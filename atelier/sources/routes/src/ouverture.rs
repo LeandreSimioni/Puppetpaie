@@ -1585,7 +1585,7 @@ pub(crate) struct EtatDeLaPage {
     urssaf_deduit_dit: String,
     /// L'organisme Urssaf que le code postal de la fiche designe, s'il en designe un.
     urssaf_deduit: Option<String>,
-    pays: Vec<socle::pays::PaysDeNationalite>,
+    pays: Vec<droit::nationalite::PaysDeNationalite>,
     pays_naissance: Vec<socle::pays::PaysServi>,
 }
 
@@ -1687,7 +1687,7 @@ pub(crate) fn etat(ctx: &Contexte) -> R<EtatDeLaPage> {
         urssaf_deduit: deduit,
         // LES PAYS : la liste livree, triee par nom, chacun avec la codification UE que le moteur en
         // deduit. Le pays de naissance et le pays de nationalite s'y choisissent.
-        pays: socle::pays::servir()?,
+        pays: droit::nationalite::servir()?,
         // Le pays de naissance : la table « Pays » de la DSN, ou se lit S21.G00.30.015.
         pays_naissance: socle::pays::servir_naissance()?,
     })

@@ -3,7 +3,6 @@
 //! et ecrits, l'echec et sa memoire, le garde-fou reseau. Aucun droit, aucun metier.
 
 pub mod base64;
-pub mod codification_ue;
 pub mod csv;
 pub mod d28;
 pub mod date;

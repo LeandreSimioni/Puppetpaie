@@ -615,11 +615,11 @@ pub(crate) fn deriver(nom: NomDeFiche, d: &mut Saisie, forcer: bool, source: &dy
             }
         }
         // LA NATIONALITE DSN SE DEDUIT DU PAYS : avec un pays de nationalite de la liste, la case 30.013 ne se choisit
-        // plus, le moteur l'ecrit (`pays::codification`). Sans pays, ou avec un pays inconnu (qui refuse sur sa case), la
+        // plus, le moteur l'ecrit (`droit::nationalite::codification`). Sans pays, ou avec un pays inconnu (qui refuse sur sa case), la
         // case reste ce qu'elle est.
         if let (true, Some(code)) = (source(S::PaysNationalite.into()), texte(d, S::PaysNationalite)) {
             if let Some(p) = socle::pays::du_code(code)? {
-                let attendu = socle::pays::codification(&p).to_string();
+                let attendu = droit::nationalite::codification(&p).as_str().to_string();
                 if d.texte(S::CodeNationaliteDsn) != Some(attendu.as_str()) {
                     d.poser(S::CodeNationaliteDsn, Valeur::Texte(attendu));
                 }

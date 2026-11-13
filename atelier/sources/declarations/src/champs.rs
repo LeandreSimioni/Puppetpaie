@@ -2280,16 +2280,21 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
         let (nom_d, nom_affichage, prenom, prenom_affichage) = (d.mot(S::Nom), d.mot(S::NomAffichage), d.mot(S::Prenom), d.mot(S::PrenomAffichage));
         let qui = socle::texte::salarie_nomme(nom_d.as_deref(), nom_affichage.as_deref(), prenom.as_deref(), prenom_affichage.as_deref());
         let (code, pays_n, hors) = (d.mot(S::CodeNationaliteDsn), d.mot(S::PaysNationalite), d.mot(S::PaysNationaliteHorsListe));
-        let fiche = socle::codification_ue::Nationalite::nouvelle(code.as_deref(), pays_n.as_deref(), hors.as_deref(), qui);
+        // Un code ou un pays hors de sa forme se dit sur sa propre case (son choix, sa forme « pays ») : il ne compte pas ici.
+        let code_dit = code.as_deref().map(str::trim).filter(|c| !c.is_empty());
+        let code_lu = code_dit.and_then(droit::fiche::CodeNationalite::du_code);
+        let code_inconnu = code_dit.is_some() && code_lu.is_none();
+        let pays_lu = pays_n.as_deref().map(str::trim).filter(|p| !p.is_empty()).and_then(|p| socle::pays::CodePays::lire(&socle::pays::CodePays::rangee(p)).ok());
+        let fiche = droit::nationalite::Nationalite::nouvelle(code_lu, pays_lu, hors.as_deref(), qui);
         let pays_inconnu = match d.dite(S::PaysNationalite) {
             Some(Valeur::Texte(p)) => socle::pays::du_code(p)?.is_none(),
             None | Some(Valeur::Nombre(_) | Valeur::OuiNon(_) | Valeur::Mots(_) | Valeur::Bloc(_) | Valeur::Lignes(_)) => false,
         };
         let hors_liste = d.dite(S::PaysNationaliteHorsListe).is_some();
-        if let Some(m) = socle::codification_ue::faute_hors_liste(&fiche)? {
+        if let Some(m) = droit::nationalite::faute_hors_liste(&fiche)? {
             out.push(constat(S::PaysNationaliteHorsListe, Gravite::Erreur, m));
-        } else if !pays_inconnu && (hors_liste || d.dite(S::CodeNationaliteDsn).is_some() || d.dite(S::PaysNationalite).is_some()) {
-            if let Err(m) = socle::codification_ue::codification_ue(&fiche) {
+        } else if !pays_inconnu && !code_inconnu && (hors_liste || d.dite(S::CodeNationaliteDsn).is_some() || d.dite(S::PaysNationalite).is_some()) {
+            if let Err(m) = droit::nationalite::codification_ue(&fiche) {
                 out.push(constat(S::CodeNationaliteDsn, Gravite::Erreur, m.phrase));
             }
         }

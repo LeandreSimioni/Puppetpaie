@@ -104,14 +104,13 @@ pub fn liste_des_contrats(ctx: &Contexte, d: &Demande) -> R<Tableau> {
 // ================================================ 14. le registre du personnel
 
 /// `NATIONALITES`.
-fn nationalite(code: &str) -> Option<&'static str> {
-    Some(match code {
-        "01" => "française",
-        "02" => "Union européenne",
-        "03" => "EEE hors Union européenne",
-        "04" => "hors Union européenne et EEE",
-        _ => return None,
-    })
+fn nationalite(code: droit::fiche::CodeNationalite) -> &'static str {
+    match code {
+        droit::fiche::CodeNationalite::Francaise => "française",
+        droit::fiche::CodeNationalite::UnionEuropeenne => "Union européenne",
+        droit::fiche::CodeNationalite::HorsUnionEuropeenne => "EEE hors Union européenne",
+        droit::fiche::CodeNationalite::Inconnue => "hors Union européenne et EEE",
+    }
 }
 
 /// Le premier chiffre du NIR (1 homme, 2 femme) ; un NIR provisoire ne le dit pas.
@@ -141,11 +140,11 @@ pub fn registre_du_personnel(ctx: &Contexte, d: &Demande) -> R<Tableau> {
         let nom = f.nom_affichage.remplie().or(f.nom.remplie()).map(str::to_string);
         let mut l = Ligne::nouvelle();
         l.ot("nom", nom.clone()).ot("prenom", f.prenom_affichage.remplie().or(f.prenom.remplie()));
-        // La codification relue comme la DSN la declare (`codification_ue`) : un ancien 03 sans pays ne se lit pas « EEE ».
+        // La codification relue comme la DSN la declare (`droit::nationalite`) : un ancien 03 sans pays ne se lit pas « EEE ».
         let dite = f.code_nationalite_dsn.est_dite() || f.pays_nationalite.remplie().is_some() || f.pays_nationalite_hors_liste.remplie().is_some();
         let categorie = if dite {
-            match socle::codification_ue::codification_ue(&f.nationalite()) {
-                Ok(code) => nationalite(&code),
+            match droit::nationalite::codification_ue(&f.nationalite()) {
+                Ok(code) => Some(nationalite(code)),
                 Err(pourquoi) => {
                     a_preciser.insert(format!("{} : {}", c.salarie, pourquoi.phrase));
                     Some("à préciser dans la fiche")

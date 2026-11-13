@@ -1,4 +1,5 @@
-//! `S21.G00.30.013` (codification UE) : quatre valeurs, et la table qui les donne depuis le pays de nationalite.
+//! `S21.G00.30.013` (codification UE) : quatre valeurs (`CodeNationalite`), et la table qui les donne depuis le pays de
+//! nationalite.
 //!
 //! LA NORME (cahier technique DSN 2026.1, p. 173, `atelier/reference/norme-dsn/texte/bloc-S21.G00.30.txt`, l. 267-277) :
 //! « Classification de l'origine du salarié au vu des frontières françaises et des limites de l'Union Européenne. Il
@@ -14,6 +15,11 @@
 //! et la Suisse ne sont ni dans l'une ni dans l'autre liste : 04 (INFERENCE par absence, la norme ne les nomme pas).
 //! Les iles Feroe, dont le pays de rattachement est le Danemark, sont hors de l'Union par le texte (TFUE art. 355 § 5 a) : 04.
 //!
+//! LA CODIFICATION UE d'un pays de la liste (`socle::pays`) se lit sur son code, ou sur celui de son pays de
+//! rattachement pour un territoire (Groenland : Danemark ; Aruba, Curacao : Pays-Bas ; Gibraltar : Royaume-Uni ; Hong
+//! Kong : Chine). Ce rattachement vaut nationalite : c'est une INFERENCE (le COG dit le rattachement, pas la nationalite
+//! de ceux qui y naissent). Les Feroe font exception (`TERRITOIRES_HORS_UNION`).
+//!
 //! UN 03 SANS PAYS DE NATIONALITE ne dit pas si le salarie est de l'EEE ou du reste du monde : le moteur recode depuis
 //! le pays quand la fiche le porte (`pays_nationalite`), il refuse sinon.
 //!
@@ -22,7 +28,11 @@
 //! pas le pays de nationalite, seulement `30.013` : rien a inventer. Un pays de la liste ecrit la ne compte pas comme
 //! hors liste (il se choisit dans la liste, la codification s'en deduit) ; la France non plus (01 refuse).
 
-use crate::echec::{refus, R};
+use serde::Serialize;
+use socle::echec::{refus, R};
+use socle::pays::{CodePays, Pays};
+
+use crate::fiche::CodeNationalite;
 
 /// Les Etats membres de l'Union (TUE art. 52 § 1, sans le Royaume-Uni), en codes ISO a deux lettres, la France a part.
 pub const UNION: [&str; 26] = [
@@ -39,38 +49,69 @@ pub const TERRITOIRES_HORS_UNION: [&str; 1] = ["FO"];
 /// Les Etats parties a l'accord EEE qui ne sont pas dans l'Union.
 pub const EEE_HORS_UNION: [&str; 3] = ["IS", "LI", "NO"];
 
-/// Le code de `S21.G00.30.013` d'un pays (code ISO a deux lettres, majuscules).
-pub fn code_du_pays(iso: &str) -> &'static str {
-    if iso == "FR" {
-        "01"
-    } else if UNION.contains(&iso) {
-        "02"
-    } else if EEE_HORS_UNION.contains(&iso) {
-        "03"
+/// Le code de `S21.G00.30.013` d'un pays (son code ISO).
+pub fn code_du_pays(iso: &CodePays) -> CodeNationalite {
+    if *iso == CodePays::france() {
+        CodeNationalite::Francaise
+    } else if UNION.contains(&&**iso) {
+        CodeNationalite::UnionEuropeenne
+    } else if EEE_HORS_UNION.contains(&&**iso) {
+        CodeNationalite::HorsUnionEuropeenne
     } else {
-        "04"
+        CodeNationalite::Inconnue
     }
 }
 
+/// La codification UE (`S21.G00.30.013`) d'un pays de la liste : celle de son code, ou de son pays de rattachement.
+pub fn codification(p: &Pays) -> CodeNationalite {
+    if TERRITOIRES_HORS_UNION.contains(&&*p.code) {
+        return code_du_pays(&p.code);
+    }
+    match &p.rattachement {
+        Some(r) => code_du_pays(r),
+        None => code_du_pays(&p.code),
+    }
+}
+
+/// Un pays de nationalite tel que la page le recoit : son code, son nom, la codification UE que le moteur en deduit, et
+/// ce que la case de nationalite dit quand elle s'en deduit.
+#[derive(Debug, Clone, Serialize)]
+pub struct PaysDeNationalite {
+    pub code: CodePays,
+    pub nom: String,
+    pub codification_ue: CodeNationalite,
+    pub deduit_dit: String,
+}
+
+/// Ce que la page recoit (`etat.pays`) : la liste triee par nom, chaque pays avec la codification UE que le moteur
+/// en deduit. La page l'affiche ; elle ne decide rien.
+pub fn servir() -> R<Vec<PaysDeNationalite>> {
+    let mut l = (*socle::pays::liste()?).clone();
+    l.sort_by_cached_key(|p| socle::pays::cle_de_nom(&p.nom));
+    Ok(l.iter()
+        .map(|p| PaysDeNationalite { code: p.code.clone(), nom: p.nom.clone(), codification_ue: codification(p), deduit_dit: format!("déduite de la nationalité ({})", p.nom) })
+        .collect())
+}
+
 /// CE QU'UNE FICHE DIT DE LA NATIONALITE : le code choisi (`code_nationalite_dsn`), le pays de la liste
-/// (`pays_nationalite`), le pays ecrit hors de la liste (`pays_nationalite_hors_liste`), chacun sans blancs et `None`
+/// (`pays_nationalite`), le pays ecrit hors de la liste (`pays_nationalite_hors_liste`, sans blancs), chacun `None`
 /// quand elle ne le dit pas ; et qui elle nomme, pour les refus.
 #[derive(Debug, Clone)]
 pub struct Nationalite {
-    pub code: Option<String>,
-    pub pays: Option<String>,
+    pub code: Option<CodeNationalite>,
+    pub pays: Option<CodePays>,
     pub hors: Option<String>,
     pub qui: String,
 }
 
 impl Nationalite {
-    pub fn nouvelle(code: Option<&str>, pays: Option<&str>, hors: Option<&str>, qui: Option<String>) -> Nationalite {
-        let dit = |t: Option<&str>| t.map(str::trim).filter(|t| !t.is_empty()).map(str::to_string);
+    pub fn nouvelle(code: Option<CodeNationalite>, pays: Option<CodePays>, hors: Option<&str>, qui: Option<String>) -> Nationalite {
+        let hors = hors.map(str::trim).filter(|t| !t.is_empty()).map(str::to_string);
         let qui = match qui {
             Some(nomme) => nomme,
             None => "ce salarié".to_string(),
         };
-        Nationalite { code: dit(code), pays: dit(pays), hors: dit(hors), qui }
+        Nationalite { code, pays, hors, qui }
     }
 }
 
@@ -89,9 +130,9 @@ pub fn faute_hors_liste(fiche: &Nationalite) -> R<Option<String>> {
             hors
         )));
     }
-    let connu = match crate::pays::du_nom(&hors)? {
+    let connu = match socle::pays::du_nom(&hors)? {
         Some(p) => Some(p),
-        None if hors.chars().count() == 2 => crate::pays::du_code(&hors)?,
+        None if hors.chars().count() == 2 => socle::pays::du_code(&hors)?,
         None => None,
     };
     Ok(connu.map(|p| {
@@ -108,15 +149,16 @@ pub fn faute_hors_liste(fiche: &Nationalite) -> R<Option<String>> {
 
 /// Le code a declarer en `S21.G00.30.013` pour une fiche salarie. Refus : pas de code ; un 03 sans pays de nationalite
 /// (la fiche ne dit pas si c'est l'EEE ou le reste du monde) ; un pays et un code qui se contredisent. Un pays de
-/// nationalite hors de la liste livree (`pays.rs`) refuse aussi, sauf ecrit comme tel (`pays_nationalite_hors_liste`) :
+/// nationalite hors de la liste livree (`socle::pays`) refuse aussi, sauf ecrit comme tel (`pays_nationalite_hors_liste`) :
 /// la codification est alors celle que l'administrateur a choisie.
-pub fn codification_ue(fiche: &Nationalite) -> R<String> {
-    let code = fiche.code.clone();
+pub fn codification_ue(fiche: &Nationalite) -> R<CodeNationalite> {
+    use CodeNationalite::{Francaise, HorsUnionEuropeenne, Inconnue, UnionEuropeenne};
+    let code = fiche.code;
     if let Some(m) = faute_hors_liste(fiche)? {
         return Err(refus(m));
     }
     if let Some(hors) = fiche.hors.clone() {
-        return match code.as_deref() {
+        return match code {
             None => Err(refus(format!(
                 "Le pays de nationalité de {} (« {} ») n'est pas dans la liste du logiciel : la nationalité que la DSN \
                  déclare ne s'en déduit pas. Dans sa fiche, la choisir (S21.G00.30.013, cahier technique DSN p. 173 : \
@@ -124,39 +166,39 @@ pub fn codification_ue(fiche: &Nationalite) -> R<String> {
                 fiche.qui,
                 hors
             ))),
-            Some("01") => Err(refus(format!(
+            Some(Francaise) => Err(refus(format!(
                 "La fiche de {} dit la nationalité française (01) et un pays de nationalité hors de la liste (« {} ») : \
                  la France est dans la liste. Choisir 02, 03 ou 04, ou la France dans « Pays de nationalité ».",
                 fiche.qui,
                 hors
             ))),
-            Some(c) => Ok(c.to_string()),
+            Some(c) => Ok(c),
         };
     }
     let Some(pays) = fiche.pays.clone() else {
-        return match code.as_deref() {
-            None => Err(crate::fichiers::absent("code_nationalite_dsn")),
-            Some("03") => Err(refus(format!(
+        return match code {
+            None => Err(socle::fichiers::absent("code_nationalite_dsn")),
+            Some(HorsUnionEuropeenne) => Err(refus(format!(
                 "La nationalité de {} est codée 03 sans pays de nationalité. La norme DSN \
                  fait du 03 l'Espace économique européen hors Union (Islande, Liechtenstein, Norvège), et le reste du monde \
                  est 04 (S21.G00.30.013, cahier technique p. 173). Dans sa fiche, indiquer son pays de nationalité, ou \
                  choisir de nouveau la nationalité (04 pour un pays hors Union et hors EEE).",
                 fiche.qui
             ))),
-            Some(c) => Ok(c.to_string()),
+            Some(c) => Ok(c),
         };
     };
-    // LE PAYS SE LIT DANS LA LISTE LIVREE (`pays.rs`) : un code qu'elle ne connait pas refuse ; un territoire
+    // LE PAYS SE LIT DANS LA LISTE LIVREE (`socle::pays`) : un code qu'elle ne connait pas refuse ; un territoire
     // prend la codification de son pays de rattachement.
-    let Some(p) = crate::pays::du_code(&pays)? else {
-        return Err(refus(crate::pays::inconnu_nationalite(&format!("Le pays de nationalité de {}", fiche.qui), &pays)));
+    let Some(p) = socle::pays::du_code(&pays)? else {
+        return Err(refus(socle::pays::inconnu_nationalite(&format!("Le pays de nationalité de {}", fiche.qui), &pays)));
     };
     let iso = p.code.clone();
-    let attendu = crate::pays::codification(&p);
-    match code.as_deref() {
+    let attendu = codification(&p);
+    match code {
         // Un code 03 ou 02 que le pays contredit d'un cran (03 pour un pays hors EEE, 02 pour l'Islande, le
         // Liechtenstein ou la Norvege) se recode depuis le pays : le pays tranche.
-        Some(c) if c != attendu && !(c == "03" && attendu == "04") && !(c == "02" && attendu == "03") => Err(refus(format!(
+        Some(c) if c != attendu && !(c == HorsUnionEuropeenne && attendu == Inconnue) && !(c == UnionEuropeenne && attendu == HorsUnionEuropeenne) => Err(refus(format!(
             "La fiche de {} dit la nationalité {} et le pays de nationalité {}, qui se déclare {} (S21.G00.30.013 : 01 \
              France, 02 Union européenne, 03 EEE hors Union, 04 reste du monde). Corriger l'un ou l'autre dans sa fiche.",
             fiche.qui,
@@ -164,6 +206,6 @@ pub fn codification_ue(fiche: &Nationalite) -> R<String> {
             iso,
             attendu
         ))),
-        _ => Ok(attendu.to_string()),
+        _ => Ok(attendu),
     }
 }

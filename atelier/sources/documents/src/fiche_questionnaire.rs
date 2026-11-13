@@ -2,7 +2,7 @@
 //! Les `QUESTIONS`, `questionnaire`, `CodeDeDemande` (et `code_au_hasard`), `lire_reponses`, `fiche_depuis_reponses`.
 //!
 //! Les textes (questions, objet, corps, HTML) et les deux tables (pays, nationalites) sont ecrits mot pour mot du questionnaire. Les deux tables ne portent que le code
-//! ISO : la codification UE (quatre valeurs) se deduit dans `codification_ue`. Les pays se
+//! ISO : la codification UE (quatre valeurs) se deduit dans `droit::nationalite`. Les pays se
 //! lisent dans la liste livree (`pays.rs`, COG de l'INSEE) ; seule la table des nationalites (adjectifs) reste ici. Ce que la personne a repondu se lit, et ce qu'on ne sait pas lire
 //! laisse la case VIDE et le dit (`illisible`) : rien n'est complete au hasard. Le departement et le pays de
 //! naissance se lisent dans le NIR.
@@ -137,7 +137,7 @@ pub const CORPS: &str = "Bonjour{virgule_prenom},\n\nPour préparer ton contrat,
 pub const HTML: &str = "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#2C3E50\">\n<p>Bonjour{virgule_prenom},</p>\n<p>Pour préparer ton contrat, {compagnie} a besoin de quelques informations sur toi.</p>\n<p>Appuie sur le bouton : une réponse s'ouvre avec les questions. Écris chaque réponse après les deux-points, puis envoie-la. Une question dont tu n'as pas la réponse reste vide.</p>\n<p style=\"margin:26px 0\">\n<a href=\"{mailto}\" style=\"display:inline-block;background:#B22222;color:#ffffff;padding:14px 26px;border-radius:6px;text-decoration:none;font-weight:bold;font-size:16px\">Remplir ma fiche</a>\n</p>\n<p style=\"font-size:13px;color:#555\">Si le bouton ne fait rien, réponds simplement à ce message en recopiant ces lignes avec tes réponses :</p>\n<pre style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;background:#f4f4f4;padding:12px\">{questionnaire}</pre>\n<p>Ces informations servent à tes contrats, à tes bulletins et aux déclarations obligatoires (Urssaf, France Travail, Audiens). Elles restent chez {compagnie}.</p>\n<p>Bien à toi,<br>{signataire}<br>{compagnie}</p>\n</div>\n";
 
 /// Les nationalites (adjectifs) : (mot sans accent, code ISO du pays). La fiche garde le pays (`pays_nationalite`) ;
-/// la codification UE s'en deduit (`codification_ue::code_du_pays`).
+/// la codification UE s'en deduit (`droit::nationalite::code_du_pays`).
 const NATIONALITES: [(&str, &str); 60] = [
     ("francaise", "FR"),
     ("francais", "FR"),
@@ -374,7 +374,7 @@ pub fn date_lue(texte: &str) -> Option<Jour> {
 /// `None` pour ce que la liste ne connait pas.
 pub fn pays_lu(texte: &str) -> R<Option<(socle::pays::CodePays, Option<&'static str>)>> {
     let t = sans_accents(texte).replace('\u{2019}', "'");
-    let lu = |p: socle::pays::Pays| (p.code.clone(), Some(socle::pays::codification(&p)));
+    let lu = |p: socle::pays::Pays| (p.code.clone(), Some(droit::nationalite::codification(&p).as_str()));
     if t.chars().count() == 2 && t.chars().all(|c| c.is_ascii_lowercase()) {
         return Ok(socle::pays::du_code(&t)?.map(lu));
     }
@@ -526,7 +526,7 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
                 // La codification se lit dans la liste (un territoire suit son pays de rattachement), `pays.rs`.
                 match socle::pays::du_code(&pays)? {
                     Some(p) => {
-                        d.code_nationalite_dsn = Some(socle::pays::codification(&p).to_string());
+                        d.code_nationalite_dsn = Some(droit::nationalite::codification(&p).as_str().to_string());
                         d.pays_nationalite = Some(p.code);
                     }
                     None => illisible.push(format!("nationalité : « {} »", r)),
