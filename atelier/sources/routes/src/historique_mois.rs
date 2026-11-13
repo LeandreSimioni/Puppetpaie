@@ -857,7 +857,7 @@ fn crm_oc_lu(crm: &CrmOc) -> Lecture {
             l.phrases.push(format!("{}.", comptes.join(", ")));
         }
         for m in &d.mandats {
-            let ou = match (m.net_entreprises, lu(&m.url)) {
+            let ou = match (m.net_entreprises, &m.url) {
                 (true, _) => "à créer sur net-entreprises (module Mandat)".to_string(),
                 (false, None) => "à créer auprès de l'organisme".to_string(),
                 (false, Some(u)) => format!("à créer sur le site de l'organisme : {}", u),

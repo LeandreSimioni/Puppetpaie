@@ -23,6 +23,7 @@ use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use socle::echec::{erreur as echec, Classe, Echec, R};
 use socle::date::Jour;
+use socle::garde_reseau::Url;
 use socle::paris::{FuseauXsd, InstantOuJour, Moment};
 use socle::piece::format;
 use socle::piece::Zone;
@@ -1610,8 +1611,9 @@ pub struct Annonce {
     pub statut: Option<StatutDuRetour>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
+    /// Une adresse vide se lit absente, comme `<url/>` dans la liste XML.
+    #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    pub url: Option<Url>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub libelle: Option<String>,
     pub flux: Option<IdDeFlux>,
@@ -1692,7 +1694,9 @@ struct RetourJson {
     nature_retour: NatureDuRetour,
     statut: Option<StatutDuRetour>,
     id: Option<String>,
-    url: Option<String>,
+    /// Une adresse vide se lit absente, comme `<url/>` dans la liste XML.
+    #[serde(default, deserialize_with = "socle::forme::vide_si_aucun::deserialize")]
+    url: Option<Url>,
 }
 
 /// L'OPS ou le delegataire d'un retour JSON : « Non renseigné s'il s'agit d'un retour par le SI DSN ou par un organisme
@@ -1818,7 +1822,7 @@ pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
                     "nature" => nature = Some(code_liste(t, "flux.retour.nature")?),
                     "statut" => statut = Some(code_liste(t, "flux.retour.statut")?),
                     "id" => id = texte,
-                    "url" => url = texte,
+                    "url" => url = Some(Url::lire(t).map_err(|e| socle::echec::cle(e.phrase, "flux.retour.url").reclasser(Classe::Illisible))?),
                     autre => return Err(illisible(&format!("flux.retour.{}", autre))),
                 }
             }
@@ -3359,8 +3363,12 @@ pub fn lire_crm_oc(o: &[u8]) -> R<Option<CrmOc>> {
         let mandats = a
             .enfants(d)
             .filter(|x| matches!(local(&x.tag), "MandatNetE" | "MandatProp"))
-            .map(|m| MandatOc { net_entreprises: local(&m.tag) == "MandatNetE", iban: at(m, "IBAN"), bic: at(m, "BIC"), ics: at(m, "ICS"), url: at(m, "URLMandatProp") })
-            .collect();
+            .map(|m| -> R<MandatOc> {
+                // L'adresse du mandat ; hors de la forme d'une adresse, le CRM ne se lit pas.
+                let url = at(m, "URLMandatProp").map(|t| Url::lire(&t).map_err(|e| socle::echec::cle(format!("Le compte rendu d'un organisme complémentaire ne se lit pas : {}", e.phrase), "URLMandatProp").reclasser(Classe::Illisible))).transpose()?;
+                Ok(MandatOc { net_entreprises: local(&m.tag) == "MandatNetE", iban: at(m, "IBAN"), bic: at(m, "BIC"), ics: at(m, "ICS"), url })
+            })
+            .collect::<R<Vec<MandatOc>>>()?;
         let mut retours = Vec::new();
         for rm in a.enfants(d).filter(|x| local(&x.tag) == "RetourMetier") {
             let contexte: Vec<ContexteOc> = a
@@ -3459,7 +3467,7 @@ pub struct MandatOc {
     pub iban: Option<String>,
     pub bic: Option<String>,
     pub ics: Option<String>,
-    pub url: Option<String>,
+    pub url: Option<Url>,
 }
 
 /// Un `RetourMetier`, et le salarie que son contexte nomme.

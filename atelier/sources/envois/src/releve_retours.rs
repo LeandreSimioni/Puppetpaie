@@ -606,8 +606,8 @@ pub fn relever_retours(
     let mut rates: Vec<Annonce> = Vec::new();
     let a_telecharger: Vec<Annonce> = if tout { releve.trouves.clone() } else { releve.nouveaux.clone() };
     for r in a_telecharger {
-        let Some(url) = r.url.clone().filter(|u| !u.is_empty()) else { continue };
-        match client.telecharger(&Url::lire(&url)?) {
+        let Some(url) = r.url.clone() else { continue };
+        match client.telecharger(&url) {
             Ok((contenu, ctype)) => {
                 let chemin = archiver(ctx, &r, &contenu, ctype.as_deref(), canal)?;
                 // LE TAUX AT/MP NOTIFIE SE LIT DE LA NOTIFICATION (regle 1) : il se pose dans la surcouche, par les suites.
@@ -708,8 +708,8 @@ pub fn relever_retours_dpae(
         Err(p) => return Err(en_echec(p)),
     }
     for x in r.trouves.clone() {
-        let Some(url) = x.url.clone().filter(|u| !u.is_empty()) else { continue };
-        match client.telecharger(&Url::lire(&url)?) {
+        let Some(url) = x.url.clone() else { continue };
+        match client.telecharger(&url) {
             Ok((contenu, ctype)) => {
                 let chemin = archiver(ctx, &x, &contenu, ctype.as_deref(), "dpae")?;
                 r.archives.push(RetourArchive { retour: x, chemin, contenu });
