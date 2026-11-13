@@ -1844,41 +1844,15 @@ pub fn departement_du_nir(nir: &str) -> Option<String> {
     (lisible && autres.chars().all(|c| c.is_ascii_digit())).then_some(dd)
 }
 
-/// `cle_nir` : 97 - (NIR mod 97), sur deux chiffres (`reference/sources/insee-nir-siret/`, INSEE, schema NIR, 4.1). En Corse,
-/// 2A et 2B au 6e-7e rang valent 19 et 18 (equivalent, par inference, au zero moins 1 000 000 ou 2 000 000 du texte).
+/// LA CLE DU NIR QU'UNE SAISIE EN COURS ECRIT (`nir`, ses blancs de bord otes, en capitales) : celle de ses treize
+/// caracteres (`droit::fiche::CleNir::des_treize`) ; une autre longueur, aucune. Un `Nir` lu dit la sienne par
+/// `CleNir::du_nir`.
 pub fn cle_nir(nir: &str) -> Option<droit::fiche::CleNir> {
-    let mut n = strip(nir).to_uppercase();
+    let n = strip(nir).to_uppercase();
     if n.chars().count() != 13 {
         return None;
     }
-    if tranche(&n, 5, 7) == "2A" {
-        n = n.replacen("2A", "19", 1);
-    }
-    if tranche(&n, 5, 7) == "2B" {
-        n = n.replacen("2B", "18", 1);
-    }
-    // Les chiffres decimaux de toutes les ecritures comptent comme des chiffres.
-    let mut x: u64 = 0;
-    for c in n.chars() {
-        x = x * 10 + valeur_decimale(c)? as u64;
-    }
-    Some(droit::fiche::CleNir::du_nombre(x))
-}
-
-/// La valeur d'un chiffre decimal Unicode (categorie Nd).
-fn valeur_decimale(c: char) -> Option<u32> {
-    if let Some(d) = c.to_digit(10) {
-        return Some(d);
-    }
-    // Le zero de chaque suite de dix chiffres decimaux (Unicode 15).
-    const ZEROS: [u32; 65] = [
-        0x660, 0x6F0, 0x7C0, 0x966, 0x9E6, 0xA66, 0xAE6, 0xB66, 0xBE6, 0xC66, 0xCE6, 0xD66, 0xDE6, 0xE50, 0xED0, 0xF20, 0x1040, 0x1090, 0x17E0,
-        0x1810, 0x1946, 0x19D0, 0x1A80, 0x1A90, 0x1B50, 0x1BB0, 0x1C40, 0x1C50, 0xA620, 0xA8D0, 0xA900, 0xA9D0, 0xA9F0, 0xAA50, 0xABF0, 0xFF10,
-        0x104A0, 0x10D30, 0x11066, 0x110F0, 0x11136, 0x111D0, 0x112F0, 0x11450, 0x114D0, 0x11650, 0x116C0, 0x11730, 0x118E0, 0x11950, 0x11C50,
-        0x11D50, 0x11DA0, 0x16A60, 0x16AC0, 0x16B50, 0x1D7CE, 0x1D7D8, 0x1D7E2, 0x1D7EC, 0x1D7F6, 0x1E140, 0x1E2F0, 0x1E4F0, 0x1E950,
-    ];
-    let p = c as u32;
-    ZEROS.iter().find(|z| (**z..**z + 10).contains(&p)).map(|z| p - z).or_else(|| (0x1FBF0..0x1FBFA).contains(&p).then(|| p - 0x1FBF0))
+    droit::fiche::CleNir::des_treize(&n)
 }
 
 /// LES JOURS TRAVAILLES D'UN PERMANENT : ceux que le calcul lira (`droit::conges::JoursTravailles`) ; la faute, dite sans

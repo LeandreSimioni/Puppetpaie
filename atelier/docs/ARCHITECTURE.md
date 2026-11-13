@@ -175,7 +175,7 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 
 | notion | ce que c'est | son type |
 |---|---|---|
-| NIR | le numéro de sécurité sociale | `droit::fiche::Nir` ; sa clé, `CleNir` (`droit/src/fiche.rs`) ; à unifier (#419) : des champs `nir` en `String` |
+| NIR | le numéro de sécurité sociale | `droit::fiche::Nir` : treize caractères, saisi il se range sans aucun blanc et en capitales (`Nir::rangee`) ; celui d'une pièce importée se lit par `Nir::d_une_piece` (hors forme : aucun), coupé de sa clé par `Nir::et_sa_cle` ; le sexe qu'il dit, `Nir::sexe`, et celui d'une fiche, `ChampsSalarie::sexe` ; sa clé, `CleNir` (`droit/src/fiche.rs`), celle d'un `Nir` par `CleNir::du_nir` ; que portent la fiche, l'identité qu'une DSN partie a déclarée, une DSN lue, une AEM, une AER, un certificat, un bulletin importé (après sa porte), la paie versée d'un engagement importé, les retours ; un NIR en cours de saisie reste son texte |
 | NTT | le numéro technique temporaire d'un individu sans NIR (S21.G00.30.020) | `Ntt` (`declarations/src/ntt.rs`) : il se fabrique pour un salarié (`ntt::numero`, contrôlé avec le SIREN) ou se lit dans une DSN (`Ntt::lu`, sa forme seule) ; que portent l'identité qu'une DSN partie a déclarée (`changements_individu::Declaree`) et l'individu d'une DSN lue |
 | SIREN, NIC, SIRET | l'entreprise, l'établissement, les deux | `Siren`, `Nic`, `Siret` (`droit/src/fiche.rs`) |
 | IBAN, BIC | un compte bancaire | `Iban`, `Bic` (`droit/src/fiche.rs` ; leurs contrôles, `socle/src/iban.rs`) |

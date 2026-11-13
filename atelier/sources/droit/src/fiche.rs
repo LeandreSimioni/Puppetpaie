@@ -517,6 +517,19 @@ impl Nir {
         Sexe::du_nir(&self.0)
     }
 
+    /// UN NIR IMPRIME AVEC OU SANS SA CLE, deja compacte (`texte`) : treize caracteres, ou quinze dont les deux derniers
+    /// sont la cle (INSEE, schema NIR) ; la seule coupe « 13 + cle ». Une autre longueur : aucun.
+    pub fn et_sa_cle(texte: &str) -> Option<(&str, Option<&str>)> {
+        match texte.chars().count() {
+            13 => Some((texte, None)),
+            15 => {
+                let (i, _) = texte.char_indices().nth(13)?;
+                Some((&texte[..i], Some(&texte[i..])))
+            }
+            _ => None,
+        }
+    }
+
     /// LE NIR QU'UNE PIECE IMPORTEE PORTE (une DSN lue, une AEM, une AER, un certificat, un bulletin d'autrui) : hors de sa
     /// forme, la case reste vide, comme un code hors de nos listes ; la piece d'un tiers se lit, elle ne se refuse pas
     /// pour lui. Les retours de la norme le lisent strictement (`lire`).
@@ -885,9 +898,49 @@ impl CleNir {
     }
 
     /// La cle du nombre `nombre` qu'ecrit un NIR : le complement a 97 de son reste par 97, de 01 a 97 (INSEE, 4.1).
-    pub fn du_nombre(nombre: u64) -> CleNir {
+    fn du_nombre(nombre: u64) -> CleNir {
         CleNir(format!("{:02}", 97 - nombre % 97))
     }
+
+    /// LA CLE DU NIR `nir` : 97 - (NIR mod 97), sur deux chiffres (`atelier/reference/sources/insee-nir-siret/`, INSEE,
+    /// schema NIR, 4.1). En Corse, 2A et 2B au 6e-7e rang valent 19 et 18 (equivalent, par inference, au zero moins
+    /// 1 000 000 ou 2 000 000 du texte). Aucune si un de ses caracteres n'est pas un chiffre.
+    pub fn du_nir(nir: &Nir) -> Option<CleNir> {
+        CleNir::des_treize(&nir.0)
+    }
+
+    /// La cle de treize caracteres `n` deja ranges (en capitales), la seule arithmetique de la cle : celle d'un `Nir`
+    /// (`du_nir`), et celle d'un NIR qu'une saisie en cours ecrit (`declarations::champs::cle_nir`).
+    pub fn des_treize(n: &str) -> Option<CleNir> {
+        let rang_corse: String = n.chars().skip(5).take(2).collect();
+        let n = match rang_corse.as_str() {
+            "2A" => n.replacen("2A", "19", 1),
+            "2B" => n.replacen("2B", "18", 1),
+            _ => n.to_string(),
+        };
+        // Les chiffres decimaux de toutes les ecritures comptent comme des chiffres.
+        let mut x: u64 = 0;
+        for c in n.chars() {
+            x = x * 10 + u64::from(valeur_decimale(c)?);
+        }
+        Some(CleNir::du_nombre(x))
+    }
+}
+
+/// La valeur d'un chiffre decimal Unicode (categorie Nd).
+fn valeur_decimale(c: char) -> Option<u32> {
+    if let Some(d) = c.to_digit(10) {
+        return Some(d);
+    }
+    // Le zero de chaque suite de dix chiffres decimaux (Unicode 15).
+    const ZEROS: [u32; 65] = [
+        0x660, 0x6F0, 0x7C0, 0x966, 0x9E6, 0xA66, 0xAE6, 0xB66, 0xBE6, 0xC66, 0xCE6, 0xD66, 0xDE6, 0xE50, 0xED0, 0xF20, 0x1040, 0x1090, 0x17E0,
+        0x1810, 0x1946, 0x19D0, 0x1A80, 0x1A90, 0x1B50, 0x1BB0, 0x1C40, 0x1C50, 0xA620, 0xA8D0, 0xA900, 0xA9D0, 0xA9F0, 0xAA50, 0xABF0, 0xFF10,
+        0x104A0, 0x10D30, 0x11066, 0x110F0, 0x11136, 0x111D0, 0x112F0, 0x11450, 0x114D0, 0x11650, 0x116C0, 0x11730, 0x118E0, 0x11950, 0x11C50,
+        0x11D50, 0x11DA0, 0x16A60, 0x16AC0, 0x16B50, 0x1D7CE, 0x1D7D8, 0x1D7E2, 0x1D7EC, 0x1D7F6, 0x1E140, 0x1E2F0, 0x1E4F0, 0x1E950,
+    ];
+    let p = c as u32;
+    ZEROS.iter().find(|z| (**z..**z + 10).contains(&p)).map(|z| p - z).or_else(|| (0x1FBF0..0x1FBFA).contains(&p).then(|| p - 0x1FBF0))
 }
 
 notion_lue!(CleNir rangee par sans_blancs_de_bord);
@@ -2648,6 +2701,15 @@ impl ChampsSalarie {
     /// l'etat civil. `None` : la fiche ne nomme personne.
     pub fn nomme(&self) -> Option<String> {
         socle::texte::salarie_nomme(self.nom.portee(), self.nom_affichage.portee(), self.prenom.portee(), self.prenom_affichage.portee())
+    }
+
+    /// LE SEXE DU SALARIE, la seule ecriture de cette regle : celui que dit son NIR (`Nir::sexe`), sinon la case `sexe` ;
+    /// aucun si ni l'un ni l'autre ne le dit.
+    pub fn sexe(&self) -> Option<Sexe> {
+        match self.nir.dite().and_then(Nir::sexe) {
+            Some(s) => Some(s),
+            None => self.sexe,
+        }
     }
 
     /// Ce que la fiche dit de la nationalite (`socle::codification_ue`, S21.G00.30.013).

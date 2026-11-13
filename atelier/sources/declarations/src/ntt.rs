@@ -39,8 +39,8 @@ impl std::fmt::Display for Ntt {
     }
 }
 
-/// Le code sexe que dit le NIR (`du_nir` : `Nir::sexe`, ou `Sexe::du_nir` d'un NIR en cours de saisie), sinon la case
-/// `sexe` ; `None` si ni l'un ni l'autre ne le dit.
+/// Le code sexe d'une fiche EN COURS DE SAISIE : celui que dit son NIR (`du_nir` : `Sexe::du_nir` du texte saisi), sinon
+/// la case `sexe` ; `None` si ni l'un ni l'autre ne le dit. Une fiche enregistree le dit par `ChampsSalarie::sexe`.
 pub fn sexe_de(du_nir: Option<Sexe>, sexe: Option<&str>) -> Option<&'static str> {
     let un_ou_deux = |t: &str| match t {
         "1" => Some("1"),
@@ -55,7 +55,7 @@ pub fn sexe_de(du_nir: Option<Sexe>, sexe: Option<&str>) -> Option<&'static str>
 
 /// Le NTT de ce salarie dans l'entreprise de SIREN `siren`.
 pub fn numero(siren: &str, salarie: &FicheSalarie) -> R<Ntt> {
-    let Some(s) = sexe_de(salarie.nir.dite().and_then(Nir::sexe), salarie.sexe.code()) else {
+    let Some(s) = salarie.sexe().map(|s| s.as_str()) else {
         let qui = match salarie.nom.remplie() {
             Some(nom) => nom.to_string(),
             None => salarie.id.to_string(),

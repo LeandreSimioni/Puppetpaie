@@ -354,7 +354,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
         _ => None,
     };
     // UN SIRET OU UNE CLE DU NIR QUI N'ONT PAS LEUR FORME se disent, et la page se refuse (`Aem::manque`) ; la cle
-    // imprimee se garde quand c'est celle du NIR (`declarations::champs::cle_nir`), comme sur une AEM (`lire_page`).
+    // imprimee se garde quand c'est celle du NIR (`CleNir::du_nir`), comme sur une AEM (`lire_page`).
     let mut fautes: Vec<String> = Vec::new();
     let siret = match v("EMP_SIRET").map(|s| droit::fiche::Siret::lire(&s)).transpose() {
         Ok(s) => s,
@@ -363,8 +363,11 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             None
         }
     };
-    let cle_nir = match nir.as_ref().and_then(|n| n.get(13..)).filter(|k| !k.is_empty()).map(droit::fiche::CleNir::lire).transpose() {
-        Ok(Some(k)) => match nir.as_ref().and_then(|n| n.get(..13)).and_then(declarations::champs::cle_nir) {
+    // Le NIR imprime, coupe en treize caracteres et sa cle (`Nir::et_sa_cle`) ; d'une autre longueur, aucun.
+    let coupe = nir.as_deref().and_then(droit::fiche::Nir::et_sa_cle);
+    let nir_lu = coupe.and_then(|(n, _)| droit::fiche::Nir::d_une_piece(n));
+    let cle_nir = match coupe.and_then(|(_, k)| k).map(droit::fiche::CleNir::lire).transpose() {
+        Ok(Some(k)) => match nir_lu.as_ref().and_then(droit::fiche::CleNir::du_nir) {
             Some(c) if c == k => Some(c),
             Some(_) => {
                 fautes.push("la clé du NIR imprimé ne correspond pas à son numéro".to_string());
@@ -411,7 +414,7 @@ pub fn lire_aer(octets: &[u8]) -> R<Option<Vec<PageAem>>> {
             employeur_commune: v("ADR_EMP_LOCALITE"),
             adherent: None,
             cle_nir: cle_nir.clone(),
-            nir: nir.as_ref().and_then(|n| n.get(..13)).and_then(droit::fiche::Nir::d_une_piece),
+            nir: nir_lu.clone(),
             nom: v("SALARIE_NOM_FAMILLE"),
             prenom: v("SALARIE_PRENOMS"),
             nom_usage: None,
@@ -671,9 +674,9 @@ fn lire_page(mots: &[Mot], inconnus: &[Inconnu], page: usize) -> Option<Aem> {
     a.nom_usage = texte(lu("usage", Some(2)));
     let mut fautes: Vec<&str> = Vec::new();
     if let Some((nir, cle, _)) = nir_en_tete(&lu("nir", Some(2))) {
-        // La cle imprimee, quand c'est celle du NIR (`declarations::champs::cle_nir`).
+        // La cle imprimee, quand c'est celle du NIR (`CleNir::du_nir`).
         match &cle {
-            Some(k) => match declarations::champs::cle_nir(&nir).filter(|c| **c == **k) {
+            Some(k) => match droit::fiche::CleNir::du_nir(&nir).filter(|c| **c == **k) {
                 Some(c) => {
                     a.nir = Some(nir);
                     a.cle_nir = Some(c);

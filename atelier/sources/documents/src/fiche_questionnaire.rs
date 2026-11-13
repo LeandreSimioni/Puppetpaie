@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use droit::fiche::{CaseDeFiche, CaseSalarie};
+use droit::fiche::{CaseDeFiche, CaseSalarie, Nir};
 use socle::texte::{blanc as espace, strip};
 use socle::date::Jour;
 use socle::echec::R;
@@ -472,21 +472,19 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
         }
     }
     if let Some(r) = reponse("nir") {
-        let n: Vec<char> = r.chars().filter(|c| !espace(*c) && !matches!(c, '.' | '-')).collect();
-        let tout_chiffres = n.iter().all(|c| chiffre(*c));
+        let n: String = r.chars().filter(|c| !espace(*c) && !matches!(c, '.' | '-')).collect();
+        let tout_chiffres = n.chars().all(chiffre);
         // Treize chiffres sont un NIR ; une cle hors de 01..97 rend la reponse entiere illisible, avec sa raison.
-        if tout_chiffres && n.len() == 15 {
-            match droit::fiche::CleNir::lire(&n[13..].iter().collect::<String>()) {
+        match Nir::et_sa_cle(&n).filter(|_| tout_chiffres) {
+            Some((nir, Some(cle))) => match droit::fiche::CleNir::lire(cle) {
                 Ok(cle) => {
-                    d.nir = Some(droit::fiche::Nir::lire(&n[..13].iter().collect::<String>())?);
+                    d.nir = Some(Nir::lire(nir)?);
                     d.nir_cle = Some(cle);
                 }
                 Err(e) => illisible.push(format!("numéro de sécurité sociale : « {} » ({})", r, e.phrase)),
-            }
-        } else if tout_chiffres && n.len() == 13 {
-            d.nir = Some(droit::fiche::Nir::lire(&n.iter().collect::<String>())?);
-        } else {
-            illisible.push(format!("numéro de sécurité sociale : « {} »", r));
+            },
+            Some((nir, None)) => d.nir = Some(Nir::lire(nir)?),
+            None => illisible.push(format!("numéro de sécurité sociale : « {} »", r)),
         }
     }
     if let Some(r) = reponse("sexe").filter(|_| d.nir.is_none()) {
@@ -574,7 +572,7 @@ pub fn fiche_depuis_reponses(rep: &HashMap<&'static str, String>) -> R<(FicheLue
 /// incomplet.
 fn naissance_depuis_nir(nir: &droit::fiche::Nir) -> Option<(String, Option<socle::pays::CodePays>)> {
     let c: Vec<char> = nir.chars().collect();
-    if c.len() != 13 || !c.iter().all(|x| chiffre(*x)) || !matches!(c[0], '1' | '2') {
+    if !c.iter().all(|x| chiffre(*x)) || !matches!(c[0], '1' | '2') {
         return None;
     }
     let dep: String = c[5..7].iter().collect();

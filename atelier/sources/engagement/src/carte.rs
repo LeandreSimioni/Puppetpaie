@@ -644,7 +644,7 @@ macro_rules! changements {
         /// "valeur": "cdi"}` change sa nature, qui ne se vide jamais.
         #[derive(Debug, Clone, PartialEq, Deserialize)]
         #[serde(tag = "case", content = "valeur", deny_unknown_fields)]
-        pub enum Changement<L = LignePaie, N = IdSalarie, P = IdSpectacle> {
+        pub enum Changement<L = LignePaie, N = IdSalarie, P = IdSpectacle, M = IdDeModele> {
             #[serde(rename = "nature")]
             Nature(NatureDeContrat),
             #[serde(rename = "salarie")]
@@ -653,10 +653,13 @@ macro_rules! changements {
             Spectacle(Option<P>),
             #[serde(rename = "lignes")]
             Lignes(Option<Vec<L>>),
+            /// Le modele que la carte choisit.
+            #[serde(rename = "modele_contrat")]
+            ModeleContrat(Option<M>),
             $( $(#[$va])* #[serde(rename = $cle)] $v(Option<$t>), )*
         }
 
-        impl<L, N, P> Changement<L, N, P> {
+        impl<L, N, P, M> Changement<L, N, P, M> {
             /// La case qu'il change.
             pub fn champ(&self) -> Champ {
                 match self {
@@ -664,14 +667,16 @@ macro_rules! changements {
                     Changement::Salarie(_) => Champ::Salarie,
                     Changement::Spectacle(_) => Champ::Spectacle,
                     Changement::Lignes(_) => Champ::Lignes,
+                    Changement::ModeleContrat(_) => Champ::ModeleContrat,
                     $( Changement::$v(_) => Champ::$v, )*
                 }
             }
         }
 
-        impl Changement<LigneDonnee, String, String> {
+        impl Changement<LigneDonnee, String, String, String> {
             /// Ses lignes rangees (`ranger`, `ligne::ranger`), le salarie et le spectacle qu'il nomme retrouves
-            /// (`salarie`, `spectacle`) ; une autre case telle quelle.
+            /// (`salarie`, `spectacle`), l'id du modele qu'il choisit lu (un id mal forme s'y refuse par la phrase d'une
+            /// charge, `IdDeModele::de_la_charge`) ; une autre case telle quelle.
             pub fn ranger(
                 self,
                 ranger: &dyn Fn(Vec<LigneDonnee>) -> R<Vec<LignePaie>>,
@@ -683,6 +688,7 @@ macro_rules! changements {
                     Changement::Salarie(x) => Changement::Salarie(x.map(|nom| salarie(&nom)).transpose()?),
                     Changement::Spectacle(x) => Changement::Spectacle(x.map(|nom| spectacle(&nom)).transpose()?),
                     Changement::Lignes(l) => Changement::Lignes(l.map(ranger).transpose()?),
+                    Changement::ModeleContrat(x) => Changement::ModeleContrat(x.map(|id| IdDeModele::de_la_charge(&id)).transpose()?),
                     $( Changement::$v(x) => Changement::$v(x), )*
                 })
             }
@@ -696,6 +702,7 @@ macro_rules! changements {
                     Changement::Salarie(x) => c.salarie = x,
                     Changement::Spectacle(x) => c.spectacle = x,
                     Changement::Lignes(x) => c.lignes = x,
+                    Changement::ModeleContrat(x) => c.modele_contrat = x,
                     $( Changement::$v(x) => c.$champ = x, )*
                 }
             }
@@ -726,9 +733,6 @@ changements! {
     PersonneRemplacee(String) = "personne_remplacee" => personne_remplacee,
     RepartitionHoraire(String) = "repartition_horaire" => repartition_horaire,
     ClausesParticulieres(String) = "clauses_particulieres" => clauses_particulieres,
-    /// Le modele que la carte choisit : un id mal forme s'y refuse par la phrase d'une charge (`id_de_la_charge`).
-    #[serde(deserialize_with = "crate::carte::id_de_la_charge::option::deserialize")]
-    ModeleContrat(IdDeModele) = "modele_contrat" => modele_contrat,
     CongesPris(Vec<CongePris>) = "conges_pris" => conges_pris,
     Primes(Vec<Prime>) = "primes" => primes,
     DatePaiement(Jour) = "date_paiement" => date_paiement,
@@ -757,11 +761,11 @@ changements! {
 /// appliques dans l'ordre, tout ou rien. La page en envoie ce qui a change depuis sa derniere ecriture (une case, le plus
 /// souvent) ; un appelant en ligne de commande, toutes les cases d'une carte d'un coup.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Changements(Vec<Changement<LigneDonnee, String, String>>);
+pub struct Changements(Vec<Changement<LigneDonnee, String, String, String>>);
 
 impl<'de> Deserialize<'de> for Changements {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Changements, D::Error> {
-        let v = Vec::<Changement<LigneDonnee, String, String>>::deserialize(d)?;
+        let v = Vec::<Changement<LigneDonnee, String, String, String>>::deserialize(d)?;
         if v.is_empty() {
             return Err(serde::de::Error::custom("`changements` : au moins un changement, {\"case\": …, \"valeur\": …}"));
         }

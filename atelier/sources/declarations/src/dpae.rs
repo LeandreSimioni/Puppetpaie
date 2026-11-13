@@ -26,7 +26,6 @@ use droit::fiche::ChampsEntreprise;
 use socle::date::Jour;
 use socle::fichiers::{modele_de, repr};
 use socle::paris::Moment;
-use crate::ntt;
 use socle::echec::{refus, refus_avec, Lieu, R};
 use socle::texte::ascii_nfkd;
 use crate::usages::strip;
@@ -403,13 +402,11 @@ pub fn enregistrement(e: &Embauche, p: &Parametres, gabarit: &[char]) -> R<Strin
     }
 
     let s = &e.salarie;
-    // LE SEXE VIENT DU NIR QUAND IL Y EN A UN, de la fiche sinon : c'est la
-    // meme lecture que pour le numero technique temporaire de la DSN
-    // (`ntt.rs`), et il n'y en a qu'une dans le logiciel.
-    let sexe = match ntt::sexe_de(s.nir.dite().and_then(droit::fiche::Nir::sexe), s.sexe.code()) {
-        Some("1") => "M",
-        Some("2") => "F",
-        Some(autre) => return Err(socle::refus!("Le sexe « {} » n'est ni 1 ni 2 : le signaler au développeur.", autre)),
+    // LE SEXE VIENT DU NIR QUAND IL Y EN A UN, de la fiche sinon (`ChampsSalarie::sexe`) : la meme lecture que pour le
+    // numero technique temporaire de la DSN, et il n'y en a qu'une dans le logiciel.
+    let sexe = match s.sexe() {
+        Some(droit::fiche::Sexe::Masculin) => "M",
+        Some(droit::fiche::Sexe::Feminin) => "F",
         None => return Err(refus("La DPAE écrit le sexe du salarié (zone SEXE) : ni son NIR ni sa fiche ne le disent.")),
     };
     poser(&mut buf, "horodatage", &horodatage_dpae(p.horodatage))?;

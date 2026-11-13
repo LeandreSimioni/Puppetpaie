@@ -170,16 +170,16 @@ pub(crate) fn compare(t: &str) -> String {
 fn nir_lu(b: &BulletinLu) -> R<Option<(Nir, Option<droit::fiche::CleNir>)>> {
     let Some(brut) = &b.salarie.nir else { return Ok(None) };
     let n: String = brut.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_uppercase();
-    match n.chars().count() {
-        13 => Ok(Some((Nir::lire(&n)?, None))),
-        15 => {
-            let (nir, cle): (String, String) = (n.chars().take(13).collect(), n.chars().skip(13).collect());
-            match declarations::champs::cle_nir(&nir).filter(|c| **c == *cle) {
-                Some(c) => Ok(Some((Nir::lire(&nir)?, Some(c)))),
+    match Nir::et_sa_cle(&n) {
+        Some((nir, None)) => Ok(Some((Nir::lire(nir)?, None))),
+        Some((nir, Some(cle))) => {
+            let nir = Nir::lire(nir)?;
+            match droit::fiche::CleNir::du_nir(&nir).filter(|c| **c == *cle) {
+                Some(c) => Ok(Some((nir, Some(c)))),
                 None => Err(socle::echec::refus("la clé du NIR imprimé ne correspond pas à son numéro")),
             }
         }
-        _ => Err(socle::echec::refus("le NIR imprimé n'a ni 13 ni 15 caractères")),
+        None => Err(socle::echec::refus("le NIR imprimé n'a ni 13 ni 15 caractères")),
     }
 }
 
@@ -1717,7 +1717,7 @@ fn fiche_salarie(nir: &Nir, ls: &[&Lu], idcc: Option<&droit::fiche::Idcc>) -> R<
         s.adresse = Some(rue).filter(|r| !r.is_empty());
         (s.code_postal, s.commune) = (Some(cp), Some(commune));
     }
-    s.nir_cle = ls.iter().rev().find_map(|l| l.cle_nir.clone()).or_else(|| declarations::champs::cle_nir(nir));
+    s.nir_cle = ls.iter().rev().find_map(|l| l.cle_nir.clone()).or_else(|| droit::fiche::CleNir::du_nir(nir));
     s.date_anciennete = ls.iter().map(|l| l.b.debut).min();
     let statut = ls.iter().rev().find_map(|l| l.b.salarie.statut.as_deref());
     // Une salariee recoit le metier au feminin, comme dans sa fiche (`routes::mois::emploi`) : le sexe que porte son NIR.
@@ -2145,7 +2145,7 @@ fn fiche_de_certificats(nir: &Nir, ls: &[&Attestee], idcc: Option<&droit::fiche:
     let dernier = |g: &dyn Fn(&import::certificat_lu::Certificat) -> Option<String>| ls.iter().rev().find_map(|l| g(&l.c).filter(|x| !x.trim().is_empty()));
     let adresse = ls.iter().rev().find_map(|l| adresse_lue(&l.c.adresse));
     let s = SalarieLu {
-        nir_cle: ls.iter().rev().find_map(|l| l.c.cle_nir.clone()).or_else(|| declarations::champs::cle_nir(nir)),
+        nir_cle: ls.iter().rev().find_map(|l| l.c.cle_nir.clone()).or_else(|| droit::fiche::CleNir::du_nir(nir)),
         nom: dernier(&|c| c.nom.clone()),
         prenom: dernier(&|c| c.prenom.clone()),
         // L'AEM dit la date de naissance, et artiste ou technicien par sa case ; le certificat, ni l'un ni l'autre.

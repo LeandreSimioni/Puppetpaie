@@ -275,11 +275,8 @@ pub(crate) fn nir_en_tete(mots: &[String]) -> Option<(Nir, Option<String>, usize
             break;
         }
     }
-    match tout.len() {
-        13 => Some((Nir::d_une_piece(&tout)?, None, pris)),
-        15 => Some((Nir::d_une_piece(&tout[..13])?, Some(tout[13..].to_string()), pris)),
-        _ => None,
-    }
+    let (nir, cle) = Nir::et_sa_cle(&tout)?;
+    Some((Nir::d_une_piece(nir)?, cle.map(str::to_string), pris))
 }
 
 /// Une page : `None` si ce n'est pas un certificat d'emploi Congés Spectacles (son titre, la Caisse, ses rubriques de
@@ -346,9 +343,9 @@ fn lire_page(p: &crate::releve::PageRelevee, page: usize) -> Option<PageCertific
                 "ce" => c.numero = texte(&v),
                 "nir" => match nir_en_tete(&v) {
                     Some((nir, cle, pris)) => {
-                        // La cle imprimee, quand c'est celle du NIR (`declarations::champs::cle_nir`).
+                        // La cle imprimee, quand c'est celle du NIR (`CleNir::du_nir`).
                         let cle = match &cle {
-                            Some(k) => match declarations::champs::cle_nir(&nir).filter(|a| **a == **k) {
+                            Some(k) => match droit::fiche::CleNir::du_nir(&nir).filter(|a| **a == **k) {
                                 Some(a) => Some(a),
                                 None => {
                                     fautes.push("la clé du NIR imprimé ne correspond pas à son numéro".into());

@@ -241,7 +241,7 @@ fn fiche_salarie(decl: &SalarieDeclare) -> R<Saisie> {
     let emploi_affichage = du_catalogue.map(|m| if femme { m.feminin() } else { m.libelle() }).filter(|l| !l.is_empty());
     let de_la_dsn = SalarieDeLaDsn {
         nir: decl.nir.as_ref(),
-        nir_cle: decl.nir.as_deref().and_then(declarations::champs::cle_nir),
+        nir_cle: decl.nir.as_ref().and_then(droit::fiche::CleNir::du_nir),
         initiales_contrat: Some(decl.initiales.as_str()).filter(|i| !i.is_empty()),
         date_anciennete: decl.premier_contrat,
         statut,
