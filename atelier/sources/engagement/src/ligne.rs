@@ -793,23 +793,24 @@ impl FormeSaisie {
     /// semaine, ce sont les dates de la ligne) ; `None` : une rubrique que le moteur pose (`saisie` vide), qui ne se saisit
     /// pas. Une `saisie` que le moteur ne sait pas ranger est une rubrique mal decrite : refus.
     pub fn de(r: &droit::catalogue::Rubrique) -> R<Option<FormeSaisie>> {
-        let mut dit: Vec<&str> = r.saisie.iter().map(String::as_str).filter(|s| *s != "jours").collect();
+        use droit::catalogue::CaseSaisie as C;
+        let mut dit: Vec<C> = r.saisie.iter().copied().filter(|s| *s != C::Jours).collect();
         dit.sort_unstable();
         let frais = r.nature == droit::catalogue::NatureDeRubrique::Frais;
         Ok(Some(match (dit.as_slice(), frais) {
-            (["quantite", "taux"], false) => FormeSaisie::Unites,
-            (["quantite", "taux"], true) if crate::a_une_limite(&r.code) => FormeSaisie::Frais,
-            (["quantite", "taux"], true) => FormeSaisie::FraisSansLimite,
-            (["heures", "quantite", "taux"], false) => FormeSaisie::UnitesEtHeures,
-            (["base", "taux_majoration"], _) => FormeSaisie::Pourcentage,
-            (["montant"], _) => FormeSaisie::Montant,
-            (["genre", "montant"], _) => FormeSaisie::AvantageEnNature,
+            ([C::Quantite, C::Taux], false) => FormeSaisie::Unites,
+            ([C::Quantite, C::Taux], true) if crate::a_une_limite(&r.code) => FormeSaisie::Frais,
+            ([C::Quantite, C::Taux], true) => FormeSaisie::FraisSansLimite,
+            ([C::Quantite, C::Taux, C::Heures], false) => FormeSaisie::UnitesEtHeures,
+            ([C::Base, C::TauxMajoration], _) => FormeSaisie::Pourcentage,
+            ([C::Montant], _) => FormeSaisie::Montant,
+            ([C::Montant, C::Genre], _) => FormeSaisie::AvantageEnNature,
             ([], _) => return Ok(None),
             _ => {
                 return Err(socle::refus!(
                     "La rubrique « {} » est mal décrite : sa saisie ({}) ne dit pas une forme de ligne. Le signaler au développeur.",
                     r.libelle,
-                    r.saisie.join(", ")
+                    r.saisie.iter().map(|s| s.cle()).collect::<Vec<_>>().join(", ")
                 ))
             }
         }))

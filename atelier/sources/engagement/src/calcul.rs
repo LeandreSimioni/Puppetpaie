@@ -180,7 +180,7 @@ pub(crate) fn lignes_brut(eng: &Engagement, ctx: &Contexte) -> R<Vec<LigneBrut>>
         let r = rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
         let q = requis(l.quantite(), "quantite")?;
         let taux = requis(l.taux(), "taux")?;
-        let signe = if r.sens == "-" { -Decimal::ONE } else { Decimal::ONE };
+        let signe = r.sens.signe();
         // Le signe porte aussi sur les heures : une absence en retire.
         let h = r.heures(q, l.heures());
         let dsn_autres_bruts = code_54(&r, l.genre())?;

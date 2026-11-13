@@ -2378,10 +2378,10 @@ fn lignes_comptees(b: &BulletinLu, racine: &Path) -> R<Lignes> {
         let par_unite = forfait.or(l.heures).or_else(|| (r.unite == droit::catalogue::Unite::Heure).then_some(Decimal::ONE));
         if !cachet && par_unite.is_none() {
             // un defraiement, un acompte : ni cachet ni heure ; une rubrique dont les heures se saisissent : non dites
-            sans_duree |= r.saisie.iter().any(|s| s == "heures");
+            sans_duree |= r.saisie.contains(&droit::catalogue::CaseSaisie::Heures);
             continue;
         }
-        let ens = r.compte_pour == "ouverture_des_droits";
+        let ens = r.compte_pour == droit::catalogue::ComptePour::OuvertureDesDroits;
         let Some(q) = l.quantite else {
             avertissements.push(format!("« {} » : sans quantité, ses {} ne se comptent pas", l.libelle, if cachet { "cachets" } else { "heures" }));
             if cachet {

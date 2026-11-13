@@ -1240,21 +1240,21 @@ pub(crate) struct RubriqueDeLaPage {
     libelle: String,
     unite: droit::catalogue::Unite,
     nature: droit::catalogue::NatureDeRubrique,
-    saisie: Vec<String>,
-    sens: String,
+    saisie: Vec<droit::catalogue::CaseSaisie>,
+    sens: droit::catalogue::Sens,
     heures_forfait: Option<NombreLu>,
-    plafond: Option<String>,
-    aem: Option<String>,
+    plafond: Option<droit::catalogue::Unite>,
+    aem: Option<droit::catalogue::Unite>,
     dsn_type: Option<String>,
     dsn_autres_bruts: Option<AutreElementDeRevenuBrut>,
     annexe: Option<String>,
     soumis: bool,
     imposable: bool,
     conges_spectacles: bool,
-    compte_pour: String,
+    compte_pour: droit::catalogue::ComptePour,
     plafond_mensuel: Option<i64>,
     plafond_annuel_heures: Option<droit::catalogue::PlafondAnnuelHeures>,
-    origine: String,
+    origine: droit::catalogue::OrigineDeRubrique,
     genres: Vec<Choix>,
     /// CE QUE LA RUBRIQUE PROMET SANS QUE RIEN NE LE TIENNE.
     non_appliques: Vec<&'static str>,
@@ -1273,17 +1273,17 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         None => return Err(socle::refus!("La rubrique « {} » ne se saisit pas : le moteur la pose lui-même. Le signaler au développeur.", r.libelle)),
     };
     let non_appliques: Vec<&'static str> = [
-        ("annexe", r.annexe.as_deref()),
-        ("plafond", r.plafond.as_deref()),
-        ("aem", r.aem.as_deref()),
-        ("dsn_type", r.dsn_type.as_deref()),
+        ("annexe", r.annexe.as_deref().is_some_and(|s| !s.is_empty())),
+        ("plafond", r.plafond.is_some()),
+        ("aem", r.aem.is_some()),
+        ("dsn_type", r.dsn_type.as_deref().is_some_and(|s| !s.is_empty())),
     ]
     .into_iter()
-    .filter(|(_, v)| v.is_some_and(|s| !s.is_empty()))
+    .filter(|(_, dite)| *dite)
     .map(|(c, _)| c)
     .collect();
     // Les valeurs de `genre`, quand la rubrique le demande : les cinq avantages en nature du bloc 54.
-    let avec_genre = r.saisie.iter().any(|s| s == "genre") && r.dsn_autres_bruts.is_some_and(AutreElementDeRevenuBrut::avantage_en_nature);
+    let avec_genre = r.saisie.contains(&droit::catalogue::CaseSaisie::Genre) &&r.dsn_autres_bruts.is_some_and(AutreElementDeRevenuBrut::avantage_en_nature);
     let genres: Vec<Choix> = if avec_genre {
         AutreElementDeRevenuBrut::TOUS
             .iter()
@@ -1312,25 +1312,25 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         unite: r.unite,
         nature: r.nature,
         saisie: r.saisie.clone(),
-        sens: r.sens.clone(),
+        sens: r.sens,
         heures_forfait: r.heures_forfait.map(NombreLu),
-        plafond: r.plafond.clone(),
-        aem: r.aem.clone(),
+        plafond: r.plafond,
+        aem: r.aem,
         dsn_type: r.dsn_type.clone(),
         dsn_autres_bruts: r.dsn_autres_bruts,
         annexe: r.annexe.clone(),
         soumis: r.soumis,
         imposable: r.imposable,
         conges_spectacles: r.conges_spectacles,
-        compte_pour: r.compte_pour.clone(),
+        compte_pour: r.compte_pour,
         plafond_mensuel: r.plafond_mensuel,
         plafond_annuel_heures: r.plafond_annuel_heures,
-        origine: r.origine.clone(),
+        origine: r.origine,
         genres,
         non_appliques,
         source: r.source.clone(),
         dit: r.dit.clone(),
-        mots: if r.saisie.iter().any(|s| s == "taux_majoration") { ["€ à", "%"] } else { ["à", "€"] },
+        mots: if r.saisie.contains(&droit::catalogue::CaseSaisie::TauxMajoration) { ["€ à", "%"] } else { ["à", "€"] },
     })
 }
 

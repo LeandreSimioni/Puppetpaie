@@ -15,13 +15,13 @@ fn heures_enseignement(ctx: &Contexte, lignes: &[crate::LignePaie]) -> R<i64> {
     let mut heures = Decimal::ZERO;
     for l in lignes {
         let r = droit::catalogue::rubrique(&ctx.racine, l.rubrique(), &ctx.lue_au)?;
-        if r.compte_pour != "ouverture_des_droits" {
+        if r.compte_pour != droit::catalogue::ComptePour::OuvertureDesDroits {
             continue;
         }
         let q = l.quantite().ok_or_else(|| socle::fichiers::absent("quantite"))?;
         // Le signe porte aussi sur les heures, comme au calcul (`calcul::lignes_brut`) : une ligne « - » en retire.
         let h = r.heures(q, l.heures());
-        heures += if r.sens == "-" { -h } else { h };
+        heures += if r.sens == droit::catalogue::Sens::Moins { -h } else { h };
     }
     heures_entieres(heures)
 }

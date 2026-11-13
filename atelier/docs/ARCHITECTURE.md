@@ -664,6 +664,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | case | `NomDeCase`, `CaseDePiece`, toutes deux `CaseDeFiche` | `droit/src/fiche.rs` |
 | rubrique | `droit::catalogue::Rubrique` | `droit/src/catalogue.rs` |
 | unité d'une rubrique | `Unite` | `droit/src/catalogue.rs` |
+| sens d'une rubrique | `Sens` | `droit/src/catalogue.rs` |
+| ce qu'une rubrique compte pour les droits | `ComptePour` | `droit/src/catalogue.rs` |
+| case qu'une rubrique fait saisir | `CaseSaisie` | `droit/src/catalogue.rs` |
+| origine d'une rubrique | `OrigineDeRubrique` | `droit/src/catalogue.rs` |
 | cotisation du bulletin | `IdDeCotisation` ; à unifier (#419) : `LigneCotisation.id` | `droit/src/forme_bareme.rs` |
 | cotisation de la DSN | `CodeCotisation81` | `droit/src/code_cotisation.rs` |
 | clé de totalisation | `CleDeTotalisation` | `droit/src/code_cotisation.rs` |
@@ -777,9 +781,21 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   (`LigneBrut.code`), les frais d'une profession au barème (`frais_hors_assiette`), une prime saisie, une ligne imprimée
   d'un bulletin importé ; un code que le moteur compose est une constante (`CodeDeRubrique::du_moteur`).
 - **unité d'une rubrique** : ce que la quantité d'une ligne compte : cachet, heure, jour, semaine, mois, service,
-  forfait, pourcentage (`rubriques-base.json`). Que portent la rubrique, sa case `unite`, une ligne du brut (`LigneBrut`,
+  forfait, pourcentage (`rubriques-base.json`). Que portent la rubrique, ses cases `unite`, `plafond` et `aem`, une ligne du brut (`LigneBrut`,
   sa forme écrite), une ligne de rémunération d'un mois, une grille des minima (`droit::minima::Grille::unite`, ce que
   sa valeur paie).
+- **sens d'une rubrique** : ce que sa ligne fait au brut, l'ajouter ou l'en retirer : `Plus`, `Moins`, écrits `+`, `-`
+  (`sens` de `rubriques-base.json`) ; `signe()` donne 1 ou -1. Que portent la rubrique, sa case, la rubrique rendue à la
+  page.
+- **ce qu'une rubrique compte pour les droits** : les heures et le montant (`droits_et_montant`), ou les heures pour
+  l'ouverture des droits seulement (`ouverture_des_droits`, l'enseignement de l'annexe X). Une liste du logiciel ; que
+  portent la rubrique, sa case, la rubrique rendue.
+- **case qu'une rubrique fait saisir** : une case de la ligne d'une rubrique (`saisie` de `rubriques-base.json`) :
+  `quantite`, `taux`, `heures`, `jours`, `base`, `taux_majoration`, `montant`, `genre`. Une liste du logiciel ; la
+  forme d'une ligne s'en déduit (`engagement::ligne::FormeSaisie::de`). Que portent la rubrique, sa case, la rubrique
+  rendue.
+- **origine d'une rubrique** : livrée (`base`) ou propre à la compagnie (`compagnie`) ; le catalogue la pose à sa
+  construction, la rubrique rendue l'écrit.
 - **cotisation du bulletin** : une ligne de cotisation du barème (`rubriques_bulletin`), par sa clé : `maladie`,
   `retraite_t1`. Que nomment les modifications d'une couche, `rubriques_retirees`, `apres`, `du_corps`, les `lignes`
   d'une cotisation DSN ou d'une contribution, `rubriques_abattues` de la DFS et les rubriques d'une DFS calculée ; une

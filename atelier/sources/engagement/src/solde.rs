@@ -1314,7 +1314,7 @@ fn brut_des_lignes(ctx: &Contexte, lignes: &[LignePaie]) -> R<Decimal> {
         if !r.soumis {
             continue;
         }
-        let signe = if r.sens == "-" { Decimal::NEGATIVE_ONE } else { Decimal::ONE };
+        let signe = r.sens.signe();
         total = add(total, mul(signe, eur2(mul(requis(l.taux(), "taux")?, requis(l.quantite(), "quantite")?))));
     }
     Ok(total)

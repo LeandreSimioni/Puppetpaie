@@ -979,7 +979,7 @@ pub(crate) fn de_saisie(ctx: &Contexte, paies: &[Paie]) -> R<Vec<Option<ConseilV
                     let mut trouve = None;
                     for l in &p.remuneration {
                         let r = droit::catalogue::rubrique(&ctx.racine, &l.code, &ctx.lue_au)?;
-                        if r.compte_pour != "ouverture_des_droits" {
+                        if r.compte_pour != droit::catalogue::ComptePour::OuvertureDesDroits {
                             continue;
                         }
                         if let Some(pl) = r.plafond_annuel_heures {
