@@ -4,7 +4,8 @@
 //! le logiciel ne connait pas se refuse a la lecture, en le nommant. Les valeurs d'un document (`Valeurs`) se posent par
 //! marqueur ; la fabrique de PDF, qui ne connait que des noms, les recoit par `pour_la_fabrique`.
 //!
-//! L'ordre de la declaration est celui dans lequel la description d'un document ecrit ses valeurs.
+//! L'ordre de la declaration ne compte pas : un marqueur se trie par son nom, et les valeurs d'un document partent vers
+//! la fabrique rangees par nom (`pour_la_fabrique`).
 
 use std::collections::BTreeMap;
 use std::path::Path;
