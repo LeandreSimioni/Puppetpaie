@@ -282,8 +282,10 @@ pub fn lire_quantites(champs: &[ChampLu]) -> socle::echec::R<Vec<Ligne>> {
     let mut numero_courant = None;
     for rang in 1..=5 {
         let nom = |p: &str| format!("{}{:02}", p, rang);
-        if let Some(numero) = valeur(champs, &nom(NUM_CONTRAT)).and_then(|n| engagement::numeros::NumeroContrat::d_une_piece(&n)) {
-            numero_courant = Some(numero);
+        // L'attestation imprime le numero que notre DSN a declare : un numero qui ne se lit pas se refuse en se nommant,
+        // il ne laisse pas la colonne prendre celui d'un autre contrat. A blanc : la suite du meme contrat.
+        if let Some(n) = valeur(champs, &nom(NUM_CONTRAT)).filter(|n| !n.trim().is_empty()) {
+            numero_courant = Some(engagement::numeros::NumeroContrat::lire(n.trim())?);
         }
         let (deb, fin) = (valeur(champs, &nom(DEBUT)), valeur(champs, &nom(FIN)));
         let (deb, fin) = match (deb.filter(|v| !v.is_empty()), fin.filter(|v| !v.is_empty())) {

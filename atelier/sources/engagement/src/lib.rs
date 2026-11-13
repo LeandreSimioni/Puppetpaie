@@ -238,10 +238,7 @@ fn jours_et_lieux(liste: &[DateDeLigne]) -> (Vec<Jour>, BTreeMap<Jour, String>) 
 impl Engagement {
     /// « NOM Prénom, contrat N » : qui une phrase de refus désigne.
     pub fn qui(&self) -> String {
-        match self.numero.as_ref() {
-            Some(n) => format!("{}, contrat {}", self.nom, n),
-            None => format!("{}, contrat sans numero", self.nom),
-        }
+        numeros::numero_dit(self.numero.as_ref(), &format!("{}, contrat ", self.nom), "", &format!("{}, contrat sans numero", self.nom))
     }
 
     /// LE NUMERO DU CONTRAT QUE LA DSN DECLARE (S21.G00.40.009, obligatoire) : sans lui, l'engagement ne se declare pas,
