@@ -34,12 +34,19 @@ fn taille_d_ouverture(ecran: Option<tauri::Monitor>) -> (u32, u32) {
     (borne(LARGEUR_VISEE, zone.width, LARGEUR_MIN), borne(HAUTEUR_VISEE, zone.height, HAUTEUR_MIN))
 }
 
-/// La fenetre revient devant (un second lancement).
+/// La fenetre revient devant (un second lancement). Le journal de la fenetre n'est pas a sa portee : ce qui ne se fait
+/// pas se dit sur la sortie d'erreur, comme le reste de `main`.
 fn devant() {
     if let Some(w) = APPLICATION.get().and_then(|a| a.get_webview_window("principale")) {
-        let _ = w.unminimize();
-        let _ = w.show();
-        let _ = w.set_focus();
+        if let Err(e) = w.unminimize() {
+            eprintln!("La fenetre ne se deplie pas : {}.", e);
+        }
+        if let Err(e) = w.show() {
+            eprintln!("La fenetre ne se montre pas : {}.", e);
+        }
+        if let Err(e) = w.set_focus() {
+            eprintln!("La fenetre ne prend pas la main : {}.", e);
+        }
     }
 }
 
@@ -116,14 +123,24 @@ fn main() -> std::process::ExitCode {
 
     let resultat = tauri::Builder::default()
         .setup(move |app| {
-            let _ = APPLICATION.set(app.handle().clone());
+            if APPLICATION.set(app.handle().clone()).is_err() {
+                eprintln!("La poignee de la fenetre etait deja posee : un second lancement ramene la premiere.");
+            }
             *pour_fermer.lock().unwrap() =Some(app.handle().clone());
             let url = adresse.parse().map_err(|e| format!("adresse illisible : {}", e))?;
             // UNE FENETRE SANS BARRE NOIRE, OUVERTE UNE FOIS. Pas de bordure systeme : le haut de la
             // fenetre est le bandeau de la page, et `cadre.js` en fait la barre de titre (tirer, double-clic, les trois
             // boutons). Elle s'ouvre a sa taille, centree, et n'en change plus : l'ancienne s'ouvrait en 1200 x 800
             // puis s'agrandissait aussitot, « ca a l'air de le faire et apres ca le fait plus ».
-            let (largeur, hauteur) = taille_d_ouverture(app.primary_monitor().ok().flatten());
+            // Un ecran qui ne se lit pas : la taille qu'on vise, et l'erreur dite.
+            let ecran = match app.primary_monitor() {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("L'ecran ne se lit pas ({}) : la fenetre s'ouvre a la taille visee.", e);
+                    None
+                }
+            };
+            let (largeur, hauteur) = taille_d_ouverture(ecran);
             WebviewWindowBuilder::new(app, "principale", WebviewUrl::External(url))
                 .title("PuppetPaie")
                 .decorations(false)
@@ -138,7 +155,8 @@ fn main() -> std::process::ExitCode {
         .run(tauri::generate_context!());
     if let Err(e) = resultat {
         fenetre.ecrire(&format!("La fenetre Tauri ne s'ouvre pas ({}) ; le navigateur prend le relais.\n", e));
-        let _ = moteur::interface::navigateur::ouvrir(&fenetre.adresse("puppetpaie.localhost", port), &fenetre.dossier_local().join("navigateur"), &|t| fenetre.ecrire(t));
+        // Le navigateur tenu, s'il l'est, vit jusqu'a la fin ; ce qui ne s'ouvre pas, `ouvrir` le note au journal.
+        let _navigateur = moteur::interface::navigateur::ouvrir(&fenetre.adresse("puppetpaie.localhost", port), &fenetre.dossier_local().join("navigateur"), &|t| fenetre.ecrire(t));
         loop {
             std::thread::sleep(std::time::Duration::from_secs(5));
             if fenetre.silence() > std::time::Duration::from_secs(300) {
