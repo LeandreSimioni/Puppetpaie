@@ -106,7 +106,7 @@ fn bilans_archives(racine: &Path) -> Result<Vec<(String, std::path::PathBuf)>, E
     for e in lecture {
         let nom = e.map_err(|x| socle::echec::du_disque(&dossier, &x).reclasser(Classe::Disque))?.file_name().to_string_lossy().into_owned();
         let p = dossier.join(&nom);
-        if crate::retours::archive_de_nature(&nom, "11") && p.is_file() {
+        if crate::retours::archive_de_nature(&nom, crate::retours::NatureDuRetour::CertificatDeConformite) && p.is_file() {
             noms.push((nom, p));
         }
     }

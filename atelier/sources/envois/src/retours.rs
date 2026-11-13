@@ -29,38 +29,253 @@ use socle::texte::blanc;
 
 // ---------------------------------------------------------------- les tables
 
-/// Natures de retour, guide d'implementation de l'API DSN v6.8, section 1.3.
-pub const NATURES: &[(&str, &str)] = &[
-    ("10", "Accuse d'enregistrement electronique / avis de rejet"),
-    ("11", "Certificat de conformite / bilan d'anomalies"),
-    ("20", "Bilan d'identification des salaries"),
-    ("21", "Controles inter-declarations / signalement AT-RT"),
-    ("22", "Controles arret de plus de 6 mois"),
-    ("23", "Controles temps partiel therapeutique"),
-    ("34", "Compte-rendu metier taux AT/MP (notification de la Carsat)"),
-    ("40", "Accuse de reception France Travail"),
-    ("42", "Compte-rendu metier CDDU-D"),
-    ("43", "AER CDDU-D (archive PDF)"),
-    ("44", "AER ou compte-rendu metier FCTU"),
-    ("45", "Compte-rendu metier « cinema, spectacle, expatries »"),
-    ("46", "AER « cinema, spectacle » (archive PDF)"),
-    ("50", "Accuse de distribution a l'organisme complementaire"),
-    ("51", "Compte-rendu metier de l'organisme complementaire"),
-    ("60", "Accuse de reception URSSAF"),
-    ("61", "Compte-rendu metier URSSAF, donnees agregees"),
-    ("70", "Accuse de reception AGIRC-ARRCO"),
-    ("71", "Compte-rendu metier AGIRC-ARRCO"),
-    ("92", "Accuse de reception DGFiP"),
-    ("93", "Compte-rendu metier DGFiP, donnees agregees"),
-    ("94", "Compte-rendu metier DGFiP, donnees nominatives (taux du PAS)"),
-    ("95", "Compte-rendu metier DGFiP, controles taux sur taux"),
-    ("117", "Compte-rendu metier bonus-malus contribution chomage"),
-    ("118", "Compte-rendu metier effectifs"),
-    ("119", "Compte-rendu metier URSSAF H+4 (immediat)"),
-    ("120", "Compte-rendu metier URSSAF J+5 (opposable)"),
-    ("121", "Compte-rendu metier identite"),
-    ("124", "Compte-rendu metier URSSAF de rappel"),
-];
+droit::codes_fermes! {
+    /// LA NATURE D'UN RETOUR, des deux canaux : la liste « Liste des retours, format, et disponibilité par environnement
+    /// et régime » du guide d'implementation de l'API DSN v6.8, § 1.3, p. 11-13
+    /// (`atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`, l. 573-788 :
+    /// chaque code a sa ligne ; deux lignes « n/a », les fiches de parametrage OC et les BPIJ, n'ont pas de code), et le
+    /// retour 41 du canal DPAE (FAQ de l'API DPAE, p. 5, `atelier/reference/norme-dpae/5493-API-DPAE-FAQ.pdf` : « Les
+    /// retours en mode API (codes retour 10, 11, 20, 41) sont-ils au format DSN ? Réponse : Les formats des retours 10
+    /// et 11 sont identiques à ceux délivrés en DSN. Les retours 20 et 41 sont spécifiques à la DPAE » ; « le retour 41
+    /// qui correspond à l'accusé réception nommé aussi certificat de conformité des DPAE »). Les codes des deux canaux
+    /// ne se recouvrent pas : 10, 11 et 20 sont ceux de la DSN. Son libelle, son organisme et son format : `NatureDuRetour::fiche`.
+    NatureDuRetour, "Nature du retour", texte "guide de l'API DSN v6.8, l. 573-788, et FAQ de l'API DPAE, p. 5" {
+        /// l. 583-585
+        AccuseDEnregistrement = "10",
+        /// l. 595-597
+        CertificatDeConformite = "11",
+        /// l. 598-600
+        BilanDIdentification = "20",
+        /// l. 601-604
+        ControlesInterDeclarations = "21",
+        /// l. 605-607
+        ControlesArretSixMois = "22",
+        /// l. 608-610
+        ControlesTempsPartielTherapeutique = "23",
+        /// l. 614
+        AccuseAtRt = "30",
+        /// l. 615-617
+        CompteRenduAtRt = "31",
+        /// l. 618-621
+        AccuseArretSixMois = "32",
+        /// l. 622-624
+        CompteRenduArretSixMois = "33",
+        /// l. 625
+        TauxAtMp = "34",
+        /// l. 626-628
+        AccuseTptCnam = "35",
+        /// l. 629-631
+        CompteRenduTptCnam = "36",
+        /// l. 632
+        AccuseTptMsa = "37",
+        /// l. 633
+        CompteRenduTptMsa = "38",
+        /// l. 634-636
+        AccuseFranceTravail = "40",
+        /// FAQ de l'API DPAE, p. 5
+        CertificatDpae = "41",
+        /// l. 637
+        CompteRenduCdduD = "42",
+        /// l. 638-640
+        AerCdduD = "43",
+        /// l. 641-645
+        Fctu = "44",
+        /// l. 646-648
+        CompteRenduSpectacle = "45",
+        /// l. 649-651
+        AerSpectacle = "46",
+        /// l. 611-612
+        AccuseDeDistributionOc = "50",
+        /// l. 613
+        CompteRenduOc = "51",
+        /// l. 655
+        AccuseUrssaf = "60",
+        /// l. 656-658
+        CompteRenduUrssafAgregees = "61",
+        /// l. 659-661
+        AccuseAgircArrco = "70",
+        /// l. 662-666
+        CompteRenduAgircArrco = "71",
+        /// l. 667-668
+        AccuseCamieg = "72",
+        /// l. 668-669
+        CompteRenduCamieg = "73",
+        /// l. 670-671
+        AccuseCnieg = "74",
+        /// l. 671-672
+        CompteRenduCnieg = "75",
+        /// l. 673-674
+        AccuseCrpcen = "76",
+        /// l. 674-675
+        CompteRenduCrpcen = "77",
+        /// l. 676-677
+        AccuseCpf = "78",
+        /// l. 677-678
+        CompteRenduCpf = "79",
+        /// l. 705-707
+        CoherenceMsa = "80",
+        /// l. 688-691
+        AccuseIrcantec = "82",
+        /// l. 691-694
+        CompteRenduIrcantec = "83",
+        /// l. 695-697
+        AccuseCprpsncf = "84",
+        /// l. 698-701
+        AccuseCrpnpac = "86",
+        /// l. 701-704
+        CompteRenduCrpnpac = "87",
+        /// l. 708-710
+        MandatAAcquitter = "90",
+        /// l. 711-713
+        AccuseDgfip = "92",
+        /// l. 714-716
+        CompteRenduDgfipAgregees = "93",
+        /// l. 717-719
+        TauxPas = "94",
+        /// l. 720-722
+        TauxSurTaux = "95",
+        /// l. 723-724
+        AccuseRafp = "100",
+        /// l. 724-725
+        CompteRenduRafp = "101",
+        /// l. 726
+        AccuseFspoeie = "102",
+        /// l. 727-728
+        AccuseCnracl = "104",
+        /// l. 728-729
+        CompteRenduCnracl = "105",
+        /// l. 730-731
+        AccuseEnim = "106",
+        /// l. 731-732
+        CompteRenduEnim = "107",
+        /// l. 733-734
+        AccuseCnbf = "110",
+        /// l. 734-735
+        CompteRenduCnbf = "111",
+        /// l. 736
+        CompteRenduSadv = "114",
+        /// l. 737-738
+        AccuseCibtp = "115",
+        /// l. 738-739
+        CompteRenduCibtp = "116",
+        /// l. 740-742
+        BonusMalus = "117",
+        /// l. 743-745
+        Effectifs = "118",
+        /// l. 746-748
+        UrssafImmediat = "119",
+        /// l. 749-751
+        UrssafOpposable = "120",
+        /// l. 752-754
+        Identite = "121",
+        /// l. 755-756
+        AccuseFctuCibtp = "122",
+        /// l. 756-757
+        CompteRenduFctuCibtp = "123",
+        /// l. 758-760
+        UrssafRappel = "124",
+        /// l. 761-763
+        RappelSubstitutionMsa = "125",
+        /// l. 764-766
+        FluxFinancierCavec = "127",
+        /// l. 767-769
+        ResolutionAnomaliesMsa = "130",
+        /// l. 770-772
+        PostSubstitution = "132",
+        /// l. 652-654
+        CompteRenduFctuNeores = "135",
+        /// l. 786-788
+        PostExigibiliteMsa = "136",
+    }
+}
+
+impl NatureDuRetour {
+    /// SA LIGNE de la liste des retours (guide v6.8, l. 573-788), pour les natures qu'une compagnie du spectacle recoit :
+    /// son libelle (celui que le journal des envois ecrit, `RetourOrganisme.libelle`), l'organisme qui le rend (la
+    /// colonne « OPS ») et son format (« Format phase 3 ») : « harmonise », le schema des bilans (`lire_rapport`) ;
+    /// « aucun », un accuse sans document, son statut dit tout ; « pdf », une archive d'AER ; « neores », le format
+    /// NEOReS (`lire_neores`, cahier technique depose dans `atelier/reference/sources/neores/`) ; « oc », le compte
+    /// rendu des organismes complementaires (`lire_crm_oc`, specification et schema V1.1.4 deposes dans
+    /// `gip-mds-api-dsn/`) ; « agirc-arrco », le format temporaire de l'AGIRC-ARRCO, que personne ne publie (le guide le
+    /// cite, [7], sans le joindre), et qui ne se traduit donc pas. Le format de la nature 93 n'est pas rempli dans le
+    /// tableau : « harmonise » est une INFERENCE (la nature 95, de la meme DGFiP, a son exemple sous « Format DSN
+    /// harmonise », § 6.3). Une autre nature de la liste n'a pas de fiche ici : elle se lit, se range et se dit par son
+    /// code.
+    fn fiche(self) -> Option<(&'static str, &'static str, &'static str)> {
+        use NatureDuRetour as N;
+        Some(match self {
+            N::AccuseDEnregistrement => ("Accuse d'enregistrement electronique / avis de rejet", "le point de dépôt (SI DSN)", "harmonise"),
+            N::CertificatDeConformite => ("Certificat de conformite / bilan d'anomalies", "le point de dépôt (SI DSN)", "harmonise"),
+            N::BilanDIdentification => ("Bilan d'identification des salaries", "le SI DSN", "harmonise"),
+            N::ControlesInterDeclarations => ("Controles inter-declarations / signalement AT-RT", "le SI DSN", "harmonise"),
+            N::ControlesArretSixMois => ("Controles arret de plus de 6 mois", "le SI DSN", "harmonise"),
+            N::ControlesTempsPartielTherapeutique => ("Controles temps partiel therapeutique", "le SI DSN", "harmonise"),
+            N::TauxAtMp => ("Compte-rendu metier taux AT/MP (notification de la Carsat)", "la CNAM (taux AT/MP)", "harmonise"),
+            N::AccuseFranceTravail => ("Accuse de reception France Travail", "France Travail", "aucun"),
+            N::CompteRenduCdduD => ("Compte-rendu metier CDDU-D", "France Travail", "harmonise"),
+            N::AerCdduD => ("AER CDDU-D (archive PDF)", "France Travail", "pdf"),
+            N::Fctu => ("AER ou compte-rendu metier FCTU", "France Travail", "harmonise"),
+            N::CompteRenduSpectacle => ("Compte-rendu metier « cinema, spectacle, expatries »", "France Travail", "harmonise"),
+            N::AerSpectacle => ("AER « cinema, spectacle » (archive PDF)", "France Travail", "pdf"),
+            N::AccuseDeDistributionOc => ("Accuse de distribution a l'organisme complementaire", "l'organisme complémentaire", "aucun"),
+            N::CompteRenduOc => ("Compte-rendu metier de l'organisme complementaire", "l'organisme complémentaire", "oc"),
+            N::AccuseUrssaf => ("Accuse de reception URSSAF", "l'Urssaf", "aucun"),
+            N::CompteRenduUrssafAgregees => ("Compte-rendu metier URSSAF, donnees agregees", "l'Urssaf", "harmonise"),
+            N::AccuseAgircArrco => ("Accuse de reception AGIRC-ARRCO", "l'AGIRC-ARRCO", "aucun"),
+            N::CompteRenduAgircArrco => ("Compte-rendu metier AGIRC-ARRCO", "l'AGIRC-ARRCO", "agirc-arrco"),
+            N::AccuseDgfip => ("Accuse de reception DGFiP", "la DGFiP", "aucun"),
+            N::CompteRenduDgfipAgregees => ("Compte-rendu metier DGFiP, donnees agregees", "la DGFiP", "harmonise"),
+            N::TauxPas => ("Compte-rendu metier DGFiP, donnees nominatives (taux du PAS)", "la DGFiP", "harmonise"),
+            N::TauxSurTaux => ("Compte-rendu metier DGFiP, controles taux sur taux", "la DGFiP", "harmonise"),
+            N::BonusMalus => ("Compte-rendu metier bonus-malus contribution chomage", "l'Urssaf ou la MSA", "harmonise"),
+            N::Effectifs => ("Compte-rendu metier effectifs", "l'Urssaf ou la MSA", "neores"),
+            N::UrssafImmediat => ("Compte-rendu metier URSSAF H+4 (immediat)", "l'Urssaf", "neores"),
+            N::UrssafOpposable => ("Compte-rendu metier URSSAF J+5 (opposable)", "l'Urssaf", "neores"),
+            N::Identite => ("Compte-rendu metier identite", "le SI DSN", "neores"),
+            N::UrssafRappel => ("Compte-rendu metier URSSAF de rappel", "l'Urssaf", "neores"),
+            _ => return None,
+        })
+    }
+
+    /// Son libelle, s'il a une fiche.
+    pub fn libelle(self) -> Option<&'static str> {
+        self.fiche().map(|f| f.0)
+    }
+
+    /// Son libelle dit : celui de sa fiche, sinon son code.
+    pub fn libelle_dit(self) -> String {
+        match self.libelle() {
+            Some(l) => l.to_string(),
+            None => format!("nature {} (inconnue de ce moteur)", self),
+        }
+    }
+
+    /// L'organisme qui le rend, s'il a une fiche.
+    pub fn organisme(self) -> Option<&'static str> {
+        self.fiche().map(|f| f.1)
+    }
+
+    /// Son format, s'il a une fiche.
+    pub fn format(self) -> Option<&'static str> {
+        self.fiche().map(|f| f.2)
+    }
+
+    /// Son libelle sur le canal d'un envoi `acte`, celui que le journal des envois ecrit : le canal DPAE a les siens,
+    /// pour les quatre retours que la FAQ de l'API DPAE nomme (10, 11, 20, 41, p. 5).
+    pub fn libelle_du_canal(self, acte: crate::ligne::Acte) -> String {
+        use NatureDuRetour as N;
+        if acte != crate::ligne::Acte::Dpae {
+            return self.libelle_dit();
+        }
+        match self {
+            N::AccuseDEnregistrement => "avis de rejet du depot".into(),
+            N::CertificatDeConformite => "certificat de conformite / bilan d'anomalies".into(),
+            N::BilanDIdentification => "bilan d'identification des salaries".into(),
+            N::CertificatDpae => "certificat de conformite des DPAE".into(),
+            autre => format!("nature {} (inconnue du canal DPAE)", autre),
+        }
+    }
+}
 
 /// Le dossier des retours des organismes, sous la racine d'une compagnie.
 pub const RETOURS: &str = "retours";
@@ -126,9 +341,6 @@ impl From<IdDeFlux> for String {
     }
 }
 
-pub const NATURE_TAUX_PAS: &str = "94";
-pub const NATURE_TAUX_ATMP: &str = "34";
-pub const NATURE_AER_SPECTACLE: &str = "46";
 pub const ESSAI_TEST: &str = "01";
 pub const ESSAI_REEL: &str = "02";
 pub const RAPPORTS_DEPOT: [&str; 3] = ["CCO", "BAN", "AEE"];
@@ -153,16 +365,8 @@ enum ChampPas {
 
 /// L'archive `nom` (`AAAAMMJJ-hhmmss_natureN_flux.ext`, `releve_retours::archiver_retour`) est-elle celle d'un retour de nature
 /// `nature` ? Son deuxieme segment le dit.
-pub fn archive_de_nature(nom: &str, nature: &str) -> bool {
-    nom.split('_').nth(1).and_then(|s| s.strip_prefix("nature")) == Some(nature)
-}
-
-/// `retours.libelle_nature`, sur la representation texte du code.
-pub fn libelle_nature(code: &str) -> String {
-    match NATURES.iter().find(|(c, _)| *c == code) {
-        Some((_, l)) => l.to_string(),
-        None => format!("nature {} (inconnue de ce moteur)", code),
-    }
+pub fn archive_de_nature(nom: &str, nature: NatureDuRetour) -> bool {
+    nom.split('_').nth(1).and_then(|s| s.strip_prefix("nature")) == Some(nature.code())
 }
 
 // ------------------------------------------------------ le texte
@@ -1218,7 +1422,7 @@ pub struct Annonce {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub delegataire: Option<IdentifiantDOrganisme>,
     #[serde(rename = "nature")]
-    pub nature_retour: String,
+    pub nature_retour: NatureDuRetour,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub statut: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1232,8 +1436,8 @@ pub struct Annonce {
 
 impl Annonce {
     /// Ce qui distingue un retour : son flux, sa nature, sa publication.
-    pub fn cle(&self) -> (Option<&IdDeFlux>, &str, Option<Moment>) {
-        (self.flux.as_ref(), self.nature_retour.as_str(), self.publication)
+    pub fn cle(&self) -> (Option<&IdDeFlux>, NatureDuRetour, Option<Moment>) {
+        (self.flux.as_ref(), self.nature_retour, self.publication)
     }
 }
 
@@ -1300,7 +1504,7 @@ struct RetourJson {
     #[serde(default, deserialize_with = "organisme_ou_non_renseigne")]
     delegataire: Option<IdentifiantDOrganisme>,
     #[serde(rename = "nature")]
-    nature_retour: String,
+    nature_retour: NatureDuRetour,
     statut: Option<String>,
     id: Option<String>,
     url: Option<String>,
@@ -1358,6 +1562,13 @@ fn organisme_liste(texte: &str, cle: &str) -> R<IdentifiantDOrganisme> {
     IdentifiantDOrganisme::lire(texte).map_err(|e| socle::echec::cle(e.phrase, cle).reclasser(Classe::Illisible))
 }
 
+/// La nature d'un retour que la liste XML porte ; hors de la liste, la liste ne se lit pas (la phrase du type, celle de
+/// la liste JSON, la cle a part).
+fn nature_liste(texte: &str) -> R<NatureDuRetour> {
+    let lecteur: serde::de::value::StrDeserializer<serde::de::value::Error> = serde::de::IntoDeserializer::into_deserializer(texte);
+    NatureDuRetour::deserialize(lecteur).map_err(|e| socle::echec::cle(e.to_string(), "flux.retour.nature").reclasser(Classe::Illisible))
+}
+
 /// Le texte des enfants de `e`, par leur nom local (un enfant vide n'est pas dit).
 fn enfants_textes<'a>(a: &'a Arbre, e: &'a Noeud) -> Vec<(&'a str, &'a str)> {
     a.enfants(e).map(|c| (local(&c.tag), c.texte_net())).filter(|(_, t)| !t.is_empty()).collect()
@@ -1405,26 +1616,23 @@ pub fn liste_retours_d_octets(o: &[u8]) -> R<Vec<Annonce>> {
             if local(&r.tag) != "retour" {
                 continue;
             }
-            let mut a = Annonce { publication: None, production: None, ops: None, delegataire: None, nature_retour: String::new(), statut: None, id: None, url: None, libelle: None, flux: idf.clone() };
-            let mut nature = None;
+            let (mut publication, mut production, mut ops, mut delegataire, mut nature, mut statut, mut id, mut url) = (None, None, None, None, None, None, None, None);
             for (nom, t) in enfants_textes(&arbre, r) {
-                let publication = Zone::lue(t, format::InstantCompact).valeur();
-                let texte = t;
-                let t = Some(t.to_string());
+                let texte = Some(t.to_string());
                 match nom {
-                    "publication" => a.publication = Some(publication.ok_or_else(|| illisible("flux.retour.publication"))?),
-                    "production" => a.production = t,
-                    "ops" => a.ops = Some(organisme_liste(texte, "flux.retour.ops")?),
-                    "delegataire" => a.delegataire = Some(organisme_liste(texte, "flux.retour.delegataire")?),
-                    "nature" => nature = t,
-                    "statut" => a.statut = t,
-                    "id" => a.id = t,
-                    "url" => a.url = t,
+                    "publication" => publication = Some(Zone::lue(t, format::InstantCompact).valeur().ok_or_else(|| illisible("flux.retour.publication"))?),
+                    "production" => production = texte,
+                    "ops" => ops = Some(organisme_liste(t, "flux.retour.ops")?),
+                    "delegataire" => delegataire = Some(organisme_liste(t, "flux.retour.delegataire")?),
+                    "nature" => nature = Some(nature_liste(t)?),
+                    "statut" => statut = texte,
+                    "id" => id = texte,
+                    "url" => url = texte,
                     autre => return Err(illisible(&format!("flux.retour.{}", autre))),
                 }
             }
-            a.nature_retour = nature.ok_or_else(|| illisible("flux.retour.nature"))?;
-            out.push(a);
+            let nature_retour = nature.ok_or_else(|| illisible("flux.retour.nature"))?;
+            out.push(Annonce { publication, production, ops, delegataire, nature_retour, statut, id, url, libelle: None, flux: idf.clone() });
         }
     }
     Ok(out)

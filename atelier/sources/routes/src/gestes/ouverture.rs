@@ -298,8 +298,8 @@ impl Ouverture {
                             Ok(RetourArchiveDit {
                                 chemin: a.chemin.clone(),
                                 fichier: a.chemin.file_name().map(|n| NomDeFichier::lire(&n.to_string_lossy())).transpose()?,
-                                nature_retour: a.retour.nature_retour.clone(),
-                                libelle: envois::retours::libelle_nature(&a.retour.nature_retour),
+                                nature_retour: a.retour.nature_retour,
+                                libelle: a.retour.nature_retour.libelle_dit(),
                             })
                         })
                         .collect::<R<_>>()?,
@@ -410,7 +410,7 @@ pub struct RetourArchiveDit {
     pub chemin: PathBuf,
     pub fichier: Option<NomDeFichier>,
     #[serde(rename = "nature")]
-    pub nature_retour: String,
+    pub nature_retour: envois::retours::NatureDuRetour,
     pub libelle: String,
 }
 

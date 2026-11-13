@@ -6,7 +6,7 @@
 
 use moteur::commandes::analyse::{Args, Opt, Spec};
 use moteur::commandes::Cadre;
-use envois::retours::NATURE_AER_SPECTACLE;
+use envois::retours::NatureDuRetour;
 use socle::echec::Echec;
 
 pub static SPEC: Spec = Spec { commande: "aer", positionnels: &[], options: &[Opt::valeur("mois"), Opt::drapeau("forcer")] };
@@ -20,8 +20,8 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
     let fait = routes::documents::ranger_aer_detail(&cadre.ctx, mois, None, args.drapeau("forcer"))?;
     if fait.ecrits.is_empty() && fait.a_ranger.is_empty() && fait.refusees.is_empty() {
         match mois {
-            Some(m) => dire!("Aucune attestation pour {} dans les retours de nature {}.", m, NATURE_AER_SPECTACLE),
-            None => dire!("Aucune attestation dans les retours de nature {}.", NATURE_AER_SPECTACLE),
+            Some(m) => dire!("Aucune attestation pour {} dans les retours de nature {}.", m, NatureDuRetour::AerSpectacle),
+            None => dire!("Aucune attestation dans les retours de nature {}.", NatureDuRetour::AerSpectacle),
         }
         return Ok(2);
     }

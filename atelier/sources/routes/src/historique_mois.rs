@@ -29,7 +29,7 @@ use droit::organismes::IdentifiantDOrganisme;
 use droit::type_declaration::TypeDeLaDeclaration;
 use envois::etats;
 use envois::journal::Ligne;
-use envois::retours::{self, AnomalieDuRapport, CrmOc, IdDeFlux, Neores, Rapport};
+use envois::retours::{self, AnomalieDuRapport, CrmOc, IdDeFlux, NatureDuRetour, Neores, Rapport};
 use socle::echec::{Classe, Echec, R};
 use socle::ecran::Pastille;
 use socle::fichiers::{CheminRelatif, NomDeFichier};
@@ -68,47 +68,6 @@ pub fn route(porte: &Porte, charge: &Charge) -> R<Rendu> {
 }
 
 // ------------------------------------------------------------------ les tables
-
-/// L'organisme et le FORMAT de chaque nature de retour de la DSN : le tableau des retours du guide d'implementation de
-/// l'API DSN v6.8, §1.3, p. 11-13 (colonnes « OPS » et « Format phase 3 » ;
-/// `atelier/reference/sources/gip-mds-api-dsn/gip-mds-guide-implementation-api-dsn-v6.8-20260706.txt`). « harmonise » :
-/// le schema des bilans (`retours::lire_rapport`) ; « aucun » : un accuse sans document, son statut dit tout ; « pdf » :
-/// une archive d'AER ; « neores » : le format NEOReS (`retours::lire_neores`, cahier technique depose dans
-/// `atelier/reference/sources/neores/`) ; « oc » : le compte rendu des organismes complementaires (`retours::lire_crm_oc`,
-/// specification et schema V1.1.4 deposes dans `gip-mds-api-dsn/`) ; « agirc-arrco » : le format temporaire de
-/// l'AGIRC-ARRCO, que personne ne publie (le guide le cite, [7], sans le joindre), et qui ne se traduit donc pas. Le
-/// format de la nature 93 n'est pas rempli dans le tableau du guide : « harmonise » est une INFERENCE (la nature 95, de la meme DGFiP, a son exemple sous « Format DSN harmonise », §6.3).
-const NATURES: [(&str, &str, &str); 29] = [
-    ("10", "le point de dépôt (SI DSN)", "harmonise"),
-    ("11", "le point de dépôt (SI DSN)", "harmonise"),
-    ("20", "le SI DSN", "harmonise"),
-    ("21", "le SI DSN", "harmonise"),
-    ("22", "le SI DSN", "harmonise"),
-    ("23", "le SI DSN", "harmonise"),
-    ("34", "la CNAM (taux AT/MP)", "harmonise"),
-    ("40", "France Travail", "aucun"),
-    ("42", "France Travail", "harmonise"),
-    ("43", "France Travail", "pdf"),
-    ("44", "France Travail", "harmonise"),
-    ("45", "France Travail", "harmonise"),
-    ("46", "France Travail", "pdf"),
-    ("50", "l'organisme complémentaire", "aucun"),
-    ("51", "l'organisme complémentaire", "oc"),
-    ("60", "l'Urssaf", "aucun"),
-    ("61", "l'Urssaf", "harmonise"),
-    ("70", "l'AGIRC-ARRCO", "aucun"),
-    ("71", "l'AGIRC-ARRCO", "agirc-arrco"),
-    ("92", "la DGFiP", "aucun"),
-    ("93", "la DGFiP", "harmonise"),
-    ("94", "la DGFiP", "harmonise"),
-    ("95", "la DGFiP", "harmonise"),
-    ("117", "l'Urssaf ou la MSA", "harmonise"),
-    ("118", "l'Urssaf ou la MSA", "neores"),
-    ("119", "l'Urssaf", "neores"),
-    ("120", "l'Urssaf", "neores"),
-    ("121", "le SI DSN", "neores"),
-    ("124", "l'Urssaf", "neores"),
-];
 
 /// Ce que dit le statut d'un retour : guide v6.8, §3.4.4 « Reponse du service » (`flux.retour.statut`) ; un autre statut
 /// ne se traduit pas.
@@ -249,10 +208,10 @@ struct RetourLu {
 #[derive(Debug, Serialize)]
 struct RetourDOrganisme {
     titre_dit: String,
-    nature_dit: Option<String>,
+    nature_dit: String,
     quand_dit: Option<String>,
     #[serde(rename = "nature")]
-    nature_retour: String,
+    nature_retour: NatureDuRetour,
     libelle: String,
     organisme: Option<String>,
     statut: Option<String>,
@@ -476,7 +435,7 @@ fn retours_illisibles(dossier: &Path, e: std::io::Error) -> Echec {
 /// La piece archivee d'un retour : `retours/[dpae/]AAAAMMJJ-hhmmss_natureN_<flux>.<ext>` (`envois::releve_retours::archiver_retour`,
 /// qui nomme `sansflux` un retour sans flux) : celle de sa publication ; sans publication datee, la premiere de sa nature
 /// pour ce flux (`etats::archive_du_retour`). Aucune s'il n'y en a pas ; un dossier des retours qui ne se lit pas le dit.
-fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&IdDeFlux>, nature: &str, publication: Option<Moment>) -> R<Option<PathBuf>> {
+fn piece_du_retour(racine: &Path, canal: Option<&str>, flux: Option<&IdDeFlux>, nature: NatureDuRetour, publication: Option<Moment>) -> R<Option<PathBuf>> {
     let mut dossier = racine.join(envois::retours::RETOURS);
     if let Some(c) = canal {
         dossier = dossier.join(c);
@@ -589,8 +548,8 @@ impl Lecture {
 /// Une piece lue : le certificat DPAE (nature 41 du canal DPAE, `dpae::lire_certificat`), un rapport au format
 /// harmonise (`retours::lire_rapport`), une archive d'AER (`retours::aer_spectacle`), un PDF. Autre chose ne se
 /// traduit pas : son format est dit, ce qui l'empeche de se lire aussi, et la piece s'ouvre telle quelle.
-fn lire_piece(o: &[u8], canal: Option<&str>, nature: &str, format: Option<&str>) -> Lecture {
-    if canal == Some("dpae") && nature == "41" {
+fn lire_piece(o: &[u8], canal: Option<&str>, nature: NatureDuRetour, format: Option<&str>) -> Lecture {
+    if canal == Some("dpae") && nature == NatureDuRetour::CertificatDpae {
         let texte: String = o.iter().map(|&b| b as char).collect();
         let lignes = declarations::dpae::lire_certificat(&texte);
         if !lignes.is_empty() {
@@ -665,7 +624,7 @@ fn lire_piece(o: &[u8], canal: Option<&str>, nature: &str, format: Option<&str>)
 
 /// Un rapport au format harmonise (`retours::lire_rapport`), dit en phrases : son titre, son message, l'envoi, chaque
 /// declaration, les informations, les taux communiques (nature 114), les anomalies, et le verdict de la piece.
-fn rapport_lu(rapport: &Rapport, o: &[u8], nature: &str) -> Lecture {
+fn rapport_lu(rapport: &Rapport, o: &[u8], nature: NatureDuRetour) -> Lecture {
     let titre = match (lu(&rapport.libelle), lu(&rapport.type_rapport)) {
         (Some(libelle), _) => libelle.to_string(),
         (None, Some(t)) => format!("Rapport {}", t),
@@ -707,7 +666,7 @@ fn rapport_lu(rapport: &Rapport, o: &[u8], nature: &str) -> Lecture {
         let donnees: Vec<String> = i.donnees.iter().map(|d| format!("{} : {}", d.nom, d.valeur)).collect();
         l.phrases.push(if donnees.is_empty() { format!("{}.", quoi) } else { format!("{} — {}.", quoi, donnees.join(" ; ")) });
     }
-    if nature == retours::NATURE_TAUX_PAS {
+    if nature == NatureDuRetour::TauxPas {
         match retours::taux_pas_d_octets(o) {
             Ok(t) => l.phrases.push(format!("{} taux de prélèvement à la source communiqué{}.", t.releves.len(), plur(t.releves.len(), "", "s"))),
             Err(m) => l.phrases.push(format!("Les taux de prélèvement à la source communiqués ne se lisent pas : {}", m.phrase)),
@@ -1016,28 +975,25 @@ enum PieceDuRetour {
 /// Un retour d'une ligne du journal, lu.
 fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme) -> R<RetourLu> {
     let canal = (ligne.acte() == envois::journal::Acte::Dpae).then_some("dpae");
-    let nature = r.nature_retour.clone();
+    let nature = r.nature_retour;
     let statut = r.statut.as_deref().and_then(dit);
     let publication = r.publication;
     let flux = ligne.flux();
     let (organisme, format) = match canal {
         Some(_) => (Some("l'Urssaf (DPAE)"), None),
-        None => match NATURES.iter().find(|(c, _, _)| *c == nature) {
-            Some((_, o, f)) => (Some(*o), Some(*f)),
-            None => (None, None),
-        },
+        None => (nature.organisme(), nature.format()),
     };
     let libelle = match dit(&r.libelle) {
         Some(l) => l.to_string(),
-        None => retours::libelle_nature(&nature),
+        None => nature.libelle_dit(),
     };
     let piece = match (flux, publication) {
         (None, None) => PieceDuRetour::Aucune,
-        _ => match piece_du_retour(racine, canal, flux, &nature, publication) {
+        _ => match piece_du_retour(racine, canal, flux, nature, publication) {
             Ok(None) => PieceDuRetour::Aucune,
             Ok(Some(p)) => match std::fs::read(&p) {
                 Ok(o) => {
-                    let l = lire_piece(&o, canal, &nature, format);
+                    let l = lire_piece(&o, canal, nature, format);
                     PieceDuRetour::Lue(p, l)
                 }
                 Err(e) => PieceDuRetour::Illisible(format!("la pièce archivée ne se lit pas ({:?})", e.kind())),
@@ -1105,12 +1061,11 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
         },
         lu,
     ));
-    let titre_dit = match (titre.as_deref().and_then(dit), dit(&libelle)) {
-        (Some(t), _) => t.to_string(),
-        (None, Some(l)) => l.to_string(),
-        (None, None) => format!("retour de nature {}", nature),
+    let titre_dit = match titre.as_deref().and_then(dit) {
+        Some(t) => t.to_string(),
+        None => libelle.clone(),
     };
-    let nature_dit = dit(&nature).map(|n| format!("Nature {} : {}", n, libelle));
+    let nature_dit = format!("Nature {} : {}", nature, libelle);
     let quand = publication;
     Ok(RetourLu {
         titre: titre_dit.clone(),

@@ -477,7 +477,7 @@ pub struct Verdict {
 pub struct RetourOrganisme {
     /// La nature du retour (un compte rendu, un bilan, un certificat...).
     #[serde(rename = "nature")]
-    pub nature_retour: String,
+    pub nature_retour: crate::retours::NatureDuRetour,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub verdict: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

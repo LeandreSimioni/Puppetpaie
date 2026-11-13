@@ -79,9 +79,9 @@ fn faire(cadre: &Cadre, args: &Args) -> Result<i32, Echec> {
             "  {} {}  nature {:<4} {:<8} {}  flux {}",
             if r.nouveaux.contains(x) { "NEUF" } else { "    " },
             super::dit(envois::releve_retours::jour_de_publication_dit(x).as_deref()),
-            x.nature_retour,
+            x.nature_retour.code(),
             super::dit(x.statut.as_deref()),
-            envois::retours::libelle_nature(&x.nature_retour),
+            x.nature_retour.libelle_dit(),
             super::dit(x.flux.as_ref().map(envois::retours::IdDeFlux::texte))
         );
     }

@@ -21,7 +21,7 @@ use droit::contexte::Contexte;
 use socle::echec::R;
 use socle::echec::erreur;
 use socle::echec::{Classe, Echec};
-use crate::retours::{Annonce, Depot, IdDeFlux};
+use crate::retours::{Annonce, Depot, IdDeFlux, NatureDuRetour};
 use socle::date::Jour;
 use socle::num::Decimal;
 use socle::paris::Moment;
@@ -434,8 +434,8 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
         let quoi = l.acte();
         let Some(flux) = l.flux().filter(|f| f.est_fictif()).cloned() else { continue };
         if matches!(quoi, Acte::Dsn | Acte::Dpae) && l.accepte() && l.nombre_de_retours() == 0 {
-            let base = |nature: &str, verdict: Option<&str>, libelle: &str| RetourOrganisme {
-                nature_retour: nature.into(),
+            let base = |nature: NatureDuRetour, verdict: Option<&str>, libelle: &str| RetourOrganisme {
+                nature_retour: nature,
                 verdict: verdict.map(String::from),
                 anomalies: Some(Vec::new()),
                 dpae: None,
@@ -445,8 +445,8 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
             };
             let mut retours: Vec<RetourOrganisme> = Vec::new();
             if quoi == Acte::Dpae {
-                retours.push(base("11", Some("OK"), "Bilan de conformite (compagnie fictive)"));
-                let mut m = base("41", Some("OK"), "Certificat de conformite des DPAE (compagnie fictive)");
+                retours.push(base(NatureDuRetour::CertificatDeConformite, Some("OK"), "Bilan de conformite (compagnie fictive)"));
+                let mut m = base(NatureDuRetour::CertificatDpae, Some("OK"), "Certificat de conformite des DPAE (compagnie fictive)");
                 m.dpae = Some(Vec::new());
                 retours.push(m);
             } else {
@@ -459,17 +459,17 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
                     }
                     Ok(autres) => pieces.extend(autres),
                 }
-                retours.push(base("10", Some("OK"), "Accuse de reception (compagnie fictive)"));
-                retours.push(base("11", Some("OK"), "Bilan de conformite (compagnie fictive)"));
+                retours.push(base(NatureDuRetour::AccuseDEnregistrement, Some("OK"), "Accuse de reception (compagnie fictive)"));
+                retours.push(base(NatureDuRetour::CertificatDeConformite, Some("OK"), "Bilan de conformite (compagnie fictive)"));
                 // L'AER : seulement quand elle est due, et avec sa piece, comme France Travail la publie.
                 if let Some(archive) = aer_jouee(ctx, l)? {
-                    let r46 = base("46", None, "Attestation employeur rematerialisee (compagnie fictive)");
+                    let r46 = base(NatureDuRetour::AerSpectacle, None, "Attestation employeur rematerialisee (compagnie fictive)");
                     let annonce = Annonce {
                         publication: r46.publication.clone(),
                         production: None,
                         ops: None,
                         delegataire: None,
-                        nature_retour: r46.nature_retour.clone(),
+                        nature_retour: r46.nature_retour,
                         statut: r46.statut.clone(),
                         id: None,
                         url: None,
@@ -502,9 +502,9 @@ pub fn rattacher_simulation(ctx: &Contexte, suites: &mut Suites) -> R<i64> {
         for x in &pieces {
             let retour = &x.retour;
             let chemin = archiver(ctx, retour, &x.contenu, Some("application/xml"), "")?;
-            if retour.nature_retour == crate::retours::NATURE_TAUX_PAS {
+            if retour.nature_retour == NatureDuRetour::TauxPas {
                 suites.taux_pas.push((retour.clone(), chemin));
-            } else if retour.nature_retour == crate::retours::NATURE_TAUX_ATMP {
+            } else if retour.nature_retour == NatureDuRetour::TauxAtMp {
                 suites.taux_atmp.push((retour.clone(), chemin));
             }
             contenus.push((crate::etats::cle_du_contenu(&retour), x.contenu.clone()));
@@ -611,17 +611,17 @@ pub fn relever_retours(
             Ok((contenu, ctype)) => {
                 let chemin = archiver(ctx, &r, &contenu, ctype.as_deref(), canal)?;
                 // LE TAUX AT/MP NOTIFIE SE LIT DE LA NOTIFICATION (regle 1) : il se pose dans la surcouche, par les suites.
-                if canal.is_empty() && r.nature_retour == crate::retours::NATURE_TAUX_ATMP {
+                if canal.is_empty() && r.nature_retour == NatureDuRetour::TauxAtMp {
                     suites.taux_atmp.push((r.clone(), chemin.clone()));
                 }
                 // UN SIGNALEMENT REFUSE B1-208-10 : l'ordre etait deja pris ; la conduite a tenir se dit.
-                if canal.is_empty() && r.nature_retour == "11" {
+                if canal.is_empty() && r.nature_retour == NatureDuRetour::CertificatDeConformite {
                     for d in crate::retours::declarations_du_bilan(&contenu)? {
                         releve.a_faire.extend(crate::ordre_signalements::conduite_b1_208_10(&d, r.flux.as_ref()));
                     }
                 }
                 // LE TAUX DU PAS SE LIT DU COMPTE RENDU (regle 1) : il va dans la fiche du salarie, par les suites.
-                if canal.is_empty() && r.nature_retour == crate::retours::NATURE_TAUX_PAS {
+                if canal.is_empty() && r.nature_retour == NatureDuRetour::TauxPas {
                     suites.taux_pas.push((r.clone(), chemin.clone()));
                 }
                 releve.archives.push(RetourArchive { retour: r, chemin, contenu });
@@ -660,7 +660,7 @@ pub fn relever_retours(
             releve
                 .archives
                 .iter()
-                .filter(|a| a.retour.nature_retour == crate::retours::NATURE_AER_SPECTACLE)
+                .filter(|a| a.retour.nature_retour == NatureDuRetour::AerSpectacle)
                 .map(|a| a.chemin.clone()),
         );
     }
@@ -841,7 +841,7 @@ pub fn reconstruire_effectifs(racine: &Path) -> R<()> {
     let mut noms: Vec<String> = Vec::new();
     for e in lecture {
         let nom = e.map_err(|x| socle::echec::du_disque(&dossier, &x).reclasser(Classe::Disque))?.file_name().to_string_lossy().into_owned();
-        if nom.ends_with(".xml") && crate::retours::archive_de_nature(&nom, "118") {
+        if nom.ends_with(".xml") && crate::retours::archive_de_nature(&nom, NatureDuRetour::Effectifs) {
             noms.push(nom);
         }
     }

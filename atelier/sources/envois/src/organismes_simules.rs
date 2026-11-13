@@ -22,7 +22,7 @@ use socle::echec::{erreur, Classe, R};
 use socle::num::Decimal;
 
 use crate::journal::Ligne;
-use crate::retours::IdDeFlux;
+use crate::retours::{IdDeFlux, NatureDuRetour};
 use declarations::dsn_lue::DsnLue;
 use socle::mois::Mois;
 use socle::paris::Moment;
@@ -30,9 +30,6 @@ use crate::branchement::Branchement;
 
 const DOSSIER: &str = "organismes-simules";
 const FICHIER: &str = "annonces.json";
-
-/// Le compte rendu de l'Urssaf qui porte les effectifs (table des types de parametres NEOReS).
-pub const NATURE_EFFECTIFS: &str = "118";
 
 fn chemin(racine: &Path) -> PathBuf {
     racine.join(DOSSIER).join(FICHIER)
@@ -284,13 +281,13 @@ pub struct Piece {
 
 /// UN RETOUR TEL QUE LA LISTE DES RETOURS LE DECRIT : son flux, sa nature, sa publication, son statut (`fictive`), son
 /// libelle, et pour un compte rendu du PAS, le mois de la declaration (`production`).
-fn retour(nature: &str, flux: &IdDeFlux, publication: Moment, libelle: &str, production: Option<String>) -> crate::retours::Annonce {
+fn retour(nature: NatureDuRetour, flux: &IdDeFlux, publication: Moment, libelle: &str, production: Option<String>) -> crate::retours::Annonce {
     crate::retours::Annonce {
         publication: Some(publication),
         production,
         ops: None,
         delegataire: None,
-        nature_retour: nature.to_string(),
+        nature_retour: nature,
         statut: Some("fictive".to_string()),
         id: None,
         url: None,
@@ -376,8 +373,8 @@ fn bilans_refuses(flux: &IdDeFlux, publication: Moment, l: &Ligne, nature: Natur
         element(refus.rubrique.as_deref())
     );
     Ok(vec![
-        Piece { retour: retour("10", flux, publication, "Accuse de reception (compagnie fictive)", None), contenu: rapport("AEE", &envoi) },
-        Piece { retour: retour("11", flux, publication, "Bilan d'anomalies (compagnie fictive)", None), contenu: rapport("BAN", &ban) },
+        Piece { retour: retour(NatureDuRetour::AccuseDEnregistrement, flux, publication, "Accuse de reception (compagnie fictive)", None), contenu: rapport("AEE", &envoi) },
+        Piece { retour: retour(NatureDuRetour::CertificatDeConformite, flux, publication, "Bilan d'anomalies (compagnie fictive)", None), contenu: rapport("BAN", &ban) },
     ])
 }
 
@@ -441,7 +438,7 @@ fn crm_pas(ctx: &Contexte, memoire: &Memoire, l: &Ligne, d: &DsnLue, flux: &IdDe
     );
     // Le mois de la declaration (`AAAAMM`), meme pour un signalement date du jour de son fait.
     let production = Some(mois_de(l)?.to_string().replace('-', ""));
-    let r = retour(crate::retours::NATURE_TAUX_PAS, flux, publication, "Compte-rendu metier DGFiP, taux du PAS (compagnie fictive)", production);
+    let r = retour(NatureDuRetour::TauxPas, flux, publication, "Compte-rendu metier DGFiP, taux du PAS (compagnie fictive)", production);
     Ok(Some(Piece { retour: r, contenu: xml.into_bytes() }))
 }
 
@@ -492,7 +489,7 @@ fn crm_atmp(memoire: &mut Memoire, l: &Ligne, d: &DsnLue, flux: &IdDeFlux, publi
         element(d.etablissement()),
         taux
     );
-    let r = retour(crate::retours::NATURE_TAUX_ATMP, flux, publication, "Compte-rendu metier taux AT/MP, notification de la Carsat (compagnie fictive)", None);
+    let r = retour(NatureDuRetour::TauxAtMp, flux, publication, "Compte-rendu metier taux AT/MP, notification de la Carsat (compagnie fictive)", None);
     Ok(Some(Piece { retour: r, contenu: xml.into_bytes() }))
 }
 
@@ -535,13 +532,13 @@ fn crm_effectif(an: i32, valeur: Decimal, flux: &IdDeFlux, publication: Moment) 
          <RO_B008_R002>{}</RO_B008_R002><RO_B008_R003>{}-01-01</RO_B008_R003><RO_B008_R004>{}-12-31</RO_B008_R004>\
          <RO_B008_R006>{}</RO_B008_R006></RO_B008></RO_B004></RO_B001></RO>",
         echappe(flux.texte()),
-        NATURE_EFFECTIFS,
+        NatureDuRetour::Effectifs,
         deux_decimales(valeur),
         an,
         an,
         calcule_le
     );
-    Piece { retour: retour(NATURE_EFFECTIFS, flux, publication, "Effectifs (compagnie fictive)", None), contenu: xml.into_bytes() }
+    Piece { retour: retour(NatureDuRetour::Effectifs, flux, publication, "Effectifs (compagnie fictive)", None), contenu: xml.into_bytes() }
 }
 
 /// Ce que les organismes rendent a la DSN que porte la ligne `l` du journal (deja acceptee au transport), au-dela de

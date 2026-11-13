@@ -124,7 +124,7 @@ struct Enregistrement {
     #[serde(skip_serializing_if = "Option::is_none")]
     retour: Option<Retour>,
     #[serde(rename = "nature", skip_serializing_if = "Option::is_none")]
-    nature_retour: Option<String>,
+    nature_retour: Option<crate::retours::NatureDuRetour>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "socle::paris::ecrit::compacte::option")]
     publication: Option<socle::paris::Moment>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -571,7 +571,7 @@ pub enum Rangement {
     /// Un compte rendu de plus.
     Retour(RetourOrganisme),
     /// Le verdict du compte rendu de cette nature et de cette publication.
-    Complement { nature_retour: String, publication: Option<socle::paris::Moment>, verdict: Verdict },
+    Complement { nature_retour: crate::retours::NatureDuRetour, publication: Option<socle::paris::Moment>, verdict: Verdict },
 }
 
 /// RANGE CE QUI REVIENT des envois : chaque `(i, rangement)` sur la `i`-ieme ligne du journal lu (`lu`), dans l'ordre.
@@ -725,7 +725,8 @@ mod tests {
     /// la DSN suivante. Rien n'a ete recu (cahier technique DSN, § 4.2, `norme-dsn/texte/chapitre-4-controles.txt`).
     #[test]
     fn une_declaration_refusee_au_bilan_n_est_pas_partie() {
-        let retour = |nature: &str, verdict: &str| RetourOrganisme { nature_retour: nature.into(), verdict: Some(verdict.into()), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
+        use crate::retours::NatureDuRetour::{AccuseDEnregistrement, CertificatDeConformite};
+        let retour = |nature: crate::retours::NatureDuRetour, verdict: &str| RetourOrganisme { nature_retour: nature, verdict: Some(verdict.into()), anomalies: None, dpae: None, libelle: String::new(), statut: None, publication: None };
         fn envoi<D>(salarie: &str, retours: Vec<RetourOrganisme>, detail: D) -> Envoi<D, RetourOrganisme> {
             let mut e = Envoi::nouveau(Mode::Reel, "t", true, "", "", detail);
             e.mois = Some(Mois::nouveau(2026, 6).unwrap());
@@ -734,12 +735,12 @@ mod tests {
             e.versions = Some(vec![Version { salarie: droit::contexte::IdSalarie::lire(salarie).unwrap(), numero: engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap(), version: 1, mois: None }]);
             e
         }
-        let ko = vec![retour("10", "OK"), retour("11", "KO")];
+        let ko = vec![retour(AccuseDEnregistrement, "OK"), retour(CertificatDeConformite, "KO")];
         let lignes = vec![
             Ligne::Dsn(envoi("ALPHA", ko.clone(), DetailDsn::nouveau(false))),
             Ligne::Dsn(envoi("BETA", vec![], DetailDsn { etat_declaration: Some("KO".into()), ..DetailDsn::nouveau(true) })),
             Ligne::Dpae(envoi("GAMMA", ko, DetailDpae::nouveau(false, false))),
-            Ligne::Dsn(envoi("DELTA", vec![retour("11", "OK")], DetailDsn::nouveau(false))),
+            Ligne::Dsn(envoi("DELTA", vec![retour(CertificatDeConformite, "OK")], DetailDsn::nouveau(false))),
         ];
         let d = departs_des_lignes(&lignes);
         let numero = engagement::numeros::NumeroContrat::lire("DE1.26.01").unwrap();

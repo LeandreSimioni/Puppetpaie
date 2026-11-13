@@ -293,7 +293,7 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
     let dossier = ctx.racine.join(crate::retours::RETOURS_DPAE);
     let par_nir = salarie_par_nir(ctx);
     let (mut sortie, mut inconnus): (Vec<DpaeAttestee>, Vec<String>) = (vec![], vec![]);
-    for (nom, p) in fichiers_du_dossier(&dossier, |n| crate::retours::archive_de_nature(n, "41"))? {
+    for (nom, p) in fichiers_du_dossier(&dossier, |n| crate::retours::archive_de_nature(n, crate::retours::NatureDuRetour::CertificatDpae))? {
         let octets = std::fs::read(&p).map_err(|e| socle::echec::du_disque(&p, &e).reclasser(Classe::Disque))?;
         let texte: String = octets.iter().map(|&b| b as char).collect();
         let (mut embauches, mut quand, mut mois) = (Vec::new(), None, None);
