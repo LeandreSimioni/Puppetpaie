@@ -860,7 +860,7 @@ fn ligne_de_l_unite(unite: Unite) -> Option<&'static str> {
 
 /// Une lecture, pas un verdict : la phrase renvoie au texte pour qu'on verifie.
 fn a_verifier(t: &Table, idcc: &str, phrase: String) -> Avis {
-    let lien = t.convention(idcc).and_then(|c| c.lien.as_deref()).filter(|l| !l.is_empty());
+    let lien = t.convention(idcc).and_then(|c| c.lien.as_ref());
     let lien: String = lien.map(|l| format!(" : {}", l)).into_iter().collect();
     Avis {
         info: true,

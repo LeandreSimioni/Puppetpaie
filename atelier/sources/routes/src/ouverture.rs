@@ -1714,7 +1714,7 @@ struct Aides(#[serde(serialize_with = "socle::ecriture::en_ordre")] &'static [(&
 #[derive(Debug, Clone, serde::Serialize)]
 pub(crate) struct Version {
     courante: String,
-    depot: String,
+    depot: compagnie::maj::DepotDesMisesAJour,
     prete: Option<String>,
     calcul: Option<String>,
     exigee: Option<String>,

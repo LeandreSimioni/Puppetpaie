@@ -37,8 +37,8 @@ pub fn executer(cadre: &Cadre, args: &Args) -> i32 {
     // Les copies sont les textes du logiciel, pas ceux d'une compagnie : elles vivent dans l'installation.
     let installation = compagnie::maj::installation();
     let liste = if verifier {
-        let mut tele = |u: &str| crate::sources::telecharger(u, 30);
-        let mut kali = |u: &str| crate::sources::telecharger(u, 60).map(|(o, _)| o);
+        let mut tele = |u: &socle::garde_reseau::Url| crate::sources::telecharger(u, 30);
+        let mut kali = |u: &str| socle::garde_reseau::Url::lire(u).and_then(|u| crate::sources::telecharger(&u, 60)).map(|(o, _)| o);
         crate::sources::verifier(&installation, &manifeste, &cadre.ctx.aujourdhui, &[], relever, &mut tele, &mut kali)
     } else {
         crate::sources::etats(&installation, &manifeste, &cadre.ctx.aujourdhui)

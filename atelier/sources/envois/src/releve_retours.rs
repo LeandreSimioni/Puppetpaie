@@ -25,6 +25,7 @@ use crate::retours::{Annonce, Depot};
 use socle::date::Jour;
 use socle::num::Decimal;
 use socle::paris::Moment;
+use socle::garde_reseau::Url;
 
 use crate::branchement::{Branchement, ANCIEN_PREFIXE_FLUX_FICTIF, PREFIXE_FLUX_FICTIF};
 use crate::journal::{Acte, Ligne, RetourOrganisme};
@@ -66,10 +67,10 @@ pub const VARIABLE_MOTDEPASSE_DPAE: &str = "URSSAF_MOTDEPASSE";
 /// Les adresses d'un service (`netentreprises.ADRESSES`, `dpae_api.ADRESSES_DPAE`).
 #[derive(Clone)]
 pub struct Adresses {
-    pub authentification: String,
-    pub retours: String,
-    pub retours_flux: String,
-    pub depot: String,
+    pub authentification: Url,
+    pub retours: Url,
+    pub retours_flux: Url,
+    pub depot: Url,
     pub service: Option<String>,
 }
 
@@ -79,33 +80,33 @@ fn adresses_dsn(environnement: &str) -> Result<Adresses, Panne> {
     if let Some(b) = crate::redirection::base(crate::redirection::VARIABLE_DSN) {
         let service = if environnement == "editeur" { SERVICE_DSN_REGIME_GENERAL_TEST } else { SERVICE_DSN_REGIME_GENERAL };
         return Ok(Adresses {
-            authentification: format!("{}/authentifier/", b),
-            retours: format!("{}/lister-retours-declarant/1.0/", b),
-            retours_flux: format!("{}/lister-retours-flux/1.0/", b),
-            depot: format!("{}/deposer-dsn/1.0/", b),
+            authentification: b.joindre("/authentifier/"),
+            retours: b.joindre("/lister-retours-declarant/1.0/"),
+            retours_flux: b.joindre("/lister-retours-flux/1.0/"),
+            depot: b.joindre("/deposer-dsn/1.0/"),
             service: Some(service.into()),
         });
     }
     let (auth, hote_consultation, depot, service) = match environnement {
         "production" => (
-            "https://services.net-entreprises.fr/authentifier/1.0/",
-            "https://consultation.dsnrg.net-entreprises.fr",
-            "https://depot.dsnrg.net-entreprises.fr/deposer-dsn/1.0/",
+            Url::du_moteur("https://services.net-entreprises.fr/authentifier/1.0/"),
+            Url::du_moteur("https://consultation.dsnrg.net-entreprises.fr"),
+            Url::du_moteur("https://depot.dsnrg.net-entreprises.fr/deposer-dsn/1.0/"),
             SERVICE_DSN_REGIME_GENERAL,
         ),
         "editeur" => (
-            "https://test-services.net-entreprises.fr/authentifier/1.0/",
-            "https://consultation-edit.dsnrg.net-entreprises.fr",
-            "https://depot-edit.dsnrg.net-entreprises.fr/deposer-dsn/1.0/",
+            Url::du_moteur("https://test-services.net-entreprises.fr/authentifier/1.0/"),
+            Url::du_moteur("https://consultation-edit.dsnrg.net-entreprises.fr"),
+            Url::du_moteur("https://depot-edit.dsnrg.net-entreprises.fr/deposer-dsn/1.0/"),
             SERVICE_DSN_REGIME_GENERAL_TEST,
         ),
         autre => return Err(panne(Classe::Illisible, format!("environnement inconnu : '{}'", autre))),
     };
     Ok(Adresses {
-        authentification: auth.into(),
-        retours: format!("{}/lister-retours-declarant/1.0/", hote_consultation),
-        retours_flux: format!("{}/lister-retours-flux/1.0/", hote_consultation),
-        depot: depot.into(),
+        authentification: auth,
+        retours: hote_consultation.joindre("/lister-retours-declarant/1.0/"),
+        retours_flux: hote_consultation.joindre("/lister-retours-flux/1.0/"),
+        depot,
         service: Some(service.into()),
     })
 }
@@ -116,18 +117,18 @@ fn adresses_dpae(compte: Option<&droit::fiche::ApiDpae>) -> Adresses {
     #[cfg(feature = "atelier")]
     if let Some(b) = crate::redirection::base(crate::redirection::VARIABLE_DPAE) {
         return Adresses {
-            authentification: format!("{}/authentifier_dpae", b),
-            retours: format!("{}/lister-retours-declarant/1.0/", b),
-            retours_flux: format!("{}/lister-retours-flux/1.0/", b),
-            depot: format!("{}/deposer-dsn/1.0/", b),
+            authentification: b.joindre("/authentifier_dpae"),
+            retours: b.joindre("/lister-retours-declarant/1.0/"),
+            retours_flux: b.joindre("/lister-retours-flux/1.0/"),
+            depot: b.joindre("/deposer-dsn/1.0/"),
             service,
         };
     }
     Adresses {
-        authentification: "https://mon.urssaf.fr/authentifier_dpae".into(),
-        retours: "https://consultation.dpae-edi.urssaf.fr/lister-retours-declarant/1.0/".into(),
-        retours_flux: "https://consultation.dpae-edi.urssaf.fr/lister-retours-flux/1.0/".into(),
-        depot: "https://depot.dpae-edi.urssaf.fr/deposer-dsn/1.0/".into(),
+        authentification: Url::du_moteur("https://mon.urssaf.fr/authentifier_dpae"),
+        retours: Url::du_moteur("https://consultation.dpae-edi.urssaf.fr/lister-retours-declarant/1.0/"),
+        retours_flux: Url::du_moteur("https://consultation.dpae-edi.urssaf.fr/lister-retours-flux/1.0/"),
+        depot: Url::du_moteur("https://depot.dpae-edi.urssaf.fr/deposer-dsn/1.0/"),
         service,
     }
 }
@@ -207,12 +208,12 @@ impl Client {
         Ok(())
     }
 
-    fn appel(&self, url: &str) -> Result<(Vec<u8>, crate::transport::Entetes), Panne> {
+    fn appel(&self, url: &Url) -> Result<(Vec<u8>, crate::transport::Entetes), Panne> {
         Ok(crate::transport::appeler(url, self.jeton.as_deref())?)
     }
 
     /// La consultation d'une plage.
-    fn consulter(&mut self, base: &str, debut: Moment, fin: Option<Moment>) -> Result<Vec<u8>, Panne> {
+    fn consulter(&mut self, base: &Url, debut: Moment, fin: Option<Moment>) -> Result<Vec<u8>, Panne> {
         self.assurer_session()?;
         Ok(crate::transport::consulter(base, self.jeton.as_deref(), debut, fin)?)
     }
@@ -226,19 +227,19 @@ impl Client {
     /// `Client.lister_depots` : les depots que net-entreprises a vus sur une plage. L'adresse est celle de la consultation
     /// des retours, dont seul le service change (`lister-depots/1.0/` au lieu de `lister-retours-declarant/1.0/`).
     pub fn lister_depots(&mut self, debut: Moment, fin: Moment) -> Result<Vec<Depot>, Panne> {
-        let base = self.adresses.retours.replace("lister-retours-declarant", "lister-depots");
+        let base = Url::lire(&self.adresses.retours.texte().replace("lister-retours-declarant", "lister-depots"))?;
         let brut = self.consulter(&base, debut, Some(fin))?;
         crate::retours::liste_depots_d_octets(&brut).map_err(de_lecture)
     }
 
     pub fn lister_retours_du_flux(&mut self, idflux: &str) -> Result<Vec<Annonce>, Panne> {
         self.assurer_session()?;
-        let (brut, _) = self.appel(&format!("{}{}", self.adresses.retours_flux, idflux))?;
+        let (brut, _) = self.appel(&self.adresses.retours_flux.joindre(idflux))?;
         crate::retours::liste_retours_d_octets(&brut).map_err(de_lecture)
     }
 
     /// Recupere un retour : (contenu brut, type de contenu, s'il est dit).
-    pub fn telecharger(&mut self, url: &str) -> Result<(Vec<u8>, Option<String>), Panne> {
+    pub fn telecharger(&mut self, url: &Url) -> Result<(Vec<u8>, Option<String>), Panne> {
         self.assurer_session()?;
         let (brut, entetes) = self.appel(url)?;
         let ctype = crate::transport::entete(&entetes, "Content-Type").map(str::to_string);
@@ -247,7 +248,7 @@ impl Client {
 
     /// L'envoi du guide (text/plain, gzip, jeton DSNLogin) des octets deja prepares. `forme` : `dsn` (`DepotRefuse`)
     /// ou `dpae` (`Organisme`). Rend la reponse et son type de contenu, s'il est dit.
-    pub fn deposer_octets(&mut self, url: &str, contenu: &[u8], forme: &str) -> Result<(String, Option<String>), Panne> {
+    pub fn deposer_octets(&mut self, url: &Url, contenu: &[u8], forme: &str) -> Result<(String, Option<String>), Panne> {
         self.assurer_session()?;
         let corps = gzip(contenu)?;
         let jeton = self.jeton.clone().ok_or_else(|| panne(Classe::Disque, "La session ouverte n'a pas de jeton.".into()))?;
@@ -610,7 +611,7 @@ pub fn relever_retours(
     let a_telecharger: Vec<Annonce> = if tout { releve.trouves.clone() } else { releve.nouveaux.clone() };
     for r in a_telecharger {
         let Some(url) = r.url.clone().filter(|u| !u.is_empty()) else { continue };
-        match client.telecharger(&url) {
+        match client.telecharger(&Url::lire(&url)?) {
             Ok((contenu, ctype)) => {
                 let chemin = archiver(ctx, &r, &contenu, ctype.as_deref(), canal)?;
                 // LE TAUX AT/MP NOTIFIE SE LIT DE LA NOTIFICATION (regle 1) : il se pose dans la surcouche, par les suites.
@@ -712,7 +713,7 @@ pub fn relever_retours_dpae(
     }
     for x in r.trouves.clone() {
         let Some(url) = x.url.clone().filter(|u| !u.is_empty()) else { continue };
-        match client.telecharger(&url) {
+        match client.telecharger(&Url::lire(&url)?) {
             Ok((contenu, ctype)) => {
                 let chemin = archiver(ctx, &x, &contenu, ctype.as_deref(), "dpae")?;
                 r.archives.push(RetourArchive { retour: x, chemin, contenu });

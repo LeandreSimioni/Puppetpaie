@@ -123,6 +123,11 @@ impl FauxDrive {
     }
 }
 
+/// Le lien qu'il donne d'un fichier depose : une adresse qui ne mene nulle part.
+fn lien(id: &IdDrive) -> socle::garde_reseau::Url {
+    socle::garde_reseau::Url::lire(&format!("http://faux-drive.invalid/lien/{}", id)).unwrap()
+}
+
 impl Drive for FauxDrive {
     fn compte(&self) -> Option<String> {
         self.compte.clone()
@@ -190,11 +195,11 @@ impl Drive for FauxDrive {
             assert_eq!(f.parent, *parent, "on ne remplace qu'un fichier du dossier");
             f.contenu = contenu;
             f.md5 = md5;
-            return Ok(Depose { id: Some(f.id.clone()), nom: Some(nom), lien: Some(format!("lien/{}", f.id)), remplace: true });
+            return Ok(Depose { id: Some(f.id.clone()), nom: Some(nom), lien: Some(lien(&f.id)), remplace: true });
         }
         let id = self.prochain("F");
         self.fichiers.push(FichierDrive { id: id.clone(), parent: parent.clone(), nom: nom.clone(), md5, contenu });
-        Ok(Depose { id: Some(id.clone()), nom: Some(nom), lien: Some(format!("lien/{}", id)), remplace: false })
+        Ok(Depose { id: Some(id.clone()), nom: Some(nom), lien: Some(lien(&id)), remplace: false })
     }
 
     fn sous_dossiers(&mut self, parent: &IdDrive) -> Result<Vec<(String, IdDrive)>, ErreurGoogle> {

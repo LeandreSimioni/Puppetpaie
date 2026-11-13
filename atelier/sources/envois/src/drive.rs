@@ -19,6 +19,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use socle::echec::{Classe, Echec};
+use socle::garde_reseau::Url;
 
 use md5::Digest;
 use serde::{Deserialize, Serialize};
@@ -40,7 +41,7 @@ struct FichierDrive {
     #[serde(rename = "mimeType")]
     type_mime: Option<String>,
     #[serde(rename = "webViewLink")]
-    lien: Option<String>,
+    lien: Option<Url>,
 }
 impl socle::forme::ReponseDUnTiers for FichierDrive {}
 
@@ -205,9 +206,9 @@ struct FichierACreer<'a> {
 }
 
 /// `google.DRIVE_FICHIERS`.
-pub const DRIVE_FICHIERS: &str = "https://www.googleapis.com/drive/v3/files";
+pub const DRIVE_FICHIERS: Url = Url::du_moteur("https://www.googleapis.com/drive/v3/files");
 /// `google.DRIVE_TELEVERSEMENT`.
-pub const DRIVE_TELEVERSEMENT: &str = "https://www.googleapis.com/upload/drive/v3/files";
+pub const DRIVE_TELEVERSEMENT: Url = Url::du_moteur("https://www.googleapis.com/upload/drive/v3/files");
 /// Le type d'un dossier chez Drive.
 pub const DOSSIER_DRIVE: &str = "application/vnd.google-apps.folder";
 
@@ -288,7 +289,7 @@ pub struct Distant {
 pub struct Depose {
     pub id: Option<IdDrive>,
     pub nom: Option<String>,
-    pub lien: Option<String>,
+    pub lien: Option<Url>,
     /// Vrai quand le contenu d'un fichier de meme nom a ete remplace au lieu d'un second depot.
     pub remplace: bool,
 }
@@ -322,20 +323,20 @@ pub trait Drive {
 /// serveur local (`http://127.0.0.1:port/...`).
 #[derive(Debug, Clone)]
 pub struct Adresses {
-    pub jetons: String,
-    pub fichiers: String,
-    pub televersement: String,
+    pub jetons: Url,
+    pub fichiers: Url,
+    pub televersement: Url,
 }
 
 impl Adresses {
     /// Les adresses de Google.
     pub fn de_google() -> Adresses {
-        Adresses { jetons: JETONS.into(), fichiers: DRIVE_FICHIERS.into(), televersement: DRIVE_TELEVERSEMENT.into() }
+        Adresses { jetons: JETONS, fichiers: DRIVE_FICHIERS, televersement: DRIVE_TELEVERSEMENT }
     }
 
     /// Les adresses d'un Google qui repond a `base` (un serveur local).
-    pub fn de_la_base(base: &str) -> Adresses {
-        Adresses { jetons: crate::google::jetons_de_la_base(base), fichiers: format!("{}/drive/v3/files", base), televersement: format!("{}/upload/drive/v3/files", base) }
+    pub fn de_la_base(base: &Url) -> Adresses {
+        Adresses { jetons: crate::google::jetons_de_la_base(base), fichiers: base.joindre("/drive/v3/files"), televersement: base.joindre("/upload/drive/v3/files") }
     }
 }
 
@@ -391,7 +392,7 @@ impl Client {
     /// UN JETON D'ACCES NE VIT QU'UNE HEURE (3600 s) : garde pour la vie du client, une sauvegarde de plus
     /// d'une heure recevrait des 401 pour chaque fichier restant. Un 401 fait donc oublier le jeton, en demande
     /// un autre (rafraichissement) et recommence UNE fois ; un second 401 est rendu comme une erreur ordinaire.
-    fn appel<T: socle::forme::ReponseDUnTiers>(&mut self, url: &str, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<T, ErreurGoogle> {
+    fn appel<T: socle::forme::ReponseDUnTiers>(&mut self, url: &Url, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<T, ErreurGoogle> {
         let brut = self.appel_brut(url, donnees, content_type, methode)?;
         lue(brut, "Google Drive a rendu une réponse illisible.").map_err(|m| ErreurGoogle::from(m.reclasser(Classe::Google)))
     }
@@ -399,7 +400,7 @@ impl Client {
     /// `appel` sans lecture du JSON : les octets de la reponse, tels quels (le contenu d'un fichier, `telecharger`). Le
     /// meme 401 rattrape une fois ; une erreur passagere (5xx, 429, limite de debit) se retente jusqu'a
     /// `NOUVELLES_TENTATIVES` fois, apres 1 s, 2 s puis 4 s, plus un hasard (`passagere`, la page de Google citee la).
-    pub fn appel_brut(&mut self, url: &str, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<Vec<u8>, ErreurGoogle> {
+    pub fn appel_brut(&mut self, url: &Url, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<Vec<u8>, ErreurGoogle> {
         let mut tentative = 0;
         loop {
             let r = match self.appel_une_fois(url, donnees, content_type, methode) {
@@ -419,7 +420,7 @@ impl Client {
         }
     }
 
-    fn appel_une_fois(&mut self, url: &str, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<Vec<u8>, ErreurGoogle> {
+    fn appel_une_fois(&mut self, url: &Url, donnees: Option<&[u8]>, content_type: Option<&str>, methode: Option<&str>) -> Result<Vec<u8>, ErreurGoogle> {
         let autorisation = format!("Bearer {}", self.jeton_acces()?);
         let entetes = [("Authorization", autorisation.as_str())];
         let requete = Requete { donnees, content_type, entetes: &entetes, methode, ..Requete::get(url, DELAI_APPEL) };
@@ -450,11 +451,10 @@ impl Client {
             DOSSIER_DRIVE,
             parent
         );
-        let url = format!(
-            "{}?{}",
-            self.adresses.fichiers,
+        let url = self.adresses.fichiers.joindre(&format!(
+            "?{}",
             encoder(&[("q", requete), ("fields", "files(id,name)".into()), ("pageSize", "10".into())])
-        );
+        ));
         let trouves: Listage = self.appel(&url, None, None, None)?;
         if let Some(premier) = trouves.files.first() {
             return premier.id();
@@ -544,7 +544,7 @@ impl Drive for Client {
             if let Some(p) = &page {
                 champs.push(("pageToken", p.clone()));
             }
-            let url = format!("{}?{}", self.adresses.fichiers, encoder(&champs));
+            let url = self.adresses.fichiers.joindre(&format!("?{}", encoder(&champs)));
             let r: Listage = self.appel(&url, None, None, None)?;
             for f in &r.files {
                 if f.type_mime.as_deref() == Some(DOSSIER_DRIVE) {
@@ -575,12 +575,11 @@ impl Drive for Client {
         };
 
         if let Some(distant) = connu {
-            let url = format!(
-                "{}/{}?{}",
-                self.adresses.televersement,
+            let url = self.adresses.televersement.joindre(&format!(
+                "/{}?{}",
                 distant.id,
                 encoder(&[("uploadType", "media".into()), ("fields", "id,name,webViewLink".into())])
-            );
+            ));
             let contenu = std::fs::read(fichier).map_err(|e| ErreurGoogle::fichier(&e, fichier))?;
             let r: FichierDrive = self.appel(&url, Some(&contenu), Some(type_mime), Some("PATCH"))?;
             let mut depose = depose_de(r);
@@ -591,11 +590,10 @@ impl Drive for Client {
         let frontiere = format!("----{}", hasard_hex()?);
         let contenu = std::fs::read(fichier).map_err(|e| ErreurGoogle::fichier(&e, fichier))?;
         let corps = corps_multipart(&nom, parent, type_mime, &contenu, &frontiere);
-        let url = format!(
-            "{}?{}",
-            self.adresses.televersement,
+        let url = self.adresses.televersement.joindre(&format!(
+            "?{}",
             encoder(&[("uploadType", "multipart".into()), ("fields", "id,name,webViewLink".into())])
-        );
+        ));
         let r: FichierDrive = self.appel(&url, Some(&corps), Some(&format!("multipart/related; boundary={}", frontiere)), None)?;
         Ok(depose_de(r))
     }
@@ -612,7 +610,7 @@ impl Drive for Client {
             if let Some(p) = &page {
                 champs.push(("pageToken", p.clone()));
             }
-            let url = format!("{}?{}", self.adresses.fichiers, encoder(&champs));
+            let url = self.adresses.fichiers.joindre(&format!("?{}", encoder(&champs)));
             let r: Listage = self.appel(&url, None, None, None)?;
             for f in &r.files {
                 dossiers.push((f.nom()?, f.id()?));
@@ -627,7 +625,7 @@ impl Drive for Client {
     fn telecharger(&mut self, id: &IdDrive) -> Result<Vec<u8>, ErreurGoogle> {
         // Un identifiant Drive ne porte que des lettres, des chiffres, `-` et `_` ; il s'encode quand meme, on ne
         // fabrique pas un chemin d'URL avec ce qu'un serveur a rendu.
-        let url = format!("{}/{}?{}", self.adresses.fichiers, socle::html::pourcent(id.texte(), ""), encoder(&[("alt", "media".into())]));
+        let url = self.adresses.fichiers.joindre(&format!("/{}?{}", socle::html::pourcent(id.texte(), ""), encoder(&[("alt", "media".into())])));
         self.appel_brut(&url, None, None, None)
     }
 }

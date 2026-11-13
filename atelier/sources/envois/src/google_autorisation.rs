@@ -24,6 +24,7 @@ use std::time::Duration;
 use sha2::{Digest, Sha256};
 
 use socle::echec::{Classe, Echec};
+use socle::garde_reseau::Url;
 use crate::google::{encoder, lue, phrase_de_panne, Application, ReponseJeton, DELAI, JETONS, PERMISSIONS};
 use crate::transport::{envoyer, Requete};
 
@@ -36,8 +37,8 @@ struct ReponseCompte {
 impl socle::forme::ReponseDUnTiers for ReponseCompte {}
 
 /// `google.AUTORISATION`, `google.USERINFO`, `google.DELAI_AUTORISATION`.
-const AUTORISATION: &str = "https://accounts.google.com/o/oauth2/v2/auth";
-const USERINFO: &str = "https://www.googleapis.com/oauth2/v3/userinfo";
+const AUTORISATION: Url = Url::du_moteur("https://accounts.google.com/o/oauth2/v2/auth");
+const USERINFO: Url = Url::du_moteur("https://www.googleapis.com/oauth2/v3/userinfo");
 pub const DELAI_AUTORISATION: u64 = 300;
 
 /// `google.PAGE_RETOUR`.
@@ -63,19 +64,19 @@ fn refus(message: impl Into<String>) -> Echec {
 /// peut pointer sur un serveur local (`de_la_base`).
 #[derive(Debug, Clone)]
 pub struct Adresses {
-    pub jetons: String,
-    pub compte: String,
+    pub jetons: Url,
+    pub compte: Url,
 }
 
 impl Adresses {
     /// Les adresses de Google.
     pub fn de_google() -> Adresses {
-        Adresses { jetons: JETONS.to_string(), compte: USERINFO.to_string() }
+        Adresses { jetons: JETONS, compte: USERINFO }
     }
 
     /// Les adresses d'un Google qui repond a `base` (un serveur local).
-    pub fn de_la_base(base: &str) -> Adresses {
-        Adresses { jetons: crate::google::jetons_de_la_base(base), compte: format!("{}/userinfo", base) }
+    pub fn de_la_base(base: &Url) -> Adresses {
+        Adresses { jetons: crate::google::jetons_de_la_base(base), compte: base.joindre("/userinfo") }
     }
 }
 
@@ -231,7 +232,7 @@ pub fn autoriser(
     application: &Application,
     adresses: &Adresses,
     delai: u64,
-    dire_url: &dyn Fn(&str),
+    dire_url: &dyn Fn(&Url),
     dire: &dyn Fn(&str),
 ) -> Result<JetonGoogle, Echec> {
     let verificateur = aleatoire_url(64)?;
@@ -241,9 +242,8 @@ pub fn autoriser(
     let ecouteur = TcpListener::bind("127.0.0.1:0").map_err(|e| refus(format!("Impossible d'ecouter sur 127.0.0.1 : {}.", e)))?;
     let adresse = ecouteur.local_addr().map_err(|e| refus(format!("Impossible d'ecouter sur 127.0.0.1 : {}.", e)))?;
     let redirection = format!("http://127.0.0.1:{}/", adresse.port());
-    let url = format!(
-        "{}?{}",
-        AUTORISATION,
+    let url = AUTORISATION.joindre(&format!(
+        "?{}",
         encoder(&[
             ("client_id", application.client_id.clone()),
             ("redirect_uri", redirection.clone()),
@@ -256,7 +256,7 @@ pub fn autoriser(
             ("code_challenge_method", "S256".into()),
             ("state", etat.clone()),
         ])
-    );
+    ));
 
     let (tx, rx) = mpsc::channel::<Result<Retour, Echec>>();
     let fini = Arc::new(AtomicBool::new(false));

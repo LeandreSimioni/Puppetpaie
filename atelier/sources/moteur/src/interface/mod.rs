@@ -874,7 +874,7 @@ impl Fenetre {
             ("maj", _) => Ok(Geste::Maj { ok: true, etat: compagnie::maj::RECHERCHE.etat() }),
             // Le site de l'editeur, dans le navigateur du poste : la fenetre ne quitte jamais sa page.
             ("site", _) => {
-                poste::ouvrir_site(texte(args, 0)?)?;
+                poste::ouvrir_site(&socle::garde_reseau::Url::lire(texte(args, 0)?)?)?;
                 Ok(fait(false))
             }
             // « Redemarrer pour mettre a jour » : la version prete part au relais, puis le logiciel se ferme comme par sa

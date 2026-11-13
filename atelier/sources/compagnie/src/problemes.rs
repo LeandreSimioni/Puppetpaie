@@ -224,7 +224,7 @@ pub struct Apercu {
     /// Ce qui partira, au mot pres (les octets des captures mis a part).
     pub corps: Corps<CaptureMontree>,
     pub caviarde: bool,
-    pub serveur: String,
+    pub serveur: socle::garde_reseau::Url,
     pub captures: usize,
     pub incidents: usize,
 }

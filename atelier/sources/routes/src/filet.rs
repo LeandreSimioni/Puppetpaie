@@ -359,7 +359,7 @@ struct Groupe {
 #[derive(Debug, Serialize)]
 struct Diagnostic {
     phrase: String,
-    serveur: String,
+    serveur: socle::garde_reseau::Url,
     envoi: bool,
     total: usize,
     partis: u64,
@@ -710,7 +710,7 @@ struct EcranDuDiagnostic {
     rien: &'static str,
 }
 
-fn ecran_du_diagnostic(envoi: bool, serveur: &str, total: usize, partis: u64, dernier_envoi: Option<Moment>, annee: Option<&AnneePartie>) -> EcranDuDiagnostic {
+fn ecran_du_diagnostic(envoi: bool, serveur: &socle::garde_reseau::Url,total: usize, partis: u64, dernier_envoi: Option<Moment>, annee: Option<&AnneePartie>) -> EcranDuDiagnostic {
     let mut compte = match (envoi, dernier_envoi) {
         (false, _) => Some("désactivé : les incidents restent sur cet ordinateur, rien ne part".to_string()),
         (true, Some(d)) => Some(format!("{} incident(s) parti(s), le dernier le {}", partis, d.dit())),

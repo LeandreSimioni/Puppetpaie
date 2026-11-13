@@ -6,6 +6,7 @@
 use std::io::Write;
 
 use envois::transport::{authentifier, depot, Authentification, Identite};
+use socle::garde_reseau::Url;
 
 use crate::outils::{serveur, Recu, Requete};
 
@@ -43,14 +44,14 @@ fn declarant() -> Identite {
     Identite { siret: Some("12345678901234".into()), nom: Some("DUPONT".into()), prenom: Some("Jean Pierre".into()) }
 }
 
-fn auth<'a>(url: &'a str, declarant: &'a Identite, motdepasse: Option<&'a str>) -> Authentification<'a> {
+fn auth<'a>(url: &'a Url, declarant: &'a Identite, motdepasse: Option<&'a str>) -> Authentification<'a> {
     Authentification { url, declarant, motdepasse, variable: "NET_ENTREPRISES_MOTDEPASSE", service: Some("97"), jeton: None }
 }
 
 #[test]
 fn l_authentification_envoie_les_identifiants_du_guide_et_rend_le_jeton() {
     let (base, recu) = faux();
-    let (url, d) = (format!("{}/auth", base), declarant());
+    let (url, d) = (Url::lire(&format!("{}/auth", base)).unwrap(), declarant());
     let r = authentifier(&auth(&url, &d, Some("a&b<c>d"))).unwrap();
     assert_eq!(r.jeton, "JETON-123");
     let v = &recu.lock().unwrap()[0];
@@ -65,7 +66,7 @@ fn l_authentification_envoie_les_identifiants_du_guide_et_rend_le_jeton() {
 #[test]
 fn un_mot_de_passe_absent_ou_un_declarant_incomplet_ne_partent_pas() {
     let (base, recu) = faux();
-    let url = format!("{}/auth", base);
+    let url = Url::lire(&format!("{}/auth", base)).unwrap();
     let d = declarant();
     for mdp in [None, Some("")] {
         assert!(authentifier(&auth(&url, &d, mdp)).is_err());
@@ -80,7 +81,7 @@ fn le_mot_de_passe_ne_fuit_dans_aucun_message() {
     let (base, _) = faux();
     let d = declarant();
     for chemin in ["/code/401", "/code/500", "/ferme", "/introuvable"] {
-        let url = format!("{}{}", base, chemin);
+        let url = Url::lire(&format!("{}{}", base, chemin)).unwrap();
         let r = authentifier(&auth(&url, &d, Some("Tres-Secret-42")));
         let tout = match r {
             Ok(s) => format!("{:?}", s),
@@ -94,7 +95,7 @@ fn le_mot_de_passe_ne_fuit_dans_aucun_message() {
 fn un_depot_part_en_post_text_plain_gzip_avec_le_jeton() {
     let (base, recu) = faux();
     let corps = gzip(b"faux depot");
-    let (rendu, _) = depot(&format!("{}/depot", base), "J-9", &corps, "dsn", 10).unwrap();
+    let (rendu, _) = depot(&Url::lire(&format!("{}/depot", base)).unwrap(),"J-9", &corps, "dsn", 10).unwrap();
     assert_eq!(rendu, b"<retours/>");
     let v = &recu.lock().unwrap()[0];
     assert_eq!(v.methode, "POST");

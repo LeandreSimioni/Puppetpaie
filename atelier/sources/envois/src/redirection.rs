@@ -4,7 +4,9 @@
 //! `http://localhost:` ou `http://[::1]:`) est refusee : jamais une redirection vers l'exterieur. La construction
 //! ordinaire ne lit jamais ces variables : les adresses des organismes y sont en dur.
 
-/// Le faux net-entreprises : `BASE/authentifier/`, `BASE/lister-retours-declarant/1.0/`, `BASE/lister-retours-flux/1.0/`, `BASE/deposer-dsn/1.0/`.
+use socle::garde_reseau::Url;
+
+/// Le faux net-entreprises :`BASE/authentifier/`, `BASE/lister-retours-declarant/1.0/`, `BASE/lister-retours-flux/1.0/`, `BASE/deposer-dsn/1.0/`.
 pub const VARIABLE_DSN: &str = "PUPPETPAIE_ATELIER_DSN";
 /// Le faux Urssaf : `BASE/authentifier_dpae`, et les mêmes services que la DSN.
 pub const VARIABLE_DPAE: &str = "PUPPETPAIE_ATELIER_DPAE";
@@ -16,28 +18,31 @@ pub const VARIABLE_GOOGLE: &str = "PUPPETPAIE_ATELIER_GOOGLE";
 pub const REFUS_ACTE_REEL: &str =
     "Ceci est le binaire de l'atelier (moteur-atelier) : il refuse tout acte reel (depot reel, envoi, signature), mot de passe ou non. Rien n'est parti.";
 
-/// Ce que dit une redirection refusee : l'adresse qui n'est pas locale n'est jamais appelee.
-pub const ADRESSE_REFUSEE: &str = "http://127.0.0.1:9/adresse-non-locale-refusee-par-l-atelier/";
+/// Ce que dit une redirection refusee : l'adresse qui n'est pas locale n'est jamais appelee (sans barre finale, comme une
+/// base).
+pub const ADRESSE_REFUSEE: Url = Url::du_moteur("http://127.0.0.1:9/adresse-non-locale-refusee-par-l-atelier");
 
 /// Une adresse locale : le seul endroit ou l'atelier accepte d'aller.
-pub fn est_locale(adresse: &str) -> bool {
-    ["http://127.0.0.1:", "http://localhost:", "http://[::1]:"].iter().any(|p| adresse.starts_with(p))
+pub fn est_locale(adresse: &Url) -> bool {
+    ["http://127.0.0.1:", "http://localhost:", "http://[::1]:"].iter().any(|p| adresse.texte().starts_with(p))
 }
 
 /// La base d'une variable de redirection, sans barre finale ; `None` si elle n'est pas posee (ou vide). Une valeur qui
-/// n'est pas locale (ou pas en Unicode) rend `ADRESSE_REFUSEE`, qui n'aboutit nulle part.
-pub fn base(variable: &str) -> Option<String> {
-    let refusee = || Some(ADRESSE_REFUSEE.trim_end_matches('/').to_string());
+/// n'est pas une adresse locale (ou pas en Unicode) rend `ADRESSE_REFUSEE`, qui n'aboutit nulle part.
+pub fn base(variable: &str) -> Option<Url> {
     let v = match std::env::var(variable) {
         Ok(v) => v,
         Err(std::env::VarError::NotPresent) => return None,
-        Err(std::env::VarError::NotUnicode(_)) => return refusee(),
+        Err(std::env::VarError::NotUnicode(_)) => return Some(ADRESSE_REFUSEE),
     };
-    let v = v.trim().trim_end_matches('/').to_string();
+    let v = v.trim().trim_end_matches('/');
     if v.is_empty() {
         return None;
     }
-    Some(if est_locale(&v) { v } else { ADRESSE_REFUSEE.trim_end_matches('/').to_string() })
+    Some(match Url::lire(v) {
+        Ok(u) if est_locale(&u) => u,
+        Ok(_) | Err(_) => ADRESSE_REFUSEE,
+    })
 }
 
 #[cfg(test)]
@@ -46,10 +51,11 @@ mod tests {
 
     #[test]
     fn seules_les_adresses_locales_passent() {
-        assert!(est_locale("http://127.0.0.1:8080/dsn"));
-        assert!(est_locale("http://localhost:1/"));
-        assert!(!est_locale("https://services.net-entreprises.fr/"));
-        assert!(!est_locale("http://127.0.0.1.exemple.fr:80/"));
-        assert!(!est_locale("http://127.0.0.1/"));
+        let locale = |t: &str| est_locale(&Url::lire(t).unwrap());
+        assert!(locale("http://127.0.0.1:8080/dsn"));
+        assert!(locale("http://localhost:1/"));
+        assert!(!locale("https://services.net-entreprises.fr/"));
+        assert!(!locale("http://127.0.0.1.exemple.fr:80/"));
+        assert!(!locale("http://127.0.0.1/"));
     }
 }

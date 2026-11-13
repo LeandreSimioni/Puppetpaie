@@ -871,14 +871,18 @@ pub(crate) fn compte_autorise(racine: &Path) -> Option<String> {
 
 /// Le faux Google qui remplace Google : dans l'atelier, celui d'`envois::redirection` ; en essai, celui que l'essai
 /// nomme (`VARIABLE_GOOGLE_ESSAIS`, une adresse locale seulement) ; `None` hors de l'un et de l'autre.
-fn faux_google() -> R<Option<String>> {
+fn faux_google() -> R<Option<socle::garde_reseau::Url>> {
     #[cfg(feature = "atelier")]
     if let Some(b) = envois::redirection::base(envois::redirection::VARIABLE_GOOGLE) {
         return Ok(Some(b));
     }
     match std::env::var(VARIABLE_GOOGLE_ESSAIS) {
-        Ok(b) if socle::garde_reseau::en_essai() && envois::redirection::est_locale(&b) => Ok(Some(b.trim_end_matches('/').to_string())),
-        // Hors essai, ou une adresse qui n'est pas locale : le vrai Google.
+        Ok(b) if socle::garde_reseau::en_essai() => Ok(match socle::garde_reseau::Url::lire(b.trim_end_matches('/')) {
+            Ok(u) if envois::redirection::est_locale(&u) => Some(u),
+            // Une adresse qui n'est pas locale : le vrai Google.
+            Ok(_) | Err(_) => None,
+        }),
+        // Hors essai : le vrai Google.
         Ok(_) | Err(std::env::VarError::NotPresent) => Ok(None),
         Err(std::env::VarError::NotUnicode(_)) => Err(refus(format!("La variable d'environnement {} n'est pas du texte : elle ne se lit pas.", VARIABLE_GOOGLE_ESSAIS))),
     }
@@ -928,7 +932,7 @@ fn adresses_de_l_autorisation() -> R<envois::google_autorisation::Adresses> {
 fn google_autoriser(ctx: &Contexte, mdp: Option<&str>) -> R<String> {
     exiger_mot_de_passe(&ctx.racine, mdp, "lier le compte Google")?;
     let (application, _) = identifiants(&ctx.racine).map_err(|e| e.reclasser(Classe::Refuse))?;
-    let dire_url = |u: &str| {
+    let dire_url = |u: &socle::garde_reseau::Url| {
         eprintln!("La fenetre de Google, a ouvrir dans le navigateur si elle ne s'ouvre pas seule : {}", u);
         if let Err(e) = compagnie::poste::ouvrir_adresse(u) {
             eprintln!("Le navigateur ne s'ouvre pas : {}", e.phrase);

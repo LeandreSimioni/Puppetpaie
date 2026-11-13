@@ -38,7 +38,7 @@ forme_notee! {
         pub courriel_audiens: CourrielCasc,
         pub courriel_casc: CourrielCasc,
         /// La page employeurs du CASC-SVP.
-        pub page: String,
+        pub page: socle::garde_reseau::Url,
         pub dsn: CascDsn,
     }
 }

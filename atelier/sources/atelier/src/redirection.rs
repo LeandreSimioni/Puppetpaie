@@ -21,7 +21,11 @@ pub fn verifier_environnement() -> socle::echec::R<()> {
             Err(std::env::VarError::NotUnicode(_)) => return Err(socle::refus!("{} ne se lit pas : ce n'est pas du texte. Rien n'est parti.", variable)),
         };
         let v = v.trim();
-        if !v.is_empty() && !est_locale(v) {
+        let locale = match socle::garde_reseau::Url::lire(v) {
+            Ok(u) => est_locale(&u),
+            Err(_) => false,
+        };
+        if !v.is_empty() && !locale {
             return Err(socle::refus!("{} : l'atelier ne se redirige que vers un serveur local (http://127.0.0.1:PORT/...). Rien n'est parti.", variable));
         }
     }

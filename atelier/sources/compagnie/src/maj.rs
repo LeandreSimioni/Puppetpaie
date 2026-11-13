@@ -74,6 +74,7 @@ use socle::echec::{refus, refus_avec, APart, Echec, Lieu, R};
 use socle::fichiers::{Empreinte, NomDeFichier};
 use socle::num::Decimal;
 use socle::paris::Moment;
+use socle::garde_reseau::Url;
 
 
 /// La cle publique d'un poste d'editeur (Ed25519, 32 octets en base64), que les installations posees acceptent encore
@@ -89,7 +90,7 @@ pub const CLE_PUBLIQUE_GITHUB: &str = "48dC1Gb82e2Zh7z7NiUH14EbXX7IvXTp83Xaui/31
 /// `releases/latest/download/<fichier>` par une redirection vers la Release la plus recente, puis vers son stockage :
 /// `lire_depot` les suit (ureq, dix au plus). `derniere.json` y nomme les archives, servies a cote. Un `depot` pose dans le
 /// reglage le remplace toujours. Il ne sert qu'a RECEVOIR (`verifier`) : `publier` ecrit dans un dossier.
-pub const DEPOT_PAR_DEFAUT: &str = "https://github.com/LeandreSimioni/PuppetPaie/releases/latest/download";
+pub const DEPOT_PAR_DEFAUT: Url = Url::du_moteur("https://github.com/LeandreSimioni/PuppetPaie/releases/latest/download");
 pub const DERNIERE: &str = "derniere.json";
 const AGENT: &str = "PuppetPaie (mise a jour)";
 const NE_PAS_TOUCHER: [&str; 3] = [".git", ".avant", ".apres"];
@@ -262,24 +263,68 @@ fn logiciel_de(inst: &Path) -> PathBuf {
 
 const REGLAGE: &str = "reglage.json";
 
+/// LE DEPOT DES MISES A JOUR : une adresse (`http://` ou `https://`, le depot public, un faux depot local), ou un dossier
+/// du poste (ce que `publier` ecrit). Lu une fois, par son debut ; il s'ecrit et se dit tel qu'on l'a lu.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum DepotDesMisesAJour {
+    Adresse(Url),
+    Dossier(PathBuf),
+}
+
+impl DepotDesMisesAJour {
+    /// Le depot `texte` : une adresse s'il commence par `http://` ou `https://`, sinon un dossier ; vide, il se refuse.
+    pub fn lire(texte: &str) -> R<DepotDesMisesAJour> {
+        if texte.is_empty() {
+            return Err(socle::refus!("Un dépôt des mises à jour vide : ni une adresse, ni un dossier."));
+        }
+        if texte.starts_with("http://") || texte.starts_with("https://") {
+            return Ok(DepotDesMisesAJour::Adresse(Url::lire(texte)?));
+        }
+        Ok(DepotDesMisesAJour::Dossier(PathBuf::from(texte)))
+    }
+}
+
+impl std::fmt::Display for DepotDesMisesAJour {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DepotDesMisesAJour::Adresse(u) => f.write_str(u.texte()),
+            DepotDesMisesAJour::Dossier(p) => f.write_str(&p.to_string_lossy()),
+        }
+    }
+}
+
+impl TryFrom<String> for DepotDesMisesAJour {
+    type Error = Echec;
+    fn try_from(s: String) -> R<DepotDesMisesAJour> {
+        DepotDesMisesAJour::lire(&s)
+    }
+}
+
+impl From<DepotDesMisesAJour> for String {
+    fn from(d: DepotDesMisesAJour) -> String {
+        d.to_string()
+    }
+}
+
 /// `maj/reglage.json`, pose a la main : le depot d'ou l'installation recoit.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Reglage {
-    depot: Option<String>,
+    depot: Option<DepotDesMisesAJour>,
 }
 
 /// Le depot que pose le reglage de l'installation, `maj/reglage.json`, ou rien de pose s'il n'existe pas.
-pub fn reglage(inst: &Path) -> R<Option<String>> {
+pub fn reglage(inst: &Path) -> R<Option<DepotDesMisesAJour>> {
     let r: Option<Reglage> = lire_forme(&dossier_maj(inst).join(REGLAGE), "Le réglage de la mise à jour ne se lit pas : il ne dit que le dépôt d'où l'installation reçoit.")?;
-    Ok(r.and_then(|r| r.depot).filter(|s| !s.is_empty()))
+    Ok(r.and_then(|r| r.depot))
 }
 
 /// Le depot d'ou l'installation recoit : celui qui est pose, sinon celui du depot public (`DEPOT_PAR_DEFAUT`).
-pub fn depot(pose: Option<String>) -> String {
+pub fn depot(pose: Option<DepotDesMisesAJour>) -> DepotDesMisesAJour {
     match pose {
         Some(d) => d,
-        None => DEPOT_PAR_DEFAUT.to_string(),
+        None => DepotDesMisesAJour::Adresse(DEPOT_PAR_DEFAUT),
     }
 }
 
@@ -313,7 +358,7 @@ pub fn prete(inst: &Path) -> R<Option<Prete>> {
     prete_dans(&dossier_maj(inst))
 }
 
-pub fn lire_depot(depot: &str, nom: &NomDeFichier) -> R<Vec<u8>> {
+pub fn lire_depot(depot: &DepotDesMisesAJour, nom: &NomDeFichier) -> R<Vec<u8>> {
     lire_depot_suivi(depot, nom, &|_, _| {}).map_err(|(_, e)| e)
 }
 
@@ -332,7 +377,7 @@ type Rate = (&'static str, Echec);
 
 /// `lire_depot`, en disant a `suivre` ce qui est recu (octets recus, octets attendus si le depot le dit) : la barre de
 /// l'indicateur (`Recherche`). Un echec porte son mot : injoignable (`HORS_LIGNE`), ou absent (`INTROUVABLE`).
-fn lire_depot_suivi(depot: &str, nom: &NomDeFichier, suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Rate> {
+fn lire_depot_suivi(depot: &DepotDesMisesAJour, nom: &NomDeFichier, suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Rate> {
     const LIMITE: u64 = 512 * 1024 * 1024;
     let lire_tout = |lecteur: &mut dyn Read, attendus: Option<u64>| -> std::io::Result<Vec<u8>> {
         let mut o = Vec::new();
@@ -350,27 +395,30 @@ fn lire_depot_suivi(depot: &str, nom: &NomDeFichier, suivre: &dyn Fn(u64, Option
             suivre(o.len() as u64, attendus);
         }
     };
-    if depot.starts_with("http://") || depot.starts_with("https://") {
-        let url = format!("{}/{}", depot.trim_end_matches('/'), nom);
-        let mut c = ureq::Agent::config_builder().user_agent(AGENT).timeout_global(Some(std::time::Duration::from_secs(120)));
-        if url.starts_with("https:") {
-            c = c.tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build());
+    let adresse = match depot {
+        DepotDesMisesAJour::Adresse(a) => a,
+        DepotDesMisesAJour::Dossier(dossier) => {
+            let p = dossier.join(nom);
+            let dit = |e: std::io::Error| (INTROUVABLE, socle::echec::du_disque(&p, &e));
+            let mut f = std::fs::File::open(&p).map_err(dit)?;
+            let attendus = f.metadata().map_err(dit)?.len();
+            return lire_tout(&mut f, Some(attendus)).map_err(dit);
         }
-        // En essai, le garde-fou reseau : rien ne sort de la machine (une panne de reseau, comme hors ligne).
-        let agent: ureq::Agent = socle::garde_reseau::regler(c, &url).map_err(|e| (HORS_LIGNE, e.reformuler(|m| format!("{} : {}", url, m))))?.build().into();
-        let mut r = agent.get(&url).call().map_err(|e| {
-            let mot = if matches!(e, ureq::Error::StatusCode(_)) { INTROUVABLE } else { HORS_LIGNE };
-            (mot, socle::refus!("{} : {}", url, e))
-        })?;
-        let attendus = r.body().content_length();
-        let mut lecteur = r.body_mut().with_config().limit(LIMITE).reader();
-        return lire_tout(&mut lecteur, attendus).map_err(|e| (HORS_LIGNE, socle::refus!("{} : {}", url, e)));
+    };
+    let url = Url::lire(&format!("{}/{}", adresse.texte().trim_end_matches('/'), nom)).map_err(|e| (HORS_LIGNE, e))?;
+    let mut c = ureq::Agent::config_builder().user_agent(AGENT).timeout_global(Some(std::time::Duration::from_secs(120)));
+    if url.texte().starts_with("https:") {
+        c = c.tls_config(ureq::tls::TlsConfig::builder().root_certs(ureq::tls::RootCerts::PlatformVerifier).build());
     }
-    let p = Path::new(depot).join(nom);
-    let dit = |e: std::io::Error| (INTROUVABLE, socle::echec::du_disque(&p, &e));
-    let mut f = std::fs::File::open(&p).map_err(dit)?;
-    let attendus = f.metadata().map_err(dit)?.len();
-    lire_tout(&mut f, Some(attendus)).map_err(dit)
+    // En essai, le garde-fou reseau : rien ne sort de la machine (une panne de reseau, comme hors ligne).
+    let agent: ureq::Agent = socle::garde_reseau::regler(c, &url).map_err(|e| (HORS_LIGNE, e.reformuler(|m| format!("{} : {}", url, m))))?.build().into();
+    let mut r = agent.get(url.texte()).call().map_err(|e| {
+        let mot = if matches!(e, ureq::Error::StatusCode(_)) { INTROUVABLE } else { HORS_LIGNE };
+        (mot, socle::refus!("{} : {}", url, e))
+    })?;
+    let attendus = r.body().content_length();
+    let mut lecteur = r.body_mut().with_config().limit(LIMITE).reader();
+    lire_tout(&mut lecteur, attendus).map_err(|e| (HORS_LIGNE, socle::refus!("{} : {}", url, e)))
 }
 
 /// `derniere.json`, LA VERSION PUBLIEE : ce qu'ecrit `moteur::publication` et que lit chaque installation, une
@@ -474,12 +522,12 @@ impl Archives {
 }
 
 /// `derniere.json` du depot (`Publiee`). Toute autre forme est refusee.
-pub fn derniere(depot: &str) -> R<Publiee> {
+pub fn derniere(depot: &DepotDesMisesAJour) -> R<Publiee> {
     derniere_dite(depot).map_err(|(_, e)| e)
 }
 
 /// `derniere`, l'echec avec son mot : le depot ne repond pas, ou il repond quelque chose qui n'est pas un `derniere.json`.
-fn derniere_dite(depot: &str) -> Result<Publiee, Rate> {
+fn derniere_dite(depot: &DepotDesMisesAJour) -> Result<Publiee, Rate> {
     let octets = lire_depot_suivi(depot, &const { NomDeFichier::du_moteur(DERNIERE) }, &|_, _| {})?;
     derniere_lue(&octets).map_err(|e| (ILLISIBLE, e))
 }
@@ -685,7 +733,7 @@ fn controler(neuf: &Path, racine: &Path) -> R<()> {
 /// entre dans une installation : la mise a jour, les fictives, les systemes qu'un dossier portable ajoute
 /// (`completer_le_portable`). Un echec de lecture porte `HORS_LIGNE` ou `INTROUVABLE` ; une archive qui n'est pas la
 /// notre, `ALTEREE` ou `SIGNATURE_REFUSEE`.
-fn archive_verifiee(depot: &str, (nom, attendu, signature): (&NomDeFichier, &Empreinte, &str), cles: &[&str], suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Rate> {
+fn archive_verifiee(depot: &DepotDesMisesAJour, (nom, attendu, signature): (&NomDeFichier, &Empreinte, &str), cles: &[&str], suivre: &dyn Fn(u64, Option<u64>)) -> Result<Vec<u8>, Rate> {
     let octets = lire_depot_suivi(depot, nom, suivre)?;
     let sha = Empreinte::des_octets(&octets);
     if sha != *attendu {
@@ -732,7 +780,7 @@ fn jeux_a_essayer<'a>(d: &'a Publiee, systemes: &[&'static str]) -> Vec<Vec<(&'s
 /// fichiers communs sont les memes), la controle et la pose prete. Rend les cles des archives prises. Une archive
 /// telechargee dont le condensat ou la signature ne vaut pas est refusee sans essayer l'autre : ce n'est pas qu'elle
 /// manque, c'est qu'elle n'est pas la notre.
-fn telecharger(inst: &Path, depot: &str, d: &Publiee, cles: &[&str], suivi: &Recherche) -> Result<Prete, Rate> {
+fn telecharger(inst: &Path, depot: &DepotDesMisesAJour, d: &Publiee, cles: &[&str], suivi: &Recherche) -> Result<Prete, Rate> {
     let version = d.version.as_str();
     let systemes = systemes_poses(&logiciel_de(inst));
     let jeux = jeux_a_essayer(d, &systemes);
@@ -822,10 +870,13 @@ pub fn systeme_lu(s: &str) -> &str {
 /// Le depot qui porte la version `version` : la Release de cette version quand le reglage ne dit rien
 /// (`DEPOT_PAR_DEFAUT` nomme la derniere ; GitHub sert les fichiers d'une Release sous `releases/download/v<version>`,
 /// le nom que lui donne le flux « Publier »). Un depot pose dans le reglage est pris tel quel.
-fn depot_de_la_version(depot: &str, version: &str) -> String {
-    match depot.strip_suffix("/latest/download") {
-        Some(tete) if depot == DEPOT_PAR_DEFAUT => format!("{}/download/v{}", tete, version),
-        _ => depot.to_string(),
+fn depot_de_la_version(depot: &DepotDesMisesAJour, version: &str) -> R<DepotDesMisesAJour> {
+    match depot {
+        DepotDesMisesAJour::Adresse(a) if *a == DEPOT_PAR_DEFAUT => match a.texte().strip_suffix("/latest/download") {
+            Some(tete) => Ok(DepotDesMisesAJour::Adresse(Url::lire(&format!("{}/download/v{}", tete, version))?)),
+            None => Ok(depot.clone()),
+        },
+        _ => Ok(depot.clone()),
     }
 }
 
@@ -851,7 +902,7 @@ pub fn completer_le_portable(inst: &Path, portable: bool, cles: &[&str]) -> R<Po
     let mut absents: Vec<&'static str> = Vec::new();
     if !manquants.is_empty() {
         let hors_ligne = |e: Echec| e.reformuler(|m| format!("Le dépôt ne répond pas ({}). {} Reconnectez-vous, puis recommencez.", m, rien));
-        let depot = depot_de_la_version(&depot(reglage(inst)?), &version);
+        let depot = depot_de_la_version(&depot(reglage(inst)?), &version)?;
         let d = derniere_dite(&depot).map_err(|(mot, e)| {
             if mot == HORS_LIGNE {
                 hors_ligne(e)
@@ -1011,7 +1062,7 @@ fn deballer_les_fictives(octets: &[u8], cible: &Path) -> R<()> {
 /// elles attendent dans `maj/fictives-pretes/` le prochain lancement (`poser_les_fictives_pretes`). Un DEPOT DE TRAVAIL
 /// (l'installation porte `.git` : un clone du depot, ou `fictives/` est suivi par Git et d'ou partent les
 /// livraisons) ne les recoit pas. Rend ce qui s'est passe, ou `None` s'il n'y avait rien a faire.
-pub fn preparer_les_fictives(inst: &Path, depot: &str, d: &Publiee, cles: &[&str]) -> Option<String> {
+pub fn preparer_les_fictives(inst: &Path, depot: &DepotDesMisesAJour, d: &Publiee, cles: &[&str]) -> Option<String> {
     let f = &d.fictives;
     let empreinte = &f.empreinte;
     let maj = dossier_maj(inst);

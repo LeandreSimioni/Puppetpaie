@@ -38,7 +38,7 @@ forme_notee! {
         pub id: Option<String>,
         pub libelle: Option<String>,
         pub texte: Option<String>,
-        pub lien: Option<String>,
+        pub lien: Option<socle::garde_reseau::Url>,
         pub en_vigueur: Option<Jour>,
         pub etendu: Option<bool>,
         /// Le jour ou l'extension de l'accord prend effet (sa publication au JORF).

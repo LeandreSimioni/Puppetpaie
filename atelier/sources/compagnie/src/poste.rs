@@ -53,9 +53,10 @@ pub fn separateurs_windows(chemin: &str) -> String {
 }
 
 /// Ouvre une adresse dans le navigateur du poste.
-pub fn ouvrir_adresse(url: &str) -> R<()> {
+pub fn ouvrir_adresse(url: &socle::garde_reseau::Url) -> R<()> {
     // En essai, le garde-fou reseau : aucun navigateur vers une adresse reelle.
-    socle::garde_reseau::directe(&socle::garde_reseau::hote_de(url))?;
+    socle::garde_reseau::directe(&socle::garde_reseau::hote_de(url.texte()))?;
+    let url = url.texte();
     #[cfg(windows)]
     let r = Command::new("rundll32").args(["url.dll,FileProtocolHandler", url]).spawn();
     #[cfg(target_os = "macos")]
@@ -68,9 +69,9 @@ pub fn ouvrir_adresse(url: &str) -> R<()> {
 /// Ouvre dans le navigateur du poste une adresse de l'editeur : en https, sur `auteur::SITES` ou l'un de leurs
 /// sous-domaines, sans identifiant ni port. Toute autre adresse est refusee : la page ne fait pas ouvrir n'importe quoi
 /// au poste.
-pub fn ouvrir_site(url: &str) -> R<()> {
+pub fn ouvrir_site(url: &socle::garde_reseau::Url) -> R<()> {
     // L'hote : ce qui suit `https://`, jusqu'au chemin, a la requete ou au fragment.
-    let hote = url.strip_prefix("https://").and_then(|r| r.split(['/', '?', '#']).next());
+    let hote = url.texte().strip_prefix("https://").and_then(|r| r.split(['/', '?', '#']).next());
     let permis = hote.is_some_and(|h| !h.contains(['@', ':', '\\']) && super::auteur::SITES.iter().any(|s| h == *s || h.ends_with(&format!(".{}", s))));
     if !permis {
         return Err(socle::refus!("La fenêtre n'ouvre que les sites de l'éditeur ({}).", super::auteur::SITES.join(", ")));

@@ -135,7 +135,7 @@ fn dans(dossier: &Option<CheminRelatif>, nom: NomDeFichier) -> CheminRelatif {
 
 /// Le seul dossier de ce nom sous `parent`, sans rien creer. `Ok(None)` s'il n'y en a pas ; un refus s'il y en a deux.
 fn le_dossier(client: &mut dyn Drive, parent: &IdDrive, nom: &str, chemin: &str) -> Result<Option<IdDrive>, ErreurGoogle> {
-    let trouves: Vec<IdDrive> =client.sous_dossiers(parent)?.into_iter().filter(|(n, _)| n == nom).map(|(_, i)| i).collect();
+    let trouves: Vec<IdDrive> = client.sous_dossiers(parent)?.into_iter().filter(|(n, _)| n == nom).map(|(_, i)| i).collect();
     match trouves.len() {
         0 => Ok(None),
         1 => Ok(trouves.into_iter().next()),
@@ -182,7 +182,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
 
     let mut distants: BTreeMap<CheminRelatif, Entree> = BTreeMap::new();
     let mut dossiers: BTreeMap<Option<CheminRelatif>, IdDrive> = BTreeMap::new();
-    let mut a_voir: Vec<(Option<CheminRelatif>, IdDrive)> =vec![(None, sauvegarde_id)];
+    let mut a_voir: Vec<(Option<CheminRelatif>, IdDrive)> = vec![(None, sauvegarde_id)];
     while let Some((dossier, id)) = a_voir.pop() {
         dossiers.insert(dossier.clone(), id.clone());
         // Le nom tel que le Drive le donne, dans son dossier : pour dire celui qui ne peut pas etre un nom ici.
@@ -202,7 +202,7 @@ pub fn restaurer(cible: &Path, racine_drive: &str, client: &mut dyn Drive) -> Re
             }
             distants.insert(relatif, Entree { id: d.id, md5: d.md5, dossier: dossier.clone() });
         }
-        let mut par_nom: BTreeMap<String, Vec<IdDrive>> =BTreeMap::new();
+        let mut par_nom: BTreeMap<String, Vec<IdDrive>> = BTreeMap::new();
         for (nom, i) in client.sous_dossiers(&id)? {
             par_nom.entry(nom).or_default().push(i);
         }

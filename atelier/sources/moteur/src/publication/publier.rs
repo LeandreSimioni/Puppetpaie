@@ -304,7 +304,7 @@ pub struct CleDeGithub {
 /// signees ni nommees, rendues sous `installations`.
 fn publier_signe(c: &Path, d: &Path, privee: &[u8], cle_publique: &str, notes: &str, calcul: &str, exigee: &str) -> R<Publication> {
     let version = courante(c)?;
-    let depot = d.display().to_string();
+    let depot = compagnie::maj::DepotDesMisesAJour::Dossier(d.to_path_buf());
     std::fs::create_dir_all(&d).map_err(|e| refus(e.to_string()))?;
     if d.join(DERNIERE).exists() {
         // Le `derniere.json` de la Release precedente, lu comme chaque installation le lit (`derniere_lue`).

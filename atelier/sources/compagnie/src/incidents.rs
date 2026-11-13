@@ -35,6 +35,7 @@ use socle::echec::R;
 use socle::echec::Classe;
 use socle::fichiers::dossier_du_code;
 use socle::paris::Moment;
+use socle::garde_reseau::Url;
 use regex::Regex;
 use socle::verrou::Verrou;
 
@@ -810,7 +811,7 @@ pub struct ConfigDiagnostic {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cle: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub serveur: Option<String>,
+    pub serveur: Option<Url>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub paies_annuelles: Option<BTreeMap<String, AnneeRetenue>>,
 }
@@ -878,17 +879,17 @@ pub fn poste(racine: &Path) -> R<Option<String>> {
 /// serveur, elle se DEMANDE au serveur (`POST /poste`) et s'ecrit, une fois pour
 /// toutes. Une panne du serveur (reseau, 429) se rend
 /// telle quelle : l'appelant laisse tout en attente.
-pub fn client_du_poste(ou: &Path, serveur: &str) -> R<Result<Client, ErreurFilet>> {
+pub fn client_du_poste(ou: &Path, serveur: &Url) -> R<Result<Client, ErreurFilet>> {
     let mut c = lire_config(ou)?;
-    let serveur = serveur.trim_end_matches('/');
+    let serveur = Url::lire(serveur.texte().trim_end_matches('/'))?;
     let connue = match (&c.poste, &c.cle, &c.serveur) {
-        (Some(n), Some(k), Some(s)) if numero_de_poste(n) && cle_de_poste(k) && s.trim_end_matches('/') == serveur => Some((n.clone(), k.clone())),
+        (Some(n), Some(k), Some(s)) if numero_de_poste(n) && cle_de_poste(k) && s.texte().trim_end_matches('/') == serveur.texte() => Some((n.clone(), k.clone())),
         _ => None,
     };
     let (numero, cle) = match connue {
         Some(id) => id,
         None => {
-            let r = match Client::demander_poste(serveur) {
+            let r = match Client::demander_poste(&serveur) {
                 Ok(r) => r,
                 Err(e) => return Ok(Err(e)),
             };
@@ -897,19 +898,19 @@ pub fn client_du_poste(ou: &Path, serveur: &str) -> R<Result<Client, ErreurFilet
             }
             c.poste = Some(r.poste.clone());
             c.cle = Some(r.cle.clone());
-            c.serveur = Some(serveur.to_string());
+            c.serveur = Some(serveur.clone());
             ecrire_config(ou, &c)?;
             (r.poste, r.cle)
         }
     };
-    Ok(Ok(Client::du_poste(serveur, &numero, &cle)))
+    Ok(Ok(Client::du_poste(&serveur, &numero, &cle)))
 }
 
 /// `EDITEUR.json`, que le paquet livre a cote du code : le serveur de l'editeur.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Editeur {
-    serveur: String,
+    serveur: Url,
 }
 
 /// Le serveur de l'editeur, pour les incidents, les
@@ -919,8 +920,8 @@ struct Editeur {
 /// identite) ; sinon celui que le paquet livre (`EDITEUR.json`), l'identite
 /// restant dans la compagnie ouverte ; sinon celui du moteur
 /// (`editeur::SERVEUR_PAR_DEFAUT`, que `EDITEUR.json` remplace quand le paquet le livre).
-pub fn configuration(racine: &Path) -> R<(String, PathBuf)> {
-    if let Some(s) = lire_config(racine)?.serveur.filter(|s| !s.is_empty()) {
+pub fn configuration(racine: &Path) -> R<(Url, PathBuf)> {
+    if let Some(s) = lire_config(racine)?.serveur {
         return Ok((s, racine.to_path_buf()));
     }
     let code = dossier_du_code();
@@ -934,7 +935,7 @@ pub fn configuration(racine: &Path) -> R<(String, PathBuf)> {
         Some(_) | None => logiciel.to_path_buf(),
     };
     if crate::installation::est_fictive(racine)? && reel != racine && reel.join(socle::fichiers::CONFIG).is_dir() {
-        if let Some(s) = lire_config(&reel)?.serveur.filter(|s| !s.is_empty()) {
+        if let Some(s) = lire_config(&reel)?.serveur {
             return Ok((s, reel));
         }
     }
@@ -943,7 +944,7 @@ pub fn configuration(racine: &Path) -> R<(String, PathBuf)> {
         let e: Editeur = socle::forme::lire_fichier(&editeur, "Le serveur de l'éditeur livré avec le logiciel ne se lit pas.")?;
         return Ok((e.serveur, racine.to_path_buf()));
     }
-    Ok((crate::editeur::SERVEUR_PAR_DEFAUT.to_string(), racine.to_path_buf()))
+    Ok((crate::editeur::SERVEUR_PAR_DEFAUT, racine.to_path_buf()))
 }
 
 /// Le canal vers l'editeur, pret a envoyer.

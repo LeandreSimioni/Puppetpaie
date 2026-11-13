@@ -37,6 +37,74 @@ pub fn vers_cette_machine(port: u16, delai: Option<std::time::Duration>) -> std:
     }
 }
 
+/// UNE ADRESSE que le moteur appelle ou montre : un service (Google, net-entreprises, l'Urssaf, le serveur du filet, un
+/// depot des mises a jour), un texte (Legifrance, le CASC-SVP). Elle commence par `http://` ou `https://` : c'est tout ce
+/// que le code en sait (la RFC 3986 n'est pas deposee). Elle s'ecrit et s'envoie au caractere pres telle qu'on l'a lue ;
+/// une adresse que le code compose se fait par `joindre`, une que le moteur ecrit en Rust par `du_moteur`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct Url(std::borrow::Cow<'static, str>);
+
+/// `texte` commence-t-il par `prefixe` ? (utilisable a la compilation)
+const fn commence_par(texte: &[u8], prefixe: &[u8]) -> bool {
+    if texte.len() < prefixe.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < prefixe.len() {
+        if texte[i] != prefixe[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+impl Url {
+    /// Une adresse que le moteur ecrit en Rust ; une autre forme ne compile pas (dans une constante).
+    pub const fn du_moteur(texte: &'static str) -> Url {
+        assert!(commence_par(texte.as_bytes(), b"http://") || commence_par(texte.as_bytes(), b"https://"), "une adresse commence par http:// ou https://");
+        Url(std::borrow::Cow::Borrowed(texte))
+    }
+
+    /// L'adresse `texte`, ou la phrase qui la refuse.
+    pub fn lire(texte: &str) -> R<Url> {
+        if !(texte.starts_with("http://") || texte.starts_with("https://")) {
+            return Err(crate::refus!("{} n'est pas une adresse : elle commence par http:// ou https://.", crate::fichiers::repr(texte)));
+        }
+        Ok(Url(std::borrow::Cow::Owned(texte.to_string())))
+    }
+
+    /// L'adresse suivie de `suite`, telle quelle (`/drive/v3/files`, `?q=…`) : le debut ne change pas.
+    pub fn joindre(&self, suite: &str) -> Url {
+        Url(std::borrow::Cow::Owned(format!("{}{}", self.0, suite)))
+    }
+
+    /// L'adresse telle qu'ecrite.
+    pub fn texte(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for Url {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl TryFrom<String> for Url {
+    type Error = Echec;
+    fn try_from(s: String) -> R<Url> {
+        Url::lire(&s)
+    }
+}
+
+impl From<Url> for String {
+    fn from(u: Url) -> String {
+        u.0.into_owned()
+    }
+}
+
 /// Ce que le garde-fou dit d'une sortie.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Sortie {
@@ -112,8 +180,8 @@ pub fn sortie_vers(hote: &str) -> R<Sortie> {
 }
 
 /// La decision pour une adresse (`https://...`).
-pub fn sortie(url: &str) -> R<Sortie> {
-    sortie_vers(&hote_de(url))
+pub fn sortie(url: &Url) -> R<Sortie> {
+    sortie_vers(&hote_de(url.texte()))
 }
 
 /// Une connexion directe, sans mandataire possible (IMAP, SMTP, le navigateur) : en essai, vers cette machine seulement.
@@ -126,7 +194,7 @@ pub fn directe(hote: &str) -> R<()> {
 
 /// Un agent `ureq` pour `url`, regle par le garde-fou : hors essais, tel quel ; en essai, sans mandataire vers cette
 /// machine, par la porte seule vers dehors, refuse sinon.
-pub fn regler(c: ureq::config::ConfigBuilder<ureq::typestate::AgentScope>, url: &str) -> R<ureq::config::ConfigBuilder<ureq::typestate::AgentScope>> {
+pub fn regler(c: ureq::config::ConfigBuilder<ureq::typestate::AgentScope>, url: &Url) -> R<ureq::config::ConfigBuilder<ureq::typestate::AgentScope>> {
     Ok(match sortie(url)? {
         Sortie::Libre => c,
         Sortie::Locale => c.proxy(None),
@@ -144,10 +212,10 @@ mod tests {
     fn dans_un_essai_rien_ne_sort_de_la_machine() {
         assert!(en_essai(), "Cargo doit poser {} pour les essais (.cargo/config.toml)", VARIABLE);
         for url in ["https://filet.puppetpaie.fr", "https://services.net-entreprises.fr/", "https://oauth2.googleapis.com/token", "https://github.com/LeandreSimioni/PuppetPaie/releases/latest/download"] {
-            assert!(sortie(url).is_err(), "{}", url);
+            assert!(sortie(&Url::lire(url).unwrap()).is_err(), "{}", url);
         }
         assert!(directe("smtp.gmail.com").is_err());
-        assert_eq!(sortie("http://127.0.0.1:8080/x").ok(), Some(Sortie::Locale));
+        assert_eq!(sortie(&Url::du_moteur("http://127.0.0.1:8080/x")).ok(), Some(Sortie::Locale));
         assert!(directe("localhost").is_ok());
     }
 }
