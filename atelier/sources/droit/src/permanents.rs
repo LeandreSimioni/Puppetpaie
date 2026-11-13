@@ -371,11 +371,19 @@ pub enum PartDuContrat {
 }
 
 impl PartDuContrat {
-    /// Le nom de la part, tel qu'une convention l'ecrit (`dixieme`, `tiers`).
-    pub fn nom(self) -> &'static str {
+    /// La part, en mots (« dixième », « tiers »).
+    pub fn en_mots(self) -> &'static str {
         match self {
-            PartDuContrat::Dixieme => "dixieme",
+            PartDuContrat::Dixieme => "dixième",
             PartDuContrat::Tiers => "tiers",
+        }
+    }
+
+    /// Les heures de cette part d'un contrat de `contrat` heures.
+    pub fn de(self, contrat: socle::num::Decimal) -> socle::num::Decimal {
+        match self {
+            PartDuContrat::Dixieme => contrat / socle::num::Decimal::from(10),
+            PartDuContrat::Tiers => contrat / socle::num::Decimal::from(3),
         }
     }
 }

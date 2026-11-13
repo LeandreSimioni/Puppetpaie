@@ -129,10 +129,16 @@ pub struct CodeEmploi(String);
 impl CodeEmploi {
     /// Le code `texte`, s'il est de la nomenclature.
     pub fn lire(texte: &str) -> R<CodeEmploi> {
-        if nomenclature()?.emplois.contains_key(texte) {
-            return Ok(CodeEmploi(texte.to_string()));
+        match CodeEmploi::de_la_nomenclature(texte)? {
+            Some(c) => Ok(c),
+            None => Err(socle::refus!("Métier {} inconnu : ni dans le catalogue des emplois, ni dans la nomenclature de France Travail.", repr(texte))),
         }
-        Err(socle::refus!("Métier {} inconnu : ni dans le catalogue des emplois, ni dans la nomenclature de France Travail.", repr(texte)))
+    }
+
+    /// Le code `texte`, s'il est de la nomenclature ; `None` sinon.
+    fn de_la_nomenclature(texte: &str) -> R<Option<CodeEmploi>> {
+        let code = CodeEmploi(texte.to_string());
+        Ok(nomenclature()?.emplois.contains_key(&code).then_some(code))
     }
 
     /// Le texte saisi `texte` dans sa forme, avant d'etre lu : sans ses blancs de bord, en capitales.
@@ -149,7 +155,7 @@ impl CodeEmploi {
         if let Some((_, f)) = base()?.emplois.iter().find(|(c, _)| c == self) {
             return Ok(Metier { code: self.clone(), fiche: FicheDuMetier::Catalogue(f.clone()) });
         }
-        let n = nomenclature()?.emplois.get(&self.0).cloned().ok_or_else(|| socle::echec::livree("nomenclature-emplois-ft.json", &self.0))?;
+        let n = nomenclature()?.emplois.get(self).cloned().ok_or_else(|| socle::echec::livree("nomenclature-emplois-ft.json", &self.0))?;
         Ok(Metier { code: self.clone(), fiche: FicheDuMetier::Nomenclature(n) })
     }
 }
@@ -275,12 +281,28 @@ pub struct Classification3097 {
 }
 
 /// `nomenclature-emplois-ft.json` : les codes emploi France Travail (S21.G00.40.005), leur libelle et leur annexe.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// Ses cles sont les codes des metiers : la nomenclature est la liste des `CodeEmploi`, elle les fait (`lue`).
+#[derive(Debug, Clone)]
 pub struct Nomenclature {
     pub quoi: String,
     pub note: String,
-    pub emplois: BTreeMap<String, EmploiFt>,
+    pub emplois: BTreeMap<CodeEmploi, EmploiFt>,
+}
+
+/// `nomenclature-emplois-ft.json` tel qu'ecrit : ses codes, avant d'etre ceux des metiers.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NomenclatureLue {
+    quoi: String,
+    note: String,
+    emplois: BTreeMap<String, EmploiFt>,
+}
+
+impl NomenclatureLue {
+    /// La nomenclature : chacun de ses codes est un `CodeEmploi`.
+    fn lue(self) -> R<Nomenclature> {
+        Ok(Nomenclature { quoi: self.quoi, note: self.note, emplois: self.emplois.into_iter().map(|(code, e)| (CodeEmploi(code), e)).collect() })
+    }
 }
 
 /// Un code de la nomenclature : son libelle et son annexe (8 technicien, 10 artiste).
@@ -305,7 +327,7 @@ pub fn base() -> R<Arc<BaseEmplois>> {
 /// LA SEULE LECTURE DE `nomenclature-emplois-ft.json`.
 pub fn nomenclature() -> R<Arc<Nomenclature>> {
     static CACHE: OnceLock<FormeGardee<Nomenclature>> = OnceLock::new();
-    forme_en_cache(&CACHE, "nomenclature-emplois-ft.json", "La nomenclature des emplois France Travail livrée avec le logiciel ne se lit pas : le signaler au développeur.", Ok)
+    forme_en_cache(&CACHE, "nomenclature-emplois-ft.json", "La nomenclature des emplois France Travail livrée avec le logiciel ne se lit pas : le signaler au développeur.", NomenclatureLue::lue)
 }
 
 /// Premiere lettre en majuscule, le reste en minuscules.
@@ -454,10 +476,10 @@ impl Metier {
 /// Le metier que nomme le code emploi declare `code` (S21.G00.40.005), tel qu'il est ecrit, s'il est un code de la
 /// nomenclature (`CodeEmploi::metier`). `None` sinon : un emploi permanent (« 999SPT »), un code d'une autre table.
 pub fn metier(code: &CodeEmploiFt) -> R<Option<Metier>> {
-    if !nomenclature()?.emplois.contains_key(code.as_ref()) {
-        return Ok(None);
+    match CodeEmploi::de_la_nomenclature(code.as_ref())? {
+        Some(c) => c.metier().map(Some),
+        None => Ok(None),
     }
-    CodeEmploi::lire(code)?.metier().map(Some)
 }
 
 /// LES SEPT CHAMPS DECLARES POUR UN METIER, tels que la fiche du salarie les ecrit : l'emploi declare et son libelle,
