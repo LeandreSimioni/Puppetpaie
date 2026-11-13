@@ -587,7 +587,7 @@ impl Pret {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Declaration {
-    pub cle: String,
+    pub(crate) cle: crate::rappels::CleDEcheance,
     pub en_retard: bool,
     pub genre: Genre,
     pub titre: String,
@@ -666,12 +666,11 @@ fn fichiers_de(dossier: &Path) -> R<Vec<PathBuf>> {
 
 /// Le fichier que l'ecriture d'un signalement pose pour cette obligation (`routes::imprevus` : `arret-signaler`,
 /// `fin-contrat-signaler`), d'apres la cle du rappel (`<obligation>:<salarie>:<jour>`, `fin-contrat:<salarie>:<fin>`).
-fn fichier_du_signalement(ctx: &Contexte, cle: &str, jour: Option<socle::date::Jour>) -> R<Option<PathBuf>> {
-    let mut morceaux = cle.splitn(3, ':');
-    let (Some(genre), Some(salarie), Some(jour)) = (morceaux.next(), morceaux.next(), jour) else { return Ok(None) };
+fn fichier_du_signalement(ctx: &Contexte, cle: &crate::rappels::CleDEcheance, jour: Option<socle::date::Jour>) -> R<Option<PathBuf>> {
+    let (crate::rappels::CleDEcheance::DuSalarie { quoi: genre, salarie, .. }, Some(jour)) = (cle, jour) else { return Ok(None) };
     let mois = jour.mois_civil();
     let compact = jour.aaaammjj();
-    let nom = match genre {
+    let nom = match genre.as_str() {
         "signalement_arret" => format!("SignalementArret_{}_{}.dsn", salarie, compact),
         // L'annule-et-remplace s'ecrit a cote du signalement parti, sous `_AR<ordre>` : le dernier ecrit.
         "signalement_arret_rectificatif" => {
@@ -685,10 +684,7 @@ fn fichier_du_signalement(ctx: &Contexte, cle: &str, jour: Option<socle::date::J
             return Ok(fichiers_de(&dossier)?.into_iter().filter_map(|p| rang(&p).map(|r| (r, p))).max_by_key(|(r, _)| *r).map(|(_, p)| p));
         }
         "signalement_reprise" => format!("SignalementReprise_{}_{}.dsn", salarie, compact),
-        "fin-contrat" => {
-            let cle = droit::contexte::IdSalarie::lire(salarie)?;
-            format!("SignalementFinContrat_{}_{}.dsn", cle, compact)
-        }
+        crate::rappels::FIN_CONTRAT => format!("SignalementFinContrat_{}_{}.dsn", salarie, compact),
         _ => return Ok(None),
     };
     fichier_ecrit(&ctx.racine, mois, &nom)
