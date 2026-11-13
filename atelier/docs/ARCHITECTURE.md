@@ -119,7 +119,9 @@ que par la structure :
     des versions livrées ;
   - `aucun_fichier_livre_ne_porte_une_cle_en_souligne` : aucune clé en `_` dans les données livrées ;
   - `chaque_script_de_la_page_se_charge` : chaque script de la page passe `node --check`, sans nom déclaré deux fois ;
-  - `la_page_ne_coupe_aucun_texte` : le CSS de la page ne cache aucun texte.
+  - `la_page_ne_coupe_aucun_texte` : le CSS de la page ne cache aucun texte ;
+  - `chaque_type_du_glossaire_existe` : chaque type que « Le glossaire » cite est déclaré dans un des fichiers du code
+    que sa ligne nomme.
 - **Un texte ne devient un jour, un mois ou un instant qu'à sa porte**, et c'est la visibilité qui le garde : les
   lectures d'un texte (`Mois::lire`, `Jour::du_texte`, les `lire` de `socle::paris`) sont privées à `socle`. Hors de
   `socle`, il entre par la forme qui le porte (`Deserialize` d'une charge, d'un fichier, d'une pièce), ou par une porte
@@ -226,7 +228,8 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | PCS-ESE | `CodePcsEse` | `droit/src/fiche.rs` |
 | code emploi déclaré | `CodeEmploiFt` | `droit/src/fiche.rs` |
 | matricule | `Matricule` | `droit/src/fiche.rs` |
-| licence | à créer (#419) | — |
+| licence | du texte : la norme ne lui donne qu'une longueur | — |
+| nationalité déclarée | `CodeNationalite` | `droit/src/fiche.rs` |
 | code NAF, code postal | `CodeNaf`, `CodePostal` | `droit/src/fiche.rs` |
 | pays | `CodePays` | `socle/src/pays.rs` |
 | lieu de mission | `LieuDeMission` | `droit/src/missions.rs` |
@@ -277,6 +280,11 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 | fraction | `Fraction` | `droit/src/natures.rs` |
 | numéro d'ordre | `NumeroDOrdre` | `droit/src/natures.rs` |
 | identifiant de déclaration | `IdentifiantDeDeclaration` | `droit/src/natures.rs` |
+| code risque AT/MP | `CodeRisqueAt` | `droit/src/bareme.rs` |
+| identifiant du taux de PAS | `IdentifiantDuTauxPas` | `droit/src/pas.rs` |
+| clé d'un contrat d'organisme | `CleDeContrat` | `droit/src/organismes.rs` |
+| accord de salaires | `AccordDeSalaires` | `droit/src/minima.rs` |
+| classe d'un échec noté | `ClasseNotee` | `socle/src/echec.rs` |
 
 **Le détail**
 
@@ -565,6 +573,29 @@ ce glossaire, sinon Léandre décide. Des notions, pas des fonctions. Les chemin
 - **identifiant de déclaration** : la déclaration qu'un annule-et-remplace ou un annule vise (S20.G00.05.006) : sa date
   de constitution `JJMMAAAA` et son numéro d'ordre ; que portent les options des signalements, la DSN lue, les charges
   des signalements.
+- **licence** : la licence d'entrepreneur de spectacles (S21.G00.40.049) reste du texte : la norme ne lui donne qu'une
+  longueur (`X [1,100]`), aucun texte déposé ne dit sa forme.
+- **nationalité déclarée** : la codification UE du salarié (S21.G00.30.013 : 01 France, 02 Union européenne, 03 EEE hors
+  Union, 04 reste du monde), un choix de la fiche. Elle se déduit du pays de nationalité de la liste, ou se choisit pour
+  un pays hors de la liste (`droit/src/nationalite.rs` : `codification`, `codification_ue`, la liste servie à la page,
+  `PaysDeNationalite`). Que portent la fiche, la DSN, l'état du personnel.
+- **code risque AT/MP** : S21.G00.40.040, `X [5,6]` de la table RAT : trois chiffres, deux caractères, et le « B » du
+  taux bureau ; `SANS_NOTIFICATION` (999ZZ). Il s'écrit comme la DSN l'écrit ; l'arrêté de tarification l'écrit avec un
+  point (`92.3AD` : `de_l_arrete`, `a_l_arrete`) ; une saisie se range sans point ni blanc, en capitales. Que portent la
+  case du taux AT/MP, un risque de l'arrêté, le taux du barème, la DSN lue (hors forme : vide), la notification de la
+  CARSAT (cinq signes, `avec_bureau`), ce que le simulateur annonce.
+- **identifiant du taux de PAS** : S21.G00.50.008, `-1|0|[1-9][0-9]{0,17}` ; `SansCrm` (« -1 », un contrat court sans
+  compte rendu) ou le numéro que la DGFiP donne, écrit comme lu. Que portent un taux reçu de la fiche, le compte rendu
+  PAS relevé (strict), le taux qui vaut, le prélèvement d'un versement, la paie versée d'un engagement importé, la DSN
+  lue (hors forme : vide).
+- **clé d'un contrat d'organisme** : un contrat de `organismes-base.json` (`prevoyance_permanents`, `tsintermittents`),
+  la CASC-SVP (`CASC`), une contribution de branche (`contribution_<nom>`, `de_la_contribution`). Une clé du logiciel,
+  non vide ; que portent une adhésion saisie (`config/organismes.json`), un contrat attendu, la ligne de l'écran, la
+  saisie d'`organismes-enregistrer`. Le contrat d'organisme lui-même est `droit::organismes::Contrat`.
+- **accord de salaires** : l'`id` d'un accord de `minima-conventionnels.json`, que nomme une valeur du barème datée par
+  lui (`accord`). Une clé du logiciel, non vide.
+- **classe d'un échec noté** : ce que la mémoire des échecs dit d'un échec : sa classe, un refus ordinaire (`-`), une
+  panique (`panique`) ; ce que le diagnostic montre.
 
 **Les codes de la norme** : une liste fermée par rubrique (`droit::natures::ListeDeLaNorme`) : `NatureDeContrat`,
 `MotifDeRecours`, `MotifDeRupture`, `ModaliteDuTempsDeTravail`, `BaseAssujettie`, `CotisationDEtablissement`,
@@ -594,8 +625,11 @@ son motif de non-assujettissement (44.004, table MNATA) est le choix de la fiche
 de rémunération (51.011), `TypeDeRemuneration` (`droit/src/natures.rs`), n'a que les quatre codes que nos natures
 écrivent : une DSN lue d'un autre code laisse la case vide. La période d'affectation d'un composant de versement
 (55.004, « AAAAPNN »), `PeriodeDAffectation` (`declarations/src/dsn.rs`) : le trimestre, le semestre ou l'année que le
-moteur écrit. À créer (#419), une liste par rubrique : le code d'option
-de prévoyance.
+moteur écrit. La nature du contrat déclarée (40.007), `NatureDuContratDsn`, et le dispositif de politique publique
+(40.008), `DispositifDePolitiquePublique` (`droit/src/natures.rs`), que `contrats-base.json` dit par nature
+(`Nature::nature_dsn`, `Nature::dispositif`) et dont le calcul lit le CDD de droit privé et le « non concerné »
+(CPF-CDD, majoration du chômage). Le code d'option de prévoyance (70.004) reste du texte : « les valeurs de code sont
+fournies par l'organisme de prévoyance » (`X [1,30]`).
 
 **Le métier**
 
@@ -605,15 +639,16 @@ de prévoyance.
 | contrat | à unifier (#419) : `ContratEcrit`, `ContratParti`, `ContratLu`, `ContratAtteste`, `ContratDeclare`… | — |
 | acte d'un contrat parti | `envois::ligne::ActeDuContrat` | `envois/src/ligne.rs` |
 | acte qu'une case exige | `declarations::champs::ActeExigeant` | `declarations/src/champs.rs` |
-| marqueur | `documents::marqueurs::Marqueur` | `documents/src/marqueurs.rs` |
+| marqueur | `droit::marqueurs::Marqueur` | `droit/src/marqueurs.rs` |
 | modèle de contrat choisi | `IdDeModele` | `engagement/src/carte.rs` |
 | catégorie d'un document | `documents::CategorieDeDocument` | `documents/src/lib.rs` |
 | formalité d'une DPAE | `declarations::dpae::FormaliteDpae` | `declarations/src/dpae.rs` |
 | code retour d'une DPAE | `declarations::dpae::CodeRetourDpae` | `declarations/src/dpae.rs` |
 | code retour du lot | `declarations::dpae::CodeRetourDuLot` | `declarations/src/dpae.rs` |
+| type de contrat de la DPAE | `TypeContratDpae` | `droit/src/natures.rs` |
 | lieu d'une obligation hors DSN | `declarations::obligations::LieuHorsDsn` | `declarations/src/obligations.rs` |
 | origine du retour d'un contrat | `envois::ligne::OrigineDuRetourDeContrat` | `envois/src/ligne.rs` |
-| paie | `engagement::calcul::Paie` ; à unifier (#419) : `PaieEcrite`, `PaieImportee`, `PaieLue`… | `engagement/src/calcul.rs` |
+| paie | `engagement::calcul::Paie` ; à unifier (#419) : `PaieEcrite`, `PaieImportee`, `PaieLue`… | `engagement/src/calcul.rs`, `engagement/src/paie_ecrite.rs`, `engagement/src/importe.rs` |
 | population | `droit::natures::Paie` | `droit/src/natures.rs` |
 | ligne de paie | `engagement::ligne::LignePaie` | `engagement/src/ligne.rs` |
 | salarié | `IdSalarie`, `droit::fiche::FicheSalarie` | `droit/src/contexte.rs`, `droit/src/fiche.rs` |
@@ -639,6 +674,13 @@ de prévoyance.
 | statut | `droit::fiche::Statut` | `droit/src/fiche.rs` |
 | colonne de la répartition de branche | `ColonneDeRepartition` | `droit/src/bareme.rs` |
 | catégorie du barème | `CategorieDuBareme` | `droit/src/forme_bareme.rs` |
+| rôle d'un contrat d'organisme | `RoleDuContrat` | `droit/src/organismes.rs` |
+| contribution de branche | `ContributionDeBranche` | `droit/src/forme_bareme.rs` |
+| niveau de garantie santé | `NiveauDeGarantie` | `droit/src/forme_bareme.rs` |
+| organisation patronale | `OrganisationPatronale` | `droit/src/forme_bareme.rs` |
+| catégorie de la DFS | `CategorieDfs` | `droit/src/forme_bareme.rs` |
+| formule de la réduction générale | `FormuleDeReduction` | `droit/src/forme_bareme.rs` |
+| affectation d'une cotisation de la DSN | `AffectationDeCotisation` | `droit/src/code_cotisation.rs` |
 | établissement | son `Nic` | `droit/src/fiche.rs` |
 | effectif | `droit::contexte::Effectif` | `droit/src/contexte.rs` |
 
@@ -659,8 +701,9 @@ de prévoyance.
   case sert (`Sert`), le refus d'un acte quand une fiche n'a pas ce qu'il exige (`refus_des_manques`). La sorte d'un
   envoi au journal (`envois::ligne::Acte`) est une autre notion.
 - **marqueur** : un champ qu'un modèle de document cite (`{{employeur.siret}}`) ; aussi une clause d'un contrat parti.
-  Une liste du logiciel : il s'écrit, se lit et se trie par son nom (`nom()`). Que portent les valeurs d'un document, un
-  modèle lu, les clauses d'un contrat parti au journal des envois (`ContratParti.clauses`, rangées dans l'ordre de leurs
+  Une liste du logiciel : il s'écrit, se lit et se trie par son nom (`nom()`). Il est dans `droit` pour que la table des
+  natures (`contrats-base.json`, ses mentions obligatoires) le lise à sa porte. Que portent une mention d'une nature, les
+  valeurs d'un document, un modèle lu (`documents::marqueurs`), les clauses d'un contrat parti au journal des envois (`ContratParti.clauses`, rangées dans l'ordre de leurs
   noms) ; ce qu'un refus ou la liste des champs d'un modèle écrivent entre accolades reste leur texte.
 - **modèle de contrat choisi** : un modèle de contrat propre à la compagnie, qu'une carte choisit (`modele_contrat`) ;
   aucun : le défaut de sa nature. `m` et un entier, gardé tel qu'écrit ; seul `IdDeModele::de` en fait un neuf (la copie
@@ -775,6 +818,29 @@ de prévoyance.
   (`SalarieDuContrat`), la DSN fabriquée et lue, le journal des envois, la désignation d'un dépôt ; aucun (`None`) : le
   siège.
 - **effectif** : l'effectif que l'Urssaf calcule.
+- **type de contrat de la DPAE** : C_TYPE_CONTRAT du Format 120 (1 CDD, 2 CDI, 3 CTT), `codes_fermes!` avec son libellé ;
+  que portent la DPAE d'une nature (`contrats-base.json`) et une DPAE relue.
+- **rôle d'un contrat d'organisme** : la prévoyance ou la santé d'un salarié payé au mois (`role` de
+  `organismes-base.json`, écrit `prevoyance`, `sante`) ; une liste du logiciel. Il range le contrat dans la pièce d'un
+  permanent (`Attendu::piece`) et ordonne son rattachement. Ceux qu'un contrat couvre (`beneficiaires`) sont une
+  population (`intermittents`, `permanents` : `natures::population::au_pluriel`).
+- **contribution de branche** : une contribution conventionnelle déclarée sous une adhésion Audiens (FNAS, FCAP,
+  PARITARISME, CCHSCT, APPAV), gardée telle que le barème l'écrit (`contributions_dsn`) ; deux noms sont la même sans
+  égard à la casse (`est`), une adhésion la tient aussi par son libellé (`est_le_libelle`). Que portent une contribution
+  DSN du barème, une adhésion saisie, un contrat attendu.
+- **niveau de garantie santé** : le niveau de la complémentaire santé d'un permanent (`1`, `2`, `3`) : la clé des
+  niveaux du relevé santé du barème, des options d'un contrat d'organisme, la case `sante_svp.niveau` ; une clé du
+  logiciel, non vide.
+- **organisation patronale** : la clé d'une couche du barème par organisation (`par_organisation_patronale`, son
+  sigle). Celle que la compagnie nomme dans sa fiche est son texte, que la couche reconnaît par son sigle ou un alias
+  (`reconnait`).
+- **catégorie de la DFS** : la catégorie d'une profession de la déduction forfaitaire spécifique (`20`, `25` : art. 5
+  de l'annexe IV du CGI), la clé des taux de l'année ; que portent une profession du barème, la DFS d'un contrat et sa
+  forme écrite. La profession elle-même est le choix de la fiche `ProfessionDfs`.
+- **formule de la réduction générale** : celle que le barème nomme (`formule`) : `fillon`, au coefficient `t` ; sans
+  elle, le coefficient se calcule par `tmin`, `tdelta` et `puissance`. Une liste du logiciel.
+- **affectation d'une cotisation de la DSN** : la place de l'adhésion sous laquelle une cotisation du barème se déclare
+  (`202`, `203`), quand plusieurs partagent un code 81.001 ; elle distingue leur clé (`059:203`, `CleDeCotisationDsn`).
 
 ## Le principe
 

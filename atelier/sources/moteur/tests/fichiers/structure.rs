@@ -576,6 +576,68 @@ fn une_liste_de_la_norme_est_celle_des_versions_livrees() {
     assert!(fautes.is_empty(), "une liste de la norme declaree en `enum` est l'union des listes livrees :\n{}", fautes.join("\n"));
 }
 
+/// CHAQUE TYPE QUE LE GLOSSAIRE CITE EXISTE (`atelier/docs/ARCHITECTURE.md`, « Le glossaire ») : une ligne de ses
+/// tableaux dont la colonne « déclaré dans » nomme des fichiers du code (`…/src/….rs`, sous `atelier/sources/`) a chaque
+/// type de sa colonne « son type » (en code ; un chemin `a::b::C` se lit par son dernier segment, ses parametres
+/// `<…>` laisses ; en `CamelCase`) declare dans l'un d'eux : `struct`, `enum`, `type`, `trait`, ou une liste de
+/// `codes_fermes!` (son nom en tete, suivi de sa phrase). Un type dont le chemin part d'une crate hors de l'espace (la
+/// bibliotheque standard) n'y est pas declare ; une ligne qui ne nomme aucun fichier du code n'a rien a verifier.
+#[test]
+fn chaque_type_du_glossaire_existe() {
+    let doc = std::fs::read_to_string(espace().parent().unwrap().join("docs").join("ARCHITECTURE.md")).unwrap();
+    let debut = doc.find("\n## Le glossaire").expect("ARCHITECTURE.md : pas de section « Le glossaire »");
+    let section = &doc[debut + 1..];
+    let fin = match section[1..].find("\n## ") {
+        Some(i) => i + 1,
+        None => section.len(),
+    };
+    let en_code = regex::Regex::new("`([^`]+)`").unwrap();
+    let fichier_du_code = regex::Regex::new(r"^[a-z_\-]+/src/[A-Za-z0-9_/\-]+\.rs$").unwrap();
+    let camel = regex::Regex::new("^[A-Z][A-Za-z0-9]*$").unwrap();
+    let crates: BTreeSet<String> = dossiers_des_crates().iter().filter_map(|d| d.file_name().map(|n| n.to_string_lossy().into_owned())).collect();
+    let mut fautes = Vec::new();
+    let mut lignes_vues = 0;
+    for ligne in section[..fin].lines().filter(|l| l.starts_with("| ") && !l.starts_with("| notion |")) {
+        let colonnes: Vec<&str> = ligne.split('|').map(str::trim).collect();
+        let [_, notion, types, declare, _] = colonnes.as_slice() else {
+            fautes.push(format!("« {} » : une ligne du glossaire a trois colonnes", ligne));
+            continue;
+        };
+        let fichiers: Vec<&str> = en_code.captures_iter(declare).map(|c| c.get(1).unwrap().as_str()).filter(|f| fichier_du_code.is_match(f)).collect();
+        if fichiers.is_empty() {
+            continue;
+        }
+        lignes_vues += 1;
+        let mut sources = Vec::new();
+        for f in &fichiers {
+            match std::fs::read_to_string(espace().join(f)) {
+                Ok(s) => sources.push(s),
+                Err(_) => fautes.push(format!("{} : le fichier {} n'existe pas", notion, f)),
+            }
+        }
+        for t in en_code.captures_iter(types).map(|c| c.get(1).unwrap().as_str()) {
+            let chemin = match t.split_once('<') {
+                Some((c, _)) => c,
+                None => t,
+            };
+            let segments: Vec<&str> = chemin.split("::").collect();
+            if segments.len() > 1 && !crates.contains(segments[0]) {
+                continue;
+            }
+            let nom = segments[segments.len() - 1];
+            if !camel.is_match(nom) {
+                continue;
+            }
+            let declaration = regex::Regex::new(&format!(r"(?m)\b(struct|enum|type|trait)\s+{0}\b|^\s*{0}\s*,\s*\x22", nom)).unwrap();
+            if !sources.iter().any(|s| declaration.is_match(s)) {
+                fautes.push(format!("{} : le type {} n'est declare dans aucun de {}", notion, nom, fichiers.join(", ")));
+            }
+        }
+    }
+    assert!(lignes_vues > 0, "le glossaire n'a aucune ligne qui nomme un fichier du code");
+    assert!(fautes.is_empty(), "chaque type que le glossaire cite existe, la ou il le dit :\n{}", fautes.join("\n"));
+}
+
 /// Chaque crate de l'espace : chaque dossier de `atelier/sources/` qui a son `Cargo.toml` (`fenetre/` et
 /// `fabrique-pdf/` compris, hors de `members`).
 pub(crate) fn dossiers_des_crates() -> Vec<PathBuf> {

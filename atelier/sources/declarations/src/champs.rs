@@ -2273,7 +2273,7 @@ fn controles_croises(nom: NomDeFiche, d: &Saisie) -> R<Vec<Constat>> {
             }
         }
         // LA CODIFICATION UE (S21.G00.30.013) : un ancien 03 sans pays de nationalite, ou un pays qui contredit
-        // la case, se dit ici, avant la DSN qui le refuserait. La regle est dans `codification_ue`, pas ici.
+        // la case, se dit ici, avant la DSN qui le refuserait. La regle est dans `droit::nationalite`, pas ici.
         // Un pays de nationalite hors de la liste se dit sur sa propre case (forme « pays »), pas deux fois.
         // Un pays ecrit « hors de la liste » qui n'en est pas un, ou a cote d'un pays de la liste, se dit sur
         // sa case a lui ; sinon c'est la nationalite choisie qui manque ou qui ne va pas, sur la sienne.

@@ -2749,7 +2749,7 @@ impl ChampsSalarie {
         }
     }
 
-    /// Ce que la fiche dit de la nationalite (`socle::codification_ue`, S21.G00.30.013).
+    /// Ce que la fiche dit de la nationalite (`crate::nationalite`, S21.G00.30.013).
     pub fn nationalite(&self) -> crate::nationalite::Nationalite {
         crate::nationalite::Nationalite::nouvelle(
             self.code_nationalite_dsn.dite().copied(),
