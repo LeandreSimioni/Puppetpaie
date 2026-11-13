@@ -97,18 +97,11 @@ struct Contenu {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Kdf {
-    pub algo: Algo,
+    pub algo: String,
     pub n: u64,
     pub r: u64,
     pub p: u64,
     pub sel: String,
-}
-
-/// L'ALGORITHME DE LA DERIVATION, tel que le coffre l'ecrit : scrypt seul (un autre nom ne se lit pas).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum Algo {
-    #[serde(rename = "scrypt")]
-    Scrypt,
 }
 
 /// LES ENVELOPPES DE LA CLE MAITRESSE, en base64 : scellee par la cle du poste, et par le mot de passe du logiciel
@@ -467,10 +460,11 @@ pub fn deriver(motdepasse: &Secret, kdf: &Kdf) -> R<Vec<u8>> {
     if socle::fil_de_fond::ici() {
         return Err(refus(socle::fil_de_fond::refus("le coffre")));
     }
-    let sel = d64(&kdf.sel)?;
-    match kdf.algo {
-        Algo::Scrypt => scrypt_32(motdepasse.devoiler().as_bytes(), &sel, i128::from(kdf.n), i128::from(kdf.r), i128::from(kdf.p)),
+    if kdf.algo != "scrypt" {
+        return Err(refus(format!("Ce coffre dit avoir ete ferme par {}, que cette version ne sait pas ouvrir.", repr_chaine(&kdf.algo))));
     }
+    let sel = d64(&kdf.sel)?;
+    scrypt_32(motdepasse.devoiler().as_bytes(), &sel, i128::from(kdf.n), i128::from(kdf.r), i128::from(kdf.p))
 }
 
 fn scrypt_32(motdepasse: &[u8], sel: &[u8], n: i128, r: i128, p: i128) -> R<Vec<u8>> {
@@ -814,7 +808,7 @@ impl Coffre {
     /// poste est posee tout de suite ; celle du mot de passe vient avec lui.
     fn creer(&self) -> R<(Vec<u8>, Contenu)> {
         let maitresse = aleas(32)?;
-        let kdf = Kdf { algo: Algo::Scrypt, n: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, sel: b64(&aleas(16)?) };
+        let kdf = Kdf { algo: "scrypt".into(), n: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, sel: b64(&aleas(16)?) };
         let enveloppes = Enveloppes { poste: b64(&sceller(&self.cle_ou_creer()?, &maitresse, AAD_POSTE)?), motdepasse: None };
         Ok((maitresse, Contenu { version: VERSION, kdf, enveloppes, fiches: BTreeMap::new(), secrets: None, logiciel_pose_le: None }))
     }

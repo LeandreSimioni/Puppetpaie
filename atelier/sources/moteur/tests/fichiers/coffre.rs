@@ -2,7 +2,7 @@
 //! sur des coffres et des mots de passe inventes, chacun dans son dossier (jamais la vraie cle du poste).
 
 use crate::outils::chemin_unique;
-use compagnie::coffre::{deriver, Algo, Coffre, Kdf, CONSULTATION};
+use compagnie::coffre::{deriver, Coffre, Kdf, CONSULTATION};
 use socle::secret::Secret;
 use socle::json_ascii::dumps;
 use socle::paris::Moment;
@@ -130,13 +130,14 @@ fn un_fichier_altere_ou_d_une_autre_version_est_refuse() {
 
 #[test]
 fn scrypt_est_celui_de_la_rfc_7914_et_refuse_les_parametres_d_un_fichier_piege() {
-    let kdf = |n: u64, r: u64, p: u64, sel: &str| Kdf { algo: Algo::Scrypt, n, r, p, sel: sel.into() };
-    let cle = deriver(&s("password"), &kdf(1024, 8, 16, "TmFDbA==")).unwrap();
+    let kdf = |algo: &str, n: u64, r: u64, p: u64, sel: &str| Kdf { algo: algo.into(), n, r, p, sel: sel.into() };
+    let cle = deriver(&s("password"), &kdf("scrypt", 1024, 8, 16, "TmFDbA==")).unwrap();
     assert_eq!(cle.iter().map(|b| format!("{:02x}", b)).collect::<String>(), "fdbabe1c9d3472007856e7190d01e9fe7c6ad7cbc8237830e77376634b373162");
     // n qui n'est pas une puissance de 2, r nul, une memoire demesuree
     for (n, r, p) in [(3, 8, 1), (2, 0, 1), (131072, 8, 1)] {
-        assert!(deriver(&s("x"), &kdf(n, r, p, "AAAA")).is_err(), "n={} r={} p={}", n, r, p);
+        assert!(deriver(&s("x"), &kdf("scrypt", n, r, p, "AAAA")).is_err(), "n={} r={} p={}", n, r, p);
     }
+    assert!(deriver(&s("x"), &kdf("argon2", 1024, 8, 1, "AAAA")).unwrap_err().phrase.contains("argon2"), "le refus nomme l'algorithme");
 }
 
 #[test]
