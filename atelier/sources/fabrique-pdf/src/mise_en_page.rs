@@ -827,16 +827,17 @@ impl Decor {
 // La construction.
 // ---------------------------------------------------------------------------
 
-fn charger_image(chemin: &str, largeur: Mesure, ou: &str, quoi: &str) -> Result<Image, Refus> {
+fn charger_image(chemin: &Path, largeur: Mesure, ou: &str, quoi: &str) -> Result<Image, Refus> {
+    let dit = chemin.display();
     let donnees = match std::fs::read(chemin) {
         Ok(d) => d,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return refus(format!("{} : {} introuvable : {}", ou, quoi, chemin))
+            return refus(format!("{} : {} introuvable : {}", ou, quoi, dit))
         }
-        Err(e) => return illisible(format!("{} : {} illisible ({}) : {}", ou, quoi, e, chemin)),
+        Err(e) => return illisible(format!("{} : {} illisible ({}) : {}", ou, quoi, e, dit)),
     };
-    let svg = Path::new(chemin).extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"));
-    Image::lire(&donnees, largeur, svg).map_err(|e| e.reformuler(|p| format!("{} : {} {} : {}", ou, quoi, chemin, p)))
+    let svg = chemin.extension().is_some_and(|e| e.eq_ignore_ascii_case("svg"));
+    Image::lire(&donnees, largeur, svg).map_err(|e| e.reformuler(|p| format!("{} : {} {} : {}", ou, quoi, dit, p)))
 }
 
 /// Refuse un texte dont un caractère manque à la police elle-même (un idéogramme, un emoji) : tout ce que

@@ -25,6 +25,7 @@ use serde::Serialize;
 
 use socle::date::Jour;
 use socle::echec::R;
+use socle::fichiers::NomDeFichier;
 
 /// Un referentiel releve tel qu'il s'ecrit : `quoi` (ce qu'il est), `note` (d'ou il vient : la commande, les fichiers
 /// deposes lus, la date du releve), puis ce que le releve en a tire (`corps`, la forme de chaque referentiel).
@@ -186,7 +187,7 @@ fn ecrire(releve: &Releve, sortie: &Path, remplacer: bool) -> R<()> {
 /// PDF depose se refait.
 pub struct Transcription {
     /// Le nom du PDF transcrit.
-    pub pdf: String,
+    pub pdf: NomDeFichier,
     /// Son empreinte SHA-256.
     pub sha256: String,
     /// Ce que l'en-tete dit d'autre (`pages`...).
@@ -200,7 +201,7 @@ const FIN_DE_L_ENTETE: &str = "# ---";
 impl Transcription {
     /// La transcription de `corps`, tire du PDF `pdf`.
     pub(crate) fn de(pdf: &Path, champs: Vec<(String, String)>, corps: String) -> R<Transcription> {
-        Ok(Transcription { pdf: nom_de(pdf), sha256: sha256(pdf)?, champs, corps })
+        Ok(Transcription { pdf: NomDeFichier::du(pdf)?, sha256: sha256(pdf)?, champs, corps })
     }
 
     /// Le fichier : `# titre`, `# pdf : ...`, `# sha256 : ...`, les autres champs, `# ---`, puis le corps.
@@ -225,7 +226,7 @@ impl Transcription {
         for l in entete.lines().skip(1) {
             let Some((k, v)) = l.strip_prefix("# ").and_then(|l| l.split_once(" : ")) else { continue };
             match k {
-                "pdf" => pdf = Some(v.to_string()),
+                "pdf" => pdf = Some(NomDeFichier::lire(v)?),
                 "sha256" => sha = Some(v.to_string()),
                 _ => champs.push((k.to_string(), v.to_string())),
             }

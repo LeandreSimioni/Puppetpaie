@@ -32,7 +32,7 @@ pub fn enveloppe(style: Style, ent: &EntrepriseDuDocument, documents: Vec<Docume
         police: None,
         style: Some(style),
         logo: identite_de(&ent.gabarits, "logo").map(|logo| forme::Logo {
-            chemin: chemin_texte(&logo),
+            chemin: chemin_texte(&logo).into(),
             largeur: LOGO_LARGEUR,
             marge_haut: LOGO_MARGE_HAUT,
             marge_droite: LOGO_MARGE_DROITE,

@@ -382,7 +382,7 @@ fn texte_complet(pdf: &[u8]) -> String {
 fn inspecter(pdf: &[u8], nom: &str) -> Value {
     let p = ecrire(nom, pdf);
     let (json, avertissements) =
-        fabrique_pdf::inspection::inspecter(&chemin(&p)).unwrap_or_else(|r| panic!("inspection : {}", r.phrase));
+        fabrique_pdf::inspection::inspecter(&p).unwrap_or_else(|r| panic!("inspection : {}", r.phrase));
     assert!(avertissements.is_empty(), "{:?}", avertissements);
     serde_json::from_str(&json).unwrap()
 }
@@ -391,7 +391,7 @@ fn inspecter(pdf: &[u8], nom: &str) -> Value {
 fn texte_des_pages(pdf: &[u8], nom: &str) -> Vec<String> {
     let p = ecrire(nom, pdf);
     let (pages, avertissements) =
-        fabrique_pdf::lecture::texte(&chemin(&p)).unwrap_or_else(|r| panic!("lecture : {}", r.phrase));
+        fabrique_pdf::lecture::texte(&p).unwrap_or_else(|r| panic!("lecture : {}", r.phrase));
     assert!(avertissements.is_empty(), "{:?}", avertissements);
     pages.iter().map(|t| t.lu().unwrap_or_else(|r| panic!("lecture : {}", r.phrase))).collect()
 }

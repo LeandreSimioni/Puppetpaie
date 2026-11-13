@@ -179,7 +179,7 @@ fn paies_fausses() -> Vec<PaieAer> {
 }
 
 fn signer(pdf: &[u8], ent: &droit::fiche::ChampsEntreprise, paies: Option<&[PaieAer]>, forcer: bool, signature: Option<&str>, cachet: Option<&str>) -> Result<Vec<u8>, Echec> {
-    aer::authentifier(pdf, &Authentification { ent, aujourdhui: jour(2026, 10, 1), signature, paies, forcer, cachet_fichier: cachet })
+    aer::authentifier(pdf, &Authentification { ent, aujourdhui: jour(2026, 10, 1), signature, paies, forcer, cachet_fichier: cachet.map(std::path::Path::new) })
 }
 
 

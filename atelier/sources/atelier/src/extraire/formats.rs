@@ -490,7 +490,7 @@ fn relever_xlsx(
 /// lit, les pages separees par un saut de ligne -- ce que `relever_pdf` lit.
 pub fn transcrire(pdf: &Path) -> R<String> {
     version_du_cahier(pdf)?;
-    let (pages, _) = fabrique_pdf::lecture::texte(&pdf.to_string_lossy()).map_err(documents::fabrique::echec)?;
+    let (pages, _) = fabrique_pdf::lecture::texte(pdf).map_err(documents::fabrique::echec)?;
     let textes = pages.iter().map(|p| p.lu().map_err(documents::fabrique::echec)).collect::<R<Vec<String>>>()?;
     let t = Transcription::de(pdf, Vec::new(), textes.join("\n"))?;
     Ok(t.texte(&format!("Le texte de {}, tel que la fabrique de PDF le lit (`moteur extraire transcrire`)", nom_de(pdf))))
@@ -528,9 +528,9 @@ pub fn relever(source: &Path, jour: &Jour) -> R<Releve> {
         // Le texte du cahier : sa transcription (`dsn-cahier-technique-<version>-formats.txt`), ou le PDF lui-meme.
         let (pdf, texte, empreinte) = if en_transcription(source) {
             let t = Transcription::lire(source)?;
-            (t.pdf, t.corps, t.sha256)
+            (t.pdf.into(), t.corps, t.sha256)
         } else {
-            let (pages, _) = fabrique_pdf::lecture::texte(&source.to_string_lossy()).map_err(documents::fabrique::echec)?;
+            let (pages, _) = fabrique_pdf::lecture::texte(source).map_err(documents::fabrique::echec)?;
             let textes = pages.iter().map(|p| p.lu().map_err(documents::fabrique::echec)).collect::<R<Vec<String>>>()?;
             (nom_de(source), textes.join("\n"), sha256(source)?)
         };

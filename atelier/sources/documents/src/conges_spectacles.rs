@@ -575,7 +575,7 @@ fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R
         let (x0, y0, x1, y1) = SIGNATURE_CADRE;
         let svg = signature.extension().is_some_and(|e| e.to_string_lossy().eq_ignore_ascii_case("svg"));
         blocs.push(pdf::Bloc::ImageFixe(pdf::ImageFixe {
-            chemin: chemin_texte(&signature),
+            chemin: chemin_texte(&signature).into(),
             x: x0,
             y: y0,
             largeur: x1 - x0,

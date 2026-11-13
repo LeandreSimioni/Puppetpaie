@@ -451,7 +451,7 @@ pub fn ranger_aer_detail(ctx: &Contexte, mois: Option<Mois>, fichiers: Option<&[
                 // Deja verifiee ci-dessus, sur l'ensemble des attestations du salarie.
                 paies: None,
                 forcer,
-                cachet_fichier: cachet.as_deref(),
+                cachet_fichier: cachet.as_deref().map(std::path::Path::new),
             };
             match authentifier(&att.donnees, &a) {
                 Ok(octets) => signees.push(octets),

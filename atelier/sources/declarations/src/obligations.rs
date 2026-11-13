@@ -84,7 +84,7 @@ pub struct Lieu {
 #[serde(deny_unknown_fields)]
 pub struct TexteDepose {
     reference: String,
-    fichier: String,
+    fichier: droit::source::CheminDepose,
     dit: String,
 }
 

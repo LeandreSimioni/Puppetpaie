@@ -119,13 +119,13 @@ pub fn executer(args: &[String]) -> ExitCode {
             }
         }
         // Le nombre de pages de chaque PDF : un tableau JSON (FORMAT.md, « Lire un PDF »).
-        [a, fichiers @ ..] if a == "--pages" && !fichiers.is_empty() => match crate::lecture::pages(fichiers) {
+        [a, fichiers @ ..] if a == "--pages" && !fichiers.is_empty() => match crate::lecture::pages(&fichiers.iter().map(std::path::PathBuf::from).collect::<Vec<_>>()) {
             Ok(n) => en_json(&n),
             Err(r) => echec(&r.phrase, 1),
         },
         // Le texte de chaque page d'un PDF : un tableau JSON, par page, de ses morceaux (une chaîne, ou un caractère
         // que rien ne dit, tel qu'il est : sa police, son code, pourquoi).
-        [a, fichier] if a == "--texte" => match crate::lecture::texte(fichier) {
+        [a, fichier] if a == "--texte" => match crate::lecture::texte(std::path::Path::new(fichier)) {
             Ok((textes, avertissements)) => {
                 for m in avertissements {
                     eprintln!("{} : {}", fichier, m);
@@ -135,7 +135,7 @@ pub fn executer(args: &[String]) -> ExitCode {
             Err(r) => echec(&r.phrase, 1),
         },
         // L'inspection d'un PDF : une ligne de JSON (FORMAT.md, « Inspecter un PDF »).
-        [a, fichier] if a == "--inspecter" => match crate::inspection::inspecter(fichier) {
+        [a, fichier] if a == "--inspecter" => match crate::inspection::inspecter(std::path::Path::new(fichier)) {
             Ok((json, avertissements)) => {
                 for m in avertissements {
                     eprintln!("{} : {}", fichier, m);
