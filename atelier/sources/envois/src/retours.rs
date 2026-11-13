@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::tables_retours::{CODECS_ASCII, CODECS_AUTRES, CODECS_CP1252, CODECS_LATIN1, CODECS_REFUSES, CP437, DECIMAUX, NOM_DEBUT, NOM_SUITE, WINDOWS_1252};
 
-use droit::fiche::{Nic, Siren, Siret};
+use droit::fiche::{Nic, Nir, Siren, Siret};
 use droit::nature_declaration::{EssaiOuReel, NatureDeLaDeclaration};
 use droit::natures::{Fraction, ListeDeLaNorme, NumeroDOrdre};
 use droit::organismes::IdentifiantDOrganisme;
@@ -555,8 +555,10 @@ fn est_nir(s: &str) -> bool {
     (n == 13 || n == 15) && t.starts_with(['1', '2']) && t.chars().all(|c| c.is_ascii_digit())
 }
 
-fn treize(s: &str) -> String {
-    s.chars().take(13).collect()
+/// Le NIR qu'une valeur de la piece porte (`est_nir`), sans sa cle : ses 13 premiers chiffres (S21.G00.30.001) ; une
+/// valeur qui n'est pas un NIR n'en porte aucun.
+fn nir_porte(s: &str) -> R<Option<Nir>> {
+    est_nir(s).then(|| Nir::lire(&s.chars().take(13).collect::<String>())).transpose()
 }
 
 
@@ -1856,7 +1858,7 @@ pub fn liste_depots_d_octets(o: &[u8]) -> R<Vec<Depot>> {
 
 #[derive(Clone, Default)]
 struct Entree94 {
-    nir: Option<String>,
+    nir: Option<Nir>,
     taux: Option<String>,
     type_: Option<String>,
     identifiant: Option<String>,
@@ -1899,7 +1901,7 @@ fn type_de_taux(t: &str) -> R<droit::type_taux_pas::TypeDeTauxPas> {
 /// (S21.G00.50.006 a .008) ; un taux ou un type que la piece ne dit pas est vide : aucun taux transmis.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ReleveTauxPas {
-    pub nir: String,
+    pub nir: Nir,
     pub taux: Option<droit::pas::TauxDePas>,
     #[serde(rename = "type")]
     pub type_taux: Option<droit::type_taux_pas::TypeDeTauxPas>,
@@ -1963,7 +1965,7 @@ fn pas_rapport_crm(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
         }
         let champs = enfants_textes(a, el);
         let lu = |k: &str| champs.iter().rev().find(|(n, _)| *n == k).map(|(_, t)| t.to_string());
-        let Some(nir) = lu("NIR") else { continue };
+        let Some(nir) = forme_du_retour(lu("NIR").as_deref(), Nir::lire)? else { continue };
         // Le schema des bilans (net-entreprises-dsn-bilans-v02r01-20230703.xsd) dit `taux_imposition_PAS` facultatif,
         // sans dire ce que son absence vaut : aucun texte deposé n'en fait un taux, un type ni un identifiant. Le salarie
         // que le compte rendu nomme sans taux n'a aucun taux transmis (ni taux, ni type) ; ce que sa paie en fait, c'est
@@ -1992,11 +1994,11 @@ fn pas_par_code(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
     for p in &elements {
         let valeurs = valeurs_de(p);
         for v in &valeurs {
-            if est_nir(v) {
+            if let Some(nir) = nir_porte(v)? {
                 if cur.complete() {
                     releves.push(std::mem::take(&mut cur));
                 }
-                cur.nir = Some(treize(v));
+                cur.nir = Some(nir);
             }
         }
         let mut trouve = false;
@@ -2036,11 +2038,11 @@ fn pas_par_nom_metier(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
     let (mut releves, mut cur) = (Vec::new(), Entree94::default());
     for p in &elements {
         for v in valeurs_de(p) {
-            if est_nir(v) {
+            if let Some(nir) = nir_porte(v)? {
                 if cur.complete() {
                     releves.push(std::mem::take(&mut cur));
                 }
-                cur.nir = Some(treize(v));
+                cur.nir = Some(nir);
             }
         }
         if let (Some(champ), false) = (metier(&p.nom.to_lowercase()), p.texte.is_empty()) {
@@ -2064,12 +2066,12 @@ fn pas_par_balayage(a: &Arbre) -> R<Vec<ReleveTauxPas>> {
         .collect();
     let (mut releves, mut cur) = (Vec::new(), Entree94::default());
     for v in &valeurs {
-        if est_nir(v) {
+        if let Some(nir) = nir_porte(v)? {
             if cur.complete() {
                 releves.push(cur);
             }
-            cur = Entree94 { nir: Some(treize(v)), ..Default::default() };
-        } else if cur.nir.as_deref().is_some_and(|n| !n.is_empty()) {
+            cur = Entree94 { nir: Some(nir), ..Default::default() };
+        } else if cur.nir.is_some() {
             if cur.taux.is_none() && droit::pas::TauxDePas::lire(v).is_some() {
                 cur.taux = Some(v.clone());
             } else if cur.type_.is_none() && droit::type_taux_pas::TypeDeTauxPas::du_code(v).is_some() {
@@ -2106,14 +2108,14 @@ pub fn taux_pas_d_octets(o: &[u8]) -> R<TauxPasLus> {
 
 /// Chaque releve a une fiche par le NIR ; `nirs` est la liste `(cle, nir)` des fiches qui en ont un, dans l'ordre du
 /// fichier.
-pub fn releves_vers_salaries(releves: &[ReleveTauxPas], nirs: &[(droit::contexte::IdSalarie, String)]) -> TauxPasRepartis {
+pub fn releves_vers_salaries(releves: &[ReleveTauxPas], nirs: &[(droit::contexte::IdSalarie, Nir)]) -> TauxPasRepartis {
     let mut par_nir: std::collections::HashMap<&str, &droit::contexte::IdSalarie> = std::collections::HashMap::new();
     for (c, n) in nirs {
-        par_nir.insert(n, c);
+        par_nir.insert(n.as_ref(), c);
     }
     let (mut rattaches, mut orphelins) = (Vec::new(), Vec::new());
     for r in releves {
-        match par_nir.get(treize(&r.nir).as_str()) {
+        match par_nir.get(r.nir.as_ref()) {
             Some(cle) => rattaches.push(TauxPasRattache { releve: r.clone(), salarie: (*cle).clone() }),
             None => orphelins.push(r.clone()),
         }

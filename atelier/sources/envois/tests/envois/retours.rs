@@ -9,7 +9,7 @@ use envois::retours::{
 };
 
 fn releve(nir: &str, identifiant: &str) -> ReleveTauxPas {
-    ReleveTauxPas { nir: nir.to_string(), taux: droit::pas::TauxDePas::lire("0.00"), type_taux: Some(droit::type_taux_pas::TypeDeTauxPas::TransmisParLaDgfip), identifiant: identifiant.to_string() }
+    ReleveTauxPas { nir: droit::fiche::Nir::lire(nir).unwrap(), taux: droit::pas::TauxDePas::lire("0.00"), type_taux: Some(droit::type_taux_pas::TypeDeTauxPas::TransmisParLaDgfip), identifiant: identifiant.to_string() }
 }
 
 const CRM_REEL: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><ns2:rapport xmlns:ns2=\"http://www.gip-mds.fr/\" identifiant=\"450189378\" type=\"CRM nominatif\" profil=\"DSN\" version=\"v02r01\"><envoi><envoi_identification><idflux>WSUrBZ50Y4RWJdDpsRsh.3r</idflux></envoi_identification></envoi><declaration><declaration_bilan><etat>OK</etat><salarie><NIR>1990101999999</NIR><matricule>2</matricule><taux_imposition_PAS>0.00</taux_imposition_PAS></salarie><salarie><NIR>2990101999999</NIR><matricule>1</matricule><taux_imposition_PAS>0.00</taux_imposition_PAS></salarie></declaration_bilan></declaration></ns2:rapport>";
@@ -24,7 +24,8 @@ fn le_format_reel_du_crm_94() {
 fn les_releves_se_rattachent_par_le_nir() {
     let releves = [releve("2990101999999", "1"), releve("1234567890123", "1")];
     let cle = |c: &str| droit::contexte::IdSalarie::lire(c).unwrap();
-    let nirs = [(cle("ALPHA"), "2990101999999".to_string()), (cle("BETA"), "1990101999999".to_string())];
+    let nir = |n: &str| droit::fiche::Nir::lire(n).unwrap();
+    let nirs = [(cle("ALPHA"), nir("2990101999999")), (cle("BETA"), nir("1990101999999"))];
     let r = releves_vers_salaries(&releves, &nirs);
     assert_eq!(r.rattaches.len(), 1);
     assert_eq!(r.rattaches[0].salarie, droit::contexte::IdSalarie::lire("ALPHA").unwrap());

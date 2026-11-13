@@ -53,7 +53,7 @@ pub fn faire(ctx: &Contexte, s: Suites) -> R<Faites> {
 /// qui repond a une DSN mensuelle (le depot du journal au meme flux, de nature 01) dit le mois qu'elle declare
 /// (`en_retour_de`, `droit::pas::date_d_effet`) : son taux vaut pour les mois qui suivent.
 fn appliquer_taux_pas(ctx: &Contexte, crm: &[(envois::retours::Annonce, std::path::PathBuf)]) -> R<()> {
-    let nirs: Vec<(droit::contexte::IdSalarie, String)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.portee().map(|nir| (cle.clone(), nir.to_string()))).collect();
+    let nirs: Vec<(droit::contexte::IdSalarie, droit::fiche::Nir)> = ctx.salaries.iter().filter_map(|(cle, s)| s.nir.dite().map(|nir| (cle.clone(), nir.clone()))).collect();
     let journal = envois::journal::lu(&ctx.racine).map_err(|m| m.reclasser(Classe::Illisible))?;
     let mois_declare = |retour: &envois::retours::Annonce| -> Option<socle::mois::Mois> {
         let flux = retour.flux.as_ref()?;

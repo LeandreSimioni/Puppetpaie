@@ -14,6 +14,7 @@
 //! (`reprendre_les_depots`), comme l'effectif se refait seul des retours 118. Un test que ce logiciel n'a pas envoye reste dehors (voir `reprise`).
 
 use droit::fiche::Lue as _;
+use droit::fiche::Nir;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -243,12 +244,11 @@ pub fn reprendre_les_depots(ctx: &Contexte, qui: &str) -> AvecIncidents<usize> {
 
 // ------------------------------------------------------------- la reprise du canal DPAE
 
-/// Le NIR (sans espaces autour) -> la cle de la fiche. Si deux fiches portent le meme NIR, la derniere gagne.
-fn salarie_par_nir(ctx: &Contexte) -> Vec<(String, IdSalarie)> {
-    let mut v: Vec<(String, IdSalarie)> = Vec::new();
+/// Le NIR -> la cle de la fiche. Si deux fiches portent le meme NIR, la derniere gagne.
+fn salarie_par_nir(ctx: &Contexte) -> Vec<(Nir, IdSalarie)> {
+    let mut v: Vec<(Nir, IdSalarie)> = Vec::new();
     for (cle, s) in &ctx.salaries {
-        let Some(nir) = s.nir.dite().filter(|n| !n.is_empty()) else { continue };
-        let nir = nir.trim().to_string();
+        let Some(nir) = s.nir.dite().cloned() else { continue };
         match v.iter_mut().find(|(n, _)| *n == nir) {
             Some(e) => e.1 = cle.clone(),
             None => v.push((nir, cle.clone())),
@@ -300,7 +300,7 @@ pub fn embauches_attestees(ctx: &Contexte) -> R<(Vec<DpaeAttestee>, Vec<String>)
             let (Some(nir), Some(emb)) = (ligne.nir.clone(), ligne.date_embauche.as_deref()) else { continue };
             let Some(debut) = Zone::lue(emb, Jjmmaaaa).valeur() else { continue };
             let iso = debut.iso();
-            let Some((_, cle)) = par_nir.iter().find(|(n, _)| *n == nir) else {
+            let Some((_, cle)) = par_nir.iter().find(|(n, _)| n.as_ref() == nir.as_str()) else {
                 // On ne devine pas qui c'est : un NIR qu'on ne reconnait pas est peut-etre une fiche archivee sous une autre cle, ou
                 // une declaration faite pour quelqu'un d'autre.
                 inconnus.push(format!("NIR {} ({}), embauche du {}", nir, nom, iso));
