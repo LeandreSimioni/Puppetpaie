@@ -497,10 +497,7 @@ fn lire_piece(o: &[u8], canal: CanalDesRetours, nature: NatureDuRetour, format: 
                     } else if x.deja_existante {
                         "déjà enregistrée auparavant".to_string()
                     } else {
-                        match x.code {
-                            Some(code) => format!("refusée : {} — {}", code, x.libelle()),
-                            None => x.libelle().to_string(),
-                        }
+                        format!("refusée : {} — {}", x.code, x.code.libelle())
                     };
                     l.phrases.push(format!("{}{} : {}.", morceau("", qui.as_deref(), ""), morceau(" (embauche du ", x.embauche.map(|j| j.iso()).as_deref(), ")"), etat));
                 }
@@ -1001,10 +998,8 @@ fn retour_lu(racine: &Path, ligne: &Ligne, r: &envois::journal::RetourOrganisme)
                     "enregistrée".to_string()
                 } else if d.deja_existante {
                     "déjà enregistrée auparavant".into()
-                } else if d.refusee() {
-                    format!("refusée : {}", d.libelle)
                 } else {
-                    d.libelle.clone()
+                    format!("refusée : {}", d.libelle)
                 };
                 phrases.push(format!("{} : {}.", joint([dit(&d.nom), dit(&d.prenom)], " ").into_iter().collect::<String>(), etat));
             }

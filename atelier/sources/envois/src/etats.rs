@@ -1021,7 +1021,7 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
             anomalies.push(format!("{} (lot)", lot.libelle()));
         }
         let p = PersonneCertifiee {
-            libelle: l.libelle().to_string(),
+            libelle: l.code.libelle().to_string(),
             nom: l.nom,
             prenom: l.prenom,
             embauche: l.embauche,
@@ -1032,7 +1032,7 @@ fn verdict_du_certificat(contenu: &[u8]) -> R<Option<VerdictDeLaPiece>> {
             formalites: l.formalites,
             pastille: None,
         };
-        // Refusee, ou sans code retour (ni enregistree ni refusee) : la ligne le dit dans ses anomalies.
+        // Refusee : la ligne le dit dans ses anomalies.
         if !p.enregistree && !p.deja_existante {
             anomalies.push(format!("{} -- {}", p.libelle, p.nom));
         }
@@ -1116,7 +1116,7 @@ fn incident(racine: &Path, ligne: &Ligne, r: &Annonce, verdict: &VerdictDeLaPiec
             .iter()
             .flatten()
             .filter(|d| d.refusee())
-            .filter_map(|d| d.code.map(|code| AnomalieDeRetour { categorie: None, code: code.to_string(), message: d.libelle.clone(), rubrique: None }))
+            .map(|d| AnomalieDeRetour { categorie: None, code: d.code.to_string(), message: d.code.libelle().to_string(), rubrique: None })
             .collect()
     } else {
         // Sans piece (ni telechargee, ni archivee), le rejet n'a pas d'anomalie lisible.

@@ -435,10 +435,9 @@ pub struct PersonneCertifiee {
     #[serde(with = "socle::forme::vide_si_aucun")]
     pub embauche: Option<socle::date::Jour>,
     pub dossier: String,
-    /// C_RETOUR_AR ; aucun : sa zone est a blanc (le journal l'ecrit `""`), la DPAE n'est dite ni enregistree ni refusee.
-    #[serde(with = "socle::forme::vide_si_aucun")]
-    pub code: Option<declarations::dpae::CodeRetourDpae>,
-    /// Le libelle de son code (Format 120), ou `declarations::dpae::SANS_CODE_RETOUR`.
+    /// C_RETOUR_AR.
+    pub code: declarations::dpae::CodeRetourDpae,
+    /// Le libelle de son code (Format 120).
     pub libelle: String,
     pub enregistree: bool,
     pub deja_existante: bool,
@@ -451,11 +450,10 @@ pub struct PersonneCertifiee {
 impl PersonneCertifiee {
     /// Refusee : un code retour qui ne l'enregistre pas et ne la dit pas deja existante.
     pub fn refusee(&self) -> bool {
-        self.code.is_some() && !self.enregistree && !self.deja_existante
+        !self.enregistree && !self.deja_existante
     }
 
-    /// Sa pastille : enregistree, faite ; deja existante, une information ; sans code retour, une information ;
-    /// refusee, refusee.
+    /// Sa pastille : enregistree, faite ; deja existante, une information ; refusee, refusee.
     pub fn pastille_due(&self) -> socle::ecran::Pastille {
         use socle::ecran::{EtatDEcran, Pastille};
         if self.enregistree {
@@ -463,15 +461,7 @@ impl PersonneCertifiee {
         } else if self.deja_existante {
             Pastille::de(EtatDEcran::Information, "déjà existante")
         } else {
-            match self.code {
-                None => Pastille::de(EtatDEcran::Information, declarations::dpae::SANS_CODE_RETOUR),
-                Some(code) => {
-                    // Sans libelle : le code seul.
-                    let code = code.to_string();
-                    let mots = if self.libelle.is_empty() { code.as_str() } else { self.libelle.as_str() };
-                    Pastille::de(EtatDEcran::Refuse, mots)
-                }
-            }
+            Pastille::de(EtatDEcran::Refuse, self.code.libelle())
         }
     }
 }
