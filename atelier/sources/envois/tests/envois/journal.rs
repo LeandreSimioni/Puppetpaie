@@ -68,7 +68,7 @@ fn noter_ajoute_a_la_fin_et_lire_filtre() {
     let f = dossier_de_test("journal", "abime");
     std::fs::create_dir_all(f.join("journal")).unwrap();
     let mut texte = std::fs::read_to_string(journal::chemin(&d)).unwrap();
-    texte.push_str(&texte.lines().next().unwrap().replace("\"flux\":", "\"fluxx\":").replace("\"id\":\"", "\"id\":\"autre-"));
+    texte.push_str(&texte.lines().next().unwrap().replace("\"flux\":", "\"fluxx\":"));
     texte.push('\n');
     std::fs::write(journal::chemin(&f), texte).unwrap();
     let refus = journal::lu(&f).unwrap_err();

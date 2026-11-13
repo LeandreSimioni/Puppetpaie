@@ -48,17 +48,79 @@ pub fn empreinte_fichier(chemin: &Path) -> R<EmpreinteCourte> {
     Ok(Empreinte::du_fichier(chemin)?.courte())
 }
 
+/// L'IDENTIFIANT D'UN ENVOI AU JOURNAL, que `a` reprend : l'empreinte courte du texte de sa ligne, suivie de `-<rang>`
+/// quand une ligne au meme texte porte deja l'empreinte seule (le rang, a partir de 2). C'est la forme que le seul
+/// ecrivain fait (`noter`) ; lu, il refuse toute autre forme.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+struct IdDEnvoi {
+    empreinte: EmpreinteCourte,
+    /// 1 : l'empreinte seule ; au-dela, le rang ecrit apres elle.
+    rang: u32,
+}
+
+impl IdDEnvoi {
+    /// L'identifiant de la premiere ligne a ce texte : son empreinte seule.
+    fn premier(empreinte: EmpreinteCourte) -> IdDEnvoi {
+        IdDEnvoi { empreinte, rang: 1 }
+    }
+
+    /// Celui de la ligne suivante au meme texte : le rang d'apres.
+    fn suivant(&self) -> IdDEnvoi {
+        IdDEnvoi { empreinte: self.empreinte.clone(), rang: self.rang + 1 }
+    }
+
+    /// L'identifiant ecrit `texte`, ou la phrase qui le refuse.
+    fn lire(texte: &str) -> R<IdDEnvoi> {
+        let refuse = || socle::refus!("{} n'est pas l'identifiant d'un envoi : 16 caracteres hexadecimaux minuscules, suivis de « -<rang> » a partir de 2.", socle::fichiers::repr(texte));
+        let (empreinte, rang) = match texte.split_once('-') {
+            None => (texte, 1),
+            Some((e, r)) => {
+                let chiffres = !r.is_empty() && !r.starts_with('0') && r.bytes().all(|o| o.is_ascii_digit());
+                match r.parse::<u32>() {
+                    Ok(n) if chiffres && n >= 2 => (e, n),
+                    _ => return Err(refuse()),
+                }
+            }
+        };
+        let empreinte = EmpreinteCourte::lire(empreinte).map_err(|_| refuse())?;
+        Ok(IdDEnvoi { empreinte, rang })
+    }
+}
+
+impl std::fmt::Display for IdDEnvoi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.rang {
+            1 => write!(f, "{}", self.empreinte),
+            r => write!(f, "{}-{}", self.empreinte, r),
+        }
+    }
+}
+
+impl TryFrom<String> for IdDEnvoi {
+    type Error = Echec;
+    fn try_from(s: String) -> R<IdDEnvoi> {
+        IdDEnvoi::lire(&s)
+    }
+}
+
+impl From<IdDEnvoi> for String {
+    fn from(i: IdDEnvoi) -> String {
+        i.to_string()
+    }
+}
+
 /// UN ENREGISTREMENT DU FICHIER : un envoi (`id`, `ligne`), un retour (`a`, `retour`) ou un complement (`a`, `nature`,
 /// `publication`, `complete`). Le retour se lit dans la forme de la sorte de son envoi (`Tenu::replier`).
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Enregistrement {
     #[serde(skip_serializing_if = "Option::is_none")]
-    id: Option<String>,
+    id: Option<IdDEnvoi>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ligne: Option<Ligne>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    a: Option<String>,
+    a: Option<IdDEnvoi>,
     #[serde(skip_serializing_if = "Option::is_none")]
     retour: Option<Retour>,
     #[serde(rename = "nature", skip_serializing_if = "Option::is_none")]
@@ -89,7 +151,7 @@ pub struct Journal {
     pub lignes: Arc<Vec<Ligne>>,
     pub departs: engagement::departs::Departs,
     /// L'`id` de chaque ligne, dans le meme ordre.
-    ids: Arc<Vec<String>>,
+    ids: Arc<Vec<IdDEnvoi>>,
 }
 
 /// Le journal d'un dossier tel que le processus l'a replie : les octets lus jusqu'a la derniere fin de ligne, ce que
@@ -100,7 +162,7 @@ struct Tenu {
     octets: Vec<u8>,
     vu: Option<(u64, std::time::SystemTime)>,
     journal: Journal,
-    index: HashMap<String, usize>,
+    index: HashMap<IdDEnvoi, usize>,
 }
 
 impl Tenu {
@@ -276,7 +338,7 @@ pub fn lu(racine: &Path) -> R<Journal> {
 
 /// LE SEUL ENDROIT QUI ECRIT LE JOURNAL : les enregistrements que `faire` tire du journal a jour s'ajoutent a la fin du
 /// fichier, d'une seule ecriture, et se replient tels qu'ils se reliront.
-fn ajouter(racine: &Path, faire: impl FnOnce(&Journal, &HashMap<String, usize>) -> R<Vec<Enregistrement>>) -> R<()> {
+fn ajouter(racine: &Path, faire: impl FnOnce(&Journal, &HashMap<IdDEnvoi, usize>) -> R<Vec<Enregistrement>>) -> R<()> {
     let p = chemin(racine);
     let mut tenus = tenus();
     let t = a_jour(&mut tenus, &p)?;
@@ -319,7 +381,7 @@ pub fn ne_garder_que(racine: &Path, garder: impl Fn(&Ligne) -> bool) -> R<()> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(socle::echec::du_disque(&p, &e)),
     };
-    let mut gardes: std::collections::HashSet<String> = Default::default();
+    let mut gardes: std::collections::HashSet<IdDEnvoi> = Default::default();
     let mut texte = String::new();
     for (n, l) in octets.split(|&o| o == b'\n').enumerate() {
         if l.iter().all(u8::is_ascii_whitespace) {
@@ -429,12 +491,9 @@ pub fn noter(racine: &Path, mut ligne: Ligne, fichier: Option<&Path>, date: Data
     let ecrite = ligne.clone();
     ajouter(racine, |_, index| {
         // L'empreinte du texte de la ligne ; deux lignes au meme texte se distinguent par leur rang.
-        let base = Empreinte::des_octets(socle::ecriture::json_en_ligne(&ligne).as_bytes()).courte().to_string();
-        let mut id = base.clone();
-        let mut rang = 1;
+        let mut id = IdDEnvoi::premier(Empreinte::des_octets(socle::ecriture::json_en_ligne(&ligne).as_bytes()).courte());
         while index.contains_key(&id) {
-            rang += 1;
-            id = format!("{}-{}", base, rang);
+            id = id.suivant();
         }
         Ok(vec![Enregistrement { id: Some(id), ligne: Some(ligne), ..Default::default() }])
     })?;

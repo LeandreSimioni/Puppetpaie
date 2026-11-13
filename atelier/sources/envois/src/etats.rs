@@ -1323,7 +1323,7 @@ mod tests {
         let p = std::env::temp_dir().join(format!("paie-etats-{}-{}", nom, std::process::id()));
         let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(p.join(crate::journal::JOURNAL)).unwrap();
-        let texte: String = lignes.iter().enumerate().map(|(i, l)| format!("{{\"id\":\"{}\",\"ligne\":{}}}\n", i, socle::ecriture::json_en_ligne(l))).collect();
+        let texte: String = lignes.iter().enumerate().map(|(i, l)| format!("{{\"id\":\"{:016x}\",\"ligne\":{}}}\n", i, socle::ecriture::json_en_ligne(l))).collect();
         std::fs::write(chemin(&p), texte).unwrap();
         p
     }
