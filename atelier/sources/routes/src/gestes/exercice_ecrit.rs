@@ -227,7 +227,7 @@ pub(crate) fn empreintes_des_saisies(racine: &Path, annee: Annee) -> R<BTreeMap<
     let mut m = BTreeMap::new();
     for mois in engagement::stock::mois_saisis(racine).map_err(|e| e.reclasser(Classe::Refuse))?.into_iter().filter(|x| x.annee_civile() == annee) {
         if let Some(e) = engagement::stock::empreinte_de_la_saisie_du_mois(racine, mois, None).map_err(|e| e.reclasser(Classe::Refuse))? {
-            m.insert(mois, e);
+            m.insert(mois, e.to_string());
         }
     }
     Ok(m)

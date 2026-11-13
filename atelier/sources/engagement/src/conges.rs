@@ -392,7 +392,8 @@ pub(crate) fn avant_le_mois(ctx: &Contexte, au: &AuMois, cle_salarie: &IdSalarie
     }
     let cle = cle_de_fiche(ctx, cle_salarie)?;
     let mensuels = mensuels_d_avant(ctx, mois, &cle)?;
-    socle::fichiers::noter_valeur(&socle::fichiers::LectureDatee::<_, droit::missions::LieuDeMission>::Mensuels { mois, salarie: &cle }.cle(), empreinte_des(&mensuels));
+    let lecture = droit::contexte::CleLue::Datee(socle::fichiers::LectureDatee::Mensuels { mois, salarie: cle.clone() });
+    socle::fichiers::noter_lecture(&lecture, socle::fichiers::ValeurLue::Empreinte(empreinte_des(&mensuels)));
     let lus = if mensuels.is_empty() { Lus::Aucun } else { Lus::Avant(mois) };
     compteur(ctx, au, cle_salarie, a_la_date, lus)
 }
@@ -433,12 +434,12 @@ fn mensuels_d_avant(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<Vec<String
     Ok(out)
 }
 
-fn empreinte_des(mensuels: &[String]) -> String {
-    socle::fichiers::Empreinte::des_octets(mensuels.join(";").as_bytes()).to_string()
+fn empreinte_des(mensuels: &[String]) -> socle::fichiers::Empreinte {
+    socle::fichiers::Empreinte::des_octets(mensuels.join(";").as_bytes())
 }
 
 /// L'empreinte des contrats payes au mois du salarie `cle` commences avant `mois` (`mensuels_d_avant`).
-pub(crate) fn empreinte_des_mensuels_d_avant(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<String> {
+pub(crate) fn empreinte_des_mensuels_d_avant(ctx: &Contexte, mois: Mois, cle: &IdSalarie) -> R<socle::fichiers::Empreinte> {
     Ok(empreinte_des(&mensuels_d_avant(ctx, mois, cle)?))
 }
 

@@ -41,7 +41,7 @@ pub const ARRET: &str = "arret";
 /// Le genre d'une autre suspension du contrat (bloc S21.G00.65).
 pub const SUSPENSION: &str = "suspension";
 /// Le dossier du magasin, sous les donnees de la compagnie.
-pub const DOSSIER: &str = "imprevus";
+pub const DOSSIER: &str = socle::fichiers::MAGASIN_DES_IMPREVUS;
 
 /// La phrase du refus d'un imprevu qui n'a pas sa forme.
 pub const ILLISIBLE: &str = "Un imprévu ne se lit pas : le signaler au développeur.";
@@ -316,27 +316,18 @@ pub fn tous(racine: &Path) -> R<Vec<Imprevu>> {
 /// ses paies.
 pub fn du_salarie(racine: &Path, cle: &IdSalarie) -> R<Vec<Imprevu>> {
     let siens = siens_sans_noter(racine, cle)?;
-    socle::fichiers::noter_valeur(&entree_du_salarie(cle), empreinte_de(&siens));
+    let lecture = droit::contexte::CleLue::Imprevus { salarie: cle.clone() };
+    socle::fichiers::noter_lecture(&lecture, socle::fichiers::ValeurLue::Empreinte(empreinte_de(&siens)));
     Ok(siens)
 }
 
-/// L'entree du registre que `du_salarie` note.
-pub fn entree_du_salarie(cle: &IdSalarie) -> String {
-    format!("{} racine:{} {}", DOSSIER, DOSSIER, cle)
-}
-
-/// Le salarie d'une entree `du_salarie`, s'il en est une.
-pub fn salarie_de_l_entree(k: &str) -> Option<&str> {
-    k.strip_prefix(DOSSIER)?.strip_prefix(" racine:")?.strip_prefix(DOSSIER)?.strip_prefix(' ')
-}
-
 /// Ce que vaut aujourd'hui l'entree `du_salarie` de `cle` : l'empreinte de ses imprevus, relus sans rien noter.
-pub fn empreinte_du_salarie(racine: &Path, cle: &IdSalarie) -> R<String> {
+pub fn empreinte_du_salarie(racine: &Path, cle: &IdSalarie) -> R<socle::fichiers::Empreinte> {
     Ok(empreinte_de(&siens_sans_noter(racine, cle)?))
 }
 
-fn empreinte_de(imprevus: &[Imprevu]) -> String {
-    socle::fichiers::Empreinte::des_octets(socle::ecriture::json_en_ligne(imprevus).as_bytes()).to_string()
+fn empreinte_de(imprevus: &[Imprevu]) -> socle::fichiers::Empreinte {
+    socle::fichiers::Empreinte::des_octets(socle::ecriture::json_en_ligne(imprevus).as_bytes())
 }
 
 /// Les imprevus de `cle`, lus mois par mois du magasin sans se noter (`socle::forme::partagee`).

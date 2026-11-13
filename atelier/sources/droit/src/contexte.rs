@@ -899,7 +899,7 @@ pub fn jour_reel() -> Jour {
 /// `PUPPETPAIE_AUJOURDHUI` (AAAA-MM-JJ) remplace l'horloge.
 pub fn aujourdhui() -> R<Jour> {
     let jour = aujourdhui_brut()?;
-    socle::fichiers::noter_valeur("aujourdhui", jour.iso());
+    socle::fichiers::noter_lecture(&CleLue::Aujourdhui, socle::fichiers::ValeurLue::Jour(jour));
     Ok(jour)
 }
 
@@ -1066,6 +1066,10 @@ impl From<IdSpectacle> for String {
         c.0
     }
 }
+
+/// La cle d'une lecture qu'une paie note (`socle::fichiers::CleDeLecture`), avec les types d'ici : le salarie, le lieu
+/// d'une mission, le spectacle.
+pub type CleLue = socle::fichiers::CleDeLecture<IdSalarie, crate::missions::LieuDeMission, IdSpectacle>;
 
 impl PartialEq<str> for IdSpectacle {
     fn eq(&self, autre: &str) -> bool {
@@ -1320,7 +1324,7 @@ impl Contexte {
     /// Le 5 a partir de cinquante salaries, le 15 sinon. Un effectif qu'il faudrait et que le moteur ne connait pas se
     /// refuse en nommant les annees qui manquent (`Effectif::atteint`).
     pub fn echeance_dsn(&self) -> R<u32> {
-        socle::fichiers::noter_valeur("aujourdhui", self.aujourdhui.iso());
+        socle::fichiers::noter_lecture(&CleLue::Aujourdhui, socle::fichiers::ValeurLue::Jour(self.aujourdhui));
         Ok(match self.effectif()?.atteint(GRAND_SEUIL, self.aujourdhui.an)? {
             true => 5,
             false => 15,

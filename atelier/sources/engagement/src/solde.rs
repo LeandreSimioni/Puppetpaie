@@ -246,7 +246,7 @@ fn cdi_a_l_issue(ctx: &Contexte, e: &Carte, fin: &socle::date::Jour) -> R<Option
     let mut trouve = None;
     for m in mois {
         let Some(s) = crate::stock::vue_et_empreinte(&ctx.racine, m)? else { continue };
-        socle::fichiers::noter_valeur(&crate::stock::cle_de_saisie(m, Some(salarie)), crate::stock::empreinte_de_saisie(&s.0, Some(salarie)));
+        socle::fichiers::noter_lecture(&crate::stock::cle_de_saisie(m, Some(salarie)), crate::stock::empreinte_de_saisie(&s.0, Some(salarie)));
         for x in &s.0.engagements {
             let sien = x.valide.is_some() && x.salarie.as_ref() == Some(salarie);
             if !sien || !x.nature_lue()?.duree_indeterminee {

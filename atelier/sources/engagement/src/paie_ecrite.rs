@@ -44,7 +44,9 @@ pub struct PaieEcrite {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Empreinte {
-    pub entrees: BTreeMap<String, String>,
+    /// Chaque lecture notee et ce qu'elle valait, ecrites par leur texte (`socle::fichiers::lectures`).
+    #[serde(with = "socle::fichiers::lectures")]
+    pub entrees: BTreeMap<droit::contexte::CleLue, socle::fichiers::ValeurLue>,
     pub regles: Vec<Jour>,
     pub configuration: Vec<Jour>,
 }

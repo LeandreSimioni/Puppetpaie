@@ -144,8 +144,8 @@ pub struct Indemnite {
 
 impl Indemnite {
     /// Ce que l'empreinte d'une paie retient de l'indemnite d'un jour.
-    pub fn empreinte(&self) -> String {
-        format!("{} {} {} {}", self.euros, self.montant, self.monnaie, self.change)
+    pub fn empreinte(&self) -> socle::fichiers::ValeurLue {
+        socle::fichiers::ValeurLue::Composee(format!("{} {} {} {}", self.euros, self.montant, self.monnaie, self.change))
     }
 }
 

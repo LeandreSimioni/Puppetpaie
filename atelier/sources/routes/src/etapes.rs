@@ -889,7 +889,7 @@ pub(crate) struct Portee(Mois, String, Option<NumeroContrat>, u64);
 /// Ce dont l'empreinte d'une saisie qui porte des corrections se calcule (`Moteur::empreinte_saisie_avec`).
 #[derive(Serialize)]
 struct SaisieEtCorrections<'a> {
-    saisie: &'a str,
+    saisie: &'a Empreinte,
     corrections: &'a [Portee],
 }
 
@@ -1811,7 +1811,7 @@ impl<'a> Moteur<'a> {
         let vue = engagement::etats::empreinte_des_paies_validees(self.ctx, mois, None)?;
         let portees = portees()?;
         if portees.is_empty() {
-            return Ok(Some(Empreinte::lire(&vue)?.courte()));
+            return Ok(Some(vue.courte()));
         }
         let ecrite = socle::ecriture::json_trie(&SaisieEtCorrections { saisie: &vue, corrections: &portees });
         Ok(Some(Empreinte::des_octets(ecrite.as_bytes()).courte()))
