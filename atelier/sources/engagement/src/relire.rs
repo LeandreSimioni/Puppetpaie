@@ -5,7 +5,7 @@
 
 use std::cell::Cell;
 
-use crate::calcul::{fiche_de_l_engagement, DeductionForfaitaire, LigneBrut, LigneCotisation, Paie, PlafondTempsPartiel};
+use crate::calcul::{fiche_de_l_engagement, DeductionForfaitaire, LigneBrut, LigneCotisation, Paie};
 use crate::paie_ecrite::FormeDePaie;
 use crate::{Avis, Engagement, LignePaie};
 use droit::contexte::Contexte;
@@ -95,7 +95,7 @@ fn paie_lue(ctx: &Contexte, eng: Engagement, v: &FormeDePaie<Avis>, fiche: Optio
     } else {
         Some(crate::fiche_du_spectacle(ctx, eng.spectacle.as_ref().ok_or_else(|| socle::fichiers::absent("spectacle"))?)?)
     };
-    let tp = PlafondTempsPartiel::lire(v.plafond_temps_partiel.as_deref().ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "plafond_temps_partiel"))?)?;
+    let tp = v.plafond_temps_partiel.ok_or_else(|| socle::echec::cle(socle::echec::PAIE_ILLISIBLE, "plafond_temps_partiel"))?;
     let mut paie = Paie::nouveau(eng.clone(), sal, spectacle, v.brut, v.base_csg, v.plafond, court(v.smic), v.heures, tp);
     let p = paie.ecrire();
     p.total_pat = v.total_pat;

@@ -635,8 +635,7 @@ fn noter_ligne(d: &mut engagement::departs::Departs, l: &Ligne) {
             .signature()
             .filter(|s| s.detail.acte == Some(ActeDuContrat::Avenant))
             .and_then(|s| s.detail.contrats.iter().find(|c| c.salarie == v.salarie && c.numero.as_ref() == Some(&v.numero)))
-            .and_then(|c| c.avenant)
-            .map(|a| a.to_string());
+            .and_then(|c| c.avenant);
         d.noter(&v.salarie, &v.numero, Depart { envoi, mois: m, par, avenant, version: v.version, le });
     }
 }

@@ -121,9 +121,9 @@ pub struct FormeDePaie<A> {
     pub plafond_urssaf: Decimal,
     /// Un mois decoupe : ses periodes elementaires, chacune une paie. Vide pour un mois d'un seul tenant.
     pub periodes: Vec<FormeDePaie<A>>,
-    /// Le plafond d'un salarie a temps partiel tel que le calcul l'a applique (`calcul::PlafondTempsPartiel::code`) :
-    /// la forme ecrite seule le porte.
-    pub plafond_temps_partiel: Option<String>,
+    /// Le plafond d'un salarie a temps partiel tel que le calcul l'a applique (`calcul::PlafondTempsPartiel`) : la forme
+    /// ecrite seule le porte.
+    pub plafond_temps_partiel: Option<crate::calcul::PlafondTempsPartiel>,
 }
 
 /// Une fiche nommee par sa cle (le salarie, le spectacle d'une paie).

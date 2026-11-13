@@ -1013,7 +1013,7 @@ pub(crate) fn engagements(
         let declare = match &carte.metier {
             Some(code) => {
                 let salarie = fiche_du_salarie(ctx, carte.salarie.as_ref().ok_or_else(|| socle::fichiers::absent("salarie"))?)?;
-                let feminin = sexe(&salarie).as_deref() == Some("2");
+                let feminin = salarie.sexe() == Some(droit::fiche::Sexe::Feminin);
                 Some(emplois::resoudre(code, carte.cadre, feminin, ctx.entreprise.idcc.dite()).map_err(|m| m.reformuler(|p| format!("{} : {}", qui, p)))?)
             }
             None => None,
@@ -1764,11 +1764,6 @@ fn unites_du_statut(ctx: &Contexte, eng: &Engagement, qui: &str) -> R<()> {
         }
     }
     Ok(())
-}
-
-/// "1", "2", ou `None` si la fiche ne le dit pas (`ChampsSalarie::sexe` : le NIR d'abord).
-fn sexe(fiche: &droit::fiche::ChampsSalarie) -> Option<String> {
-    fiche.sexe().map(|s| s.as_str().to_string())
 }
 
 // ------------------------------------------- le contrat qui deborde du mois

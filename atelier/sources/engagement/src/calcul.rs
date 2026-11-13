@@ -1894,7 +1894,11 @@ pub(crate) fn plafond_de_la_sante(ctx: &Contexte, e: &Engagement) -> R<Decimal> 
 ///   montants specifiques ; BOSS § 1090 : ils « ne sont pas eligibles a la reduction du plafond », et « sont notamment
 ///   vises les artistes du spectacle ».
 /// Textes : `atelier/reference/sources/plafond-temps-partiel/LISEZ-MOI.md`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Sa forme ecrite dans une paie (`paie_ecrite::FormeDePaie::plafond_temps_partiel`) : `non_concerne`, `proratise`,
+/// `entier`, `exclu` ; une autre valeur rend la paie illisible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PlafondTempsPartiel {
     /// Un intermittent (contrat d'usage, sans duree du travail : 40.014 = 99), ou un temps plein : la question ne se
     /// pose pas, le plafond n'est pas corrige a la quotite, et 40.084 ne s'ecrit pas (norme 2027.1.2 : conditionnelle).
@@ -1906,34 +1910,6 @@ pub enum PlafondTempsPartiel {
     /// Temps partiel d'un artiste du spectacle : exclu de la proratisation (L. 242-10, 1° ; BOSS § 1090), le plafond
     /// entier quel que soit le choix de l'etablissement.
     Exclu,
-}
-
-impl PlafondTempsPartiel {
-    const CODES: [(PlafondTempsPartiel, &'static str); 4] = [
-        (PlafondTempsPartiel::NonConcerne, "non_concerne"),
-        (PlafondTempsPartiel::Proratise, "proratise"),
-        (PlafondTempsPartiel::Entier, "entier"),
-        (PlafondTempsPartiel::Exclu, "exclu"),
-    ];
-
-    /// Sa forme ecrite dans une paie (`relire::PLAFOND_TEMPS_PARTIEL`).
-    pub fn code(self) -> &'static str {
-        match self {
-            PlafondTempsPartiel::NonConcerne => Self::CODES[0].1,
-            PlafondTempsPartiel::Proratise => Self::CODES[1].1,
-            PlafondTempsPartiel::Entier => Self::CODES[2].1,
-            PlafondTempsPartiel::Exclu => Self::CODES[3].1,
-        }
-    }
-
-    /// Depuis sa forme ecrite ; une autre valeur est une paie illisible.
-    pub(crate) fn lire(code: &str) -> R<PlafondTempsPartiel> {
-        Self::CODES
-            .iter()
-            .find(|(_, c)| *c == code)
-            .map(|(p, _)| *p)
-            .ok_or_else(|| socle::echec::a_la_cle(socle::echec::PAIE_ILLISIBLE, "plafond_temps_partiel", code))
-    }
 }
 
 /// Le plafond du salarie `sal` (sa fiche telle que la paie la lit, pour son statut) a temps partiel de l'engagement `e`,
@@ -2052,7 +2028,7 @@ impl Paie {
             plafond: self.plafond,
             plafond_urssaf: self.plafond_urssaf(ctx)?,
             periodes: self.periodes.iter().map(|p| p.forme(ctx, avis, ecrite)).collect::<R<_>>()?,
-            plafond_temps_partiel: ecrite.then(|| self.plafond_temps_partiel.code().to_string()),
+            plafond_temps_partiel: ecrite.then_some(self.plafond_temps_partiel),
         })
     }
 }
