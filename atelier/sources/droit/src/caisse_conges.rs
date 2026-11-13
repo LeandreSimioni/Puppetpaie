@@ -20,7 +20,7 @@
 //! tranche.
 
 use crate::natures::Nature;
-use crate::fiche::{CodeEmploiFt, Lue, SalarieDuContrat};
+use crate::fiche::{Lue, SalarieDuContrat};
 use socle::date::Jour;
 use crate::emplois;
 use socle::echec::R;
@@ -78,19 +78,18 @@ pub fn intermittent(nat: &Nature, sal: &SalarieDuContrat) -> R<bool> {
     // Un emploi permanent (999SPT), ou sans code, n'a pas de metier du catalogue.
     let code = sal.code_emploi_ft.dite().filter(|c| !c.est_permanent());
     let metier = match code {
-        Some(code) => emplois::metier(code)?.map(|m| (code, m)),
+        Some(code) => emplois::metier(code)?,
         None => None,
     };
-    let range = |(code, m): (&CodeEmploiFt, emplois::Metier)| -> R<bool> {
+    let range = |m: emplois::Metier| -> R<bool> {
         match m.annexe() {
-            10 => Ok(true),
-            8 => {
+            emplois::AnnexeChomage::X => Ok(true),
+            emplois::AnnexeChomage::Viii => {
                 let idcc = sal.idcc_de_l_employeur.as_ref().ok_or_else(|| {
                     socle::echec::refus("La convention collective de l'employeur n'est pas dite : la liste de l'annexe 8 qui nomme le métier en dépend (Configuration › Entreprise).")
                 })?;
                 Ok(m.nomme_par_l_annexe8(idcc))
             }
-            autre => Err(socle::refus!("Le métier {} est rangé à l'annexe {} : l'assurance chômage n'en a que deux, la 8 (technicien) et la 10 (artiste). Le signaler au développeur.", code, autre)),
         }
     };
     Ok(metier.map(range).transpose()?.is_some_and(|oui| oui))
@@ -106,7 +105,7 @@ pub fn hors_de_l_annexe8(nat: &Nature, sal: &SalarieDuContrat) -> R<Option<(Stri
     let Some(code) = sal.code_emploi_ft.dite() else {
         return Ok(None);
     };
-    let Some(m) = emplois::metier(code)?.filter(|m| m.annexe() == 8) else {
+    let Some(m) = emplois::metier(code)?.filter(|m| m.annexe() == emplois::AnnexeChomage::Viii) else {
         return Ok(None);
     };
     let Some(idcc) = sal.idcc_de_l_employeur.as_ref() else { return Ok(None) };

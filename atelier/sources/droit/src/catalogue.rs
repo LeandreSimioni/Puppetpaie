@@ -317,7 +317,7 @@ pub struct Rubrique {
     pub aem: Option<Unite>,
     pub dsn_type: Option<String>,
     pub dsn_autres_bruts: Option<crate::autre_revenu_brut::AutreElementDeRevenuBrut>,
-    pub annexe: Option<String>,
+    pub annexe: Option<crate::emplois::AnnexeChomage>,
     pub plafond_mensuel: Option<i64>,
     pub plafond_annuel_heures: Option<PlafondAnnuelHeures>,
     pub compte_pour: ComptePour,

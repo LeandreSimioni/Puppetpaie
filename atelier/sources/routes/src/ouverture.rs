@@ -1247,7 +1247,7 @@ pub(crate) struct RubriqueDeLaPage {
     aem: Option<droit::catalogue::Unite>,
     dsn_type: Option<String>,
     dsn_autres_bruts: Option<AutreElementDeRevenuBrut>,
-    annexe: Option<String>,
+    annexe: Option<droit::emplois::AnnexeChomage>,
     soumis: bool,
     imposable: bool,
     conges_spectacles: bool,
@@ -1273,7 +1273,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         None => return Err(socle::refus!("La rubrique « {} » ne se saisit pas : le moteur la pose lui-même. Le signaler au développeur.", r.libelle)),
     };
     let non_appliques: Vec<&'static str> = [
-        ("annexe", r.annexe.as_deref().is_some_and(|s| !s.is_empty())),
+        ("annexe", r.annexe.is_some()),
         ("plafond", r.plafond.is_some()),
         ("aem", r.aem.is_some()),
         ("dsn_type", r.dsn_type.as_deref().is_some_and(|s| !s.is_empty())),
@@ -1318,7 +1318,7 @@ pub(crate) fn rubrique_de_la_page(r: &Rubrique) -> R<RubriqueDeLaPage> {
         aem: r.aem,
         dsn_type: r.dsn_type.clone(),
         dsn_autres_bruts: r.dsn_autres_bruts,
-        annexe: r.annexe.clone(),
+        annexe: r.annexe,
         soumis: r.soumis,
         imposable: r.imposable,
         conges_spectacles: r.conges_spectacles,

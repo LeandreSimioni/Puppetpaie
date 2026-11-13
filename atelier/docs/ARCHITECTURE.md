@@ -675,6 +675,7 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
 | barème | `droit::forme_bareme::Pile` | `droit/src/forme_bareme.rs` |
 | emploi | à unifier (#419) : `droit::emplois::FicheDuMetier`, `EmploiFt` et d'autres | `droit/src/emplois.rs` |
 | code d'un métier | `CodeEmploi` | `droit/src/emplois.rs` |
+| annexe du règlement d'assurance chômage | `AnnexeChomage` | `droit/src/emplois.rs` |
 | statut | `droit::fiche::Statut` | `droit/src/fiche.rs` |
 | colonne de la répartition de branche | `ColonneDeRepartition` | `droit/src/bareme.rs` |
 | catégorie du barème | `CategorieDuBareme` | `droit/src/forme_bareme.rs` |
@@ -820,6 +821,10 @@ fournies par l'organisme de prévoyance » (`X [1,30]`).
   celui d'un déroulant, les `codes` d'une grille des minima, les métiers retenus par la compagnie ; son métier :
   `CodeEmploi::metier`. Le code emploi qu'une fiche déclare (S21.G00.40.005) est une autre notion, `CodeEmploiFt`, qui
   peut n'en nommer aucun (« 999SPT »).
+- **annexe du règlement d'assurance chômage** : l'annexe VIII (les ouvriers et techniciens) ou X (les artistes) dont
+  relève un intermittent. `Viii`, `X` ; écrite par son nom (`X`, `VIII` : l'annexe d'une rubrique, celle d'une source)
+  ou par son numéro (`8`, `10` : `emplois-base.json`, la nomenclature, un métier rendu, `emplois::annexe_en_nombre`).
+  Que portent un métier (`Metier::annexe`), la rubrique, une source citée, les annexes en jeu d'un conseil.
 - **statut** : artiste ou technicien ; écrit `artiste`, `technicien`. Que portent la fiche, les sections `par_statut` du
   barème (d'une catégorie aussi), la section d'un effet de seuil, les `statuts` de la réduction générale, le `statut`
   d'une ligne du bordereau et d'une grille des minima (absent : tous).

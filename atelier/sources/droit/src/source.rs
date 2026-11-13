@@ -120,8 +120,8 @@ pub struct Source {
     pub emetteur: Emetteur,
     pub article: Option<String>,
     pub citation: String,
-    /// L'annexe du texte qui porte l'article (« X », « VIII » du reglement d'assurance chomage).
-    pub annexe: Option<String>,
+    /// L'annexe du reglement d'assurance chomage qui porte l'article (« X », « VIII »).
+    pub annexe: Option<crate::emplois::AnnexeChomage>,
 }
 
 /// Ce qui fonde une valeur : les textes d'un meme emetteur (`Texte`), ou des textes d'emetteurs distincts qui convergent,
@@ -142,7 +142,7 @@ struct FondementLu {
     emetteur: Option<Emetteur>,
     article: Option<String>,
     citation: Option<String>,
-    annexe: Option<String>,
+    annexe: Option<crate::emplois::AnnexeChomage>,
     sources: Option<Vec<Source>>,
     raisonnement: Option<String>,
 }

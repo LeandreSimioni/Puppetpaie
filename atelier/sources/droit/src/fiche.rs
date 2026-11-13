@@ -2677,6 +2677,7 @@ fiche! {
 }
 
 impl FormeDeCase for crate::catalogue::PlafondAnnuelHeures {}
+impl FormeDeCase for crate::emplois::AnnexeChomage {}
 
 fiche! {
     /// UNE RUBRIQUE TELLE QU'UN FICHIER L'ECRIT, case par case : livree (`rubriques-base.json`, de tout temps), ou la
@@ -2697,7 +2698,7 @@ fiche! {
         Aem(crate::catalogue::Unite) = "aem" => aem,
         DsnType(String) = "dsn_type" => dsn_type,
         DsnAutresBruts(crate::autre_revenu_brut::AutreElementDeRevenuBrut) = "dsn_autres_bruts" => dsn_autres_bruts,
-        Annexe(String) = "annexe" => annexe,
+        Annexe(crate::emplois::AnnexeChomage) = "annexe" => annexe,
         PlafondMensuel(i64) = "plafond_mensuel" => plafond_mensuel,
         PlafondAnnuelHeures(crate::catalogue::PlafondAnnuelHeures) = "plafond_annuel_heures" => plafond_annuel_heures,
         ComptePour(crate::catalogue::ComptePour) = "compte_pour" => compte_pour,
