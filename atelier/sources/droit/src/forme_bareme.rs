@@ -645,7 +645,7 @@ forme! {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReleveSante {
-    pub niveaux: BTreeMap<String, NiveauSante>,
+    pub niveaux: BTreeMap<NiveauDeGarantie, NiveauSante>,
     pub part_employeur: Nombre,
     pub composant_79: Option<Composant79>,
     pub source: Option<Fondement>,
@@ -1338,12 +1338,38 @@ forme! {
     }
 }
 
+crate::cle_opaque! {
+    /// UNE CONTRIBUTION CONVENTIONNELLE DE BRANCHE declaree sous une adhesion Audiens (FNAS, FCAP, PARITARISME, CCHSCT,
+    /// APPAV) : son nom, garde tel que le bareme l'ecrit (`contributions_dsn`). Que portent une contribution DSN du
+    /// bareme, une adhesion saisie et un contrat attendu ; deux noms sont la meme contribution sans egard a la casse
+    /// (`est`), et une adhesion la tient aussi par son libelle (`est_le_libelle`).
+    pub struct ContributionDeBranche, "contribution de branche";
+}
+
+impl ContributionDeBranche {
+    /// La meme contribution, sans egard a la casse.
+    pub fn est(&self, autre: &ContributionDeBranche) -> bool {
+        self.est_le_libelle(autre.as_str())
+    }
+
+    /// Le libelle `libelle` (S21.G00.15.001), sans ses blancs de bord et sans egard a la casse, est-il son nom ?
+    pub fn est_le_libelle(&self, libelle: &str) -> bool {
+        self.as_str().to_uppercase() == libelle.trim().to_uppercase()
+    }
+}
+
+crate::cle_opaque! {
+    /// LE NIVEAU DE GARANTIE SANTE d'un permanent (`1`, `2`, `3`) : la cle des niveaux du releve sante du bareme, des
+    /// options d'un contrat d'organisme (S21.G00.70.004 par niveau), et la case `sante_svp.niveau` de sa fiche.
+    pub struct NiveauDeGarantie, "niveau de garantie santé";
+}
+
 /// Une contribution de branche que la DSN declare (bloc 82), la somme de lignes du bulletin. Son premier mois en DSN
 /// n'a pas de valeur par defaut : elle ne prend pas la forme `forme!`.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContributionDsn {
-    pub contribution: String,
+    pub contribution: ContributionDeBranche,
     pub lignes: Vec<IdDeCotisation>,
     pub en_dsn_depuis: socle::mois::Mois,
     pub source: Option<Fondement>,

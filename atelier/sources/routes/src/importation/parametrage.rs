@@ -21,7 +21,7 @@
 use import::dsn_aem::LectureDsn;
 use declarations::dsn_lue::Adhesion;
 use droit::contexte::Contexte;
-use droit::organismes::Ligne;
+use droit::organismes::{Ligne, RoleDuContrat};
 
 /// Le libelle d'un contrat attendu, s'il en dit un.
 fn libelle_de(l: &Ligne) -> Option<String> {
@@ -69,12 +69,12 @@ fn poser_atmp(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String>) {
 
 /// Le role d'un contrat attendu (`role` de `organismes-base.json` : `prevoyance`, `sante`) que le libelle d'une adhesion
 /// nomme, et lui seul : « SANTE CCNEAC » nomme la sante, « PREVOYANCE CCNEAC » la prevoyance, « CCNEAC » rien.
-fn role_nomme(libelle: &str) -> Option<&'static str> {
+fn role_nomme(libelle: &str) -> Option<RoleDuContrat> {
     let mots = import::bulletin_lu::jetons(libelle);
     let a = |m: &str| mots.iter().any(|x| x == m);
     match (a("prevoyance"), a("sante")) {
-        (true, false) => Some("prevoyance"),
-        (false, true) => Some("sante"),
+        (true, false) => Some(RoleDuContrat::Prevoyance),
+        (false, true) => Some(RoleDuContrat::Sante),
         _ => None,
     }
 }
@@ -109,14 +109,14 @@ fn poser_organismes(ctx: &Contexte, lecture: &LectureDsn, faits: &mut Vec<String
         return Ok(());
     }
     // Le role du contrat attendu d'une ligne (`prevoyance`, `sante`), s'il en a un.
-    let role_de = |l: &Ligne| attendus.iter().find(|s| s.cle.trim() == l.cle).and_then(|s| s.role.as_deref()).map(str::trim).map(str::to_string);
+    let role_de = |l: &Ligne| attendus.iter().find(|s| s.cle == l.cle).and_then(|s| s.role);
     let mut paires: Vec<(&Ligne, &Adhesion, bool)> = Vec::new();
     if let ([l], [a]) = (a_saisir.as_slice(), libres.as_slice()) {
         paires.push((l, a, false));
     } else {
         for l in &a_saisir {
             let r = role_de(l);
-            let siens: Vec<&&Adhesion> = libres.iter().filter(|a| r.is_some() && role_nomme(&libelle(a)) == r.as_deref()).collect();
+            let siens: Vec<&&Adhesion> = libres.iter().filter(|a| r.is_some() && role_nomme(&libelle(a)) == r).collect();
             let rivaux = a_saisir.iter().filter(|x| role_de(x) == r).count();
             if let ([a], 1) = (siens.as_slice(), rivaux) {
                 paires.push((l, a, true));

@@ -1348,7 +1348,7 @@ compagnie ; rien n'est declare.",
     // Le niveau d'un salarie au mois : un contrat qui ne l'est pas n'en dit aucun.
     let au_mois = p.engagement.nat()?.au_mois();
     let choix = au_mois.as_ref().and_then(|au| p.salarie.permanent.ouvrir(au).sante_svp.dite());
-    let niveau = choix.and_then(|c| c.niveau.portee());
+    let niveau = choix.and_then(|c| c.niveau.dite());
     let enfants = match choix.and_then(|c| c.enfants.dite()) {
         Some(m) => m.entier()?,
         None => None,
@@ -1449,7 +1449,7 @@ fn contributions_dsn(ctx: &Contexte, ent: &ChampsEntreprise, orgs: &Organismes, 
     for spec in specs {
         let nom = spec.contribution.clone();
         let adh = orgs.adhesions_prevoyance.iter().find(|a| {
-            a.contribution.as_deref().is_some_and(|c| c.trim().to_uppercase() == nom.to_uppercase()) || a.libelle.trim().to_uppercase() == nom.to_uppercase()
+            a.contribution.as_ref().is_some_and(|c| c.est(&nom)) || nom.est_le_libelle(&a.libelle)
         });
         let adh = match adh {
             Some(a) => a,
@@ -5174,7 +5174,7 @@ mod tests {
     fn orgs_casc() -> Organismes {
         use droit::organismes::{Adhesion, ParNature, Rattachement};
         let adh = |libelle: &str, reference: &str| Adhesion {
-            cle: libelle.to_lowercase(),
+            cle: droit::organismes::CleDeContrat::lire(&libelle.to_lowercase()).unwrap(),
             libelle: libelle.into(),
             delegataire: droit::organismes::AUDIENS,
             r#type: "01".into(),

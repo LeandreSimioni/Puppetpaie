@@ -105,7 +105,7 @@ pub fn casc_svp(ent: &crate::fiche::ChampsEntreprise, eff: &crate::contexte::Eff
     }
     let d = &base.dsn;
     Ok(Some(Adhesion {
-        cle: "casc".into(),
+        cle: crate::organismes::CASC,
         libelle: d.contrat.clone(),
         delegataire: d.organisme.clone(),
         r#type: "02".into(),

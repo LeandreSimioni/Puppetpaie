@@ -572,7 +572,7 @@ pub fn minimum_sante(ent: &ChampsEntreprise, jour: Option<&Jour>) -> R<Option<(D
 }
 
 /// Le niveau souscrit cotise-t-il au moins le minimum de la convention ?
-fn controler_minimum_sante(ent: &ChampsEntreprise, sal: &SalarieDuContrat, niveau: &str, assure: Decimal, fin: Option<&Jour>) -> R<()> {
+fn controler_minimum_sante(ent: &ChampsEntreprise, sal: &SalarieDuContrat, niveau: &crate::forme_bareme::NiveauDeGarantie, assure: Decimal, fin: Option<&Jour>) -> R<()> {
     let Some((mini, origine)) = minimum_sante(ent, fin)? else { return Ok(()) };
     if assure < mini {
         return Err(socle::echec::refus_avec(
@@ -702,8 +702,8 @@ la Securite sociale), et pas plus de 100.",
     };
     let choix = sal.permanent.ouvrir(au_mois).sante_svp.dite();
     let Some((choix, niveau, taux)) = choix.and_then(|c| {
-        let niveau = c.niveau.portee()?.to_string();
-        releve.niveaux.get(&niveau).map(|t| (c, niveau, t))
+        let niveau = c.niveau.dite()?;
+        releve.niveaux.get(niveau).map(|t| (c, niveau, t))
     }) else {
         return Err(socle::refus!(
             "{} : sa complémentaire santé n'est pas encore dite. Un salarié au mois y est affilié \
@@ -712,7 +712,7 @@ d'office (article L911-7 du code de la sécurité sociale), et son niveau se lit
             nom_du_salarie(sal)
         ));
     };
-    controler_minimum_sante(ent, sal, &niveau, taux.assure, fin)?;
+    controler_minimum_sante(ent, sal, niveau, taux.assure, fin)?;
     // Qui le contrat couvre avec lui, son conjoint et ses enfants : seule sa fiche le sait, et elle le dit meme a non ou
     // a zero.
     let a_dire = |cle: &str, quoi: &str| {

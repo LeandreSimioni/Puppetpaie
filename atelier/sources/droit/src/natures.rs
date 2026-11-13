@@ -30,6 +30,15 @@ impl Paie {
             Paie::Mensuelle => "permanent",
         }
     }
+
+    /// La population au pluriel, telle que `organismes-base.json` dit ceux qu'un contrat couvre (`beneficiaires`) :
+    /// `intermittents`, `permanents`.
+    pub fn au_pluriel(self) -> &'static str {
+        match self {
+            Paie::Activite => "intermittents",
+            Paie::Mensuelle => "permanents",
+        }
+    }
 }
 
 /// LA POPULATION ECRITE : `intermittent` ou `permanent`, la face de paie (`Paie`) la ou les fichiers livres la nomment
@@ -60,6 +69,22 @@ pub mod population {
             match Option::<String>::deserialize(d)? {
                 Some(t) => lue(&t).map(Some),
                 None => Ok(None),
+            }
+        }
+    }
+
+    /// La population au pluriel (`Paie::au_pluriel`) : ceux qu'un contrat d'organisme couvre. Un autre mot se refuse a
+    /// la lecture, en le nommant.
+    pub mod au_pluriel {
+        use super::Paie;
+        use serde::Deserialize;
+
+        pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Paie, D::Error> {
+            let texte = String::deserialize(d)?;
+            match texte.as_str() {
+                "intermittents" => Ok(Paie::Activite),
+                "permanents" => Ok(Paie::Mensuelle),
+                _ => Err(serde::de::Error::custom(format!("{} n'est pas une population : intermittents ou permanents", socle::fichiers::repr(&texte)))),
             }
         }
     }

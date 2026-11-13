@@ -88,17 +88,17 @@ pub(crate) struct ContratSaisi {
 /// qu'elle ne change pas ; absent d'une version, il n'y est pas saisi).
 fn temps_des_contrats(ctx: &droit::contexte::Contexte) -> R<Vec<TempsDeLaCase<ContratSaisi>>> {
     let fichier = droit::organismes::fichier_organismes(ctx)?;
-    let mut par_cle: Vec<(String, Vec<droit::fiche::Datee<ContratSaisi>>)> = Vec::new();
+    let mut par_cle: Vec<(droit::organismes::CleDeContrat, Vec<droit::fiche::Datee<ContratSaisi>>)> = Vec::new();
     // Aucune adhesion saisie : aucun contrat.
     let versions = fichier.adhesions_prevoyance.as_deref().map(droit::fiche::valeurs_datees);
     for version in versions.into_iter().flatten() {
         for a in version.valeur.iter().flatten() {
-            if !par_cle.iter().any(|(c, _)| c == a.cle.trim()) {
-                par_cle.push((a.cle.trim().to_string(), Vec::new()));
+            if !par_cle.iter().any(|(c, _)| *c == a.cle) {
+                par_cle.push((a.cle.clone(), Vec::new()));
             }
         }
         for (cle, datees) in par_cle.iter_mut() {
-            let valeur = version.valeur.iter().flatten().find(|a| a.cle.trim() == cle).map(|a| ContratSaisi { libelle: a.libelle.trim().to_string(), organisme: a.delegataire.clone() });
+            let valeur = version.valeur.iter().flatten().find(|a| a.cle == *cle).map(|a| ContratSaisi { libelle: a.libelle.trim().to_string(), organisme: a.delegataire.clone() });
             if datees.last().is_some_and(|d| d.valeur == valeur) {
                 continue;
             }

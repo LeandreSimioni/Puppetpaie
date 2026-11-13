@@ -1466,7 +1466,7 @@ fn natures() -> R<Vec<NatureDeLaPage>> {
 /// conjoint et chaque enfant, et ce que le choix en dit.
 #[derive(Debug, Clone, serde::Serialize)]
 struct NiveauDeSante {
-    niveau: String,
+    niveau: droit::forme_bareme::NiveauDeGarantie,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]
     assure: socle::num::Decimal,
     #[serde(serialize_with = "socle::forme::ecrire_a_virgule")]

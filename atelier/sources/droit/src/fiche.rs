@@ -1507,6 +1507,7 @@ impl FormeDeCase for Jour {}
 impl FormeDeCase for Mois {}
 impl FormeDeCase for Montant {}
 impl FormeDeCase for socle::paris::Moment {}
+impl FormeDeCase for crate::forme_bareme::NiveauDeGarantie {}
 impl FormeDeCase for socle::pays::CodePays {
     const FAUTE: Option<fn(&str) -> Option<String>> = Some(socle::pays::CodePays::faute);
     const RANGER: Option<fn(&str) -> String> = Some(socle::pays::CodePays::rangee);
@@ -2331,7 +2332,7 @@ cases! {
 
 cases! {
     /// La complementaire sante d'un permanent : le niveau souscrit et la composition couverte.
-    pub struct SanteSvp { niveau: String, conjoint: bool, enfants: Montant }
+    pub struct SanteSvp { niveau: crate::forme_bareme::NiveauDeGarantie, conjoint: bool, enfants: Montant }
 }
 
 cases! {

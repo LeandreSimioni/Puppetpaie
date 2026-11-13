@@ -213,10 +213,10 @@ impl Organismes {
 
     /// L'organisme de l'adhesion `cle` (la prevoyance, la sante) : celui que la compagnie a enregistre, sinon celui que
     /// la branche designe (`organisme_fixe` des contrats de `organismes-base.json`). `None` : elle n'a pas ce contrat.
-    fn adhesion(&self, cle: &str) -> Option<Organisme> {
-        let enregistre = self.compagnie.adhesions_prevoyance.iter().find(|a| a.cle == cle).map(|a| &a.delegataire);
+    fn adhesion(&self, cle: &droit::organismes::CleDeContrat) -> Option<Organisme> {
+        let enregistre = self.compagnie.adhesions_prevoyance.iter().find(|a| a.cle == *cle).map(|a| &a.delegataire);
         let designe = || {
-            self.compagnie.base.contrats_de(self.idcc.as_ref()).filter(|c| c.cle == cle && c.organisme_fixe).find_map(|c| c.organisme.as_ref())
+            self.compagnie.base.contrats_de(self.idcc.as_ref()).filter(|c| c.cle == *cle && c.organisme_fixe).find_map(|c| c.organisme.as_ref())
         };
         self.par_siret(enregistre.or_else(designe)?)
     }
@@ -260,7 +260,8 @@ pub fn poser_les_mentions(ctx: &Contexte, ent: &droit::fiche::ChampsEntreprise, 
     let retraite = org.retraite().ok_or_else(|| socle::echec::refus_avec(format!("Le contrat de {} nomme sa caisse de retraite complémentaire (L. 1242-12, 8°), et la table livrée des versements n'en nomme aucune : le signaler au développeur. Rien n'est écrit.", nom), socle::echec::Lieu { fichier: Some("organismes-base.json".into()), cle: Some("131".into()), ..Default::default() }))?;
     let manque_adresse = |o: &Organisme| socle::refus!("Le contrat de {} donne « le nom et l'adresse » de {} (L. 1242-12, 8°), et cette adresse n'est pas connue du logiciel. Rien n'est écrit.", nom, o.nom);
     m.insert(Marqueur::OrganismesRetraite, retraite.nom_et_adresse().ok_or_else(|| manque_adresse(&retraite))?);
-    let (cle_prevoyance, cle_sante) = if nat.permanent() { ("prevoyance_permanents", "sante_permanents") } else { ("interbranche", "tsintermittents") };
+    use droit::organismes::{INTERBRANCHE, PREVOYANCE_PERMANENTS, SANTE_PERMANENTS, TSINTERMITTENTS};
+    let (cle_prevoyance, cle_sante) = if nat.permanent() { (&PREVOYANCE_PERMANENTS, &SANTE_PERMANENTS) } else { (&INTERBRANCHE, &TSINTERMITTENTS) };
     let prevoyance = org.adhesion(cle_prevoyance);
     m.insert(
         Marqueur::OrganismesPrevoyance,
