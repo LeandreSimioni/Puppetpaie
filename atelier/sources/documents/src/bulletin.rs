@@ -1271,7 +1271,7 @@ fn blocs_un(j: &Jeu, ent: &ChampsEntreprise) -> R<Vec<Bloc>> {
 // ------------------------------------------------------------ la description
 
 /// Un chemin en texte : sans `.` ni séparateur double.
-fn chemin_texte(p: &Path) -> String {
+pub(crate) fn chemin_texte(p: &Path) -> String {
     p.components().collect::<PathBuf>().to_string_lossy().into_owned()
 }
 

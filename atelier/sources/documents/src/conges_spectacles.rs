@@ -9,7 +9,7 @@ use droit::fiche::Lue as _;
 use rust_decimal::RoundingStrategy;
 use fabrique_pdf::forme as pdf;
 
-use crate::bulletin::{identite_de, FORMAT};
+use crate::bulletin::{chemin_texte, identite_de, FORMAT};
 use fabrique_pdf::mesure::{mesure, Mesure};
 use droit::contexte::EntrepriseDuDocument;
 use droit::fiche::ChampsEntreprise;
@@ -584,11 +584,6 @@ fn blocs_certificat(c: &Certificat, p: &PaieCs, ent: &EntrepriseDuDocument) -> R
         }));
     }
     Ok(blocs)
-}
-
-/// Un chemin en texte : sans `.` ni séparateur double.
-pub fn chemin_texte(p: &std::path::Path) -> String {
-    p.components().collect::<std::path::PathBuf>().to_string_lossy().into_owned()
 }
 
 /// `description` : un document par page, sans marge ; chaque texte dit son corps et sa couleur, la police n'en est que

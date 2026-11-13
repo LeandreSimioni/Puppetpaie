@@ -438,8 +438,10 @@ pub(crate) struct ReponseSignalementFin {
 #[derive(Debug, Serialize)]
 struct ReponsePapiers {
     phrase: String,
-    certificat: String,
-    recu: String,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    certificat: std::path::PathBuf,
+    #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
+    recu: std::path::PathBuf,
     #[serde(serialize_with = "socle::fichiers::ecrire_chemin")]
     dossier: std::path::PathBuf,
     avertissements: &'static [&'static str],
@@ -1907,8 +1909,8 @@ fn fin_contrat_documents(ctx: &Contexte, c: ChargeFinContratDocuments) -> R<Repo
     let [certificat, recu] = documents::fin_de_contrat::ecrire(ctx, &p, date, &dossier)?;
     Ok(ReponsePapiers {
         phrase: format!("Écrits pour {} : le certificat de travail et le reçu pour solde de tout compte.", crate::nom_a_l_ecran(&p.salarie, &cle)),
-        certificat: certificat.to_string_lossy().into_owned(),
-        recu: recu.to_string_lossy().into_owned(),
+        certificat,
+        recu,
         dossier,
         avertissements: documents::fin_de_contrat::AVIS,
     })

@@ -22,9 +22,9 @@ use std::path::Path;
 use regex::Regex;
 use serde::Serialize;
 
-use super::{case, date_du_releve, nom_de, propre, remplie, sha256, EnOrdre, Rang, Releve};
+use super::{case, date_du_releve, propre, remplie, sha256, EnOrdre, Rang, Releve};
 use socle::date::Jour;
-use socle::fichiers::repr;
+use socle::fichiers::{repr, NomDeFichier};
 use socle::lecture_xlsx;
 use socle::echec::R;
 
@@ -114,7 +114,7 @@ pub fn relever(structure: &Path, correspondances: &Path, jour: &Jour) -> R<Relev
         ));
     }
     let (n_2025, n_rev2) = (naf_2025.len(), naf_rev2.len());
-    let (nom_s, nom_c) = (nom_de(structure), nom_de(correspondances));
+    let (nom_s, nom_c) = (NomDeFichier::du(structure)?.to_string(), NomDeFichier::du(correspondances)?.to_string());
     let sha = EnOrdre(vec![(nom_s.clone(), sha256(structure)?), (nom_c.clone(), sha256(correspondances)?)]);
     let note = format!(
         "INSEE, page « NAF 2025 » (https://www.insee.fr/fr/information/8181066) : {} (structure, feuille \

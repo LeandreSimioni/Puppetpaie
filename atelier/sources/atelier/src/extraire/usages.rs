@@ -33,12 +33,13 @@ use std::path::Path;
 use regex::Regex;
 use serde::Serialize;
 
-use super::{case, date_du_releve, en_transcription, nom_de, propre, remplie, sha256, EnOrdre, Rang, Releve, Transcription};
+use super::{case, date_du_releve, en_transcription, propre, remplie, sha256, EnOrdre, Rang, Releve, Transcription};
 use fabrique_pdf::mesure::{mesure, Mesure};
 use import::releve::PageRelevee;
 use socle::date::Jour;
 use socle::lecture_xlsx;
 use socle::echec::{refus, R};
+use socle::fichiers::NomDeFichier;
 
 const QUOI: &str = "Le tableau des usages du cahier technique NEODeS : pour chaque rubrique et chaque nature de declaration, si \
                     elle est obligatoire (O), conditionnelle (C), interdite (I) ou sans objet (N). Ecrire une rubrique que la \
@@ -266,7 +267,7 @@ pub fn transcrire(pdf: &Path) -> R<String> {
         corps.push('\n');
     }
     let t = Transcription::de(pdf, vec![("pages".into(), format!("{}-{}", premiere, derniere))], corps)?;
-    Ok(t.texte(&format!("Le tableau des usages de {}, cellule par cellule (`moteur extraire transcrire`)", nom_de(pdf))))
+    Ok(t.texte(&format!("Le tableau des usages de {}, cellule par cellule (`moteur extraire transcrire`)", NomDeFichier::du(pdf)?)))
 }
 
 /// (entete, lignes de rubriques, pages) relus dans une transcription : une case sans texte est vide.
@@ -322,7 +323,7 @@ pub fn relever(source: &Path, jour: &Jour) -> R<Releve> {
             "Tableau des usages de la norme DSN {}, classeur {} (feuille « {} »). Releve automatiquement par \
              `moteur extraire usages` le {}.",
             v,
-            nom_de(source),
+            NomDeFichier::du(source)?,
             FEUILLE_USAGES,
             date
         );
@@ -334,7 +335,7 @@ pub fn relever(source: &Path, jour: &Jour) -> R<Releve> {
     } else {
         version_du_cahier(source)?;
         let (entete, lignes, (premiere, derniere)) = lire_le_cahier(source)?;
-        let provenance = provenance_du_cahier(&nom_de(source), &premiere.to_string(), &derniere.to_string())?;
+        let provenance = provenance_du_cahier(NomDeFichier::du(source)?.texte(), &premiere.to_string(), &derniere.to_string())?;
         (entete, lignes, provenance, sha256(source)?)
     };
     let nature = Regex::new(r"\A(\d\d) - (.*)").expect("motif");

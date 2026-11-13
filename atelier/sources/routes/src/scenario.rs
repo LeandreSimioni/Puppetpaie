@@ -177,7 +177,7 @@ pub struct Piece {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nom: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dans_la_compagnie: Option<String>,
+    pub dans_la_compagnie: Option<socle::fichiers::CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fichiers: Option<BTreeMap<String, String>>,
 }
@@ -420,7 +420,7 @@ fn poser_les_pieces(scenario: &Path, racine: &Path, travail: &Path, rang: usize,
         };
         let nom = p.nom.clone().or_else(|| p.chemin.as_ref().map(|c| c.nom().into()));
         let est_fichier = p.fichier == Some(true) || (fichiers.len() == 1 && fichiers[0].0 == ".");
-        let dans = p.dans_la_compagnie.as_deref();
+        let dans = p.dans_la_compagnie.as_ref();
         let cible = match dans {
             Some(rel) => racine.join(rel),
             None => travail.join(rang.to_string()).join(cle),
@@ -1179,7 +1179,7 @@ mod enregistreur {
                 };
                 // Son chemin dans la compagnie ; aucun, hors d'elle.
                 let dans = if chemin.starts_with(racine) {
-                    Some(chemin.strip_prefix(racine).map_err(|e| du_disque(&chemin, &e))?.to_string_lossy().replace('\\', "/"))
+                    Some(socle::fichiers::CheminRelatif::sous(racine, &chemin)?)
                 } else {
                     None
                 };

@@ -36,9 +36,9 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use super::{date_du_releve, nom_de, EnOrdre, Releve};
+use super::{date_du_releve, EnOrdre, Releve};
 use socle::date::Jour;
-use socle::fichiers::repr;
+use socle::fichiers::{repr, NomDeFichier};
 use socle::echec::R;
 use socle::texte::strip;
 
@@ -204,7 +204,7 @@ struct Organisme {
 
 /// Les organismes de la Table des Urssaf (windows-1252 : « Numéro », « Dénomination »), tries par code.
 fn organismes(table: &Path) -> R<Vec<Organisme>> {
-    let nom = nom_de(table);
+    let nom = NomDeFichier::du(table)?.to_string();
     let octets = std::fs::read(table).map_err(|e| refus!("{} illisible ({})", table.display(), e))?;
     let t = Table::lire(&cp1252(&octets, &nom)?, ';');
     let mut liste: Vec<Organisme> = Vec::new();
@@ -338,7 +338,7 @@ pub fn relever(table: &Path, sites: &Path, cog: &Path, jour: &Jour) -> R<Releve>
              l'organisme du territoire, ce qui est le cas ordinaire ; l'ecran la propose, il ne l'impose pas, et la valeur \
              de la fiche gagne toujours. \
              Par defaut : 117 -- Urssaf Ile-de-France, la valeur du gabarit quand ni la fiche ni le departement ne disent rien.",
-            nom_de(table), nom_de(sites), nom_de(cog), date_du_releve(jour)
+            NomDeFichier::du(table)?, NomDeFichier::du(sites)?, NomDeFichier::du(cog)?, date_du_releve(jour)
         );
     let corps = Urssaf { organismes, par_ancienne_region: regions, par_departement: departements };
     Ok(Releve::nouveau(quoi, note, corps, 2, true, bilan))

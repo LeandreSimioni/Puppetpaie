@@ -50,11 +50,12 @@ use regex::Regex;
 use serde::Serialize;
 
 use super::usages::{en_classeur, version_du_cahier};
-use super::{blancs_ramenes, date_du_releve, en_transcription, nfc, nom_de, sha256, EnOrdre, Releve, Transcription};
+use super::{blancs_ramenes, date_du_releve, en_transcription, nfc, sha256, EnOrdre, Releve, Transcription};
 use droit::natures::RubriqueDeLaNorme;
 use socle::date::Jour;
 use socle::lecture_xlsx::{self, Cellule};
 use socle::echec::R;
+use socle::fichiers::NomDeFichier;
 use socle::texte::{blanc as espace, strip};
 
 const QUOI: &str = "Le format de chaque rubrique du cahier technique NEODeS : sa longueur [min,max], ses expressions de \
@@ -493,7 +494,7 @@ pub fn transcrire(pdf: &Path) -> R<String> {
     let (pages, _) = fabrique_pdf::lecture::texte(pdf).map_err(documents::fabrique::echec)?;
     let textes = pages.iter().map(|p| p.lu().map_err(documents::fabrique::echec)).collect::<R<Vec<String>>>()?;
     let t = Transcription::de(pdf, Vec::new(), textes.join("\n"))?;
-    Ok(t.texte(&format!("Le texte de {}, tel que la fabrique de PDF le lit (`moteur extraire transcrire`)", nom_de(pdf))))
+    Ok(t.texte(&format!("Le texte de {}, tel que la fabrique de PDF le lit (`moteur extraire transcrire`)", NomDeFichier::du(pdf)?)))
 }
 
 /// Le releve des formats, depuis le classeur, le cahier en PDF ou sa transcription.
@@ -520,7 +521,7 @@ pub fn relever(source: &Path, jour: &Jour) -> R<Releve> {
              de valeurs dans sa colonne « Values »). Releve \
              automatiquement par `moteur extraire formats` le {}.",
             v,
-            nom_de(source),
+            NomDeFichier::du(source)?,
             date
         );
         (formats, provenance, sha256(source)?)
@@ -528,13 +529,13 @@ pub fn relever(source: &Path, jour: &Jour) -> R<Releve> {
         // Le texte du cahier : sa transcription (`dsn-cahier-technique-<version>-formats.txt`), ou le PDF lui-meme.
         let (pdf, texte, empreinte) = if en_transcription(source) {
             let t = Transcription::lire(source)?;
-            (t.pdf.into(), t.corps, t.sha256)
+            (t.pdf, t.corps, t.sha256)
         } else {
             let (pages, _) = fabrique_pdf::lecture::texte(source).map_err(documents::fabrique::echec)?;
             let textes = pages.iter().map(|p| p.lu().map_err(documents::fabrique::echec)).collect::<R<Vec<String>>>()?;
-            (nom_de(source), textes.join("\n"), sha256(source)?)
+            (NomDeFichier::du(source)?, textes.join("\n"), sha256(source)?)
         };
-        let v = version_du_cahier(Path::new(&pdf))?;
+        let v = version_du_cahier(pdf.as_ref())?;
         let formats = relever_pdf(&texte, &mut ecartees, &mut notes)?;
         let provenance = format!(
             "Cahier technique NEODeS {} ({}), definitions des rubriques (les listes de valeurs : ce qui suit la \

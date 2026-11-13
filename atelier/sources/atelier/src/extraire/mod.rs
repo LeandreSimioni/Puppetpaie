@@ -283,14 +283,6 @@ fn transcrire(args: &[&str], remplacer: bool) -> i32 {
 
 // ------------------------------------------------------------------ les aides communes
 
-/// Le nom du fichier ; un chemin qui ne finit pas par un nom (`..`) se dit entier.
-pub(crate) fn nom_de(chemin: &Path) -> String {
-    match chemin.file_name() {
-        Some(n) => n.to_string_lossy().into_owned(),
-        None => chemin.display().to_string(),
-    }
-}
-
 pub(crate) use crate::EnOrdre;
 
 /// Une ligne d'un tableau releve, case par case : `None` pour une case vide.

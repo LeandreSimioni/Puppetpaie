@@ -274,7 +274,7 @@ impl Ouverture {
         let phrases: Vec<String> = self.horloge.iter().chain(&self.manquants).chain(&self.incidents).cloned().collect();
         let sauvegarde = self.sauvegarde.as_ref().map(|s| SauvegardeDite {
             resume: s.resume(),
-            deposes: s.deposes.iter().map(|f| f.relatif.to_string()).collect(),
+            deposes: s.deposes.iter().map(|f| f.relatif.clone()).collect(),
             identiques: s.identiques,
             octets: s.octets_deposes,
             deposes_detail: s.deposes.iter().map(|f| FichierDepose { relatif: f.relatif.clone(), etat: f.etat.texte(), octets: f.octets }).collect(),
@@ -374,7 +374,7 @@ impl Dite for OuvertureDite {
 #[derive(Debug, Serialize)]
 pub struct SauvegardeDite {
     pub resume: String,
-    pub deposes: Vec<String>,
+    pub deposes: Vec<socle::fichiers::CheminRelatif>,
     pub identiques: usize,
     pub octets: u64,
     pub deposes_detail: Vec<FichierDepose>,
