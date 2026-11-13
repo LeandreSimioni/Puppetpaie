@@ -722,21 +722,21 @@ pub fn rubrique(racine: &Path, code: &CodeDeRubrique, jour: &Jour) -> R<Rubrique
 
 /// Le code S21.G00.54.001 de cette ligne de paie, ou `None` : `genre` de la
 /// saisie precise lequel des cinq avantages en nature.
-pub fn code_54(r: &Rubrique, genre: Option<&str>) -> R<Option<AutreElementDeRevenuBrut>> {
+pub fn code_54(r: &Rubrique, genre: Option<AutreElementDeRevenuBrut>) -> R<Option<AutreElementDeRevenuBrut>> {
     let Some(code) = r.dsn_autres_bruts else { return Ok(None) };
-    let Some(genre) = genre.map(str::trim).filter(|g| !g.is_empty()) else {
+    let Some(genre) = genre else {
         return Ok(Some(code));
     };
     if !code.avantage_en_nature() {
-        return Err(socle::echec::a_la_cle(&format!("La ligne « {} » dit le genre d'un avantage en nature, et ce n'en est pas un : retirer ce genre.", r.libelle), "genre", repr_texte(genre)));
+        return Err(socle::echec::a_la_cle(&format!("La ligne « {} » dit le genre d'un avantage en nature, et ce n'en est pas un : retirer ce genre.", r.libelle), "genre", repr_texte(genre.code())));
+    }
+    if genre.avantage_en_nature() {
+        return Ok(Some(genre));
     }
     let avantages: Vec<AutreElementDeRevenuBrut> = AutreElementDeRevenuBrut::TOUS.iter().copied().filter(|a| a.avantage_en_nature()).collect();
-    match avantages.iter().copied().find(|a| a.code() == genre) {
-        Some(a) => Ok(Some(a)),
-        None => Err(socle::echec::a_la_cle(
-            &format!("La ligne « {} » porte un genre d'avantage en nature inconnu : le choisir dans la liste.", r.libelle),
-            "genre",
-            format!("{} ; connus : {}", repr_texte(genre), avantages.iter().map(|a| a.code()).collect::<Vec<_>>().join(", ")),
-        )),
-    }
+    Err(socle::echec::a_la_cle(
+        &format!("La ligne « {} » porte un genre d'avantage en nature inconnu : le choisir dans la liste.", r.libelle),
+        "genre",
+        format!("{} ; connus : {}", repr_texte(genre.code()), avantages.iter().map(|a| a.code()).collect::<Vec<_>>().join(", ")),
+    ))
 }
