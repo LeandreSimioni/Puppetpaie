@@ -53,7 +53,7 @@ use socle::echec::R;
 pub use declarations::obligations::{CleDObligation, Ou, TexteDepose};
 use declarations::obligations::{BaseDesObligations, DeBase};
 use socle::echec::erreur;
-use socle::fichiers::{repr, CheminRelatif};
+use socle::fichiers::{repr, CheminRelatif, NomDeFichier};
 use socle::mois::Mois;
 
 use crate::catalogue::{Acte, Affiche, Champ, Forme, Fiche, Refus, MANQUE, OPERATION};
@@ -512,7 +512,7 @@ pub enum FaitDit {
 pub struct DepotFait {
     quand: InstantOuJour,
     #[serde(skip_serializing_if = "Option::is_none")]
-    fichier: Option<String>,
+    fichier: Option<NomDeFichier>,
     #[serde(skip_serializing_if = "Option::is_none", serialize_with = "droit::natures::en_nombre::option::serialize")]
     ordre: Option<NumeroDOrdre>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -812,7 +812,7 @@ fn envoi(envois: &[EnvoiDeLArret], nature: NatureDeLaDeclaration) -> Option<Fait
     Some(Fait {
         le,
         comment: "déposé sur net-entreprises ; le bilan dit s'il est accepté".into(),
-        dit: FaitDit::Depose(DepotFait { quand: e.quand, fichier: e.fichier.as_ref().map(CheminRelatif::to_string), ordre: e.ordre, flux: None, comment: "depot", le }),
+        dit: FaitDit::Depose(DepotFait { quand: e.quand, fichier: e.fichier.as_ref().map(CheminRelatif::nom), ordre: e.ordre, flux: None, comment: "depot", le }),
     })
 }
 
@@ -1191,7 +1191,7 @@ fn fctu_depose(journal: &[envois::journal::Ligne], cle: &IdSalarie, fin: &Jour) 
     Ok(Some(Fait {
         le,
         comment: "déposé sur net-entreprises ; le bilan dit s'il est accepté".into(),
-        dit: FaitDit::Depose(DepotFait { quand: l.quand(), fichier: l.fichier().map(|f| f.to_string()), ordre: None, flux: l.flux().cloned(), comment: "depot", le }),
+        dit: FaitDit::Depose(DepotFait { quand: l.quand(), fichier: l.fichier().cloned(), ordre: None, flux: l.flux().cloned(), comment: "depot", le }),
     }))
 }
 
