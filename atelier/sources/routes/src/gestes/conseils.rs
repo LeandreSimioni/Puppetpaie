@@ -324,7 +324,7 @@ enum Livree {
     /// `bareme:deduction_forfaitaire/plafond_annuel`
     PlafondDeduction,
     /// `bareme:deduction_forfaitaire/taux/<taux>`
-    TauxDeduction(String),
+    TauxDeduction(droit::forme_bareme::CategorieDfs),
     /// `bareme:rubriques_bulletin/id=<rubrique>/taux_pat`
     TauxPatronal(droit::forme_bareme::IdDeCotisation),
     /// `minima:conventions/<idcc>/annexes/<annexe>/repetition/cachet`
@@ -416,7 +416,7 @@ fn lire_livree(chemin: &str, bareme: bool) -> R<Livree> {
         (true, ["plafond_securite_sociale", "mensuel"]) => Livree::PlafondMensuel,
         (true, ["plafond_securite_sociale", "horaire"]) => Livree::PlafondHoraire,
         (true, ["deduction_forfaitaire", "plafond_annuel"]) => Livree::PlafondDeduction,
-        (true, ["deduction_forfaitaire", "taux", taux]) => Livree::TauxDeduction(taux.to_string()),
+        (true, ["deduction_forfaitaire", "taux", taux]) => Livree::TauxDeduction(droit::forme_bareme::CategorieDfs::lire(taux)?),
         (true, ["rubriques_bulletin", id, "taux_pat"]) => match id.strip_prefix("id=") {
             Some(id) => Livree::TauxPatronal(droit::forme_bareme::IdDeCotisation::lire(id)?),
             None => return Err(inconnue()),

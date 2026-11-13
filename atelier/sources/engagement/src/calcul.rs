@@ -267,9 +267,9 @@ impl LigneCotisation {
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeductionForfaitaire {
     /// « 20 » ou « 25 » : le taux de l'article 5 de l'annexe IV du CGI (redaction du 31/12/2000) que la profession porte.
-    pub categorie: String,
+    pub categorie: droit::forme_bareme::CategorieDfs,
     /// La profession de la fiche (`deduction_forfaitaire.professions` du bareme).
-    pub profession: String,
+    pub profession: droit::fiche::ProfessionDfs,
     /// Le taux de l'annee (bareme), en pourcent.
     pub taux: Decimal,
     /// Les lignes du bulletin dont l'assiette est abattue.
@@ -287,7 +287,7 @@ impl DeductionForfaitaire {
     pub fn forme(&self) -> FormeDeLaDeduction {
         FormeDeLaDeduction {
             categorie: self.categorie.clone(),
-            profession: self.profession.clone(),
+            profession: self.profession,
             taux: self.taux,
             rubriques: self.rubriques.clone(),
             montant: self.montant,
@@ -299,7 +299,7 @@ impl DeductionForfaitaire {
     pub(crate) fn de_la_forme(f: &FormeDeLaDeduction) -> DeductionForfaitaire {
         DeductionForfaitaire {
             categorie: f.categorie.clone(),
-            profession: f.profession.clone(),
+            profession: f.profession,
             taux: f.taux,
             rubriques: f.rubriques.clone(),
             montant: f.montant,
@@ -587,8 +587,8 @@ pub(crate) const DFS_SALARIE_REFUS: &str = "refus";
 /// les autres.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OptionDfs {
-    pub profession: String,
-    pub categorie: String,
+    pub profession: droit::fiche::ProfessionDfs,
+    pub categorie: droit::forme_bareme::CategorieDfs,
     pub taux: Decimal,
     pub rubriques: Vec<IdDeCotisation>,
     pub plafond_annuel: Decimal,
@@ -615,7 +615,7 @@ fn refus_detaille(phrase: impl Into<String>, cle: Option<&str>, detail: String) 
 /// CGI dans sa redaction en vigueur au 31/12/2000 (`atelier/reference/sources/dfs/cgi-annexe4-art5/`) et l'annexe 1 de
 /// l'arrete ; leur taux de l'annee, le bareme (art. 9, II et III). Une section du bareme non marquee verifiee refuse.
 pub(crate) fn deduction_forfaitaire(bar: &Pile, sal: &ChampsSalarie, ent: &ChampsEntreprise) -> R<Option<OptionDfs>> {
-    let Some(profession) = sal.deduction_forfaitaire.dite().map(|p| p.as_str().to_string()) else {
+    let Some(profession) = sal.deduction_forfaitaire.dite().copied() else {
         return Ok(None);
     };
     let qui = crate::qui_de(sal)?;
@@ -623,7 +623,7 @@ pub(crate) fn deduction_forfaitaire(bar: &Pile, sal: &ChampsSalarie, ent: &Champ
     let dfs = bar.deduction_forfaitaire.as_ref();
     let professions = dfs.map(|d| &d.professions);
     let connues = || match professions {
-        Some(p) => p.keys().cloned().collect::<Vec<_>>().join(", "),
+        Some(p) => p.keys().map(|k| k.as_str()).collect::<Vec<_>>().join(", "),
         None => "aucune".to_string(),
     };
     let Some(fiche_prof) = professions.and_then(|p| p.get(&profession)) else {
@@ -1498,7 +1498,7 @@ Conges Spectacles (code du travail D. 7121-41 ; `caisse_conges::affilie`) : c'es
         avis_dfs.extend(a.avis);
         dfs = Some(DeductionForfaitaire {
             categorie: o.categorie.clone(),
-            profession: o.profession.clone(),
+            profession: o.profession,
             taux: o.taux,
             rubriques: o.rubriques.clone(),
             montant: a.deduction,

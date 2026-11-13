@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use crate::assiette::Assiette;
 use crate::base_assujettie::BaseAssujettie;
 use crate::code_cotisation::{CleDeCotisationDsn, CleDeTotalisation, CodeCotisation81};
-use crate::fiche::{Lue, Statut};
+use crate::fiche::Statut;
 use crate::natures::Paie;
 use crate::organismes::IdentifiantDOrganisme;
 use crate::source::Fondement;
@@ -116,7 +116,7 @@ enum Ecrite<T> {
 struct Entree<T> {
     depuis: Option<socle::date::Jour>,
     valeur: T,
-    accord: Option<String>,
+    accord: Option<crate::minima::AccordDeSalaires>,
     #[serde(default, deserialize_with = "socle::forme::non_lue")]
     source: socle::forme::NonLue,
     #[serde(default, deserialize_with = "socle::forme::non_lue")]
@@ -189,7 +189,7 @@ pub(crate) mod datee {
                 None => e.depuis,
                 Some(source) => {
                     let t = crate::minima::table()?;
-                    let accord = crate::minima::accord(&t, &source).ok_or_else(|| socle::echec::livree("minima-conventionnels.json", &source))?;
+                    let accord = crate::minima::accord(&t, &source).ok_or_else(|| socle::echec::livree("minima-conventionnels.json", source.as_str()))?;
                     let ecrit = e.depuis.ok_or_else(|| socle::echec::a_la_cle("Une valeur du barème datée par un accord ne dit pas son jour : le signaler au développeur.", "depuis", &source))?;
                     match crate::minima::lie_depuis(accord, lecture.organisation.as_deref(), ecrit) {
                         Some(j) => Some(j),
@@ -268,7 +268,7 @@ forme! {
         pub regime_local_alsace_moselle: Option<RegimeLocal>,
         /// Le versement mobilite de la compagnie ou de l'etablissement (sa fiche) : `bareme::versement_mobilite` le lit.
         pub versement_mobilite: Option<VersementMobiliteEcrit>,
-        pub par_organisation_patronale: BTreeMap<String, Organisation>,
+        pub par_organisation_patronale: BTreeMap<OrganisationPatronale, Organisation>,
         pub retraite_t1_repartition: Option<RetraiteT1Repartition>,
         pub par_convention: BTreeMap<crate::fiche::Idcc, Convention>,
         // La couche de la convention de la compagnie, fondue dans le socle (`contexte::convention`) : le socle ne l'ecrit pas.
@@ -703,7 +703,7 @@ forme! {
         /// La base de la ligne s'arrete au plafond de la periode.
         pub plafond: Option<bool>,
         pub composants: Option<Vec<Court>>,
-        pub affectation: Option<String>,
+        pub affectation: Option<crate::code_cotisation::AffectationDeCotisation>,
         /// L'adhesion sous laquelle se declare la base 31 de la cotisation, nommee pour qui lit le bareme : la reference
         /// du contrat chez l'organisme (S21.G00.15.001 : `INTERBRANCHE`, `TSINTERMITTENTS`) ou son role (`PREVOYANCE`,
         /// `SANTE`). Ce n'est pas un organisme ; c'est `affectation` (la place de l'adhesion) que la DSN ecrit.
@@ -726,7 +726,7 @@ impl CotisationDsn {
     /// n'a pas de code, une couche ne la nomme pas.
     pub fn cle(&self) -> Option<CleDeCotisationDsn> {
         let code = self.code81?;
-        Some(CleDeCotisationDsn { code, affectation: self.affectation.clone().filter(|a| !a.is_empty()) })
+        Some(CleDeCotisationDsn { code, affectation: self.affectation.clone() })
     }
 }
 
@@ -797,13 +797,22 @@ forme! {
     }
 }
 
+/// LA FORMULE DE LA REDUCTION GENERALE qu'un bareme nomme (`formule`) : celle de « Fillon », au coefficient `t` ; un
+/// bareme qui n'en nomme aucune calcule le coefficient par `tmin`, `tdelta` et `puissance` (`reduction`). Une liste du
+/// logiciel : les baremes livres n'ecrivent que `fillon`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FormuleDeReduction {
+    Fillon,
+}
+
 forme! {
     /// La reduction generale des cotisations (CSS L. 241-13), ou ce qu'une couche en complete.
     #[derive(Default)]
     pub struct ReductionGenerale {
         pub verifie: Option<bool>,
         pub statuts: Option<Vec<Statut>>,
-        pub formule: Option<String>,
+        pub formule: Option<FormuleDeReduction>,
         pub tmin: Option<Nombre>,
         pub tdelta: Option<Nombre>,
         pub puissance: Option<Nombre>,
@@ -920,12 +929,19 @@ forme! {
     }
 }
 
+crate::cle_opaque! {
+    /// LA CATEGORIE DE LA DEDUCTION FORFAITAIRE SPECIFIQUE d'une profession (`20`, `25`) : le taux de l'article 5 de
+    /// l'annexe IV du CGI (redaction du 31/12/2000) qu'elle porte, la cle des `taux` de l'annee du bareme. Que portent
+    /// une profession du bareme, la DFS d'un contrat et sa forme ecrite.
+    pub struct CategorieDfs, "catégorie de la déduction forfaitaire spécifique";
+}
+
 forme! {
     pub struct DeductionForfaitaire {
         pub verifie: Option<bool>,
-        pub professions: BTreeMap<String, Profession>,
+        pub professions: BTreeMap<crate::fiche::ProfessionDfs, Profession>,
         pub frais_cumulables: bool,
-        pub taux: BTreeMap<String, socle::forme::Nombre>,
+        pub taux: BTreeMap<CategorieDfs, socle::forme::Nombre>,
         #[serde(deserialize_with = "socle::forme::decimal")]
         pub plafond_annuel: Decimal,
         pub rubriques_abattues: Vec<IdDeCotisation>,
@@ -935,7 +951,7 @@ forme! {
 forme! {
     pub struct Profession {
         pub libelle: String,
-        pub categorie: String,
+        pub categorie: CategorieDfs,
         pub frais_hors_assiette: Vec<crate::catalogue::CodeDeRubrique>,
         pub taux: Option<Nombre>,
     }
@@ -1176,6 +1192,12 @@ forme! {
     }
 }
 
+crate::cle_opaque! {
+    /// L'ORGANISATION PATRONALE D'UNE COUCHE DU BAREME : la cle de `par_organisation_patronale`, son sigle. Celle que la
+    /// compagnie nomme (le texte de sa fiche) la designe par son sigle ou un alias de sa couche (`reconnait`).
+    pub struct OrganisationPatronale, "organisation patronale";
+}
+
 forme! {
     /// La couche d'une organisation patronale : la retraite T1 de ses adherents (`bareme::bareme_retraite_t1`).
     pub struct Organisation {
@@ -1382,7 +1404,7 @@ forme! {
     pub struct Secteurs {
         pub champ: ChampDuSecteur,
         pub libelle: String,
-        pub portes: Vec<String>,
+        pub portes: Vec<crate::fiche::Secteur2121>,
         pub refus: String,
     }
 }
@@ -1397,9 +1419,9 @@ pub enum ChampDuSecteur {
 
 impl ChampDuSecteur {
     /// Ce que la fiche y dit.
-    pub fn dit(self, fiche: &crate::fiche::ChampsEntreprise) -> Option<&'static str> {
+    pub fn dit(self, fiche: &crate::fiche::ChampsEntreprise) -> Option<crate::fiche::Secteur2121> {
         match self {
-            ChampDuSecteur::Secteur2121 => fiche.secteur_2121.code(),
+            ChampDuSecteur::Secteur2121 => fiche.secteur_2121,
         }
     }
 }

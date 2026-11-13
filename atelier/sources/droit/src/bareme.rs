@@ -1381,13 +1381,18 @@ fn sigle(v: &str) -> String {
     s.to_uppercase().split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+impl crate::forme_bareme::OrganisationPatronale {
+    /// L'organisation que la compagnie nomme `nom` est-elle celle-ci : son sigle, ou un alias de sa couche (`couche`),
+    /// sans egard aux accents, a la casse ni aux blancs ? Un nom vide n'en nomme aucune.
+    pub fn reconnait(&self, couche: &crate::forme_bareme::Organisation, nom: &str) -> bool {
+        let cle = sigle(nom);
+        !cle.is_empty() && (cle == sigle(self.as_str()) || couche.alias.iter().flatten().any(|a| cle == sigle(a)))
+    }
+}
+
 /// La couche de l'organisation patronale `nom` (sigle ou alias), ou `None`.
 pub fn couche_organisation<'a>(bar: &'a Pile, nom: &str) -> Option<&'a crate::forme_bareme::Organisation> {
-    let cle = sigle(nom);
-    if cle.is_empty() {
-        return None;
-    }
-    bar.par_organisation_patronale.iter().find(|(k, c)| cle == sigle(k) || c.alias.iter().flatten().any(|a| cle == sigle(a))).map(|(_, c)| c)
+    bar.par_organisation_patronale.iter().find(|(k, c)| k.reconnait(c, nom)).map(|(_, c)| c)
 }
 
 /// Une fraction `num/den` irreductible.

@@ -830,7 +830,7 @@ pub fn cotisations(p: &Paie, bar: &BaremeDuMois) -> R<Vec<Cotisation>> {
             base78: abattue(c.base78)?,
             code81: c.code81,
             org: c.org.clone(),
-            affectation: c.affectation.clone(),
+            affectation: c.affectation.as_ref().map(|a| a.as_str().to_string()),
             cle_total: c.cle_total,
             code_insee: c.code_insee.clone(),
             base81: None,

@@ -13,7 +13,7 @@ use crate::outils::typee::{code_livre, lire, lu};
 #[test]
 fn un_accord_lie_l_adherente_des_sa_date_et_toute_compagnie_des_son_extension() {
     let t: droit::minima::Table = lire(&code_livre(), "minima-conventionnels.json");
-    let a = accord(&t, "kali-1285-accord-salaires-20260701").expect("l'accord de 2026 de la 1285 est dans la table");
+    let a = accord(&t, &droit::minima::AccordDeSalaires::lire("kali-1285-accord-salaires-20260701").unwrap()).expect("l'accord de 2026 de la 1285 est dans la table");
     let j = |a, m, d| socle::date::Jour::nouveau(a, m, d).unwrap();
     let lie = |org: Option<&str>, depuis: socle::date::Jour| lie_depuis(a, org, depuis).map(|x| x.iso());
 

@@ -189,14 +189,21 @@ codes_fermes! {
 #[serde(try_from = "String")]
 pub struct CleDeCotisationDsn {
     pub code: CodeCotisation81,
-    pub affectation: Option<String>,
+    pub affectation: Option<AffectationDeCotisation>,
+}
+
+crate::cle_opaque! {
+    /// L'AFFECTATION D'UNE COTISATION DE LA DSN (`202`, `203`) : la place de l'adhesion sous laquelle elle se declare,
+    /// quand plusieurs cotisations du corps du bareme partagent un code 81.001 (`CotisationDsn::affectation`) ; elle
+    /// distingue leur cle (`059:203`).
+    pub struct AffectationDeCotisation, "affectation d'une cotisation de la DSN";
 }
 
 impl CleDeCotisationDsn {
     /// La cle ecrite `texte`.
     pub fn lire(texte: &str) -> socle::echec::R<CleDeCotisationDsn> {
         let (code, affectation) = match texte.split_once(':') {
-            Some((c, a)) if !a.is_empty() => (c, Some(a.to_string())),
+            Some((c, a)) if !a.is_empty() => (c, Some(AffectationDeCotisation::lire(a)?)),
             Some(_) => return Err(socle::refus!("cle de cotisation de la DSN {} : affectation vide", socle::fichiers::repr(texte))),
             None => (texte, None),
         };

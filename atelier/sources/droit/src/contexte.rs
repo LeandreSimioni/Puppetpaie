@@ -642,7 +642,7 @@ declare dans sa propre DSN, avec ce qui est a lui.\n  - {}",
 fn controler_secteur(pile: &Pile, fiche: &ChampsEntreprise) -> R<()> {
     let Some(sec) = &pile.secteurs else { return Ok(()) };
     let dit = sec.champ.dit(fiche);
-    if sec.portes.iter().any(|p| Some(p.as_str()) == dit) {
+    if sec.portes.iter().any(|p| Some(*p) == dit) {
         return Ok(());
     }
     // Les secteurs viennent de la couche d'une convention : celle que la fiche dit.
@@ -653,10 +653,10 @@ fn controler_secteur(pile: &Pile, fiche: &ChampsEntreprise) -> R<()> {
         sec.refus,
         sec.libelle,
         match dit {
-            Some(d) => d,
+            Some(d) => d.as_str(),
             None => "non renseigné",
         },
-        sec.portes.join(", ")
+        sec.portes.iter().map(|p| p.as_str()).collect::<Vec<_>>().join(", ")
     ))
 }
 
@@ -666,7 +666,7 @@ fn controler_organisation_patronale(pile: &Pile, fiche: &ChampsEntreprise) -> R<
         return Ok(());
     };
     let annee = pile.annee;
-    let connues: Vec<&str> = pile.par_organisation_patronale.keys().map(String::as_str).collect();
+    let connues: Vec<&str> = pile.par_organisation_patronale.keys().map(crate::forme_bareme::OrganisationPatronale::as_str).collect();
     let Some(couche) = crate::bareme::couche_organisation(pile, &nom) else {
         return Err(socle::echec::refus_avec(
             "L'organisation patronale de la compagnie n'est pas couverte par le barème : le signaler au développeur.",

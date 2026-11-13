@@ -35,7 +35,7 @@ forme_notee! {
     /// des grilles (`grilles`, `grilles_complementaires`).
     pub struct Convention {
         /// L'accord, tel qu'une valeur du bareme le nomme (`accord`).
-        pub id: Option<String>,
+        pub id: Option<AccordDeSalaires>,
         pub libelle: Option<String>,
         pub texte: Option<String>,
         pub lien: Option<socle::garde_reseau::Url>,
@@ -568,8 +568,15 @@ impl Table {
 }
 
 /// L'accord de salaires `id` d'une convention de la table (`<idcc>.accords`), ou `None`.
-pub fn accord<'a>(t: &'a Table, id: &str) -> Option<&'a Convention> {
-    t.conventions.values().flat_map(|c| c.accords.iter().flatten()).find(|a| a.id.as_deref() == Some(id))
+pub fn accord<'a>(t: &'a Table, id: &AccordDeSalaires) -> Option<&'a Convention> {
+    t.conventions.values().flat_map(|c| c.accords.iter().flatten()).find(|a| a.id.as_ref() == Some(id))
+}
+
+crate::cle_opaque! {
+    /// L'IDENTIFIANT D'UN ACCORD DE SALAIRES (`kali-1285-accord-salaires-20260701`) : l'`id` d'un accord de
+    /// `minima-conventionnels.json`, que nomme une valeur du bareme datee par lui (`accord`) ; il relie le bareme aux
+    /// minima.
+    pub struct AccordDeSalaires, "accord de salaires";
 }
 
 /// La compagnie adherente de `organisation` l'est-elle d'une organisation d'employeurs signataire de l'accord ?

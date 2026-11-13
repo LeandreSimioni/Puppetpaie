@@ -187,8 +187,8 @@ pub struct FormeDeRemuneration {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FormeDeLaDeduction {
-    pub categorie: String,
-    pub profession: String,
+    pub categorie: droit::forme_bareme::CategorieDfs,
+    pub profession: droit::fiche::ProfessionDfs,
     #[serde(with = "nombre")]
     pub taux: Decimal,
     pub rubriques: Vec<droit::forme_bareme::IdDeCotisation>,

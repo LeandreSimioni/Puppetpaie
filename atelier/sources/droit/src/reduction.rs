@@ -70,7 +70,7 @@ pub fn reduction_generale(
     }
     let smic_ref = eur(mul(requis(rg.smic_horaire_reference.map(|n| n.0), "smic_horaire_reference")?, heures));
     let plafond = requis(rg.plafond_smic.map(|n| n.0), "plafond_smic")?;
-    let fillon = rg.formule.as_deref() == Some("fillon");
+    let fillon = rg.formule == Some(crate::forme_bareme::FormuleDeReduction::Fillon);
     let mut coefficient;
     if brut >= mul(plafond, smic_ref) {
         coefficient = Decimal::ZERO;
@@ -108,7 +108,7 @@ pub fn reduction_au_coefficient(rg: Option<&Parametres>, coefficient: Decimal, b
 }
 
 fn repartir_la_reduction(rg: &Parametres, coefficient: Decimal, montant: Decimal, smic_ref: Decimal, heures: Decimal) -> R<ReductionGenerale> {
-    let total_points = if rg.formule.as_deref() == Some("fillon") { requis(rg.t.map(|n| n.0), "t")? } else { requis(rg.tmin.map(|n| n.0), "tmin")? + requis(rg.tdelta.map(|n| n.0), "tdelta")? };
+    let total_points = if rg.formule == Some(crate::forme_bareme::FormuleDeReduction::Fillon) { requis(rg.t.map(|n| n.0), "t")? } else { requis(rg.tmin.map(|n| n.0), "tmin")? + requis(rg.tdelta.map(|n| n.0), "tdelta")? };
     let part = |taux: Option<Decimal>, cle: &str| -> R<Decimal> {
         if montant.is_zero() {
             return Ok(Decimal::new(0, 2));
