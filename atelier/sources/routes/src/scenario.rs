@@ -179,7 +179,7 @@ pub struct Piece {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dans_la_compagnie: Option<socle::fichiers::CheminRelatif>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fichiers: Option<BTreeMap<String, String>>,
+    pub fichiers: Option<BTreeMap<String, socle::fichiers::Empreinte>>,
 }
 
 /// Ce que rend `horloge-rattraper`, pour le rejeu : les pas joues, une phrase chacun.
@@ -393,8 +393,8 @@ fn instants(gestes: &[Geste]) -> R<Vec<Moment>> {
 }
 
 /// Le contenu d'une piece : `chemin` (relatif au scenario) ou l'empreinte `sha` (dans `pieces/`).
-fn source_de_piece(scenario: &Path, sha: &str) -> PathBuf {
-    scenario.join(PIECES).join(sha)
+fn source_de_piece(scenario: &Path, sha: &socle::fichiers::Empreinte) -> PathBuf {
+    scenario.join(PIECES).join(sha.texte())
 }
 
 /// Pose, avant la route, ce qu'on avait depose : un dossier de la compagnie se remet tel qu'il etait ; un dossier
@@ -711,7 +711,7 @@ pub fn elaguer(scenario: &Path, vers: &Path) -> R<(usize, usize)> {
         }
         for p in g.pieces.iter().flat_map(BTreeMap::values) {
             for sha in p.fichiers.iter().flat_map(BTreeMap::values) {
-                copier(&Path::new(PIECES).join(sha))?;
+                copier(&Path::new(PIECES).join(sha.texte()))?;
             }
             if let Some(c) = &p.chemin {
                 let source = scenario.join(c);
@@ -1149,10 +1149,10 @@ mod enregistreur {
         }
 
         /// Recopie un fichier dans `pieces/` (une fois par contenu) ; rend son empreinte.
-        fn recopier(&self, p: &Path) -> R<String> {
+        fn recopier(&self, p: &Path) -> R<socle::fichiers::Empreinte> {
             let octets = std::fs::read(p).map_err(|e| du_disque(p, &e))?;
-            let sha = socle::fichiers::Empreinte::des_octets(&octets).to_string();
-            let dest = self.dossier.join(PIECES).join(&sha);
+            let sha = socle::fichiers::Empreinte::des_octets(&octets);
+            let dest = self.dossier.join(PIECES).join(sha.texte());
             if !dest.exists() {
                 std::fs::write(&dest, &octets).map_err(|e| du_disque(&dest, &e))?;
             }
