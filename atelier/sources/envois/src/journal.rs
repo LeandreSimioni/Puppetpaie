@@ -633,7 +633,7 @@ fn noter_ligne(d: &mut engagement::departs::Departs, l: &Ligne) {
         // Un avenant : la ligne du journal le dit (`acte`), et son contrat porte son numero.
         let avenant = l
             .signature()
-            .filter(|s| s.detail.acte.as_deref() == Some("avenant"))
+            .filter(|s| s.detail.acte == Some(ActeDuContrat::Avenant))
             .and_then(|s| s.detail.contrats.iter().find(|c| c.salarie == v.salarie && c.numero.as_ref() == Some(&v.numero)))
             .and_then(|c| c.avenant)
             .map(|a| a.to_string());

@@ -199,8 +199,8 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
         // incident NOMME (le salarie, le contrat, la raison) et la releve continue.
         // Une demande qui ne dit pas son acte est celle du contrat lui-meme (la forme du journal des envois,
         // `envois::etats`) : l'absence passe telle quelle.
-        let acte = a.acte.clone();
-        let est_avenant = acte.as_deref() == Some("avenant");
+        let acte = a.acte;
+        let est_avenant = acte == Some(envois::journal::ActeDuContrat::Avenant);
         let mut notes = 0usize;
         for c in &contrats {
             let sien = signes.iter().find(|(n, _)| *n == c.fichier).map(|(_, p)| NomDeFichier::du(p)).transpose()?;
@@ -213,7 +213,7 @@ pub(crate) fn relever_signatures(ctx: &Contexte, client: Option<&mut dyn Courrie
                 fichier_signe: sien,
                 // La mention posee : l'exemplaire contresigne se refait du contrat parti et d'elle (`depart::piece_partie`).
                 mention: mention.clone(),
-                acte: acte.clone(),
+                acte,
                 avenant: if est_avenant { c.avenant.filter(|n| *n != 0).or(a.avenant) } else { None },
             };
             let debut = c.debut.iso();

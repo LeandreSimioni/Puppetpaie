@@ -590,7 +590,7 @@ pub struct ContratParti {
     pub spectacle: Option<String>,
     pub mois: Mois,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub acte: Option<String>,
+    pub acte: Option<ActeDuContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avenant: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -623,8 +623,26 @@ pub struct ContratParti {
 impl ContratParti {
     /// Un avenant au contrat, pas le contrat.
     pub fn est_avenant(&self) -> bool {
-        self.acte.as_deref() == Some("avenant")
+        self.acte == Some(ActeDuContrat::Avenant)
     }
+}
+
+/// CE QU'EST UN CONTRAT PARTI QUI N'EST PAS LE CONTRAT LUI-MEME : un avenant (`avenant`), ou le contrat refait qui annule
+/// et remplace celui qui est parti (`remplace`). Une liste du logiciel, qu'il ecrit lui-meme ; aucun acte : le contrat
+/// lui-meme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ActeDuContrat {
+    Avenant,
+    Remplace,
+}
+
+/// D'OU EST VENUE LA REPONSE A UN CONTRAT PARTI : un « Je signe » releve par courriel (`courriel`). Une liste du
+/// logiciel, qu'il ecrit lui-meme ; aucune : la mention posee a la main.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OrigineDuRetourDeContrat {
+    Courriel,
 }
 
 /// CE QU'UN AVENANT CHANGE, un article ou un terme : l'article du modele de contrat et son numero, l'ancien texte et le
@@ -663,7 +681,7 @@ pub struct DetailSignature {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relance: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub acte: Option<String>,
+    pub acte: Option<ActeDuContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub partis: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -684,7 +702,7 @@ pub struct RetourContrat {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub avenant: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub origine: Option<String>,
+    pub origine: Option<OrigineDuRetourDeContrat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -700,7 +718,7 @@ pub struct RetourContrat {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mention: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub acte: Option<String>,
+    pub acte: Option<ActeDuContrat>,
     pub qui: String,
     pub reponse: String,
 }
@@ -708,7 +726,7 @@ pub struct RetourContrat {
 impl RetourContrat {
     /// Une reponse « Je signe » relevee par courriel.
     pub fn par_courriel(&self) -> bool {
-        self.origine.as_deref() == Some("courriel")
+        self.origine == Some(OrigineDuRetourDeContrat::Courriel)
     }
 }
 

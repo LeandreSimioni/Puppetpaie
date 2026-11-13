@@ -279,7 +279,7 @@ pub struct Attendue {
     pub adresse: Option<String>,
     pub fichier: NomDeFichier,
     /// L'acte du contrat parti (`avenant`, `remplace`) ; aucun pour le contrat lui-meme.
-    pub acte: Option<String>,
+    pub acte: Option<crate::ligne::ActeDuContrat>,
     pub avenant: Option<i64>,
     pub rang: usize,
     pub apres_signature: bool,
@@ -331,7 +331,7 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&droit::contexte::IdSalarie) -
         for c in &e.detail.contrats {
             let Some(code) = c.code.as_deref().filter(|c| !c.is_empty()) else { continue };
             let k = paire(&c.salarie, c.numero.as_ref());
-            let apres_signature = matches!(c.acte.as_deref(), Some("avenant") | Some("remplace")) || renvoyes.contains(&k);
+            let apres_signature = c.acte.is_some() || renvoyes.contains(&k);
             let n = *par_code.entry(code.to_string()).or_insert_with(|| {
                 let fiche = fiche_de(&c.salarie);
                 let prenom = fiche.and_then(|f| f.prenom_affichage.en_texte().or_else(|| f.prenom.en_texte()));
@@ -342,7 +342,7 @@ pub fn signatures_attendues<'f>(fiche_de: impl Fn(&droit::contexte::IdSalarie) -
                     salarie: c.salarie.clone(),
                     adresse: c.adresse.clone(),
                     fichier: c.fichier.clone(),
-                    acte: c.acte.clone(),
+                    acte: c.acte,
                     avenant: c.avenant,
                     rang: i,
                     apres_signature: false,

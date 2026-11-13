@@ -273,7 +273,7 @@ fn acte(ctx: &Contexte, l: &Ligne) -> String {
         Ligne::Dsn(e) => nature_dsn(e.detail.nature_declaration, e.detail.type_declaration),
         Ligne::Dpae(_) => "DPAE".into(),
         Ligne::Documents(_) => "Documents aux salariés".into(),
-        Ligne::ContratSignature(e) => match (e.detail.main_propre, e.detail.acte.as_deref() == Some("avenant")) {
+        Ligne::ContratSignature(e) => match (e.detail.main_propre, e.detail.acte == Some(envois::journal::ActeDuContrat::Avenant)) {
             (true, true) => "Avenant imprimé, à remettre en main propre".into(),
             (true, false) => "Contrat imprimé, à remettre en main propre".into(),
             (false, true) => "Avenant envoyé à la signature".into(),

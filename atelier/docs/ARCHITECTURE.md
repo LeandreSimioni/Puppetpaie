@@ -258,6 +258,8 @@ de prévoyance.
 |---|---|---|
 | engagement | ce qu'une compagnie engage d'un salarié, et ses calculs | `Engagement` (`engagement/src/lib.rs`) ; sa forme écrite est une forme |
 | contrat | ce que l'engagement fait signer et déclare : son numéro et ses termes | à unifier (#419) : `ContratEcrit`, `ContratParti`, `ContratLu`, `ContratAtteste`, `ContratDeclare`… sont des lectures, à ranger par origine ; `droit::organismes::Contrat` est un contrat d'organisme, à renommer |
+| acte d'un contrat parti | ce qu'est une pièce partie à la signature qui n'est pas le contrat lui-même : un avenant, le contrat refait qui annule et remplace celui qui est parti ; aucun : le contrat | `envois::ligne::ActeDuContrat` (`avenant`, `remplace` : une liste du logiciel, qu'il écrit lui-même), que portent un contrat parti, le détail d'un envoi à la signature, ce qui en revient, une signature attendue, une réponse relevée par courriel |
+| origine du retour d'un contrat | d'où vient la réponse à un contrat parti : un « Je signe » relevé par courriel ; aucune : la mention posée à la main | `envois::ligne::OrigineDuRetourDeContrat` (`courriel` : une liste du logiciel), que porte ce qui revient d'un contrat parti |
 | paie | ce qui part avec le bulletin d'un mois | `engagement::calcul::Paie` ; à unifier (#419) : `PaieEcrite`, `PaieImportee`, `PaieLue`… ; `droit::natures::Paie` (à l'activité ou au mois) est une autre notion, à renommer |
 | ligne de paie | une ligne datée : cachet, heures, prime, frais | `engagement::ligne::LignePaie` ; une date de ligne, `DateDeLigne` |
 | salarié | une personne que la compagnie emploie | `IdSalarie` et `droit::fiche::FicheSalarie` ; `SalarieDuContrat`, la fiche figée d'un contrat |
