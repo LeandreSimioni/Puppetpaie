@@ -1213,6 +1213,13 @@ pub const BAREMES: &str = "config/baremes";
 pub fn surcouche(an: i32) -> R<CheminRelatif> {
     CheminRelatif::lire(&format!("{}/{}.json", BAREMES, an))
 }
+
+/// L'annee de la surcouche que `chemin` nomme, s'il en est une (`surcouche`, dont c'est la seule relecture).
+pub fn annee_de_la_surcouche(chemin: &CheminRelatif) -> Option<i32> {
+    let an = chemin.texte().strip_prefix(BAREMES)?.strip_prefix('/')?.strip_suffix(".json")?;
+    let an = i32::try_from(socle::num::entier_de_chiffres(an)?).ok()?;
+    surcouche(an).is_ok_and(|c| c == *chemin).then_some(an)
+}
 /// Le fichier des organismes et contrats de la DSN, sous `config/`.
 pub const ORGANISMES: &str = "organismes.json";
 

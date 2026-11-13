@@ -483,9 +483,10 @@ pub(crate) fn cloturer(ctx: &Contexte, annee: Annee, forcer: bool, qui: &str) ->
             entrees.push(entree_fichier(&cfg.join(nom), format!("config/{}", nom))?);
         }
     }
-    let bar = cfg.join("baremes").join(format!("{}.json", annee));
+    let surcouche = droit::contexte::surcouche(annee.nombre())?;
+    let bar = ctx.racine.join(surcouche.texte());
     if bar.exists() {
-        entrees.push(entree_fichier(&bar, format!("config/baremes/{}.json", annee))?);
+        entrees.push(entree_fichier(&bar, surcouche.texte().to_string())?);
     }
     if let Some(f) = &fichier_export {
         let nom = f.file_name().ok_or_else(|| refus("L'export compta n'a pas de nom de fichier."))?;

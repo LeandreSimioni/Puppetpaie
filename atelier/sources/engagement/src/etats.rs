@@ -1026,7 +1026,7 @@ fn egales_sans_avis(a: &FormeDePaie<Avis>, b: &FormeDePaie<Avis>) -> bool {
 /// saisie, une paie d'un autre mois, une valeur datee) dit donc pourquoi avant le code, qui ne se nomme que lorsque rien
 /// d'autre n'a change. Une paie partie (`parti`) ne bouge que par une decision de l'editeur : le code et les regles
 /// datees s'y nomment d'abord, puisque ce sont eux qui la refont.
-fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool, mois: Mois) -> R<String> {
+fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool) -> R<String> {
     if egales_sans_avis(&avant.paie, &apres.paie) && avant.conges_sans_avis() == apres.conges_sans_avis() && avant.pas != apres.pas {
         return Ok(TAUX_DE_PAS.to_string());
     }
@@ -1071,15 +1071,17 @@ fn raison(avant: &PaieEcrite, apres: &PaieEcrite, parti: bool, mois: Mois) -> R<
         return Ok(format!("la paie {} a changé", socle::texte::de(&m.libelle(socle::mois::Graphie::Accentuee))));
     }
     // La configuration de la compagnie : une valeur datee de ses fiches qui s'applique, ou son bareme de l'annee
-    // (`droit::contexte::surcouche` : ses choix de bareme, qui valent pour toute l'annee). La paie de `mois` ne lit le
-    // bareme qu'a des jours de `mois`, donc celui de son annee.
+    // (`droit::contexte::surcouche` : ses choix de bareme, qui valent pour toute l'annee). Une paie peut lire celle d'une
+    // autre annee que son mois (une ligne de frais datee de decembre dans la paie de janvier).
     let config_avant = &avant.empreinte.configuration;
     let config_nouvelle = apres.empreinte.configuration.iter().filter(|r| !config_avant.contains(r)).max().cloned();
-    let surcouche = socle::fichiers::CheminLu::Racine(Some(droit::contexte::surcouche(mois.annee())?));
-    let annee_du_bareme = match changees.iter().any(|k| k.chemin() == Some(&surcouche)) {
-        true => Jour::nouveau(mois.annee(), 1, 1),
-        false => None,
-    };
+    let annee_du_bareme = changees
+        .iter()
+        .find_map(|k| match k.chemin() {
+            Some(socle::fichiers::CheminLu::Racine(Some(c))) => droit::contexte::annee_de_la_surcouche(c),
+            _ => None,
+        })
+        .and_then(|an| Jour::nouveau(an, 1, 1));
     if let Some(jour) = config_nouvelle.or(annee_du_bareme) {
         return Ok(format!("règle du {}", jour.jj_mm_aaaa()));
     }
@@ -1576,7 +1578,7 @@ fn rafraichir(ctx: &Contexte, mois: Mois, departs: &Departs, passage: bool) -> R
     }
     for ((_, mut o, ancienne, parti), mut nouvelle) in calculees {
         let raison = match &ancienne {
-            Some(a) if !chiffres_egaux(a, &nouvelle) => Some(raison(a, &nouvelle, parti, mois)?),
+            Some(a) if !chiffres_egaux(a, &nouvelle) => Some(raison(a, &nouvelle, parti)?),
             Some(a) => {
                 if a.recalcul.is_some() {
                     nouvelle.recalcul = a.recalcul.clone();
