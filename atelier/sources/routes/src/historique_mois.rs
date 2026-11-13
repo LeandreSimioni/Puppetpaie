@@ -226,7 +226,7 @@ struct Anomalie {
 impl Anomalie {
     fn du_rapport(a: &AnomalieDuRapport) -> Anomalie {
         let o = |t: &str| dit(t).map(String::from);
-        Anomalie { code: o(&a.code), categorie: a.categorie.map(|c| c.to_string()), message: o(&a.message), rubrique: o(&a.rubrique), ligne: o(&a.ligne), nombre: o(&a.nombre), salarie: o(&a.salarie) }
+        Anomalie { code: o(&a.code), categorie: a.categorie.clone(), message: o(&a.message), rubrique: o(&a.rubrique), ligne: o(&a.ligne), nombre: o(&a.nombre), salarie: o(&a.salarie) }
     }
 
     fn du_message(message: &str) -> Anomalie {
@@ -562,7 +562,11 @@ fn lire_piece(o: &[u8], canal: Option<&str>, nature: NatureDuRetour, format: Opt
 fn rapport_lu(rapport: &Rapport, o: &[u8], nature: NatureDuRetour) -> Lecture {
     let titre = match (lu(&rapport.libelle), lu(&rapport.type_rapport)) {
         (Some(libelle), _) => libelle.to_string(),
-        (None, Some(t)) => format!("Rapport {}", t),
+        // Un type de rapport sans libelle (BIS, CID...) : le libelle de la nature qui le porte, s'il y en a un.
+        (None, Some(t)) => match nature.libelle() {
+            Some(l) => l.to_string(),
+            None => format!("Rapport {}", t),
+        },
         (None, None) => "Compte rendu".into(),
     };
     let mut l = Lecture::nouvelle(titre);

@@ -2721,7 +2721,7 @@ pub fn lire_rapport(o: &[u8]) -> R<Option<Rapport>> {
         }
         anomalies.push(AnomalieDuRapport {
             code: code.to_string(),
-            categorie: forme_du_retour(Some(premier_texte(&arbre, a, &["categorie"])).filter(|c| !c.is_empty()), code_ferme::<CategorieDAnomalie>)?,
+            categorie: Some(premier_texte(&arbre, a, &["categorie"])).filter(|c| !c.is_empty()).map(str::to_string),
             message: message.to_string(),
             rubrique,
             ligne: premier_texte(&arbre, a, &["numero_ligne"]).to_string(),
@@ -2783,7 +2783,9 @@ pub struct DeclarationDuRapport {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct AnomalieDuRapport {
     pub code: String,
-    pub categorie: Option<CategorieDAnomalie>,
+    /// Telle qu'ecrite : la specification des comptes rendus harmonises n'en fixe pas la liste (« Contenu a definir
+    /// ulterieurement, a priori un niveau de gravite », VT2.2 l. 248) ; celle du bilan est `CategorieDAnomalie`.
+    pub categorie: Option<String>,
     pub message: String,
     pub rubrique: String,
     pub ligne: String,
